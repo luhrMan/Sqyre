@@ -1,0 +1,15 @@
+{
+    "Items": [
+        {
+            "name": "GOLD_PURSE",
+            "gridSize":[1, 1],
+            "stackMax": "",
+            "merchant": "Treasurer",
+            "category": "Currency"
+        },
+        {
+            
+        }
+        
+    ]
+}
