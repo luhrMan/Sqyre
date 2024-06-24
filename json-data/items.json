@@ -1,0 +1,26 @@
+{
+    "Categories": {
+        "Currency": [
+            {
+                "name": "Gold Purse",
+                "gridSize":[1, 1],
+                "stackMax": 0,
+                "merchant": "Treasurer"
+            },
+            {
+                "name": "Gold Purse Full",
+                "gridSize":[1, 1],
+                "stackMax": 50,
+                "merchant": "Treasurer"
+            }
+        ],
+        "Treasures": [
+            {
+                "name": "Gold Band",
+                "gridSize":[1, 1],
+                "stackMax": 0,
+                "merchant": "Collector"
+            }
+        ]
+    }
+}
