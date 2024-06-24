@@ -73,7 +73,7 @@ func ItemsCheckBoxes() *widget.Accordion {
 			itemsList = append(itemsList, item.Name)
 		}
 		checkGroup := widget.NewCheckGroup(itemsList, func(val []string){})
-		widget.NewCheck
+		//widget.NewCheck
 		accordionItem := widget.NewAccordionItem(category, checkGroup)
 		accordion.Append(accordionItem)
 	}
