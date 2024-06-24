@@ -12,25 +12,24 @@ import (
     "log"
 )
 func Load(){
-	width, height := robotgo.GetScreenSize()
-	log.Println(height + width)
 	a := app.New()
 	w := a.NewWindow("Squire")
 	w.Resize(fyne.NewSize(500,500))
-	
+
 //-------------------------------------------------------------------------------Tab 1
-	itemSelector 		:= ItemSelector()
+	itemSelector 		:= ItemsCheckBoxes()
 	searchBoxSelector 	:= SearchBoxSelector()
-	imageSearchButton 	:= ImageSearchButton(itemSelector, searchBoxSelector)
+	//imageSearchButton 	:= ImageSearchButton(itemSelector, searchBoxSelector)
 	tab1 := container.NewTabItem("image screenshot", container.New(layout.NewGridLayout(2),
 		container.NewVBox(
+            //itemSelector,
 			searchBoxSelector,
 			widget.NewAccordion(
 				widget.NewAccordionItem(
 					"Items",
 					itemSelector),
 				),
-			imageSearchButton,
+	//		imageSearchButton,
 			//widget.NewAccordion(),
 		),
 	))
@@ -53,7 +52,7 @@ func Load(){
 	w.ShowAndRun()
 }
 
-//func ItemSelector() *widget.Select {
+//func ItemsCheckBoxes() *widget.Select {
 //	items := *structs.ItemsMap()
 //	var names []string
 //	for _, item := range items{
@@ -62,13 +61,24 @@ func Load(){
 //	return widget.NewSelect(names, func(value string){})
 //}
 
-func ItemSelector() *widget.CheckGroup {
-	items := *structs.ItemsMap()
-	var names []string
-	for _, item := range items{
-		names = append(names, item.Name)
+func ItemsCheckBoxes() *widget.Accordion {
+	itemsByCategory := *structs.ItemsFromFile()
+	//var categories []string
+	var itemsList []string
+	accordion := widget.NewAccordion()
+	for category, items := range itemsByCategory.Categories {
+		//categories = append(categories, category)
+		itemsList = []string{}
+        for _, item := range items {
+			itemsList = append(itemsList, item.Name)
+		}
+		checkGroup := widget.NewCheckGroup(itemsList, func(val []string){})
+		widget.NewCheck
+		accordionItem := widget.NewAccordionItem(category, checkGroup)
+		accordion.Append(accordionItem)
 	}
-	return widget.NewCheckGroup(names, func(value []string){})
+	return accordion
+	//return widget.NewCheckGroup(itemsList, func(value []string){})
 }
 
 func SearchBoxSelector() *widget.Select{
@@ -88,7 +98,7 @@ func ImageSearchButton(itemSelector *widget.CheckGroup, searchBoxSelector *widge
 			return 
 		}
 		for _, v := range itemSelector.Selected{
-			item := structs.GetItem(v)
+			item, _ := structs.GetItem(v)
 			sbc := structs.GetSearchBoxCoordinates(searchBoxSelector.Selected)
 			ip := "./images/" + item.Name + ".png"
 			x, y := utils.ImageSearch(sbc, ip)
