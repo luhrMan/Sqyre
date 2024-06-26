@@ -17,17 +17,18 @@ func Load(){
 	w.Resize(fyne.NewSize(500,500))
 
 //-------------------------------------------------------------------------------Tab 1
-	itemSelector 		:= ItemsCheckBoxes()
+	itemsCheckBoxes 	:= ItemsCheckBoxes()
+	itemsCheckBoxes.MultiOpen = true
 	searchBoxSelector 	:= SearchBoxSelector()
-	//imageSearchButton 	:= ImageSearchButton(itemSelector, searchBoxSelector)
+	//imageSearchButton 	:= ImageSearchButton(itemsCheckBoxes, searchBoxSelector)
 	tab1 := container.NewTabItem("image screenshot", container.New(layout.NewGridLayout(2),
 		container.NewVBox(
-            //itemSelector,
+            //itemsCheckBoxes,
 			searchBoxSelector,
 			widget.NewAccordion(
 				widget.NewAccordionItem(
 					"Items",
-					itemSelector),
+                    itemsCheckBoxes),
 				),
 	//		imageSearchButton,
 			//widget.NewAccordion(),
