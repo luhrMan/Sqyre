@@ -72,6 +72,48 @@
                 "merchant": "Collector"
             },
             {
+                "name": "Emerald1",
+                "gridSize":[1, 1],
+                "stackMax": 0,
+                "merchant": "Collector"
+            },
+            {
+                "name": "Emerald2",
+                "gridSize":[1, 1],
+                "stackMax": 0,
+                "merchant": "Collector"
+            },
+            {
+                "name": "Emerald3",
+                "gridSize":[1, 1],
+                "stackMax": 0,
+                "merchant": "Collector"
+            },
+            {
+                "name": "Emerald4",
+                "gridSize":[1, 1],
+                "stackMax": 0,
+                "merchant": "Collector"
+            },
+            {
+                "name": "Emerald5",
+                "gridSize":[1, 1],
+                "stackMax": 0,
+                "merchant": "Collector"
+            },
+            {
+                "name": "Emerald6",
+                "gridSize":[1, 1],
+                "stackMax": 0,
+                "merchant": "Collector"
+            },
+            {
+                "name": "Emerald7",
+                "gridSize":[1, 1],
+                "stackMax": 0,
+                "merchant": "Collector"
+            },
+            {
                 "name": "Sapphire",
                 "gridSize":[1, 1],
                 "stackMax": 0,
