@@ -30,10 +30,9 @@ func Load() {
 	tab1 := container.NewTabItem("Macro Builder", container.New(layout.NewGridLayout(2),
 		container.New(
 			layout.NewGridLayout(2),
-			searchBoxSelector,
-			container.NewScroll(
-				itemsCheckBoxes,
-			)),
+			container.NewVBox(searchBoxSelector),
+			itemsCheckBoxes,
+		),
 	),
 	//			widget.NewAccordion(
 	//				widget.NewAccordionItem(
@@ -73,39 +72,28 @@ func Load() {
 
 func ItemsCheckBoxes() *widget.Accordion {
 	itemsByCategory := *structs.ItemsFromFile()
-	var itemsList []string
-	accordion := widget.NewAccordion()
+	accordionItems := widget.NewAccordion()
 	for category, items := range itemsByCategory.Categories {
-		itemsList = []string{}
-
+		box := container.NewVBox()
+		scroll := container.NewVScroll(box)
 		for _, item := range items {
-			itemsList = append(itemsList, item.Name)
-		}
-
-		checkGroup := widget.NewCheckGroup(itemsList, func(selected []string) {})
-		checkGroup.OnChanged = func(selected []string) {
-			for _, item := range selected {
-				(selectedItemsMap)[item] = true // Add selected items to the map
-			}
-			for _, item := range checkGroup.Options {
-				if !contains(selected, item) {
-					delete(selectedItemsMap, item) // Remove unselected items from the map
+			func(itemName string) {
+				checkBox := widget.NewCheck(itemName, func(checked bool) {})
+				checkBox.OnChanged = func(checked bool) {
+					if checked {
+						log.Println(itemName)
+						selectedItemsMap[itemName] = true // Add selected item to the map
+					} else {
+						delete(selectedItemsMap, itemName) // Remove unselected item from the map
+					}
+					log.Println(selectedItemsMap)
 				}
-			}
-			log.Println(selectedItemsMap)
+				box.Add(checkBox)
+			}(item.Name)
 		}
-		accordionItem := widget.NewAccordionItem(category, checkGroup)
-		accordion.Append(accordionItem)
+		accordionItems.Append(widget.NewAccordionItem(category, scroll))
 	}
-	return accordion
-}
-func contains(slice []string, item string) bool {
-	for _, s := range slice {
-		if s == item {
-			return true
-		}
-	}
-	return false
+	return accordionItems
 }
 
 func SearchBoxSelector() *widget.Select {
