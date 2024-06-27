@@ -14,7 +14,7 @@ import (
 func Load(){
 	a := app.New()
 	w := a.NewWindow("Squire")
-	w.Resize(fyne.NewSize(500,500))
+	w.Resize(fyne.NewSize(1500,1500))
 
 //-------------------------------------------------------------------------------Tab 1
 	itemsCheckBoxes 	:= ItemsCheckBoxes()
@@ -64,22 +64,18 @@ func Load(){
 
 func ItemsCheckBoxes() *widget.Accordion {
 	itemsByCategory := *structs.ItemsFromFile()
-	//var categories []string
 	var itemsList []string
 	accordion := widget.NewAccordion()
 	for category, items := range itemsByCategory.Categories {
-		//categories = append(categories, category)
 		itemsList = []string{}
         for _, item := range items {
 			itemsList = append(itemsList, item.Name)
 		}
 		checkGroup := widget.NewCheckGroup(itemsList, func(val []string){})
-		//widget.NewCheck
 		accordionItem := widget.NewAccordionItem(category, checkGroup)
 		accordion.Append(accordionItem)
 	}
 	return accordion
-	//return widget.NewCheckGroup(itemsList, func(value []string){})
 }
 
 func SearchBoxSelector() *widget.Select{

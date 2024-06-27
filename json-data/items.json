@@ -1,8 +1,34 @@
 {
     "Categories": {
+        "Consumables":[
+            {
+                "name": "Potion",
+                "gridSize":[1, 1],
+                "stackMax": 3,
+                "merchant": ""
+            },
+            {
+                "name": "Bandage",
+                "gridSize":[1, 1],
+                "stackMax": 3,
+                "merchant": "Surgeon"
+            }
+        ],
         "Currency": [
             {
+                "name": "Gold Coins",
+                "gridSize":[1, 1],
+                "stackMax": 10,
+                "merchant": "Treasurer"
+            },
+            {
                 "name": "Gold Purse",
+                "gridSize":[1, 1],
+                "stackMax": 0,
+                "merchant": "Treasurer"
+            },
+            {
+                "name": "Gold Purse Empty",
                 "gridSize":[1, 1],
                 "stackMax": 0,
                 "merchant": "Treasurer"
@@ -12,11 +38,23 @@
                 "gridSize":[1, 1],
                 "stackMax": 50,
                 "merchant": "Treasurer"
+            },
+            {
+                "name": "Gold Bag",
+                "gridSize":[2, 2],
+                "stackMax": 1000,
+                "merchant": ""
             }
         ],
         "Treasures": [
             {
                 "name": "Gold Band",
+                "gridSize":[1, 1],
+                "stackMax": 0,
+                "merchant": "Collector"
+            },
+            {
+                "name": "Diamond",
                 "gridSize":[1, 1],
                 "stackMax": 0,
                 "merchant": "Collector"
