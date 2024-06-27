@@ -8,16 +8,58 @@
                 "merchant": ""
             },
             {
+                "name": "Healing Potion",
+                "gridSize":[1, 1],
+                "stackMax": 3,
+                "merchant": "Alchemist"
+            },
+            {
+                "name": "Protection Potion",
+                "gridSize":[1, 1],
+                "stackMax": 3,
+                "merchant": "Alchemist"
+            },
+            {
+                "name": "Magic Protection Potion",
+                "gridSize":[1, 1],
+                "stackMax": 3,
+                "merchant": "Alchemist"
+            },
+            {
+                "name": "Luck Potion",
+                "gridSize":[1, 1],
+                "stackMax": 3,
+                "merchant": "Alchemist"
+            },
+            {
                 "name": "Bandage",
                 "gridSize":[1, 1],
                 "stackMax": 3,
                 "merchant": "Surgeon"
             },
             {
-                "name": "Healing Potion",
+                "name": "Lockpick",
                 "gridSize":[1, 1],
                 "stackMax": 3,
-                "merchant": "Alchemist"
+                "merchant": ""
+            },
+            {
+                "name": "Francisca Axe",
+                "gridSize":[1, 2],
+                "stackMax": 0,
+                "merchant": "Woodsman"
+            },
+            {
+                "name": "Surgical Kit",
+                "gridSize":[2, 2],
+                "stackMax": 0,
+                "merchant": ""
+            },
+            {
+                "name": "Campfire",
+                "gridSize":[2, 2],
+                "stackMax": 0,
+                "merchant": "Woodsman"
             }
         ],
         "Currency": [
@@ -25,6 +67,12 @@
                 "name": "Gold Coins",
                 "gridSize":[1, 1],
                 "stackMax": 10,
+                "merchant": "Treasurer"
+            },
+            {
+                "name": "Gold Coin",
+                "gridSize":[1, 1],
+                "stackMax": 0,
                 "merchant": "Treasurer"
             },
             {
@@ -54,12 +102,6 @@
         ],
         "Treasures": [
             {
-                "name": "Gold Band",
-                "gridSize":[1, 1],
-                "stackMax": 0,
-                "merchant": "Collector"
-            },
-            {
                 "name": "Diamond",
                 "gridSize":[1, 1],
                 "stackMax": 0,
@@ -72,43 +114,7 @@
                 "merchant": "Collector"
             },
             {
-                "name": "Emerald1",
-                "gridSize":[1, 1],
-                "stackMax": 0,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Emerald2",
-                "gridSize":[1, 1],
-                "stackMax": 0,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Emerald3",
-                "gridSize":[1, 1],
-                "stackMax": 0,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Emerald4",
-                "gridSize":[1, 1],
-                "stackMax": 0,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Emerald5",
-                "gridSize":[1, 1],
-                "stackMax": 0,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Emerald6",
-                "gridSize":[1, 1],
-                "stackMax": 0,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Emerald7",
+                "name": "Ruby",
                 "gridSize":[1, 1],
                 "stackMax": 0,
                 "merchant": "Collector"
@@ -116,6 +122,162 @@
             {
                 "name": "Sapphire",
                 "gridSize":[1, 1],
+                "stackMax": 0,
+                "merchant": "Collector"
+            },
+            {
+                "name": "Dotted Bangle",
+                "gridSize":[1, 1],
+                "stackMax": 0,
+                "merchant": "Collector"
+            },
+            {
+                "name": "Gem Necklace",
+                "gridSize":[1, 1],
+                "stackMax": 0,
+                "merchant": "Collector"
+            },
+            {
+                "name": "Gem Ring",
+                "gridSize":[1, 1],
+                "stackMax": 0,
+                "merchant": "Collector"
+            },
+            {
+                "name": "Glimmer Bangle",
+                "gridSize":[1, 1],
+                "stackMax": 0,
+                "merchant": "Collector"
+            },
+            {
+                "name": "Gold Band",
+                "gridSize":[1, 1],
+                "stackMax": 0,
+                "merchant": "Collector"
+            },
+            {
+                "name": "Gold Candle Platter",
+                "gridSize":[1, 1],
+                "stackMax": 0,
+                "merchant": "Collector"
+            },
+            {
+                "name": "Leaf Gold Bangle",
+                "gridSize":[1, 1],
+                "stackMax": 0,
+                "merchant": "Collector"
+            },
+            {
+                "name": "Light Gold Bangle",
+                "gridSize":[1, 1],
+                "stackMax": 0,
+                "merchant": "Collector"
+            },
+            {
+                "name": "Patterned Gold Bangle",
+                "gridSize":[1, 1],
+                "stackMax": 0,
+                "merchant": "Collector"
+            },
+            {
+                "name": "Pearl Necklace",
+                "gridSize":[1, 1],
+                "stackMax": 0,
+                "merchant": "Collector"
+            },
+            {
+                "name": "Shine Bangle",
+                "gridSize":[1, 1],
+                "stackMax": 0,
+                "merchant": "Collector"
+            },
+            {
+                "name": "Simple Gold Bangle",
+                "gridSize":[1, 1],
+                "stackMax": 0,
+                "merchant": "Collector"
+            },
+            {
+                "name": "Slim Bangle",
+                "gridSize":[1, 1],
+                "stackMax": 0,
+                "merchant": "Collector"
+            },
+            {
+                "name": "Triple Gem Bangle",
+                "gridSize":[1, 1],
+                "stackMax": 0,
+                "merchant": "Collector"
+            },
+            {
+                "name": "Turquoise Gem Bangle",
+                "gridSize":[1, 1],
+                "stackMax": 0,
+                "merchant": "Collector"
+            },
+            {
+                "name": "Ceremonial Dagger",
+                "gridSize":[2, 1],
+                "stackMax": 0,
+                "merchant": "Collector"
+            },
+            {
+                "name": "Goblet",
+                "gridSize":[1, 2],
+                "stackMax": 0,
+                "merchant": "Collector"
+            },
+            {
+                "name": "Gold Chalice",
+                "gridSize":[1, 2],
+                "stackMax": 0,
+                "merchant": "Collector"
+            },
+            {
+                "name": "Gold Goblet",
+                "gridSize":[1, 2],
+                "stackMax": 0,
+                "merchant": "Collector"
+            },
+            {
+                "name": "Silver Chalice",
+                "gridSize":[1, 2],
+                "stackMax": 0,
+                "merchant": "Collector"
+            },
+            {
+                "name": "Gold Bowl",
+                "gridSize":[2, 2],
+                "stackMax": 0,
+                "merchant": "Collector"
+            },
+            {
+                "name": "Gold Candelabra",
+                "gridSize":[2, 2],
+                "stackMax": 0,
+                "merchant": "Collector"
+            },
+            {
+                "name": "Gold Candle Holder",
+                "gridSize":[2, 2],
+                "stackMax": 0,
+                "merchant": "Collector"
+            },
+            {
+                "name": "Gold Crown",
+                "gridSize":[2, 2],
+                "stackMax": 0,
+                "merchant": "Collector"
+            },
+            {
+                "name": "Gold Waterpot",
+                "gridSize":[2, 2],
+                "stackMax": 0,
+                "merchant": "Collector"
+            },
+            {
+                "name": "Ancient Scroll",
+                "gridSize":[2, 3],
                 "stackMax": 0,
                 "merchant": "Collector"
             }
