@@ -11,25 +11,31 @@ import (
     "github.com/go-vgo/robotgo"
     "log"
 )
+//var selectedItemsMap *map[string]bool
+
+var selectedItemsMap = make(map[string]bool)
+var selectedItemsMapPtr = &selectedItemsMap
+
 func Load(){
 	a := app.New()
 	w := a.NewWindow("Squire")
 	w.Resize(fyne.NewSize(1500,1500))
-
 //-------------------------------------------------------------------------------Tab 1
+	//selectedItemsMap = make(map[string]bool)
 	itemsCheckBoxes 	:= ItemsCheckBoxes()
 	itemsCheckBoxes.MultiOpen = true
-	searchBoxSelector 	:= SearchBoxSelector()
+	//searchBoxSelector 	:= SearchBoxSelector()
 	//imageSearchButton 	:= ImageSearchButton(itemsCheckBoxes, searchBoxSelector)
-	tab1 := container.NewTabItem("image screenshot", container.New(layout.NewGridLayout(2),
-		container.NewVBox(
+	tab1 := container.NewTabItem("Macro Builder", container.New(layout.NewGridLayout(2),
+		container.NewScroll(
             //itemsCheckBoxes,
-			searchBoxSelector,
-			widget.NewAccordion(
-				widget.NewAccordionItem(
-					"Items",
-                    itemsCheckBoxes),
-				),
+			//searchBoxSelector,
+			itemsCheckBoxes,
+//			widget.NewAccordion(
+//				widget.NewAccordionItem(
+//					"Items",
+//                    itemsCheckBoxes),
+//				),
 	//		imageSearchButton,
 			//widget.NewAccordion(),
 		),
@@ -68,14 +74,38 @@ func ItemsCheckBoxes() *widget.Accordion {
 	accordion := widget.NewAccordion()
 	for category, items := range itemsByCategory.Categories {
 		itemsList = []string{}
+		log.Println(category)
+		log.Println(items)
+		log.Println(itemsList)
+
         for _, item := range items {
 			itemsList = append(itemsList, item.Name)
 		}
-		checkGroup := widget.NewCheckGroup(itemsList, func(val []string){})
+		log.Println(itemsList)
+		checkGroup := widget.NewCheckGroup(itemsList, func(selected []string){})
+		checkGroup.OnChanged = func(selected []string){
+			for _, item := range selected {
+                	(selectedItemsMap)[item] = true // Add selected items to the map
+	            }
+	            for _, item := range checkGroup.Options {
+	                if !contains(selected, item) {
+	                    delete(selectedItemsMap, item) // Remove unselected items from the map
+	                }
+            	}
+				log.Println(selectedItemsMap)
+		}
 		accordionItem := widget.NewAccordionItem(category, checkGroup)
 		accordion.Append(accordionItem)
 	}
 	return accordion
+}
+func contains(slice []string, item string) bool {
+    for _, s := range slice {
+        if s == item {
+            return true
+        }
+    }
+    return false
 }
 
 func SearchBoxSelector() *widget.Select{

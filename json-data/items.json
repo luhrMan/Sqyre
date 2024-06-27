@@ -12,6 +12,12 @@
                 "gridSize":[1, 1],
                 "stackMax": 3,
                 "merchant": "Surgeon"
+            },
+            {
+                "name": "Healing Potion",
+                "gridSize":[1, 1],
+                "stackMax": 3,
+                "merchant": "Alchemist"
             }
         ],
         "Currency": [
@@ -55,6 +61,18 @@
             },
             {
                 "name": "Diamond",
+                "gridSize":[1, 1],
+                "stackMax": 0,
+                "merchant": "Collector"
+            },
+            {
+                "name": "Emerald",
+                "gridSize":[1, 1],
+                "stackMax": 0,
+                "merchant": "Collector"
+            },
+            {
+                "name": "Sapphire",
                 "gridSize":[1, 1],
                 "stackMax": 0,
                 "merchant": "Collector"

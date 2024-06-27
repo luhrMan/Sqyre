@@ -12,6 +12,7 @@ import (
 // 	- Create a select option in the GUI for this?
 
 func main() {
+	
 	log.Println(robotgo.GetScreenSize())
 	log.Println(robotgo.GetDisplayBounds(0))
 	log.Println(robotgo.GetDisplayBounds(1))
