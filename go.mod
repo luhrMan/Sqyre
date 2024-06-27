@@ -1,6 +1,8 @@
 module Dark-And-Darker
 
-go 1.18
+go 1.21
+
+toolchain go1.22.4
 
 require (
 	fyne.io/fyne/v2 v2.4.5
@@ -49,6 +51,7 @@ require (
 	github.com/vcaesar/tt v0.20.1 // indirect
 	github.com/yuin/goldmark v1.5.5 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
+	gocv.io/x/gocv v0.37.0 // indirect
 	golang.org/x/image v0.17.0 // indirect
 	golang.org/x/mobile v0.0.0-20230531173138-3c911d8e3eda // indirect
 	golang.org/x/net v0.17.0 // indirect

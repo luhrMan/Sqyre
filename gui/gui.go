@@ -9,6 +9,7 @@ import (
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/layout"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"github.com/go-vgo/robotgo"
 )
@@ -26,13 +27,14 @@ func Load() {
 	itemsCheckBoxes := ItemsCheckBoxes()
 	itemsCheckBoxes.MultiOpen = true
 	searchBoxSelector := SearchBoxSelector()
-	//imageSearchButton 	:= ImageSearchButton(itemsCheckBoxes, searchBoxSelector)
+	imageSearchButton := ImageSearchButton(&selectedItemsMap, searchBoxSelector)
 	tab1 := container.NewTabItem("Macro Builder", container.New(layout.NewGridLayout(2),
 		container.New(
 			layout.NewGridLayout(2),
-			container.NewVBox(searchBoxSelector),
+			container.NewVBox(searchBoxSelector, layout.NewSpacer(), imageSearchButton),
 			itemsCheckBoxes,
 		),
+		widget.NewButton("move mouse", func() { OffsetMove(400, 400) }),
 	),
 	//			widget.NewAccordion(
 	//				widget.NewAccordionItem(
@@ -60,6 +62,10 @@ func Load() {
 
 	w.ShowAndRun()
 }
+func OffsetMove(x int, y int) {
+	robotgo.Move(x+1920, y+utils.YOffset)
+	robotgo.Sleep(1)
+}
 
 //func ItemsCheckBoxes() *widget.Select {
 //	items := *structs.ItemsMap()
@@ -77,6 +83,7 @@ func ItemsCheckBoxes() *widget.Accordion {
 		box := container.NewVBox()
 		scroll := container.NewVScroll(box)
 		for _, item := range items {
+			checkBoxWithIcon := container.NewHBox()
 			func(itemName string) {
 				checkBox := widget.NewCheck(itemName, func(checked bool) {})
 				checkBox.OnChanged = func(checked bool) {
@@ -88,7 +95,17 @@ func ItemsCheckBoxes() *widget.Accordion {
 					}
 					log.Println(selectedItemsMap)
 				}
-				box.Add(checkBox)
+				resource, err := fyne.LoadResourceFromPath("./images/" + itemName + ".png")
+				if err != nil {
+					log.Println(err)
+					checkBoxWithIcon.Add(widget.NewIcon(theme.BrokenImageIcon()))
+				} else {
+					icon := widget.NewIcon(resource)
+					checkBoxWithIcon.Add(icon)
+					icon.Resize(fyne.NewSquareSize(50))
+				}
+				checkBoxWithIcon.Add(checkBox)
+				box.Add(checkBoxWithIcon)
 			}(item.Name)
 		}
 		accordionItems.Append(widget.NewAccordionItem(category, scroll))
@@ -105,19 +122,19 @@ func SearchBoxSelector() *widget.Select {
 	return widget.NewSelect(names, func(value string) {})
 }
 
-func ImageSearchButton(itemSelector *widget.CheckGroup, searchBoxSelector *widget.Select) *widget.Button {
-	return widget.NewButton("Find image", func() {
-		err := robotgo.ActiveName("Fleet")
+func ImageSearchButton(selectedItemsMap *map[string]bool, searchBoxSelector *widget.Select) *widget.Button {
+	return widget.NewButton("Find items", func() {
+		err := robotgo.ActiveName("Dark and Darker")
 		if err != nil {
 			log.Printf("robotgo.ActiveName failed:%d\n", err)
 			return
 		}
-		for _, v := range itemSelector.Selected {
+		for v := range *selectedItemsMap {
 			item, _ := structs.GetItem(v)
 			sbc := structs.GetSearchBoxCoordinates(searchBoxSelector.Selected)
-			ip := "./images/" + item.Name + ".png"
-			x, y := utils.ImageSearch(sbc, ip)
+			x, y := utils.ImageSearch(sbc, item.Name)
 			robotgo.Move(x, y)
+			//OffsetMove(x, y)
 		}
 	})
 }

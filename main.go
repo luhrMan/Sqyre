@@ -1,10 +1,11 @@
 package main
 
 import (
-    "Dark-And-Darker/gui"
-    "github.com/go-vgo/robotgo"
-    "github.com/otiai10/gosseract/v2"
-    "log"
+	"Dark-And-Darker/gui"
+	"log"
+
+	"github.com/go-vgo/robotgo"
+	"github.com/otiai10/gosseract/v2"
 )
 
 // Can't seem to get the resolution of a single display
@@ -12,24 +13,27 @@ import (
 // 	- Create a select option in the GUI for this?
 
 func main() {
-	
+
+	log.Println("Screen Size")
 	log.Println(robotgo.GetScreenSize())
+	log.Println("Monitor 1 size")
 	log.Println(robotgo.GetDisplayBounds(0))
+	log.Println("Monitor 2 size")
 	log.Println(robotgo.GetDisplayBounds(1))
-	
-//	quitChan := make(chan bool)
-//	go func() {
-//		for {
-//			select {
-//			case <-quitChan:
-//				return
-//			default:
-//				robotgo.MilliSleep(1000)
-//				log.Println(robotgo.Location())
-//			}
-//
-//		}
-//	}()
+
+	//	quitChan := make(chan bool)
+	//	go func() {
+	//		for {
+	//			select {
+	//			case <-quitChan:
+	//				return
+	//			default:
+	//				robotgo.MilliSleep(1000)
+	//				log.Println(robotgo.Location())
+	//			}
+	//
+	//		}
+	//	}()
 	//	scrRes := widget.NewLabel("Select your Screen Resolution")
 	//	w.SetContent(container.NewVBox(
 	//		scrRes,
