@@ -8,6 +8,12 @@ type SearchBoxCoordinates struct {
 	BottomY  int    `json:"y2"`
 }
 
+type SearchSpotCoordinates struct {
+	SpotName string `json:"spotName"`
+	X        int    `json:"x"`
+	Y        int    `json:"y"`
+}
+
 type coordinate interface {
 	SearchBoxCoordinatesMap() (string, SearchBoxCoordinates)
 }
@@ -23,8 +29,25 @@ func SearchBoxCoordinatesMap() *map[string]SearchBoxCoordinates {
 	return &c
 }
 
+func SearchSpotCoordinatesMap() *map[string]SearchSpotCoordinates {
+	c := make(map[string]SearchSpotCoordinates)
+	c = map[string]SearchSpotCoordinates{
+		"Middle":             {SpotName: "Middle", X: 2560 / 2, Y: 1440 / 2},
+		"Top Left Corner":    {SpotName: "Top Left Corner", X: 0, Y: 0},
+		"Top Menu Bar":       {SpotName: "Top Menu Bar", X: 100, Y: 200},
+		"Merchant Portraits": {SpotName: "Merchant Portraits", X: 200, Y: 300},
+	}
+	return &c
+}
+
 func GetSearchBoxCoordinates(key string) SearchBoxCoordinates {
 	sbcMap := *SearchBoxCoordinatesMap()
 	sbc := sbcMap[key]
 	return sbc
+}
+
+func GetSearchSpotCoordinates(key string) SearchSpotCoordinates {
+	sscMap := *SearchSpotCoordinatesMap()
+	ssc := sscMap[key]
+	return ssc
 }
