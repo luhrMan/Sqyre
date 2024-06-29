@@ -1,11 +1,18 @@
 {
-    "Coordinates":[
+    "Coordinates": [
         {
-            "areaName": "TopMenuBar",
+            "areaName": "Top Menu Bar",
             "x1": 100,
             "y1": 200,
             "x2": 300,
             "y2": 400
+        },
+        {
+            "areaName": "Whole Screen",
+            "x1": 0,
+            "y1": 0,
+            "x2": 2560,
+            "y2": 1440
         }
     ]
 }

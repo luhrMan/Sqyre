@@ -22,30 +22,99 @@ func Load() {
 	a := app.New()
 	w := a.NewWindow("Squire")
 	w.Resize(fyne.NewSize(1000, 1000))
-	//-------------------------------------------------------------------------------Tab 1
-	//selectedItemsMap = make(map[string]bool)
+	//-----------------------------------------------------------------------------------------------------------------------------------------#Tab 1
+	//-----------------------------------------------------------------------------------------------------------------------------------------##Col 1
+	//-----------------------------------------------------------------------------------------------------------------------------------------###ITEMS
 	itemsCheckBoxes := ItemsCheckBoxes()
 	itemsCheckBoxes.MultiOpen = true
+	//-----------------------------------------------------------------------------------------------------------------------------------------##Col 2
+	//-----------------------------------------------------------------------------------------------------------------------------------------###MACRO SELECTOR
+	var macroSettingsContainer *fyne.Container
+	macros := []string{
+		"Custom Macro",
+		"Move Items Player -> Stash", // use icons here?
+		"Move Items Player <- Stash",
+		"Empty Player Inventory",
+		"Sell Treasures",
+	}
+	macroSelector := widget.NewSelect(macros, func(value string) {
+		if value != "Custom Macro" {
+			ToggleWidgets(macroSettingsContainer, false)
+		} else {
+			ToggleWidgets(macroSettingsContainer, true)
+		}
+	})
+	//-----------------------------------------------------------------------------------------------------------------------------------------###GO TO
+
+	//-----------------------------------------------------------------------------------------------------------------------------------------###SEARCH AREA
 	searchBoxSelector := SearchBoxSelector()
-	imageSearchButton := ImageSearchButton(&selectedItemsMap, searchBoxSelector)
+	searchBoxSelector.SetSelected("Whole Screen")
+	//-----------------------------------------------------------------------------------------------------------------------------------------###MOUSE AND KEYBOARD
+	mouseButtonToggle := widget.NewCheck("", func(b bool) {})
+	mouseContainer := container.NewHBox(
+		mouseButtonToggle,
+		widget.NewLabel("Left"),
+		widget.NewSlider(0, 1),
+		widget.NewLabel("Right"),
+	)
+	keyboardContainer := container.NewHBox(
+		widget.NewCheck("Alt", func(b bool) {}),
+		widget.NewCheck("Shift", func(b bool) {}),
+		widget.NewCheck("Ctrl", func(b bool) {}),
+	)
+
+	startMacroButton := StartMacroButton(&selectedItemsMap, searchBoxSelector)
+	macroSettingsContainer = container.NewVBox(widget.NewLabelWithStyle("Search Area", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
+		searchBoxSelector,
+		widget.NewLabelWithStyle("Buttons", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
+		widget.NewLabel("Mouse"),
+		mouseContainer,
+		widget.NewLabel("Keyboard"),
+		keyboardContainer,
+		layout.NewSpacer(),
+		startMacroButton,
+	)
+	ToggleWidgets(macroSettingsContainer, false)
+
 	tab1 := container.NewTabItem("Macro Builder", container.New(layout.NewGridLayout(2),
 		container.New(
 			layout.NewGridLayout(2),
-			container.NewVBox(searchBoxSelector, layout.NewSpacer(), imageSearchButton),
 			itemsCheckBoxes,
+			container.NewVBox(
+				macroSelector,
+				macroSettingsContainer,
+				layout.NewSpacer(),
+				widget.NewLabelWithStyle("Dungeon Setup", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
+				widget.NewCheck("Check Stash before merchants", func(b bool) {}),
+				widget.NewButton("Setup for Dungeon", func() {}),
+			),
 		),
-		widget.NewButton("move mouse", func() { OffsetMove(400, 400) }),
 	),
-	//			widget.NewAccordion(
-	//				widget.NewAccordionItem(
-	//					"Items",
-	//                    itemsCheckBoxes),
-	//				),
-	//		imageSearchButton,
-	//widget.NewAccordion(),
+	// container.NewVBox(
+	// 	widget.NewLabelWithStyle("Search Area", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
+	// 	searchBoxSelector,
+	// 	widget.NewCheck("Build your own Macro?", func(b bool) {}),
+	// 	widget.NewLabelWithStyle("Game Related", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
+	// 	widget.NewCheck("Check Stash before merchants", func(b bool) {}),
+	// 	widget.NewLabelWithStyle("Buttons", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
+	// 	widget.NewLabel("Mouse"),
+	// 	container.NewHBox(
+	// 		mouseButtonToggle,
+	// 		widget.NewLabel("Left"),
+	// 		widget.NewSlider(0, 1),
+	// 		widget.NewLabel("Right"),
+	// 	),
+	// 	widget.NewLabel("Keyboard"),
+	// 	container.NewHBox(
+	// 		widget.NewCheck("Alt", func(b bool) {}),
+	// 		widget.NewCheck("Shift", func(b bool) {}),
+	// 		widget.NewCheck("Ctrl", func(b bool) {}),
+	// 	),
+
 	)
+
 	//-------------------------------------------------------------------------------------Tab 2
-	tab2 := container.NewTabItem("macro builder", container.New(layout.NewGridLayout(1),
+	tab2 := container.NewTabItem("Tab 2", container.New(layout.NewGridLayout(1),
 		widget.NewSelect([]string{"1", "2"}, func(value string) {
 			log.Println(value)
 		})),
@@ -62,6 +131,22 @@ func Load() {
 
 	w.ShowAndRun()
 }
+
+func ToggleWidgets(c *fyne.Container, b bool) {
+	for _, obj := range c.Objects {
+		switch obj := obj.(type) {
+		case fyne.Disableable:
+			if b {
+				obj.Enable()
+			} else {
+				obj.Disable()
+			}
+		case *fyne.Container:
+			ToggleWidgets(obj, b)
+		}
+	}
+}
+
 func OffsetMove(x int, y int) {
 	robotgo.Move(x+1920, y+utils.YOffset)
 	robotgo.Sleep(1)
@@ -102,7 +187,6 @@ func ItemsCheckBoxes() *widget.Accordion {
 				} else {
 					icon := widget.NewIcon(resource)
 					checkBoxWithIcon.Add(icon)
-					icon.Resize(fyne.NewSquareSize(50))
 				}
 				checkBoxWithIcon.Add(checkBox)
 				box.Add(checkBoxWithIcon)
@@ -122,19 +206,27 @@ func SearchBoxSelector() *widget.Select {
 	return widget.NewSelect(names, func(value string) {})
 }
 
-func ImageSearchButton(selectedItemsMap *map[string]bool, searchBoxSelector *widget.Select) *widget.Button {
-	return widget.NewButton("Find items", func() {
+func StartMacroButton(selectedItemsMap *map[string]bool, searchBoxSelector *widget.Select) *widget.Button {
+	return widget.NewButton("Start Macro", func() {
 		err := robotgo.ActiveName("Dark and Darker")
 		if err != nil {
 			log.Printf("robotgo.ActiveName failed:%d\n", err)
 			return
 		}
+
+		posArr := []robotgo.Point{}
 		for v := range *selectedItemsMap {
 			item, _ := structs.GetItem(v)
 			sbc := structs.GetSearchBoxCoordinates(searchBoxSelector.Selected)
-			x, y := utils.ImageSearch(sbc, item.Name)
-			robotgo.Move(x, y)
+			found := utils.ImageSearch(sbc, item.Name)
+			posArr = append(found, posArr...)
 			//OffsetMove(x, y)
+		}
+		for _, position := range posArr {
+			x := position.X
+			y := position.Y
+			OffsetMove(x, y)
+			robotgo.MilliSleep(200)
 		}
 	})
 }
