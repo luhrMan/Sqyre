@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"Dark-And-Darker/actions"
 	"Dark-And-Darker/structs"
 	"Dark-And-Darker/utils"
 	"log"
@@ -17,6 +18,50 @@ import (
 //var selectedItemsMap *map[string]bool
 
 var selectedItemsMap = make(map[string]bool)
+
+var macroSettingsParameters map[string]interface{}
+
+var actionsArr []actions.Action
+
+var actionsList = widget.NewList(
+	func() int { return len(actionsArr) },
+	func() fyne.CanvasObject { return container.NewHBox(widget.NewLabel("Text")) },
+	func(lii widget.ListItemID, co fyne.CanvasObject) {
+		// switch actionsArr[lii].Parameters := actionsArr[lii].Parameters.(type){
+		// case
+
+		// }
+		co.(*fyne.Container).Objects[0].(*widget.Label).SetText(actionsArr[lii].PrintParams())
+	},
+)
+
+var goToSelector = widget.NewSelect([]string{"Stash Tab", "Play Tab"}, func(s string) {})
+var goToSettingsForm = widget.Form{
+	Items: []*widget.FormItem{
+		{Text: "Go To", Widget: goToSelector},
+	},
+	OnSubmit: func() {
+		action := actions.Goto{
+			Place:       goToSelector.Selected,
+			Coordinates: [2]int{structs.GetSearchSpotCoordinates(goToSelector.Selected).X, structs.GetSearchSpotCoordinates(goToSelector.Selected).Y},
+		}
+		actionsArr = append(actionsArr, action)
+		actionsList.Refresh()
+	},
+}
+var actionSelector = widget.NewSelect([]string{"Go To", "Search", "Click"}, func(s string) {
+	goToSettingsForm.Hide()
+	//searchSettingsForm.Hide()
+	//clickSettingsForm.Hide()
+	switch s {
+	case "Go To":
+		goToSettingsForm.Show()
+	case "Search":
+		//searchSettingsForm.Show()
+	case "Click":
+		//clickSettingsForm.Show()
+	}
+})
 
 func Load() {
 	a := app.New()
@@ -114,11 +159,28 @@ func Load() {
 	)
 
 	//-------------------------------------------------------------------------------------Tab 2
-	tab2 := container.NewTabItem("Tab 2", container.New(layout.NewGridLayout(1),
-		widget.NewSelect([]string{"1", "2"}, func(value string) {
-			log.Println(value)
-		})),
-	)
+	tab2 := container.NewTabItem("Tab 2", container.New(layout.NewGridLayout(2),
+		container.NewGridWithColumns(2,
+			container.NewVBox(
+				actionSelector,
+			),
+			container.NewVBox(
+				&goToSettingsForm,
+				// layout.NewSpacer(),
+				// widget.NewButton("Add", func() {}),
+				// widget.NewButton("Remove", func() {}),
+			),
+		),
+		container.NewGridWithColumns(1,
+			actionsList,
+			container.NewVBox(
+				container.NewGridWithColumns(2,
+					widget.NewButton("-", func() {}),
+					widget.NewButton("+", func() {}),
+				),
+			),
+		),
+	))
 
 	//imageDropDown := widget.NewAccordion()
 	tabs := container.NewAppTabs(
