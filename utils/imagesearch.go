@@ -9,7 +9,7 @@ import (
 )
 
 // ImageSearch searchBox[x, y, w, h], imagePath "./images/test.png"
-func ImageSearch(sbc structs.SearchBoxCoordinates, itemName string) []robotgo.Point {
+func ImageSearch(sbc structs.SearchBox, itemName string) []robotgo.Point {
 	//sbc.LeftX += XOffset //might need for linux?
 	//sbc.TopY += YOffset
 
