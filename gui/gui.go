@@ -17,64 +17,6 @@ import (
 
 var selectedItemsMap = make(map[string]bool)
 
-var actionsArr []actions.Action
-
-var actionsList = widget.NewList(
-	func() int { return len(actionsArr) },
-	func() fyne.CanvasObject { return container.NewHBox(widget.NewLabel("Text")) },
-	func(lii widget.ListItemID, co fyne.CanvasObject) {
-		co.(*fyne.Container).Objects[0].(*widget.Label).SetText(actionsArr[lii].PrintParams())
-	},
-)
-
-var mouseMoveSelector = widget.NewSelect([]string{"Stash Tab", "Play Tab"}, func(s string) {})
-var mouseMoveSettingsForm = widget.Form{
-	Items: []*widget.FormItem{
-		{Text: "Mouse Move to", Widget: mouseMoveSelector},
-	},
-	OnSubmit: func() {
-		action := actions.MouseMove{
-			//Place:       goToSelector.Selected,
-			Coordinates: structs.GetSpot(mouseMoveSelector.Selected), //[2]int{structs.GetSpot(goToSelector.Selected).X, structs.GetSpot(goToSelector.Selected).Y},
-		}
-		actionsArr = append(actionsArr, action)
-		actionsList.Refresh()
-	},
-}
-var clickSelector = widget.NewSelect([]string{"Left", "Right"}, func(s string) {})
-var amountSlider = widget.NewSlider(0, 50)
-
-// var holdKeysCheckGroup = widget.NewCheckGroup([]string{"Alt", "Shift", "Ctrl"}, func(s []string) {})
-var clickSettingsForm = widget.Form{
-	Items: []*widget.FormItem{
-		{Text: "Amount", Widget: amountSlider},
-		{Text: "Button", Widget: clickSelector},
-		//{Text: "Hold Keys Down", Widget: holdKeysCheckGroup},
-	},
-	OnSubmit: func() {
-		action := actions.Click{
-			Amount: int(amountSlider.Value),
-			Button: clickSelector.Selected,
-			//KeysHeldDown: holdKeysCheckGroup.Selected,
-		}
-		actionsArr = append(actionsArr, action)
-		actionsList.Refresh()
-	},
-}
-var actionSelector = widget.NewSelect([]string{"Mouse Move", "Search", "Click"}, func(s string) {
-	mouseMoveSettingsForm.Hide()
-	//searchSettingsForm.Hide()
-	clickSettingsForm.Hide()
-	switch s {
-	case "Mouse Move":
-		mouseMoveSettingsForm.Show()
-	case "Click":
-		clickSettingsForm.Show()
-	case "Search":
-		//searchSettingsForm.Show()
-	}
-})
-
 func Load() {
 	a := app.New()
 	w := a.NewWindow("Squire")
@@ -179,6 +121,9 @@ func Load() {
 			container.NewVBox(
 				&mouseMoveSettingsForm,
 				&clickSettingsForm,
+				//&searchSettingsForm,
+				//&ocrSettingsForm,
+				&repeaterSettingsForm,
 			),
 		),
 		container.NewBorder(
@@ -197,7 +142,11 @@ func Load() {
 	))
 	mouseMoveSettingsForm.Hide()
 	clickSettingsForm.Hide()
+	//searchSettingsForm.Hide(),
+	//ocrSettingsForm.Hide(),
+	repeaterSettingsForm.Hide()
 	//imageDropDown := widget.NewAccordion()
+
 	tabs := container.NewAppTabs(
 		tab1,
 		tab2,
