@@ -1,11 +1,14 @@
 package actions
 
-import "strconv"
+import (
+	"Dark-And-Darker/structs"
+	"strconv"
+)
 
 type Search struct {
-	Area   string
-	Item   string
-	Amount int
+	SearchBox structs.SearchBox
+	Item      structs.Item
+	Amount    int
 }
 
 func (Search) ActionType() string {
@@ -13,6 +16,6 @@ func (Search) ActionType() string {
 }
 
 func (s Search) PrintParams() string {
-	str := s.ActionType() + " " + s.Area + " for " + strconv.FormatInt(int64(s.Amount), 10) + " " + s.Item
+	str := s.ActionType() + " " + s.SearchBox.AreaName + " for " + strconv.FormatInt(int64(s.Amount), 10) + " " + s.Item.Name
 	return str
 }

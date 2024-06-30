@@ -4,7 +4,7 @@ import "strconv"
 
 type Click struct {
 	Amount       int
-	Spot         [2]int
+	Button       string
 	KeysHeldDown []string
 }
 
@@ -13,11 +13,11 @@ func (Click) ActionType() string {
 }
 
 func (s Click) PrintParams() string {
-	str := s.ActionType() +
-		" at X:" + strconv.FormatInt(int64(s.Spot[0]), 10) +
-		" Y:" + strconv.FormatInt(int64(s.Spot[1]), 10) +
+	str := s.Button +
+		" " +
+		s.ActionType() +
 		" " +
 		strconv.FormatInt(int64(s.Amount), 10) +
-		" time(s) with " //+ s.KeysHeldDown[]
+		" time(s) with KEYSHELDDOWN HERE" //+ s.KeysHeldDown[]
 	return str
 }

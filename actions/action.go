@@ -1,6 +1,7 @@
 package actions
 
 import (
+	"Dark-And-Darker/utils"
 	"log"
 
 	"github.com/go-vgo/robotgo"
@@ -11,28 +12,21 @@ type Action interface {
 	PrintParams() string
 }
 
-func performActions(actions []Action) {
+func PerformActions(actions []Action) {
 	for _, action := range actions {
 		switch action := action.(type) {
-		case Goto:
-			// Example: Implement RobotGo function to move to screen
-			goTo := action.Place
-			robotgo.Click(goTo)
-			// Implement RobotGo function to move to screen
-
-		case Search:
-			//Search Area & Items
-
-			// Example: Implement RobotGo function to perform search
-			// searchTerm := action.Parameters["SearchTerm"].(string)
-			// Implement RobotGo function to perform search
-
+		case MouseMove:
+			//log.Printf("Mouse Move to %s at X: %d, Y: %d", action.Coordinates.SpotName, action.Coordinates.X, action.Coordinates.Y)
+			log.Println(action.PrintParams())
+			robotgo.Move(action.Coordinates.X, action.Coordinates.Y)
 		case Click:
-			// Example: Implement RobotGo function to perform click
-			// coordinatesX := action.Parameters["X"].(int)
-			// coordinatesY := action.Parameters["Y"].(int)
-			// Implement RobotGo function to perform click
-
+			//log.Printf("Click %d times", action.Amount)
+			log.Println(action.PrintParams())
+			robotgo.Click()
+		case Search:
+			// log.Printf("Search %s for %d %s", action.SearchBox.AreaName, action.Amount, action.Item)
+			log.Println(action.PrintParams())
+			utils.ImageSearch(action.SearchBox, action.Item.Name)
 		default:
 			log.Printf("Unsupported action type: %s", action.ActionType())
 		}

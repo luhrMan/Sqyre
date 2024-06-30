@@ -15,11 +15,7 @@ import (
 	"github.com/go-vgo/robotgo"
 )
 
-//var selectedItemsMap *map[string]bool
-
 var selectedItemsMap = make(map[string]bool)
-
-var macroSettingsParameters map[string]interface{}
 
 var actionsArr []actions.Action
 
@@ -27,39 +23,55 @@ var actionsList = widget.NewList(
 	func() int { return len(actionsArr) },
 	func() fyne.CanvasObject { return container.NewHBox(widget.NewLabel("Text")) },
 	func(lii widget.ListItemID, co fyne.CanvasObject) {
-		// switch actionsArr[lii].Parameters := actionsArr[lii].Parameters.(type){
-		// case
-
-		// }
 		co.(*fyne.Container).Objects[0].(*widget.Label).SetText(actionsArr[lii].PrintParams())
 	},
 )
 
-var goToSelector = widget.NewSelect([]string{"Stash Tab", "Play Tab"}, func(s string) {})
-var goToSettingsForm = widget.Form{
+var mouseMoveSelector = widget.NewSelect([]string{"Stash Tab", "Play Tab"}, func(s string) {})
+var mouseMoveSettingsForm = widget.Form{
 	Items: []*widget.FormItem{
-		{Text: "Go To", Widget: goToSelector},
+		{Text: "Mouse Move to", Widget: mouseMoveSelector},
 	},
 	OnSubmit: func() {
-		action := actions.Goto{
-			Place:       goToSelector.Selected,
-			Coordinates: [2]int{structs.GetSearchSpotCoordinates(goToSelector.Selected).X, structs.GetSearchSpotCoordinates(goToSelector.Selected).Y},
+		action := actions.MouseMove{
+			//Place:       goToSelector.Selected,
+			Coordinates: structs.GetSpot(mouseMoveSelector.Selected), //[2]int{structs.GetSpot(goToSelector.Selected).X, structs.GetSpot(goToSelector.Selected).Y},
 		}
 		actionsArr = append(actionsArr, action)
 		actionsList.Refresh()
 	},
 }
-var actionSelector = widget.NewSelect([]string{"Go To", "Search", "Click"}, func(s string) {
-	goToSettingsForm.Hide()
+var clickSelector = widget.NewSelect([]string{"Left", "Right"}, func(s string) {})
+var amountSlider = widget.NewSlider(0, 50)
+
+// var holdKeysCheckGroup = widget.NewCheckGroup([]string{"Alt", "Shift", "Ctrl"}, func(s []string) {})
+var clickSettingsForm = widget.Form{
+	Items: []*widget.FormItem{
+		{Text: "Amount", Widget: amountSlider},
+		{Text: "Button", Widget: clickSelector},
+		//{Text: "Hold Keys Down", Widget: holdKeysCheckGroup},
+	},
+	OnSubmit: func() {
+		action := actions.Click{
+			Amount: int(amountSlider.Value),
+			Button: clickSelector.Selected,
+			//KeysHeldDown: holdKeysCheckGroup.Selected,
+		}
+		actionsArr = append(actionsArr, action)
+		actionsList.Refresh()
+	},
+}
+var actionSelector = widget.NewSelect([]string{"Mouse Move", "Search", "Click"}, func(s string) {
+	mouseMoveSettingsForm.Hide()
 	//searchSettingsForm.Hide()
-	//clickSettingsForm.Hide()
+	clickSettingsForm.Hide()
 	switch s {
-	case "Go To":
-		goToSettingsForm.Show()
+	case "Mouse Move":
+		mouseMoveSettingsForm.Show()
+	case "Click":
+		clickSettingsForm.Show()
 	case "Search":
 		//searchSettingsForm.Show()
-	case "Click":
-		//clickSettingsForm.Show()
 	}
 })
 
@@ -165,23 +177,26 @@ func Load() {
 				actionSelector,
 			),
 			container.NewVBox(
-				&goToSettingsForm,
-				// layout.NewSpacer(),
-				// widget.NewButton("Add", func() {}),
-				// widget.NewButton("Remove", func() {}),
+				&mouseMoveSettingsForm,
+				&clickSettingsForm,
 			),
 		),
-		container.NewGridWithColumns(1,
-			actionsList,
+		container.NewBorder(
+			widget.NewLabelWithStyle("Actions List", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
 			container.NewVBox(
 				container.NewGridWithColumns(2,
 					widget.NewButton("-", func() {}),
 					widget.NewButton("+", func() {}),
 				),
+				widget.NewButton("Start Macro", func() { actions.PerformActions(actionsArr) }),
 			),
+			widget.NewLabel(""),
+			widget.NewLabel(""),
+			actionsList,
 		),
 	))
-
+	mouseMoveSettingsForm.Hide()
+	clickSettingsForm.Hide()
 	//imageDropDown := widget.NewAccordion()
 	tabs := container.NewAppTabs(
 		tab1,
@@ -260,7 +275,7 @@ func ItemsCheckBoxes() *widget.Accordion {
 }
 
 func SearchBoxSelector() *widget.Select {
-	sbcMap := *structs.SearchBoxCoordinatesMap()
+	sbcMap := *structs.SearchBoxMap()
 	var names []string
 	for _, sbc := range sbcMap {
 		names = append(names, sbc.AreaName)
@@ -279,7 +294,7 @@ func StartMacroButton(selectedItemsMap *map[string]bool, searchBoxSelector *widg
 		posArr := []robotgo.Point{}
 		for v := range *selectedItemsMap {
 			item, _ := structs.GetItem(v)
-			sbc := structs.GetSearchBoxCoordinates(searchBoxSelector.Selected)
+			sbc := structs.GetSearchBox(searchBoxSelector.Selected)
 			found := utils.ImageSearch(sbc, item.Name)
 			posArr = append(found, posArr...)
 			//OffsetMove(x, y)
