@@ -75,7 +75,7 @@ func Load() {
 	)
 	ToggleWidgets(macroSettingsContainer, false)
 
-	tab1 := container.NewTabItem("Macro Builder", container.New(layout.NewGridLayout(2),
+	tab1 := container.NewTabItem("Tab 1", container.New(layout.NewGridLayout(2),
 		container.New(
 			layout.NewGridLayout(2),
 			itemsCheckBoxes,
@@ -89,62 +89,86 @@ func Load() {
 			),
 		),
 	),
-	// container.NewVBox(
-	// 	widget.NewLabelWithStyle("Search Area", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
-	// 	searchBoxSelector,
-	// 	widget.NewCheck("Build your own Macro?", func(b bool) {}),
-	// 	widget.NewLabelWithStyle("Game Related", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
-	// 	widget.NewCheck("Check Stash before merchants", func(b bool) {}),
-	// 	widget.NewLabelWithStyle("Buttons", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
-	// 	widget.NewLabel("Mouse"),
-	// 	container.NewHBox(
-	// 		mouseButtonToggle,
-	// 		widget.NewLabel("Left"),
-	// 		widget.NewSlider(0, 1),
-	// 		widget.NewLabel("Right"),
-	// 	),
-	// 	widget.NewLabel("Keyboard"),
-	// 	container.NewHBox(
-	// 		widget.NewCheck("Alt", func(b bool) {}),
-	// 		widget.NewCheck("Shift", func(b bool) {}),
-	// 		widget.NewCheck("Ctrl", func(b bool) {}),
-	// 	),
-
 	)
-
 	//-------------------------------------------------------------------------------------Tab 2
-	tab2 := container.NewTabItem("Tab 2", container.New(layout.NewGridLayout(2),
+	var actionSelected int
+	actionsList.OnSelected = func(id widget.ListItemID) {
+		actionSelected = id
+	}
+
+	var removeActionButton = widget.Button{
+		Text:       "action",
+		Icon:       theme.ContentRemoveIcon(),
+		Importance: widget.DangerImportance,
+		OnTapped: func() {
+			sequence.Actions = RemoveIndex(sequence.Actions, actionSelected)
+			actionsList.Refresh()
+		},
+	}
+
+	sequenceBuilderForm.SubmitText = "Add Sequence"
+	mouseMoveSettingsForm.SubmitText = "Add Action"
+	clickSettingsForm.SubmitText = "Add Action"
+	//searchSettingsForm.SubmitText = "Add Action"
+	tab2 := container.NewTabItem("Macro Builder", container.New(layout.NewGridLayout(2),
 		container.NewGridWithColumns(2,
-			container.NewVBox(
-				actionSelector,
+			container.NewBorder(
+				actionBuilder,
+				&sequenceBuilderForm,
+				widget.NewLabel(""),
+				widget.NewLabel(""),
+				widget.NewSeparator(),
+				itemsCheckBoxes,
 			),
-			container.NewVBox(
-				&mouseMoveSettingsForm,
-				&clickSettingsForm,
-				//&searchSettingsForm,
-				//&ocrSettingsForm,
-				&repeaterSettingsForm,
+			// container.NewVBox(
+			// 	actionBuilder,
+			// 	widget.NewSeparator(),
+			// 	itemsCheckBoxes,
+			// 	widget.NewSeparator(),
+			// 	&sequenceBuilderForm,
+			// ),
+			container.NewBorder(
+				widget.NewLabelWithStyle("Sequence", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
+				container.NewVBox(
+					&removeActionButton,
+				),
+				widget.NewSeparator(),
+				widget.NewSeparator(),
+				actionsList,
 			),
 		),
 		container.NewBorder(
-			widget.NewLabelWithStyle("Actions List", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
+			widget.NewLabelWithStyle("Macro", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
 			container.NewVBox(
-				container.NewGridWithColumns(2,
-					widget.NewButton("-", func() {}),
-					widget.NewButton("+", func() {}),
+				container.NewGridWithColumns(3,
+					widget.NewButtonWithIcon("", theme.MoveUpIcon(), func() {
+
+					}),
+					widget.NewButtonWithIcon("sequence", theme.ContentRemoveIcon(), func() {
+
+					}),
+					widget.NewButtonWithIcon("", theme.MoveDownIcon(), func() {
+
+					}),
 				),
-				widget.NewButton("Start Macro", func() { actions.PerformActions(actionsArr) }),
+				widget.NewButtonWithIcon("Start Macro", theme.MediaPlayIcon(), func() {
+					for _, seq := range macro.Sequences {
+						for i := 0; i < seq.Loops; i++ {
+							actions.PerformActions(seq.Actions)
+						}
+					}
+				}),
 			),
 			widget.NewLabel(""),
 			widget.NewLabel(""),
-			actionsList,
+			sequenceList,
 		),
 	))
 	mouseMoveSettingsForm.Hide()
 	clickSettingsForm.Hide()
 	//searchSettingsForm.Hide(),
 	//ocrSettingsForm.Hide(),
-	repeaterSettingsForm.Hide()
+	//repeaterSettingsForm.Hide()
 	//imageDropDown := widget.NewAccordion()
 
 	tabs := container.NewAppTabs(
@@ -156,6 +180,15 @@ func Load() {
 	w.SetContent(tabs)
 
 	w.ShowAndRun()
+}
+
+func RemoveIndex(s []actions.Action, index int) []actions.Action {
+	if index < 0 || index >= len(s) {
+		log.Println("Cannot remove index out of range")
+		return s // if index is out of range, return the original slice
+	}
+	log.Println("removed index")
+	return append(s[:index], s[index+1:]...)
 }
 
 func ToggleWidgets(c *fyne.Container, b bool) {
@@ -177,15 +210,6 @@ func OffsetMove(x int, y int) {
 	robotgo.Move(x+1920, y+utils.YOffset)
 	robotgo.Sleep(1)
 }
-
-//func ItemsCheckBoxes() *widget.Select {
-//	items := *structs.ItemsMap()
-//	var names []string
-//	for _, item := range items{
-//		names = append(names, item.Name)
-//	}
-//	return widget.NewSelect(names, func(value string){})
-//}
 
 func ItemsCheckBoxes() *widget.Accordion {
 	itemsByCategory := *structs.ItemsFromFile()
