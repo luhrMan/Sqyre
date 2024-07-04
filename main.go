@@ -61,7 +61,8 @@ import (
 
 var macro = *gui.NewMacro("Macro")
 var selectedTreeItem string
-var savedSequences = make(map[string])
+
+//var savedSequences = make(map[string])
 
 func main() {
 	a := app.New()
