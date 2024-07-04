@@ -66,7 +66,7 @@ func ItemsCheckBoxes() *widget.Accordion {
 					}
 					log.Println(selectedItemsMap)
 				}
-				resource, err := fyne.LoadResourceFromPath("./images/icons" + itemName + ".png")
+				resource, err := fyne.LoadResourceFromPath("./images/icons/" + itemName + ".png")
 				if err != nil {
 					log.Println(err)
 					checkBoxWithIcon.Add(widget.NewIcon(theme.BrokenImageIcon()))
