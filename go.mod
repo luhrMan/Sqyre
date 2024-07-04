@@ -7,12 +7,16 @@ toolchain go1.22.4
 require (
 	fyne.io/fyne/v2 v2.4.5
 	github.com/go-vgo/robotgo v1.0.0-rc2.1
-	github.com/otiai10/gosseract/v2 v2.4.1
 	github.com/vcaesar/bitmap v0.10.0-beta3.2
 )
 
 require (
-	fyne.io/fyne v1.4.3
+	github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e // indirect
+	github.com/otiai10/mint v1.6.3 // indirect
+	gopkg.in/check.v1 v1.0.0-20200227125254-8fa46927fb4f // indirect
+)
+
+require (
 	fyne.io/systray v1.11.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/fredbi/uri v1.1.0 // indirect

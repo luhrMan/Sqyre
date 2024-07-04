@@ -197,7 +197,7 @@ func main() {
 	// ***************************************************************************************
 	var data = []string{"a", "string", "list"}
 	content := container.NewGridWithColumns(2,
-		container.NewGridWithColumns(2,
+		container.NewHSplit(
 			itemsCheckBoxes,
 			container.NewVBox(
 				// macroSettingsContainer,
