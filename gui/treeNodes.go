@@ -2,7 +2,8 @@ package gui
 
 import (
 	"Dark-And-Darker/actions"
-	"fmt"
+    "Dark-And-Darker/structs"
+    "fmt"
 	"log"
 )
 
@@ -20,7 +21,7 @@ type Node struct {
 	Type     NodeType
 	Children []*Node
 	Parent   *Node
-	Action   actions.Action
+	Action   structs.Action
 }
 
 func NewMacro(uid string) *Node {
@@ -36,7 +37,7 @@ func NewSequence(parent *Node, name string) *Node {
 	return node
 }
 
-func NewAction(parent *Node, action actions.Action) *Node {
+func NewAction(parent *Node, action structs.Action) *Node {
 	seqNum := getSequenceNumber(parent)
 	actionNum := len(parent.Children) + 1
 	uid := fmt.Sprintf("Seq%d.%d", seqNum, actionNum)
