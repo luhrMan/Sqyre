@@ -1,0 +1,28 @@
+{
+    "Macros": [
+        {
+            "Name": "Top Menu Bar",
+            "UID": "Seq1",
+            "Type": "SequenceType"
+        },
+        {
+            "areaName": "Whole Screen",
+            "x1": 0,
+            "y1": 0,
+            "x2": 2560,
+            "y2": 1440
+        }
+    ],
+    "Sequences": [
+        {
+            "name": "Stash Tab",
+            "x": 0,
+            "y": 0
+        },
+        {
+            "name": "Play Tab",
+            "x": 0,
+            "y": 0
+        }
+    ]
+}
