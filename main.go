@@ -41,9 +41,9 @@
 package main
 
 import (
-	"Dark-And-Darker/actions"
 	"Dark-And-Darker/gui"
-	"Dark-And-Darker/utils"
+    "Dark-And-Darker/structs"
+    "Dark-And-Darker/utils"
 	"fmt"
 	"image/color"
 	"regexp"
@@ -98,7 +98,7 @@ func main() {
 			selectedNode := findNode(root, selectedTreeItem)
 			if selectedNode != nil && selectedNode.Type == gui.SequenceType {
 				wait, _ := strconv.Atoi(millisecondsWaitEntry.Text)
-				gui.NewAction(selectedNode, &actions.WaitAction{Time: wait})
+				gui.NewAction(selectedNode, &structs.WaitAction{Time: wait})
 				updateTree(&tree, root)
 			}
 		},
@@ -120,7 +120,7 @@ func main() {
 			if selectedNode != nil && selectedNode.Type == gui.SequenceType {
 				x, _ := strconv.Atoi(mouseMoveXEntry.Text)
 				y, _ := strconv.Atoi(mouseMoveYEntry.Text)
-				gui.NewAction(selectedNode, &actions.MouseMoveAction{X: x, Y: y})
+				gui.NewAction(selectedNode, &structs.MouseMoveAction{X: x, Y: y})
 				updateTree(&tree, root)
 			}
 		},
@@ -143,7 +143,7 @@ func main() {
 			selectedNode := findNode(root, selectedTreeItem)
 			if selectedNode != nil && selectedNode.Type == gui.SequenceType {
 
-				gui.NewAction(selectedNode, &actions.ClickAction{Button: mouseButtonRadioGroup.Selected})
+				gui.NewAction(selectedNode, &structs.ClickAction{Button: mouseButtonRadioGroup.Selected})
 				updateTree(&tree, root)
 			}
 		},
@@ -166,7 +166,7 @@ func main() {
 			}
 			selectedNode := findNode(root, selectedTreeItem)
 			if selectedNode != nil && selectedNode.Type == gui.SequenceType {
-				gui.NewAction(selectedNode, &actions.KeyAction{Key: "Enter", State: keyUpDownRadioGroup.Selected})
+				gui.NewAction(selectedNode, &structs.KeyAction{Key: "Enter", State: keyUpDownRadioGroup.Selected})
 				updateTree(&tree, root)
 			}
 		},
@@ -282,12 +282,12 @@ func main() {
 
 func createSampleTree() *gui.Node {
 	seq1 := gui.NewSequence(&macro, "preset x2")
-	gui.NewAction(seq1, &actions.ClickAction{})
-	gui.NewAction(seq1, &actions.MouseMoveAction{X: 100, Y: 100})
+	gui.NewAction(seq1, &structs.ClickAction{})
+	gui.NewAction(seq1, &structs.MouseMoveAction{X: 100, Y: 100})
 
 	seq2 := gui.NewSequence(&macro, "preset x1")
-	gui.NewAction(seq2, &actions.ClickAction{})
-	gui.NewAction(seq2, &actions.MouseMoveAction{X: 2000, Y: 200})
+	gui.NewAction(seq2, &structs.ClickAction{})
+	gui.NewAction(seq2, &structs.MouseMoveAction{X: 2000, Y: 200})
 	return &macro
 }
 
