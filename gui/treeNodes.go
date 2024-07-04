@@ -32,6 +32,7 @@ func NewSequence(parent *Node, name string) *Node {
 	seqNum := len(parent.Children)
 	uid := fmt.Sprintf("Seq%d", seqNum+1)
 	node := &Node{Name: name, UID: uid, Type: SequenceType, Parent: parent}
+	
 	parent.AddChild(node)
 	log.Printf("New sequence %s: %s", node.UID, node.Name)
 	return node
@@ -42,6 +43,7 @@ func NewAction(parent *Node, action structs.Action) *Node {
 	actionNum := len(parent.Children) + 1
 	uid := fmt.Sprintf("Seq%d.%d", seqNum, actionNum)
 	node := &Node{UID: uid, Type: ActionType, Parent: parent, Action: action}
+
 	parent.AddChild(node)
 	log.Printf("New action: %s %s ", uid, action)
 	return node
