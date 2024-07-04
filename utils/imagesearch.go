@@ -16,7 +16,10 @@ func ImageSearch(sbc structs.SearchBox, itemName string) []robotgo.Point {
 	ip := "./images/" + itemName + ".png"
 	capture := robotgo.CaptureScreen(sbc.LeftX, sbc.TopY, sbc.RightX, sbc.BottomY) //sb[0], sb[1], sb[2], sb[3]
 	defer robotgo.FreeBitmap(capture)
-	robotgo.SaveJpeg(robotgo.ToImage(capture), "./images/wholeScreen.jpeg")
+    err := robotgo.SaveJpeg(robotgo.ToImage(capture), "./images/wholeScreen.jpeg")
+    if err != nil {
+        return nil
+    }
 
 	predefinedImage, err := robotgo.OpenImg(ip)
 	if err != nil {
