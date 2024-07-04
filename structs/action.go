@@ -13,8 +13,8 @@ type Action interface {
 	Execute()
 	String() string
 }
+//***************************************************************************************Wait
 
-// ***************************************************************************************Sleep
 type WaitAction struct {
 	Time int
 }
@@ -29,6 +29,7 @@ func (a *WaitAction) String() string {
 }
 
 // ***************************************************************************************Click
+
 type ClickAction struct {
 	Button string
 }
@@ -43,6 +44,7 @@ func (a *ClickAction) String() string {
 }
 
 // ***************************************************************************************Move
+
 type MouseMoveAction struct {
 	X, Y int
 }
@@ -57,6 +59,7 @@ func (a *MouseMoveAction) String() string {
 }
 
 // ***************************************************************************************Key
+
 type KeyAction struct {
 	Key   string
 	State string
@@ -77,6 +80,7 @@ func (a *KeyAction) String() string {
 }
 
 // ***************************************************************************************ImageSearch
+
 type ImageSearchAction struct {
 	X1, Y1, X2, Y2 int
 	Target         string
