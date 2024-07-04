@@ -1,13 +1,5 @@
 {
     "Categories": {
-        "Discord": [
-            {
-                "name": "Discord",
-                "gridSize":[1, 1],
-                "stackMax": 3,
-                "merchant": ""
-            }
-        ],
         "Consumables":[
             {
                 "name": "Potion",
