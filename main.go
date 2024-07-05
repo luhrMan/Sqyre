@@ -112,8 +112,7 @@ func main() {
 	spotSelector := &widget.Select{Options: *structs.GetSpotMapKeys(*structs.GetSpotMap())}
 	spotSelector.OnChanged = func(s string) {
 		structs.GetSpot("Search Area Selector Info:")
-		log.Println(s)
-		log.Println(structs.GetSpot(s))
+		log.Println(*structs.GetSpot(s))
 		mouseMoveXEntry.SetText(strconv.FormatInt(int64(structs.GetSpot(s).Coordinates.X), 10))
 		mouseMoveYEntry.SetText(strconv.FormatInt(int64(structs.GetSpot(s).Coordinates.Y), 10))
 	}
@@ -359,12 +358,12 @@ func main() {
 
 func createSampleTree() *gui.Node {
 	seq1 := gui.NewSequence(&macro, "preset x2")
-	gui.NewAction(seq1, &structs.ClickAction{Button: "Left"})
 	gui.NewAction(seq1, &structs.MouseMoveAction{X: 100, Y: 100})
+	gui.NewAction(seq1, &structs.ClickAction{Button: "Left"})
 
 	seq2 := gui.NewSequence(&macro, "preset x1")
-	gui.NewAction(seq2, &structs.ClickAction{Button: "Right"})
 	gui.NewAction(seq2, &structs.MouseMoveAction{X: 2000, Y: 200})
+	gui.NewAction(seq2, &structs.ClickAction{Button: "Right"})
 	return &macro
 }
 
