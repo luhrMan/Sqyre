@@ -57,6 +57,11 @@ func (a *MouseMoveAction) Execute() {
 }
 
 func (a *MouseMoveAction) String() string {
+	for _, s := range *GetSpotMap() {
+		if (s.Coordinates.X == a.X) && (s.Coordinates.Y == a.Y) {
+			return fmt.Sprintf("%s Move mouse to %s", utils.GetEmoji("Move"), s.Name)
+		}
+	}
 	return fmt.Sprintf("%s Move mouse to (%d, %d)", utils.GetEmoji("Move"), a.X, a.Y)
 }
 
