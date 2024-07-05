@@ -107,10 +107,18 @@ func main() {
 		Importance:    widget.HighImportance,
 	}
 	// ***************************************************************************************Move
-	spotSelector := &widget.Select{Options: *structs.GetSpotMapKeys(*structs.GetSpotMap())}
-	spotSelector.SetSelected(spotSelector.Options[0])
 	mouseMoveXEntry := widget.NewEntry()
 	mouseMoveYEntry := widget.NewEntry()
+	spotSelector := &widget.Select{Options: *structs.GetSpotMapKeys(*structs.GetSpotMap())}
+	spotSelector.OnChanged = func(s string) {
+		structs.GetSpot("Search Area Selector Info:")
+		log.Println(s)
+		log.Println(structs.GetSpot(s))
+		mouseMoveXEntry.SetText(strconv.FormatInt(int64(structs.GetSpot(s).Coordinates.X), 10))
+		mouseMoveYEntry.SetText(strconv.FormatInt(int64(structs.GetSpot(s).Coordinates.Y), 10))
+	}
+	spotSelector.SetSelected(spotSelector.Options[0])
+
 	addMouseMoveActionButton := &widget.Button{
 		Text: utils.GetEmoji("Move") + "Add Move",
 		OnTapped: func() {
@@ -181,6 +189,7 @@ func main() {
 	// ***************************************************************************************Search settings
 
 	searchAreaSelector := &widget.Select{Options: *structs.GetSearchBoxMapKeys(*structs.GetSearchBoxMap())}
+
 	searchAreaSelector.SetSelected(searchAreaSelector.Options[0])
 	itemsCheckBoxes := ItemsCheckBoxes()
 	itemsCheckBoxes.MultiOpen = true
