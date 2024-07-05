@@ -300,6 +300,16 @@ func main() {
 
 					canvas.NewRectangle(color.Gray{}),
 				),
+				container.NewHBox(
+					widget.NewLabel(""),
+
+					canvas.NewRectangle(color.Gray{}),
+				),
+				container.NewHBox(
+					widget.NewLabel(""),
+
+					canvas.NewRectangle(color.Gray{}),
+				),
 
 				// ****************************************************************************************************************************************Search Settings
 				&widget.Label{Text: "Search Settings", TextStyle: fyne.TextStyle{Bold: true, Monospace: true}, Alignment: fyne.TextAlignCenter},
