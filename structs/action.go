@@ -53,7 +53,7 @@ type MouseMoveAction struct {
 
 func (a *MouseMoveAction) Execute() {
 	log.Printf("Moving mouse to (%d, %d)", a.X, a.Y)
-	robotgo.Move(a.X, a.Y)
+	robotgo.Move(a.X+utils.XOffset, a.Y+utils.YOffset)
 }
 
 func (a *MouseMoveAction) String() string {
