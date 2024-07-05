@@ -29,19 +29,46 @@
             }
         },
         {
-            "name": "Tab 1",
+            "name": "Merchants Tab",
             "coordinates": {
-                "x": 1,
-                "y": 1
+                "x": 1280,
+                "y": 60
             }
         },
         {
-            "name": "Tab 2",
+            "name": "Trade Tab",
             "coordinates": {
-                "x": 2,
-                "y": 1
+                "x": 1480,
+                "y": 60
+            }
+        },
+        {
+            "name": "Gathering Hall Tab",
+            "coordinates": {
+                "x": 1680,
+                "y": 60
+            }
+        },
+        {
+            "name": "Customize Tab",
+            "coordinates": {
+                "x": 1920,
+                "y": 60
+            }
+        },
+        {
+            "name": "Shop Tab",
+            "coordinates": {
+                "x": 2130,
+                "y": 60
+            }
+        },
+        {
+            "name": "Change Class",
+            "coordinates": {
+                "x": 2480,
+                "y": 1360
             }
         }
-
     ]
 }
