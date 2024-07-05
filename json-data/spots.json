@@ -3,16 +3,45 @@
         {
             "name": "Play Tab",
             "coordinates": {
-                "x": 0,
-                "y": 0
+                "x": 430,
+                "y": 60
+            }
+        },
+        {
+            "name": "Leaderboard Tab",
+            "coordinates": {
+                "x": 660,
+                "y": 60
+            }
+        },
+        {
+            "name": "Class Tab",
+            "coordinates": {
+                "x": 860,
+                "y": 60
             }
         },
         {
             "name": "Stash Tab",
             "coordinates": {
-                "x": 0,
-                "y": 0
+                "x": 1060,
+                "y": 60
+            }
+        },
+        {
+            "name": "Tab",
+            "coordinates": {
+                "x": 1,
+                "y": 1
+            }
+        },
+        {
+            "name": "Tab",
+            "coordinates": {
+                "x": 2,
+                "y": 1
             }
         }
+
     ]
 }

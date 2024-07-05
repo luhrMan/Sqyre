@@ -1,563 +1,562 @@
 {
-    "categories": {
-        "consumables":[
-            {
-                "name": "Potion",
-                "gridSize":[1, 1],
-                "stackMax": 3,
-                "merchant": ""
-            },
-            {
-                "name": "Healing Potion",
-                "gridSize":[1, 1],
-                "stackMax": 3,
-                "merchant": "Alchemist"
-            },
-            {
-                "name": "Protection Potion",
-                "gridSize":[1, 1],
-                "stackMax": 3,
-                "merchant": "Alchemist"
-            },
-            {
-                "name": "Magic Protection Potion",
-                "gridSize":[1, 1],
-                "stackMax": 3,
-                "merchant": "Alchemist"
-            },
-            {
-                "name": "Luck Potion",
-                "gridSize":[1, 1],
-                "stackMax": 3,
-                "merchant": "Alchemist"
-            },
-            {
-                "name": "Bandage",
-                "gridSize":[1, 1],
-                "stackMax": 3,
-                "merchant": "Surgeon"
-            },
-            {
-                "name": "Lockpick",
-                "gridSize":[1, 1],
-                "stackMax": 3,
-                "merchant": ""
-            },
-            {
-                "name": "Francisca Axe",
-                "gridSize":[1, 2],
-                "stackMax": 0,
-                "merchant": "Woodsman"
-            },
-            {
-                "name": "Surgical Kit",
-                "gridSize":[2, 2],
-                "stackMax": 0,
-                "merchant": ""
-            },
-            {
-                "name": "Campfire",
-                "gridSize":[2, 2],
-                "stackMax": 0,
-                "merchant": "Woodsman"
-            }
-        ],
-        "currency": [
-            {
-                "name": "Gold Coins",
-                "gridSize":[1, 1],
-                "stackMax": 10,
-                "merchant": "Treasurer"
-            },
-            {
-                "name": "Gold Coin",
-                "gridSize":[1, 1],
-                "stackMax": 0,
-                "merchant": "Treasurer"
-            },
-            {
-                "name": "Gold Purse",
-                "gridSize":[1, 1],
-                "stackMax": 0,
-                "merchant": "Treasurer"
-            },
-            {
-                "name": "Gold Purse Empty",
-                "gridSize":[1, 1],
-                "stackMax": 0,
-                "merchant": "Treasurer"
-            },
-            {
-                "name": "Gold Purse Full",
-                "gridSize":[1, 1],
-                "stackMax": 50,
-                "merchant": "Treasurer"
-            },
-            {
-                "name": "Gold Bag",
-                "gridSize":[2, 2],
-                "stackMax": 1000,
-                "merchant": ""
-            }
-        ],
-        "treasures": [
-            {
-                "name": "Diamond",
-                "gridSize":[1, 1],
-                "stackMax": 0,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Emerald",
-                "gridSize":[1, 1],
-                "stackMax": 0,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Ruby",
-                "gridSize":[1, 1],
-                "stackMax": 0,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Sapphire",
-                "gridSize":[1, 1],
-                "stackMax": 0,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Dotted Bangle",
-                "gridSize":[1, 1],
-                "stackMax": 0,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Gem Necklace",
-                "gridSize":[1, 1],
-                "stackMax": 0,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Gem Ring",
-                "gridSize":[1, 1],
-                "stackMax": 0,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Glimmer Bangle",
-                "gridSize":[1, 1],
-                "stackMax": 0,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Gold Band",
-                "gridSize":[1, 1],
-                "stackMax": 0,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Gold Candle Platter",
-                "gridSize":[1, 1],
-                "stackMax": 0,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Leaf Gold Bangle",
-                "gridSize":[1, 1],
-                "stackMax": 0,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Light Gold Bangle",
-                "gridSize":[1, 1],
-                "stackMax": 0,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Patterned Gold Bangle",
-                "gridSize":[1, 1],
-                "stackMax": 0,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Pearl Necklace",
-                "gridSize":[1, 1],
-                "stackMax": 0,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Shine Bangle",
-                "gridSize":[1, 1],
-                "stackMax": 0,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Simple Gold Bangle",
-                "gridSize":[1, 1],
-                "stackMax": 0,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Slim Bangle",
-                "gridSize":[1, 1],
-                "stackMax": 0,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Triple Gem Bangle",
-                "gridSize":[1, 1],
-                "stackMax": 0,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Turquoise Gem Bangle",
-                "gridSize":[1, 1],
-                "stackMax": 0,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Ceremonial Dagger",
-                "gridSize":[2, 1],
-                "stackMax": 0,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Goblet",
-                "gridSize":[1, 2],
-                "stackMax": 0,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Gold Chalice",
-                "gridSize":[1, 2],
-                "stackMax": 0,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Gold Goblet",
-                "gridSize":[1, 2],
-                "stackMax": 0,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Silver Chalice",
-                "gridSize":[1, 2],
-                "stackMax": 0,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Gold Bowl",
-                "gridSize":[2, 2],
-                "stackMax": 0,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Gold Candelabra",
-                "gridSize":[2, 2],
-                "stackMax": 0,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Gold Candle Holder",
-                "gridSize":[2, 2],
-                "stackMax": 0,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Gold Crown",
-                "gridSize":[2, 2],
-                "stackMax": 0,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Gold Waterpot",
-                "gridSize":[2, 2],
-                "stackMax": 0,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Ancient Scroll",
-                "gridSize":[2, 3],
-                "stackMax": 0,
-                "merchant": "Collector"
-            }
-        ],
-        "mobs": [
-            {
-                "name": "Bat Claw",
-                "gridSize":[1, 1],
-                "stackMax": 3,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Bowstring",
-                "gridSize":[1, 1],
-                "stackMax": 3,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Captured Mana Flakes",
-                "gridSize":[1, 1],
-                "stackMax": 3,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Demon Blood",
-                "gridSize":[1, 1],
-                "stackMax": 3,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Glowing Blue Ice Eyes",
-                "gridSize":[1, 1],
-                "stackMax": 3,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Goblin Ear",
-                "gridSize":[1, 1],
-                "stackMax": 3,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Golden Teeth",
-                "gridSize":[1, 1],
-                "stackMax": 3,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Grave Essence",
-                "gridSize":[1, 1],
-                "stackMax": 3,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Kobold's Ear",
-                "gridSize":[1, 1],
-                "stackMax": 3,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Maggots",
-                "gridSize":[1, 1],
-                "stackMax": 3,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Primitive Bracelet",
-                "gridSize":[1, 1],
-                "stackMax": 3,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Rotten Fluids",
-                "gridSize":[1, 1],
-                "stackMax": 3,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Spider Silk",
-                "gridSize":[1, 1],
-                "stackMax": 3,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Volcanic Ash",
-                "gridSize":[1, 1],
-                "stackMax": 3,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Wolf Claw",
-                "gridSize":[1, 1],
-                "stackMax": 3,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Yeti's Teeth",
-                "gridSize":[1, 1],
-                "stackMax": 3,
-                "merchant": "Collector"
-            },
+    "consumables":[
+        {
+            "name": "Potion",
+            "gridSize":[1, 1],
+            "stackMax": 3,
+            "merchant": ""
+        },
+        {
+            "name": "Healing Potion",
+            "gridSize":[1, 1],
+            "stackMax": 3,
+            "merchant": "Alchemist"
+        },
+        {
+            "name": "Protection Potion",
+            "gridSize":[1, 1],
+            "stackMax": 3,
+            "merchant": "Alchemist"
+        },
+        {
+            "name": "Magic Protection Potion",
+            "gridSize":[1, 1],
+            "stackMax": 3,
+            "merchant": "Alchemist"
+        },
+        {
+            "name": "Luck Potion",
+            "gridSize":[1, 1],
+            "stackMax": 3,
+            "merchant": "Alchemist"
+        },
+        {
+            "name": "Bandage",
+            "gridSize":[1, 1],
+            "stackMax": 3,
+            "merchant": "Surgeon"
+        },
+        {
+            "name": "Lockpick",
+            "gridSize":[1, 1],
+            "stackMax": 3,
+            "merchant": ""
+        },
+        {
+            "name": "Francisca Axe",
+            "gridSize":[1, 2],
+            "stackMax": 0,
+            "merchant": "Woodsman"
+        },
+        {
+            "name": "Surgical Kit",
+            "gridSize":[2, 2],
+            "stackMax": 0,
+            "merchant": ""
+        },
+        {
+            "name": "Campfire",
+            "gridSize":[2, 2],
+            "stackMax": 0,
+            "merchant": "Woodsman"
+        }
+    ],
+    "currency": [
+        {
+            "name": "Gold Coins",
+            "gridSize":[1, 1],
+            "stackMax": 10,
+            "merchant": "Treasurer"
+        },
+        {
+            "name": "Gold Coin",
+            "gridSize":[1, 1],
+            "stackMax": 0,
+            "merchant": "Treasurer"
+        },
+        {
+            "name": "Gold Purse",
+            "gridSize":[1, 1],
+            "stackMax": 0,
+            "merchant": "Treasurer"
+        },
+        {
+            "name": "Gold Purse Empty",
+            "gridSize":[1, 1],
+            "stackMax": 0,
+            "merchant": "Treasurer"
+        },
+        {
+            "name": "Gold Purse Full",
+            "gridSize":[1, 1],
+            "stackMax": 50,
+            "merchant": "Treasurer"
+        },
+        {
+            "name": "Gold Bag",
+            "gridSize":[2, 2],
+            "stackMax": 1000,
+            "merchant": ""
+        }
+    ],
+    "treasures": [
+        {
+            "name": "Diamond",
+            "gridSize":[1, 1],
+            "stackMax": 0,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Emerald",
+            "gridSize":[1, 1],
+            "stackMax": 0,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Ruby",
+            "gridSize":[1, 1],
+            "stackMax": 0,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Sapphire",
+            "gridSize":[1, 1],
+            "stackMax": 0,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Dotted Bangle",
+            "gridSize":[1, 1],
+            "stackMax": 0,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Gem Necklace",
+            "gridSize":[1, 1],
+            "stackMax": 0,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Gem Ring",
+            "gridSize":[1, 1],
+            "stackMax": 0,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Glimmer Bangle",
+            "gridSize":[1, 1],
+            "stackMax": 0,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Gold Band",
+            "gridSize":[1, 1],
+            "stackMax": 0,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Gold Candle Platter",
+            "gridSize":[1, 1],
+            "stackMax": 0,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Leaf Gold Bangle",
+            "gridSize":[1, 1],
+            "stackMax": 0,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Light Gold Bangle",
+            "gridSize":[1, 1],
+            "stackMax": 0,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Patterned Gold Bangle",
+            "gridSize":[1, 1],
+            "stackMax": 0,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Pearl Necklace",
+            "gridSize":[1, 1],
+            "stackMax": 0,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Shine Bangle",
+            "gridSize":[1, 1],
+            "stackMax": 0,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Simple Gold Bangle",
+            "gridSize":[1, 1],
+            "stackMax": 0,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Slim Bangle",
+            "gridSize":[1, 1],
+            "stackMax": 0,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Triple Gem Bangle",
+            "gridSize":[1, 1],
+            "stackMax": 0,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Turquoise Gem Bangle",
+            "gridSize":[1, 1],
+            "stackMax": 0,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Ceremonial Dagger",
+            "gridSize":[2, 1],
+            "stackMax": 0,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Goblet",
+            "gridSize":[1, 2],
+            "stackMax": 0,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Gold Chalice",
+            "gridSize":[1, 2],
+            "stackMax": 0,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Gold Goblet",
+            "gridSize":[1, 2],
+            "stackMax": 0,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Silver Chalice",
+            "gridSize":[1, 2],
+            "stackMax": 0,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Gold Bowl",
+            "gridSize":[2, 2],
+            "stackMax": 0,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Gold Candelabra",
+            "gridSize":[2, 2],
+            "stackMax": 0,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Gold Candle Holder",
+            "gridSize":[2, 2],
+            "stackMax": 0,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Gold Crown",
+            "gridSize":[2, 2],
+            "stackMax": 0,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Gold Waterpot",
+            "gridSize":[2, 2],
+            "stackMax": 0,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Ancient Scroll",
+            "gridSize":[2, 3],
+            "stackMax": 0,
+            "merchant": "Collector"
+        }
+    ],
+    "mobs": [
+        {
+            "name": "Bat Claw",
+            "gridSize":[1, 1],
+            "stackMax": 3,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Bowstring",
+            "gridSize":[1, 1],
+            "stackMax": 3,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Captured Mana Flakes",
+            "gridSize":[1, 1],
+            "stackMax": 3,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Demon Blood",
+            "gridSize":[1, 1],
+            "stackMax": 3,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Glowing Blue Ice Eyes",
+            "gridSize":[1, 1],
+            "stackMax": 3,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Goblin Ear",
+            "gridSize":[1, 1],
+            "stackMax": 3,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Golden Teeth",
+            "gridSize":[1, 1],
+            "stackMax": 3,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Grave Essence",
+            "gridSize":[1, 1],
+            "stackMax": 3,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Kobold's Ear",
+            "gridSize":[1, 1],
+            "stackMax": 3,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Maggots",
+            "gridSize":[1, 1],
+            "stackMax": 3,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Primitive Bracelet",
+            "gridSize":[1, 1],
+            "stackMax": 3,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Rotten Fluids",
+            "gridSize":[1, 1],
+            "stackMax": 3,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Spider Silk",
+            "gridSize":[1, 1],
+            "stackMax": 3,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Volcanic Ash",
+            "gridSize":[1, 1],
+            "stackMax": 3,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Wolf Claw",
+            "gridSize":[1, 1],
+            "stackMax": 3,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Yeti's Teeth",
+            "gridSize":[1, 1],
+            "stackMax": 3,
+            "merchant": "Collector"
+        },
 
-            {
-                "name": "Giant Toe",
-                "gridSize":[1, 2],
-                "stackMax": 3,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Mimic Tooth",
-                "gridSize":[1, 2],
-                "stackMax": 0,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Moldy Bread",
-                "gridSize":[1, 2],
-                "stackMax": 3,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Rusty Broken Sword",
-                "gridSize":[1, 2],
-                "stackMax": 3,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Wolf Fang",
-                "gridSize":[1, 2],
-                "stackMax": 3,
-                "merchant": "Collector"
-            },
-            
-            {
-                "name": "Wendigo's Sharp Claws",
-                "gridSize":[2, 1],
-                "stackMax": 0,
-                "merchant": "Collector"
-            },
+        {
+            "name": "Giant Toe",
+            "gridSize":[1, 2],
+            "stackMax": 3,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Mimic Tooth",
+            "gridSize":[1, 2],
+            "stackMax": 0,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Moldy Bread",
+            "gridSize":[1, 2],
+            "stackMax": 3,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Rusty Broken Sword",
+            "gridSize":[1, 2],
+            "stackMax": 3,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Wolf Fang",
+            "gridSize":[1, 2],
+            "stackMax": 3,
+            "merchant": "Collector"
+        },
+        
+        {
+            "name": "Wendigo's Sharp Claws",
+            "gridSize":[2, 1],
+            "stackMax": 0,
+            "merchant": "Collector"
+        },
 
-            {
-                "name": "Beetle Wings",
-                "gridSize":[1, 3],
-                "stackMax": 0,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Bone",
-                "gridSize":[1, 3],
-                "stackMax": 3,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Centaur Tail",
-                "gridSize":[1, 3],
-                "stackMax": 0,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Demon Dog Thorn",
-                "gridSize":[1, 3],
-                "stackMax": 0,
-                "merchant": "Collector"
-            },
+        {
+            "name": "Beetle Wings",
+            "gridSize":[1, 3],
+            "stackMax": 0,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Bone",
+            "gridSize":[1, 3],
+            "stackMax": 3,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Centaur Tail",
+            "gridSize":[1, 3],
+            "stackMax": 0,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Demon Dog Thorn",
+            "gridSize":[1, 3],
+            "stackMax": 0,
+            "merchant": "Collector"
+        },
 
-            {
-                "name": "Broken Skull",
-                "gridSize":[2, 2],
-                "stackMax": 2,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Bug Shell",
-                "gridSize":[2, 2],
-                "stackMax": 0,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Centaur Hoof",
-                "gridSize":[2, 2],
-                "stackMax": 0,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Centaur Horn",
-                "gridSize":[2, 2],
-                "stackMax": 0,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Cursed Crown",
-                "gridSize":[2, 2],
-                "stackMax": 0,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Cyclops Eye",
-                "gridSize":[2, 2],
-                "stackMax": 0,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Cyclops Rag",
-                "gridSize":[2, 2],
-                "stackMax": 0,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Dog Collar",
-                "gridSize":[2, 2],
-                "stackMax": 0,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Enchanted Dark Fabric",
-                "gridSize":[2, 2],
-                "stackMax": 3,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Extra Thick Pelts",
-                "gridSize":[2, 2],
-                "stackMax": 3,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Frost Wyvern's Claws",
-                "gridSize":[2, 2],
-                "stackMax": 0,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Frozen Heart",
-                "gridSize":[2, 2],
-                "stackMax": 0,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Intact Skull",
-                "gridSize":[2, 2],
-                "stackMax": 2,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Mimic Tongue",
-                "gridSize":[2, 2],
-                "stackMax": 0,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Old Cloth",
-                "gridSize":[2, 2],
-                "stackMax": 3,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Torn Bat Wing",
-                "gridSize":[2, 2],
-                "stackMax": 3,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Troll Pelt",
-                "gridSize":[2, 2],
-                "stackMax": 0,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Wendigo's Hoof",
-                "gridSize":[2, 2],
-                "stackMax": 0,
-                "merchant": "Collector"
-            },
-            {
-                "name": "Wolf Pelt",
-                "gridSize":[2, 2],
-                "stackMax": 3,
-                "merchant": "Collector"
-            }
-        ]
-    }
+        {
+            "name": "Broken Skull",
+            "gridSize":[2, 2],
+            "stackMax": 2,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Bug Shell",
+            "gridSize":[2, 2],
+            "stackMax": 0,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Centaur Hoof",
+            "gridSize":[2, 2],
+            "stackMax": 0,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Centaur Horn",
+            "gridSize":[2, 2],
+            "stackMax": 0,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Cursed Crown",
+            "gridSize":[2, 2],
+            "stackMax": 0,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Cyclops Eye",
+            "gridSize":[2, 2],
+            "stackMax": 0,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Cyclops Rag",
+            "gridSize":[2, 2],
+            "stackMax": 0,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Dog Collar",
+            "gridSize":[2, 2],
+            "stackMax": 0,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Enchanted Dark Fabric",
+            "gridSize":[2, 2],
+            "stackMax": 3,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Extra Thick Pelts",
+            "gridSize":[2, 2],
+            "stackMax": 3,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Frost Wyvern's Claws",
+            "gridSize":[2, 2],
+            "stackMax": 0,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Frozen Heart",
+            "gridSize":[2, 2],
+            "stackMax": 0,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Intact Skull",
+            "gridSize":[2, 2],
+            "stackMax": 2,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Mimic Tongue",
+            "gridSize":[2, 2],
+            "stackMax": 0,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Old Cloth",
+            "gridSize":[2, 2],
+            "stackMax": 3,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Torn Bat Wing",
+            "gridSize":[2, 2],
+            "stackMax": 3,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Troll Pelt",
+            "gridSize":[2, 2],
+            "stackMax": 0,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Wendigo's Hoof",
+            "gridSize":[2, 2],
+            "stackMax": 0,
+            "merchant": "Collector"
+        },
+        {
+            "name": "Wolf Pelt",
+            "gridSize":[2, 2],
+            "stackMax": 3,
+            "merchant": "Collector"
+        }
+    ]
+
 }
 
