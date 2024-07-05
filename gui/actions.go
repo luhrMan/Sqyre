@@ -162,7 +162,7 @@ func createSearchAreaSelector() *fyne.Container {
 	searchAreaSelector := &widget.Select{Options: *structs.GetSearchBoxMapKeys(*structs.GetSearchBoxMap())}
 	searchAreaSelector.SetSelected(searchAreaSelector.Options[0])
 
-	return container.NewWithoutLayout(searchAreaSelector)
+	return container.NewVBox(searchAreaSelector)
 }
 
 // ***************************************************************************************Image Search
