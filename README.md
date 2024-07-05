@@ -1,3 +1,4 @@
+This tool only works on 2560 x 1440 because of hard-set values
 # What is it
 Squire is a Macro Builder built for Dark and Darker. Squire is written using GO, with 2 notable libraries:
 - Fyne (GUI)

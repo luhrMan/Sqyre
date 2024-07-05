@@ -48,7 +48,7 @@ func Load() {
 // }
 
 func ItemsCheckBoxes() *widget.Accordion {
-	itemsByCategory := *structs.ItemsFromFile()
+	itemsByCategory := *structs.ItemsByCategoryMap()
 	accordionItems := widget.NewAccordion()
 	for category, items := range itemsByCategory.Categories {
 		box := container.NewVBox()
@@ -83,14 +83,14 @@ func ItemsCheckBoxes() *widget.Accordion {
 	return accordionItems
 }
 
-// func SearchBoxSelector() *widget.Select {
-// 	sbcMap := *structs.SearchBoxMap()
-// 	var names []string
-// 	for _, sbc := range sbcMap {
-// 		names = append(names, sbc.AreaName)
-// 	}
-// 	return widget.NewSelect(names, func(value string) {})
-// }
+func SearchBoxSelector() *widget.Select {
+	sbcMap := *structs.SearchBoxMapInit()
+	var names []string
+	for a := range sbcMap {
+		names = append(names, a)
+	}
+	return &widget.Select{Options: names, OnChanged: func(value string) {}}
+}
 
 // func StartMacroButton(selectedItemsMap *map[string]bool, searchBoxSelector *widget.Select) *widget.Button {
 // 	return widget.NewButton("Start Macro", func() {
