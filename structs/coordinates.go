@@ -40,11 +40,6 @@ var (
 	spotMapOnce sync.Once
 )
 
-//var searchBoxes *SearchBoxes
-//ar searchBoxMap = make(map[string]SearchBox)
-//var spots *Spots
-//var spotMap = make(map[string]Spot)
-
 func GetSearchBox(key string) *SearchBox {
 	m := *GetSearchBoxMap()
 	sb := m[key]
@@ -120,11 +115,6 @@ func GetSpotMap() *map[string]Spot {
 			panic(err)
 		}
 
-		// for _, spot := range *spotMap {
-		// 	spotMap[spot.Name] = spot
-		// }
-
-		// Print out the decoded data
 		log.Println("Search Coordinates:")
 		for _, sArr := range tempArrMap {
 			for _, s := range sArr {
