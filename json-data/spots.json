@@ -1,0 +1,18 @@
+{
+    "spots": [
+        {
+            "name": "Stash Tab",
+            "coordinates": {
+                "x": 0,
+                "y": 0
+            }
+        },
+        {
+            "name": "Play Tab",
+            "coordinates": {
+                "x": 0,
+                "y": 0
+            }
+        }
+    ]
+}

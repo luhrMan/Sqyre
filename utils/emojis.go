@@ -1,11 +1,13 @@
 package utils
 
 var Emojis = map[string]string{
-	"Move":     "↔️",
-	"Click":    "🖱️",
-	"Key":      "⌨️",
-	"Sequence": "🔢",
-	"Wait":     "⏳",
+	"Move":         "↔️",
+	"Click":        "🖱️",
+	"Key":          "⌨️",
+	"Sequence":     "🔢",
+	"Wait":         "⏳",
+	"Image Search": "🔍",
+	"OCR":          "🔬",
 }
 
 func GetEmoji(key string) string {
