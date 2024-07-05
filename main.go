@@ -46,6 +46,7 @@ import (
 	"Dark-And-Darker/utils"
 	"fmt"
 	"image/color"
+	"log"
 	"regexp"
 	"strconv"
 	"strings"
@@ -61,13 +62,13 @@ import (
 
 var macro = *gui.NewMacro("Macro")
 var selectedTreeItem string
-
-//var savedSequences = make(map[string])
+var selectedItemsMap = make(map[string]bool)
 
 func main() {
 	a := app.New()
 	a.Settings().SetTheme(theme.DarkTheme())
 	myWindow := a.NewWindow("Squire")
+
 	root := createSampleTree()
 	tree := widget.Tree{}
 	updateTree(&tree, root)
@@ -106,7 +107,6 @@ func main() {
 		Importance:    widget.HighImportance,
 	}
 	// ***************************************************************************************Move
-	structs.SpotMapInit()
 	spotSelector := &widget.Select{Options: *structs.GetSpotMapKeys(*structs.GetSpotMap())}
 	spotSelector.SetSelected(spotSelector.Options[0])
 	mouseMoveXEntry := widget.NewEntry()
@@ -179,11 +179,12 @@ func main() {
 	}
 
 	// ***************************************************************************************Search settings
-	structs.SearchBoxMapInit()
+
 	searchAreaSelector := &widget.Select{Options: *structs.GetSearchBoxMapKeys(*structs.GetSearchBoxMap())}
 	searchAreaSelector.SetSelected(searchAreaSelector.Options[0])
-	itemsCheckBoxes := gui.ItemsCheckBoxes()
+	itemsCheckBoxes := ItemsCheckBoxes()
 	itemsCheckBoxes.MultiOpen = true
+
 	// ***************************************************************************************Image Search
 
 	addImageSearchActionButton := &widget.Button{
@@ -422,4 +423,39 @@ func getLoops(s string) int { //there is probably a better way to do this. maybe
 	}
 	loops, _ := strconv.Atoi(strings.TrimPrefix(match, "x"))
 	return loops
+}
+
+func ItemsCheckBoxes() *widget.Accordion {
+	accordionItems := widget.NewAccordion()
+	for category, items := range *structs.GetItemsMap() {
+		box := container.NewVBox()
+		scroll := container.NewVScroll(box)
+		for _, item := range items {
+			checkBoxWithIcon := container.NewHBox()
+			func(itemName string) {
+				checkBox := widget.NewCheck(itemName, func(checked bool) {})
+				checkBox.OnChanged = func(checked bool) {
+					if checked {
+						log.Println(itemName)
+						selectedItemsMap[itemName] = true // Add selected item to the map
+					} else {
+						delete(selectedItemsMap, itemName) // Remove unselected item from the map
+					}
+					log.Println(selectedItemsMap)
+				}
+				resource, err := fyne.LoadResourceFromPath("./images/icons/" + itemName + ".png")
+				if err != nil {
+					log.Println(err)
+					checkBoxWithIcon.Add(widget.NewIcon(theme.BrokenImageIcon()))
+				} else {
+					icon := widget.NewIcon(resource)
+					checkBoxWithIcon.Add(icon)
+				}
+				checkBoxWithIcon.Add(checkBox)
+				box.Add(checkBoxWithIcon)
+			}(item.Name)
+		}
+		accordionItems.Append(widget.NewAccordionItem(category, scroll))
+	}
+	return accordionItems
 }

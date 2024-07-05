@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"os"
+	"sync"
 )
 
 type SearchBoxes struct {
@@ -32,13 +33,22 @@ type Spot struct {
 	} `json:"coordinates"`
 }
 
-var searchBoxes *SearchBoxes
-var searchBoxMap = make(map[string]SearchBox)
-var spots *Spots
-var spotMap = make(map[string]Spot)
+var (
+	sbMap       *map[string]SearchBox
+	sbOnce      sync.Once
+	spotMap     *map[string]Spot
+	spotMapOnce sync.Once
+)
 
-func GetSearchBox(key string) SearchBox {
-	return searchBoxMap[key]
+//var searchBoxes *SearchBoxes
+//ar searchBoxMap = make(map[string]SearchBox)
+//var spots *Spots
+//var spotMap = make(map[string]Spot)
+
+func GetSearchBox(key string) *SearchBox {
+	m := *GetSearchBoxMap()
+	sb := m[key]
+	return &sb
 }
 
 func GetSearchBoxMapKeys(m map[string]SearchBox) *[]string {
@@ -50,39 +60,39 @@ func GetSearchBoxMapKeys(m map[string]SearchBox) *[]string {
 }
 
 func GetSearchBoxMap() *map[string]SearchBox {
-	return &searchBoxMap
+	sbOnce.Do(func() {
+		log.Println("Initializing Searchbox Map")
+		tempArrMap := make(map[string][]SearchBox)
+		tempMap := make(map[string]SearchBox)
+		file, err := os.Open("./json-data/searchBoxes.json")
+		if err != nil {
+			log.Println("Error opening file:", err)
+			panic(err)
+		}
+		defer file.Close()
+
+		decoder := json.NewDecoder(file)
+		if err := decoder.Decode(&tempArrMap); err != nil {
+			log.Println("Error decoding JSON:", err)
+			panic(err)
+		}
+
+		log.Println("Search Coordinates:")
+		for _, sbArr := range tempArrMap {
+			for _, sb := range sbArr {
+				log.Printf("Area: %s, X1: %d Y1: %d X2: %d Y2: %d\n", sb.Name, sb.SearchArea.LeftX, sb.SearchArea.TopY, sb.SearchArea.RightX, sb.SearchArea.BottomY)
+				tempMap[sb.Name] = sb
+			}
+		}
+		sbMap = &tempMap
+	})
+	return sbMap
 }
 
-func SearchBoxMapInit() *map[string]SearchBox {
-	file, err := os.Open("./json-data/searchBoxes.json")
-	if err != nil {
-		log.Println("Error opening file:", err)
-		panic(err)
-	}
-	defer file.Close()
-
-	decoder := json.NewDecoder(file)
-	if err := decoder.Decode(&searchBoxes); err != nil {
-		log.Println("Error decoding JSON:", err)
-		panic(err)
-	}
-
-	for _, box := range searchBoxes.Boxes {
-		searchBoxMap[box.Name] = box
-	}
-	log.Println("Search Coordinates:")
-	for _, s := range searchBoxMap {
-		log.Printf("Area: %s, X1: %d Y1: %d X2: %d Y2: %d\n", s.Name, s.SearchArea.LeftX, s.SearchArea.TopY, s.SearchArea.RightX, s.SearchArea.BottomY)
-	}
-	return &searchBoxMap
-}
-
-func GetSpot(key string) Spot {
-	return spotMap[key]
-}
-
-func GetSpotMap() *map[string]Spot {
-	return &spotMap
+func GetSpot(key string) *Spot {
+	m := *GetSpotMap()
+	s := m[key]
+	return &s
 }
 
 func GetSpotMapKeys(m map[string]Spot) *[]string {
@@ -93,28 +103,36 @@ func GetSpotMapKeys(m map[string]Spot) *[]string {
 	return &keys
 }
 
-func SpotMapInit() *map[string]Spot {
-	file, err := os.Open("./json-data/spots.json")
-	if err != nil {
-		log.Println("Error opening file:", err)
-		panic(err)
-	}
-	defer file.Close()
+func GetSpotMap() *map[string]Spot {
+	spotMapOnce.Do(func() {
+		tempArrMap := make(map[string][]Spot)
+		tempMap := make(map[string]Spot)
+		file, err := os.Open("./json-data/spots.json")
+		if err != nil {
+			log.Println("Error opening file:", err)
+			panic(err)
+		}
+		defer file.Close()
 
-	decoder := json.NewDecoder(file)
-	if err := decoder.Decode(&spots); err != nil {
-		log.Println("Error decoding JSON:", err)
-		panic(err)
-	}
+		decoder := json.NewDecoder(file)
+		if err := decoder.Decode(&tempArrMap); err != nil {
+			log.Println("Error decoding JSON:", err)
+			panic(err)
+		}
 
-	for _, spot := range spots.Spots {
-		spotMap[spot.Name] = spot
-	}
+		// for _, spot := range *spotMap {
+		// 	spotMap[spot.Name] = spot
+		// }
 
-	// Print out the decoded data
-	log.Println("Search Coordinates:")
-	for _, s := range spotMap {
-		log.Printf("Spot: %s, X: %d Y: %d\n", s.Name, s.Coordinates.X, s.Coordinates.Y)
-	}
-	return &spotMap
+		// Print out the decoded data
+		log.Println("Search Coordinates:")
+		for _, sArr := range tempArrMap {
+			for _, s := range sArr {
+				log.Printf("Spot: %s, X: %d Y: %d\n", s.Name, s.Coordinates.X, s.Coordinates.Y)
+				tempMap[s.Name] = s
+			}
+		}
+		spotMap = &tempMap
+	})
+	return spotMap
 }
