@@ -42,8 +42,8 @@ package main
 
 import (
 	"Dark-And-Darker/gui"
-    "Dark-And-Darker/structs"
-    "Dark-And-Darker/utils"
+	"Dark-And-Darker/structs"
+	"Dark-And-Darker/utils"
 	"fmt"
 	"image/color"
 	"regexp"
@@ -68,7 +68,6 @@ func main() {
 	a := app.New()
 	a.Settings().SetTheme(theme.DarkTheme())
 	myWindow := a.NewWindow("Squire")
-
 	root := createSampleTree()
 	tree := widget.Tree{}
 	updateTree(&tree, root)
@@ -107,9 +106,11 @@ func main() {
 		Importance:    widget.HighImportance,
 	}
 	// ***************************************************************************************Move
+	structs.SpotMapInit()
+	spotSelector := &widget.Select{Options: *structs.GetSpotMapKeys(*structs.GetSpotMap())}
+	spotSelector.SetSelected(spotSelector.Options[0])
 	mouseMoveXEntry := widget.NewEntry()
 	mouseMoveYEntry := widget.NewEntry()
-
 	addMouseMoveActionButton := &widget.Button{
 		Text: utils.GetEmoji("Move") + "Add Move",
 		OnTapped: func() {
@@ -133,6 +134,7 @@ func main() {
 		Horizontal: true,
 		Required:   false,
 		Options:    []string{"Left", "Right"},
+		Selected:   "Left",
 	}
 	addClickActionButton := &widget.Button{
 		Text: utils.GetEmoji("Click") + "Add Click",
@@ -156,6 +158,7 @@ func main() {
 		Horizontal: true,
 		Required:   true,
 		Options:    []string{"Up", "Down"},
+		Selected:   "Down",
 	}
 
 	addKeyPressActionButton := &widget.Button{
@@ -167,6 +170,48 @@ func main() {
 			selectedNode := findNode(root, selectedTreeItem)
 			if selectedNode != nil && selectedNode.Type == gui.SequenceType {
 				gui.NewAction(selectedNode, &structs.KeyAction{Key: "Enter", State: keyUpDownRadioGroup.Selected})
+				updateTree(&tree, root)
+			}
+		},
+		IconPlacement: widget.ButtonIconPlacement(widget.ButtonAlignTrailing),
+		Icon:          theme.NavigateNextIcon(),
+		Importance:    widget.HighImportance,
+	}
+
+	// ***************************************************************************************Search settings
+	structs.SearchBoxMapInit()
+	searchAreaSelector := &widget.Select{Options: *structs.GetSearchBoxMapKeys(*structs.GetSearchBoxMap())}
+	searchAreaSelector.SetSelected(searchAreaSelector.Options[0])
+	itemsCheckBoxes := gui.ItemsCheckBoxes()
+	itemsCheckBoxes.MultiOpen = true
+	// ***************************************************************************************Image Search
+
+	addImageSearchActionButton := &widget.Button{
+		Text: utils.GetEmoji("Image Search") + "Add Image Search",
+		OnTapped: func() {
+			if selectedTreeItem == "" {
+				return
+			}
+			selectedNode := findNode(root, selectedTreeItem)
+			if selectedNode != nil && selectedNode.Type == gui.SequenceType {
+				gui.NewAction(selectedNode, &structs.ImageSearchAction{})
+				updateTree(&tree, root)
+			}
+		},
+		IconPlacement: widget.ButtonIconPlacement(widget.ButtonAlignTrailing),
+		Icon:          theme.NavigateNextIcon(),
+		Importance:    widget.HighImportance,
+	}
+	// ***************************************************************************************OCR
+	addOCRActionButton := &widget.Button{
+		Text: utils.GetEmoji("OCR") + "Add OCR",
+		OnTapped: func() {
+			if selectedTreeItem == "" {
+				return
+			}
+			selectedNode := findNode(root, selectedTreeItem)
+			if selectedNode != nil && selectedNode.Type == gui.SequenceType {
+				gui.NewAction(selectedNode, &structs.OcrAction{})
 				updateTree(&tree, root)
 			}
 		},
@@ -190,12 +235,10 @@ func main() {
 		Icon:       theme.MediaPlayIcon(),
 		Importance: widget.WarningImportance,
 	}
-	itemsCheckBoxes := gui.ItemsCheckBoxes()
-	itemsCheckBoxes.MultiOpen = true
+
 	// ***************************************************************************************
 	// *****************************Main Content
 	// ***************************************************************************************
-	var data = []string{"a", "string", "list"}
 	content := container.NewGridWithColumns(2,
 		container.NewHSplit(
 			itemsCheckBoxes,
@@ -212,7 +255,7 @@ func main() {
 				canvas.NewRectangle(color.Gray{}),
 				// ****************************************************************************************************************************************Move
 				&widget.Label{Text: "Mouse Move Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
-				widget.NewSelect(data, func(s string) {}),
+				spotSelector,
 				container.NewGridWithColumns(4,
 					widget.NewLabel(""),
 					container.NewGridWithColumns(2,
@@ -242,12 +285,26 @@ func main() {
 					keyUpDownRadioGroup,
 					addKeyPressActionButton,
 				),
-				canvas.NewRectangle(color.Gray{}),
+				container.NewHBox(
+					widget.NewLabel(""),
+
+					canvas.NewRectangle(color.Gray{}),
+				),
+
+				// ****************************************************************************************************************************************Search Settings
+				&widget.Label{Text: "Search Settings", TextStyle: fyne.TextStyle{Bold: true, Monospace: true}, Alignment: fyne.TextAlignCenter},
+				searchAreaSelector,
 				// ****************************************************************************************************************************************Image Search
 				&widget.Label{Text: "Image Search Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
+				container.NewHBox(
+					addImageSearchActionButton,
+				),
 				canvas.NewRectangle(color.Gray{}),
 				// ****************************************************************************************************************************************OCR
 				&widget.Label{Text: "OCR Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
+				container.NewHBox(
+					addOCRActionButton,
+				),
 				canvas.NewRectangle(color.Gray{}),
 			),
 		),
@@ -282,11 +339,11 @@ func main() {
 
 func createSampleTree() *gui.Node {
 	seq1 := gui.NewSequence(&macro, "preset x2")
-	gui.NewAction(seq1, &structs.ClickAction{})
+	gui.NewAction(seq1, &structs.ClickAction{Button: "Left"})
 	gui.NewAction(seq1, &structs.MouseMoveAction{X: 100, Y: 100})
 
 	seq2 := gui.NewSequence(&macro, "preset x1")
-	gui.NewAction(seq2, &structs.ClickAction{})
+	gui.NewAction(seq2, &structs.ClickAction{Button: "Right"})
 	gui.NewAction(seq2, &structs.MouseMoveAction{X: 2000, Y: 200})
 	return &macro
 }

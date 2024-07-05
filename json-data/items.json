@@ -1,6 +1,6 @@
 {
-    "Categories": {
-        "Consumables":[
+    "categories": {
+        "consumables":[
             {
                 "name": "Potion",
                 "gridSize":[1, 1],
@@ -62,7 +62,7 @@
                 "merchant": "Woodsman"
             }
         ],
-        "Currency": [
+        "currency": [
             {
                 "name": "Gold Coins",
                 "gridSize":[1, 1],
@@ -100,7 +100,7 @@
                 "merchant": ""
             }
         ],
-        "Treasures": [
+        "treasures": [
             {
                 "name": "Diamond",
                 "gridSize":[1, 1],

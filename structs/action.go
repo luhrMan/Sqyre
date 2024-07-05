@@ -3,8 +3,9 @@ package structs
 import (
 	"Dark-And-Darker/utils"
 	"fmt"
-    "github.com/vcaesar/bitmap"
-    "log"
+	"log"
+
+	"github.com/vcaesar/bitmap"
 
 	"github.com/go-vgo/robotgo"
 )
@@ -13,6 +14,7 @@ type Action interface {
 	Execute()
 	String() string
 }
+
 //***************************************************************************************Wait
 
 type WaitAction struct {
@@ -100,13 +102,13 @@ func ImageSearch(sbc SearchBox, itemName string) []robotgo.Point {
 	//sbc.LeftX += XOffset //might need for linux?
 	//sbc.TopY += YOffset
 
-	ip := "./images/" + itemName + ".png"
-	capture := robotgo.CaptureScreen(sbc.LeftX, sbc.TopY, sbc.RightX, sbc.BottomY) //sb[0], sb[1], sb[2], sb[3]
+	ip := "./images/icons/" + itemName + ".png"
+	capture := robotgo.CaptureScreen(sbc.SearchArea.LeftX, sbc.SearchArea.TopY, sbc.SearchArea.RightX, sbc.SearchArea.BottomY)
 	defer robotgo.FreeBitmap(capture)
-    err := robotgo.SaveJpeg(robotgo.ToImage(capture), "./images/wholeScreen.jpeg")
-    if err != nil {
-        return nil
-    }
+	err := robotgo.SaveJpeg(robotgo.ToImage(capture), "./images/wholeScreen.jpeg")
+	if err != nil {
+		return nil
+	}
 
 	predefinedImage, err := robotgo.OpenImg(ip)
 	if err != nil {
@@ -116,6 +118,22 @@ func ImageSearch(sbc SearchBox, itemName string) []robotgo.Point {
 	predefinedBitmap := robotgo.ByteToCBitmap(predefinedImage)
 	//defer robotgo.FreeBitmap(predefinedBitmap)
 	return bitmap.FindAll(predefinedBitmap, capture, 0.2)
+}
+
+// ***************************************************************************************OCR
+
+type OcrAction struct {
+	X1, Y1, X2, Y2 int
+	Target         string
+}
+
+func (a *OcrAction) Execute() {
+	log.Printf("OCR search | %s in X1:%d Y1:%d X2:%d Y2:%d", a.Target, a.X1, a.Y1, a.X2, a.Y2)
+
+}
+
+func (a *OcrAction) String() string {
+	return fmt.Sprintf("OCR search for %s", a.Target)
 }
 
 // type Action interface {
