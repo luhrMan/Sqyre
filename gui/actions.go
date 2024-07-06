@@ -25,7 +25,7 @@ func createWaitActionSettings() *fyne.Container {
 			selectedNode := findNode(root, selectedTreeItem)
 			if selectedNode != nil && selectedNode.Type == SequenceType {
 				wait, _ := strconv.Atoi(millisecondsWaitEntry.Text)
-				NewAction(selectedNode, &structs.WaitAction{Time: wait})
+				newAction(selectedNode, &structs.WaitAction{Time: wait})
 				updateTree(&tree, root)
 			}
 		},
@@ -65,7 +65,7 @@ func createMouseMoveSettings() *fyne.Container {
 			if selectedNode != nil && selectedNode.Type == SequenceType {
 				x, _ := strconv.Atoi(mouseMoveXEntry.Text)
 				y, _ := strconv.Atoi(mouseMoveYEntry.Text)
-				NewAction(selectedNode, &structs.MouseMoveAction{X: x, Y: y})
+				newAction(selectedNode, &structs.MouseMoveAction{X: x, Y: y})
 				updateTree(&tree, root)
 			}
 		},
@@ -108,7 +108,7 @@ func createClickSettings() *fyne.Container {
 			selectedNode := findNode(root, selectedTreeItem)
 			if selectedNode != nil && selectedNode.Type == SequenceType {
 
-				NewAction(selectedNode, &structs.ClickAction{Button: mouseButtonRadioGroup.Selected})
+				newAction(selectedNode, &structs.ClickAction{Button: mouseButtonRadioGroup.Selected})
 				updateTree(&tree, root)
 			}
 		},
@@ -141,7 +141,7 @@ func createKeySettings() *fyne.Container {
 			}
 			selectedNode := findNode(root, selectedTreeItem)
 			if selectedNode != nil && selectedNode.Type == SequenceType {
-				NewAction(selectedNode, &structs.KeyAction{Key: "Enter", State: keyUpDownRadioGroup.Selected})
+				newAction(selectedNode, &structs.KeyAction{Key: "Enter", State: keyUpDownRadioGroup.Selected})
 				updateTree(&tree, root)
 			}
 		},
@@ -175,7 +175,7 @@ func createImageSearchSettings() *fyne.Container {
 			}
 			selectedNode := findNode(root, selectedTreeItem)
 			if selectedNode != nil && selectedNode.Type == SequenceType {
-				NewAction(selectedNode, &structs.ImageSearchAction{})
+				newAction(selectedNode, &structs.ImageSearchAction{})
 				updateTree(&tree, root)
 			}
 		},
@@ -199,7 +199,7 @@ func createOCRSettings() *fyne.Container {
 			}
 			selectedNode := findNode(root, selectedTreeItem)
 			if selectedNode != nil && selectedNode.Type == SequenceType {
-				NewAction(selectedNode, &structs.OcrAction{})
+				newAction(selectedNode, &structs.OcrAction{})
 				updateTree(&tree, root)
 			}
 		},

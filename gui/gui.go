@@ -14,11 +14,13 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-var macro = *NewMacro("Macro")
-var root = createSampleTree()
-var tree = widget.Tree{}
-var selectedTreeItem string
-var selectedItemsMap = make(map[string]bool)
+var (
+	macro            = *newMacro("Macro")
+	root             = createSampleTree()
+	tree             = widget.Tree{}
+	selectedTreeItem string
+	selectedItemsMap = make(map[string]bool)
+)
 
 func LoadMainContent() *fyne.Container {
 	updateTree(&tree, root)
@@ -44,17 +46,14 @@ func LoadMainContent() *fyne.Container {
 				createKeySettings(),
 				container.NewHBox(
 					widget.NewLabel(""),
-
 					canvas.NewRectangle(color.Gray{}),
 				),
 				container.NewHBox(
 					widget.NewLabel(""),
-
 					canvas.NewRectangle(color.Gray{}),
 				),
 				container.NewHBox(
 					widget.NewLabel(""),
-
 					canvas.NewRectangle(color.Gray{}),
 				),
 
@@ -89,7 +88,7 @@ func createSequenceSettings() *fyne.Container {
 		Text: utils.GetEmoji("Sequence") + "Add New Sequence",
 		OnTapped: func() {
 			seq := sequenceName.Text + " x" + strconv.FormatInt(int64(sequenceLoops.Value), 10)
-			NewSequence(root, seq)
+			newSequence(root, seq)
 			updateTree(&tree, root)
 		},
 		Icon:       theme.ContentAddIcon(),

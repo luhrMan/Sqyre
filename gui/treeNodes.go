@@ -1,8 +1,8 @@
 package gui
 
 import (
-    "Dark-And-Darker/structs"
-    "fmt"
+	"Dark-And-Darker/structs"
+	"fmt"
 	"log"
 )
 
@@ -23,27 +23,27 @@ type Node struct {
 	Action   structs.Action
 }
 
-func NewMacro(uid string) *Node {
+func newMacro(uid string) *Node {
 	return &Node{UID: uid, Type: MacroType}
 }
 
-func NewSequence(parent *Node, name string) *Node {
+func newSequence(parent *Node, name string) *Node {
 	seqNum := len(parent.Children)
 	uid := fmt.Sprintf("Seq%d", seqNum+1)
 	node := &Node{Name: name, UID: uid, Type: SequenceType, Parent: parent}
-	
-	parent.AddChild(node)
+
+	parent.addChild(node)
 	log.Printf("New sequence %s: %s", node.UID, node.Name)
 	return node
 }
 
-func NewAction(parent *Node, action structs.Action) *Node {
+func newAction(parent *Node, action structs.Action) *Node {
 	seqNum := getSequenceNumber(parent)
 	actionNum := len(parent.Children) + 1
 	uid := fmt.Sprintf("Seq%d.%d", seqNum, actionNum)
 	node := &Node{UID: uid, Type: ActionType, Parent: parent, Action: action}
 
-	parent.AddChild(node)
+	parent.addChild(node)
 	log.Printf("New action: %s %s ", uid, action)
 	return node
 }
@@ -59,7 +59,7 @@ func getSequenceNumber(node *Node) int {
 	return 0
 }
 
-func (n *Node) RenameSiblings() {
+func (n *Node) renameSiblings() {
 	switch n.Type {
 	case 0:
 		for a, seq := range n.Children {
@@ -79,18 +79,18 @@ func (n *Node) RenameSiblings() {
 	}
 }
 
-func (n *Node) AddChild(child *Node) {
+func (n *Node) addChild(child *Node) {
 	n.Children = append(n.Children, child)
 	child.Parent = n
 }
 
-func (n *Node) RemoveChild(child *Node) {
+func (n *Node) removeChild(child *Node) {
 	for i, c := range n.Children {
 		if c == child {
 			n.Children = append(n.Children[:i], n.Children[i+1:]...)
 			log.Printf("Removing %s", child.UID)
 			child.Parent = nil
-			n.RenameSiblings()
+			n.renameSiblings()
 			return
 		}
 	}

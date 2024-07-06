@@ -13,13 +13,13 @@ import (
 )
 
 func createSampleTree() *Node {
-	seq1 := NewSequence(&macro, "preset x2")
-	NewAction(seq1, &structs.MouseMoveAction{X: 100, Y: 100})
-	NewAction(seq1, &structs.ClickAction{Button: "Left"})
+	seq1 := newSequence(&macro, "preset x2")
+	newAction(seq1, &structs.MouseMoveAction{X: 100, Y: 100})
+	newAction(seq1, &structs.ClickAction{Button: "Left"})
 
-	seq2 := NewSequence(&macro, "preset x1")
-	NewAction(seq2, &structs.MouseMoveAction{X: 2000, Y: 200})
-	NewAction(seq2, &structs.ClickAction{Button: "Right"})
+	seq2 := newSequence(&macro, "preset x1")
+	newAction(seq2, &structs.MouseMoveAction{X: 2000, Y: 200})
+	newAction(seq2, &structs.ClickAction{Button: "Right"})
 	return &macro
 }
 
@@ -63,7 +63,7 @@ func updateTree(tree *widget.Tree, root *Node) {
 
 		if node.Parent != nil {
 			removeButton.OnTapped = func() {
-				node.Parent.RemoveChild(node)
+				node.Parent.removeChild(node)
 				updateTree(tree, root)
 			}
 			removeButton.Show()
