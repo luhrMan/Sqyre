@@ -2,7 +2,6 @@ package gui
 
 import (
 	"Dark-And-Darker/structs"
-	"Dark-And-Darker/utils"
 	"fmt"
 
 	"fyne.io/fyne/v2"
@@ -13,14 +12,15 @@ import (
 )
 
 func createSampleTree() *Node {
-	seq1 := newSequence(&macro, "preset x2")
-	newAction(seq1, &structs.MouseMoveAction{X: 100, Y: 100})
-	newAction(seq1, &structs.ClickAction{Button: "Left"})
+	//seq1 := newSequence(&macro, "preset x2")
+	//newAction(seq1, &structs.MouseMoveAction{X: 100, Y: 100})
+	//newAction(seq1, &structs.ClickAction{Button: "Left"})
 
-	seq2 := newSequence(&macro, "preset x1")
-	newAction(seq2, &structs.MouseMoveAction{X: 2000, Y: 200})
-	newAction(seq2, &structs.ClickAction{Button: "Right"})
-	return &macro
+	//seq2 := newSequence(&macro, "preset x1")
+	//newAction(seq2, &structs.MouseMoveAction{X: 2000, Y: 200})
+	//newAction(seq2, &structs.ClickAction{Button: "Right"})
+	//return &macro
+	return &root
 }
 
 func updateTree(tree *widget.Tree, root *Node) {
@@ -38,7 +38,7 @@ func updateTree(tree *widget.Tree, root *Node) {
 	}
 	tree.IsBranch = func(uid string) bool {
 		node := findNode(root, uid)
-		return node != nil && (node.Type == MacroType || node.Type == SequenceType)
+		return node != nil && (node.Action.GetType() == structs.ContainerType || node.Action.GetType() == structs.LoopType)
 	}
 	tree.CreateNode = func(branch bool) fyne.CanvasObject {
 		return container.NewHBox(widget.NewLabel("Template"), layout.NewSpacer(), &widget.Button{Icon: theme.CancelIcon(), Importance: widget.DangerImportance})
@@ -51,15 +51,7 @@ func updateTree(tree *widget.Tree, root *Node) {
 		container := obj.(*fyne.Container)
 		label := container.Objects[0].(*widget.Label)
 		removeButton := container.Objects[2].(*widget.Button)
-
-		switch node.Type {
-		case MacroType:
-			label.SetText(fmt.Sprintf("📁 %s", node.UID))
-		case SequenceType:
-			label.SetText(fmt.Sprintf("%s %s %s", utils.GetEmoji("Sequence"), node.UID, node.Name))
-		case ActionType:
-			label.SetText(node.Action.String())
-		}
+		label.SetText(fmt.Sprintf("%s %s", node.UID, node.Action.String()))
 
 		if node.Parent != nil {
 			removeButton.OnTapped = func() {
