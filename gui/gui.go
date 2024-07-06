@@ -16,18 +16,32 @@ import (
 )
 
 var (
-	//macro            = *newMacro("Macro")
-	root             = Node{Name: "root", UID: "root", Action: &structs.ContainerAction{}, Parent: nil}
+	root             *Node //= &Node{Name: "root", UID: "root", Action: &structs.ContainerAction{}, Parent: nil}
 	tree             = widget.Tree{}
 	selectedTreeItem string
 	selectedItemsMap = make(map[string]bool)
 )
 
 func LoadMainContent() *fyne.Container {
-	updateTree(&tree, &root)
-	newActionNode(&root, &structs.MouseMoveAction{X: 100, Y: 100})
-	newActionNode(&root, &structs.LoopAction{}) //TRY newActionNode for this created action node?
-	newActionNode(&root, &structs.ContainerAction{})
+	root = newRootNode("1")
+	updateTree(&tree, root)
+	newActionNode(root, &structs.MouseMoveAction{X: 100, Y: 100})
+	loop := newActionNode(root, &structs.LoopAction{Iterations: 2}) //TRY newActionNode for this created action node?
+	newActionNode(loop, &structs.MouseMoveAction{X: 200, Y: 200})
+	newActionNode(loop, &structs.WaitAction{Time: 200})
+	newActionNode(loop, &structs.MouseMoveAction{X: 300, Y: 300})
+	nestedLoop := newActionNode(loop, &structs.LoopAction{Iterations: 3})
+	newActionNode(nestedLoop, &structs.MouseMoveAction{X: 400, Y: 400})
+	newActionNode(nestedLoop, &structs.WaitAction{Time: 200})
+	newActionNode(nestedLoop, &structs.MouseMoveAction{X: 500, Y: 500})
+	newActionNode(nestedLoop, &structs.WaitAction{Time: 200})
+	newActionNode(nestedLoop, &structs.MouseMoveAction{X: 600, Y: 600})
+	newActionNode(nestedLoop, &structs.WaitAction{Time: 200})
+	c := newActionNode(root, &structs.ContainerAction{})
+	newActionNode(c, &structs.MouseMoveAction{X: 600, Y: 600})
+	newActionNode(c, &structs.WaitAction{Time: 200})
+	updateTree(&tree, root)
+
 	content := container.NewGridWithColumns(2,
 		container.NewHSplit(
 			createItemsCheckBoxes(),
@@ -98,7 +112,6 @@ func executeNode(node *Node, context *structs.Context) error {
 	if node == nil {
 		return nil
 	}
-
 	log.Printf("Executing action: %s", node.Action.String())
 
 	err := node.Action.Execute(context)
@@ -106,16 +119,26 @@ func executeNode(node *Node, context *structs.Context) error {
 		return fmt.Errorf("error executing action %s: %v", node.Action.String(), err)
 	}
 
-	// If the action is a container or loop, it will have already executed its children
-	if node.Action.GetType() != structs.ContainerType && node.Action.GetType() != structs.LoopType {
+	var executeChildren = func() error {
 		for _, child := range node.Children {
 			err = executeNode(child, context)
 			if err != nil {
 				return err
 			}
 		}
+		return nil
 	}
 
+	switch n := node.Action.(type) {
+	case *structs.LoopAction:
+		{
+			for i := 0; i <= n.Iterations; i++ {
+				executeChildren()
+			}
+		}
+	default:
+		executeChildren()
+	}
 	return nil
 }
 
@@ -127,7 +150,7 @@ func createSequenceSettings() *fyne.Container {
 		OnTapped: func() {
 			//seq := sequenceName.Text + " x" + strconv.FormatInt(int64(sequenceLoops.Value), 10)
 			//newSequence(root, seq)
-			updateTree(&tree, &root)
+			updateTree(&tree, root)
 		},
 		Icon:       theme.ContentAddIcon(),
 		Importance: widget.SuccessImportance,
@@ -153,13 +176,7 @@ func createMacroSettings() *fyne.Container {
 	startMacroButton := &widget.Button{
 		Text: "Start Macro",
 		OnTapped: func() {
-			// for _, sequence := range macro.Children {
-			// 	for range getLoops(sequence.Name) {
-			// 		for _, action := range sequence.Children {
-			// 			action.Action.Execute()
-			// 		}
-			// 	}
-			// }
+			ExecuteActionTree(root)
 		},
 		Icon:       theme.MediaPlayIcon(),
 		Importance: widget.WarningImportance,
