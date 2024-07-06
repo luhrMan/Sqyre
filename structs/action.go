@@ -5,14 +5,89 @@ import (
 	"fmt"
 	"log"
 
+	"fyne.io/fyne/v2"
 	"github.com/vcaesar/bitmap"
 
 	"github.com/go-vgo/robotgo"
 )
 
+type ActionType int
+
+const (
+	WaitType ActionType = iota
+	ClickType
+	MouseMoveType
+	KeyType
+	ImageSearchType
+	OcrType
+	LoopType
+	ContainerType
+)
+
 type Action interface {
-	Execute()
+	Execute(context *Context) error
+	GetType() ActionType
 	String() string
+}
+
+type Context struct {
+	Variables map[string]interface{}
+}
+
+type ContainerAction struct {
+	Type     ActionType
+	Children []Action
+}
+
+func (a *ContainerAction) Execute(context *Context) error {
+	for _, child := range a.Children {
+		if err := child.Execute(context); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (a *ContainerAction) GetType() ActionType {
+	return ContainerType
+}
+
+func (a *ContainerAction) String() string {
+	return fmt.Sprintf("Container with %d actions", len(a.Children))
+}
+
+type LoopAction struct {
+	ContainerAction
+	Iterations int
+	Condition  func(*Context) bool
+}
+
+func (a *LoopAction) Execute(context *Context) error {
+	if a.Condition != nil {
+		for a.Condition(context) {
+			if err := a.ContainerAction.Execute(context); err != nil {
+				return err
+			}
+		}
+	} else {
+		for i := 0; i < a.Iterations; i++ {
+			if err := a.ContainerAction.Execute(context); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (a *LoopAction) GetType() ActionType {
+	return LoopType
+}
+
+func (a *LoopAction) String() string {
+	if a.Condition != nil {
+		return "Conditional Loop"
+	}
+	return fmt.Sprintf("Loop %d times", a.Iterations)
 }
 
 //***************************************************************************************Wait
@@ -21,9 +96,13 @@ type WaitAction struct {
 	Time int
 }
 
-func (a *WaitAction) Execute() {
+func (a *WaitAction) Execute(context *Context) error {
 	log.Printf("Waiting for %d milliseconds", a.Time)
 	robotgo.MilliSleep(a.Time)
+	return nil
+}
+func (a *WaitAction) GetType() ActionType {
+	return WaitType
 }
 
 func (a *WaitAction) String() string {
@@ -36,9 +115,14 @@ type ClickAction struct {
 	Button string
 }
 
-func (a *ClickAction) Execute() {
+func (a *ClickAction) Execute(context *Context) error {
 	log.Printf("%s Click", a.Button)
 	robotgo.Click(a.Button)
+	return nil
+}
+
+func (a *ClickAction) GetType() ActionType {
+	return ClickType
 }
 
 func (a *ClickAction) String() string {
@@ -51,9 +135,14 @@ type MouseMoveAction struct {
 	X, Y int
 }
 
-func (a *MouseMoveAction) Execute() {
+func (a *MouseMoveAction) Execute(context *Context) error {
 	log.Printf("Moving mouse to (%d, %d)", a.X, a.Y)
 	robotgo.Move(a.X+utils.XOffset, a.Y+utils.YOffset)
+	return nil
+}
+
+func (a *MouseMoveAction) GetType() ActionType {
+	return MouseMoveType
 }
 
 func (a *MouseMoveAction) String() string {
@@ -72,7 +161,7 @@ type KeyAction struct {
 	State string
 }
 
-func (a *KeyAction) Execute() {
+func (a *KeyAction) Execute(context *Context) {
 	log.Printf("Key: %s %s", a.Key, a.State)
 	switch a.State {
 	case "Up":
@@ -93,9 +182,14 @@ type ImageSearchAction struct {
 	Target         string
 }
 
-func (a *ImageSearchAction) Execute() {
+func (a *ImageSearchAction) Execute(context *Context) error {
 	log.Printf("Image Search | %s in X1:%d Y1:%d X2:%d Y2:%d", a.Target, a.X1, a.Y1, a.X2, a.Y2)
+	context.Variables["ImageSearchResults"] = []fyne.Position{{X: 100, Y: 100}, {X: 200, Y: 200}} // Example results
+	return nil
+}
 
+func (a *ImageSearchAction) GetType() ActionType {
+	return ImageSearchType
 }
 
 func (a *ImageSearchAction) String() string {
