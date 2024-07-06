@@ -35,16 +35,11 @@ type Context struct {
 }
 
 type ContainerAction struct {
-	Type     ActionType
-	Children []Action
+	Type ActionType
+	Name string
 }
 
 func (a *ContainerAction) Execute(context *Context) error {
-	for _, child := range a.Children {
-		if err := child.Execute(context); err != nil {
-			return err
-		}
-	}
 	return nil
 }
 
@@ -53,7 +48,7 @@ func (a *ContainerAction) GetType() ActionType {
 }
 
 func (a *ContainerAction) String() string {
-	return fmt.Sprintf("Container with %d actions", len(a.Children))
+	return fmt.Sprintf("Container: %s", a.Name)
 }
 
 type LoopAction struct {
@@ -63,19 +58,19 @@ type LoopAction struct {
 }
 
 func (a *LoopAction) Execute(context *Context) error {
-	if a.Condition != nil {
-		for a.Condition(context) {
-			if err := a.ContainerAction.Execute(context); err != nil {
-				return err
-			}
-		}
-	} else {
-		for i := 0; i < a.Iterations; i++ {
-			if err := a.ContainerAction.Execute(context); err != nil {
-				return err
-			}
-		}
-	}
+	// if a.Condition != nil {
+	// 	for a.Condition(context) {
+	// 		if err := a.Execute(context); err != nil {
+	// 			return err
+	// 		}
+	// 	}
+	// } else {
+	// 	for i := 0; i < a.Iterations; i++ {
+	// 		if err := a.Execute(context); err != nil {
+	// 			return err
+	// 		}
+	// 	}
+	// }
 	return nil
 }
 
