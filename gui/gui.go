@@ -4,29 +4,32 @@ import (
 	"Dark-And-Darker/structs"
 	"Dark-And-Darker/utils"
 	"fmt"
+	"image/color"
 	"log"
 	"regexp"
 	"strconv"
 	"strings"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
 
 var (
-	root             *Node //= &Node{Name: "root", UID: "root", Action: &structs.ContainerAction{}, Parent: nil}
+	root             *Node
 	tree             = widget.Tree{}
 	selectedTreeItem string
 	selectedItemsMap = make(map[string]bool)
 )
 
 func LoadMainContent() *fyne.Container {
-	root = newRootNode("1")
+	root = newRootNode("root")
+	log.Println(root)
 	updateTree(&tree, root)
 	newActionNode(root, &structs.MouseMoveAction{X: 100, Y: 100})
-	loop := newActionNode(root, &structs.LoopAction{Iterations: 2}) //TRY newActionNode for this created action node?
+	loop := newActionNode(root, &structs.LoopAction{Iterations: 2})
 	newActionNode(loop, &structs.MouseMoveAction{X: 200, Y: 200})
 	newActionNode(loop, &structs.WaitAction{Time: 200})
 	newActionNode(loop, &structs.MouseMoveAction{X: 300, Y: 300})
@@ -45,13 +48,13 @@ func LoadMainContent() *fyne.Container {
 	content := container.NewGridWithColumns(2,
 		container.NewHSplit(
 			createItemsCheckBoxes(),
-			widget.NewLabel(""),
-			// container.NewVBox(
-			// 	// macroSettingsContainer,
-			// 	// **********************************************************************************************************Wait
-			// 	&widget.Label{Text: "Wait Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
-			// 	createWaitActionSettings(),
-			// 	canvas.NewRectangle(color.Gray{}),
+			container.NewVBox(
+				// 	// macroSettingsContainer,
+				// **********************************************************************************************************Wait
+				&widget.Label{Text: "Wait Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
+				createWaitActionSettings(),
+				canvas.NewRectangle(color.Gray{}),
+				createMoveButtons(root, &tree),
 			// 	// ************************************************************************************************************Move
 			// 	&widget.Label{Text: "Mouse Move Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
 			// 	createMouseMoveSettings(),
@@ -87,7 +90,7 @@ func LoadMainContent() *fyne.Container {
 			// 	&widget.Label{Text: "OCR Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
 			// 	createOCRSettings(),
 			// 	canvas.NewRectangle(color.Gray{}),
-			// ),
+			),
 		),
 		container.NewBorder(
 			// ***********************************************************************************************************************Sequence & Macro Settings
@@ -143,13 +146,12 @@ func executeNode(node *Node, context *structs.Context) error {
 }
 
 func createSequenceSettings() *fyne.Container {
+	//binding.BindString()
 	sequenceName := widget.NewEntry()
 	sequenceLoops := widget.NewSlider(1, 10)
 	addSequenceButton := &widget.Button{
 		Text: utils.GetEmoji("Sequence") + "Add New Sequence",
 		OnTapped: func() {
-			//seq := sequenceName.Text + " x" + strconv.FormatInt(int64(sequenceLoops.Value), 10)
-			//newSequence(root, seq)
 			updateTree(&tree, root)
 		},
 		Icon:       theme.ContentAddIcon(),
