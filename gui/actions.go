@@ -1,45 +1,44 @@
 package gui
 
-// import (
-// 	"Dark-And-Darker/structs"
-// 	"Dark-And-Darker/utils"
-// 	"log"
-// 	"strconv"
+import (
+	"Dark-And-Darker/structs"
+	"Dark-And-Darker/utils"
+	"strconv"
 
-// 	"fyne.io/fyne/v2"
-// 	"fyne.io/fyne/v2/container"
-// 	"fyne.io/fyne/v2/layout"
-// 	"fyne.io/fyne/v2/theme"
-// 	"fyne.io/fyne/v2/widget"
-// )
+	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/layout"
+	"fyne.io/fyne/v2/theme"
+	"fyne.io/fyne/v2/widget"
+)
 
-// // ***************************************************************************************Wait
-// func createWaitActionSettings() *fyne.Container {
-// 	millisecondsWaitEntry := widget.NewEntry()
-// 	addWaitActionButton := &widget.Button{
-// 		Text: utils.GetEmoji("Wait") + "Add Wait",
-// 		OnTapped: func() {
-// 			if selectedTreeItem == "" {
-// 				return
-// 			}
-// 			selectedNode := findNode(&root, selectedTreeItem)
-// 			if selectedNode != nil && selectedNode.Type == SequenceType {
-// 				//wait, _ := strconv.Atoi(millisecondsWaitEntry.Text)
-// 				//newAction(selectedNode, &structs.WaitAction{Time: wait})
-// 				updateTree(&tree, &root)
-// 			}
-// 		},
-// 		IconPlacement: widget.ButtonIconPlacement(widget.ButtonAlignTrailing),
-// 		Icon:          theme.NavigateNextIcon(),
-// 		Importance:    widget.HighImportance,
-// 	}
-// 	return container.NewGridWithColumns(4,
-// 		layout.NewSpacer(),
-// 		widget.NewLabel("Wait in ms"),
-// 		millisecondsWaitEntry,
-// 		addWaitActionButton,
-// 	)
-// }
+// ***************************************************************************************Wait
+func createWaitActionSettings() *fyne.Container {
+	millisecondsWaitEntry := widget.NewEntry()
+	addWaitActionButton := &widget.Button{
+		Text: utils.GetEmoji("Wait") + "Add Wait",
+		OnTapped: func() {
+			if selectedTreeItem == "" {
+				return
+			}
+			selectedNode := findNode(root, selectedTreeItem)
+			if selectedNode != nil {
+				wait, _ := strconv.Atoi(millisecondsWaitEntry.Text)
+				newActionNode(selectedNode, &structs.WaitAction{Time: wait})
+				updateTree(&tree, root)
+			}
+		},
+		IconPlacement: widget.ButtonIconPlacement(widget.ButtonAlignTrailing),
+		Icon:          theme.NavigateNextIcon(),
+		Importance:    widget.HighImportance,
+	}
+	return container.NewGridWithColumns(4,
+		layout.NewSpacer(),
+		widget.NewLabel("Wait in ms"),
+		millisecondsWaitEntry,
+		addWaitActionButton,
+	)
+}
 
 // // ***************************************************************************************Move
 // func createMouseMoveSettings() *fyne.Container {

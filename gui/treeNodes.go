@@ -56,6 +56,7 @@ func (n *Node) renameChildren() {
 		child.UID = fmt.Sprintf("%s.%d", n.UID, i+1)
 		child.renameChildren()
 	}
+	tree.OpenAllBranches()
 }
 
 func newRootNode(name string) *Node {
@@ -80,6 +81,69 @@ func findNode(node *Node, uid string) *Node {
 		}
 	}
 	return nil
+}
+
+func moveNodeUp(root *Node, selectedUID string, tree *widget.Tree) {
+	node := findNode(root, selectedUID)
+	if node == nil || node.Parent == nil {
+		return
+	}
+
+	parent := node.Parent
+	index := -1
+	for i, child := range parent.Children {
+		if child == node {
+			index = i
+			break
+		}
+	}
+
+	if index > 0 {
+		parent.Children[index-1], parent.Children[index] = parent.Children[index], parent.Children[index-1]
+		parent.renameChildren()
+		tree.Select(parent.Children[index-1].UID)
+		updateTree(tree, root)
+	}
+}
+
+func moveNodeDown(root *Node, selectedUID string, tree *widget.Tree) {
+	node := findNode(root, selectedUID)
+	if node == nil || node.Parent == nil {
+		return
+	}
+
+	parent := node.Parent
+	index := -1
+	for i, child := range parent.Children {
+		if child == node {
+			index = i
+			break
+		}
+	}
+
+	if index < len(parent.Children)-1 {
+		parent.Children[index], parent.Children[index+1] = parent.Children[index+1], parent.Children[index]
+		parent.renameChildren()
+		tree.Select(parent.Children[index+1].UID)
+
+		updateTree(tree, root)
+	}
+}
+
+func createMoveButtons(root *Node, tree *widget.Tree) *fyne.Container {
+	moveUpButton := widget.NewButton("Move Up", func() {
+		if selectedTreeItem != "" {
+			moveNodeUp(root, selectedTreeItem, tree)
+		}
+	})
+
+	moveDownButton := widget.NewButton("Move Down", func() {
+		if selectedTreeItem != "" {
+			moveNodeDown(root, selectedTreeItem, tree)
+		}
+	})
+
+	return container.NewHBox(moveUpButton, moveDownButton)
 }
 
 func updateTree(tree *widget.Tree, root *Node) {
@@ -110,7 +174,7 @@ func updateTree(tree *widget.Tree, root *Node) {
 		container := obj.(*fyne.Container)
 		label := container.Objects[0].(*widget.Label)
 		removeButton := container.Objects[2].(*widget.Button)
-		label.SetText(fmt.Sprintf("%s %s", node.UID, node.Action.String()))
+		label.SetText(node.Action.String())
 
 		if node.Parent != nil {
 			removeButton.OnTapped = func() {
