@@ -28,9 +28,21 @@ func newActionNode(parent *Node, action structs.Action) *Node {
 		Parent: parent,
 		Action: action,
 	}
-	//parent.Children = append(parent.Children, node)
 	parent.addChild(node)
 	log.Printf("New action: %s %s", uid, action)
+	return node
+}
+
+func newContainerNode(parent *Node, container structs.Action) *Node {
+	actionNum := len(parent.Children) + 1
+	uid := fmt.Sprintf("%s.%d", parent.UID, actionNum)
+	node := &Node{
+		UID:    uid,
+		Parent: parent,
+		Action: container,
+	}
+	parent.addChild(node)
+	log.Printf("New container: %s %s", uid, container)
 	return node
 }
 
