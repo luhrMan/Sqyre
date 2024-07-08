@@ -24,10 +24,16 @@ func LoadMainContent() *container.Split {
 	updateTree(&tree, root)
 	c1 := newContainerNode(root, 1, "Go to Collector")
 	newActionNode(c1, &structs.MouseMoveAction{X: structs.GetSpot("Merchants Tab").Coordinates.X, Y: structs.GetSpot("Merchants Tab").Coordinates.Y})
+	newActionNode(c1, &structs.WaitAction{Time: 100})
+	newActionNode(c1, &structs.ClickAction{Button: "Left"})
+	newActionNode(c1, &structs.WaitAction{Time: 100})
 	newActionNode(c1, &structs.MouseMoveAction{X: structs.GetSpot("Merchant: Collector").Coordinates.X, Y: structs.GetSpot("Merchant: Collector").Coordinates.Y})
+	newActionNode(c1, &structs.WaitAction{Time: 100})
+	newActionNode(c1, &structs.ClickAction{Button: "Left"})
+	newActionNode(c1, &structs.WaitAction{Time: 100})
 	c2 := newContainerNode(root, 1, "Sell Collectibles")
 	newActionNode(c2, &structs.ImageSearchAction{SearchBox: *structs.GetSearchBox("Whole Screen"), Target: "Healing Potion"})
-	newActionNode(c2, &structs.MouseMoveAction{X: 300, Y: 300})
+	//newActionNode(c2, &structs.MouseMoveAction{X: 300, Y: 300})
 	updateTree(&tree, root)
 
 	content := container.NewHSplit(
@@ -93,15 +99,18 @@ func executeNode(node NodeInterface, context *structs.Context) error {
 	switch n := node.(type) {
 	case *ActionNode:
 		{
-			log.Printf("Executing action: %s", node.(*ActionNode).Action.String())
-			err := node.(*ActionNode).Action.Execute(context)
+			log.Printf("Executing action: %s", n.Action.String())
+			err := n.Action.Execute(context)
 			if err != nil {
-				return fmt.Errorf("error executing action %s: %v", node.(*ActionNode).Action.String(), err)
+				return fmt.Errorf("error executing action %s: %v", n.Action.String(), err)
 			}
 		}
 	case *ContainerNode:
 		{
-			for i := 0; i <= n.Iterations; i++ {
+			log.Printf("Entering container: %s x%d", n.Name, n.Iterations)
+
+			for i := 1; i <= n.Iterations; i++ {
+				log.Printf("container iteration: %d", i)
 				for _, child := range node.(*ContainerNode).Children {
 					err := executeNode(child, context)
 					if err != nil {
@@ -118,7 +127,7 @@ func createContainerSettings() *fyne.Container {
 	containerName := widget.NewEntry()
 	containerLoops := widget.NewSlider(1, 10)
 	addContainerButton := &widget.Button{
-		Text: utils.GetEmoji("Container") + "Add New Container",
+		Text: utils.GetEmoji("Container") + "Add Container",
 		OnTapped: func() {
 			selectedNode := findNode(root, selectedTreeItem)
 			if _, ok := selectedNode.(*ContainerNode); ok {
