@@ -75,9 +75,8 @@ func createMouseMoveSettings() *fyne.Container {
 		Importance:    widget.HighImportance,
 	}
 	return container.NewVBox(
-		spotSelector,
 		container.NewGridWithColumns(4,
-			widget.NewLabel(""),
+			spotSelector,
 			container.NewGridWithColumns(2,
 				container.NewHBox(layout.NewSpacer(), widget.NewLabel("X:")),
 				mouseMoveXEntry,
@@ -126,14 +125,12 @@ func createClickSettings() *fyne.Container {
 
 // ***************************************************************************************Key
 func createKeySettings() *fyne.Container {
-
 	keyUpDownRadioGroup := &widget.RadioGroup{
 		Horizontal: true,
 		Required:   true,
 		Options:    []string{"Up", "Down"},
 		Selected:   "Down",
 	}
-
 	addKeyPressActionButton := &widget.Button{
 		Text: utils.GetEmoji("Key") + "Add Key",
 		OnTapped: func() {
@@ -152,8 +149,8 @@ func createKeySettings() *fyne.Container {
 		Importance:    widget.HighImportance,
 	}
 	return container.NewHBox(
+		widget.NewSelect([]string{"ctrl", "alt", "shift"}, func(s string) {}),
 		layout.NewSpacer(),
-		widget.NewSelect([]string{"ctrl", "alt"}, func(s string) {}),
 		keyUpDownRadioGroup,
 		addKeyPressActionButton,
 	)
@@ -163,8 +160,7 @@ func createKeySettings() *fyne.Container {
 func createSearchAreaSelector() *fyne.Container {
 	searchAreaSelector := &widget.Select{Options: *structs.GetSearchBoxMapKeys(*structs.GetSearchBoxMap())}
 	searchAreaSelector.SetSelected(searchAreaSelector.Options[0])
-
-	return container.NewVBox(searchAreaSelector)
+	return container.NewGridWithColumns(2, searchAreaSelector, layout.NewSpacer())
 }
 
 // ***************************************************************************************Image Search
