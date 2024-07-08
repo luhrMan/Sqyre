@@ -55,41 +55,41 @@ func LoadMainContent() *fyne.Container {
 				createWaitActionSettings(),
 				canvas.NewRectangle(color.Gray{}),
 				createMoveButtons(root, &tree),
-			// 	// ************************************************************************************************************Move
-			// 	&widget.Label{Text: "Mouse Move Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
-			// 	createMouseMoveSettings(),
-			// 	canvas.NewRectangle(color.Gray{}),
-			// 	// ************************************************************************************************************Click
-			// 	&widget.Label{Text: "Click Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
-			// 	createClickSettings(),
-			// 	canvas.NewRectangle(color.Gray{}),
-			// 	// *************************************************************************************************************Key
-			// 	&widget.Label{Text: "Key Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
-			// 	createKeySettings(),
-			// 	container.NewHBox(
-			// 		widget.NewLabel(""),
-			// 		canvas.NewRectangle(color.Gray{}),
-			// 	),
-			// 	container.NewHBox(
-			// 		widget.NewLabel(""),
-			// 		canvas.NewRectangle(color.Gray{}),
-			// 	),
-			// 	container.NewHBox(
-			// 		widget.NewLabel(""),
-			// 		canvas.NewRectangle(color.Gray{}),
-			// 	),
+				// ************************************************************************************************************Move
+				&widget.Label{Text: "Mouse Move Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
+				createMouseMoveSettings(),
+				canvas.NewRectangle(color.Gray{}),
+				// ************************************************************************************************************Click
+				&widget.Label{Text: "Click Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
+				createClickSettings(),
+				canvas.NewRectangle(color.Gray{}),
+				// *************************************************************************************************************Key
+				&widget.Label{Text: "Key Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
+				createKeySettings(),
+				container.NewHBox(
+					widget.NewLabel(""),
+					canvas.NewRectangle(color.Gray{}),
+				),
+				container.NewHBox(
+					widget.NewLabel(""),
+					canvas.NewRectangle(color.Gray{}),
+				),
+				container.NewHBox(
+					widget.NewLabel(""),
+					canvas.NewRectangle(color.Gray{}),
+				),
 
-			// 	// ***************************************************************************************************************Search Settings
-			// 	&widget.Label{Text: "Search Settings", TextStyle: fyne.TextStyle{Bold: true, Monospace: true}, Alignment: fyne.TextAlignCenter},
-			// 	createSearchAreaSelector(),
-			// 	// ******************************************************************************************************************Image Search
-			// 	&widget.Label{Text: "Image Search Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
-			// 	createImageSearchSettings(),
-			// 	canvas.NewRectangle(color.Gray{}),
-			// 	// *******************************************************************************************************************OCR
-			// 	&widget.Label{Text: "OCR Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
-			// 	createOCRSettings(),
-			// 	canvas.NewRectangle(color.Gray{}),
+				// ***************************************************************************************************************Search Settings
+				&widget.Label{Text: "Search Settings", TextStyle: fyne.TextStyle{Bold: true, Monospace: true}, Alignment: fyne.TextAlignCenter},
+				createSearchAreaSelector(),
+				// ******************************************************************************************************************Image Search
+				&widget.Label{Text: "Image Search Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
+				createImageSearchSettings(),
+				canvas.NewRectangle(color.Gray{}),
+				// *******************************************************************************************************************OCR
+				&widget.Label{Text: "OCR Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
+				createOCRSettings(),
+				canvas.NewRectangle(color.Gray{}),
 			),
 		),
 		container.NewBorder(

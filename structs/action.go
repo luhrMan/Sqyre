@@ -20,7 +20,6 @@ const (
 	KeyType
 	ImageSearchType
 	OcrType
-	LoopType
 )
 
 type Action interface {
@@ -31,39 +30,6 @@ type Action interface {
 
 type Context struct {
 	Variables map[string]interface{}
-}
-
-type LoopAction struct {
-	Iterations int
-	Condition  func(*Context) bool
-}
-
-func (a *LoopAction) Execute(context *Context) error {
-	// if a.Condition != nil {
-	// 	for a.Condition(context) {
-	// 		if err := a.Execute(context); err != nil {
-	// 			return err
-	// 		}
-	// 	}
-	// } else {
-	// 	for i := 0; i < a.Iterations; i++ {
-	// 		if err := a.Execute(context); err != nil {
-	// 			return err
-	// 		}
-	// 	}
-	// }
-	return nil
-}
-
-func (a *LoopAction) GetType() ActionType {
-	return LoopType
-}
-
-func (a *LoopAction) String() string {
-	if a.Condition != nil {
-		return "Conditional Loop"
-	}
-	return fmt.Sprintf("Loop %d times", a.Iterations)
 }
 
 //***************************************************************************************Wait
@@ -137,7 +103,7 @@ type KeyAction struct {
 	State string
 }
 
-func (a *KeyAction) Execute(context *Context) {
+func (a *KeyAction) Execute(context *Context) error {
 	log.Printf("Key: %s %s", a.Key, a.State)
 	switch a.State {
 	case "Up":
@@ -145,6 +111,11 @@ func (a *KeyAction) Execute(context *Context) {
 	case "Down":
 		robotgo.KeyDown(a.Key)
 	}
+	return nil
+
+}
+func (a *KeyAction) GetType() ActionType {
+	return KeyType
 }
 
 func (a *KeyAction) String() string {
@@ -202,9 +173,13 @@ type OcrAction struct {
 	Target         string
 }
 
-func (a *OcrAction) Execute() {
+func (a *OcrAction) Execute(context *Context) error {
 	log.Printf("OCR search | %s in X1:%d Y1:%d X2:%d Y2:%d", a.Target, a.X1, a.Y1, a.X2, a.Y2)
+	return nil
+}
 
+func (a *OcrAction) GetType() ActionType {
+	return OcrType
 }
 
 func (a *OcrAction) String() string {
