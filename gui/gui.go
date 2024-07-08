@@ -21,23 +21,13 @@ var (
 
 func LoadMainContent() *container.Split {
 	root = newRootNode()
-	log.Println(root)
 	updateTree(&tree, root)
-	newActionNode(root, &structs.MouseMoveAction{X: 100, Y: 100})
-	loop := newContainerNode(root, 1, "Loop Preset")
-	newActionNode(loop, &structs.MouseMoveAction{X: 200, Y: 200})
-	newActionNode(loop, &structs.WaitAction{Time: 200})
-	newActionNode(loop, &structs.MouseMoveAction{X: 300, Y: 300})
-	nested := newContainerNode(loop, 2, "Loop Preset 2")
-	newActionNode(nested, &structs.MouseMoveAction{X: 400, Y: 400})
-	newActionNode(nested, &structs.WaitAction{Time: 200})
-	newActionNode(nested, &structs.MouseMoveAction{X: 500, Y: 500})
-	newActionNode(nested, &structs.WaitAction{Time: 200})
-	newActionNode(nested, &structs.MouseMoveAction{X: 600, Y: 600})
-	newActionNode(nested, &structs.WaitAction{Time: 200})
-	c := newContainerNode(root, 1, "Container Preset 1")
-	newActionNode(c, &structs.MouseMoveAction{X: 600, Y: 600})
-	newActionNode(c, &structs.WaitAction{Time: 200})
+	c1 := newContainerNode(root, 1, "Go to Collector")
+	newActionNode(c1, &structs.MouseMoveAction{X: structs.GetSpot("Merchants Tab").Coordinates.X, Y: structs.GetSpot("Merchants Tab").Coordinates.Y})
+	newActionNode(c1, &structs.MouseMoveAction{X: structs.GetSpot("Merchant: Collector").Coordinates.X, Y: structs.GetSpot("Merchant: Collector").Coordinates.Y})
+	c2 := newContainerNode(root, 1, "Sell Collectibles")
+	newActionNode(c2, &structs.ImageSearchAction{SearchBox: *structs.GetSearchBox("Whole Screen"), Target: "Healing Potion"})
+	newActionNode(c2, &structs.MouseMoveAction{X: 300, Y: 300})
 	updateTree(&tree, root)
 
 	content := container.NewHSplit(
@@ -46,7 +36,6 @@ func LoadMainContent() *container.Split {
 			container.NewVSplit(
 				container.NewVBox(
 					&widget.Label{Text: "ACITON SETTINGS", TextStyle: fyne.TextStyle{Bold: true, Monospace: true}, Alignment: fyne.TextAlignCenter},
-					// 	// macroSettingsContainer,
 					// **********************************************************************************************************Wait
 					&widget.Label{Text: "Wait Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
 					createWaitActionSettings(),
@@ -80,7 +69,6 @@ func LoadMainContent() *container.Split {
 			),
 		),
 		container.NewBorder(
-			// ***********************************************************************************************************************Sequence & Macro Settings
 			createMacroSettings(),
 			createContainerSettings(),
 			nil,
@@ -180,16 +168,6 @@ func createMacroSettings() *fyne.Container {
 	)
 }
 
-// func getLoops(s string) int { //there is probably a better way to do this. maybe a sequence struct with a loop int, idk
-// 	re := regexp.MustCompile(`x\d+$`)
-// 	match := re.FindString(s)
-// 	if match == "" {
-// 		return 0
-// 	}
-// 	loops, _ := strconv.Atoi(strings.TrimPrefix(match, "x"))
-// 	return loops
-// }
-
 // func ToggleWidgets(c *fyne.Container, b bool) {
 // 	for _, obj := range c.Objects {
 // 		switch obj := obj.(type) {
@@ -203,9 +181,4 @@ func createMacroSettings() *fyne.Container {
 // 			ToggleWidgets(obj, b)
 // 		}
 // 	}
-// }
-
-// func OffsetMove(x int, y int) {
-// 	robotgo.Move(x+1920, y+utils.YOffset)
-// 	robotgo.Sleep(1)
 // }
