@@ -146,9 +146,8 @@ func (a *ImageSearchAction) Execute(context *Context) error {
 		return err
 	}
 	predefinedBitmap := robotgo.ByteToCBitmap(predefinedImage)
-	//defer robotgo.FreeBitmap(predefinedBitmap)
-
-	context.Variables["ImageSearchResults"] = bitmap.FindAll(predefinedBitmap, capture, 0.2) // Example results
+	results := bitmap.FindAll(predefinedBitmap, capture, 0.2)
+	context.Variables["ImageSearchResults"] = results
 	//context.Variables["ImageSearchResults"] = []fyne.Position{{X: 100, Y: 100}, {X: 200, Y: 200}} // Example results
 	return nil
 }
@@ -159,26 +158,6 @@ func (a *ImageSearchAction) GetType() ActionType {
 
 func (a *ImageSearchAction) String() string {
 	return fmt.Sprintf("%s Image Search for %s", utils.GetEmoji("Image Search"), a.Target)
-}
-
-// ImageSearch searchBox[x, y, w, h], imagePath "./images/test.png"
-func ImageSearch(sbc SearchBox, itemName string) []robotgo.Point {
-	ip := "./images/icons/" + itemName + ".png"
-	capture := robotgo.CaptureScreen(sbc.SearchArea.LeftX, sbc.SearchArea.TopY, sbc.SearchArea.RightX, sbc.SearchArea.BottomY)
-	defer robotgo.FreeBitmap(capture)
-	err := robotgo.SaveJpeg(robotgo.ToImage(capture), "./images/wholeScreen.jpeg")
-	if err != nil {
-		return nil
-	}
-
-	predefinedImage, err := robotgo.OpenImg(ip)
-	if err != nil {
-		log.Printf("robotgo.OpenImg failed:%d\n", err)
-		return []robotgo.Point{}
-	}
-	predefinedBitmap := robotgo.ByteToCBitmap(predefinedImage)
-	//defer robotgo.FreeBitmap(predefinedBitmap)
-	return bitmap.FindAll(predefinedBitmap, capture, 0.2)
 }
 
 // ***************************************************************************************OCR
