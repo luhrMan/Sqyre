@@ -168,12 +168,12 @@ func (a *ImageSearchAction) String() string {
 // ***************************************************************************************OCR
 
 type OcrAction struct {
-	X1, Y1, X2, Y2 int
-	Target         string
+	SearchBox SearchBox
+	Target    string
 }
 
 func (a *OcrAction) Execute(context *Context) error {
-	log.Printf("OCR search | %s in X1:%d Y1:%d X2:%d Y2:%d", a.Target, a.X1, a.Y1, a.X2, a.Y2)
+	log.Printf("OCR search | %s in X1:%d Y1:%d X2:%d Y2:%d", a.Target, a.SearchBox.SearchArea.LeftX, a.SearchBox.SearchArea.TopY, a.SearchBox.SearchArea.RightX, a.SearchBox.SearchArea.BottomY)
 	return nil
 }
 
@@ -182,5 +182,5 @@ func (a *OcrAction) GetType() ActionType {
 }
 
 func (a *OcrAction) String() string {
-	return fmt.Sprintf("%s OCR search for %s", utils.GetEmoji("OCR"), a.Target)
+	return fmt.Sprintf("%s OCR search for `%s` in `%s`", utils.GetEmoji("OCR"), a.Target, a.SearchBox.Name)
 }

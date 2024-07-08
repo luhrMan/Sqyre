@@ -7,16 +7,19 @@ import (
 	"log"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
 
 var (
-	root             *ContainerNode
-	tree             = widget.Tree{}
-	selectedTreeItem string
-	selectedItemsMap = make(map[string]bool)
+	root               *ContainerNode
+	tree               = widget.Tree{}
+	selectedTreeItem   string
+	selectedItemsMap   = make(map[string]bool)
+	searchAreaSelector = &widget.Select{Options: *structs.GetSearchBoxMapKeys(*structs.GetSearchBoxMap())}
 )
 
 func LoadMainContent() *container.Split {
@@ -35,13 +38,14 @@ func LoadMainContent() *container.Split {
 	newActionNode(c2, &structs.ImageSearchAction{SearchBox: *structs.GetSearchBox("Whole Screen"), Target: "Healing Potion"})
 	//newActionNode(c2, &structs.MouseMoveAction{X: 300, Y: 300})
 	updateTree(&tree, root)
+	searchAreaSelector.SetSelected(searchAreaSelector.Options[0])
 
 	content := container.NewHSplit(
 		container.NewHSplit(
 			createItemsCheckBoxes(),
 			container.NewVSplit(
 				container.NewVBox(
-					&widget.Label{Text: "ACITON SETTINGS", TextStyle: fyne.TextStyle{Bold: true, Monospace: true}, Alignment: fyne.TextAlignCenter},
+					&canvas.Text{Text: "ACTION SETTINGS", TextSize: 25, Alignment: fyne.TextAlignCenter, TextStyle: fyne.TextStyle{Bold: true, Monospace: true}},
 					// **********************************************************************************************************Wait
 					&widget.Label{Text: "Wait Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
 					createWaitActionSettings(),
@@ -61,8 +65,11 @@ func LoadMainContent() *container.Split {
 				),
 				container.NewVBox(
 					// ***************************************************************************************************************Search Settings
-					&widget.Label{Text: "SEARCH SETTINGS", TextStyle: fyne.TextStyle{Bold: true, Monospace: true}, Alignment: fyne.TextAlignCenter},
-					createSearchAreaSelector(),
+					&canvas.Text{Text: "SEARCH SETTINGS", TextSize: 25, Alignment: fyne.TextAlignCenter, TextStyle: fyne.TextStyle{Bold: true, Monospace: true}},
+					container.NewGridWithColumns(2,
+						searchAreaSelector,
+						layout.NewSpacer(),
+					),
 					// ******************************************************************************************************************Image Search
 					&widget.Label{Text: "Image Search Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
 					createImageSearchSettings(),

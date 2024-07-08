@@ -157,11 +157,6 @@ func createKeySettings() *fyne.Container {
 }
 
 // ***************************************************************************************Search settings
-func createSearchAreaSelector() *fyne.Container {
-	searchAreaSelector := &widget.Select{Options: *structs.GetSearchBoxMapKeys(*structs.GetSearchBoxMap())}
-	searchAreaSelector.SetSelected(searchAreaSelector.Options[0])
-	return container.NewGridWithColumns(2, searchAreaSelector, layout.NewSpacer())
-}
 
 // ***************************************************************************************Image Search
 func createImageSearchSettings() *fyne.Container {
@@ -171,9 +166,9 @@ func createImageSearchSettings() *fyne.Container {
 			selectedNode := findNode(root, selectedTreeItem)
 			if selectedNode != nil {
 				if _, ok := selectedNode.(*ContainerNode); ok {
-					newActionNode(selectedNode.(*ContainerNode), &structs.ImageSearchAction{SearchBox: *structs.GetSearchBox("Whole Screen"), Target: "Healing Potion"})
+					newActionNode(selectedNode.(*ContainerNode), &structs.ImageSearchAction{SearchBox: *structs.GetSearchBox(searchAreaSelector.Selected), Target: "Healing Potion"})
 				} else {
-					newActionNode(selectedNode.GetParent(), &structs.ImageSearchAction{SearchBox: *structs.GetSearchBox("Whole Screen"), Target: "Healing Potion"})
+					newActionNode(selectedNode.GetParent(), &structs.ImageSearchAction{SearchBox: *structs.GetSearchBox(searchAreaSelector.Selected), Target: "Healing Potion"})
 				}
 			}
 			updateTree(&tree, root)
@@ -195,9 +190,9 @@ func createOCRSettings() *fyne.Container {
 			selectedNode := findNode(root, selectedTreeItem)
 			if selectedNode != nil {
 				if _, ok := selectedNode.(*ContainerNode); ok {
-					newActionNode(selectedNode.(*ContainerNode), &structs.OcrAction{})
+					newActionNode(selectedNode.(*ContainerNode), &structs.OcrAction{SearchBox: *structs.GetSearchBox(searchAreaSelector.Selected)})
 				} else {
-					newActionNode(selectedNode.GetParent(), &structs.OcrAction{})
+					newActionNode(selectedNode.GetParent(), &structs.OcrAction{SearchBox: *structs.GetSearchBox(searchAreaSelector.Selected)})
 				}
 			}
 			updateTree(&tree, root)
