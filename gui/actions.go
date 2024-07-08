@@ -19,14 +19,19 @@ func createWaitActionSettings() *fyne.Container {
 	addWaitActionButton := &widget.Button{
 		Text: utils.GetEmoji("Wait") + "Add Wait",
 		OnTapped: func() {
-			if selectedTreeItem == "" {
-				return
-			}
 			selectedNode := findNode(root, selectedTreeItem)
-			if selectedNode != nil && selectedNode.Type == SequenceType {
-				wait, _ := strconv.Atoi(millisecondsWaitEntry.Text)
-				newAction(selectedNode, &structs.WaitAction{Time: wait})
-				updateTree(&tree, root)
+			if _, ok := selectedNode.(*ContainerNode); ok {
+				if selectedNode != nil {
+					wait, _ := strconv.Atoi(millisecondsWaitEntry.Text)
+					newActionNode(selectedNode.(*ContainerNode), &structs.WaitAction{Time: wait})
+					updateTree(&tree, root)
+				}
+			} else {
+				if selectedNode != nil {
+					wait, _ := strconv.Atoi(millisecondsWaitEntry.Text)
+					newActionNode(selectedNode.GetParent(), &structs.WaitAction{Time: wait})
+					updateTree(&tree, root)
+				}
 			}
 		},
 		IconPlacement: widget.ButtonIconPlacement(widget.ButtonAlignTrailing),
@@ -58,15 +63,19 @@ func createMouseMoveSettings() *fyne.Container {
 	addMouseMoveActionButton := &widget.Button{
 		Text: utils.GetEmoji("Move") + "Add Move",
 		OnTapped: func() {
-			if selectedTreeItem == "" {
-				return
-			}
 			selectedNode := findNode(root, selectedTreeItem)
-			if selectedNode != nil && selectedNode.Type == SequenceType {
-				x, _ := strconv.Atoi(mouseMoveXEntry.Text)
-				y, _ := strconv.Atoi(mouseMoveYEntry.Text)
-				newAction(selectedNode, &structs.MouseMoveAction{X: x, Y: y})
-				updateTree(&tree, root)
+			x, _ := strconv.Atoi(mouseMoveXEntry.Text)
+			y, _ := strconv.Atoi(mouseMoveYEntry.Text)
+			if _, ok := selectedNode.(*ContainerNode); ok {
+				if selectedNode != nil {
+					newActionNode(selectedNode.(*ContainerNode), &structs.MouseMoveAction{X: x, Y: y})
+					updateTree(&tree, root)
+				}
+			} else {
+				if selectedNode != nil {
+					newActionNode(selectedNode.GetParent(), &structs.MouseMoveAction{X: x, Y: y})
+					updateTree(&tree, root)
+				}
 			}
 		},
 		IconPlacement: widget.ButtonIconPlacement(widget.ButtonAlignTrailing),
@@ -102,14 +111,17 @@ func createClickSettings() *fyne.Container {
 	addClickActionButton := &widget.Button{
 		Text: utils.GetEmoji("Click") + "Add Click",
 		OnTapped: func() {
-			if selectedTreeItem == "" {
-				return
-			}
 			selectedNode := findNode(root, selectedTreeItem)
-			if selectedNode != nil && selectedNode.Type == SequenceType {
-
-				newAction(selectedNode, &structs.ClickAction{Button: mouseButtonRadioGroup.Selected})
-				updateTree(&tree, root)
+			if _, ok := selectedNode.(*ContainerNode); ok {
+				if selectedNode != nil {
+					newActionNode(selectedNode.(*ContainerNode), &structs.ClickAction{Button: mouseButtonRadioGroup.Selected})
+					updateTree(&tree, root)
+				}
+			} else {
+				if selectedNode != nil {
+					newActionNode(selectedNode.GetParent(), &structs.ClickAction{Button: mouseButtonRadioGroup.Selected})
+					updateTree(&tree, root)
+				}
 			}
 		},
 		IconPlacement: widget.ButtonIconPlacement(widget.ButtonAlignTrailing),
@@ -136,13 +148,17 @@ func createKeySettings() *fyne.Container {
 	addKeyPressActionButton := &widget.Button{
 		Text: utils.GetEmoji("Key") + "Add Key",
 		OnTapped: func() {
-			if selectedTreeItem == "" {
-				return
-			}
 			selectedNode := findNode(root, selectedTreeItem)
-			if selectedNode != nil && selectedNode.Type == SequenceType {
-				newAction(selectedNode, &structs.KeyAction{Key: "Enter", State: keyUpDownRadioGroup.Selected})
-				updateTree(&tree, root)
+			if _, ok := selectedNode.(*ContainerNode); ok {
+				if selectedNode != nil {
+					newActionNode(selectedNode.(*ContainerNode), &structs.KeyAction{Key: "Enter", State: keyUpDownRadioGroup.Selected})
+					updateTree(&tree, root)
+				}
+			} else {
+				if selectedNode != nil {
+					newActionNode(selectedNode.GetParent(), &structs.KeyAction{Key: "Enter", State: keyUpDownRadioGroup.Selected})
+					updateTree(&tree, root)
+				}
 			}
 		},
 		IconPlacement: widget.ButtonIconPlacement(widget.ButtonAlignTrailing),
@@ -170,13 +186,17 @@ func createImageSearchSettings() *fyne.Container {
 	addImageSearchActionButton := &widget.Button{
 		Text: utils.GetEmoji("Image Search") + "Add Image Search",
 		OnTapped: func() {
-			if selectedTreeItem == "" {
-				return
-			}
 			selectedNode := findNode(root, selectedTreeItem)
-			if selectedNode != nil && selectedNode.Type == SequenceType {
-				newAction(selectedNode, &structs.ImageSearchAction{})
-				updateTree(&tree, root)
+			if _, ok := selectedNode.(*ContainerNode); ok {
+				if selectedNode != nil {
+					newActionNode(selectedNode.(*ContainerNode), &structs.ImageSearchAction{})
+					updateTree(&tree, root)
+				}
+			} else {
+				if selectedNode != nil {
+					newActionNode(selectedNode.GetParent(), &structs.ImageSearchAction{})
+					updateTree(&tree, root)
+				}
 			}
 		},
 		IconPlacement: widget.ButtonIconPlacement(widget.ButtonAlignTrailing),
@@ -194,13 +214,17 @@ func createOCRSettings() *fyne.Container {
 	addOCRActionButton := &widget.Button{
 		Text: utils.GetEmoji("OCR") + "Add OCR",
 		OnTapped: func() {
-			if selectedTreeItem == "" {
-				return
-			}
 			selectedNode := findNode(root, selectedTreeItem)
-			if selectedNode != nil && selectedNode.Type == SequenceType {
-				newAction(selectedNode, &structs.OcrAction{})
-				updateTree(&tree, root)
+			if _, ok := selectedNode.(*ContainerNode); ok {
+				if selectedNode != nil {
+					newActionNode(selectedNode.(*ContainerNode), &structs.OcrAction{})
+					updateTree(&tree, root)
+				}
+			} else {
+				if selectedNode != nil {
+					newActionNode(selectedNode.GetParent(), &structs.OcrAction{})
+					updateTree(&tree, root)
+				}
 			}
 		},
 		IconPlacement: widget.ButtonIconPlacement(widget.ButtonAlignTrailing),
