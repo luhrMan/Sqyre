@@ -6,9 +6,6 @@ import (
 	"fmt"
 	"image/color"
 	"log"
-	"regexp"
-	"strconv"
-	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -24,7 +21,7 @@ var (
 	selectedItemsMap = make(map[string]bool)
 )
 
-func LoadMainContent() *fyne.Container {
+func LoadMainContent() *container.Split {
 	root = newRootNode()
 	log.Println(root)
 	updateTree(&tree, root)
@@ -45,16 +42,16 @@ func LoadMainContent() *fyne.Container {
 	newActionNode(c, &structs.WaitAction{Time: 200})
 	updateTree(&tree, root)
 
-	content := container.NewGridWithColumns(2,
+	content := container.NewHSplit(
 		container.NewHSplit(
 			createItemsCheckBoxes(),
 			container.NewVBox(
+				&widget.Label{Text: "ACITON SETTINGS", TextStyle: fyne.TextStyle{Bold: true, Monospace: true}, Alignment: fyne.TextAlignCenter},
 				// 	// macroSettingsContainer,
 				// **********************************************************************************************************Wait
 				&widget.Label{Text: "Wait Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
 				createWaitActionSettings(),
 				canvas.NewRectangle(color.Gray{}),
-				createMoveButtons(root, &tree),
 				// ************************************************************************************************************Move
 				&widget.Label{Text: "Mouse Move Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
 				createMouseMoveSettings(),
@@ -80,7 +77,7 @@ func LoadMainContent() *fyne.Container {
 				),
 
 				// ***************************************************************************************************************Search Settings
-				&widget.Label{Text: "Search Settings", TextStyle: fyne.TextStyle{Bold: true, Monospace: true}, Alignment: fyne.TextAlignCenter},
+				&widget.Label{Text: "SEARCH SETTINGS", TextStyle: fyne.TextStyle{Bold: true, Monospace: true}, Alignment: fyne.TextAlignCenter},
 				createSearchAreaSelector(),
 				// ******************************************************************************************************************Image Search
 				&widget.Label{Text: "Image Search Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
@@ -95,7 +92,7 @@ func LoadMainContent() *fyne.Container {
 		container.NewBorder(
 			// ***********************************************************************************************************************Sequence & Macro Settings
 			createMacroSettings(),
-			createSequenceSettings(),
+			createContainerSettings(),
 			nil,
 			nil,
 			&tree,
@@ -139,30 +136,40 @@ func executeNode(node NodeInterface, context *structs.Context) error {
 	return nil
 }
 
-func createSequenceSettings() *fyne.Container {
-	//binding.BindString()
-	sequenceName := widget.NewEntry()
-	sequenceLoops := widget.NewSlider(1, 10)
-	addSequenceButton := &widget.Button{
-		Text: utils.GetEmoji("Sequence") + "Add New Sequence",
+func createContainerSettings() *fyne.Container {
+	containerName := widget.NewEntry()
+	containerLoops := widget.NewSlider(1, 10)
+	addContainerButton := &widget.Button{
+		Text: utils.GetEmoji("Container") + "Add New Container",
 		OnTapped: func() {
+			selectedNode := findNode(root, selectedTreeItem)
+			if _, ok := selectedNode.(*ContainerNode); ok {
+				if selectedNode != nil {
+					newContainerNode(selectedNode.(*ContainerNode), int(containerLoops.Value), containerName.Text)
+				}
+			} else {
+				if selectedNode != nil {
+					newContainerNode(selectedNode.GetParent(), int(containerLoops.Value), containerName.Text)
+				}
+			}
 			updateTree(&tree, root)
 		},
 		Icon:       theme.ContentAddIcon(),
 		Importance: widget.SuccessImportance,
 	}
 	return container.NewVBox(
-		container.NewGridWithColumns(2,
+		container.NewGridWithColumns(3,
 			container.NewGridWithColumns(2,
 				widget.NewLabel("Name:"),
-				sequenceName,
+				containerName,
 			),
 			container.NewGridWithColumns(2,
 				widget.NewLabel("Loops:"),
-				sequenceLoops,
+				containerLoops,
 			),
+			createMoveButtons(root, &tree),
 		),
-		addSequenceButton,
+		addContainerButton,
 	)
 }
 
@@ -183,15 +190,15 @@ func createMacroSettings() *fyne.Container {
 	)
 }
 
-func getLoops(s string) int { //there is probably a better way to do this. maybe a sequence struct with a loop int, idk
-	re := regexp.MustCompile(`x\d+$`)
-	match := re.FindString(s)
-	if match == "" {
-		return 0
-	}
-	loops, _ := strconv.Atoi(strings.TrimPrefix(match, "x"))
-	return loops
-}
+// func getLoops(s string) int { //there is probably a better way to do this. maybe a sequence struct with a loop int, idk
+// 	re := regexp.MustCompile(`x\d+$`)
+// 	match := re.FindString(s)
+// 	if match == "" {
+// 		return 0
+// 	}
+// 	loops, _ := strconv.Atoi(strings.TrimPrefix(match, "x"))
+// 	return loops
+// }
 
 // func ToggleWidgets(c *fyne.Container, b bool) {
 // 	for _, obj := range c.Objects {

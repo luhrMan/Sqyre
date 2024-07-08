@@ -4,7 +4,7 @@ var Emojis = map[string]string{
 	"Move":         "↔️",
 	"Click":        "🖱️",
 	"Key":          "⌨️",
-	"Sequence":     "🔢",
+	"Container":    "🔁",
 	"Wait":         "⏳",
 	"Image Search": "🔍",
 	"OCR":          "🔬",
