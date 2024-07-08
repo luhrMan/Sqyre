@@ -115,32 +115,26 @@ func executeNode(node NodeInterface, context *structs.Context) error {
 	if node == nil {
 		return nil
 	}
-	log.Printf("Executing action: %s", node.(*ActionNode).Action.String())
-
-	err := node.(*ActionNode).Action.Execute(context)
-	if err != nil {
-		return fmt.Errorf("error executing action %s: %v", node.(*ActionNode).Action.String(), err)
-	}
-
-	var executeChildren = func() error {
-		for _, child := range node.(*ContainerNode).Children {
-			err = executeNode(child, context)
+	switch n := node.(type) {
+	case *ActionNode:
+		{
+			log.Printf("Executing action: %s", node.(*ActionNode).Action.String())
+			err := node.(*ActionNode).Action.Execute(context)
 			if err != nil {
-				return err
+				return fmt.Errorf("error executing action %s: %v", node.(*ActionNode).Action.String(), err)
 			}
 		}
-		return nil
-	}
-
-	switch n := node.(*ActionNode).Action.(type) {
-	case *structs.LoopAction:
+	case *ContainerNode:
 		{
 			for i := 0; i <= n.Iterations; i++ {
-				executeChildren()
+				for _, child := range node.(*ContainerNode).Children {
+					err := executeNode(child, context)
+					if err != nil {
+						return err
+					}
+				}
 			}
 		}
-	default:
-		executeChildren()
 	}
 	return nil
 }
