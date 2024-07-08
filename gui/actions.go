@@ -18,14 +18,19 @@ func createWaitActionSettings() *fyne.Container {
 	addWaitActionButton := &widget.Button{
 		Text: utils.GetEmoji("Wait") + "Add Wait",
 		OnTapped: func() {
-			if selectedTreeItem == "" {
-				return
-			}
 			selectedNode := findNode(root, selectedTreeItem)
-			if selectedNode != nil {
-				wait, _ := strconv.Atoi(millisecondsWaitEntry.Text)
-				newActionNode(selectedNode, &structs.WaitAction{Time: wait})
-				updateTree(&tree, root)
+			if _, ok := selectedNode.(*ContainerNode); ok {
+				if selectedNode != nil {
+					wait, _ := strconv.Atoi(millisecondsWaitEntry.Text)
+					newActionNode(selectedNode.(*ContainerNode), &structs.WaitAction{Time: wait})
+					updateTree(&tree, root)
+				}
+			} else {
+				if selectedNode != nil {
+					wait, _ := strconv.Atoi(millisecondsWaitEntry.Text)
+					newActionNode(selectedNode.GetParent(), &structs.WaitAction{Time: wait})
+					updateTree(&tree, root)
+				}
 			}
 		},
 		IconPlacement: widget.ButtonIconPlacement(widget.ButtonAlignTrailing),
