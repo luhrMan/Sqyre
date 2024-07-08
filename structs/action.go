@@ -21,7 +21,6 @@ const (
 	ImageSearchType
 	OcrType
 	LoopType
-	ContainerType
 )
 
 type Action interface {
@@ -34,25 +33,7 @@ type Context struct {
 	Variables map[string]interface{}
 }
 
-type ContainerAction struct {
-	Type ActionType
-	Name string
-}
-
-func (a *ContainerAction) Execute(context *Context) error {
-	return nil
-}
-
-func (a *ContainerAction) GetType() ActionType {
-	return ContainerType
-}
-
-func (a *ContainerAction) String() string {
-	return fmt.Sprintf("Container: %s", a.Name)
-}
-
 type LoopAction struct {
-	ContainerAction
 	Iterations int
 	Condition  func(*Context) bool
 }

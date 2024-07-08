@@ -18,29 +18,29 @@ import (
 )
 
 var (
-	root             *Node
+	root             *ContainerNode
 	tree             = widget.Tree{}
 	selectedTreeItem string
 	selectedItemsMap = make(map[string]bool)
 )
 
 func LoadMainContent() *fyne.Container {
-	root = newRootNode("root")
+	root = newRootNode()
 	log.Println(root)
 	updateTree(&tree, root)
 	newActionNode(root, &structs.MouseMoveAction{X: 100, Y: 100})
-	loop := newContainerNode(root, &structs.LoopAction{Iterations: 2})
+	loop := newContainerNode(root, 1, "Loop Preset")
 	newActionNode(loop, &structs.MouseMoveAction{X: 200, Y: 200})
 	newActionNode(loop, &structs.WaitAction{Time: 200})
 	newActionNode(loop, &structs.MouseMoveAction{X: 300, Y: 300})
-	nestedLoop := newContainerNode(loop, &structs.LoopAction{Iterations: 3})
-	newActionNode(nestedLoop, &structs.MouseMoveAction{X: 400, Y: 400})
-	newActionNode(nestedLoop, &structs.WaitAction{Time: 200})
-	newActionNode(nestedLoop, &structs.MouseMoveAction{X: 500, Y: 500})
-	newActionNode(nestedLoop, &structs.WaitAction{Time: 200})
-	newActionNode(nestedLoop, &structs.MouseMoveAction{X: 600, Y: 600})
-	newActionNode(nestedLoop, &structs.WaitAction{Time: 200})
-	c := newContainerNode(root, &structs.ContainerAction{})
+	nested := newContainerNode(loop, 2, "Loop Preset 2")
+	newActionNode(nested, &structs.MouseMoveAction{X: 400, Y: 400})
+	newActionNode(nested, &structs.WaitAction{Time: 200})
+	newActionNode(nested, &structs.MouseMoveAction{X: 500, Y: 500})
+	newActionNode(nested, &structs.WaitAction{Time: 200})
+	newActionNode(nested, &structs.MouseMoveAction{X: 600, Y: 600})
+	newActionNode(nested, &structs.WaitAction{Time: 200})
+	c := newContainerNode(root, 1, "Container Preset 1")
 	newActionNode(c, &structs.MouseMoveAction{X: 600, Y: 600})
 	newActionNode(c, &structs.WaitAction{Time: 200})
 	updateTree(&tree, root)
@@ -104,26 +104,26 @@ func LoadMainContent() *fyne.Container {
 	return content
 }
 
-func ExecuteActionTree(root *Node) error {
+func ExecuteActionTree(root *ContainerNode) error {
 	context := &structs.Context{
 		Variables: make(map[string]interface{}),
 	}
 	return executeNode(root, context)
 }
 
-func executeNode(node *Node, context *structs.Context) error {
+func executeNode(node NodeInterface, context *structs.Context) error {
 	if node == nil {
 		return nil
 	}
-	log.Printf("Executing action: %s", node.Action.String())
+	log.Printf("Executing action: %s", node.(*ActionNode).Action.String())
 
-	err := node.Action.Execute(context)
+	err := node.(*ActionNode).Action.Execute(context)
 	if err != nil {
-		return fmt.Errorf("error executing action %s: %v", node.Action.String(), err)
+		return fmt.Errorf("error executing action %s: %v", node.(*ActionNode).Action.String(), err)
 	}
 
 	var executeChildren = func() error {
-		for _, child := range node.Children {
+		for _, child := range node.(*ContainerNode).Children {
 			err = executeNode(child, context)
 			if err != nil {
 				return err
@@ -132,7 +132,7 @@ func executeNode(node *Node, context *structs.Context) error {
 		return nil
 	}
 
-	switch n := node.Action.(type) {
+	switch n := node.(*ActionNode).Action.(type) {
 	case *structs.LoopAction:
 		{
 			for i := 0; i <= n.Iterations; i++ {
