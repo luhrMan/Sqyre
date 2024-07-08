@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 
-	"fyne.io/fyne/v2"
 	"github.com/vcaesar/bitmap"
 
 	"github.com/go-vgo/robotgo"
@@ -60,6 +59,7 @@ type ClickAction struct {
 func (a *ClickAction) Execute(context *Context) error {
 	log.Printf("%s Click", a.Button)
 	robotgo.Click(a.Button)
+	log.Println(context)
 	return nil
 }
 
@@ -125,13 +125,31 @@ func (a *KeyAction) String() string {
 // ***************************************************************************************ImageSearch
 
 type ImageSearchAction struct {
-	X1, Y1, X2, Y2 int
-	Target         string
+	SearchBox SearchBox
+	Target    string
 }
 
 func (a *ImageSearchAction) Execute(context *Context) error {
-	log.Printf("Image Search | %s in X1:%d Y1:%d X2:%d Y2:%d", a.Target, a.X1, a.Y1, a.X2, a.Y2)
-	context.Variables["ImageSearchResults"] = []fyne.Position{{X: 100, Y: 100}, {X: 200, Y: 200}} // Example results
+	log.Printf("Image Search | %s in X1:%d Y1:%d X2:%d Y2:%d", a.Target, a.SearchBox.SearchArea.LeftX, a.SearchBox.SearchArea.TopY, a.SearchBox.SearchArea.RightX, a.SearchBox.SearchArea.BottomY)
+
+	ip := "./images/icons/" + a.Target + ".png"
+	capture := robotgo.CaptureScreen(a.SearchBox.SearchArea.LeftX, a.SearchBox.SearchArea.TopY, a.SearchBox.SearchArea.RightX, a.SearchBox.SearchArea.BottomY)
+	defer robotgo.FreeBitmap(capture)
+	err := robotgo.SaveJpeg(robotgo.ToImage(capture), "./images/wholeScreen.jpeg")
+	if err != nil {
+		return nil
+	}
+
+	predefinedImage, err := robotgo.OpenImg(ip)
+	if err != nil {
+		log.Printf("robotgo.OpenImg failed:%d\n", err)
+		return err
+	}
+	predefinedBitmap := robotgo.ByteToCBitmap(predefinedImage)
+	//defer robotgo.FreeBitmap(predefinedBitmap)
+
+	context.Variables["ImageSearchResults"] = bitmap.FindAll(predefinedBitmap, capture, 0.2) // Example results
+	//context.Variables["ImageSearchResults"] = []fyne.Position{{X: 100, Y: 100}, {X: 200, Y: 200}} // Example results
 	return nil
 }
 
@@ -140,14 +158,11 @@ func (a *ImageSearchAction) GetType() ActionType {
 }
 
 func (a *ImageSearchAction) String() string {
-	return fmt.Sprintf("Image Search for %s", a.Target)
+	return fmt.Sprintf("%s Image Search for %s", utils.GetEmoji("Image Search"), a.Target)
 }
 
 // ImageSearch searchBox[x, y, w, h], imagePath "./images/test.png"
 func ImageSearch(sbc SearchBox, itemName string) []robotgo.Point {
-	//sbc.LeftX += XOffset //might need for linux?
-	//sbc.TopY += YOffset
-
 	ip := "./images/icons/" + itemName + ".png"
 	capture := robotgo.CaptureScreen(sbc.SearchArea.LeftX, sbc.SearchArea.TopY, sbc.SearchArea.RightX, sbc.SearchArea.BottomY)
 	defer robotgo.FreeBitmap(capture)
@@ -183,33 +198,5 @@ func (a *OcrAction) GetType() ActionType {
 }
 
 func (a *OcrAction) String() string {
-	return fmt.Sprintf("OCR search for %s", a.Target)
+	return fmt.Sprintf("%s OCR search for %s", utils.GetEmoji("OCR"), a.Target)
 }
-
-// type Action interface {
-// 	ActionType() string
-// 	PrintParams() string
-// }
-
-// func PerformActions(actions []Action) {
-// 	for _, action := range actions {
-// 		robotgo.Sleep(1)
-// 		switch action := action.(type) {
-// 		case MouseMove:
-// 			//log.Printf("Mouse Move to %s at X: %d, Y: %d", action.Coordinates.SpotName, action.Coordinates.X, action.Coordinates.Y)
-// 			log.Println(action.PrintParams())
-// 			robotgo.Move(action.Coordinates.X, action.Coordinates.Y)
-// 		case Click:
-// 			//log.Printf("Click %d times", action.Amount)
-// 			log.Println(action.PrintParams())
-// 			robotgo.Click()
-// 		case Search:
-// 			// log.Printf("Search %s for %d %s", action.SearchBox.AreaName, action.Amount, action.Item)
-// 			log.Println(action.PrintParams())
-// 			utils.ImageSearch(action.SearchBox, action.Item.Name)
-// 		case OCR:
-// 		default:
-// 			log.Printf("Unsupported action type: %s", action.ActionType())
-// 		}
-// 	}
-// }
