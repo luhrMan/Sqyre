@@ -4,6 +4,7 @@ import (
 	"Dark-And-Darker/structs"
 	"fmt"
 	"log"
+	"strconv"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -57,9 +58,47 @@ type ContainerNode struct {
 	Iterations int
 }
 
+func newContainerNode(parent *ContainerNode, iterations int, name string) *ContainerNode {
+	actionNum := len(parent.Children) + 1
+	uid := fmt.Sprintf("%s.%d", parent.UID, actionNum)
+	node := &ContainerNode{
+		BaseNode: BaseNode{
+			UID:    uid,
+			Parent: parent,
+			Name:   name + " | Loops: " + strconv.FormatInt(int64(iterations), 10),
+		},
+		Iterations: iterations,
+	}
+	parent.addChild(node)
+	log.Printf("New container: %s", uid)
+	return node
+}
+
 func (n *ContainerNode) addChild(child NodeInterface) {
 	n.Children = append(n.Children, child)
 	child.SetParent(n)
+}
+
+func (n *ContainerNode) removeChild(child NodeInterface) {
+	for i, c := range n.Children {
+		if c == child {
+			n.Children = append(n.Children[:i], n.Children[i+1:]...)
+			log.Printf("Removing %s", child.GetUID())
+			child.SetParent(nil)
+			n.renameChildren()
+			return
+		}
+	}
+}
+
+func (n *ContainerNode) renameChildren() {
+	for i, child := range n.Children {
+		child.SetUID(fmt.Sprintf("%s.%d", n.UID, i+1))
+		if c, ok := child.(*ContainerNode); ok {
+			c.renameChildren()
+		}
+	}
+	tree.OpenAllBranches()
 }
 
 type ActionNode struct {
@@ -83,46 +122,6 @@ func newActionNode(parent *ContainerNode, action structs.Action) *ActionNode {
 	parent.addChild(actionNode)
 	log.Printf("New action: %s %s", uid, action)
 	return actionNode
-}
-
-func newContainerNode(parent *ContainerNode, iterations int, name string) *ContainerNode {
-
-	actionNum := len(parent.Children) + 1
-	uid := fmt.Sprintf("%s.%d", parent.UID, actionNum)
-	node := &ContainerNode{
-		BaseNode: BaseNode{
-			UID:    uid,
-			Parent: parent,
-			Name:   name,
-		},
-		Iterations: iterations,
-	}
-	parent.addChild(node)
-	log.Printf("New container: %s", uid)
-	return node
-
-}
-
-func (n *ContainerNode) removeChild(child NodeInterface) {
-	for i, c := range n.Children {
-		if c == child {
-			n.Children = append(n.Children[:i], n.Children[i+1:]...)
-			log.Printf("Removing %s", child.GetUID())
-			child.SetParent(nil)
-			n.renameChildren()
-			return
-		}
-	}
-}
-
-func (n *ContainerNode) renameChildren() {
-	for i, child := range n.Children {
-		child.SetUID(fmt.Sprintf("%s.%d", n.UID, i+1))
-		if c, ok := child.(*ContainerNode); ok {
-			c.renameChildren()
-		}
-	}
-	tree.OpenAllBranches()
 }
 
 func newRootNode() *ContainerNode {
@@ -195,19 +194,19 @@ func moveNodeDown(root *ContainerNode, selectedUID string, tree *widget.Tree) {
 }
 
 func createMoveButtons(root *ContainerNode, tree *widget.Tree) *fyne.Container {
-	moveUpButton := widget.NewButton("Move Up", func() {
+	moveUpButton := widget.NewButtonWithIcon("", theme.MoveUpIcon(), func() {
 		if selectedTreeItem != "" {
 			moveNodeUp(root, selectedTreeItem, tree)
 		}
 	})
 
-	moveDownButton := widget.NewButton("Move Down", func() {
+	moveDownButton := widget.NewButtonWithIcon("", theme.MoveDownIcon(), func() {
 		if selectedTreeItem != "" {
 			moveNodeDown(root, selectedTreeItem, tree)
 		}
 	})
 
-	return container.NewHBox(moveUpButton, moveDownButton)
+	return container.NewHBox(layout.NewSpacer(), moveUpButton, moveDownButton)
 }
 
 func updateTree(tree *widget.Tree, root *ContainerNode) {
