@@ -4,11 +4,9 @@ import (
 	"Dark-And-Darker/structs"
 	"Dark-And-Darker/utils"
 	"fmt"
-	"image/color"
 	"log"
 
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
@@ -45,48 +43,40 @@ func LoadMainContent() *container.Split {
 	content := container.NewHSplit(
 		container.NewHSplit(
 			createItemsCheckBoxes(),
-			container.NewVBox(
-				&widget.Label{Text: "ACITON SETTINGS", TextStyle: fyne.TextStyle{Bold: true, Monospace: true}, Alignment: fyne.TextAlignCenter},
-				// 	// macroSettingsContainer,
-				// **********************************************************************************************************Wait
-				&widget.Label{Text: "Wait Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
-				createWaitActionSettings(),
-				canvas.NewRectangle(color.Gray{}),
-				// ************************************************************************************************************Move
-				&widget.Label{Text: "Mouse Move Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
-				createMouseMoveSettings(),
-				canvas.NewRectangle(color.Gray{}),
-				// ************************************************************************************************************Click
-				&widget.Label{Text: "Click Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
-				createClickSettings(),
-				canvas.NewRectangle(color.Gray{}),
-				// *************************************************************************************************************Key
-				&widget.Label{Text: "Key Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
-				createKeySettings(),
-				container.NewHBox(
-					widget.NewLabel(""),
-					canvas.NewRectangle(color.Gray{}),
+			container.NewVSplit(
+				container.NewVBox(
+					&widget.Label{Text: "ACITON SETTINGS", TextStyle: fyne.TextStyle{Bold: true, Monospace: true}, Alignment: fyne.TextAlignCenter},
+					// 	// macroSettingsContainer,
+					// **********************************************************************************************************Wait
+					&widget.Label{Text: "Wait Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
+					createWaitActionSettings(),
+					widget.NewSeparator(),
+					// ************************************************************************************************************Move
+					&widget.Label{Text: "Mouse Move Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
+					createMouseMoveSettings(),
+					widget.NewSeparator(),
+					// ************************************************************************************************************Click
+					&widget.Label{Text: "Click Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
+					createClickSettings(),
+					widget.NewSeparator(),
+					// *************************************************************************************************************Key
+					&widget.Label{Text: "Key Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
+					createKeySettings(),
+					widget.NewSeparator(),
 				),
-				container.NewHBox(
-					widget.NewLabel(""),
-					canvas.NewRectangle(color.Gray{}),
+				container.NewVBox(
+					// ***************************************************************************************************************Search Settings
+					&widget.Label{Text: "SEARCH SETTINGS", TextStyle: fyne.TextStyle{Bold: true, Monospace: true}, Alignment: fyne.TextAlignCenter},
+					createSearchAreaSelector(),
+					// ******************************************************************************************************************Image Search
+					&widget.Label{Text: "Image Search Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
+					createImageSearchSettings(),
+					widget.NewSeparator(),
+					// *******************************************************************************************************************OCR
+					&widget.Label{Text: "OCR Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
+					createOCRSettings(),
+					widget.NewSeparator(),
 				),
-				container.NewHBox(
-					widget.NewLabel(""),
-					canvas.NewRectangle(color.Gray{}),
-				),
-
-				// ***************************************************************************************************************Search Settings
-				&widget.Label{Text: "SEARCH SETTINGS", TextStyle: fyne.TextStyle{Bold: true, Monospace: true}, Alignment: fyne.TextAlignCenter},
-				createSearchAreaSelector(),
-				// ******************************************************************************************************************Image Search
-				&widget.Label{Text: "Image Search Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
-				createImageSearchSettings(),
-				canvas.NewRectangle(color.Gray{}),
-				// *******************************************************************************************************************OCR
-				&widget.Label{Text: "OCR Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
-				createOCRSettings(),
-				canvas.NewRectangle(color.Gray{}),
 			),
 		),
 		container.NewBorder(
