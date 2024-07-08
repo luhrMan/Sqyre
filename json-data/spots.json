@@ -64,6 +64,13 @@
             }
         },
         {
+            "name": "Merchant: Collector",
+            "coordinates": {
+                "x": 2,
+                "y": 2
+            }
+        },
+        {
             "name": "Change Class",
             "coordinates": {
                 "x": 2480,
