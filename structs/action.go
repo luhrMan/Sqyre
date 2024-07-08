@@ -146,8 +146,13 @@ func (a *ImageSearchAction) Execute(context *Context) error {
 		return err
 	}
 	predefinedBitmap := robotgo.ByteToCBitmap(predefinedImage)
-	results := bitmap.FindAll(predefinedBitmap, capture, 0.2)
+	results := bitmap.FindAll(predefinedBitmap, capture, 0.1)
 	context.Variables["ImageSearchResults"] = results
+	log.Println(results)
+	for _, r := range results {
+		robotgo.Move(r.X+utils.XOffset+5, r.Y+utils.YOffset+5)
+		robotgo.MilliSleep(500)
+	}
 	//context.Variables["ImageSearchResults"] = []fyne.Position{{X: 100, Y: 100}, {X: 200, Y: 200}} // Example results
 	return nil
 }
@@ -157,7 +162,7 @@ func (a *ImageSearchAction) GetType() ActionType {
 }
 
 func (a *ImageSearchAction) String() string {
-	return fmt.Sprintf("%s Image Search for %s", utils.GetEmoji("Image Search"), a.Target)
+	return fmt.Sprintf("%s Image Search for `%s` in `%s`", utils.GetEmoji("Image Search"), a.Target, a.SearchBox.Name)
 }
 
 // ***************************************************************************************OCR
