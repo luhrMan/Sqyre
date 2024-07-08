@@ -2,6 +2,7 @@ package gui
 
 import (
 	"Dark-And-Darker/structs"
+	"Dark-And-Darker/utils"
 	"fmt"
 	"log"
 	"strconv"
@@ -65,7 +66,7 @@ func newContainerNode(parent *ContainerNode, iterations int, name string) *Conta
 		BaseNode: BaseNode{
 			UID:    uid,
 			Parent: parent,
-			Name:   name + " | Loops: " + strconv.FormatInt(int64(iterations), 10),
+			Name:   name + " | " + utils.GetEmoji("Container") + strconv.FormatInt(int64(iterations), 10),
 		},
 		Iterations: iterations,
 	}
@@ -130,6 +131,7 @@ func newRootNode() *ContainerNode {
 			Name: "root",
 			UID:  "",
 		},
+		Iterations: 1,
 	}
 }
 func findNode(node NodeInterface, uid string) NodeInterface {
