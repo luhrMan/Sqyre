@@ -166,9 +166,9 @@ func createImageSearchSettings() *fyne.Container {
 			selectedNode := findNode(root, selectedTreeItem)
 			if selectedNode != nil {
 				if _, ok := selectedNode.(*ContainerNode); ok {
-					newActionNode(selectedNode.(*ContainerNode), &structs.ImageSearchAction{SearchBox: *structs.GetSearchBox(searchAreaSelector.Selected), Target: "Healing Potion"})
+					newActionNode(selectedNode.(*ContainerNode), &structs.ImageSearchAction{SearchBox: *structs.GetSearchBox(searchAreaSelector.Selected), Targets: selectedItems()})
 				} else {
-					newActionNode(selectedNode.GetParent(), &structs.ImageSearchAction{SearchBox: *structs.GetSearchBox(searchAreaSelector.Selected), Target: "Healing Potion"})
+					newActionNode(selectedNode.GetParent(), &structs.ImageSearchAction{SearchBox: *structs.GetSearchBox(searchAreaSelector.Selected), Targets: selectedItems()})
 				}
 			}
 			updateTree(&tree, root)

@@ -45,3 +45,11 @@ func createItemsCheckBoxes() *widget.Accordion {
 	accordionItems.MultiOpen = true
 	return accordionItems
 }
+
+func selectedItems() []string {
+	var items []string
+	for s := range selectedItemsMap {
+		items = append(items, s)
+	}
+	return items
+}
