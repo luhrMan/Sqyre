@@ -35,7 +35,7 @@ func LoadMainContent() *container.Split {
 	newActionNode(c1, &structs.ClickAction{Button: "Left"})
 	newActionNode(c1, &structs.WaitAction{Time: 100})
 	c2 := newContainerNode(root, 1, "Sell Collectibles")
-	newActionNode(c2, &structs.ImageSearchAction{SearchBox: *structs.GetSearchBox("Whole Screen"), Target: "Healing Potion"})
+	newActionNode(c2, &structs.ImageSearchAction{SearchBox: *structs.GetSearchBox("Whole Screen"), Targets: []string{"Healing Potion", "Protection Potion", "Bandage"}})
 	//newActionNode(c2, &structs.MouseMoveAction{X: 300, Y: 300})
 	updateTree(&tree, root)
 	searchAreaSelector.SetSelected(searchAreaSelector.Options[0])
@@ -115,7 +115,6 @@ func executeNode(node NodeInterface, context *structs.Context) error {
 	case *ContainerNode:
 		{
 			log.Printf("Entering container: %s x%d", n.Name, n.Iterations)
-
 			for i := 1; i <= n.Iterations; i++ {
 				log.Printf("container iteration: %d", i)
 				for _, child := range node.(*ContainerNode).Children {

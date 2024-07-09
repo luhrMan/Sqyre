@@ -4,6 +4,7 @@ import (
 	"Dark-And-Darker/utils"
 	"fmt"
 	"log"
+	"sync"
 
 	"github.com/vcaesar/bitmap"
 
@@ -126,34 +127,58 @@ func (a *KeyAction) String() string {
 
 type ImageSearchAction struct {
 	SearchBox SearchBox
-	Target    string
+	Targets   []string
 }
 
 func (a *ImageSearchAction) Execute(context *Context) error {
-	log.Printf("Image Search | %s in X1:%d Y1:%d X2:%d Y2:%d", a.Target, a.SearchBox.SearchArea.LeftX, a.SearchBox.SearchArea.TopY, a.SearchBox.SearchArea.RightX, a.SearchBox.SearchArea.BottomY)
+	log.Printf("Image Search | %v in X1:%d Y1:%d X2:%d Y2:%d", a.Targets, a.SearchBox.SearchArea.LeftX, a.SearchBox.SearchArea.TopY, a.SearchBox.SearchArea.RightX, a.SearchBox.SearchArea.BottomY)
 
-	ip := "./images/icons/" + a.Target + ".png"
+	// Capture the screen once before processing targets
 	capture := robotgo.CaptureScreen(a.SearchBox.SearchArea.LeftX, a.SearchBox.SearchArea.TopY, a.SearchBox.SearchArea.RightX, a.SearchBox.SearchArea.BottomY)
 	defer robotgo.FreeBitmap(capture)
+
 	err := robotgo.SaveJpeg(robotgo.ToImage(capture), "./images/wholeScreen.jpeg")
 	if err != nil {
-		return nil
-	}
-
-	predefinedImage, err := robotgo.OpenImg(ip)
-	if err != nil {
-		log.Printf("robotgo.OpenImg failed:%d\n", err)
 		return err
 	}
-	predefinedBitmap := robotgo.ByteToCBitmap(predefinedImage)
-	results := bitmap.FindAll(predefinedBitmap, capture, 0.1)
-	context.Variables["ImageSearchResults"] = results
-	log.Println(results)
-	for _, r := range results {
-		robotgo.Move(r.X+utils.XOffset+5, r.Y+utils.YOffset+5)
-		robotgo.MilliSleep(500)
+
+	var wg sync.WaitGroup
+	results := make(map[string][]robotgo.Point)
+	resultsMutex := &sync.Mutex{}
+
+	for _, target := range a.Targets {
+		wg.Add(1)
+		go func(target string) {
+			defer wg.Done()
+
+			ip := "./images/icons/" + target + ".png"
+			predefinedImage, err := robotgo.OpenImg(ip)
+			if err != nil {
+				log.Printf("robotgo.OpenImg failed for %s: %v\n", target, err)
+				return
+			}
+			predefinedBitmap := robotgo.ByteToCBitmap(predefinedImage)
+			targetResults := bitmap.FindAll(predefinedBitmap, capture, 0.1)
+
+			resultsMutex.Lock()
+			results[target] = targetResults
+			resultsMutex.Unlock()
+
+			log.Printf("Results for %s: %v\n", target, targetResults)
+
+		}(target)
 	}
-	//context.Variables["ImageSearchResults"] = []fyne.Position{{X: 100, Y: 100}, {X: 200, Y: 200}} // Example results
+
+	wg.Wait()
+
+	context.Variables["ImageSearchResults"] = results
+
+	// for _, r := range results {
+	// 	for _, i := range r {
+	// 		robotgo.Move(i.X+utils.XOffset+5, i.Y+utils.YOffset+5)
+	// 		robotgo.MilliSleep(500)
+	// 	}
+	// }
 	return nil
 }
 
@@ -162,7 +187,7 @@ func (a *ImageSearchAction) GetType() ActionType {
 }
 
 func (a *ImageSearchAction) String() string {
-	return fmt.Sprintf("%s Image Search for `%s` in `%s`", utils.GetEmoji("Image Search"), a.Target, a.SearchBox.Name)
+	return fmt.Sprintf("%s Image Search for `%s` in `%s`", utils.GetEmoji("Image Search"), a.Targets, a.SearchBox.Name)
 }
 
 // ***************************************************************************************OCR
