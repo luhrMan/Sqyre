@@ -57,6 +57,7 @@ type ContainerNode struct {
 	BaseNode
 	Children   []NodeInterface
 	Iterations int
+	Context    map[string]interface{}
 }
 
 func newContainerNode(parent *ContainerNode, iterations int, name string) *ContainerNode {
@@ -94,12 +95,15 @@ func (n *ContainerNode) removeChild(child NodeInterface) {
 
 func (n *ContainerNode) renameChildren() {
 	for i, child := range n.Children {
+		open := tree.IsBranchOpen(child.GetUID())
 		child.SetUID(fmt.Sprintf("%s.%d", n.UID, i+1))
+		if open {
+			tree.OpenBranch(child.GetUID())
+		}
 		if c, ok := child.(*ContainerNode); ok {
 			c.renameChildren()
 		}
 	}
-	tree.OpenAllBranches()
 }
 
 type ActionNode struct {
