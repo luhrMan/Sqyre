@@ -110,8 +110,14 @@ func (a *BaseAction) String() string                                 { return "T
 func (a *BaseAction) GetBaseAction() *BaseAction                     { return a }
 func (a *BaseAction) SetBaseAction(b *BaseAction)                    { a = b }
 
-func (a *ActionWithSubActions) Execute(context interface{}) error { return nil }
-func (a *ActionWithSubActions) String() string                    { return "This is a Action with SubActions" }
+func (a *ActionWithSubActions) Execute(context interface{}) error {
+	log.Printf("Executing %s", a.Name)
+	for _, c := range a.SubActions {
+		c.Execute(context)
+	}
+	return nil
+}
+func (a *ActionWithSubActions) String() string { return "This is a Action with SubActions" }
 
 //***************************************************************************************Wait
 
@@ -159,6 +165,7 @@ type MouseMoveAction struct {
 }
 
 func (a *MouseMoveAction) Execute(context interface{}) error {
+	log.Println(context)
 	if c, ok := context.(robotgo.Point); ok {
 		log.Printf("Moving mouse to (%d, %d)", c.X, c.Y)
 		robotgo.Move(c.X+40+utils.XOffset, c.Y+40+utils.YOffset)
