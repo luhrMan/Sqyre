@@ -39,64 +39,25 @@ func LoadMainContent() *container.Split {
 	// 	},
 	// 	Count: 1,
 	// }
-	root.AddSubAction(&structs.MouseMoveAction{
-		X: structs.GetSpot("Merchants Tab").Coordinates.X,
-		Y: structs.GetSpot("Merchants Tab").Coordinates.Y,
-		BaseAction: structs.BaseAction{
-			UID: "1.1",
-		},
-	}, "Go to Merchants Tab")
-	root.AddSubAction(&structs.ClickAction{
-		Button: "left",
-		BaseAction: structs.BaseAction{
-			UID: "1.2",
-		},
-	}, "Click")
-	root.AddSubAction(&structs.WaitAction{
-		Time: 500,
-		BaseAction: structs.BaseAction{
-			UID: "1.3",
-		},
-	}, "Click")
-	root.AddSubAction(&structs.MouseMoveAction{
-		X: structs.GetSpot("Merchants: Collector").Coordinates.X,
-		Y: structs.GetSpot("Merchants: Collector").Coordinates.Y,
-		BaseAction: structs.BaseAction{
-			UID: "1.4",
-		},
-	}, "Go to Collector")
-	root.AddSubAction(&structs.ClickAction{
-		Button: "left",
-		BaseAction: structs.BaseAction{
-			UID: "1.5",
-		},
-	}, "Click")
-	root.AddSubAction(&structs.ImageSearchAction{
+
+	root.AddSubAction(&structs.MouseMoveAction{BaseAction: structs.NewBaseAction(), X: structs.GetSpot("Merchants Tab").Coordinates.X, Y: structs.GetSpot("Merchants Tab").Coordinates.Y}, "")
+	root.AddSubAction(&structs.ClickAction{BaseAction: structs.NewBaseAction(), Button: "left"}, "")
+	root.AddSubAction(&structs.WaitAction{BaseAction: structs.NewBaseAction(), Time: 500}, "")
+	root.AddSubAction(&structs.MouseMoveAction{BaseAction: structs.NewBaseAction(), X: structs.GetSpot("Merchant: Collector").Coordinates.X, Y: structs.GetSpot("Merchant: Collector").Coordinates.Y}, "")
+	root.AddSubAction(&structs.ClickAction{BaseAction: structs.NewBaseAction(), Button: "left"}, "")
+
+	imageSearch := &structs.ImageSearchAction{
 		ActionWithSubActions: structs.ActionWithSubActions{
-			BaseAction: structs.BaseAction{
-				UID: "1.6",
-			},
-			SubActions: []structs.ActionInterface{
-				&structs.MouseMoveAction{
-					BaseAction: structs.BaseAction{
-						UID: "1.6.1",
-					},
-				},
-			},
+			BaseAction: structs.NewBaseAction(),
+			SubActions: []structs.ActionInterface{},
 		},
 		SearchBox: *structs.GetSearchBox("Whole Screen"),
 		Targets:   *structs.GetItemsMapCategory("treasures"),
-	}, "Search for collectibles")
-
-	// c1 := newAction(root, &structs.LoopAction{}, "Go to Collector")
-	// newAction(c1, &structs.WaitAction{Time: 100}, "name")
-	// newAction(c1, &structs.ClickAction{Button: "Left"}, "name")
-	// newAction(c1, &structs.WaitAction{Time: 100}, "name")
-	// newAction(c1, &structs.MouseMoveAction{X: structs.GetSpot("Merchant: Collector").Coordinates.X, Y: structs.GetSpot("Merchant: Collector").Coordinates.Y})
-	// newAction(c1, &structs.WaitAction{Time: 100})
-	// newAction(c1, &structs.ClickAction{Button: "Left"})
-	// newAction(c1, &structs.WaitAction{Time: 100})
-	// c2 := newContainerNode(root, 1, "Sell Collectibles")
+	}
+	root.AddSubAction(imageSearch, "Search for treasures")
+	imageSearch.AddSubAction(&structs.MouseMoveAction{BaseAction: structs.NewBaseAction(), X: -1, Y: -1}, "")
+	imageSearch.AddSubAction(&structs.ClickAction{BaseAction: structs.NewBaseAction(), Button: "left"}, "")
+	root.AddSubAction(&structs.MouseMoveAction{BaseAction: structs.NewBaseAction(), X: structs.GetSpot("Make Deal").Coordinates.X, Y: structs.GetSpot("Make Deal").Coordinates.Y}, "")
 
 	// newActionNode(c2, &structs.KeyAction{Key: "shift", State: "Down"})
 	// newActionNode(c2, &structs.ImageSearchAction{
