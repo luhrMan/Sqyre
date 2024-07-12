@@ -1,12 +1,14 @@
 {
-    "spots": [
+    "Context": [
         {
             "name": "context",
             "coordinates": {
                 "x": -1,
                 "y": -1
             }
-        },
+        }
+    ],
+    "Top Menu Tabs": [
         {
             "name": "Play Tab",
             "coordinates": {
@@ -69,14 +71,102 @@
                 "x": 2130,
                 "y": 60
             }
-        },
+        }
+    ],
+    "Merchants" :[
         {
-            "name": "Merchant: Collector",
+            "name": "Collector",
             "coordinates": {
                 "x": 950,
                 "y": 920
             }
         },
+        {
+            "name": "Alchemist",
+            "coordinates": {
+                "x": 300,
+                "y": 420
+            }
+        },
+        {
+            "name": "Armourer",
+            "coordinates": {
+                "x": 620,
+                "y": 420
+            }
+        },
+        {
+            "name": "Fortune Teller",
+            "coordinates": {
+                "x": 950,
+                "y": 420
+            }
+        },
+        {
+            "name": "Goblin Merchant",
+            "coordinates": {
+                "x": 1270,
+                "y": 420
+            }
+        },
+        {
+            "name": "Leathersmith",
+            "coordinates": {
+                "x": 1600,
+                "y": 420
+            }
+        },
+        {
+            "name": "Squire",
+            "coordinates": {
+                "x": 1920,
+                "y": 420
+            }
+        },
+        {
+            "name": "Surgeon",
+            "coordinates": {
+                "x": 2240,
+                "y": 420
+            }
+        },
+        {
+            "name": "Tailor",
+            "coordinates": {
+                "x": 300,
+                "y": 920
+            }
+        },
+        {
+            "name": "Tavern Master",
+            "coordinates": {
+                "x": 625,
+                "y": 920
+            }
+        },
+        {
+            "name": "Treasurer",
+            "coordinates": {
+                "x": 1270,
+                "y": 920
+            }
+        },
+        {
+            "name": "Weaponsmith",
+            "coordinates": {
+                "x": 1600,
+                "y": 920
+            }
+        },
+        {
+            "name": "Woodsman",
+            "coordinates": {
+                "x": 1920,
+                "y": 920
+            }
+        }
+    ],
+    "Miscellaneous": [
         {
             "name": "Change Class",
             "coordinates": {

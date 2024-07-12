@@ -7,7 +7,6 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"github.com/go-vgo/robotgo"
@@ -41,25 +40,26 @@ func LoadMainContent() *container.Split {
 	// }
 
 	//click merchants tab, click merchant
-	root.AddSubAction(&structs.MouseMoveAction{BaseAction: structs.NewBaseAction(), X: structs.GetSpot("Merchants Tab").Coordinates.X, Y: structs.GetSpot("Merchants Tab").Coordinates.Y}, "")
-	root.AddSubAction(&structs.ClickAction{BaseAction: structs.NewBaseAction(), Button: "left"}, "")
-	root.AddSubAction(&structs.WaitAction{BaseAction: structs.NewBaseAction(), Time: 500}, "")
-	root.AddSubAction(&structs.MouseMoveAction{BaseAction: structs.NewBaseAction(), X: structs.GetSpot("Merchant: Collector").Coordinates.X, Y: structs.GetSpot("Merchant: Collector").Coordinates.Y}, "")
-	root.AddSubAction(&structs.ClickAction{BaseAction: structs.NewBaseAction(), Button: "left"}, "")
+	root.AddSubAction(&structs.MouseMoveAction{BaseAction: structs.NewBaseAction(), X: structs.GetSpot("Merchants Tab").Coordinates.X, Y: structs.GetSpot("Merchants Tab").Coordinates.Y})
+	root.AddSubAction(&structs.ClickAction{BaseAction: structs.NewBaseAction(), Button: "left"})
+	root.AddSubAction(&structs.WaitAction{BaseAction: structs.NewBaseAction(), Time: 500})
+	root.AddSubAction(&structs.MouseMoveAction{BaseAction: structs.NewBaseAction(), X: structs.GetSpot("Collector").Coordinates.X, Y: structs.GetSpot("Collector").Coordinates.Y})
+	root.AddSubAction(&structs.ClickAction{BaseAction: structs.NewBaseAction(), Button: "left"})
 
 	//image search for treasures
 	imageSearch := &structs.ImageSearchAction{
-		ActionWithSubActions: structs.ActionWithSubActions{
+		AdvancedAction: structs.AdvancedAction{
 			BaseAction: structs.NewBaseAction(),
+			Name:       "Search for treasures",
 			SubActions: []structs.ActionInterface{},
 		},
 		SearchBox: *structs.GetSearchBox("Whole Screen"),
 		Targets:   *structs.GetItemsMapCategory("treasures"),
 	}
-	root.AddSubAction(imageSearch, "Search for treasures")
-	imageSearch.AddSubAction(&structs.MouseMoveAction{BaseAction: structs.NewBaseAction(), X: -1, Y: -1}, "")
-	imageSearch.AddSubAction(&structs.ClickAction{BaseAction: structs.NewBaseAction(), Button: "left"}, "")
-	root.AddSubAction(&structs.MouseMoveAction{BaseAction: structs.NewBaseAction(), X: structs.GetSpot("Make Deal").Coordinates.X, Y: structs.GetSpot("Make Deal").Coordinates.Y}, "")
+	root.AddSubAction(imageSearch)
+	imageSearch.AddSubAction(&structs.MouseMoveAction{BaseAction: structs.NewBaseAction(), X: -1, Y: -1})
+	imageSearch.AddSubAction(&structs.ClickAction{BaseAction: structs.NewBaseAction(), Button: "left"})
+	root.AddSubAction(&structs.MouseMoveAction{BaseAction: structs.NewBaseAction(), X: structs.GetSpot("Make Deal").Coordinates.X, Y: structs.GetSpot("Make Deal").Coordinates.Y})
 
 	updateTree(&tree, root)
 	searchAreaSelector.SetSelected(searchAreaSelector.Options[0])
@@ -86,18 +86,19 @@ func LoadMainContent() *container.Split {
 					&widget.Label{Text: "Key Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
 					createKeySettings(),
 					widget.NewSeparator(),
+				),
+				container.NewVBox(
+					// ***************************************************************************************************************Search Settings
+					&canvas.Text{Text: "ADVANCED ACTION SETTINGS", TextSize: 25, Alignment: fyne.TextAlignCenter, TextStyle: fyne.TextStyle{Bold: true, Monospace: true}},
+					createAdvancedActionSettings(),
 					// *************************************************************************************************************Loop
 					&widget.Label{Text: "Loop", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
 					createLoopActionSettings(),
 					widget.NewSeparator(),
-				),
-				container.NewVBox(
-					// ***************************************************************************************************************Search Settings
-					&canvas.Text{Text: "SEARCH SETTINGS", TextSize: 25, Alignment: fyne.TextAlignCenter, TextStyle: fyne.TextStyle{Bold: true, Monospace: true}},
-					container.NewGridWithColumns(2,
-						searchAreaSelector,
-						layout.NewSpacer(),
-					),
+					// container.NewGridWithColumns(2,
+					// 	searchAreaSelector,
+					// 	layout.NewSpacer(),
+					// ),
 					// ******************************************************************************************************************Image Search
 					&widget.Label{Text: "Image Search Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
 					createImageSearchSettings(),
@@ -123,7 +124,6 @@ func LoadMainContent() *container.Split {
 func ExecuteActionTree(root *structs.LoopAction) { //error
 	var context interface{}
 	root.Execute(context)
-	//return executeNode(root, context)
 }
 
 // ***************************************************************************************Start Macro
