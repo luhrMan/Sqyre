@@ -164,9 +164,10 @@ type MouseMoveAction struct {
 }
 
 func (a *MouseMoveAction) Execute(context interface{}) error {
-	if (a.X == -1) && (a.Y == -1) {
-		log.Printf("Moving mouse to (%d, %d)", a.X, a.Y)
-		robotgo.Move(a.X+40+utils.XOffset, a.Y+40+utils.YOffset)
+	//if (a.X == -1) && (a.Y == -1) {
+	if c, ok := context.(robotgo.Point); ok {
+		log.Printf("Moving mouse to context (%d, %d)", c.X, c.Y)
+		robotgo.Move(c.X+40+utils.XOffset, c.Y+40+utils.YOffset)
 	} else {
 		log.Printf("Moving mouse to (%d, %d)", a.X, a.Y)
 		robotgo.Move(a.X+utils.XOffset, a.Y+utils.YOffset)

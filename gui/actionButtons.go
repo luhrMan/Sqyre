@@ -101,8 +101,8 @@ func createClickSettings() *fyne.Container {
 	mouseButtonRadioGroup := &widget.RadioGroup{
 		Horizontal: true,
 		Required:   false,
-		Options:    []string{"Left", "Right"},
-		Selected:   "Left",
+		Options:    []string{"left", "right"},
+		Selected:   "left",
 	}
 	addClickActionButton := &widget.Button{
 		Text: utils.GetEmoji("Click") + "Add Click",

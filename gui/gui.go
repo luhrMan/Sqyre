@@ -40,12 +40,14 @@ func LoadMainContent() *container.Split {
 	// 	Count: 1,
 	// }
 
+	//click merchants tab, click merchant
 	root.AddSubAction(&structs.MouseMoveAction{BaseAction: structs.NewBaseAction(), X: structs.GetSpot("Merchants Tab").Coordinates.X, Y: structs.GetSpot("Merchants Tab").Coordinates.Y}, "")
 	root.AddSubAction(&structs.ClickAction{BaseAction: structs.NewBaseAction(), Button: "left"}, "")
 	root.AddSubAction(&structs.WaitAction{BaseAction: structs.NewBaseAction(), Time: 500}, "")
 	root.AddSubAction(&structs.MouseMoveAction{BaseAction: structs.NewBaseAction(), X: structs.GetSpot("Merchant: Collector").Coordinates.X, Y: structs.GetSpot("Merchant: Collector").Coordinates.Y}, "")
 	root.AddSubAction(&structs.ClickAction{BaseAction: structs.NewBaseAction(), Button: "left"}, "")
 
+	//image search for treasures
 	imageSearch := &structs.ImageSearchAction{
 		ActionWithSubActions: structs.ActionWithSubActions{
 			BaseAction: structs.NewBaseAction(),
@@ -59,16 +61,6 @@ func LoadMainContent() *container.Split {
 	imageSearch.AddSubAction(&structs.ClickAction{BaseAction: structs.NewBaseAction(), Button: "left"}, "")
 	root.AddSubAction(&structs.MouseMoveAction{BaseAction: structs.NewBaseAction(), X: structs.GetSpot("Make Deal").Coordinates.X, Y: structs.GetSpot("Make Deal").Coordinates.Y}, "")
 
-	// newActionNode(c2, &structs.KeyAction{Key: "shift", State: "Down"})
-	// newActionNode(c2, &structs.ImageSearchAction{
-	// 	SearchBox: *structs.GetSearchBox("Whole Screen"),
-	// 	Targets:   []string{"Healing Potion", "Protection Potion", "Bandage"},
-	// 	SubActions: []structs.Action{
-	// 		&structs.MouseMoveAction{},
-	// 		&structs.WaitAction{Time: 500},
-	// 		&structs.ClickAction{Button: "right"}}})
-	// //newActionNode(c2, &structs.MouseMoveAction{X: 300, Y: 300})
-	// newActionNode(c2, &structs.KeyAction{Key: "shift", State: "Up"})
 	updateTree(&tree, root)
 	searchAreaSelector.SetSelected(searchAreaSelector.Options[0])
 
