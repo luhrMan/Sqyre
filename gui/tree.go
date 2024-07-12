@@ -95,7 +95,7 @@ func findNode(node structs.ActionInterface, uid string) structs.ActionInterface 
 	if node.GetUID() == uid {
 		return node
 	}
-	if parent, ok := node.(structs.ActionWithSubActionsInterface); ok {
+	if parent, ok := node.(structs.AdvancedActionInterface); ok {
 		for _, child := range parent.GetSubActions() {
 			if found := findNode(child, uid); found != nil {
 				return found
@@ -118,7 +118,7 @@ func updateTree(tree *widget.Tree, root *structs.LoopAction) {
 			return []string{}
 		}
 
-		if awsa, ok := node.(structs.ActionWithSubActionsInterface); ok {
+		if awsa, ok := node.(structs.AdvancedActionInterface); ok {
 			sa := awsa.GetSubActions()
 			childIDs := make([]string, len(sa))
 			for i, child := range sa {
@@ -133,7 +133,7 @@ func updateTree(tree *widget.Tree, root *structs.LoopAction) {
 
 	tree.IsBranch = func(uid string) bool {
 		node := findNode(root, uid)
-		_, ok := node.(structs.ActionWithSubActionsInterface)
+		_, ok := node.(structs.AdvancedActionInterface)
 		return node != nil && ok
 	}
 

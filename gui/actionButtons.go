@@ -13,6 +13,8 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
+var advancedActionNameEntry = widget.NewEntry()
+
 // ***************************************************************************************Wait
 func createWaitActionSettings() *fyne.Container {
 	millisecondsWaitEntry := widget.NewEntry()
@@ -26,10 +28,10 @@ func createWaitActionSettings() *fyne.Container {
 			wait, _ := strconv.Atoi(millisecondsWaitEntry.Text)
 			wa := &structs.WaitAction{Time: wait, BaseAction: structs.NewBaseAction()}
 
-			if s, ok := selectedNode.(structs.ActionWithSubActionsInterface); ok {
-				s.AddSubAction(wa, wa.String())
+			if s, ok := selectedNode.(structs.AdvancedActionInterface); ok {
+				s.AddSubAction(wa)
 			} else {
-				selectedNode.GetParent().AddSubAction(wa, wa.String())
+				selectedNode.GetParent().AddSubAction(wa)
 			}
 			updateTree(&tree, root)
 		},
@@ -68,10 +70,10 @@ func createMouseMoveSettings() *fyne.Container {
 				selectedNode = root
 			}
 			mma := &structs.MouseMoveAction{X: x, Y: y, BaseAction: structs.NewBaseAction()}
-			if s, ok := selectedNode.(structs.ActionWithSubActionsInterface); ok {
-				s.AddSubAction(mma, mma.String())
+			if s, ok := selectedNode.(structs.AdvancedActionInterface); ok {
+				s.AddSubAction(mma)
 			} else {
-				selectedNode.GetParent().AddSubAction(mma, mma.String())
+				selectedNode.GetParent().AddSubAction(mma)
 			}
 			updateTree(&tree, root)
 		},
@@ -112,10 +114,10 @@ func createClickSettings() *fyne.Container {
 				selectedNode = root
 			}
 			ca := &structs.ClickAction{Button: mouseButtonRadioGroup.Selected, BaseAction: structs.NewBaseAction()}
-			if s, ok := selectedNode.(structs.ActionWithSubActionsInterface); ok {
-				s.AddSubAction(ca, ca.String())
+			if s, ok := selectedNode.(structs.AdvancedActionInterface); ok {
+				s.AddSubAction(ca)
 			} else {
-				selectedNode.GetParent().AddSubAction(ca, ca.String())
+				selectedNode.GetParent().AddSubAction(ca)
 			}
 			updateTree(&tree, root)
 		},
@@ -147,10 +149,10 @@ func createKeySettings() *fyne.Container {
 				selectedNode = root
 			}
 			ka := &structs.KeyAction{Key: keySelector.Selected, State: keyUpDownRadioGroup.Selected, BaseAction: structs.NewBaseAction()}
-			if s, ok := selectedNode.(structs.ActionWithSubActionsInterface); ok {
-				s.AddSubAction(ka, ka.String())
+			if s, ok := selectedNode.(structs.AdvancedActionInterface); ok {
+				s.AddSubAction(ka)
 			} else {
-				selectedNode.GetParent().AddSubAction(ka, ka.String())
+				selectedNode.GetParent().AddSubAction(ka)
 			}
 			updateTree(&tree, root)
 		},
@@ -166,9 +168,25 @@ func createKeySettings() *fyne.Container {
 	)
 }
 
+// ***************************************************************************************Advanced Actions
+
+func createAdvancedActionSettings() *fyne.Container {
+	return container.NewVBox(
+		//container.NewGridWithColumns(2,
+		container.NewGridWithColumns(2,
+			widget.NewLabel("Search Area:"),
+			searchAreaSelector,
+		),
+		container.NewGridWithColumns(2,
+			widget.NewLabel("Name:"),
+			advancedActionNameEntry,
+		),
+		//),
+	)
+}
+
 // ***************************************************************************************Loop
 func createLoopActionSettings() *fyne.Container {
-	loopName := widget.NewEntry()
 	loops := widget.NewSlider(1, 10)
 
 	addLoopActionButton := &widget.Button{
@@ -180,14 +198,15 @@ func createLoopActionSettings() *fyne.Container {
 			}
 			la := &structs.LoopAction{
 				Count: int(loops.Value),
-				ActionWithSubActions: structs.ActionWithSubActions{
+				AdvancedAction: structs.AdvancedAction{
 					BaseAction: structs.NewBaseAction(),
+					Name:       advancedActionNameEntry.Text,
 				},
 			}
-			if s, ok := selectedNode.(structs.ActionWithSubActionsInterface); ok {
-				s.AddSubAction(la, loopName.Text)
+			if s, ok := selectedNode.(structs.AdvancedActionInterface); ok {
+				s.AddSubAction(la)
 			} else {
-				selectedNode.GetParent().AddSubAction(la, loopName.Text)
+				selectedNode.GetParent().AddSubAction(la)
 			}
 			updateTree(&tree, root)
 		},
@@ -197,16 +216,15 @@ func createLoopActionSettings() *fyne.Container {
 	}
 
 	return container.NewVBox(
-		container.NewGridWithColumns(3,
-			container.NewGridWithColumns(2,
-				widget.NewLabel("Name:"),
-				loopName,
-			),
+		container.NewGridWithColumns(2,
 			container.NewGridWithColumns(2,
 				widget.NewLabel("Loops:"),
 				loops,
 			),
-			addLoopActionButton,
+			container.NewGridWithColumns(2,
+				layout.NewSpacer(),
+				addLoopActionButton,
+			),
 		),
 	)
 }
@@ -223,14 +241,15 @@ func createImageSearchSettings() *fyne.Container {
 			isa := &structs.ImageSearchAction{
 				SearchBox: *structs.GetSearchBox(searchAreaSelector.Selected),
 				Targets:   selectedItems(),
-				ActionWithSubActions: structs.ActionWithSubActions{
+				AdvancedAction: structs.AdvancedAction{
 					BaseAction: structs.NewBaseAction(),
+					Name:       advancedActionNameEntry.Text,
 				},
 			}
-			if s, ok := selectedNode.(structs.ActionWithSubActionsInterface); ok {
-				s.AddSubAction(isa, isa.String())
+			if s, ok := selectedNode.(structs.AdvancedActionInterface); ok {
+				s.AddSubAction(isa)
 			} else {
-				selectedNode.GetParent().AddSubAction(isa, isa.String())
+				selectedNode.GetParent().AddSubAction(isa)
 			}
 
 			updateTree(&tree, root)
@@ -240,6 +259,7 @@ func createImageSearchSettings() *fyne.Container {
 		Importance:    widget.HighImportance,
 	}
 	return container.NewHBox(
+		layout.NewSpacer(),
 		addImageSearchActionButton,
 	)
 }
