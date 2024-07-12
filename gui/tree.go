@@ -66,17 +66,27 @@ func moveNodeDown(root *structs.LoopAction, selectedUID string, tree *widget.Tre
 }
 
 func createMoveButtons(root *structs.LoopAction, tree *widget.Tree) *fyne.Container {
-	moveUpButton := widget.NewButtonWithIcon("", theme.MoveUpIcon(), func() {
-		if selectedTreeItem != "" {
-			moveNodeUp(root, selectedTreeItem, tree)
-		}
-	})
+	moveUpButton := &widget.Button{
+		Text: "",
+		OnTapped: func() {
+			if selectedTreeItem != "" {
+				moveNodeUp(root, selectedTreeItem, tree)
+			}
+		},
+		Icon:       theme.MoveUpIcon(),
+		Importance: widget.HighImportance,
+	}
 
-	moveDownButton := widget.NewButtonWithIcon("", theme.MoveDownIcon(), func() {
-		if selectedTreeItem != "" {
-			moveNodeDown(root, selectedTreeItem, tree)
-		}
-	})
+	moveDownButton := &widget.Button{
+		Text: "",
+		OnTapped: func() {
+			if selectedTreeItem != "" {
+				moveNodeDown(root, selectedTreeItem, tree)
+			}
+		},
+		Icon:       theme.MoveDownIcon(),
+		Importance: widget.HighImportance,
+	}
 
 	return container.NewHBox(layout.NewSpacer(), moveUpButton, moveDownButton)
 }

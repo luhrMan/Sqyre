@@ -30,27 +30,63 @@ func LoadMainContent() *container.Split {
 	log.Println(robotgo.GetDisplayBounds(1))
 	root = newRootNode()
 	updateTree(&tree, root)
-	loopAction := &structs.LoopAction{
+	// loopAction := &structs.LoopAction{
+	// 	ActionWithSubActions: structs.ActionWithSubActions{
+	// 		BaseAction: structs.BaseAction{
+	// 			UID: "1",
+	// 			//Name: "first action",
+	// 		},
+	// 	},
+	// 	Count: 1,
+	// }
+	root.AddSubAction(&structs.MouseMoveAction{
+		X: structs.GetSpot("Merchants Tab").Coordinates.X,
+		Y: structs.GetSpot("Merchants Tab").Coordinates.Y,
+		BaseAction: structs.BaseAction{
+			UID: "1.1",
+		},
+	}, "Go to Merchants Tab")
+	root.AddSubAction(&structs.ClickAction{
+		Button: "left",
+		BaseAction: structs.BaseAction{
+			UID: "1.2",
+		},
+	}, "Click")
+	root.AddSubAction(&structs.WaitAction{
+		Time: 500,
+		BaseAction: structs.BaseAction{
+			UID: "1.3",
+		},
+	}, "Click")
+	root.AddSubAction(&structs.MouseMoveAction{
+		X: structs.GetSpot("Merchants: Collector").Coordinates.X,
+		Y: structs.GetSpot("Merchants: Collector").Coordinates.Y,
+		BaseAction: structs.BaseAction{
+			UID: "1.4",
+		},
+	}, "Go to Collector")
+	root.AddSubAction(&structs.ClickAction{
+		Button: "left",
+		BaseAction: structs.BaseAction{
+			UID: "1.5",
+		},
+	}, "Click")
+	root.AddSubAction(&structs.ImageSearchAction{
 		ActionWithSubActions: structs.ActionWithSubActions{
 			BaseAction: structs.BaseAction{
-				UID:  "1",
-				Name: "first action",
+				UID: "1.6",
+			},
+			SubActions: []structs.ActionInterface{
+				&structs.MouseMoveAction{
+					BaseAction: structs.BaseAction{
+						UID: "1.6.1",
+					},
+				},
 			},
 		},
-		Count: 5,
-	}
-	root.AddSubAction(loopAction, "loop 1")
-	loopAction.AddSubAction(
-		&structs.MouseMoveAction{
-			X: structs.GetSpot("Merchants Tab").Coordinates.X,
-			Y: structs.GetSpot("Merchants Tab").Coordinates.Y,
-			BaseAction: structs.BaseAction{
-				UID:  "1.1",
-				Name: "second action, nested in first action",
-			},
-		},
-		"second action",
-	)
+		SearchBox: *structs.GetSearchBox("Whole Screen"),
+		Targets:   *structs.GetItemsMapCategory("treasures"),
+	}, "Search for collectibles")
 
 	// c1 := newAction(root, &structs.LoopAction{}, "Go to Collector")
 	// newAction(c1, &structs.WaitAction{Time: 100}, "name")
@@ -146,7 +182,7 @@ func createMacroSettings() *fyne.Container {
 			ExecuteActionTree(root)
 		},
 		Icon:       theme.MediaPlayIcon(),
-		Importance: widget.WarningImportance,
+		Importance: widget.SuccessImportance,
 	}
 	return container.NewVBox(
 		macroSelector,
