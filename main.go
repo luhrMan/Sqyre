@@ -25,19 +25,6 @@
 // 	gui.Load()
 // }
 
-// func gosseractOCR(sb [4]int) {
-// 	client := gosseract.NewClient()
-// 	defer client.Close()
-// 	//img := robotgo.ToByteImg(robotgo.CaptureImg(sb[0], sb[1], sb[2], sb[3]))
-// 	//capture := robotgo.CaptureImg(sb[0], sb[1], sb[2], sb[3])
-// 	capture := robotgo.CaptureImg([]int{sb[0], sb[1], sb[2], sb[3]}...)
-// 	robotgo.SaveJpeg(capture, "./images/test1.jpeg")
-// 	client.SetImage("./images/test1.jpeg")
-// 	text, _ := client.Text()
-// 	log.Println(text)
-// 	return
-// }
-
 package main
 
 import (
