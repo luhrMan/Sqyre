@@ -60,7 +60,18 @@ func LoadMainContent() *container.Split {
 	imageSearch.AddSubAction(&structs.MouseMoveAction{BaseAction: structs.NewBaseAction(), X: -1, Y: -1})
 	imageSearch.AddSubAction(&structs.ClickAction{BaseAction: structs.NewBaseAction(), Button: "left"})
 	root.AddSubAction(&structs.MouseMoveAction{BaseAction: structs.NewBaseAction(), X: structs.GetSpot("Make Deal").Coordinates.X, Y: structs.GetSpot("Make Deal").Coordinates.Y})
+	data := map[string][]structs.Spot{
+		"Beaches": {
+			{Name: "Sunny Beach"},
+			{Name: "Rocky Cove"},
+		},
+		"Mountains": {
+			{Name: "Everest Base Camp"},
+			{Name: "Whistler Peak"},
+		},
+	}
 
+	customSelect := NewCustomSelect(data)
 	updateTree(&tree, root)
 	searchAreaSelector.SetSelected(searchAreaSelector.Options[0])
 
@@ -69,6 +80,8 @@ func LoadMainContent() *container.Split {
 			createItemsCheckBoxes(),
 			container.NewVSplit(
 				container.NewVBox(
+					widget.NewLabel("Choose a location:"),
+					customSelect,
 					&canvas.Text{Text: "ACTION SETTINGS", TextSize: 25, Alignment: fyne.TextAlignCenter, TextStyle: fyne.TextStyle{Bold: true, Monospace: true}},
 					// **********************************************************************************************************Wait
 					&widget.Label{Text: "Wait Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
