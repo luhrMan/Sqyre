@@ -46,6 +46,15 @@ func GetItemsMap() *map[string][]Item {
 	return itemsMap
 }
 
+func GetItemsMapCategory(category string) *[]string {
+	m := *GetItemsMap()
+	keys := make([]string, 0, len(m[category]))
+	for _, k := range m[category] {
+		keys = append(keys, k.Name)
+	}
+	return &keys
+}
+
 func GetItem(key string) (*Item, error) {
 	for _, items := range *GetItemsMap() {
 		for _, item := range items {
