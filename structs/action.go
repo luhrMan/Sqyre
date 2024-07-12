@@ -16,50 +16,49 @@ import (
 type ActionInterface interface {
 	Execute(context interface{}) error
 
-	GetName() string
-	SetName(string)
-
 	GetUID() string
 	SetUID(string)
 
-	GetParent() ActionWithSubActionsInterface
-	SetParent(ActionWithSubActionsInterface)
+	GetParent() AdvancedActionInterface
+	SetParent(AdvancedActionInterface)
 
 	String() string
 
-	updateBaseAction(uid string, name string, parent ActionWithSubActionsInterface)
+	updateBaseAction(uid string, parent AdvancedActionInterface)
 }
 
-type ActionWithSubActionsInterface interface {
+type AdvancedActionInterface interface {
 	ActionInterface
 
+	GetName() string
+	SetName(string)
+
 	GetSubActions() []ActionInterface
-
-	AddSubAction(ActionInterface, string)
+	AddSubAction(ActionInterface)
 	RemoveSubAction(ActionInterface, *widget.Tree)
-
 	RenameActions(*widget.Tree)
 }
 
-type ActionWithSubActions struct {
+type AdvancedAction struct {
 	BaseAction
+	Name       string
 	SubActions []ActionInterface
 }
 
-func (a *ActionWithSubActions) GetSubActions() []ActionInterface {
+func (a *AdvancedAction) GetSubActions() []ActionInterface {
 	return a.SubActions
 }
 
-func (a *ActionWithSubActions) AddSubAction(action ActionInterface, name string) {
+func (a *AdvancedAction) AddSubAction(action ActionInterface) {
 	actionNum := len(a.GetSubActions()) + 1
 	uid := fmt.Sprintf("%s.%d", a.GetUID(), actionNum)
-	action.updateBaseAction(uid, name, a)
+	action.updateBaseAction(uid, a)
 
 	a.SubActions = append(a.SubActions, action)
-	log.Printf("Added new action: %s", name)
+	log.Printf("Added new action: %s", action.String())
 }
 
-func (a *ActionWithSubActions) RemoveSubAction(action ActionInterface, tree *widget.Tree) {
+func (a *AdvancedAction) RemoveSubAction(action ActionInterface, tree *widget.Tree) {
 	for i, c := range a.SubActions {
 		if c == action {
 			a.SubActions = append(a.SubActions[:i], a.SubActions[i+1:]...)
@@ -71,56 +70,53 @@ func (a *ActionWithSubActions) RemoveSubAction(action ActionInterface, tree *wid
 	}
 }
 
-func (a *ActionWithSubActions) RenameActions(tree *widget.Tree) {
+func (a *AdvancedAction) RenameActions(tree *widget.Tree) {
 	for i, child := range a.SubActions {
 		open := tree.IsBranchOpen(child.GetUID())
 		child.SetUID(fmt.Sprintf("%s.%d", a.UID, i+1))
 		if open {
 			tree.OpenBranch(child.GetUID())
 		}
-		if n, ok := child.(ActionWithSubActionsInterface); ok {
+		if n, ok := child.(AdvancedActionInterface); ok {
 			n.RenameActions(tree)
 		}
 	}
 }
 
 type BaseAction struct {
-	Name          string
 	UID           string
-	Parent        ActionWithSubActionsInterface
+	Parent        AdvancedActionInterface
 	NewBaseAction func()
 }
 
 func NewBaseAction() BaseAction {
 	return BaseAction{
-		UID:  "temp uid",
-		Name: "",
+		UID: "temp uid",
 	}
 }
 
-func (a *BaseAction) updateBaseAction(uid string, name string, parent ActionWithSubActionsInterface) {
+func (a *BaseAction) updateBaseAction(uid string, parent AdvancedActionInterface) {
 	a.SetUID(uid)
 	a.SetParent(parent)
-	a.SetName(name)
 }
 
-func (a *BaseAction) GetName() string                                { return a.Name }
-func (a *BaseAction) SetName(name string)                            { a.Name = name }
-func (a *BaseAction) GetUID() string                                 { return a.UID }
-func (a *BaseAction) SetUID(uid string)                              { a.UID = uid }
-func (a *BaseAction) GetParent() ActionWithSubActionsInterface       { return a.Parent }
-func (a *BaseAction) SetParent(action ActionWithSubActionsInterface) { a.Parent = action }
-func (a *BaseAction) Execute(context interface{}) error              { return nil }
-func (a *BaseAction) String() string                                 { return "This is a BaseAction" }
+func (a *AdvancedAction) GetName() string                      { return a.Name }
+func (a *AdvancedAction) SetName(name string)                  { a.Name = name }
+func (a *BaseAction) GetUID() string                           { return a.UID }
+func (a *BaseAction) SetUID(uid string)                        { a.UID = uid }
+func (a *BaseAction) GetParent() AdvancedActionInterface       { return a.Parent }
+func (a *BaseAction) SetParent(action AdvancedActionInterface) { a.Parent = action }
+func (a *BaseAction) Execute(context interface{}) error        { return nil }
+func (a *BaseAction) String() string                           { return "This is a BaseAction" }
 
-func (a *ActionWithSubActions) Execute(context interface{}) error {
+func (a *AdvancedAction) Execute(context interface{}) error {
 	log.Printf("Executing %s", a.Name)
 	for _, c := range a.SubActions {
 		c.Execute(context)
 	}
 	return nil
 }
-func (a *ActionWithSubActions) String() string { return "This is a Action with SubActions" }
+func (a *AdvancedAction) String() string { return "This is a Action with SubActions" }
 
 //***************************************************************************************Wait
 
@@ -210,7 +206,7 @@ func (a *KeyAction) String() string {
 // ***************************************************************************************ImageSearch
 
 type ImageSearchAction struct {
-	ActionWithSubActions
+	AdvancedAction
 	SearchBox SearchBox
 	Targets   []string
 }
@@ -272,7 +268,7 @@ func (a *ImageSearchAction) String() string {
 // ***************************************************************************************OCR
 
 type OcrAction struct {
-	ActionWithSubActions
+	AdvancedAction
 	SearchBox SearchBox
 	Target    string
 }
@@ -298,7 +294,7 @@ func (a *OcrAction) String() string {
 //******************************************************************************************Loop
 
 type LoopAction struct {
-	ActionWithSubActions
+	AdvancedAction
 	Count int
 }
 

@@ -7,9 +7,9 @@ import (
 	"sync"
 )
 
-type SearchBoxes struct {
-	Boxes []SearchBox `json:"searchBoxes"`
-}
+// type SearchBoxes struct {
+// 	Boxes []SearchBox `json:"searchBoxes"`
+// }
 
 type SearchBox struct {
 	Name       string `json:"name"`
@@ -21,9 +21,9 @@ type SearchBox struct {
 	} `json:"searchArea"`
 }
 
-type Spots struct {
-	Spots []Spot `json:"spots"`
-}
+// type Spots struct {
+// 	Spots []Spot `json:"spots"`
+// }
 
 type Spot struct {
 	Name        string `json:"name"`
@@ -102,6 +102,7 @@ func GetSpotMap() *map[string]Spot {
 	spotMapOnce.Do(func() {
 		tempArrMap := make(map[string][]Spot)
 		tempMap := make(map[string]Spot)
+
 		file, err := os.Open("./json-data/spots.json")
 		if err != nil {
 			log.Println("Error opening file:", err)
@@ -115,7 +116,6 @@ func GetSpotMap() *map[string]Spot {
 			panic(err)
 		}
 
-		log.Println("Search Coordinates:")
 		for _, sArr := range tempArrMap {
 			for _, s := range sArr {
 				log.Printf("Spot: %s, X: %d Y: %d\n", s.Name, s.Coordinates.X, s.Coordinates.Y)
