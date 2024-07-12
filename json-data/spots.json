@@ -1,6 +1,13 @@
 {
     "spots": [
         {
+            "name": "context",
+            "coordinates": {
+                "x": -1,
+                "y": -1
+            }
+        },
+        {
             "name": "Play Tab",
             "coordinates": {
                 "x": 430,

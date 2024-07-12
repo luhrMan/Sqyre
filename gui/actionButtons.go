@@ -24,7 +24,7 @@ func createWaitActionSettings() *fyne.Container {
 				selectedNode = root
 			}
 			wait, _ := strconv.Atoi(millisecondsWaitEntry.Text)
-			wa := &structs.WaitAction{Time: wait, BaseAction: structs.BaseAction{UID: "ZZZ"}}
+			wa := &structs.WaitAction{Time: wait, BaseAction: structs.NewBaseAction()}
 
 			if s, ok := selectedNode.(structs.ActionWithSubActionsInterface); ok {
 				s.AddSubAction(wa, wa.String())
@@ -51,7 +51,7 @@ func createMouseMoveSettings() *fyne.Container {
 	mouseMoveYEntry := widget.NewEntry()
 	spotSelector := &widget.Select{Options: *structs.GetSpotMapKeys(*structs.GetSpotMap())}
 	spotSelector.OnChanged = func(s string) {
-		structs.GetSpot("Search Area Selector Info:")
+		//structs.GetSpot(spotSelector.Selected)
 		log.Println(*structs.GetSpot(s))
 		mouseMoveXEntry.SetText(strconv.FormatInt(int64(structs.GetSpot(s).Coordinates.X), 10))
 		mouseMoveYEntry.SetText(strconv.FormatInt(int64(structs.GetSpot(s).Coordinates.Y), 10))
@@ -67,7 +67,7 @@ func createMouseMoveSettings() *fyne.Container {
 			if selectedNode == nil {
 				selectedNode = root
 			}
-			mma := &structs.MouseMoveAction{X: x, Y: y, BaseAction: structs.BaseAction{UID: "ZZZ"}}
+			mma := &structs.MouseMoveAction{X: x, Y: y, BaseAction: structs.NewBaseAction()}
 			if s, ok := selectedNode.(structs.ActionWithSubActionsInterface); ok {
 				s.AddSubAction(mma, mma.String())
 			} else {
@@ -111,7 +111,7 @@ func createClickSettings() *fyne.Container {
 			if selectedNode == nil {
 				selectedNode = root
 			}
-			ca := &structs.ClickAction{Button: mouseButtonRadioGroup.Selected, BaseAction: structs.BaseAction{UID: "ZZZ"}}
+			ca := &structs.ClickAction{Button: mouseButtonRadioGroup.Selected, BaseAction: structs.NewBaseAction()}
 			if s, ok := selectedNode.(structs.ActionWithSubActionsInterface); ok {
 				s.AddSubAction(ca, ca.String())
 			} else {
@@ -146,7 +146,7 @@ func createKeySettings() *fyne.Container {
 			if selectedNode == nil {
 				selectedNode = root
 			}
-			ka := &structs.KeyAction{Key: keySelector.Selected, State: keyUpDownRadioGroup.Selected, BaseAction: structs.BaseAction{UID: "ZZZ"}}
+			ka := &structs.KeyAction{Key: keySelector.Selected, State: keyUpDownRadioGroup.Selected, BaseAction: structs.NewBaseAction()}
 			if s, ok := selectedNode.(structs.ActionWithSubActionsInterface); ok {
 				s.AddSubAction(ka, ka.String())
 			} else {
@@ -181,7 +181,7 @@ func createLoopActionSettings() *fyne.Container {
 			la := &structs.LoopAction{
 				Count: int(loops.Value),
 				ActionWithSubActions: structs.ActionWithSubActions{
-					BaseAction: structs.BaseAction{UID: "ZZZ", Name: loopName.Text},
+					BaseAction: structs.NewBaseAction(),
 				},
 			}
 			if s, ok := selectedNode.(structs.ActionWithSubActionsInterface); ok {
@@ -224,7 +224,7 @@ func createImageSearchSettings() *fyne.Container {
 				SearchBox: *structs.GetSearchBox(searchAreaSelector.Selected),
 				Targets:   selectedItems(),
 				ActionWithSubActions: structs.ActionWithSubActions{
-					BaseAction: structs.BaseAction{UID: "ZZZ"},
+					BaseAction: structs.NewBaseAction(),
 				},
 			}
 			if s, ok := selectedNode.(structs.ActionWithSubActionsInterface); ok {

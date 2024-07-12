@@ -85,9 +85,17 @@ func (a *ActionWithSubActions) RenameActions(tree *widget.Tree) {
 }
 
 type BaseAction struct {
-	Name   string
-	UID    string
-	Parent ActionWithSubActionsInterface
+	Name          string
+	UID           string
+	Parent        ActionWithSubActionsInterface
+	NewBaseAction func()
+}
+
+func NewBaseAction() BaseAction {
+	return BaseAction{
+		UID:  "temp uid",
+		Name: "",
+	}
 }
 
 func (a *BaseAction) updateBaseAction(uid string, name string, parent ActionWithSubActionsInterface) {
@@ -127,10 +135,6 @@ func (a *WaitAction) Execute(context interface{}) error {
 	return nil
 }
 
-func (a *WaitAction) GetName() string {
-	return a.Name
-}
-
 func (a *WaitAction) String() string {
 	return fmt.Sprintf("%s Wait for %d ms", utils.GetEmoji("Wait"), a.Time)
 }
@@ -149,7 +153,7 @@ func (a *ClickAction) Execute(context interface{}) error {
 }
 
 func (a *ClickAction) String() string {
-	return fmt.Sprintf("%s %s Click", utils.GetEmoji("Click"), a.Button)
+	return fmt.Sprintf("%s %s click", utils.GetEmoji("Click"), a.Button)
 }
 
 // ***************************************************************************************Move
@@ -160,10 +164,9 @@ type MouseMoveAction struct {
 }
 
 func (a *MouseMoveAction) Execute(context interface{}) error {
-	log.Println(context)
-	if c, ok := context.(robotgo.Point); ok {
-		log.Printf("Moving mouse to (%d, %d)", c.X, c.Y)
-		robotgo.Move(c.X+40+utils.XOffset, c.Y+40+utils.YOffset)
+	if (a.X == -1) && (a.Y == -1) {
+		log.Printf("Moving mouse to (%d, %d)", a.X, a.Y)
+		robotgo.Move(a.X+40+utils.XOffset, a.Y+40+utils.YOffset)
 	} else {
 		log.Printf("Moving mouse to (%d, %d)", a.X, a.Y)
 		robotgo.Move(a.X+utils.XOffset, a.Y+utils.YOffset)
@@ -262,7 +265,7 @@ func (a *ImageSearchAction) Execute(context interface{}) error {
 	return nil
 }
 func (a *ImageSearchAction) String() string {
-	return fmt.Sprintf("%s Image Search for `%s` in `%s`", utils.GetEmoji("Image Search"), a.Targets, a.SearchBox.Name)
+	return fmt.Sprintf("%s Image Search for %d items in `%s` | %s", utils.GetEmoji("Image Search"), len(a.Targets), a.SearchBox.Name, a.Name)
 }
 
 // ***************************************************************************************OCR
