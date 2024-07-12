@@ -97,6 +97,10 @@ func LoadMainContent() *container.Split {
 					&widget.Label{Text: "Key Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
 					createKeySettings(),
 					widget.NewSeparator(),
+					// *************************************************************************************************************Loop
+					&widget.Label{Text: "Loop", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
+					createLoopActionSettings(),
+					widget.NewSeparator(),
 				),
 				container.NewVBox(
 					// ***************************************************************************************************************Search Settings
@@ -117,7 +121,7 @@ func LoadMainContent() *container.Split {
 			),
 		),
 		container.NewBorder(
-			createContainerSettings(),
+			createMoveButtons(root, &tree),
 			createMacroSettings(),
 			nil,
 			nil,
@@ -131,43 +135,6 @@ func ExecuteActionTree(root *structs.LoopAction) { //error
 	var context interface{}
 	root.Execute(context)
 	//return executeNode(root, context)
-}
-
-func createContainerSettings() *fyne.Container {
-	containerName := widget.NewEntry()
-	containerLoops := widget.NewSlider(1, 10)
-	addContainerButton := &widget.Button{
-		// 		Text: utils.GetEmoji("Container") + "Add Container",
-		// 		OnTapped: func() {
-		// 			selectedNode := findNode(root, selectedTreeItem)
-		// 			if _, ok := selectedNode.(*ContainerNode); ok {
-		// 				if selectedNode != nil {
-		// 					newAction(selectedNode.(*ContainerNode), int(containerLoops.Value), containerName.Text)
-		// 				}
-		// 			} else {
-		// 				if selectedNode != nil {
-		// 					newContainerNode(selectedNode.GetParent(), int(containerLoops.Value), containerName.Text)
-		// 				}
-		// 			}
-		// 			updateTree(&tree, root)
-		// 		},
-		// 		Icon:       theme.ContentAddIcon(),
-		// 		Importance: widget.SuccessImportance,
-	}
-	return container.NewVBox(
-		container.NewGridWithColumns(3,
-			container.NewGridWithColumns(2,
-				widget.NewLabel("Name:"),
-				containerName,
-			),
-			container.NewGridWithColumns(2,
-				widget.NewLabel("Loops:"),
-				containerLoops,
-			),
-			createMoveButtons(root, &tree),
-		),
-		addContainerButton,
-	)
 }
 
 // ***************************************************************************************Start Macro
