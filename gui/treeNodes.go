@@ -10,81 +10,8 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-// type NodeInterface interface {
-// 	GetName() string
-// 	SetName(string)
-// 	GetUID() string
-// 	SetUID(string)
-// 	GetParent() *Node
-// 	SetParent(*Node)
-// }
-
-// type Node struct {
-// 	Name     string
-// 	UID      string
-// 	Parent   *Node
-// 	Children []*Node
-// 	Action   structs.Action
-// }
-
-// func (n *Node) GetName() string {
-// 	return n.Name
-// }
-
-// func (n *Node) SetName(name string) {
-// 	n.Name = name
-// }
-
-// func (n *Node) GetUID() string {
-// 	return n.UID
-// }
-
-// func (n *Node) SetUID(uid string) {
-// 	n.UID = uid
-// }
-
-// func (n *Node) SetParent(parent *Node) {
-// 	n.Parent = parent
-// }
-
-// func (n *Node) GetParent() *Node {
-// 	return n.Parent
-// }
-
-//	type SearchContainerNode struct {
-//		ContainerNode
-//		Context map[string]interface{}
-//	}
-// func newAction(parent structs.ActionWithSubActionsInterface, newAction structs.ActionInterface, name string) structs.ActionInterface {
-// 	actionNum := len(parent.GetSubActions()) + 1
-// 	uid := fmt.Sprintf("%s.%d", parent.GetUID(), actionNum)
-// 	action := &structs.BaseAction{
-// 		UID:  uid,
-// 		Name: name + " | " + utils.GetEmoji("Container"),
-// 	}
-// 	parent.AddSubAction(action)
-// 	log.Printf("New container: %s", uid)
-// 	return action
-// }
-
-// func newActionNode(parent *Node, action structs.Action) *Node {
-// 	if parent == nil {
-// 		parent = root
-// 	}
-// 	actionNum := len(parent.Children) + 1
-// 	uid := fmt.Sprintf("%s.%d", parent.GetUID(), actionNum)
-// 	actionNode := &Node{
-// 		UID:    uid,
-// 		Parent: parent,
-// 	}
-
-// 	parent.addChild(actionNode)
-// 	log.Printf("New action: %s %s", uid, action)
-// 	return actionNode
-// }
-
 func newRootNode() *structs.LoopAction {
-	root := &structs.LoopAction{}
+	root := &structs.LoopAction{Count: 1}
 	root.SetName("root")
 	root.SetUID("")
 	root.SetParent(nil)

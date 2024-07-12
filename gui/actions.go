@@ -20,15 +20,16 @@ func createWaitActionSettings() *fyne.Container {
 		Text: utils.GetEmoji("Wait") + "Add Wait",
 		OnTapped: func() {
 			selectedNode := findNode(root, selectedTreeItem)
-			if selectedNode != nil {
-				wait, _ := strconv.Atoi(millisecondsWaitEntry.Text)
-				wa := &structs.WaitAction{Time: wait, BaseAction: structs.BaseAction{UID: "ZZZ"}}
+			if selectedNode == nil {
+				selectedNode = root
+			}
+			wait, _ := strconv.Atoi(millisecondsWaitEntry.Text)
+			wa := &structs.WaitAction{Time: wait, BaseAction: structs.BaseAction{UID: "ZZZ"}}
 
-				if s, ok := selectedNode.(structs.ActionWithSubActionsInterface); ok {
-					s.AddSubAction(wa, wa.String())
-				} else {
-					selectedNode.GetParent().AddSubAction(wa, wa.String())
-				}
+			if s, ok := selectedNode.(structs.ActionWithSubActionsInterface); ok {
+				s.AddSubAction(wa, wa.String())
+			} else {
+				selectedNode.GetParent().AddSubAction(wa, wa.String())
 			}
 			updateTree(&tree, root)
 		},
@@ -63,13 +64,14 @@ func createMouseMoveSettings() *fyne.Container {
 			selectedNode := findNode(root, selectedTreeItem)
 			x, _ := strconv.Atoi(mouseMoveXEntry.Text)
 			y, _ := strconv.Atoi(mouseMoveYEntry.Text)
-			if selectedNode != nil {
-				mma := &structs.MouseMoveAction{X: x, Y: y, BaseAction: structs.BaseAction{UID: "ZZZ"}}
-				if s, ok := selectedNode.(structs.ActionWithSubActionsInterface); ok {
-					s.AddSubAction(mma, mma.String())
-				} else {
-					selectedNode.GetParent().AddSubAction(mma, mma.String())
-				}
+			if selectedNode == nil {
+				selectedNode = root
+			}
+			mma := &structs.MouseMoveAction{X: x, Y: y, BaseAction: structs.BaseAction{UID: "ZZZ"}}
+			if s, ok := selectedNode.(structs.ActionWithSubActionsInterface); ok {
+				s.AddSubAction(mma, mma.String())
+			} else {
+				selectedNode.GetParent().AddSubAction(mma, mma.String())
 			}
 			updateTree(&tree, root)
 		},
@@ -106,13 +108,14 @@ func createClickSettings() *fyne.Container {
 		Text: utils.GetEmoji("Click") + "Add Click",
 		OnTapped: func() {
 			selectedNode := findNode(root, selectedTreeItem)
-			if selectedNode != nil {
-				ca := &structs.ClickAction{Button: mouseButtonRadioGroup.Selected, BaseAction: structs.BaseAction{UID: "ZZZ"}}
-				if s, ok := selectedNode.(structs.ActionWithSubActionsInterface); ok {
-					s.AddSubAction(ca, ca.String())
-				} else {
-					selectedNode.GetParent().AddSubAction(ca, ca.String())
-				}
+			if selectedNode == nil {
+				selectedNode = root
+			}
+			ca := &structs.ClickAction{Button: mouseButtonRadioGroup.Selected, BaseAction: structs.BaseAction{UID: "ZZZ"}}
+			if s, ok := selectedNode.(structs.ActionWithSubActionsInterface); ok {
+				s.AddSubAction(ca, ca.String())
+			} else {
+				selectedNode.GetParent().AddSubAction(ca, ca.String())
 			}
 			updateTree(&tree, root)
 		},
@@ -127,64 +130,76 @@ func createClickSettings() *fyne.Container {
 	)
 }
 
-// // ***************************************************************************************Key
-// func createKeySettings() *fyne.Container {
-// 	keyUpDownRadioGroup := &widget.RadioGroup{
-// 		Horizontal: true,
-// 		Required:   true,
-// 		Options:    []string{"Up", "Down"},
-// 		Selected:   "Down",
-// 	}
-// 	addKeyPressActionButton := &widget.Button{
-// 		Text: utils.GetEmoji("Key") + "Add Key",
-// 		OnTapped: func() {
-// 			selectedNode := findNode(root, selectedTreeItem)
-// 			if selectedNode != nil {
-// 				if _, ok := selectedNode.(*Node); ok {
-// 					newActionNode(selectedNode.(*Node), &structs.KeyAction{Key: "Enter", State: keyUpDownRadioGroup.Selected})
-// 				} else {
-// 					newActionNode(selectedNode.GetParent(), &structs.KeyAction{Key: "Enter", State: keyUpDownRadioGroup.Selected})
-// 				}
-// 			}
-// 			updateTree(&tree, root)
-// 		},
-// 		IconPlacement: widget.ButtonIconPlacement(widget.ButtonAlignTrailing),
-// 		Icon:          theme.NavigateNextIcon(),
-// 		Importance:    widget.HighImportance,
-// 	}
-// 	return container.NewHBox(
-// 		widget.NewSelect([]string{"ctrl", "alt", "shift"}, func(s string) {}),
-// 		layout.NewSpacer(),
-// 		keyUpDownRadioGroup,
-// 		addKeyPressActionButton,
-// 	)
-// }
+// ***************************************************************************************Key
+func createKeySettings() *fyne.Container {
+	keyUpDownRadioGroup := &widget.RadioGroup{
+		Horizontal: true,
+		Required:   true,
+		Options:    []string{"Up", "Down"},
+		Selected:   "Down",
+	}
+	keySelector := widget.NewSelect([]string{"ctrl", "alt", "shift"}, func(s string) {})
+	addKeyPressActionButton := &widget.Button{
+		Text: utils.GetEmoji("Key") + "Add Key",
+		OnTapped: func() {
+			selectedNode := findNode(root, selectedTreeItem)
+			if selectedNode == nil {
+				selectedNode = root
+			}
+			ka := &structs.KeyAction{Key: keySelector.Selected, State: keyUpDownRadioGroup.Selected, BaseAction: structs.BaseAction{UID: "ZZZ"}}
+			if s, ok := selectedNode.(structs.ActionWithSubActionsInterface); ok {
+				s.AddSubAction(ka, ka.String())
+			} else {
+				selectedNode.GetParent().AddSubAction(ka, ka.String())
+			}
+			updateTree(&tree, root)
+		},
+		IconPlacement: widget.ButtonIconPlacement(widget.ButtonAlignTrailing),
+		Icon:          theme.NavigateNextIcon(),
+		Importance:    widget.HighImportance,
+	}
+	return container.NewHBox(
+		keySelector,
+		layout.NewSpacer(),
+		keyUpDownRadioGroup,
+		addKeyPressActionButton,
+	)
+}
 
-// // ***************************************************************************************Search settings
+// ***************************************************************************************Search settings
 
-// // ***************************************************************************************Image Search
-// func createImageSearchSettings() *fyne.Container {
-// 	addImageSearchActionButton := &widget.Button{
-// 		Text: utils.GetEmoji("Image Search") + "Add Image Search",
-// 		OnTapped: func() {
-// 			selectedNode := findNode(root, selectedTreeItem)
-// 			if selectedNode != nil {
-// 				if _, ok := selectedNode.(*Node); ok {
-// 					newActionNode(selectedNode.(*Node), &structs.ImageSearchAction{SearchBox: *structs.GetSearchBox(searchAreaSelector.Selected), Targets: selectedItems()})
-// 				} else {
-// 					newActionNode(selectedNode.GetParent(), &structs.ImageSearchAction{SearchBox: *structs.GetSearchBox(searchAreaSelector.Selected), Targets: selectedItems()})
-// 				}
-// 			}
-// 			updateTree(&tree, root)
-// 		},
-// 		IconPlacement: widget.ButtonIconPlacement(widget.ButtonAlignTrailing),
-// 		Icon:          theme.NavigateNextIcon(),
-// 		Importance:    widget.HighImportance,
-// 	}
-// 	return container.NewHBox(
-// 		addImageSearchActionButton,
-// 	)
-// }
+// ***************************************************************************************Image Search
+func createImageSearchSettings() *fyne.Container {
+	addImageSearchActionButton := &widget.Button{
+		Text: utils.GetEmoji("Image Search") + "Add Image Search",
+		OnTapped: func() {
+			selectedNode := findNode(root, selectedTreeItem)
+			if selectedNode == nil {
+				selectedNode = root
+			}
+			isa := &structs.ImageSearchAction{
+				SearchBox: *structs.GetSearchBox(searchAreaSelector.Selected),
+				Targets:   selectedItems(),
+				ActionWithSubActions: structs.ActionWithSubActions{
+					BaseAction: structs.BaseAction{UID: "ZZZ"},
+				},
+			}
+			if s, ok := selectedNode.(structs.ActionWithSubActionsInterface); ok {
+				s.AddSubAction(isa, isa.String())
+			} else {
+				selectedNode.GetParent().AddSubAction(isa, isa.String())
+			}
+
+			updateTree(&tree, root)
+		},
+		IconPlacement: widget.ButtonIconPlacement(widget.ButtonAlignTrailing),
+		Icon:          theme.NavigateNextIcon(),
+		Importance:    widget.HighImportance,
+	}
+	return container.NewHBox(
+		addImageSearchActionButton,
+	)
+}
 
 // // ***************************************************************************************OCR
 // func createOCRSettings() *fyne.Container {
