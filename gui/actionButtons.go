@@ -166,7 +166,50 @@ func createKeySettings() *fyne.Container {
 	)
 }
 
-// ***************************************************************************************Search settings
+// ***************************************************************************************Loop
+func createLoopActionSettings() *fyne.Container {
+	loopName := widget.NewEntry()
+	loops := widget.NewSlider(1, 10)
+
+	addLoopActionButton := &widget.Button{
+		Text: utils.GetEmoji("Loop") + "Add Loop",
+		OnTapped: func() {
+			selectedNode := findNode(root, selectedTreeItem)
+			if selectedNode == nil {
+				selectedNode = root
+			}
+			la := &structs.LoopAction{
+				Count: int(loops.Value),
+				ActionWithSubActions: structs.ActionWithSubActions{
+					BaseAction: structs.BaseAction{UID: "ZZZ", Name: loopName.Text},
+				},
+			}
+			if s, ok := selectedNode.(structs.ActionWithSubActionsInterface); ok {
+				s.AddSubAction(la, loopName.Text)
+			} else {
+				selectedNode.GetParent().AddSubAction(la, loopName.Text)
+			}
+			updateTree(&tree, root)
+		},
+		IconPlacement: widget.ButtonIconPlacement(widget.ButtonAlignTrailing),
+		Icon:          theme.NavigateNextIcon(),
+		Importance:    widget.HighImportance,
+	}
+
+	return container.NewVBox(
+		container.NewGridWithColumns(3,
+			container.NewGridWithColumns(2,
+				widget.NewLabel("Name:"),
+				loopName,
+			),
+			container.NewGridWithColumns(2,
+				widget.NewLabel("Loops:"),
+				loops,
+			),
+			addLoopActionButton,
+		),
+	)
+}
 
 // ***************************************************************************************Image Search
 func createImageSearchSettings() *fyne.Container {

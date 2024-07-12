@@ -16,9 +16,6 @@ import (
 type ActionInterface interface {
 	Execute(context interface{}) error
 
-	GetBaseAction() *BaseAction
-	SetBaseAction(*BaseAction)
-
 	GetName() string
 	SetName(string)
 
@@ -107,8 +104,6 @@ func (a *BaseAction) GetParent() ActionWithSubActionsInterface       { return a.
 func (a *BaseAction) SetParent(action ActionWithSubActionsInterface) { a.Parent = action }
 func (a *BaseAction) Execute(context interface{}) error              { return nil }
 func (a *BaseAction) String() string                                 { return "This is a BaseAction" }
-func (a *BaseAction) GetBaseAction() *BaseAction                     { return a }
-func (a *BaseAction) SetBaseAction(b *BaseAction)                    { a = b }
 
 func (a *ActionWithSubActions) Execute(context interface{}) error {
 	log.Printf("Executing %s", a.Name)
@@ -316,5 +311,5 @@ func (a *LoopAction) Execute(context interface{}) error {
 }
 
 func (a *LoopAction) String() string {
-	return fmt.Sprintf("Loop Action | %s%d", utils.GetEmoji("Container"), a.Count)
+	return fmt.Sprintf("%s | %s%d", a.Name, utils.GetEmoji("Loop"), a.Count)
 }
