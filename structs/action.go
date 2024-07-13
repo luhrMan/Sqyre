@@ -213,15 +213,16 @@ type ImageSearchAction struct {
 
 func (a *ImageSearchAction) Execute(context interface{}) error {
 	log.Printf("Image Search | %v in X1:%d Y1:%d X2:%d Y2:%d", a.Targets, a.SearchBox.SearchArea.LeftX, a.SearchBox.SearchArea.TopY, a.SearchBox.SearchArea.RightX, a.SearchBox.SearchArea.BottomY)
+	w := a.SearchBox.SearchArea.RightX - a.SearchBox.SearchArea.LeftX
+	h := a.SearchBox.SearchArea.BottomY - a.SearchBox.SearchArea.TopY
 
-	// Capture the screen once before processing targets
-	capture := robotgo.CaptureScreen(a.SearchBox.SearchArea.LeftX, a.SearchBox.SearchArea.TopY, a.SearchBox.SearchArea.RightX, a.SearchBox.SearchArea.BottomY)
+	capture := robotgo.CaptureScreen(a.SearchBox.SearchArea.LeftX, a.SearchBox.SearchArea.TopY, w, h)
 	defer robotgo.FreeBitmap(capture)
 
-	err := robotgo.SaveJpeg(robotgo.ToImage(capture), "./images/wholeScreen.jpeg")
-	if err != nil {
-		return err
-	}
+	// err := robotgo.SaveJpeg(robotgo.ToImage(capture), "./images/wholeScreen.jpeg")
+	// if err != nil {
+	// 	return err
+	// }
 
 	var wg sync.WaitGroup
 	results := make(map[string][]robotgo.Point)
@@ -254,6 +255,8 @@ func (a *ImageSearchAction) Execute(context interface{}) error {
 
 	for _, pointArr := range results {
 		for _, point := range pointArr {
+			point.X += a.SearchBox.SearchArea.LeftX
+			point.Y += a.SearchBox.SearchArea.TopY
 			for _, d := range a.SubActions {
 				d.Execute(point)
 			}

@@ -53,7 +53,7 @@ func LoadMainContent() *container.Split {
 			Name:       "Search for treasures",
 			SubActions: []structs.ActionInterface{},
 		},
-		SearchBox: *structs.GetSearchBox("Whole Screen"),
+		SearchBox: *structs.GetSearchBox("Player Inventory Merchant"),
 		Targets:   *structs.GetItemsMapCategory("treasures"),
 	}
 	root.AddSubAction(imageSearch)
