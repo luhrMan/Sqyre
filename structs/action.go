@@ -8,8 +8,10 @@ import (
 
 	"fyne.io/fyne/v2/widget"
 	"github.com/go-vgo/robotgo"
+	"github.com/otiai10/gosseract/v2"
 
 	//"github.com/otiai10/gosseract"
+
 	"github.com/vcaesar/bitmap"
 )
 
@@ -278,15 +280,21 @@ type OcrAction struct {
 
 func (a *OcrAction) Execute(context interface{}) error {
 	log.Printf("OCR search | %s in X1:%d Y1:%d X2:%d Y2:%d", a.Target, a.SearchBox.SearchArea.LeftX, a.SearchBox.SearchArea.TopY, a.SearchBox.SearchArea.RightX, a.SearchBox.SearchArea.BottomY)
-	// client := gosseract.NewClient()
-	// defer client.Close()
-	// //img := robotgo.ToByteImg(robotgo.CaptureImg(sb[0], sb[1], sb[2], sb[3]))
-	// //capture := robotgo.CaptureImg(sb[0], sb[1], sb[2], sb[3])
-	// capture := robotgo.CaptureImg(a.SearchBox.SearchArea.LeftX, a.SearchBox.SearchArea.TopY, a.SearchBox.SearchArea.RightX, a.SearchBox.SearchArea.BottomY)
-	// robotgo.SaveJpeg(capture, "./images/test1.jpeg")
-	// client.SetImage("./images/test1.jpeg")
-	// text, _ := client.Text()
-	// log.Println(text)
+	client := gosseract.NewClient()
+	defer client.Close()
+	//img := robotgo.ToByteImg(robotgo.CaptureImg(sb[0], sb[1], sb[2], sb[3]))
+	//capture := robotgo.CaptureImg(sb[0], sb[1], sb[2], sb[3])
+	//w := a.SearchBox.SearchArea.RightX - a.SearchBox.SearchArea.LeftX
+	//h := a.SearchBox.SearchArea.BottomY - a.SearchBox.SearchArea.TopY
+
+	//capture := robotgo.CaptureImg(a.SearchBox.SearchArea.LeftX, a.SearchBox.SearchArea.TopY, w, h)
+	//robotgo.SavePng(capture, "./images/test.png")
+	client.SetImage("./images/test.png")
+	text, err := client.Text()
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Println(text)
 	return nil
 }
 
