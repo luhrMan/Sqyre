@@ -56,15 +56,15 @@ func LoadMainContent() *container.Split {
 		SearchBox: *structs.GetSearchBox("Player Inventory Merchant"),
 		Targets:   *structs.GetItemsMapCategory("treasures"),
 	}
-	ocrSearch := &structs.OcrAction{
-		AdvancedAction: structs.AdvancedAction{
-			BaseAction: structs.NewBaseAction(),
-			Name:       "Search for treasures",
-			SubActions: []structs.ActionInterface{},
-		},
-		SearchBox: *structs.GetSearchBox("Player Inventory Merchant"),
-		Target:    "rare",
-	}
+	// ocrSearch := &structs.OcrAction{
+	// 	AdvancedAction: structs.AdvancedAction{
+	// 		BaseAction: structs.NewBaseAction(),
+	// 		Name:       "Search for treasures",
+	// 		SubActions: []structs.ActionInterface{},
+	// 	},
+	// 	SearchBox: *structs.GetSearchBox("Player Inventory Merchant"),
+	// 	Target:    "rare",
+	// }
 	root.AddSubAction(imageSearch)
 	imageSearch.AddSubAction(&structs.MouseMoveAction{BaseAction: structs.NewBaseAction(), X: -1, Y: -1})
 	root.AddSubAction(&structs.WaitAction{BaseAction: structs.NewBaseAction(), Time: 500})
