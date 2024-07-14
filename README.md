@@ -31,4 +31,5 @@ Install Msys2
     - [zlib](https://packages.msys2.org/package/mingw-w64-x86_64-zlib)
     - [tesseract](https://packages.msys2.org/package/mingw-w64-x86_64-tesseract-ocr)
     - [leptonica](https://packages.msys2.org/package/mingw-w64-x86_64-leptonica)
+- download [english tessdata](https://github.com/tesseract-ocr/tessdata/blob/main/eng.traineddata)
 - set TESSDATA_PREFIX in your PATH, run this in mingw64 console `export TESSDATA_PREFIX=C:\msys64\mingw64\share\tessdata`
