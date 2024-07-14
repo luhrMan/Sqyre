@@ -264,26 +264,38 @@ func createImageSearchSettings() *fyne.Container {
 	)
 }
 
-// // ***************************************************************************************OCR
-// func createOCRSettings() *fyne.Container {
-// 	addOCRActionButton := &widget.Button{
-// 		Text: utils.GetEmoji("OCR") + "Add OCR",
-// 		OnTapped: func() {
-// 			selectedNode := findNode(root, selectedTreeItem)
-// 			if selectedNode != nil {
-// 				if _, ok := selectedNode.(*Node); ok {
-// 					newActionNode(selectedNode.(*Node), &structs.OcrAction{SearchBox: *structs.GetSearchBox(searchAreaSelector.Selected)})
-// 				} else {
-// 					newActionNode(selectedNode.GetParent(), &structs.OcrAction{SearchBox: *structs.GetSearchBox(searchAreaSelector.Selected)})
-// 				}
-// 			}
-// 			updateTree(&tree, root)
-// 		},
-// 		IconPlacement: widget.ButtonIconPlacement(widget.ButtonAlignTrailing),
-// 		Icon:          theme.NavigateNextIcon(),
-// 		Importance:    widget.HighImportance,
-// 	}
-// 	return container.NewHBox(
-// 		addOCRActionButton,
-// 	)
-// }
+// ***************************************************************************************OCR
+func createOCRSettings() *fyne.Container {
+	textToSearch := widget.NewEntry()
+	addOCRActionButton := &widget.Button{
+		Text: utils.GetEmoji("OCR") + "Add OCR",
+		OnTapped: func() {
+			selectedNode := findNode(root, selectedTreeItem)
+			if selectedNode == nil {
+				selectedNode = root
+			}
+			ocra := &structs.OcrAction{
+				SearchBox: *structs.GetSearchBox(searchAreaSelector.Selected),
+				Target:    textToSearch.Text,
+				AdvancedAction: structs.AdvancedAction{
+					BaseAction: structs.NewBaseAction(),
+					Name:       advancedActionNameEntry.Text,
+				},
+			}
+			if s, ok := selectedNode.(structs.AdvancedActionInterface); ok {
+				s.AddSubAction(ocra)
+			} else {
+				selectedNode.GetParent().AddSubAction(ocra)
+			}
+			updateTree(&tree, root)
+		},
+		IconPlacement: widget.ButtonIconPlacement(widget.ButtonAlignTrailing),
+		Icon:          theme.NavigateNextIcon(),
+		Importance:    widget.HighImportance,
+	}
+	return container.NewGridWithColumns(3,
+		widget.NewLabel("Text to search:"),
+		textToSearch,
+		addOCRActionButton,
+	)
+}
