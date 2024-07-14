@@ -19,3 +19,16 @@ The structure of the fyne `widget.Tree`:
   - `Wait`: Wait for time set in milliseconds
 # Why
 fuck all that clicking
+
+# BUILD INSTRUCTIONS
+## Windows 10
+Install Msys2
+- Using the mingw64 console, install these packages
+    - [mingwx86 toolchain](https://packages.msys2.org/groups/mingw-w64-x86_64-toolchain)
+    - [gcc](https://packages.msys2.org/package/mingw-w64-x86_64-gcc)
+    - optional if u want go in the same place[go](https://packages.msys2.org/package/mingw-w64-x86_64-go?repo=mingw64)
+    - [opencv](https://packages.msys2.org/package/mingw-w64-x86_64-opencv)
+    - [zlib](https://packages.msys2.org/package/mingw-w64-x86_64-zlib)
+    - [tesseract](https://packages.msys2.org/package/mingw-w64-x86_64-tesseract-ocr)
+    - [leptonica](https://packages.msys2.org/package/mingw-w64-x86_64-leptonica)
+- set TESSDATA_PREFIX in your PATH, run this in mingw64 console `export TESSDATA_PREFIX=C:\msys64\mingw64\share\tessdata`
