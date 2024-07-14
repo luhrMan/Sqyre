@@ -53,13 +53,24 @@ func LoadMainContent() *container.Split {
 			Name:       "Search for treasures",
 			SubActions: []structs.ActionInterface{},
 		},
-		SearchBox: *structs.GetSearchBox("Whole Screen"),
+		SearchBox: *structs.GetSearchBox("Player Inventory Merchant"),
 		Targets:   *structs.GetItemsMapCategory("treasures"),
 	}
+	// ocrSearch := &structs.OcrAction{
+	// 	AdvancedAction: structs.AdvancedAction{
+	// 		BaseAction: structs.NewBaseAction(),
+	// 		Name:       "Search for treasures",
+	// 		SubActions: []structs.ActionInterface{},
+	// 	},
+	// 	SearchBox: *structs.GetSearchBox("Player Inventory Merchant"),
+	// 	Target:    "rare",
+	// }
 	root.AddSubAction(imageSearch)
 	imageSearch.AddSubAction(&structs.MouseMoveAction{BaseAction: structs.NewBaseAction(), X: -1, Y: -1})
+	root.AddSubAction(&structs.WaitAction{BaseAction: structs.NewBaseAction(), Time: 500})
+
 	imageSearch.AddSubAction(&structs.ClickAction{BaseAction: structs.NewBaseAction(), Button: "left"})
-	root.AddSubAction(&structs.MouseMoveAction{BaseAction: structs.NewBaseAction(), X: structs.GetSpot("Make Deal").Coordinates.X, Y: structs.GetSpot("Make Deal").Coordinates.Y})
+	//root.AddSubAction(&structs.MouseMoveAction{BaseAction: structs.NewBaseAction(), X: structs.GetSpot("Make Deal").Coordinates.X, Y: structs.GetSpot("Make Deal").Coordinates.Y})
 
 	updateTree(&tree, root)
 	searchAreaSelector.SetSelected(searchAreaSelector.Options[0])
@@ -105,7 +116,7 @@ func LoadMainContent() *container.Split {
 					widget.NewSeparator(),
 					// *******************************************************************************************************************OCR
 					&widget.Label{Text: "OCR Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
-					//createOCRSettings(),
+					createOCRSettings(),
 					widget.NewSeparator(),
 				),
 			),
