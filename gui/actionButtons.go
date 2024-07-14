@@ -293,10 +293,13 @@ func createOCRSettings() *fyne.Container {
 		Icon:          theme.NavigateNextIcon(),
 		Importance:    widget.HighImportance,
 	}
-	return container.NewHBox(
-		textToSearch,
-		layout.NewSpacer(),
-
-		addOCRActionButton,
+	return container.NewGridWithColumns(2,
+		container.NewGridWithColumns(1,
+			textToSearch,
+		),
+		container.NewGridWithColumns(2,
+			layout.NewSpacer(),
+			addOCRActionButton,
+		),
 	)
 }
