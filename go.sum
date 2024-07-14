@@ -106,8 +106,6 @@ github.com/go-text/typesetting v0.1.1 h1:bGAesCuo85nXnEN5LmFMVGAGpGkCPtHrZLi//qD
 github.com/go-text/typesetting v0.1.1/go.mod h1:d22AnmeKq/on0HNv73UFriMKc4Ez6EqZAofLhAzpSzI=
 github.com/go-text/typesetting-utils v0.0.0-20240329101916-eee87fb235a3 h1:levTnuLLUmpavLGbJYLJA7fQnKeS7P1eCdAlM+vReXk=
 github.com/go-text/typesetting-utils v0.0.0-20240329101916-eee87fb235a3/go.mod h1:DDxDdQEnB70R8owOx3LVpEFvpMK9eeH1o2r0yZhFI9o=
-github.com/go-vgo/robotgo v1.0.0-beta5.3 h1:NxMCkhMKF/a6UwvwknyCYoZggSM1PTNkd703HQ517D8=
-github.com/go-vgo/robotgo v1.0.0-beta5.3/go.mod h1:/pnsw7Nnjx2Lmi88Ld6rlQZ231jvfsWeg/8GvFmk7FI=
 github.com/go-vgo/robotgo v1.0.0-rc2.1 h1:C7AZTxQmRc0GozMMbS5m/ZgfqjnSpvUvDZtzaXUdFWk=
 github.com/go-vgo/robotgo v1.0.0-rc2.1/go.mod h1:DdJUdi6mEU8ttHMbow6hKD1TjgsfgJC/H+4dusok8Uw=
 github.com/godbus/dbus/v5 v5.0.4/go.mod h1:xhWf0FNVPg57R7Z0UbKHbJfkEywrmjJnf7w5xrFpKfA=
