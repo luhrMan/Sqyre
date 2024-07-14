@@ -279,7 +279,7 @@ type OcrAction struct {
 }
 
 func (a *OcrAction) Execute(context interface{}) error {
-	log.Printf("OCR search | %s in X1:%d Y1:%d X2:%d Y2:%d", a.Target, a.SearchBox.SearchArea.LeftX, a.SearchBox.SearchArea.TopY, a.SearchBox.SearchArea.RightX, a.SearchBox.SearchArea.BottomY)
+	//log.Printf("OCR search | %s in X1:%d Y1:%d X2:%d Y2:%d", a.Target, a.SearchBox.SearchArea.LeftX, a.SearchBox.SearchArea.TopY, a.SearchBox.SearchArea.RightX, a.SearchBox.SearchArea.BottomY)
 	client := gosseract.NewClient()
 	defer client.Close()
 	//img := robotgo.ToByteImg(robotgo.CaptureImg(sb[0], sb[1], sb[2], sb[3]))
@@ -289,11 +289,12 @@ func (a *OcrAction) Execute(context interface{}) error {
 
 	//capture := robotgo.CaptureImg(a.SearchBox.SearchArea.LeftX, a.SearchBox.SearchArea.TopY, w, h)
 	//robotgo.SavePng(capture, "./images/test.png")
-	client.SetImage("./images/test.png")
+	client.SetImage("./images/Example Item Text.png")
 	text, err := client.Text()
 	if err != nil {
 		log.Fatal(err)
 	}
+	log.Println("FOUND TEXT:")
 	log.Println(text)
 	return nil
 }
