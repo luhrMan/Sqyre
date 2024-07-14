@@ -1,6 +1,33 @@
 {
     "searchBoxes": [
         {
+            "name": "Whole Screen",
+            "searchArea": {
+                "x1": 0,
+                "y1": 0,
+                "x2": 2560,
+                "y2": 1440
+            }
+        },
+        {
+            "name": "Top Half",
+            "searchArea": {
+                "x1": 0,
+                "y1": 0,
+                "x2": 2560,
+                "y2": 720
+            }
+        },
+        {
+            "name": "Bottom Half",
+            "searchArea": {
+                "x1": 0,
+                "y1": 720,
+                "x2": 2560,
+                "y2": 1440
+            }
+        },
+        {
             "name": "Top Menu Bar",
             "searchArea": {
                 "x1": 0,
@@ -10,14 +37,40 @@
             }
         },
         {
-            "name": "Whole Screen",
+            "name": "Stash Inventory",
             "searchArea": {
-                "x1": 0,
-                "y1": 0,
+                "x1": 1800,
+                "y1": 265,
                 "x2": 2560,
-                "y2": 1440
+                "y2": 1345
+            }
+        },
+        {
+            "name": "Player Inventory Stash",
+            "searchArea": {
+                "x1": 915,
+                "y1": 820,
+                "x2": 1460,
+                "y2": 1095
+            }
+        },
+        {
+            "name": "Player Inventory Merchant",
+            "searchArea": {
+                "x1": 1900,
+                "y1": 800,
+                "x2": 2475,
+                "y2": 1111
+            }
+        },
+        {
+            "name": "Player Inventory Equipped",
+            "searchArea": {
+                "x1": 777,
+                "y1": 170,
+                "x2": 1500,
+                "y2": 1100
             }
         }
-]
-
+    ]
 }
