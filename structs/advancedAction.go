@@ -29,7 +29,7 @@ type AdvancedActionInterface interface {
 }
 
 type AdvancedAction struct {
-	BaseAction
+	BaseAction                   //`json:"baseaction"`
 	Name       string            `json:"name"`
 	SubActions []ActionInterface `json:"subactions"`
 }
@@ -41,7 +41,7 @@ func (a *AdvancedAction) GetSubActions() []ActionInterface {
 func (a *AdvancedAction) AddSubAction(action ActionInterface) {
 	actionNum := len(a.GetSubActions()) + 1
 	uid := fmt.Sprintf("%s.%d", a.GetUID(), actionNum)
-	action.updateBaseAction(uid, a)
+	action.UpdateBaseAction(uid, a)
 
 	a.SubActions = append(a.SubActions, action)
 	log.Printf("Added new action: %s", action.String())
@@ -53,7 +53,6 @@ func (a *AdvancedAction) RemoveSubAction(action ActionInterface, tree *widget.Tr
 			a.SubActions = append(a.SubActions[:i], a.SubActions[i+1:]...)
 			log.Printf("Removing %s", action.GetUID())
 			a.RenameActions(tree)
-			return
 		}
 	}
 }
@@ -84,8 +83,8 @@ func (a *AdvancedAction) String() string { return "This is a Action with SubActi
 //******************************************************************************************Loop
 
 type LoopAction struct {
-	Count int `json:"loopcount"`
-	AdvancedAction
+	Count          int `json:"loopcount"`
+	AdvancedAction     //`json:"advancedaction"`
 }
 
 func (a *LoopAction) Execute(context interface{}) error {
@@ -107,9 +106,9 @@ func (a *LoopAction) String() string {
 // ***************************************************************************************ImageSearch
 
 type ImageSearchAction struct {
-	Targets   []string  `json:"imagetargets"`
-	SearchBox SearchBox `json:"searchbox"`
-	AdvancedAction
+	Targets        []string  `json:"imagetargets"`
+	SearchBox      SearchBox `json:"searchbox"`
+	AdvancedAction           //`json:"advancedaction"`
 }
 
 func (a *ImageSearchAction) Execute(context interface{}) error {
@@ -172,9 +171,9 @@ func (a *ImageSearchAction) String() string {
 // ***************************************************************************************OCR
 
 type OcrAction struct {
-	Target    string    `json:"texttarget"`
-	SearchBox SearchBox `json:"searchbox"`
-	AdvancedAction
+	Target         string    `json:"texttarget"`
+	SearchBox      SearchBox `json:"searchbox"`
+	AdvancedAction           //`json:"advancedaction"`
 }
 
 func (a *OcrAction) Execute(context interface{}) error {

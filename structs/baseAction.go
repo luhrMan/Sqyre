@@ -12,7 +12,7 @@ func NewBaseAction() BaseAction {
 	}
 }
 
-func (a *BaseAction) updateBaseAction(uid string, parent AdvancedActionInterface) {
+func (a *BaseAction) UpdateBaseAction(uid string, parent AdvancedActionInterface) {
 	a.SetUID(uid)
 	a.SetParent(parent)
 }
