@@ -14,7 +14,7 @@
 		},
 		{
 			"uid": ".3",
-			"waitTime": 200
+			"waittime": 200
 		},
 		{
 			"uid": ".4",
@@ -79,7 +79,7 @@
 				},
 				{
 					"uid": ".7.2",
-					"waitTime": 200
+					"waittime": 200
 				},
 				{
 					"texttarget": "Rare",
@@ -111,9 +111,14 @@
 				},
 				{
 					"uid": ".7.4",
-					"waitTime": 200
+					"waittime": 200
 				}
 			]
+		},
+		{
+			"uid": ".8",
+			"X": 0,
+			"Y": 0
 		}
 	]
 }
