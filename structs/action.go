@@ -19,7 +19,7 @@ type ActionInterface interface {
 
 	String() string
 
-	updateBaseAction(uid string, parent AdvancedActionInterface)
+	UpdateBaseAction(uid string, parent AdvancedActionInterface)
 }
 
 func (a *AdvancedAction) GetName() string                      { return a.Name }
@@ -34,8 +34,8 @@ func (a *BaseAction) String() string                           { return "This is
 //***************************************************************************************Wait
 
 type WaitAction struct {
-	BaseAction
-	Time int `json:"waittime"`
+	BaseAction     //`json:"baseaction"`
+	Time       int `json:"waittime"`
 }
 
 func (a *WaitAction) Execute(context interface{}) error {
@@ -51,8 +51,8 @@ func (a *WaitAction) String() string {
 // ***************************************************************************************Click
 
 type ClickAction struct {
-	BaseAction
-	Button string `json:"button"`
+	BaseAction        //`json:"baseaction"`
+	Button     string `json:"button"`
 }
 
 func (a *ClickAction) Execute(context interface{}) error {
@@ -68,8 +68,8 @@ func (a *ClickAction) String() string {
 // ***************************************************************************************Move
 
 type MouseMoveAction struct {
-	BaseAction
-	X, Y int
+	BaseAction //`json:"baseaction"`
+	X, Y       int
 }
 
 func (a *MouseMoveAction) Execute(context interface{}) error {
@@ -96,9 +96,9 @@ func (a *MouseMoveAction) String() string {
 // ***************************************************************************************Key
 
 type KeyAction struct {
-	BaseAction
-	Key   string `json:"key"`
-	State string `json:"state"`
+	BaseAction        //`json:"baseaction"`
+	Key        string `json:"key"`
+	State      string `json:"state"`
 }
 
 func (a *KeyAction) Execute(context interface{}) error {

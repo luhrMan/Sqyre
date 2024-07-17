@@ -84,7 +84,7 @@ func LoadMainContent() *container.Split {
 	imageSearch.AddSubAction(&structs.WaitAction{BaseAction: structs.NewBaseAction(), Time: 200})
 	root.AddSubAction(&structs.MouseMoveAction{BaseAction: structs.NewBaseAction(), X: structs.GetSpot("Make Deal").X, Y: structs.GetSpot("Make Deal").Y})
 
-	encodeToGobFile(&root, "./saved-macros/Sell Collectibles.gob")
+	//encodeToGobFile(&root, "./saved-macros/Sell Collectibles.gob")
 	//decodeFromFile("./saved-macros/Sell Collectibles.gob")
 
 	//saveTreeToFile(root, "./saved-macros/Sell Collectibles.json")
@@ -175,7 +175,7 @@ func macroSelector() *widget.Select {
 	for _, f := range files {
 		macroList = append(macroList, strings.TrimSuffix(f.Name(), ".json"))
 	}
-	return widget.NewSelect(macroList, func(s string) { loadTreeFromJsonFile(s + ".json") })
+	return widget.NewSelect(macroList, func(s string) { loadTreeFromJsonFile(&root, s+".json") })
 }
 
 func macroStartButton() *widget.Button {
