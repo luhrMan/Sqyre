@@ -7,30 +7,18 @@ import (
 	"sync"
 )
 
-// type SearchBoxes struct {
-// 	Boxes []SearchBox `json:"searchBoxes"`
-// }
-
 type SearchBox struct {
-	Name       string `json:"name"`
-	SearchArea struct {
-		LeftX   int `json:"x1"`
-		TopY    int `json:"y1"`
-		RightX  int `json:"x2"`
-		BottomY int `json:"y2"`
-	} `json:"searchArea"`
+	Name    string `json:"name"`
+	LeftX   int    `json:"x1"`
+	TopY    int    `json:"y1"`
+	RightX  int    `json:"x2"`
+	BottomY int    `json:"y2"`
 }
 
-// type Spots struct {
-// 	Spots []Spot `json:"spots"`
-// }
-
 type Spot struct {
-	Name        string `json:"name"`
-	Coordinates struct {
-		X int `json:"x"`
-		Y int `json:"y"`
-	} `json:"coordinates"`
+	Name string `json:"name"`
+	X    int    `json:"x"`
+	Y    int    `json:"y"`
 }
 
 var (
@@ -75,7 +63,7 @@ func GetSearchBoxMap() *map[string]SearchBox {
 		log.Println("Search Coordinates:")
 		for _, sbArr := range tempArrMap {
 			for _, sb := range sbArr {
-				log.Printf("Area: %s, X1: %d Y1: %d X2: %d Y2: %d\n", sb.Name, sb.SearchArea.LeftX, sb.SearchArea.TopY, sb.SearchArea.RightX, sb.SearchArea.BottomY)
+				log.Printf("Area: %s, X1: %d Y1: %d X2: %d Y2: %d\n", sb.Name, sb.LeftX, sb.TopY, sb.RightX, sb.BottomY)
 				tempMap[sb.Name] = sb
 			}
 		}
@@ -118,7 +106,7 @@ func GetSpotMap() *map[string]Spot {
 
 		for _, sArr := range tempArrMap {
 			for _, s := range sArr {
-				log.Printf("Spot: %s, X: %d Y: %d\n", s.Name, s.Coordinates.X, s.Coordinates.Y)
+				log.Printf("Spot: %s, X: %d Y: %d\n", s.Name, s.X, s.Y)
 				tempMap[s.Name] = s
 			}
 		}
