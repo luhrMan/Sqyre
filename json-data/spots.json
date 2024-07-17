@@ -2,177 +2,129 @@
     "Context": [
         {
             "name": "context",
-            "coordinates": {
-                "x": -1,
-                "y": -1
-            }
+            "x": -1,
+            "y": -1
         }
     ],
     "Top Menu Tabs": [
         {
             "name": "Play Tab",
-            "coordinates": {
-                "x": 430,
-                "y": 60
-            }
+            "x": 430,
+            "y": 60
         },
         {
             "name": "Leaderboard Tab",
-            "coordinates": {
-                "x": 660,
-                "y": 60
-            }
+            "x": 660,
+            "y": 60
         },
         {
             "name": "Class Tab",
-            "coordinates": {
-                "x": 860,
-                "y": 60
-            }
+            "x": 860,
+            "y": 60
         },
         {
             "name": "Stash Tab",
-            "coordinates": {
-                "x": 1060,
-                "y": 60
-            }
+            "x": 1060,
+            "y": 60
         },
         {
             "name": "Merchants Tab",
-            "coordinates": {
-                "x": 1280,
-                "y": 60
-            }
+            "x": 1280,
+            "y": 60
         },
         {
             "name": "Trade Tab",
-            "coordinates": {
-                "x": 1480,
-                "y": 60
-            }
+            "x": 1480,
+            "y": 60
         },
         {
             "name": "Gathering Hall Tab",
-            "coordinates": {
-                "x": 1680,
-                "y": 60
-            }
+            "x": 1680,
+            "y": 60
         },
         {
             "name": "Customize Tab",
-            "coordinates": {
-                "x": 1920,
-                "y": 60
-            }
+            "x": 1920,
+            "y": 60
         },
         {
             "name": "Shop Tab",
-            "coordinates": {
-                "x": 2130,
-                "y": 60
-            }
+            "x": 2130,
+            "y": 60
         }
     ],
     "Merchants" :[
         {
             "name": "Collector",
-            "coordinates": {
-                "x": 950,
-                "y": 920
-            }
+            "x": 950,
+            "y": 920
         },
         {
             "name": "Alchemist",
-            "coordinates": {
-                "x": 300,
-                "y": 420
-            }
+            "x": 300,
+            "y": 420
         },
         {
             "name": "Armourer",
-            "coordinates": {
-                "x": 620,
-                "y": 420
-            }
+            "x": 620,
+            "y": 420
         },
         {
             "name": "Fortune Teller",
-            "coordinates": {
-                "x": 950,
-                "y": 420
-            }
+            "x": 950,
+            "y": 420
         },
         {
             "name": "Goblin Merchant",
-            "coordinates": {
-                "x": 1270,
-                "y": 420
-            }
+            "x": 1270,
+            "y": 420
         },
         {
             "name": "Leathersmith",
-            "coordinates": {
-                "x": 1600,
-                "y": 420
-            }
+            "x": 1600,
+            "y": 420
         },
         {
             "name": "Squire",
-            "coordinates": {
-                "x": 1920,
-                "y": 420
-            }
+            "x": 1920,
+            "y": 420
         },
         {
             "name": "Surgeon",
-            "coordinates": {
-                "x": 2240,
-                "y": 420
-            }
+            "x": 2240,
+            "y": 420
         },
         {
             "name": "Tailor",
-            "coordinates": {
-                "x": 300,
-                "y": 920
-            }
+            "x": 300,
+            "y": 920
         },
         {
             "name": "Tavern Master",
-            "coordinates": {
-                "x": 625,
-                "y": 920
-            }
+            "x": 625,
+            "y": 920
         },
         {
             "name": "Treasurer",
-            "coordinates": {
-                "x": 1270,
-                "y": 920
-            }
+            "x": 1270,
+            "y": 920
         },
         {
             "name": "Weaponsmith",
-            "coordinates": {
-                "x": 1600,
-                "y": 920
-            }
+            "x": 1600,
+            "y": 920
         },
         {
             "name": "Woodsman",
-            "coordinates": {
-                "x": 1920,
-                "y": 920
-            }
+            "x": 1920,
+            "y": 920
         }
     ],
     "Miscellaneous": [
         {
             "name": "Change Class",
-            "coordinates": {
-                "x": 2480,
-                "y": 1360
-            }
+            "x": 2480,
+            "y": 1360
         }
     ]
 }
