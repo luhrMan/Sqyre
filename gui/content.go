@@ -15,7 +15,8 @@ import (
 )
 
 var (
-	root               = structs.LoopAction{}
+	root *structs.LoopAction
+	//root               = structs.LoopAction{}
 	tree               = widget.Tree{}
 	selectedTreeItem   string
 	selectedItemsMap   = make(map[string]bool)
@@ -42,8 +43,8 @@ func LoadMainContent() *container.Split {
 	log.Println(robotgo.GetDisplayBounds(0))
 	log.Println("Monitor 2 size")
 	log.Println(robotgo.GetDisplayBounds(1))
-	root = *newRootNode()
-	updateTree(&tree, &root)
+	root = getRoot()
+	updateTree(&tree, root)
 	//err := loadTreeFromFile("test.json")
 	//log.Println(err)
 
@@ -54,7 +55,7 @@ func LoadMainContent() *container.Split {
 	root.AddSubAction(&structs.MouseMoveAction{BaseAction: structs.NewBaseAction(), X: structs.GetSpot("Collector").X, Y: structs.GetSpot("Collector").Y})
 	root.AddSubAction(&structs.ClickAction{BaseAction: structs.NewBaseAction(), Button: "left"})
 	root.AddSubAction(&structs.WaitAction{BaseAction: structs.NewBaseAction(), Time: 200})
-	initR()
+	//initR()
 	//image search for treasures
 	imageSearch := &structs.ImageSearchAction{
 		AdvancedAction: structs.AdvancedAction{
@@ -84,7 +85,7 @@ func LoadMainContent() *container.Split {
 	imageSearch.AddSubAction(&structs.WaitAction{BaseAction: structs.NewBaseAction(), Time: 200})
 	root.AddSubAction(&structs.MouseMoveAction{BaseAction: structs.NewBaseAction(), X: structs.GetSpot("Make Deal").X, Y: structs.GetSpot("Make Deal").Y})
 
-	//encodeToGobFile(&root, "./saved-macros/Sell Collectibles.gob")
+	//encodeToGobFile(root, "./saved-macros/Sell Collectibles.gob")
 	//decodeFromFile("./saved-macros/Sell Collectibles.gob")
 
 	//saveTreeToFile(root, "./saved-macros/Sell Collectibles.json")
@@ -141,7 +142,7 @@ func LoadMainContent() *container.Split {
 				container.NewHBox(
 					widget.NewLabel("Global Delay"),
 					widget.NewEntry(),
-					createMoveButtons(&root, &tree),
+					createMoveButtons(root, &tree),
 				),
 				createMacroSettings(),
 				nil,
@@ -175,14 +176,14 @@ func macroSelector() *widget.Select {
 	for _, f := range files {
 		macroList = append(macroList, strings.TrimSuffix(f.Name(), ".json"))
 	}
-	return widget.NewSelect(macroList, func(s string) { loadTreeFromJsonFile(&root, s+".json") })
+	return widget.NewSelect(macroList, func(s string) { loadTreeFromJsonFile(root, s+".json") })
 }
 
 func macroStartButton() *widget.Button {
 	return &widget.Button{
 		Text: "Start Macro",
 		OnTapped: func() {
-			ExecuteActionTree(&root)
+			ExecuteActionTree(root)
 		},
 		Icon:       theme.MediaPlayIcon(),
 		Importance: widget.SuccessImportance,
