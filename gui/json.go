@@ -18,7 +18,7 @@ func createSaveSettings() *fyne.Container { //fyne has a file selector / save fe
 	addSaveButton := &widget.Button{
 		Text: "",
 		OnTapped: func() {
-			err := saveTreeToJsonFile(&root, macroNameEntry.Text)
+			err := saveTreeToJsonFile(root, macroNameEntry.Text)
 			log.Println(err)
 		},
 		IconPlacement: widget.ButtonIconPlacement(widget.ButtonAlignTrailing),
@@ -60,10 +60,9 @@ func loadTreeFromJsonFile(root *structs.LoopAction, filename string) error {
 	}
 	//log.Println(root.SubActions)
 	var result structs.ActionInterface
-	//err = json.Unmarshal(jsonData, &root)
-	for _, r := range root.SubActions { // empty root / tree
-		root.RemoveSubAction(r, &tree)
-	}
+	//err = json.Unmarshal(jsonData, root)
+	log.Println(root.SubActions)
+	root.SubActions = []structs.ActionInterface{}
 	result, err = UnmarshalJSON(jsonData)
 	if s, ok := result.(*structs.LoopAction); ok { // fill root / tree
 		for _, sa := range s.SubActions {
@@ -131,30 +130,45 @@ func UnmarshalJSON(data []byte) (structs.ActionInterface, error) {
 func createActionFromMap(rawMap map[string]interface{}, parent structs.AdvancedActionInterface) (structs.ActionInterface, error) {
 	log.Println(rawMap)
 	var action structs.ActionInterface
+	// if parent != nil {
 
+	// } else {
+	// 	rawMap["name"] != nil:
+	// 	parent.SetName()
+	// }
 	switch {
 	case rawMap["loopcount"] != nil:
 		action = &structs.LoopAction{
+			AdvancedAction: structs.AdvancedAction{
+				BaseAction: structs.NewBaseAction(),
+			},
 			Count: int(rawMap["loopcount"].(float64)),
 		}
-
+		// if baseActionMap, ok := rawMap["baseaction"].(map[string]interface{}); ok {
+		// 	uid := baseActionMap["uid"].(string)
+		// 	action.UpdateBaseAction(uid, parent)
+		// }
 	case rawMap["waittime"] != nil:
 		action = &structs.WaitAction{
-			Time: int(rawMap["waittime"].(float64)),
+			BaseAction: structs.NewBaseAction(),
+			Time:       int(rawMap["waittime"].(float64)),
 		}
 	case rawMap["button"] != nil:
 		action = &structs.ClickAction{
-			Button: rawMap["button"].(string),
+			BaseAction: structs.NewBaseAction(),
+			Button:     rawMap["button"].(string),
 		}
 	case rawMap["X"] != nil && rawMap["Y"] != nil:
 		action = &structs.MouseMoveAction{
-			X: int(rawMap["X"].(float64)),
-			Y: int(rawMap["Y"].(float64)),
+			BaseAction: structs.NewBaseAction(),
+			X:          int(rawMap["X"].(float64)),
+			Y:          int(rawMap["Y"].(float64)),
 		}
 	case rawMap["key"] != nil:
 		action = &structs.KeyAction{
-			Key:   rawMap["key"].(string),
-			State: rawMap["state"].(string),
+			BaseAction: structs.NewBaseAction(),
+			Key:        rawMap["key"].(string),
+			State:      rawMap["state"].(string),
 		}
 	case rawMap["imagetargets"] != nil:
 		targets := make([]string, 0)
@@ -162,11 +176,17 @@ func createActionFromMap(rawMap map[string]interface{}, parent structs.AdvancedA
 			targets = append(targets, t.(string))
 		}
 		action = &structs.ImageSearchAction{
+			AdvancedAction: structs.AdvancedAction{
+				BaseAction: structs.NewBaseAction(),
+			},
 			Targets:   targets,
 			SearchBox: createSearchBox(rawMap["searchbox"].(map[string]interface{})),
 		}
 	case rawMap["texttarget"] != nil:
 		action = &structs.OcrAction{
+			AdvancedAction: structs.AdvancedAction{
+				BaseAction: structs.NewBaseAction(),
+			},
 			Target:    rawMap["texttarget"].(string),
 			SearchBox: createSearchBox(rawMap["searchbox"].(map[string]interface{})),
 		}
@@ -179,11 +199,11 @@ func createActionFromMap(rawMap map[string]interface{}, parent structs.AdvancedA
 	// 		action.UpdateBaseAction(uid, parent)
 	// 	}
 	// }
-	// // Set BaseAction
-	// if baseActionMap, ok := rawMap["baseaction"].(map[string]interface{}); ok {
-	// 	uid := baseActionMap["uid"].(string)
-	// 	action.UpdateBaseAction(uid, parent)
-	// }
+	// Set BaseAction
+	if baseActionMap, ok := rawMap["baseaction"].(map[string]interface{}); ok {
+		uid := baseActionMap["uid"].(string)
+		action.UpdateBaseAction(uid, parent)
+	}
 	if uid, ok := rawMap["uid"].(string); ok {
 		action.SetUID(uid)
 	}
@@ -196,13 +216,21 @@ func createActionFromMap(rawMap map[string]interface{}, parent structs.AdvancedA
 
 		if subActionsRaw, ok := rawMap["subactions"].([]interface{}); ok {
 			log.Println("SubActions unmarshal")
+			// var subActionList []structs.ActionInterface
 			for _, subActionRaw := range subActionsRaw {
 				subAction, err := createActionFromMap(subActionRaw.(map[string]interface{}), advAction)
 				if err != nil {
 					return nil, err
 				}
 				advAction.AddSubAction(subAction)
+				log.Println(subAction.GetParent())
+
+				// subActionList = append(subActionList, subAction)
 			}
+			//updateTree(&tree, root)
+			// for _, sa := range subActionList {
+			// 	advAction.AddSubAction(sa)
+			// }
 		}
 	}
 	log.Printf("Unmarshalled action %s", action)
