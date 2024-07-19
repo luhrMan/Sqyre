@@ -2,6 +2,8 @@ package gui
 
 import (
 	"Dark-And-Darker/structs"
+	"log"
+	"sync"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -10,11 +12,22 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-func newRootNode() *structs.LoopAction {
-	root := &structs.LoopAction{Count: 1}
-	root.SetName("root")
-	root.SetUID("")
-	root.SetParent(nil)
+var once sync.Once
+
+func getRoot() *structs.LoopAction {
+	if root == nil {
+		once.Do(
+			func() {
+				log.Println("Creating single instance now.")
+				root = &structs.LoopAction{Count: 1}
+				root.SetName("root")
+				root.SetUID("")
+				root.SetParent(nil)
+			})
+	} else {
+		log.Println("Creating single instance now.")
+	}
+	//root := &structs.LoopAction{}
 	return root
 }
 
