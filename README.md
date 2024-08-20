@@ -33,3 +33,15 @@ Install Msys2
     - [leptonica](https://packages.msys2.org/package/mingw-w64-x86_64-leptonica)
 - download [english tessdata](https://github.com/tesseract-ocr/tessdata/blob/main/eng.traineddata)
 - set TESSDATA_PREFIX in your PATH, run this in mingw64 console `export TESSDATA_PREFIX=C:\msys64\mingw64\share\tessdata`
+## Linux
+- `apt install`
+    - `golang-go`
+    - `tesseract-ocr`
+    - `libgl1-mesa-dev`
+    - `libx11-dev`
+    - `libxtst-dev`
+    - `libxcursor-dev`
+    - `libxrandr-dev`
+    - `g++`
+    - `clang`
+    - `libtesseract-dev`

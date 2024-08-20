@@ -8,7 +8,7 @@ require (
 	fyne.io/fyne/v2 v2.4.5
 	github.com/go-vgo/robotgo v1.0.0-rc2.1
 	github.com/otiai10/gosseract/v2 v2.4.1
-	github.com/vcaesar/bitmap v0.10.0-beta3.2
+	github.com/vcaesar/bitmap v0.10.1
 )
 
 require gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
@@ -47,16 +47,16 @@ require (
 	github.com/tklauser/go-sysconf v0.3.14 // indirect
 	github.com/tklauser/numcpus v0.8.0 // indirect
 	github.com/vcaesar/gops v0.40.0 // indirect
-	github.com/vcaesar/imgo v0.40.1 // indirect
+	github.com/vcaesar/imgo v0.40.2 // indirect
 	github.com/vcaesar/keycode v0.10.1 // indirect
 	github.com/vcaesar/tt v0.20.1 // indirect
 	github.com/yuin/goldmark v1.7.4 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	golang.org/x/image v0.18.0 // indirect
 	golang.org/x/mobile v0.0.0-20240707233753-b765e5d5218f // indirect
-	golang.org/x/net v0.27.0 // indirect
-	golang.org/x/sys v0.22.0 // indirect
-	golang.org/x/text v0.16.0 // indirect
+	golang.org/x/net v0.28.0 // indirect
+	golang.org/x/sys v0.23.0 // indirect
+	golang.org/x/text v0.17.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	honnef.co/go/js/dom v0.0.0-20231112215516-51f43a291193 // indirect
 )
