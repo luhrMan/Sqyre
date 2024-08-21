@@ -45,3 +45,4 @@ Install Msys2
     - `g++`
     - `clang`
     - `libtesseract-dev`
+    - `libxxf86vm-dev`
