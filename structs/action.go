@@ -9,7 +9,7 @@ import (
 )
 
 type ActionInterface interface {
-	Execute(context interface{}) error
+	Execute(ctx interface{}) error
 
 	GetUID() string
 	SetUID(string)
@@ -28,7 +28,7 @@ func (a *BaseAction) GetUID() string                           { return a.UID }
 func (a *BaseAction) SetUID(uid string)                        { a.UID = uid }
 func (a *BaseAction) GetParent() AdvancedActionInterface       { return a.Parent }
 func (a *BaseAction) SetParent(action AdvancedActionInterface) { a.Parent = action }
-func (a *BaseAction) Execute(context interface{}) error        { return nil }
+func (a *BaseAction) Execute(ctx interface{}) error            { return nil }
 func (a *BaseAction) String() string                           { return "This is a BaseAction" }
 
 //***************************************************************************************Wait
@@ -38,7 +38,7 @@ type WaitAction struct {
 	Time       int `json:"waittime"`
 }
 
-func (a *WaitAction) Execute(context interface{}) error {
+func (a *WaitAction) Execute(ctx interface{}) error {
 	log.Printf("Waiting for %d milliseconds", a.Time)
 	robotgo.MilliSleep(a.Time)
 	return nil
@@ -55,7 +55,7 @@ type ClickAction struct {
 	Button     string `json:"button"`
 }
 
-func (a *ClickAction) Execute(context interface{}) error {
+func (a *ClickAction) Execute(ctx interface{}) error {
 	log.Printf("%s click", a.Button)
 	robotgo.Click(a.Button)
 	return nil
@@ -72,11 +72,11 @@ type MouseMoveAction struct {
 	X, Y       int
 }
 
-func (a *MouseMoveAction) Execute(context interface{}) error {
+func (a *MouseMoveAction) Execute(ctx interface{}) error {
 	//if (a.X == -1) && (a.Y == -1) {
-	if c, ok := context.(robotgo.Point); ok {
-		log.Printf("Moving mouse to context (%d, %d)", c.X, c.Y)
-		robotgo.Move(c.X+40+utils.XOffset, c.Y+40+utils.YOffset)
+	if c, ok := ctx.(robotgo.Point); ok {
+		log.Printf("Moving mouse to ctx (%d, %d)", c.X, c.Y)
+		robotgo.Move(c.X+utils.XOffset-25, c.Y+utils.YOffset-25)
 	} else {
 		log.Printf("Moving mouse to (%d, %d)", a.X, a.Y)
 		robotgo.Move(a.X+utils.XOffset, a.Y+utils.YOffset)
@@ -101,7 +101,7 @@ type KeyAction struct {
 	State      string `json:"state"`
 }
 
-func (a *KeyAction) Execute(context interface{}) error {
+func (a *KeyAction) Execute(ctx interface{}) error {
 	log.Printf("Key: %s %s", a.Key, a.State)
 	switch a.State {
 	case "Up":
