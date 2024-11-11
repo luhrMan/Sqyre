@@ -3,17 +3,21 @@ package structs
 import (
 	"Dark-And-Darker/utils"
 	"bytes"
+	"context"
 	"fmt"
 	"image"
 	"image/png"
 	"log"
+	"os"
 	"strings"
 	"sync"
+
+	"github.com/andreyvit/locateimage"
 
 	"fyne.io/fyne/v2/widget"
 	"github.com/go-vgo/robotgo"
 	"github.com/otiai10/gosseract/v2"
-	"github.com/vcaesar/bitmap"
+	//"github.com/vcaesar/bitmap"
 )
 
 type AdvancedActionInterface interface {
@@ -70,11 +74,11 @@ func (a *AdvancedAction) RenameActions(tree *widget.Tree) {
 	}
 }
 
-func (a *AdvancedAction) Execute(context interface{}) error {
+func (a *AdvancedAction) Execute(ctx interface{}) error {
 	log.Printf("Executing %s", a.Name)
 
 	for _, c := range a.SubActions {
-		c.Execute(context)
+		c.Execute(ctx)
 	}
 	return nil
 }
@@ -87,11 +91,11 @@ type LoopAction struct {
 	AdvancedAction     //`json:"advancedaction"`
 }
 
-func (a *LoopAction) Execute(context interface{}) error {
+func (a *LoopAction) Execute(ctx interface{}) error {
 	for i := 0; i < a.Count; i++ {
 		fmt.Printf("Loop iteration %d\n", i+1)
 		for _, action := range a.GetSubActions() {
-			if err := action.Execute(context); err != nil {
+			if err := action.Execute(ctx); err != nil {
 				return err
 			}
 		}
@@ -111,21 +115,26 @@ type ImageSearchAction struct {
 	AdvancedAction           //`json:"advancedaction"`
 }
 
-func (a *ImageSearchAction) Execute(context interface{}) error {
+func (a *ImageSearchAction) Execute(ctx interface{}) error {
 	log.Printf("Image Search | %v in X1:%d Y1:%d X2:%d Y2:%d", a.Targets, a.SearchBox.LeftX, a.SearchBox.TopY, a.SearchBox.RightX, a.SearchBox.BottomY)
 	w := a.SearchBox.RightX - a.SearchBox.LeftX
 	h := a.SearchBox.BottomY - a.SearchBox.TopY
 
-	capture := robotgo.CaptureScreen(a.SearchBox.LeftX, a.SearchBox.TopY, w, h)
+	capture := robotgo.CaptureScreen(a.SearchBox.LeftX+utils.XOffset, a.SearchBox.TopY+utils.YOffset, w, h)
+	robotgo.SaveJpeg(robotgo.ToImage(capture), "./images/temp.jpeg")
+	// capture := robotgo.CaptureScreen(a.SearchBox.LeftX, a.SearchBox.TopY, w, h)
 	defer robotgo.FreeBitmap(capture)
-
+	captureImg := robotgo.ToImage(capture)
+	captureConvert := locateimage.Convert(captureImg)
 	// err := robotgo.SaveJpeg(robotgo.ToImage(capture), "./images/wholeScreen.jpeg")
 	// if err != nil {
 	// 	return err
 	// }
 
 	var wg sync.WaitGroup
-	results := make(map[string][]robotgo.Point)
+	//	results := make(map[string][]robotgo.Point)
+	results := make(map[string][]locateimage.Match)
+
 	resultsMutex := &sync.Mutex{}
 
 	for _, target := range a.Targets {
@@ -134,31 +143,38 @@ func (a *ImageSearchAction) Execute(context interface{}) error {
 			defer wg.Done()
 
 			ip := "./images/icons/" + target + ".png"
-			predefinedImage, err := robotgo.OpenImg(ip)
+			reader, err := os.Open(ip)
+			defer reader.Close()
 			if err != nil {
-				log.Printf("robotgo.OpenImg failed for %s: %v\n", target, err)
-				return
+				log.Print(err)
+			} else {
+				img, _, err := image.Decode(reader)
+				if err != nil {
+					log.Print(err)
+				} else {
+					predefinedImage := locateimage.Convert(img)
+					targetResults, err := locateimage.All(context.Background(), captureConvert, predefinedImage, 0.15)
+					if err != nil {
+						log.Print(err)
+					}
+					resultsMutex.Lock()
+					results[target] = targetResults
+					resultsMutex.Unlock()
+
+					log.Printf("Results for %s: %v\n", target, targetResults)
+				}
 			}
-			predefinedBitmap := robotgo.ByteToCBitmap(predefinedImage)
-			targetResults := bitmap.FindAll(predefinedBitmap, capture, 0.1)
-
-			resultsMutex.Lock()
-			results[target] = targetResults
-			resultsMutex.Unlock()
-
-			log.Printf("Results for %s: %v\n", target, targetResults)
-
 		}(target)
 	}
 
 	wg.Wait()
 
 	for _, pointArr := range results {
-		for _, point := range pointArr {
-			point.X += a.SearchBox.LeftX
-			point.Y += a.SearchBox.TopY
+		for _, match := range pointArr {
+			match.Rect.Max.X += a.SearchBox.LeftX
+			match.Rect.Max.Y += a.SearchBox.TopY
 			for _, d := range a.SubActions {
-				d.Execute(point)
+				d.Execute(robotgo.Point(match.Rect.Max))
 			}
 		}
 	}
@@ -176,7 +192,7 @@ type OcrAction struct {
 	AdvancedAction           //`json:"advancedaction"`
 }
 
-func (a *OcrAction) Execute(context interface{}) error {
+func (a *OcrAction) Execute(ctx interface{}) error {
 	client := gosseract.NewClient()
 	defer client.Close()
 
@@ -222,7 +238,7 @@ func (a *OcrAction) Execute(context interface{}) error {
 	log.Println(text)
 	if strings.Contains(text, a.Target) {
 		for _, action := range a.SubActions {
-			if err := action.Execute(context); err != nil {
+			if err := action.Execute(ctx); err != nil {
 				return err
 			}
 		}
@@ -241,18 +257,18 @@ func (a *OcrAction) String() string {
 // 	Condition func(interface{}) bool
 // }
 
-// func (a *ConditionalAction) Execute(context interface{}) error {
-// 	if a.Condition(context) {
+// func (a *ConditionalAction) Execute(ctx interface{}) error {
+// 	if a.Condition(ctx) {
 // 		fmt.Println("Condition true. Executing subactions")
 // 		for _, action := range a.SubActions {
-// 			if err := action.Execute(context); err != nil {
+// 			if err := action.Execute(ctx); err != nil {
 // 				return err
 // 			}
 // 		}
 // 	} else {
 // 		fmt.Println("Condition false. Skipping block")
 // 		// for _, action := range a.FalseActions {
-// 		// 	if err := action.Execute(context); err != nil {
+// 		// 	if err := action.Execute(ctx); err != nil {
 // 		// 		return err
 // 		// 	}
 // 		// }

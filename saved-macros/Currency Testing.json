@@ -1,0 +1,42 @@
+{
+	"loopcount": 1,
+	"uid": "",
+	"name": "root",
+	"subactions": [
+		{
+			"imagetargets": [
+				"Gold Coins",
+				"Gold Coin",
+				"Gold Purse"
+			],
+			"searchbox": {
+				"name": "Stash Inventory",
+				"x1": 1800,
+				"y1": 160,
+				"x2": 2560,
+				"y2": 1345
+			},
+			"uid": ".1",
+			"name": "Get currency",
+			"subactions": [
+				{
+					"uid": ".1.1",
+					"X": -1,
+					"Y": -1
+				},
+				{
+					"uid": ".1.2",
+					"waittime": 100
+				},
+				{
+					"uid": ".1.3",
+					"button": "right"
+				},
+				{
+					"uid": ".1.4",
+					"waittime": 100
+				}
+			]
+		}
+	]
+}
