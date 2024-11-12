@@ -76,7 +76,7 @@ func (a *MouseMoveAction) Execute(ctx interface{}) error {
 	//if (a.X == -1) && (a.Y == -1) {
 	if c, ok := ctx.(robotgo.Point); ok {
 		log.Printf("Moving mouse to ctx (%d, %d)", c.X, c.Y)
-		robotgo.Move(c.X+utils.XOffset-25, c.Y+utils.YOffset-25)
+		robotgo.Move(c.X+utils.XOffset+25, c.Y+utils.YOffset+25)
 	} else {
 		log.Printf("Moving mouse to (%d, %d)", a.X, a.Y)
 		robotgo.Move(a.X+utils.XOffset, a.Y+utils.YOffset)
