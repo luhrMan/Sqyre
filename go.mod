@@ -9,6 +9,7 @@ require (
 	github.com/andreyvit/locateimage v0.1.0
 	github.com/go-vgo/robotgo v1.0.0-rc2.1
 	github.com/otiai10/gosseract/v2 v2.4.1
+	gocv.io/x/gocv v0.39.0
 )
 
 require gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect

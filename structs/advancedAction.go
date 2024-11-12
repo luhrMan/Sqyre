@@ -3,16 +3,13 @@ package structs
 import (
 	"Dark-And-Darker/utils"
 	"bytes"
-	"context"
 	"fmt"
 	"image"
 	"image/png"
 	"log"
-	"os"
 	"strings"
 	"sync"
-
-	"github.com/andreyvit/locateimage"
+	"gocv.io/x/gocv"
 
 	"fyne.io/fyne/v2/widget"
 	"github.com/go-vgo/robotgo"
@@ -124,16 +121,9 @@ func (a *ImageSearchAction) Execute(ctx interface{}) error {
 	robotgo.SaveJpeg(robotgo.ToImage(capture), "./images/temp.jpeg")
 	// capture := robotgo.CaptureScreen(a.SearchBox.LeftX, a.SearchBox.TopY, w, h)
 	defer robotgo.FreeBitmap(capture)
-	captureImg := robotgo.ToImage(capture)
-	captureConvert := locateimage.Convert(captureImg)
-	// err := robotgo.SaveJpeg(robotgo.ToImage(capture), "./images/wholeScreen.jpeg")
-	// if err != nil {
-	// 	return err
-	// }
 
 	var wg sync.WaitGroup
-	//	results := make(map[string][]robotgo.Point)
-	results := make(map[string][]locateimage.Match)
+	results := make(map[string][]robotgo.Point)
 
 	resultsMutex := &sync.Mutex{}
 
@@ -143,41 +133,59 @@ func (a *ImageSearchAction) Execute(ctx interface{}) error {
 			defer wg.Done()
 
 			ip := "./images/icons/" + target + ".png"
-			reader, err := os.Open(ip)
-			defer reader.Close()
-			if err != nil {
-				log.Print(err)
-			} else {
-				img, _, err := image.Decode(reader)
-				if err != nil {
-					log.Print(err)
-				} else {
-					predefinedImage := locateimage.Convert(img)
-					targetResults, err := locateimage.All(context.Background(), captureConvert, predefinedImage, 0.15)
-					if err != nil {
-						log.Print(err)
-					}
-					resultsMutex.Lock()
-					results[target] = targetResults
-					resultsMutex.Unlock()
+			// Read the main image and template
+		    img := gocv.IMRead("./images/temp.jpeg", gocv.IMReadColor)
+		    if img.Empty() {
+		        fmt.Println("Error reading main image")
+		        return
+		    }
+		    defer img.Close()
 
-					log.Printf("Results for %s: %v\n", target, targetResults)
-				}
-			}
+		    template := gocv.IMRead(ip, gocv.IMReadColor)
+		    if template.Empty() {
+		        fmt.Println("Error reading template image")
+		        return
+		    }
+		    defer template.Close()
+
+		    // Print image information for debugging
+		    fmt.Printf("Main image: Type=%v, Channels=%v",
+		        img.Type(), img.Channels())
+		    fmt.Printf("Template: Type=%v, Channels=%v",
+		        template.Type(), template.Channels())
+
+			resultMat := gocv.NewMat()
+			resultMat.Close()
+			maskMat := gocv.NewMat()
+			maskMat.Close()
+//			targetResults, err := locateimage.All(context.Background(), captureConvert, predefinedImage, 0.15)
+//			if err != nil {
+//				log.Print(err)
+//			}
+			//gocv.MatchTemplate(captureImg, imgMat, &resultMat, 5, maskMat)
+			matches := findTemplateMatches(img, template, 0.8)
+			resultsMutex.Lock()
+			results[target] = matches
+			resultsMutex.Unlock()
+
+			log.Printf("Results for %s: %v\n", target, matches)
+
+
 		}(target)
 	}
 
 	wg.Wait()
 
 	for _, pointArr := range results {
-		for _, match := range pointArr {
-			match.Rect.Max.X += a.SearchBox.LeftX
-			match.Rect.Max.Y += a.SearchBox.TopY
+		for _, point := range pointArr {
+			point.X += a.SearchBox.LeftX
+			point.Y += a.SearchBox.TopY
 			for _, d := range a.SubActions {
-				d.Execute(robotgo.Point(match.Rect.Max))
+				d.Execute(point)
 			}
 		}
 	}
+	log.Printf("Total # found: %v\n", len(results))
 	return nil
 }
 func (a *ImageSearchAction) String() string {
@@ -279,3 +287,58 @@ func (a *OcrAction) String() string {
 // func (a *ConditionalAction) String() string {
 // 	return fmt.Sprintf("%sConditional | %s", utils.GetEmoji("Conditional"), a.Name)
 // }
+
+type MatchResult struct {
+    X, Y int
+}
+func findTemplateMatches(img gocv.Mat, template gocv.Mat, threshold float32) []robotgo.Point {
+	// Convert images to grayscale
+    gray := gocv.NewMat()
+    defer gray.Close()
+    gocv.CvtColor(img, &gray, gocv.ColorBGRToGray)
+
+    templateGray := gocv.NewMat()
+    defer templateGray.Close()
+    gocv.CvtColor(template, &templateGray, gocv.ColorBGRToGray)
+
+    // Ensure both images are 8-bit
+    gray8bit := gocv.NewMat()
+    defer gray8bit.Close()
+    templateGray8bit := gocv.NewMat()
+    defer templateGray8bit.Close()
+
+	gray.ConvertTo(&gray8bit, gocv.MatTypeCV8U)
+    templateGray.ConvertTo(&templateGray8bit, gocv.MatTypeCV8U)
+
+	// Create the result matrix
+    result := gocv.NewMat()
+    defer result.Close()
+
+    // Perform template matching
+	mask := gocv.NewMat()
+	defer mask.Close()
+    gocv.MatchTemplate(img, template, &result, gocv.TmCcoeffNormed, mask)
+	os.
+
+    // Get the dimensions
+    resultRows := result.Rows()
+    resultCols := result.Cols()
+
+    // Store matches
+    var matches []robotgo.Point
+
+    // Iterate through the result matrix
+    for y := 0; y < resultRows; y++ {
+        for x := 0; x < resultCols; x++ {
+            confidence := result.GetFloatAt(y, x)
+            if confidence >= threshold {
+                matches = append(matches, robotgo.Point{
+                    X: x,
+                    Y: y,
+                })
+            }
+        }
+    }
+
+	return matches
+}
