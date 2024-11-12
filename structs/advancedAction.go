@@ -318,8 +318,6 @@ func findTemplateMatches(img gocv.Mat, template gocv.Mat, threshold float32) []r
 	mask := gocv.NewMat()
 	defer mask.Close()
     gocv.MatchTemplate(img, template, &result, gocv.TmCcoeffNormed, mask)
-	os.
-
     // Get the dimensions
     resultRows := result.Rows()
     resultCols := result.Cols()
