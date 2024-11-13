@@ -1,0 +1,52 @@
+{
+	"loopcount": 1,
+	"uid": "",
+	"name": "root",
+	"subactions": [
+		{
+			"uid": ".1",
+			"key": "shift",
+			"state": "Down"
+		},
+		{
+			"imagetargets": [
+				"Gold Coin",
+				"Gold Coins",
+				"Gold Purse"
+			],
+			"searchbox": {
+				"name": "Player Inventory Stash",
+				"x1": 915,
+				"y1": 820,
+				"x2": 1460,
+				"y2": 1095
+			},
+			"uid": ".2",
+			"name": "",
+			"subactions": [
+				{
+					"uid": ".2.1",
+					"X": -1,
+					"Y": -1
+				},
+				{
+					"uid": ".2.2",
+					"waittime": 44
+				},
+				{
+					"uid": ".2.3",
+					"button": "right"
+				},
+				{
+					"uid": ".2.4",
+					"waittime": 44
+				}
+			]
+		},
+		{
+			"uid": ".3",
+			"key": "shift",
+			"state": "Up"
+		}
+	]
+}

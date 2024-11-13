@@ -4,12 +4,15 @@ import (
 	"Dark-And-Darker/utils"
 	"bytes"
 	"fmt"
+	"gocv.io/x/gocv"
 	"image"
+	"image/color"
 	"image/png"
 	"log"
+	"math"
+	"sort"
 	"strings"
 	"sync"
-	"gocv.io/x/gocv"
 
 	"fyne.io/fyne/v2/widget"
 	"github.com/go-vgo/robotgo"
@@ -118,13 +121,18 @@ func (a *ImageSearchAction) Execute(ctx interface{}) error {
 	h := a.SearchBox.BottomY - a.SearchBox.TopY
 
 	capture := robotgo.CaptureScreen(a.SearchBox.LeftX+utils.XOffset, a.SearchBox.TopY+utils.YOffset, w, h)
-	robotgo.SaveJpeg(robotgo.ToImage(capture), "./images/temp.jpeg")
+	robotgo.SaveJpeg(robotgo.ToImage(capture), "./images/search-area.jpeg")
 	// capture := robotgo.CaptureScreen(a.SearchBox.LeftX, a.SearchBox.TopY, w, h)
 	defer robotgo.FreeBitmap(capture)
 
+	img := gocv.IMRead("./images/search-area.jpeg", gocv.IMReadColor)
+    defer img.Close()
+    if img.Empty() {
+        fmt.Println("Error reading main image")
+    }
+
 	var wg sync.WaitGroup
 	results := make(map[string][]robotgo.Point)
-
 	resultsMutex := &sync.Mutex{}
 
 	for _, target := range a.Targets {
@@ -133,51 +141,71 @@ func (a *ImageSearchAction) Execute(ctx interface{}) error {
 			defer wg.Done()
 
 			ip := "./images/icons/" + target + ".png"
-			// Read the main image and template
-		    img := gocv.IMRead("./images/temp.jpeg", gocv.IMReadColor)
-		    if img.Empty() {
-		        fmt.Println("Error reading main image")
-		        return
-		    }
-		    defer img.Close()
 
+			// Read the template
 		    template := gocv.IMRead(ip, gocv.IMReadColor)
-		    if template.Empty() {
-		        fmt.Println("Error reading template image")
-		        return
-		    }
 		    defer template.Close()
-
-		    // Print image information for debugging
-		    fmt.Printf("Main image: Type=%v, Channels=%v",
-		        img.Type(), img.Channels())
-		    fmt.Printf("Template: Type=%v, Channels=%v",
-		        template.Type(), template.Channels())
+			if template.Empty() {
+				fmt.Println("Error reading template image")
+				return
+			}
 
 			resultMat := gocv.NewMat()
 			resultMat.Close()
-			maskMat := gocv.NewMat()
-			maskMat.Close()
-//			targetResults, err := locateimage.All(context.Background(), captureConvert, predefinedImage, 0.15)
-//			if err != nil {
-//				log.Print(err)
-//			}
-			//gocv.MatchTemplate(captureImg, imgMat, &resultMat, 5, maskMat)
-			matches := findTemplateMatches(img, template, 0.8)
+
+			matches := findTemplateMatches(img, template, 0.93)
+
+			sort.Slice(matches, func(i, j int) bool {
+				return matches[i].Y < matches[j].Y
+			})
+
+			imgDraw := img
+			//draw rectangles around each match
+			for _, match := range matches {
+		        rect := image.Rect(
+		            match.X,
+		            match.Y,
+		            match.X + template.Cols(),
+		            match.Y + template.Rows(),
+		        )
+		        gocv.Rectangle(&imgDraw, rect, color.RGBA{R: 255, A: 255}, 2)
+		    }
+			gocv.IMWrite("./images/founditems.jpeg", imgDraw)
+
 			resultsMutex.Lock()
 			results[target] = matches
 			resultsMutex.Unlock()
 
 			log.Printf("Results for %s: %v\n", target, matches)
-
-
 		}(target)
 	}
-
 	wg.Wait()
-
+	//show temp window of matches surrounded by rectangles
+//	window := gocv.NewWindow("Matches")
+//    defer window.Close()
+//	window.IMShow(img)
+//    window.WaitKey(0)
+	count := 0
+	//clicked := []robotgo.Point
 	for _, pointArr := range results {
-		for _, point := range pointArr {
+		//filterClosePoints(results, 10)
+		for i, point := range pointArr {
+//			if len(clicked) == 0 {
+//
+//			}
+//			for i, c := range clicked {
+//				dist := distance(clicked[i], c)
+//				log.Printf("distance: %f", dist)
+//				if dist < 10 {
+//					break
+//				}else{
+//					clicked = append(clicked, point)
+//				}
+//			}
+			if i > 50 {
+				break
+			}
+			count++
 			point.X += a.SearchBox.LeftX
 			point.Y += a.SearchBox.TopY
 			for _, d := range a.SubActions {
@@ -185,7 +213,8 @@ func (a *ImageSearchAction) Execute(ctx interface{}) error {
 			}
 		}
 	}
-	log.Printf("Total # found: %v\n", len(results))
+
+	log.Printf("Total # found: %v\n", count)
 	return nil
 }
 func (a *ImageSearchAction) String() string {
@@ -288,28 +317,41 @@ func (a *OcrAction) String() string {
 // 	return fmt.Sprintf("%sConditional | %s", utils.GetEmoji("Conditional"), a.Name)
 // }
 
-type MatchResult struct {
-    X, Y int
-}
-func findTemplateMatches(img gocv.Mat, template gocv.Mat, threshold float32) []robotgo.Point {
-	// Convert images to grayscale
-    gray := gocv.NewMat()
-    defer gray.Close()
-    gocv.CvtColor(img, &gray, gocv.ColorBGRToGray)
+// func distance(p, other robotgo.Point) float64 {
+//	dx := p.X - other.X
+//	dy := p.Y - other.Y
+//	return math.Sqrt(float64(dx*dx + dy*dy))
+//}
+//
+//// filterClosePoints removes points that are within minDistance of any previous point
+//func filterClosePoints(points []robotgo.Point, minDistance float64) []robotgo.Point {
+//	if len(points) == 0 {
+//		return points
+//	}
+//
+//	// First point is always included
+//	filtered := []robotgo.Point{points[0]}
+//
+//	// Check each point against all previously accepted points
+//	for i := 1; i < len(points); i++ {
+//		tooClose := false
+//		for _, accepted := range filtered {
+//			dist := distance(points[i], accepted)
+//			log.Printf("distance: %f", dist)
+//			if dist < minDistance {
+//				tooClose = true
+//				break
+//			}
+//		}
+//		if !tooClose {
+//			filtered = append(filtered, points[i])
+//		}
+//	}
+//
+//	return filtered
+//}
 
-    templateGray := gocv.NewMat()
-    defer templateGray.Close()
-    gocv.CvtColor(template, &templateGray, gocv.ColorBGRToGray)
-
-    // Ensure both images are 8-bit
-    gray8bit := gocv.NewMat()
-    defer gray8bit.Close()
-    templateGray8bit := gocv.NewMat()
-    defer templateGray8bit.Close()
-
-	gray.ConvertTo(&gray8bit, gocv.MatTypeCV8U)
-    templateGray.ConvertTo(&templateGray8bit, gocv.MatTypeCV8U)
-
+func findTemplateMatches(img, template gocv.Mat, threshold float32) []robotgo.Point {
 	// Create the result matrix
     result := gocv.NewMat()
     defer result.Close()
@@ -317,15 +359,29 @@ func findTemplateMatches(img gocv.Mat, template gocv.Mat, threshold float32) []r
     // Perform template matching
 	mask := gocv.NewMat()
 	defer mask.Close()
-    gocv.MatchTemplate(img, template, &result, gocv.TmCcoeffNormed, mask)
+
+	region := template.Region(image.Rect(0, 0, 25, 25))
+
+	//method 5 works best
+    gocv.MatchTemplate(img, region, &result, 5, mask)
+
+//	window := gocv.NewWindow("result")
+//    defer window.Close()
+//	window.IMShow(result)
+//    window.WaitKey(0)
+//
+//	window2 := gocv.NewWindow("region")
+//    defer window2.Close()
+//	window2.IMShow(region)
+//    window2.WaitKey(0)
+
     // Get the dimensions
     resultRows := result.Rows()
     resultCols := result.Cols()
 
-    // Store matches
     var matches []robotgo.Point
 
-    // Iterate through the result matrix
+    // Iterate through the result matrix and store the matches
     for y := 0; y < resultRows; y++ {
         for x := 0; x < resultCols; x++ {
             confidence := result.GetFloatAt(y, x)
@@ -340,3 +396,99 @@ func findTemplateMatches(img gocv.Mat, template gocv.Mat, threshold float32) []r
 
 	return matches
 }
+
+func findFeatureMatches(img, template gocv.Mat) []Match{
+	orbTemplate := gocv.NewORBWithParams( 20,
+		1.2,
+		8,
+	10,
+		0,
+		2,
+		gocv.ORBScoreTypeHarris,
+	10,
+		20,
+		)
+	defer orbTemplate.Close()
+	orbSource := gocv.NewORBWithParams( 10000,
+		1.1,
+		12,
+		10,
+		0,
+		2,
+		gocv.ORBScoreTypeHarris,
+		10,
+		5,
+		)
+	defer orbSource.Close()
+
+	kp1, desc1 := orbTemplate.DetectAndCompute(template, gocv.NewMat())
+    kp2, desc2 := orbSource.DetectAndCompute(img, gocv.NewMat())
+    defer desc1.Close()
+    defer desc2.Close()
+
+	matcher := gocv.NewBFMatcher()
+    defer matcher.Close()
+
+	matches := matcher.Match(desc1, desc2)
+
+	log.Printf("%v", matches)
+
+	templateKPs := gocv.NewMat()
+	gocv.DrawKeyPoints(template, kp1, &templateKPs, color.RGBA{G: 255}, 0)
+
+	templateKPsWin := gocv.NewWindow("templateKPsWin")
+	defer templateKPsWin.Close()
+	templateKPsWin.IMShow(templateKPs)
+    gocv.WaitKey(0)
+
+	imgKPs := gocv.NewMat()
+	gocv.DrawKeyPoints(img, kp2, &imgKPs, color.RGBA{G: 255}, 0)
+
+	imgKPsWin := gocv.NewWindow("imgKPsWin")
+	defer imgKPsWin.Close()
+	imgKPsWin.IMShow(imgKPs)
+    gocv.WaitKey(0)
+
+	matchesImg := gocv.NewMat()
+	gocv.DrawMatches(template, kp1, img, kp2, matches, &matchesImg, color.RGBA{R: 255}, color.RGBA{G: 255}, nil, 2)
+
+	matchesImgWin := gocv.NewWindow("matchesImgWin")
+	defer matchesImgWin.Close()
+	matchesImgWin.IMShow(matchesImg)
+    gocv.WaitKey(0)
+
+	return []Match{}
+}
+
+// Match represents a detected match in the image
+type Match struct {
+    Location image.Point
+    Size     image.Point
+    Score    float64
+}
+
+//// transformPoints transforms a set of points using a homography matrix
+//func transformPoints(points []image.Point, H gocv.Mat) []image.Point {
+//    var transformed []image.Point
+//    for _, pt := range points {
+//        // Create 3x1 matrix for point
+//        srcMat := gocv.NewMatWithSize(3, 1, gocv.MatTypeCV64F)
+//        defer srcMat.Close()
+//        srcMat.SetDoubleAt(0, 0, float64(pt.X))
+//        srcMat.SetDoubleAt(1, 0, float64(pt.Y))
+//        srcMat.SetDoubleAt(2, 0, 1.0)
+//
+//        // Apply homography
+//        dstMat := gocv.NewMat()
+//        defer dstMat.Close()
+//        gocv.GemmWithParams(H, srcMat, 1.0, gocv.NewMat(), 0.0, &dstMat, 0)
+//
+//        // Convert back to point
+//        w := dstMat.GetDoubleAt(2, 0)
+//        x := int(dstMat.GetDoubleAt(0, 0) / w)
+//        y := int(dstMat.GetDoubleAt(1, 0) / w)
+//
+//        transformed = append(transformed, image.Point{X: x, Y: y})
+//    }
+//    return transformed
+//}
