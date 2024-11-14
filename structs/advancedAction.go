@@ -9,7 +9,6 @@ import (
 	"image/color"
 	"image/png"
 	"log"
-	"math"
 	"sort"
 	"strings"
 	"sync"
