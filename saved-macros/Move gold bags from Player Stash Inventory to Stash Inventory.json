@@ -10,8 +10,6 @@
 		},
 		{
 			"imagetargets": [
-				"Gold Coin",
-				"Gold Coins",
 				"Gold Purse"
 			],
 			"searchbox": {
