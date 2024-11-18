@@ -149,8 +149,50 @@ func (a *ImageSearchAction) Execute(ctx interface{}) error {
 				return
 			}
 
-			resultMat := gocv.NewMat()
-			resultMat.Close()
+//			window := gocv.NewWindow("template")
+//		    defer window.Close()
+//			window.IMShow(template)
+//		    window.WaitKey(0)
+//			s := gocv.Split(template)
+//
+//			b, g, r := s[0], s[1], s[2]
+////			b, g, r := gocv.NewMat(), gocv.NewMat(), gocv.NewMat()
+//			defer b.Close()
+//			bw := gocv.NewWindow("blue")
+//		    defer bw.Close()
+//			bw.IMShow(b)
+//		    bw.WaitKey(0)
+//
+//			defer g.Close()
+//			gw := gocv.NewWindow("green")
+//		    defer gw.Close()
+//			gw.IMShow(g)
+//		    gw.WaitKey(0)
+//			defer r.Close()
+//
+//			//gocv.Merge([]gocv.Mat{b,g,r}, &template)
+//			window.IMShow(template)
+//		    window.WaitKey(0)
+//
+//			gocv.CalcHist([]gocv.Mat{b}, []int{0}, gocv.NewMat(), &b, []int{256}, []float64{0, 256}, false)
+//			gocv.CalcHist([]gocv.Mat{g}, []int{0}, gocv.NewMat(), &g, []int{256}, []float64{0, 256}, false)
+//			gocv.CalcHist([]gocv.Mat{r}, []int{0}, gocv.NewMat(), &r, []int{256}, []float64{0, 256}, false)
+//
+//			rows := template.Rows()
+//			cols := template.Cols()
+//			var sumR, sumG, sumB float64
+//			for y := 0; y < rows; y++ {
+//				for x := 0; x < cols; x++ {
+//					sumR += float64(r.GetFloatAt(x, y))
+//					sumG += float64(g.GetFloatAt(x, y))
+//					sumB += float64(b.GetFloatAt(x, y))
+//				}
+//			}
+//			totalPixels := float64(rows * cols)
+//			avgB, avgG, avgR := sumB / totalPixels, sumG / totalPixels, sumR / totalPixels
+//			log.Println(avgB)
+//			log.Println(avgG)
+//			log.Println(avgR)
 
 			matches := findTemplateMatches(img, template, 0.93)
 
@@ -187,20 +229,7 @@ func (a *ImageSearchAction) Execute(ctx interface{}) error {
 	count := 0
 	//clicked := []robotgo.Point
 	for _, pointArr := range results {
-		//filterClosePoints(results, 10)
 		for i, point := range pointArr {
-//			if len(clicked) == 0 {
-//
-//			}
-//			for i, c := range clicked {
-//				dist := distance(clicked[i], c)
-//				log.Printf("distance: %f", dist)
-//				if dist < 10 {
-//					break
-//				}else{
-//					clicked = append(clicked, point)
-//				}
-//			}
 			if i > 50 {
 				break
 			}
