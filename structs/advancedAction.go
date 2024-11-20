@@ -121,11 +121,11 @@ func (a *ImageSearchAction) Execute(ctx interface{}) error {
 	h := a.SearchBox.BottomY - a.SearchBox.TopY
 
 	capture := robotgo.CaptureScreen(a.SearchBox.LeftX+utils.XOffset, a.SearchBox.TopY+utils.YOffset, w, h)
-	robotgo.SaveJpeg(robotgo.ToImage(capture), "./images/search-area.jpeg")
+	robotgo.SaveJpeg(robotgo.ToImage(capture), "./images/search-area.png")
 	// capture := robotgo.CaptureScreen(a.SearchBox.LeftX, a.SearchBox.TopY, w, h)
 	defer robotgo.FreeBitmap(capture)
 
-	img := gocv.IMRead("./images/search-area.jpeg", gocv.IMReadColor)
+	img := gocv.IMRead("./images/search-area.png", gocv.IMReadColor)
 	defer img.Close()
 	if img.Empty() {
 		fmt.Println("Error reading main image")
@@ -173,21 +173,32 @@ func (a *ImageSearchAction) Execute(ctx interface{}) error {
 					splitAreas = append(splitAreas, image.Rect(xSize*r, ySize*c, xSize+xSize*r, ySize+ySize*c))
 				}
 			}
+			var colorMatchwg sync.WaitGroup
 			var matches []robotgo.Point
-			emptyPoint := robotgo.Point{0,0}
+			var colorMatchResults []robotgo.Point
+			colorMatchResultsMutex := &sync.Mutex{}
+			emptyPoint := robotgo.Point{}
 			for i, s := range splitAreas {
-				log.Println(i)
-				point := checkColorMatch(img.Region(s), template, 3, xSplit, ySplit)
-				if point != emptyPoint {
-					matches = append(matches, point)
-				}
+				colorMatchwg.Add(1)
+				go func(s image.Rectangle) {
+					defer colorMatchwg.Done()
+					point := checkColorMatch(img.Region(s), template, 3)
+					if point != emptyPoint {
+						point = robotgo.Point{X: s.Min.X, Y: s.Min.Y}
+						log.Printf("slot: %v || at: %v", i, point)
+						colorMatchResultsMutex.Lock()
+						defer colorMatchResultsMutex.Unlock()
+						colorMatchResults = append(colorMatchResults, point)
+					}
+				}(s)
 			}
-
+			colorMatchwg.Wait()
+			matches = colorMatchResults
 			// matches := findTemplateMatches(img, template, 0.93)
 
-			sort.Slice(matches, func(i, j int) bool {
-				return matches[i].Y < matches[j].Y
-			})
+//			sort.Slice(matches, func(i, j int) bool {
+//				return matches[i].Y < matches[j].Y
+//			})
 
 			imgDraw := img
 			//draw rectangles around each match
@@ -200,11 +211,11 @@ func (a *ImageSearchAction) Execute(ctx interface{}) error {
 				)
 				gocv.Rectangle(&imgDraw, rect, color.RGBA{R: 255, A: 255}, 2)
 			}
-			gocv.IMWrite("./images/founditems.jpeg", imgDraw)
+			gocv.IMWrite("./images/founditems.png", imgDraw)
 
 			resultsMutex.Lock()
+			defer resultsMutex.Unlock()
 			results[target] = matches
-			resultsMutex.Unlock()
 
 			log.Printf("Results for %s: %v\n", target, matches)
 		}(target)
@@ -368,97 +379,192 @@ func (a *OcrAction) String() string {
 //	return filtered
 //}
 
-func checkColorMatch(img, template gocv.Mat, threshold, xSplit, ySplit int) robotgo.Point {
-	var templateBGRAvgs, templateBGRMeds = [3]int{}, [3]int{}
+func checkColorMatch(img, template gocv.Mat, threshold uint8) robotgo.Point {
+	var templateBGRAvgs, templateBGRMeds = [3]uint8{}, [3]uint8{}
 	templateBGRAvgs, templateBGRMeds = extractValuesBGR(template)
-	var templateHSVAvgs, templateHSVMeds = [3]int{}, [3]int{}
+	var templateHSVAvgs, templateHSVMeds = [3]uint8{}, [3]uint8{}
 	templateHSVAvgs, templateHSVMeds = extractValuesHSV(template)
 
-	var imgBGRAvgs, imgBGRMeds, imgHSVAvgs, imgHSVMeds = [3]int{}, [3]int{}, [3]int{}, [3]int{}
+	var imgBGRAvgs, imgBGRMeds, imgHSVAvgs, imgHSVMeds = [3]uint8{}, [3]uint8{}, [3]uint8{}, [3]uint8{}
 	// imgBGRAvgs, imgBGRMeds = extractValuesBGR(img)
 	// imgHSVAvgs, imgHSVMeds = extractValuesHSV(img)
 	// log.Print("imgBGRAvgs, imgBGRMeds, imgHSVAvgs, imgHSVMeds, templateBGRAvgs, templateBGRMeds, templateHSVAvgs, templateHSVMeds")
 	// log.Print("", imgBGRAvgs, imgBGRMeds, imgHSVAvgs, imgHSVMeds, templateBGRAvgs, templateBGRMeds, templateHSVAvgs, templateHSVMeds)
 
-	abs := func(x int) int {
-		if x < 0 {
-			return -x
-		}
-		return x
-	}
+//	abs := func(x uint8) uint8 {
+//		log.Println(x)
+//		if x < 0 {
+//			return -x
+//		}
+//		return x
+//	}
 
 	imgBGRAvgs, imgBGRMeds = extractValuesBGR(img)
 	imgHSVAvgs, imgHSVMeds = extractValuesHSV(img)
-	if abs(templateBGRAvgs[0]-imgBGRAvgs[0]) <= threshold &&
-		abs(templateBGRAvgs[1]-imgBGRAvgs[1]) <= threshold &&
-		abs(templateBGRAvgs[2]-imgBGRAvgs[2]) <= threshold &&
-		abs(templateBGRMeds[0]-imgBGRMeds[0]) <= threshold &&
-		abs(templateBGRMeds[1]-imgBGRMeds[1]) <= threshold &&
-		abs(templateBGRMeds[2]-imgBGRMeds[2]) <= threshold {
+//	var avgs []uint8
+	var bAvg, gAvg, rAvg uint8
+	var bMed, gMed, rMed uint8
+	//	avgs = []uint8{bAvg, gAvg, rAvg}
+//	log.Printf("%v, %v", imgBGRAvgs, templateBGRAvgs)
+////	for i := 0; i < len(templateBGRAvgs); i++ {
+//	for i, a := range avgs {
+//		log.Println(a)
+//		if templateBGRAvgs[i] > imgBGRAvgs[i] {
+//			a = templateBGRAvgs[i]-imgBGRAvgs[i]
+//		} else {
+//			a = imgBGRAvgs[i]- templateBGRAvgs[i]
+//		}
+//	}
+	if templateBGRAvgs[0] > imgBGRAvgs[0] {
+		bAvg = templateBGRAvgs[0]-imgBGRAvgs[0]
+	} else {
+		bAvg = imgBGRAvgs[0]- templateBGRAvgs[0]
+	}
+	if templateBGRAvgs[1] > imgBGRAvgs[1] {
+		gAvg = templateBGRAvgs[1]-imgBGRAvgs[1]
+	} else {
+		gAvg = imgBGRAvgs[1]- templateBGRAvgs[1]
+	}
+	if templateBGRAvgs[2] > imgBGRAvgs[2] {
+		rAvg = templateBGRAvgs[2]-imgBGRAvgs[2]
+	} else {
+		rAvg = imgBGRAvgs[2]- templateBGRAvgs[2]
+	}
+
+	if templateBGRMeds[0] > imgBGRMeds[0] {
+		bMed = templateBGRMeds[0]-imgBGRMeds[0]
+	} else {
+		bMed = imgBGRMeds[0]- templateBGRMeds[0]
+	}
+	if templateBGRMeds[1] > imgBGRMeds[1] {
+		gMed = templateBGRMeds[1]-imgBGRMeds[1]
+	} else {
+		gMed = imgBGRMeds[1]- templateBGRMeds[1]
+	}
+	if templateBGRMeds[2] > imgBGRMeds[2] {
+		rMed = templateBGRMeds[2]-imgBGRMeds[2]
+	} else {
+		rMed = imgBGRMeds[2]- templateBGRMeds[2]
+	}
+	medThresh := uint8(10)
+	log.Printf("BGR averages: %v, %v ||| BGR medians: %v, %v ||| HSV averages: %v, %v ||| HSV medians: %v, %v",
+					imgBGRAvgs, templateBGRAvgs,  imgBGRMeds, templateBGRMeds, imgHSVAvgs, templateHSVAvgs, imgHSVMeds, templateHSVMeds)
+
+	if (bAvg <= threshold &&
+		gAvg <= threshold &&
+		rAvg <= threshold) &&
+		(bMed <= medThresh &&
+			gMed <= medThresh &&
+			rMed <= medThresh) {
 		// abs(templateHSVAvgs[0]-imgHSVAvgs[0]) <= threshold &&
 		// abs(templateHSVAvgs[1]-imgHSVAvgs[1]) <= threshold &&
 		// abs(templateHSVAvgs[2]-imgHSVAvgs[2]) <= threshold &&
 		// abs(templateHSVMeds[0]-imgHSVMeds[0]) <= threshold &&
 		// abs(templateHSVMeds[1]-imgHSVMeds[1]) <= threshold &&
 		// abs(templateHSVMeds[2]-imgHSVMeds[2]) <= threshold {
-		log.Println("BGR averages:")
-		log.Print(imgBGRAvgs, templateBGRAvgs)
-		log.Println("BGR medians")
-		log.Print(imgBGRMeds, templateBGRMeds)
-		log.Println("HSV averages")
-		log.Print(imgHSVAvgs, templateHSVAvgs)
-		log.Println("HSV medians")
-		log.Print(imgHSVMeds, templateHSVMeds)
+		//log.Printf("BGR averages: %v, %v ||| BGR medians: %v, %v ||| HSV averages: %v, %v ||| HSV medians: %v, %v",
+//			imgBGRAvgs, templateBGRAvgs,  imgBGRMeds, templateBGRMeds, imgHSVAvgs, templateHSVAvgs, imgHSVMeds, templateHSVMeds)
+//		log.Println(robotgo.Point{X: img.Size()[0], Y: img.Size()[1]})
 		return robotgo.Point{X: img.Size()[0], Y: img.Size()[1]}
 	}
-	return robotgo.Point{0, 0}
+	return robotgo.Point{}
 }
 
-func extractValuesBGR(img gocv.Mat) ([3]int, [3]int) {
-	avgB := int(img.Mean().Val1)
-	avgG := int(img.Mean().Val2)
-	avgR := int(img.Mean().Val3)
-	// log.Printf("averages")
-	// log.Printf("blue: %v", avgB)
-	// log.Printf("green: %v", avgG)
-	// log.Printf("red: %v", avgR)
+func extractValuesBGR(img gocv.Mat) ([3]uint8, [3]uint8) {
+	split := gocv.Split(img)
+	b, g, r := split[0], split[1], split[2]
+	defer b.Close()
+	defer g.Close()
+	defer r.Close()
+
+	avgB := uint8(b.Mean().Val1)
+	avgG := uint8(g.Mean().Val1)
+	avgR := uint8(r.Mean().Val1)
+//	avgB := int(img.Mean().Val1)
+//	avgG := int(img.Mean().Val2)
+//	avgR := int(img.Mean().Val3)
 
 	//calculate median for each color
-	medB, medG, medR := -1, -1, -1
-	// medians := [3]*int{&medB, &medG, &medR}
-	// for j, m := range medians {
-	// 	bin := 0
-	// 	channel := s[j]
-	// 	for i := 0; i < 256 && *m < 0.0; i++ {
-	// 		bin += int(channel.GetFloatAt(i, 0))
-	// 		if bin > (totalPixels/2) && *m < 0.0 {
-	// 			*m = i
-	// 		}
-	// 	}
-	// }
-	// // log.Printf("medians")
-	// log.Printf("blue: %v", medB)
-	// log.Printf("green: %v", medG)
-	// log.Printf("red: %v", medR)
-	return [3]int{avgB, avgG, avgR}, [3]int{medB, medG, medR}
+//	medians := [3]*int{&medB, &medG, &medR}
+//	var intConv []int
+//	for i, m := range medians {
+//		for j := 0; j < 256; j++ {
+//			intConv = append(intConv, int(split[i].GetIntAt(j, 0)))
+//		}
+//		*m = median(intConv)
+////		for j = 0; j < split[i].Size()[0] && *m < 0.0; j++ {
+////			*m = median()
+////		}
+//	}
+
+//	totalPixels := img.Rows() * img.Cols()
+//	 medians := [3]*int{&medB, &medG, &medR}
+//	 for j, m := range medians {
+//		sorted := gocv.NewMat()
+//		defer sorted.Close()
+//		gocv.Sort(split[j], &sorted, gocv.SortEveryRow + gocv.SortAscending)
+//		bin := 0
+//	 	//channel := split[j]
+//	 	for i := 0; i < 256 && *m < 0.0; i++ {
+//	 		bin += int(sorted.GetFloatAt(i, 0))
+//	 		if bin > (totalPixels/2) && *m < 0.0 {
+//	 			*m = i
+//	 		}
+//	 	}
+//	 }
+
+	 // Convert the channels to slices to easily calculate the median
+    blueData := getChannelData(b)
+    greenData := getChannelData(g)
+    redData := getChannelData(r)
+
+    // Calculate the median of each channel
+	medB := calculateMedian(blueData)
+    medG := calculateMedian(greenData)
+    medR := calculateMedian(redData)
+	return [3]uint8{avgB, avgG, avgR}, [3]uint8{medB, medG, medR}
+}
+// getChannelData converts a gocv Mat to a slice of uint8 for median calculation.
+func getChannelData(channel gocv.Mat) []uint8 {
+    rows := channel.Rows()
+    cols := channel.Cols()
+    data := make([]uint8, rows*cols)
+
+    data, _ = channel.DataPtrUint8()
+
+	return data
 }
 
-func extractValuesHSV(img gocv.Mat) ([3]int, [3]int) {
+func calculateMedian(data []uint8) uint8 {
+    // Sort the data slice
+    sort.Slice(data, func(i, j int) bool {
+        return data[i] < data[j]
+    })
+
+    // Calculate median
+    mid := len(data) / 2
+    if len(data)%2 == 0 {
+        return (data[mid-1] + data[mid]) / 2
+    }
+    return data[mid]
+}
+
+func extractValuesHSV(img gocv.Mat) ([3]uint8, [3]uint8) {
 	hsvMat := gocv.NewMat()
 	defer hsvMat.Close()
 	//convert img to HSV
 	gocv.CvtColor(img, &hsvMat, gocv.ColorBGRToHSV)
 
-	avgH := int(hsvMat.Mean().Val1)
-	avgS := int(hsvMat.Mean().Val2)
-	avgV := int(hsvMat.Mean().Val3)
+	avgS := uint8(hsvMat.Mean().Val2)
+	avgH := uint8(hsvMat.Mean().Val1)
+	avgV := uint8(hsvMat.Mean().Val3)
 	// log.Printf("averages")
 	// log.Printf("Hue: %v", avgH)
 	// log.Printf("Saturation: %v", avgS)
 	// log.Printf("Value: %v", avgV)
 
 	//calculate median for each color
-	medH, medS, medV := -1, -1, -1
+	var medH, medS, medV uint8
 	// medians := [3]*int{&medH, &medS, &medV}
 	// for j, m := range medians {
 	// 	bin := 0
@@ -484,7 +590,26 @@ func extractValuesHSV(img gocv.Mat) ([3]int, [3]int) {
 	// log.Printf("Saturation: %v", medS)
 	// log.Printf("Value: %v", medV)
 
-	return [3]int{avgH, avgS, avgV}, [3]int{medH, medS, medV}
+	return [3]uint8{avgH, avgS, avgV}, [3]uint8{medH, medS, medV}
+}
+
+func median(data []int) int {
+    dataCopy := make([]int, len(data))
+    copy(dataCopy, data)
+
+    sort.Ints(dataCopy)
+
+    var m int
+    l := len(dataCopy)
+    if l == 0 {
+        return 0
+    } else if l%2 == 0 {
+        m = (dataCopy[l/2-1] + dataCopy[l/2]) / 2
+    } else {
+        m = dataCopy[l/2]
+    }
+
+    return m
 }
 
 func findTemplateMatches(img, template gocv.Mat, threshold float32) []robotgo.Point {
