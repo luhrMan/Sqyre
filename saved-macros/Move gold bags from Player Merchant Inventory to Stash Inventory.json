@@ -9,6 +9,23 @@
 			"state": "Down"
 		},
 		{
+			"uid": ".2",
+			"X": 100,
+			"Y": 600
+		},
+		{
+			"uid": ".3",
+			"waittime": 20
+		},
+		{
+			"uid": ".4",
+			"button": "left"
+		},
+		{
+			"uid": ".5",
+			"waittime": 20
+		},
+		{
 			"imagetargets": [
 				"Gold Purse"
 			],
@@ -19,7 +36,7 @@
 				"x2": 2475,
 				"y2": 1103
 			},
-			"uid": ".2",
+			"uid": ".6",
 			"name": "",
 			"subactions": [
 				{
@@ -42,7 +59,7 @@
 			]
 		},
 		{
-			"uid": ".3",
+			"uid": ".7",
 			"key": "shift",
 			"state": "Up"
 		}
