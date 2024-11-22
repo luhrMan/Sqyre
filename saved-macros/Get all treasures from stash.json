@@ -1,0 +1,79 @@
+{
+	"loopcount": 1,
+	"uid": "",
+	"name": "root",
+	"subactions": [
+		{
+			"uid": ".1",
+			"key": "shift",
+			"state": "Down"
+		},
+		{
+			"imagetargets": [
+				"Ruby",
+				"Dotted Gold Bangle",
+				"Gold Band",
+				"Gold Bowl",
+				"Ancient Scroll",
+				"Leaf Gold Bangle",
+				"Patterned Gold Bangle",
+				"Triple Gem Bangle",
+				"Pearl Necklace",
+				"Shine Bangle",
+				"Turquoise Gem Bangle",
+				"Gem Necklace",
+				"Gem Ring",
+				"Goblet",
+				"Gold Goblet",
+				"Gold Crown",
+				"Diamond",
+				"Light Gold Bangle",
+				"Gold Candelabra",
+				"Sapphire",
+				"Gold Candle Platter",
+				"Ceremonial Dagger",
+				"Gold Chalice",
+				"Silver Chalice",
+				"Gold Candle Holder",
+				"Emerald",
+				"Glimmer Bangle",
+				"Simple Gold Bangle",
+				"Slim Bangle",
+				"Gold Waterpot"
+			],
+			"searchbox": {
+				"name": "Stash Inventory",
+				"x1": 1837,
+				"y1": 266,
+				"x2": 2486,
+				"y2": 1347
+			},
+			"uid": ".2",
+			"name": "All Treasures",
+			"subactions": [
+				{
+					"uid": ".2.1",
+					"X": -1,
+					"Y": -1
+				},
+				{
+					"uid": ".2.2",
+					"waittime": 20
+				},
+				{
+					"uid": ".2.3",
+					"button": "right"
+				},
+				{
+					"uid": ".2.4",
+					"waittime": 20
+				}
+			]
+		},
+		{
+			"uid": ".3",
+			"key": "shift",
+			"state": "Up"
+		}
+	]
+}
