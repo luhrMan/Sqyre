@@ -5,12 +5,31 @@
 	"subactions": [
 		{
 			"uid": ".1",
+			"X": 625,
+			"Y": 920
+		},
+		{
+			"uid": ".2",
+			"waittime": 25
+		},
+		{
+			"uid": ".3",
+			"button": "left"
+		},
+		{
+			"uid": ".4",
+			"waittime": 25
+		},
+		{
+			"uid": ".5",
 			"key": "shift",
 			"state": "Down"
 		},
 		{
 			"imagetargets": [
-				"Gold Purse"
+				"Gold Purse",
+				"Gold Coins",
+				"Gold Coin"
 			],
 			"searchbox": {
 				"name": "Player Inventory Stash",
@@ -19,30 +38,30 @@
 				"x2": 1461,
 				"y2": 1106
 			},
-			"uid": ".2",
+			"uid": ".6",
 			"name": "",
 			"subactions": [
 				{
-					"uid": ".2.1",
+					"uid": ".6.1",
 					"X": -1,
 					"Y": -1
 				},
 				{
-					"uid": ".2.2",
+					"uid": ".6.2",
 					"waittime": 20
 				},
 				{
-					"uid": ".2.3",
+					"uid": ".6.3",
 					"button": "right"
 				},
 				{
-					"uid": ".2.4",
+					"uid": ".6.4",
 					"waittime": 20
 				}
 			]
 		},
 		{
-			"uid": ".3",
+			"uid": ".7",
 			"key": "shift",
 			"state": "Up"
 		}

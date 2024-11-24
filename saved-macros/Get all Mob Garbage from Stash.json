@@ -1,0 +1,111 @@
+{
+	"loopcount": 1,
+	"uid": "",
+	"name": "root",
+	"subactions": [
+		{
+			"uid": ".1",
+			"X": 1600,
+			"Y": 920
+		},
+		{
+			"uid": ".2",
+			"waittime": 25
+		},
+		{
+			"uid": ".3",
+			"button": "left"
+		},
+		{
+			"uid": ".4",
+			"waittime": 25
+		},
+		{
+			"uid": ".5",
+			"key": "shift",
+			"state": "Down"
+		},
+		{
+			"imagetargets": [
+				"Demon Blood",
+				"Yetis Teeth",
+				"Wolf Fang",
+				"Centaur Tail",
+				"Broken Skull",
+				"Bat Claw",
+				"Rusty Broken Sword",
+				"Centaur Horn",
+				"Cursed Crown",
+				"Spider Silk",
+				"Rotten Fluids",
+				"Giant Toe",
+				"Cyclops Eye",
+				"Frost Wyverns Claws",
+				"Intact Skull",
+				"Troll Pelt",
+				"Bowstring",
+				"Golden Teeth",
+				"Wolf Claw",
+				"Volcanic Ash",
+				"Mimic Tooth",
+				"Enchanted Dark Fabric",
+				"Mimic Tongue",
+				"Torn Bat Wing",
+				"Bone",
+				"Demon Dog Thorn",
+				"Frozen Heart",
+				"Grave Essence",
+				"Primitive Bracelet",
+				"Moldy Bread",
+				"Cyclops Rags",
+				"Wolf Pelt",
+				"Captured Mana Flakes",
+				"Goblin Ear",
+				"Wendigos Sharp Claws",
+				"Beetle Wings",
+				"Bug Shell",
+				"Dog Collar",
+				"Extra Thick Pelt",
+				"Glowing Blue Ice Eyes",
+				"Kobolds Ear",
+				"Maggots",
+				"Centaur Hoof",
+				"Old Cloth",
+				"Wendigos Hoof"
+			],
+			"searchbox": {
+				"name": "Stash Inventory",
+				"x1": 1838,
+				"y1": 267,
+				"x2": 2486,
+				"y2": 1347
+			},
+			"uid": ".6",
+			"name": "Mob Garbage",
+			"subactions": [
+				{
+					"uid": ".6.1",
+					"X": -1,
+					"Y": -1
+				},
+				{
+					"uid": ".6.2",
+					"waittime": 25
+				},
+				{
+					"uid": ".6.3",
+					"button": "left"
+				},
+				{
+					"uid": ".6.4",
+					"waittime": 25
+				}
+			]
+		},
+		{
+			"uid": ".7",
+			"key": "shift",
+			"state": "Up"
+		}
+	]
+}
