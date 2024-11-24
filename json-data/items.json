@@ -331,7 +331,7 @@
             "merchant": "Collector"
         },
         {
-            "name": "Kobold's Ear",
+            "name": "Kobolds Ear",
             "gridSize":[1, 1],
             "stackMax": 3,
             "merchant": "Collector"
@@ -373,7 +373,7 @@
             "merchant": "Collector"
         },
         {
-            "name": "Yeti's Teeth",
+            "name": "Yetis Teeth",
             "gridSize":[1, 1],
             "stackMax": 3,
             "merchant": "Collector"
@@ -411,7 +411,7 @@
         },
         
         {
-            "name": "Wendigo's Sharp Claws",
+            "name": "Wendigos Sharp Claws",
             "gridSize":[2, 1],
             "stackMax": 0,
             "merchant": "Collector"
@@ -479,7 +479,7 @@
             "merchant": "Collector"
         },
         {
-            "name": "Cyclops Rag",
+            "name": "Cyclops Rags",
             "gridSize":[2, 2],
             "stackMax": 0,
             "merchant": "Collector"
@@ -497,13 +497,13 @@
             "merchant": "Collector"
         },
         {
-            "name": "Extra Thick Pelts",
+            "name": "Extra Thick Pelt",
             "gridSize":[2, 2],
             "stackMax": 3,
             "merchant": "Collector"
         },
         {
-            "name": "Frost Wyvern's Claws",
+            "name": "Frost Wyverns Claws",
             "gridSize":[2, 2],
             "stackMax": 0,
             "merchant": "Collector"
@@ -545,7 +545,7 @@
             "merchant": "Collector"
         },
         {
-            "name": "Wendigo's Hoof",
+            "name": "Wendigos Hoof",
             "gridSize":[2, 2],
             "stackMax": 0,
             "merchant": "Collector"

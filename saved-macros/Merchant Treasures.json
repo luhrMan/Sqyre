@@ -45,7 +45,25 @@
 			},
 			"uid": ".1",
 			"name": "Treasures",
-			"subactions": null
+			"subactions": [
+				{
+					"uid": ".1.1",
+					"waittime": 25
+				},
+				{
+					"uid": ".1.2",
+					"X": -1,
+					"Y": -1
+				},
+				{
+					"uid": ".1.3",
+					"waittime": 25
+				},
+				{
+					"uid": ".1.4",
+					"button": "left"
+				}
+			]
 		}
 	]
 }
