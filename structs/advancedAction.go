@@ -180,7 +180,6 @@ func (a *ImageSearchAction) Execute(ctx interface{}) error {
 
 			var colorMatchwg sync.WaitGroup
 			var matches []robotgo.Point
-//			var colorMatchResults []robotgo.Point
 			colorMatchResultsMutex := &sync.Mutex{}
 			emptyPoint := robotgo.Point{}
 
@@ -190,8 +189,6 @@ func (a *ImageSearchAction) Execute(ctx interface{}) error {
 					defer colorMatchwg.Done()
 					var point robotgo.Point
 					point = checkHistogramMatch(img.Region(s), templateCut, tolerance, target)
-//					point := checkColorMatch(img.Region(s), template, 5)
-//					log.Printf("slot: %v || at: %v", i, point)
 					if point != emptyPoint {
 						point = robotgo.Point{X: s.Min.X, Y: s.Min.Y}
 						colorMatchResultsMutex.Lock()
@@ -201,7 +198,6 @@ func (a *ImageSearchAction) Execute(ctx interface{}) error {
 				}(s)
 			}
 			colorMatchwg.Wait()
-//			matches = colorMatchResults
 //			 matches := findTemplateMatches(img, templateCut, 0.95)
 			sort.Slice(matches, func(i, j int) bool {
 				return matches[i].Y < matches[j].Y
@@ -211,7 +207,6 @@ func (a *ImageSearchAction) Execute(ctx interface{}) error {
 			defer resultsMutex.Unlock()
 			results[target] = matches
 		}(target)
-		//draw rectangles around each match
 	}
 	wg.Wait()
 //	removeDupes := make(map[robotgo.Point]bool)
@@ -225,7 +220,7 @@ func (a *ImageSearchAction) Execute(ctx interface{}) error {
 //			}
 //		}
 //	}
-	for i, matches := range results {
+	for i, matches := range results { //draw rectangles around each match
 		for _, match := range matches {
 			rect := image.Rect(
 				match.X,
@@ -238,7 +233,6 @@ func (a *ImageSearchAction) Execute(ctx interface{}) error {
 		}
 		log.Printf("Results for %s: %v\n", i, matches)
 	}
-
 	gocv.IMWrite("./images/founditems.png", imgDraw)
 	//show temp window of matches surrounded by rectangles
 	//	window := gocv.NewWindow("Matches")
@@ -415,8 +409,6 @@ func checkHistogramMatch(img, template gocv.Mat, tolerance float32, target strin
 		for c := range img1Channels {
 			gocv.CalcHist([]gocv.Mat{img1}, []int{c}, gocv.NewMat(), &img1Channels[c], []int{bins}, []float64{0,256}, false)
 			gocv.Normalize(img1Channels[c], &img1Channels[c], 0, 1, normType)
-		}
-		for c := range img2Channels {
 			gocv.CalcHist([]gocv.Mat{img2}, []int{c}, gocv.NewMat(), &img2Channels[c], []int{bins}, []float64{0,256}, false)
 			gocv.Normalize(img2Channels[c], &img2Channels[c], 0, 1, normType)
 			comparisons[c] = gocv.CompareHist(img1Channels[c], img2Channels[c], compType)
@@ -424,179 +416,61 @@ func checkHistogramMatch(img, template gocv.Mat, tolerance float32, target strin
 		return comparisons
 	}
 
+	calculateHSVColorModelSimilarities := func(img1, img2 gocv.Mat, bins int) []float32 {
+		comparisons := []float32{0, 0, 0}
+		img1Channels := gocv.Split(img1)
+		img2Channels := gocv.Split(img2)
+		for c := range img1Channels {
+			if c == 0 { //for hue, set range 0 - 180
+				gocv.CalcHist([]gocv.Mat{img1}, []int{c}, gocv.NewMat(), &img1Channels[c], []int{bins}, []float64{0,180}, false)
+				gocv.CalcHist([]gocv.Mat{img2}, []int{c}, gocv.NewMat(), &img2Channels[c], []int{bins}, []float64{0,180}, false)
+			} else {
+				gocv.CalcHist([]gocv.Mat{img1}, []int{c}, gocv.NewMat(), &img1Channels[c], []int{bins}, []float64{0,256}, false)
+				gocv.CalcHist([]gocv.Mat{img2}, []int{c}, gocv.NewMat(), &img2Channels[c], []int{bins}, []float64{0,256}, false)
+			}
+			gocv.Normalize(img1Channels[c], &img1Channels[c], 0, 1, normType)
+			gocv.Normalize(img2Channels[c], &img2Channels[c], 0, 1, normType)
+			if c == 1 { //for saturation, cut in half idk why it just was going high af
+				comparisons[c] = gocv.CompareHist(img1Channels[c], img2Channels[c], compType) / 2
+			} else {
+				comparisons[c] = gocv.CompareHist(img1Channels[c], img2Channels[c], compType)
+			}
+		}
+		return comparisons
+	}
+
+	simBGR := calculateColorModelSimilarities(img, template, 64)
+
 	imgGray := getColorChannels(img, gocv.ColorBGRToGray)
 	templateGray := getColorChannels(template, gocv.ColorBGRToGray)
 	simGray := calculateColorModelSimilarities(imgGray, templateGray, 64)
+
+	imgHSV := getColorChannels(img, gocv.ColorBGRToHSV)
+	templateHSV := getColorChannels(template, gocv.ColorBGRToHSV)
+	simHSV := calculateHSVColorModelSimilarities(imgHSV, templateHSV, 64)
 
 	imgLAB := getColorChannels(img, gocv.ColorBGRToLab)
 	templateLAB := getColorChannels(template, gocv.ColorBGRToLab)
 	simLAB := calculateColorModelSimilarities(imgLAB, templateLAB, 64)
 
-	simBGR := calculateColorModelSimilarities(img, template, 64)
-
-//	grayImg := gocv.NewMat()
-//	grayTemplate := gocv.NewMat()
-//	grayHistImg := gocv.NewMat()
-//	grayHistTemplate := gocv.NewMat()
-//	defer grayImg.Close()
-//	defer grayTemplate.Close()
-//	defer grayHistImg.Close()
-//	defer grayHistTemplate.Close()
-//
-//	gocv.CvtColor(img, &grayImg, gocv.ColorBGRToGray)
-//	gocv.CvtColor(template, &grayTemplate, gocv.ColorBGRToGray)
-//
-//	grayBins := 64
-//	gocv.CalcHist([]gocv.Mat{grayImg}, []int{0}, gocv.NewMat(), &grayHistImg, []int{grayBins}, []float64{0,256}, false)
-//	gocv.CalcHist([]gocv.Mat{grayTemplate}, []int{0}, gocv.NewMat(), &grayHistTemplate, []int{grayBins}, []float64{0,256}, false)
-//	gocv.Normalize(grayHistImg, &grayHistImg, 0, 1, normType)
-//	gocv.Normalize(grayHistTemplate, &grayHistTemplate, 0, 1, normType)
-//	graySimilarity := gocv.CompareHist(grayHistImg, grayHistTemplate, compType)
-
-
-//	graySimilarity := 3
-//	var bgrTolerance float32 = 0.15
-//	labImg := gocv.NewMat()
-//	labTemplate := gocv.NewMat()
-//	lHistImg := gocv.NewMat()
-//	aHistImg := gocv.NewMat()
-//	blabHistImg := gocv.NewMat()
-//	lHistTemplate := gocv.NewMat()
-//	aHistTemplate := gocv.NewMat()
-//	blabHistTemplate := gocv.NewMat()
-//	defer labImg.Close()
-//	defer labTemplate.Close()
-//	defer lHistImg.Close()
-//	defer aHistImg.Close()
-//	defer blabHistImg.Close()
-//	defer lHistTemplate.Close()
-//	defer aHistTemplate.Close()
-//	defer blabHistTemplate.Close()
-//
-//	gocv.CvtColor(img, &labImg, gocv.ColorBGRToLab)
-//	gocv.CvtColor(template, &labTemplate, gocv.ColorBGRToLab)
-//
-//
-//	labBins := 64
-//	gocv.CalcHist([]gocv.Mat{labImg}, []int{0}, gocv.NewMat(), &lHistImg, []int{labBins}, []float64{0,256}, false)
-//	gocv.CalcHist([]gocv.Mat{labTemplate}, []int{0}, gocv.NewMat(), &lHistTemplate, []int{labBins}, []float64{0,256}, false)
-//	gocv.CalcHist([]gocv.Mat{labImg}, []int{1}, gocv.NewMat(), &aHistImg, []int{labBins}, []float64{0,256}, false)
-//	gocv.CalcHist([]gocv.Mat{labTemplate}, []int{1}, gocv.NewMat(), &aHistTemplate, []int{labBins}, []float64{0,256}, false)
-//	gocv.CalcHist([]gocv.Mat{labImg}, []int{2}, gocv.NewMat(), &blabHistImg, []int{labBins}, []float64{0,256}, false)
-//	gocv.CalcHist([]gocv.Mat{labTemplate}, []int{2}, gocv.NewMat(), &blabHistTemplate, []int{labBins}, []float64{0,256}, false)
-//
-//	gocv.Normalize(lHistImg, &lHistImg, 0, 1, normType)
-//	gocv.Normalize(aHistImg, &aHistImg, 0, 1, normType)
-//	gocv.Normalize(blabHistImg, &blabHistImg, 0, 1, normType)
-//	gocv.Normalize(lHistTemplate, &lHistTemplate, 0, 1, normType)
-//	gocv.Normalize(aHistTemplate, &aHistTemplate, 0, 1, normType)
-//	gocv.Normalize(blabHistTemplate, &blabHistTemplate, 0, 1, normType)
-//	compType := gocv.HistCmpCorrel
-//	lSimilarity := gocv.CompareHist(lHistImg, lHistTemplate, compType)
-//	aSimilarity := gocv.CompareHist(aHistImg, aHistTemplate, compType)
-//	blabSimilarity := gocv.CompareHist(blabHistImg, blabHistTemplate, compType)
-
-	// ------------------------------------------------------------------------HSV
-	hsvImg := gocv.NewMat()
-	hsvTemplate := gocv.NewMat()
-	hHistImg := gocv.NewMat()
-	sHistImg := gocv.NewMat()
-	vHistImg := gocv.NewMat()
-	hHistTemplate := gocv.NewMat()
-	sHistTemplate := gocv.NewMat()
-	vHistTemplate := gocv.NewMat()
-	defer hsvImg.Close()
-	defer hsvTemplate.Close()
-	defer hHistImg.Close()
-	defer sHistImg.Close()
-	defer vHistImg.Close()
-	defer hHistTemplate.Close()
-	defer sHistTemplate.Close()
-	defer vHistTemplate.Close()
-	gocv.CvtColor(img, &hsvImg, gocv.ColorBGRToHSV)
-	gocv.CvtColor(template, &hsvTemplate, gocv.ColorBGRToHSV)
-
-	hsvBins := 64
-	gocv.CalcHist([]gocv.Mat{hsvImg}, []int{0}, gocv.NewMat(), &hHistImg, []int{hsvBins}, []float64{0,180}, false)
-	gocv.CalcHist([]gocv.Mat{hsvTemplate}, []int{0}, gocv.NewMat(), &hHistTemplate, []int{hsvBins}, []float64{0,180}, false)
-	gocv.CalcHist([]gocv.Mat{hsvImg}, []int{1}, gocv.NewMat(), &sHistImg, []int{hsvBins}, []float64{0,256}, false)
-	gocv.CalcHist([]gocv.Mat{hsvTemplate}, []int{1}, gocv.NewMat(), &sHistTemplate, []int{hsvBins}, []float64{0,256}, false)
-	gocv.CalcHist([]gocv.Mat{hsvImg}, []int{2}, gocv.NewMat(), &vHistImg, []int{hsvBins}, []float64{0,256}, false)
-	gocv.CalcHist([]gocv.Mat{hsvTemplate}, []int{2}, gocv.NewMat(), &vHistTemplate, []int{hsvBins}, []float64{0,256}, false)
-
-	gocv.Normalize(hHistImg, &hHistImg, 0, 1, normType)
-	gocv.Normalize(sHistImg, &sHistImg, 0, 1, normType)
-	gocv.Normalize(vHistImg, &vHistImg, 0, 1, normType)
-	gocv.Normalize(hHistTemplate, &hHistTemplate, 0, 1, normType)
-	gocv.Normalize(sHistTemplate, &sHistTemplate, 0, 1, normType)
-	gocv.Normalize(vHistTemplate, &vHistTemplate, 0, 1, normType)
-	hSimilarity := gocv.CompareHist(hHistImg, hHistTemplate, compType)
-	sSimilarity := gocv.CompareHist(sHistImg, sHistTemplate, compType) / 2
-	vSimilarity := gocv.CompareHist(vHistImg, vHistTemplate, compType)
-
-	// ------------------------------------------------------------------------BGR
-//	bHistImg := gocv.NewMat()
-//	gHistImg := gocv.NewMat()
-//	rHistImg := gocv.NewMat()
-//	bHistTemplate := gocv.NewMat()
-//	gHistTemplate := gocv.NewMat()
-//	rHistTemplate := gocv.NewMat()
-//	defer bHistImg.Close()
-//	defer gHistImg.Close()
-//	defer rHistImg.Close()
-//
-//	defer bHistTemplate.Close()
-//	defer gHistTemplate.Close()
-//	defer rHistTemplate.Close()
-//
-//	bgrBins := 64
-//	gocv.CalcHist([]gocv.Mat{img}, []int{0}, gocv.NewMat(), &bHistImg, []int{bgrBins}, []float64{0,256}, false)
-//	gocv.CalcHist([]gocv.Mat{template}, []int{0}, gocv.NewMat(), &bHistTemplate, []int{bgrBins}, []float64{0,256}, false)
-//	gocv.CalcHist([]gocv.Mat{img}, []int{1}, gocv.NewMat(), &gHistImg, []int{bgrBins}, []float64{0,256}, false)
-//	gocv.CalcHist([]gocv.Mat{template}, []int{1}, gocv.NewMat(), &gHistTemplate, []int{bgrBins}, []float64{0,256}, false)
-//	gocv.CalcHist([]gocv.Mat{img}, []int{2}, gocv.NewMat(), &rHistImg, []int{bgrBins}, []float64{0,256}, false)
-//	gocv.CalcHist([]gocv.Mat{template}, []int{2}, gocv.NewMat(), &rHistTemplate, []int{bgrBins}, []float64{0,256}, false)
-//
-//	gocv.Normalize(bHistImg, &bHistImg, 0, 1, normType)
-//	gocv.Normalize(gHistImg, &gHistImg, 0, 1, normType)
-//	gocv.Normalize(rHistImg, &rHistImg, 0, 1, normType)
-//	gocv.Normalize(bHistTemplate, &bHistTemplate, 0, 1, normType)
-//	gocv.Normalize(gHistTemplate, &gHistTemplate, 0, 1, normType)
-//	gocv.Normalize(rHistTemplate, &rHistTemplate, 0, 1, normType)
-//
-//	bSimilarity := gocv.CompareHist(bHistImg, bHistTemplate, compType)
-//	gSimilarity := gocv.CompareHist(gHistImg, gHistTemplate, compType)
-//	rSimilarity := gocv.CompareHist(rHistImg, rHistTemplate, compType)
-//	log.Printf( "target: %v gray: %.4f\n" +
-//		"l: %.4f || a: %.4f || b: %.4f\n" +
-//		"hue: %.4f || sat: %.4f || val: %.4f\n" +
-//		"blue: %.4f || green: %.4f || red: %.4f",
-//		target, graySimilarity,
-//		lSimilarity, aSimilarity, blabSimilarity,
-//		hSimilarity, sSimilarity, vSimilarity,
-//		bSimilarity, gSimilarity, rSimilarity)
 	if
 	//	simGray < 0.06 &&
 		simBGR[0] < tolerance &&
 		simBGR[1] < tolerance &&
 		simBGR[2] < tolerance &&
-		hSimilarity < tolerance &&
-		sSimilarity < tolerance &&
-		vSimilarity < tolerance &&
+		simHSV[0] < tolerance &&
+		simHSV[1] < tolerance &&
+		simHSV[2] < tolerance &&
 		simLAB[0] < tolerance &&
 		simLAB[1] < tolerance &&
 		simLAB[2] < tolerance {
-
-//	lSimilarity < tolerance &&
-//	aSimilarity <  tolerance &&
-//	blabSimilarity < tolerance {
 	log.Printf( "target: %v gray: %.4f\n" +
 		"l: %.4f || a: %.4f || b: %.4f\n" +
 		"hue: %.4f || sat: %.4f || val: %.4f\n" +
 		"blue: %.4f || green: %.4f || red: %.4f",
 		target, simGray[0],
 		simLAB[0], simLAB[1], simLAB[2],
-		hSimilarity, sSimilarity, vSimilarity,
+		simHSV[0], simHSV[1], simHSV[2],
 		simBGR[0], simBGR[1], simBGR[2])
 		return robotgo.Point{X: img.Size()[0], Y: img.Size()[1]}
 	} else {
