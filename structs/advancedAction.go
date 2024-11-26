@@ -117,38 +117,38 @@ type ImageSearchAction struct {
 
 func (a *ImageSearchAction) Execute(ctx interface{}) error {
 	log.Printf("Image Search | %v in X1:%d Y1:%d X2:%d Y2:%d", a.Targets, a.SearchBox.LeftX, a.SearchBox.TopY, a.SearchBox.RightX, a.SearchBox.BottomY)
-//	w := a.SearchBox.RightX - a.SearchBox.LeftX
-//	h := a.SearchBox.BottomY - a.SearchBox.TopY
-//
-//	captureImg :=robotgo.CaptureImg(a.SearchBox.LeftX+utils.XOffset, a.SearchBox.TopY+utils.YOffset, w, h)
-//	img, _  := gocv.ImageToMatRGB(captureImg)
-//	gocv.IMWrite("./images/search-area.png", img)
-	img := gocv.IMRead("./images/stash-area.png", gocv.IMReadColor)
+	w := a.SearchBox.RightX - a.SearchBox.LeftX
+	h := a.SearchBox.BottomY - a.SearchBox.TopY
+
+	captureImg :=robotgo.CaptureImg(a.SearchBox.LeftX+utils.XOffset, a.SearchBox.TopY+utils.YOffset, w, h)
+	img, _  := gocv.ImageToMatRGB(captureImg)
+	gocv.IMWrite("./images/search-area.png", img)
+//	img := gocv.IMRead("./images/stash-area.png", gocv.IMReadColor)
 	defer img.Close()
-//	imgDraw := gocv.NewMat()
 	imgDraw := img.Clone()
 	defer imgDraw.Close()
-	//defer imgDraw.Close()
+
 	var xSplit, ySplit int
-	if strings.Contains(a.SearchBox.Name, "Player") {
-		xSplit = 5
-		ySplit = 10
-	} else if strings.Contains(a.SearchBox.Name, "Stash Inventory") {
-		xSplit = 20
-		ySplit = 12
-	} else if strings.Contains(a.SearchBox.Name, "Merchant Inventory") {
-		xSplit = 20
-		ySplit = 12
-	} else {
-		xSplit = 1
-		ySplit = 1
+	switch {
+	case strings.Contains(a.SearchBox.Name, "Player"):
+		xSplit = 5; ySplit = 10
+	case strings.Contains(a.SearchBox.Name, "Stash Inventory"),
+		strings.Contains(a.SearchBox.Name, "Merchant Inventory"):
+		xSplit = 20; ySplit = 12
+	default:
+		xSplit = 1; ySplit = 1
 	}
-	var tolerance float32 = 0.05
-	if strings.Contains(a.SearchBox.Name, "Stash") {
+
+	var tolerance float32
+	switch {
+	case strings.Contains(a.SearchBox.Name, "Stash"):
 		tolerance = 0.1
-	} else if strings.Contains(a.SearchBox.Name, "Merchant"){
+	case strings.Contains(a.SearchBox.Name, "Merchant"):
 		tolerance = 0.15
+	default:
+		tolerance = 0.05
 	}
+
 	xSize := img.Cols() / ySplit
 	ySize := img.Rows() / xSplit
 	borderSize := 3
@@ -162,7 +162,7 @@ func (a *ImageSearchAction) Execute(ctx interface{}) error {
 	var wg sync.WaitGroup
 	results := make(map[string][]robotgo.Point)
 	resultsMutex := &sync.Mutex{}
-	for _, target := range a.Targets {
+	for _, target := range a.Targets { // for each search target, create a goroutine
 		wg.Add(1)
 		go func(target string) {
 			defer wg.Done()
@@ -176,24 +176,25 @@ func (a *ImageSearchAction) Execute(ctx interface{}) error {
 				fmt.Println("Error reading template image")
 				return
 			}
-			templateCut := template.Region(image.Rect(borderSize, borderSize, template.Cols()-borderSize, template.Rows()-borderSize)) //template.Size()[0]-borderSize, template.Size()[1]-borderSize))
+			templateCut := template.Region(image.Rect(borderSize, borderSize, template.Cols()-borderSize, template.Rows()-borderSize))
 
 			var colorMatchwg sync.WaitGroup
 			var matches []robotgo.Point
 			colorMatchResultsMutex := &sync.Mutex{}
 			emptyPoint := robotgo.Point{}
 
-			for _, s := range splitAreas {
+			for _, s := range splitAreas { //for each split area, create a goroutine
 				colorMatchwg.Add(1)
 				go func(s image.Rectangle) {
 					defer colorMatchwg.Done()
+
 					var point robotgo.Point
 					point = checkHistogramMatch(img.Region(s), templateCut, tolerance, target)
 					if point != emptyPoint {
 						point = robotgo.Point{X: s.Min.X, Y: s.Min.Y}
 						colorMatchResultsMutex.Lock()
-						matches = append(matches, point)
 						defer colorMatchResultsMutex.Unlock()
+						matches = append(matches, point)
 					}
 				}(s)
 			}
@@ -209,17 +210,6 @@ func (a *ImageSearchAction) Execute(ctx interface{}) error {
 		}(target)
 	}
 	wg.Wait()
-//	removeDupes := make(map[robotgo.Point]bool)
-//	for _, matches := range results {
-//		k := 0
-//		for j := range matches {
-//			if !removeDupes[matches[j]] {
-//				removeDupes[matches[j]] = true
-//				matches[k] = matches[j]
-//				k++
-//			}
-//		}
-//	}
 	for i, matches := range results { //draw rectangles around each match
 		for _, match := range matches {
 			rect := image.Rect(
@@ -234,11 +224,6 @@ func (a *ImageSearchAction) Execute(ctx interface{}) error {
 		log.Printf("Results for %s: %v\n", i, matches)
 	}
 	gocv.IMWrite("./images/founditems.png", imgDraw)
-	//show temp window of matches surrounded by rectangles
-	//	window := gocv.NewWindow("Matches")
-	//    defer window.Close()
-	//	window.IMShow(img)
-	//    window.WaitKey(0)
 	count := 0
 	//clicked := []robotgo.Point
 	for _, pointArr := range results {
@@ -391,6 +376,20 @@ func (a *OcrAction) String() string {
 //
 //	return filtered
 //}
+
+func removeDupes() {
+	//	removeDupes := make(map[robotgo.Point]bool)
+	//	for _, matches := range results {
+	//		k := 0
+	//		for j := range matches {
+	//			if !removeDupes[matches[j]] {
+	//				removeDupes[matches[j]] = true
+	//				matches[k] = matches[j]
+	//				k++
+	//			}
+	//		}
+	//	})
+}
 
 func checkHistogramMatch(img, template gocv.Mat, tolerance float32, target string) robotgo.Point {
 	normType := gocv.NormMinMax

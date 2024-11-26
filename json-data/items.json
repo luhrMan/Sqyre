@@ -556,6 +556,288 @@
             "stackMax": 3,
             "merchant": "Collector"
         }
+    ],
+    "accessories | jewelry": [
+        {
+            "name": "Badger Pendant",
+            "gridSize":[1, 1],
+            "stackMax": 0,
+            "merchant": ""
+        },
+        {
+            "name": "Bear Pendant",
+            "gridSize":[1, 1],
+            "stackMax": 0,
+            "merchant": ""
+        },
+        {
+            "name": "Fangs of Death Necklace",
+            "gridSize":[1, 1],
+            "stackMax": 0,
+            "merchant": ""
+        },
+        {
+            "name": "Fox Pendant",
+            "gridSize":[1, 1],
+            "stackMax": 0,
+            "merchant": ""
+        },
+        {
+            "name": "Frost Amulet",
+            "gridSize":[1, 1],
+            "stackMax": 0,
+            "merchant": ""
+        },
+        {
+            "name": "Monkey Pendant",
+            "gridSize":[1, 1],
+            "stackMax": 0,
+            "merchant": ""
+        },
+        {
+            "name": "Necklace of Peace",
+            "gridSize":[1, 1],
+            "stackMax": 0,
+            "merchant": ""
+        },
+        {
+            "name": "Owl Pendant",
+            "gridSize":[1, 1],
+            "stackMax": 0,
+            "merchant": ""
+        },
+        {
+            "name": "Ox Pendant",
+            "gridSize":[1, 1],
+            "stackMax": 0,
+            "merchant": ""
+        },
+        {
+            "name": "Phoenix Choker",
+            "gridSize":[1, 1],
+            "stackMax": 0,
+            "merchant": ""
+        },
+        {
+            "name": "Rat Pendant",
+            "gridSize":[1, 1],
+            "stackMax": 0,
+            "merchant": ""
+        },
+        {
+            "name": "Torq of Soul",
+            "gridSize":[1, 1],
+            "stackMax": 0,
+            "merchant": ""
+        },
+        {
+            "name": "Wind Locket",
+            "gridSize":[1, 1],
+            "stackMax": 0,
+            "merchant": ""
+        },
+        {
+            "name": "Grimsmile Ring",
+            "gridSize":[1, 1],
+            "stackMax": 0,
+            "merchant": ""
+        },
+        {
+            "name": "Ring of Courage",
+            "gridSize":[1, 1],
+            "stackMax": 0,
+            "merchant": ""
+        },
+        {
+            "name": "Ring of Finesse",
+            "gridSize":[1, 1],
+            "stackMax": 0,
+            "merchant": ""
+        },
+        {
+            "name": "Ring of Quickness",
+            "gridSize":[1, 1],
+            "stackMax": 0,
+            "merchant": ""
+        },
+        {
+            "name": "Ring of Resolve",
+            "gridSize":[1, 1],
+            "stackMax": 0,
+            "merchant": ""
+        },
+        {
+            "name": "Ring of Survival",
+            "gridSize":[1, 1],
+            "stackMax": 0,
+            "merchant": ""
+        },
+        {
+            "name": "Ring of Vitality",
+            "gridSize":[1, 1],
+            "stackMax": 0,
+            "merchant": ""
+        },
+        {
+            "name": "Ring of Wisdom",
+            "gridSize":[1, 1],
+            "stackMax": 0,
+            "merchant": ""
+        }
+    ],
+    "ores | ingots | powders": [
+        {
+            "name": "Cobalt Ore",
+            "gridSize":[2, 2],
+            "stackMax": 0,
+            "merchant": ""
+        },
+        {
+            "name": "Cobalt Ore Stack",
+            "gridSize":[2, 2],
+            "stackMax": 0,
+            "merchant": ""
+        },
+        {
+            "name": "Copper Ore",
+            "gridSize":[2, 2],
+            "stackMax": 0,
+            "merchant": ""
+        },
+        {
+            "name": "Copper Ore Stack",
+            "gridSize":[2, 2],
+            "stackMax": 0,
+            "merchant": ""
+        },
+        {
+            "name": "Froststone Ore",
+            "gridSize":[2, 2],
+            "stackMax": 0,
+            "merchant": ""
+        },
+        {
+            "name": "Froststone Ore Stack",
+            "gridSize":[2, 2],
+            "stackMax": 0,
+            "merchant": ""
+        },
+        {
+            "name": "Gold Ore",
+            "gridSize":[2, 2],
+            "stackMax": 0,
+            "merchant": ""
+        },
+        {
+            "name": "Gold Ore Stack",
+            "gridSize":[2, 2],
+            "stackMax": 0,
+            "merchant": ""
+        },
+        {
+            "name": "Iron Ore",
+            "gridSize":[2, 2],
+            "stackMax": 0,
+            "merchant": ""
+        },
+        {
+            "name": "Iron Ore Stack",
+            "gridSize":[2, 2],
+            "stackMax": 0,
+            "merchant": ""
+        },
+        {
+            "name": "Rubysilver Ore",
+            "gridSize":[2, 2],
+            "stackMax": 0,
+            "merchant": ""
+        },
+        {
+            "name": "Rubysilver Ore Stack",
+            "gridSize":[2, 2],
+            "stackMax": 0,
+            "merchant": ""
+        },
+        {
+            "name": "Cobalt Ingot",
+            "gridSize":[2, 2],
+            "stackMax": 0,
+            "merchant": ""
+        },
+        {
+            "name": "Cobalt Ingot Stack",
+            "gridSize":[2, 2],
+            "stackMax": 0,
+            "merchant": ""
+        },
+        {
+            "name": "Copper Ingot",
+            "gridSize":[2, 2],
+            "stackMax": 0,
+            "merchant": ""
+        },
+        {
+            "name": "Copper Ingot Stack",
+            "gridSize":[2, 2],
+            "stackMax": 0,
+            "merchant": ""
+        },
+        {
+            "name": "Froststone Ingot",
+            "gridSize":[2, 2],
+            "stackMax": 0,
+            "merchant": ""
+        },
+        {
+            "name": "Froststone Ingot Stack",
+            "gridSize":[2, 2],
+            "stackMax": 0,
+            "merchant": ""
+        },
+        {
+            "name": "Gold Ingot",
+            "gridSize":[2, 2],
+            "stackMax": 0,
+            "merchant": ""
+        },
+        {
+            "name": "Gold Ingot Stack",
+            "gridSize":[2, 2],
+            "stackMax": 0,
+            "merchant": ""
+        },
+        {
+            "name": "Iron Ingot",
+            "gridSize":[2, 2],
+            "stackMax": 0,
+            "merchant": ""
+        },
+        {
+            "name": "Iron Ingot Stack",
+            "gridSize":[2, 2],
+            "stackMax": 0,
+            "merchant": ""
+        },
+        {
+            "name": "Silver Ingot",
+            "gridSize":[2, 2],
+            "stackMax": 0,
+            "merchant": ""
+        },
+        {
+            "name": "Silver Ingot Stack",
+            "gridSize":[2, 2],
+            "stackMax": 0,
+            "merchant": ""
+        }
+    ],
+    "misc": [
+        {
+            "name": "Empty Inventory Slot",
+            "gridSize":[1, 1],
+            "stackMax": 0,
+            "merchant": ""
+        }
     ]
 
 }
