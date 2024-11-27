@@ -155,6 +155,23 @@ func LoadMainContent() *container.Split {
 
 func ExecuteActionTree(root *structs.LoopAction) { //error
 	var context interface{}
+//	move := &structs.MouseMoveAction{
+//		BaseAction: structs.NewBaseAction(),
+//		X: utils.MonitorWidth/10,
+//		Y: utils.MonitorHeight/2,
+//	}
+//	wait := &structs.WaitAction{
+//		BaseAction: structs.NewBaseAction(),
+//		Time: 50,
+//	}
+//	click := &structs.ClickAction{
+//		BaseAction: structs.NewBaseAction(),
+//		Button: "left",
+//	}
+//	move.Execute(context)
+//	wait.Execute(context)
+//	click.Execute(context)
+
 	root.Execute(context)
 }
 
