@@ -6,9 +6,9 @@ toolchain go1.22.4
 
 require (
 	fyne.io/fyne/v2 v2.4.5
-	github.com/andreyvit/locateimage v0.1.0
 	github.com/go-vgo/robotgo v1.0.0-rc2.1
 	github.com/otiai10/gosseract/v2 v2.4.1
+	github.com/robotn/gohook v0.41.0
 	gocv.io/x/gocv v0.39.0
 )
 

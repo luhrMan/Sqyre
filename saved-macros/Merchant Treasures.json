@@ -1,0 +1,69 @@
+{
+	"loopcount": 1,
+	"uid": "",
+	"name": "root",
+	"subactions": [
+		{
+			"imagetargets": [
+				"Emerald",
+				"Gem Necklace",
+				"Goblet",
+				"Gold Goblet",
+				"Diamond",
+				"Gem Ring",
+				"Glimmer Bangle",
+				"Simple Gold Bangle",
+				"Gold Bowl",
+				"Gold Candle Holder",
+				"Gold Waterpot",
+				"Shine Bangle",
+				"Gold Candelabra",
+				"Gold Band",
+				"Gold Candle Platter",
+				"Light Gold Bangle",
+				"Patterned Gold Bangle",
+				"Ceremonial Dagger",
+				"Turquoise Gem Bangle",
+				"Ruby",
+				"Sapphire",
+				"Slim Bangle",
+				"Triple Gem Bangle",
+				"Gold Chalice",
+				"Silver Chalice",
+				"Ancient Scroll",
+				"Dotted Gold Bangle",
+				"Leaf Gold Bangle",
+				"Pearl Necklace",
+				"Gold Crown"
+			],
+			"searchbox": {
+				"name": "Player Inventory Merchant",
+				"x1": 1923,
+				"y1": 827,
+				"x2": 2475,
+				"y2": 1103
+			},
+			"uid": ".1",
+			"name": "Treasures",
+			"subactions": [
+				{
+					"uid": ".1.1",
+					"waittime": 25
+				},
+				{
+					"uid": ".1.2",
+					"X": -1,
+					"Y": -1
+				},
+				{
+					"uid": ".1.3",
+					"waittime": 25
+				},
+				{
+					"uid": ".1.4",
+					"button": "left"
+				}
+			]
+		}
+	]
+}
