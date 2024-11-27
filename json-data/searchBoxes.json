@@ -30,24 +30,24 @@
         },
         {
             "name": "Stash Inventory",
-            "x1": 1800,
-            "y1": 160,
-            "x2": 2560,
-            "y2": 1360
+            "x1": 1838,
+            "y1": 267,
+            "x2": 2486,
+            "y2": 1347
         },
         {
             "name": "Player Inventory Stash",
-            "x1": 915,
-            "y1": 820,
-            "x2": 1460,
-            "y2": 1095
+            "x1": 920,
+            "y1": 836,
+            "x2": 1461,
+            "y2": 1106
         },
         {
             "name": "Player Inventory Merchant",
-            "x1": 1900,
-            "y1": 800,
+            "x1": 1923,
+            "y1": 827,
             "x2": 2475,
-            "y2": 1111
+            "y2": 1103
         },
         {
             "name": "Player Inventory Equipped",
