@@ -2,6 +2,7 @@ package gui
 
 import (
 	"Dark-And-Darker/structs"
+	"Dark-And-Darker/utils"
 	"log"
 
 	"fyne.io/fyne/v2"
@@ -11,38 +12,58 @@ import (
 )
 
 func createItemsCheckBoxes() *widget.Accordion {
-	accordionItems := widget.NewAccordion()
+	var (
+		accordionItems = widget.NewAccordion()
+	)
+	accordionItems.MultiOpen = true
 	for category, items := range *structs.GetItemsMap() {
-		box := container.NewVBox()
-		scroll := container.NewVScroll(box)
+		var (
+			box              = container.NewVBox()
+			scroll           = container.NewVScroll(box)
+			categoryCheckbox = widget.NewCheck("select all", func(checked bool) {
+				switch checked {
+				case true:
+					for _, item := range items {
+						selectedItemsMap[item.Name] = true
+					}
+				case false:
+					for _, item := range items {
+						delete(selectedItemsMap, item.Name)
+					}
+				}
+				log.Println(selectedItemsMap)
+			})
+		)
+		accordionItems.Append(widget.NewAccordionItem(category, scroll))
+		box.Add(categoryCheckbox)
 		for _, item := range items {
-			checkBoxWithIcon := container.NewHBox()
-			func(itemName string) {
-				checkBox := widget.NewCheck(itemName, func(checked bool) {})
-				checkBox.OnChanged = func(checked bool) {
-					if checked {
-						log.Println(itemName)
+			var (
+				itemName                = item.Name
+				HBoxWithCheckBoxAndIcon = container.NewHBox()
+				itemCheckBox            = widget.NewCheck(itemName, func(checked bool) {
+					switch checked {
+					case true:
 						selectedItemsMap[itemName] = true // Add selected item to the map
-					} else {
+					case false:
 						delete(selectedItemsMap, itemName) // Remove unselected item from the map
 					}
 					log.Println(selectedItemsMap)
-				}
-				resource, err := fyne.LoadResourceFromPath("./images/icons/" + itemName + ".png")
-				if err != nil {
-					log.Println(err)
-					checkBoxWithIcon.Add(widget.NewIcon(theme.BrokenImageIcon()))
-				} else {
+				})
+				resource, imageLoadErr = fyne.LoadResourceFromPath("./images/icons/" + itemName + ".png")
+			)
+			utils.HandleError(
+				imageLoadErr,
+				func() {
+					HBoxWithCheckBoxAndIcon.Add(widget.NewIcon(theme.BrokenImageIcon()))
+				},
+				func() {
 					icon := widget.NewIcon(resource)
-					checkBoxWithIcon.Add(icon)
-				}
-				checkBoxWithIcon.Add(checkBox)
-				box.Add(checkBoxWithIcon)
-			}(item.Name)
+					HBoxWithCheckBoxAndIcon.Add(icon)
+				})
+			HBoxWithCheckBoxAndIcon.Add(itemCheckBox)
+			box.Add(HBoxWithCheckBoxAndIcon)
 		}
-		accordionItems.Append(widget.NewAccordionItem(category, scroll))
 	}
-	accordionItems.MultiOpen = true
 	return accordionItems
 }
 
