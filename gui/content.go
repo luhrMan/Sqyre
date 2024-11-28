@@ -46,7 +46,6 @@ func LoadMainContent() *fyne.Container {
 	root.AddSubAction(&structs.MouseMoveAction{BaseAction: structs.NewBaseAction(), X: structs.GetSpot("Collector").X, Y: structs.GetSpot("Collector").Y})
 	root.AddSubAction(&structs.ClickAction{BaseAction: structs.NewBaseAction(), Button: "left"})
 	root.AddSubAction(&structs.WaitAction{BaseAction: structs.NewBaseAction(), Time: 200})
-	//initR()
 	//image search for treasures
 	imageSearch := &structs.ImageSearchAction{
 		AdvancedAction: structs.AdvancedAction{
@@ -239,83 +238,4 @@ func createToolbar() *widget.Toolbar {
 		widget.NewToolbarSpacer(),
 	)
 	return toolbar
-}
-
-func addActionToTree(actionType structs.ActionInterface) {
-	var (
-		selectedNode = findNode(root, selectedTreeItem)
-		action       structs.ActionInterface
-	)
-	switch actionType.(type) {
-	case *structs.WaitAction:
-		t, _ := boundTime.Get()
-		action = &structs.WaitAction{Time: int(t), BaseAction: structs.NewBaseAction()}
-	case *structs.MouseMoveAction:
-		x, _ := boundMoveX.Get()
-		y, _ := boundMoveY.Get()
-		action = &structs.MouseMoveAction{X: int(x), Y: int(y), BaseAction: structs.NewBaseAction()}
-	case *structs.ClickAction:
-		str := ""
-		b, _ := boundButton.Get()
-		if !b {
-			str = "left"
-		} else {
-			str = "right"
-		}
-		action = &structs.ClickAction{Button: str, BaseAction: structs.NewBaseAction()}
-	case *structs.KeyAction:
-		str := ""
-		k, _ := boundKey.Get()
-		s, _ := boundState.Get()
-		if !s {
-			str = "down"
-		} else {
-			str = "up"
-		}
-		action = &structs.KeyAction{Key: k, State: str, BaseAction: structs.NewBaseAction()}
-	case *structs.LoopAction:
-		n, _ := boundAdvancedActionName.Get()
-		c, _ := boundCount.Get()
-		action = &structs.LoopAction{
-			Count: int(c),
-			AdvancedAction: structs.AdvancedAction{
-				BaseAction: structs.NewBaseAction(),
-				Name:       n,
-			},
-		}
-	case *structs.ImageSearchAction:
-		n, _ := boundAdvancedActionName.Get()
-		t, _ := boundTargets.Get()
-		s, _ := boundSearchArea.Get()
-		action = &structs.ImageSearchAction{
-			Targets:   t,
-			SearchBox: *structs.GetSearchBox(s),
-			AdvancedAction: structs.AdvancedAction{
-				BaseAction: structs.NewBaseAction(),
-				Name:       n,
-			},
-		}
-	case *structs.OcrAction:
-		// n, _ := boundAdvancedActionName.Get()
-		// t, _ := boundOcrTarget.Get()
-		// s, _ := boundSearchArea.Get()
-		// action = &structs.OcrAction{
-		// 	SearchBox: *structs.GetSearchBox(s),
-		// 	Target:    t,
-		// 	AdvancedAction: structs.AdvancedAction{
-		// 		BaseAction: structs.NewBaseAction(),
-		// 		Name:       n,
-		// 	},
-		// }
-
-		// if selectedNode == nil {
-		// 	selectedNode = getRoot()
-		// }
-		if s, ok := selectedNode.(structs.AdvancedActionInterface); ok {
-			s.AddSubAction(selectedNode)
-		} else {
-			selectedNode.GetParent().AddSubAction(action)
-		}
-		updateTree(&tree, root)
-	}
 }
