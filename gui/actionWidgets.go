@@ -110,7 +110,7 @@ func createUpdateButton() *widget.Button {
 		case *structs.ImageSearchAction:
 			n, _ := boundAdvancedActionName.Get()
 			s, _ := boundSearchArea.Get()
-			t, _ := boundTargets.Get()
+			t := boundSelectedItemsMap.Keys()
 			node.Name = n
 			node.SearchBox = *structs.GetSearchBox(s)
 			node.Targets = t
@@ -122,52 +122,6 @@ func createUpdateButton() *widget.Button {
 	})
 }
 
-// ***************************************************************************************Move
-
-// spotSelector := &widget.Select{Options: *structs.GetSpotMapKeys(*structs.GetSpotMap())}
-// spotSelector.OnChanged = func(s string) {
-// 	//structs.GetSpot(spotSelector.Selected)
-// 	log.Println(*structs.GetSpot(s))
-// 	mouseMoveXEntry.SetText(strconv.FormatInt(int64(structs.GetSpot(s).X), 10))
-// 	mouseMoveYEntry.SetText(strconv.FormatInt(int64(structs.GetSpot(s).Y), 10))
-// }
-// spotSelector.SetSelected(spotSelector.Options[0])
-
-// ***************************************************************************************Conditional
-// func createConditionalSettings() *fyne.Container {
-// 	addConditonalActionButton := &widget.Button{
-// 		Text: utils.GetEmoji("Conditional") + "Add Conditional",
-// 		OnTapped: func() {
-// 			selectedNode := findNode(root, selectedTreeItem)
-// 			if selectedNode == nil {
-// 				selectedNode = root
-// 			}
-// 			ca := &structs.ConditionalAction{
-// 				AdvancedAction: structs.AdvancedAction{
-// 					BaseAction: structs.NewBaseAction(),
-// 					Name:       advancedActionNameEntry.Text,
-// 				},
-// 				Condition: func(i interface{}) bool { return true },
-// 			}
-// 			if s, ok := selectedNode.(structs.AdvancedActionInterface); ok {
-// 				s.AddSubAction(ca)
-// 			} else {
-// 				selectedNode.GetParent().AddSubAction(ca)
-// 			}
-// 			updateTree(&tree, root)
-// 		},
-// 		IconPlacement: widget.ButtonIconPlacement(widget.ButtonAlignTrailing),
-// 		Icon:          theme.NavigateNextIcon(),
-// 		Importance:    widget.HighImportance,
-// 	}
-// 	return container.NewGridWithColumns(4,
-// 		layout.NewSpacer(),
-// 		layout.NewSpacer(),
-// 		layout.NewSpacer(),
-// 		addConditonalActionButton,
-// 	)
-// }
-
 func createItemsCheckBoxes() *widget.Accordion {
 	// var boundTargetsCheck []widget.Check
 	var (
@@ -176,14 +130,24 @@ func createItemsCheckBoxes() *widget.Accordion {
 	accordionItems.MultiOpen = true
 	for category, items := range *structs.GetItemsMap() {
 		var (
-			box                    = container.NewVBox()
-			scroll                 = container.NewVScroll(box)
-			categoryBool           bool
-			boundCategoryBool      = binding.BindBool(&categoryBool)
-			boundCategoryBoolCheck = widget.NewCheckWithData("select all", boundCategoryBool)
+			box           = container.NewVBox()
+			scroll        = container.NewVScroll(box)
+			categoryCheck = widget.NewCheck("select all", func(checked bool) {
+				switch checked {
+				case true:
+					for _, item := range items {
+						boundSelectedItemsMap.SetValue(item.Name, true)
+					}
+				case false:
+					for _, item := range items {
+						boundSelectedItemsMap.Delete(item.Name)
+					}
+				}
+				log.Println(selectedItemsMap)
+			})
 		)
 		accordionItems.Append(widget.NewAccordionItem(category, scroll))
-		box.Add(boundCategoryBoolCheck)
+		box.Add(categoryCheck)
 		for _, item := range items {
 			var (
 				itemName                = item.Name
@@ -191,9 +155,9 @@ func createItemsCheckBoxes() *widget.Accordion {
 				itemCheckBox            = widget.NewCheck(itemName, func(checked bool) {
 					switch checked {
 					case true:
-						selectedItemsMap[itemName] = true // Add selected item to the map
+						boundSelectedItemsMap.SetValue(itemName, true)
 					case false:
-						delete(selectedItemsMap, itemName) // Remove unselected item from the map
+						boundSelectedItemsMap.Delete(itemName)
 					}
 					log.Println(selectedItemsMap)
 				})
@@ -273,4 +237,50 @@ func createItemsCheckBoxes() *widget.Accordion {
 // 		items = append(items, s)
 // 	}
 // 	return items
+// }
+
+// ***************************************************************************************Move
+
+// spotSelector := &widget.Select{Options: *structs.GetSpotMapKeys(*structs.GetSpotMap())}
+// spotSelector.OnChanged = func(s string) {
+// 	//structs.GetSpot(spotSelector.Selected)
+// 	log.Println(*structs.GetSpot(s))
+// 	mouseMoveXEntry.SetText(strconv.FormatInt(int64(structs.GetSpot(s).X), 10))
+// 	mouseMoveYEntry.SetText(strconv.FormatInt(int64(structs.GetSpot(s).Y), 10))
+// }
+// spotSelector.SetSelected(spotSelector.Options[0])
+
+// ***************************************************************************************Conditional
+// func createConditionalSettings() *fyne.Container {
+// 	addConditonalActionButton := &widget.Button{
+// 		Text: utils.GetEmoji("Conditional") + "Add Conditional",
+// 		OnTapped: func() {
+// 			selectedNode := findNode(root, selectedTreeItem)
+// 			if selectedNode == nil {
+// 				selectedNode = root
+// 			}
+// 			ca := &structs.ConditionalAction{
+// 				AdvancedAction: structs.AdvancedAction{
+// 					BaseAction: structs.NewBaseAction(),
+// 					Name:       advancedActionNameEntry.Text,
+// 				},
+// 				Condition: func(i interface{}) bool { return true },
+// 			}
+// 			if s, ok := selectedNode.(structs.AdvancedActionInterface); ok {
+// 				s.AddSubAction(ca)
+// 			} else {
+// 				selectedNode.GetParent().AddSubAction(ca)
+// 			}
+// 			updateTree(&tree, root)
+// 		},
+// 		IconPlacement: widget.ButtonIconPlacement(widget.ButtonAlignTrailing),
+// 		Icon:          theme.NavigateNextIcon(),
+// 		Importance:    widget.HighImportance,
+// 	}
+// 	return container.NewGridWithColumns(4,
+// 		layout.NewSpacer(),
+// 		layout.NewSpacer(),
+// 		layout.NewSpacer(),
+// 		addConditonalActionButton,
+// 	)
 // }
