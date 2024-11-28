@@ -177,26 +177,35 @@ func updateTree(tree *widget.Tree, root *structs.LoopAction) {
 			removeButton.Hide()
 		}
 	}
+	//Set here, Get @ addActionToTree in content.go
 	tree.OnSelected = func(uid widget.TreeNodeID) {
 		selectedTreeItem = uid
 		switch node := findNode(root, uid).(type) {
 		case *structs.WaitAction:
-			time = float64(node.Time)
-			boundTime.Set(time)
-			// case *structs.MouseMoveAction:
-			// 	node.X, _ = strconv.Atoi(m.sections["move"].widgets["X"].(*widget.Entry).Text)
-			// 	node.Y, _ = strconv.Atoi(m.sections["move"].widgets["Y"].(*widget.Entry).Text)
-			// case *structs.ClickAction:
-			// 	node.Button = m.sections["click"].widgets["button"].(*widget.RadioGroup).Selected
-			// case *structs.KeyAction:
-			// 	node.Key = m.sections["key"].widgets["key"].(*widget.Select).Selected
-			// 	node.State = m.sections["key"].widgets["state"].(*widget.RadioGroup).Selected
-			// case *structs.LoopAction:
-			// 	node.Count, _ = strconv.Atoi(m.sections["loop"].widgets["count"].(*widget.Entry).Text)
-			// case *structs.ImageSearchAction:
-			// 	node.SearchBox = *structs.GetSearchBox(m.sections["imagesearch"].widgets["searchbox"].(*widget.Select).Selected)
-			// 	// node.Targets = m.sections["imagesearch"].widgets["targets"].(*widget.CheckGroup).Selected
-			// 	node.Targets = selectedItems()
+			boundTime.Set(float64(node.Time))
+		case *structs.MouseMoveAction:
+			boundMoveX.Set(float64(node.X))
+			boundMoveY.Set(float64(node.Y))
+		case *structs.ClickAction:
+			if node.Button == "left" {
+				boundButton.Set(false)
+			} else {
+				boundButton.Set(true)
+			}
+		case *structs.KeyAction:
+			boundKeySelect.SetSelected(node.Key)
+			if node.State == "down" {
+				boundState.Set(false)
+			} else {
+				boundState.Set(true)
+			}
+		case *structs.LoopAction:
+			boundAdvancedActionName.Set(node.Name)
+			boundCount.Set(float64(node.Count))
+		case *structs.ImageSearchAction:
+			boundAdvancedActionName.Set(node.Name)
+			boundTargets.Set(node.Targets)
+			boundSearchAreaSelect.SetSelected(node.SearchBox.Name)
 		}
 	}
 	tree.Refresh()
