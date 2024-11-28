@@ -8,6 +8,7 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
@@ -17,7 +18,10 @@ var advancedActionNameEntry = widget.NewEntry()
 
 // ***************************************************************************************Wait
 func createWaitSettings() *fyne.Container {
-	millisecondsWaitEntry := widget.NewEntry()
+	var time float64
+	boundTime := binding.BindFloat(&time)
+	boundTimeEntry := widget.NewSliderWithData(0.0, 250.0, boundTime)
+	boundTimeLabel := widget.NewLabelWithData(binding.FloatToString(boundTime))
 	addWaitActionButton := &widget.Button{
 		Text: utils.GetEmoji("Wait") + "Add Wait",
 		OnTapped: func() {
@@ -25,8 +29,7 @@ func createWaitSettings() *fyne.Container {
 			if selectedNode == nil {
 				selectedNode = root
 			}
-			wait, _ := strconv.Atoi(millisecondsWaitEntry.Text)
-			wa := &structs.WaitAction{Time: wait, BaseAction: structs.NewBaseAction()}
+			wa := &structs.WaitAction{Time: int(time), BaseAction: structs.NewBaseAction()}
 
 			if s, ok := selectedNode.(structs.AdvancedActionInterface); ok {
 				s.AddSubAction(wa)
@@ -41,8 +44,8 @@ func createWaitSettings() *fyne.Container {
 	}
 	return container.NewGridWithColumns(4,
 		layout.NewSpacer(),
-		widget.NewLabel("Wait in ms"),
-		millisecondsWaitEntry,
+		boundTimeLabel,
+		boundTimeEntry,
 		addWaitActionButton,
 	)
 }
