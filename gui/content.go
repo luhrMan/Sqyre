@@ -23,19 +23,6 @@ var (
 	searchAreaSelector = &widget.Select{Options: *structs.GetSearchBoxMapKeys(*structs.GetSearchBoxMap())}
 )
 
-func initR() {
-	// Register interface implementations
-	// gob.Register(&structs.BaseAction{})
-	// gob.Register(&structs.AdvancedAction{})
-	// gob.Register(&structs.LoopAction{})
-	// gob.Register(&structs.ImageSearchAction{})
-	// gob.Register(&structs.OcrAction{})
-	// gob.Register(&structs.WaitAction{})
-	// gob.Register(&structs.ClickAction{})
-	// gob.Register(&structs.MouseMoveAction{})
-	// gob.Register(&structs.KeyAction{})
-}
-
 func LoadMainContent() *container.Split {
 	log.Println("Screen Size")
 	log.Println(robotgo.GetScreenSize())
@@ -135,6 +122,7 @@ func LoadMainContent() *container.Split {
 						// &widget.Label{Text: "Conditional Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
 						// createConditionalSettings(),
 						// widget.NewSeparator(),
+						createEditButton(),
 					),
 				),
 			),
@@ -155,22 +143,22 @@ func LoadMainContent() *container.Split {
 
 func ExecuteActionTree(root *structs.LoopAction) { //error
 	var context interface{}
-//	move := &structs.MouseMoveAction{
-//		BaseAction: structs.NewBaseAction(),
-//		X: utils.MonitorWidth/10,
-//		Y: utils.MonitorHeight/2,
-//	}
-//	wait := &structs.WaitAction{
-//		BaseAction: structs.NewBaseAction(),
-//		Time: 50,
-//	}
-//	click := &structs.ClickAction{
-//		BaseAction: structs.NewBaseAction(),
-//		Button: "left",
-//	}
-//	move.Execute(context)
-//	wait.Execute(context)
-//	click.Execute(context)
+	//	move := &structs.MouseMoveAction{
+	//		BaseAction: structs.NewBaseAction(),
+	//		X: utils.MonitorWidth/10,
+	//		Y: utils.MonitorHeight/2,
+	//	}
+	//	wait := &structs.WaitAction{
+	//		BaseAction: structs.NewBaseAction(),
+	//		Time: 50,
+	//	}
+	//	click := &structs.ClickAction{
+	//		BaseAction: structs.NewBaseAction(),
+	//		Button: "left",
+	//	}
+	//	move.Execute(context)
+	//	wait.Execute(context)
+	//	click.Execute(context)
 
 	root.Execute(context)
 }
