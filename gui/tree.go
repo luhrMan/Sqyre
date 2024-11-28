@@ -183,15 +183,19 @@ func updateTree(tree *widget.Tree, root *structs.LoopAction) {
 		switch node := findNode(root, uid).(type) {
 		case *structs.WaitAction:
 			boundTime.Set(float64(node.Time))
+			settingsAccordion.Open(0)
 		case *structs.MouseMoveAction:
 			boundMoveX.Set(float64(node.X))
 			boundMoveY.Set(float64(node.Y))
+			settingsAccordion.Open(1)
 		case *structs.ClickAction:
 			if node.Button == "left" {
 				boundButton.Set(false)
 			} else {
 				boundButton.Set(true)
 			}
+			settingsAccordion.Open(2)
+
 		case *structs.KeyAction:
 			boundKeySelect.SetSelected(node.Key)
 			if node.State == "down" {
@@ -199,9 +203,13 @@ func updateTree(tree *widget.Tree, root *structs.LoopAction) {
 			} else {
 				boundState.Set(true)
 			}
+			settingsAccordion.Open(3)
+
 		case *structs.LoopAction:
 			boundAdvancedActionName.Set(node.Name)
 			boundCount.Set(float64(node.Count))
+			settingsAccordion.Open(4)
+
 		case *structs.ImageSearchAction:
 			boundAdvancedActionName.Set(node.Name)
 			boundSelectedItemsMap.Set(map[string]any{})
@@ -209,6 +217,7 @@ func updateTree(tree *widget.Tree, root *structs.LoopAction) {
 				boundSelectedItemsMap.SetValue(t, true)
 			}
 			boundSearchAreaSelect.SetSelected(node.SearchBox.Name)
+			settingsAccordion.Open(5)
 		}
 	}
 	tree.Refresh()

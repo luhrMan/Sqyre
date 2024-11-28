@@ -21,50 +21,45 @@ import (
 	"gocv.io/x/gocv"
 )
 
-type inventorySlot struct {
-	Rectangle image.Rectangle
-	AvgBGR    []float32
-	AvgHSV    []float32
-	AvgLAB    []float32
-}
-
 func main() {
 	go func() {
 		//	eventHook := hook.Start()
-		    //var e hook.Event
-		    //var key string
-			ok := hook.AddEvents("f1", "shift", "ctrl")
-			if ok {
-				log.Println("Exiting...")
-				os.Exit(0)
-			}
-	//		hook.Register(hook.KeyDown, []string{"ctrl", "shift", "f1"}, func(e hook.Event) {
-	//			log.Println("Exiting...")
-	//			os.Exit(0)
-	//		})
-	//		s := hook.Start()
-	//  		<-hook.Process(s)
-	//	    for e = range eventHook {
-	//	        if e.Kind == hook.KeyDown {
-	//	            key = string(e.Keychar)
-	//	            switch key {
-	//	            case "s":
-	//	                log.Println("pressed k")
-	//	            case "l":
-	//	                log.Println("pressed l")
-	//	            default:
-	//	                log.Printf("pressed %s \n", key)
-	//	            }
-	//	        }
-	//	    }
-		}()
+		//var e hook.Event
+		//var key string
+		ok := hook.AddEvents("f1", "shift", "ctrl")
+		if ok {
+			log.Println("Exiting...")
+			os.Exit(0)
+		}
+		//		hook.Register(hook.KeyDown, []string{"ctrl", "shift", "f1"}, func(e hook.Event) {
+		//			log.Println("Exiting...")
+		//			os.Exit(0)
+		//		})
+		//		s := hook.Start()
+		//  		<-hook.Process(s)
+		//	    for e = range eventHook {
+		//	        if e.Kind == hook.KeyDown {
+		//	            key = string(e.Keychar)
+		//	            switch key {
+		//	            case "s":
+		//	                log.Println("pressed k")
+		//	            case "l":
+		//	                log.Println("pressed l")
+		//	            default:
+		//	                log.Printf("pressed %s \n", key)
+		//	            }
+		//	        }
+		//	    }
+	}()
 	a := app.New()
 	a.Settings().SetTheme(theme.DarkTheme())
 	w := a.NewWindow("Squire")
-	content := gui.LoadMainContent()
+
+	mainMenu := fyne.NewMainMenu(fyne.NewMenu("Settings"), gui.CreateActionAddMenu())
+	w.SetMainMenu(mainMenu)
 	icon, _ := fyne.LoadResourceFromPath("./images/Squire.png")
 	w.SetIcon(icon)
-	w.SetContent(content)
+	w.SetContent(gui.LoadMainContent())
 	w.ShowAndRun()
 }
 
