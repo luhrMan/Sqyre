@@ -1,6 +1,8 @@
 package gui
 
 import (
+	"Dark-And-Darker/custom_widgets"
+
 	"Dark-And-Darker/structs"
 	"log"
 	"os"
@@ -9,6 +11,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"github.com/go-vgo/robotgo"
@@ -18,12 +21,13 @@ var (
 	root *structs.LoopAction
 	//root               = structs.LoopAction{}
 	tree               = widget.Tree{}
-	selectedTreeItem   string
-	selectedItemsMap   = make(map[string]bool)
+	selectedTreeItem   = ".1"
+	selectedItemsMap   = make(map[string]any)
 	searchAreaSelector = &widget.Select{Options: *structs.GetSearchBoxMapKeys(*structs.GetSearchBoxMap())}
+	customImport       = custom_widgets.NewToggle(func(b bool) {})
 )
 
-func LoadMainContent() *container.Split {
+func LoadMainContent() *fyne.Container {
 	log.Println("Screen Size")
 	log.Println(robotgo.GetScreenSize())
 	log.Println("Monitor 1 size")
@@ -77,89 +81,73 @@ func LoadMainContent() *container.Split {
 
 	//saveTreeToFile(root, "./saved-macros/Sell Collectibles.json")
 
-	searchAreaSelector.SetSelected(searchAreaSelector.Options[0])
-	content :=
-		container.NewHSplit(
-			container.NewHSplit(
-				createItemsCheckBoxes(),
-				container.NewVSplit(
-					container.NewVBox(
-						&canvas.Text{Text: "ACTION SETTINGS", TextSize: 25, Alignment: fyne.TextAlignCenter, TextStyle: fyne.TextStyle{Bold: true, Monospace: true}},
-						// **********************************************************************************************************Wait
-						&widget.Label{Text: "Wait Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
-						createWaitSettings(),
-						widget.NewSeparator(),
-						// ************************************************************************************************************Move
-						&widget.Label{Text: "Mouse Move Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
-						createMouseMoveSettings(),
-						widget.NewSeparator(),
-						// ************************************************************************************************************Click
-						&widget.Label{Text: "Click Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
-						createClickSettings(),
-						widget.NewSeparator(),
-						// *************************************************************************************************************Key
-						&widget.Label{Text: "Key Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
-						createKeySettings(),
-						widget.NewSeparator(),
-					),
-					container.NewVBox(
-						// ***************************************************************************************************************Advanced Actions
-						&canvas.Text{Text: "ADVANCED ACTION SETTINGS", TextSize: 25, Alignment: fyne.TextAlignCenter, TextStyle: fyne.TextStyle{Bold: true, Monospace: true}},
-						createAdvancedActionSettings(),
-						// *************************************************************************************************************Loop
-						&widget.Label{Text: "Loop", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
-						createLoopSettings(),
-						widget.NewSeparator(),
-						// ******************************************************************************************************************Image Search
-						&widget.Label{Text: "Image Search Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
-						createImageSearchSettings(),
-						widget.NewSeparator(),
-						// *******************************************************************************************************************OCR
-						&widget.Label{Text: "OCR Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
-						createOCRSettings(),
-						widget.NewSeparator(),
-						// *******************************************************************************************************************Conditional
-						// &widget.Label{Text: "Conditional Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
-						// createConditionalSettings(),
-						// widget.NewSeparator(),
-						createEditButton(),
-					),
-				),
+	// searchAreaSelector.SetSelected(searchAreaSelector.Options[0])
+	mainLayout := container.NewBorder(createToolbar(), nil, nil, nil)
+	settingsLayout := container.NewBorder(nil, createUpdateButton(), createItemsCheckBoxes(), nil)
+
+	settingsLayout.Add(container.NewVBox(
+		&widget.Label{Text: "Wait Action (ms)", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
+		container.NewGridWithColumns(2,
+			container.NewHBox(layout.NewSpacer(), boundTimeLabel, widget.NewLabel("ms")),
+			boundTimeSlider,
+		),
+		widget.NewSeparator(),
+		&widget.Label{Text: "Mouse Move Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
+		container.NewGridWithColumns(2,
+			container.NewHBox(layout.NewSpacer(), widget.NewLabel("X:"), boundMoveXLabel),
+			boundMoveXSlider,
+			container.NewHBox(layout.NewSpacer(), widget.NewLabel("Y:"), boundMoveYLabel),
+			boundMoveYSlider,
+		),
+		widget.NewSeparator(),
+		&widget.Label{Text: "Click Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
+		container.NewHBox(layout.NewSpacer(), widget.NewLabel("left"), boundButtonToggle, widget.NewLabel("right"), layout.NewSpacer()),
+		widget.NewSeparator(),
+		&widget.Label{Text: "Key Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
+		container.NewHBox(layout.NewSpacer(), boundKeySelect, widget.NewLabel("down"), boundStateToggle, widget.NewLabel("up"), layout.NewSpacer()),
+		widget.NewSeparator(),
+
+		&canvas.Text{Text: "ADVANCED ACTION SETTINGS", TextSize: 20, Alignment: fyne.TextAlignCenter, TextStyle: fyne.TextStyle{Bold: true, Monospace: true}},
+		container.NewGridWithColumns(3,
+			layout.NewSpacer(),
+			container.NewGridWithColumns(2,
+				widget.NewLabel("Name:"),
+				boundAdvancedActionNameEntry,
 			),
-			container.NewBorder(
-				container.NewHBox(
-					widget.NewLabel("Global Delay"),
-					widget.NewEntry(),
-					createMoveButtons(root, &tree),
-				),
-				createMacroSettings(),
-				nil,
-				nil,
-				&tree,
+			layout.NewSpacer(),
+			layout.NewSpacer(),
+			container.NewGridWithColumns(2,
+				widget.NewLabel("Search area:"),
+				boundSearchAreaSelect,
 			),
-		)
-	return content
+			layout.NewSpacer(),
+		),
+		&widget.Label{Text: "Loop", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
+		container.NewGridWithColumns(2,
+			container.NewHBox(layout.NewSpacer(), widget.NewLabel("loops:"), boundCountLabel),
+			boundCountSlider,
+		),
+		&widget.Label{Text: "Image Search Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
+		&widget.Label{Text: "Conditional Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
+	))
+	macroLayout := container.NewBorder(
+		container.NewHBox(
+			widget.NewLabel("Global Delay"),
+			widget.NewEntry(),
+			createMoveButtons(root, &tree),
+		),
+		createMacroSettings(),
+		nil,
+		nil,
+		&tree,
+	)
+	middleSplit := container.NewHSplit(settingsLayout, macroLayout)
+	mainLayout.Add(middleSplit)
+	return mainLayout
 }
 
 func ExecuteActionTree(root *structs.LoopAction) { //error
 	var context interface{}
-	//	move := &structs.MouseMoveAction{
-	//		BaseAction: structs.NewBaseAction(),
-	//		X: utils.MonitorWidth/10,
-	//		Y: utils.MonitorHeight/2,
-	//	}
-	//	wait := &structs.WaitAction{
-	//		BaseAction: structs.NewBaseAction(),
-	//		Time: 50,
-	//	}
-	//	click := &structs.ClickAction{
-	//		BaseAction: structs.NewBaseAction(),
-	//		Button: "left",
-	//	}
-	//	move.Execute(context)
-	//	wait.Execute(context)
-	//	click.Execute(context)
-
 	root.Execute(context)
 }
 
@@ -209,3 +197,125 @@ func macroStartButton() *widget.Button {
 // 		}
 // 	}
 // }
+
+func createToolbar() *widget.Toolbar {
+
+	toolbar := widget.NewToolbar(
+		widget.NewToolbarSpacer(),
+		widget.NewToolbarSpacer(),
+		widget.NewToolbarSeparator(),
+		widget.NewToolbarAction(theme.HistoryIcon(), func() {
+			addActionToTree(&structs.WaitAction{})
+		}),
+		widget.NewToolbarSeparator(),
+		widget.NewToolbarAction(theme.ContentRedoIcon(), func() {
+			addActionToTree(&structs.MouseMoveAction{})
+		}),
+		widget.NewToolbarSeparator(),
+		widget.NewToolbarAction(theme.DownloadIcon(), func() {
+			addActionToTree(&structs.ClickAction{})
+		}),
+		widget.NewToolbarSeparator(),
+		widget.NewToolbarAction(theme.ComputerIcon(), func() {
+			addActionToTree(&structs.KeyAction{})
+		}),
+		widget.NewToolbarSeparator(),
+		widget.NewToolbarSpacer(),
+		widget.NewToolbarSeparator(),
+		widget.NewToolbarAction(theme.MediaReplayIcon(), func() {
+			addActionToTree(&structs.LoopAction{})
+		}),
+		widget.NewToolbarSeparator(),
+		widget.NewToolbarAction(theme.MediaPhotoIcon(), func() {
+			addActionToTree(&structs.ImageSearchAction{})
+		}),
+		widget.NewToolbarSeparator(),
+		widget.NewToolbarAction(theme.DocumentIcon(), func() {
+			addActionToTree(&structs.OcrAction{})
+		}),
+		widget.NewToolbarSeparator(),
+		widget.NewToolbarSpacer(),
+		widget.NewToolbarSpacer(),
+		widget.NewToolbarSpacer(),
+	)
+	return toolbar
+}
+
+func addActionToTree(actionType structs.ActionInterface) {
+	var (
+		selectedNode = findNode(root, selectedTreeItem)
+		action       structs.ActionInterface
+	)
+	switch actionType.(type) {
+	case *structs.WaitAction:
+		t, _ := boundTime.Get()
+		action = &structs.WaitAction{Time: int(t), BaseAction: structs.NewBaseAction()}
+	case *structs.MouseMoveAction:
+		x, _ := boundMoveX.Get()
+		y, _ := boundMoveY.Get()
+		action = &structs.MouseMoveAction{X: int(x), Y: int(y), BaseAction: structs.NewBaseAction()}
+	case *structs.ClickAction:
+		str := ""
+		b, _ := boundButton.Get()
+		if !b {
+			str = "left"
+		} else {
+			str = "right"
+		}
+		action = &structs.ClickAction{Button: str, BaseAction: structs.NewBaseAction()}
+	case *structs.KeyAction:
+		str := ""
+		k, _ := boundKey.Get()
+		s, _ := boundState.Get()
+		if !s {
+			str = "down"
+		} else {
+			str = "up"
+		}
+		action = &structs.KeyAction{Key: k, State: str, BaseAction: structs.NewBaseAction()}
+	case *structs.LoopAction:
+		n, _ := boundAdvancedActionName.Get()
+		c, _ := boundCount.Get()
+		action = &structs.LoopAction{
+			Count: int(c),
+			AdvancedAction: structs.AdvancedAction{
+				BaseAction: structs.NewBaseAction(),
+				Name:       n,
+			},
+		}
+	case *structs.ImageSearchAction:
+		n, _ := boundAdvancedActionName.Get()
+		t, _ := boundTargets.Get()
+		s, _ := boundSearchArea.Get()
+		action = &structs.ImageSearchAction{
+			Targets:   t,
+			SearchBox: *structs.GetSearchBox(s),
+			AdvancedAction: structs.AdvancedAction{
+				BaseAction: structs.NewBaseAction(),
+				Name:       n,
+			},
+		}
+	case *structs.OcrAction:
+		// n, _ := boundAdvancedActionName.Get()
+		// t, _ := boundOcrTarget.Get()
+		// s, _ := boundSearchArea.Get()
+		// action = &structs.OcrAction{
+		// 	SearchBox: *structs.GetSearchBox(s),
+		// 	Target:    t,
+		// 	AdvancedAction: structs.AdvancedAction{
+		// 		BaseAction: structs.NewBaseAction(),
+		// 		Name:       n,
+		// 	},
+		// }
+
+		// if selectedNode == nil {
+		// 	selectedNode = getRoot()
+		// }
+		if s, ok := selectedNode.(structs.AdvancedActionInterface); ok {
+			s.AddSubAction(selectedNode)
+		} else {
+			selectedNode.GetParent().AddSubAction(action)
+		}
+		updateTree(&tree, root)
+	}
+}
