@@ -2,6 +2,10 @@ package gui
 
 import (
 	"Dark-And-Darker/custom_widgets"
+	"Dark-And-Darker/utils"
+	"fmt"
+	"fyne.io/fyne/v2/data/binding"
+	"fyne.io/fyne/v2/layout"
 
 	"Dark-And-Darker/structs"
 	"log"
@@ -9,9 +13,7 @@ import (
 	"strings"
 
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"github.com/go-vgo/robotgo"
@@ -25,6 +27,79 @@ var (
 	selectedItemsMap   = make(map[string]any)
 	searchAreaSelector = &widget.Select{Options: *structs.GetSearchBoxMapKeys(*structs.GetSearchBoxMap())}
 	customImport       = custom_widgets.NewToggle(func(b bool) {})
+	settingsAccordion  = widget.NewAccordion()
+
+	//BASICS
+	//wait
+	time            float64
+	boundTime       = binding.BindFloat(&time)
+	boundTimeSlider = widget.NewSliderWithData(0.0, 250.0, boundTime)
+	boundTimeLabel  = widget.NewLabelWithData(binding.FloatToStringWithFormat(boundTime, "%0.0f"))
+	//move
+	moveX float64
+	moveY float64
+	// spot             structs.Spot
+	// boundSpot        = binding.BindString(&spot.Name)
+	boundMoveX = binding.BindFloat(&moveX)
+	boundMoveY = binding.BindFloat(&moveY)
+	// boundSpotSelect  = widget.NewSelect(*structs.GetSpotMapKeys(*structs.GetSpotMap()), func(s string) { boundSpot.Set(s) })
+	boundMoveXSlider = widget.NewSliderWithData(0.0, float64(utils.MonitorWidth), boundMoveX)
+	boundMoveYSlider = widget.NewSliderWithData(0.0, float64(utils.MonitorHeight), boundMoveY)
+	boundMoveXLabel  = widget.NewLabelWithData(binding.FloatToStringWithFormat(boundMoveX, "%0.0f"))
+	boundMoveYLabel  = widget.NewLabelWithData(binding.FloatToStringWithFormat(boundMoveY, "%0.0f"))
+	//click
+	button            bool
+	boundButton       = binding.BindBool(&button)
+	boundButtonToggle = custom_widgets.NewToggleWithData(boundButton)
+	//key
+	key              string
+	state            bool
+	boundKey         = binding.BindString(&key)
+	boundState       = binding.BindBool(&state)
+	boundKeySelect   = widget.NewSelect([]string{"ctrl", "alt", "shift"}, func(s string) { boundKey.Set(s) })
+	boundStateToggle = custom_widgets.NewToggleWithData(boundState)
+
+	//ADVANCED
+	advancedActionName           string
+	searchArea                   string
+	boundAdvancedActionName      = binding.BindString(&advancedActionName)
+	boundSearchArea              = binding.BindString(&searchArea)
+	boundAdvancedActionNameEntry = widget.NewEntryWithData(boundAdvancedActionName)
+	boundSearchAreaSelect        = widget.NewSelect(*structs.GetSearchBoxMapKeys(*structs.GetSearchBoxMap()), func(s string) { boundSearchArea.Set(s) })
+
+	//loop
+	count            float64 = 1
+	boundCount               = binding.BindFloat(&count)
+	boundCountSlider         = widget.NewSliderWithData(1, 10, boundCount)
+	boundCountLabel          = widget.NewLabelWithData(binding.FloatToStringWithFormat(boundCount, "%0.0f"))
+	//image search
+	targets []string
+
+	// selectedItemsMap       = make(map[string]any)
+	boundSelectedItemsMap = binding.BindUntypedMap(&selectedItemsMap)
+
+	boundTargets = binding.BindStringList(&targets)
+
+	//ocr
+)
+
+//action settings layout
+var (
+	waitSettings = container.NewVBox(
+		container.NewGridWithColumns(2,
+			container.NewHBox(layout.NewSpacer(), boundTimeLabel, widget.NewLabel("ms")), boundTimeSlider),
+	)
+	mouseMoveSettings = container.NewVBox(
+		container.NewGridWithColumns(2,
+			container.NewHBox(layout.NewSpacer(), widget.NewLabel("X:"), boundMoveXLabel),
+			boundMoveXSlider,
+			container.NewHBox(layout.NewSpacer(), widget.NewLabel("Y:"), boundMoveYLabel),
+			boundMoveYSlider,
+		))
+	clickSettings = container.NewVBox(
+		container.NewHBox(layout.NewSpacer(), widget.NewLabel("left"), boundButtonToggle, widget.NewLabel("right"), layout.NewSpacer()))
+	keySettings = container.NewVBox(
+		container.NewHBox(layout.NewSpacer(), boundKeySelect, widget.NewLabel("down"), boundStateToggle, widget.NewLabel("up"), layout.NewSpacer()))
 )
 
 func LoadMainContent() *fyne.Container {
@@ -36,8 +111,6 @@ func LoadMainContent() *fyne.Container {
 	log.Println(robotgo.GetDisplayBounds(1))
 	root = getRoot()
 	updateTree(&tree, root)
-	//err := loadTreeFromFile("test.json")
-	//log.Println(err)
 
 	//click merchants tab, click merchant
 	root.AddSubAction(&structs.MouseMoveAction{BaseAction: structs.NewBaseAction(), X: structs.GetSpot("Merchants Tab").X, Y: structs.GetSpot("Merchants Tab").Y})
@@ -75,60 +148,39 @@ func LoadMainContent() *fyne.Container {
 	imageSearch.AddSubAction(&structs.WaitAction{BaseAction: structs.NewBaseAction(), Time: 200})
 	root.AddSubAction(&structs.MouseMoveAction{BaseAction: structs.NewBaseAction(), X: structs.GetSpot("Make Deal").X, Y: structs.GetSpot("Make Deal").Y})
 
-	//encodeToGobFile(root, "./saved-macros/Sell Collectibles.gob")
-	//decodeFromFile("./saved-macros/Sell Collectibles.gob")
-
-	//saveTreeToFile(root, "./saved-macros/Sell Collectibles.json")
-
 	// searchAreaSelector.SetSelected(searchAreaSelector.Options[0])
-	mainLayout := container.NewBorder(createToolbar(), nil, nil, nil)
+	mainLayout := container.NewBorder(nil, nil, nil, nil)
 	settingsLayout := container.NewBorder(nil, createUpdateButton(), createItemsCheckBoxes(), nil)
+	settingsLayout.Add(container.NewGridWithRows(2, settingsAccordion))
 
-	settingsLayout.Add(container.NewVBox(
-		&widget.Label{Text: "Wait Action (ms)", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
-		container.NewGridWithColumns(2,
-			container.NewHBox(layout.NewSpacer(), boundTimeLabel, widget.NewLabel("ms")),
-			boundTimeSlider,
-		),
-		widget.NewSeparator(),
-		&widget.Label{Text: "Mouse Move Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
-		container.NewGridWithColumns(2,
-			container.NewHBox(layout.NewSpacer(), widget.NewLabel("X:"), boundMoveXLabel),
-			boundMoveXSlider,
-			container.NewHBox(layout.NewSpacer(), widget.NewLabel("Y:"), boundMoveYLabel),
-			boundMoveYSlider,
-		),
-		widget.NewSeparator(),
-		&widget.Label{Text: "Click Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
-		container.NewHBox(layout.NewSpacer(), widget.NewLabel("left"), boundButtonToggle, widget.NewLabel("right"), layout.NewSpacer()),
-		widget.NewSeparator(),
-		&widget.Label{Text: "Key Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
-		container.NewHBox(layout.NewSpacer(), boundKeySelect, widget.NewLabel("down"), boundStateToggle, widget.NewLabel("up"), layout.NewSpacer()),
-		widget.NewSeparator(),
+	settingsAccordion.Append(widget.NewAccordionItem("Wait Action", waitSettings))
+	settingsAccordion.Append(widget.NewAccordionItem("Mouse Move Action", mouseMoveSettings))
+	settingsAccordion.Append(widget.NewAccordionItem("Click Action", clickSettings))
+	settingsAccordion.Append(widget.NewAccordionItem("Key Action", keySettings))
+	//	settingsAccordion.Append(widget.NewAccordionItem("Loop Action", loopSettings))
+	//	settingsAccordion.Append(widget.NewAccordionItem("Image Search Action", imageSearchSettings))
+	//	settingsAccordion.Append(widget.NewAccordionItem("OCR Action", ocrSettings))
 
-		&canvas.Text{Text: "ADVANCED ACTION SETTINGS", TextSize: 20, Alignment: fyne.TextAlignCenter, TextStyle: fyne.TextStyle{Bold: true, Monospace: true}},
-		container.NewGridWithColumns(3,
-			layout.NewSpacer(),
-			container.NewGridWithColumns(2,
-				widget.NewLabel("Name:"),
-				boundAdvancedActionNameEntry,
-			),
-			layout.NewSpacer(),
-			layout.NewSpacer(),
-			container.NewGridWithColumns(2,
-				widget.NewLabel("Search area:"),
-				boundSearchAreaSelect,
-			),
-			layout.NewSpacer(),
-		),
-		&widget.Label{Text: "Loop", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
-		container.NewGridWithColumns(2,
-			container.NewHBox(layout.NewSpacer(), widget.NewLabel("loops:"), boundCountLabel),
-			boundCountSlider,
-		),
-		&widget.Label{Text: "Image Search Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
-		&widget.Label{Text: "Conditional Action", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
-	))
+	//		&canvas.Text{Text: "ADVANCED ACTION SETTINGS", TextSize: 20, Alignment: fyne.TextAlignCenter, TextStyle: fyne.TextStyle{Bold: true, Monospace: true}},
+	//		container.NewGridWithColumns(3,
+	//			layout.NewSpacer(),
+	//			container.NewGridWithColumns(2,
+	//				widget.NewLabel("Name:"),
+	//				boundAdvancedActionNameEntry,
+	//			),
+	//			layout.NewSpacer(),
+	//			layout.NewSpacer(),
+	//			container.NewGridWithColumns(2,
+	//				widget.NewLabel("Search area:"),
+	//				boundSearchAreaSelect,
+	//			),
+	//			layout.NewSpacer(),
+	//		),
+	//		&widget.Label{Text: "Loop", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
+	//		container.NewGridWithColumns(2,
+	//			container.NewHBox(layout.NewSpacer(), widget.NewLabel("loops:"), boundCountLabel),
+	//			boundCountSlider,
+	//		),
 	macroLayout := container.NewBorder(
 		container.NewHBox(
 			widget.NewLabel("Global Delay"),
@@ -197,45 +249,214 @@ func macroStartButton() *widget.Button {
 // 	}
 // }
 
-func createToolbar() *widget.Toolbar {
-
-	toolbar := widget.NewToolbar(
-		widget.NewToolbarSpacer(),
-		widget.NewToolbarSpacer(),
-		widget.NewToolbarSeparator(),
-		widget.NewToolbarAction(theme.HistoryIcon(), func() {
-			addActionToTree(&structs.WaitAction{})
-		}),
-		widget.NewToolbarSeparator(),
-		widget.NewToolbarAction(theme.ContentRedoIcon(), func() {
-			addActionToTree(&structs.MouseMoveAction{})
-		}),
-		widget.NewToolbarSeparator(),
-		widget.NewToolbarAction(theme.DownloadIcon(), func() {
-			addActionToTree(&structs.ClickAction{})
-		}),
-		widget.NewToolbarSeparator(),
-		widget.NewToolbarAction(theme.ComputerIcon(), func() {
-			addActionToTree(&structs.KeyAction{})
-		}),
-		widget.NewToolbarSeparator(),
-		widget.NewToolbarSpacer(),
-		widget.NewToolbarSeparator(),
-		widget.NewToolbarAction(theme.MediaReplayIcon(), func() {
-			addActionToTree(&structs.LoopAction{})
-		}),
-		widget.NewToolbarSeparator(),
-		widget.NewToolbarAction(theme.MediaPhotoIcon(), func() {
-			addActionToTree(&structs.ImageSearchAction{})
-		}),
-		widget.NewToolbarSeparator(),
-		widget.NewToolbarAction(theme.DocumentIcon(), func() {
-			addActionToTree(&structs.OcrAction{})
-		}),
-		widget.NewToolbarSeparator(),
-		widget.NewToolbarSpacer(),
-		widget.NewToolbarSpacer(),
-		widget.NewToolbarSpacer(),
+func createItemsCheckBoxes() *widget.Accordion {
+	// var boundTargetsCheck []widget.Check
+	var (
+		accordionItems = widget.NewAccordion()
 	)
-	return toolbar
+	accordionItems.MultiOpen = true
+	for category, items := range *structs.GetItemsMap() {
+		var (
+			box           = container.NewVBox()
+			scroll        = container.NewVScroll(box)
+			categoryCheck = widget.NewCheck("select all", func(checked bool) {
+				switch checked {
+				case true:
+					for _, item := range items {
+						boundSelectedItemsMap.SetValue(item.Name, true)
+					}
+				case false:
+					for _, item := range items {
+						boundSelectedItemsMap.Delete(item.Name)
+					}
+				}
+				log.Println(selectedItemsMap)
+			})
+		)
+		accordionItems.Append(widget.NewAccordionItem(category, scroll))
+		box.Add(categoryCheck)
+		for _, item := range items {
+			var (
+				itemName                = item.Name
+				HBoxWithCheckBoxAndIcon = container.NewHBox()
+				itemCheckBox            = widget.NewCheck(itemName, func(checked bool) {
+					switch checked {
+					case true:
+						boundSelectedItemsMap.SetValue(itemName, true)
+					case false:
+						boundSelectedItemsMap.Delete(itemName)
+					}
+					log.Println(selectedItemsMap)
+				})
+				// itemBool                bool
+				// boundItemBool           = binding.BindBool(&itemBool)
+				// boundItemCheck          = widget.NewCheckWithData(itemName, boundItemBool)
+				resource, imageLoadErr = fyne.LoadResourceFromPath("./images/icons/" + itemName + ".png")
+			)
+			utils.HandleError(
+				imageLoadErr,
+				func() {
+					HBoxWithCheckBoxAndIcon.Add(widget.NewIcon(theme.BrokenImageIcon()))
+				},
+				func() {
+					icon := widget.NewIcon(resource)
+					HBoxWithCheckBoxAndIcon.Add(icon)
+				})
+			HBoxWithCheckBoxAndIcon.Add(itemCheckBox)
+			box.Add(HBoxWithCheckBoxAndIcon)
+		}
+	}
+
+	// for category, items := range *structs.GetItemsMap() {
+	// 	var (
+	// 		box              = container.NewVBox()
+	// 		scroll           = container.NewVScroll(box)
+	// 		categoryCheckbox = widget.NewCheck("select all", func(checked bool) {
+	// 			switch checked {
+	// 			case true:
+	// 				for _, item := range items {
+	// 					selectedItemsMap[item.Name] = true
+	// 				}
+	// 			case false:
+	// 				for _, item := range items {
+	// 					delete(selectedItemsMap, item.Name)
+	// 				}
+	// 			}
+	// 			log.Println(selectedItemsMap)
+	// 		})
+	// 	)
+	// 	accordionItems.Append(widget.NewAccordionItem(category, scroll))
+	// 	box.Add(categoryCheckbox)
+	// 	for _, item := range items {
+	// 		var (
+	// 			itemName                = item.Name
+	// 			HBoxWithCheckBoxAndIcon = container.NewHBox()
+	// 			itemCheckBox            = widget.NewCheck(itemName, func(checked bool) {
+	// 				switch checked {
+	// 				case true:
+	// 					selectedItemsMap[itemName] = true // Add selected item to the map
+	// 				case false:
+	// 					delete(selectedItemsMap, itemName) // Remove unselected item from the map
+	// 				}
+	// 				log.Println(selectedItemsMap)
+	// 			})
+	// 			resource, imageLoadErr = fyne.LoadResourceFromPath("./images/icons/" + itemName + ".png")
+	// 		)
+	// 		utils.HandleError(
+	// 			imageLoadErr,
+	// 			func() {
+	// 				HBoxWithCheckBoxAndIcon.Add(widget.NewIcon(theme.BrokenImageIcon()))
+	// 			},
+	// 			func() {
+	// 				icon := widget.NewIcon(resource)
+	// 				HBoxWithCheckBoxAndIcon.Add(icon)
+	// 			})
+	// 		HBoxWithCheckBoxAndIcon.Add(itemCheckBox)
+	// 		box.Add(HBoxWithCheckBoxAndIcon)
+	// 	}
+	// }
+	return accordionItems
 }
+
+func createUpdateButton() *widget.Button {
+	return widget.NewButton("Update", func() {
+		node := findNode(root, selectedTreeItem)
+		if selectedTreeItem == "" {
+			log.Println("No node selected")
+			return
+		}
+		og := node.String()
+		switch node := node.(type) {
+		case *structs.WaitAction:
+			t, _ := boundTime.Get()
+			node.Time = int(t)
+		case *structs.MouseMoveAction:
+			x, _ := boundMoveX.Get()
+			y, _ := boundMoveY.Get()
+			node.X = int(x)
+			node.Y = int(y)
+		case *structs.ClickAction:
+			b, _ := boundButton.Get()
+			if !b {
+				node.Button = "left"
+			} else {
+				node.Button = "right"
+			}
+		case *structs.KeyAction:
+			k, _ := boundKey.Get()
+			s, _ := boundState.Get()
+			node.Key = k
+			if !s {
+				node.State = "down"
+			} else {
+				node.State = "up"
+			}
+		case *structs.LoopAction:
+			n, _ := boundAdvancedActionName.Get()
+			c, _ := boundCount.Get()
+			node.Name = n
+			node.Count = int(c)
+		case *structs.ImageSearchAction:
+			n, _ := boundAdvancedActionName.Get()
+			s, _ := boundSearchArea.Get()
+			t := boundSelectedItemsMap.Keys()
+			node.Name = n
+			node.SearchBox = *structs.GetSearchBox(s)
+			node.Targets = t
+		}
+
+		fmt.Printf("Updated node: %+v from '%v' to '%v' \n", node.GetUID(), og, node)
+
+		tree.Refresh()
+	})
+}
+
+func CreateActionAddMenu() *fyne.Menu {
+	waitActionMenuItem := fyne.NewMenuItem("Wait", func() { addActionToTree(&structs.WaitAction{}) })
+	actionMenuItems := fyne.NewMenu("Add Actions")
+	actionMenuItems.Items = append(actionMenuItems.Items, waitActionMenuItem)
+	return actionMenuItems
+}
+
+//func createToolbar() *widget.Toolbar {
+//
+//	toolbar := widget.NewToolbar(
+//		widget.NewToolbarSpacer(),
+//		widget.NewToolbarSpacer(),
+//		widget.NewToolbarSeparator(),
+//		widget.NewToolbarAction(theme.HistoryIcon(), func() {
+//			addActionToTree(&structs.WaitAction{})
+//		}),
+//		widget.NewToolbarSeparator(),
+//		widget.NewToolbarAction(theme.ContentRedoIcon(), func() {
+//			addActionToTree(&structs.MouseMoveAction{})
+//		}),
+//		widget.NewToolbarSeparator(),
+//		widget.NewToolbarAction(theme.DownloadIcon(), func() {
+//			addActionToTree(&structs.ClickAction{})
+//		}),
+//		widget.NewToolbarSeparator(),
+//		widget.NewToolbarAction(theme.ComputerIcon(), func() {
+//			addActionToTree(&structs.KeyAction{})
+//		}),
+//		widget.NewToolbarSeparator(),
+//		widget.NewToolbarSpacer(),
+//		widget.NewToolbarSeparator(),
+//		widget.NewToolbarAction(theme.MediaReplayIcon(), func() {
+//			addActionToTree(&structs.LoopAction{})
+//		}),
+//		widget.NewToolbarSeparator(),
+//		widget.NewToolbarAction(theme.MediaPhotoIcon(), func() {
+//			addActionToTree(&structs.ImageSearchAction{})
+//		}),
+//		widget.NewToolbarSeparator(),
+//		widget.NewToolbarAction(theme.DocumentIcon(), func() {
+//			addActionToTree(&structs.OcrAction{})
+//		}),
+//		widget.NewToolbarSeparator(),
+//		widget.NewToolbarSpacer(),
+//		widget.NewToolbarSpacer(),
+//		widget.NewToolbarSpacer(),
+//	)
+//	return toolbar
+//}
