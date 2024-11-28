@@ -34,3 +34,51 @@ package gui
 // 		tree.Refresh()
 // 	})
 // }
+
+// func (m *ActionSectionManager) addSection(
+// 	key string,
+// 	labelText string,
+// 	widgetSetupFunc func() map[string]fyne.CanvasObject,
+// ) {
+// 	label := widget.NewLabel(labelText)
+// 	label.TextStyle = fyne.TextStyle{Bold: true}
+// 	label.Alignment = fyne.TextAlignCenter
+
+// 	content := container.NewWithoutLayout()
+// 	section := &ActionSection{
+// 		label:   label,
+// 		content: content,
+// 		widgets: widgetSetupFunc(),
+// 	}
+
+// 	// Add widgets to content
+// 	content.Add(label)
+// 	for _, widget := range section.widgets {
+// 		content.Add(widget)
+// 	}
+// 	// content.Add(widget.NewSeparator())
+
+// 	content.Hide()
+
+// 	m.sections[key] = section
+// 	m.container.Add(content)
+// }
+
+// func showAndPopulateSection(
+// 	sectionKey string,
+// 	nodeData interface{},
+// ) {
+// 	// Hide all sections
+// 	for _, section := range m.sections {
+// 		section.content.Hide()
+// 	}
+
+// 	// Show and populate selected section
+// 	if section, exists := m.sections[sectionKey]; exists {
+// 		m.populateWidgets(section, nodeData)
+// 		section.content.Show()
+// 	}
+
+// 	// Store the current selected node
+// 	m.currentSelectedNode = nodeData
+// }
