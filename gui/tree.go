@@ -204,9 +204,92 @@ func updateTree(tree *widget.Tree, root *structs.LoopAction) {
 			boundCount.Set(float64(node.Count))
 		case *structs.ImageSearchAction:
 			boundAdvancedActionName.Set(node.Name)
-			boundTargets.Set(node.Targets)
+			boundSelectedItemsMap.Set(map[string]any{})
+			for _, t := range node.Targets {
+				boundSelectedItemsMap.SetValue(t, true)
+			}
 			boundSearchAreaSelect.SetSelected(node.SearchBox.Name)
 		}
 	}
 	tree.Refresh()
+}
+
+func addActionToTree(actionType structs.ActionInterface) {
+	var (
+		selectedNode = findNode(root, selectedTreeItem)
+		action       structs.ActionInterface
+	)
+	switch actionType.(type) {
+	case *structs.WaitAction:
+		t, _ := boundTime.Get()
+		action = &structs.WaitAction{Time: int(t), BaseAction: structs.NewBaseAction()}
+	case *structs.MouseMoveAction:
+		x, _ := boundMoveX.Get()
+		y, _ := boundMoveY.Get()
+		action = &structs.MouseMoveAction{X: int(x), Y: int(y), BaseAction: structs.NewBaseAction()}
+	case *structs.ClickAction:
+		str := ""
+		b, _ := boundButton.Get()
+		if !b {
+			str = "left"
+		} else {
+			str = "right"
+		}
+		action = &structs.ClickAction{Button: str, BaseAction: structs.NewBaseAction()}
+	case *structs.KeyAction:
+		str := ""
+		k, _ := boundKey.Get()
+		s, _ := boundState.Get()
+		if !s {
+			str = "down"
+		} else {
+			str = "up"
+		}
+		action = &structs.KeyAction{Key: k, State: str, BaseAction: structs.NewBaseAction()}
+	case *structs.LoopAction:
+		n, _ := boundAdvancedActionName.Get()
+		c, _ := boundCount.Get()
+		action = &structs.LoopAction{
+			Count: int(c),
+			AdvancedAction: structs.AdvancedAction{
+				BaseAction: structs.NewBaseAction(),
+				Name:       n,
+			},
+		}
+	case *structs.ImageSearchAction:
+		n, _ := boundAdvancedActionName.Get()
+		s, _ := boundSearchArea.Get()
+		t := boundSelectedItemsMap.Keys()
+		action = &structs.ImageSearchAction{
+			Targets:   t,
+			SearchBox: *structs.GetSearchBox(s),
+			AdvancedAction: structs.AdvancedAction{
+				BaseAction: structs.NewBaseAction(),
+				Name:       n,
+			},
+		}
+	case *structs.OcrAction:
+		// n, _ := boundAdvancedActionName.Get()
+		// t, _ := boundOcrTarget.Get()
+		// s, _ := boundSearchArea.Get()
+		// action = &structs.OcrAction{
+		// 	SearchBox: *structs.GetSearchBox(s),
+		// 	Target:    t,
+		// 	AdvancedAction: structs.AdvancedAction{
+		// 		BaseAction: structs.NewBaseAction(),
+		// 		Name:       n,
+		// 	},
+		// }
+
+	}
+
+	// if selectedNode == nil {
+	// 	selectedNode = getRoot()
+	// }
+	if s, ok := selectedNode.(structs.AdvancedActionInterface); ok {
+		s.AddSubAction(selectedNode)
+	} else {
+		selectedNode.GetParent().AddSubAction(action)
+	}
+	updateTree(&tree, root)
 }
