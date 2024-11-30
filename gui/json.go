@@ -58,7 +58,6 @@ func loadTreeFromJsonFile(root *structs.LoopAction, filename string) error {
 	if err != nil {
 		return fmt.Errorf("error reading file: %v", err)
 	}
-	//log.Println(root.SubActions)
 	var result structs.ActionInterface
 	//err = json.Unmarshal(jsonData, root)
 	log.Println(root.SubActions)
@@ -159,7 +158,7 @@ func createActionFromMap(rawMap map[string]interface{}, parent structs.AdvancedA
 			Button:     rawMap["button"].(string),
 		}
 	case rawMap["X"] != nil && rawMap["Y"] != nil:
-		action = &structs.MouseMoveAction{
+		action = &structs.MoveAction{
 			BaseAction: structs.NewBaseAction(),
 			X:          int(rawMap["X"].(float64)),
 			Y:          int(rawMap["Y"].(float64)),
