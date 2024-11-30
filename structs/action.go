@@ -38,6 +38,13 @@ type WaitAction struct {
 	Time       int `json:"waittime"`
 }
 
+func NewWaitAction(time int) *WaitAction {
+	return &WaitAction{
+		BaseAction: NewBaseAction(),
+		Time:       time,
+	}
+}
+
 func (a *WaitAction) Execute(ctx interface{}) error {
 	log.Printf("Waiting for %d milliseconds", a.Time)
 	robotgo.MilliSleep(a.Time)
@@ -55,6 +62,13 @@ type ClickAction struct {
 	Button     string `json:"button"`
 }
 
+func NewClickAction(button string) *ClickAction {
+	return &ClickAction{
+		BaseAction: NewBaseAction(),
+		Button:     button,
+	}
+}
+
 func (a *ClickAction) Execute(ctx interface{}) error {
 	log.Printf("%s click", a.Button)
 	robotgo.Click(a.Button)
@@ -67,12 +81,20 @@ func (a *ClickAction) String() string {
 
 // ***************************************************************************************Move
 
-type MouseMoveAction struct {
+type MoveAction struct {
 	BaseAction //`json:"baseaction"`
 	X, Y       int
 }
 
-func (a *MouseMoveAction) Execute(ctx interface{}) error {
+func NewMoveAction(x, y int) *MoveAction {
+	return &MoveAction{
+		BaseAction: NewBaseAction(),
+		X:          x,
+		Y:          y,
+	}
+}
+
+func (a *MoveAction) Execute(ctx interface{}) error {
 	//if (a.X == -1) && (a.Y == -1) {
 	if c, ok := ctx.(robotgo.Point); ok {
 		log.Printf("Moving mouse to ctx (%d, %d)", c.X, c.Y)
@@ -84,7 +106,7 @@ func (a *MouseMoveAction) Execute(ctx interface{}) error {
 	return nil
 }
 
-func (a *MouseMoveAction) String() string {
+func (a *MoveAction) String() string {
 	for _, s := range *GetSpotMap() {
 		if (s.X == a.X) && (s.Y == a.Y) {
 			return fmt.Sprintf("%s Move mouse to %s", utils.GetEmoji("Move"), s.Name)
@@ -101,13 +123,27 @@ type KeyAction struct {
 	State      string `json:"state"`
 }
 
+func NewKeyAction(key, state string) *KeyAction {
+	return &KeyAction{
+		BaseAction: NewBaseAction(),
+		Key:        key,
+		State:      state,
+	}
+}
+
 func (a *KeyAction) Execute(ctx interface{}) error {
 	log.Printf("Key: %s %s", a.Key, a.State)
 	switch a.State {
 	case "Up":
-		robotgo.KeyUp(a.Key)
+		err := robotgo.KeyUp(a.Key)
+		if err != nil {
+			return err
+		}
 	case "Down":
-		robotgo.KeyDown(a.Key)
+		err := robotgo.KeyDown(a.Key)
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }

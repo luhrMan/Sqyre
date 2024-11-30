@@ -60,10 +60,10 @@ func GetSearchBoxMap() *map[string]SearchBox {
 			panic(err)
 		}
 
-		log.Println("Search Coordinates:")
+		//		log.Println("Search Coordinates:")
 		for _, sbArr := range tempArrMap {
 			for _, sb := range sbArr {
-				log.Printf("Area: %s, X1: %d Y1: %d X2: %d Y2: %d\n", sb.Name, sb.LeftX, sb.TopY, sb.RightX, sb.BottomY)
+				//				log.Printf("Area: %s, X1: %d Y1: %d X2: %d Y2: %d\n", sb.Name, sb.LeftX, sb.TopY, sb.RightX, sb.BottomY)
 				tempMap[sb.Name] = sb
 			}
 		}
@@ -106,7 +106,7 @@ func GetSpotMap() *map[string]Spot {
 
 		for _, sArr := range tempArrMap {
 			for _, s := range sArr {
-				log.Printf("Spot: %s, X: %d Y: %d\n", s.Name, s.X, s.Y)
+				//				log.Printf("Spot: %s, X: %d Y: %d\n", s.Name, s.X, s.Y)
 				tempMap[s.Name] = s
 			}
 		}
