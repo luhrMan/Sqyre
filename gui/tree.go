@@ -15,10 +15,6 @@ type macroTree struct {
 	root *structs.LoopAction
 }
 
-func getRoot() *structs.LoopAction {
-	return macro.root
-}
-
 func (m *macroTree) moveNodeUp(selectedUID string) {
 	node := m.findNode(m.root, selectedUID)
 	if node == nil || node.GetParent() == nil {
@@ -64,32 +60,6 @@ func (m *macroTree) moveNodeDown(selectedUID string) {
 
 		m.tree.Refresh()
 	}
-}
-
-func (m *macroTree) createMoveButtons() *fyne.Container {
-	moveUpButton := &widget.Button{
-		Text: "",
-		OnTapped: func() {
-			if selectedTreeItem != "" {
-				m.moveNodeUp(selectedTreeItem)
-			}
-		},
-		Icon:       theme.MoveUpIcon(),
-		Importance: widget.HighImportance,
-	}
-
-	moveDownButton := &widget.Button{
-		Text: "",
-		OnTapped: func() {
-			if selectedTreeItem != "" {
-				m.moveNodeDown(selectedTreeItem)
-			}
-		},
-		Icon:       theme.MoveDownIcon(),
-		Importance: widget.HighImportance,
-	}
-
-	return container.NewHBox(layout.NewSpacer(), moveUpButton, moveDownButton)
 }
 
 func (m *macroTree) findNode(node structs.ActionInterface, uid string) structs.ActionInterface {
@@ -169,19 +139,18 @@ func (m *macroTree) createTree() {
 		switch node := m.findNode(m.root, uid).(type) {
 		case *structs.WaitAction:
 			boundTime.Set(float64(node.Time))
-			settingsAccordion.Open(0)
+			settingsTabs.SelectIndex(0)
 		case *structs.MoveAction:
 			boundMoveX.Set(float64(node.X))
 			boundMoveY.Set(float64(node.Y))
-			settingsAccordion.Open(1)
+			settingsTabs.SelectIndex(1)
 		case *structs.ClickAction:
 			if node.Button == "left" {
 				boundButton.Set(false)
 			} else {
 				boundButton.Set(true)
 			}
-			settingsAccordion.Open(2)
-
+			settingsTabs.SelectIndex(2)
 		case *structs.KeyAction:
 			boundKeySelect.SetSelected(node.Key)
 			if node.State == "down" {
@@ -189,21 +158,22 @@ func (m *macroTree) createTree() {
 			} else {
 				boundState.Set(true)
 			}
-			settingsAccordion.Open(3)
+			settingsTabs.SelectIndex(3)
 
 		case *structs.LoopAction:
-			boundAdvancedActionName.Set(node.Name)
+			boundLoopName.Set(node.Name)
 			boundCount.Set(float64(node.Count))
-			settingsAccordion.Open(4)
+			settingsTabs.SelectIndex(4)
 
 		case *structs.ImageSearchAction:
-			boundAdvancedActionName.Set(node.Name)
+			boundImageSearchName.Set(node.Name)
 			boundSelectedItemsMap.Set(map[string]any{})
 			for _, t := range node.Targets {
 				boundSelectedItemsMap.SetValue(t, true)
 			}
 			boundSearchAreaSelect.SetSelected(node.SearchBox.Name)
-			settingsAccordion.Open(5)
+			settingsTabs.SelectIndex(5)
+
 		}
 	}
 }
@@ -241,11 +211,11 @@ func (m *macroTree) addActionToTree(actionType structs.ActionInterface) {
 		}
 		action = structs.NewKeyAction(k, str)
 	case *structs.LoopAction:
-		n, _ := boundAdvancedActionName.Get()
+		n, _ := boundLoopName.Get()
 		c, _ := boundCount.Get()
 		action = structs.NewLoopAction(int(c), n, []structs.ActionInterface{})
 	case *structs.ImageSearchAction:
-		n, _ := boundAdvancedActionName.Get()
+		n, _ := boundImageSearchName.Get()
 		s, _ := boundSearchArea.Get()
 		t := boundSelectedItemsMap.Keys()
 		action = structs.NewImageSearchAction(n, []structs.ActionInterface{}, t, *structs.GetSearchBox(s))
@@ -265,7 +235,7 @@ func (m *macroTree) addActionToTree(actionType structs.ActionInterface) {
 	}
 
 	if selectedNode == nil {
-		selectedNode = getRoot()
+		selectedNode = m.root
 	}
 	if s, ok := selectedNode.(structs.AdvancedActionInterface); ok {
 		s.AddSubAction(action)
