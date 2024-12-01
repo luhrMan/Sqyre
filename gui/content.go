@@ -20,8 +20,7 @@ import (
 )
 
 var (
-	root               *structs.LoopAction
-	tree               = widget.Tree{}
+	macro              = &macroTree{}
 	selectedTreeItem   = ".1"
 	selectedItemsMap   = make(map[string]any)
 	searchAreaSelector = &widget.Select{Options: *structs.GetSearchBoxMapKeys(*structs.GetSearchBoxMap())}
@@ -110,48 +109,41 @@ func LoadMainContent() *fyne.Container {
 	log.Println(robotgo.GetDisplayBounds(0))
 	log.Println("Monitor 2 size")
 	log.Println(robotgo.GetDisplayBounds(1))
-	root = getRoot()
-	updateTree(&tree, root)
-	//	loadTreeFromJsonFile(root, "Currency Testing.json")
+	macro.createTree()
+	macro.loadTreeFromJsonFile("Currency Testing.json")
 	//	//click merchants tab, click merchant
-	root.AddSubAction(&structs.MoveAction{BaseAction: structs.NewBaseAction(), X: structs.GetSpot("Merchants Tab").X, Y: structs.GetSpot("Merchants Tab").Y})
-	root.AddSubAction(&structs.ClickAction{BaseAction: structs.NewBaseAction(), Button: "left"})
-	root.AddSubAction(&structs.WaitAction{BaseAction: structs.NewBaseAction(), Time: 200})
-	root.AddSubAction(&structs.MoveAction{BaseAction: structs.NewBaseAction(), X: structs.GetSpot("Collector").X, Y: structs.GetSpot("Collector").Y})
-	root.AddSubAction(&structs.ClickAction{BaseAction: structs.NewBaseAction(), Button: "left"})
-	root.AddSubAction(&structs.WaitAction{BaseAction: structs.NewBaseAction(), Time: 200})
+	//	macro.root.AddSubAction(structs.NewMoveAction(structs.GetSpot("Merchants Tab").X, structs.GetSpot("Merchants Tab").Y))
+	//	macro.root.AddSubAction(structs.NewClickAction("left"))
+	//	macro.root.AddSubAction(structs.NewWaitAction(200))
+	//	macro.root.AddSubAction(structs.NewMoveAction(structs.GetSpot("Collector").X, structs.GetSpot("Collector").Y))
+	//	macro.root.AddSubAction(structs.NewClickAction("left"))
+	//	macro.root.AddSubAction(structs.NewWaitAction(200))
+
 	//image search for treasures
-	imageSearch := &structs.ImageSearchAction{
-		AdvancedAction: structs.AdvancedAction{
-			BaseAction: structs.NewBaseAction(),
-			Name:       "Search for treasures",
-			SubActions: []structs.ActionInterface{},
-		},
-		SearchBox: *structs.GetSearchBox("Stash Inventory"),
-		Targets:   *structs.GetItemsMapCategory("treasures"),
-	}
-	ocrSearch := &structs.OcrAction{
-		AdvancedAction: structs.AdvancedAction{
-			BaseAction: structs.NewBaseAction(),
-			Name:       "Search for Rare",
-			SubActions: []structs.ActionInterface{},
-		},
-		SearchBox: *structs.GetSearchBox("Stash Inventory"),
-		Target:    "Rare",
-	}
-	root.AddSubAction(imageSearch)
-	imageSearch.AddSubAction(structs.NewMoveAction(-1, -1))
-	imageSearch.AddSubAction(structs.NewWaitAction(200))
-	imageSearch.AddSubAction(ocrSearch)
-	ocrSearch.AddSubAction(structs.NewKeyAction("shift", "down"))
-	ocrSearch.AddSubAction(structs.NewClickAction("right"))
-	ocrSearch.AddSubAction(structs.NewKeyAction("shift", "up"))
-	imageSearch.AddSubAction(&structs.WaitAction{BaseAction: structs.NewBaseAction(), Time: 200})
-	root.AddSubAction(&structs.MoveAction{BaseAction: structs.NewBaseAction(), X: structs.GetSpot("Make Deal").X, Y: structs.GetSpot("Make Deal").Y})
+	//	imageSearch := structs.NewImageSearchAction("Search for treasures", []structs.ActionInterface{}, *structs.GetItemsMapCategory("treasures"), *structs.GetSearchBox("Stash Inventory"))
+
+	//	ocrSearch := &structs.OcrAction{
+	//		AdvancedAction: structs.AdvancedAction{
+	//			BaseAction: structs.NewBaseAction(),
+	//			Name:       "Search for Rare",
+	//			SubActions: []structs.ActionInterface{},
+	//		},
+	//		SearchBox: *structs.GetSearchBox("Stash Inventory"),
+	//		Target:    "Rare",
+	//	}
+	//	macro.root.AddSubAction(imageSearch)
+	//	imageSearch.AddSubAction(structs.NewMoveAction(-1, -1))
+	//	imageSearch.AddSubAction(structs.NewWaitAction(200))
+	//	imageSearch.AddSubAction(ocrSearch)
+	//	ocrSearch.AddSubAction(structs.NewKeyAction("shift", "down"))
+	//	ocrSearch.AddSubAction(structs.NewClickAction("right"))
+	//	ocrSearch.AddSubAction(structs.NewKeyAction("shift", "up"))
+	//	imageSearch.AddSubAction(structs.NewWaitAction(200))
+	//	macro.root.AddSubAction(structs.NewMoveAction(structs.GetSpot("Make Deal").X, structs.GetSpot("Make Deal").Y))
 
 	// searchAreaSelector.SetSelected(searchAreaSelector.Options[0])
 	mainLayout := container.NewBorder(nil, nil, nil, nil)
-	settingsLayout := container.NewBorder(nil, createUpdateButton(), createItemsCheckBoxes(), nil)
+	settingsLayout := container.NewBorder(nil, macro.createUpdateButton(), createItemsCheckBoxes(), nil)
 	settingsLayout.Add(container.NewGridWithRows(2, settingsAccordion))
 
 	settingsAccordion.Append(widget.NewAccordionItem("Wait Action", waitSettings))
@@ -186,22 +178,22 @@ func LoadMainContent() *fyne.Container {
 		container.NewHBox(
 			widget.NewLabel("Global Delay"),
 			widget.NewEntry(),
-			createMoveButtons(root, &tree),
+			macro.createMoveButtons(),
 		),
 		createMacroSettings(),
 		nil,
 
 		nil,
-		&tree,
+		macro.tree,
 	)
 	middleSplit := container.NewHSplit(settingsLayout, macroLayout)
 	mainLayout.Add(middleSplit)
 	return mainLayout
 }
 
-func ExecuteActionTree(root *structs.LoopAction) { //error
+func (m *macroTree) ExecuteActionTree() { //error
 	var context interface{}
-	err := root.Execute(context)
+	err := m.root.Execute(context)
 	if err != nil {
 		log.Println(err)
 		return
@@ -226,14 +218,14 @@ func macroSelector() *widget.Select {
 	for _, f := range files {
 		macroList = append(macroList, strings.TrimSuffix(f.Name(), ".json"))
 	}
-	return widget.NewSelect(macroList, func(s string) { loadTreeFromJsonFile(root, s+".json") })
+	return widget.NewSelect(macroList, func(s string) { macro.loadTreeFromJsonFile(s + ".json") })
 }
 
 func macroStartButton() *widget.Button {
 	return &widget.Button{
 		Text: "Start Macro",
 		OnTapped: func() {
-			ExecuteActionTree(root)
+			macro.ExecuteActionTree()
 		},
 		Icon:       theme.MediaPlayIcon(),
 		Importance: widget.SuccessImportance,
@@ -362,9 +354,9 @@ func createItemsCheckBoxes() *widget.Accordion {
 	return accordionItems
 }
 
-func createUpdateButton() *widget.Button {
+func (m *macroTree) createUpdateButton() *widget.Button {
 	return widget.NewButton("Update", func() {
-		node := findNode(root, selectedTreeItem)
+		node := m.findNode(m.root, selectedTreeItem)
 		if selectedTreeItem == "" {
 			log.Println("No node selected")
 			return
@@ -411,7 +403,7 @@ func createUpdateButton() *widget.Button {
 
 		fmt.Printf("Updated node: %+v from '%v' to '%v' \n", node.GetUID(), og, node)
 
-		tree.Refresh()
+		m.tree.Refresh()
 	})
 }
 func CreateActionMenu() *fyne.Menu {
@@ -421,13 +413,13 @@ func CreateActionMenu() *fyne.Menu {
 	advancedActionsSubMenu := fyne.NewMenuItem("Advanced Actions", nil)
 	advancedActionsSubMenu.ChildMenu = fyne.NewMenu("")
 
-	waitActionMenuItem := fyne.NewMenuItem("Wait", func() { addActionToTree(&structs.WaitAction{}) })
-	mouseMoveActionMenuItem := fyne.NewMenuItem("Mouse Move", func() { addActionToTree(&structs.MoveAction{}) })
-	clickActionMenuItem := fyne.NewMenuItem("Click", func() { addActionToTree(&structs.ClickAction{}) })
-	keyActionMenuItem := fyne.NewMenuItem("Key", func() { addActionToTree(&structs.KeyAction{}) })
+	waitActionMenuItem := fyne.NewMenuItem("Wait", func() { macro.addActionToTree(&structs.WaitAction{}) })
+	mouseMoveActionMenuItem := fyne.NewMenuItem("Mouse Move", func() { macro.addActionToTree(&structs.MoveAction{}) })
+	clickActionMenuItem := fyne.NewMenuItem("Click", func() { macro.addActionToTree(&structs.ClickAction{}) })
+	keyActionMenuItem := fyne.NewMenuItem("Key", func() { macro.addActionToTree(&structs.KeyAction{}) })
 
-	loopActionMenuItem := fyne.NewMenuItem("Loop", func() { addActionToTree(&structs.LoopAction{}) })
-	imageSearchActionMenuItem := fyne.NewMenuItem("Image Search", func() { addActionToTree(&structs.ImageSearchAction{}) })
+	loopActionMenuItem := fyne.NewMenuItem("Loop", func() { macro.addActionToTree(&structs.LoopAction{}) })
+	imageSearchActionMenuItem := fyne.NewMenuItem("Image Search", func() { macro.addActionToTree(&structs.ImageSearchAction{}) })
 	//	clickActionMenuItem := fyne.NewMenuItem("Click", func() { addActionToTree(&structs.OcrAction{}) })
 	//	keyActionMenuItem := fyne.NewMenuItem("Key", func() { addActionToTree(&structs.KeyAction{}) })
 
