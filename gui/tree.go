@@ -159,9 +159,9 @@ func updateTree(tree *widget.Tree, root *structs.LoopAction) {
 		if node == nil {
 			return
 		}
-		container := obj.(*fyne.Container)
-		label := container.Objects[0].(*widget.Label)
-		removeButton := container.Objects[2].(*widget.Button)
+		c := obj.(*fyne.Container)
+		label := c.Objects[0].(*widget.Label)
+		removeButton := c.Objects[2].(*widget.Button)
 		label.SetText(node.String())
 
 		if node.GetParent() != nil {
@@ -176,6 +176,7 @@ func updateTree(tree *widget.Tree, root *structs.LoopAction) {
 		} else {
 			removeButton.Hide()
 		}
+		//		tree.Refresh()
 	}
 	//Set here, Get @ addActionToTree in content.go
 	tree.OnSelected = func(uid widget.TreeNodeID) {
@@ -184,7 +185,7 @@ func updateTree(tree *widget.Tree, root *structs.LoopAction) {
 		case *structs.WaitAction:
 			boundTime.Set(float64(node.Time))
 			settingsAccordion.Open(0)
-		case *structs.MouseMoveAction:
+		case *structs.MoveAction:
 			boundMoveX.Set(float64(node.X))
 			boundMoveY.Set(float64(node.Y))
 			settingsAccordion.Open(1)
@@ -231,11 +232,11 @@ func addActionToTree(actionType structs.ActionInterface) {
 	switch actionType.(type) {
 	case *structs.WaitAction:
 		t, _ := boundTime.Get()
-		action = &structs.WaitAction{Time: int(t), BaseAction: structs.NewBaseAction()}
-	case *structs.MouseMoveAction:
+		action = structs.NewWaitAction(int(t))
+	case *structs.MoveAction:
 		x, _ := boundMoveX.Get()
 		y, _ := boundMoveY.Get()
-		action = &structs.MouseMoveAction{X: int(x), Y: int(y), BaseAction: structs.NewBaseAction()}
+		action = structs.NewMoveAction(int(x), int(y))
 	case *structs.ClickAction:
 		str := ""
 		b, _ := boundButton.Get()
@@ -244,7 +245,7 @@ func addActionToTree(actionType structs.ActionInterface) {
 		} else {
 			str = "right"
 		}
-		action = &structs.ClickAction{Button: str, BaseAction: structs.NewBaseAction()}
+		action = structs.NewClickAction(str)
 	case *structs.KeyAction:
 		str := ""
 		k, _ := boundKey.Get()
@@ -254,29 +255,16 @@ func addActionToTree(actionType structs.ActionInterface) {
 		} else {
 			str = "up"
 		}
-		action = &structs.KeyAction{Key: k, State: str, BaseAction: structs.NewBaseAction()}
+		action = structs.NewKeyAction(k, str)
 	case *structs.LoopAction:
 		n, _ := boundAdvancedActionName.Get()
 		c, _ := boundCount.Get()
-		action = &structs.LoopAction{
-			Count: int(c),
-			AdvancedAction: structs.AdvancedAction{
-				BaseAction: structs.NewBaseAction(),
-				Name:       n,
-			},
-		}
+		action = structs.NewLoopAction(int(c), n, []structs.ActionInterface{})
 	case *structs.ImageSearchAction:
 		n, _ := boundAdvancedActionName.Get()
 		s, _ := boundSearchArea.Get()
 		t := boundSelectedItemsMap.Keys()
-		action = &structs.ImageSearchAction{
-			Targets:   t,
-			SearchBox: *structs.GetSearchBox(s),
-			AdvancedAction: structs.AdvancedAction{
-				BaseAction: structs.NewBaseAction(),
-				Name:       n,
-			},
-		}
+		action = structs.NewImageSearchAction(n, []structs.ActionInterface{}, t, *structs.GetSearchBox(s))
 	case *structs.OcrAction:
 		// n, _ := boundAdvancedActionName.Get()
 		// t, _ := boundOcrTarget.Get()
