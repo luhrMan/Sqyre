@@ -28,11 +28,9 @@ func main() {
 			os.Exit(0)
 		}
 	}()
-
 	a.Settings().SetTheme(theme.DarkTheme())
 	w.SetIcon(icon)
 	w.SetMainMenu(mainMenu)
 	w.SetContent(gui.LoadMainContent())
-
 	w.ShowAndRun()
 }

@@ -20,19 +20,28 @@ import (
 )
 
 var (
-	macro              = &macroTree{}
+	macro               = &macroTree{}
+	macroName           string
+	boundMacroName      = binding.BindString(&macroName)
+	boundMacroNameEntry = widget.NewEntryWithData(boundMacroName)
+
 	selectedTreeItem   = ".1"
 	selectedItemsMap   = make(map[string]any)
 	searchAreaSelector = &widget.Select{Options: *structs.GetSearchBoxMapKeys(*structs.GetSearchBoxMap())}
 	customImport       = custom_widgets.NewToggle(func(b bool) {})
-	settingsAccordion  = widget.NewAccordion()
+)
 
+//action settings
+var (
+	//	settingsAccordion = widget.NewAccordion()
+	settingsTabs = container.AppTabs{}
 	//BASICS
 	//wait
 	time            float64
 	boundTime       = binding.BindFloat(&time)
 	boundTimeSlider = widget.NewSliderWithData(0.0, 250.0, boundTime)
 	boundTimeLabel  = widget.NewLabelWithData(binding.FloatToStringWithFormat(boundTime, "%0.0f"))
+
 	//move
 	moveX float64
 	moveY float64
@@ -47,10 +56,12 @@ var (
 	boundMoveYLabel  = widget.NewLabelWithData(binding.FloatToStringWithFormat(boundMoveY, "%0.0f"))
 	boundMoveXEntry  = widget.NewEntryWithData(binding.FloatToStringWithFormat(boundMoveX, "%0.0f"))
 	boundMoveYEntry  = widget.NewEntryWithData(binding.FloatToStringWithFormat(boundMoveY, "%0.0f"))
+
 	//click
 	button            bool
 	boundButton       = binding.BindBool(&button)
 	boundButtonToggle = custom_widgets.NewToggleWithData(boundButton)
+
 	//key
 	key              string
 	state            bool
@@ -60,46 +71,51 @@ var (
 	boundStateToggle = custom_widgets.NewToggleWithData(boundState)
 
 	//ADVANCED
-	advancedActionName           string
-	searchArea                   string
-	boundAdvancedActionName      = binding.BindString(&advancedActionName)
-	boundSearchArea              = binding.BindString(&searchArea)
-	boundAdvancedActionNameEntry = widget.NewEntryWithData(boundAdvancedActionName)
-	boundSearchAreaSelect        = widget.NewSelect(*structs.GetSearchBoxMapKeys(*structs.GetSearchBoxMap()), func(s string) { boundSearchArea.Set(s) })
 
 	//loop
-	count            float64 = 1
-	boundCount               = binding.BindFloat(&count)
-	boundCountSlider         = widget.NewSliderWithData(1, 10, boundCount)
-	boundCountLabel          = widget.NewLabelWithData(binding.FloatToStringWithFormat(boundCount, "%0.0f"))
+	loopName           string
+	count              float64 = 1
+	boundLoopName              = binding.BindString(&loopName)
+	boundCount                 = binding.BindFloat(&count)
+	boundLoopNameEntry         = widget.NewEntryWithData(boundLoopName)
+	boundCountSlider           = widget.NewSliderWithData(1, 10, boundCount)
+	boundCountLabel            = widget.NewLabelWithData(binding.FloatToStringWithFormat(boundCount, "%0.0f"))
 	//image search
-	targets []string
-
-	// selectedItemsMap       = make(map[string]any)
-	boundSelectedItemsMap = binding.BindUntypedMap(&selectedItemsMap)
-
-	boundTargets = binding.BindStringList(&targets)
-
+	imageSearchName           string
+	searchArea                string
+	targets                   []string
+	boundImageSearchName      = binding.BindString(&imageSearchName)
+	boundSearchArea           = binding.BindString(&searchArea)
+	boundTargets              = binding.BindStringList(&targets)
+	boundImageSearchNameEntry = widget.NewEntryWithData(boundImageSearchName)
+	boundSearchAreaSelect     = widget.NewSelect(*structs.GetSearchBoxMapKeys(*structs.GetSearchBoxMap()), func(s string) { boundSearchArea.Set(s) })
+	boundSelectedItemsMap     = binding.BindUntypedMap(&selectedItemsMap)
 	//ocr
 )
 
 //action settings layout
 var (
 	waitSettings = container.NewVBox(
-		container.NewGridWithColumns(2,
-			container.NewHBox(layout.NewSpacer(), boundTimeLabel, widget.NewLabel("ms")), boundTimeSlider),
+		container.NewGridWithColumns(2, container.NewHBox(layout.NewSpacer(), boundTimeLabel, widget.NewLabel("ms")), boundTimeSlider),
 	)
-	moveSettings = container.NewVBox(
-		container.NewGridWithColumns(2,
-			container.NewHBox(layout.NewSpacer(), widget.NewLabel("X:"), boundMoveXEntry, boundMoveXLabel),
-			boundMoveXSlider,
-			container.NewHBox(layout.NewSpacer(), widget.NewLabel("Y:"), boundMoveYEntry, boundMoveYLabel),
-			boundMoveYSlider,
-		))
+	moveSettings = container.NewVBox(container.NewGridWithColumns(2,
+		container.NewHBox(layout.NewSpacer(), widget.NewLabel("X:"), boundMoveXEntry, boundMoveXLabel), boundMoveXSlider,
+		container.NewHBox(layout.NewSpacer(), widget.NewLabel("Y:"), boundMoveYEntry, boundMoveYLabel), boundMoveYSlider),
+	)
 	clickSettings = container.NewVBox(
-		container.NewHBox(layout.NewSpacer(), widget.NewLabel("left"), boundButtonToggle, widget.NewLabel("right"), layout.NewSpacer()))
+		container.NewHBox(layout.NewSpacer(), widget.NewLabel("left"), boundButtonToggle, widget.NewLabel("right"), layout.NewSpacer()),
+	)
 	keySettings = container.NewVBox(
 		container.NewHBox(layout.NewSpacer(), boundKeySelect, widget.NewLabel("down"), boundStateToggle, widget.NewLabel("up"), layout.NewSpacer()))
+	loopSettings = container.NewVBox(
+		container.NewGridWithColumns(2, container.NewHBox(layout.NewSpacer(), widget.NewLabel("name:")), boundLoopNameEntry),
+		container.NewGridWithColumns(2, container.NewHBox(layout.NewSpacer(), widget.NewLabel("loops:"), boundCountLabel), boundCountSlider),
+	)
+	imageSearchSettings = container.NewVBox(
+		container.NewGridWithColumns(2, container.NewHBox(layout.NewSpacer(), widget.NewLabel("name:")), boundImageSearchNameEntry),
+		container.NewHBox(layout.NewSpacer(), widget.NewLabel("search area:"), boundSearchAreaSelect),
+	)
+	ocrSettings = container.NewHBox(layout.NewSpacer(), layout.NewSpacer())
 )
 
 func LoadMainContent() *fyne.Container {
@@ -110,84 +126,37 @@ func LoadMainContent() *fyne.Container {
 	log.Println("Monitor 2 size")
 	log.Println(robotgo.GetDisplayBounds(1))
 	macro.createTree()
-	macro.loadTreeFromJsonFile("Currency Testing.json")
-	//	//click merchants tab, click merchant
-	//	macro.root.AddSubAction(structs.NewMoveAction(structs.GetSpot("Merchants Tab").X, structs.GetSpot("Merchants Tab").Y))
-	//	macro.root.AddSubAction(structs.NewClickAction("left"))
-	//	macro.root.AddSubAction(structs.NewWaitAction(200))
-	//	macro.root.AddSubAction(structs.NewMoveAction(structs.GetSpot("Collector").X, structs.GetSpot("Collector").Y))
-	//	macro.root.AddSubAction(structs.NewClickAction("left"))
-	//	macro.root.AddSubAction(structs.NewWaitAction(200))
-
-	//image search for treasures
-	//	imageSearch := structs.NewImageSearchAction("Search for treasures", []structs.ActionInterface{}, *structs.GetItemsMapCategory("treasures"), *structs.GetSearchBox("Stash Inventory"))
-
-	//	ocrSearch := &structs.OcrAction{
-	//		AdvancedAction: structs.AdvancedAction{
-	//			BaseAction: structs.NewBaseAction(),
-	//			Name:       "Search for Rare",
-	//			SubActions: []structs.ActionInterface{},
-	//		},
-	//		SearchBox: *structs.GetSearchBox("Stash Inventory"),
-	//		Target:    "Rare",
-	//	}
-	//	macro.root.AddSubAction(imageSearch)
-	//	imageSearch.AddSubAction(structs.NewMoveAction(-1, -1))
-	//	imageSearch.AddSubAction(structs.NewWaitAction(200))
-	//	imageSearch.AddSubAction(ocrSearch)
-	//	ocrSearch.AddSubAction(structs.NewKeyAction("shift", "down"))
-	//	ocrSearch.AddSubAction(structs.NewClickAction("right"))
-	//	ocrSearch.AddSubAction(structs.NewKeyAction("shift", "up"))
-	//	imageSearch.AddSubAction(structs.NewWaitAction(200))
-	//	macro.root.AddSubAction(structs.NewMoveAction(structs.GetSpot("Make Deal").X, structs.GetSpot("Make Deal").Y))
-
 	// searchAreaSelector.SetSelected(searchAreaSelector.Options[0])
 	mainLayout := container.NewBorder(nil, nil, nil, nil)
-	settingsLayout := container.NewBorder(nil, macro.createUpdateButton(), createItemsCheckBoxes(), nil)
-	settingsLayout.Add(container.NewGridWithRows(2, settingsAccordion))
+	settingsLayout := container.NewBorder(&settingsTabs, macro.createUpdateButton(), nil, nil)
 
-	settingsAccordion.Append(widget.NewAccordionItem("Wait Action", waitSettings))
-	settingsAccordion.Append(widget.NewAccordionItem("Mouse Move Action", moveSettings))
-	settingsAccordion.Append(widget.NewAccordionItem("Click Action", clickSettings))
-	settingsAccordion.Append(widget.NewAccordionItem("Key Action", keySettings))
-	//	settingsAccordion.Append(widget.NewAccordionItem("Loop Action", loopSettings))
-	//	settingsAccordion.Append(widget.NewAccordionItem("Image Search Action", imageSearchSettings))
-	//	settingsAccordion.Append(widget.NewAccordionItem("OCR Action", ocrSettings))
+	settingsTabs.Append(container.NewTabItem("Wait", waitSettings))
+	settingsTabs.Append(container.NewTabItem("Move", moveSettings))
+	settingsTabs.Append(container.NewTabItem("Click", clickSettings))
+	settingsTabs.Append(container.NewTabItem("Key", keySettings))
+	settingsTabs.Append(container.NewTabItem("Loop", loopSettings))
+	settingsTabs.Append(container.NewTabItem("Image Search", imageSearchSettings))
+	settingsTabs.Append(container.NewTabItem("OCR", ocrSettings))
 
-	//		&canvas.Text{Text: "ADVANCED ACTION SETTINGS", TextSize: 20, Alignment: fyne.TextAlignCenter, TextStyle: fyne.TextStyle{Bold: true, Monospace: true}},
-	//		container.NewGridWithColumns(3,
-	//			layout.NewSpacer(),
-	//			container.NewGridWithColumns(2,
-	//				widget.NewLabel("Name:"),
-	//				boundAdvancedActionNameEntry,
-	//			),
-	//			layout.NewSpacer(),
-	//			layout.NewSpacer(),
-	//			container.NewGridWithColumns(2,
-	//				widget.NewLabel("Search area:"),
-	//				boundSearchAreaSelect,
-	//			),
-	//			layout.NewSpacer(),
-	//		),
-	//		&widget.Label{Text: "Loop", TextStyle: fyne.TextStyle{Bold: true}, Alignment: fyne.TextAlignCenter},
-	//		container.NewGridWithColumns(2,
-	//			container.NewHBox(layout.NewSpacer(), widget.NewLabel("loops:"), boundCountLabel),
-	//			boundCountSlider,
-	//		),
 	macroLayout := container.NewBorder(
-		container.NewHBox(
-			widget.NewLabel("Global Delay"),
-			widget.NewEntry(),
-			macro.createMoveButtons(),
+		container.NewGridWithColumns(3,
+			container.NewHBox(
+				widget.NewLabel("Global Delay:"),
+				widget.NewEntry(),
+				layout.NewSpacer(),
+				widget.NewLabel("Macro Name:"),
+			),
+			boundMacroNameEntry,
+			macro.createMacroToolbar(),
 		),
-		createMacroSettings(),
 		nil,
-
+		nil,
 		nil,
 		macro.tree,
 	)
 	middleSplit := container.NewHSplit(settingsLayout, macroLayout)
 	mainLayout.Add(middleSplit)
+	macro.loadTreeFromJsonFile("Currency Testing.json")
 	return mainLayout
 }
 
@@ -200,13 +169,27 @@ func (m *macroTree) ExecuteActionTree() { //error
 	}
 }
 
-// ***************************************************************************************Macro
-func createMacroSettings() *fyne.Container {
-	return container.NewVBox(
-		createSaveSettings(),
-		macroSelector(),
-		macroStartButton(),
+func (m *macroTree) createMacroToolbar() *widget.Toolbar {
+	tb := widget.NewToolbar(
+		widget.NewToolbarAction(theme.DocumentSaveIcon(), func() {
+			err := m.saveTreeToJsonFile(boundMacroNameEntry.Text)
+			log.Printf("createSaveSettings(): %v", err)
+		}),
+		widget.NewToolbarSpacer(),
+		widget.NewToolbarSeparator(),
+		widget.NewToolbarAction(theme.MoveDownIcon(), func() {
+			m.moveNodeDown(selectedTreeItem)
+		}),
+		widget.NewToolbarAction(theme.MoveUpIcon(), func() {
+			m.moveNodeUp(selectedTreeItem)
+		}),
+		widget.NewToolbarAction(theme.MediaPlayIcon(), func() {
+			macro.ExecuteActionTree()
+		}),
+		widget.NewToolbarSeparator(),
+		widget.NewToolbarSpacer(),
 	)
+	return tb
 }
 
 func macroSelector() *widget.Select {
@@ -219,17 +202,6 @@ func macroSelector() *widget.Select {
 		macroList = append(macroList, strings.TrimSuffix(f.Name(), ".json"))
 	}
 	return widget.NewSelect(macroList, func(s string) { macro.loadTreeFromJsonFile(s + ".json") })
-}
-
-func macroStartButton() *widget.Button {
-	return &widget.Button{
-		Text: "Start Macro",
-		OnTapped: func() {
-			macro.ExecuteActionTree()
-		},
-		Icon:       theme.MediaPlayIcon(),
-		Importance: widget.SuccessImportance,
-	}
 }
 
 // func ToggleWidgets(c *fyne.Container, b bool) {
@@ -388,12 +360,12 @@ func (m *macroTree) createUpdateButton() *widget.Button {
 				node.State = "up"
 			}
 		case *structs.LoopAction:
-			n, _ := boundAdvancedActionName.Get()
+			n, _ := boundLoopName.Get()
 			c, _ := boundCount.Get()
 			node.Name = n
 			node.Count = int(c)
 		case *structs.ImageSearchAction:
-			n, _ := boundAdvancedActionName.Get()
+			n, _ := boundImageSearchName.Get()
 			s, _ := boundSearchArea.Get()
 			t := boundSelectedItemsMap.Keys()
 			node.Name = n
@@ -406,8 +378,8 @@ func (m *macroTree) createUpdateButton() *widget.Button {
 		m.tree.Refresh()
 	})
 }
-func CreateActionMenu() *fyne.Menu {
 
+func CreateActionMenu() *fyne.Menu {
 	basicActionsSubMenu := fyne.NewMenuItem("Basic Actions", nil)
 	basicActionsSubMenu.ChildMenu = fyne.NewMenu("")
 	advancedActionsSubMenu := fyne.NewMenuItem("Advanced Actions", nil)
@@ -420,8 +392,7 @@ func CreateActionMenu() *fyne.Menu {
 
 	loopActionMenuItem := fyne.NewMenuItem("Loop", func() { macro.addActionToTree(&structs.LoopAction{}) })
 	imageSearchActionMenuItem := fyne.NewMenuItem("Image Search", func() { macro.addActionToTree(&structs.ImageSearchAction{}) })
-	//	clickActionMenuItem := fyne.NewMenuItem("Click", func() { addActionToTree(&structs.OcrAction{}) })
-	//	keyActionMenuItem := fyne.NewMenuItem("Key", func() { addActionToTree(&structs.KeyAction{}) })
+	ocrActionMenuItem := fyne.NewMenuItem("Image Search", func() { macro.addActionToTree(&structs.OcrAction{}) })
 
 	basicActionsSubMenu.ChildMenu.Items = append(basicActionsSubMenu.ChildMenu.Items,
 		waitActionMenuItem,
@@ -433,6 +404,7 @@ func CreateActionMenu() *fyne.Menu {
 	advancedActionsSubMenu.ChildMenu.Items = append(advancedActionsSubMenu.ChildMenu.Items,
 		loopActionMenuItem,
 		imageSearchActionMenuItem,
+		ocrActionMenuItem,
 	)
 
 	return fyne.NewMenu("Add Action", basicActionsSubMenu, advancedActionsSubMenu)

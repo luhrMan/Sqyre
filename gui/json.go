@@ -6,39 +6,11 @@ import (
 	"fmt"
 	"log"
 	"os"
-
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/theme"
-	"fyne.io/fyne/v2/widget"
 )
 
-func createSaveSettings() *fyne.Container { //fyne has a file selector / save feature i think
-	macroNameEntry := widget.NewEntry()
-	addSaveButton := &widget.Button{
-		Text: "",
-		OnTapped: func() {
-			err := saveTreeToJsonFile(macro.root, macroNameEntry.Text)
-			log.Printf("createSaveSettings(): %v", err)
-		},
-		IconPlacement: widget.ButtonIconPlacement(widget.ButtonAlignTrailing),
-		Icon:          theme.DocumentSaveIcon(),
-		Importance:    widget.HighImportance,
-	}
-	return container.NewVBox(
-		container.NewBorder(
-			nil,
-			nil,
-			widget.NewLabel("Macro Name:"),
-			container.NewHBox(addSaveButton),
-			macroNameEntry,
-		),
-	)
-}
-
-func saveTreeToJsonFile(root structs.AdvancedActionInterface, filename string) error {
+func (m *macroTree) saveTreeToJsonFile(filename string) error {
 	// Marshal the action to JSON
-	jsonData, err := json.MarshalIndent(root, "", "\t")
+	jsonData, err := json.MarshalIndent(m.root, "", "\t")
 	if err != nil {
 		return fmt.Errorf("error marshalling tree: %v", err)
 	}
