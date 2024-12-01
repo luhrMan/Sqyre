@@ -20,8 +20,7 @@ import (
 )
 
 var (
-	root *structs.LoopAction
-	//root               = structs.LoopAction{}
+	root               *structs.LoopAction
 	tree               = widget.Tree{}
 	selectedTreeItem   = ".1"
 	selectedItemsMap   = make(map[string]any)
@@ -47,6 +46,8 @@ var (
 	boundMoveYSlider = widget.NewSliderWithData(0.0, float64(utils.MonitorHeight), boundMoveY)
 	boundMoveXLabel  = widget.NewLabelWithData(binding.FloatToStringWithFormat(boundMoveX, "%0.0f"))
 	boundMoveYLabel  = widget.NewLabelWithData(binding.FloatToStringWithFormat(boundMoveY, "%0.0f"))
+	boundMoveXEntry  = widget.NewEntryWithData(binding.FloatToStringWithFormat(boundMoveX, "%0.0f"))
+	boundMoveYEntry  = widget.NewEntryWithData(binding.FloatToStringWithFormat(boundMoveY, "%0.0f"))
 	//click
 	button            bool
 	boundButton       = binding.BindBool(&button)
@@ -89,11 +90,11 @@ var (
 		container.NewGridWithColumns(2,
 			container.NewHBox(layout.NewSpacer(), boundTimeLabel, widget.NewLabel("ms")), boundTimeSlider),
 	)
-	mouseMoveSettings = container.NewVBox(
+	moveSettings = container.NewVBox(
 		container.NewGridWithColumns(2,
-			container.NewHBox(layout.NewSpacer(), widget.NewLabel("X:"), boundMoveXLabel),
+			container.NewHBox(layout.NewSpacer(), widget.NewLabel("X:"), boundMoveXEntry, boundMoveXLabel),
 			boundMoveXSlider,
-			container.NewHBox(layout.NewSpacer(), widget.NewLabel("Y:"), boundMoveYLabel),
+			container.NewHBox(layout.NewSpacer(), widget.NewLabel("Y:"), boundMoveYEntry, boundMoveYLabel),
 			boundMoveYSlider,
 		))
 	clickSettings = container.NewVBox(
@@ -111,12 +112,12 @@ func LoadMainContent() *fyne.Container {
 	log.Println(robotgo.GetDisplayBounds(1))
 	root = getRoot()
 	updateTree(&tree, root)
-
-	//click merchants tab, click merchant
-	root.AddSubAction(&structs.MouseMoveAction{BaseAction: structs.NewBaseAction(), X: structs.GetSpot("Merchants Tab").X, Y: structs.GetSpot("Merchants Tab").Y})
+	//	loadTreeFromJsonFile(root, "Currency Testing.json")
+	//	//click merchants tab, click merchant
+	root.AddSubAction(&structs.MoveAction{BaseAction: structs.NewBaseAction(), X: structs.GetSpot("Merchants Tab").X, Y: structs.GetSpot("Merchants Tab").Y})
 	root.AddSubAction(&structs.ClickAction{BaseAction: structs.NewBaseAction(), Button: "left"})
 	root.AddSubAction(&structs.WaitAction{BaseAction: structs.NewBaseAction(), Time: 200})
-	root.AddSubAction(&structs.MouseMoveAction{BaseAction: structs.NewBaseAction(), X: structs.GetSpot("Collector").X, Y: structs.GetSpot("Collector").Y})
+	root.AddSubAction(&structs.MoveAction{BaseAction: structs.NewBaseAction(), X: structs.GetSpot("Collector").X, Y: structs.GetSpot("Collector").Y})
 	root.AddSubAction(&structs.ClickAction{BaseAction: structs.NewBaseAction(), Button: "left"})
 	root.AddSubAction(&structs.WaitAction{BaseAction: structs.NewBaseAction(), Time: 200})
 	//image search for treasures
@@ -139,14 +140,14 @@ func LoadMainContent() *fyne.Container {
 		Target:    "Rare",
 	}
 	root.AddSubAction(imageSearch)
-	imageSearch.AddSubAction(&structs.MouseMoveAction{BaseAction: structs.NewBaseAction(), X: -1, Y: -1})
-	imageSearch.AddSubAction(&structs.WaitAction{BaseAction: structs.NewBaseAction(), Time: 200})
+	imageSearch.AddSubAction(structs.NewMoveAction(-1, -1))
+	imageSearch.AddSubAction(structs.NewWaitAction(200))
 	imageSearch.AddSubAction(ocrSearch)
-	ocrSearch.AddSubAction(&structs.KeyAction{BaseAction: structs.NewBaseAction(), Key: "shift", State: "down"})
-	ocrSearch.AddSubAction(&structs.ClickAction{BaseAction: structs.NewBaseAction(), Button: "right"})
-	ocrSearch.AddSubAction(&structs.KeyAction{BaseAction: structs.NewBaseAction(), Key: "shift", State: "up"})
+	ocrSearch.AddSubAction(structs.NewKeyAction("shift", "down"))
+	ocrSearch.AddSubAction(structs.NewClickAction("right"))
+	ocrSearch.AddSubAction(structs.NewKeyAction("shift", "up"))
 	imageSearch.AddSubAction(&structs.WaitAction{BaseAction: structs.NewBaseAction(), Time: 200})
-	root.AddSubAction(&structs.MouseMoveAction{BaseAction: structs.NewBaseAction(), X: structs.GetSpot("Make Deal").X, Y: structs.GetSpot("Make Deal").Y})
+	root.AddSubAction(&structs.MoveAction{BaseAction: structs.NewBaseAction(), X: structs.GetSpot("Make Deal").X, Y: structs.GetSpot("Make Deal").Y})
 
 	// searchAreaSelector.SetSelected(searchAreaSelector.Options[0])
 	mainLayout := container.NewBorder(nil, nil, nil, nil)
@@ -154,7 +155,7 @@ func LoadMainContent() *fyne.Container {
 	settingsLayout.Add(container.NewGridWithRows(2, settingsAccordion))
 
 	settingsAccordion.Append(widget.NewAccordionItem("Wait Action", waitSettings))
-	settingsAccordion.Append(widget.NewAccordionItem("Mouse Move Action", mouseMoveSettings))
+	settingsAccordion.Append(widget.NewAccordionItem("Mouse Move Action", moveSettings))
 	settingsAccordion.Append(widget.NewAccordionItem("Click Action", clickSettings))
 	settingsAccordion.Append(widget.NewAccordionItem("Key Action", keySettings))
 	//	settingsAccordion.Append(widget.NewAccordionItem("Loop Action", loopSettings))
@@ -189,6 +190,7 @@ func LoadMainContent() *fyne.Container {
 		),
 		createMacroSettings(),
 		nil,
+
 		nil,
 		&tree,
 	)
@@ -199,7 +201,11 @@ func LoadMainContent() *fyne.Container {
 
 func ExecuteActionTree(root *structs.LoopAction) { //error
 	var context interface{}
-	root.Execute(context)
+	err := root.Execute(context)
+	if err != nil {
+		log.Println(err)
+		return
+	}
 }
 
 // ***************************************************************************************Macro
@@ -284,7 +290,7 @@ func createItemsCheckBoxes() *widget.Accordion {
 					case true:
 						boundSelectedItemsMap.SetValue(itemName, true)
 					case false:
-						boundSelectedItemsMap.Delete(itemName)
+						delete(selectedItemsMap, itemName)
 					}
 					log.Println(selectedItemsMap)
 				})
@@ -293,15 +299,13 @@ func createItemsCheckBoxes() *widget.Accordion {
 				// boundItemCheck          = widget.NewCheckWithData(itemName, boundItemBool)
 				resource, imageLoadErr = fyne.LoadResourceFromPath("./images/icons/" + itemName + ".png")
 			)
-			utils.HandleError(
-				imageLoadErr,
-				func() {
-					HBoxWithCheckBoxAndIcon.Add(widget.NewIcon(theme.BrokenImageIcon()))
-				},
-				func() {
-					icon := widget.NewIcon(resource)
-					HBoxWithCheckBoxAndIcon.Add(icon)
-				})
+			if imageLoadErr != nil {
+				log.Println(imageLoadErr)
+				HBoxWithCheckBoxAndIcon.Add(widget.NewIcon(theme.BrokenImageIcon()))
+			} else {
+				icon := widget.NewIcon(resource)
+				HBoxWithCheckBoxAndIcon.Add(icon)
+			}
 			HBoxWithCheckBoxAndIcon.Add(itemCheckBox)
 			box.Add(HBoxWithCheckBoxAndIcon)
 		}
@@ -370,7 +374,7 @@ func createUpdateButton() *widget.Button {
 		case *structs.WaitAction:
 			t, _ := boundTime.Get()
 			node.Time = int(t)
-		case *structs.MouseMoveAction:
+		case *structs.MoveAction:
 			x, _ := boundMoveX.Get()
 			y, _ := boundMoveY.Get()
 			node.X = int(x)
@@ -410,53 +414,34 @@ func createUpdateButton() *widget.Button {
 		tree.Refresh()
 	})
 }
+func CreateActionMenu() *fyne.Menu {
 
-func CreateActionAddMenu() *fyne.Menu {
+	basicActionsSubMenu := fyne.NewMenuItem("Basic Actions", nil)
+	basicActionsSubMenu.ChildMenu = fyne.NewMenu("")
+	advancedActionsSubMenu := fyne.NewMenuItem("Advanced Actions", nil)
+	advancedActionsSubMenu.ChildMenu = fyne.NewMenu("")
+
 	waitActionMenuItem := fyne.NewMenuItem("Wait", func() { addActionToTree(&structs.WaitAction{}) })
-	actionMenuItems := fyne.NewMenu("Add Actions")
-	actionMenuItems.Items = append(actionMenuItems.Items, waitActionMenuItem)
-	return actionMenuItems
-}
+	mouseMoveActionMenuItem := fyne.NewMenuItem("Mouse Move", func() { addActionToTree(&structs.MoveAction{}) })
+	clickActionMenuItem := fyne.NewMenuItem("Click", func() { addActionToTree(&structs.ClickAction{}) })
+	keyActionMenuItem := fyne.NewMenuItem("Key", func() { addActionToTree(&structs.KeyAction{}) })
 
-//func createToolbar() *widget.Toolbar {
-//
-//	toolbar := widget.NewToolbar(
-//		widget.NewToolbarSpacer(),
-//		widget.NewToolbarSpacer(),
-//		widget.NewToolbarSeparator(),
-//		widget.NewToolbarAction(theme.HistoryIcon(), func() {
-//			addActionToTree(&structs.WaitAction{})
-//		}),
-//		widget.NewToolbarSeparator(),
-//		widget.NewToolbarAction(theme.ContentRedoIcon(), func() {
-//			addActionToTree(&structs.MouseMoveAction{})
-//		}),
-//		widget.NewToolbarSeparator(),
-//		widget.NewToolbarAction(theme.DownloadIcon(), func() {
-//			addActionToTree(&structs.ClickAction{})
-//		}),
-//		widget.NewToolbarSeparator(),
-//		widget.NewToolbarAction(theme.ComputerIcon(), func() {
-//			addActionToTree(&structs.KeyAction{})
-//		}),
-//		widget.NewToolbarSeparator(),
-//		widget.NewToolbarSpacer(),
-//		widget.NewToolbarSeparator(),
-//		widget.NewToolbarAction(theme.MediaReplayIcon(), func() {
-//			addActionToTree(&structs.LoopAction{})
-//		}),
-//		widget.NewToolbarSeparator(),
-//		widget.NewToolbarAction(theme.MediaPhotoIcon(), func() {
-//			addActionToTree(&structs.ImageSearchAction{})
-//		}),
-//		widget.NewToolbarSeparator(),
-//		widget.NewToolbarAction(theme.DocumentIcon(), func() {
-//			addActionToTree(&structs.OcrAction{})
-//		}),
-//		widget.NewToolbarSeparator(),
-//		widget.NewToolbarSpacer(),
-//		widget.NewToolbarSpacer(),
-//		widget.NewToolbarSpacer(),
-//	)
-//	return toolbar
-//}
+	loopActionMenuItem := fyne.NewMenuItem("Loop", func() { addActionToTree(&structs.LoopAction{}) })
+	imageSearchActionMenuItem := fyne.NewMenuItem("Image Search", func() { addActionToTree(&structs.ImageSearchAction{}) })
+	//	clickActionMenuItem := fyne.NewMenuItem("Click", func() { addActionToTree(&structs.OcrAction{}) })
+	//	keyActionMenuItem := fyne.NewMenuItem("Key", func() { addActionToTree(&structs.KeyAction{}) })
+
+	basicActionsSubMenu.ChildMenu.Items = append(basicActionsSubMenu.ChildMenu.Items,
+		waitActionMenuItem,
+		mouseMoveActionMenuItem,
+		clickActionMenuItem,
+		keyActionMenuItem,
+	)
+
+	advancedActionsSubMenu.ChildMenu.Items = append(advancedActionsSubMenu.ChildMenu.Items,
+		loopActionMenuItem,
+		imageSearchActionMenuItem,
+	)
+
+	return fyne.NewMenu("Add Action", basicActionsSubMenu, advancedActionsSubMenu)
+}

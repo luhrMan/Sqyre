@@ -54,12 +54,11 @@ func main() {
 	a := app.New()
 	a.Settings().SetTheme(theme.DarkTheme())
 	w := a.NewWindow("Squire")
-
-	mainMenu := fyne.NewMainMenu(fyne.NewMenu("Settings"), gui.CreateActionAddMenu())
-	w.SetMainMenu(mainMenu)
 	icon, _ := fyne.LoadResourceFromPath("./images/Squire.png")
 	w.SetIcon(icon)
 	w.SetContent(gui.LoadMainContent())
+	mainMenu := fyne.NewMainMenu(fyne.NewMenu("Settings"), gui.CreateActionMenu())
+	w.SetMainMenu(mainMenu)
 	w.ShowAndRun()
 }
 
