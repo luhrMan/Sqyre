@@ -18,7 +18,7 @@ func createSaveSettings() *fyne.Container { //fyne has a file selector / save fe
 	addSaveButton := &widget.Button{
 		Text: "",
 		OnTapped: func() {
-			err := saveTreeToJsonFile(root, macroNameEntry.Text)
+			err := saveTreeToJsonFile(macro.root, macroNameEntry.Text)
 			log.Printf("createSaveSettings(): %v", err)
 		},
 		IconPlacement: widget.ButtonIconPlacement(widget.ButtonAlignTrailing),
@@ -51,7 +51,7 @@ func saveTreeToJsonFile(root structs.AdvancedActionInterface, filename string) e
 	return nil
 }
 
-func loadTreeFromJsonFile(root *structs.LoopAction, filename string) error {
+func (m *macroTree) loadTreeFromJsonFile(filename string) error {
 	log.Printf("loadTreeFromJsonFile: attempting to read file %v", filename)
 	jsonData, err := os.ReadFile("./saved-macros/" + filename)
 	if err != nil {
@@ -59,17 +59,17 @@ func loadTreeFromJsonFile(root *structs.LoopAction, filename string) error {
 	}
 	var result structs.ActionInterface
 	//err = json.Unmarshal(jsonData, root)
-	root.SubActions = []structs.ActionInterface{}
+	m.root.SubActions = []structs.ActionInterface{}
 	result, err = UnmarshalJSON(jsonData)
 	if s, ok := result.(*structs.LoopAction); ok { // fill root / tree
 		for _, sa := range s.SubActions {
-			root.AddSubAction(sa)
+			m.root.AddSubAction(sa)
 		}
 	}
 	if err != nil {
 		return fmt.Errorf("error unmarshalling tree: %v", err)
 	}
-	updateTree(&tree, root)
+	macro.tree.Refresh()
 	return err
 }
 

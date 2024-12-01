@@ -2,8 +2,6 @@ package gui
 
 import (
 	"Dark-And-Darker/structs"
-	"log"
-	"sync"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -12,27 +10,17 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-var once sync.Once
-
-func getRoot() *structs.LoopAction {
-	if root == nil {
-		once.Do(
-			func() {
-				log.Println("Creating single instance now.")
-				root = &structs.LoopAction{Count: 1}
-				root.SetName("root")
-				root.SetUID("")
-				root.SetParent(nil)
-			})
-	} else {
-		log.Println("Creating single instance now.")
-	}
-	//root := &structs.LoopAction{}
-	return root
+type macroTree struct {
+	tree *widget.Tree
+	root *structs.LoopAction
 }
 
-func moveNodeUp(root *structs.LoopAction, selectedUID string, tree *widget.Tree) {
-	node := findNode(root, selectedUID)
+func getRoot() *structs.LoopAction {
+	return macro.root
+}
+
+func (m *macroTree) moveNodeUp(selectedUID string) {
+	node := m.findNode(m.root, selectedUID)
 	if node == nil || node.GetParent() == nil {
 		return
 	}
@@ -48,14 +36,14 @@ func moveNodeUp(root *structs.LoopAction, selectedUID string, tree *widget.Tree)
 
 	if index > 0 {
 		parent.GetSubActions()[index-1], parent.GetSubActions()[index] = parent.GetSubActions()[index], parent.GetSubActions()[index-1]
-		parent.RenameActions(tree)
-		tree.Select(parent.GetSubActions()[index-1].GetUID())
-		updateTree(tree, root)
+		parent.RenameActions()
+		m.tree.Select(parent.GetSubActions()[index-1].GetUID())
+		m.tree.Refresh()
 	}
 }
 
-func moveNodeDown(root *structs.LoopAction, selectedUID string, tree *widget.Tree) {
-	node := findNode(root, selectedUID)
+func (m *macroTree) moveNodeDown(selectedUID string) {
+	node := m.findNode(m.root, selectedUID)
 	if node == nil || node.GetParent() == nil {
 		return
 	}
@@ -71,19 +59,19 @@ func moveNodeDown(root *structs.LoopAction, selectedUID string, tree *widget.Tre
 
 	if index < len(parent.GetSubActions())-1 {
 		parent.GetSubActions()[index], parent.GetSubActions()[index+1] = parent.GetSubActions()[index+1], parent.GetSubActions()[index]
-		parent.RenameActions(tree)
-		tree.Select(parent.GetSubActions()[index+1].GetUID())
+		parent.RenameActions()
+		m.tree.Select(parent.GetSubActions()[index+1].GetUID())
 
-		updateTree(tree, root)
+		m.tree.Refresh()
 	}
 }
 
-func createMoveButtons(root *structs.LoopAction, tree *widget.Tree) *fyne.Container {
+func (m *macroTree) createMoveButtons() *fyne.Container {
 	moveUpButton := &widget.Button{
 		Text: "",
 		OnTapped: func() {
 			if selectedTreeItem != "" {
-				moveNodeUp(root, selectedTreeItem, tree)
+				m.moveNodeUp(selectedTreeItem)
 			}
 		},
 		Icon:       theme.MoveUpIcon(),
@@ -94,7 +82,7 @@ func createMoveButtons(root *structs.LoopAction, tree *widget.Tree) *fyne.Contai
 		Text: "",
 		OnTapped: func() {
 			if selectedTreeItem != "" {
-				moveNodeDown(root, selectedTreeItem, tree)
+				m.moveNodeDown(selectedTreeItem)
 			}
 		},
 		Icon:       theme.MoveDownIcon(),
@@ -104,13 +92,13 @@ func createMoveButtons(root *structs.LoopAction, tree *widget.Tree) *fyne.Contai
 	return container.NewHBox(layout.NewSpacer(), moveUpButton, moveDownButton)
 }
 
-func findNode(node structs.ActionInterface, uid string) structs.ActionInterface {
+func (m *macroTree) findNode(node structs.ActionInterface, uid string) structs.ActionInterface {
 	if node.GetUID() == uid {
 		return node
 	}
 	if parent, ok := node.(structs.AdvancedActionInterface); ok {
 		for _, child := range parent.GetSubActions() {
-			if found := findNode(child, uid); found != nil {
+			if found := m.findNode(child, uid); found != nil {
 				return found
 			}
 		}
@@ -118,70 +106,67 @@ func findNode(node structs.ActionInterface, uid string) structs.ActionInterface 
 	return nil
 }
 
-func updateTree(tree *widget.Tree, root *structs.LoopAction) {
-	tree.Root = root.UID
+func (m *macroTree) createTree() {
+	m.root = structs.NewLoopAction(1, "root", []structs.ActionInterface{})
+	m.root.SetUID("")
 
-	childCache := make(map[string][]string)
-	tree.ChildUIDs = func(uid string) []string {
-		if cachedChildren, ok := childCache[uid]; ok {
-			return cachedChildren
-		}
-		node := findNode(root, uid)
-		if node == nil {
-			return []string{}
-		}
-
-		if awsa, ok := node.(structs.AdvancedActionInterface); ok {
-			sa := awsa.GetSubActions()
-			childIDs := make([]string, len(sa))
-			for i, child := range sa {
-				childIDs[i] = child.GetUID()
+	m.tree = widget.NewTree(
+		func(uid string) []string {
+			node := m.findNode(m.root, uid)
+			if node == nil {
+				return []string{}
 			}
-			childCache[uid] = childIDs
-			return childIDs
-		}
 
-		return []string{}
-	}
-
-	tree.IsBranch = func(uid string) bool {
-		node := findNode(root, uid)
-		_, ok := node.(structs.AdvancedActionInterface)
-		return node != nil && ok
-	}
-
-	tree.CreateNode = func(branch bool) fyne.CanvasObject {
-		return container.NewHBox(widget.NewLabel("Template"), layout.NewSpacer(), &widget.Button{Icon: theme.CancelIcon(), Importance: widget.DangerImportance})
-	}
-
-	tree.UpdateNode = func(uid string, branch bool, obj fyne.CanvasObject) {
-		node := findNode(root, uid)
-		if node == nil {
-			return
-		}
-		c := obj.(*fyne.Container)
-		label := c.Objects[0].(*widget.Label)
-		removeButton := c.Objects[2].(*widget.Button)
-		label.SetText(node.String())
-
-		if node.GetParent() != nil {
-			removeButton.OnTapped = func() {
-				node.GetParent().RemoveSubAction(node, tree)
-				updateTree(tree, root)
-				if len(root.SubActions) == 0 {
-					selectedTreeItem = ""
+			if awsa, ok := node.(structs.AdvancedActionInterface); ok {
+				sa := awsa.GetSubActions()
+				childIDs := make([]string, len(sa))
+				for i, child := range sa {
+					childIDs[i] = child.GetUID()
 				}
+				return childIDs
 			}
-			removeButton.Show()
-		} else {
-			removeButton.Hide()
-		}
-		//		tree.Refresh()
-	}
+
+			return []string{}
+		},
+		func(uid string) bool {
+			//			log.Printf("Create Branch: %v", uid)
+			node := m.findNode(m.root, uid)
+			_, ok := node.(structs.AdvancedActionInterface)
+			return node != nil && ok
+		},
+		func(branch bool) fyne.CanvasObject {
+			//			log.Printf("Create Template")
+			return container.NewHBox(widget.NewLabel("Template"), layout.NewSpacer(), &widget.Button{Icon: theme.CancelIcon(), Importance: widget.DangerImportance})
+		},
+		func(uid string, branch bool, obj fyne.CanvasObject) {
+			node := m.findNode(m.root, uid)
+			if node == nil {
+				return
+			}
+			c := obj.(*fyne.Container)
+			label := c.Objects[0].(*widget.Label)
+			removeButton := c.Objects[2].(*widget.Button)
+			label.SetText(node.String())
+
+			if node.GetParent() != nil {
+				removeButton.OnTapped = func() {
+					node.GetParent().RemoveSubAction(node)
+					m.root.RenameActions() //should figure out how to rename the whole tree from RemoveSubActions
+					macro.tree.Refresh()
+					if len(m.root.SubActions) == 0 {
+						selectedTreeItem = ""
+					}
+				}
+				removeButton.Show()
+			} else {
+				removeButton.Hide()
+			}
+		},
+	)
 	//Set here, Get @ addActionToTree in content.go
-	tree.OnSelected = func(uid widget.TreeNodeID) {
+	m.tree.OnSelected = func(uid widget.TreeNodeID) {
 		selectedTreeItem = uid
-		switch node := findNode(root, uid).(type) {
+		switch node := m.findNode(m.root, uid).(type) {
 		case *structs.WaitAction:
 			boundTime.Set(float64(node.Time))
 			settingsAccordion.Open(0)
@@ -221,12 +206,11 @@ func updateTree(tree *widget.Tree, root *structs.LoopAction) {
 			settingsAccordion.Open(5)
 		}
 	}
-	tree.Refresh()
 }
 
-func addActionToTree(actionType structs.ActionInterface) {
+func (m *macroTree) addActionToTree(actionType structs.ActionInterface) {
 	var (
-		selectedNode = findNode(root, selectedTreeItem)
+		selectedNode = m.findNode(m.root, selectedTreeItem)
 		action       structs.ActionInterface
 	)
 	switch actionType.(type) {
@@ -280,13 +264,13 @@ func addActionToTree(actionType structs.ActionInterface) {
 
 	}
 
-	// if selectedNode == nil {
-	// 	selectedNode = getRoot()
-	// }
+	if selectedNode == nil {
+		selectedNode = getRoot()
+	}
 	if s, ok := selectedNode.(structs.AdvancedActionInterface); ok {
-		s.AddSubAction(selectedNode)
+		s.AddSubAction(action)
 	} else {
 		selectedNode.GetParent().AddSubAction(action)
 	}
-	updateTree(&tree, root)
+	m.tree.Refresh()
 }

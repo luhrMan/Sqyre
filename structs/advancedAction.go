@@ -14,10 +14,8 @@ import (
 
 	"gocv.io/x/gocv"
 
-	"fyne.io/fyne/v2/widget"
 	"github.com/go-vgo/robotgo"
 	"github.com/otiai10/gosseract/v2"
-	//"github.com/vcaesar/bitmap"
 )
 
 type AdvancedActionInterface interface {
@@ -28,8 +26,8 @@ type AdvancedActionInterface interface {
 
 	GetSubActions() []ActionInterface
 	AddSubAction(ActionInterface)
-	RemoveSubAction(ActionInterface, *widget.Tree)
-	RenameActions(*widget.Tree)
+	RemoveSubAction(ActionInterface)
+	RenameActions()
 }
 
 type AdvancedAction struct {
@@ -56,29 +54,32 @@ func (a *AdvancedAction) AddSubAction(action ActionInterface) {
 	action.UpdateBaseAction(uid, a)
 
 	a.SubActions = append(a.SubActions, action)
-	log.Printf("Added new action: %s", action.String())
+	log.Printf("Added new action: %v %s", uid, action.String())
 }
 
-func (a *AdvancedAction) RemoveSubAction(action ActionInterface, tree *widget.Tree) {
+func (a *AdvancedAction) RemoveSubAction(action ActionInterface) {
 	for i, c := range a.SubActions {
 		if c == action {
 			a.SubActions = append(a.SubActions[:i], a.SubActions[i+1:]...)
 			log.Printf("Removing %s", action.GetUID())
-			a.RenameActions(tree)
+			a.RenameActions()
 		}
 	}
 }
 
-func (a *AdvancedAction) RenameActions(tree *widget.Tree) {
+func (a *AdvancedAction) RenameActions() {
 	for i, child := range a.SubActions {
-		open := tree.IsBranchOpen(child.GetUID())
-		child.SetUID(fmt.Sprintf("%s.%d", a.UID, i+1))
-		if open {
-			tree.OpenBranch(child.GetUID())
-		}
 		if n, ok := child.(AdvancedActionInterface); ok {
-			n.RenameActions(tree)
+			n.RenameActions()
 		}
+		//		open := tree.IsBranchOpen(child.GetUID())
+		child.SetUID(fmt.Sprintf("%s.%d", a.UID, i+1))
+		//		if open {
+		//			tree.OpenBranch(child.GetUID())
+		//		}
+		//		if n, ok := child.(AdvancedActionInterface); ok {
+		//			n.RenameActions(tree)
+		//		}
 	}
 }
 
