@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/layout"
+	"slices"
 
 	"Dark-And-Darker/structs"
 	"log"
@@ -111,11 +112,18 @@ var (
 		container.NewGridWithColumns(2, container.NewHBox(layout.NewSpacer(), widget.NewLabel("name:")), boundLoopNameEntry),
 		container.NewGridWithColumns(2, container.NewHBox(layout.NewSpacer(), widget.NewLabel("loops:"), boundCountLabel), boundCountSlider),
 	)
-	imageSearchSettings = container.NewVBox(
-		container.NewGridWithColumns(2, container.NewHBox(layout.NewSpacer(), widget.NewLabel("name:")), boundImageSearchNameEntry),
-		container.NewHBox(layout.NewSpacer(), widget.NewLabel("search area:"), boundSearchAreaSelect),
+	imageSearchSettings = container.NewBorder(
+		container.NewVBox(
+			container.NewGridWithColumns(2, container.NewHBox(layout.NewSpacer(), widget.NewLabel("name:")), boundImageSearchNameEntry),
+			container.NewGridWithColumns(2, container.NewHBox(layout.NewSpacer(), widget.NewLabel("search area:")), boundSearchAreaSelect),
+		),
+		nil, nil, nil,
 	)
-	ocrSettings = container.NewHBox(layout.NewSpacer(), layout.NewSpacer())
+
+	ocrSettings = container.NewHBox(
+		layout.NewSpacer(), layout.NewSpacer())
+
+	items structs.Items
 )
 
 func LoadMainContent() *fyne.Container {
@@ -125,11 +133,12 @@ func LoadMainContent() *fyne.Container {
 	log.Println(robotgo.GetDisplayBounds(0))
 	log.Println("Monitor 2 size")
 	log.Println(robotgo.GetDisplayBounds(1))
+	items.CreateItemMaps()
 	macro.createTree()
 	// searchAreaSelector.SetSelected(searchAreaSelector.Options[0])
 	mainLayout := container.NewBorder(nil, nil, nil, nil)
 	settingsLayout := container.NewBorder(&settingsTabs, macro.createUpdateButton(), nil, nil)
-
+	log.Println(settingsLayout)
 	settingsTabs.Append(container.NewTabItem("Wait", waitSettings))
 	settingsTabs.Append(container.NewTabItem("Move", moveSettings))
 	settingsTabs.Append(container.NewTabItem("Click", clickSettings))
@@ -154,7 +163,10 @@ func LoadMainContent() *fyne.Container {
 		nil,
 		macro.tree,
 	)
-	middleSplit := container.NewHSplit(settingsLayout, macroLayout)
+	//	imageSearchSettings.Add(createItemsCheckTree())
+	//	middleSplit := container.NewHSplit(settingsLayout, macroLayout)
+	middleSplit := container.NewHSplit(createItemsCheckTree(), macroLayout)
+
 	mainLayout.Add(middleSplit)
 	macro.loadTreeFromJsonFile("Currency Testing.json")
 	return mainLayout
@@ -204,20 +216,65 @@ func macroSelector() *widget.Select {
 	return widget.NewSelect(macroList, func(s string) { macro.loadTreeFromJsonFile(s + ".json") })
 }
 
-// func ToggleWidgets(c *fyne.Container, b bool) {
-// 	for _, obj := range c.Objects {
-// 		switch obj := obj.(type) {
-// 		case fyne.Disableable:
-// 			if b {
-// 				obj.Enable()
-// 			} else {
-// 				obj.Disable()
-// 			}
-// 		case *fyne.Container:
-// 			ToggleWidgets(obj, b)
-// 		}
-// 	}
-// }
+func createItemsCheckTree() *widget.Tree {
+	cache := []string{}
+	itemsStrMap := items.GetItemsMapAsStringsMap()
+	categories := make([]string, 0, len(itemsStrMap))
+	for category := range itemsStrMap {
+		categories = append(categories, category)
+	}
+	tree := widget.NewTree(
+		func(id widget.TreeNodeID) []widget.TreeNodeID {
+			if slices.Contains(cache, id) {
+				return nil
+			}
+			if id == "" {
+				return categories
+			}
+			if is, exists := itemsStrMap[id]; exists {
+				return is
+			}
+
+			return nil
+		},
+		func(id widget.TreeNodeID) bool {
+			return id == "" || itemsStrMap[id] != nil
+		},
+		func(b bool) fyne.CanvasObject {
+			if b {
+				return container.NewHBox()
+				//					widget.NewCheck("placeholder", func(b bool) {}))
+			} else {
+				return container.NewHBox()
+				//					widget.NewIcon(theme.BrokenImageIcon()),
+				//					widget.NewCheck("placeholder", func(b bool) {}))
+			}
+		},
+		func(id widget.TreeNodeID, b bool, o fyne.CanvasObject) {
+			//				c.Objects[0].(*widget.Check).SetText(id)
+			//			c.Objects[1].(*widget.Check).SetText(id)
+			c := o.(*fyne.Container)
+			if len(c.Objects) == 0 {
+
+				if b {
+					c.Objects = append(c.Objects,
+						widget.NewCheck(id, func(b bool) {}),
+					)
+					return
+				}
+				resource, imageLoadErr := fyne.LoadResourceFromPath("./images/icons/" + id + ".png")
+				if imageLoadErr != nil {
+					log.Println(imageLoadErr)
+					c.Objects = append(c.Objects, widget.NewIcon(theme.BrokenImageIcon()))
+				} else {
+					c.Objects = append(c.Objects, widget.NewIcon(resource))
+				}
+				c.Objects = append(c.Objects, widget.NewCheck(id, func(b bool) {}))
+			}
+		},
+	)
+	return tree
+}
 
 func createItemsCheckBoxes() *widget.Accordion {
 	// var boundTargetsCheck []widget.Check
@@ -225,7 +282,7 @@ func createItemsCheckBoxes() *widget.Accordion {
 		accordionItems = widget.NewAccordion()
 	)
 	accordionItems.MultiOpen = true
-	for category, items := range *structs.GetItemsMap() {
+	for category, items := range items.Map {
 		var (
 			box           = container.NewVBox()
 			scroll        = container.NewVScroll(box)
