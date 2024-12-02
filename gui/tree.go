@@ -87,8 +87,8 @@ func (m *macroTree) createTree() {
 				return []string{}
 			}
 
-			if awsa, ok := node.(structs.AdvancedActionInterface); ok {
-				sa := awsa.GetSubActions()
+			if aa, ok := node.(structs.AdvancedActionInterface); ok {
+				sa := aa.GetSubActions()
 				childIDs := make([]string, len(sa))
 				for i, child := range sa {
 					childIDs[i] = child.GetUID()
@@ -99,13 +99,11 @@ func (m *macroTree) createTree() {
 			return []string{}
 		},
 		func(uid string) bool {
-			//			log.Printf("Create Branch: %v", uid)
 			node := m.findNode(m.root, uid)
 			_, ok := node.(structs.AdvancedActionInterface)
 			return node != nil && ok
 		},
 		func(branch bool) fyne.CanvasObject {
-			//			log.Printf("Create Template")
 			return container.NewHBox(widget.NewLabel("Template"), layout.NewSpacer(), &widget.Button{Icon: theme.CancelIcon(), Importance: widget.DangerImportance})
 		},
 		func(uid string, branch bool, obj fyne.CanvasObject) {
