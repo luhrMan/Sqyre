@@ -12,14 +12,12 @@ import (
 	hook "github.com/robotn/gohook"
 )
 
-var (
-	a        = app.New()
-	w        = a.NewWindow("Squire")
-	icon, _  = fyne.LoadResourceFromPath("./images/Squire.png")
-	mainMenu = fyne.NewMainMenu(fyne.NewMenu("Settings"), gui.CreateActionMenu())
-)
-
 func main() {
+	a := app.New()
+	w := a.NewWindow("Squire")
+	icon, _ := fyne.LoadResourceFromPath("./images/Squire.png")
+
+	mainMenu := fyne.NewMainMenu(fyne.NewMenu("Settings"), gui.CreateActionMenu())
 	//failsafe hotkey
 	go func() {
 		ok := hook.AddEvents("f1", "shift", "ctrl")
@@ -28,9 +26,9 @@ func main() {
 			os.Exit(0)
 		}
 	}()
+	w.SetContent(gui.LoadMainContent())
 	a.Settings().SetTheme(theme.DarkTheme())
 	w.SetIcon(icon)
 	w.SetMainMenu(mainMenu)
-	w.SetContent(gui.LoadMainContent())
 	w.ShowAndRun()
 }
