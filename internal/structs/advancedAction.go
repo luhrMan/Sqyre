@@ -1,7 +1,7 @@
 package structs
 
 import (
-	"Dark-And-Darker/utils"
+	"Dark-And-Darker/internal/utils"
 	"bytes"
 	"fmt"
 	"image"
@@ -83,11 +83,11 @@ func (a *AdvancedAction) RenameActions() {
 	}
 }
 
-func (a *AdvancedAction) Execute(ctx interface{}) error {
+func (a *AdvancedAction) execute(ctx interface{}) error {
 	log.Printf("Executing %s", a.Name)
 
 	for _, c := range a.SubActions {
-		c.Execute(ctx)
+		c.execute(ctx)
 	}
 	return nil
 }
@@ -111,7 +111,7 @@ func (a *LoopAction) Execute(ctx interface{}) error {
 	for i := 0; i < a.Count; i++ {
 		fmt.Printf("Loop iteration %d\n", i+1)
 		for _, action := range a.GetSubActions() {
-			if err := action.Execute(ctx); err != nil {
+			if err := action.execute(ctx); err != nil {
 				return err
 			}
 		}
@@ -262,7 +262,7 @@ func (a *ImageSearchAction) Execute(ctx interface{}) error {
 			point.X += a.SearchBox.LeftX
 			point.Y += a.SearchBox.TopY
 			for _, d := range a.SubActions {
-				d.Execute(point)
+				d.execute(point)
 			}
 		}
 	}
@@ -328,7 +328,7 @@ func (a *OcrAction) Execute(ctx interface{}) error {
 	log.Println(text)
 	if strings.Contains(text, a.Target) {
 		for _, action := range a.SubActions {
-			if err := action.Execute(ctx); err != nil {
+			if err := action.execute(ctx); err != nil {
 				return err
 			}
 		}
@@ -347,18 +347,18 @@ func (a *OcrAction) String() string {
 // 	Condition func(interface{}) bool
 // }
 
-// func (a *ConditionalAction) Execute(ctx interface{}) error {
+// func (a *ConditionalAction) execute(ctx interface{}) error {
 // 	if a.Condition(ctx) {
 // 		fmt.Println("Condition true. Executing subactions")
 // 		for _, action := range a.SubActions {
-// 			if err := action.Execute(ctx); err != nil {
+// 			if err := action.execute(ctx); err != nil {
 // 				return err
 // 			}
 // 		}
 // 	} else {
 // 		fmt.Println("Condition false. Skipping block")
 // 		// for _, action := range a.FalseActions {
-// 		// 	if err := action.Execute(ctx); err != nil {
+// 		// 	if err := action.execute(ctx); err != nil {
 // 		// 		return err
 // 		// 	}
 // 		// }
