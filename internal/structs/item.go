@@ -1,11 +1,7 @@
 package structs
 
 import (
-	"embed"
-	"encoding/json"
 	"errors"
-	"log"
-	"os"
 )
 
 type Item struct {
@@ -19,28 +15,25 @@ type Items struct {
 	Map map[string][]Item
 }
 
-//go:embed items.json
-var items embed.FS
-
-func (is *Items) CreateItemMaps() {
-	log.Println("GetItemsMap()")
-	is.Map = make(map[string][]Item)
-
-	log.Println("Initializing Items Map")
-
-	file, err := os.Open("./json-data/items.json")
-	if err != nil {
-		log.Println("Error opening file:", err)
-		panic(err)
-	}
-	defer file.Close()
-
-	decoder := json.NewDecoder(file)
-	if err := decoder.Decode(&is.Map); err != nil {
-		log.Println("Error decoding JSON:", err)
-		panic(err)
-	}
-}
+//func (is *Items) CreateItemMaps() {
+//        log.Println("GetItemsMap()")
+//        is.Map = make(map[string][]Item)
+//
+//        log.Println("Initializing Items Map")
+//
+//        file, err := os.Open(".internal/resources/json-data/items.json")
+//        if err != nil {
+//                log.Println("Error opening file:", err)
+//                panic(err)
+//        }
+//        defer file.Close()
+//
+//        decoder := json.NewDecoder(file)
+//        if err := decoder.Decode(&is.Map); err != nil {
+//                log.Println("Error decoding JSON:", err)
+//                panic(err)
+//        }
+//}
 
 func (is *Items) GetItemsMapAsStringsMap() map[string][]string {
 	itemsStringMap := make(map[string][]string)

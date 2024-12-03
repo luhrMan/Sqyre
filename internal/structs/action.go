@@ -1,15 +1,16 @@
 package structs
 
 import (
-	"Dark-And-Darker/utils"
+	"Dark-And-Darker/internal/utils"
 	"fmt"
+	"fyne.io/fyne/v2/data/binding"
 	"log"
 
 	"github.com/go-vgo/robotgo"
 )
 
 type ActionInterface interface {
-	Execute(ctx interface{}) error
+	execute(ctx interface{}) error
 
 	GetUID() string
 	SetUID(string)
@@ -28,7 +29,7 @@ func (a *BaseAction) GetUID() string                           { return a.UID }
 func (a *BaseAction) SetUID(uid string)                        { a.UID = uid }
 func (a *BaseAction) GetParent() AdvancedActionInterface       { return a.Parent }
 func (a *BaseAction) SetParent(action AdvancedActionInterface) { a.Parent = action }
-func (a *BaseAction) Execute(ctx interface{}) error            { return nil }
+func (a *BaseAction) execute(ctx interface{}) error            { return nil }
 func (a *BaseAction) String() string                           { return "This is a BaseAction" }
 
 //***************************************************************************************Wait
@@ -45,7 +46,7 @@ func NewWaitAction(time int) *WaitAction {
 	}
 }
 
-func (a *WaitAction) Execute(ctx interface{}) error {
+func (a *WaitAction) execute(ctx interface{}) error {
 	log.Printf("Waiting for %d milliseconds", a.Time)
 	robotgo.MilliSleep(a.Time)
 	return nil
@@ -53,6 +54,10 @@ func (a *WaitAction) Execute(ctx interface{}) error {
 
 func (a *WaitAction) String() string {
 	return fmt.Sprintf("%s Wait for %d ms", utils.GetEmoji("Wait"), a.Time)
+}
+
+func (a *WaitAction) GetBoundTime() binding.ExternalInt {
+	return binding.BindInt(&a.Time)
 }
 
 // ***************************************************************************************Click
@@ -69,7 +74,7 @@ func NewClickAction(button string) *ClickAction {
 	}
 }
 
-func (a *ClickAction) Execute(ctx interface{}) error {
+func (a *ClickAction) execute(ctx interface{}) error {
 	log.Printf("%s click", a.Button)
 	robotgo.Click(a.Button)
 	return nil
@@ -94,7 +99,7 @@ func NewMoveAction(x, y int) *MoveAction {
 	}
 }
 
-func (a *MoveAction) Execute(ctx interface{}) error {
+func (a *MoveAction) execute(ctx interface{}) error {
 	//if (a.X == -1) && (a.Y == -1) {
 	if c, ok := ctx.(robotgo.Point); ok {
 		log.Printf("Moving mouse to ctx (%d, %d)", c.X, c.Y)
@@ -131,7 +136,7 @@ func NewKeyAction(key, state string) *KeyAction {
 	}
 }
 
-func (a *KeyAction) Execute(ctx interface{}) error {
+func (a *KeyAction) execute(ctx interface{}) error {
 	log.Printf("Key: %s %s", a.Key, a.State)
 	switch a.State {
 	case "Up":
