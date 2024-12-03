@@ -22,6 +22,7 @@ type Spot struct {
 }
 
 var (
+	path        = "./internal/resources/json/"
 	sbMap       *map[string]SearchBox
 	sbOnce      sync.Once
 	spotMap     *map[string]Spot
@@ -47,7 +48,7 @@ func GetSearchBoxMap() *map[string]SearchBox {
 		log.Println("Initializing Searchbox Map")
 		tempArrMap := make(map[string][]SearchBox)
 		tempMap := make(map[string]SearchBox)
-		file, err := os.Open("./json-data/searchBoxes.json")
+		file, err := os.Open(path + "searchBoxes.json")
 		if err != nil {
 			log.Println("Error opening file:", err)
 			panic(err)
@@ -91,7 +92,7 @@ func GetSpotMap() *map[string]Spot {
 		tempArrMap := make(map[string][]Spot)
 		tempMap := make(map[string]Spot)
 
-		file, err := os.Open("./json-data/spots.json")
+		file, err := os.Open(path + "spots.json")
 		if err != nil {
 			log.Println("Error opening file:", err)
 			panic(err)
