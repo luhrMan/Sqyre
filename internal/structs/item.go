@@ -48,6 +48,16 @@ func (is *Items) GetItemsMapAsStringsMap() map[string][]string {
 	return itemsStringMap
 }
 
+func (is *Items) GetItemsMapAsBool() map[string]bool {
+	itemsBool := make(map[string]bool)
+	for _, items := range is.Map {
+		for _, item := range items {
+			itemsBool[item.Name] = false
+		}
+	}
+	return itemsBool
+}
+
 func (is *Items) GetItemsMapCategory(category string) *[]string {
 	im := is.Map
 	keys := make([]string, 0, len(im[category]))
