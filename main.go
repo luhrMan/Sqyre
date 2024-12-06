@@ -5,6 +5,7 @@ import (
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/theme"
+	"fyne.io/x/fyne/widget"
 	hook "github.com/robotn/gohook"
 	"log"
 	"os"
@@ -14,7 +15,7 @@ func main() {
 	a := app.New()
 	w := a.NewWindow("Squire")
 	os.Setenv("FYNE_SCALE", "1.25")
-	u := &ui{win: w, mt: &macroTree{}, st: &settingsTabs{tabs: &container.AppTabs{}}}
+	u := &ui{win: w, m: &macro{sel: &widget.CompletionEntry{}}, st: &settingsTabs{tabs: &container.AppTabs{}}}
 	icon, _ := fyne.LoadResourceFromPath("./internal/resources/images/Squire.png")
 	mainMenu := fyne.NewMainMenu(fyne.NewMenu("Settings"), u.createActionMenu())
 	//failsafe hotkey

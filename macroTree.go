@@ -4,6 +4,7 @@ import (
         "Dark-And-Darker/internal/structs"
         "fmt"
         "fyne.io/fyne/v2/data/binding"
+        xwidget "fyne.io/x/fyne/widget"
         "log"
         "os"
         "strings"
@@ -15,14 +16,18 @@ import (
         "fyne.io/fyne/v2/widget"
 )
 
-type macroTree struct {
-        tree             *widget.Tree
-        root             *structs.LoopAction
+type macro struct {
+        tree *widget.Tree
+        root *structs.LoopAction
+
+        sel *xwidget.CompletionEntry
+        dt  *container.DocTabs
+
         boundMacroName   binding.String
         boundGlobalDelay binding.Int
 }
 
-func (m *macroTree) moveNodeUp(selectedUID string) {
+func (m *macro) moveNodeUp(selectedUID string) {
         node := m.findNode(m.root, selectedUID)
         if node == nil || node.GetParent() == nil {
                 return
@@ -45,7 +50,7 @@ func (m *macroTree) moveNodeUp(selectedUID string) {
         }
 }
 
-func (m *macroTree) moveNodeDown(selectedUID string) {
+func (m *macro) moveNodeDown(selectedUID string) {
         node := m.findNode(m.root, selectedUID)
         if node == nil || node.GetParent() == nil {
                 return
@@ -69,7 +74,7 @@ func (m *macroTree) moveNodeDown(selectedUID string) {
         }
 }
 
-func (m *macroTree) findNode(node structs.ActionInterface, uid string) structs.ActionInterface {
+func (m *macro) findNode(node structs.ActionInterface, uid string) structs.ActionInterface {
         if node.GetUID() == uid {
                 return node
         }
@@ -83,7 +88,7 @@ func (m *macroTree) findNode(node structs.ActionInterface, uid string) structs.A
         return nil
 }
 
-func (m *macroTree) executeActionTree() { //error
+func (m *macro) executeActionTree() { //error
         var context interface{}
         err := m.root.Execute(context)
         if err != nil {
@@ -92,7 +97,7 @@ func (m *macroTree) executeActionTree() { //error
         }
 }
 
-func (m *macroTree) macroSelector() *widget.Select {
+func (m *macro) createMacroSelect() {
         files, err := os.ReadDir("./internal/saved-macros")
         if err != nil {
                 log.Fatal(err)
@@ -101,10 +106,32 @@ func (m *macroTree) macroSelector() *widget.Select {
         for _, f := range files {
                 macroList = append(macroList, strings.TrimSuffix(f.Name(), ".json"))
         }
-        return widget.NewSelect(macroList, func(s string) { m.loadTreeFromJsonFile(s + ".json") })
+        m.sel = xwidget.NewCompletionEntry(macroList)
+        m.sel.OnSubmitted = func(s string) { m.loadTreeFromJsonFile(s + ".json") }
+        m.sel.
+                m.sel.OnChanged = func(s string) {
+                //                if len(s) == 0 {
+                //                        m.sel.HideCompletion()
+                //                        return
+                //                }
+                var matches []string
+                userPrefix := strings.ToLower(s)
+                for _, listStr := range macroList {
+                        if len(listStr) < len(s) {
+                                continue
+                        }
+                        listPrefix := strings.ToLower(listStr[:len(s)])
+                        if userPrefix == listPrefix {
+                                matches = append(matches, listStr)
+                        }
+                }
+                m.sel.SetOptions(matches)
+                m.sel.ShowCompletion()
+        }
+        //        , func(s string) { m.loadTreeFromJsonFile(s + ".json") }
 }
 
-func (m *macroTree) createTree() {
+func (m *macro) createTree() {
         m.root = structs.NewLoopAction(1, "root", []structs.ActionInterface{})
         m.root.SetUID("")
 
@@ -164,7 +191,7 @@ func (m *macroTree) createTree() {
 
 func (u *ui) addActionToTree(actionType structs.ActionInterface) {
         var (
-                selectedNode = u.mt.findNode(u.mt.root, selectedTreeItem)
+                selectedNode = u.m.findNode(u.m.root, selectedTreeItem)
                 action       structs.ActionInterface
         )
         switch actionType.(type) {
@@ -214,19 +241,19 @@ func (u *ui) addActionToTree(actionType structs.ActionInterface) {
         }
 
         if selectedNode == nil {
-                selectedNode = u.mt.root
+                selectedNode = u.m.root
         }
         if s, ok := selectedNode.(structs.AdvancedActionInterface); ok {
                 s.AddSubAction(action)
         } else {
                 selectedNode.GetParent().AddSubAction(action)
         }
-        u.mt.tree.Refresh()
+        u.m.tree.Refresh()
 }
 
 func (u *ui) createUpdateButton() *widget.Button {
         return widget.NewButton("Update", func() {
-                node := u.mt.findNode(u.mt.root, selectedTreeItem)
+                node := u.m.findNode(u.m.root, selectedTreeItem)
                 if selectedTreeItem == "" {
                         log.Println("No node selected")
                         return
@@ -269,15 +296,15 @@ func (u *ui) createUpdateButton() *widget.Button {
 
                 fmt.Printf("Updated node: %+v from '%v' to '%v' \n", node.GetUID(), og, node)
 
-                u.mt.tree.Refresh()
+                u.m.tree.Refresh()
         })
 }
 
 func (u *ui) updateTreeOnselect() {
         //Set here, Get @ addActionToTree
-        u.mt.tree.OnSelected = func(uid widget.TreeNodeID) {
+        u.m.tree.OnSelected = func(uid widget.TreeNodeID) {
                 selectedTreeItem = uid
-                switch node := u.mt.findNode(u.mt.root, uid).(type) {
+                switch node := u.m.findNode(u.m.root, uid).(type) {
                 case *structs.WaitAction:
                         u.st.boundTime.Set(node.Time)
                         u.st.tabs.SelectIndex(0)
@@ -318,7 +345,7 @@ func (u *ui) updateTreeOnselect() {
                         for _, t := range node.Targets {
                                 imageSearchTargets[t] = true
                         }
-                        u.mt.tree.Refresh()
+                        u.m.tree.Refresh()
                         u.st.tabs.Items[5]. //image search tab
                                 Content.(*fyne.Container). //settings border
                                 Objects[1].(*fyne.Container). //2nd grid with columns
