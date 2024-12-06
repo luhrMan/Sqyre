@@ -161,7 +161,7 @@ func (u *ui) actionSettingsTabs() {
                 boundSearchAreaSelect     = widget.NewSelect(*structs.GetSearchBoxMapKeys(*structs.GetSearchBoxMap()), func(s string) { u.st.boundSearchArea.Set(s) })
 
                 waitSettings = container.NewVBox(
-                        widget.NewLabel("-----------------------------------------------------------------------------------------------------------"),
+                        widget.NewLabel("------------------------------------------------------------------------------------"),
                         container.NewGridWithColumns(2, container.NewHBox(layout.NewSpacer(), boundTimeLabel, widget.NewLabel("ms")), boundTimeSlider),
                 )
                 moveSettings = container.NewVBox(container.NewGridWithColumns(2,
