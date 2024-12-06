@@ -31,14 +31,14 @@ type AdvancedActionInterface interface {
 }
 
 type AdvancedAction struct {
-	BaseAction                   //`json:"baseaction"`
+	baseAction                   //`json:"baseaction"`
 	Name       string            `json:"name"`
 	SubActions []ActionInterface `json:"subactions"`
 }
 
 func NewAdvancedAction(name string, subActions []ActionInterface) *AdvancedAction {
 	return &AdvancedAction{
-		BaseAction: NewBaseAction(),
+		baseAction: newBaseAction(),
 		Name:       name,
 		SubActions: subActions,
 	}
@@ -83,11 +83,11 @@ func (a *AdvancedAction) RenameActions() {
 	}
 }
 
-func (a *AdvancedAction) execute(ctx interface{}) error {
+func (a *AdvancedAction) Execute(ctx interface{}) error {
 	log.Printf("Executing %s", a.Name)
 
 	for _, c := range a.SubActions {
-		c.execute(ctx)
+		c.Execute(ctx)
 	}
 	return nil
 }
@@ -111,7 +111,7 @@ func (a *LoopAction) Execute(ctx interface{}) error {
 	for i := 0; i < a.Count; i++ {
 		fmt.Printf("Loop iteration %d\n", i+1)
 		for _, action := range a.GetSubActions() {
-			if err := action.execute(ctx); err != nil {
+			if err := action.Execute(ctx); err != nil {
 				return err
 			}
 		}
@@ -143,10 +143,10 @@ func (a *ImageSearchAction) Execute(ctx interface{}) error {
 	log.Printf("Image Search | %v in X1:%d Y1:%d X2:%d Y2:%d", a.Targets, a.SearchBox.LeftX, a.SearchBox.TopY, a.SearchBox.RightX, a.SearchBox.BottomY)
 	w := a.SearchBox.RightX - a.SearchBox.LeftX
 	h := a.SearchBox.BottomY - a.SearchBox.TopY
-
+	pathDir := "./internal/resources/images/"
 	captureImg := robotgo.CaptureImg(a.SearchBox.LeftX+utils.XOffset, a.SearchBox.TopY+utils.YOffset, w, h)
 	img, _ := gocv.ImageToMatRGB(captureImg)
-	gocv.IMWrite("./images/search-area.png", img)
+	gocv.IMWrite(pathDir+"search-area.png", img)
 	//	img := gocv.IMRead("./images/stash-area.png", gocv.IMReadColor)
 	defer img.Close()
 	imgDraw := img.Clone()
@@ -194,7 +194,7 @@ func (a *ImageSearchAction) Execute(ctx interface{}) error {
 		go func(target string) {
 			defer wg.Done()
 
-			ip := "./images/icons/" + target + ".png"
+			ip := pathDir + "icons/" + target + ".png"
 
 			// Read the template
 			template := gocv.IMRead(ip, gocv.IMReadColor)
@@ -250,7 +250,7 @@ func (a *ImageSearchAction) Execute(ctx interface{}) error {
 		}
 		log.Printf("Results for %s: %v\n", i, matches)
 	}
-	gocv.IMWrite("./images/founditems.png", imgDraw)
+	gocv.IMWrite(pathDir+"founditems.png", imgDraw)
 	count := 0
 	//clicked := []robotgo.Point
 	for _, pointArr := range results {
@@ -262,7 +262,7 @@ func (a *ImageSearchAction) Execute(ctx interface{}) error {
 			point.X += a.SearchBox.LeftX
 			point.Y += a.SearchBox.TopY
 			for _, d := range a.SubActions {
-				d.execute(point)
+				d.Execute(point)
 			}
 		}
 	}
@@ -280,6 +280,14 @@ type OcrAction struct {
 	Target         string    `json:"texttarget"`
 	SearchBox      SearchBox `json:"searchbox"`
 	AdvancedAction           //`json:"advancedaction"`
+}
+
+func NewOcrAction(name string, subActions []ActionInterface, target string, searchbox SearchBox) *OcrAction {
+	return &OcrAction{
+		AdvancedAction: *NewAdvancedAction(name, subActions),
+		Target:         target,
+		SearchBox:      searchbox,
+	}
 }
 
 func (a *OcrAction) Execute(ctx interface{}) error {
@@ -328,7 +336,7 @@ func (a *OcrAction) Execute(ctx interface{}) error {
 	log.Println(text)
 	if strings.Contains(text, a.Target) {
 		for _, action := range a.SubActions {
-			if err := action.execute(ctx); err != nil {
+			if err := action.Execute(ctx); err != nil {
 				return err
 			}
 		}
@@ -347,18 +355,18 @@ func (a *OcrAction) String() string {
 // 	Condition func(interface{}) bool
 // }
 
-// func (a *ConditionalAction) execute(ctx interface{}) error {
+// func (a *ConditionalAction) Execute(ctx interface{}) error {
 // 	if a.Condition(ctx) {
 // 		fmt.Println("Condition true. Executing subactions")
 // 		for _, action := range a.SubActions {
-// 			if err := action.execute(ctx); err != nil {
+// 			if err := action.Execute(ctx); err != nil {
 // 				return err
 // 			}
 // 		}
 // 	} else {
 // 		fmt.Println("Condition false. Skipping block")
 // 		// for _, action := range a.FalseActions {
-// 		// 	if err := action.execute(ctx); err != nil {
+// 		// 	if err := action.Execute(ctx); err != nil {
 // 		// 		return err
 // 		// 	}
 // 		// }
