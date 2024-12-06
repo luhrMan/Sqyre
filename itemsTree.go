@@ -57,10 +57,9 @@ func (u *ui) createItemsCheckTree() *widget.Tree {
 		},
 		func(b bool) fyne.CanvasObject {
 			if b {
-				return container.NewGridWithRows(1,
+				return container.NewHBox(
 					widget.NewLabel(""),
 					widget.NewCheck("placeholder", func(b bool) {}),
-					layout.NewSpacer(),
 
 				)
 			} else {

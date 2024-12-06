@@ -9,8 +9,6 @@ import (
 
         "Dark-And-Darker/internal/structs"
         "log"
-        "os"
-        "strings"
 
         "fyne.io/fyne/v2"
         "fyne.io/fyne/v2/container"
@@ -46,7 +44,8 @@ type settingsTabs struct {
 //action settings
 var (
         macroName        string
-        selectedTreeItem = ".1"
+        globalDelay      int = 25
+        selectedTreeItem     = ".1"
 
         //BASICS
         //wait
@@ -83,102 +82,42 @@ func (u *ui) LoadMainContent() *fyne.Container {
         u.mt.createTree()
         u.updateTreeOnselect()
         u.actionSettingsTabs()
+
         // searchAreaSelector.SetSelected(searchAreaSelector.Options[0])
-        mainLayout := container.NewBorder(nil, nil, nil, nil)
         settingsLayout := container.NewBorder(nil, u.createUpdateButton(), nil, nil, u.st.tabs)
         boundMacroNameEntry := widget.NewEntryWithData(u.mt.boundMacroName)
+        boundGlobalDelayEntry := widget.NewEntryWithData(binding.IntToString(u.mt.boundGlobalDelay))
+
         macroLayout := container.NewBorder(
                 container.NewGridWithColumns(3,
+                        u.mt.createMacroToolbar(),
+
                         container.NewHBox(
                                 widget.NewLabel("Global Delay:"),
-                                widget.NewEntry(),
+                                boundGlobalDelayEntry,
                                 layout.NewSpacer(),
                                 widget.NewLabel("Macro Name:"),
                         ),
                         boundMacroNameEntry,
-                        u.mt.createMacroToolbar(),
                 ),
                 u.mt.macroSelector(),
-                nil,
+                widget.NewSeparator(),
                 nil,
                 u.mt.tree,
         )
-
-        middleSplit := container.NewBorder(nil, nil, container.NewHBox(settingsLayout), nil, macroLayout)
-
-        mainLayout.Add(middleSplit)
+        u.mt.macroSelector().OnChanged = func(s string) {
+                boundMacroNameEntry.Text = s
+        }
+        mainLayout := container.NewBorder(nil, nil, settingsLayout, nil, macroLayout)
 
         u.mt.loadTreeFromJsonFile("Currency Testing.json")
         return mainLayout
 }
 
-func (m *macroTree) createMacroToolbar() *widget.Toolbar {
-        tb := widget.NewToolbar(
-                widget.NewToolbarAction(theme.DocumentSaveIcon(), func() {
-                        err := m.saveTreeToJsonFile(macroName)
-                        log.Printf("createSaveSettings(): %v", err)
-                }),
-                widget.NewToolbarSpacer(),
-                widget.NewToolbarSeparator(),
-                widget.NewToolbarAction(theme.MoveDownIcon(), func() {
-                        m.moveNodeDown(selectedTreeItem)
-                }),
-                widget.NewToolbarAction(theme.MoveUpIcon(), func() {
-                        m.moveNodeUp(selectedTreeItem)
-                }),
-                widget.NewToolbarAction(theme.MediaPlayIcon(), func() {
-                        m.executeActionTree()
-                }),
-                widget.NewToolbarSeparator(),
-                widget.NewToolbarSpacer(),
-        )
-        return tb
-}
-
-func (m *macroTree) macroSelector() *widget.Select {
-        files, err := os.ReadDir("./internal/saved-macros")
-        if err != nil {
-                log.Fatal(err)
-        }
-        var macroList []string
-        for _, f := range files {
-                macroList = append(macroList, strings.TrimSuffix(f.Name(), ".json"))
-        }
-        return widget.NewSelect(macroList, func(s string) { m.loadTreeFromJsonFile(s + ".json") })
-}
-
-func (u *ui) createActionMenu() *fyne.Menu {
-        basicActionsSubMenu := fyne.NewMenuItem("Basic Actions", nil)
-        basicActionsSubMenu.ChildMenu = fyne.NewMenu("")
-        advancedActionsSubMenu := fyne.NewMenuItem("Advanced Actions", nil)
-        advancedActionsSubMenu.ChildMenu = fyne.NewMenu("")
-
-        waitActionMenuItem := fyne.NewMenuItem("Wait", func() { u.addActionToTree(&structs.WaitAction{}) })
-        mouseMoveActionMenuItem := fyne.NewMenuItem("Mouse Move", func() { u.addActionToTree(&structs.MoveAction{}) })
-        clickActionMenuItem := fyne.NewMenuItem("Click", func() { u.addActionToTree(&structs.ClickAction{}) })
-        keyActionMenuItem := fyne.NewMenuItem("Key", func() { u.addActionToTree(&structs.KeyAction{}) })
-
-        loopActionMenuItem := fyne.NewMenuItem("Loop", func() { u.addActionToTree(&structs.LoopAction{}) })
-        imageSearchActionMenuItem := fyne.NewMenuItem("Image Search", func() { u.addActionToTree(&structs.ImageSearchAction{}) })
-        ocrActionMenuItem := fyne.NewMenuItem("OCR", func() { u.addActionToTree(&structs.OcrAction{}) })
-
-        basicActionsSubMenu.ChildMenu.Items = append(basicActionsSubMenu.ChildMenu.Items,
-                waitActionMenuItem,
-                mouseMoveActionMenuItem,
-                clickActionMenuItem,
-                keyActionMenuItem,
-        )
-
-        advancedActionsSubMenu.ChildMenu.Items = append(advancedActionsSubMenu.ChildMenu.Items,
-                loopActionMenuItem,
-                imageSearchActionMenuItem,
-                ocrActionMenuItem,
-        )
-
-        return fyne.NewMenu("Add Action", basicActionsSubMenu, advancedActionsSubMenu)
-}
-
 func (u *ui) bindVariables() {
+        u.mt.boundMacroName = binding.BindString(&macroName)
+        u.mt.boundGlobalDelay = binding.BindInt(&globalDelay)
+
         u.st.boundTime = binding.BindInt(&time)
         u.st.boundMoveX = binding.BindInt(&moveX)
         u.st.boundMoveY = binding.BindInt(&moveY)
@@ -190,8 +129,6 @@ func (u *ui) bindVariables() {
         u.st.boundCount = binding.BindFloat(&count)
         u.st.boundImageSearchName = binding.BindString(&imageSearchName)
         u.st.boundSearchArea = binding.BindString(&searchArea)
-
-        u.mt.boundMacroName = binding.BindString(&macroName)
 }
 
 //WIDGET LOCATIONS ARE HARD CODED IN THE TREE ONSELECTED CALLBACK. CAREFUL WITH CHANGES HERE
@@ -222,9 +159,9 @@ func (u *ui) actionSettingsTabs() {
                 //image search
                 boundImageSearchNameEntry = widget.NewEntryWithData(u.st.boundImageSearchName)
                 boundSearchAreaSelect     = widget.NewSelect(*structs.GetSearchBoxMapKeys(*structs.GetSearchBoxMap()), func(s string) { u.st.boundSearchArea.Set(s) })
-        )
-        var (
+
                 waitSettings = container.NewVBox(
+                        widget.NewLabel("-----------------------------------------------------------------------------------------------------------"),
                         container.NewGridWithColumns(2, container.NewHBox(layout.NewSpacer(), boundTimeLabel, widget.NewLabel("ms")), boundTimeSlider),
                 )
                 moveSettings = container.NewVBox(container.NewGridWithColumns(2,
@@ -258,4 +195,63 @@ func (u *ui) actionSettingsTabs() {
         u.st.tabs.Append(container.NewTabItem("Loop", loopSettings))
         u.st.tabs.Append(container.NewTabItem("Image", imageSearchSettings))
         u.st.tabs.Append(container.NewTabItem("OCR", ocrSettings))
+}
+
+func (m *macroTree) createMacroToolbar() *widget.Toolbar {
+        tb := widget.NewToolbar(
+                widget.NewToolbarAction(theme.DocumentSaveIcon(), func() {
+                        err := m.saveTreeToJsonFile(macroName)
+                        log.Printf("createSaveSettings(): %v", err)
+                }),
+                widget.NewToolbarSpacer(),
+                widget.NewToolbarSeparator(),
+                widget.NewToolbarAction(theme.MoveDownIcon(), func() {
+                        m.moveNodeDown(selectedTreeItem)
+                }),
+                widget.NewToolbarAction(theme.MoveUpIcon(), func() {
+                        m.moveNodeUp(selectedTreeItem)
+                }),
+                widget.NewToolbarAction(theme.MediaPlayIcon(), func() {
+                        m.executeActionTree()
+                }),
+                widget.NewToolbarSeparator(),
+                widget.NewToolbarAction(nil, func() {}),
+                widget.NewToolbarAction(nil, func() {}),
+
+        )
+        return tb
+}
+
+func (u *ui) createActionMenu() *fyne.Menu {
+
+        basicActionsSubMenu := fyne.NewMenuItem("Basic Actions", nil)
+        basicActionsSubMenu.ChildMenu = fyne.NewMenu("")
+        advancedActionsSubMenu := fyne.NewMenuItem("Advanced Actions", nil)
+        advancedActionsSubMenu.ChildMenu = fyne.NewMenu("")
+
+        waitActionMenuItem := fyne.NewMenuItem("Wait", func() { u.addActionToTree(&structs.WaitAction{}) })
+        mouseMoveActionMenuItem := fyne.NewMenuItem("Mouse Move", func() { u.addActionToTree(&structs.MoveAction{}) })
+        clickActionMenuItem := fyne.NewMenuItem("Click", func() { u.addActionToTree(&structs.ClickAction{}) })
+        keyActionMenuItem := fyne.NewMenuItem("Key", func() { u.addActionToTree(&structs.KeyAction{}) })
+
+        loopActionMenuItem := fyne.NewMenuItem("Loop", func() { u.addActionToTree(&structs.LoopAction{}) })
+        imageSearchActionMenuItem := fyne.NewMenuItem("Image Search", func() { u.addActionToTree(&structs.ImageSearchAction{}) })
+        ocrActionMenuItem := fyne.NewMenuItem("OCR", func() { u.addActionToTree(&structs.OcrAction{}) })
+
+        ocrActionMenuItem.Icon, _ = fyne.LoadResourceFromPath("./internal/resources/images/Squire.png")
+
+        basicActionsSubMenu.ChildMenu.Items = append(basicActionsSubMenu.ChildMenu.Items,
+                waitActionMenuItem,
+                mouseMoveActionMenuItem,
+                clickActionMenuItem,
+                keyActionMenuItem,
+        )
+
+        advancedActionsSubMenu.ChildMenu.Items = append(advancedActionsSubMenu.ChildMenu.Items,
+                loopActionMenuItem,
+                imageSearchActionMenuItem,
+                ocrActionMenuItem,
+        )
+
+        return fyne.NewMenu("Add Action", basicActionsSubMenu, advancedActionsSubMenu)
 }
