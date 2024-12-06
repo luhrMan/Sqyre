@@ -7,3 +7,6 @@ notes.md
 
 # Built Visual Studio Code Extensions
 *.vsix
+
+*.prof
+*.test

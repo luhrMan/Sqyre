@@ -1,3 +1,10 @@
+# TODO:
+- get a kanban lol
+- figure out Data Binding for the image search item checkboxes
+
+
+
+
 This tool only works on 2560 x 1440 because of hard-set values. (Hopefully this can change with an implementation of SVG?)
 # What is it
 Squire is a Macro Builder built for Dark and Darker. Squire is written using GO, with 2 notable libraries:
