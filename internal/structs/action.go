@@ -1,8 +1,9 @@
 package structs
 
 import (
-	"Dark-And-Darker/utils"
+	"Dark-And-Darker/internal/utils"
 	"fmt"
+	"fyne.io/fyne/v2/data/binding"
 	"log"
 
 	"github.com/go-vgo/robotgo"
@@ -24,18 +25,25 @@ type ActionInterface interface {
 
 func (a *AdvancedAction) GetName() string                      { return a.Name }
 func (a *AdvancedAction) SetName(name string)                  { a.Name = name }
-func (a *BaseAction) GetUID() string                           { return a.UID }
-func (a *BaseAction) SetUID(uid string)                        { a.UID = uid }
-func (a *BaseAction) GetParent() AdvancedActionInterface       { return a.Parent }
-func (a *BaseAction) SetParent(action AdvancedActionInterface) { a.Parent = action }
-func (a *BaseAction) Execute(ctx interface{}) error            { return nil }
-func (a *BaseAction) String() string                           { return "This is a BaseAction" }
+func (a *baseAction) GetUID() string                           { return a.UID }
+func (a *baseAction) SetUID(uid string)                        { a.UID = uid }
+func (a *baseAction) GetParent() AdvancedActionInterface       { return a.Parent }
+func (a *baseAction) SetParent(action AdvancedActionInterface) { a.Parent = action }
+func (a *baseAction) Execute(ctx interface{}) error            { return nil }
+func (a *baseAction) String() string                           { return "This is a baseAction" }
 
 //***************************************************************************************Wait
 
 type WaitAction struct {
-	BaseAction     //`json:"baseaction"`
+	baseAction     //`json:"baseaction"`
 	Time       int `json:"waittime"`
+}
+
+func NewWaitAction(time int) *WaitAction {
+	return &WaitAction{
+		baseAction: newBaseAction(),
+		Time:       time,
+	}
 }
 
 func (a *WaitAction) Execute(ctx interface{}) error {
@@ -48,11 +56,22 @@ func (a *WaitAction) String() string {
 	return fmt.Sprintf("%s Wait for %d ms", utils.GetEmoji("Wait"), a.Time)
 }
 
+func (a *WaitAction) GetBoundTime() binding.ExternalInt {
+	return binding.BindInt(&a.Time)
+}
+
 // ***************************************************************************************Click
 
 type ClickAction struct {
-	BaseAction        //`json:"baseaction"`
+	baseAction        //`json:"baseaction"`
 	Button     string `json:"button"`
+}
+
+func NewClickAction(button string) *ClickAction {
+	return &ClickAction{
+		baseAction: newBaseAction(),
+		Button:     button,
+	}
 }
 
 func (a *ClickAction) Execute(ctx interface{}) error {
@@ -67,12 +86,20 @@ func (a *ClickAction) String() string {
 
 // ***************************************************************************************Move
 
-type MouseMoveAction struct {
-	BaseAction //`json:"baseaction"`
+type MoveAction struct {
+	baseAction //`json:"baseaction"`
 	X, Y       int
 }
 
-func (a *MouseMoveAction) Execute(ctx interface{}) error {
+func NewMoveAction(x, y int) *MoveAction {
+	return &MoveAction{
+		baseAction: newBaseAction(),
+		X:          x,
+		Y:          y,
+	}
+}
+
+func (a *MoveAction) Execute(ctx interface{}) error {
 	//if (a.X == -1) && (a.Y == -1) {
 	if c, ok := ctx.(robotgo.Point); ok {
 		log.Printf("Moving mouse to ctx (%d, %d)", c.X, c.Y)
@@ -84,7 +111,7 @@ func (a *MouseMoveAction) Execute(ctx interface{}) error {
 	return nil
 }
 
-func (a *MouseMoveAction) String() string {
+func (a *MoveAction) String() string {
 	for _, s := range *GetSpotMap() {
 		if (s.X == a.X) && (s.Y == a.Y) {
 			return fmt.Sprintf("%s Move mouse to %s", utils.GetEmoji("Move"), s.Name)
@@ -96,18 +123,32 @@ func (a *MouseMoveAction) String() string {
 // ***************************************************************************************Key
 
 type KeyAction struct {
-	BaseAction        //`json:"baseaction"`
+	baseAction        //`json:"baseaction"`
 	Key        string `json:"key"`
 	State      string `json:"state"`
+}
+
+func NewKeyAction(key, state string) *KeyAction {
+	return &KeyAction{
+		baseAction: newBaseAction(),
+		Key:        key,
+		State:      state,
+	}
 }
 
 func (a *KeyAction) Execute(ctx interface{}) error {
 	log.Printf("Key: %s %s", a.Key, a.State)
 	switch a.State {
 	case "Up":
-		robotgo.KeyUp(a.Key)
+		err := robotgo.KeyUp(a.Key)
+		if err != nil {
+			return err
+		}
 	case "Down":
-		robotgo.KeyDown(a.Key)
+		err := robotgo.KeyDown(a.Key)
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
