@@ -6,21 +6,21 @@ import (
         "Dark-And-Darker/internal/utils"
         "fyne.io/fyne/v2/data/binding"
         "fyne.io/fyne/v2/layout"
-
+        _ "fyne.io/x/fyne/widget"
         "Dark-And-Darker/internal/structs"
         "log"
 
         "fyne.io/fyne/v2"
         "fyne.io/fyne/v2/container"
         "fyne.io/fyne/v2/theme"
-        "fyne.io/fyne/v2/widget"
+        widget "fyne.io/fyne/v2/widget"
         "github.com/go-vgo/robotgo"
 )
 
 type ui struct {
         win fyne.Window
 
-        mt *macroTree
+        m  *macro
         st *settingsTabs
 }
 
@@ -79,18 +79,19 @@ func (u *ui) LoadMainContent() *fyne.Container {
         log.Println("Monitor 2 size")
         log.Println(robotgo.GetDisplayBounds(1))
         internal.CreateItemMaps()
-        u.mt.createTree()
+        u.m.createTree()
         u.updateTreeOnselect()
         u.actionSettingsTabs()
+        u.m.createMacroSelect()
 
         // searchAreaSelector.SetSelected(searchAreaSelector.Options[0])
         settingsLayout := container.NewBorder(nil, u.createUpdateButton(), nil, nil, u.st.tabs)
-        boundMacroNameEntry := widget.NewEntryWithData(u.mt.boundMacroName)
-        boundGlobalDelayEntry := widget.NewEntryWithData(binding.IntToString(u.mt.boundGlobalDelay))
+        //        boundMacroNameEntry := widget.NewEntryWithData(u.m.boundMacroName)
+        boundGlobalDelayEntry := widget.NewEntryWithData(binding.IntToString(u.m.boundGlobalDelay))
 
         macroLayout := container.NewBorder(
                 container.NewGridWithColumns(3,
-                        u.mt.createMacroToolbar(),
+                        u.m.createMacroToolbar(),
 
                         container.NewHBox(
                                 widget.NewLabel("Global Delay:"),
@@ -98,25 +99,27 @@ func (u *ui) LoadMainContent() *fyne.Container {
                                 layout.NewSpacer(),
                                 widget.NewLabel("Macro Name:"),
                         ),
-                        boundMacroNameEntry,
+                        u.m.sel,
+                        //                        boundMacroNameEntry,
                 ),
-                u.mt.macroSelector(),
+                //                u.m.sel,
+                nil,
                 widget.NewSeparator(),
                 nil,
-                u.mt.tree,
+                u.m.tree,
         )
-        u.mt.macroSelector().OnChanged = func(s string) {
-                boundMacroNameEntry.Text = s
-        }
+        //        u.m.macroSelector().OnChanged = func(s string) {
+        //                boundMacroNameEntry.Text = s
+        //        }
         mainLayout := container.NewBorder(nil, nil, settingsLayout, nil, macroLayout)
 
-        u.mt.loadTreeFromJsonFile("Currency Testing.json")
+        u.m.loadTreeFromJsonFile("Currency Testing.json")
         return mainLayout
 }
 
 func (u *ui) bindVariables() {
-        u.mt.boundMacroName = binding.BindString(&macroName)
-        u.mt.boundGlobalDelay = binding.BindInt(&globalDelay)
+        u.m.boundMacroName = binding.BindString(&macroName)
+        u.m.boundGlobalDelay = binding.BindInt(&globalDelay)
 
         u.st.boundTime = binding.BindInt(&time)
         u.st.boundMoveX = binding.BindInt(&moveX)
@@ -129,6 +132,11 @@ func (u *ui) bindVariables() {
         u.st.boundCount = binding.BindFloat(&count)
         u.st.boundImageSearchName = binding.BindString(&imageSearchName)
         u.st.boundSearchArea = binding.BindString(&searchArea)
+}
+
+func (u *ui) createDocTabs() {
+        u.m.dt = container.NewDocTabs()
+        //        u.mdt.Append(container.NewTabItem())
 }
 
 //WIDGET LOCATIONS ARE HARD CODED IN THE TREE ONSELECTED CALLBACK. CAREFUL WITH CHANGES HERE
@@ -197,7 +205,7 @@ func (u *ui) actionSettingsTabs() {
         u.st.tabs.Append(container.NewTabItem("OCR", ocrSettings))
 }
 
-func (m *macroTree) createMacroToolbar() *widget.Toolbar {
+func (m *macro) createMacroToolbar() *widget.Toolbar {
         tb := widget.NewToolbar(
                 widget.NewToolbarAction(theme.DocumentSaveIcon(), func() {
                         err := m.saveTreeToJsonFile(macroName)

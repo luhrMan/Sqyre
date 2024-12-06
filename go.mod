@@ -6,6 +6,7 @@ toolchain go1.23.3
 
 require (
 	fyne.io/fyne/v2 v2.5.3-rc3
+	fyne.io/x/fyne v0.0.0-20240803204126-8b5b5bfe65ef
 	github.com/go-vgo/robotgo v1.0.0-rc2.1
 	github.com/otiai10/gosseract/v2 v2.4.1
 	github.com/robotn/gohook v0.41.0
@@ -38,6 +39,7 @@ require (
 	github.com/kbinani/screenshot v0.0.0-20240820160931-a8a2c5d0e191 // indirect
 	github.com/lufia/plan9stats v0.0.0-20240909124753-873cd0166683 // indirect
 	github.com/lxn/win v0.0.0-20210218163916-a377121e959e // indirect
+	github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646 // indirect
 	github.com/nicksnyder/go-i18n/v2 v2.4.1 // indirect
 	github.com/otiai10/gosseract v2.2.1+incompatible // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect

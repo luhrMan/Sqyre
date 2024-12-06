@@ -10,7 +10,7 @@ import (
 
 var path = "./internal/saved-macros/"
 
-func (m *macroTree) saveTreeToJsonFile(filename string) error {
+func (m *macro) saveTreeToJsonFile(filename string) error {
         // Marshal the action to JSON
         jsonData, err := json.MarshalIndent(m.root, "", "\t")
         if err != nil {
@@ -25,7 +25,7 @@ func (m *macroTree) saveTreeToJsonFile(filename string) error {
         return nil
 }
 
-func (m *macroTree) loadTreeFromJsonFile(filename string) error {
+func (m *macro) loadTreeFromJsonFile(filename string) error {
         log.Printf("loadTreeFromJsonFile: attempting to read file %v", filename)
         jsonData, err := os.ReadFile(path + filename)
         if err != nil {
