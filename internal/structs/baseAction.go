@@ -1,18 +1,18 @@
 package structs
 
-type BaseAction struct {
+type baseAction struct {
 	UID           string                  `json:"uid"`
 	Parent        AdvancedActionInterface `json:"-"`
-	NewBaseAction func()                  `json:"-"`
+	newBaseAction func()
 }
 
-func NewBaseAction() BaseAction {
-	return BaseAction{
+func newBaseAction() baseAction {
+	return baseAction{
 		UID: "temp uid",
 	}
 }
 
-func (a *BaseAction) UpdateBaseAction(uid string, parent AdvancedActionInterface) {
+func (a *baseAction) UpdateBaseAction(uid string, parent AdvancedActionInterface) {
 	a.SetUID(uid)
 	a.SetParent(parent)
 }

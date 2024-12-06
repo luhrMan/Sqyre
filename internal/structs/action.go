@@ -10,7 +10,7 @@ import (
 )
 
 type ActionInterface interface {
-	execute(ctx interface{}) error
+	Execute(ctx interface{}) error
 
 	GetUID() string
 	SetUID(string)
@@ -25,28 +25,28 @@ type ActionInterface interface {
 
 func (a *AdvancedAction) GetName() string                      { return a.Name }
 func (a *AdvancedAction) SetName(name string)                  { a.Name = name }
-func (a *BaseAction) GetUID() string                           { return a.UID }
-func (a *BaseAction) SetUID(uid string)                        { a.UID = uid }
-func (a *BaseAction) GetParent() AdvancedActionInterface       { return a.Parent }
-func (a *BaseAction) SetParent(action AdvancedActionInterface) { a.Parent = action }
-func (a *BaseAction) execute(ctx interface{}) error            { return nil }
-func (a *BaseAction) String() string                           { return "This is a BaseAction" }
+func (a *baseAction) GetUID() string                           { return a.UID }
+func (a *baseAction) SetUID(uid string)                        { a.UID = uid }
+func (a *baseAction) GetParent() AdvancedActionInterface       { return a.Parent }
+func (a *baseAction) SetParent(action AdvancedActionInterface) { a.Parent = action }
+func (a *baseAction) Execute(ctx interface{}) error            { return nil }
+func (a *baseAction) String() string                           { return "This is a baseAction" }
 
 //***************************************************************************************Wait
 
 type WaitAction struct {
-	BaseAction     //`json:"baseaction"`
+	baseAction     //`json:"baseaction"`
 	Time       int `json:"waittime"`
 }
 
 func NewWaitAction(time int) *WaitAction {
 	return &WaitAction{
-		BaseAction: NewBaseAction(),
+		baseAction: newBaseAction(),
 		Time:       time,
 	}
 }
 
-func (a *WaitAction) execute(ctx interface{}) error {
+func (a *WaitAction) Execute(ctx interface{}) error {
 	log.Printf("Waiting for %d milliseconds", a.Time)
 	robotgo.MilliSleep(a.Time)
 	return nil
@@ -63,18 +63,18 @@ func (a *WaitAction) GetBoundTime() binding.ExternalInt {
 // ***************************************************************************************Click
 
 type ClickAction struct {
-	BaseAction        //`json:"baseaction"`
+	baseAction        //`json:"baseaction"`
 	Button     string `json:"button"`
 }
 
 func NewClickAction(button string) *ClickAction {
 	return &ClickAction{
-		BaseAction: NewBaseAction(),
+		baseAction: newBaseAction(),
 		Button:     button,
 	}
 }
 
-func (a *ClickAction) execute(ctx interface{}) error {
+func (a *ClickAction) Execute(ctx interface{}) error {
 	log.Printf("%s click", a.Button)
 	robotgo.Click(a.Button)
 	return nil
@@ -87,19 +87,19 @@ func (a *ClickAction) String() string {
 // ***************************************************************************************Move
 
 type MoveAction struct {
-	BaseAction //`json:"baseaction"`
+	baseAction //`json:"baseaction"`
 	X, Y       int
 }
 
 func NewMoveAction(x, y int) *MoveAction {
 	return &MoveAction{
-		BaseAction: NewBaseAction(),
+		baseAction: newBaseAction(),
 		X:          x,
 		Y:          y,
 	}
 }
 
-func (a *MoveAction) execute(ctx interface{}) error {
+func (a *MoveAction) Execute(ctx interface{}) error {
 	//if (a.X == -1) && (a.Y == -1) {
 	if c, ok := ctx.(robotgo.Point); ok {
 		log.Printf("Moving mouse to ctx (%d, %d)", c.X, c.Y)
@@ -123,20 +123,20 @@ func (a *MoveAction) String() string {
 // ***************************************************************************************Key
 
 type KeyAction struct {
-	BaseAction        //`json:"baseaction"`
+	baseAction        //`json:"baseaction"`
 	Key        string `json:"key"`
 	State      string `json:"state"`
 }
 
 func NewKeyAction(key, state string) *KeyAction {
 	return &KeyAction{
-		BaseAction: NewBaseAction(),
+		baseAction: newBaseAction(),
 		Key:        key,
 		State:      state,
 	}
 }
 
-func (a *KeyAction) execute(ctx interface{}) error {
+func (a *KeyAction) Execute(ctx interface{}) error {
 	log.Printf("Key: %s %s", a.Key, a.State)
 	switch a.State {
 	case "Up":

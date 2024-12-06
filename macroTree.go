@@ -147,6 +147,117 @@ func (m *macroTree) createTree() {
 
 }
 
+func (u *ui) addActionToTree(actionType structs.ActionInterface) {
+        var (
+                selectedNode = u.mt.findNode(u.mt.root, selectedTreeItem)
+                action       structs.ActionInterface
+        )
+        switch actionType.(type) {
+        case *structs.WaitAction:
+                action = structs.NewWaitAction(time)
+        case *structs.MoveAction:
+                action = structs.NewMoveAction(moveX, moveY)
+        case *structs.ClickAction:
+                str := ""
+                if !button {
+                        str = "left"
+                } else {
+                        str = "right"
+                }
+                action = structs.NewClickAction(str)
+        case *structs.KeyAction:
+                str := ""
+                if !state {
+                        str = "down"
+                } else {
+                        str = "up"
+                }
+                action = structs.NewKeyAction(key, str)
+        case *structs.LoopAction:
+                action = structs.NewLoopAction(int(count), loopName, []structs.ActionInterface{})
+        case *structs.ImageSearchAction:
+                var t []string
+                for i, item := range imageSearchTargets {
+                        if item == true {
+                                t = append(t, i)
+                        }
+                }
+                action = structs.NewImageSearchAction(imageSearchName, []structs.ActionInterface{}, t, *structs.GetSearchBox(searchArea))
+        case *structs.OcrAction:
+                // n, _ := boundAdvancedActionName.Get()
+                // t, _ := boundOcrTarget.Get()
+                // s, _ := boundSearchArea.Get()
+                // action = &structs.OcrAction{
+                // 	SearchBox: *structs.GetSearchBox(s),
+                // 	Target:    t,
+                // 	AdvancedAction: structs.AdvancedAction{
+                // 		baseAction: structs.newBaseAction(),
+                // 		Name:       n,
+                // 	},
+                // }
+
+        }
+
+        if selectedNode == nil {
+                selectedNode = u.mt.root
+        }
+        if s, ok := selectedNode.(structs.AdvancedActionInterface); ok {
+                s.AddSubAction(action)
+        } else {
+                selectedNode.GetParent().AddSubAction(action)
+        }
+        u.mt.tree.Refresh()
+}
+
+func (u *ui) createUpdateButton() *widget.Button {
+        return widget.NewButton("Update", func() {
+                node := u.mt.findNode(u.mt.root, selectedTreeItem)
+                if selectedTreeItem == "" {
+                        log.Println("No node selected")
+                        return
+                }
+                og := node.String()
+                switch node := node.(type) {
+                case *structs.WaitAction:
+                        node.Time = time
+                case *structs.MoveAction:
+                        node.X = moveX
+                        node.Y = moveY
+                case *structs.ClickAction:
+                        if !button {
+                                node.Button = "left"
+                        } else {
+                                node.Button = "right"
+                        }
+                case *structs.KeyAction:
+                        node.Key = key
+                        if !state {
+                                node.State = "down"
+                        } else {
+                                node.State = "up"
+                        }
+                case *structs.LoopAction:
+                        node.Name = loopName
+                        node.Count = int(count)
+                case *structs.ImageSearchAction:
+                        var t []string
+                        for i, item := range imageSearchTargets {
+                                if item == true {
+                                        t = append(t, i)
+                                }
+                        }
+                        //                        t := boundSelectedItemsMap.Keys()
+                        node.Name = imageSearchName
+                        node.SearchBox = *structs.GetSearchBox(searchArea)
+                        node.Targets = t
+                }
+
+                fmt.Printf("Updated node: %+v from '%v' to '%v' \n", node.GetUID(), og, node)
+
+                u.mt.tree.Refresh()
+        })
+}
+
 func (u *ui) updateTreeOnselect() {
         //Set here, Get @ addActionToTree
         u.mt.tree.OnSelected = func(uid widget.TreeNodeID) {
@@ -186,138 +297,20 @@ func (u *ui) updateTreeOnselect() {
                         u.st.tabs.SelectIndex(4)
                 case *structs.ImageSearchAction:
                         u.st.boundImageSearchName.Set(node.Name)
-                        //                        boundSelectedItemsMap.Set(map[string]any{})
-                        //                        for _, t := range node.Targets {
-                        //                                boundSelectedItemsMap.SetValue(t, true)
-                        //                        }
-                        u.st.tabs.Items[5].
-                                Content.(*fyne.Container).
-                                Objects[0].(*fyne.Container).
-                                Objects[1].(*fyne.Container).
+                        for t := range imageSearchTargets {
+                                imageSearchTargets[t] = false
+                        }
+                        for _, t := range node.Targets {
+                                imageSearchTargets[t] = true
+                        }
+                        u.mt.tree.Refresh()
+                        u.st.tabs.Items[5]. //image search tab
+                                Content.(*fyne.Container). //settings border
+                                Objects[1].(*fyne.Container). //2nd grid with columns
+                                Objects[1].(*fyne.Container). //vbox
                                 Objects[1].(*widget.Select).SetSelected(node.SearchBox.Name)
+
                         u.st.tabs.SelectIndex(5)
-
                 }
         }
-}
-
-func (u *ui) addActionToTree(actionType structs.ActionInterface) {
-        var (
-                selectedNode = u.mt.findNode(u.mt.root, selectedTreeItem)
-                action       structs.ActionInterface
-        )
-        switch actionType.(type) {
-        case *structs.WaitAction:
-                t, _ := u.st.boundTime.Get()
-                action = structs.NewWaitAction(int(t))
-        case *structs.MoveAction:
-                x, _ := u.st.boundMoveX.Get()
-                y, _ := u.st.boundMoveY.Get()
-                action = structs.NewMoveAction(int(x), int(y))
-        case *structs.ClickAction:
-                str := ""
-                b, _ := u.st.boundButton.Get()
-                if !b {
-                        str = "left"
-                } else {
-                        str = "right"
-                }
-                action = structs.NewClickAction(str)
-        case *structs.KeyAction:
-                str := ""
-                k, _ := u.st.boundKey.Get()
-                s, _ := u.st.boundState.Get()
-                if !s {
-                        str = "down"
-                } else {
-                        str = "up"
-                }
-                action = structs.NewKeyAction(k, str)
-        case *structs.LoopAction:
-                n, _ := u.st.boundLoopName.Get()
-                c, _ := u.st.boundCount.Get()
-                action = structs.NewLoopAction(int(c), n, []structs.ActionInterface{})
-        case *structs.ImageSearchAction:
-                n, _ := u.st.boundImageSearchName.Get()
-                s, _ := u.st.boundSearchArea.Get()
-                //                t := boundSelectedItemsMap.Keys()
-                //                action = structs.NewImageSearchAction(n, []structs.ActionInterface{}, t, *structs.GetSearchBox(s))
-                action = structs.NewImageSearchAction(n, []structs.ActionInterface{}, []string{}, *structs.GetSearchBox(s))
-        case *structs.OcrAction:
-                // n, _ := boundAdvancedActionName.Get()
-                // t, _ := boundOcrTarget.Get()
-                // s, _ := boundSearchArea.Get()
-                // action = &structs.OcrAction{
-                // 	SearchBox: *structs.GetSearchBox(s),
-                // 	Target:    t,
-                // 	AdvancedAction: structs.AdvancedAction{
-                // 		BaseAction: structs.NewBaseAction(),
-                // 		Name:       n,
-                // 	},
-                // }
-
-        }
-
-        if selectedNode == nil {
-                selectedNode = u.mt.root
-        }
-        if s, ok := selectedNode.(structs.AdvancedActionInterface); ok {
-                s.AddSubAction(action)
-        } else {
-                selectedNode.GetParent().AddSubAction(action)
-        }
-        u.mt.tree.Refresh()
-}
-
-func (u *ui) createUpdateButton() *widget.Button {
-        return widget.NewButton("Update", func() {
-                node := u.mt.findNode(u.mt.root, selectedTreeItem)
-                if selectedTreeItem == "" {
-                        log.Println("No node selected")
-                        return
-                }
-                og := node.String()
-                switch node := node.(type) {
-                case *structs.WaitAction:
-                        t, _ := u.st.boundTime.Get()
-                        node.Time = t
-                case *structs.MoveAction:
-                        x, _ := u.st.boundMoveX.Get()
-                        y, _ := u.st.boundMoveY.Get()
-                        node.X = int(x)
-                        node.Y = int(y)
-                case *structs.ClickAction:
-                        b, _ := u.st.boundButton.Get()
-                        if !b {
-                                node.Button = "left"
-                        } else {
-                                node.Button = "right"
-                        }
-                case *structs.KeyAction:
-                        k, _ := u.st.boundKey.Get()
-                        s, _ := u.st.boundState.Get()
-                        node.Key = k
-                        if !s {
-                                node.State = "down"
-                        } else {
-                                node.State = "up"
-                        }
-                case *structs.LoopAction:
-                        n, _ := u.st.boundLoopName.Get()
-                        c, _ := u.st.boundCount.Get()
-                        node.Name = n
-                        node.Count = int(c)
-                case *structs.ImageSearchAction:
-                        n, _ := u.st.boundImageSearchName.Get()
-                        s, _ := u.st.boundSearchArea.Get()
-                        //                        t := boundSelectedItemsMap.Keys()
-                        node.Name = n
-                        node.SearchBox = *structs.GetSearchBox(s)
-                        //                        node.Targets = t
-                }
-
-                fmt.Printf("Updated node: %+v from '%v' to '%v' \n", node.GetUID(), og, node)
-
-                u.mt.tree.Refresh()
-        })
 }

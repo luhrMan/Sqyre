@@ -18,7 +18,7 @@ var iconFS embed.FS
 
 var Items structs.Items
 
-func LoadIconBytes() (map[string][]byte, error) {
+func LoadIconBytes() (*map[string][]byte, error) {
         dirPath := "resources/images/icons"
         icons := make(map[string][]byte)
         log.Printf("Loading Icon Bytes...")
@@ -42,17 +42,15 @@ func LoadIconBytes() (map[string][]byte, error) {
                 }
         }
 
-        return icons, nil
+        return &icons, nil
 }
 
 func BytesToFyneIcons() *map[string]*fyne.StaticResource {
-        iconBytes, _ := LoadIconBytes()
+        var iconBytes, _ = LoadIconBytes()
         icons := make(map[string]*fyne.StaticResource)
-        for k := range iconBytes {
-                //                path := k + ".png"
-                icons[k] = fyne.NewStaticResource(k, iconBytes[k])
+        for k, v := range *iconBytes {
+                icons[k] = fyne.NewStaticResource(k, v)
         }
-        log.Println(icons)
         return &icons
 }
 func CreateItemMaps() {

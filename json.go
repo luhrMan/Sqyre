@@ -129,13 +129,7 @@ func createActionFromMap(rawMap map[string]interface{}, parent structs.AdvancedA
                 }
                 action = structs.NewImageSearchAction("", []structs.ActionInterface{}, targets, createSearchBox(rawMap["searchbox"].(map[string]interface{})))
         case rawMap["texttarget"] != nil:
-                action = &structs.OcrAction{
-                        AdvancedAction: structs.AdvancedAction{
-                                BaseAction: structs.NewBaseAction(),
-                        },
-                        Target:    rawMap["texttarget"].(string),
-                        SearchBox: createSearchBox(rawMap["searchbox"].(map[string]interface{})),
-                }
+                action = structs.NewOcrAction("", []structs.ActionInterface{}, rawMap["texttarget"].(string), createSearchBox(rawMap["searchbox"].(map[string]interface{})))
         default:
                 //action = &structs.AdvancedAction{}
         }
@@ -145,7 +139,7 @@ func createActionFromMap(rawMap map[string]interface{}, parent structs.AdvancedA
         // 		action.UpdateBaseAction(uid, parent)
         // 	}
         // }
-        // Set BaseAction
+        // Set baseAction
         if baseActionMap, ok := rawMap["baseaction"].(map[string]interface{}); ok {
                 uid := baseActionMap["uid"].(string)
                 action.UpdateBaseAction(uid, parent)

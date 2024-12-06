@@ -13,7 +13,7 @@ import (
 func main() {
 	a := app.New()
 	w := a.NewWindow("Squire")
-
+	os.Setenv("FYNE_SCALE", "1.25")
 	u := &ui{win: w, mt: &macroTree{}, st: &settingsTabs{tabs: &container.AppTabs{}}}
 	icon, _ := fyne.LoadResourceFromPath("./internal/resources/images/Squire.png")
 	mainMenu := fyne.NewMainMenu(fyne.NewMenu("Settings"), u.createActionMenu())
