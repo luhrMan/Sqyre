@@ -5,6 +5,8 @@ import (
         "fmt"
         "fyne.io/fyne/v2/data/binding"
         "log"
+        "os"
+        "strings"
 
         "fyne.io/fyne/v2"
         "fyne.io/fyne/v2/container"
@@ -14,9 +16,10 @@ import (
 )
 
 type macroTree struct {
-        tree           *widget.Tree
-        root           *structs.LoopAction
-        boundMacroName binding.String
+        tree             *widget.Tree
+        root             *structs.LoopAction
+        boundMacroName   binding.String
+        boundGlobalDelay binding.Int
 }
 
 func (m *macroTree) moveNodeUp(selectedUID string) {
@@ -87,6 +90,18 @@ func (m *macroTree) executeActionTree() { //error
                 log.Println(err)
                 return
         }
+}
+
+func (m *macroTree) macroSelector() *widget.Select {
+        files, err := os.ReadDir("./internal/saved-macros")
+        if err != nil {
+                log.Fatal(err)
+        }
+        var macroList []string
+        for _, f := range files {
+                macroList = append(macroList, strings.TrimSuffix(f.Name(), ".json"))
+        }
+        return widget.NewSelect(macroList, func(s string) { m.loadTreeFromJsonFile(s + ".json") })
 }
 
 func (m *macroTree) createTree() {
