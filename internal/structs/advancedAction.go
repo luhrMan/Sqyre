@@ -1,7 +1,7 @@
 package structs
 
 import (
-	"Dark-And-Darker/utils"
+	"Dark-And-Darker/internal/utils"
 	"bytes"
 	"fmt"
 	"image"
@@ -14,10 +14,8 @@ import (
 
 	"gocv.io/x/gocv"
 
-	"fyne.io/fyne/v2/widget"
 	"github.com/go-vgo/robotgo"
 	"github.com/otiai10/gosseract/v2"
-	//"github.com/vcaesar/bitmap"
 )
 
 type AdvancedActionInterface interface {
@@ -28,14 +26,22 @@ type AdvancedActionInterface interface {
 
 	GetSubActions() []ActionInterface
 	AddSubAction(ActionInterface)
-	RemoveSubAction(ActionInterface, *widget.Tree)
-	RenameActions(*widget.Tree)
+	RemoveSubAction(ActionInterface)
+	RenameActions()
 }
 
 type AdvancedAction struct {
-	BaseAction                   //`json:"baseaction"`
+	baseAction                   //`json:"baseaction"`
 	Name       string            `json:"name"`
 	SubActions []ActionInterface `json:"subactions"`
+}
+
+func NewAdvancedAction(name string, subActions []ActionInterface) *AdvancedAction {
+	return &AdvancedAction{
+		baseAction: newBaseAction(),
+		Name:       name,
+		SubActions: subActions,
+	}
 }
 
 func (a *AdvancedAction) GetSubActions() []ActionInterface {
@@ -48,29 +54,32 @@ func (a *AdvancedAction) AddSubAction(action ActionInterface) {
 	action.UpdateBaseAction(uid, a)
 
 	a.SubActions = append(a.SubActions, action)
-	log.Printf("Added new action: %s", action.String())
+	log.Printf("Added new action: %v %s", uid, action.String())
 }
 
-func (a *AdvancedAction) RemoveSubAction(action ActionInterface, tree *widget.Tree) {
+func (a *AdvancedAction) RemoveSubAction(action ActionInterface) {
 	for i, c := range a.SubActions {
 		if c == action {
 			a.SubActions = append(a.SubActions[:i], a.SubActions[i+1:]...)
 			log.Printf("Removing %s", action.GetUID())
-			a.RenameActions(tree)
+			a.RenameActions()
 		}
 	}
 }
 
-func (a *AdvancedAction) RenameActions(tree *widget.Tree) {
+func (a *AdvancedAction) RenameActions() {
 	for i, child := range a.SubActions {
-		open := tree.IsBranchOpen(child.GetUID())
-		child.SetUID(fmt.Sprintf("%s.%d", a.UID, i+1))
-		if open {
-			tree.OpenBranch(child.GetUID())
-		}
 		if n, ok := child.(AdvancedActionInterface); ok {
-			n.RenameActions(tree)
+			n.RenameActions()
 		}
+		//		open := tree.IsBranchOpen(child.GetUID())
+		child.SetUID(fmt.Sprintf("%s.%d", a.UID, i+1))
+		//		if open {
+		//			tree.OpenBranch(child.GetUID())
+		//		}
+		//		if n, ok := child.(AdvancedActionInterface); ok {
+		//			n.RenameActions(tree)
+		//		}
 	}
 }
 
@@ -89,6 +98,13 @@ func (a *AdvancedAction) String() string { return "This is a Action with SubActi
 type LoopAction struct {
 	Count          int `json:"loopcount"`
 	AdvancedAction     //`json:"advancedaction"`
+}
+
+func NewLoopAction(count int, name string, subActions []ActionInterface) *LoopAction {
+	return &LoopAction{
+		AdvancedAction: *NewAdvancedAction(name, subActions),
+		Count:          count,
+	}
 }
 
 func (a *LoopAction) Execute(ctx interface{}) error {
@@ -115,15 +131,23 @@ type ImageSearchAction struct {
 	AdvancedAction           //`json:"advancedaction"`
 }
 
+func NewImageSearchAction(name string, subActions []ActionInterface, targets []string, searchbox SearchBox) *ImageSearchAction {
+	return &ImageSearchAction{
+		AdvancedAction: *NewAdvancedAction(name, subActions),
+		Targets:        targets,
+		SearchBox:      searchbox,
+	}
+}
+
 func (a *ImageSearchAction) Execute(ctx interface{}) error {
 	log.Printf("Image Search | %v in X1:%d Y1:%d X2:%d Y2:%d", a.Targets, a.SearchBox.LeftX, a.SearchBox.TopY, a.SearchBox.RightX, a.SearchBox.BottomY)
 	w := a.SearchBox.RightX - a.SearchBox.LeftX
 	h := a.SearchBox.BottomY - a.SearchBox.TopY
-
-	captureImg :=robotgo.CaptureImg(a.SearchBox.LeftX+utils.XOffset, a.SearchBox.TopY+utils.YOffset, w, h)
-	img, _  := gocv.ImageToMatRGB(captureImg)
-	gocv.IMWrite("./images/search-area.png", img)
-//	img := gocv.IMRead("./images/stash-area.png", gocv.IMReadColor)
+	pathDir := "./internal/resources/images/"
+	captureImg := robotgo.CaptureImg(a.SearchBox.LeftX+utils.XOffset, a.SearchBox.TopY+utils.YOffset, w, h)
+	img, _ := gocv.ImageToMatRGB(captureImg)
+	gocv.IMWrite(pathDir+"search-area.png", img)
+	//	img := gocv.IMRead("./images/stash-area.png", gocv.IMReadColor)
 	defer img.Close()
 	imgDraw := img.Clone()
 	defer imgDraw.Close()
@@ -131,12 +155,15 @@ func (a *ImageSearchAction) Execute(ctx interface{}) error {
 	var xSplit, ySplit int
 	switch {
 	case strings.Contains(a.SearchBox.Name, "Player"):
-		xSplit = 5; ySplit = 10
+		xSplit = 5
+		ySplit = 10
 	case strings.Contains(a.SearchBox.Name, "Stash Inventory"),
 		strings.Contains(a.SearchBox.Name, "Merchant Inventory"):
-		xSplit = 20; ySplit = 12
+		xSplit = 20
+		ySplit = 12
 	default:
-		xSplit = 1; ySplit = 1
+		xSplit = 1
+		ySplit = 1
 	}
 
 	var tolerance float32
@@ -167,7 +194,7 @@ func (a *ImageSearchAction) Execute(ctx interface{}) error {
 		go func(target string) {
 			defer wg.Done()
 
-			ip := "./images/icons/" + target + ".png"
+			ip := pathDir + "icons/" + target + ".png"
 
 			// Read the template
 			template := gocv.IMRead(ip, gocv.IMReadColor)
@@ -199,7 +226,7 @@ func (a *ImageSearchAction) Execute(ctx interface{}) error {
 				}(s)
 			}
 			colorMatchwg.Wait()
-//			 matches := findTemplateMatches(img, templateCut, 0.95)
+			//			 matches := findTemplateMatches(img, templateCut, 0.95)
 			sort.Slice(matches, func(i, j int) bool {
 				return matches[i].Y < matches[j].Y
 			})
@@ -217,13 +244,13 @@ func (a *ImageSearchAction) Execute(ctx interface{}) error {
 				match.Y,
 				match.X+xSize-(borderSize*2),
 				match.Y+ySize-(borderSize*2),
-				)
+			)
 			gocv.Rectangle(&imgDraw, rect, color.RGBA{R: 255, A: 255}, 1)
-			gocv.PutText(&imgDraw, i, image.Point{X: match.X, Y: match.Y+ySize}, gocv.FontHersheySimplex, 0.3, color.RGBA{G: 255, A: 255}, 1)
+			gocv.PutText(&imgDraw, i, image.Point{X: match.X, Y: match.Y + ySize}, gocv.FontHersheySimplex, 0.3, color.RGBA{G: 255, A: 255}, 1)
 		}
 		log.Printf("Results for %s: %v\n", i, matches)
 	}
-	gocv.IMWrite("./images/founditems.png", imgDraw)
+	gocv.IMWrite(pathDir+"founditems.png", imgDraw)
 	count := 0
 	//clicked := []robotgo.Point
 	for _, pointArr := range results {
@@ -253,6 +280,14 @@ type OcrAction struct {
 	Target         string    `json:"texttarget"`
 	SearchBox      SearchBox `json:"searchbox"`
 	AdvancedAction           //`json:"advancedaction"`
+}
+
+func NewOcrAction(name string, subActions []ActionInterface, target string, searchbox SearchBox) *OcrAction {
+	return &OcrAction{
+		AdvancedAction: *NewAdvancedAction(name, subActions),
+		Target:         target,
+		SearchBox:      searchbox,
+	}
 }
 
 func (a *OcrAction) Execute(ctx interface{}) error {
@@ -395,7 +430,7 @@ func checkHistogramMatch(img, template gocv.Mat, tolerance float32, target strin
 	normType := gocv.NormMinMax
 	compType := gocv.HistCmpBhattacharya
 
-	getColorChannels := func(image gocv.Mat, colorModel gocv.ColorConversionCode) gocv.Mat{
+	getColorChannels := func(image gocv.Mat, colorModel gocv.ColorConversionCode) gocv.Mat {
 		colors := gocv.NewMat()
 		gocv.CvtColor(image, &colors, colorModel)
 		return colors
@@ -406,9 +441,9 @@ func checkHistogramMatch(img, template gocv.Mat, tolerance float32, target strin
 		img1Channels := gocv.Split(img1)
 		img2Channels := gocv.Split(img2)
 		for c := range img1Channels {
-			gocv.CalcHist([]gocv.Mat{img1}, []int{c}, gocv.NewMat(), &img1Channels[c], []int{bins}, []float64{0,256}, false)
+			gocv.CalcHist([]gocv.Mat{img1}, []int{c}, gocv.NewMat(), &img1Channels[c], []int{bins}, []float64{0, 256}, false)
 			gocv.Normalize(img1Channels[c], &img1Channels[c], 0, 1, normType)
-			gocv.CalcHist([]gocv.Mat{img2}, []int{c}, gocv.NewMat(), &img2Channels[c], []int{bins}, []float64{0,256}, false)
+			gocv.CalcHist([]gocv.Mat{img2}, []int{c}, gocv.NewMat(), &img2Channels[c], []int{bins}, []float64{0, 256}, false)
 			gocv.Normalize(img2Channels[c], &img2Channels[c], 0, 1, normType)
 			comparisons[c] = gocv.CompareHist(img1Channels[c], img2Channels[c], compType)
 		}
@@ -421,11 +456,11 @@ func checkHistogramMatch(img, template gocv.Mat, tolerance float32, target strin
 		img2Channels := gocv.Split(img2)
 		for c := range img1Channels {
 			if c == 0 { //for hue, set range 0 - 180
-				gocv.CalcHist([]gocv.Mat{img1}, []int{c}, gocv.NewMat(), &img1Channels[c], []int{bins}, []float64{0,180}, false)
-				gocv.CalcHist([]gocv.Mat{img2}, []int{c}, gocv.NewMat(), &img2Channels[c], []int{bins}, []float64{0,180}, false)
+				gocv.CalcHist([]gocv.Mat{img1}, []int{c}, gocv.NewMat(), &img1Channels[c], []int{bins}, []float64{0, 180}, false)
+				gocv.CalcHist([]gocv.Mat{img2}, []int{c}, gocv.NewMat(), &img2Channels[c], []int{bins}, []float64{0, 180}, false)
 			} else {
-				gocv.CalcHist([]gocv.Mat{img1}, []int{c}, gocv.NewMat(), &img1Channels[c], []int{bins}, []float64{0,256}, false)
-				gocv.CalcHist([]gocv.Mat{img2}, []int{c}, gocv.NewMat(), &img2Channels[c], []int{bins}, []float64{0,256}, false)
+				gocv.CalcHist([]gocv.Mat{img1}, []int{c}, gocv.NewMat(), &img1Channels[c], []int{bins}, []float64{0, 256}, false)
+				gocv.CalcHist([]gocv.Mat{img2}, []int{c}, gocv.NewMat(), &img2Channels[c], []int{bins}, []float64{0, 256}, false)
 			}
 			gocv.Normalize(img1Channels[c], &img1Channels[c], 0, 1, normType)
 			gocv.Normalize(img2Channels[c], &img2Channels[c], 0, 1, normType)
@@ -454,7 +489,7 @@ func checkHistogramMatch(img, template gocv.Mat, tolerance float32, target strin
 
 	if
 	//	simGray < 0.06 &&
-		simBGR[0] < tolerance &&
+	simBGR[0] < tolerance &&
 		simBGR[1] < tolerance &&
 		simBGR[2] < tolerance &&
 		simHSV[0] < tolerance &&
@@ -463,14 +498,14 @@ func checkHistogramMatch(img, template gocv.Mat, tolerance float32, target strin
 		simLAB[0] < tolerance &&
 		simLAB[1] < tolerance &&
 		simLAB[2] < tolerance {
-	log.Printf( "target: %v gray: %.4f\n" +
-		"l: %.4f || a: %.4f || b: %.4f\n" +
-		"hue: %.4f || sat: %.4f || val: %.4f\n" +
-		"blue: %.4f || green: %.4f || red: %.4f",
-		target, simGray[0],
-		simLAB[0], simLAB[1], simLAB[2],
-		simHSV[0], simHSV[1], simHSV[2],
-		simBGR[0], simBGR[1], simBGR[2])
+		log.Printf("target: %v gray: %.4f\n"+
+			"l: %.4f || a: %.4f || b: %.4f\n"+
+			"hue: %.4f || sat: %.4f || val: %.4f\n"+
+			"blue: %.4f || green: %.4f || red: %.4f",
+			target, simGray[0],
+			simLAB[0], simLAB[1], simLAB[2],
+			simHSV[0], simHSV[1], simHSV[2],
+			simBGR[0], simBGR[1], simBGR[2])
 		return robotgo.Point{X: img.Size()[0], Y: img.Size()[1]}
 	} else {
 		return robotgo.Point{}
@@ -486,7 +521,7 @@ func findTemplateMatches(img, template gocv.Mat, threshold float32) []robotgo.Po
 	mask := gocv.NewMat()
 	defer mask.Close()
 
-//	region := template.Region(image.Rect(0, 0, 25, 25))
+	//	region := template.Region(image.Rect(0, 0, 25, 25))
 
 	//method 5 works best
 	gocv.MatchTemplate(img, template, &result, 5, mask)
