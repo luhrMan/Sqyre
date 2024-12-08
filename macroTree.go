@@ -3,7 +3,6 @@ package main
 import (
 	"Squire/internal/actions"
 	"Squire/internal/structs"
-	"fmt"
 	"log"
 	"os"
 	"strings"
@@ -100,15 +99,23 @@ func (m *macro) executeActionTree() { //error
 }
 
 func (m *macro) createSelect() {
-	files, err := os.ReadDir("./internal/saved-macros")
-	if err != nil {
-		log.Fatal(err)
-	}
 	var macroList []string
-	for _, f := range files {
-		macroList = append(macroList, strings.TrimSuffix(f.Name(), ".json"))
+
+	getMacroList := func() []string {
+		var list []string
+		files, err := os.ReadDir("./internal/saved-macros")
+		if err != nil {
+			log.Fatal(err)
+		}
+		for _, f := range files {
+			list = append(list, strings.TrimSuffix(f.Name(), ".json"))
+		}
+		return list
 	}
+
+	macroList = getMacroList()
 	m.sel = xwidget.NewCompletionEntry(macroList)
+	m.sel.ActionItem = widget.NewButtonWithIcon("", theme.ViewRefreshIcon(), func() { macroList = getMacroList() })
 	m.sel.OnSubmitted = func(s string) { m.loadTreeFromJsonFile(s + ".json") }
 	m.sel.OnChanged = func(s string) {
 		var matches []string
@@ -244,55 +251,6 @@ func (u *ui) addActionToTree(actionType actions.ActionInterface) {
 		selectedNode.GetParent().AddSubAction(action)
 	}
 	u.m.tree.Refresh()
-}
-
-func (u *ui) createUpdateButton() *widget.Button {
-	return widget.NewButton("Update", func() {
-		node := u.m.findNode(u.m.root, selectedTreeItem)
-		if selectedTreeItem == "" {
-			log.Println("No node selected")
-			return
-		}
-		og := node.String()
-		switch node := node.(type) {
-		case *actions.Wait:
-			node.Time = time
-		case *actions.Move:
-			node.X = moveX
-			node.Y = moveY
-		case *actions.Click:
-			if !button {
-				node.Button = "left"
-			} else {
-				node.Button = "right"
-			}
-		case *actions.Key:
-			node.Key = key
-			if !state {
-				node.State = "down"
-			} else {
-				node.State = "up"
-			}
-		case *actions.Loop:
-			node.Name = loopName
-			node.Count = int(count)
-		case *actions.ImageSearch:
-			var t []string
-			for i, item := range imageSearchTargets {
-				if item {
-					t = append(t, i)
-				}
-			}
-			//                        t := boundSelectedItemsMap.Keys()
-			node.Name = imageSearchName
-			node.SearchBox = *structs.GetSearchBox(searchArea)
-			node.Targets = t
-		}
-
-		fmt.Printf("Updated node: %+v from '%v' to '%v' \n", node.GetUID(), og, node)
-
-		u.m.tree.Refresh()
-	})
 }
 
 func (u *ui) updateTreeOnselect() {

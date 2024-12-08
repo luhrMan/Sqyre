@@ -10,6 +10,7 @@ import (
 	"log"
 
 	"fyne.io/fyne/v2/data/binding"
+	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
 	_ "fyne.io/x/fyne/widget"
 
@@ -89,8 +90,6 @@ func (u *ui) LoadMainContent() *fyne.Container {
 
 	// searchAreaSelector.SetSelected(searchAreaSelector.Options[0])
 
-	settingsLayout := container.NewBorder(nil, u.createUpdateButton(), nil, nil, u.st.tabs)
-
 	//        boundMacroNameEntry := widget.NewEntryWithData(u.m.boundMacroName)
 
 	// boundGlobalDelayEntry := widget.NewEntryWithData(binding.IntToString(u.m.boundGlobalDelay))
@@ -111,7 +110,7 @@ func (u *ui) LoadMainContent() *fyne.Container {
 		nil,
 		u.m.tree,
 	)
-	mainLayout := container.NewBorder(nil, nil, settingsLayout, nil, macroLayout)
+	mainLayout := container.NewBorder(nil, nil, u.st.tabs, nil, macroLayout)
 
 	u.m.loadTreeFromJsonFile("Currency Testing.json")
 	return mainLayout
@@ -290,7 +289,12 @@ func (u *ui) createMacroToolbar() *widget.Toolbar {
 		}),
 		widget.NewToolbarAction(theme.DocumentSaveIcon(), func() {
 			err := u.m.saveTreeToJsonFile(u.m.sel.Text)
-			log.Printf("createSaveSettings(): %v", err)
+			if err != nil {
+				dialog.ShowError(err, u.win)
+				log.Printf("saveTreeToJsonFile(): %v", err)
+			} else {
+				dialog.ShowInformation("File Saved Successfully", u.m.sel.Text+".json"+"\nPlease refresh the list.", u.win)
+			}
 		}),
 	)
 	return tb

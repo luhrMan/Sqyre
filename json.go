@@ -12,13 +12,14 @@ import (
 var path = "./internal/saved-macros/"
 
 func (m *macro) saveTreeToJsonFile(filename string) error {
-	// Marshal the action to JSON
+	if filename == "" {
+		return fmt.Errorf("cannot save empty filename")
+	}
 	jsonData, err := json.MarshalIndent(m.root, "", "\t")
 	if err != nil {
 		return fmt.Errorf("error marshalling tree: %v", err)
 	}
 	filepath := path + filename + ".json"
-	// Write the JSON data to the file
 	err = os.WriteFile(filepath, jsonData, 0644)
 	if err != nil {
 		return fmt.Errorf("error writing to file: %v", err)
