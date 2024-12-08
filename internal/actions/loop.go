@@ -1,7 +1,7 @@
 package actions
 
 import (
-        "Dark-And-Darker/internal/utils"
+        "Squire/internal/utils"
         "fmt"
 )
 

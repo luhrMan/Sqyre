@@ -1,7 +1,7 @@
 package internal
 
 import (
-        "Dark-And-Darker/internal/structs"
+        "Squire/internal/structs"
         "embed"
         _ "embed"
         "encoding/json"
