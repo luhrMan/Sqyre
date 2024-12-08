@@ -1,14 +1,14 @@
 package main
 
 import (
-        "Dark-And-Darker/internal"
-        "Dark-And-Darker/internal/actions"
-        "Dark-And-Darker/internal/gui/custom_widgets"
-        "Dark-And-Darker/internal/utils"
+        "Squire/internal"
+        "Squire/internal/actions"
+        "Squire/internal/gui/custom_widgets"
+        "Squire/internal/utils"
         "fyne.io/fyne/v2/data/binding"
         "fyne.io/fyne/v2/layout"
         _ "fyne.io/x/fyne/widget"
-        "Dark-And-Darker/internal/structs"
+        "Squire/internal/structs"
         "log"
 
         "fyne.io/fyne/v2"

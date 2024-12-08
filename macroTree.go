@@ -1,8 +1,8 @@
 package main
 
 import (
-        "Dark-And-Darker/internal/actions"
-        "Dark-And-Darker/internal/structs"
+        "Squire/internal/actions"
+        "Squire/internal/structs"
         "fmt"
         "fyne.io/fyne/v2/data/binding"
         xwidget "fyne.io/x/fyne/widget"
