@@ -1,4 +1,4 @@
-module Dark-And-Darker
+module Squire
 
 go 1.22.0
 

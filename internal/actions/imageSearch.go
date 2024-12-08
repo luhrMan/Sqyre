@@ -1,8 +1,8 @@
 package actions
 
 import (
-        "Dark-And-Darker/internal/structs"
-        "Dark-And-Darker/internal/utils"
+        "Squire/internal/structs"
+        "Squire/internal/utils"
         "fmt"
         "github.com/go-vgo/robotgo"
         "gocv.io/x/gocv"
