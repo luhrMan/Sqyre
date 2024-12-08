@@ -18,7 +18,7 @@ func (u *ui) createItemsCheckTree() *widget.Tree {
 		itemsStrMap = internal.Items.GetItemsMapAsStringsMap()
 		categories  = make([]string, 0, len(itemsStrMap))
 	)
-
+	
 	for category := range itemsStrMap {
 		categories = append(categories, category)
 	}
