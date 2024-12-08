@@ -2,6 +2,7 @@ package main
 
 import (
         "Dark-And-Darker/internal"
+        "Dark-And-Darker/internal/actions"
         "Dark-And-Darker/internal/gui/custom_widgets"
         "Dark-And-Darker/internal/utils"
         "fyne.io/fyne/v2/data/binding"
@@ -85,8 +86,11 @@ func (u *ui) LoadMainContent() *fyne.Container {
         u.m.createMacroSelect()
 
         // searchAreaSelector.SetSelected(searchAreaSelector.Options[0])
+
         settingsLayout := container.NewBorder(nil, u.createUpdateButton(), nil, nil, u.st.tabs)
+
         //        boundMacroNameEntry := widget.NewEntryWithData(u.m.boundMacroName)
+
         boundGlobalDelayEntry := widget.NewEntryWithData(binding.IntToString(u.m.boundGlobalDelay))
 
         macroLayout := container.NewBorder(
@@ -237,14 +241,14 @@ func (u *ui) createActionMenu() *fyne.Menu {
         advancedActionsSubMenu := fyne.NewMenuItem("Advanced Actions", nil)
         advancedActionsSubMenu.ChildMenu = fyne.NewMenu("")
 
-        waitActionMenuItem := fyne.NewMenuItem("Wait", func() { u.addActionToTree(&structs.WaitAction{}) })
-        mouseMoveActionMenuItem := fyne.NewMenuItem("Mouse Move", func() { u.addActionToTree(&structs.MoveAction{}) })
-        clickActionMenuItem := fyne.NewMenuItem("Click", func() { u.addActionToTree(&structs.ClickAction{}) })
-        keyActionMenuItem := fyne.NewMenuItem("Key", func() { u.addActionToTree(&structs.KeyAction{}) })
+        waitActionMenuItem := fyne.NewMenuItem("Wait", func() { u.addActionToTree(&actions.Wait{}) })
+        mouseMoveActionMenuItem := fyne.NewMenuItem("Mouse Move", func() { u.addActionToTree(&actions.Move{}) })
+        clickActionMenuItem := fyne.NewMenuItem("Click", func() { u.addActionToTree(&actions.Click{}) })
+        keyActionMenuItem := fyne.NewMenuItem("Key", func() { u.addActionToTree(&actions.Key{}) })
 
-        loopActionMenuItem := fyne.NewMenuItem("Loop", func() { u.addActionToTree(&structs.LoopAction{}) })
-        imageSearchActionMenuItem := fyne.NewMenuItem("Image Search", func() { u.addActionToTree(&structs.ImageSearchAction{}) })
-        ocrActionMenuItem := fyne.NewMenuItem("OCR", func() { u.addActionToTree(&structs.OcrAction{}) })
+        loopActionMenuItem := fyne.NewMenuItem("Loop", func() { u.addActionToTree(&actions.Loop{}) })
+        imageSearchActionMenuItem := fyne.NewMenuItem("Image Search", func() { u.addActionToTree(&actions.ImageSearch{}) })
+        ocrActionMenuItem := fyne.NewMenuItem("OCR", func() { u.addActionToTree(&actions.Ocr{}) })
 
         ocrActionMenuItem.Icon, _ = fyne.LoadResourceFromPath("./internal/resources/images/Squire.png")
 

@@ -16,6 +16,8 @@ var itemsEmbed []byte
 //go:embed resources/images/icons/*
 var iconFS embed.FS
 
+var icons *map[string]*fyne.StaticResource
+
 var Items structs.Items
 
 func LoadIconBytes() (*map[string][]byte, error) {

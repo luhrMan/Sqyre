@@ -1,6 +1,7 @@
 package main
 
 import (
+        "Dark-And-Darker/internal/actions"
         "Dark-And-Darker/internal/structs"
         "fmt"
         "fyne.io/fyne/v2/data/binding"
@@ -18,7 +19,7 @@ import (
 
 type macro struct {
         tree *widget.Tree
-        root *structs.LoopAction
+        root *actions.Loop
 
         sel *xwidget.CompletionEntry
         dt  *container.DocTabs
@@ -74,11 +75,11 @@ func (m *macro) moveNodeDown(selectedUID string) {
         }
 }
 
-func (m *macro) findNode(node structs.ActionInterface, uid string) structs.ActionInterface {
+func (m *macro) findNode(node actions.ActionInterface, uid string) actions.ActionInterface {
         if node.GetUID() == uid {
                 return node
         }
-        if parent, ok := node.(structs.AdvancedActionInterface); ok {
+        if parent, ok := node.(actions.AdvancedActionInterface); ok {
                 for _, child := range parent.GetSubActions() {
                         if found := m.findNode(child, uid); found != nil {
                                 return found
@@ -108,8 +109,8 @@ func (m *macro) createMacroSelect() {
         }
         m.sel = xwidget.NewCompletionEntry(macroList)
         m.sel.OnSubmitted = func(s string) { m.loadTreeFromJsonFile(s + ".json") }
-        m.sel.
-                m.sel.OnChanged = func(s string) {
+        //        m.sel.
+        m.sel.OnChanged = func(s string) {
                 //                if len(s) == 0 {
                 //                        m.sel.HideCompletion()
                 //                        return
@@ -132,7 +133,7 @@ func (m *macro) createMacroSelect() {
 }
 
 func (m *macro) createTree() {
-        m.root = structs.NewLoopAction(1, "root", []structs.ActionInterface{})
+        m.root = actions.NewLoop(1, "root", []actions.ActionInterface{})
         m.root.SetUID("")
 
         m.tree = widget.NewTree(
@@ -142,7 +143,7 @@ func (m *macro) createTree() {
                                 return []string{}
                         }
 
-                        if aa, ok := node.(structs.AdvancedActionInterface); ok {
+                        if aa, ok := node.(actions.AdvancedActionInterface); ok {
                                 sa := aa.GetSubActions()
                                 childIDs := make([]string, len(sa))
                                 for i, child := range sa {
@@ -155,7 +156,7 @@ func (m *macro) createTree() {
                 },
                 func(uid string) bool {
                         node := m.findNode(m.root, uid)
-                        _, ok := node.(structs.AdvancedActionInterface)
+                        _, ok := node.(actions.AdvancedActionInterface)
                         return node != nil && ok
                 },
                 func(branch bool) fyne.CanvasObject {
@@ -189,51 +190,51 @@ func (m *macro) createTree() {
 
 }
 
-func (u *ui) addActionToTree(actionType structs.ActionInterface) {
+func (u *ui) addActionToTree(actionType actions.ActionInterface) {
         var (
                 selectedNode = u.m.findNode(u.m.root, selectedTreeItem)
-                action       structs.ActionInterface
+                action       actions.ActionInterface
         )
         switch actionType.(type) {
-        case *structs.WaitAction:
-                action = structs.NewWaitAction(time)
-        case *structs.MoveAction:
-                action = structs.NewMoveAction(moveX, moveY)
-        case *structs.ClickAction:
+        case *actions.Wait:
+                action = actions.NewWait(time)
+        case *actions.Move:
+                action = actions.NewMove(moveX, moveY)
+        case *actions.Click:
                 str := ""
                 if !button {
                         str = "left"
                 } else {
                         str = "right"
                 }
-                action = structs.NewClickAction(str)
-        case *structs.KeyAction:
+                action = actions.NewClick(str)
+        case *actions.Key:
                 str := ""
                 if !state {
                         str = "down"
                 } else {
                         str = "up"
                 }
-                action = structs.NewKeyAction(key, str)
-        case *structs.LoopAction:
-                action = structs.NewLoopAction(int(count), loopName, []structs.ActionInterface{})
-        case *structs.ImageSearchAction:
+                action = actions.NewKey(key, str)
+        case *actions.Loop:
+                action = actions.NewLoop(int(count), loopName, []actions.ActionInterface{})
+        case *actions.ImageSearch:
                 var t []string
                 for i, item := range imageSearchTargets {
                         if item == true {
                                 t = append(t, i)
                         }
                 }
-                action = structs.NewImageSearchAction(imageSearchName, []structs.ActionInterface{}, t, *structs.GetSearchBox(searchArea))
-        case *structs.OcrAction:
+                action = actions.NewImageSearch(imageSearchName, []actions.ActionInterface{}, t, *structs.GetSearchBox(searchArea))
+        case *actions.Ocr:
                 // n, _ := boundAdvancedActionName.Get()
                 // t, _ := boundOcrTarget.Get()
                 // s, _ := boundSearchArea.Get()
-                // action = &structs.OcrAction{
-                // 	SearchBox: *structs.GetSearchBox(s),
+                // action = &actions.OcrAction{
+                // 	SearchBox: *actions.GetSearchBox(s),
                 // 	Target:    t,
-                // 	AdvancedAction: structs.AdvancedAction{
-                // 		baseAction: structs.newBaseAction(),
+                // 	advanced: actions.advancedAction{
+                // 		base: actions.newBaseAction(),
                 // 		Name:       n,
                 // 	},
                 // }
@@ -243,7 +244,7 @@ func (u *ui) addActionToTree(actionType structs.ActionInterface) {
         if selectedNode == nil {
                 selectedNode = u.m.root
         }
-        if s, ok := selectedNode.(structs.AdvancedActionInterface); ok {
+        if s, ok := selectedNode.(actions.AdvancedActionInterface); ok {
                 s.AddSubAction(action)
         } else {
                 selectedNode.GetParent().AddSubAction(action)
@@ -260,28 +261,28 @@ func (u *ui) createUpdateButton() *widget.Button {
                 }
                 og := node.String()
                 switch node := node.(type) {
-                case *structs.WaitAction:
+                case *actions.Wait:
                         node.Time = time
-                case *structs.MoveAction:
+                case *actions.Move:
                         node.X = moveX
                         node.Y = moveY
-                case *structs.ClickAction:
+                case *actions.Click:
                         if !button {
                                 node.Button = "left"
                         } else {
                                 node.Button = "right"
                         }
-                case *structs.KeyAction:
+                case *actions.Key:
                         node.Key = key
                         if !state {
                                 node.State = "down"
                         } else {
                                 node.State = "up"
                         }
-                case *structs.LoopAction:
+                case *actions.Loop:
                         node.Name = loopName
                         node.Count = int(count)
-                case *structs.ImageSearchAction:
+                case *actions.ImageSearch:
                         var t []string
                         for i, item := range imageSearchTargets {
                                 if item == true {
@@ -305,21 +306,21 @@ func (u *ui) updateTreeOnselect() {
         u.m.tree.OnSelected = func(uid widget.TreeNodeID) {
                 selectedTreeItem = uid
                 switch node := u.m.findNode(u.m.root, uid).(type) {
-                case *structs.WaitAction:
+                case *actions.Wait:
                         u.st.boundTime.Set(node.Time)
                         u.st.tabs.SelectIndex(0)
-                case *structs.MoveAction:
+                case *actions.Move:
                         u.st.boundMoveX.Set(node.X)
                         u.st.boundMoveY.Set(node.Y)
                         u.st.tabs.SelectIndex(1)
-                case *structs.ClickAction:
+                case *actions.Click:
                         if node.Button == "left" {
                                 u.st.boundButton.Set(false)
                         } else {
                                 u.st.boundButton.Set(true)
                         }
                         u.st.tabs.SelectIndex(2)
-                case *structs.KeyAction:
+                case *actions.Key:
                         key = node.Key
                         u.st.tabs.Items[3].
                                 Content.(*fyne.Container).
@@ -333,11 +334,11 @@ func (u *ui) updateTreeOnselect() {
                         }
                         u.st.tabs.SelectIndex(3)
 
-                case *structs.LoopAction:
+                case *actions.Loop:
                         u.st.boundLoopName.Set(node.Name)
                         u.st.boundCount.Set(float64(node.Count))
                         u.st.tabs.SelectIndex(4)
-                case *structs.ImageSearchAction:
+                case *actions.ImageSearch:
                         u.st.boundImageSearchName.Set(node.Name)
                         for t := range imageSearchTargets {
                                 imageSearchTargets[t] = false

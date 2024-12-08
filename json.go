@@ -1,6 +1,7 @@
 package main
 
 import (
+        "Dark-And-Darker/internal/actions"
         "Dark-And-Darker/internal/structs"
         "encoding/json"
         "fmt"
@@ -31,11 +32,11 @@ func (m *macro) loadTreeFromJsonFile(filename string) error {
         if err != nil {
                 return fmt.Errorf("error reading file: %v", err)
         }
-        var result structs.ActionInterface
+        var result actions.ActionInterface
         //err = json.Unmarshal(jsonData, root)
-        m.root.SubActions = []structs.ActionInterface{}
+        m.root.SubActions = []actions.ActionInterface{}
         result, err = UnmarshalJSON(jsonData)
-        if s, ok := result.(*structs.LoopAction); ok { // fill root / tree
+        if s, ok := result.(*actions.Loop); ok { // fill root / tree
                 for _, sa := range s.SubActions {
                         m.root.AddSubAction(sa)
                 }
@@ -47,7 +48,7 @@ func (m *macro) loadTreeFromJsonFile(filename string) error {
         return err
 }
 
-// func encodeToGobFile(data *structs.LoopAction, filename string) {
+// func encodeToGobFile(data *actions.LoopAction, filename string) {
 // 	file, err := os.Create(filename)
 // 	if err != nil {
 // 		fmt.Println("Error creating file:", err)
@@ -65,30 +66,30 @@ func (m *macro) loadTreeFromJsonFile(filename string) error {
 // 	fmt.Println("Data encoded and saved to", filename)
 // }
 
-// func decodeFromGobFile(filename string) structs.LoopAction {
+// func decodeFromGobFile(filename string) actions.LoopAction {
 
 // 	// Open file for reading
 // 	file, err := os.Open(filename)
 // 	if err != nil {
 // 		fmt.Println("Error opening file:", err)
-// 		// return structs.LoopAction{}
+// 		// return actions.LoopAction{}
 // 	}
 // 	defer file.Close()
 
 // 	// Create a new decoder and decode the data
-// 	var data structs.LoopAction
+// 	var data actions.LoopAction
 // 	decoder := gob.NewDecoder(file)
 
 // 	if err := decoder.Decode(&data); err != nil {
 // 		fmt.Println("Error decoding data:", err)
-// 		// return structs.LoopAction{}
+// 		// return actions.LoopAction{}
 // 	}
 
 // 	return data
 // }
 
 // // **** NEW ATTEMPT
-func UnmarshalJSON(data []byte) (structs.ActionInterface, error) {
+func UnmarshalJSON(data []byte) (actions.ActionInterface, error) {
         var rawMap map[string]interface{}
         err := json.Unmarshal(data, &rawMap)
         if err != nil {
@@ -98,9 +99,9 @@ func UnmarshalJSON(data []byte) (structs.ActionInterface, error) {
         return createActionFromMap(rawMap, nil)
 }
 
-func createActionFromMap(rawMap map[string]interface{}, parent structs.AdvancedActionInterface) (structs.ActionInterface, error) {
+func createActionFromMap(rawMap map[string]interface{}, parent actions.AdvancedActionInterface) (actions.ActionInterface, error) {
         log.Println(rawMap)
-        var action structs.ActionInterface
+        var action actions.ActionInterface
         // if parent != nil {
 
         // } else {
@@ -109,29 +110,29 @@ func createActionFromMap(rawMap map[string]interface{}, parent structs.AdvancedA
         // }
         switch {
         case rawMap["loopcount"] != nil:
-                action = structs.NewLoopAction(int(rawMap["loopcount"].(float64)), "", []structs.ActionInterface{})
+                action = actions.NewLoop(int(rawMap["loopcount"].(float64)), "", []actions.ActionInterface{})
                 // if baseActionMap, ok := rawMap["baseaction"].(map[string]interface{}); ok {
                 // 	uid := baseActionMap["uid"].(string)
                 // 	action.UpdateBaseAction(uid, parent)
                 // }
         case rawMap["waittime"] != nil:
-                action = structs.NewWaitAction(int(rawMap["waittime"].(float64)))
+                action = actions.NewWait(int(rawMap["waittime"].(float64)))
         case rawMap["button"] != nil:
-                action = structs.NewClickAction(rawMap["button"].(string))
+                action = actions.NewClick(rawMap["button"].(string))
         case rawMap["X"] != nil && rawMap["Y"] != nil:
-                action = structs.NewMoveAction(int(rawMap["X"].(float64)), int(rawMap["Y"].(float64)))
+                action = actions.NewMove(int(rawMap["X"].(float64)), int(rawMap["Y"].(float64)))
         case rawMap["key"] != nil:
-                action = structs.NewKeyAction(rawMap["key"].(string), rawMap["state"].(string))
+                action = actions.NewKey(rawMap["key"].(string), rawMap["state"].(string))
         case rawMap["imagetargets"] != nil:
                 targets := make([]string, 0)
                 for _, t := range rawMap["imagetargets"].([]interface{}) {
                         targets = append(targets, t.(string))
                 }
-                action = structs.NewImageSearchAction("", []structs.ActionInterface{}, targets, createSearchBox(rawMap["searchbox"].(map[string]interface{})))
+                action = actions.NewImageSearch("", []actions.ActionInterface{}, targets, createSearchBox(rawMap["searchbox"].(map[string]interface{})))
         case rawMap["texttarget"] != nil:
-                action = structs.NewOcrAction("", []structs.ActionInterface{}, rawMap["texttarget"].(string), createSearchBox(rawMap["searchbox"].(map[string]interface{})))
+                action = actions.NewOcr("", []actions.ActionInterface{}, rawMap["texttarget"].(string), createSearchBox(rawMap["searchbox"].(map[string]interface{})))
         default:
-                //action = &structs.AdvancedAction{}
+                //action = &actions.advancedAction{}
         }
         // if advActMap, ok := rawMap["advancedaction"].(map[string]interface{}); ok {
         // 	if baseActionMap, ok := advActMap["baseaction"].(map[string]interface{}); ok {
@@ -147,8 +148,8 @@ func createActionFromMap(rawMap map[string]interface{}, parent structs.AdvancedA
         if uid, ok := rawMap["uid"].(string); ok {
                 action.SetUID(uid)
         }
-        // Handle AdvancedAction fields
-        if advAction, ok := action.(structs.AdvancedActionInterface); ok {
+        // Handle advancedAction fields
+        if advAction, ok := action.(actions.AdvancedActionInterface); ok {
                 log.Println("Advanced Action unmarshal")
                 if name, ok := rawMap["name"].(string); ok {
                         advAction.SetName(name)
@@ -156,7 +157,7 @@ func createActionFromMap(rawMap map[string]interface{}, parent structs.AdvancedA
 
                 if subActionsRaw, ok := rawMap["subactions"].([]interface{}); ok {
                         log.Println("SubActions unmarshal")
-                        // var subActionList []structs.ActionInterface
+                        // var subActionList []actions.ActionInterface
                         for _, subActionRaw := range subActionsRaw {
                                 subAction, err := createActionFromMap(subActionRaw.(map[string]interface{}), advAction)
                                 if err != nil {
