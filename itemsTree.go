@@ -2,13 +2,14 @@ package main
 
 import (
 	"Squire/internal"
+	"log"
+	"strconv"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
-	"log"
-	"strconv"
 )
 
 func (u *ui) createItemsCheckTree() *widget.Tree {
@@ -17,17 +18,19 @@ func (u *ui) createItemsCheckTree() *widget.Tree {
 		icons       = *internal.BytesToFyneIcons()
 		itemsStrMap = internal.Items.GetItemsMapAsStringsMap()
 		categories  = make([]string, 0, len(itemsStrMap))
+		tree        = &widget.Tree{}
 	)
-	
+
 	for category := range itemsStrMap {
 		categories = append(categories, category)
 	}
 
 	setAllItemsInCategory := func(category string, b bool) bool {
 		flip := true
+		defer tree.Refresh()
 		if b {
 			for _, item := range itemsStrMap[category] {
-				if imageSearchTargets[item] == false {
+				if !imageSearchTargets[item] {
 					flip = false
 				}
 				imageSearchTargets[item] = true
@@ -42,71 +45,74 @@ func (u *ui) createItemsCheckTree() *widget.Tree {
 		return false
 	}
 
-	tree := widget.NewTree(
-		func(id widget.TreeNodeID) []widget.TreeNodeID {
-			if id == "" {
-				return categories
-			}
-			if is, exists := itemsStrMap[id]; exists {
-				return is
-			}
-			return nil
-		},
-		func(id widget.TreeNodeID) bool {
-			return id == "" || itemsStrMap[id] != nil
-		},
-		func(b bool) fyne.CanvasObject {
-			if b {
-				return container.NewHBox(
-					widget.NewLabel(""),
-					widget.NewCheck("placeholder", func(b bool) {}),
+	tree.ChildUIDs = func(id widget.TreeNodeID) []widget.TreeNodeID {
+		if id == "" {
+			return categories
+		}
+		if is, exists := itemsStrMap[id]; exists {
+			return is
+		}
+		return nil
+	}
+	tree.IsBranch = func(id widget.TreeNodeID) bool {
+		return id == "" || itemsStrMap[id] != nil
+	}
+	tree.CreateNode = func(b bool) fyne.CanvasObject {
+		if b {
+			return container.NewHBox(
+				widget.NewLabel(""),
+				widget.NewCheck("placeholder", func(b bool) {}),
+			)
+		} else {
+			return container.NewGridWrap(fyne.NewSquareSize(40),
+				widget.NewIcon(theme.BrokenImageIcon()),
+				widget.NewCheck("placeholder", func(b bool) {}),
+				layout.NewSpacer(),
+			)
+		}
+	}
+	tree.UpdateNode = func(id widget.TreeNodeID, b bool, o fyne.CanvasObject) {
+		c := o.(*fyne.Container)
+		wc := c.Objects[1].(*widget.Check)
 
-				)
-			} else {
-				return container.NewGridWrap(fyne.NewSquareSize(40),
-					widget.NewIcon(theme.BrokenImageIcon()),
-					widget.NewCheck("placeholder", func(b bool) {}),
-					layout.NewSpacer(),
-				)
-			}
-		},
-		func(id widget.TreeNodeID, b bool, o fyne.CanvasObject) {
-			c := o.(*fyne.Container)
-			wc := c.Objects[1].(*widget.Check)
-
-			if b {
-				wc.OnChanged = func(b bool) {
-					setAllItemsInCategory(id, b)
-				}
-				var counter int
-				for _, item := range itemsStrMap[id] {
-					if imageSearchTargets[item] {
-						counter++
-					}
-				}
-				wc.SetText(id + ": " + strconv.Itoa(counter) + " / " + strconv.Itoa(len(itemsStrMap[id])))
-				return
-			}
-			wi := c.Objects[0].(*widget.Icon)
+		if b {
 			wc.OnChanged = func(b bool) {
-				if b {
-					imageSearchTargets[id] = true
-				} else {
-					imageSearchTargets[id] = false
+				setAllItemsInCategory(id, b)
+			}
+			var counter int
+			for _, item := range itemsStrMap[id] {
+				if imageSearchTargets[item] {
+					counter++
 				}
-				return
 			}
-			wc.SetText(id)
-			wc.SetChecked(imageSearchTargets[id])
+			wc.SetText(id + ": " + strconv.Itoa(counter) + " / " + strconv.Itoa(len(itemsStrMap[id])))
+			if counter == len(itemsStrMap[id]) {
+				wc.Checked = true
+			} else {
+				wc.Checked = false
+			}
 
-			path := id + ".png"
-			if icons[path] == nil {
-				wi.SetResource(theme.BrokenImageIcon())
-				return
+			return
+		}
+		wi := c.Objects[0].(*widget.Icon)
+		wc.OnChanged = func(b bool) {
+			if b {
+				imageSearchTargets[id] = true
+			} else {
+				imageSearchTargets[id] = false
 			}
-			wi.SetResource(icons[path])
-		},
-	)
+		}
+		wc.SetText(id)
+		wc.SetChecked(imageSearchTargets[id])
+
+		path := id + ".png"
+		if icons[path] == nil {
+			wi.SetResource(theme.BrokenImageIcon())
+			return
+		}
+		wi.SetResource(icons[path])
+	}
+
 	tree.HideSeparators = true
 	tree.OnSelected = func(id widget.TreeNodeID) {
 		tree.Unselect(id)
