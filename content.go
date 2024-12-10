@@ -124,7 +124,6 @@ func (u *ui) LoadMainContent() *fyne.Container {
 	)
 	mainLayout := container.NewBorder(nil, nil, u.st.tabs, nil, macroLayout)
 
-	// ct.loadTreeFromJsonFile("Currency Testing.json")
 	return mainLayout
 }
 

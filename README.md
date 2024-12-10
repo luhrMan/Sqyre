@@ -1,24 +1,21 @@
 # TODO:
 - get a kanban lol
-- figure out Data Binding for the image search item checkboxes
 
 
-
-
-This tool only works on 2560 x 1440 because of hard-set values. (Hopefully this can change with an implementation of SVG?)
+This tool only works on 2560 x 1440 because of hard-set values
 # What is it
-Squire is a Macro Builder built for Dark and Darker. Squire is written using GO, with 2 notable libraries:
+Squire is a Macro Builder built for Dark and Darker. Squire is written using GO, with a few notable libraries:
 - Fyne (GUI)
 - Robotgo (Automation)
-    - Bitmap (Image Search)
-- Gosseract (OCR)
-    
+- Gosseract aka Tesseract (OCR)
+- GoCV aka OpenCV (Computer Vision)
+
 The structure of the fyne `widget.Tree`:
 - (Root) 1 Loop Action
 - (Branch) Action with SubAction (Advanced Actions)
-    - Loop actions
-    - Image Search Action
-    - OCR Action
+    - `Loop`
+    - `Image Search` 
+    - `OCR`
 - (Leaf) Action
   - `Click`: click the mouse where cursor is at
   - `Move`: move the mouse to specific coordinates
@@ -53,3 +50,5 @@ Install Msys2
     - `clang`
     - `libtesseract-dev`
     - `libxxf86vm-dev`
+
+- Find the GoCV folder and build the OpenCV source
