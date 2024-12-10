@@ -4,11 +4,8 @@ import (
 	"Squire/internal/actions"
 	"Squire/internal/structs"
 	"log"
-	"os"
-	"strings"
 
 	"fyne.io/fyne/v2/data/binding"
-	xwidget "fyne.io/x/fyne/widget"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -21,11 +18,16 @@ type macro struct {
 	tree *widget.Tree
 	root *actions.Loop
 
-	sel *xwidget.CompletionEntry
-	dt  *container.DocTabs
+	// dt  *container.DocTabs
 
 	boundMacroName   binding.String
 	boundGlobalDelay binding.Int
+}
+
+func NewMacro() macro {
+	m := macro{}
+	m.createTree()
+	return m
 }
 
 func (m *macro) moveNodeUp(selectedUID string) {
@@ -98,43 +100,8 @@ func (m *macro) executeActionTree() { //error
 	}
 }
 
-func (m *macro) createSelect() {
-	var macroList []string
-
-	getMacroList := func() []string {
-		var list []string
-		files, err := os.ReadDir("./internal/saved-macros")
-		if err != nil {
-			log.Fatal(err)
-		}
-		for _, f := range files {
-			list = append(list, strings.TrimSuffix(f.Name(), ".json"))
-		}
-		return list
-	}
-
-	macroList = getMacroList()
-	m.sel = xwidget.NewCompletionEntry(macroList)
-	m.sel.ActionItem = widget.NewButtonWithIcon("", theme.ViewRefreshIcon(), func() { macroList = getMacroList() })
-	m.sel.OnSubmitted = func(s string) { m.loadTreeFromJsonFile(s + ".json") }
-	m.sel.OnChanged = func(s string) {
-		var matches []string
-		userPrefix := strings.ToLower(s)
-		for _, listStr := range macroList {
-			if len(listStr) < len(s) {
-				continue
-			}
-			listPrefix := strings.ToLower(listStr[:len(s)])
-			if userPrefix == listPrefix {
-				matches = append(matches, listStr)
-			}
-		}
-		m.sel.SetOptions(matches)
-		m.sel.ShowCompletion()
-	}
-}
-
 func (m *macro) createTree() {
+	// macro := NewMacro()
 	m.root = actions.NewLoop(1, "root", []actions.ActionInterface{})
 	m.root.SetUID("")
 
@@ -191,9 +158,9 @@ func (m *macro) createTree() {
 	}
 }
 
-func (u *ui) addActionToTree(actionType actions.ActionInterface) {
+func (m *macro) addActionToTree(actionType actions.ActionInterface) {
 	var (
-		selectedNode = u.m.findNode(u.m.root, selectedTreeItem)
+		selectedNode = m.findNode(m.root, selectedTreeItem)
 		action       actions.ActionInterface
 	)
 	switch actionType.(type) {
@@ -243,21 +210,21 @@ func (u *ui) addActionToTree(actionType actions.ActionInterface) {
 	}
 
 	if selectedNode == nil {
-		selectedNode = u.m.root
+		selectedNode = m.root
 	}
 	if s, ok := selectedNode.(actions.AdvancedActionInterface); ok {
 		s.AddSubAction(action)
 	} else {
 		selectedNode.GetParent().AddSubAction(action)
 	}
-	u.m.tree.Refresh()
+	m.tree.Refresh()
 }
 
 func (u *ui) updateTreeOnselect() {
 	//Set here, Get @ addActionToTree
-	u.m.tree.OnSelected = func(uid widget.TreeNodeID) {
+	u.getCurrentTabMacro().tree.OnSelected = func(uid widget.TreeNodeID) {
 		selectedTreeItem = uid
-		switch node := u.m.findNode(u.m.root, uid).(type) {
+		switch node := u.getCurrentTabMacro().findNode(u.getCurrentTabMacro().root, uid).(type) {
 		case *actions.Wait:
 			u.st.boundTime.Set(node.Time)
 			u.st.tabs.SelectIndex(0)
@@ -298,7 +265,7 @@ func (u *ui) updateTreeOnselect() {
 			for _, t := range node.Targets {
 				imageSearchTargets[t] = true
 			}
-			u.m.tree.Refresh()
+			u.getCurrentTabMacro().tree.Refresh()
 			u.st.tabs.Items[5]. //image search tab
 						Content.(*fyne.Container).    //settings border
 						Objects[1].(*fyne.Container). //2nd grid with columns

@@ -8,11 +8,14 @@ import (
 	"Squire/internal/utils"
 	"fmt"
 	"log"
+	"os"
+	"strings"
 
 	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
 	_ "fyne.io/x/fyne/widget"
+	xwidget "fyne.io/x/fyne/widget"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -24,7 +27,12 @@ import (
 type ui struct {
 	win fyne.Window
 
-	m  *macro
+	mm  map[string]*macro
+	sel *xwidget.CompletionEntry
+
+	// m  *macro
+	dt *container.DocTabs
+	// mdt *macroTabs
 	st *settingsTabs
 }
 
@@ -83,16 +91,20 @@ func (u *ui) LoadMainContent() *fyne.Container {
 	log.Println("Monitor 2 size")
 	log.Println(robotgo.GetDisplayBounds(1))
 	internal.CreateItemMaps()
-	u.m.createTree()
-	u.updateTreeOnselect()
+	u.createDocTabs()
+	u.addMacroDocTab("Currency Testing")
+	u.dt.SelectIndex(0)
+	u.createSelect()
+
 	u.actionSettingsTabs()
-	u.m.createSelect()
+	mainMenu := fyne.NewMainMenu(fyne.NewMenu("Settings"), u.createActionMenu())
+	u.win.SetMainMenu(mainMenu)
 
 	// searchAreaSelector.SetSelected(searchAreaSelector.Options[0])
 
-	//        boundMacroNameEntry := widget.NewEntryWithData(u.m.boundMacroName)
+	//        boundMacroNameEntry := widget.NewEntryWithData(ct.boundMacroName)
 
-	// boundGlobalDelayEntry := widget.NewEntryWithData(binding.IntToString(u.m.boundGlobalDelay))
+	// boundGlobalDelayEntry := widget.NewEntryWithData(binding.IntToString(ct.boundGlobalDelay))
 
 	macroLayout := container.NewBorder(
 		container.NewGridWithColumns(2,
@@ -103,22 +115,73 @@ func (u *ui) LoadMainContent() *fyne.Container {
 				layout.NewSpacer(),
 				widget.NewLabel("Macro Name:"),
 			),
-			container.NewBorder(nil, nil, nil, widget.NewButtonWithIcon("", theme.LoginIcon(), func() { u.m.loadTreeFromJsonFile(u.m.sel.Text + ".json") }), u.m.sel),
+			container.NewBorder(nil, nil, nil, widget.NewButtonWithIcon("", theme.LoginIcon(), func() { u.addMacroDocTab(u.sel.Text) }), u.sel),
 		),
 		nil,
 		widget.NewSeparator(),
 		nil,
-		u.m.tree,
+		u.dt,
 	)
 	mainLayout := container.NewBorder(nil, nil, u.st.tabs, nil, macroLayout)
 
-	u.m.loadTreeFromJsonFile("Currency Testing.json")
+	// ct.loadTreeFromJsonFile("Currency Testing.json")
 	return mainLayout
 }
 
+func (u *ui) addMacroDocTab(name string) {
+	if _, ok := u.mm[name]; ok {
+		return
+	}
+	m := &macro{}
+	u.mm[name] = m
+	m.createTree()
+	m.loadTreeFromJsonFile(name + ".json")
+
+	t := container.NewTabItem(name, m.tree)
+	u.dt.Append(t)
+	u.dt.Select(t)
+	u.updateTreeOnselect()
+
+}
+
+func (u *ui) createSelect() {
+	var macroList []string
+
+	getMacroList := func() []string {
+		var list []string
+		files, err := os.ReadDir("./internal/saved-macros")
+		if err != nil {
+			log.Fatal(err)
+		}
+		for _, f := range files {
+			list = append(list, strings.TrimSuffix(f.Name(), ".json"))
+		}
+		return list
+	}
+
+	macroList = getMacroList()
+	u.sel = xwidget.NewCompletionEntry(macroList)
+	u.sel.ActionItem = widget.NewButtonWithIcon("", theme.ViewRefreshIcon(), func() { macroList = getMacroList() })
+	u.sel.OnSubmitted = func(s string) { u.addMacroDocTab(s) }
+	u.sel.OnChanged = func(s string) {
+		var matches []string
+		userPrefix := strings.ToLower(s)
+		for _, listStr := range macroList {
+			if len(listStr) < len(s) {
+				continue
+			}
+			listPrefix := strings.ToLower(listStr[:len(s)])
+			if userPrefix == listPrefix {
+				matches = append(matches, listStr)
+			}
+		}
+		u.sel.SetOptions(matches)
+		u.sel.ShowCompletion()
+	}
+}
 func (u *ui) bindVariables() {
-	u.m.boundMacroName = binding.BindString(&macroName)
-	u.m.boundGlobalDelay = binding.BindInt(&globalDelay)
+	// ct.boundMacroName = binding.BindString(&macroName)
+	// ct.boundGlobalDelay = binding.BindInt(&globalDelay)
 
 	u.st.boundTime = binding.BindInt(&time)
 	u.st.boundMoveX = binding.BindInt(&moveX)
@@ -134,8 +197,8 @@ func (u *ui) bindVariables() {
 }
 
 func (u *ui) createDocTabs() {
-	u.m.dt = container.NewDocTabs()
-	//        u.mdt.Append(container.NewTabItem())
+	u.dt = container.NewDocTabs()
+	// ct.dt.Append(container.NewTabItem())
 }
 
 // WIDGET LOCATIONS ARE HARD CODED IN THE TREE ONSELECTED CALLBACK. CAREFUL WITH CHANGES HERE
@@ -209,23 +272,23 @@ func (u *ui) createMacroToolbar() *widget.Toolbar {
 		widget.NewToolbarAction(theme.ContentAddIcon(), func() {
 			switch u.st.tabs.Selected().Text {
 			case "Wait":
-				u.addActionToTree(&actions.Wait{})
+				u.getCurrentTabMacro().addActionToTree(&actions.Wait{})
 			case "Move":
-				u.addActionToTree(&actions.Move{})
+				u.getCurrentTabMacro().addActionToTree(&actions.Move{})
 			case "Click":
-				u.addActionToTree(&actions.Click{})
+				u.getCurrentTabMacro().addActionToTree(&actions.Click{})
 			case "Key":
-				u.addActionToTree(&actions.Key{})
+				u.getCurrentTabMacro().addActionToTree(&actions.Key{})
 			case "Loop":
-				u.addActionToTree(&actions.Loop{})
+				u.getCurrentTabMacro().addActionToTree(&actions.Loop{})
 			case "Image":
-				u.addActionToTree(&actions.ImageSearch{})
+				u.getCurrentTabMacro().addActionToTree(&actions.ImageSearch{})
 			case "OCR":
-				u.addActionToTree(&actions.Ocr{})
+				u.getCurrentTabMacro().addActionToTree(&actions.Ocr{})
 			}
 		}),
 		widget.NewToolbarAction(theme.ViewRefreshIcon(), func() {
-			node := u.m.findNode(u.m.root, selectedTreeItem)
+			node := u.getCurrentTabMacro().findNode(u.getCurrentTabMacro().root, selectedTreeItem)
 			if selectedTreeItem == "" {
 				log.Println("No node selected")
 				return
@@ -268,53 +331,56 @@ func (u *ui) createMacroToolbar() *widget.Toolbar {
 
 			fmt.Printf("Updated node: %+v from '%v' to '%v' \n", node.GetUID(), og, node)
 
-			u.m.tree.Refresh()
+			u.getCurrentTabMacro().tree.Refresh()
 		}),
 		widget.NewToolbarSpacer(),
 		widget.NewToolbarSeparator(),
 		widget.NewToolbarAction(theme.RadioButtonIcon(), func() {
-			u.m.tree.UnselectAll()
+			u.getCurrentTabMacro().tree.UnselectAll()
 			selectedTreeItem = ""
 		}),
 		widget.NewToolbarAction(theme.MoveDownIcon(), func() {
-			u.m.moveNodeDown(selectedTreeItem)
+			u.getCurrentTabMacro().moveNodeDown(selectedTreeItem)
 		}),
 		widget.NewToolbarAction(theme.MoveUpIcon(), func() {
-			u.m.moveNodeUp(selectedTreeItem)
+			u.getCurrentTabMacro().moveNodeUp(selectedTreeItem)
 		}),
 		widget.NewToolbarSeparator(),
 		widget.NewToolbarSpacer(),
 		widget.NewToolbarAction(theme.MediaPlayIcon(), func() {
-			u.m.executeActionTree()
+			u.getCurrentTabMacro().executeActionTree()
 		}),
 		widget.NewToolbarAction(theme.DocumentSaveIcon(), func() {
-			err := u.m.saveTreeToJsonFile(u.m.sel.Text)
+			err := u.getCurrentTabMacro().saveTreeToJsonFile(u.sel.Text)
 			if err != nil {
 				dialog.ShowError(err, u.win)
 				log.Printf("saveTreeToJsonFile(): %v", err)
 			} else {
-				dialog.ShowInformation("File Saved Successfully", u.m.sel.Text+".json"+"\nPlease refresh the list.", u.win)
+				dialog.ShowInformation("File Saved Successfully", u.sel.Text+".json"+"\nPlease refresh the list.", u.win)
 			}
 		}),
 	)
 	return tb
 }
 
-func (u *ui) createActionMenu() *fyne.Menu {
+func (u *ui) getCurrentTabMacro() *macro {
+	return u.mm[u.dt.Selected().Text]
+}
 
+func (u *ui) createActionMenu() *fyne.Menu {
 	basicActionsSubMenu := fyne.NewMenuItem("Basic Actions", nil)
 	basicActionsSubMenu.ChildMenu = fyne.NewMenu("")
 	advancedActionsSubMenu := fyne.NewMenuItem("Advanced Actions", nil)
 	advancedActionsSubMenu.ChildMenu = fyne.NewMenu("")
 
-	waitActionMenuItem := fyne.NewMenuItem("Wait", func() { u.addActionToTree(&actions.Wait{}) })
-	mouseMoveActionMenuItem := fyne.NewMenuItem("Mouse Move", func() { u.addActionToTree(&actions.Move{}) })
-	clickActionMenuItem := fyne.NewMenuItem("Click", func() { u.addActionToTree(&actions.Click{}) })
-	keyActionMenuItem := fyne.NewMenuItem("Key", func() { u.addActionToTree(&actions.Key{}) })
+	waitActionMenuItem := fyne.NewMenuItem("Wait", func() { u.getCurrentTabMacro().addActionToTree(&actions.Wait{}) })
+	mouseMoveActionMenuItem := fyne.NewMenuItem("Mouse Move", func() { u.getCurrentTabMacro().addActionToTree(&actions.Move{}) })
+	clickActionMenuItem := fyne.NewMenuItem("Click", func() { u.getCurrentTabMacro().addActionToTree(&actions.Click{}) })
+	keyActionMenuItem := fyne.NewMenuItem("Key", func() { u.getCurrentTabMacro().addActionToTree(&actions.Key{}) })
 
-	loopActionMenuItem := fyne.NewMenuItem("Loop", func() { u.addActionToTree(&actions.Loop{}) })
-	imageSearchActionMenuItem := fyne.NewMenuItem("Image Search", func() { u.addActionToTree(&actions.ImageSearch{}) })
-	ocrActionMenuItem := fyne.NewMenuItem("OCR", func() { u.addActionToTree(&actions.Ocr{}) })
+	loopActionMenuItem := fyne.NewMenuItem("Loop", func() { u.getCurrentTabMacro().addActionToTree(&actions.Loop{}) })
+	imageSearchActionMenuItem := fyne.NewMenuItem("Image Search", func() { u.getCurrentTabMacro().addActionToTree(&actions.ImageSearch{}) })
+	ocrActionMenuItem := fyne.NewMenuItem("OCR", func() { u.getCurrentTabMacro().addActionToTree(&actions.Ocr{}) })
 
 	ocrActionMenuItem.Icon, _ = fyne.LoadResourceFromPath("./internal/resources/images/Squire.png")
 
