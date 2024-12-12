@@ -27,7 +27,9 @@
             "y1": 200,
             "x2": 2560,
             "y2": 400
-        },
+        }
+    ],
+    "inventories": [
         {
             "name": "Stash Inventory",
             "x1": 1838,
