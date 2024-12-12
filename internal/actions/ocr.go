@@ -69,8 +69,7 @@ func (a *Ocr) Execute(ctx interface{}) error {
                         log.Fatal(err)
                 }
         }
-        log.Println("FOUND TEXT:")
-        log.Println(text)
+        log.Printf("FOUND TEXT: %v", text)
         if strings.Contains(text, a.Target) {
                 for _, action := range a.SubActions {
                         if err := action.Execute(ctx); err != nil {

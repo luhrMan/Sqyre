@@ -96,7 +96,7 @@ func (u *ui) LoadMainContent() *fyne.Container {
 
 	// searchAreaSelector.SetSelected(searchAreaSelector.Options[0])
 
-	//        boundMacroNameEntry := widget.NewEntryWithData(ct.boundMacroName)
+	//        boundMacroNameEntry := widget.NewEntryWitdhData(ct.boundMacroName)
 
 	// boundGlobalDelayEntry := widget.NewEntryWithData(binding.IntToString(ct.boundGlobalDelay))
 
@@ -229,10 +229,11 @@ func (u *ui) actionSettingsTabs() {
 			widget.NewLabel("------------------------------------------------------------------------------------"),
 			container.NewGridWithColumns(2, container.NewHBox(layout.NewSpacer(), boundTimeLabel, widget.NewLabel("ms")), boundTimeSlider),
 		)
-		moveSettings = container.NewVBox(container.NewGridWithColumns(2,
-			container.NewHBox(layout.NewSpacer(), widget.NewLabel("X:"), boundMoveXLabel), boundMoveXSlider,
-			container.NewHBox(layout.NewSpacer(), widget.NewLabel("Y:"), boundMoveYLabel), boundMoveYSlider),
-		)
+		moveSettings = container.NewBorder(
+			container.NewVBox(container.NewGridWithColumns(2,
+				container.NewHBox(layout.NewSpacer(), widget.NewLabel("X:"), boundMoveXLabel), boundMoveXSlider,
+				container.NewHBox(layout.NewSpacer(), widget.NewLabel("Y:"), boundMoveYLabel), boundMoveYSlider),
+			), nil, nil, nil)
 		clickSettings = container.NewVBox(
 			container.NewHBox(layout.NewSpacer(), widget.NewLabel("left"), boundButtonToggle, widget.NewLabel("right"), layout.NewSpacer()),
 		)
