@@ -1,7 +1,7 @@
 package internal
 
 import (
-        "Dark-And-Darker/internal/structs"
+        "Squire/internal/structs"
         "embed"
         _ "embed"
         "encoding/json"
@@ -15,6 +15,8 @@ var itemsEmbed []byte
 
 //go:embed resources/images/icons/*
 var iconFS embed.FS
+
+var icons *map[string]*fyne.StaticResource
 
 var Items structs.Items
 
