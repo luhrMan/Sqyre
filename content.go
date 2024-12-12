@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"slices"
+	"strconv"
 	"strings"
 
 	"fyne.io/fyne/v2/data/binding"
@@ -30,16 +32,13 @@ type ui struct {
 	mm  map[string]*macro
 	sel *xwidget.CompletionEntry
 
-	// m  *macro
 	dt *container.DocTabs
-	// mdt *macroTabs
 	st *settingsTabs
 }
 
 type settingsTabs struct {
 	tabs *container.AppTabs
 
-	wait                 *fyne.Container
 	boundTime            binding.Int
 	boundMoveX           binding.Int
 	boundMoveY           binding.Int
@@ -84,21 +83,16 @@ var (
 )
 
 func (u *ui) LoadMainContent() *fyne.Container {
-	log.Println("Screen Size")
-	log.Println(robotgo.GetScreenSize())
-	log.Println("Monitor 1 size")
-	log.Println(robotgo.GetDisplayBounds(0))
-	log.Println("Monitor 2 size")
-	log.Println(robotgo.GetDisplayBounds(1))
 	internal.CreateItemMaps()
 	u.createDocTabs()
 	u.addMacroDocTab("Currency Testing")
 	u.dt.SelectIndex(0)
 	u.createSelect()
-
+	u.dt.OnClosed = func(ti *container.TabItem) {
+		delete(u.mm, ti.Text)
+	}
 	u.actionSettingsTabs()
-	mainMenu := fyne.NewMainMenu(fyne.NewMenu("Settings"), u.createActionMenu())
-	u.win.SetMainMenu(mainMenu)
+	u.win.SetMainMenu(u.createMainMenu())
 
 	// searchAreaSelector.SetSelected(searchAreaSelector.Options[0])
 
@@ -132,15 +126,18 @@ func (u *ui) addMacroDocTab(name string) {
 		return
 	}
 	m := &macro{}
-	u.mm[name] = m
 	m.createTree()
-	m.loadTreeFromJsonFile(name + ".json")
+	err := m.loadTreeFromJsonFile(name + ".json")
+	if err != nil {
+		dialog.ShowError(err, u.win)
+		return
+	}
+	u.mm[name] = m
 
 	t := container.NewTabItem(name, m.tree)
 	u.dt.Append(t)
 	u.dt.Select(t)
 	u.updateTreeOnselect()
-
 }
 
 func (u *ui) createSelect() {
@@ -197,7 +194,6 @@ func (u *ui) bindVariables() {
 
 func (u *ui) createDocTabs() {
 	u.dt = container.NewDocTabs()
-	// ct.dt.Append(container.NewTabItem())
 }
 
 // WIDGET LOCATIONS ARE HARD CODED IN THE TREE ONSELECTED CALLBACK. CAREFUL WITH CHANGES HERE
@@ -322,7 +318,6 @@ func (u *ui) createMacroToolbar() *widget.Toolbar {
 						t = append(t, i)
 					}
 				}
-				//                        t := boundSelectedItemsMap.Keys()
 				node.Name = imageSearchName
 				node.SearchBox = *structs.GetSearchBox(searchArea)
 				node.Targets = t
@@ -350,12 +345,24 @@ func (u *ui) createMacroToolbar() *widget.Toolbar {
 			u.getCurrentTabMacro().executeActionTree()
 		}),
 		widget.NewToolbarAction(theme.DocumentSaveIcon(), func() {
-			err := u.getCurrentTabMacro().saveTreeToJsonFile(u.sel.Text)
-			if err != nil {
-				dialog.ShowError(err, u.win)
-				log.Printf("saveTreeToJsonFile(): %v", err)
+			save := func() {
+				err := u.getCurrentTabMacro().saveTreeToJsonFile(u.sel.Text)
+				if err != nil {
+					dialog.ShowError(err, u.win)
+					log.Printf("saveTreeToJsonFile(): %v", err)
+				} else {
+					dialog.ShowInformation("File Saved Successfully", u.sel.Text+".json"+"\nPlease refresh the list.", u.win)
+				}
+			}
+			if slices.Contains(u.sel.Options, u.sel.Text) {
+				dialog.ShowConfirm("Overwrite existing file", "Overwrite "+u.sel.Text+"?", func(b bool) {
+					if !b {
+						return
+					}
+					save()
+				}, u.win)
 			} else {
-				dialog.ShowInformation("File Saved Successfully", u.sel.Text+".json"+"\nPlease refresh the list.", u.win)
+				save()
 			}
 		}),
 	)
@@ -366,7 +373,7 @@ func (u *ui) getCurrentTabMacro() *macro {
 	return u.mm[u.dt.Selected().Text]
 }
 
-func (u *ui) createActionMenu() *fyne.Menu {
+func (u *ui) createMainMenu() *fyne.MainMenu {
 	basicActionsSubMenu := fyne.NewMenuItem("Basic Actions", nil)
 	basicActionsSubMenu.ChildMenu = fyne.NewMenu("")
 	advancedActionsSubMenu := fyne.NewMenuItem("Advanced Actions", nil)
@@ -381,7 +388,7 @@ func (u *ui) createActionMenu() *fyne.Menu {
 	imageSearchActionMenuItem := fyne.NewMenuItem("Image Search", func() { u.getCurrentTabMacro().addActionToTree(&actions.ImageSearch{}) })
 	ocrActionMenuItem := fyne.NewMenuItem("OCR", func() { u.getCurrentTabMacro().addActionToTree(&actions.Ocr{}) })
 
-	ocrActionMenuItem.Icon, _ = fyne.LoadResourceFromPath("./internal/resources/images/Squire.png")
+	// ocrActionMenuItem.Icon, _ = fyne.LoadResourceFromPath("./internal/resources/images/Squire.png")
 
 	basicActionsSubMenu.ChildMenu.Items = append(basicActionsSubMenu.ChildMenu.Items,
 		waitActionMenuItem,
@@ -396,5 +403,20 @@ func (u *ui) createActionMenu() *fyne.Menu {
 		ocrActionMenuItem,
 	)
 
-	return fyne.NewMenu("Add Action", basicActionsSubMenu, advancedActionsSubMenu)
+	actionMenu := fyne.NewMenu("Add Action", basicActionsSubMenu, advancedActionsSubMenu)
+
+	computerInfo := fyne.NewMenuItem("Computer info", func() {
+		w, h := robotgo.GetScreenSize()
+		log.Println("Monitor 1 size")
+		log.Println(robotgo.GetDisplayBounds(0))
+		log.Println("Monitor 2 size")
+		log.Println(robotgo.GetDisplayBounds(1))
+		dialog.ShowInformation("Computer Information",
+			"Total Screen Size: w "+strconv.Itoa(w)+" h "+strconv.Itoa(h)+"\n"+
+				"Monitor 1 Size: "+"\n"+
+				"Monitor 2 Size: ",
+			u.win)
+	})
+
+	return fyne.NewMainMenu(fyne.NewMenu("Settings", computerInfo), actionMenu)
 }
