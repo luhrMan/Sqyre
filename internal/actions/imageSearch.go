@@ -1,145 +1,36 @@
-package structs
+package actions
 
 import (
-	"Dark-And-Darker/internal/utils"
-	"bytes"
+	"Squire/internal/structs"
+	"Squire/internal/utils"
 	"fmt"
 	"image"
 	"image/color"
-	"image/png"
 	"log"
 	"sort"
 	"strings"
 	"sync"
 
-	"gocv.io/x/gocv"
-
 	"github.com/go-vgo/robotgo"
-	"github.com/otiai10/gosseract/v2"
+	"gocv.io/x/gocv"
 )
 
-type AdvancedActionInterface interface {
-	ActionInterface
-
-	GetName() string
-	SetName(string)
-
-	GetSubActions() []ActionInterface
-	AddSubAction(ActionInterface)
-	RemoveSubAction(ActionInterface)
-	RenameActions()
+type ImageSearch struct {
+	Targets        []string          `json:"imagetargets"`
+	SearchBox      structs.SearchBox `json:"searchbox"`
+	advancedAction                   //`json:"advancedaction"`
 }
 
-type AdvancedAction struct {
-	baseAction                   //`json:"baseaction"`
-	Name       string            `json:"name"`
-	SubActions []ActionInterface `json:"subactions"`
-}
-
-func NewAdvancedAction(name string, subActions []ActionInterface) *AdvancedAction {
-	return &AdvancedAction{
-		baseAction: newBaseAction(),
-		Name:       name,
-		SubActions: subActions,
-	}
-}
-
-func (a *AdvancedAction) GetSubActions() []ActionInterface {
-	return a.SubActions
-}
-
-func (a *AdvancedAction) AddSubAction(action ActionInterface) {
-	actionNum := len(a.GetSubActions()) + 1
-	uid := fmt.Sprintf("%s.%d", a.GetUID(), actionNum)
-	action.UpdateBaseAction(uid, a)
-
-	a.SubActions = append(a.SubActions, action)
-	log.Printf("Added new action: %v %s", uid, action.String())
-}
-
-func (a *AdvancedAction) RemoveSubAction(action ActionInterface) {
-	for i, c := range a.SubActions {
-		if c == action {
-			a.SubActions = append(a.SubActions[:i], a.SubActions[i+1:]...)
-			log.Printf("Removing %s", action.GetUID())
-			a.RenameActions()
-		}
-	}
-}
-
-func (a *AdvancedAction) RenameActions() {
-	for i, child := range a.SubActions {
-		if n, ok := child.(AdvancedActionInterface); ok {
-			n.RenameActions()
-		}
-		//		open := tree.IsBranchOpen(child.GetUID())
-		child.SetUID(fmt.Sprintf("%s.%d", a.UID, i+1))
-		//		if open {
-		//			tree.OpenBranch(child.GetUID())
-		//		}
-		//		if n, ok := child.(AdvancedActionInterface); ok {
-		//			n.RenameActions(tree)
-		//		}
-	}
-}
-
-func (a *AdvancedAction) Execute(ctx interface{}) error {
-	log.Printf("Executing %s", a.Name)
-
-	for _, c := range a.SubActions {
-		c.Execute(ctx)
-	}
-	return nil
-}
-func (a *AdvancedAction) String() string { return "This is a Action with SubActions" }
-
-//******************************************************************************************Loop
-
-type LoopAction struct {
-	Count          int `json:"loopcount"`
-	AdvancedAction     //`json:"advancedaction"`
-}
-
-func NewLoopAction(count int, name string, subActions []ActionInterface) *LoopAction {
-	return &LoopAction{
-		AdvancedAction: *NewAdvancedAction(name, subActions),
-		Count:          count,
-	}
-}
-
-func (a *LoopAction) Execute(ctx interface{}) error {
-	for i := 0; i < a.Count; i++ {
-		fmt.Printf("Loop iteration %d\n", i+1)
-		for _, action := range a.GetSubActions() {
-			if err := action.Execute(ctx); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func (a *LoopAction) String() string {
-	return fmt.Sprintf("%s | %s%d", a.Name, utils.GetEmoji("Loop"), a.Count)
-}
-
-// ***************************************************************************************ImageSearch
-
-type ImageSearchAction struct {
-	Targets        []string  `json:"imagetargets"`
-	SearchBox      SearchBox `json:"searchbox"`
-	AdvancedAction           //`json:"advancedaction"`
-}
-
-func NewImageSearchAction(name string, subActions []ActionInterface, targets []string, searchbox SearchBox) *ImageSearchAction {
-	return &ImageSearchAction{
-		AdvancedAction: *NewAdvancedAction(name, subActions),
+func NewImageSearch(name string, subActions []ActionInterface, targets []string, searchbox structs.SearchBox) *ImageSearch {
+	return &ImageSearch{
+		advancedAction: *newAdvancedAction(name, subActions),
 		Targets:        targets,
 		SearchBox:      searchbox,
 	}
 }
 
-func (a *ImageSearchAction) Execute(ctx interface{}) error {
+func (a *ImageSearch) Execute(ctx interface{}) error {
+
 	log.Printf("Image Search | %v in X1:%d Y1:%d X2:%d Y2:%d", a.Targets, a.SearchBox.LeftX, a.SearchBox.TopY, a.SearchBox.RightX, a.SearchBox.BottomY)
 	w := a.SearchBox.RightX - a.SearchBox.LeftX
 	h := a.SearchBox.BottomY - a.SearchBox.TopY
@@ -195,7 +86,6 @@ func (a *ImageSearchAction) Execute(ctx interface{}) error {
 			defer wg.Done()
 
 			ip := pathDir + "icons/" + target + ".png"
-
 			// Read the template
 			template := gocv.IMRead(ip, gocv.IMReadColor)
 			defer template.Close()
@@ -270,160 +160,8 @@ func (a *ImageSearchAction) Execute(ctx interface{}) error {
 	log.Printf("Total # found: %v\n", count)
 	return nil
 }
-func (a *ImageSearchAction) String() string {
+func (a *ImageSearch) String() string {
 	return fmt.Sprintf("%s Image Search for %d items in `%s` | %s", utils.GetEmoji("Image Search"), len(a.Targets), a.SearchBox.Name, a.Name)
-}
-
-// ***************************************************************************************OCR
-
-type OcrAction struct {
-	Target         string    `json:"texttarget"`
-	SearchBox      SearchBox `json:"searchbox"`
-	AdvancedAction           //`json:"advancedaction"`
-}
-
-func NewOcrAction(name string, subActions []ActionInterface, target string, searchbox SearchBox) *OcrAction {
-	return &OcrAction{
-		AdvancedAction: *NewAdvancedAction(name, subActions),
-		Target:         target,
-		SearchBox:      searchbox,
-	}
-}
-
-func (a *OcrAction) Execute(ctx interface{}) error {
-	client := gosseract.NewClient()
-	defer client.Close()
-
-	log.Printf("%s OCR search | %s in X1:%d Y1:%d X2:%d Y2:%d", utils.GetEmoji("OCR"), a.Target, a.SearchBox.LeftX, a.SearchBox.TopY, a.SearchBox.RightX, a.SearchBox.BottomY)
-	w := a.SearchBox.RightX - a.SearchBox.LeftX
-	h := a.SearchBox.BottomY - a.SearchBox.TopY
-	//var text string
-	var capture image.Image
-	//check bottom first
-	capture = robotgo.CaptureImg(a.SearchBox.LeftX, a.SearchBox.TopY+h/2, w, h/2)
-	// Convert the capture to an image.Image
-
-	// Encode the image to PNG format in memory
-	var buf bytes.Buffer
-	if err := png.Encode(&buf, capture); err != nil {
-		return err
-	}
-	if err := client.SetImageFromBytes(buf.Bytes()); err != nil {
-		return err
-	}
-
-	text, err := client.Text()
-	if err != nil {
-		log.Fatal(err)
-	}
-	//if not, check top
-	if !strings.Contains(text, a.Target) {
-		capture = robotgo.CaptureImg(a.SearchBox.LeftX, a.SearchBox.TopY, w, h/2)
-
-		var buf bytes.Buffer
-		if err := png.Encode(&buf, capture); err != nil {
-			return err
-		}
-		if err := client.SetImageFromBytes(buf.Bytes()); err != nil {
-			return err
-		}
-		text, err = client.Text()
-		if err != nil {
-			log.Fatal(err)
-		}
-	}
-	log.Println("FOUND TEXT:")
-	log.Println(text)
-	if strings.Contains(text, a.Target) {
-		for _, action := range a.SubActions {
-			if err := action.Execute(ctx); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func (a *OcrAction) String() string {
-	return fmt.Sprintf("%s OCR search for `%s` in `%s`", utils.GetEmoji("OCR"), a.Target, a.SearchBox.Name)
-}
-
-//******************************************************************************************Conditional
-
-// type ConditionalAction struct {
-// 	AdvancedAction
-// 	Condition func(interface{}) bool
-// }
-
-// func (a *ConditionalAction) Execute(ctx interface{}) error {
-// 	if a.Condition(ctx) {
-// 		fmt.Println("Condition true. Executing subactions")
-// 		for _, action := range a.SubActions {
-// 			if err := action.Execute(ctx); err != nil {
-// 				return err
-// 			}
-// 		}
-// 	} else {
-// 		fmt.Println("Condition false. Skipping block")
-// 		// for _, action := range a.FalseActions {
-// 		// 	if err := action.Execute(ctx); err != nil {
-// 		// 		return err
-// 		// 	}
-// 		// }
-// 	}
-// 	return nil
-// }
-
-// func (a *ConditionalAction) String() string {
-// 	return fmt.Sprintf("%sConditional | %s", utils.GetEmoji("Conditional"), a.Name)
-// }
-
-// func distance(p, other robotgo.Point) float64 {
-//	dx := p.X - other.X
-//	dy := p.Y - other.Y
-//	return math.Sqrt(float64(dx*dx + dy*dy))
-//}
-//
-//// filterClosePoints removes points that are within minDistance of any previous point
-//func filterClosePoints(points []robotgo.Point, minDistance float64) []robotgo.Point {
-//	if len(points) == 0 {
-//		return points
-//	}
-//
-//	// First point is always included
-//	filtered := []robotgo.Point{points[0]}
-//
-//	// Check each point against all previously accepted points
-//	for i := 1; i < len(points); i++ {
-//		tooClose := false
-//		for _, accepted := range filtered {
-//			dist := distance(points[i], accepted)
-//			log.Printf("distance: %f", dist)
-//			if dist < minDistance {
-//				tooClose = true
-//				break
-//			}
-//		}
-//		if !tooClose {
-//			filtered = append(filtered, points[i])
-//		}
-//	}
-//
-//	return filtered
-//}
-
-func removeDupes() {
-	//	removeDupes := make(map[robotgo.Point]bool)
-	//	for _, matches := range results {
-	//		k := 0
-	//		for j := range matches {
-	//			if !removeDupes[matches[j]] {
-	//				removeDupes[matches[j]] = true
-	//				matches[k] = matches[j]
-	//				k++
-	//			}
-	//		}
-	//	})
 }
 
 func checkHistogramMatch(img, template gocv.Mat, tolerance float32, target string) robotgo.Point {

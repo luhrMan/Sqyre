@@ -1,4 +1,4 @@
-package structs
+package actions
 
 type baseAction struct {
 	UID           string                  `json:"uid"`
@@ -10,9 +10,4 @@ func newBaseAction() baseAction {
 	return baseAction{
 		UID: "temp uid",
 	}
-}
-
-func (a *baseAction) UpdateBaseAction(uid string, parent AdvancedActionInterface) {
-	a.SetUID(uid)
-	a.SetParent(parent)
 }
