@@ -1,7 +1,7 @@
 package structs
 
 import (
-        "Dark-And-Darker/internal/utils"
+        "Squire/internal/utils"
         "fmt"
         "github.com/go-vgo/robotgo"
         "gocv.io/x/gocv"
