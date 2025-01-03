@@ -16,13 +16,13 @@ var itemsEmbed []byte
 //go:embed resources/images/icons/*
 var iconFS embed.FS
 
-var icons *map[string]*fyne.StaticResource
+var icons = make(map[string][]byte)
 
 var Items structs.Items
 
 func LoadIconBytes() (*map[string][]byte, error) {
         dirPath := "resources/images/icons"
-        icons := make(map[string][]byte)
+        //        icons := make(map[string][]byte)
         log.Printf("Loading Icon Bytes...")
 
         entries, err := iconFS.ReadDir(dirPath)
@@ -45,6 +45,10 @@ func LoadIconBytes() (*map[string][]byte, error) {
         }
 
         return &icons, nil
+}
+
+func GetIconBytes() *map[string][]byte {
+        return &icons
 }
 
 func BytesToFyneIcons() *map[string]*fyne.StaticResource {

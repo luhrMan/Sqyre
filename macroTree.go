@@ -91,9 +91,9 @@ func (m *macro) findNode(node actions.ActionInterface, uid string) actions.Actio
 	return nil
 }
 
-func (m *macro) executeActionTree() { //error
-	var context interface{}
-	err := m.root.Execute(context)
+func (m *macro) executeActionTree(ctx ...interface{}) { //error
+	//	var context interface{}
+	err := m.root.Execute(ctx)
 	if err != nil {
 		log.Println(err)
 		return
@@ -267,10 +267,10 @@ func (u *ui) updateTreeOnselect() {
 			}
 			u.getCurrentTabMacro().tree.Refresh()
 			u.st.tabs.Items[5]. //image search tab
-						Content.(*fyne.Container).    //settings border
-						Objects[1].(*fyne.Container). //2nd grid with columns
-						Objects[1].(*fyne.Container). //vbox
-						Objects[1].(*widget.Select).SetSelected(node.SearchBox.Name)
+				Content.(*fyne.Container). //settings border
+				Objects[1].(*fyne.Container). //2nd grid with columns
+				Objects[1].(*fyne.Container). //vbox
+				Objects[1].(*widget.Select).SetSelected(node.SearchBox.Name)
 
 			u.st.tabs.SelectIndex(5)
 		}

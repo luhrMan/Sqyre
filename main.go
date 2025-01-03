@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/go-vgo/robotgo"
 	"log"
 	"os"
 
@@ -14,6 +15,7 @@ import (
 func main() {
 	a := app.New()
 	w := a.NewWindow("Squire")
+	go toggleMousePos()
 	os.Setenv("FYNE_SCALE", "1.25")
 	u := &ui{win: w, mm: map[string]*macro{"test": &macro{}}, st: &settingsTabs{tabs: &container.AppTabs{}}}
 	icon, _ := fyne.LoadResourceFromPath("./internal/resources/images/Squire.png")
@@ -29,4 +31,11 @@ func main() {
 	a.Settings().SetTheme(theme.DarkTheme())
 	w.SetIcon(icon)
 	w.ShowAndRun()
+}
+
+func toggleMousePos() {
+	for {
+		robotgo.MilliSleep(2000)
+		log.Println(robotgo.Location())
+	}
 }
