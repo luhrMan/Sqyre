@@ -50,6 +50,8 @@ type settingsTabs struct {
 	boundCount           binding.Float
 	boundImageSearchName binding.String
 	boundSearchArea      binding.String
+	boundXSplit          binding.Int
+	boundYSplit          binding.Int
 }
 
 // action settings
@@ -78,6 +80,8 @@ var (
 	//image search
 	imageSearchName    string
 	searchArea         string
+	xSplit             int
+	ySplit             int
 	imageSearchTargets = internal.Items.GetItemsMapAsBool()
 	//ocr
 )
@@ -190,6 +194,9 @@ func (u *ui) bindVariables() {
 	u.st.boundCount = binding.BindFloat(&count)
 	u.st.boundImageSearchName = binding.BindString(&imageSearchName)
 	u.st.boundSearchArea = binding.BindString(&searchArea)
+	u.st.boundXSplit = binding.BindInt(&xSplit)
+	u.st.boundYSplit = binding.BindInt(&ySplit)
+
 }
 
 func (u *ui) createDocTabs() {
@@ -224,6 +231,8 @@ func (u *ui) actionSettingsTabs() {
 		//image search
 		boundImageSearchNameEntry = widget.NewEntryWithData(u.st.boundImageSearchName)
 		boundSearchAreaSelect     = widget.NewSelect(*structs.GetSearchBoxMapKeys(*structs.GetSearchBoxMap()), func(s string) { u.st.boundSearchArea.Set(s) })
+		boundXSplitSlider         = widget.NewSliderWithData(0, 100, binding.IntToFloat(u.st.boundXSplit))
+		boundXSplitEntry          = widget.NewEntryWithData(binding.IntToString(u.st.boundXSplit))
 
 		waitSettings = container.NewVBox(
 			widget.NewLabel("------------------------------------------------------------------------------------"),
@@ -245,8 +254,9 @@ func (u *ui) actionSettingsTabs() {
 		)
 		imageSearchSettings = container.NewBorder(
 			container.NewVBox(
-				container.NewGridWithColumns(2, container.NewHBox(layout.NewSpacer(), widget.NewLabel("name:")), boundImageSearchNameEntry),
-				container.NewGridWithColumns(2, container.NewHBox(layout.NewSpacer(), widget.NewLabel("search area:")), boundSearchAreaSelect),
+				container.NewGridWithColumns(2, container.NewHBox(widget.NewLabel("name:")), boundImageSearchNameEntry),
+				container.NewGridWithColumns(2, container.NewHBox(widget.NewLabel("search area:")), boundSearchAreaSelect),
+				container.NewGridWithColumns(3, container.NewHBox(widget.NewLabel("screen split cols:")), boundXSplitSlider, boundXSplitEntry),
 			), nil, nil, nil,
 			u.createItemsCheckTree(),
 		)
