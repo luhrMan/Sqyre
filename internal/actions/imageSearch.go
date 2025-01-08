@@ -33,7 +33,7 @@ func (a *ImageSearch) Execute(ctx interface{}) error {
 	log.Printf("Image Search | %v in X1:%d Y1:%d X2:%d Y2:%d", a.Targets, a.SearchBox.LeftX, a.SearchBox.TopY, a.SearchBox.RightX, a.SearchBox.BottomY)
 	w := a.SearchBox.RightX - a.SearchBox.LeftX
 	h := a.SearchBox.BottomY - a.SearchBox.TopY
-	pathDir := "./internal/resources/images/"
+	pathDir := "./internal/resources/images/icons/"
 	captureImg := robotgo.CaptureImg(a.SearchBox.LeftX+utils.XOffset, a.SearchBox.TopY+utils.YOffset, w, h)
 
 	img, _ := gocv.ImageToMatRGB(captureImg)
@@ -46,7 +46,7 @@ func (a *ImageSearch) Execute(ctx interface{}) error {
 		go func(target string) {
 			defer wg.Done()
 
-			ip := pathDir + "icons/" + target + ".png"
+			ip := pathDir + target + ".png"
 			// Read the template
 			template := gocv.IMRead(ip, gocv.IMReadColor)
 			defer template.Close()
@@ -54,9 +54,11 @@ func (a *ImageSearch) Execute(ctx interface{}) error {
 				fmt.Println("Error reading template image")
 				return
 			}
+			borderSize := 3
+			templateCut := template.Region(image.Rect(borderSize, borderSize, template.Cols()-borderSize, template.Rows()-borderSize))
 
 			var matches []robotgo.Point
-			matches = a.findTemplateMatches(img, template, 0.9)
+			matches = a.findTemplateMatches(img, templateCut, 0.8)
 
 			sort.Slice(matches, func(i, j int) bool {
 				return matches[i].Y < matches[j].Y
