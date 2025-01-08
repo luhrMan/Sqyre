@@ -5,12 +5,12 @@
 	"subactions": [
 		{
 			"uid": ".1",
-			"X": 1600,
-			"Y": 920
+			"X": 1138,
+			"Y": 534
 		},
 		{
 			"uid": ".2",
-			"waittime": 25
+			"waittime": 40
 		},
 		{
 			"uid": ".3",
@@ -18,7 +18,7 @@
 		},
 		{
 			"uid": ".4",
-			"waittime": 25
+			"waittime": 40
 		},
 		{
 			"uid": ".5",
