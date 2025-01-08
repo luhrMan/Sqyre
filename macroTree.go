@@ -179,9 +179,9 @@ func (m *macro) addActionToTree(actionType actions.ActionInterface) {
 	case *actions.Key:
 		str := ""
 		if !state {
-			str = "down"
+			str = "Down"
 		} else {
-			str = "up"
+			str = "Up"
 		}
 		action = actions.NewKey(key, str)
 	case *actions.Loop:
@@ -246,7 +246,7 @@ func (u *ui) updateTreeOnselect() {
 				Objects[0].(*fyne.Container).
 				Objects[1].(*widget.Select).SetSelected(node.Key)
 			//                                                boundKeySelect.SetSelected(node.Key)
-			if node.State == "down" {
+			if node.State == "Down" {
 				u.st.boundState.Set(false)
 			} else {
 				u.st.boundState.Set(true)
