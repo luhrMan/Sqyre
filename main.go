@@ -1,6 +1,7 @@
 package main
 
 import (
+	"Squire/internal/utils"
 	"github.com/go-vgo/robotgo"
 	"log"
 	"os"
@@ -34,8 +35,14 @@ func main() {
 }
 
 func toggleMousePos() {
+	locX, locY := robotgo.Location()
 	for {
 		robotgo.MilliSleep(2000)
-		log.Println(robotgo.Location())
+		newLocX, newLocY := robotgo.Location()
+		if locX == newLocX && locY == newLocY {
+			continue
+		}
+		locX, locY = robotgo.Location()
+		log.Println(locX-utils.XOffset, locY-utils.YOffset)
 	}
 }
