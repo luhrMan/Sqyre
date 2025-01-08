@@ -5,12 +5,12 @@
 	"subactions": [
 		{
 			"uid": ".1",
-			"X": 100,
-			"Y": 600
+			"X": 1008,
+			"Y": 594
 		},
 		{
 			"uid": ".2",
-			"waittime": 20
+			"waittime": 30
 		},
 		{
 			"uid": ".3",
@@ -18,7 +18,7 @@
 		},
 		{
 			"uid": ".4",
-			"waittime": 20
+			"waittime": 30
 		},
 		{
 			"uid": ".5",
@@ -27,9 +27,10 @@
 		},
 		{
 			"imagetargets": [
-				"Gold Purse",
-				"Gold Coin",
-				"Gold Coins"
+				"Sapphire",
+				"Ruby",
+				"Diamond",
+				"Emerald"
 			],
 			"searchbox": {
 				"name": "Player Inventory Merchant",
@@ -39,7 +40,7 @@
 				"y2": 1103
 			},
 			"uid": ".6",
-			"name": "",
+			"name": "All Treasures",
 			"subactions": [
 				{
 					"uid": ".6.1",
@@ -48,7 +49,7 @@
 				},
 				{
 					"uid": ".6.2",
-					"waittime": 20
+					"waittime": 30
 				},
 				{
 					"uid": ".6.3",
@@ -56,7 +57,7 @@
 				},
 				{
 					"uid": ".6.4",
-					"waittime": 20
+					"waittime": 30
 				}
 			]
 		},
