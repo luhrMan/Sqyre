@@ -13,12 +13,12 @@ import (
 //go:embed resources/json/items.json
 var itemsEmbed []byte
 
+var Items structs.Items
+
 //go:embed resources/images/icons/*
 var iconFS embed.FS
 
 var icons = make(map[string][]byte)
-
-var Items structs.Items
 
 func LoadIconBytes() (*map[string][]byte, error) {
         dirPath := "resources/images/icons"
@@ -53,11 +53,11 @@ func GetIconBytes() *map[string][]byte {
 
 func BytesToFyneIcons() *map[string]*fyne.StaticResource {
         var iconBytes, _ = LoadIconBytes()
-        icons := make(map[string]*fyne.StaticResource)
-        for k, v := range *iconBytes {
-                icons[k] = fyne.NewStaticResource(k, v)
+        i := make(map[string]*fyne.StaticResource)
+        for s, b := range *iconBytes {
+                i[s] = fyne.NewStaticResource(s, b)
         }
-        return &icons
+        return &i
 }
 func CreateItemMaps() {
         err := json.Unmarshal(itemsEmbed, &Items.Map)
