@@ -253,7 +253,7 @@ func (u *ui) updateTreeOnselect() {
 
 		case *actions.Loop:
 			u.st.boundLoopName.Set(node.Name)
-			u.st.boundCount.Set(float64(node.Count))
+			u.st.boundCount.Set(node.Count)
 			u.st.tabs.SelectIndex(4)
 		case *actions.ImageSearch:
 			u.st.boundImageSearchName.Set(node.Name)
