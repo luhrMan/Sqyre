@@ -18,10 +18,7 @@ type macro struct {
 	tree *widget.Tree
 	root *actions.Loop
 
-	// dt  *container.DocTabs
-
-	boundMacroName   binding.String
-	boundGlobalDelay binding.Int
+	boundMacroName binding.String
 }
 
 func NewMacro() macro {
@@ -92,7 +89,6 @@ func (m *macro) findNode(node actions.ActionInterface, uid string) actions.Actio
 }
 
 func (m *macro) executeActionTree(ctx ...interface{}) { //error
-	//	var context interface{}
 	err := m.root.Execute(ctx)
 	if err != nil {
 		log.Println(err)
@@ -267,10 +263,10 @@ func (u *ui) updateTreeOnselect() {
 			}
 			u.getCurrentTabMacro().tree.Refresh()
 			u.st.tabs.Items[5]. //image search tab
-				Content.(*fyne.Container). //settings border
-				Objects[1].(*fyne.Container). //2nd grid with columns
-				Objects[1].(*fyne.Container). //vbox
-				Objects[1].(*widget.Select).SetSelected(node.SearchBox.Name)
+						Content.(*fyne.Container).    //settings border
+						Objects[1].(*fyne.Container). //2nd grid with columns
+						Objects[1].(*fyne.Container). //vbox
+						Objects[1].(*widget.Select).SetSelected(node.SearchBox.Name)
 
 			u.st.tabs.SelectIndex(5)
 		}
