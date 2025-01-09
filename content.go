@@ -37,22 +37,64 @@ type ui struct {
 }
 
 type settingsTabs struct {
-	tabs *container.AppTabs
+	tabs                  *container.AppTabs
+	boundGlobalDelay      binding.Int
+	boundGlobalDelayEntry *widget.Entry
+	waitTab
+	moveTab
+	keyTab
+	loopTab
+	imageSearchTab
+}
 
-	boundTime            binding.Int
-	boundGlobalDelay     binding.Int
-	boundMoveX           binding.Int
-	boundMoveY           binding.Int
-	boundSpot            binding.String
-	boundButton          binding.Bool
-	boundKey             binding.String
-	boundState           binding.Bool
-	boundLoopName        binding.String
-	boundCount           binding.Float
+type waitTab struct {
+	boundTime binding.Int
+
+	boundTimeSlider *widget.Slider
+	boundTimeEntry  *widget.Entry
+}
+
+type moveTab struct {
+	boundMoveX binding.Int
+	boundMoveY binding.Int
+	boundSpot  binding.String
+
+	boundMoveXSlider *widget.Slider
+	boundMoveYSlider *widget.Slider
+	boundMoveXEntry  *widget.Entry
+	boundMoveYEntry  *widget.Entry
+	boundSpotSelect  *widget.Select
+}
+
+type keyTab struct {
+	boundButton binding.Bool
+	boundKey    binding.String
+	boundState  binding.Bool
+
+	boundButtonToggle *custom_widgets.Toggle
+	boundKeySelect    *widget.Select
+	boundStateToggle  *custom_widgets.Toggle
+}
+
+type loopTab struct {
+	boundLoopName binding.String
+	boundCount    binding.Float
+
+	boundLoopNameEntry *widget.Entry
+	boundCountSlider   *widget.Slider
+	boundCountLabel    *widget.Label
+}
+
+type imageSearchTab struct {
 	boundImageSearchName binding.String
 	boundSearchArea      binding.String
 	boundXSplit          binding.Int
 	boundYSplit          binding.Int
+
+	boundImageSearchNameEntry *widget.Entry
+	boundSearchAreaSelect     *widget.Select
+	boundXSplitSlider         *widget.Slider
+	boundXSplitEntry          *widget.Entry
 }
 
 // action settings
@@ -100,7 +142,6 @@ func (u *ui) LoadMainContent() *fyne.Container {
 	u.win.SetMainMenu(u.createMainMenu())
 
 	// searchAreaSelector.SetSelected(searchAreaSelector.Options[0])
-
 	macroLayout := container.NewBorder(
 		container.NewGridWithColumns(2,
 			container.NewHBox(
@@ -178,82 +219,83 @@ func (u *ui) bindVariables() {
 	// ct.boundMacroName = binding.BindString(&macroName)
 	u.st.boundGlobalDelay = binding.BindInt(&globalDelay)
 	u.st.boundGlobalDelay.AddListener(binding.NewDataListener(func() { robotgo.MouseSleep = globalDelay; robotgo.KeySleep = globalDelay }))
+	u.st.boundGlobalDelayEntry = widget.NewEntryWithData(binding.IntToString(u.st.boundGlobalDelay))
 	u.st.boundTime = binding.BindInt(&time)
+	u.st.boundTimeEntry = widget.NewEntryWithData(binding.IntToString(u.st.boundTime))
+	u.st.boundTimeSlider = widget.NewSliderWithData(0.0, 250.0, binding.IntToFloat(u.st.boundTime))
+	u.st.boundTime.AddListener(binding.NewDataListener(func() {
+		if _, ok := u.getCurrentTabMacro().findNode(u.getCurrentTabMacro().root, selectedTreeItem).(*actions.Wait); ok {
+			u.getCurrentTabMacro().findNode(u.getCurrentTabMacro().root, selectedTreeItem).(*actions.Wait).Time = time
+			u.getCurrentTabMacro().tree.Refresh()
+		}
+	}))
 	u.st.boundMoveX = binding.BindInt(&moveX)
 	u.st.boundMoveY = binding.BindInt(&moveY)
+	u.st.boundMoveXSlider = widget.NewSliderWithData(-1.0, float64(utils.MonitorWidth), binding.IntToFloat(u.st.boundMoveX))
+	u.st.boundMoveYSlider = widget.NewSliderWithData(-1.0, float64(utils.MonitorHeight), binding.IntToFloat(u.st.boundMoveY))
+	u.st.boundMoveXEntry = widget.NewEntryWithData(binding.IntToString(u.st.boundMoveX))
+	u.st.boundMoveYEntry = widget.NewEntryWithData(binding.IntToString(u.st.boundMoveY))
 	u.st.boundSpot = binding.BindString(&spot)
+	u.st.boundSpotSelect = widget.NewSelect(*structs.GetSpotMapKeys(*structs.GetSpotMap()), func(s string) {
+		u.st.boundSpot.Set(s)
+		u.st.boundMoveX.Set(structs.GetSpot(s).X)
+		u.st.boundMoveY.Set(structs.GetSpot(s).Y)
+	})
 	u.st.boundButton = binding.BindBool(&button)
+	u.st.boundButtonToggle = custom_widgets.NewToggleWithData(u.st.boundButton)
 	u.st.boundKey = binding.BindString(&key)
+	u.st.boundKeySelect = widget.NewSelect([]string{"ctrl", "alt", "shift"}, func(s string) { u.st.boundKey.Set(s) })
 	u.st.boundState = binding.BindBool(&state)
+	u.st.boundStateToggle = custom_widgets.NewToggleWithData(u.st.boundState)
 	u.st.boundLoopName = binding.BindString(&loopName)
 	u.st.boundCount = binding.BindFloat(&count)
+	u.st.boundLoopNameEntry = widget.NewEntryWithData(u.st.boundLoopName)
+	u.st.boundCountSlider = widget.NewSliderWithData(1, 10, u.st.boundCount)
+	u.st.boundCountLabel = widget.NewLabelWithData(binding.FloatToStringWithFormat(u.st.boundCount, "%0.0f"))
 	u.st.boundImageSearchName = binding.BindString(&imageSearchName)
 	u.st.boundSearchArea = binding.BindString(&searchArea)
 	u.st.boundXSplit = binding.BindInt(&xSplit)
 	u.st.boundYSplit = binding.BindInt(&ySplit)
-
+	u.st.boundImageSearchNameEntry = widget.NewEntryWithData(u.st.boundImageSearchName)
+	u.st.boundSearchAreaSelect = widget.NewSelect(*structs.GetSearchBoxMapKeys(*structs.GetSearchBoxMap()), func(s string) { u.st.boundSearchArea.Set(s) })
+	u.st.boundXSplitSlider = widget.NewSliderWithData(0, 100, binding.IntToFloat(u.st.boundXSplit))
+	u.st.boundXSplitEntry = widget.NewEntryWithData(binding.IntToString(u.st.boundXSplit))
 }
 
 func (u *ui) createDocTabs() {
 	u.dt = container.NewDocTabs()
 }
 
-// WIDGET LOCATIONS ARE HARD CODED IN THE TREE ONSELECTED CALLBACK. CAREFUL WITH CHANGES HERE
 func (u *ui) actionSettingsTabs() {
 	u.bindVariables()
 	var (
-		//BASICS
-		//wait
-		boundTimeSlider       = widget.NewSliderWithData(0.0, 250.0, binding.IntToFloat(u.st.boundTime))
-		boundTimeLabel        = widget.NewLabelWithData(binding.FloatToStringWithFormat(binding.IntToFloat(u.st.boundTime), "%0.0f"))
-		boundGlobalDelayEntry = widget.NewEntryWithData(binding.IntToString(u.st.boundGlobalDelay))
-		//move
-		// boundSpotSelect  = widget.NewSelect(*structs.GetSpotMapKeys(*structs.GetSpotMap()), func(s string) { boundSpot.Set(s) })
-		boundMoveXSlider = widget.NewSliderWithData(-1.0, float64(utils.MonitorWidth), binding.IntToFloat(u.st.boundMoveX))
-		boundMoveYSlider = widget.NewSliderWithData(-1.0, float64(utils.MonitorHeight), binding.IntToFloat(u.st.boundMoveY))
-		boundMoveXLabel  = widget.NewLabelWithData(binding.FloatToStringWithFormat(binding.IntToFloat(u.st.boundMoveX), "%0.0f"))
-		boundMoveYLabel  = widget.NewLabelWithData(binding.FloatToStringWithFormat(binding.IntToFloat(u.st.boundMoveY), "%0.0f"))
-		//click
-		boundButtonToggle = custom_widgets.NewToggleWithData(u.st.boundButton)
-		//key
-		boundKeySelect   = widget.NewSelect([]string{"ctrl", "alt", "shift"}, func(s string) { u.st.boundKey.Set(s) })
-		boundStateToggle = custom_widgets.NewToggleWithData(u.st.boundState)
-
-		//ADVANCED
-		//loop
-		boundLoopNameEntry = widget.NewEntryWithData(u.st.boundLoopName)
-		boundCountSlider   = widget.NewSliderWithData(1, 10, u.st.boundCount)
-		boundCountLabel    = widget.NewLabelWithData(binding.FloatToStringWithFormat(u.st.boundCount, "%0.0f"))
-		//image search
-		boundImageSearchNameEntry = widget.NewEntryWithData(u.st.boundImageSearchName)
-		boundSearchAreaSelect     = widget.NewSelect(*structs.GetSearchBoxMapKeys(*structs.GetSearchBoxMap()), func(s string) { u.st.boundSearchArea.Set(s) })
-		boundXSplitSlider         = widget.NewSliderWithData(0, 100, binding.IntToFloat(u.st.boundXSplit))
-		boundXSplitEntry          = widget.NewEntryWithData(binding.IntToString(u.st.boundXSplit))
-
 		waitSettings = container.NewVBox(
-			container.NewGridWithColumns(2, container.NewHBox(widget.NewLabel("Global Delay"), boundGlobalDelayEntry, layout.NewSpacer(), widget.NewLabel("ms"))),
+			container.NewGridWithColumns(2, container.NewHBox(widget.NewLabel("Global Delay"), u.st.boundGlobalDelayEntry, layout.NewSpacer(), widget.NewLabel("ms"))),
 			widget.NewLabel("------------------------------------------------------------------------------------"),
-			container.NewGridWithColumns(2, container.NewHBox(layout.NewSpacer(), boundTimeLabel, widget.NewLabel("ms")), boundTimeSlider),
+			container.NewGridWithColumns(2, container.NewBorder(nil, nil, nil, container.NewHBox(widget.NewLabel("ms")), u.st.boundTimeEntry), u.st.boundTimeSlider),
 		)
 		moveSettings = container.NewBorder(
-			container.NewVBox(container.NewGridWithColumns(2,
-				container.NewHBox(layout.NewSpacer(), widget.NewLabel("X:"), boundMoveXLabel), boundMoveXSlider,
-				container.NewHBox(layout.NewSpacer(), widget.NewLabel("Y:"), boundMoveYLabel), boundMoveYSlider),
+			container.NewVBox(
+				container.NewGridWithColumns(2,
+					container.NewHBox(layout.NewSpacer(), widget.NewLabel("Spot:")), u.st.boundSpotSelect,
+					container.NewBorder(nil, nil, container.NewHBox(widget.NewLabel("X:")), nil, u.st.boundMoveXEntry), u.st.boundMoveXSlider,
+					container.NewBorder(nil, nil, container.NewHBox(widget.NewLabel("Y:")), nil, u.st.boundMoveYEntry), u.st.boundMoveYSlider,
+				),
 			), nil, nil, nil)
 		clickSettings = container.NewVBox(
-			container.NewHBox(layout.NewSpacer(), widget.NewLabel("left"), boundButtonToggle, widget.NewLabel("right"), layout.NewSpacer()),
+			container.NewHBox(layout.NewSpacer(), widget.NewLabel("left"), u.st.boundButtonToggle, widget.NewLabel("right"), layout.NewSpacer()),
 		)
 		keySettings = container.NewVBox(
-			container.NewHBox(layout.NewSpacer(), boundKeySelect, widget.NewLabel("down"), boundStateToggle, widget.NewLabel("up"), layout.NewSpacer()))
+			container.NewHBox(layout.NewSpacer(), u.st.boundKeySelect, widget.NewLabel("down"), u.st.boundStateToggle, widget.NewLabel("up"), layout.NewSpacer()))
 		loopSettings = container.NewVBox(
-			container.NewGridWithColumns(2, container.NewHBox(layout.NewSpacer(), widget.NewLabel("name:")), boundLoopNameEntry),
-			container.NewGridWithColumns(2, container.NewHBox(layout.NewSpacer(), widget.NewLabel("loops:"), boundCountLabel), boundCountSlider),
+			container.NewGridWithColumns(2, container.NewHBox(layout.NewSpacer(), widget.NewLabel("name:")), u.st.boundLoopNameEntry),
+			container.NewGridWithColumns(2, container.NewHBox(layout.NewSpacer(), widget.NewLabel("loops:"), u.st.boundCountLabel), u.st.boundCountSlider),
 		)
 		imageSearchSettings = container.NewBorder(
 			container.NewVBox(
-				container.NewGridWithColumns(2, container.NewHBox(widget.NewLabel("name:")), boundImageSearchNameEntry),
-				container.NewGridWithColumns(2, container.NewHBox(widget.NewLabel("search area:")), boundSearchAreaSelect),
-				container.NewGridWithColumns(3, container.NewHBox(widget.NewLabel("screen split cols:")), boundXSplitSlider, boundXSplitEntry),
+				container.NewGridWithColumns(2, container.NewHBox(widget.NewLabel("name:")), u.st.boundImageSearchNameEntry),
+				container.NewGridWithColumns(2, container.NewHBox(widget.NewLabel("search area:")), u.st.boundSearchAreaSelect),
+				container.NewGridWithColumns(3, container.NewHBox(widget.NewLabel("screen split cols:")), u.st.boundXSplitSlider, u.st.boundXSplitEntry),
 			), nil, nil, nil,
 			u.createItemsCheckTree(),
 		)
@@ -261,6 +303,7 @@ func (u *ui) actionSettingsTabs() {
 		ocrSettings = container.NewHBox(
 			layout.NewSpacer(), layout.NewSpacer())
 	)
+
 	u.st.tabs.Append(container.NewTabItem("Wait", waitSettings))
 	u.st.tabs.Append(container.NewTabItem("Move", moveSettings))
 	u.st.tabs.Append(container.NewTabItem("Click", clickSettings))
