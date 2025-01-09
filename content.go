@@ -40,6 +40,7 @@ type settingsTabs struct {
 	tabs *container.AppTabs
 
 	boundTime            binding.Int
+	boundGlobalDelay     binding.Int
 	boundMoveX           binding.Int
 	boundMoveY           binding.Int
 	boundSpot            binding.String
@@ -57,12 +58,12 @@ type settingsTabs struct {
 // action settings
 var (
 	macroName        string
-	globalDelay      int = 25
-	selectedTreeItem     = ".1"
+	selectedTreeItem = ".1"
 
 	//BASICS
 	//wait
-	time int
+	time        int
+	globalDelay int = 30
 	//move
 	moveX int
 	moveY int
@@ -100,16 +101,10 @@ func (u *ui) LoadMainContent() *fyne.Container {
 
 	// searchAreaSelector.SetSelected(searchAreaSelector.Options[0])
 
-	//        boundMacroNameEntry := widget.NewEntryWitdhData(ct.boundMacroName)
-
-	// boundGlobalDelayEntry := widget.NewEntryWithData(binding.IntToString(ct.boundGlobalDelay))
-
 	macroLayout := container.NewBorder(
 		container.NewGridWithColumns(2,
 			container.NewHBox(
 				u.createMacroToolbar(),
-				// widget.NewLabel("Global Delay:"),
-				// boundGlobalDelayEntry,
 				layout.NewSpacer(),
 				widget.NewLabel("Macro Name:"),
 			),
@@ -181,8 +176,8 @@ func (u *ui) createSelect() {
 }
 func (u *ui) bindVariables() {
 	// ct.boundMacroName = binding.BindString(&macroName)
-	// ct.boundGlobalDelay = binding.BindInt(&globalDelay)
-
+	u.st.boundGlobalDelay = binding.BindInt(&globalDelay)
+	u.st.boundGlobalDelay.AddListener(binding.NewDataListener(func() { robotgo.MouseSleep = globalDelay; robotgo.KeySleep = globalDelay }))
 	u.st.boundTime = binding.BindInt(&time)
 	u.st.boundMoveX = binding.BindInt(&moveX)
 	u.st.boundMoveY = binding.BindInt(&moveY)
@@ -209,8 +204,9 @@ func (u *ui) actionSettingsTabs() {
 	var (
 		//BASICS
 		//wait
-		boundTimeSlider = widget.NewSliderWithData(0.0, 250.0, binding.IntToFloat(u.st.boundTime))
-		boundTimeLabel  = widget.NewLabelWithData(binding.FloatToStringWithFormat(binding.IntToFloat(u.st.boundTime), "%0.0f"))
+		boundTimeSlider       = widget.NewSliderWithData(0.0, 250.0, binding.IntToFloat(u.st.boundTime))
+		boundTimeLabel        = widget.NewLabelWithData(binding.FloatToStringWithFormat(binding.IntToFloat(u.st.boundTime), "%0.0f"))
+		boundGlobalDelayEntry = widget.NewEntryWithData(binding.IntToString(u.st.boundGlobalDelay))
 		//move
 		// boundSpotSelect  = widget.NewSelect(*structs.GetSpotMapKeys(*structs.GetSpotMap()), func(s string) { boundSpot.Set(s) })
 		boundMoveXSlider = widget.NewSliderWithData(-1.0, float64(utils.MonitorWidth), binding.IntToFloat(u.st.boundMoveX))
@@ -235,6 +231,7 @@ func (u *ui) actionSettingsTabs() {
 		boundXSplitEntry          = widget.NewEntryWithData(binding.IntToString(u.st.boundXSplit))
 
 		waitSettings = container.NewVBox(
+			container.NewGridWithColumns(2, container.NewHBox(widget.NewLabel("Global Delay"), boundGlobalDelayEntry, layout.NewSpacer(), widget.NewLabel("ms"))),
 			widget.NewLabel("------------------------------------------------------------------------------------"),
 			container.NewGridWithColumns(2, container.NewHBox(layout.NewSpacer(), boundTimeLabel, widget.NewLabel("ms")), boundTimeSlider),
 		)
@@ -353,6 +350,7 @@ func (u *ui) createMacroToolbar() *widget.Toolbar {
 		widget.NewToolbarSeparator(),
 		widget.NewToolbarSpacer(),
 		widget.NewToolbarAction(theme.MediaPlayIcon(), func() {
+			robotgo.ActiveName("Dark and Darker")
 			u.getCurrentTabMacro().executeActionTree()
 		}),
 		widget.NewToolbarAction(theme.DocumentSaveIcon(), func() {
