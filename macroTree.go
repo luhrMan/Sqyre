@@ -237,10 +237,12 @@ func (u *ui) updateTreeOnselect() {
 			u.st.tabs.SelectIndex(2)
 		case *actions.Key:
 			key = node.Key
-			u.st.tabs.Items[3].
-				Content.(*fyne.Container).
-				Objects[0].(*fyne.Container).
-				Objects[1].(*widget.Select).SetSelected(node.Key)
+			u.st.boundKeySelect.SetSelected(node.Key)
+			//			u.st.tabs.Items[3].
+			//				Content.(*fyne.Container).
+			//				Objects[0].(*fyne.Container).
+			//				Objects[1].(*widget.Select).SetSelected(node.Key)
+
 			//                                                boundKeySelect.SetSelected(node.Key)
 			if node.State == "Down" {
 				u.st.boundState.Set(false)
@@ -262,11 +264,12 @@ func (u *ui) updateTreeOnselect() {
 				imageSearchTargets[t] = true
 			}
 			u.getCurrentTabMacro().tree.Refresh()
-			u.st.tabs.Items[5]. //image search tab
-						Content.(*fyne.Container).    //settings border
-						Objects[1].(*fyne.Container). //2nd grid with columns
-						Objects[1].(*fyne.Container). //vbox
-						Objects[1].(*widget.Select).SetSelected(node.SearchBox.Name)
+			u.st.boundSearchAreaSelect.SetSelected(node.SearchBox.Name)
+			//			u.st.tabs.Items[5]. //image search tab
+			//				Content.(*fyne.Container). //settings border
+			//				Objects[1].(*fyne.Container). //2nd grid with columns
+			//				Objects[1].(*fyne.Container). //vbox
+			//				Objects[1].(*widget.Select).SetSelected(node.SearchBox.Name)
 
 			u.st.tabs.SelectIndex(5)
 		}
