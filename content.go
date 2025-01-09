@@ -78,7 +78,7 @@ type keyTab struct {
 
 type loopTab struct {
 	boundLoopName binding.String
-	boundCount    binding.Float
+	boundCount    binding.Int
 
 	boundLoopNameEntry *widget.Entry
 	boundCountSlider   *widget.Slider
@@ -119,7 +119,7 @@ var (
 	//ADVANCED
 	//loop
 	loopName string
-	count    float64 = 1
+	count    int = 1
 	//image search
 	imageSearchName    string
 	searchArea         string
@@ -224,8 +224,8 @@ func (u *ui) bindVariables() {
 	u.st.boundTimeEntry = widget.NewEntryWithData(binding.IntToString(u.st.boundTime))
 	u.st.boundTimeSlider = widget.NewSliderWithData(0.0, 250.0, binding.IntToFloat(u.st.boundTime))
 	u.st.boundTime.AddListener(binding.NewDataListener(func() {
-		if _, ok := u.getCurrentTabMacro().findNode(u.getCurrentTabMacro().root, selectedTreeItem).(*actions.Wait); ok {
-			u.getCurrentTabMacro().findNode(u.getCurrentTabMacro().root, selectedTreeItem).(*actions.Wait).Time = time
+		if n, ok := u.getCurrentTabMacro().findNode(u.getCurrentTabMacro().root, selectedTreeItem).(*actions.Wait); ok {
+			n.Time = time
 			u.getCurrentTabMacro().tree.Refresh()
 		}
 	}))
@@ -241,25 +241,87 @@ func (u *ui) bindVariables() {
 		u.st.boundMoveX.Set(structs.GetSpot(s).X)
 		u.st.boundMoveY.Set(structs.GetSpot(s).Y)
 	})
+	u.st.boundMoveX.AddListener(binding.NewDataListener(func() {
+		if n, ok := u.getCurrentTabMacro().findNode(u.getCurrentTabMacro().root, selectedTreeItem).(*actions.Move); ok {
+			n.X = moveX
+			u.getCurrentTabMacro().tree.Refresh()
+		}
+	}))
+	u.st.boundMoveY.AddListener(binding.NewDataListener(func() {
+		if n, ok := u.getCurrentTabMacro().findNode(u.getCurrentTabMacro().root, selectedTreeItem).(*actions.Move); ok {
+			n.Y = moveY
+			u.getCurrentTabMacro().tree.Refresh()
+		}
+	}))
 	u.st.boundButton = binding.BindBool(&button)
 	u.st.boundButtonToggle = custom_widgets.NewToggleWithData(u.st.boundButton)
+	u.st.boundButton.AddListener(binding.NewDataListener(func() {
+		if n, ok := u.getCurrentTabMacro().findNode(u.getCurrentTabMacro().root, selectedTreeItem).(*actions.Click); ok {
+			if button {
+				n.Button = "right"
+			} else {
+				n.Button = "left"
+			}
+			u.getCurrentTabMacro().tree.Refresh()
+		}
+	}))
 	u.st.boundKey = binding.BindString(&key)
 	u.st.boundKeySelect = widget.NewSelect([]string{"ctrl", "alt", "shift"}, func(s string) { u.st.boundKey.Set(s) })
 	u.st.boundState = binding.BindBool(&state)
 	u.st.boundStateToggle = custom_widgets.NewToggleWithData(u.st.boundState)
+	u.st.boundKey.AddListener(binding.NewDataListener(func() {
+		if n, ok := u.getCurrentTabMacro().findNode(u.getCurrentTabMacro().root, selectedTreeItem).(*actions.Key); ok {
+			n.Key = key
+			u.getCurrentTabMacro().tree.Refresh()
+		}
+	}))
+	u.st.boundState.AddListener(binding.NewDataListener(func() {
+		if n, ok := u.getCurrentTabMacro().findNode(u.getCurrentTabMacro().root, selectedTreeItem).(*actions.Key); ok {
+			if state {
+				n.State = "Up"
+			} else {
+				n.State = "Down"
+			}
+			u.getCurrentTabMacro().tree.Refresh()
+		}
+	}))
 	u.st.boundLoopName = binding.BindString(&loopName)
-	u.st.boundCount = binding.BindFloat(&count)
+	u.st.boundCount = binding.BindInt(&count)
 	u.st.boundLoopNameEntry = widget.NewEntryWithData(u.st.boundLoopName)
-	u.st.boundCountSlider = widget.NewSliderWithData(1, 10, u.st.boundCount)
-	u.st.boundCountLabel = widget.NewLabelWithData(binding.FloatToStringWithFormat(u.st.boundCount, "%0.0f"))
+	u.st.boundCountSlider = widget.NewSliderWithData(1, 10, binding.IntToFloat(u.st.boundCount))
+	u.st.boundCountLabel = widget.NewLabelWithData(binding.IntToString(u.st.boundCount))
+	u.st.boundLoopName.AddListener(binding.NewDataListener(func() {
+		if n, ok := u.getCurrentTabMacro().findNode(u.getCurrentTabMacro().root, selectedTreeItem).(*actions.Loop); ok {
+			n.Name = loopName
+			u.getCurrentTabMacro().tree.Refresh()
+		}
+	}))
+	u.st.boundCount.AddListener(binding.NewDataListener(func() {
+		if n, ok := u.getCurrentTabMacro().findNode(u.getCurrentTabMacro().root, selectedTreeItem).(*actions.Loop); ok {
+			n.Count = count
+			u.getCurrentTabMacro().tree.Refresh()
+		}
+	}))
 	u.st.boundImageSearchName = binding.BindString(&imageSearchName)
 	u.st.boundSearchArea = binding.BindString(&searchArea)
 	u.st.boundXSplit = binding.BindInt(&xSplit)
 	u.st.boundYSplit = binding.BindInt(&ySplit)
 	u.st.boundImageSearchNameEntry = widget.NewEntryWithData(u.st.boundImageSearchName)
 	u.st.boundSearchAreaSelect = widget.NewSelect(*structs.GetSearchBoxMapKeys(*structs.GetSearchBoxMap()), func(s string) { u.st.boundSearchArea.Set(s) })
-	u.st.boundXSplitSlider = widget.NewSliderWithData(0, 100, binding.IntToFloat(u.st.boundXSplit))
+	u.st.boundXSplitSlider = widget.NewSliderWithData(0, 50, binding.IntToFloat(u.st.boundXSplit))
 	u.st.boundXSplitEntry = widget.NewEntryWithData(binding.IntToString(u.st.boundXSplit))
+	u.st.boundImageSearchName.AddListener(binding.NewDataListener(func() {
+		if n, ok := u.getCurrentTabMacro().findNode(u.getCurrentTabMacro().root, selectedTreeItem).(*actions.ImageSearch); ok {
+			n.Name = imageSearchName
+			u.getCurrentTabMacro().tree.Refresh()
+		}
+	}))
+	u.st.boundSearchArea.AddListener(binding.NewDataListener(func() {
+		if n, ok := u.getCurrentTabMacro().findNode(u.getCurrentTabMacro().root, selectedTreeItem).(*actions.ImageSearch); ok {
+			n.SearchBox = *structs.GetSearchBox(searchArea)
+			u.getCurrentTabMacro().tree.Refresh()
+		}
+	}))
 }
 
 func (u *ui) createDocTabs() {
