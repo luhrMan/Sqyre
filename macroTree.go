@@ -193,7 +193,7 @@ func (m *macro) addActionToTree(actionType actions.ActionInterface) {
 	case *actions.Ocr:
 		// n, _ := boundAdvancedActionName.Get()
 		// t, _ := boundOcrTarget.Get()
-		// s, _ := boundSearchArea.Get()
+		// s, _ := boundImageSearchArea.Get()
 		// action = &actions.OcrAction{
 		// 	SearchBox: *actions.GetSearchBox(s),
 		// 	Target:    t,
@@ -264,7 +264,7 @@ func (u *ui) updateTreeOnselect() {
 				imageSearchTargets[t] = true
 			}
 			u.getCurrentTabMacro().tree.Refresh()
-			u.st.boundSearchAreaSelect.SetSelected(node.SearchBox.Name)
+			u.st.boundImageSearchAreaSelect.SetSelected(node.SearchBox.Name)
 			//			u.st.tabs.Items[5]. //image search tab
 			//				Content.(*fyne.Container). //settings border
 			//				Objects[1].(*fyne.Container). //2nd grid with columns

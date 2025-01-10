@@ -87,40 +87,30 @@ type loopTab struct {
 
 type imageSearchTab struct {
 	boundImageSearchName binding.String
-	boundSearchArea      binding.String
+	boundImageSearchArea binding.String
 	boundXSplit          binding.Int
 	boundYSplit          binding.Int
 
-	boundImageSearchNameEntry *widget.Entry
-	boundSearchAreaSelect     *widget.Select
-	boundXSplitSlider         *widget.Slider
-	boundXSplitEntry          *widget.Entry
+	boundImageSearchNameEntry  *widget.Entry
+	boundImageSearchAreaSelect *widget.Select
+	boundXSplitSlider          *widget.Slider
+	boundXSplitEntry           *widget.Entry
 }
 
 // action settings
 var (
-	macroName        string
-	selectedTreeItem = ".1"
-
-	//BASICS
-	//wait
-	time        int
-	globalDelay int = 30
-	//move
-	moveX int
-	moveY int
-	spot  string
-	//click
-	button bool
-	//key
-	key   string
-	state bool
-
-	//ADVANCED
-	//loop
-	loopName string
-	count    int = 1
-	//image search
+	macroName          string
+	selectedTreeItem   = ".1"
+	time               int
+	globalDelay        = 30
+	moveX              int
+	moveY              int
+	spot               string
+	button             bool
+	key                string
+	state              bool
+	loopName           string
+	count              int = 1
 	imageSearchName    string
 	searchArea         string
 	xSplit             int
@@ -303,11 +293,12 @@ func (u *ui) bindVariables() {
 		}
 	}))
 	u.st.boundImageSearchName = binding.BindString(&imageSearchName)
-	u.st.boundSearchArea = binding.BindString(&searchArea)
+	u.st.boundImageSearchArea = binding.BindString(&searchArea)
 	u.st.boundXSplit = binding.BindInt(&xSplit)
 	u.st.boundYSplit = binding.BindInt(&ySplit)
 	u.st.boundImageSearchNameEntry = widget.NewEntryWithData(u.st.boundImageSearchName)
-	u.st.boundSearchAreaSelect = widget.NewSelect(*structs.GetSearchBoxMapKeys(*structs.GetSearchBoxMap()), func(s string) { u.st.boundSearchArea.Set(s) })
+	u.st.boundImageSearchAreaSelect = widget.NewSelect(*structs.GetSearchBoxMapKeys(*structs.GetSearchBoxMap()), func(s string) { u.st.boundImageSearchArea.Set(s) })
+
 	u.st.boundXSplitSlider = widget.NewSliderWithData(0, 50, binding.IntToFloat(u.st.boundXSplit))
 	u.st.boundXSplitEntry = widget.NewEntryWithData(binding.IntToString(u.st.boundXSplit))
 	u.st.boundImageSearchName.AddListener(binding.NewDataListener(func() {
@@ -316,7 +307,7 @@ func (u *ui) bindVariables() {
 			u.getCurrentTabMacro().tree.Refresh()
 		}
 	}))
-	u.st.boundSearchArea.AddListener(binding.NewDataListener(func() {
+	u.st.boundImageSearchArea.AddListener(binding.NewDataListener(func() {
 		if n, ok := u.getCurrentTabMacro().findNode(u.getCurrentTabMacro().root, selectedTreeItem).(*actions.ImageSearch); ok {
 			n.SearchBox = *structs.GetSearchBox(searchArea)
 			u.getCurrentTabMacro().tree.Refresh()
@@ -339,11 +330,11 @@ func (u *ui) actionSettingsTabs() {
 		moveSettings = container.NewBorder(
 			container.NewVBox(
 				container.NewGridWithColumns(2,
-					container.NewHBox(layout.NewSpacer(), widget.NewLabel("Spot:")), u.st.boundSpotSelect,
 					container.NewBorder(nil, nil, container.NewHBox(widget.NewLabel("X:")), nil, u.st.boundMoveXEntry), u.st.boundMoveXSlider,
 					container.NewBorder(nil, nil, container.NewHBox(widget.NewLabel("Y:")), nil, u.st.boundMoveYEntry), u.st.boundMoveYSlider,
+					container.NewHBox(layout.NewSpacer(), widget.NewLabel("Spot:")), u.st.boundSpotSelect,
 				),
-			), nil, nil, nil)
+			), nil, nil, nil) //, u.st.boundSpotTree)
 		clickSettings = container.NewVBox(
 			container.NewHBox(layout.NewSpacer(), widget.NewLabel("left"), u.st.boundButtonToggle, widget.NewLabel("right"), layout.NewSpacer()),
 		)
@@ -356,9 +347,10 @@ func (u *ui) actionSettingsTabs() {
 		imageSearchSettings = container.NewBorder(
 			container.NewVBox(
 				container.NewGridWithColumns(2, container.NewHBox(widget.NewLabel("name:")), u.st.boundImageSearchNameEntry),
-				container.NewGridWithColumns(2, container.NewHBox(widget.NewLabel("search area:")), u.st.boundSearchAreaSelect),
+				container.NewGridWithColumns(2, container.NewHBox(widget.NewLabel("search area:")), u.st.boundImageSearchAreaSelect),
 				container.NewGridWithColumns(3, container.NewHBox(widget.NewLabel("screen split cols:")), u.st.boundXSplitSlider, u.st.boundXSplitEntry),
 			), nil, nil, nil,
+			//			u.st.boundImageSearchTargetsTree,
 			u.createItemsCheckTree(),
 		)
 
@@ -403,27 +395,27 @@ func (u *ui) createMacroToolbar() *widget.Toolbar {
 			}
 			og := node.String()
 			switch node := node.(type) {
-			case *actions.Wait:
-				node.Time = time
-			case *actions.Move:
-				node.X = moveX
-				node.Y = moveY
-			case *actions.Click:
-				if !button {
-					node.Button = "left"
-				} else {
-					node.Button = "right"
-				}
-			case *actions.Key:
-				node.Key = key
-				if !state {
-					node.State = "down"
-				} else {
-					node.State = "up"
-				}
-			case *actions.Loop:
-				node.Name = loopName
-				node.Count = int(count)
+			//			case *actions.Wait:
+			//				node.Time = time
+			//			case *actions.Move:
+			//				node.X = moveX
+			//				node.Y = moveY
+			//			case *actions.Click:
+			//				if !button {
+			//					node.Button = "left"
+			//				} else {
+			//					node.Button = "right"
+			//				}
+			//			case *actions.Key:
+			//				node.Key = key
+			//				if !state {
+			//					node.State = "down"
+			//				} else {
+			//					node.State = "up"
+			//				}
+			//			case *actions.Loop:
+			//				node.Name = loopName
+			//				node.Count = count
 			case *actions.ImageSearch:
 				var t []string
 				for i, item := range imageSearchTargets {
