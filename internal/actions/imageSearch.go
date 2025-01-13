@@ -22,6 +22,11 @@ type ImageSearch struct {
 	advancedAction                   //`json:"advancedaction"`
 }
 
+type Match struct {
+	Location image.Point
+	Score    float64
+}
+
 func NewImageSearch(name string, subActions []ActionInterface, targets []string, searchbox structs.SearchBox) *ImageSearch {
 	return &ImageSearch{
 		advancedAction: *newAdvancedAction(name, subActions),
@@ -43,7 +48,7 @@ func (a *ImageSearch) Execute(ctx interface{}) error {
 	imgDraw := img.Clone()
 	defer imgDraw.Close()
 
-	results := a.match("color", pathDir, img, imgDraw)
+	results := a.match("feature", pathDir, img, imgDraw)
 
 	count := 0
 	//clicked := []robotgo.Point
@@ -99,7 +104,7 @@ func (a *ImageSearch) match(matchMode, pathDir string, img, imgDraw gocv.Mat) ma
 
 	xSize := img.Cols() / ySplit
 	ySize := img.Rows() / xSplit
-	borderSize := 3
+	borderSize := 5
 	var splitAreas []image.Rectangle
 	for r := 0; r < ySplit; r++ {
 		for c := 0; c < xSplit; c++ {
@@ -135,10 +140,12 @@ func (a *ImageSearch) match(matchMode, pathDir string, img, imgDraw gocv.Mat) ma
 			case "color":
 				matches = a.colorMatching(img, templateCut, tolerance, target, splitAreas)
 			case "threshold":
+				a.thresholdMatching(img, template)
+			case "feature":
+				matches = a.featureMatching(img, template, target)
 			default:
 
 			}
-
 			sort.Slice(matches, func(i, j int) bool {
 				return matches[i].Y < matches[j].Y
 			})
@@ -157,7 +164,7 @@ func (a *ImageSearch) match(matchMode, pathDir string, img, imgDraw gocv.Mat) ma
 					match.Y+ySize-(borderSize*2),
 				)
 				gocv.Rectangle(&imgDraw, rect, color.RGBA{R: 255, A: 255}, 1)
-				gocv.PutText(&imgDraw, target, image.Point{X: match.X, Y: match.Y + ySize}, gocv.FontHersheySimplex, 0.3, color.RGBA{G: 255, A: 255}, 1)
+				gocv.PutText(&imgDraw, target, image.Point{X: match.X, Y: match.Y + 5}, gocv.FontHersheySimplex, 0.3, color.RGBA{G: 255, A: 255}, 1)
 			}
 		}(target)
 	}
@@ -324,6 +331,172 @@ func (a *ImageSearch) findTemplateMatches(img, template gocv.Mat, threshold floa
 	}
 
 	return matches
+}
+
+func (a *ImageSearch) featureMatching(img, template gocv.Mat, target string) []robotgo.Point {
+	//	sift := gocv.NewSIFT()
+	nFeatures := 0
+	nOctaveLayers := 5
+	contrastThreshold := 0.04
+	edgeThreshold := 300.0
+	sigma := 1.6
+	sift := gocv.NewSIFTWithParams(&nFeatures, &nOctaveLayers, &contrastThreshold, &edgeThreshold, &sigma)
+	defer sift.Close()
+
+	mask := gocv.NewMat()
+	defer mask.Close()
+
+	m := gocv.IMRead("./internal/resources/images/empty-stash.png", gocv.IMReadGrayScale)
+	defer m.Close()
+	diffed := gocv.NewMat()
+	defer diffed.Close()
+	threshM := gocv.NewMat()
+	defer threshM.Close()
+
+	grayI := gocv.NewMat()
+	threshI := gocv.NewMat()
+	bitwiseI := gocv.NewMat()
+	defer grayI.Close()
+	defer threshI.Close()
+	defer bitwiseI.Close()
+	gocv.CvtColor(img, &grayI, gocv.ColorBGRToGray)
+	gocv.AbsDiff(m, grayI, &diffed)
+	gocv.Threshold(diffed, &threshM, 48, 255, gocv.ThresholdBinary)
+	kernel := gocv.GetStructuringElement(gocv.MorphCross, image.Point{1, 1})
+	defer kernel.Close()
+	gocv.MorphologyExWithParams(diffed, &diffed, gocv.MorphType(gocv.MorphCross), kernel, 1, gocv.BorderIsolated)
+	gocv.Inpaint(img, diffed, &diffed, 1, 1)
+
+	//	gocv.Threshold(grayI, &threshI, 48, 255, gocv.ThresholdBinary)
+	//	gocv.BitwiseAndWithMask(img, img, &bitwiseI, threshI)
+
+	grayT := gocv.NewMat()
+	threshT := gocv.NewMat()
+	bitwiseT := gocv.NewMat()
+	defer grayT.Close()
+	defer threshT.Close()
+	defer bitwiseT.Close()
+	gocv.CvtColor(template, &grayT, gocv.ColorBGRToGray)
+	gocv.Threshold(grayT, &threshT, 48, 255, gocv.ThresholdBinary)
+	gocv.BitwiseAndWithMask(template, template, &bitwiseT, threshT)
+
+	//	kp1, des1 := sift.DetectAndCompute(bitwiseI, mask)
+	kp1, des1 := sift.DetectAndCompute(diffed, mask)
+	gocv.DrawKeyPoints(diffed, kp1, &img, color.RGBA{R: 255}, gocv.NotDrawSinglePoints)
+	w := gocv.NewWindow("test")
+	defer w.Close()
+	w.IMShow(img)
+	w.WaitKey(0)
+
+	kp2, des2 := sift.DetectAndCompute(bitwiseT, mask)
+	matcher := gocv.NewBFMatcher()
+	//	matcher := gocv.NewFlannBasedMatcher()
+	defer matcher.Close()
+
+	matches := matcher.KnnMatch(des1, des2, 2)
+
+	//	var tolerance float64
+	//	switch {
+	//	case strings.Contains(a.SearchBox.Name, "Stash"):
+	//		tolerance = 0.15
+	//	case strings.Contains(a.SearchBox.Name, "Merchant"):
+	//		tolerance = 0.2
+	//	default:
+	//		tolerance = 0.05
+	//	}
+
+	var goodMatches []gocv.DMatch
+	for _, m := range matches {
+		if len(m) > 1 {
+			if m[0].Distance < 0.1*m[1].Distance {
+				goodMatches = append(goodMatches, m[0])
+			}
+		}
+	}
+
+	//	locationMap := make(map[image.Point]int)
+
+	// Apply ratio test and group matches by location
+	//	for _, m := range matches {
+	//		if len(m) >= 2 && m[0].Distance < 0.2*m[1].Distance {
+	//			// Get the location of the match in the search image
+	//			matchLoc := kp1[m[0].TrainIdx]
+	//
+	//			// Round to nearest coordinate to group nearby matches
+	//			roundedPoint := image.Point{
+	//				X: int(matchLoc.X),
+	//				Y: int(matchLoc.Y),
+	//			}
+	//
+	//			// Group matches within a small radius
+	//			found := false
+	//			for existingPoint := range locationMap {
+	//				dx := float64(existingPoint.X - roundedPoint.X)
+	//				dy := float64(existingPoint.Y - roundedPoint.Y)
+	//				distance := dx*dx + dy*dy
+	//
+	//				if distance < 25 { // Adjust this radius based on your icon size
+	//					locationMap[existingPoint]++
+	//					found = true
+	//					break
+	//				}
+	//			}
+	//
+	//			if !found {
+	//				locationMap[roundedPoint] = 1
+	//			}
+	//		}
+	//	}
+
+	// Convert to matches array, filtering by minimum match count
+	//	var results []Match
+	var points []robotgo.Point
+
+	//	for loc, count := range locationMap {
+	//		if count >= minMatchCount {
+	//			results = append(results, Match{
+	//				Location: loc,
+	//				Score:    float64(count) / float64(len(matches)),
+	//			})
+	//			points = append(points, robotgo.Point{
+	//				X: loc.X,
+	//				Y: loc.Y,
+	//			})
+	//		}
+	//	}
+	log.Println(target)
+	log.Println(points)
+	draw := img.Clone()
+	if len(goodMatches) > 1 {
+		gocv.DrawMatches(bitwiseI, kp1, bitwiseT, kp2, goodMatches, &draw, color.RGBA{255, 0, 0, 0}, color.RGBA{0, 255, 0, 0}, nil, gocv.NotDrawSinglePoints)
+	}
+	//	w := fyne.CurrentApp().NewWindow("found images")
+	gocv.IMWrite("./internal/resources/images/FM/"+target+"FM.png", draw)
+
+	//	w.Content(canvas.NewImageFromFile())
+
+	return points
+}
+
+func (a *ImageSearch) thresholdMatching(img, template gocv.Mat) {
+	log.Println("Threshold matching...")
+	//	grayImg := gocv.NewMat()
+	//	defer grayImg.Close()
+
+	grayTemplate := gocv.NewMat()
+	defer grayTemplate.Close()
+
+	thTemplate := gocv.NewMat()
+	defer thTemplate.Close()
+
+	//	gocv.CvtColor(img, &grayImg, gocv.ColorRGBToGray)
+	gocv.CvtColor(template, &grayTemplate, gocv.ColorRGBToGray)
+
+	gocv.AdaptiveThreshold(grayTemplate, &thTemplate, 50, gocv.AdaptiveThresholdGaussian, gocv.ThresholdBinary, 11, 2)
+	window := gocv.NewWindow("Threshold")
+	defer window.Close()
+	window.IMShow(thTemplate)
+	gocv.WaitKey(0)
 }
 
 //func (a *ImageSearch) bitMapMatching(captureImg image.Image, pathDir string) map[string][]robotgo.Point {
