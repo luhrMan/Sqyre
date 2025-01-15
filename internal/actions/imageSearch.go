@@ -8,6 +8,7 @@ import (
 	"image"
 	"image/color"
 	"log"
+	"math"
 	"sort"
 	"strings"
 	"sync"
@@ -48,7 +49,7 @@ func (a *ImageSearch) Execute(ctx interface{}) error {
 	imgDraw := img.Clone()
 	defer imgDraw.Close()
 
-	results := a.match("feature", pathDir, img, imgDraw)
+	results := a.match("template", pathDir, img, imgDraw)
 
 	count := 0
 	//clicked := []robotgo.Point
@@ -91,27 +92,34 @@ func (a *ImageSearch) match(matchMode, pathDir string, img, imgDraw gocv.Mat) ma
 		xSplit = 1
 		ySplit = 1
 	}
-
+	Imask := gocv.NewMat()
 	var tolerance float32
 	switch {
+	case strings.Contains(a.SearchBox.Name, "Player Inventory Stash"):
+		tolerance = 0.96
+		Imask = gocv.IMRead("./internal/resources/images/empty-player-stash.png", gocv.IMReadColor)
 	case strings.Contains(a.SearchBox.Name, "Stash"):
-		tolerance = 0.1
+		tolerance = 0.96
+		Imask = gocv.IMRead("./internal/resources/images/empty-stash.png", gocv.IMReadColor)
 	case strings.Contains(a.SearchBox.Name, "Merchant"):
-		tolerance = 0.15
+		tolerance = 0.93
+		Imask = gocv.IMRead("./internal/resources/images/empty-player-merchant.png", gocv.IMReadColor)
 	default:
-		tolerance = 0.05
+		tolerance = 0.95
 	}
 
 	xSize := img.Cols() / ySplit
 	ySize := img.Rows() / xSplit
-	borderSize := 5
+	borderSize := 0
 	var splitAreas []image.Rectangle
 	for r := 0; r < ySplit; r++ {
 		for c := 0; c < xSplit; c++ {
 			splitAreas = append(splitAreas, image.Rect((xSize*r)+borderSize, (ySize*c)+borderSize, (xSize+(xSize*r))-borderSize, (ySize+(ySize*c))-borderSize))
 		}
 	}
-
+	Tmask := gocv.IMRead("./internal/resources/images/1x1 mask.png", gocv.IMReadColor)
+	defer Imask.Close()
+	defer Tmask.Close()
 	results := make(map[string][]robotgo.Point)
 	var wg sync.WaitGroup
 	resultsMutex := &sync.Mutex{}
@@ -136,7 +144,7 @@ func (a *ImageSearch) match(matchMode, pathDir string, img, imgDraw gocv.Mat) ma
 			var matches []robotgo.Point
 			switch matchMode {
 			case "template":
-				matches = a.findTemplateMatches(img, templateCut, 0.95)
+				matches = a.findTemplateMatches(img, template, Imask, Tmask, tolerance)
 			case "color":
 				matches = a.colorMatching(img, templateCut, tolerance, target, splitAreas)
 			case "threshold":
@@ -300,17 +308,25 @@ func checkHistogramMatch(img, template gocv.Mat, tolerance float32, target strin
 	}
 }
 
-func (a *ImageSearch) findTemplateMatches(img, template gocv.Mat, threshold float32) []robotgo.Point {
+func (a *ImageSearch) findTemplateMatches(img, template, Imask, Tmask gocv.Mat, threshold float32) []robotgo.Point {
 	result := gocv.NewMat()
 	defer result.Close()
-
-	mask := gocv.NewMat()
+	mask := gocv.IMRead("./internal/resources/images/icons/mask1.png", gocv.IMReadGrayScale)
 	defer mask.Close()
 
-	//	region := template.Region(image.Rect(0, 0, 25, 25))
+	i := img.Clone()
+	t := template.Clone()
+	defer i.Close()
+	defer t.Close()
+	kernel := image.Point{X: 5, Y: 5}
+
+	gocv.Subtract(i, Imask, &i)
+	gocv.Subtract(t, Tmask, &t)
+	gocv.GaussianBlur(i, &i, kernel, 0, 0, gocv.BorderDefault)
+	gocv.GaussianBlur(t, &t, kernel, 0, 0, gocv.BorderDefault)
 
 	//method 5 works best
-	gocv.MatchTemplate(img, template, &result, 5, mask)
+	gocv.MatchTemplate(i, t, &result, gocv.TemplateMatchMode(5), mask)
 
 	resultRows := result.Rows()
 	resultCols := result.Cols()
@@ -321,16 +337,37 @@ func (a *ImageSearch) findTemplateMatches(img, template gocv.Mat, threshold floa
 	for y := 0; y < resultRows; y++ {
 		for x := 0; x < resultCols; x++ {
 			confidence := result.GetFloatAt(y, x)
+			if math.IsInf(float64(confidence), 0) || math.IsNaN(float64(confidence)) {
+				continue
+			}
 			if confidence >= threshold {
-				matches = append(matches, robotgo.Point{
-					X: x,
-					Y: y,
-				})
+				fmt.Printf("Position (%d, %d), Correlation: %.4f\n",
+					x, y, confidence)
+				newPoint := robotgo.Point{X: x, Y: y}
+				if !isNearExistingPoint(newPoint, matches, 5) {
+					matches = append(matches, newPoint)
+				}
 			}
 		}
 	}
 
 	return matches
+}
+func isNearExistingPoint(point robotgo.Point, matches []robotgo.Point, distance int) bool {
+	for _, existing := range matches {
+		// Check if the point is within the distance threshold
+		if abs(existing.X-point.X) <= distance && abs(existing.Y-point.Y) <= distance {
+			return true
+		}
+	}
+	return false
+}
+
+func abs(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
 }
 
 func (a *ImageSearch) featureMatching(img, template gocv.Mat, target string) []robotgo.Point {
