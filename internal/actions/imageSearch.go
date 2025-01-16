@@ -49,7 +49,7 @@ func (a *ImageSearch) Execute(ctx interface{}) error {
 	imgDraw := img.Clone()
 	defer imgDraw.Close()
 
-	results := a.match("template", pathDir, img, imgDraw)
+	results := a.match(pathDir, img, imgDraw)
 
 	count := 0
 	//clicked := []robotgo.Point
@@ -75,7 +75,7 @@ func (a *ImageSearch) String() string {
 	return fmt.Sprintf("%s Image Search for %d items in `%s` | %s", utils.GetEmoji("Image Search"), len(a.Targets), a.SearchBox.Name, a.Name)
 }
 
-func (a *ImageSearch) match(matchMode, pathDir string, img, imgDraw gocv.Mat) map[string][]robotgo.Point {
+func (a *ImageSearch) match(pathDir string, img, imgDraw gocv.Mat) map[string][]robotgo.Point {
 	icons := *internal.GetIconBytes()
 
 	var xSplit, ySplit int
@@ -139,21 +139,10 @@ func (a *ImageSearch) match(matchMode, pathDir string, img, imgDraw gocv.Mat) ma
 				return
 			}
 
-			templateCut := template.Region(image.Rect(borderSize, borderSize, template.Cols()-borderSize, template.Rows()-borderSize))
-
 			var matches []robotgo.Point
-			switch matchMode {
-			case "template":
-				matches = a.findTemplateMatches(img, template, Imask, Tmask, tolerance)
-			case "color":
-				matches = a.colorMatching(img, templateCut, tolerance, target, splitAreas)
-			case "threshold":
-				a.thresholdMatching(img, template)
-			case "feature":
-				matches = a.featureMatching(img, template, target)
-			default:
 
-			}
+			matches = a.findTemplateMatches(img, template, Imask, Tmask, tolerance)
+
 			sort.Slice(matches, func(i, j int) bool {
 				return matches[i].Y < matches[j].Y
 			})
