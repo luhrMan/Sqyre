@@ -20,6 +20,7 @@ func main() {
 	os.Setenv("FYNE_SCALE", "1.25")
 	u := &ui{win: w, mm: map[string]*macro{"test": &macro{}}, st: &settingsTabs{tabs: &container.AppTabs{}}}
 	icon, _ := fyne.LoadResourceFromPath("./internal/resources/images/Squire.png")
+
 	//failsafe hotkey
 	go func() {
 		ok := hook.AddEvents("f1", "shift", "ctrl")
@@ -28,6 +29,7 @@ func main() {
 			os.Exit(0)
 		}
 	}()
+
 	w.SetContent(u.LoadMainContent())
 	a.Settings().SetTheme(theme.DarkTheme())
 	w.SetIcon(icon)
