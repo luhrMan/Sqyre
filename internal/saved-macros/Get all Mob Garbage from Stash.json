@@ -5,25 +5,8 @@
 	"subactions": [
 		{
 			"uid": ".1",
-			"X": 1600,
-			"Y": 920
-		},
-		{
-			"uid": ".2",
-			"waittime": 25
-		},
-		{
-			"uid": ".3",
-			"button": "left"
-		},
-		{
-			"uid": ".4",
-			"waittime": 25
-		},
-		{
-			"uid": ".5",
 			"key": "shift",
-			"state": "Down"
+			"state": "down"
 		},
 		{
 			"imagetargets": [
@@ -80,30 +63,30 @@
 				"x2": 2486,
 				"y2": 1347
 			},
-			"uid": ".6",
+			"uid": ".2",
 			"name": "Mob Garbage",
 			"subactions": [
 				{
-					"uid": ".6.1",
+					"uid": ".1.1",
 					"X": -1,
 					"Y": -1
 				},
 				{
-					"uid": ".6.2",
-					"waittime": 25
+					"uid": ".1.2",
+					"waittime": 35
 				},
 				{
-					"uid": ".6.3",
-					"button": "left"
+					"uid": ".1.3",
+					"button": "right"
 				},
 				{
-					"uid": ".6.4",
-					"waittime": 25
+					"uid": ".1.4",
+					"waittime": 35
 				}
 			]
 		},
 		{
-			"uid": ".7",
+			"uid": ".3",
 			"key": "shift",
 			"state": "Up"
 		}

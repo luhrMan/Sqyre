@@ -18,10 +18,7 @@ type macro struct {
 	tree *widget.Tree
 	root *actions.Loop
 
-	// dt  *container.DocTabs
-
-	boundMacroName   binding.String
-	boundGlobalDelay binding.Int
+	boundMacroName binding.String
 }
 
 func NewMacro() macro {
@@ -91,9 +88,8 @@ func (m *macro) findNode(node actions.ActionInterface, uid string) actions.Actio
 	return nil
 }
 
-func (m *macro) executeActionTree() { //error
-	var context interface{}
-	err := m.root.Execute(context)
+func (m *macro) executeActionTree(ctx ...interface{}) { //error
+	err := m.root.Execute(ctx)
 	if err != nil {
 		log.Println(err)
 		return
@@ -179,9 +175,9 @@ func (m *macro) addActionToTree(actionType actions.ActionInterface) {
 	case *actions.Key:
 		str := ""
 		if !state {
-			str = "down"
+			str = "Down"
 		} else {
-			str = "up"
+			str = "Up"
 		}
 		action = actions.NewKey(key, str)
 	case *actions.Loop:
@@ -197,7 +193,7 @@ func (m *macro) addActionToTree(actionType actions.ActionInterface) {
 	case *actions.Ocr:
 		// n, _ := boundAdvancedActionName.Get()
 		// t, _ := boundOcrTarget.Get()
-		// s, _ := boundSearchArea.Get()
+		// s, _ := boundImageSearchArea.Get()
 		// action = &actions.OcrAction{
 		// 	SearchBox: *actions.GetSearchBox(s),
 		// 	Target:    t,
@@ -241,12 +237,14 @@ func (u *ui) updateTreeOnselect() {
 			u.st.tabs.SelectIndex(2)
 		case *actions.Key:
 			key = node.Key
-			u.st.tabs.Items[3].
-				Content.(*fyne.Container).
-				Objects[0].(*fyne.Container).
-				Objects[1].(*widget.Select).SetSelected(node.Key)
+			u.st.boundKeySelect.SetSelected(node.Key)
+			//			u.st.tabs.Items[3].
+			//				Content.(*fyne.Container).
+			//				Objects[0].(*fyne.Container).
+			//				Objects[1].(*widget.Select).SetSelected(node.Key)
+
 			//                                                boundKeySelect.SetSelected(node.Key)
-			if node.State == "down" {
+			if node.State == "Down" {
 				u.st.boundState.Set(false)
 			} else {
 				u.st.boundState.Set(true)
@@ -255,7 +253,7 @@ func (u *ui) updateTreeOnselect() {
 
 		case *actions.Loop:
 			u.st.boundLoopName.Set(node.Name)
-			u.st.boundCount.Set(float64(node.Count))
+			u.st.boundCount.Set(node.Count)
 			u.st.tabs.SelectIndex(4)
 		case *actions.ImageSearch:
 			u.st.boundImageSearchName.Set(node.Name)
@@ -266,11 +264,12 @@ func (u *ui) updateTreeOnselect() {
 				imageSearchTargets[t] = true
 			}
 			u.getCurrentTabMacro().tree.Refresh()
-			u.st.tabs.Items[5]. //image search tab
-						Content.(*fyne.Container).    //settings border
-						Objects[1].(*fyne.Container). //2nd grid with columns
-						Objects[1].(*fyne.Container). //vbox
-						Objects[1].(*widget.Select).SetSelected(node.SearchBox.Name)
+			u.st.boundImageSearchAreaSelect.SetSelected(node.SearchBox.Name)
+			//			u.st.tabs.Items[5]. //image search tab
+			//				Content.(*fyne.Container). //settings border
+			//				Objects[1].(*fyne.Container). //2nd grid with columns
+			//				Objects[1].(*fyne.Container). //vbox
+			//				Objects[1].(*widget.Select).SetSelected(node.SearchBox.Name)
 
 			u.st.tabs.SelectIndex(5)
 		}
