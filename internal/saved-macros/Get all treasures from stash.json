@@ -5,23 +5,6 @@
 	"subactions": [
 		{
 			"uid": ".1",
-			"X": 1138,
-			"Y": 534
-		},
-		{
-			"uid": ".2",
-			"waittime": 40
-		},
-		{
-			"uid": ".3",
-			"button": "left"
-		},
-		{
-			"uid": ".4",
-			"waittime": 40
-		},
-		{
-			"uid": ".5",
 			"key": "shift",
 			"state": "Down"
 		},
@@ -65,30 +48,22 @@
 				"x2": 2486,
 				"y2": 1347
 			},
-			"uid": ".6",
+			"uid": ".2",
 			"name": "All Treasures",
 			"subactions": [
 				{
-					"uid": ".6.1",
+					"uid": ".2.1",
 					"X": -1,
 					"Y": -1
 				},
 				{
-					"uid": ".6.2",
-					"waittime": 20
-				},
-				{
-					"uid": ".6.3",
+					"uid": ".2.2",
 					"button": "right"
-				},
-				{
-					"uid": ".6.4",
-					"waittime": 20
 				}
 			]
 		},
 		{
-			"uid": ".7",
+			"uid": ".3",
 			"key": "shift",
 			"state": "Up"
 		}

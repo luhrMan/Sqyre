@@ -23,11 +23,6 @@ type ImageSearch struct {
 	advancedAction                   //`json:"advancedaction"`
 }
 
-type Match struct {
-	Location image.Point
-	Score    float64
-}
-
 func NewImageSearch(name string, subActions []ActionInterface, targets []string, searchbox structs.SearchBox) *ImageSearch {
 	return &ImageSearch{
 		advancedAction: *newAdvancedAction(name, subActions),
@@ -76,10 +71,10 @@ func (a *ImageSearch) String() string {
 }
 
 func (a *ImageSearch) match(pathDir string, img, imgDraw gocv.Mat) map[string][]robotgo.Point {
+	//	maskedIcons := *internal.MaskItems()
 	icons := *internal.GetIconBytes()
 
 	var xSplit, ySplit int
-
 	switch {
 	case strings.Contains(a.SearchBox.Name, "Player"):
 		xSplit = 5
@@ -92,7 +87,17 @@ func (a *ImageSearch) match(pathDir string, img, imgDraw gocv.Mat) map[string][]
 		xSplit = 1
 		ySplit = 1
 	}
+	xSize := img.Cols() / ySplit
+	ySize := img.Rows() / xSplit
+	//	var splitAreas []image.Rectangle
+	//	for r := 0; r < ySplit; r++ {
+	//		for c := 0; c < xSplit; c++ {
+	//			splitAreas = append(splitAreas, image.Rect(xSize*r, ySize*c, xSize+(xSize*r), ySize+(ySize*c)))
+	//		}
+	//	}
 	Imask := gocv.NewMat()
+	defer Imask.Close()
+
 	var tolerance float32
 	switch {
 	case strings.Contains(a.SearchBox.Name, "Player Inventory Stash"):
@@ -108,18 +113,31 @@ func (a *ImageSearch) match(pathDir string, img, imgDraw gocv.Mat) map[string][]
 		tolerance = 0.95
 	}
 
-	xSize := img.Cols() / ySplit
-	ySize := img.Rows() / xSplit
-	borderSize := 0
-	var splitAreas []image.Rectangle
-	for r := 0; r < ySplit; r++ {
-		for c := 0; c < xSplit; c++ {
-			splitAreas = append(splitAreas, image.Rect((xSize*r)+borderSize, (ySize*c)+borderSize, (xSize+(xSize*r))-borderSize, (ySize+(ySize*c))-borderSize))
-		}
-	}
-	Tmask := gocv.IMRead("./internal/resources/images/1x1 mask.png", gocv.IMReadColor)
-	defer Imask.Close()
-	defer Tmask.Close()
+	Tmask1x1 := gocv.IMRead("./internal/resources/images/1x1 mask.png", gocv.IMReadColor)
+	Tmask1x2 := gocv.IMRead("./internal/resources/images/1x2 mask.png", gocv.IMReadColor)
+	Tmask1x3 := gocv.IMRead("./internal/resources/images/1x3 mask.png", gocv.IMReadColor)
+	Tmask2x1 := gocv.IMRead("./internal/resources/images/2x1 mask.png", gocv.IMReadColor)
+	Tmask2x2 := gocv.IMRead("./internal/resources/images/2x2 mask.png", gocv.IMReadColor)
+	Tmask2x3 := gocv.IMRead("./internal/resources/images/2x3 mask.png", gocv.IMReadColor)
+	defer Tmask1x1.Close()
+	defer Tmask1x2.Close()
+	defer Tmask1x3.Close()
+	defer Tmask2x1.Close()
+	defer Tmask2x2.Close()
+	defer Tmask2x3.Close()
+	Cmask1x1 := gocv.IMRead("./internal/resources/images/1x1 Cmask.png", gocv.IMReadGrayScale)
+	Cmask1x2 := gocv.IMRead("./internal/resources/images/1x2 Cmask.png", gocv.IMReadGrayScale)
+	Cmask1x3 := gocv.IMRead("./internal/resources/images/1x3 Cmask.png", gocv.IMReadGrayScale)
+	Cmask2x1 := gocv.IMRead("./internal/resources/images/2x1 Cmask.png", gocv.IMReadGrayScale)
+	Cmask2x2 := gocv.IMRead("./internal/resources/images/2x2 Cmask.png", gocv.IMReadGrayScale)
+	Cmask2x3 := gocv.IMRead("./internal/resources/images/2x3 Cmask.png", gocv.IMReadGrayScale)
+	defer Cmask1x1.Close()
+	defer Cmask1x2.Close()
+	defer Cmask1x3.Close()
+	defer Cmask2x1.Close()
+	defer Cmask2x2.Close()
+	defer Cmask2x3.Close()
+
 	results := make(map[string][]robotgo.Point)
 	var wg sync.WaitGroup
 	resultsMutex := &sync.Mutex{}
@@ -127,6 +145,38 @@ func (a *ImageSearch) match(pathDir string, img, imgDraw gocv.Mat) map[string][]
 		wg.Add(1)
 		go func(target string) {
 			defer wg.Done()
+			Tmask := gocv.NewMat()
+			Cmask := gocv.NewMat()
+			defer Tmask.Close()
+			defer Cmask.Close()
+
+			i, _ := internal.Items.GetItem(target)
+			switch i.GridSize {
+			case [2]int{1, 1}:
+				//				Tmask = Imask.Region(image.Rect(0, 0, xSize, ySize))
+				Tmask = Tmask1x1.Clone()
+				Cmask = Cmask1x1.Clone()
+			case [2]int{1, 2}:
+				//				Tmask = Imask.Region(image.Rect(0, 0, xSize, ySize*2))
+				Tmask = Tmask1x2.Clone()
+				Cmask = Cmask1x2.Clone()
+			case [2]int{1, 3}:
+				//				Tmask = Imask.Region(image.Rect(0, 0, xSize, ySize*3))
+				Tmask = Tmask1x3.Clone()
+				Cmask = Cmask1x3.Clone()
+			case [2]int{2, 1}:
+				//				Tmask = Imask.Region(image.Rect(0, 0, xSize*2, ySize))
+				Tmask = Tmask2x1.Clone()
+				Cmask = Cmask2x1.Clone()
+			case [2]int{2, 2}:
+				//				Tmask = Imask.Region(image.Rect(0, 0, xSize*2, ySize*2))
+				Tmask = Tmask2x2.Clone()
+				Cmask = Cmask2x2.Clone()
+			case [2]int{2, 3}:
+				//				Tmask = Imask.Region(image.Rect(0, 0, xSize*2, ySize*3))
+				Tmask = Tmask2x3.Clone()
+				Cmask = Cmask2x3.Clone()
+			}
 
 			ip := target + ".png"
 			b := icons[ip]
@@ -139,9 +189,16 @@ func (a *ImageSearch) match(pathDir string, img, imgDraw gocv.Mat) map[string][]
 				return
 			}
 
+			if Tmask.Cols() != template.Cols() && Tmask.Rows() != template.Rows() {
+				log.Println("item: ", target)
+				log.Println("Tmask cols: ", Tmask.Cols())
+				log.Println("Tmask rows: ", Tmask.Rows())
+				log.Println("t cols: ", template.Cols())
+				log.Println("t rows: ", template.Rows())
+				return
+			}
 			var matches []robotgo.Point
-
-			matches = a.findTemplateMatches(img, template, Imask, Tmask, tolerance)
+			matches = a.findTemplateMatches(img, template, Imask, Tmask, Cmask, tolerance)
 
 			sort.Slice(matches, func(i, j int) bool {
 				return matches[i].Y < matches[j].Y
@@ -157,8 +214,8 @@ func (a *ImageSearch) match(pathDir string, img, imgDraw gocv.Mat) map[string][]
 					match.X,
 					match.Y,
 
-					match.X+xSize-(borderSize*2),
-					match.Y+ySize-(borderSize*2),
+					match.X+xSize*i.GridSize[0],
+					match.Y+ySize*i.GridSize[1],
 				)
 				gocv.Rectangle(&imgDraw, rect, color.RGBA{R: 255, A: 255}, 1)
 				gocv.PutText(&imgDraw, target, image.Point{X: match.X, Y: match.Y + 5}, gocv.FontHersheySimplex, 0.3, color.RGBA{G: 255, A: 255}, 1)
@@ -297,11 +354,9 @@ func checkHistogramMatch(img, template gocv.Mat, tolerance float32, target strin
 	}
 }
 
-func (a *ImageSearch) findTemplateMatches(img, template, Imask, Tmask gocv.Mat, threshold float32) []robotgo.Point {
+func (a *ImageSearch) findTemplateMatches(img, template, Imask, Tmask, Cmask gocv.Mat, threshold float32) []robotgo.Point {
 	result := gocv.NewMat()
 	defer result.Close()
-	mask := gocv.IMRead("./internal/resources/images/icons/mask1.png", gocv.IMReadGrayScale)
-	defer mask.Close()
 
 	i := img.Clone()
 	t := template.Clone()
@@ -315,7 +370,7 @@ func (a *ImageSearch) findTemplateMatches(img, template, Imask, Tmask gocv.Mat, 
 	gocv.GaussianBlur(t, &t, kernel, 0, 0, gocv.BorderDefault)
 
 	//method 5 works best
-	gocv.MatchTemplate(i, t, &result, gocv.TemplateMatchMode(5), mask)
+	gocv.MatchTemplate(i, t, &result, gocv.TemplateMatchMode(5), Cmask)
 
 	resultRows := result.Rows()
 	resultCols := result.Cols()
@@ -333,7 +388,7 @@ func (a *ImageSearch) findTemplateMatches(img, template, Imask, Tmask gocv.Mat, 
 				fmt.Printf("Position (%d, %d), Correlation: %.4f\n",
 					x, y, confidence)
 				newPoint := robotgo.Point{X: x, Y: y}
-				if !isNearExistingPoint(newPoint, matches, 5) {
+				if !isNearExistingPoint(newPoint, matches, 10) {
 					matches = append(matches, newPoint)
 				}
 			}
@@ -524,55 +579,3 @@ func (a *ImageSearch) thresholdMatching(img, template gocv.Mat) {
 	window.IMShow(thTemplate)
 	gocv.WaitKey(0)
 }
-
-//func (a *ImageSearch) bitMapMatching(captureImg image.Image, pathDir string) map[string][]robotgo.Point {
-//	robotgo.ToCBitmap(robotgo.ImgToBitmap(captureImg))
-//	icons := *internal.GetIconBytes()
-//	var wg sync.WaitGroup
-//	results := make(map[string][]robotgo.Point)
-//	resultsMutex := &sync.Mutex{}
-//	for _, target := range a.Targets { // for each search target, create a goroutine
-//		wg.Add(1)
-//		go func(target string) {
-//			defer wg.Done()
-//
-//			templateBytes := icons[target]
-//			templateImg := robotgo.ByteToCBitmap(templateBytes)
-//			defer robotgo.FreeBitmap(templateImg)
-//
-//			var (
-//				matches []robotgo.Point
-//				point   robotgo.Point
-//			)
-//
-//			point =
-//
-//				matches = append(matches, point)
-//
-//			sort.Slice(matches, func(i, j int) bool {
-//				return matches[i].Y < matches[j].Y
-//			})
-//
-//			resultsMutex.Lock()
-//			defer resultsMutex.Unlock()
-//			results[target] = matches
-//		}(target)
-//	}
-//
-//	for i, matches := range results { //draw rectangles around each match
-//		for _, match := range matches {
-//			rect := image.Rect(
-//				match.X,
-//				match.Y,
-//				match.X+xSize-(borderSize*2),
-//				match.Y+ySize-(borderSize*2),
-//			)
-//			gocv.Rectangle(&imgDraw, rect, color.RGBA{R: 255, A: 255}, 1)
-//			gocv.PutText(&imgDraw, i, image.Point{X: match.X, Y: match.Y + ySize}, gocv.FontHersheySimplex, 0.3, color.RGBA{G: 255, A: 255}, 1)
-//		}
-//		log.Printf("Results for %s: %v\n", i, matches)
-//	}
-//	gocv.IMWrite(pathDir+"founditems.png", imgDraw)
-//
-//	return map[string][]robotgo.Point{}
-//}
