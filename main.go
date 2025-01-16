@@ -1,6 +1,8 @@
 package main
 
 import (
+	"Squire/internal/utils"
+	"github.com/go-vgo/robotgo"
 	"log"
 	"os"
 
@@ -14,9 +16,11 @@ import (
 func main() {
 	a := app.New()
 	w := a.NewWindow("Squire")
+	go toggleMousePos()
 	os.Setenv("FYNE_SCALE", "1.25")
 	u := &ui{win: w, mm: map[string]*macro{"test": &macro{}}, st: &settingsTabs{tabs: &container.AppTabs{}}}
 	icon, _ := fyne.LoadResourceFromPath("./internal/resources/images/Squire.png")
+
 	//failsafe hotkey
 	go func() {
 		ok := hook.AddEvents("f1", "shift", "ctrl")
@@ -25,8 +29,22 @@ func main() {
 			os.Exit(0)
 		}
 	}()
+
 	w.SetContent(u.LoadMainContent())
 	a.Settings().SetTheme(theme.DarkTheme())
 	w.SetIcon(icon)
 	w.ShowAndRun()
+}
+
+func toggleMousePos() {
+	locX, locY := robotgo.Location()
+	for {
+		robotgo.MilliSleep(2000)
+		newLocX, newLocY := robotgo.Location()
+		if locX == newLocX && locY == newLocY {
+			continue
+		}
+		locX, locY = robotgo.Location()
+		log.Println(locX-utils.XOffset, locY-utils.YOffset)
+	}
 }
