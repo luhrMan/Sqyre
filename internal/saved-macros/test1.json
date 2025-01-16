@@ -5,24 +5,30 @@
 	"subactions": [
 		{
 			"uid": ".1",
-			"X": 1060,
-			"Y": 60
-		},
-		{
-			"uid": ".2",
-			"button": "left"
-		},
-		{
-			"uid": ".3",
 			"key": "shift",
 			"state": "Down"
 		},
 		{
 			"imagetargets": [
+				"Triple Gem Bangle",
+				"Gem Necklace",
 				"Sapphire",
+				"Gold Band",
+				"Pearl Necklace",
+				"Turquoise Gem Bangle",
 				"Ruby",
+				"Dotted Gold Bangle",
+				"Emerald",
+				"Glimmer Bangle",
+				"Simple Gold Bangle",
+				"Patterned Gold Bangle",
 				"Diamond",
-				"Emerald"
+				"Light Gold Bangle",
+				"Gem Ring",
+				"Gold Candle Platter",
+				"Shine Bangle",
+				"Slim Bangle",
+				"Leaf Gold Bangle"
 			],
 			"searchbox": {
 				"name": "Stash Inventory",
@@ -31,22 +37,22 @@
 				"x2": 2486,
 				"y2": 1347
 			},
-			"uid": ".4",
+			"uid": ".2",
 			"name": "All Treasures",
 			"subactions": [
 				{
-					"uid": ".4.1",
+					"uid": ".2.1",
 					"X": -1,
 					"Y": -1
 				},
 				{
-					"uid": ".4.2",
+					"uid": ".2.2",
 					"button": "right"
 				}
 			]
 		},
 		{
-			"uid": ".5",
+			"uid": ".3",
 			"key": "shift",
 			"state": "Up"
 		}
