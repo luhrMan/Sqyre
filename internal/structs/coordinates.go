@@ -115,3 +115,36 @@ func GetSpotMap() *map[string]Spot {
 	})
 	return spotMap
 }
+
+func GetSpotJsonMap() map[string][]Spot {
+	spotJsonMap := make(map[string][]Spot)
+
+	file, err := os.Open(path + "spots.json")
+	if err != nil {
+		log.Println("Error opening file:", err)
+		panic(err)
+	}
+	defer file.Close()
+
+	decoder := json.NewDecoder(file)
+	if err := decoder.Decode(&spotJsonMap); err != nil {
+		log.Println("Error decoding JSON:", err)
+		panic(err)
+	}
+	return spotJsonMap
+}
+
+func GetSpotMapAsStringsMap() *map[string][]string {
+	spotStringsMap := make(map[string][]string)
+	jsonMap := GetSpotJsonMap()
+	for str, items := range jsonMap {
+		names := make([]string, len(items))
+		for i, item := range items {
+			names[i] = item.Name
+		}
+		//		log.Printf("strMap add names: %v", names)
+		spotStringsMap[str] = names
+		spotStringsMap[""] = append(spotStringsMap[""], str)
+	}
+	return &spotStringsMap
+}

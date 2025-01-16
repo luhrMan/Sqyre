@@ -53,7 +53,7 @@
             "y": 60
         }
     ],
-    "Merchants" :[
+    "Merchants": [
         {
             "name": "Collector",
             "x": 950,
@@ -125,6 +125,17 @@
             "name": "Change Class",
             "x": 2480,
             "y": 1360
+        }
+    ],
+    "Path of Exile 2": [
+        {
+            "Stash Tabs": [
+                {
+                    "name": "Tab 1",
+                    "x": 0,
+                    "y": 0
+                }
+            ]
         }
     ]
 }
