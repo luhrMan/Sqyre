@@ -1,0 +1,228 @@
+{
+	"loopcount": 1,
+	"uid": "",
+	"name": "root",
+	"subactions": [
+		{
+			"uid": ".1",
+			"X": 1292,
+			"Y": 930
+		},
+		{
+			"uid": ".2",
+			"waittime": 43
+		},
+		{
+			"uid": ".3",
+			"button": "left"
+		},
+		{
+			"uid": ".4",
+			"key": "ctrl",
+			"state": "Down"
+		},
+		{
+			"imagetargets": [
+				"Waystone T10"
+			],
+			"searchbox": {
+				"name": "Left Half",
+				"x1": 0,
+				"y1": 0,
+				"x2": 1280,
+				"y2": 1440
+			},
+			"uid": ".5",
+			"name": "T10",
+			"subactions": [
+				{
+					"uid": ".5.1",
+					"X": -1,
+					"Y": -1
+				},
+				{
+					"uid": ".5.2",
+					"waittime": 30
+				},
+				{
+					"uid": ".5.3",
+					"button": "left"
+				},
+				{
+					"uid": ".5.4",
+					"waittime": 30
+				}
+			]
+		},
+		{
+			"imagetargets": [
+				"Waystone T11"
+			],
+			"searchbox": {
+				"name": "Left Half",
+				"x1": 0,
+				"y1": 0,
+				"x2": 1280,
+				"y2": 1440
+			},
+			"uid": ".6",
+			"name": "T11",
+			"subactions": [
+				{
+					"uid": ".6.1",
+					"X": -1,
+					"Y": -1
+				},
+				{
+					"uid": ".6.2",
+					"waittime": 30
+				},
+				{
+					"uid": ".6.3",
+					"button": "left"
+				},
+				{
+					"uid": ".6.4",
+					"waittime": 30
+				}
+			]
+		},
+		{
+			"imagetargets": [
+				"Waystone T12"
+			],
+			"searchbox": {
+				"name": "Left Half",
+				"x1": 0,
+				"y1": 0,
+				"x2": 1280,
+				"y2": 1440
+			},
+			"uid": ".7",
+			"name": "T12",
+			"subactions": [
+				{
+					"uid": ".7.1",
+					"X": -1,
+					"Y": -1
+				},
+				{
+					"uid": ".7.2",
+					"waittime": 30
+				},
+				{
+					"uid": ".7.3",
+					"button": "left"
+				},
+				{
+					"uid": ".7.4",
+					"waittime": 30
+				}
+			]
+		},
+		{
+			"imagetargets": [
+				"Waystone T13"
+			],
+			"searchbox": {
+				"name": "Left Half",
+				"x1": 0,
+				"y1": 0,
+				"x2": 1280,
+				"y2": 1440
+			},
+			"uid": ".8",
+			"name": "T13",
+			"subactions": [
+				{
+					"uid": ".8.1",
+					"X": -1,
+					"Y": -1
+				},
+				{
+					"uid": ".8.2",
+					"waittime": 30
+				},
+				{
+					"uid": ".8.3",
+					"button": "left"
+				},
+				{
+					"uid": ".8.4",
+					"waittime": 30
+				}
+			]
+		},
+		{
+			"imagetargets": [
+				"Waystone T14"
+			],
+			"searchbox": {
+				"name": "Left Half",
+				"x1": 0,
+				"y1": 0,
+				"x2": 1280,
+				"y2": 1440
+			},
+			"uid": ".9",
+			"name": "T14",
+			"subactions": [
+				{
+					"uid": ".9.1",
+					"X": -1,
+					"Y": -1
+				},
+				{
+					"uid": ".9.2",
+					"waittime": 30
+				},
+				{
+					"uid": ".9.3",
+					"button": "left"
+				},
+				{
+					"uid": ".9.4",
+					"waittime": 30
+				}
+			]
+		},
+		{
+			"imagetargets": [
+				"Waystone T15"
+			],
+			"searchbox": {
+				"name": "Left Half",
+				"x1": 0,
+				"y1": 0,
+				"x2": 1280,
+				"y2": 1440
+			},
+			"uid": ".10",
+			"name": "T15",
+			"subactions": [
+				{
+					"uid": ".10.1",
+					"X": -1,
+					"Y": -1
+				},
+				{
+					"uid": ".10.2",
+					"waittime": 30
+				},
+				{
+					"uid": ".10.3",
+					"button": "left"
+				},
+				{
+					"uid": ".10.4",
+					"waittime": 30
+				}
+			]
+		},
+		{
+			"uid": ".11",
+			"key": "ctrl",
+			"state": "Up"
+		}
+	]
+}
