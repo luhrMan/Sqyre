@@ -1,10 +1,23 @@
 package utils
 
+import "github.com/go-vgo/robotgo"
+
 var (
-	//MonitorWidth, MonitorHeight = robotgo.GetScreenSize()
-	//_, _, XOffset, YOffset      = robotgo.GetDisplayBounds(1)
-	MonitorWidth  = 2560
-	MonitorHeight = 1440
-	XOffset       = 1920
-	YOffset       = 0
+	MainMonitorSize  = robotgo.GetDisplayRect(0)
+	MonitorWidth     = MainMonitorSize.W
+	MonitorHeight    = MainMonitorSize.H
+	XOffset, YOffset = findOffsets()
 )
+
+func findOffsets() (X, Y int) {
+	for d := range robotgo.DisplaysNum() {
+		x, y, _, _ := robotgo.GetDisplayBounds(d)
+		if x < 0 {
+			X = x * -1
+		}
+		if y < 0 {
+			Y = y * -1
+		}
+	}
+	return X, Y
+}
