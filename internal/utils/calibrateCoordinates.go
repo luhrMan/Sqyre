@@ -92,6 +92,10 @@ func stashPlayerInvLocation(tlc, trc, blc, brc gocv.Mat) {
         }
         log.Println("bottom right: ", brcmatch)
 
+        if len(brcmatch) == 0 || len(match) == 0 || len(tlcmatch) == 0 {
+                return
+        }
+
         ci := robotgo.CaptureImg(
                 tlcmatch[0].X+XOffset,
                 tlcmatch[0].Y+YOffset,
