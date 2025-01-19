@@ -8,7 +8,6 @@ import (
 	"image"
 	"image/color"
 	"log"
-	"math"
 	"sort"
 	"strings"
 	"sync"
@@ -260,35 +259,11 @@ func (a *ImageSearch) findTemplateMatches(img, template, Imask, Tmask, Cmask goc
 
 	//method 5 works best
 	gocv.MatchTemplate(i, t, &result, gocv.TemplateMatchMode(5), Cmask)
-
-	resultRows := result.Rows()
-	resultCols := result.Cols()
-
-	var matches []robotgo.Point
-
-	// Iterate through the result matrix and store the matches
-	for y := 0; y < resultRows; y++ {
-		for x := 0; x < resultCols; x++ {
-			confidence := result.GetFloatAt(y, x)
-			if math.IsInf(float64(confidence), 0) || math.IsNaN(float64(confidence)) {
-				continue
-			}
-			if confidence >= threshold {
-				fmt.Printf("Position (%d, %d), Correlation: %.4f\n",
-					x, y, confidence)
-				newPoint := robotgo.Point{X: x, Y: y}
-				if !isNearExistingPoint(newPoint, matches, 10) {
-					matches = append(matches, newPoint)
-				}
-			}
-		}
-	}
-
+	matches := utils.GetMatchesFromTemplateMatchResult(result, threshold)
 	return matches
 }
 func isNearExistingPoint(point robotgo.Point, matches []robotgo.Point, distance int) bool {
 	for _, existing := range matches {
-		// Check if the point is within the distance threshold
 		if abs(existing.X-point.X) <= distance && abs(existing.Y-point.Y) <= distance {
 			return true
 		}
