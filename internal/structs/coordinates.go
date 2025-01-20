@@ -75,8 +75,11 @@ func GetSearchBoxMap() *map[string]SearchBox {
 
 func GetSpot(key string) *Spot {
 	m := *GetSpotMap()
-	s := m[key]
-	return &s
+	if s, ok := m[key]; ok {
+		//		s := m[key]
+		return &s
+	}
+	return nil
 }
 
 func GetSpotMapKeys(m map[string]Spot) *[]string {
