@@ -191,18 +191,7 @@ func (m *macro) addActionToTree(actionType actions.ActionInterface) {
 		}
 		action = actions.NewImageSearch(imageSearchName, []actions.ActionInterface{}, t, *structs.GetSearchBox(searchArea))
 	case *actions.Ocr:
-		// n, _ := boundAdvancedActionName.Get()
-		// t, _ := boundOcrTarget.Get()
-		// s, _ := boundImageSearchArea.Get()
-		// action = &actions.OcrAction{
-		// 	SearchBox: *actions.GetSearchBox(s),
-		// 	Target:    t,
-		// 	advanced: actions.advancedAction{
-		// 		base: actions.newBaseAction(),
-		// 		Name:       n,
-		// 	},
-		// }
-
+		action = actions.NewOcr(ocrTarget, []actions.ActionInterface{}, ocrTarget, *structs.GetSearchBox(ocrSearchBox))
 	}
 
 	if selectedNode == nil {
@@ -272,6 +261,10 @@ func (u *ui) updateTreeOnselect() {
 			//				Objects[1].(*widget.Select).SetSelected(node.SearchBox.Name)
 
 			u.st.tabs.SelectIndex(5)
+		case *actions.Ocr:
+			u.st.boundOCRTarget.Set(node.Target)
+			u.st.boundOCRSearchBoxSelect.SetSelected(node.SearchBox.Name)
+			u.st.tabs.SelectIndex(6)
 		}
 	}
 }
