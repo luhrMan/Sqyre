@@ -562,5 +562,9 @@ func (u *ui) createMainMenu() *fyne.MainMenu {
 		dialog.ShowInformation("Computer Information", str, u.win)
 	})
 
-	return fyne.NewMainMenu(fyne.NewMenu("Settings", computerInfo), actionMenu)
+	testMenu := fyne.NewMenu("Test", fyne.NewMenuItem("top menu calibrate", func() {
+		utils.CalibrateInventorySearchboxes()
+	}))
+
+	return fyne.NewMainMenu(fyne.NewMenu("Settings", computerInfo), actionMenu, testMenu)
 }

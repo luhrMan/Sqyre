@@ -34,6 +34,7 @@ func main() {
 	a.Settings().SetTheme(theme.DarkTheme())
 	w.SetIcon(icon)
 	w.ShowAndRun()
+	utils.CloseTessClient()
 }
 
 func toggleMousePos() {
