@@ -14,7 +14,6 @@ import (
 )
 
 func main() {
-	utils.CalibrateInventorySearchboxes()
 	a := app.New()
 	w := a.NewWindow("Squire")
 	go toggleMousePos()

@@ -2,6 +2,7 @@ package utils
 
 import (
         "Squire/internal/structs"
+        "errors"
         "fmt"
         "github.com/go-vgo/robotgo"
         "gocv.io/x/gocv"
@@ -11,7 +12,7 @@ import (
 )
 
 func CalibrateInventorySearchboxes() {
-        path := "./internal/resources/images/corners/"
+        path := "./internal/resources/images/corners/bigger/"
         var (
                 //                stashTLC  = gocv.IMRead(path+"stashCorner-TopLeft.png", gocv.IMReadColor)
                 //                stashTRC  = gocv.IMRead(path+"stashCorner-TopRight.png", gocv.IMReadColor)
@@ -27,6 +28,62 @@ func CalibrateInventorySearchboxes() {
         //        merchantInvLocation(stashTLC, stashTRC, stashBLC, stashBRC)
         //        merchantPlayerInvLocation(playerTLC, playerTRC, playerBLC, playerBRC)
         //        merchantStashInvLocation(stashTLC, stashTRC, stashBLC, stashBRC)
+}
+
+func ItemDescriptionLocation() (image.Image, error) {
+        mx, _ := robotgo.Location()
+        mx = mx - int(float32(MonitorWidth)*0.25)
+        mw := int(float32(MonitorWidth) * 0.45)
+        if mw+mx > MonitorWidth+XOffset {
+                mw = MonitorWidth + XOffset - mx
+        }
+
+        captureImg := robotgo.CaptureImg(mx, 0, mw, MonitorHeight)
+        img, _ := gocv.ImageToMatRGB(captureImg)
+        defer img.Close()
+        gocv.IMWrite("./internal/resources/images/meta/precorneritemdescription-test.png", img)
+
+        path := "./internal/resources/images/corners/nobackground/"
+        trc := gocv.IMRead(path+"itemCorner-TopRight.png", gocv.IMReadColor)
+        blc := gocv.IMRead(path+"itemCorner-BottomLeft.png", gocv.IMReadColor)
+        defer trc.Close()
+        defer blc.Close()
+        gocv.CvtColor(img, &img, gocv.ColorBGRToGray)
+        gocv.CvtColor(trc, &trc, gocv.ColorBGRToGray)
+        gocv.CvtColor(blc, &blc, gocv.ColorBGRToGray)
+
+        var threshold float32 = 0.97
+        result := gocv.NewMat()
+        defer result.Close()
+        log.Println("item description")
+        log.Println("----------------")
+
+        gocv.MatchTemplate(img, trc, &result, gocv.TemplateMatchMode(5), gocv.NewMat())
+        trcmatch := GetMatchesFromTemplateMatchResult(result, threshold)
+        log.Println("top right: ", trcmatch)
+
+        gocv.MatchTemplate(img, blc, &result, gocv.TemplateMatchMode(5), gocv.NewMat())
+        blcmatch := GetMatchesFromTemplateMatchResult(result, threshold)
+        log.Println("bottom left: ", blcmatch)
+
+        if len(blcmatch) == 0 || len(trcmatch) == 0 {
+                return nil, errors.New("could not find corners")
+        }
+        w := trcmatch[0].X - blcmatch[0].X + 5
+        h := blcmatch[0].Y - trcmatch[0].Y + 5
+        x := blcmatch[0].X + mx
+        y := trcmatch[0].Y + YOffset
+        log.Printf("X: %d, Y: %d, W: %d, H: %d", x, y, w, h)
+        ci := robotgo.CaptureImg(
+                x,
+                y,
+                w,
+                h)
+        i, _ := gocv.ImageToMatRGB(ci)
+        defer i.Close()
+        gocv.IMWrite("./internal/resources/images/meta/itemdescription-test.png", i)
+
+        return ci, nil
 }
 
 func stashInvLocation(tlc, trc, blc, brc gocv.Mat) {
@@ -87,8 +144,8 @@ func stashPlayerInvLocation(tlc, trc, blc, brc gocv.Mat) {
         gocv.MatchTemplate(img, brc, &result, gocv.TemplateMatchMode(5), gocv.NewMat())
         brcmatch := GetMatchesFromTemplateMatchResult(result, threshold)
         if len(brcmatch) == 1 {
-                brcmatch[0].X = brcmatch[0].X + 0
-                brcmatch[0].Y = brcmatch[0].Y + 0
+                brcmatch[0].X = brcmatch[0].X + 5
+                brcmatch[0].Y = brcmatch[0].Y + 5
         }
         log.Println("bottom right: ", brcmatch)
 

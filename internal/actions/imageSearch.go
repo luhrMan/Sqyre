@@ -106,7 +106,7 @@ func (a *ImageSearch) match(pathDir string, img, imgDraw gocv.Mat) map[string][]
 		tolerance = 0.96
 		Imask = gocv.IMRead(path+"empty-stash.png", gocv.IMReadColor)
 	case strings.Contains(a.SearchBox.Name, "Merchant"):
-		tolerance = 0.93
+		tolerance = 0.94
 		Imask = gocv.IMRead(path+"empty-player-merchant.png", gocv.IMReadColor)
 	default:
 		tolerance = 0.95
