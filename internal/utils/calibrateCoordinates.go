@@ -4,11 +4,13 @@ import (
         "Squire/internal/structs"
         "errors"
         "fmt"
+        "fyne.io/fyne/v2"
         "github.com/go-vgo/robotgo"
         "gocv.io/x/gocv"
         "image"
         "image/color"
         "log"
+        "slices"
 )
 
 func CalibrateInventorySearchboxes() {
@@ -241,6 +243,23 @@ func merchantPlayerInventorySlots() {
 }
 
 func merchantPortraitsLocation() {
+        merchants := []string{
+                "Alchemist",
+                "Armourer",
+                "Fortune Teller",
+                "Goblin Merchant",
+                "Goldsmith",
+                "Leathersmith",
+                "Nicholas",
+                "Squire",
+                "Surgeon",
+                "Tailor",
+                "Tavern Master",
+                "The Collector",
+                "Treasurer",
+                "Weaponsmith",
+                "Woodsman",
+        }
         path := "./internal/resources/images/"
         captureImg := robotgo.CaptureImg(XOffset, YOffset, MonitorWidth, MonitorHeight)
         i, _ := gocv.ImageToMatRGB(captureImg)
@@ -259,7 +278,20 @@ func merchantPortraitsLocation() {
         matches := GetMatchesFromTemplateMatchResult(result, 0.9, 10)
 
         DrawFoundMatches(matches, t.Cols(), t.Rows(), imgDraw, "")
-        gocv.IMWrite(path+"/meta/foundMerchants.png", imgDraw)
+        gocv.IMWrite(path+"/meta/merchantPortraitsLocation-foundMerchants.png", imgDraw)
+
+        for _, match := range matches {
+                h := t.Rows() / 2
+                img := robotgo.CaptureImg(match.X+XOffset, match.Y+YOffset+h, t.Cols(), h)
+                img = ImageToMatToImagePreprocess(img, true, true, true, true, PreprocessOptions{MinThreshold: 150})
+                _, foundText := CheckImageForText(img)
+
+                log.Printf("FOUND TEXT: %v", foundText)
+                if slices.Contains(merchants, foundText) {
+                        log.Printf("Saving user preference location for: %s, [%d, %d]", foundText, match.X+XOffset, match.Y+YOffset)
+                        fyne.CurrentApp().Preferences().SetIntList(foundText, []int{match.X + XOffset, match.Y + YOffset})
+                }
+        }
 }
 func topMenuTabLocations() {
         //        i := robotgo.CaptureImg(XOffset, YOffset, MonitorWidth, int(float32(MonitorHeight)*0.1))

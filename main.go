@@ -14,7 +14,7 @@ import (
 )
 
 func main() {
-	a := app.New()
+	a := app.NewWithID("squire")
 	w := a.NewWindow("Squire")
 	go toggleMousePos()
 	os.Setenv("FYNE_SCALE", "1.25")
