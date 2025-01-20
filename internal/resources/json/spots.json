@@ -9,47 +9,52 @@
     "Top Menu Tabs": [
         {
             "name": "Play Tab",
-            "x": 430,
+            "x": 318,
             "y": 60
         },
         {
             "name": "Leaderboard Tab",
-            "x": 660,
+            "x": 520,
+            "y": 60
+        },
+        {
+            "name": "Religion Tab",
+            "x": 732,
             "y": 60
         },
         {
             "name": "Class Tab",
-            "x": 860,
+            "x": 944,
             "y": 60
         },
         {
             "name": "Stash Tab",
-            "x": 1060,
+            "x": 1156,
             "y": 60
         },
         {
             "name": "Merchants Tab",
-            "x": 1280,
+            "x": 1368,
             "y": 60
         },
         {
             "name": "Trade Tab",
-            "x": 1480,
+            "x": 1580,
             "y": 60
         },
         {
             "name": "Gathering Hall Tab",
-            "x": 1680,
+            "x": 1792,
             "y": 60
         },
         {
             "name": "Customize Tab",
-            "x": 1920,
+            "x": 2004,
             "y": 60
         },
         {
             "name": "Shop Tab",
-            "x": 2130,
+            "x": 2216,
             "y": 60
         }
     ],

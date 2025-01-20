@@ -12,19 +12,21 @@ import (
 )
 
 func CalibrateInventorySearchboxes() {
-        path := "./internal/resources/images/corners/bigger/"
+        //        path := "./internal/resources/images/corners/bigger/"
         var (
-                //                stashTLC  = gocv.IMRead(path+"stashCorner-TopLeft.png", gocv.IMReadColor)
-                //                stashTRC  = gocv.IMRead(path+"stashCorner-TopRight.png", gocv.IMReadColor)
-                //                stashBLC  = gocv.IMRead(path+"stashCorner-BottomLeft.png", gocv.IMReadColor)
-                //                stashBRC  = gocv.IMRead(path+"stashCorner-BottomRight.png", gocv.IMReadColor)
-                playerTLC = gocv.IMRead(path+"playerCorner-TopLeft.png", gocv.IMReadColor)
-                playerTRC = gocv.IMRead(path+"playerCorner-TopRight.png", gocv.IMReadColor)
-                playerBLC = gocv.IMRead(path+"playerCorner-BottomLeft.png", gocv.IMReadColor)
-                playerBRC = gocv.IMRead(path+"playerCorner-BottomRight.png", gocv.IMReadColor)
+        //                stashTLC  = gocv.IMRead(path+"stashCorner-TopLeft.png", gocv.IMReadColor)
+        //                stashTRC  = gocv.IMRead(path+"stashCorner-TopRight.png", gocv.IMReadColor)
+        //                stashBLC  = gocv.IMRead(path+"stashCorner-BottomLeft.png", gocv.IMReadColor)
+        //                stashBRC  = gocv.IMRead(path+"stashCorner-BottomRight.png", gocv.IMReadColor)
+        //                playerTLC = gocv.IMRead(path+"playerCorner-TopLeft.png", gocv.IMReadColor)
+        //                playerTRC = gocv.IMRead(path+"playerCorner-TopRight.png", gocv.IMReadColor)
+        //                playerBLC = gocv.IMRead(path+"playerCorner-BottomLeft.png", gocv.IMReadColor)
+        //                playerBRC = gocv.IMRead(path+"playerCorner-BottomRight.png", gocv.IMReadColor)
         )
+        topMenuTabLocations()
+        merchantPortraitsLocation()
         //        stashInvLocation(stashTLC, stashTRC, stashBLC, stashBRC)
-        stashPlayerInvLocation(playerTLC, playerTRC, playerBLC, playerBRC)
+        //        stashPlayerInvLocation(playerTLC, playerTRC, playerBLC, playerBRC)
         //        merchantInvLocation(stashTLC, stashTRC, stashBLC, stashBRC)
         //        merchantPlayerInvLocation(playerTLC, playerTRC, playerBLC, playerBRC)
         //        merchantStashInvLocation(stashTLC, stashTRC, stashBLC, stashBRC)
@@ -33,7 +35,7 @@ func CalibrateInventorySearchboxes() {
 func ItemDescriptionLocation() (image.Image, error) {
         mx, _ := robotgo.Location()
         mx = mx - int(float32(MonitorWidth)*0.25)
-        mw := int(float32(MonitorWidth) * 0.45)
+        mw := int(float32(MonitorWidth) * 0.50)
         if mw+mx > MonitorWidth+XOffset {
                 mw = MonitorWidth + XOffset - mx
         }
@@ -59,18 +61,18 @@ func ItemDescriptionLocation() (image.Image, error) {
         log.Println("----------------")
 
         gocv.MatchTemplate(img, trc, &result, gocv.TemplateMatchMode(5), gocv.NewMat())
-        trcmatch := GetMatchesFromTemplateMatchResult(result, threshold)
+        trcmatch := GetMatchesFromTemplateMatchResult(result, threshold, 10)
         log.Println("top right: ", trcmatch)
 
         gocv.MatchTemplate(img, blc, &result, gocv.TemplateMatchMode(5), gocv.NewMat())
-        blcmatch := GetMatchesFromTemplateMatchResult(result, threshold)
+        blcmatch := GetMatchesFromTemplateMatchResult(result, threshold, 10)
         log.Println("bottom left: ", blcmatch)
 
         if len(blcmatch) == 0 || len(trcmatch) == 0 {
                 return nil, errors.New("could not find corners")
         }
-        w := trcmatch[0].X - blcmatch[0].X + 5
-        h := blcmatch[0].Y - trcmatch[0].Y + 5
+        w := trcmatch[0].X - blcmatch[0].X + 20
+        h := blcmatch[0].Y - trcmatch[0].Y + 20
         x := blcmatch[0].X + mx
         y := trcmatch[0].Y + YOffset
         log.Printf("X: %d, Y: %d, W: %d, H: %d", x, y, w, h)
@@ -98,7 +100,7 @@ func stashInvLocation(tlc, trc, blc, brc gocv.Mat) {
         defer result.Close()
         gocv.MatchTemplate(img, tlc, &result, gocv.TemplateMatchMode(5), gocv.NewMat())
 
-        matches := GetMatchesFromTemplateMatchResult(result, 0.9)
+        matches := GetMatchesFromTemplateMatchResult(result, 0.9, 10)
         matches[0].X = matches[0].X + 6
         matches[0].Y = matches[0].Y + 4
 
@@ -118,7 +120,7 @@ func stashPlayerInvLocation(tlc, trc, blc, brc gocv.Mat) {
         var match []robotgo.Point
 
         gocv.MatchTemplate(img, tlc, &result, gocv.TemplateMatchMode(5), gocv.NewMat())
-        tlcmatch := GetMatchesFromTemplateMatchResult(result, threshold)
+        tlcmatch := GetMatchesFromTemplateMatchResult(result, threshold, 10)
         if len(tlcmatch) == 1 {
                 tlcmatch[0].X = tlcmatch[0].X + 0
                 tlcmatch[0].Y = tlcmatch[0].Y + 0
@@ -126,7 +128,7 @@ func stashPlayerInvLocation(tlc, trc, blc, brc gocv.Mat) {
         log.Println("top left: ", tlcmatch)
 
         gocv.MatchTemplate(img, trc, &result, gocv.TemplateMatchMode(5), gocv.NewMat())
-        match = GetMatchesFromTemplateMatchResult(result, threshold)
+        match = GetMatchesFromTemplateMatchResult(result, threshold, 10)
         if len(match) == 1 {
                 match[0].X = match[0].X + 0
                 match[0].Y = match[0].Y + 0
@@ -134,7 +136,7 @@ func stashPlayerInvLocation(tlc, trc, blc, brc gocv.Mat) {
         log.Println("top right: ", match)
 
         gocv.MatchTemplate(img, blc, &result, gocv.TemplateMatchMode(5), gocv.NewMat())
-        match = GetMatchesFromTemplateMatchResult(result, threshold)
+        match = GetMatchesFromTemplateMatchResult(result, threshold, 10)
         if len(match) == 1 {
                 match[0].X = match[0].X + 0
                 match[0].Y = match[0].Y + 0
@@ -142,7 +144,7 @@ func stashPlayerInvLocation(tlc, trc, blc, brc gocv.Mat) {
         log.Println("bottom left: ", match)
 
         gocv.MatchTemplate(img, brc, &result, gocv.TemplateMatchMode(5), gocv.NewMat())
-        brcmatch := GetMatchesFromTemplateMatchResult(result, threshold)
+        brcmatch := GetMatchesFromTemplateMatchResult(result, threshold, 10)
         if len(brcmatch) == 1 {
                 brcmatch[0].X = brcmatch[0].X + 5
                 brcmatch[0].Y = brcmatch[0].Y + 5
@@ -236,4 +238,32 @@ func merchantPlayerInventorySlots() {
                         invSlots = append(invSlots, image.Rect(xSize*r, ySize*c, xSize+xSize*r, ySize+ySize*c))
                 }
         }
+}
+
+func merchantPortraitsLocation() {
+        path := "./internal/resources/images/"
+        captureImg := robotgo.CaptureImg(XOffset, YOffset, MonitorWidth, MonitorHeight)
+        i, _ := gocv.ImageToMatRGB(captureImg)
+        imgDraw := i.Clone()
+        gocv.CvtColor(i, &i, gocv.ColorRGBToGray)
+        t := gocv.IMRead(path+"corners/merchantPortraitTop.png", gocv.IMReadGrayScale)
+        m := gocv.IMRead(path+"masks/merchantPortraitTop mask.png", gocv.IMReadGrayScale)
+        result := gocv.NewMat()
+        defer i.Close()
+        defer imgDraw.Close()
+        defer t.Close()
+        defer m.Close()
+        defer result.Close()
+
+        gocv.MatchTemplate(i, t, &result, 5, m)
+        matches := GetMatchesFromTemplateMatchResult(result, 0.9, 10)
+
+        DrawFoundMatches(matches, t.Cols(), t.Rows(), imgDraw, "")
+        gocv.IMWrite(path+"/meta/foundMerchants.png", imgDraw)
+}
+func topMenuTabLocations() {
+        //        i := robotgo.CaptureImg(XOffset, YOffset, MonitorWidth, int(float32(MonitorHeight)*0.1))
+        //        i = ImageToMatToImagePreprocess(i, true, true, true, true, PreprocessOptions{5, 50, 2})
+        //        str, _ := CheckImageForText(i)
+
 }

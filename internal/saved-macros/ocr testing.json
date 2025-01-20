@@ -10,7 +10,7 @@
 		},
 		{
 			"uid": ".2",
-			"waittime": 50
+			"waittime": 100
 		},
 		{
 			"texttarget": "Common",
