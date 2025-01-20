@@ -49,7 +49,7 @@
 				"y2": 1103
 			},
 			"uid": ".3",
-			"name": "Get currency",
+			"name": "Find all treasures",
 			"subactions": [
 				{
 					"uid": ".3.1",
@@ -57,7 +57,39 @@
 					"Y": -1
 				},
 				{
+					"texttarget": "Legendary",
+					"searchbox": {
+						"name": "Item Description",
+						"x1": 0,
+						"y1": 0,
+						"x2": 0,
+						"y2": 0
+					},
 					"uid": ".3.2",
+					"name": "Legendary",
+					"subactions": [
+						{
+							"uid": ".3.2.1",
+							"key": "shift",
+							"state": "Down"
+						},
+						{
+							"uid": ".3.2.2",
+							"waittime": 20
+						},
+						{
+							"uid": ".3.2.3",
+							"button": "right"
+						},
+						{
+							"uid": ".3.2.4",
+							"key": "shift",
+							"state": "Up"
+						}
+					]
+				},
+				{
+					"uid": ".3.3",
 					"button": "left"
 				}
 			]

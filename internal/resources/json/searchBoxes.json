@@ -80,11 +80,11 @@
             "y2": 1440
         },
         {
-            "name": "Relative: Item Description",
+            "name": "Item Description",
             "x1": 0,
             "y1": 0,
             "x2": 0,
-            "y2": 600
+            "y2": 0
         },
         {
             "name": "POE2: Player",
