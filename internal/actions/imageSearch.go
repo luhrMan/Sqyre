@@ -6,7 +6,6 @@ import (
 	"Squire/internal/utils"
 	"fmt"
 	"image"
-	"image/color"
 	"log"
 	"sort"
 	"strings"
@@ -106,7 +105,7 @@ func (a *ImageSearch) match(pathDir string, img, imgDraw gocv.Mat) map[string][]
 		tolerance = 0.96
 		Imask = gocv.IMRead(path+"empty-stash.png", gocv.IMReadColor)
 	case strings.Contains(a.SearchBox.Name, "Merchant"):
-		tolerance = 0.94
+		tolerance = 0.93
 		Imask = gocv.IMRead(path+"empty-player-merchant.png", gocv.IMReadColor)
 	default:
 		tolerance = 0.95
@@ -207,18 +206,7 @@ func (a *ImageSearch) match(pathDir string, img, imgDraw gocv.Mat) map[string][]
 			defer resultsMutex.Unlock()
 
 			results[target] = matches
-
-			for _, match := range matches {
-				rect := image.Rect(
-					match.X,
-					match.Y,
-
-					match.X+xSize*i.GridSize[0],
-					match.Y+ySize*i.GridSize[1],
-				)
-				gocv.Rectangle(&imgDraw, rect, color.RGBA{R: 255, A: 255}, 1)
-				gocv.PutText(&imgDraw, target, image.Point{X: match.X, Y: match.Y + 5}, gocv.FontHersheySimplex, 0.3, color.RGBA{G: 255, A: 255}, 1)
-			}
+			utils.DrawFoundMatches(matches, xSize*i.GridSize[0], ySize*i.GridSize[1], imgDraw, target)
 		}(target)
 	}
 	wg.Wait()
@@ -259,21 +247,6 @@ func (a *ImageSearch) findTemplateMatches(img, template, Imask, Tmask, Cmask goc
 
 	//method 5 works best
 	gocv.MatchTemplate(i, t, &result, gocv.TemplateMatchMode(5), Cmask)
-	matches := utils.GetMatchesFromTemplateMatchResult(result, threshold)
+	matches := utils.GetMatchesFromTemplateMatchResult(result, threshold, 10)
 	return matches
-}
-func isNearExistingPoint(point robotgo.Point, matches []robotgo.Point, distance int) bool {
-	for _, existing := range matches {
-		if abs(existing.X-point.X) <= distance && abs(existing.Y-point.Y) <= distance {
-			return true
-		}
-	}
-	return false
-}
-
-func abs(x int) int {
-	if x < 0 {
-		return -x
-	}
-	return x
 }
