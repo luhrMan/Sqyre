@@ -1,11 +1,13 @@
-FROM ghcr.io/hybridgroup/opencv:4.11.0 AS builder
+FROM gocv/opencv:4.11.0 AS builder
+COPY . .
 
 FROM golang:1.23.3-alpine
-COPY --from=builder . /go/src/gocv.io/x/gocv/
 ENV CGO_ENABLED=1
+ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/lib/pkgconfig
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download && go mod verify
+RUN go get -u gocv.io/x/gocv
 RUN apk add --no-cache \
 gcc \
 g++ \
@@ -26,19 +28,10 @@ libxrandr-dev \
 libxinerama-dev \
 xorg-server-dev \
 libxxf86vm-dev
-#
-COPY . .
-RUN go build -v -o bin .
-#
-# FROM ghcr.io/hybridgroup/opencv:4.11.0
-#
-# RUN apk add --no-cache \
-# cmake \
-#
-# COPY . .
+
+COPY . /app
 # RUN go build -v -o bin .
-#
-#
-ENTRYPOINT ["/app/bin"]
-#
-CMD ["go", "run", "main.go"]
+
+# ENTRYPOINT ["/app/bin"]
+CMD ["cat", "/usr/local/lib/pkgconfig/opencv4.pc"]
+# CMD ["go", "run", "main.go"]
