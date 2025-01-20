@@ -47,6 +47,7 @@ type settingsTabs struct {
 	keyTab
 	loopTab
 	imageSearchTab
+	ocrTab
 }
 
 type waitTab struct {
@@ -99,6 +100,14 @@ type imageSearchTab struct {
 	boundXSplitEntry           *widget.Entry
 }
 
+type ocrTab struct {
+	boundOCRTarget    binding.String
+	boundOCRSearchBox binding.String
+
+	boundOCRTargetEntry     *widget.Entry
+	boundOCRSearchBoxSelect *widget.Select
+}
+
 // action settings
 var (
 	macroName          string
@@ -118,7 +127,8 @@ var (
 	xSplit             int
 	ySplit             int
 	imageSearchTargets = internal.Items.GetItemsMapAsBool()
-	//ocr
+	ocrTarget          string
+	ocrSearchBox       string
 )
 
 func (u *ui) LoadMainContent() *fyne.Container {
@@ -133,7 +143,6 @@ func (u *ui) LoadMainContent() *fyne.Container {
 	u.actionSettingsTabs()
 	u.win.SetMainMenu(u.createMainMenu())
 
-	// searchAreaSelector.SetSelected(searchAreaSelector.Options[0])
 	macroLayout := container.NewBorder(
 		container.NewGridWithColumns(2,
 			container.NewHBox(
@@ -315,6 +324,11 @@ func (u *ui) bindVariables() {
 			u.getCurrentTabMacro().tree.Refresh()
 		}
 	}))
+	u.st.boundOCRSearchBox = binding.BindString(&ocrSearchBox)
+	u.st.boundOCRTarget = binding.BindString(&ocrTarget)
+	u.st.boundOCRSearchBoxSelect = widget.NewSelect(*structs.GetSearchBoxMapKeys(*structs.GetSearchBoxMap()), func(s string) { u.st.boundOCRSearchBox.Set(s) })
+	u.st.boundOCRTargetEntry = widget.NewEntryWithData(u.st.boundOCRTarget)
+
 }
 
 func (u *ui) createDocTabs() {
@@ -377,8 +391,11 @@ func (u *ui) actionSettingsTabs() {
 			u.createItemsCheckTree(),
 		)
 
-		ocrSettings = container.NewHBox(
-			layout.NewSpacer(), layout.NewSpacer())
+		ocrSettings = container.NewBorder(
+			container.NewGridWithColumns(1,
+				container.NewBorder(nil, nil, container.NewHBox(widget.NewLabel("Text Target:")), nil, u.st.boundOCRTargetEntry),
+				container.NewBorder(nil, nil, container.NewHBox(widget.NewLabel("Search Area:")), nil, u.st.boundOCRSearchBoxSelect),
+			), nil, nil, nil)
 	)
 
 	u.st.tabs.Append(container.NewTabItem("Wait", waitSettings))
