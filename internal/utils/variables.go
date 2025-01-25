@@ -7,6 +7,7 @@ var (
 	MonitorWidth     = MainMonitorSize.W
 	MonitorHeight    = MainMonitorSize.H
 	XOffset, YOffset = findOffsets()
+	imagesPath       = "./internal/resources/images/"
 )
 
 func findOffsets() (X, Y int) {
