@@ -152,7 +152,7 @@ func stashInvTabsLocation(t gocv.Mat, topMenuTab string) {
 	img, _ := gocv.ImageToMatRGB(captureImg)
 	defer img.Close()
 
-	m := gocv.IMRead()
+	m := gocv.IMRead(imagesPath+"calibration/stashTabs mask.png", gocv.IMReadColor)
 
 	log.Println("tab " + topMenuTab + ": stash tabs")
 	log.Println("------------------------")
@@ -163,7 +163,9 @@ func stashInvTabsLocation(t gocv.Mat, topMenuTab string) {
 
 	gocv.MatchTemplate(img, t, &result, 5, m)
 	matches := GetMatchesFromTemplateMatchResult(result, threshold, 10)
+	for _, m := range matches {
 
+	}
 }
 
 func playerInvLocation(tlc, brc gocv.Mat, topMenuTab string) {

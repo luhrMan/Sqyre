@@ -199,6 +199,9 @@ func (a *ImageSearch) match(pathDir string, img, imgDraw gocv.Mat) map[string][]
 			matches = a.findTemplateMatches(img, template, Imask, Tmask, Cmask, tolerance)
 
 			sort.Slice(matches, func(i, j int) bool {
+				if matches[i].Y == matches[j].Y {
+					return matches[i].X < matches[j].X
+				}
 				return matches[i].Y < matches[j].Y
 			})
 
@@ -210,21 +213,6 @@ func (a *ImageSearch) match(pathDir string, img, imgDraw gocv.Mat) map[string][]
 		}(target)
 	}
 	wg.Wait()
-
-	//	for i, matches := range results { //draw rectangles around each match
-	//		for _, match := range matches {
-	//			rect := image.Rect(
-	//				match.X,
-	//				match.Y,
-	//
-	//				match.X+25-(borderSize*2),
-	//				match.Y+25-(borderSize*2),
-	//			)
-	//			gocv.Rectangle(&imgDraw, rect, color.RGBA{R: 255, A: 255}, 1)
-	//			gocv.PutText(&imgDraw, i, image.Point{X: match.X, Y: match.Y + 25}, gocv.FontHersheySimplex, 0.3, color.RGBA{G: 255, A: 255}, 1)
-	//		}
-	//		log.Printf("Results for %s: %v\n", i, matches)
-	//	}
 	gocv.IMWrite(pathDir+"founditems.png", imgDraw)
 
 	return results
