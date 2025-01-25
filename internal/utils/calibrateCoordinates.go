@@ -25,13 +25,25 @@ func CalibrateInventorySearchboxes() {
 		//                playerBLC = gocv.IMRead(path+"playerCorner-BottomLeft.png", gocv.IMReadColor)
 		playerBRC = gocv.IMRead(path+"playerCorner-BottomRight.png", gocv.IMReadColor)
 	)
-	// topMenuTabLocations()
-	merchantPortraitsLocation()
-	stashInvLocation(stashTLC, stashBRC, "stash")
-	stashInvLocation(stashTLC, stashBRC, "merchant")
-
+	topMenuTabLocations()
+	robotgo.Move(fyne.CurrentApp().Preferences().IntList("Stash")[0], fyne.CurrentApp().Preferences().IntList("Stash")[1])
+	robotgo.Click()
+	robotgo.Sleep(1)
 	playerInvLocation(playerTLC, playerBRC, "stash")
+	stashInvTabsLocation(stashTab, "merchant")
+	stashInvLocation(stashTLC, stashBRC, "stash")
+
+	robotgo.Move(fyne.CurrentApp().Preferences().IntList("Merchants")[0], fyne.CurrentApp().Preferences().IntList("Merchants")[1])
+	robotgo.Click()
+	robotgo.Sleep(1)
+	merchantPortraitsLocation()
+
+	robotgo.Move(fyne.CurrentApp().Preferences().IntList("Alchemist")[0], fyne.CurrentApp().Preferences().IntList("Alchemist")[1])
+	robotgo.Click()
+	robotgo.Sleep(1)
 	playerInvLocation(playerTLC, playerBRC, "merchant")
+	stashInvTabsLocation(stashTab, "merchant")
+	stashInvLocation(stashTLC, stashBRC, "merchant")
 
 	//        merchantInvLocation(stashTLC, stashTRC, stashBLC, stashBRC)
 }
@@ -133,7 +145,24 @@ func stashInvLocation(tlc, brc gocv.Mat, topMenuTab string) {
 		brcmatch[0].Y-tlcmatch[0].Y)
 	i, _ := gocv.ImageToMatRGB(ci)
 	defer i.Close()
-	gocv.IMWrite("internal/resources/images/meta/"+topMenuTab+"tabstash-test.png", i)
+	gocv.IMWrite("internal/resources/images/meta/"+topMenuTab+"tab-stash-test.png", i)
+	fyne.CurrentApp().Preferences().SetIntList(topMenuTab+"tab-stash-tlc", []int{tlcmatch[0].X + XOffset, tlcmatch[0].Y + YOffset})
+	fyne.CurrentApp().Preferences().SetIntList(topMenuTab+"tab-stash-brc", []int{brcmatch[0].X + XOffset, brcmatch[0].Y + YOffset})
+}
+
+func stashInvTabsLocation(t gocv.Mat, topMenuTab string) {
+	captureImg := robotgo.CaptureImg(XOffset, YOffset, MonitorWidth, MonitorHeight)
+	img, _ := gocv.ImageToMatRGB(captureImg)
+	defer img.Close()
+
+	log.Println("tab " + topMenuTab + ": stash tabs")
+	log.Println("------------------------")
+
+	result := gocv.NewMat()
+	defer result.Close()
+	var threshold float32 = 0.95
+
+	matches := GetMatchesFromTemplateMatchResult(result, threshold, 10)
 
 }
 
@@ -169,8 +198,8 @@ func playerInvLocation(tlc, brc gocv.Mat, topMenuTab string) {
 	defer i.Close()
 	gocv.IMWrite("internal/resources/images/meta/stashplayerinv-test.png", i)
 
-	fyne.CurrentApp().Preferences().SetIntList(topMenuTab+"-player-tlc", []int{tlcmatch[0].X + XOffset, tlcmatch[0].Y + YOffset})
-	fyne.CurrentApp().Preferences().SetIntList(topMenuTab+"-player-brc", []int{brcmatch[0].X + XOffset, brcmatch[0].Y + YOffset})
+	fyne.CurrentApp().Preferences().SetIntList(topMenuTab+"tab-player-tlc", []int{tlcmatch[0].X + XOffset, tlcmatch[0].Y + YOffset})
+	fyne.CurrentApp().Preferences().SetIntList(topMenuTab+"tab-player-brc", []int{brcmatch[0].X + XOffset, brcmatch[0].Y + YOffset})
 }
 
 func merchantInvLocation(tlc, trc, blc, brc gocv.Mat) {
@@ -292,8 +321,23 @@ func merchantPortraitsLocation() {
 	}
 }
 func topMenuTabLocations() {
-	//        i := robotgo.CaptureImg(XOffset, YOffset, MonitorWidth, int(float32(MonitorHeight)*0.1))
-	//        i = ImageToMatToImagePreprocess(i, true, true, true, true, PreprocessOptions{5, 50, 2})
-	//        str, _ := CheckImageForText(i)
-
+	topMenuTabs := []string{
+		"Play",
+		"Leaderboard",
+		"Religion",
+		"Class",
+		"Stash",
+		"Merchants",
+		"Trade",
+		"Gathering Hall",
+		"Customize",
+		"Shop",
+	}
+	x := int(float32(MonitorWidth) - (float32(MonitorWidth)*0.25)*0.1)
+	y := int(float32(MonitorHeight) * 0.04)
+	for _, t := range topMenuTabs {
+		fyne.CurrentApp().Preferences().SetIntList(t, []int{x + XOffset, y + YOffset})
+		x += x
+		robotgo.Move(fyne.CurrentApp().Preferences().IntList(t)[0], fyne.CurrentApp().Preferences().IntList(t)[1])
+	}
 }
