@@ -14,16 +14,13 @@ import (
 )
 
 func CalibrateInventorySearchboxes() {
-	path := "./internal/resources/images/corners/bigger/"
+	path := imagesPath + "calibration/"
 	var (
-		stashTLC = gocv.IMRead(path+"stashCorner-TopLeft.png", gocv.IMReadColor)
-		// stashTRC = gocv.IMRead(path+"stashCorner-TopRight.png", gocv.IMReadColor)
-		// stashBLC = gocv.IMRead(path+"stashCorner-BottomLeft.png", gocv.IMReadColor)
+		stashTLC  = gocv.IMRead(path+"stashCorner-TopLeft.png", gocv.IMReadColor)
 		stashBRC  = gocv.IMRead(path+"stashCorner-BottomRight.png", gocv.IMReadColor)
 		playerTLC = gocv.IMRead(path+"playerCorner-TopLeft.png", gocv.IMReadColor)
-		//                playerTRC = gocv.IMRead(path+"playerCorner-TopRight.png", gocv.IMReadColor)
-		//                playerBLC = gocv.IMRead(path+"playerCorner-BottomLeft.png", gocv.IMReadColor)
 		playerBRC = gocv.IMRead(path+"playerCorner-BottomRight.png", gocv.IMReadColor)
+		stashTab  = gocv.IMRead(path+"stashTab1.png", gocv.IMReadColor)
 	)
 	topMenuTabLocations()
 	robotgo.Move(fyne.CurrentApp().Preferences().IntList("Stash")[0], fyne.CurrentApp().Preferences().IntList("Stash")[1])
@@ -59,9 +56,9 @@ func ItemDescriptionLocation() (image.Image, error) {
 	captureImg := robotgo.CaptureImg(mx, 0, mw, MonitorHeight)
 	img, _ := gocv.ImageToMatRGB(captureImg)
 	defer img.Close()
-	gocv.IMWrite("./internal/resources/images/meta/precorneritemdescription-test.png", img)
+	gocv.IMWrite(imagesPath+"meta/precorneritemdescription-test.png", img)
 
-	path := "./internal/resources/images/corners/nobackground/"
+	path := imagesPath + "calibration/"
 	trc := gocv.IMRead(path+"itemCorner-TopRight.png", gocv.IMReadColor)
 	blc := gocv.IMRead(path+"itemCorner-BottomLeft.png", gocv.IMReadColor)
 	defer trc.Close()
@@ -100,7 +97,7 @@ func ItemDescriptionLocation() (image.Image, error) {
 		h)
 	i, _ := gocv.ImageToMatRGB(ci)
 	defer i.Close()
-	gocv.IMWrite("./internal/resources/images/meta/itemdescription-test.png", i)
+	gocv.IMWrite(imagesPath+"meta/itemdescription-test.png", i)
 
 	return ci, nil
 }
@@ -145,7 +142,7 @@ func stashInvLocation(tlc, brc gocv.Mat, topMenuTab string) {
 		brcmatch[0].Y-tlcmatch[0].Y)
 	i, _ := gocv.ImageToMatRGB(ci)
 	defer i.Close()
-	gocv.IMWrite("internal/resources/images/meta/"+topMenuTab+"tab-stash-test.png", i)
+	gocv.IMWrite(imagesPath+"meta/"+topMenuTab+"tab-stash-test.png", i)
 	fyne.CurrentApp().Preferences().SetIntList(topMenuTab+"tab-stash-tlc", []int{tlcmatch[0].X + XOffset, tlcmatch[0].Y + YOffset})
 	fyne.CurrentApp().Preferences().SetIntList(topMenuTab+"tab-stash-brc", []int{brcmatch[0].X + XOffset, brcmatch[0].Y + YOffset})
 }
@@ -155,6 +152,8 @@ func stashInvTabsLocation(t gocv.Mat, topMenuTab string) {
 	img, _ := gocv.ImageToMatRGB(captureImg)
 	defer img.Close()
 
+	m := gocv.IMRead()
+
 	log.Println("tab " + topMenuTab + ": stash tabs")
 	log.Println("------------------------")
 
@@ -162,6 +161,7 @@ func stashInvTabsLocation(t gocv.Mat, topMenuTab string) {
 	defer result.Close()
 	var threshold float32 = 0.95
 
+	gocv.MatchTemplate(img, t, &result, 5, m)
 	matches := GetMatchesFromTemplateMatchResult(result, threshold, 10)
 
 }
@@ -196,7 +196,7 @@ func playerInvLocation(tlc, brc gocv.Mat, topMenuTab string) {
 		brcmatch[0].Y-tlcmatch[0].Y)
 	i, _ := gocv.ImageToMatRGB(ci)
 	defer i.Close()
-	gocv.IMWrite("internal/resources/images/meta/stashplayerinv-test.png", i)
+	gocv.IMWrite(imagesPath+"meta/stashplayerinv-test.png", i)
 
 	fyne.CurrentApp().Preferences().SetIntList(topMenuTab+"tab-player-tlc", []int{tlcmatch[0].X + XOffset, tlcmatch[0].Y + YOffset})
 	fyne.CurrentApp().Preferences().SetIntList(topMenuTab+"tab-player-brc", []int{brcmatch[0].X + XOffset, brcmatch[0].Y + YOffset})
@@ -287,13 +287,12 @@ func merchantPortraitsLocation() {
 		"Weaponsmith",
 		"Woodsman",
 	}
-	path := "./internal/resources/images/"
 	captureImg := robotgo.CaptureImg(XOffset, YOffset, MonitorWidth, MonitorHeight)
 	i, _ := gocv.ImageToMatRGB(captureImg)
 	imgDraw := i.Clone()
 	gocv.CvtColor(i, &i, gocv.ColorRGBToGray)
-	t := gocv.IMRead(path+"corners/merchantPortraitTop.png", gocv.IMReadGrayScale)
-	m := gocv.IMRead(path+"masks/merchantPortraitTop mask.png", gocv.IMReadGrayScale)
+	t := gocv.IMRead(imagesPath+"calibration/merchantPortraitTop.png", gocv.IMReadGrayScale)
+	m := gocv.IMRead(imagesPath+"masks/merchantPortraitTop mask.png", gocv.IMReadGrayScale)
 	result := gocv.NewMat()
 	defer i.Close()
 	defer imgDraw.Close()
@@ -305,7 +304,7 @@ func merchantPortraitsLocation() {
 	matches := GetMatchesFromTemplateMatchResult(result, 0.9, 10)
 
 	DrawFoundMatches(matches, t.Cols(), t.Rows(), imgDraw, "")
-	gocv.IMWrite(path+"/meta/merchantPortraitsLocation-foundMerchants.png", imgDraw)
+	gocv.IMWrite(imagesPath+"meta/merchantPortraitsLocation-foundMerchants.png", imgDraw)
 
 	for _, match := range matches {
 		h := t.Rows() / 2
