@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"image"
 	"log"
-	"sort"
 	"strings"
 	"sync"
 
@@ -43,22 +42,23 @@ func (a *ImageSearch) Execute(ctx interface{}) error {
 	defer imgDraw.Close()
 
 	results := a.match(pathDir, img, imgDraw)
+	sorted := utils.SortListOfPoints(results)
 
 	count := 0
 	//clicked := []robotgo.Point
-	for _, pointArr := range results {
-		for i, point := range pointArr {
-			if i > 50 {
-				break
-			}
-			count++
-			point.X += a.SearchBox.LeftX
-			point.Y += a.SearchBox.TopY
-			for _, d := range a.SubActions {
-				d.Execute(point)
-			}
+	// for _, pointArr := range sorted {
+	for i, point := range sorted {
+		if i > 50 {
+			break
+		}
+		count++
+		point.X += a.SearchBox.LeftX
+		point.Y += a.SearchBox.TopY
+		for _, d := range a.SubActions {
+			d.Execute(point)
 		}
 	}
+	// }
 
 	log.Printf("Total # found: %v\n", count)
 	return nil
@@ -197,13 +197,6 @@ func (a *ImageSearch) match(pathDir string, img, imgDraw gocv.Mat) map[string][]
 			}
 			var matches []robotgo.Point
 			matches = a.findTemplateMatches(img, template, Imask, Tmask, Cmask, tolerance)
-
-			sort.Slice(matches, func(i, j int) bool {
-				if matches[i].Y == matches[j].Y {
-					return matches[i].X < matches[j].X
-				}
-				return matches[i].Y < matches[j].Y
-			})
 
 			resultsMutex.Lock()
 			defer resultsMutex.Unlock()

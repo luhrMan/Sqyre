@@ -163,9 +163,8 @@ func stashInvTabsLocation(t gocv.Mat, topMenuTab string) {
 
 	gocv.MatchTemplate(img, t, &result, 5, m)
 	matches := GetMatchesFromTemplateMatchResult(result, threshold, 10)
-	for _, m := range matches {
+	matches = SortPoints(matches, "")
 
-	}
 }
 
 func playerInvLocation(tlc, brc gocv.Mat, topMenuTab string) {
