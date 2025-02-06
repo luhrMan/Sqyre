@@ -1,26 +1,15 @@
 package utils
 
 import (
-	"bytes"
 	"fmt"
 	"image"
 	"image/color"
-	"image/png"
-	"log"
 	"math"
 	"sort"
 
 	"github.com/go-vgo/robotgo"
-	"github.com/otiai10/gosseract/v2"
 	"gocv.io/x/gocv"
 )
-
-var (
-	tessClient = gosseract.NewClient()
-)
-
-func GetTessClient() *gosseract.Client { return tessClient }
-func CloseTessClient()                 { tessClient.Close() }
 
 func GetMatchesFromTemplateMatchResult(result gocv.Mat, threshold float32, closeMatchesDistance int) []robotgo.Point {
 	resultRows := result.Rows()
@@ -61,21 +50,6 @@ func abs(x int) int {
 		return -x
 	}
 	return x
-}
-
-func CheckImageForText(img image.Image) (error, string) {
-	var buf bytes.Buffer
-	if err := png.Encode(&buf, img); err != nil {
-		return err, ""
-	}
-	if err := GetTessClient().SetImageFromBytes(buf.Bytes()); err != nil {
-		return err, ""
-	}
-	text, err := GetTessClient().Text()
-	if err != nil {
-		log.Fatal(err)
-	}
-	return nil, text
 }
 
 type PreprocessOptions struct {
@@ -129,26 +103,27 @@ func DrawFoundMatches(matches []robotgo.Point, rectSizeX, rectSizeY int, draw go
 
 func SortPoints(points []robotgo.Point, sortBy string) []robotgo.Point {
 	switch sortBy {
-	case "LeftToRightTopToBottom":
-	case "RightToLeftTopToBottom":
-	case "LeftToRightBottomToTop":
-	case "RightToLeftBottomToTop":
+	case "TopLeftToBottomRight":
+		sort.Slice(points, func(i, j int) bool {
+			for a := 0; a <= 5; a++ {
+				if points[i].Y+a == points[j].Y || points[i].Y == points[j].Y+a {
+					return points[i].X < points[j].X
+				}
+			}
+			return points[i].Y < points[j].Y
+		})
+	case "TopRightToBottomLeft":
+	case "BottomLeftToTopRight":
+	case "BottomRightToTopLeft":
 	}
-	sort.Slice(points, func(i, j int) bool {
-		if points[i].Y == points[j].Y {
-			return points[i].X < points[j].X
-		}
-		return points[i].Y < points[j].Y
-	})
+
 	return points
 }
 
 func SortListOfPoints(lop map[string][]robotgo.Point) []robotgo.Point {
 	var sort []robotgo.Point
 	for _, points := range lop {
-		for _, m := range points {
-			sort = append(sort, m)
-		}
+		sort = append(sort, points...)
 	}
-	return SortPoints(sort, "LeftToRightTopToBottom")
+	return SortPoints(sort, "TopLeftToBottomRight")
 }

@@ -70,8 +70,48 @@ func (a *ImageSearch) String() string {
 
 func (a *ImageSearch) match(pathDir string, img, imgDraw gocv.Mat) map[string][]robotgo.Point {
 	//	maskedIcons := *internal.MaskItems()
-	icons := *internal.GetIconBytes()
-	path := "./internal/resources/images/"
+
+	results := make(map[string][]robotgo.Point)
+
+	switch robotgo.GetTitle() {
+	case "Dark and Darker":
+		results = DarkAndDarker(*a, img, imgDraw)
+	case "Path of Exile 2":
+		results = PathOfExile2(*a, img, imgDraw)
+	}
+
+	gocv.IMWrite(pathDir+"founditems.png", imgDraw)
+
+	return results
+}
+
+func (a *ImageSearch) FindTemplateMatches(img, template, Imask, Tmask, Cmask gocv.Mat, threshold float32) []robotgo.Point {
+	result := gocv.NewMat()
+	defer result.Close()
+
+	i := img.Clone()
+	t := template.Clone()
+	defer i.Close()
+	defer t.Close()
+	kernel := image.Point{X: 5, Y: 5}
+
+	gocv.Subtract(i, Imask, &i)
+	gocv.Subtract(t, Tmask, &t)
+	gocv.GaussianBlur(i, &i, kernel, 0, 0, gocv.BorderDefault)
+	gocv.GaussianBlur(t, &t, kernel, 0, 0, gocv.BorderDefault)
+
+	//method 5 works best
+	gocv.MatchTemplate(i, t, &result, gocv.TemplateMatchMode(5), Cmask)
+	matches := utils.GetMatchesFromTemplateMatchResult(result, threshold, 10)
+	return matches
+}
+
+var (
+	icons = *internal.GetIconBytes()
+	path  = "./internal/resources/images/"
+)
+
+func DarkAndDarker(a ImageSearch, img, imgDraw gocv.Mat) map[string][]robotgo.Point {
 	var xSplit, ySplit int
 	switch {
 	case strings.Contains(a.SearchBox.Name, "Player"):
@@ -100,35 +140,35 @@ func (a *ImageSearch) match(pathDir string, img, imgDraw gocv.Mat) map[string][]
 	switch {
 	case strings.Contains(a.SearchBox.Name, "Player Inventory Stash"):
 		tolerance = 0.96
-		Imask = gocv.IMRead(path+"empty-player-stash.png", gocv.IMReadColor)
+		Imask = gocv.IMRead(path+"masks/Dark And Darker/empty-player-stash.png", gocv.IMReadColor)
 	case strings.Contains(a.SearchBox.Name, "Stash"):
 		tolerance = 0.96
-		Imask = gocv.IMRead(path+"empty-stash.png", gocv.IMReadColor)
+		Imask = gocv.IMRead(path+"masks/Dark And Darker/empty-stash.png", gocv.IMReadColor)
 	case strings.Contains(a.SearchBox.Name, "Merchant"):
 		tolerance = 0.93
-		Imask = gocv.IMRead(path+"empty-player-merchant.png", gocv.IMReadColor)
+		Imask = gocv.IMRead(path+"masks/Dark And Darker/empty-player-merchant.png", gocv.IMReadColor)
 	default:
 		tolerance = 0.95
 	}
 
-	Tmask1x1 := gocv.IMRead(path+"masks/1x1 mask.png", gocv.IMReadColor)
-	Tmask1x2 := gocv.IMRead(path+"masks/1x2 mask.png", gocv.IMReadColor)
-	Tmask1x3 := gocv.IMRead(path+"masks/1x3 mask.png", gocv.IMReadColor)
-	Tmask2x1 := gocv.IMRead(path+"masks/2x1 mask.png", gocv.IMReadColor)
-	Tmask2x2 := gocv.IMRead(path+"masks/2x2 mask.png", gocv.IMReadColor)
-	Tmask2x3 := gocv.IMRead(path+"masks/2x3 mask.png", gocv.IMReadColor)
+	Tmask1x1 := gocv.IMRead(path+"masks/Dark And Darker/1x1 mask.png", gocv.IMReadColor)
+	Tmask1x2 := gocv.IMRead(path+"masks/Dark And Darker/1x2 mask.png", gocv.IMReadColor)
+	Tmask1x3 := gocv.IMRead(path+"masks/Dark And Darker/1x3 mask.png", gocv.IMReadColor)
+	Tmask2x1 := gocv.IMRead(path+"masks/Dark And Darker/2x1 mask.png", gocv.IMReadColor)
+	Tmask2x2 := gocv.IMRead(path+"masks/Dark And Darker/2x2 mask.png", gocv.IMReadColor)
+	Tmask2x3 := gocv.IMRead(path+"masks/Dark And Darker/2x3 mask.png", gocv.IMReadColor)
 	defer Tmask1x1.Close()
 	defer Tmask1x2.Close()
 	defer Tmask1x3.Close()
 	defer Tmask2x1.Close()
 	defer Tmask2x2.Close()
 	defer Tmask2x3.Close()
-	Cmask1x1 := gocv.IMRead(path+"masks/1x1 Cmask.png", gocv.IMReadGrayScale)
-	Cmask1x2 := gocv.IMRead(path+"masks/1x2 Cmask.png", gocv.IMReadGrayScale)
-	Cmask1x3 := gocv.IMRead(path+"masks/1x3 Cmask.png", gocv.IMReadGrayScale)
-	Cmask2x1 := gocv.IMRead(path+"masks/2x1 Cmask.png", gocv.IMReadGrayScale)
-	Cmask2x2 := gocv.IMRead(path+"masks/2x2 Cmask.png", gocv.IMReadGrayScale)
-	Cmask2x3 := gocv.IMRead(path+"masks/2x3 Cmask.png", gocv.IMReadGrayScale)
+	Cmask1x1 := gocv.IMRead(path+"masks/Dark And Darker/1x1 Cmask.png", gocv.IMReadGrayScale)
+	Cmask1x2 := gocv.IMRead(path+"masks/Dark And Darker/1x2 Cmask.png", gocv.IMReadGrayScale)
+	Cmask1x3 := gocv.IMRead(path+"masks/Dark And Darker/1x3 Cmask.png", gocv.IMReadGrayScale)
+	Cmask2x1 := gocv.IMRead(path+"masks/Dark And Darker/2x1 Cmask.png", gocv.IMReadGrayScale)
+	Cmask2x2 := gocv.IMRead(path+"masks/Dark And Darker/2x2 Cmask.png", gocv.IMReadGrayScale)
+	Cmask2x3 := gocv.IMRead(path+"masks/Dark And Darker/2x3 Cmask.png", gocv.IMReadGrayScale)
 	defer Cmask1x1.Close()
 	defer Cmask1x2.Close()
 	defer Cmask1x3.Close()
@@ -143,6 +183,7 @@ func (a *ImageSearch) match(pathDir string, img, imgDraw gocv.Mat) map[string][]
 		wg.Add(1)
 		go func(target string) {
 			defer wg.Done()
+
 			Tmask := gocv.NewMat()
 			Cmask := gocv.NewMat()
 			defer Tmask.Close()
@@ -188,6 +229,7 @@ func (a *ImageSearch) match(pathDir string, img, imgDraw gocv.Mat) map[string][]
 			}
 
 			if Tmask.Cols() != template.Cols() && Tmask.Rows() != template.Rows() {
+				log.Println("ERROR: template mask size does not match template!")
 				log.Println("item: ", target)
 				log.Println("Tmask cols: ", Tmask.Cols())
 				log.Println("Tmask rows: ", Tmask.Rows())
@@ -195,8 +237,9 @@ func (a *ImageSearch) match(pathDir string, img, imgDraw gocv.Mat) map[string][]
 				log.Println("t rows: ", template.Rows())
 				return
 			}
+
 			var matches []robotgo.Point
-			matches = a.findTemplateMatches(img, template, Imask, Tmask, Cmask, tolerance)
+			matches = a.FindTemplateMatches(img, template, Imask, Tmask, Cmask, tolerance)
 
 			resultsMutex.Lock()
 			defer resultsMutex.Unlock()
@@ -206,28 +249,76 @@ func (a *ImageSearch) match(pathDir string, img, imgDraw gocv.Mat) map[string][]
 		}(target)
 	}
 	wg.Wait()
-	gocv.IMWrite(pathDir+"founditems.png", imgDraw)
 
 	return results
 }
+func PathOfExile2(a ImageSearch, img, imgDraw gocv.Mat) map[string][]robotgo.Point {
+	Imask := gocv.NewMat()
+	defer Imask.Close()
 
-func (a *ImageSearch) findTemplateMatches(img, template, Imask, Tmask, Cmask gocv.Mat, threshold float32) []robotgo.Point {
-	result := gocv.NewMat()
-	defer result.Close()
+	var tolerance float32 = 0.95
 
-	i := img.Clone()
-	t := template.Clone()
-	defer i.Close()
-	defer t.Close()
-	kernel := image.Point{X: 5, Y: 5}
+	// Tmask1x1 := gocv.IMRead(path+"masks/1x1 mask.png", gocv.IMReadColor)
+	// defer Tmask1x1.Close()
+	// Cmask1x1 := gocv.IMRead(path+"masks/1x1 Cmask.png", gocv.IMReadGrayScale)
+	// defer Cmask1x1.Close()
 
-	gocv.Subtract(i, Imask, &i)
-	gocv.Subtract(t, Tmask, &t)
-	gocv.GaussianBlur(i, &i, kernel, 0, 0, gocv.BorderDefault)
-	gocv.GaussianBlur(t, &t, kernel, 0, 0, gocv.BorderDefault)
+	results := make(map[string][]robotgo.Point)
+	var wg sync.WaitGroup
+	resultsMutex := &sync.Mutex{}
+	for _, target := range a.Targets { // for each search target, create a goroutine
+		wg.Add(1)
+		go func(target string) {
+			defer wg.Done()
 
-	//method 5 works best
-	gocv.MatchTemplate(i, t, &result, gocv.TemplateMatchMode(5), Cmask)
-	matches := utils.GetMatchesFromTemplateMatchResult(result, threshold, 10)
-	return matches
+			Tmask := gocv.NewMat()
+			Cmask := gocv.NewMat()
+			defer Tmask.Close()
+			defer Cmask.Close()
+
+			i, _ := internal.Items.GetItem(target)
+			switch i.GridSize {
+			case [2]int{1, 1}:
+				//				Tmask = Imask.Region(image.Rect(0, 0, xSize, ySize))
+				// Tmask = Tmask1x1.Clone()
+				// Cmask = Cmask1x1.Clone()
+
+			default:
+
+			}
+
+			ip := target + ".png"
+			b := icons[ip]
+			template := gocv.NewMat()
+			defer template.Close()
+			err := gocv.IMDecodeIntoMat(b, gocv.IMReadColor, &template)
+			if err != nil {
+				fmt.Println("Error reading template image")
+				fmt.Println(err)
+				return
+			}
+
+			// if Tmask.Cols() != template.Cols() && Tmask.Rows() != template.Rows() {
+			// 	log.Println("ERROR: template mask size does not match template!")
+			// 	log.Println("item: ", target)
+			// 	log.Println("Tmask cols: ", Tmask.Cols())
+			// 	log.Println("Tmask rows: ", Tmask.Rows())
+			// 	log.Println("t cols: ", template.Cols())
+			// 	log.Println("t rows: ", template.Rows())
+			// 	return
+			// }
+
+			// var matches []robotgo.Point
+			matches := a.FindTemplateMatches(img, template, Imask, Tmask, Cmask, tolerance)
+
+			resultsMutex.Lock()
+			defer resultsMutex.Unlock()
+
+			results[target] = matches
+			utils.DrawFoundMatches(matches, template.Cols()*i.GridSize[0], template.Rows()*i.GridSize[1], imgDraw, target)
+		}(target)
+	}
+	wg.Wait()
+
+	return results
 }
