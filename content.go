@@ -7,8 +7,6 @@ import (
 	"Squire/internal/structs"
 	"Squire/internal/utils"
 	"fmt"
-	"fyne.io/fyne/v2/canvas"
-	"golang.org/x/image/colornames"
 	"log"
 	"os"
 	"slices"
@@ -341,19 +339,19 @@ func (u *ui) actionSettingsTabs() {
 	//	defer robotgo.FreeBitmap(screen)
 	//		mouseMoveDisplay := canvas.NewImageFromImage(robotgo.ToImage(screen))
 
-	mouseMoveDisplayImage := canvas.NewImageFromFile("./internal/resources/images/full-screen.png")
-	mouseMoveDisplayImage.FillMode = canvas.ImageFillStretch
-	vLine := canvas.NewLine(colornames.Red)
-	hLine := canvas.NewLine(colornames.Red)
-	vLine.StrokeWidth = 2
-	hLine.StrokeWidth = 2
-	mouseMoveDisplayContainer := container.NewBorder(nil, nil, nil, nil, mouseMoveDisplayImage, vLine, hLine)
+	// mouseMoveDisplayImage := canvas.NewImageFromFile("./internal/resources/images/full-screen.png")
+	// mouseMoveDisplayImage.FillMode = canvas.ImageFillStretch
+	// vLine := canvas.NewLine(colornames.Red)
+	// hLine := canvas.NewLine(colornames.Red)
+	// vLine.StrokeWidth = 2
+	// hLine.StrokeWidth = 2
+	// mouseMoveDisplayContainer := container.NewBorder(nil, nil, nil, nil, mouseMoveDisplayImage, vLine, hLine)
 	//	vLine.Position1 = mouseMoveDisplayContainer.Position()
-	x, _ := u.st.boundMoveX.Get()
-	vLine.Position1.X = float32(x)
-	vLine.Position1.Y = 0
-	vLine.Position2.X = float32(x)
-	vLine.Position2.Y = mouseMoveDisplayImage.Size().Height
+	// x, _ := u.st.boundMoveX.Get()
+	// vLine.Position1.X = float32(x)
+	// vLine.Position1.Y = 0
+	// vLine.Position2.X = float32(x)
+	// vLine.Position2.Y = mouseMoveDisplayImage.Size().Height
 	//	vLine.Position1.Y /= 2
 	//	hLine.Position1.X /= 2
 	//	hLine.Position1.Y /= 2
@@ -371,7 +369,7 @@ func (u *ui) actionSettingsTabs() {
 					container.NewBorder(nil, nil, container.NewHBox(widget.NewLabel("Y:")), nil, u.st.boundMoveYEntry), u.st.boundMoveYSlider,
 					container.NewHBox(layout.NewSpacer(), widget.NewLabel("Spot:")), u.st.boundSpotSelect,
 				),
-			), nil, nil, nil, mouseMoveDisplayContainer)
+			), nil, nil, nil) //, mouseMoveDisplayContainer)
 		clickSettings = container.NewVBox(
 			container.NewHBox(layout.NewSpacer(), widget.NewLabel("left"), u.st.boundButtonToggle, widget.NewLabel("right"), layout.NewSpacer()),
 		)

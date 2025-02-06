@@ -2,9 +2,10 @@ package main
 
 import (
 	"Squire/internal/utils"
-	"github.com/go-vgo/robotgo"
 	"log"
 	"os"
+
+	"github.com/go-vgo/robotgo"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
@@ -47,5 +48,6 @@ func toggleMousePos() {
 		}
 		locX, locY = robotgo.Location()
 		log.Println(locX-utils.XOffset, locY-utils.YOffset)
+		log.Println("Current title: ", robotgo.GetTitle())
 	}
 }

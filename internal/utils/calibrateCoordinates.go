@@ -7,6 +7,7 @@ import (
 	"image/color"
 	"log"
 	"slices"
+	"strconv"
 
 	"fyne.io/fyne/v2"
 	"github.com/go-vgo/robotgo"
@@ -152,7 +153,7 @@ func stashInvTabsLocation(t gocv.Mat, topMenuTab string) {
 	img, _ := gocv.ImageToMatRGB(captureImg)
 	defer img.Close()
 
-	m := gocv.IMRead(imagesPath+"calibration/stashTabs mask.png", gocv.IMReadColor)
+	m := gocv.IMRead(imagesPath+"masks/stashTabs mask.png", gocv.IMReadColor)
 
 	log.Println("tab " + topMenuTab + ": stash tabs")
 	log.Println("------------------------")
@@ -163,8 +164,14 @@ func stashInvTabsLocation(t gocv.Mat, topMenuTab string) {
 
 	gocv.MatchTemplate(img, t, &result, 5, m)
 	matches := GetMatchesFromTemplateMatchResult(result, threshold, 10)
-	matches = SortPoints(matches, "")
+	matches = SortPoints(matches, "TopLeftToBottomRight")
 
+	for i, m := range matches {
+		if topMenuTab == "merchant" {
+			continue
+		}
+		fyne.CurrentApp().Preferences().SetIntList(topMenuTab+"tab-stashtab"+strconv.Itoa(i+1), []int{m.X + XOffset, m.Y + YOffset})
+	}
 }
 
 func playerInvLocation(tlc, brc gocv.Mat, topMenuTab string) {
@@ -333,11 +340,13 @@ func topMenuTabLocations() {
 		"Customize",
 		"Shop",
 	}
+	log.Println(MonitorWidth)
 	x := int(float32(MonitorWidth) - (float32(MonitorWidth)*0.25)*0.1)
 	y := int(float32(MonitorHeight) * 0.04)
 	for _, t := range topMenuTabs {
 		fyne.CurrentApp().Preferences().SetIntList(t, []int{x + XOffset, y + YOffset})
 		x += x
 		robotgo.Move(fyne.CurrentApp().Preferences().IntList(t)[0], fyne.CurrentApp().Preferences().IntList(t)[1])
+		log.Printf(t+": %d %d", fyne.CurrentApp().Preferences().IntList(t)[0], fyne.CurrentApp().Preferences().IntList(t)[0])
 	}
 }

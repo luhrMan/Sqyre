@@ -1,5 +1,78 @@
 {
     "path of exile 2": [
+             {
+            "name": "Waystone T1",
+            "gridSize": [
+                1,
+                1
+            ],
+            "stackMax": 1,
+            "merchant": ""
+        },        {
+            "name": "Waystone T2",
+            "gridSize": [
+                1,
+                1
+            ],
+            "stackMax": 1,
+            "merchant": ""
+        },        {
+            "name": "Waystone T3",
+            "gridSize": [
+                1,
+                1
+            ],
+            "stackMax": 1,
+            "merchant": ""
+        },        {
+            "name": "Waystone T4",
+            "gridSize": [
+                1,
+                1
+            ],
+            "stackMax": 1,
+            "merchant": ""
+        },        {
+            "name": "Waystone T5",
+            "gridSize": [
+                1,
+                1
+            ],
+            "stackMax": 1,
+            "merchant": ""
+        },        {
+            "name": "Waystone T6",
+            "gridSize": [
+                1,
+                1
+            ],
+            "stackMax": 1,
+            "merchant": ""
+        },        {
+            "name": "Waystone T7",
+            "gridSize": [
+                1,
+                1
+            ],
+            "stackMax": 1,
+            "merchant": ""
+        },        {
+            "name": "Waystone T8",
+            "gridSize": [
+                1,
+                1
+            ],
+            "stackMax": 1,
+            "merchant": ""
+        },        {
+            "name": "Waystone T9",
+            "gridSize": [
+                1,
+                1
+            ],
+            "stackMax": 1,
+            "merchant": ""
+        },
         {
             "name": "Waystone T10",
             "gridSize": [
