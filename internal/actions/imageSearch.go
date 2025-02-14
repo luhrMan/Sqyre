@@ -95,8 +95,14 @@ func (a *ImageSearch) FindTemplateMatches(img, template, Imask, Tmask, Cmask goc
 	defer t.Close()
 	kernel := image.Point{X: 5, Y: 5}
 
-	gocv.Subtract(i, Imask, &i)
-	gocv.Subtract(t, Tmask, &t)
+	if Imask.Rows() > 0 && Imask.Cols() > 0 {
+		gocv.Subtract(i, Imask, &i)
+	}
+	if Tmask.Rows() > 0 && Tmask.Cols() > 0 {
+		gocv.Subtract(t, Tmask, &t)
+	}
+	gocv.IMWrite("internal/resources/images/meta/"+"poe2templateSubtraction.png", t)
+
 	gocv.GaussianBlur(i, &i, kernel, 0, 0, gocv.BorderDefault)
 	gocv.GaussianBlur(t, &t, kernel, 0, 0, gocv.BorderDefault)
 
@@ -256,12 +262,12 @@ func PathOfExile2(a ImageSearch, img, imgDraw gocv.Mat) map[string][]robotgo.Poi
 	Imask := gocv.NewMat()
 	defer Imask.Close()
 
-	var tolerance float32 = 0.95
-
-	// Tmask1x1 := gocv.IMRead(path+"masks/1x1 mask.png", gocv.IMReadColor)
-	// defer Tmask1x1.Close()
-	// Cmask1x1 := gocv.IMRead(path+"masks/1x1 Cmask.png", gocv.IMReadGrayScale)
-	// defer Cmask1x1.Close()
+	var tolerance float32 = 0.9
+	// Imask = gocv.IMRead(path+"masks/Path Of Exile 2/empty-player-stash.png", gocv.IMReadColor)
+	Tmask1x1 := gocv.IMRead(path+"masks/Path Of Exile 2/1x1 mask.png", gocv.IMReadColor)
+	defer Tmask1x1.Close()
+	Cmask1x1 := gocv.IMRead(path+"masks/Path Of Exile 2/1x1 Cmask.png", gocv.IMReadGrayScale)
+	defer Cmask1x1.Close()
 
 	results := make(map[string][]robotgo.Point)
 	var wg sync.WaitGroup
@@ -280,8 +286,8 @@ func PathOfExile2(a ImageSearch, img, imgDraw gocv.Mat) map[string][]robotgo.Poi
 			switch i.GridSize {
 			case [2]int{1, 1}:
 				//				Tmask = Imask.Region(image.Rect(0, 0, xSize, ySize))
-				// Tmask = Tmask1x1.Clone()
-				// Cmask = Cmask1x1.Clone()
+				Tmask = Tmask1x1.Clone()
+				Cmask = Cmask1x1.Clone()
 
 			default:
 
@@ -298,15 +304,15 @@ func PathOfExile2(a ImageSearch, img, imgDraw gocv.Mat) map[string][]robotgo.Poi
 				return
 			}
 
-			// if Tmask.Cols() != template.Cols() && Tmask.Rows() != template.Rows() {
-			// 	log.Println("ERROR: template mask size does not match template!")
-			// 	log.Println("item: ", target)
-			// 	log.Println("Tmask cols: ", Tmask.Cols())
-			// 	log.Println("Tmask rows: ", Tmask.Rows())
-			// 	log.Println("t cols: ", template.Cols())
-			// 	log.Println("t rows: ", template.Rows())
-			// 	return
-			// }
+			if Tmask.Cols() != template.Cols() && Tmask.Rows() != template.Rows() {
+				log.Println("ERROR: template mask size does not match template!")
+				log.Println("item: ", target)
+				log.Println("Tmask cols: ", Tmask.Cols())
+				log.Println("Tmask rows: ", Tmask.Rows())
+				log.Println("t cols: ", template.Cols())
+				log.Println("t rows: ", template.Rows())
+				return
+			}
 
 			// var matches []robotgo.Point
 			matches := a.FindTemplateMatches(img, template, Imask, Tmask, Cmask, tolerance)
