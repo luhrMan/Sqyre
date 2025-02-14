@@ -1,0 +1,39 @@
+{
+	"loopcount": 1,
+	"uid": "",
+	"name": "root",
+	"subactions": [
+		{
+			"uid": ".1",
+			"X": 345,
+			"Y": 194
+		},
+		{
+			"uid": ".2",
+			"button": "left"
+		},
+		{
+			"imagetargets": [
+				"Regal Orb",
+				"Orb of Transmutation",
+				"Orb of Augmentation"
+			],
+			"searchbox": {
+				"name": "Right Half",
+				"x1": 1280,
+				"y1": 0,
+				"x2": 2560,
+				"y2": 1440
+			},
+			"uid": ".3",
+			"name": "Get currency",
+			"subactions": [
+				{
+					"uid": ".3.1",
+					"X": -1,
+					"Y": -1
+				}
+			]
+		}
+	]
+}
