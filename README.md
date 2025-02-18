@@ -58,17 +58,6 @@ Install Msys2
 
 ## Linux
 
-- `apt install`
-    - `golang-go`
-    - `tesseract-ocr`
-    - `libgl1-mesa-dev`
-    - `libx11-dev`
-    - `libxtst-dev`
-    - `libxcursor-dev`
-    - `libxrandr-dev`
-    - `g++`
-    - `clang`
-    - `libtesseract-dev`
-    - `libxxf86vm-dev`
+- `apt install tesseract-ocr libgl1-mesa-dev libx11-dev libx11-xcb-dev libxtst-dev libxcursor-dev libxrandr-dev libxinerama-dev g++ clang libtesseract-dev libxxf86vm-dev libxkbcommon-x11-dev golang-go`
 
 - Find the GoCV folder and build the OpenCV source

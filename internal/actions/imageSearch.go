@@ -72,13 +72,15 @@ func (a *ImageSearch) match(pathDir string, img, imgDraw gocv.Mat) map[string][]
 	//	maskedIcons := *internal.MaskItems()
 
 	results := make(map[string][]robotgo.Point)
-
-	switch robotgo.GetTitle() {
-	case "Dark and Darker":
-		results = DarkAndDarker(*a, img, imgDraw)
-	case "Path of Exile 2":
-		results = PathOfExile2(*a, img, imgDraw)
-	}
+	results = DarkAndDarker(*a, img, imgDraw)
+	// switch robotgo.GetTitle() {
+	// case "Dark and Darker":
+	// 	log.Println("Dark and Darker found, executing for this program")
+	// 	results = DarkAndDarker(*a, img, imgDraw)
+	// case "Path of Exile 2":
+	// 	log.Println("Path of Exile 2 found, executing for this program")
+	// 	results = PathOfExile2(*a, img, imgDraw)
+	// }
 
 	gocv.IMWrite(pathDir+"founditems.png", imgDraw)
 
@@ -101,7 +103,7 @@ func (a *ImageSearch) FindTemplateMatches(img, template, Imask, Tmask, Cmask goc
 	if Tmask.Rows() > 0 && Tmask.Cols() > 0 {
 		gocv.Subtract(t, Tmask, &t)
 	}
-	gocv.IMWrite("internal/resources/images/meta/"+"poe2templateSubtraction.png", t)
+	gocv.IMWrite("internal/resources/images/meta/"+"templateSubtraction.png", t)
 
 	gocv.GaussianBlur(i, &i, kernel, 0, 0, gocv.BorderDefault)
 	gocv.GaussianBlur(t, &t, kernel, 0, 0, gocv.BorderDefault)
@@ -146,7 +148,7 @@ func DarkAndDarker(a ImageSearch, img, imgDraw gocv.Mat) map[string][]robotgo.Po
 	switch {
 	case strings.Contains(a.SearchBox.Name, "Player Inventory Stash"):
 		tolerance = 0.96
-		Imask = gocv.IMRead(path+"masks/Dark And Darker/empty-player-stash.png", gocv.IMReadColor)
+		Imask = gocv.IMRead(path+"masks/Dark And Darker/empty-player-inventory-stashtab.png", gocv.IMReadColor)
 	case strings.Contains(a.SearchBox.Name, "Stash"):
 		tolerance = 0.96
 		Imask = gocv.IMRead(path+"masks/Dark And Darker/empty-stash.png", gocv.IMReadColor)
