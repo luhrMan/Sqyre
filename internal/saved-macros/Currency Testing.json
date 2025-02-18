@@ -4,54 +4,29 @@
 	"name": "root",
 	"subactions": [
 		{
-			"uid": ".1",
-			"X": 625,
-			"Y": 920
-		},
-		{
-			"uid": ".2",
-			"waittime": 25
-		},
-		{
-			"uid": ".3",
-			"button": "left"
-		},
-		{
-			"uid": ".4",
-			"waittime": 25
-		},
-		{
 			"imagetargets": [
 				"Gold Coins",
 				"Gold Coin",
 				"Gold Purse"
 			],
 			"searchbox": {
-				"name": "Stash Inventory",
-				"x1": 1838,
-				"y1": 267,
-				"x2": 2486,
-				"y2": 1347
+				"name": "Right Half",
+				"x1": 1280,
+				"y1": 0,
+				"x2": 2560,
+				"y2": 1440
 			},
-			"uid": ".5",
-			"name": "Get currency",
+			"uid": ".1",
+			"name": "",
 			"subactions": [
 				{
-					"uid": ".5.1",
+					"uid": ".1.1",
 					"X": -1,
 					"Y": -1
 				},
 				{
-					"uid": ".5.2",
-					"waittime": 20
-				},
-				{
-					"uid": ".5.3",
-					"button": "right"
-				},
-				{
-					"uid": ".5.4",
-					"waittime": 20
+					"uid": ".1.2",
+					"button": "left"
 				}
 			]
 		}
