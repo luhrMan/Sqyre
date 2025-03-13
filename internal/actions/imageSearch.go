@@ -15,24 +15,24 @@ import (
 )
 
 type ImageSearch struct {
-	Targets        []string          `json:"imagetargets"`
-	SearchBox      structs.SearchBox `json:"searchbox"`
-	advancedAction                   //`json:"advancedaction"`
+	Targets        []string           `json:"imagetargets"`
+	SearchArea     structs.SearchArea `json:"searchbox"`
+	advancedAction                    //`json:"advancedaction"`
 }
 
-func NewImageSearch(name string, subActions []ActionInterface, targets []string, searchbox structs.SearchBox) *ImageSearch {
+func NewImageSearch(name string, subActions []ActionInterface, targets []string, searchbox structs.SearchArea) *ImageSearch {
 	return &ImageSearch{
 		advancedAction: *newAdvancedAction(name, subActions),
 		Targets:        targets,
-		SearchBox:      searchbox,
+		SearchArea:     searchbox,
 	}
 }
 
 func (a *ImageSearch) Execute(ctx interface{}) error {
-	log.Printf("Image Search | %v in X1:%d Y1:%d X2:%d Y2:%d", a.Targets, a.SearchBox.LeftX, a.SearchBox.TopY, a.SearchBox.RightX, a.SearchBox.BottomY)
-	w := a.SearchBox.RightX - a.SearchBox.LeftX
-	h := a.SearchBox.BottomY - a.SearchBox.TopY
-	captureImg := robotgo.CaptureImg(a.SearchBox.LeftX+utils.XOffset, a.SearchBox.TopY+utils.YOffset, w, h)
+	log.Printf("Image Search | %v in X1:%d Y1:%d X2:%d Y2:%d", a.Targets, a.SearchArea.LeftX, a.SearchArea.TopY, a.SearchArea.RightX, a.SearchArea.BottomY)
+	w := a.SearchArea.RightX - a.SearchArea.LeftX
+	h := a.SearchArea.BottomY - a.SearchArea.TopY
+	captureImg := robotgo.CaptureImg(a.SearchArea.LeftX+utils.XOffset, a.SearchArea.TopY+utils.YOffset, w, h)
 	img, _ := gocv.ImageToMatRGB(captureImg)
 	defer img.Close()
 	pathDir := "internal/resources/images/"
@@ -52,8 +52,8 @@ func (a *ImageSearch) Execute(ctx interface{}) error {
 			break
 		}
 		count++
-		point.X += a.SearchBox.LeftX
-		point.Y += a.SearchBox.TopY
+		point.X += a.SearchArea.LeftX
+		point.Y += a.SearchArea.TopY
 		for _, d := range a.SubActions {
 			d.Execute(point)
 		}
@@ -65,7 +65,7 @@ func (a *ImageSearch) Execute(ctx interface{}) error {
 }
 
 func (a *ImageSearch) String() string {
-	return fmt.Sprintf("%s Image Search for %d items in `%s` | %s", utils.GetEmoji("Image Search"), len(a.Targets), a.SearchBox.Name, a.Name)
+	return fmt.Sprintf("%s Image Search for %d items in `%s` | %s", utils.GetEmoji("Image Search"), len(a.Targets), a.SearchArea.Name, a.Name)
 }
 
 func (a *ImageSearch) match(pathDir string, img, imgDraw gocv.Mat) map[string][]robotgo.Point {
@@ -99,11 +99,12 @@ func (a *ImageSearch) FindTemplateMatches(img, template, Imask, Tmask, Cmask goc
 
 	if Imask.Rows() > 0 && Imask.Cols() > 0 {
 		gocv.Subtract(i, Imask, &i)
+		gocv.IMWrite("internal/resources/images/meta/imageSubtraction.png", i)
 	}
 	if Tmask.Rows() > 0 && Tmask.Cols() > 0 {
 		gocv.Subtract(t, Tmask, &t)
+		gocv.IMWrite("internal/resources/images/meta/templateSubtraction.png", t)
 	}
-	gocv.IMWrite("internal/resources/images/meta/"+"templateSubtraction.png", t)
 
 	gocv.GaussianBlur(i, &i, kernel, 0, 0, gocv.BorderDefault)
 	gocv.GaussianBlur(t, &t, kernel, 0, 0, gocv.BorderDefault)
@@ -122,11 +123,11 @@ var (
 func DarkAndDarker(a ImageSearch, img, imgDraw gocv.Mat) map[string][]robotgo.Point {
 	var xSplit, ySplit int
 	switch {
-	case strings.Contains(a.SearchBox.Name, "Player"):
+	case strings.Contains(a.SearchArea.Name, "Player"):
 		xSplit = 5
 		ySplit = 10
-	case strings.Contains(a.SearchBox.Name, "Stash Inventory"),
-		strings.Contains(a.SearchBox.Name, "Merchant Inventory"):
+	case strings.Contains(a.SearchArea.Name, "Stash Inventory"),
+		strings.Contains(a.SearchArea.Name, "Merchant Inventory"):
 		xSplit = 20
 		ySplit = 12
 	default:
@@ -146,13 +147,13 @@ func DarkAndDarker(a ImageSearch, img, imgDraw gocv.Mat) map[string][]robotgo.Po
 
 	var tolerance float32
 	switch {
-	case strings.Contains(a.SearchBox.Name, "Player Inventory Stash"):
+	case strings.Contains(a.SearchArea.Name, "Stash-screen-player-inventory"):
 		tolerance = 0.96
-		Imask = gocv.IMRead(path+"masks/Dark And Darker/empty-player-inventory-stashtab.png", gocv.IMReadColor)
-	case strings.Contains(a.SearchBox.Name, "Stash"):
+		Imask = gocv.IMRead(path+"masks/Dark And Darker/Stash-screen-empty-player-inventory.png", gocv.IMReadColor)
+	case strings.Contains(a.SearchArea.Name, "Stash"):
 		tolerance = 0.96
 		Imask = gocv.IMRead(path+"masks/Dark And Darker/empty-stash.png", gocv.IMReadColor)
-	case strings.Contains(a.SearchBox.Name, "Merchant"):
+	case strings.Contains(a.SearchArea.Name, "Merchant"):
 		tolerance = 0.93
 		Imask = gocv.IMRead(path+"masks/Dark And Darker/empty-player-merchant.png", gocv.IMReadColor)
 	default:
