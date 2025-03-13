@@ -1,8 +1,7 @@
 package actions
 
 import (
-	"Squire/internal"
-	"Squire/internal/structs"
+	"Squire/internal/data"
 	"Squire/internal/utils"
 	"fmt"
 	"image"
@@ -15,12 +14,12 @@ import (
 )
 
 type ImageSearch struct {
-	Targets        []string           `json:"imagetargets"`
-	SearchArea     structs.SearchArea `json:"searchbox"`
-	advancedAction                    //`json:"advancedaction"`
+	Targets        []string        `json:"imagetargets"`
+	SearchArea     data.SearchArea `json:"searchbox"`
+	advancedAction                 //`json:"advancedaction"`
 }
 
-func NewImageSearch(name string, subActions []ActionInterface, targets []string, searchbox structs.SearchArea) *ImageSearch {
+func NewImageSearch(name string, subActions []ActionInterface, targets []string, searchbox data.SearchArea) *ImageSearch {
 	return &ImageSearch{
 		advancedAction: *newAdvancedAction(name, subActions),
 		Targets:        targets,
@@ -28,14 +27,14 @@ func NewImageSearch(name string, subActions []ActionInterface, targets []string,
 	}
 }
 
-func (a *ImageSearch) Execute(ctx interface{}) error {
+func (a *ImageSearch) Execute(ctx any) error {
 	log.Printf("Image Search | %v in X1:%d Y1:%d X2:%d Y2:%d", a.Targets, a.SearchArea.LeftX, a.SearchArea.TopY, a.SearchArea.RightX, a.SearchArea.BottomY)
 	w := a.SearchArea.RightX - a.SearchArea.LeftX
 	h := a.SearchArea.BottomY - a.SearchArea.TopY
-	captureImg := robotgo.CaptureImg(a.SearchArea.LeftX+utils.XOffset, a.SearchArea.TopY+utils.YOffset, w, h)
+	captureImg := robotgo.CaptureImg(a.SearchArea.LeftX+data.XOffset, a.SearchArea.TopY+data.YOffset, w, h)
 	img, _ := gocv.ImageToMatRGB(captureImg)
 	defer img.Close()
-	pathDir := "internal/resources/images/"
+	pathDir := "internal/data/resources/images/"
 	gocv.IMWrite(pathDir+"search-area.png", img)
 
 	imgDraw := img.Clone()
@@ -65,7 +64,7 @@ func (a *ImageSearch) Execute(ctx interface{}) error {
 }
 
 func (a *ImageSearch) String() string {
-	return fmt.Sprintf("%s Image Search for %d items in `%s` | %s", utils.GetEmoji("Image Search"), len(a.Targets), a.SearchArea.Name, a.Name)
+	return fmt.Sprintf("%s Image Search for %d items in `%s` | %s", data.GetEmoji("Image Search"), len(a.Targets), a.SearchArea.Name, a.Name)
 }
 
 func (a *ImageSearch) match(pathDir string, img, imgDraw gocv.Mat) map[string][]robotgo.Point {
@@ -99,11 +98,11 @@ func (a *ImageSearch) FindTemplateMatches(img, template, Imask, Tmask, Cmask goc
 
 	if Imask.Rows() > 0 && Imask.Cols() > 0 {
 		gocv.Subtract(i, Imask, &i)
-		gocv.IMWrite("internal/resources/images/meta/imageSubtraction.png", i)
+		gocv.IMWrite("internal/data/resources/images/meta/imageSubtraction.png", i)
 	}
 	if Tmask.Rows() > 0 && Tmask.Cols() > 0 {
 		gocv.Subtract(t, Tmask, &t)
-		gocv.IMWrite("internal/resources/images/meta/templateSubtraction.png", t)
+		gocv.IMWrite("internal/data/resources/images/meta/templateSubtraction.png", t)
 	}
 
 	gocv.GaussianBlur(i, &i, kernel, 0, 0, gocv.BorderDefault)
@@ -116,8 +115,8 @@ func (a *ImageSearch) FindTemplateMatches(img, template, Imask, Tmask, Cmask goc
 }
 
 var (
-	icons = *internal.GetIconBytes()
-	path  = "./internal/resources/images/"
+	icons = *data.GetIconBytes()
+	path  = "./internal/data/resources/images/"
 )
 
 func DarkAndDarker(a ImageSearch, img, imgDraw gocv.Mat) map[string][]robotgo.Point {
@@ -198,7 +197,7 @@ func DarkAndDarker(a ImageSearch, img, imgDraw gocv.Mat) map[string][]robotgo.Po
 			defer Tmask.Close()
 			defer Cmask.Close()
 
-			i, _ := internal.Items.GetItem(target)
+			i, _ := data.Items.GetItem(target)
 			switch i.GridSize {
 			case [2]int{1, 1}:
 				//				Tmask = Imask.Region(image.Rect(0, 0, xSize, ySize))
@@ -285,7 +284,7 @@ func PathOfExile2(a ImageSearch, img, imgDraw gocv.Mat) map[string][]robotgo.Poi
 			defer Tmask.Close()
 			defer Cmask.Close()
 
-			i, _ := internal.Items.GetItem(target)
+			i, _ := data.Items.GetItem(target)
 			switch i.GridSize {
 			case [2]int{1, 1}:
 				//				Tmask = Imask.Region(image.Rect(0, 0, xSize, ySize))

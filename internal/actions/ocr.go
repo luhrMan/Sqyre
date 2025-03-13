@@ -1,7 +1,7 @@
 package actions
 
 import (
-	"Squire/internal/structs"
+	"Squire/internal/data"
 	"Squire/internal/utils"
 	"fmt"
 	"image"
@@ -12,12 +12,12 @@ import (
 )
 
 type Ocr struct {
-	Target         string             `json:"texttarget"`
-	SearchArea     structs.SearchArea `json:"searchbox"`
-	advancedAction                    //`json:"advancedaction"`
+	Target         string          `json:"texttarget"`
+	SearchArea     data.SearchArea `json:"searchbox"`
+	advancedAction                 //`json:"advancedaction"`
 }
 
-func NewOcr(name string, subActions []ActionInterface, target string, searchbox structs.SearchArea) *Ocr {
+func NewOcr(name string, subActions []ActionInterface, target string, searchbox data.SearchArea) *Ocr {
 	return &Ocr{
 		advancedAction: *newAdvancedAction(name, subActions),
 		Target:         target,
@@ -26,7 +26,7 @@ func NewOcr(name string, subActions []ActionInterface, target string, searchbox 
 }
 
 func (a *Ocr) Execute(ctx interface{}) error {
-	log.Printf("%s OCR search | %s in X1:%d Y1:%d X2:%d Y2:%d", utils.GetEmoji("OCR"), a.Target, a.SearchArea.LeftX, a.SearchArea.TopY, a.SearchArea.RightX, a.SearchArea.BottomY)
+	log.Printf("%s OCR search | %s in X1:%d Y1:%d X2:%d Y2:%d", data.GetEmoji("OCR"), a.Target, a.SearchArea.LeftX, a.SearchArea.TopY, a.SearchArea.RightX, a.SearchArea.BottomY)
 	var (
 		img       image.Image
 		err       error
@@ -36,7 +36,7 @@ func (a *Ocr) Execute(ctx interface{}) error {
 	h := a.SearchArea.BottomY - a.SearchArea.TopY
 	ppOptions := utils.PreprocessOptions{MinThreshold: 50}
 	if a.SearchArea.Name == "Item Description" {
-		img, err = utils.ItemDescriptionLocation()
+		img, err = data.ItemDescriptionLocation()
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -72,5 +72,5 @@ func (a *Ocr) Execute(ctx interface{}) error {
 }
 
 func (a *Ocr) String() string {
-	return fmt.Sprintf("%s OCR search for `%s` in `%s`", utils.GetEmoji("OCR"), a.Target, a.SearchArea.Name)
+	return fmt.Sprintf("%s OCR search for `%s` in `%s`", data.GetEmoji("OCR"), a.Target, a.SearchArea.Name)
 }

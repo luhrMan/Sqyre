@@ -1,4 +1,4 @@
-package utils
+package data
 
 import "github.com/go-vgo/robotgo"
 
@@ -7,7 +7,8 @@ var (
 	MonitorWidth     = MainMonitorSize.W
 	MonitorHeight    = MainMonitorSize.H
 	XOffset, YOffset = findOffsets()
-	imagesPath       = "./internal/resources/images/"
+	ResPath          = "./internal/data/resources/"
+	imagesPath       = ResPath + "images/"
 	masksPath        = imagesPath + "masks/"
 )
 

@@ -10,22 +10,22 @@ import (
 	xwidget "fyne.io/x/fyne/widget"
 )
 
-var savedMacrosPath = "./internal/saved-macros/"
+var savedMacrosPath = "./internal/data/resources/saved-macros/"
 
 type Ui struct {
 	win fyne.Window
 
-	mm  map[string]*Macro
+	mm  map[string]*MacroTree
 	sel *xwidget.CompletionEntry
 
 	dt *container.DocTabs
 	st *settingsTabs
 }
 
-func (u *Ui) SetWindow(w fyne.Window)        { u.win = w }
-func (u *Ui) SetMacros(mm map[string]*Macro) { u.mm = mm }
-func (u *Ui) CreateSettingsTabs()            { u.st = &settingsTabs{tabs: &container.AppTabs{}} }
-func (u *Ui) createDocTabs()                 { u.dt = container.NewDocTabs() }
+func (u *Ui) SetWindow(w fyne.Window)            { u.win = w }
+func (u *Ui) SetMacros(mm map[string]*MacroTree) { u.mm = mm }
+func (u *Ui) CreateSettingsTabs()                { u.st = &settingsTabs{tabs: &container.AppTabs{}} }
+func (u *Ui) createDocTabs()                     { u.dt = container.NewDocTabs() }
 
 type settingsTabs struct {
 	tabs                  *container.AppTabs
