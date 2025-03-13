@@ -7,7 +7,7 @@ import (
 	"sync"
 )
 
-type SearchBox struct {
+type SearchArea struct {
 	Name    string `json:"name"`
 	LeftX   int    `json:"x1"`
 	TopY    int    `json:"y1"`
@@ -15,7 +15,7 @@ type SearchBox struct {
 	BottomY int    `json:"y2"`
 }
 
-type Spot struct {
+type Point struct {
 	Name string `json:"name"`
 	X    int    `json:"x"`
 	Y    int    `json:"y"`
@@ -23,19 +23,19 @@ type Spot struct {
 
 var (
 	path        = "./internal/resources/json/"
-	sbMap       *map[string]SearchBox
+	sbMap       *map[string]SearchArea
 	sbOnce      sync.Once
-	spotMap     *map[string]Spot
+	spotMap     *map[string]Point
 	spotMapOnce sync.Once
 )
 
-func GetSearchBox(key string) *SearchBox {
-	m := *GetSearchBoxMap()
+func GetSearchArea(key string) *SearchArea {
+	m := *GetSearchAreaMap()
 	sb := m[key]
 	return &sb
 }
 
-func GetSearchBoxMapKeys(m map[string]SearchBox) *[]string {
+func GetSearchAreaMapKeys(m map[string]SearchArea) *[]string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)
@@ -43,11 +43,11 @@ func GetSearchBoxMapKeys(m map[string]SearchBox) *[]string {
 	return &keys
 }
 
-func GetSearchBoxMap() *map[string]SearchBox {
+func GetSearchAreaMap() *map[string]SearchArea {
 	sbOnce.Do(func() {
 		log.Println("Initializing Searchbox Map")
-		tempArrMap := make(map[string][]SearchBox)
-		tempMap := make(map[string]SearchBox)
+		tempArrMap := make(map[string][]SearchArea)
+		tempMap := make(map[string]SearchArea)
 		file, err := os.Open(path + "searchBoxes.json")
 		if err != nil {
 			log.Println("Error opening file:", err)
@@ -73,8 +73,8 @@ func GetSearchBoxMap() *map[string]SearchBox {
 	return sbMap
 }
 
-func GetSpot(key string) *Spot {
-	m := *GetSpotMap()
+func GetPoint(key string) *Point {
+	m := *GetPointMap()
 	if s, ok := m[key]; ok {
 		//		s := m[key]
 		return &s
@@ -82,7 +82,7 @@ func GetSpot(key string) *Spot {
 	return nil
 }
 
-func GetSpotMapKeys(m map[string]Spot) *[]string {
+func GetPointMapKeys(m map[string]Point) *[]string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)
@@ -90,10 +90,10 @@ func GetSpotMapKeys(m map[string]Spot) *[]string {
 	return &keys
 }
 
-func GetSpotMap() *map[string]Spot {
+func GetPointMap() *map[string]Point {
 	spotMapOnce.Do(func() {
-		tempArrMap := make(map[string][]Spot)
-		tempMap := make(map[string]Spot)
+		tempArrMap := make(map[string][]Point)
+		tempMap := make(map[string]Point)
 
 		file, err := os.Open(path + "spots.json")
 		if err != nil {
@@ -119,8 +119,8 @@ func GetSpotMap() *map[string]Spot {
 	return spotMap
 }
 
-func GetSpotJsonMap() map[string][]Spot {
-	spotJsonMap := make(map[string][]Spot)
+func GetPointJsonMap() map[string][]Point {
+	spotJsonMap := make(map[string][]Point)
 
 	file, err := os.Open(path + "spots.json")
 	if err != nil {
@@ -137,9 +137,9 @@ func GetSpotJsonMap() map[string][]Spot {
 	return spotJsonMap
 }
 
-func GetSpotMapAsStringsMap() *map[string][]string {
+func GetPointMapAsStringsMap() *map[string][]string {
 	spotStringsMap := make(map[string][]string)
-	jsonMap := GetSpotJsonMap()
+	jsonMap := GetPointJsonMap()
 	for str, items := range jsonMap {
 		names := make([]string, len(items))
 		for i, item := range items {
