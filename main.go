@@ -1,6 +1,9 @@
 package main
 
 import (
+	sen "Squire/encoding"
+	"Squire/internal"
+	"Squire/internal/data"
 	"Squire/internal/utils"
 	"Squire/ui"
 
@@ -15,7 +18,7 @@ import (
 	hook "github.com/robotn/gohook"
 )
 
-var programs = make(map[string]ui.Program)
+var Programs = make(map[string]internal.Program)
 
 func main() {
 	a := app.NewWithID("Squire")
@@ -25,9 +28,9 @@ func main() {
 
 	u := &ui.Ui{}
 	u.SetWindow(w)
-	u.SetMacros(map[string]*ui.Macro{"test": &ui.Macro{}})
+	u.SetMacros(map[string]*ui.MacroTree{"test": &ui.MacroTree{}})
 	u.CreateSettingsTabs()
-	icon, _ := fyne.LoadResourceFromPath("./internal/resources/images/Squire.png")
+	icon, _ := fyne.LoadResourceFromPath("./internal/data/resources/images/Squire.png")
 
 	//failsafe hotkey
 	go func() {
@@ -43,6 +46,8 @@ func main() {
 	w.SetIcon(icon)
 	w.ShowAndRun()
 	utils.CloseTessClient()
+	sen.GobSerializer.Encode(Programs, "programData")
+	log.Println(Programs)
 }
 
 func toggleMousePos() {
@@ -54,7 +59,7 @@ func toggleMousePos() {
 			continue
 		}
 		locX, locY = robotgo.Location()
-		log.Println(locX-utils.XOffset, locY-utils.YOffset)
+		log.Println(locX-data.XOffset, locY-data.YOffset)
 		log.Println("Current title: ", robotgo.GetTitle())
 	}
 }
