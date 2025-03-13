@@ -1,4 +1,4 @@
-package structs
+package data
 
 import (
 	"errors"
@@ -11,7 +11,7 @@ type Item struct {
 	Merchant string `json:"merchant"`
 }
 
-type Items struct {
+type ItemsMap struct {
 	Map map[string][]Item
 }
 
@@ -35,7 +35,7 @@ type Items struct {
 //        }
 //}
 
-func (is *Items) GetItemsMapAsStringsMap() map[string][]string {
+func (is *ItemsMap) GetItemsMapAsStringsMap() map[string][]string {
 	itemsStringMap := make(map[string][]string)
 	for str, items := range is.Map {
 		names := make([]string, len(items))
@@ -48,7 +48,7 @@ func (is *Items) GetItemsMapAsStringsMap() map[string][]string {
 	return itemsStringMap
 }
 
-func (is *Items) GetItemsMapAsBool() map[string]bool {
+func (is *ItemsMap) GetItemsMapAsBool() map[string]bool {
 	itemsBool := make(map[string]bool)
 	for _, items := range is.Map {
 		for _, item := range items {
@@ -58,7 +58,7 @@ func (is *Items) GetItemsMapAsBool() map[string]bool {
 	return itemsBool
 }
 
-func (is *Items) GetItemsMapCategory(category string) *[]string {
+func (is *ItemsMap) GetItemsMapCategory(category string) *[]string {
 	im := is.Map
 	keys := make([]string, 0, len(im[category]))
 	for _, k := range im[category] {
@@ -67,7 +67,7 @@ func (is *Items) GetItemsMapCategory(category string) *[]string {
 	return &keys
 }
 
-func (is *Items) GetItem(key string) (*Item, error) {
+func (is *ItemsMap) GetItem(key string) (*Item, error) {
 	for _, items := range is.Map {
 		for _, item := range items {
 			if item.Name == key {

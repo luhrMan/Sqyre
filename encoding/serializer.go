@@ -2,7 +2,7 @@ package encoding
 
 import (
 	"Squire/internal/actions"
-	"Squire/internal/structs"
+	"Squire/internal/data"
 	"log"
 )
 
@@ -97,8 +97,8 @@ func (s *serializer) CreateActionFromMap(rawMap map[string]any, parent actions.A
 	return action, nil
 }
 
-func createSearchBox(rawMap map[string]interface{}) structs.SearchArea {
-	return structs.SearchArea{
+func createSearchBox(rawMap map[string]interface{}) data.SearchArea {
+	return data.SearchArea{
 		Name:    rawMap["name"].(string),
 		LeftX:   int(rawMap["x1"].(float64)),
 		TopY:    int(rawMap["y1"].(float64)),

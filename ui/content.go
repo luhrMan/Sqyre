@@ -4,8 +4,7 @@ import (
 	"Squire/encoding"
 	"Squire/internal"
 	"Squire/internal/actions"
-	"Squire/internal/structs"
-	"Squire/internal/utils"
+	"Squire/internal/data"
 	"Squire/ui/custom_widgets"
 	"fmt"
 	"log"
@@ -45,13 +44,13 @@ var (
 	searchArea         string
 	xSplit             int
 	ySplit             int
-	imageSearchTargets = internal.Items.GetItemsMapAsBool()
+	imageSearchTargets = data.Items.GetItemsMapAsBool()
 	ocrTarget          string
 	ocrSearchBox       string
 )
 
 func (u *Ui) LoadMainContent() *fyne.Container {
-	internal.CreateItemMaps()
+	data.CreateItemMaps()
 	u.createDocTabs()
 	u.addMacroDocTab("Currency Testing")
 	u.dt.SelectIndex(0)
@@ -86,7 +85,7 @@ func (u *Ui) addMacroDocTab(name string) {
 	if _, ok := u.mm[name]; ok {
 		return
 	}
-	m := &Macro{}
+	m := &MacroTree{Macro: internal.NewMacro("", &actions.Loop{}, "")}
 	m.createTree()
 	s, err := encoding.JsonSerializer.Decode(fp)
 	if err != nil {
@@ -97,10 +96,10 @@ func (u *Ui) addMacroDocTab(name string) {
 	result, err := encoding.JsonSerializer.CreateActionFromMap(s.(map[string]any), nil)
 	// var result actions.ActionInterface
 	log.Println(result)
-	m.Root.SubActions = []actions.ActionInterface{}
-	if s, ok := result.(*actions.Loop); ok { // fill root / tree
+	m.Macro.Root.SubActions = []actions.ActionInterface{}
+	if s, ok := result.(*actions.Loop); ok { // fill Macro.Root / tree
 		for _, sa := range s.SubActions {
-			m.Root.AddSubAction(sa)
+			m.Macro.Root.AddSubAction(sa)
 		}
 	}
 	if err != nil {
@@ -159,31 +158,31 @@ func (u *Ui) bindVariables() {
 	u.st.boundTimeEntry = widget.NewEntryWithData(binding.IntToString(u.st.boundTime))
 	u.st.boundTimeSlider = widget.NewSliderWithData(0.0, 250.0, binding.IntToFloat(u.st.boundTime))
 	u.st.boundTime.AddListener(binding.NewDataListener(func() {
-		if n, ok := u.getCurrentTabMacro().findNode(u.getCurrentTabMacro().Root, selectedTreeItem).(*actions.Wait); ok {
+		if n, ok := u.getCurrentTabMacro().findNode(u.getCurrentTabMacro().Macro.Root, selectedTreeItem).(*actions.Wait); ok {
 			n.Time = time
 			u.getCurrentTabMacro().Tree.Refresh()
 		}
 	}))
 	u.st.boundMoveX = binding.BindInt(&moveX)
 	u.st.boundMoveY = binding.BindInt(&moveY)
-	u.st.boundMoveXSlider = widget.NewSliderWithData(-1.0, float64(utils.MonitorWidth), binding.IntToFloat(u.st.boundMoveX))
-	u.st.boundMoveYSlider = widget.NewSliderWithData(-1.0, float64(utils.MonitorHeight), binding.IntToFloat(u.st.boundMoveY))
+	u.st.boundMoveXSlider = widget.NewSliderWithData(-1.0, float64(data.MonitorWidth), binding.IntToFloat(u.st.boundMoveX))
+	u.st.boundMoveYSlider = widget.NewSliderWithData(-1.0, float64(data.MonitorHeight), binding.IntToFloat(u.st.boundMoveY))
 	u.st.boundMoveXEntry = widget.NewEntryWithData(binding.IntToString(u.st.boundMoveX))
 	u.st.boundMoveYEntry = widget.NewEntryWithData(binding.IntToString(u.st.boundMoveY))
 	u.st.boundSpot = binding.BindString(&spot)
-	u.st.boundSpotSelect = widget.NewSelect(*structs.GetPointMapKeys(*structs.GetPointMap()), func(s string) {
+	u.st.boundSpotSelect = widget.NewSelect(*data.GetPointMapKeys(*data.GetPointMap()), func(s string) {
 		u.st.boundSpot.Set(s)
-		u.st.boundMoveX.Set(structs.GetPoint(s).X)
-		u.st.boundMoveY.Set(structs.GetPoint(s).Y)
+		u.st.boundMoveX.Set(data.GetPoint(s).X)
+		u.st.boundMoveY.Set(data.GetPoint(s).Y)
 	})
 	u.st.boundMoveX.AddListener(binding.NewDataListener(func() {
-		if n, ok := u.getCurrentTabMacro().findNode(u.getCurrentTabMacro().Root, selectedTreeItem).(*actions.Move); ok {
+		if n, ok := u.getCurrentTabMacro().findNode(u.getCurrentTabMacro().Macro.Root, selectedTreeItem).(*actions.Move); ok {
 			n.X = moveX
 			u.getCurrentTabMacro().Tree.Refresh()
 		}
 	}))
 	u.st.boundMoveY.AddListener(binding.NewDataListener(func() {
-		if n, ok := u.getCurrentTabMacro().findNode(u.getCurrentTabMacro().Root, selectedTreeItem).(*actions.Move); ok {
+		if n, ok := u.getCurrentTabMacro().findNode(u.getCurrentTabMacro().Macro.Root, selectedTreeItem).(*actions.Move); ok {
 			n.Y = moveY
 			u.getCurrentTabMacro().Tree.Refresh()
 		}
@@ -191,7 +190,7 @@ func (u *Ui) bindVariables() {
 	u.st.boundButton = binding.BindBool(&button)
 	u.st.boundButtonToggle = custom_widgets.NewToggleWithData(u.st.boundButton)
 	u.st.boundButton.AddListener(binding.NewDataListener(func() {
-		if n, ok := u.getCurrentTabMacro().findNode(u.getCurrentTabMacro().Root, selectedTreeItem).(*actions.Click); ok {
+		if n, ok := u.getCurrentTabMacro().findNode(u.getCurrentTabMacro().Macro.Root, selectedTreeItem).(*actions.Click); ok {
 			if button {
 				n.Button = "right"
 			} else {
@@ -205,13 +204,13 @@ func (u *Ui) bindVariables() {
 	u.st.boundState = binding.BindBool(&state)
 	u.st.boundStateToggle = custom_widgets.NewToggleWithData(u.st.boundState)
 	u.st.boundKey.AddListener(binding.NewDataListener(func() {
-		if n, ok := u.getCurrentTabMacro().findNode(u.getCurrentTabMacro().Root, selectedTreeItem).(*actions.Key); ok {
+		if n, ok := u.getCurrentTabMacro().findNode(u.getCurrentTabMacro().Macro.Root, selectedTreeItem).(*actions.Key); ok {
 			n.Key = key
 			u.getCurrentTabMacro().Tree.Refresh()
 		}
 	}))
 	u.st.boundState.AddListener(binding.NewDataListener(func() {
-		if n, ok := u.getCurrentTabMacro().findNode(u.getCurrentTabMacro().Root, selectedTreeItem).(*actions.Key); ok {
+		if n, ok := u.getCurrentTabMacro().findNode(u.getCurrentTabMacro().Macro.Root, selectedTreeItem).(*actions.Key); ok {
 			if state {
 				n.State = "Up"
 			} else {
@@ -226,13 +225,13 @@ func (u *Ui) bindVariables() {
 	u.st.boundCountSlider = widget.NewSliderWithData(1, 10, binding.IntToFloat(u.st.boundCount))
 	u.st.boundCountLabel = widget.NewLabelWithData(binding.IntToString(u.st.boundCount))
 	u.st.boundLoopName.AddListener(binding.NewDataListener(func() {
-		if n, ok := u.getCurrentTabMacro().findNode(u.getCurrentTabMacro().Root, selectedTreeItem).(*actions.Loop); ok {
+		if n, ok := u.getCurrentTabMacro().findNode(u.getCurrentTabMacro().Macro.Root, selectedTreeItem).(*actions.Loop); ok {
 			n.Name = loopName
 			u.getCurrentTabMacro().Tree.Refresh()
 		}
 	}))
 	u.st.boundCount.AddListener(binding.NewDataListener(func() {
-		if n, ok := u.getCurrentTabMacro().findNode(u.getCurrentTabMacro().Root, selectedTreeItem).(*actions.Loop); ok {
+		if n, ok := u.getCurrentTabMacro().findNode(u.getCurrentTabMacro().Macro.Root, selectedTreeItem).(*actions.Loop); ok {
 			n.Count = count
 			u.getCurrentTabMacro().Tree.Refresh()
 		}
@@ -242,25 +241,25 @@ func (u *Ui) bindVariables() {
 	u.st.boundXSplit = binding.BindInt(&xSplit)
 	u.st.boundYSplit = binding.BindInt(&ySplit)
 	u.st.boundImageSearchNameEntry = widget.NewEntryWithData(u.st.boundImageSearchName)
-	u.st.boundImageSearchAreaSelect = widget.NewSelect(*structs.GetSearchAreaMapKeys(*structs.GetSearchAreaMap()), func(s string) { u.st.boundImageSearchArea.Set(s) })
+	u.st.boundImageSearchAreaSelect = widget.NewSelect(*data.GetSearchAreaMapKeys(*data.GetSearchAreaMap()), func(s string) { u.st.boundImageSearchArea.Set(s) })
 
 	u.st.boundXSplitSlider = widget.NewSliderWithData(0, 50, binding.IntToFloat(u.st.boundXSplit))
 	u.st.boundXSplitEntry = widget.NewEntryWithData(binding.IntToString(u.st.boundXSplit))
 	u.st.boundImageSearchName.AddListener(binding.NewDataListener(func() {
-		if n, ok := u.getCurrentTabMacro().findNode(u.getCurrentTabMacro().Root, selectedTreeItem).(*actions.ImageSearch); ok {
+		if n, ok := u.getCurrentTabMacro().findNode(u.getCurrentTabMacro().Macro.Root, selectedTreeItem).(*actions.ImageSearch); ok {
 			n.Name = imageSearchName
 			u.getCurrentTabMacro().Tree.Refresh()
 		}
 	}))
 	u.st.boundImageSearchArea.AddListener(binding.NewDataListener(func() {
-		if n, ok := u.getCurrentTabMacro().findNode(u.getCurrentTabMacro().Root, selectedTreeItem).(*actions.ImageSearch); ok {
-			n.SearchArea = *structs.GetSearchArea(searchArea)
+		if n, ok := u.getCurrentTabMacro().findNode(u.getCurrentTabMacro().Macro.Root, selectedTreeItem).(*actions.ImageSearch); ok {
+			n.SearchArea = *data.GetSearchArea(searchArea)
 			u.getCurrentTabMacro().Tree.Refresh()
 		}
 	}))
 	u.st.boundOCRSearchBox = binding.BindString(&ocrSearchBox)
 	u.st.boundOCRTarget = binding.BindString(&ocrTarget)
-	u.st.boundOCRSearchBoxSelect = widget.NewSelect(*structs.GetSearchAreaMapKeys(*structs.GetSearchAreaMap()), func(s string) { u.st.boundOCRSearchBox.Set(s) })
+	u.st.boundOCRSearchBoxSelect = widget.NewSelect(*data.GetSearchAreaMapKeys(*data.GetSearchAreaMap()), func(s string) { u.st.boundOCRSearchBox.Set(s) })
 	u.st.boundOCRTargetEntry = widget.NewEntryWithData(u.st.boundOCRTarget)
 
 }
@@ -362,7 +361,7 @@ func (u *Ui) createMacroToolbar() *widget.Toolbar {
 			}
 		}),
 		widget.NewToolbarAction(theme.ViewRefreshIcon(), func() {
-			node := u.getCurrentTabMacro().findNode(u.getCurrentTabMacro().Root, selectedTreeItem)
+			node := u.getCurrentTabMacro().findNode(u.getCurrentTabMacro().Macro.Root, selectedTreeItem)
 			if selectedTreeItem == "" {
 				log.Println("No node selected")
 				return
@@ -398,7 +397,7 @@ func (u *Ui) createMacroToolbar() *widget.Toolbar {
 					}
 				}
 				node.Name = imageSearchName
-				node.SearchArea = *structs.GetSearchArea(searchArea)
+				node.SearchArea = *data.GetSearchArea(searchArea)
 				node.Targets = t
 			}
 
@@ -422,7 +421,7 @@ func (u *Ui) createMacroToolbar() *widget.Toolbar {
 		widget.NewToolbarSpacer(),
 		widget.NewToolbarAction(theme.MediaPlayIcon(), func() {
 			robotgo.ActiveName("Dark and Darker")
-			u.getCurrentTabMacro().executeActionTree()
+			u.getCurrentTabMacro().Macro.ExecuteActionTree()
 		}),
 		widget.NewToolbarAction(theme.DocumentSaveIcon(), func() {
 			save := func() {
@@ -450,7 +449,7 @@ func (u *Ui) createMacroToolbar() *widget.Toolbar {
 	return tb
 }
 
-func (u *Ui) getCurrentTabMacro() *Macro {
+func (u *Ui) getCurrentTabMacro() *MacroTree {
 	return u.mm[u.dt.Selected().Text]
 }
 
@@ -498,8 +497,8 @@ func (u *Ui) createMainMenu() *fyne.MainMenu {
 	})
 
 	calibrationMenu := fyne.NewMenu("Calibration", fyne.NewMenuItem("Calibrate Everything", func() {
-		utils.CalibrateInventorySearchboxes()
-		u.st.boundImageSearchAreaSelect.SetOptions(*structs.GetSearchAreaMapKeys(*structs.GetSearchAreaMap()))
+		data.CalibrateInventorySearchboxes()
+		u.st.boundImageSearchAreaSelect.SetOptions(*data.GetSearchAreaMapKeys(*data.GetSearchAreaMap()))
 	}))
 
 	testMenu := fyne.NewMenu("Test", fyne.NewMenuItem("", func() {

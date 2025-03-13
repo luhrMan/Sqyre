@@ -1,4 +1,4 @@
-package structs
+package data
 
 import (
 	"encoding/json"
@@ -22,7 +22,7 @@ type Point struct {
 }
 
 var (
-	path        = "./internal/resources/json/"
+	path        = "./internal/data/resources/json/"
 	sbMap       *map[string]SearchArea
 	sbOnce      sync.Once
 	spotMap     *map[string]Point

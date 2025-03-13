@@ -1,30 +1,31 @@
 package actions
 
 import (
-        "Squire/internal/utils"
-        "fmt"
-        "github.com/go-vgo/robotgo"
-        "log"
+	"Squire/internal/data"
+	"fmt"
+	"log"
+
+	"github.com/go-vgo/robotgo"
 )
 
 type Click struct {
-        baseAction        //`json:"baseaction"`
-        Button     string `json:"button"`
+	baseAction        //`json:"baseaction"`
+	Button     string `json:"button"`
 }
 
 func NewClick(button string) *Click {
-        return &Click{
-                baseAction: newBaseAction(),
-                Button:     button,
-        }
+	return &Click{
+		baseAction: newBaseAction(),
+		Button:     button,
+	}
 }
 
 func (a *Click) Execute(ctx interface{}) error {
-        log.Printf("%s click", a.Button)
-        robotgo.Click(a.Button)
-        return nil
+	log.Printf("%s click", a.Button)
+	robotgo.Click(a.Button)
+	return nil
 }
 
 func (a *Click) String() string {
-        return fmt.Sprintf("%s %s click", utils.GetEmoji("Click"), a.Button)
+	return fmt.Sprintf("%s %s click", data.GetEmoji("Click"), a.Button)
 }
