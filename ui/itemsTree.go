@@ -1,4 +1,4 @@
-package main
+package ui
 
 import (
 	"Squire/internal"
@@ -12,7 +12,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-func (u *ui) createItemsCheckTree() *widget.Tree {
+func (u *Ui) createItemsCheckTree() *widget.Tree {
 	log.Println("Creating Items Check Tree")
 	var (
 		icons       = *internal.BytesToFyneIcons()

@@ -1,4 +1,4 @@
-package main
+package ui
 
 import (
 	"Squire/internal/actions"
@@ -14,21 +14,52 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-type macro struct {
-	tree *widget.Tree
-	root *actions.Loop
+type Program struct {
+	Macros      *[]Macro
+	Items       *map[string]structs.Item
+	Coordinates *map[[2]int]ScreenSize
+}
+
+// func newProgram() {
+// 	ss := make(map[[2]int]ScreenSize)
+// 	pm := make(map[string]structs.Point)
+// 	sam := make(map[string]structs.SearchArea)
+// 	ss[[2]int{10, 10}] = ScreenSize{
+// 		Points:      &pm,
+// 		SearchAreas: &sam,
+// 	}
+
+// 	p := &Program{
+// 		Macros:     &[]Macro{},
+// 		Items:      &map[string]structs.Item{},
+// 		ScreenSize: &ss,
+// 	}
+// 	programs["Dark and Darker"] = *p
+// 	log.Println(programs["Dark and Darker"].Macros)
+// }
+
+type ScreenSize struct {
+	Points      *map[string]structs.Point
+	SearchAreas *map[string]structs.SearchArea
+}
+
+type Macro struct {
+	name   string
+	Tree   *widget.Tree
+	Root   *actions.Loop
+	Hotkey string
 
 	boundMacroName binding.String
 }
 
-func NewMacro() macro {
-	m := macro{}
+func NewMacro() Macro {
+	m := Macro{}
 	m.createTree()
 	return m
 }
 
-func (m *macro) moveNodeUp(selectedUID string) {
-	node := m.findNode(m.root, selectedUID)
+func (m *Macro) moveNodeUp(selectedUID string) {
+	node := m.findNode(m.Root, selectedUID)
 	if node == nil || node.GetParent() == nil {
 		return
 	}
@@ -45,13 +76,13 @@ func (m *macro) moveNodeUp(selectedUID string) {
 	if index > 0 {
 		parent.GetSubActions()[index-1], parent.GetSubActions()[index] = parent.GetSubActions()[index], parent.GetSubActions()[index-1]
 		parent.RenameActions()
-		m.tree.Select(parent.GetSubActions()[index-1].GetUID())
-		m.tree.Refresh()
+		m.Tree.Select(parent.GetSubActions()[index-1].GetUID())
+		m.Tree.Refresh()
 	}
 }
 
-func (m *macro) moveNodeDown(selectedUID string) {
-	node := m.findNode(m.root, selectedUID)
+func (m *Macro) moveNodeDown(selectedUID string) {
+	node := m.findNode(m.Root, selectedUID)
 	if node == nil || node.GetParent() == nil {
 		return
 	}
@@ -68,13 +99,13 @@ func (m *macro) moveNodeDown(selectedUID string) {
 	if index < len(parent.GetSubActions())-1 {
 		parent.GetSubActions()[index], parent.GetSubActions()[index+1] = parent.GetSubActions()[index+1], parent.GetSubActions()[index]
 		parent.RenameActions()
-		m.tree.Select(parent.GetSubActions()[index+1].GetUID())
+		m.Tree.Select(parent.GetSubActions()[index+1].GetUID())
 
-		m.tree.Refresh()
+		m.Tree.Refresh()
 	}
 }
 
-func (m *macro) findNode(node actions.ActionInterface, uid string) actions.ActionInterface {
+func (m *Macro) findNode(node actions.ActionInterface, uid string) actions.ActionInterface {
 	if node.GetUID() == uid {
 		return node
 	}
@@ -88,23 +119,23 @@ func (m *macro) findNode(node actions.ActionInterface, uid string) actions.Actio
 	return nil
 }
 
-func (m *macro) executeActionTree(ctx ...interface{}) { //error
-	err := m.root.Execute(ctx)
+func (m *Macro) executeActionTree(ctx ...interface{}) { //error
+	err := m.Root.Execute(ctx)
 	if err != nil {
 		log.Println(err)
 		return
 	}
 }
 
-func (m *macro) createTree() {
+func (m *Macro) createTree() {
 	// macro := NewMacro()
-	m.root = actions.NewLoop(1, "root", []actions.ActionInterface{})
-	m.root.SetUID("")
+	m.Root = actions.NewLoop(1, "root", []actions.ActionInterface{})
+	m.Root.SetUID("")
 
-	m.tree = &widget.Tree{}
+	m.Tree = &widget.Tree{}
 
-	m.tree.ChildUIDs = func(uid string) []string {
-		node := m.findNode(m.root, uid)
+	m.Tree.ChildUIDs = func(uid string) []string {
+		node := m.findNode(m.Root, uid)
 		if node == nil {
 			return []string{}
 		}
@@ -120,16 +151,16 @@ func (m *macro) createTree() {
 
 		return []string{}
 	}
-	m.tree.IsBranch = func(uid string) bool {
-		node := m.findNode(m.root, uid)
+	m.Tree.IsBranch = func(uid string) bool {
+		node := m.findNode(m.Root, uid)
 		_, ok := node.(actions.AdvancedActionInterface)
 		return node != nil && ok
 	}
-	m.tree.CreateNode = func(branch bool) fyne.CanvasObject {
+	m.Tree.CreateNode = func(branch bool) fyne.CanvasObject {
 		return container.NewHBox(widget.NewLabel("Template"), layout.NewSpacer(), &widget.Button{Icon: theme.CancelIcon(), Importance: widget.DangerImportance})
 	}
-	m.tree.UpdateNode = func(uid string, branch bool, obj fyne.CanvasObject) {
-		node := m.findNode(m.root, uid)
+	m.Tree.UpdateNode = func(uid string, branch bool, obj fyne.CanvasObject) {
+		node := m.findNode(m.Root, uid)
 		if node == nil {
 			return
 		}
@@ -141,9 +172,9 @@ func (m *macro) createTree() {
 		if node.GetParent() != nil {
 			removeButton.OnTapped = func() {
 				node.GetParent().RemoveSubAction(node)
-				m.root.RenameActions() //should figure out how to rename the whole tree from RemoveSubActions
-				m.tree.Refresh()
-				if len(m.root.SubActions) == 0 {
+				m.Root.RenameActions() //should figure out how to rename the whole tree from RemoveSubActions
+				m.Tree.Refresh()
+				if len(m.Root.SubActions) == 0 {
 					selectedTreeItem = ""
 				}
 			}
@@ -154,9 +185,9 @@ func (m *macro) createTree() {
 	}
 }
 
-func (m *macro) addActionToTree(actionType actions.ActionInterface) {
+func (m *Macro) addActionToTree(actionType actions.ActionInterface) {
 	var (
-		selectedNode = m.findNode(m.root, selectedTreeItem)
+		selectedNode = m.findNode(m.Root, selectedTreeItem)
 		action       actions.ActionInterface
 	)
 	switch actionType.(type) {
@@ -189,27 +220,27 @@ func (m *macro) addActionToTree(actionType actions.ActionInterface) {
 				t = append(t, i)
 			}
 		}
-		action = actions.NewImageSearch(imageSearchName, []actions.ActionInterface{}, t, *structs.GetSearchBox(searchArea))
+		action = actions.NewImageSearch(imageSearchName, []actions.ActionInterface{}, t, *structs.GetSearchArea(searchArea))
 	case *actions.Ocr:
-		action = actions.NewOcr(ocrTarget, []actions.ActionInterface{}, ocrTarget, *structs.GetSearchBox(ocrSearchBox))
+		action = actions.NewOcr(ocrTarget, []actions.ActionInterface{}, ocrTarget, *structs.GetSearchArea(ocrSearchBox))
 	}
 
 	if selectedNode == nil {
-		selectedNode = m.root
+		selectedNode = m.Root
 	}
 	if s, ok := selectedNode.(actions.AdvancedActionInterface); ok {
 		s.AddSubAction(action)
 	} else {
 		selectedNode.GetParent().AddSubAction(action)
 	}
-	m.tree.Refresh()
+	m.Tree.Refresh()
 }
 
-func (u *ui) updateTreeOnselect() {
+func (u *Ui) updateTreeOnselect() {
 	//Set here, Get @ addActionToTree
-	u.getCurrentTabMacro().tree.OnSelected = func(uid widget.TreeNodeID) {
+	u.getCurrentTabMacro().Tree.OnSelected = func(uid widget.TreeNodeID) {
 		selectedTreeItem = uid
-		switch node := u.getCurrentTabMacro().findNode(u.getCurrentTabMacro().root, uid).(type) {
+		switch node := u.getCurrentTabMacro().findNode(u.getCurrentTabMacro().Root, uid).(type) {
 		case *actions.Wait:
 			u.st.boundTime.Set(node.Time)
 			u.st.tabs.SelectIndex(0)
@@ -252,8 +283,8 @@ func (u *ui) updateTreeOnselect() {
 			for _, t := range node.Targets {
 				imageSearchTargets[t] = true
 			}
-			u.getCurrentTabMacro().tree.Refresh()
-			u.st.boundImageSearchAreaSelect.SetSelected(node.SearchBox.Name)
+			u.getCurrentTabMacro().Tree.Refresh()
+			u.st.boundImageSearchAreaSelect.SetSelected(node.SearchArea.Name)
 			//			u.st.tabs.Items[5]. //image search tab
 			//				Content.(*fyne.Container). //settings border
 			//				Objects[1].(*fyne.Container). //2nd grid with columns
@@ -263,8 +294,46 @@ func (u *ui) updateTreeOnselect() {
 			u.st.tabs.SelectIndex(5)
 		case *actions.Ocr:
 			u.st.boundOCRTarget.Set(node.Target)
-			u.st.boundOCRSearchBoxSelect.SetSelected(node.SearchBox.Name)
+			u.st.boundOCRSearchBoxSelect.SetSelected(node.SearchArea.Name)
 			u.st.tabs.SelectIndex(6)
 		}
 	}
 }
+
+// func (m *Macro) saveTreeToJsonFile(filename string) error {
+// 	if filename == "" {
+// 		return fmt.Errorf("cannot save empty filename")
+// 	}
+// 	jsonData, err := json.MarshalIndent(m.root, "", "\t")
+// 	if err != nil {
+// 		return fmt.Errorf("error marshalling tree: %v", err)
+// 	}
+// 	filepath := path + filename + ".json"
+// 	err = os.WriteFile(filepath, jsonData, 0644)
+// 	if err != nil {
+// 		return fmt.Errorf("error writing to file: %v", err)
+// 	}
+// 	return nil
+// }
+
+// func (m *Macro) loadTreeFromJsonFile(filename string) error {
+// 	log.Printf("loadTreeFromJsonFile: attempting to read file %v", filename)
+// 	jsonData, err := os.ReadFile(path + filename)
+// 	if err != nil {
+// 		return fmt.Errorf("error reading file: %v", err)
+// 	}
+// 	var result actions.ActionInterface
+// 	//err = json.Unmarshal(jsonData, root)
+// 	m.root.SubActions = []actions.ActionInterface{}
+// 	result, err = UnmarshalJSON(jsonData)
+// 	if s, ok := result.(*actions.Loop); ok { // fill root / tree
+// 		for _, sa := range s.SubActions {
+// 			m.root.AddSubAction(sa)
+// 		}
+// 	}
+// 	if err != nil {
+// 		return fmt.Errorf("error unmarshalling tree: %v", err)
+// 	}
+// 	m.tree.Refresh()
+// 	return err
+// }

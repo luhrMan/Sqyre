@@ -2,6 +2,8 @@ package main
 
 import (
 	"Squire/internal/utils"
+	"Squire/ui"
+
 	"log"
 	"os"
 
@@ -9,17 +11,22 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
-	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/theme"
 	hook "github.com/robotn/gohook"
 )
 
+var programs = make(map[string]ui.Program)
+
 func main() {
-	a := app.NewWithID("squire")
+	a := app.NewWithID("Squire")
 	w := a.NewWindow("Squire")
 	go toggleMousePos()
 	os.Setenv("FYNE_SCALE", "1.25")
-	u := &ui{win: w, mm: map[string]*macro{"test": &macro{}}, st: &settingsTabs{tabs: &container.AppTabs{}}}
+
+	u := &ui.Ui{}
+	u.SetWindow(w)
+	u.SetMacros(map[string]*ui.Macro{"test": &ui.Macro{}})
+	u.CreateSettingsTabs()
 	icon, _ := fyne.LoadResourceFromPath("./internal/resources/images/Squire.png")
 
 	//failsafe hotkey

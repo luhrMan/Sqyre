@@ -8,6 +8,7 @@ var (
 	MonitorHeight    = MainMonitorSize.H
 	XOffset, YOffset = findOffsets()
 	imagesPath       = "./internal/resources/images/"
+	masksPath        = imagesPath + "masks/"
 )
 
 func findOffsets() (X, Y int) {
