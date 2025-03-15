@@ -9,8 +9,8 @@ import (
 )
 
 type Move struct {
-	baseAction //`json:"baseaction"`
-	X, Y       int
+	baseAction
+	X, Y int
 }
 
 func NewMove(x, y int) *Move {

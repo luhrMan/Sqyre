@@ -70,14 +70,7 @@ func (a *advancedAction) RenameActions() {
 		if n, ok := child.(AdvancedActionInterface); ok {
 			n.RenameActions()
 		}
-		//		open := tree.IsBranchOpen(child.GetUID())
 		child.SetUID(fmt.Sprintf("%s.%d", a.UID, i+1))
-		//		if open {
-		//			tree.OpenBranch(child.GetUID())
-		//		}
-		//		if n, ok := child.(AdvancedActionInterface); ok {
-		//			n.RenameActions(tree)
-		//		}
 	}
 }
 
@@ -89,4 +82,4 @@ func (a *advancedAction) Execute(ctx interface{}) error {
 	}
 	return nil
 }
-func (a *advancedAction) String() string { return "This is a Action with SubActions" }
+func (a *advancedAction) String() string { return "This is an Advanced Action" }

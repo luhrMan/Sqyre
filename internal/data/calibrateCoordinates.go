@@ -18,17 +18,16 @@ import (
 func CalibrateInventorySearchboxes() {
 	var prefs = fyne.CurrentApp().Preferences()
 
-	path := imagesPath + "calibration/"
 	sspi := "Stash-screen-player-inventory"
 	sssi := "Stash-screen-stash-inventory"
 	sbm := *GetSearchAreaMap()
 	var (
-		stashTLC         = gocv.IMRead(path+"stashCorner-TopLeft.png", gocv.IMReadColor)
-		stashBRC         = gocv.IMRead(path+"stashCorner-BottomRight.png", gocv.IMReadColor)
-		playerTLC        = gocv.IMRead(path+"playerCorner-TopLeft.png", gocv.IMReadColor)
-		playerBRC        = gocv.IMRead(path+"playerCorner-BottomRight.png", gocv.IMReadColor)
-		stashTabActive   = gocv.IMRead(path+"stashTabActive.png", gocv.IMReadColor)
-		stashTabInactive = gocv.IMRead(path+"stashTabInactive.png", gocv.IMReadColor)
+		stashTLC         = gocv.IMRead(CalibrationImagesPath+"stashCorner-TopLeft.png", gocv.IMReadColor)
+		stashBRC         = gocv.IMRead(CalibrationImagesPath+"stashCorner-BottomRight.png", gocv.IMReadColor)
+		playerTLC        = gocv.IMRead(CalibrationImagesPath+"playerCorner-TopLeft.png", gocv.IMReadColor)
+		playerBRC        = gocv.IMRead(CalibrationImagesPath+"playerCorner-BottomRight.png", gocv.IMReadColor)
+		stashTabActive   = gocv.IMRead(CalibrationImagesPath+"stashTabActive.png", gocv.IMReadColor)
+		stashTabInactive = gocv.IMRead(CalibrationImagesPath+"stashTabInactive.png", gocv.IMReadColor)
 	)
 	TopMenuTabLocations()
 	robotgo.Move(prefs.IntList("Stash-screen")[0]+XOffset, prefs.IntList("Stash-screen")[1]+YOffset)
@@ -65,11 +64,10 @@ func ItemDescriptionLocation() (image.Image, error) {
 	captureImg := robotgo.CaptureImg(mx, 0, mw, MonitorHeight)
 	img, _ := gocv.ImageToMatRGB(captureImg)
 	defer img.Close()
-	gocv.IMWrite(imagesPath+"meta/precorneritemdescription-test.png", img)
+	gocv.IMWrite(ImagesPath+"meta/precorneritemdescription-test.png", img)
 
-	path := imagesPath + "calibration/"
-	trc := gocv.IMRead(path+"itemCorner-TopRight.png", gocv.IMReadColor)
-	blc := gocv.IMRead(path+"itemCorner-BottomLeft.png", gocv.IMReadColor)
+	trc := gocv.IMRead(CalibrationImagesPath+"itemCorner-TopRight.png", gocv.IMReadColor)
+	blc := gocv.IMRead(CalibrationImagesPath+"itemCorner-BottomLeft.png", gocv.IMReadColor)
 	defer trc.Close()
 	defer blc.Close()
 	gocv.CvtColor(img, &img, gocv.ColorBGRToGray)
@@ -106,7 +104,7 @@ func ItemDescriptionLocation() (image.Image, error) {
 		h)
 	i, _ := gocv.ImageToMatRGB(ci)
 	defer i.Close()
-	gocv.IMWrite(imagesPath+"meta/itemdescription-test.png", i)
+	gocv.IMWrite(ImagesPath+"meta/itemdescription-test.png", i)
 
 	return ci, nil
 }
@@ -160,8 +158,8 @@ func StashInvLocation(tlc, brc gocv.Mat, topMenuTab string) {
 		brcmatch[0].Y-tlcmatch[0].Y)
 	i, _ := gocv.ImageToMatRGB(ci)
 	defer i.Close()
-	gocv.IMWrite(imagesPath+"meta/"+topMenuTab+"-stash-test.png", i)
-	gocv.IMWrite(masksPath+"Dark And Darker/"+topMenuTab+"-empty-stash-inventory.png", i)
+	gocv.IMWrite(ImagesPath+"meta/"+topMenuTab+"-stash-test.png", i)
+	gocv.IMWrite(MaskImagesPath+"Dark And Darker/"+topMenuTab+"-empty-stash-inventory.png", i)
 	prefs.SetIntList(topMenuTab+"-stash-inventory", []int{tlcmatch[0].X, tlcmatch[0].Y, brcmatch[0].X, brcmatch[0].Y})
 }
 
@@ -172,7 +170,7 @@ func StashInvTabsLocation(active, inactive gocv.Mat, topMenuTab string) {
 	img, _ := gocv.ImageToMatRGB(captureImg)
 	defer img.Close()
 
-	m := gocv.IMRead(masksPath+"Dark And Darker/stashTabs mask.png", gocv.IMReadColor)
+	m := gocv.IMRead(MaskImagesPath+"Dark And Darker/stashTabs mask.png", gocv.IMReadColor)
 
 	log.Println(topMenuTab + " stash tabs")
 	log.Println("------------------------")
@@ -232,8 +230,8 @@ func PlayerInvLocation(tlc, brc gocv.Mat, topMenuTab string) {
 		brcmatch[0].Y-tlcmatch[0].Y)
 	i, _ := gocv.ImageToMatRGB(ci)
 	defer i.Close()
-	gocv.IMWrite(imagesPath+"meta/"+topMenuTab+"-empty-player-inventory.png", i)
-	gocv.IMWrite(masksPath+"Dark And Darker/"+topMenuTab+"-empty-player-inventory.png", i)
+	gocv.IMWrite(ImagesPath+"meta/"+topMenuTab+"-empty-player-inventory.png", i)
+	gocv.IMWrite(MaskImagesPath+"Dark And Darker/"+topMenuTab+"-empty-player-inventory.png", i)
 
 	prefs.SetIntList(topMenuTab+"-player-inventory", []int{tlcmatch[0].X, tlcmatch[0].Y, brcmatch[0].X, brcmatch[0].Y})
 }
@@ -337,8 +335,8 @@ func MerchantPortraitsLocation() {
 	i, _ := gocv.ImageToMatRGB(captureImg)
 	imgDraw := i.Clone()
 	gocv.CvtColor(i, &i, gocv.ColorRGBToGray)
-	t := gocv.IMRead(imagesPath+"calibration/merchantPortraitTop.png", gocv.IMReadGrayScale)
-	m := gocv.IMRead(imagesPath+"masks/Dark And Darker/merchantPortraitTop mask.png", gocv.IMReadGrayScale)
+	t := gocv.IMRead(CalibrationImagesPath+"merchantPortraitTop.png", gocv.IMReadGrayScale)
+	m := gocv.IMRead(MaskImagesPath+"Dark And Darker/merchantPortraitTop mask.png", gocv.IMReadGrayScale)
 	result := gocv.NewMat()
 	defer i.Close()
 	defer imgDraw.Close()
@@ -350,7 +348,7 @@ func MerchantPortraitsLocation() {
 	matches := utils.GetMatchesFromTemplateMatchResult(result, 0.9, 10)
 
 	utils.DrawFoundMatches(matches, t.Cols(), t.Rows(), imgDraw, "")
-	gocv.IMWrite(imagesPath+"meta/merchantPortraitsLocation-foundMerchants.png", imgDraw)
+	gocv.IMWrite(ImagesPath+"meta/merchantPortraitsLocation-foundMerchants.png", imgDraw)
 
 	for _, match := range matches {
 		h := t.Rows() / 2
