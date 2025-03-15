@@ -1,15 +1,21 @@
 package data
 
-import "github.com/go-vgo/robotgo"
+import (
+	"github.com/go-vgo/robotgo"
+)
 
 var (
-	MainMonitorSize  = robotgo.GetDisplayRect(0)
-	MonitorWidth     = MainMonitorSize.W
-	MonitorHeight    = MainMonitorSize.H
-	XOffset, YOffset = findOffsets()
-	ResPath          = "./internal/data/resources/"
-	imagesPath       = ResPath + "images/"
-	masksPath        = imagesPath + "masks/"
+	MainMonitorSize       = robotgo.GetDisplayRect(0)
+	MonitorWidth          = MainMonitorSize.W
+	MonitorHeight         = MainMonitorSize.H
+	XOffset, YOffset      = findOffsets()
+	RootPath              = "./"
+	InternalPath          = RootPath + "internal/"
+	DataPath              = InternalPath + "data/"
+	ResourcePath          = DataPath + "resources/"
+	ImagesPath            = ResourcePath + "images/"
+	MaskImagesPath        = ImagesPath + "masks/"
+	CalibrationImagesPath = ImagesPath + "calibration/"
 )
 
 func findOffsets() (X, Y int) {
