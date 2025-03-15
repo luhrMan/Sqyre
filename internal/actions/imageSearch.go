@@ -14,9 +14,9 @@ import (
 )
 
 type ImageSearch struct {
-	Targets        []string        `json:"imagetargets"`
-	SearchArea     data.SearchArea `json:"searchbox"`
-	advancedAction                 //`json:"advancedaction"`
+	Targets    []string        `json:"imagetargets"`
+	SearchArea data.SearchArea `json:"searchbox"`
+	advancedAction
 }
 
 func NewImageSearch(name string, subActions []ActionInterface, targets []string, searchbox data.SearchArea) *ImageSearch {
@@ -28,19 +28,20 @@ func NewImageSearch(name string, subActions []ActionInterface, targets []string,
 }
 
 func (a *ImageSearch) Execute(ctx any) error {
-	log.Printf("Image Search | %v in X1:%d Y1:%d X2:%d Y2:%d", a.Targets, a.SearchArea.LeftX, a.SearchArea.TopY, a.SearchArea.RightX, a.SearchArea.BottomY)
-	w := a.SearchArea.RightX - a.SearchArea.LeftX
-	h := a.SearchArea.BottomY - a.SearchArea.TopY
-	captureImg := robotgo.CaptureImg(a.SearchArea.LeftX+data.XOffset, a.SearchArea.TopY+data.YOffset, w, h)
+	sa := data.GetSearchArea(a.SearchArea.Name)
+	w := sa.RightX - sa.LeftX
+	h := sa.BottomY - sa.TopY
+	log.Printf("Image Search | %v in X1:%d Y1:%d X2:%d Y2:%d", a.Targets, sa.LeftX, sa.TopY, sa.RightX, sa.BottomY)
+
+	captureImg := robotgo.CaptureImg(sa.LeftX+data.XOffset, sa.TopY+data.YOffset, w, h)
 	img, _ := gocv.ImageToMatRGB(captureImg)
 	defer img.Close()
-	pathDir := "internal/data/resources/images/"
-	gocv.IMWrite(pathDir+"search-area.png", img)
+	gocv.IMWrite(data.ImagesPath+"search-area.png", img)
 
 	imgDraw := img.Clone()
 	defer imgDraw.Close()
 
-	results := a.match(pathDir, img, imgDraw)
+	results := a.match(data.ImagesPath, img, imgDraw)
 	sorted := utils.SortListOfPoints(results)
 
 	count := 0
@@ -51,8 +52,8 @@ func (a *ImageSearch) Execute(ctx any) error {
 			break
 		}
 		count++
-		point.X += a.SearchArea.LeftX
-		point.Y += a.SearchArea.TopY
+		point.X += sa.LeftX
+		point.Y += sa.TopY
 		for _, d := range a.SubActions {
 			d.Execute(point)
 		}
@@ -98,11 +99,11 @@ func (a *ImageSearch) FindTemplateMatches(img, template, Imask, Tmask, Cmask goc
 
 	if Imask.Rows() > 0 && Imask.Cols() > 0 {
 		gocv.Subtract(i, Imask, &i)
-		gocv.IMWrite("internal/data/resources/images/meta/imageSubtraction.png", i)
+		gocv.IMWrite(data.ImagesPath+"meta/imageSubtraction.png", i)
 	}
 	if Tmask.Rows() > 0 && Tmask.Cols() > 0 {
 		gocv.Subtract(t, Tmask, &t)
-		gocv.IMWrite("internal/data/resources/images/meta/templateSubtraction.png", t)
+		gocv.IMWrite(data.ImagesPath+"meta/templateSubtraction.png", t)
 	}
 
 	gocv.GaussianBlur(i, &i, kernel, 0, 0, gocv.BorderDefault)
@@ -116,7 +117,6 @@ func (a *ImageSearch) FindTemplateMatches(img, template, Imask, Tmask, Cmask goc
 
 var (
 	icons = *data.GetIconBytes()
-	path  = "./internal/data/resources/images/"
 )
 
 func DarkAndDarker(a ImageSearch, img, imgDraw gocv.Mat) map[string][]robotgo.Point {
@@ -148,35 +148,35 @@ func DarkAndDarker(a ImageSearch, img, imgDraw gocv.Mat) map[string][]robotgo.Po
 	switch {
 	case strings.Contains(a.SearchArea.Name, "Stash-screen-player-inventory"):
 		tolerance = 0.96
-		Imask = gocv.IMRead(path+"masks/Dark And Darker/Stash-screen-empty-player-inventory.png", gocv.IMReadColor)
+		Imask = gocv.IMRead(data.MaskImagesPath+"Dark And Darker/Stash-screen-empty-player-inventory.png", gocv.IMReadColor)
 	case strings.Contains(a.SearchArea.Name, "Stash"):
 		tolerance = 0.96
-		Imask = gocv.IMRead(path+"masks/Dark And Darker/empty-stash.png", gocv.IMReadColor)
+		Imask = gocv.IMRead(data.MaskImagesPath+"Dark And Darker/empty-stash.png", gocv.IMReadColor)
 	case strings.Contains(a.SearchArea.Name, "Merchant"):
 		tolerance = 0.93
-		Imask = gocv.IMRead(path+"masks/Dark And Darker/empty-player-merchant.png", gocv.IMReadColor)
+		Imask = gocv.IMRead(data.MaskImagesPath+"Dark And Darker/empty-player-merchant.png", gocv.IMReadColor)
 	default:
 		tolerance = 0.95
 	}
 
-	Tmask1x1 := gocv.IMRead(path+"masks/Dark And Darker/1x1 mask.png", gocv.IMReadColor)
-	Tmask1x2 := gocv.IMRead(path+"masks/Dark And Darker/1x2 mask.png", gocv.IMReadColor)
-	Tmask1x3 := gocv.IMRead(path+"masks/Dark And Darker/1x3 mask.png", gocv.IMReadColor)
-	Tmask2x1 := gocv.IMRead(path+"masks/Dark And Darker/2x1 mask.png", gocv.IMReadColor)
-	Tmask2x2 := gocv.IMRead(path+"masks/Dark And Darker/2x2 mask.png", gocv.IMReadColor)
-	Tmask2x3 := gocv.IMRead(path+"masks/Dark And Darker/2x3 mask.png", gocv.IMReadColor)
+	Tmask1x1 := gocv.IMRead(data.MaskImagesPath+"Dark And Darker/1x1 mask.png", gocv.IMReadColor)
+	Tmask1x2 := gocv.IMRead(data.MaskImagesPath+"Dark And Darker/1x2 mask.png", gocv.IMReadColor)
+	Tmask1x3 := gocv.IMRead(data.MaskImagesPath+"Dark And Darker/1x3 mask.png", gocv.IMReadColor)
+	Tmask2x1 := gocv.IMRead(data.MaskImagesPath+"Dark And Darker/2x1 mask.png", gocv.IMReadColor)
+	Tmask2x2 := gocv.IMRead(data.MaskImagesPath+"Dark And Darker/2x2 mask.png", gocv.IMReadColor)
+	Tmask2x3 := gocv.IMRead(data.MaskImagesPath+"Dark And Darker/2x3 mask.png", gocv.IMReadColor)
 	defer Tmask1x1.Close()
 	defer Tmask1x2.Close()
 	defer Tmask1x3.Close()
 	defer Tmask2x1.Close()
 	defer Tmask2x2.Close()
 	defer Tmask2x3.Close()
-	Cmask1x1 := gocv.IMRead(path+"masks/Dark And Darker/1x1 Cmask.png", gocv.IMReadGrayScale)
-	Cmask1x2 := gocv.IMRead(path+"masks/Dark And Darker/1x2 Cmask.png", gocv.IMReadGrayScale)
-	Cmask1x3 := gocv.IMRead(path+"masks/Dark And Darker/1x3 Cmask.png", gocv.IMReadGrayScale)
-	Cmask2x1 := gocv.IMRead(path+"masks/Dark And Darker/2x1 Cmask.png", gocv.IMReadGrayScale)
-	Cmask2x2 := gocv.IMRead(path+"masks/Dark And Darker/2x2 Cmask.png", gocv.IMReadGrayScale)
-	Cmask2x3 := gocv.IMRead(path+"masks/Dark And Darker/2x3 Cmask.png", gocv.IMReadGrayScale)
+	Cmask1x1 := gocv.IMRead(data.MaskImagesPath+"Dark And Darker/1x1 Cmask.png", gocv.IMReadGrayScale)
+	Cmask1x2 := gocv.IMRead(data.MaskImagesPath+"Dark And Darker/1x2 Cmask.png", gocv.IMReadGrayScale)
+	Cmask1x3 := gocv.IMRead(data.MaskImagesPath+"Dark And Darker/1x3 Cmask.png", gocv.IMReadGrayScale)
+	Cmask2x1 := gocv.IMRead(data.MaskImagesPath+"Dark And Darker/2x1 Cmask.png", gocv.IMReadGrayScale)
+	Cmask2x2 := gocv.IMRead(data.MaskImagesPath+"Dark And Darker/2x2 Cmask.png", gocv.IMReadGrayScale)
+	Cmask2x3 := gocv.IMRead(data.MaskImagesPath+"Dark And Darker/2x3 Cmask.png", gocv.IMReadGrayScale)
 	defer Cmask1x1.Close()
 	defer Cmask1x2.Close()
 	defer Cmask1x3.Close()
@@ -266,9 +266,9 @@ func PathOfExile2(a ImageSearch, img, imgDraw gocv.Mat) map[string][]robotgo.Poi
 
 	var tolerance float32 = 0.9
 	// Imask = gocv.IMRead(path+"masks/Path Of Exile 2/empty-player-stash.png", gocv.IMReadColor)
-	Tmask1x1 := gocv.IMRead(path+"masks/Path Of Exile 2/1x1 mask.png", gocv.IMReadColor)
+	Tmask1x1 := gocv.IMRead(data.MaskImagesPath+"Path Of Exile 2/1x1 mask.png", gocv.IMReadColor)
 	defer Tmask1x1.Close()
-	Cmask1x1 := gocv.IMRead(path+"masks/Path Of Exile 2/1x1 Cmask.png", gocv.IMReadGrayScale)
+	Cmask1x1 := gocv.IMRead(data.MaskImagesPath+"Path Of Exile 2/1x1 Cmask.png", gocv.IMReadGrayScale)
 	defer Cmask1x1.Close()
 
 	results := make(map[string][]robotgo.Point)
