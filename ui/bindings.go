@@ -52,11 +52,7 @@ func (u *Ui) bindVariables() {
 	u.st.boundButtonToggle = custom_widgets.NewToggleWithData(u.st.boundButton)
 	u.st.boundButton.AddListener(binding.NewDataListener(func() {
 		if n, ok := u.getCurrentTabMacro().findNode(u.getCurrentTabMacro().Macro.Root, selectedTreeItem).(*actions.Click); ok {
-			if button {
-				n.Button = "right"
-			} else {
-				n.Button = "left"
-			}
+			n.Button = actions.LeftOrRight(button)
 			u.getCurrentTabMacro().Tree.Refresh()
 		}
 	}))
@@ -72,11 +68,7 @@ func (u *Ui) bindVariables() {
 	}))
 	u.st.boundState.AddListener(binding.NewDataListener(func() {
 		if n, ok := u.getCurrentTabMacro().findNode(u.getCurrentTabMacro().Macro.Root, selectedTreeItem).(*actions.Key); ok {
-			if state {
-				n.State = "Up"
-			} else {
-				n.State = "Down"
-			}
+			n.State = actions.UpOrDown(state)
 			u.getCurrentTabMacro().Tree.Refresh()
 		}
 	}))

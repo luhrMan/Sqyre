@@ -22,7 +22,7 @@ func NewKey(key, state string) *Key {
 	}
 }
 
-func (a *Key) Execute(ctx interface{}) error {
+func (a *Key) Execute(ctx any) error {
 	log.Printf("Key: %s %s", a.Key, a.State)
 	switch a.State {
 	case "Up":
@@ -41,4 +41,11 @@ func (a *Key) Execute(ctx interface{}) error {
 
 func (a *Key) String() string {
 	return fmt.Sprintf("%s Key: %s %s ", data.GetEmoji("Key"), a.Key, a.State)
+}
+
+func UpOrDown(b bool) string {
+	if b {
+		return "Down"
+	}
+	return "Up"
 }

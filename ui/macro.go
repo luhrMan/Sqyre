@@ -189,21 +189,9 @@ func (m *MacroTree) addActionToTree(actionType actions.ActionInterface) {
 	case *actions.Move:
 		action = actions.NewMove(moveX, moveY)
 	case *actions.Click:
-		str := ""
-		if !button {
-			str = "left"
-		} else {
-			str = "right"
-		}
-		action = actions.NewClick(str)
+		action = actions.NewClick(actions.LeftOrRight(button))
 	case *actions.Key:
-		str := ""
-		if !state {
-			str = "Down"
-		} else {
-			str = "Up"
-		}
-		action = actions.NewKey(key, str)
+		action = actions.NewKey(key, actions.UpOrDown(state))
 	case *actions.Loop:
 		action = actions.NewLoop(int(count), loopName, []actions.ActionInterface{})
 	case *actions.ImageSearch:
@@ -242,7 +230,7 @@ func (u *Ui) updateTreeOnselect() {
 			u.st.boundMoveY.Set(node.Y)
 			u.st.tabs.SelectIndex(movetab)
 		case *actions.Click:
-			if node.Button == "left" {
+			if node.Button == actions.LeftOrRight(false) {
 				u.st.boundButton.Set(false)
 			} else {
 				u.st.boundButton.Set(true)
@@ -251,13 +239,7 @@ func (u *Ui) updateTreeOnselect() {
 		case *actions.Key:
 			key = node.Key
 			u.st.boundKeySelect.SetSelected(node.Key)
-			//			u.st.tabs.Items[3].
-			//				Content.(*fyne.Container).
-			//				Objects[0].(*fyne.Container).
-			//				Objects[1].(*widget.Select).SetSelected(node.Key)
-
-			//                                                boundKeySelect.SetSelected(node.Key)
-			if node.State == "Down" {
+			if node.State == actions.UpOrDown(false) {
 				u.st.boundState.Set(false)
 			} else {
 				u.st.boundState.Set(true)
@@ -278,12 +260,6 @@ func (u *Ui) updateTreeOnselect() {
 			}
 			u.getCurrentTabMacro().Tree.Refresh()
 			u.st.boundImageSearchAreaSelect.SetSelected(node.SearchArea.Name)
-			//			u.st.tabs.Items[5]. //image search tab
-			//				Content.(*fyne.Container). //settings border
-			//				Objects[1].(*fyne.Container). //2nd grid with columns
-			//				Objects[1].(*fyne.Container). //vbox
-			//				Objects[1].(*widget.Select).SetSelected(node.SearchBox.Name)
-
 			u.st.tabs.SelectIndex(imagesearchtab)
 		case *actions.Ocr:
 			u.st.boundOCRTarget.Set(node.Target)
@@ -321,27 +297,6 @@ func (u *Ui) createMacroToolbar() *widget.Toolbar {
 			}
 			og := node.String()
 			switch node := node.(type) {
-			//			case *actions.Wait:
-			//				node.Time = time
-			//			case *actions.Move:
-			//				node.X = moveX
-			//				node.Y = moveY
-			//			case *actions.Click:
-			//				if !button {
-			//					node.Button = "left"
-			//				} else {
-			//					node.Button = "right"
-			//				}
-			//			case *actions.Key:
-			//				node.Key = key
-			//				if !state {
-			//					node.State = "down"
-			//				} else {
-			//					node.State = "up"
-			//				}
-			//			case *actions.Loop:
-			//				node.Name = loopName
-			//				node.Count = count
 			case *actions.ImageSearch:
 				var t []string
 				for i, item := range imageSearchTargets {
@@ -404,37 +359,6 @@ func (u *Ui) createMacroToolbar() *widget.Toolbar {
 
 func (u *Ui) getCurrentTabMacro() *MacroTree {
 	return u.mtm[u.dt.Selected().Text]
-}
-
-func (u *Ui) LoadMainContent() *fyne.Container {
-	data.CreateItemMaps()
-	u.createDocTabs()
-	u.addMacroDocTab("Currency Testing")
-	u.dt.SelectIndex(0)
-	u.createSelect()
-	u.dt.OnClosed = func(ti *container.TabItem) {
-		delete(u.mtm, ti.Text)
-	}
-	u.win.SetMainMenu(u.createMainMenu())
-	u.actionSettingsTabs()
-
-	macroLayout := container.NewBorder(
-		container.NewGridWithColumns(2,
-			container.NewHBox(
-				u.createMacroToolbar(),
-				layout.NewSpacer(),
-				widget.NewLabel("Macro Name:"),
-			),
-			container.NewBorder(nil, nil, nil, widget.NewButtonWithIcon("", theme.LoginIcon(), func() { u.addMacroDocTab(u.sel.Text) }), u.sel),
-		),
-		nil,
-		widget.NewSeparator(),
-		nil,
-		u.dt,
-	)
-	mainLayout := container.NewBorder(nil, nil, u.st.tabs, nil, macroLayout)
-
-	return mainLayout
 }
 
 func (u *Ui) addMacroDocTab(name string) {
