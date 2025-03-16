@@ -9,6 +9,7 @@ require (
 	fyne.io/x/fyne v0.0.0-20250106132206-3228f6c50107
 	github.com/go-vgo/robotgo v1.0.0-rc2.1
 	github.com/otiai10/gosseract/v2 v2.4.1
+	github.com/pkg/errors v0.9.1
 	github.com/robotn/gohook v0.41.0
 	gocv.io/x/gocv v0.40.0
 )

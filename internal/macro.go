@@ -8,15 +8,17 @@ import (
 type Macro struct {
 	Name string
 
-	Root   *actions.Loop
-	Hotkey string
+	Root        *actions.Loop
+	GlobalDelay int
+	Hotkey      string
 }
 
-func NewMacro(name string, root *actions.Loop, hotkey string) *Macro {
+func NewMacro(name string, root *actions.Loop, delay int, hotkey string) *Macro {
 	return &Macro{
-		Name:   name,
-		Root:   root,
-		Hotkey: hotkey,
+		Name:        name,
+		Root:        root,
+		GlobalDelay: delay,
+		Hotkey:      hotkey,
 	}
 }
 
