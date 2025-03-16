@@ -20,7 +20,7 @@ func NewClick(button string) *Click {
 	}
 }
 
-func (a *Click) Execute(ctx interface{}) error {
+func (a *Click) Execute(ctx any) error {
 	log.Printf("%s click", a.Button)
 	robotgo.Click(a.Button)
 	return nil
@@ -28,4 +28,11 @@ func (a *Click) Execute(ctx interface{}) error {
 
 func (a *Click) String() string {
 	return fmt.Sprintf("%s %s click", data.GetEmoji("Click"), a.Button)
+}
+
+func LeftOrRight(b bool) string {
+	if b {
+		return "right"
+	}
+	return "left"
 }
