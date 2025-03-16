@@ -22,7 +22,7 @@ type Point struct {
 }
 
 var (
-	path        = "./internal/data/resources/json/"
+	path        = ResourcePath + "json/"
 	sbMap       *map[string]SearchArea
 	sbOnce      sync.Once
 	spotMap     *map[string]Point

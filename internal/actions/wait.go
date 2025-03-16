@@ -9,8 +9,8 @@ import (
 )
 
 type Wait struct {
-	baseAction     //`json:"baseaction"`
-	Time       int `json:"waittime"`
+	baseAction
+	Time int `json:"waittime"`
 }
 
 func NewWait(time int) *Wait {
@@ -20,7 +20,7 @@ func NewWait(time int) *Wait {
 	}
 }
 
-func (a *Wait) Execute(ctx interface{}) error {
+func (a *Wait) Execute(ctx any) error {
 	log.Printf("Waiting for %d milliseconds", a.Time)
 	robotgo.MilliSleep(a.Time)
 	return nil

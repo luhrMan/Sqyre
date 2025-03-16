@@ -18,36 +18,39 @@ import (
 	hook "github.com/robotn/gohook"
 )
 
-var Programs = make(map[string]internal.Program)
+// var Programs = make(map[string]internal.Program)
 
 func main() {
 	a := app.NewWithID("Squire")
-	w := a.NewWindow("Squire")
-	go toggleMousePos()
+	a.Settings().SetTheme(theme.DarkTheme())
 	os.Setenv("FYNE_SCALE", "1.25")
+	go toggleMousePos()
+	go failsafeHotkey()
 
+	w := a.NewWindow("Squire")
+	p := internal.GetPrograms()
 	u := &ui.Ui{}
 	u.SetWindow(w)
-	u.SetMacros(map[string]*ui.MacroTree{"test": &ui.MacroTree{}})
+	u.SetMacroTreeMap(map[string]*ui.MacroTree{"test": &ui.MacroTree{}})
 	u.CreateSettingsTabs()
-	icon, _ := fyne.LoadResourceFromPath("./internal/data/resources/images/Squire.png")
-
-	//failsafe hotkey
-	go func() {
-		ok := hook.AddEvents("f1", "shift", "ctrl")
-		if ok {
-			log.Println("Exiting...")
-			os.Exit(0)
-		}
-	}()
 
 	w.SetContent(u.LoadMainContent())
-	a.Settings().SetTheme(theme.DarkTheme())
+	icon, _ := fyne.LoadResourceFromPath("./internal/data/resources/images/Squire.png")
 	w.SetIcon(icon)
+
 	w.ShowAndRun()
+
 	utils.CloseTessClient()
-	sen.GobSerializer.Encode(Programs, "programData")
-	log.Println(Programs)
+	sen.GobSerializer.Encode(p, "programData")
+	log.Println(p)
+}
+
+func failsafeHotkey() {
+	ok := hook.AddEvents("f1", "shift", "ctrl")
+	if ok {
+		log.Println("Exiting...")
+		os.Exit(0)
+	}
 }
 
 func toggleMousePos() {

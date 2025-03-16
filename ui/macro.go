@@ -1,11 +1,17 @@
 package ui
 
 import (
+	"Squire/encoding"
 	"Squire/internal"
 	"Squire/internal/actions"
 	"Squire/internal/data"
+	"fmt"
+	"log"
+	"slices"
 
 	"fyne.io/fyne/v2/data/binding"
+	"fyne.io/fyne/v2/dialog"
+	"github.com/go-vgo/robotgo"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -35,7 +41,6 @@ import (
 type MacroTree struct {
 	Macro *internal.Macro
 	Tree  *widget.Tree
-	// Root   *actions.Loop
 
 	boundMacroName binding.String
 }
@@ -231,18 +236,18 @@ func (u *Ui) updateTreeOnselect() {
 		switch node := u.getCurrentTabMacro().findNode(u.getCurrentTabMacro().Macro.Root, uid).(type) {
 		case *actions.Wait:
 			u.st.boundTime.Set(node.Time)
-			u.st.tabs.SelectIndex(0)
+			u.st.tabs.SelectIndex(waittab)
 		case *actions.Move:
 			u.st.boundMoveX.Set(node.X)
 			u.st.boundMoveY.Set(node.Y)
-			u.st.tabs.SelectIndex(1)
+			u.st.tabs.SelectIndex(movetab)
 		case *actions.Click:
 			if node.Button == "left" {
 				u.st.boundButton.Set(false)
 			} else {
 				u.st.boundButton.Set(true)
 			}
-			u.st.tabs.SelectIndex(2)
+			u.st.tabs.SelectIndex(clicktab)
 		case *actions.Key:
 			key = node.Key
 			u.st.boundKeySelect.SetSelected(node.Key)
@@ -257,12 +262,12 @@ func (u *Ui) updateTreeOnselect() {
 			} else {
 				u.st.boundState.Set(true)
 			}
-			u.st.tabs.SelectIndex(3)
+			u.st.tabs.SelectIndex(keytab)
 
 		case *actions.Loop:
 			u.st.boundLoopName.Set(node.Name)
 			u.st.boundCount.Set(node.Count)
-			u.st.tabs.SelectIndex(4)
+			u.st.tabs.SelectIndex(looptab)
 		case *actions.ImageSearch:
 			u.st.boundImageSearchName.Set(node.Name)
 			for t := range imageSearchTargets {
@@ -279,11 +284,189 @@ func (u *Ui) updateTreeOnselect() {
 			//				Objects[1].(*fyne.Container). //vbox
 			//				Objects[1].(*widget.Select).SetSelected(node.SearchBox.Name)
 
-			u.st.tabs.SelectIndex(5)
+			u.st.tabs.SelectIndex(imagesearchtab)
 		case *actions.Ocr:
 			u.st.boundOCRTarget.Set(node.Target)
 			u.st.boundOCRSearchBoxSelect.SetSelected(node.SearchArea.Name)
-			u.st.tabs.SelectIndex(6)
+			u.st.tabs.SelectIndex(ocrtab)
 		}
 	}
+}
+
+func (u *Ui) createMacroToolbar() *widget.Toolbar {
+	tb := widget.NewToolbar(
+		widget.NewToolbarAction(theme.ContentAddIcon(), func() {
+			switch u.st.tabs.Selected().Text {
+			case "Wait":
+				u.getCurrentTabMacro().addActionToTree(&actions.Wait{})
+			case "Move":
+				u.getCurrentTabMacro().addActionToTree(&actions.Move{})
+			case "Click":
+				u.getCurrentTabMacro().addActionToTree(&actions.Click{})
+			case "Key":
+				u.getCurrentTabMacro().addActionToTree(&actions.Key{})
+			case "Loop":
+				u.getCurrentTabMacro().addActionToTree(&actions.Loop{})
+			case "Image":
+				u.getCurrentTabMacro().addActionToTree(&actions.ImageSearch{})
+			case "OCR":
+				u.getCurrentTabMacro().addActionToTree(&actions.Ocr{})
+			}
+		}),
+		widget.NewToolbarAction(theme.ViewRefreshIcon(), func() {
+			node := u.getCurrentTabMacro().findNode(u.getCurrentTabMacro().Macro.Root, selectedTreeItem)
+			if selectedTreeItem == "" {
+				log.Println("No node selected")
+				return
+			}
+			og := node.String()
+			switch node := node.(type) {
+			//			case *actions.Wait:
+			//				node.Time = time
+			//			case *actions.Move:
+			//				node.X = moveX
+			//				node.Y = moveY
+			//			case *actions.Click:
+			//				if !button {
+			//					node.Button = "left"
+			//				} else {
+			//					node.Button = "right"
+			//				}
+			//			case *actions.Key:
+			//				node.Key = key
+			//				if !state {
+			//					node.State = "down"
+			//				} else {
+			//					node.State = "up"
+			//				}
+			//			case *actions.Loop:
+			//				node.Name = loopName
+			//				node.Count = count
+			case *actions.ImageSearch:
+				var t []string
+				for i, item := range imageSearchTargets {
+					if item {
+						t = append(t, i)
+					}
+				}
+				node.Name = imageSearchName
+				node.SearchArea = *data.GetSearchArea(searchArea)
+				node.Targets = t
+			}
+
+			fmt.Printf("Updated node: %+v from '%v' to '%v' \n", node.GetUID(), og, node)
+
+			u.getCurrentTabMacro().Tree.Refresh()
+		}),
+		widget.NewToolbarSpacer(),
+		widget.NewToolbarSeparator(),
+		widget.NewToolbarAction(theme.RadioButtonIcon(), func() {
+			u.getCurrentTabMacro().Tree.UnselectAll()
+			selectedTreeItem = ""
+		}),
+		widget.NewToolbarAction(theme.MoveDownIcon(), func() {
+			u.getCurrentTabMacro().moveNodeDown(selectedTreeItem)
+		}),
+		widget.NewToolbarAction(theme.MoveUpIcon(), func() {
+			u.getCurrentTabMacro().moveNodeUp(selectedTreeItem)
+		}),
+		widget.NewToolbarSeparator(),
+		widget.NewToolbarSpacer(),
+		widget.NewToolbarAction(theme.MediaPlayIcon(), func() {
+			robotgo.ActiveName("Dark and Darker")
+			u.getCurrentTabMacro().Macro.ExecuteActionTree()
+		}),
+		widget.NewToolbarAction(theme.DocumentSaveIcon(), func() {
+			save := func() {
+				err := encoding.GobSerializer.Encode(u.getCurrentTabMacro(), u.sel.Text)
+				// err := u.getCurrentTabMacro().saveTreeToJsonFile(u.sel.Text)
+				if err != nil {
+					dialog.ShowError(err, u.win)
+					log.Printf("encode tree to json: %v", err)
+				} else {
+					dialog.ShowInformation("File Saved Successfully", u.sel.Text+".json"+"\nPlease refresh the list.", u.win)
+				}
+			}
+			if slices.Contains(u.sel.Options, u.sel.Text) {
+				dialog.ShowConfirm("Overwrite existing file", "Overwrite "+u.sel.Text+"?", func(b bool) {
+					if !b {
+						return
+					}
+					save()
+				}, u.win)
+			} else {
+				save()
+			}
+		}),
+	)
+	return tb
+}
+
+func (u *Ui) getCurrentTabMacro() *MacroTree {
+	return u.mtm[u.dt.Selected().Text]
+}
+
+func (u *Ui) LoadMainContent() *fyne.Container {
+	data.CreateItemMaps()
+	u.createDocTabs()
+	u.addMacroDocTab("Currency Testing")
+	u.dt.SelectIndex(0)
+	u.createSelect()
+	u.dt.OnClosed = func(ti *container.TabItem) {
+		delete(u.mtm, ti.Text)
+	}
+	u.win.SetMainMenu(u.createMainMenu())
+	u.actionSettingsTabs()
+
+	macroLayout := container.NewBorder(
+		container.NewGridWithColumns(2,
+			container.NewHBox(
+				u.createMacroToolbar(),
+				layout.NewSpacer(),
+				widget.NewLabel("Macro Name:"),
+			),
+			container.NewBorder(nil, nil, nil, widget.NewButtonWithIcon("", theme.LoginIcon(), func() { u.addMacroDocTab(u.sel.Text) }), u.sel),
+		),
+		nil,
+		widget.NewSeparator(),
+		nil,
+		u.dt,
+	)
+	mainLayout := container.NewBorder(nil, nil, u.st.tabs, nil, macroLayout)
+
+	return mainLayout
+}
+
+func (u *Ui) addMacroDocTab(name string) {
+	fp := savedMacrosPath + name
+	if _, ok := u.mtm[name]; ok {
+		return
+	}
+	m := &MacroTree{Macro: internal.NewMacro("", &actions.Loop{}, 30, "")}
+	m.createTree()
+	s, err := encoding.JsonSerializer.Decode(fp)
+	if err != nil {
+		dialog.ShowError(err, u.win)
+		return
+	}
+	log.Println(s)
+	result, err := encoding.JsonSerializer.CreateActionFromMap(s.(map[string]any), nil)
+	// var result actions.ActionInterface
+	log.Println(result)
+	m.Macro.Root.SubActions = []actions.ActionInterface{}
+	if s, ok := result.(*actions.Loop); ok { // fill Macro.Root / tree
+		for _, sa := range s.SubActions {
+			m.Macro.Root.AddSubAction(sa)
+		}
+	}
+	if err != nil {
+		fmt.Errorf("error unmarshalling tree: %v", err)
+	}
+	m.Tree.Refresh()
+	u.mtm[name] = m
+
+	t := container.NewTabItem(name, m.Tree)
+	u.dt.Append(t)
+	u.dt.Select(t)
+	u.updateTreeOnselect()
 }
