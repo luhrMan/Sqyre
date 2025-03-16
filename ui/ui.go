@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"Squire/internal/data"
 	"Squire/ui/custom_widgets"
 
 	"fyne.io/fyne/v2"
@@ -10,22 +11,22 @@ import (
 	xwidget "fyne.io/x/fyne/widget"
 )
 
-var savedMacrosPath = "./internal/data/resources/saved-macros/"
+var savedMacrosPath = data.ResourcePath + "saved-macros/"
 
 type Ui struct {
 	win fyne.Window
 
-	mm  map[string]*MacroTree
+	mtm map[string]*MacroTree
 	sel *xwidget.CompletionEntry
 
 	dt *container.DocTabs
 	st *settingsTabs
 }
 
-func (u *Ui) SetWindow(w fyne.Window)            { u.win = w }
-func (u *Ui) SetMacros(mm map[string]*MacroTree) { u.mm = mm }
-func (u *Ui) CreateSettingsTabs()                { u.st = &settingsTabs{tabs: &container.AppTabs{}} }
-func (u *Ui) createDocTabs()                     { u.dt = container.NewDocTabs() }
+func (u *Ui) SetWindow(w fyne.Window)                   { u.win = w }
+func (u *Ui) SetMacroTreeMap(mtm map[string]*MacroTree) { u.mtm = mtm }
+func (u *Ui) CreateSettingsTabs()                       { u.st = &settingsTabs{tabs: &container.AppTabs{}} }
+func (u *Ui) createDocTabs()                            { u.dt = container.NewDocTabs() }
 
 type settingsTabs struct {
 	tabs                  *container.AppTabs
@@ -33,11 +34,23 @@ type settingsTabs struct {
 	boundGlobalDelayEntry *widget.Entry
 	waitTab
 	moveTab
+	clickTab
 	keyTab
 	loopTab
 	imageSearchTab
 	ocrTab
 }
+
+// settingsTabs indexes
+const (
+	waittab = iota
+	movetab
+	clicktab
+	keytab
+	looptab
+	imagesearchtab
+	ocrtab
+)
 
 type waitTab struct {
 	boundTime binding.Int
@@ -58,14 +71,18 @@ type moveTab struct {
 	boundSpotSelect  *widget.Select
 }
 
-type keyTab struct {
+type clickTab struct {
 	boundButton binding.Bool
-	boundKey    binding.String
-	boundState  binding.Bool
 
 	boundButtonToggle *custom_widgets.Toggle
-	boundKeySelect    *widget.Select
-	boundStateToggle  *custom_widgets.Toggle
+}
+
+type keyTab struct {
+	boundKey   binding.String
+	boundState binding.Bool
+
+	boundKeySelect   *widget.Select
+	boundStateToggle *custom_widgets.Toggle
 }
 
 type loopTab struct {

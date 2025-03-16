@@ -5,17 +5,20 @@ import (
 )
 
 var (
-	MainMonitorSize       = robotgo.GetDisplayRect(0)
-	MonitorWidth          = MainMonitorSize.W
-	MonitorHeight         = MainMonitorSize.H
-	XOffset, YOffset      = findOffsets()
-	RootPath              = "./"
-	InternalPath          = RootPath + "internal/"
-	DataPath              = InternalPath + "data/"
-	ResourcePath          = DataPath + "resources/"
-	ImagesPath            = ResourcePath + "images/"
-	MaskImagesPath        = ImagesPath + "masks/"
-	CalibrationImagesPath = ImagesPath + "calibration/"
+	MainMonitorSize  = robotgo.GetDisplayRect(0)
+	MonitorWidth     = MainMonitorSize.W
+	MonitorHeight    = MainMonitorSize.H
+	XOffset, YOffset = findOffsets()
+)
+
+const (
+	RootPath              string = "./"
+	InternalPath                 = RootPath + "internal/"
+	DataPath                     = InternalPath + "data/"
+	ResourcePath                 = DataPath + "resources/"
+	ImagesPath                   = ResourcePath + "images/"
+	MaskImagesPath               = ImagesPath + "masks/"
+	CalibrationImagesPath        = ImagesPath + "calibration/"
 )
 
 func findOffsets() (X, Y int) {

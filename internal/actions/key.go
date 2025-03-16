@@ -9,9 +9,9 @@ import (
 )
 
 type Key struct {
-	baseAction        //`json:"baseaction"`
-	Key        string `json:"key"`
-	State      string `json:"state"`
+	baseAction
+	Key   string `json:"key"`
+	State string `json:"state"`
 }
 
 func NewKey(key, state string) *Key {
