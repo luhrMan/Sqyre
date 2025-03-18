@@ -21,6 +21,18 @@ type Point struct {
 	Y    int    `json:"y"`
 }
 
+type Coordinates struct {
+	Points      map[string]Point
+	SearchAreas map[string]SearchArea
+}
+
+func (c *Coordinates) AddPoint(point Point) {
+	c.Points[point.Name] = point
+}
+func (c *Coordinates) AddSearchArea(sa SearchArea) {
+	c.SearchAreas[sa.Name] = sa
+}
+
 var (
 	path        = ResourcePath + "json/"
 	sbMap       *map[string]SearchArea
@@ -74,7 +86,7 @@ func GetSearchAreaMap() *map[string]SearchArea {
 }
 
 func GetPoint(key string) *Point {
-	m := *GetPointMap()
+	m := JsonPointMap()
 	if s, ok := m[key]; ok {
 		//		s := m[key]
 		return &s
@@ -90,7 +102,7 @@ func GetPointMapKeys(m map[string]Point) *[]string {
 	return &keys
 }
 
-func GetPointMap() *map[string]Point {
+func JsonPointMap() map[string]Point {
 	spotMapOnce.Do(func() {
 		tempArrMap := make(map[string][]Point)
 		tempMap := make(map[string]Point)
@@ -116,38 +128,38 @@ func GetPointMap() *map[string]Point {
 		}
 		spotMap = &tempMap
 	})
-	return spotMap
+	return *spotMap
 }
 
-func GetPointJsonMap() map[string][]Point {
-	spotJsonMap := make(map[string][]Point)
+// func GetPointJsonMap() map[string][]Point {
+// 	spotJsonMap := make(map[string][]Point)
 
-	file, err := os.Open(path + "spots.json")
-	if err != nil {
-		log.Println("Error opening file:", err)
-		panic(err)
-	}
-	defer file.Close()
+// 	file, err := os.Open(path + "spots.json")
+// 	if err != nil {
+// 		log.Println("Error opening file:", err)
+// 		panic(err)
+// 	}
+// 	defer file.Close()
 
-	decoder := json.NewDecoder(file)
-	if err := decoder.Decode(&spotJsonMap); err != nil {
-		log.Println("Error decoding JSON:", err)
-		panic(err)
-	}
-	return spotJsonMap
-}
+// 	decoder := json.NewDecoder(file)
+// 	if err := decoder.Decode(&spotJsonMap); err != nil {
+// 		log.Println("Error decoding JSON:", err)
+// 		panic(err)
+// 	}
+// 	return spotJsonMap
+// }
 
-func GetPointMapAsStringsMap() *map[string][]string {
-	spotStringsMap := make(map[string][]string)
-	jsonMap := GetPointJsonMap()
-	for str, items := range jsonMap {
-		names := make([]string, len(items))
-		for i, item := range items {
-			names[i] = item.Name
-		}
-		//		log.Printf("strMap add names: %v", names)
-		spotStringsMap[str] = names
-		spotStringsMap[""] = append(spotStringsMap[""], str)
-	}
-	return &spotStringsMap
-}
+// func GetPointMapAsStringsMap() map[string][]string {
+// 	spotStringsMap := make(map[string][]string)
+// 	jsonMap := GetPointJsonMap()
+// 	for str, items := range jsonMap {
+// 		names := make([]string, len(items))
+// 		for i, item := range items {
+// 			names[i] = item.Name
+// 		}
+// 		//		log.Printf("strMap add names: %v", names)
+// 		spotStringsMap[str] = names
+// 		spotStringsMap[""] = append(spotStringsMap[""], str)
+// 	}
+// 	return spotStringsMap
+// }

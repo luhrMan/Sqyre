@@ -6,49 +6,69 @@ import (
 	"log"
 )
 
-var p *Programs
+var p Programs
 
-type Programs struct {
-	Map *map[string]Program
-}
+// type Name string
+type Programs map[string]*Program
 
 type Program struct {
 	Macros      *[]Macro
-	Items       *map[string]data.Item
-	Coordinates *map[[2]int]ScreenSize
+	Items       map[string]data.Item
+	Coordinates map[ScreenSize]data.Coordinates
+}
+type ScreenSize [2]int
+
+func NewProgram() *Program {
+	return &Program{
+		Macros: &[]Macro{
+			*NewMacro("test", 30, ""),
+		},
+		Items: map[string]data.Item{},
+		Coordinates: map[ScreenSize]data.Coordinates{
+			{2560, 1440}: {
+				Points:      map[string]data.Point{},
+				SearchAreas: map[string]data.SearchArea{},
+			},
+		},
+	}
 }
 
-type ScreenSize struct {
-	Points      *map[string]data.Point
-	SearchAreas *map[string]data.SearchArea
-}
-
-func GetPrograms() *Programs {
+func GetPrograms() Programs {
 	// var err error
 	if p == nil {
-		p = &Programs{}
+		p = Programs{}
 		a, err := encoding.GobSerializer.Decode("programData")
 		if err != nil {
 			log.Println(err)
-			return nil
+			return p
 		}
 		if a == nil {
 			return p
 		}
-		p = a.(*Programs)
+		p = a.(Programs)
 		return p
 	}
 	return p
 }
 
-func (p *Program) AddProgramPoint(screenSize [2]int, point data.Point) {
-	c := *p.Coordinates
-	points := *c[screenSize].Points
+// func (p *Program) GetMacros() *[]Macro {
+// 	return p.Macros
+// }
+
+func (p *Program) AddProgramPoint(ss ScreenSize, point data.Point) {
+	c := p.Coordinates
+	points := c[ss].Points
 	points[point.Name] = point
 }
+func (p *Program) SerializeJsonPointsToProgram(ss ScreenSize) {
+	jpm := data.JsonPointMap()
+	for _, point := range jpm {
+		p.AddProgramPoint(ss, point)
+	}
+}
 
-func (p *Program) AddProgramSearchArea(screenSize [2]int, sa data.SearchArea) {
-	c := *p.Coordinates
-	sas := *c[screenSize].SearchAreas
+func (p *Program) AddProgramSearchArea(ss ScreenSize, sa data.SearchArea) {
+	c := p.Coordinates
+	sas := c[ss].SearchAreas
 	sas[sa.Name] = sa
 }

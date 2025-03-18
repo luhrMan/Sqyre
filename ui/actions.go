@@ -35,6 +35,7 @@ func (u *Ui) actionSettingsTabs() {
 			widget.NewLabel("------------------------------------------------------------------------------------"),
 			container.NewGridWithColumns(2, container.NewBorder(nil, nil, nil, container.NewHBox(widget.NewLabel("ms")), u.st.boundTimeEntry), u.st.boundTimeSlider),
 		)
+
 		moveSettings = container.NewBorder(
 			container.NewVBox(
 				container.NewGridWithColumns(2,
@@ -46,12 +47,16 @@ func (u *Ui) actionSettingsTabs() {
 		clickSettings = container.NewVBox(
 			container.NewHBox(layout.NewSpacer(), widget.NewLabel("left"), u.st.boundButtonToggle, widget.NewLabel("right"), layout.NewSpacer()),
 		)
+
 		keySettings = container.NewVBox(
-			container.NewHBox(layout.NewSpacer(), u.st.boundKeySelect, widget.NewLabel("up"), u.st.boundStateToggle, widget.NewLabel("down"), layout.NewSpacer()))
+			container.NewHBox(layout.NewSpacer(), u.st.boundKeySelect, widget.NewLabel("up"), u.st.boundStateToggle, widget.NewLabel("down"), layout.NewSpacer()),
+		)
+
 		loopSettings = container.NewVBox(
 			container.NewGridWithColumns(2, container.NewHBox(layout.NewSpacer(), widget.NewLabel("name:")), u.st.boundLoopNameEntry),
 			container.NewGridWithColumns(2, container.NewHBox(layout.NewSpacer(), widget.NewLabel("loops:"), u.st.boundCountLabel), u.st.boundCountSlider),
 		)
+
 		imageSearchSettings = container.NewBorder(
 			container.NewVBox(
 				container.NewGridWithColumns(2, container.NewHBox(widget.NewLabel("name:")), u.st.boundImageSearchNameEntry),

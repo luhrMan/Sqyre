@@ -3,6 +3,7 @@ package ui
 import (
 	"Squire/internal/data"
 	"Squire/ui/custom_widgets"
+	"log"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -23,10 +24,21 @@ type Ui struct {
 	st *settingsTabs
 }
 
+func InitializeUi(w fyne.Window) *Ui {
+	return &Ui{
+		win: w,
+		mtm: map[string]*MacroTree{},
+	}
+}
+
 func (u *Ui) SetWindow(w fyne.Window)                   { u.win = w }
 func (u *Ui) SetMacroTreeMap(mtm map[string]*MacroTree) { u.mtm = mtm }
-func (u *Ui) CreateSettingsTabs()                       { u.st = &settingsTabs{tabs: &container.AppTabs{}} }
-func (u *Ui) createDocTabs()                            { u.dt = container.NewDocTabs() }
+func (u *Ui) AddMacroTree(key string, mt *MacroTree) {
+	u.mtm[key] = mt
+	log.Println("added macro tree: ", mt, key)
+}
+func (u *Ui) CreateSettingsTabs() { u.st = &settingsTabs{tabs: &container.AppTabs{}} }
+func (u *Ui) createDocTabs()      { u.dt = container.NewDocTabs() }
 
 type settingsTabs struct {
 	tabs                  *container.AppTabs
