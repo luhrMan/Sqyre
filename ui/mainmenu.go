@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"Squire/internal"
 	"Squire/internal/actions"
 	"Squire/internal/data"
 	"strconv"
@@ -26,16 +27,26 @@ func (u *Ui) createMainMenu() *fyne.MainMenu {
 		basicActionsSubMenu,
 		advancedActionsSubMenu,
 	)
+	// newAction := func(action actions.ActionInterface) {
+	// 	a := u.getCurrentTabMacro().Macro.Root.GetAction(selectedTreeItem)
+	// 	if aa, ok := a.(actions.AdvancedActionInterface); ok {
+	// 		aa.AddSubAction(action)
+	// 		u.getCurrentTabMacro().Tree.Refresh()
+	// 		return
+	// 	}
+	// 	a.GetParent().AddSubAction(action)
+	// 	u.getCurrentTabMacro().Tree.Refresh()
+	// }
 	basicActionsSubMenu.ChildMenu = fyne.NewMenu("",
-		fyne.NewMenuItem("Wait", func() { u.getCurrentTabMacro().addActionToTree(&actions.Wait{}) }),
-		fyne.NewMenuItem("Mouse Move", func() { u.getCurrentTabMacro().addActionToTree(&actions.Move{}) }),
-		fyne.NewMenuItem("Click", func() { u.getCurrentTabMacro().addActionToTree(&actions.Click{}) }),
-		fyne.NewMenuItem("Key", func() { u.getCurrentTabMacro().addActionToTree(&actions.Key{}) }),
+		fyne.NewMenuItem("Wait", func() { u.selectedMacroTab().addActionToTree(&actions.Wait{}) }),
+		fyne.NewMenuItem("Mouse Move", func() { u.selectedMacroTab().addActionToTree(&actions.Move{}) }),
+		fyne.NewMenuItem("Click", func() { u.selectedMacroTab().addActionToTree(&actions.Click{}) }),
+		fyne.NewMenuItem("Key", func() { u.selectedMacroTab().addActionToTree(&actions.Key{}) }),
 	)
 	advancedActionsSubMenu.ChildMenu = fyne.NewMenu("",
-		fyne.NewMenuItem("Loop", func() { u.getCurrentTabMacro().addActionToTree(&actions.Loop{}) }),
-		fyne.NewMenuItem("Image Search", func() { u.getCurrentTabMacro().addActionToTree(&actions.ImageSearch{}) }),
-		fyne.NewMenuItem("OCR", func() { u.getCurrentTabMacro().addActionToTree(&actions.Ocr{}) }),
+		fyne.NewMenuItem("Loop", func() { u.selectedMacroTab().addActionToTree(&actions.Loop{}) }),
+		fyne.NewMenuItem("Image Search", func() { u.selectedMacroTab().addActionToTree(&actions.ImageSearch{}) }),
+		fyne.NewMenuItem("OCR", func() { u.selectedMacroTab().addActionToTree(&actions.Ocr{}) }),
 	)
 
 	computerInfo := fyne.NewMenuItem("Computer info", func() {
@@ -50,7 +61,7 @@ func (u *Ui) createMainMenu() *fyne.MainMenu {
 	})
 
 	calibrationMenu := fyne.NewMenu("Calibration", fyne.NewMenuItem("Calibrate Everything", func() {
-		data.CalibrateInventorySearchboxes()
+		data.CalibrateInventorySearchboxes((internal.GetPrograms())[data.DarkAndDarker].Coordinates[internal.ScreenSize{data.MainMonitorSize.X, data.MainMonitorSize.Y}])
 		u.st.boundImageSearchAreaSelect.SetOptions(*data.GetSearchAreaMapKeys(*data.GetSearchAreaMap()))
 	}))
 

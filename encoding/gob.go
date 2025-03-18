@@ -3,6 +3,7 @@ package encoding
 import (
 	"encoding/gob"
 	"fmt"
+	"log"
 	"os"
 )
 
@@ -24,7 +25,7 @@ func (s *sGob) Encode(data any, filename string) error {
 		fmt.Errorf("Error encoding data:", err)
 		return err
 	}
-	fmt.Println("Data encoded and saved to ", filename)
+	log.Println("Data encoded and saved to ", filename)
 	return nil
 }
 

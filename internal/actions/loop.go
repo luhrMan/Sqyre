@@ -6,8 +6,8 @@ import (
 )
 
 type Loop struct {
-	Count          int `json:"loopcount"`
-	advancedAction     //`json:"advancedaction"`
+	Count int `json:"loopcount"`
+	advancedAction
 }
 
 func NewLoop(count int, name string, subActions []ActionInterface) *Loop {
