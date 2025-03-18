@@ -13,7 +13,7 @@ const (
 	MetaImagesPath               = ImagesPath + "meta/"
 	MaskImagesPath               = ImagesPath + "masks/"
 	CalibrationImagesPath        = ImagesPath + "calibration/"
-	DarkAndDarker                = "Dark And Darker/"
+	DarkAndDarker                = "Dark And Darker"
 
 	Scr                   = "screen"
 	Inv                   = "inventory"
