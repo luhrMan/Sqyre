@@ -9,8 +9,8 @@ import (
 )
 
 type Click struct {
-	baseAction        //`json:"baseaction"`
-	Button     string `json:"button"`
+	baseAction
+	Button string `json:"button"`
 }
 
 func NewClick(button string) *Click {

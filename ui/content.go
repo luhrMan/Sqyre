@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"Squire/internal"
 	"Squire/internal/data"
 	"log"
 	"os"
@@ -40,9 +41,11 @@ var (
 )
 
 func (u *Ui) LoadMainContent() *fyne.Container {
+	var p = internal.GetPrograms()
+
 	data.CreateItemMaps()
 	u.createDocTabs()
-	u.addMacroDocTab("Currency Testing")
+	u.addMacroDocTab((*p[data.DarkAndDarker].Macros)[0])
 	u.dt.SelectIndex(0)
 	u.createSelect()
 	u.dt.OnClosed = func(ti *container.TabItem) {
@@ -58,7 +61,7 @@ func (u *Ui) LoadMainContent() *fyne.Container {
 				layout.NewSpacer(),
 				widget.NewLabel("Macro Name:"),
 			),
-			container.NewBorder(nil, nil, nil, widget.NewButtonWithIcon("", theme.LoginIcon(), func() { u.addMacroDocTab(u.sel.Text) }), u.sel),
+			// container.NewBorder(nil, nil, nil, widget.NewButtonWithIcon("", theme.LoginIcon(), func() { u.addMacroDocTab(u.sel.Text) }), u.sel),
 		),
 		nil,
 		widget.NewSeparator(),
@@ -79,7 +82,7 @@ func (u *Ui) createSelect() {
 			log.Fatal(err)
 		}
 		for _, f := range files {
-			list = append(list, strings.TrimSuffix(f.Name(), ".json"))
+			list = append(list, strings.TrimSuffix(f.Name(), data.JSON))
 		}
 		return list
 	}
@@ -87,7 +90,7 @@ func (u *Ui) createSelect() {
 	macroList = getMacroList()
 	u.sel = xwidget.NewCompletionEntry(macroList)
 	u.sel.ActionItem = widget.NewButtonWithIcon("", theme.ViewRefreshIcon(), func() { macroList = getMacroList() })
-	u.sel.OnSubmitted = func(s string) { u.addMacroDocTab(s) }
+	// u.sel.OnSubmitted = func(s string) { u.addMacroDocTab(s) }
 	u.sel.OnChanged = func(s string) {
 		var matches []string
 		userPrefix := strings.ToLower(s)

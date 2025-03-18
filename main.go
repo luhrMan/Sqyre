@@ -15,33 +15,40 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/theme"
+	"fyne.io/fyne/v2/widget"
 	hook "github.com/robotn/gohook"
 )
 
 // var Programs = make(map[string]internal.Program)
-
+// var p internal.Programs
 func main() {
 	a := app.NewWithID("Squire")
 	a.Settings().SetTheme(theme.DarkTheme())
 	os.Setenv("FYNE_SCALE", "1.25")
-	go toggleMousePos()
+	//go toggleMousePos()
 	go failsafeHotkey()
 
 	w := a.NewWindow("Squire")
+	u := ui.InitializeUi(w)
+	// u.SetWindow(w)
+
 	p := internal.GetPrograms()
-	u := &ui.Ui{}
-	u.SetWindow(w)
-	u.SetMacroTreeMap(map[string]*ui.MacroTree{"test": &ui.MacroTree{}})
+	p[data.DarkAndDarker] = internal.NewProgram()
+	dnd := p[data.DarkAndDarker]
+	log.Println("dnd: ", dnd)
+	dnd.SerializeJsonPointsToProgram(internal.ScreenSize{2560, 1440})
+	// log.Println("Points: ", dnd.Coordinates[internal.ScreenSize{2560, 1440}].Points)
+	u.AddMacroTree("test", &ui.MacroTree{Macro: &(*dnd.Macros)[0], Tree: &widget.Tree{}})
 	u.CreateSettingsTabs()
 
 	w.SetContent(u.LoadMainContent())
-	icon, _ := fyne.LoadResourceFromPath("./internal/data/resources/images/Squire.png")
+	icon, _ := fyne.LoadResourceFromPath(data.ImagesPath + "Squire" + data.PNG)
 	w.SetIcon(icon)
 
 	w.ShowAndRun()
 
 	utils.CloseTessClient()
-	sen.GobSerializer.Encode(p, "programData")
+	sen.GobSerializer.Encode(&p, "programData")
 	log.Println(p)
 }
 

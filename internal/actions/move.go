@@ -21,7 +21,7 @@ func NewMove(x, y int) *Move {
 	}
 }
 
-func (a *Move) Execute(ctx interface{}) error {
+func (a *Move) Execute(ctx any) error {
 	//if (a.X == -1) && (a.Y == -1) {
 	if c, ok := ctx.(robotgo.Point); ok {
 		log.Printf("Moving mouse to ctx (%d, %d)", c.X, c.Y)
@@ -34,7 +34,7 @@ func (a *Move) Execute(ctx interface{}) error {
 }
 
 func (a *Move) String() string {
-	for _, s := range *data.GetPointMap() {
+	for _, s := range data.JsonPointMap() {
 		if (s.X == a.X) && (s.Y == a.Y) {
 			return fmt.Sprintf("%s Move mouse to %s", data.GetEmoji("Move"), s.Name)
 		}

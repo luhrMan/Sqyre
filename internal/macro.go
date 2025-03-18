@@ -13,10 +13,16 @@ type Macro struct {
 	Hotkey      string
 }
 
-func NewMacro(name string, root *actions.Loop, delay int, hotkey string) *Macro {
+func newRoot() *actions.Loop {
+	r := actions.NewLoop(1, "root", []actions.ActionInterface{})
+	r.UpdateBaseAction("", nil)
+	return r
+}
+
+func NewMacro(name string, delay int, hotkey string) *Macro {
 	return &Macro{
 		Name:        name,
-		Root:        root,
+		Root:        newRoot(),
 		GlobalDelay: delay,
 		Hotkey:      hotkey,
 	}
