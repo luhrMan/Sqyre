@@ -38,7 +38,7 @@ func main() {
 	w.ShowAndRun()
 
 	utils.CloseTessClient()
-	sen.GobSerializer.Encode(&p, "programData")
+	sen.GobSerializer.Encode(p, "programData")
 	log.Println(p)
 }
 
