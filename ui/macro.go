@@ -370,26 +370,7 @@ func (u *Ui) addMacroDocTab(macro internal.Macro) {
 		return
 	}
 	mt := u.mtm[macro.Name]
-	// m := &MacroTree{Macro: &macro}
 	mt.createTree()
-
-	// s, err := encoding.JsonSerializer.Decode(fp)
-	// if err != nil {
-	// 	dialog.ShowError(err, u.win)
-	// 	return
-	// }
-	// result, err := encoding.JsonSerializer.CreateActionFromMap(s.(map[string]any), nil)
-
-	// m.Macro.Root.SubActions = []actions.ActionInterface{}
-	// if s, ok := result.(*actions.Loop); ok { // fill Macro.Root / tree
-	// 	for _, sa := range s.SubActions {
-	// 		m.Macro.Root.AddSubAction(sa)
-	// 	}
-	// }
-	// if err != nil {
-	// 	fmt.Errorf("error unmarshalling tree: %v", err)
-	// }
-	// u.mtm[name] = m
 
 	t := container.NewTabItem(macro.Name, mt.Tree)
 	u.dt.Append(t)

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"Squire/internal"
 	"Squire/internal/data"
 	"Squire/ui/custom_widgets"
 	"log"
@@ -36,9 +37,16 @@ func (u *Ui) SetMacroTreeMap(mtm map[string]*MacroTree) { u.mtm = mtm }
 func (u *Ui) AddMacroTree(key string, mt *MacroTree) {
 	u.mtm[key] = mt
 	log.Println("added macro tree: ", mt, key)
+	u.addMacroDocTab(*mt.Macro)
+	u.dt.SelectIndex(0)
 }
 func (u *Ui) CreateSettingsTabs() { u.st = &settingsTabs{tabs: &container.AppTabs{}} }
-func (u *Ui) createDocTabs()      { u.dt = container.NewDocTabs() }
+func (u *Ui) CreateDocTabs() {
+	u.dt = container.NewDocTabs()
+	for _, m := range internal.GetPrograms().GetProgram(data.DarkAndDarker).Macros {
+		u.AddMacroTree(m.Name, &MacroTree{Macro: &m, Tree: &widget.Tree{}})
+	}
+}
 
 type settingsTabs struct {
 	tabs                  *container.AppTabs
