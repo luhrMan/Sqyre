@@ -3,6 +3,7 @@ package internal
 import (
 	"Squire/encoding"
 	"Squire/internal/data"
+	"encoding/gob"
 	"log"
 )
 
@@ -39,7 +40,7 @@ func GetPrograms() *Programs {
 		log.Println("p already has a value:", p)
 		return &p
 	}
-	log.Println("couldn't load programs, create fresh set")
+	log.Println("couldn't load programs, create fresh set and attempt load from gob file")
 	p = make(Programs)
 	p.InitPrograms()
 	return &p
@@ -50,11 +51,20 @@ func (p *Programs) GetProgram(name string) *Program {
 }
 
 func (p *Programs) InitPrograms() {
+	gob.Register(Programs{})
+	gob.Register(Program{})
+	gob.Register(Macro{})
+	gob.Register(ScreenSize{})
+	gob.Register(data.Coordinates{})
+	gob.Register(data.Point{})
+	gob.Register(data.SearchArea{})
+
 	err := encoding.GobSerializer.Decode("programData", p)
 	if err != nil {
 		log.Println(err)
-		p.NewProgram(data.DarkAndDarker)
-		p.GetProgram(data.DarkAndDarker).SerializeJsonPointsToProgram(ScreenSize{2560, 1440})
+		// p.NewProgram(data.DarkAndDarker)
+		// p.GetProgram(data.DarkAndDarker).Macros[0].Root.AddSubAction(actions.NewClick("left"))
+		// p.GetProgram(data.DarkAndDarker).SerializeJsonPointsToProgram(ScreenSize{2560, 1440})
 	}
 }
 func (p Program) GetMacroAtIndex(i int) Macro {
