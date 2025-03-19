@@ -12,44 +12,64 @@ var p Programs
 type Programs map[string]*Program
 
 type Program struct {
-	Macros      *[]Macro
+	Macros      []Macro
 	Items       map[string]data.Item
 	Coordinates map[ScreenSize]data.Coordinates
 }
 type ScreenSize [2]int
 
-func NewProgram() *Program {
-	return &Program{
-		Macros: &[]Macro{
-			*NewMacro("test", 30, ""),
+func (p *Programs) NewProgram(name string) {
+	(*p)[name] = &Program{
+		Macros: []Macro{
+			NewMacro("New Macro", 30, ""),
+			NewMacro("Macro 2", 30, ""),
 		},
-		Items: map[string]data.Item{},
+		Items: make(map[string]data.Item),
 		Coordinates: map[ScreenSize]data.Coordinates{
 			{2560, 1440}: {
-				Points:      map[string]data.Point{},
-				SearchAreas: map[string]data.SearchArea{},
+				Points:      make(map[string]data.Point),
+				SearchAreas: make(map[string]data.SearchArea),
 			},
 		},
 	}
 }
 
-func GetPrograms() Programs {
-	// var err error
-	if p == nil {
-		p = Programs{}
-		a, err := encoding.GobSerializer.Decode("programData")
-		if err != nil {
-			log.Println(err)
-			return p
-		}
-		if a == nil {
-			return p
-		}
-		p = a.(Programs)
-		return p
+func GetPrograms() *Programs {
+	if p != nil {
+		log.Println("p already has a value:", p)
+		return &p
 	}
-	return p
+	log.Println("couldn't load programs, create fresh set")
+	p = make(Programs)
+	p.InitPrograms()
+	return &p
 }
+
+func (p *Programs) GetProgram(name string) *Program {
+	return (*p)[name]
+}
+
+func (p *Programs) InitPrograms() {
+	err := encoding.GobSerializer.Decode("programData", p)
+	if err != nil {
+		log.Println(err)
+		p.NewProgram(data.DarkAndDarker)
+		p.GetProgram(data.DarkAndDarker).SerializeJsonPointsToProgram(ScreenSize{2560, 1440})
+	}
+}
+func (p Program) GetMacroAtIndex(i int) Macro {
+	return p.Macros[i]
+}
+
+// func DecodePrograms() Programs {
+// 	p = Programs{}
+// 	err := encoding.GobSerializer.Decode("programData", &p)
+// 	if err != nil {
+// 		log.Println(err)
+// 		return nil
+// 	}
+// 	return p
+// }
 
 // func (p *Program) GetMacros() *[]Macro {
 // 	return p.Macros

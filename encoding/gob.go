@@ -29,18 +29,18 @@ func (s *sGob) Encode(data any, filename string) error {
 	return nil
 }
 
-func (s *sGob) Decode(filename string) (any, error) {
+func (s *sGob) Decode(filename string, data any) error {
 	file, err := os.Open(filename + ".gob")
 	if err != nil {
-		return nil, fmt.Errorf("Error opening file:", err)
+		return fmt.Errorf("Error opening file:", err)
 	}
 	defer file.Close()
 
-	var data any
+	gob.Register(data)
 	decoder := gob.NewDecoder(file)
-	if err := decoder.Decode(&data); err != nil {
-		return nil, fmt.Errorf("Error decoding data: ", err)
+	if err := decoder.Decode(data); err != nil {
+		return fmt.Errorf("Error decoding data: ", err)
 	}
-
-	return data, nil
+	log.Println("Successfully decoded data: ", data)
+	return nil
 }

@@ -19,8 +19,8 @@ func newRoot() *actions.Loop {
 	return r
 }
 
-func NewMacro(name string, delay int, hotkey string) *Macro {
-	return &Macro{
+func NewMacro(name string, delay int, hotkey string) Macro {
+	return Macro{
 		Name:        name,
 		Root:        newRoot(),
 		GlobalDelay: delay,

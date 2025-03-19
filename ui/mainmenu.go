@@ -61,7 +61,7 @@ func (u *Ui) createMainMenu() *fyne.MainMenu {
 	})
 
 	calibrationMenu := fyne.NewMenu("Calibration", fyne.NewMenuItem("Calibrate Everything", func() {
-		data.CalibrateInventorySearchboxes((internal.GetPrograms())[data.DarkAndDarker].Coordinates[internal.ScreenSize{data.MainMonitorSize.X, data.MainMonitorSize.Y}])
+		data.CalibrateInventorySearchboxes((*internal.GetPrograms())[data.DarkAndDarker].Coordinates[internal.ScreenSize{data.MainMonitorSize.X, data.MainMonitorSize.Y}])
 		u.st.boundImageSearchAreaSelect.SetOptions(*data.GetSearchAreaMapKeys(*data.GetSearchAreaMap()))
 	}))
 
