@@ -38,7 +38,6 @@ func (u *Ui) AddMacroTree(key string, mt *MacroTree) {
 	u.mtm[key] = mt
 	log.Println("added macro tree: ", mt, key)
 	u.addMacroDocTab(*mt.Macro)
-	u.dt.SelectIndex(0)
 }
 func (u *Ui) CreateSettingsTabs() { u.st = &settingsTabs{tabs: &container.AppTabs{}} }
 func (u *Ui) CreateDocTabs() {
@@ -46,6 +45,7 @@ func (u *Ui) CreateDocTabs() {
 	for _, m := range internal.GetPrograms().GetProgram(data.DarkAndDarker).Macros {
 		u.AddMacroTree(m.Name, &MacroTree{Macro: &m, Tree: &widget.Tree{}})
 	}
+	u.dt.SelectIndex(0)
 }
 
 type settingsTabs struct {

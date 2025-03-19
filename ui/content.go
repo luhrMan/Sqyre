@@ -40,8 +40,6 @@ var (
 )
 
 func (u *Ui) LoadMainContent() *fyne.Container {
-	// var p = *internal.GetPrograms()
-
 	data.CreateItemMaps()
 	u.createSelect()
 	u.dt.OnClosed = func(ti *container.TabItem) {

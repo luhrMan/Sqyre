@@ -36,7 +36,8 @@ func (s *sGob) Decode(filename string, data any) error {
 	}
 	defer file.Close()
 
-	gob.Register(data)
+	// gob.Register(data)
+
 	decoder := gob.NewDecoder(file)
 	if err := decoder.Decode(data); err != nil {
 		return fmt.Errorf("Error decoding data: ", err)

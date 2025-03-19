@@ -20,36 +20,12 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-// func newProgram() {
-// 	ss := make(map[[2]int]ScreenSize)
-// 	pm := make(map[string]data.Point)
-// 	sam := make(map[string]data.SearchArea)
-// 	ss[[2]int{10, 10}] = ScreenSize{
-// 		Points:      &pm,
-// 		SearchAreas: &sam,
-// 	}
-
-// 	p := &Program{
-// 		Macros:     &[]Macro{},
-// 		Items:      &map[string]data.Item{},
-// 		ScreenSize: &ss,
-// 	}
-// 	programs["Dark and Darker"] = *p
-// 	log.Println(programs["Dark and Darker"].Macros)
-// }
-
 type MacroTree struct {
 	Macro *internal.Macro
 	Tree  *widget.Tree
 
 	boundMacroName binding.String
 }
-
-// func NewMacroTree() MacroTree {
-// 	m := MacroTree{}
-// 	m.createTree()
-// 	return m
-// }
 
 func (m *MacroTree) moveNodeUp(selectedUID string) {
 	node := m.findNode(m.Macro.Root, selectedUID)
@@ -112,21 +88,7 @@ func (m *MacroTree) findNode(node actions.ActionInterface, uid string) actions.A
 	return nil
 }
 
-// func (m *MacroTree) ExecuteActionTree(ctx ...interface{}) { //error
-// 	err := m.Macro.Root.Execute(ctx)
-// 	if err != nil {
-// 		log.Println(err)
-// 		return
-// 	}
-// }
-
 func (m *MacroTree) createTree() {
-	// macro := NewMacro()
-	// m.Macro.Root = actions.NewLoop(1, "root", []actions.ActionInterface{})
-	// m.Macro.Root.SetUID("")
-
-	// m.Tree = &widget.Tree{}
-
 	m.Tree.ChildUIDs = func(uid string) []string {
 		node := m.findNode(m.Macro.Root, uid)
 		if node == nil {
@@ -363,9 +325,9 @@ func (u *Ui) selectedMacroTab() *MacroTree {
 
 func (u *Ui) addMacroDocTab(macro internal.Macro) {
 	// fp := savedMacrosPath + name
-	log.Println("macro: ", macro)
-	log.Println("macro tree map: ", u.mtm)
-	log.Println("macro tree: ", u.mtm[macro.Name])
+	// log.Println("macro: ", macro)
+	// log.Println("macro tree map: ", u.mtm)
+	// log.Println("macro tree: ", u.mtm[macro.Name])
 	if _, ok := u.mtm[macro.Name]; !ok {
 		return
 	}
