@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"Squire/internal"
 	"Squire/internal/data"
 	"log"
 	"os"
@@ -41,12 +40,9 @@ var (
 )
 
 func (u *Ui) LoadMainContent() *fyne.Container {
-	var p = internal.GetPrograms()
+	// var p = *internal.GetPrograms()
 
 	data.CreateItemMaps()
-	u.createDocTabs()
-	u.addMacroDocTab((*p[data.DarkAndDarker].Macros)[0])
-	u.dt.SelectIndex(0)
 	u.createSelect()
 	u.dt.OnClosed = func(ti *container.TabItem) {
 		delete(u.mtm, ti.Text)
