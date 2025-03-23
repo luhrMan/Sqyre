@@ -2,17 +2,12 @@ package ui
 
 import (
 	"Squire/internal/data"
-	"log"
-	"os"
-	"strings"
 
 	_ "fyne.io/x/fyne/widget"
-	xwidget "fyne.io/x/fyne/widget"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/layout"
-	"fyne.io/fyne/v2/theme"
 	widget "fyne.io/fyne/v2/widget"
 )
 
@@ -35,6 +30,7 @@ var (
 	xSplit             int
 	ySplit             int
 	imageSearchTargets = data.Items.GetItemsMapAsBool()
+	ocrName            string
 	ocrTarget          string
 	ocrSearchBox       string
 )
@@ -65,39 +61,4 @@ func (u *Ui) LoadMainContent() *fyne.Container {
 	mainLayout := container.NewBorder(nil, nil, u.st.tabs, nil, macroLayout)
 
 	return mainLayout
-}
-func (u *Ui) createSelect() {
-	var macroList []string
-
-	getMacroList := func() []string {
-		var list []string
-		files, err := os.ReadDir(savedMacrosPath)
-		if err != nil {
-			log.Fatal(err)
-		}
-		for _, f := range files {
-			list = append(list, strings.TrimSuffix(f.Name(), data.JSON))
-		}
-		return list
-	}
-
-	macroList = getMacroList()
-	u.sel = xwidget.NewCompletionEntry(macroList)
-	u.sel.ActionItem = widget.NewButtonWithIcon("", theme.ViewRefreshIcon(), func() { macroList = getMacroList() })
-	// u.sel.OnSubmitted = func(s string) { u.addMacroDocTab(s) }
-	u.sel.OnChanged = func(s string) {
-		var matches []string
-		userPrefix := strings.ToLower(s)
-		for _, listStr := range macroList {
-			if len(listStr) < len(s) {
-				continue
-			}
-			listPrefix := strings.ToLower(listStr[:len(s)])
-			if userPrefix == listPrefix {
-				matches = append(matches, listStr)
-			}
-		}
-		u.sel.SetOptions(matches)
-		u.sel.ShowCompletion()
-	}
 }
