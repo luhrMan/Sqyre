@@ -114,18 +114,24 @@ func (u *Ui) actionSettingsTabs() {
 }
 
 func (u *Ui) bindVariables() {
+
 	// ct.boundMacroName = binding.BindString(&macroName)
 	u.st.boundGlobalDelay = binding.BindInt(&globalDelay)
 	u.st.boundGlobalDelay.AddListener(binding.NewDataListener(func() { robotgo.MouseSleep = globalDelay; robotgo.KeySleep = globalDelay }))
 	u.st.boundGlobalDelayEntry = widget.NewEntryWithData(binding.IntToString(u.st.boundGlobalDelay))
 	u.st.boundGlobalDelay.AddListener(binding.NewDataListener(func() {
-		u.selectedMacroTab().Macro.GlobalDelay = globalDelay
+		if macro := mtmtm(); macro != nil {
+			macro.GlobalDelay = globalDelay
+		}
 	}))
 	u.st.boundTime = binding.BindInt(&time)
 	u.st.boundTimeEntry = widget.NewEntryWithData(binding.IntToString(u.st.boundTime))
 	u.st.boundTimeSlider = widget.NewSliderWithData(0.0, 250.0, binding.IntToFloat(u.st.boundTime))
 	u.st.boundTime.AddListener(binding.NewDataListener(func() {
-		if n, ok := u.selectedMacroTab().Macro.Root.GetAction(selectedTreeItem).(*actions.Wait); ok {
+		if macro := mtmtm(); macro != nil {
+			macro
+		}
+		if n, ok := mtm().Root.GetAction(selectedTreeItem).(*actions.Wait); ok {
 			n.Time = time
 			u.selectedMacroTab().Tree.Refresh()
 		}
