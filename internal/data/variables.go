@@ -2,6 +2,7 @@ package data
 
 import (
 	"github.com/go-vgo/robotgo"
+	"github.com/spf13/viper"
 )
 
 const (
@@ -36,6 +37,7 @@ const (
 )
 
 var (
+	ViperConfig      = viper.New()
 	MainMonitorSize  = robotgo.GetDisplayRect(0)
 	MonitorWidth     = MainMonitorSize.W
 	MonitorHeight    = MainMonitorSize.H

@@ -12,14 +12,14 @@ import (
 )
 
 type Ocr struct {
-	Target     string          `json:"texttarget"`
-	SearchArea data.SearchArea `json:"searchbox"`
-	advancedAction
+	Target          string
+	SearchArea      data.SearchArea
+	*AdvancedAction `yaml:",inline" mapstructure:",squash"`
 }
 
 func NewOcr(name string, subActions []ActionInterface, target string, searchbox data.SearchArea) *Ocr {
 	return &Ocr{
-		advancedAction: *newAdvancedAction(name, subActions),
+		AdvancedAction: newAdvancedAction(name, "ocr", subActions),
 		Target:         target,
 		SearchArea:     searchbox,
 	}

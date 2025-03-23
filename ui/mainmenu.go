@@ -4,6 +4,7 @@ import (
 	"Squire/internal"
 	"Squire/internal/actions"
 	"Squire/internal/data"
+	"log"
 	"strconv"
 
 	"fyne.io/fyne/v2"
@@ -38,7 +39,11 @@ func (u *Ui) createMainMenu() *fyne.MainMenu {
 	// 	u.getCurrentTabMacro().Tree.Refresh()
 	// }
 	basicActionsSubMenu.ChildMenu = fyne.NewMenu("",
-		fyne.NewMenuItem("Wait", func() { u.selectedMacroTab().addActionToTree(&actions.Wait{}) }),
+		fyne.NewMenuItem("Wait", func() {
+			u.selectedMacroTab().Macro.Root.AddSubAction(actions.NewWait(time))
+			u.selectedMacroTab().Tree.Refresh()
+			// u.selectedMacroTab().addActionToTree(&actions.Wait{})
+		}),
 		fyne.NewMenuItem("Mouse Move", func() { u.selectedMacroTab().addActionToTree(&actions.Move{}) }),
 		fyne.NewMenuItem("Click", func() { u.selectedMacroTab().addActionToTree(&actions.Click{}) }),
 		fyne.NewMenuItem("Key", func() { u.selectedMacroTab().addActionToTree(&actions.Key{}) }),
@@ -61,14 +66,18 @@ func (u *Ui) createMainMenu() *fyne.MainMenu {
 	})
 
 	calibrationMenu := fyne.NewMenu("Calibration", fyne.NewMenuItem("Calibrate Everything", func() {
-		data.CalibrateInventorySearchboxes((*internal.GetPrograms())[data.DarkAndDarker].Coordinates[internal.ScreenSize{data.MainMonitorSize.X, data.MainMonitorSize.Y}])
+		data.CalibrateInventorySearchboxes((*internal.GetPrograms())[data.DarkAndDarker].Coordinates["2560x1440"])
 		u.st.boundImageSearchAreaSelect.SetOptions(*data.GetSearchAreaMapKeys(*data.GetSearchAreaMap()))
 	}))
 
-	testMenu := fyne.NewMenu("Test", fyne.NewMenuItem("Add Item", func() {
-		addItemWindow()
-
-	}))
+	testMenu := fyne.NewMenu("Test",
+		fyne.NewMenuItem("Add Item", func() { addItemWindow() }),
+		fyne.NewMenuItem("print subaction UIDS", func() {
+			for _, a := range u.selectedMacroTab().Macro.Root.SubActions {
+				log.Println("UID: ", a.GetUID())
+			}
+		}),
+	)
 
 	return fyne.NewMainMenu(fyne.NewMenu("Settings", computerInfo), macroMenu, calibrationMenu, testMenu)
 }

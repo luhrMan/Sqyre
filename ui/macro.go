@@ -27,8 +27,8 @@ type MacroTree struct {
 	boundMacroName binding.String
 }
 
-func (m *MacroTree) moveNodeUp(selectedUID string) {
-	node := m.findNode(m.Macro.Root, selectedUID)
+func (mt *MacroTree) moveNodeUp(selectedUID string) {
+	node := mt.findNode(mt.Macro.Root, selectedUID)
 	if node == nil || node.GetParent() == nil {
 		return
 	}
@@ -44,14 +44,13 @@ func (m *MacroTree) moveNodeUp(selectedUID string) {
 
 	if index > 0 {
 		parent.GetSubActions()[index-1], parent.GetSubActions()[index] = parent.GetSubActions()[index], parent.GetSubActions()[index-1]
-		parent.RenameActions()
-		m.Tree.Select(parent.GetSubActions()[index-1].GetUID())
-		m.Tree.Refresh()
+		mt.Tree.Select(parent.GetSubActions()[index-1].GetUID())
+		mt.Tree.Refresh()
 	}
 }
 
-func (m *MacroTree) moveNodeDown(selectedUID string) {
-	node := m.findNode(m.Macro.Root, selectedUID)
+func (mt *MacroTree) moveNodeDown(selectedUID string) {
+	node := mt.findNode(mt.Macro.Root, selectedUID)
 	if node == nil || node.GetParent() == nil {
 		return
 	}
@@ -67,20 +66,18 @@ func (m *MacroTree) moveNodeDown(selectedUID string) {
 
 	if index < len(parent.GetSubActions())-1 {
 		parent.GetSubActions()[index], parent.GetSubActions()[index+1] = parent.GetSubActions()[index+1], parent.GetSubActions()[index]
-		parent.RenameActions()
-		m.Tree.Select(parent.GetSubActions()[index+1].GetUID())
-
-		m.Tree.Refresh()
+		mt.Tree.Select(parent.GetSubActions()[index+1].GetUID())
+		mt.Tree.Refresh()
 	}
 }
 
-func (m *MacroTree) findNode(node actions.ActionInterface, uid string) actions.ActionInterface {
+func (mt *MacroTree) findNode(node actions.ActionInterface, uid string) actions.ActionInterface {
 	if node.GetUID() == uid {
 		return node
 	}
 	if parent, ok := node.(actions.AdvancedActionInterface); ok {
 		for _, child := range parent.GetSubActions() {
-			if found := m.findNode(child, uid); found != nil {
+			if found := mt.findNode(child, uid); found != nil {
 				return found
 			}
 		}
@@ -88,9 +85,11 @@ func (m *MacroTree) findNode(node actions.ActionInterface, uid string) actions.A
 	return nil
 }
 
-func (m *MacroTree) createTree() {
-	m.Tree.ChildUIDs = func(uid string) []string {
-		node := m.findNode(m.Macro.Root, uid)
+func (mt *MacroTree) createTree() {
+	log.Println("Creating tree")
+	mt.Tree.ChildUIDs = func(uid string) []string {
+		node := mt.Macro.Root.GetAction(uid)
+		// node := mt.findNode(mt.Macro.Root, uid)
 		if node == nil {
 			return []string{}
 		}
@@ -106,16 +105,19 @@ func (m *MacroTree) createTree() {
 
 		return []string{}
 	}
-	m.Tree.IsBranch = func(uid string) bool {
-		node := m.findNode(m.Macro.Root, uid)
+	mt.Tree.IsBranch = func(uid string) bool {
+		node := mt.Macro.Root.GetAction(uid)
+
+		// node := mt.findNode(mt.Macro.Root, uid)
 		_, ok := node.(actions.AdvancedActionInterface)
 		return node != nil && ok
 	}
-	m.Tree.CreateNode = func(branch bool) fyne.CanvasObject {
+	mt.Tree.CreateNode = func(branch bool) fyne.CanvasObject {
 		return container.NewHBox(widget.NewLabel("Template"), layout.NewSpacer(), &widget.Button{Icon: theme.CancelIcon(), Importance: widget.DangerImportance})
 	}
-	m.Tree.UpdateNode = func(uid string, branch bool, obj fyne.CanvasObject) {
-		node := m.findNode(m.Macro.Root, uid)
+	mt.Tree.UpdateNode = func(uid string, branch bool, obj fyne.CanvasObject) {
+		// node := mt.findNode(mt.Macro.Root, uid)
+		node := mt.Macro.Root.GetAction(uid)
 		if node == nil {
 			return
 		}
@@ -127,9 +129,8 @@ func (m *MacroTree) createTree() {
 		if node.GetParent() != nil {
 			removeButton.OnTapped = func() {
 				node.GetParent().RemoveSubAction(node)
-				m.Macro.Root.RenameActions() //should figure out how to rename the whole tree from RemoveSubActions
-				m.Tree.Refresh()
-				if len(m.Macro.Root.SubActions) == 0 {
+				mt.Tree.Refresh()
+				if len(mt.Macro.Root.SubActions) == 0 {
 					selectedTreeItem = ""
 				}
 			}
@@ -180,7 +181,6 @@ func (m *MacroTree) addActionToTree(actionType actions.ActionInterface) {
 }
 
 func (u *Ui) updateTreeOnselect() {
-	//Set here, Get @ addActionToTree
 	u.selectedMacroTab().Tree.OnSelected = func(uid widget.TreeNodeID) {
 		selectedTreeItem = uid
 		switch node := u.selectedMacroTab().findNode(u.selectedMacroTab().Macro.Root, uid).(type) {
@@ -234,22 +234,42 @@ func (u *Ui) updateTreeOnselect() {
 func (u *Ui) createMacroToolbar() *widget.Toolbar {
 	tb := widget.NewToolbar(
 		widget.NewToolbarAction(theme.ContentAddIcon(), func() {
+			var (
+				selectedNode = u.selectedMacroTab().findNode(u.selectedMacroTab().Macro.Root, selectedTreeItem)
+				action       actions.ActionInterface
+			)
 			switch u.st.tabs.Selected().Text {
 			case "Wait":
-				u.selectedMacroTab().addActionToTree(&actions.Wait{})
+				action = actions.NewWait(time)
 			case "Move":
-				u.selectedMacroTab().addActionToTree(&actions.Move{})
+				action = actions.NewMove(moveX, moveY)
 			case "Click":
-				u.selectedMacroTab().addActionToTree(&actions.Click{})
+				action = actions.NewClick(actions.LeftOrRight(button))
 			case "Key":
-				u.selectedMacroTab().addActionToTree(&actions.Key{})
+				action = actions.NewKey(key, actions.UpOrDown(state))
 			case "Loop":
-				u.selectedMacroTab().addActionToTree(&actions.Loop{})
+				action = actions.NewLoop(int(count), loopName, []actions.ActionInterface{})
 			case "Image":
-				u.selectedMacroTab().addActionToTree(&actions.ImageSearch{})
+				var t []string
+				for i, item := range imageSearchTargets {
+					if item {
+						t = append(t, i)
+					}
+				}
+				action = actions.NewImageSearch(imageSearchName, []actions.ActionInterface{}, t, *data.GetSearchArea(searchArea))
 			case "OCR":
-				u.selectedMacroTab().addActionToTree(&actions.Ocr{})
+				action = actions.NewOcr(ocrTarget, []actions.ActionInterface{}, ocrTarget, *data.GetSearchArea(ocrSearchBox))
 			}
+
+			if selectedNode == nil {
+				selectedNode = u.selectedMacroTab().Macro.Root
+			}
+			if s, ok := selectedNode.(actions.AdvancedActionInterface); ok {
+				s.AddSubAction(action)
+			} else {
+				selectedNode.GetParent().AddSubAction(action)
+			}
+			u.selectedMacroTab().Tree.Refresh()
 		}),
 		widget.NewToolbarAction(theme.ViewRefreshIcon(), func() {
 			node := u.selectedMacroTab().findNode(u.selectedMacroTab().Macro.Root, selectedTreeItem)
@@ -295,7 +315,7 @@ func (u *Ui) createMacroToolbar() *widget.Toolbar {
 		}),
 		widget.NewToolbarAction(theme.DocumentSaveIcon(), func() {
 			save := func() {
-				err := encoding.GobSerializer.Encode(u.selectedMacroTab(), u.sel.Text)
+				err := encoding.GobSerializer.Encode(u.sel.Text, u.selectedMacroTab())
 				// err := u.getCurrentTabMacro().saveTreeToJsonFile(u.sel.Text)
 				if err != nil {
 					dialog.ShowError(err, u.win)
@@ -320,18 +340,21 @@ func (u *Ui) createMacroToolbar() *widget.Toolbar {
 }
 
 func (u *Ui) selectedMacroTab() *MacroTree {
+	if len(u.dt.Items) == 0 {
+		log.Println("No tabs, selecting first macro")
+		u.addMacroDocTab(internal.GetPrograms().GetProgram(data.DarkAndDarker).Macros[0])
+		u.dt.SelectIndex(0)
+	}
 	return u.mtm[u.dt.Selected().Text]
 }
 
-func (u *Ui) addMacroDocTab(macro internal.Macro) {
-	// fp := savedMacrosPath + name
-	// log.Println("macro: ", macro)
-	// log.Println("macro tree map: ", u.mtm)
-	// log.Println("macro tree: ", u.mtm[macro.Name])
+func (u *Ui) addMacroDocTab(macro *internal.Macro) {
+	u.AddMacroTree(macro.Name, &MacroTree{Macro: macro, Tree: &widget.Tree{}})
 	if _, ok := u.mtm[macro.Name]; !ok {
 		return
 	}
 	mt := u.mtm[macro.Name]
+
 	mt.createTree()
 
 	t := container.NewTabItem(macro.Name, mt.Tree)

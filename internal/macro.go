@@ -1,28 +1,26 @@
 package internal
 
 import (
+	"Squire/encoding"
 	"Squire/internal/actions"
+	"Squire/internal/data"
 	"log"
+	"strconv"
+
+	"github.com/spf13/viper"
 )
 
 type Macro struct {
-	Name string
-
+	Name        string
 	Root        *actions.Loop
 	GlobalDelay int
 	Hotkey      string
 }
 
-func newRoot() *actions.Loop {
-	r := actions.NewLoop(1, "root", []actions.ActionInterface{})
-	r.UpdateBaseAction("", nil)
-	return r
-}
-
-func NewMacro(name string, delay int, hotkey string) Macro {
-	return Macro{
+func NewMacro(name string, delay int, hotkey string) *Macro {
+	return &Macro{
 		Name:        name,
-		Root:        newRoot(),
+		Root:        actions.NewLoop(1, "root", []actions.ActionInterface{}),
 		GlobalDelay: delay,
 		Hotkey:      hotkey,
 	}
@@ -38,4 +36,20 @@ func (m *Macro) ExecuteActionTree(ctx ...any) { //error
 		log.Println(err)
 		return
 	}
+}
+
+func (m *Macro) UnmarshalMacro(i int) error {
+	log.Println("Unmarshalling macro")
+	err := data.ViperConfig.UnmarshalKey(
+		"programs"+"."+
+			data.DarkAndDarker+"."+
+			"macros"+"."+
+			strconv.Itoa(i), &m,
+		viper.DecodeHook(encoding.MacroDecodeHookFunc()),
+	)
+	if err != nil {
+		log.Println("Error unmarshalling macro:")
+		return err
+	}
+	return nil
 }

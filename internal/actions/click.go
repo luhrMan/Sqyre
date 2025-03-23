@@ -9,13 +9,13 @@ import (
 )
 
 type Click struct {
-	baseAction
-	Button string `json:"button"`
+	*BaseAction `yaml:",inline" mapstructure:",squash"`
+	Button      string
 }
 
 func NewClick(button string) *Click {
 	return &Click{
-		baseAction: newBaseAction(),
+		BaseAction: newBaseAction("click"),
 		Button:     button,
 	}
 }

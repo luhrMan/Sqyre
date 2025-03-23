@@ -1,7 +1,7 @@
 package main
 
 import (
-	sen "Squire/encoding"
+	"Squire/encoding"
 	"Squire/internal"
 	"Squire/internal/data"
 	"Squire/internal/utils"
@@ -25,9 +25,14 @@ func main() {
 	//go toggleMousePos()
 	go failsafeHotkey()
 
+	data.ViperConfig.AddConfigPath(".")
+	data.ViperConfig.SetConfigName("config")
+	data.ViperConfig.SetConfigType("yaml")
+	data.ViperConfig.ReadInConfig()
+
 	w := a.NewWindow("Squire")
 	u := ui.InitializeUi(w)
-	p := internal.GetPrograms()
+	internal.GetPrograms().InitPrograms()
 	u.CreateSettingsTabs()
 	u.CreateDocTabs()
 
@@ -38,8 +43,11 @@ func main() {
 	w.ShowAndRun()
 
 	utils.CloseTessClient()
-	sen.GobSerializer.Encode(p, "programData")
-	log.Println(p)
+
+	err := encoding.ViperSerializer.Encode(internal.GetPrograms())
+	if err != nil {
+		log.Println(err)
+	}
 }
 
 func failsafeHotkey() {
