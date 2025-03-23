@@ -19,32 +19,33 @@ import (
 )
 
 func main() {
-	a := app.NewWithID("Squire")
-	a.Settings().SetTheme(theme.DarkTheme())
-	os.Setenv("FYNE_SCALE", "1.25")
-	//go toggleMousePos()
 	go failsafeHotkey()
-
+	//go toggleMousePos()
 	data.ViperConfig.AddConfigPath(".")
 	data.ViperConfig.SetConfigName("config")
 	data.ViperConfig.SetConfigType("yaml")
-	data.ViperConfig.ReadInConfig()
+	err := data.ViperConfig.ReadInConfig()
+	if err != nil {
+		log.Println(err)
+	}
+
+	a := app.NewWithID("Squire")
+	a.Settings().SetTheme(theme.DarkTheme())
+	os.Setenv("FYNE_SCALE", "1.25")
 
 	w := a.NewWindow("Squire")
 	u := ui.InitializeUi(w)
 	internal.GetPrograms().InitPrograms()
-	u.CreateSettingsTabs()
-	u.CreateDocTabs()
+	u.SetCurrentProgram(data.DarkAndDarker)
+	u.ConstructUi()
 
-	w.SetContent(u.LoadMainContent())
 	icon, _ := fyne.LoadResourceFromPath(data.ImagesPath + "Squire" + data.PNG)
 	w.SetIcon(icon)
-
 	w.ShowAndRun()
 
 	utils.CloseTessClient()
 
-	err := encoding.ViperSerializer.Encode(internal.GetPrograms())
+	err = encoding.ViperSerializer.Encode(internal.GetPrograms())
 	if err != nil {
 		log.Println(err)
 	}

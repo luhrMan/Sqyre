@@ -17,8 +17,8 @@ type SearchArea struct {
 
 type Point struct {
 	Name string
-	X    int `yaml:"x"`
-	Y    int `yaml:"y"`
+	X    int
+	Y    int
 }
 
 type Coordinates struct {
