@@ -1,21 +1,19 @@
 package ui
 
 import (
+	"Squire/internal"
 	"Squire/internal/data"
 	"Squire/ui/custom_widgets"
-	"log"
-	"os"
 	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/data/binding"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	widget "fyne.io/fyne/v2/widget"
 	xwidget "fyne.io/x/fyne/widget"
 )
-
-var savedMacrosPath = data.ResourcePath + "saved-macros/"
 
 type Ui struct {
 	win fyne.Window
@@ -25,37 +23,59 @@ type Ui struct {
 
 	dt *container.DocTabs
 	st *settingsTabs
+
+	p *internal.Program
 }
 
 func InitializeUi(w fyne.Window) *Ui {
 	return &Ui{
 		win: w,
-		mtm: map[string]*MacroTree{},
+		mtm: map[string]*MacroTree{"init": {Macro: &internal.Macro{Name: "init "}, Tree: &widget.Tree{}}},
 	}
 }
 
+func (u *Ui) ConstructUi() {
+	u.createSettingsTabs()
+	u.createDocTabs()
+	u.createSelect()
+	u.actionSettingsTabs()
+	data.CreateItemMaps()
+	u.win.SetMainMenu(u.createMainMenu())
+	u.win.SetContent(u.constructMainLayout())
+}
+
+func (u *Ui) constructMainLayout() *fyne.Container {
+	macroLayout := container.NewBorder(
+		container.NewGridWithColumns(2,
+			container.NewHBox(
+				u.createMacroToolbar(),
+				layout.NewSpacer(),
+				widget.NewLabel("Macro Name:"),
+			),
+			container.NewBorder(nil, nil, nil, widget.NewButtonWithIcon("", theme.LoginIcon(), func() { u.addMacroDocTab(u.p.GetMacroByName(u.sel.Text)) }), u.sel),
+		),
+		nil,
+		widget.NewSeparator(),
+		nil,
+		u.dt,
+	)
+	mainLayout := container.NewBorder(nil, nil, u.st.tabs, nil, macroLayout)
+
+	return mainLayout
+}
+
 func (u *Ui) SetWindow(w fyne.Window)                { u.win = w }
+func (u *Ui) SetCurrentProgram(s string)             { u.p = internal.GetPrograms().GetProgram(s) }
 func (u *Ui) AddMacroTree(key string, mt *MacroTree) { u.mtm[key] = mt }
-func (u *Ui) CreateSettingsTabs()                    { u.st = &settingsTabs{tabs: &container.AppTabs{}} }
+func (u *Ui) createSettingsTabs()                    { u.st = &settingsTabs{tabs: &container.AppTabs{}} }
 func (u *Ui) createSelect() {
 	var macroList []string
-
-	getMacroList := func() []string {
-		var list []string
-		files, err := os.ReadDir(savedMacrosPath)
-		if err != nil {
-			log.Fatal(err)
-		}
-		for _, f := range files {
-			list = append(list, strings.TrimSuffix(f.Name(), data.JSON))
-		}
-		return list
+	for _, m := range u.p.Macros {
+		macroList = append(macroList, m.Name)
 	}
-
-	macroList = getMacroList()
 	u.sel = xwidget.NewCompletionEntry(macroList)
-	u.sel.ActionItem = widget.NewButtonWithIcon("", theme.ViewRefreshIcon(), func() { macroList = getMacroList() })
-	// u.sel.OnSubmitted = func(s string) { u.addMacroDocTab(s) }
+	// u.sel.ActionItem = widget.NewButtonWithIcon("", theme.ViewRefreshIcon(), func() { macroList = getMacroList() })
+	u.sel.OnSubmitted = func(s string) { u.addMacroDocTab(u.p.GetMacroByName(s)) }
 	u.sel.OnChanged = func(s string) {
 		var matches []string
 		userPrefix := strings.ToLower(s)
