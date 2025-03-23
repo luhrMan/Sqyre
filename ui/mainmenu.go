@@ -28,30 +28,25 @@ func (u *Ui) createMainMenu() *fyne.MainMenu {
 		basicActionsSubMenu,
 		advancedActionsSubMenu,
 	)
-	// newAction := func(action actions.ActionInterface) {
-	// 	a := u.getCurrentTabMacro().Macro.Root.GetAction(selectedTreeItem)
-	// 	if aa, ok := a.(actions.AdvancedActionInterface); ok {
-	// 		aa.AddSubAction(action)
-	// 		u.getCurrentTabMacro().Tree.Refresh()
-	// 		return
-	// 	}
-	// 	a.GetParent().AddSubAction(action)
-	// 	u.getCurrentTabMacro().Tree.Refresh()
-	// }
-	basicActionsSubMenu.ChildMenu = fyne.NewMenu("",
-		fyne.NewMenuItem("Wait", func() {
-			u.selectedMacroTab().Macro.Root.AddSubAction(actions.NewWait(time))
+	addActionAndRefresh :=
+		func(a actions.ActionInterface) {
+			u.selectedMacroTab().Macro.Root.AddSubAction(a)
 			u.selectedMacroTab().Tree.Refresh()
-			// u.selectedMacroTab().addActionToTree(&actions.Wait{})
-		}),
-		fyne.NewMenuItem("Mouse Move", func() { u.selectedMacroTab().addActionToTree(&actions.Move{}) }),
-		fyne.NewMenuItem("Click", func() { u.selectedMacroTab().addActionToTree(&actions.Click{}) }),
-		fyne.NewMenuItem("Key", func() { u.selectedMacroTab().addActionToTree(&actions.Key{}) }),
+		}
+	basicActionsSubMenu.ChildMenu = fyne.NewMenu("",
+		fyne.NewMenuItem("Wait", func() { addActionAndRefresh(actions.NewWait(time)) }),
+		fyne.NewMenuItem("Mouse Move", func() { addActionAndRefresh(actions.NewMove(moveX, moveY)) }),
+		fyne.NewMenuItem("Click", func() { addActionAndRefresh(actions.NewClick(actions.LeftOrRight(button))) }),
+		fyne.NewMenuItem("Key", func() { addActionAndRefresh(actions.NewKey(key, actions.UpOrDown(state))) }),
 	)
 	advancedActionsSubMenu.ChildMenu = fyne.NewMenu("",
-		fyne.NewMenuItem("Loop", func() { u.selectedMacroTab().addActionToTree(&actions.Loop{}) }),
-		fyne.NewMenuItem("Image Search", func() { u.selectedMacroTab().addActionToTree(&actions.ImageSearch{}) }),
-		fyne.NewMenuItem("OCR", func() { u.selectedMacroTab().addActionToTree(&actions.Ocr{}) }),
+		fyne.NewMenuItem("Loop", func() { addActionAndRefresh(actions.NewLoop(count, loopName, []actions.ActionInterface{})) }),
+		fyne.NewMenuItem("Image Search", func() {
+			addActionAndRefresh(actions.NewImageSearch(imageSearchName, []actions.ActionInterface{}, []string{}, *data.GetSearchArea(searchArea)))
+		}),
+		fyne.NewMenuItem("OCR", func() {
+			addActionAndRefresh(actions.NewOcr(ocrName, []actions.ActionInterface{}, ocrTarget, *data.GetSearchArea(ocrSearchBox)))
+		}),
 	)
 
 	computerInfo := fyne.NewMenuItem("Computer info", func() {
