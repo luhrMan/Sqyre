@@ -1,33 +1,27 @@
 package internal
 
 import (
-	"Squire/encoding"
 	"Squire/internal/data"
-	"encoding/gob"
 	"log"
+	"strconv"
 )
 
-var p Programs
+var programs = &Programs{}
 
-// type Name string
 type Programs map[string]*Program
 
 type Program struct {
-	Macros      []Macro
+	Macros      []*Macro
 	Items       map[string]data.Item
-	Coordinates map[ScreenSize]data.Coordinates
+	Coordinates map[string]data.Coordinates
 }
-type ScreenSize [2]int
 
-func (p *Programs) NewProgram(name string) {
-	(*p)[name] = &Program{
-		Macros: []Macro{
-			NewMacro("New Macro", 30, ""),
-			NewMacro("Macro 2", 30, ""),
-		},
-		Items: make(map[string]data.Item),
-		Coordinates: map[ScreenSize]data.Coordinates{
-			{2560, 1440}: {
+func NewProgram() *Program {
+	return &Program{
+		Macros: []*Macro{},
+		Items:  make(map[string]data.Item),
+		Coordinates: map[string]data.Coordinates{
+			"2560x1440": {
 				Points:      make(map[string]data.Point),
 				SearchAreas: make(map[string]data.SearchArea),
 			},
@@ -35,69 +29,35 @@ func (p *Programs) NewProgram(name string) {
 	}
 }
 
-func GetPrograms() *Programs {
-	if p != nil {
-		log.Println("p already has a value:", p)
-		return &p
-	}
-	log.Println("couldn't load programs, create fresh set and attempt load from gob file")
-	p = make(Programs)
-	p.InitPrograms()
-	return &p
-}
-
-func (p *Programs) GetProgram(name string) *Program {
-	return (*p)[name]
-}
+func GetPrograms() *Programs                        { return programs }
+func (p *Programs) GetProgram(name string) *Program { return (*p)[name] }
+func (p *Program) GetMacroAtIndex(i int) *Macro     { return p.Macros[i] }
 
 func (p *Programs) InitPrograms() {
-	gob.Register(Programs{})
-	gob.Register(Program{})
-	gob.Register(Macro{})
-	gob.Register(ScreenSize{})
-	gob.Register(data.Coordinates{})
-	gob.Register(data.Point{})
-	gob.Register(data.SearchArea{})
-
-	err := encoding.GobSerializer.Decode("programData", p)
-	if err != nil {
-		log.Println(err)
-		// p.NewProgram(data.DarkAndDarker)
-		// p.GetProgram(data.DarkAndDarker).Macros[0].Root.AddSubAction(actions.NewClick("left"))
-		// p.GetProgram(data.DarkAndDarker).SerializeJsonPointsToProgram(ScreenSize{2560, 1440})
+	(*p)[data.DarkAndDarker] = NewProgram()
+	macros := data.ViperConfig.GetStringSlice("programs" + "." + data.DarkAndDarker + "." + "macros")
+	for i := range macros {
+		p.GetProgram(data.DarkAndDarker).Macros = append(p.GetProgram(data.DarkAndDarker).Macros, NewMacro("New Macro "+strconv.Itoa(i), 30, ""))
+		err := p.GetProgram(data.DarkAndDarker).GetMacroAtIndex(i).UnmarshalMacro(i)
+		if err != nil {
+			log.Println(err)
+		}
 	}
 }
-func (p Program) GetMacroAtIndex(i int) Macro {
-	return p.Macros[i]
-}
 
-// func DecodePrograms() Programs {
-// 	p = Programs{}
-// 	err := encoding.GobSerializer.Decode("programData", &p)
-// 	if err != nil {
-// 		log.Println(err)
-// 		return nil
-// 	}
-// 	return p
-// }
-
-// func (p *Program) GetMacros() *[]Macro {
-// 	return p.Macros
-// }
-
-func (p *Program) AddProgramPoint(ss ScreenSize, point data.Point) {
+func (p *Program) AddProgramPoint(ss string, point data.Point) {
 	c := p.Coordinates
 	points := c[ss].Points
 	points[point.Name] = point
 }
-func (p *Program) SerializeJsonPointsToProgram(ss ScreenSize) {
+func (p *Program) SerializeJsonPointsToProgram(ss string) {
 	jpm := data.JsonPointMap()
 	for _, point := range jpm {
 		p.AddProgramPoint(ss, point)
 	}
 }
 
-func (p *Program) AddProgramSearchArea(ss ScreenSize, sa data.SearchArea) {
+func (p *Program) AddProgramSearchArea(ss string, sa data.SearchArea) {
 	c := p.Coordinates
 	sas := c[ss].SearchAreas
 	sas[sa.Name] = sa

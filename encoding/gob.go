@@ -1,6 +1,7 @@
 package encoding
 
 import (
+	"Squire/internal/data"
 	"encoding/gob"
 	"fmt"
 	"log"
@@ -11,37 +12,35 @@ type sGob struct {
 	serializer
 }
 
-func (s *sGob) Encode(data any, filename string) error {
-	filename += ".gob"
+func (s *sGob) Encode(filename string, d any) error {
+	filename += data.GOB
 	file, err := os.Create(filename)
 	if err != nil {
-		fmt.Errorf("Error creating file: ", err)
-		return err
+		return fmt.Errorf("error creating file: %w", err)
 	}
 	defer file.Close()
 
 	encoder := gob.NewEncoder(file)
-	if err := encoder.Encode(data); err != nil {
-		fmt.Errorf("Error encoding data:", err)
-		return err
+	if err := encoder.Encode(&d); err != nil {
+		return fmt.Errorf("error encoding data: %w", err)
 	}
 	log.Println("Data encoded and saved to ", filename)
 	return nil
 }
 
-func (s *sGob) Decode(filename string, data any) error {
-	file, err := os.Open(filename + ".gob")
+func (s *sGob) Decode(filename string, d any) error {
+	file, err := os.Open(filename + data.GOB)
 	if err != nil {
-		return fmt.Errorf("Error opening file:", err)
+		return fmt.Errorf("error opening file: %w", err)
 	}
 	defer file.Close()
-
-	// gob.Register(data)
-
+	log.Println("file: ", &file)
 	decoder := gob.NewDecoder(file)
-	if err := decoder.Decode(data); err != nil {
-		return fmt.Errorf("Error decoding data: ", err)
+	log.Printf("data type: %T", d)
+
+	if err := decoder.Decode(&d); err != nil {
+		return fmt.Errorf("error decoding data: %w", err)
 	}
-	log.Println("Successfully decoded data: ", data)
+	log.Println("Successfully decoded data: ", d)
 	return nil
 }

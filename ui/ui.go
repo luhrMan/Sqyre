@@ -4,7 +4,6 @@ import (
 	"Squire/internal"
 	"Squire/internal/data"
 	"Squire/ui/custom_widgets"
-	"log"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -32,18 +31,13 @@ func InitializeUi(w fyne.Window) *Ui {
 	}
 }
 
-func (u *Ui) SetWindow(w fyne.Window)                   { u.win = w }
-func (u *Ui) SetMacroTreeMap(mtm map[string]*MacroTree) { u.mtm = mtm }
-func (u *Ui) AddMacroTree(key string, mt *MacroTree) {
-	u.mtm[key] = mt
-	log.Println("added macro tree: ", mt, key)
-	u.addMacroDocTab(*mt.Macro)
-}
-func (u *Ui) CreateSettingsTabs() { u.st = &settingsTabs{tabs: &container.AppTabs{}} }
+func (u *Ui) SetWindow(w fyne.Window)                { u.win = w }
+func (u *Ui) AddMacroTree(key string, mt *MacroTree) { u.mtm[key] = mt }
+func (u *Ui) CreateSettingsTabs()                    { u.st = &settingsTabs{tabs: &container.AppTabs{}} }
 func (u *Ui) CreateDocTabs() {
 	u.dt = container.NewDocTabs()
 	for _, m := range internal.GetPrograms().GetProgram(data.DarkAndDarker).Macros {
-		u.AddMacroTree(m.Name, &MacroTree{Macro: &m, Tree: &widget.Tree{}})
+		u.addMacroDocTab(m)
 	}
 	u.dt.SelectIndex(0)
 }
