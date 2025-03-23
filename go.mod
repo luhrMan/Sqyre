@@ -8,8 +8,11 @@ require (
 	fyne.io/fyne/v2 v2.5.3
 	fyne.io/x/fyne v0.0.0-20250106132206-3228f6c50107
 	github.com/go-vgo/robotgo v1.0.0-rc2.1
+	github.com/go-viper/mapstructure/v2 v2.2.1
+	github.com/google/uuid v1.6.0
 	github.com/otiai10/gosseract/v2 v2.4.1
 	github.com/robotn/gohook v0.41.0
+	github.com/spf13/viper v1.20.0
 	gocv.io/x/gocv v0.40.0
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -32,10 +35,7 @@ require (
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/go-text/render v0.2.0 // indirect
 	github.com/go-text/typesetting v0.2.1 // indirect
-	github.com/go-viper/mapstructure/v2 v2.2.1 // indirect
-	github.com/goccy/go-yaml v1.16.0 // indirect
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/gopherjs/gopherjs v1.17.2 // indirect
 	github.com/jeandeaual/go-locale v0.0.0-20241217141322-fcc2cadd6f08 // indirect
 	github.com/jezek/xgb v1.1.1 // indirect
@@ -58,7 +58,6 @@ require (
 	github.com/spf13/afero v1.12.0 // indirect
 	github.com/spf13/cast v1.7.1 // indirect
 	github.com/spf13/pflag v1.0.6 // indirect
-	github.com/spf13/viper v1.20.0 // indirect
 	github.com/srwiley/oksvg v0.0.0-20221011165216-be6e8873101c // indirect
 	github.com/srwiley/rasterx v0.0.0-20220730225603-2ab79fcdd4ef // indirect
 	github.com/stretchr/testify v1.10.0 // indirect

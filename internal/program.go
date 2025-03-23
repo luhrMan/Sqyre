@@ -32,6 +32,14 @@ func NewProgram() *Program {
 func GetPrograms() *Programs                        { return programs }
 func (p *Programs) GetProgram(name string) *Program { return (*p)[name] }
 func (p *Program) GetMacroAtIndex(i int) *Macro     { return p.Macros[i] }
+func (p *Program) GetMacroByName(s string) *Macro {
+	for _, m := range p.Macros {
+		if m.Name == s {
+			return m
+		}
+	}
+	return nil
+}
 
 func (p *Programs) InitPrograms() {
 	(*p)[data.DarkAndDarker] = NewProgram()

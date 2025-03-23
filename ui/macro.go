@@ -29,11 +29,11 @@ type MacroTree struct {
 
 func (mt *MacroTree) moveNode(selectedUID string, up bool) {
 	node := mt.Macro.Root.GetAction(selectedUID)
-	parent := node.GetParent()
-	if node == nil || parent == nil {
+	if node == nil || node.GetParent() == nil {
 		return
 	}
 
+	parent := node.GetParent()
 	psa := parent.GetSubActions()
 	index := -1
 	for i, child := range psa {

@@ -9,8 +9,9 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-func (u *Ui) CreateDocTabs() {
+func (u *Ui) createDocTabs() {
 	u.dt = container.NewDocTabs()
+	u.dt.OnClosed = func(ti *container.TabItem) { delete(u.mtm, ti.Text) }
 	for _, m := range internal.GetPrograms().GetProgram(data.DarkAndDarker).Macros {
 		u.addMacroDocTab(m)
 	}
