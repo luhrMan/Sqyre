@@ -1,14 +1,14 @@
 package actions
 
-type advancedAction struct {
-	baseAction
-	Name       string            `json:"name"`
-	SubActions []ActionInterface `json:"subactions"`
+type AdvancedAction struct {
+	*BaseAction `yaml:",inline" mapstructure:",squash"`
+	Name        string
+	SubActions  []ActionInterface `yaml:",omitempty" mapstructure:",omitempty"`
 }
 
-func newAdvancedAction(name string, subActions []ActionInterface) *advancedAction {
-	return &advancedAction{
-		baseAction: newBaseAction(),
+func newAdvancedAction(name, t string, subActions []ActionInterface) *AdvancedAction {
+	return &AdvancedAction{
+		BaseAction: newBaseAction(t),
 		Name:       name,
 		SubActions: subActions,
 	}

@@ -8,17 +8,17 @@ import (
 )
 
 type SearchArea struct {
-	Name    string `json:"name"`
-	LeftX   int    `json:"x1"`
-	TopY    int    `json:"y1"`
-	RightX  int    `json:"x2"`
-	BottomY int    `json:"y2"`
+	Name    string
+	LeftX   int
+	TopY    int
+	RightX  int
+	BottomY int
 }
 
 type Point struct {
-	Name string `json:"name"`
-	X    int    `json:"x"`
-	Y    int    `json:"y"`
+	Name string
+	X    int `yaml:"x"`
+	Y    int `yaml:"y"`
 }
 
 type Coordinates struct {

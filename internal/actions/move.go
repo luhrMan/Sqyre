@@ -9,13 +9,13 @@ import (
 )
 
 type Move struct {
-	baseAction
-	X, Y int
+	*BaseAction `yaml:",inline" mapstructure:",squash"`
+	X, Y        int
 }
 
 func NewMove(x, y int) *Move {
 	return &Move{
-		baseAction: newBaseAction(),
+		BaseAction: newBaseAction("move"),
 		X:          x,
 		Y:          y,
 	}
@@ -23,13 +23,13 @@ func NewMove(x, y int) *Move {
 
 func (a *Move) Execute(ctx any) error {
 	//if (a.X == -1) && (a.Y == -1) {
-	if c, ok := ctx.(robotgo.Point); ok {
-		log.Printf("Moving mouse to ctx (%d, %d)", c.X, c.Y)
-		robotgo.Move(c.X+data.XOffset+25, c.Y+data.YOffset+25)
-	} else {
-		log.Printf("Moving mouse to (%d, %d)", a.X, a.Y)
-		robotgo.Move(a.X+data.XOffset, a.Y+data.YOffset)
-	}
+	// if c, ok := ctx.(robotgo.Point); ok {
+	// 	log.Printf("Moving mouse to ctx (%d, %d)", c.X, c.Y)
+	// 	robotgo.Move(c.X+data.XOffset+25, c.Y+data.YOffset+25)
+	// } else {
+	log.Printf("Moving mouse to (%d, %d)", a.X, a.Y)
+	robotgo.Move(a.X+data.XOffset, a.Y+data.YOffset)
+	// }
 	return nil
 }
 

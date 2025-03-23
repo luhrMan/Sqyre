@@ -7,7 +7,7 @@ import (
 )
 
 type ISerializer interface {
-	Encode(any, string) error
+	Encode(string, any) error
 	Decode(string) (map[string]any, error)
 	CreateActionFromMap(map[string]any, actions.AdvancedActionInterface) (actions.ActionInterface, error)
 }
@@ -17,92 +17,57 @@ type serializer struct {
 }
 
 var (
-	GobSerializer  = sGob{}
-	JsonSerializer = sJson{}
-	Serializer     = serializer{}.iSerializer
+	GobSerializer   = sGob{}
+	JsonSerializer  = sJson{}
+	YamlSerializer  = sYaml{}
+	ViperSerializer = sViper{}
+	Serializer      = serializer{}.iSerializer
 )
 
 func (s *serializer) CreateActionFromMap(rawMap map[string]any, parent actions.AdvancedActionInterface) (actions.ActionInterface, error) {
-	log.Println(rawMap)
 	var action actions.ActionInterface
-	// if parent != nil {
-
-	// } else {
-	// 	rawMap["name"] != nil:
-	// 	parent.SetName()
-	// }
-	switch {
-	case rawMap["loopcount"] != nil:
-		action = actions.NewLoop(int(rawMap["loopcount"].(float64)), "", []actions.ActionInterface{})
-	case rawMap["waittime"] != nil:
-		action = actions.NewWait(int(rawMap["waittime"].(float64)))
-	case rawMap["button"] != nil:
+	switch rawMap["type"] {
+	case "loop":
+		action = actions.NewLoop(rawMap["count"].(int), rawMap["name"].(string), []actions.ActionInterface{})
+	case "wait":
+		action = actions.NewWait(rawMap["time"].(int))
+	case "click":
 		action = actions.NewClick(rawMap["button"].(string))
-	case rawMap["X"] != nil && rawMap["Y"] != nil:
-		action = actions.NewMove(int(rawMap["X"].(float64)), int(rawMap["Y"].(float64)))
-	case rawMap["key"] != nil:
+	case "move":
+		action = actions.NewMove(rawMap["x"].(int), rawMap["y"].(int))
+	case "key":
 		action = actions.NewKey(rawMap["key"].(string), rawMap["state"].(string))
-	case rawMap["imagetargets"] != nil:
+	case "imagesearch":
 		targets := make([]string, 0)
-		for _, t := range rawMap["imagetargets"].([]any) {
+		for _, t := range rawMap["targets"].([]any) {
 			targets = append(targets, t.(string))
 		}
-		action = actions.NewImageSearch("", []actions.ActionInterface{}, targets, createSearchBox(rawMap["searchbox"].(map[string]interface{})))
-	case rawMap["texttarget"] != nil:
-		action = actions.NewOcr("", []actions.ActionInterface{}, rawMap["texttarget"].(string), createSearchBox(rawMap["searchbox"].(map[string]interface{})))
-	default:
-		//action = &actions.advancedAction{}
+		action = actions.NewImageSearch(rawMap["name"].(string), []actions.ActionInterface{}, targets, createSearchBox(rawMap["searcharea"].(map[string]any)))
+	case "ocr":
+		action = actions.NewOcr(rawMap["name"].(string), []actions.ActionInterface{}, rawMap["target"].(string), createSearchBox(rawMap["searcharea"].(map[string]any)))
 	}
-	// if advActMap, ok := rawMap["advancedaction"].(map[string]interface{}); ok {
-	// 	if baseActionMap, ok := advActMap["baseaction"].(map[string]interface{}); ok {
-	// 		uid := baseActionMap["uid"].(string)
-	// 		action.UpdateBaseAction(uid, parent)
-	// 	}
-	// }
-	// Set baseAction
-	if baseActionMap, ok := rawMap["baseaction"].(map[string]any); ok {
-		uid := baseActionMap["uid"].(string)
-		action.UpdateBaseAction(uid, parent)
-	}
-	if uid, ok := rawMap["uid"].(string); ok {
-		action.SetUID(uid)
-	}
-	// Handle advancedAction fields
+	action.SetParent(parent)
 	if advAction, ok := action.(actions.AdvancedActionInterface); ok {
-		log.Println("Advanced Action unmarshal")
-		if name, ok := rawMap["name"].(string); ok {
-			advAction.SetName(name)
-		}
-
-		if subActionsRaw, ok := rawMap["subactions"].([]interface{}); ok {
-			log.Println("SubActions unmarshal")
-			// var subActionList []actions.ActionInterface
+		if subActionsRaw, ok := rawMap["subactions"].([]any); ok {
 			for _, subActionRaw := range subActionsRaw {
-				subAction, err := s.CreateActionFromMap(subActionRaw.(map[string]interface{}), advAction)
+				subAction, err := s.CreateActionFromMap(subActionRaw.(map[string]any), advAction)
 				if err != nil {
 					return nil, err
 				}
 				advAction.AddSubAction(subAction)
-				//				log.Println(subAction.GetParent())
-
-				// subActionList = append(subActionList, subAction)
 			}
-			//updateTree(&tree, root)
-			// for _, sa := range subActionList {
-			// 	advAction.AddSubAction(sa)
-			// }
 		}
 	}
 	log.Printf("Unmarshalled action %s", action)
 	return action, nil
 }
 
-func createSearchBox(rawMap map[string]interface{}) data.SearchArea {
+func createSearchBox(rawMap map[string]any) data.SearchArea {
 	return data.SearchArea{
 		Name:    rawMap["name"].(string),
-		LeftX:   int(rawMap["x1"].(float64)),
-		TopY:    int(rawMap["y1"].(float64)),
-		RightX:  int(rawMap["x2"].(float64)),
-		BottomY: int(rawMap["y2"].(float64)),
+		LeftX:   rawMap["leftx"].(int),
+		TopY:    rawMap["topy"].(int),
+		RightX:  rawMap["rightx"].(int),
+		BottomY: rawMap["bottomy"].(int),
 	}
 }

@@ -1,6 +1,7 @@
 package encoding
 
 import (
+	"Squire/internal/data"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -11,12 +12,12 @@ type sJson struct {
 	serializer
 }
 
-func (s *sJson) Encode(data any, filename string) error {
-	filename += ".json"
+func (s *sJson) Encode(filename string, d any) error {
+	filename += data.JSON
 	if filename == "" {
 		return fmt.Errorf("cannot save empty filename")
 	}
-	jsonData, err := json.MarshalIndent(data, "", "\t")
+	jsonData, err := json.MarshalIndent(d, "", "\t")
 	if err != nil {
 		return fmt.Errorf("error marshalling tree: %v", err)
 	}
@@ -28,7 +29,7 @@ func (s *sJson) Encode(data any, filename string) error {
 }
 
 func (s *sJson) Decode(filename string) (any, error) {
-	filename += ".json"
+	filename += data.JSON
 	log.Printf("Json Decoding: attempting to read file %v", filename)
 	jsonData, err := os.ReadFile(filename)
 	if err != nil {

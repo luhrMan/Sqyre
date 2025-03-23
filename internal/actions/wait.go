@@ -9,13 +9,13 @@ import (
 )
 
 type Wait struct {
-	baseAction
-	Time int `json:"waittime"`
+	*BaseAction `yaml:",inline" mapstructure:",squash"`
+	Time        int
 }
 
 func NewWait(time int) *Wait {
 	return &Wait{
-		baseAction: newBaseAction(),
+		BaseAction: newBaseAction("wait"),
 		Time:       time,
 	}
 }

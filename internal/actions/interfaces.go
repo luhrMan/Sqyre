@@ -15,9 +15,10 @@ type ActionInterface interface {
 	SetParent(AdvancedActionInterface)
 
 	String() string
-
-	UpdateBaseAction(uid string, parent AdvancedActionInterface)
+	GetType() string
+	// UpdateBaseAction(uid string, parent AdvancedActionInterface)
 }
+
 type AdvancedActionInterface interface {
 	ActionInterface
 
@@ -26,26 +27,28 @@ type AdvancedActionInterface interface {
 
 	GetAction(string) ActionInterface
 	GetSubActions() []ActionInterface
+	SetSubActions([]ActionInterface)
 	AddSubAction(ActionInterface)
 	RemoveSubAction(ActionInterface)
-	RenameActions()
 }
 
-func (a *baseAction) UpdateBaseAction(uid string, parent AdvancedActionInterface) {
-	a.SetUID(uid)
-	a.SetParent(parent)
-}
-func (a *baseAction) GetUID() string                           { return a.UID }
-func (a *baseAction) SetUID(uid string)                        { a.UID = uid }
-func (a *baseAction) GetParent() AdvancedActionInterface       { return a.Parent }
-func (a *baseAction) SetParent(action AdvancedActionInterface) { a.Parent = action }
-func (a *baseAction) Execute(ctx any) error                    { return nil }
-func (a *baseAction) String() string                           { return "This is a baseAction" }
-func (a *advancedAction) GetName() string                      { return a.Name }
-func (a *advancedAction) SetName(name string)                  { a.Name = name }
-func (a *advancedAction) GetSubActions() []ActionInterface     { return a.SubActions }
+//	func (a *BaseAction) UpdateBaseAction(uid string, parent AdvancedActionInterface) {
+//		a.SetUID(uid)
+//		a.SetParent(parent)
+//	}
+func (a *BaseAction) GetType() string                          { return a.Type }
+func (a *BaseAction) GetUID() string                           { return a.uid }
+func (a *BaseAction) SetUID(uid string)                        { a.uid = uid }
+func (a *BaseAction) GetParent() AdvancedActionInterface       { return a.Parent }
+func (a *BaseAction) SetParent(action AdvancedActionInterface) { a.Parent = action }
+func (a *BaseAction) Execute(ctx any) error                    { return nil }
+func (a *BaseAction) String() string                           { return "This is a baseAction" }
+func (a *AdvancedAction) GetName() string                      { return a.Name }
+func (a *AdvancedAction) SetName(name string)                  { a.Name = name }
+func (a *AdvancedAction) GetSubActions() []ActionInterface     { return a.SubActions }
+func (a *AdvancedAction) SetSubActions(sa []ActionInterface)   { a.SubActions = sa }
 
-func (a *advancedAction) GetAction(uid string) ActionInterface {
+func (a *AdvancedAction) GetAction(uid string) ActionInterface {
 	if a.GetUID() == uid {
 		return a
 	}
@@ -63,40 +66,29 @@ func (a *advancedAction) GetAction(uid string) ActionInterface {
 	return nil
 }
 
-func (a *advancedAction) AddSubAction(action ActionInterface) {
-	actionNum := len(a.GetSubActions()) + 1
-	uid := fmt.Sprintf("%s.%d", a.GetUID(), actionNum)
-	action.UpdateBaseAction(uid, a)
-
+func (a *AdvancedAction) AddSubAction(action ActionInterface) {
+	action.SetParent(a)
 	a.SubActions = append(a.SubActions, action)
-	log.Printf("Added new action: %v %s", uid, action.String())
+	log.Printf("Added new action: %s to parent: %v", action.String(), a.Name)
 }
 
-func (a *advancedAction) RemoveSubAction(action ActionInterface) {
+func (a *AdvancedAction) RemoveSubAction(action ActionInterface) {
 	for i, c := range a.SubActions {
 		if c == action {
 			a.SubActions = append(a.SubActions[:i], a.SubActions[i+1:]...)
 			log.Printf("Removing %s", action.GetUID())
-			a.RenameActions()
+			return
 		}
 	}
 }
 
-func (a *advancedAction) RenameActions() {
-	for i, child := range a.SubActions {
-		if n, ok := child.(AdvancedActionInterface); ok {
-			n.RenameActions()
-		}
-		child.SetUID(fmt.Sprintf("%s.%d", a.UID, i+1))
-	}
-}
-
-func (a *advancedAction) Execute(ctx any) error {
+func (a *AdvancedAction) Execute(ctx any) error {
 	log.Printf("Executing %s", a.Name)
-
 	for _, c := range a.SubActions {
 		c.Execute(ctx)
 	}
 	return nil
 }
-func (a *advancedAction) String() string { return "This is an Advanced Action" }
+func (a *AdvancedAction) String() string { return fmt.Sprintf("Advanced Action: %v", a.Type) }
+
+func (a *AdvancedAction) GetType() string { return a.Type }

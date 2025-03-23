@@ -9,14 +9,14 @@ import (
 )
 
 type Key struct {
-	baseAction
-	Key   string `json:"key"`
-	State string `json:"state"`
+	*BaseAction `yaml:",inline" mapstructure:",squash"`
+	Key         string
+	State       string
 }
 
 func NewKey(key, state string) *Key {
 	return &Key{
-		baseAction: newBaseAction(),
+		BaseAction: newBaseAction("key"),
 		Key:        key,
 		State:      state,
 	}

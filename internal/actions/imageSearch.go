@@ -14,20 +14,21 @@ import (
 )
 
 type ImageSearch struct {
-	Targets    []string        `json:"imagetargets"`
-	SearchArea data.SearchArea `json:"searchbox"`
-	advancedAction
+	Targets         []string
+	SearchArea      data.SearchArea
+	*AdvancedAction `yaml:",inline" mapstructure:",squash"`
 }
 
 func NewImageSearch(name string, subActions []ActionInterface, targets []string, searchbox data.SearchArea) *ImageSearch {
 	return &ImageSearch{
-		advancedAction: *newAdvancedAction(name, subActions),
+		AdvancedAction: newAdvancedAction(name, "imagesearch", subActions),
 		Targets:        targets,
 		SearchArea:     searchbox,
 	}
 }
 
 func (a *ImageSearch) Execute(ctx any) error {
+	// sa := data.ViperConfig.Get("")
 	sa := data.GetSearchArea(a.SearchArea.Name)
 	w := sa.RightX - sa.LeftX
 	h := sa.BottomY - sa.TopY
