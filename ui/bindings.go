@@ -22,7 +22,7 @@ func (u *Ui) bindVariables() {
 	u.st.boundTimeEntry = widget.NewEntryWithData(binding.IntToString(u.st.boundTime))
 	u.st.boundTimeSlider = widget.NewSliderWithData(0.0, 250.0, binding.IntToFloat(u.st.boundTime))
 	u.st.boundTime.AddListener(binding.NewDataListener(func() {
-		if n, ok := u.selectedMacroTab().findNode(u.selectedMacroTab().Macro.Root, selectedTreeItem).(*actions.Wait); ok {
+		if n, ok := u.selectedMacroTab().Macro.Root.GetAction(selectedTreeItem).(*actions.Wait); ok {
 			n.Time = time
 			u.selectedMacroTab().Tree.Refresh()
 		}
@@ -40,13 +40,13 @@ func (u *Ui) bindVariables() {
 		u.st.boundMoveY.Set(data.GetPoint(s).Y)
 	})
 	u.st.boundMoveX.AddListener(binding.NewDataListener(func() {
-		if n, ok := u.selectedMacroTab().findNode(u.selectedMacroTab().Macro.Root, selectedTreeItem).(*actions.Move); ok {
+		if n, ok := u.selectedMacroTab().Macro.Root.GetAction(selectedTreeItem).(*actions.Move); ok {
 			n.X = moveX
 			u.selectedMacroTab().Tree.Refresh()
 		}
 	}))
 	u.st.boundMoveY.AddListener(binding.NewDataListener(func() {
-		if n, ok := u.selectedMacroTab().findNode(u.selectedMacroTab().Macro.Root, selectedTreeItem).(*actions.Move); ok {
+		if n, ok := u.selectedMacroTab().Macro.Root.GetAction(selectedTreeItem).(*actions.Move); ok {
 			n.Y = moveY
 			u.selectedMacroTab().Tree.Refresh()
 		}
@@ -54,7 +54,7 @@ func (u *Ui) bindVariables() {
 	u.st.boundButton = binding.BindBool(&button)
 	u.st.boundButtonToggle = custom_widgets.NewToggleWithData(u.st.boundButton)
 	u.st.boundButton.AddListener(binding.NewDataListener(func() {
-		if n, ok := u.selectedMacroTab().findNode(u.selectedMacroTab().Macro.Root, selectedTreeItem).(*actions.Click); ok {
+		if n, ok := u.selectedMacroTab().Macro.Root.GetAction(selectedTreeItem).(*actions.Click); ok {
 			n.Button = actions.LeftOrRight(button)
 			u.selectedMacroTab().Tree.Refresh()
 		}
@@ -64,13 +64,13 @@ func (u *Ui) bindVariables() {
 	u.st.boundState = binding.BindBool(&state)
 	u.st.boundStateToggle = custom_widgets.NewToggleWithData(u.st.boundState)
 	u.st.boundKey.AddListener(binding.NewDataListener(func() {
-		if n, ok := u.selectedMacroTab().findNode(u.selectedMacroTab().Macro.Root, selectedTreeItem).(*actions.Key); ok {
+		if n, ok := u.selectedMacroTab().Macro.Root.GetAction(selectedTreeItem).(*actions.Key); ok {
 			n.Key = key
 			u.selectedMacroTab().Tree.Refresh()
 		}
 	}))
 	u.st.boundState.AddListener(binding.NewDataListener(func() {
-		if n, ok := u.selectedMacroTab().findNode(u.selectedMacroTab().Macro.Root, selectedTreeItem).(*actions.Key); ok {
+		if n, ok := u.selectedMacroTab().Macro.Root.GetAction(selectedTreeItem).(*actions.Key); ok {
 			n.State = actions.UpOrDown(state)
 			u.selectedMacroTab().Tree.Refresh()
 		}
@@ -81,13 +81,13 @@ func (u *Ui) bindVariables() {
 	u.st.boundCountSlider = widget.NewSliderWithData(1, 10, binding.IntToFloat(u.st.boundCount))
 	u.st.boundCountLabel = widget.NewLabelWithData(binding.IntToString(u.st.boundCount))
 	u.st.boundLoopName.AddListener(binding.NewDataListener(func() {
-		if n, ok := u.selectedMacroTab().findNode(u.selectedMacroTab().Macro.Root, selectedTreeItem).(*actions.Loop); ok {
+		if n, ok := u.selectedMacroTab().Macro.Root.GetAction(selectedTreeItem).(*actions.Loop); ok {
 			n.Name = loopName
 			u.selectedMacroTab().Tree.Refresh()
 		}
 	}))
 	u.st.boundCount.AddListener(binding.NewDataListener(func() {
-		if n, ok := u.selectedMacroTab().findNode(u.selectedMacroTab().Macro.Root, selectedTreeItem).(*actions.Loop); ok {
+		if n, ok := u.selectedMacroTab().Macro.Root.GetAction(selectedTreeItem).(*actions.Loop); ok {
 			n.Count = count
 			u.selectedMacroTab().Tree.Refresh()
 		}
@@ -102,13 +102,13 @@ func (u *Ui) bindVariables() {
 	u.st.boundXSplitSlider = widget.NewSliderWithData(0, 50, binding.IntToFloat(u.st.boundXSplit))
 	u.st.boundXSplitEntry = widget.NewEntryWithData(binding.IntToString(u.st.boundXSplit))
 	u.st.boundImageSearchName.AddListener(binding.NewDataListener(func() {
-		if n, ok := u.selectedMacroTab().findNode(u.selectedMacroTab().Macro.Root, selectedTreeItem).(*actions.ImageSearch); ok {
+		if n, ok := u.selectedMacroTab().Macro.Root.GetAction(selectedTreeItem).(*actions.ImageSearch); ok {
 			n.Name = imageSearchName
 			u.selectedMacroTab().Tree.Refresh()
 		}
 	}))
 	u.st.boundImageSearchArea.AddListener(binding.NewDataListener(func() {
-		if n, ok := u.selectedMacroTab().findNode(u.selectedMacroTab().Macro.Root, selectedTreeItem).(*actions.ImageSearch); ok {
+		if n, ok := u.selectedMacroTab().Macro.Root.GetAction(selectedTreeItem).(*actions.ImageSearch); ok {
 			n.SearchArea = *data.GetSearchArea(searchArea)
 			u.selectedMacroTab().Tree.Refresh()
 		}
