@@ -27,7 +27,36 @@ type MacroTree struct {
 	boundMacroName binding.String
 }
 
+func (u *Ui) GetMacroTabMacroTree() *MacroTree {
+	mt, err := u.selectedMacroTab()
+	if err != nil {
+		log.Println(err)
+		return nil
+	}
+	if mt == nil {
+		log.Println("MacroTree is nil")
+		return nil
+	}
+	return mt
+}
+func (u *Ui) GetMacroTabMacroTreeMacro() *internal.Macro {
+	mt := u.GetMacroTabMacroTree()
+	if mt == nil {
+		return nil
+	}
+	if mt.Macro == nil {
+		log.Println("MacroTree Macro is nil")
+		return nil
+	}
+	return mt.Macro
+}
+
 func (mt *MacroTree) moveNode(selectedUID string, up bool) {
+
+	if mt == nil {
+		return
+	}
+
 	node := mt.Macro.Root.GetAction(selectedUID)
 	if node == nil || node.GetParent() == nil {
 		return
@@ -159,9 +188,17 @@ func (u *Ui) createMacroToolbar() *widget.Toolbar {
 	tb := widget.NewToolbar(
 		widget.NewToolbarAction(theme.ContentAddIcon(), func() {
 			var (
-				selectedNode = u.selectedMacroTab().Macro.Root.GetAction(selectedTreeItem)
-				action       actions.ActionInterface
+				// selectedNode, err = u.selectedMacroTab().Macro.Root.GetAction(selectedTreeItem)
+				action actions.ActionInterface
 			)
+			mt, err := u.selectedMacroTab()
+			if err != nil {
+				log.Println(err)
+				return
+			}
+			if mt.Macro.Root.GetAction(selectedTreeItem) == nil {
+
+			}
 			switch u.st.tabs.Selected().Text {
 			case "Wait":
 				action = actions.NewWait(time)
@@ -222,6 +259,9 @@ func (u *Ui) createMacroToolbar() *widget.Toolbar {
 		widget.NewToolbarSpacer(),
 		widget.NewToolbarSeparator(),
 		widget.NewToolbarAction(theme.RadioButtonIcon(), func() {
+			if u.selectedMacroTab() == nil {
+				return
+			}
 			u.selectedMacroTab().Tree.UnselectAll()
 			selectedTreeItem = ""
 		}),

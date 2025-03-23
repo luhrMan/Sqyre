@@ -18,8 +18,8 @@ import (
 type Ui struct {
 	win fyne.Window
 
-	mtm map[string]*MacroTree
-	sel *xwidget.CompletionEntry
+	mtMap map[string]*MacroTree
+	sel   *xwidget.CompletionEntry
 
 	dt *container.DocTabs
 	st *settingsTabs
@@ -29,8 +29,8 @@ type Ui struct {
 
 func InitializeUi(w fyne.Window) *Ui {
 	return &Ui{
-		win: w,
-		mtm: map[string]*MacroTree{"init": {Macro: &internal.Macro{Name: "init "}, Tree: &widget.Tree{}}},
+		win:   w,
+		mtMap: map[string]*MacroTree{},
 	}
 }
 
@@ -66,7 +66,7 @@ func (u *Ui) constructMainLayout() *fyne.Container {
 
 func (u *Ui) SetWindow(w fyne.Window)                { u.win = w }
 func (u *Ui) SetCurrentProgram(s string)             { u.p = internal.GetPrograms().GetProgram(s) }
-func (u *Ui) AddMacroTree(key string, mt *MacroTree) { u.mtm[key] = mt }
+func (u *Ui) AddMacroTree(key string, mt *MacroTree) { u.mtMap[key] = mt }
 func (u *Ui) createSettingsTabs()                    { u.st = &settingsTabs{tabs: &container.AppTabs{}} }
 func (u *Ui) createSelect() {
 	var macroList []string
