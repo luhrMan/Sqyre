@@ -34,10 +34,10 @@ func main() {
 	os.Setenv("FYNE_SCALE", "1.25")
 
 	w := a.NewWindow("Squire")
-	u := ui.InitializeUi(w)
+	ui.InitializeUi(w)
 	internal.GetPrograms().InitPrograms()
-	u.SetCurrentProgram(data.DarkAndDarker)
-	u.ConstructUi()
+	ui.GetUi().SetCurrentProgram(data.DarkAndDarker)
+	ui.GetUi().ConstructUi()
 
 	icon, _ := fyne.LoadResourceFromPath(data.ImagesPath + "Squire" + data.PNG)
 	w.SetIcon(icon)
