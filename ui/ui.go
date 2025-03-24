@@ -15,6 +15,8 @@ import (
 	xwidget "fyne.io/x/fyne/widget"
 )
 
+var ui *Ui
+
 type Ui struct {
 	win fyne.Window
 
@@ -27,11 +29,16 @@ type Ui struct {
 	p *internal.Program
 }
 
+func GetUi() *Ui {
+	return ui
+}
+
 func InitializeUi(w fyne.Window) *Ui {
-	return &Ui{
+	ui = &Ui{
 		win:   w,
 		mtMap: map[string]*MacroTree{},
 	}
+	return ui
 }
 
 func (u *Ui) ConstructUi() {
