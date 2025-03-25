@@ -1,7 +1,7 @@
 package encoding
 
 import (
-	"Squire/internal/data"
+	"Squire/internal/config"
 	"fmt"
 	"log"
 	"os"
@@ -14,7 +14,7 @@ type sYaml struct {
 }
 
 func (s *sYaml) Encode(filename string, d any) error {
-	filename += data.YAML
+	filename += config.YAML
 	if filename == "" {
 		return fmt.Errorf("cannot save empty filename")
 	}
@@ -34,13 +34,13 @@ func (s *sYaml) Encode(filename string, d any) error {
 }
 
 func (s *sYaml) Decode(filename string, d any) error {
-	filename += data.YAML
-	log.Printf(data.YAML+" decoding: attempting to read file %v", filename)
+	filename += config.YAML
+	log.Printf(config.YAML+" decoding: attempting to read file %v", filename)
 	yamlData, err := os.ReadFile(filename)
 	if err != nil {
 		return fmt.Errorf("error reading file: %v", err)
 	}
-	log.Printf("data type: %T", d)
+	log.Printf("config type: %T", d)
 
 	err = yaml.Unmarshal(yamlData, &d)
 	if err != nil {

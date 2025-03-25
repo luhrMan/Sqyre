@@ -1,9 +1,9 @@
-package internal
+package macro
 
 import (
 	"Squire/encoding"
-	"Squire/internal/actions"
-	"Squire/internal/data"
+	"Squire/internal/config"
+	"Squire/internal/programs/actions"
 	"log"
 	"strconv"
 
@@ -40,9 +40,9 @@ func (m *Macro) ExecuteActionTree(ctx ...any) { //error
 
 func (m *Macro) UnmarshalMacro(i int) error {
 	log.Println("Unmarshalling macro")
-	err := data.ViperConfig.UnmarshalKey(
+	err := config.ViperConfig.UnmarshalKey(
 		"programs"+"."+
-			data.DarkAndDarker+"."+
+			config.DarkAndDarker+"."+
 			"macros"+"."+
 			strconv.Itoa(i), &m,
 		viper.DecodeHook(encoding.MacroDecodeHookFunc()),

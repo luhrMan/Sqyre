@@ -1,8 +1,8 @@
 package encoding
 
 import (
-	"Squire/internal/actions"
-	"Squire/internal/data"
+	"Squire/internal/config"
+	"Squire/internal/programs/actions"
 	"fmt"
 	"log"
 	"reflect"
@@ -15,8 +15,8 @@ type sViper struct {
 }
 
 func (s *sViper) Encode(d any) error {
-	data.ViperConfig.Set("programs", d)
-	err := data.ViperConfig.WriteConfig()
+	config.ViperConfig.Set("programs", d)
+	err := config.ViperConfig.WriteConfig()
 	if err != nil {
 		return fmt.Errorf("error marshalling tree: %v", err)
 	}
@@ -25,7 +25,7 @@ func (s *sViper) Encode(d any) error {
 }
 
 func (s *sViper) Decode(filename string, d any) error {
-	err := data.ViperConfig.Unmarshal(&d)
+	err := config.ViperConfig.Unmarshal(&d)
 	if err != nil {
 		return fmt.Errorf("error unmarhsalling yaml file: %v", err)
 	}

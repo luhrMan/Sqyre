@@ -1,7 +1,7 @@
 package actions
 
 import (
-	"Squire/internal/data"
+	"Squire/internal/config"
 	"fmt"
 	"log"
 
@@ -27,5 +27,5 @@ func (a *Wait) Execute(ctx any) error {
 }
 
 func (a *Wait) String() string {
-	return fmt.Sprintf("%s Wait for %d ms", data.GetEmoji("Wait"), a.Time)
+	return fmt.Sprintf("%s Wait for %d ms", config.GetEmoji("Wait"), a.Time)
 }
