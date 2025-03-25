@@ -1,7 +1,8 @@
 package actions
 
 import (
-	"Squire/internal/data"
+	"Squire/internal/config"
+	"Squire/internal/programs/coordinates"
 	"Squire/internal/utils"
 	"fmt"
 	"image"
@@ -13,11 +14,11 @@ import (
 
 type Ocr struct {
 	Target          string
-	SearchArea      data.SearchArea
+	SearchArea      coordinates.SearchArea
 	*AdvancedAction `yaml:",inline" mapstructure:",squash"`
 }
 
-func NewOcr(name string, subActions []ActionInterface, target string, searchbox data.SearchArea) *Ocr {
+func NewOcr(name string, subActions []ActionInterface, target string, searchbox coordinates.SearchArea) *Ocr {
 	return &Ocr{
 		AdvancedAction: newAdvancedAction(name, "ocr", subActions),
 		Target:         target,
@@ -26,7 +27,7 @@ func NewOcr(name string, subActions []ActionInterface, target string, searchbox 
 }
 
 func (a *Ocr) Execute(ctx any) error {
-	log.Printf("%s OCR search | %s in X1:%d Y1:%d X2:%d Y2:%d", data.GetEmoji("OCR"), a.Target, a.SearchArea.LeftX, a.SearchArea.TopY, a.SearchArea.RightX, a.SearchArea.BottomY)
+	log.Printf("%s OCR search | %s in X1:%d Y1:%d X2:%d Y2:%d", config.GetEmoji("OCR"), a.Target, a.SearchArea.LeftX, a.SearchArea.TopY, a.SearchArea.RightX, a.SearchArea.BottomY)
 	var (
 		img       image.Image
 		err       error
@@ -36,7 +37,7 @@ func (a *Ocr) Execute(ctx any) error {
 	h := a.SearchArea.BottomY - a.SearchArea.TopY
 	ppOptions := utils.PreprocessOptions{MinThreshold: 50}
 	if a.SearchArea.Name == "Item Description" {
-		img, err = data.ItemDescriptionLocation()
+		img, err = coordinates.ItemDescriptionLocation()
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -75,5 +76,5 @@ func (a *Ocr) Execute(ctx any) error {
 }
 
 func (a *Ocr) String() string {
-	return fmt.Sprintf("%s OCR search for `%s` in `%s`", data.GetEmoji("OCR"), a.Target, a.SearchArea.Name)
+	return fmt.Sprintf("%s OCR search for `%s` in `%s`", config.GetEmoji("OCR"), a.Target, a.SearchArea.Name)
 }

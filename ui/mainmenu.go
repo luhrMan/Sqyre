@@ -1,9 +1,10 @@
 package ui
 
 import (
-	"Squire/internal"
-	"Squire/internal/actions"
-	"Squire/internal/data"
+	"Squire/internal/config"
+	"Squire/internal/programs"
+	"Squire/internal/programs/actions"
+	"Squire/internal/programs/coordinates"
 	"log"
 	"strconv"
 
@@ -30,8 +31,13 @@ func (u *Ui) createMainMenu() *fyne.MainMenu {
 	)
 	addActionAndRefresh :=
 		func(a actions.ActionInterface) {
-			u.selectedMacroTab().Macro.Root.AddSubAction(a)
-			u.selectedMacroTab().Tree.Refresh()
+			t, err := u.GetMacroTabMacroTree()
+			if err != nil {
+				log.Println(err)
+				return
+			}
+			t.Macro.Root.AddSubAction(a)
+			t.Tree.Refresh()
 		}
 	basicActionsSubMenu.ChildMenu = fyne.NewMenu("",
 		fyne.NewMenuItem("Wait", func() { addActionAndRefresh(actions.NewWait(time)) }),
@@ -42,10 +48,15 @@ func (u *Ui) createMainMenu() *fyne.MainMenu {
 	advancedActionsSubMenu.ChildMenu = fyne.NewMenu("",
 		fyne.NewMenuItem("Loop", func() { addActionAndRefresh(actions.NewLoop(count, loopName, []actions.ActionInterface{})) }),
 		fyne.NewMenuItem("Image Search", func() {
-			addActionAndRefresh(actions.NewImageSearch(imageSearchName, []actions.ActionInterface{}, []string{}, *data.GetSearchArea(searchArea)))
+			addActionAndRefresh(
+				actions.NewImageSearch(
+					imageSearchName,
+					[]actions.ActionInterface{},
+					[]string{},
+					programs.CurrentProgramAndScreenSizeCoordinates().GetSearchArea(searchArea)))
 		}),
 		fyne.NewMenuItem("OCR", func() {
-			addActionAndRefresh(actions.NewOcr(ocrName, []actions.ActionInterface{}, ocrTarget, *data.GetSearchArea(ocrSearchBox)))
+			addActionAndRefresh(actions.NewOcr(ocrName, []actions.ActionInterface{}, ocrTarget, programs.CurrentProgramAndScreenSizeCoordinates().GetSearchArea(ocrSearchBox)))
 		}),
 	)
 
@@ -61,16 +72,16 @@ func (u *Ui) createMainMenu() *fyne.MainMenu {
 	})
 
 	calibrationMenu := fyne.NewMenu("Calibration", fyne.NewMenuItem("Calibrate Everything", func() {
-		data.CalibrateInventorySearchboxes((*internal.GetPrograms())[data.DarkAndDarker].Coordinates["2560x1440"])
-		u.st.boundImageSearchAreaSelect.SetOptions(*data.GetSearchAreaMapKeys(*data.GetSearchAreaMap()))
+		coordinates.CalibrateInventorySearchboxes((*programs.GetPrograms())[config.DarkAndDarker].Coordinates["2560x1440"])
+		u.st.boundImageSearchAreaSelect.SetOptions(programs.CurrentProgramAndScreenSizeCoordinates().GetSearchAreasAsStringSlice())
 	}))
 
 	testMenu := fyne.NewMenu("Test",
 		fyne.NewMenuItem("Add Item", func() { addItemWindow() }),
-		fyne.NewMenuItem("print subaction UIDS", func() {
-			for _, a := range u.selectedMacroTab().Macro.Root.SubActions {
-				log.Println("UID: ", a.GetUID())
-			}
+		fyne.NewMenuItem("Test string slice", func() {
+			log.Println("String Map:",
+				config.ViperConfig.Get("programs"+"."+config.DarkAndDarker+"."+"macros"),
+			)
 		}),
 	)
 

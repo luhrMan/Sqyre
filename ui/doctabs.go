@@ -1,8 +1,9 @@
 package ui
 
 import (
-	"Squire/internal"
-	"Squire/internal/data"
+	"Squire/internal/config"
+	"Squire/internal/programs"
+	"Squire/internal/programs/macro"
 	"errors"
 
 	"fyne.io/fyne/v2/container"
@@ -12,7 +13,7 @@ import (
 func (u *Ui) createDocTabs() {
 	u.dt = container.NewDocTabs()
 	u.dt.OnClosed = func(ti *container.TabItem) { delete(u.mtMap, ti.Text) }
-	for _, m := range internal.GetPrograms().GetProgram(data.DarkAndDarker).Macros {
+	for _, m := range programs.GetPrograms().GetProgram(config.DarkAndDarker).Macros {
 		u.addMacroDocTab(m)
 	}
 	u.dt.SelectIndex(0)
@@ -30,7 +31,7 @@ func (u *Ui) selectedMacroTab() (*MacroTree, error) {
 	return macroTree, nil
 }
 
-func (u *Ui) addMacroDocTab(macro *internal.Macro) {
+func (u *Ui) addMacroDocTab(macro *macro.Macro) {
 	u.AddMacroTree(macro.Name, &MacroTree{Macro: macro, Tree: &widget.Tree{}})
 	if _, ok := u.mtMap[macro.Name]; !ok {
 		return
@@ -42,6 +43,6 @@ func (u *Ui) addMacroDocTab(macro *internal.Macro) {
 	t := container.NewTabItem(macro.Name, mt.Tree)
 	u.dt.Append(t)
 	u.dt.Select(t)
-	u.updateTreeOnselect()
+	mt.updateTreeOnselect()
 	mt.Tree.Refresh()
 }

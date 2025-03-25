@@ -1,4 +1,4 @@
-package data
+package config
 
 var Emojis = map[string]string{
 	"Move":         "↔️",

@@ -1,18 +1,12 @@
 package ui
 
 import (
-	"Squire/encoding"
-	"Squire/internal"
-	"Squire/internal/actions"
-	"Squire/internal/data"
+	"Squire/internal/programs"
+	"Squire/internal/programs/actions"
+	"Squire/internal/programs/macro"
 	"errors"
 	"fmt"
 	"log"
-	"slices"
-
-	"fyne.io/fyne/v2/data/binding"
-	"fyne.io/fyne/v2/dialog"
-	"github.com/go-vgo/robotgo"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -22,10 +16,10 @@ import (
 )
 
 type MacroTree struct {
-	Macro *internal.Macro
+	Macro *macro.Macro
 	Tree  *widget.Tree
 
-	boundMacroName binding.String
+	// boundMacroName binding.String
 }
 
 func (u *Ui) GetMacroTabMacroTree() (*MacroTree, error) {
@@ -48,60 +42,7 @@ func (u *Ui) GetMacroTabMacroTree() (*MacroTree, error) {
 	return mt, nil
 }
 
-// func GetMacroTabMacroTreeMacro() (*internal.Macro, error) {
-// 	mt, err := GetMacroTabMacroTree()
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	if mt.Macro == nil {
-// 		return nil, errors.New("macroTree Macro is nil")
-// 	}
-// 	return mt.Macro, nil
-// }
-// func GetMacroTabMacroTreeMacroRoot() (*actions.Loop, error) {
-// 	m, err := GetMacroTabMacroTreeMacro()
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	if m.Root == nil {
-// 		return nil, errors.New("macroTree Macro Root is nil")
-// 	}
-// 	return m.Root, nil
-// }
-
-// func GetMacroPart(part string) (any, error) {
-// 	mt, err := GetUi().selectedMacroTab()
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	if mt == nil {
-// 		return nil, errors.New("macroTree is nil")
-// 	}
-
-// 	switch part {
-// 	case "tree":
-// 		return mt, nil
-// 	case "macro":
-// 		if mt.Macro == nil {
-// 			return nil, errors.New("macroTree Macro is nil")
-// 		}
-// 		return mt.Macro, nil
-// 	case "root":
-// 		if mt.Macro == nil || mt.Macro.Root == nil {
-// 			return nil, errors.New("macroTree Macro Root is nil")
-// 		}
-// 		return mt.Macro.Root, nil
-// 	default:
-// 		return nil, errors.New("invalid part requested")
-// 	}
-// }
-
 func (mt *MacroTree) moveNode(selectedUID string, up bool) {
-	// mt, err := GetUi().GetMacroTabMacroTree()
-	// if err != nil {
-	// 	log.Println(err)
-	// 	return
-	// }
 	node := mt.Macro.Root.GetAction(selectedUID)
 	if node == nil || node.GetParent() == nil {
 		return
@@ -260,9 +201,9 @@ func (u *Ui) createMacroToolbar() *widget.Toolbar {
 						t = append(t, i)
 					}
 				}
-				action = actions.NewImageSearch(imageSearchName, []actions.ActionInterface{}, t, *data.GetSearchArea(searchArea))
+				action = actions.NewImageSearch(imageSearchName, []actions.ActionInterface{}, t, programs.CurrentProgramAndScreenSizeCoordinates().GetSearchArea(searchArea))
 			case "OCR":
-				action = actions.NewOcr(ocrTarget, []actions.ActionInterface{}, ocrTarget, *data.GetSearchArea(ocrSearchBox))
+				action = actions.NewOcr(ocrTarget, []actions.ActionInterface{}, ocrTarget, programs.CurrentProgramAndScreenSizeCoordinates().GetSearchArea(ocrSearchBox))
 			}
 
 			if selectedNode == nil {
@@ -282,11 +223,11 @@ func (u *Ui) createMacroToolbar() *widget.Toolbar {
 				log.Println(err)
 				return
 			}
-			node := mt.Macro.Root.GetAction(selectedTreeItem)
 			if selectedTreeItem == "" {
 				log.Println("No node selected")
 				return
 			}
+			node := mt.Macro.Root.GetAction(selectedTreeItem)
 			og := node.String()
 			switch node := node.(type) {
 			case *actions.ImageSearch:
@@ -297,7 +238,7 @@ func (u *Ui) createMacroToolbar() *widget.Toolbar {
 					}
 				}
 				node.Name = imageSearchName
-				node.SearchArea = *data.GetSearchArea(searchArea)
+				node.SearchArea = programs.CurrentProgramAndScreenSizeCoordinates().GetSearchArea(searchArea)
 				node.Targets = t
 			}
 
@@ -308,47 +249,72 @@ func (u *Ui) createMacroToolbar() *widget.Toolbar {
 		widget.NewToolbarSpacer(),
 		widget.NewToolbarSeparator(),
 		widget.NewToolbarAction(theme.RadioButtonIcon(), func() {
-			if u.selectedMacroTab() == nil {
+			t, err := u.GetMacroTabMacroTree()
+			if err != nil {
+				log.Println(err)
 				return
 			}
-			u.selectedMacroTab().Tree.UnselectAll()
+			t.Tree.UnselectAll()
 			selectedTreeItem = ""
 		}),
 		widget.NewToolbarAction(theme.MoveDownIcon(), func() {
-			u.selectedMacroTab().moveNode(selectedTreeItem, false)
+			t, err := u.GetMacroTabMacroTree()
+			if err != nil {
+				log.Println(err)
+				return
+			}
+			t.moveNode(selectedTreeItem, false)
 		}),
 		widget.NewToolbarAction(theme.MoveUpIcon(), func() {
-			u.selectedMacroTab().moveNode(selectedTreeItem, true)
+			t, err := u.GetMacroTabMacroTree()
+			if err != nil {
+				log.Println(err)
+				return
+			}
+			t.moveNode(selectedTreeItem, true)
 
 		}),
 		widget.NewToolbarSeparator(),
 		widget.NewToolbarSpacer(),
 		widget.NewToolbarAction(theme.MediaPlayIcon(), func() {
-			robotgo.ActiveName("Dark And Darker")
-			u.selectedMacroTab().Macro.ExecuteActionTree()
-		}),
-		widget.NewToolbarAction(theme.DocumentSaveIcon(), func() {
-			save := func() {
-				err := encoding.GobSerializer.Encode(u.sel.Text, u.selectedMacroTab())
-				// err := u.getCurrentTabMacro().saveTreeToJsonFile(u.sel.Text)
-				if err != nil {
-					dialog.ShowError(err, u.win)
-					log.Printf("encode tree to json: %v", err)
-				} else {
-					dialog.ShowInformation("File Saved Successfully", u.sel.Text+".json"+"\nPlease refresh the list.", u.win)
-				}
+			t, err := u.GetMacroTabMacroTree()
+			if err != nil {
+				log.Println(err)
+				return
 			}
-			if slices.Contains(u.sel.Options, u.sel.Text) {
-				dialog.ShowConfirm("Overwrite existing file", "Overwrite "+u.sel.Text+"?", func(b bool) {
-					if !b {
-						return
-					}
-					save()
-				}, u.win)
-			} else {
-				save()
-			}
+			t.Macro.ExecuteActionTree()
 		}),
+		// widget.NewToolbarAction(theme.DocumentSaveIcon(), func() {
+		// 	save := func() {
+		// 		t, err := u.GetMacroTabMacroTree()
+		// 		if err != nil {
+		// 			log.Println(err)
+		// 			return
+		// 		}
+		// 		str := "programs" + "." + config.DarkAndDarker + "." + "macros"
+		// 		for _, m := range config.ViperConfig.Get(str).([]any) {
+		// 			log.Println("string slice text", m)
+		// 			log.Println("select text", u.sel.Text)
+		// 			if m.(map[string]any)["name"] == u.sel.Text {
+		// 				config.ViperConfig.Set(str+"."+"0", t.Macro)
+		// 				config.ViperConfig.WriteConfig()
+		// 				dialog.ShowInformation("Macro Saved Successfully", u.sel.Text+"\nPlease refresh the list.", u.win)
+		// 				return
+		// 			}
+		// 		}
+		// 		dialog.ShowInformation("Macro failed to save", "Macro not found in config", u.win)
+		// 	}
+		// 	if slices.Contains(u.sel.Options, u.sel.Text) {
+		// 		dialog.ShowConfirm("Overwrite existing file", "Overwrite "+u.sel.Text+"?", func(b bool) {
+		// 			if !b {
+		// 				return
+		// 			}
+		// 			save()
+		// 		}, u.win)
+		// 	} else {
+		// 		save()
+		// 	}
+		// }),
 	)
 	return tb
 }

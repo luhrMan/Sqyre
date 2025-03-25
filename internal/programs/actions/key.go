@@ -1,7 +1,7 @@
 package actions
 
 import (
-	"Squire/internal/data"
+	"Squire/internal/config"
 	"fmt"
 	"log"
 
@@ -40,7 +40,7 @@ func (a *Key) Execute(ctx any) error {
 }
 
 func (a *Key) String() string {
-	return fmt.Sprintf("%s Key: %s %s ", data.GetEmoji("Key"), a.Key, a.State)
+	return fmt.Sprintf("%s Key: %s %s ", config.GetEmoji("Key"), a.Key, a.State)
 }
 
 func UpOrDown(b bool) string {

@@ -1,0 +1,70 @@
+programs:
+    Dark And Darker:
+        macros:
+            - name: Test
+              root:
+                count: 1
+                type: loop
+                name: root
+                subactions:
+                    - type: wait
+                      time: 0
+                    - type: wait
+                      time: 0
+              globaldelay: 30
+              hotkey: ""
+            - name: New Macro 1
+              root:
+                count: 1
+                type: loop
+                name: root
+                subactions:
+                    - count: 1
+                      type: loop
+                      name: ""
+                      subactions:
+                        - type: move
+                          x: 0
+                          "y": 0
+                        - type: move
+                          x: 0
+                          "y": 0
+                    - target: ""
+                      searcharea:
+                        name: ""
+                        leftx: 0
+                        topy: 0
+                        rightx: 0
+                        bottomy: 0
+                      type: ocr
+                      name: ""
+              globaldelay: 30
+              hotkey: ""
+        items: {}
+        coordinates:
+            2560x1440:
+                points:
+                  test:
+                      name: test
+                      x: 10
+                      y: 10
+                searchareas: 
+                  test:
+                      name: test
+                      leftx: 0
+                      topy: 0
+                      rightx: 0
+                      bottomy: 0
+            1920x1080:
+                points:
+                  test:
+                      name: test
+                      x: 10
+                      y: 10
+                searchareas: 
+                  test:
+                      name: test
+                      leftx: 0
+                      topy: 0
+                      rightx: 0
+                      bottomy: 0

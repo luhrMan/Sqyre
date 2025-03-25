@@ -63,7 +63,6 @@ func (a *AdvancedAction) GetAction(uid string) ActionInterface {
 		}
 	}
 
-	log.Println("Action not found")
 	return nil
 }
 
