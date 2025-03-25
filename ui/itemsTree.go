@@ -1,7 +1,7 @@
 package ui
 
 import (
-	"Squire/internal/data"
+	"Squire/internal/assets"
 	"log"
 	"strconv"
 
@@ -15,8 +15,8 @@ import (
 func (u *Ui) createItemsCheckTree() *widget.Tree {
 	log.Println("Creating Items Check Tree")
 	var (
-		icons       = *data.BytesToFyneIcons()
-		itemsStrMap = data.Items.GetItemsMapAsStringsMap()
+		icons       = *assets.BytesToFyneIcons()
+		itemsStrMap = assets.Items.GetItemsMapAsStringsMap()
 		categories  = make([]string, 0, len(itemsStrMap))
 		tree        = &widget.Tree{}
 	)

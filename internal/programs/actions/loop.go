@@ -1,7 +1,7 @@
 package actions
 
 import (
-	"Squire/internal/data"
+	"Squire/internal/config"
 	"fmt"
 )
 
@@ -39,7 +39,7 @@ func (a *Loop) Execute(ctx any) error {
 }
 
 func (a *Loop) String() string {
-	return fmt.Sprintf("%s | %s%d", a.Name, data.GetEmoji("Loop"), a.Count)
+	return fmt.Sprintf("%s | %s%d", a.Name, config.GetEmoji("Loop"), a.Count)
 }
 
 func (a *Loop) GetType() string { return a.Type }

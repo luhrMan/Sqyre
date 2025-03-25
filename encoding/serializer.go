@@ -1,8 +1,8 @@
 package encoding
 
 import (
-	"Squire/internal/actions"
-	"Squire/internal/data"
+	"Squire/internal/programs/actions"
+	"Squire/internal/programs/coordinates"
 	"log"
 )
 
@@ -62,8 +62,8 @@ func (s *serializer) CreateActionFromMap(rawMap map[string]any, parent actions.A
 	return action, nil
 }
 
-func createSearchBox(rawMap map[string]any) data.SearchArea {
-	return data.SearchArea{
+func createSearchBox(rawMap map[string]any) coordinates.SearchArea {
+	return coordinates.SearchArea{
 		Name:    rawMap["name"].(string),
 		LeftX:   rawMap["leftx"].(int),
 		TopY:    rawMap["topy"].(int),

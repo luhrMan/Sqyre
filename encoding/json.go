@@ -1,7 +1,7 @@
 package encoding
 
 import (
-	"Squire/internal/data"
+	"Squire/internal/config"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -13,7 +13,7 @@ type sJson struct {
 }
 
 func (s *sJson) Encode(filename string, d any) error {
-	filename += data.JSON
+	filename += config.JSON
 	if filename == "" {
 		return fmt.Errorf("cannot save empty filename")
 	}
@@ -29,7 +29,7 @@ func (s *sJson) Encode(filename string, d any) error {
 }
 
 func (s *sJson) Decode(filename string) (any, error) {
-	filename += data.JSON
+	filename += config.JSON
 	log.Printf("Json Decoding: attempting to read file %v", filename)
 	jsonData, err := os.ReadFile(filename)
 	if err != nil {
@@ -88,9 +88,9 @@ func (s *sJson) Decode(filename string) (any, error) {
 // 	return err
 // }
 
-// func UnmarshalJSON(data []byte) (actions.ActionInterface, error) {
+// func UnmarshalJSON(config []byte) (actions.ActionInterface, error) {
 // 	var rawMap map[string]interface{}
-// 	err := json.Unmarshal(data, &rawMap)
+// 	err := json.Unmarshal(config, &rawMap)
 // 	if err != nil {
 // 		return nil, err
 // 	}

@@ -1,8 +1,8 @@
 package ui
 
 import (
-	"Squire/internal"
-	"Squire/internal/data"
+	"Squire/internal/assets"
+	"Squire/internal/programs"
 	"Squire/ui/custom_widgets"
 	"strings"
 
@@ -26,7 +26,7 @@ type Ui struct {
 	dt *container.DocTabs
 	st *settingsTabs
 
-	p *internal.Program
+	p *programs.Program
 }
 
 func GetUi() *Ui {
@@ -46,7 +46,7 @@ func (u *Ui) ConstructUi() {
 	u.createDocTabs()
 	u.createSelect()
 	u.actionSettingsTabs()
-	data.CreateItemMaps()
+	assets.CreateItemMaps()
 	u.win.SetMainMenu(u.createMainMenu())
 	u.win.SetContent(u.constructMainLayout())
 }
@@ -72,7 +72,7 @@ func (u *Ui) constructMainLayout() *fyne.Container {
 }
 
 func (u *Ui) SetWindow(w fyne.Window)                { u.win = w }
-func (u *Ui) SetCurrentProgram(s string)             { u.p = internal.GetPrograms().GetProgram(s) }
+func (u *Ui) SetCurrentProgram(s string)             { u.p = programs.GetPrograms().GetProgram(s) }
 func (u *Ui) AddMacroTree(key string, mt *MacroTree) { u.mtMap[key] = mt }
 func (u *Ui) createSettingsTabs()                    { u.st = &settingsTabs{tabs: &container.AppTabs{}} }
 func (u *Ui) createSelect() {

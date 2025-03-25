@@ -1,8 +1,10 @@
-package data
+package assets
 
 import (
+	"Squire/internal/programs/items"
 	"embed"
-	_ "embed"
+
+	// _ "embed"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -10,18 +12,18 @@ import (
 	"fyne.io/fyne/v2"
 )
 
-//go:embed resources/json/items.json
+//go:embed json/items.json
 var itemsEmbed []byte
 
-var Items ItemsMap
+var Items items.ItemsMap
 
-//go:embed resources/images/icons/*
+//go:embed images/icons/*
 var iconFS embed.FS
 
 var icons = make(map[string][]byte)
 
 func LoadIconBytes() (*map[string][]byte, error) {
-	dirPath := "resources/images/icons"
+	dirPath := "images/icons"
 	//        icons := make(map[string][]byte)
 	log.Printf("Loading Icon Bytes...")
 

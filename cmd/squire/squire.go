@@ -2,8 +2,8 @@ package main
 
 import (
 	"Squire/encoding"
-	"Squire/internal"
-	"Squire/internal/data"
+	"Squire/internal/config"
+	"Squire/internal/programs"
 	"Squire/internal/utils"
 	"Squire/ui"
 
@@ -21,10 +21,10 @@ import (
 func main() {
 	go failsafeHotkey()
 	//go toggleMousePos()
-	data.ViperConfig.AddConfigPath(".")
-	data.ViperConfig.SetConfigName("config")
-	data.ViperConfig.SetConfigType("yaml")
-	err := data.ViperConfig.ReadInConfig()
+	config.ViperConfig.AddConfigPath("../../internal/config")
+	config.ViperConfig.SetConfigName("config")
+	config.ViperConfig.SetConfigType("yaml")
+	err := config.ViperConfig.ReadInConfig()
 	if err != nil {
 		log.Println(err)
 	}
@@ -35,17 +35,17 @@ func main() {
 
 	w := a.NewWindow("Squire")
 	ui.InitializeUi(w)
-	internal.GetPrograms().InitPrograms()
-	ui.GetUi().SetCurrentProgram(data.DarkAndDarker)
+	programs.GetPrograms().InitPrograms()
+	ui.GetUi().SetCurrentProgram(config.DarkAndDarker)
 	ui.GetUi().ConstructUi()
 
-	icon, _ := fyne.LoadResourceFromPath(data.ImagesPath + "Squire" + data.PNG)
+	icon, _ := fyne.LoadResourceFromPath(config.ImagesPath + "Squire" + config.PNG)
 	w.SetIcon(icon)
 	w.ShowAndRun()
 
 	utils.CloseTessClient()
 
-	err = encoding.ViperSerializer.Encode(internal.GetPrograms())
+	err = encoding.ViperSerializer.Encode(programs.GetPrograms())
 	if err != nil {
 		log.Println(err)
 	}
@@ -68,7 +68,7 @@ func toggleMousePos() {
 			continue
 		}
 		locX, locY = robotgo.Location()
-		log.Println(locX-data.XOffset, locY-data.YOffset)
+		log.Println(locX-config.XOffset, locY-config.YOffset)
 		log.Println("Current title: ", robotgo.GetTitle())
 	}
 }
