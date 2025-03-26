@@ -3,9 +3,8 @@ package config
 const (
 	RootPath              string = "./"
 	InternalPath                 = RootPath + "internal/"
-	DataPath                     = InternalPath + "data/"
-	ResourcePath                 = DataPath + "resources/"
-	ImagesPath                   = ResourcePath + "images/"
+	AssetsPath                   = InternalPath + "assets/"
+	ImagesPath                   = AssetsPath + "images/"
 	MetaImagesPath               = ImagesPath + "meta/"
 	MaskImagesPath               = ImagesPath + "masks/"
 	CalibrationImagesPath        = ImagesPath + "calibration/"

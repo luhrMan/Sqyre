@@ -21,7 +21,7 @@ programs:
                 subactions:
                     - count: 1
                       type: loop
-                      name: ""
+                      name: kkjj
                       subactions:
                         - type: move
                           x: 0
@@ -29,6 +29,15 @@ programs:
                         - type: move
                           x: 0
                           "y": 0
+                        - targets: []
+                          searcharea:
+                            name: test
+                            leftx: 10
+                            topy: 10
+                            rightx: 10
+                            bottomy: 10
+                          type: imagesearch
+                          name: ""
                     - target: ""
                       searcharea:
                         name: ""
@@ -42,29 +51,19 @@ programs:
               hotkey: ""
         items: {}
         coordinates:
-            2560x1440:
-                points:
-                  test:
-                      name: test
-                      x: 10
-                      y: 10
-                searchareas: 
-                  test:
-                      name: test
-                      leftx: 0
-                      topy: 0
-                      rightx: 0
-                      bottomy: 0
             1920x1080:
                 points:
-                  test:
-                      name: test
-                      x: 10
-                      y: 10
-                searchareas: 
-                  test:
-                      name: test
-                      leftx: 0
-                      topy: 0
-                      rightx: 0
-                      bottomy: 0
+                    test:
+                        name: test
+                        x: 10
+                        "y": 10
+                searchareas:
+                    test:
+                        name: test
+                        leftx: 10
+                        topy: 10
+                        rightx: 10
+                        bottomy: 10
+            2560x1440:
+                points: {}
+                searchareas: {}

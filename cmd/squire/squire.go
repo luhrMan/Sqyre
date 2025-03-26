@@ -38,8 +38,10 @@ func main() {
 	programs.GetPrograms().InitPrograms()
 	ui.GetUi().SetCurrentProgram(config.DarkAndDarker)
 	ui.GetUi().ConstructUi()
-
-	icon, _ := fyne.LoadResourceFromPath(config.ImagesPath + "Squire" + config.PNG)
+	icon, err := fyne.LoadResourceFromPath("../../" + config.ImagesPath + "Squire" + config.PNG)
+	if err != nil {
+		log.Println(err)
+	}
 	w.SetIcon(icon)
 	w.ShowAndRun()
 

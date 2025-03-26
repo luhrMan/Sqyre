@@ -25,8 +25,22 @@ func NewProgram() *Program {
 				SearchAreas: make(map[string]coordinates.SearchArea),
 			},
 			"1920x1080": {
-				Points:      make(map[string]coordinates.Point),
-				SearchAreas: make(map[string]coordinates.SearchArea),
+				Points: map[string]coordinates.Point{
+					// "test": {
+					// 	Name: "test",
+					// 	X:    10,
+					// 	Y:    10,
+					// },
+				},
+				SearchAreas: map[string]coordinates.SearchArea{
+					// "test": {
+					// 	Name:    "test",
+					// 	LeftX:   10,
+					// 	TopY:    10,
+					// 	RightX:  10,
+					// 	BottomY: 10,
+					// },
+				},
 			},
 		},
 	}
