@@ -35,6 +35,6 @@ func (p *Programs) InitPrograms() {
 		}
 	}
 	log.Println("viper key coordinates: ", config.ViperConfig.Get(keystr+"coordinates"))
-	config.ViperConfig.UnmarshalKey(keystr+"coordinates", p.GetProgram(config.DarkAndDarker).Coordinates)
+	config.ViperConfig.UnmarshalKey(keystr+"coordinates", &p.GetProgram(config.DarkAndDarker).Coordinates)
 	log.Println("program struct coordinates: ", p.GetProgram(config.DarkAndDarker).Coordinates)
 }
