@@ -59,7 +59,16 @@ func (u *Ui) constructMainLayout() *fyne.Container {
 				layout.NewSpacer(),
 				widget.NewLabel("Macro Name:"),
 			),
-			container.NewBorder(nil, nil, nil, widget.NewButtonWithIcon("", theme.LoginIcon(), func() { u.addMacroDocTab(u.p.GetMacroByName(u.sel.Text)) }), u.sel),
+			container.NewBorder(nil, nil, nil,
+				widget.NewButtonWithIcon("",
+					theme.LoginIcon(),
+					func() {
+						if u.p.GetMacroByName(u.sel.Text) == nil {
+							u.p.AddMacro(u.sel.Text, globalDelay)
+						}
+						u.addMacroDocTab(u.p.GetMacroByName(u.sel.Text))
+					},
+				), u.sel),
 		),
 		nil,
 		widget.NewSeparator(),
