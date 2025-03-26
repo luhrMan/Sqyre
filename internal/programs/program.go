@@ -61,6 +61,10 @@ func (p *Program) GetMacroByName(s string) *macro.Macro {
 	return nil
 }
 
+func (p *Program) AddMacro(s string, d int) {
+	p.Macros = append(p.Macros, macro.NewMacro(s, d, ""))
+}
+
 // func (p *Program) AddProgramPoint(ss string, point config.Point) {
 // 	c := p.Coordinates
 // 	points := c[ss].Points
