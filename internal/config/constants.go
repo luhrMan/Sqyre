@@ -2,7 +2,8 @@ package config
 
 const (
 	RootPath              string = "./"
-	InternalPath                 = RootPath + "internal/"
+	UpDir                        = "../"
+	InternalPath                 = "internal/"
 	AssetsPath                   = InternalPath + "assets/"
 	ImagesPath                   = AssetsPath + "images/"
 	MetaImagesPath               = ImagesPath + "meta/"
