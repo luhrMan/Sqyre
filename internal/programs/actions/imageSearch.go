@@ -30,21 +30,24 @@ func NewImageSearch(name string, subActions []ActionInterface, targets []string,
 }
 
 func (a *ImageSearch) Execute(ctx any) error {
-	// sa := config.ViperConfig.Get("")
 	sa := a.SearchArea
 	w := sa.RightX - sa.LeftX
 	h := sa.BottomY - sa.TopY
 	log.Printf("Image Search | %v in X1:%d Y1:%d X2:%d Y2:%d", a.Targets, sa.LeftX, sa.TopY, sa.RightX, sa.BottomY)
 
 	captureImg := robotgo.CaptureImg(sa.LeftX+config.XOffset, sa.TopY+config.YOffset, w, h)
-	img, _ := gocv.ImageToMatRGB(captureImg)
+	img, err := gocv.ImageToMatRGB(captureImg)
+	if err != nil {
+		log.Println("image search failed:", err)
+		return err
+	}
 	defer img.Close()
-	gocv.IMWrite(config.ImagesPath+"search-area.png", img)
+	gocv.IMWrite(config.UpDir+config.UpDir+config.ImagesPath+"search-area.png", img)
 
 	imgDraw := img.Clone()
 	defer imgDraw.Close()
 
-	results := a.match(config.ImagesPath, img, imgDraw)
+	results := a.match(config.UpDir+config.UpDir+config.ImagesPath, img, imgDraw)
 	sorted := utils.SortListOfPoints(results)
 
 	count := 0
@@ -102,11 +105,11 @@ func (a *ImageSearch) FindTemplateMatches(img, template, Imask, Tmask, Cmask goc
 
 	if Imask.Rows() > 0 && Imask.Cols() > 0 {
 		gocv.Subtract(i, Imask, &i)
-		gocv.IMWrite(config.ImagesPath+"meta/imageSubtraction.png", i)
+		gocv.IMWrite(config.UpDir+config.UpDir+config.ImagesPath+"meta/imageSubtraction.png", i)
 	}
 	if Tmask.Rows() > 0 && Tmask.Cols() > 0 {
 		gocv.Subtract(t, Tmask, &t)
-		gocv.IMWrite(config.ImagesPath+"meta/templateSubtraction.png", t)
+		gocv.IMWrite(config.UpDir+config.UpDir+config.ImagesPath+"meta/templateSubtraction.png", t)
 	}
 
 	gocv.GaussianBlur(i, &i, kernel, 0, 0, gocv.BorderDefault)
@@ -151,35 +154,35 @@ func DarkAndDarker(a ImageSearch, img, imgDraw gocv.Mat) map[string][]robotgo.Po
 	switch {
 	case strings.Contains(a.SearchArea.Name, config.StashScrPlayerInv):
 		tolerance = 0.96
-		Imask = gocv.IMRead(config.MaskImagesPath+config.DarkAndDarker+"/"+config.StashScrPlayerInv+"-"+config.Empty+config.PNG, gocv.IMReadColor)
+		Imask = gocv.IMRead(config.UpDir+config.UpDir+config.MaskImagesPath+config.DarkAndDarker+"/"+config.StashScrPlayerInv+"-"+config.Empty+config.PNG, gocv.IMReadColor)
 	case strings.Contains(a.SearchArea.Name, "Stash"):
 		tolerance = 0.96
-		Imask = gocv.IMRead(config.MaskImagesPath+config.DarkAndDarker+"/"+config.StashScrStashInv+"-"+config.Empty+config.PNG, gocv.IMReadColor)
+		Imask = gocv.IMRead(config.UpDir+config.UpDir+config.MaskImagesPath+config.DarkAndDarker+"/"+config.StashScrStashInv+"-"+config.Empty+config.PNG, gocv.IMReadColor)
 	case strings.Contains(a.SearchArea.Name, "Merchant"):
 		tolerance = 0.93
-		Imask = gocv.IMRead(config.MaskImagesPath+config.DarkAndDarker+"/"+config.MerchantsScrPlayerInv+"-"+config.Empty+config.PNG, gocv.IMReadColor)
+		Imask = gocv.IMRead(config.UpDir+config.UpDir+config.MaskImagesPath+config.DarkAndDarker+"/"+config.MerchantsScrPlayerInv+"-"+config.Empty+config.PNG, gocv.IMReadColor)
 	default:
 		tolerance = 0.95
 	}
 
-	Tmask1x1 := gocv.IMRead(config.MaskImagesPath+config.DarkAndDarker+"/"+"1x1 mask"+config.PNG, gocv.IMReadColor)
-	Tmask1x2 := gocv.IMRead(config.MaskImagesPath+config.DarkAndDarker+"/"+"1x2 mask"+config.PNG, gocv.IMReadColor)
-	Tmask1x3 := gocv.IMRead(config.MaskImagesPath+config.DarkAndDarker+"/"+"1x3 mask"+config.PNG, gocv.IMReadColor)
-	Tmask2x1 := gocv.IMRead(config.MaskImagesPath+config.DarkAndDarker+"/"+"2x1 mask"+config.PNG, gocv.IMReadColor)
-	Tmask2x2 := gocv.IMRead(config.MaskImagesPath+config.DarkAndDarker+"/"+"2x2 mask"+config.PNG, gocv.IMReadColor)
-	Tmask2x3 := gocv.IMRead(config.MaskImagesPath+config.DarkAndDarker+"/"+"2x3 mask"+config.PNG, gocv.IMReadColor)
+	Tmask1x1 := gocv.IMRead(config.UpDir+config.UpDir+config.MaskImagesPath+config.DarkAndDarker+"/"+"1x1 mask"+config.PNG, gocv.IMReadColor)
+	Tmask1x2 := gocv.IMRead(config.UpDir+config.UpDir+config.MaskImagesPath+config.DarkAndDarker+"/"+"1x2 mask"+config.PNG, gocv.IMReadColor)
+	Tmask1x3 := gocv.IMRead(config.UpDir+config.UpDir+config.MaskImagesPath+config.DarkAndDarker+"/"+"1x3 mask"+config.PNG, gocv.IMReadColor)
+	Tmask2x1 := gocv.IMRead(config.UpDir+config.UpDir+config.MaskImagesPath+config.DarkAndDarker+"/"+"2x1 mask"+config.PNG, gocv.IMReadColor)
+	Tmask2x2 := gocv.IMRead(config.UpDir+config.UpDir+config.MaskImagesPath+config.DarkAndDarker+"/"+"2x2 mask"+config.PNG, gocv.IMReadColor)
+	Tmask2x3 := gocv.IMRead(config.UpDir+config.UpDir+config.MaskImagesPath+config.DarkAndDarker+"/"+"2x3 mask"+config.PNG, gocv.IMReadColor)
 	defer Tmask1x1.Close()
 	defer Tmask1x2.Close()
 	defer Tmask1x3.Close()
 	defer Tmask2x1.Close()
 	defer Tmask2x2.Close()
 	defer Tmask2x3.Close()
-	Cmask1x1 := gocv.IMRead(config.MaskImagesPath+config.DarkAndDarker+"/"+"1x1 Cmask"+config.PNG, gocv.IMReadGrayScale)
-	Cmask1x2 := gocv.IMRead(config.MaskImagesPath+config.DarkAndDarker+"/"+"1x2 Cmask"+config.PNG, gocv.IMReadGrayScale)
-	Cmask1x3 := gocv.IMRead(config.MaskImagesPath+config.DarkAndDarker+"/"+"1x3 Cmask"+config.PNG, gocv.IMReadGrayScale)
-	Cmask2x1 := gocv.IMRead(config.MaskImagesPath+config.DarkAndDarker+"/"+"2x1 Cmask"+config.PNG, gocv.IMReadGrayScale)
-	Cmask2x2 := gocv.IMRead(config.MaskImagesPath+config.DarkAndDarker+"/"+"2x2 Cmask"+config.PNG, gocv.IMReadGrayScale)
-	Cmask2x3 := gocv.IMRead(config.MaskImagesPath+config.DarkAndDarker+"/"+"2x3 Cmask"+config.PNG, gocv.IMReadGrayScale)
+	Cmask1x1 := gocv.IMRead(config.UpDir+config.UpDir+config.MaskImagesPath+config.DarkAndDarker+"/"+"1x1 Cmask"+config.PNG, gocv.IMReadGrayScale)
+	Cmask1x2 := gocv.IMRead(config.UpDir+config.UpDir+config.MaskImagesPath+config.DarkAndDarker+"/"+"1x2 Cmask"+config.PNG, gocv.IMReadGrayScale)
+	Cmask1x3 := gocv.IMRead(config.UpDir+config.UpDir+config.MaskImagesPath+config.DarkAndDarker+"/"+"1x3 Cmask"+config.PNG, gocv.IMReadGrayScale)
+	Cmask2x1 := gocv.IMRead(config.UpDir+config.UpDir+config.MaskImagesPath+config.DarkAndDarker+"/"+"2x1 Cmask"+config.PNG, gocv.IMReadGrayScale)
+	Cmask2x2 := gocv.IMRead(config.UpDir+config.UpDir+config.MaskImagesPath+config.DarkAndDarker+"/"+"2x2 Cmask"+config.PNG, gocv.IMReadGrayScale)
+	Cmask2x3 := gocv.IMRead(config.UpDir+config.UpDir+config.MaskImagesPath+config.DarkAndDarker+"/"+"2x3 Cmask"+config.PNG, gocv.IMReadGrayScale)
 	defer Cmask1x1.Close()
 	defer Cmask1x2.Close()
 	defer Cmask1x3.Close()
@@ -228,14 +231,13 @@ func DarkAndDarker(a ImageSearch, img, imgDraw gocv.Mat) map[string][]robotgo.Po
 				Cmask = Cmask2x3.Clone()
 			}
 
-			ip := target + ".png"
+			ip := target + config.PNG
 			b := icons[ip]
 			template := gocv.NewMat()
 			defer template.Close()
 			err := gocv.IMDecodeIntoMat(b, gocv.IMReadColor, &template)
 			if err != nil {
-				fmt.Println("Error reading template image")
-				fmt.Println(err)
+				fmt.Println("Error reading template image:", err)
 				return
 			}
 
@@ -269,9 +271,9 @@ func PathOfExile2(a ImageSearch, img, imgDraw gocv.Mat) map[string][]robotgo.Poi
 
 	var tolerance float32 = 0.9
 	// Imask = gocv.IMRead(path+"masks/Path Of Exile 2/empty-player-stash.png", gocv.IMReadColor)
-	Tmask1x1 := gocv.IMRead(config.MaskImagesPath+"Path Of Exile 2/1x1 mask.png", gocv.IMReadColor)
+	Tmask1x1 := gocv.IMRead(config.UpDir+config.UpDir+config.MaskImagesPath+"Path Of Exile 2/1x1 mask.png", gocv.IMReadColor)
 	defer Tmask1x1.Close()
-	Cmask1x1 := gocv.IMRead(config.MaskImagesPath+"Path Of Exile 2/1x1 Cmask.png", gocv.IMReadGrayScale)
+	Cmask1x1 := gocv.IMRead(config.UpDir+config.UpDir+config.MaskImagesPath+"Path Of Exile 2/1x1 Cmask.png", gocv.IMReadGrayScale)
 	defer Cmask1x1.Close()
 
 	results := make(map[string][]robotgo.Point)
@@ -304,8 +306,7 @@ func PathOfExile2(a ImageSearch, img, imgDraw gocv.Mat) map[string][]robotgo.Poi
 			defer template.Close()
 			err := gocv.IMDecodeIntoMat(b, gocv.IMReadColor, &template)
 			if err != nil {
-				fmt.Println("Error reading template image")
-				fmt.Println(err)
+				fmt.Println("Error reading template image:", err)
 				return
 			}
 
