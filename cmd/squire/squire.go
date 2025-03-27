@@ -34,6 +34,7 @@ func main() {
 	os.Setenv("FYNE_SCALE", "1.25")
 
 	w := a.NewWindow("Squire")
+	w.Resize(fyne.NewSize(1000, 500))
 	ui.InitializeUi(w)
 	programs.GetPrograms().InitPrograms()
 	ui.GetUi().SetCurrentProgram(config.DarkAndDarker)
