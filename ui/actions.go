@@ -33,7 +33,8 @@ var (
 	searchArea         string
 	xSplit             int
 	ySplit             int
-	imageSearchTargets = assets.Items.GetItemsMapAsBool()
+	itemsBoolList      = assets.Items.GetItemsMapAsBool()
+	imageSearchTargets []string
 	ocrName            string
 	ocrTarget          string
 	ocrSearchBox       string
@@ -96,6 +97,7 @@ func (u *Ui) actionSettingsTabs() {
 				container.NewGridWithColumns(2, container.NewHBox(widget.NewLabel("search area:")), u.st.boundImageSearchAreaSelect),
 				container.NewGridWithColumns(3, container.NewHBox(widget.NewLabel("screen split cols:")), u.st.boundXSplitSlider, u.st.boundXSplitEntry),
 			), nil, nil, nil,
+			// container.NewBorder(nil, nil, nil, nil,),
 			//			u.st.boundImageSearchTargetsTree,
 			u.createItemsCheckTree(),
 		)
@@ -254,10 +256,12 @@ func (u *Ui) bindVariables() {
 	}))
 	u.st.boundImageSearchName = binding.BindString(&imageSearchName)
 	u.st.boundImageSearchArea = binding.BindString(&searchArea)
+	u.st.boundImageSearchTargets = binding.BindStringList(&imageSearchTargets)
 	u.st.boundXSplit = binding.BindInt(&xSplit)
 	u.st.boundYSplit = binding.BindInt(&ySplit)
 	u.st.boundImageSearchNameEntry = widget.NewEntryWithData(u.st.boundImageSearchName)
-	u.st.boundImageSearchAreaSelect = widget.NewSelect(programs.CurrentProgramAndScreenSizeCoordinates().GetSearchAreasAsStringSlice(), func(s string) { u.st.boundImageSearchArea.Set(s) })
+	u.st.boundImageSearchAreaSelect = widget.NewSelect(programs.CurrentProgramAndScreenSizeCoordinates().GetSearchAreasAsStringSlice(),
+		func(s string) { u.st.boundImageSearchArea.Set(s) })
 
 	u.st.boundXSplitSlider = widget.NewSliderWithData(0, 50, binding.IntToFloat(u.st.boundXSplit))
 	u.st.boundXSplitEntry = widget.NewEntryWithData(binding.IntToString(u.st.boundXSplit))
@@ -289,5 +293,29 @@ func (u *Ui) bindVariables() {
 	u.st.boundOCRTarget = binding.BindString(&ocrTarget)
 	u.st.boundOCRSearchAreaSelect = widget.NewSelect(programs.CurrentProgramAndScreenSizeCoordinates().GetSearchAreasAsStringSlice(), func(s string) { u.st.boundOCRSearchArea.Set(s) })
 	u.st.boundOCRTargetEntry = widget.NewEntryWithData(u.st.boundOCRTarget)
+	u.st.boundOCRSearchArea.AddListener(binding.NewDataListener(func() {
+		t, err := u.GetMacroTabMacroTree()
+		if err != nil {
+			log.Println(err)
+			return
+		}
+
+		if n, ok := t.Macro.Root.GetAction(selectedTreeItem).(*actions.Ocr); ok {
+			n.SearchArea = programs.CurrentProgramAndScreenSizeCoordinates().GetSearchArea(searchArea)
+			t.Tree.Refresh()
+		}
+	}))
+	u.st.boundOCRTarget.AddListener(binding.NewDataListener(func() {
+		t, err := u.GetMacroTabMacroTree()
+		if err != nil {
+			log.Println(err)
+			return
+		}
+
+		if n, ok := t.Macro.Root.GetAction(selectedTreeItem).(*actions.Ocr); ok {
+			n.Target = ocrTarget
+			t.Tree.Refresh()
+		}
+	}))
 
 }

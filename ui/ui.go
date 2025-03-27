@@ -44,9 +44,9 @@ func InitializeUi(w fyne.Window) *Ui {
 func (u *Ui) ConstructUi() {
 	u.createSettingsTabs()
 	u.createSelect()
+	assets.CreateItemMaps()
 	u.actionSettingsTabs()
 	u.createDocTabs()
-	assets.CreateItemMaps()
 	u.win.SetMainMenu(u.createMainMenu())
 	u.win.SetContent(u.constructMainLayout())
 }
@@ -179,10 +179,11 @@ type loopTab struct {
 }
 
 type imageSearchTab struct {
-	boundImageSearchName binding.String
-	boundImageSearchArea binding.String
-	boundXSplit          binding.Int
-	boundYSplit          binding.Int
+	boundImageSearchName    binding.String
+	boundImageSearchArea    binding.String
+	boundImageSearchTargets binding.StringList
+	boundXSplit             binding.Int
+	boundYSplit             binding.Int
 
 	boundImageSearchNameEntry  *widget.Entry
 	boundImageSearchAreaSelect *widget.Select

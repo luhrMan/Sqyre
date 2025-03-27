@@ -9,6 +9,7 @@ import (
 	"log"
 	"slices"
 	"strconv"
+	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/dialog"
@@ -382,6 +383,7 @@ func MerchantPortraitsLocation(c *Coordinates) error {
 
 		log.Printf("FOUND TEXT: %v", foundText)
 		if slices.Contains(merchants, foundText) {
+			foundText = strings.ToLower(foundText)
 			log.Printf("Saving point: %s, [%d, %d]", foundText, match.X+(t.Cols()/2), match.Y+h)
 			c.AddPoint(Point{Name: foundText, X: match.X + (t.Cols() / 2), Y: match.Y + h})
 			robotgo.Move(c.Points[foundText].X+config.XOffset, c.Points[foundText].Y+config.YOffset)
@@ -407,7 +409,7 @@ func TopMenuTabLocations(c *Coordinates) {
 	y := int(float32(config.MonitorHeight) * 0.04)
 	nx := int(float32(config.MonitorWidth) * 0.125)
 	for _, t := range topMenuTabs {
-		name := t + "-screen"
+		name := strings.ToLower(t) + "-screen"
 		c.AddPoint(Point{Name: name, X: nx, Y: y})
 		nx += x
 		robotgo.MilliSleep(200)
