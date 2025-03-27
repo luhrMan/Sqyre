@@ -63,6 +63,9 @@ func (u *Ui) constructMainLayout() *fyne.Container {
 				widget.NewButtonWithIcon("",
 					theme.LoginIcon(),
 					func() {
+						if u.sel.Text == "" {
+							return
+						}
 						if u.p.GetMacroByName(u.sel.Text) == nil {
 							u.p.AddMacro(u.sel.Text, globalDelay)
 						}

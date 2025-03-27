@@ -62,6 +62,9 @@ func (p *Program) GetMacroByName(s string) *macro.Macro {
 }
 
 func (p *Program) AddMacro(s string, d int) {
+	if s == "" {
+		return
+	}
 	p.Macros = append(p.Macros, macro.NewMacro(s, d, ""))
 }
 

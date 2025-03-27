@@ -72,8 +72,12 @@ func (u *Ui) createMainMenu() *fyne.MainMenu {
 	})
 
 	calibrationMenu := fyne.NewMenu("Calibration", fyne.NewMenuItem("Calibrate Everything", func() {
+		robotgo.MouseSleep = 0
+		robotgo.KeySleep = 0
 		coordinates.CalibrateInventorySearchboxes((*programs.GetPrograms())[config.DarkAndDarker].Coordinates["2560x1440"])
 		u.st.boundImageSearchAreaSelect.SetOptions(programs.CurrentProgramAndScreenSizeCoordinates().GetSearchAreasAsStringSlice())
+		robotgo.MouseSleep = globalDelay
+		robotgo.KeySleep = globalDelay
 	}))
 
 	testMenu := fyne.NewMenu("Test",
