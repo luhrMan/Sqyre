@@ -1,5 +1,5 @@
 programs:
-    Dark And Darker:
+    dark and darker:
         macros:
             - name: Test
               root:
@@ -11,6 +11,46 @@ programs:
                       time: 143
                     - type: wait
                       time: 145
+                    - targets:
+                        - Badger Pendant
+                        - Fangs of Death Necklace
+                        - Necklace of Peace
+                        - Ring of Wisdom
+                        - Magic Protection Potion
+                        - Surgical Kit
+                        - Phoenix Choker
+                        - Frost Amulet
+                        - Ring of Quickness
+                        - Ring of Vitality
+                        - Lockpick
+                        - Owl Pendant
+                        - Grimsmile Ring
+                        - Fox Pendant
+                        - Potion
+                        - Luck Potion
+                        - Ring of Courage
+                        - Ox Pendant
+                        - Rat Pendant
+                        - Healing Potion
+                        - Francisca Axe
+                        - Monkey Pendant
+                        - Wind Locket
+                        - Ring of Finesse
+                        - Ring of Survival
+                        - Bear Pendant
+                        - Ring of Resolve
+                        - Torq of Soul
+                        - Campfire
+                        - Protection Potion
+                        - Bandage
+                      searcharea:
+                        name: stash-screen-player-inventory
+                        leftx: 913
+                        topy: 830
+                        rightx: 1466
+                        bottomy: 1112
+                      type: imagesearch
+                      name: test
               globaldelay: 0
               hotkey: ""
             - name: New Macro 1
@@ -31,11 +71,11 @@ programs:
                           "y": 0
                         - targets: []
                           searcharea:
-                            name: test
-                            leftx: 10
-                            topy: 10
-                            rightx: 10
-                            bottomy: 10
+                            name: stash-screen-player-inventory
+                            leftx: 913
+                            topy: 830
+                            rightx: 1466
+                            bottomy: 1112
                           type: imagesearch
                           name: ""
                     - target: ""
@@ -47,20 +87,13 @@ programs:
                         bottomy: 0
                       type: ocr
                       name: ""
-              globaldelay: 1000
+              globaldelay: 100
               hotkey: ""
             - name: f
               root:
                 count: 1
                 type: loop
                 name: root
-                subactions:
-                    - type: click
-                      button: left
-                    - type: click
-                      button: left
-                    - type: click
-                      button: left
               globaldelay: 30
               hotkey: ""
             - name: fuuuuck
@@ -75,7 +108,21 @@ programs:
                 count: 1
                 type: loop
                 name: root
+                subactions:
+                    - type: wait
+                      time: 0
               globaldelay: 50
+              hotkey: ""
+
+            - name: t
+              root:
+                count: 1
+                type: loop
+                name: root
+                subactions:
+                    - type: wait
+                      time: 0
+              globaldelay: 0
               hotkey: ""
         items: {}
         coordinates:
@@ -94,54 +141,6 @@ programs:
                         bottomy: 10
             2560x1440:
                 points:
-                    Class-screen:
-                        name: Class-screen
-                        x: 953
-                        "y": 57
-                    Customize-screen:
-                        name: Customize-screen
-                        x: 2008
-                        "y": 57
-                    Gathering Hall-screen:
-                        name: Gathering Hall-screen
-                        x: 1797
-                        "y": 57
-                    Leaderboard-screen:
-                        name: Leaderboard-screen
-                        x: 531
-                        "y": 57
-                    Merchants-screen:
-                        name: Merchants-screen
-                        x: 1375
-                        "y": 57
-                    Play-screen:
-                        name: Play-screen
-                        x: 320
-                        "y": 57
-                    Religion-screen:
-                        name: Religion-screen
-                        x: 742
-                        "y": 57
-                    Shop-screen:
-                        name: Shop-screen
-                        x: 2219
-                        "y": 57
-                    Stash-screen:
-                        name: Stash-screen
-                        x: 1164
-                        "y": 57
-                    Stash-screen-stashtab1:
-                        name: Stash-screen-stashtab1
-                        x: 1743
-                        "y": 258
-                    Stash-screen-stashtab2:
-                        name: Stash-screen-stashtab2
-                        x: 1743
-                        "y": 319
-                    Trade-screen:
-                        name: Trade-screen
-                        x: 1586
-                        "y": 57
                     alchemist:
                         name: Alchemist
                         x: 515
@@ -267,18 +266,6 @@ programs:
                         x: 1125
                         "y": 1063
                 searchareas:
-                    Stash-screen-player-inventory:
-                        name: Stash-screen-player-inventory
-                        leftx: 913
-                        topy: 830
-                        rightx: 1466
-                        bottomy: 1112
-                    Stash-screen-stash-inventory:
-                        name: Stash-screen-stash-inventory
-                        leftx: 1832
-                        topy: 261
-                        rightx: 2493
-                        bottomy: 1354
                     stash-screen-player-inventory:
                         name: Stash-screen-player-inventory
                         leftx: 913

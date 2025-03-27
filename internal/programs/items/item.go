@@ -42,7 +42,6 @@ func (is *ItemsMap) GetItemsMapAsStringsMap() map[string][]string {
 		for i, item := range items {
 			names[i] = item.Name
 		}
-		//		log.Printf("strMap add names: %v", names)
 		itemsStringMap[str] = names
 	}
 	return itemsStringMap

@@ -5,7 +5,6 @@ import (
 	"Squire/internal/programs/coordinates"
 	"Squire/internal/programs/items"
 	"Squire/internal/programs/macro"
-	"log"
 	"strconv"
 )
 
@@ -46,8 +45,8 @@ func NewProgram() *Program {
 	}
 }
 func CurrentProgramAndScreenSizeCoordinates() *coordinates.Coordinates {
-	log.Println(strconv.Itoa(config.MonitorWidth) + "x" + strconv.Itoa(config.MonitorHeight))
-	log.Println(currentProgram.Coordinates[strconv.Itoa(config.MonitorWidth)+"x"+strconv.Itoa(config.MonitorHeight)])
+	// log.Println(strconv.Itoa(config.MonitorWidth) + "x" + strconv.Itoa(config.MonitorHeight))
+	// log.Println(currentProgram.Coordinates[strconv.Itoa(config.MonitorWidth)+"x"+strconv.Itoa(config.MonitorHeight)])
 	return currentProgram.Coordinates[strconv.Itoa(config.MonitorWidth)+"x"+strconv.Itoa(config.MonitorHeight)]
 }
 
