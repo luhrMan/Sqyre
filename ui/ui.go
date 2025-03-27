@@ -61,16 +61,55 @@ func (u *Ui) constructMainLayout() *fyne.Container {
 			),
 			container.NewBorder(nil, nil, nil,
 				widget.NewButtonWithIcon("",
-					theme.LoginIcon(),
+					theme.FolderOpenIcon(),
 					func() {
-						if u.sel.Text == "" {
-							return
+						title := "Open Macro"
+						for _, w := range fyne.CurrentApp().Driver().AllWindows() {
+							if w.Title() == title {
+								w.RequestFocus()
+								return
+							}
 						}
-						if u.p.GetMacroByName(u.sel.Text) == nil {
-							u.p.AddMacro(u.sel.Text, globalDelay)
+						w := fyne.CurrentApp().NewWindow(title)
+						var macroList []string
+						for _, m := range u.p.Macros {
+							macroList = append(macroList, m.Name)
 						}
-						u.addMacroDocTab(u.p.GetMacroByName(u.sel.Text))
+						boundMacroList := binding.BindStringList(&macroList)
+						boundMacroListWidget := widget.NewListWithData(
+							boundMacroList,
+							func() fyne.CanvasObject {
+								return widget.NewLabel("template")
+							},
+							func(di binding.DataItem, co fyne.CanvasObject) {
+								co.(*widget.Label).Bind(di.(binding.String))
+							},
+						)
+						boundMacroListWidget.OnSelected =
+							func(id widget.ListItemID) {
+								if u.p.GetMacroByName(macroList[id]) == nil {
+									u.p.AddMacro(macroList[id], globalDelay)
+								}
+								u.addMacroDocTab(u.p.GetMacroByName(macroList[id]))
+							}
+						w.SetContent(
+							container.NewAdaptiveGrid(1,
+								boundMacroListWidget,
+							),
+						)
+						w.Resize(fyne.NewSize(300, 500))
+						w.Show()
 					},
+					// theme.LoginIcon(),
+					// func() {
+					// 	if u.sel.Text == "" {
+					// 		return
+					// 	}
+					// 	if u.p.GetMacroByName(u.sel.Text) == nil {
+					// 		u.p.AddMacro(u.sel.Text, globalDelay)
+					// 	}
+					// 	u.addMacroDocTab(u.p.GetMacroByName(u.sel.Text))
+					// },
 				), u.sel),
 		),
 		nil,
