@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"log"
 	"math"
 	"sort"
 
@@ -59,7 +60,11 @@ type PreprocessOptions struct {
 }
 
 func ImageToMatToImagePreprocess(img image.Image, gray, blur, threshold, resize bool, ppOptions PreprocessOptions) image.Image {
-	i, _ := gocv.ImageToMatRGB(img)
+	i, err := gocv.ImageToMatRGB(img)
+	if err != nil {
+		log.Println(err)
+		return nil
+	}
 	defer i.Close()
 	if ppOptions.BlurAmount == 0 {
 		ppOptions.BlurAmount = 3
@@ -74,7 +79,7 @@ func ImageToMatToImagePreprocess(img image.Image, gray, blur, threshold, resize 
 		gocv.CvtColor(i, &i, gocv.ColorBGRToGray)
 	}
 	if threshold {
-		gocv.Threshold(i, &i, ppOptions.MinThreshold, 255, gocv.ThresholdBinary)
+		gocv.Threshold(i, &i, ppOptions.MinThreshold, 255, gocv.ThresholdBinaryInv)
 	}
 	if blur {
 		gocv.GaussianBlur(i, &i, image.Point{X: ppOptions.BlurAmount, Y: ppOptions.BlurAmount}, 0, 0, gocv.BorderDefault)
@@ -83,7 +88,11 @@ func ImageToMatToImagePreprocess(img image.Image, gray, blur, threshold, resize 
 		gocv.Resize(i, &i, image.Point{}, ppOptions.ResizeScale, ppOptions.ResizeScale, gocv.InterpolationDefault)
 	}
 	gocv.IMWrite("./internal/resources/images/meta/imagetext-test.png", i)
-	img, _ = i.ToImage()
+	img, err = i.ToImage()
+	if err != nil {
+		log.Println(err)
+		return nil
+	}
 	return img
 }
 

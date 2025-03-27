@@ -188,9 +188,9 @@ type imageSearchTab struct {
 }
 
 type ocrTab struct {
-	boundOCRTarget    binding.String
-	boundOCRSearchBox binding.String
+	boundOCRTarget     binding.String
+	boundOCRSearchArea binding.String
 
-	boundOCRTargetEntry     *widget.Entry
-	boundOCRSearchBoxSelect *widget.Select
+	boundOCRTargetEntry      *widget.Entry
+	boundOCRSearchAreaSelect *widget.Select
 }
