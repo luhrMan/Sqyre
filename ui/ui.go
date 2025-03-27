@@ -43,9 +43,9 @@ func InitializeUi(w fyne.Window) *Ui {
 
 func (u *Ui) ConstructUi() {
 	u.createSettingsTabs()
-	u.createDocTabs()
 	u.createSelect()
 	u.actionSettingsTabs()
+	u.createDocTabs()
 	assets.CreateItemMaps()
 	u.win.SetMainMenu(u.createMainMenu())
 	u.win.SetContent(u.constructMainLayout())
