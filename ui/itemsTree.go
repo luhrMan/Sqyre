@@ -24,22 +24,22 @@ func (u *Ui) createItemsCheckTree() *widget.Tree {
 	for category := range itemsStrMap {
 		categories = append(categories, category)
 	}
-
+	log.Println("items map", itemsStrMap)
 	setAllItemsInCategory := func(category string, b bool) bool {
 		flip := true
 		defer tree.Refresh()
 		if b {
 			for _, item := range itemsStrMap[category] {
-				if !imageSearchTargets[item] {
+				if !itemsBoolList[item] {
 					flip = false
 				}
-				imageSearchTargets[item] = true
+				itemsBoolList[item] = true
 			}
 			log.Printf("Selected category: %v", category)
 			return flip
 		}
 		for _, item := range itemsStrMap[category] {
-			imageSearchTargets[item] = false
+			itemsBoolList[item] = false
 		}
 		log.Printf("Unselected category: %v", category)
 		return false
@@ -81,7 +81,7 @@ func (u *Ui) createItemsCheckTree() *widget.Tree {
 			}
 			var counter int
 			for _, item := range itemsStrMap[id] {
-				if imageSearchTargets[item] {
+				if itemsBoolList[item] {
 					counter++
 				}
 			}
@@ -91,19 +91,19 @@ func (u *Ui) createItemsCheckTree() *widget.Tree {
 			} else {
 				wc.Checked = false
 			}
-
 			return
 		}
 		wi := c.Objects[0].(*widget.Icon)
 		wc.OnChanged = func(b bool) {
 			if b {
-				imageSearchTargets[id] = true
+				itemsBoolList[id] = true
 			} else {
-				imageSearchTargets[id] = false
+				itemsBoolList[id] = false
+
 			}
 		}
 		wc.SetText(id)
-		wc.SetChecked(imageSearchTargets[id])
+		wc.SetChecked(itemsBoolList[id])
 
 		path := id + ".png"
 		if icons[path] == nil {
@@ -122,10 +122,10 @@ func (u *Ui) createItemsCheckTree() *widget.Tree {
 				setAllItemsInCategory(id, false)
 			}
 		} else {
-			if imageSearchTargets[id] {
-				imageSearchTargets[id] = false
+			if itemsBoolList[id] {
+				itemsBoolList[id] = false
 			} else {
-				imageSearchTargets[id] = true
+				itemsBoolList[id] = true
 			}
 		}
 		tree.Refresh()

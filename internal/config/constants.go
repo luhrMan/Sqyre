@@ -9,13 +9,13 @@ const (
 	MetaImagesPath               = ImagesPath + "meta/"
 	MaskImagesPath               = ImagesPath + "masks/"
 	CalibrationImagesPath        = ImagesPath + "calibration/"
-	DarkAndDarker                = "Dark And Darker"
+	DarkAndDarker                = "dark and darker"
 
 	Scr                   = "screen"
 	Inv                   = "inventory"
 	Empty                 = "empty"
-	StashScr              = "Stash-" + Scr
-	MerchantsScr          = "Merchants-" + Scr
+	StashScr              = "stash-" + Scr
+	MerchantsScr          = "merchants-" + Scr
 	PlayerInv             = "player-" + Inv
 	StashInv              = "stash-" + Inv
 	MerchantInv           = "merchant-" + Inv

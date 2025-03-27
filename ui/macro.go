@@ -153,13 +153,14 @@ func (mt *MacroTree) updateTreeOnselect() {
 			GetUi().st.tabs.SelectIndex(looptab)
 		case *actions.ImageSearch:
 			GetUi().st.boundImageSearchName.Set(node.Name)
-			for t := range imageSearchTargets {
-				imageSearchTargets[t] = false
+			for t := range itemsBoolList {
+				itemsBoolList[t] = false
 			}
 			for _, t := range node.Targets {
-				imageSearchTargets[t] = true
+				itemsBoolList[t] = true
 			}
-			mt.Tree.Refresh()
+			// mt.Tree.Refresh()
+			log.Println("set selected ISA: ", node.SearchArea.Name)
 			GetUi().st.boundImageSearchAreaSelect.SetSelected(node.SearchArea.Name)
 			GetUi().st.tabs.SelectIndex(imagesearchtab)
 		case *actions.Ocr:
@@ -183,8 +184,7 @@ func (u *Ui) createMacroToolbar() *widget.Toolbar {
 			}
 			selectedNode := mt.Macro.Root.GetAction(selectedTreeItem)
 			if selectedNode == nil {
-				log.Println("Could not find action: ", selectedTreeItem)
-				return
+				selectedNode = mt.Macro.Root
 			}
 			switch u.st.tabs.Selected().Text {
 			case "Wait":
@@ -199,7 +199,7 @@ func (u *Ui) createMacroToolbar() *widget.Toolbar {
 				action = actions.NewLoop(int(count), loopName, []actions.ActionInterface{})
 			case "Image":
 				var t []string
-				for i, item := range imageSearchTargets {
+				for i, item := range itemsBoolList {
 					if item {
 						t = append(t, i)
 					}
@@ -232,14 +232,13 @@ func (u *Ui) createMacroToolbar() *widget.Toolbar {
 			}
 			node := mt.Macro.Root.GetAction(selectedTreeItem)
 			if node == nil {
-				log.Println("could not find action:", selectedTreeItem)
-				return
+				node = mt.Macro.Root
 			}
 			og := node.String()
 			switch node := node.(type) {
 			case *actions.ImageSearch:
 				var t []string
-				for i, item := range imageSearchTargets {
+				for i, item := range itemsBoolList {
 					if item {
 						t = append(t, i)
 					}
