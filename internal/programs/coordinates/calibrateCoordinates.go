@@ -77,7 +77,7 @@ func CalibrateInventorySearchboxes(c *Coordinates) {
 		log.Println(err)
 		dialog.ShowInformation("Merchant Portrait Calibration Failed", err.Error(), fyne.CurrentApp().Driver().AllWindows()[0])
 	} else {
-		robotgo.Move(c.Points["Alchemist"].X, c.Points["Alchemist"].X)
+		robotgo.Move(c.Points["Alchemist"].X+config.XOffset, c.Points["Alchemist"].Y+config.YOffset)
 		robotgo.Click()
 		robotgo.MilliSleep(200)
 
@@ -98,6 +98,7 @@ func CalibrateInventorySearchboxes(c *Coordinates) {
 
 		//add merchant inventory location search here
 	}
+	log.Println("CALIBRATION COMPLETE")
 }
 
 func ItemDescriptionLocation() (image.Image, error) {
@@ -340,6 +341,7 @@ func MerchantPortraitsLocation(c *Coordinates) error {
 		"Tavern Master",
 		"The Collector",
 		"Treasurer",
+		"Valentine",
 		"Weaponsmith",
 		"Woodsman",
 	}
@@ -360,20 +362,30 @@ func MerchantPortraitsLocation(c *Coordinates) error {
 	matches := utils.GetMatchesFromTemplateMatchResult(result, 0.9, 10)
 
 	utils.DrawFoundMatches(matches, t.Cols(), t.Rows(), imgDraw, "")
-	gocv.IMWrite(config.UpDir+config.UpDir+config.MetaImagesPath+"merchantPortraitsLocation-foundMerchants"+config.PNG, imgDraw)
+	gocv.IMWrite(config.UpDir+config.UpDir+config.MetaImagesPath+"merchantPortraitsLocation/foundMerchants"+config.PNG, imgDraw)
 
 	for _, match := range matches {
 		h := t.Rows() / 2
 		img := robotgo.CaptureImg(match.X+config.XOffset, match.Y+config.YOffset+h, t.Cols(), h)
-		img = utils.ImageToMatToImagePreprocess(img, true, true, true, true, utils.PreprocessOptions{MinThreshold: 150})
-		_, foundText := utils.CheckImageForText(img)
+		img = utils.ImageToMatToImagePreprocess(img, true, true, true, true, utils.PreprocessOptions{MinThreshold: 118})
+		mat, err := gocv.ImageToMatRGB(img)
+		if err != nil {
+			log.Println(err)
+			continue
+		}
+		err, foundText := utils.CheckImageForText(img)
+		if err != nil {
+			log.Println(err)
+			continue
+		}
+		gocv.IMWrite(config.UpDir+config.UpDir+config.MetaImagesPath+"merchantPortraitsLocation/"+foundText+config.PNG, mat)
 
 		log.Printf("FOUND TEXT: %v", foundText)
 		if slices.Contains(merchants, foundText) {
-			log.Printf("Saving point: %s, [%d, %d]", foundText, match.X, match.Y)
-			c.AddPoint(Point{Name: foundText, X: match.X, Y: match.Y})
+			log.Printf("Saving point: %s, [%d, %d]", foundText, match.X+(t.Cols()/2), match.Y+h)
+			c.AddPoint(Point{Name: foundText, X: match.X + (t.Cols() / 2), Y: match.Y + h})
+			robotgo.Move(c.Points[foundText].X+config.XOffset, c.Points[foundText].Y+config.YOffset)
 		}
-		robotgo.Move(match.X+config.XOffset, match.Y+config.YOffset)
 		robotgo.MilliSleep(200)
 	}
 	return nil
