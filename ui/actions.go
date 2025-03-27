@@ -103,7 +103,7 @@ func (u *Ui) actionSettingsTabs() {
 		ocrSettings = container.NewBorder(
 			container.NewGridWithColumns(1,
 				container.NewBorder(nil, nil, container.NewHBox(widget.NewLabel("Text Target:")), nil, u.st.boundOCRTargetEntry),
-				container.NewBorder(nil, nil, container.NewHBox(widget.NewLabel("Search Area:")), nil, u.st.boundOCRSearchBoxSelect),
+				container.NewBorder(nil, nil, container.NewHBox(widget.NewLabel("Search Area:")), nil, u.st.boundOCRSearchAreaSelect),
 			), nil, nil, nil)
 	)
 
@@ -117,8 +117,6 @@ func (u *Ui) actionSettingsTabs() {
 }
 
 func (u *Ui) bindVariables() {
-
-	// u.sel.boundMacroName = binding.BindString(&macroName)
 	u.st.boundGlobalDelay = binding.BindInt(&globalDelay)
 	u.st.boundGlobalDelayEntry = widget.NewEntryWithData(binding.IntToString(u.st.boundGlobalDelay))
 	u.st.boundGlobalDelay.AddListener(binding.NewDataListener(func() {
@@ -287,9 +285,9 @@ func (u *Ui) bindVariables() {
 			t.Tree.Refresh()
 		}
 	}))
-	u.st.boundOCRSearchBox = binding.BindString(&ocrSearchBox)
+	u.st.boundOCRSearchArea = binding.BindString(&ocrSearchBox)
 	u.st.boundOCRTarget = binding.BindString(&ocrTarget)
-	u.st.boundOCRSearchBoxSelect = widget.NewSelect(programs.CurrentProgramAndScreenSizeCoordinates().GetSearchAreasAsStringSlice(), func(s string) { u.st.boundOCRSearchBox.Set(s) })
+	u.st.boundOCRSearchAreaSelect = widget.NewSelect(programs.CurrentProgramAndScreenSizeCoordinates().GetSearchAreasAsStringSlice(), func(s string) { u.st.boundOCRSearchArea.Set(s) })
 	u.st.boundOCRTargetEntry = widget.NewEntryWithData(u.st.boundOCRTarget)
 
 }

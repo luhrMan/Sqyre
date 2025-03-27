@@ -164,7 +164,7 @@ func (mt *MacroTree) updateTreeOnselect() {
 			GetUi().st.tabs.SelectIndex(imagesearchtab)
 		case *actions.Ocr:
 			GetUi().st.boundOCRTarget.Set(node.Target)
-			GetUi().st.boundOCRSearchBoxSelect.SetSelected(node.SearchArea.Name)
+			GetUi().st.boundOCRSearchAreaSelect.SetSelected(node.SearchArea.Name)
 			GetUi().st.tabs.SelectIndex(ocrtab)
 		}
 	}
