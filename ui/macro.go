@@ -182,7 +182,10 @@ func (u *Ui) createMacroToolbar() *widget.Toolbar {
 				return
 			}
 			selectedNode := mt.Macro.Root.GetAction(selectedTreeItem)
-
+			if selectedNode == nil {
+				log.Println("Could not find action: ", selectedTreeItem)
+				return
+			}
 			switch u.st.tabs.Selected().Text {
 			case "Wait":
 				action = actions.NewWait(time)
@@ -228,6 +231,10 @@ func (u *Ui) createMacroToolbar() *widget.Toolbar {
 				return
 			}
 			node := mt.Macro.Root.GetAction(selectedTreeItem)
+			if node == nil {
+				log.Println("could not find action:", selectedTreeItem)
+				return
+			}
 			og := node.String()
 			switch node := node.(type) {
 			case *actions.ImageSearch:

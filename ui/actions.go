@@ -118,9 +118,8 @@ func (u *Ui) actionSettingsTabs() {
 
 func (u *Ui) bindVariables() {
 
-	// ct.boundMacroName = binding.BindString(&macroName)
+	// u.sel.boundMacroName = binding.BindString(&macroName)
 	u.st.boundGlobalDelay = binding.BindInt(&globalDelay)
-	u.st.boundGlobalDelay.AddListener(binding.NewDataListener(func() { robotgo.MouseSleep = globalDelay; robotgo.KeySleep = globalDelay }))
 	u.st.boundGlobalDelayEntry = widget.NewEntryWithData(binding.IntToString(u.st.boundGlobalDelay))
 	u.st.boundGlobalDelay.AddListener(binding.NewDataListener(func() {
 		t, err := u.GetMacroTabMacroTree()
@@ -130,6 +129,8 @@ func (u *Ui) bindVariables() {
 		}
 
 		t.Macro.GlobalDelay = globalDelay
+		robotgo.MouseSleep = globalDelay
+		robotgo.KeySleep = globalDelay
 	}))
 	u.st.boundTime = binding.BindInt(&time)
 	u.st.boundTimeEntry = widget.NewEntryWithData(binding.IntToString(u.st.boundTime))
