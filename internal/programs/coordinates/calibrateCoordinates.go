@@ -78,7 +78,7 @@ func CalibrateInventorySearchboxes(c *Coordinates) {
 		log.Println(err)
 		dialog.ShowInformation("Merchant Portrait Calibration Failed", err.Error(), fyne.CurrentApp().Driver().AllWindows()[0])
 	} else {
-		robotgo.Move(c.Points["Alchemist"].X+config.XOffset, c.Points["Alchemist"].Y+config.YOffset)
+		robotgo.Move(c.Points["alchemist"].X+config.XOffset, c.Points["alchemist"].Y+config.YOffset)
 		robotgo.Click()
 		robotgo.MilliSleep(200)
 
