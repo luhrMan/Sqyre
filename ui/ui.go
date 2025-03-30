@@ -95,6 +95,7 @@ func (u *Ui) createMacroSelect() *widget.Button {
 						u.p.AddMacro(macroList[id], globalDelay)
 					}
 					u.addMacroDocTab(u.p.GetMacroByName(macroList[id]))
+					boundMacroListWidget.UnselectAll()
 				}
 			w.SetContent(
 				container.NewAdaptiveGrid(1,
