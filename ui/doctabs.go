@@ -24,8 +24,7 @@ func (u *Ui) createDocTabs() {
 			return
 		}
 		u.st.boundGlobalDelay.Set(mt.Macro.GlobalDelay)
-		u.sel.Text = mt.Macro.Name
-		u.sel.Refresh()
+		u.st.boundMacroName.Set(mt.Macro.Name)
 	}
 	u.dt.Items = append(u.dt.Items, container.NewTabItem("", container.NewBorder(nil, nil, nil, nil)))
 	u.dt.SelectIndex(0)
@@ -60,7 +59,6 @@ func (u *Ui) addMacroDocTab(macro *macro.Macro) {
 		}
 		return
 	}
-
 	u.AddMacroTree(macro.Name, &MacroTree{Macro: macro, Tree: &widget.Tree{}})
 	mt := u.mtMap[macro.Name]
 
