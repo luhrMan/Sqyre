@@ -3,6 +3,7 @@ package ui
 import (
 	"Squire/internal/assets"
 	"Squire/internal/programs"
+	"Squire/internal/utils"
 	"Squire/ui/custom_widgets"
 
 	"fyne.io/fyne/v2"
@@ -58,10 +59,14 @@ func (u *Ui) constructMainLayout() *fyne.Container {
 		nil,
 		widget.NewSeparator(),
 		nil,
-		u.dt,
+		container.NewBorder(
+			nil,
+			container.NewAdaptiveGrid(2, utils.MacroProgressBar(), widget.NewLabel("HOTKEYS HERE")),
+			nil,
+			nil,
+			u.dt),
 	)
 	mainLayout := container.NewBorder(nil, nil, u.st.tabs, nil, macroLayout)
-
 	return mainLayout
 }
 
@@ -80,6 +85,7 @@ func (u *Ui) createMacroSelect() *widget.Button {
 				}
 			}
 			w := fyne.CurrentApp().NewWindow(title)
+			w.SetIcon(assets.AppIcon)
 			boundMacroListWidget := widget.NewListWithData(
 				u.st.boundMacroList,
 				func() fyne.CanvasObject {
@@ -105,16 +111,6 @@ func (u *Ui) createMacroSelect() *widget.Button {
 			w.Resize(fyne.NewSize(300, 500))
 			w.Show()
 		},
-		// theme.LoginIcon(),
-		// func() {
-		// 	if u.sel.Text == "" {
-		// 		return
-		// 	}
-		// 	if u.p.GetMacroByName(u.sel.Text) == nil {
-		// 		u.p.AddMacro(u.sel.Text, globalDelay)
-		// 	}
-		// 	u.addMacroDocTab(u.p.GetMacroByName(u.sel.Text))
-		// },
 	)
 }
 

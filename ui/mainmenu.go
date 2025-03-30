@@ -71,14 +71,28 @@ func (u *Ui) createMainMenu() *fyne.MainMenu {
 		dialog.ShowInformation("Computer Information", str, u.win)
 	})
 
-	calibrationMenu := fyne.NewMenu("Calibration", fyne.NewMenuItem("Calibrate Everything", func() {
-		robotgo.MouseSleep = 0
-		robotgo.KeySleep = 0
-		coordinates.CalibrateInventorySearchboxes((*programs.GetPrograms())[config.DarkAndDarker].Coordinates["2560x1440"])
-		u.st.boundImageSearchAreaSelect.SetOptions(programs.CurrentProgramAndScreenSizeCoordinates().GetSearchAreasAsStringSlice())
-		robotgo.MouseSleep = globalDelay
-		robotgo.KeySleep = globalDelay
-	}))
+	calibrationMenu := fyne.NewMenu("Coordinate Calibration",
+		fyne.NewMenuItem("Everything", func() {
+
+		}),
+		fyne.NewMenuItem("Top Menu", func() {
+			coordinates.TopMenuTabLocations((*programs.GetPrograms())[config.DarkAndDarker].Coordinates["2560x1440"])
+		}),
+		fyne.NewMenuItem("Inventories", func() {
+			robotgo.MouseSleep = 0
+			robotgo.KeySleep = 0
+			coordinates.CalibrateInventorySearchboxes((*programs.GetPrograms())[config.DarkAndDarker].Coordinates["2560x1440"])
+			u.st.boundImageSearchAreaSelect.SetOptions(programs.CurrentProgramAndScreenSizeCoordinates().GetSearchAreasAsStringSlice())
+			robotgo.MouseSleep = globalDelay
+			robotgo.KeySleep = globalDelay
+		}),
+		fyne.NewMenuItem("Stash-screen", func() {
+
+		}),
+		fyne.NewMenuItem("Merchants-screen", func() {
+
+		}),
+	)
 
 	testMenu := fyne.NewMenu("Test",
 		fyne.NewMenuItem("Add Item", func() { addItemWindow() }),
