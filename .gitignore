@@ -10,3 +10,4 @@ notes.md
 
 *.prof
 *.test
+/internal/assets/images/meta/

@@ -1,0 +1,286 @@
+programs:
+    dark and darker:
+        macros:
+            - name: Test
+              root:
+                count: 1
+                type: loop
+                name: root
+                subactions:
+                    - type: wait
+                      time: 143
+                    - type: wait
+                      time: 145
+                    - targets:
+                        - Badger Pendant
+                        - Fangs of Death Necklace
+                        - Necklace of Peace
+                        - Ring of Wisdom
+                        - Magic Protection Potion
+                        - Surgical Kit
+                        - Phoenix Choker
+                        - Frost Amulet
+                        - Ring of Quickness
+                        - Ring of Vitality
+                        - Lockpick
+                        - Owl Pendant
+                        - Grimsmile Ring
+                        - Fox Pendant
+                        - Potion
+                        - Luck Potion
+                        - Ring of Courage
+                        - Ox Pendant
+                        - Rat Pendant
+                        - Healing Potion
+                        - Francisca Axe
+                        - Monkey Pendant
+                        - Wind Locket
+                        - Ring of Finesse
+                        - Ring of Survival
+                        - Bear Pendant
+                        - Ring of Resolve
+                        - Torq of Soul
+                        - Campfire
+                        - Protection Potion
+                        - Bandage
+                      searcharea:
+                        name: stash-screen-player-inventory
+                        leftx: 913
+                        topy: 830
+                        rightx: 1466
+                        bottomy: 1112
+                      type: imagesearch
+                      name: test
+              globaldelay: 0
+              hotkey: ""
+            - name: New Macro 1
+              root:
+                count: 1
+                type: loop
+                name: root
+                subactions:
+                    - count: 1
+                      type: loop
+                      name: kkjj
+                      subactions:
+                        - type: move
+                          x: 0
+                          "y": 0
+                        - type: move
+                          x: 0
+                          "y": 0
+                        - targets: []
+                          searcharea:
+                            name: stash-screen-player-inventory
+                            leftx: 913
+                            topy: 830
+                            rightx: 1466
+                            bottomy: 1112
+                          type: imagesearch
+                          name: ""
+                    - target: ""
+                      searcharea:
+                        name: ""
+                        leftx: 0
+                        topy: 0
+                        rightx: 0
+                        bottomy: 0
+                      type: ocr
+                      name: ""
+              globaldelay: 100
+              hotkey: ""
+            - name: f
+              root:
+                count: 1
+                type: loop
+                name: root
+              globaldelay: 30
+              hotkey: ""
+            - name: fuuuuck
+              root:
+                count: 1
+                type: loop
+                name: root
+              globaldelay: 30
+              hotkey: ""
+            - name: Testies
+              root:
+                count: 1
+                type: loop
+                name: root
+                subactions:
+                    - type: wait
+                      time: 0
+              globaldelay: 50
+              hotkey: ""
+
+            - name: t
+              root:
+                count: 1
+                type: loop
+                name: root
+                subactions:
+                    - type: wait
+                      time: 0
+              globaldelay: 0
+              hotkey: ""
+        items: {}
+        coordinates:
+            1920x1080:
+                points:
+                    test:
+                        name: test
+                        x: 10
+                        "y": 10
+                searchareas:
+                    test:
+                        name: test
+                        leftx: 10
+                        topy: 10
+                        rightx: 10
+                        bottomy: 10
+            2560x1440:
+                points:
+                    alchemist:
+                        name: Alchemist
+                        x: 515
+                        "y": 299
+                    armourer:
+                        name: Armourer
+                        x: 820
+                        "y": 299
+                    class-screen:
+                        name: Class-screen
+                        x: 953
+                        "y": 57
+                    customize-screen:
+                        name: Customize-screen
+                        x: 2008
+                        "y": 57
+                    fortune teller:
+                        name: Fortune Teller
+                        x: 1125
+                        "y": 299
+                    gathering hall-screen:
+                        name: Gathering Hall-screen
+                        x: 1797
+                        "y": 57
+                    goblin merchant:
+                        name: Goblin Merchant
+                        x: 1431
+                        "y": 299
+                    goldsmith:
+                        name: Goldsmith
+                        x: 1736
+                        "y": 299
+                    leaderboard-screen:
+                        name: Leaderboard-screen
+                        x: 531
+                        "y": 57
+                    leathersmith:
+                        name: Leathersmith
+                        x: 2041
+                        "y": 299
+                    merchants-screen:
+                        name: Merchants-screen
+                        x: 1375
+                        "y": 57
+                    merchants-screen-stashtab1:
+                        name: Merchants-screen-stashtab1
+                        x: 1727
+                        "y": 234
+                    play-screen:
+                        name: Play-screen
+                        x: 320
+                        "y": 57
+                    religion-screen:
+                        name: Religion-screen
+                        x: 742
+                        "y": 57
+                    shop-screen:
+                        name: Shop-screen
+                        x: 2219
+                        "y": 57
+                    squire:
+                        name: Squire
+                        x: 515
+                        "y": 681
+                    stash-screen:
+                        name: Stash-screen
+                        x: 1164
+                        "y": 57
+                    stash-screen-stashtab1:
+                        name: Stash-screen-stashtab1
+                        x: 1743
+                        "y": 258
+                    stash-screen-stashtab2:
+                        name: Stash-screen-stashtab2
+                        x: 1743
+                        "y": 319
+                    stash-screen-stashtab3:
+                        name: Stash-screen-stashtab3
+                        x: 1743
+                        "y": 380
+                    stash-screen-stashtab4:
+                        name: Stash-screen-stashtab4
+                        x: 1743
+                        "y": 441
+                    surgeon:
+                        name: Surgeon
+                        x: 820
+                        "y": 681
+                    tailor:
+                        name: Tailor
+                        x: 1125
+                        "y": 681
+                    tavern master:
+                        name: Tavern Master
+                        x: 1431
+                        "y": 681
+                    test:
+                        name: test
+                        x: 10
+                        "y": 10
+                    the collector:
+                        name: The Collector
+                        x: 1736
+                        "y": 681
+                    trade-screen:
+                        name: Trade-screen
+                        x: 1586
+                        "y": 57
+                    treasurer:
+                        name: Treasurer
+                        x: 2041
+                        "y": 681
+                    valentine:
+                        name: Valentine
+                        x: 515
+                        "y": 1063
+                    weaponsmith:
+                        name: Weaponsmith
+                        x: 820
+                        "y": 1063
+                    woodsman:
+                        name: Woodsman
+                        x: 1125
+                        "y": 1063
+                searchareas:
+                    stash-screen-player-inventory:
+                        name: Stash-screen-player-inventory
+                        leftx: 913
+                        topy: 830
+                        rightx: 1466
+                        bottomy: 1112
+                    stash-screen-stash-inventory:
+                        name: Stash-screen-stash-inventory
+                        leftx: 1832
+                        topy: 261
+                        rightx: 2493
+                        bottomy: 1354
+                    test:
+                        name: test
+                        leftx: 10
+                        topy: 10
+                        rightx: 10
+                        bottomy: 10

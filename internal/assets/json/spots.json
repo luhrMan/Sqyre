@@ -1,0 +1,135 @@
+{
+    "Context": [
+        {
+            "name": "context",
+            "x": -1,
+            "y": -1
+        }
+    ],
+    "Top Menu Tabs": [
+        {
+            "name": "Play Tab",
+            "x": 318,
+            "y": 60
+        },
+        {
+            "name": "Leaderboard Tab",
+            "x": 520,
+            "y": 60
+        },
+        {
+            "name": "Religion Tab",
+            "x": 732,
+            "y": 60
+        },
+        {
+            "name": "Class Tab",
+            "x": 944,
+            "y": 60
+        },
+        {
+            "name": "Stash Tab",
+            "x": 1156,
+            "y": 60
+        },
+        {
+            "name": "Merchants Tab",
+            "x": 1368,
+            "y": 60
+        },
+        {
+            "name": "Trade Tab",
+            "x": 1580,
+            "y": 60
+        },
+        {
+            "name": "Gathering Hall Tab",
+            "x": 1792,
+            "y": 60
+        },
+        {
+            "name": "Customize Tab",
+            "x": 2004,
+            "y": 60
+        },
+        {
+            "name": "Shop Tab",
+            "x": 2216,
+            "y": 60
+        }
+    ],
+    "Merchants": [
+        {
+            "name": "Collector",
+            "x": 950,
+            "y": 920
+        },
+        {
+            "name": "Alchemist",
+            "x": 300,
+            "y": 420
+        },
+        {
+            "name": "Armourer",
+            "x": 620,
+            "y": 420
+        },
+        {
+            "name": "Fortune Teller",
+            "x": 950,
+            "y": 420
+        },
+        {
+            "name": "Goblin Merchant",
+            "x": 1270,
+            "y": 420
+        },
+        {
+            "name": "Leathersmith",
+            "x": 1600,
+            "y": 420
+        },
+        {
+            "name": "Squire",
+            "x": 1920,
+            "y": 420
+        },
+        {
+            "name": "Surgeon",
+            "x": 2240,
+            "y": 420
+        },
+        {
+            "name": "Tailor",
+            "x": 300,
+            "y": 920
+        },
+        {
+            "name": "Tavern Master",
+            "x": 625,
+            "y": 920
+        },
+        {
+            "name": "Treasurer",
+            "x": 1270,
+            "y": 920
+        },
+        {
+            "name": "Weaponsmith",
+            "x": 1600,
+            "y": 920
+        },
+        {
+            "name": "Woodsman",
+            "x": 1920,
+            "y": 920
+        }
+    ],
+    "Miscellaneous": [
+        {
+            "name": "Change Class",
+            "x": 2480,
+            "y": 1360
+        }
+    ]
+}

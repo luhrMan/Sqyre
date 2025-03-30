@@ -1,12 +1,10 @@
 # TODO:
 
 - get a kanban lol
-- change tree updates to data listeners; if the user wants to add an action, just hit the deselect button to prevent
-  updates to selected item
+- change tree updates to data listeners; if the user wants to add an action, hit the deselect button to prevent updates to selected item
 - add copy action button
 
-This tool only works on 2560 x 1440 because of hard-set values. Feature Matching should allow for scale variant image
-matching. The color matching might also work.
+This tool only works on 2560 x 1440 because of hard-set values. Feature Matching should allow for scale variant image matching. The color matching might also work.
 
 # What is it
 
@@ -58,20 +56,5 @@ Install Msys2
 
 ## Linux
 
-- `apt install`
-    - `golang-go`
-    - `tesseract-ocr`
-    - `libgl1-mesa-dev`
-    - `libx11-dev`
-    - `libx11-xcb-dev`
-    - `libxtst-dev`
-    - `libxcursor-dev`
-    - `libxrandr-dev`
-    - `libxinerama-dev`
-    - `g++`
-    - `clang`
-    - `libtesseract-dev`
-    - `libxxf86vm-dev`
-    - `libxkbcommon-x11-dev`
-
+- `apt install tesseract-ocr libgl1-mesa-dev libx11-dev libx11-xcb-dev libxtst-dev libxcursor-dev libxrandr-dev libxinerama-dev g++ clang libtesseract-dev libxxf86vm-dev libxkbcommon-x11-dev golang-go`
 - Find the GoCV folder and build the OpenCV source
