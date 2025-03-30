@@ -17,6 +17,10 @@ var itemsEmbed []byte
 
 var Items items.ItemsMap
 
+//go:embed images/Squire.png
+var appIcon []byte
+var AppIcon = fyne.NewStaticResource("appIcon", appIcon)
+
 //go:embed images/icons/*
 var iconFS embed.FS
 
