@@ -6,10 +6,13 @@ import (
 	"Squire/internal/programs"
 	"Squire/internal/programs/actions"
 	"Squire/ui/custom_widgets"
+	"errors"
 	"log"
+	"sort"
 
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/data/binding"
+	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 	"github.com/go-vgo/robotgo"
@@ -17,6 +20,7 @@ import (
 
 // action settings
 var (
+	macroList          []string
 	macroName          string
 	selectedTreeItem   = ".1"
 	time               int
@@ -119,6 +123,55 @@ func (u *Ui) actionSettingsTabs() {
 }
 
 func (u *Ui) bindVariables() {
+	u.st.boundMacroList = binding.BindStringList(&macroList)
+	for _, m := range u.p.Macros {
+		u.st.boundMacroList.Append(m.Name)
+	}
+	u.st.boundMacroList.AddListener(binding.NewDataListener(func() {
+		ml, err := u.st.boundMacroList.Get()
+		if err != nil {
+			log.Println(err)
+			return
+		}
+		sort.Strings(ml)
+	}))
+	u.st.boundMacroName = binding.BindString(&macroName)
+	u.st.boundMacroNameEntry = widget.NewEntryWithData(u.st.boundMacroName)
+	u.st.boundMacroNameEntry.OnSubmitted = func(string) {
+		t, err := u.GetMacroTabMacroTree()
+		if err != nil {
+			log.Println(err)
+			return
+		}
+		for _, m := range u.p.Macros {
+			if m.Name == macroName {
+				dialog.ShowError(errors.New("macro name already exists"), u.win)
+				return
+			}
+		}
+		delete(u.mtMap, t.Macro.Name)
+		u.st.boundMacroList.Remove(t.Macro.Name)
+		u.mtMap[macroName] = t
+		t.Macro.Name = macroName
+		u.dt.Selected().Text = macroName
+		u.st.boundMacroList.Append(macroName)
+
+		u.dt.Refresh()
+	}
+	// u.st.boundMacroName.AddListener(binding.NewDataListener(func() {
+	// 	t, err := u.GetMacroTabMacroTree()
+	// 	if err != nil {
+	// 		log.Println(err)
+	// 		return
+	// 	}
+	// 	u.st.boundMacroNameEntry.
+	// 	delete(u.mtMap, t.Macro.Name)
+	// 	u.mtMap[macroName] = t
+	// 	t.Macro.Name = macroName
+	// 	u.dt.Selected().Text = macroName
+
+	// 	u.dt.Refresh()
+	// }))
 	u.st.boundGlobalDelay = binding.BindInt(&globalDelay)
 	u.st.boundGlobalDelayEntry = widget.NewEntryWithData(binding.IntToString(u.st.boundGlobalDelay))
 	u.st.boundGlobalDelay.AddListener(binding.NewDataListener(func() {
