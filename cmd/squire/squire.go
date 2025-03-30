@@ -2,6 +2,7 @@ package main
 
 import (
 	"Squire/encoding"
+	"Squire/internal/assets"
 	"Squire/internal/config"
 	"Squire/internal/programs"
 	"Squire/internal/utils"
@@ -21,34 +22,37 @@ import (
 func main() {
 	go failsafeHotkey()
 	//go toggleMousePos()
-	config.ViperConfig.AddConfigPath("../../internal/config")
-	config.ViperConfig.SetConfigName("config")
-	config.ViperConfig.SetConfigType("yaml")
-	err := config.ViperConfig.ReadInConfig()
-	if err != nil {
-		log.Println(err)
-	}
 
+	configInit()
 	a := app.NewWithID("Squire")
 	a.Settings().SetTheme(theme.DarkTheme())
 	os.Setenv("FYNE_SCALE", "1.25")
 
 	w := a.NewWindow("Squire")
 	w.Resize(fyne.NewSize(1000, 500))
+
 	ui.InitializeUi(w)
 	programs.GetPrograms().InitPrograms()
 	ui.GetUi().SetCurrentProgram(config.DarkAndDarker)
 	ui.GetUi().ConstructUi()
-	icon, err := fyne.LoadResourceFromPath("../../" + config.ImagesPath + "Squire" + config.PNG)
-	if err != nil {
-		log.Println(err)
-	}
-	w.SetIcon(icon)
+
+	w.SetIcon(assets.AppIcon)
+	w.SetMaster()
 	w.ShowAndRun()
 
 	utils.CloseTessClient()
 
-	err = encoding.ViperSerializer.Encode(programs.GetPrograms())
+	err := encoding.ViperSerializer.Encode(programs.GetPrograms())
+	if err != nil {
+		log.Println(err)
+	}
+}
+
+func configInit() {
+	config.ViperConfig.AddConfigPath("../../internal/config")
+	config.ViperConfig.SetConfigName("config")
+	config.ViperConfig.SetConfigType("yaml")
+	err := config.ViperConfig.ReadInConfig()
 	if err != nil {
 		log.Println(err)
 	}

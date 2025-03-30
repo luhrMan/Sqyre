@@ -159,8 +159,7 @@ func (mt *MacroTree) updateTreeOnselect() {
 			for _, t := range node.Targets {
 				itemsBoolList[t] = true
 			}
-			// mt.Tree.Refresh()
-			log.Println("set selected ISA: ", node.SearchArea.Name)
+			GetUi().st.boundImageSearchTargets.Set(node.Targets)
 			GetUi().st.boundImageSearchAreaSelect.SetSelected(node.SearchArea.Name)
 			GetUi().st.tabs.SelectIndex(imagesearchtab)
 		case *actions.Ocr:
@@ -174,9 +173,7 @@ func (mt *MacroTree) updateTreeOnselect() {
 func (u *Ui) createMacroToolbar() *widget.Toolbar {
 	tb := widget.NewToolbar(
 		widget.NewToolbarAction(theme.ContentAddIcon(), func() {
-			var (
-				action actions.ActionInterface
-			)
+			var action actions.ActionInterface
 			mt, err := u.GetMacroTabMacroTree()
 			if err != nil {
 				log.Println(err)
@@ -288,39 +285,9 @@ func (u *Ui) createMacroToolbar() *widget.Toolbar {
 				log.Println(err)
 				return
 			}
+
 			t.Macro.ExecuteActionTree()
 		}),
-		// widget.NewToolbarAction(theme.DocumentSaveIcon(), func() {
-		// 	save := func() {
-		// 		t, err := u.GetMacroTabMacroTree()
-		// 		if err != nil {
-		// 			log.Println(err)
-		// 			return
-		// 		}
-		// 		str := "programs" + "." + config.DarkAndDarker + "." + "macros"
-		// 		for _, m := range config.ViperConfig.Get(str).([]any) {
-		// 			log.Println("string slice text", m)
-		// 			log.Println("select text", u.sel.Text)
-		// 			if m.(map[string]any)["name"] == u.sel.Text {
-		// 				config.ViperConfig.Set(str+"."+"0", t.Macro)
-		// 				config.ViperConfig.WriteConfig()
-		// 				dialog.ShowInformation("Macro Saved Successfully", u.sel.Text+"\nPlease refresh the list.", u.win)
-		// 				return
-		// 			}
-		// 		}
-		// 		dialog.ShowInformation("Macro failed to save", "Macro not found in config", u.win)
-		// 	}
-		// 	if slices.Contains(u.sel.Options, u.sel.Text) {
-		// 		dialog.ShowConfirm("Overwrite existing file", "Overwrite "+u.sel.Text+"?", func(b bool) {
-		// 			if !b {
-		// 				return
-		// 			}
-		// 			save()
-		// 		}, u.win)
-		// 	} else {
-		// 		save()
-		// 	}
-		// }),
 	)
 	return tb
 }

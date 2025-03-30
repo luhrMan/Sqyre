@@ -310,6 +310,18 @@ func (u *Ui) bindVariables() {
 	u.st.boundImageSearchName = binding.BindString(&imageSearchName)
 	u.st.boundImageSearchArea = binding.BindString(&searchArea)
 	u.st.boundImageSearchTargets = binding.BindStringList(&imageSearchTargets)
+	u.st.boundImageSearchTargets.AddListener(binding.NewDataListener(func() {
+		t, err := u.GetMacroTabMacroTree()
+		if err != nil {
+			log.Println(err)
+			return
+		}
+
+		if n, ok := t.Macro.Root.GetAction(selectedTreeItem).(*actions.ImageSearch); ok {
+			n.Targets = imageSearchTargets
+			t.Tree.Refresh()
+		}
+	}))
 	u.st.boundXSplit = binding.BindInt(&xSplit)
 	u.st.boundYSplit = binding.BindInt(&ySplit)
 	u.st.boundImageSearchNameEntry = widget.NewEntryWithData(u.st.boundImageSearchName)
