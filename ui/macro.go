@@ -4,8 +4,8 @@ import (
 	"Squire/internal/programs"
 	"Squire/internal/programs/actions"
 	"Squire/internal/programs/macro"
+	"Squire/internal/utils"
 	"errors"
-	"fmt"
 	"log"
 
 	"fyne.io/fyne/v2"
@@ -13,11 +13,12 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+	hook "github.com/robotn/gohook"
 )
 
 type MacroTree struct {
+	*widget.Tree
 	Macro *macro.Macro
-	Tree  *widget.Tree
 
 	// boundMacroName binding.String
 }
@@ -69,7 +70,6 @@ func (mt *MacroTree) moveNode(selectedUID string, up bool) {
 }
 
 func (mt *MacroTree) createTree() {
-	log.Println("Creating tree")
 	mt.Tree.ChildUIDs = func(uid string) []string {
 		node := mt.Macro.Root.GetAction(uid)
 		if node == nil {
@@ -124,48 +124,48 @@ func (mt *MacroTree) updateTreeOnselect() {
 		selectedTreeItem = uid
 		switch node := mt.Macro.Root.GetAction(uid).(type) {
 		case *actions.Wait:
-			GetUi().st.boundTime.Set(node.Time)
-			GetUi().st.tabs.SelectIndex(waittab)
+			GetUi().at.boundTime.Set(node.Time)
+			GetUi().at.SelectIndex(waittab)
 		case *actions.Move:
-			GetUi().st.boundMoveX.Set(node.X)
-			GetUi().st.boundMoveY.Set(node.Y)
-			GetUi().st.tabs.SelectIndex(movetab)
+			GetUi().at.boundMoveX.Set(node.X)
+			GetUi().at.boundMoveY.Set(node.Y)
+			GetUi().at.SelectIndex(movetab)
 		case *actions.Click:
 			if node.Button == actions.LeftOrRight(false) {
-				GetUi().st.boundButton.Set(false)
+				GetUi().at.boundButton.Set(false)
 			} else {
-				GetUi().st.boundButton.Set(true)
+				GetUi().at.boundButton.Set(true)
 			}
-			GetUi().st.tabs.SelectIndex(clicktab)
+			GetUi().at.SelectIndex(clicktab)
 		case *actions.Key:
 			key = node.Key
-			GetUi().st.boundKeySelect.SetSelected(node.Key)
+			GetUi().at.boundKeySelect.SetSelected(node.Key)
 			if node.State == actions.UpOrDown(false) {
-				GetUi().st.boundState.Set(false)
+				GetUi().at.boundState.Set(false)
 			} else {
-				GetUi().st.boundState.Set(true)
+				GetUi().at.boundState.Set(true)
 			}
-			GetUi().st.tabs.SelectIndex(keytab)
+			GetUi().at.SelectIndex(keytab)
 
 		case *actions.Loop:
-			GetUi().st.boundLoopName.Set(node.Name)
-			GetUi().st.boundCount.Set(node.Count)
-			GetUi().st.tabs.SelectIndex(looptab)
+			GetUi().at.boundLoopName.Set(node.Name)
+			GetUi().at.boundCount.Set(node.Count)
+			GetUi().at.SelectIndex(looptab)
 		case *actions.ImageSearch:
-			GetUi().st.boundImageSearchName.Set(node.Name)
+			GetUi().at.boundImageSearchName.Set(node.Name)
 			for t := range itemsBoolList {
 				itemsBoolList[t] = false
 			}
 			for _, t := range node.Targets {
 				itemsBoolList[t] = true
 			}
-			GetUi().st.boundImageSearchTargets.Set(node.Targets)
-			GetUi().st.boundImageSearchAreaSelect.SetSelected(node.SearchArea.Name)
-			GetUi().st.tabs.SelectIndex(imagesearchtab)
+			GetUi().at.boundImageSearchTargets.Set(node.Targets)
+			GetUi().at.boundImageSearchAreaSelect.SetSelected(node.SearchArea.Name)
+			GetUi().at.SelectIndex(imagesearchtab)
 		case *actions.Ocr:
-			GetUi().st.boundOCRTarget.Set(node.Target)
-			GetUi().st.boundOCRSearchAreaSelect.SetSelected(node.SearchArea.Name)
-			GetUi().st.tabs.SelectIndex(ocrtab)
+			GetUi().at.boundOCRTarget.Set(node.Target)
+			GetUi().at.boundOCRSearchAreaSelect.SetSelected(node.SearchArea.Name)
+			GetUi().at.SelectIndex(ocrtab)
 		}
 	}
 }
@@ -183,7 +183,7 @@ func (u *Ui) createMacroToolbar() *widget.Toolbar {
 			if selectedNode == nil {
 				selectedNode = mt.Macro.Root
 			}
-			switch u.st.tabs.Selected().Text {
+			switch u.at.Selected().Text {
 			case "Wait":
 				action = actions.NewWait(time)
 			case "Move":
@@ -214,38 +214,6 @@ func (u *Ui) createMacroToolbar() *widget.Toolbar {
 			} else {
 				selectedNode.GetParent().AddSubAction(action)
 			}
-
-			mt.Tree.Refresh()
-		}),
-		widget.NewToolbarAction(theme.ViewRefreshIcon(), func() {
-			mt, err := u.GetMacroTabMacroTree()
-			if err != nil {
-				log.Println(err)
-				return
-			}
-			if selectedTreeItem == "" {
-				log.Println("No node selected")
-				return
-			}
-			node := mt.Macro.Root.GetAction(selectedTreeItem)
-			if node == nil {
-				node = mt.Macro.Root
-			}
-			og := node.String()
-			switch node := node.(type) {
-			case *actions.ImageSearch:
-				var t []string
-				for i, item := range itemsBoolList {
-					if item {
-						t = append(t, i)
-					}
-				}
-				node.Name = imageSearchName
-				node.SearchArea = programs.CurrentProgramAndScreenSizeCoordinates().GetSearchArea(searchArea)
-				node.Targets = t
-			}
-
-			fmt.Printf("Updated node: %+v from '%v' to '%v' \n", node.GetUID(), og, node)
 
 			mt.Tree.Refresh()
 		}),
@@ -290,4 +258,22 @@ func (u *Ui) createMacroToolbar() *widget.Toolbar {
 		}),
 	)
 	return tb
+}
+
+func (u *Ui) RegisterMacroHotkeys() {
+	for _, m := range u.p.Macros {
+		hook.Register(hook.KeyDown, m.Hotkey, func(e hook.Event) {
+			log.Println("pressed", m.Hotkey)
+			m.ExecuteActionTree()
+		})
+		log.Println("registered:", m)
+	}
+}
+
+func ReRegisterMacroHotkeys() {
+	hook.End()
+	log.Println("event stopped, reregistering")
+	utils.FailsafeHotkey()
+	ui.RegisterMacroHotkeys()
+	go utils.StartHook()
 }
