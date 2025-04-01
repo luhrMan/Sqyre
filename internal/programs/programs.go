@@ -28,7 +28,7 @@ func (p *Programs) InitPrograms() {
 	SetCurrentProgram(p.GetProgram(config.DarkAndDarker))
 	macros := config.ViperConfig.GetStringSlice(keystr + "macros")
 	for i := range macros {
-		p.GetProgram(config.DarkAndDarker).Macros = append(p.GetProgram(config.DarkAndDarker).Macros, macro.NewMacro("New Macro "+strconv.Itoa(i), 30, ""))
+		p.GetProgram(config.DarkAndDarker).Macros = append(p.GetProgram(config.DarkAndDarker).Macros, macro.NewMacro("New Macro "+strconv.Itoa(i), 30, []string{}))
 		err := p.GetProgram(config.DarkAndDarker).GetMacroAtIndex(i).UnmarshalMacro(i)
 		if err != nil {
 			log.Println(err)

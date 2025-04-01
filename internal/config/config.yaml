@@ -8,57 +8,25 @@ programs:
                 name: root
                 subactions:
                     - type: wait
-                      time: 143
+                      time: 2500
+                    - type: move
+                      x: 1920
+                      "y": 572
                     - type: wait
-                      time: 145
-                    - targets:
-                        - Badger Pendant
-                        - Fangs of Death Necklace
-                        - Necklace of Peace
-                        - Ring of Wisdom
-                        - Magic Protection Potion
-                        - Surgical Kit
-                        - Phoenix Choker
-                        - Frost Amulet
-                        - Ring of Quickness
-                        - Ring of Vitality
-                        - Lockpick
-                        - Owl Pendant
-                        - Grimsmile Ring
-                        - Fox Pendant
-                        - Potion
-                        - Luck Potion
-                        - Ring of Courage
-                        - Ox Pendant
-                        - Rat Pendant
-                        - Healing Potion
-                        - Francisca Axe
-                        - Monkey Pendant
-                        - Wind Locket
-                        - Ring of Finesse
-                        - Ring of Survival
-                        - Bear Pendant
-                        - Ring of Resolve
-                        - Torq of Soul
-                        - Campfire
-                        - Protection Potion
-                        - Bandage
-                      searcharea:
-                        name: stash-screen-player-inventory
-                        leftx: 913
-                        topy: 830
-                        rightx: 1466
-                        bottomy: 1112
-                      type: imagesearch
-                      name: test
+                      time: 143
               globaldelay: 0
-              hotkey: ""
+              hotkey:
+                - ctrl
+                - shift
+                - "1"
             - name: New Macro 1
               root:
                 count: 1
                 type: loop
                 name: root
                 subactions:
+                    - type: wait
+                      time: 2500
                     - count: 1
                       type: loop
                       name: kkjj
@@ -66,43 +34,16 @@ programs:
                         - type: move
                           x: 0
                           "y": 0
-                        - type: move
-                          x: 0
-                          "y": 0
-                        - targets: []
-                          searcharea:
-                            name: stash-screen-player-inventory
-                            leftx: 913
-                            topy: 830
-                            rightx: 1466
-                            bottomy: 1112
-                          type: imagesearch
-                          name: ""
-                    - target: ""
-                      searcharea:
-                        name: ""
-                        leftx: 0
-                        topy: 0
-                        rightx: 0
-                        bottomy: 0
-                      type: ocr
-                      name: ""
+                    - type: click
+                      button: right
+                    - type: key
+                      key: ctrl
+                      state: Down
               globaldelay: 100
-              hotkey: ""
-            - name: f
-              root:
-                count: 1
-                type: loop
-                name: root
-              globaldelay: 30
-              hotkey: ""
-            - name: fuuuuck
-              root:
-                count: 1
-                type: loop
-                name: root
-              globaldelay: 30
-              hotkey: ""
+              hotkey:
+                - ctrl
+                - shift
+                - "4"
             - name: Testies
               root:
                 count: 1
@@ -110,20 +51,24 @@ programs:
                 name: root
                 subactions:
                     - type: wait
-                      time: 0
-              globaldelay: 50
-              hotkey: ""
-
-            - name: t
-              root:
-                count: 1
-                type: loop
-                name: root
-                subactions:
+                      time: 2500
                     - type: wait
-                      time: 0
-              globaldelay: 0
-              hotkey: ""
+                      time: 231
+                    - type: wait
+                      time: 231
+                    - type: wait
+                      time: 231
+                    - type: wait
+                      time: 231
+                    - type: wait
+                      time: 231
+                    - type: wait
+                      time: 231
+              globaldelay: 50
+              hotkey:
+                - ctrl
+                - shift
+                - "3"
         items: {}
         coordinates:
             1920x1080:
@@ -267,13 +212,13 @@ programs:
                         "y": 1063
                 searchareas:
                     stash-screen-player-inventory:
-                        name: Stash-screen-player-inventory
+                        name: stash-screen-player-inventory
                         leftx: 913
                         topy: 830
                         rightx: 1466
                         bottomy: 1112
                     stash-screen-stash-inventory:
-                        name: Stash-screen-stash-inventory
+                        name: stash-screen-stash-inventory
                         leftx: 1832
                         topy: 261
                         rightx: 2493

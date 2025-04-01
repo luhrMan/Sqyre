@@ -14,10 +14,10 @@ type Macro struct {
 	Name        string
 	Root        *actions.Loop
 	GlobalDelay int
-	Hotkey      string
+	Hotkey      []string
 }
 
-func NewMacro(name string, delay int, hotkey string) *Macro {
+func NewMacro(name string, delay int, hotkey []string) *Macro {
 	return &Macro{
 		Name:        name,
 		Root:        actions.NewLoop(1, "root", []actions.ActionInterface{}),
@@ -26,8 +26,8 @@ func NewMacro(name string, delay int, hotkey string) *Macro {
 	}
 }
 
-func (m *Macro) SetHotkey(s string) {
-	m.Hotkey = s
+func (m *Macro) SetHotkey(hk []string) {
+	m.Hotkey = hk
 }
 
 func (m *Macro) ExecuteActionTree(ctx ...any) { //error

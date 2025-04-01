@@ -64,7 +64,7 @@ func (p *Program) AddMacro(s string, d int) {
 	if s == "" {
 		return
 	}
-	p.Macros = append(p.Macros, macro.NewMacro(s, d, ""))
+	p.Macros = append(p.Macros, macro.NewMacro(s, d, []string{}))
 }
 
 // func (p *Program) AddProgramPoint(ss string, point config.Point) {

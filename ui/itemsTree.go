@@ -31,7 +31,7 @@ func (u *Ui) createItemsCheckTree() *widget.Tree {
 		log.Println("updating image search targets...")
 		log.Println("Before update:", imageSearchTargets)
 
-		t, err := u.st.boundImageSearchTargets.Get()
+		t, err := u.at.boundImageSearchTargets.Get()
 		if err != nil {
 			log.Println(err)
 			return
@@ -39,10 +39,10 @@ func (u *Ui) createItemsCheckTree() *widget.Tree {
 		itemsBoolList[item] = b
 		if b {
 			if !slices.Contains(t, item) {
-				u.st.boundImageSearchTargets.Append(item)
+				u.at.boundImageSearchTargets.Append(item)
 			}
 		} else {
-			u.st.boundImageSearchTargets.Remove(item)
+			u.at.boundImageSearchTargets.Remove(item)
 		}
 		log.Println("After update:", imageSearchTargets)
 	}
