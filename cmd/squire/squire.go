@@ -11,16 +11,14 @@ import (
 	"log"
 	"os"
 
-	"github.com/go-vgo/robotgo"
-
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/theme"
-	hook "github.com/robotn/gohook"
 )
 
 func main() {
-	go failsafeHotkey()
+	utils.FailsafeHotkey()
+	go utils.StartHook()
 	//go toggleMousePos()
 
 	configInit()
@@ -41,7 +39,6 @@ func main() {
 	w.ShowAndRun()
 
 	utils.CloseTessClient()
-
 	err := encoding.ViperSerializer.Encode(programs.GetPrograms())
 	if err != nil {
 		log.Println(err)
@@ -55,27 +52,5 @@ func configInit() {
 	err := config.ViperConfig.ReadInConfig()
 	if err != nil {
 		log.Println(err)
-	}
-}
-
-func failsafeHotkey() {
-	ok := hook.AddEvents("f1", "shift", "ctrl")
-	if ok {
-		log.Println("Exiting...")
-		os.Exit(0)
-	}
-}
-
-func toggleMousePos() {
-	locX, locY := robotgo.Location()
-	for {
-		robotgo.MilliSleep(2000)
-		newLocX, newLocY := robotgo.Location()
-		if locX == newLocX && locY == newLocY {
-			continue
-		}
-		locX, locY = robotgo.Location()
-		log.Println(locX-config.XOffset, locY-config.YOffset)
-		log.Println("Current title: ", robotgo.GetTitle())
 	}
 }
