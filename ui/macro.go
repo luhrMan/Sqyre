@@ -261,10 +261,10 @@ func (u *Ui) createMacroToolbar() *widget.Toolbar {
 }
 
 func (u *Ui) RegisterMacroHotkeys() {
-	for _, m := range u.p.Macros {
-		hook.Register(hook.KeyDown, m.Hotkey, func(e hook.Event) {
-			log.Println("pressed", m.Hotkey)
-			m.ExecuteActionTree()
+	for _, m := range u.mtMap {
+		hook.Register(hook.KeyDown, m.Macro.Hotkey, func(e hook.Event) {
+			log.Println("pressed", m.Macro.Hotkey)
+			m.Macro.ExecuteActionTree()
 		})
 		log.Println("registered:", m)
 	}
