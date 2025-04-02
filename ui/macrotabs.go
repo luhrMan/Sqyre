@@ -15,8 +15,8 @@ func (u *Ui) createDocTabs() {
 	u.dt = container.NewDocTabs()
 	u.dt.OnClosed = func(ti *container.TabItem) {
 		delete(u.mtMap, ti.Text)
-
-	} //u.setMacroHotkeyHookEvents() }
+		ReRegisterMacroHotkeys()
+	}
 	u.dt.OnSelected = func(ti *container.TabItem) {
 		mt, err := u.selectedMacroTab()
 		if err != nil {
@@ -83,7 +83,7 @@ func (u *Ui) addMacroDocTab(macro *macro.Macro) {
 	u.dt.Append(t)
 	u.dt.Select(t)
 	mt.updateTreeOnselect()
-	// u.setMacroHotkeyHookEvents()
+	ReRegisterMacroHotkeys()
 	mt.Tree.Refresh()
 }
 

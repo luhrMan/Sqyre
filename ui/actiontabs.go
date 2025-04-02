@@ -173,20 +173,7 @@ func (u *Ui) bindVariables() {
 	u.ms.macroHotkeySelect2 = &widget.Select{Options: []string{"", "shift"}}
 	u.ms.macroHotkeySelect3 = &widget.Select{Options: []string{"1", "2", "3", "4", "5"}}
 
-	// u.ms.macroHotkeySelect1.OnChanged = func(s string) {
-	// 	macroHotkey[0] = s
-	// 	u.ms.boundMacroHotkey.Reload()
-	// 	ReRegisterMacroHotkeys()
-	// }
 	u.ms.macroHotkeySelect1.SetSelectedIndex(0)
-	u.ms.macroHotkeySelect2.OnChanged = func(s string) {
-		macroHotkey[1] = s
-		u.ms.boundMacroHotkey.Reload()
-	}
-	u.ms.macroHotkeySelect3.OnChanged = func(s string) {
-		macroHotkey[2] = s
-		u.ms.boundMacroHotkey.Reload()
-	}
 
 	u.ms.boundGlobalDelay = binding.BindInt(&globalDelay)
 	u.ms.boundGlobalDelayEntry = widget.NewEntryWithData(binding.IntToString(u.ms.boundGlobalDelay))
