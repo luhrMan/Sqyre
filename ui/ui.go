@@ -5,6 +5,7 @@ import (
 	"Squire/internal/programs"
 	"Squire/internal/utils"
 	"Squire/ui/custom_widgets"
+	"log"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -50,22 +51,15 @@ func InitializeUi(w fyne.Window) *Ui {
 func (u *Ui) ConstructUi() {
 	toggleMousePos()
 	// u.at = &actionTabs{tabs: &container.AppTabs{}}
-	u.RegisterMacroHotkeys()
 	assets.CreateItemMaps()
 	u.actionSettingsTabs()
 	u.createDocTabs()
 	u.win.SetMainMenu(u.createMainMenu())
 	u.win.SetContent(u.constructMainLayout())
-
-	u.ms.macroHotkeySelect1.OnChanged = func(s string) {
-		macroHotkey[0] = s
-		u.ms.boundMacroHotkey.Reload()
-		ReRegisterMacroHotkeys()
-	}
 }
 
 func (u *Ui) constructMainLayout() *fyne.Container {
-	macroLayout := container.NewBorder(
+	macroToolbar :=
 		container.NewGridWithColumns(2,
 			container.NewHBox(
 				u.createMacroToolbar(),
@@ -73,41 +67,69 @@ func (u *Ui) constructMainLayout() *fyne.Container {
 				widget.NewLabel("Macro Name:"),
 			),
 			container.NewBorder(nil, nil, nil,
-				u.createMacroSelect(), u.ms.boundMacroNameEntry),
-		),
-		nil,
-		widget.NewSeparator(),
-		nil,
-		container.NewBorder(
-			nil,
-			container.NewGridWithRows(2,
-
-				container.NewGridWithColumns(
-					2,
-					container.NewGridWithColumns(3,
-						u.ms.macroHotkeySelect1,
-						u.ms.macroHotkeySelect2,
-						u.ms.macroHotkeySelect3,
-					),
-					container.NewGridWithColumns(2,
-						container.NewBorder(nil, nil,
-							widget.NewLabel("X: "), nil,
-							boundLocXLabel,
-						),
-						container.NewBorder(nil, nil,
-							widget.NewLabel("Y: "), nil,
-							boundLocYLabel,
-						),
-					),
-				),
-				container.NewVBox(
-					utils.MacroProgressBar(),
-				),
+				u.createMacroSelect(),
+				u.ms.boundMacroNameEntry,
 			),
+		)
+	macroHotkey :=
+		container.NewHBox(
+			u.ms.macroHotkeySelect1,
+			u.ms.macroHotkeySelect2,
+			u.ms.macroHotkeySelect3,
+			widget.NewButtonWithIcon("", theme.DocumentSaveIcon(),
+				func() {
+					macroHotkey = []string{
+						u.ms.macroHotkeySelect1.Selected,
+						u.ms.macroHotkeySelect2.Selected,
+						u.ms.macroHotkeySelect3.Selected,
+					}
+					for i, s := range macroHotkey {
+						if s == "" {
+							macroHotkey = append(macroHotkey[:i], macroHotkey[i+1:]...)
+						}
+					}
+					mt, err := u.selectedMacroTab()
+					if err != nil {
+						log.Println(err)
+						return
+					}
+					u.ms.boundMacroHotkey.Reload()
+					mt.Macro.Hotkey = macroHotkey
+					ReRegisterMacroHotkeys()
+				},
+			),
+		)
+	mousePosition :=
+		container.NewHBox(
+			container.NewBorder(nil, nil,
+				widget.NewLabel("X: "), nil,
+				boundLocXLabel,
+			),
+			container.NewBorder(nil, nil,
+				widget.NewLabel("Y: "), nil,
+				boundLocYLabel,
+			),
+		)
+
+	macroBottom :=
+		container.NewGridWithRows(2,
+			container.NewBorder(
+				nil,
+				nil,
+				macroHotkey,
+				mousePosition,
+			),
+			utils.MacroProgressBar(),
+		)
+
+	macroLayout :=
+		container.NewBorder(
+			macroToolbar,
+			macroBottom,
+			widget.NewSeparator(),
 			nil,
-			nil,
-			u.dt),
-	)
+			u.dt,
+		)
 	mainLayout := container.NewBorder(nil, nil, u.at, nil, macroLayout)
 	return mainLayout
 }
