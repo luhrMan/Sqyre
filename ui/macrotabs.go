@@ -88,18 +88,3 @@ func (u *Ui) addMacroDocTab(macro *macro.Macro) {
 	ReRegisterMacroHotkeys()
 	mt.Tree.Refresh()
 }
-
-// for all open macros, register their hotkeys to the hook process
-// func (u *Ui) setMacroHotkeyHookEvents() {
-// 	log.Println("setting macro hotkey hook events...")
-
-// 	for _, mt := range u.mtMap {
-
-// 		hk := hotkey.New([]hotkey.Modifier{mt.Macro.Hotkey[0], mt.Macro.Hotkey[1], mt.Macro.Hotkey[2]})
-// 		hook.Register(hook.KeyDown, mt.Macro.Hotkey, func(e hook.Event) {
-// 			log.Println("Executing:", mt.Macro.Name)
-// 			mt.Macro.ExecuteActionTree()
-// 		})
-// 	}
-// 	utils.FailsafeHotkey()
-// }
