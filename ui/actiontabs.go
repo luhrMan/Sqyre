@@ -20,10 +20,9 @@ import (
 
 // action settings
 var (
-	macroList   []string
-	macroName   string
-	macroHotkey []string
-	// macroMod1
+	macroList          []string
+	macroName          string
+	macroHotkey        []string
 	selectedTreeItem   = ".1"
 	time               int
 	globalDelay        = 30

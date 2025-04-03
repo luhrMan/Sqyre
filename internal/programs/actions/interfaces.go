@@ -16,7 +16,6 @@ type ActionInterface interface {
 
 	String() string
 	GetType() string
-	// UpdateBaseAction(uid string, parent AdvancedActionInterface)
 }
 
 type AdvancedActionInterface interface {
@@ -32,10 +31,6 @@ type AdvancedActionInterface interface {
 	RemoveSubAction(ActionInterface)
 }
 
-//	func (a *BaseAction) UpdateBaseAction(uid string, parent AdvancedActionInterface) {
-//		a.SetUID(uid)
-//		a.SetParent(parent)
-//	}
 func (a *BaseAction) GetType() string                          { return a.Type }
 func (a *BaseAction) GetUID() string                           { return a.uid }
 func (a *BaseAction) SetUID(uid string)                        { a.uid = uid }

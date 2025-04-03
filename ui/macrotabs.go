@@ -13,6 +13,7 @@ import (
 
 func (u *Ui) createDocTabs() {
 	u.dt = container.NewDocTabs()
+
 	u.dt.OnClosed = func(ti *container.TabItem) {
 		delete(u.mtMap, ti.Text)
 		ReRegisterMacroHotkeys()
@@ -40,6 +41,7 @@ func (u *Ui) createDocTabs() {
 		u.ms.macroHotkeySelect2.SetSelected(mt.Macro.Hotkey[1])
 		u.ms.macroHotkeySelect3.SetSelected(mt.Macro.Hotkey[2])
 	}
+
 	u.dt.Items = append(u.dt.Items, container.NewTabItem("", container.NewBorder(nil, nil, nil, nil)))
 	u.dt.SelectIndex(0)
 

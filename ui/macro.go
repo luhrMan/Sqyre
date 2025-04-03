@@ -243,7 +243,6 @@ func (u *Ui) createMacroToolbar() *widget.Toolbar {
 				return
 			}
 			t.moveNode(selectedTreeItem, true)
-
 		}),
 		widget.NewToolbarSeparator(),
 		widget.NewToolbarSpacer(),
