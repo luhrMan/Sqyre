@@ -45,8 +45,6 @@ func NewProgram() *Program {
 	}
 }
 func CurrentProgramAndScreenSizeCoordinates() *coordinates.Coordinates {
-	// log.Println(strconv.Itoa(config.MonitorWidth) + "x" + strconv.Itoa(config.MonitorHeight))
-	// log.Println(currentProgram.Coordinates[strconv.Itoa(config.MonitorWidth)+"x"+strconv.Itoa(config.MonitorHeight)])
 	return currentProgram.Coordinates[strconv.Itoa(config.MonitorWidth)+"x"+strconv.Itoa(config.MonitorHeight)]
 }
 
@@ -64,7 +62,7 @@ func (p *Program) AddMacro(s string, d int) {
 	if s == "" {
 		return
 	}
-	p.Macros = append(p.Macros, macro.NewMacro(s, d, ""))
+	p.Macros = append(p.Macros, macro.NewMacro(s, d, []string{}))
 }
 
 // func (p *Program) AddProgramPoint(ss string, point config.Point) {

@@ -3,6 +3,7 @@ package ui
 import (
 	"Squire/internal/assets"
 	"log"
+	"slices"
 	"strconv"
 
 	"fyne.io/fyne/v2"
@@ -25,6 +26,27 @@ func (u *Ui) createItemsCheckTree() *widget.Tree {
 		categories = append(categories, category)
 	}
 	log.Println("items map", itemsStrMap)
+
+	updateLists := func(item string, b bool) {
+		log.Println("updating image search targets...")
+		log.Println("Before update:", imageSearchTargets)
+
+		t, err := u.at.boundImageSearchTargets.Get()
+		if err != nil {
+			log.Println(err)
+			return
+		}
+		itemsBoolList[item] = b
+		if b {
+			if !slices.Contains(t, item) {
+				u.at.boundImageSearchTargets.Append(item)
+			}
+		} else {
+			u.at.boundImageSearchTargets.Remove(item)
+		}
+		log.Println("After update:", imageSearchTargets)
+	}
+
 	setAllItemsInCategory := func(category string, b bool) bool {
 		flip := true
 		defer tree.Refresh()
@@ -33,13 +55,13 @@ func (u *Ui) createItemsCheckTree() *widget.Tree {
 				if !itemsBoolList[item] {
 					flip = false
 				}
-				itemsBoolList[item] = true
+				updateLists(item, true)
 			}
 			log.Printf("Selected category: %v", category)
 			return flip
 		}
 		for _, item := range itemsStrMap[category] {
-			itemsBoolList[item] = false
+			updateLists(item, false)
 		}
 		log.Printf("Unselected category: %v", category)
 		return false
@@ -88,18 +110,19 @@ func (u *Ui) createItemsCheckTree() *widget.Tree {
 			wc.SetText(id + ": " + strconv.Itoa(counter) + " / " + strconv.Itoa(len(itemsStrMap[id])))
 			if counter == len(itemsStrMap[id]) {
 				wc.Checked = true
+				wc.Refresh()
 			} else {
 				wc.Checked = false
+				wc.Refresh()
 			}
 			return
 		}
 		wi := c.Objects[0].(*widget.Icon)
 		wc.OnChanged = func(b bool) {
 			if b {
-				itemsBoolList[id] = true
+				updateLists(id, true)
 			} else {
-				itemsBoolList[id] = false
-
+				updateLists(id, false)
 			}
 		}
 		wc.SetText(id)
@@ -123,9 +146,9 @@ func (u *Ui) createItemsCheckTree() *widget.Tree {
 			}
 		} else {
 			if itemsBoolList[id] {
-				itemsBoolList[id] = false
+				updateLists(id, false)
 			} else {
-				itemsBoolList[id] = true
+				updateLists(id, true)
 			}
 		}
 		tree.Refresh()
