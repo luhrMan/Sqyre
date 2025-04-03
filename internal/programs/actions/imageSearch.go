@@ -42,12 +42,12 @@ func (a *ImageSearch) Execute(ctx any) error {
 		return err
 	}
 	defer img.Close()
-	gocv.IMWrite(config.UpDir+config.UpDir+config.ImagesPath+"search-area.png", img)
+	gocv.IMWrite(config.UpDir+config.UpDir+config.MetaImagesPath+"search-area.png", img)
 
 	imgDraw := img.Clone()
 	defer imgDraw.Close()
 
-	results := a.match(config.UpDir+config.UpDir+config.ImagesPath, img, imgDraw)
+	results := a.match(config.UpDir+config.UpDir+config.MetaImagesPath, img, imgDraw)
 	sorted := utils.SortListOfPoints(results)
 
 	count := 0
@@ -105,11 +105,11 @@ func (a *ImageSearch) FindTemplateMatches(img, template, Imask, Tmask, Cmask goc
 
 	if Imask.Rows() > 0 && Imask.Cols() > 0 {
 		gocv.Subtract(i, Imask, &i)
-		gocv.IMWrite(config.UpDir+config.UpDir+config.ImagesPath+"meta/imageSubtraction.png", i)
+		gocv.IMWrite(config.UpDir+config.UpDir+config.MetaImagesPath+"imageSubtraction.png", i)
 	}
 	if Tmask.Rows() > 0 && Tmask.Cols() > 0 {
 		gocv.Subtract(t, Tmask, &t)
-		gocv.IMWrite(config.UpDir+config.UpDir+config.ImagesPath+"meta/templateSubtraction.png", t)
+		gocv.IMWrite(config.UpDir+config.UpDir+config.MetaImagesPath+"templateSubtraction.png", t)
 	}
 
 	gocv.GaussianBlur(i, &i, kernel, 0, 0, gocv.BorderDefault)

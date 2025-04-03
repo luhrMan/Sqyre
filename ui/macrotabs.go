@@ -13,19 +13,35 @@ import (
 
 func (u *Ui) createDocTabs() {
 	u.dt = container.NewDocTabs()
-	u.dt.OnClosed = func(ti *container.TabItem) { delete(u.mtMap, ti.Text) }
+
+	u.dt.OnClosed = func(ti *container.TabItem) {
+		delete(u.mtMap, ti.Text)
+		ReRegisterMacroHotkeys()
+	}
 	u.dt.OnSelected = func(ti *container.TabItem) {
 		mt, err := u.selectedMacroTab()
 		if err != nil {
 			log.Println(err)
 			return
 		}
-		if u.st == nil {
+		if u.at == nil {
 			return
 		}
-		u.st.boundGlobalDelay.Set(mt.Macro.GlobalDelay)
-		u.st.boundMacroName.Set(mt.Macro.Name)
+		u.ms.boundGlobalDelay.Set(mt.Macro.GlobalDelay)
+		u.ms.boundMacroName.Set(mt.Macro.Name)
+		if len(mt.Macro.Hotkey) < 3 {
+			mt.Macro.Hotkey = []string{"ctrl", "shift", "1"}
+		}
+		u.ms.boundMacroHotkey.Set(mt.Macro.Hotkey)
+
+		v, _ := u.ms.boundMacroHotkey.Get()
+		log.Println("boundMacroHotkey set from:", mt.Macro.Name)
+		log.Println("boundMacroHotkey set to:", v)
+		u.ms.macroHotkeySelect1.SetSelected(mt.Macro.Hotkey[0])
+		u.ms.macroHotkeySelect2.SetSelected(mt.Macro.Hotkey[1])
+		u.ms.macroHotkeySelect3.SetSelected(mt.Macro.Hotkey[2])
 	}
+
 	u.dt.Items = append(u.dt.Items, container.NewTabItem("", container.NewBorder(nil, nil, nil, nil)))
 	u.dt.SelectIndex(0)
 
@@ -35,6 +51,7 @@ func (u *Ui) createDocTabs() {
 
 	u.dt.RemoveIndex(0)
 	u.dt.SelectIndex(0)
+
 }
 
 func (u *Ui) selectedMacroTab() (*MacroTree, error) {
@@ -68,5 +85,6 @@ func (u *Ui) addMacroDocTab(macro *macro.Macro) {
 	u.dt.Append(t)
 	u.dt.Select(t)
 	mt.updateTreeOnselect()
+	ReRegisterMacroHotkeys()
 	mt.Tree.Refresh()
 }
