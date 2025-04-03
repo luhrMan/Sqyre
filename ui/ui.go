@@ -3,7 +3,9 @@ package ui
 import (
 	"Squire/internal/assets"
 	"Squire/internal/programs"
+	"Squire/internal/utils"
 	"Squire/ui/custom_widgets"
+	"log"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -11,9 +13,18 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	widget "fyne.io/fyne/v2/widget"
+	"github.com/go-vgo/robotgo"
 )
 
-var ui *Ui
+var (
+	ui             *Ui
+	locX           int
+	locY           int
+	boundLocX      binding.ExternalInt
+	boundLocY      binding.ExternalInt
+	boundLocXLabel *widget.Label
+	boundLocYLabel *widget.Label
+)
 
 type Ui struct {
 	win fyne.Window
@@ -21,7 +32,8 @@ type Ui struct {
 	mtMap map[string]*MacroTree
 
 	dt *container.DocTabs
-	st *settingsTabs
+	at *actionTabs
+	ms *macroSettings
 
 	p *programs.Program
 }
@@ -31,12 +43,14 @@ func InitializeUi(w fyne.Window) *Ui {
 	ui = &Ui{
 		win:   w,
 		mtMap: map[string]*MacroTree{},
+		at:    &actionTabs{AppTabs: &container.AppTabs{}},
+		ms:    &macroSettings{},
 	}
 	return ui
 }
 func (u *Ui) ConstructUi() {
-	u.st = &settingsTabs{tabs: &container.AppTabs{}}
-
+	toggleMousePos()
+	// u.at = &actionTabs{tabs: &container.AppTabs{}}
 	assets.CreateItemMaps()
 	u.actionSettingsTabs()
 	u.createDocTabs()
@@ -45,7 +59,7 @@ func (u *Ui) ConstructUi() {
 }
 
 func (u *Ui) constructMainLayout() *fyne.Container {
-	macroLayout := container.NewBorder(
+	macroToolbar :=
 		container.NewGridWithColumns(2,
 			container.NewHBox(
 				u.createMacroToolbar(),
@@ -53,15 +67,70 @@ func (u *Ui) constructMainLayout() *fyne.Container {
 				widget.NewLabel("Macro Name:"),
 			),
 			container.NewBorder(nil, nil, nil,
-				u.createMacroSelect(), u.st.boundMacroNameEntry),
-		),
-		nil,
-		widget.NewSeparator(),
-		nil,
-		u.dt,
-	)
-	mainLayout := container.NewBorder(nil, nil, u.st.tabs, nil, macroLayout)
+				u.createMacroSelect(),
+				u.ms.boundMacroNameEntry,
+			),
+		)
+	macroHotkey :=
+		container.NewHBox(
+			u.ms.macroHotkeySelect1,
+			u.ms.macroHotkeySelect2,
+			u.ms.macroHotkeySelect3,
+			widget.NewButtonWithIcon("", theme.DocumentSaveIcon(),
+				func() {
+					macroHotkey = []string{
+						u.ms.macroHotkeySelect1.Selected,
+						u.ms.macroHotkeySelect2.Selected,
+						u.ms.macroHotkeySelect3.Selected,
+					}
+					for i, s := range macroHotkey {
+						if s == "" {
+							macroHotkey = append(macroHotkey[:i], macroHotkey[i+1:]...)
+						}
+					}
+					mt, err := u.selectedMacroTab()
+					if err != nil {
+						log.Println(err)
+						return
+					}
+					u.ms.boundMacroHotkey.Reload()
+					mt.Macro.Hotkey = macroHotkey
+					ReRegisterMacroHotkeys()
+				},
+			),
+		)
+	mousePosition :=
+		container.NewHBox(
+			container.NewBorder(nil, nil,
+				widget.NewLabel("X: "), nil,
+				boundLocXLabel,
+			),
+			container.NewBorder(nil, nil,
+				widget.NewLabel("Y: "), nil,
+				boundLocYLabel,
+			),
+		)
 
+	macroBottom :=
+		container.NewGridWithRows(2,
+			container.NewBorder(
+				nil,
+				nil,
+				macroHotkey,
+				mousePosition,
+			),
+			utils.MacroProgressBar(),
+		)
+
+	macroLayout :=
+		container.NewBorder(
+			macroToolbar,
+			macroBottom,
+			widget.NewSeparator(),
+			nil,
+			u.dt,
+		)
+	mainLayout := container.NewBorder(nil, nil, u.at, nil, macroLayout)
 	return mainLayout
 }
 
@@ -80,8 +149,9 @@ func (u *Ui) createMacroSelect() *widget.Button {
 				}
 			}
 			w := fyne.CurrentApp().NewWindow(title)
+			w.SetIcon(assets.AppIcon)
 			boundMacroListWidget := widget.NewListWithData(
-				u.st.boundMacroList,
+				u.ms.boundMacroList,
 				func() fyne.CanvasObject {
 					return widget.NewLabel("template")
 				},
@@ -105,17 +175,23 @@ func (u *Ui) createMacroSelect() *widget.Button {
 			w.Resize(fyne.NewSize(300, 500))
 			w.Show()
 		},
-		// theme.LoginIcon(),
-		// func() {
-		// 	if u.sel.Text == "" {
-		// 		return
-		// 	}
-		// 	if u.p.GetMacroByName(u.sel.Text) == nil {
-		// 		u.p.AddMacro(u.sel.Text, globalDelay)
-		// 	}
-		// 	u.addMacroDocTab(u.p.GetMacroByName(u.sel.Text))
-		// },
 	)
+}
+
+func toggleMousePos() {
+	locX, locY = robotgo.Location()
+	go func() {
+		for {
+			robotgo.MilliSleep(100)
+			newLocX, newLocY := robotgo.Location()
+			if locX == newLocX && locY == newLocY {
+				continue
+			}
+			locX, locY = robotgo.Location()
+			boundLocX.Reload()
+			boundLocY.Reload()
+		}
+	}()
 }
 
 // func (u *Ui) createSelect() {
@@ -143,13 +219,20 @@ func (u *Ui) createMacroSelect() *widget.Button {
 // 	}
 // }
 
-type settingsTabs struct {
-	tabs                  *container.AppTabs
+type macroSettings struct {
 	boundMacroList        binding.StringList
 	boundMacroName        binding.String
 	boundMacroNameEntry   *widget.Entry
 	boundGlobalDelay      binding.Int
 	boundGlobalDelayEntry *widget.Entry
+	boundMacroHotkey      binding.ExternalStringList
+	macroHotkeySelect1    *widget.Select
+	macroHotkeySelect2    *widget.Select
+	macroHotkeySelect3    *widget.Select
+}
+
+type actionTabs struct {
+	*container.AppTabs
 	waitTab
 	moveTab
 	clickTab
