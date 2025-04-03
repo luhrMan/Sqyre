@@ -19,7 +19,6 @@ import (
 func main() {
 	utils.FailsafeHotkey()
 	go utils.StartHook()
-	//go toggleMousePos()
 
 	configInit()
 	a := app.NewWithID("Squire")
@@ -28,17 +27,18 @@ func main() {
 
 	w := a.NewWindow("Squire")
 	w.Resize(fyne.NewSize(1000, 500))
+	w.SetIcon(assets.AppIcon)
+	w.SetMaster()
 
 	ui.InitializeUi(w)
 	programs.GetPrograms().InitPrograms()
 	ui.GetUi().SetCurrentProgram(config.DarkAndDarker)
 	ui.GetUi().ConstructUi()
 
-	w.SetIcon(assets.AppIcon)
-	w.SetMaster()
 	w.ShowAndRun()
 
 	utils.CloseTessClient()
+
 	err := encoding.ViperSerializer.Encode(programs.GetPrograms())
 	if err != nil {
 		log.Println(err)
