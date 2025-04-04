@@ -63,6 +63,7 @@ func (u *Ui) constructMainLayout() *fyne.Container {
 		container.NewGridWithColumns(2,
 			container.NewHBox(
 				u.createMacroToolbar(),
+				&u.ms.isExecuting,
 				layout.NewSpacer(),
 				widget.NewLabel("Macro Name:"),
 			),
@@ -83,18 +84,13 @@ func (u *Ui) constructMainLayout() *fyne.Container {
 						u.ms.macroHotkeySelect2.Selected,
 						u.ms.macroHotkeySelect3.Selected,
 					}
-					for i, s := range macroHotkey {
-						if s == "" {
-							macroHotkey = append(macroHotkey[:i], macroHotkey[i+1:]...)
-						}
-					}
 					mt, err := u.selectedMacroTab()
 					if err != nil {
 						log.Println(err)
 						return
 					}
-					u.ms.boundMacroHotkey.Reload()
 					mt.Macro.Hotkey = macroHotkey
+					u.ms.boundMacroHotkey.Reload()
 					ReRegisterMacroHotkeys()
 				},
 			),
@@ -110,14 +106,17 @@ func (u *Ui) constructMainLayout() *fyne.Container {
 				boundLocYLabel,
 			),
 		)
+	macroGlobalDelay :=
+		container.NewHBox(widget.NewLabel("Global Delay (ms)"), u.ms.boundGlobalDelayEntry)
 
 	macroBottom :=
 		container.NewGridWithRows(2,
 			container.NewBorder(
 				nil,
 				nil,
-				macroHotkey,
-				mousePosition,
+				macroHotkey,      //right
+				mousePosition,    //left
+				macroGlobalDelay, //middle
 			),
 			utils.MacroProgressBar(),
 		)
@@ -134,9 +133,9 @@ func (u *Ui) constructMainLayout() *fyne.Container {
 	return mainLayout
 }
 
-func (u *Ui) SetWindow(w fyne.Window)                { u.win = w }
-func (u *Ui) SetCurrentProgram(s string)             { u.p = programs.GetPrograms().GetProgram(s) }
-func (u *Ui) AddMacroTree(key string, mt *MacroTree) { u.mtMap[key] = mt }
+func (u *Ui) SetWindow(w fyne.Window)                           { u.win = w }
+func (u *Ui) SetCurrentProgram(s string)                        { u.p = programs.GetPrograms().GetProgram(s) }
+func (u *Ui) SetMacroTreeMapKeyValue(key string, mt *MacroTree) { u.mtMap[key] = mt }
 func (u *Ui) createMacroSelect() *widget.Button {
 	return widget.NewButtonWithIcon("",
 		theme.FolderOpenIcon(),
@@ -220,6 +219,7 @@ func toggleMousePos() {
 // }
 
 type macroSettings struct {
+	isExecuting           widget.Activity
 	boundMacroList        binding.StringList
 	boundMacroName        binding.String
 	boundMacroNameEntry   *widget.Entry
