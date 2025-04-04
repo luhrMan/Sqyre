@@ -171,91 +171,95 @@ func (mt *MacroTree) updateTreeOnselect() {
 }
 
 func (u *Ui) createMacroToolbar() *widget.Toolbar {
-	tb := widget.NewToolbar(
-		widget.NewToolbarAction(theme.ContentAddIcon(), func() {
-			var action actions.ActionInterface
-			mt, err := u.GetMacroTabMacroTree()
-			if err != nil {
-				log.Println(err)
-				return
-			}
-			selectedNode := mt.Macro.Root.GetAction(selectedTreeItem)
-			if selectedNode == nil {
-				selectedNode = mt.Macro.Root
-			}
-			switch u.at.Selected().Text {
-			case "Wait":
-				action = actions.NewWait(time)
-			case "Move":
-				action = actions.NewMove(moveX, moveY)
-			case "Click":
-				action = actions.NewClick(actions.LeftOrRight(button))
-			case "Key":
-				action = actions.NewKey(key, actions.UpOrDown(state))
-			case "Loop":
-				action = actions.NewLoop(int(count), loopName, []actions.ActionInterface{})
-			case "Image":
-				var t []string
-				for i, item := range itemsBoolList {
-					if item {
-						t = append(t, i)
-					}
+	tb :=
+		widget.NewToolbar(
+			widget.NewToolbarAction(theme.ContentAddIcon(), func() {
+				var action actions.ActionInterface
+				mt, err := u.GetMacroTabMacroTree()
+				if err != nil {
+					log.Println(err)
+					return
 				}
-				action = actions.NewImageSearch(imageSearchName, []actions.ActionInterface{}, t, programs.CurrentProgramAndScreenSizeCoordinates().GetSearchArea(searchArea))
-			case "OCR":
-				action = actions.NewOcr(ocrTarget, []actions.ActionInterface{}, ocrTarget, programs.CurrentProgramAndScreenSizeCoordinates().GetSearchArea(ocrSearchBox))
-			}
+				selectedNode := mt.Macro.Root.GetAction(selectedTreeItem)
+				if selectedNode == nil {
+					selectedNode = mt.Macro.Root
+				}
+				switch u.at.Selected().Text {
+				case "Wait":
+					action = actions.NewWait(time)
+				case "Move":
+					action = actions.NewMove(moveX, moveY)
+				case "Click":
+					action = actions.NewClick(actions.LeftOrRight(button))
+				case "Key":
+					action = actions.NewKey(key, actions.UpOrDown(state))
+				case "Loop":
+					action = actions.NewLoop(int(count), loopName, []actions.ActionInterface{})
+				case "Image":
+					var t []string
+					for i, item := range itemsBoolList {
+						if item {
+							t = append(t, i)
+						}
+					}
+					action = actions.NewImageSearch(imageSearchName, []actions.ActionInterface{}, t, programs.CurrentProgramAndScreenSizeCoordinates().GetSearchArea(searchArea))
+				case "OCR":
+					action = actions.NewOcr(ocrTarget, []actions.ActionInterface{}, ocrTarget, programs.CurrentProgramAndScreenSizeCoordinates().GetSearchArea(ocrSearchBox))
+				}
 
-			if selectedNode == nil {
-				selectedNode = mt.Macro.Root
-			}
-			if s, ok := selectedNode.(actions.AdvancedActionInterface); ok {
-				s.AddSubAction(action)
-			} else {
-				selectedNode.GetParent().AddSubAction(action)
-			}
+				if selectedNode == nil {
+					selectedNode = mt.Macro.Root
+				}
+				if s, ok := selectedNode.(actions.AdvancedActionInterface); ok {
+					s.AddSubAction(action)
+				} else {
+					selectedNode.GetParent().AddSubAction(action)
+				}
 
-			mt.Tree.Refresh()
-		}),
-		widget.NewToolbarSpacer(),
-		widget.NewToolbarSeparator(),
-		widget.NewToolbarAction(theme.RadioButtonIcon(), func() {
-			t, err := u.GetMacroTabMacroTree()
-			if err != nil {
-				log.Println(err)
-				return
-			}
-			t.Tree.UnselectAll()
-			selectedTreeItem = ""
-		}),
-		widget.NewToolbarAction(theme.MoveDownIcon(), func() {
-			t, err := u.GetMacroTabMacroTree()
-			if err != nil {
-				log.Println(err)
-				return
-			}
-			t.moveNode(selectedTreeItem, false)
-		}),
-		widget.NewToolbarAction(theme.MoveUpIcon(), func() {
-			t, err := u.GetMacroTabMacroTree()
-			if err != nil {
-				log.Println(err)
-				return
-			}
-			t.moveNode(selectedTreeItem, true)
-		}),
-		widget.NewToolbarSeparator(),
-		widget.NewToolbarSpacer(),
-		widget.NewToolbarAction(theme.MediaPlayIcon(), func() {
-			t, err := u.GetMacroTabMacroTree()
-			if err != nil {
-				log.Println(err)
-				return
-			}
-
-			t.Macro.ExecuteActionTree()
-		}),
-	)
+				mt.Tree.Refresh()
+			}),
+			widget.NewToolbarSpacer(),
+			widget.NewToolbarSeparator(),
+			widget.NewToolbarAction(theme.RadioButtonIcon(), func() {
+				t, err := u.GetMacroTabMacroTree()
+				if err != nil {
+					log.Println(err)
+					return
+				}
+				t.Tree.UnselectAll()
+				selectedTreeItem = ""
+			}),
+			widget.NewToolbarAction(theme.MoveDownIcon(), func() {
+				t, err := u.GetMacroTabMacroTree()
+				if err != nil {
+					log.Println(err)
+					return
+				}
+				t.moveNode(selectedTreeItem, false)
+			}),
+			widget.NewToolbarAction(theme.MoveUpIcon(), func() {
+				t, err := u.GetMacroTabMacroTree()
+				if err != nil {
+					log.Println(err)
+					return
+				}
+				t.moveNode(selectedTreeItem, true)
+			}),
+			widget.NewToolbarSeparator(),
+			widget.NewToolbarSpacer(),
+			widget.NewToolbarAction(theme.MediaPlayIcon(), func() {
+				t, err := u.GetMacroTabMacroTree()
+				if err != nil {
+					log.Println(err)
+					return
+				}
+				u.ms.isExecuting.Show()
+				u.ms.isExecuting.Start()
+				t.Macro.ExecuteActionTree()
+				u.ms.isExecuting.Stop()
+				u.ms.isExecuting.Hide()
+			}),
+		)
 	return tb
 }
 

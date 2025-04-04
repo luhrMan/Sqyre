@@ -25,7 +25,7 @@ var (
 	macroHotkey        []string
 	selectedTreeItem   = ".1"
 	time               int
-	globalDelay        = 30
+	globalDelay        = 0
 	moveX              int
 	moveY              int
 	spot               string
@@ -182,7 +182,6 @@ func (u *Ui) bindVariables() {
 			log.Println(err)
 			return
 		}
-
 		t.Macro.GlobalDelay = globalDelay
 		robotgo.MouseSleep = globalDelay
 		robotgo.KeySleep = globalDelay
