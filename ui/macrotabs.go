@@ -29,14 +29,8 @@ func (u *Ui) createDocTabs() {
 		}
 		u.ms.boundGlobalDelay.Set(mt.Macro.GlobalDelay)
 		u.ms.boundMacroName.Set(mt.Macro.Name)
-		if len(mt.Macro.Hotkey) < 3 {
-			mt.Macro.Hotkey = []string{"ctrl", "shift", "1"}
-		}
 		u.ms.boundMacroHotkey.Set(mt.Macro.Hotkey)
 
-		v, _ := u.ms.boundMacroHotkey.Get()
-		log.Println("boundMacroHotkey set from:", mt.Macro.Name)
-		log.Println("boundMacroHotkey set to:", v)
 		u.ms.macroHotkeySelect1.SetSelected(mt.Macro.Hotkey[0])
 		u.ms.macroHotkeySelect2.SetSelected(mt.Macro.Hotkey[1])
 		u.ms.macroHotkeySelect3.SetSelected(mt.Macro.Hotkey[2])
@@ -76,7 +70,7 @@ func (u *Ui) addMacroDocTab(macro *macro.Macro) {
 		}
 		return
 	}
-	u.AddMacroTree(macro.Name, &MacroTree{Macro: macro, Tree: &widget.Tree{}})
+	u.SetMacroTreeMapKeyValue(macro.Name, &MacroTree{Macro: macro, Tree: &widget.Tree{}})
 	mt := u.mtMap[macro.Name]
 
 	mt.createTree()

@@ -9,37 +9,27 @@ type ActionInterface interface {
 	Execute(ctx any) error
 
 	GetUID() string
-	SetUID(string)
 
 	GetParent() AdvancedActionInterface
 	SetParent(AdvancedActionInterface)
 
 	String() string
-	GetType() string
 }
 
 type AdvancedActionInterface interface {
 	ActionInterface
 
-	GetName() string
-	SetName(string)
-
 	GetAction(string) ActionInterface
 	GetSubActions() []ActionInterface
-	SetSubActions([]ActionInterface)
 	AddSubAction(ActionInterface)
 	RemoveSubAction(ActionInterface)
 }
 
-func (a *BaseAction) GetType() string                          { return a.Type }
 func (a *BaseAction) GetUID() string                           { return a.uid }
-func (a *BaseAction) SetUID(uid string)                        { a.uid = uid }
 func (a *BaseAction) GetParent() AdvancedActionInterface       { return a.Parent }
 func (a *BaseAction) SetParent(action AdvancedActionInterface) { a.Parent = action }
 func (a *BaseAction) Execute(ctx any) error                    { return nil }
 func (a *BaseAction) String() string                           { return "This is a baseAction" }
-func (a *AdvancedAction) GetName() string                      { return a.Name }
-func (a *AdvancedAction) SetName(name string)                  { a.Name = name }
 func (a *AdvancedAction) GetSubActions() []ActionInterface     { return a.SubActions }
 func (a *AdvancedAction) SetSubActions(sa []ActionInterface)   { a.SubActions = sa }
 
@@ -85,5 +75,3 @@ func (a *AdvancedAction) Execute(ctx any) error {
 	return nil
 }
 func (a *AdvancedAction) String() string { return fmt.Sprintf("Advanced Action: %v", a.Type) }
-
-func (a *AdvancedAction) GetType() string { return a.Type }

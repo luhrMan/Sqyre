@@ -18,7 +18,7 @@ func NewLoop(count int, name string, subActions []ActionInterface) *Loop {
 			AdvancedAction: newAdvancedAction(name, "loop", subActions),
 			Count:          1,
 		}
-		r.SetUID("")
+		r.uid = ""
 		r.SetParent(nil)
 		return r
 	}

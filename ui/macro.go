@@ -261,17 +261,23 @@ func (u *Ui) createMacroToolbar() *widget.Toolbar {
 
 func (u *Ui) RegisterMacroHotkeys() {
 	for _, m := range u.mtMap {
-		hook.Register(hook.KeyDown, m.Macro.Hotkey, func(e hook.Event) {
-			log.Println("pressed", m.Macro.Hotkey)
+
+		hk := make([]string, len(m.Macro.Hotkey))
+		copy(hk, m.Macro.Hotkey)
+		if hk[1] == "" {
+			hk = append(hk[:1], hk[1+1:]...)
+		}
+
+		hook.Register(hook.KeyDown, hk, func(e hook.Event) {
+			log.Println("pressed", hk)
 			m.Macro.ExecuteActionTree()
 		})
-		log.Println("registered:", m)
+		log.Println("registered:", m.Macro.Hotkey)
 	}
 }
 
 func ReRegisterMacroHotkeys() {
 	hook.End()
-	log.Println("event stopped, reregistering")
 	utils.FailsafeHotkey()
 	ui.RegisterMacroHotkeys()
 	go utils.StartHook()
