@@ -63,6 +63,7 @@ func (u *Ui) constructMainLayout() *fyne.Container {
 		container.NewGridWithColumns(2,
 			container.NewHBox(
 				u.createMacroToolbar(),
+				&u.ms.isExecuting,
 				layout.NewSpacer(),
 				widget.NewLabel("Macro Name:"),
 			),
@@ -83,11 +84,6 @@ func (u *Ui) constructMainLayout() *fyne.Container {
 						u.ms.macroHotkeySelect2.Selected,
 						u.ms.macroHotkeySelect3.Selected,
 					}
-					// for i, s := range macroHotkey {
-					// 	if s == "" {
-					// 		macroHotkey = append(macroHotkey[:i], macroHotkey[i+1:]...)
-					// 	}
-					// }
 					mt, err := u.selectedMacroTab()
 					if err != nil {
 						log.Println(err)
@@ -223,6 +219,7 @@ func toggleMousePos() {
 // }
 
 type macroSettings struct {
+	isExecuting           widget.Activity
 	boundMacroList        binding.StringList
 	boundMacroName        binding.String
 	boundMacroNameEntry   *widget.Entry
