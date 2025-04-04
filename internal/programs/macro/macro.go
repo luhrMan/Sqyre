@@ -26,10 +26,6 @@ func NewMacro(name string, delay int, hotkey []string) *Macro {
 	}
 }
 
-func (m *Macro) SetHotkey(hk []string) {
-	m.Hotkey = hk
-}
-
 func (m *Macro) ExecuteActionTree(ctx ...any) { //error
 	err := m.Root.Execute(ctx)
 	if err != nil {

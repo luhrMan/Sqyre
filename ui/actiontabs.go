@@ -25,7 +25,7 @@ var (
 	macroHotkey        []string
 	selectedTreeItem   = ".1"
 	time               int
-	globalDelay        = 30
+	globalDelay        = 0
 	moveX              int
 	moveY              int
 	spot               string
@@ -70,8 +70,7 @@ func (u *Ui) actionSettingsTabs() {
 	//	vLine.Position2.X /= 2
 	var (
 		waitSettings = container.NewVBox(
-			container.NewGridWithColumns(2, container.NewHBox(widget.NewLabel("Global Delay"), u.ms.boundGlobalDelayEntry, layout.NewSpacer(), widget.NewLabel("ms"))),
-			widget.NewLabel("------------------------------------------------------------------------------------"),
+			// widget.NewLabel("------------------------------------------------------------------------------------"),
 			container.NewGridWithColumns(2, container.NewBorder(nil, nil, nil, container.NewHBox(widget.NewLabel("ms")), u.at.boundTimeEntry), u.at.boundTimeSlider),
 		)
 
@@ -159,7 +158,8 @@ func (u *Ui) bindVariables() {
 		}
 		delete(u.mtMap, t.Macro.Name)
 		u.ms.boundMacroList.Remove(t.Macro.Name)
-		u.mtMap[macroName] = t
+		u.SetMacroTreeMapKeyValue(macroName, t)
+		// u.mtMap[macroName] = t
 		t.Macro.Name = macroName
 		u.dt.Selected().Text = macroName
 		u.ms.boundMacroList.Append(macroName)
@@ -182,7 +182,6 @@ func (u *Ui) bindVariables() {
 			log.Println(err)
 			return
 		}
-
 		t.Macro.GlobalDelay = globalDelay
 		robotgo.MouseSleep = globalDelay
 		robotgo.KeySleep = globalDelay
