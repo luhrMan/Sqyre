@@ -13,7 +13,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-func (u *Ui) createItemsCheckTree() *widget.Tree {
+func (at *actionTabs) createItemsCheckTree() *widget.Tree {
 	log.Println("Creating Items Check Tree")
 	var (
 		icons       = *assets.BytesToFyneIcons()
@@ -31,7 +31,7 @@ func (u *Ui) createItemsCheckTree() *widget.Tree {
 		log.Println("updating image search targets...")
 		log.Println("Before update:", imageSearchTargets)
 
-		t, err := u.at.boundImageSearchTargets.Get()
+		t, err := at.imageSearch.boundImageSearchTargets.Get()
 		if err != nil {
 			log.Println(err)
 			return
@@ -39,10 +39,10 @@ func (u *Ui) createItemsCheckTree() *widget.Tree {
 		itemsBoolList[item] = b
 		if b {
 			if !slices.Contains(t, item) {
-				u.at.boundImageSearchTargets.Append(item)
+				at.imageSearch.boundImageSearchTargets.Append(item)
 			}
 		} else {
-			u.at.boundImageSearchTargets.Remove(item)
+			at.imageSearch.boundImageSearchTargets.Remove(item)
 		}
 		log.Println("After update:", imageSearchTargets)
 	}

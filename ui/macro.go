@@ -124,47 +124,47 @@ func (mt *MacroTree) updateTreeOnselect() {
 		selectedTreeItem = uid
 		switch node := mt.Macro.Root.GetAction(uid).(type) {
 		case *actions.Wait:
-			GetUi().at.boundTime.Set(node.Time)
+			GetUi().at.wait.boundTime.Set(node.Time)
 			GetUi().at.SelectIndex(waittab)
 		case *actions.Move:
-			GetUi().at.boundMoveX.Set(node.X)
-			GetUi().at.boundMoveY.Set(node.Y)
+			GetUi().at.move.boundMoveX.Set(node.X)
+			GetUi().at.move.boundMoveY.Set(node.Y)
 			GetUi().at.SelectIndex(movetab)
 		case *actions.Click:
 			if node.Button == actions.LeftOrRight(false) {
-				GetUi().at.boundButton.Set(false)
+				GetUi().at.click.boundButton.Set(false)
 			} else {
-				GetUi().at.boundButton.Set(true)
+				GetUi().at.click.boundButton.Set(true)
 			}
 			GetUi().at.SelectIndex(clicktab)
 		case *actions.Key:
 			key = node.Key
-			GetUi().at.boundKeySelect.SetSelected(node.Key)
+			GetUi().at.key.boundKeySelect.SetSelected(node.Key)
 			if node.State == actions.UpOrDown(false) {
-				GetUi().at.boundState.Set(false)
+				GetUi().at.key.boundState.Set(false)
 			} else {
-				GetUi().at.boundState.Set(true)
+				GetUi().at.key.boundState.Set(true)
 			}
 			GetUi().at.SelectIndex(keytab)
 
 		case *actions.Loop:
-			GetUi().at.boundLoopName.Set(node.Name)
-			GetUi().at.boundCount.Set(node.Count)
+			GetUi().at.loop.boundLoopName.Set(node.Name)
+			GetUi().at.loop.boundCount.Set(node.Count)
 			GetUi().at.SelectIndex(looptab)
 		case *actions.ImageSearch:
-			GetUi().at.boundImageSearchName.Set(node.Name)
+			GetUi().at.imageSearch.boundImageSearchName.Set(node.Name)
 			for t := range itemsBoolList {
 				itemsBoolList[t] = false
 			}
 			for _, t := range node.Targets {
 				itemsBoolList[t] = true
 			}
-			GetUi().at.boundImageSearchTargets.Set(node.Targets)
-			GetUi().at.boundImageSearchAreaSelect.SetSelected(node.SearchArea.Name)
+			GetUi().at.imageSearch.boundImageSearchTargets.Set(node.Targets)
+			GetUi().at.imageSearch.boundImageSearchAreaSelect.SetSelected(node.SearchArea.Name)
 			GetUi().at.SelectIndex(imagesearchtab)
 		case *actions.Ocr:
-			GetUi().at.boundOCRTarget.Set(node.Target)
-			GetUi().at.boundOCRSearchAreaSelect.SetSelected(node.SearchArea.Name)
+			GetUi().at.ocr.boundOCRTarget.Set(node.Target)
+			GetUi().at.ocr.boundOCRSearchAreaSelect.SetSelected(node.SearchArea.Name)
 			GetUi().at.SelectIndex(ocrtab)
 		}
 	}
