@@ -6,16 +6,12 @@ import (
 	"Squire/internal/programs"
 	"Squire/internal/programs/actions"
 	"Squire/ui/custom_widgets"
-	"errors"
 	"log"
-	"sort"
 
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/data/binding"
-	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
-	"github.com/go-vgo/robotgo"
 )
 
 const (
@@ -115,7 +111,7 @@ var (
 	ocrSearchBox       string
 )
 
-func (u *Ui) actionSettingsTabs() {
+func (u *Ui) constructActionSettingsTabs() {
 	u.at.constructWaitTab()
 	u.at.constructMoveTab()
 	u.at.constructClickTab()
@@ -123,7 +119,7 @@ func (u *Ui) actionSettingsTabs() {
 	u.at.constructLoopTab()
 	u.at.constructImageSearchTab()
 	u.at.constructOcrTab()
-	u.bindVariables()
+	// u.bindVariables()
 	//	screen := robotgo.CaptureScreen(0, 0, 2560, 1440)
 	//	defer robotgo.FreeBitmap(screen)
 	//		mouseMoveDisplay := canvas.NewImageFromImage(robotgo.ToImage(screen))
@@ -145,75 +141,6 @@ func (u *Ui) actionSettingsTabs() {
 	//	hLine.Position1.X /= 2
 	//	hLine.Position1.Y /= 2
 	//	vLine.Position2.X /= 2
-	var ()
-
-}
-
-func (u *Ui) bindVariables() {
-	boundLocX = binding.BindInt(&locX)
-	boundLocY = binding.BindInt(&locY)
-	boundLocXLabel = widget.NewLabelWithData(binding.IntToString(boundLocX))
-	boundLocYLabel = widget.NewLabelWithData(binding.IntToString(boundLocY))
-
-	boundMacro := binding.NewUntyped()
-	boundMacro.Set(u.p.Macros[0])
-	u.ms.boundMacroList = binding.BindStringList(&macroList)
-	for _, m := range u.p.Macros {
-		u.ms.boundMacroList.Append(m.Name)
-	}
-	u.ms.boundMacroList.AddListener(binding.NewDataListener(func() {
-		ml, err := u.ms.boundMacroList.Get()
-		if err != nil {
-			log.Println(err)
-			return
-		}
-		sort.Strings(ml)
-	}))
-	u.ms.boundMacroName = binding.BindString(&macroName)
-	u.ms.boundMacroNameEntry = widget.NewEntryWithData(u.ms.boundMacroName)
-	u.ms.boundMacroNameEntry.OnSubmitted = func(string) {
-		t, err := u.GetMacroTabMacroTree()
-		if err != nil {
-			log.Println(err)
-			return
-		}
-		for _, m := range u.p.Macros {
-			if m.Name == macroName {
-				dialog.ShowError(errors.New("macro name already exists"), u.win)
-				return
-			}
-		}
-		delete(u.mtMap, t.Macro.Name)
-		u.ms.boundMacroList.Remove(t.Macro.Name)
-		u.SetMacroTreeMapKeyValue(macroName, t)
-		// u.mtMap[macroName] = t
-		t.Macro.Name = macroName
-		u.dt.Selected().Text = macroName
-		u.ms.boundMacroList.Append(macroName)
-
-		u.dt.Refresh()
-	}
-	macroHotkey = []string{"1", "2", "3"}
-	u.ms.boundMacroHotkey = binding.BindStringList(&macroHotkey)
-	u.ms.macroHotkeySelect1 = &widget.Select{Options: []string{"ctrl"}}
-	u.ms.macroHotkeySelect2 = &widget.Select{Options: []string{"", "shift"}}
-	u.ms.macroHotkeySelect3 = &widget.Select{Options: []string{"1", "2", "3", "4", "5"}}
-
-	u.ms.macroHotkeySelect1.SetSelectedIndex(0)
-
-	u.ms.boundGlobalDelay = binding.BindInt(&globalDelay)
-	u.ms.boundGlobalDelayEntry = widget.NewEntryWithData(binding.IntToString(u.ms.boundGlobalDelay))
-	u.ms.boundGlobalDelay.AddListener(binding.NewDataListener(func() {
-		t, err := u.GetMacroTabMacroTree()
-		if err != nil {
-			log.Println(err)
-			return
-		}
-		t.Macro.GlobalDelay = globalDelay
-		robotgo.MouseSleep = globalDelay
-		robotgo.KeySleep = globalDelay
-	}))
-
 }
 
 func (at *actionTabs) constructWaitTab() {

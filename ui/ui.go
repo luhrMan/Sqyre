@@ -49,9 +49,8 @@ func InitializeUi(w fyne.Window) *Ui {
 }
 func (u *Ui) ConstructUi() {
 	toggleMousePos()
-	// u.at = &actionTabs{tabs: &container.AppTabs{}}
 	assets.CreateItemMaps()
-	u.actionSettingsTabs()
+	u.constructActionSettingsTabs()
 	u.createDocTabs()
 	u.win.SetMainMenu(u.createMainMenu())
 	u.win.SetContent(u.constructMainLayout())
