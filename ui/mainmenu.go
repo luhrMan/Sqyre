@@ -31,7 +31,7 @@ func (u *Ui) createMainMenu() *fyne.MainMenu {
 	)
 	addActionAndRefresh :=
 		func(a actions.ActionInterface) {
-			t, err := u.GetMacroTabMacroTree()
+			t, err := u.mui.mtabs.GetTabTree()
 			if err != nil {
 				log.Println(err)
 				return
