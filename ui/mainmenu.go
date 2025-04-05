@@ -82,7 +82,7 @@ func (u *Ui) createMainMenu() *fyne.MainMenu {
 			robotgo.MouseSleep = 0
 			robotgo.KeySleep = 0
 			coordinates.CalibrateInventorySearchboxes((*programs.GetPrograms())[config.DarkAndDarker].Coordinates["2560x1440"])
-			u.at.boundImageSearchAreaSelect.SetOptions(programs.CurrentProgramAndScreenSizeCoordinates().GetSearchAreasAsStringSlice())
+			u.at.imageSearch.boundImageSearchAreaSelect.SetOptions(programs.CurrentProgramAndScreenSizeCoordinates().GetSearchAreasAsStringSlice())
 			robotgo.MouseSleep = globalDelay
 			robotgo.KeySleep = globalDelay
 		}),

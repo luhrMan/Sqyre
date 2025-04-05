@@ -4,7 +4,6 @@ import (
 	"Squire/internal/assets"
 	"Squire/internal/programs"
 	"Squire/internal/utils"
-	"Squire/ui/custom_widgets"
 	"log"
 
 	"fyne.io/fyne/v2"
@@ -229,89 +228,4 @@ type macroSettings struct {
 	macroHotkeySelect1    *widget.Select
 	macroHotkeySelect2    *widget.Select
 	macroHotkeySelect3    *widget.Select
-}
-
-type actionTabs struct {
-	*container.AppTabs
-	waitTab
-	moveTab
-	clickTab
-	keyTab
-	loopTab
-	imageSearchTab
-	ocrTab
-}
-
-// settingsTabs indexes
-const (
-	waittab = iota
-	movetab
-	clicktab
-	keytab
-	looptab
-	imagesearchtab
-	ocrtab
-)
-
-type waitTab struct {
-	boundTime binding.Int
-
-	boundTimeSlider *widget.Slider
-	boundTimeEntry  *widget.Entry
-}
-
-type moveTab struct {
-	boundMoveX binding.Int
-	boundMoveY binding.Int
-	boundSpot  binding.String
-
-	boundMoveXSlider *widget.Slider
-	boundMoveYSlider *widget.Slider
-	boundMoveXEntry  *widget.Entry
-	boundMoveYEntry  *widget.Entry
-	boundSpotSelect  *widget.Select
-}
-
-type clickTab struct {
-	boundButton binding.Bool
-
-	boundButtonToggle *custom_widgets.Toggle
-}
-
-type keyTab struct {
-	boundKey   binding.String
-	boundState binding.Bool
-
-	boundKeySelect   *widget.Select
-	boundStateToggle *custom_widgets.Toggle
-}
-
-type loopTab struct {
-	boundLoopName binding.String
-	boundCount    binding.Int
-
-	boundLoopNameEntry *widget.Entry
-	boundCountSlider   *widget.Slider
-	boundCountLabel    *widget.Label
-}
-
-type imageSearchTab struct {
-	boundImageSearchName    binding.String
-	boundImageSearchArea    binding.String
-	boundImageSearchTargets binding.StringList
-	boundXSplit             binding.Int
-	boundYSplit             binding.Int
-
-	boundImageSearchNameEntry  *widget.Entry
-	boundImageSearchAreaSelect *widget.Select
-	boundXSplitSlider          *widget.Slider
-	boundXSplitEntry           *widget.Entry
-}
-
-type ocrTab struct {
-	boundOCRTarget     binding.String
-	boundOCRSearchArea binding.String
-
-	boundOCRTargetEntry      *widget.Entry
-	boundOCRSearchAreaSelect *widget.Select
 }

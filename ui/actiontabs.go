@@ -18,6 +18,76 @@ import (
 	"github.com/go-vgo/robotgo"
 )
 
+const (
+	waittab = iota
+	movetab
+	clicktab
+	keytab
+	looptab
+	imagesearchtab
+	ocrtab
+)
+
+type actionTabs struct {
+	*container.AppTabs
+	wait struct {
+		boundTime binding.Int
+
+		boundTimeSlider *widget.Slider
+		boundTimeEntry  *widget.Entry
+	}
+	move struct {
+		boundMoveX binding.Int
+		boundMoveY binding.Int
+		boundSpot  binding.String
+
+		boundMoveXSlider *widget.Slider
+		boundMoveYSlider *widget.Slider
+		boundMoveXEntry  *widget.Entry
+		boundMoveYEntry  *widget.Entry
+		boundSpotSelect  *widget.Select
+	}
+	click struct {
+		boundButton binding.Bool
+
+		boundButtonToggle *custom_widgets.Toggle
+	}
+	key struct {
+		boundKey   binding.String
+		boundState binding.Bool
+
+		boundKeySelect   *widget.Select
+		boundStateToggle *custom_widgets.Toggle
+	}
+	loop struct {
+		boundLoopName binding.String
+		boundCount    binding.Int
+
+		boundLoopNameEntry *widget.Entry
+		boundCountSlider   *widget.Slider
+		boundCountLabel    *widget.Label
+	}
+	imageSearch struct {
+		boundImageSearchName    binding.String
+		boundImageSearchArea    binding.String
+		boundImageSearchTargets binding.StringList
+		boundXSplit             binding.Int
+		boundYSplit             binding.Int
+
+		boundImageSearchNameEntry  *widget.Entry
+		boundImageSearchAreaSelect *widget.Select
+		boundXSplitSlider          *widget.Slider
+		boundXSplitEntry           *widget.Entry
+	}
+	ocr struct {
+		boundOCRTarget     binding.String
+		boundOCRSearchArea binding.String
+
+		boundOCRTargetEntry      *widget.Entry
+		boundOCRSearchAreaSelect *widget.Select
+	}
+}
+
 // action settings
 var (
 	macroList          []string
@@ -46,6 +116,13 @@ var (
 )
 
 func (u *Ui) actionSettingsTabs() {
+	u.at.constructWaitTab()
+	u.at.constructMoveTab()
+	u.at.constructClickTab()
+	u.at.constructKeyTab()
+	u.at.constructLoopTab()
+	u.at.constructImageSearchTab()
+	u.at.constructOcrTab()
 	u.bindVariables()
 	//	screen := robotgo.CaptureScreen(0, 0, 2560, 1440)
 	//	defer robotgo.FreeBitmap(screen)
@@ -68,58 +145,8 @@ func (u *Ui) actionSettingsTabs() {
 	//	hLine.Position1.X /= 2
 	//	hLine.Position1.Y /= 2
 	//	vLine.Position2.X /= 2
-	var (
-		waitSettings = container.NewVBox(
-			// widget.NewLabel("------------------------------------------------------------------------------------"),
-			container.NewGridWithColumns(2, container.NewBorder(nil, nil, nil, container.NewHBox(widget.NewLabel("ms")), u.at.boundTimeEntry), u.at.boundTimeSlider),
-		)
+	var ()
 
-		moveSettings = container.NewBorder(
-			container.NewVBox(
-				container.NewGridWithColumns(2,
-					container.NewBorder(nil, nil, container.NewHBox(widget.NewLabel("X:")), nil, u.at.boundMoveXEntry), u.at.boundMoveXSlider,
-					container.NewBorder(nil, nil, container.NewHBox(widget.NewLabel("Y:")), nil, u.at.boundMoveYEntry), u.at.boundMoveYSlider,
-					container.NewHBox(layout.NewSpacer(), widget.NewLabel("Spot:")), u.at.boundSpotSelect,
-				),
-			), nil, nil, nil) //, mouseMoveDisplayContainer)
-		clickSettings = container.NewVBox(
-			container.NewHBox(layout.NewSpacer(), widget.NewLabel("left"), u.at.boundButtonToggle, widget.NewLabel("right"), layout.NewSpacer()),
-		)
-
-		keySettings = container.NewVBox(
-			container.NewHBox(layout.NewSpacer(), u.at.boundKeySelect, widget.NewLabel("up"), u.at.boundStateToggle, widget.NewLabel("down"), layout.NewSpacer()),
-		)
-
-		loopSettings = container.NewVBox(
-			container.NewGridWithColumns(2, container.NewHBox(layout.NewSpacer(), widget.NewLabel("name:")), u.at.boundLoopNameEntry),
-			container.NewGridWithColumns(2, container.NewHBox(layout.NewSpacer(), widget.NewLabel("loops:"), u.at.boundCountLabel), u.at.boundCountSlider),
-		)
-
-		imageSearchSettings = container.NewBorder(
-			container.NewVBox(
-				container.NewGridWithColumns(2, container.NewHBox(widget.NewLabel("name:")), u.at.boundImageSearchNameEntry),
-				container.NewGridWithColumns(2, container.NewHBox(widget.NewLabel("search area:")), u.at.boundImageSearchAreaSelect),
-				container.NewGridWithColumns(3, container.NewHBox(widget.NewLabel("screen split cols:")), u.at.boundXSplitSlider, u.at.boundXSplitEntry),
-			), nil, nil, nil,
-			// container.NewBorder(nil, nil, nil, nil,),
-			//			u.st.boundImageSearchTargetsTree,
-			u.createItemsCheckTree(),
-		)
-
-		ocrSettings = container.NewBorder(
-			container.NewGridWithColumns(1,
-				container.NewBorder(nil, nil, container.NewHBox(widget.NewLabel("Text Target:")), nil, u.at.boundOCRTargetEntry),
-				container.NewBorder(nil, nil, container.NewHBox(widget.NewLabel("Search Area:")), nil, u.at.boundOCRSearchAreaSelect),
-			), nil, nil, nil)
-	)
-
-	u.at.Append(container.NewTabItem("Wait", waitSettings))
-	u.at.Append(container.NewTabItem("Move", moveSettings))
-	u.at.Append(container.NewTabItem("Click", clickSettings))
-	u.at.Append(container.NewTabItem("Key", keySettings))
-	u.at.Append(container.NewTabItem("Loop", loopSettings))
-	u.at.Append(container.NewTabItem("Image", imageSearchSettings))
-	u.at.Append(container.NewTabItem("OCR", ocrSettings))
 }
 
 func (u *Ui) bindVariables() {
@@ -186,11 +213,15 @@ func (u *Ui) bindVariables() {
 		robotgo.MouseSleep = globalDelay
 		robotgo.KeySleep = globalDelay
 	}))
-	u.at.boundTime = binding.BindInt(&time)
-	u.at.boundTimeEntry = widget.NewEntryWithData(binding.IntToString(u.at.boundTime))
-	u.at.boundTimeSlider = widget.NewSliderWithData(0.0, 250.0, binding.IntToFloat(u.at.boundTime))
-	u.at.boundTime.AddListener(binding.NewDataListener(func() {
-		t, err := u.GetMacroTabMacroTree()
+
+}
+
+func (at *actionTabs) constructWaitTab() {
+	at.wait.boundTime = binding.BindInt(&time)
+	at.wait.boundTimeEntry = widget.NewEntryWithData(binding.IntToString(at.wait.boundTime))
+	at.wait.boundTimeSlider = widget.NewSliderWithData(0.0, 250.0, binding.IntToFloat(at.wait.boundTime))
+	at.wait.boundTime.AddListener(binding.NewDataListener(func() {
+		t, err := ui.GetMacroTabMacroTree()
 		if err != nil {
 			log.Println(err)
 			return
@@ -201,20 +232,35 @@ func (u *Ui) bindVariables() {
 			t.Tree.Refresh()
 		}
 	}))
-	u.at.boundMoveX = binding.BindInt(&moveX)
-	u.at.boundMoveY = binding.BindInt(&moveY)
-	u.at.boundMoveXSlider = widget.NewSliderWithData(-1.0, float64(config.MonitorWidth), binding.IntToFloat(u.at.boundMoveX))
-	u.at.boundMoveYSlider = widget.NewSliderWithData(-1.0, float64(config.MonitorHeight), binding.IntToFloat(u.at.boundMoveY))
-	u.at.boundMoveXEntry = widget.NewEntryWithData(binding.IntToString(u.at.boundMoveX))
-	u.at.boundMoveYEntry = widget.NewEntryWithData(binding.IntToString(u.at.boundMoveY))
-	u.at.boundSpot = binding.BindString(&spot)
-	u.at.boundSpotSelect = widget.NewSelect(programs.GetPrograms().GetProgram(config.DarkAndDarker).Coordinates["2560x1440"].GetPointsAsStringSlice(), func(s string) {
-		u.at.boundSpot.Set(s)
-		u.at.boundMoveX.Set(programs.CurrentProgram().Coordinates["2560x1440"].GetPoint(s).X)
-		u.at.boundMoveY.Set(programs.CurrentProgram().Coordinates["2560x1440"].GetPoint(s).Y)
+	waitSettings :=
+		container.NewVBox(
+			container.NewGridWithColumns(
+				2,
+				container.NewBorder(
+					nil, nil, nil,
+					container.NewHBox(widget.NewLabel("ms")), at.wait.boundTimeEntry,
+				),
+				at.wait.boundTimeSlider),
+		)
+	at.Append(container.NewTabItem("Wait", waitSettings))
+
+}
+
+func (at *actionTabs) constructMoveTab() {
+	at.move.boundMoveX = binding.BindInt(&moveX)
+	at.move.boundMoveY = binding.BindInt(&moveY)
+	at.move.boundMoveXSlider = widget.NewSliderWithData(-1.0, float64(config.MonitorWidth), binding.IntToFloat(at.move.boundMoveX))
+	at.move.boundMoveYSlider = widget.NewSliderWithData(-1.0, float64(config.MonitorHeight), binding.IntToFloat(at.move.boundMoveY))
+	at.move.boundMoveXEntry = widget.NewEntryWithData(binding.IntToString(at.move.boundMoveX))
+	at.move.boundMoveYEntry = widget.NewEntryWithData(binding.IntToString(at.move.boundMoveY))
+	at.move.boundSpot = binding.BindString(&spot)
+	at.move.boundSpotSelect = widget.NewSelect(programs.CurrentProgramAndScreenSizeCoordinates().GetPointsAsStringSlice(), func(s string) {
+		at.move.boundSpot.Set(s)
+		at.move.boundMoveX.Set(programs.CurrentProgramAndScreenSizeCoordinates().GetPoint(s).X)
+		at.move.boundMoveY.Set(programs.CurrentProgramAndScreenSizeCoordinates().GetPoint(s).Y)
 	})
-	u.at.boundMoveX.AddListener(binding.NewDataListener(func() {
-		t, err := u.GetMacroTabMacroTree()
+	at.move.boundMoveX.AddListener(binding.NewDataListener(func() {
+		t, err := ui.GetMacroTabMacroTree()
 		if err != nil {
 			log.Println(err)
 			return
@@ -225,8 +271,8 @@ func (u *Ui) bindVariables() {
 			t.Tree.Refresh()
 		}
 	}))
-	u.at.boundMoveY.AddListener(binding.NewDataListener(func() {
-		t, err := u.GetMacroTabMacroTree()
+	at.move.boundMoveY.AddListener(binding.NewDataListener(func() {
+		t, err := ui.GetMacroTabMacroTree()
 		if err != nil {
 			log.Println(err)
 			return
@@ -237,10 +283,36 @@ func (u *Ui) bindVariables() {
 			t.Tree.Refresh()
 		}
 	}))
-	u.at.boundButton = binding.BindBool(&button)
-	u.at.boundButtonToggle = custom_widgets.NewToggleWithData(u.at.boundButton)
-	u.at.boundButton.AddListener(binding.NewDataListener(func() {
-		t, err := u.GetMacroTabMacroTree()
+
+	moveSettings :=
+		container.NewBorder(
+			container.NewVBox(
+				container.NewGridWithColumns(
+					2,
+					container.NewBorder(
+						nil, nil,
+						container.NewHBox(widget.NewLabel("X:")),
+						nil, at.move.boundMoveXEntry),
+					at.move.boundMoveXSlider,
+					container.NewBorder(
+						nil, nil,
+						container.NewHBox(widget.NewLabel("Y:")),
+						nil, at.move.boundMoveYEntry),
+					at.move.boundMoveYSlider,
+					container.NewHBox(layout.NewSpacer(), widget.NewLabel("Spot:")),
+					at.move.boundSpotSelect,
+				),
+			),
+			nil, nil, nil,
+		) //, mouseMoveDisplayContainer)
+	at.Append(container.NewTabItem("Move", moveSettings))
+}
+
+func (at *actionTabs) constructClickTab() {
+	at.click.boundButton = binding.BindBool(&button)
+	at.click.boundButtonToggle = custom_widgets.NewToggleWithData(at.click.boundButton)
+	at.click.boundButton.AddListener(binding.NewDataListener(func() {
+		t, err := ui.GetMacroTabMacroTree()
 		if err != nil {
 			log.Println(err)
 			return
@@ -251,12 +323,26 @@ func (u *Ui) bindVariables() {
 			t.Tree.Refresh()
 		}
 	}))
-	u.at.boundKey = binding.BindString(&key)
-	u.at.boundKeySelect = widget.NewSelect([]string{"ctrl", "alt", "shift"}, func(s string) { u.at.boundKey.Set(s) })
-	u.at.boundState = binding.BindBool(&state)
-	u.at.boundStateToggle = custom_widgets.NewToggleWithData(u.at.boundState)
-	u.at.boundKey.AddListener(binding.NewDataListener(func() {
-		t, err := u.GetMacroTabMacroTree()
+	clickSettings :=
+		container.NewVBox(
+			container.NewHBox(
+				layout.NewSpacer(),
+				widget.NewLabel("left"),
+				at.click.boundButtonToggle,
+				widget.NewLabel("right"),
+				layout.NewSpacer(),
+			),
+		)
+	at.Append(container.NewTabItem("Click", clickSettings))
+}
+
+func (at *actionTabs) constructKeyTab() {
+	at.key.boundKey = binding.BindString(&key)
+	at.key.boundKeySelect = widget.NewSelect([]string{"ctrl", "alt", "shift"}, func(s string) { at.key.boundKey.Set(s) })
+	at.key.boundState = binding.BindBool(&state)
+	at.key.boundStateToggle = custom_widgets.NewToggleWithData(at.key.boundState)
+	at.key.boundKey.AddListener(binding.NewDataListener(func() {
+		t, err := ui.GetMacroTabMacroTree()
 		if err != nil {
 			log.Println(err)
 			return
@@ -267,8 +353,8 @@ func (u *Ui) bindVariables() {
 			t.Tree.Refresh()
 		}
 	}))
-	u.at.boundState.AddListener(binding.NewDataListener(func() {
-		t, err := u.GetMacroTabMacroTree()
+	at.key.boundState.AddListener(binding.NewDataListener(func() {
+		t, err := ui.GetMacroTabMacroTree()
 		if err != nil {
 			log.Println(err)
 			return
@@ -279,13 +365,28 @@ func (u *Ui) bindVariables() {
 			t.Tree.Refresh()
 		}
 	}))
-	u.at.boundLoopName = binding.BindString(&loopName)
-	u.at.boundCount = binding.BindInt(&count)
-	u.at.boundLoopNameEntry = widget.NewEntryWithData(u.at.boundLoopName)
-	u.at.boundCountSlider = widget.NewSliderWithData(1, 10, binding.IntToFloat(u.at.boundCount))
-	u.at.boundCountLabel = widget.NewLabelWithData(binding.IntToString(u.at.boundCount))
-	u.at.boundLoopName.AddListener(binding.NewDataListener(func() {
-		t, err := u.GetMacroTabMacroTree()
+	keySettings :=
+		container.NewVBox(
+			container.NewHBox(
+				layout.NewSpacer(),
+				at.key.boundKeySelect,
+				widget.NewLabel("up"),
+				at.key.boundStateToggle,
+				widget.NewLabel("down"),
+				layout.NewSpacer(),
+			),
+		)
+	at.Append(container.NewTabItem("Key", keySettings))
+}
+
+func (at *actionTabs) constructLoopTab() {
+	at.loop.boundLoopName = binding.BindString(&loopName)
+	at.loop.boundCount = binding.BindInt(&count)
+	at.loop.boundLoopNameEntry = widget.NewEntryWithData(at.loop.boundLoopName)
+	at.loop.boundCountSlider = widget.NewSliderWithData(1, 10, binding.IntToFloat(at.loop.boundCount))
+	at.loop.boundCountLabel = widget.NewLabelWithData(binding.IntToString(at.loop.boundCount))
+	at.loop.boundLoopName.AddListener(binding.NewDataListener(func() {
+		t, err := ui.GetMacroTabMacroTree()
 		if err != nil {
 			log.Println(err)
 			return
@@ -296,8 +397,8 @@ func (u *Ui) bindVariables() {
 			t.Tree.Refresh()
 		}
 	}))
-	u.at.boundCount.AddListener(binding.NewDataListener(func() {
-		t, err := u.GetMacroTabMacroTree()
+	at.loop.boundCount.AddListener(binding.NewDataListener(func() {
+		t, err := ui.GetMacroTabMacroTree()
 		if err != nil {
 			log.Println(err)
 			return
@@ -308,11 +409,35 @@ func (u *Ui) bindVariables() {
 			t.Tree.Refresh()
 		}
 	}))
-	u.at.boundImageSearchName = binding.BindString(&imageSearchName)
-	u.at.boundImageSearchArea = binding.BindString(&searchArea)
-	u.at.boundImageSearchTargets = binding.BindStringList(&imageSearchTargets)
-	u.at.boundImageSearchTargets.AddListener(binding.NewDataListener(func() {
-		t, err := u.GetMacroTabMacroTree()
+
+	loopSettings :=
+		container.NewVBox(
+			container.NewGridWithColumns(
+				2,
+				container.NewHBox(
+					layout.NewSpacer(),
+					widget.NewLabel("name:"),
+				),
+				at.loop.boundLoopNameEntry,
+			),
+			container.NewGridWithColumns(
+				2,
+				container.NewHBox(
+					layout.NewSpacer(),
+					widget.NewLabel("loops:"),
+					at.loop.boundCountLabel),
+				at.loop.boundCountSlider,
+			),
+		)
+	at.Append(container.NewTabItem("Loop", loopSettings))
+
+}
+func (at *actionTabs) constructImageSearchTab() {
+	at.imageSearch.boundImageSearchName = binding.BindString(&imageSearchName)
+	at.imageSearch.boundImageSearchArea = binding.BindString(&searchArea)
+	at.imageSearch.boundImageSearchTargets = binding.BindStringList(&imageSearchTargets)
+	at.imageSearch.boundImageSearchTargets.AddListener(binding.NewDataListener(func() {
+		t, err := ui.GetMacroTabMacroTree()
 		if err != nil {
 			log.Println(err)
 			return
@@ -323,16 +448,16 @@ func (u *Ui) bindVariables() {
 			t.Tree.Refresh()
 		}
 	}))
-	u.at.boundXSplit = binding.BindInt(&xSplit)
-	u.at.boundYSplit = binding.BindInt(&ySplit)
-	u.at.boundImageSearchNameEntry = widget.NewEntryWithData(u.at.boundImageSearchName)
-	u.at.boundImageSearchAreaSelect = widget.NewSelect(programs.CurrentProgramAndScreenSizeCoordinates().GetSearchAreasAsStringSlice(),
-		func(s string) { u.at.boundImageSearchArea.Set(s) })
+	at.imageSearch.boundXSplit = binding.BindInt(&xSplit)
+	at.imageSearch.boundYSplit = binding.BindInt(&ySplit)
+	at.imageSearch.boundImageSearchNameEntry = widget.NewEntryWithData(at.imageSearch.boundImageSearchName)
+	at.imageSearch.boundImageSearchAreaSelect = widget.NewSelect(programs.CurrentProgramAndScreenSizeCoordinates().GetSearchAreasAsStringSlice(),
+		func(s string) { at.imageSearch.boundImageSearchArea.Set(s) })
 
-	u.at.boundXSplitSlider = widget.NewSliderWithData(0, 50, binding.IntToFloat(u.at.boundXSplit))
-	u.at.boundXSplitEntry = widget.NewEntryWithData(binding.IntToString(u.at.boundXSplit))
-	u.at.boundImageSearchName.AddListener(binding.NewDataListener(func() {
-		t, err := u.GetMacroTabMacroTree()
+	at.imageSearch.boundXSplitSlider = widget.NewSliderWithData(0, 50, binding.IntToFloat(at.imageSearch.boundXSplit))
+	at.imageSearch.boundXSplitEntry = widget.NewEntryWithData(binding.IntToString(at.imageSearch.boundXSplit))
+	at.imageSearch.boundImageSearchName.AddListener(binding.NewDataListener(func() {
+		t, err := ui.GetMacroTabMacroTree()
 		if err != nil {
 			log.Println(err)
 			return
@@ -343,8 +468,8 @@ func (u *Ui) bindVariables() {
 			t.Tree.Refresh()
 		}
 	}))
-	u.at.boundImageSearchArea.AddListener(binding.NewDataListener(func() {
-		t, err := u.GetMacroTabMacroTree()
+	at.imageSearch.boundImageSearchArea.AddListener(binding.NewDataListener(func() {
+		t, err := ui.GetMacroTabMacroTree()
 		if err != nil {
 			log.Println(err)
 			return
@@ -355,12 +480,48 @@ func (u *Ui) bindVariables() {
 			t.Tree.Refresh()
 		}
 	}))
-	u.at.boundOCRSearchArea = binding.BindString(&ocrSearchBox)
-	u.at.boundOCRTarget = binding.BindString(&ocrTarget)
-	u.at.boundOCRSearchAreaSelect = widget.NewSelect(programs.CurrentProgramAndScreenSizeCoordinates().GetSearchAreasAsStringSlice(), func(s string) { u.at.boundOCRSearchArea.Set(s) })
-	u.at.boundOCRTargetEntry = widget.NewEntryWithData(u.at.boundOCRTarget)
-	u.at.boundOCRSearchArea.AddListener(binding.NewDataListener(func() {
-		t, err := u.GetMacroTabMacroTree()
+
+	imageSearchSettings :=
+		container.NewBorder(
+			container.NewVBox(
+				container.NewGridWithColumns(
+					2,
+					container.NewHBox(
+						widget.NewLabel("name:"),
+					),
+					at.imageSearch.boundImageSearchNameEntry,
+				),
+				container.NewGridWithColumns(
+					2,
+					container.NewHBox(
+						widget.NewLabel("search area:"),
+					),
+					at.imageSearch.boundImageSearchAreaSelect,
+				),
+				container.NewGridWithColumns(
+					3,
+					container.NewHBox(
+						widget.NewLabel("screen split cols:"),
+					),
+					at.imageSearch.boundXSplitSlider,
+					at.imageSearch.boundXSplitEntry,
+				),
+			),
+			nil, nil, nil,
+			// container.NewBorder(nil, nil, nil, nil,),
+			//			u.st.boundImageSearchTargetsTree,
+			at.createItemsCheckTree(),
+		)
+	at.Append(container.NewTabItem("Image", imageSearchSettings))
+
+}
+func (at *actionTabs) constructOcrTab() {
+	at.ocr.boundOCRSearchArea = binding.BindString(&ocrSearchBox)
+	at.ocr.boundOCRTarget = binding.BindString(&ocrTarget)
+	at.ocr.boundOCRSearchAreaSelect = widget.NewSelect(programs.CurrentProgramAndScreenSizeCoordinates().GetSearchAreasAsStringSlice(), func(s string) { at.ocr.boundOCRSearchArea.Set(s) })
+	at.ocr.boundOCRTargetEntry = widget.NewEntryWithData(at.ocr.boundOCRTarget)
+	at.ocr.boundOCRSearchArea.AddListener(binding.NewDataListener(func() {
+		t, err := ui.GetMacroTabMacroTree()
 		if err != nil {
 			log.Println(err)
 			return
@@ -371,8 +532,8 @@ func (u *Ui) bindVariables() {
 			t.Tree.Refresh()
 		}
 	}))
-	u.at.boundOCRTarget.AddListener(binding.NewDataListener(func() {
-		t, err := u.GetMacroTabMacroTree()
+	at.ocr.boundOCRTarget.AddListener(binding.NewDataListener(func() {
+		t, err := ui.GetMacroTabMacroTree()
 		if err != nil {
 			log.Println(err)
 			return
@@ -383,5 +544,30 @@ func (u *Ui) bindVariables() {
 			t.Tree.Refresh()
 		}
 	}))
+
+	ocrSettings :=
+		container.NewBorder(
+			container.NewGridWithColumns(
+				1,
+				container.NewBorder(
+					nil, nil,
+					container.NewHBox(
+						widget.NewLabel("Text Target:"),
+					),
+					nil,
+					at.ocr.boundOCRTargetEntry,
+				),
+				container.NewBorder(
+					nil, nil,
+					container.NewHBox(
+						widget.NewLabel("Search Area:"),
+					),
+					nil,
+					at.ocr.boundOCRSearchAreaSelect,
+				),
+			),
+			nil, nil, nil,
+		)
+	at.Append(container.NewTabItem("OCR", ocrSettings))
 
 }
