@@ -119,28 +119,7 @@ func (u *Ui) constructActionSettingsTabs() {
 	u.at.constructLoopTab()
 	u.at.constructImageSearchTab()
 	u.at.constructOcrTab()
-	// u.bindVariables()
-	//	screen := robotgo.CaptureScreen(0, 0, 2560, 1440)
-	//	defer robotgo.FreeBitmap(screen)
-	//		mouseMoveDisplay := canvas.NewImageFromImage(robotgo.ToImage(screen))
 
-	// mouseMoveDisplayImage := canvas.NewImageFromFile("./internal/resources/images/full-screen.png")
-	// mouseMoveDisplayImage.FillMode = canvas.ImageFillStretch
-	// vLine := canvas.NewLine(colornames.Red)
-	// hLine := canvas.NewLine(colornames.Red)
-	// vLine.StrokeWidth = 2
-	// hLine.StrokeWidth = 2
-	// mouseMoveDisplayContainer := container.NewBorder(nil, nil, nil, nil, mouseMoveDisplayImage, vLine, hLine)
-	//	vLine.Position1 = mouseMoveDisplayContainer.Position()
-	// x, _ := u.st.boundMoveX.Get()
-	// vLine.Position1.X = float32(x)
-	// vLine.Position1.Y = 0
-	// vLine.Position2.X = float32(x)
-	// vLine.Position2.Y = mouseMoveDisplayImage.Size().Height
-	//	vLine.Position1.Y /= 2
-	//	hLine.Position1.X /= 2
-	//	hLine.Position1.Y /= 2
-	//	vLine.Position2.X /= 2
 }
 
 func (at *actionTabs) constructWaitTab() {
@@ -148,7 +127,7 @@ func (at *actionTabs) constructWaitTab() {
 	at.wait.boundTimeEntry = widget.NewEntryWithData(binding.IntToString(at.wait.boundTime))
 	at.wait.boundTimeSlider = widget.NewSliderWithData(0.0, 250.0, binding.IntToFloat(at.wait.boundTime))
 	at.wait.boundTime.AddListener(binding.NewDataListener(func() {
-		t, err := ui.GetMacroTabMacroTree()
+		t, err := ui.mui.mtabs.GetTabTree()
 		if err != nil {
 			log.Println(err)
 			return
@@ -187,7 +166,7 @@ func (at *actionTabs) constructMoveTab() {
 		at.move.boundMoveY.Set(programs.CurrentProgramAndScreenSizeCoordinates().GetPoint(s).Y)
 	})
 	at.move.boundMoveX.AddListener(binding.NewDataListener(func() {
-		t, err := ui.GetMacroTabMacroTree()
+		t, err := ui.mui.mtabs.GetTabTree()
 		if err != nil {
 			log.Println(err)
 			return
@@ -199,7 +178,7 @@ func (at *actionTabs) constructMoveTab() {
 		}
 	}))
 	at.move.boundMoveY.AddListener(binding.NewDataListener(func() {
-		t, err := ui.GetMacroTabMacroTree()
+		t, err := ui.mui.mtabs.GetTabTree()
 		if err != nil {
 			log.Println(err)
 			return
@@ -239,7 +218,7 @@ func (at *actionTabs) constructClickTab() {
 	at.click.boundButton = binding.BindBool(&button)
 	at.click.boundButtonToggle = custom_widgets.NewToggleWithData(at.click.boundButton)
 	at.click.boundButton.AddListener(binding.NewDataListener(func() {
-		t, err := ui.GetMacroTabMacroTree()
+		t, err := ui.mui.mtabs.GetTabTree()
 		if err != nil {
 			log.Println(err)
 			return
@@ -269,7 +248,7 @@ func (at *actionTabs) constructKeyTab() {
 	at.key.boundState = binding.BindBool(&state)
 	at.key.boundStateToggle = custom_widgets.NewToggleWithData(at.key.boundState)
 	at.key.boundKey.AddListener(binding.NewDataListener(func() {
-		t, err := ui.GetMacroTabMacroTree()
+		t, err := ui.mui.mtabs.GetTabTree()
 		if err != nil {
 			log.Println(err)
 			return
@@ -281,7 +260,7 @@ func (at *actionTabs) constructKeyTab() {
 		}
 	}))
 	at.key.boundState.AddListener(binding.NewDataListener(func() {
-		t, err := ui.GetMacroTabMacroTree()
+		t, err := ui.mui.mtabs.GetTabTree()
 		if err != nil {
 			log.Println(err)
 			return
@@ -313,7 +292,7 @@ func (at *actionTabs) constructLoopTab() {
 	at.loop.boundCountSlider = widget.NewSliderWithData(1, 10, binding.IntToFloat(at.loop.boundCount))
 	at.loop.boundCountLabel = widget.NewLabelWithData(binding.IntToString(at.loop.boundCount))
 	at.loop.boundLoopName.AddListener(binding.NewDataListener(func() {
-		t, err := ui.GetMacroTabMacroTree()
+		t, err := ui.mui.mtabs.GetTabTree()
 		if err != nil {
 			log.Println(err)
 			return
@@ -325,7 +304,7 @@ func (at *actionTabs) constructLoopTab() {
 		}
 	}))
 	at.loop.boundCount.AddListener(binding.NewDataListener(func() {
-		t, err := ui.GetMacroTabMacroTree()
+		t, err := ui.mui.mtabs.GetTabTree()
 		if err != nil {
 			log.Println(err)
 			return
@@ -364,7 +343,7 @@ func (at *actionTabs) constructImageSearchTab() {
 	at.imageSearch.boundImageSearchArea = binding.BindString(&searchArea)
 	at.imageSearch.boundImageSearchTargets = binding.BindStringList(&imageSearchTargets)
 	at.imageSearch.boundImageSearchTargets.AddListener(binding.NewDataListener(func() {
-		t, err := ui.GetMacroTabMacroTree()
+		t, err := ui.mui.mtabs.GetTabTree()
 		if err != nil {
 			log.Println(err)
 			return
@@ -384,7 +363,7 @@ func (at *actionTabs) constructImageSearchTab() {
 	at.imageSearch.boundXSplitSlider = widget.NewSliderWithData(0, 50, binding.IntToFloat(at.imageSearch.boundXSplit))
 	at.imageSearch.boundXSplitEntry = widget.NewEntryWithData(binding.IntToString(at.imageSearch.boundXSplit))
 	at.imageSearch.boundImageSearchName.AddListener(binding.NewDataListener(func() {
-		t, err := ui.GetMacroTabMacroTree()
+		t, err := ui.mui.mtabs.GetTabTree()
 		if err != nil {
 			log.Println(err)
 			return
@@ -396,7 +375,7 @@ func (at *actionTabs) constructImageSearchTab() {
 		}
 	}))
 	at.imageSearch.boundImageSearchArea.AddListener(binding.NewDataListener(func() {
-		t, err := ui.GetMacroTabMacroTree()
+		t, err := ui.mui.mtabs.GetTabTree()
 		if err != nil {
 			log.Println(err)
 			return
@@ -448,7 +427,7 @@ func (at *actionTabs) constructOcrTab() {
 	at.ocr.boundOCRSearchAreaSelect = widget.NewSelect(programs.CurrentProgramAndScreenSizeCoordinates().GetSearchAreasAsStringSlice(), func(s string) { at.ocr.boundOCRSearchArea.Set(s) })
 	at.ocr.boundOCRTargetEntry = widget.NewEntryWithData(at.ocr.boundOCRTarget)
 	at.ocr.boundOCRSearchArea.AddListener(binding.NewDataListener(func() {
-		t, err := ui.GetMacroTabMacroTree()
+		t, err := ui.mui.mtabs.GetTabTree()
 		if err != nil {
 			log.Println(err)
 			return
@@ -460,7 +439,7 @@ func (at *actionTabs) constructOcrTab() {
 		}
 	}))
 	at.ocr.boundOCRTarget.AddListener(binding.NewDataListener(func() {
-		t, err := ui.GetMacroTabMacroTree()
+		t, err := ui.mui.mtabs.GetTabTree()
 		if err != nil {
 			log.Println(err)
 			return
@@ -498,3 +477,25 @@ func (at *actionTabs) constructOcrTab() {
 	at.Append(container.NewTabItem("OCR", ocrSettings))
 
 }
+
+//	screen := robotgo.CaptureScreen(0, 0, 2560, 1440)
+//	defer robotgo.FreeBitmap(screen)
+//		mouseMoveDisplay := canvas.NewImageFromImage(robotgo.ToImage(screen))
+
+// mouseMoveDisplayImage := canvas.NewImageFromFile("./internal/resources/images/full-screen.png")
+// mouseMoveDisplayImage.FillMode = canvas.ImageFillStretch
+// vLine := canvas.NewLine(colornames.Red)
+// hLine := canvas.NewLine(colornames.Red)
+// vLine.StrokeWidth = 2
+// hLine.StrokeWidth = 2
+// mouseMoveDisplayContainer := container.NewBorder(nil, nil, nil, nil, mouseMoveDisplayImage, vLine, hLine)
+//	vLine.Position1 = mouseMoveDisplayContainer.Position()
+// x, _ := u.st.boundMoveX.Get()
+// vLine.Position1.X = float32(x)
+// vLine.Position1.Y = 0
+// vLine.Position2.X = float32(x)
+// vLine.Position2.Y = mouseMoveDisplayImage.Size().Height
+//	vLine.Position1.Y /= 2
+//	hLine.Position1.X /= 2
+//	hLine.Position1.Y /= 2
+//	vLine.Position2.X /= 2
