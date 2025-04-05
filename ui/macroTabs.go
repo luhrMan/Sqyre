@@ -61,6 +61,7 @@ func (u *Ui) selectedMacroTab() (*MacroTree, error) {
 }
 
 func (u *Ui) addMacroDocTab(macro *macro.Macro) {
+	//check if already open. if it is, select it
 	if _, ok := u.mtMap[macro.Name]; ok {
 		log.Println("macro is already open")
 		for _, d := range u.dt.Items {
@@ -70,6 +71,7 @@ func (u *Ui) addMacroDocTab(macro *macro.Macro) {
 		}
 		return
 	}
+
 	u.SetMacroTreeMapKeyValue(macro.Name, &MacroTree{Macro: macro, Tree: &widget.Tree{}})
 	mt := u.mtMap[macro.Name]
 
@@ -78,7 +80,9 @@ func (u *Ui) addMacroDocTab(macro *macro.Macro) {
 	t := container.NewTabItem(macro.Name, mt.Tree)
 	u.dt.Append(t)
 	u.dt.Select(t)
-	mt.updateTreeOnselect()
+
+	mt.setUpdateTreeOnselect()
+
 	ReRegisterMacroHotkeys()
 	mt.Tree.Refresh()
 }
