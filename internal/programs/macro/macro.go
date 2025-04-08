@@ -35,7 +35,7 @@ func (m *Macro) ExecuteActionTree(ctx ...any) { //error
 }
 
 func (m *Macro) UnmarshalMacro(i int) error {
-	log.Println("Unmarshalling macro")
+	log.Println("Unmarshalling macro", m.Name)
 	err := config.ViperConfig.UnmarshalKey(
 		"programs"+"."+
 			config.DarkAndDarker+"."+

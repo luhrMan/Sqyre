@@ -5,33 +5,18 @@ import (
 	"Squire/internal/programs"
 	"Squire/internal/programs/actions"
 	"Squire/internal/utils"
-	"errors"
 	"log"
-	"sort"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/data/binding"
-	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
-	"github.com/go-vgo/robotgo"
 )
 
 type macroUi struct {
 	mtabs *macroTabs
-
-	boundMacroName      binding.String
-	boundMacroNameEntry *widget.Entry
-
-	boundMacroHotkey   binding.ExternalStringList
-	macroHotkeySelect1 *widget.Select
-	macroHotkeySelect2 *widget.Select
-	macroHotkeySelect3 *widget.Select
-
-	boundGlobalDelay      binding.Int
-	boundGlobalDelayEntry *widget.Entry
 
 	mtoolbars struct {
 		tb1 *fyne.Container
@@ -40,8 +25,12 @@ type macroUi struct {
 }
 
 func (mui *macroUi) constructMacroUi() *fyne.Container {
-	mui.constructMacroSettings()
-	mui.constructTabs()
+	boundLocX = binding.BindInt(&locX)
+	boundLocY = binding.BindInt(&locY)
+	boundLocXLabel = widget.NewLabelWithData(binding.IntToString(boundLocX))
+	boundLocYLabel = widget.NewLabelWithData(binding.IntToString(boundLocY))
+
+	mui.mtabs.constructTabs()
 
 	mui.mtoolbars.tb1 =
 		container.NewGridWithColumns(2,
@@ -53,36 +42,37 @@ func (mui *macroUi) constructMacroUi() *fyne.Container {
 			),
 			container.NewBorder(nil, nil, nil,
 				mui.constructMacroSelect(),
-				mui.boundMacroNameEntry,
+				mui.mtabs.boundMacroNameEntry,
 			),
 		)
 
 	macroHotkey :=
 		container.NewHBox(
-			mui.macroHotkeySelect1,
-			mui.macroHotkeySelect2,
-			mui.macroHotkeySelect3,
+			mui.mtabs.macroHotkeySelect1,
+			mui.mtabs.macroHotkeySelect2,
+			mui.mtabs.macroHotkeySelect3,
 			widget.NewButtonWithIcon("", theme.DocumentSaveIcon(),
 				func() {
 					macroHotkey = []string{
-						mui.macroHotkeySelect1.Selected,
-						mui.macroHotkeySelect2.Selected,
-						mui.macroHotkeySelect3.Selected,
+						mui.mtabs.macroHotkeySelect1.Selected,
+						mui.mtabs.macroHotkeySelect2.Selected,
+						mui.mtabs.macroHotkeySelect3.Selected,
 					}
 					mt, err := mui.mtabs.selectedTab()
 					if err != nil {
 						log.Println(err)
 						return
 					}
+					mt.UnregisterHotkey()
 					mt.Macro.Hotkey = macroHotkey
-					mui.boundMacroHotkey.Reload()
-					mui.mtabs.ReRegisterHotkeys()
+					mui.mtabs.boundMacroHotkey.Reload()
+					mt.RegisterHotkey()
 				},
 			),
 		)
 	macroGlobalDelay :=
 		container.NewHBox(
-			widget.NewLabel("Global Delay (ms)"), mui.boundGlobalDelayEntry)
+			widget.NewLabel("Global Delay (ms)"), mui.mtabs.boundGlobalDelayEntry)
 
 	mousePosition :=
 		container.NewHBox(
@@ -252,71 +242,4 @@ func (mui *macroUi) constructMacroToolbar() *widget.Toolbar {
 			}),
 		)
 	return tb
-}
-
-func (mui *macroUi) constructMacroSettings() {
-	boundLocX = binding.BindInt(&locX)
-	boundLocY = binding.BindInt(&locY)
-	boundLocXLabel = widget.NewLabelWithData(binding.IntToString(boundLocX))
-	boundLocYLabel = widget.NewLabelWithData(binding.IntToString(boundLocY))
-
-	boundMacro := binding.NewUntyped()
-	boundMacro.Set(ui.p.Macros[0])
-	mui.mtabs.boundMacroList = binding.BindStringList(&macroList)
-	for _, m := range ui.p.Macros {
-		mui.mtabs.boundMacroList.Append(m.Name)
-	}
-	mui.mtabs.boundMacroList.AddListener(binding.NewDataListener(func() {
-		ml, err := mui.mtabs.boundMacroList.Get()
-		if err != nil {
-			log.Println(err)
-			return
-		}
-		sort.Strings(ml)
-	}))
-	mui.boundMacroName = binding.BindString(&macroName)
-	mui.boundMacroNameEntry = widget.NewEntryWithData(mui.boundMacroName)
-	mui.boundMacroNameEntry.OnSubmitted = func(string) {
-		t, err := mui.mtabs.GetTabTree()
-		if err != nil {
-			log.Println(err)
-			return
-		}
-		for _, m := range ui.p.Macros {
-			if m.Name == macroName {
-				dialog.ShowError(errors.New("macro name already exists"), ui.win)
-				return
-			}
-		}
-		delete(mui.mtabs.mtMap, t.Macro.Name)
-		mui.mtabs.boundMacroList.Remove(t.Macro.Name)
-		mui.mtabs.SetTreeMapKeyValue(macroName, t)
-		// u.mtMap[macroName] = t
-		t.Macro.Name = macroName
-		mui.mtabs.Selected().Text = macroName
-		mui.mtabs.boundMacroList.Append(macroName)
-
-		mui.mtabs.Refresh()
-	}
-	macroHotkey = []string{"1", "2", "3"}
-	mui.boundMacroHotkey = binding.BindStringList(&macroHotkey)
-	mui.macroHotkeySelect1 = &widget.Select{Options: []string{"ctrl"}}
-	mui.macroHotkeySelect2 = &widget.Select{Options: []string{"", "shift"}}
-	mui.macroHotkeySelect3 = &widget.Select{Options: []string{"1", "2", "3", "4", "5"}}
-
-	mui.macroHotkeySelect1.SetSelectedIndex(0)
-
-	mui.boundGlobalDelay = binding.BindInt(&globalDelay)
-	mui.boundGlobalDelayEntry = widget.NewEntryWithData(binding.IntToString(mui.boundGlobalDelay))
-	mui.boundGlobalDelay.AddListener(binding.NewDataListener(func() {
-		t, err := mui.mtabs.GetTabTree()
-		if err != nil {
-			log.Println(err)
-			return
-		}
-		t.Macro.GlobalDelay = globalDelay
-		robotgo.MouseSleep = globalDelay
-		robotgo.KeySleep = globalDelay
-	}))
-
 }
