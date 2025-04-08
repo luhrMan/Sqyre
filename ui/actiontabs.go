@@ -119,7 +119,6 @@ func (u *Ui) constructActionSettingsTabs() {
 	u.at.constructLoopTab()
 	u.at.constructImageSearchTab()
 	u.at.constructOcrTab()
-
 }
 
 func (at *actionTabs) constructWaitTab() {
@@ -338,6 +337,7 @@ func (at *actionTabs) constructLoopTab() {
 	at.Append(container.NewTabItem("Loop", loopSettings))
 
 }
+
 func (at *actionTabs) constructImageSearchTab() {
 	at.imageSearch.boundImageSearchName = binding.BindString(&imageSearchName)
 	at.imageSearch.boundImageSearchArea = binding.BindString(&searchArea)
@@ -421,6 +421,7 @@ func (at *actionTabs) constructImageSearchTab() {
 	at.Append(container.NewTabItem("Image", imageSearchSettings))
 
 }
+
 func (at *actionTabs) constructOcrTab() {
 	at.ocr.boundOCRSearchArea = binding.BindString(&ocrSearchBox)
 	at.ocr.boundOCRTarget = binding.BindString(&ocrTarget)

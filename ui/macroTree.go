@@ -3,12 +3,14 @@ package ui
 import (
 	"Squire/internal/programs/actions"
 	"Squire/internal/programs/macro"
+	"log"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+	hook "github.com/robotn/gohook"
 )
 
 type MacroTree struct {
@@ -91,6 +93,7 @@ func (mt *MacroTree) createTree() {
 			removeButton.Hide()
 		}
 	}
+	mt.setUpdateTreeOnselect()
 }
 
 func (mt *MacroTree) setUpdateTreeOnselect() {
@@ -142,4 +145,18 @@ func (mt *MacroTree) setUpdateTreeOnselect() {
 			GetUi().at.SelectIndex(ocrtab)
 		}
 	}
+}
+
+func (mtree *MacroTree) RegisterHotkey() {
+	hk := mtree.Macro.Hotkey
+	log.Println("registering hotkey:", hk)
+	hook.Register(hook.KeyDown, hk, func(e hook.Event) {
+		log.Println("pressed", hk)
+		mtree.Macro.ExecuteActionTree()
+	})
+}
+func (mtree *MacroTree) UnregisterHotkey() {
+	hk := mtree.Macro.Hotkey
+	log.Println("unregistering hotkey:", hk)
+	hook.Unregister(hook.KeyDown, hk)
 }

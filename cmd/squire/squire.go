@@ -13,12 +13,13 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
+	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/theme"
 )
 
 func main() {
-	utils.FailsafeHotkey()
 	go utils.StartHook()
+	utils.FailsafeHotkey()
 
 	configInit()
 	a := app.NewWithID("Squire")
@@ -30,11 +31,12 @@ func main() {
 	w.SetIcon(assets.AppIcon)
 	w.SetMaster()
 
+	systemTraySetup(w)
 	ui.InitializeUi(w)
 	programs.GetPrograms().InitPrograms()
 	ui.GetUi().SetCurrentProgram(config.DarkAndDarker)
 	ui.GetUi().ConstructUi()
-
+	w.RequestFocus()
 	w.ShowAndRun()
 
 	utils.CloseTessClient()
@@ -53,4 +55,19 @@ func configInit() {
 	if err != nil {
 		log.Println(err)
 	}
+}
+
+func systemTraySetup(w fyne.Window) {
+	if desk, ok := fyne.CurrentApp().(desktop.App); ok {
+		m := fyne.NewMenu("Squire",
+			fyne.NewMenuItem("Show", func() {
+				w.Show()
+			}))
+		desk.SetSystemTrayMenu(m)
+		desk.SetSystemTrayIcon(assets.AppIcon)
+	}
+
+	w.SetCloseIntercept(func() {
+		w.Hide()
+	})
 }

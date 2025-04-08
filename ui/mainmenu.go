@@ -11,6 +11,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/dialog"
 	"github.com/go-vgo/robotgo"
+	hook "github.com/robotn/gohook"
 )
 
 func (u *Ui) createMainMenu() *fyne.MainMenu {
@@ -100,6 +101,11 @@ func (u *Ui) createMainMenu() *fyne.MainMenu {
 			log.Println("String Map:",
 				config.ViperConfig.Get("programs"+"."+config.DarkAndDarker+"."+"macros"),
 			)
+		}),
+		fyne.NewMenuItem("unregister failsafe", func() {
+			fs := []string{"esc", "ctrl", "shift"}
+
+			hook.Unregister(hook.KeyDown, fs)
 		}),
 	)
 

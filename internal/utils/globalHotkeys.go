@@ -16,9 +16,7 @@ func FailsafeHotkey() {
 }
 
 func StartHook() {
+	log.Println("hook started")
 	s := hook.Start()
-	// defer hook.End()
-	// defer log.Println("hook ended")
-	log.Println("Hook started")
 	<-hook.Process(s)
 }
