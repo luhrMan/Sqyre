@@ -25,7 +25,7 @@ func (at *actionTabs) createItemsCheckTree() *widget.Tree {
 	for category := range itemsStrMap {
 		categories = append(categories, category)
 	}
-	log.Println("items map", itemsStrMap)
+	// log.Println("items map", itemsStrMap)
 
 	updateLists := func(item string, b bool) {
 		log.Println("updating image search targets...")

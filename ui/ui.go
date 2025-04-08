@@ -36,7 +36,7 @@ func InitializeUi(w fyne.Window) *Ui {
 		win: w,
 		mui: &macroUi{
 			mtabs: &macroTabs{
-				DocTabs: &container.DocTabs{},
+				DocTabs: container.NewDocTabs(),
 				mtMap:   map[string]*MacroTree{},
 			},
 		},
@@ -45,10 +45,8 @@ func InitializeUi(w fyne.Window) *Ui {
 	return ui
 }
 func (u *Ui) ConstructUi() {
-	toggleMousePos()
 	assets.CreateItemMaps()
 	u.constructActionSettingsTabs()
-	// u.mui.mtabs.constructDocTabs()
 	u.win.SetMainMenu(u.createMainMenu())
 	u.win.SetContent(
 		container.NewBorder(
@@ -58,6 +56,7 @@ func (u *Ui) ConstructUi() {
 			u.mui.constructMacroUi(),
 		),
 	)
+	toggleMousePos()
 }
 
 // func (u *Ui) constructMainLayout() *fyne.Container {
