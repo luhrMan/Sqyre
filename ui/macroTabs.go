@@ -145,10 +145,9 @@ func (mtabs *macroTabs) addTab(macro *macro.Macro) {
 
 func (mtabs *macroTabs) constructMtabSettings() {
 	mtabs.boundMacroList = binding.BindStringList(&macroList)
-	mtabs.boundMacroMap = binding.BindUntypedTree(&map[string][]string{}, mtabs.mtMap)
-	// for _, m := range ui.p.Macros {
-	// 	mtabs.boundMacroList.Append(m.Name)
-	// }
+	for _, m := range ui.p.Macros {
+		mtabs.boundMacroList.Append(m.Name)
+	}
 	mtabs.boundMacroList.AddListener(binding.NewDataListener(func() {
 		ml, err := mtabs.boundMacroList.Get()
 		if err != nil {

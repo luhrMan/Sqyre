@@ -13,7 +13,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-func (at *actionTabs) createItemsCheckTree() *widget.Tree {
+func (at *actionTabs) QcreateItemsCheckTree() *widget.Tree {
 	log.Println("Creating Items Check Tree")
 	var (
 		icons       = *assets.BytesToFyneIcons()
@@ -25,12 +25,8 @@ func (at *actionTabs) createItemsCheckTree() *widget.Tree {
 	for category := range itemsStrMap {
 		categories = append(categories, category)
 	}
-	// log.Println("items map", itemsStrMap)
 
 	updateLists := func(item string, b bool) {
-		log.Println("updating image search targets...")
-		log.Println("Before update:", imageSearchTargets)
-
 		t, err := at.imageSearch.boundImageSearchTargets.Get()
 		if err != nil {
 			log.Println(err)
@@ -44,7 +40,6 @@ func (at *actionTabs) createItemsCheckTree() *widget.Tree {
 		} else {
 			at.imageSearch.boundImageSearchTargets.Remove(item)
 		}
-		log.Println("After update:", imageSearchTargets)
 	}
 
 	setAllItemsInCategory := func(category string, b bool) bool {
@@ -86,7 +81,7 @@ func (at *actionTabs) createItemsCheckTree() *widget.Tree {
 				widget.NewCheck("placeholder", func(b bool) {}),
 			)
 		} else {
-			return container.NewGridWrap(fyne.NewSquareSize(40),
+			return container.NewGridWrap(fyne.NewSquareSize(25),
 				widget.NewIcon(theme.BrokenImageIcon()),
 				widget.NewCheck("placeholder", func(b bool) {}),
 				layout.NewSpacer(),
