@@ -177,13 +177,7 @@ func (mui *macroUi) constructMacroToolbar() *widget.Toolbar {
 				case "Loop":
 					action = actions.NewLoop(int(count), loopName, []actions.ActionInterface{})
 				case "Image":
-					var t []string
-					for i, item := range itemsBoolList {
-						if item {
-							t = append(t, i)
-						}
-					}
-					action = actions.NewImageSearch(imageSearchName, []actions.ActionInterface{}, t, programs.CurrentProgramAndScreenSizeCoordinates().GetSearchArea(searchArea))
+					action = actions.NewImageSearch(imageSearchName, []actions.ActionInterface{}, imageSearchTargets, programs.CurrentProgramAndScreenSizeCoordinates().GetSearchArea(searchArea))
 				case "OCR":
 					action = actions.NewOcr(ocrTarget, []actions.ActionInterface{}, ocrTarget, programs.CurrentProgramAndScreenSizeCoordinates().GetSearchArea(ocrSearchBox))
 				}
@@ -197,7 +191,7 @@ func (mui *macroUi) constructMacroToolbar() *widget.Toolbar {
 					selectedNode.GetParent().AddSubAction(action)
 				}
 
-				mt.Tree.Refresh()
+				mt.Refresh()
 			}),
 			widget.NewToolbarSpacer(),
 			widget.NewToolbarSeparator(),
@@ -207,7 +201,7 @@ func (mui *macroUi) constructMacroToolbar() *widget.Toolbar {
 					log.Println(err)
 					return
 				}
-				t.Tree.UnselectAll()
+				t.UnselectAll()
 				selectedTreeItem = ""
 			}),
 			widget.NewToolbarAction(theme.MoveDownIcon(), func() {

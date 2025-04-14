@@ -8,6 +8,8 @@ import (
 	"Squire/ui/custom_widgets"
 	"log"
 
+	"slices"
+
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/layout"
@@ -66,7 +68,9 @@ type actionTabs struct {
 	imageSearch struct {
 		boundImageSearchName    binding.String
 		boundImageSearchArea    binding.String
-		boundImageSearchTargets binding.StringList
+		boundImageSearchTargets binding.ExternalStringList
+		targetsTree             *widget.Tree
+		targetsGrid             *widget.Accordion
 		boundXSplit             binding.Int
 		boundYSplit             binding.Int
 
@@ -134,7 +138,7 @@ func (at *actionTabs) constructWaitTab() {
 
 		if n, ok := t.Macro.Root.GetAction(selectedTreeItem).(*actions.Wait); ok {
 			n.Time = time
-			t.Tree.Refresh()
+			t.Refresh()
 		}
 	}))
 	waitSettings :=
@@ -173,7 +177,7 @@ func (at *actionTabs) constructMoveTab() {
 
 		if n, ok := t.Macro.Root.GetAction(selectedTreeItem).(*actions.Move); ok {
 			n.X = moveX
-			t.Tree.Refresh()
+			t.Refresh()
 		}
 	}))
 	at.move.boundMoveY.AddListener(binding.NewDataListener(func() {
@@ -185,7 +189,7 @@ func (at *actionTabs) constructMoveTab() {
 
 		if n, ok := t.Macro.Root.GetAction(selectedTreeItem).(*actions.Move); ok {
 			n.Y = moveY
-			t.Tree.Refresh()
+			t.Refresh()
 		}
 	}))
 
@@ -225,7 +229,7 @@ func (at *actionTabs) constructClickTab() {
 
 		if n, ok := t.Macro.Root.GetAction(selectedTreeItem).(*actions.Click); ok {
 			n.Button = actions.LeftOrRight(button)
-			t.Tree.Refresh()
+			t.Refresh()
 		}
 	}))
 	clickSettings :=
@@ -255,7 +259,7 @@ func (at *actionTabs) constructKeyTab() {
 
 		if n, ok := t.Macro.Root.GetAction(selectedTreeItem).(*actions.Key); ok {
 			n.Key = key
-			t.Tree.Refresh()
+			t.Refresh()
 		}
 	}))
 	at.key.boundState.AddListener(binding.NewDataListener(func() {
@@ -267,7 +271,7 @@ func (at *actionTabs) constructKeyTab() {
 
 		if n, ok := t.Macro.Root.GetAction(selectedTreeItem).(*actions.Key); ok {
 			n.State = actions.UpOrDown(state)
-			t.Tree.Refresh()
+			t.Refresh()
 		}
 	}))
 	keySettings :=
@@ -299,7 +303,7 @@ func (at *actionTabs) constructLoopTab() {
 
 		if n, ok := t.Macro.Root.GetAction(selectedTreeItem).(*actions.Loop); ok {
 			n.Name = loopName
-			t.Tree.Refresh()
+			t.Refresh()
 		}
 	}))
 	at.loop.boundCount.AddListener(binding.NewDataListener(func() {
@@ -311,7 +315,7 @@ func (at *actionTabs) constructLoopTab() {
 
 		if n, ok := t.Macro.Root.GetAction(selectedTreeItem).(*actions.Loop); ok {
 			n.Count = count
-			t.Tree.Refresh()
+			t.Refresh()
 		}
 	}))
 
@@ -350,8 +354,14 @@ func (at *actionTabs) constructImageSearchTab() {
 		}
 
 		if n, ok := t.Macro.Root.GetAction(selectedTreeItem).(*actions.ImageSearch); ok {
-			n.Targets = imageSearchTargets
-			t.Tree.Refresh()
+			c := slices.Clone(imageSearchTargets)
+			n.Targets = c
+			// at.imageSearch.targetsTree.Refresh()
+			for _, i := range at.imageSearch.targetsGrid.Items {
+				i.Detail.Refresh()
+			}
+			t.Refresh()
+			// at.imageSearch.targetsGrid.Refresh()
 		}
 	}))
 	at.imageSearch.boundXSplit = binding.BindInt(&xSplit)
@@ -371,7 +381,7 @@ func (at *actionTabs) constructImageSearchTab() {
 
 		if n, ok := t.Macro.Root.GetAction(selectedTreeItem).(*actions.ImageSearch); ok {
 			n.Name = imageSearchName
-			t.Tree.Refresh()
+			t.Refresh()
 		}
 	}))
 	at.imageSearch.boundImageSearchArea.AddListener(binding.NewDataListener(func() {
@@ -383,7 +393,7 @@ func (at *actionTabs) constructImageSearchTab() {
 
 		if n, ok := t.Macro.Root.GetAction(selectedTreeItem).(*actions.ImageSearch); ok {
 			n.SearchArea = programs.CurrentProgramAndScreenSizeCoordinates().GetSearchArea(searchArea)
-			t.Tree.Refresh()
+			t.Refresh()
 		}
 	}))
 
@@ -416,7 +426,9 @@ func (at *actionTabs) constructImageSearchTab() {
 			nil, nil, nil,
 			// container.NewBorder(nil, nil, nil, nil,),
 			//			u.st.boundImageSearchTargetsTree,
-			at.createItemsCheckTree(),
+			container.NewScroll(
+				at.createItemsCheckTree(),
+			),
 		)
 	at.Append(container.NewTabItem("Image", imageSearchSettings))
 
@@ -436,7 +448,7 @@ func (at *actionTabs) constructOcrTab() {
 
 		if n, ok := t.Macro.Root.GetAction(selectedTreeItem).(*actions.Ocr); ok {
 			n.SearchArea = programs.CurrentProgramAndScreenSizeCoordinates().GetSearchArea(searchArea)
-			t.Tree.Refresh()
+			t.Refresh()
 		}
 	}))
 	at.ocr.boundOCRTarget.AddListener(binding.NewDataListener(func() {
@@ -448,7 +460,7 @@ func (at *actionTabs) constructOcrTab() {
 
 		if n, ok := t.Macro.Root.GetAction(selectedTreeItem).(*actions.Ocr); ok {
 			n.Target = ocrTarget
-			t.Tree.Refresh()
+			t.Refresh()
 		}
 	}))
 

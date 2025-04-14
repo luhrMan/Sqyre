@@ -83,7 +83,7 @@ func (mt *MacroTree) createTree() {
 		if node.GetParent() != nil {
 			removeButton.OnTapped = func() {
 				node.GetParent().RemoveSubAction(node)
-				mt.Tree.Refresh()
+				mt.Refresh()
 				if len(mt.Macro.Root.SubActions) == 0 {
 					selectedTreeItem = ""
 				}
@@ -97,7 +97,7 @@ func (mt *MacroTree) createTree() {
 }
 
 func (mt *MacroTree) setUpdateTreeOnselect() {
-	mt.Tree.OnSelected = func(uid widget.TreeNodeID) {
+	mt.OnSelected = func(uid widget.TreeNodeID) {
 		selectedTreeItem = uid
 		switch node := mt.Macro.Root.GetAction(uid).(type) {
 		case *actions.Wait:
@@ -130,12 +130,6 @@ func (mt *MacroTree) setUpdateTreeOnselect() {
 			GetUi().at.SelectIndex(looptab)
 		case *actions.ImageSearch:
 			GetUi().at.imageSearch.boundImageSearchName.Set(node.Name)
-			for t := range itemsBoolList {
-				itemsBoolList[t] = false
-			}
-			for _, t := range node.Targets {
-				itemsBoolList[t] = true
-			}
 			GetUi().at.imageSearch.boundImageSearchTargets.Set(node.Targets)
 			GetUi().at.imageSearch.boundImageSearchAreaSelect.SetSelected(node.SearchArea.Name)
 			GetUi().at.SelectIndex(imagesearchtab)

@@ -56,6 +56,15 @@ func (is *ItemsMap) GetItemsMapAsBool() map[string]bool {
 	}
 	return itemsBool
 }
+func (is *ItemsMap) GetItemsMapAsStringTree() map[string]string {
+	itemsStr := make(map[string]string)
+	for _, items := range is.Map {
+		for _, item := range items {
+			itemsStr[item.Name] = item.Name
+		}
+	}
+	return itemsStr
+}
 
 func (is *ItemsMap) GetItemsMapCategory(category string) *[]string {
 	im := is.Map
