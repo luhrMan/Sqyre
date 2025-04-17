@@ -1,4 +1,4 @@
-package ui
+package archive
 
 import (
 	"Squire/internal/assets"
@@ -14,7 +14,9 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-func (at *actionTabs) THISONEcreateItemsCheckTree() *widget.Tree {
+var imageSearchTargets = []string{}
+
+func createItemsStringTree() *widget.Tree {
 	log.Println("Creating Items Check Tree")
 	var (
 		icons       = *assets.BytesToFyneIcons()
@@ -90,7 +92,7 @@ func (at *actionTabs) THISONEcreateItemsCheckTree() *widget.Tree {
 	twd.OnSelected = func(uid widget.TreeNodeID) {
 		log.Println("selected:", uid)
 		defer twd.UnselectAll()
-		defer at.imageSearch.boundImageSearchTargets.Reload()
+		// defer at.imageSearch.boundImageSearchTargets.Reload()
 		defer twd.RefreshItem(uid)
 		if twd.IsBranch(uid) {
 			flip := true
@@ -129,6 +131,6 @@ func (at *actionTabs) THISONEcreateItemsCheckTree() *widget.Tree {
 		}
 	}
 	twd.HideSeparators = true
-	at.imageSearch.targetsTree = twd
-	return at.imageSearch.targetsTree
+	// at.imageSearch.targetsTree = twd
+	return twd
 }

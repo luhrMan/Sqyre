@@ -1,4 +1,4 @@
-package ui
+package archive
 
 import (
 	"Squire/internal/assets"
@@ -13,7 +13,9 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-func (at *actionTabs) QcreateItemsCheckTree() *widget.Tree {
+var itemsBoolList map[string]bool
+
+func createItemsCheckTree() *widget.Tree {
 	log.Println("Creating Items Check Tree")
 	var (
 		icons       = *assets.BytesToFyneIcons()
@@ -27,7 +29,7 @@ func (at *actionTabs) QcreateItemsCheckTree() *widget.Tree {
 	}
 
 	updateLists := func(item string, b bool) {
-		t, err := at.imageSearch.boundImageSearchTargets.Get()
+		t, err := boundImageSearchTargets.Get()
 		if err != nil {
 			log.Println(err)
 			return
@@ -35,10 +37,10 @@ func (at *actionTabs) QcreateItemsCheckTree() *widget.Tree {
 		itemsBoolList[item] = b
 		if b {
 			if !slices.Contains(t, item) {
-				at.imageSearch.boundImageSearchTargets.Append(item)
+				boundImageSearchTargets.Append(item)
 			}
 		} else {
-			at.imageSearch.boundImageSearchTargets.Remove(item)
+			boundImageSearchTargets.Remove(item)
 		}
 	}
 

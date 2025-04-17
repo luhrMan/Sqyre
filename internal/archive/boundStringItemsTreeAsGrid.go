@@ -1,4 +1,4 @@
-package ui
+package archive
 
 import (
 	"Squire/internal/assets"
@@ -14,31 +14,38 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-func (at *actionTabs) createItemsCheckTree() *widget.Accordion {
+func createItemsStringGrid() *widget.Accordion {
 	log.Println("Creating Items Check Tree")
 	var (
 		icons       = *assets.BytesToFyneIcons()
 		itemsStrMap = assets.Items.GetItemsMapAsStringsMap()
-		// categories  = make([]string, 0, len(itemsStrMap))
+		ac          = widget.NewAccordion()
 	)
-	ac := widget.NewAccordion()
-	ai := widget.NewAccordionItem("", nil)
 
-	// for category := range itemsStrMap {
-	// 	categories = append(categories, category)
-	// }
+	getCategoryCount := func(c string) int {
+		var counter int
+		for _, i := range itemsStrMap[c] {
+			if slices.Contains(imageSearchTargets, i) {
+				counter++
+			}
+		}
+		return counter
+	}
+
 	for category := range itemsStrMap {
+		ait := category + ": " + strconv.Itoa(getCategoryCount(category)) + " / " + strconv.Itoa(len(itemsStrMap[category]))
+		ai := widget.NewAccordionItem(ait, nil)
 		gw := widget.NewGridWrap(
-			func() int {
-				return len(itemsStrMap[category])
-			},
+			func() int { return len(itemsStrMap[category]) },
 			func() fyne.CanvasObject {
 				rect := canvas.NewRectangle(color.RGBA{})
 				rect.SetMinSize(fyne.NewSquareSize(45))
 				rect.CornerRadius = 5
+
 				icon := canvas.NewImageFromResource(theme.BrokenImageIcon())
 				icon.SetMinSize(fyne.NewSquareSize(40))
 				icon.FillMode = canvas.ImageFillOriginal
+
 				stack :=
 					container.NewStack(
 						rect,
@@ -62,14 +69,6 @@ func (at *actionTabs) createItemsCheckTree() *widget.Accordion {
 					rect.FillColor = color.RGBA{}
 				}
 
-				var counter int
-				for _, i := range itemsStrMap[category] {
-					if slices.Contains(imageSearchTargets, i) {
-						counter++
-					}
-				}
-				ai.Title = category + ": " + strconv.Itoa(counter) + " / " + strconv.Itoa(len(itemsStrMap[category]))
-
 				label.Hidden = true
 				label.SetText(item)
 
@@ -77,13 +76,14 @@ func (at *actionTabs) createItemsCheckTree() *widget.Accordion {
 				if icons[path] != nil {
 					icon.Resource = icons[path]
 				}
+				ai.Title = category + ": " + strconv.Itoa(getCategoryCount(category)) + " / " + strconv.Itoa(len(itemsStrMap[category]))
+
 				o.Refresh()
 			},
 		)
-
 		gw.OnSelected = func(uid widget.GridWrapItemID) {
 			defer gw.UnselectAll()
-			defer at.imageSearch.boundImageSearchTargets.Reload()
+			defer boundImageSearchTargets.Reload()
 			defer gw.RefreshItem(uid)
 			// if gw.IsBranch(uid) {
 			// 	flip := true
@@ -121,6 +121,9 @@ func (at *actionTabs) createItemsCheckTree() *widget.Accordion {
 					imageSearchTargets = slices.Delete(imageSearchTargets, i, i+1)
 				}
 			}
+			ai.Title = category + ": " + strconv.Itoa(getCategoryCount(category)) + " / " + strconv.Itoa(len(itemsStrMap[category]))
+
+			ac.Refresh()
 		}
 
 		r := canvas.NewRectangle(color.RGBA{R: 255, G: 255, B: 255, A: 25})
@@ -128,10 +131,11 @@ func (at *actionTabs) createItemsCheckTree() *widget.Accordion {
 		r.SetMinSize(fyne.NewSize(150, float32(len(itemsStrMap[category])*8)))
 		r.CornerRadius = 5
 		s := container.NewStack(r, gw)
-		ac.Append(widget.NewAccordionItem(category, s))
+		ai.Detail = s
+		ac.Append(ai) //widget.NewAccordionItem(category, s))
 	}
 
 	ac.MultiOpen = true
-	at.imageSearch.targetsGrid = ac
-	return at.imageSearch.targetsGrid
+	// at.imageSearch.targetsAccordionGrids = ac
+	return ac
 }

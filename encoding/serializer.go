@@ -34,7 +34,7 @@ func (s *serializer) CreateActionFromMap(rawMap map[string]any, parent actions.A
 	case "click":
 		action = actions.NewClick(rawMap["button"].(string))
 	case "move":
-		action = actions.NewMove(rawMap["x"].(int), rawMap["y"].(int))
+		action = actions.NewMove(createPoint(rawMap["point"].(map[string]any)))
 	case "key":
 		action = actions.NewKey(rawMap["key"].(string), rawMap["state"].(string))
 	case "imagesearch":
@@ -69,5 +69,13 @@ func createSearchBox(rawMap map[string]any) coordinates.SearchArea {
 		TopY:    rawMap["topy"].(int),
 		RightX:  rawMap["rightx"].(int),
 		BottomY: rawMap["bottomy"].(int),
+	}
+}
+
+func createPoint(rawMap map[string]any) coordinates.Point {
+	return coordinates.Point{
+		Name: rawMap["name"].(string),
+		X:    rawMap["x"].(int),
+		Y:    rawMap["y"].(int),
 	}
 }

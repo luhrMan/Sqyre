@@ -13,10 +13,6 @@ import (
 
 var (
 	ui             *Ui
-	locX           int
-	locY           int
-	boundLocX      binding.ExternalInt
-	boundLocY      binding.ExternalInt
 	boundLocXLabel *widget.Label
 	boundLocYLabel *widget.Label
 )
@@ -59,16 +55,14 @@ func (u *Ui) ConstructUi() {
 	toggleMousePos()
 }
 
-// func (u *Ui) constructMainLayout() *fyne.Container {
-// 	mainLayout := container.NewBorder(nil, nil, u.at, nil, u.mui.constructMacroUi())
-// 	return mainLayout
-// }
-
 func (u *Ui) SetWindow(w fyne.Window)    { u.win = w }
 func (u *Ui) SetCurrentProgram(s string) { u.p = programs.GetPrograms().GetProgram(s) }
 
 func toggleMousePos() {
-	locX, locY = robotgo.Location()
+	locX, locY := robotgo.Location()
+	blocX, blocY := binding.BindInt(&locX), binding.BindInt(&locY)
+	boundLocXLabel.Bind(binding.IntToString(blocX))
+	boundLocYLabel.Bind(binding.IntToString(blocY))
 	go func() {
 		for {
 			robotgo.MilliSleep(100)
@@ -77,8 +71,8 @@ func toggleMousePos() {
 				continue
 			}
 			locX, locY = robotgo.Location()
-			boundLocX.Reload()
-			boundLocY.Reload()
+			blocX.Reload()
+			blocY.Reload()
 		}
 	}()
 }
