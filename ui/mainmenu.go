@@ -18,7 +18,7 @@ func (u *Ui) createMainMenu() *fyne.MainMenu {
 	// ocrActionMenuItem.Icon, _ = fyne.LoadResourceFromPath("./internal/resources/images/Squire.png")
 	macroMenu := fyne.NewMenu("Macro")
 	programSelectSubMenu := fyne.NewMenuItem("Select Program", nil)
-	actionSubMenu := fyne.NewMenuItem("Add Action", nil)
+	actionSubMenu := fyne.NewMenuItem("Add Blank Action", nil)
 	basicActionsSubMenu := fyne.NewMenuItem("Basic Actions", nil)
 	advancedActionsSubMenu := fyne.NewMenuItem("Advanced Actions", nil)
 
@@ -38,26 +38,27 @@ func (u *Ui) createMainMenu() *fyne.MainMenu {
 				return
 			}
 			t.Macro.Root.AddSubAction(a)
-			t.Tree.Refresh()
+			t.Select(a.GetUID())
+			t.Refresh()
 		}
 	basicActionsSubMenu.ChildMenu = fyne.NewMenu("",
-		fyne.NewMenuItem("Wait", func() { addActionAndRefresh(actions.NewWait(time)) }),
-		fyne.NewMenuItem("Mouse Move", func() { addActionAndRefresh(actions.NewMove(moveX, moveY)) }),
-		fyne.NewMenuItem("Click", func() { addActionAndRefresh(actions.NewClick(actions.LeftOrRight(button))) }),
-		fyne.NewMenuItem("Key", func() { addActionAndRefresh(actions.NewKey(key, actions.UpOrDown(state))) }),
+		fyne.NewMenuItem("Wait", func() { addActionAndRefresh(actions.NewWait(0)) }),
+		fyne.NewMenuItem("Mouse Move", func() { addActionAndRefresh(actions.NewMove(coordinates.Point{Name: "", X: 0, Y: 0})) }),
+		fyne.NewMenuItem("Click", func() { addActionAndRefresh(actions.NewClick(actions.LeftOrRight(false))) }),
+		fyne.NewMenuItem("Key", func() { addActionAndRefresh(actions.NewKey("", actions.UpOrDown(false))) }),
 	)
 	advancedActionsSubMenu.ChildMenu = fyne.NewMenu("",
-		fyne.NewMenuItem("Loop", func() { addActionAndRefresh(actions.NewLoop(count, loopName, []actions.ActionInterface{})) }),
+		fyne.NewMenuItem("Loop", func() { addActionAndRefresh(actions.NewLoop(1, "", []actions.ActionInterface{})) }),
 		fyne.NewMenuItem("Image Search", func() {
-			addActionAndRefresh(
-				actions.NewImageSearch(
-					imageSearchName,
-					[]actions.ActionInterface{},
-					[]string{},
-					programs.CurrentProgramAndScreenSizeCoordinates().GetSearchArea(searchArea)))
+			addActionAndRefresh(actions.NewImageSearch(
+				"",
+				[]actions.ActionInterface{},
+				[]string{},
+				coordinates.SearchArea{},
+			))
 		}),
 		fyne.NewMenuItem("OCR", func() {
-			addActionAndRefresh(actions.NewOcr(ocrName, []actions.ActionInterface{}, ocrTarget, programs.CurrentProgramAndScreenSizeCoordinates().GetSearchArea(ocrSearchBox)))
+			addActionAndRefresh(actions.NewOcr("", []actions.ActionInterface{}, "", coordinates.SearchArea{}))
 		}),
 	)
 

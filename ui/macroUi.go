@@ -4,6 +4,7 @@ import (
 	"Squire/internal/assets"
 	"Squire/internal/programs"
 	"Squire/internal/programs/actions"
+	"Squire/internal/programs/coordinates"
 	"Squire/internal/utils"
 	"log"
 
@@ -25,10 +26,12 @@ type macroUi struct {
 }
 
 func (mui *macroUi) constructMacroUi() *fyne.Container {
-	boundLocX = binding.BindInt(&locX)
-	boundLocY = binding.BindInt(&locY)
-	boundLocXLabel = widget.NewLabelWithData(binding.IntToString(boundLocX))
-	boundLocYLabel = widget.NewLabelWithData(binding.IntToString(boundLocY))
+	// boundLocX = binding.BindInt(&locX)
+	// boundLocY = binding.BindInt(&locY)
+	// boundLocXLabel = widget.NewLabelWithData(binding.IntToString(boundLocX))
+	// boundLocYLabel = widget.NewLabelWithData(binding.IntToString(boundLocY))
+	boundLocXLabel = widget.NewLabelWithData(binding.NewString())
+	boundLocYLabel = widget.NewLabelWithData(binding.NewString())
 
 	mui.mtabs.constructTabs()
 
@@ -167,19 +170,42 @@ func (mui *macroUi) constructMacroToolbar() *widget.Toolbar {
 				}
 				switch ui.at.Selected().Text {
 				case "Wait":
-					action = actions.NewWait(time)
+					time, _ := GetUi().at.boundWait.GetValue("Time")
+					action = actions.NewWait(time.(int))
 				case "Move":
-					action = actions.NewMove(moveX, moveY)
+					name, _ := GetUi().at.boundPoint.GetValue("Name")
+					x, _ := GetUi().at.boundPoint.GetValue("X")
+					y, _ := GetUi().at.boundPoint.GetValue("Y")
+					action = actions.NewMove(coordinates.Point{Name: name.(string), X: x.(int), Y: y.(int)})
 				case "Click":
 					action = actions.NewClick(actions.LeftOrRight(button))
 				case "Key":
 					action = actions.NewKey(key, actions.UpOrDown(state))
 				case "Loop":
-					action = actions.NewLoop(int(count), loopName, []actions.ActionInterface{})
+					name, _ := GetUi().at.boundAdvancedAction.GetValue("Name")
+					count, _ := GetUi().at.boundLoop.GetValue("Count")
+					subactions := []actions.ActionInterface{}
+					action = actions.NewLoop(count.(int), name.(string), subactions)
 				case "Image":
-					action = actions.NewImageSearch(imageSearchName, []actions.ActionInterface{}, imageSearchTargets, programs.CurrentProgramAndScreenSizeCoordinates().GetSearchArea(searchArea))
+					name, _ := GetUi().at.boundAdvancedAction.GetValue("Name")
+					subactions := []actions.ActionInterface{}
+					targets, _ := GetUi().at.boundImageSearch.GetValue("Targets")
+					searchArea, _ := GetUi().at.boundSearchArea.GetValue("Name")
+					action = actions.NewImageSearch(
+						name.(string),
+						subactions,
+						targets.([]string),
+						programs.CurrentProgramAndScreenSizeCoordinates().GetSearchArea(searchArea.(string)))
 				case "OCR":
-					action = actions.NewOcr(ocrTarget, []actions.ActionInterface{}, ocrTarget, programs.CurrentProgramAndScreenSizeCoordinates().GetSearchArea(ocrSearchBox))
+					name, _ := GetUi().at.boundAdvancedAction.GetValue("Name")
+					target, _ := GetUi().at.boundOcr.GetValue("Target")
+					subactions := []actions.ActionInterface{}
+					searchArea, _ := GetUi().at.boundSearchArea.GetValue("Name")
+					action = actions.NewOcr(
+						name.(string),
+						subactions,
+						target.(string),
+						programs.CurrentProgramAndScreenSizeCoordinates().GetSearchArea(searchArea.(string)))
 				}
 
 				if selectedNode == nil {
@@ -190,7 +216,7 @@ func (mui *macroUi) constructMacroToolbar() *widget.Toolbar {
 				} else {
 					selectedNode.GetParent().AddSubAction(action)
 				}
-
+				mt.Select(action.GetUID())
 				mt.Refresh()
 			}),
 			widget.NewToolbarSpacer(),
@@ -203,6 +229,7 @@ func (mui *macroUi) constructMacroToolbar() *widget.Toolbar {
 				}
 				t.UnselectAll()
 				selectedTreeItem = ""
+				unbindAll()
 			}),
 			widget.NewToolbarAction(theme.MoveDownIcon(), func() {
 				t, err := mui.mtabs.GetTabTree()
