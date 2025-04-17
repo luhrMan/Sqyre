@@ -83,6 +83,8 @@ func (mtabs *macroTabs) constructTabs() {
 			log.Println(err)
 			return
 		}
+		unbindAll()
+
 		mtabs.boundGlobalDelay.Set(mt.Macro.GlobalDelay)
 		mtabs.boundMacroName.Set(mt.Macro.Name)
 		mtabs.boundMacroHotkey.Set(mt.Macro.Hotkey)

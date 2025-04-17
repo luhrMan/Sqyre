@@ -7,22 +7,6 @@ programs:
                 type: loop
                 name: root
                 subactions:
-                    - type: wait
-                      time: 250
-                    - type: move
-                      x: 480
-                      "y": 572
-                    - type: wait
-                      time: 143
-                    - type: move
-                      x: 1427
-                      "y": 572
-                    - type: move
-                      x: 787
-                      "y": 174
-                    - type: move
-                      x: 480
-                      "y": 160
               globaldelay: 0
               hotkey:
                 - ctrl
@@ -41,8 +25,10 @@ programs:
                       name: kkjj
                       subactions:
                         - type: move
-                          x: 0
-                          "y": 0
+                          point:
+                            name: test
+                            x: 0
+                            "y": 0
                     - type: click
                       button: left
                     - type: key
@@ -91,81 +77,6 @@ programs:
                         - Regal Orb
                         - Vaal Orb
                         - Orb of Chance
-                        - Divine Orb
-                        - Chance Shard
-                        - Regal Shard
-                        - Artificers Shard
-                        - Arcanists Etcher
-                        - Armourers Scrap
-                        - Blacksmiths Whetstone
-                        - Artificers Orb
-                        - Scroll of Wisdom
-                        - Gemcutters Prism
-                        - Glassblowers Bauble
-                        - Lesser Jewellers Orb
-                        - Greaters Jewellers Orb
-                        - Perfect Jewellers Orb
-                        - Transmutation Shard
-                        - Orb of Annulment
-                        - Mirror of Kalandra
-                        - Waystone T1
-                        - Waystone T2
-                        - Waystone T3
-                        - Waystone T4
-                        - Waystone T5
-                        - Waystone T6
-                        - Waystone T7
-                        - Waystone T8
-                        - Waystone T9
-                        - Waystone T10
-                        - Waystone T11
-                        - Waystone T12
-                        - Waystone T13
-                        - Waystone T14
-                        - Waystone T15
-                        - Bandage
-                        - Francisca Axe
-                        - Surgical Kit
-                        - Healing Potion
-                        - Gold Coins
-                        - Gold Coin
-                        - Gold Purse
-                        - Campfire
-                        - Protection Potion
-                        - Magic Protection Potion
-                        - Potion
-                        - Luck Potion
-                        - Lockpick
-                        - Ruby
-                        - Sapphire
-                        - Dotted Gold Bangle
-                        - Gem Necklace
-                        - Gem Ring
-                        - Glimmer Bangle
-                        - Gold Band
-                        - Gold Candle Platter
-                        - Leaf Gold Bangle
-                        - Light Gold Bangle
-                        - Patterned Gold Bangle
-                        - Pearl Necklace
-                        - Shine Bangle
-                        - Simple Gold Bangle
-                        - Slim Bangle
-                        - Triple Gem Bangle
-                        - Turquoise Gem Bangle
-                        - Ceremonial Dagger
-                        - Goblet
-                        - Gold Chalice
-                        - Gold Goblet
-                        - Silver Chalice
-                        - Gold Bowl
-                        - Gold Candelabra
-                        - Gold Candle Holder
-                        - Gold Crown
-                        - Gold Waterpot
-                        - Ancient Scroll
-                        - Diamond
-                        - Emerald
                       searcharea:
                         name: ""
                         leftx: 0

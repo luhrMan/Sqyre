@@ -36,16 +36,16 @@ func (mt *MacroTree) moveNode(selectedUID string, up bool) {
 
 	if up && index > 0 {
 		psa[index-1], psa[index] = psa[index], psa[index-1]
-		mt.Tree.Select(psa[index-1].GetUID())
+		mt.Select(psa[index-1].GetUID())
 	} else if !up && index < len(psa)-1 {
 		psa[index], psa[index+1] = psa[index+1], psa[index]
-		mt.Tree.Select(psa[index+1].GetUID())
+		mt.Select(psa[index+1].GetUID())
 	}
-	mt.Tree.Refresh()
+	mt.Refresh()
 }
 
 func (mt *MacroTree) createTree() {
-	mt.Tree.ChildUIDs = func(uid string) []string {
+	mt.ChildUIDs = func(uid string) []string {
 		node := mt.Macro.Root.GetAction(uid)
 		if node == nil {
 			return []string{}
@@ -62,15 +62,15 @@ func (mt *MacroTree) createTree() {
 
 		return []string{}
 	}
-	mt.Tree.IsBranch = func(uid string) bool {
+	mt.IsBranch = func(uid string) bool {
 		node := mt.Macro.Root.GetAction(uid)
 		_, ok := node.(actions.AdvancedActionInterface)
 		return node != nil && ok
 	}
-	mt.Tree.CreateNode = func(branch bool) fyne.CanvasObject {
+	mt.CreateNode = func(branch bool) fyne.CanvasObject {
 		return container.NewHBox(widget.NewLabel("Template"), layout.NewSpacer(), &widget.Button{Icon: theme.CancelIcon(), Importance: widget.DangerImportance})
 	}
-	mt.Tree.UpdateNode = func(uid string, branch bool, obj fyne.CanvasObject) {
+	mt.UpdateNode = func(uid string, branch bool, obj fyne.CanvasObject) {
 		node := mt.Macro.Root.GetAction(uid)
 		if node == nil {
 			return
@@ -96,46 +96,53 @@ func (mt *MacroTree) createTree() {
 	mt.setUpdateTreeOnselect()
 }
 
+func (mt *MacroTree) selectedAction() actions.ActionInterface {
+	if selectedTreeItem == "" {
+		return mt.Macro.Root
+	}
+	return mt.Macro.Root.GetAction(selectedTreeItem)
+}
+
 func (mt *MacroTree) setUpdateTreeOnselect() {
 	mt.OnSelected = func(uid widget.TreeNodeID) {
 		selectedTreeItem = uid
 		switch node := mt.Macro.Root.GetAction(uid).(type) {
 		case *actions.Wait:
-			GetUi().at.wait.boundTime.Set(node.Time)
+			bindAction(node)
 			GetUi().at.SelectIndex(waittab)
 		case *actions.Move:
-			GetUi().at.move.boundMoveX.Set(node.X)
-			GetUi().at.move.boundMoveY.Set(node.Y)
+			bindAction(node)
 			GetUi().at.SelectIndex(movetab)
 		case *actions.Click:
-			if node.Button == actions.LeftOrRight(false) {
-				GetUi().at.click.boundButton.Set(false)
-			} else {
-				GetUi().at.click.boundButton.Set(true)
-			}
+			bindAction(node)
+
+			// if node.Button == actions.LeftOrRight(false) {
+			// 	GetUi().at.click.boundButton.Set(false)
+			// } else {
+			// 	GetUi().at.click.boundButton.Set(true)
+			// }
 			GetUi().at.SelectIndex(clicktab)
 		case *actions.Key:
-			key = node.Key
-			GetUi().at.key.boundKeySelect.SetSelected(node.Key)
-			if node.State == actions.UpOrDown(false) {
-				GetUi().at.key.boundState.Set(false)
-			} else {
-				GetUi().at.key.boundState.Set(true)
-			}
+			bindAction(node)
+
+			// key = node.Key
+			// GetUi().at.key.boundKeySelect.SetSelected(node.Key)
+			// if node.State == actions.UpOrDown(false) {
+			// 	GetUi().at.key.boundState.Set(false)
+			// } else {
+			// 	GetUi().at.key.boundState.Set(true)
+			// }
 			GetUi().at.SelectIndex(keytab)
 
 		case *actions.Loop:
-			GetUi().at.loop.boundLoopName.Set(node.Name)
-			GetUi().at.loop.boundCount.Set(node.Count)
+			bindAction(node)
 			GetUi().at.SelectIndex(looptab)
 		case *actions.ImageSearch:
-			GetUi().at.imageSearch.boundImageSearchName.Set(node.Name)
-			GetUi().at.imageSearch.boundImageSearchTargets.Set(node.Targets)
-			GetUi().at.imageSearch.boundImageSearchAreaSelect.SetSelected(node.SearchArea.Name)
+			bindAction(node)
+			GetUi().at.imageSearch.boundTargetsGrid.Refresh()
 			GetUi().at.SelectIndex(imagesearchtab)
 		case *actions.Ocr:
-			GetUi().at.ocr.boundOCRTarget.Set(node.Target)
-			GetUi().at.ocr.boundOCRSearchAreaSelect.SetSelected(node.SearchArea.Name)
+			bindAction(node)
 			GetUi().at.SelectIndex(ocrtab)
 		}
 	}

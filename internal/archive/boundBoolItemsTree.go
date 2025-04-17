@@ -1,4 +1,4 @@
-package ui
+package archive
 
 import (
 	"Squire/internal/assets"
@@ -15,8 +15,9 @@ import (
 
 var boolMap = map[string]bool{}
 var bind binding.ExternalBoolTree
+var boundImageSearchTargets binding.ExternalStringList
 
-func (at *actionTabs) DcreateItemsCheckTree() *widget.Tree {
+func createItemsBoundCheckTree() *widget.Tree {
 	log.Println("Creating Items Check Tree")
 	var (
 		treeStructure = assets.Items.GetItemsMapAsStringsMap()
@@ -119,7 +120,7 @@ func (at *actionTabs) DcreateItemsCheckTree() *widget.Tree {
 				}
 			}
 
-			at.imageSearch.boundImageSearchTargets.Set(targets)
+			boundImageSearchTargets.Set(targets)
 
 			// for s, b := range v {
 			// 	if b {
