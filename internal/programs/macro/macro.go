@@ -7,6 +7,7 @@ import (
 	"log"
 	"strconv"
 
+	hook "github.com/robotn/gohook"
 	"github.com/spf13/viper"
 )
 
@@ -48,4 +49,18 @@ func (m *Macro) UnmarshalMacro(i int) error {
 		return err
 	}
 	return nil
+}
+
+func (m *Macro) RegisterHotkey() {
+	hk := m.Hotkey
+	log.Println("registering hotkey:", hk)
+	hook.Register(hook.KeyDown, hk, func(e hook.Event) {
+		log.Println("pressed", hk)
+		m.ExecuteActionTree()
+	})
+}
+func (m *Macro) UnregisterHotkey() {
+	hk := m.Hotkey
+	log.Println("unregistering hotkey:", hk)
+	hook.Unregister(hook.KeyDown, hk)
 }
