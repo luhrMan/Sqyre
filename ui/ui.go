@@ -2,7 +2,9 @@ package ui
 
 import (
 	"Squire/internal/assets"
+	"Squire/internal/config"
 	"Squire/internal/programs"
+	"Squire/ui/custom_widgets"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -31,26 +33,43 @@ func InitializeUi(w fyne.Window) *Ui {
 	ui = &Ui{
 		win: w,
 		mui: &macroUi{
-			mtabs: &macroTabs{
-				DocTabs: container.NewDocTabs(),
-				mtMap:   map[string]*MacroTree{},
-			},
+			mtabs: NewMacroTabs(),
 		},
-		at: &actionTabs{AppTabs: &container.AppTabs{}},
+		at: &actionTabs{
+			AppTabs:           &container.AppTabs{},
+			boundTimeSlider:   widget.NewSliderWithData(0.0, 1000.0, binding.NewFloat()),
+			boundTimeEntry:    &widget.Entry{},
+			boundMoveXSlider:  widget.NewSliderWithData(-1.0, float64(config.MonitorWidth), binding.NewFloat()),
+			boundMoveYSlider:  widget.NewSliderWithData(-1.0, float64(config.MonitorHeight), binding.NewFloat()),
+			boundMoveXEntry:   widget.NewEntryWithData(binding.NewString()),
+			boundMoveYEntry:   widget.NewEntryWithData(binding.NewString()),
+			boundPointList:    &widget.List{},
+			boundButtonToggle: custom_widgets.NewToggleWithData(binding.NewBool()),
+			boundKeySelect:    widget.NewSelectWithData([]string{"ctrl", "alt", "shift"}, binding.NewString()),
+			boundStateToggle:  custom_widgets.NewToggleWithData(binding.NewBool()),
+
+			boundLoopNameEntry: widget.NewEntryWithData(binding.NewString()),
+			boundCountSlider:   widget.NewSliderWithData(1, 10, binding.IntToFloat(binding.NewInt())),
+			boundCountLabel:    widget.NewLabelWithData(binding.NewString()),
+
+			boundTargetsGridSearchBar:  &widget.Entry{},
+			boundTargetsGrid:           &widget.GridWrap{},
+			boundImageSearchNameEntry:  widget.NewEntryWithData(binding.NewString()),
+			boundImageSearchAreaSelect: &widget.Select{},
+			boundOCRTargetEntry:        &widget.Entry{},
+			boundOCRSearchAreaSelect:   &widget.Select{},
+		},
 	}
 	return ui
 }
 func (u *Ui) ConstructUi() {
 	assets.CreateItemMaps()
-	u.constructActionSettingsTabs()
+	u.at.constructActionSettingsTabs()
 	u.win.SetMainMenu(u.createMainMenu())
+	hs := container.NewHSplit(u.at, u.mui.constructMacroUi())
+	hs.SetOffset(0.3333333333333333333333333333333333333)
 	u.win.SetContent(
-		container.NewBorder(
-			nil, nil,
-			u.at,
-			nil,
-			u.mui.constructMacroUi(),
-		),
+		hs,
 	)
 	toggleMousePos()
 }
