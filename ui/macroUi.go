@@ -7,6 +7,7 @@ import (
 	"Squire/internal/programs/coordinates"
 	"Squire/internal/utils"
 	"log"
+	"slices"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -26,10 +27,6 @@ type macroUi struct {
 }
 
 func (mui *macroUi) constructMacroUi() *fyne.Container {
-	// boundLocX = binding.BindInt(&locX)
-	// boundLocY = binding.BindInt(&locY)
-	// boundLocXLabel = widget.NewLabelWithData(binding.IntToString(boundLocX))
-	// boundLocYLabel = widget.NewLabelWithData(binding.IntToString(boundLocY))
 	boundLocXLabel = widget.NewLabelWithData(binding.NewString())
 	boundLocYLabel = widget.NewLabelWithData(binding.NewString())
 
@@ -45,37 +42,9 @@ func (mui *macroUi) constructMacroUi() *fyne.Container {
 			),
 			container.NewBorder(nil, nil, nil,
 				mui.constructMacroSelect(),
-				mui.mtabs.boundMacroNameEntry,
+				mui.mtabs.macroNameEntry,
 			),
 		)
-
-	macroHotkey :=
-		container.NewHBox(
-			mui.mtabs.macroHotkeySelect1,
-			mui.mtabs.macroHotkeySelect2,
-			mui.mtabs.macroHotkeySelect3,
-			widget.NewButtonWithIcon("", theme.DocumentSaveIcon(),
-				func() {
-					macroHotkey = []string{
-						mui.mtabs.macroHotkeySelect1.Selected,
-						mui.mtabs.macroHotkeySelect2.Selected,
-						mui.mtabs.macroHotkeySelect3.Selected,
-					}
-					mt, err := mui.mtabs.selectedTab()
-					if err != nil {
-						log.Println(err)
-						return
-					}
-					mt.UnregisterHotkey()
-					mt.Macro.Hotkey = macroHotkey
-					mui.mtabs.boundMacroHotkey.Reload()
-					mt.RegisterHotkey()
-				},
-			),
-		)
-	macroGlobalDelay :=
-		container.NewHBox(
-			widget.NewLabel("Global Delay (ms)"), mui.mtabs.boundGlobalDelayEntry)
 
 	mousePosition :=
 		container.NewHBox(
@@ -94,9 +63,9 @@ func (mui *macroUi) constructMacroUi() *fyne.Container {
 			container.NewBorder(
 				nil,
 				nil,
-				macroHotkey,      //right
-				mousePosition,    //left
-				macroGlobalDelay, //middle
+				nil,
+				mousePosition, //right
+				mui.mtabs.macroHotkeyEntry,
 			),
 			utils.MacroProgressBar(),
 		)
@@ -113,6 +82,17 @@ func (mui *macroUi) constructMacroUi() *fyne.Container {
 	return macroUi
 }
 
+func GetMacrosAsStringSlice() []string {
+	keys := make([]string, len(programs.CurrentProgram().Macros))
+
+	i := 0
+	for _, k := range programs.CurrentProgram().Macros {
+		keys[i] = k.Name
+		i++
+	}
+	return keys
+}
+
 func (mui *macroUi) constructMacroSelect() *widget.Button {
 	return widget.NewButtonWithIcon("",
 		theme.FolderOpenIcon(),
@@ -126,26 +106,40 @@ func (mui *macroUi) constructMacroSelect() *widget.Button {
 			}
 			w := fyne.CurrentApp().NewWindow(title)
 			w.SetIcon(assets.AppIcon)
-			boundMacroListWidget := widget.NewListWithData(
-				mui.mtabs.boundMacroList,
+			mui.mtabs.boundMacroListWidget = widget.NewList(
+				func() int {
+					return len(programs.CurrentProgram().Macros)
+				},
 				func() fyne.CanvasObject {
 					return widget.NewLabel("template")
 				},
-				func(di binding.DataItem, co fyne.CanvasObject) {
-					co.(*widget.Label).Bind(di.(binding.String))
+				func(id widget.ListItemID, co fyne.CanvasObject) {
+					k := GetMacrosAsStringSlice()
+					label := co.(*widget.Label)
+					slices.Sort(k)
+					v := k[id]
+					label.SetText(v)
+					label.Importance = widget.MediumImportance
+					for _, d := range mui.mtabs.Items {
+						if d.Text == v {
+							label.Importance = widget.SuccessImportance
+						}
+					}
+					label.Refresh()
 				},
 			)
-			boundMacroListWidget.OnSelected =
+			mui.mtabs.boundMacroListWidget.OnSelected =
 				func(id widget.ListItemID) {
-					if ui.p.GetMacroByName(macroList[id]) == nil {
-						ui.p.AddMacro(macroList[id], globalDelay)
-					}
-					mui.mtabs.addTab(ui.p.GetMacroByName(macroList[id]))
-					boundMacroListWidget.UnselectAll()
+					k := GetMacrosAsStringSlice()
+					slices.Sort(k)
+					macroName := k[id]
+					mui.mtabs.addTab(macroName)
+					mui.mtabs.boundMacroListWidget.RefreshItem(id)
+					mui.mtabs.boundMacroListWidget.UnselectAll()
 				}
 			w.SetContent(
 				container.NewAdaptiveGrid(1,
-					boundMacroListWidget,
+					mui.mtabs.boundMacroListWidget,
 				),
 			)
 			w.Resize(fyne.NewSize(300, 500))
@@ -159,7 +153,7 @@ func (mui *macroUi) constructMacroToolbar() *widget.Toolbar {
 		widget.NewToolbar(
 			widget.NewToolbarAction(theme.ContentAddIcon(), func() {
 				var action actions.ActionInterface
-				mt, err := mui.mtabs.GetTabTree()
+				mt, err := ui.mui.mtabs.selectedTab()
 				if err != nil {
 					log.Println(err)
 					return
@@ -178,9 +172,12 @@ func (mui *macroUi) constructMacroToolbar() *widget.Toolbar {
 					y, _ := GetUi().at.boundPoint.GetValue("Y")
 					action = actions.NewMove(coordinates.Point{Name: name.(string), X: x.(int), Y: y.(int)})
 				case "Click":
-					action = actions.NewClick(actions.LeftOrRight(button))
+					button, _ := GetUi().at.boundClick.GetValue("Button")
+					action = actions.NewClick(button.(string))
 				case "Key":
-					action = actions.NewKey(key, actions.UpOrDown(state))
+					key, _ := GetUi().at.boundKey.GetValue("Key")
+					state, _ := GetUi().at.boundKey.GetValue("State")
+					action = actions.NewKey(key.(string), state.(string))
 				case "Loop":
 					name, _ := GetUi().at.boundAdvancedAction.GetValue("Name")
 					count, _ := GetUi().at.boundLoop.GetValue("Count")
@@ -217,47 +214,50 @@ func (mui *macroUi) constructMacroToolbar() *widget.Toolbar {
 					selectedNode.GetParent().AddSubAction(action)
 				}
 				mt.Select(action.GetUID())
-				mt.Refresh()
+				mt.RefreshItem(action.GetUID())
 			}),
 			widget.NewToolbarSpacer(),
 			widget.NewToolbarSeparator(),
 			widget.NewToolbarAction(theme.RadioButtonIcon(), func() {
-				t, err := mui.mtabs.GetTabTree()
+				mt, err := ui.mui.mtabs.selectedTab()
 				if err != nil {
 					log.Println(err)
 					return
 				}
-				t.UnselectAll()
+				mt.UnselectAll()
 				selectedTreeItem = ""
 				unbindAll()
 			}),
 			widget.NewToolbarAction(theme.MoveDownIcon(), func() {
-				t, err := mui.mtabs.GetTabTree()
+				mt, err := ui.mui.mtabs.selectedTab()
 				if err != nil {
 					log.Println(err)
 					return
 				}
-				t.moveNode(selectedTreeItem, false)
+
+				mt.moveNode(selectedTreeItem, false)
 			}),
 			widget.NewToolbarAction(theme.MoveUpIcon(), func() {
-				t, err := mui.mtabs.GetTabTree()
+				mt, err := ui.mui.mtabs.selectedTab()
 				if err != nil {
 					log.Println(err)
 					return
 				}
-				t.moveNode(selectedTreeItem, true)
+
+				mt.moveNode(selectedTreeItem, true)
 			}),
 			widget.NewToolbarSeparator(),
 			widget.NewToolbarSpacer(),
 			widget.NewToolbarAction(theme.MediaPlayIcon(), func() {
-				t, err := mui.mtabs.GetTabTree()
+				mt, err := ui.mui.mtabs.selectedTab()
 				if err != nil {
 					log.Println(err)
 					return
 				}
+
 				mui.mtabs.isExecuting.Show()
 				mui.mtabs.isExecuting.Start()
-				t.Macro.ExecuteActionTree()
+				mt.Macro.ExecuteActionTree()
 				mui.mtabs.isExecuting.Stop()
 				mui.mtabs.isExecuting.Hide()
 			}),

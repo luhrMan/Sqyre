@@ -32,20 +32,22 @@ func (u *Ui) createMainMenu() *fyne.MainMenu {
 	)
 	addActionAndRefresh :=
 		func(a actions.ActionInterface) {
-			t, err := u.mui.mtabs.GetTabTree()
+			// t, err := u.mui.mtabs.GetTabTree()
+			mt, err := ui.mui.mtabs.selectedTab()
 			if err != nil {
 				log.Println(err)
 				return
 			}
-			t.Macro.Root.AddSubAction(a)
-			t.Select(a.GetUID())
-			t.Refresh()
+
+			mt.Macro.Root.AddSubAction(a)
+			mt.Select(a.GetUID())
+			mt.Refresh()
 		}
 	basicActionsSubMenu.ChildMenu = fyne.NewMenu("",
 		fyne.NewMenuItem("Wait", func() { addActionAndRefresh(actions.NewWait(0)) }),
 		fyne.NewMenuItem("Mouse Move", func() { addActionAndRefresh(actions.NewMove(coordinates.Point{Name: "", X: 0, Y: 0})) }),
-		fyne.NewMenuItem("Click", func() { addActionAndRefresh(actions.NewClick(actions.LeftOrRight(false))) }),
-		fyne.NewMenuItem("Key", func() { addActionAndRefresh(actions.NewKey("", actions.UpOrDown(false))) }),
+		fyne.NewMenuItem("Click", func() { addActionAndRefresh(actions.NewClick("left")) }),
+		fyne.NewMenuItem("Key", func() { addActionAndRefresh(actions.NewKey("ctrl", "down")) }),
 	)
 	advancedActionsSubMenu.ChildMenu = fyne.NewMenu("",
 		fyne.NewMenuItem("Loop", func() { addActionAndRefresh(actions.NewLoop(1, "", []actions.ActionInterface{})) }),
@@ -84,9 +86,14 @@ func (u *Ui) createMainMenu() *fyne.MainMenu {
 			robotgo.MouseSleep = 0
 			robotgo.KeySleep = 0
 			coordinates.CalibrateInventorySearchboxes((*programs.GetPrograms())[config.DarkAndDarker].Coordinates["2560x1440"])
-			u.at.imageSearch.boundImageSearchAreaSelect.SetOptions(programs.CurrentProgramAndScreenSizeCoordinates().GetSearchAreasAsStringSlice())
-			robotgo.MouseSleep = globalDelay
-			robotgo.KeySleep = globalDelay
+			u.at.boundImageSearchAreaSelect.SetOptions(programs.CurrentProgramAndScreenSizeCoordinates().GetSearchAreasAsStringSlice())
+			mt, err := u.mui.mtabs.selectedTab()
+			if err != nil {
+				log.Println(err)
+				return
+			}
+			robotgo.MouseSleep = mt.Macro.GlobalDelay
+			robotgo.KeySleep = mt.Macro.GlobalDelay
 		}),
 		fyne.NewMenuItem("Stash-screen", func() {
 
