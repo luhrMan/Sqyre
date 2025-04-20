@@ -2,8 +2,11 @@ package utils
 
 import "fyne.io/fyne/v2/widget"
 
-var mpb = &widget.ProgressBar{}
-var ispb = &widget.ProgressBar{}
+var (
+	mpb  = &widget.ProgressBar{}
+	ispb = &widget.ProgressBar{}
+	a    = &widget.Activity{}
+)
 
 func MacroProgressBar() *widget.ProgressBar {
 	return mpb
@@ -11,4 +14,8 @@ func MacroProgressBar() *widget.ProgressBar {
 
 func ImageSearchProgressBar() *widget.ProgressBar {
 	return ispb
+}
+
+func MacroActiveIndicator() *widget.Activity {
+	return a
 }

@@ -4,10 +4,12 @@ import (
 	"Squire/encoding"
 	"Squire/internal/config"
 	"Squire/internal/programs/actions"
+	"Squire/internal/utils"
 	"log"
 	"slices"
 	"strconv"
 
+	"fyne.io/fyne/v2"
 	hook "github.com/robotn/gohook"
 	"github.com/spf13/viper"
 )
@@ -29,11 +31,21 @@ func NewMacro(name string, delay int, hotkey []string) *Macro {
 }
 
 func (m *Macro) ExecuteActionTree(ctx ...any) { //error
-	err := m.Root.Execute(ctx)
-	if err != nil {
-		log.Println(err)
-		return
-	}
+	go func() {
+		fyne.Do(func() {
+			utils.MacroActiveIndicator().Show()
+			utils.MacroActiveIndicator().Start()
+		})
+		err := m.Root.Execute(ctx)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+		fyne.Do(func() {
+			utils.MacroActiveIndicator().Stop()
+			utils.MacroActiveIndicator().Hide()
+		})
+	}()
 }
 
 func (m *Macro) UnmarshalMacro(i int) error {
@@ -58,9 +70,9 @@ func (m *Macro) RegisterHotkey() {
 		log.Println("do not register empty hotkeys!")
 		return
 	}
-	log.Println("registering hotkey:", hk)
+	log.Printf("registering hotkey %v for %v", hk, m.Name)
 	hook.Register(hook.KeyDown, hk, func(e hook.Event) {
-		log.Println("pressed", hk)
+		log.Printf("pressed %v, executing %v", hk, m.Name)
 		m.ExecuteActionTree()
 	})
 }

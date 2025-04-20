@@ -35,7 +35,7 @@ func (mui *macroUi) constructMacroUi() *fyne.Container {
 		container.NewGridWithColumns(2,
 			container.NewHBox(
 				mui.constructMacroToolbar(),
-				&mui.mtabs.isExecuting,
+				utils.MacroActiveIndicator(),
 				layout.NewSpacer(),
 				widget.NewLabel("Macro Name:"),
 			),
@@ -232,11 +232,7 @@ func (mui *macroUi) constructMacroToolbar() *widget.Toolbar {
 			widget.NewToolbarSpacer(),
 			widget.NewToolbarAction(theme.MediaPlayIcon(), func() {
 				mt := mui.mtabs.selectedTab()
-				mui.mtabs.isExecuting.Show()
-				mui.mtabs.isExecuting.Start()
 				mt.Macro.ExecuteActionTree()
-				mui.mtabs.isExecuting.Stop()
-				mui.mtabs.isExecuting.Hide()
 			}),
 		)
 	return tb
