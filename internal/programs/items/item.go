@@ -15,26 +15,6 @@ type ItemsMap struct {
 	Map map[string][]Item
 }
 
-//func (is *Items) CreateItemMaps() {
-//        log.Println("GetItemsMap()")
-//        is.Map = make(map[string][]Item)
-//
-//        log.Println("Initializing Items Map")
-//
-//        file, err := os.Open(".internal/resources/json-data/items.json")
-//        if err != nil {
-//                log.Println("Error opening file:", err)
-//                panic(err)
-//        }
-//        defer file.Close()
-//
-//        decoder := json.NewDecoder(file)
-//        if err := decoder.Decode(&is.Map); err != nil {
-//                log.Println("Error decoding JSON:", err)
-//                panic(err)
-//        }
-//}
-
 func (is *ItemsMap) GetItemsMapAsStringsMap() map[string][]string {
 	itemsStringMap := make(map[string][]string)
 	for str, items := range is.Map {
@@ -47,33 +27,14 @@ func (is *ItemsMap) GetItemsMapAsStringsMap() map[string][]string {
 	return itemsStringMap
 }
 
-func (is *ItemsMap) GetItemsMapAsBool() map[string]bool {
-	itemsBool := make(map[string]bool)
-	for _, items := range is.Map {
-		for _, item := range items {
-			itemsBool[item.Name] = false
-		}
-	}
-	return itemsBool
-}
-func (is *ItemsMap) GetItemsMapAsStringTree() map[string]string {
-	itemsStr := make(map[string]string)
-	for _, items := range is.Map {
-		for _, item := range items {
-			itemsStr[item.Name] = item.Name
-		}
-	}
-	return itemsStr
-}
-
-func (is *ItemsMap) GetItemsMapCategory(category string) *[]string {
-	im := is.Map
-	keys := make([]string, 0, len(im[category]))
-	for _, k := range im[category] {
-		keys = append(keys, k.Name)
-	}
-	return &keys
-}
+// func (is *ItemsMap) GetItemsMapCategory(category string) *[]string {
+// 	im := is.Map
+// 	keys := make([]string, 0, len(im[category]))
+// 	for _, k := range im[category] {
+// 		keys = append(keys, k.Name)
+// 	}
+// 	return &keys
+// }
 
 func (is *ItemsMap) GetItem(key string) (*Item, error) {
 	for _, items := range is.Map {

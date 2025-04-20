@@ -23,12 +23,14 @@ func StartHook() {
 }
 
 func ParseMacroHotkey(hk string) []string {
+	if hk == "" {
+		return []string{}
+	}
 	parts := strings.Split(hk, "+")
 
 	for i, part := range parts {
 		parts[i] = strings.TrimSpace(part)
 	}
-
 	return parts
 }
 

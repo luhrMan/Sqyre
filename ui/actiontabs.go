@@ -7,7 +7,6 @@ import (
 	"Squire/internal/programs/coordinates"
 	"Squire/ui/custom_widgets"
 	"image/color"
-	"log"
 	"slices"
 
 	"fyne.io/fyne/v2"
@@ -104,12 +103,8 @@ func unbindAll() {
 
 func bindAction(a actions.ActionInterface) {
 	dl := binding.NewDataListener(func() {
-		mt, err := ui.mui.mtabs.selectedTab()
-		if err != nil {
-			log.Println(err)
-			return
-		}
-		mt.RefreshItem(selectedTreeItem)
+		mt := ui.mui.mtabs.selectedTab()
+		fyne.Do(func() { mt.RefreshItem(selectedTreeItem) })
 	})
 	ats := GetUi().at
 	switch node := a.(type) {
