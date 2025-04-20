@@ -32,13 +32,7 @@ func (u *Ui) createMainMenu() *fyne.MainMenu {
 	)
 	addActionAndRefresh :=
 		func(a actions.ActionInterface) {
-			// t, err := u.mui.mtabs.GetTabTree()
-			mt, err := ui.mui.mtabs.selectedTab()
-			if err != nil {
-				log.Println(err)
-				return
-			}
-
+			mt := u.mui.mtabs.selectedTab()
 			mt.Macro.Root.AddSubAction(a)
 			mt.Select(a.GetUID())
 			mt.Refresh()
@@ -87,11 +81,7 @@ func (u *Ui) createMainMenu() *fyne.MainMenu {
 			robotgo.KeySleep = 0
 			coordinates.CalibrateInventorySearchboxes((*programs.GetPrograms())[config.DarkAndDarker].Coordinates["2560x1440"])
 			u.at.boundImageSearchAreaSelect.SetOptions(programs.CurrentProgramAndScreenSizeCoordinates().GetSearchAreasAsStringSlice())
-			mt, err := u.mui.mtabs.selectedTab()
-			if err != nil {
-				log.Println(err)
-				return
-			}
+			mt := u.mui.mtabs.selectedTab()
 			robotgo.MouseSleep = mt.Macro.GlobalDelay
 			robotgo.KeySleep = mt.Macro.GlobalDelay
 		}),

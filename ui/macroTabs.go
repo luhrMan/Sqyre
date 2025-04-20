@@ -45,11 +45,14 @@ func (mtabs *macroTabs) constructTabs() {
 	}
 }
 
-func (mtabs *macroTabs) selectedTab() (*MacroTree, error) {
-	if mtabs == nil || mtabs.Selected() == nil || mtabs.Selected().Text == "" {
-		return nil, errors.New("no selected tab")
+func (mtabs *macroTabs) selectedTab() *MacroTree {
+	if mtabs.Selected() == nil {
+		t := mtabs.CreateTab()
+		mtabs.Append(t)
+		mtabs.Select(t)
+		return t.Content.(*MacroTree)
 	}
-	return mtabs.Selected().Content.(*MacroTree), nil
+	return mtabs.Selected().Content.(*MacroTree)
 }
 
 func (mtabs *macroTabs) addTab(name string) {
@@ -63,8 +66,11 @@ func (mtabs *macroTabs) addTab(name string) {
 	}
 	m := ui.p.GetMacroByName(name)
 	m.RegisterHotkey()
-	mtabs.Append(container.NewTabItem(name, NewMacroTree(m)))
+	t := container.NewTabItem(name, NewMacroTree(m))
+	mtabs.Append(t)
+	mtabs.Select(t)
 }
+
 func (mtabs *macroTabs) setMtabSettingsAndWidgets() {
 	mtabs.CreateTab = func() *container.TabItem {
 		macros := programs.CurrentProgram().Macros
@@ -90,6 +96,7 @@ func (mtabs *macroTabs) setMtabSettingsAndWidgets() {
 		ui.p.GetMacroByName(ti.Text).UnregisterHotkey()
 		mtabs.boundMacroListWidget.Refresh()
 	}
+
 	mtabs.OnSelected = func(ti *container.TabItem) {
 		unbindAll()
 		m := ui.p.GetMacroByName(ti.Text)
@@ -101,11 +108,7 @@ func (mtabs *macroTabs) setMtabSettingsAndWidgets() {
 
 	mtabs.macroHotkeyEntry.PlaceHolder = "ctrl+shift+1 or ctrl+1 or ctrl+a+1"
 	saveHotkey := func() {
-		mt, err := mtabs.selectedTab()
-		if err != nil {
-			log.Println(err)
-			return
-		}
+		mt := mtabs.selectedTab()
 		mt.Macro.UnregisterHotkey()
 		mt.Macro.Hotkey = utils.ParseMacroHotkey(mtabs.macroHotkeyEntry.Text)
 		mt.Macro.RegisterHotkey()
@@ -129,23 +132,14 @@ func (mtabs *macroTabs) setMtabSettingsAndWidgets() {
 				return
 			}
 		}
-		mt, err := mtabs.selectedTab()
-		if err != nil {
-			log.Println(err)
-			return
-		}
-
+		mt := mtabs.selectedTab()
 		mt.Macro.Name = sub
 		mtabs.Selected().Text = sub
 		mtabs.boundMacroListWidget.Refresh()
 		mtabs.Refresh()
 	}
 	mtabs.boundGlobalDelayEntry.OnChanged = func(s string) {
-		mt, err := mtabs.selectedTab()
-		if err != nil {
-			log.Println(err)
-			return
-		}
+		mt := mtabs.selectedTab()
 		gd, _ := strconv.Atoi(s)
 
 		mt.Macro.GlobalDelay = gd

@@ -5,6 +5,7 @@ import (
 	"Squire/internal/config"
 	"Squire/internal/programs/actions"
 	"log"
+	"slices"
 	"strconv"
 
 	hook "github.com/robotn/gohook"
@@ -53,6 +54,10 @@ func (m *Macro) UnmarshalMacro(i int) error {
 
 func (m *Macro) RegisterHotkey() {
 	hk := m.Hotkey
+	if slices.Equal(hk, []string{}) {
+		log.Println("do not register empty hotkeys!")
+		return
+	}
 	log.Println("registering hotkey:", hk)
 	hook.Register(hook.KeyDown, hk, func(e hook.Event) {
 		log.Println("pressed", hk)

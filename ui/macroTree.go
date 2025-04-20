@@ -72,7 +72,7 @@ func (mt *MacroTree) setTree() {
 		return ok
 	}
 	mt.CreateNode = func(branch bool) fyne.CanvasObject {
-		return container.NewHBox(widget.NewLabel("Template"), layout.NewSpacer(), &widget.Button{Icon: theme.CancelIcon(), Importance: widget.DangerImportance})
+		return container.NewHBox(widget.NewLabel("Template"), layout.NewSpacer(), &widget.Button{Icon: theme.CancelIcon(), Importance: widget.LowImportance})
 	}
 	mt.UpdateNode = func(uid string, branch bool, obj fyne.CanvasObject) {
 		node := mt.Macro.Root.GetAction(uid)

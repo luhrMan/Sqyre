@@ -64,10 +64,10 @@ func InitializeUi(w fyne.Window) *Ui {
 }
 func (u *Ui) ConstructUi() {
 	assets.CreateItemMaps()
-	u.at.constructActionSettingsTabs()
-	u.win.SetMainMenu(u.createMainMenu())
 	hs := container.NewHSplit(u.at, u.mui.constructMacroUi())
 	hs.SetOffset(0.3333333333333333333333333333333333333)
+	u.win.SetMainMenu(u.createMainMenu())
+	u.at.constructActionSettingsTabs()
 	u.win.SetContent(
 		hs,
 	)
