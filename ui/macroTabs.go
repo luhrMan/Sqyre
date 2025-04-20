@@ -18,7 +18,6 @@ import (
 
 type macroTabs struct {
 	container.DocTabs
-	isExecuting widget.Activity
 
 	boundMacroListWidget  *widget.List
 	macroNameEntry        *widget.Entry
