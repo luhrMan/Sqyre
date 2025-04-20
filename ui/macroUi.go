@@ -6,7 +6,6 @@ import (
 	"Squire/internal/programs/actions"
 	"Squire/internal/programs/coordinates"
 	"Squire/internal/utils"
-	"log"
 	"slices"
 
 	"fyne.io/fyne/v2"
@@ -153,11 +152,7 @@ func (mui *macroUi) constructMacroToolbar() *widget.Toolbar {
 		widget.NewToolbar(
 			widget.NewToolbarAction(theme.ContentAddIcon(), func() {
 				var action actions.ActionInterface
-				mt, err := ui.mui.mtabs.selectedTab()
-				if err != nil {
-					log.Println(err)
-					return
-				}
+				mt := mui.mtabs.selectedTab()
 				selectedNode := mt.Macro.Root.GetAction(selectedTreeItem)
 				if selectedNode == nil {
 					selectedNode = mt.Macro.Root
@@ -219,42 +214,24 @@ func (mui *macroUi) constructMacroToolbar() *widget.Toolbar {
 			widget.NewToolbarSpacer(),
 			widget.NewToolbarSeparator(),
 			widget.NewToolbarAction(theme.RadioButtonIcon(), func() {
-				mt, err := ui.mui.mtabs.selectedTab()
-				if err != nil {
-					log.Println(err)
-					return
-				}
+				mt := mui.mtabs.selectedTab()
 				mt.UnselectAll()
+				ui.at.Selected().Content.Refresh()
 				selectedTreeItem = ""
 				unbindAll()
 			}),
 			widget.NewToolbarAction(theme.MoveDownIcon(), func() {
-				mt, err := ui.mui.mtabs.selectedTab()
-				if err != nil {
-					log.Println(err)
-					return
-				}
-
+				mt := mui.mtabs.selectedTab()
 				mt.moveNode(selectedTreeItem, false)
 			}),
 			widget.NewToolbarAction(theme.MoveUpIcon(), func() {
-				mt, err := ui.mui.mtabs.selectedTab()
-				if err != nil {
-					log.Println(err)
-					return
-				}
-
+				mt := mui.mtabs.selectedTab()
 				mt.moveNode(selectedTreeItem, true)
 			}),
 			widget.NewToolbarSeparator(),
 			widget.NewToolbarSpacer(),
 			widget.NewToolbarAction(theme.MediaPlayIcon(), func() {
-				mt, err := ui.mui.mtabs.selectedTab()
-				if err != nil {
-					log.Println(err)
-					return
-				}
-
+				mt := mui.mtabs.selectedTab()
 				mui.mtabs.isExecuting.Show()
 				mui.mtabs.isExecuting.Start()
 				mt.Macro.ExecuteActionTree()
