@@ -3,6 +3,7 @@ package utils
 import (
 	"log"
 	"os"
+	"slices"
 	"strings"
 
 	hook "github.com/robotn/gohook"
@@ -44,4 +45,21 @@ func ReverseParseMacroHotkey(hk []string) string {
 		str = str + " + " + k
 	}
 	return str
+}
+
+func RegisterHotkey(hk []string, cb func(e hook.Event)) {
+	if slices.Equal(hk, []string{}) {
+		log.Println("do not register empty hotkeys!")
+		return
+	}
+	log.Printf("registering hotkey %v", hk)
+	hook.Register(hook.KeyDown, hk, cb)
+	// hook.Register(hook.KeyDown, hk, func(e hook.Event) {
+	// 	log.Printf("pressed %v, executing %v", hk, m.Name)
+	// 	m.ExecuteActionTree()
+	// })
+}
+func UnregisterHotkey(hk []string) {
+	log.Println("unregistering hotkey:", hk)
+	hook.Unregister(hook.KeyDown, hk)
 }

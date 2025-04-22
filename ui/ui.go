@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"Squire/internal/assets"
 	"Squire/internal/config"
 	"Squire/internal/programs"
 	"Squire/ui/custom_widgets"
@@ -52,18 +51,19 @@ func InitializeUi(w fyne.Window) *Ui {
 			boundCountSlider:   widget.NewSliderWithData(1, 10, binding.IntToFloat(binding.NewInt())),
 			boundCountLabel:    widget.NewLabelWithData(binding.NewString()),
 
-			boundTargetsGridSearchBar:  &widget.Entry{},
-			boundTargetsGrid:           &widget.GridWrap{},
-			boundImageSearchNameEntry:  widget.NewEntryWithData(binding.NewString()),
-			boundImageSearchAreaSelect: &widget.Select{},
-			boundOCRTargetEntry:        &widget.Entry{},
-			boundOCRSearchAreaSelect:   &widget.Select{},
+			boundTargetsGridSearchBar:            &widget.Entry{},
+			boundTargetsGrid:                     &widget.GridWrap{},
+			boundImageSearchNameEntry:            widget.NewEntryWithData(binding.NewString()),
+			boundImageSearchAreaList:             &widget.List{},
+			boundImageSearchSearchAreaStringList: binding.BindStringList(&[]string{}),
+			boundOCRTargetEntry:                  &widget.Entry{},
+			boundOCRSearchAreaSelect:             &widget.Select{},
 		},
 	}
 	return ui
 }
 func (u *Ui) ConstructUi() {
-	assets.CreateItemMaps()
+	// assets.UnmarshalItemsFromJson()
 	hs := container.NewHSplit(u.at, u.mui.constructMacroUi())
 	hs.SetOffset(0.3333333333333333333333333333333333333)
 	u.win.SetMainMenu(u.createMainMenu())

@@ -5,9 +5,13 @@ import (
 	"Squire/internal/programs"
 	"Squire/internal/programs/actions"
 	"Squire/internal/programs/coordinates"
+	"Squire/internal/programs/items"
 	"Squire/ui/custom_widgets"
+	"fmt"
 	"image/color"
+	"log"
 	"slices"
+	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -64,10 +68,12 @@ type actionTabs struct {
 	boundCountSlider   *widget.Slider
 	boundCountLabel    *widget.Label
 
-	boundTargetsGridSearchBar  *widget.Entry
-	boundTargetsGrid           *widget.GridWrap
-	boundImageSearchNameEntry  *widget.Entry
-	boundImageSearchAreaSelect *widget.Select
+	boundTargetsGridSearchBar *widget.Entry
+	boundTargetsGrid          *widget.GridWrap
+	boundImageSearchNameEntry *widget.Entry
+	// boundImageSearchAreaSelect *widget.Select
+	boundImageSearchSearchAreaStringList binding.ExternalStringList
+	boundImageSearchAreaList             *widget.List
 	// boundXSplitSlider          *widget.Slider
 	// boundXSplitEntry           *widget.Entry
 	// boundOCRTarget     binding.String
@@ -170,7 +176,14 @@ func bindAction(a actions.ActionInterface) {
 		t, _ := ats.boundImageSearch.GetItem("Targets")
 
 		ats.boundImageSearchNameEntry.Bind(n.(binding.String))
-		ats.boundImageSearchAreaSelect.Bind(sa.(binding.String))
+		// ats.boundImageSearchAreaList.Select(slices.Index(programs.CurrentProgramAndScreenSizeCoordinates().GetSearchAreasAsStringSlice(), node.SearchArea.Name))
+		v, _ := ats.boundImageSearchSearchAreaStringList.Get()
+		for i, s := range v {
+			if s == node.SearchArea.Name {
+				ats.boundImageSearchAreaList.Select(i)
+			}
+		}
+		// ats.boundImageSearchAreaSelect.Bind(sa.(binding.String))
 		ats.boundImageSearch.SetValue("Targets", slices.Clone(node.Targets))
 
 		t.AddListener(dl)
@@ -277,42 +290,60 @@ func (at *actionTabs) constructLoopTab() {
 }
 
 func (at *actionTabs) constructImageSearchTab() {
-	is := actions.ImageSearch{AdvancedAction: &actions.AdvancedAction{}}
-	at.boundImageSearchAreaSelect = widget.NewSelectWithData(
-		programs.CurrentProgramAndScreenSizeCoordinates().GetSearchAreasAsStringSlice(),
-		binding.NewString(),
+	var (
+		saSearchList = slices.Clone(programs.CurrentProgramAndScreenSizeCoordinates().GetSearchAreasAsStringSlice())
+		// boundImageSearchSearchAreaStringList binding.ExternalStringList
 	)
-	bindAction(&is)
+	at.boundImageSearchSearchAreaStringList = binding.BindStringList(&saSearchList)
 
+	at.boundImageSearchAreaList = widget.NewListWithData(
+		at.boundImageSearchSearchAreaStringList,
+		func() fyne.CanvasObject { return widget.NewLabel("template") },
+		func(di binding.DataItem, co fyne.CanvasObject) {
+			bsa := di.(binding.String)
+			label := co.(*widget.Label)
+			v, _ := bsa.Get()
+			sa := programs.CurrentProgramAndScreenSizeCoordinates().GetSearchArea(v)
+			label.SetText(fmt.Sprintf("%v: %d, %d | %d, %d)", sa.Name, sa.LeftX, sa.TopY, sa.RightX, sa.BottomY))
+			label.Refresh()
+		},
+	)
+	at.boundImageSearchAreaList.OnSelected = func(lii widget.ListItemID) {
+		v, _ := at.boundImageSearchSearchAreaStringList.GetValue(lii)
+		at.boundImageSearch.SetValue("SearchArea", programs.CurrentProgramAndScreenSizeCoordinates().SearchAreas[v])
+		at.boundImageSearch.Reload()
+		GetUi().mui.mtabs.selectedTab().Refresh()
+	}
+	log.Println(items.AllItems("category"))
+	// log.Println(items.AllItems("none"))
 	var (
 		icons       = *assets.BytesToFyneIcons()
-		itemsStrMap = assets.Items.GetItemsMapAsStringsMap()
-		allItems    = []string{}
-		searchList  = []string{}
+		searchList  = slices.Clone(items.AllItems("category"))
 		bSearchList binding.ExternalStringList
 	)
 	bSearchList = binding.BindStringList(&searchList)
 
-	for _, items := range itemsStrMap {
-		allItems = append(allItems, items...)
-	}
-	searchList = slices.Clone(allItems)
-	bSearchList.Reload()
-
 	at.boundTargetsGridSearchBar = widget.NewEntry()
 	at.boundTargetsGridSearchBar.PlaceHolder = "Search here"
+	at.boundTargetsGridSearchBar.ActionItem = widget.NewButtonWithIcon("", theme.RadioButtonIcon(), func() {
+		searchList = slices.Clone(items.AllItems("category"))
+		at.boundImageSearch.SetValue("Targets", []string{})
+		at.boundTargetsGrid.Refresh()
+		bSearchList.Reload()
+	})
 
 	at.boundTargetsGridSearchBar.OnChanged = func(s string) {
 		defer bSearchList.Reload()
 		defer at.boundTargetsGrid.ScrollToTop()
+		defer at.boundTargetsGrid.Refresh()
 
 		if s == "" {
-			searchList = slices.Clone(allItems)
+			searchList = slices.Clone(items.AllItems("category"))
 			return
 		}
 		searchList = []string{}
-		for _, i := range allItems {
-			if fuzzy.MatchFold(s, i) {
+		for _, i := range items.AllItems("category") {
+			if fuzzy.MatchFold(s, i) || fuzzy.MatchFold(s, items.ItemsMap()[strings.ToLower(i)].Category) {
 				searchList = append(searchList, i)
 			}
 		}
@@ -332,7 +363,6 @@ func (at *actionTabs) constructImageSearchTab() {
 			stack :=
 				container.NewStack(
 					rect,
-					widget.NewLabel(""),
 					container.NewPadded(
 						icon,
 					),
@@ -342,11 +372,10 @@ func (at *actionTabs) constructImageSearchTab() {
 		func(di binding.DataItem, o fyne.CanvasObject) {
 			item := di.(binding.String)
 			name, _ := item.Get()
+
 			stack := o.(*fyne.Container)
 			rect := stack.Objects[0].(*canvas.Rectangle)
-			label := stack.Objects[1].(*widget.Label)
-			label.Bind(item)
-			icon := stack.Objects[2].(*fyne.Container).Objects[0].(*canvas.Image)
+			icon := stack.Objects[1].(*fyne.Container).Objects[0].(*canvas.Image)
 
 			ist, _ := at.boundImageSearch.GetValue("Targets")
 			t := ist.([]string)
@@ -356,8 +385,6 @@ func (at *actionTabs) constructImageSearchTab() {
 			} else {
 				rect.FillColor = color.RGBA{}
 			}
-
-			label.Hidden = true
 
 			path := name + ".png"
 			if icons[path] != nil {
@@ -391,17 +418,24 @@ func (at *actionTabs) constructImageSearchTab() {
 
 	// at.boundXSplitSlider = widget.NewSliderWithData(0, 50, binding.IntToFloat(at.boundXSplit))
 	// at.boundXSplitEntry = widget.NewEntryWithData(binding.IntToString(at.boundXSplit))
-
+	// safi := widget.NewFormItem("Search Area:", widget.NewAccordion(widget.NewAccordionItem("Search Areas", at.boundImageSearchAreaList)))
+	// safi.HintText = "rightX, topY, leftX, bottomY"
 	imageSearchSettings :=
-		container.NewBorder(
-			widget.NewForm(
-				widget.NewFormItem("Name:", at.boundImageSearchNameEntry),
-				widget.NewFormItem("Search Area:", at.boundImageSearchAreaSelect),
-				widget.NewFormItem("Items:", at.boundTargetsGridSearchBar),
-			),
-			nil, nil, nil,
-			container.NewScroll(
-				at.boundTargetsGrid,
+		container.NewScroll(
+			container.NewBorder(
+				widget.NewForm(
+					widget.NewFormItem("Name:", at.boundImageSearchNameEntry),
+				),
+				nil, nil, nil,
+				widget.NewAccordion(
+					widget.NewAccordionItem("Search Areas", at.boundImageSearchAreaList),
+					widget.NewAccordionItem("Items", container.NewScroll(
+						container.NewBorder(
+							at.boundTargetsGridSearchBar, nil, nil, nil,
+							at.boundTargetsGrid,
+						),
+					)),
+				),
 			),
 		)
 	at.Append(container.NewTabItem("Image", imageSearchSettings))
