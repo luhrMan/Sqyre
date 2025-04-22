@@ -17,7 +17,7 @@ type Program struct {
 func NewProgram() *Program {
 	return &Program{
 		Macros: []*macro.Macro{},
-		Items:  make(map[string]items.Item),
+		Items:  make(map[string]items.Item), //make(map[string]items.Item),
 		Coordinates: map[string]*coordinates.Coordinates{
 			"2560x1440": {
 				Points:      make(map[string]coordinates.Point),
@@ -64,6 +64,13 @@ func (p *Program) AddMacro(s string, d int) {
 	}
 	p.Macros = append(p.Macros, macro.NewMacro(s, d, []string{}))
 }
+
+// func (p *Program) GetItem(i string) items.Item {
+// 	if item, ok := p.Items[i]; ok {
+// 		return item
+// 	}
+// 	return items.Item{}
+// }
 
 // func (p *Program) AddProgramPoint(ss string, point config.Point) {
 // 	c := p.Coordinates
