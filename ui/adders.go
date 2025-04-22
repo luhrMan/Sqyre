@@ -23,10 +23,10 @@ func addItemWindow() {
 		widget.NewFormItem("Grid Size:", container.NewHBox(widget.NewLabel("Width: "), widget.NewEntry(), widget.NewLabel("Height: "), widget.NewEntry())),
 		widget.NewFormItem("Merchant:", widget.NewEntryWithData(m.(binding.String))),
 	)
-	nv, _ := bi.GetValue("Name")
+	// nv, _ := bi.GetValue("Name")
 
 	form.OnSubmit = func() {
-		GetUi().p.Items[nv.(string)] = *i
+		// GetUi().p.Items[nv.(string)] = *i
 	}
 	w.SetContent(form)
 	w.Show()

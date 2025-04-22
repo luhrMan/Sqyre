@@ -6,7 +6,6 @@ import (
 	"Squire/internal/programs/actions"
 	"Squire/internal/utils"
 	"log"
-	"slices"
 	"strconv"
 
 	"fyne.io/fyne/v2"
@@ -64,20 +63,27 @@ func (m *Macro) UnmarshalMacro(i int) error {
 	return nil
 }
 
-func (m *Macro) RegisterHotkey() {
-	hk := m.Hotkey
-	if slices.Equal(hk, []string{}) {
-		log.Println("do not register empty hotkeys!")
-		return
-	}
-	log.Printf("registering hotkey %v for %v", hk, m.Name)
-	hook.Register(hook.KeyDown, hk, func(e hook.Event) {
-		log.Printf("pressed %v, executing %v", hk, m.Name)
+func (m *Macro) HotkeyCallback() func(e hook.Event) {
+	return func(e hook.Event) {
+		log.Printf("pressed %v, executing %v", m.Hotkey, m.Name)
 		m.ExecuteActionTree()
-	})
+	}
 }
-func (m *Macro) UnregisterHotkey() {
-	hk := m.Hotkey
-	log.Println("unregistering hotkey:", hk)
-	hook.Unregister(hook.KeyDown, hk)
-}
+
+// func (m *Macro) RegisterHotkey() {
+// 	hk := m.Hotkey
+// 	if slices.Equal(hk, []string{}) {
+// 		log.Println("do not register empty hotkeys!")
+// 		return
+// 	}
+// 	log.Printf("registering hotkey %v for %v", hk, m.Name)
+// 	hook.Register(hook.KeyDown, hk, func(e hook.Event) {
+// 		log.Printf("pressed %v, executing %v", hk, m.Name)
+// 		m.ExecuteActionTree()
+// 	})
+// }
+// func (m *Macro) UnregisterHotkey() {
+// 	hk := m.Hotkey
+// 	log.Println("unregistering hotkey:", hk)
+// 	hook.Unregister(hook.KeyDown, hk)
+// }

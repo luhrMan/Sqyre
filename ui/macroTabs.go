@@ -64,7 +64,7 @@ func (mtabs *macroTabs) addTab(name string) {
 		}
 	}
 	m := ui.p.GetMacroByName(name)
-	m.RegisterHotkey()
+	utils.RegisterHotkey(m.Hotkey, m.HotkeyCallback())
 	t := container.NewTabItem(name, NewMacroTree(m))
 	mtabs.Append(t)
 	mtabs.Select(t)
@@ -92,12 +92,15 @@ func (mtabs *macroTabs) setMtabSettingsAndWidgets() {
 		)
 	}
 	mtabs.OnClosed = func(ti *container.TabItem) {
-		ui.p.GetMacroByName(ti.Text).UnregisterHotkey()
+		utils.UnregisterHotkey(ui.p.GetMacroByName(ti.Text).Hotkey)
 		mtabs.boundMacroListWidget.Refresh()
 	}
 
-	mtabs.OnSelected = func(ti *container.TabItem) {
+	mtabs.OnUnselected = func(ti *container.TabItem) {
 		unbindAll()
+		ti.Content.(*MacroTree).UnselectAll()
+	}
+	mtabs.OnSelected = func(ti *container.TabItem) {
 		m := ui.p.GetMacroByName(ti.Text)
 		mtabs.macroNameEntry.SetText(m.Name)
 		mtabs.boundGlobalDelayEntry.SetText(strconv.Itoa(m.GlobalDelay))
@@ -108,9 +111,9 @@ func (mtabs *macroTabs) setMtabSettingsAndWidgets() {
 	mtabs.macroHotkeyEntry.PlaceHolder = "ctrl+shift+1 or ctrl+1 or ctrl+a+1"
 	saveHotkey := func() {
 		mt := mtabs.selectedTab()
-		mt.Macro.UnregisterHotkey()
+		utils.UnregisterHotkey(mt.Macro.Hotkey)
 		mt.Macro.Hotkey = utils.ParseMacroHotkey(mtabs.macroHotkeyEntry.Text)
-		mt.Macro.RegisterHotkey()
+		utils.RegisterHotkey(mt.Macro.Hotkey, mt.Macro.HotkeyCallback())
 	}
 	mtabs.macroHotkeyEntry.ActionItem = widget.NewButtonWithIcon("", theme.DocumentSaveIcon(), func() {
 		saveHotkey()

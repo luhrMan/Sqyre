@@ -5,6 +5,7 @@ import (
 	"Squire/internal/programs"
 	"Squire/internal/programs/actions"
 	"Squire/internal/programs/coordinates"
+	"Squire/internal/programs/items"
 	"log"
 	"strconv"
 
@@ -80,7 +81,7 @@ func (u *Ui) createMainMenu() *fyne.MainMenu {
 			robotgo.MouseSleep = 0
 			robotgo.KeySleep = 0
 			coordinates.CalibrateInventorySearchboxes((*programs.GetPrograms())[config.DarkAndDarker].Coordinates["2560x1440"])
-			u.at.boundImageSearchAreaSelect.SetOptions(programs.CurrentProgramAndScreenSizeCoordinates().GetSearchAreasAsStringSlice())
+			// u.at.boundImageSearchAreaSelect.SetOptions(programs.CurrentProgramAndScreenSizeCoordinates().GetSearchAreasAsStringSlice())
 			mt := u.mui.mtabs.selectedTab()
 			robotgo.MouseSleep = mt.Macro.GlobalDelay
 			robotgo.KeySleep = mt.Macro.GlobalDelay
@@ -95,6 +96,16 @@ func (u *Ui) createMainMenu() *fyne.MainMenu {
 
 	testMenu := fyne.NewMenu("Test",
 		fyne.NewMenuItem("Add Item", func() { addItemWindow() }),
+		fyne.NewMenuItem("Set Items from JSON", func() {
+			dialog.ShowFileOpen(func(reader fyne.URIReadCloser, err error) {
+				log.Println(reader.URI().Path())
+				i := items.ParseItemsFromJson(reader.URI().Path())
+				for _, item := range i {
+					programs.CurrentProgram().Items[item.Name] = item
+				}
+				items.SetItemsMap(programs.CurrentProgram().Items)
+			}, u.win)
+		}),
 		fyne.NewMenuItem("Test string slice", func() {
 			log.Println("String Map:",
 				config.ViperConfig.Get("programs"+"."+config.DarkAndDarker+"."+"macros"),
