@@ -98,3 +98,37 @@ func UnregisterHotkey(hk []string) {
 
 // 	return false
 // }
+
+// equalKeySlices compares two slices of uint16 for equality
+// func equalKeySlices(a, b []uint16) bool {
+// 	if len(a) != len(b) {
+// 		return false
+// 	}
+
+// 	// Create maps to count occurrences of each key
+// 	mapA := make(map[uint16]int)
+// 	mapB := make(map[uint16]int)
+
+// 	for _, k := range a {
+// 		mapA[k]++
+// 	}
+
+// 	for _, k := range b {
+// 		mapB[k]++
+// 	}
+
+// 	// Compare maps
+// 	for k, v := range mapA {
+// 		if mapB[k] != v {
+// 			return false
+// 		}
+// 	}
+
+// 	for k, v := range mapB {
+// 		if mapA[k] != v {
+// 			return false
+// 		}
+// 	}
+
+// 	return true
+// }
