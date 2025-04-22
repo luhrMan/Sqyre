@@ -2,6 +2,7 @@ package programs
 
 import (
 	"Squire/internal/config"
+	"Squire/internal/programs/items"
 	"Squire/internal/programs/macro"
 	"log"
 	"strconv"
@@ -35,4 +36,6 @@ func (p *Programs) InitPrograms() {
 		}
 	}
 	config.ViperConfig.UnmarshalKey(keystr+"coordinates", &p.GetProgram(config.DarkAndDarker).Coordinates)
+	config.ViperConfig.UnmarshalKey(keystr+"items", &p.GetProgram(config.DarkAndDarker).Items)
+	items.SetItemsMap(currentProgram.Items)
 }
