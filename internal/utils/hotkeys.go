@@ -63,3 +63,38 @@ func UnregisterHotkey(hk []string) {
 	log.Println("unregistering hotkey:", hk)
 	hook.Unregister(hook.KeyDown, hk)
 }
+
+// add this to hook.go file in robotgo hook
+// Unregister removes a previously registered hook event handler
+// It takes the same parameters as Register to identify which hook to remove
+// func Unregister(when uint8, cmds []string) bool {
+// 	lck.Lock()
+// 	defer lck.Unlock()
+
+// 	targetKeys := []uint16{}
+// 	for _, v := range cmds {
+// 		targetKeys = append(targetKeys, Keycode[v])
+// 	}
+
+// 	if eventKeys, ok := events[when]; ok {
+// 		for i, keyIndex := range eventKeys {
+// 			if equalKeySlices(keys[keyIndex], targetKeys) {
+// 				events[when] = append(eventKeys[:i], eventKeys[i+1:]...)
+
+// 				delete(keys, keyIndex)
+// 				delete(cbs, keyIndex)
+
+// 				for j, usedKey := range used {
+// 					if usedKey == keyIndex {
+// 						used[j] = -1
+// 						// used = append(used[:j], used[j+1:]...)
+// 						break
+// 					}
+// 				}
+// 				return true
+// 			}
+// 		}
+// 	}
+
+// 	return false
+// }
