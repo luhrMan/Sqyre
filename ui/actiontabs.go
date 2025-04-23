@@ -52,16 +52,18 @@ type actionTabs struct {
 	boundTimeSlider *widget.Slider
 	boundTimeEntry  *widget.Entry
 
-	boundMoveXSlider *widget.Slider
-	boundMoveYSlider *widget.Slider
-	boundMoveXEntry  *widget.Entry
-	boundMoveYEntry  *widget.Entry
-	// boundPointTree   *widget.Tree
-	boundPointList *widget.List
-	// boundSpotSelect  *widget.Select
+	boundMoveXSlider         *widget.Slider
+	boundMoveYSlider         *widget.Slider
+	boundMoveXEntry          *widget.Entry
+	boundMoveYEntry          *widget.Entry
+	boundMovePointSearchBar  *widget.Entry
+	boundMovePointStringList binding.ExternalStringList
+	boundPointList           *widget.List
+
 	boundButtonToggle *custom_widgets.Toggle
-	boundKeySelect    *widget.Select
-	boundStateToggle  *custom_widgets.Toggle
+
+	boundKeySelect   *widget.Select
+	boundStateToggle *custom_widgets.Toggle
 
 	boundLoopNameEntry *widget.Entry
 	boundCountSlider   *widget.Slider
@@ -218,18 +220,49 @@ func (at *actionTabs) constructWaitTab() {
 }
 
 func (at *actionTabs) constructMoveTab() {
-	// at.boundPointList = widget.NewListWithData(
-	// 	binding.NewStringList(),
-	// 	func() fyne.CanvasObject {
-	// 		return widget.NewLabel("")
-	// 	},
-	// 	func(di binding.DataItem, co fyne.CanvasObject) {},
-	// )
-	// at.boundPointList.OnSelected = func(id widget.ListItemID) {
+	var pSearchList = slices.Clone(programs.CurrentProgramAndScreenSizeCoordinates().GetPointsAsStringSlice())
+	at.boundMovePointStringList = binding.BindStringList(&pSearchList)
 
-	// }
-	// at.boundPointTree = widget.NewTreeWithData(
-	// )
+	at.boundMovePointSearchBar = widget.NewEntry()
+	at.boundMovePointSearchBar.PlaceHolder = "Search here"
+
+	at.boundMovePointSearchBar.OnChanged = func(s string) {
+		defaultList := programs.CurrentProgramAndScreenSizeCoordinates().GetPointsAsStringSlice()
+		defer at.boundMovePointStringList.Reload()
+		defer at.boundPointList.ScrollToTop()
+		defer at.boundPointList.Refresh()
+
+		if s == "" {
+			pSearchList = defaultList
+			return
+		}
+		pSearchList = []string{}
+		for _, i := range defaultList {
+			if fuzzy.MatchFold(s, i) {
+				pSearchList = append(pSearchList, i)
+			}
+		}
+	}
+
+	at.boundPointList = widget.NewListWithData(
+		at.boundMovePointStringList,
+		func() fyne.CanvasObject { return widget.NewLabel("template") },
+		func(di binding.DataItem, co fyne.CanvasObject) {
+			bsa := di.(binding.String)
+			label := co.(*widget.Label)
+			v, _ := bsa.Get()
+			p := programs.CurrentProgramAndScreenSizeCoordinates().GetPoint(v)
+			label.SetText(fmt.Sprintf("%v: %d, %d", p.Name, p.X, p.Y))
+			label.Refresh()
+		},
+	)
+
+	at.boundPointList.OnSelected = func(lii widget.ListItemID) {
+		v, _ := at.boundMovePointStringList.GetValue(lii)
+		at.boundMove.SetValue("Point", programs.CurrentProgramAndScreenSizeCoordinates().Points[v])
+		at.boundMove.Reload()
+		GetUi().mui.mtabs.selectedTab().Refresh()
+	}
 
 	moveSettings :=
 		container.NewBorder(
@@ -242,7 +275,11 @@ func (at *actionTabs) constructMoveTab() {
 				)),
 			),
 			nil, nil, nil,
-			// at.boundPointList,
+			container.NewBorder(
+				at.boundMovePointSearchBar,
+				nil, nil, nil,
+				at.boundPointList,
+			),
 			// mouseMoveDisplayContainer
 		)
 	at.Append(container.NewTabItem("Move", moveSettings))
@@ -322,7 +359,7 @@ func (at *actionTabs) constructImageSearchTab() {
 			label := co.(*widget.Label)
 			v, _ := bsa.Get()
 			sa := programs.CurrentProgramAndScreenSizeCoordinates().GetSearchArea(v)
-			label.SetText(fmt.Sprintf("%v: %d, %d | %d, %d)", sa.Name, sa.LeftX, sa.TopY, sa.RightX, sa.BottomY))
+			label.SetText(fmt.Sprintf("%v: %d, %d | %d, %d", sa.Name, sa.LeftX, sa.TopY, sa.RightX, sa.BottomY))
 			label.Refresh()
 		},
 	)
