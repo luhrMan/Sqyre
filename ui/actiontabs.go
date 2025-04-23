@@ -9,7 +9,6 @@ import (
 	"Squire/ui/custom_widgets"
 	"fmt"
 	"image/color"
-	"log"
 	"slices"
 	"strings"
 
@@ -68,10 +67,10 @@ type actionTabs struct {
 	boundCountSlider   *widget.Slider
 	boundCountLabel    *widget.Label
 
-	boundTargetsGridSearchBar *widget.Entry
-	boundTargetsGrid          *widget.GridWrap
-	boundImageSearchNameEntry *widget.Entry
-	// boundImageSearchAreaSelect *widget.Select
+	boundTargetsGridSearchBar            *widget.Entry
+	boundTargetsGrid                     *widget.GridWrap
+	boundImageSearchNameEntry            *widget.Entry
+	boundImageSearchAreaSearchBar        *widget.Entry
 	boundImageSearchSearchAreaStringList binding.ExternalStringList
 	boundImageSearchAreaList             *widget.List
 	// boundXSplitSlider          *widget.Slider
@@ -290,11 +289,30 @@ func (at *actionTabs) constructLoopTab() {
 }
 
 func (at *actionTabs) constructImageSearchTab() {
-	var (
-		saSearchList = slices.Clone(programs.CurrentProgramAndScreenSizeCoordinates().GetSearchAreasAsStringSlice())
-		// boundImageSearchSearchAreaStringList binding.ExternalStringList
-	)
+	var saSearchList = slices.Clone(programs.CurrentProgramAndScreenSizeCoordinates().GetSearchAreasAsStringSlice())
+
 	at.boundImageSearchSearchAreaStringList = binding.BindStringList(&saSearchList)
+
+	at.boundImageSearchAreaSearchBar = widget.NewEntry()
+	at.boundImageSearchAreaSearchBar.PlaceHolder = "Search here"
+
+	at.boundImageSearchAreaSearchBar.OnChanged = func(s string) {
+		defaultList := programs.CurrentProgramAndScreenSizeCoordinates().GetSearchAreasAsStringSlice()
+		defer at.boundImageSearchSearchAreaStringList.Reload()
+		defer at.boundImageSearchAreaList.ScrollToTop()
+		defer at.boundImageSearchAreaList.Refresh()
+
+		if s == "" {
+			saSearchList = defaultList
+			return
+		}
+		saSearchList = []string{}
+		for _, i := range defaultList {
+			if fuzzy.MatchFold(s, i) {
+				saSearchList = append(saSearchList, i)
+			}
+		}
+	}
 
 	at.boundImageSearchAreaList = widget.NewListWithData(
 		at.boundImageSearchSearchAreaStringList,
@@ -314,8 +332,7 @@ func (at *actionTabs) constructImageSearchTab() {
 		at.boundImageSearch.Reload()
 		GetUi().mui.mtabs.selectedTab().Refresh()
 	}
-	log.Println(items.AllItems("category"))
-	// log.Println(items.AllItems("none"))
+
 	var (
 		icons       = *assets.BytesToFyneIcons()
 		searchList  = slices.Clone(items.AllItems("category"))
@@ -428,13 +445,18 @@ func (at *actionTabs) constructImageSearchTab() {
 				),
 				nil, nil, nil,
 				widget.NewAccordion(
-					widget.NewAccordionItem("Search Areas", at.boundImageSearchAreaList),
-					widget.NewAccordionItem("Items", container.NewScroll(
+					widget.NewAccordionItem("Search Areas",
+						container.NewBorder(
+							at.boundImageSearchAreaSearchBar, nil, nil, nil,
+							at.boundImageSearchAreaList,
+						),
+					),
+					widget.NewAccordionItem("Items",
 						container.NewBorder(
 							at.boundTargetsGridSearchBar, nil, nil, nil,
 							at.boundTargetsGrid,
 						),
-					)),
+					),
 				),
 			),
 		)
