@@ -9,7 +9,9 @@ import (
 	"Squire/ui/custom_widgets"
 	"fmt"
 	"image/color"
+	"log"
 	"slices"
+	"strconv"
 	"strings"
 
 	"fyne.io/fyne/v2"
@@ -221,27 +223,54 @@ func (at *actionTabs) constructWaitTab() {
 
 func (at *actionTabs) constructMoveTab() {
 	var pSearchList = slices.Clone(programs.CurrentProgramAndScreenSizeCoordinates().GetPointsAsStringSlice())
-	at.boundMovePointStringList = binding.BindStringList(&pSearchList)
 
-	at.boundMovePointSearchBar = widget.NewEntry()
-	at.boundMovePointSearchBar.PlaceHolder = "Search here"
-
-	at.boundMovePointSearchBar.OnChanged = func(s string) {
-		defaultList := programs.CurrentProgramAndScreenSizeCoordinates().GetPointsAsStringSlice()
-		defer at.boundMovePointStringList.Reload()
-		defer at.boundPointList.ScrollToTop()
-		defer at.boundPointList.Refresh()
-
-		if s == "" {
-			pSearchList = defaultList
+	//change point to custom if changed from selected option in point list
+	at.boundMoveXEntry.OnChanged = func(s string) {
+		i, e := strconv.Atoi(s)
+		if e != nil {
+			log.Println(e)
 			return
 		}
-		pSearchList = []string{}
-		for _, i := range defaultList {
-			if fuzzy.MatchFold(s, i) {
-				pSearchList = append(pSearchList, i)
-			}
+		n, _ := at.boundPoint.GetValue("Name")
+		p := programs.CurrentProgramAndScreenSizeCoordinates().GetPoint(strings.ToLower(n.(string)))
+		if p.X != i {
+			at.boundPoint.SetValue("Name", "custom")
+			at.boundPointList.UnselectAll()
 		}
+	}
+	at.boundMoveYEntry.OnChanged = func(s string) {
+		i, e := strconv.Atoi(s)
+		if e != nil {
+			log.Println(e)
+			return
+		}
+		n, _ := at.boundPoint.GetValue("Name")
+		p := programs.CurrentProgramAndScreenSizeCoordinates().GetPoint(strings.ToLower(n.(string)))
+		if p.Y != i {
+			at.boundPoint.SetValue("Name", "custom")
+			at.boundPointList.UnselectAll()
+		}
+	}
+	at.boundMovePointStringList = binding.BindStringList(&pSearchList)
+	at.boundMovePointSearchBar = &widget.Entry{
+		PlaceHolder: "Search here",
+		OnChanged: func(s string) {
+			defaultList := programs.CurrentProgramAndScreenSizeCoordinates().GetPointsAsStringSlice()
+			defer at.boundMovePointStringList.Reload()
+			defer at.boundPointList.ScrollToTop()
+			defer at.boundPointList.Refresh()
+
+			if s == "" {
+				pSearchList = defaultList
+				return
+			}
+			pSearchList = []string{}
+			for _, i := range defaultList {
+				if fuzzy.MatchFold(s, i) {
+					pSearchList = append(pSearchList, i)
+				}
+			}
+		},
 	}
 
 	at.boundPointList = widget.NewListWithData(
@@ -259,7 +288,10 @@ func (at *actionTabs) constructMoveTab() {
 
 	at.boundPointList.OnSelected = func(lii widget.ListItemID) {
 		v, _ := at.boundMovePointStringList.GetValue(lii)
-		at.boundMove.SetValue("Point", programs.CurrentProgramAndScreenSizeCoordinates().Points[v])
+		p := programs.CurrentProgramAndScreenSizeCoordinates().Points[v]
+		at.boundMove.SetValue("Point", p)
+		at.boundPoint.SetValue("X", p.X)
+		at.boundPoint.SetValue("Y", p.Y)
 		at.boundMove.Reload()
 		GetUi().mui.mtabs.selectedTab().Refresh()
 	}
@@ -326,29 +358,29 @@ func (at *actionTabs) constructLoopTab() {
 }
 
 func (at *actionTabs) constructImageSearchTab() {
+	at.boundImageSearchNameEntry.OnChanged = func(s string) { at.boundAdvancedAction.SetValue("Name", s) }
+
 	var saSearchList = slices.Clone(programs.CurrentProgramAndScreenSizeCoordinates().GetSearchAreasAsStringSlice())
-
 	at.boundImageSearchSearchAreaStringList = binding.BindStringList(&saSearchList)
+	at.boundImageSearchAreaSearchBar = &widget.Entry{
+		PlaceHolder: "Search here",
+		OnChanged: func(s string) {
+			defaultList := programs.CurrentProgramAndScreenSizeCoordinates().GetSearchAreasAsStringSlice()
+			defer at.boundImageSearchSearchAreaStringList.Reload()
+			defer at.boundImageSearchAreaList.ScrollToTop()
+			defer at.boundImageSearchAreaList.Refresh()
 
-	at.boundImageSearchAreaSearchBar = widget.NewEntry()
-	at.boundImageSearchAreaSearchBar.PlaceHolder = "Search here"
-
-	at.boundImageSearchAreaSearchBar.OnChanged = func(s string) {
-		defaultList := programs.CurrentProgramAndScreenSizeCoordinates().GetSearchAreasAsStringSlice()
-		defer at.boundImageSearchSearchAreaStringList.Reload()
-		defer at.boundImageSearchAreaList.ScrollToTop()
-		defer at.boundImageSearchAreaList.Refresh()
-
-		if s == "" {
-			saSearchList = defaultList
-			return
-		}
-		saSearchList = []string{}
-		for _, i := range defaultList {
-			if fuzzy.MatchFold(s, i) {
-				saSearchList = append(saSearchList, i)
+			if s == "" {
+				saSearchList = defaultList
+				return
 			}
-		}
+			saSearchList = []string{}
+			for _, i := range defaultList {
+				if fuzzy.MatchFold(s, i) {
+					saSearchList = append(saSearchList, i)
+				}
+			}
+		},
 	}
 
 	at.boundImageSearchAreaList = widget.NewListWithData(
@@ -366,6 +398,7 @@ func (at *actionTabs) constructImageSearchTab() {
 	at.boundImageSearchAreaList.OnSelected = func(lii widget.ListItemID) {
 		v, _ := at.boundImageSearchSearchAreaStringList.GetValue(lii)
 		at.boundImageSearch.SetValue("SearchArea", programs.CurrentProgramAndScreenSizeCoordinates().SearchAreas[v])
+		at.boundSearchArea.SetValue("Name", v)
 		at.boundImageSearch.Reload()
 		GetUi().mui.mtabs.selectedTab().Refresh()
 	}
@@ -377,30 +410,32 @@ func (at *actionTabs) constructImageSearchTab() {
 	)
 	bSearchList = binding.BindStringList(&searchList)
 
-	at.boundTargetsGridSearchBar = widget.NewEntry()
-	at.boundTargetsGridSearchBar.PlaceHolder = "Search here"
-	at.boundTargetsGridSearchBar.ActionItem = widget.NewButtonWithIcon("", theme.RadioButtonIcon(), func() {
-		searchList = slices.Clone(items.AllItems("category"))
-		at.boundImageSearch.SetValue("Targets", []string{})
-		at.boundTargetsGrid.Refresh()
-		bSearchList.Reload()
-	})
-
-	at.boundTargetsGridSearchBar.OnChanged = func(s string) {
-		defer bSearchList.Reload()
-		defer at.boundTargetsGrid.ScrollToTop()
-		defer at.boundTargetsGrid.Refresh()
-
-		if s == "" {
+	at.boundTargetsGridSearchBar = &widget.Entry{
+		PlaceHolder: "Search here",
+		ActionItem: widget.NewButtonWithIcon("", theme.RadioButtonIcon(), func() {
 			searchList = slices.Clone(items.AllItems("category"))
-			return
-		}
-		searchList = []string{}
-		for _, i := range items.AllItems("category") {
-			if fuzzy.MatchFold(s, i) || fuzzy.MatchFold(s, items.ItemsMap()[strings.ToLower(i)].Category) {
-				searchList = append(searchList, i)
+			at.boundImageSearch.SetValue("Targets", []string{})
+			at.boundTargetsGridSearchBar.Text = ""
+			at.boundTargetsGridSearchBar.Refresh()
+			at.boundTargetsGrid.Refresh()
+			bSearchList.Reload()
+		}),
+		OnChanged: func(s string) {
+			defer bSearchList.Reload()
+			defer at.boundTargetsGrid.ScrollToTop()
+			defer at.boundTargetsGrid.Refresh()
+
+			if s == "" {
+				searchList = slices.Clone(items.AllItems("category"))
+				return
 			}
-		}
+			searchList = []string{}
+			for _, i := range items.AllItems("category") {
+				if fuzzy.MatchFold(s, i) || fuzzy.MatchFold(s, items.ItemsMap()[strings.ToLower(i)].Category) {
+					searchList = append(searchList, i)
+				}
+			}
+		},
 	}
 
 	at.boundTargetsGrid = widget.NewGridWrapWithData(
@@ -414,13 +449,7 @@ func (at *actionTabs) constructImageSearchTab() {
 			icon.SetMinSize(fyne.NewSquareSize(40))
 			icon.FillMode = canvas.ImageFillOriginal
 
-			stack :=
-				container.NewStack(
-					rect,
-					container.NewPadded(
-						icon,
-					),
-				)
+			stack := container.NewStack(rect, container.NewPadded(icon))
 			return stack
 		},
 		func(di binding.DataItem, o fyne.CanvasObject) {
