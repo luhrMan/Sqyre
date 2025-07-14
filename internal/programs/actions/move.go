@@ -25,14 +25,15 @@ func NewMove(p coordinates.Point) *Move {
 }
 
 func (a *Move) Execute(ctx any) error {
-	//if (a.X == -1) && (a.Y == -1) {
-	// if c, ok := ctx.(robotgo.Point); ok {
-	// 	log.Printf("Moving mouse to ctx (%d, %d)", c.X, c.Y)
-	// 	robotgo.Move(c.X+config.XOffset+25, c.Y+config.YOffset+25)
-	// } else {
-	log.Printf("Moving mouse to %v", a.Point)
-	robotgo.Move(a.Point.X+config.XOffset, a.Point.Y+config.YOffset)
-	// }
+	if (a.Point.X == -1) && (a.Point.Y == -1) {
+		if c, ok := ctx.(robotgo.Point); ok {
+			log.Printf("Moving mouse to ctx (%d, %d)", c.X, c.Y)
+			robotgo.Move(c.X+config.XOffset+25, c.Y+config.YOffset+25)
+		} else {
+			log.Printf("Moving mouse to %v", a.Point)
+			robotgo.Move(a.Point.X+config.XOffset, a.Point.Y+config.YOffset)
+		}
+	}
 	return nil
 }
 
