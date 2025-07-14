@@ -70,17 +70,28 @@ func (u *Ui) createMainMenu() *fyne.MainMenu {
 		dialog.ShowInformation("Computer Information", str, u.win)
 	})
 
+	screensize := strconv.Itoa(config.MonitorWidth) + "x" + strconv.Itoa(config.MonitorHeight)
 	calibrationMenu := fyne.NewMenu("Coordinate Calibration",
 		fyne.NewMenuItem("Everything", func() {
+			robotgo.MouseSleep = 0
+			robotgo.KeySleep = 0
+
+			coordinates.CalibrateInventorySearchboxes((*programs.GetPrograms())[config.DarkAndDarker].Coordinates[screensize])
+			// u.at.boundImageSearchAreaSelect.SetOptions(programs.CurrentProgramAndScreenSizeCoordinates().GetSearchAreasAsStringSlice())
+			coordinates.CalibrateTopMenuTabLocations((*programs.GetPrograms())[config.DarkAndDarker].Coordinates[screensize])
+
+			mt := u.mui.mtabs.selectedTab()
+			robotgo.MouseSleep = mt.Macro.GlobalDelay
+			robotgo.KeySleep = mt.Macro.GlobalDelay
 
 		}),
 		fyne.NewMenuItem("Top Menu", func() {
-			coordinates.TopMenuTabLocations((*programs.GetPrograms())[config.DarkAndDarker].Coordinates["2560x1440"])
+			coordinates.CalibrateTopMenuTabLocations((*programs.GetPrograms())[config.DarkAndDarker].Coordinates[screensize])
 		}),
 		fyne.NewMenuItem("Inventories", func() {
 			robotgo.MouseSleep = 0
 			robotgo.KeySleep = 0
-			coordinates.CalibrateInventorySearchboxes((*programs.GetPrograms())[config.DarkAndDarker].Coordinates["2560x1440"])
+			coordinates.CalibrateInventorySearchboxes((*programs.GetPrograms())[config.DarkAndDarker].Coordinates[screensize])
 			// u.at.boundImageSearchAreaSelect.SetOptions(programs.CurrentProgramAndScreenSizeCoordinates().GetSearchAreasAsStringSlice())
 			mt := u.mui.mtabs.selectedTab()
 			robotgo.MouseSleep = mt.Macro.GlobalDelay
@@ -91,6 +102,9 @@ func (u *Ui) createMainMenu() *fyne.MainMenu {
 		}),
 		fyne.NewMenuItem("Merchants-screen", func() {
 
+		}),
+		fyne.NewMenuItem("Merchants Portraits", func() {
+			coordinates.MerchantPortraitsLocation((*programs.GetPrograms())[config.DarkAndDarker].Coordinates[screensize])
 		}),
 	)
 

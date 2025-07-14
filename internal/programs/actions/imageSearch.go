@@ -106,14 +106,14 @@ func (a *ImageSearch) FindTemplateMatches(img, template, Imask, Tmask, Cmask goc
 	defer t.Close()
 	kernel := image.Point{X: 5, Y: 5}
 
-	if Imask.Rows() > 0 && Imask.Cols() > 0 {
-		gocv.Subtract(i, Imask, &i)
-		gocv.IMWrite(config.UpDir+config.UpDir+config.MetaImagesPath+"imageSubtraction.png", i)
-	}
-	if Tmask.Rows() > 0 && Tmask.Cols() > 0 {
-		gocv.Subtract(t, Tmask, &t)
-		gocv.IMWrite(config.UpDir+config.UpDir+config.MetaImagesPath+"templateSubtraction.png", t)
-	}
+	// if Imask.Rows() > 0 && Imask.Cols() > 0 {
+	// 	gocv.Subtract(i, Imask, &i)
+	// 	gocv.IMWrite(config.UpDir+config.UpDir+config.MetaImagesPath+"imageSubtraction.png", i)
+	// }
+	// if Tmask.Rows() > 0 && Tmask.Cols() > 0 {
+	// 	gocv.Subtract(t, Tmask, &t)
+	// 	gocv.IMWrite(config.UpDir+config.UpDir+config.MetaImagesPath+"templateSubtraction.png", t)
+	// }
 
 	gocv.GaussianBlur(i, &i, kernel, 0, 0, gocv.BorderDefault)
 	gocv.GaussianBlur(t, &t, kernel, 0, 0, gocv.BorderDefault)
