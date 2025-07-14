@@ -37,6 +37,7 @@ func ParseItemsFromJson(path string) []Item {
 		log.Printf("Error unmarshaling JSON: %v\n", err)
 		return nil
 	}
+	log.Println(im)
 	return im
 }
 
@@ -99,7 +100,7 @@ func ItemsMap() map[string]Item {
 }
 
 func GetItem(i string) (Item, error) {
-	if item, ok := allItemsMap[i]; ok {
+	if item, ok := allItemsMap[strings.ToLower(i)]; ok {
 		return item, nil
 	}
 	return Item{}, fmt.Errorf("item does not exist")
