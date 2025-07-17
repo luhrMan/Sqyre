@@ -9,8 +9,9 @@ require (
 	github.com/go-vgo/robotgo v1.0.0-rc2.1
 	github.com/go-viper/mapstructure/v2 v2.2.1
 	github.com/google/uuid v1.6.0
+	github.com/lithammer/fuzzysearch v1.1.8
+	github.com/luhrMan/gohook v0.0.0-20250717231151-9fc28a31bf68
 	github.com/otiai10/gosseract/v2 v2.4.1
-	github.com/luhrMan/gohook v0.0.0-20250717204014-f92a77b7ffea
 	github.com/spf13/viper v1.20.1
 	gocv.io/x/gocv v0.41.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -42,7 +43,6 @@ require (
 	github.com/jezek/xgb v1.1.1 // indirect
 	github.com/jsummers/gobmp v0.0.0-20230614200233-a9de23ed2e25 // indirect
 	github.com/kbinani/screenshot v0.0.0-20250118074034-a3924b7bbc8c // indirect
-	github.com/lithammer/fuzzysearch v1.1.8 // indirect
 	github.com/lufia/plan9stats v0.0.0-20250317134145-8bc96cf8fc35 // indirect
 	github.com/lxn/win v0.0.0-20210218163916-a377121e959e // indirect
 	github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646 // indirect
