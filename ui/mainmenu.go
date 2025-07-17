@@ -12,7 +12,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/dialog"
 	"github.com/go-vgo/robotgo"
-	hook "github.com/robotn/gohook"
+	hook "github.com/luhrMan/gohook"
 )
 
 func (u *Ui) createMainMenu() *fyne.MainMenu {

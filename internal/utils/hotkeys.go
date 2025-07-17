@@ -6,7 +6,8 @@ import (
 	"slices"
 	"strings"
 
-	hook "github.com/robotn/gohook"
+	// hook "github.com/robotn/gohook"
+	hook "github.com/luhrMan/gohook"
 )
 
 func FailsafeHotkey() {

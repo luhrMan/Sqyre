@@ -9,7 +9,8 @@ import (
 	"strconv"
 
 	"fyne.io/fyne/v2"
-	hook "github.com/robotn/gohook"
+	// hook "github.com/robotn/gohook"
+	hook "github.com/luhrMan/gohook"
 	"github.com/spf13/viper"
 )
 
