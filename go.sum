@@ -78,6 +78,8 @@ github.com/lufia/plan9stats v0.0.0-20250317134145-8bc96cf8fc35 h1:PpXWgLPs+Fqr32
 github.com/lufia/plan9stats v0.0.0-20250317134145-8bc96cf8fc35/go.mod h1:autxFIvghDt3jPTLoqZ9OZ7s9qTGNAWmYCjVFWPX/zg=
 github.com/luhrMan/gohook v0.0.0-20250717204014-f92a77b7ffea h1:VcQsmjvjr/nNsv2utXwOF2vcQp/jiUozBZsX8LmJ17U=
 github.com/luhrMan/gohook v0.0.0-20250717204014-f92a77b7ffea/go.mod h1:iCHwLlxJ+fWZHM+PgS+Vcl/3+NMvmICUAVxL9322wGg=
+github.com/luhrMan/gohook v0.0.0-20250717231151-9fc28a31bf68 h1:RqsljRPUySr9qozTE2yJ1MR+xifwXkodzuSYTAmddig=
+github.com/luhrMan/gohook v0.0.0-20250717231151-9fc28a31bf68/go.mod h1:iCHwLlxJ+fWZHM+PgS+Vcl/3+NMvmICUAVxL9322wGg=
 github.com/lxn/win v0.0.0-20210218163916-a377121e959e h1:H+t6A/QJMbhCSEH5rAuRxh+CtW96g0Or0Fxa9IKr4uc=
 github.com/lxn/win v0.0.0-20210218163916-a377121e959e/go.mod h1:KxxjdtRkfNoYDCUP5ryK7XJJNTnpC8atvtmTheChOtk=
 github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646 h1:zYyBkD/k9seD2A7fsi6Oo2LfFZAehjjQMERAvZLEDnQ=
