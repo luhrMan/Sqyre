@@ -10,7 +10,7 @@ require (
 	github.com/go-viper/mapstructure/v2 v2.2.1
 	github.com/google/uuid v1.6.0
 	github.com/otiai10/gosseract/v2 v2.4.1
-	github.com/robotn/gohook v0.42.0
+	github.com/luhrMan/gohook v0.0.0-20250717204014-f92a77b7ffea
 	github.com/spf13/viper v1.20.1
 	gocv.io/x/gocv v0.41.0
 	gopkg.in/yaml.v3 v3.0.1
