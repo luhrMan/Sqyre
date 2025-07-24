@@ -13,29 +13,49 @@ var currentProgram *Program
 
 type Programs map[string]*Program
 
-func SetCurrentProgram(p *Program) {
+func SetCurrentProgram(p *Program, s string) {
 	currentProgram = p
+
+	keystr := "programs" + "." + s + "."
+
+	macros := config.ViperConfig.GetStringSlice(keystr + "macros")
+	for i := range macros {
+		p.Macros = append(p.Macros, macro.NewMacro("New Macro "+strconv.Itoa(i), 30, []string{}))
+		err := p.GetMacroAtIndex(i).UnmarshalMacro(i)
+		if err != nil {
+			log.Println(err)
+		}
+	}
+	config.ViperConfig.UnmarshalKey(keystr+"coordinates", &p.Coordinates)
+	config.ViperConfig.UnmarshalKey(keystr+"items", &p.Items)
+	items.SetItemsMap(currentProgram.Items)
 }
 func CurrentProgram() *Program {
 	return currentProgram
 }
 
-func GetPrograms() *Programs                        { return programs }
-func (p *Programs) GetProgram(name string) *Program { return (*p)[name] }
+func GetPrograms() *Programs                         { return programs }
+func (ps *Programs) GetProgram(name string) *Program { return (*ps)[name] }
 
-func (p *Programs) InitPrograms() {
-	keystr := "programs" + "." + config.DarkAndDarker + "."
-	(*p)[config.DarkAndDarker] = NewProgram()
-	SetCurrentProgram(p.GetProgram(config.DarkAndDarker))
-	macros := config.ViperConfig.GetStringSlice(keystr + "macros")
-	for i := range macros {
-		p.GetProgram(config.DarkAndDarker).Macros = append(p.GetProgram(config.DarkAndDarker).Macros, macro.NewMacro("New Macro "+strconv.Itoa(i), 30, []string{}))
-		err := p.GetProgram(config.DarkAndDarker).GetMacroAtIndex(i).UnmarshalMacro(i)
-		if err != nil {
-			log.Println(err)
-		}
+func (ps *Programs) InitPrograms() {
+	keystr := "programs"
+	programsList := config.ViperConfig.Get(keystr)
+	for s := range programsList.(map[string]any) {
+		log.Println(s)
+		(*ps)[s] = NewProgram()
 	}
-	config.ViperConfig.UnmarshalKey(keystr+"coordinates", &p.GetProgram(config.DarkAndDarker).Coordinates)
-	config.ViperConfig.UnmarshalKey(keystr+"items", &p.GetProgram(config.DarkAndDarker).Items)
-	items.SetItemsMap(currentProgram.Items)
+	// keystr = "programs" + "." + config.DarkAndDarker + "."
+
+	SetCurrentProgram(ps.GetProgram(config.DarkAndDarker), config.DarkAndDarker)
+	// macros := config.ViperConfig.GetStringSlice(keystr + "macros")
+	// for i := range macros {
+	// 	p.GetProgram(config.DarkAndDarker).Macros = append(p.GetProgram(config.DarkAndDarker).Macros, macro.NewMacro("New Macro "+strconv.Itoa(i), 30, []string{}))
+	// 	err := p.GetProgram(config.DarkAndDarker).GetMacroAtIndex(i).UnmarshalMacro(i)
+	// 	if err != nil {
+	// 		log.Println(err)
+	// 	}
+	// }
+	// config.ViperConfig.UnmarshalKey(keystr+"coordinates", &p.GetProgram(config.DarkAndDarker).Coordinates)
+	// config.ViperConfig.UnmarshalKey(keystr+"items", &p.GetProgram(config.DarkAndDarker).Items)
+	// items.SetItemsMap(currentProgram.Items)
 }
