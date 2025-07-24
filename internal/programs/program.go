@@ -19,27 +19,9 @@ func NewProgram() *Program {
 		Macros: []*macro.Macro{},
 		Items:  make(map[string]items.Item), //make(map[string]items.Item),
 		Coordinates: map[string]*coordinates.Coordinates{
-			"2560x1440": {
+			strconv.Itoa(config.MonitorWidth) + "x" + strconv.Itoa(config.MonitorHeight): { //"2560x1440": {
 				Points:      make(map[string]coordinates.Point),
 				SearchAreas: make(map[string]coordinates.SearchArea),
-			},
-			"1920x1080": {
-				Points: map[string]coordinates.Point{
-					// "test": {
-					// 	Name: "test",
-					// 	X:    10,
-					// 	Y:    10,
-					// },
-				},
-				SearchAreas: map[string]coordinates.SearchArea{
-					// "test": {
-					// 	Name:    "test",
-					// 	LeftX:   10,
-					// 	TopY:    10,
-					// 	RightX:  10,
-					// 	BottomY: 10,
-					// },
-				},
 			},
 		},
 	}
