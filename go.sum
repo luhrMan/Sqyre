@@ -76,8 +76,6 @@ github.com/lithammer/fuzzysearch v1.1.8 h1:/HIuJnjHuXS8bKaiTMeeDlW2/AyIWk2brx1V8
 github.com/lithammer/fuzzysearch v1.1.8/go.mod h1:IdqeyBClc3FFqSzYq/MXESsS4S0FsZ5ajtkr5xPLts4=
 github.com/lufia/plan9stats v0.0.0-20250317134145-8bc96cf8fc35 h1:PpXWgLPs+Fqr325bN2FD2ISlRRztXibcX6e8f5FR5Dc=
 github.com/lufia/plan9stats v0.0.0-20250317134145-8bc96cf8fc35/go.mod h1:autxFIvghDt3jPTLoqZ9OZ7s9qTGNAWmYCjVFWPX/zg=
-github.com/luhrMan/gohook v0.0.0-20250717204014-f92a77b7ffea h1:VcQsmjvjr/nNsv2utXwOF2vcQp/jiUozBZsX8LmJ17U=
-github.com/luhrMan/gohook v0.0.0-20250717204014-f92a77b7ffea/go.mod h1:iCHwLlxJ+fWZHM+PgS+Vcl/3+NMvmICUAVxL9322wGg=
 github.com/luhrMan/gohook v0.0.0-20250717231151-9fc28a31bf68 h1:RqsljRPUySr9qozTE2yJ1MR+xifwXkodzuSYTAmddig=
 github.com/luhrMan/gohook v0.0.0-20250717231151-9fc28a31bf68/go.mod h1:iCHwLlxJ+fWZHM+PgS+Vcl/3+NMvmICUAVxL9322wGg=
 github.com/lxn/win v0.0.0-20210218163916-a377121e959e h1:H+t6A/QJMbhCSEH5rAuRxh+CtW96g0Or0Fxa9IKr4uc=
