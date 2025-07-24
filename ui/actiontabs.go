@@ -101,7 +101,7 @@ func (at *actionTabs) constructActionSettingsTabs() {
 
 func unbindAll() {
 	bindAction(&actions.Wait{})
-	bindAction(&actions.Move{})
+	bindAction(&actions.Move{Point: coordinates.Point{}})
 	bindAction(&actions.Click{})
 	bindAction(&actions.Key{})
 
@@ -208,15 +208,17 @@ func bindAction(a actions.ActionInterface) {
 }
 
 func (at *actionTabs) constructWaitTab() {
-	gdfi := widget.NewFormItem("delay", GetUi().mui.mtabs.boundGlobalDelayEntry)
-	gdfi.HintText = "keyboard & mouse global delay (ms)"
-
 	waitSettings :=
 		widget.NewForm(
-			widget.NewFormItem("ms", container.NewGridWithColumns(2,
-				at.boundTimeEntry, at.boundTimeSlider,
-			)),
-			gdfi,
+			&widget.FormItem{
+				Text:   "ms",
+				Widget: container.NewGridWithColumns(2, at.boundTimeEntry, at.boundTimeSlider),
+			},
+			&widget.FormItem{
+				Text:     "delay",
+				Widget:   GetUi().mui.mtabs.boundGlobalDelayEntry,
+				HintText: "keyboard & mouse global delay (ms)",
+			},
 		)
 	at.Append(container.NewTabItem("Wait", waitSettings))
 }

@@ -6,6 +6,7 @@ import (
 	"Squire/internal/programs/actions"
 	"Squire/internal/programs/coordinates"
 	"Squire/internal/programs/items"
+	imagematchhelper "Squire/ui/image-match-helper"
 	"log"
 	"strconv"
 
@@ -96,6 +97,7 @@ func (u *Ui) createMainMenu() *fyne.MainMenu {
 
 	testMenu := fyne.NewMenu("Test",
 		fyne.NewMenuItem("Add Item", func() { addItemWindow() }),
+		fyne.NewMenuItem("Calibrate Image Matching", func() { imagematchhelper.ImageMatchingHelperWindow() }),
 		fyne.NewMenuItem("Set Items from JSON", func() {
 			dialog.ShowFileOpen(func(reader fyne.URIReadCloser, err error) {
 				log.Println(reader.URI().Path())

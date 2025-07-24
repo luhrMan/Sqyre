@@ -15,12 +15,17 @@ func addItemWindow() {
 	bi := binding.BindStruct(i)
 	n, _ := bi.GetItem("Name")
 	gs, _ := bi.GetItem("GridSize")
-	// sm, _ := bi.GetItem("StackMax")
+	gs1, _ := gs.(binding.IntList).GetItem(0)
+	gs2, _ := gs.(binding.IntList).GetItem(1)
+	sm, _ := bi.GetItem("StackMax")
 	m, _ := bi.GetItem("Merchant")
 	form := widget.NewForm(
 		widget.NewFormItem("Name:", widget.NewEntryWithData(n.(binding.String))),
-		widget.NewFormItem("Max Stacksize:", widget.NewEntryWithData(binding.IntToString(gs.(binding.Int)))),
-		widget.NewFormItem("Grid Size:", container.NewHBox(widget.NewLabel("Width: "), widget.NewEntry(), widget.NewLabel("Height: "), widget.NewEntry())),
+		widget.NewFormItem("Max Stacksize:", widget.NewEntryWithData(binding.IntToString(sm.(binding.Int)))),
+		widget.NewFormItem("Grid Size:", container.NewHBox(
+			widget.NewLabel("Width: "), widget.NewEntryWithData(binding.IntToString(gs1.(binding.Int))),
+			widget.NewLabel("Height: "), widget.NewEntryWithData(binding.IntToString(gs2.(binding.Int)))),
+		),
 		widget.NewFormItem("Merchant:", widget.NewEntryWithData(m.(binding.String))),
 	)
 	// nv, _ := bi.GetValue("Name")
