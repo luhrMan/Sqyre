@@ -36,7 +36,7 @@ func CalibrateInventorySearchboxes(c *Coordinates) {
 		log.Println("Could not read a calibration image")
 		return
 	}
-	TopMenuTabLocations(c)
+	// CalibrateTopMenuTabLocations(c)
 
 	robotgo.Move(c.Points[config.StashScr].X+config.XOffset, c.Points[config.StashScr].Y+config.YOffset)
 	robotgo.MilliSleep(200)
@@ -64,12 +64,19 @@ func CalibrateInventorySearchboxes(c *Coordinates) {
 		log.Println(err)
 	} else {
 		searchAreaInventoryAdd(sa, config.StashScrPlayerInv)
+		robotgo.Move(c.SearchAreas[config.StashScrPlayerInv].LeftX+config.XOffset, c.SearchAreas[config.StashScrPlayerInv].TopY+config.YOffset)
+		robotgo.MilliSleep(400)
+		robotgo.Move(c.SearchAreas[config.StashScrPlayerInv].RightX+config.XOffset, c.SearchAreas[config.StashScrPlayerInv].BottomY+config.YOffset)
 	}
 	sa, err = SearchAreaLocation(stashTLC, stashBRC, config.StashScrStashInv, 0.9)
 	if err != nil {
 		log.Println(err)
 	} else {
 		searchAreaInventoryAdd(sa, config.StashScrStashInv)
+		robotgo.Move(c.SearchAreas[config.StashScrStashInv].LeftX+config.XOffset, c.SearchAreas[config.StashScrStashInv].TopY+config.YOffset)
+		robotgo.MilliSleep(400)
+		robotgo.Move(c.SearchAreas[config.StashScrStashInv].RightX+config.XOffset, c.SearchAreas[config.StashScrStashInv].BottomY+config.YOffset)
+
 	}
 	StashInvTabsLocation(stashTabActive, stashTabInactive, config.StashScr, c)
 
@@ -368,7 +375,7 @@ func MerchantPortraitsLocation(c *Coordinates) error {
 	for _, match := range matches {
 		h := t.Rows() / 2
 		img := robotgo.CaptureImg(match.X+config.XOffset, match.Y+config.YOffset+h, t.Cols(), h)
-		img = utils.ImageToMatToImagePreprocess(img, true, true, true, true, utils.PreprocessOptions{MinThreshold: 118})
+		img = utils.ImageToMatToImagePreprocess(img, true, true, true, true, utils.PreprocessOptions{MinThreshold: 160})
 		mat, err := gocv.ImageToMatRGB(img)
 		if err != nil {
 			log.Println(err)
@@ -392,7 +399,7 @@ func MerchantPortraitsLocation(c *Coordinates) error {
 	}
 	return nil
 }
-func TopMenuTabLocations(c *Coordinates) {
+func CalibrateTopMenuTabLocations(c *Coordinates) {
 	topMenuTabs := []string{
 		"Play",
 		"Leaderboard",

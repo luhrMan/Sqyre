@@ -4,6 +4,7 @@ import (
 	"Squire/internal/config"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/go-vgo/robotgo"
 )
@@ -22,7 +23,7 @@ func NewClick(button string) *Click {
 
 func (a *Click) Execute(ctx any) error {
 	log.Printf("%s click", a.Button)
-	robotgo.Click(a.Button)
+	robotgo.Click(strings.ToLower(a.Button))
 	return nil
 }
 

@@ -4,10 +4,12 @@ import (
 	"Squire/internal/assets"
 	"Squire/internal/config"
 	"Squire/internal/programs/coordinates"
+	"Squire/internal/programs/items"
 	"Squire/internal/utils"
 	"fmt"
 	"image"
 	"log"
+	"slices"
 	"strings"
 	"sync"
 
@@ -22,6 +24,7 @@ type ImageSearch struct {
 }
 
 func NewImageSearch(name string, subActions []ActionInterface, targets []string, searchbox coordinates.SearchArea) *ImageSearch {
+	slices.Sort(targets)
 	return &ImageSearch{
 		AdvancedAction: newAdvancedAction(name, "imagesearch", subActions),
 		Targets:        targets,
@@ -103,14 +106,14 @@ func (a *ImageSearch) FindTemplateMatches(img, template, Imask, Tmask, Cmask goc
 	defer t.Close()
 	kernel := image.Point{X: 5, Y: 5}
 
-	if Imask.Rows() > 0 && Imask.Cols() > 0 {
-		gocv.Subtract(i, Imask, &i)
-		gocv.IMWrite(config.UpDir+config.UpDir+config.MetaImagesPath+"imageSubtraction.png", i)
-	}
-	if Tmask.Rows() > 0 && Tmask.Cols() > 0 {
-		gocv.Subtract(t, Tmask, &t)
-		gocv.IMWrite(config.UpDir+config.UpDir+config.MetaImagesPath+"templateSubtraction.png", t)
-	}
+	// if Imask.Rows() > 0 && Imask.Cols() > 0 {
+	// 	gocv.Subtract(i, Imask, &i)
+	// 	gocv.IMWrite(config.UpDir+config.UpDir+config.MetaImagesPath+"imageSubtraction.png", i)
+	// }
+	// if Tmask.Rows() > 0 && Tmask.Cols() > 0 {
+	// 	gocv.Subtract(t, Tmask, &t)
+	// 	gocv.IMWrite(config.UpDir+config.UpDir+config.MetaImagesPath+"templateSubtraction.png", t)
+	// }
 
 	gocv.GaussianBlur(i, &i, kernel, 0, 0, gocv.BorderDefault)
 	gocv.GaussianBlur(t, &t, kernel, 0, 0, gocv.BorderDefault)
@@ -203,7 +206,11 @@ func DarkAndDarker(a ImageSearch, img, imgDraw gocv.Mat) map[string][]robotgo.Po
 			defer Tmask.Close()
 			defer Cmask.Close()
 
-			i, _ := assets.Items.GetItem(target)
+			i, err := items.GetItem(target)
+			if err != nil {
+				log.Println(err)
+				return
+			}
 			switch i.GridSize {
 			case [2]int{1, 1}:
 				//				Tmask = Imask.Region(image.Rect(0, 0, xSize, ySize))
@@ -235,7 +242,7 @@ func DarkAndDarker(a ImageSearch, img, imgDraw gocv.Mat) map[string][]robotgo.Po
 			b := icons[ip]
 			template := gocv.NewMat()
 			defer template.Close()
-			err := gocv.IMDecodeIntoMat(b, gocv.IMReadColor, &template)
+			err = gocv.IMDecodeIntoMat(b, gocv.IMReadColor, &template)
 			if err != nil {
 				fmt.Println("Error reading template image:", err)
 				return
@@ -289,7 +296,11 @@ func PathOfExile2(a ImageSearch, img, imgDraw gocv.Mat) map[string][]robotgo.Poi
 			defer Tmask.Close()
 			defer Cmask.Close()
 
-			i, _ := assets.Items.GetItem(target)
+			i, err := items.GetItem(target)
+			if err != nil {
+				log.Println(err)
+				return
+			}
 			switch i.GridSize {
 			case [2]int{1, 1}:
 				//				Tmask = Imask.Region(image.Rect(0, 0, xSize, ySize))
@@ -304,7 +315,7 @@ func PathOfExile2(a ImageSearch, img, imgDraw gocv.Mat) map[string][]robotgo.Poi
 			b := icons[ip]
 			template := gocv.NewMat()
 			defer template.Close()
-			err := gocv.IMDecodeIntoMat(b, gocv.IMReadColor, &template)
+			err = gocv.IMDecodeIntoMat(b, gocv.IMReadColor, &template)
 			if err != nil {
 				fmt.Println("Error reading template image:", err)
 				return

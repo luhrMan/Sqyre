@@ -1,448 +1,4 @@
-{
-    "path of exile 2": [
-        {
-            "name": "Desert Rune",
-            "gridSize": [
-                1,
-                1
-            ],
-            "stackMax": 1,
-            "merchant": ""
-        },
-        {
-            "name": "Stone Rune",
-            "gridSize": [
-                1,
-                1
-            ],
-            "stackMax": 1,
-            "merchant": ""
-        },
-        {
-            "name": "Inspiration Rune",
-            "gridSize": [
-                1,
-                1
-            ],
-            "stackMax": 1,
-            "merchant": ""
-        },
-        {
-            "name": "Body Rune",
-            "gridSize": [
-                1,
-                1
-            ],
-            "stackMax": 1,
-            "merchant": ""
-        },
-        {
-            "name": "Mind Rune",
-            "gridSize": [
-                1,
-                1
-            ],
-            "stackMax": 1,
-            "merchant": ""
-        },
-        {
-            "name": "Vision Rune",
-            "gridSize": [
-                1,
-                1
-            ],
-            "stackMax": 1,
-            "merchant": ""
-        },
-        {
-            "name": "Glacial Rune",
-            "gridSize": [
-                1,
-                1
-            ],
-            "stackMax": 1,
-            "merchant": ""
-        },
-        {
-            "name": "Iron Rune",
-            "gridSize": [
-                1,
-                1
-            ],
-            "stackMax": 1,
-            "merchant": ""
-        },
-        {
-            "name": "Storm Rune",
-            "gridSize": [
-                1,
-                1
-            ],
-            "stackMax": 1,
-            "merchant": ""
-        },
-        {
-            "name": "Rebirth Rune",
-            "gridSize": [
-                1,
-                1
-            ],
-            "stackMax": 1,
-            "merchant": ""
-        },
-        {
-            "name": "Orb of Transmutation",
-            "gridSize": [
-                1,
-                1
-            ],
-            "stackMax": 1,
-            "merchant": ""
-        },
-        {
-            "name": "Orb of Augmentation",
-            "gridSize": [
-                1,
-                1
-            ],
-            "stackMax": 1,
-            "merchant": ""
-        },
-        {
-            "name": "Exalted Orb",
-            "gridSize": [
-                1,
-                1
-            ],
-            "stackMax": 1,
-            "merchant": ""
-        },
-        {
-            "name": "Orb of Alchemy",
-            "gridSize": [
-                1,
-                1
-            ],
-            "stackMax": 1,
-            "merchant": ""
-        },
-        {
-            "name": "Regal Orb",
-            "gridSize": [
-                1,
-                1
-            ],
-            "stackMax": 1,
-            "merchant": ""
-        },
-        {
-            "name": "Vaal Orb",
-            "gridSize": [
-                1,
-                1
-            ],
-            "stackMax": 1,
-            "merchant": ""
-        },
-        {
-            "name": "Orb of Chance",
-            "gridSize": [
-                1,
-                1
-            ],
-            "stackMax": 1,
-            "merchant": ""
-        },
-        {
-            "name": "Divine Orb",
-            "gridSize": [
-                1,
-                1
-            ],
-            "stackMax": 1,
-            "merchant": ""
-        },
-        {
-            "name": "Chance Shard",
-            "gridSize": [
-                1,
-                1
-            ],
-            "stackMax": 1,
-            "merchant": ""
-        },
-        {
-            "name": "Regal Shard",
-            "gridSize": [
-                1,
-                1
-            ],
-            "stackMax": 1,
-            "merchant": ""
-        },
-        {
-            "name": "Artificers Shard",
-            "gridSize": [
-                1,
-                1
-            ],
-            "stackMax": 1,
-            "merchant": ""
-        },
-        {
-            "name": "Arcanists Etcher",
-            "gridSize": [
-                1,
-                1
-            ],
-            "stackMax": 1,
-            "merchant": ""
-        },
-        {
-            "name": "Armourers Scrap",
-            "gridSize": [
-                1,
-                1
-            ],
-            "stackMax": 1,
-            "merchant": ""
-        },
-        {
-            "name": "Blacksmiths Whetstone",
-            "gridSize": [
-                1,
-                1
-            ],
-            "stackMax": 1,
-            "merchant": ""
-        },
-        {
-            "name": "Artificers Orb",
-            "gridSize": [
-                1,
-                1
-            ],
-            "stackMax": 1,
-            "merchant": ""
-        },
-        {
-            "name": "Scroll of Wisdom",
-            "gridSize": [
-                1,
-                1
-            ],
-            "stackMax": 1,
-            "merchant": ""
-        },
-        {
-            "name": "Gemcutters Prism",
-            "gridSize": [
-                1,
-                1
-            ],
-            "stackMax": 1,
-            "merchant": ""
-        },
-        {
-            "name": "Glassblowers Bauble",
-            "gridSize": [
-                1,
-                1
-            ],
-            "stackMax": 1,
-            "merchant": ""
-        },
-        {
-            "name": "Lesser Jewellers Orb",
-            "gridSize": [
-                1,
-                1
-            ],
-            "stackMax": 1,
-            "merchant": ""
-        },
-        {
-            "name": "Greaters Jewellers Orb",
-            "gridSize": [
-                1,
-                1
-            ],
-            "stackMax": 1,
-            "merchant": ""
-        },
-        {
-            "name": "Perfect Jewellers Orb",
-            "gridSize": [
-                1,
-                1
-            ],
-            "stackMax": 1,
-            "merchant": ""
-        },
-        {
-            "name": "Transmutation Shard",
-            "gridSize": [
-                1,
-                1
-            ],
-            "stackMax": 1,
-            "merchant": ""
-        },
-        {
-            "name": "Orb of Annulment",
-            "gridSize": [
-                1,
-                1
-            ],
-            "stackMax": 1,
-            "merchant": ""
-        },
-        {
-            "name": "Mirror of Kalandra",
-            "gridSize": [
-                1,
-                1
-            ],
-            "stackMax": 1,
-            "merchant": ""
-        },
-        {
-            "name": "Waystone T1",
-            "gridSize": [
-                1,
-                1
-            ],
-            "stackMax": 1,
-            "merchant": ""
-        },
-        {
-            "name": "Waystone T2",
-            "gridSize": [
-                1,
-                1
-            ],
-            "stackMax": 1,
-            "merchant": ""
-        },
-        {
-            "name": "Waystone T3",
-            "gridSize": [
-                1,
-                1
-            ],
-            "stackMax": 1,
-            "merchant": ""
-        },
-        {
-            "name": "Waystone T4",
-            "gridSize": [
-                1,
-                1
-            ],
-            "stackMax": 1,
-            "merchant": ""
-        },
-        {
-            "name": "Waystone T5",
-            "gridSize": [
-                1,
-                1
-            ],
-            "stackMax": 1,
-            "merchant": ""
-        },
-        {
-            "name": "Waystone T6",
-            "gridSize": [
-                1,
-                1
-            ],
-            "stackMax": 1,
-            "merchant": ""
-        },
-        {
-            "name": "Waystone T7",
-            "gridSize": [
-                1,
-                1
-            ],
-            "stackMax": 1,
-            "merchant": ""
-        },
-        {
-            "name": "Waystone T8",
-            "gridSize": [
-                1,
-                1
-            ],
-            "stackMax": 1,
-            "merchant": ""
-        },
-        {
-            "name": "Waystone T9",
-            "gridSize": [
-                1,
-                1
-            ],
-            "stackMax": 1,
-            "merchant": ""
-        },
-        {
-            "name": "Waystone T10",
-            "gridSize": [
-                1,
-                1
-            ],
-            "stackMax": 1,
-            "merchant": ""
-        },
-        {
-            "name": "Waystone T11",
-            "gridSize": [
-                1,
-                1
-            ],
-            "stackMax": 1,
-            "merchant": ""
-        },
-        {
-            "name": "Waystone T12",
-            "gridSize": [
-                1,
-                1
-            ],
-            "stackMax": 1,
-            "merchant": ""
-        },
-        {
-            "name": "Waystone T13",
-            "gridSize": [
-                1,
-                1
-            ],
-            "stackMax": 1,
-            "merchant": ""
-        },
-        {
-            "name": "Waystone T14",
-            "gridSize": [
-                1,
-                1
-            ],
-            "stackMax": 1,
-            "merchant": ""
-        },
-        {
-            "name": "Waystone T15",
-            "gridSize": [
-                1,
-                1
-            ],
-            "stackMax": 1,
-            "merchant": ""
-        }
-    ],
-    "consumables": [
+[
         {
             "name": "Potion",
             "gridSize": [
@@ -450,7 +6,8 @@
                 1
             ],
             "stackMax": 3,
-            "merchant": ""
+            "merchant": "",
+            "category": "consumables/potion"
         },
         {
             "name": "Healing Potion",
@@ -459,7 +16,8 @@
                 1
             ],
             "stackMax": 3,
-            "merchant": "Alchemist"
+            "merchant": "Alchemist",
+            "category": "consumables/potion"
         },
         {
             "name": "Protection Potion",
@@ -468,7 +26,8 @@
                 1
             ],
             "stackMax": 3,
-            "merchant": "Alchemist"
+            "merchant": "Alchemist",
+            "category": "consumables/potion"
         },
         {
             "name": "Magic Protection Potion",
@@ -477,7 +36,8 @@
                 1
             ],
             "stackMax": 3,
-            "merchant": "Alchemist"
+            "merchant": "Alchemist",
+            "category": "consumables/potion"
         },
         {
             "name": "Luck Potion",
@@ -486,7 +46,8 @@
                 1
             ],
             "stackMax": 3,
-            "merchant": "Alchemist"
+            "merchant": "Alchemist",
+            "category": "consumables/potion"
         },
         {
             "name": "Bandage",
@@ -495,7 +56,8 @@
                 1
             ],
             "stackMax": 3,
-            "merchant": "Surgeon"
+            "merchant": "Surgeon",
+            "category": "consumables"
         },
         {
             "name": "Lockpick",
@@ -504,7 +66,8 @@
                 1
             ],
             "stackMax": 3,
-            "merchant": ""
+            "merchant": "",
+            "category": "consumables"
         },
         {
             "name": "Francisca Axe",
@@ -513,7 +76,8 @@
                 2
             ],
             "stackMax": 0,
-            "merchant": "Woodsman"
+            "merchant": "Woodsman",
+            "category": "consumables/throwables"
         },
         {
             "name": "Surgical Kit",
@@ -522,7 +86,8 @@
                 2
             ],
             "stackMax": 0,
-            "merchant": ""
+            "merchant": "",
+            "category": "consumables"
         },
         {
             "name": "Campfire",
@@ -531,10 +96,9 @@
                 2
             ],
             "stackMax": 0,
-            "merchant": "Woodsman"
-        }
-    ],
-    "currency": [
+            "merchant": "Woodsman",
+            "category": "consumables"
+        },
         {
             "name": "Gold Coins",
             "gridSize": [
@@ -542,7 +106,8 @@
                 1
             ],
             "stackMax": 10,
-            "merchant": "Treasurer"
+            "merchant": "Treasurer",
+            "category": "currency"
         },
         {
             "name": "Gold Coin",
@@ -551,7 +116,8 @@
                 1
             ],
             "stackMax": 0,
-            "merchant": "Treasurer"
+            "merchant": "Treasurer",
+            "category": "currency"
         },
         {
             "name": "Gold Purse",
@@ -560,7 +126,8 @@
                 1
             ],
             "stackMax": 0,
-            "merchant": "Treasurer"
+            "merchant": "Treasurer",
+            "category": "currency"
         },
         {
             "name": "Gold Purse Empty",
@@ -569,7 +136,8 @@
                 1
             ],
             "stackMax": 0,
-            "merchant": "Treasurer"
+            "merchant": "Treasurer",
+            "category": "currency"
         },
         {
             "name": "Gold Purse Full",
@@ -578,7 +146,8 @@
                 1
             ],
             "stackMax": 50,
-            "merchant": "Treasurer"
+            "merchant": "Treasurer",
+            "category": "currency"
         },
         {
             "name": "Gold Bag",
@@ -587,10 +156,9 @@
                 2
             ],
             "stackMax": 1000,
-            "merchant": ""
-        }
-    ],
-    "treasures": [
+            "merchant": "",
+            "category": "currency"
+        },
         {
             "name": "Diamond",
             "gridSize": [
@@ -598,7 +166,8 @@
                 1
             ],
             "stackMax": 0,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "treasures/gem"
         },
         {
             "name": "Emerald",
@@ -607,7 +176,8 @@
                 1
             ],
             "stackMax": 0,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "treasures/gem"
         },
         {
             "name": "Ruby",
@@ -616,7 +186,8 @@
                 1
             ],
             "stackMax": 0,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "treasures/gem"
         },
         {
             "name": "Sapphire",
@@ -625,7 +196,8 @@
                 1
             ],
             "stackMax": 0,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "treasures/gem"
         },
         {
             "name": "Dotted Gold Bangle",
@@ -634,7 +206,8 @@
                 1
             ],
             "stackMax": 0,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "treasures"
         },
         {
             "name": "Gem Necklace",
@@ -643,7 +216,8 @@
                 1
             ],
             "stackMax": 0,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "treasures"
         },
         {
             "name": "Gem Ring",
@@ -652,7 +226,8 @@
                 1
             ],
             "stackMax": 0,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "treasures"
         },
         {
             "name": "Glimmer Bangle",
@@ -661,7 +236,8 @@
                 1
             ],
             "stackMax": 0,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "treasures"
         },
         {
             "name": "Gold Band",
@@ -670,7 +246,8 @@
                 1
             ],
             "stackMax": 0,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "treasures"
         },
         {
             "name": "Gold Candle Platter",
@@ -679,7 +256,8 @@
                 1
             ],
             "stackMax": 0,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "treasures"
         },
         {
             "name": "Leaf Gold Bangle",
@@ -688,7 +266,8 @@
                 1
             ],
             "stackMax": 0,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "treasures"
         },
         {
             "name": "Light Gold Bangle",
@@ -697,7 +276,8 @@
                 1
             ],
             "stackMax": 0,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "treasures"
         },
         {
             "name": "Patterned Gold Bangle",
@@ -706,7 +286,8 @@
                 1
             ],
             "stackMax": 0,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "treasures"
         },
         {
             "name": "Pearl Necklace",
@@ -715,7 +296,8 @@
                 1
             ],
             "stackMax": 0,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "treasures"
         },
         {
             "name": "Shine Bangle",
@@ -724,7 +306,8 @@
                 1
             ],
             "stackMax": 0,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "treasures"
         },
         {
             "name": "Simple Gold Bangle",
@@ -733,7 +316,8 @@
                 1
             ],
             "stackMax": 0,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "treasures"
         },
         {
             "name": "Slim Bangle",
@@ -742,7 +326,8 @@
                 1
             ],
             "stackMax": 0,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "treasures"
         },
         {
             "name": "Triple Gem Bangle",
@@ -751,7 +336,8 @@
                 1
             ],
             "stackMax": 0,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "treasures"
         },
         {
             "name": "Turquoise Gem Bangle",
@@ -760,7 +346,8 @@
                 1
             ],
             "stackMax": 0,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "treasures"
         },
         {
             "name": "Ceremonial Dagger",
@@ -769,7 +356,8 @@
                 1
             ],
             "stackMax": 0,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "treasures"
         },
         {
             "name": "Goblet",
@@ -778,7 +366,8 @@
                 2
             ],
             "stackMax": 0,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "treasures"
         },
         {
             "name": "Gold Chalice",
@@ -787,7 +376,8 @@
                 2
             ],
             "stackMax": 0,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "treasures"
         },
         {
             "name": "Gold Goblet",
@@ -796,7 +386,8 @@
                 2
             ],
             "stackMax": 0,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "treasures"
         },
         {
             "name": "Silver Chalice",
@@ -805,7 +396,8 @@
                 2
             ],
             "stackMax": 0,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "treasures"
         },
         {
             "name": "Gold Bowl",
@@ -814,7 +406,8 @@
                 2
             ],
             "stackMax": 0,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "treasures"
         },
         {
             "name": "Gold Candelabra",
@@ -823,7 +416,8 @@
                 2
             ],
             "stackMax": 0,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "treasures"
         },
         {
             "name": "Gold Candle Holder",
@@ -832,7 +426,8 @@
                 2
             ],
             "stackMax": 0,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "treasures"
         },
         {
             "name": "Gold Crown",
@@ -841,7 +436,8 @@
                 2
             ],
             "stackMax": 0,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "treasures"
         },
         {
             "name": "Gold Waterpot",
@@ -850,7 +446,8 @@
                 2
             ],
             "stackMax": 0,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "treasures"
         },
         {
             "name": "Ancient Scroll",
@@ -859,10 +456,9 @@
                 3
             ],
             "stackMax": 0,
-            "merchant": "Collector"
-        }
-    ],
-    "mobs": [
+            "merchant": "Collector",
+            "category": "treasures"
+        },
         {
             "name": "Bat Claw",
             "gridSize": [
@@ -870,7 +466,8 @@
                 1
             ],
             "stackMax": 3,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "mobs"
         },
         {
             "name": "Bowstring",
@@ -879,7 +476,8 @@
                 1
             ],
             "stackMax": 3,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "mobs"
         },
         {
             "name": "Captured Mana Flakes",
@@ -888,7 +486,8 @@
                 1
             ],
             "stackMax": 3,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "mobs"
         },
         {
             "name": "Demon Blood",
@@ -897,7 +496,8 @@
                 1
             ],
             "stackMax": 3,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "mobs"
         },
         {
             "name": "Glowing Blue Ice Eyes",
@@ -906,7 +506,8 @@
                 1
             ],
             "stackMax": 3,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "mobs"
         },
         {
             "name": "Goblin Ear",
@@ -915,7 +516,8 @@
                 1
             ],
             "stackMax": 3,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "mobs"
         },
         {
             "name": "Golden Teeth",
@@ -924,7 +526,8 @@
                 1
             ],
             "stackMax": 3,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "mobs"
         },
         {
             "name": "Grave Essence",
@@ -933,7 +536,8 @@
                 1
             ],
             "stackMax": 3,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "mobs"
         },
         {
             "name": "Kobolds Ear",
@@ -942,7 +546,8 @@
                 1
             ],
             "stackMax": 3,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "mobs"
         },
         {
             "name": "Maggots",
@@ -951,7 +556,8 @@
                 1
             ],
             "stackMax": 3,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "mobs"
         },
         {
             "name": "Primitive Bracelet",
@@ -960,7 +566,8 @@
                 1
             ],
             "stackMax": 3,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "mobs"
         },
         {
             "name": "Rotten Fluids",
@@ -969,7 +576,8 @@
                 1
             ],
             "stackMax": 3,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "mobs"
         },
         {
             "name": "Spider Silk",
@@ -978,7 +586,8 @@
                 1
             ],
             "stackMax": 3,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "mobs"
         },
         {
             "name": "Volcanic Ash",
@@ -987,7 +596,8 @@
                 1
             ],
             "stackMax": 3,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "mobs"
         },
         {
             "name": "Wolf Claw",
@@ -996,7 +606,8 @@
                 1
             ],
             "stackMax": 3,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "mobs"
         },
         {
             "name": "Yetis Teeth",
@@ -1005,7 +616,8 @@
                 1
             ],
             "stackMax": 3,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "mobs"
         },
         {
             "name": "Giant Toe",
@@ -1014,7 +626,8 @@
                 2
             ],
             "stackMax": 3,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "mobs"
         },
         {
             "name": "Mimic Tooth",
@@ -1023,7 +636,8 @@
                 2
             ],
             "stackMax": 0,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "mobs"
         },
         {
             "name": "Moldy Bread",
@@ -1032,7 +646,8 @@
                 2
             ],
             "stackMax": 3,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "mobs"
         },
         {
             "name": "Rusty Broken Sword",
@@ -1041,7 +656,8 @@
                 2
             ],
             "stackMax": 3,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "mobs"
         },
         {
             "name": "Wolf Fang",
@@ -1050,7 +666,8 @@
                 2
             ],
             "stackMax": 3,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "mobs"
         },
         {
             "name": "Wendigos Sharp Claws",
@@ -1059,7 +676,8 @@
                 1
             ],
             "stackMax": 0,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "mobs"
         },
         {
             "name": "Beetle Wings",
@@ -1068,7 +686,8 @@
                 3
             ],
             "stackMax": 0,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "mobs"
         },
         {
             "name": "Bone",
@@ -1077,7 +696,8 @@
                 3
             ],
             "stackMax": 3,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "mobs"
         },
         {
             "name": "Centaur Tail",
@@ -1086,7 +706,8 @@
                 3
             ],
             "stackMax": 0,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "mobs"
         },
         {
             "name": "Demon Dog Thorn",
@@ -1095,7 +716,8 @@
                 3
             ],
             "stackMax": 0,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "mobs"
         },
         {
             "name": "Broken Skull",
@@ -1104,7 +726,8 @@
                 2
             ],
             "stackMax": 2,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "mobs"
         },
         {
             "name": "Bug Shell",
@@ -1113,7 +736,8 @@
                 2
             ],
             "stackMax": 0,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "mobs"
         },
         {
             "name": "Centaur Hoof",
@@ -1122,7 +746,8 @@
                 2
             ],
             "stackMax": 0,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "mobs"
         },
         {
             "name": "Centaur Horn",
@@ -1131,7 +756,8 @@
                 2
             ],
             "stackMax": 0,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "mobs"
         },
         {
             "name": "Cursed Crown",
@@ -1140,7 +766,8 @@
                 2
             ],
             "stackMax": 0,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "mobs"
         },
         {
             "name": "Cyclops Eye",
@@ -1149,7 +776,8 @@
                 2
             ],
             "stackMax": 0,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "mobs"
         },
         {
             "name": "Cyclops Rags",
@@ -1158,7 +786,8 @@
                 2
             ],
             "stackMax": 0,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "mobs"
         },
         {
             "name": "Dog Collar",
@@ -1167,7 +796,8 @@
                 2
             ],
             "stackMax": 0,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "mobs"
         },
         {
             "name": "Enchanted Dark Fabric",
@@ -1176,7 +806,8 @@
                 2
             ],
             "stackMax": 3,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "mobs"
         },
         {
             "name": "Extra Thick Pelt",
@@ -1185,7 +816,8 @@
                 2
             ],
             "stackMax": 3,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "mobs"
         },
         {
             "name": "Frost Wyverns Claws",
@@ -1194,7 +826,8 @@
                 2
             ],
             "stackMax": 0,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "mobs"
         },
         {
             "name": "Frozen Heart",
@@ -1203,7 +836,8 @@
                 2
             ],
             "stackMax": 0,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "mobs"
         },
         {
             "name": "Intact Skull",
@@ -1212,7 +846,8 @@
                 2
             ],
             "stackMax": 2,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "mobs"
         },
         {
             "name": "Mimic Tongue",
@@ -1221,7 +856,8 @@
                 2
             ],
             "stackMax": 0,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "mobs"
         },
         {
             "name": "Old Cloth",
@@ -1230,7 +866,8 @@
                 2
             ],
             "stackMax": 3,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "mobs"
         },
         {
             "name": "Torn Bat Wing",
@@ -1239,7 +876,8 @@
                 2
             ],
             "stackMax": 3,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "mobs"
         },
         {
             "name": "Troll Pelt",
@@ -1248,7 +886,8 @@
                 2
             ],
             "stackMax": 0,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "mobs"
         },
         {
             "name": "Wendigos Hoof",
@@ -1257,7 +896,8 @@
                 2
             ],
             "stackMax": 0,
-            "merchant": "Collector"
+            "merchant": "Collector",
+            "category": "mobs"
         },
         {
             "name": "Wolf Pelt",
@@ -1266,10 +906,9 @@
                 2
             ],
             "stackMax": 3,
-            "merchant": "Collector"
-        }
-    ],
-    "accessories | jewelry": [
+            "merchant": "Collector",
+            "category": "mobs"
+        },
         {
             "name": "Badger Pendant",
             "gridSize": [
@@ -1277,7 +916,8 @@
                 1
             ],
             "stackMax": 0,
-            "merchant": ""
+            "merchant": "",
+            "category": "accessories/necklace"
         },
         {
             "name": "Bear Pendant",
@@ -1286,7 +926,8 @@
                 1
             ],
             "stackMax": 0,
-            "merchant": ""
+            "merchant": "",
+            "category": "accessories/necklace"
         },
         {
             "name": "Fangs of Death Necklace",
@@ -1295,7 +936,8 @@
                 1
             ],
             "stackMax": 0,
-            "merchant": ""
+            "merchant": "",
+            "category": "accessories/necklace"
         },
         {
             "name": "Fox Pendant",
@@ -1304,7 +946,8 @@
                 1
             ],
             "stackMax": 0,
-            "merchant": ""
+            "merchant": "",
+            "category": "accessories/necklace"
         },
         {
             "name": "Frost Amulet",
@@ -1313,7 +956,8 @@
                 1
             ],
             "stackMax": 0,
-            "merchant": ""
+            "merchant": "",
+            "category": "accessories/necklace"
         },
         {
             "name": "Monkey Pendant",
@@ -1322,7 +966,8 @@
                 1
             ],
             "stackMax": 0,
-            "merchant": ""
+            "merchant": "",
+            "category": "accessories/necklace"
         },
         {
             "name": "Necklace of Peace",
@@ -1331,7 +976,8 @@
                 1
             ],
             "stackMax": 0,
-            "merchant": ""
+            "merchant": "",
+            "category": "accessories/necklace"
         },
         {
             "name": "Owl Pendant",
@@ -1340,7 +986,8 @@
                 1
             ],
             "stackMax": 0,
-            "merchant": ""
+            "merchant": "",
+            "category": "accessories/necklace"
         },
         {
             "name": "Ox Pendant",
@@ -1349,7 +996,8 @@
                 1
             ],
             "stackMax": 0,
-            "merchant": ""
+            "merchant": "",
+            "category": "accessories/necklace"
         },
         {
             "name": "Phoenix Choker",
@@ -1358,7 +1006,8 @@
                 1
             ],
             "stackMax": 0,
-            "merchant": ""
+            "merchant": "",
+            "category": "accessories/necklace"
         },
         {
             "name": "Rat Pendant",
@@ -1367,7 +1016,8 @@
                 1
             ],
             "stackMax": 0,
-            "merchant": ""
+            "merchant": "",
+            "category": "accessories/necklace"
         },
         {
             "name": "Torq of Soul",
@@ -1376,7 +1026,8 @@
                 1
             ],
             "stackMax": 0,
-            "merchant": ""
+            "merchant": "",
+            "category": "accessories/necklace"
         },
         {
             "name": "Wind Locket",
@@ -1385,7 +1036,8 @@
                 1
             ],
             "stackMax": 0,
-            "merchant": ""
+            "merchant": "",
+            "category": "accessories/necklace"
         },
         {
             "name": "Grimsmile Ring",
@@ -1394,7 +1046,8 @@
                 1
             ],
             "stackMax": 0,
-            "merchant": ""
+            "merchant": "",
+            "category": "accessories/ring"
         },
         {
             "name": "Ring of Courage",
@@ -1403,7 +1056,8 @@
                 1
             ],
             "stackMax": 0,
-            "merchant": ""
+            "merchant": "",
+            "category": "accessories/ring"
         },
         {
             "name": "Ring of Finesse",
@@ -1412,16 +1066,18 @@
                 1
             ],
             "stackMax": 0,
-            "merchant": ""
+            "merchant": "",
+            "category": "accessories/ring"
         },
         {
-            "name": "Ring of Quickness",
+            "name": "Ring of Quickness/ring",
             "gridSize": [
                 1,
                 1
             ],
             "stackMax": 0,
-            "merchant": ""
+            "merchant": "",
+            "category": "accessories/ring"
         },
         {
             "name": "Ring of Resolve",
@@ -1430,7 +1086,8 @@
                 1
             ],
             "stackMax": 0,
-            "merchant": ""
+            "merchant": "",
+            "category": "accessories/ring"
         },
         {
             "name": "Ring of Survival",
@@ -1439,7 +1096,8 @@
                 1
             ],
             "stackMax": 0,
-            "merchant": ""
+            "merchant": "",
+            "category": "accessories/ring"
         },
         {
             "name": "Ring of Vitality",
@@ -1448,7 +1106,8 @@
                 1
             ],
             "stackMax": 0,
-            "merchant": ""
+            "merchant": "",
+            "category": "accessories/ring"
         },
         {
             "name": "Ring of Wisdom",
@@ -1457,10 +1116,9 @@
                 1
             ],
             "stackMax": 0,
-            "merchant": ""
-        }
-    ],
-    "ores | ingots | powders": [
+            "merchant": "",
+            "category": "accessories/ring"
+        },
         {
             "name": "Cobalt Ore",
             "gridSize": [
@@ -1468,7 +1126,8 @@
                 2
             ],
             "stackMax": 0,
-            "merchant": ""
+            "merchant": "",
+            "category": "mineable"
         },
         {
             "name": "Cobalt Ore Stack",
@@ -1477,7 +1136,8 @@
                 2
             ],
             "stackMax": 0,
-            "merchant": ""
+            "merchant": "",
+            "category": "mineable"
         },
         {
             "name": "Copper Ore",
@@ -1486,7 +1146,8 @@
                 2
             ],
             "stackMax": 0,
-            "merchant": ""
+            "merchant": "",
+            "category": "mineable"
         },
         {
             "name": "Copper Ore Stack",
@@ -1495,7 +1156,8 @@
                 2
             ],
             "stackMax": 0,
-            "merchant": ""
+            "merchant": "",
+            "category": "mineable"
         },
         {
             "name": "Froststone Ore",
@@ -1504,7 +1166,8 @@
                 2
             ],
             "stackMax": 0,
-            "merchant": ""
+            "merchant": "",
+            "category": "mineable"
         },
         {
             "name": "Froststone Ore Stack",
@@ -1513,7 +1176,8 @@
                 2
             ],
             "stackMax": 0,
-            "merchant": ""
+            "merchant": "",
+            "category": "mineable"
         },
         {
             "name": "Gold Ore",
@@ -1522,7 +1186,8 @@
                 2
             ],
             "stackMax": 0,
-            "merchant": ""
+            "merchant": "",
+            "category": "mineable"
         },
         {
             "name": "Gold Ore Stack",
@@ -1531,7 +1196,8 @@
                 2
             ],
             "stackMax": 0,
-            "merchant": ""
+            "merchant": "",
+            "category": "mineable"
         },
         {
             "name": "Iron Ore",
@@ -1540,7 +1206,8 @@
                 2
             ],
             "stackMax": 0,
-            "merchant": ""
+            "merchant": "",
+            "category": "mineable"
         },
         {
             "name": "Iron Ore Stack",
@@ -1549,7 +1216,8 @@
                 2
             ],
             "stackMax": 0,
-            "merchant": ""
+            "merchant": "",
+            "category": "mineable"
         },
         {
             "name": "Rubysilver Ore",
@@ -1558,7 +1226,8 @@
                 2
             ],
             "stackMax": 0,
-            "merchant": ""
+            "merchant": "",
+            "category": "mineable"
         },
         {
             "name": "Rubysilver Ore Stack",
@@ -1567,7 +1236,8 @@
                 2
             ],
             "stackMax": 0,
-            "merchant": ""
+            "merchant": "",
+            "category": "mineable"
         },
         {
             "name": "Cobalt Ingot",
@@ -1576,7 +1246,8 @@
                 2
             ],
             "stackMax": 0,
-            "merchant": ""
+            "merchant": "",
+            "category": "mineable"
         },
         {
             "name": "Cobalt Ingot Stack",
@@ -1585,7 +1256,8 @@
                 2
             ],
             "stackMax": 0,
-            "merchant": ""
+            "merchant": "",
+            "category": "mineable"
         },
         {
             "name": "Copper Ingot",
@@ -1594,7 +1266,8 @@
                 2
             ],
             "stackMax": 0,
-            "merchant": ""
+            "merchant": "",
+            "category": "mineable"
         },
         {
             "name": "Copper Ingot Stack",
@@ -1603,7 +1276,8 @@
                 2
             ],
             "stackMax": 0,
-            "merchant": ""
+            "merchant": "",
+            "category": "mineable"
         },
         {
             "name": "Froststone Ingot",
@@ -1612,7 +1286,8 @@
                 2
             ],
             "stackMax": 0,
-            "merchant": ""
+            "merchant": "",
+            "category": "mineable"
         },
         {
             "name": "Froststone Ingot Stack",
@@ -1621,7 +1296,8 @@
                 2
             ],
             "stackMax": 0,
-            "merchant": ""
+            "merchant": "",
+            "category": "mineable"
         },
         {
             "name": "Gold Ingot",
@@ -1630,7 +1306,8 @@
                 2
             ],
             "stackMax": 0,
-            "merchant": ""
+            "merchant": "",
+            "category": "mineable"
         },
         {
             "name": "Gold Ingot Stack",
@@ -1639,7 +1316,8 @@
                 2
             ],
             "stackMax": 0,
-            "merchant": ""
+            "merchant": "",
+            "category": "mineable"
         },
         {
             "name": "Iron Ingot",
@@ -1648,7 +1326,8 @@
                 2
             ],
             "stackMax": 0,
-            "merchant": ""
+            "merchant": "",
+            "category": "mineable"
         },
         {
             "name": "Iron Ingot Stack",
@@ -1657,7 +1336,8 @@
                 2
             ],
             "stackMax": 0,
-            "merchant": ""
+            "merchant": "",
+            "category": "mineable"
         },
         {
             "name": "Silver Ingot",
@@ -1666,7 +1346,8 @@
                 2
             ],
             "stackMax": 0,
-            "merchant": ""
+            "merchant": "",
+            "category": "mineable"
         },
         {
             "name": "Silver Ingot Stack",
@@ -1675,10 +1356,9 @@
                 2
             ],
             "stackMax": 0,
-            "merchant": ""
-        }
-    ],
-    "misc": [
+            "merchant": "",
+            "category": "mineable"
+        },
         {
             "name": "Empty Inventory Slot",
             "gridSize": [
@@ -1686,7 +1366,7 @@
                 1
             ],
             "stackMax": 0,
-            "merchant": ""
+            "merchant": "",
+            "category": "misc"
         }
     ]
-}
