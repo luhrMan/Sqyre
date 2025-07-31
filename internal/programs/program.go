@@ -9,37 +9,21 @@ import (
 )
 
 type Program struct {
+	Name        string
 	Macros      []*macro.Macro
 	Items       map[string]items.Item
 	Coordinates map[string]*coordinates.Coordinates
 }
 
-func NewProgram() *Program {
+func NewProgram(name string) *Program {
 	return &Program{
+		Name:   name,
 		Macros: []*macro.Macro{},
-		Items:  make(map[string]items.Item),
+		Items:  make(map[string]items.Item), //make(map[string]items.Item),
 		Coordinates: map[string]*coordinates.Coordinates{
-			"2560x1440": {
+			strconv.Itoa(config.MonitorWidth) + "x" + strconv.Itoa(config.MonitorHeight): { //"2560x1440": {
 				Points:      make(map[string]coordinates.Point),
 				SearchAreas: make(map[string]coordinates.SearchArea),
-			},
-			"1920x1080": {
-				Points: map[string]coordinates.Point{
-					// "test": {
-					// 	Name: "test",
-					// 	X:    10,
-					// 	Y:    10,
-					// },
-				},
-				SearchAreas: map[string]coordinates.SearchArea{
-					// "test": {
-					// 	Name:    "test",
-					// 	LeftX:   10,
-					// 	TopY:    10,
-					// 	RightX:  10,
-					// 	BottomY: 10,
-					// },
-				},
 			},
 		},
 	}
@@ -64,6 +48,13 @@ func (p *Program) AddMacro(s string, d int) {
 	}
 	p.Macros = append(p.Macros, macro.NewMacro(s, d, []string{}))
 }
+
+// func (p *Program) GetItem(i string) items.Item {
+// 	if item, ok := p.Items[i]; ok {
+// 		return item
+// 	}
+// 	return items.Item{}
+// }
 
 // func (p *Program) AddProgramPoint(ss string, point config.Point) {
 // 	c := p.Coordinates

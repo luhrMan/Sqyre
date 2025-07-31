@@ -6,11 +6,13 @@ toolchain go1.23.3
 
 require (
 	fyne.io/fyne/v2 v2.6.0
+	github.com/dweymouth/fyne-tooltip v0.3.4-0.20250722161819-f7e79f756d1a
 	github.com/go-vgo/robotgo v1.0.0-rc2.1
-	github.com/go-viper/mapstructure/v2 v2.2.1
+	github.com/go-viper/mapstructure/v2 v2.4.0
 	github.com/google/uuid v1.6.0
+	github.com/lithammer/fuzzysearch v1.1.8
+	github.com/luhrMan/gohook v0.0.0-20250717231151-9fc28a31bf68
 	github.com/otiai10/gosseract/v2 v2.4.1
-	github.com/robotn/gohook v0.42.0
 	github.com/spf13/viper v1.20.1
 	gocv.io/x/gocv v0.41.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -72,8 +74,8 @@ require (
 	github.com/yuin/goldmark v1.7.8 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/image v0.26.0 // indirect
-	golang.org/x/net v0.39.0 // indirect
-	golang.org/x/sys v0.32.0 // indirect
-	golang.org/x/text v0.24.0 // indirect
+	golang.org/x/image v0.29.0 // indirect
+	golang.org/x/net v0.42.0 // indirect
+	golang.org/x/sys v0.34.0 // indirect
+	golang.org/x/text v0.27.0 // indirect
 )

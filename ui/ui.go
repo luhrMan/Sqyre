@@ -1,8 +1,9 @@
 package ui
 
 import (
-	"Squire/internal/assets"
+	"Squire/internal/config"
 	"Squire/internal/programs"
+	"Squire/ui/custom_widgets"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -13,10 +14,6 @@ import (
 
 var (
 	ui             *Ui
-	locX           int
-	locY           int
-	boundLocX      binding.ExternalInt
-	boundLocY      binding.ExternalInt
 	boundLocXLabel *widget.Label
 	boundLocYLabel *widget.Label
 )
@@ -35,40 +32,56 @@ func InitializeUi(w fyne.Window) *Ui {
 	ui = &Ui{
 		win: w,
 		mui: &macroUi{
-			mtabs: &macroTabs{
-				DocTabs: container.NewDocTabs(),
-				mtMap:   map[string]*MacroTree{},
-			},
+			mtabs: NewMacroTabs(),
 		},
-		at: &actionTabs{AppTabs: &container.AppTabs{}},
+		at: &actionTabs{
+			AppTabs:           &container.AppTabs{},
+			boundTimeSlider:   widget.NewSliderWithData(0.0, 1000.0, binding.NewFloat()),
+			boundTimeEntry:    &widget.Entry{},
+			boundMoveXSlider:  widget.NewSliderWithData(-1.0, float64(config.MonitorWidth), binding.NewFloat()),
+			boundMoveYSlider:  widget.NewSliderWithData(-1.0, float64(config.MonitorHeight), binding.NewFloat()),
+			boundMoveXEntry:   widget.NewEntryWithData(binding.NewString()),
+			boundMoveYEntry:   widget.NewEntryWithData(binding.NewString()),
+			boundPointList:    &widget.List{},
+			boundButtonToggle: custom_widgets.NewToggleWithData(binding.NewBool()),
+			boundKeySelect:    widget.NewSelectWithData([]string{"ctrl", "alt", "shift"}, binding.NewString()),
+			boundStateToggle:  custom_widgets.NewToggleWithData(binding.NewBool()),
+
+			boundLoopNameEntry: widget.NewEntryWithData(binding.NewString()),
+			boundCountSlider:   widget.NewSliderWithData(1, 10, binding.IntToFloat(binding.NewInt())),
+			boundCountLabel:    widget.NewLabelWithData(binding.NewString()),
+
+			boundTargetsGridSearchBar:            &widget.Entry{},
+			boundTargetsGrid:                     &widget.GridWrap{},
+			boundImageSearchNameEntry:            widget.NewEntryWithData(binding.NewString()),
+			boundImageSearchAreaList:             &widget.List{},
+			boundImageSearchSearchAreaStringList: binding.BindStringList(&[]string{}),
+			boundOCRTargetEntry:                  &widget.Entry{},
+			boundOCRSearchAreaSelect:             &widget.Select{},
+		},
 	}
 	return ui
 }
 func (u *Ui) ConstructUi() {
-	assets.CreateItemMaps()
-	u.constructActionSettingsTabs()
+	// assets.UnmarshalItemsFromJson()
+	hs := container.NewHSplit(u.at, u.mui.constructMacroUi())
+	hs.SetOffset(0.3333333333333333333333333333333333333)
 	u.win.SetMainMenu(u.createMainMenu())
+	u.at.constructActionSettingsTabs()
 	u.win.SetContent(
-		container.NewBorder(
-			nil, nil,
-			u.at,
-			nil,
-			u.mui.constructMacroUi(),
-		),
+		hs,
 	)
 	toggleMousePos()
 }
-
-// func (u *Ui) constructMainLayout() *fyne.Container {
-// 	mainLayout := container.NewBorder(nil, nil, u.at, nil, u.mui.constructMacroUi())
-// 	return mainLayout
-// }
 
 func (u *Ui) SetWindow(w fyne.Window)    { u.win = w }
 func (u *Ui) SetCurrentProgram(s string) { u.p = programs.GetPrograms().GetProgram(s) }
 
 func toggleMousePos() {
-	locX, locY = robotgo.Location()
+	locX, locY := robotgo.Location()
+	blocX, blocY := binding.BindInt(&locX), binding.BindInt(&locY)
+	boundLocXLabel.Bind(binding.IntToString(blocX))
+	boundLocYLabel.Bind(binding.IntToString(blocY))
 	go func() {
 		for {
 			robotgo.MilliSleep(100)
@@ -77,8 +90,8 @@ func toggleMousePos() {
 				continue
 			}
 			locX, locY = robotgo.Location()
-			boundLocX.Reload()
-			boundLocY.Reload()
+			blocX.Reload()
+			blocY.Reload()
 		}
 	}()
 }

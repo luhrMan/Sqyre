@@ -1,21 +1,13 @@
 package assets
 
 import (
-	"Squire/internal/programs/items"
 	"embed"
 
-	// _ "embed"
-	"encoding/json"
 	"fmt"
 	"log"
 
 	"fyne.io/fyne/v2"
 )
-
-//go:embed json/items.json
-var itemsEmbed []byte
-
-var Items items.ItemsMap
 
 //go:embed images/Squire.png
 var appIcon []byte
@@ -64,13 +56,6 @@ func BytesToFyneIcons() *map[string]*fyne.StaticResource {
 		i[s] = fyne.NewStaticResource(s, b)
 	}
 	return &i
-}
-func CreateItemMaps() {
-	err := json.Unmarshal(itemsEmbed, &Items.Map)
-	if err != nil {
-		log.Printf("Error unmarshaling JSON: %v\n", err)
-		return
-	}
 }
 
 //func MaskItems() *map[string][]byte {

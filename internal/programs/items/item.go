@@ -1,7 +1,20 @@
 package items
 
 import (
-	"errors"
+	"encoding/json"
+	"fmt"
+	"log"
+	"os"
+	"slices"
+	"sort"
+	"strings"
+)
+
+var (
+	allItemsSlice            []string
+	allItemsSortedByName     []string
+	allItemsSortedByCategory []string
+	allItemsMap              = make(map[string]Item)
 )
 
 type Item struct {
@@ -9,79 +22,126 @@ type Item struct {
 	GridSize [2]int `json:"gridSize"`
 	StackMax int    `json:"stackMax"`
 	Merchant string `json:"merchant"`
+	Category string `json:"category"`
 }
 
-type ItemsMap struct {
-	Map map[string][]Item
-}
-
-//func (is *Items) CreateItemMaps() {
-//        log.Println("GetItemsMap()")
-//        is.Map = make(map[string][]Item)
-//
-//        log.Println("Initializing Items Map")
-//
-//        file, err := os.Open(".internal/resources/json-data/items.json")
-//        if err != nil {
-//                log.Println("Error opening file:", err)
-//                panic(err)
-//        }
-//        defer file.Close()
-//
-//        decoder := json.NewDecoder(file)
-//        if err := decoder.Decode(&is.Map); err != nil {
-//                log.Println("Error decoding JSON:", err)
-//                panic(err)
-//        }
-//}
-
-func (is *ItemsMap) GetItemsMapAsStringsMap() map[string][]string {
-	itemsStringMap := make(map[string][]string)
-	for str, items := range is.Map {
-		names := make([]string, len(items))
-		for i, item := range items {
-			names[i] = item.Name
-		}
-		itemsStringMap[str] = names
+func ParseItemsFromJson(path string) []Item {
+	im := []Item{}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		log.Println("Error when opening file: ", err)
+		return nil
 	}
-	return itemsStringMap
+	err = json.Unmarshal(content, &im)
+	if err != nil {
+		log.Printf("Error unmarshaling JSON: %v\n", err)
+		return nil
+	}
+	log.Println(im)
+	return im
 }
 
-func (is *ItemsMap) GetItemsMapAsBool() map[string]bool {
-	itemsBool := make(map[string]bool)
-	for _, items := range is.Map {
-		for _, item := range items {
-			itemsBool[item.Name] = false
+func SortByCategory(is map[string]Item) []string {
+	categories := make([]string, 0, len(is))
+	items := []string{}
+	for _, i := range is {
+		if !slices.Contains(categories, i.Category) {
+			categories = append(categories, i.Category)
 		}
 	}
-	return itemsBool
-}
-func (is *ItemsMap) GetItemsMapAsStringTree() map[string]string {
-	itemsStr := make(map[string]string)
-	for _, items := range is.Map {
-		for _, item := range items {
-			itemsStr[item.Name] = item.Name
-		}
-	}
-	return itemsStr
-}
-
-func (is *ItemsMap) GetItemsMapCategory(category string) *[]string {
-	im := is.Map
-	keys := make([]string, 0, len(im[category]))
-	for _, k := range im[category] {
-		keys = append(keys, k.Name)
-	}
-	return &keys
-}
-
-func (is *ItemsMap) GetItem(key string) (*Item, error) {
-	for _, items := range is.Map {
-		for _, item := range items {
-			if item.Name == key {
-				return &item, nil
+	sort.Strings(categories)
+	for _, c := range categories {
+		for _, i := range allItemsSortedByName {
+			if is[strings.ToLower(i)].Category == c {
+				items = append(items, is[strings.ToLower(i)].Name)
 			}
 		}
 	}
-	return nil, errors.New("could not find item")
+	return items
 }
+
+func SortByName(is map[string]Item) []string {
+	items := []string{}
+	for _, i := range is {
+		items = append(items, i.Name)
+	}
+	if !slices.IsSorted(items) {
+		slices.Sort(items)
+	}
+	return items
+}
+
+func SetAllItems(is []string) {
+	allItemsSlice = is
+}
+
+func AllItems(sortedby string) []string {
+	switch sortedby {
+	case "none":
+		return allItemsSlice
+	case "category":
+		return allItemsSortedByCategory
+	case "name":
+		return allItemsSortedByName
+	default:
+		return allItemsSlice
+	}
+}
+
+func SetItemsMap(ism map[string]Item) {
+	allItemsMap = ism
+	allItemsSortedByName = SortByName(ism)
+	allItemsSortedByCategory = SortByCategory(ism)
+	allItemsSlice = allItemsSortedByName
+}
+
+func ItemsMap() map[string]Item {
+	return allItemsMap
+}
+
+func GetItem(i string) (Item, error) {
+	if item, ok := allItemsMap[strings.ToLower(i)]; ok {
+		return item, nil
+	}
+	return Item{}, fmt.Errorf("item does not exist")
+	// index, found := slices.BinarySearch(SortByName(allItemsMap), i)
+	// if found {
+	// 	return allItemsMap[AllItems()[index]], nil
+	// }
+}
+
+// type ItemsMap struct {
+// 	Map map[string][]Item
+// }
+
+// func (is *ItemsMap) GetItemsMapAsStringsMap() map[string][]string {
+// 	itemsStringMap := make(map[string][]string)
+// 	for str, items := range is.Map {
+// 		names := make([]string, len(items))
+// 		for i, item := range items {
+// 			names[i] = item.Name
+// 		}
+// 		itemsStringMap[str] = names
+// 	}
+// 	return itemsStringMap
+// }
+
+// func (is *ItemsMap) GetItemsMapCategory(category string) *[]string {
+// 	im := is.Map
+// 	keys := make([]string, 0, len(im[category]))
+// 	for _, k := range im[category] {
+// 		keys = append(keys, k.Name)
+// 	}
+// 	return &keys
+// }
+
+// func (is *ItemsMap) GetItem(key string) (*Item, error) {
+// 	for _, items := range is.Map {
+// 		for _, item := range items {
+// 			if item.Name == key {
+// 				return &item, nil
+// 			}
+// 		}
+// 	}
+// 	return nil, errors.New("could not find item")
+// }
