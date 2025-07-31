@@ -42,7 +42,7 @@ func (ps *Programs) InitPrograms() {
 	programsList := config.ViperConfig.Get(keystr)
 	for s := range programsList.(map[string]any) {
 		log.Println(s)
-		(*ps)[s] = NewProgram()
+		(*ps)[s] = NewProgram(s)
 	}
 	// keystr = "programs" + "." + config.DarkAndDarker + "."
 

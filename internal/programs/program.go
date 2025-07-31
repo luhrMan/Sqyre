@@ -9,13 +9,15 @@ import (
 )
 
 type Program struct {
+	Name        string
 	Macros      []*macro.Macro
 	Items       map[string]items.Item
 	Coordinates map[string]*coordinates.Coordinates
 }
 
-func NewProgram() *Program {
+func NewProgram(name string) *Program {
 	return &Program{
+		Name:   name,
 		Macros: []*macro.Macro{},
 		Items:  make(map[string]items.Item), //make(map[string]items.Item),
 		Coordinates: map[string]*coordinates.Coordinates{
