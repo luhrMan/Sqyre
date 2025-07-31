@@ -39,14 +39,12 @@ programs:
                 - ctrl
                 - shift
                 - "2"
-            - name: New Macro 1
+            - name: chris sucks wiener
               root:
                 count: 1
                 type: loop
                 name: root
                 subactions:
-                    - type: wait
-                      time: 2500
                     - count: 1
                       type: loop
                       name: kkjj
@@ -56,11 +54,36 @@ programs:
                             name: test
                             x: 0
                             "y": 0
+                        - count: 1
+                          type: loop
+                          name: kkjj
+                          subactions:
+                            - type: wait
+                              time: 58
                     - type: click
                       button: left
                     - type: key
                       key: ctrl
-                      state: Down
+                      state: down
+                    - type: key
+                      key: ""
+                      state: ""
+                    - type: wait
+                      time: 505
+                    - type: wait
+                      time: 0
+                    - count: 1
+                      type: loop
+                      name: ""
+                    - targets: []
+                      searcharea:
+                        name: stash-screen-player-inventory
+                        leftx: 913
+                        topy: 830
+                        rightx: 1466
+                        bottomy: 1112
+                      type: imagesearch
+                      name: ""
               globaldelay: 100
               hotkey:
                 - ctrl
@@ -128,6 +151,13 @@ programs:
                 - shift
                 - "1"
             - name: New macro 4
+              root:
+                count: 1
+                type: loop
+                name: root
+              globaldelay: 0
+              hotkey: []
+            - name: New macro 5
               root:
                 count: 1
                 type: loop
@@ -423,8 +453,8 @@ programs:
                 stackmax: 3
                 merchant: Collector
                 category: mobs
-            fangs of death necklace:
-                name: Fangs of Death Necklace
+            fangs of death:
+                name: Fangs of Death
                 gridsize:
                     - 1
                     - 1
@@ -975,8 +1005,8 @@ programs:
                 stackmax: 0
                 merchant: ""
                 category: accessories/ring
-            ring of quickness/ring:
-                name: Ring of Quickness/ring
+            ring of quickness:
+                name: Ring of Quickness
                 gridsize:
                     - 1
                     - 1
@@ -1418,3 +1448,10 @@ programs:
                         topy: 10
                         rightx: 10
                         bottomy: 10
+    path of exile:
+        macros: []
+        items: {}
+        coordinates:
+            2560x1440:
+                points: {}
+                searchareas: {}
