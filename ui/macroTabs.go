@@ -3,202 +3,149 @@ package ui
 import (
 	"Squire/internal/config"
 	"Squire/internal/programs"
-	"Squire/internal/programs/macro"
+	"Squire/internal/utils"
 	"errors"
 	"log"
-	"sort"
+	"slices"
 	"strconv"
 
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"github.com/go-vgo/robotgo"
 )
 
 type macroTabs struct {
-	*container.DocTabs
-	isExecuting widget.Activity
+	container.DocTabs
 
-	boundMacroName      binding.String
-	boundMacroNameEntry *widget.Entry
-
-	boundMacroHotkey   binding.ExternalStringList
-	macroHotkeySelect1 *widget.Select
-	macroHotkeySelect2 *widget.Select
-	macroHotkeySelect3 *widget.Select
-
-	boundGlobalDelay      binding.Int
+	boundMacroListWidget  *widget.List
+	macroNameEntry        *widget.Entry
 	boundGlobalDelayEntry *widget.Entry
-
-	mtMap          map[string]*MacroTree
-	boundMacroList binding.StringList
-	boundMacroMap  binding.UntypedTree
+	macroHotkeyEntry      *widget.Entry
 }
 
-func (mtabs *macroTabs) SetTreeMapKeyValue(key string, mt *MacroTree) { mtabs.mtMap[key] = mt }
+func NewMacroTabs() *macroTabs {
+	t := &macroTabs{
+		boundMacroListWidget:  &widget.List{},
+		macroNameEntry:        widget.NewEntry(),
+		boundGlobalDelayEntry: widget.NewEntry(),
+		macroHotkeyEntry:      widget.NewEntry(),
+	}
+	t.ExtendBaseWidget(t)
 
-func (mtabs *macroTabs) GetTabTree() (*MacroTree, error) {
-	mtree, err := mtabs.selectedTab()
-	if err != nil {
-		return nil, err
-	}
-	if mtree == nil {
-		return nil, errors.New("macroTree is nil")
-	}
-	if mtree.Tree == nil {
-		return nil, errors.New("macroTree Tree is nil")
-	}
-	if mtree.Macro == nil {
-		return nil, errors.New("macroTree Macro is nil")
-	}
-	if mtree.Macro.Root == nil {
-		return nil, errors.New("macroTree Macro Root is nil")
-	}
-	return mtree, nil
+	return t
 }
 
 func (mtabs *macroTabs) constructTabs() {
-	mtabs.constructMtabSettings()
-	mtabs.CreateTab = func() *container.TabItem {
-		m := macro.NewMacro("New macro"+strconv.Itoa(len(mtabs.mtMap)), 0, []string{"1", "2", "3"})
-		mtabs.SetTreeMapKeyValue(m.Name, &MacroTree{Macro: m, Tree: &widget.Tree{}})
-		mtree := mtabs.mtMap[m.Name]
-		mtabs.boundMacroList.Append(m.Name)
-		mtree.createTree()
+	mtabs.setMtabSettingsAndWidgets()
+	for _, m := range programs.GetPrograms().GetProgram(config.DarkAndDarker).Macros {
+		mtabs.addTab(m.Name)
+	}
+}
 
+func (mtabs *macroTabs) selectedTab() *MacroTree {
+	if mtabs.Selected() == nil {
+		t := mtabs.CreateTab()
+		mtabs.Append(t)
+		mtabs.Select(t)
+		return t.Content.(*MacroTree)
+	}
+	return mtabs.Selected().Content.(*MacroTree)
+}
+
+func (mtabs *macroTabs) addTab(name string) {
+	//check if already open. if it is, select it.
+	for _, d := range mtabs.Items {
+		if d.Text == name {
+			log.Println("macro already open")
+			mtabs.Select(d)
+			return
+		}
+	}
+	m := ui.p.GetMacroByName(name)
+	utils.RegisterHotkey(m.Hotkey, m.HotkeyCallback())
+	t := container.NewTabItem(name, NewMacroTree(m))
+	mtabs.Append(t)
+	mtabs.Select(t)
+}
+
+func (mtabs *macroTabs) setMtabSettingsAndWidgets() {
+	mtabs.CreateTab = func() *container.TabItem {
+		macros := programs.CurrentProgram().Macros
+
+		c := len(macros)
+		name := "New macro " + strconv.Itoa(c)
+		for {
+			if slices.Contains(macros, ui.p.GetMacroByName(name)) {
+				c++
+				name = "New macro " + strconv.Itoa(c)
+			} else {
+				break
+			}
+		}
+		ui.p.AddMacro(name, 0)
+		mtabs.boundMacroListWidget.Refresh()
 		return container.NewTabItem(
-			m.Name,
-			mtree.Tree,
+			name,
+			NewMacroTree(ui.p.GetMacroByName(name)),
 		)
 	}
 	mtabs.OnClosed = func(ti *container.TabItem) {
-		t := mtabs.mtMap[ti.Text]
-		t.UnregisterHotkey()
-		delete(mtabs.mtMap, ti.Text)
+		utils.UnregisterHotkey(ui.p.GetMacroByName(ti.Text).Hotkey)
+		mtabs.boundMacroListWidget.Refresh()
+	}
+
+	mtabs.OnUnselected = func(ti *container.TabItem) {
+		unbindAll()
+		ti.Content.(*MacroTree).UnselectAll()
 	}
 	mtabs.OnSelected = func(ti *container.TabItem) {
-		mt, err := mtabs.selectedTab()
-		if err != nil {
-			log.Println(err)
-			return
-		}
-		mtabs.boundGlobalDelay.Set(mt.Macro.GlobalDelay)
-		mtabs.boundMacroName.Set(mt.Macro.Name)
-		mtabs.boundMacroHotkey.Set(mt.Macro.Hotkey)
+		m := ui.p.GetMacroByName(ti.Text)
+		mtabs.macroNameEntry.SetText(m.Name)
+		mtabs.boundGlobalDelayEntry.SetText(strconv.Itoa(m.GlobalDelay))
 
-		mtabs.macroHotkeySelect1.SetSelected(mt.Macro.Hotkey[0])
-		mtabs.macroHotkeySelect2.SetSelected(mt.Macro.Hotkey[1])
-		mtabs.macroHotkeySelect3.SetSelected(mt.Macro.Hotkey[2])
+		mtabs.macroHotkeyEntry.SetText(utils.ReverseParseMacroHotkey(m.Hotkey))
 	}
 
-	for _, m := range programs.GetPrograms().GetProgram(config.DarkAndDarker).Macros {
-		mtabs.addTab(m)
+	mtabs.macroHotkeyEntry.PlaceHolder = "ctrl+shift+1 or ctrl+1 or ctrl+a+1"
+	saveHotkey := func() {
+		mt := mtabs.selectedTab()
+		utils.UnregisterHotkey(mt.Macro.Hotkey)
+		mt.Macro.Hotkey = utils.ParseMacroHotkey(mtabs.macroHotkeyEntry.Text)
+		utils.RegisterHotkey(mt.Macro.Hotkey, mt.Macro.HotkeyCallback())
 	}
-}
-
-func (mtabs *macroTabs) selectedTab() (*MacroTree, error) {
-	if mtabs == nil || mtabs.Selected() == nil || mtabs.Selected().Text == "" {
-		return nil, errors.New("no selected tab")
-	}
-	macroTree, exists := mtabs.mtMap[mtabs.Selected().Text]
-	if !exists {
-		return nil, errors.New("selected tab: " + mtabs.Selected().Text + " does not have a corresponding MacroTree")
-	}
-
-	return macroTree, nil
-}
-
-func (mtabs *macroTabs) addTab(macro *macro.Macro) {
-	//check if already open. if it is, select it.
-	if _, ok := mtabs.mtMap[macro.Name]; ok {
-		log.Println("macro is already open")
-		for _, d := range mtabs.Items {
-			if d.Text == macro.Name {
-				mtabs.Select(d)
-			}
-		}
-		return
+	mtabs.macroHotkeyEntry.ActionItem = widget.NewButtonWithIcon("", theme.DocumentSaveIcon(), func() {
+		saveHotkey()
+	})
+	mtabs.macroHotkeyEntry.OnSubmitted = func(s string) {
+		saveHotkey()
 	}
 
-	mtabs.SetTreeMapKeyValue(macro.Name, &MacroTree{Macro: macro, Tree: &widget.Tree{}})
-	mtree := mtabs.mtMap[macro.Name]
-	mtabs.boundMacroList.Append(macro.Name)
-
-	mtree.createTree()
-
-	t := container.NewTabItem(macro.Name, mtree.Tree)
-	mtabs.Append(t)
-	mtabs.Select(t)
-
-	mtree.RegisterHotkey()
-
-	// boundGlobalDelay.Set(mt.Macro.GlobalDelay)
-	// boundMacroName.Set(mt.Macro.Name)
-	// boundMacroHotkey.Set(mt.Macro.Hotkey)
-
-	// macroHotkeySelect1.SetSelected(mt.Macro.Hotkey[0])
-	// macroHotkeySelect2.SetSelected(mt.Macro.Hotkey[1])
-	// macroHotkeySelect3.SetSelected(mt.Macro.Hotkey[2])
-	// mtree.Tree.Refresh()
-}
-
-func (mtabs *macroTabs) constructMtabSettings() {
-	mtabs.boundMacroList = binding.BindStringList(&macroList)
-	for _, m := range ui.p.Macros {
-		mtabs.boundMacroList.Append(m.Name)
-	}
-	mtabs.boundMacroList.AddListener(binding.NewDataListener(func() {
-		ml, err := mtabs.boundMacroList.Get()
-		if err != nil {
-			log.Println(err)
-			return
-		}
-		sort.Strings(ml)
-	}))
-
-	mtabs.boundMacroName = binding.BindString(&macroName)
-	mtabs.boundMacroNameEntry = widget.NewEntryWithData(mtabs.boundMacroName)
-	mtabs.boundMacroNameEntry.OnSubmitted = func(string) {
-		t, err := mtabs.GetTabTree()
-		if err != nil {
-			log.Println(err)
+	mtabs.macroNameEntry.OnSubmitted = func(sub string) {
+		if sub == "" {
+			e := dialog.NewError(errors.New("macro name cannot be empty"), ui.win)
+			e.Show()
 			return
 		}
 		for _, m := range ui.p.Macros {
-			if m.Name == macroName {
+			if m.Name == sub {
 				dialog.ShowError(errors.New("macro name already exists"), ui.win)
 				return
 			}
 		}
-		delete(mtabs.mtMap, t.Macro.Name)
-		mtabs.boundMacroList.Remove(t.Macro.Name)
-		mtabs.SetTreeMapKeyValue(macroName, t)
-		// u.mtMap[macroName] = t
-		t.Macro.Name = macroName
-		mtabs.Selected().Text = macroName
-		mtabs.boundMacroList.Append(macroName)
-
+		mt := mtabs.selectedTab()
+		mt.Macro.Name = sub
+		mtabs.Selected().Text = sub
+		mtabs.boundMacroListWidget.Refresh()
 		mtabs.Refresh()
 	}
-	macroHotkey = []string{"1", "2", "3"}
-	mtabs.boundMacroHotkey = binding.BindStringList(&macroHotkey)
-	mtabs.macroHotkeySelect1 = &widget.Select{Options: []string{"ctrl"}}
-	mtabs.macroHotkeySelect2 = &widget.Select{Options: []string{"", "shift"}}
-	mtabs.macroHotkeySelect3 = &widget.Select{Options: []string{"1", "2", "3", "4", "5"}}
+	mtabs.boundGlobalDelayEntry.OnChanged = func(s string) {
+		mt := mtabs.selectedTab()
+		gd, _ := strconv.Atoi(s)
 
-	mtabs.macroHotkeySelect1.SetSelectedIndex(0)
-
-	mtabs.boundGlobalDelay = binding.BindInt(&globalDelay)
-	mtabs.boundGlobalDelayEntry = widget.NewEntryWithData(binding.IntToString(mtabs.boundGlobalDelay))
-	mtabs.boundGlobalDelay.AddListener(binding.NewDataListener(func() {
-		t, err := mtabs.GetTabTree()
-		if err != nil {
-			log.Println(err)
-			return
-		}
-		t.Macro.GlobalDelay = globalDelay
-		robotgo.MouseSleep = globalDelay
-		robotgo.KeySleep = globalDelay
-	}))
+		mt.Macro.GlobalDelay = gd
+		robotgo.MouseSleep = gd
+		robotgo.KeySleep = gd
+	}
 }

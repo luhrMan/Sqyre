@@ -25,12 +25,12 @@ func NewKey(key, state string) *Key {
 func (a *Key) Execute(ctx any) error {
 	log.Printf("Key: %s %s", a.Key, a.State)
 	switch a.State {
-	case "Up":
+	case "Up", "up":
 		err := robotgo.KeyUp(a.Key)
 		if err != nil {
 			return err
 		}
-	case "Down":
+	case "Down", "down":
 		err := robotgo.KeyDown(a.Key)
 		if err != nil {
 			return err
@@ -45,7 +45,7 @@ func (a *Key) String() string {
 
 func UpOrDown(b bool) string {
 	if b {
-		return "Down"
+		return "down"
 	}
-	return "Up"
+	return "up"
 }

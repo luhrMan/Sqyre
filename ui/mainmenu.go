@@ -5,20 +5,21 @@ import (
 	"Squire/internal/programs"
 	"Squire/internal/programs/actions"
 	"Squire/internal/programs/coordinates"
+	"Squire/internal/programs/items"
 	"log"
 	"strconv"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/dialog"
 	"github.com/go-vgo/robotgo"
-	hook "github.com/robotn/gohook"
+	hook "github.com/luhrMan/gohook"
 )
 
 func (u *Ui) createMainMenu() *fyne.MainMenu {
 	// ocrActionMenuItem.Icon, _ = fyne.LoadResourceFromPath("./internal/resources/images/Squire.png")
 	macroMenu := fyne.NewMenu("Macro")
 	programSelectSubMenu := fyne.NewMenuItem("Select Program", nil)
-	actionSubMenu := fyne.NewMenuItem("Add Action", nil)
+	actionSubMenu := fyne.NewMenuItem("Add Blank Action", nil)
 	basicActionsSubMenu := fyne.NewMenuItem("Basic Actions", nil)
 	advancedActionsSubMenu := fyne.NewMenuItem("Advanced Actions", nil)
 
@@ -32,32 +33,29 @@ func (u *Ui) createMainMenu() *fyne.MainMenu {
 	)
 	addActionAndRefresh :=
 		func(a actions.ActionInterface) {
-			t, err := u.mui.mtabs.GetTabTree()
-			if err != nil {
-				log.Println(err)
-				return
-			}
-			t.Macro.Root.AddSubAction(a)
-			t.Tree.Refresh()
+			mt := u.mui.mtabs.selectedTab()
+			mt.Macro.Root.AddSubAction(a)
+			mt.Select(a.GetUID())
+			mt.Refresh()
 		}
 	basicActionsSubMenu.ChildMenu = fyne.NewMenu("",
-		fyne.NewMenuItem("Wait", func() { addActionAndRefresh(actions.NewWait(time)) }),
-		fyne.NewMenuItem("Mouse Move", func() { addActionAndRefresh(actions.NewMove(moveX, moveY)) }),
-		fyne.NewMenuItem("Click", func() { addActionAndRefresh(actions.NewClick(actions.LeftOrRight(button))) }),
-		fyne.NewMenuItem("Key", func() { addActionAndRefresh(actions.NewKey(key, actions.UpOrDown(state))) }),
+		fyne.NewMenuItem("Wait", func() { addActionAndRefresh(actions.NewWait(0)) }),
+		fyne.NewMenuItem("Mouse Move", func() { addActionAndRefresh(actions.NewMove(coordinates.Point{Name: "", X: 0, Y: 0})) }),
+		fyne.NewMenuItem("Click", func() { addActionAndRefresh(actions.NewClick("left")) }),
+		fyne.NewMenuItem("Key", func() { addActionAndRefresh(actions.NewKey("ctrl", "down")) }),
 	)
 	advancedActionsSubMenu.ChildMenu = fyne.NewMenu("",
-		fyne.NewMenuItem("Loop", func() { addActionAndRefresh(actions.NewLoop(count, loopName, []actions.ActionInterface{})) }),
+		fyne.NewMenuItem("Loop", func() { addActionAndRefresh(actions.NewLoop(1, "", []actions.ActionInterface{})) }),
 		fyne.NewMenuItem("Image Search", func() {
-			addActionAndRefresh(
-				actions.NewImageSearch(
-					imageSearchName,
-					[]actions.ActionInterface{},
-					[]string{},
-					programs.CurrentProgramAndScreenSizeCoordinates().GetSearchArea(searchArea)))
+			addActionAndRefresh(actions.NewImageSearch(
+				"",
+				[]actions.ActionInterface{},
+				[]string{},
+				coordinates.SearchArea{},
+			))
 		}),
 		fyne.NewMenuItem("OCR", func() {
-			addActionAndRefresh(actions.NewOcr(ocrName, []actions.ActionInterface{}, ocrTarget, programs.CurrentProgramAndScreenSizeCoordinates().GetSearchArea(ocrSearchBox)))
+			addActionAndRefresh(actions.NewOcr("", []actions.ActionInterface{}, "", coordinates.SearchArea{}))
 		}),
 	)
 
@@ -72,20 +70,32 @@ func (u *Ui) createMainMenu() *fyne.MainMenu {
 		dialog.ShowInformation("Computer Information", str, u.win)
 	})
 
+	screensize := strconv.Itoa(config.MonitorWidth) + "x" + strconv.Itoa(config.MonitorHeight)
 	calibrationMenu := fyne.NewMenu("Coordinate Calibration",
 		fyne.NewMenuItem("Everything", func() {
+			robotgo.MouseSleep = 0
+			robotgo.KeySleep = 0
+
+			coordinates.CalibrateInventorySearchboxes((*programs.GetPrograms())[config.DarkAndDarker].Coordinates[screensize])
+			// u.at.boundImageSearchAreaSelect.SetOptions(programs.CurrentProgramAndScreenSizeCoordinates().GetSearchAreasAsStringSlice())
+			coordinates.CalibrateTopMenuTabLocations((*programs.GetPrograms())[config.DarkAndDarker].Coordinates[screensize])
+
+			mt := u.mui.mtabs.selectedTab()
+			robotgo.MouseSleep = mt.Macro.GlobalDelay
+			robotgo.KeySleep = mt.Macro.GlobalDelay
 
 		}),
 		fyne.NewMenuItem("Top Menu", func() {
-			coordinates.TopMenuTabLocations((*programs.GetPrograms())[config.DarkAndDarker].Coordinates["2560x1440"])
+			coordinates.CalibrateTopMenuTabLocations((*programs.GetPrograms())[config.DarkAndDarker].Coordinates[screensize])
 		}),
 		fyne.NewMenuItem("Inventories", func() {
 			robotgo.MouseSleep = 0
 			robotgo.KeySleep = 0
-			coordinates.CalibrateInventorySearchboxes((*programs.GetPrograms())[config.DarkAndDarker].Coordinates["2560x1440"])
-			u.at.imageSearch.boundImageSearchAreaSelect.SetOptions(programs.CurrentProgramAndScreenSizeCoordinates().GetSearchAreasAsStringSlice())
-			robotgo.MouseSleep = globalDelay
-			robotgo.KeySleep = globalDelay
+			coordinates.CalibrateInventorySearchboxes((*programs.GetPrograms())[config.DarkAndDarker].Coordinates[screensize])
+			// u.at.boundImageSearchAreaSelect.SetOptions(programs.CurrentProgramAndScreenSizeCoordinates().GetSearchAreasAsStringSlice())
+			mt := u.mui.mtabs.selectedTab()
+			robotgo.MouseSleep = mt.Macro.GlobalDelay
+			robotgo.KeySleep = mt.Macro.GlobalDelay
 		}),
 		fyne.NewMenuItem("Stash-screen", func() {
 
@@ -93,10 +103,23 @@ func (u *Ui) createMainMenu() *fyne.MainMenu {
 		fyne.NewMenuItem("Merchants-screen", func() {
 
 		}),
+		fyne.NewMenuItem("Merchants Portraits", func() {
+			coordinates.MerchantPortraitsLocation((*programs.GetPrograms())[config.DarkAndDarker].Coordinates[screensize])
+		}),
 	)
 
 	testMenu := fyne.NewMenu("Test",
 		fyne.NewMenuItem("Add Item", func() { addItemWindow() }),
+		fyne.NewMenuItem("Set Items from JSON", func() {
+			dialog.ShowFileOpen(func(reader fyne.URIReadCloser, err error) {
+				log.Println(reader.URI().Path())
+				i := items.ParseItemsFromJson(reader.URI().Path())
+				for _, item := range i {
+					programs.CurrentProgram().Items[item.Name] = item
+				}
+				items.SetItemsMap(programs.CurrentProgram().Items)
+			}, u.win)
+		}),
 		fyne.NewMenuItem("Test string slice", func() {
 			log.Println("String Map:",
 				config.ViperConfig.Get("programs"+"."+config.DarkAndDarker+"."+"macros"),

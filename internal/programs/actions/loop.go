@@ -5,6 +5,8 @@ import (
 	"Squire/internal/utils"
 	"fmt"
 	"log"
+
+	"fyne.io/fyne/v2"
 )
 
 type Loop struct {
@@ -40,7 +42,10 @@ func (a *Loop) Execute(ctx any) error {
 			if a.Name == "root" {
 				progress = progressStep * float64(j+1)
 				log.Println(progress)
-				utils.MacroProgressBar().SetValue(progress)
+				fyne.Do(func() {
+					utils.MacroProgressBar().SetValue(progress)
+					utils.MacroProgressBar().Refresh()
+				})
 			}
 			if err := action.Execute(ctx); err != nil {
 				return err
