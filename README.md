@@ -45,14 +45,20 @@ Install Msys2
     - [opencv](https://packages.msys2.org/package/mingw-w64-x86_64-opencv)
     - [zlib](https://packages.msys2.org/package/mingw-w64-x86_64-zlib)
     - [tesseract](https://packages.msys2.org/package/mingw-w64-x86_64-tesseract-ocr)
-    - [leptonica](https://packages.msys2.org/package/mingw-w64-x86_64-leptonica)
+    - [leptonica](http1s://packages.msys2.org/package/mingw-w64-x86_64-leptonica)
 - download [english tessdata](https://github.com/tesseract-ocr/tessdata/blob/main/eng.traineddata)
+- move `traineddata` to `C:\msys64\mingw64\share\tessdata`
 - run these commands in the mingw64 console:
     - set TESSDATA_PREFIX
         - `export TESSDATA_PREFIX=C:\msys64\mingw64\share\tessdata`
+    - if downloaded `go` in msys2, run these commands 
     - set GOROOT & GOPATH
         - `export GOROOT=/mingw64/lib/go`
         - `export GOPATH=/mingw64`
+Add Msys2 console to VSCode
+    - edit terminal settings
+        - search for terminal integrated profiles and edit the windows settings
+    - https://stackoverflow.com/questions/45836650/how-do-i-integrate-msys2-shell-into-visual-studio-code-on-window
 
 ## Linux
 
