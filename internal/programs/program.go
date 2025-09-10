@@ -88,11 +88,22 @@ func (ps *Programs) ReadAllPoints() []*coordinates.Point {
 	allPoints := []*coordinates.Point{}
 	for _, pro := range *ps {
 		for _, cs := range pro.Coordinates {
-			for _, 
-			allPoints = append(allPoints, poi.Points...)
+			for _, poi := range cs.Points {
+				allPoints = append(allPoints, &poi)
+
+			}
 		}
 	}
 	return allPoints
+}
+
+func (ps *Programs) ReadAllPointsAsStringSlice() []string {
+	allPoints := ps.ReadAllPoints
+	allPointsStringSlice := []string{}
+	for _, poi := range allPoints() {
+		allPointsStringSlice = append(allPointsStringSlice, poi.Name)
+	}
+	return allPointsStringSlice
 }
 
 // func (p *Program) GetItem(i string) items.Item {

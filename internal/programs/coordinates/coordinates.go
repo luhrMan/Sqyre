@@ -22,17 +22,18 @@ type Coordinates struct {
 func (c *Coordinates) GetPoints() map[string]Point {
 	return c.Points
 }
-func (c *Coordinates) GetPointsAsStringSlice() []string {
-	keys := make([]string, len(c.Points))
 
-	i := 0
-	for k := range c.Points {
-		keys[i] = k
-		i++
-	}
+// func (c *Coordinates) GetPointsAsStringSlice() []string {
+// 	keys := make([]string, len(c.Points))
 
-	return keys
-}
+// 	i := 0
+// 	for k := range c.Points {
+// 		keys[i] = k
+// 		i++
+// 	}
+
+//		return keys
+//	}
 func (c *Coordinates) GetPoint(name string) Point {
 	return c.Points[name]
 }
