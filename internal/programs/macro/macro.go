@@ -21,7 +21,7 @@ type Macro struct {
 	Hotkey      []string
 }
 
-func NewMacro(name string, delay int, hotkey []string) *Macro {
+func CreateMacro(name string, delay int, hotkey []string) *Macro {
 	return &Macro{
 		Name:        name,
 		Root:        actions.NewLoop(1, "root", []actions.ActionInterface{}),

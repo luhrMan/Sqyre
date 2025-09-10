@@ -222,8 +222,13 @@ func (at *actionTabs) constructWaitTab() {
 }
 
 func (at *actionTabs) constructMoveTab() {
-	var pSearchList = slices.Clone(programs.CurrentProgramAndScreenSizeCoordinates().GetPointsAsStringSlice())
+	l := []string{}
+	for _, p := range *programs.ReadPrograms() {
+		l = append(l, p.Name)
+	}
+	cs := programs.ReadPrograms().ReadAllCoordinates()
 
+	var pSearchList = slices.Clone(programs.ReadPrograms().ReadAllCoordinates().GetPointsAsStringSlice())
 	//change point to custom if changed from selected option in point list
 	at.boundMoveXEntry.OnChanged = func(s string) {
 		i, e := strconv.Atoi(s)

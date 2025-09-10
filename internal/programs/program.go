@@ -8,6 +8,8 @@ import (
 	"strconv"
 )
 
+type Programs map[string]*Program
+
 type Program struct {
 	Name        string
 	Macros      []*macro.Macro
@@ -15,8 +17,11 @@ type Program struct {
 	Coordinates map[string]*coordinates.Coordinates
 }
 
-func NewProgram(name string) *Program {
-	return &Program{
+var programs = make(Programs)
+
+func ReadPrograms() *Programs { return &programs }
+func (ps *Programs) CreateProgram(name string) {
+	p := &Program{
 		Name:   name,
 		Macros: []*macro.Macro{},
 		Items:  make(map[string]items.Item), //make(map[string]items.Item),
@@ -27,13 +32,35 @@ func NewProgram(name string) *Program {
 			},
 		},
 	}
+	programs[name] = p
 }
-func CurrentProgramAndScreenSizeCoordinates() *coordinates.Coordinates {
-	return currentProgram.Coordinates[strconv.Itoa(config.MonitorWidth)+"x"+strconv.Itoa(config.MonitorHeight)]
+func (ps *Programs) ReadProgram(name string) *Program {
+	return programs[name]
 }
 
-func (p *Program) GetMacroAtIndex(i int) *macro.Macro { return p.Macros[i] }
-func (p *Program) GetMacroByName(s string) *macro.Macro {
+func (ps *Programs) UpdateProgram(name string) {
+	_, ok := programs[name]
+	if ok {
+
+	}
+}
+
+func (ps *Programs) DeleteProgram(name string) {
+	val, ok := programs[name]
+	if ok {
+		programs[val.Name] = nil
+	}
+}
+
+func (ps *Programs) ReadAllMacros() []*macro.Macro {
+	ms := []*macro.Macro{}
+	for _, p := range *ps {
+		ms = append(ms, p.Macros...)
+	}
+	return ms
+}
+func (p *Program) ReadMacroAtIndex(i int) *macro.Macro { return p.Macros[i] }
+func (p *Program) ReadMacroByName(s string) *macro.Macro {
 	for _, m := range p.Macros {
 		if m.Name == s {
 			return m
@@ -42,11 +69,30 @@ func (p *Program) GetMacroByName(s string) *macro.Macro {
 	return nil
 }
 
-func (p *Program) AddMacro(s string, d int) {
+func (p *Program) CreateMacro(s string, d int) {
 	if s == "" {
 		return
 	}
-	p.Macros = append(p.Macros, macro.NewMacro(s, d, []string{}))
+	p.Macros = append(p.Macros, macro.CreateMacro(s, d, []string{}))
+}
+
+func (ps *Programs) ReadAllCoordinates() []*coordinates.Coordinates {
+	cs := []*coordinates.Coordinates{}
+	for _, p := range *ps {
+		cs = append(cs, p.Coordinates[config.MainMonitorSizeString])
+	}
+	return cs
+}
+
+func (ps *Programs) ReadAllPoints() []*coordinates.Point {
+	allPoints := []*coordinates.Point{}
+	for _, pro := range *ps {
+		for _, cs := range pro.Coordinates {
+			for _, 
+			allPoints = append(allPoints, poi.Points...)
+		}
+	}
+	return allPoints
 }
 
 // func (p *Program) GetItem(i string) items.Item {

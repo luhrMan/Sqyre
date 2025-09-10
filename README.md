@@ -38,6 +38,7 @@ fuck all that clicking
 
 Install Msys2
 
+~~~
 - Using the mingw64 console, install these packages
     - [mingwx86 toolchain](https://packages.msys2.org/groups/mingw-w64-x86_64-toolchain)
     - [gcc](https://packages.msys2.org/package/mingw-w64-x86_64-gcc)
@@ -58,7 +59,8 @@ Install Msys2
 Add Msys2 console to VSCode
     - edit terminal settings
         - search for terminal integrated profiles and edit the windows settings
-    - https://stackoverflow.com/questions/45836650/how-do-i-integrate-msys2-shell-into-visual-studio-code-on-window
+    - https://stackoverflow.com/questions/45836650/how-do-i-integrate-msys2-shell-into-visual-studio-code-on-window 
+~~~
 
 ## Linux
 

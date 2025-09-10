@@ -18,14 +18,23 @@ import (
 func (u *Ui) createMainMenu() *fyne.MainMenu {
 	// ocrActionMenuItem.Icon, _ = fyne.LoadResourceFromPath("./internal/resources/images/Squire.png")
 	macroMenu := fyne.NewMenu("Macro")
-	programSelectSubMenu := fyne.NewMenuItem("Select Program", nil)
 	actionSubMenu := fyne.NewMenuItem("Add Blank Action", nil)
 	basicActionsSubMenu := fyne.NewMenuItem("Basic Actions", nil)
 	advancedActionsSubMenu := fyne.NewMenuItem("Advanced Actions", nil)
 
-	macroMenu.Items = append(macroMenu.Items, actionSubMenu, programSelectSubMenu)
-	programSelectSubMenu.ChildMenu = fyne.NewMenu("")
+	macroMenu.Items = append(macroMenu.Items, actionSubMenu)
 	actionSubMenu.ChildMenu = fyne.NewMenu("")
+
+	programCheckboxesMenu := fyne.NewMenu("Select Programs")
+	for _, p := range *programs.GetPrograms() {
+		mi := fyne.NewMenuItem(p.Name, func() {
+
+		})
+		mi.Action = func() {
+			mi.Checked = !mi.Checked
+		}
+		mi.Checked = true
+	}
 
 	actionSubMenu.ChildMenu.Items = append(actionSubMenu.ChildMenu.Items,
 		basicActionsSubMenu,
@@ -132,5 +141,5 @@ func (u *Ui) createMainMenu() *fyne.MainMenu {
 		}),
 	)
 
-	return fyne.NewMainMenu(fyne.NewMenu("Settings", computerInfo), macroMenu, calibrationMenu, testMenu)
+	return fyne.NewMainMenu(fyne.NewMenu("Settings", computerInfo), macroMenu, programCheckboxesMenu, calibrationMenu, testMenu)
 }
