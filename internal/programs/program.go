@@ -26,7 +26,7 @@ func (ps *Programs) CreateProgram(name string) {
 		Macros: []*macro.Macro{},
 		Items:  make(map[string]items.Item), //make(map[string]items.Item),
 		Coordinates: map[string]*coordinates.Coordinates{
-			strconv.Itoa(config.MonitorWidth) + "x" + strconv.Itoa(config.MonitorHeight): { //"2560x1440": {
+			config.MainMonitorSizeString: { //"2560x1440": {
 				Points:      make(map[string]coordinates.Point),
 				SearchAreas: make(map[string]coordinates.SearchArea),
 			},

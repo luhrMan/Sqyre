@@ -13,7 +13,7 @@ var (
 	MonitorWidth          = MainMonitorSize.W
 	MonitorHeight         = MainMonitorSize.H
 	XOffset, YOffset      = findOffsets()
-	MainMonitorSizeString = strconv.Itoa(MonitorWidth) + strconv.Itoa(MonitorHeight)
+	MainMonitorSizeString = strconv.Itoa(MonitorWidth) + "x" + strconv.Itoa(MonitorHeight)
 )
 
 func findOffsets() (X, Y int) {
