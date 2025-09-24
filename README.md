@@ -34,6 +34,16 @@ fuck all that clicking
 
 # BUILD INSTRUCTIONS
 
+## Linux
+1. install dependencies
+    - `sudo apt install tesseract-ocr libgl1-mesa-dev libx11-dev libx11-xcb-dev libxtst-dev libxcursor-dev libxrandr-dev libxinerama-dev g++ clang libtesseract-dev libxxf86vm-dev libxkbcommon-x11-dev golang-go cmake`
+1. install opencv
+    1. install gocv from this project folder
+    - `go get -u -d gocv.io/x/gocv`
+    1. install opencv
+    - `cd $GOPATH/pkg/mod/gocv.io/x/gocv@v0.42.0`
+    - `make install`
+
 ## Windows 10
 
 Install Msys2
@@ -59,13 +69,3 @@ Add Msys2 console to VSCode
     - edit terminal settings
         - search for terminal integrated profiles and edit the windows settings
     - https://stackoverflow.com/questions/45836650/how-do-i-integrate-msys2-shell-into-visual-studio-code-on-window
-
-## Linux
-1. install dependencies
-    - `sudo apt install tesseract-ocr libgl1-mesa-dev libx11-dev libx11-xcb-dev libxtst-dev libxcursor-dev libxrandr-dev libxinerama-dev g++ clang libtesseract-dev libxxf86vm-dev libxkbcommon-x11-dev golang-go cmake`
-1. install opencv
-    1. install gocv from this project folder
-    - `go get -u -d gocv.io/x/gocv`
-    1. install opencv
-    - `cd $GOPATH/pkg/mod/gocv.io/x/gocv@v0.42.0`
-    - `make install`
