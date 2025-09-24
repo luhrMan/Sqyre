@@ -1,6 +1,5 @@
 # TODO:
 
-- get a kanban lol
 - change tree updates to data listeners; if the user wants to add an action, hit the deselect button to prevent updates to selected item
 - add copy action button
 
@@ -65,4 +64,9 @@ Add Msys2 console to VSCode
 ## Linux
 
 - `apt install tesseract-ocr libgl1-mesa-dev libx11-dev libx11-xcb-dev libxtst-dev libxcursor-dev libxrandr-dev libxinerama-dev g++ clang libtesseract-dev libxxf86vm-dev libxkbcommon-x11-dev golang-go`
-- Find the GoCV folder and build the OpenCV source
+- Follow this website instructions: https://gocv.io/getting-started/linux/
+    - `go get -u -d gocv.io/x/gocv`
+    - `cd $GOPATH/src/gocv.io/x/gocv`
+        - The /src/ folder is not created anymore since GO 1.17
+        - maybe copy the `/pkg/mod/` folder into `/src/` ? Or just run commands in `/pkg/mod/`
+    - `make install`

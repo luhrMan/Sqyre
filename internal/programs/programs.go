@@ -1,9 +1,9 @@
 package programs
 
-import (
-	"Squire/internal/config"
-	"log"
-)
+// import (
+// 	"Squire/internal/config"
+// 	"log"
+// )
 
 // var programs = &Programs{}
 // var currentProgram *Program
@@ -34,25 +34,25 @@ import (
 
 // func (ps *Programs) GetProgram(name string) *Program { return (*ps)[name] }
 
-func (ps *Programs) InitPrograms() {
-	keystr := "programs"
-	programsList := config.ViperConfig.Get(keystr)
-	for s := range programsList.(map[string]any) {
-		log.Println(s)
-		ps.CreateProgram(s)
-	}
-	// keystr = "programs" + "." + config.DarkAndDarker + "."
+// func (ps *Programs) InitPrograms() {
+// 	keystr := "programs"
+// 	programsList := config.ViperConfig.Get(keystr)
+// 	for s := range programsList.(map[string]any) {
+// 		log.Println(s)
+// 		ps.CreateProgram(s)
+// 	}
+// 	// keystr = "programs" + "." + config.DarkAndDarker + "."
 
-	// SetCurrentProgram(ps.GetProgram(config.DarkAndDarker), config.DarkAndDarker)
-	// macros := config.ViperConfig.GetStringSlice(keystr + "macros")
-	// for i := range macros {
-	// 	p.GetProgram(config.DarkAndDarker).Macros = append(p.GetProgram(config.DarkAndDarker).Macros, macro.NewMacro("New Macro "+strconv.Itoa(i), 30, []string{}))
-	// 	err := p.GetProgram(config.DarkAndDarker).GetMacroAtIndex(i).UnmarshalMacro(i)
-	// 	if err != nil {
-	// 		log.Println(err)
-	// 	}
-	// }
-	// config.ViperConfig.UnmarshalKey(keystr+"coordinates", &p.GetProgram(config.DarkAndDarker).Coordinates)
-	// config.ViperConfig.UnmarshalKey(keystr+"items", &p.GetProgram(config.DarkAndDarker).Items)
-	// items.SetItemsMap(currentProgram.Items)
-}
+// 	// SetCurrentProgram(ps.GetProgram(config.DarkAndDarker), config.DarkAndDarker)
+// 	// macros := config.ViperConfig.GetStringSlice(keystr + "macros")
+// 	// for i := range macros {
+// 	// 	p.GetProgram(config.DarkAndDarker).Macros = append(p.GetProgram(config.DarkAndDarker).Macros, macro.NewMacro("New Macro "+strconv.Itoa(i), 30, []string{}))
+// 	// 	err := p.GetProgram(config.DarkAndDarker).GetMacroAtIndex(i).UnmarshalMacro(i)
+// 	// 	if err != nil {
+// 	// 		log.Println(err)
+// 	// 	}
+// 	// }
+// 	// config.ViperConfig.UnmarshalKey(keystr+"coordinates", &p.GetProgram(config.DarkAndDarker).Coordinates)
+// 	// config.ViperConfig.UnmarshalKey(keystr+"items", &p.GetProgram(config.DarkAndDarker).Items)
+// 	// items.SetItemsMap(currentProgram.Items)
+// }

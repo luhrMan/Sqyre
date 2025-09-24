@@ -14,7 +14,7 @@ require (
 	github.com/luhrMan/gohook v0.0.0-20250717231151-9fc28a31bf68
 	github.com/otiai10/gosseract/v2 v2.4.1
 	github.com/spf13/viper v1.20.1
-	gocv.io/x/gocv v0.41.0
+	gocv.io/x/gocv v0.42.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 

@@ -5,56 +5,65 @@ import (
 	"Squire/internal/programs/coordinates"
 	"Squire/internal/programs/items"
 	"Squire/internal/programs/macro"
-	"strconv"
+	"log"
 )
-
-type Programs map[string]*Program
 
 type Program struct {
 	Name        string
 	Macros      []*macro.Macro
 	Items       map[string]items.Item
 	Coordinates map[string]*coordinates.Coordinates
+	Enabled     bool
 }
 
-var programs = make(Programs)
+var (
+	programs             = make(map[string]*Program)
+	enabledPrograms      = make(map[string]*Program)
+	coords               = make(map[string]coordinates.Coordinates)
+	points               = make(map[string]coordinates.Point)
+	allPointsStringSlice = []string{}
+)
 
-func ReadPrograms() *Programs { return &programs }
-func (ps *Programs) CreateProgram(name string) {
+func ReadPrograms() map[string]*Program { return programs }
+func CreateProgram(name string) {
 	p := &Program{
 		Name:   name,
 		Macros: []*macro.Macro{},
-		Items:  make(map[string]items.Item), //make(map[string]items.Item),
+		Items:  make(map[string]items.Item),
 		Coordinates: map[string]*coordinates.Coordinates{
 			config.MainMonitorSizeString: { //"2560x1440": {
 				Points:      make(map[string]coordinates.Point),
 				SearchAreas: make(map[string]coordinates.SearchArea),
 			},
 		},
+		Enabled: true,
 	}
 	programs[name] = p
 }
-func (ps *Programs) ReadProgram(name string) *Program {
+func ReadProgram(name string) *Program {
 	return programs[name]
 }
 
-func (ps *Programs) UpdateProgram(name string) {
+func UpdateProgram(name string) {
 	_, ok := programs[name]
 	if ok {
 
 	}
 }
 
-func (ps *Programs) DeleteProgram(name string) {
+func DeleteProgram(name string) {
 	val, ok := programs[name]
 	if ok {
 		programs[val.Name] = nil
+		if programs[val.Name].Enabled {
+			enabledPrograms[val.Name] = nil
+		}
 	}
 }
 
-func (ps *Programs) ReadAllMacros() []*macro.Macro {
+func ReadAllMacros() []*macro.Macro {
 	ms := []*macro.Macro{}
-	for _, p := range *ps {
+	for _, p := range enabledPrograms {
 		ms = append(ms, p.Macros...)
 	}
 	return ms
@@ -76,34 +85,83 @@ func (p *Program) CreateMacro(s string, d int) {
 	p.Macros = append(p.Macros, macro.CreateMacro(s, d, []string{}))
 }
 
-func (ps *Programs) ReadAllCoordinates() []*coordinates.Coordinates {
-	cs := []*coordinates.Coordinates{}
-	for _, p := range *ps {
-		cs = append(cs, p.Coordinates[config.MainMonitorSizeString])
-	}
-	return cs
+func ReadCoordinates() map[string]coordinates.Coordinates {
+	return coords
 }
 
-func (ps *Programs) ReadAllPoints() []*coordinates.Point {
-	allPoints := []*coordinates.Point{}
-	for _, pro := range *ps {
+func UpdateCoordinates() {
+	clear(coords)
+	for _, pro := range enabledPrograms {
 		for _, cs := range pro.Coordinates {
-			for _, poi := range cs.Points {
-				allPoints = append(allPoints, &poi)
-
-			}
+			coords[pro.Name+" "+config.MainMonitorSizeString] = *cs
 		}
 	}
-	return allPoints
 }
 
-func (ps *Programs) ReadAllPointsAsStringSlice() []string {
-	allPoints := ps.ReadAllPoints
-	allPointsStringSlice := []string{}
-	for _, poi := range allPoints() {
+// func ReadEnabledPrograms() map[string]*Program {
+// 	return enabledPrograms
+// }
+
+//	func CalculateEnabledPoints() int {
+//		ReadEnabledPrograms()
+//		totalPoints := 0
+//		for _, pro := range programs {
+//			if pro.Enabled {
+//				totalPoints += len(pro.Coordinates)
+//			}
+//		}
+//		return totalPoints
+//	}
+
+func UpdatePoints() {
+	clear(points)
+	for s, cs := range coords {
+		for _, poi := range cs.Points {
+			points[s+" "+poi.Name] = poi
+		}
+	}
+}
+
+func ReadPoints() map[string]coordinates.Point {
+	return points
+}
+
+func ReadPointsAsStringSlice() []string {
+	for _, poi := range ReadPoints() {
 		allPointsStringSlice = append(allPointsStringSlice, poi.Name)
 	}
 	return allPointsStringSlice
+}
+
+func ReadPoint(name string) coordinates.Point {
+	val, ok := points[name]
+	if ok {
+		return val
+	}
+	return val
+}
+
+func InitPrograms() {
+	keystr := "programs"
+	programsList := config.ViperConfig.Get(keystr)
+	for s := range programsList.(map[string]any) {
+		log.Println(s)
+		CreateProgram(s)
+	}
+	// keystr = "programs" + "." + config.DarkAndDarker + "."
+
+	// SetCurrentProgram(ps.GetProgram(config.DarkAndDarker), config.DarkAndDarker)
+	// macros := config.ViperConfig.GetStringSlice(keystr + "macros")
+	// for i := range macros {
+	// 	p.GetProgram(config.DarkAndDarker).Macros = append(p.GetProgram(config.DarkAndDarker).Macros, macro.NewMacro("New Macro "+strconv.Itoa(i), 30, []string{}))
+	// 	err := p.GetProgram(config.DarkAndDarker).GetMacroAtIndex(i).UnmarshalMacro(i)
+	// 	if err != nil {
+	// 		log.Println(err)
+	// 	}
+	// }
+	// config.ViperConfig.UnmarshalKey(keystr+"coordinates", &p.GetProgram(config.DarkAndDarker).Coordinates)
+	// config.ViperConfig.UnmarshalKey(keystr+"items", &p.GetProgram(config.DarkAndDarker).Items)
+	// items.SetItemsMap(currentProgram.Items)
 }
 
 // func (p *Program) GetItem(i string) items.Item {
