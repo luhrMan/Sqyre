@@ -4,7 +4,7 @@
 - change tree updates to data listeners; if the user wants to add an action, hit the deselect button to prevent updates to selected item
 - add copy action button
 
-This tool only works on 2560 x 1440 because of hard-set values. Feature Matching should allow for scale variant image matching. The color matching might also work.
+~~This tool only works on 2560 x 1440 because of hard-set values. Feature Matching should allow for scale variant image matching. The color matching might also work.~~
 
 # What is it
 
@@ -39,10 +39,10 @@ fuck all that clicking
     - `sudo apt install tesseract-ocr libgl1-mesa-dev libx11-dev libx11-xcb-dev libxtst-dev libxcursor-dev libxrandr-dev libxinerama-dev g++ clang libtesseract-dev libxxf86vm-dev libxkbcommon-x11-dev golang-go cmake`
 1. install opencv
     1. install gocv from this project folder
-    - `go get -u -d gocv.io/x/gocv`
+        - `go get -u -d gocv.io/x/gocv`
     1. install opencv
-    - `cd $GOPATH/pkg/mod/gocv.io/x/gocv@v0.42.0`
-    - `make install`
+        - `cd $GOPATH/pkg/mod/gocv.io/x/gocv@v0.42.0`
+        - `make install`
 
 ## Windows 10
 
