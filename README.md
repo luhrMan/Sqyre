@@ -64,8 +64,8 @@ Add Msys2 console to VSCode
 0. install dependencies
     - `sudo apt install tesseract-ocr libgl1-mesa-dev libx11-dev libx11-xcb-dev libxtst-dev libxcursor-dev libxrandr-dev libxinerama-dev g++ clang libtesseract-dev libxxf86vm-dev libxkbcommon-x11-dev golang-go`
 0. install opencv
-    0. install gocv from this project folder
+    1. install gocv from this project folder
         - `go get -u -d gocv.io/x/gocv`
-    0. install opencv
+    1. install opencv
     - `cd $GOPATH/pkg/mod/gocv.io/x/gocv@v0.42.0`
     - `make install`
