@@ -17,15 +17,36 @@ type Program struct {
 }
 
 var (
-	programs             = make(map[string]*Program)
-	enabledPrograms      = make(map[string]*Program)
-	coords               = make(map[string]coordinates.Coordinates)
-	points               = make(map[string]coordinates.Point)
+	programs        = make(map[string]*Program)
+	enabledPrograms = make(map[string]*Program)
+	// coords               = make(map[string]coordinates.Coordinates)
+	// points               = make(map[string]coordinates.Point)
 	allPointsStringSlice = []string{}
 )
 
-func ReadPrograms() map[string]*Program { return programs }
-func CreateProgram(name string) {
+func GetPrograms() map[string]*Program { return programs }
+
+func InitEnabledPrograms() {
+	tmp := make(map[string]*Program)
+	for _, p := range GetPrograms() {
+		if p.Enabled {
+			tmp[p.Name] = p
+		}
+	}
+	SetEnabledPrograms(tmp)
+}
+func GetEnabledPrograms() map[string]*Program { return enabledPrograms }
+
+func GetEnabledProgramsPoints() map[string]coordinates.Point   {
+	points := make(map[string]coordinates.Point)
+	for _, p := range enabledPrograms {
+		points[p.Name+]
+	}
+	return points
+}
+func SetEnabledPrograms(ep map[string]*Program) { enabledPrograms = ep }
+
+func NewProgram(name string) {
 	p := &Program{
 		Name:   name,
 		Macros: []*macro.Macro{},
@@ -40,17 +61,15 @@ func CreateProgram(name string) {
 	}
 	programs[name] = p
 }
-func ReadProgram(name string) *Program {
+func GetProgram(name string) *Program {
 	return programs[name]
 }
-
-func UpdateProgram(name string) {
+func SetProgram(name string) {
 	_, ok := programs[name]
 	if ok {
 
 	}
 }
-
 func DeleteProgram(name string) {
 	val, ok := programs[name]
 	if ok {
@@ -61,15 +80,15 @@ func DeleteProgram(name string) {
 	}
 }
 
-func ReadAllMacros() []*macro.Macro {
+func GetAllMacros() []*macro.Macro {
 	ms := []*macro.Macro{}
 	for _, p := range enabledPrograms {
 		ms = append(ms, p.Macros...)
 	}
 	return ms
 }
-func (p *Program) ReadMacroAtIndex(i int) *macro.Macro { return p.Macros[i] }
-func (p *Program) ReadMacroByName(s string) *macro.Macro {
+func (p *Program) GetMacroAtIndex(i int) *macro.Macro { return p.Macros[i] }
+func (p *Program) GetMacroByName(s string) *macro.Macro {
 	for _, m := range p.Macros {
 		if m.Name == s {
 			return m
@@ -78,25 +97,25 @@ func (p *Program) ReadMacroByName(s string) *macro.Macro {
 	return nil
 }
 
-func (p *Program) CreateMacro(s string, d int) {
+func (p *Program) NewMacro(s string, d int) {
 	if s == "" {
 		return
 	}
 	p.Macros = append(p.Macros, macro.CreateMacro(s, d, []string{}))
 }
 
-func ReadCoordinates() map[string]coordinates.Coordinates {
-	return coords
+func (p *Program) GetCoordinates() map[string]*coordinates.Coordinates {
+	return p.Coordinates
 }
 
-func UpdateCoordinates() {
-	clear(coords)
-	for _, pro := range enabledPrograms {
-		for _, cs := range pro.Coordinates {
-			coords[pro.Name+" "+config.MainMonitorSizeString] = *cs
-		}
-	}
-}
+// func UpdateCoordinates() {
+// 	clear(coords)
+// 	for _, pro := range enabledPrograms {
+// 		for _, cs := range pro.Coordinates {
+// 			coords[pro.Name+" "+config.MainMonitorSizeString] = *cs
+// 		}
+// 	}
+// }
 
 // func ReadEnabledPrograms() map[string]*Program {
 // 	return enabledPrograms
@@ -113,40 +132,46 @@ func UpdateCoordinates() {
 //		return totalPoints
 //	}
 
-func UpdatePoints() {
-	clear(points)
-	for s, cs := range coords {
-		for _, poi := range cs.Points {
-			points[s+" "+poi.Name] = poi
-		}
-	}
-}
+// func UpdatePoints() {
+// 	clear(points)
+// 	for s, cs := range coords {
+// 		for _, poi := range cs.Points {
+// 			points[s+" "+poi.Name] = poi
+// 		}
+// 	}
+// }
 
-func ReadPoints() map[string]coordinates.Point {
-	return points
-}
+//Gets all points from all screen sizes for this program
+// func (p *Program) GetAllPoints() map[string]coordinates.Point {
+// 	points := make(map[string]coordinates.Point)
+// 	for _, c := range p.Coordinates {
+// 		points
+// 	}
+// 	return p.Coordinates[config.MainMonitorSizeString].GetPoints()
+// 	// return p.Coordinates[config.MainMonitorSizeString].Points
+// }
 
-func ReadPointsAsStringSlice() []string {
-	for _, poi := range ReadPoints() {
-		allPointsStringSlice = append(allPointsStringSlice, poi.Name)
-	}
-	return allPointsStringSlice
-}
+// func (p *Program) GetPointsAsStringSlice() []string {
+// 	for _, poi := range p.GetPoints() {
+// 		allPointsStringSlice = append(allPointsStringSlice, poi.Name)
+// 	}
+// 	return allPointsStringSlice
+// }
 
-func ReadPoint(name string) coordinates.Point {
-	val, ok := points[name]
-	if ok {
-		return val
-	}
-	return val
-}
+// func ReadPoint(name string) coordinates.Point {
+// 	val, ok := points[name]
+// 	if ok {
+// 		return val
+// 	}
+// 	return val
+// }
 
 func InitPrograms() {
 	keystr := "programs"
 	programsList := config.ViperConfig.Get(keystr)
 	for s := range programsList.(map[string]any) {
 		log.Println(s)
-		CreateProgram(s)
+		NewProgram(s)
 	}
 	// keystr = "programs" + "." + config.DarkAndDarker + "."
 

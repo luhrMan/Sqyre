@@ -222,12 +222,17 @@ func (at *actionTabs) constructWaitTab() {
 }
 
 func (at *actionTabs) constructMoveTab() {
-	l := []string{}
-	for _, p := range programs.ReadPrograms() {
-		l = append(l, p.Name)
-	}
+	// l := []string{}
+	// for _, p := range programs.ReadPrograms() {
+	// 	l = append(l, p.Name)
+	// }
+	points := make(map[])
+	for _, p := programs.GetEnabledPrograms() {
 
-	var pSearchList = slices.Clone(programs.ReadPointsAsStringSlice())
+	}
+	// var pSearchList = slices.Clone(programs.Program.Coordinates[config.MainMonitorSize].ReadPointsAsStringSlice())
+	var pSearchList = slices.Clone(programs.GetEnabledPrograms())
+
 	//change point to custom if changed from selected option in point list
 	at.boundMoveXEntry.OnChanged = func(s string) {
 		i, e := strconv.Atoi(s)
@@ -235,8 +240,8 @@ func (at *actionTabs) constructMoveTab() {
 			log.Println(e)
 			return
 		}
-		n, _ := at.boundPoint.GetValue("Name")
-		p := programs.ReadPoint(strings.ToLower(n.(string)))
+		//n, _ := at.boundPoint.GetValue("Name")
+		//p := programs.Coordinates[config.MainMonitorSizeString].ReadPoint(strings.ToLower(n.(string)))
 		if p.X != i {
 			at.boundPoint.SetValue("Name", "custom")
 			at.boundPointList.UnselectAll()
@@ -249,7 +254,7 @@ func (at *actionTabs) constructMoveTab() {
 			return
 		}
 		n, _ := at.boundPoint.GetValue("Name")
-		p := programs.CurrentProgramAndScreenSizeCoordinates().GetPoint(strings.ToLower(n.(string)))
+		p := programs.ReadPoint(strings.ToLower(n.(string)))
 		if p.Y != i {
 			at.boundPoint.SetValue("Name", "custom")
 			at.boundPointList.UnselectAll()
