@@ -18,6 +18,7 @@ type Program struct {
 
 var (
 	programs        = make(map[string]*Program)
+	// loop programs to find enabled programs, then display all properties of programs
 	enabledPrograms = make(map[string]*Program)
 	// coords               = make(map[string]coordinates.Coordinates)
 	// points               = make(map[string]coordinates.Point)
