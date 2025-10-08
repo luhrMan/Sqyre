@@ -1,6 +1,6 @@
 [Details]
-Icon = "internal/assets/images/Squire.png"
-Name = "Squire"
-ID = "com.squire.app"
+Icon = "internal/assets/images/icon.svg"
+Name = "Sqyre"
+ID = "com.sqyre.app"
 Version = "0.5.0"
 Build = 1
