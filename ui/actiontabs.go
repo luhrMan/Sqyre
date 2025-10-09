@@ -36,20 +36,20 @@ const (
 
 type actionTabs struct {
 	*container.AppTabs
-	boundBaseAction     binding.Struct
-	boundAdvancedAction binding.Struct
+	// boundBaseAction     binding.Struct
+	// boundAdvancedAction binding.Struct
 
-	boundWait  binding.Struct
-	boundKey   binding.Struct
-	boundMove  binding.Struct
-	boundClick binding.Struct
+	// boundWait  binding.Struct
+	// boundKey   binding.Struct
+	// boundMove  binding.Struct
+	// boundClick binding.Struct
 
-	boundLoop        binding.Struct
-	boundImageSearch binding.Struct
-	boundOcr         binding.Struct
+	// boundLoop        binding.Struct
+	// boundImageSearch binding.Struct
+	// boundOcr         binding.Struct
 
-	boundSearchArea binding.Struct
-	boundPoint      binding.Struct
+	// boundSearchArea binding.Struct
+	// boundPoint      binding.Struct
 
 	boundTimeSlider *widget.Slider
 	boundTimeEntry  *widget.Entry
