@@ -62,9 +62,10 @@ func InitializeUi(w fyne.Window) *Ui {
 	}
 	return ui
 }
-func (u *Ui) ConstructUi() {
+func (u *Ui) ConstructUi(s *programs.Store) {
 	// assets.UnmarshalItemsFromJson()
-	hs := container.NewHSplit(u.at, u.mui.constructMacroUi())
+
+	hs := container.NewHSplit(u.at, u.mui.constructMacroUi(s.GetEnabledProgramsMacros()))
 	hs.SetOffset(0.3333333333333333333333333333333333333)
 	u.win.SetMainMenu(u.createMainMenu())
 	u.at.constructActionSettingsTabs()
@@ -74,8 +75,7 @@ func (u *Ui) ConstructUi() {
 	toggleMousePos()
 }
 
-func (u *Ui) SetWindow(w fyne.Window)    { u.win = w }
-func (u *Ui) SetCurrentProgram(s string) { u.p = programs.GetPrograms().GetProgram(s) }
+func (u *Ui) SetWindow(w fyne.Window) { u.win = w }
 
 func toggleMousePos() {
 	locX, locY := robotgo.Location()

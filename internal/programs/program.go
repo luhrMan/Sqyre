@@ -6,6 +6,8 @@ import (
 	"Squire/internal/programs/items"
 	"Squire/internal/programs/macro"
 	"log"
+
+	"fyne.io/fyne/v2/data/binding"
 )
 
 type Program struct {
@@ -14,43 +16,21 @@ type Program struct {
 	Items       map[string]items.Item
 	Coordinates map[string]*coordinates.Coordinates
 	Enabled     bool
+
+	boundName   binding.String
+	boundMacros binding.ExternalUntypedList
 }
 
-var (
-	programs        = make(map[string]*Program)
-	// loop programs to find enabled programs, then display all properties of programs
-	enabledPrograms = make(map[string]*Program)
-	// coords               = make(map[string]coordinates.Coordinates)
-	// points               = make(map[string]coordinates.Point)
-	allPointsStringSlice = []string{}
-)
-
-func GetPrograms() map[string]*Program { return programs }
-
-func InitEnabledPrograms() {
-	tmp := make(map[string]*Program)
-	for _, p := range GetPrograms() {
-		if p.Enabled {
-			tmp[p.Name] = p
-		}
-	}
-	SetEnabledPrograms(tmp)
+type MacroList struct {
+	bindings *binding.StringList
+	macros   []*macro.Macro
 }
-func GetEnabledPrograms() map[string]*Program { return enabledPrograms }
 
-func GetEnabledProgramsPoints() map[string]coordinates.Point   {
-	points := make(map[string]coordinates.Point)
-	for _, p := range enabledPrograms {
-		points[p.Name+]
-	}
-	return points
-}
-func SetEnabledPrograms(ep map[string]*Program) { enabledPrograms = ep }
-
-func NewProgram(name string) {
-	p := &Program{
+func NewProgram(name string) *Program {
+	m := []*macro.Macro{}
+	return &Program{
 		Name:   name,
-		Macros: []*macro.Macro{},
+		Macros: m,
 		Items:  make(map[string]items.Item),
 		Coordinates: map[string]*coordinates.Coordinates{
 			config.MainMonitorSizeString: { //"2560x1440": {
@@ -59,35 +39,29 @@ func NewProgram(name string) {
 			},
 		},
 		Enabled: true,
-	}
-	programs[name] = p
-}
-func GetProgram(name string) *Program {
-	return programs[name]
-}
-func SetProgram(name string) {
-	_, ok := programs[name]
-	if ok {
 
-	}
-}
-func DeleteProgram(name string) {
-	val, ok := programs[name]
-	if ok {
-		programs[val.Name] = nil
-		if programs[val.Name].Enabled {
-			enabledPrograms[val.Name] = nil
-		}
+		boundName:   binding.BindString(&name),
+		boundMacros: binding.BindUntypedList(&m),
 	}
 }
 
-func GetAllMacros() []*macro.Macro {
-	ms := []*macro.Macro{}
-	for _, p := range enabledPrograms {
-		ms = append(ms, p.Macros...)
-	}
-	return ms
-}
+// func DeleteProgram(name string) {
+// 	val, ok := programs[name]
+// 	if ok {
+// 		programs[val.Name] = nil
+// 		if programs[val.Name].Enabled {
+// 			enabledPrograms[val.Name] = nil
+// 		}
+// 	}
+// }
+
+//	func GetAllMacros() []*macro.Macro {
+//		ms := []*macro.Macro{}
+//		for _, p := range enabledPrograms {
+//			ms = append(ms, p.Macros...)
+//		}
+//		return ms
+//	}
 func (p *Program) GetMacroAtIndex(i int) *macro.Macro { return p.Macros[i] }
 func (p *Program) GetMacroByName(s string) *macro.Macro {
 	for _, m := range p.Macros {

@@ -1,24 +1,61 @@
 package programs
 
-import "fmt"
+import (
+	"Squire/internal/config"
+	"Squire/internal/programs/coordinates"
+	"Squire/internal/programs/macro"
+	"fmt"
+	"sync"
+)
 
 type Store struct {
 	AllPrograms     map[string]*Program
 	EnabledPrograms map[string]*Program
-	filePath        string
+	//filePath        string
 }
 
-func NewStore(filePath string) (*Store, error) {
-	s := &Store{
-		AllPrograms: make(map[string]*Program),
-		filePath:    filePath,
+var lock = &sync.Mutex{}
+var s *Store
+
+func GetStore() *Store {
+	if s == nil {
+		lock.Lock()
+		defer lock.Unlock()
+		if s == nil {
+			fmt.Println("Creating store")
+			s = &Store{
+				AllPrograms: make(map[string]*Program),
+			}
+			s.rebuildEnabled()
+		} else {
+			fmt.Println("store already created.")
+		}
+	} else {
+		fmt.Println("store already created.")
 	}
-	if err := s.load(); err != nil {
-		return nil, err
-	}
-	s.rebuildEnabled()
-	return s, nil
+	return s
 }
+
+func (s *Store) GetEnabledProgramsPoints() map[string]map[string]coordinates.Point {
+	points := make(map[string]map[string]coordinates.Point)
+	for _, pro := range s.EnabledPrograms {
+		for _, poi := range pro.Coordinates[config.MainMonitorSizeString].Points {
+			points[pro.Name][config.MainMonitorSizeString] = poi
+		}
+	}
+	return points
+}
+
+func (s *Store) GetEnabledProgramsMacros() map[string][]*macro.Macro {
+	macros := make(map[string][]*macro.Macro)
+	for _, pro := range s.EnabledPrograms {
+		macros[pro.Name] = pro.Macros
+	}
+	return macros
+}
+
+// func (s *Store) GetPrograms()  map[string]*Program { return s.AllPrograms }
+// func (s *Store) GetEnabledPrograms()  map[string]*Program { return s.EnabledPrograms }
 
 // load reads the YAML file into AllPrograms.
 // func (s *Store) load() error {

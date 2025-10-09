@@ -9,6 +9,8 @@ import (
 	"strconv"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/data/binding"
+
 	// hook "github.com/robotn/gohook"
 	hook "github.com/luhrMan/gohook"
 	"github.com/spf13/viper"
@@ -19,6 +21,8 @@ type Macro struct {
 	Root        *actions.Loop
 	GlobalDelay int
 	Hotkey      []string
+
+	boundName binding.String
 }
 
 func CreateMacro(name string, delay int, hotkey []string) *Macro {
@@ -27,6 +31,8 @@ func CreateMacro(name string, delay int, hotkey []string) *Macro {
 		Root:        actions.NewLoop(1, "root", []actions.ActionInterface{}),
 		GlobalDelay: delay,
 		Hotkey:      hotkey,
+
+		boundName: binding.BindString(&name),
 	}
 }
 

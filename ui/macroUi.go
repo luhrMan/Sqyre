@@ -5,6 +5,7 @@ import (
 	"Squire/internal/programs"
 	"Squire/internal/programs/actions"
 	"Squire/internal/programs/coordinates"
+	"Squire/internal/programs/macro"
 	"Squire/internal/utils"
 	"slices"
 
@@ -25,7 +26,7 @@ type macroUi struct {
 	}
 }
 
-func (mui *macroUi) constructMacroUi() *fyne.Container {
+func (mui *macroUi) constructMacroUi(s map[string][]*macro.Macro) *fyne.Container {
 	boundLocXLabel = widget.NewLabelWithData(binding.NewString())
 	boundLocYLabel = widget.NewLabelWithData(binding.NewString())
 

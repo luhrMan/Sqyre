@@ -22,19 +22,20 @@ func main() {
 	utils.FailsafeHotkey()
 
 	configInit()
-	a := app.NewWithID("Squire")
+	a := app.NewWithID("Sqyre")
 	a.Settings().SetTheme(theme.DarkTheme())
 	os.Setenv("FYNE_SCALE", "1.25")
 
-	w := a.NewWindow("Squire")
+	w := a.NewWindow("Sqyre")
 	w.Resize(fyne.NewSize(1000, 500))
 	w.SetIcon(assets.AppIcon)
 	w.SetMaster()
 
 	systemTraySetup(w)
 	ui.InitializeUi(w)
-	programs.GetPrograms().InitPrograms()
-	ui.GetUi().SetCurrentProgram(config.DarkAndDarker)
+
+	s := programs.GetStore()
+
 	ui.GetUi().ConstructUi()
 	w.RequestFocus()
 	w.ShowAndRun()
