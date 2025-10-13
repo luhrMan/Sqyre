@@ -1,0 +1,122 @@
+package ui
+
+import (
+	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/data/binding"
+	"fyne.io/fyne/v2/widget"
+)
+
+type EditorUi struct {
+	Window fyne.Window
+
+	EditorTabs struct {
+		*container.AppTabs
+		ItemsTab       *EditorTab
+		PointsTab      *EditorTab
+		SearchAreasTab *EditorTab
+	}
+}
+type EditorTab struct {
+	*container.TabItem
+	Split *container.Split
+	Left  *fyne.Container
+	Right *fyne.Container
+
+	BindableWidgets map[string]fyne.Widget
+}
+
+func NewEditorTab(name string, left, right *fyne.Container) *container.TabItem {
+	split := container.NewHSplit(left, right)
+	return container.NewTabItem(name, split)
+}
+
+func constructEditorWindow() {
+	ConstructEditorTabs()
+	ui.EditorUi.Window.SetContent(ui.EditorUi.EditorTabs)
+}
+
+// I need to complete the structure of the editor window here and then complete the bindings in binders. add as many properties to EditorUi as u need bro
+func ConstructEditorTabs() {
+	ui.EditorTabs.ItemsTab.TabItem = NewEditorTab(
+		"Items",
+		container.NewBorder(nil, nil, nil, nil, widget.NewAccordion()),
+		container.NewBorder(nil, nil, nil, nil, widget.NewForm(
+			widget.NewFormItem("", widget.NewLabel("")),
+		)),
+	)
+	var (
+		name = "Name"
+		x    = "X"
+		y    = "Y"
+	)
+	ui.EditorTabs.PointsTab.BindableWidgets[name] = widget.NewEntryWithData(binding.NewString())
+	ui.EditorTabs.PointsTab.BindableWidgets[x] = widget.NewEntryWithData(binding.NewString())
+	ui.EditorTabs.PointsTab.BindableWidgets[y] = widget.NewEntryWithData(binding.NewString())
+	ui.EditorUi.EditorTabs.PointsTab.TabItem = NewEditorTab(
+		"Points",
+		container.NewBorder(nil, nil, nil, nil, widget.NewAccordion()),
+		container.NewBorder(nil, nil, nil, nil, widget.NewForm(
+			widget.NewFormItem(name, ui.EditorTabs.PointsTab.BindableWidgets[name]),
+			widget.NewFormItem(x, ui.EditorTabs.PointsTab.BindableWidgets[x]),
+			widget.NewFormItem(y, ui.EditorTabs.PointsTab.BindableWidgets[y]),
+		)),
+	)
+	ui.EditorUi.EditorTabs.SearchAreasTab.TabItem = NewEditorTab(
+		"Search Areas",
+		container.NewBorder(nil, nil, nil, nil, widget.NewAccordion()),
+		container.NewBorder(nil, nil, nil, nil, widget.NewForm(
+			widget.NewFormItem("", widget.NewLabel("")),
+		)),
+	)
+
+	ui.EditorUi.EditorTabs.Append(ui.EditorUi.EditorTabs.ItemsTab.TabItem)
+	ui.EditorUi.EditorTabs.Append(ui.EditorUi.EditorTabs.PointsTab.TabItem)
+	ui.EditorUi.EditorTabs.Append(ui.EditorUi.EditorTabs.SearchAreasTab.TabItem)
+}
+
+func launchEditorWindow() {
+
+	// 	i := &items.Item{}
+	// 	bi := binding.BindStruct(i)
+	// 	n, _ := bi.GetItem("Name")
+	// 	gs, _ := bi.GetItem("GridSize")
+	// 	// sm, _ := bi.GetItem("StackMax")
+	// 	m, _ := bi.GetItem("Merchant")
+	// form := widget.NewForm(
+	// 	widget.NewFormItem("Name:", widget.NewEntryWithData(n.(binding.String))),
+	// 	widget.NewFormItem("Max Stacksize:", widget.NewEntryWithData(binding.IntToString(gs.(binding.Int)))),
+	// 	widget.NewFormItem("Grid Size:", container.NewHBox(widget.NewLabel("Width: "), widget.NewEntry(), widget.NewLabel("Height: "), widget.NewEntry())),
+	// 	widget.NewFormItem("Merchant:", widget.NewEntryWithData(m.(binding.String))),
+	// )
+	// 	// nv, _ := bi.GetValue("Name")
+
+	// 	form.OnSubmit = func() {
+	// 		// GetUi().p.Items[nv.(string)] = *i
+	// 	}
+
+	ui.EditorUi.Window.Show()
+}
+
+// func addItemWindow() {
+// 	w := fyne.CurrentApp().NewWindow("Add Item")
+// 	i := &items.Item{}
+// 	bi := binding.BindStruct(i)
+// 	n, _ := bi.GetItem("Name")
+// 	gs, _ := bi.GetItem("GridSize")
+// 	// sm, _ := bi.GetItem("StackMax")
+// 	m, _ := bi.GetItem("Merchant")
+// 	form := widget.NewForm(
+// 		widget.NewFormItem("Name:", widget.NewEntryWithData(n.(binding.String))),
+// 		widget.NewFormItem("Max Stacksize:", widget.NewEntryWithData(binding.IntToString(gs.(binding.Int)))),
+// 		widget.NewFormItem("Grid Size:", container.NewHBox(widget.NewLabel("Width: "), widget.NewEntry(), widget.NewLabel("Height: "), widget.NewEntry())),
+// 		widget.NewFormItem("Merchant:", widget.NewEntryWithData(m.(binding.String))),
+// 	)
+// 	// nv, _ := bi.GetValue("Name")
+
+// 	form.OnSubmit = func() {
+// 		// GetUi().p.Items[nv.(string)] = *i
+// 	}
+// 	w.SetContent(form)
+// 	w.Show()
+// }

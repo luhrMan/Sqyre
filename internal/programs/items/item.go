@@ -1,10 +1,7 @@
 package items
 
 import (
-	"encoding/json"
 	"fmt"
-	"log"
-	"os"
 	"slices"
 	"sort"
 	"strings"
@@ -25,21 +22,21 @@ type Item struct {
 	Category string `json:"category"`
 }
 
-func ParseItemsFromJson(path string) []Item {
-	im := []Item{}
-	content, err := os.ReadFile(path)
-	if err != nil {
-		log.Println("Error when opening file: ", err)
-		return nil
-	}
-	err = json.Unmarshal(content, &im)
-	if err != nil {
-		log.Printf("Error unmarshaling JSON: %v\n", err)
-		return nil
-	}
-	log.Println(im)
-	return im
-}
+// func ParseItemsFromJson(path string) []Item {
+// 	im := []Item{}
+// 	content, err := os.ReadFile(path)
+// 	if err != nil {
+// 		log.Println("Error when opening file: ", err)
+// 		return nil
+// 	}
+// 	err = json.Unmarshal(content, &im)
+// 	if err != nil {
+// 		log.Printf("Error unmarshaling JSON: %v\n", err)
+// 		return nil
+// 	}
+// 	log.Println(im)
+// 	return im
+// }
 
 func SortByCategory(is map[string]Item) []string {
 	categories := make([]string, 0, len(is))

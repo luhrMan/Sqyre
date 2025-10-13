@@ -1,16 +1,19 @@
 package config
 
 import (
+	"strconv"
+
 	"github.com/go-vgo/robotgo"
 	"github.com/spf13/viper"
 )
 
 var (
-	ViperConfig      = viper.New()
-	MainMonitorSize  = robotgo.GetDisplayRect(0)
-	MonitorWidth     = MainMonitorSize.W
-	MonitorHeight    = MainMonitorSize.H
-	XOffset, YOffset = findOffsets()
+	ViperConfig           = viper.New()
+	MainMonitorSize       = robotgo.GetDisplayRect(0)
+	MonitorWidth          = MainMonitorSize.W
+	MonitorHeight         = MainMonitorSize.H
+	XOffset, YOffset      = findOffsets()
+	MainMonitorSizeString = strconv.Itoa(MonitorWidth) + "x" + strconv.Itoa(MonitorHeight)
 )
 
 func findOffsets() (X, Y int) {

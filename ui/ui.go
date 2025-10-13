@@ -1,10 +1,6 @@
 package ui
 
 import (
-	"Squire/internal/config"
-	"Squire/internal/programs"
-	"Squire/ui/custom_widgets"
-
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/data/binding"
@@ -19,63 +15,64 @@ var (
 )
 
 type Ui struct {
-	win fyne.Window
+	MainWindow fyne.Window
+	*EditorUi
 
-	mui *macroUi
-	at  *actionTabs
-
-	p *programs.Program
+	Mui        *MacroUi
+	ActionTabs *ActionTabs
 }
 
 func GetUi() *Ui { return ui }
 func InitializeUi(w fyne.Window) *Ui {
 	ui = &Ui{
-		win: w,
-		mui: &macroUi{
-			mtabs: NewMacroTabs(),
+		MainWindow: w,
+		EditorUi: &EditorUi{
+			Window: fyne.CurrentApp().NewWindow("Editor"),
+			EditorTabs: struct {
+				*container.AppTabs
+				ItemsTab       *EditorTab
+				PointsTab      *EditorTab
+				SearchAreasTab *EditorTab
+			}{
+				AppTabs: &container.AppTabs{},
+				ItemsTab: &EditorTab{
+					BindableWidgets: make(map[string]fyne.Widget),
+				},
+				PointsTab: &EditorTab{
+					BindableWidgets: make(map[string]fyne.Widget),
+				},
+				SearchAreasTab: &EditorTab{
+					BindableWidgets: make(map[string]fyne.Widget),
+				},
+			},
 		},
-		at: &actionTabs{
-			AppTabs:           &container.AppTabs{},
-			boundTimeSlider:   widget.NewSliderWithData(0.0, 1000.0, binding.NewFloat()),
-			boundTimeEntry:    &widget.Entry{},
-			boundMoveXSlider:  widget.NewSliderWithData(-1.0, float64(config.MonitorWidth), binding.NewFloat()),
-			boundMoveYSlider:  widget.NewSliderWithData(-1.0, float64(config.MonitorHeight), binding.NewFloat()),
-			boundMoveXEntry:   widget.NewEntryWithData(binding.NewString()),
-			boundMoveYEntry:   widget.NewEntryWithData(binding.NewString()),
-			boundPointList:    &widget.List{},
-			boundButtonToggle: custom_widgets.NewToggleWithData(binding.NewBool()),
-			boundKeySelect:    widget.NewSelectWithData([]string{"ctrl", "alt", "shift"}, binding.NewString()),
-			boundStateToggle:  custom_widgets.NewToggleWithData(binding.NewBool()),
-
-			boundLoopNameEntry: widget.NewEntryWithData(binding.NewString()),
-			boundCountSlider:   widget.NewSliderWithData(1, 10, binding.IntToFloat(binding.NewInt())),
-			boundCountLabel:    widget.NewLabelWithData(binding.NewString()),
-
-			boundTargetsGridSearchBar:            &widget.Entry{},
-			boundTargetsGrid:                     &widget.GridWrap{},
-			boundImageSearchNameEntry:            widget.NewEntryWithData(binding.NewString()),
-			boundImageSearchAreaList:             &widget.List{},
-			boundImageSearchSearchAreaStringList: binding.BindStringList(&[]string{}),
-			boundOCRTargetEntry:                  &widget.Entry{},
-			boundOCRSearchAreaSelect:             &widget.Select{},
+		Mui: &MacroUi{
+			MTabs:             NewMacroTabs(),
+			MacroSelectButton: &widget.Button{},
+			MacroToolbars: struct {
+				Toolbar1 *fyne.Container
+				Toolbar2 *fyne.Container
+			}{
+				Toolbar1: &fyne.Container{},
+				Toolbar2: &fyne.Container{},
+			},
 		},
+		ActionTabs: newActionTabs(),
 	}
 	return ui
 }
 func (u *Ui) ConstructUi() {
 	// assets.UnmarshalItemsFromJson()
-	hs := container.NewHSplit(u.at, u.mui.constructMacroUi())
-	hs.SetOffset(0.3333333333333333333333333333333333333)
-	u.win.SetMainMenu(u.createMainMenu())
-	u.at.constructActionSettingsTabs()
-	u.win.SetContent(
-		hs,
-	)
+	u.constructActionTabs()
+	hs := container.NewHSplit(u.ActionTabs, u.constructMacroUi())
+	hs.SetOffset(0.3)
+	u.MainWindow.SetContent(hs)
+	u.MainWindow.SetMainMenu(u.constructMainMenu())
+	constructEditorWindow()
 	toggleMousePos()
 }
 
-func (u *Ui) SetWindow(w fyne.Window)    { u.win = w }
-func (u *Ui) SetCurrentProgram(s string) { u.p = programs.GetPrograms().GetProgram(s) }
+func (u *Ui) SetWindow(w fyne.Window) { u.MainWindow = w }
 
 func toggleMousePos() {
 	locX, locY := robotgo.Location()

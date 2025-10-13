@@ -1,12 +1,9 @@
 package ui
 
 import (
-	"Squire/internal/assets"
-	"Squire/internal/programs"
 	"Squire/internal/programs/actions"
 	"Squire/internal/programs/coordinates"
 	"Squire/internal/utils"
-	"slices"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -16,32 +13,30 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-type macroUi struct {
-	mtabs *macroTabs
-
-	mtoolbars struct {
-		tb1 *fyne.Container
-		tb2 *fyne.Container
+type MacroUi struct {
+	MTabs             *MacroTabs
+	MacroSelectButton *widget.Button
+	MacroToolbars     struct {
+		Toolbar1 *fyne.Container
+		Toolbar2 *fyne.Container
 	}
 }
 
-func (mui *macroUi) constructMacroUi() *fyne.Container {
+func (u *Ui) constructMacroUi() *fyne.Container {
 	boundLocXLabel = widget.NewLabelWithData(binding.NewString())
 	boundLocYLabel = widget.NewLabelWithData(binding.NewString())
 
-	mui.mtabs.constructTabs()
-
-	mui.mtoolbars.tb1 =
+	u.Mui.MacroToolbars.Toolbar1 =
 		container.NewGridWithColumns(2,
 			container.NewHBox(
-				mui.constructMacroToolbar(),
+				u.Mui.constructMacroToolbar(),
 				utils.MacroActiveIndicator(),
 				layout.NewSpacer(),
 				widget.NewLabel("Macro Name:"),
 			),
 			container.NewBorder(nil, nil, nil,
-				mui.constructMacroSelect(),
-				mui.mtabs.macroNameEntry,
+				u.Mui.MacroSelectButton,
+				u.Mui.MTabs.MacroNameEntry,
 			),
 		)
 
@@ -57,147 +52,85 @@ func (mui *macroUi) constructMacroUi() *fyne.Container {
 			),
 		)
 
-	mui.mtoolbars.tb2 =
+	u.Mui.MacroToolbars.Toolbar2 =
 		container.NewGridWithRows(2,
 			container.NewBorder(
 				nil,
 				nil,
 				nil,
 				mousePosition, //right
-				mui.mtabs.macroHotkeyEntry,
+				u.Mui.MTabs.MacroHotkeyEntry,
 			),
 			utils.MacroProgressBar(),
 		)
 
 	macroUi :=
 		container.NewBorder(
-			mui.mtoolbars.tb1,
-			mui.mtoolbars.tb2,
+			u.Mui.MacroToolbars.Toolbar1,
+			u.Mui.MacroToolbars.Toolbar2,
 			widget.NewSeparator(),
 			nil,
-			mui.mtabs,
+			u.Mui.MTabs,
 		)
 
 	return macroUi
 }
 
-func GetMacrosAsStringSlice() []string {
-	keys := make([]string, len(programs.CurrentProgram().Macros))
-
-	i := 0
-	for _, k := range programs.CurrentProgram().Macros {
-		keys[i] = k.Name
-		i++
-	}
-	return keys
-}
-
-func (mui *macroUi) constructMacroSelect() *widget.Button {
-	return widget.NewButtonWithIcon("",
-		theme.FolderOpenIcon(),
-		func() {
-			title := "Open Macro"
-			for _, w := range fyne.CurrentApp().Driver().AllWindows() {
-				if w.Title() == title {
-					w.RequestFocus()
-					return
-				}
-			}
-			w := fyne.CurrentApp().NewWindow(title)
-			w.SetIcon(assets.AppIcon)
-			mui.mtabs.boundMacroListWidget = widget.NewList(
-				func() int {
-					return len(programs.CurrentProgram().Macros)
-				},
-				func() fyne.CanvasObject {
-					return widget.NewLabel("template")
-				},
-				func(id widget.ListItemID, co fyne.CanvasObject) {
-					k := GetMacrosAsStringSlice()
-					label := co.(*widget.Label)
-					slices.Sort(k)
-					v := k[id]
-					label.SetText(v)
-					label.Importance = widget.MediumImportance
-					for _, d := range mui.mtabs.Items {
-						if d.Text == v {
-							label.Importance = widget.SuccessImportance
-						}
-					}
-					label.Refresh()
-				},
-			)
-			mui.mtabs.boundMacroListWidget.OnSelected =
-				func(id widget.ListItemID) {
-					k := GetMacrosAsStringSlice()
-					slices.Sort(k)
-					macroName := k[id]
-					mui.mtabs.addTab(macroName)
-					mui.mtabs.boundMacroListWidget.RefreshItem(id)
-					mui.mtabs.boundMacroListWidget.UnselectAll()
-				}
-			w.SetContent(
-				container.NewAdaptiveGrid(1,
-					mui.mtabs.boundMacroListWidget,
-				),
-			)
-			w.Resize(fyne.NewSize(300, 500))
-			w.Show()
-		},
-	)
-}
-
-func (mui *macroUi) constructMacroToolbar() *widget.Toolbar {
+func (mui *MacroUi) constructMacroToolbar() *widget.Toolbar {
 	tb :=
 		widget.NewToolbar(
 			widget.NewToolbarAction(theme.ContentAddIcon(), func() {
 				var action actions.ActionInterface
-				mt := mui.mtabs.selectedTab()
-				selectedNode := mt.Macro.Root.GetAction(selectedTreeItem)
+				mt := mui.MTabs.SelectedTab()
+				selectedNode := mt.Macro.Root.GetAction(mt.SelectedNode)
 				if selectedNode == nil {
 					selectedNode = mt.Macro.Root
 				}
-				switch ui.at.Selected().Text {
+				switch ui.ActionTabs.Selected().Text {
 				case "Wait":
-					time, _ := GetUi().at.boundWait.GetValue("Time")
+					time, _ := GetUi().ActionTabs.BoundWait.GetValue("Time")
 					action = actions.NewWait(time.(int))
 				case "Move":
-					name, _ := GetUi().at.boundPoint.GetValue("Name")
-					x, _ := GetUi().at.boundPoint.GetValue("X")
-					y, _ := GetUi().at.boundPoint.GetValue("Y")
+					name, _ := GetUi().ActionTabs.BoundPoint.GetValue("Name")
+					x, _ := GetUi().ActionTabs.BoundPoint.GetValue("X")
+					y, _ := GetUi().ActionTabs.BoundPoint.GetValue("Y")
 					action = actions.NewMove(coordinates.Point{Name: name.(string), X: x.(int), Y: y.(int)})
 				case "Click":
-					button, _ := GetUi().at.boundClick.GetValue("Button")
+					button, _ := GetUi().ActionTabs.BoundClick.GetValue("Button")
 					action = actions.NewClick(button.(string))
 				case "Key":
-					key, _ := GetUi().at.boundKey.GetValue("Key")
-					state, _ := GetUi().at.boundKey.GetValue("State")
+					key, _ := GetUi().ActionTabs.BoundKey.GetValue("Key")
+					state, _ := GetUi().ActionTabs.BoundKey.GetValue("State")
 					action = actions.NewKey(key.(string), state.(string))
 				case "Loop":
-					name, _ := GetUi().at.boundAdvancedAction.GetValue("Name")
-					count, _ := GetUi().at.boundLoop.GetValue("Count")
+					name, _ := GetUi().ActionTabs.BoundAdvancedAction.GetValue("Name")
+					count, _ := GetUi().ActionTabs.BoundLoop.GetValue("Count")
 					subactions := []actions.ActionInterface{}
 					action = actions.NewLoop(count.(int), name.(string), subactions)
 				case "Image":
-					name, _ := GetUi().at.boundAdvancedAction.GetValue("Name")
+					name, _ := GetUi().ActionTabs.BoundAdvancedAction.GetValue("Name")
 					subactions := []actions.ActionInterface{}
-					targets, _ := GetUi().at.boundImageSearch.GetValue("Targets")
-					searchArea, _ := GetUi().at.boundSearchArea.GetValue("Name")
+					targets, _ := GetUi().ActionTabs.BoundImageSearch.GetValue("Targets")
+					searchArea, _ := GetUi().ActionTabs.BoundSearchArea.GetValue("Name")
 					action = actions.NewImageSearch(
 						name.(string),
 						subactions,
 						targets.([]string),
-						programs.CurrentProgramAndScreenSizeCoordinates().GetSearchArea(searchArea.(string)))
+						searchArea.(coordinates.SearchArea),
+						// binders.GetProgram(config.DarkAndDarker).Coordinates[config.MainMonitorSizeString].GetSearchArea(searchArea.(string))
+					)
 				case "OCR":
-					name, _ := GetUi().at.boundAdvancedAction.GetValue("Name")
-					target, _ := GetUi().at.boundOcr.GetValue("Target")
+					name, _ := GetUi().ActionTabs.BoundAdvancedAction.GetValue("Name")
+					target, _ := GetUi().ActionTabs.BoundOcr.GetValue("Target")
 					subactions := []actions.ActionInterface{}
-					searchArea, _ := GetUi().at.boundSearchArea.GetValue("Name")
+					searchArea, _ := GetUi().ActionTabs.BoundSearchArea.GetValue("Name")
 					action = actions.NewOcr(
 						name.(string),
 						subactions,
 						target.(string),
-						programs.CurrentProgramAndScreenSizeCoordinates().GetSearchArea(searchArea.(string)))
+						searchArea.(coordinates.SearchArea),
+						// binders.GetProgram(config.DarkAndDarker).Coordinates[config.MainMonitorSizeString].GetSearchArea(searchArea.(string))
+					)
 				}
 
 				if selectedNode == nil {
@@ -214,24 +147,24 @@ func (mui *macroUi) constructMacroToolbar() *widget.Toolbar {
 			widget.NewToolbarSpacer(),
 			widget.NewToolbarSeparator(),
 			widget.NewToolbarAction(theme.RadioButtonIcon(), func() {
-				mt := mui.mtabs.selectedTab()
+				mt := mui.MTabs.SelectedTab()
 				mt.UnselectAll()
-				ui.at.Selected().Content.Refresh()
-				selectedTreeItem = ""
-				unbindAll()
+				ui.ActionTabs.Selected().Content.Refresh()
+				mt.SelectedNode = ""
+				// unbindAll()
 			}),
 			widget.NewToolbarAction(theme.MoveDownIcon(), func() {
-				mt := mui.mtabs.selectedTab()
-				mt.moveNode(selectedTreeItem, false)
+				mt := mui.MTabs.SelectedTab()
+				mt.moveNode(mt.SelectedNode, false)
 			}),
 			widget.NewToolbarAction(theme.MoveUpIcon(), func() {
-				mt := mui.mtabs.selectedTab()
-				mt.moveNode(selectedTreeItem, true)
+				mt := mui.MTabs.SelectedTab()
+				mt.moveNode(mt.SelectedNode, true)
 			}),
 			widget.NewToolbarSeparator(),
 			widget.NewToolbarSpacer(),
 			widget.NewToolbarAction(theme.MediaPlayIcon(), func() {
-				mt := mui.mtabs.selectedTab()
+				mt := mui.MTabs.SelectedTab()
 				mt.Macro.ExecuteActionTree()
 			}),
 		)
