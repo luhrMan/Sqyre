@@ -3,7 +3,6 @@ package encoding
 import (
 	"Squire/internal/programs/actions"
 	"Squire/internal/programs/coordinates"
-	"log"
 )
 
 type ISerializer interface {
@@ -58,7 +57,7 @@ func (s *serializer) CreateActionFromMap(rawMap map[string]any, parent actions.A
 			}
 		}
 	}
-	log.Printf("Unmarshalled action %s", action)
+	// log.Printf("Unmarshalled action %s", action)
 	return action, nil
 }
 

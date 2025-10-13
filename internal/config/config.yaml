@@ -1,209 +1,6 @@
 programs:
     dark and darker:
         name: dark and darker
-        macros:
-            - name: Get Gems
-              root:
-                count: 1
-                type: loop
-                name: root
-                subactions:
-                    - type: key
-                      key: shift
-                      state: down
-                    - targets:
-                        - Diamond
-                        - Emerald
-                        - Ruby
-                        - Sapphire
-                      searcharea:
-                        name: stash-screen-stash-inventory
-                        leftx: 1832
-                        topy: 261
-                        rightx: 2493
-                        bottomy: 1354
-                      type: imagesearch
-                      name: Get Gems
-                      subactions:
-                        - type: move
-                          point:
-                            name: custom
-                            x: -1
-                            "y": -1
-                        - type: click
-                          button: right
-                    - type: key
-                      key: shift
-                      state: up
-              globaldelay: 45
-              hotkey:
-                - ctrl
-                - shift
-                - "2"
-            - name: New Macro 1
-              root:
-                count: 1
-                type: loop
-                name: root
-                subactions:
-                    - count: 1
-                      type: loop
-                      name: kkjj
-                      subactions:
-                        - type: move
-                          point:
-                            name: test
-                            x: 0
-                            "y": 0
-                        - count: 1
-                          type: loop
-                          name: kkjj
-                          subactions:
-                            - type: wait
-                              time: 58
-                    - type: click
-                      button: left
-                    - type: key
-                      key: ctrl
-                      state: down
-                    - type: key
-                      key: ""
-                      state: ""
-                    - type: wait
-                      time: 505
-                    - type: wait
-                      time: 0
-                    - count: 1
-                      type: loop
-                      name: ""
-                    - targets: []
-                      searcharea:
-                        name: stash-screen-player-inventory
-                        leftx: 913
-                        topy: 830
-                        rightx: 1466
-                        bottomy: 1112
-                      type: imagesearch
-                      name: ""
-              globaldelay: 100
-              hotkey:
-                - ctrl
-                - shift
-                - "4"
-            - name: Testies
-              root:
-                count: 1
-                type: loop
-                name: root
-                subactions:
-                    - type: wait
-                      time: 250
-                    - type: wait
-                      time: 231
-                    - type: wait
-                      time: 231
-                    - type: wait
-                      time: 231
-                    - type: wait
-                      time: 231
-                    - type: wait
-                      time: 231
-                    - type: wait
-                      time: 231
-              globaldelay: 50
-              hotkey:
-                - ctrl
-                - shift
-                - "3"
-            - name: Move Gold Coins
-              root:
-                count: 1
-                type: loop
-                name: root
-                subactions:
-                    - type: key
-                      key: shift
-                      state: down
-                    - targets:
-                        - Gold Coin
-                        - Gold Coins
-                      searcharea:
-                        name: stash-screen-stash-inventory
-                        leftx: 1832
-                        topy: 261
-                        rightx: 2493
-                        bottomy: 1354
-                      type: imagesearch
-                      name: get gold coins
-                      subactions:
-                        - type: move
-                          point:
-                            name: custom
-                            x: -1
-                            "y": -1
-                        - type: click
-                          button: right
-                    - type: key
-                      key: shift
-                      state: up
-              globaldelay: 40
-              hotkey:
-                - ctrl
-                - shift
-                - "1"
-            - name: New macro 4
-              root:
-                count: 1
-                type: loop
-                name: root
-              globaldelay: 0
-              hotkey: []
-            - name: New macro 5
-              root:
-                count: 1
-                type: loop
-                name: root
-              globaldelay: 0
-              hotkey: []
-            - name: Get Drums
-              root:
-                count: 1
-                type: loop
-                name: root
-                subactions:
-                    - type: key
-                      key: shift
-                      state: down
-                    - targets:
-                        - Campfire
-                      searcharea:
-                        name: stash-screen-player-inventory
-                        leftx: 913
-                        topy: 830
-                        rightx: 1466
-                        bottomy: 1112
-                      type: imagesearch
-                      name: move campfire to stash
-                      subactions:
-                        - type: move
-                          point:
-                            name: custom
-                            x: 930
-                            "y": 872
-                        - type: click
-                          button: right
-                    - type: key
-                      key: shift
-                      state: up
-              globaldelay: 0
-              hotkey: []
-            - name: New macro 7
-              root:
-                count: 1
-                type: loop
-                name: root
-              globaldelay: 0
-              hotkey: []
         items:
             ancient scroll:
                 name: Ancient Scroll
@@ -1490,9 +1287,19 @@ programs:
                         bottomy: 10
     path of exile:
         name: path of exile
-        macros: []
         items: {}
         coordinates:
+            1920x1080:
+                points:
+                    test:
+                        name: test
+                        x: 10
+                        "y": 10
+                searchareas: {}
             2560x1440:
-                points: {}
+                points:
+                    test:
+                        name: test
+                        x: 10
+                        "y": 10
                 searchareas: {}
