@@ -11,11 +11,12 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-var selectedTreeItem = ""
+// var selectedTreeItem = ""
 
 type MacroTree struct {
 	widget.Tree
-	Macro *macro.Macro
+	Macro        *macro.Macro
+	SelectedNode string
 }
 
 func NewMacroTree(m *macro.Macro) *MacroTree {
@@ -87,37 +88,37 @@ func (mt *MacroTree) setTree() {
 			node.GetParent().RemoveSubAction(node)
 			mt.RefreshItem(uid)
 			if len(mt.Macro.Root.SubActions) == 0 {
-				selectedTreeItem = ""
+				mt.SelectedNode = ""
 			}
 		}
 		removeButton.Show()
 	}
-	mt.OnSelected = func(uid widget.TreeNodeID) {
-		selectedTreeItem = uid
-		switch node := mt.Macro.Root.GetAction(uid).(type) {
-		case *actions.Wait:
-			bindAction(node)
-			GetUi().at.SelectIndex(waittab)
-		case *actions.Move:
-			bindAction(node)
-			GetUi().at.SelectIndex(movetab)
-		case *actions.Click:
-			bindAction(node)
-			GetUi().at.SelectIndex(clicktab)
-		case *actions.Key:
-			bindAction(node)
-			GetUi().at.SelectIndex(keytab)
+	// mt.OnSelected = func(uid widget.TreeNodeID) {
+	// 	selectedTreeItem = uid
+	// 	switch node := mt.Macro.Root.GetAction(uid).(type) {
+	// 	case *actions.Wait:
+	// 		bindAction(node)
+	// 		GetUi().ActionTabs.SelectIndex(waittab)
+	// 	case *actions.Move:
+	// 		bindAction(node)
+	// 		GetUi().ActionTabs.SelectIndex(movetab)
+	// 	case *actions.Click:
+	// 		bindAction(node)
+	// 		GetUi().ActionTabs.SelectIndex(clicktab)
+	// 	case *actions.Key:
+	// 		bindAction(node)
+	// 		GetUi().ActionTabs.SelectIndex(keytab)
 
-		case *actions.Loop:
-			bindAction(node)
-			GetUi().at.SelectIndex(looptab)
-		case *actions.ImageSearch:
-			bindAction(node)
-			GetUi().at.boundTargetsGrid.Refresh()
-			GetUi().at.SelectIndex(imagesearchtab)
-		case *actions.Ocr:
-			bindAction(node)
-			GetUi().at.SelectIndex(ocrtab)
-		}
-	}
+	// 	case *actions.Loop:
+	// 		bindAction(node)
+	// 		GetUi().ActionTabs.SelectIndex(looptab)
+	// 	case *actions.ImageSearch:
+	// 		bindAction(node)
+	// 		GetUi().ActionTabs.BoundTargetsGrid.Refresh()
+	// 		GetUi().ActionTabs.SelectIndex(imagesearchtab)
+	// 	case *actions.Ocr:
+	// 		bindAction(node)
+	// 		GetUi().ActionTabs.SelectIndex(ocrtab)
+	// 	}
+	// }
 }

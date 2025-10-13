@@ -1,10 +1,10 @@
 package main
 
 import (
+	"Squire/binders"
 	"Squire/encoding"
 	"Squire/internal/assets"
 	"Squire/internal/config"
-	"Squire/internal/programs"
 	"Squire/internal/utils"
 	"Squire/ui"
 
@@ -22,6 +22,7 @@ func main() {
 	utils.FailsafeHotkey()
 
 	configInit()
+
 	a := app.NewWithID("Squire")
 	a.Settings().SetTheme(theme.DarkTheme())
 	os.Setenv("FYNE_SCALE", "1.25")
@@ -33,15 +34,15 @@ func main() {
 
 	systemTraySetup(w)
 	ui.InitializeUi(w)
-	programs.GetPrograms().InitPrograms()
-	ui.GetUi().SetCurrentProgram(config.DarkAndDarker)
 	ui.GetUi().ConstructUi()
+	BindUi()
+
 	w.RequestFocus()
 	w.ShowAndRun()
 
 	utils.CloseTessClient()
 
-	err := encoding.ViperSerializer.Encode(programs.GetPrograms())
+	err := encoding.ViperSerializer.Encode(binders.GetPrograms())
 	if err != nil {
 		log.Println(err)
 	}
@@ -55,6 +56,13 @@ func configInit() {
 	if err != nil {
 		log.Println(err)
 	}
+	binders.InitPrograms()
+}
+
+func BindUi() {
+	binders.SetMacroUi()
+	binders.SetPointsLists(ui.GetUi().ActionTabs.PointsAccordion)
+	binders.SetEditorTabs()
 }
 
 func systemTraySetup(w fyne.Window) {
