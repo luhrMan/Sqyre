@@ -49,6 +49,10 @@ func ConstructEditorTabs() {
 		name = "Name"
 		x    = "X"
 		y    = "Y"
+		x1   = "RightX"
+		y1   = "TopY"
+		x2   = "LeftX"
+		y2   = "BottomY"
 	)
 	ui.EditorTabs.PointsTab.BindableWidgets[name] = widget.NewEntryWithData(binding.NewString())
 	ui.EditorTabs.PointsTab.BindableWidgets[x] = widget.NewEntryWithData(binding.NewString())
@@ -62,11 +66,21 @@ func ConstructEditorTabs() {
 			widget.NewFormItem(y, ui.EditorTabs.PointsTab.BindableWidgets[y]),
 		)),
 	)
+
+	ui.EditorTabs.SearchAreasTab.BindableWidgets[name] = widget.NewEntryWithData(binding.NewString())
+	ui.EditorTabs.SearchAreasTab.BindableWidgets[x1] = widget.NewEntryWithData(binding.NewString())
+	ui.EditorTabs.SearchAreasTab.BindableWidgets[y1] = widget.NewEntryWithData(binding.NewString())
+	ui.EditorTabs.SearchAreasTab.BindableWidgets[x2] = widget.NewEntryWithData(binding.NewString())
+	ui.EditorTabs.SearchAreasTab.BindableWidgets[y2] = widget.NewEntryWithData(binding.NewString())
 	ui.EditorUi.EditorTabs.SearchAreasTab.TabItem = NewEditorTab(
 		"Search Areas",
 		container.NewBorder(nil, nil, nil, nil, widget.NewAccordion()),
 		container.NewBorder(nil, nil, nil, nil, widget.NewForm(
-			widget.NewFormItem("", widget.NewLabel("")),
+			widget.NewFormItem(name, ui.EditorTabs.SearchAreasTab.BindableWidgets[name]),
+			widget.NewFormItem(x1, ui.EditorTabs.SearchAreasTab.BindableWidgets[x1]),
+			widget.NewFormItem(y1, ui.EditorTabs.SearchAreasTab.BindableWidgets[y1]),
+			widget.NewFormItem(x2, ui.EditorTabs.SearchAreasTab.BindableWidgets[x2]),
+			widget.NewFormItem(y2, ui.EditorTabs.SearchAreasTab.BindableWidgets[y2]),
 		)),
 	)
 

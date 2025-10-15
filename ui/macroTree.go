@@ -93,32 +93,4 @@ func (mt *MacroTree) setTree() {
 		}
 		removeButton.Show()
 	}
-	// mt.OnSelected = func(uid widget.TreeNodeID) {
-	// 	selectedTreeItem = uid
-	// 	switch node := mt.Macro.Root.GetAction(uid).(type) {
-	// 	case *actions.Wait:
-	// 		bindAction(node)
-	// 		GetUi().ActionTabs.SelectIndex(waittab)
-	// 	case *actions.Move:
-	// 		bindAction(node)
-	// 		GetUi().ActionTabs.SelectIndex(movetab)
-	// 	case *actions.Click:
-	// 		bindAction(node)
-	// 		GetUi().ActionTabs.SelectIndex(clicktab)
-	// 	case *actions.Key:
-	// 		bindAction(node)
-	// 		GetUi().ActionTabs.SelectIndex(keytab)
-
-	// 	case *actions.Loop:
-	// 		bindAction(node)
-	// 		GetUi().ActionTabs.SelectIndex(looptab)
-	// 	case *actions.ImageSearch:
-	// 		bindAction(node)
-	// 		GetUi().ActionTabs.BoundTargetsGrid.Refresh()
-	// 		GetUi().ActionTabs.SelectIndex(imagesearchtab)
-	// 	case *actions.Ocr:
-	// 		bindAction(node)
-	// 		GetUi().ActionTabs.SelectIndex(ocrtab)
-	// 	}
-	// }
 }

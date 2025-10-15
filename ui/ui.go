@@ -50,11 +50,11 @@ func InitializeUi(w fyne.Window) *Ui {
 			MTabs:             NewMacroTabs(),
 			MacroSelectButton: &widget.Button{},
 			MacroToolbars: struct {
-				Toolbar1 *fyne.Container
-				Toolbar2 *fyne.Container
+				TopToolbar    *fyne.Container
+				BottomToolbar *fyne.Container
 			}{
-				Toolbar1: &fyne.Container{},
-				Toolbar2: &fyne.Container{},
+				TopToolbar:    &fyne.Container{},
+				BottomToolbar: &fyne.Container{},
 			},
 		},
 		ActionTabs: newActionTabs(),

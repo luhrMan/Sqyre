@@ -1303,3 +1303,27 @@ programs:
                         x: 10
                         "y": 10
                 searchareas: {}
+macros:
+    get gems:
+        name: Get Gems
+        root:
+            name: root
+            count: 1
+            type: loop
+            subactions: {}
+        globaldelay: 45
+        hotkey:
+        - ctrl
+        - shift
+        - "2"
+#   - name: Get Gems
+#     root:
+#         count: 1
+#         type: loop
+#         name: root
+#         subactions: {}
+#     globaldelay: 45
+#     hotkey:
+#     - ctrl
+#     - shift
+#     - "2"

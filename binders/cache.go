@@ -7,7 +7,9 @@ import (
 )
 
 var (
-	programs map[string]*model.Program
-	once     sync.Once
-	macros   []*macro.Macro
+	programs      map[string]*model.Program
+	boundPrograms map[string]*ProgramBinding
+	boundMacros   map[string]*MacroBinding
+	once          sync.Once
+	macros        map[string]*macro.Macro
 )

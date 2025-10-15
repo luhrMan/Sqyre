@@ -9,7 +9,7 @@ import (
 )
 
 func SetEditorTabs() {
-	SetPointsLists(
+	SetAccordionPointsLists(
 		ui.GetUi().EditorUi.EditorTabs.
 			PointsTab.Content.(*container.Split).Leading.(*fyne.Container).Objects[0].(*widget.Accordion),
 	)

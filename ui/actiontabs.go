@@ -1,25 +1,31 @@
 package ui
 
 import (
-	"Squire/internal/config"
+	"Squire/internal/assets"
 	"Squire/internal/programs/actions"
 	"Squire/internal/programs/coordinates"
+	"Squire/internal/programs/items"
 	"Squire/ui/custom_widgets"
+	"image/color"
+	"slices"
 
+	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/layout"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
 
 const (
-	waittab = iota
-	movetab
-	clicktab
-	keytab
-	looptab
-	imagesearchtab
-	ocrtab
+	WaitTab = iota
+	MoveTab
+	ClickTab
+	KeyTab
+	LoopTab
+	ImageSearchTab
+	OcrTab
 )
 
 type ActionTabs struct {
@@ -42,10 +48,10 @@ type ActionTabs struct {
 	BoundTimeSlider *widget.Slider
 	BoundTimeEntry  *widget.Entry
 
-	BoundMoveXSlider *widget.Slider
-	BoundMoveYSlider *widget.Slider
-	BoundMoveXEntry  *widget.Entry
-	BoundMoveYEntry  *widget.Entry
+	// BoundMoveXSlider *widget.Slider
+	// BoundMoveYSlider *widget.Slider
+	// BoundMoveXEntry  *widget.Entry
+	// BoundMoveYEntry  *widget.Entry
 	// boundMovePointSearchBar  *widget.Entry
 	// boundMovePointStringList binding.ExternalStringList
 	PointsAccordion *widget.Accordion
@@ -61,12 +67,14 @@ type ActionTabs struct {
 	BoundCountSlider   *widget.Slider
 	BoundCountLabel    *widget.Label
 
-	BoundTargetsGridSearchBar            *widget.Entry
-	BoundTargetsGrid                     *widget.GridWrap
-	BoundImageSearchNameEntry            *widget.Entry
-	BoundImageSearchAreaSearchBar        *widget.Entry
-	BoundImageSearchSearchAreaStringList binding.ExternalStringList
-	BoundImageSearchAreaList             *widget.List
+	BoundTargetsGridSearchBar *widget.Entry
+	BoundTargetsGrid          *widget.GridWrap
+	BoundImageSearchNameEntry *widget.Entry
+	// BoundImageSearchAreaSearchBar        *widget.Entry
+	// BoundImageSearchSearchAreaStringList binding.ExternalStringList
+	// BoundImageSearchAreaList             *widget.List
+	SAAccordion *widget.Accordion
+
 	// boundXSplitSlider          *widget.Slider
 	// boundXSplitEntry           *widget.Entry
 	// boundOCRTarget     binding.String
@@ -77,33 +85,30 @@ type ActionTabs struct {
 }
 
 func newActionTabs() *ActionTabs {
-	bp := binding.BindStruct("")
 	return &ActionTabs{
 		AppTabs: &container.AppTabs{},
 
-		BoundBaseAction:     binding.BindStruct(""),
-		BoundAdvancedAction: binding.BindStruct(""),
+		BoundBaseAction:     binding.BindStruct(actions.BaseAction{}),
+		BoundAdvancedAction: binding.BindStruct(actions.AdvancedAction{}),
 
-		BoundWait:  binding.BindStruct(""),
-		BoundKey:   binding.BindStruct(""),
-		BoundMove:  binding.BindStruct(""),
-		BoundClick: binding.BindStruct(""),
+		BoundWait:  binding.BindStruct(actions.NewWait(0)),
+		BoundKey:   binding.BindStruct(actions.NewKey("ctrl", "down")),
+		BoundMove:  binding.BindStruct(actions.NewMove(coordinates.Point{"blank", 0, 0})),
+		BoundClick: binding.BindStruct(actions.NewClick("left")),
 
-		BoundLoop:        binding.BindStruct(""),
-		BoundImageSearch: binding.BindStruct(""),
-		BoundOcr:         binding.BindStruct(""),
+		BoundLoop:        binding.BindStruct(actions.NewLoop(1, "blank", []actions.ActionInterface{})),
+		BoundImageSearch: binding.BindStruct(actions.NewImageSearch("blank", []actions.ActionInterface{}, []string{}, coordinates.SearchArea{})),
+		BoundOcr:         binding.BindStruct(actions.NewOcr("blank", []actions.ActionInterface{}, "blank", coordinates.SearchArea{})),
 
-		BoundSearchArea: binding.BindStruct(""),
-		BoundPoint:      bp,
+		BoundSearchArea: binding.BindStruct(coordinates.SearchArea{}),
+		BoundPoint:      binding.BindStruct(coordinates.Point{Name: "", X: 0, Y: 0}),
 
-		BoundTimeSlider:  widget.NewSliderWithData(0.0, 1000.0, binding.NewFloat()),
-		BoundTimeEntry:   &widget.Entry{},
-		BoundMoveXSlider: widget.NewSliderWithData(-1.0, float64(config.MonitorWidth), binding.NewFloat()),
-		BoundMoveYSlider: widget.NewSliderWithData(-1.0, float64(config.MonitorHeight), binding.NewFloat()),
-		BoundMoveXEntry:  widget.NewEntryWithData(binding.NewString()),
-		BoundMoveYEntry:  widget.NewEntryWithData(binding.NewString()),
-		// boundPointList:   &widget.List{},
-		// PointTree:         &widget.Tree{},
+		BoundTimeSlider: widget.NewSliderWithData(0.0, 1000.0, binding.NewFloat()),
+		BoundTimeEntry:  &widget.Entry{},
+		// BoundMoveXSlider:  widget.NewSliderWithData(-1.0, float64(config.MonitorWidth), binding.NewFloat()),
+		// BoundMoveYSlider:  widget.NewSliderWithData(-1.0, float64(config.MonitorHeight), binding.NewFloat()),
+		// BoundMoveXEntry:   widget.NewEntryWithData(binding.NewString()),
+		// BoundMoveYEntry:   widget.NewEntryWithData(binding.NewString()),
 		PointsAccordion:   widget.NewAccordion(),
 		BoundButtonToggle: custom_widgets.NewToggleWithData(binding.NewBool()),
 		BoundKeySelect:    widget.NewSelectWithData([]string{"ctrl", "alt", "shift"}, binding.NewString()),
@@ -113,13 +118,15 @@ func newActionTabs() *ActionTabs {
 		BoundCountSlider:   widget.NewSliderWithData(1, 10, binding.IntToFloat(binding.NewInt())),
 		BoundCountLabel:    widget.NewLabelWithData(binding.NewString()),
 
-		BoundTargetsGridSearchBar:            &widget.Entry{},
-		BoundTargetsGrid:                     &widget.GridWrap{},
-		BoundImageSearchNameEntry:            widget.NewEntryWithData(binding.NewString()),
-		BoundImageSearchAreaList:             &widget.List{},
-		BoundImageSearchSearchAreaStringList: binding.BindStringList(&[]string{}),
-		boundOCRTargetEntry:                  &widget.Entry{},
-		boundOCRSearchAreaSelect:             &widget.Select{},
+		BoundTargetsGridSearchBar: &widget.Entry{},
+		BoundTargetsGrid:          &widget.GridWrap{},
+		SAAccordion:               widget.NewAccordion(),
+
+		BoundImageSearchNameEntry: widget.NewEntryWithData(binding.NewString()),
+		// BoundImageSearchAreaList:             &widget.List{},
+		// BoundImageSearchSearchAreaStringList: binding.BindStringList(&[]string{}),
+		boundOCRTargetEntry:      &widget.Entry{},
+		boundOCRSearchAreaSelect: &widget.Select{},
 	}
 }
 
@@ -132,118 +139,9 @@ func (u *Ui) constructActionTabs() {
 	u.ActionTabs.constructClickTab()
 	u.ActionTabs.constructKeyTab()
 	u.ActionTabs.constructLoopTab()
-	// at.constructImageSearchTab()
-	// at.constructOcrTab()
+	u.ActionTabs.constructImageSearchTab()
+	u.ActionTabs.constructOcrTab()
 }
-
-// func unbindAll() {
-// 	bindAction(&actions.Wait{})
-// 	bindAction(&actions.Move{})
-// 	bindAction(&actions.Click{})
-// 	bindAction(&actions.Key{})
-
-// 	bindAction(&actions.Loop{AdvancedAction: &actions.AdvancedAction{}})
-// 	bindAction(&actions.ImageSearch{AdvancedAction: &actions.AdvancedAction{}, SearchArea: coordinates.SearchArea{}})
-// 	bindAction(&actions.Ocr{AdvancedAction: &actions.AdvancedAction{}, SearchArea: coordinates.SearchArea{}})
-// }
-
-// func bindAction(a actions.ActionInterface) {
-// 	dl := binding.NewDataListener(func() {
-// 		mt := ui.Mui.MTabs.SelectedTab()
-// 		fyne.Do(func() { mt.RefreshItem(selectedTreeItem) })
-// 	})
-// 	ats := GetUi().ActionTabs
-// 	switch node := a.(type) {
-// 	case *actions.Wait:
-// 		ats.boundWait = binding.BindStruct(node)
-// 		t, _ := ats.boundWait.GetItem("Time")
-
-// 		ats.boundTimeEntry.Bind(binding.IntToString(t.(binding.Int)))
-// 		ats.boundTimeSlider.Bind(binding.IntToFloat(t.(binding.Int)))
-
-// 		t.AddListener(dl)
-// 	case *actions.Move:
-// 		ats.BoundMove = binding.BindStruct(node)
-// 		ats.BoundPoint = binding.BindStruct(&node.Point)
-// 		x, _ := ats.BoundPoint.GetItem("X")
-// 		y, _ := ats.BoundPoint.GetItem("Y")
-
-// 		// ats.BoundMoveXSlider.Unbind()
-// 		ats.BoundMoveXSlider.Bind(binding.IntToFloat(x.(binding.Int)))
-// 		ats.BoundMoveYSlider.Bind(binding.IntToFloat(y.(binding.Int)))
-// 		ats.BoundMoveXEntry.Bind(binding.IntToString(x.(binding.Int)))
-// 		ats.BoundMoveYEntry.Bind(binding.IntToString(y.(binding.Int)))
-// 		// ats.boundSpotSelect.Bind())
-
-// 		x.AddListener(dl)
-// 		y.AddListener(dl)
-// 	case *actions.Click:
-// 		ats.boundClick = binding.BindStruct(node)
-// 		b, _ := ats.boundClick.GetItem("Button")
-
-// 		ats.boundButtonToggle.Bind(custom_widgets.CustomStringToBool(b.(binding.String), "click", dl))
-
-// 		b.AddListener(dl)
-// 	case *actions.Key:
-// 		ats.boundKey = binding.BindStruct(node)
-// 		k, _ := ats.boundKey.GetItem("Key")
-// 		s, _ := ats.boundKey.GetItem("State")
-
-// 		ats.boundKeySelect.Bind(k.(binding.String))
-// 		ats.boundStateToggle.Bind(custom_widgets.CustomStringToBool(s.(binding.String), "key", dl))
-
-// 		k.AddListener(dl)
-// 		s.AddListener(dl)
-
-// 	case *actions.Loop:
-// 		ats.boundLoop = binding.BindStruct(node)
-// 		ats.boundAdvancedAction = binding.BindStruct(node.AdvancedAction)
-// 		c, _ := ats.boundLoop.GetItem("Count")
-// 		n, _ := ats.boundAdvancedAction.GetItem("Name")
-
-// 		ats.boundLoopNameEntry.Bind(n.(binding.String))
-// 		ats.boundCountLabel.Bind(binding.IntToString(c.(binding.Int)))
-// 		ats.boundCountSlider.Bind(binding.IntToFloat(c.(binding.Int)))
-
-// 		c.AddListener(dl)
-// 		n.AddListener(dl)
-// 	case *actions.ImageSearch:
-// 		ats.boundImageSearch = binding.BindStruct(node)
-// 		ats.boundAdvancedAction = binding.BindStruct(node.AdvancedAction)
-// 		ats.boundSearchArea = binding.BindStruct(&node.SearchArea)
-
-// 		n, _ := ats.boundAdvancedAction.GetItem("Name")
-// 		sa, _ := ats.boundSearchArea.GetItem("Name")
-// 		t, _ := ats.boundImageSearch.GetItem("Targets")
-
-// 		ats.boundImageSearchNameEntry.Bind(n.(binding.String))
-// 		// ats.boundImageSearchAreaList.Select(slices.Index(programs.CurrentProgramAndScreenSizeCoordinates().GetSearchAreasAsStringSlice(), node.SearchArea.Name))
-// 		v, _ := ats.boundImageSearchSearchAreaStringList.Get()
-// 		for i, s := range v {
-// 			if s == node.SearchArea.Name {
-// 				ats.boundImageSearchAreaList.Select(i)
-// 			}
-// 		}
-// 		// ats.boundImageSearchAreaSelect.Bind(sa.(binding.String))
-// 		ats.boundImageSearch.SetValue("Targets", slices.Clone(node.Targets))
-
-// 		t.AddListener(dl)
-// 		n.AddListener(dl)
-// 		sa.AddListener(dl)
-// 	case *actions.Ocr:
-// 		ats.boundOcr = binding.BindStruct(node)
-// 		ats.boundAdvancedAction = binding.BindStruct(node.AdvancedAction)
-// 		ats.boundSearchArea = binding.BindStruct(&node.SearchArea)
-
-// 		t, _ := ats.boundOcr.GetItem("Target")
-// 		n, _ := ats.boundAdvancedAction.GetItem("Name")
-// 		sa, _ := ats.boundSearchArea.GetItem("Name")
-
-// 		t.AddListener(dl)
-// 		n.AddListener(dl)
-// 		sa.AddListener(dl)
-// 	}
-// }
 
 func (at *ActionTabs) constructWaitTab() {
 	gdfi := widget.NewFormItem("delay", GetUi().Mui.MTabs.BoundGlobalDelayEntry)
@@ -343,191 +241,191 @@ func (at *ActionTabs) constructLoopTab() {
 	at.Append(container.NewTabItem("Loop", loopSettings))
 }
 
-// func (at *actionTabs) constructImageSearchTab() {
-// 	at.boundImageSearchNameEntry.OnChanged = func(s string) { at.boundAdvancedAction.SetValue("Name", s) }
+func (at *ActionTabs) constructImageSearchTab() {
+	// at.BoundImageSearchNameEntry.OnChanged = func(s string) { at.BoundAdvancedAction.SetValue("Name", s) }
 
-// 	var saSearchList = slices.Clone(programs.CurrentProgramAndScreenSizeCoordinates().GetSearchAreasAsStringSlice())
-// 	at.boundImageSearchSearchAreaStringList = binding.BindStringList(&saSearchList)
-// 	at.boundImageSearchAreaSearchBar = &widget.Entry{
-// 		PlaceHolder: "Search here",
-// 		OnChanged: func(s string) {
-// 			defaultList := programs.CurrentProgramAndScreenSizeCoordinates().GetSearchAreasAsStringSlice()
-// 			defer at.boundImageSearchSearchAreaStringList.Reload()
-// 			defer at.boundImageSearchAreaList.ScrollToTop()
-// 			defer at.boundImageSearchAreaList.Refresh()
+	// var saSearchList = slices.Clone(programs.CurrentProgramAndScreenSizeCoordinates().GetSearchAreasAsStringSlice())
+	// at.boundImageSearchSearchAreaStringList = binding.BindStringList(&saSearchList)
+	// at.boundImageSearchAreaSearchBar = &widget.Entry{
+	// 	PlaceHolder: "Search here",
+	// 	OnChanged: func(s string) {
+	// 		defaultList := programs.CurrentProgramAndScreenSizeCoordinates().GetSearchAreasAsStringSlice()
+	// 		defer at.boundImageSearchSearchAreaStringList.Reload()
+	// 		defer at.boundImageSearchAreaList.ScrollToTop()
+	// 		defer at.boundImageSearchAreaList.Refresh()
 
-// 			if s == "" {
-// 				saSearchList = defaultList
-// 				return
-// 			}
-// 			saSearchList = []string{}
-// 			for _, i := range defaultList {
-// 				if fuzzy.MatchFold(s, i) {
-// 					saSearchList = append(saSearchList, i)
-// 				}
-// 			}
-// 		},
-// 	}
+	// 		if s == "" {
+	// 			saSearchList = defaultList
+	// 			return
+	// 		}
+	// 		saSearchList = []string{}
+	// 		for _, i := range defaultList {
+	// 			if fuzzy.MatchFold(s, i) {
+	// 				saSearchList = append(saSearchList, i)
+	// 			}
+	// 		}
+	// 	},
+	// }
 
-// 	at.boundImageSearchAreaList = widget.NewListWithData(
-// 		at.boundImageSearchSearchAreaStringList,
-// 		func() fyne.CanvasObject { return widget.NewLabel("template") },
-// 		func(di binding.DataItem, co fyne.CanvasObject) {
-// 			bsa := di.(binding.String)
-// 			label := co.(*widget.Label)
-// 			v, _ := bsa.Get()
-// 			sa := programs.CurrentProgramAndScreenSizeCoordinates().GetSearchArea(v)
-// 			label.SetText(fmt.Sprintf("%v: %d, %d | %d, %d", sa.Name, sa.LeftX, sa.TopY, sa.RightX, sa.BottomY))
-// 			label.Refresh()
-// 		},
-// 	)
-// 	at.boundImageSearchAreaList.OnSelected = func(lii widget.ListItemID) {
-// 		v, _ := at.boundImageSearchSearchAreaStringList.GetValue(lii)
-// 		at.boundImageSearch.SetValue("SearchArea", programs.CurrentProgramAndScreenSizeCoordinates().SearchAreas[v])
-// 		at.boundSearchArea.SetValue("Name", v)
-// 		at.boundImageSearch.Reload()
-// 		GetUi().mui.mtabs.selectedTab().Refresh()
-// 	}
+	// at.BoundImageSearchAreaList = widget.NewListWithData(
+	// 	at.BoundImageSearchSearchAreaStringList,
+	// 	func() fyne.CanvasObject { return widget.NewLabel("template") },
+	// 	func(di binding.DataItem, co fyne.CanvasObject) {
+	// 		bsa := di.(binding.String)
+	// 		label := co.(*widget.Label)
+	// 		v, _ := bsa.Get()
+	// 		sa := programs.CurrentProgramAndScreenSizeCoordinates().GetSearchArea(v)
+	// 		label.SetText(fmt.Sprintf("%v: %d, %d | %d, %d", sa.Name, sa.LeftX, sa.TopY, sa.RightX, sa.BottomY))
+	// 		label.Refresh()
+	// 	},
+	// )
+	// at.BoundImageSearchAreaList.OnSelected = func(lii widget.ListItemID) {
+	// 	v, _ := at.BoundImageSearchSearchAreaStringList.GetValue(lii)
+	// 	at.BoundImageSearch.SetValue("SearchArea", programs.CurrentProgramAndScreenSizeCoordinates().SearchAreas[v])
+	// 	at.BoundSearchArea.SetValue("Name", v)
+	// 	at.BoundImageSearch.Reload()
+	// 	GetUi().Mui.MTabs.SelectedTab().Refresh()
+	// }
 
-// 	var (
-// 		icons       = *assets.BytesToFyneIcons()
-// 		searchList  = slices.Clone(items.AllItems("category"))
-// 		bSearchList binding.ExternalStringList
-// 	)
-// 	bSearchList = binding.BindStringList(&searchList)
+	var (
+		icons       = *assets.BytesToFyneIcons()
+		searchList  = slices.Clone(items.AllItems("category"))
+		bSearchList binding.ExternalStringList
+	)
+	bSearchList = binding.BindStringList(&searchList)
 
-// 	at.boundTargetsGridSearchBar = &widget.Entry{
-// 		PlaceHolder: "Search here",
-// 		ActionItem: widget.NewButtonWithIcon("", theme.RadioButtonIcon(), func() {
-// 			searchList = slices.Clone(items.AllItems("category"))
-// 			at.boundImageSearch.SetValue("Targets", []string{})
-// 			at.boundTargetsGridSearchBar.Text = ""
-// 			at.boundTargetsGridSearchBar.Refresh()
-// 			at.boundTargetsGrid.Refresh()
-// 			bSearchList.Reload()
-// 		}),
-// 		OnChanged: func(s string) {
-// 			defer bSearchList.Reload()
-// 			defer at.boundTargetsGrid.ScrollToTop()
-// 			defer at.boundTargetsGrid.Refresh()
+	// at.boundTargetsGridSearchBar = &widget.Entry{
+	// 	PlaceHolder: "Search here",
+	// 	ActionItem: widget.NewButtonWithIcon("", theme.RadioButtonIcon(), func() {
+	// 		searchList = slices.Clone(items.AllItems("category"))
+	// 		at.boundImageSearch.SetValue("Targets", []string{})
+	// 		at.boundTargetsGridSearchBar.Text = ""
+	// 		at.boundTargetsGridSearchBar.Refresh()
+	// 		at.boundTargetsGrid.Refresh()
+	// 		bSearchList.Reload()
+	// 	}),
+	// 	OnChanged: func(s string) {
+	// 		defer bSearchList.Reload()
+	// 		defer at.boundTargetsGrid.ScrollToTop()
+	// 		defer at.boundTargetsGrid.Refresh()
 
-// 			if s == "" {
-// 				searchList = slices.Clone(items.AllItems("category"))
-// 				return
-// 			}
-// 			searchList = []string{}
-// 			for _, i := range items.AllItems("category") {
-// 				if fuzzy.MatchFold(s, i) || fuzzy.MatchFold(s, items.ItemsMap()[strings.ToLower(i)].Category) {
-// 					searchList = append(searchList, i)
-// 				}
-// 			}
-// 		},
-// 	}
+	// 		if s == "" {
+	// 			searchList = slices.Clone(items.AllItems("category"))
+	// 			return
+	// 		}
+	// 		searchList = []string{}
+	// 		for _, i := range items.AllItems("category") {
+	// 			if fuzzy.MatchFold(s, i) || fuzzy.MatchFold(s, items.ItemsMap()[strings.ToLower(i)].Category) {
+	// 				searchList = append(searchList, i)
+	// 			}
+	// 		}
+	// 	},
+	// }
 
-// 	at.boundTargetsGrid = widget.NewGridWrapWithData(
-// 		bSearchList,
-// 		func() fyne.CanvasObject {
-// 			rect := canvas.NewRectangle(color.RGBA{})
-// 			rect.SetMinSize(fyne.NewSquareSize(45))
-// 			rect.CornerRadius = 5
+	at.BoundTargetsGrid = widget.NewGridWrapWithData(
+		bSearchList,
+		func() fyne.CanvasObject {
+			rect := canvas.NewRectangle(color.RGBA{})
+			rect.SetMinSize(fyne.NewSquareSize(45))
+			rect.CornerRadius = 5
 
-// 			icon := canvas.NewImageFromResource(theme.BrokenImageIcon())
-// 			icon.SetMinSize(fyne.NewSquareSize(40))
-// 			icon.FillMode = canvas.ImageFillOriginal
+			icon := canvas.NewImageFromResource(theme.BrokenImageIcon())
+			icon.SetMinSize(fyne.NewSquareSize(40))
+			icon.FillMode = canvas.ImageFillOriginal
 
-// 			stack := container.NewStack(rect, container.NewPadded(icon))
-// 			return stack
-// 		},
-// 		func(di binding.DataItem, o fyne.CanvasObject) {
-// 			item := di.(binding.String)
-// 			name, _ := item.Get()
+			stack := container.NewStack(rect, container.NewPadded(icon))
+			return stack
+		},
+		func(di binding.DataItem, o fyne.CanvasObject) {
+			item := di.(binding.String)
+			name, _ := item.Get()
 
-// 			stack := o.(*fyne.Container)
-// 			rect := stack.Objects[0].(*canvas.Rectangle)
-// 			icon := stack.Objects[1].(*fyne.Container).Objects[0].(*canvas.Image)
+			stack := o.(*fyne.Container)
+			rect := stack.Objects[0].(*canvas.Rectangle)
+			icon := stack.Objects[1].(*fyne.Container).Objects[0].(*canvas.Image)
 
-// 			ist, _ := at.boundImageSearch.GetValue("Targets")
-// 			t := ist.([]string)
+			ist, _ := at.BoundImageSearch.GetValue("Targets")
+			t := ist.([]string)
 
-// 			if slices.Contains(t, name) {
-// 				rect.FillColor = color.RGBA{R: 0, G: 128, B: 0, A: 128}
-// 			} else {
-// 				rect.FillColor = color.RGBA{}
-// 			}
+			if slices.Contains(t, name) {
+				rect.FillColor = color.RGBA{R: 0, G: 128, B: 0, A: 128}
+			} else {
+				rect.FillColor = color.RGBA{}
+			}
 
-// 			path := name + ".png"
-// 			if icons[path] != nil {
-// 				icon.Resource = icons[path]
-// 			} else {
-// 				icon.Resource = theme.BrokenImageIcon()
-// 			}
-// 			o.Refresh()
-// 		},
-// 	)
-// 	at.boundTargetsGrid.OnSelected = func(id widget.GridWrapItemID) {
-// 		defer at.boundTargetsGrid.UnselectAll()
-// 		defer at.boundTargetsGrid.RefreshItem(id)
-// 		ist, _ := at.boundImageSearch.GetValue("Targets")
-// 		t := ist.([]string)
+			path := name + ".png"
+			if icons[path] != nil {
+				icon.Resource = icons[path]
+			} else {
+				icon.Resource = theme.BrokenImageIcon()
+			}
+			o.Refresh()
+		},
+	)
+	at.BoundTargetsGrid.OnSelected = func(id widget.GridWrapItemID) {
+		defer at.BoundTargetsGrid.UnselectAll()
+		defer at.BoundTargetsGrid.RefreshItem(id)
+		ist, _ := at.BoundImageSearch.GetValue("Targets")
+		t := ist.([]string)
 
-// 		item := searchList[id]
-// 		if !slices.Contains(t, item) {
-// 			t = append(t, item)
-// 		} else {
-// 			i := slices.Index(t, item)
-// 			if i != -1 {
-// 				t = slices.Delete(t, i, i+1)
-// 			}
-// 		}
-// 		at.boundImageSearch.SetValue("Targets", t)
-// 	}
+		item := searchList[id]
+		if !slices.Contains(t, item) {
+			t = append(t, item)
+		} else {
+			i := slices.Index(t, item)
+			if i != -1 {
+				t = slices.Delete(t, i, i+1)
+			}
+		}
+		at.BoundImageSearch.SetValue("Targets", t)
+	}
 
-// 	// at.boundXSplit = binding.BindInt(&xSplit)
-// 	// at.boundYSplit = binding.BindInt(&ySplit)
+	// at.boundXSplit = binding.BindInt(&xSplit)
+	// at.boundYSplit = binding.BindInt(&ySplit)
 
-// 	// at.boundXSplitSlider = widget.NewSliderWithData(0, 50, binding.IntToFloat(at.boundXSplit))
-// 	// at.boundXSplitEntry = widget.NewEntryWithData(binding.IntToString(at.boundXSplit))
-// 	// safi := widget.NewFormItem("Search Area:", widget.NewAccordion(widget.NewAccordionItem("Search Areas", at.boundImageSearchAreaList)))
-// 	// safi.HintText = "rightX, topY, leftX, bottomY"
-// 	imageSearchSettings :=
-// 		container.NewScroll(
-// 			container.NewBorder(
-// 				widget.NewForm(
-// 					widget.NewFormItem("Name:", at.boundImageSearchNameEntry),
-// 				),
-// 				nil, nil, nil,
-// 				widget.NewAccordion(
-// 					widget.NewAccordionItem("Search Areas",
-// 						container.NewBorder(
-// 							at.boundImageSearchAreaSearchBar, nil, nil, nil,
-// 							at.boundImageSearchAreaList,
-// 						),
-// 					),
-// 					widget.NewAccordionItem("Items",
-// 						container.NewBorder(
-// 							at.boundTargetsGridSearchBar, nil, nil, nil,
-// 							at.boundTargetsGrid,
-// 						),
-// 					),
-// 				),
-// 			),
-// 		)
-// 	at.Append(container.NewTabItem("Image", imageSearchSettings))
+	// at.boundXSplitSlider = widget.NewSliderWithData(0, 50, binding.IntToFloat(at.boundXSplit))
+	// at.boundXSplitEntry = widget.NewEntryWithData(binding.IntToString(at.boundXSplit))
+	// safi := widget.NewFormItem("Search Area:", widget.NewAccordion(widget.NewAccordionItem("Search Areas", at.boundImageSearchAreaList)))
+	// safi.HintText = "rightX, topY, leftX, bottomY"
+	imageSearchSettings :=
+		container.NewScroll(
+			container.NewBorder(
+				widget.NewForm(
+					widget.NewFormItem("Name:", at.BoundImageSearchNameEntry),
+				),
+				nil, nil, nil,
+				widget.NewAccordion(
+					widget.NewAccordionItem("Search Areas",
+						container.NewBorder(
+							nil, nil, nil, nil,
+							at.SAAccordion,
+						),
+					),
+					widget.NewAccordionItem("Items",
+						container.NewBorder(
+							at.BoundTargetsGridSearchBar, nil, nil, nil,
+							at.BoundTargetsGrid,
+						),
+					),
+				),
+			),
+		)
+	at.Append(container.NewTabItem("Image", imageSearchSettings))
 
-// }
+}
 
-// func (at *actionTabs) constructOcrTab() {
-// 	at.boundOCRSearchAreaSelect = widget.NewSelectWithData(programs.CurrentProgramAndScreenSizeCoordinates().GetSearchAreasAsStringSlice(), binding.NewString())
-// 	at.boundOCRTargetEntry = widget.NewEntryWithData(binding.NewString())
+func (at *ActionTabs) constructOcrTab() {
+	// 	at.boundOCRSearchAreaSelect = widget.NewSelectWithData(programs.CurrentProgramAndScreenSizeCoordinates().GetSearchAreasAsStringSlice(), binding.NewString())
+	// 	at.boundOCRTargetEntry = widget.NewEntryWithData(binding.NewString())
 
-// 	ocrSettings :=
-// 		widget.NewForm(
-// 			widget.NewFormItem("Text Target:", at.boundOCRTargetEntry),
-// 			widget.NewFormItem("Search Area:", at.boundOCRSearchAreaSelect),
-// 		)
-// 	at.Append(container.NewTabItem("OCR", ocrSettings))
+	ocrSettings :=
+		widget.NewForm(
+			widget.NewFormItem("Text Target:", at.boundOCRTargetEntry),
+			widget.NewFormItem("Search Area:", at.boundOCRSearchAreaSelect),
+		)
+	at.Append(container.NewTabItem("OCR", ocrSettings))
 
-// }
+}
 
 //	screen := robotgo.CaptureScreen(0, 0, 2560, 1440)
 //	defer robotgo.FreeBitmap(screen)

@@ -36,15 +36,6 @@ func GetProgram(s string) *Program {
 		log.Fatalf(errStr, err)
 	}
 
-	// macros := config.ViperConfig.GetStringSlice(keyStr + "macros")
-	// for i := range macros {
-	// 	p.Macros = append(p.Macros, macro.NewMacro("New Macro "+strconv.Itoa(i), 30, []string{}))
-	// 	err := p.GetMacroAtIndex(i).UnmarshalMacro(i)
-	// 	if err != nil {
-	// 		log.Println(err)
-	// 	}
-	// }
-	// log.Println("Program data loaded from config.yaml:", p.Name)
 	return p
 }
 
@@ -61,14 +52,12 @@ func GetPrograms() map[string]*Program {
 		ps[s] = p
 	}
 	log.Println("programs loaded", ps)
-	// log.Println("dark and darker shit", *ps[config.DarkAndDarker])
 	return ps
 }
 
 func NewProgram(name string) *Program {
 	return &Program{
-		Name: name,
-		// Macros: []*macro.Macro{},
+		Name:  name,
 		Items: make(map[string]items.Item),
 		// Coordinates: map[string]*coordinates.Coordinates{
 		// 	strconv.Itoa(config.MonitorWidth) + "x" + strconv.Itoa(config.MonitorHeight): { //"2560x1440": {
@@ -78,8 +67,6 @@ func NewProgram(name string) *Program {
 		// },
 	}
 }
-
-// func (p *Program) GetMacroAtIndex(i int) *macro.Macro { return p.Macros[i] }
 
 // func (p *Program) GetItem(i string) items.Item {
 // 	if item, ok := p.Items[i]; ok {

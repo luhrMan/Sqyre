@@ -21,7 +21,7 @@ func main() {
 	go utils.StartHook()
 	utils.FailsafeHotkey()
 
-	configInit()
+	configInit() // read config.yaml data and save into GO structs
 
 	a := app.NewWithID("Squire")
 	a.Settings().SetTheme(theme.DarkTheme())
@@ -33,6 +33,9 @@ func main() {
 	w.SetMaster()
 
 	systemTraySetup(w)
+	//Initialize ui 		(provide an object for each property of ui)
+	// construct the initialized 	(add widgets to ui)
+	// set bindings			(set bindings for ui widgets)
 	ui.InitializeUi(w)
 	ui.GetUi().ConstructUi()
 	BindUi()
@@ -61,8 +64,8 @@ func configInit() {
 
 func BindUi() {
 	binders.SetMacroUi()
-	binders.SetPointsLists(ui.GetUi().ActionTabs.PointsAccordion)
 	binders.SetEditorTabs()
+	binders.SetActionTabBindings()
 }
 
 func systemTraySetup(w fyne.Window) {
