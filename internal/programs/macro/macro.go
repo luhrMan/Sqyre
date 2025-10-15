@@ -7,7 +7,6 @@ import (
 	"Squire/internal/utils"
 	"log"
 	"slices"
-	"strconv"
 
 	"fyne.io/fyne/v2"
 	// hook "github.com/robotn/gohook"
@@ -16,10 +15,10 @@ import (
 )
 
 type Macro struct {
-	Name        string
-	Root        *actions.Loop
-	GlobalDelay int
-	Hotkey      []string
+	Name        string        `mapstructure:"name"`
+	Root        *actions.Loop `mapstructure:"root"`
+	GlobalDelay int           `mapstructure:"globaldelay"`
+	Hotkey      []string      `mapstructure:"hotkey"`
 }
 
 func NewMacro(name string, delay int, hotkey []string) *Macro {
@@ -49,14 +48,11 @@ func (m *Macro) ExecuteActionTree(ctx ...any) { //error
 	}()
 }
 
-func (m *Macro) UnmarshalMacro(i int) error {
+func (m *Macro) UnmarshalMacro(keystr string) error {
 	// log.Println("Unmarshalling macro", m.Name)
+	log.Println(keystr)
 	err := config.ViperConfig.UnmarshalKey(
-		"macros."+
-			// "programs"+"."+
-			// config.DarkAndDarker+"."+
-			// "macros"+"."+
-			strconv.Itoa(i), &m,
+		keystr, &m,
 		viper.DecodeHook(encoding.MacroDecodeHookFunc()),
 	)
 	if err != nil {
@@ -89,4 +85,26 @@ func (m *Macro) UnregisterHotkey() {
 	hk := m.Hotkey
 	log.Println("unregistering hotkey:", hk)
 	hook.Unregister(hook.KeyDown, hk)
+}
+
+func GetMacro(s string) *Macro {
+	keyStr := "macros" + "." + s // + "."
+	var m = new(Macro)
+	m.UnmarshalMacro(keyStr)
+	return m
+}
+
+func GetMacros() map[string]*Macro {
+	var (
+		ps = make(map[string]*Macro)
+		ss = config.ViperConfig.GetStringMap("macros")
+	)
+	for s := range ss {
+		p := GetMacro(s)
+		ps[s] = p
+		log.Println("macro loaded", ps[s].Root)
+
+	}
+	log.Println("macros loaded", ps)
+	return ps
 }
