@@ -14,6 +14,10 @@ type Point struct {
 	Y    int
 }
 
+func (p *Point) GetName() string {
+	return p.Name
+}
+
 type Coordinates struct {
 	Points      map[string]Point
 	SearchAreas map[string]SearchArea
