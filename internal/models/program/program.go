@@ -1,9 +1,9 @@
-package model
+package program
 
 import (
 	"Squire/internal/config"
-	"Squire/internal/programs/coordinates"
-	"Squire/internal/programs/items"
+	"Squire/internal/models/coordinates"
+	"Squire/internal/models/items"
 	"log"
 )
 
@@ -11,10 +11,17 @@ var errStr = "unable to decode into struct, %v"
 
 type Program struct {
 	Name        string
-	Items       map[string]items.Item
+	Items       *items.Items
 	Coordinates map[string]*coordinates.Coordinates
 }
 
+func (p *Program) GetItems() *items.Items {
+	return p.Items
+}
+
+func (p *Program) GetItemsMap() map[string]*items.Item {
+	return p.Items.Items
+}
 func GetProgram(s string) *Program {
 	var (
 		keyStr = "programs" + "." + s + "."
@@ -58,7 +65,7 @@ func GetPrograms() map[string]*Program {
 func NewProgram(name string) *Program {
 	return &Program{
 		Name:  name,
-		Items: make(map[string]items.Item),
+		Items: &items.Items{},
 		// Coordinates: map[string]*coordinates.Coordinates{
 		// 	strconv.Itoa(config.MonitorWidth) + "x" + strconv.Itoa(config.MonitorHeight): { //"2560x1440": {
 		// 		Points:      make(map[string]coordinates.Point),
@@ -73,6 +80,23 @@ func NewProgram(name string) *Program {
 // 		return item
 // 	}
 // 	return items.Item{}
+// }
+
+// func SetAllItems(is []string) {
+// 	allItemsSlice = is
+// }
+
+// func AllItems(sortedby string) []string {
+// 	switch sortedby {
+// 	case "none":
+// 		return allItemsSlice
+// 	case "category":
+// 		return allItemsSortedByCategory
+// 	case "name":
+// 		return allItemsSortedByName
+// 	default:
+// 		return allItemsSlice
+// 	}
 // }
 
 // func (p *Program) AddProgramPoint(ss string, point config.Point) {

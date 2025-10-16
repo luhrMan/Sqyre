@@ -2,7 +2,7 @@ package encoding
 
 import (
 	"Squire/internal/config"
-	"Squire/internal/programs/actions"
+	"Squire/internal/models/actions"
 	"fmt"
 	"log"
 	"reflect"

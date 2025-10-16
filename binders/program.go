@@ -2,14 +2,15 @@ package binders
 
 import (
 	"Squire/internal/config"
-	model "Squire/internal/programs"
-	"Squire/internal/programs/macro"
+	"Squire/internal/models/macro"
+	"Squire/internal/models/program"
+	"log"
 
 	"fyne.io/fyne/v2/data/binding"
 )
 
 type ProgramBinding struct {
-	*model.Program
+	*program.Program
 	ItemBindings       []binding.Struct
 	PointsBindings     []binding.Struct
 	SearchAreaBindings []binding.Struct
@@ -17,7 +18,7 @@ type ProgramBinding struct {
 
 func InitPrograms() {
 	once.Do(func() {
-		programs = model.GetPrograms()
+		programs = program.GetPrograms()
 		macros = macro.GetMacros()
 		boundPrograms = map[string]*ProgramBinding{}
 		boundMacros = map[string]*MacroBinding{}
@@ -32,11 +33,12 @@ func BindPrograms() {
 	}
 }
 
-func BindProgram(p *model.Program) {
+func BindProgram(p *program.Program) {
 	boundPrograms[p.Name] = &ProgramBinding{
 		Program:            p,
 		PointsBindings:     []binding.Struct{},
 		SearchAreaBindings: []binding.Struct{},
+		ItemBindings:       []binding.Struct{},
 	}
 
 	points := p.Coordinates[config.MainMonitorSizeString].Points
@@ -56,16 +58,25 @@ func BindProgram(p *model.Program) {
 		boundPrograms[p.Name].SearchAreaBindings[counter] = boundSA
 		counter++
 	}
+	log.Println(p.Items)
+	items := p.GetItemsMap()
+	boundPrograms[p.Name].ItemBindings = make([]binding.Struct, len(items)) // Do not use slice append to build boundFriends list, for some reason! Strange effects...
+	counter = 0
+	for _, i := range items {
+		boundItem := binding.BindStruct(&i)
+		boundPrograms[p.Name].ItemBindings[counter] = boundItem
+		counter++
+	}
 }
 
-func GetProgram(s string) *model.Program {
+func GetProgram(s string) *program.Program {
 	if p, ok := GetPrograms()[s]; ok {
 		return p
 	}
 	return nil
 }
 
-func GetPrograms() map[string]*model.Program {
+func GetPrograms() map[string]*program.Program {
 	return programs
 }
 

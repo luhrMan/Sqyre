@@ -1,8 +1,8 @@
 package encoding
 
 import (
-	"Squire/internal/programs/actions"
-	"Squire/internal/programs/coordinates"
+	"Squire/internal/models/actions"
+	"Squire/internal/models/coordinates"
 )
 
 type ISerializer interface {

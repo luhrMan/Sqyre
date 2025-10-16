@@ -3,7 +3,7 @@ package macro
 import (
 	"Squire/encoding"
 	"Squire/internal/config"
-	"Squire/internal/programs/actions"
+	"Squire/internal/models/actions"
 	"Squire/internal/utils"
 	"log"
 	"slices"

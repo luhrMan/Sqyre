@@ -7,19 +7,33 @@ import (
 	"strings"
 )
 
-var (
-	allItemsSlice            []string
-	allItemsSortedByName     []string
-	allItemsSortedByCategory []string
-	allItemsMap              = make(map[string]Item)
-)
+// var (
+// 	allItemsSlice            []string
+// 	allItemsSortedByName     []string
+// 	allItemsSortedByCategory []string
+// 	allItemsMap              = make(map[string]Item)
+// )
 
+type Items struct {
+	Items map[string]*Item
+}
 type Item struct {
 	Name     string `json:"name"`
 	GridSize [2]int `json:"gridSize"`
+	Category string `json:"category"`
 	StackMax int    `json:"stackMax"`
 	Merchant string `json:"merchant"`
-	Category string `json:"category"`
+}
+
+func (is *Items) GetItem(i string) (*Item, error) {
+	if item, ok := is.Items[strings.ToLower(i)]; ok {
+		return item, nil
+	}
+	return &Item{}, fmt.Errorf("item does not exist")
+	// index, found := slices.BinarySearch(SortByName(allItemsMap), i)
+	// if found {
+	// 	return allItemsMap[AllItems()[index]], nil
+	// }
 }
 
 // func ParseItemsFromJson(path string) []Item {
@@ -38,28 +52,28 @@ type Item struct {
 // 	return im
 // }
 
-func SortByCategory(is map[string]Item) []string {
-	categories := make([]string, 0, len(is))
+func (is *Items) SortByCategory() []string {
+	categories := make([]string, 0, len(is.Items))
 	items := []string{}
-	for _, i := range is {
+	for _, i := range is.Items {
 		if !slices.Contains(categories, i.Category) {
 			categories = append(categories, i.Category)
 		}
 	}
 	sort.Strings(categories)
 	for _, c := range categories {
-		for _, i := range allItemsSortedByName {
-			if is[strings.ToLower(i)].Category == c {
-				items = append(items, is[strings.ToLower(i)].Name)
+		for _, i := range is.SortByName() {
+			if is.Items[strings.ToLower(i)].Category == c {
+				items = append(items, is.Items[strings.ToLower(i)].Name)
 			}
 		}
 	}
 	return items
 }
 
-func SortByName(is map[string]Item) []string {
+func (is *Items) SortByName() []string {
 	items := []string{}
-	for _, i := range is {
+	for _, i := range is.Items {
 		items = append(items, i.Name)
 	}
 	if !slices.IsSorted(items) {
@@ -68,47 +82,32 @@ func SortByName(is map[string]Item) []string {
 	return items
 }
 
-func SetAllItems(is []string) {
-	allItemsSlice = is
-}
+// func SetAllItems(is []string) {
+// 	allItemsSlice = is
+// }
 
-func AllItems(sortedby string) []string {
-	switch sortedby {
-	case "none":
-		return allItemsSlice
-	case "category":
-		return allItemsSortedByCategory
-	case "name":
-		return allItemsSortedByName
-	default:
-		return allItemsSlice
-	}
-}
+// func AllItems(sortedby string) []string {
+// 	switch sortedby {
+// 	case "none":
+// 		return allItemsSlice
+// 	case "category":
+// 		return allItemsSortedByCategory
+// 	case "name":
+// 		return allItemsSortedByName
+// 	default:
+// 		return allItemsSlice
+// 	}
+// }
 
-func SetItemsMap(ism map[string]Item) {
-	allItemsMap = ism
-	allItemsSortedByName = SortByName(ism)
-	allItemsSortedByCategory = SortByCategory(ism)
-	allItemsSlice = allItemsSortedByName
-}
+// func SetItemsMap(ism map[string]Item) {
+// 	allItemsMap = ism
+// 	allItemsSortedByName = SortByName(ism)
+// 	allItemsSortedByCategory = SortByCategory(ism)
+// 	allItemsSlice = allItemsSortedByName
+// }
 
-func ItemsMap() map[string]Item {
-	return allItemsMap
-}
-
-func GetItem(i string) (Item, error) {
-	if item, ok := allItemsMap[strings.ToLower(i)]; ok {
-		return item, nil
-	}
-	return Item{}, fmt.Errorf("item does not exist")
-	// index, found := slices.BinarySearch(SortByName(allItemsMap), i)
-	// if found {
-	// 	return allItemsMap[AllItems()[index]], nil
-	// }
-}
-
-// type ItemsMap struct {
-// 	Map map[string][]Item
+// func ItemsMap() map[string]Item {
+// 	return allItemsMap
 // }
 
 // func (is *ItemsMap) GetItemsMapAsStringsMap() map[string][]string {

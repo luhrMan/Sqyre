@@ -2,7 +2,7 @@ package actions
 
 import (
 	"Squire/internal/config"
-	"Squire/internal/programs/coordinates"
+	"Squire/internal/models/coordinates"
 	"fmt"
 )
 
