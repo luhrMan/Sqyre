@@ -108,7 +108,6 @@ func launchEditorWindow() {
 	// 	form.OnSubmit = func() {
 	// 		// GetUi().p.Items[nv.(string)] = *i
 	// 	}
-
 	ui.EditorUi.Window.Show()
 }
 

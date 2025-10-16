@@ -1,8 +1,8 @@
 package ui
 
 import (
-	"Squire/internal/programs/actions"
-	"Squire/internal/programs/coordinates"
+	"Squire/internal/models/actions"
+	"Squire/internal/models/coordinates"
 	"strconv"
 
 	"fyne.io/fyne/v2"

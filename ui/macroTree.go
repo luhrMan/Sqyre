@@ -1,8 +1,8 @@
 package ui
 
 import (
-	"Squire/internal/programs/actions"
-	"Squire/internal/programs/macro"
+	"Squire/internal/models/actions"
+	"Squire/internal/models/macro"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
