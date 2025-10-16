@@ -13,5 +13,13 @@ func SetEditorTabs() {
 		ui.GetUi().EditorUi.EditorTabs.
 			PointsTab.Content.(*container.Split).Leading.(*fyne.Container).Objects[0].(*widget.Accordion),
 	)
+	SetAccordionSearchAreasLists(
+		ui.GetUi().EditorUi.EditorTabs.
+			SearchAreasTab.Content.(*container.Split).Leading.(*fyne.Container).Objects[0].(*widget.Accordion),
+	)
+	SetAccordionItemsLists(
+		ui.GetUi().EditorUi.EditorTabs.
+			ItemsTab.Content.(*container.Split).Leading.(*fyne.Container).Objects[0].(*widget.Accordion),
+	)
 
 }

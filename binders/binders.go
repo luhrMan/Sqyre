@@ -1,8 +1,8 @@
 package binders
 
 import (
-	"Squire/internal/config"
-	"Squire/internal/programs/actions"
+	"Squire/internal/models/actions"
+	"Squire/internal/models/coordinates"
 	"Squire/ui"
 	"Squire/ui/custom_widgets"
 	"log"
@@ -62,38 +62,44 @@ func GetPointsAsStringSlice(program string, ss string) []string {
 
 func UnbindAll() {
 	log.Println("This is definitely being called")
+	boundMacros[ui.GetUi().Mui.MTabs.SelectedTab().Macro.Name].UnbindAction()
 	Rebind()
-	// for _, m := range boundMacros {
-	// 	m.BoundSelectedAction = nil
-	// }
-	// ui.GetUi().Mui.MTabs.Items[0].Content.(*ui.MacroTree).
-
 }
 
 func Rebind() {
 	ats := ui.GetUi().ActionTabs
 	ats.BoundWait = binding.BindStruct(actions.NewWait(int(ats.BoundTimeSlider.Value)))
 	t, _ := ats.BoundWait.GetItem("Time")
-	ats.BoundTimeEntry.Unbind()
-	ats.BoundTimeSlider.Unbind()
+	// ats.BoundTimeEntry.Unbind()
+	// ats.BoundTimeSlider.Unbind()
 	ats.BoundTimeSlider.Bind(binding.IntToFloat(t.(binding.Int)))
 	ats.BoundTimeEntry.Bind(binding.IntToString(t.(binding.Int)))
 
-	boundPoint := boundPrograms[config.DarkAndDarker].PointsBindings[0]
-	// n, _ := boundPoint.GetValue("Name")
-	// x, _ := boundPoint.GetValue("X")
-	// y, _ := boundPoint.GetValue("Y")
-	ui.GetUi().Mui.MTabs.SelectedTab().SelectedNode = ""
-	// ats.BoundMove = binding.BindStruct(actions.NewMove(coordinates.Point{n.(string), x.(int), y.(int)}))
-	// ats.BoundMove = binding.BindStruct(&coordinates.Point{n.(string), x.(int), y.(int)})
-	ats.BoundMove = boundPoint //binding.BindStruct(&coordinates.Point{n.(string), x.(int), y.(int)})
+	n, _ := ats.BoundPoint.GetValue("Name")
+	x, _ := ats.BoundPoint.GetValue("X")
+	y, _ := ats.BoundPoint.GetValue("Y")
+	// m := actions.NewMove(coordinates.Point{n.(string), x.(int), y.(int)})
+	// ui.GetUi().Mui.MTabs.SelectedTab().SelectedNode = ""
+	// ats.BoundPoint = binding.BindStruct(m)
+	// ats.BoundMove = binding.BindStruct(m)
+	ats.BoundMove = binding.BindStruct(actions.NewMove(coordinates.Point{n.(string), x.(int), y.(int)}))
+	// ats.BoundPoint = binding.BindStruct(&coordinates.Point{n.(string), x.(int), y.(int)})
 	// ats.PointsAccordion.CloseAll()
 }
 
 func SetActionTabBindings() {
 	SetAccordionPointsLists(ui.GetUi().ActionTabs.PointsAccordion)
 	SetAccordionSearchAreasLists(ui.GetUi().ActionTabs.SAAccordion)
-	// ui.GetUi().ActionTabs.BoundWait = binding.BindStruct(actions.NewWait(0))
+	SetAccordionItemsLists(ui.GetUi().ActionTabs.ItemsAccordion)
+	ui.GetUi().ActionTabs.BoundWait = binding.BindStruct(actions.NewWait(0))
+	ui.GetUi().ActionTabs.BoundKey = binding.BindStruct(actions.NewKey("ctrl", "down"))
+	ui.GetUi().ActionTabs.BoundMove = binding.BindStruct(actions.NewMove(coordinates.Point{"blank", 0, 0}))
+	ui.GetUi().ActionTabs.BoundClick = binding.BindStruct(actions.NewClick("left"))
+	ui.GetUi().ActionTabs.BoundLoop = binding.BindStruct(actions.NewLoop(1, "blank", []actions.ActionInterface{}))
+	ui.GetUi().ActionTabs.BoundImageSearch = binding.BindStruct(actions.NewImageSearch("blank", []actions.ActionInterface{}, []string{}, coordinates.SearchArea{}))
+	ui.GetUi().ActionTabs.BoundSearchArea = binding.BindStruct(&coordinates.SearchArea{})
+	ui.GetUi().ActionTabs.BoundPoint = binding.BindStruct(&coordinates.Point{Name: "template", X: 0, Y: 0})
+
 	t, _ := ui.GetUi().ActionTabs.BoundWait.GetItem("Time")
 	ui.GetUi().ActionTabs.BoundTimeEntry.Bind(binding.IntToString(t.(binding.Int)))
 	ui.GetUi().ActionTabs.BoundTimeSlider.Bind(binding.IntToFloat(t.(binding.Int)))
@@ -155,8 +161,8 @@ func bindSearchAreaWidgets(di binding.Struct) {
 	st["Name"].(*widget.Entry).Bind(name.(binding.String))
 	st["LeftX"].(*widget.Entry).Bind(binding.IntToString(x1.(binding.Int)))
 	st["TopY"].(*widget.Entry).Bind(binding.IntToString(y1.(binding.Int)))
-	st["RightX"].(*widget.Entry).Bind(binding.IntToString(x1.(binding.Int)))
-	st["BottomY"].(*widget.Entry).Bind(binding.IntToString(y1.(binding.Int)))
+	st["RightX"].(*widget.Entry).Bind(binding.IntToString(x2.(binding.Int)))
+	st["BottomY"].(*widget.Entry).Bind(binding.IntToString(y2.(binding.Int)))
 	x1.AddListener(dl)
 	y1.AddListener(dl)
 	x2.AddListener(dl)
@@ -178,8 +184,6 @@ func (m *MacroBinding) bindAction(a actions.ActionInterface) {
 		// boundMacros[ui.GetUi().Mui.MTabs.SelectedTab().SelectedNode] = binding.BindStruct(node)
 		t, _ := ats.BoundWait.GetItem("Time")
 
-		// ats.BoundTimeEntry.Unbind()
-		// ats.BoundTimeSlider.Unbind()
 		ats.BoundTimeEntry.Bind(binding.IntToString(t.(binding.Int)))
 		ats.BoundTimeSlider.Bind(binding.IntToFloat(t.(binding.Int)))
 
@@ -190,7 +194,6 @@ func (m *MacroBinding) bindAction(a actions.ActionInterface) {
 		ats.BoundClick = bsa
 		b, _ := ats.BoundClick.GetItem("Button")
 		ats.BoundButtonToggle.Bind(custom_widgets.CustomStringToBool(b.(binding.String), "click", dl))
-
 	case *actions.Key:
 		ats.BoundKey = bsa
 		k, _ := ats.BoundKey.GetItem("Key")
@@ -200,6 +203,7 @@ func (m *MacroBinding) bindAction(a actions.ActionInterface) {
 		ats.BoundStateToggle.Bind(custom_widgets.CustomStringToBool(s.(binding.String), "key", dl))
 
 		k.AddListener(dl)
+		s.AddListener(dl)
 
 	case *actions.Loop:
 		ats.BoundLoop = bsa
@@ -230,7 +234,6 @@ func (m *MacroBinding) bindAction(a actions.ActionInterface) {
 		// 		ats.BoundImageSearchAreaList.Select(i)
 		// 	}
 		// }
-		// ats.boundImageSearchAreaSelect.Bind(sa.(binding.String))
 		ats.BoundImageSearch.SetValue("Targets", slices.Clone(node.Targets))
 
 		t.AddListener(dl)

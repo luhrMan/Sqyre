@@ -1,13 +1,13 @@
 package binders
 
 import (
-	model "Squire/internal/programs"
-	"Squire/internal/programs/macro"
+	"Squire/internal/models/macro"
+	"Squire/internal/models/program"
 	"sync"
 )
 
 var (
-	programs      map[string]*model.Program
+	programs      map[string]*program.Program
 	boundPrograms map[string]*ProgramBinding
 	boundMacros   map[string]*MacroBinding
 	once          sync.Once

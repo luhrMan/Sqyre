@@ -2,9 +2,9 @@ package binders
 
 import (
 	"Squire/internal/assets"
-	"Squire/internal/programs/actions"
-	"Squire/internal/programs/coordinates"
-	"Squire/internal/programs/macro"
+	"Squire/internal/models/actions"
+	"Squire/internal/models/coordinates"
+	"Squire/internal/models/macro"
 	"Squire/internal/utils"
 	"Squire/ui"
 	"errors"
@@ -37,6 +37,11 @@ func BindMacro(m *macro.Macro) {
 		Macro: m,
 		// BoundSelectedAction: binding.BindStruct(m.Root),
 	}
+}
+
+func (mb *MacroBinding) UnbindAction() {
+	// mb.BoundSelectedAction = ui.GetUi().ActionTabs.BoundWait
+	mb.BoundSelectedAction = nil
 }
 
 func GetMacros() map[string]*macro.Macro {
@@ -133,6 +138,8 @@ func setMtabSettingsAndWidgets() {
 	mtabs.OnUnselected = func(ti *container.TabItem) {
 		ti.Content.(*ui.MacroTree).UnselectAll()
 		UnbindAll()
+		boundMacros[ui.GetUi().Mui.MTabs.SelectedTab().Macro.Name].UnbindAction()
+
 		// boundMacros[ti.Content.(*ui.MacroTree).Macro.Name].BoundSelectedAction = nil
 	}
 	mtabs.OnSelected = func(ti *container.TabItem) {
@@ -265,7 +272,8 @@ func setMacroTree(mt *ui.MacroTree) {
 			at.SelectIndex(ui.LoopTab)
 		case *actions.ImageSearch:
 			macroBind.bindAction(node)
-			at.BoundTargetsGrid.Refresh()
+			at.ItemsAccordion.Refresh()
+			// at.BoundTargetsGrid.Refresh()
 			at.SelectIndex(ui.ImageSearchTab)
 		case *actions.Ocr:
 			macroBind.bindAction(node)
@@ -282,7 +290,7 @@ func setMacroToolbar() {
 		if selectedNode == nil {
 			selectedNode = mt.Macro.Root
 		}
-		log.Println(ui.GetUi().ActionTabs.BoundMove)
+		// log.Println(ui.GetUi().ActionTabs.BoundMove)
 		switch ui.ActionTabs.Selected(*ui.GetUi().ActionTabs).Text {
 		case "Wait":
 			time, e := ui.GetUi().ActionTabs.BoundWait.GetValue("Time")
@@ -291,9 +299,9 @@ func setMacroToolbar() {
 			}
 			action = actions.NewWait(time.(int))
 		case "Move":
-			name, _ := ui.GetUi().ActionTabs.BoundMove.GetValue("Name")
-			x, _ := ui.GetUi().ActionTabs.BoundMove.GetValue("X")
-			y, _ := ui.GetUi().ActionTabs.BoundMove.GetValue("Y")
+			name, _ := ui.GetUi().ActionTabs.BoundPoint.GetValue("Name")
+			x, _ := ui.GetUi().ActionTabs.BoundPoint.GetValue("X")
+			y, _ := ui.GetUi().ActionTabs.BoundPoint.GetValue("Y")
 			action = actions.NewMove(coordinates.Point{Name: name.(string), X: x.(int), Y: y.(int)})
 		case "Click":
 			button, _ := ui.GetUi().ActionTabs.BoundClick.GetValue("Button")
@@ -328,11 +336,15 @@ func setMacroToolbar() {
 			target, _ := ui.GetUi().ActionTabs.BoundOcr.GetValue("Target")
 			subactions := []actions.ActionInterface{}
 			searchArea, _ := ui.GetUi().ActionTabs.BoundSearchArea.GetValue("Name")
+			x1, _ := ui.GetUi().ActionTabs.BoundSearchArea.GetValue("LeftX")
+			y1, _ := ui.GetUi().ActionTabs.BoundSearchArea.GetValue("TopY")
+			x2, _ := ui.GetUi().ActionTabs.BoundSearchArea.GetValue("RightX")
+			y2, _ := ui.GetUi().ActionTabs.BoundSearchArea.GetValue("BottomY")
 			action = actions.NewOcr(
 				name.(string),
 				subactions,
 				target.(string),
-				searchArea.(coordinates.SearchArea),
+				coordinates.SearchArea{Name: searchArea.(string), LeftX: x1.(int), TopY: y1.(int), RightX: x2.(int), BottomY: y2.(int)},
 				// binders.GetProgram(config.DarkAndDarker).Coordinates[config.MainMonitorSizeString].GetSearchArea(searchArea.(string))
 			)
 		}
