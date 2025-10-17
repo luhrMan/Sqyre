@@ -69,21 +69,6 @@ func newActionTabs() *ActionTabs {
 	return &ActionTabs{
 		AppTabs: &container.AppTabs{},
 
-		// BoundBaseAction:     binding.BindStruct(actions.BaseAction{}),
-		// BoundAdvancedAction: binding.BindStruct(actions.AdvancedAction{}),
-
-		// BoundWait:  binding.BindStruct(actions.NewWait(0)),
-		// BoundKey:   binding.BindStruct(actions.NewKey("ctrl", "down")),
-		// BoundMove:  binding.BindStruct(actions.NewMove(coordinates.Point{"blank", 0, 0})),
-		// BoundClick: binding.BindStruct(actions.NewClick("left")),
-
-		// BoundLoop:        binding.BindStruct(actions.NewLoop(1, "blank", []actions.ActionInterface{})),
-		// BoundImageSearch: binding.BindStruct(actions.NewImageSearch("blank", []actions.ActionInterface{}, []string{}, coordinates.SearchArea{})),
-		// BoundOcr:         binding.BindStruct(actions.NewOcr("blank", []actions.ActionInterface{}, "blank", coordinates.SearchArea{})),
-
-		// BoundSearchArea: binding.BindStruct(coordinates.SearchArea{}),
-		// BoundPoint:      binding.BindStruct(coordinates.Point{Name: "template", X: 0, Y: 0}),
-
 		BoundTimeSlider: widget.NewSliderWithData(0.0, 1000.0, binding.NewFloat()),
 		BoundTimeEntry:  &widget.Entry{},
 		// BoundMoveXSlider:  widget.NewSliderWithData(-1.0, float64(config.MonitorWidth), binding.NewFloat()),

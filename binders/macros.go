@@ -276,6 +276,9 @@ func setMacroTree(mt *ui.MacroTree) {
 			at.SelectIndex(ui.OcrTab)
 		}
 	}
+	mt.Tree.OnUnselected = func(uid widget.TreeNodeID) {
+		ResetBinds()
+	}
 }
 
 func setMacroToolbar() {

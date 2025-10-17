@@ -1,8 +1,6 @@
 package ui
 
 import (
-	"Squire/internal/models/actions"
-	"Squire/internal/models/coordinates"
 	"strconv"
 
 	"fyne.io/fyne/v2"
@@ -14,48 +12,48 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 	// ocrActionMenuItem.Icon, _ = fyne.LoadResourceFromPath("./internal/resources/images/Squire.png")
 	macroMenu := fyne.NewMenu("Macro")
 	programSelectSubMenu := fyne.NewMenuItem("Select Program", nil)
-	actionSubMenu := fyne.NewMenuItem("Add Blank Action", nil)
-	basicActionsSubMenu := fyne.NewMenuItem("Basic Actions", nil)
-	advancedActionsSubMenu := fyne.NewMenuItem("Advanced Actions", nil)
+	// actionSubMenu := fyne.NewMenuItem("Add Blank Action", nil)
+	// basicActionsSubMenu := fyne.NewMenuItem("Basic Actions", nil)
+	// advancedActionsSubMenu := fyne.NewMenuItem("Advanced Actions", nil)
 
-	macroMenu.Items = append(macroMenu.Items, actionSubMenu, programSelectSubMenu)
+	macroMenu.Items = append(macroMenu.Items, programSelectSubMenu)
 	programSelectSubMenu.ChildMenu = fyne.NewMenu("")
-	actionSubMenu.ChildMenu = fyne.NewMenu("")
+	// actionSubMenu.ChildMenu = fyne.NewMenu("")
 
-	actionSubMenu.ChildMenu.Items = append(actionSubMenu.ChildMenu.Items,
-		basicActionsSubMenu,
-		advancedActionsSubMenu,
-	)
-	addActionAndRefresh :=
-		func(a actions.ActionInterface) {
-			mt := u.Mui.MTabs.SelectedTab()
-			mt.Macro.Root.AddSubAction(a)
-			mt.Select(a.GetUID())
-			mt.Refresh()
-		}
-	basicActionsSubMenu.ChildMenu = fyne.NewMenu("",
-		fyne.NewMenuItem("Wait", func() { addActionAndRefresh(actions.NewWait(0)) }),
-		fyne.NewMenuItem("Mouse Move", func() { addActionAndRefresh(actions.NewMove(coordinates.Point{Name: "", X: 0, Y: 0})) }),
-		fyne.NewMenuItem("Click", func() { addActionAndRefresh(actions.NewClick("left")) }),
-		fyne.NewMenuItem("Key", func() { addActionAndRefresh(actions.NewKey("ctrl", "down")) }),
-	)
-	advancedActionsSubMenu.ChildMenu = fyne.NewMenu("",
-		fyne.NewMenuItem("Loop", func() { addActionAndRefresh(actions.NewLoop(1, "", []actions.ActionInterface{})) }),
-		fyne.NewMenuItem("Image Search", func() {
-			addActionAndRefresh(actions.NewImageSearch(
-				"",
-				[]actions.ActionInterface{},
-				[]string{},
-				coordinates.SearchArea{},
-				1,
-				1,
-				0.95,
-			))
-		}),
-		fyne.NewMenuItem("OCR", func() {
-			addActionAndRefresh(actions.NewOcr("", []actions.ActionInterface{}, "", coordinates.SearchArea{}))
-		}),
-	)
+	// actionSubMenu.ChildMenu.Items = append(actionSubMenu.ChildMenu.Items,
+	// basicActionsSubMenu,
+	// advancedActionsSubMenu,
+	// )
+	// addActionAndRefresh :=
+	// 	func(a actions.ActionInterface) {
+	// 		mt := u.Mui.MTabs.SelectedTab()
+	// 		mt.Macro.Root.AddSubAction(a)
+	// 		mt.Select(a.GetUID())
+	// 		mt.Refresh()
+	// 	}
+	// basicActionsSubMenu.ChildMenu = fyne.NewMenu("",
+	// 	fyne.NewMenuItem("Wait", func() { addActionAndRefresh(actions.NewWait(0)) }),
+	// 	fyne.NewMenuItem("Mouse Move", func() { addActionAndRefresh(actions.NewMove(coordinates.Point{Name: "", X: 0, Y: 0})) }),
+	// 	fyne.NewMenuItem("Click", func() { addActionAndRefresh(actions.NewClick("left")) }),
+	// 	fyne.NewMenuItem("Key", func() { addActionAndRefresh(actions.NewKey("ctrl", "down")) }),
+	// )
+	// advancedActionsSubMenu.ChildMenu = fyne.NewMenu("",
+	// 	fyne.NewMenuItem("Loop", func() { addActionAndRefresh(actions.NewLoop(1, "", []actions.ActionInterface{})) }),
+	// 	fyne.NewMenuItem("Image Search", func() {
+	// 		addActionAndRefresh(actions.NewImageSearch(
+	// 			"",
+	// 			[]actions.ActionInterface{},
+	// 			[]string{},
+	// 			coordinates.SearchArea{},
+	// 			1,
+	// 			1,
+	// 			0.95,
+	// 		))
+	// 	}),
+	// 	fyne.NewMenuItem("OCR", func() {
+	// 		addActionAndRefresh(actions.NewOcr("", []actions.ActionInterface{}, "", coordinates.SearchArea{}))
+	// 	}),
+	// )
 
 	computerInfo := fyne.NewMenuItem("Computer info", func() {
 		var str string

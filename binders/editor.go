@@ -9,15 +9,15 @@ import (
 )
 
 func SetEditorTabs() {
-	SetAccordionPointsLists(
+	setAccordionPointsLists(
 		ui.GetUi().EditorUi.EditorTabs.
 			PointsTab.Content.(*container.Split).Leading.(*fyne.Container).Objects[0].(*widget.Accordion),
 	)
-	SetAccordionSearchAreasLists(
+	setAccordionSearchAreasLists(
 		ui.GetUi().EditorUi.EditorTabs.
 			SearchAreasTab.Content.(*container.Split).Leading.(*fyne.Container).Objects[0].(*widget.Accordion),
 	)
-	SetAccordionItemsLists(
+	setAccordionItemsLists(
 		ui.GetUi().EditorUi.EditorTabs.
 			ItemsTab.Content.(*container.Split).Leading.(*fyne.Container).Objects[0].(*widget.Accordion),
 	)
