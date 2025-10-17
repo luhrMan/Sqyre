@@ -47,6 +47,9 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 				[]actions.ActionInterface{},
 				[]string{},
 				coordinates.SearchArea{},
+				1,
+				1,
+				0.95,
 			))
 		}),
 		fyne.NewMenuItem("OCR", func() {

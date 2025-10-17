@@ -18,20 +18,24 @@ type ImageSearch struct {
 	SearchArea      coordinates.SearchArea
 	RowSplit        int
 	ColSplit        int
+	Tolerance       float32
 	*AdvancedAction `yaml:",inline" mapstructure:",squash"`
 }
 
-func NewImageSearch(name string, subActions []ActionInterface, targets []string, searchbox coordinates.SearchArea) *ImageSearch {
+func NewImageSearch(name string, subActions []ActionInterface, targets []string, searchbox coordinates.SearchArea, rs, cs int, tol float32) *ImageSearch {
 	slices.Sort(targets)
 	return &ImageSearch{
 		AdvancedAction: newAdvancedAction(name, "imagesearch", subActions),
 		Targets:        targets,
 		SearchArea:     searchbox,
+		RowSplit:       rs,
+		ColSplit:       cs,
+		Tolerance:      tol,
 	}
 }
 
 func (a *ImageSearch) Execute(ctx any) error {
-	results, err := utils.ImageSearch(a.SearchArea, a.Targets, a.RowSplit, a.ColSplit)
+	results, err := utils.ImageSearch(a.SearchArea, a.Targets, a.RowSplit, a.ColSplit, a.Tolerance)
 	if err != nil {
 		return err
 	}

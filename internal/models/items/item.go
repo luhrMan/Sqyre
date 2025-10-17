@@ -52,6 +52,14 @@ func (is *Items) GetItem(i string) (*Item, error) {
 // 	return im
 // }
 
+func (is *Items) GetAsStringSlice() []string {
+	items := []string{}
+	for _, i := range is.Items {
+		items = append(items, strings.ToLower(i.Name))
+	}
+	return items
+}
+
 func (is *Items) SortByCategory() []string {
 	categories := make([]string, 0, len(is.Items))
 	items := []string{}
@@ -74,7 +82,7 @@ func (is *Items) SortByCategory() []string {
 func (is *Items) SortByName() []string {
 	items := []string{}
 	for _, i := range is.Items {
-		items = append(items, i.Name)
+		items = append(items, strings.ToLower(i.Name))
 	}
 	if !slices.IsSorted(items) {
 		slices.Sort(items)

@@ -4,7 +4,6 @@ import (
 	"Squire/internal/config"
 	"Squire/internal/models/macro"
 	"Squire/internal/models/program"
-	"log"
 
 	"fyne.io/fyne/v2/data/binding"
 )
@@ -58,12 +57,11 @@ func BindProgram(p *program.Program) {
 		boundPrograms[p.Name].SearchAreaBindings[counter] = boundSA
 		counter++
 	}
-	log.Println(p.Items)
 	items := p.GetItemsMap()
 	boundPrograms[p.Name].ItemBindings = make([]binding.Struct, len(items)) // Do not use slice append to build boundFriends list, for some reason! Strange effects...
 	counter = 0
 	for _, i := range items {
-		boundItem := binding.BindStruct(&i)
+		boundItem := binding.BindStruct(i)
 		boundPrograms[p.Name].ItemBindings[counter] = boundItem
 		counter++
 	}
