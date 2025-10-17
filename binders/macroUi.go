@@ -39,11 +39,6 @@ func BindMacro(m *macro.Macro) {
 	}
 }
 
-func (mb *MacroBinding) UnbindAction() {
-	// mb.BoundSelectedAction = ui.GetUi().ActionTabs.BoundWait
-	mb.BoundSelectedAction = nil
-}
-
 func GetMacros() map[string]*macro.Macro {
 	return macros
 }
@@ -136,11 +131,14 @@ func setMtabSettingsAndWidgets() {
 	}
 
 	mtabs.OnUnselected = func(ti *container.TabItem) {
-		ti.Content.(*ui.MacroTree).UnselectAll()
-		UnbindAll()
-		boundMacros[ui.GetUi().Mui.MTabs.SelectedTab().Macro.Name].UnbindAction()
-
-		// boundMacros[ti.Content.(*ui.MacroTree).Macro.Name].BoundSelectedAction = nil
+		mt := mtabs.SelectedTab()
+		mt.UnselectAll()
+		mt.SelectedNode = ""
+		boundMacros[mt.Macro.Name].BoundSelectedAction = nil
+		ResetBinds()
+		for _, ai := range ui.GetUi().ActionTabs.ItemsAccordion.Items {
+			ai.Detail.Refresh()
+		}
 	}
 	mtabs.OnSelected = func(ti *container.TabItem) {
 		m := GetMacro(ti.Text)
@@ -272,8 +270,6 @@ func setMacroTree(mt *ui.MacroTree) {
 			at.SelectIndex(ui.LoopTab)
 		case *actions.ImageSearch:
 			macroBind.bindAction(node)
-			at.ItemsAccordion.Refresh()
-			// at.BoundTargetsGrid.Refresh()
 			at.SelectIndex(ui.ImageSearchTab)
 		case *actions.Ocr:
 			macroBind.bindAction(node)
@@ -290,7 +286,6 @@ func setMacroToolbar() {
 		if selectedNode == nil {
 			selectedNode = mt.Macro.Root
 		}
-		// log.Println(ui.GetUi().ActionTabs.BoundMove)
 		switch ui.ActionTabs.Selected(*ui.GetUi().ActionTabs).Text {
 		case "Wait":
 			time, e := ui.GetUi().ActionTabs.BoundWait.GetValue("Time")
@@ -319,6 +314,9 @@ func setMacroToolbar() {
 			name, _ := ui.GetUi().ActionTabs.BoundAdvancedAction.GetValue("Name")
 			subactions := []actions.ActionInterface{}
 			targets, _ := ui.GetUi().ActionTabs.BoundImageSearch.GetValue("Targets")
+			rs, _ := ui.GetUi().ActionTabs.BoundImageSearch.GetValue("RowSplit")
+			cs, _ := ui.GetUi().ActionTabs.BoundImageSearch.GetValue("ColSplit")
+			tol, _ := ui.GetUi().ActionTabs.BoundImageSearch.GetValue("Tolerance")
 			searchArea, _ := ui.GetUi().ActionTabs.BoundSearchArea.GetValue("Name")
 			x1, _ := ui.GetUi().ActionTabs.BoundSearchArea.GetValue("LeftX")
 			y1, _ := ui.GetUi().ActionTabs.BoundSearchArea.GetValue("TopY")
@@ -329,6 +327,7 @@ func setMacroToolbar() {
 				subactions,
 				targets.([]string),
 				coordinates.SearchArea{Name: searchArea.(string), LeftX: x1.(int), TopY: y1.(int), RightX: x2.(int), BottomY: y2.(int)},
+				rs.(int), cs.(int), tol.(float32),
 				// binders.GetProgram(config.DarkAndDarker).Coordinates[config.MainMonitorSizeString].GetSearchArea(searchArea.(string))
 			)
 		case "OCR":

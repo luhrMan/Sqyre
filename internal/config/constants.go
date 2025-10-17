@@ -29,6 +29,12 @@ const (
 	GOB  = ".gob"
 	JSON = ".json"
 	YAML = ".yaml"
+
+	//since I have refactored the code to account for multiple programs at once,
+	// I need to append the program name to the program properties names,
+	// this is the delimiter between the program name and the property name
+	// e.g. dark and darker|Health potion
+	ProgramDelimiter = "|"
 )
 
 var Emojis = map[string]string{
