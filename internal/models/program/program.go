@@ -15,6 +15,17 @@ type Program struct {
 	Coordinates map[string]*coordinates.Coordinates
 }
 
+func (p *Program) GetItemsWithAppendedProgramName() *items.Items {
+	itemsWithProgramAppended := &items.Items{
+		Items: make(map[string]*items.Item),
+	}
+	for s, i := range p.Items.Items {
+		s = p.Name + config.ProgramDelimiter + s
+		itemsWithProgramAppended.Items[s] = i
+	}
+	return itemsWithProgramAppended
+}
+
 func (p *Program) GetItems() *items.Items {
 	return p.Items
 }
@@ -27,13 +38,18 @@ func GetProgram(s string) *Program {
 		keyStr = "programs" + "." + s + "."
 		err    error
 	)
-	var p = new(Program)
+	var p = &Program{
+		Items: &items.Items{
+			Items: map[string]*items.Item{},
+		},
+		Coordinates: map[string]*coordinates.Coordinates{},
+	}
 	err = config.ViperConfig.UnmarshalKey(keyStr+"name", &p.Name)
 	if err != nil {
 		log.Fatalf(errStr, err)
 	}
 
-	err = config.ViperConfig.UnmarshalKey(keyStr+"items", &p.Items)
+	err = config.ViperConfig.UnmarshalKey(keyStr+"items", &p.Items.Items)
 	if err != nil {
 		log.Fatalf(errStr, err)
 	}
@@ -52,10 +68,7 @@ func GetPrograms() map[string]*Program {
 		ss = config.ViperConfig.GetStringMap("programs")
 	)
 	for s := range ss {
-		var (
-			p = new(Program)
-		)
-		p = GetProgram(s)
+		p := GetProgram(s)
 		ps[s] = p
 	}
 	log.Println("programs loaded", ps)

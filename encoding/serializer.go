@@ -41,7 +41,7 @@ func (s *serializer) CreateActionFromMap(rawMap map[string]any, parent actions.A
 		for _, t := range rawMap["targets"].([]any) {
 			targets = append(targets, t.(string))
 		}
-		action = actions.NewImageSearch(rawMap["name"].(string), []actions.ActionInterface{}, targets, createSearchBox(rawMap["searcharea"].(map[string]any)))
+		action = actions.NewImageSearch(rawMap["name"].(string), []actions.ActionInterface{}, targets, createSearchBox(rawMap["searcharea"].(map[string]any)), rawMap["rowsplit"].(int), rawMap["colsplit"].(int), rawMap["tolerance"].(float32))
 	case "ocr":
 		action = actions.NewOcr(rawMap["name"].(string), []actions.ActionInterface{}, rawMap["target"].(string), createSearchBox(rawMap["searcharea"].(map[string]any)))
 	}

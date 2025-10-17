@@ -84,7 +84,6 @@ func (mui *MacroUi) constructMacroToolbar() *widget.Toolbar {
 				mt.UnselectAll()
 				ui.ActionTabs.Selected().Content.Refresh()
 				mt.SelectedNode = ""
-				// unbindAll()
 			}),
 			widget.NewToolbarAction(theme.MoveDownIcon(), func() {
 				mt := mui.MTabs.SelectedTab()

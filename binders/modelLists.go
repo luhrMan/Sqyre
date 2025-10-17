@@ -7,7 +7,6 @@ import (
 	"Squire/internal/models/coordinates"
 	"Squire/ui"
 	"image/color"
-	"log"
 	"slices"
 	"strings"
 
@@ -21,7 +20,7 @@ import (
 )
 
 func SetAccordionPointsLists(acc *widget.Accordion) {
-	for key, pb := range GetBoundPrograms() {
+	for _, pb := range GetBoundPrograms() {
 		lists := struct {
 			boundPointSearchBar *widget.Entry
 			boundPointList      *widget.List
@@ -29,7 +28,7 @@ func SetAccordionPointsLists(acc *widget.Accordion) {
 		}{
 			boundPointSearchBar: &widget.Entry{},
 			boundPointList:      &widget.List{},
-			pointSearchList:     GetPointsAsStringSlice(key, config.MainMonitorSizeString),
+			pointSearchList:     pb.Coordinates[config.MainMonitorSizeString].GetPointsAsStringSlice(),
 		}
 
 		lists.boundPointList = widget.NewList(
@@ -60,7 +59,6 @@ func SetAccordionPointsLists(acc *widget.Accordion) {
 			ui.GetUi().ActionTabs.BoundPoint = boundPoint
 			// ui.GetUi().ActionTabs.BoundMove = boundPoint
 			if v, ok := ui.GetUi().Mui.MTabs.SelectedTab().Macro.Root.GetAction(ui.GetUi().Mui.MTabs.SelectedTab().SelectedNode).(*actions.Move); ok {
-				log.Println("This is getting called")
 				name, _ := boundPoint.GetValue("Name")
 				x, _ := boundPoint.GetValue("X")
 				y, _ := boundPoint.GetValue("Y")
@@ -83,7 +81,7 @@ func SetAccordionPointsLists(acc *widget.Accordion) {
 			PlaceHolder: "Search here",
 			OnChanged: func(s string) {
 				// defaultList := pro.Coordinates[config.MainMonitorSizeString].Points
-				defaultList := GetPointsAsStringSlice(key, config.MainMonitorSizeString)
+				defaultList := pb.Coordinates[config.MainMonitorSizeString].GetPointsAsStringSlice()
 				defer lists.boundPointList.ScrollToTop()
 				defer lists.boundPointList.Refresh()
 
@@ -145,12 +143,11 @@ func SetAccordionSearchAreasLists(acc *widget.Accordion) {
 		)
 
 		lists.boundSAList.OnSelected = func(id widget.ListItemID) {
-			boundMacro := boundMacros[ui.GetUi().Mui.MTabs.SelectedTab().Macro.Name]
+			// boundMacro := boundMacros[ui.GetUi().Mui.MTabs.SelectedTab().Macro.Name]
 			boundSA := pb.SearchAreaBindings[id]
 			bindSearchAreaWidgets(boundSA)
 			ui.GetUi().ActionTabs.BoundSearchArea = boundSA
 			if v, ok := ui.GetUi().Mui.MTabs.SelectedTab().Macro.Root.GetAction(ui.GetUi().Mui.MTabs.SelectedTab().SelectedNode).(*actions.ImageSearch); ok {
-				log.Println("This is getting called")
 				name, _ := boundSA.GetValue("Name")
 				x1, _ := boundSA.GetValue("LeftX")
 				y1, _ := boundSA.GetValue("TopY")
@@ -163,7 +160,7 @@ func SetAccordionSearchAreasLists(acc *widget.Accordion) {
 					RightX:  x2.(int),
 					BottomY: y2.(int),
 				}
-				boundMacro.bindAction(v)
+				// boundMacro.bindAction(v)
 				// boundMacros[ui.GetUi().Mui.MTabs.Selected().Text].BoundSelectedAction = boundPoint //ui.GetUi().ActionTabs.BoundMove
 				// ui.GetUi().Mui.MTabs.SelectedTab().
 			}
@@ -213,8 +210,9 @@ func SetAccordionItemsLists(acc *widget.Accordion) {
 	)
 	for _, pb := range GetBoundPrograms() {
 		var (
-			searchList = slices.Clone(pb.Program.GetItems().SortByCategory())
-			// bSearchList binding.ExternalStringList
+		// searchList = slices.Clone(pb.Program.GetItems().SortByName())
+		// searchList =
+		// bSearchList binding.ExternalStringList
 		)
 		lists := struct {
 			boundItemSearchBar *widget.Entry
@@ -225,7 +223,7 @@ func SetAccordionItemsLists(acc *widget.Accordion) {
 			boundItemGrid:      &widget.GridWrap{},
 			// searchAreaSearchList: GetPointsAsStringSlice(key, config.MainMonitorSizeString),
 		}
-		lists.ItemSearchList = pb.Program.GetItems().SortByCategory()
+		lists.ItemSearchList = pb.Program.GetItems().GetAsStringSlice()
 		lists.boundItemGrid = widget.NewGridWrap(
 			func() int {
 				return len(pb.ItemBindings)
@@ -245,7 +243,6 @@ func SetAccordionItemsLists(acc *widget.Accordion) {
 			func(id widget.GridWrapItemID, o fyne.CanvasObject) {
 				boundItem := pb.ItemBindings[id]
 				name, _ := boundItem.GetValue("Name")
-				// name = strings.ToLower(name.(string))
 
 				stack := o.(*fyne.Container)
 				rect := stack.Objects[0].(*canvas.Rectangle)
@@ -254,7 +251,7 @@ func SetAccordionItemsLists(acc *widget.Accordion) {
 				ist, _ := ats.BoundImageSearch.GetValue("Targets")
 				t := ist.([]string)
 
-				if slices.Contains(t, pb.Program.Name+"|"+name.(string)) {
+				if slices.Contains(t, strings.ToLower(pb.Program.Name)+config.ProgramDelimiter+name.(string)) {
 					rect.FillColor = color.RGBA{R: 0, G: 128, B: 0, A: 128}
 				} else {
 					rect.FillColor = color.RGBA{}
@@ -279,20 +276,24 @@ func SetAccordionItemsLists(acc *widget.Accordion) {
 		lists.boundItemGrid.OnSelected = func(id widget.GridWrapItemID) {
 			defer lists.boundItemGrid.UnselectAll()
 			defer lists.boundItemGrid.RefreshItem(id)
+			// boundMacro := boundMacros[ui.GetUi().Mui.MTabs.SelectedTab().Macro.Name]
+
+			boundItem := pb.ItemBindings[id]
+			n, _ := boundItem.GetValue("Name")
 			ist, _ := ats.BoundImageSearch.GetValue("Targets")
 			t := ist.([]string)
-			log.Println(lists.ItemSearchList[id])
-			name := strings.Split(lists.ItemSearchList[id], "|")[1]
-			item := searchList[id]
+			name := pb.Program.Name + config.ProgramDelimiter + n.(string)
 			if !slices.Contains(t, name) {
 				t = append(t, name)
 			} else {
-				i := slices.Index(t, item)
+				i := slices.Index(t, name)
 				if i != -1 {
 					t = slices.Delete(t, i, i+1)
 				}
 			}
 			ats.BoundImageSearch.SetValue("Targets", t)
+			// boundMacro.bindAction(v)
+
 		}
 
 		// lists.boundSAList = widget.NewList(
@@ -322,7 +323,6 @@ func SetAccordionItemsLists(acc *widget.Accordion) {
 		// 	bindSearchAreaWidgets(boundSA)
 		// 	ui.GetUi().ActionTabs.BoundSearchArea = boundSA
 		// 	if v, ok := ui.GetUi().Mui.MTabs.SelectedTab().Macro.Root.GetAction(ui.GetUi().Mui.MTabs.SelectedTab().SelectedNode).(*actions.ImageSearch); ok {
-		// 		log.Println("This is getting called")
 		// 		name, _ := boundSA.GetValue("Name")
 		// 		x1, _ := boundSA.GetValue("LeftX")
 		// 		y1, _ := boundSA.GetValue("TopY")
