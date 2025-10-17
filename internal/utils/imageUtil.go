@@ -56,7 +56,7 @@ func match(pathDir string, img, imgDraw gocv.Mat, sa coordinates.SearchArea, ts 
 		go func(t string) {
 			defer wg.Done()
 			p := program.GetProgram(strings.Split(t, config.ProgramDelimiter)[0])
-			i, err := p.Items.GetItem(strings.Split(t, config.ProgramDelimiter)[1])
+			i, err := p.GetItem(strings.Split(t, config.ProgramDelimiter)[1])
 			if err != nil {
 				log.Println(err)
 				return

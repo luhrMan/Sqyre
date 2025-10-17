@@ -14,15 +14,12 @@ type sViper struct {
 	serializer
 }
 
-func (s *sViper) Encode(d any) error {
-	config.ViperConfig.Set("programs", d)
-	err := config.ViperConfig.WriteConfig()
-	if err != nil {
-		return fmt.Errorf("error marshalling tree: %v", err)
-	}
-	log.Println("Successfully encoded:", "config.yaml")
-	return nil
-}
+// func (s *sViper) Encode(d any) error {
+// 	// s.encodePrograms(d.(map[string]program.Program))
+// 	// s.encodeMacros()
+// 	log.Println("Successfully encoded:", "config.yaml")
+// 	return nil
+// }
 
 func (s *sViper) Decode(filename string, d any) error {
 	err := config.ViperConfig.Unmarshal(&d)
