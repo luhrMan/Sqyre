@@ -9,15 +9,7 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/data/binding"
-	"fyne.io/fyne/v2/widget"
 )
-
-func UnbindAll() {
-	ats := ui.GetUi().ActionTabs
-
-	ats.BoundTimeEntry.Unbind()
-	ats.BoundTimeSlider.Unbind()
-}
 
 func ResetBinds() {
 	ats := ui.GetUi().ActionTabs
@@ -61,9 +53,9 @@ func ResetBinds() {
 }
 
 func SetActionTabBindings() {
-	SetAccordionPointsLists(ui.GetUi().ActionTabs.PointsAccordion)
-	SetAccordionSearchAreasLists(ui.GetUi().ActionTabs.SAAccordion)
-	SetAccordionItemsLists(ui.GetUi().ActionTabs.ItemsAccordion)
+	setAccordionPointsLists(ui.GetUi().ActionTabs.PointsAccordion)
+	setAccordionSearchAreasLists(ui.GetUi().ActionTabs.SAAccordion)
+	setAccordionItemsLists(ui.GetUi().ActionTabs.ItemsAccordion)
 	ui.GetUi().ActionTabs.BoundWait = binding.BindStruct(actions.NewWait(0))
 	ui.GetUi().ActionTabs.BoundMove = binding.BindStruct(actions.NewMove(coordinates.Point{"blank", 0, 0}))
 	ui.GetUi().ActionTabs.BoundKey = binding.BindStruct(actions.NewKey("ctrl", "down"))
@@ -76,70 +68,6 @@ func SetActionTabBindings() {
 	t, _ := ui.GetUi().ActionTabs.BoundWait.GetItem("Time")
 	ui.GetUi().ActionTabs.BoundTimeEntry.Bind(binding.IntToString(t.(binding.Int)))
 	ui.GetUi().ActionTabs.BoundTimeSlider.Bind(binding.IntToFloat(t.(binding.Int)))
-
-}
-
-func bindPointWidgets(di binding.Struct) {
-	dl := binding.NewDataListener(func() {
-		mt := ui.GetUi().Mui.MTabs.SelectedTab()
-		fyne.Do(func() { mt.RefreshItem(mt.SelectedNode) })
-	})
-
-	ets := ui.GetUi().EditorTabs
-	pt := ets.PointsTab.BindableWidgets
-
-	name, _ := di.GetItem("Name")
-	x, _ := di.GetItem("X")
-	y, _ := di.GetItem("Y")
-
-	pt["Name"].(*widget.Entry).Unbind()
-	pt["X"].(*widget.Entry).Unbind()
-	pt["Y"].(*widget.Entry).Unbind()
-	x.RemoveListener(dl)
-	y.RemoveListener(dl)
-
-	pt["Name"].(*widget.Entry).Bind(name.(binding.String))
-	pt["X"].(*widget.Entry).Bind(binding.IntToString(x.(binding.Int)))
-	pt["Y"].(*widget.Entry).Bind(binding.IntToString(y.(binding.Int)))
-	x.AddListener(dl)
-	y.AddListener(dl)
-
-}
-
-func bindSearchAreaWidgets(di binding.Struct) {
-	dl := binding.NewDataListener(func() {
-		mt := ui.GetUi().Mui.MTabs.SelectedTab()
-		fyne.Do(func() { mt.RefreshItem(mt.SelectedNode) })
-	})
-
-	ets := ui.GetUi().EditorTabs
-	st := ets.SearchAreasTab.BindableWidgets
-
-	name, _ := di.GetItem("Name")
-	x1, _ := di.GetItem("LeftX")
-	y1, _ := di.GetItem("TopY")
-	x2, _ := di.GetItem("RightX")
-	y2, _ := di.GetItem("BottomY")
-
-	st["Name"].(*widget.Entry).Unbind()
-	st["LeftX"].(*widget.Entry).Unbind()
-	st["TopY"].(*widget.Entry).Unbind()
-	st["RightX"].(*widget.Entry).Unbind()
-	st["BottomY"].(*widget.Entry).Unbind()
-	x1.RemoveListener(dl)
-	y1.RemoveListener(dl)
-	x2.RemoveListener(dl)
-	y2.RemoveListener(dl)
-
-	st["Name"].(*widget.Entry).Bind(name.(binding.String))
-	st["LeftX"].(*widget.Entry).Bind(binding.IntToString(x1.(binding.Int)))
-	st["TopY"].(*widget.Entry).Bind(binding.IntToString(y1.(binding.Int)))
-	st["RightX"].(*widget.Entry).Bind(binding.IntToString(x2.(binding.Int)))
-	st["BottomY"].(*widget.Entry).Bind(binding.IntToString(y2.(binding.Int)))
-	x1.AddListener(dl)
-	y1.AddListener(dl)
-	x2.AddListener(dl)
-	y2.AddListener(dl)
 
 }
 

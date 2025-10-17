@@ -1,12 +1,5 @@
 package items
 
-import (
-	"fmt"
-	"slices"
-	"sort"
-	"strings"
-)
-
 // var (
 // 	allItemsSlice            []string
 // 	allItemsSortedByName     []string
@@ -14,26 +7,15 @@ import (
 // 	allItemsMap              = make(map[string]Item)
 // )
 
-type Items struct {
-	Items map[string]*Item
-}
+//	type Items struct {
+//		Items map[string]*Item
+//	}
 type Item struct {
-	Name     string `json:"name"`
-	GridSize [2]int `json:"gridSize"`
-	Category string `json:"category"`
-	StackMax int    `json:"stackMax"`
-	Merchant string `json:"merchant"`
-}
-
-func (is *Items) GetItem(i string) (*Item, error) {
-	if item, ok := is.Items[strings.ToLower(i)]; ok {
-		return item, nil
-	}
-	return &Item{}, fmt.Errorf("item does not exist")
-	// index, found := slices.BinarySearch(SortByName(allItemsMap), i)
-	// if found {
-	// 	return allItemsMap[AllItems()[index]], nil
-	// }
+	Name     string   `json:"name"`
+	GridSize [2]int   `json:"gridSize"`
+	Tags     []string `json:"tags"`
+	StackMax int      `json:"stackMax"`
+	Merchant string   `json:"merchant"`
 }
 
 // func ParseItemsFromJson(path string) []Item {
@@ -52,43 +34,24 @@ func (is *Items) GetItem(i string) (*Item, error) {
 // 	return im
 // }
 
-func (is *Items) GetAsStringSlice() []string {
-	items := []string{}
-	for _, i := range is.Items {
-		items = append(items, strings.ToLower(i.Name))
-	}
-	return items
-}
-
-func (is *Items) SortByCategory() []string {
-	categories := make([]string, 0, len(is.Items))
-	items := []string{}
-	for _, i := range is.Items {
-		if !slices.Contains(categories, i.Category) {
-			categories = append(categories, i.Category)
-		}
-	}
-	sort.Strings(categories)
-	for _, c := range categories {
-		for _, i := range is.SortByName() {
-			if is.Items[strings.ToLower(i)].Category == c {
-				items = append(items, is.Items[strings.ToLower(i)].Name)
-			}
-		}
-	}
-	return items
-}
-
-func (is *Items) SortByName() []string {
-	items := []string{}
-	for _, i := range is.Items {
-		items = append(items, strings.ToLower(i.Name))
-	}
-	if !slices.IsSorted(items) {
-		slices.Sort(items)
-	}
-	return items
-}
+// func (is *Items) SortByCategory() []string {
+// 	categories := make([]string, 0, len(is.Items))
+// 	items := []string{}
+// 	for _, i := range is.Items {
+// 		if !slices.Contains(categories, i.Category) {
+// 			categories = append(categories, i.Category)
+// 		}
+// 	}
+// 	sort.Strings(categories)
+// 	for _, c := range categories {
+// 		for _, i := range is.SortByName() {
+// 			if is.Items[strings.ToLower(i)].Category == c {
+// 				items = append(items, is.Items[strings.ToLower(i)].Name)
+// 			}
+// 		}
+// 	}
+// 	return items
+// }
 
 // func SetAllItems(is []string) {
 // 	allItemsSlice = is

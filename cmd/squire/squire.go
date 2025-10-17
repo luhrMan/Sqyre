@@ -2,9 +2,10 @@ package main
 
 import (
 	"Squire/binders"
-	"Squire/encoding"
 	"Squire/internal/assets"
 	"Squire/internal/config"
+	"Squire/internal/models/macro"
+	"Squire/internal/models/program"
 	"Squire/internal/utils"
 	"Squire/ui"
 
@@ -45,7 +46,11 @@ func main() {
 
 	utils.CloseTessClient()
 
-	err := encoding.ViperSerializer.Encode(binders.GetPrograms())
+	err := program.EncodePrograms(binders.GetPrograms())
+	if err != nil {
+		log.Println(err)
+	}
+	err = macro.EncodeMacros(binders.GetMacros())
 	if err != nil {
 		log.Println(err)
 	}
@@ -63,9 +68,9 @@ func configInit() {
 }
 
 func BindUi() {
+	binders.SetActionTabBindings()
 	binders.SetMacroUi()
 	binders.SetEditorTabs()
-	binders.SetActionTabBindings()
 }
 
 func systemTraySetup(w fyne.Window) {

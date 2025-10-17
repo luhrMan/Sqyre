@@ -5,6 +5,7 @@ import (
 	"Squire/internal/config"
 	"Squire/internal/models/actions"
 	"Squire/internal/utils"
+	"fmt"
 	"log"
 	"slices"
 
@@ -49,8 +50,6 @@ func (m *Macro) ExecuteActionTree(ctx ...any) { //error
 }
 
 func (m *Macro) UnmarshalMacro(keystr string) error {
-	// log.Println("Unmarshalling macro", m.Name)
-	log.Println(keystr)
 	err := config.ViperConfig.UnmarshalKey(
 		keystr, &m,
 		viper.DecodeHook(encoding.MacroDecodeHookFunc()),
@@ -59,6 +58,18 @@ func (m *Macro) UnmarshalMacro(keystr string) error {
 		log.Println("Error unmarshalling macro:")
 		return err
 	}
+	log.Println("Unmarshalled macro: ", m.Name)
+	log.Println("Unmarshalled actions: ", m.Root.SubActions)
+	return nil
+}
+
+func EncodeMacros(d map[string]*Macro) error {
+	config.ViperConfig.Set("macros", d)
+	err := config.ViperConfig.WriteConfig()
+	if err != nil {
+		return fmt.Errorf("error marshalling macros: %v", err)
+	}
+	log.Println("Successfully encoded macros")
 	return nil
 }
 

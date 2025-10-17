@@ -4,34 +4,61 @@ import (
 	"Squire/internal/config"
 	"Squire/internal/models/coordinates"
 	"Squire/internal/models/items"
+	"fmt"
 	"log"
+	"slices"
+	"strings"
 )
 
 var errStr = "unable to decode into struct, %v"
 
 type Program struct {
 	Name        string
-	Items       *items.Items
+	Items       map[string]*items.Item
 	Coordinates map[string]*coordinates.Coordinates
 }
 
-func (p *Program) GetItemsWithAppendedProgramName() *items.Items {
-	itemsWithProgramAppended := &items.Items{
-		Items: make(map[string]*items.Item),
-	}
-	for s, i := range p.Items.Items {
+func (p *Program) GetItemsWithAppendedProgramName() map[string]*items.Item {
+	is := make(map[string]*items.Item)
+	for s, i := range p.Items {
 		s = p.Name + config.ProgramDelimiter + s
-		itemsWithProgramAppended.Items[s] = i
+		is[s] = i
 	}
-	return itemsWithProgramAppended
+	return is
 }
 
-func (p *Program) GetItems() *items.Items {
-	return p.Items
+func (p *Program) GetItem(i string) (*items.Item, error) {
+	if item, ok := p.Items[strings.ToLower(i)]; ok {
+		return item, nil
+	}
+	return &items.Item{}, fmt.Errorf("item does not exist")
+	// index, found := slices.BinarySearch(SortByName(allItemsMap), i)
+	// if found {
+	// 	return allItemsMap[AllItems()[index]], nil
+	// }
+}
+
+func (p *Program) GetItemsAsStringSlice() []string {
+	items := []string{}
+	for _, i := range p.Items {
+		items = append(items, strings.ToLower(i.Name))
+	}
+	return items
+}
+
+func (p *Program) SortItemsByName() []string {
+	items := []string{}
+	for _, i := range p.Items {
+		items = append(items, strings.ToLower(i.Name))
+	}
+	if !slices.IsSorted(items) {
+		slices.Sort(items)
+	}
+	return items
 }
 
 func (p *Program) GetItemsMap() map[string]*items.Item {
-	return p.Items.Items
+	return p.Items
 }
 func GetProgram(s string) *Program {
 	var (
@@ -39,9 +66,7 @@ func GetProgram(s string) *Program {
 		err    error
 	)
 	var p = &Program{
-		Items: &items.Items{
-			Items: map[string]*items.Item{},
-		},
+		Items:       map[string]*items.Item{},
 		Coordinates: map[string]*coordinates.Coordinates{},
 	}
 	err = config.ViperConfig.UnmarshalKey(keyStr+"name", &p.Name)
@@ -49,7 +74,7 @@ func GetProgram(s string) *Program {
 		log.Fatalf(errStr, err)
 	}
 
-	err = config.ViperConfig.UnmarshalKey(keyStr+"items", &p.Items.Items)
+	err = config.ViperConfig.UnmarshalKey(keyStr+"items", &p.Items)
 	if err != nil {
 		log.Fatalf(errStr, err)
 	}
@@ -78,7 +103,7 @@ func GetPrograms() map[string]*Program {
 func NewProgram(name string) *Program {
 	return &Program{
 		Name:  name,
-		Items: &items.Items{},
+		Items: make(map[string]*items.Item),
 		// Coordinates: map[string]*coordinates.Coordinates{
 		// 	strconv.Itoa(config.MonitorWidth) + "x" + strconv.Itoa(config.MonitorHeight): { //"2560x1440": {
 		// 		Points:      make(map[string]coordinates.Point),
@@ -86,6 +111,16 @@ func NewProgram(name string) *Program {
 		// 	},
 		// },
 	}
+}
+
+func EncodePrograms(d map[string]*Program) error {
+	config.ViperConfig.Set("programs", d)
+	err := config.ViperConfig.WriteConfig()
+	if err != nil {
+		return fmt.Errorf("error marshalling programs: %v", err)
+	}
+	log.Println("Successfully encoded programs")
+	return nil
 }
 
 // func (p *Program) GetItem(i string) items.Item {
