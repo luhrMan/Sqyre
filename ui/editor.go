@@ -39,22 +39,22 @@ func constructEditorWindow() {
 // I need to complete the structure of the editor window here and then complete the bindings in binders. add as many properties to EditorUi as u need bro
 func ConstructEditorTabs() {
 	var (
-		name     = "Name"
-		x        = "X"
-		y        = "Y"
-		x1       = "RightX"
-		y1       = "TopY"
-		x2       = "LeftX"
-		y2       = "BottomY"
-		gs       = "GridSize"
-		category = "Category"
-		sm       = "StackMax"
-		m        = "Merchant"
+		name = "Name"
+		x    = "X"
+		y    = "Y"
+		x1   = "RightX"
+		y1   = "TopY"
+		x2   = "LeftX"
+		y2   = "BottomY"
+		gs   = "GridSize"
+		tags = "Tags"
+		sm   = "StackMax"
+		m    = "Merchant"
 	)
 
 	ui.EditorTabs.ItemsTab.BindableWidgets[name] = widget.NewEntryWithData(binding.NewString())
 	ui.EditorTabs.ItemsTab.BindableWidgets[gs] = widget.NewEntryWithData(binding.NewString())
-	ui.EditorTabs.ItemsTab.BindableWidgets[category] = widget.NewEntryWithData(binding.NewString())
+	ui.EditorTabs.ItemsTab.BindableWidgets[tags] = widget.NewEntryWithData(binding.NewString())
 	ui.EditorTabs.ItemsTab.BindableWidgets[sm] = widget.NewEntryWithData(binding.NewString())
 	ui.EditorTabs.ItemsTab.BindableWidgets[m] = widget.NewEntryWithData(binding.NewString())
 	ui.EditorTabs.ItemsTab.TabItem = NewEditorTab(
@@ -63,7 +63,7 @@ func ConstructEditorTabs() {
 		container.NewBorder(nil, nil, nil, nil, widget.NewForm(
 			widget.NewFormItem(name, ui.EditorTabs.ItemsTab.BindableWidgets[name]),
 			widget.NewFormItem(gs, ui.EditorTabs.ItemsTab.BindableWidgets[gs]),
-			widget.NewFormItem(category, ui.EditorTabs.ItemsTab.BindableWidgets[category]),
+			widget.NewFormItem(tags, ui.EditorTabs.ItemsTab.BindableWidgets[tags]),
 			widget.NewFormItem(sm, ui.EditorTabs.ItemsTab.BindableWidgets[sm]),
 			widget.NewFormItem(m, ui.EditorTabs.ItemsTab.BindableWidgets[m]),
 		)),

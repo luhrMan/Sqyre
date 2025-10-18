@@ -14,7 +14,6 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
@@ -23,7 +22,6 @@ import (
 
 type MacroBinding struct {
 	*macro.Macro
-	BoundSelectedAction binding.Struct
 }
 
 func BindMacros() {
@@ -72,8 +70,8 @@ func GetMacrosAsStringSlice() []string {
 
 func SetMacroUi() {
 	setMtabSettingsAndWidgets()
-	setMacroSelect()
 	setMacroToolbar()
+	setMacroSelect()
 	for _, m := range GetMacros() {
 		AddMacroTab(m)
 	}
@@ -134,11 +132,8 @@ func setMtabSettingsAndWidgets() {
 		mt := mtabs.SelectedTab()
 		mt.UnselectAll()
 		mt.SelectedNode = ""
-		boundMacros[mt.Macro.Name].BoundSelectedAction = nil
 		ResetBinds()
-		for _, ai := range ui.GetUi().ActionTabs.ItemsAccordion.Items {
-			ai.Detail.Refresh()
-		}
+		RefreshItemsAccordionItems()
 	}
 	mtabs.OnSelected = func(ti *container.TabItem) {
 		m := GetMacro(ti.Text)
@@ -191,7 +186,7 @@ func setMtabSettingsAndWidgets() {
 }
 
 func setMacroSelect() {
-	ui.GetUi().Mui.MacroSelectButton = widget.NewButtonWithIcon("",
+	ui.GetUi().Mui.MacroSelectButton = widget.NewButtonWithIcon("why no show",
 		theme.FolderOpenIcon(),
 		func() {
 			title := "Open Macro"
@@ -247,33 +242,33 @@ func setMacroSelect() {
 // MACRO TREE
 func setMacroTree(mt *ui.MacroTree) {
 	// mt := ui.GetUi().Mui.MTabs.SelectedTab()
-	at := ui.GetUi().ActionTabs
+	ats := ui.GetUi().ActionTabs
 	macroBind := boundMacros[mt.Macro.Name]
 	mt.Tree.OnSelected = func(uid widget.TreeNodeID) {
 		ui.GetUi().Mui.MTabs.SelectedTab().SelectedNode = uid
 		switch node := mt.Macro.Root.GetAction(uid).(type) {
 		case *actions.Wait:
 			macroBind.bindAction(node)
-			at.SelectIndex(ui.WaitTab)
+			ats.SelectIndex(ui.WaitTab)
 		case *actions.Move:
 			macroBind.bindAction(node)
-			at.SelectIndex(ui.MoveTab)
+			ats.SelectIndex(ui.MoveTab)
 		case *actions.Click:
 			macroBind.bindAction(node)
-			at.SelectIndex(ui.ClickTab)
+			ats.SelectIndex(ui.ClickTab)
 		case *actions.Key:
 			macroBind.bindAction(node)
-			at.SelectIndex(ui.KeyTab)
+			ats.SelectIndex(ui.KeyTab)
 
 		case *actions.Loop:
 			macroBind.bindAction(node)
-			at.SelectIndex(ui.LoopTab)
+			ats.SelectIndex(ui.LoopTab)
 		case *actions.ImageSearch:
 			macroBind.bindAction(node)
-			at.SelectIndex(ui.ImageSearchTab)
+			ats.SelectIndex(ui.ImageSearchTab)
 		case *actions.Ocr:
 			macroBind.bindAction(node)
-			at.SelectIndex(ui.OcrTab)
+			ats.SelectIndex(ui.OcrTab)
 		}
 	}
 	mt.Tree.OnUnselected = func(uid widget.TreeNodeID) {
@@ -285,46 +280,47 @@ func setMacroToolbar() {
 	ui.GetUi().Mui.MacroToolbars.TopToolbar.Objects[0].(*fyne.Container).Objects[0].(*widget.Toolbar).Prepend(widget.NewToolbarAction(theme.ContentAddIcon(), func() {
 		var action actions.ActionInterface
 		mt := ui.GetUi().Mui.MTabs.SelectedTab()
+		ats := ui.GetUi().ActionTabs
 		selectedNode := mt.Macro.Root.GetAction(mt.SelectedNode)
 		if selectedNode == nil {
 			selectedNode = mt.Macro.Root
 		}
-		switch ui.ActionTabs.Selected(*ui.GetUi().ActionTabs).Text {
+		switch ui.ActionTabs.Selected(*ats).Text {
 		case "Wait":
-			time, e := ui.GetUi().ActionTabs.BoundWait.GetValue("Time")
+			time, e := ats.BoundWait.GetValue("Time")
 			if e != nil {
 				log.Println(e)
 			}
 			action = actions.NewWait(time.(int))
 		case "Move":
-			name, _ := ui.GetUi().ActionTabs.BoundPoint.GetValue("Name")
-			x, _ := ui.GetUi().ActionTabs.BoundPoint.GetValue("X")
-			y, _ := ui.GetUi().ActionTabs.BoundPoint.GetValue("Y")
+			name, _ := ats.BoundPoint.GetValue("Name")
+			x, _ := ats.BoundPoint.GetValue("X")
+			y, _ := ats.BoundPoint.GetValue("Y")
 			action = actions.NewMove(coordinates.Point{Name: name.(string), X: x.(int), Y: y.(int)})
 		case "Click":
-			button, _ := ui.GetUi().ActionTabs.BoundClick.GetValue("Button")
-			action = actions.NewClick(button.(string))
+			button, _ := ats.BoundClick.GetValue("Button")
+			action = actions.NewClick(button.(bool))
 		case "Key":
-			key, _ := ui.GetUi().ActionTabs.BoundKey.GetValue("Key")
-			state, _ := ui.GetUi().ActionTabs.BoundKey.GetValue("State")
-			action = actions.NewKey(key.(string), state.(string))
+			key, _ := ats.BoundKey.GetValue("Key")
+			state, _ := ats.BoundKey.GetValue("State")
+			action = actions.NewKey(key.(string), state.(bool))
 		case "Loop":
-			name, _ := ui.GetUi().ActionTabs.BoundAdvancedAction.GetValue("Name")
-			count, _ := ui.GetUi().ActionTabs.BoundLoop.GetValue("Count")
+			name, _ := ats.BoundLoopAA.GetValue("Name")
+			count, _ := ats.BoundLoop.GetValue("Count")
 			subactions := []actions.ActionInterface{}
 			action = actions.NewLoop(count.(int), name.(string), subactions)
 		case "Image":
-			name, _ := ui.GetUi().ActionTabs.BoundAdvancedAction.GetValue("Name")
+			name, _ := ats.BoundImageSearchAA.GetValue("Name")
 			subactions := []actions.ActionInterface{}
-			targets, _ := ui.GetUi().ActionTabs.BoundImageSearch.GetValue("Targets")
-			rs, _ := ui.GetUi().ActionTabs.BoundImageSearch.GetValue("RowSplit")
-			cs, _ := ui.GetUi().ActionTabs.BoundImageSearch.GetValue("ColSplit")
-			tol, _ := ui.GetUi().ActionTabs.BoundImageSearch.GetValue("Tolerance")
-			searchArea, _ := ui.GetUi().ActionTabs.BoundSearchArea.GetValue("Name")
-			x1, _ := ui.GetUi().ActionTabs.BoundSearchArea.GetValue("LeftX")
-			y1, _ := ui.GetUi().ActionTabs.BoundSearchArea.GetValue("TopY")
-			x2, _ := ui.GetUi().ActionTabs.BoundSearchArea.GetValue("RightX")
-			y2, _ := ui.GetUi().ActionTabs.BoundSearchArea.GetValue("BottomY")
+			targets, _ := ats.BoundImageSearch.GetValue("Targets")
+			rs, _ := ats.BoundImageSearch.GetValue("RowSplit")
+			cs, _ := ats.BoundImageSearch.GetValue("ColSplit")
+			tol, _ := ats.BoundImageSearch.GetValue("Tolerance")
+			searchArea, _ := ats.BoundImageSearchSA.GetValue("Name")
+			x1, _ := ats.BoundImageSearchSA.GetValue("LeftX")
+			y1, _ := ats.BoundImageSearchSA.GetValue("TopY")
+			x2, _ := ats.BoundImageSearchSA.GetValue("RightX")
+			y2, _ := ats.BoundImageSearchSA.GetValue("BottomY")
 			action = actions.NewImageSearch(
 				name.(string),
 				subactions,
@@ -334,14 +330,14 @@ func setMacroToolbar() {
 				// binders.GetProgram(config.DarkAndDarker).Coordinates[config.MainMonitorSizeString].GetSearchArea(searchArea.(string))
 			)
 		case "OCR":
-			name, _ := ui.GetUi().ActionTabs.BoundAdvancedAction.GetValue("Name")
-			target, _ := ui.GetUi().ActionTabs.BoundOcr.GetValue("Target")
+			name, _ := ats.BoundOcrAA.GetValue("Name")
+			target, _ := ats.BoundOcr.GetValue("Target")
 			subactions := []actions.ActionInterface{}
-			searchArea, _ := ui.GetUi().ActionTabs.BoundSearchArea.GetValue("Name")
-			x1, _ := ui.GetUi().ActionTabs.BoundSearchArea.GetValue("LeftX")
-			y1, _ := ui.GetUi().ActionTabs.BoundSearchArea.GetValue("TopY")
-			x2, _ := ui.GetUi().ActionTabs.BoundSearchArea.GetValue("RightX")
-			y2, _ := ui.GetUi().ActionTabs.BoundSearchArea.GetValue("BottomY")
+			searchArea, _ := ats.BoundOcrSA.GetValue("Name")
+			x1, _ := ats.BoundOcrSA.GetValue("LeftX")
+			y1, _ := ats.BoundOcrSA.GetValue("TopY")
+			x2, _ := ats.BoundOcrSA.GetValue("RightX")
+			y2, _ := ats.BoundOcrSA.GetValue("BottomY")
 			action = actions.NewOcr(
 				name.(string),
 				subactions,

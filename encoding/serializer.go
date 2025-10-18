@@ -31,11 +31,11 @@ func (s *serializer) CreateActionFromMap(rawMap map[string]any, parent actions.A
 	case "wait":
 		action = actions.NewWait(rawMap["time"].(int))
 	case "click":
-		action = actions.NewClick(rawMap["button"].(string))
+		action = actions.NewClick(rawMap["button"].(bool))
 	case "move":
 		action = actions.NewMove(createPoint(rawMap["point"].(map[string]any)))
 	case "key":
-		action = actions.NewKey(rawMap["key"].(string), rawMap["state"].(string))
+		action = actions.NewKey(rawMap["key"].(string), rawMap["state"].(bool))
 	case "imagesearch":
 		targets := make([]string, 0)
 		for _, t := range rawMap["targets"].([]any) {

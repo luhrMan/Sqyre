@@ -18,10 +18,10 @@ type ProgramBinding struct {
 func InitPrograms() {
 	once.Do(func() {
 		programs = program.GetPrograms()
-		macros = macro.GetMacros()
 		boundPrograms = map[string]*ProgramBinding{}
-		boundMacros = map[string]*MacroBinding{}
 		BindPrograms()
+		macros = macro.GetMacros()
+		boundMacros = map[string]*MacroBinding{}
 		BindMacros()
 	})
 }
