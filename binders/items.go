@@ -139,6 +139,9 @@ func setAccordionItemsLists(acc *widget.Accordion) {
 				}
 			}
 			ats.BoundImageSearch.SetValue("Targets", t)
+			// for _, o := range ui.GetUi().EditorTabs.ItemsTab.Right.Objects {
+			// 	o.Refresh()
+			// }
 			// boundMacro.bindAction(v)
 
 		}
@@ -216,5 +219,11 @@ func setAccordionItemsLists(acc *widget.Accordion) {
 			),
 		)
 		acc.Append(&programItemsListWidget)
+	}
+}
+
+func RefreshItemsAccordionItems() {
+	for _, ai := range ui.GetUi().ActionTabs.ImageSearchItemsAccordion.Items {
+		ai.Detail.Refresh()
 	}
 }

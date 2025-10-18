@@ -1,5 +1,41 @@
 macros:
-    New macro 1:
+    get gems:
+        name: Get Gems
+        root:
+            count: 1
+            type: loop
+            name: root
+            subactions:
+                - type: wait
+                  time: 590
+                - type: key
+                  key: ctrl
+                  state: true
+                - targets:
+                    - dark and darker|Ancient Scroll
+                    - dark and darker|Gold Candle Holder
+                    - dark and darker|Iron Ore Stack
+                    - dark and darker|Old Cloth
+                    - dark and darker|Shine Bangle
+                    - dark and darker|Silver Ingot
+                    - path of exile|Arcanists Etcher
+                  searcharea:
+                    name: stash-screen-stash-inventory
+                    leftx: 1832
+                    topy: 261
+                    rightx: 2493
+                    bottomy: 1354
+                  rowsplit: 1
+                  colsplit: 1
+                  tolerance: 0.95
+                  type: imagesearch
+                  name: ""
+        globaldelay: 45
+        hotkey:
+            - ctrl
+            - shift
+            - "2"
+    new macro 1:
         name: New macro 1
         root:
             count: 1
@@ -8,9 +44,9 @@ macros:
             subactions:
                 - targets:
                     - dark and darker|Gold Candle Holder
-                    - dark and darker|Silver Ingot
                     - dark and darker|Iron Ingot Stack
                     - dark and darker|Phoenix Choker
+                    - dark and darker|Silver Ingot
                   searcharea:
                     name: stash-screen-player-inventory
                     leftx: 913
@@ -28,40 +64,8 @@ macros:
                         name: Stash-screen-stashtab3
                         x: 1743
                         "y": 380
-        globaldelay: 0
+        globaldelay: 150
         hotkey: []
-    get gems:
-        name: Get Gems
-        root:
-            count: 1
-            type: loop
-            name: root
-            subactions:
-                - type: wait
-                  time: 0
-                - type: key
-                  key: ctrl
-                  state: up
-                - targets:
-                    - dark and darker|Gold Candle Holder
-                    - dark and darker|Old Cloth
-                    - dark and darker|Silver Ingot
-                  searcharea:
-                    name: stash-screen-stash-inventory
-                    leftx: 1832
-                    topy: 261
-                    rightx: 2493
-                    bottomy: 1354
-                  rowsplit: 1
-                  colsplit: 1
-                  tolerance: 0.95
-                  type: imagesearch
-                  name: ""
-        globaldelay: 45
-        hotkey:
-            - ctrl
-            - shift
-            - "2"
 programs:
     dark and darker:
         name: dark and darker
@@ -976,7 +980,7 @@ programs:
                     - 2
                     - 2
                 tags: []
-                stackmax: 0
+                stackmax: 5
                 merchant: ""
             rusty broken sword:
                 name: Rusty Broken Sword
