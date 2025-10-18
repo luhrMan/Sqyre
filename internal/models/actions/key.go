@@ -11,10 +11,10 @@ import (
 type Key struct {
 	*BaseAction `yaml:",inline" mapstructure:",squash"`
 	Key         string
-	State       string
+	State       bool
 }
 
-func NewKey(key, state string) *Key {
+func NewKey(key string, state bool) *Key {
 	return &Key{
 		BaseAction: newBaseAction("key"),
 		Key:        key,
@@ -24,14 +24,13 @@ func NewKey(key, state string) *Key {
 
 func (a *Key) Execute(ctx any) error {
 	log.Printf("Key: %s %s", a.Key, a.State)
-	switch a.State {
-	case "Up", "up":
-		err := robotgo.KeyUp(a.Key)
+	if a.State {
+		err := robotgo.KeyDown(a.Key)
 		if err != nil {
 			return err
 		}
-	case "Down", "down":
-		err := robotgo.KeyDown(a.Key)
+	} else {
+		err := robotgo.KeyUp(a.Key)
 		if err != nil {
 			return err
 		}
@@ -40,7 +39,7 @@ func (a *Key) Execute(ctx any) error {
 }
 
 func (a *Key) String() string {
-	return fmt.Sprintf("%s Key: %s %s ", config.GetEmoji("Key"), a.Key, a.State)
+	return fmt.Sprintf("%s Key: %s %s ", config.GetEmoji("Key"), a.Key, UpOrDown(a.State))
 }
 
 func UpOrDown(b bool) string {

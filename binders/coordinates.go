@@ -13,7 +13,7 @@ import (
 	"github.com/lithammer/fuzzysearch/fuzzy"
 )
 
-func bindSearchAreaWidgets(di binding.Struct) {
+func bindSearchAreaEditorWidgets(di binding.Struct) {
 	dl := binding.NewDataListener(func() {
 		mt := ui.GetUi().Mui.MTabs.SelectedTab()
 		fyne.Do(func() { mt.RefreshItem(mt.SelectedNode) })
@@ -112,8 +112,10 @@ func setAccordionSearchAreasLists(acc *widget.Accordion) {
 		lists.boundSAList.OnSelected = func(id widget.ListItemID) {
 			// boundMacro := boundMacros[ui.GetUi().Mui.MTabs.SelectedTab().Macro.Name]
 			boundSA := pb.SearchAreaBindings[id]
-			bindSearchAreaWidgets(boundSA)
-			ui.GetUi().ActionTabs.BoundSearchArea = boundSA
+			bindSearchAreaEditorWidgets(boundSA)
+			// w := ui.GetUi().EditorUi.Window.Canvas()
+
+			// ui.GetUi().ActionTabs.BoundSearchArea = boundSA
 			if v, ok := ui.GetUi().Mui.MTabs.SelectedTab().Macro.Root.GetAction(ui.GetUi().Mui.MTabs.SelectedTab().SelectedNode).(*actions.ImageSearch); ok {
 				name, _ := boundSA.GetValue("Name")
 				x1, _ := boundSA.GetValue("LeftX")

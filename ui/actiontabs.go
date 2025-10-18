@@ -1,8 +1,6 @@
 package ui
 
 import (
-	"Squire/internal/models/actions"
-	"Squire/internal/models/coordinates"
 	"Squire/ui/custom_widgets"
 
 	"fyne.io/fyne/v2/container"
@@ -23,20 +21,20 @@ const (
 
 type ActionTabs struct {
 	*container.AppTabs
-	BoundBaseAction     binding.Struct
-	BoundAdvancedAction binding.Struct
-
 	BoundWait  binding.Struct
 	BoundKey   binding.Struct
 	BoundMove  binding.Struct
 	BoundClick binding.Struct
+	BoundPoint binding.Struct
 
-	BoundLoop        binding.Struct
-	BoundImageSearch binding.Struct
-	BoundOcr         binding.Struct
-
-	BoundSearchArea binding.Struct
-	BoundPoint      binding.Struct
+	BoundLoop          binding.Struct
+	BoundLoopAA        binding.Struct
+	BoundImageSearch   binding.Struct
+	BoundImageSearchAA binding.Struct
+	BoundImageSearchSA binding.Struct
+	BoundOcr           binding.Struct
+	BoundOcrAA         binding.Struct
+	BoundOcrSA         binding.Struct
 
 	BoundTimeSlider *widget.Slider
 	BoundTimeEntry  *widget.Entry
@@ -53,16 +51,14 @@ type ActionTabs struct {
 	BoundCountLabel    *widget.Label
 
 	BoundImageSearchNameEntry *widget.Entry
-	SAAccordion               *widget.Accordion
-	ItemsAccordion            *widget.Accordion
+	ImageSearchSAAccordion    *widget.Accordion
+	ImageSearchItemsAccordion *widget.Accordion
 
 	// boundXSplitSlider          *widget.Slider
 	// boundXSplitEntry           *widget.Entry
-	// boundOCRTarget     binding.String
-	// boundOCRSearchArea binding.String
 
-	boundOCRTargetEntry      *widget.Entry
-	boundOCRSearchAreaSelect *widget.Select
+	boundOCRTargetEntry *widget.Entry
+	OCRSAAccordion      *widget.Accordion
 }
 
 func newActionTabs() *ActionTabs {
@@ -85,18 +81,15 @@ func newActionTabs() *ActionTabs {
 		BoundCountLabel:    widget.NewLabelWithData(binding.NewString()),
 
 		BoundImageSearchNameEntry: widget.NewEntryWithData(binding.NewString()),
-		SAAccordion:               widget.NewAccordion(),
-		ItemsAccordion:            widget.NewAccordion(),
+		ImageSearchSAAccordion:    widget.NewAccordion(),
+		ImageSearchItemsAccordion: widget.NewAccordion(),
 
-		boundOCRTargetEntry:      &widget.Entry{},
-		boundOCRSearchAreaSelect: &widget.Select{},
+		boundOCRTargetEntry: widget.NewEntryWithData(binding.NewString()),
+		OCRSAAccordion:      widget.NewAccordion(),
 	}
 }
 
 func (u *Ui) constructActionTabs() {
-	u.ActionTabs.BoundAdvancedAction = binding.BindStruct(&actions.AdvancedAction{})
-	u.ActionTabs.BoundSearchArea = binding.BindStruct(&coordinates.SearchArea{})
-
 	u.ActionTabs.constructWaitTab()
 	u.ActionTabs.constructMoveTab()
 	u.ActionTabs.constructClickTab()
@@ -267,13 +260,13 @@ func (at *ActionTabs) constructImageSearchTab() {
 					widget.NewAccordionItem("Search Areas",
 						container.NewBorder(
 							nil, nil, nil, nil,
-							at.SAAccordion,
+							at.ImageSearchSAAccordion,
 						),
 					),
 					widget.NewAccordionItem("Items",
 						container.NewBorder(
 							nil, nil, nil, nil,
-							at.ItemsAccordion,
+							at.ImageSearchItemsAccordion,
 						),
 					),
 				),
@@ -290,7 +283,7 @@ func (at *ActionTabs) constructOcrTab() {
 	ocrSettings :=
 		widget.NewForm(
 			widget.NewFormItem("Text Target:", at.boundOCRTargetEntry),
-			widget.NewFormItem("Search Area:", at.boundOCRSearchAreaSelect),
+			widget.NewFormItem("Search Area:", at.OCRSAAccordion),
 		)
 	at.Append(container.NewTabItem("OCR", ocrSettings))
 
