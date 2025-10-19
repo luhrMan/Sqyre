@@ -3,9 +3,6 @@ package actions
 import (
 	"Squire/internal/config"
 	"fmt"
-	"log"
-
-	"github.com/go-vgo/robotgo"
 )
 
 type Key struct {
@@ -20,22 +17,6 @@ func NewKey(key string, state bool) *Key {
 		Key:        key,
 		State:      state,
 	}
-}
-
-func (a *Key) Execute(ctx any) error {
-	log.Printf("Key: %s %s", a.Key, a.State)
-	if a.State {
-		err := robotgo.KeyDown(a.Key)
-		if err != nil {
-			return err
-		}
-	} else {
-		err := robotgo.KeyUp(a.Key)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func (a *Key) String() string {

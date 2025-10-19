@@ -3,14 +3,8 @@ package actions
 import (
 	"Squire/internal/config"
 	"Squire/internal/models/coordinates"
-	"Squire/internal/utils"
 	"fmt"
-	"image"
-	"log"
 	"slices"
-
-	"github.com/go-vgo/robotgo"
-	"gocv.io/x/gocv"
 )
 
 type ImageSearch struct {
@@ -33,65 +27,6 @@ func NewImageSearch(name string, subActions []ActionInterface, targets []string,
 		Tolerance:      tol,
 	}
 }
-
-func (a *ImageSearch) Execute(ctx any) error {
-	results, err := utils.ImageSearch(a.SearchArea, a.Targets, a.RowSplit, a.ColSplit, a.Tolerance)
-	if err != nil {
-		return err
-	}
-	sorted := utils.SortListOfPoints(results)
-	count := 0
-	for _, point := range sorted {
-		count++
-		point.X += a.SearchArea.LeftX
-		point.Y += a.SearchArea.TopY
-		for _, d := range a.SubActions {
-			d.Execute(point)
-		}
-	}
-	log.Printf("Total # found: %v\n", count)
-
-	return nil
-	// sa := a.SearchArea
-	// w := sa.RightX - sa.LeftX
-	// h := sa.BottomY - sa.TopY
-	// log.Printf("Image Searching | %v in X1:%d Y1:%d X2:%d Y2:%d", a.Targets, sa.LeftX, sa.TopY, sa.RightX, sa.BottomY)
-
-	// captureImg := robotgo.CaptureImg(sa.LeftX+config.XOffset, sa.TopY+config.YOffset, w, h)
-	// img, err := gocv.ImageToMatRGB(captureImg)
-	// if err != nil {
-	// 	log.Println("image search failed:", err)
-	// 	return err
-	// }
-	// defer img.Close()
-	// gocv.IMWrite(config.UpDir+config.UpDir+config.MetaImagesPath+"search-area.png", img)
-
-	// imgDraw := img.Clone()
-	// defer imgDraw.Close()
-
-	// results := a.match(config.UpDir+config.UpDir+config.MetaImagesPath, img, imgDraw)
-	// sorted := utils.SortListOfPoints(results)
-
-	// count := 0
-	// //clicked := []robotgo.Point
-	// // for _, pointArr := range sorted {
-	// for i, point := range sorted {
-	// 	if i > 50 {
-	// 		break
-	// 	}
-	// 	count++
-	// 	point.X += sa.LeftX
-	// 	point.Y += sa.TopY
-	// 	for _, d := range a.SubActions {
-	// 		d.Execute(point)
-	// 	}
-	// }
-	// // }
-
-	// log.Printf("Total # found: %v\n", count)
-	// return nil
-}
-
 func (a *ImageSearch) String() string {
 	return fmt.Sprintf("%s Image Search for %d items in `%s` | %s", config.GetEmoji("Image Search"), len(a.Targets), a.SearchArea.Name, a.Name)
 }
@@ -115,33 +50,33 @@ func (a *ImageSearch) String() string {
 // 	return results
 // }
 
-func (a *ImageSearch) FindTemplateMatches(img, template, Imask, Tmask, Cmask gocv.Mat, threshold float32) []robotgo.Point {
-	result := gocv.NewMat()
-	defer result.Close()
+// func (a *ImageSearch) FindTemplateMatches(img, template, Imask, Tmask, Cmask gocv.Mat, threshold float32) []robotgo.Point {
+// 	result := gocv.NewMat()
+// 	defer result.Close()
 
-	i := img.Clone()
-	t := template.Clone()
-	defer i.Close()
-	defer t.Close()
-	kernel := image.Point{X: 5, Y: 5}
+// 	i := img.Clone()
+// 	t := template.Clone()
+// 	defer i.Close()
+// 	defer t.Close()
+// 	kernel := image.Point{X: 5, Y: 5}
 
-	// if Imask.Rows() > 0 && Imask.Cols() > 0 {
-	// 	gocv.Subtract(i, Imask, &i)
-	// 	gocv.IMWrite(config.UpDir+config.UpDir+config.MetaImagesPath+"imageSubtraction.png", i)
-	// }
-	// if Tmask.Rows() > 0 && Tmask.Cols() > 0 {
-	// 	gocv.Subtract(t, Tmask, &t)
-	// 	gocv.IMWrite(config.UpDir+config.UpDir+config.MetaImagesPath+"templateSubtraction.png", t)
-	// }
+// 	// if Imask.Rows() > 0 && Imask.Cols() > 0 {
+// 	// 	gocv.Subtract(i, Imask, &i)
+// 	// 	gocv.IMWrite(config.UpDir+config.UpDir+config.MetaImagesPath+"imageSubtraction.png", i)
+// 	// }
+// 	// if Tmask.Rows() > 0 && Tmask.Cols() > 0 {
+// 	// 	gocv.Subtract(t, Tmask, &t)
+// 	// 	gocv.IMWrite(config.UpDir+config.UpDir+config.MetaImagesPath+"templateSubtraction.png", t)
+// 	// }
 
-	gocv.GaussianBlur(i, &i, kernel, 0, 0, gocv.BorderDefault)
-	gocv.GaussianBlur(t, &t, kernel, 0, 0, gocv.BorderDefault)
+// 	gocv.GaussianBlur(i, &i, kernel, 0, 0, gocv.BorderDefault)
+// 	gocv.GaussianBlur(t, &t, kernel, 0, 0, gocv.BorderDefault)
 
-	//method 5 works best
-	gocv.MatchTemplate(i, t, &result, gocv.TemplateMatchMode(5), Cmask)
-	matches := utils.GetMatchesFromTemplateMatchResult(result, threshold, 10)
-	return matches
-}
+// 	//method 5 works best
+// 	gocv.MatchTemplate(i, t, &result, gocv.TemplateMatchMode(5), Cmask)
+// 	matches := services.GetMatchesFromTemplateMatchResult(result, threshold, 10)
+// 	return matches
+// }
 
 // var (
 // 	icons = *assets.GetIconBytes()

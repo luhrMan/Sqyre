@@ -5,12 +5,9 @@ import (
 	"Squire/internal/models/coordinates"
 	"Squire/internal/models/items"
 	"fmt"
-	"log"
 	"slices"
 	"strings"
 )
-
-var errStr = "unable to decode into struct, %v"
 
 type Program struct {
 	Name        string
@@ -60,45 +57,6 @@ func (p *Program) SortItemsByName() []string {
 func (p *Program) GetItemsMap() map[string]*items.Item {
 	return p.Items
 }
-func GetProgram(s string) *Program {
-	var (
-		keyStr = "programs" + "." + s + "."
-		err    error
-	)
-	var p = &Program{
-		Items:       map[string]*items.Item{},
-		Coordinates: map[string]*coordinates.Coordinates{},
-	}
-	err = config.ViperConfig.UnmarshalKey(keyStr+"name", &p.Name)
-	if err != nil {
-		log.Fatalf(errStr, err)
-	}
-
-	err = config.ViperConfig.UnmarshalKey(keyStr+"items", &p.Items)
-	if err != nil {
-		log.Fatalf(errStr, err)
-	}
-
-	err = config.ViperConfig.UnmarshalKey(keyStr+"coordinates", &p.Coordinates)
-	if err != nil {
-		log.Fatalf(errStr, err)
-	}
-
-	return p
-}
-
-func GetPrograms() map[string]*Program {
-	var (
-		ps = make(map[string]*Program)
-		ss = config.ViperConfig.GetStringMap("programs")
-	)
-	for s := range ss {
-		p := GetProgram(s)
-		ps[s] = p
-	}
-	log.Println("programs loaded", ps)
-	return ps
-}
 
 func NewProgram(name string) *Program {
 	return &Program{
@@ -111,16 +69,6 @@ func NewProgram(name string) *Program {
 		// 	},
 		// },
 	}
-}
-
-func EncodePrograms(d map[string]*Program) error {
-	config.ViperConfig.Set("programs", d)
-	err := config.ViperConfig.WriteConfig()
-	if err != nil {
-		return fmt.Errorf("error marshalling programs: %v", err)
-	}
-	log.Println("Successfully encoded programs")
-	return nil
 }
 
 // func (p *Program) GetItem(i string) items.Item {

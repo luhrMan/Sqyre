@@ -2,8 +2,8 @@ package binders
 
 import (
 	"Squire/internal/config"
-	"Squire/internal/models/macro"
 	"Squire/internal/models/program"
+	"Squire/internal/models/repositories"
 
 	"fyne.io/fyne/v2/data/binding"
 )
@@ -17,10 +17,10 @@ type ProgramBinding struct {
 
 func InitPrograms() {
 	once.Do(func() {
-		programs = program.GetPrograms()
+		programs = repositories.GetPrograms()
 		boundPrograms = map[string]*ProgramBinding{}
 		BindPrograms()
-		macros = macro.GetMacros()
+		macros = repositories.GetMacros()
 		boundMacros = map[string]*MacroBinding{}
 		BindMacros()
 	})
