@@ -8,16 +8,6 @@ import (
 	"log"
 )
 
-func EncodePrograms(d map[string]*program.Program) error {
-	v.Set("programs", d)
-	err := v.WriteConfig()
-	if err != nil {
-		return fmt.Errorf("error marshalling programs: %v", err)
-	}
-	log.Println("Successfully encoded programs")
-	return nil
-}
-
 func GetProgram(s string) *program.Program {
 	var (
 		keyStr = "programs" + "." + s + "."
@@ -57,4 +47,14 @@ func GetPrograms() map[string]*program.Program {
 	}
 	log.Println("programs loaded", ps)
 	return ps
+}
+
+func EncodePrograms(d map[string]*program.Program) error {
+	v.Set("programs", d)
+	err := v.WriteConfig()
+	if err != nil {
+		return fmt.Errorf("error marshalling programs: %v", err)
+	}
+	log.Println("Successfully encoded programs")
+	return nil
 }

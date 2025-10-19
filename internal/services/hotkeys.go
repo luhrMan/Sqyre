@@ -1,6 +1,7 @@
 package services
 
 import (
+	"Squire/internal/models/macro"
 	"log"
 	"os"
 	"slices"
@@ -55,17 +56,20 @@ func RegisterHotkey(hk []string, cb func(e hook.Event)) {
 	}
 	log.Printf("registering hotkey %v", hk)
 	hook.Register(hook.KeyDown, hk, cb)
-	// hook.Register(hook.KeyDown, hk, func(e hook.Event) {
-	// 	log.Printf("pressed %v, executing %v", hk, m.Name)
-	// 	m.ExecuteActionTree()
-	// })
 }
 func UnregisterHotkey(hk []string) {
 	log.Println("unregistering hotkey:", hk)
 	hook.Unregister(hook.KeyDown, hk)
 }
 
-// add this to hook.go file in robotgo hook
+func MacroHotkeyCallback(m *macro.Macro) func(e hook.Event) {
+	return func(e hook.Event) {
+		log.Printf("pressed %v, executing %v", m.Hotkey, m.Name)
+		Execute(m.Root)
+	}
+}
+
+// add this to hook.go file in robotgo hook (I did add this as a self-maintained fork... fuc)
 // Unregister removes a previously registered hook event handler
 // It takes the same parameters as Register to identify which hook to remove
 // func Unregister(when uint8, cmds []string) bool {
