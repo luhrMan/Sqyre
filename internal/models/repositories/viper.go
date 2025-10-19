@@ -1,14 +1,15 @@
-package encoding
+package repositories
 
 import (
-	"Squire/internal/config"
 	"Squire/internal/models/actions"
 	"fmt"
-	"log"
 	"reflect"
 
 	"github.com/go-viper/mapstructure/v2"
+	"github.com/spf13/viper"
 )
+
+var v = viper.New()
 
 type sViper struct {
 	serializer
@@ -17,16 +18,18 @@ type sViper struct {
 // func (s *sViper) Encode(d any) error {
 // 	// s.encodePrograms(d.(map[string]program.Program))
 // 	// s.encodeMacros()
-// 	log.Println("Successfully encoded:", "config.yaml")
+// 	log.Println("Successfully encoded:", "yaml")
 // 	return nil
 // }
 
-func (s *sViper) Decode(filename string, d any) error {
-	err := config.ViperConfig.Unmarshal(&d)
+func (s *sViper) Decode() error {
+	v.AddConfigPath("../../internal/config")
+	v.SetConfigName("config")
+	v.SetConfigType("yaml")
+	err := v.ReadInConfig()
 	if err != nil {
-		return fmt.Errorf("error unmarhsalling yaml file: %v", err)
+		return fmt.Errorf("viper error reading in file: %v", err)
 	}
-	log.Println("File successfuly decoded:", &d)
 
 	return nil
 }

@@ -5,7 +5,7 @@ import (
 	"Squire/internal/models/actions"
 	"Squire/internal/models/coordinates"
 	"Squire/internal/models/macro"
-	"Squire/internal/utils"
+	"Squire/internal/services"
 	"Squire/ui"
 	"errors"
 	"log"
@@ -18,6 +18,7 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"github.com/go-vgo/robotgo"
+	hook "github.com/luhrMan/gohook"
 )
 
 type MacroBinding struct {
@@ -85,7 +86,17 @@ func AddMacroTab(m *macro.Macro) {
 	t := container.NewTabItem(m.Name, ui.NewMacroTree(m))
 	mtabs.AddTab(m.Name, t)
 	setMacroTree(mtabs.SelectedTab())
-	utils.RegisterHotkey(m.Hotkey, m.HotkeyCallback())
+	hotkeyCallback := func() func(e hook.Event) {
+		{
+			return func(e hook.Event) {
+				log.Printf("pressed %v, executing %v", m.Hotkey, m.Name)
+				services.Execute(m.Root)
+			}
+		}
+	}
+
+	services.RegisterHotkey(m.Hotkey, hotkeyCallback())
+
 }
 
 func setMtabSettingsAndWidgets() {
@@ -124,7 +135,7 @@ func setMtabSettingsAndWidgets() {
 		return ti
 	}
 	mtabs.OnClosed = func(ti *container.TabItem) {
-		utils.UnregisterHotkey(GetMacro(ti.Text).Hotkey)
+		services.UnregisterHotkey(GetMacro(ti.Text).Hotkey)
 		mtabs.BoundMacroListWidget.Refresh()
 	}
 
@@ -140,15 +151,25 @@ func setMtabSettingsAndWidgets() {
 		mtabs.MacroNameEntry.SetText(m.Name)
 		mtabs.BoundGlobalDelayEntry.SetText(strconv.Itoa(m.GlobalDelay))
 
-		mtabs.MacroHotkeyEntry.SetText(utils.ReverseParseMacroHotkey(m.Hotkey))
+		mtabs.MacroHotkeyEntry.SetText(services.ReverseParseMacroHotkey(m.Hotkey))
 	}
 
 	mtabs.MacroHotkeyEntry.PlaceHolder = "ctrl+shift+1 or ctrl+1 or ctrl+a+1"
 	saveHotkey := func() {
 		mt := mtabs.SelectedTab()
-		utils.UnregisterHotkey(mt.Macro.Hotkey)
-		mt.Macro.Hotkey = utils.ParseMacroHotkey(mtabs.MacroHotkeyEntry.Text)
-		utils.RegisterHotkey(mt.Macro.Hotkey, mt.Macro.HotkeyCallback())
+		m := mt.Macro
+		services.UnregisterHotkey(mt.Macro.Hotkey)
+		m.Hotkey = services.ParseMacroHotkey(mtabs.MacroHotkeyEntry.Text)
+		hotkeyCallback := func() func(e hook.Event) {
+			{
+				return func(e hook.Event) {
+					log.Printf("pressed %v, executing %v", m.Hotkey, m.Name)
+					services.Execute(m.Root)
+				}
+			}
+		}
+
+		services.RegisterHotkey(mt.Macro.Hotkey, hotkeyCallback())
 	}
 	mtabs.MacroHotkeyEntry.ActionItem = widget.NewButtonWithIcon("", theme.DocumentSaveIcon(), func() {
 		saveHotkey()

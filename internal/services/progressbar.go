@@ -1,4 +1,4 @@
-package utils
+package services
 
 import "fyne.io/fyne/v2/widget"
 

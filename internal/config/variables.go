@@ -4,11 +4,9 @@ import (
 	"strconv"
 
 	"github.com/go-vgo/robotgo"
-	"github.com/spf13/viper"
 )
 
 var (
-	ViperConfig           = viper.New()
 	MainMonitorSize       = robotgo.GetDisplayRect(0)
 	MonitorWidth          = MainMonitorSize.W
 	MonitorHeight         = MainMonitorSize.H

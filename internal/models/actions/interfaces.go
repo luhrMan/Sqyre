@@ -6,8 +6,6 @@ import (
 )
 
 type ActionInterface interface {
-	Execute(ctx any) error
-
 	GetUID() string
 
 	GetParent() AdvancedActionInterface
@@ -28,7 +26,6 @@ type AdvancedActionInterface interface {
 func (a *BaseAction) GetUID() string                           { return a.uid }
 func (a *BaseAction) GetParent() AdvancedActionInterface       { return a.Parent }
 func (a *BaseAction) SetParent(action AdvancedActionInterface) { a.Parent = action }
-func (a *BaseAction) Execute(ctx any) error                    { return nil }
 func (a *BaseAction) String() string                           { return "This is a baseAction" }
 func (a *AdvancedAction) GetSubActions() []ActionInterface     { return a.SubActions }
 func (a *AdvancedAction) SetSubActions(sa []ActionInterface)   { a.SubActions = sa }
@@ -67,11 +64,4 @@ func (a *AdvancedAction) RemoveSubAction(action ActionInterface) {
 	}
 }
 
-func (a *AdvancedAction) Execute(ctx any) error {
-	log.Printf("Executing %s", a.Name)
-	for _, c := range a.SubActions {
-		c.Execute(ctx)
-	}
-	return nil
-}
 func (a *AdvancedAction) String() string { return fmt.Sprintf("Advanced Action: %v", a.Type) }

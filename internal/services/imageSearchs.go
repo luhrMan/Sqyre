@@ -1,10 +1,11 @@
-package utils
+package services
 
 import (
 	"Squire/internal/assets"
 	"Squire/internal/config"
+	"Squire/internal/models/actions"
 	"Squire/internal/models/coordinates"
-	"Squire/internal/models/program"
+	"Squire/internal/models/repositories"
 	"fmt"
 	"image"
 	"image/color"
@@ -18,10 +19,11 @@ import (
 	"gocv.io/x/gocv"
 )
 
-func ImageSearch(sa coordinates.SearchArea, ts []string, rows, cols int, tolerance float32) (map[string][]robotgo.Point, error) {
+func imageSearch(a *actions.ImageSearch) (map[string][]robotgo.Point, error) {
+	sa := a.SearchArea
 	w := sa.RightX - sa.LeftX
 	h := sa.BottomY - sa.TopY
-	log.Printf("Image Searching | %v in X1:%d Y1:%d X2:%d Y2:%d", ts, sa.LeftX, sa.TopY, sa.RightX, sa.BottomY)
+	log.Printf("Image Searching | %v in X1:%d Y1:%d X2:%d Y2:%d", a.Targets, sa.LeftX, sa.TopY, sa.RightX, sa.BottomY)
 
 	captureImg := robotgo.CaptureImg(sa.LeftX+config.XOffset, sa.TopY+config.YOffset, w, h)
 	img, err := gocv.ImageToMatRGB(captureImg)
@@ -35,7 +37,7 @@ func ImageSearch(sa coordinates.SearchArea, ts []string, rows, cols int, toleran
 	imgDraw := img.Clone()
 	defer imgDraw.Close()
 
-	results := match(config.UpDir+config.UpDir+config.MetaImagesPath, img, imgDraw, sa, ts, rows, cols, tolerance)
+	results := match(config.UpDir+config.UpDir+config.MetaImagesPath, img, imgDraw, sa, a.Targets, a.RowSplit, a.ColSplit, a.Tolerance)
 	return results, nil
 
 }
@@ -55,7 +57,7 @@ func match(pathDir string, img, imgDraw gocv.Mat, sa coordinates.SearchArea, ts 
 		wg.Add(1)
 		go func(t string) {
 			defer wg.Done()
-			p := program.GetProgram(strings.Split(t, config.ProgramDelimiter)[0])
+			p := repositories.GetProgram(strings.Split(t, config.ProgramDelimiter)[0])
 			i, err := p.GetItem(strings.Split(t, config.ProgramDelimiter)[1])
 			if err != nil {
 				log.Println(err)

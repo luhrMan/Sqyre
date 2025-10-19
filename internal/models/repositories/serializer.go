@@ -1,4 +1,4 @@
-package encoding
+package repositories
 
 import (
 	"Squire/internal/models/actions"
@@ -16,9 +16,6 @@ type serializer struct {
 }
 
 var (
-	GobSerializer   = sGob{}
-	JsonSerializer  = sJson{}
-	YamlSerializer  = sYaml{}
 	ViperSerializer = sViper{}
 	Serializer      = serializer{}.iSerializer
 )
