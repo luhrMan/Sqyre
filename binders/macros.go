@@ -18,7 +18,6 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"github.com/go-vgo/robotgo"
-	hook "github.com/luhrMan/gohook"
 )
 
 type MacroBinding struct {
@@ -86,17 +85,7 @@ func AddMacroTab(m *macro.Macro) {
 	t := container.NewTabItem(m.Name, ui.NewMacroTree(m))
 	mtabs.AddTab(m.Name, t)
 	setMacroTree(mtabs.SelectedTab())
-	hotkeyCallback := func() func(e hook.Event) {
-		{
-			return func(e hook.Event) {
-				log.Printf("pressed %v, executing %v", m.Hotkey, m.Name)
-				services.Execute(m.Root)
-			}
-		}
-	}
-
-	services.RegisterHotkey(m.Hotkey, hotkeyCallback())
-
+	services.RegisterHotkey(m.Hotkey, services.MacroHotkeyCallback(m))
 }
 
 func setMtabSettingsAndWidgets() {
@@ -160,16 +149,7 @@ func setMtabSettingsAndWidgets() {
 		m := mt.Macro
 		services.UnregisterHotkey(mt.Macro.Hotkey)
 		m.Hotkey = services.ParseMacroHotkey(mtabs.MacroHotkeyEntry.Text)
-		hotkeyCallback := func() func(e hook.Event) {
-			{
-				return func(e hook.Event) {
-					log.Printf("pressed %v, executing %v", m.Hotkey, m.Name)
-					services.Execute(m.Root)
-				}
-			}
-		}
-
-		services.RegisterHotkey(mt.Macro.Hotkey, hotkeyCallback())
+		services.RegisterHotkey(mt.Macro.Hotkey, services.MacroHotkeyCallback(m))
 	}
 	mtabs.MacroHotkeyEntry.ActionItem = widget.NewButtonWithIcon("", theme.DocumentSaveIcon(), func() {
 		saveHotkey()
