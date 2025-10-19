@@ -3,10 +3,8 @@ package main
 import (
 	"Squire/binders"
 	"Squire/internal/assets"
-	"Squire/internal/config"
-	"Squire/internal/models/macro"
-	"Squire/internal/models/program"
-	"Squire/internal/utils"
+	"Squire/internal/models/repositories"
+	"Squire/internal/services"
 	"Squire/ui"
 
 	"log"
@@ -19,10 +17,10 @@ import (
 )
 
 func main() {
-	go utils.StartHook()
-	utils.FailsafeHotkey()
-
-	configInit() // read config.yaml data and save into GO structs
+	go services.StartHook()
+	services.FailsafeHotkey()
+	repositories.ViperSerializer.Decode() // read config.yaml data and save into GO structs
+	binders.InitPrograms()
 
 	a := app.NewWithID("Squire")
 	a.Settings().SetTheme(theme.DarkTheme())
@@ -44,27 +42,16 @@ func main() {
 	w.RequestFocus()
 	w.ShowAndRun()
 
-	utils.CloseTessClient()
+	services.CloseTessClient()
 
-	err := program.EncodePrograms(binders.GetPrograms())
+	err := repositories.EncodePrograms(repositories.GetPrograms())
 	if err != nil {
 		log.Println(err)
 	}
-	err = macro.EncodeMacros(binders.GetMacros())
+	err = repositories.EncodeMacros(repositories.GetMacros())
 	if err != nil {
 		log.Println(err)
 	}
-}
-
-func configInit() {
-	config.ViperConfig.AddConfigPath("../../internal/config")
-	config.ViperConfig.SetConfigName("config")
-	config.ViperConfig.SetConfigType("yaml")
-	err := config.ViperConfig.ReadInConfig()
-	if err != nil {
-		log.Println(err)
-	}
-	binders.InitPrograms()
 }
 
 func BindUi() {

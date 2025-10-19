@@ -1,7 +1,7 @@
 package ui
 
 import (
-	"Squire/internal/utils"
+	"Squire/internal/services"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -28,7 +28,7 @@ func (u *Ui) constructMacroUi() *fyne.Container {
 		container.NewGridWithColumns(2,
 			container.NewHBox(
 				u.Mui.constructMacroToolbar(),
-				utils.MacroActiveIndicator(),
+				services.MacroActiveIndicator(),
 				layout.NewSpacer(),
 				widget.NewLabel("Macro Name:"),
 			),
@@ -59,7 +59,7 @@ func (u *Ui) constructMacroUi() *fyne.Container {
 				mousePosition, //right
 				u.Mui.MTabs.MacroHotkeyEntry,
 			),
-			utils.MacroProgressBar(),
+			services.MacroProgressBar(),
 		)
 
 	macroUi :=
@@ -96,8 +96,7 @@ func (mui *MacroUi) constructMacroToolbar() *widget.Toolbar {
 			widget.NewToolbarSeparator(),
 			widget.NewToolbarSpacer(),
 			widget.NewToolbarAction(theme.MediaPlayIcon(), func() {
-				mt := mui.MTabs.SelectedTab()
-				mt.Macro.ExecuteActionTree()
+				services.Execute(mui.MTabs.SelectedTab().Macro.Root)
 			}),
 		)
 	return tb

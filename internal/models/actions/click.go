@@ -3,9 +3,6 @@ package actions
 import (
 	"Squire/internal/config"
 	"fmt"
-	"log"
-
-	"github.com/go-vgo/robotgo"
 )
 
 type Click struct {
@@ -18,12 +15,6 @@ func NewClick(button bool) *Click {
 		BaseAction: newBaseAction("click"),
 		Button:     button,
 	}
-}
-
-func (a *Click) Execute(ctx any) error {
-	log.Printf("%s click", LeftOrRight(a.Button))
-	robotgo.Click(LeftOrRight(a.Button))
-	return nil
 }
 
 func (a *Click) String() string {
