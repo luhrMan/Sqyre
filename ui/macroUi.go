@@ -96,7 +96,9 @@ func (mui *MacroUi) constructMacroToolbar() *widget.Toolbar {
 			widget.NewToolbarSeparator(),
 			widget.NewToolbarSpacer(),
 			widget.NewToolbarAction(theme.MediaPlayIcon(), func() {
-				services.Execute(mui.MTabs.SelectedTab().Macro.Root)
+				go func() {
+					services.Execute(mui.MTabs.SelectedTab().Macro.Root)
+				}()
 			}),
 		)
 	return tb
