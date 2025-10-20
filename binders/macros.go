@@ -20,22 +20,19 @@ import (
 	"github.com/go-vgo/robotgo"
 )
 
-type MacroBinding struct {
-	*macro.Macro
-}
+// type BoundMacros struct {
+// 	binds []binding.Struct
+// }
 
-func BindMacros() {
-	for _, macro := range GetMacros() {
-		BindMacro(macro)
-	}
-}
+// func BindMacros() {
+// 	for _, macro := range GetMacros() {
+// 		BindMacro(macro)
+// 	}
+// }
 
-func BindMacro(m *macro.Macro) {
-	boundMacros[m.Name] = &MacroBinding{
-		Macro: m,
-		// BoundSelectedAction: binding.BindStruct(m.Root),
-	}
-}
+// func BindMacro(m *macro.Macro) {
+// 	boundMacros.binds = append(boundMacros.binds, binding.BindStruct(m))
+// }
 
 func GetMacros() map[string]*macro.Macro {
 	return macros
@@ -80,8 +77,6 @@ func SetMacroUi() {
 
 func AddMacroTab(m *macro.Macro) {
 	mtabs := ui.GetUi().Mui.MTabs
-
-	//check if already open. if it is, select it.
 	t := container.NewTabItem(m.Name, ui.NewMacroTree(m))
 	mtabs.AddTab(m.Name, t)
 	setMacroTree(mtabs.SelectedTab())
@@ -118,7 +113,6 @@ func setMtabSettingsAndWidgets() {
 			ui.NewMacroTree(GetMacro(name)),
 		)
 
-		BindMacro(macros[name])
 		setMacroTree(ti.Content.(*ui.MacroTree))
 		mtabs.BoundMacroListWidget.Refresh()
 		return ti
@@ -242,33 +236,31 @@ func setMacroSelect() {
 
 // MACRO TREE
 func setMacroTree(mt *ui.MacroTree) {
-	// mt := ui.GetUi().Mui.MTabs.SelectedTab()
 	ats := ui.GetUi().ActionTabs
-	macroBind := boundMacros[mt.Macro.Name]
 	mt.Tree.OnSelected = func(uid widget.TreeNodeID) {
 		ui.GetUi().Mui.MTabs.SelectedTab().SelectedNode = uid
 		switch node := mt.Macro.Root.GetAction(uid).(type) {
 		case *actions.Wait:
-			macroBind.bindAction(node)
+			bindAction(node)
 			ats.SelectIndex(ui.WaitTab)
 		case *actions.Move:
-			macroBind.bindAction(node)
+			bindAction(node)
 			ats.SelectIndex(ui.MoveTab)
 		case *actions.Click:
-			macroBind.bindAction(node)
+			bindAction(node)
 			ats.SelectIndex(ui.ClickTab)
 		case *actions.Key:
-			macroBind.bindAction(node)
+			bindAction(node)
 			ats.SelectIndex(ui.KeyTab)
 
 		case *actions.Loop:
-			macroBind.bindAction(node)
+			bindAction(node)
 			ats.SelectIndex(ui.LoopTab)
 		case *actions.ImageSearch:
-			macroBind.bindAction(node)
+			bindAction(node)
 			ats.SelectIndex(ui.ImageSearchTab)
 		case *actions.Ocr:
-			macroBind.bindAction(node)
+			bindAction(node)
 			ats.SelectIndex(ui.OcrTab)
 		}
 	}

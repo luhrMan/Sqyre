@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"log"
 
+	"fyne.io/fyne/v2"
 	"github.com/go-vgo/robotgo"
 )
 
 func Execute(a actions.ActionInterface) error {
+
 	switch node := a.(type) {
 	case *actions.Wait:
 		log.Printf("Waiting for %d milliseconds", node.Time)
@@ -49,6 +51,10 @@ func Execute(a actions.ActionInterface) error {
 		var progress, progressStep float64
 		if node.Name == "root" {
 			progressStep = (100.0 / float64(len(node.GetSubActions()))) / 100
+			fyne.Do(func() {
+				MacroActiveIndicator().Show()
+				MacroActiveIndicator().Start()
+			})
 		}
 
 		for i := range node.Count {
@@ -57,15 +63,22 @@ func Execute(a actions.ActionInterface) error {
 				if node.Name == "root" {
 					progress = progressStep * float64(j+1)
 					log.Println(progress)
-					// fyne.Do(func() {
-					// 	services.MacroProgressBar().SetValue(progress)
-					// 	services.MacroProgressBar().Refresh()
-					// })
+					fyne.Do(func() {
+						MacroProgressBar().SetValue(progress)
+						MacroProgressBar().Refresh()
+					})
 				}
 				if err := Execute(action); err != nil {
 					return err
 				}
 			}
+			if node.Name == "root" {
+				fyne.Do(func() {
+					MacroActiveIndicator().Stop()
+					MacroActiveIndicator().Hide()
+				})
+			}
+
 		}
 		return nil
 	case *actions.ImageSearch:

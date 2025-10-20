@@ -9,7 +9,7 @@ import (
 var (
 	programs      map[string]*program.Program
 	boundPrograms map[string]*ProgramBinding
-	boundMacros   map[string]*MacroBinding
-	once          sync.Once
-	macros        map[string]*macro.Macro
+	// boundMacros   BoundMacros
+	once   sync.Once
+	macros map[string]*macro.Macro
 )

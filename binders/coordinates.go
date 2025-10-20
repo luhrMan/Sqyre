@@ -199,7 +199,6 @@ func setAccordionPointsLists(acc *widget.Accordion) {
 		)
 
 		lists.boundPointList.OnSelected = func(id widget.ListItemID) {
-			boundMacro := boundMacros[ui.GetUi().Mui.MTabs.SelectedTab().Macro.Name]
 			boundPoint := pb.PointsBindings[id]
 			bindPointWidgets(boundPoint)
 			ui.GetUi().ActionTabs.BoundPoint = boundPoint
@@ -213,7 +212,7 @@ func setAccordionPointsLists(acc *widget.Accordion) {
 					X:    x.(int),
 					Y:    y.(int),
 				}
-				boundMacro.bindAction(v)
+				bindAction(v)
 				// boundMacros[ui.GetUi().Mui.MTabs.Selected().Text].BoundSelectedAction = boundPoint //ui.GetUi().ActionTabs.BoundMove
 				// ui.GetUi().Mui.MTabs.SelectedTab().
 			}
