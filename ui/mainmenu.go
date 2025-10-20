@@ -63,11 +63,12 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 			_, _, mh, mw := robotgo.GetDisplayBounds(d)
 			str = str + "Monitor " + strconv.Itoa(d+1) + " Size: " + strconv.Itoa(mh) + "x" + strconv.Itoa(mw) + "\n"
 		}
-		dialog.ShowInformation("Computer Information", str, u.MainWindow)
+		dialog.ShowInformation("Computer Information", str, u.Window)
 	})
 
 	editor := fyne.NewMenuItem("Open Data Editor", func() {
-		launchEditorWindow()
+		// launchEditorWindow()
+		ui.Window.SetContent(ui.EditorUi.CanvasObject)
 	})
 
 	// screensize := strconv.Itoa(config.MonitorWidth) + "x" + strconv.Itoa(config.MonitorHeight)

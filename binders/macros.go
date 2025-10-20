@@ -154,13 +154,13 @@ func setMtabSettingsAndWidgets() {
 
 	mtabs.MacroNameEntry.OnSubmitted = func(sub string) {
 		if sub == "" {
-			e := dialog.NewError(errors.New("macro name cannot be empty"), ui.GetUi().MainWindow)
+			e := dialog.NewError(errors.New("macro name cannot be empty"), ui.GetUi().Window)
 			e.Show()
 			return
 		}
 		for _, m := range GetMacros() {
 			if m.Name == sub {
-				dialog.ShowError(errors.New("macro name already exists"), ui.GetUi().MainWindow)
+				dialog.ShowError(errors.New("macro name already exists"), ui.GetUi().Window)
 				return
 			}
 		}
