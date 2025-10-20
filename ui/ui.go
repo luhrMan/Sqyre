@@ -15,9 +15,13 @@ var (
 )
 
 type Ui struct {
-	MainWindow fyne.Window
+	Window fyne.Window
 	*EditorUi
+	*MainUi
+}
 
+type MainUi struct {
+	fyne.CanvasObject
 	Mui        *MacroUi
 	ActionTabs *ActionTabs
 }
@@ -25,9 +29,9 @@ type Ui struct {
 func GetUi() *Ui { return ui }
 func InitializeUi(w fyne.Window) *Ui {
 	ui = &Ui{
-		MainWindow: w,
+		Window: w,
 		EditorUi: &EditorUi{
-			Window: fyne.CurrentApp().NewWindow("Editor"),
+			NavButton: &widget.Button{},
 			EditorTabs: struct {
 				*container.AppTabs
 				ItemsTab       *EditorTab
@@ -46,33 +50,46 @@ func InitializeUi(w fyne.Window) *Ui {
 				},
 			},
 		},
-		Mui: &MacroUi{
-			MTabs:             NewMacroTabs(),
-			MacroSelectButton: &widget.Button{},
-			MacroToolbars: struct {
-				TopToolbar    *fyne.Container
-				BottomToolbar *fyne.Container
-			}{
-				TopToolbar:    &fyne.Container{},
-				BottomToolbar: &fyne.Container{},
+		MainUi: &MainUi{
+			Mui: &MacroUi{
+				MTabs:             NewMacroTabs(),
+				MacroSelectButton: &widget.Button{},
+				MacroToolbars: struct {
+					TopToolbar    *fyne.Container
+					BottomToolbar *fyne.Container
+				}{
+					TopToolbar:    &fyne.Container{},
+					BottomToolbar: &fyne.Container{},
+				},
 			},
+			ActionTabs: newActionTabs(),
 		},
-		ActionTabs: newActionTabs(),
 	}
 	return ui
 }
 func (u *Ui) ConstructUi() {
-	// assets.UnmarshalItemsFromJson()
-	u.constructActionTabs()
-	hs := container.NewHSplit(u.ActionTabs, u.constructMacroUi())
-	hs.SetOffset(0.3)
-	u.MainWindow.SetContent(hs)
-	u.MainWindow.SetMainMenu(u.constructMainMenu())
-	constructEditorWindow()
+	// construct main screen
+	u.MainUi.CanvasObject = container.NewHSplit(
+		u.constructActionTabs(), u.constructMacroUi(),
+	)
+	u.MainUi.CanvasObject.(*container.Split).SetOffset(0.3)
+
+	// construct editor screen
+	u.EditorUi.CanvasObject = container.NewBorder(
+		nil,
+		container.NewHBox(ui.EditorUi.NavButton),
+		nil,
+		nil,
+		ui.EditorUi.EditorTabs,
+	)
+	u.constructEditorTabs()
+	u.constructNavButton()
+
+	// construct main menu
+	u.Window.SetMainMenu(u.constructMainMenu())
+
 	toggleMousePos()
 }
-
-func (u *Ui) SetWindow(w fyne.Window) { u.MainWindow = w }
 
 func toggleMousePos() {
 	locX, locY := robotgo.Location()

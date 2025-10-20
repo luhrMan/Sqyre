@@ -89,7 +89,7 @@ func newActionTabs() *ActionTabs {
 	}
 }
 
-func (u *Ui) constructActionTabs() {
+func (u *Ui) constructActionTabs() *ActionTabs {
 	u.ActionTabs.constructWaitTab()
 	u.ActionTabs.constructMoveTab()
 	u.ActionTabs.constructClickTab()
@@ -97,6 +97,7 @@ func (u *Ui) constructActionTabs() {
 	u.ActionTabs.constructLoopTab()
 	u.ActionTabs.constructImageSearchTab()
 	u.ActionTabs.constructOcrTab()
+	return u.ActionTabs
 }
 
 func (at *ActionTabs) constructWaitTab() {
