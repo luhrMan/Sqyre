@@ -87,7 +87,7 @@ func SetActionTabBindings() {
 	ResetBinds()
 }
 
-func (m *MacroBinding) bindAction(a actions.ActionInterface) {
+func bindAction(a actions.ActionInterface) {
 	dl := binding.NewDataListener(func() {
 		mt := ui.GetUi().Mui.MTabs.SelectedTab()
 		fyne.Do(func() { mt.RefreshItem(mt.SelectedNode) })
@@ -97,7 +97,6 @@ func (m *MacroBinding) bindAction(a actions.ActionInterface) {
 	switch node := a.(type) {
 	case *actions.Wait:
 		ats.BoundWait = bsa
-		// boundMacros[ui.GetUi().Mui.MTabs.SelectedTab().SelectedNode] = binding.BindStruct(node)
 		t, _ := ats.BoundWait.GetItem("Time")
 
 		ats.BoundTimeEntry.Bind(binding.IntToString(t.(binding.Int)))
@@ -111,6 +110,7 @@ func (m *MacroBinding) bindAction(a actions.ActionInterface) {
 		b, _ := ats.BoundClick.GetItem("Button")
 		ats.BoundButtonToggle.Bind(b.(binding.Bool))
 
+		b.RemoveListener(dl)
 		b.AddListener(dl)
 	case *actions.Key:
 		ats.BoundKey = bsa

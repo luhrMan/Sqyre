@@ -21,5 +21,4 @@ func SetEditorTabs() {
 		ui.GetUi().EditorUi.EditorTabs.
 			ItemsTab.Content.(*container.Split).Leading.(*fyne.Container).Objects[0].(*widget.Accordion),
 	)
-
 }
