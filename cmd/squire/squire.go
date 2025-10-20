@@ -38,7 +38,7 @@ func main() {
 	ui.InitializeUi(w)
 	ui.GetUi().ConstructUi()
 	BindUi()
-
+	w.SetContent(ui.GetUi().MainUi.CanvasObject)
 	w.RequestFocus()
 	w.ShowAndRun()
 

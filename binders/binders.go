@@ -68,6 +68,10 @@ func ResetBinds() {
 	ats.BoundImageSearch = binding.BindStruct(is)
 	ats.BoundImageSearchAA = binding.BindStruct(is.AdvancedAction)
 	n, _ = ats.BoundImageSearchAA.GetItem("Name")
+	t, _ = ats.BoundImageSearch.GetItem("Targets")
+	t.AddListener(binding.NewDataListener(func() {
+
+	}))
 
 	ats.BoundImageSearchNameEntry.Bind(n.(binding.String))
 
@@ -80,11 +84,11 @@ func ResetBinds() {
 }
 
 func SetActionTabBindings() {
+	initBinds()
+	ResetBinds()
 	setAccordionPointsLists(ui.GetUi().ActionTabs.PointsAccordion)
 	setAccordionSearchAreasLists(ui.GetUi().ActionTabs.ImageSearchSAAccordion)
 	setAccordionItemsLists(ui.GetUi().ActionTabs.ImageSearchItemsAccordion)
-	initBinds()
-	ResetBinds()
 }
 
 func bindAction(a actions.ActionInterface) {
