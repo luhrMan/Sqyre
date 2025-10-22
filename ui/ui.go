@@ -69,9 +69,10 @@ func InitializeUi(w fyne.Window) *Ui {
 }
 func (u *Ui) ConstructUi() {
 	// construct main screen
-	u.MainUi.CanvasObject = container.NewHSplit(
-		u.constructActionTabs(), u.constructMacroUi(),
-	)
+	u.MainUi.CanvasObject =
+		container.NewHSplit(
+			u.constructActionTabs(), u.constructMacroUi(),
+		)
 	u.MainUi.CanvasObject.(*container.Split).SetOffset(0.3)
 
 	// construct editor screen

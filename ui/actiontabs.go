@@ -22,10 +22,10 @@ const (
 type ActionTabs struct {
 	*container.AppTabs
 	BoundWait  binding.Struct
-	BoundKey   binding.Struct
 	BoundMove  binding.Struct
-	BoundClick binding.Struct
 	BoundPoint binding.Struct
+	BoundClick binding.Struct
+	BoundKey   binding.Struct
 
 	BoundLoop          binding.Struct
 	BoundLoopAA        binding.Struct
@@ -50,9 +50,11 @@ type ActionTabs struct {
 	BoundCountSlider   *widget.Slider
 	BoundCountLabel    *widget.Label
 
-	BoundImageSearchNameEntry *widget.Entry
-	ImageSearchSAAccordion    *widget.Accordion
-	ImageSearchItemsAccordion *widget.Accordion
+	BoundImageSearchNameEntry     *widget.Entry
+	BoundImageSearchColSplitEntry *widget.Entry
+	BoundImageSearchRowSplitEntry *widget.Entry
+	ImageSearchSAAccordion        *widget.Accordion
+	ImageSearchItemsAccordion     *widget.Accordion
 
 	// boundXSplitSlider          *widget.Slider
 	// boundXSplitEntry           *widget.Entry
@@ -80,7 +82,10 @@ func newActionTabs() *ActionTabs {
 		BoundCountSlider:   widget.NewSliderWithData(1, 10, binding.IntToFloat(binding.NewInt())),
 		BoundCountLabel:    widget.NewLabelWithData(binding.NewString()),
 
-		BoundImageSearchNameEntry: widget.NewEntryWithData(binding.NewString()),
+		BoundImageSearchNameEntry:     widget.NewEntryWithData(binding.NewString()),
+		BoundImageSearchColSplitEntry: widget.NewEntryWithData(binding.NewString()),
+		BoundImageSearchRowSplitEntry: widget.NewEntryWithData(binding.NewString()),
+
 		ImageSearchSAAccordion:    widget.NewAccordion(),
 		ImageSearchItemsAccordion: widget.NewAccordion(),
 
@@ -255,6 +260,15 @@ func (at *ActionTabs) constructImageSearchTab() {
 			container.NewBorder(
 				widget.NewForm(
 					widget.NewFormItem("Name:", at.BoundImageSearchNameEntry),
+
+					widget.NewFormItem("Cols: ",
+						container.NewGridWithColumns(3,
+							at.BoundImageSearchColSplitEntry,
+							widget.NewLabel("Rows:"),
+							at.BoundImageSearchRowSplitEntry,
+						),
+					),
+					// widget.NewFormItem("Rows:", at.BoundImageSearchRowSplitEntry),
 				),
 				nil, nil, nil,
 				widget.NewAccordion(
