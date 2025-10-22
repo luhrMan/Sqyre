@@ -4,87 +4,52 @@ import (
 	"Squire/internal/models/actions"
 	"Squire/internal/models/coordinates"
 	"Squire/ui"
+	"log"
 	"slices"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/data/binding"
 )
 
-func initBinds() {
-	ui.GetUi().ActionTabs.BoundWait = binding.BindStruct(actions.NewWait(0))
-	ui.GetUi().ActionTabs.BoundMove = binding.BindStruct(actions.NewMove(coordinates.Point{"blank", 0, 0}))
-	ui.GetUi().ActionTabs.BoundKey = binding.BindStruct(actions.NewKey("ctrl", true))
-	ui.GetUi().ActionTabs.BoundClick = binding.BindStruct(actions.NewClick(false))
+func InitBinds() {
+	ats := ui.GetUi().ActionTabs
+
+	ats.BoundWait = binding.BindStruct(actions.NewWait(0))
+	m := actions.NewMove(coordinates.Point{Name: "blank", X: 0, Y: 0})
+	ats.BoundMove = binding.BindStruct(m)
+	ats.BoundPoint = binding.BindStruct(&m.Point)
+	ats.BoundKey = binding.BindStruct(actions.NewKey("ctrl", true))
+	ats.BoundClick = binding.BindStruct(actions.NewClick(false))
 
 	l := actions.NewLoop(1, "blank", []actions.ActionInterface{})
-	ui.GetUi().ActionTabs.BoundLoop = binding.BindStruct(l)
-	ui.GetUi().ActionTabs.BoundLoopAA = binding.BindStruct(l.AdvancedAction)
+	ats.BoundLoop = binding.BindStruct(l)
+	ats.BoundLoopAA = binding.BindStruct(l.AdvancedAction)
 	is := actions.NewImageSearch("blank", []actions.ActionInterface{}, []string{}, coordinates.SearchArea{}, 1, 1, 0.95)
-	ui.GetUi().ActionTabs.BoundImageSearch = binding.BindStruct(is)
-	ui.GetUi().ActionTabs.BoundImageSearchAA = binding.BindStruct(is.AdvancedAction)
-	ui.GetUi().ActionTabs.BoundImageSearchSA = binding.BindStruct(is.SearchArea)
+	ats.BoundImageSearch = binding.BindStruct(is)
+	ats.BoundImageSearchAA = binding.BindStruct(is.AdvancedAction)
+	ats.BoundImageSearchSA = binding.BindStruct(is.SearchArea)
 	ocr := actions.NewOcr("blank", []actions.ActionInterface{}, "blank", coordinates.SearchArea{})
-	ui.GetUi().ActionTabs.BoundOcr = binding.BindStruct(ocr)
-	ui.GetUi().ActionTabs.BoundOcrAA = binding.BindStruct(ocr.AdvancedAction)
-	ui.GetUi().ActionTabs.BoundOcrSA = binding.BindStruct(ocr.SearchArea)
-
-	ui.GetUi().ActionTabs.BoundPoint = binding.BindStruct(&coordinates.Point{Name: "template", X: 0, Y: 0})
+	ats.BoundOcr = binding.BindStruct(ocr)
+	ats.BoundOcrAA = binding.BindStruct(ocr.AdvancedAction)
+	ats.BoundOcrSA = binding.BindStruct(ocr.SearchArea)
 
 }
 
 func ResetBinds() {
 	ats := ui.GetUi().ActionTabs
-
-	ats.BoundWait = binding.BindStruct(actions.NewWait(int(ats.BoundTimeSlider.Value)))
-	t, _ := ats.BoundWait.GetItem("Time")
-	ats.BoundTimeSlider.Bind(binding.IntToFloat(t.(binding.Int)))
-	ats.BoundTimeEntry.Bind(binding.IntToString(t.(binding.Int)))
-
+	bindAction(actions.NewWait(int(ats.BoundTimeSlider.Value)))
 	n, _ := ats.BoundPoint.GetValue("Name")
 	x, _ := ats.BoundPoint.GetValue("X")
 	y, _ := ats.BoundPoint.GetValue("Y")
-	ats.BoundMove = binding.BindStruct(actions.NewMove(coordinates.Point{n.(string), x.(int), y.(int)}))
-
-	ats.BoundKey = binding.BindStruct(actions.NewKey(ats.BoundKeySelect.Selected, ats.BoundStateToggle.Toggled))
-	k, _ := ats.BoundKey.GetItem("Key")
-	s, _ := ats.BoundKey.GetItem("State")
-	ats.BoundKeySelect.Bind(k.(binding.String))
-	ats.BoundStateToggle.Bind(s.(binding.Bool))
-
-	ats.BoundClick = binding.BindStruct(actions.NewClick(ats.BoundButtonToggle.Toggled))
-	b, _ := ats.BoundClick.GetItem("Button")
-	ats.BoundButtonToggle.Bind(b.(binding.Bool))
-
-	l := actions.NewLoop(int(ats.BoundCountSlider.Value), ats.BoundLoopNameEntry.Text, []actions.ActionInterface{})
-	ats.BoundLoop = binding.BindStruct(l)
-	ats.BoundLoopAA = binding.BindStruct(l.AdvancedAction)
-	c, _ := ats.BoundLoop.GetItem("Count")
-	n, _ = ats.BoundLoopAA.GetItem("Name")
-	ats.BoundLoopNameEntry.Bind(n.(binding.String))
-	ats.BoundCountSlider.Bind(binding.IntToFloat(c.(binding.Int)))
-	ats.BoundCountLabel.Bind(binding.IntToString(c.(binding.Int)))
-
-	is := actions.NewImageSearch(ats.BoundImageSearchNameEntry.Text, []actions.ActionInterface{}, []string{}, coordinates.SearchArea{}, 1, 1, 0.95)
-	ats.BoundImageSearch = binding.BindStruct(is)
-	ats.BoundImageSearchAA = binding.BindStruct(is.AdvancedAction)
-	n, _ = ats.BoundImageSearchAA.GetItem("Name")
-	t, _ = ats.BoundImageSearch.GetItem("Targets")
-	t.AddListener(binding.NewDataListener(func() {
-
-	}))
-
-	ats.BoundImageSearchNameEntry.Bind(n.(binding.String))
-
-	// ats.BoundOcr = binding.BindStruct(actions.NewOcr(ats.BoundOcr.Text, []actions.ActionInterface{}, []string{}, coordinates.SearchArea{}, 1, 1, 0.95))
-	// n, _ = ats.BoundImageSearch.GetItem("Name")
-	// ats.BoundImageSearchNameEntry.Bind(n.(binding.String))
-
-	// ui.GetUi().ActionTabs.BoundImageSearch = binding.BindStruct(actions.NewImageSearch("", []actions.ActionInterface{}, []string{}, coordinates.SearchArea{}, 1, 1, 0.95))
-
+	bindAction(actions.NewMove(coordinates.Point{n.(string), x.(int), y.(int)})) //n.(string), x.(int), y.(int)}))
+	bindAction(actions.NewKey(ats.BoundKeySelect.Selected, ats.BoundStateToggle.Toggled))
+	bindAction(actions.NewClick(ats.BoundButtonToggle.Toggled))
+	bindAction(actions.NewLoop(int(ats.BoundCountSlider.Value), ats.BoundLoopNameEntry.Text, []actions.ActionInterface{}))
+	bindAction(actions.NewImageSearch(ats.BoundImageSearchNameEntry.Text, []actions.ActionInterface{}, []string{}, coordinates.SearchArea{}, 1, 1, 0.95))
+	// bindAction(actions.NewOcr()
 }
 
 func SetActionTabBindings() {
-	initBinds()
 	ResetBinds()
 	setAccordionPointsLists(ui.GetUi().ActionTabs.PointsAccordion)
 	setAccordionSearchAreasLists(ui.GetUi().ActionTabs.ImageSearchSAAccordion)
@@ -109,12 +74,12 @@ func bindAction(a actions.ActionInterface) {
 		t.AddListener(dl)
 	case *actions.Move:
 		ats.BoundMove = bsa
+		ats.BoundPoint = binding.BindStruct(&node.Point)
 	case *actions.Click:
 		ats.BoundClick = bsa
 		b, _ := ats.BoundClick.GetItem("Button")
 		ats.BoundButtonToggle.Bind(b.(binding.Bool))
 
-		b.RemoveListener(dl)
 		b.AddListener(dl)
 	case *actions.Key:
 		ats.BoundKey = bsa
@@ -141,14 +106,19 @@ func bindAction(a actions.ActionInterface) {
 		n.AddListener(dl)
 	case *actions.ImageSearch:
 		ats.BoundImageSearch = bsa
+		log.Println("image search")
 		ats.BoundImageSearchAA = binding.BindStruct(node.AdvancedAction)
+		log.Println("image search aa")
 		ats.BoundImageSearchSA = binding.BindStruct(&node.SearchArea)
-
 		n, _ := ats.BoundImageSearchAA.GetItem("Name")
 		sa, _ := ats.BoundImageSearchSA.GetItem("Name")
 		ts, _ := ats.BoundImageSearch.GetItem("Targets")
+		rs, _ := ats.BoundImageSearch.GetItem("RowSplit")
+		cs, _ := ats.BoundImageSearch.GetItem("ColSplit")
 
 		ats.BoundImageSearchNameEntry.Bind(n.(binding.String))
+		ats.BoundImageSearchColSplitEntry.Bind(binding.IntToString(rs.(binding.Int)))
+		ats.BoundImageSearchRowSplitEntry.Bind(binding.IntToString(cs.(binding.Int)))
 
 		ats.BoundImageSearch.SetValue("Targets", slices.Clone(node.Targets))
 		RefreshItemsAccordionItems()
@@ -156,6 +126,8 @@ func bindAction(a actions.ActionInterface) {
 		ts.AddListener(dl)
 		n.AddListener(dl)
 		sa.AddListener(dl)
+		rs.AddListener(dl)
+		cs.AddListener(dl)
 	case *actions.Ocr:
 		ats.BoundOcr = bsa
 		ats.BoundOcrAA = binding.BindStruct(node.AdvancedAction)

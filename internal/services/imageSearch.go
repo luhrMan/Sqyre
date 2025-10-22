@@ -4,7 +4,6 @@ import (
 	"Squire/internal/assets"
 	"Squire/internal/config"
 	"Squire/internal/models/actions"
-	"Squire/internal/models/coordinates"
 	"Squire/internal/models/repositories"
 	"fmt"
 	"image"
@@ -37,15 +36,15 @@ func imageSearch(a *actions.ImageSearch) (map[string][]robotgo.Point, error) {
 	imgDraw := img.Clone()
 	defer imgDraw.Close()
 
-	results := match(config.UpDir+config.UpDir+config.MetaImagesPath, img, imgDraw, sa, a.Targets, a.RowSplit, a.ColSplit, a.Tolerance)
+	results := match(config.UpDir+config.UpDir+config.MetaImagesPath, img, imgDraw, a)
 	return results, nil
 
 }
 
-func match(pathDir string, img, imgDraw gocv.Mat, sa coordinates.SearchArea, ts []string, rows, cols int, tolerance float32) map[string][]robotgo.Point {
+func match(pathDir string, img, imgDraw gocv.Mat, a *actions.ImageSearch) map[string][]robotgo.Point {
 	icons := *assets.GetIconBytes()
-	xSize := img.Cols() / cols
-	ySize := img.Rows() / rows
+	xSize := img.Cols() / a.ColSplit
+	ySize := img.Rows() / a.RowSplit
 
 	Imask := gocv.NewMat()
 	defer Imask.Close()
@@ -53,7 +52,7 @@ func match(pathDir string, img, imgDraw gocv.Mat, sa coordinates.SearchArea, ts 
 	results := make(map[string][]robotgo.Point)
 	var wg sync.WaitGroup
 	resultsMutex := &sync.Mutex{}
-	for _, t := range ts { // for each search target, create a goroutine
+	for _, t := range a.Targets { // for each search target, create a goroutine
 		wg.Add(1)
 		go func(t string) {
 			defer wg.Done()
@@ -119,7 +118,7 @@ func match(pathDir string, img, imgDraw gocv.Mat, sa coordinates.SearchArea, ts 
 			// }
 
 			var matches []robotgo.Point
-			matches = FindTemplateMatches(img, template, Imask, gocv.NewMat(), gocv.NewMat(), tolerance) //Tmask, Cmask, tolerance)
+			matches = FindTemplateMatches(img, template, Imask, gocv.NewMat(), gocv.NewMat(), a.Tolerance) //Tmask, Cmask, tolerance)
 
 			resultsMutex.Lock()
 			defer resultsMutex.Unlock()
