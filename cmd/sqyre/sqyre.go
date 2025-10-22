@@ -16,12 +16,11 @@ import (
 	"fyne.io/fyne/v2/theme"
 )
 
-func main() {
+func init() {
 	go services.StartHook()
 	services.FailsafeHotkey()
 	repositories.ViperSerializer.Decode() // read config.yaml data and save into GO structs
 	binders.InitPrograms()
-
 	a := app.NewWithID("Squire")
 	a.Settings().SetTheme(theme.DarkTheme())
 	os.Setenv("FYNE_SCALE", "1.25")
@@ -37,10 +36,13 @@ func main() {
 	// set bindings			(set bindings for ui widgets)
 	ui.InitializeUi(w)
 	ui.GetUi().ConstructUi()
-	BindUi()
+	bindUi()
 	w.SetContent(ui.GetUi().MainUi.CanvasObject)
 	w.RequestFocus()
-	w.ShowAndRun()
+}
+
+func main() {
+	ui.GetUi().Window.ShowAndRun()
 
 	services.CloseTessClient()
 
@@ -54,9 +56,10 @@ func main() {
 	}
 }
 
-func BindUi() {
-	binders.SetActionTabBindings()
+func bindUi() {
+	binders.InitBinds()
 	binders.SetMacroUi()
+	binders.SetActionTabBindings()
 	binders.SetEditorTabs()
 }
 
