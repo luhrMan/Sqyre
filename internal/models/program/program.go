@@ -4,7 +4,9 @@ import (
 	"Squire/internal/config"
 	"Squire/internal/models/coordinates"
 	"Squire/internal/models/items"
+	"Squire/internal/models/serialize"
 	"fmt"
+	"log"
 	"slices"
 	"strings"
 )
@@ -112,3 +114,55 @@ func NewProgram(name string) *Program {
 // 	sas := c[ss].SearchAreas
 // 	sas[sa.Name] = sa
 // }
+
+func GetProgram(s string) *Program {
+	var (
+		keyStr = "programs" + "." + s + "."
+		err    error
+		errStr = "problem here lol"
+	)
+
+	var p = &Program{
+		Items:       map[string]*items.Item{},
+		Coordinates: map[string]*coordinates.Coordinates{},
+	}
+	err = serialize.GetViper().UnmarshalKey(keyStr+"name", &p.Name)
+	if err != nil {
+		log.Fatalf(errStr, err)
+	}
+
+	err = serialize.GetViper().UnmarshalKey(keyStr+"items", &p.Items)
+	if err != nil {
+		log.Fatalf(errStr, err)
+	}
+
+	err = serialize.GetViper().UnmarshalKey(keyStr+"coordinates", &p.Coordinates)
+	if err != nil {
+		log.Fatalf(errStr, err)
+	}
+
+	return p
+}
+
+func GetPrograms() map[string]*Program {
+	var (
+		ps = make(map[string]*Program)
+		ss = serialize.GetViper().GetStringMap("programs")
+	)
+	for s := range ss {
+		p := GetProgram(s)
+		ps[s] = p
+	}
+	log.Println("programs loaded", ps)
+	return ps
+}
+
+func EncodePrograms(d map[string]*Program) error {
+	serialize.GetViper().Set("programs", d)
+	err := serialize.GetViper().WriteConfig()
+	if err != nil {
+		return fmt.Errorf("error marshalling programs: %v", err)
+	}
+	log.Println("Successfully encoded programs")
+	return nil
+}
