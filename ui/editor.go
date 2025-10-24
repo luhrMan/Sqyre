@@ -4,6 +4,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/data/binding"
+	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
@@ -32,7 +33,6 @@ func NewEditorTab(name string, left, right *fyne.Container) *container.TabItem {
 	return container.NewTabItem(name, split)
 }
 
-// I need to complete the structure of the editor window here and then complete the bindings in binders. add as many properties to EditorUi as u need bro
 func (u *Ui) constructEditorTabs() {
 	var (
 		name = "Name"
@@ -46,23 +46,36 @@ func (u *Ui) constructEditorTabs() {
 		tags = "Tags"
 		sm   = "StackMax"
 		m    = "Merchant"
+		// i    = "Icons"
 	)
-
 	ui.EditorTabs.ItemsTab.BindableWidgets[name] = widget.NewEntryWithData(binding.NewString())
 	ui.EditorTabs.ItemsTab.BindableWidgets[gs] = widget.NewEntryWithData(binding.NewString())
-	ui.EditorTabs.ItemsTab.BindableWidgets[tags] = widget.NewEntryWithData(binding.NewString())
+	ui.EditorTabs.ItemsTab.BindableWidgets[tags] = widget.NewCard("test", "", nil)
 	ui.EditorTabs.ItemsTab.BindableWidgets[sm] = widget.NewEntryWithData(binding.NewString())
 	ui.EditorTabs.ItemsTab.BindableWidgets[m] = widget.NewEntryWithData(binding.NewString())
+	// ui.EditorTabs.ItemsTab.BindableWidgets[i] = container.NewGridWithRows(2, )
 	ui.EditorTabs.ItemsTab.TabItem = NewEditorTab(
 		"Items",
-		container.NewBorder(nil, nil, nil, nil, widget.NewAccordion()),
-		container.NewBorder(nil, nil, nil, nil, widget.NewForm(
-			widget.NewFormItem(name, ui.EditorTabs.ItemsTab.BindableWidgets[name]),
-			widget.NewFormItem(gs, ui.EditorTabs.ItemsTab.BindableWidgets[gs]),
-			widget.NewFormItem(tags, ui.EditorTabs.ItemsTab.BindableWidgets[tags]),
-			widget.NewFormItem(sm, ui.EditorTabs.ItemsTab.BindableWidgets[sm]),
-			widget.NewFormItem(m, ui.EditorTabs.ItemsTab.BindableWidgets[m]),
-		)),
+		container.NewBorder(
+			nil, nil, nil, nil, widget.NewAccordion(),
+		),
+		container.NewBorder(
+			container.NewHBox(
+				widget.NewButtonWithIcon("", theme.ContentAddIcon(), func() {
+					dialog.ShowFileOpen(func(reader fyne.URIReadCloser, err error) {}, u.Window)
+				}),
+			),
+			nil,
+			nil, nil,
+			widget.NewForm(
+				widget.NewFormItem(name, ui.EditorTabs.ItemsTab.BindableWidgets[name]),
+				widget.NewFormItem(gs, ui.EditorTabs.ItemsTab.BindableWidgets[gs]),
+				widget.NewFormItem(tags, widget.NewEntry()),
+				widget.NewFormItem("", ui.EditorTabs.ItemsTab.BindableWidgets[tags]),
+				widget.NewFormItem(sm, ui.EditorTabs.ItemsTab.BindableWidgets[sm]),
+				widget.NewFormItem(m, ui.EditorTabs.ItemsTab.BindableWidgets[m]),
+				// widget.NewFormItem("icons", container.NewGridWithRows(2, widget.NewIcon(theme.MediaFastForwardIcon()))),
+			)),
 	)
 
 	ui.EditorTabs.PointsTab.BindableWidgets[name] = widget.NewEntryWithData(binding.NewString())
@@ -88,7 +101,9 @@ func (u *Ui) constructEditorTabs() {
 		container.NewBorder(nil, nil, nil, nil, widget.NewAccordion()),
 		container.NewBorder(nil, nil, nil, nil, widget.NewForm(
 			widget.NewFormItem(name, ui.EditorTabs.SearchAreasTab.BindableWidgets[name]),
-			widget.NewFormItem(x1, ui.EditorTabs.SearchAreasTab.BindableWidgets[x1]),
+
+			widget.NewFormItem(x1, container.NewGridWithColumns(2,
+				ui.EditorTabs.SearchAreasTab.BindableWidgets[x1])),
 			widget.NewFormItem(y1, ui.EditorTabs.SearchAreasTab.BindableWidgets[y1]),
 			widget.NewFormItem(x2, ui.EditorTabs.SearchAreasTab.BindableWidgets[x2]),
 			widget.NewFormItem(y2, ui.EditorTabs.SearchAreasTab.BindableWidgets[y2]),
