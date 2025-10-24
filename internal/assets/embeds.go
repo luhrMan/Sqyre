@@ -1,6 +1,7 @@
 package assets
 
 import (
+	"Squire/internal/config"
 	"embed"
 
 	"fmt"
@@ -30,15 +31,21 @@ func LoadIconBytes() (*map[string][]byte, error) {
 	}
 
 	for _, entry := range entries {
-		if !entry.IsDir() {
-			iconPath := fmt.Sprintf("%s/%s", dirPath, entry.Name())
-			iconBytes, err := iconFS.ReadFile(iconPath)
+		if entry.IsDir() {
+			subentries, err := iconFS.ReadDir(dirPath + "/" + entry.Name())
 			if err != nil {
-				log.Printf("Could not read image. Error: %v", err)
-				continue
+				log.Printf("Could not read directory. Error: %v", err)
+				return nil, err
 			}
-
-			icons[entry.Name()] = iconBytes
+			for _, se := range subentries {
+				iconPath := fmt.Sprintf("%s/%s", dirPath, entry.Name()+"/"+se.Name())
+				iconBytes, err := iconFS.ReadFile(iconPath)
+				if err != nil {
+					log.Printf("Could not read image. Error: %v", err)
+					continue
+				}
+				icons[entry.Name()+config.ProgramDelimiter+se.Name()] = iconBytes
+			}
 		}
 	}
 
