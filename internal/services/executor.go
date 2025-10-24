@@ -17,15 +17,8 @@ func Execute(a actions.ActionInterface) error {
 		robotgo.MilliSleep(node.Time)
 		return nil
 	case *actions.Move:
-		if (node.Point.X == -1) && (node.Point.Y == -1) {
-			// if c, ok := ctx.(robotgo.Point); ok {
-			// 	log.Printf("Moving mouse to ctx (%d, %d)", c.X, c.Y)
-			// 	robotgo.Move(c.X+config.XOffset+25, c.Y+config.YOffset+25)
-			// }
-		} else {
-			log.Printf("Moving mouse to %v", node.Point)
-			robotgo.Move(node.Point.X+config.XOffset, node.Point.Y+config.YOffset)
-		}
+		log.Printf("Moving mouse to %v", node.Point)
+		robotgo.Move(node.Point.X+config.XOffset, node.Point.Y+config.YOffset)
 		return nil
 	case *actions.Click:
 		log.Printf("%s click", LeftOrRight(node.Button))
@@ -96,6 +89,12 @@ func Execute(a actions.ActionInterface) error {
 			point.X += node.SearchArea.LeftX
 			point.Y += node.SearchArea.TopY
 			for _, a := range node.SubActions {
+				if v, ok := a.(*actions.Move); ok {
+					if v.Point.Name == "image search context" {
+						v.Point.X = point.X + 25
+						v.Point.Y = point.Y + 25
+					}
+				}
 				if err := Execute(a); err != nil {
 					return err
 				}
