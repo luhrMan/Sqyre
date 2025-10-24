@@ -24,7 +24,7 @@ func imageSearch(a *actions.ImageSearch) (map[string][]robotgo.Point, error) {
 	h := sa.BottomY - sa.TopY
 	log.Printf("Image Searching | %v in X1:%d Y1:%d X2:%d Y2:%d", a.Targets, sa.LeftX, sa.TopY, sa.RightX, sa.BottomY)
 	if w+h == 0 {
-		err := fmt.Errorf("image search failed:")
+		err := fmt.Errorf("image search failed: cannot have an empty search area")
 		log.Println(err)
 		return nil, err
 	}

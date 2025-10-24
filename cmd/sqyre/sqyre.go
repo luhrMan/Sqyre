@@ -3,7 +3,10 @@ package main
 import (
 	"Squire/binders"
 	"Squire/internal/assets"
+	"Squire/internal/models/macro"
+	"Squire/internal/models/program"
 	"Squire/internal/models/repositories"
+	"Squire/internal/models/serialize"
 	"Squire/internal/services"
 	"Squire/ui"
 
@@ -19,24 +22,28 @@ import (
 func init() {
 	go services.StartHook()
 	services.FailsafeHotkey()
-	repositories.ViperSerializer.Decode() // read config.yaml data and save into GO structs
+	serialize.Decode() // read config.yaml data and save into GO structs
+	repositories.InitMacros()
+	repositories.InitPrograms()
 	binders.InitPrograms()
-	a := app.NewWithID("Squire")
+	a := app.NewWithID("Sqyre")
 	a.Settings().SetTheme(theme.DarkTheme())
 	os.Setenv("FYNE_SCALE", "1.25")
 
-	w := a.NewWindow("Squire")
+	w := a.NewWindow("Sqyre")
 	w.Resize(fyne.NewSize(1000, 500))
 	w.SetIcon(assets.AppIcon)
 	w.SetMaster()
 
 	systemTraySetup(w)
+
 	//Initialize ui 		(provide an object for each property of ui)
-	// construct the initialized 	(add widgets to ui)
-	// set bindings			(set bindings for ui widgets)
 	ui.InitializeUi(w)
+	// construct the initialized 	(add widgets to ui)
 	ui.GetUi().ConstructUi()
+	// set bindings			(set bindings for ui widgets)
 	bindUi()
+
 	w.SetContent(ui.GetUi().MainUi.CanvasObject)
 	w.RequestFocus()
 }
@@ -46,11 +53,11 @@ func main() {
 
 	services.CloseTessClient()
 
-	err := repositories.EncodePrograms(repositories.GetPrograms())
+	err := program.EncodePrograms(repositories.GetPrograms())
 	if err != nil {
 		log.Println(err)
 	}
-	err = repositories.EncodeMacros(repositories.GetMacros())
+	err = macro.EncodeMacros(repositories.GetMacros())
 	if err != nil {
 		log.Println(err)
 	}
