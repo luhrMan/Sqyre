@@ -14,6 +14,7 @@ import (
 	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+	"github.com/lithammer/fuzzysearch/fuzzy"
 )
 
 func bindItemsWidgets(di binding.Struct) {
@@ -22,8 +23,7 @@ func bindItemsWidgets(di binding.Struct) {
 		fyne.Do(func() { mt.RefreshItem(mt.SelectedNode) })
 	})
 
-	ets := ui.GetUi().EditorTabs
-	it := ets.ItemsTab.BindableWidgets
+	it := ui.GetUi().EditorTabs.ItemsTab.BindableWidgets
 
 	name, _ := di.GetItem("Name")
 	// gs, _ := di.GetItem("GridSize")
@@ -34,6 +34,7 @@ func bindItemsWidgets(di binding.Struct) {
 	it["Name"].(*widget.Entry).Unbind()
 	// it["Rows"].(*widget.Entry).Unbind()
 	// it["Cols"].(*widget.Entry).Unbind()
+	// widget.NewCard("test card", "", nil)
 	// it["Tags"].(*widget.Entry).Unbind()
 	it["StackMax"].(*widget.Entry).Unbind()
 	it["Merchant"].(*widget.Entry).Unbind()
@@ -70,16 +71,15 @@ func setAccordionItemsLists(acc *widget.Accordion) {
 		lists := struct {
 			boundItemSearchBar *widget.Entry
 			boundItemGrid      *widget.GridWrap
-			ItemSearchList     []string
+			filtered           []string
 		}{
 			boundItemSearchBar: &widget.Entry{},
 			boundItemGrid:      &widget.GridWrap{},
-			// searchAreaSearchList: GetPointsAsStringSlice(key, config.MainMonitorSizeString),
+			filtered:           pb.GetItemsAsStringSlice(),
 		}
-		lists.ItemSearchList = pb.Program.GetItemsAsStringSlice()
 		lists.boundItemGrid = widget.NewGridWrap(
 			func() int {
-				return len(pb.ItemBindings)
+				return len(lists.filtered)
 			},
 			func() fyne.CanvasObject {
 				rect := canvas.NewRectangle(color.RGBA{})
@@ -94,7 +94,8 @@ func setAccordionItemsLists(acc *widget.Accordion) {
 				return stack
 			},
 			func(id widget.GridWrapItemID, o fyne.CanvasObject) {
-				boundItem := pb.ItemBindings[id]
+				item := lists.filtered[id]
+				boundItem := pb.ItemBindings[item]
 				name, _ := boundItem.GetValue("Name")
 
 				stack := o.(*fyne.Container)
@@ -110,7 +111,7 @@ func setAccordionItemsLists(acc *widget.Accordion) {
 					rect.FillColor = color.RGBA{}
 				}
 
-				path := name.(string) + ".png"
+				path := pb.Name + config.ProgramDelimiter + name.(string) + config.PNG
 				if icons[path] != nil {
 					icon.Resource = icons[path]
 				} else {
@@ -124,7 +125,8 @@ func setAccordionItemsLists(acc *widget.Accordion) {
 			defer lists.boundItemGrid.RefreshItem(id)
 			// boundMacro := boundMacros[ui.GetUi().Mui.MTabs.SelectedTab().Macro.Name]
 
-			boundItem := pb.ItemBindings[id]
+			item := lists.filtered[id]
+			boundItem := pb.ItemBindings[item]
 			bindItemsWidgets(boundItem)
 			n, _ := boundItem.GetValue("Name")
 			ist, _ := ats.BoundImageSearch.GetValue("Targets")
@@ -190,26 +192,26 @@ func setAccordionItemsLists(acc *widget.Accordion) {
 		// 	}
 		// 	lists.boundSAList.Unselect(id)
 		// }
-		// lists.boundSASearchBar = &widget.Entry{
-		// 	PlaceHolder: "Search here",
-		// 	OnChanged: func(s string) {
-		// 		// defaultList := pro.Coordinates[config.MainMonitorSizeString].Points
-		// 		defaultList := GetPointsAsStringSlice(key, config.MainMonitorSizeString)
-		// 		defer lists.boundSAList.ScrollToTop()
-		// 		defer lists.boundSAList.Refresh()
+		lists.boundItemSearchBar = &widget.Entry{
+			PlaceHolder: "Search here",
+			OnChanged: func(s string) {
+				// defaultList := pro.Coordinates[config.MainMonitorSizeString].Points
+				defaultList := pb.GetItemsAsStringSlice()
+				defer lists.boundItemGrid.ScrollToTop()
+				defer lists.boundItemGrid.Refresh()
 
-		// 		if s == "" {
-		// 			lists.searchAreaSearchList = defaultList
-		// 			return
-		// 		}
-		// 		lists.searchAreaSearchList = []string{}
-		// 		for _, i := range defaultList {
-		// 			if fuzzy.MatchFold(s, i) {
-		// 				lists.searchAreaSearchList = append(lists.searchAreaSearchList, i)
-		// 			}
-		// 		}
-		// 	},
-		// }
+				if s == "" {
+					lists.filtered = defaultList
+					return
+				}
+				lists.filtered = []string{}
+				for _, i := range defaultList {
+					if fuzzy.MatchFold(s, i) {
+						lists.filtered = append(lists.filtered, i)
+					}
+				}
+			},
+		}
 		programItemsListWidget := *widget.NewAccordionItem(
 			pb.Program.Name,
 			container.NewBorder(

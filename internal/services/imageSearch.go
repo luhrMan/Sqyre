@@ -36,12 +36,12 @@ func imageSearch(a *actions.ImageSearch) (map[string][]robotgo.Point, error) {
 	imgDraw := img.Clone()
 	defer imgDraw.Close()
 
-	results := match(config.UpDir+config.UpDir+config.MetaImagesPath, img, imgDraw, a)
+	results := match(img, imgDraw, a)
 	return results, nil
 
 }
 
-func match(pathDir string, img, imgDraw gocv.Mat, a *actions.ImageSearch) map[string][]robotgo.Point {
+func match(img, imgDraw gocv.Mat, a *actions.ImageSearch) map[string][]robotgo.Point {
 	icons := *assets.GetIconBytes()
 	xSize := img.Cols() / a.ColSplit
 	ySize := img.Rows() / a.RowSplit
@@ -130,7 +130,7 @@ func match(pathDir string, img, imgDraw gocv.Mat, a *actions.ImageSearch) map[st
 	wg.Wait()
 	//	maskedIcons := *internal.MaskItems()
 
-	gocv.IMWrite(pathDir+"founditems.png", imgDraw)
+	// gocv.IMWrite(pathDir+"founditems.png", imgDraw)
 
 	return results
 }

@@ -10,9 +10,9 @@ import (
 
 type ProgramBinding struct {
 	*program.Program
-	ItemBindings       []binding.Struct
-	PointsBindings     []binding.Struct
-	SearchAreaBindings []binding.Struct
+	ItemBindings       map[string]binding.Struct
+	PointsBindings     map[string]binding.Struct
+	SearchAreaBindings map[string]binding.Struct
 }
 
 func InitPrograms() {
@@ -33,35 +33,18 @@ func BindPrograms() {
 func BindProgram(p *program.Program) {
 	boundPrograms[p.Name] = &ProgramBinding{
 		Program:            p,
-		PointsBindings:     []binding.Struct{},
-		SearchAreaBindings: []binding.Struct{},
-		ItemBindings:       []binding.Struct{},
+		PointsBindings:     map[string]binding.Struct{},
+		SearchAreaBindings: map[string]binding.Struct{},
+		ItemBindings:       map[string]binding.Struct{},
 	}
-
-	points := p.Coordinates[config.MainMonitorSizeString].Points
-	boundPrograms[p.Name].PointsBindings = make([]binding.Struct, len(points)) // Do not use slice append to build boundFriends list, for some reason! Strange effects...
-	counter := 0
-	for _, point := range points {
-		boundPoint := binding.BindStruct(&point)
-		boundPrograms[p.Name].PointsBindings[counter] = boundPoint
-		counter++
+	for s, point := range p.Coordinates[config.MainMonitorSizeString].Points {
+		boundPrograms[p.Name].PointsBindings[s] = binding.BindStruct(&point)
 	}
-
-	sas := p.Coordinates[config.MainMonitorSizeString].SearchAreas
-	boundPrograms[p.Name].SearchAreaBindings = make([]binding.Struct, len(sas)) // Do not use slice append to build boundFriends list, for some reason! Strange effects...
-	counter = 0
-	for _, sa := range sas {
-		boundSA := binding.BindStruct(&sa)
-		boundPrograms[p.Name].SearchAreaBindings[counter] = boundSA
-		counter++
+	for s, sa := range p.Coordinates[config.MainMonitorSizeString].SearchAreas {
+		boundPrograms[p.Name].SearchAreaBindings[s] = binding.BindStruct(&sa)
 	}
-	items := p.GetItemsMap()
-	boundPrograms[p.Name].ItemBindings = make([]binding.Struct, len(items)) // Do not use slice append to build boundFriends list, for some reason! Strange effects...
-	counter = 0
-	for _, i := range items {
-		boundItem := binding.BindStruct(i)
-		boundPrograms[p.Name].ItemBindings[counter] = boundItem
-		counter++
+	for s, i := range p.GetItemsMap() {
+		boundPrograms[p.Name].ItemBindings[s] = binding.BindStruct(i)
 	}
 }
 
