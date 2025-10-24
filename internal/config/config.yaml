@@ -57,7 +57,7 @@ macros:
                   colsplit: 1
                   tolerance: 0.95
                   type: imagesearch
-                  name: ""
+                  name: please help me
                   subactions:
                     - type: move
                       point:
@@ -65,6 +65,65 @@ macros:
                         x: 1743
                         "y": 380
         globaldelay: 150
+        hotkey: []
+    new macro 2:
+        name: Sell Treasures
+        root:
+            count: 1
+            type: loop
+            name: root
+            subactions:
+                - type: key
+                  key: shift
+                  state: true
+                - targets:
+                    - dark and darker|Diamond
+                    - dark and darker|Dotted Gold Bangle
+                    - dark and darker|Gem Ring
+                    - dark and darker|Glimmer Bangle
+                    - dark and darker|Goblet
+                    - dark and darker|Gold Band
+                    - dark and darker|Gold Bowl
+                    - dark and darker|Gold Candelabra
+                    - dark and darker|Gold Candle Holder
+                    - dark and darker|Gold Candle Platter
+                    - dark and darker|Gold Chalice
+                    - dark and darker|Gold Crown
+                    - dark and darker|Gold Goblet
+                    - dark and darker|Gold Waterpot
+                    - dark and darker|Leaf Gold Bangle
+                    - dark and darker|Light Gold Bangle
+                    - dark and darker|Patterned Gold Bangle
+                    - dark and darker|Pearl Necklace
+                    - dark and darker|Shine Bangle
+                    - dark and darker|Simple Gold Bangle
+                    - dark and darker|Slim Bangle
+                    - dark and darker|Triple Gem Bangle
+                    - dark and darker|Turquoise Gem Bangle
+                    - dark and darker|Silver Chalice
+                  searcharea:
+                    name: stash-screen-stash-inventory
+                    leftx: 1832
+                    topy: 261
+                    rightx: 2493
+                    bottomy: 1354
+                  rowsplit: 1
+                  colsplit: 1
+                  tolerance: 0.95
+                  type: imagesearch
+                  name: treasures
+                  subactions:
+                    - type: move
+                      point:
+                        name: image search context
+                        x: 2456
+                        "y": 345
+                    - type: click
+                      button: true
+                - type: key
+                  key: shift
+                  state: false
+        globaldelay: 50
         hotkey: []
 programs:
     dark and darker:
@@ -1242,6 +1301,10 @@ programs:
                         name: Goldsmith
                         x: 1736
                         "y": 299
+                    image search context:
+                        name: image search context
+                        x: -1
+                        "y": -1
                     leaderboard-screen:
                         name: Leaderboard-screen
                         x: 531
