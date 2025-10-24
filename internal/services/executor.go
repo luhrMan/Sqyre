@@ -11,7 +11,6 @@ import (
 )
 
 func Execute(a actions.ActionInterface) error {
-
 	switch node := a.(type) {
 	case *actions.Wait:
 		log.Printf("Waiting for %d milliseconds", node.Time)
@@ -69,6 +68,10 @@ func Execute(a actions.ActionInterface) error {
 					})
 				}
 				if err := Execute(action); err != nil {
+					fyne.DoAndWait(func() {
+						MacroActiveIndicator().Stop()
+						MacroActiveIndicator().Hide()
+					})
 					return err
 				}
 			}
@@ -92,8 +95,10 @@ func Execute(a actions.ActionInterface) error {
 			count++
 			point.X += node.SearchArea.LeftX
 			point.Y += node.SearchArea.TopY
-			for _, d := range node.SubActions {
-				Execute(d)
+			for _, a := range node.SubActions {
+				if err := Execute(a); err != nil {
+					return err
+				}
 			}
 		}
 		log.Printf("Total # found: %v\n", count)
