@@ -36,8 +36,7 @@ func Decode(s string) (*Macro, error) {
 		log.Println("Error unmarshalling macro:")
 		return nil, err
 	}
-	log.Println("Unmarshalled macro: ", m.Name)
-	log.Println("Unmarshalled actions: ", m.Root.SubActions)
+	log.Println("Succesffuly decoded macro: ", m.Name)
 	return m, nil
 }
 
@@ -53,29 +52,28 @@ func DecodeAll() map[string]*Macro {
 			break
 		}
 		ps[s] = p
-		log.Println("macro loaded", ps[s].Root)
 
 	}
-	log.Println("macros loaded", ps)
+	log.Println("Successfully decoded all macros:", ps)
 	return ps
 }
 
-func Encode(m *Macro) error {
-	serialize.GetViper().Set("macros."+m.Name, m)
-	err := serialize.GetViper().WriteConfig()
-	if err != nil {
-		return fmt.Errorf("error marshalling macros: %v", err)
-	}
-	log.Println("Successfully encoded macro:", m.Name)
-	return nil
-}
+// func Encode(m *Macro) error {
+// 	serialize.GetViper().Set("macros."+m.Name, m)
+// 	err := serialize.GetViper().WriteConfig()
+// 	if err != nil {
+// 		return fmt.Errorf("error encoding macro: %v", err)
+// 	}
+// 	log.Println("Successfully encoded macro:", m.Name)
+// 	return nil
+// }
 
 func EncodeAll(mm map[string]*Macro) error {
 	serialize.GetViper().Set("macros", mm)
 	err := serialize.GetViper().WriteConfig()
 	if err != nil {
-		return fmt.Errorf("error marshalling macros: %v", err)
+		return fmt.Errorf("error encoding macros: %v", err)
 	}
-	log.Println("Successfully encoded macros")
+	log.Println("Successfully encoded all macros")
 	return nil
 }

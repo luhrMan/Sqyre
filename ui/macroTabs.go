@@ -3,6 +3,7 @@ package ui
 import (
 	"log"
 
+	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
 )
@@ -44,8 +45,11 @@ func (mtabs *MacroTabs) AddTab(name string, t *container.TabItem) {
 func (mtabs *MacroTabs) SelectedTab() *MacroTree {
 	if mtabs.Selected() == nil {
 		t := mtabs.CreateTab()
-		mtabs.Append(t)
-		mtabs.Select(t)
+		go fyne.DoAndWait(func() {
+			mtabs.AddTab("", t)
+			// mtabs.Append(t)
+			// mtabs.Select(t)
+		})
 		return t.Content.(*MacroTree)
 	}
 	return mtabs.Selected().Content.(*MacroTree)

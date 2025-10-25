@@ -53,21 +53,20 @@ func bindItemsWidgets(di binding.Struct) {
 	// c.AddListener(dl)
 	sm.AddListener(dl)
 	m.AddListener(dl)
+}
 
+func RefreshItemsAccordionItems() {
+	for _, ai := range ui.GetUi().ActionTabs.ImageSearchItemsAccordion.Items {
+		ai.Detail.Refresh()
+	}
 }
 
 func setAccordionItemsLists(acc *widget.Accordion) {
-	// bSearchList = binding.BindStringList(&searchList)
 	var (
 		ats   = ui.GetUi().ActionTabs
 		icons = *assets.BytesToFyneIcons()
 	)
 	for _, pb := range GetBoundPrograms() {
-		var (
-		// searchList = slices.Clone(pb.Program.GetItems().SortByName())
-		// searchList =
-		// bSearchList binding.ExternalStringList
-		)
 		lists := struct {
 			boundItemSearchBar *widget.Entry
 			boundItemGrid      *widget.GridWrap
@@ -148,50 +147,6 @@ func setAccordionItemsLists(acc *widget.Accordion) {
 
 		}
 
-		// lists.boundSAList = widget.NewList(
-		// 	func() int {
-		// 		return len(pro.SearchAreaBindings)
-		// 	},
-		// 	func() fyne.CanvasObject {
-		// 		return widget.NewLabel("template")
-		// 	},
-		// 	func(id widget.ListItemID, co fyne.CanvasObject) {
-		// 		boundSA := pro.SearchAreaBindings[id]
-		// 		name, _ := boundSA.GetItem("Name")
-		// 		label := co.(*widget.Label)
-		// 		// nameLabel := c.Objects[0].(*widget.Label)
-		// 		// coordsLabel := c.Objects[1].(*widget.Label)
-
-		// 		// t := fmt.Sprintf("%v| %d, %d", poi.Name, poi.X, poi.Y)
-		// 		label.Bind(name.(binding.String))
-
-		// 		// label.SetText((fmt.Sprintf("%v: %d, %d", poi.Name, poi.X, poi.Y)))
-		// 	},
-		// )
-
-		// lists.boundSAList.OnSelected = func(id widget.ListItemID) {
-		// 	boundMacro := boundMacros[ui.GetUi().Mui.MTabs.SelectedTab().Macro.Name]
-		// 	boundSA := pro.SearchAreaBindings[id]
-		// 	bindSearchAreaWidgets(boundSA)
-		// 	ui.GetUi().ActionTabs.BoundSearchArea = boundSA
-		// 	if v, ok := ui.GetUi().Mui.MTabs.SelectedTab().Macro.Root.GetAction(ui.GetUi().Mui.MTabs.SelectedTab().SelectedNode).(*actions.ImageSearch); ok {
-		// 		name, _ := boundSA.GetValue("Name")
-		// 		x1, _ := boundSA.GetValue("LeftX")
-		// 		y1, _ := boundSA.GetValue("TopY")
-		// 		x2, _ := boundSA.GetValue("RightX")
-		// 		y2, _ := boundSA.GetValue("BottomY")
-		// 		v.SearchArea = coordinates.SearchArea{
-		// 			Name:    name.(string),
-		// 			LeftX:   x1.(int),
-		// 			TopY:    y1.(int),
-		// 			RightX:  x2.(int),
-		// 			BottomY: y2.(int),
-		// 		}
-		// 		boundMacro.bindAction(v)
-
-		// 	}
-		// 	lists.boundSAList.Unselect(id)
-		// }
 		lists.boundItemSearchBar = &widget.Entry{
 			PlaceHolder: "Search here",
 			OnChanged: func(s string) {
@@ -221,11 +176,5 @@ func setAccordionItemsLists(acc *widget.Accordion) {
 			),
 		)
 		acc.Append(&programItemsListWidget)
-	}
-}
-
-func RefreshItemsAccordionItems() {
-	for _, ai := range ui.GetUi().ActionTabs.ImageSearchItemsAccordion.Items {
-		ai.Detail.Refresh()
 	}
 }
