@@ -60,7 +60,7 @@ func match(img, imgDraw gocv.Mat, a *actions.ImageSearch) map[string][]robotgo.P
 		wg.Add(1)
 		go func(t string) {
 			defer wg.Done()
-			p := repositories.GetProgram(strings.Split(t, config.ProgramDelimiter)[0])
+			p := repositories.ProgramRepo().Get(strings.Split(t, config.ProgramDelimiter)[0])
 			i, err := p.GetItem(strings.Split(t, config.ProgramDelimiter)[1])
 			if err != nil {
 				log.Println(err)

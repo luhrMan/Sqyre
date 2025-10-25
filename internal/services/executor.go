@@ -21,8 +21,8 @@ func Execute(a actions.ActionInterface) error {
 		robotgo.Move(node.Point.X+config.XOffset, node.Point.Y+config.YOffset)
 		return nil
 	case *actions.Click:
-		log.Printf("%s click", LeftOrRight(node.Button))
-		robotgo.Click(LeftOrRight(node.Button))
+		log.Printf("%s click", actions.LeftOrRight(node.Button))
+		robotgo.Click(actions.LeftOrRight(node.Button))
 		return nil
 	case *actions.Key:
 		log.Printf("Key: %s %s", node.Key, node.State)
@@ -107,11 +107,4 @@ func Execute(a actions.ActionInterface) error {
 		return nil
 	}
 	return nil
-}
-
-func LeftOrRight(b bool) string {
-	if b {
-		return "right"
-	}
-	return "left"
 }

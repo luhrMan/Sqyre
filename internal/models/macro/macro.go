@@ -25,8 +25,7 @@ func NewMacro(name string, delay int, hotkey []string) *Macro {
 	}
 }
 
-func GetMacro(s string) (*Macro, error) {
-
+func Decode(s string) (*Macro, error) {
 	keystr := "macros" + "." + s // + "."
 	var m = new(Macro)
 	err := serialize.GetViper().UnmarshalKey(
@@ -42,13 +41,13 @@ func GetMacro(s string) (*Macro, error) {
 	return m, nil
 }
 
-func GetMacros() map[string]*Macro {
+func DecodeAll() map[string]*Macro {
 	var (
 		ps = make(map[string]*Macro)
 		ss = serialize.GetViper().GetStringMap("macros")
 	)
 	for s := range ss {
-		p, err := GetMacro(s)
+		p, err := Decode(s)
 		if err != nil {
 			log.Println("macro could not be loaded: ", err)
 			break
@@ -61,8 +60,18 @@ func GetMacros() map[string]*Macro {
 	return ps
 }
 
-func EncodeMacros(d map[string]*Macro) error {
-	serialize.GetViper().Set("macros", d)
+func Encode(m *Macro) error {
+	serialize.GetViper().Set("macros."+m.Name, m)
+	err := serialize.GetViper().WriteConfig()
+	if err != nil {
+		return fmt.Errorf("error marshalling macros: %v", err)
+	}
+	log.Println("Successfully encoded macro:", m.Name)
+	return nil
+}
+
+func EncodeAll(mm map[string]*Macro) error {
+	serialize.GetViper().Set("macros", mm)
 	err := serialize.GetViper().WriteConfig()
 	if err != nil {
 		return fmt.Errorf("error marshalling macros: %v", err)

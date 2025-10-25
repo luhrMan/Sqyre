@@ -3,8 +3,6 @@ package main
 import (
 	"Squire/binders"
 	"Squire/internal/assets"
-	"Squire/internal/models/macro"
-	"Squire/internal/models/program"
 	"Squire/internal/models/repositories"
 	"Squire/internal/models/serialize"
 	"Squire/internal/services"
@@ -23,8 +21,8 @@ func init() {
 	go services.StartHook()
 	services.FailsafeHotkey()
 	serialize.Decode() // read config.yaml data and save into GO structs
-	repositories.InitMacros()
-	repositories.InitPrograms()
+	repositories.MacroRepo().Init()
+	repositories.ProgramRepo().Init()
 	binders.InitPrograms()
 	a := app.NewWithID("Sqyre")
 	a.Settings().SetTheme(theme.DarkTheme())
@@ -53,11 +51,11 @@ func main() {
 
 	services.CloseTessClient()
 
-	err := program.EncodePrograms(repositories.GetPrograms())
+	err := repositories.ProgramRepo().SetAll()
 	if err != nil {
 		log.Println(err)
 	}
-	err = macro.EncodeMacros(repositories.GetMacros())
+	err = repositories.MacroRepo().SetAll()
 	if err != nil {
 		log.Println(err)
 	}
