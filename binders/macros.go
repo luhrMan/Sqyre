@@ -5,6 +5,7 @@ import (
 	"Squire/internal/models/actions"
 	"Squire/internal/models/coordinates"
 	"Squire/internal/models/macro"
+	"Squire/internal/models/repositories"
 	"Squire/internal/services"
 	"Squire/ui"
 	"errors"
@@ -15,68 +16,38 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"github.com/go-vgo/robotgo"
+	"github.com/google/uuid"
 )
 
-// type BoundMacros struct {
-// 	binds []binding.Struct
-// }
-
-// func BindMacros() {
-// 	for _, macro := range GetMacros() {
-// 		BindMacro(macro)
+// func AddMacro(s string, d int) {
+// 	if s == "" {
+// 		return
 // 	}
+// 	macros[s] = macro.NewMacro(s, d, []string{})
 // }
-
-// func BindMacro(m *macro.Macro) {
-// 	boundMacros.binds = append(boundMacros.binds, binding.BindStruct(m))
-// }
-
-func GetMacros() map[string]*macro.Macro {
-	return macros
-}
-
-func GetMacro(s string) *macro.Macro {
-	for _, m := range GetMacros() {
-		if m.Name == s {
-			return m
-		}
-	}
-	return nil
-}
-
-func AddMacro(s string, d int) {
-	if s == "" {
-		return
-	}
-	macros[s] = macro.NewMacro(s, d, []string{})
-}
-
-func GetMacrosAsStringSlice() []string {
-	keys := make([]string, len(GetMacros()))
-
-	i := 0
-	for _, k := range GetMacros() {
-		keys[i] = k.Name
-		i++
-	}
-	return keys
-}
 
 func SetMacroUi() {
 	setMtabSettingsAndWidgets()
 	setMacroToolbar()
-	setMacroSelect()
-	for _, m := range GetMacros() {
+	for _, m := range repositories.MacroRepo().GetAll() {
 		AddMacroTab(m)
 	}
-
+	setMacroSelect(ui.GetUi().MainUi.Mui.MacroSelectButton)
 }
 
 func AddMacroTab(m *macro.Macro) {
 	mtabs := ui.GetUi().Mui.MTabs
+	for _, d := range mtabs.Items {
+		if d.Text == m.Name {
+			log.Println("macro already open")
+			mtabs.Select(d)
+			return
+		}
+	}
 	t := container.NewTabItem(m.Name, ui.NewMacroTree(m))
 	mtabs.AddTab(m.Name, t)
 	setMacroTree(mtabs.SelectedTab())
@@ -86,39 +57,31 @@ func AddMacroTab(m *macro.Macro) {
 func setMtabSettingsAndWidgets() {
 	mtabs := ui.GetUi().Mui.MTabs
 	mtabs.CreateTab = func() *container.TabItem {
-		macros := GetMacros()
-
-		c := len(macros)
-		name := "New macro " + strconv.Itoa(c)
-		for {
-			if _, ok := macros[name]; ok {
-				c++
-				name = "New macro " + strconv.Itoa(c)
-			} else {
-				break
-			}
-		}
-
-		// for {
-		// 	if slices.Contains(macros, GetMacro(name)) {
-		// 		c++
-		// 		name = "New macro " + strconv.Itoa(c)
-		// 	} else {
-		// 		break
-		// 	}
+		name := "new macro " + uuid.NewString()
+		m := macro.NewMacro(name, 0, []string{})
+		repositories.MacroRepo().Set(m)
+		// m, err := repositories.MacroRepo().Get(name)
+		// if err != nil {
+		// 	log.Println("Error creating macro tab")
+		// 	return nil
 		// }
-		AddMacro(name, 0)
 		ti := container.NewTabItem(
 			name,
-			ui.NewMacroTree(GetMacro(name)),
+			ui.NewMacroTree(m),
 		)
 
 		setMacroTree(ti.Content.(*ui.MacroTree))
-		mtabs.BoundMacroListWidget.Refresh()
+		go fyne.DoAndWait(func() {
+			mtabs.BoundMacroListWidget.Refresh()
+		})
 		return ti
 	}
 	mtabs.OnClosed = func(ti *container.TabItem) {
-		services.UnregisterHotkey(GetMacro(ti.Text).Hotkey)
+		m, err := repositories.MacroRepo().Get(ti.Text)
+		if err != nil {
+			return
+		}
+		services.UnregisterHotkey(m.Hotkey)
 		mtabs.BoundMacroListWidget.Refresh()
 	}
 
@@ -130,7 +93,10 @@ func setMtabSettingsAndWidgets() {
 		RefreshItemsAccordionItems()
 	}
 	mtabs.OnSelected = func(ti *container.TabItem) {
-		m := GetMacro(ti.Text)
+		m, err := repositories.MacroRepo().Get(ti.Text)
+		if err != nil {
+			return
+		}
 		mtabs.MacroNameEntry.SetText(m.Name)
 		mtabs.BoundGlobalDelayEntry.SetText(strconv.Itoa(m.GlobalDelay))
 
@@ -158,15 +124,22 @@ func setMtabSettingsAndWidgets() {
 			e.Show()
 			return
 		}
-		for _, m := range GetMacros() {
+		for _, m := range repositories.MacroRepo().GetAll() {
 			if m.Name == sub {
 				dialog.ShowError(errors.New("macro name already exists"), ui.GetUi().Window)
 				return
 			}
 		}
+
 		mt := mtabs.SelectedTab()
+
+		repositories.MacroRepo().Delete(mt.Macro.Name)
+
 		mt.Macro.Name = sub
 		mtabs.Selected().Text = sub
+
+		repositories.MacroRepo().Set(mt.Macro)
+
 		mtabs.BoundMacroListWidget.Refresh()
 		mtabs.Refresh()
 	}
@@ -180,58 +153,77 @@ func setMtabSettingsAndWidgets() {
 	}
 }
 
-func setMacroSelect() {
-	ui.GetUi().Mui.MacroSelectButton = widget.NewButtonWithIcon("why no show",
-		theme.FolderOpenIcon(),
-		func() {
-			title := "Open Macro"
-			for _, w := range fyne.CurrentApp().Driver().AllWindows() {
-				if w.Title() == title {
-					w.RequestFocus()
-					return
-				}
+func setMacroSelect(b *widget.Button) {
+	b.Text = ""
+	b.Icon = theme.FolderOpenIcon()
+	b.OnTapped = func() {
+		title := "Open Macro"
+		for _, w := range fyne.CurrentApp().Driver().AllWindows() {
+			if w.Title() == title {
+				w.RequestFocus()
+				return
 			}
-			w := fyne.CurrentApp().NewWindow(title)
-			w.SetIcon(assets.AppIcon)
-			ui.GetUi().Mui.MTabs.BoundMacroListWidget = widget.NewList(
-				func() int {
-					return len(GetMacros())
-				},
-				func() fyne.CanvasObject {
-					return widget.NewLabel("template")
-				},
-				func(id widget.ListItemID, co fyne.CanvasObject) {
-					k := GetMacrosAsStringSlice()
-					label := co.(*widget.Label)
-					slices.Sort(k)
-					v := k[id]
-					label.SetText(v)
-					label.Importance = widget.MediumImportance
-					for _, d := range ui.GetUi().Mui.MTabs.Items {
-						if d.Text == v {
-							label.Importance = widget.SuccessImportance
+		}
+		w := fyne.CurrentApp().NewWindow(title)
+		w.SetIcon(assets.AppIcon)
+		ui.GetUi().Mui.MTabs.BoundMacroListWidget = widget.NewList(
+			func() int {
+				return len(repositories.MacroRepo().GetAll())
+			},
+			func() fyne.CanvasObject {
+				return container.NewHBox(widget.NewLabel("Template"), layout.NewSpacer(), &widget.Button{Icon: theme.CancelIcon(), Importance: widget.LowImportance})
+			},
+			func(id widget.ListItemID, co fyne.CanvasObject) {
+				k := repositories.MacroRepo().GetAllAsStringSlice()
+				c := co.(*fyne.Container)
+				label := c.Objects[0].(*widget.Label)
+				removeButton := c.Objects[2].(*widget.Button)
+				// label := co.(*widget.Label)
+				slices.Sort(k)
+				v := k[id]
+				label.SetText(v)
+				label.Importance = widget.MediumImportance
+				for _, d := range ui.GetUi().Mui.MTabs.Items {
+					if d.Text == v {
+						label.Importance = widget.SuccessImportance
+					}
+				}
+				label.Refresh()
+				removeButton.OnTapped = func() {
+					repositories.MacroRepo().Delete(v)
+					ui.GetUi().Mui.MTabs.BoundMacroListWidget.RefreshItem(id)
+					for _, ti := range ui.GetUi().Mui.MTabs.Items {
+						if ti.Text == v {
+							ui.GetUi().Mui.MTabs.Remove(ti)
+							ui.GetUi().Mui.MTabs.Refresh()
 						}
 					}
-					label.Refresh()
-				},
-			)
-			ui.GetUi().Mui.MTabs.BoundMacroListWidget.OnSelected =
-				func(id widget.ListItemID) {
-					k := GetMacrosAsStringSlice()
-					slices.Sort(k)
-					AddMacroTab(GetMacro(k[id]))
-					ui.GetUi().Mui.MTabs.BoundMacroListWidget.RefreshItem(id)
-					ui.GetUi().Mui.MTabs.BoundMacroListWidget.UnselectAll()
 				}
-			w.SetContent(
-				container.NewAdaptiveGrid(1,
-					ui.GetUi().Mui.MTabs.BoundMacroListWidget,
-				),
-			)
-			w.Resize(fyne.NewSize(300, 500))
-			w.Show()
-		},
-	)
+				removeButton.Show()
+
+			},
+		)
+		ui.GetUi().Mui.MTabs.BoundMacroListWidget.OnSelected =
+			func(id widget.ListItemID) {
+				k := repositories.MacroRepo().GetAllAsStringSlice()
+				slices.Sort(k)
+				log.Println(k[id])
+				m, err := repositories.MacroRepo().Get(k[id])
+				if err != nil {
+					return
+				}
+				AddMacroTab(m)
+				ui.GetUi().Mui.MTabs.BoundMacroListWidget.RefreshItem(id)
+				ui.GetUi().Mui.MTabs.BoundMacroListWidget.UnselectAll()
+			}
+		w.SetContent(
+			container.NewAdaptiveGrid(1,
+				ui.GetUi().Mui.MTabs.BoundMacroListWidget,
+			),
+		)
+		w.Resize(fyne.NewSize(300, 500))
+		w.Show()
+	}
 }
 
 // MACRO TREE

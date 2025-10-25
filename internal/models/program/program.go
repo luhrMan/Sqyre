@@ -102,12 +102,6 @@ func NewProgram(name string) *Program {
 // 	points := c[ss].Points
 // 	points[point.Name] = point
 // }
-// func (p *Program) SerializeJsonPointsToProgram(ss string) {
-// 	jpm := config.JsonPointMap()
-// 	for _, point := range jpm {
-// 		p.AddProgramPoint(ss, point)
-// 	}
-// }
 
 // func (p *Program) AddProgramSearchArea(ss string, sa config.SearchArea) {
 // 	c := p.Coordinates
@@ -140,7 +134,7 @@ func Decode(s string) *Program {
 	if err != nil {
 		log.Fatalf(errStr, err)
 	}
-
+	log.Println("Successfully decoded program:", p.Name)
 	return p
 }
 
@@ -153,16 +147,26 @@ func DecodeAll() map[string]*Program {
 		p := Decode(s)
 		ps[s] = p
 	}
-	log.Println("programs loaded", ps)
+	log.Println("Successfully decoded all programs", ps)
 	return ps
 }
 
-func EncodeAll(d map[string]*Program) error {
-	serialize.GetViper().Set("programs", d)
+// func Encode(p *Program) error {
+// 	serialize.GetViper().Set("programs."+p.Name, p)
+// 	err := serialize.GetViper().WriteConfig()
+// 	if err != nil {
+// 		return fmt.Errorf("error encoding program: %v", err)
+// 	}
+// 	log.Println("Successfully encoded program:", p.Name)
+// 	return nil
+// }
+
+func EncodeAll(pm map[string]*Program) error {
+	serialize.GetViper().Set("programs", pm)
 	err := serialize.GetViper().WriteConfig()
 	if err != nil {
-		return fmt.Errorf("error marshalling programs: %v", err)
+		return fmt.Errorf("error encoding programs: %v", err)
 	}
-	log.Println("Successfully encoded programs")
+	log.Printf("Successfully encoded programs")
 	return nil
 }

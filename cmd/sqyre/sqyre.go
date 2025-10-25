@@ -21,8 +21,8 @@ func init() {
 	go services.StartHook()
 	services.FailsafeHotkey()
 	serialize.Decode() // read config.yaml data and save into GO structs
-	repositories.MacroRepo().Init()
-	repositories.ProgramRepo().Init()
+	repositories.MacroRepo()
+	repositories.ProgramRepo()
 	binders.InitPrograms()
 	a := app.NewWithID("Sqyre")
 	a.Settings().SetTheme(theme.DarkTheme())

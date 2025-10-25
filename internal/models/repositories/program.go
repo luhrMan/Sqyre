@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"Squire/internal/models/program"
+	"sync"
 )
 
 type ProgramRepository struct {
@@ -9,17 +10,16 @@ type ProgramRepository struct {
 }
 
 var pr *ProgramRepository
+var programInit sync.Once
 
 func ProgramRepo() *ProgramRepository {
+	programInit.Do(func() {
+		pr = &ProgramRepository{
+			programs: make(map[string]*program.Program),
+		}
+		pr.programs = program.DecodeAll()
+	})
 	return pr
-}
-
-func (r *ProgramRepository) Init() {
-	r = &ProgramRepository{
-		programs: make(map[string]*program.Program),
-	}
-	r.programs = program.DecodeAll()
-	pr = r
 }
 
 func (r *ProgramRepository) Get(s string) *program.Program {

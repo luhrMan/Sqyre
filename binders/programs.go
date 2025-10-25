@@ -17,15 +17,17 @@ type ProgramBinding struct {
 
 func InitPrograms() {
 	once.Do(func() {
-		programs = repositories.ProgramRepo().GetAll()
-		macros = repositories.MacroRepo().GetAll()
 		boundPrograms = map[string]*ProgramBinding{}
 		BindPrograms()
 	})
 }
 
+func GetBoundPrograms() map[string]*ProgramBinding {
+	return boundPrograms
+}
+
 func BindPrograms() {
-	for _, program := range GetPrograms() {
+	for _, program := range repositories.ProgramRepo().GetAll() {
 		BindProgram(program)
 	}
 }
@@ -46,19 +48,4 @@ func BindProgram(p *program.Program) {
 	for s, i := range p.GetItemsMap() {
 		boundPrograms[p.Name].ItemBindings[s] = binding.BindStruct(i)
 	}
-}
-
-func GetProgram(s string) *program.Program {
-	if p, ok := GetPrograms()[s]; ok {
-		return p
-	}
-	return nil
-}
-
-func GetPrograms() map[string]*program.Program {
-	return programs
-}
-
-func GetBoundPrograms() map[string]*ProgramBinding {
-	return boundPrograms
 }
