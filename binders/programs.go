@@ -17,8 +17,8 @@ type ProgramBinding struct {
 
 func InitPrograms() {
 	once.Do(func() {
-		programs = repositories.GetPrograms()
-		macros = repositories.GetMacros()
+		programs = repositories.ProgramRepo().GetAll()
+		macros = repositories.MacroRepo().GetAll()
 		boundPrograms = map[string]*ProgramBinding{}
 		BindPrograms()
 	})
