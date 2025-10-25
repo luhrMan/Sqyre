@@ -171,27 +171,6 @@ func (at *ActionTabs) constructImageSearchTab() {
 	// at.BoundImageSearchNameEntry.OnChanged = func(s string) { at.BoundAdvancedAction.SetValue("Name", s) }
 
 	// var saSearchList = slices.Clone(programs.CurrentProgramAndScreenSizeCoordinates().GetSearchAreasAsStringSlice())
-	// at.boundImageSearchSearchAreaStringList = binding.BindStringList(&saSearchList)
-	// at.boundImageSearchAreaSearchBar = &widget.Entry{
-	// 	PlaceHolder: "Search here",
-	// 	OnChanged: func(s string) {
-	// 		defaultList := programs.CurrentProgramAndScreenSizeCoordinates().GetSearchAreasAsStringSlice()
-	// 		defer at.boundImageSearchSearchAreaStringList.Reload()
-	// 		defer at.boundImageSearchAreaList.ScrollToTop()
-	// 		defer at.boundImageSearchAreaList.Refresh()
-
-	// 		if s == "" {
-	// 			saSearchList = defaultList
-	// 			return
-	// 		}
-	// 		saSearchList = []string{}
-	// 		for _, i := range defaultList {
-	// 			if fuzzy.MatchFold(s, i) {
-	// 				saSearchList = append(saSearchList, i)
-	// 			}
-	// 		}
-	// 	},
-	// }
 
 	// at.BoundImageSearchAreaList = widget.NewListWithData(
 	// 	at.BoundImageSearchSearchAreaStringList,
