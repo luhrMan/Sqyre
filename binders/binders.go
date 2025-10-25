@@ -4,7 +4,6 @@ import (
 	"Squire/internal/models/actions"
 	"Squire/internal/models/coordinates"
 	"Squire/ui"
-	"log"
 	"slices"
 
 	"fyne.io/fyne/v2"
@@ -106,9 +105,7 @@ func bindAction(a actions.ActionInterface) {
 		n.AddListener(dl)
 	case *actions.ImageSearch:
 		ats.BoundImageSearch = bsa
-		log.Println("image search")
 		ats.BoundImageSearchAA = binding.BindStruct(node.AdvancedAction)
-		log.Println("image search aa")
 		ats.BoundImageSearchSA = binding.BindStruct(&node.SearchArea)
 		n, _ := ats.BoundImageSearchAA.GetItem("Name")
 		sa, _ := ats.BoundImageSearchSA.GetItem("Name")

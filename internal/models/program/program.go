@@ -115,7 +115,7 @@ func NewProgram(name string) *Program {
 // 	sas[sa.Name] = sa
 // }
 
-func GetProgram(s string) *Program {
+func Decode(s string) *Program {
 	var (
 		keyStr = "programs" + "." + s + "."
 		err    error
@@ -144,20 +144,20 @@ func GetProgram(s string) *Program {
 	return p
 }
 
-func GetPrograms() map[string]*Program {
+func DecodeAll() map[string]*Program {
 	var (
 		ps = make(map[string]*Program)
 		ss = serialize.GetViper().GetStringMap("programs")
 	)
 	for s := range ss {
-		p := GetProgram(s)
+		p := Decode(s)
 		ps[s] = p
 	}
 	log.Println("programs loaded", ps)
 	return ps
 }
 
-func EncodePrograms(d map[string]*Program) error {
+func EncodeAll(d map[string]*Program) error {
 	serialize.GetViper().Set("programs", d)
 	err := serialize.GetViper().WriteConfig()
 	if err != nil {
