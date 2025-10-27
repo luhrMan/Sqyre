@@ -18,22 +18,6 @@ type Item struct {
 	Merchant string   `json:"merchant"`
 }
 
-// func ParseItemsFromJson(path string) []Item {
-// 	im := []Item{}
-// 	content, err := os.ReadFile(path)
-// 	if err != nil {
-// 		log.Println("Error when opening file: ", err)
-// 		return nil
-// 	}
-// 	err = json.Unmarshal(content, &im)
-// 	if err != nil {
-// 		log.Printf("Error unmarshaling JSON: %v\n", err)
-// 		return nil
-// 	}
-// 	log.Println(im)
-// 	return im
-// }
-
 // func (is *Items) SortByCategory() []string {
 // 	categories := make([]string, 0, len(is.Items))
 // 	items := []string{}

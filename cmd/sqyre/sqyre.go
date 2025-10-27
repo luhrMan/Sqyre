@@ -65,7 +65,7 @@ func bindUi() {
 	binders.InitBinds()
 	binders.SetMacroUi()
 	binders.SetActionTabBindings()
-	binders.SetEditorTabs()
+	binders.SetEditorUi()
 }
 
 func systemTraySetup(w fyne.Window) {

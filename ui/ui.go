@@ -4,6 +4,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/data/binding"
+	"fyne.io/fyne/v2/layout"
 	widget "fyne.io/fyne/v2/widget"
 	"github.com/go-vgo/robotgo"
 )
@@ -31,7 +32,10 @@ func InitializeUi(w fyne.Window) *Ui {
 	ui = &Ui{
 		Window: w,
 		EditorUi: &EditorUi{
-			NavButton: &widget.Button{},
+			NavButton:       &widget.Button{},
+			AddButton:       &widget.Button{},
+			RemoveButton:    &widget.Button{},
+			ProgramSelector: &widget.SelectEntry{},
 			EditorTabs: struct {
 				*container.AppTabs
 				ItemsTab       *EditorTab
@@ -78,13 +82,20 @@ func (u *Ui) ConstructUi() {
 	// construct editor screen
 	u.EditorUi.CanvasObject = container.NewBorder(
 		nil,
-		container.NewHBox(ui.EditorUi.NavButton),
+		container.NewBorder(
+			nil, nil,
+			ui.EditorUi.NavButton,
+			container.NewHBox(ui.EditorUi.AddButton, layout.NewSpacer(), ui.EditorUi.RemoveButton),
+			layout.NewSpacer(), ui.EditorUi.ProgramSelector,
+		),
 		nil,
 		nil,
 		ui.EditorUi.EditorTabs,
 	)
 	u.constructEditorTabs()
 	u.constructNavButton()
+	u.constructAddButton()
+	u.constructRemoveButton()
 
 	// construct main menu
 	u.Window.SetMainMenu(u.constructMainMenu())
@@ -92,6 +103,7 @@ func (u *Ui) ConstructUi() {
 	toggleMousePos()
 }
 
+// widget.NewSelect(repositories.ProgramRepo().GetAllAsStringSlice(), func(s string) {}),
 func toggleMousePos() {
 	locX, locY := robotgo.Location()
 	blocX, blocY := binding.BindInt(&locX), binding.BindInt(&locY)
