@@ -4,15 +4,17 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/data/binding"
-	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
 
 type EditorUi struct {
 	fyne.CanvasObject
-	NavButton  *widget.Button
-	EditorTabs struct {
+	NavButton       *widget.Button
+	AddButton       *widget.Button
+	RemoveButton    *widget.Button
+	ProgramSelector *widget.SelectEntry
+	EditorTabs      struct {
 		*container.AppTabs
 		ItemsTab       *EditorTab
 		PointsTab      *EditorTab
@@ -42,14 +44,16 @@ func (u *Ui) constructEditorTabs() {
 		y1   = "TopY"
 		x2   = "LeftX"
 		y2   = "BottomY"
-		gs   = "GridSize"
+		gsx  = "GridSizeX"
+		gsy  = "GridSizeY"
 		tags = "Tags"
 		sm   = "StackMax"
 		m    = "Merchant"
 		// i    = "Icons"
 	)
 	ui.EditorTabs.ItemsTab.BindableWidgets[name] = widget.NewEntryWithData(binding.NewString())
-	ui.EditorTabs.ItemsTab.BindableWidgets[gs] = widget.NewEntryWithData(binding.NewString())
+	ui.EditorTabs.ItemsTab.BindableWidgets[gsx] = widget.NewEntryWithData(binding.NewString())
+	ui.EditorTabs.ItemsTab.BindableWidgets[gsy] = widget.NewEntryWithData(binding.NewString())
 	ui.EditorTabs.ItemsTab.BindableWidgets[tags] = widget.NewCard("test", "", nil)
 	ui.EditorTabs.ItemsTab.BindableWidgets[sm] = widget.NewEntryWithData(binding.NewString())
 	ui.EditorTabs.ItemsTab.BindableWidgets[m] = widget.NewEntryWithData(binding.NewString())
@@ -60,16 +64,12 @@ func (u *Ui) constructEditorTabs() {
 			nil, nil, nil, nil, widget.NewAccordion(),
 		),
 		container.NewBorder(
-			container.NewHBox(
-				widget.NewButtonWithIcon("", theme.ContentAddIcon(), func() {
-					dialog.ShowFileOpen(func(reader fyne.URIReadCloser, err error) {}, u.Window)
-				}),
-			),
-			nil,
+			nil, nil,
 			nil, nil,
 			widget.NewForm(
 				widget.NewFormItem(name, ui.EditorTabs.ItemsTab.BindableWidgets[name]),
-				widget.NewFormItem(gs, ui.EditorTabs.ItemsTab.BindableWidgets[gs]),
+				widget.NewFormItem(gsx, ui.EditorTabs.ItemsTab.BindableWidgets[gsx]),
+				widget.NewFormItem(gsy, ui.EditorTabs.ItemsTab.BindableWidgets[gsy]),
 				widget.NewFormItem(tags, widget.NewEntry()),
 				widget.NewFormItem("", ui.EditorTabs.ItemsTab.BindableWidgets[tags]),
 				widget.NewFormItem(sm, ui.EditorTabs.ItemsTab.BindableWidgets[sm]),
@@ -116,8 +116,22 @@ func (u *Ui) constructEditorTabs() {
 }
 
 func (u *Ui) constructNavButton() {
+	u.EditorUi.NavButton.Text = "Back"
 	u.EditorUi.NavButton.Icon = theme.NavigateBackIcon()
 	u.EditorUi.NavButton.OnTapped = func() {
 		u.Window.SetContent(u.MainUi.CanvasObject)
 	}
+}
+
+func (u *Ui) constructAddButton() {
+	u.EditorUi.AddButton.Text = "New"
+	u.EditorUi.AddButton.Icon = theme.ContentAddIcon()
+	u.EditorUi.AddButton.Importance = widget.SuccessImportance
+
+}
+
+func (u *Ui) constructRemoveButton() {
+	u.EditorUi.RemoveButton.Text = ""
+	u.EditorUi.RemoveButton.Icon = theme.ContentRemoveIcon()
+	u.EditorUi.RemoveButton.Importance = widget.DangerImportance
 }

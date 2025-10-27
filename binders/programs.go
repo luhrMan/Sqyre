@@ -45,7 +45,7 @@ func BindProgram(p *program.Program) {
 	for s, sa := range p.Coordinates[config.MainMonitorSizeString].SearchAreas {
 		boundPrograms[p.Name].SearchAreaBindings[s] = binding.BindStruct(&sa)
 	}
-	for s, i := range p.GetItemsMap() {
+	for s, i := range p.Items {
 		boundPrograms[p.Name].ItemBindings[s] = binding.BindStruct(i)
 	}
 }

@@ -30,11 +30,22 @@ func (r *ProgramRepository) GetAll() map[string]*program.Program {
 	return r.programs
 }
 
+func (r *ProgramRepository) GetAllAsStringSlice() []string {
+	keys := make([]string, len(r.programs))
+
+	i := 0
+	for _, k := range r.programs {
+		keys[i] = k.Name
+		i++
+	}
+	return keys
+}
+
 func (r *ProgramRepository) Set() {
 }
 
 func (r *ProgramRepository) SetAll() error {
-	e := program.EncodeAll(r.GetAll())
+	e := program.EncodeAll(r.programs)
 	if e != nil {
 		return e
 	}
