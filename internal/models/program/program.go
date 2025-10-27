@@ -17,13 +17,17 @@ type Program struct {
 	Coordinates map[string]*coordinates.Coordinates
 }
 
-func (p *Program) GetItemsWithAppendedProgramName() map[string]*items.Item {
-	is := make(map[string]*items.Item)
-	for s, i := range p.Items {
-		s = p.Name + config.ProgramDelimiter + s
-		is[s] = i
+func NewProgram(name string) *Program {
+	return &Program{
+		Name:  name,
+		Items: make(map[string]*items.Item),
+		// Coordinates: map[string]*coordinates.Coordinates{
+		// 	strconv.Itoa(config.MonitorWidth) + "x" + strconv.Itoa(config.MonitorHeight): { //"2560x1440": {
+		// 		Points:      make(map[string]coordinates.Point),
+		// 		SearchAreas: make(map[string]coordinates.SearchArea),
+		// 	},
+		// },
 	}
-	return is
 }
 
 func (p *Program) GetItem(i string) (*items.Item, error) {
@@ -35,6 +39,15 @@ func (p *Program) GetItem(i string) (*items.Item, error) {
 	// if found {
 	// 	return allItemsMap[AllItems()[index]], nil
 	// }
+}
+
+func (p *Program) GetItemsWithAppendedProgramName() map[string]*items.Item {
+	is := make(map[string]*items.Item)
+	for s, i := range p.Items {
+		s = p.Name + config.ProgramDelimiter + s
+		is[s] = i
+	}
+	return is
 }
 
 func (p *Program) GetItemsAsStringSlice() []string {
@@ -60,17 +73,8 @@ func (p *Program) GetItemsMap() map[string]*items.Item {
 	return p.Items
 }
 
-func NewProgram(name string) *Program {
-	return &Program{
-		Name:  name,
-		Items: make(map[string]*items.Item),
-		// Coordinates: map[string]*coordinates.Coordinates{
-		// 	strconv.Itoa(config.MonitorWidth) + "x" + strconv.Itoa(config.MonitorHeight): { //"2560x1440": {
-		// 		Points:      make(map[string]coordinates.Point),
-		// 		SearchAreas: make(map[string]coordinates.SearchArea),
-		// 	},
-		// },
-	}
+func (p *Program) AddItem(i *items.Item) {
+	p.Items[strings.ToLower(i.Name)] = i
 }
 
 // func (p *Program) GetItem(i string) items.Item {
