@@ -113,7 +113,7 @@ func (p *Program) AddItem(i *items.Item) {
 // 	sas[sa.Name] = sa
 // }
 
-func Decode(s string) *Program {
+func Decode(s string) (*Program, error) {
 	var (
 		keyStr = "programs" + "." + s + "."
 		err    error
@@ -139,21 +139,21 @@ func Decode(s string) *Program {
 		log.Fatalf(errStr, err)
 	}
 	log.Println("Successfully decoded program:", p.Name)
-	return p
+	return p, nil
 }
 
-func DecodeAll() map[string]*Program {
-	var (
-		ps = make(map[string]*Program)
-		ss = serialize.GetViper().GetStringMap("programs")
-	)
-	for s := range ss {
-		p := Decode(s)
-		ps[s] = p
-	}
-	log.Println("Successfully decoded all programs", ps)
-	return ps
-}
+// func DecodeAll() map[string]*Program {
+// 	var (
+// 		ps = make(map[string]*Program)
+// 		ss = serialize.GetViper().GetStringMap("programs")
+// 	)
+// 	for s := range ss {
+// 		p := Decode(s)
+// 		ps[s] = p
+// 	}
+// 	log.Println("Successfully decoded all programs", ps)
+// 	return ps
+// }
 
 // func Encode(p *Program) error {
 // 	serialize.GetViper().Set("programs."+p.Name, p)

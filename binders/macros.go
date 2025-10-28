@@ -31,7 +31,16 @@ import (
 // }
 
 func SetMacroUi() {
-	setMtabSettingsAndWidgets()
+	mtabs := ui.GetUi().Mui.MTabs
+	mtabs.OnSelected = func(ti *container.TabItem) {
+		setMtabSettingsAndWidgets()
+
+		m := repositories.MacroRepo().Get(ti.Text)
+		mtabs.MacroNameEntry.SetText(m.Name)
+		mtabs.BoundGlobalDelayEntry.SetText(strconv.Itoa(m.GlobalDelay))
+
+		mtabs.MacroHotkeyEntry.SetText(services.ReverseParseMacroHotkey(m.Hotkey))
+	}
 	setMacroToolbar()
 	for _, m := range repositories.MacroRepo().GetAll() {
 		AddMacroTab(m)
@@ -59,7 +68,7 @@ func setMtabSettingsAndWidgets() {
 	mtabs.CreateTab = func() *container.TabItem {
 		name := "new macro " + uuid.NewString()
 		m := macro.NewMacro(name, 0, []string{})
-		repositories.MacroRepo().Set(m)
+		repositories.MacroRepo().Set(m.Name, m)
 		// m, err := repositories.MacroRepo().Get(name)
 		// if err != nil {
 		// 	log.Println("Error creating macro tab")
@@ -77,10 +86,7 @@ func setMtabSettingsAndWidgets() {
 		return ti
 	}
 	mtabs.OnClosed = func(ti *container.TabItem) {
-		m, err := repositories.MacroRepo().Get(ti.Text)
-		if err != nil {
-			return
-		}
+		m := repositories.MacroRepo().Get(ti.Text)
 		services.UnregisterHotkey(m.Hotkey)
 		mtabs.BoundMacroListWidget.Refresh()
 	}
@@ -92,16 +98,17 @@ func setMtabSettingsAndWidgets() {
 		ResetBinds()
 		RefreshItemsAccordionItems()
 	}
-	mtabs.OnSelected = func(ti *container.TabItem) {
-		m, err := repositories.MacroRepo().Get(ti.Text)
-		if err != nil {
-			return
-		}
-		mtabs.MacroNameEntry.SetText(m.Name)
-		mtabs.BoundGlobalDelayEntry.SetText(strconv.Itoa(m.GlobalDelay))
+	// mtabs.OnSelected = func(ti *container.TabItem) {
+	// 	m := repositories.MacroRepo().Get(ti.Text)
+	// 	// if m == nil {
+	// 	// 	return
+	// 	// }
 
-		mtabs.MacroHotkeyEntry.SetText(services.ReverseParseMacroHotkey(m.Hotkey))
-	}
+	// 	mtabs.MacroNameEntry.SetText(m.Name)
+	// 	mtabs.BoundGlobalDelayEntry.SetText(strconv.Itoa(m.GlobalDelay))
+
+	// 	mtabs.MacroHotkeyEntry.SetText(services.ReverseParseMacroHotkey(m.Hotkey))
+	// }
 
 	mtabs.MacroHotkeyEntry.PlaceHolder = "ctrl+shift+1 or ctrl+1 or ctrl+a+1"
 	saveHotkey := func() {
@@ -138,7 +145,7 @@ func setMtabSettingsAndWidgets() {
 		mt.Macro.Name = sub
 		mtabs.Selected().Text = sub
 
-		repositories.MacroRepo().Set(mt.Macro)
+		repositories.MacroRepo().Set(mt.Macro.Name, mt.Macro)
 
 		mtabs.BoundMacroListWidget.Refresh()
 		mtabs.Refresh()
@@ -208,10 +215,7 @@ func setMacroSelect(b *widget.Button) {
 				k := repositories.MacroRepo().GetAllAsStringSlice()
 				slices.Sort(k)
 				log.Println(k[id])
-				m, err := repositories.MacroRepo().Get(k[id])
-				if err != nil {
-					return
-				}
+				m := repositories.MacroRepo().Get(k[id])
 				AddMacroTab(m)
 				ui.GetUi().Mui.MTabs.BoundMacroListWidget.RefreshItem(id)
 				ui.GetUi().Mui.MTabs.BoundMacroListWidget.UnselectAll()
