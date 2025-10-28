@@ -51,11 +51,11 @@ func main() {
 
 	services.CloseTessClient()
 
-	err := repositories.ProgramRepo().SetAll()
+	err := repositories.ProgramRepo().EncodeAll()
 	if err != nil {
 		log.Println(err)
 	}
-	err = repositories.MacroRepo().SetAll()
+	err = repositories.MacroRepo().EncodeAll()
 	if err != nil {
 		log.Println(err)
 	}

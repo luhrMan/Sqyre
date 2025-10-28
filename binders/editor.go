@@ -51,7 +51,7 @@ func setButtons() {
 			}
 			repositories.ProgramRepo().Get(program).AddItem(i)
 			log.Println(repositories.ProgramRepo().Get(program).GetItem(i.Name))
-			repositories.ProgramRepo().SetAll()
+			repositories.ProgramRepo().EncodeAll()
 		case "Points":
 
 		case "Search Areas":

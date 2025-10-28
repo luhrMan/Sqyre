@@ -3,6 +3,7 @@ package binders
 import (
 	"Squire/internal/assets"
 	"Squire/internal/config"
+	"Squire/internal/models/repositories"
 	"Squire/ui"
 	"image/color"
 	"slices"
@@ -17,7 +18,7 @@ import (
 	"github.com/lithammer/fuzzysearch/fuzzy"
 )
 
-func bindItemsWidgets(di binding.Struct) {
+func bindItemsWidgets(di binding.Struct, bx, by binding.Int) {
 	dl := binding.NewDataListener(func() {
 		mt := ui.GetUi().Mui.MTabs.SelectedTab()
 		fyne.Do(func() { mt.RefreshItem(mt.SelectedNode) })
@@ -26,26 +27,27 @@ func bindItemsWidgets(di binding.Struct) {
 	it := ui.GetUi().EditorTabs.ItemsTab.BindableWidgets
 
 	name, _ := di.GetItem("Name")
-	// gs, _ := di.GetItem("GridSize")
+	// gsx, _ := bx.GetItem("X")
+	// gsy, _ := gs.GetItem("Y")
 	// c, _ := di.GetItem("Tags")
 	sm, _ := di.GetItem("StackMax")
 	m, _ := di.GetItem("Merchant")
 
-	it["Name"].(*widget.Entry).Unbind()
+	// it["Name"].(*widget.Entry).Unbind()
 	// it["Rows"].(*widget.Entry).Unbind()
 	// it["Cols"].(*widget.Entry).Unbind()
 	// widget.NewCard("test card", "", nil)
 	// it["Tags"].(*widget.Entry).Unbind()
-	it["StackMax"].(*widget.Entry).Unbind()
-	it["Merchant"].(*widget.Entry).Unbind()
+	// it["StackMax"].(*widget.Entry).Unbind()
+	// it["Merchant"].(*widget.Entry).Unbind()
 	// gs.RemoveListener(dl)
 	// c.RemoveListener(dl)
-	sm.RemoveListener(dl)
-	m.RemoveListener(dl)
+	// sm.RemoveListener(dl)
+	// m.RemoveListener(dl)
 
 	it["Name"].(*widget.Entry).Bind(name.(binding.String))
-	// it["Rows"].(*widget.Entry).Bind(binding.IntToString(gs.(binding.Int)))
-	// it["Cols"].(*widget.Entry).Bind(binding.IntToString(gs.(binding.Int)))
+	it["GridSizeX"].(*widget.Entry).Bind(binding.IntToString(bx))
+	it["GridSizeY"].(*widget.Entry).Bind(binding.IntToString(by))
 	// it["Tags"].(*widget.Entry).Bind(c.(binding.String))
 	it["StackMax"].(*widget.Entry).Bind(binding.IntToString(sm.(binding.Int)))
 	it["Merchant"].(*widget.Entry).Bind(m.(binding.String))
@@ -126,7 +128,10 @@ func setAccordionItemsLists(acc *widget.Accordion) {
 
 			item := lists.filtered[id]
 			boundItem := pb.ItemBindings[item]
-			bindItemsWidgets(boundItem)
+			i, _ := repositories.ProgramRepo().Get(pb.Name).GetItem(item)
+			boundx := binding.BindInt(&i.GridSize[0])
+			boundy := binding.BindInt(&i.GridSize[1])
+			bindItemsWidgets(boundItem, boundx, boundy)
 			n, _ := boundItem.GetValue("Name")
 			ist, _ := ats.BoundImageSearch.GetValue("Targets")
 			t := ist.([]string)
