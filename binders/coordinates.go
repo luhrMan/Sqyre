@@ -85,7 +85,7 @@ func setAccordionSearchAreasLists(acc *widget.Accordion) {
 		}{
 			boundSASearchBar: &widget.Entry{},
 			boundSAList:      &widget.List{},
-			filtered:         pb.Coordinates[config.MainMonitorSizeString].GetSearchAreasAsStringSlice(),
+			filtered:         pb.Program.Coordinates[config.MainMonitorSizeString].GetSearchAreasAsStringSlice(),
 		}
 
 		lists.boundSAList = widget.NewList(
@@ -130,7 +130,7 @@ func setAccordionSearchAreasLists(acc *widget.Accordion) {
 			PlaceHolder: "Search here",
 			OnChanged: func(s string) {
 				// defaultList := pro.Coordinates[config.MainMonitorSizeString].Points
-				defaultList := pb.Coordinates[config.MainMonitorSizeString].GetSearchAreasAsStringSlice()
+				defaultList := pb.Program.Coordinates[config.MainMonitorSizeString].GetSearchAreasAsStringSlice()
 				defer lists.boundSAList.ScrollToTop()
 				defer lists.boundSAList.Refresh()
 
@@ -167,7 +167,7 @@ func setAccordionPointsLists(acc *widget.Accordion) {
 		}{
 			boundPointSearchBar: &widget.Entry{},
 			boundPointList:      &widget.List{},
-			filtered:            pb.Coordinates[config.MainMonitorSizeString].GetPointsAsStringSlice(),
+			filtered:            pb.Program.Coordinates[config.MainMonitorSizeString].GetPointsAsStringSlice(),
 		}
 		lists.boundPointList = widget.NewList(
 			func() int {
@@ -206,7 +206,7 @@ func setAccordionPointsLists(acc *widget.Accordion) {
 		lists.boundPointSearchBar = &widget.Entry{
 			PlaceHolder: "Search here",
 			OnChanged: func(s string) {
-				defaultList := pb.Coordinates[config.MainMonitorSizeString].GetPointsAsStringSlice()
+				defaultList := pb.Program.Coordinates[config.MainMonitorSizeString].GetPointsAsStringSlice()
 				defer lists.boundPointList.ScrollToTop()
 				defer lists.boundPointList.Refresh()
 

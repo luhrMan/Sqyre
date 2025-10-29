@@ -1,60 +1,46 @@
 package repositories
 
 import (
-	"Squire/internal/models/coordinates"
-	"Squire/internal/models/items"
-	"Squire/internal/models/program"
+	"Squire/internal/models"
 	"Squire/internal/models/serialize"
 	"log"
 	"sync"
 )
 
-type ProgramRepository[T program.Program] struct {
-	*repository[T]
+type ProgramRepository[T models.Program] struct {
+	*repository[models.Program]
 	// programs map[string]*T
 }
 
-var pr *ProgramRepository[program.Program]
+var pr *ProgramRepository[models.Program]
 var programInit sync.Once
 
-func ProgramRepo() *ProgramRepository[program.Program] {
+func ProgramRepo() *ProgramRepository[models.Program] {
 	programInit.Do(func() {
-		pr = &ProgramRepository[program.Program]{
-			repository: &repository[program.Program]{
+		pr = &ProgramRepository[models.Program]{
+			repository: &repository[models.Program]{
 				model:  "programs",
-				models: make(map[string]*program.Program),
+				models: make(map[string]*models.Program),
 			},
 		}
-		pr.models = pr.DecodeAll(pr.model, pr.Decode) //func(s string) { p, _ := pr.Decode(s) })
+		pr.models = pr.DecodeAll() //func(s string) { p, _ := pr.Decode(s) })
 	})
 	return pr
 }
 
-func (r *ProgramRepository[T]) Decode(s string) (*program.Program, error) {
+func (r *ProgramRepository[T]) Decode(s string) (*models.Program, error) {
+	return r.m.Decode(s)
+}
+
+func (r *ProgramRepository[T]) DecodeAll() map[string]*models.Program {
 	var (
-		keyStr = "programs" + "." + s + "."
-		err    error
-		errStr = "problem here lol"
+		ps = make(map[string]*models.Program)
+		ss = serialize.GetViper().GetStringMap("programs")
 	)
-
-	var p = &program.Program{
-		Items:       map[string]*items.Item{},
-		Coordinates: map[string]*coordinates.Coordinates{},
+	for s := range ss {
+		p, _ := r.Decode(s)
+		ps[s] = p
 	}
-	err = serialize.GetViper().UnmarshalKey(keyStr+"name", &p.Name)
-	if err != nil {
-		log.Fatalf(errStr, err)
-	}
-
-	err = serialize.GetViper().UnmarshalKey(keyStr+"items", &p.Items)
-	if err != nil {
-		log.Fatalf(errStr, err)
-	}
-
-	err = serialize.GetViper().UnmarshalKey(keyStr+"coordinates", &p.Coordinates)
-	if err != nil {
-		log.Fatalf(errStr, err)
-	}
-	log.Println("Successfully decoded program:", p.Name)
-	return p, nil
+	log.Printf("Successfully decoded all %v: %v", "programs", ps)
+	return ps
 }
