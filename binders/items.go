@@ -66,7 +66,7 @@ func RefreshItemsAccordionItems() {
 func setAccordionItemsLists(acc *widget.Accordion) {
 	var (
 		ats   = ui.GetUi().ActionTabs
-		icons = *assets.BytesToFyneIcons()
+		icons = assets.BytesToFyneIcons()
 	)
 	for _, pb := range GetBoundPrograms() {
 		lists := struct {

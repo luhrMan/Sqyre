@@ -1,7 +1,7 @@
 package binders
 
 import (
-	"Squire/internal/models/items"
+	"Squire/internal/models"
 	"Squire/internal/models/repositories"
 	"Squire/ui"
 	"log"
@@ -42,7 +42,7 @@ func setButtons() {
 			x, _ := strconv.Atoi(ui.GetUi().EditorTabs.ItemsTab.BindableWidgets["GridSizeX"].(*widget.Entry).Text)
 			y, _ := strconv.Atoi(ui.GetUi().EditorTabs.ItemsTab.BindableWidgets["GridSizeY"].(*widget.Entry).Text)
 			sm, _ := strconv.Atoi(ui.GetUi().EditorTabs.ItemsTab.BindableWidgets["StackMax"].(*widget.Entry).Text)
-			i := &items.Item{
+			i := &models.Item{
 				Name:     ui.GetUi().EditorTabs.ItemsTab.BindableWidgets["Name"].(*widget.Entry).Text,
 				GridSize: [2]int{x, y},
 				Tags:     []string{},
