@@ -6,6 +6,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
+	"github.com/google/uuid"
 )
 
 type MacroTabs struct {
@@ -46,7 +47,7 @@ func (mtabs *MacroTabs) SelectedTab() *MacroTree {
 	if mtabs.Selected() == nil {
 		t := mtabs.CreateTab()
 		go fyne.DoAndWait(func() {
-			mtabs.AddTab("", t)
+			mtabs.AddTab(uuid.NewString(), t)
 			// mtabs.Append(t)
 			// mtabs.Select(t)
 		})

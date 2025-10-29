@@ -14,7 +14,6 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/driver/desktop"
-	"fyne.io/fyne/v2/theme"
 )
 
 func init() {
@@ -25,7 +24,6 @@ func init() {
 	repositories.ProgramRepo()
 	binders.InitPrograms()
 	a := app.NewWithID("Sqyre")
-	a.Settings().SetTheme(theme.DarkTheme())
 	os.Setenv("FYNE_SCALE", "1.25")
 
 	w := a.NewWindow("Sqyre")

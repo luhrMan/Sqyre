@@ -1,26 +1,29 @@
 package models
 
 import (
-	"Squire/internal/config"
 	"Squire/internal/models/coordinates"
-	"Squire/internal/models/items"
 	"Squire/internal/models/serialize"
-	"fmt"
 	"log"
-	"slices"
-	"strings"
 )
 
 type Program struct {
 	Name        string
-	Items       map[string]*items.Item
+	Items       map[string]*Item
 	Coordinates map[string]*coordinates.Coordinates
+}
+
+type Item struct {
+	Name     string   `json:"name"`
+	GridSize [2]int   `json:"gridSize"`
+	Tags     []string `json:"tags"`
+	StackMax int      `json:"stackMax"`
+	Merchant string   `json:"merchant"`
 }
 
 func NewProgram(name string) *Program {
 	return &Program{
 		Name:  name,
-		Items: make(map[string]*items.Item),
+		Items: make(map[string]*Item),
 		// Coordinates: map[string]*coordinates.Coordinates{
 		// 	strconv.Itoa(config.MonitorWidth) + "x" + strconv.Itoa(config.MonitorHeight): { //"2560x1440": {
 		// 		Points:      make(map[string]coordinates.Point),
@@ -30,89 +33,6 @@ func NewProgram(name string) *Program {
 	}
 }
 
-func (p *Program) GetItem(i string) (*items.Item, error) {
-	if item, ok := p.Items[strings.ToLower(i)]; ok {
-		return item, nil
-	}
-	return &items.Item{}, fmt.Errorf("item does not exist")
-	// index, found := slices.BinarySearch(SortByName(allItemsMap), i)
-	// if found {
-	// 	return allItemsMap[AllItems()[index]], nil
-	// }
-}
-
-func (p *Program) GetItemsWithAppendedProgramName() map[string]*items.Item {
-	is := make(map[string]*items.Item)
-	for s, i := range p.Items {
-		s = p.Name + config.ProgramDelimiter + s
-		is[s] = i
-	}
-	return is
-}
-
-func (p *Program) GetItemsAsStringSlice() []string {
-	items := []string{}
-	for _, i := range p.Items {
-		items = append(items, strings.ToLower(i.Name))
-	}
-	return items
-}
-
-func (p *Program) SortItemsByName() []string {
-	items := []string{}
-	for _, i := range p.Items {
-		items = append(items, strings.ToLower(i.Name))
-	}
-	if !slices.IsSorted(items) {
-		slices.Sort(items)
-	}
-	return items
-}
-
-func (p *Program) GetItemsMap() map[string]*items.Item {
-	return p.Items
-}
-
-func (p *Program) AddItem(i *items.Item) {
-	p.Items[strings.ToLower(i.Name)] = i
-}
-
-// func (p *Program) GetItem(i string) items.Item {
-// 	if item, ok := p.Items[i]; ok {
-// 		return item
-// 	}
-// 	return items.Item{}
-// }
-
-// func SetAllItems(is []string) {
-// 	allItemsSlice = is
-// }
-
-// func AllItems(sortedby string) []string {
-// 	switch sortedby {
-// 	case "none":
-// 		return allItemsSlice
-// 	case "category":
-// 		return allItemsSortedByCategory
-// 	case "name":
-// 		return allItemsSortedByName
-// 	default:
-// 		return allItemsSlice
-// 	}
-// }
-
-// func (p *Program) AddProgramPoint(ss string, point config.Point) {
-// 	c := p.Coordinates
-// 	points := c[ss].Points
-// 	points[point.Name] = point
-// }
-
-// func (p *Program) AddProgramSearchArea(ss string, sa config.SearchArea) {
-// 	c := p.Coordinates
-// 	sas := c[ss].SearchAreas
-// 	sas[sa.Name] = sa
-// }
-
 func (p *Program) Decode(s string) (*Program, error) {
 	var (
 		keyStr = "programs" + "." + s + "."
@@ -121,8 +41,7 @@ func (p *Program) Decode(s string) (*Program, error) {
 	)
 
 	p = &Program{
-		Name:        "",
-		Items:       map[string]*items.Item{},
+		Items:       map[string]*Item{},
 		Coordinates: map[string]*coordinates.Coordinates{},
 	}
 	err = serialize.GetViper().UnmarshalKey(keyStr+"name", &p.Name)

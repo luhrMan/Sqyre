@@ -1,7 +1,6 @@
 package binders
 
 import (
-	"Squire/internal/assets"
 	"Squire/internal/models"
 	"Squire/internal/models/actions"
 	"Squire/internal/models/coordinates"
@@ -12,6 +11,7 @@ import (
 	"log"
 	"slices"
 	"strconv"
+	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -102,9 +102,9 @@ func setMtabSettingsAndWidgets() {
 	}
 	mtabs.OnSelected = func(ti *container.TabItem) {
 		m := repositories.MacroRepo().Get(ti.Text)
-		// if m == nil {
-		// 	return
-		// }
+		if m == nil {
+			return
+		}
 
 		mtabs.MacroNameEntry.SetText(m.Name)
 		mtabs.BoundGlobalDelayEntry.SetText(strconv.Itoa(m.GlobalDelay))
@@ -163,18 +163,10 @@ func setMtabSettingsAndWidgets() {
 }
 
 func setMacroSelect(b *widget.Button) {
+	var popup *widget.PopUp
 	b.Text = ""
-	b.Icon = theme.FolderOpenIcon()
+	b.Icon = theme.ListIcon()
 	b.OnTapped = func() {
-		title := "Open Macro"
-		for _, w := range fyne.CurrentApp().Driver().AllWindows() {
-			if w.Title() == title {
-				w.RequestFocus()
-				return
-			}
-		}
-		w := fyne.CurrentApp().NewWindow(title)
-		w.SetIcon(assets.AppIcon)
 		ui.GetUi().Mui.MTabs.BoundMacroListWidget = widget.NewList(
 			func() int {
 				return len(repositories.MacroRepo().GetAll())
@@ -193,18 +185,23 @@ func setMacroSelect(b *widget.Button) {
 				label.SetText(v)
 				label.Importance = widget.MediumImportance
 				for _, d := range ui.GetUi().Mui.MTabs.Items {
-					if d.Text == v {
+					if strings.ToLower(d.Text) == v {
 						label.Importance = widget.SuccessImportance
 					}
 				}
 				label.Refresh()
 				removeButton.OnTapped = func() {
-					repositories.MacroRepo().Delete(v)
-					ui.GetUi().Mui.MTabs.BoundMacroListWidget.RefreshItem(id)
 					for _, ti := range ui.GetUi().Mui.MTabs.Items {
-						if ti.Text == v {
-							ui.GetUi().Mui.MTabs.Remove(ti)
-							ui.GetUi().Mui.MTabs.Refresh()
+						if strings.ToLower(ti.Text) == v {
+							dialog.ShowConfirm("Delete Macro", "Are you sure you want to delete this macro?", func(b bool) {
+								if b {
+									repositories.MacroRepo().Delete(v)
+									ui.GetUi().Mui.MTabs.BoundMacroListWidget.RefreshItem(id)
+									ui.GetUi().Mui.MTabs.Remove(ti)
+									ui.GetUi().Mui.MTabs.Refresh()
+								}
+							}, ui.GetUi().Window)
+
 						}
 					}
 				}
@@ -222,13 +219,17 @@ func setMacroSelect(b *widget.Button) {
 				ui.GetUi().Mui.MTabs.BoundMacroListWidget.RefreshItem(id)
 				ui.GetUi().Mui.MTabs.BoundMacroListWidget.UnselectAll()
 			}
-		w.SetContent(
+		popUpContent := container.NewBorder(
+			widget.NewButton("Close", func() {
+				popup.Hide() // Function to hide the pop-up
+			}), nil, nil, nil,
 			container.NewAdaptiveGrid(1,
 				ui.GetUi().Mui.MTabs.BoundMacroListWidget,
 			),
 		)
-		w.Resize(fyne.NewSize(300, 500))
-		w.Show()
+		popup = widget.NewModalPopUp(popUpContent, ui.GetUi().Window.Canvas())
+		popup.Resize(fyne.NewSize(300, 500))
+		popup.Show()
 	}
 }
 
