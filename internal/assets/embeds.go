@@ -56,13 +56,13 @@ func GetIconBytes() *map[string][]byte {
 	return &icons
 }
 
-func BytesToFyneIcons() *map[string]*fyne.StaticResource {
+func BytesToFyneIcons() map[string]*fyne.StaticResource {
 	var iconBytes, _ = LoadIconBytes()
 	i := make(map[string]*fyne.StaticResource)
 	for s, b := range *iconBytes {
 		i[s] = fyne.NewStaticResource(s, b)
 	}
-	return &i
+	return i
 }
 
 //func MaskItems() *map[string][]byte {
