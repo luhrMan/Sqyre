@@ -1,7 +1,7 @@
 package services
 
 import (
-	"Squire/internal/models/macro"
+	"Squire/internal/models"
 	"log"
 	"os"
 	"slices"
@@ -62,7 +62,7 @@ func UnregisterHotkey(hk []string) {
 	hook.Unregister(hook.KeyDown, hk)
 }
 
-func MacroHotkeyCallback(m *macro.Macro) func(e hook.Event) {
+func MacroHotkeyCallback(m *models.Macro) func(e hook.Event) {
 	return func(e hook.Event) {
 		log.Printf("pressed %v, executing %v", m.Hotkey, m.Name)
 		Execute(m.Root)

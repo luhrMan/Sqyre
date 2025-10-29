@@ -1,4 +1,4 @@
-package program
+package models
 
 import (
 	"Squire/internal/config"
@@ -113,14 +113,15 @@ func (p *Program) AddItem(i *items.Item) {
 // 	sas[sa.Name] = sa
 // }
 
-func Decode(s string) (*Program, error) {
+func (p *Program) Decode(s string) (*Program, error) {
 	var (
 		keyStr = "programs" + "." + s + "."
 		err    error
 		errStr = "problem here lol"
 	)
 
-	var p = &Program{
+	p = &Program{
+		Name:        "",
 		Items:       map[string]*items.Item{},
 		Coordinates: map[string]*coordinates.Coordinates{},
 	}
@@ -165,12 +166,12 @@ func Decode(s string) (*Program, error) {
 // 	return nil
 // }
 
-func EncodeAll(pm map[string]*Program) error {
-	serialize.GetViper().Set("programs", pm)
-	err := serialize.GetViper().WriteConfig()
-	if err != nil {
-		return fmt.Errorf("error encoding programs: %v", err)
-	}
-	log.Printf("Successfully encoded programs")
-	return nil
-}
+// func EncodeAll(pm map[string]*Program) error {
+// 	serialize.GetViper().Set("programs", pm)
+// 	err := serialize.GetViper().WriteConfig()
+// 	if err != nil {
+// 		return fmt.Errorf("error encoding programs: %v", err)
+// 	}
+// 	log.Printf("Successfully encoded programs")
+// 	return nil
+// }

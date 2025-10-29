@@ -1,8 +1,8 @@
 package ui
 
 import (
+	"Squire/internal/models"
 	"Squire/internal/models/actions"
-	"Squire/internal/models/macro"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -15,11 +15,11 @@ import (
 
 type MacroTree struct {
 	widget.Tree
-	Macro        *macro.Macro
+	Macro        *models.Macro
 	SelectedNode string
 }
 
-func NewMacroTree(m *macro.Macro) *MacroTree {
+func NewMacroTree(m *models.Macro) *MacroTree {
 	t := &MacroTree{}
 	t.ExtendBaseWidget(t)
 	t.Macro = m
