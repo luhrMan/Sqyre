@@ -76,7 +76,7 @@ func setAccordionItemsLists(acc *widget.Accordion) {
 		}{
 			boundItemSearchBar: &widget.Entry{},
 			boundItemGrid:      &widget.GridWrap{},
-			filtered:           pb.GetItemsAsStringSlice(),
+			filtered:           pb.Program.GetItemsAsStringSlice(),
 		}
 		lists.boundItemGrid = widget.NewGridWrap(
 			func() int {
@@ -112,7 +112,7 @@ func setAccordionItemsLists(acc *widget.Accordion) {
 					rect.FillColor = color.RGBA{}
 				}
 
-				path := pb.Name + config.ProgramDelimiter + name.(string) + config.PNG
+				path := pb.Program.Name + config.ProgramDelimiter + name.(string) + config.PNG
 				if icons[path] != nil {
 					icon.Resource = icons[path]
 				} else {
@@ -128,7 +128,7 @@ func setAccordionItemsLists(acc *widget.Accordion) {
 
 			item := lists.filtered[id]
 			boundItem := pb.ItemBindings[item]
-			i, _ := repositories.ProgramRepo().Get(pb.Name).GetItem(item)
+			i, _ := repositories.ProgramRepo().Get(pb.Program.Name).GetItem(item)
 			boundx := binding.BindInt(&i.GridSize[0])
 			boundy := binding.BindInt(&i.GridSize[1])
 			bindItemsWidgets(boundItem, boundx, boundy)
@@ -156,7 +156,7 @@ func setAccordionItemsLists(acc *widget.Accordion) {
 			PlaceHolder: "Search here",
 			OnChanged: func(s string) {
 				// defaultList := pro.Coordinates[config.MainMonitorSizeString].Points
-				defaultList := pb.GetItemsAsStringSlice()
+				defaultList := pb.Program.GetItemsAsStringSlice()
 				defer lists.boundItemGrid.ScrollToTop()
 				defer lists.boundItemGrid.Refresh()
 

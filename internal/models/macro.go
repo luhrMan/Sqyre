@@ -1,9 +1,8 @@
-package macro
+package models
 
 import (
 	"Squire/internal/models/actions"
 	"Squire/internal/models/serialize"
-	"fmt"
 	"log"
 
 	"github.com/spf13/viper"
@@ -25,9 +24,9 @@ func NewMacro(name string, delay int, hotkey []string) *Macro {
 	}
 }
 
-func Decode(s string) (*Macro, error) {
-	keystr := "macros" + "." + s // + "."
-	var m = new(Macro)
+func (m *Macro) Decode(s string) (*Macro, error) {
+	keystr := "macros" + "." + s
+	m = new(Macro)
 	err := serialize.GetViper().UnmarshalKey(
 		keystr, &m,
 		viper.DecodeHook(serialize.MacroDecodeHookFunc()),
@@ -36,27 +35,27 @@ func Decode(s string) (*Macro, error) {
 		log.Println("Error unmarshalling macro:")
 		return nil, err
 	}
-	log.Println("Succesffuly decoded macro: ", m.Name)
+	log.Println("Successfuly decoded macro: ", m.Name)
 	return m, nil
 }
 
-func DecodeAll() map[string]*Macro {
-	var (
-		ps = make(map[string]*Macro)
-		ss = serialize.GetViper().GetStringMap("macros")
-	)
-	for s := range ss {
-		p, err := Decode(s)
-		if err != nil {
-			log.Println("macro could not be loaded: ", err)
-			break
-		}
-		ps[s] = p
+// func DecodeAll() map[string]*Macro {
+// 	var (
+// 		ps = make(map[string]*Macro)
+// 		ss = serialize.GetViper().GetStringMap("macros")
+// 	)
+// 	for s := range ss {
+// 		p, err := m.Decode(s)
+// 		if err != nil {
+// 			log.Println("macro could not be loaded: ", err)
+// 			break
+// 		}
+// 		ps[s] = p
 
-	}
-	log.Println("Successfully decoded all macros:", ps)
-	return ps
-}
+// 	}
+// 	log.Println("Successfully decoded all macros:", ps)
+// 	return ps
+// }
 
 // func Encode(m *Macro) error {
 // 	serialize.GetViper().Set("macros."+m.Name, m)
@@ -68,12 +67,12 @@ func DecodeAll() map[string]*Macro {
 // 	return nil
 // }
 
-func EncodeAll(mm map[string]*Macro) error {
-	serialize.GetViper().Set("macros", mm)
-	err := serialize.GetViper().WriteConfig()
-	if err != nil {
-		return fmt.Errorf("error encoding macros: %v", err)
-	}
-	log.Println("Successfully encoded all macros")
-	return nil
-}
+// func EncodeAll(mm map[string]*Macro) error {
+// 	serialize.GetViper().Set("macros", mm)
+// 	err := serialize.GetViper().WriteConfig()
+// 	if err != nil {
+// 		return fmt.Errorf("error encoding macros: %v", err)
+// 	}
+// 	log.Println("Successfully encoded all macros")
+// 	return nil
+// }

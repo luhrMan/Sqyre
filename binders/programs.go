@@ -2,14 +2,14 @@ package binders
 
 import (
 	"Squire/internal/config"
-	"Squire/internal/models/program"
+	"Squire/internal/models"
 	"Squire/internal/models/repositories"
 
 	"fyne.io/fyne/v2/data/binding"
 )
 
 type ProgramBinding struct {
-	*program.Program
+	*models.Program
 	ItemBindings       map[string]binding.Struct
 	PointsBindings     map[string]binding.Struct
 	SearchAreaBindings map[string]binding.Struct
@@ -32,7 +32,7 @@ func BindPrograms() {
 	}
 }
 
-func BindProgram(p *program.Program) {
+func BindProgram(p *models.Program) {
 	boundPrograms[p.Name] = &ProgramBinding{
 		Program:            p,
 		PointsBindings:     map[string]binding.Struct{},

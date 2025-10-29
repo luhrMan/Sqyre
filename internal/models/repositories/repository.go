@@ -1,14 +1,16 @@
 package repositories
 
 import (
+	"Squire/internal/models"
 	"Squire/internal/models/serialize"
 	"fmt"
 	"log"
 	"strings"
 )
 
-type repositoryInterface[T any] interface {
-	// Init()
+// type models.Model[T any] []T
+
+type repositoryInterface[T models.Program | models.Macro] interface {
 	Get(s string) *T
 	GetAll() map[string]*T
 	GetAllAsStringSlice() []string
@@ -16,10 +18,11 @@ type repositoryInterface[T any] interface {
 	SetAll(s map[string]T)
 	EncodeAll(k string) error
 	DecodeAll(k string, decode func(s string) (*T, error)) map[string]T
+	Decode()
 }
 
-type repository[T any] struct {
-	// model  T
+type repository[T models.Program | models.Macro] struct {
+	m      T
 	model  string
 	models map[string]*T
 }
@@ -65,22 +68,26 @@ func (r *repository[T]) EncodeAll() error {
 	if err != nil {
 		return fmt.Errorf("error encoding %v: %v", r.model, err)
 	}
-	log.Printf("Successfully encoded ", r.model)
+	log.Println("Successfully encoded ", r.model)
 	return nil
 }
 
-func (r *repository[T]) DecodeAll(k string, decode func(s string) (*T, error)) map[string]*T {
-	var (
-		ps = make(map[string]*T)
-		ss = serialize.GetViper().GetStringMap(k)
-	)
-	for s := range ss {
-		p, _ := decode(s)
-		ps[s] = p
-	}
-	log.Printf("Successfully decoded all %v: %v", k, ps)
-	return ps
-}
+// func (r *repository[T]) DecodeAll(k string, decode func(s string) (*T, error)) map[string]*T {
+// 	var (
+// 		ps = make(map[string]*T)
+// 		ss = serialize.GetViper().GetStringMap(k)
+// 	)
+// 	for s := range ss {
+// 		p, _ := T.Decode(decode)
+// 		ps[s] = p
+// 	}
+// 	log.Printf("Successfully decoded all %v: %v", k, ps)
+// 	return ps
+// }
+
+// func (r *repository[T]) Decode(decode func(s string) (*T, error)) (*T, error) {
+
+// }
 
 // func EncodeAll(pm map[string]*Program) error {
 // 	serialize.GetViper().Set("programs", pm)

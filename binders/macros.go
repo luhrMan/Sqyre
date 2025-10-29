@@ -2,9 +2,9 @@ package binders
 
 import (
 	"Squire/internal/assets"
+	"Squire/internal/models"
 	"Squire/internal/models/actions"
 	"Squire/internal/models/coordinates"
-	"Squire/internal/models/macro"
 	"Squire/internal/models/repositories"
 	"Squire/internal/services"
 	"Squire/ui"
@@ -31,16 +31,18 @@ import (
 // }
 
 func SetMacroUi() {
-	mtabs := ui.GetUi().Mui.MTabs
-	mtabs.OnSelected = func(ti *container.TabItem) {
-		setMtabSettingsAndWidgets()
+	// mtabs := ui.GetUi().Mui.MTabs
+	// mtabs.OnSelected = func(ti *container.TabItem) {
+	// 	setMtabSettingsAndWidgets()
 
-		m := repositories.MacroRepo().Get(ti.Text)
-		mtabs.MacroNameEntry.SetText(m.Name)
-		mtabs.BoundGlobalDelayEntry.SetText(strconv.Itoa(m.GlobalDelay))
+	// 	m := repositories.MacroRepo().Get(ti.Text)
+	// 	mtabs.MacroNameEntry.SetText(m.Name)
+	// 	mtabs.BoundGlobalDelayEntry.SetText(strconv.Itoa(m.GlobalDelay))
 
-		mtabs.MacroHotkeyEntry.SetText(services.ReverseParseMacroHotkey(m.Hotkey))
-	}
+	// 	mtabs.MacroHotkeyEntry.SetText(services.ReverseParseMacroHotkey(m.Hotkey))
+	// }
+	setMtabSettingsAndWidgets()
+
 	setMacroToolbar()
 	for _, m := range repositories.MacroRepo().GetAll() {
 		AddMacroTab(m)
@@ -48,7 +50,7 @@ func SetMacroUi() {
 	setMacroSelect(ui.GetUi().MainUi.Mui.MacroSelectButton)
 }
 
-func AddMacroTab(m *macro.Macro) {
+func AddMacroTab(m *models.Macro) {
 	mtabs := ui.GetUi().Mui.MTabs
 	for _, d := range mtabs.Items {
 		if d.Text == m.Name {
@@ -67,7 +69,7 @@ func setMtabSettingsAndWidgets() {
 	mtabs := ui.GetUi().Mui.MTabs
 	mtabs.CreateTab = func() *container.TabItem {
 		name := "new macro " + uuid.NewString()
-		m := macro.NewMacro(name, 0, []string{})
+		m := models.NewMacro(name, 0, []string{})
 		repositories.MacroRepo().Set(m.Name, m)
 		// m, err := repositories.MacroRepo().Get(name)
 		// if err != nil {
@@ -98,17 +100,17 @@ func setMtabSettingsAndWidgets() {
 		ResetBinds()
 		RefreshItemsAccordionItems()
 	}
-	// mtabs.OnSelected = func(ti *container.TabItem) {
-	// 	m := repositories.MacroRepo().Get(ti.Text)
-	// 	// if m == nil {
-	// 	// 	return
-	// 	// }
+	mtabs.OnSelected = func(ti *container.TabItem) {
+		m := repositories.MacroRepo().Get(ti.Text)
+		// if m == nil {
+		// 	return
+		// }
 
-	// 	mtabs.MacroNameEntry.SetText(m.Name)
-	// 	mtabs.BoundGlobalDelayEntry.SetText(strconv.Itoa(m.GlobalDelay))
+		mtabs.MacroNameEntry.SetText(m.Name)
+		mtabs.BoundGlobalDelayEntry.SetText(strconv.Itoa(m.GlobalDelay))
 
-	// 	mtabs.MacroHotkeyEntry.SetText(services.ReverseParseMacroHotkey(m.Hotkey))
-	// }
+		mtabs.MacroHotkeyEntry.SetText(services.ReverseParseMacroHotkey(m.Hotkey))
+	}
 
 	mtabs.MacroHotkeyEntry.PlaceHolder = "ctrl+shift+1 or ctrl+1 or ctrl+a+1"
 	saveHotkey := func() {
