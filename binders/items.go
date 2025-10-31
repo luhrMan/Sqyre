@@ -24,7 +24,7 @@ func bindItemsWidgets(di binding.Struct, bx, by binding.Int) {
 		fyne.Do(func() { mt.RefreshItem(mt.SelectedNode) })
 	})
 
-	it := ui.GetUi().EditorTabs.ItemsTab.BindableWidgets
+	it := ui.GetUi().EditorTabs.ItemsTab.Widgets
 
 	name, _ := di.GetItem("Name")
 	// gsx, _ := bx.GetItem("X")

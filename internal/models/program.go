@@ -20,19 +20,6 @@ type Item struct {
 	Merchant string   `json:"merchant"`
 }
 
-func NewProgram(name string) *Program {
-	return &Program{
-		Name:  name,
-		Items: make(map[string]*Item),
-		// Coordinates: map[string]*coordinates.Coordinates{
-		// 	strconv.Itoa(config.MonitorWidth) + "x" + strconv.Itoa(config.MonitorHeight): { //"2560x1440": {
-		// 		Points:      make(map[string]coordinates.Point),
-		// 		SearchAreas: make(map[string]coordinates.SearchArea),
-		// 	},
-		// },
-	}
-}
-
 func (p *Program) Decode(s string) (*Program, error) {
 	var (
 		keyStr = "programs" + "." + s + "."

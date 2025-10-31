@@ -14,6 +14,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/driver/desktop"
+	fynetooltip "github.com/dweymouth/fyne-tooltip"
 )
 
 func init() {
@@ -40,7 +41,7 @@ func init() {
 	// set bindings			(set bindings for ui widgets)
 	bindUi()
 
-	w.SetContent(ui.GetUi().MainUi.CanvasObject)
+	w.SetContent(fynetooltip.AddWindowToolTipLayer(ui.GetUi().MainUi.CanvasObject, w.Canvas()))
 	w.RequestFocus()
 }
 

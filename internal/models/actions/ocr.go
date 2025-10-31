@@ -1,9 +1,11 @@
 package actions
 
 import (
-	"Squire/internal/config"
 	"Squire/internal/models/coordinates"
 	"fmt"
+
+	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/theme"
 )
 
 type Ocr struct {
@@ -70,5 +72,9 @@ func (a *Ocr) Execute(ctx any) error {
 }
 
 func (a *Ocr) String() string {
-	return fmt.Sprintf("%s OCR search for `%s` in `%s`", config.GetEmoji("OCR"), a.Target, a.SearchArea.Name)
+	return fmt.Sprintf("`%s` in `%s`", a.Target, a.SearchArea.Name)
+}
+
+func (a *Ocr) Icon() fyne.Resource {
+	return theme.VisibilityIcon()
 }
