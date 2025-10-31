@@ -38,10 +38,11 @@ func init() {
 	ui.InitializeUi(w)
 	// construct the initialized 	(add widgets to ui)
 	ui.GetUi().ConstructUi()
+	w.SetContent(fynetooltip.AddWindowToolTipLayer(ui.GetUi().MainUi.CanvasObject, w.Canvas()))
 	// set bindings			(set bindings for ui widgets)
 	bindUi()
 
-	w.SetContent(fynetooltip.AddWindowToolTipLayer(ui.GetUi().MainUi.CanvasObject, w.Canvas()))
+	// w.SetContent(fynetooltip.AddWindowToolTipLayer(ui.GetUi().MainUi.CanvasObject, w.Canvas()))
 	w.RequestFocus()
 }
 

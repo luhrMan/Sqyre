@@ -52,8 +52,8 @@ func LoadIconBytes() (*map[string][]byte, error) {
 	return &icons, nil
 }
 
-func GetIconBytes() *map[string][]byte {
-	return &icons
+func GetIconBytes() map[string][]byte {
+	return icons
 }
 
 func BytesToFyneIcons() map[string]*fyne.StaticResource {

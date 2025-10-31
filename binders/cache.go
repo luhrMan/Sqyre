@@ -6,7 +6,5 @@ import (
 
 var (
 	boundPrograms map[string]*ProgramBinding
-	// boundMacros   BoundMacros
-	once sync.Once
-	// macros map[string]*macro.Macro
+	once          sync.Once
 )

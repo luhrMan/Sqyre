@@ -27,7 +27,9 @@ type EditorTab struct {
 	Left  *fyne.Container
 	Right *fyne.Container
 
-	BindableWidgets map[string]fyne.Widget
+	Widgets      map[string]fyne.Widget
+	SelectedItem any
+	// ProgramData map[string]widget.List
 }
 
 func NewEditorTab(name string, left, right *fyne.Container) *container.TabItem {
@@ -37,26 +39,28 @@ func NewEditorTab(name string, left, right *fyne.Container) *container.TabItem {
 
 func (u *Ui) constructEditorTabs() {
 	var (
-		name = "Name"
-		x    = "X"
-		y    = "Y"
-		x1   = "RightX"
-		y1   = "TopY"
-		x2   = "LeftX"
-		y2   = "BottomY"
-		gsx  = "GridSizeX"
-		gsy  = "GridSizeY"
-		tags = "Tags"
-		sm   = "StackMax"
-		m    = "Merchant"
+		name   = "Name"
+		x      = "X"
+		y      = "Y"
+		x1     = "RightX"
+		y1     = "TopY"
+		x2     = "LeftX"
+		y2     = "BottomY"
+		gsx    = "GridSizeX"
+		gsy    = "GridSizeY"
+		tags   = "Tags"
+		sm     = "StackMax"
+		m      = "Merchant"
+		form   = "Form"
+		points = "Points"
 		// i    = "Icons"
 	)
-	ui.EditorTabs.ItemsTab.BindableWidgets[name] = widget.NewEntryWithData(binding.NewString())
-	ui.EditorTabs.ItemsTab.BindableWidgets[gsx] = widget.NewEntryWithData(binding.NewString())
-	ui.EditorTabs.ItemsTab.BindableWidgets[gsy] = widget.NewEntryWithData(binding.NewString())
-	ui.EditorTabs.ItemsTab.BindableWidgets[tags] = widget.NewCard("test", "", nil)
-	ui.EditorTabs.ItemsTab.BindableWidgets[sm] = widget.NewEntryWithData(binding.NewString())
-	ui.EditorTabs.ItemsTab.BindableWidgets[m] = widget.NewEntryWithData(binding.NewString())
+	ui.EditorTabs.ItemsTab.Widgets[name] = widget.NewEntryWithData(binding.NewString())
+	ui.EditorTabs.ItemsTab.Widgets[gsx] = widget.NewEntryWithData(binding.NewString())
+	ui.EditorTabs.ItemsTab.Widgets[gsy] = widget.NewEntryWithData(binding.NewString())
+	ui.EditorTabs.ItemsTab.Widgets[tags] = widget.NewCard("test", "", nil)
+	ui.EditorTabs.ItemsTab.Widgets[sm] = widget.NewEntryWithData(binding.NewString())
+	ui.EditorTabs.ItemsTab.Widgets[m] = widget.NewEntryWithData(binding.NewString())
 	// ui.EditorTabs.ItemsTab.BindableWidgets[i] = container.NewGridWithRows(2, )
 	ui.EditorTabs.ItemsTab.TabItem = NewEditorTab(
 		"Items",
@@ -67,46 +71,52 @@ func (u *Ui) constructEditorTabs() {
 			nil, nil,
 			nil, nil,
 			widget.NewForm(
-				widget.NewFormItem(name, ui.EditorTabs.ItemsTab.BindableWidgets[name]),
-				widget.NewFormItem(gsx, ui.EditorTabs.ItemsTab.BindableWidgets[gsx]),
-				widget.NewFormItem(gsy, ui.EditorTabs.ItemsTab.BindableWidgets[gsy]),
+				widget.NewFormItem(name, ui.EditorTabs.ItemsTab.Widgets[name]),
+				widget.NewFormItem(gsx, ui.EditorTabs.ItemsTab.Widgets[gsx]),
+				widget.NewFormItem(gsy, ui.EditorTabs.ItemsTab.Widgets[gsy]),
 				widget.NewFormItem(tags, widget.NewEntry()),
-				widget.NewFormItem("", ui.EditorTabs.ItemsTab.BindableWidgets[tags]),
-				widget.NewFormItem(sm, ui.EditorTabs.ItemsTab.BindableWidgets[sm]),
-				widget.NewFormItem(m, ui.EditorTabs.ItemsTab.BindableWidgets[m]),
+				widget.NewFormItem("", ui.EditorTabs.ItemsTab.Widgets[tags]),
+				widget.NewFormItem(sm, ui.EditorTabs.ItemsTab.Widgets[sm]),
+				widget.NewFormItem(m, ui.EditorTabs.ItemsTab.Widgets[m]),
 				// widget.NewFormItem("icons", container.NewGridWithRows(2, widget.NewIcon(theme.MediaFastForwardIcon()))),
 			)),
 	)
 
-	ui.EditorTabs.PointsTab.BindableWidgets[name] = widget.NewEntryWithData(binding.NewString())
-	ui.EditorTabs.PointsTab.BindableWidgets[x] = widget.NewEntryWithData(binding.NewString())
-	ui.EditorTabs.PointsTab.BindableWidgets[y] = widget.NewEntryWithData(binding.NewString())
+	ui.EditorTabs.PointsTab.Widgets[points] = widget.NewAccordion()
+	ui.EditorTabs.PointsTab.Widgets[name] = widget.NewEntry()
+	ui.EditorTabs.PointsTab.Widgets[x] = widget.NewEntry()
+	ui.EditorTabs.PointsTab.Widgets[y] = widget.NewEntry()
+	ui.EditorTabs.PointsTab.Widgets[form] = widget.NewForm(
+		widget.NewFormItem(name, ui.EditorTabs.PointsTab.Widgets[name]),
+		widget.NewFormItem(x, ui.EditorTabs.PointsTab.Widgets[x]),
+		widget.NewFormItem(y, ui.EditorTabs.PointsTab.Widgets[y]),
+	)
+	// pointsForm.OnSubmit = func() {
+
+	// }
+	ui.EditorTabs.PointsTab.Widgets[form].(*widget.Form).SubmitText = "Update"
 	ui.EditorUi.EditorTabs.PointsTab.TabItem = NewEditorTab(
 		"Points",
-		container.NewBorder(nil, nil, nil, nil, widget.NewAccordion()),
-		container.NewBorder(nil, nil, nil, nil, widget.NewForm(
-			widget.NewFormItem(name, ui.EditorTabs.PointsTab.BindableWidgets[name]),
-			widget.NewFormItem(x, ui.EditorTabs.PointsTab.BindableWidgets[x]),
-			widget.NewFormItem(y, ui.EditorTabs.PointsTab.BindableWidgets[y]),
-		)),
+		container.NewBorder(nil, nil, nil, nil, ui.EditorTabs.PointsTab.Widgets[points]),
+		container.NewBorder(nil, nil, nil, nil, ui.EditorTabs.PointsTab.Widgets[form]),
 	)
 
-	ui.EditorTabs.SearchAreasTab.BindableWidgets[name] = widget.NewEntryWithData(binding.NewString())
-	ui.EditorTabs.SearchAreasTab.BindableWidgets[x1] = widget.NewEntryWithData(binding.NewString())
-	ui.EditorTabs.SearchAreasTab.BindableWidgets[y1] = widget.NewEntryWithData(binding.NewString())
-	ui.EditorTabs.SearchAreasTab.BindableWidgets[x2] = widget.NewEntryWithData(binding.NewString())
-	ui.EditorTabs.SearchAreasTab.BindableWidgets[y2] = widget.NewEntryWithData(binding.NewString())
+	ui.EditorTabs.SearchAreasTab.Widgets[name] = widget.NewEntryWithData(binding.NewString())
+	ui.EditorTabs.SearchAreasTab.Widgets[x1] = widget.NewEntryWithData(binding.NewString())
+	ui.EditorTabs.SearchAreasTab.Widgets[y1] = widget.NewEntryWithData(binding.NewString())
+	ui.EditorTabs.SearchAreasTab.Widgets[x2] = widget.NewEntryWithData(binding.NewString())
+	ui.EditorTabs.SearchAreasTab.Widgets[y2] = widget.NewEntryWithData(binding.NewString())
 	ui.EditorUi.EditorTabs.SearchAreasTab.TabItem = NewEditorTab(
 		"Search Areas",
 		container.NewBorder(nil, nil, nil, nil, widget.NewAccordion()),
 		container.NewBorder(nil, nil, nil, nil, widget.NewForm(
-			widget.NewFormItem(name, ui.EditorTabs.SearchAreasTab.BindableWidgets[name]),
+			widget.NewFormItem(name, ui.EditorTabs.SearchAreasTab.Widgets[name]),
 
 			widget.NewFormItem(x1, container.NewGridWithColumns(2,
-				ui.EditorTabs.SearchAreasTab.BindableWidgets[x1])),
-			widget.NewFormItem(y1, ui.EditorTabs.SearchAreasTab.BindableWidgets[y1]),
-			widget.NewFormItem(x2, ui.EditorTabs.SearchAreasTab.BindableWidgets[x2]),
-			widget.NewFormItem(y2, ui.EditorTabs.SearchAreasTab.BindableWidgets[y2]),
+				ui.EditorTabs.SearchAreasTab.Widgets[x1])),
+			widget.NewFormItem(y1, ui.EditorTabs.SearchAreasTab.Widgets[y1]),
+			widget.NewFormItem(x2, ui.EditorTabs.SearchAreasTab.Widgets[x2]),
+			widget.NewFormItem(y2, ui.EditorTabs.SearchAreasTab.Widgets[y2]),
 		)),
 	)
 

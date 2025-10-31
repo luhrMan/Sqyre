@@ -11,6 +11,7 @@ import (
 	"log"
 	"math"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -46,9 +47,9 @@ func imageSearch(a *actions.ImageSearch) (map[string][]robotgo.Point, error) {
 }
 
 func match(img, imgDraw gocv.Mat, a *actions.ImageSearch) map[string][]robotgo.Point {
-	icons := *assets.GetIconBytes()
-	xSize := img.Cols() / a.ColSplit
-	ySize := img.Rows() / a.RowSplit
+	icons := assets.GetIconBytes()
+	// xSize := img.Cols() / a.ColSplit
+	// ySize := img.Rows() / a.RowSplit
 
 	Imask := gocv.NewMat()
 	defer Imask.Close()
@@ -57,6 +58,7 @@ func match(img, imgDraw gocv.Mat, a *actions.ImageSearch) map[string][]robotgo.P
 	var wg sync.WaitGroup
 	resultsMutex := &sync.Mutex{}
 	for _, t := range a.Targets { // for each search target, create a goroutine
+		//NOT IMPLEMENTED: for each grid split, create a goroutine
 		wg.Add(1)
 		go func(t string) {
 			defer wg.Done()
@@ -67,39 +69,14 @@ func match(img, imgDraw gocv.Mat, a *actions.ImageSearch) map[string][]robotgo.P
 				return
 			}
 
-			//LOAD IN MASKS HERE
-
-			// Tmask := gocv.NewMat()
-			// Cmask := gocv.NewMat()
-			// defer Tmask.Close()
-			// defer Cmask.Close()
-
-			// switch i.GridSize {
-			// case [2]int{1, 1}:
-			// 	//				Tmask = Imask.Region(image.Rect(0, 0, xSize, ySize))
-			// 	Tmask = Tmask1x1.Clone()
-			// 	Cmask = Cmask1x1.Clone()
-			// case [2]int{1, 2}:
-			// 	//				Tmask = Imask.Region(image.Rect(0, 0, xSize, ySize*2))
-			// 	Tmask = Tmask1x2.Clone()
-			// 	Cmask = Cmask1x2.Clone()
-			// case [2]int{1, 3}:
-			// 	//				Tmask = Imask.Region(image.Rect(0, 0, xSize, ySize*3))
-			// 	Tmask = Tmask1x3.Clone()
-			// 	Cmask = Cmask1x3.Clone()
-			// case [2]int{2, 1}:
-			// 	//				Tmask = Imask.Region(image.Rect(0, 0, xSize*2, ySize))
-			// 	Tmask = Tmask2x1.Clone()
-			// 	Cmask = Cmask2x1.Clone()
-			// case [2]int{2, 2}:
-			// 	//				Tmask = Imask.Region(image.Rect(0, 0, xSize*2, ySize*2))
-			// 	Tmask = Tmask2x2.Clone()
-			// 	Cmask = Cmask2x2.Clone()
-			// case [2]int{2, 3}:
-			// 	//				Tmask = Imask.Region(image.Rect(0, 0, xSize*2, ySize*3))
-			// 	Tmask = Tmask2x3.Clone()
-			// 	Cmask = Cmask2x3.Clone()
-			// }
+			path := config.UpDir + config.UpDir + config.MaskImagesPath + strings.ToLower(p.Name) + "/"
+			size := "/" + strconv.Itoa(i.GridSize[0]) + "x" + strconv.Itoa(i.GridSize[1])
+			// Tmask := gocv.IMRead(path+"templates"+size+"-tmask"+config.PNG, gocv.IMReadColor)
+			Tmask := gocv.NewMat()
+			Cmask := gocv.IMRead(path+"corners"+size+"-cmask"+config.PNG, gocv.IMReadGrayScale)
+			defer Tmask.Close()
+			defer Cmask.Close()
+			//				Tmask = Imask.Region(image.Rect(0, 0, xSize, ySize))
 
 			ip := t + config.PNG
 			b := icons[ip]
@@ -122,19 +99,19 @@ func match(img, imgDraw gocv.Mat, a *actions.ImageSearch) map[string][]robotgo.P
 			// }
 
 			var matches []robotgo.Point
-			matches = FindTemplateMatches(img, template, Imask, gocv.NewMat(), gocv.NewMat(), a.Tolerance) //Tmask, Cmask, tolerance)
+			matches = FindTemplateMatches(img, template, Imask, Tmask, Cmask, a.Tolerance)
 
 			resultsMutex.Lock()
 			defer resultsMutex.Unlock()
 
 			results[t] = matches
-			DrawFoundMatches(matches, xSize*i.GridSize[0], ySize*i.GridSize[1], imgDraw, t)
+			DrawFoundMatches(matches, template.Cols(), template.Rows(), imgDraw, i.Name) // xSize*i.GridSize[0], ySize*i.GridSize[1]
 		}(t)
 	}
 	wg.Wait()
 	//	maskedIcons := *internal.MaskItems()
 
-	// gocv.IMWrite(pathDir+"founditems.png", imgDraw)
+	gocv.IMWrite(config.UpDir+config.UpDir+config.MetaImagesPath+"founditems.png", imgDraw)
 
 	return results
 }
