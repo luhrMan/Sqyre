@@ -31,7 +31,7 @@ func (r *repository[T]) Get(s string) *T {
 	if m, ok := r.models[strings.ToLower(s)]; ok {
 		return m
 	}
-	return nil
+	return new(T)
 }
 
 func (r *repository[T]) GetAll() map[string]*T {

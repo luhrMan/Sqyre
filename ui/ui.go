@@ -32,38 +32,38 @@ func InitializeUi(w fyne.Window) *Ui {
 	ui = &Ui{
 		Window: w,
 		EditorUi: &EditorUi{
-			NavButton:       &widget.Button{},
-			AddButton:       &widget.Button{},
-			RemoveButton:    &widget.Button{},
-			ProgramSelector: &widget.SelectEntry{},
+			NavButton:       new(widget.Button),
+			AddButton:       new(widget.Button),
+			RemoveButton:    new(widget.Button),
+			ProgramSelector: new(widget.SelectEntry),
 			EditorTabs: struct {
 				*container.AppTabs
 				ItemsTab       *EditorTab
 				PointsTab      *EditorTab
 				SearchAreasTab *EditorTab
 			}{
-				AppTabs: &container.AppTabs{},
+				AppTabs: new(container.AppTabs),
 				ItemsTab: &EditorTab{
-					BindableWidgets: make(map[string]fyne.Widget),
+					Widgets: make(map[string]fyne.Widget),
 				},
 				PointsTab: &EditorTab{
-					BindableWidgets: make(map[string]fyne.Widget),
+					Widgets: make(map[string]fyne.Widget),
 				},
 				SearchAreasTab: &EditorTab{
-					BindableWidgets: make(map[string]fyne.Widget),
+					Widgets: make(map[string]fyne.Widget),
 				},
 			},
 		},
 		MainUi: &MainUi{
 			Mui: &MacroUi{
 				MTabs:             NewMacroTabs(),
-				MacroSelectButton: &widget.Button{},
+				MacroSelectButton: new(widget.Button),
 				MacroToolbars: struct {
 					TopToolbar    *fyne.Container
 					BottomToolbar *fyne.Container
 				}{
-					TopToolbar:    &fyne.Container{},
-					BottomToolbar: &fyne.Container{},
+					TopToolbar:    new(fyne.Container),
+					BottomToolbar: new(fyne.Container),
 				},
 			},
 			ActionTabs: newActionTabs(),
