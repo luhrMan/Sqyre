@@ -66,7 +66,7 @@ macros:
                         "y": 380
         globaldelay: 150
         hotkey: []
-    new macro 2:
+    sell treasures:
         name: Sell Treasures
         root:
             count: 1
