@@ -9,6 +9,7 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 )
 
 // var selectedTreeItem = ""
@@ -73,16 +74,19 @@ func (mt *MacroTree) setTree() {
 		return ok
 	}
 	mt.CreateNode = func(branch bool) fyne.CanvasObject {
-		return container.NewHBox(widget.NewLabel("Template"), layout.NewSpacer(), &widget.Button{Icon: theme.CancelIcon(), Importance: widget.LowImportance})
+		return container.NewHBox(ttwidget.NewIcon(theme.ErrorIcon()), widget.NewLabel("Template"), layout.NewSpacer(), &widget.Button{Icon: theme.CancelIcon(), Importance: widget.LowImportance})
 	}
 	mt.UpdateNode = func(uid string, branch bool, obj fyne.CanvasObject) {
 		node := mt.Macro.Root.GetAction(uid)
 
 		c := obj.(*fyne.Container)
-		label := c.Objects[0].(*widget.Label)
-		removeButton := c.Objects[2].(*widget.Button)
+		icon := c.Objects[0].(*ttwidget.Icon)
+		label := c.Objects[1].(*widget.Label)
+		removeButton := c.Objects[3].(*widget.Button)
 
 		label.SetText(node.String())
+		icon.SetResource(node.Icon())
+		icon.SetToolTip(node.GetType())
 
 		removeButton.OnTapped = func() {
 			node.GetParent().RemoveSubAction(node)
