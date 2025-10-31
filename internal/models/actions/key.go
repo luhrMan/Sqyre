@@ -1,8 +1,10 @@
 package actions
 
 import (
-	"Squire/internal/config"
 	"fmt"
+
+	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/theme"
 )
 
 type Key struct {
@@ -20,7 +22,7 @@ func NewKey(key string, state bool) *Key {
 }
 
 func (a *Key) String() string {
-	return fmt.Sprintf("%s Key: %s %s ", config.GetEmoji("Key"), a.Key, UpOrDown(a.State))
+	return fmt.Sprintf("%s %s ", a.Key, UpOrDown(a.State))
 }
 
 func UpOrDown(b bool) string {
@@ -28,4 +30,11 @@ func UpOrDown(b bool) string {
 		return "down"
 	}
 	return "up"
+}
+
+func (a *Key) Icon() fyne.Resource {
+	if a.State {
+		return theme.DownloadIcon()
+	}
+	return theme.UploadIcon()
 }

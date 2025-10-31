@@ -1,8 +1,10 @@
 package actions
 
 import (
-	"Squire/internal/config"
 	"fmt"
+
+	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/theme"
 )
 
 type Wait struct {
@@ -18,5 +20,9 @@ func NewWait(time int) *Wait {
 }
 
 func (a *Wait) String() string {
-	return fmt.Sprintf("%s Wait for %d ms", config.GetEmoji("Wait"), a.Time)
+	return fmt.Sprintf("%d ms", a.Time)
+}
+
+func (a *Wait) Icon() fyne.Resource {
+	return theme.HistoryIcon()
 }
