@@ -1,8 +1,10 @@
 package actions
 
 import (
-	"Squire/internal/config"
 	"fmt"
+
+	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/theme"
 )
 
 type Loop struct {
@@ -27,7 +29,9 @@ func NewLoop(count int, name string, subActions []ActionInterface) *Loop {
 }
 
 func (a *Loop) String() string {
-	return fmt.Sprintf("%s | %s%d", a.Name, config.GetEmoji("Loop"), a.Count)
+	return fmt.Sprintf("%s | %d", a.Name, a.Count)
 }
 
-func (a *Loop) GetType() string { return a.Type }
+func (a *Loop) Icon() fyne.Resource {
+	return theme.ViewRefreshIcon()
+}

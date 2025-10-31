@@ -1,8 +1,10 @@
 package actions
 
 import (
-	"Squire/internal/config"
 	"fmt"
+
+	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/theme"
 )
 
 type Click struct {
@@ -18,7 +20,7 @@ func NewClick(button bool) *Click {
 }
 
 func (a *Click) String() string {
-	return fmt.Sprintf("%s %s click", config.GetEmoji("Click"), LeftOrRight(a.Button))
+	return fmt.Sprintf("%s click", LeftOrRight(a.Button))
 }
 
 func LeftOrRight(b bool) string {
@@ -26,4 +28,8 @@ func LeftOrRight(b bool) string {
 		return "right"
 	}
 	return "left"
+}
+
+func (a *Click) Icon() fyne.Resource {
+	return theme.MenuDropDownIcon()
 }

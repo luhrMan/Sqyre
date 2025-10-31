@@ -3,15 +3,20 @@ package actions
 import (
 	"fmt"
 	"log"
+
+	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/theme"
 )
 
 type ActionInterface interface {
+	GetType() string
 	GetUID() string
 
 	GetParent() AdvancedActionInterface
 	SetParent(AdvancedActionInterface)
 
 	String() string
+	Icon() fyne.Resource
 }
 
 type AdvancedActionInterface interface {
@@ -24,11 +29,14 @@ type AdvancedActionInterface interface {
 }
 
 func (a *BaseAction) GetUID() string                           { return a.uid }
+func (a *BaseAction) GetType() string                          { return a.Type }
 func (a *BaseAction) GetParent() AdvancedActionInterface       { return a.Parent }
 func (a *BaseAction) SetParent(action AdvancedActionInterface) { a.Parent = action }
 func (a *BaseAction) String() string                           { return "This is a baseAction" }
-func (a *AdvancedAction) GetSubActions() []ActionInterface     { return a.SubActions }
-func (a *AdvancedAction) SetSubActions(sa []ActionInterface)   { a.SubActions = sa }
+func (a *BaseAction) Icon() fyne.Resource                      { return theme.ErrorIcon() }
+
+func (a *AdvancedAction) GetSubActions() []ActionInterface   { return a.SubActions }
+func (a *AdvancedAction) SetSubActions(sa []ActionInterface) { a.SubActions = sa }
 
 func (a *AdvancedAction) GetAction(uid string) ActionInterface {
 	if a.GetUID() == uid {

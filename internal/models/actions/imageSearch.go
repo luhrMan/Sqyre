@@ -1,10 +1,12 @@
 package actions
 
 import (
-	"Squire/internal/config"
 	"Squire/internal/models/coordinates"
 	"fmt"
 	"slices"
+
+	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/theme"
 )
 
 type ImageSearch struct {
@@ -28,7 +30,11 @@ func NewImageSearch(name string, subActions []ActionInterface, targets []string,
 	}
 }
 func (a *ImageSearch) String() string {
-	return fmt.Sprintf("%s Image Search for %d items in `%s` | %s", config.GetEmoji("Image Search"), len(a.Targets), a.SearchArea.Name, a.Name)
+	return fmt.Sprintf("%d items in `%s` | %s", len(a.Targets), a.SearchArea.Name, a.Name)
+}
+
+func (a *ImageSearch) Icon() fyne.Resource {
+	return theme.SearchIcon()
 }
 
 // func (a *ImageSearch) match(pathDir string, img, imgDraw gocv.Mat) map[string][]robotgo.Point {
