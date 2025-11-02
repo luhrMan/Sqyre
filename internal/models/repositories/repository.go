@@ -11,6 +11,7 @@ import (
 // type models.Model[T any] []T
 
 type repositoryInterface[T models.Program | models.Macro] interface {
+	New() *T
 	Get(s string) *T
 	GetAll() map[string]*T
 	GetAllAsStringSlice() []string
@@ -27,11 +28,15 @@ type repository[T models.Program | models.Macro] struct {
 	models map[string]*T
 }
 
+func (r *repository[T]) New() *T {
+	return new(T)
+}
+
 func (r *repository[T]) Get(s string) *T {
 	if m, ok := r.models[strings.ToLower(s)]; ok {
 		return m
 	}
-	return new(T)
+	return r.New()
 }
 
 func (r *repository[T]) GetAll() map[string]*T {

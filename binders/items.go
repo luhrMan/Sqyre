@@ -125,7 +125,7 @@ func setAccordionItemsLists(acc *widget.Accordion) {
 			defer lists.boundItemGrid.UnselectAll()
 			defer lists.boundItemGrid.RefreshItem(id)
 			// boundMacro := boundMacros[ui.GetUi().Mui.MTabs.SelectedTab().Macro.Name]
-
+			ui.GetUi().ProgramSelector.SetText(pb.Program.Name)
 			item := lists.filtered[id]
 			boundItem := pb.ItemBindings[item]
 			i, _ := repositories.ProgramRepo().Get(pb.Program.Name).GetItem(item)

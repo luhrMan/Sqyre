@@ -1,9 +1,12 @@
 package repositories
 
 import (
+	"Squire/internal/config"
 	"Squire/internal/models"
+	"Squire/internal/models/coordinates"
 	"Squire/internal/models/serialize"
 	"log"
+	"strconv"
 	"sync"
 )
 
@@ -26,6 +29,18 @@ func ProgramRepo() *ProgramRepository[models.Program] {
 		pr.models = pr.DecodeAll() //func(s string) { p, _ := pr.Decode(s) })
 	})
 	return pr
+}
+
+func (r *ProgramRepository[T]) New() *models.Program {
+	return &models.Program{
+		Items: make(map[string]*models.Item),
+		Coordinates: map[string]*coordinates.Coordinates{
+			strconv.Itoa(config.MonitorWidth) + "x" + strconv.Itoa(config.MonitorHeight): { //"2560x1440": {
+				Points:      make(map[string]*coordinates.Point),
+				SearchAreas: make(map[string]coordinates.SearchArea),
+			},
+		},
+	}
 }
 
 func (r *ProgramRepository[T]) Decode(s string) (*models.Program, error) {

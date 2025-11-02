@@ -4,12 +4,19 @@ import (
 	"Squire/internal/models/coordinates"
 	"Squire/internal/models/serialize"
 	"log"
+
+	"gocv.io/x/gocv"
 )
 
 type Program struct {
 	Name        string
 	Items       map[string]*Item
 	Coordinates map[string]*coordinates.Coordinates
+	masks       map[string]func(f ...any) *gocv.Mat
+}
+
+func (p *Program) GetMasks() map[string]func(f ...any) *gocv.Mat {
+	return p.masks
 }
 
 type Item struct {
@@ -30,6 +37,7 @@ func (p *Program) Decode(s string) (*Program, error) {
 	p = &Program{
 		Items:       map[string]*Item{},
 		Coordinates: map[string]*coordinates.Coordinates{},
+		masks:       make(map[string]func(f ...any) *gocv.Mat),
 	}
 	err = serialize.GetViper().UnmarshalKey(keyStr+"name", &p.Name)
 	if err != nil {

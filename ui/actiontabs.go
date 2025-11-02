@@ -7,6 +7,7 @@ import (
 	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
+	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 )
 
 const (
@@ -50,14 +51,11 @@ type ActionTabs struct {
 	BoundCountSlider   *widget.Slider
 	BoundCountLabel    *widget.Label
 
-	BoundImageSearchNameEntry     *widget.Entry
-	BoundImageSearchColSplitEntry *widget.Entry
-	BoundImageSearchRowSplitEntry *widget.Entry
-	ImageSearchSAAccordion        *widget.Accordion
-	ImageSearchItemsAccordion     *widget.Accordion
-
-	// boundXSplitSlider          *widget.Slider
-	// boundXSplitEntry           *widget.Entry
+	BoundImageSearchNameEntry      *widget.Entry
+	BoundImageSearchColSplitSlider *ttwidget.Slider
+	BoundImageSearchRowSplitSlider *ttwidget.Slider
+	ImageSearchSAAccordion         *widget.Accordion
+	ImageSearchItemsAccordion      *widget.Accordion
 
 	boundOCRTargetEntry *widget.Entry
 	OCRSAAccordion      *widget.Accordion
@@ -65,14 +63,10 @@ type ActionTabs struct {
 
 func newActionTabs() *ActionTabs {
 	return &ActionTabs{
-		AppTabs: &container.AppTabs{},
+		AppTabs: new(container.AppTabs),
 
-		BoundTimeSlider: widget.NewSliderWithData(0.0, 1000.0, binding.NewFloat()),
-		BoundTimeEntry:  &widget.Entry{},
-		// BoundMoveXSlider:  widget.NewSliderWithData(-1.0, float64(config.MonitorWidth), binding.NewFloat()),
-		// BoundMoveYSlider:  widget.NewSliderWithData(-1.0, float64(config.MonitorHeight), binding.NewFloat()),
-		// BoundMoveXEntry:   widget.NewEntryWithData(binding.NewString()),
-		// BoundMoveYEntry:   widget.NewEntryWithData(binding.NewString()),
+		BoundTimeSlider:   widget.NewSliderWithData(0.0, 1000.0, binding.NewFloat()),
+		BoundTimeEntry:    new(widget.Entry),
 		PointsAccordion:   widget.NewAccordion(),
 		BoundButtonToggle: custom_widgets.NewToggleWithData(binding.NewBool()),
 		BoundKeySelect:    widget.NewSelectWithData([]string{"ctrl", "alt", "shift"}, binding.NewString()),
@@ -82,9 +76,9 @@ func newActionTabs() *ActionTabs {
 		BoundCountSlider:   widget.NewSliderWithData(1, 10, binding.IntToFloat(binding.NewInt())),
 		BoundCountLabel:    widget.NewLabelWithData(binding.NewString()),
 
-		BoundImageSearchNameEntry:     widget.NewEntryWithData(binding.NewString()),
-		BoundImageSearchColSplitEntry: widget.NewEntryWithData(binding.NewString()),
-		BoundImageSearchRowSplitEntry: widget.NewEntryWithData(binding.NewString()),
+		BoundImageSearchNameEntry:      widget.NewEntryWithData(binding.NewString()),
+		BoundImageSearchColSplitSlider: ttwidget.NewSlider(0, 100),
+		BoundImageSearchRowSplitSlider: ttwidget.NewSlider(0, 100),
 
 		ImageSearchSAAccordion:    widget.NewAccordion(),
 		ImageSearchItemsAccordion: widget.NewAccordion(),
@@ -168,85 +162,30 @@ func (at *ActionTabs) constructLoopTab() {
 }
 
 func (at *ActionTabs) constructImageSearchTab() {
-	// at.BoundImageSearchNameEntry.OnChanged = func(s string) { at.BoundAdvancedAction.SetValue("Name", s) }
-
-	// var saSearchList = slices.Clone(programs.CurrentProgramAndScreenSizeCoordinates().GetSearchAreasAsStringSlice())
-
-	// at.BoundImageSearchAreaList = widget.NewListWithData(
-	// 	at.BoundImageSearchSearchAreaStringList,
-	// 	func() fyne.CanvasObject { return widget.NewLabel("template") },
-	// 	func(di binding.DataItem, co fyne.CanvasObject) {
-	// 		bsa := di.(binding.String)
-	// 		label := co.(*widget.Label)
-	// 		v, _ := bsa.Get()
-	// 		sa := programs.CurrentProgramAndScreenSizeCoordinates().GetSearchArea(v)
-	// 		label.SetText(fmt.Sprintf("%v: %d, %d | %d, %d", sa.Name, sa.LeftX, sa.TopY, sa.RightX, sa.BottomY))
-	// 		label.Refresh()
-	// 	},
-	// )
-	// at.BoundImageSearchAreaList.OnSelected = func(lii widget.ListItemID) {
-	// 	v, _ := at.BoundImageSearchSearchAreaStringList.GetValue(lii)
-	// 	at.BoundImageSearch.SetValue("SearchArea", programs.CurrentProgramAndScreenSizeCoordinates().SearchAreas[v])
-	// 	at.BoundSearchArea.SetValue("Name", v)
-	// 	at.BoundImageSearch.Reload()
-	// 	GetUi().Mui.MTabs.SelectedTab().Refresh()
+	// colIcon := ttwidget.NewIcon(theme.NewDisabledResource(theme.MoreVerticalIcon()))
+	// colIcon.SetToolTip("columns split")
+	// rowIcon := ttwidget.NewIcon(theme.NewDisabledResource(theme.MoreHorizontalIcon()))
+	// rowIcon.SetToolTip("rows split")
+	// at.BoundImageSearchColSplitSlider.OnChanged = func(f float64) {
+	// 	at.BoundImageSearchColSplitSlider.SetToolTip(strconv.FormatFloat(f, 'f', -1, 64))
 	// }
-
-	// var (
-	// 	icons       = *assets.BytesToFyneIcons()
-	// 	searchList  = slices.Clone(items.AllItems("category"))
-	// 	bSearchList binding.ExternalStringList
-	// )
-	// bSearchList = binding.BindStringList(&searchList)
-
-	// at.boundTargetsGridSearchBar = &widget.Entry{
-	// 	PlaceHolder: "Search here",
-	// 	ActionItem: widget.NewButtonWithIcon("", theme.RadioButtonIcon(), func() {
-	// 		searchList = slices.Clone(items.AllItems("category"))
-	// 		at.boundImageSearch.SetValue("Targets", []string{})
-	// 		at.boundTargetsGridSearchBar.Text = ""
-	// 		at.boundTargetsGridSearchBar.Refresh()
-	// 		at.boundTargetsGrid.Refresh()
-	// 		bSearchList.Reload()
-	// 	}),
-	// 	OnChanged: func(s string) {
-	// 		defer bSearchList.Reload()
-	// 		defer at.boundTargetsGrid.ScrollToTop()
-	// 		defer at.boundTargetsGrid.Refresh()
-
-	// 		if s == "" {
-	// 			searchList = slices.Clone(items.AllItems("category"))
-	// 			return
-	// 		}
-	// 		searchList = []string{}
-	// 		for _, i := range items.AllItems("category") {
-	// 			if fuzzy.MatchFold(s, i) || fuzzy.MatchFold(s, items.ItemsMap()[strings.ToLower(i)].Category) {
-	// 				searchList = append(searchList, i)
-	// 			}
-	// 		}
-	// 	},
-	// }
-
-	// at.boundXSplit = binding.BindInt(&xSplit)
-	// at.boundYSplit = binding.BindInt(&ySplit)
-
-	// at.boundXSplitSlider = widget.NewSliderWithData(0, 50, binding.IntToFloat(at.boundXSplit))
-	// at.boundXSplitEntry = widget.NewEntryWithData(binding.IntToString(at.boundXSplit))
-	// safi := widget.NewFormItem("Search Area:", widget.NewAccordion(widget.NewAccordionItem("Search Areas", at.boundImageSearchAreaList)))
-	// safi.HintText = "rightX, topY, leftX, bottomY"
 	imageSearchSettings :=
 		container.NewScroll(
 			container.NewBorder(
 				widget.NewForm(
 					widget.NewFormItem("Name:", at.BoundImageSearchNameEntry),
+					widget.NewFormItem("Cols:", at.BoundImageSearchColSplitSlider),
+					widget.NewFormItem("Rows:", at.BoundImageSearchRowSplitSlider),
 
-					widget.NewFormItem("Cols: ",
-						container.NewGridWithColumns(3,
-							at.BoundImageSearchColSplitEntry,
-							widget.NewLabel("Rows:"),
-							at.BoundImageSearchRowSplitEntry,
-						),
-					),
+					// widget.NewFormItem("",
+					// 	container.NewGridWithColumns(2,
+					// 		// colIcon,
+					// 		at.BoundImageSearchColSplitSlider,
+					// 		// rowIcon,
+					// 		// widget.NewLabel("Rows:"),
+					// 		at.BoundImageSearchRowSplitSlider,
+					// 	),
+					// ),
 					// widget.NewFormItem("Rows:", at.BoundImageSearchRowSplitEntry),
 				),
 				nil, nil, nil,
