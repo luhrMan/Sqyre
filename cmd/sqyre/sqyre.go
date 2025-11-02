@@ -30,6 +30,7 @@ func init() {
 	binders.InitPrograms()
 
 	a := app.NewWithID("Sqyre")
+	a.Settings().SetTheme(&customTheme{})
 	os.Setenv("FYNE_SCALE", "1.25")
 
 	w := a.NewWindow("Sqyre")
