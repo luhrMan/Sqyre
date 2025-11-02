@@ -11,7 +11,6 @@ import (
 	"log"
 	"math"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -43,7 +42,6 @@ func imageSearch(a *actions.ImageSearch) (map[string][]robotgo.Point, error) {
 
 	results := match(img, imgDraw, a)
 	return results, nil
-
 }
 
 func match(img, imgDraw gocv.Mat, a *actions.ImageSearch) map[string][]robotgo.Point {
@@ -62,21 +60,12 @@ func match(img, imgDraw gocv.Mat, a *actions.ImageSearch) map[string][]robotgo.P
 		wg.Add(1)
 		go func(t string) {
 			defer wg.Done()
-			p := repositories.ProgramRepo().Get(strings.Split(t, config.ProgramDelimiter)[0])
-			i, err := p.GetItem(strings.Split(t, config.ProgramDelimiter)[1])
+			program := repositories.ProgramRepo().Get(strings.Split(t, config.ProgramDelimiter)[0])
+			i, err := program.GetItem(strings.Split(t, config.ProgramDelimiter)[1])
 			if err != nil {
 				log.Println(err)
 				return
 			}
-
-			path := config.UpDir + config.UpDir + config.MaskImagesPath + strings.ToLower(p.Name) + "/"
-			size := "/" + strconv.Itoa(i.GridSize[0]) + "x" + strconv.Itoa(i.GridSize[1])
-			// Tmask := gocv.IMRead(path+"templates"+size+"-tmask"+config.PNG, gocv.IMReadColor)
-			Tmask := gocv.NewMat()
-			Cmask := gocv.IMRead(path+"corners"+size+"-cmask"+config.PNG, gocv.IMReadGrayScale)
-			defer Tmask.Close()
-			defer Cmask.Close()
-			//				Tmask = Imask.Region(image.Rect(0, 0, xSize, ySize))
 
 			ip := t + config.PNG
 			b := icons[ip]
@@ -87,6 +76,13 @@ func match(img, imgDraw gocv.Mat, a *actions.ImageSearch) map[string][]robotgo.P
 				fmt.Println("Error reading template image:", err)
 				return
 			}
+			// tmask := gocv.IMRead(path+"templates"+size+"-tmask"+config.PNG, gocv.IMReadColor)
+			tmask := gocv.NewMat()
+			cmask := *program.GetMasks()["item-corner"](template.Rows(), template.Cols(), i.GridSize[0], i.GridSize[1])
+
+			defer tmask.Close()
+			defer cmask.Close()
+			// gocv.IMWrite(config.UpDir+config.UpDir+config.MetaImagesPath+"cmask.png", *cmask)
 
 			// if Tmask.Cols() != template.Cols() && Tmask.Rows() != template.Rows() {
 			// 	log.Println("ERROR: template mask size does not match template!")
@@ -98,8 +94,7 @@ func match(img, imgDraw gocv.Mat, a *actions.ImageSearch) map[string][]robotgo.P
 			// 	return
 			// }
 
-			var matches []robotgo.Point
-			matches = FindTemplateMatches(img, template, Imask, Tmask, Cmask, a.Tolerance)
+			matches := FindTemplateMatches(img, template, Imask, tmask, cmask, a.Tolerance)
 
 			resultsMutex.Lock()
 			defer resultsMutex.Unlock()
@@ -109,14 +104,11 @@ func match(img, imgDraw gocv.Mat, a *actions.ImageSearch) map[string][]robotgo.P
 		}(t)
 	}
 	wg.Wait()
-	//	maskedIcons := *internal.MaskItems()
-
 	gocv.IMWrite(config.UpDir+config.UpDir+config.MetaImagesPath+"founditems.png", imgDraw)
-
 	return results
 }
 
-func FindTemplateMatches(img, template, Imask, Tmask, Cmask gocv.Mat, threshold float32) []robotgo.Point {
+func FindTemplateMatches(img, template, imask, tmask, cmask gocv.Mat, threshold float32) []robotgo.Point {
 	result := gocv.NewMat()
 	defer result.Close()
 
@@ -139,7 +131,7 @@ func FindTemplateMatches(img, template, Imask, Tmask, Cmask gocv.Mat, threshold 
 	gocv.GaussianBlur(t, &t, kernel, 0, 0, gocv.BorderDefault)
 
 	//method 5 works best
-	gocv.MatchTemplate(i, t, &result, gocv.TemplateMatchMode(5), Cmask)
+	gocv.MatchTemplate(i, t, &result, gocv.TemplateMatchMode(5), cmask)
 	matches := GetMatchesFromTemplateMatchResult(result, threshold, 10)
 	return matches
 }
@@ -267,4 +259,28 @@ func SortListOfPoints(lop map[string][]robotgo.Point) []robotgo.Point {
 		sort = append(sort, points...)
 	}
 	return SortPoints(sort, "TopLeftToBottomRight")
+}
+
+// func CalculateCornerMask(rows, cols int, r image.Rectangle) *gocv.Mat {
+// 	cmask := gocv.NewMatWithSize(rows, cols, gocv.MatTypeCV8U)
+// 	cmask.SetTo(gocv.NewScalar(255, 255, 255, 0))
+
+// 	region := cmask.Region(r) // = gocv.NewScalar(0, 0, 0, 0) //.SetTo(gocv.NewScalar(0, 0, 0, 0))
+// 	defer region.Close()
+// 	region.SetTo(gocv.NewScalar(0, 0, 0, 0))
+
+// 	return &cmask
+// }
+
+func CalculateCornerMask(rows, cols int, r image.Rectangle) func() *gocv.Mat {
+	return func() *gocv.Mat {
+		cmask := gocv.NewMatWithSize(rows, cols, gocv.MatTypeCV8U)
+		cmask.SetTo(gocv.NewScalar(255, 255, 255, 0))
+
+		region := cmask.Region(r) // = gocv.NewScalar(0, 0, 0, 0) //.SetTo(gocv.NewScalar(0, 0, 0, 0))
+		defer region.Close()
+		region.SetTo(gocv.NewScalar(0, 0, 0, 0))
+
+		return &cmask
+	}
 }

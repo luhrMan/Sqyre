@@ -29,7 +29,7 @@ func NewLoop(count int, name string, subActions []ActionInterface) *Loop {
 }
 
 func (a *Loop) String() string {
-	return fmt.Sprintf("%s | %d", a.Name, a.Count)
+	return fmt.Sprintf("%s | iterations: %d", a.Name, a.Count)
 }
 
 func (a *Loop) Icon() fyne.Resource {
