@@ -3,10 +3,12 @@ package main
 import (
 	"Squire/binders"
 	"Squire/internal/assets"
+	"Squire/internal/config"
 	"Squire/internal/models/repositories"
 	"Squire/internal/models/serialize"
 	"Squire/internal/services"
 	"Squire/ui"
+	"image"
 
 	"log"
 	"os"
@@ -15,6 +17,7 @@ import (
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/driver/desktop"
 	fynetooltip "github.com/dweymouth/fyne-tooltip"
+	"gocv.io/x/gocv"
 )
 
 func init() {
@@ -23,7 +26,9 @@ func init() {
 	serialize.Decode() // read config.yaml data and save into GO structs
 	repositories.MacroRepo()
 	repositories.ProgramRepo()
+
 	binders.InitPrograms()
+
 	a := app.NewWithID("Sqyre")
 	os.Setenv("FYNE_SCALE", "1.25")
 
@@ -47,6 +52,27 @@ func init() {
 }
 
 func main() {
+	repositories.ProgramRepo().Get(config.DarkAndDarker).GetMasks()["item-corner"] = func(f ...any) *gocv.Mat {
+		rows, cols, x, y :=
+			f[0].(int), f[1].(int), f[2].(int), f[3].(int)
+		roi :=
+			image.Rect(
+				(cols/x)/2,
+				(rows/y)/2,
+				cols,
+				rows,
+			)
+
+		cmask := gocv.NewMatWithSize(rows, cols, gocv.MatTypeCV8U)
+		cmask.SetTo(gocv.NewScalar(255, 255, 255, 0))
+
+		region := cmask.Region(roi)
+		defer region.Close()
+		region.SetTo(gocv.NewScalar(0, 0, 0, 0))
+
+		return &cmask
+	}
+
 	ui.GetUi().Window.ShowAndRun()
 
 	services.CloseTessClient()

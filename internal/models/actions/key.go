@@ -25,16 +25,16 @@ func (a *Key) String() string {
 	return fmt.Sprintf("%s %s ", a.Key, UpOrDown(a.State))
 }
 
-func UpOrDown(b bool) string {
-	if b {
-		return "down"
-	}
-	return "up"
-}
-
 func (a *Key) Icon() fyne.Resource {
 	if a.State {
 		return theme.DownloadIcon()
 	}
 	return theme.UploadIcon()
+}
+
+func UpOrDown(b bool) string {
+	if b {
+		return "down"
+	}
+	return "up"
 }

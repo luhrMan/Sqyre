@@ -5,6 +5,7 @@ import (
 	"Squire/internal/models/actions"
 	"fmt"
 	"log"
+	"strings"
 
 	"fyne.io/fyne/v2"
 	"github.com/go-vgo/robotgo"
@@ -13,19 +14,19 @@ import (
 func Execute(a actions.ActionInterface) error {
 	switch node := a.(type) {
 	case *actions.Wait:
-		log.Printf("Waiting for %d milliseconds", node.Time)
+		log.Println("Wait:", node.String())
 		robotgo.MilliSleep(node.Time)
 		return nil
 	case *actions.Move:
-		log.Printf("Moving mouse to %v", node.Point)
+		log.Println("Move:", node.String())
 		robotgo.Move(node.Point.X+config.XOffset, node.Point.Y+config.YOffset)
 		return nil
 	case *actions.Click:
-		log.Printf("%s click", actions.LeftOrRight(node.Button))
+		log.Println("Click:", node.String())
 		robotgo.Click(actions.LeftOrRight(node.Button))
 		return nil
 	case *actions.Key:
-		log.Printf("Key: %s %s", node.Key, node.State)
+		log.Println("Key:", node.String())
 		if node.State {
 			err := robotgo.KeyDown(node.Key)
 			if err != nil {
@@ -40,6 +41,7 @@ func Execute(a actions.ActionInterface) error {
 		return nil
 
 	case *actions.Loop:
+		log.Println("Loop:", node.String())
 		var progress, progressStep float64
 		if node.Name == "root" {
 			progressStep = (100.0 / float64(len(node.GetSubActions()))) / 100
@@ -50,7 +52,7 @@ func Execute(a actions.ActionInterface) error {
 		}
 
 		for i := range node.Count {
-			fmt.Printf("Loop iteration %d\n", i+1)
+			fmt.Printf("Loop: %s iteration %d\n", node.Name, i+1)
 			for j, action := range node.GetSubActions() {
 				if node.Name == "root" {
 					progress = progressStep * float64(j+1)
@@ -78,6 +80,7 @@ func Execute(a actions.ActionInterface) error {
 		}
 		return nil
 	case *actions.ImageSearch:
+		log.Println("Image Search:", node.String())
 		results, err := imageSearch(node)
 		if err != nil {
 			return err
@@ -104,6 +107,18 @@ func Execute(a actions.ActionInterface) error {
 
 		return nil
 	case *actions.Ocr:
+		foundText, err := OCR(node)
+		if err != nil {
+			log.Println(err)
+			return err
+		}
+		if strings.Contains(foundText, node.Target) {
+			for _, action := range node.SubActions {
+				if err := Execute(action); err != nil {
+					return err
+				}
+			}
+		}
 		return nil
 	}
 	return nil
