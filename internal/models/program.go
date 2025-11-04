@@ -1,9 +1,11 @@
 package models
 
 import (
+	"Squire/internal/config"
 	"Squire/internal/models/coordinates"
 	"Squire/internal/models/serialize"
 	"log"
+	"strconv"
 
 	"gocv.io/x/gocv"
 )
@@ -13,6 +15,19 @@ type Program struct {
 	Items       map[string]*Item
 	Coordinates map[string]*coordinates.Coordinates
 	masks       map[string]func(f ...any) *gocv.Mat
+}
+
+func NewProgram() *Program {
+	return &Program{
+		Items: make(map[string]*Item),
+		Coordinates: map[string]*coordinates.Coordinates{
+			strconv.Itoa(config.MonitorWidth) + "x" + strconv.Itoa(config.MonitorHeight): { //"2560x1440": {
+				Points:      make(map[string]*coordinates.Point),
+				SearchAreas: make(map[string]*coordinates.SearchArea),
+			},
+		},
+		masks: make(map[string]func(f ...any) *gocv.Mat),
+	}
 }
 
 func (p *Program) GetMasks() map[string]func(f ...any) *gocv.Mat {
@@ -34,11 +49,7 @@ func (p *Program) Decode(s string) (*Program, error) {
 		errStr = "problem here lol"
 	)
 
-	p = &Program{
-		Items:       map[string]*Item{},
-		Coordinates: map[string]*coordinates.Coordinates{},
-		masks:       make(map[string]func(f ...any) *gocv.Mat),
-	}
+	p = NewProgram()
 	err = serialize.GetViper().UnmarshalKey(keyStr+"name", &p.Name)
 	if err != nil {
 		log.Fatalf(errStr, err)

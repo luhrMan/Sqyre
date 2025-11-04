@@ -32,6 +32,7 @@ func InitializeUi(w fyne.Window) *Ui {
 	ui = &Ui{
 		Window: w,
 		EditorUi: &EditorUi{
+			CanvasObject:    new(fyne.Container),
 			NavButton:       new(widget.Button),
 			AddButton:       new(widget.Button),
 			RemoveButton:    new(widget.Button),

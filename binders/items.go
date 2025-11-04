@@ -22,11 +22,6 @@ import (
 )
 
 func setItemsWidgets(i models.Item) {
-	// dl := binding.NewDataListener(func() {
-	// 	mt := ui.GetUi().Mui.MTabs.SelectedTab()
-	// 	fyne.Do(func() { mt.RefreshItem(mt.SelectedNode) })
-	// })
-
 	it := ui.GetUi().EditorTabs.ItemsTab.Widgets
 
 	it["Name"].(*widget.Entry).SetText(i.Name)
@@ -140,10 +135,6 @@ func setAccordionItemsLists(acc *widget.Accordion) {
 
 			}
 			setItemsWidgets(*item)
-
-			// for _, o := range ui.GetUi().EditorTabs.ItemsTab.Right.Objects {
-			// 	o.Refresh()
-			// }
 		}
 
 		lists.searchbar = &widget.Entry{
@@ -174,7 +165,7 @@ func setAccordionItemsLists(acc *widget.Accordion) {
 			),
 		)
 		ui.GetUi().EditorTabs.ItemsTab.Widgets[strings.ToLower(p.Name+"-searchbar")] = lists.searchbar
-		ui.GetUi().EditorTabs.ItemsTab.Widgets[strings.ToLower(p.Name+"-items")] = lists.items
+		ui.GetUi().EditorTabs.ItemsTab.Widgets[strings.ToLower(p.Name+"-list")] = lists.items
 
 		acc.Append(&programItemsListWidget)
 	}

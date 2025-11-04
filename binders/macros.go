@@ -193,13 +193,17 @@ func setMacroSelect(b *widget.Button) {
 				}
 				label.Refresh()
 				removeButton.OnTapped = func() {
-					for _, ti := range ui.GetUi().Mui.MTabs.Items {
-						if strings.ToLower(ti.Text) == v {
+					for _, m := range repositories.MacroRepo().GetAll() {
+						if strings.ToLower(m.Name) == v {
 							dialog.ShowConfirm("Delete Macro", "Are you sure you want to delete this macro?", func(b bool) {
 								if b {
 									repositories.MacroRepo().Delete(v)
 									ui.GetUi().Mui.MTabs.BoundMacroListWidget.RefreshItem(id)
-									ui.GetUi().Mui.MTabs.Remove(ti)
+									for _, ti := range ui.GetUi().Mui.MTabs.Items {
+										if m.Name == ti.Text {
+											ui.GetUi().Mui.MTabs.Remove(ti)
+										}
+									}
 									ui.GetUi().Mui.MTabs.Refresh()
 								}
 							}, ui.GetUi().Window)

@@ -26,11 +26,11 @@ func InitBinds() {
 	is := actions.NewImageSearch("blank", []actions.ActionInterface{}, []string{}, coordinates.SearchArea{}, 1, 1, 0.95)
 	ats.BoundImageSearch = binding.BindStruct(is)
 	ats.BoundImageSearchAA = binding.BindStruct(is.AdvancedAction)
-	ats.BoundImageSearchSA = binding.BindStruct(is.SearchArea)
+	ats.BoundImageSearchSA = binding.BindStruct(&is.SearchArea)
 	ocr := actions.NewOcr("blank", []actions.ActionInterface{}, "blank", coordinates.SearchArea{})
 	ats.BoundOcr = binding.BindStruct(ocr)
 	ats.BoundOcrAA = binding.BindStruct(ocr.AdvancedAction)
-	ats.BoundOcrSA = binding.BindStruct(ocr.SearchArea)
+	ats.BoundOcrSA = binding.BindStruct(&ocr.SearchArea)
 
 }
 
