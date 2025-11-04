@@ -2,7 +2,9 @@ package models
 
 import (
 	"Squire/internal/config"
+	"errors"
 	"fmt"
+	"log"
 	"slices"
 	"strings"
 )
@@ -74,3 +76,13 @@ func (p *Program) GetItemsMap() map[string]*Item {
 // 		return allItemsSlice
 // 	}
 // }
+
+func (p *Program) AddItem(i Item) (*Item, error) {
+	if _, ok := p.Items[strings.ToLower(p.Name)]; ok {
+		return nil, errors.New("an item with that name already exists")
+	} else {
+		log.Println("adding item: ", p.Name)
+		p.SetItem(&i)
+		return &i, nil
+	}
+}
