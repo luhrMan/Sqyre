@@ -48,8 +48,6 @@ func (mtabs *MacroTabs) SelectedTab() *MacroTree {
 		t := mtabs.CreateTab()
 		go fyne.DoAndWait(func() {
 			mtabs.AddTab(uuid.NewString(), t)
-			// mtabs.Append(t)
-			// mtabs.Select(t)
 		})
 		return t.Content.(*MacroTree)
 	}

@@ -9,6 +9,7 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 )
 
 type MacroUi struct {
@@ -23,18 +24,58 @@ type MacroUi struct {
 func (u *Ui) constructMacroUi() *fyne.Container {
 	boundLocXLabel = widget.NewLabelWithData(binding.NewString())
 	boundLocYLabel = widget.NewLabelWithData(binding.NewString())
+	mui := u.Mui
 
-	u.Mui.MacroToolbars.TopToolbar =
+	addNodeButton := ttwidget.NewButtonWithIcon("", theme.ContentAddIcon(), func() {
+
+	})
+	unselectNodeButton := ttwidget.NewButtonWithIcon("", theme.RadioButtonIcon(), func() {
+		st := mui.MTabs.SelectedTab()
+		st.UnselectAll()
+		ui.ActionTabs.Selected().Content.Refresh()
+		st.SelectedNode = ""
+	})
+
+	moveDownNodeButton := ttwidget.NewButtonWithIcon("", theme.MoveDownIcon(), func() {
+		st := mui.MTabs.SelectedTab()
+		st.moveNode(st.SelectedNode, false)
+	})
+	// upIcon := fyne.NewStaticResource("custom_arrowup", assets.CustomArrowUpIcon())
+	moveUpNodeButton := ttwidget.NewButtonWithIcon("", theme.MoveUpIcon(), func() {
+		st := mui.MTabs.SelectedTab()
+		st.moveNode(st.SelectedNode, true)
+	})
+	playMacroButton := ttwidget.NewButtonWithIcon("", theme.MediaPlayIcon(), func() {
+		st := mui.MTabs.SelectedTab()
+		go func() {
+			services.Execute(st.Macro.Root)
+		}()
+	})
+
+	addNodeButton.SetToolTip("add new action node")
+	unselectNodeButton.SetToolTip("unselect nodes")
+	moveDownNodeButton.SetToolTip("move node down")
+	moveUpNodeButton.SetToolTip("move node up")
+	playMacroButton.SetToolTip("start macro execution")
+
+	mui.MacroToolbars.TopToolbar =
 		container.NewGridWithColumns(2,
 			container.NewHBox(
-				u.Mui.constructMacroToolbar(),
-				services.MacroActiveIndicator(),
+				addNodeButton,
 				layout.NewSpacer(),
+				unselectNodeButton,
+				moveDownNodeButton,
+				moveUpNodeButton,
+				layout.NewSpacer(),
+				layout.NewSpacer(),
+				layout.NewSpacer(),
+				playMacroButton,
+				services.MacroActiveIndicator(),
 				widget.NewLabel("Macro Name:"),
 			),
 			container.NewBorder(nil, nil, nil,
-				u.Mui.MacroSelectButton,
-				u.Mui.MTabs.MacroNameEntry,
+				mui.MacroSelectButton,
+				mui.MTabs.MacroNameEntry,
 			),
 		)
 
@@ -50,56 +91,28 @@ func (u *Ui) constructMacroUi() *fyne.Container {
 			),
 		)
 
-	u.Mui.MacroToolbars.BottomToolbar =
+	globaldelaytt := ttwidget.NewIcon(theme.HistoryIcon())
+	globaldelaytt.SetToolTip("global delay (ms)")
+	mui.MacroToolbars.BottomToolbar =
 		container.NewGridWithRows(2,
 			container.NewBorder(
 				nil,
 				nil,
-				nil,
+				container.NewHBox(globaldelaytt, mui.MTabs.BoundGlobalDelayEntry),
 				mousePosition, //right
-				u.Mui.MTabs.MacroHotkeyEntry,
+				mui.MTabs.MacroHotkeyEntry,
 			),
 			services.MacroProgressBar(),
 		)
 
 	macroUi :=
 		container.NewBorder(
-			u.Mui.MacroToolbars.TopToolbar,
-			u.Mui.MacroToolbars.BottomToolbar,
+			mui.MacroToolbars.TopToolbar,
+			mui.MacroToolbars.BottomToolbar,
 			widget.NewSeparator(),
 			nil,
-			u.Mui.MTabs,
+			mui.MTabs,
 		)
 
 	return macroUi
-}
-
-func (mui *MacroUi) constructMacroToolbar() *widget.Toolbar {
-	tb :=
-		widget.NewToolbar(
-			widget.NewToolbarSpacer(),
-			widget.NewToolbarSeparator(),
-			widget.NewToolbarAction(theme.RadioButtonIcon(), func() {
-				mt := mui.MTabs.SelectedTab()
-				mt.UnselectAll()
-				ui.ActionTabs.Selected().Content.Refresh()
-				mt.SelectedNode = ""
-			}),
-			widget.NewToolbarAction(theme.MoveDownIcon(), func() {
-				mt := mui.MTabs.SelectedTab()
-				mt.moveNode(mt.SelectedNode, false)
-			}),
-			widget.NewToolbarAction(theme.MoveUpIcon(), func() {
-				mt := mui.MTabs.SelectedTab()
-				mt.moveNode(mt.SelectedNode, true)
-			}),
-			widget.NewToolbarSeparator(),
-			widget.NewToolbarSpacer(),
-			widget.NewToolbarAction(theme.MediaPlayIcon(), func() {
-				go func() {
-					services.Execute(mui.MTabs.SelectedTab().Macro.Root)
-				}()
-			}),
-		)
-	return tb
 }

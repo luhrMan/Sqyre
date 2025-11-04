@@ -23,9 +23,9 @@ func NewOcr(name string, subActions []ActionInterface, target string, searchbox 
 }
 
 func (a *Ocr) String() string {
-	return fmt.Sprintf("`%s` in `%s`", a.Target, a.SearchArea.Name)
+	return fmt.Sprintf("%s | `%s` in `%s`", a.Name, a.Target, a.SearchArea.Name)
 }
 
 func (a *Ocr) Icon() fyne.Resource {
-	return theme.VisibilityIcon()
+	return theme.ViewFullScreenIcon()
 }

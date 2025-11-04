@@ -4,91 +4,47 @@ import (
 	"Squire/internal/config"
 	"Squire/internal/models/actions"
 	"Squire/internal/models/coordinates"
+	"Squire/internal/models/repositories"
 	"Squire/ui"
+	"strconv"
+	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/widget"
 	"github.com/lithammer/fuzzysearch/fuzzy"
 )
 
-func bindSearchAreaEditorWidgets(di binding.Struct) {
-	dl := binding.NewDataListener(func() {
-		mt := ui.GetUi().Mui.MTabs.SelectedTab()
-		fyne.Do(func() { mt.RefreshItem(mt.SelectedNode) })
-	})
-
-	ets := ui.GetUi().EditorTabs
-	st := ets.SearchAreasTab.BindableWidgets
-
-	name, _ := di.GetItem("Name")
-	x1, _ := di.GetItem("LeftX")
-	y1, _ := di.GetItem("TopY")
-	x2, _ := di.GetItem("RightX")
-	y2, _ := di.GetItem("BottomY")
-
-	st["Name"].(*widget.Entry).Unbind()
-	st["LeftX"].(*widget.Entry).Unbind()
-	st["TopY"].(*widget.Entry).Unbind()
-	st["RightX"].(*widget.Entry).Unbind()
-	st["BottomY"].(*widget.Entry).Unbind()
-	x1.RemoveListener(dl)
-	y1.RemoveListener(dl)
-	x2.RemoveListener(dl)
-	y2.RemoveListener(dl)
-
-	st["Name"].(*widget.Entry).Bind(name.(binding.String))
-	st["LeftX"].(*widget.Entry).Bind(binding.IntToString(x1.(binding.Int)))
-	st["TopY"].(*widget.Entry).Bind(binding.IntToString(y1.(binding.Int)))
-	st["RightX"].(*widget.Entry).Bind(binding.IntToString(x2.(binding.Int)))
-	st["BottomY"].(*widget.Entry).Bind(binding.IntToString(y2.(binding.Int)))
-	x1.AddListener(dl)
-	y1.AddListener(dl)
-	x2.AddListener(dl)
-	y2.AddListener(dl)
+func setSearchAreaWidgets(sa coordinates.SearchArea) {
+	st := ui.GetUi().EditorTabs.SearchAreasTab.Widgets
+	st["Name"].(*widget.Entry).SetText(sa.Name)
+	st["LeftX"].(*widget.Entry).SetText(strconv.Itoa(sa.LeftX))
+	st["TopY"].(*widget.Entry).SetText(strconv.Itoa(sa.TopY))
+	st["RightX"].(*widget.Entry).SetText(strconv.Itoa(sa.RightX))
+	st["BottomY"].(*widget.Entry).SetText(strconv.Itoa(sa.BottomY))
 }
 
-func bindPointWidgets(di binding.Struct) {
-	dl := binding.NewDataListener(func() {
-		mt := ui.GetUi().Mui.MTabs.SelectedTab()
-		fyne.Do(func() { mt.RefreshItem(mt.SelectedNode) })
-	})
-
-	ets := ui.GetUi().EditorTabs
-	pt := ets.PointsTab.BindableWidgets
-
-	name, _ := di.GetItem("Name")
-	x, _ := di.GetItem("X")
-	y, _ := di.GetItem("Y")
-
-	pt["Name"].(*widget.Entry).Unbind()
-	pt["X"].(*widget.Entry).Unbind()
-	pt["Y"].(*widget.Entry).Unbind()
-	x.RemoveListener(dl)
-	y.RemoveListener(dl)
-
-	pt["Name"].(*widget.Entry).Bind(name.(binding.String))
-	pt["X"].(*widget.Entry).Bind(binding.IntToString(x.(binding.Int)))
-	pt["Y"].(*widget.Entry).Bind(binding.IntToString(y.(binding.Int)))
-	x.AddListener(dl)
-	y.AddListener(dl)
-
+func setPointWidgets(p coordinates.Point) {
+	pt := ui.GetUi().EditorTabs.PointsTab
+	pt.Widgets["Name"].(*widget.Entry).SetText(p.Name)
+	pt.Widgets["X"].(*widget.Entry).SetText(strconv.Itoa(p.X))
+	pt.Widgets["Y"].(*widget.Entry).SetText(strconv.Itoa(p.Y))
 }
 
 func setAccordionSearchAreasLists(acc *widget.Accordion) {
-	for _, pb := range GetBoundPrograms() {
+	acc.Items = []*widget.AccordionItem{}
+	for _, p := range repositories.ProgramRepo().GetAll() {
 		lists := struct {
-			boundSASearchBar *widget.Entry
-			boundSAList      *widget.List
-			filtered         []string
+			searchbar   *widget.Entry
+			searchareas *widget.List
+			filtered    []string
 		}{
-			boundSASearchBar: &widget.Entry{},
-			boundSAList:      &widget.List{},
-			filtered:         pb.Program.Coordinates[config.MainMonitorSizeString].GetSearchAreasAsStringSlice(),
+			searchbar:   new(widget.Entry),
+			searchareas: new(widget.List),
+			filtered:    p.Coordinates[config.MainMonitorSizeString].GetSearchAreasAsStringSlice(),
 		}
 
-		lists.boundSAList = widget.NewList(
+		lists.searchareas = widget.NewList(
 			func() int {
 				return len(lists.filtered)
 			},
@@ -96,43 +52,47 @@ func setAccordionSearchAreasLists(acc *widget.Accordion) {
 				return widget.NewLabel("template")
 			},
 			func(id widget.ListItemID, co fyne.CanvasObject) {
-				sa := lists.filtered[id]
-				boundSA := pb.SearchAreaBindings[sa]
-				name, _ := boundSA.GetItem("Name")
+				name := lists.filtered[id]
+
 				label := co.(*widget.Label)
-				label.Bind(name.(binding.String))
+				sa, err := repositories.ProgramRepo().Get(p.Name).Coordinates[config.MainMonitorSizeString].GetSearchArea(name)
+				if err != nil {
+					return
+				}
+				label.SetText(sa.Name)
 			},
 		)
 
-		lists.boundSAList.OnSelected = func(id widget.ListItemID) {
-			sa := lists.filtered[id]
-			boundSA := pb.SearchAreaBindings[sa]
-			bindSearchAreaEditorWidgets(boundSA)
-			// ui.GetUi().ActionTabs.BoundSearchArea = boundSA
+		lists.searchareas.OnSelected = func(id widget.ListItemID) {
+			program := repositories.ProgramRepo().Get(p.Name)
+			ui.GetUi().ProgramSelector.SetText(program.Name)
+			saName := lists.filtered[id]
+
+			sa, err := program.Coordinates[config.MainMonitorSizeString].GetSearchArea(saName)
+			if err != nil {
+				return
+			}
+			ui.GetUi().EditorTabs.SearchAreasTab.SelectedItem = sa
+			setSearchAreaWidgets(*sa)
 			if v, ok := ui.GetUi().Mui.MTabs.SelectedTab().Macro.Root.GetAction(ui.GetUi().Mui.MTabs.SelectedTab().SelectedNode).(*actions.ImageSearch); ok {
-				name, _ := boundSA.GetValue("Name")
-				x1, _ := boundSA.GetValue("LeftX")
-				y1, _ := boundSA.GetValue("TopY")
-				x2, _ := boundSA.GetValue("RightX")
-				y2, _ := boundSA.GetValue("BottomY")
-				v.SearchArea = coordinates.SearchArea{
-					Name:    name.(string),
-					LeftX:   x1.(int),
-					TopY:    y1.(int),
-					RightX:  x2.(int),
-					BottomY: y2.(int),
-				}
+				v.SearchArea = *sa
 				bindAction(v)
 			}
-			lists.boundSAList.Unselect(id)
+			if v, ok := ui.GetUi().Mui.MTabs.SelectedTab().Macro.Root.GetAction(ui.GetUi().Mui.MTabs.SelectedTab().SelectedNode).(*actions.Ocr); ok {
+				v.SearchArea = *sa
+				bindAction(v)
+			}
+			if ui.GetUi().MainUi.Visible() {
+				lists.searchareas.Unselect(id)
+			}
 		}
-		lists.boundSASearchBar = &widget.Entry{
+		lists.searchbar = &widget.Entry{
 			PlaceHolder: "Search here",
 			OnChanged: func(s string) {
 				// defaultList := pro.Coordinates[config.MainMonitorSizeString].Points
-				defaultList := pb.Program.Coordinates[config.MainMonitorSizeString].GetSearchAreasAsStringSlice()
-				defer lists.boundSAList.ScrollToTop()
-				defer lists.boundSAList.Refresh()
+				defaultList := p.Coordinates[config.MainMonitorSizeString].GetSearchAreasAsStringSlice()
+				defer lists.searchareas.ScrollToTop()
+				defer lists.searchareas.Refresh()
 
 				if s == "" {
 					lists.filtered = defaultList
@@ -142,34 +102,39 @@ func setAccordionSearchAreasLists(acc *widget.Accordion) {
 				for _, i := range defaultList {
 					if fuzzy.MatchFold(s, i) {
 						lists.filtered = append(lists.filtered, i)
+						lists.searchareas.UnselectAll()
+
 					}
 				}
 			},
 		}
 		programSAListWidget := *widget.NewAccordionItem(
-			pb.Program.Name,
+			p.Name,
 			container.NewBorder(
-				lists.boundSASearchBar,
+				lists.searchbar,
 				nil, nil, nil,
-				lists.boundSAList,
+				lists.searchareas,
 			),
 		)
+		ui.GetUi().EditorTabs.SearchAreasTab.Widgets[strings.ToLower(p.Name+"-searchbar")] = lists.searchbar
+		ui.GetUi().EditorTabs.SearchAreasTab.Widgets[strings.ToLower(p.Name+"-searchareas")] = lists.searchareas
 		acc.Append(&programSAListWidget)
 	}
 }
 
 func setAccordionPointsLists(acc *widget.Accordion) {
-	for _, pb := range GetBoundPrograms() {
+	acc.Items = []*widget.AccordionItem{}
+	for _, p := range repositories.ProgramRepo().GetAll() {
 		lists := struct {
-			boundPointSearchBar *widget.Entry
-			boundPointList      *widget.List
-			filtered            []string
+			searchBar *widget.Entry
+			points    *widget.List
+			filtered  []string
 		}{
-			boundPointSearchBar: &widget.Entry{},
-			boundPointList:      &widget.List{},
-			filtered:            pb.Program.Coordinates[config.MainMonitorSizeString].GetPointsAsStringSlice(),
+			searchBar: new(widget.Entry),
+			points:    new(widget.List),
+			filtered:  p.Coordinates[config.MainMonitorSizeString].GetPointsAsStringSlice(),
 		}
-		lists.boundPointList = widget.NewList(
+		lists.points = widget.NewList(
 			func() int {
 				return len(lists.filtered)
 			},
@@ -177,38 +142,41 @@ func setAccordionPointsLists(acc *widget.Accordion) {
 				return widget.NewLabel("template")
 			},
 			func(id widget.ListItemID, co fyne.CanvasObject) {
-				point := lists.filtered[id]
-				boundPoint := pb.PointsBindings[point]
-				name, _ := boundPoint.GetItem("Name")
+				name := lists.filtered[id]
 				label := co.(*widget.Label)
-				label.Bind(name.(binding.String))
+				point, err := repositories.ProgramRepo().Get(p.Name).Coordinates[config.MainMonitorSizeString].GetPoint(name)
+				if err != nil {
+					return
+				}
+				label.SetText(point.Name)
 			},
 		)
 
-		lists.boundPointList.OnSelected = func(id widget.ListItemID) {
-			point := lists.filtered[id]
-			boundPoint := pb.PointsBindings[point]
-			bindPointWidgets(boundPoint)
-			ui.GetUi().ActionTabs.BoundPoint = boundPoint
+		lists.points.OnSelected = func(id widget.ListItemID) {
+			program := repositories.ProgramRepo().Get(p.Name)
+			ui.GetUi().ProgramSelector.SetText(program.Name)
+
+			pointName := lists.filtered[id]
+			point, err := program.Coordinates[config.MainMonitorSizeString].GetPoint(pointName)
+			if err != nil {
+				return
+			}
+			ui.GetUi().EditorTabs.PointsTab.SelectedItem = point
+			setPointWidgets(*point)
 			if v, ok := ui.GetUi().Mui.MTabs.SelectedTab().Macro.Root.GetAction(ui.GetUi().Mui.MTabs.SelectedTab().SelectedNode).(*actions.Move); ok {
-				name, _ := boundPoint.GetValue("Name")
-				x, _ := boundPoint.GetValue("X")
-				y, _ := boundPoint.GetValue("Y")
-				v.Point = coordinates.Point{
-					Name: name.(string),
-					X:    x.(int),
-					Y:    y.(int),
-				}
+				v.Point = *point
 				bindAction(v)
 			}
-			lists.boundPointList.Unselect(id)
+			if ui.GetUi().MainUi.Visible() {
+				lists.points.Unselect(id)
+			}
 		}
-		lists.boundPointSearchBar = &widget.Entry{
+		lists.searchBar = &widget.Entry{
 			PlaceHolder: "Search here",
 			OnChanged: func(s string) {
-				defaultList := pb.Program.Coordinates[config.MainMonitorSizeString].GetPointsAsStringSlice()
-				defer lists.boundPointList.ScrollToTop()
-				defer lists.boundPointList.Refresh()
+				defaultList := p.Coordinates[config.MainMonitorSizeString].GetPointsAsStringSlice()
+				defer lists.points.ScrollToTop()
+				defer lists.points.Refresh()
 
 				if s == "" {
 					lists.filtered = defaultList
@@ -218,18 +186,21 @@ func setAccordionPointsLists(acc *widget.Accordion) {
 				for _, i := range defaultList {
 					if fuzzy.MatchFold(s, i) {
 						lists.filtered = append(lists.filtered, i)
+						lists.points.UnselectAll()
 					}
 				}
 			},
 		}
 		programPointListWidget := *widget.NewAccordionItem(
-			pb.Program.Name,
+			p.Name,
 			container.NewBorder(
-				lists.boundPointSearchBar,
+				lists.searchBar,
 				nil, nil, nil,
-				lists.boundPointList,
+				lists.points,
 			),
 		)
+		ui.GetUi().EditorTabs.PointsTab.Widgets[strings.ToLower(p.Name+"-searchbar")] = lists.searchBar
+		ui.GetUi().EditorTabs.PointsTab.Widgets[strings.ToLower(p.Name+"-points")] = lists.points
 		acc.Append(&programPointListWidget)
 	}
 }

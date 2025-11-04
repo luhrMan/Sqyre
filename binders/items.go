@@ -3,58 +3,37 @@ package binders
 import (
 	"Squire/internal/assets"
 	"Squire/internal/config"
+	"Squire/internal/models"
+	"Squire/internal/models/actions"
 	"Squire/internal/models/repositories"
 	"Squire/ui"
 	"image/color"
 	"slices"
+	"strconv"
 	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 	"github.com/lithammer/fuzzysearch/fuzzy"
 )
 
-func bindItemsWidgets(di binding.Struct, bx, by binding.Int) {
-	dl := binding.NewDataListener(func() {
-		mt := ui.GetUi().Mui.MTabs.SelectedTab()
-		fyne.Do(func() { mt.RefreshItem(mt.SelectedNode) })
-	})
+func setItemsWidgets(i models.Item) {
+	// dl := binding.NewDataListener(func() {
+	// 	mt := ui.GetUi().Mui.MTabs.SelectedTab()
+	// 	fyne.Do(func() { mt.RefreshItem(mt.SelectedNode) })
+	// })
 
 	it := ui.GetUi().EditorTabs.ItemsTab.Widgets
 
-	name, _ := di.GetItem("Name")
-	// gsx, _ := bx.GetItem("X")
-	// gsy, _ := gs.GetItem("Y")
-	// c, _ := di.GetItem("Tags")
-	sm, _ := di.GetItem("StackMax")
-	m, _ := di.GetItem("Merchant")
-
-	// it["Name"].(*widget.Entry).Unbind()
-	// it["Rows"].(*widget.Entry).Unbind()
-	// it["Cols"].(*widget.Entry).Unbind()
-	// widget.NewCard("test card", "", nil)
-	// it["Tags"].(*widget.Entry).Unbind()
-	// it["StackMax"].(*widget.Entry).Unbind()
-	// it["Merchant"].(*widget.Entry).Unbind()
-	// gs.RemoveListener(dl)
-	// c.RemoveListener(dl)
-	// sm.RemoveListener(dl)
-	// m.RemoveListener(dl)
-
-	it["Name"].(*widget.Entry).Bind(name.(binding.String))
-	it["GridSizeX"].(*widget.Entry).Bind(binding.IntToString(bx))
-	it["GridSizeY"].(*widget.Entry).Bind(binding.IntToString(by))
+	it["Name"].(*widget.Entry).SetText(i.Name)
+	it["GridSizeX"].(*widget.Entry).SetText(strconv.Itoa(i.GridSize[0]))
+	it["GridSizeY"].(*widget.Entry).SetText(strconv.Itoa(i.GridSize[1]))
 	// it["Tags"].(*widget.Entry).Bind(c.(binding.String))
-	it["StackMax"].(*widget.Entry).Bind(binding.IntToString(sm.(binding.Int)))
-	it["Merchant"].(*widget.Entry).Bind(m.(binding.String))
-	// gs.AddListener(dl)
-	// c.AddListener(dl)
-	sm.AddListener(dl)
-	m.AddListener(dl)
+	it["StackMax"].(*widget.Entry).SetText(strconv.Itoa(i.StackMax))
 }
 
 func RefreshItemsAccordionItems() {
@@ -64,21 +43,23 @@ func RefreshItemsAccordionItems() {
 }
 
 func setAccordionItemsLists(acc *widget.Accordion) {
+	acc.Items = []*widget.AccordionItem{}
+
 	var (
 		ats   = ui.GetUi().ActionTabs
 		icons = assets.BytesToFyneIcons()
 	)
-	for _, pb := range GetBoundPrograms() {
+	for _, p := range repositories.ProgramRepo().GetAll() {
 		lists := struct {
-			boundItemSearchBar *widget.Entry
-			boundItemGrid      *widget.GridWrap
-			filtered           []string
+			searchbar *widget.Entry
+			items     *widget.GridWrap
+			filtered  []string
 		}{
-			boundItemSearchBar: &widget.Entry{},
-			boundItemGrid:      &widget.GridWrap{},
-			filtered:           pb.Program.GetItemsAsStringSlice(),
+			searchbar: new(widget.Entry),
+			items:     new(widget.GridWrap),
+			filtered:  p.GetItemsAsStringSlice(),
 		}
-		lists.boundItemGrid = widget.NewGridWrap(
+		lists.items = widget.NewGridWrap(
 			func() int {
 				return len(lists.filtered)
 			},
@@ -91,28 +72,33 @@ func setAccordionItemsLists(acc *widget.Accordion) {
 				icon.SetMinSize(fyne.NewSquareSize(40))
 				icon.FillMode = canvas.ImageFillOriginal
 
-				stack := container.NewStack(rect, container.NewPadded(icon))
+				stack := container.NewStack(rect, container.NewPadded(icon), ttwidget.NewLabel(""))
 				return stack
 			},
 			func(id widget.GridWrapItemID, o fyne.CanvasObject) {
-				item := lists.filtered[id]
-				boundItem := pb.ItemBindings[item]
-				name, _ := boundItem.GetValue("Name")
+				name := lists.filtered[id]
 
 				stack := o.(*fyne.Container)
 				rect := stack.Objects[0].(*canvas.Rectangle)
 				icon := stack.Objects[1].(*fyne.Container).Objects[0].(*canvas.Image)
+				tt := stack.Objects[2].(*ttwidget.Label)
+				tt.SetToolTip(name)
 
+				item, err := repositories.ProgramRepo().Get(p.Name).GetItem(name)
+				if err != nil {
+					return
+				}
 				ist, _ := ats.BoundImageSearch.GetValue("Targets")
 				t := ist.([]string)
-
-				if slices.Contains(t, strings.ToLower(pb.Program.Name)+config.ProgramDelimiter+name.(string)) {
-					rect.FillColor = color.RGBA{R: 0, G: 128, B: 0, A: 128}
-				} else {
-					rect.FillColor = color.RGBA{}
+				if ui.GetUi().MainUi.Visible() {
+					if slices.Contains(t, strings.ToLower(p.Name)+config.ProgramDelimiter+item.Name) {
+						rect.FillColor = color.RGBA{R: 0, G: 128, B: 0, A: 128}
+					} else {
+						rect.FillColor = color.RGBA{}
+					}
 				}
 
-				path := pb.Program.Name + config.ProgramDelimiter + name.(string) + config.PNG
+				path := p.Name + config.ProgramDelimiter + item.Name + config.PNG
 				if icons[path] != nil {
 					icon.Resource = icons[path]
 				} else {
@@ -121,44 +107,51 @@ func setAccordionItemsLists(acc *widget.Accordion) {
 				o.Refresh()
 			},
 		)
-		lists.boundItemGrid.OnSelected = func(id widget.GridWrapItemID) {
-			defer lists.boundItemGrid.UnselectAll()
-			defer lists.boundItemGrid.RefreshItem(id)
-			// boundMacro := boundMacros[ui.GetUi().Mui.MTabs.SelectedTab().Macro.Name]
-			ui.GetUi().ProgramSelector.SetText(pb.Program.Name)
-			item := lists.filtered[id]
-			boundItem := pb.ItemBindings[item]
-			i, _ := repositories.ProgramRepo().Get(pb.Program.Name).GetItem(item)
-			boundx := binding.BindInt(&i.GridSize[0])
-			boundy := binding.BindInt(&i.GridSize[1])
-			bindItemsWidgets(boundItem, boundx, boundy)
-			n, _ := boundItem.GetValue("Name")
-			ist, _ := ats.BoundImageSearch.GetValue("Targets")
-			t := ist.([]string)
-			name := pb.Program.Name + config.ProgramDelimiter + n.(string)
-			if !slices.Contains(t, name) {
-				t = append(t, name)
-			} else {
-				i := slices.Index(t, name)
-				if i != -1 {
-					t = slices.Delete(t, i, i+1)
-				}
+		lists.items.OnSelected = func(id widget.GridWrapItemID) {
+			defer lists.items.RefreshItem(id)
+
+			program := repositories.ProgramRepo().Get(p.Name)
+			ui.GetUi().ProgramSelector.SetText(program.Name)
+			itemName := lists.filtered[id]
+
+			item, err := program.GetItem(itemName)
+			if err != nil {
+				return
 			}
-			ats.BoundImageSearch.SetValue("Targets", t)
+			ui.GetUi().EditorTabs.ItemsTab.SelectedItem = item
+			if ui.GetUi().MainUi.Visible() {
+				if v, ok := ui.GetUi().Mui.MTabs.SelectedTab().Macro.Root.GetAction(ui.GetUi().Mui.MTabs.SelectedTab().SelectedNode).(*actions.ImageSearch); ok {
+					t := v.Targets
+					name := p.Name + config.ProgramDelimiter + item.Name
+					if !slices.Contains(t, name) {
+						t = append(t, name)
+					} else {
+						i := slices.Index(t, name)
+						if i != -1 {
+							t = slices.Delete(t, i, i+1)
+						}
+					}
+					v.Targets = t
+					ui.GetUi().Mui.MTabs.SelectedTab().Tree.RefreshItem(v.GetUID())
+					// bindAction(v)
+
+				}
+				lists.items.UnselectAll()
+
+			}
+			setItemsWidgets(*item)
+
 			// for _, o := range ui.GetUi().EditorTabs.ItemsTab.Right.Objects {
 			// 	o.Refresh()
 			// }
-			// boundMacro.bindAction(v)
-
 		}
 
-		lists.boundItemSearchBar = &widget.Entry{
+		lists.searchbar = &widget.Entry{
 			PlaceHolder: "Search here",
 			OnChanged: func(s string) {
-				// defaultList := pro.Coordinates[config.MainMonitorSizeString].Points
-				defaultList := pb.Program.GetItemsAsStringSlice()
-				defer lists.boundItemGrid.ScrollToTop()
-				defer lists.boundItemGrid.Refresh()
+				defaultList := p.GetItemsAsStringSlice()
+				defer lists.items.ScrollToTop()
+				defer lists.items.Refresh()
 
 				if s == "" {
 					lists.filtered = defaultList
@@ -173,13 +166,16 @@ func setAccordionItemsLists(acc *widget.Accordion) {
 			},
 		}
 		programItemsListWidget := *widget.NewAccordionItem(
-			pb.Program.Name,
+			p.Name,
 			container.NewBorder(
-				lists.boundItemSearchBar,
+				lists.searchbar,
 				nil, nil, nil,
-				lists.boundItemGrid,
+				lists.items,
 			),
 		)
+		ui.GetUi().EditorTabs.ItemsTab.Widgets[strings.ToLower(p.Name+"-searchbar")] = lists.searchbar
+		ui.GetUi().EditorTabs.ItemsTab.Widgets[strings.ToLower(p.Name+"-items")] = lists.items
+
 		acc.Append(&programItemsListWidget)
 	}
 }

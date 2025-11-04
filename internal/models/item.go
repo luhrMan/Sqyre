@@ -11,11 +11,22 @@ func (p *Program) GetItem(i string) (*Item, error) {
 	if item, ok := p.Items[strings.ToLower(i)]; ok {
 		return item, nil
 	}
-	return &Item{}, fmt.Errorf("item does not exist")
+	newItem := p.NewItem(i)
+	return newItem, fmt.Errorf("item does not exist; creating new item")
 	// index, found := slices.BinarySearch(SortByName(allItemsMap), i)
 	// if found {
 	// 	return allItemsMap[AllItems()[index]], nil
 	// }
+}
+
+func (p *Program) SetItem(i *Item) {
+	p.Items[strings.ToLower(i.Name)] = i
+}
+
+func (p *Program) NewItem(s string) *Item {
+	p.Items[s] = new(Item)
+	p.Items[s].Name = s
+	return p.Items[s]
 }
 
 func (p *Program) GetItemsWithAppendedProgramName() map[string]*Item {
@@ -32,6 +43,7 @@ func (p *Program) GetItemsAsStringSlice() []string {
 	for _, i := range p.Items {
 		items = append(items, strings.ToLower(i.Name))
 	}
+	slices.Sort(items)
 	return items
 }
 
@@ -48,10 +60,6 @@ func (p *Program) SortItemsByName() []string {
 
 func (p *Program) GetItemsMap() map[string]*Item {
 	return p.Items
-}
-
-func (p *Program) AddItem(i *Item) {
-	p.Items[strings.ToLower(i.Name)] = i
 }
 
 // func AllItems(sortedby string) []string {
