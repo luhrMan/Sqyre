@@ -19,6 +19,7 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 	"github.com/go-vgo/robotgo"
 	"github.com/google/uuid"
 )
@@ -90,6 +91,7 @@ func setMtabSettingsAndWidgets() {
 	mtabs.OnClosed = func(ti *container.TabItem) {
 		m := repositories.MacroRepo().Get(ti.Text)
 		services.UnregisterHotkey(m.Hotkey)
+		mtabs.SelectIndex(0)
 		mtabs.BoundMacroListWidget.Refresh()
 	}
 
@@ -269,7 +271,8 @@ func setMacroTree(mt *ui.MacroTree) {
 }
 
 func setMacroToolbar() {
-	ui.GetUi().Mui.MacroToolbars.TopToolbar.Objects[0].(*fyne.Container).Objects[0].(*widget.Toolbar).Prepend(widget.NewToolbarAction(theme.ContentAddIcon(), func() {
+	// ui.GetUi().Mui.MacroToolbars.TopToolbar.Objects[0].(*fyne.Container).Objects[0].(*widget.Toolbar).Prepend(widget.NewToolbarAction(theme.ContentAddIcon(), func() {
+	ui.GetUi().Mui.MacroToolbars.TopToolbar.Objects[0].(*fyne.Container).Objects[0].(*ttwidget.Button).OnTapped = func() {
 		var action actions.ActionInterface
 		mt := ui.GetUi().Mui.MTabs.SelectedTab()
 		ats := ui.GetUi().ActionTabs
@@ -349,6 +352,6 @@ func setMacroToolbar() {
 		}
 		mt.Select(action.GetUID())
 		mt.RefreshItem(action.GetUID())
-	}))
+	}
 
 }

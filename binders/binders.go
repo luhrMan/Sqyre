@@ -44,15 +44,17 @@ func ResetBinds() {
 	bindAction(actions.NewKey(ats.BoundKeySelect.Selected, ats.BoundStateToggle.Toggled))
 	bindAction(actions.NewClick(ats.BoundButtonToggle.Toggled))
 	bindAction(actions.NewLoop(int(ats.BoundCountSlider.Value), ats.BoundLoopNameEntry.Text, []actions.ActionInterface{}))
-	bindAction(actions.NewImageSearch(ats.BoundImageSearchNameEntry.Text, []actions.ActionInterface{}, []string{}, coordinates.SearchArea{}, 1, 1, 0.95))
-	// bindAction(actions.NewOcr()
+	bindAction(actions.NewImageSearch(ats.BoundImageSearchNameEntry.Text, []actions.ActionInterface{}, []string{}, coordinates.SearchArea{}, int(ats.BoundImageSearchRowSplitSlider.Value), int(ats.BoundImageSearchColSplitSlider.Value), 0.95))
+	bindAction(actions.NewOcr(ats.BoundOcrNameEntry.Text, []actions.ActionInterface{}, ats.BoundOcrTargetEntry.Text, coordinates.SearchArea{}))
 }
 
 func SetActionTabBindings() {
+	ats := ui.GetUi().ActionTabs
 	ResetBinds()
-	setAccordionPointsLists(ui.GetUi().ActionTabs.PointsAccordion)
-	setAccordionSearchAreasLists(ui.GetUi().ActionTabs.ImageSearchSAAccordion)
-	setAccordionItemsLists(ui.GetUi().ActionTabs.ImageSearchItemsAccordion)
+	setAccordionPointsLists(ats.PointsAccordion)
+	setAccordionSearchAreasLists(ats.ImageSearchSAAccordion)
+	setAccordionItemsLists(ats.ImageSearchItemsAccordion)
+	setAccordionSearchAreasLists(ats.OcrSAAccordion)
 }
 
 func bindAction(a actions.ActionInterface) {
@@ -114,9 +116,10 @@ func bindAction(a actions.ActionInterface) {
 		cs, _ := ats.BoundImageSearch.GetItem("ColSplit")
 
 		ats.BoundImageSearchNameEntry.Bind(n.(binding.String))
-		ats.BoundImageSearchColSplitEntry.Bind(binding.IntToString(rs.(binding.Int)))
-		ats.BoundImageSearchRowSplitEntry.Bind(binding.IntToString(cs.(binding.Int)))
-
+		ats.BoundImageSearchColSplitSlider.Bind(binding.IntToFloat(rs.(binding.Int)))
+		ats.BoundImageSearchRowSplitSlider.Bind(binding.IntToFloat(cs.(binding.Int)))
+		ats.BoundImageSearchColSplitLabel.Bind(binding.IntToString(rs.(binding.Int)))
+		ats.BoundImageSearchRowSplitLabel.Bind(binding.IntToString(cs.(binding.Int)))
 		ats.BoundImageSearch.SetValue("Targets", slices.Clone(node.Targets))
 		RefreshItemsAccordionItems()
 
@@ -130,12 +133,15 @@ func bindAction(a actions.ActionInterface) {
 		ats.BoundOcrAA = binding.BindStruct(node.AdvancedAction)
 		ats.BoundOcrSA = binding.BindStruct(&node.SearchArea)
 
-		t, _ := ats.BoundOcr.GetItem("Target")
 		n, _ := ats.BoundOcrAA.GetItem("Name")
+		t, _ := ats.BoundOcr.GetItem("Target")
 		sa, _ := ats.BoundOcrSA.GetItem("Name")
+		ats.BoundOcrNameEntry.Bind(n.(binding.String))
+		ats.BoundOcrTargetEntry.Bind(t.(binding.String))
 
 		t.AddListener(dl)
 		n.AddListener(dl)
 		sa.AddListener(dl)
 	}
+	ui.GetUi().Mui.MTabs.SelectedTab().Refresh() //could probably just refresh the selected tree item here
 }

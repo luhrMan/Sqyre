@@ -1,4 +1,4 @@
-package main
+package assets
 
 import (
 	"image/color"
@@ -7,11 +7,11 @@ import (
 	"fyne.io/fyne/v2/theme"
 )
 
-type customTheme struct{}
+type CustomTheme struct{}
 
-var _ fyne.Theme = (*customTheme)(nil)
+var _ fyne.Theme = (*CustomTheme)(nil)
 
-func (m customTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVariant) color.Color {
+func (m CustomTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVariant) color.Color {
 	switch name {
 	case theme.ColorNameBackground:
 		if variant == theme.VariantLight {
@@ -23,17 +23,17 @@ func (m customTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVariant) 
 	return theme.DefaultTheme().Color(name, variant)
 }
 
-func (m customTheme) Icon(name fyne.ThemeIconName) fyne.Resource {
+func (m CustomTheme) Icon(name fyne.ThemeIconName) fyne.Resource {
 	// if name == theme.IconNameHome {
 	// 	return fyne.NewStaticResource("myHome", homeBytes)
 	// }
-	moveup, _ := fyne.LoadResourceFromPath("../../internal/assets/MoveUp.svg")
+
 	minus, _ := fyne.LoadResourceFromPath("../../internal/assets/minus.svg")
 	plus, _ := fyne.LoadResourceFromPath("../../internal/assets/plus.svg")
 
 	switch name {
-	case theme.IconNameMoveUp:
-		return moveup
+	// case theme.IconNameMoveUp:
+	// 	return moveup
 	case theme.IconNameMoveDown:
 		return minus
 	case theme.IconNameNavigateNext:
@@ -42,10 +42,10 @@ func (m customTheme) Icon(name fyne.ThemeIconName) fyne.Resource {
 	return theme.DefaultTheme().Icon(name)
 }
 
-func (m customTheme) Font(style fyne.TextStyle) fyne.Resource {
+func (m CustomTheme) Font(style fyne.TextStyle) fyne.Resource {
 	return theme.DefaultTheme().Font(style)
 }
 
-func (m customTheme) Size(name fyne.ThemeSizeName) float32 {
+func (m CustomTheme) Size(name fyne.ThemeSizeName) float32 {
 	return theme.DefaultTheme().Size(name)
 }

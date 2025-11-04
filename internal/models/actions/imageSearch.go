@@ -34,5 +34,5 @@ func (a *ImageSearch) String() string {
 }
 
 func (a *ImageSearch) Icon() fyne.Resource {
-	return theme.SearchIcon()
+	return theme.DesktopIcon()
 }
