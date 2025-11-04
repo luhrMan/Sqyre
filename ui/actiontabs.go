@@ -6,6 +6,7 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/layout"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 )
@@ -54,11 +55,14 @@ type ActionTabs struct {
 	BoundImageSearchNameEntry      *widget.Entry
 	BoundImageSearchColSplitSlider *ttwidget.Slider
 	BoundImageSearchRowSplitSlider *ttwidget.Slider
+	BoundImageSearchColSplitLabel  *ttwidget.Label
+	BoundImageSearchRowSplitLabel  *ttwidget.Label
 	ImageSearchSAAccordion         *widget.Accordion
 	ImageSearchItemsAccordion      *widget.Accordion
 
-	boundOCRTargetEntry *widget.Entry
-	OCRSAAccordion      *widget.Accordion
+	BoundOcrNameEntry   *widget.Entry
+	BoundOcrTargetEntry *widget.Entry
+	OcrSAAccordion      *widget.Accordion
 }
 
 func newActionTabs() *ActionTabs {
@@ -79,49 +83,31 @@ func newActionTabs() *ActionTabs {
 		BoundImageSearchNameEntry:      widget.NewEntryWithData(binding.NewString()),
 		BoundImageSearchColSplitSlider: ttwidget.NewSlider(0, 100),
 		BoundImageSearchRowSplitSlider: ttwidget.NewSlider(0, 100),
+		BoundImageSearchColSplitLabel:  ttwidget.NewLabel(""),
+		BoundImageSearchRowSplitLabel:  ttwidget.NewLabel(""),
 
 		ImageSearchSAAccordion:    widget.NewAccordion(),
 		ImageSearchItemsAccordion: widget.NewAccordion(),
 
-		boundOCRTargetEntry: widget.NewEntryWithData(binding.NewString()),
-		OCRSAAccordion:      widget.NewAccordion(),
+		BoundOcrNameEntry:   new(widget.Entry),
+		BoundOcrTargetEntry: new(widget.Entry),
+		OcrSAAccordion:      widget.NewAccordion(),
 	}
 }
 
 func (u *Ui) constructActionTabs() *ActionTabs {
-	u.ActionTabs.constructWaitTab()
-	u.ActionTabs.constructMoveTab()
-	u.ActionTabs.constructClickTab()
-	u.ActionTabs.constructKeyTab()
-	u.ActionTabs.constructLoopTab()
-	u.ActionTabs.constructImageSearchTab()
-	u.ActionTabs.constructOcrTab()
-	return u.ActionTabs
-}
-
-func (at *ActionTabs) constructWaitTab() {
-	gdfi := widget.NewFormItem("delay", GetUi().Mui.MTabs.BoundGlobalDelayEntry)
-	gdfi.HintText = "keyboard & mouse global delay (ms)"
-
+	at := u.ActionTabs
 	waitSettings :=
 		widget.NewForm(
 			widget.NewFormItem("ms", container.NewGridWithColumns(2,
 				at.BoundTimeEntry, at.BoundTimeSlider,
 			)),
-			gdfi,
 		)
-	at.Append(container.NewTabItem("Wait", waitSettings))
-}
-func (at *ActionTabs) constructMoveTab() {
 	moveSettings :=
 		container.NewBorder(
 			nil, nil, nil, nil,
 			at.PointsAccordion,
 		)
-	at.Append(container.NewTabItem("Move", moveSettings))
-}
-
-func (at *ActionTabs) constructClickTab() {
 	clickSettings :=
 		container.NewVBox(
 			container.NewHBox(
@@ -132,10 +118,6 @@ func (at *ActionTabs) constructClickTab() {
 				layout.NewSpacer(),
 			),
 		)
-	at.Append(container.NewTabItem("Click", clickSettings))
-}
-
-func (at *ActionTabs) constructKeyTab() {
 	keySettings :=
 		container.NewVBox(
 			container.NewHBox(
@@ -147,10 +129,6 @@ func (at *ActionTabs) constructKeyTab() {
 				layout.NewSpacer(),
 			),
 		)
-	at.Append(container.NewTabItem("Key", keySettings))
-}
-
-func (at *ActionTabs) constructLoopTab() {
 	loopSettings :=
 		widget.NewForm(
 			widget.NewFormItem("Name:", at.BoundLoopNameEntry),
@@ -158,10 +136,6 @@ func (at *ActionTabs) constructLoopTab() {
 				nil, nil, at.BoundCountLabel, nil, at.BoundCountSlider,
 			)),
 		)
-	at.Append(container.NewTabItem("Loop", loopSettings))
-}
-
-func (at *ActionTabs) constructImageSearchTab() {
 	// colIcon := ttwidget.NewIcon(theme.NewDisabledResource(theme.MoreVerticalIcon()))
 	// colIcon.SetToolTip("columns split")
 	// rowIcon := ttwidget.NewIcon(theme.NewDisabledResource(theme.MoreHorizontalIcon()))
@@ -169,24 +143,27 @@ func (at *ActionTabs) constructImageSearchTab() {
 	// at.BoundImageSearchColSplitSlider.OnChanged = func(f float64) {
 	// 	at.BoundImageSearchColSplitSlider.SetToolTip(strconv.FormatFloat(f, 'f', -1, 64))
 	// }
+	colIcon := ttwidget.NewIcon(theme.NewPrimaryThemedResource(theme.MoreVerticalIcon()))
+	rowIcon := ttwidget.NewIcon(theme.NewErrorThemedResource(theme.MoreHorizontalIcon()))
+	colIcon.SetToolTip("column search split")
+	rowIcon.SetToolTip("row search split")
+	at.BoundImageSearchColSplitSlider.SetToolTip("column search split")
+	at.BoundImageSearchRowSplitSlider.SetToolTip("row search split")
 	imageSearchSettings :=
 		container.NewScroll(
 			container.NewBorder(
-				widget.NewForm(
-					widget.NewFormItem("Name:", at.BoundImageSearchNameEntry),
-					widget.NewFormItem("Cols:", at.BoundImageSearchColSplitSlider),
-					widget.NewFormItem("Rows:", at.BoundImageSearchRowSplitSlider),
-
-					// widget.NewFormItem("",
-					// 	container.NewGridWithColumns(2,
-					// 		// colIcon,
-					// 		at.BoundImageSearchColSplitSlider,
-					// 		// rowIcon,
-					// 		// widget.NewLabel("Rows:"),
-					// 		at.BoundImageSearchRowSplitSlider,
-					// 	),
-					// ),
-					// widget.NewFormItem("Rows:", at.BoundImageSearchRowSplitEntry),
+				container.NewVBox(
+					container.NewBorder(nil, nil, widget.NewLabel("Name:"), nil, at.BoundImageSearchNameEntry),
+					container.NewBorder(
+						nil, nil,
+						container.NewBorder(nil, nil, colIcon, at.BoundImageSearchColSplitLabel), nil,
+						at.BoundImageSearchColSplitSlider,
+					),
+					container.NewBorder(
+						nil, nil,
+						container.NewBorder(nil, nil, rowIcon, at.BoundImageSearchRowSplitLabel), nil,
+						at.BoundImageSearchRowSplitSlider,
+					),
 				),
 				nil, nil, nil,
 				widget.NewAccordion(
@@ -205,21 +182,33 @@ func (at *ActionTabs) constructImageSearchTab() {
 				),
 			),
 		)
-	at.Append(container.NewTabItem("Image", imageSearchSettings))
-
-}
-
-func (at *ActionTabs) constructOcrTab() {
-	// 	at.boundOCRSearchAreaSelect = widget.NewSelectWithData(programs.CurrentProgramAndScreenSizeCoordinates().GetSearchAreasAsStringSlice(), binding.NewString())
-	// 	at.boundOCRTargetEntry = widget.NewEntryWithData(binding.NewString())
 
 	ocrSettings :=
-		widget.NewForm(
-			widget.NewFormItem("Text Target:", at.boundOCRTargetEntry),
-			widget.NewFormItem("Search Area:", at.OCRSAAccordion),
+		container.NewBorder(
+			container.NewGridWithRows(2,
+				container.NewBorder(
+					nil, nil,
+					widget.NewLabel("Name:"), nil,
+					at.BoundOcrNameEntry,
+				),
+				container.NewBorder(
+					nil, nil,
+					widget.NewLabel("Text Target:"), nil,
+					at.BoundOcrTargetEntry,
+				),
+			),
+			nil, nil, nil,
+			at.OcrSAAccordion,
 		)
-	at.Append(container.NewTabItem("OCR", ocrSettings))
 
+	at.Append(container.NewTabItem("Wait", waitSettings))
+	at.Append(container.NewTabItem("Move", moveSettings))
+	at.Append(container.NewTabItem("Click", clickSettings))
+	at.Append(container.NewTabItem("Key", keySettings))
+	at.Append(container.NewTabItem("Loop", loopSettings))
+	at.Append(container.NewTabItem("Image", imageSearchSettings))
+	at.Append(container.NewTabItem("OCR", ocrSettings))
+	return u.ActionTabs
 }
 
 //	screen := robotgo.CaptureScreen(0, 0, 2560, 1440)
