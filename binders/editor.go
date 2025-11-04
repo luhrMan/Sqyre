@@ -10,8 +10,6 @@ import (
 	"strconv"
 	"strings"
 
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 )
@@ -24,16 +22,21 @@ func SetEditorUi() {
 
 func setEditorLists() {
 	setAccordionPointsLists(
-		ui.GetUi().EditorUi.EditorTabs.
-			PointsTab.Content.(*container.Split).Leading.(*fyne.Container).Objects[0].(*widget.Accordion),
+		ui.GetUi().EditorTabs.PointsTab.Widgets["Accordion"].(*widget.Accordion),
+
+		// ui.GetUi().EditorUi.EditorTabs.
+		// 	PointsTab.Content.(*container.Split).Leading.(*fyne.Container).Objects[0].(*widget.Accordion),
 	)
 	setAccordionSearchAreasLists(
-		ui.GetUi().EditorUi.EditorTabs.
-			SearchAreasTab.Content.(*container.Split).Leading.(*fyne.Container).Objects[0].(*widget.Accordion),
+		ui.GetUi().EditorTabs.SearchAreasTab.Widgets["Accordion"].(*widget.Accordion),
+
+		// ui.GetUi().EditorUi.EditorTabs.
+		// 	SearchAreasTab.Content.(*container.Split).Leading.(*fyne.Container).Objects[0].(*widget.Accordion),
 	)
 	setAccordionItemsLists(
-		ui.GetUi().EditorUi.EditorTabs.
-			ItemsTab.Content.(*container.Split).Leading.(*fyne.Container).Objects[0].(*widget.Accordion),
+		ui.GetUi().EditorTabs.ItemsTab.Widgets["Accordion"].(*widget.Accordion),
+		// ui.GetUi().EditorUi.EditorTabs.
+		// 	ItemsTab.Content.(*container.Split).Leading.(*fyne.Container).Objects[0].(*widget.Accordion),
 	)
 }
 
@@ -90,12 +93,20 @@ func setEditorButtons() {
 			x, _ := strconv.Atoi(ui.GetUi().EditorTabs.ItemsTab.Widgets["GridSizeX"].(*widget.Entry).Text)
 			y, _ := strconv.Atoi(ui.GetUi().EditorTabs.ItemsTab.Widgets["GridSizeY"].(*widget.Entry).Text)
 			sm, _ := strconv.Atoi(ui.GetUi().EditorTabs.ItemsTab.Widgets["StackMax"].(*widget.Entry).Text)
+			i := models.Item{
+				Name:     n,
+				GridSize: [2]int{x, y},
+				StackMax: sm,
+			}
 			pro := getProgram()
-			item, _ := pro.GetItem(n)
-			item.GridSize[0] = x
-			item.GridSize[1] = y
-			item.StackMax = sm
-			// item.Tags =
+			v, err := pro.AddItem(i)
+			if err != nil {
+				dialog.ShowError(err, ui.GetUi().Window)
+				return
+			}
+			ui.GetUi().EditorTabs.ItemsTab.Widgets[strings.ToLower(program)+"-searchbar"].(*widget.Entry).SetText(v.Name)
+			ui.GetUi().EditorTabs.ItemsTab.Widgets["Name"].(*widget.Entry).SetText(v.Name)
+			ui.GetUi().EditorTabs.ItemsTab.Widgets[strings.ToLower(program)+"-list"].(*widget.GridWrap).Select(0)
 		case "Points":
 			n := ui.GetUi().EditorTabs.PointsTab.Widgets["Name"].(*widget.Entry).Text
 			x, _ := strconv.Atoi(ui.GetUi().EditorTabs.PointsTab.Widgets["X"].(*widget.Entry).Text)
@@ -111,9 +122,9 @@ func setEditorButtons() {
 				dialog.ShowError(err, ui.GetUi().Window)
 				return
 			}
-			ui.GetUi().EditorTabs.PointsTab.Widgets[program+"-searchbar"].(*widget.Entry).SetText(v.Name)
+			ui.GetUi().EditorTabs.PointsTab.Widgets[strings.ToLower(program)+"-searchbar"].(*widget.Entry).SetText(v.Name)
 			ui.GetUi().EditorTabs.PointsTab.Widgets["Name"].(*widget.Entry).SetText(v.Name)
-			ui.GetUi().EditorTabs.PointsTab.Widgets[strings.ToLower(program+"-points")].(*widget.List).Select(0)
+			ui.GetUi().EditorTabs.PointsTab.Widgets[strings.ToLower(program)+"-list"].(*widget.List).Select(0)
 		case "Search Areas":
 			n := ui.GetUi().EditorTabs.SearchAreasTab.Widgets["Name"].(*widget.Entry).Text
 			lx, _ := strconv.Atoi(ui.GetUi().EditorTabs.SearchAreasTab.Widgets["LeftX"].(*widget.Entry).Text)
@@ -133,9 +144,9 @@ func setEditorButtons() {
 				dialog.ShowError(err, ui.GetUi().Window)
 				return
 			}
-			ui.GetUi().EditorTabs.SearchAreasTab.Widgets[program+"-searchbar"].(*widget.Entry).SetText(v.Name)
+			ui.GetUi().EditorTabs.SearchAreasTab.Widgets[strings.ToLower(program)+"-searchbar"].(*widget.Entry).SetText(v.Name)
 			ui.GetUi().EditorTabs.SearchAreasTab.Widgets["Name"].(*widget.Entry).SetText(v.Name)
-			ui.GetUi().EditorTabs.SearchAreasTab.Widgets[strings.ToLower(program+"-searchareas")].(*widget.List).Select(0)
+			ui.GetUi().EditorTabs.SearchAreasTab.Widgets[strings.ToLower(program)+"-list"].(*widget.List).Select(0)
 
 		}
 		repositories.ProgramRepo().EncodeAll()
@@ -152,9 +163,9 @@ func setEditorButtons() {
 			text := ui.GetUi().EditorTabs.PointsTab.Widgets[program+"-searchbar"].(*widget.Entry).Text
 			ui.GetUi().EditorTabs.PointsTab.Widgets[program+"-searchbar"].(*widget.Entry).SetText("uuid")
 			ui.GetUi().EditorTabs.PointsTab.Widgets[program+"-searchbar"].(*widget.Entry).SetText(text)
-			ui.GetUi().EditorTabs.PointsTab.Widgets[strings.ToLower(program+"-points")].(*widget.List).UnselectAll()
+			ui.GetUi().EditorTabs.PointsTab.Widgets[strings.ToLower(program)+"-list"].(*widget.List).UnselectAll()
 
-			ui.GetUi().EditorTabs.PointsTab.Widgets[strings.ToLower(program+"-points")].(*widget.List).Select(0)
+			ui.GetUi().EditorTabs.PointsTab.Widgets[strings.ToLower(program)+"-list"].(*widget.List).Select(0)
 		case "Search Areas":
 
 		}

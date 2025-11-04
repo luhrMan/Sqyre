@@ -74,22 +74,25 @@ func setAccordionSearchAreasLists(acc *widget.Accordion) {
 			}
 			ui.GetUi().EditorTabs.SearchAreasTab.SelectedItem = sa
 			setSearchAreaWidgets(*sa)
-			if v, ok := ui.GetUi().Mui.MTabs.SelectedTab().Macro.Root.GetAction(ui.GetUi().Mui.MTabs.SelectedTab().SelectedNode).(*actions.ImageSearch); ok {
-				v.SearchArea = *sa
-				bindAction(v)
-			}
-			if v, ok := ui.GetUi().Mui.MTabs.SelectedTab().Macro.Root.GetAction(ui.GetUi().Mui.MTabs.SelectedTab().SelectedNode).(*actions.Ocr); ok {
-				v.SearchArea = *sa
-				bindAction(v)
-			}
 			if ui.GetUi().MainUi.Visible() {
+				if v, ok := ui.GetUi().Mui.MTabs.SelectedTab().Macro.Root.GetAction(ui.GetUi().Mui.MTabs.SelectedTab().SelectedNode).(*actions.ImageSearch); ok {
+					if ui.GetUi().ActionTabs.AppTabs.Selected().Text == "Image" {
+						v.SearchArea = *sa
+						bindAction(v)
+					}
+				}
+				if v, ok := ui.GetUi().Mui.MTabs.SelectedTab().Macro.Root.GetAction(ui.GetUi().Mui.MTabs.SelectedTab().SelectedNode).(*actions.Ocr); ok {
+					if ui.GetUi().ActionTabs.AppTabs.Selected().Text == "OCR" {
+						v.SearchArea = *sa
+						bindAction(v)
+					}
+				}
 				lists.searchareas.Unselect(id)
 			}
 		}
 		lists.searchbar = &widget.Entry{
 			PlaceHolder: "Search here",
 			OnChanged: func(s string) {
-				// defaultList := pro.Coordinates[config.MainMonitorSizeString].Points
 				defaultList := p.Coordinates[config.MainMonitorSizeString].GetSearchAreasAsStringSlice()
 				defer lists.searchareas.ScrollToTop()
 				defer lists.searchareas.Refresh()
@@ -117,7 +120,7 @@ func setAccordionSearchAreasLists(acc *widget.Accordion) {
 			),
 		)
 		ui.GetUi().EditorTabs.SearchAreasTab.Widgets[strings.ToLower(p.Name+"-searchbar")] = lists.searchbar
-		ui.GetUi().EditorTabs.SearchAreasTab.Widgets[strings.ToLower(p.Name+"-searchareas")] = lists.searchareas
+		ui.GetUi().EditorTabs.SearchAreasTab.Widgets[strings.ToLower(p.Name+"-list")] = lists.searchareas
 		acc.Append(&programSAListWidget)
 	}
 }
@@ -199,8 +202,8 @@ func setAccordionPointsLists(acc *widget.Accordion) {
 				lists.points,
 			),
 		)
-		ui.GetUi().EditorTabs.PointsTab.Widgets[strings.ToLower(p.Name+"-searchbar")] = lists.searchBar
-		ui.GetUi().EditorTabs.PointsTab.Widgets[strings.ToLower(p.Name+"-points")] = lists.points
+		ui.GetUi().EditorTabs.PointsTab.Widgets[strings.ToLower(p.Name)+"-searchbar"] = lists.searchBar
+		ui.GetUi().EditorTabs.PointsTab.Widgets[strings.ToLower(p.Name)+"-list"] = lists.points
 		acc.Append(&programPointListWidget)
 	}
 }
