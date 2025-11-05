@@ -78,11 +78,15 @@ func (p *Program) GetItemsMap() map[string]*Item {
 // }
 
 func (p *Program) AddItem(i Item) (*Item, error) {
-	if _, ok := p.Items[strings.ToLower(p.Name)]; ok {
+	if _, ok := p.Items[strings.ToLower(i.Name)]; ok {
 		return nil, errors.New("an item with that name already exists")
 	} else {
 		log.Println("adding item: ", p.Name)
 		p.SetItem(&i)
 		return &i, nil
 	}
+}
+
+func (p *Program) DeleteItem(name string) {
+	delete(p.Items, strings.ToLower(name))
 }
