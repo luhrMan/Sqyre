@@ -54,7 +54,6 @@ func (c *Coordinates) SetPoint(p *Point) {
 	c.Points[strings.ToLower(p.Name)] = p
 }
 func (c *Coordinates) DeletePoint(name string) {
-	log.Println(strings.ToLower(name) + " point deleted")
 	delete(c.Points, strings.ToLower(name))
 }
 func (c *Coordinates) AddPoint(p Point) (*Point, error) {
@@ -101,6 +100,10 @@ func (c *Coordinates) AddSearchArea(sa SearchArea) (*SearchArea, error) {
 		c.SetSearchArea(&sa)
 		return &sa, nil
 	}
+}
+
+func (c *Coordinates) DeleteSearchArea(name string) {
+	delete(c.SearchAreas, strings.ToLower(name))
 }
 
 // var (
