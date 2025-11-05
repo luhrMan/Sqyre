@@ -5,6 +5,7 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+	fynetooltip "github.com/dweymouth/fyne-tooltip"
 )
 
 type EditorUi struct {
@@ -131,7 +132,7 @@ func (u *Ui) constructNavButton() {
 	u.EditorUi.NavButton.Text = "Back"
 	u.EditorUi.NavButton.Icon = theme.NavigateBackIcon()
 	u.EditorUi.NavButton.OnTapped = func() {
-		u.Window.SetContent(u.MainUi.CanvasObject)
+		u.Window.SetContent(fynetooltip.AddWindowToolTipLayer(u.MainUi.CanvasObject, u.Window.Canvas()))
 	}
 }
 

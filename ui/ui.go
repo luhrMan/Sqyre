@@ -56,6 +56,7 @@ func InitializeUi(w fyne.Window) *Ui {
 			},
 		},
 		MainUi: &MainUi{
+			CanvasObject: new(fyne.Container),
 			Mui: &MacroUi{
 				MTabs:             NewMacroTabs(),
 				MacroSelectButton: new(widget.Button),

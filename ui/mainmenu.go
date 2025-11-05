@@ -7,6 +7,7 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/dialog"
+	fynetooltip "github.com/dweymouth/fyne-tooltip"
 	"github.com/go-vgo/robotgo"
 )
 
@@ -72,7 +73,7 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 	})
 
 	editor := fyne.NewMenuItem("Open Data Editor", func() {
-		ui.Window.SetContent(ui.EditorUi.CanvasObject)
+		u.Window.SetContent(fynetooltip.AddWindowToolTipLayer(u.EditorUi.CanvasObject, u.Window.Canvas()))
 	})
 
 	// screensize := strconv.Itoa(config.MonitorWidth) + "x" + strconv.Itoa(config.MonitorHeight)
