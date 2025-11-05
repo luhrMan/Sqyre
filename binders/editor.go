@@ -16,37 +16,58 @@ import (
 
 func SetEditorUi() {
 	setEditorLists()
+	setEditorForms()
 	setEditorButtons()
 	ui.GetUi().EditorUi.ProgramSelector.SetOptions(repositories.ProgramRepo().GetAllAsStringSlice())
 }
 
 func setEditorLists() {
+	et := ui.GetUi().EditorTabs
 	setAccordionPointsLists(
-		ui.GetUi().EditorTabs.PointsTab.Widgets["Accordion"].(*widget.Accordion),
-
-		// ui.GetUi().EditorUi.EditorTabs.
-		// 	PointsTab.Content.(*container.Split).Leading.(*fyne.Container).Objects[0].(*widget.Accordion),
+		et.PointsTab.Widgets["Accordion"].(*widget.Accordion),
 	)
 	setAccordionSearchAreasLists(
-		ui.GetUi().EditorTabs.SearchAreasTab.Widgets["Accordion"].(*widget.Accordion),
-
-		// ui.GetUi().EditorUi.EditorTabs.
-		// 	SearchAreasTab.Content.(*container.Split).Leading.(*fyne.Container).Objects[0].(*widget.Accordion),
+		et.SearchAreasTab.Widgets["Accordion"].(*widget.Accordion),
 	)
 	setAccordionItemsLists(
-		ui.GetUi().EditorTabs.ItemsTab.Widgets["Accordion"].(*widget.Accordion),
-		// ui.GetUi().EditorUi.EditorTabs.
-		// 	ItemsTab.Content.(*container.Split).Leading.(*fyne.Container).Objects[0].(*widget.Accordion),
+		et.ItemsTab.Widgets["Accordion"].(*widget.Accordion),
 	)
+	et.ItemsTab.SelectedItem = &models.Item{}
+	et.PointsTab.SelectedItem = &coordinates.Point{}
+	et.SearchAreasTab.SelectedItem = &coordinates.SearchArea{}
 }
 
-func setEditorButtons() {
-	ui.GetUi().EditorTabs.PointsTab.Widgets["Form"].(*widget.Form).OnSubmit = func() {
-		w := ui.GetUi().EditorTabs.PointsTab.Widgets
+func setEditorForms() {
+	et := ui.GetUi().EditorTabs
+	et.ItemsTab.Widgets["Form"].(*widget.Form).OnSubmit = func() {
+		w := et.ItemsTab.Widgets
+		n := w["Name"].(*widget.Entry).Text
+		x, _ := strconv.Atoi(w["Cols"].(*widget.Entry).Text)
+		y, _ := strconv.Atoi(w["Rows"].(*widget.Entry).Text)
+		sm, _ := strconv.Atoi(w["StackMax"].(*widget.Entry).Text)
+		// tags, _ := strconv.Atoi(w["Tags"].(*widget.Entry).Text)
+		if si, ok := et.ItemsTab.SelectedItem.(*models.Item); ok {
+			p := ui.GetUi().ProgramSelector.Text
+			v := si
+			repositories.ProgramRepo().Get(p).DeleteItem(si.Name)
+			v.Name = n
+			v.GridSize = [2]int{x, y}
+			v.StackMax = sm
+			// v.Tags = tags
+			repositories.ProgramRepo().Get(p).SetItem(v)
+			// repositories.ProgramRepo().Get(ui.GetUi().ProgramSelector.Text).
+			repositories.ProgramRepo().Set(p, repositories.ProgramRepo().Get(p))
+			repositories.ProgramRepo().EncodeAll()
+			w[p+"-searchbar"].(*widget.Entry).SetText(v.Name)
+		}
+		// si := &ui.GetUi().EditorTabs.PointsTab.SelectedItem.(coordinates.Point)
+	}
+	et.PointsTab.Widgets["Form"].(*widget.Form).OnSubmit = func() {
+		w := et.PointsTab.Widgets
 		n := w["Name"].(*widget.Entry).Text
 		x, _ := strconv.Atoi(w["X"].(*widget.Entry).Text)
 		y, _ := strconv.Atoi(w["Y"].(*widget.Entry).Text)
-		if si, ok := ui.GetUi().EditorTabs.PointsTab.SelectedItem.(*coordinates.Point); ok {
+		if si, ok := et.PointsTab.SelectedItem.(*coordinates.Point); ok {
 			p := ui.GetUi().ProgramSelector.Text
 			v := si
 			repositories.ProgramRepo().Get(p).Coordinates[config.MainMonitorSizeString].DeletePoint(si.Name)
@@ -58,20 +79,38 @@ func setEditorButtons() {
 			repositories.ProgramRepo().Set(p, repositories.ProgramRepo().Get(p))
 			repositories.ProgramRepo().EncodeAll()
 			w[p+"-searchbar"].(*widget.Entry).SetText(v.Name)
-			// log.Println(repositories.ProgramRepo().Get(ui.GetUi().ProgramSelector.Text).Coordinates[config.MainMonitorSizeString].Points)
-			// ui.GetUi().EditorTabs.PointsTab.Widgets["Points"] = &widget.Accordion{}
-			// ui.GetUi().ActionTabs.PointsAccordion = &widget.Accordion{}
-			// setAccordionPointsLists(ui.GetUi().EditorTabs.PointsTab.Widgets["Points"].(*widget.Accordion))
-			// setAccordionPointsLists(ui.GetUi().ActionTabs.PointsAccordion)
-			// ui.GetUi().EditorTabs.PointsTab.Widgets["Points"].Refresh()
-			// ui.GetUi().ActionTabs.PointsAccordion.Refresh()
-			// ui.GetUi().EditorUi.EditorTabs.
-			// 	PointsTab.Content.(*container.Split).Leading.(*fyne.Container).Objects[0].(*widget.Accordion).Items[0].Detail.(*fyne.Container).Objects[0].(*widget.List).Refresh()
-			// ui.GetUi().EditorUi.EditorTabs.
-			// 	PointsTab.Content.(*container.Split).Leading.(*fyne.Container).Objects[0].(*widget.Accordion).Items[1].Detail.(*fyne.Container).Objects[0].(*widget.List).Refresh()
 		}
 		// si := &ui.GetUi().EditorTabs.PointsTab.SelectedItem.(coordinates.Point)
 	}
+	et.SearchAreasTab.Widgets["Form"].(*widget.Form).OnSubmit = func() {
+		w := et.SearchAreasTab.Widgets
+		n := w["Name"].(*widget.Entry).Text
+		lx, _ := strconv.Atoi(w["LeftX"].(*widget.Entry).Text)
+		ty, _ := strconv.Atoi(w["TopY"].(*widget.Entry).Text)
+		rx, _ := strconv.Atoi(w["RightX"].(*widget.Entry).Text)
+		by, _ := strconv.Atoi(w["BottomY"].(*widget.Entry).Text)
+		if si, ok := et.SearchAreasTab.SelectedItem.(*coordinates.SearchArea); ok {
+			p := ui.GetUi().ProgramSelector.Text
+			v := si
+			repositories.ProgramRepo().Get(p).Coordinates[config.MainMonitorSizeString].DeleteSearchArea(si.Name)
+			v.Name = n
+			v.LeftX = lx
+			v.TopY = ty
+			v.RightX = rx
+			v.BottomY = by
+			repositories.ProgramRepo().Get(p).Coordinates[config.MainMonitorSizeString].SetSearchArea(v)
+			// repositories.ProgramRepo().Get(ui.GetUi().ProgramSelector.Text).
+			repositories.ProgramRepo().Set(p, repositories.ProgramRepo().Get(p))
+			repositories.ProgramRepo().EncodeAll()
+			w[p+"-searchbar"].(*widget.Entry).SetText(v.Name)
+		}
+		// si := &ui.GetUi().EditorTabs.PointsTab.SelectedItem.(coordinates.Point)
+	}
+
+}
+
+func setEditorButtons() {
+
 	ui.GetUi().EditorUi.AddButton.OnTapped = func() {
 		program := ui.GetUi().EditorUi.ProgramSelector.Text
 
@@ -90,8 +129,8 @@ func setEditorButtons() {
 		switch ui.GetUi().EditorUi.EditorTabs.Selected().Text {
 		case "Items":
 			n := ui.GetUi().EditorTabs.ItemsTab.Widgets["Name"].(*widget.Entry).Text
-			x, _ := strconv.Atoi(ui.GetUi().EditorTabs.ItemsTab.Widgets["GridSizeX"].(*widget.Entry).Text)
-			y, _ := strconv.Atoi(ui.GetUi().EditorTabs.ItemsTab.Widgets["GridSizeY"].(*widget.Entry).Text)
+			x, _ := strconv.Atoi(ui.GetUi().EditorTabs.ItemsTab.Widgets["Cols"].(*widget.Entry).Text)
+			y, _ := strconv.Atoi(ui.GetUi().EditorTabs.ItemsTab.Widgets["Rows"].(*widget.Entry).Text)
 			sm, _ := strconv.Atoi(ui.GetUi().EditorTabs.ItemsTab.Widgets["StackMax"].(*widget.Entry).Text)
 			i := models.Item{
 				Name:     n,
@@ -107,6 +146,7 @@ func setEditorButtons() {
 			ui.GetUi().EditorTabs.ItemsTab.Widgets[strings.ToLower(program)+"-searchbar"].(*widget.Entry).SetText(v.Name)
 			ui.GetUi().EditorTabs.ItemsTab.Widgets["Name"].(*widget.Entry).SetText(v.Name)
 			ui.GetUi().EditorTabs.ItemsTab.Widgets[strings.ToLower(program)+"-list"].(*widget.GridWrap).Select(0)
+			RefreshItemsAccordionItems()
 		case "Points":
 			n := ui.GetUi().EditorTabs.PointsTab.Widgets["Name"].(*widget.Entry).Text
 			x, _ := strconv.Atoi(ui.GetUi().EditorTabs.PointsTab.Widgets["X"].(*widget.Entry).Text)
@@ -154,20 +194,38 @@ func setEditorButtons() {
 	}
 	ui.GetUi().EditorUi.RemoveButton.OnTapped = func() {
 		program := ui.GetUi().EditorUi.ProgramSelector.Text
+		et := ui.GetUi().EditorTabs
+		it := et.ItemsTab
+		pt := et.PointsTab
+		sat := et.SearchAreasTab
 		switch ui.GetUi().EditorUi.EditorTabs.Selected().Text {
 		case "Items":
+			repositories.ProgramRepo().Get(program).DeleteItem(it.SelectedItem.(*models.Item).Name)
+			it.SelectedItem = &models.Item{}
+			text := it.Widgets[program+"-searchbar"].(*widget.Entry).Text
+			it.Widgets[program+"-searchbar"].(*widget.Entry).SetText("uuid")
+			it.Widgets[program+"-searchbar"].(*widget.Entry).SetText(text)
+			it.Widgets[strings.ToLower(program)+"-list"].(*widget.GridWrap).UnselectAll()
 
+			it.Widgets[strings.ToLower(program)+"-list"].(*widget.GridWrap).Select(0)
 		case "Points":
-			repositories.ProgramRepo().Get(program).Coordinates[config.MainMonitorSizeString].DeletePoint(ui.GetUi().EditorTabs.PointsTab.SelectedItem.(*coordinates.Point).Name)
-			ui.GetUi().EditorTabs.PointsTab.SelectedItem = &coordinates.Point{}
-			text := ui.GetUi().EditorTabs.PointsTab.Widgets[program+"-searchbar"].(*widget.Entry).Text
-			ui.GetUi().EditorTabs.PointsTab.Widgets[program+"-searchbar"].(*widget.Entry).SetText("uuid")
-			ui.GetUi().EditorTabs.PointsTab.Widgets[program+"-searchbar"].(*widget.Entry).SetText(text)
-			ui.GetUi().EditorTabs.PointsTab.Widgets[strings.ToLower(program)+"-list"].(*widget.List).UnselectAll()
+			repositories.ProgramRepo().Get(program).Coordinates[config.MainMonitorSizeString].DeletePoint(pt.SelectedItem.(*coordinates.Point).Name)
+			pt.SelectedItem = &coordinates.Point{}
+			text := pt.Widgets[program+"-searchbar"].(*widget.Entry).Text
+			pt.Widgets[program+"-searchbar"].(*widget.Entry).SetText("uuid")
+			pt.Widgets[program+"-searchbar"].(*widget.Entry).SetText(text)
+			pt.Widgets[strings.ToLower(program)+"-list"].(*widget.List).UnselectAll()
 
-			ui.GetUi().EditorTabs.PointsTab.Widgets[strings.ToLower(program)+"-list"].(*widget.List).Select(0)
+			pt.Widgets[strings.ToLower(program)+"-list"].(*widget.List).Select(0)
 		case "Search Areas":
+			repositories.ProgramRepo().Get(program).Coordinates[config.MainMonitorSizeString].DeleteSearchArea(sat.SelectedItem.(*coordinates.SearchArea).Name)
+			sat.SelectedItem = &coordinates.SearchArea{}
+			text := sat.Widgets[program+"-searchbar"].(*widget.Entry).Text
+			sat.Widgets[program+"-searchbar"].(*widget.Entry).SetText("uuid")
+			sat.Widgets[program+"-searchbar"].(*widget.Entry).SetText(text)
+			sat.Widgets[strings.ToLower(program)+"-list"].(*widget.List).UnselectAll()
 
+			sat.Widgets[strings.ToLower(program)+"-list"].(*widget.List).Select(0)
 		}
 	}
 }

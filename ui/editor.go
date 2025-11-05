@@ -45,8 +45,8 @@ func (u *Ui) constructEditorTabs() {
 		y1   = "TopY"
 		x2   = "LeftX"
 		y2   = "BottomY"
-		gsx  = "GridSizeX"
-		gsy  = "GridSizeY"
+		cols = "Cols"
+		rows = "Rows"
 		tags = "Tags"
 		sm   = "StackMax"
 		// m    = "Merchant"
@@ -62,14 +62,14 @@ func (u *Ui) constructEditorTabs() {
 	//===========================================================================================================ITEMS
 	itw[acc] = widget.NewAccordion()
 	itw[name] = new(widget.Entry)
-	itw[gsx] = new(widget.Entry)
-	itw[gsy] = new(widget.Entry)
+	itw[cols] = new(widget.Entry)
+	itw[rows] = new(widget.Entry)
 	itw[tags] = widget.NewCard("test", "", nil)
 	itw[sm] = new(widget.Entry)
 	itw[form] = widget.NewForm(
 		widget.NewFormItem(name, itw[name]),
-		widget.NewFormItem(gsx, itw[gsx]),
-		widget.NewFormItem(gsy, itw[gsy]),
+		widget.NewFormItem(cols, itw[cols]),
+		widget.NewFormItem(rows, itw[rows]),
 		widget.NewFormItem(tags, widget.NewEntry()),
 		widget.NewFormItem("", itw[tags]),
 		widget.NewFormItem(sm, itw[sm]),

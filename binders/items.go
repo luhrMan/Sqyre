@@ -25,8 +25,8 @@ func setItemsWidgets(i models.Item) {
 	it := ui.GetUi().EditorTabs.ItemsTab.Widgets
 
 	it["Name"].(*widget.Entry).SetText(i.Name)
-	it["GridSizeX"].(*widget.Entry).SetText(strconv.Itoa(i.GridSize[0]))
-	it["GridSizeY"].(*widget.Entry).SetText(strconv.Itoa(i.GridSize[1]))
+	it["Cols"].(*widget.Entry).SetText(strconv.Itoa(i.GridSize[0]))
+	it["Rows"].(*widget.Entry).SetText(strconv.Itoa(i.GridSize[1]))
 	// it["Tags"].(*widget.Entry).Bind(c.(binding.String))
 	it["StackMax"].(*widget.Entry).SetText(strconv.Itoa(i.StackMax))
 }
