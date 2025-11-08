@@ -24,8 +24,13 @@ func init() {
 	go services.StartHook()
 	services.FailsafeHotkey()
 	serialize.Decode() // read config.yaml data and save into GO structs
-	repositories.MacroRepo()
-	repositories.ProgramRepo()
+	
+	// Initialize repositories - they will load data from config.yaml
+	macroRepo := repositories.MacroRepo()
+	log.Printf("Initialized MacroRepository with %d macros", macroRepo.Count())
+	
+	programRepo := repositories.ProgramRepo()
+	log.Printf("Initialized ProgramRepository with %d programs", programRepo.Count())
 
 	a := app.NewWithID("Sqyre")
 	a.Settings().SetTheme(&assets.CustomTheme{})
@@ -51,7 +56,12 @@ func init() {
 }
 
 func main() {
-	repositories.ProgramRepo().Get(config.DarkAndDarker).GetMasks()["item-corner"] = func(f ...any) *gocv.Mat {
+	// Get the Dark and Darker program and set up the item-corner mask
+	program, err := repositories.ProgramRepo().Get(config.DarkAndDarker)
+	if err != nil {
+		log.Printf("Warning: Could not load %s program: %v", config.DarkAndDarker, err)
+	} else {
+		program.GetMasks()["item-corner"] = func(f ...any) *gocv.Mat {
 		rows, cols, x, y :=
 			f[0].(int), f[1].(int), f[2].(int), f[3].(int)
 		roi :=
@@ -69,20 +79,20 @@ func main() {
 		defer region.Close()
 		region.SetTo(gocv.NewScalar(0, 0, 0, 0))
 
-		return &cmask
+			return &cmask
+		}
 	}
 
 	ui.GetUi().Window.ShowAndRun()
 
 	services.CloseTessClient()
 
-	err := repositories.ProgramRepo().EncodeAll()
-	if err != nil {
-		log.Println(err)
+	// Save all repositories on shutdown
+	if err := repositories.ProgramRepo().Save(); err != nil {
+		log.Printf("Error saving programs: %v", err)
 	}
-	err = repositories.MacroRepo().EncodeAll()
-	if err != nil {
-		log.Println(err)
+	if err := repositories.MacroRepo().Save(); err != nil {
+		log.Printf("Error saving macros: %v", err)
 	}
 }
 

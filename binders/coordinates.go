@@ -8,7 +8,7 @@ import (
 	"Squire/ui"
 	"strconv"
 	"strings"
-
+"log"
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
@@ -55,7 +55,12 @@ func setAccordionSearchAreasLists(acc *widget.Accordion) {
 				name := lists.filtered[id]
 
 				label := co.(*widget.Label)
-				sa, err := repositories.ProgramRepo().Get(p.Name).Coordinates[config.MainMonitorSizeString].GetSearchArea(name)
+				program, err := repositories.ProgramRepo().Get(p.Name)
+				if err != nil {
+					log.Printf("Error getting program %s: %v", p.Name, err)
+					return
+				}
+				sa, err := program.Coordinates[config.MainMonitorSizeString].GetSearchArea(name)
 				if err != nil {
 					return
 				}
@@ -64,7 +69,11 @@ func setAccordionSearchAreasLists(acc *widget.Accordion) {
 		)
 
 		lists.searchareas.OnSelected = func(id widget.ListItemID) {
-			program := repositories.ProgramRepo().Get(p.Name)
+			program, err := repositories.ProgramRepo().Get(p.Name)
+			if err != nil {
+				log.Printf("Error getting program %s: %v", p.Name, err)
+				return
+			}
 			ui.GetUi().ProgramSelector.SetText(program.Name)
 			saName := lists.filtered[id]
 
@@ -147,7 +156,12 @@ func setAccordionPointsLists(acc *widget.Accordion) {
 			func(id widget.ListItemID, co fyne.CanvasObject) {
 				name := lists.filtered[id]
 				label := co.(*widget.Label)
-				point, err := repositories.ProgramRepo().Get(p.Name).Coordinates[config.MainMonitorSizeString].GetPoint(name)
+				program, err := repositories.ProgramRepo().Get(p.Name)
+				if err != nil {
+					log.Printf("Error getting program %s: %v", p.Name, err)
+					return
+				}
+				point, err := program.Coordinates[config.MainMonitorSizeString].GetPoint(name)
 				if err != nil {
 					return
 				}
@@ -156,7 +170,11 @@ func setAccordionPointsLists(acc *widget.Accordion) {
 		)
 
 		lists.points.OnSelected = func(id widget.ListItemID) {
-			program := repositories.ProgramRepo().Get(p.Name)
+			program, err := repositories.ProgramRepo().Get(p.Name)
+			if err != nil {
+				log.Printf("Error getting program %s: %v", p.Name, err)
+				return
+			}
 			ui.GetUi().ProgramSelector.SetText(program.Name)
 
 			pointName := lists.filtered[id]

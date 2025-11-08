@@ -89,8 +89,10 @@ func setMtabSettingsAndWidgets() {
 		return ti
 	}
 	mtabs.OnClosed = func(ti *container.TabItem) {
-		m := repositories.MacroRepo().Get(ti.Text)
-		services.UnregisterHotkey(m.Hotkey)
+		m, err := repositories.MacroRepo().Get(ti.Text)
+		if err == nil {
+			services.UnregisterHotkey(m.Hotkey)
+		}
 		mtabs.SelectIndex(0)
 		mtabs.BoundMacroListWidget.Refresh()
 	}
@@ -103,8 +105,9 @@ func setMtabSettingsAndWidgets() {
 		RefreshItemsAccordionItems()
 	}
 	mtabs.OnSelected = func(ti *container.TabItem) {
-		m := repositories.MacroRepo().Get(ti.Text)
-		if m == nil {
+		m, err := repositories.MacroRepo().Get(ti.Text)
+		if err != nil {
+			log.Printf("Error getting macro %s: %v", ti.Text, err)
 			return
 		}
 
@@ -177,7 +180,7 @@ func setMacroSelect(b *widget.Button) {
 				return container.NewHBox(widget.NewLabel("Template"), layout.NewSpacer(), &widget.Button{Icon: theme.CancelIcon(), Importance: widget.LowImportance})
 			},
 			func(id widget.ListItemID, co fyne.CanvasObject) {
-				k := repositories.MacroRepo().GetAllAsStringSlice()
+				k := repositories.MacroRepo().GetAllKeys()
 				c := co.(*fyne.Container)
 				label := c.Objects[0].(*widget.Label)
 				removeButton := c.Objects[2].(*widget.Button)
@@ -193,23 +196,26 @@ func setMacroSelect(b *widget.Button) {
 				}
 				label.Refresh()
 				removeButton.OnTapped = func() {
-					for _, m := range repositories.MacroRepo().GetAll() {
-						if strings.ToLower(m.Name) == v {
-							dialog.ShowConfirm("Delete Macro", "Are you sure you want to delete this macro?", func(b bool) {
-								if b {
-									repositories.MacroRepo().Delete(v)
-									ui.GetUi().Mui.MTabs.BoundMacroListWidget.RefreshItem(id)
-									for _, ti := range ui.GetUi().Mui.MTabs.Items {
-										if m.Name == ti.Text {
-											ui.GetUi().Mui.MTabs.Remove(ti)
-										}
-									}
-									ui.GetUi().Mui.MTabs.Refresh()
-								}
-							}, ui.GetUi().Window)
-
-						}
+					m, err := repositories.MacroRepo().Get(v)
+					if err != nil {
+						log.Printf("Error getting macro %s: %v", v, err)
+						return
 					}
+					dialog.ShowConfirm("Delete Macro", "Are you sure you want to delete this macro?", func(b bool) {
+						if b {
+							if err := repositories.MacroRepo().Delete(v); err != nil {
+								log.Printf("Error deleting macro %s: %v", v, err)
+								return
+							}
+							ui.GetUi().Mui.MTabs.BoundMacroListWidget.RefreshItem(id)
+							for _, ti := range ui.GetUi().Mui.MTabs.Items {
+								if m.Name == ti.Text {
+									ui.GetUi().Mui.MTabs.Remove(ti)
+								}
+							}
+							ui.GetUi().Mui.MTabs.Refresh()
+						}
+					}, ui.GetUi().Window)
 				}
 				removeButton.Show()
 
@@ -217,10 +223,14 @@ func setMacroSelect(b *widget.Button) {
 		)
 		ui.GetUi().Mui.MTabs.BoundMacroListWidget.OnSelected =
 			func(id widget.ListItemID) {
-				k := repositories.MacroRepo().GetAllAsStringSlice()
+				k := repositories.MacroRepo().GetAllKeys()
 				slices.Sort(k)
 				log.Println(k[id])
-				m := repositories.MacroRepo().Get(k[id])
+				m, err := repositories.MacroRepo().Get(k[id])
+				if err != nil {
+					log.Printf("Error getting macro %s: %v", k[id], err)
+					return
+				}
 				AddMacroTab(m)
 				ui.GetUi().Mui.MTabs.BoundMacroListWidget.RefreshItem(id)
 				ui.GetUi().Mui.MTabs.BoundMacroListWidget.UnselectAll()
