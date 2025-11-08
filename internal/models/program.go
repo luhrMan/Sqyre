@@ -3,18 +3,46 @@ package models
 import (
 	"Squire/internal/config"
 	"Squire/internal/models/coordinates"
-	"Squire/internal/models/serialize"
-	"log"
 	"strconv"
+	"sync"
 
 	"gocv.io/x/gocv"
 )
+
+// ItemRepositoryInterface defines the interface for item data access operations.
+// This interface is defined in the models package to avoid circular dependencies.
+type ItemRepositoryInterface interface {
+	Get(name string) (*Item, error)
+	GetAll() map[string]*Item
+	GetAllKeys() []string
+	Set(name string, item *Item) error
+	Delete(name string) error
+	Save() error
+	Count() int
+	GetAllWithProgramPrefix() map[string]*Item
+	GetAllSorted() []string
+}
+
+// ItemRepositoryFactory is a function type that creates ItemRepository instances.
+// This is set by the repositories package to avoid circular dependencies.
+var ItemRepositoryFactory func(*Program) ItemRepositoryInterface
 
 type Program struct {
 	Name        string
 	Items       map[string]*Item
 	Coordinates map[string]*coordinates.Coordinates
 	masks       map[string]func(f ...any) *gocv.Mat
+	
+	itemRepo   ItemRepositoryInterface // Lazy-initialized ItemRepository
+	itemRepoMu sync.Mutex              // Protects itemRepo initialization
+}
+
+type Item struct {
+	Name     string   `json:"name"`
+	GridSize [2]int   `json:"gridSize"`
+	Tags     []string `json:"tags"`
+	StackMax int      `json:"stackMax"`
+	Merchant string   `json:"merchant"`
 }
 
 func NewProgram() *Program {
@@ -34,69 +62,21 @@ func (p *Program) GetMasks() map[string]func(f ...any) *gocv.Mat {
 	return p.masks
 }
 
-type Item struct {
-	Name     string   `json:"name"`
-	GridSize [2]int   `json:"gridSize"`
-	Tags     []string `json:"tags"`
-	StackMax int      `json:"stackMax"`
-	Merchant string   `json:"merchant"`
+// ItemRepo returns an ItemRepository for managing this program's items.
+// The repository is lazily initialized on first access and provides
+// thread-safe CRUD operations for items within this program.
+// Note: This method is named ItemRepo() instead of Items() to avoid
+// conflict with the Items field used for serialization.
+func (p *Program) ItemRepo() ItemRepositoryInterface {
+	p.itemRepoMu.Lock()
+	defer p.itemRepoMu.Unlock()
+	
+	if p.itemRepo == nil {
+		if ItemRepositoryFactory == nil {
+			panic("ItemRepositoryFactory not initialized - repositories package not imported")
+		}
+		p.itemRepo = ItemRepositoryFactory(p)
+	}
+	
+	return p.itemRepo
 }
-
-func (p *Program) Decode(s string) (*Program, error) {
-	var (
-		keyStr = "programs" + "." + s + "."
-		err    error
-		errStr = "problem here lol"
-	)
-
-	p = NewProgram()
-	err = serialize.GetViper().UnmarshalKey(keyStr+"name", &p.Name)
-	if err != nil {
-		log.Fatalf(errStr, err)
-	}
-
-	err = serialize.GetViper().UnmarshalKey(keyStr+"items", &p.Items)
-	if err != nil {
-		log.Fatalf(errStr, err)
-	}
-
-	err = serialize.GetViper().UnmarshalKey(keyStr+"coordinates", &p.Coordinates)
-	if err != nil {
-		log.Fatalf(errStr, err)
-	}
-	log.Println("Successfully decoded program:", p.Name)
-	return p, nil
-}
-
-// func DecodeAll() map[string]*Program {
-// 	var (
-// 		ps = make(map[string]*Program)
-// 		ss = serialize.GetViper().GetStringMap("programs")
-// 	)
-// 	for s := range ss {
-// 		p := Decode(s)
-// 		ps[s] = p
-// 	}
-// 	log.Println("Successfully decoded all programs", ps)
-// 	return ps
-// }
-
-// func Encode(p *Program) error {
-// 	serialize.GetViper().Set("programs."+p.Name, p)
-// 	err := serialize.GetViper().WriteConfig()
-// 	if err != nil {
-// 		return fmt.Errorf("error encoding program: %v", err)
-// 	}
-// 	log.Println("Successfully encoded program:", p.Name)
-// 	return nil
-// }
-
-// func EncodeAll(pm map[string]*Program) error {
-// 	serialize.GetViper().Set("programs", pm)
-// 	err := serialize.GetViper().WriteConfig()
-// 	if err != nil {
-// 		return fmt.Errorf("error encoding programs: %v", err)
-// 	}
-// 	log.Printf("Successfully encoded programs")
-// 	return nil
-// }

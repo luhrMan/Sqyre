@@ -2,50 +2,37 @@ package repositories
 
 import (
 	"Squire/internal/models"
-	"Squire/internal/models/serialize"
-	"log"
 	"sync"
 )
 
-type MacroRepository[T models.Macro] struct {
-	*repository[models.Macro]
-
-	// macros map[string]*macro.Macro
+// MacroRepository provides data access operations for Macro models
+type MacroRepository struct {
+	*BaseRepository[models.Macro]
 }
 
-var mr *MacroRepository[models.Macro]
-var macroInit sync.Once
+var (
+	macroRepo *MacroRepository
+	macroOnce sync.Once
+)
 
-func MacroRepo() *MacroRepository[models.Macro] {
-	macroInit.Do(func() {
-		mr = &MacroRepository[models.Macro]{
-			repository: &repository[models.Macro]{
-				model:  "macros",
-				models: make(map[string]*models.Macro),
-			},
+// MacroRepo returns the singleton MacroRepository instance.
+// On first call, it initializes the repository and loads all macros from disk.
+func MacroRepo() *MacroRepository {
+	macroOnce.Do(func() {
+		macroRepo = &MacroRepository{
+			BaseRepository: NewBaseRepository[models.Macro](
+				"macros",
+				decodeMacro,
+				func() *models.Macro {
+					return models.NewMacro("", 0, []string{})
+				},
+			),
 		}
-		mr.models = mr.DecodeAll()
+		// Load all macros from disk on initialization
+		if err := macroRepo.Reload(); err != nil {
+			// Log error but don't panic - repository is still usable
+			// Error is already logged in Reload()
+		}
 	})
-	return mr
+	return macroRepo
 }
-
-func (r *MacroRepository[T]) Decode(s string) (*models.Macro, error) {
-	return r.m.Decode(s)
-}
-
-func (r *MacroRepository[T]) DecodeAll() map[string]*models.Macro {
-	var (
-		mm = make(map[string]*models.Macro)
-		ss = serialize.GetViper().GetStringMap("macros")
-	)
-	for s, m := range ss {
-		m, _ = r.Decode(s)
-		mm[s] = m.(*models.Macro)
-	}
-	log.Printf("Successfully decoded all %v: %v", "macros", mm)
-	return mm
-}
-
-// func (r *MacroRepository) Refresh() {
-// 	r.macros = macro.DecodeAll()
-// }

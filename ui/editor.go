@@ -16,6 +16,7 @@ type EditorUi struct {
 	ProgramSelector *widget.SelectEntry
 	EditorTabs      struct {
 		*container.AppTabs
+		ProgramsTab    *EditorTab
 		ItemsTab       *EditorTab
 		PointsTab      *EditorTab
 		SearchAreasTab *EditorTab
@@ -50,13 +51,29 @@ func (u *Ui) constructEditorTabs() {
 		tags = "Tags"
 		sm   = "StackMax"
 		// m    = "Merchant"
-		form = "Form"
-		acc  = "Accordion"
+		form  = "Form"
+		acc   = "Accordion"
+		plist = "list"
 
-		et   = ui.EditorTabs
-		itw  = et.ItemsTab.Widgets
-		ptw  = et.PointsTab.Widgets
-		satw = et.SearchAreasTab.Widgets
+		et    = ui.EditorTabs
+		protw = et.ProgramsTab.Widgets
+		itw   = et.ItemsTab.Widgets
+		ptw   = et.PointsTab.Widgets
+		satw  = et.SearchAreasTab.Widgets
+	)
+
+	protw[name] = new(widget.Entry)
+	protw[plist] = new(widget.List)
+	protw["searchbar"] = new(widget.Entry)
+	protw[form] = widget.NewForm(
+		widget.NewFormItem(name, protw[name]),
+	)
+	protw[form].(*widget.Form).SubmitText = "Update"
+
+	et.ProgramsTab.TabItem = NewEditorTab(
+		"Programs",
+		container.NewBorder(protw["searchbar"], nil, nil, nil, protw[plist]),
+		container.NewBorder(nil, nil, nil, nil, protw[form]),
 	)
 
 	//===========================================================================================================ITEMS
@@ -123,6 +140,7 @@ func (u *Ui) constructEditorTabs() {
 		container.NewBorder(nil, nil, nil, nil, satw[form]),
 	)
 
+	et.Append(et.ProgramsTab.TabItem)
 	et.Append(et.ItemsTab.TabItem)
 	et.Append(et.PointsTab.TabItem)
 	et.Append(et.SearchAreasTab.TabItem)

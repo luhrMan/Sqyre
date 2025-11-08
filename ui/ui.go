@@ -39,11 +39,15 @@ func InitializeUi(w fyne.Window) *Ui {
 			ProgramSelector: new(widget.SelectEntry),
 			EditorTabs: struct {
 				*container.AppTabs
+				ProgramsTab    *EditorTab
 				ItemsTab       *EditorTab
 				PointsTab      *EditorTab
 				SearchAreasTab *EditorTab
 			}{
 				AppTabs: new(container.AppTabs),
+				ProgramsTab: &EditorTab{
+					Widgets: make(map[string]fyne.Widget),
+				},
 				ItemsTab: &EditorTab{
 					Widgets: make(map[string]fyne.Widget),
 				},

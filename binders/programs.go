@@ -8,6 +8,7 @@ import (
 	"Squire/internal/models/repositories"
 	"Squire/ui"
 	"image/color"
+	"log"
 	"slices"
 	"strconv"
 	"strings"
@@ -37,6 +38,51 @@ func RefreshItemsAccordionItems() {
 	}
 }
 
+func setProgramList(list *widget.List) {
+	var (
+		filtered = repositories.ProgramRepo().GetAllKeys()
+	)
+	ui.GetUi().EditorTabs.ProgramsTab.Widgets["searchbar"].(*widget.Entry).SetPlaceHolder("Search here")
+	ui.GetUi().EditorTabs.ProgramsTab.Widgets["searchbar"].(*widget.Entry).OnChanged = func(s string) {
+		defaultList := repositories.ProgramRepo().GetAllKeys()
+		defer list.ScrollToTop()
+		defer list.Refresh()
+
+		if s == "" {
+			filtered = defaultList
+			return
+		}
+		filtered = []string{}
+		for _, i := range defaultList {
+			if fuzzy.MatchFold(s, i) {
+				filtered = append(filtered, i)
+			}
+		}
+	}
+
+	list.Length = func() int {
+		return len(filtered)
+	}
+	list.CreateItem = func() fyne.CanvasObject {
+		return widget.NewLabel("template")
+	}
+	list.UpdateItem = func(lii widget.ListItemID, co fyne.CanvasObject) {
+		label := co.(*widget.Label)
+		pname := filtered[lii]
+		label.SetText(pname)
+	}
+	list.OnSelected = func(id widget.ListItemID) {
+		ui.GetUi().EditorTabs.ProgramsTab.Widgets["Name"].(*widget.Entry).SetText(filtered[id])
+		program, err := repositories.ProgramRepo().Get(filtered[id])
+		if err != nil {
+			log.Printf("Error getting program %s: %v", filtered[id], err)
+			return
+		}
+		ui.GetUi().EditorTabs.ProgramsTab.SelectedItem = program
+		ui.GetUi().ProgramSelector.SetText(filtered[id])
+	}
+}
+
 func setAccordionItemsLists(acc *widget.Accordion) {
 	acc.Items = []*widget.AccordionItem{}
 
@@ -52,7 +98,7 @@ func setAccordionItemsLists(acc *widget.Accordion) {
 		}{
 			searchbar: new(widget.Entry),
 			items:     new(widget.GridWrap),
-			filtered:  p.GetItemsAsStringSlice(),
+			filtered:  p.ItemRepo().GetAllKeys(),
 		}
 		lists.items = widget.NewGridWrap(
 			func() int {
@@ -79,7 +125,12 @@ func setAccordionItemsLists(acc *widget.Accordion) {
 				tt := stack.Objects[2].(*ttwidget.Label)
 				tt.SetToolTip(name)
 
-				item, err := repositories.ProgramRepo().Get(p.Name).GetItem(name)
+				program, err := repositories.ProgramRepo().Get(p.Name)
+				if err != nil {
+					log.Printf("Error getting program %s: %v", p.Name, err)
+					return
+				}
+				item, err := program.ItemRepo().Get(name)
 				if err != nil {
 					return
 				}
@@ -105,11 +156,15 @@ func setAccordionItemsLists(acc *widget.Accordion) {
 		lists.items.OnSelected = func(id widget.GridWrapItemID) {
 			defer lists.items.RefreshItem(id)
 
-			program := repositories.ProgramRepo().Get(p.Name)
+			program, err := repositories.ProgramRepo().Get(p.Name)
+			if err != nil {
+				log.Printf("Error getting program %s: %v", p.Name, err)
+				return
+			}
 			ui.GetUi().ProgramSelector.SetText(program.Name)
 			itemName := lists.filtered[id]
 
-			item, err := program.GetItem(itemName)
+			item, err := program.ItemRepo().Get(itemName)
 			if err != nil {
 				return
 			}
@@ -140,7 +195,7 @@ func setAccordionItemsLists(acc *widget.Accordion) {
 		lists.searchbar = &widget.Entry{
 			PlaceHolder: "Search here",
 			OnChanged: func(s string) {
-				defaultList := p.GetItemsAsStringSlice()
+				defaultList := p.ItemRepo().GetAllKeys()
 				defer lists.items.ScrollToTop()
 				defer lists.items.Refresh()
 
