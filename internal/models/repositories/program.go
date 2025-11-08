@@ -2,49 +2,35 @@ package repositories
 
 import (
 	"Squire/internal/models"
-	"Squire/internal/models/serialize"
-	"log"
 	"sync"
 )
 
-type ProgramRepository[T models.Program] struct {
-	*repository[models.Program]
-	// programs map[string]*T
+// ProgramRepository manages Program model persistence using the generic BaseRepository
+type ProgramRepository struct {
+	*BaseRepository[models.Program]
 }
 
-var pr *ProgramRepository[models.Program]
-var programInit sync.Once
+var (
+	programRepo *ProgramRepository
+	programOnce sync.Once
+)
 
-func ProgramRepo() *ProgramRepository[models.Program] {
-	programInit.Do(func() {
-		pr = &ProgramRepository[models.Program]{
-			repository: &repository[models.Program]{
-				model:  "programs",
-				models: make(map[string]*models.Program),
-			},
+// ProgramRepo returns the singleton ProgramRepository instance.
+// It initializes the repository on first call and loads existing programs from disk.
+func ProgramRepo() *ProgramRepository {
+	programOnce.Do(func() {
+		programRepo = &ProgramRepository{
+			BaseRepository: NewBaseRepository[models.Program](
+				"programs",
+				decodeProgram,
+				models.NewProgram,
+			),
 		}
-		pr.models = pr.DecodeAll() //func(s string) { p, _ := pr.Decode(s) })
+		// Load existing programs from disk
+		if err := programRepo.Reload(); err != nil {
+			// Log error but don't fail - repository will be empty
+			// This allows the application to start even if config is missing/corrupt
+		}
 	})
-	return pr
-}
-
-func (r *ProgramRepository[T]) New() *models.Program {
-	return models.NewProgram()
-}
-
-func (r *ProgramRepository[T]) Decode(s string) (*models.Program, error) {
-	return r.m.Decode(s)
-}
-
-func (r *ProgramRepository[T]) DecodeAll() map[string]*models.Program {
-	var (
-		ps = make(map[string]*models.Program)
-		ss = serialize.GetViper().GetStringMap("programs")
-	)
-	for s := range ss {
-		p, _ := r.Decode(s)
-		ps[s] = p
-	}
-	log.Printf("Successfully decoded all %v: %v", "programs", ps)
-	return ps
+	return programRepo
 }

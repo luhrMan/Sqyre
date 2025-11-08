@@ -5,7 +5,6 @@ import (
 	"Squire/internal/models/coordinates"
 	"Squire/ui"
 	"slices"
-
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/data/binding"
 )
