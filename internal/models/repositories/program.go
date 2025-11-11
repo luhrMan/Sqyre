@@ -20,7 +20,7 @@ var (
 func ProgramRepo() *ProgramRepository {
 	programOnce.Do(func() {
 		programRepo = &ProgramRepository{
-			BaseRepository: NewBaseRepository[models.Program](
+			BaseRepository: NewBaseRepository(
 				"programs",
 				decodeProgram,
 				models.NewProgram,

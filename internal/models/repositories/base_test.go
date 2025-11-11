@@ -13,6 +13,16 @@ type testModel struct {
 	Value int
 }
 
+// GetKey returns the unique identifier for this testModel.
+func (m *testModel) GetKey() string {
+	return m.Name
+}
+
+// SetKey updates the unique identifier for this testModel.
+func (m *testModel) SetKey(key string) {
+	m.Name = key
+}
+
 // newTestModel creates a new testModel instance
 func newTestModel() *testModel {
 	return &testModel{}

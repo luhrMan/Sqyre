@@ -2,7 +2,6 @@ package binders
 
 import (
 	"Squire/internal/models/actions"
-	"Squire/internal/models/coordinates"
 	"Squire/ui"
 	"slices"
 	"fyne.io/fyne/v2"
@@ -13,7 +12,7 @@ func InitBinds() {
 	ats := ui.GetUi().ActionTabs
 
 	ats.BoundWait = binding.BindStruct(actions.NewWait(0))
-	m := actions.NewMove(coordinates.Point{Name: "blank", X: 0, Y: 0})
+	m := actions.NewMove(actions.Point{Name: "blank", X: 0, Y: 0})
 	ats.BoundMove = binding.BindStruct(m)
 	ats.BoundPoint = binding.BindStruct(&m.Point)
 	ats.BoundKey = binding.BindStruct(actions.NewKey("ctrl", true))
@@ -22,11 +21,11 @@ func InitBinds() {
 	l := actions.NewLoop(1, "blank", []actions.ActionInterface{})
 	ats.BoundLoop = binding.BindStruct(l)
 	ats.BoundLoopAA = binding.BindStruct(l.AdvancedAction)
-	is := actions.NewImageSearch("blank", []actions.ActionInterface{}, []string{}, coordinates.SearchArea{}, 1, 1, 0.95)
+	is := actions.NewImageSearch("blank", []actions.ActionInterface{}, []string{}, actions.SearchArea{}, 1, 1, 0.95)
 	ats.BoundImageSearch = binding.BindStruct(is)
 	ats.BoundImageSearchAA = binding.BindStruct(is.AdvancedAction)
 	ats.BoundImageSearchSA = binding.BindStruct(&is.SearchArea)
-	ocr := actions.NewOcr("blank", []actions.ActionInterface{}, "blank", coordinates.SearchArea{})
+	ocr := actions.NewOcr("blank", []actions.ActionInterface{}, "blank", actions.SearchArea{})
 	ats.BoundOcr = binding.BindStruct(ocr)
 	ats.BoundOcrAA = binding.BindStruct(ocr.AdvancedAction)
 	ats.BoundOcrSA = binding.BindStruct(&ocr.SearchArea)
@@ -39,12 +38,12 @@ func ResetBinds() {
 	n, _ := ats.BoundPoint.GetValue("Name")
 	x, _ := ats.BoundPoint.GetValue("X")
 	y, _ := ats.BoundPoint.GetValue("Y")
-	bindAction(actions.NewMove(coordinates.Point{n.(string), x.(int), y.(int)})) //n.(string), x.(int), y.(int)}))
+	bindAction(actions.NewMove(actions.Point{n.(string), x.(int), y.(int)})) //n.(string), x.(int), y.(int)}))
 	bindAction(actions.NewKey(ats.BoundKeySelect.Selected, ats.BoundStateToggle.Toggled))
 	bindAction(actions.NewClick(ats.BoundButtonToggle.Toggled))
 	bindAction(actions.NewLoop(int(ats.BoundCountSlider.Value), ats.BoundLoopNameEntry.Text, []actions.ActionInterface{}))
-	bindAction(actions.NewImageSearch(ats.BoundImageSearchNameEntry.Text, []actions.ActionInterface{}, []string{}, coordinates.SearchArea{}, int(ats.BoundImageSearchRowSplitSlider.Value), int(ats.BoundImageSearchColSplitSlider.Value), 0.95))
-	bindAction(actions.NewOcr(ats.BoundOcrNameEntry.Text, []actions.ActionInterface{}, ats.BoundOcrTargetEntry.Text, coordinates.SearchArea{}))
+	bindAction(actions.NewImageSearch(ats.BoundImageSearchNameEntry.Text, []actions.ActionInterface{}, []string{}, actions.SearchArea{}, int(ats.BoundImageSearchRowSplitSlider.Value), int(ats.BoundImageSearchColSplitSlider.Value), 0.95))
+	bindAction(actions.NewOcr(ats.BoundOcrNameEntry.Text, []actions.ActionInterface{}, ats.BoundOcrTargetEntry.Text, actions.SearchArea{}))
 }
 
 func SetActionTabBindings() {

@@ -3,7 +3,6 @@ package binders
 import (
 	"Squire/internal/config"
 	"Squire/internal/models"
-	"Squire/internal/models/coordinates"
 	"Squire/internal/models/repositories"
 	"Squire/ui"
 	"errors"
@@ -38,8 +37,8 @@ func setEditorLists() {
 	)
 	et.ProgramsTab.SelectedItem = &models.Program{}
 	et.ItemsTab.SelectedItem = &models.Item{}
-	et.PointsTab.SelectedItem = &coordinates.Point{}
-	et.SearchAreasTab.SelectedItem = &coordinates.SearchArea{}
+	et.PointsTab.SelectedItem = &models.Point{}
+	et.SearchAreasTab.SelectedItem = &models.SearchArea{}
 }
 
 func setEditorForms() {
@@ -95,14 +94,13 @@ func setEditorForms() {
 			}
 			w[p+"-searchbar"].(*widget.Entry).SetText(v.Name)
 		}
-		// si := &ui.GetUi().EditorTabs.PointsTab.SelectedItem.(coordinates.Point)
 	}
 	et.PointsTab.Widgets["Form"].(*widget.Form).OnSubmit = func() {
 		w := et.PointsTab.Widgets
 		n := w["Name"].(*widget.Entry).Text
 		x, _ := strconv.Atoi(w["X"].(*widget.Entry).Text)
 		y, _ := strconv.Atoi(w["Y"].(*widget.Entry).Text)
-		if si, ok := et.PointsTab.SelectedItem.(*coordinates.Point); ok {
+		if si, ok := et.PointsTab.SelectedItem.(*models.Point); ok {
 			p := ui.GetUi().ProgramSelector.Text
 			program, err := repositories.ProgramRepo().Get(p)
 			if err != nil {
@@ -121,7 +119,6 @@ func setEditorForms() {
 			}
 			w[p+"-searchbar"].(*widget.Entry).SetText(v.Name)
 		}
-		// si := &ui.GetUi().EditorTabs.PointsTab.SelectedItem.(coordinates.Point)
 	}
 	et.SearchAreasTab.Widgets["Form"].(*widget.Form).OnSubmit = func() {
 		w := et.SearchAreasTab.Widgets
@@ -130,7 +127,7 @@ func setEditorForms() {
 		ty, _ := strconv.Atoi(w["TopY"].(*widget.Entry).Text)
 		rx, _ := strconv.Atoi(w["RightX"].(*widget.Entry).Text)
 		by, _ := strconv.Atoi(w["BottomY"].(*widget.Entry).Text)
-		if si, ok := et.SearchAreasTab.SelectedItem.(*coordinates.SearchArea); ok {
+		if si, ok := et.SearchAreasTab.SelectedItem.(*models.SearchArea); ok {
 			p := ui.GetUi().ProgramSelector.Text
 			program, err := repositories.ProgramRepo().Get(p)
 			if err != nil {
@@ -151,7 +148,6 @@ func setEditorForms() {
 			}
 			w[p+"-searchbar"].(*widget.Entry).SetText(v.Name)
 		}
-		// si := &ui.GetUi().EditorTabs.PointsTab.SelectedItem.(coordinates.Point)
 	}
 
 }
@@ -176,25 +172,44 @@ func setEditorButtons() {
 		}
 
 		switch ui.GetUi().EditorUi.EditorTabs.Selected().Text {
+		case "Programs":
+			n := ui.GetUi().EditorTabs.ProgramsTab.Widgets["Name"].(*widget.Entry).Text
+
+			// Check if item already exists
+			_, err := repositories.ProgramRepo().Get(n)
+			if err == nil {
+				dialog.ShowError(errors.New("an item with that name already exists"), ui.GetUi().Window)
+				return
+			}
+
+			if err := repositories.ProgramRepo().Set(n, repositories.ProgramRepo().New()); err != nil {
+				dialog.ShowError(err, ui.GetUi().Window)
+				return
+			}
+			ui.GetUi().EditorTabs.ProgramsTab.Widgets["searchbar"].(*widget.Entry).SetText(n)
+			ui.GetUi().EditorTabs.ProgramsTab.Widgets["Name"].(*widget.Entry).SetText(n)
+			ui.GetUi().EditorTabs.ProgramsTab.Widgets["list"].(*widget.GridWrap).Select(0)
 		case "Items":
 			n := ui.GetUi().EditorTabs.ItemsTab.Widgets["Name"].(*widget.Entry).Text
 			x, _ := strconv.Atoi(ui.GetUi().EditorTabs.ItemsTab.Widgets["Cols"].(*widget.Entry).Text)
 			y, _ := strconv.Atoi(ui.GetUi().EditorTabs.ItemsTab.Widgets["Rows"].(*widget.Entry).Text)
 			sm, _ := strconv.Atoi(ui.GetUi().EditorTabs.ItemsTab.Widgets["StackMax"].(*widget.Entry).Text)
-			i := models.Item{
-				Name:     n,
-				GridSize: [2]int{x, y},
-				StackMax: sm,
-			}
+
 			pro := getProgram()
 			if pro == nil {
 				return
 			}
 			// Check if item already exists
-			_, err := pro.ItemRepo().Get(i.Name)
+			_, err := pro.ItemRepo().Get(n)
 			if err == nil {
 				dialog.ShowError(errors.New("an item with that name already exists"), ui.GetUi().Window)
 				return
+			}
+
+			i := models.Item{
+				Name:     n,
+				GridSize: [2]int{x, y},
+				StackMax: sm,
 			}
 			if err := pro.ItemRepo().Set(i.Name, &i); err != nil {
 				dialog.ShowError(err, ui.GetUi().Window)
@@ -209,7 +224,7 @@ func setEditorButtons() {
 			n := ui.GetUi().EditorTabs.PointsTab.Widgets["Name"].(*widget.Entry).Text
 			x, _ := strconv.Atoi(ui.GetUi().EditorTabs.PointsTab.Widgets["X"].(*widget.Entry).Text)
 			y, _ := strconv.Atoi(ui.GetUi().EditorTabs.PointsTab.Widgets["Y"].(*widget.Entry).Text)
-			p := coordinates.Point{
+			p := models.Point{
 				Name: n,
 				X:    x,
 				Y:    y,
@@ -232,7 +247,7 @@ func setEditorButtons() {
 			ty, _ := strconv.Atoi(ui.GetUi().EditorTabs.SearchAreasTab.Widgets["TopY"].(*widget.Entry).Text)
 			rx, _ := strconv.Atoi(ui.GetUi().EditorTabs.SearchAreasTab.Widgets["RightX"].(*widget.Entry).Text)
 			by, _ := strconv.Atoi(ui.GetUi().EditorTabs.SearchAreasTab.Widgets["BottomY"].(*widget.Entry).Text)
-			sa := coordinates.SearchArea{
+			sa := models.SearchArea{
 				Name:    n,
 				LeftX:   lx,
 				TopY:    ty,
@@ -296,8 +311,8 @@ func setEditorButtons() {
 				log.Printf("Error getting program %s: %v", program, err)
 				return
 			}
-			prog.Coordinates[config.MainMonitorSizeString].DeletePoint(pt.SelectedItem.(*coordinates.Point).Name)
-			pt.SelectedItem = &coordinates.Point{}
+			prog.Coordinates[config.MainMonitorSizeString].DeletePoint(pt.SelectedItem.(*models.Point).Name)
+			pt.SelectedItem = &models.Point{}
 			text := pt.Widgets[program+"-searchbar"].(*widget.Entry).Text
 			pt.Widgets[program+"-searchbar"].(*widget.Entry).SetText("uuid")
 			pt.Widgets[program+"-searchbar"].(*widget.Entry).SetText(text)
@@ -310,8 +325,8 @@ func setEditorButtons() {
 				log.Printf("Error getting program %s: %v", program, err)
 				return
 			}
-			prog.Coordinates[config.MainMonitorSizeString].DeleteSearchArea(sat.SelectedItem.(*coordinates.SearchArea).Name)
-			sat.SelectedItem = &coordinates.SearchArea{}
+			prog.Coordinates[config.MainMonitorSizeString].DeleteSearchArea(sat.SelectedItem.(*models.SearchArea).Name)
+			sat.SelectedItem = &models.SearchArea{}
 			text := sat.Widgets[program+"-searchbar"].(*widget.Entry).Text
 			sat.Widgets[program+"-searchbar"].(*widget.Entry).SetText("uuid")
 			sat.Widgets[program+"-searchbar"].(*widget.Entry).SetText(text)

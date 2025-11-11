@@ -30,6 +30,102 @@ type Repository[T any] interface {
 }
 
 // BaseRepository provides generic repository functionality with thread-safe operations
+// for top-level models that are persisted directly to the configuration file.
+//
+// # Purpose
+//
+// BaseRepository implements the Repository pattern for models that are stored at the
+// root level of the configuration (e.g., Macros, Programs). It handles:
+// - Thread-safe CRUD operations with sync.RWMutex
+// - Automatic persistence to disk via Viper
+// - Case-insensitive key normalization
+// - Lazy loading and reloading from configuration
+//
+// # When to Use BaseRepository
+//
+// Use BaseRepository for:
+// - Top-level domain models (Macro, Program)
+// - Models that are stored directly in config.yaml under their own key
+// - Models that don't belong to another aggregate root
+// - Models that need independent persistence
+//
+// Example config structure for BaseRepository models:
+//
+//	macros:
+//	  "my-macro":
+//	    name: "my-macro"
+//	    hotkey: ["ctrl", "shift", "m"]
+//	  "another-macro":
+//	    name: "another-macro"
+//	    hotkey: ["ctrl", "alt", "a"]
+//
+// # When NOT to Use BaseRepository
+//
+// Do NOT use BaseRepository for:
+// - Nested models (Items, Points, SearchAreas) - use NestedRepository instead
+// - Models that belong to an aggregate root
+// - Models that should be saved as part of their parent
+//
+// See NestedRepository for managing models within an aggregate root context.
+//
+// # Architecture: BaseRepository vs NestedRepository
+//
+// BaseRepository (for top-level models):
+//   - Persists directly to config via Viper.WriteConfig()
+//   - Each model is independent
+//   - Example: Macro, Program
+//
+// NestedRepository (for child models):
+//   - Persists by saving the parent aggregate root
+//   - Models are part of a larger aggregate
+//   - Example: Item (within Program), Point (within Program/Coordinates)
+//
+// # Type Parameters
+//
+// T: The model type. While T can be any type, *T should implement BaseModel interface
+// to work correctly with repository operations. The repository stores pointers to T (*T).
+//
+// # Thread Safety
+//
+// All operations are thread-safe using sync.RWMutex:
+// - Read operations (Get, GetAll, GetAllKeys, Count) use RLock
+// - Write operations (Set, Delete, Save, Reload) use Lock
+// - Multiple concurrent reads are allowed
+// - Writes are exclusive
+//
+// # Example Usage
+//
+// Creating a repository:
+//
+//	macroRepo := NewBaseRepository[models.Macro](
+//	    "macros",                              // Config key in YAML
+//	    func(key string) (*models.Macro, error) {
+//	        // Decode logic using Viper
+//	        return decodeMacro(key)
+//	    },
+//	    func() *models.Macro {
+//	        return &models.Macro{}             // Factory function
+//	    },
+//	)
+//
+// Using the repository:
+//
+//	// Create and store a model
+//	macro := &models.Macro{Name: "test"}
+//	err := macroRepo.Set("test", macro)        // Saves to disk immediately
+//
+//	// Retrieve a model
+//	retrieved, err := macroRepo.Get("test")    // Case-insensitive
+//
+//	// List all models
+//	allMacros := macroRepo.GetAll()            // Returns a copy
+//	keys := macroRepo.GetAllKeys()             // Sorted keys
+//
+//	// Delete a model
+//	err = macroRepo.Delete("test")             // Saves to disk immediately
+//
+//	// Reload from disk
+//	err = macroRepo.Reload()                   // Refreshes from config file
 type BaseRepository[T any] struct {
 	mu         sync.RWMutex
 	models     map[string]*T
@@ -38,7 +134,8 @@ type BaseRepository[T any] struct {
 	newFunc    NewFunc[T]
 }
 
-// NewBaseRepository creates a new BaseRepository instance
+// NewBaseRepository creates a new BaseRepository instance.
+// The type parameter T should be a type where *T implements models.BaseModel.
 // configKey: the key in config.yaml (e.g., "macros", "programs")
 // decodeFunc: function to decode a single model from Viper
 // newFunc: function to create a new model instance

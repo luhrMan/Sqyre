@@ -14,3 +14,10 @@ func newBaseAction(t string) *BaseAction {
 		uid:  uuid.NewString(),
 	}
 }
+
+// Point represents a screen coordinate for move actions
+type Point struct {
+	Name string
+	X    int
+	Y    int
+}

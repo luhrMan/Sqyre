@@ -25,10 +25,14 @@ func setupTestConfig(t *testing.T) {
 	viper.AddConfigPath(testdataPath)
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")
-
 	if err := viper.ReadInConfig(); err != nil {
 		t.Fatalf("Failed to read test config: %v", err)
 	}
+	viper.SetConfigName("writeable-config")
+	viper.WriteConfig()
+
+	// viper.SetConfigFile(testdataPath)
+
 }
 
 // resetMacroRepo resets the singleton for testing
@@ -90,9 +94,9 @@ func TestMacroRepo_LoadFromConfig(t *testing.T) {
 	}
 
 	// Get the test macro
-	macro, err := repo.Get("testmacro")
+	macro, err := repo.Get("test macro")
 	if err != nil {
-		t.Fatalf("Failed to get testmacro: %v", err)
+		t.Fatalf("Failed to get test macro: %v", err)
 	}
 
 	// Verify macro properties
@@ -123,9 +127,9 @@ func TestMacroRepo_DecodeWithActions(t *testing.T) {
 
 	repo := MacroRepo()
 
-	macro, err := repo.Get("testmacro")
+	macro, err := repo.Get("test macro")
 	if err != nil {
-		t.Fatalf("Failed to get testmacro: %v", err)
+		t.Fatalf("Failed to get test macro: %v", err)
 	}
 
 	// Verify root loop has subactions
@@ -230,7 +234,7 @@ func TestDecodeMacro_InvalidKey(t *testing.T) {
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
-	
+
 	// The macro will be decoded but with empty/zero values
 	if macro == nil {
 		t.Error("Expected non-nil macro even for non-existent key")
@@ -266,7 +270,7 @@ func TestMacroRepo_Reload(t *testing.T) {
 	}
 
 	// Original macro should still exist
-	_, err = repo.Get("testmacro")
+	_, err = repo.Get("test macro")
 	if err != nil {
 		t.Errorf("Original macro should exist after reload: %v", err)
 	}
