@@ -1,7 +1,6 @@
 package actions
 
 import (
-	"Squire/internal/models/coordinates"
 	"fmt"
 
 	"fyne.io/fyne/v2"
@@ -10,11 +9,11 @@ import (
 
 type Ocr struct {
 	Target          string
-	SearchArea      coordinates.SearchArea
+	SearchArea      SearchArea
 	*AdvancedAction `yaml:",inline" mapstructure:",squash"`
 }
 
-func NewOcr(name string, subActions []ActionInterface, target string, searchbox coordinates.SearchArea) *Ocr {
+func NewOcr(name string, subActions []ActionInterface, target string, searchbox SearchArea) *Ocr {
 	return &Ocr{
 		AdvancedAction: newAdvancedAction(name, "ocr", subActions),
 		Target:         target,

@@ -1,4 +1,4 @@
-package coordinates
+package services
 
 // import (
 // 	"Squire/internal/config"

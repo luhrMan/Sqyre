@@ -2,7 +2,6 @@ package ui
 
 import (
 	"Squire/internal/models/actions"
-	"Squire/internal/models/coordinates"
 	"strconv"
 
 	"fyne.io/fyne/v2"
@@ -39,7 +38,7 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 		}
 	basicActionsSubMenu.ChildMenu = fyne.NewMenu("",
 		fyne.NewMenuItem("Wait", func() { addActionAndRefresh(actions.NewWait(0)) }),
-		fyne.NewMenuItem("Mouse Move", func() { addActionAndRefresh(actions.NewMove(coordinates.Point{Name: "", X: 0, Y: 0})) }),
+		fyne.NewMenuItem("Mouse Move", func() { addActionAndRefresh(actions.NewMove(actions.Point{Name: "", X: 0, Y: 0})) }),
 		fyne.NewMenuItem("Click", func() { addActionAndRefresh(actions.NewClick(false)) }),
 		fyne.NewMenuItem("Key", func() { addActionAndRefresh(actions.NewKey("ctrl", true)) }),
 	)
@@ -50,14 +49,14 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 				"",
 				[]actions.ActionInterface{},
 				[]string{},
-				coordinates.SearchArea{},
+				actions.SearchArea{},
 				1,
 				1,
 				0.95,
 			))
 		}),
 		fyne.NewMenuItem("OCR", func() {
-			addActionAndRefresh(actions.NewOcr("", []actions.ActionInterface{}, "template", coordinates.SearchArea{Name: "template search area"}))
+			addActionAndRefresh(actions.NewOcr("", []actions.ActionInterface{}, "template", actions.SearchArea{Name: "template search area"}))
 		}),
 	)
 
