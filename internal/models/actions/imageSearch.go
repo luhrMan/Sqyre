@@ -1,7 +1,6 @@
 package actions
 
 import (
-	"Squire/internal/models/coordinates"
 	"fmt"
 	"slices"
 
@@ -9,16 +8,17 @@ import (
 	"fyne.io/fyne/v2/theme"
 )
 
+
 type ImageSearch struct {
 	Targets         []string
-	SearchArea      coordinates.SearchArea
+	SearchArea      SearchArea
 	RowSplit        int
 	ColSplit        int
 	Tolerance       float32
 	*AdvancedAction `yaml:",inline" mapstructure:",squash"`
 }
 
-func NewImageSearch(name string, subActions []ActionInterface, targets []string, searchbox coordinates.SearchArea, rs, cs int, tol float32) *ImageSearch {
+func NewImageSearch(name string, subActions []ActionInterface, targets []string, searchbox SearchArea, rs, cs int, tol float32) *ImageSearch {
 	slices.Sort(targets)
 	return &ImageSearch{
 		AdvancedAction: newAdvancedAction(name, "imagesearch", subActions),

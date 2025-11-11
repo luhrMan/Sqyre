@@ -14,6 +14,7 @@ import (
 func decodeMacro(key string) (*models.Macro, error) {
 	keyPath := "macros." + key
 	macro := &models.Macro{}
+	// macro := models.NewMacro("", 0, []string{})
 
 	err := serialize.GetViper().UnmarshalKey(
 		keyPath,

@@ -2,7 +2,6 @@ package serialize
 
 import (
 	"Squire/internal/models/actions"
-	"Squire/internal/models/coordinates"
 	"fmt"
 	"reflect"
 
@@ -135,8 +134,8 @@ func (s *serializer) CreateActionFromMap(rawMap map[string]any, parent actions.A
 	return action, nil
 }
 
-func createSearchBox(rawMap map[string]any) coordinates.SearchArea {
-	return coordinates.SearchArea{
+func createSearchBox(rawMap map[string]any) actions.SearchArea {
+	return actions.SearchArea{
 		Name:    rawMap["name"].(string),
 		LeftX:   rawMap["leftx"].(int),
 		TopY:    rawMap["topy"].(int),
@@ -145,8 +144,8 @@ func createSearchBox(rawMap map[string]any) coordinates.SearchArea {
 	}
 }
 
-func createPoint(rawMap map[string]any) coordinates.Point {
-	return coordinates.Point{
+func createPoint(rawMap map[string]any) actions.Point {
+	return actions.Point{
 		Name: rawMap["name"].(string),
 		X:    rawMap["x"].(int),
 		Y:    rawMap["y"].(int),

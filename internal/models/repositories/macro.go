@@ -20,7 +20,7 @@ var (
 func MacroRepo() *MacroRepository {
 	macroOnce.Do(func() {
 		macroRepo = &MacroRepository{
-			BaseRepository: NewBaseRepository[models.Macro](
+			BaseRepository: NewBaseRepository(
 				"macros",
 				decodeMacro,
 				func() *models.Macro {

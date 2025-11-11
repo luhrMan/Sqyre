@@ -1,19 +1,20 @@
 package actions
 
 import (
-	"Squire/internal/models/coordinates"
 	"fmt"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/theme"
 )
 
+
+
 type Move struct {
 	*BaseAction `yaml:",inline" mapstructure:",squash"`
-	Point       coordinates.Point
+	Point       Point
 }
 
-func NewMove(p coordinates.Point) *Move {
+func NewMove(p Point) *Move {
 	return &Move{
 		BaseAction: newBaseAction("move"),
 		Point:      p,

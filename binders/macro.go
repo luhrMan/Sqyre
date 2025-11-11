@@ -3,7 +3,6 @@ package binders
 import (
 	"Squire/internal/models"
 	"Squire/internal/models/actions"
-	"Squire/internal/models/coordinates"
 	"Squire/internal/models/repositories"
 	"Squire/internal/services"
 	"Squire/ui"
@@ -305,7 +304,7 @@ func setMacroToolbar() {
 			name, _ := ats.BoundPoint.GetValue("Name")
 			x, _ := ats.BoundPoint.GetValue("X")
 			y, _ := ats.BoundPoint.GetValue("Y")
-			action = actions.NewMove(coordinates.Point{Name: name.(string), X: x.(int), Y: y.(int)})
+			action = actions.NewMove(actions.Point{Name: name.(string), X: x.(int), Y: y.(int)})
 		case "Click":
 			button, _ := ats.BoundClick.GetValue("Button")
 			action = actions.NewClick(button.(bool))
@@ -334,7 +333,7 @@ func setMacroToolbar() {
 				name.(string),
 				subactions,
 				targets.([]string),
-				coordinates.SearchArea{Name: searchArea.(string), LeftX: x1.(int), TopY: y1.(int), RightX: x2.(int), BottomY: y2.(int)},
+				actions.SearchArea{Name: searchArea.(string), LeftX: x1.(int), TopY: y1.(int), RightX: x2.(int), BottomY: y2.(int)},
 				rs.(int), cs.(int), tol.(float32),
 				// binders.GetProgram(config.DarkAndDarker).Coordinates[config.MainMonitorSizeString].GetSearchArea(searchArea.(string))
 			)
@@ -351,7 +350,7 @@ func setMacroToolbar() {
 				name.(string),
 				subactions,
 				target.(string),
-				coordinates.SearchArea{Name: searchArea.(string), LeftX: x1.(int), TopY: y1.(int), RightX: x2.(int), BottomY: y2.(int)},
+				actions.SearchArea{Name: searchArea.(string), LeftX: x1.(int), TopY: y1.(int), RightX: x2.(int), BottomY: y2.(int)},
 				// binders.GetProgram(config.DarkAndDarker).Coordinates[config.MainMonitorSizeString].GetSearchArea(searchArea.(string))
 			)
 		}

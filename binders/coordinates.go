@@ -2,8 +2,8 @@ package binders
 
 import (
 	"Squire/internal/config"
+	"Squire/internal/models"
 	"Squire/internal/models/actions"
-	"Squire/internal/models/coordinates"
 	"Squire/internal/models/repositories"
 	"Squire/ui"
 	"strconv"
@@ -15,7 +15,7 @@ import (
 	"github.com/lithammer/fuzzysearch/fuzzy"
 )
 
-func setSearchAreaWidgets(sa coordinates.SearchArea) {
+func setSearchAreaWidgets(sa models.SearchArea) {
 	st := ui.GetUi().EditorTabs.SearchAreasTab.Widgets
 	st["Name"].(*widget.Entry).SetText(sa.Name)
 	st["LeftX"].(*widget.Entry).SetText(strconv.Itoa(sa.LeftX))
@@ -24,7 +24,7 @@ func setSearchAreaWidgets(sa coordinates.SearchArea) {
 	st["BottomY"].(*widget.Entry).SetText(strconv.Itoa(sa.BottomY))
 }
 
-func setPointWidgets(p coordinates.Point) {
+func setPointWidgets(p models.Point) {
 	pt := ui.GetUi().EditorTabs.PointsTab
 	pt.Widgets["Name"].(*widget.Entry).SetText(p.Name)
 	pt.Widgets["X"].(*widget.Entry).SetText(strconv.Itoa(p.X))
@@ -86,13 +86,13 @@ func setAccordionSearchAreasLists(acc *widget.Accordion) {
 			if ui.GetUi().MainUi.Visible() {
 				if v, ok := ui.GetUi().Mui.MTabs.SelectedTab().Macro.Root.GetAction(ui.GetUi().Mui.MTabs.SelectedTab().SelectedNode).(*actions.ImageSearch); ok {
 					if ui.GetUi().ActionTabs.AppTabs.Selected().Text == "Image" {
-						v.SearchArea = *sa
+						v.SearchArea = actions.SearchArea{Name: sa.Name, LeftX: sa.LeftX, TopY: sa.TopY, RightX: sa.RightX, BottomY: sa.BottomY}
 						bindAction(v)
 					}
 				}
 				if v, ok := ui.GetUi().Mui.MTabs.SelectedTab().Macro.Root.GetAction(ui.GetUi().Mui.MTabs.SelectedTab().SelectedNode).(*actions.Ocr); ok {
 					if ui.GetUi().ActionTabs.AppTabs.Selected().Text == "OCR" {
-						v.SearchArea = *sa
+						v.SearchArea = actions.SearchArea{Name: sa.Name, LeftX: sa.LeftX, TopY: sa.TopY, RightX: sa.RightX, BottomY: sa.BottomY}
 						bindAction(v)
 					}
 				}
@@ -185,7 +185,7 @@ func setAccordionPointsLists(acc *widget.Accordion) {
 			ui.GetUi().EditorTabs.PointsTab.SelectedItem = point
 			setPointWidgets(*point)
 			if v, ok := ui.GetUi().Mui.MTabs.SelectedTab().Macro.Root.GetAction(ui.GetUi().Mui.MTabs.SelectedTab().SelectedNode).(*actions.Move); ok {
-				v.Point = *point
+				v.Point = actions.Point{Name: point.Name, X: point.X, Y: point.Y}
 				bindAction(v)
 			}
 			if ui.GetUi().MainUi.Visible() {
