@@ -2,10 +2,10 @@ package assets
 
 import (
 	"Squire/internal/config"
-	"embed"
-
-	"fmt"
+	_ "embed"
 	"log"
+	"os"
+	"path/filepath"
 
 	"fyne.io/fyne/v2"
 )
@@ -14,40 +14,52 @@ import (
 var appIcon []byte
 var AppIcon = fyne.NewStaticResource("appIcon", appIcon)
 
-//go:embed images/icons/*
-var iconFS embed.FS
-
 var icons = make(map[string][]byte)
 
 func LoadIconBytes() (map[string][]byte, error) {
-	dirPath := "images/icons"
-	//        icons := make(map[string][]byte)
 	log.Printf("Loading Icon Bytes...")
 
-	entries, err := iconFS.ReadDir(dirPath)
+	iconsPath := config.GetIconsPath()
+
+	// Read program directories from filesystem
+	entries, err := os.ReadDir(iconsPath)
 	if err != nil {
-		log.Printf("Could not read directory. Error: %v", err)
+		// Graceful degradation if directory doesn't exist
+		if os.IsNotExist(err) {
+			log.Printf("Icons directory does not exist: %s", iconsPath)
+			return icons, nil
+		}
+		log.Printf("Could not read directory %s. Error: %v", iconsPath, err)
 		return nil, err
 	}
 
 	for _, entry := range entries {
 		if entry.IsDir() {
-			subentries, err := iconFS.ReadDir(dirPath + "/" + entry.Name())
+			programName := entry.Name()
+			programPath := filepath.Join(iconsPath, programName)
+
+			subentries, err := os.ReadDir(programPath)
 			if err != nil {
-				log.Printf("Could not read directory. Error: %v", err)
-				return nil, err
+				log.Printf("Could not read directory %s. Error: %v", programPath, err)
+				continue
 			}
+
 			for _, se := range subentries {
-				iconPath := fmt.Sprintf("%s/%s", dirPath, entry.Name()+"/"+se.Name())
-				iconBytes, err := iconFS.ReadFile(iconPath)
-				if err != nil {
-					log.Printf("Could not read image. Error: %v", err)
+				if se.IsDir() {
 					continue
 				}
+
+				iconPath := filepath.Join(programPath, se.Name())
+				iconBytes, err := os.ReadFile(iconPath)
+				if err != nil {
+					log.Printf("Could not read icon %s. Error: %v", iconPath, err)
+					continue
+				}
+
 				// Store icon with program delimiter and filename
-				// This handles both variant files (ItemName|VariantName.png) 
+				// This handles both variant files (ItemName|VariantName.png)
 				// and non-variant files (ItemName.png) correctly
-				icons[entry.Name()+config.ProgramDelimiter+se.Name()] = iconBytes
+				icons[programName+config.ProgramDelimiter+se.Name()] = iconBytes
 			}
 		}
 	}

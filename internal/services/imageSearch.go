@@ -35,7 +35,7 @@ func imageSearch(a *actions.ImageSearch) (map[string][]robotgo.Point, error) {
 		return nil, err
 	}
 	defer img.Close()
-	gocv.IMWrite(config.UpDir+config.UpDir+config.MetaImagesPath+"search-area.png", img)
+	gocv.IMWrite(config.GetMetaPath()+"search-area.png", img)
 
 	imgDraw := img.Clone()
 	defer imgDraw.Close()
@@ -48,7 +48,7 @@ func match(img, imgDraw gocv.Mat, a *actions.ImageSearch) map[string][]robotgo.P
 	icons := assets.GetIconBytes()
 	// xSize := img.Cols() / a.ColSplit
 	// ySize := img.Rows() / a.RowSplit
-
+	vs := NewIconVariantService()
 	Imask := gocv.NewMat()
 	defer Imask.Close()
 
@@ -72,45 +72,51 @@ func match(img, imgDraw gocv.Mat, a *actions.ImageSearch) map[string][]robotgo.P
 				log.Printf("Error getting item %s from program %s: %v", itemName, programName, err)
 				return
 			}
-
-			ip := t + config.PNG
-			b := icons[ip]
-			template := gocv.NewMat()
-			defer template.Close()
-			err = gocv.IMDecodeIntoMat(b, gocv.IMReadColor, &template)
+			variants, err := vs.GetVariants(programName, itemName)
 			if err != nil {
-				fmt.Println("Error reading template image:", err)
-				return
+				log.Println("could not find variants for item during image search")
 			}
-			// tmask := gocv.IMRead(path+"templates"+size+"-tmask"+config.PNG, gocv.IMReadColor)
-			tmask := gocv.NewMat()
-			cmask := *program.GetMasks()["item-corner"](template.Rows(), template.Cols(), i.GridSize[0], i.GridSize[1])
+			for _, v := range variants { // search for the item variants also
+				ip := programName + config.ProgramDelimiter + itemName + config.ProgramDelimiter + v + config.PNG
+				b := icons[ip]
+				template := gocv.NewMat()
+				defer template.Close()
+				err = gocv.IMDecodeIntoMat(b, gocv.IMReadColor, &template)
 
-			defer tmask.Close()
-			defer cmask.Close()
-			// gocv.IMWrite(config.UpDir+config.UpDir+config.MetaImagesPath+"cmask.png", *cmask)
+				if err != nil {
+					fmt.Println("Error reading template image:", err)
+					return
+				}
+				// tmask := gocv.IMRead(path+"templates"+size+"-tmask"+config.PNG, gocv.IMReadColor)
+				tmask := gocv.NewMat()
+				cmask := *program.GetMasks()["item-corner"](template.Rows(), template.Cols(), i.GridSize[0], i.GridSize[1])
 
-			// if Tmask.Cols() != template.Cols() && Tmask.Rows() != template.Rows() {
-			// 	log.Println("ERROR: template mask size does not match template!")
-			// 	log.Println("item: ", t)
-			// 	log.Println("Tmask cols: ", Tmask.Cols())
-			// 	log.Println("Tmask rows: ", Tmask.Rows())
-			// 	log.Println("t cols: ", template.Cols())
-			// 	log.Println("t rows: ", template.Rows())
-			// 	return
-			// }
+				defer tmask.Close()
+				defer cmask.Close()
+				// gocv.IMWrite(config.UpDir+config.UpDir+config.MetaImagesPath+"cmask.png", *cmask)
 
-			matches := FindTemplateMatches(img, template, Imask, tmask, cmask, a.Tolerance)
+				// if Tmask.Cols() != template.Cols() && Tmask.Rows() != template.Rows() {
+				// 	log.Println("ERROR: template mask size does not match template!")
+				// 	log.Println("item: ", t)
+				// 	log.Println("Tmask cols: ", Tmask.Cols())
+				// 	log.Println("Tmask rows: ", Tmask.Rows())
+				// 	log.Println("t cols: ", template.Cols())
+				// 	log.Println("t rows: ", template.Rows())
+				// 	return
+				// }
 
-			resultsMutex.Lock()
-			defer resultsMutex.Unlock()
+				matches := FindTemplateMatches(img, template, Imask, tmask, cmask, a.Tolerance)
 
-			results[t] = matches
-			DrawFoundMatches(matches, template.Cols(), template.Rows(), imgDraw, i.Name) // xSize*i.GridSize[0], ySize*i.GridSize[1]
+				resultsMutex.Lock()
+				defer resultsMutex.Unlock()
+
+				results[t] = matches
+				DrawFoundMatches(matches, template.Cols(), template.Rows(), imgDraw, i.Name) // xSize*i.GridSize[0], ySize*i.GridSize[1]
+			}
 		}(t)
 	}
 	wg.Wait()
-	gocv.IMWrite(config.UpDir+config.UpDir+config.MetaImagesPath+"founditems.png", imgDraw)
+	gocv.IMWrite(config.GetMetaPath()+"founditems.png", imgDraw)
 	return results
 }
 

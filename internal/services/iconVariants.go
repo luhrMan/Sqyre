@@ -243,7 +243,7 @@ func (s *IconVariantService) getIconsPath(programName string) string {
 	if s.basePath != "" {
 		return filepath.Join(s.basePath, programName) + "/"
 	}
-	return config.UpDir + config.UpDir + config.ImagesPath + "icons/" + programName + "/"
+	return filepath.Join(config.GetIconsPath(), programName)
 }
 
 // copyFile copies a file from src to dst.
