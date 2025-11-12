@@ -1,16 +1,22 @@
 package config
 
+import (
+	"log"
+	"os"
+	"path/filepath"
+)
+
 const (
-	RootPath              string = "./"
-	UpDir                        = "../"
-	InternalPath                 = "internal/"
-	AssetsPath                   = InternalPath + "assets/"
-	ImagesPath                   = AssetsPath + "images/"
-	IconsPath                    = ImagesPath + "icons/"
-	MetaImagesPath               = ImagesPath + "meta/"
-	MaskImagesPath               = ImagesPath + "masks/"
-	CalibrationImagesPath        = ImagesPath + "calibration/"
-	DarkAndDarker                = "dark and darker"
+	RootPath string = "./"
+	UpDir           = "../"
+
+	// User directory structure
+	SqyreDir           = "Sqyre"
+	UserImagesDir      = "images"
+	UserIconsDir       = "icons"
+	UserMasksDir       = "masks"
+	UserMetaDir        = "meta"
+	UserCalibrationDir = "calibration"
 
 	Scr                   = "screen"
 	Inv                   = "inventory"
@@ -41,3 +47,44 @@ const (
 	// e.g. dark and darker|Health potion
 	ProgramDelimiter = "|"
 )
+
+// GetIconsPath returns the path to the icons directory in the user's home directory
+// Returns: ~/Sqyre/images/icons/
+func GetIconsPath() string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		log.Fatalf("Could not get user home directory: %v", err)
+	}
+	return filepath.Join(homeDir, SqyreDir, UserImagesDir, UserIconsDir)
+}
+
+func GetMasksPath() string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		log.Fatalf("Could not get user home directory: %v", err)
+	}
+	return filepath.Join(homeDir, SqyreDir, UserImagesDir, UserMasksDir)
+}
+
+func GetMetaPath() string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		log.Fatalf("Could not get user home directory: %v", err)
+	}
+	return filepath.Join(homeDir, SqyreDir, UserImagesDir, UserMetaDir)
+}
+
+// InitializeDirectories creates the necessary directories in the user's home directory
+// Creates: ~/Sqyre/images/icons/
+func InitializeDirectories() error {
+	iconsPath := GetIconsPath()
+
+	// Create all parent directories as needed
+	if err := os.MkdirAll(iconsPath, 0755); err != nil {
+		log.Printf("Failed to create icons directory at %s: %v", iconsPath, err)
+		return err
+	}
+
+	log.Printf("Initialized directory structure at: %s", iconsPath)
+	return nil
+}

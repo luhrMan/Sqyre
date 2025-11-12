@@ -21,6 +21,11 @@ import (
 )
 
 func init() {
+	// Initialize directory structure first
+	if err := config.InitializeDirectories(); err != nil {
+		log.Printf("Warning: Failed to initialize directories: %v", err)
+	}
+
 	go services.StartHook()
 	services.FailsafeHotkey()
 
@@ -65,9 +70,9 @@ func init() {
 
 func main() {
 	// Get the Dark and Darker program and set up the item-corner mask
-	program, err := repositories.ProgramRepo().Get(config.DarkAndDarker)
+	program, err := repositories.ProgramRepo().Get("dark and darker")
 	if err != nil {
-		log.Printf("Warning: Could not load %s program: %v", config.DarkAndDarker, err)
+		log.Printf("Warning: Could not load %s program: %v", "dark and darker", err)
 	} else {
 		program.GetMasks()["item-corner"] = func(f ...any) *gocv.Mat {
 			rows, cols, x, y :=
