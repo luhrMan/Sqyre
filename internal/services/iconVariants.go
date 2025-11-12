@@ -12,7 +12,7 @@ import (
 
 // IconVariantService provides filesystem operations for discovering, validating,
 // and managing icon variant files.
-type IconVariantService struct{
+type IconVariantService struct {
 	basePath string // Optional base path for testing, overrides config.ImagesPath
 }
 
@@ -30,7 +30,7 @@ func (s *IconVariantService) GetVariants(programName, itemName string) ([]string
 	}
 
 	iconsPath := s.getIconsPath(programName)
-	
+
 	// Check if the icons directory exists
 	if _, err := os.Stat(iconsPath); os.IsNotExist(err) {
 		return []string{}, nil
@@ -38,7 +38,7 @@ func (s *IconVariantService) GetVariants(programName, itemName string) ([]string
 
 	// Pattern to match: {ItemName}|*.png
 	pattern := filepath.Join(iconsPath, itemName+config.ProgramDelimiter+"*"+config.PNG)
-	
+
 	matches, err := filepath.Glob(pattern)
 	if err != nil {
 		return nil, fmt.Errorf("failed to search for variants: %w", err)
@@ -57,7 +57,7 @@ func (s *IconVariantService) GetVariants(programName, itemName string) ([]string
 		filename := filepath.Base(match)
 		// Remove .png extension
 		nameWithoutExt := strings.TrimSuffix(filename, config.PNG)
-		
+
 		// Check if it contains the delimiter
 		if strings.Contains(nameWithoutExt, config.ProgramDelimiter) {
 			// Extract variant name (text after delimiter)
@@ -81,12 +81,12 @@ func (s *IconVariantService) GetVariants(programName, itemName string) ([]string
 // If variantName is empty, returns the path to the legacy non-variant icon.
 func (s *IconVariantService) GetVariantPath(programName, itemName, variantName string) string {
 	iconsPath := s.getIconsPath(programName)
-	
+
 	if variantName == "" {
 		// Legacy icon without variant
 		return filepath.Join(iconsPath, itemName+config.PNG)
 	}
-	
+
 	// Variant icon with delimiter
 	filename := itemName + config.ProgramDelimiter + variantName + config.PNG
 	return filepath.Join(iconsPath, filename)
@@ -243,7 +243,7 @@ func (s *IconVariantService) getIconsPath(programName string) string {
 	if s.basePath != "" {
 		return filepath.Join(s.basePath, programName) + "/"
 	}
-	return config.ImagesPath + "icons/" + programName + "/"
+	return config.UpDir + config.UpDir + config.ImagesPath + "icons/" + programName + "/"
 }
 
 // copyFile copies a file from src to dst.
