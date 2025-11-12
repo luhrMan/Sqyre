@@ -1,5 +1,5 @@
 macros:
-    get gems:
+    Get Gems:
         name: Get Gems
         root:
             count: 1
@@ -35,7 +35,7 @@ macros:
             - ctrl
             - shift
             - "2"
-    new macro 1:
+    New macro 1:
         name: New macro 1
         root:
             count: 1
@@ -66,7 +66,7 @@ macros:
                         "y": 380
         globaldelay: 150
         hotkey: []
-    sell treasures:
+    Sell Treasures:
         name: Sell Treasures
         root:
             count: 1
@@ -129,7 +129,7 @@ programs:
     dark and darker:
         name: dark and darker
         items:
-            ancient scroll:
+            Ancient Scroll:
                 name: Ancient Scroll
                 gridsize:
                     - 2
@@ -137,7 +137,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: Collector
-            badger pendant:
+            Badger Pendant:
                 name: Badger Pendant
                 gridsize:
                     - 1
@@ -145,7 +145,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: ""
-            bandage:
+            Bandage:
                 name: Bandage
                 gridsize:
                     - 1
@@ -153,7 +153,7 @@ programs:
                 tags: []
                 stackmax: 3
                 merchant: Surgeon
-            bat claw:
+            Bat Claw:
                 name: Bat Claw
                 gridsize:
                     - 1
@@ -161,7 +161,7 @@ programs:
                 tags: []
                 stackmax: 3
                 merchant: Collector
-            bear pendant:
+            Bear Pendant:
                 name: Bear Pendant
                 gridsize:
                     - 1
@@ -169,7 +169,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: ""
-            beetle wings:
+            Beetle Wings:
                 name: Beetle Wings
                 gridsize:
                     - 1
@@ -177,7 +177,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: Collector
-            bone:
+            Bone:
                 name: Bone
                 gridsize:
                     - 1
@@ -185,7 +185,7 @@ programs:
                 tags: []
                 stackmax: 3
                 merchant: Collector
-            bowstring:
+            Bowstring:
                 name: Bowstring
                 gridsize:
                     - 1
@@ -193,7 +193,7 @@ programs:
                 tags: []
                 stackmax: 3
                 merchant: Collector
-            broken skull:
+            Broken Skull:
                 name: Broken Skull
                 gridsize:
                     - 2
@@ -201,7 +201,7 @@ programs:
                 tags: []
                 stackmax: 2
                 merchant: Collector
-            bug shell:
+            Bug Shell:
                 name: Bug Shell
                 gridsize:
                     - 2
@@ -209,7 +209,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: Collector
-            campfire:
+            Campfire:
                 name: Campfire
                 gridsize:
                     - 2
@@ -217,7 +217,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: Woodsman
-            captured mana flakes:
+            Captured Mana Flakes:
                 name: Captured Mana Flakes
                 gridsize:
                     - 1
@@ -225,7 +225,7 @@ programs:
                 tags: []
                 stackmax: 3
                 merchant: Collector
-            centaur hoof:
+            Centaur Hoof:
                 name: Centaur Hoof
                 gridsize:
                     - 2
@@ -233,7 +233,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: Collector
-            centaur horn:
+            Centaur Horn:
                 name: Centaur Horn
                 gridsize:
                     - 2
@@ -241,7 +241,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: Collector
-            centaur tail:
+            Centaur Tail:
                 name: Centaur Tail
                 gridsize:
                     - 1
@@ -249,7 +249,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: Collector
-            ceremonial dagger:
+            Ceremonial Dagger:
                 name: Ceremonial Dagger
                 gridsize:
                     - 2
@@ -257,7 +257,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: Collector
-            cobalt ingot:
+            Cobalt Ingot:
                 name: Cobalt Ingot
                 gridsize:
                     - 2
@@ -265,7 +265,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: ""
-            cobalt ingot stack:
+            Cobalt Ingot Stack:
                 name: Cobalt Ingot Stack
                 gridsize:
                     - 2
@@ -273,7 +273,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: ""
-            cobalt ore:
+            Cobalt Ore:
                 name: Cobalt Ore
                 gridsize:
                     - 2
@@ -281,7 +281,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: ""
-            cobalt ore stack:
+            Cobalt Ore Stack:
                 name: Cobalt Ore Stack
                 gridsize:
                     - 2
@@ -289,7 +289,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: ""
-            copper ingot:
+            Copper Ingot:
                 name: Copper Ingot
                 gridsize:
                     - 2
@@ -297,7 +297,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: ""
-            copper ingot stack:
+            Copper Ingot Stack:
                 name: Copper Ingot Stack
                 gridsize:
                     - 2
@@ -305,7 +305,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: ""
-            copper ore:
+            Copper Ore:
                 name: Copper Ore
                 gridsize:
                     - 2
@@ -313,7 +313,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: ""
-            copper ore stack:
+            Copper Ore Stack:
                 name: Copper Ore Stack
                 gridsize:
                     - 2
@@ -321,7 +321,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: ""
-            cursed crown:
+            Cursed Crown:
                 name: Cursed Crown
                 gridsize:
                     - 2
@@ -329,7 +329,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: Collector
-            cyclops eye:
+            Cyclops Eye:
                 name: Cyclops Eye
                 gridsize:
                     - 2
@@ -337,7 +337,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: Collector
-            cyclops rags:
+            Cyclops Rags:
                 name: Cyclops Rags
                 gridsize:
                     - 2
@@ -345,7 +345,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: Collector
-            demon blood:
+            Demon Blood:
                 name: Demon Blood
                 gridsize:
                     - 1
@@ -353,7 +353,7 @@ programs:
                 tags: []
                 stackmax: 3
                 merchant: Collector
-            demon dog thorn:
+            Demon Dog Thorn:
                 name: Demon Dog Thorn
                 gridsize:
                     - 1
@@ -361,7 +361,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: Collector
-            diamond:
+            Diamond:
                 name: Diamond
                 gridsize:
                     - 1
@@ -369,7 +369,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: Collector
-            dog collar:
+            Dog Collar:
                 name: Dog Collar
                 gridsize:
                     - 2
@@ -377,7 +377,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: Collector
-            dotted gold bangle:
+            Dotted Gold Bangle:
                 name: Dotted Gold Bangle
                 gridsize:
                     - 1
@@ -385,7 +385,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: Collector
-            emerald:
+            Emerald:
                 name: Emerald
                 gridsize:
                     - 1
@@ -393,7 +393,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: Collector
-            empty inventory slot:
+            Empty Inventory Slot:
                 name: Empty Inventory Slot
                 gridsize:
                     - 1
@@ -401,7 +401,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: ""
-            enchanted dark fabric:
+            Enchanted Dark Fabric:
                 name: Enchanted Dark Fabric
                 gridsize:
                     - 2
@@ -409,7 +409,7 @@ programs:
                 tags: []
                 stackmax: 3
                 merchant: Collector
-            extra thick pelt:
+            Extra Thick Pelt:
                 name: Extra Thick Pelt
                 gridsize:
                     - 2
@@ -417,7 +417,7 @@ programs:
                 tags: []
                 stackmax: 3
                 merchant: Collector
-            fangs of death:
+            Fangs of Death:
                 name: Fangs of Death
                 gridsize:
                     - 1
@@ -425,7 +425,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: ""
-            fox pendant:
+            Fox Pendant:
                 name: Fox Pendant
                 gridsize:
                     - 1
@@ -433,7 +433,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: ""
-            francisca axe:
+            Francisca Axe:
                 name: Francisca Axe
                 gridsize:
                     - 1
@@ -441,7 +441,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: Woodsman
-            frost amulet:
+            Frost Amulet:
                 name: Frost Amulet
                 gridsize:
                     - 1
@@ -449,7 +449,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: ""
-            frost wyverns claws:
+            Frost Wyverns Claws:
                 name: Frost Wyverns Claws
                 gridsize:
                     - 2
@@ -457,7 +457,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: Collector
-            froststone ingot:
+            Froststone Ingot:
                 name: Froststone Ingot
                 gridsize:
                     - 2
@@ -465,7 +465,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: ""
-            froststone ingot stack:
+            Froststone Ingot Stack:
                 name: Froststone Ingot Stack
                 gridsize:
                     - 2
@@ -473,7 +473,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: ""
-            froststone ore:
+            Froststone Ore:
                 name: Froststone Ore
                 gridsize:
                     - 2
@@ -481,7 +481,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: ""
-            froststone ore stack:
+            Froststone Ore Stack:
                 name: Froststone Ore Stack
                 gridsize:
                     - 2
@@ -489,7 +489,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: ""
-            frozen heart:
+            Frozen Heart:
                 name: Frozen Heart
                 gridsize:
                     - 2
@@ -497,7 +497,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: Collector
-            gem necklace:
+            Gem Necklace:
                 name: Gem Necklace
                 gridsize:
                     - 1
@@ -505,7 +505,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: Collector
-            gem ring:
+            Gem Ring:
                 name: Gem Ring
                 gridsize:
                     - 1
@@ -513,7 +513,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: Collector
-            giant toe:
+            Giant Toe:
                 name: Giant Toe
                 gridsize:
                     - 1
@@ -521,7 +521,7 @@ programs:
                 tags: []
                 stackmax: 3
                 merchant: Collector
-            glimmer bangle:
+            Glimmer Bangle:
                 name: Glimmer Bangle
                 gridsize:
                     - 1
@@ -529,7 +529,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: Collector
-            glowing blue ice eyes:
+            Glowing Blue Ice Eyes:
                 name: Glowing Blue Ice Eyes
                 gridsize:
                     - 1
@@ -537,7 +537,7 @@ programs:
                 tags: []
                 stackmax: 3
                 merchant: Collector
-            goblet:
+            Goblet:
                 name: Goblet
                 gridsize:
                     - 1
@@ -545,7 +545,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: Collector
-            goblin ear:
+            Goblin Ear:
                 name: Goblin Ear
                 gridsize:
                     - 1
@@ -553,7 +553,7 @@ programs:
                 tags: []
                 stackmax: 3
                 merchant: Collector
-            gold bag:
+            Gold Bag:
                 name: Gold Bag
                 gridsize:
                     - 2
@@ -561,7 +561,7 @@ programs:
                 tags: []
                 stackmax: 1000
                 merchant: ""
-            gold band:
+            Gold Band:
                 name: Gold Band
                 gridsize:
                     - 1
@@ -569,7 +569,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: Collector
-            gold bowl:
+            Gold Bowl:
                 name: Gold Bowl
                 gridsize:
                     - 2
@@ -577,7 +577,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: Collector
-            gold candelabra:
+            Gold Candelabra:
                 name: Gold Candelabra
                 gridsize:
                     - 2
@@ -585,7 +585,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: Collector
-            gold candle holder:
+            Gold Candle Holder:
                 name: Gold Candle Holder
                 gridsize:
                     - 2
@@ -593,7 +593,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: Collector
-            gold candle platter:
+            Gold Candle Platter:
                 name: Gold Candle Platter
                 gridsize:
                     - 1
@@ -601,7 +601,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: Collector
-            gold chalice:
+            Gold Chalice:
                 name: Gold Chalice
                 gridsize:
                     - 1
@@ -609,7 +609,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: Collector
-            gold coin:
+            Gold Coin:
                 name: Gold Coin
                 gridsize:
                     - 1
@@ -617,7 +617,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: Treasurer
-            gold coins:
+            Gold Coins:
                 name: Gold Coins
                 gridsize:
                     - 1
@@ -625,7 +625,7 @@ programs:
                 tags: []
                 stackmax: 10
                 merchant: Treasurer
-            gold crown:
+            Gold Crown:
                 name: Gold Crown
                 gridsize:
                     - 2
@@ -633,7 +633,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: Collector
-            gold goblet:
+            Gold Goblet:
                 name: Gold Goblet
                 gridsize:
                     - 1
@@ -641,7 +641,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: Collector
-            gold ingot:
+            Gold Ingot:
                 name: Gold Ingot
                 gridsize:
                     - 2
@@ -649,7 +649,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: ""
-            gold ingot stack:
+            Gold Ingot Stack:
                 name: Gold Ingot Stack
                 gridsize:
                     - 2
@@ -657,7 +657,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: ""
-            gold ore:
+            Gold Ore:
                 name: Gold Ore
                 gridsize:
                     - 2
@@ -665,7 +665,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: ""
-            gold ore stack:
+            Gold Ore Stack:
                 name: Gold Ore Stack
                 gridsize:
                     - 2
@@ -673,7 +673,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: ""
-            gold purse:
+            Gold Purse:
                 name: Gold Purse
                 gridsize:
                     - 1
@@ -681,7 +681,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: Treasurer
-            gold purse empty:
+            Gold Purse Empty:
                 name: Gold Purse Empty
                 gridsize:
                     - 1
@@ -689,7 +689,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: Treasurer
-            gold purse full:
+            Gold Purse Full:
                 name: Gold Purse Full
                 gridsize:
                     - 1
@@ -697,7 +697,7 @@ programs:
                 tags: []
                 stackmax: 50
                 merchant: Treasurer
-            gold waterpot:
+            Gold Waterpot:
                 name: Gold Waterpot
                 gridsize:
                     - 2
@@ -705,7 +705,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: Collector
-            golden teeth:
+            Golden Teeth:
                 name: Golden Teeth
                 gridsize:
                     - 1
@@ -713,7 +713,7 @@ programs:
                 tags: []
                 stackmax: 3
                 merchant: Collector
-            grave essence:
+            Grave Essence:
                 name: Grave Essence
                 gridsize:
                     - 1
@@ -721,7 +721,7 @@ programs:
                 tags: []
                 stackmax: 3
                 merchant: Collector
-            grimsmile ring:
+            Grimsmile Ring:
                 name: Grimsmile Ring
                 gridsize:
                     - 1
@@ -729,7 +729,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: ""
-            healing potion:
+            Healing Potion:
                 name: Healing Potion
                 gridsize:
                     - 1
@@ -737,7 +737,7 @@ programs:
                 tags: []
                 stackmax: 3
                 merchant: Alchemist
-            intact skull:
+            Intact Skull:
                 name: Intact Skull
                 gridsize:
                     - 2
@@ -745,7 +745,7 @@ programs:
                 tags: []
                 stackmax: 2
                 merchant: Collector
-            iron ingot:
+            Iron Ingot:
                 name: Iron Ingot
                 gridsize:
                     - 2
@@ -753,7 +753,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: ""
-            iron ingot stack:
+            Iron Ingot Stack:
                 name: Iron Ingot Stack
                 gridsize:
                     - 2
@@ -761,7 +761,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: ""
-            iron ore:
+            Iron Ore:
                 name: Iron Ore
                 gridsize:
                     - 2
@@ -769,7 +769,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: ""
-            iron ore stack:
+            Iron Ore Stack:
                 name: Iron Ore Stack
                 gridsize:
                     - 2
@@ -777,7 +777,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: ""
-            kobolds ear:
+            Kobolds Ear:
                 name: Kobolds Ear
                 gridsize:
                     - 1
@@ -785,7 +785,7 @@ programs:
                 tags: []
                 stackmax: 3
                 merchant: Collector
-            leaf gold bangle:
+            Leaf Gold Bangle:
                 name: Leaf Gold Bangle
                 gridsize:
                     - 1
@@ -793,7 +793,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: Collector
-            light gold bangle:
+            Light Gold Bangle:
                 name: Light Gold Bangle
                 gridsize:
                     - 1
@@ -801,7 +801,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: Collector
-            lockpick:
+            Lockpick:
                 name: Lockpick
                 gridsize:
                     - 1
@@ -809,7 +809,7 @@ programs:
                 tags: []
                 stackmax: 3
                 merchant: ""
-            luck potion:
+            Luck Potion:
                 name: Luck Potion
                 gridsize:
                     - 1
@@ -817,7 +817,7 @@ programs:
                 tags: []
                 stackmax: 3
                 merchant: Alchemist
-            maggots:
+            Maggots:
                 name: Maggots
                 gridsize:
                     - 1
@@ -825,7 +825,7 @@ programs:
                 tags: []
                 stackmax: 3
                 merchant: Collector
-            magic protection potion:
+            Magic Protection Potion:
                 name: Magic Protection Potion
                 gridsize:
                     - 1
@@ -833,7 +833,7 @@ programs:
                 tags: []
                 stackmax: 3
                 merchant: Alchemist
-            mimic tongue:
+            Mimic Tongue:
                 name: Mimic Tongue
                 gridsize:
                     - 2
@@ -841,7 +841,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: Collector
-            mimic tooth:
+            Mimic Tooth:
                 name: Mimic Tooth
                 gridsize:
                     - 1
@@ -849,7 +849,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: Collector
-            moldy bread:
+            Moldy Bread:
                 name: Moldy Bread
                 gridsize:
                     - 1
@@ -857,7 +857,7 @@ programs:
                 tags: []
                 stackmax: 3
                 merchant: Collector
-            monkey pendant:
+            Monkey Pendant:
                 name: Monkey Pendant
                 gridsize:
                     - 1
@@ -865,7 +865,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: ""
-            necklace of peace:
+            Necklace of Peace:
                 name: Necklace of Peace
                 gridsize:
                     - 1
@@ -873,7 +873,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: ""
-            old cloth:
+            Old Cloth:
                 name: Old Cloth
                 gridsize:
                     - 2
@@ -881,7 +881,7 @@ programs:
                 tags: []
                 stackmax: 3
                 merchant: Collector
-            owl pendant:
+            Owl Pendant:
                 name: Owl Pendant
                 gridsize:
                     - 1
@@ -889,7 +889,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: ""
-            ox pendant:
+            Ox Pendant:
                 name: Ox Pendant
                 gridsize:
                     - 1
@@ -897,7 +897,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: ""
-            patterned gold bangle:
+            Patterned Gold Bangle:
                 name: Patterned Gold Bangle
                 gridsize:
                     - 1
@@ -905,7 +905,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: Collector
-            pearl necklace:
+            Pearl Necklace:
                 name: Pearl Necklace
                 gridsize:
                     - 1
@@ -913,7 +913,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: Collector
-            phoenix choker:
+            Phoenix Choker:
                 name: Phoenix Choker
                 gridsize:
                     - 1
@@ -921,7 +921,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: ""
-            potion:
+            Potion:
                 name: Potion
                 gridsize:
                     - 1
@@ -929,7 +929,7 @@ programs:
                 tags: []
                 stackmax: 3
                 merchant: ""
-            primitive bracelet:
+            Primitive Bracelet:
                 name: Primitive Bracelet
                 gridsize:
                     - 1
@@ -937,7 +937,7 @@ programs:
                 tags: []
                 stackmax: 3
                 merchant: Collector
-            protection potion:
+            Protection Potion:
                 name: Protection Potion
                 gridsize:
                     - 1
@@ -945,7 +945,7 @@ programs:
                 tags: []
                 stackmax: 3
                 merchant: Alchemist
-            rat pendant:
+            Rat Pendant:
                 name: Rat Pendant
                 gridsize:
                     - 1
@@ -953,7 +953,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: ""
-            ring of courage:
+            Ring of Courage:
                 name: Ring of Courage
                 gridsize:
                     - 1
@@ -961,7 +961,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: ""
-            ring of finesse:
+            Ring of Finesse:
                 name: Ring of Finesse
                 gridsize:
                     - 1
@@ -969,7 +969,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: ""
-            ring of quickness:
+            Ring of Quickness:
                 name: Ring of Quickness
                 gridsize:
                     - 1
@@ -977,7 +977,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: ""
-            ring of resolve:
+            Ring of Resolve:
                 name: Ring of Resolve
                 gridsize:
                     - 1
@@ -985,7 +985,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: ""
-            ring of survival:
+            Ring of Survival:
                 name: Ring of Survival
                 gridsize:
                     - 1
@@ -993,7 +993,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: ""
-            ring of vitality:
+            Ring of Vitality:
                 name: Ring of Vitality
                 gridsize:
                     - 1
@@ -1001,7 +1001,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: ""
-            ring of wisdom:
+            Ring of Wisdom:
                 name: Ring of Wisdom
                 gridsize:
                     - 1
@@ -1009,7 +1009,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: ""
-            rotten fluids:
+            Rotten Fluids:
                 name: Rotten Fluids
                 gridsize:
                     - 1
@@ -1017,7 +1017,7 @@ programs:
                 tags: []
                 stackmax: 3
                 merchant: Collector
-            ruby:
+            Ruby:
                 name: Ruby
                 gridsize:
                     - 1
@@ -1025,7 +1025,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: Collector
-            rubysilver ore:
+            Rubysilver Ore:
                 name: Rubysilver Ore
                 gridsize:
                     - 2
@@ -1033,7 +1033,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: ""
-            rubysilver ore stack:
+            Rubysilver Ore Stack:
                 name: Rubysilver Ore Stack
                 gridsize:
                     - 2
@@ -1041,7 +1041,7 @@ programs:
                 tags: []
                 stackmax: 5
                 merchant: ""
-            rusty broken sword:
+            Rusty Broken Sword:
                 name: Rusty Broken Sword
                 gridsize:
                     - 1
@@ -1049,7 +1049,7 @@ programs:
                 tags: []
                 stackmax: 3
                 merchant: Collector
-            sapphire:
+            Sapphire:
                 name: Sapphire
                 gridsize:
                     - 1
@@ -1057,7 +1057,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: Collector
-            shine bangle:
+            Shine Bangle:
                 name: Shine Bangle
                 gridsize:
                     - 1
@@ -1065,7 +1065,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: Collector
-            silver chalice:
+            Silver Chalice:
                 name: Silver Chalice
                 gridsize:
                     - 1
@@ -1073,7 +1073,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: Collector
-            silver ingot:
+            Silver Ingot:
                 name: Silver Ingot
                 gridsize:
                     - 2
@@ -1081,7 +1081,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: ""
-            silver ingot stack:
+            Silver Ingot Stack:
                 name: Silver Ingot Stack
                 gridsize:
                     - 2
@@ -1089,7 +1089,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: ""
-            simple gold bangle:
+            Simple Gold Bangle:
                 name: Simple Gold Bangle
                 gridsize:
                     - 1
@@ -1097,7 +1097,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: Collector
-            slim bangle:
+            Slim Bangle:
                 name: Slim Bangle
                 gridsize:
                     - 1
@@ -1105,7 +1105,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: Collector
-            spider silk:
+            Spider Silk:
                 name: Spider Silk
                 gridsize:
                     - 1
@@ -1113,7 +1113,7 @@ programs:
                 tags: []
                 stackmax: 3
                 merchant: Collector
-            surgical kit:
+            Surgical Kit:
                 name: Surgical Kit
                 gridsize:
                     - 2
@@ -1121,7 +1121,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: ""
-            torn bat wing:
+            Torn Bat Wing:
                 name: Torn Bat Wing
                 gridsize:
                     - 2
@@ -1129,7 +1129,7 @@ programs:
                 tags: []
                 stackmax: 3
                 merchant: Collector
-            torq of soul:
+            Torq of Soul:
                 name: Torq of Soul
                 gridsize:
                     - 1
@@ -1137,7 +1137,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: ""
-            triple gem bangle:
+            Triple Gem Bangle:
                 name: Triple Gem Bangle
                 gridsize:
                     - 1
@@ -1145,7 +1145,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: Collector
-            troll pelt:
+            Troll Pelt:
                 name: Troll Pelt
                 gridsize:
                     - 2
@@ -1153,7 +1153,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: Collector
-            turquoise gem bangle:
+            Turquoise Gem Bangle:
                 name: Turquoise Gem Bangle
                 gridsize:
                     - 1
@@ -1161,7 +1161,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: Collector
-            volcanic ash:
+            Volcanic Ash:
                 name: Volcanic Ash
                 gridsize:
                     - 1
@@ -1169,7 +1169,7 @@ programs:
                 tags: []
                 stackmax: 3
                 merchant: Collector
-            wendigos hoof:
+            Wendigos Hoof:
                 name: Wendigos Hoof
                 gridsize:
                     - 2
@@ -1177,7 +1177,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: Collector
-            wendigos sharp claws:
+            Wendigos Sharp Claws:
                 name: Wendigos Sharp Claws
                 gridsize:
                     - 2
@@ -1185,7 +1185,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: Collector
-            wind locket:
+            Wind Locket:
                 name: Wind Locket
                 gridsize:
                     - 1
@@ -1193,7 +1193,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: ""
-            wolf claw:
+            Wolf Claw:
                 name: Wolf Claw
                 gridsize:
                     - 1
@@ -1201,7 +1201,7 @@ programs:
                 tags: []
                 stackmax: 3
                 merchant: Collector
-            wolf fang:
+            Wolf Fang:
                 name: Wolf Fang
                 gridsize:
                     - 1
@@ -1209,7 +1209,7 @@ programs:
                 tags: []
                 stackmax: 3
                 merchant: Collector
-            wolf pelt:
+            Wolf Pelt:
                 name: Wolf Pelt
                 gridsize:
                     - 2
@@ -1217,7 +1217,7 @@ programs:
                 tags: []
                 stackmax: 3
                 merchant: Collector
-            yetis teeth:
+            Yetis Teeth:
                 name: Yetis Teeth
                 gridsize:
                     - 1
@@ -1419,7 +1419,7 @@ programs:
     path of exile:
         name: path of exile
         items:
-            arcanists etcher:
+            Arcanists Etcher:
                 name: Arcanists Etcher
                 gridsize:
                     - 1
