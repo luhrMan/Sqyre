@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-// setupTestConfig initializes Viper with test configuration
+// setupTestConfig initializes YAML config with test configuration
 func setupTestConfig(t *testing.T) {
 	t.Helper()
 
@@ -20,19 +20,23 @@ func setupTestConfig(t *testing.T) {
 		t.Fatalf("Failed to get testdata path: %v", err)
 	}
 
-	// Configure Viper to use test config
-	viper := serialize.GetViper()
-	viper.AddConfigPath(testdataPath)
-	viper.SetConfigName("config")
-	viper.SetConfigType("yaml")
-	if err := viper.ReadInConfig(); err != nil {
+	// Configure YAML config to use writeable test config
+	yamlConfig := serialize.GetYAMLConfig()
+	configPath := filepath.Join(testdataPath, "writeable-config.yaml")
+	yamlConfig.SetConfigFile(configPath)
+	
+	// Read the base config first
+	baseConfigPath := filepath.Join(testdataPath, "config.yaml")
+	yamlConfig.SetConfigFile(baseConfigPath)
+	if err := yamlConfig.ReadConfig(); err != nil {
 		t.Fatalf("Failed to read test config: %v", err)
 	}
-	viper.SetConfigName("writeable-config")
-	viper.WriteConfig()
-
-	// viper.SetConfigFile(testdataPath)
-
+	
+	// Set to writeable config for tests
+	yamlConfig.SetConfigFile(configPath)
+	if err := yamlConfig.WriteConfig(); err != nil {
+		t.Fatalf("Failed to write test config: %v", err)
+	}
 }
 
 // resetMacroRepo resets the singleton for testing
@@ -94,7 +98,7 @@ func TestMacroRepo_LoadFromConfig(t *testing.T) {
 	}
 
 	// Get the test macro
-	macro, err := repo.Get("test macro")
+	macro, err := repo.Get("Test Macro")
 	if err != nil {
 		t.Fatalf("Failed to get test macro: %v", err)
 	}
@@ -127,7 +131,7 @@ func TestMacroRepo_DecodeWithActions(t *testing.T) {
 
 	repo := MacroRepo()
 
-	macro, err := repo.Get("test macro")
+	macro, err := repo.Get("Test Macro")
 	if err != nil {
 		t.Fatalf("Failed to get test macro: %v", err)
 	}
@@ -167,11 +171,11 @@ func TestMacroRepo_CRUD(t *testing.T) {
 
 	// Test Set (skip actual save to avoid file I/O issues)
 	repo.mu.Lock()
-	repo.models["newmacro"] = newMacro
+	repo.models["New Test Macro"] = newMacro
 	repo.mu.Unlock()
 
 	// Test Get
-	retrieved, err := repo.Get("newmacro")
+	retrieved, err := repo.Get("New Test Macro")
 	if err != nil {
 		t.Fatalf("Failed to get new macro: %v", err)
 	}
@@ -180,10 +184,10 @@ func TestMacroRepo_CRUD(t *testing.T) {
 		t.Errorf("Expected name 'New Test Macro', got '%s'", retrieved.Name)
 	}
 
-	// Test case-insensitive access
-	retrieved, err = repo.Get("NewMacro")
-	if err != nil {
-		t.Errorf("Case-insensitive get failed: %v", err)
+	// Test exact key matching (different case should fail)
+	_, err = repo.Get("new test macro")
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("Expected ErrNotFound for different case key, got: %v", err)
 	}
 
 	// Test GetAll
@@ -194,10 +198,10 @@ func TestMacroRepo_CRUD(t *testing.T) {
 
 	// Test Delete (without save)
 	repo.mu.Lock()
-	delete(repo.models, "newmacro")
+	delete(repo.models, "New Test Macro")
 	repo.mu.Unlock()
 
-	_, err = repo.Get("newmacro")
+	_, err = repo.Get("New Test Macro")
 	if !errors.Is(err, ErrNotFound) {
 		t.Errorf("Expected ErrNotFound after delete, got %v", err)
 	}
@@ -270,7 +274,7 @@ func TestMacroRepo_Reload(t *testing.T) {
 	}
 
 	// Original macro should still exist
-	_, err = repo.Get("test macro")
+	_, err = repo.Get("Test Macro")
 	if err != nil {
 		t.Errorf("Original macro should exist after reload: %v", err)
 	}

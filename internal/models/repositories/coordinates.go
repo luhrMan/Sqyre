@@ -9,7 +9,7 @@ func init() {
 	models.PointRepositoryFactory = func(p *models.Program, resKey string) models.PointRepositoryInterface {
 		return NewPointRepository(p, resKey)
 	}
-	
+
 	models.SearchAreaRepositoryFactory = func(p *models.Program, resKey string) models.SearchAreaRepositoryInterface {
 		return NewSearchAreaRepository(p, resKey)
 	}
@@ -38,9 +38,9 @@ func NewPointRepository(program *models.Program, resolutionKey string) *PointRep
 		}
 		program.Coordinates[resolutionKey] = coords
 	}
-	
+
 	return &PointRepository{
-		NestedRepository: NewNestedRepository[models.Point](
+		NestedRepository: NewNestedRepository(
 			coords.Points,
 			program.GetKey()+"|"+resolutionKey,
 			func() error {
@@ -51,7 +51,6 @@ func NewPointRepository(program *models.Program, resolutionKey string) *PointRep
 		program:       program,
 	}
 }
-
 
 // SearchAreaRepository manages SearchArea persistence within a Program context.
 // It embeds NestedRepository to leverage generic CRUD operations while maintaining
@@ -76,9 +75,9 @@ func NewSearchAreaRepository(program *models.Program, resolutionKey string) *Sea
 		}
 		program.Coordinates[resolutionKey] = coords
 	}
-	
+
 	return &SearchAreaRepository{
-		NestedRepository: NewNestedRepository[models.SearchArea](
+		NestedRepository: NewNestedRepository(
 			coords.SearchAreas,
 			program.GetKey()+"|"+resolutionKey,
 			func() error {
@@ -89,5 +88,3 @@ func NewSearchAreaRepository(program *models.Program, resolutionKey string) *Sea
 		program:       program,
 	}
 }
-
-

@@ -54,18 +54,23 @@ func TestItemRepository_Get(t *testing.T) {
 		}
 	})
 
-	t.Run("Get with case insensitivity", func(t *testing.T) {
-		testCases := []string{"health potion", "HEALTH POTION", "Health Potion", "HeAlTh PoTiOn"}
+	t.Run("Get with exact key matching", func(t *testing.T) {
+		// Test that exact key works
+		item, err := repo.Get("health potion")
+		if err != nil {
+			t.Fatalf("Failed to get item with exact key 'health potion': %v", err)
+		}
 
-		for _, key := range testCases {
-			item, err := repo.Get(key)
-			if err != nil {
-				t.Errorf("Failed to get item with key '%s': %v", key, err)
-				continue
-			}
+		if item.Name != "Health Potion" {
+			t.Errorf("Expected item name 'Health Potion', got '%s'", item.Name)
+		}
 
-			if item.Name != "Health Potion" {
-				t.Errorf("Key '%s' retrieved wrong item: %s", key, item.Name)
+		// Test that different case keys don't work (exact matching only)
+		differentCases := []string{"HEALTH POTION", "Health Potion", "HeAlTh PoTiOn"}
+		for _, key := range differentCases {
+			_, err := repo.Get(key)
+			if !errors.Is(err, ErrNotFound) {
+				t.Errorf("Expected ErrNotFound for different case key '%s', got: %v", key, err)
 			}
 		}
 	})
@@ -232,8 +237,9 @@ func TestItemRepository_Set(t *testing.T) {
 			t.Fatalf("Failed to get newly set item: %v", err)
 		}
 
-		if retrieved.Name != "New Potion" {
-			t.Errorf("Expected name 'New Potion', got '%s'", retrieved.Name)
+		// After key synchronization, the Name should match the provided key (preserving capitalization)
+		if retrieved.Name != "new potion" {
+			t.Errorf("Expected name 'new potion' (provided key), got '%s'", retrieved.Name)
 		}
 	})
 
@@ -287,22 +293,28 @@ func TestItemRepository_Set(t *testing.T) {
 		}
 	})
 
-	t.Run("Set normalizes key to lowercase", func(t *testing.T) {
+	t.Run("Set preserves exact key case", func(t *testing.T) {
 		item := &models.Item{Name: "Case Test"}
 		err := repo.Set("CASE TEST", item)
 		if err != nil {
 			t.Fatalf("Failed to set item: %v", err)
 		}
 
-		// Should be retrievable with any case
-		_, err = repo.Get("case test")
+		// Should be retrievable with exact case only
+		retrieved, err := repo.Get("CASE TEST")
 		if err != nil {
-			t.Error("Item should be retrievable with lowercase key")
+			t.Error("Item should be retrievable with exact key")
 		}
 
-		_, err = repo.Get("CASE TEST")
-		if err != nil {
-			t.Error("Item should be retrievable with uppercase key")
+		// Verify the item's name was synchronized to the exact key
+		if retrieved.Name != "CASE TEST" {
+			t.Errorf("Expected item name to be 'CASE TEST', got '%s'", retrieved.Name)
+		}
+
+		// Should NOT be retrievable with different case
+		_, err = repo.Get("case test")
+		if !errors.Is(err, ErrNotFound) {
+			t.Error("Item should NOT be retrievable with different case")
 		}
 	})
 }
@@ -356,21 +368,37 @@ func TestItemRepository_Delete(t *testing.T) {
 		}
 	})
 
-	t.Run("Delete with case insensitivity", func(t *testing.T) {
+	t.Run("Delete with exact key matching", func(t *testing.T) {
 		// Add an item
 		item := &models.Item{Name: "Delete Test"}
 		repo.Set("delete test", item)
 
-		// Delete with different case
-		err := repo.Delete("DELETE TEST")
+		// Delete with exact case should work
+		err := repo.Delete("delete test")
 		if err != nil {
-			t.Fatalf("Failed to delete with different case: %v", err)
+			t.Fatalf("Failed to delete with exact key: %v", err)
 		}
 
 		// Verify deletion
 		_, err = repo.Get("delete test")
 		if !errors.Is(err, ErrNotFound) {
-			t.Error("Item should be deleted regardless of case")
+			t.Error("Item should be deleted with exact key")
+		}
+
+		// Add another item to test that different case doesn't delete
+		item2 := &models.Item{Name: "Another Test"}
+		repo.Set("Another Test", item2)
+
+		// Try to delete with different case - should not work
+		err = repo.Delete("another test")
+		if err != nil {
+			t.Fatalf("Delete with wrong case should not error, but should not delete: %v", err)
+		}
+
+		// Verify item still exists
+		_, err = repo.Get("Another Test")
+		if err != nil {
+			t.Error("Item should still exist when deleted with wrong case")
 		}
 	})
 }
@@ -957,13 +985,14 @@ func TestItemRepository_Integration_CreateAndSave(t *testing.T) {
 		}
 
 		// Save through ProgramRepository
-		err := ProgramRepo().Set("integrationtest", program)
+		// Use a key that matches the desired program name
+		err := ProgramRepo().Set("Integration Test Game", program)
 		if err != nil {
 			t.Fatalf("Failed to save program: %v", err)
 		}
 
 		// Verify program was saved
-		retrieved, err := ProgramRepo().Get("integrationtest")
+		retrieved, err := ProgramRepo().Get("Integration Test Game")
 		if err != nil {
 			t.Fatalf("Failed to retrieve saved program: %v", err)
 		}
@@ -1125,8 +1154,9 @@ func TestItemRepository_Integration_ModifyAndPersist(t *testing.T) {
 			t.Fatalf("New item should exist after reload: %v", err)
 		}
 
-		if newItemRetrieved.Name != "New Item" {
-			t.Errorf("Expected 'New Item', got '%s'", newItemRetrieved.Name)
+		// After key synchronization, Name should match the provided key
+		if newItemRetrieved.Name != "new item" {
+			t.Errorf("Expected 'new item', got '%s'", newItemRetrieved.Name)
 		}
 
 		// Verify original item was updated
@@ -1177,7 +1207,7 @@ func TestItemRepository_Integration_SaveTriggersProgram(t *testing.T) {
 			StackMax: 1,
 		}
 
-		err = itemRepo.Set("test item", item)
+		err = itemRepo.Set("Test Item", item)
 		if err != nil {
 			t.Fatalf("Failed to set item: %v", err)
 		}
@@ -1198,7 +1228,7 @@ func TestItemRepository_Integration_SaveTriggersProgram(t *testing.T) {
 			t.Errorf("Expected 1 item after reload, got %d", len(reloaded.Items))
 		}
 
-		testItem, exists := reloaded.Items["test item"]
+		testItem, exists := reloaded.Items["Test Item"]
 		if !exists {
 			t.Fatal("Test item should exist after reload")
 		}
@@ -1330,4 +1360,86 @@ func TestItemRepository_Integration_ProgramItemRepo(t *testing.T) {
 			t.Error("ItemRepo() should return the same instance on multiple calls")
 		}
 	})
+}
+
+// TestNestedRepository_KeySynchronization_Item verifies that Item key synchronization
+// works correctly when using Set() with a different key than the item's Name
+func TestNestedRepository_KeySynchronization_Item(t *testing.T) {
+	setupTestConfig(t)
+	resetProgramRepo()
+
+	// Create a Program with an ItemRepository
+	program := models.NewProgram()
+	program.Name = "Key Sync Test"
+
+	// Save the program to make it available for ItemRepository.Save()
+	err := ProgramRepo().Set("keysynctest", program)
+	if err != nil {
+		t.Fatalf("Failed to save initial program: %v", err)
+	}
+
+	itemRepo := NewItemRepository(program)
+
+	// Create an Item with a different name than the key we'll use
+	item := &models.Item{
+		Name:     "Old Name",
+		GridSize: [2]int{1, 1},
+		StackMax: 5,
+		Tags:     []string{"test"},
+	}
+
+	// Call Set() with a different key than the item's Name (preserving capitalization)
+	err = itemRepo.Set("New Name", item)
+	if err != nil {
+		t.Fatalf("Failed to set item: %v", err)
+	}
+
+	// Verify the item's internal Name field is updated to match the provided key (with capitalization)
+	if item.GetKey() != "New Name" {
+		t.Errorf("Expected item.GetKey() to be 'New Name', got '%s'", item.GetKey())
+	}
+
+	if item.Name != "New Name" {
+		t.Errorf("Expected item.Name to be 'New Name', got '%s'", item.Name)
+	}
+
+	// Verify the item can be retrieved with the exact key
+	retrieved, err := itemRepo.Get("New Name")
+	if err != nil {
+		t.Fatalf("Failed to get item with new key: %v", err)
+	}
+
+	if retrieved.GetKey() != "New Name" {
+		t.Errorf("Expected retrieved.GetKey() to be 'New Name', got '%s'", retrieved.GetKey())
+	}
+
+	// Verify other fields are preserved
+	if retrieved.StackMax != 5 {
+		t.Errorf("Expected StackMax to be 5, got %d", retrieved.StackMax)
+	}
+
+	if len(retrieved.Tags) != 1 || retrieved.Tags[0] != "test" {
+		t.Errorf("Expected Tags to be ['test'], got %v", retrieved.Tags)
+	}
+
+	// Verify the parent Program is saved correctly by getting it from the repository
+	// (Set() should have triggered a save through the saveFunc)
+	savedProgram, err := ProgramRepo().Get("keysynctest")
+	if err != nil {
+		t.Fatalf("Failed to get saved program: %v", err)
+	}
+
+	// Verify the item exists in the saved program with the exact key
+	savedItem, exists := savedProgram.Items["New Name"]
+	if !exists {
+		t.Fatal("Item should exist in saved program with key 'New Name'")
+	}
+
+	if savedItem.Name != "New Name" {
+		t.Errorf("Expected saved item Name to be 'New Name', got '%s'", savedItem.Name)
+	}
+
+	if savedItem.StackMax != 5 {
+		t.Errorf("Expected saved item StackMax to be 5, got %d", savedItem.StackMax)
+	}
 }

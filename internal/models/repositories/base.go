@@ -1,13 +1,13 @@
 package repositories
 
 import (
+	"Squire/internal/models"
 	"Squire/internal/models/serialize"
 	"fmt"
 	"log"
 	"maps"
 	"os"
 	"slices"
-	"strings"
 	"sync"
 )
 
@@ -149,7 +149,7 @@ func NewBaseRepository[T any](configKey string, decodeFunc DecodeFunc[T], newFun
 }
 
 // Get retrieves a model by key. Returns ErrNotFound if the key doesn't exist.
-// Keys are normalized to lowercase for case-insensitive access.
+// Keys must match exactly (case-sensitive).
 func (r *BaseRepository[T]) Get(key string) (*T, error) {
 	if key == "" {
 		return nil, ErrInvalidKey
@@ -158,8 +158,7 @@ func (r *BaseRepository[T]) Get(key string) (*T, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	normalizedKey := strings.ToLower(key)
-	model, ok := r.models[normalizedKey]
+	model, ok := r.models[key]
 	if !ok {
 		return nil, fmt.Errorf("%w: %s", ErrNotFound, key)
 	}
@@ -205,8 +204,13 @@ func (r *BaseRepository[T]) Set(key string, model *T) error {
 	}
 
 	r.mu.Lock()
-	normalizedKey := strings.ToLower(key)
-	r.models[normalizedKey] = model
+
+	// Synchronize model's internal key with the provided key (exact match)
+	if baseModel, ok := any(model).(models.BaseModel); ok {
+		baseModel.SetKey(key)
+	}
+
+	r.models[key] = model
 	r.mu.Unlock()
 
 	// Save immediately after modification
@@ -225,8 +229,7 @@ func (r *BaseRepository[T]) Delete(key string) error {
 	}
 
 	r.mu.Lock()
-	normalizedKey := strings.ToLower(key)
-	delete(r.models, normalizedKey)
+	delete(r.models, key)
 	r.mu.Unlock()
 
 	// Save immediately after modification
@@ -237,13 +240,14 @@ func (r *BaseRepository[T]) Delete(key string) error {
 	return nil
 }
 
-// Save persists all models to disk via Viper
+// Save persists all models to disk via YAML
 func (r *BaseRepository[T]) Save() error {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	serialize.GetViper().Set(r.configKey, r.models)
-	if err := serialize.GetViper().WriteConfig(); err != nil {
+	yamlConfig := serialize.GetYAMLConfig()
+	yamlConfig.Set(r.configKey, r.models)
+	if err := yamlConfig.WriteConfig(); err != nil {
 		return fmt.Errorf("%w: %v", ErrSaveFailed, err)
 	}
 
@@ -255,24 +259,17 @@ func (r *BaseRepository[T]) Save() error {
 // Individual decode failures are logged but don't stop the loading process.
 // In test mode (SQYRE_TEST_MODE=1), this will re-read the config file from disk.
 func (r *BaseRepository[T]) Reload() error {
-	viper := serialize.GetViper()
+	yamlConfig := serialize.GetYAMLConfig()
 
 	// In test mode, re-read config file from disk to ensure fresh data
-	// This is necessary because after WriteConfig(), Viper's in-memory state
-	// contains struct pointers which GetStringMap() cannot handle properly
 	if os.Getenv("SQYRE_TEST_MODE") == "1" {
-		// Clear the in-memory config to force a fresh read
-		configFile := viper.ConfigFileUsed()
-		viper.Set(r.configKey, nil)
-
 		// Re-read from disk
-		viper.SetConfigFile(configFile)
-		if err := viper.ReadInConfig(); err != nil {
+		if err := yamlConfig.ReadConfig(); err != nil {
 			return fmt.Errorf("failed to re-read config in test mode: %w", err)
 		}
 	}
 
-	configMap := viper.GetStringMap(r.configKey)
+	configMap := yamlConfig.GetStringMap(r.configKey)
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -289,8 +286,7 @@ func (r *BaseRepository[T]) Reload() error {
 			continue
 		}
 
-		normalizedKey := strings.ToLower(key)
-		r.models[normalizedKey] = model
+		r.models[key] = model
 		successCount++
 	}
 

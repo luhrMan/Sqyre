@@ -197,7 +197,7 @@ programs:
                 tags: []
                 stackmax: 19
                 merchant: ""
-            Item 20:
+            item20:
                 name: Item 20
                 gridsize:
                     - 1
@@ -205,7 +205,7 @@ programs:
                 tags: []
                 stackmax: 20
                 merchant: ""
-            Item 21:
+            item21:
                 name: Item 21
                 gridsize:
                     - 1
@@ -213,7 +213,7 @@ programs:
                 tags: []
                 stackmax: 21
                 merchant: ""
-            Item 22:
+            item22:
                 name: Item 22
                 gridsize:
                     - 1
@@ -221,7 +221,7 @@ programs:
                 tags: []
                 stackmax: 22
                 merchant: ""
-            Item 23:
+            item23:
                 name: Item 23
                 gridsize:
                     - 1
@@ -229,7 +229,7 @@ programs:
                 tags: []
                 stackmax: 23
                 merchant: ""
-            Item 24:
+            item24:
                 name: Item 24
                 gridsize:
                     - 1
@@ -237,7 +237,7 @@ programs:
                 tags: []
                 stackmax: 24
                 merchant: ""
-            Item 25:
+            item25:
                 name: Item 25
                 gridsize:
                     - 1
@@ -245,7 +245,7 @@ programs:
                 tags: []
                 stackmax: 25
                 merchant: ""
-            Item 26:
+            item26:
                 name: Item 26
                 gridsize:
                     - 1
@@ -253,7 +253,7 @@ programs:
                 tags: []
                 stackmax: 26
                 merchant: ""
-            Item 27:
+            item27:
                 name: Item 27
                 gridsize:
                     - 1
@@ -261,7 +261,7 @@ programs:
                 tags: []
                 stackmax: 27
                 merchant: ""
-            Item 28:
+            item28:
                 name: Item 28
                 gridsize:
                     - 1
@@ -269,7 +269,7 @@ programs:
                 tags: []
                 stackmax: 28
                 merchant: ""
-            Item 29:
+            item29:
                 name: Item 29
                 gridsize:
                     - 1
@@ -277,7 +277,7 @@ programs:
                 tags: []
                 stackmax: 29
                 merchant: ""
-            Item 30:
+            item30:
                 name: Item 30
                 gridsize:
                     - 1
@@ -285,7 +285,7 @@ programs:
                 tags: []
                 stackmax: 30
                 merchant: ""
-            Item 31:
+            item31:
                 name: Item 31
                 gridsize:
                     - 1
@@ -293,7 +293,7 @@ programs:
                 tags: []
                 stackmax: 31
                 merchant: ""
-            Item 32:
+            item32:
                 name: Item 32
                 gridsize:
                     - 1
@@ -301,7 +301,7 @@ programs:
                 tags: []
                 stackmax: 32
                 merchant: ""
-            Item 33:
+            item33:
                 name: Item 33
                 gridsize:
                     - 1
@@ -309,7 +309,7 @@ programs:
                 tags: []
                 stackmax: 33
                 merchant: ""
-            Item 34:
+            item34:
                 name: Item 34
                 gridsize:
                     - 1
@@ -317,7 +317,7 @@ programs:
                 tags: []
                 stackmax: 34
                 merchant: ""
-            Item 35:
+            item35:
                 name: Item 35
                 gridsize:
                     - 1
@@ -325,7 +325,7 @@ programs:
                 tags: []
                 stackmax: 35
                 merchant: ""
-            Item 36:
+            item36:
                 name: Item 36
                 gridsize:
                     - 1
@@ -333,7 +333,7 @@ programs:
                 tags: []
                 stackmax: 36
                 merchant: ""
-            Item 37:
+            item37:
                 name: Item 37
                 gridsize:
                     - 1
@@ -341,7 +341,7 @@ programs:
                 tags: []
                 stackmax: 37
                 merchant: ""
-            Item 38:
+            item38:
                 name: Item 38
                 gridsize:
                     - 1
@@ -349,7 +349,7 @@ programs:
                 tags: []
                 stackmax: 38
                 merchant: ""
-            Item 39:
+            item39:
                 name: Item 39
                 gridsize:
                     - 1
@@ -357,7 +357,7 @@ programs:
                 tags: []
                 stackmax: 39
                 merchant: ""
-            Item 40:
+            item40:
                 name: Item 40
                 gridsize:
                     - 1
@@ -365,7 +365,7 @@ programs:
                 tags: []
                 stackmax: 40
                 merchant: ""
-            Item 41:
+            item41:
                 name: Item 41
                 gridsize:
                     - 1
@@ -373,7 +373,7 @@ programs:
                 tags: []
                 stackmax: 41
                 merchant: ""
-            Item 42:
+            item42:
                 name: Item 42
                 gridsize:
                     - 1
@@ -381,7 +381,7 @@ programs:
                 tags: []
                 stackmax: 42
                 merchant: ""
-            Item 43:
+            item43:
                 name: Item 43
                 gridsize:
                     - 1
@@ -389,7 +389,7 @@ programs:
                 tags: []
                 stackmax: 43
                 merchant: ""
-            Item 44:
+            item44:
                 name: Item 44
                 gridsize:
                     - 1
@@ -397,7 +397,7 @@ programs:
                 tags: []
                 stackmax: 44
                 merchant: ""
-            Item 45:
+            item45:
                 name: Item 45
                 gridsize:
                     - 1
@@ -405,7 +405,7 @@ programs:
                 tags: []
                 stackmax: 45
                 merchant: ""
-            Item 46:
+            item46:
                 name: Item 46
                 gridsize:
                     - 1
@@ -413,7 +413,7 @@ programs:
                 tags: []
                 stackmax: 46
                 merchant: ""
-            Item 47:
+            item47:
                 name: Item 47
                 gridsize:
                     - 1
@@ -421,7 +421,7 @@ programs:
                 tags: []
                 stackmax: 47
                 merchant: ""
-            Item 48:
+            item48:
                 name: Item 48
                 gridsize:
                     - 1
@@ -429,7 +429,7 @@ programs:
                 tags: []
                 stackmax: 48
                 merchant: ""
-            Item 49:
+            item49:
                 name: Item 49
                 gridsize:
                     - 1
@@ -437,7 +437,7 @@ programs:
                 tags: []
                 stackmax: 49
                 merchant: ""
-            Item 50:
+            item50:
                 name: Item 50
                 gridsize:
                     - 1
@@ -445,7 +445,7 @@ programs:
                 tags: []
                 stackmax: 50
                 merchant: ""
-            Item 51:
+            item51:
                 name: Item 51
                 gridsize:
                     - 1
@@ -453,7 +453,7 @@ programs:
                 tags: []
                 stackmax: 51
                 merchant: ""
-            Item 52:
+            item52:
                 name: Item 52
                 gridsize:
                     - 1
@@ -461,7 +461,7 @@ programs:
                 tags: []
                 stackmax: 52
                 merchant: ""
-            Item 53:
+            item53:
                 name: Item 53
                 gridsize:
                     - 1
@@ -469,7 +469,7 @@ programs:
                 tags: []
                 stackmax: 53
                 merchant: ""
-            Item 54:
+            item54:
                 name: Item 54
                 gridsize:
                     - 1
@@ -477,7 +477,7 @@ programs:
                 tags: []
                 stackmax: 54
                 merchant: ""
-            Item 55:
+            item55:
                 name: Item 55
                 gridsize:
                     - 1
@@ -485,7 +485,7 @@ programs:
                 tags: []
                 stackmax: 55
                 merchant: ""
-            Item 56:
+            item56:
                 name: Item 56
                 gridsize:
                     - 1
@@ -493,7 +493,7 @@ programs:
                 tags: []
                 stackmax: 56
                 merchant: ""
-            Item 57:
+            item57:
                 name: Item 57
                 gridsize:
                     - 1
@@ -501,7 +501,7 @@ programs:
                 tags: []
                 stackmax: 57
                 merchant: ""
-            Item 58:
+            item58:
                 name: Item 58
                 gridsize:
                     - 1
@@ -509,7 +509,7 @@ programs:
                 tags: []
                 stackmax: 58
                 merchant: ""
-            Item 59:
+            item59:
                 name: Item 59
                 gridsize:
                     - 1
@@ -517,7 +517,7 @@ programs:
                 tags: []
                 stackmax: 59
                 merchant: ""
-            Item 60:
+            item60:
                 name: Item 60
                 gridsize:
                     - 1
@@ -525,7 +525,7 @@ programs:
                 tags: []
                 stackmax: 60
                 merchant: ""
-            Item 61:
+            item61:
                 name: Item 61
                 gridsize:
                     - 1
@@ -533,7 +533,7 @@ programs:
                 tags: []
                 stackmax: 61
                 merchant: ""
-            Item 62:
+            item62:
                 name: Item 62
                 gridsize:
                     - 1
@@ -541,7 +541,7 @@ programs:
                 tags: []
                 stackmax: 62
                 merchant: ""
-            Item 63:
+            item63:
                 name: Item 63
                 gridsize:
                     - 1
@@ -549,7 +549,7 @@ programs:
                 tags: []
                 stackmax: 63
                 merchant: ""
-            Item 64:
+            item64:
                 name: Item 64
                 gridsize:
                     - 1
@@ -557,7 +557,7 @@ programs:
                 tags: []
                 stackmax: 64
                 merchant: ""
-            Item 65:
+            item65:
                 name: Item 65
                 gridsize:
                     - 1
@@ -565,7 +565,7 @@ programs:
                 tags: []
                 stackmax: 65
                 merchant: ""
-            Item 66:
+            item66:
                 name: Item 66
                 gridsize:
                     - 1
@@ -573,7 +573,7 @@ programs:
                 tags: []
                 stackmax: 66
                 merchant: ""
-            Item 67:
+            item67:
                 name: Item 67
                 gridsize:
                     - 1
@@ -581,7 +581,7 @@ programs:
                 tags: []
                 stackmax: 67
                 merchant: ""
-            Item 68:
+            item68:
                 name: Item 68
                 gridsize:
                     - 1
@@ -589,7 +589,7 @@ programs:
                 tags: []
                 stackmax: 68
                 merchant: ""
-            Item 69:
+            item69:
                 name: Item 69
                 gridsize:
                     - 1
@@ -597,7 +597,7 @@ programs:
                 tags: []
                 stackmax: 69
                 merchant: ""
-            Item 70:
+            item70:
                 name: Item 70
                 gridsize:
                     - 1
@@ -605,7 +605,7 @@ programs:
                 tags: []
                 stackmax: 70
                 merchant: ""
-            Item 71:
+            item71:
                 name: Item 71
                 gridsize:
                     - 1
@@ -613,7 +613,7 @@ programs:
                 tags: []
                 stackmax: 71
                 merchant: ""
-            Item 72:
+            item72:
                 name: Item 72
                 gridsize:
                     - 1
@@ -621,7 +621,7 @@ programs:
                 tags: []
                 stackmax: 72
                 merchant: ""
-            Item 73:
+            item73:
                 name: Item 73
                 gridsize:
                     - 1
@@ -629,7 +629,7 @@ programs:
                 tags: []
                 stackmax: 73
                 merchant: ""
-            Item 74:
+            item74:
                 name: Item 74
                 gridsize:
                     - 1
@@ -637,7 +637,7 @@ programs:
                 tags: []
                 stackmax: 74
                 merchant: ""
-            Item 75:
+            item75:
                 name: Item 75
                 gridsize:
                     - 1
@@ -645,7 +645,7 @@ programs:
                 tags: []
                 stackmax: 75
                 merchant: ""
-            Item 76:
+            item76:
                 name: Item 76
                 gridsize:
                     - 1
@@ -653,7 +653,7 @@ programs:
                 tags: []
                 stackmax: 76
                 merchant: ""
-            Item 77:
+            item77:
                 name: Item 77
                 gridsize:
                     - 1
@@ -661,7 +661,7 @@ programs:
                 tags: []
                 stackmax: 77
                 merchant: ""
-            Item 78:
+            item78:
                 name: Item 78
                 gridsize:
                     - 1
@@ -669,7 +669,7 @@ programs:
                 tags: []
                 stackmax: 78
                 merchant: ""
-            Item 79:
+            item79:
                 name: Item 79
                 gridsize:
                     - 1
@@ -677,7 +677,7 @@ programs:
                 tags: []
                 stackmax: 79
                 merchant: ""
-            Item 80:
+            item80:
                 name: Item 80
                 gridsize:
                     - 1
@@ -685,7 +685,7 @@ programs:
                 tags: []
                 stackmax: 80
                 merchant: ""
-            Item 81:
+            item81:
                 name: Item 81
                 gridsize:
                     - 1
@@ -693,7 +693,7 @@ programs:
                 tags: []
                 stackmax: 81
                 merchant: ""
-            Item 82:
+            item82:
                 name: Item 82
                 gridsize:
                     - 1
@@ -701,7 +701,7 @@ programs:
                 tags: []
                 stackmax: 82
                 merchant: ""
-            Item 83:
+            item83:
                 name: Item 83
                 gridsize:
                     - 1
@@ -709,7 +709,7 @@ programs:
                 tags: []
                 stackmax: 83
                 merchant: ""
-            Item 84:
+            item84:
                 name: Item 84
                 gridsize:
                     - 1
@@ -717,7 +717,7 @@ programs:
                 tags: []
                 stackmax: 84
                 merchant: ""
-            Item 85:
+            item85:
                 name: Item 85
                 gridsize:
                     - 1
@@ -725,7 +725,7 @@ programs:
                 tags: []
                 stackmax: 85
                 merchant: ""
-            Item 86:
+            item86:
                 name: Item 86
                 gridsize:
                     - 1
@@ -733,7 +733,7 @@ programs:
                 tags: []
                 stackmax: 86
                 merchant: ""
-            Item 87:
+            item87:
                 name: Item 87
                 gridsize:
                     - 1
@@ -741,7 +741,7 @@ programs:
                 tags: []
                 stackmax: 87
                 merchant: ""
-            Item 88:
+            item88:
                 name: Item 88
                 gridsize:
                     - 1
@@ -749,7 +749,7 @@ programs:
                 tags: []
                 stackmax: 88
                 merchant: ""
-            Item 89:
+            item89:
                 name: Item 89
                 gridsize:
                     - 1
@@ -757,7 +757,7 @@ programs:
                 tags: []
                 stackmax: 89
                 merchant: ""
-            Item 90:
+            item90:
                 name: Item 90
                 gridsize:
                     - 1
@@ -765,7 +765,7 @@ programs:
                 tags: []
                 stackmax: 90
                 merchant: ""
-            Item 91:
+            item91:
                 name: Item 91
                 gridsize:
                     - 1
@@ -773,7 +773,7 @@ programs:
                 tags: []
                 stackmax: 91
                 merchant: ""
-            Item 92:
+            item92:
                 name: Item 92
                 gridsize:
                     - 1
@@ -781,7 +781,7 @@ programs:
                 tags: []
                 stackmax: 92
                 merchant: ""
-            Item 93:
+            item93:
                 name: Item 93
                 gridsize:
                     - 1
@@ -789,7 +789,7 @@ programs:
                 tags: []
                 stackmax: 93
                 merchant: ""
-            Item 94:
+            item94:
                 name: Item 94
                 gridsize:
                     - 1
@@ -797,7 +797,7 @@ programs:
                 tags: []
                 stackmax: 94
                 merchant: ""
-            Item 95:
+            item95:
                 name: Item 95
                 gridsize:
                     - 1
@@ -805,7 +805,7 @@ programs:
                 tags: []
                 stackmax: 95
                 merchant: ""
-            Item 96:
+            item96:
                 name: Item 96
                 gridsize:
                     - 1
@@ -813,7 +813,7 @@ programs:
                 tags: []
                 stackmax: 96
                 merchant: ""
-            Item 97:
+            item97:
                 name: Item 97
                 gridsize:
                     - 1
@@ -821,7 +821,7 @@ programs:
                 tags: []
                 stackmax: 97
                 merchant: ""
-            Item 98:
+            item98:
                 name: Item 98
                 gridsize:
                     - 1
@@ -829,7 +829,7 @@ programs:
                 tags: []
                 stackmax: 98
                 merchant: ""
-            Item 99:
+            item99:
                 name: Item 99
                 gridsize:
                     - 1
@@ -851,7 +851,7 @@ programs:
     count test:
         name: count test
         items:
-            Item 3:
+            item3:
                 name: Item 3 Updated
                 gridsize:
                     - 0
@@ -889,7 +889,7 @@ programs:
     mixed operations:
         name: mixed operations
         items:
-            Item 0:
+            item0:
                 name: Item 0
                 gridsize:
                     - 1
@@ -897,7 +897,7 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: ""
-            Item 1:
+            item1:
                 name: Item 1
                 gridsize:
                     - 1
@@ -905,7 +905,7 @@ programs:
                 tags: []
                 stackmax: 1
                 merchant: ""
-            Item 2:
+            item2:
                 name: Item 2
                 gridsize:
                     - 1
@@ -913,7 +913,7 @@ programs:
                 tags: []
                 stackmax: 2
                 merchant: ""
-            Item 3:
+            item3:
                 name: Item 3
                 gridsize:
                     - 1
@@ -921,7 +921,7 @@ programs:
                 tags: []
                 stackmax: 3
                 merchant: ""
-            Item 4:
+            item4:
                 name: Item 4
                 gridsize:
                     - 1
@@ -929,7 +929,7 @@ programs:
                 tags: []
                 stackmax: 4
                 merchant: ""
-            Item 5:
+            item5:
                 name: Item 5
                 gridsize:
                     - 1
@@ -937,7 +937,7 @@ programs:
                 tags: []
                 stackmax: 5
                 merchant: ""
-            Item 6:
+            item6:
                 name: Item 6
                 gridsize:
                     - 1
@@ -945,7 +945,7 @@ programs:
                 tags: []
                 stackmax: 6
                 merchant: ""
-            Item 7:
+            item7:
                 name: Item 7
                 gridsize:
                     - 1
@@ -953,7 +953,7 @@ programs:
                 tags: []
                 stackmax: 7
                 merchant: ""
-            Item 8:
+            item8:
                 name: Item 8
                 gridsize:
                     - 1
@@ -961,7 +961,7 @@ programs:
                 tags: []
                 stackmax: 8
                 merchant: ""
-            Item 9:
+            item9:
                 name: Item 9
                 gridsize:
                     - 1
@@ -969,7 +969,7 @@ programs:
                 tags: []
                 stackmax: 9
                 merchant: ""
-            Item 10:
+            item10:
                 name: Item 10
                 gridsize:
                     - 1
@@ -977,7 +977,7 @@ programs:
                 tags: []
                 stackmax: 10
                 merchant: ""
-            Item 11:
+            item11:
                 name: Item 11
                 gridsize:
                     - 1
@@ -985,7 +985,7 @@ programs:
                 tags: []
                 stackmax: 11
                 merchant: ""
-            Item 12:
+            item12:
                 name: Item 12
                 gridsize:
                     - 1
@@ -993,7 +993,7 @@ programs:
                 tags: []
                 stackmax: 12
                 merchant: ""
-            Item 13:
+            item13:
                 name: Item 13
                 gridsize:
                     - 1
@@ -1001,7 +1001,7 @@ programs:
                 tags: []
                 stackmax: 13
                 merchant: ""
-            Item 14:
+            item14:
                 name: Item 14
                 gridsize:
                     - 1
@@ -1009,7 +1009,7 @@ programs:
                 tags: []
                 stackmax: 14
                 merchant: ""
-            Item 15:
+            item15:
                 name: Item 15
                 gridsize:
                     - 1
@@ -1017,7 +1017,7 @@ programs:
                 tags: []
                 stackmax: 15
                 merchant: ""
-            Item 16:
+            item16:
                 name: Item 16
                 gridsize:
                     - 1
@@ -1025,7 +1025,7 @@ programs:
                 tags: []
                 stackmax: 16
                 merchant: ""
-            Item 17:
+            item17:
                 name: Item 17
                 gridsize:
                     - 1
@@ -1033,7 +1033,7 @@ programs:
                 tags: []
                 stackmax: 17
                 merchant: ""
-            Item 18:
+            item18:
                 name: Item 18
                 gridsize:
                     - 1
@@ -1041,7 +1041,7 @@ programs:
                 tags: []
                 stackmax: 18
                 merchant: ""
-            Item 19:
+            item19:
                 name: Item 19
                 gridsize:
                     - 1
@@ -1049,7 +1049,7 @@ programs:
                 tags: []
                 stackmax: 19
                 merchant: ""
-            Item 20:
+            item20:
                 name: Item 20
                 gridsize:
                     - 1
@@ -1057,7 +1057,7 @@ programs:
                 tags: []
                 stackmax: 20
                 merchant: ""
-            Item 21:
+            item21:
                 name: Item 21
                 gridsize:
                     - 1
@@ -1065,7 +1065,7 @@ programs:
                 tags: []
                 stackmax: 21
                 merchant: ""
-            Item 22:
+            item22:
                 name: Item 22
                 gridsize:
                     - 1
@@ -1073,7 +1073,7 @@ programs:
                 tags: []
                 stackmax: 22
                 merchant: ""
-            Item 23:
+            item23:
                 name: Item 23
                 gridsize:
                     - 1
@@ -1081,7 +1081,7 @@ programs:
                 tags: []
                 stackmax: 23
                 merchant: ""
-            Item 24:
+            item24:
                 name: Item 24
                 gridsize:
                     - 1
@@ -1089,7 +1089,7 @@ programs:
                 tags: []
                 stackmax: 24
                 merchant: ""
-            Item 25:
+            item25:
                 name: Item 25
                 gridsize:
                     - 1
@@ -1097,7 +1097,7 @@ programs:
                 tags: []
                 stackmax: 25
                 merchant: ""
-            Item 26:
+            item26:
                 name: Item 26
                 gridsize:
                     - 1
@@ -1105,7 +1105,7 @@ programs:
                 tags: []
                 stackmax: 26
                 merchant: ""
-            Item 27:
+            item27:
                 name: Item 27
                 gridsize:
                     - 1
@@ -1113,7 +1113,7 @@ programs:
                 tags: []
                 stackmax: 27
                 merchant: ""
-            Item 28:
+            item28:
                 name: Item 28
                 gridsize:
                     - 1
@@ -1121,7 +1121,7 @@ programs:
                 tags: []
                 stackmax: 28
                 merchant: ""
-            Item 29:
+            item29:
                 name: Item 29
                 gridsize:
                     - 1
@@ -1129,7 +1129,7 @@ programs:
                 tags: []
                 stackmax: 29
                 merchant: ""
-            Item 30:
+            item30:
                 name: Item 30
                 gridsize:
                     - 1
@@ -1137,7 +1137,7 @@ programs:
                 tags: []
                 stackmax: 30
                 merchant: ""
-            Item 31:
+            item31:
                 name: Item 31
                 gridsize:
                     - 1
@@ -1145,7 +1145,7 @@ programs:
                 tags: []
                 stackmax: 31
                 merchant: ""
-            Item 32:
+            item32:
                 name: Item 32
                 gridsize:
                     - 1
@@ -1153,7 +1153,7 @@ programs:
                 tags: []
                 stackmax: 32
                 merchant: ""
-            Item 33:
+            item33:
                 name: Item 33
                 gridsize:
                     - 1
@@ -1161,7 +1161,7 @@ programs:
                 tags: []
                 stackmax: 33
                 merchant: ""
-            Item 34:
+            item34:
                 name: Item 34
                 gridsize:
                     - 1
@@ -1169,7 +1169,7 @@ programs:
                 tags: []
                 stackmax: 34
                 merchant: ""
-            Item 35:
+            item35:
                 name: Item 35
                 gridsize:
                     - 1
@@ -1177,7 +1177,7 @@ programs:
                 tags: []
                 stackmax: 35
                 merchant: ""
-            Item 36:
+            item36:
                 name: Item 36
                 gridsize:
                     - 1
@@ -1185,7 +1185,7 @@ programs:
                 tags: []
                 stackmax: 36
                 merchant: ""
-            Item 37:
+            item37:
                 name: Item 37
                 gridsize:
                     - 1
@@ -1193,7 +1193,7 @@ programs:
                 tags: []
                 stackmax: 37
                 merchant: ""
-            Item 38:
+            item38:
                 name: Item 38
                 gridsize:
                     - 1
@@ -1201,7 +1201,7 @@ programs:
                 tags: []
                 stackmax: 38
                 merchant: ""
-            Item 39:
+            item39:
                 name: Item 39
                 gridsize:
                     - 1
@@ -1209,7 +1209,7 @@ programs:
                 tags: []
                 stackmax: 39
                 merchant: ""
-            Item 40:
+            item40:
                 name: Item 40
                 gridsize:
                     - 1
@@ -1217,7 +1217,7 @@ programs:
                 tags: []
                 stackmax: 40
                 merchant: ""
-            Item 41:
+            item41:
                 name: Item 41
                 gridsize:
                     - 1
@@ -1225,7 +1225,7 @@ programs:
                 tags: []
                 stackmax: 41
                 merchant: ""
-            Item 42:
+            item42:
                 name: Item 42
                 gridsize:
                     - 1
@@ -1233,7 +1233,7 @@ programs:
                 tags: []
                 stackmax: 42
                 merchant: ""
-            Item 43:
+            item43:
                 name: Item 43
                 gridsize:
                     - 1
@@ -1241,7 +1241,7 @@ programs:
                 tags: []
                 stackmax: 43
                 merchant: ""
-            Item 44:
+            item44:
                 name: Item 44
                 gridsize:
                     - 1
@@ -1249,7 +1249,7 @@ programs:
                 tags: []
                 stackmax: 44
                 merchant: ""
-            Item 45:
+            item45:
                 name: Item 45
                 gridsize:
                     - 1
@@ -1257,7 +1257,7 @@ programs:
                 tags: []
                 stackmax: 45
                 merchant: ""
-            Item 46:
+            item46:
                 name: Item 46
                 gridsize:
                     - 1
@@ -1265,7 +1265,7 @@ programs:
                 tags: []
                 stackmax: 46
                 merchant: ""
-            Item 47:
+            item47:
                 name: Item 47
                 gridsize:
                     - 1
@@ -1273,7 +1273,7 @@ programs:
                 tags: []
                 stackmax: 47
                 merchant: ""
-            Item 48:
+            item48:
                 name: Item 48
                 gridsize:
                     - 1
@@ -1281,7 +1281,7 @@ programs:
                 tags: []
                 stackmax: 48
                 merchant: ""
-            Item 49:
+            item49:
                 name: Item 49
                 gridsize:
                     - 1
@@ -1318,7 +1318,7 @@ programs:
     test game:
         name: test game
         items:
-            Sword:
+            sword:
                 name: Sword
                 gridsize:
                     - 1
@@ -1332,10 +1332,10 @@ programs:
             2560x1440:
                 points: {}
                 searchareas: {}
-    Test Program:
+    test program:
         name: Test Program
         items:
-            Test Item:
+            test item:
                 name: Test Item
                 gridsize:
                     - 1

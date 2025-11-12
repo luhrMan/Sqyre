@@ -42,17 +42,16 @@ func setupIntegrationTest(t *testing.T) (string, func()) {
 		// Disable test mode
 		os.Unsetenv("SQYRE_TEST_MODE")
 
-		viper := serialize.GetViper()
-		// Reset viper to testdata config for other tests
+		yamlConfig := serialize.GetYAMLConfig()
+		// Reset YAML config to testdata config for other tests
 		testdataPath, _ := filepath.Abs("testdata")
-		viper.AddConfigPath(testdataPath)
-		viper.SetConfigName("config")
-		viper.SetConfigType("yaml")
-		viper.ReadInConfig()
-		viper.SetConfigName("writeable-config")
-		viper.WriteConfig()
-
-		// os.RemoveAll(tempDir)
+		baseConfigPath := filepath.Join(testdataPath, "config.yaml")
+		yamlConfig.SetConfigFile(baseConfigPath)
+		yamlConfig.ReadConfig()
+		
+		writeableConfigPath := filepath.Join(testdataPath, "writeable-config.yaml")
+		yamlConfig.SetConfigFile(writeableConfigPath)
+		yamlConfig.WriteConfig()
 	}
 	configPath, _ := filepath.Abs("testdata/writeable-config.yaml")
 	return configPath, cleanup
@@ -73,8 +72,8 @@ func TestIntegration_FullSaveAndReloadCycle(t *testing.T) {
 	if macroRepo.Count() != 2 {
 		t.Fatalf("Expected 2 macro initially, got %d", macroRepo.Count())
 	}
-	if programRepo.Count() != 2 {
-		t.Fatalf("Expected 2 program initially, got %d", programRepo.Count())
+	if programRepo.Count() != 9 {
+		t.Fatalf("Expected 9 program initially, got %d", programRepo.Count())
 	}
 
 	// Add new macro
@@ -83,13 +82,13 @@ func TestIntegration_FullSaveAndReloadCycle(t *testing.T) {
 	newMacro.Root.SetSubActions([]actions.ActionInterface{waitAction})
 
 	macroRepo.mu.Lock()
-	macroRepo.models["newmacro"] = newMacro
+	macroRepo.models["New Integration Macro"] = newMacro
 	macroRepo.mu.Unlock()
 
 	// Add new program
 	newProgram := programRepo.New()
 	newProgram.Name = "New Integration Program"
-	newProgram.Items["newitem"] = &models.Item{
+	newProgram.Items["New Item"] = &models.Item{
 		Name:     "New Item",
 		GridSize: [2]int{1, 2},
 		Tags:     []string{"new"},
@@ -98,7 +97,7 @@ func TestIntegration_FullSaveAndReloadCycle(t *testing.T) {
 	}
 
 	programRepo.mu.Lock()
-	programRepo.models["newprogram"] = newProgram
+	programRepo.models["New Integration Program"] = newProgram
 	programRepo.mu.Unlock()
 
 	// Save both
@@ -121,12 +120,12 @@ func TestIntegration_FullSaveAndReloadCycle(t *testing.T) {
 	if macroRepo.Count() != 3 {
 		t.Errorf("Expected 3 macros after reload, got %d", macroRepo.Count())
 	}
-	if programRepo.Count() != 3 {
-		t.Errorf("Expected 3 programs after reload, got %d", programRepo.Count())
+	if programRepo.Count() != 10 {
+		t.Errorf("Expected 10 programs after reload, got %d", programRepo.Count())
 	}
 
 	// Verify new macro persisted
-	reloadedMacro, err := macroRepo.Get("newmacro")
+	reloadedMacro, err := macroRepo.Get("New Integration Macro")
 	if err != nil {
 		t.Fatalf("Failed to get new macro: %v", err)
 	}
@@ -135,7 +134,7 @@ func TestIntegration_FullSaveAndReloadCycle(t *testing.T) {
 	}
 
 	// Verify new program persisted
-	reloadedProgram, err := programRepo.Get("newprogram")
+	reloadedProgram, err := programRepo.Get("New Integration Program")
 	if err != nil {
 		t.Fatalf("Failed to get new program: %v", err)
 	}
@@ -163,7 +162,7 @@ func TestIntegration_ConcurrentRepositoryAccess(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, err := macroRepo.Get("integration test macro")
+			_, err := macroRepo.Get("Integration Test Macro")
 			if err != nil {
 				errors <- err
 			}
@@ -282,14 +281,14 @@ func TestIntegration_SaveReloadCycle_WithModifications(t *testing.T) {
 	initialProgramCount := programRepo.Count()
 
 	// Modify macro
-	macro, err := macroRepo.Get("integration test macro")
+	macro, err := macroRepo.Get("Integration Test Macro")
 	if err != nil {
 		t.Fatalf("Failed to get macro: %v", err)
 	}
 	macro.GlobalDelay = 999
 
 	macroRepo.mu.Lock()
-	macroRepo.models["integration test macro"] = macro
+	macroRepo.models["Integration Test Macro"] = macro
 	macroRepo.mu.Unlock()
 
 	// Modify program
@@ -334,7 +333,7 @@ func TestIntegration_SaveReloadCycle_WithModifications(t *testing.T) {
 	}
 
 	// Verify macro modifications persisted
-	reloadedMacro, err := macroRepo.Get("integration test macro")
+	reloadedMacro, err := macroRepo.Get("Integration Test Macro")
 	if err != nil {
 		t.Fatalf("Failed to get macro after reload: %v", err)
 	}
@@ -470,7 +469,7 @@ func TestIntegration_StressTest_RapidOperations(t *testing.T) {
 	}
 
 	// Verify we can still perform operations
-	_, err := repo.Get("integration test macro")
+	_, err := repo.Get("Integration Test Macro")
 	if err != nil {
 		t.Errorf("Repository should still be functional after stress test: %v", err)
 	}

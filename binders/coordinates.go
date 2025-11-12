@@ -6,9 +6,9 @@ import (
 	"Squire/internal/models/actions"
 	"Squire/internal/models/repositories"
 	"Squire/ui"
+	"log"
 	"strconv"
-	"strings"
-"log"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
@@ -41,7 +41,7 @@ func setAccordionSearchAreasLists(acc *widget.Accordion) {
 		}{
 			searchbar:   new(widget.Entry),
 			searchareas: new(widget.List),
-			filtered:    p.Coordinates[config.MainMonitorSizeString].GetSearchAreasAsStringSlice(),
+			filtered:    p.SearchAreaRepo(config.MainMonitorSizeString).GetAllKeys(),
 		}
 
 		lists.searchareas = widget.NewList(
@@ -60,7 +60,7 @@ func setAccordionSearchAreasLists(acc *widget.Accordion) {
 					log.Printf("Error getting program %s: %v", p.Name, err)
 					return
 				}
-				sa, err := program.Coordinates[config.MainMonitorSizeString].GetSearchArea(name)
+				sa, err := program.SearchAreaRepo(config.MainMonitorSizeString).Get(name)
 				if err != nil {
 					return
 				}
@@ -77,7 +77,7 @@ func setAccordionSearchAreasLists(acc *widget.Accordion) {
 			ui.GetUi().ProgramSelector.SetText(program.Name)
 			saName := lists.filtered[id]
 
-			sa, err := program.Coordinates[config.MainMonitorSizeString].GetSearchArea(saName)
+			sa, err := program.SearchAreaRepo(config.MainMonitorSizeString).Get(saName)
 			if err != nil {
 				return
 			}
@@ -102,7 +102,7 @@ func setAccordionSearchAreasLists(acc *widget.Accordion) {
 		lists.searchbar = &widget.Entry{
 			PlaceHolder: "Search here",
 			OnChanged: func(s string) {
-				defaultList := p.Coordinates[config.MainMonitorSizeString].GetSearchAreasAsStringSlice()
+				defaultList := p.SearchAreaRepo(config.MainMonitorSizeString).GetAllKeys()
 				defer lists.searchareas.ScrollToTop()
 				defer lists.searchareas.Refresh()
 
@@ -128,8 +128,8 @@ func setAccordionSearchAreasLists(acc *widget.Accordion) {
 				lists.searchareas,
 			),
 		)
-		ui.GetUi().EditorTabs.SearchAreasTab.Widgets[strings.ToLower(p.Name+"-searchbar")] = lists.searchbar
-		ui.GetUi().EditorTabs.SearchAreasTab.Widgets[strings.ToLower(p.Name+"-list")] = lists.searchareas
+		ui.GetUi().EditorTabs.SearchAreasTab.Widgets[p.Name+"-searchbar"] = lists.searchbar
+		ui.GetUi().EditorTabs.SearchAreasTab.Widgets[p.Name+"-list"] = lists.searchareas
 		acc.Append(&programSAListWidget)
 	}
 }
@@ -144,7 +144,7 @@ func setAccordionPointsLists(acc *widget.Accordion) {
 		}{
 			searchBar: new(widget.Entry),
 			points:    new(widget.List),
-			filtered:  p.Coordinates[config.MainMonitorSizeString].GetPointsAsStringSlice(),
+			filtered:  p.PointRepo(config.MainMonitorSizeString).GetAllKeys(),
 		}
 		lists.points = widget.NewList(
 			func() int {
@@ -161,7 +161,7 @@ func setAccordionPointsLists(acc *widget.Accordion) {
 					log.Printf("Error getting program %s: %v", p.Name, err)
 					return
 				}
-				point, err := program.Coordinates[config.MainMonitorSizeString].GetPoint(name)
+				point, err := program.PointRepo(config.MainMonitorSizeString).Get(name)
 				if err != nil {
 					return
 				}
@@ -178,7 +178,7 @@ func setAccordionPointsLists(acc *widget.Accordion) {
 			ui.GetUi().ProgramSelector.SetText(program.Name)
 
 			pointName := lists.filtered[id]
-			point, err := program.Coordinates[config.MainMonitorSizeString].GetPoint(pointName)
+			point, err := p.PointRepo(config.MainMonitorSizeString).Get(pointName)
 			if err != nil {
 				return
 			}
@@ -195,7 +195,7 @@ func setAccordionPointsLists(acc *widget.Accordion) {
 		lists.searchBar = &widget.Entry{
 			PlaceHolder: "Search here",
 			OnChanged: func(s string) {
-				defaultList := p.Coordinates[config.MainMonitorSizeString].GetPointsAsStringSlice()
+				defaultList := p.SearchAreaRepo(config.MainMonitorSizeString).GetAllKeys()
 				defer lists.points.ScrollToTop()
 				defer lists.points.Refresh()
 
@@ -220,8 +220,8 @@ func setAccordionPointsLists(acc *widget.Accordion) {
 				lists.points,
 			),
 		)
-		ui.GetUi().EditorTabs.PointsTab.Widgets[strings.ToLower(p.Name)+"-searchbar"] = lists.searchBar
-		ui.GetUi().EditorTabs.PointsTab.Widgets[strings.ToLower(p.Name)+"-list"] = lists.points
+		ui.GetUi().EditorTabs.PointsTab.Widgets[p.Name+"-searchbar"] = lists.searchBar
+		ui.GetUi().EditorTabs.PointsTab.Widgets[p.Name+"-list"] = lists.points
 		acc.Append(&programPointListWidget)
 	}
 }
