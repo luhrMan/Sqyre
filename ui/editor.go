@@ -1,6 +1,9 @@
 package ui
 
 import (
+	"Squire/internal/services"
+	"Squire/ui/custom_widgets"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/theme"
@@ -83,6 +86,17 @@ func (u *Ui) constructEditorTabs() {
 	itw[rows] = new(widget.Entry)
 	itw[tags] = widget.NewCard("test", "", nil)
 	itw[sm] = new(widget.Entry)
+	
+	// Create IconVariantEditor widget
+	iconService := services.NewIconVariantService()
+	itw["iconVariantEditor"] = custom_widgets.NewIconVariantEditor(
+		"", // programName will be set when item is selected
+		"", // itemName will be set when item is selected
+		iconService,
+		ui.Window,
+		nil, // onVariantChange callback will be set in binders
+	)
+	
 	itw[form] = widget.NewForm(
 		widget.NewFormItem(name, itw[name]),
 		widget.NewFormItem(cols, itw[cols]),
@@ -90,6 +104,7 @@ func (u *Ui) constructEditorTabs() {
 		widget.NewFormItem(tags, widget.NewEntry()),
 		widget.NewFormItem("", itw[tags]),
 		widget.NewFormItem(sm, itw[sm]),
+		widget.NewFormItem("Icon Variants", itw["iconVariantEditor"]),
 		// widget.NewFormItem(m, ui.EditorTabs.ItemsTab.Widgets[m]),
 		// widget.NewFormItem("icons", container.NewGridWithRows(2, widget.NewIcon(theme.MediaFastForwardIcon()))),
 	)

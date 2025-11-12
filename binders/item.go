@@ -6,10 +6,13 @@ import (
 	"Squire/internal/models"
 	"Squire/internal/models/actions"
 	"Squire/internal/models/repositories"
+	"Squire/internal/services"
 	"Squire/ui"
+	"Squire/ui/custom_widgets"
 	"image/color"
 	"log"
 	"slices"
+	"sort"
 	"strconv"
 
 	"fyne.io/fyne/v2"
@@ -29,6 +32,25 @@ func setItemsWidgets(i models.Item) {
 	it["Rows"].(*widget.Entry).SetText(strconv.Itoa(i.GridSize[1]))
 	// it["Tags"].(*widget.Entry).Bind(c.(binding.String))
 	it["StackMax"].(*widget.Entry).SetText(strconv.Itoa(i.StackMax))
+	
+	// Update IconVariantEditor with selected item
+	if editor, ok := it["iconVariantEditor"].(*custom_widgets.IconVariantEditor); ok {
+		programName := ui.GetUi().ProgramSelector.Text
+		iconService := services.NewIconVariantService()
+		baseName := iconService.GetBaseItemName(i.Name)
+		
+		editor.SetProgramName(programName)
+		editor.SetItemName(baseName)
+		
+		// Set variant change callback to refresh accordion items
+		editor.SetOnVariantChange(func() {
+			RefreshItemsAccordionItems()
+			// Also refresh the accordion to update the item list
+			if acc, ok := it["Accordion"].(*widget.Accordion); ok {
+				acc.Refresh()
+			}
+		})
+	}
 }
 
 func RefreshItemsAccordionItems() {
@@ -41,8 +63,9 @@ func setAccordionItemsLists(acc *widget.Accordion) {
 	acc.Items = []*widget.AccordionItem{}
 
 	var (
-		ats   = ui.GetUi().ActionTabs
-		icons = assets.BytesToFyneIcons()
+		ats            = ui.GetUi().ActionTabs
+		icons          = assets.BytesToFyneIcons()
+		iconService    = services.NewIconVariantService()
 	)
 	for _, p := range repositories.ProgramRepo().GetAll() {
 		lists := struct {
@@ -52,7 +75,7 @@ func setAccordionItemsLists(acc *widget.Accordion) {
 		}{
 			searchbar: new(widget.Entry),
 			items:     new(widget.GridWrap),
-			filtered:  p.ItemRepo().GetAllKeys(),
+			filtered:  groupItemsByBaseName(p.ItemRepo().GetAllKeys(), iconService),
 		}
 		lists.items = widget.NewGridWrap(
 			func() int {
@@ -71,38 +94,57 @@ func setAccordionItemsLists(acc *widget.Accordion) {
 				return stack
 			},
 			func(id widget.GridWrapItemID, o fyne.CanvasObject) {
-				name := lists.filtered[id]
+				baseItemName := lists.filtered[id]
 
 				stack := o.(*fyne.Container)
 				rect := stack.Objects[0].(*canvas.Rectangle)
 				icon := stack.Objects[1].(*fyne.Container).Objects[0].(*canvas.Image)
 				tt := stack.Objects[2].(*ttwidget.Label)
-				tt.SetToolTip(name)
+				tt.SetToolTip(baseItemName)
 
-				program, err := repositories.ProgramRepo().Get(p.Name)
-				if err != nil {
-					log.Printf("Error getting program %s: %v", p.Name, err)
-					return
-				}
-				item, err := program.ItemRepo().Get(name)
-				if err != nil {
-					return
-				}
 				ist, _ := ats.BoundImageSearch.GetValue("Targets")
 				t := ist.([]string)
 				if ui.GetUi().MainUi.Visible() {
-					if slices.Contains(t, p.Name+config.ProgramDelimiter+item.Name) {
+					// Check if any variant of this base item is in targets
+					hasVariantInTargets := false
+					for _, target := range t {
+						targetBaseName := iconService.GetBaseItemName(target)
+						if targetBaseName == p.Name+config.ProgramDelimiter+baseItemName {
+							hasVariantInTargets = true
+							break
+						}
+					}
+					if hasVariantInTargets {
 						rect.FillColor = color.RGBA{R: 0, G: 128, B: 0, A: 128}
 					} else {
 						rect.FillColor = color.RGBA{}
 					}
 				}
 
-				path := p.Name + config.ProgramDelimiter + item.Name + config.PNG
-				if icons[path] != nil {
-					icon.Resource = icons[path]
+				// Load first variant's icon for display
+				variants, err := iconService.GetVariants(p.Name, baseItemName)
+				if err == nil && len(variants) > 0 {
+					// Use first variant
+					path := p.Name + config.ProgramDelimiter + baseItemName
+					if variants[0] != "" {
+						path = path + config.ProgramDelimiter + variants[0]
+					}
+					path = path + config.PNG
+					
+					if icons[path] != nil {
+						icon.Resource = icons[path]
+					} else {
+						// Try loading from filesystem if not in embedded icons
+						icon.Resource = theme.BrokenImageIcon()
+					}
 				} else {
-					icon.Resource = theme.BrokenImageIcon()
+					// Fallback to legacy path
+					path := p.Name + config.ProgramDelimiter + baseItemName + config.PNG
+					if icons[path] != nil {
+						icon.Resource = icons[path]
+					} else {
+						icon.Resource = theme.BrokenImageIcon()
+					}
 				}
 				o.Refresh()
 			},
@@ -116,12 +158,26 @@ func setAccordionItemsLists(acc *widget.Accordion) {
 				return
 			}
 			ui.GetUi().ProgramSelector.SetText(program.Name)
-			itemName := lists.filtered[id]
+			baseItemName := lists.filtered[id]
 
-			item, err := program.ItemRepo().Get(itemName)
+			// Try to get the item by base name first, or find first variant
+			item, err := program.ItemRepo().Get(baseItemName)
 			if err != nil {
-				return
+				// Item not found by base name, try to find first variant
+				allItems := program.ItemRepo().GetAllKeys()
+				for _, itemName := range allItems {
+					if iconService.GetBaseItemName(itemName) == baseItemName {
+						item, err = program.ItemRepo().Get(itemName)
+						if err == nil {
+							break
+						}
+					}
+				}
+				if err != nil {
+					return
+				}
 			}
+			
 			ui.GetUi().EditorTabs.ItemsTab.SelectedItem = item
 			if ui.GetUi().MainUi.Visible() {
 				if v, ok := ui.GetUi().Mui.MTabs.SelectedTab().Macro.Root.GetAction(ui.GetUi().Mui.MTabs.SelectedTab().SelectedNode).(*actions.ImageSearch); ok {
@@ -149,7 +205,7 @@ func setAccordionItemsLists(acc *widget.Accordion) {
 		lists.searchbar = &widget.Entry{
 			PlaceHolder: "Search here",
 			OnChanged: func(s string) {
-				defaultList := p.ItemRepo().GetAllKeys()
+				defaultList := groupItemsByBaseName(p.ItemRepo().GetAllKeys(), iconService)
 				defer lists.items.ScrollToTop()
 				defer lists.items.Refresh()
 
@@ -178,4 +234,28 @@ func setAccordionItemsLists(acc *widget.Accordion) {
 
 		acc.Append(&programItemsListWidget)
 	}
+}
+
+// groupItemsByBaseName groups items by their base name (text before ProgramDelimiter)
+// to prevent duplicate entries in the filtered list. Returns a sorted list of unique
+// base item names.
+func groupItemsByBaseName(itemNames []string, iconService *services.IconVariantService) []string {
+	baseNameMap := make(map[string]bool)
+	
+	// Extract unique base names
+	for _, itemName := range itemNames {
+		baseName := iconService.GetBaseItemName(itemName)
+		baseNameMap[baseName] = true
+	}
+	
+	// Convert map to sorted slice
+	uniqueBaseNames := make([]string, 0, len(baseNameMap))
+	for baseName := range baseNameMap {
+		uniqueBaseNames = append(uniqueBaseNames, baseName)
+	}
+	
+	// Sort alphabetically by base item name
+	sort.Strings(uniqueBaseNames)
+	
+	return uniqueBaseNames
 }

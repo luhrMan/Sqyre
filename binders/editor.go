@@ -204,6 +204,7 @@ func setEditorButtons() {
 			ui.GetUi().EditorTabs.ItemsTab.Widgets[program+"-searchbar"].(*widget.Entry).SetText(v.Name)
 			ui.GetUi().EditorTabs.ItemsTab.Widgets["Name"].(*widget.Entry).SetText(v.Name)
 			ui.GetUi().EditorTabs.ItemsTab.Widgets[program+"-list"].(*widget.GridWrap).Select(0)
+			setItemsWidgets(i)
 			RefreshItemsAccordionItems()
 		case "Points":
 			n := ui.GetUi().EditorTabs.PointsTab.Widgets["Name"].(*widget.Entry).Text

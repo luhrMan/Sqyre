@@ -6,6 +6,7 @@ const (
 	InternalPath                 = "internal/"
 	AssetsPath                   = InternalPath + "assets/"
 	ImagesPath                   = AssetsPath + "images/"
+	IconsPath                    = ImagesPath + "icons/"
 	MetaImagesPath               = ImagesPath + "meta/"
 	MaskImagesPath               = ImagesPath + "masks/"
 	CalibrationImagesPath        = ImagesPath + "calibration/"
@@ -29,6 +30,10 @@ const (
 	GOB  = ".gob"
 	JSON = ".json"
 	YAML = ".yaml"
+
+	// Icon variant constants
+	IconThumbnailSize = 64  // pixels for thumbnail display
+	MaxIconVariants   = 100 // maximum variants per item
 
 	//since I have refactored the code to account for multiple programs at once,
 	// I need to append the program name to the program properties names,
