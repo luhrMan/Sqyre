@@ -50,6 +50,7 @@ func setProgramList(list *widget.List) {
 			log.Printf("Error getting program %s: %v", filtered[id], err)
 			return
 		}
+		log.Println("selected", program.Name)
 		ui.GetUi().EditorTabs.ProgramsTab.SelectedItem = program
 		ui.GetUi().ProgramSelector.SetText(filtered[id])
 	}

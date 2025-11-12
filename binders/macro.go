@@ -10,7 +10,6 @@ import (
 	"log"
 	"slices"
 	"strconv"
-	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -189,7 +188,7 @@ func setMacroSelect(b *widget.Button) {
 				label.SetText(v)
 				label.Importance = widget.MediumImportance
 				for _, d := range ui.GetUi().Mui.MTabs.Items {
-					if strings.ToLower(d.Text) == v {
+					if d.Text == v {
 						label.Importance = widget.SuccessImportance
 					}
 				}

@@ -65,18 +65,23 @@ func TestPointRepository_Get(t *testing.T) {
 		}
 	})
 
-	t.Run("Get with case insensitivity", func(t *testing.T) {
-		testCases := []string{"stash-screen", "STASH-SCREEN", "Stash-Screen", "StAsH-ScReEn"}
+	t.Run("Get with exact key matching", func(t *testing.T) {
+		// Test that exact key works
+		point, err := repo.Get("stash-screen")
+		if err != nil {
+			t.Fatalf("Failed to get point with exact key 'stash-screen': %v", err)
+		}
 
-		for _, key := range testCases {
-			point, err := repo.Get(key)
-			if err != nil {
-				t.Errorf("Failed to get point with key '%s': %v", key, err)
-				continue
-			}
+		if point.Name != "stash-screen" {
+			t.Errorf("Expected point name 'stash-screen', got '%s'", point.Name)
+		}
 
-			if point.Name != "stash-screen" {
-				t.Errorf("Key '%s' retrieved wrong point: %s", key, point.Name)
+		// Test that different case keys don't work (exact matching only)
+		differentCases := []string{"STASH-SCREEN", "Stash-Screen", "StAsH-ScReEn"}
+		for _, key := range differentCases {
+			_, err := repo.Get(key)
+			if !errors.Is(err, ErrNotFound) {
+				t.Errorf("Expected ErrNotFound for different case key '%s', got: %v", key, err)
 			}
 		}
 	})
@@ -257,8 +262,9 @@ func TestPointRepository_Set(t *testing.T) {
 			t.Fatalf("Failed to get newly set point: %v", err)
 		}
 
-		if retrieved.Name != "New Point" {
-			t.Errorf("Expected name 'New Point', got '%s'", retrieved.Name)
+		// After key synchronization, Name should match the provided key exactly
+		if retrieved.Name != "new point" {
+			t.Errorf("Expected name 'new point', got '%s'", retrieved.Name)
 		}
 
 		if retrieved.X != 800 {
@@ -316,22 +322,28 @@ func TestPointRepository_Set(t *testing.T) {
 		}
 	})
 
-	t.Run("Set normalizes key to lowercase", func(t *testing.T) {
+	t.Run("Set preserves exact key case", func(t *testing.T) {
 		point := &models.Point{Name: "Case Test", X: 50, Y: 50}
 		err := repo.Set("CASE TEST", point)
 		if err != nil {
 			t.Fatalf("Failed to set point: %v", err)
 		}
 
-		// Should be retrievable with any case
-		_, err = repo.Get("case test")
+		// Should be retrievable with exact case only
+		retrieved, err := repo.Get("CASE TEST")
 		if err != nil {
-			t.Error("Point should be retrievable with lowercase key")
+			t.Error("Point should be retrievable with exact key")
 		}
 
-		_, err = repo.Get("CASE TEST")
-		if err != nil {
-			t.Error("Point should be retrievable with uppercase key")
+		// Verify the point's name was synchronized to the exact key
+		if retrieved.Name != "CASE TEST" {
+			t.Errorf("Expected point name to be 'CASE TEST', got '%s'", retrieved.Name)
+		}
+
+		// Should NOT be retrievable with different case
+		_, err = repo.Get("case test")
+		if !errors.Is(err, ErrNotFound) {
+			t.Error("Point should NOT be retrievable with different case")
 		}
 	})
 }
@@ -385,21 +397,37 @@ func TestPointRepository_Delete(t *testing.T) {
 		}
 	})
 
-	t.Run("Delete with case insensitivity", func(t *testing.T) {
+	t.Run("Delete with exact key matching", func(t *testing.T) {
 		// Add a point
 		point := &models.Point{Name: "Delete Test", X: 10, Y: 10}
 		repo.Set("delete test", point)
 
-		// Delete with different case
-		err := repo.Delete("DELETE TEST")
+		// Delete with exact case should work
+		err := repo.Delete("delete test")
 		if err != nil {
-			t.Fatalf("Failed to delete with different case: %v", err)
+			t.Fatalf("Failed to delete with exact key: %v", err)
 		}
 
 		// Verify deletion
 		_, err = repo.Get("delete test")
 		if !errors.Is(err, ErrNotFound) {
-			t.Error("Point should be deleted regardless of case")
+			t.Error("Point should be deleted with exact key")
+		}
+
+		// Add another point to test that different case doesn't delete
+		point2 := &models.Point{Name: "Another Test", X: 20, Y: 20}
+		repo.Set("Another Test", point2)
+
+		// Try to delete with different case - should not work
+		err = repo.Delete("another test")
+		if err != nil {
+			t.Fatalf("Delete with wrong case should not error, but should not delete: %v", err)
+		}
+
+		// Verify point still exists
+		_, err = repo.Get("Another Test")
+		if err != nil {
+			t.Error("Point should still exist when deleted with wrong case")
 		}
 	})
 }
@@ -752,18 +780,23 @@ func TestSearchAreaRepository_Get(t *testing.T) {
 		}
 	})
 
-	t.Run("Get with case insensitivity", func(t *testing.T) {
-		testCases := []string{"stash-player-inv", "STASH-PLAYER-INV", "Stash-Player-Inv", "StAsH-PlAyEr-InV"}
+	t.Run("Get with exact key matching", func(t *testing.T) {
+		// Test that exact key works
+		area, err := repo.Get("stash-player-inv")
+		if err != nil {
+			t.Fatalf("Failed to get search area with exact key 'stash-player-inv': %v", err)
+		}
 
-		for _, key := range testCases {
-			area, err := repo.Get(key)
-			if err != nil {
-				t.Errorf("Failed to get search area with key '%s': %v", key, err)
-				continue
-			}
+		if area.Name != "stash-player-inv" {
+			t.Errorf("Expected area name 'stash-player-inv', got '%s'", area.Name)
+		}
 
-			if area.Name != "stash-player-inv" {
-				t.Errorf("Key '%s' retrieved wrong search area: %s", key, area.Name)
+		// Test that different case keys don't work (exact matching only)
+		differentCases := []string{"STASH-PLAYER-INV", "Stash-Player-Inv", "StAsH-PlAyEr-InV"}
+		for _, key := range differentCases {
+			_, err := repo.Get(key)
+			if !errors.Is(err, ErrNotFound) {
+				t.Errorf("Expected ErrNotFound for different case key '%s', got: %v", key, err)
 			}
 		}
 	})
@@ -937,8 +970,9 @@ func TestSearchAreaRepository_Set(t *testing.T) {
 			t.Fatalf("Failed to get newly set search area: %v", err)
 		}
 
-		if retrieved.Name != "New Area" {
-			t.Errorf("Expected name 'New Area', got '%s'", retrieved.Name)
+		// After key synchronization, Name should match the provided key exactly
+		if retrieved.Name != "new area" {
+			t.Errorf("Expected name 'new area', got '%s'", retrieved.Name)
 		}
 
 		if retrieved.LeftX != 100 {
@@ -1004,22 +1038,28 @@ func TestSearchAreaRepository_Set(t *testing.T) {
 		}
 	})
 
-	t.Run("Set normalizes key to lowercase", func(t *testing.T) {
+	t.Run("Set preserves exact key case", func(t *testing.T) {
 		area := &models.SearchArea{Name: "Case Test", LeftX: 50, TopY: 50, RightX: 100, BottomY: 100}
 		err := repo.Set("CASE TEST", area)
 		if err != nil {
 			t.Fatalf("Failed to set search area: %v", err)
 		}
 
-		// Should be retrievable with any case
-		_, err = repo.Get("case test")
+		// Should be retrievable with exact case only
+		retrieved, err := repo.Get("CASE TEST")
 		if err != nil {
-			t.Error("Search area should be retrievable with lowercase key")
+			t.Error("Search area should be retrievable with exact key")
 		}
 
-		_, err = repo.Get("CASE TEST")
-		if err != nil {
-			t.Error("Search area should be retrievable with uppercase key")
+		// Verify the area's name was synchronized to the exact key
+		if retrieved.Name != "CASE TEST" {
+			t.Errorf("Expected area name to be 'CASE TEST', got '%s'", retrieved.Name)
+		}
+
+		// Should NOT be retrievable with different case
+		_, err = repo.Get("case test")
+		if !errors.Is(err, ErrNotFound) {
+			t.Error("Search area should NOT be retrievable with different case")
 		}
 	})
 }
@@ -1073,21 +1113,37 @@ func TestSearchAreaRepository_Delete(t *testing.T) {
 		}
 	})
 
-	t.Run("Delete with case insensitivity", func(t *testing.T) {
+	t.Run("Delete with exact key matching", func(t *testing.T) {
 		// Add a search area
 		area := &models.SearchArea{Name: "Delete Test", LeftX: 10, TopY: 10, RightX: 20, BottomY: 20}
 		repo.Set("delete test", area)
 
-		// Delete with different case
-		err := repo.Delete("DELETE TEST")
+		// Delete with exact case should work
+		err := repo.Delete("delete test")
 		if err != nil {
-			t.Fatalf("Failed to delete with different case: %v", err)
+			t.Fatalf("Failed to delete with exact key: %v", err)
 		}
 
 		// Verify deletion
 		_, err = repo.Get("delete test")
 		if !errors.Is(err, ErrNotFound) {
-			t.Error("Search area should be deleted regardless of case")
+			t.Error("Search area should be deleted with exact key")
+		}
+
+		// Add another area to test that different case doesn't delete
+		area2 := &models.SearchArea{Name: "Another Test", LeftX: 30, TopY: 30, RightX: 40, BottomY: 40}
+		repo.Set("Another Test", area2)
+
+		// Try to delete with different case - should not work
+		err = repo.Delete("another test")
+		if err != nil {
+			t.Fatalf("Delete with wrong case should not error, but should not delete: %v", err)
+		}
+
+		// Verify area still exists
+		_, err = repo.Get("Another Test")
+		if err != nil {
+			t.Error("Search area should still exist when deleted with wrong case")
 		}
 	})
 }
@@ -1428,4 +1484,216 @@ func containsAt(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+// TestNestedRepository_KeySynchronization_Point verifies that Point key synchronization
+// works correctly when using Set() with a different key than the point's Name
+func TestNestedRepository_KeySynchronization_Point(t *testing.T) {
+	setupTestConfig(t)
+	resetProgramRepo()
+
+	// Create a Program with a PointRepository for a specific resolution
+	program := models.NewProgram()
+	program.Name = "Point Key Sync Test"
+	resolutionKey := "1920x1080"
+
+	// Initialize coordinates for the resolution
+	program.Coordinates[resolutionKey] = &models.Coordinates{
+		Points:      make(map[string]*models.Point),
+		SearchAreas: make(map[string]*models.SearchArea),
+	}
+
+	// Save the program to make it available for PointRepository.Save()
+	err := ProgramRepo().Set("pointkeysynctest", program)
+	if err != nil {
+		t.Fatalf("Failed to save initial program: %v", err)
+	}
+
+	pointRepo := NewPointRepository(program, resolutionKey)
+
+	// Create a Point with a different name than the key we'll use
+	point := &models.Point{
+		Name: "Old Point Name",
+		X:    100,
+		Y:    200,
+	}
+
+	// Call Set() with a different key than the point's Name (preserving capitalization)
+	err = pointRepo.Set("New Point Name", point)
+	if err != nil {
+		t.Fatalf("Failed to set point: %v", err)
+	}
+
+	// Verify the point's internal Name field is updated to match the provided key (with capitalization)
+	if point.GetKey() != "New Point Name" {
+		t.Errorf("Expected point.GetKey() to be 'New Point Name', got '%s'", point.GetKey())
+	}
+
+	if point.Name != "New Point Name" {
+		t.Errorf("Expected point.Name to be 'New Point Name', got '%s'", point.Name)
+	}
+
+	// Verify the point can be retrieved with the exact key
+	retrieved, err := pointRepo.Get("New Point Name")
+	if err != nil {
+		t.Fatalf("Failed to get point with new key: %v", err)
+	}
+
+	if retrieved.GetKey() != "New Point Name" {
+		t.Errorf("Expected retrieved.GetKey() to be 'New Point Name', got '%s'", retrieved.GetKey())
+	}
+
+	// Verify other fields are preserved
+	if retrieved.X != 100 {
+		t.Errorf("Expected X to be 100, got %d", retrieved.X)
+	}
+
+	if retrieved.Y != 200 {
+		t.Errorf("Expected Y to be 200, got %d", retrieved.Y)
+	}
+
+	// Verify the parent Program is saved correctly by getting it from the repository
+	// (Set() should have triggered a save through the saveFunc)
+	savedProgram, err := ProgramRepo().Get("pointkeysynctest")
+	if err != nil {
+		t.Fatalf("Failed to get saved program: %v", err)
+	}
+
+	// Verify the point exists in the saved program with the correct key
+	coords, exists := savedProgram.Coordinates[resolutionKey]
+	if !exists {
+		t.Fatalf("Coordinates for resolution '%s' should exist in saved program", resolutionKey)
+	}
+
+	savedPoint, exists := coords.Points["New Point Name"]
+	if !exists {
+		t.Fatal("Point should exist in saved program with key 'New Point Name'")
+	}
+
+	if savedPoint.Name != "New Point Name" {
+		t.Errorf("Expected saved point Name to be 'New Point Name', got '%s'", savedPoint.Name)
+	}
+
+	if savedPoint.X != 100 {
+		t.Errorf("Expected saved point X to be 100, got %d", savedPoint.X)
+	}
+
+	if savedPoint.Y != 200 {
+		t.Errorf("Expected saved point Y to be 200, got %d", savedPoint.Y)
+	}
+}
+
+// TestNestedRepository_KeySynchronization_SearchArea verifies that SearchArea key synchronization
+// works correctly when using Set() with a different key than the area's Name
+func TestNestedRepository_KeySynchronization_SearchArea(t *testing.T) {
+	setupTestConfig(t)
+	resetProgramRepo()
+
+	// Create a Program with a SearchAreaRepository for a specific resolution
+	program := models.NewProgram()
+	program.Name = "SearchArea Key Sync Test"
+	resolutionKey := "1920x1080"
+
+	// Initialize coordinates for the resolution
+	program.Coordinates[resolutionKey] = &models.Coordinates{
+		Points:      make(map[string]*models.Point),
+		SearchAreas: make(map[string]*models.SearchArea),
+	}
+
+	// Save the program to make it available for SearchAreaRepository.Save()
+	err := ProgramRepo().Set("areakeysynctest", program)
+	if err != nil {
+		t.Fatalf("Failed to save initial program: %v", err)
+	}
+
+	areaRepo := NewSearchAreaRepository(program, resolutionKey)
+
+	// Create a SearchArea with a different name than the key we'll use
+	area := &models.SearchArea{
+		Name:    "Old Area Name",
+		LeftX:   50,
+		TopY:    100,
+		RightX:  500,
+		BottomY: 600,
+	}
+
+	// Call Set() with a different key than the area's Name (preserving capitalization)
+	err = areaRepo.Set("New Area Name", area)
+	if err != nil {
+		t.Fatalf("Failed to set search area: %v", err)
+	}
+
+	// Verify the area's internal Name field is updated to match the provided key (with capitalization)
+	if area.GetKey() != "New Area Name" {
+		t.Errorf("Expected area.GetKey() to be 'New Area Name', got '%s'", area.GetKey())
+	}
+
+	if area.Name != "New Area Name" {
+		t.Errorf("Expected area.Name to be 'New Area Name', got '%s'", area.Name)
+	}
+
+	// Verify the area can be retrieved with the exact key
+	retrieved, err := areaRepo.Get("New Area Name")
+	if err != nil {
+		t.Fatalf("Failed to get search area with new key: %v", err)
+	}
+
+	if retrieved.GetKey() != "New Area Name" {
+		t.Errorf("Expected retrieved.GetKey() to be 'New Area Name', got '%s'", retrieved.GetKey())
+	}
+
+	// Verify other fields are preserved
+	if retrieved.LeftX != 50 {
+		t.Errorf("Expected LeftX to be 50, got %d", retrieved.LeftX)
+	}
+
+	if retrieved.TopY != 100 {
+		t.Errorf("Expected TopY to be 100, got %d", retrieved.TopY)
+	}
+
+	if retrieved.RightX != 500 {
+		t.Errorf("Expected RightX to be 500, got %d", retrieved.RightX)
+	}
+
+	if retrieved.BottomY != 600 {
+		t.Errorf("Expected BottomY to be 600, got %d", retrieved.BottomY)
+	}
+
+	// Verify the parent Program is saved correctly by getting it from the repository
+	// (Set() should have triggered a save through the saveFunc)
+	savedProgram, err := ProgramRepo().Get("areakeysynctest")
+	if err != nil {
+		t.Fatalf("Failed to get saved program: %v", err)
+	}
+
+	// Verify the search area exists in the saved program with the correct key
+	coords, exists := savedProgram.Coordinates[resolutionKey]
+	if !exists {
+		t.Fatalf("Coordinates for resolution '%s' should exist in saved program", resolutionKey)
+	}
+
+	savedArea, exists := coords.SearchAreas["New Area Name"]
+	if !exists {
+		t.Fatal("SearchArea should exist in saved program with key 'New Area Name'")
+	}
+
+	if savedArea.Name != "New Area Name" {
+		t.Errorf("Expected saved area Name to be 'New Area Name', got '%s'", savedArea.Name)
+	}
+
+	if savedArea.LeftX != 50 {
+		t.Errorf("Expected saved area LeftX to be 50, got %d", savedArea.LeftX)
+	}
+
+	if savedArea.TopY != 100 {
+		t.Errorf("Expected saved area TopY to be 100, got %d", savedArea.TopY)
+	}
+
+	if savedArea.RightX != 500 {
+		t.Errorf("Expected saved area RightX to be 500, got %d", savedArea.RightX)
+	}
+
+	if savedArea.BottomY != 600 {
+		t.Errorf("Expected saved area BottomY to be 600, got %d", savedArea.BottomY)
+	}
 }

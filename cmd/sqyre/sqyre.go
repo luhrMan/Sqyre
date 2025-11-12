@@ -23,12 +23,20 @@ import (
 func init() {
 	go services.StartHook()
 	services.FailsafeHotkey()
+
+	// Initialize YAML config with proper file path
+	yamlConfig := serialize.GetYAMLConfig()
+	yamlConfig.SetConfigFile("../../internal/config/config.yaml")
+	if err := yamlConfig.ReadConfig(); err != nil {
+		log.Printf("Warning: Failed to read config file: %v", err)
+	}
+
 	serialize.Decode() // read config.yaml data and save into GO structs
-	
+
 	// Initialize repositories - they will load data from config.yaml
 	macroRepo := repositories.MacroRepo()
 	log.Printf("Initialized MacroRepository with %d macros", macroRepo.Count())
-	
+
 	programRepo := repositories.ProgramRepo()
 	log.Printf("Initialized ProgramRepository with %d programs", programRepo.Count())
 
@@ -62,22 +70,22 @@ func main() {
 		log.Printf("Warning: Could not load %s program: %v", config.DarkAndDarker, err)
 	} else {
 		program.GetMasks()["item-corner"] = func(f ...any) *gocv.Mat {
-		rows, cols, x, y :=
-			f[0].(int), f[1].(int), f[2].(int), f[3].(int)
-		roi :=
-			image.Rect(
-				(cols/x)/2,
-				(rows/y)/2,
-				cols,
-				rows,
-			)
+			rows, cols, x, y :=
+				f[0].(int), f[1].(int), f[2].(int), f[3].(int)
+			roi :=
+				image.Rect(
+					(cols/x)/2,
+					(rows/y)/2,
+					cols,
+					rows,
+				)
 
-		cmask := gocv.NewMatWithSize(rows, cols, gocv.MatTypeCV8U)
-		cmask.SetTo(gocv.NewScalar(255, 255, 255, 0))
+			cmask := gocv.NewMatWithSize(rows, cols, gocv.MatTypeCV8U)
+			cmask.SetTo(gocv.NewScalar(255, 255, 255, 0))
 
-		region := cmask.Region(roi)
-		defer region.Close()
-		region.SetTo(gocv.NewScalar(0, 0, 0, 0))
+			region := cmask.Region(roi)
+			defer region.Close()
+			region.SetTo(gocv.NewScalar(0, 0, 0, 0))
 
 			return &cmask
 		}

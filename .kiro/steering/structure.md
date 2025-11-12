@@ -15,9 +15,8 @@ Squire/
 │   ├── config/            # Configuration constants and data files
 │   ├── models/            # Core domain models
 │   │   ├── actions/       # Action types (Click, Move, Key, Wait, Loop, etc.)
-│   │   ├── coordinates/   # Screen coordinate management
 │   │   ├── repositories/  # Data persistence layer
-│   │   └── serialize/     # Viper-based serialization
+│   │   └── serialize/     # Gopkg Yaml v3-based serialization
 │   └── services/          # Business logic services
 ├── ui/                    # Fyne GUI components
 │   └── custom_widgets/    # Custom Fyne widgets
@@ -46,7 +45,7 @@ Each action has:
 
 Models use repository pattern for persistence:
 - `repositories.MacroRepo()` - Manages macro definitions
-- `repositories.ProgramRepo()` - Manages game-specific configurations
+- `repositories.ProgramRepo()` - Manages program-specific configurations
 
 Repositories handle encoding/decoding via Viper with custom decode hooks.
 
@@ -77,9 +76,7 @@ Services in `internal/services/`:
 ## Game-Specific Assets
 
 Assets organized by game under `internal/assets/images/`:
-- `icons/dark and darker/` - Item icons for Dark and Darker
 - `icons/*program*/` - Item icons for any program the user adds
-~~- `masks/` - Template masks for image matching~~ shouldn't be needed anymore with dynamic mask creation via functions
 - `calibration/` - UI corner detection images
 
 ## Key Files
