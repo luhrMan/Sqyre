@@ -195,7 +195,7 @@ func setAccordionPointsLists(acc *widget.Accordion) {
 		lists.searchBar = &widget.Entry{
 			PlaceHolder: "Search here",
 			OnChanged: func(s string) {
-				defaultList := p.SearchAreaRepo(config.MainMonitorSizeString).GetAllKeys()
+				defaultList := p.PointRepo(config.MainMonitorSizeString).GetAllKeys()
 				defer lists.points.ScrollToTop()
 				defer lists.points.Refresh()
 
