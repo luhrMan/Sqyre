@@ -11,7 +11,6 @@ import (
 	"log"
 	"slices"
 	"strconv"
-	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -92,7 +91,7 @@ func setAccordionItemsLists(acc *widget.Accordion) {
 				ist, _ := ats.BoundImageSearch.GetValue("Targets")
 				t := ist.([]string)
 				if ui.GetUi().MainUi.Visible() {
-					if slices.Contains(t, strings.ToLower(p.Name)+config.ProgramDelimiter+item.Name) {
+					if slices.Contains(t, p.Name+config.ProgramDelimiter+item.Name) {
 						rect.FillColor = color.RGBA{R: 0, G: 128, B: 0, A: 128}
 					} else {
 						rect.FillColor = color.RGBA{}
@@ -174,8 +173,8 @@ func setAccordionItemsLists(acc *widget.Accordion) {
 				lists.items,
 			),
 		)
-		ui.GetUi().EditorTabs.ItemsTab.Widgets[strings.ToLower(p.Name+"-searchbar")] = lists.searchbar
-		ui.GetUi().EditorTabs.ItemsTab.Widgets[strings.ToLower(p.Name+"-list")] = lists.items
+		ui.GetUi().EditorTabs.ItemsTab.Widgets[p.Name+"-searchbar"] = lists.searchbar
+		ui.GetUi().EditorTabs.ItemsTab.Widgets[p.Name+"-list"] = lists.items
 
 		acc.Append(&programItemsListWidget)
 	}

@@ -1,10 +1,10 @@
 package repositories
 
 import (
+	"Squire/internal/models"
 	"fmt"
 	"maps"
 	"slices"
-	"strings"
 	"sync"
 )
 
@@ -88,20 +88,20 @@ import (
 // # Key Differences from BaseRepository
 //
 // 1. Persistence:
-//    - BaseRepository: Calls Viper.WriteConfig() directly
-//    - NestedRepository: Calls saveFunc to persist parent aggregate
+//   - BaseRepository: Calls Viper.WriteConfig() directly
+//   - NestedRepository: Calls saveFunc to persist parent aggregate
 //
 // 2. Initialization:
-//    - BaseRepository: Loads from config key (e.g., "macros")
-//    - NestedRepository: Operates on parent's existing map reference
+//   - BaseRepository: Loads from config key (e.g., "macros")
+//   - NestedRepository: Operates on parent's existing map reference
 //
 // 3. Context:
-//    - BaseRepository: No parent context needed
-//    - NestedRepository: Requires contextKey for error messages (e.g., "dark and darker")
+//   - BaseRepository: No parent context needed
+//   - NestedRepository: Requires contextKey for error messages (e.g., "dark and darker")
 //
 // 4. Lifecycle:
-//    - BaseRepository: Models exist independently
-//    - NestedRepository: Models lifecycle tied to parent aggregate
+//   - BaseRepository: Models exist independently
+//   - NestedRepository: Models lifecycle tied to parent aggregate
 //
 // # Type Parameters
 //
@@ -191,7 +191,7 @@ func NewNestedRepository[T any](
 }
 
 // Get retrieves a model by key. Returns ErrNotFound if the key doesn't exist.
-// Keys are normalized to lowercase for case-insensitive access.
+// Keys must match exactly (case-sensitive).
 func (r *NestedRepository[T]) Get(key string) (*T, error) {
 	if key == "" {
 		return nil, ErrInvalidKey
@@ -199,9 +199,7 @@ func (r *NestedRepository[T]) Get(key string) (*T, error) {
 
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-
-	normalizedKey := strings.ToLower(key)
-	model, ok := r.models[normalizedKey]
+	model, ok := r.models[key]
 	if !ok {
 		return nil, fmt.Errorf("%w: %s (context: %s)", ErrNotFound, key, r.contextKey)
 	}
@@ -237,7 +235,7 @@ func (r *NestedRepository[T]) GetAllKeys() []string {
 }
 
 // Set creates or updates a model with the given key.
-// Keys are normalized to lowercase. Changes are immediately persisted via saveFunc.
+// The key must exactly match the model's internal key. Changes are immediately persisted via saveFunc.
 func (r *NestedRepository[T]) Set(key string, model *T) error {
 	if key == "" {
 		return ErrInvalidKey
@@ -247,8 +245,13 @@ func (r *NestedRepository[T]) Set(key string, model *T) error {
 	}
 
 	r.mu.Lock()
-	normalizedKey := strings.ToLower(key)
-	r.models[normalizedKey] = model
+
+	// Synchronize model's internal key with the provided key (exact match)
+	if baseModel, ok := any(model).(models.BaseModel); ok {
+		baseModel.SetKey(key)
+	}
+
+	r.models[key] = model
 	r.mu.Unlock()
 
 	// Save the parent aggregate immediately after modification
@@ -267,8 +270,7 @@ func (r *NestedRepository[T]) Delete(key string) error {
 	}
 
 	r.mu.Lock()
-	normalizedKey := strings.ToLower(key)
-	delete(r.models, normalizedKey)
+	delete(r.models, key)
 	r.mu.Unlock()
 
 	// Save the parent aggregate immediately after modification
