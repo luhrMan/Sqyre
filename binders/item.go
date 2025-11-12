@@ -105,16 +105,16 @@ func setAccordionItemsLists(acc *widget.Accordion) {
 				ist, _ := ats.BoundImageSearch.GetValue("Targets")
 				t := ist.([]string)
 				if ui.GetUi().MainUi.Visible() {
-					// Check if any variant of this base item is in targets
-					hasVariantInTargets := false
+					// Check if this base item is selected (in targets)
+					isSelected := false
+					fullItemName := p.Name + config.ProgramDelimiter + baseItemName
 					for _, target := range t {
-						targetBaseName := iconService.GetBaseItemName(target)
-						if targetBaseName == p.Name+config.ProgramDelimiter+baseItemName {
-							hasVariantInTargets = true
+						if target == fullItemName {
+							isSelected = true
 							break
 						}
 					}
-					if hasVariantInTargets {
+					if isSelected {
 						rect.FillColor = color.RGBA{R: 0, G: 128, B: 0, A: 128}
 					} else {
 						rect.FillColor = color.RGBA{}
