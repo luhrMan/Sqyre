@@ -44,6 +44,9 @@ func LoadIconBytes() (map[string][]byte, error) {
 					log.Printf("Could not read image. Error: %v", err)
 					continue
 				}
+				// Store icon with program delimiter and filename
+				// This handles both variant files (ItemName|VariantName.png) 
+				// and non-variant files (ItemName.png) correctly
 				icons[entry.Name()+config.ProgramDelimiter+se.Name()] = iconBytes
 			}
 		}
