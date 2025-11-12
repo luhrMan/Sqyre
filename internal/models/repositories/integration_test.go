@@ -1287,3 +1287,4 @@ func TestIntegration_CoordinateRepositories_ConfigFileVerification(t *testing.T)
 		}
 	})
 }
+
