@@ -45,14 +45,13 @@ func setEditorForms() {
 	et.ProgramsTab.Widgets["Form"].(*widget.Form).OnSubmit = func() {
 		w := et.ProgramsTab.Widgets
 		n := w["Name"].(*widget.Entry).Text
-		if v, ok := et.ProgramsTab.SelectedItem.(*models.Program); ok {
+		if si, ok := et.ProgramsTab.SelectedItem.(*models.Program); ok {
+			v := si
 			// p := ui.GetUi().ProgramSelector.Text
-			if err := repositories.ProgramRepo().Delete(v.Name); err != nil {
-				log.Printf("Error deleting program %s: %v", v.Name, err)
+			if err := repositories.ProgramRepo().Delete(si.Name); err != nil {
+				log.Printf("Error deleting program %s: %v", si.Name, err)
 			}
 			v.Name = n
-			// pro, err := repositories.ProgramRepo().Get(p)
-			// if err != nil || pro.Name == "" {
 			if err := repositories.ProgramRepo().Set(v.Name, v); err != nil {
 				log.Printf("Error setting program %s: %v", v.Name, err)
 				return
@@ -80,10 +79,6 @@ func setEditorForms() {
 			v.StackMax = sm
 			// v.Tags = tags
 
-			// if err := program.ItemRepo().Set(v.Name, v); err != nil {
-			// 	log.Printf("Error setting item %s: %v", v.Name, err)
-			// 	return
-			// }
 			if err := repositories.ProgramRepo().Set(program.Name, program); err != nil {
 				log.Printf("Error saving program %s: %v", p, err)
 				return
