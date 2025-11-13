@@ -7,9 +7,6 @@ import (
 )
 
 const (
-	RootPath string = "./"
-	UpDir           = "../"
-
 	// User directory structure
 	SqyreDir           = "Sqyre"
 	UserImagesDir      = "images"

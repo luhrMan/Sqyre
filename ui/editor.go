@@ -57,6 +57,7 @@ func (u *Ui) constructEditorTabs() {
 		form  = "Form"
 		acc   = "Accordion"
 		plist = "list"
+		ive   = "iconVariantEditor"
 
 		et    = ui.EditorTabs
 		protw = et.ProgramsTab.Widgets
@@ -86,17 +87,17 @@ func (u *Ui) constructEditorTabs() {
 	itw[rows] = new(widget.Entry)
 	itw[tags] = widget.NewCard("test", "", nil)
 	itw[sm] = new(widget.Entry)
-	
+
 	// Create IconVariantEditor widget
 	iconService := services.NewIconVariantService()
-	itw["iconVariantEditor"] = custom_widgets.NewIconVariantEditor(
+	itw[ive] = custom_widgets.NewIconVariantEditor(
 		"", // programName will be set when item is selected
 		"", // itemName will be set when item is selected
 		iconService,
 		ui.Window,
 		nil, // onVariantChange callback will be set in binders
 	)
-	
+
 	itw[form] = widget.NewForm(
 		widget.NewFormItem(name, itw[name]),
 		widget.NewFormItem(cols, itw[cols]),
@@ -104,7 +105,6 @@ func (u *Ui) constructEditorTabs() {
 		widget.NewFormItem(tags, widget.NewEntry()),
 		widget.NewFormItem("", itw[tags]),
 		widget.NewFormItem(sm, itw[sm]),
-		widget.NewFormItem("Icon Variants", itw["iconVariantEditor"]),
 		// widget.NewFormItem(m, ui.EditorTabs.ItemsTab.Widgets[m]),
 		// widget.NewFormItem("icons", container.NewGridWithRows(2, widget.NewIcon(theme.MediaFastForwardIcon()))),
 	)
@@ -113,7 +113,7 @@ func (u *Ui) constructEditorTabs() {
 	et.ItemsTab.TabItem = NewEditorTab(
 		"Items",
 		container.NewBorder(nil, nil, nil, nil, itw[acc]),
-		container.NewBorder(nil, nil, nil, nil, itw[form]),
+		container.NewBorder(itw[form], nil, nil, nil, itw[ive]),
 	)
 
 	//===========================================================================================================POINTS

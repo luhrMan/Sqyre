@@ -48,7 +48,7 @@ func match(img, imgDraw gocv.Mat, a *actions.ImageSearch) map[string][]robotgo.P
 	icons := assets.GetIconBytes()
 	// xSize := img.Cols() / a.ColSplit
 	// ySize := img.Rows() / a.RowSplit
-	vs := NewIconVariantService()
+	vs := IconVariantServiceInstance()
 	Imask := gocv.NewMat()
 	defer Imask.Close()
 
@@ -76,6 +76,10 @@ func match(img, imgDraw gocv.Mat, a *actions.ImageSearch) map[string][]robotgo.P
 			if err != nil {
 				log.Println("could not find variants for item during image search")
 			}
+			
+			// Accumulate all matches for this item across all variants
+			allMatches := []robotgo.Point{}
+			
 			for _, v := range variants { // search for the item variants also
 				ip := programName + config.ProgramDelimiter + itemName + config.ProgramDelimiter + v + config.PNG
 				b := icons[ip]
@@ -106,13 +110,14 @@ func match(img, imgDraw gocv.Mat, a *actions.ImageSearch) map[string][]robotgo.P
 				// }
 
 				matches := FindTemplateMatches(img, template, Imask, tmask, cmask, a.Tolerance)
-
-				resultsMutex.Lock()
-				defer resultsMutex.Unlock()
-
-				results[t] = matches
+				allMatches = append(allMatches, matches...)
 				DrawFoundMatches(matches, template.Cols(), template.Rows(), imgDraw, i.Name) // xSize*i.GridSize[0], ySize*i.GridSize[1]
 			}
+			
+			// Store accumulated matches once per item
+			resultsMutex.Lock()
+			results[t] = allMatches
+			resultsMutex.Unlock()
 		}(t)
 	}
 	wg.Wait()
