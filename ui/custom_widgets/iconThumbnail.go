@@ -1,17 +1,17 @@
 package custom_widgets
 
 import (
+	"Squire/internal/config"
 	"image/color"
 	"os"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
-
-const IconThumbnailSize = 64
 
 // IconThumbnail is a custom widget that displays an icon variant with preview, label, and delete button
 type IconThumbnail struct {
@@ -53,18 +53,23 @@ func (t *IconThumbnail) createUI() {
 	t.label.Truncation = fyne.TextTruncateEllipsis
 
 	// Create delete button with danger styling
-	t.deleteBtn = widget.NewButton("Delete", func() {
+	t.deleteBtn = widget.NewButtonWithIcon("", theme.CancelIcon(), func() {
 		if t.onDelete != nil {
 			t.onDelete()
 		}
 	})
-	t.deleteBtn.Importance = widget.DangerImportance
+	t.deleteBtn.Importance = widget.LowImportance
 
-	// Layout: image on top, label in middle, delete button at bottom
+	// Layout: button top right corner, image in middle, label on bottom
 	t.container = container.NewVBox(
-		container.NewCenter(t.image),
+		container.NewBorder(
+			container.NewHBox(layout.NewSpacer(), t.deleteBtn),
+			nil,
+			nil,
+			nil,
+			container.NewCenter(t.image),
+		),
 		t.label,
-		t.deleteBtn,
 	)
 }
 
@@ -88,7 +93,7 @@ func (t *IconThumbnail) loadIcon() *canvas.Image {
 
 	// Configure image display
 	img.FillMode = canvas.ImageFillContain
-	img.SetMinSize(fyne.NewSize(IconThumbnailSize, IconThumbnailSize))
+	img.SetMinSize(fyne.NewSize(config.IconThumbnailSize, config.IconThumbnailSize))
 
 	return img
 }
@@ -123,13 +128,13 @@ func (t *IconThumbnail) validatePNG(path string) bool {
 func (t *IconThumbnail) createPlaceholder(showError bool) *canvas.Image {
 	// Create a rectangle as placeholder
 	rect := canvas.NewRectangle(color.RGBA{R: 200, G: 200, B: 200, A: 255})
-	rect.SetMinSize(fyne.NewSize(IconThumbnailSize, IconThumbnailSize))
+	rect.SetMinSize(fyne.NewSize(config.IconThumbnailSize, config.IconThumbnailSize))
 
 	// For now, return a simple gray placeholder
 	// In a real implementation, you might want to create an actual placeholder image
 	img := canvas.NewImageFromResource(theme.BrokenImageIcon())
 	img.FillMode = canvas.ImageFillContain
-	img.SetMinSize(fyne.NewSize(IconThumbnailSize, IconThumbnailSize))
+	img.SetMinSize(fyne.NewSize(config.IconThumbnailSize, config.IconThumbnailSize))
 
 	return img
 }

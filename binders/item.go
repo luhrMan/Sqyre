@@ -32,16 +32,16 @@ func setItemsWidgets(i models.Item) {
 	it["Rows"].(*widget.Entry).SetText(strconv.Itoa(i.GridSize[1]))
 	// it["Tags"].(*widget.Entry).Bind(c.(binding.String))
 	it["StackMax"].(*widget.Entry).SetText(strconv.Itoa(i.StackMax))
-	
+
 	// Update IconVariantEditor with selected item
 	if editor, ok := it["iconVariantEditor"].(*custom_widgets.IconVariantEditor); ok {
 		programName := ui.GetUi().ProgramSelector.Text
 		iconService := services.NewIconVariantService()
 		baseName := iconService.GetBaseItemName(i.Name)
-		
+
 		editor.SetProgramName(programName)
 		editor.SetItemName(baseName)
-		
+
 		// Set variant change callback to refresh accordion items
 		editor.SetOnVariantChange(func() {
 			RefreshItemsAccordionItems()
@@ -63,9 +63,9 @@ func setAccordionItemsLists(acc *widget.Accordion) {
 	acc.Items = []*widget.AccordionItem{}
 
 	var (
-		ats            = ui.GetUi().ActionTabs
-		icons          = assets.BytesToFyneIcons()
-		iconService    = services.NewIconVariantService()
+		ats         = ui.GetUi().ActionTabs
+		icons       = assets.BytesToFyneIcons()
+		iconService = services.NewIconVariantService()
 	)
 	for _, p := range repositories.ProgramRepo().GetAll() {
 		lists := struct {
@@ -108,11 +108,8 @@ func setAccordionItemsLists(acc *widget.Accordion) {
 					// Check if this base item is selected (in targets)
 					isSelected := false
 					fullItemName := p.Name + config.ProgramDelimiter + baseItemName
-					for _, target := range t {
-						if target == fullItemName {
-							isSelected = true
-							break
-						}
+					if slices.Contains(t, fullItemName) {
+						isSelected = true
 					}
 					if isSelected {
 						rect.FillColor = color.RGBA{R: 0, G: 128, B: 0, A: 128}
@@ -130,7 +127,7 @@ func setAccordionItemsLists(acc *widget.Accordion) {
 						path = path + config.ProgramDelimiter + variants[0]
 					}
 					path = path + config.PNG
-					
+
 					if icons[path] != nil {
 						icon.Resource = icons[path]
 					} else {
@@ -177,7 +174,7 @@ func setAccordionItemsLists(acc *widget.Accordion) {
 					return
 				}
 			}
-			
+
 			ui.GetUi().EditorTabs.ItemsTab.SelectedItem = item
 			if ui.GetUi().MainUi.Visible() {
 				if v, ok := ui.GetUi().Mui.MTabs.SelectedTab().Macro.Root.GetAction(ui.GetUi().Mui.MTabs.SelectedTab().SelectedNode).(*actions.ImageSearch); ok {
@@ -241,21 +238,21 @@ func setAccordionItemsLists(acc *widget.Accordion) {
 // base item names.
 func groupItemsByBaseName(itemNames []string, iconService *services.IconVariantService) []string {
 	baseNameMap := make(map[string]bool)
-	
+
 	// Extract unique base names
 	for _, itemName := range itemNames {
 		baseName := iconService.GetBaseItemName(itemName)
 		baseNameMap[baseName] = true
 	}
-	
+
 	// Convert map to sorted slice
 	uniqueBaseNames := make([]string, 0, len(baseNameMap))
 	for baseName := range baseNameMap {
 		uniqueBaseNames = append(uniqueBaseNames, baseName)
 	}
-	
+
 	// Sort alphabetically by base item name
 	sort.Strings(uniqueBaseNames)
-	
+
 	return uniqueBaseNames
 }

@@ -16,7 +16,18 @@ type IconVariantService struct {
 	basePath string // Optional base path for testing, overrides config.ImagesPath
 }
 
+var iconVariantServiceInstance *IconVariantService
+
+// IconVariantServiceInstance returns the singleton instance of IconVariantService.
+func IconVariantServiceInstance() *IconVariantService {
+	if iconVariantServiceInstance == nil {
+		iconVariantServiceInstance = &IconVariantService{}
+	}
+	return iconVariantServiceInstance
+}
+
 // NewIconVariantService creates a new IconVariantService instance.
+// Deprecated: Use IconVariantServiceInstance() for the singleton instance.
 func NewIconVariantService() *IconVariantService {
 	return &IconVariantService{}
 }

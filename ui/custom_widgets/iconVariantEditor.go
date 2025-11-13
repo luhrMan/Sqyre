@@ -87,31 +87,29 @@ func (e *IconVariantEditor) createVariantList() *fyne.Container {
 
 	// Create a grid container with thumbnails
 	thumbnails := make([]fyne.CanvasObject, 0, len(e.variants))
-	
+
 	for _, variantName := range e.variants {
 		// Create a copy of variantName for the closure
 		variant := variantName
-		
+
 		iconPath := e.service.GetVariantPath(e.programName, e.itemName, variant)
-		
+
 		// Create delete callback
 		onDelete := func() {
 			e.showDeleteConfirmation(variant)
 		}
-		
-		// Disable delete button if only one variant remains
+
 		thumbnail := NewIconThumbnail(iconPath, variant, onDelete)
-		
+
 		// Disable delete button if only one variant
 		if len(e.variants) <= 1 {
 			thumbnail.deleteBtn.Disable()
 		}
-		
+
 		thumbnails = append(thumbnails, thumbnail)
 	}
 
-	// Use a grid layout with 3 columns
-	return container.NewGridWrap(fyne.NewSize(200, 150), thumbnails...)
+	return container.NewGridWrap(fyne.NewSize(100, 150), thumbnails...)
 }
 
 // showAddVariantDialog opens a file picker dialog to add a new icon variant
@@ -129,7 +127,7 @@ func (e *IconVariantEditor) showAddVariantDialog() {
 		defer reader.Close()
 
 		sourcePath := reader.URI().Path()
-		
+
 		// Validate the file is a PNG
 		if err := e.service.ValidateVariantFile(sourcePath); err != nil {
 			dialog.ShowError(fmt.Errorf("Invalid PNG file: %v", err), e.window)
