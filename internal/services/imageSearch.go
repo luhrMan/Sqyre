@@ -45,7 +45,7 @@ func imageSearch(a *actions.ImageSearch) (map[string][]robotgo.Point, error) {
 }
 
 func match(img, imgDraw gocv.Mat, a *actions.ImageSearch) map[string][]robotgo.Point {
-	icons := assets.GetIconBytes()
+	// Note: We'll load icons on-demand per variant instead of loading all icons upfront
 	// xSize := img.Cols() / a.ColSplit
 	// ySize := img.Rows() / a.RowSplit
 	vs := IconVariantServiceInstance()
@@ -82,7 +82,15 @@ func match(img, imgDraw gocv.Mat, a *actions.ImageSearch) map[string][]robotgo.P
 			
 			for _, v := range variants { // search for the item variants also
 				ip := programName + config.ProgramDelimiter + itemName + config.ProgramDelimiter + v + config.PNG
-				b := icons[ip]
+				
+				// Load icon on-demand from cache
+				resource := assets.GetFyneResource(ip)
+				if resource == nil {
+					log.Printf("Could not load icon resource for %s", ip)
+					continue
+				}
+				b := resource.Content()
+				
 				template := gocv.NewMat()
 				defer template.Close()
 				err = gocv.IMDecodeIntoMat(b, gocv.IMReadColor, &template)

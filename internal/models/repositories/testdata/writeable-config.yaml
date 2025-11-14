@@ -35,41 +35,29 @@ macros:
             type: loop
 programs:
     ItemRepo Test:
-        name: ItemRepo Test
-        items:
-            item 1:
-                name: Item 1
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 0
-                merchant: ""
-            item 2:
-                name: Item 2
-                gridsize:
-                    - 2
-                    - 2
-                tags: []
-                stackmax: 0
-                merchant: ""
         coordinates:
             2560x1440:
                 points: {}
                 searchareas: {}
-    Test Program:
-        name: Test Program
         items:
-            Test Item:
-                name: Test Item
+            item 1:
                 gridsize:
                     - 1
                     - 1
-                tags:
-                    - weapon
-                    - melee
-                stackmax: 10
-                merchant: test merchant
+                merchant: ""
+                name: Item 1
+                stackmax: 0
+                tags: []
+            item 2:
+                gridsize:
+                    - 2
+                    - 2
+                merchant: ""
+                name: Item 2
+                stackmax: 0
+                tags: []
+        name: ItemRepo Test
+    Test Program:
         coordinates:
             1920x1080:
                 points:
@@ -79,1319 +67,1312 @@ programs:
                         "y": 600
                 searchareas:
                     test area:
-                        name: Test Area
-                        leftx: 100
-                        topy: 100
-                        rightx: 500
                         bottomy: 500
-            2560x1440:
-                points: {}
-                searchareas: {}
-    concurrent deletes:
-        name: concurrent deletes
+                        leftx: 100
+                        name: Test Area
+                        rightx: 500
+                        topy: 100
         items:
-            Item 0:
-                name: Item 0
+            Test Item:
                 gridsize:
                     - 1
                     - 1
-                tags: []
-                stackmax: 0
-                merchant: ""
-            Item 1:
-                name: Item 1
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 1
-                merchant: ""
-            Item 2:
-                name: Item 2
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 2
-                merchant: ""
-            Item 3:
-                name: Item 3
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 3
-                merchant: ""
-            Item 4:
-                name: Item 4
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 4
-                merchant: ""
-            Item 5:
-                name: Item 5
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 5
-                merchant: ""
-            Item 6:
-                name: Item 6
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 6
-                merchant: ""
-            Item 7:
-                name: Item 7
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 7
-                merchant: ""
-            Item 8:
-                name: Item 8
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 8
-                merchant: ""
-            Item 9:
-                name: Item 9
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 9
-                merchant: ""
-            Item 10:
-                name: Item 10
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
+                merchant: test merchant
+                name: Test Item
                 stackmax: 10
-                merchant: ""
-            Item 11:
-                name: Item 11
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 11
-                merchant: ""
-            Item 12:
-                name: Item 12
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 12
-                merchant: ""
-            Item 13:
-                name: Item 13
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 13
-                merchant: ""
-            Item 14:
-                name: Item 14
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 14
-                merchant: ""
-            Item 15:
-                name: Item 15
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 15
-                merchant: ""
-            Item 16:
-                name: Item 16
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 16
-                merchant: ""
-            Item 17:
-                name: Item 17
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 17
-                merchant: ""
-            Item 18:
-                name: Item 18
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 18
-                merchant: ""
-            Item 19:
-                name: Item 19
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 19
-                merchant: ""
-            Item 20:
-                name: Item 20
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 20
-                merchant: ""
-            Item 21:
-                name: Item 21
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 21
-                merchant: ""
-            Item 22:
-                name: Item 22
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 22
-                merchant: ""
-            Item 23:
-                name: Item 23
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 23
-                merchant: ""
-            Item 24:
-                name: Item 24
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 24
-                merchant: ""
-            Item 25:
-                name: Item 25
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 25
-                merchant: ""
-            Item 26:
-                name: Item 26
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 26
-                merchant: ""
-            Item 27:
-                name: Item 27
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 27
-                merchant: ""
-            Item 28:
-                name: Item 28
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 28
-                merchant: ""
-            Item 29:
-                name: Item 29
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 29
-                merchant: ""
-            Item 30:
-                name: Item 30
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 30
-                merchant: ""
-            Item 31:
-                name: Item 31
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 31
-                merchant: ""
-            Item 32:
-                name: Item 32
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 32
-                merchant: ""
-            Item 33:
-                name: Item 33
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 33
-                merchant: ""
-            Item 34:
-                name: Item 34
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 34
-                merchant: ""
-            Item 35:
-                name: Item 35
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 35
-                merchant: ""
-            Item 36:
-                name: Item 36
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 36
-                merchant: ""
-            Item 37:
-                name: Item 37
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 37
-                merchant: ""
-            Item 38:
-                name: Item 38
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 38
-                merchant: ""
-            Item 39:
-                name: Item 39
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 39
-                merchant: ""
-            Item 40:
-                name: Item 40
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 40
-                merchant: ""
-            Item 41:
-                name: Item 41
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 41
-                merchant: ""
-            Item 42:
-                name: Item 42
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 42
-                merchant: ""
-            Item 43:
-                name: Item 43
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 43
-                merchant: ""
-            Item 44:
-                name: Item 44
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 44
-                merchant: ""
-            Item 45:
-                name: Item 45
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 45
-                merchant: ""
-            Item 46:
-                name: Item 46
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 46
-                merchant: ""
-            Item 47:
-                name: Item 47
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 47
-                merchant: ""
-            Item 48:
-                name: Item 48
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 48
-                merchant: ""
-            Item 49:
-                name: Item 49
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 49
-                merchant: ""
-            Item 50:
-                name: Item 50
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 50
-                merchant: ""
-            Item 51:
-                name: Item 51
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 51
-                merchant: ""
-            Item 52:
-                name: Item 52
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 52
-                merchant: ""
-            Item 53:
-                name: Item 53
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 53
-                merchant: ""
-            Item 54:
-                name: Item 54
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 54
-                merchant: ""
-            Item 55:
-                name: Item 55
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 55
-                merchant: ""
-            Item 56:
-                name: Item 56
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 56
-                merchant: ""
-            Item 57:
-                name: Item 57
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 57
-                merchant: ""
-            Item 58:
-                name: Item 58
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 58
-                merchant: ""
-            Item 59:
-                name: Item 59
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 59
-                merchant: ""
-            Item 60:
-                name: Item 60
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 60
-                merchant: ""
-            Item 61:
-                name: Item 61
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 61
-                merchant: ""
-            Item 62:
-                name: Item 62
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 62
-                merchant: ""
-            Item 63:
-                name: Item 63
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 63
-                merchant: ""
-            Item 64:
-                name: Item 64
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 64
-                merchant: ""
-            Item 65:
-                name: Item 65
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 65
-                merchant: ""
-            Item 66:
-                name: Item 66
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 66
-                merchant: ""
-            Item 67:
-                name: Item 67
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 67
-                merchant: ""
-            Item 68:
-                name: Item 68
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 68
-                merchant: ""
-            Item 69:
-                name: Item 69
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 69
-                merchant: ""
-            Item 70:
-                name: Item 70
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 70
-                merchant: ""
-            Item 71:
-                name: Item 71
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 71
-                merchant: ""
-            Item 72:
-                name: Item 72
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 72
-                merchant: ""
-            Item 73:
-                name: Item 73
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 73
-                merchant: ""
-            Item 74:
-                name: Item 74
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 74
-                merchant: ""
-            Item 75:
-                name: Item 75
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 75
-                merchant: ""
-            Item 76:
-                name: Item 76
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 76
-                merchant: ""
-            Item 77:
-                name: Item 77
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 77
-                merchant: ""
-            Item 78:
-                name: Item 78
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 78
-                merchant: ""
-            Item 79:
-                name: Item 79
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 79
-                merchant: ""
-            Item 80:
-                name: Item 80
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 80
-                merchant: ""
-            Item 81:
-                name: Item 81
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 81
-                merchant: ""
-            Item 82:
-                name: Item 82
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 82
-                merchant: ""
-            Item 83:
-                name: Item 83
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 83
-                merchant: ""
-            Item 84:
-                name: Item 84
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 84
-                merchant: ""
-            Item 85:
-                name: Item 85
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 85
-                merchant: ""
-            Item 86:
-                name: Item 86
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 86
-                merchant: ""
-            Item 87:
-                name: Item 87
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 87
-                merchant: ""
-            Item 88:
-                name: Item 88
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 88
-                merchant: ""
-            Item 89:
-                name: Item 89
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 89
-                merchant: ""
-            Item 90:
-                name: Item 90
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 90
-                merchant: ""
-            Item 91:
-                name: Item 91
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 91
-                merchant: ""
-            Item 92:
-                name: Item 92
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 92
-                merchant: ""
-            Item 93:
-                name: Item 93
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 93
-                merchant: ""
-            Item 94:
-                name: Item 94
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 94
-                merchant: ""
-            Item 95:
-                name: Item 95
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 95
-                merchant: ""
-            Item 96:
-                name: Item 96
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 96
-                merchant: ""
-            Item 97:
-                name: Item 97
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 97
-                merchant: ""
-            Item 98:
-                name: Item 98
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 98
-                merchant: ""
-            Item 99:
-                name: Item 99
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 99
-                merchant: ""
-        coordinates:
-            2560x1440:
-                points: {}
-                searchareas: {}
-    concurrent writes:
-        name: concurrent writes
-        items: {}
-        coordinates:
-            2560x1440:
-                points: {}
-                searchareas: {}
-    count test:
-        name: count test
-        items:
-            Item 3:
-                name: Item 3 Updated
-                gridsize:
-                    - 0
-                    - 0
-                tags: []
-                stackmax: 0
-                merchant: ""
-        coordinates:
-            2560x1440:
-                points: {}
-                searchareas: {}
-    integration test program:
-        name: integration test program
-        items:
-            sword:
-                name: Sword
-                gridsize:
-                    - 1
-                    - 3
                 tags:
                     - weapon
                     - melee
-                stackmax: 1
-                merchant: blacksmith
+        name: Test Program
+    concurrent deletes:
         coordinates:
             2560x1440:
                 points: {}
                 searchareas: {}
-    keysynctest:
-        name: keysynctest
-        items:
-            New Name:
-                name: New Name
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - test
-                stackmax: 5
-                merchant: ""
-        coordinates:
-            2560x1440:
-                points: {}
-                searchareas: {}
-    mixed operations:
-        name: mixed operations
         items:
             Item 0:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
                 name: Item 0
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
                 stackmax: 0
-                merchant: ""
+                tags: []
             Item 1:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
                 name: Item 1
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
                 stackmax: 1
-                merchant: ""
+                tags: []
             Item 2:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
                 name: Item 2
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
                 stackmax: 2
-                merchant: ""
+                tags: []
             Item 3:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
                 name: Item 3
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
                 stackmax: 3
-                merchant: ""
+                tags: []
             Item 4:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
                 name: Item 4
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
                 stackmax: 4
-                merchant: ""
+                tags: []
             Item 5:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
                 name: Item 5
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
                 stackmax: 5
-                merchant: ""
+                tags: []
             Item 6:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
                 name: Item 6
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
                 stackmax: 6
-                merchant: ""
+                tags: []
             Item 7:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
                 name: Item 7
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
                 stackmax: 7
-                merchant: ""
+                tags: []
             Item 8:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
                 name: Item 8
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
                 stackmax: 8
-                merchant: ""
+                tags: []
             Item 9:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
                 name: Item 9
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
                 stackmax: 9
-                merchant: ""
+                tags: []
             Item 10:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
                 name: Item 10
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
                 stackmax: 10
-                merchant: ""
+                tags: []
             Item 11:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
                 name: Item 11
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
                 stackmax: 11
-                merchant: ""
+                tags: []
             Item 12:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
                 name: Item 12
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
                 stackmax: 12
-                merchant: ""
+                tags: []
             Item 13:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
                 name: Item 13
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
                 stackmax: 13
-                merchant: ""
+                tags: []
             Item 14:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
                 name: Item 14
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
                 stackmax: 14
-                merchant: ""
+                tags: []
             Item 15:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
                 name: Item 15
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
                 stackmax: 15
-                merchant: ""
+                tags: []
             Item 16:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
                 name: Item 16
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
                 stackmax: 16
-                merchant: ""
+                tags: []
             Item 17:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
                 name: Item 17
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
                 stackmax: 17
-                merchant: ""
+                tags: []
             Item 18:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
                 name: Item 18
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
                 stackmax: 18
-                merchant: ""
+                tags: []
             Item 19:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
                 name: Item 19
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
                 stackmax: 19
-                merchant: ""
+                tags: []
             Item 20:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
                 name: Item 20
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
                 stackmax: 20
-                merchant: ""
+                tags: []
             Item 21:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
                 name: Item 21
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
                 stackmax: 21
-                merchant: ""
+                tags: []
             Item 22:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
                 name: Item 22
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
                 stackmax: 22
-                merchant: ""
+                tags: []
             Item 23:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
                 name: Item 23
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
                 stackmax: 23
-                merchant: ""
+                tags: []
             Item 24:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
                 name: Item 24
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
                 stackmax: 24
-                merchant: ""
+                tags: []
             Item 25:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
                 name: Item 25
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
                 stackmax: 25
-                merchant: ""
+                tags: []
             Item 26:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
                 name: Item 26
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
                 stackmax: 26
-                merchant: ""
+                tags: []
             Item 27:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
                 name: Item 27
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
                 stackmax: 27
-                merchant: ""
+                tags: []
             Item 28:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
                 name: Item 28
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
                 stackmax: 28
-                merchant: ""
+                tags: []
             Item 29:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
                 name: Item 29
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
                 stackmax: 29
-                merchant: ""
+                tags: []
             Item 30:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
                 name: Item 30
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
                 stackmax: 30
-                merchant: ""
+                tags: []
             Item 31:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
                 name: Item 31
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
                 stackmax: 31
-                merchant: ""
+                tags: []
             Item 32:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
                 name: Item 32
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
                 stackmax: 32
-                merchant: ""
+                tags: []
             Item 33:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
                 name: Item 33
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
                 stackmax: 33
-                merchant: ""
+                tags: []
             Item 34:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
                 name: Item 34
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
                 stackmax: 34
-                merchant: ""
+                tags: []
             Item 35:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
                 name: Item 35
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
                 stackmax: 35
-                merchant: ""
+                tags: []
             Item 36:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
                 name: Item 36
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
                 stackmax: 36
-                merchant: ""
+                tags: []
             Item 37:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
                 name: Item 37
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
                 stackmax: 37
-                merchant: ""
+                tags: []
             Item 38:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
                 name: Item 38
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
                 stackmax: 38
-                merchant: ""
+                tags: []
             Item 39:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
                 name: Item 39
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
                 stackmax: 39
-                merchant: ""
+                tags: []
             Item 40:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
                 name: Item 40
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
                 stackmax: 40
-                merchant: ""
+                tags: []
             Item 41:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
                 name: Item 41
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
                 stackmax: 41
-                merchant: ""
+                tags: []
             Item 42:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
                 name: Item 42
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
                 stackmax: 42
-                merchant: ""
+                tags: []
             Item 43:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
                 name: Item 43
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
                 stackmax: 43
-                merchant: ""
+                tags: []
             Item 44:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
                 name: Item 44
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
                 stackmax: 44
-                merchant: ""
+                tags: []
             Item 45:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
                 name: Item 45
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
                 stackmax: 45
-                merchant: ""
+                tags: []
             Item 46:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
                 name: Item 46
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
                 stackmax: 46
-                merchant: ""
+                tags: []
             Item 47:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
                 name: Item 47
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
                 stackmax: 47
-                merchant: ""
+                tags: []
             Item 48:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
                 name: Item 48
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
                 stackmax: 48
-                merchant: ""
+                tags: []
             Item 49:
-                name: Item 49
                 gridsize:
                     - 1
                     - 1
-                tags: []
-                stackmax: 49
                 merchant: ""
+                name: Item 49
+                stackmax: 49
+                tags: []
+            Item 50:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 50
+                stackmax: 50
+                tags: []
+            Item 51:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 51
+                stackmax: 51
+                tags: []
+            Item 52:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 52
+                stackmax: 52
+                tags: []
+            Item 53:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 53
+                stackmax: 53
+                tags: []
+            Item 54:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 54
+                stackmax: 54
+                tags: []
+            Item 55:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 55
+                stackmax: 55
+                tags: []
+            Item 56:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 56
+                stackmax: 56
+                tags: []
+            Item 57:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 57
+                stackmax: 57
+                tags: []
+            Item 58:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 58
+                stackmax: 58
+                tags: []
+            Item 59:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 59
+                stackmax: 59
+                tags: []
+            Item 60:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 60
+                stackmax: 60
+                tags: []
+            Item 61:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 61
+                stackmax: 61
+                tags: []
+            Item 62:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 62
+                stackmax: 62
+                tags: []
+            Item 63:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 63
+                stackmax: 63
+                tags: []
+            Item 64:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 64
+                stackmax: 64
+                tags: []
+            Item 65:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 65
+                stackmax: 65
+                tags: []
+            Item 66:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 66
+                stackmax: 66
+                tags: []
+            Item 67:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 67
+                stackmax: 67
+                tags: []
+            Item 68:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 68
+                stackmax: 68
+                tags: []
+            Item 69:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 69
+                stackmax: 69
+                tags: []
+            Item 70:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 70
+                stackmax: 70
+                tags: []
+            Item 71:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 71
+                stackmax: 71
+                tags: []
+            Item 72:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 72
+                stackmax: 72
+                tags: []
+            Item 73:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 73
+                stackmax: 73
+                tags: []
+            Item 74:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 74
+                stackmax: 74
+                tags: []
+            Item 75:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 75
+                stackmax: 75
+                tags: []
+            Item 76:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 76
+                stackmax: 76
+                tags: []
+            Item 77:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 77
+                stackmax: 77
+                tags: []
+            Item 78:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 78
+                stackmax: 78
+                tags: []
+            Item 79:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 79
+                stackmax: 79
+                tags: []
+            Item 80:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 80
+                stackmax: 80
+                tags: []
+            Item 81:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 81
+                stackmax: 81
+                tags: []
+            Item 82:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 82
+                stackmax: 82
+                tags: []
+            Item 83:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 83
+                stackmax: 83
+                tags: []
+            Item 84:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 84
+                stackmax: 84
+                tags: []
+            Item 85:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 85
+                stackmax: 85
+                tags: []
+            Item 86:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 86
+                stackmax: 86
+                tags: []
+            Item 87:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 87
+                stackmax: 87
+                tags: []
+            Item 88:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 88
+                stackmax: 88
+                tags: []
+            Item 89:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 89
+                stackmax: 89
+                tags: []
+            Item 90:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 90
+                stackmax: 90
+                tags: []
+            Item 91:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 91
+                stackmax: 91
+                tags: []
+            Item 92:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 92
+                stackmax: 92
+                tags: []
+            Item 93:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 93
+                stackmax: 93
+                tags: []
+            Item 94:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 94
+                stackmax: 94
+                tags: []
+            Item 95:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 95
+                stackmax: 95
+                tags: []
+            Item 96:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 96
+                stackmax: 96
+                tags: []
+            Item 97:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 97
+                stackmax: 97
+                tags: []
+            Item 98:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 98
+                stackmax: 98
+                tags: []
+            Item 99:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 99
+                stackmax: 99
+                tags: []
+        name: concurrent deletes
+    concurrent writes:
         coordinates:
             2560x1440:
                 points: {}
                 searchareas: {}
-    multi resolution:
-        name: multi resolution
         items: {}
+        name: concurrent writes
+    count test:
+        coordinates:
+            2560x1440:
+                points: {}
+                searchareas: {}
+        items:
+            Item 3:
+                gridsize:
+                    - 0
+                    - 0
+                merchant: ""
+                name: Item 3 Updated
+                stackmax: 0
+                tags: []
+        name: count test
+    integration test program:
+        coordinates:
+            2560x1440:
+                points: {}
+                searchareas: {}
+        items:
+            sword:
+                gridsize:
+                    - 1
+                    - 3
+                merchant: blacksmith
+                name: Sword
+                stackmax: 1
+                tags:
+                    - weapon
+                    - melee
+        name: integration test program
+    mixed operations:
+        coordinates:
+            2560x1440:
+                points: {}
+                searchareas: {}
+        items:
+            Item 0:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 0
+                stackmax: 0
+                tags: []
+            Item 1:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 1
+                stackmax: 1
+                tags: []
+            Item 2:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 2
+                stackmax: 2
+                tags: []
+            Item 3:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 3
+                stackmax: 3
+                tags: []
+            Item 4:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 4
+                stackmax: 4
+                tags: []
+            Item 5:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 5
+                stackmax: 5
+                tags: []
+            Item 6:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 6
+                stackmax: 6
+                tags: []
+            Item 7:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 7
+                stackmax: 7
+                tags: []
+            Item 8:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 8
+                stackmax: 8
+                tags: []
+            Item 9:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 9
+                stackmax: 9
+                tags: []
+            Item 10:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 10
+                stackmax: 10
+                tags: []
+            Item 11:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 11
+                stackmax: 11
+                tags: []
+            Item 12:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 12
+                stackmax: 12
+                tags: []
+            Item 13:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 13
+                stackmax: 13
+                tags: []
+            Item 14:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 14
+                stackmax: 14
+                tags: []
+            Item 15:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 15
+                stackmax: 15
+                tags: []
+            Item 16:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 16
+                stackmax: 16
+                tags: []
+            Item 17:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 17
+                stackmax: 17
+                tags: []
+            Item 18:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 18
+                stackmax: 18
+                tags: []
+            Item 19:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 19
+                stackmax: 19
+                tags: []
+            Item 20:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 20
+                stackmax: 20
+                tags: []
+            Item 21:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 21
+                stackmax: 21
+                tags: []
+            Item 22:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 22
+                stackmax: 22
+                tags: []
+            Item 23:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 23
+                stackmax: 23
+                tags: []
+            Item 24:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 24
+                stackmax: 24
+                tags: []
+            Item 25:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 25
+                stackmax: 25
+                tags: []
+            Item 26:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 26
+                stackmax: 26
+                tags: []
+            Item 27:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 27
+                stackmax: 27
+                tags: []
+            Item 28:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 28
+                stackmax: 28
+                tags: []
+            Item 29:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 29
+                stackmax: 29
+                tags: []
+            Item 30:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 30
+                stackmax: 30
+                tags: []
+            Item 31:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 31
+                stackmax: 31
+                tags: []
+            Item 32:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 32
+                stackmax: 32
+                tags: []
+            Item 33:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 33
+                stackmax: 33
+                tags: []
+            Item 34:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 34
+                stackmax: 34
+                tags: []
+            Item 35:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 35
+                stackmax: 35
+                tags: []
+            Item 36:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 36
+                stackmax: 36
+                tags: []
+            Item 37:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 37
+                stackmax: 37
+                tags: []
+            Item 38:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 38
+                stackmax: 38
+                tags: []
+            Item 39:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 39
+                stackmax: 39
+                tags: []
+            Item 40:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 40
+                stackmax: 40
+                tags: []
+            Item 41:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 41
+                stackmax: 41
+                tags: []
+            Item 42:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 42
+                stackmax: 42
+                tags: []
+            Item 43:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 43
+                stackmax: 43
+                tags: []
+            Item 44:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 44
+                stackmax: 44
+                tags: []
+            Item 45:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 45
+                stackmax: 45
+                tags: []
+            Item 46:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 46
+                stackmax: 46
+                tags: []
+            Item 47:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 47
+                stackmax: 47
+                tags: []
+            Item 48:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 48
+                stackmax: 48
+                tags: []
+            Item 49:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Item 49
+                stackmax: 49
+                tags: []
+        name: mixed operations
+    multi resolution:
         coordinates:
             1920x1080:
                 points: {}
                 searchareas:
                     area1:
-                        name: Area 1080
-                        leftx: 100
-                        topy: 100
-                        rightx: 200
                         bottomy: 200
+                        leftx: 100
+                        name: Area 1080
+                        rightx: 200
+                        topy: 100
             2560x1440:
                 points: {}
                 searchareas:
                     area1:
-                        name: Area 1440
-                        leftx: 200
-                        topy: 200
-                        rightx: 400
                         bottomy: 400
+                        leftx: 200
+                        name: Area 1440
+                        rightx: 400
+                        topy: 200
+        items: {}
+        name: multi resolution
     test game:
-        name: test game
-        items:
-            Sword:
-                name: Sword
-                gridsize:
-                    - 1
-                    - 3
-                tags:
-                    - weapon
-                    - melee
-                stackmax: 1
-                merchant: blacksmith
         coordinates:
             2560x1440:
                 points: {}
                 searchareas: {}
+        items:
+            Sword:
+                gridsize:
+                    - 1
+                    - 3
+                merchant: blacksmith
+                name: Sword
+                stackmax: 1
+                tags:
+                    - weapon
+                    - melee
+        name: test game

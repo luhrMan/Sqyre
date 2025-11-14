@@ -1,6 +1,7 @@
 package services
 
 import (
+	"Squire/internal/assets"
 	"Squire/internal/config"
 	"fmt"
 	"io"
@@ -157,6 +158,10 @@ func (s *IconVariantService) AddVariant(programName, itemName, variantName, sour
 		return fmt.Errorf("failed to copy file: %w", err)
 	}
 
+	// Invalidate cache for the new variant
+	cacheKey := constructCacheKey(programName, itemName, variantName)
+	assets.InvalidateFyneResourceCache(cacheKey)
+
 	return nil
 }
 
@@ -179,6 +184,10 @@ func (s *IconVariantService) DeleteVariant(programName, itemName, variantName st
 	if err := os.Remove(filePath); err != nil {
 		return fmt.Errorf("failed to delete variant file: %w", err)
 	}
+
+	// Invalidate cache for the deleted variant
+	cacheKey := constructCacheKey(programName, itemName, variantName)
+	assets.InvalidateFyneResourceCache(cacheKey)
 
 	return nil
 }
@@ -278,4 +287,20 @@ func (s *IconVariantService) copyFile(src, dst string) error {
 
 	// Sync to ensure data is written to disk
 	return destFile.Sync()
+}
+
+// constructCacheKey builds the cache key used by the Fyne Resource cache.
+// The key format matches the cache key format in internal/assets/embeds.go:
+// "programName|filename.png"
+// For variants: "programName|ItemName|VariantName.png"
+// For non-variants: "programName|ItemName.png"
+func constructCacheKey(programName, itemName, variantName string) string {
+	if variantName == "" {
+		// Legacy icon without variant
+		return programName + config.ProgramDelimiter + itemName + config.PNG
+	}
+
+	// Variant icon with delimiter
+	filename := itemName + config.ProgramDelimiter + variantName + config.PNG
+	return programName + config.ProgramDelimiter + filename
 }
