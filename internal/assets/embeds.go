@@ -3,21 +3,121 @@ package assets
 import (
 	"Squire/internal/config"
 	_ "embed"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 )
 
 //go:embed images/icon.svg
 var appIcon []byte
 var AppIcon = fyne.NewStaticResource("appIcon", appIcon)
 
-var icons = make(map[string][]byte)
+var (
+	// fyneResourceCache stores loaded Fyne resources keyed by file path
+	// Key format: "programName|filename.png"
+	fyneResourceCache = make(map[string]*fyne.StaticResource)
 
-func LoadIconBytes() (map[string][]byte, error) {
-	log.Printf("Loading Icon Bytes...")
+	// fyneResourceMutex protects concurrent access to fyneResourceCache
+	fyneResourceMutex sync.RWMutex
+
+	// canvasImageCache stores decoded canvas.Image objects to prevent memory bloat
+	// from repeatedly decoding the same PNG data
+	canvasImageCache = make(map[string]*canvas.Image)
+
+	// canvasImageMutex protects concurrent access to canvasImageCache
+	canvasImageMutex sync.RWMutex
+)
+
+// GetFyneResource returns a single cached Fyne resource by key, loading from disk if not cached.
+// This is more efficient than BytesToFyneIcons() when you only need one icon.
+// Returns nil if the icon file doesn't exist or can't be loaded.
+func GetFyneResource(key string) *fyne.StaticResource {
+	fyneResourceMutex.RLock()
+	resource, exists := fyneResourceCache[key]
+	fyneResourceMutex.RUnlock()
+
+	if exists {
+		log.Printf("DEBUG: Cache HIT for key: %s", key)
+		return resource
+	}
+
+	// Not in cache, try to load from disk
+	fyneResourceMutex.Lock()
+	defer fyneResourceMutex.Unlock()
+
+	// Double-check after acquiring write lock (another goroutine might have loaded it)
+	if resource, exists := fyneResourceCache[key]; exists {
+		log.Printf("DEBUG: Cache HIT (after lock) for key: %s", key)
+		return resource
+	}
+
+	// Parse key to get file path: "programName|filename.png"
+	// Split on first delimiter to get program name and filename
+	parts := splitOnFirstDelimiter(key, config.ProgramDelimiter)
+	if len(parts) != 2 {
+		log.Printf("Invalid cache key format: %s", key)
+		return nil
+	}
+
+	programName := parts[0]
+	filename := parts[1]
+
+	// Construct file path
+	iconsPath := config.GetIconsPath()
+	iconPath := filepath.Join(iconsPath, programName, filename)
+
+	log.Printf("DEBUG: Loading from disk - key: %s, path: %s", key, iconPath)
+
+	// Read icon file
+	iconBytes, err := os.ReadFile(iconPath)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			log.Printf("Could not read icon %s. Error: %v", iconPath, err)
+		}
+		return nil
+	}
+
+	// Cache and return
+	resource = fyne.NewStaticResource(key, iconBytes)
+	fyneResourceCache[key] = resource
+	log.Printf("DEBUG: Cached resource for key: %s", key)
+	return resource
+}
+
+// splitOnFirstDelimiter splits a string on the first occurrence of delimiter
+func splitOnFirstDelimiter(s, delimiter string) []string {
+	idx := len(delimiter)
+	for i := 0; i <= len(s)-len(delimiter); i++ {
+		if s[i:i+len(delimiter)] == delimiter {
+			idx = i
+			break
+		}
+	}
+	if idx >= len(s) {
+		return []string{s}
+	}
+	return []string{s[:idx], s[idx+len(delimiter):]}
+}
+
+// BytesToFyneIcons returns cached Fyne resources, loading from disk only on first call
+// or after cache invalidation. When cache is empty, loads all icons. When cache has entries,
+// scans filesystem and loads any new icons that aren't cached yet.
+// NOTE: This returns a copy of the entire cache which can be memory-intensive.
+// Consider using GetFyneResource() for individual icon lookups instead.
+func BytesToFyneIcons() map[string]*fyne.StaticResource {
+	fyneResourceMutex.Lock()
+	defer fyneResourceMutex.Unlock()
+
+	// If cache is completely empty, do a full load
+	initialLoad := len(fyneResourceCache) == 0
+	if initialLoad {
+		log.Printf("Loading icons from disk and populating cache...")
+	}
 
 	iconsPath := config.GetIconsPath()
 
@@ -27,12 +127,13 @@ func LoadIconBytes() (map[string][]byte, error) {
 		// Graceful degradation if directory doesn't exist
 		if os.IsNotExist(err) {
 			log.Printf("Icons directory does not exist: %s", iconsPath)
-			return icons, nil
+			return make(map[string]*fyne.StaticResource)
 		}
 		log.Printf("Could not read directory %s. Error: %v", iconsPath, err)
-		return nil, err
+		return make(map[string]*fyne.StaticResource)
 	}
 
+	// Scan filesystem and load any icons not in cache
 	for _, entry := range entries {
 		if entry.IsDir() {
 			programName := entry.Name()
@@ -49,41 +150,99 @@ func LoadIconBytes() (map[string][]byte, error) {
 					continue
 				}
 
-				iconPath := filepath.Join(programPath, se.Name())
-				iconBytes, err := os.ReadFile(iconPath)
-				if err != nil {
-					log.Printf("Could not read icon %s. Error: %v", iconPath, err)
-					continue
-				}
+				// Construct cache key
+				key := programName + config.ProgramDelimiter + se.Name()
 
-				// Store icon with program delimiter and filename
-				// This handles both variant files (ItemName|VariantName.png)
-				// and non-variant files (ItemName.png) correctly
-				icons[programName+config.ProgramDelimiter+se.Name()] = iconBytes
+				// Only load if not already in cache
+				if _, exists := fyneResourceCache[key]; !exists {
+					iconPath := filepath.Join(programPath, se.Name())
+					iconBytes, err := os.ReadFile(iconPath)
+					if err != nil {
+						log.Printf("Could not read icon %s. Error: %v", iconPath, err)
+						continue
+					}
+
+					fyneResourceCache[key] = fyne.NewStaticResource(key, iconBytes)
+					if !initialLoad {
+						log.Printf("Loaded new icon from disk: %s", key)
+					}
+				}
 			}
 		}
 	}
 
-	return icons, nil
-}
-
-// func CustomArrowUpIcon() []byte {
-// 	moveup, err := fyne.LoadResourceFromPath("MoveUp.svg")
-// 	if err != nil {
-// 		log.Println(err)
-// 	}
-// 	return moveup.Content()
-// }
-
-func GetIconBytes() map[string][]byte {
-	return icons
-}
-
-func BytesToFyneIcons() map[string]*fyne.StaticResource {
-	var iconBytes, _ = LoadIconBytes()
-	i := make(map[string]*fyne.StaticResource)
-	for s, b := range iconBytes {
-		i[s] = fyne.NewStaticResource(s, b)
+	// Return a copy of the cache to prevent external modification
+	result := make(map[string]*fyne.StaticResource, len(fyneResourceCache))
+	for k, v := range fyneResourceCache {
+		result[k] = v
 	}
-	return i
+	return result
+}
+
+// InvalidateFyneResourceCache removes a specific icon from the cache
+// Called by IconVariantService after add/delete operations
+func InvalidateFyneResourceCache(key string) {
+	fyneResourceMutex.Lock()
+	canvasImageMutex.Lock()
+	defer fyneResourceMutex.Unlock()
+	defer canvasImageMutex.Unlock()
+
+	delete(fyneResourceCache, key)
+	delete(canvasImageCache, key)
+	log.Printf("Invalidated cache entry for key: %s", key)
+}
+
+// ClearFyneResourceCache removes all entries from the cache
+// Useful for testing or full cache reset
+func ClearFyneResourceCache() {
+	fyneResourceMutex.Lock()
+	canvasImageMutex.Lock()
+	defer fyneResourceMutex.Unlock()
+	defer canvasImageMutex.Unlock()
+
+	fyneResourceCache = make(map[string]*fyne.StaticResource)
+	canvasImageCache = make(map[string]*canvas.Image)
+	log.Printf("Cleared all cache entries")
+}
+
+// GetCanvasImage returns a cached canvas.Image for the given key, creating it if necessary.
+// This prevents memory bloat from repeatedly decoding the same PNG data into pixel buffers.
+// The returned image should NOT be modified as it's shared across all callers.
+func GetCanvasImage(key string, minSize fyne.Size, fillMode canvas.ImageFill) *canvas.Image {
+	// Create a composite cache key that includes size and fill mode
+	// This ensures different configurations don't share the same cached image
+	cacheKey := fmt.Sprintf("%s|%dx%d|%d", key, int(minSize.Width), int(minSize.Height), int(fillMode))
+	
+	// Check canvas image cache first
+	canvasImageMutex.RLock()
+	if img, exists := canvasImageCache[cacheKey]; exists {
+		canvasImageMutex.RUnlock()
+		return img
+	}
+	canvasImageMutex.RUnlock()
+
+	// Get the Fyne resource
+	resource := GetFyneResource(key)
+	if resource == nil {
+		return nil
+	}
+
+	// Create canvas image with write lock
+	canvasImageMutex.Lock()
+	defer canvasImageMutex.Unlock()
+
+	// Double-check after acquiring write lock
+	if img, exists := canvasImageCache[cacheKey]; exists {
+		return img
+	}
+
+	// Create new canvas.Image from resource
+	img := canvas.NewImageFromResource(resource)
+	img.FillMode = fillMode
+	img.SetMinSize(minSize)
+
+	// Cache it with the composite key
+	canvasImageCache[cacheKey] = img
+
+	return img
 }

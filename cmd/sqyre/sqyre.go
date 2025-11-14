@@ -79,8 +79,8 @@ func main() {
 				f[0].(int), f[1].(int), f[2].(int), f[3].(int)
 			roi :=
 				image.Rect(
-					(cols/x)/2,
-					(rows/y)/2,
+					cols-cols/x,
+					rows-rows/y,
 					cols,
 					rows,
 				)
@@ -95,7 +95,8 @@ func main() {
 			return &cmask
 		}
 	}
-
+	mask, _ := program.ItemRepo().Get("Ancient Scroll")
+	gocv.IMWrite(config.GetMetaPath()+"mask.png", *program.GetMasks()["item-corner"](162, 108, mask.GridSize[0], mask.GridSize[1]))
 	ui.GetUi().Window.ShowAndRun()
 
 	services.CloseTessClient()
