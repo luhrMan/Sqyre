@@ -1,6 +1,7 @@
 package services
 
 import (
+	"Squire/internal/assets"
 	"os"
 	"path/filepath"
 	"testing"
@@ -435,5 +436,359 @@ func TestIntegration_IconVariants_MultiplePrograms(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// TestIntegration_CacheInvalidation_AddVariant verifies that AddVariant invalidates
+// the Fyne Resource cache for the newly added variant
+func TestIntegration_CacheInvalidation_AddVariant(t *testing.T) {
+	// Clear cache before test
+	assets.ClearFyneResourceCache()
+
+	// Create a temporary directory for test icons
+	tempIconsDir, err := os.MkdirTemp("", "sqyre-cache-add-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp icons dir: %v", err)
+	}
+	defer os.RemoveAll(tempIconsDir)
+
+	service := &IconVariantService{basePath: tempIconsDir}
+
+	programName := "cache-test-program"
+	itemName := "Test Item"
+	variantName := "Variant1"
+
+	// Create program icons directory
+	programIconsDir := filepath.Join(tempIconsDir, programName)
+	if err := os.MkdirAll(programIconsDir, 0755); err != nil {
+		t.Fatalf("Failed to create program icons dir: %v", err)
+	}
+
+	// Create test PNG file
+	createTestPNG := func(path string) error {
+		file, err := os.Create(path)
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+
+		// Write PNG signature
+		pngSignature := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
+		_, err = file.Write(pngSignature)
+		return err
+	}
+
+	// Create source PNG
+	sourcePNG := filepath.Join(tempIconsDir, "source.png")
+	if err := createTestPNG(sourcePNG); err != nil {
+		t.Fatalf("Failed to create source PNG: %v", err)
+	}
+
+	// Add variant - this should call InvalidateFyneResourceCache
+	err = service.AddVariant(programName, itemName, variantName, sourcePNG)
+	if err != nil {
+		t.Fatalf("Failed to add variant: %v", err)
+	}
+
+	// Verify file exists in the test directory
+	variantPath := service.GetVariantPath(programName, itemName, variantName)
+	if _, err := os.Stat(variantPath); os.IsNotExist(err) {
+		t.Fatal("Variant file should exist after AddVariant")
+	}
+
+	// Verify the variant file was created with correct naming
+	expectedFilename := itemName + "|" + variantName + ".png"
+	actualFilename := filepath.Base(variantPath)
+	if actualFilename != expectedFilename {
+		t.Errorf("Expected filename '%s', got '%s'", expectedFilename, actualFilename)
+	}
+}
+
+// TestIntegration_CacheInvalidation_DeleteVariant verifies that DeleteVariant invalidates
+// the Fyne Resource cache for the deleted variant
+func TestIntegration_CacheInvalidation_DeleteVariant(t *testing.T) {
+	// Clear cache before test
+	assets.ClearFyneResourceCache()
+
+	// Create a temporary directory for test icons
+	tempIconsDir, err := os.MkdirTemp("", "sqyre-cache-delete-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp icons dir: %v", err)
+	}
+	defer os.RemoveAll(tempIconsDir)
+
+	service := &IconVariantService{basePath: tempIconsDir}
+
+	programName := "cache-delete-program"
+	itemName := "Test Item"
+	variantName := "Variant1"
+
+	// Create program icons directory
+	programIconsDir := filepath.Join(tempIconsDir, programName)
+	if err := os.MkdirAll(programIconsDir, 0755); err != nil {
+		t.Fatalf("Failed to create program icons dir: %v", err)
+	}
+
+	// Create test PNG file
+	createTestPNG := func(path string) error {
+		file, err := os.Create(path)
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+
+		// Write PNG signature
+		pngSignature := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
+		_, err = file.Write(pngSignature)
+		return err
+	}
+
+	// Create source PNG
+	sourcePNG := filepath.Join(tempIconsDir, "source.png")
+	if err := createTestPNG(sourcePNG); err != nil {
+		t.Fatalf("Failed to create source PNG: %v", err)
+	}
+
+	// Add variant first
+	err = service.AddVariant(programName, itemName, variantName, sourcePNG)
+	if err != nil {
+		t.Fatalf("Failed to add variant: %v", err)
+	}
+
+	// Verify file exists before deletion
+	variantPath := service.GetVariantPath(programName, itemName, variantName)
+	if _, err := os.Stat(variantPath); os.IsNotExist(err) {
+		t.Fatal("Variant file should exist before deletion")
+	}
+
+	// Delete variant - this should call InvalidateFyneResourceCache
+	err = service.DeleteVariant(programName, itemName, variantName)
+	if err != nil {
+		t.Fatalf("Failed to delete variant: %v", err)
+	}
+
+	// Verify file is deleted from filesystem
+	if _, err := os.Stat(variantPath); !os.IsNotExist(err) {
+		t.Error("Variant file should be deleted after DeleteVariant")
+	}
+
+	// Verify GetVariants no longer returns the deleted variant
+	variants, err := service.GetVariants(programName, itemName)
+	if err != nil {
+		t.Fatalf("Failed to get variants: %v", err)
+	}
+
+	for _, v := range variants {
+		if v == variantName {
+			t.Errorf("Deleted variant '%s' should not be in GetVariants result", variantName)
+		}
+	}
+}
+
+// TestIntegration_EndToEnd_LoadAddReload verifies the complete flow:
+// load icon → add variant → verify cache invalidated → verify reload
+func TestIntegration_EndToEnd_LoadAddReload(t *testing.T) {
+	// Clear cache before test
+	assets.ClearFyneResourceCache()
+
+	// Create a temporary directory for test icons
+	tempIconsDir, err := os.MkdirTemp("", "sqyre-e2e-add-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp icons dir: %v", err)
+	}
+	defer os.RemoveAll(tempIconsDir)
+
+	service := &IconVariantService{basePath: tempIconsDir}
+
+	programName := "e2e-add-program"
+	itemName := "Health Potion"
+	variantName := "NewVariant"
+
+	// Create program icons directory
+	programIconsDir := filepath.Join(tempIconsDir, programName)
+	if err := os.MkdirAll(programIconsDir, 0755); err != nil {
+		t.Fatalf("Failed to create program icons dir: %v", err)
+	}
+
+	// Create test PNG file helper
+	createTestPNG := func(path string) error {
+		file, err := os.Create(path)
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+
+		// Write PNG signature
+		pngSignature := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
+		_, err = file.Write(pngSignature)
+		return err
+	}
+
+	// Step 1: Create initial variant
+	initialVariantPath := filepath.Join(programIconsDir, itemName+"|Initial.png")
+	if err := createTestPNG(initialVariantPath); err != nil {
+		t.Fatalf("Failed to create initial variant: %v", err)
+	}
+
+	// Verify initial variant exists
+	if _, err := os.Stat(initialVariantPath); os.IsNotExist(err) {
+		t.Fatal("Initial variant file should exist")
+	}
+
+	// Step 2: Get initial variants list
+	initialVariants, err := service.GetVariants(programName, itemName)
+	if err != nil {
+		t.Fatalf("Failed to get initial variants: %v", err)
+	}
+
+	if len(initialVariants) != 1 {
+		t.Errorf("Expected 1 initial variant, got %d", len(initialVariants))
+	}
+
+	// Step 3: Add new variant
+	sourcePNG := filepath.Join(tempIconsDir, "source.png")
+	if err := createTestPNG(sourcePNG); err != nil {
+		t.Fatalf("Failed to create source PNG: %v", err)
+	}
+
+	err = service.AddVariant(programName, itemName, variantName, sourcePNG)
+	if err != nil {
+		t.Fatalf("Failed to add variant: %v", err)
+	}
+
+	// Step 4: Verify new variant file exists
+	newVariantPath := service.GetVariantPath(programName, itemName, variantName)
+	if _, err := os.Stat(newVariantPath); os.IsNotExist(err) {
+		t.Error("New variant file should exist after AddVariant")
+	}
+
+	// Step 5: Verify GetVariants returns both variants
+	variantsAfterAdd, err := service.GetVariants(programName, itemName)
+	if err != nil {
+		t.Fatalf("Failed to get variants after add: %v", err)
+	}
+
+	if len(variantsAfterAdd) != 2 {
+		t.Errorf("Expected 2 variants after add, got %d", len(variantsAfterAdd))
+	}
+
+	// Verify both variant names are present
+	variantMap := make(map[string]bool)
+	for _, v := range variantsAfterAdd {
+		variantMap[v] = true
+	}
+
+	if !variantMap["Initial"] {
+		t.Error("Expected 'Initial' variant to be present")
+	}
+	if !variantMap[variantName] {
+		t.Errorf("Expected '%s' variant to be present", variantName)
+	}
+}
+
+// TestIntegration_EndToEnd_LoadDeletePlaceholder verifies the complete flow:
+// load icon → delete variant → verify cache invalidated → verify placeholder
+func TestIntegration_EndToEnd_LoadDeletePlaceholder(t *testing.T) {
+	// Clear cache before test
+	assets.ClearFyneResourceCache()
+
+	// Create a temporary directory for test icons
+	tempIconsDir, err := os.MkdirTemp("", "sqyre-e2e-delete-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp icons dir: %v", err)
+	}
+	defer os.RemoveAll(tempIconsDir)
+
+	service := &IconVariantService{basePath: tempIconsDir}
+
+	programName := "e2e-delete-program"
+	itemName := "Mana Potion"
+	variantName := "ToDelete"
+	keepVariantName := "KeepThis"
+
+	// Create program icons directory
+	programIconsDir := filepath.Join(tempIconsDir, programName)
+	if err := os.MkdirAll(programIconsDir, 0755); err != nil {
+		t.Fatalf("Failed to create program icons dir: %v", err)
+	}
+
+	// Create test PNG file helper
+	createTestPNG := func(path string) error {
+		file, err := os.Create(path)
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+
+		// Write PNG signature
+		pngSignature := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
+		_, err = file.Write(pngSignature)
+		return err
+	}
+
+	// Step 1: Create two variants - one to delete, one to keep
+	variantToDeletePath := filepath.Join(programIconsDir, itemName+"|"+variantName+".png")
+	if err := createTestPNG(variantToDeletePath); err != nil {
+		t.Fatalf("Failed to create variant to delete: %v", err)
+	}
+
+	variantToKeepPath := filepath.Join(programIconsDir, itemName+"|"+keepVariantName+".png")
+	if err := createTestPNG(variantToKeepPath); err != nil {
+		t.Fatalf("Failed to create variant to keep: %v", err)
+	}
+
+	// Step 2: Verify both variants exist before deletion
+	initialVariants, err := service.GetVariants(programName, itemName)
+	if err != nil {
+		t.Fatalf("Failed to get initial variants: %v", err)
+	}
+
+	if len(initialVariants) != 2 {
+		t.Errorf("Expected 2 initial variants, got %d", len(initialVariants))
+	}
+
+	// Step 3: Delete one variant
+	err = service.DeleteVariant(programName, itemName, variantName)
+	if err != nil {
+		t.Fatalf("Failed to delete variant: %v", err)
+	}
+
+	// Step 4: Verify file is deleted from filesystem
+	if _, err := os.Stat(variantToDeletePath); !os.IsNotExist(err) {
+		t.Error("Variant file should be deleted from filesystem")
+	}
+
+	// Step 5: Verify the other variant still exists
+	if _, err := os.Stat(variantToKeepPath); os.IsNotExist(err) {
+		t.Error("Other variant file should still exist")
+	}
+
+	// Step 6: Verify GetVariants no longer returns the deleted variant
+	variantsAfterDelete, err := service.GetVariants(programName, itemName)
+	if err != nil {
+		t.Fatalf("Failed to get variants after delete: %v", err)
+	}
+
+	if len(variantsAfterDelete) != 1 {
+		t.Errorf("Expected 1 variant after delete, got %d", len(variantsAfterDelete))
+	}
+
+	// Verify the deleted variant is not in the list
+	for _, v := range variantsAfterDelete {
+		if v == variantName {
+			t.Errorf("Deleted variant '%s' should not be in GetVariants result", variantName)
+		}
+	}
+
+	// Verify the kept variant is still in the list
+	foundKeptVariant := false
+	for _, v := range variantsAfterDelete {
+		if v == keepVariantName {
+			foundKeptVariant = true
+			break
+		}
+	}
+	if !foundKeptVariant {
+		t.Errorf("Expected kept variant '%s' to still be in GetVariants result", keepVariantName)
 	}
 }

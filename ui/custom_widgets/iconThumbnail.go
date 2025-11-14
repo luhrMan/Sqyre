@@ -1,9 +1,11 @@
 package custom_widgets
 
 import (
+	"Squire/internal/assets"
 	"Squire/internal/config"
 	"image/color"
-	"os"
+	"log"
+	"path/filepath"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -73,55 +75,50 @@ func (t *IconThumbnail) createUI() {
 	)
 }
 
-// loadIcon loads the PNG image or returns a placeholder if missing/corrupted
+// loadIcon loads the PNG image from cache or returns a placeholder if missing/corrupted
 func (t *IconThumbnail) loadIcon() *canvas.Image {
-	// Check if file exists and is readable
-	if _, err := os.Stat(t.iconPath); err != nil {
+	// Construct cache key from icon path
+	key := t.constructIconKey()
+	if key == "" {
 		return t.createPlaceholder(true)
 	}
 
-	// Try to load the image
-	img := canvas.NewImageFromFile(t.iconPath)
-	if img == nil {
-		return t.createPlaceholder(true)
+	// Get cached canvas.Image (includes decoded pixel data)
+	// This prevents memory bloat from repeatedly decoding the same PNG
+	img := assets.GetCanvasImage(
+		key,
+		fyne.NewSize(config.IconThumbnailSize, config.IconThumbnailSize),
+		canvas.ImageFillContain,
+	)
+	
+	if img != nil {
+		return img
 	}
 
-	// Validate it's a PNG by checking the file
-	if !t.validatePNG(t.iconPath) {
-		return t.createPlaceholder(true)
-	}
-
-	// Configure image display
-	img.FillMode = canvas.ImageFillContain
-	img.SetMinSize(fyne.NewSize(config.IconThumbnailSize, config.IconThumbnailSize))
-
-	return img
+	// Resource not found in cache, return placeholder
+	return t.createPlaceholder(true)
 }
 
-// validatePNG checks if the file has a valid PNG header
-func (t *IconThumbnail) validatePNG(path string) bool {
-	file, err := os.Open(path)
-	if err != nil {
-		return false
-	}
-	defer file.Close()
-
-	// Read first 8 bytes to check PNG signature
-	header := make([]byte, 8)
-	n, err := file.Read(header)
-	if err != nil || n != 8 {
-		return false
+// constructIconKey constructs the cache key from the icon file path
+// Key format: "programName|filename.png"
+// Example: "/home/user/Sqyre/images/icons/dark and darker/Health Potion.png"
+//          -> "dark and darker|Health Potion.png"
+func (t *IconThumbnail) constructIconKey() string {
+	if t.iconPath == "" {
+		return ""
 	}
 
-	// PNG signature: \x89PNG\r\n\x1a\n
-	pngSignature := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
-	for i := 0; i < 8; i++ {
-		if header[i] != pngSignature[i] {
-			return false
-		}
-	}
+	// Get the filename (e.g., "Health Potion.png" or "Health Potion|Variant1.png")
+	filename := filepath.Base(t.iconPath)
 
-	return true
+	// Get the parent directory name (program name, e.g., "dark and darker")
+	parentDir := filepath.Base(filepath.Dir(t.iconPath))
+
+	// Construct key: programName|filename
+	key := parentDir + config.ProgramDelimiter + filename
+
+	log.Printf("DEBUG: IconThumbnail constructIconKey - iconPath: %s, key: %s, variant: %s", t.iconPath, key, t.variantName)
+	return key
 }
 
 // createPlaceholder creates a placeholder image with error indicator

@@ -22,20 +22,22 @@ type IconVariantEditor struct {
 	onVariantChange func()
 
 	// UI components
-	variantList *fyne.Container
-	addButton   *widget.Button
-	mainContent *fyne.Container
-	window      fyne.Window
+	variantList     *fyne.Container
+	addButton       *widget.Button
+	mainContent     *fyne.Container
+	window          fyne.Window
+	thumbnailWidgets map[string]*IconThumbnail // Cache widgets to avoid recreation
 }
 
 // NewIconVariantEditor creates a new icon variant editor widget
 func NewIconVariantEditor(programName, itemName string, service *services.IconVariantService, window fyne.Window, onVariantChange func()) *IconVariantEditor {
 	editor := &IconVariantEditor{
-		programName:     programName,
-		itemName:        itemName,
-		service:         service,
-		window:          window,
-		onVariantChange: onVariantChange,
+		programName:      programName,
+		itemName:         itemName,
+		service:          service,
+		window:           window,
+		onVariantChange:  onVariantChange,
+		thumbnailWidgets: make(map[string]*IconThumbnail),
 	}
 
 	editor.ExtendBaseWidget(editor)
@@ -78,6 +80,7 @@ func (e *IconVariantEditor) createUI() {
 }
 
 // createVariantList creates a grid of IconThumbnail widgets for existing variants
+// Reuses existing widgets when possible to avoid recreation overhead
 func (e *IconVariantEditor) createVariantList() *fyne.Container {
 	if len(e.variants) == 0 {
 		// Show a message when no variants exist
@@ -88,25 +91,51 @@ func (e *IconVariantEditor) createVariantList() *fyne.Container {
 	// Create a grid container with thumbnails
 	thumbnails := make([]fyne.CanvasObject, 0, len(e.variants))
 
+	// Track which widgets are still needed
+	neededWidgets := make(map[string]bool)
+
 	for _, variantName := range e.variants {
 		// Create a copy of variantName for the closure
 		variant := variantName
+		neededWidgets[variant] = true
 
+		// Get the correct icon path for this item and variant
 		iconPath := e.service.GetVariantPath(e.programName, e.itemName, variant)
 
-		// Create delete callback
-		onDelete := func() {
-			e.showDeleteConfirmation(variant)
+		// Try to reuse existing widget
+		thumbnail, exists := e.thumbnailWidgets[variant]
+		if !exists {
+			// Create new widget only if it doesn't exist
+			// Create delete callback
+			onDelete := func() {
+				e.showDeleteConfirmation(variant)
+			}
+
+			thumbnail = NewIconThumbnail(iconPath, variant, onDelete)
+			e.thumbnailWidgets[variant] = thumbnail
+		} else {
+			// Update existing widget with new icon path and callback
+			thumbnail.SetIconPath(iconPath)
+			thumbnail.SetOnDelete(func() {
+				e.showDeleteConfirmation(variant)
+			})
 		}
 
-		thumbnail := NewIconThumbnail(iconPath, variant, onDelete)
-
-		// Disable delete button if only one variant
+		// Update delete button state
 		if len(e.variants) <= 1 {
 			thumbnail.deleteBtn.Disable()
+		} else {
+			thumbnail.deleteBtn.Enable()
 		}
 
 		thumbnails = append(thumbnails, thumbnail)
+	}
+
+	// Clean up widgets that are no longer needed
+	for variant := range e.thumbnailWidgets {
+		if !neededWidgets[variant] {
+			delete(e.thumbnailWidgets, variant)
+		}
 	}
 
 	return container.NewGridWrap(fyne.NewSize(100, 150), thumbnails...)
@@ -237,14 +266,35 @@ func (e *IconVariantEditor) CreateRenderer() fyne.WidgetRenderer {
 	return widget.NewSimpleRenderer(e.mainContent)
 }
 
-// SetProgramName updates the program name and reloads variants
+// SetProgramName updates the program name (call refreshDisplay manually after setting both)
 func (e *IconVariantEditor) SetProgramName(programName string) {
-	e.programName = programName
-	e.refreshDisplay()
+	if e.programName != programName {
+		e.programName = programName
+		// Clear widget cache since program changed
+		e.thumbnailWidgets = make(map[string]*IconThumbnail)
+	}
 }
 
-// SetItemName updates the item name and reloads variants
+// SetItemName updates the item name (call refreshDisplay manually after setting both)
 func (e *IconVariantEditor) SetItemName(itemName string) {
+	if e.itemName != itemName {
+		e.itemName = itemName
+		// Clear widget cache since item changed
+		e.thumbnailWidgets = make(map[string]*IconThumbnail)
+	}
+}
+
+// SetProgramAndItem updates both program and item name, then refreshes once
+func (e *IconVariantEditor) SetProgramAndItem(programName, itemName string) {
+	// Only refresh if values actually changed
+	if e.programName == programName && e.itemName == itemName {
+		return
+	}
+	
+	// Clear widget cache since program or item changed
+	e.thumbnailWidgets = make(map[string]*IconThumbnail)
+	
+	e.programName = programName
 	e.itemName = itemName
 	e.refreshDisplay()
 }

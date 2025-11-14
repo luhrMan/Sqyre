@@ -1,17 +1,30 @@
 macros:
     Get Gems:
+        globaldelay: 45
+        hotkey:
+            - ctrl
+            - shift
+            - "2"
         name: Get Gems
         root:
             count: 1
-            type: loop
             name: root
             subactions:
-                - type: wait
-                  time: 590
-                - type: key
-                  key: ctrl
+                - time: 590
+                  type: wait
+                - key: ctrl
                   state: true
-                - targets:
+                  type: key
+                - colsplit: 1
+                  name: ""
+                  rowsplit: 1
+                  searcharea:
+                    bottomy: 1354
+                    leftx: 1832
+                    name: stash-screen-stash-inventory
+                    rightx: 2493
+                    topy: 261
+                  targets:
                     - dark and darker|Ancient Scroll
                     - dark and darker|Gold Candle Holder
                     - dark and darker|Iron Ore Stack
@@ -19,64 +32,66 @@ macros:
                     - dark and darker|Shine Bangle
                     - dark and darker|Silver Ingot
                     - path of exile|Arcanists Etcher
-                  searcharea:
-                    name: stash-screen-stash-inventory
-                    leftx: 1832
-                    topy: 261
-                    rightx: 2493
-                    bottomy: 1354
-                  rowsplit: 1
-                  colsplit: 1
                   tolerance: 0.95
                   type: imagesearch
-                  name: ""
-        globaldelay: 45
-        hotkey:
-            - ctrl
-            - shift
-            - "2"
+            type: loop
     New macro 1:
+        globaldelay: 50
+        hotkey: []
         name: New macro 1
         root:
             count: 1
-            type: loop
             name: root
             subactions:
-                - targets:
-                    - dark and darker|Gold Candle Holder
-                    - dark and darker|Iron Ingot Stack
-                    - dark and darker|Phoenix Choker
-                    - dark and darker|Silver Ingot
-                  searcharea:
-                    name: stash-screen-player-inventory
-                    leftx: 913
-                    topy: 830
-                    rightx: 1466
-                    bottomy: 1112
+                - colsplit: 1
+                  name: please help me
                   rowsplit: 1
-                  colsplit: 1
+                  searcharea:
+                    bottomy: 1354
+                    leftx: 1832
+                    name: stash-screen-stash-inventory
+                    rightx: 2493
+                    topy: 261
+                  subactions:
+                    - point:
+                        name: image search context
+                        x: 2024
+                        "y": 615
+                      type: move
+                  targets:
+                    - dark and darker|Rubysilver Ore
                   tolerance: 0.95
                   type: imagesearch
-                  name: please help me
-                  subactions:
-                    - type: move
-                      point:
-                        name: Stash-screen-stashtab3
-                        x: 1743
-                        "y": 380
-        globaldelay: 150
-        hotkey: []
+            type: loop
     Sell Treasures:
+        globaldelay: 50
+        hotkey: []
         name: Sell Treasures
         root:
             count: 1
-            type: loop
             name: root
             subactions:
-                - type: key
-                  key: shift
+                - key: shift
                   state: true
-                - targets:
+                  type: key
+                - colsplit: 1
+                  name: treasures
+                  rowsplit: 1
+                  searcharea:
+                    bottomy: 1354
+                    leftx: 1832
+                    name: stash-screen-stash-inventory
+                    rightx: 2493
+                    topy: 261
+                  subactions:
+                    - point:
+                        name: image search context
+                        x: 2456
+                        "y": 345
+                      type: move
+                    - button: true
+                      type: click
+                  targets:
                     - dark and darker|Diamond
                     - dark and darker|Dotted Gold Bangle
                     - dark and darker|Gem Ring
@@ -101,30 +116,20 @@ macros:
                     - dark and darker|Slim Bangle
                     - dark and darker|Triple Gem Bangle
                     - dark and darker|Turquoise Gem Bangle
-                  searcharea:
-                    name: stash-screen-stash-inventory
-                    leftx: 1832
-                    topy: 261
-                    rightx: 2493
-                    bottomy: 1354
-                  rowsplit: 1
-                  colsplit: 1
                   tolerance: 0.95
                   type: imagesearch
-                  name: treasures
-                  subactions:
-                    - type: move
-                      point:
-                        name: image search context
-                        x: 2456
-                        "y": 345
-                    - type: click
-                      button: true
-                - type: key
-                  key: shift
+                - key: shift
                   state: false
-        globaldelay: 50
+                  type: key
+            type: loop
+    Standard:
+        globaldelay: 0
         hotkey: []
+        name: Standard
+        root:
+            count: 1
+            name: root
+            type: loop
 programs:
     dark and darker:
         name: dark and darker
@@ -681,22 +686,6 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: Treasurer
-            Gold Purse Empty:
-                name: Gold Purse Empty
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 0
-                merchant: Treasurer
-            Gold Purse Full:
-                name: Gold Purse Full
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 50
-                merchant: Treasurer
             Gold Waterpot:
                 name: Gold Waterpot
                 gridsize:
@@ -921,14 +910,6 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: ""
-            Potion:
-                name: Potion
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 3
-                merchant: ""
             Primitive Bracelet:
                 name: Primitive Bracelet
                 gridsize:
@@ -1027,14 +1008,6 @@ programs:
                 merchant: Collector
             Rubysilver Ore:
                 name: Rubysilver Ore
-                gridsize:
-                    - 2
-                    - 2
-                tags: []
-                stackmax: 0
-                merchant: ""
-            Rubysilver Ore Stack:
-                name: Rubysilver Ore Stack
                 gridsize:
                     - 2
                     - 2
@@ -1169,6 +1142,14 @@ programs:
                 tags: []
                 stackmax: 3
                 merchant: Collector
+            Wendigos Antler Fragments:
+                name: Wendigos Antler Fragments
+                gridsize:
+                    - 1
+                    - 1
+                tags: []
+                stackmax: 0
+                merchant: ""
             Wendigos Hoof:
                 name: Wendigos Hoof
                 gridsize:
@@ -1265,138 +1246,138 @@ programs:
                         bottomy: 10
             2560x1440:
                 points:
-                    alchemist:
+                    Alchemist:
                         name: Alchemist
                         x: 515
                         "y": 299
-                    armourer:
+                    Armourer:
                         name: Armourer
                         x: 820
                         "y": 299
-                    class-screen:
+                    Class-screen:
                         name: Class-screen
                         x: 953
                         "y": 57
+                    Customize-screen:
+                        name: Customize-screen
+                        x: 2008
+                        "y": 57
+                    Fortune Teller:
+                        name: Fortune Teller
+                        x: 1125
+                        "y": 299
+                    Gathering Hall-screen:
+                        name: Gathering Hall-screen
+                        x: 1797
+                        "y": 57
+                    Goblin Merchant:
+                        name: Goblin Merchant
+                        x: 1431
+                        "y": 299
+                    Goldsmith:
+                        name: Goldsmith
+                        x: 1736
+                        "y": 299
+                    Leaderboard-screen:
+                        name: Leaderboard-screen
+                        x: 531
+                        "y": 57
+                    Leathersmith:
+                        name: Leathersmith
+                        x: 2041
+                        "y": 299
+                    Merchants-screen:
+                        name: Merchants-screen
+                        x: 1375
+                        "y": 57
+                    Merchants-screen-stashtab1:
+                        name: Merchants-screen-stashtab1
+                        x: 1727
+                        "y": 234
+                    Play-screen:
+                        name: Play-screen
+                        x: 320
+                        "y": 57
+                    Religion-screen:
+                        name: Religion-screen
+                        x: 742
+                        "y": 57
+                    Shop-screen:
+                        name: Shop-screen
+                        x: 2219
+                        "y": 57
+                    Squire:
+                        name: Squire
+                        x: 515
+                        "y": 681
+                    Stash-screen:
+                        name: Stash-screen
+                        x: 1164
+                        "y": 57
+                    Stash-screen-stashtab1:
+                        name: Stash-screen-stashtab1
+                        x: 1743
+                        "y": 258
+                    Stash-screen-stashtab2:
+                        name: Stash-screen-stashtab2
+                        x: 1743
+                        "y": 319
+                    Stash-screen-stashtab3:
+                        name: Stash-screen-stashtab3
+                        x: 1743
+                        "y": 380
+                    Stash-screen-stashtab4:
+                        name: Stash-screen-stashtab4
+                        x: 1743
+                        "y": 441
+                    Surgeon:
+                        name: Surgeon
+                        x: 820
+                        "y": 681
+                    Tailor:
+                        name: Tailor
+                        x: 1125
+                        "y": 681
+                    Tavern Master:
+                        name: Tavern Master
+                        x: 1431
+                        "y": 681
+                    The Collector:
+                        name: The Collector
+                        x: 1736
+                        "y": 681
+                    Trade-screen:
+                        name: Trade-screen
+                        x: 1586
+                        "y": 57
+                    Treasurer:
+                        name: Treasurer
+                        x: 2041
+                        "y": 681
+                    Valentine:
+                        name: Valentine
+                        x: 515
+                        "y": 1063
+                    Weaponsmith:
+                        name: Weaponsmith
+                        x: 820
+                        "y": 1063
+                    Woodsman:
+                        name: Woodsman
+                        x: 1125
+                        "y": 1063
                     custom:
                         name: custom
                         x: 0
                         "y": 0
-                    customize-screen:
-                        name: Customize-screen
-                        x: 2008
-                        "y": 57
-                    fortune teller:
-                        name: Fortune Teller
-                        x: 1125
-                        "y": 299
-                    gathering hall-screen:
-                        name: Gathering Hall-screen
-                        x: 1797
-                        "y": 57
-                    goblin merchant:
-                        name: Goblin Merchant
-                        x: 1431
-                        "y": 299
-                    goldsmith:
-                        name: Goldsmith
-                        x: 1736
-                        "y": 299
                     image search context:
                         name: image search context
                         x: -1
                         "y": -1
-                    leaderboard-screen:
-                        name: Leaderboard-screen
-                        x: 531
-                        "y": 57
-                    leathersmith:
-                        name: Leathersmith
-                        x: 2041
-                        "y": 299
-                    merchants-screen:
-                        name: Merchants-screen
-                        x: 1375
-                        "y": 57
-                    merchants-screen-stashtab1:
-                        name: Merchants-screen-stashtab1
-                        x: 1727
-                        "y": 234
-                    play-screen:
-                        name: Play-screen
-                        x: 320
-                        "y": 57
-                    religion-screen:
-                        name: Religion-screen
-                        x: 742
-                        "y": 57
-                    shop-screen:
-                        name: Shop-screen
-                        x: 2219
-                        "y": 57
-                    squire:
-                        name: Squire
-                        x: 515
-                        "y": 681
-                    stash-screen:
-                        name: Stash-screen
-                        x: 1164
-                        "y": 57
-                    stash-screen-stashtab1:
-                        name: Stash-screen-stashtab1
-                        x: 1743
-                        "y": 258
-                    stash-screen-stashtab2:
-                        name: Stash-screen-stashtab2
-                        x: 1743
-                        "y": 319
-                    stash-screen-stashtab3:
-                        name: Stash-screen-stashtab3
-                        x: 1743
-                        "y": 380
-                    stash-screen-stashtab4:
-                        name: Stash-screen-stashtab4
-                        x: 1743
-                        "y": 441
-                    surgeon:
-                        name: Surgeon
-                        x: 820
-                        "y": 681
-                    tailor:
-                        name: Tailor
-                        x: 1125
-                        "y": 681
-                    tavern master:
-                        name: Tavern Master
-                        x: 1431
-                        "y": 681
                     test:
                         name: test
                         x: 10
                         "y": 10
-                    the collector:
-                        name: The Collector
-                        x: 1736
-                        "y": 681
-                    trade-screen:
-                        name: Trade-screen
-                        x: 1586
-                        "y": 57
-                    treasurer:
-                        name: Treasurer
-                        x: 2041
-                        "y": 681
-                    valentine:
-                        name: Valentine
-                        x: 515
-                        "y": 1063
-                    weaponsmith:
-                        name: Weaponsmith
-                        x: 820
-                        "y": 1063
-                    woodsman:
-                        name: Woodsman
-                        x: 1125
-                        "y": 1063
                 searchareas:
                     stash-screen-player-inventory:
                         name: stash-screen-player-inventory
