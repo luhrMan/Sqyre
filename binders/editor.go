@@ -4,9 +4,12 @@ import (
 	"Squire/internal/config"
 	"Squire/internal/models"
 	"Squire/internal/models/repositories"
+	"Squire/internal/services"
 	"Squire/ui"
+	"Squire/ui/custom_widgets"
 	"errors"
 	"log"
+	"os"
 	"strconv"
 
 	"fyne.io/fyne/v2/dialog"
@@ -74,16 +77,75 @@ func setEditorForms() {
 				log.Printf("Error getting program %s: %v", p, err)
 				return
 			}
+			
+			// Capture the old name before making changes
+			oldItemName := v.Name
+			
+			// Check if the name is being changed and if the new name already exists
+			if v.Name != n {
+				// Check if an item with the new name already exists
+				_, err := program.ItemRepo().Get(n)
+				if err == nil {
+					dialog.ShowError(errors.New("an item with that name already exists"), ui.GetUi().Window)
+					return
+				}
+				
+				// Handle renaming of icon variant files when item name changes
+				iconService := services.IconVariantServiceInstance()
+				oldVariants, err := iconService.GetVariants(p, v.Name)
+				if err == nil && len(oldVariants) > 0 {
+					// Move each variant file from old name to new name
+					for _, variant := range oldVariants {
+						oldPath := iconService.GetVariantPath(p, v.Name, variant)
+						newPath := iconService.GetVariantPath(p, n, variant)
+						
+						// Check if old file exists
+						if _, err := os.Stat(oldPath); err == nil {
+							// Move the file
+							if err := os.Rename(oldPath, newPath); err != nil {
+								log.Printf("Warning: Failed to rename variant file %s to %s: %v", oldPath, newPath, err)
+							} else {
+								log.Printf("Renamed variant file %s to %s", oldPath, newPath)
+							}
+						}
+					}
+				}
+				
+				// Delete the old item entry since we're changing the name
+				if err := program.ItemRepo().Delete(v.Name); err != nil {
+					log.Printf("Error deleting old item %s: %v", v.Name, err)
+					dialog.ShowError(errors.New("failed to update item name"), ui.GetUi().Window)
+					return
+				}
+			}
+			
 			v.Name = n
 			v.GridSize = [2]int{x, y}
 			v.StackMax = sm
 			// v.Tags = tags
+
+			// Save the item with the new name
+			if err := program.ItemRepo().Set(v.Name, v); err != nil {
+				log.Printf("Error saving item %s: %v", v.Name, err)
+				dialog.ShowError(errors.New("failed to save item"), ui.GetUi().Window)
+				return
+			}
 
 			if err := repositories.ProgramRepo().Set(program.Name, program); err != nil {
 				log.Printf("Error saving program %s: %v", p, err)
 				return
 			}
 			w[p+"-searchbar"].(*widget.Entry).SetText(v.Name)
+			
+			// Refresh only the specific item that was updated
+			RefreshItemInGrid(p, oldItemName, v.Name)
+			
+			// If the item name was changed, update the IconVariantEditor
+			if editor, ok := w["iconVariantEditor"].(*custom_widgets.IconVariantEditor); ok {
+				iconService := services.IconVariantServiceInstance()
+				baseName := iconService.GetBaseItemName(v.Name)
+				editor.SetProgramAndItem(p, baseName)
+			}
 		}
 	}
 	et.PointsTab.Widgets["Form"].(*widget.Form).OnSubmit = func() {

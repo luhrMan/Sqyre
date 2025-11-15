@@ -89,7 +89,7 @@ func (u *Ui) constructEditorTabs() {
 	itw[sm] = new(widget.Entry)
 
 	// Create IconVariantEditor widget
-	iconService := services.NewIconVariantService()
+	iconService := services.IconVariantServiceInstance()
 	itw[ive] = custom_widgets.NewIconVariantEditor(
 		"", // programName will be set when item is selected
 		"", // itemName will be set when item is selected

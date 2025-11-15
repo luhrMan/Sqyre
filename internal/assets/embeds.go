@@ -3,7 +3,6 @@ package assets
 import (
 	"Squire/internal/config"
 	_ "embed"
-	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -207,17 +206,17 @@ func ClearFyneResourceCache() {
 
 // GetCanvasImage returns a cached canvas.Image for the given key, creating it if necessary.
 // This prevents memory bloat from repeatedly decoding the same PNG data into pixel buffers.
-// The returned image should NOT be modified as it's shared across all callers.
+// The caller should set the desired minSize and fillMode on the returned image.
 func GetCanvasImage(key string, minSize fyne.Size, fillMode canvas.ImageFill) *canvas.Image {
-	// Create a composite cache key that includes size and fill mode
-	// This ensures different configurations don't share the same cached image
-	cacheKey := fmt.Sprintf("%s|%dx%d|%d", key, int(minSize.Width), int(minSize.Height), int(fillMode))
-	
 	// Check canvas image cache first
 	canvasImageMutex.RLock()
-	if img, exists := canvasImageCache[cacheKey]; exists {
+	if img, exists := canvasImageCache[key]; exists {
 		canvasImageMutex.RUnlock()
-		return img
+		// Create a copy with the requested settings to avoid modifying the cached version
+		newImg := canvas.NewImageFromResource(img.Resource)
+		newImg.FillMode = fillMode
+		newImg.SetMinSize(minSize)
+		return newImg
 	}
 	canvasImageMutex.RUnlock()
 
@@ -232,17 +231,23 @@ func GetCanvasImage(key string, minSize fyne.Size, fillMode canvas.ImageFill) *c
 	defer canvasImageMutex.Unlock()
 
 	// Double-check after acquiring write lock
-	if img, exists := canvasImageCache[cacheKey]; exists {
-		return img
+	if img, exists := canvasImageCache[key]; exists {
+		// Create a copy with the requested settings
+		newImg := canvas.NewImageFromResource(img.Resource)
+		newImg.FillMode = fillMode
+		newImg.SetMinSize(minSize)
+		return newImg
 	}
 
 	// Create new canvas.Image from resource
 	img := canvas.NewImageFromResource(resource)
-	img.FillMode = fillMode
-	img.SetMinSize(minSize)
+	
+	// Cache the base image without specific size/fill settings
+	canvasImageCache[key] = img
 
-	// Cache it with the composite key
-	canvasImageCache[cacheKey] = img
-
-	return img
+	// Return a copy with the requested settings
+	newImg := canvas.NewImageFromResource(resource)
+	newImg.FillMode = fillMode
+	newImg.SetMinSize(minSize)
+	return newImg
 }

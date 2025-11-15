@@ -11,6 +11,16 @@ import (
 	"strings"
 )
 
+// VariantExistsError is returned when trying to add a variant that already exists
+type VariantExistsError struct {
+	VariantName string
+	ItemName    string
+}
+
+func (e *VariantExistsError) Error() string {
+	return fmt.Sprintf("variant '%s' already exists for item '%s'", e.VariantName, e.ItemName)
+}
+
 // IconVariantService provides filesystem operations for discovering, validating,
 // and managing icon variant files.
 type IconVariantService struct {
@@ -107,9 +117,10 @@ func (s *IconVariantService) GetVariantPath(programName, itemName, variantName s
 // AddVariant copies a file to the icons directory with proper naming convention.
 // It validates the source file, creates necessary directories, and copies the file
 // with the format "{ItemName}|{VariantName}.png".
+// If this is the first variant for an item, it will be named "Original".
 func (s *IconVariantService) AddVariant(programName, itemName, variantName, sourcePath string) error {
-	if programName == "" || itemName == "" || variantName == "" {
-		return fmt.Errorf("program name, item name, and variant name cannot be empty")
+	if programName == "" || itemName == "" {
+		return fmt.Errorf("program name and item name cannot be empty")
 	}
 
 	if sourcePath == "" {
@@ -121,21 +132,32 @@ func (s *IconVariantService) AddVariant(programName, itemName, variantName, sour
 		return fmt.Errorf("invalid source file: %w", err)
 	}
 
+	// Get existing variants
+	existingVariants, err := s.GetVariants(programName, itemName)
+	if err != nil {
+		return fmt.Errorf("failed to check existing variants: %w", err)
+	}
+
+	// If this is the first variant, force it to be "Original"
+	if len(existingVariants) == 0 {
+		variantName = "Original"
+	} else if variantName == "" {
+		return fmt.Errorf("variant name cannot be empty")
+	}
+
 	// Sanitize variant name to prevent path traversal
 	if strings.Contains(variantName, "..") || strings.Contains(variantName, "/") || strings.Contains(variantName, "\\") {
 		return fmt.Errorf("invalid variant name: contains path separators")
 	}
 	variantName = filepath.Base(variantName)
 
-	// Check if variant already exists
-	existingVariants, err := s.GetVariants(programName, itemName)
-	if err != nil {
-		return fmt.Errorf("failed to check existing variants: %w", err)
-	}
-
+	// Check if variant already exists - return special error for UI to handle
 	for _, existing := range existingVariants {
 		if existing == variantName {
-			return fmt.Errorf("variant '%s' already exists for item '%s'", variantName, itemName)
+			return &VariantExistsError{
+				VariantName: variantName,
+				ItemName:    itemName,
+			}
 		}
 	}
 
@@ -165,10 +187,59 @@ func (s *IconVariantService) AddVariant(programName, itemName, variantName, sour
 	return nil
 }
 
+// OverwriteVariant replaces an existing variant with a new file.
+// This bypasses the existence check and directly overwrites the file.
+func (s *IconVariantService) OverwriteVariant(programName, itemName, variantName, sourcePath string) error {
+	if programName == "" || itemName == "" || variantName == "" {
+		return fmt.Errorf("program name, item name, and variant name cannot be empty")
+	}
+
+	if sourcePath == "" {
+		return fmt.Errorf("source path cannot be empty")
+	}
+
+	// Validate source file
+	if err := s.ValidateVariantFile(sourcePath); err != nil {
+		return fmt.Errorf("invalid source file: %w", err)
+	}
+
+	// Sanitize variant name to prevent path traversal
+	if strings.Contains(variantName, "..") || strings.Contains(variantName, "/") || strings.Contains(variantName, "\\") {
+		return fmt.Errorf("invalid variant name: contains path separators")
+	}
+	variantName = filepath.Base(variantName)
+
+	// Create icons directory if it doesn't exist
+	iconsPath := s.getIconsPath(programName)
+	if err := os.MkdirAll(iconsPath, 0755); err != nil {
+		return fmt.Errorf("failed to create icons directory: %w", err)
+	}
+
+	// Construct destination path
+	destPath := s.GetVariantPath(programName, itemName, variantName)
+
+	// Copy file (this will overwrite if it exists)
+	if err := s.copyFile(sourcePath, destPath); err != nil {
+		return fmt.Errorf("failed to copy file: %w", err)
+	}
+
+	// Invalidate cache for the overwritten variant
+	cacheKey := constructCacheKey(programName, itemName, variantName)
+	assets.InvalidateFyneResourceCache(cacheKey)
+
+	return nil
+}
+
 // DeleteVariant removes a variant icon file from the filesystem.
+// The "Original" variant cannot be deleted.
 func (s *IconVariantService) DeleteVariant(programName, itemName, variantName string) error {
 	if programName == "" || itemName == "" {
 		return fmt.Errorf("program name and item name cannot be empty")
+	}
+
+	// Prevent deletion of "Original" variant
+	if variantName == "Original" {
+		return fmt.Errorf("cannot delete the 'Original' variant")
 	}
 
 	// Get the file path

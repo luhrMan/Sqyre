@@ -310,15 +310,16 @@ func TestAddVariant(t *testing.T) {
 		sourcePath := filepath.Join(sourceDir, "test.png")
 		createTestIconFile(t, sourcePath)
 
+		// First variant will be forced to "Original"
 		err := service.AddVariant(programName, itemName, "Ice", sourcePath)
 		if err != nil {
 			t.Fatalf("Expected no error, got: %v", err)
 		}
 
-		// Verify file was copied
-		destPath := service.GetVariantPath(programName, itemName, "Ice")
+		// Verify file was copied with "Original" name
+		destPath := service.GetVariantPath(programName, itemName, "Original")
 		if _, err := os.Stat(destPath); os.IsNotExist(err) {
-			t.Error("Variant file was not created")
+			t.Error("Original variant file was not created")
 		}
 
 		// Verify it's a valid PNG
@@ -331,16 +332,21 @@ func TestAddVariant(t *testing.T) {
 		sourcePath := filepath.Join(sourceDir, "test2.png")
 		createTestIconFile(t, sourcePath)
 
-		// First add should succeed
+		// First add should succeed and become "Original"
 		err := service.AddVariant(programName, itemName, "Fire", sourcePath)
 		if err != nil {
 			t.Fatalf("First add failed: %v", err)
 		}
 
-		// Second add with same variant name should fail
-		err = service.AddVariant(programName, itemName, "Fire", sourcePath)
+		// Second add with "Original" variant name should fail with VariantExistsError
+		err = service.AddVariant(programName, itemName, "Original", sourcePath)
 		if err == nil {
 			t.Error("Expected error for duplicate variant name")
+		}
+		
+		// Check that it's the correct error type
+		if _, ok := err.(*VariantExistsError); !ok {
+			t.Errorf("Expected VariantExistsError, got %T", err)
 		}
 	})
 

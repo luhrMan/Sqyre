@@ -53,10 +53,10 @@ func TestIntegration_IconVariants_EndToEnd(t *testing.T) {
 	t.Run("Create item and add variants", func(t *testing.T) {
 		itemName := "Health Potion"
 
-		// Add first variant
+		// Add first variant - should be forced to "Original"
 		err := service.AddVariant(programName, itemName, "Red", sourcePNG1)
 		if err != nil {
-			t.Fatalf("Failed to add Red variant: %v", err)
+			t.Fatalf("Failed to add first variant: %v", err)
 		}
 
 		// Add second variant
@@ -66,11 +66,11 @@ func TestIntegration_IconVariants_EndToEnd(t *testing.T) {
 		}
 
 		// Verify files exist in filesystem
-		variant1Path := service.GetVariantPath(programName, itemName, "Red")
+		variant1Path := service.GetVariantPath(programName, itemName, "Original") // First variant is always "Original"
 		variant2Path := service.GetVariantPath(programName, itemName, "Blue")
 		
 		if _, err := os.Stat(variant1Path); os.IsNotExist(err) {
-			t.Error("Red variant file should exist")
+			t.Error("Original variant file should exist")
 		}
 		if _, err := os.Stat(variant2Path); os.IsNotExist(err) {
 			t.Error("Blue variant file should exist")
@@ -87,7 +87,7 @@ func TestIntegration_IconVariants_EndToEnd(t *testing.T) {
 		}
 
 		// Verify variant names (should be sorted)
-		expectedVariants := []string{"Blue", "Red"}
+		expectedVariants := []string{"Blue", "Original"}
 		for i, expected := range expectedVariants {
 			if i >= len(variants) {
 				t.Errorf("Missing variant at index %d", i)
@@ -102,16 +102,21 @@ func TestIntegration_IconVariants_EndToEnd(t *testing.T) {
 	t.Run("Prevent duplicate variant names", func(t *testing.T) {
 		itemName := "Mana Potion"
 
-		// Add first variant
-		err := service.AddVariant(programName, itemName, "Original", sourcePNG1)
+		// Add first variant - will be forced to "Original"
+		err := service.AddVariant(programName, itemName, "SomeVariant", sourcePNG1)
 		if err != nil {
-			t.Fatalf("Failed to add Original variant: %v", err)
+			t.Fatalf("Failed to add first variant: %v", err)
 		}
 
-		// Try to add duplicate variant name
+		// Try to add duplicate "Original" variant name
 		err = service.AddVariant(programName, itemName, "Original", sourcePNG2)
 		if err == nil {
 			t.Error("Should not allow duplicate variant names")
+		}
+		
+		// Check that it's the correct error type
+		if _, ok := err.(*VariantExistsError); !ok {
+			t.Errorf("Expected VariantExistsError, got %T", err)
 		}
 	})
 
@@ -153,6 +158,12 @@ func TestIntegration_IconVariants_EndToEnd(t *testing.T) {
 	t.Run("Prevent path traversal in variant names", func(t *testing.T) {
 		itemName := "Secure Item"
 
+		// Add first variant to get past the "Original" requirement
+		err := service.AddVariant(programName, itemName, "FirstVariant", sourcePNG1)
+		if err != nil {
+			t.Fatalf("Failed to add first variant: %v", err)
+		}
+
 		// Try various path traversal attempts
 		badNames := []string{
 			"../../../etc/passwd",
@@ -162,7 +173,7 @@ func TestIntegration_IconVariants_EndToEnd(t *testing.T) {
 		}
 
 		for _, badName := range badNames {
-			err := service.AddVariant(programName, itemName, badName, sourcePNG1)
+			err := service.AddVariant(programName, itemName, badName, sourcePNG2)
 			if err == nil {
 				t.Errorf("Should not allow path traversal in variant name: %s", badName)
 			}
@@ -211,10 +222,10 @@ func TestIntegration_IconVariants_DeleteVariant(t *testing.T) {
 		t.Fatalf("Failed to create source PNG: %v", err)
 	}
 
-	// Add two variants
+	// Add two variants - first will be "Original", second will be "Variant2"
 	err = service.AddVariant(programName, itemName, "Variant1", sourcePNG)
 	if err != nil {
-		t.Fatalf("Failed to add Variant1: %v", err)
+		t.Fatalf("Failed to add first variant: %v", err)
 	}
 	err = service.AddVariant(programName, itemName, "Variant2", sourcePNG)
 	if err != nil {
@@ -222,30 +233,36 @@ func TestIntegration_IconVariants_DeleteVariant(t *testing.T) {
 	}
 
 	// Verify both files exist
-	variant1Path := service.GetVariantPath(programName, itemName, "Variant1")
+	originalPath := service.GetVariantPath(programName, itemName, "Original") // First variant is always "Original"
 	variant2Path := service.GetVariantPath(programName, itemName, "Variant2")
 	
-	if _, err := os.Stat(variant1Path); os.IsNotExist(err) {
-		t.Fatal("Variant 1 should exist before deletion")
+	if _, err := os.Stat(originalPath); os.IsNotExist(err) {
+		t.Fatal("Original variant should exist before deletion")
 	}
 	if _, err := os.Stat(variant2Path); os.IsNotExist(err) {
 		t.Fatal("Variant 2 should exist before deletion")
 	}
 
-	// Delete variant 1
-	err = service.DeleteVariant(programName, itemName, "Variant1")
+	// Try to delete "Original" variant - should fail
+	err = service.DeleteVariant(programName, itemName, "Original")
+	if err == nil {
+		t.Error("Should not be able to delete Original variant")
+	}
+
+	// Delete variant 2 instead
+	err = service.DeleteVariant(programName, itemName, "Variant2")
 	if err != nil {
 		t.Fatalf("Failed to delete variant 1: %v", err)
 	}
 
-	// Verify variant 1 is deleted
-	if _, err := os.Stat(variant1Path); !os.IsNotExist(err) {
-		t.Error("Variant 1 should be deleted")
+	// Verify variant 2 is deleted
+	if _, err := os.Stat(variant2Path); !os.IsNotExist(err) {
+		t.Error("Variant 2 should be deleted")
 	}
 
-	// Verify variant 2 still exists
-	if _, err := os.Stat(variant2Path); os.IsNotExist(err) {
-		t.Error("Variant 2 should still exist")
+	// Verify Original still exists
+	if _, err := os.Stat(originalPath); os.IsNotExist(err) {
+		t.Error("Original variant should still exist")
 	}
 
 	// Verify GetVariants returns only remaining variant
@@ -256,8 +273,8 @@ func TestIntegration_IconVariants_DeleteVariant(t *testing.T) {
 	if len(variants) != 1 {
 		t.Errorf("Expected 1 variant after deletion, got %d", len(variants))
 	}
-	if len(variants) > 0 && variants[0] != "Variant2" {
-		t.Errorf("Expected remaining variant to be 'Variant2', got '%s'", variants[0])
+	if len(variants) > 0 && variants[0] != "Original" {
+		t.Errorf("Expected remaining variant to be 'Original', got '%s'", variants[0])
 	}
 }
 
@@ -373,14 +390,16 @@ func TestIntegration_IconVariants_MultiplePrograms(t *testing.T) {
 	}
 
 	// Create multiple programs with items and variants
+	// Note: First variant will always be "Original", so we adjust expected variants
 	programs := []struct {
 		name     string
 		itemName string
 		variants []string
+		expected []string // What we expect after first variant becomes "Original"
 	}{
-		{"dark and darker", "Health Potion", []string{"Red", "Blue"}},
-		{"path of exile 2", "Chaos Orb", []string{"Normal", "Shiny"}},
-		{"another game", "Gold Coin", []string{"Small", "Large", "Huge"}},
+		{"dark and darker", "Health Potion", []string{"Red", "Blue"}, []string{"Blue", "Original"}},
+		{"path of exile 2", "Chaos Orb", []string{"Normal", "Shiny"}, []string{"Original", "Shiny"}},
+		{"another game", "Gold Coin", []string{"Small", "Large", "Huge"}, []string{"Huge", "Large", "Original"}},
 	}
 
 	for _, prog := range programs {
@@ -407,12 +426,12 @@ func TestIntegration_IconVariants_MultiplePrograms(t *testing.T) {
 			t.Fatalf("Failed to get variants for %s: %v", prog.name, err)
 		}
 
-		if len(discoveredVariants) != len(prog.variants) {
-			t.Errorf("Expected %d variants for %s, found %d", len(prog.variants), prog.name, len(discoveredVariants))
+		if len(discoveredVariants) != len(prog.expected) {
+			t.Errorf("Expected %d variants for %s, found %d", len(prog.expected), prog.name, len(discoveredVariants))
 		}
 
-		// Verify variant files exist
-		for _, variant := range prog.variants {
+		// Verify expected variant files exist
+		for _, variant := range prog.expected {
 			variantPath := service.GetVariantPath(prog.name, prog.itemName, variant)
 			if _, err := os.Stat(variantPath); os.IsNotExist(err) {
 				t.Errorf("Variant %s should exist for %s in %s", variant, prog.itemName, prog.name)
@@ -485,20 +504,21 @@ func TestIntegration_CacheInvalidation_AddVariant(t *testing.T) {
 	}
 
 	// Add variant - this should call InvalidateFyneResourceCache
+	// First variant will be forced to "Original"
 	err = service.AddVariant(programName, itemName, variantName, sourcePNG)
 	if err != nil {
 		t.Fatalf("Failed to add variant: %v", err)
 	}
 
-	// Verify file exists in the test directory
-	variantPath := service.GetVariantPath(programName, itemName, variantName)
-	if _, err := os.Stat(variantPath); os.IsNotExist(err) {
-		t.Fatal("Variant file should exist after AddVariant")
+	// Verify file exists in the test directory - first variant becomes "Original"
+	originalPath := service.GetVariantPath(programName, itemName, "Original")
+	if _, err := os.Stat(originalPath); os.IsNotExist(err) {
+		t.Fatal("Original variant file should exist after AddVariant")
 	}
 
 	// Verify the variant file was created with correct naming
-	expectedFilename := itemName + "|" + variantName + ".png"
-	actualFilename := filepath.Base(variantPath)
+	expectedFilename := itemName + "|Original.png"
+	actualFilename := filepath.Base(originalPath)
 	if actualFilename != expectedFilename {
 		t.Errorf("Expected filename '%s', got '%s'", expectedFilename, actualFilename)
 	}
@@ -549,10 +569,15 @@ func TestIntegration_CacheInvalidation_DeleteVariant(t *testing.T) {
 		t.Fatalf("Failed to create source PNG: %v", err)
 	}
 
-	// Add variant first
+	// Add first variant (will become "Original") and then the test variant
+	err = service.AddVariant(programName, itemName, "FirstVariant", sourcePNG)
+	if err != nil {
+		t.Fatalf("Failed to add first variant: %v", err)
+	}
+	
 	err = service.AddVariant(programName, itemName, variantName, sourcePNG)
 	if err != nil {
-		t.Fatalf("Failed to add variant: %v", err)
+		t.Fatalf("Failed to add test variant: %v", err)
 	}
 
 	// Verify file exists before deletion
