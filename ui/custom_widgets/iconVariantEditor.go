@@ -122,7 +122,7 @@ func (e *IconVariantEditor) createVariantList() *fyne.Container {
 		}
 
 		// Update delete button state
-		if len(e.variants) <= 1 {
+		if len(e.variants) <= 1 || variant == "Original" {
 			thumbnail.deleteBtn.Disable()
 		} else {
 			thumbnail.deleteBtn.Enable()
@@ -175,7 +175,15 @@ func (e *IconVariantEditor) showAddVariantDialog() {
 // showVariantNameDialog prompts the user to enter a variant name
 func (e *IconVariantEditor) showVariantNameDialog(sourcePath string) {
 	variantNameEntry := widget.NewEntry()
-	variantNameEntry.SetPlaceHolder("Enter variant name (e.g., 'Ice', 'Fire', 'Original')")
+	
+	// Set different placeholder based on whether this is the first variant
+	if len(e.variants) == 0 {
+		variantNameEntry.SetPlaceHolder("First variant will be named 'Original'")
+		variantNameEntry.SetText("Original")
+		variantNameEntry.Disable() // Don't allow editing for first variant
+	} else {
+		variantNameEntry.SetPlaceHolder("Enter variant name (e.g., 'Ice', 'Fire', 'Bone')")
+	}
 
 	formDialog := dialog.NewForm("Add Icon Variant", "Add", "Cancel", []*widget.FormItem{
 		widget.NewFormItem("Variant Name", variantNameEntry),
@@ -185,13 +193,18 @@ func (e *IconVariantEditor) showVariantNameDialog(sourcePath string) {
 		}
 
 		variantName := variantNameEntry.Text
-		if variantName == "" {
+		if len(e.variants) > 0 && variantName == "" {
 			dialog.ShowError(fmt.Errorf("Variant name cannot be empty"), e.window)
 			return
 		}
 
 		// Add the variant
 		if err := e.service.AddVariant(e.programName, e.itemName, variantName, sourcePath); err != nil {
+			// Check if it's a variant exists error
+			if variantExistsErr, ok := err.(*services.VariantExistsError); ok {
+				e.showOverwriteConfirmation(variantExistsErr.VariantName, sourcePath)
+				return
+			}
 			dialog.ShowError(fmt.Errorf("Failed to add variant: %v", err), e.window)
 			return
 		}
@@ -206,6 +219,12 @@ func (e *IconVariantEditor) showVariantNameDialog(sourcePath string) {
 
 // showDeleteConfirmation shows a confirmation dialog before deleting a variant
 func (e *IconVariantEditor) showDeleteConfirmation(variantName string) {
+	// Prevent deletion of "Original" variant
+	if variantName == "Original" {
+		dialog.ShowInformation("Cannot Delete", "The 'Original' variant cannot be deleted.", e.window)
+		return
+	}
+
 	// Prevent deletion if only one variant remains
 	if len(e.variants) <= 1 {
 		dialog.ShowInformation("Cannot Delete", "Cannot delete the last icon variant. At least one variant must remain.", e.window)
@@ -228,6 +247,31 @@ func (e *IconVariantEditor) showDeleteConfirmation(variantName string) {
 			// Delete the variant
 			if err := e.service.DeleteVariant(e.programName, e.itemName, variantName); err != nil {
 				dialog.ShowError(fmt.Errorf("Failed to delete variant: %v", err), e.window)
+				return
+			}
+
+			// Refresh the display
+			e.refreshDisplay()
+		},
+		e.window,
+	)
+
+	confirmDialog.Show()
+}
+
+// showOverwriteConfirmation shows a confirmation dialog for overwriting an existing variant
+func (e *IconVariantEditor) showOverwriteConfirmation(variantName, sourcePath string) {
+	confirmDialog := dialog.NewConfirm(
+		"Variant Already Exists",
+		fmt.Sprintf("The variant '%s' already exists. Do you want to overwrite it?", variantName),
+		func(confirmed bool) {
+			if !confirmed {
+				return
+			}
+
+			// Overwrite the variant
+			if err := e.service.OverwriteVariant(e.programName, e.itemName, variantName, sourcePath); err != nil {
+				dialog.ShowError(fmt.Errorf("Failed to overwrite variant: %v", err), e.window)
 				return
 			}
 

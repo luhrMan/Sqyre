@@ -144,8 +144,25 @@ func (t *IconThumbnail) CreateRenderer() fyne.WidgetRenderer {
 // SetIconPath updates the icon path and reloads the image
 func (t *IconThumbnail) SetIconPath(path string) {
 	t.iconPath = path
-	t.image = t.loadIcon()
-	t.createUI()
+	
+	// Invalidate cache for the new path to ensure fresh load from disk
+	key := t.constructIconKey()
+	if key != "" {
+		assets.InvalidateFyneResourceCache(key)
+	}
+	
+	// Reload the image and update the existing UI
+	newImage := t.loadIcon()
+	if t.image != nil && t.container != nil {
+		// Update the existing image in the container instead of recreating everything
+		t.image.Resource = newImage.Resource
+		t.image.Refresh()
+	} else {
+		// Fallback to full recreation if components don't exist yet
+		t.image = newImage
+		t.createUI()
+	}
+	
 	t.Refresh()
 }
 
