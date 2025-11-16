@@ -22,10 +22,10 @@ type IconVariantEditor struct {
 	onVariantChange func()
 
 	// UI components
-	variantList     *fyne.Container
-	addButton       *widget.Button
-	mainContent     *fyne.Container
-	window          fyne.Window
+	variantList      *fyne.Container
+	addButton        *widget.Button
+	mainContent      *fyne.Container
+	window           fyne.Window
 	thumbnailWidgets map[string]*IconThumbnail // Cache widgets to avoid recreation
 }
 
@@ -169,13 +169,14 @@ func (e *IconVariantEditor) showAddVariantDialog() {
 
 	// Set file filter to PNG files
 	fileDialog.SetFilter(storage.NewExtensionFileFilter([]string{".png"}))
+	fileDialog.Resize(fyne.NewSquareSize(500))
 	fileDialog.Show()
 }
 
 // showVariantNameDialog prompts the user to enter a variant name
 func (e *IconVariantEditor) showVariantNameDialog(sourcePath string) {
 	variantNameEntry := widget.NewEntry()
-	
+
 	// Set different placeholder based on whether this is the first variant
 	if len(e.variants) == 0 {
 		variantNameEntry.SetPlaceHolder("First variant will be named 'Original'")
@@ -334,10 +335,10 @@ func (e *IconVariantEditor) SetProgramAndItem(programName, itemName string) {
 	if e.programName == programName && e.itemName == itemName {
 		return
 	}
-	
+
 	// Clear widget cache since program or item changed
 	e.thumbnailWidgets = make(map[string]*IconThumbnail)
-	
+
 	e.programName = programName
 	e.itemName = itemName
 	e.refreshDisplay()

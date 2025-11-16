@@ -66,13 +66,6 @@ func (s *IconVariantService) GetVariants(programName, itemName string) ([]string
 		return nil, fmt.Errorf("failed to search for variants: %w", err)
 	}
 
-	// Also check for non-variant icon (legacy single icon without delimiter)
-	legacyPath := filepath.Join(iconsPath, itemName+config.PNG)
-	if _, err := os.Stat(legacyPath); err == nil {
-		// Legacy icon exists, treat it as a variant with empty name
-		matches = append(matches, legacyPath)
-	}
-
 	// Extract variant names from file paths
 	variants := make([]string, 0, len(matches))
 	for _, match := range matches {
@@ -87,9 +80,6 @@ func (s *IconVariantService) GetVariants(programName, itemName string) ([]string
 			if len(parts) == 2 {
 				variants = append(variants, parts[1])
 			}
-		} else {
-			// Legacy icon without delimiter - use empty string as variant name
-			variants = append(variants, "")
 		}
 	}
 
@@ -100,14 +90,8 @@ func (s *IconVariantService) GetVariants(programName, itemName string) ([]string
 }
 
 // GetVariantPath constructs the full path to a variant icon file.
-// If variantName is empty, returns the path to the legacy non-variant icon.
 func (s *IconVariantService) GetVariantPath(programName, itemName, variantName string) string {
 	iconsPath := s.getIconsPath(programName)
-
-	if variantName == "" {
-		// Legacy icon without variant
-		return filepath.Join(iconsPath, itemName+config.PNG)
-	}
 
 	// Variant icon with delimiter
 	filename := itemName + config.ProgramDelimiter + variantName + config.PNG
@@ -364,13 +348,7 @@ func (s *IconVariantService) copyFile(src, dst string) error {
 // The key format matches the cache key format in internal/assets/embeds.go:
 // "programName|filename.png"
 // For variants: "programName|ItemName|VariantName.png"
-// For non-variants: "programName|ItemName.png"
 func constructCacheKey(programName, itemName, variantName string) string {
-	if variantName == "" {
-		// Legacy icon without variant
-		return programName + config.ProgramDelimiter + itemName + config.PNG
-	}
-
 	// Variant icon with delimiter
 	filename := itemName + config.ProgramDelimiter + variantName + config.PNG
 	return programName + config.ProgramDelimiter + filename

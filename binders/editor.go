@@ -20,7 +20,47 @@ func SetEditorUi() {
 	setEditorLists()
 	setEditorForms()
 	setEditorButtons()
+	updateProgramSelectorOptions()
+}
+
+// updateProgramSelectorOptions refreshes the program selector with current programs
+func updateProgramSelectorOptions() {
 	ui.GetUi().EditorUi.ProgramSelector.SetOptions(repositories.ProgramRepo().GetAllKeys())
+}
+
+// refreshAllProgramRelatedUI refreshes all accordions and program list when programs are modified
+func refreshAllProgramRelatedUI() {
+	// Refresh program list
+	et := ui.GetUi().EditorTabs
+	if programList, ok := et.ProgramsTab.Widgets["list"].(*widget.List); ok {
+		setProgramList(programList)
+	}
+
+	// Refresh editor tab accordions
+	if accordion, ok := et.ItemsTab.Widgets["Accordion"].(*widget.Accordion); ok {
+		setAccordionItemsLists(accordion)
+	}
+	if accordion, ok := et.PointsTab.Widgets["Accordion"].(*widget.Accordion); ok {
+		setAccordionPointsLists(accordion)
+	}
+	if accordion, ok := et.SearchAreasTab.Widgets["Accordion"].(*widget.Accordion); ok {
+		setAccordionSearchAreasLists(accordion)
+	}
+
+	// Refresh action tab accordions
+	ats := ui.GetUi().ActionTabs
+	if ats.ImageSearchItemsAccordion != nil {
+		setAccordionItemsLists(ats.ImageSearchItemsAccordion)
+	}
+	if ats.PointsAccordion != nil {
+		setAccordionPointsLists(ats.PointsAccordion)
+	}
+	if ats.ImageSearchSAAccordion != nil {
+		setAccordionSearchAreasLists(ats.ImageSearchSAAccordion)
+	}
+	if ats.OcrSAAccordion != nil {
+		setAccordionSearchAreasLists(ats.OcrSAAccordion)
+	}
 }
 
 func setEditorLists() {
@@ -59,8 +99,13 @@ func setEditorForms() {
 				log.Printf("Error setting program %s: %v", v.Name, err)
 				return
 			}
+
+			// Update all UI components after renaming program
+			refreshAllProgramRelatedUI()
+			updateProgramSelectorOptions()
+
 			// }
-			w["searchbar"].(*widget.Entry).SetText(v.Name)
+			// w["searchbar"].(*widget.Entry).SetText(v.Name)
 		}
 	}
 	et.ItemsTab.Widgets["Form"].(*widget.Form).OnSubmit = func() {
@@ -77,10 +122,10 @@ func setEditorForms() {
 				log.Printf("Error getting program %s: %v", p, err)
 				return
 			}
-			
+
 			// Capture the old name before making changes
 			oldItemName := v.Name
-			
+
 			// Check if the name is being changed and if the new name already exists
 			if v.Name != n {
 				// Check if an item with the new name already exists
@@ -89,7 +134,7 @@ func setEditorForms() {
 					dialog.ShowError(errors.New("an item with that name already exists"), ui.GetUi().Window)
 					return
 				}
-				
+
 				// Handle renaming of icon variant files when item name changes
 				iconService := services.IconVariantServiceInstance()
 				oldVariants, err := iconService.GetVariants(p, v.Name)
@@ -98,7 +143,7 @@ func setEditorForms() {
 					for _, variant := range oldVariants {
 						oldPath := iconService.GetVariantPath(p, v.Name, variant)
 						newPath := iconService.GetVariantPath(p, n, variant)
-						
+
 						// Check if old file exists
 						if _, err := os.Stat(oldPath); err == nil {
 							// Move the file
@@ -110,7 +155,7 @@ func setEditorForms() {
 						}
 					}
 				}
-				
+
 				// Delete the old item entry since we're changing the name
 				if err := program.ItemRepo().Delete(v.Name); err != nil {
 					log.Printf("Error deleting old item %s: %v", v.Name, err)
@@ -118,7 +163,7 @@ func setEditorForms() {
 					return
 				}
 			}
-			
+
 			v.Name = n
 			v.GridSize = [2]int{x, y}
 			v.StackMax = sm
@@ -135,11 +180,11 @@ func setEditorForms() {
 				log.Printf("Error saving program %s: %v", p, err)
 				return
 			}
-			w[p+"-searchbar"].(*widget.Entry).SetText(v.Name)
-			
+			// w[p+"-searchbar"].(*widget.Entry).SetText(v.Name)
+
 			// Refresh only the specific item that was updated
 			RefreshItemInGrid(p, oldItemName, v.Name)
-			
+
 			// If the item name was changed, update the IconVariantEditor
 			if editor, ok := w["iconVariantEditor"].(*custom_widgets.IconVariantEditor); ok {
 				iconService := services.IconVariantServiceInstance()
@@ -167,7 +212,7 @@ func setEditorForms() {
 				log.Printf("Error saving program %s: %v", p, err)
 				return
 			}
-			w[p+"-searchbar"].(*widget.Entry).SetText(v.Name)
+			// w[p+"-searchbar"].(*widget.Entry).SetText(v.Name)
 		}
 	}
 	et.SearchAreasTab.Widgets["Form"].(*widget.Form).OnSubmit = func() {
@@ -193,7 +238,7 @@ func setEditorForms() {
 				log.Printf("Error saving program %s: %v", p, err)
 				return
 			}
-			w[p+"-searchbar"].(*widget.Entry).SetText(v.Name)
+			// w[p+"-searchbar"].(*widget.Entry).SetText(v.Name)
 		}
 	}
 
@@ -229,10 +274,17 @@ func setEditorButtons() {
 				return
 			}
 
-			if err := repositories.ProgramRepo().Set(n, repositories.ProgramRepo().New()); err != nil {
+			newProgram := repositories.ProgramRepo().New()
+			newProgram.Name = n
+			if err := repositories.ProgramRepo().Set(n, newProgram); err != nil {
 				dialog.ShowError(err, ui.GetUi().Window)
 				return
 			}
+
+			// Update all UI components after adding new program
+			refreshAllProgramRelatedUI()
+			updateProgramSelectorOptions()
+
 			ui.GetUi().EditorTabs.ProgramsTab.Widgets["searchbar"].(*widget.Entry).SetText(n)
 			ui.GetUi().EditorTabs.ProgramsTab.Widgets["Name"].(*widget.Entry).SetText(n)
 			ui.GetUi().EditorTabs.ProgramsTab.Widgets["list"].(*widget.List).Select(0)
@@ -337,6 +389,11 @@ func setEditorButtons() {
 			if err := repositories.ProgramRepo().Delete(prot.SelectedItem.(*models.Program).Name); err != nil {
 				log.Printf("Error deleting program: %v", err)
 			}
+
+			// Update all UI components after deleting program
+			refreshAllProgramRelatedUI()
+			updateProgramSelectorOptions()
+
 			prot.SelectedItem = &models.Program{}
 			// prot.SelectedItem, _ = repositories.ProgramRepo().Get("")
 			text := prot.Widgets["searchbar"].(*widget.Entry).Text
