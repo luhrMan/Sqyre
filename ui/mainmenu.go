@@ -6,7 +6,6 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/dialog"
-	fynetooltip "github.com/dweymouth/fyne-tooltip"
 	"github.com/go-vgo/robotgo"
 )
 
@@ -71,10 +70,9 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 		dialog.ShowInformation("Computer Information", str, u.Window)
 	})
 
-	editor := fyne.NewMenuItem("Open Data Editor", func() {
-		u.Window.SetContent(fynetooltip.AddWindowToolTipLayer(u.EditorUi.CanvasObject, u.Window.Canvas()))
-	})
-
+	// editor := fyne.NewMenuItem("Open Data Editor", func() {
+	// 	u.Window.SetContent(fynetooltip.AddWindowToolTipLayer(u.EditorUi.CanvasObject, u.Window.Canvas()))
+	// })
 	// screensize := strconv.Itoa(config.MonitorWidth) + "x" + strconv.Itoa(config.MonitorHeight)
 	// calibrationMenu := fyne.NewMenu("Coordinate Calibration",
 	// 	fyne.NewMenuItem("Everything", func() {
@@ -138,5 +136,7 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 	// )
 
 	// return fyne.NewMainMenu(fyne.NewMenu("Settings", computerInfo), macroMenu, calibrationMenu)
-	return fyne.NewMainMenu(fyne.NewMenu("Settings", computerInfo, editor), macroMenu)
+	u.MainMenu.Items = append(u.MainMenu.Items, fyne.NewMenu("Settings", computerInfo), macroMenu)
+	return u.MainMenu
+	// return fyne.NewMainMenu(fyne.NewMenu("Settings", computerInfo, editor), macroMenu)
 }
