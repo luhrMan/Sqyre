@@ -16,7 +16,8 @@ var (
 )
 
 type Ui struct {
-	Window fyne.Window
+	Window   fyne.Window
+	MainMenu *fyne.MainMenu
 	*EditorUi
 	*MainUi
 }
@@ -30,7 +31,8 @@ type MainUi struct {
 func GetUi() *Ui { return ui }
 func InitializeUi(w fyne.Window) *Ui {
 	ui = &Ui{
-		Window: w,
+		Window:   w,
+		MainMenu: new(fyne.MainMenu),
 		EditorUi: &EditorUi{
 			CanvasObject:    new(fyne.Container),
 			NavButton:       new(widget.Button),
@@ -102,7 +104,6 @@ func (u *Ui) ConstructUi() {
 	u.constructNavButton()
 	u.constructAddButton()
 	u.constructRemoveButton()
-
 	// construct main menu
 	u.Window.SetMainMenu(u.constructMainMenu())
 

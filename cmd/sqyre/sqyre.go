@@ -64,6 +64,13 @@ func init() {
 	// set bindings			(set bindings for ui widgets)
 	bindUi()
 
+	editor := fyne.NewMenuItem("Open Data Editor", func() {
+		ui.GetUi().Window.SetContent(fynetooltip.AddWindowToolTipLayer(ui.GetUi().EditorUi.CanvasObject, ui.GetUi().Window.Canvas()))
+		ui.GetUi().Mui.MTabs.SelectedTab().UnselectAll()
+		ui.GetUi().Mui.MTabs.SelectedTab().SelectedNode = ""
+	})
+	ui.GetUi().MainMenu.Items[0].Items = append(ui.GetUi().MainMenu.Items[0].Items, editor)
+
 	w.SetContent(fynetooltip.AddWindowToolTipLayer(ui.GetUi().MainUi.CanvasObject, w.Canvas()))
 	w.RequestFocus()
 }
@@ -79,8 +86,10 @@ func main() {
 				f[0].(int), f[1].(int), f[2].(int), f[3].(int)
 			roi :=
 				image.Rect(
-					cols-cols/x,
-					rows-rows/y,
+					// (cols/x)/2,
+					// (rows/y)/2,
+					(cols/x)-cols,
+					(rows/y)-rows,
 					cols,
 					rows,
 				)
@@ -95,8 +104,10 @@ func main() {
 			return &cmask
 		}
 	}
-	mask, _ := program.ItemRepo().Get("Ancient Scroll")
-	gocv.IMWrite(config.GetMetaPath()+"mask.png", *program.GetMasks()["item-corner"](162, 108, mask.GridSize[0], mask.GridSize[1]))
+	// mask, _ := program.ItemRepo().Get("Ancient Scroll")
+	// gocv.IMWrite(config.GetMetaPath()+"mask.png", *program.GetMasks()["item-corner"](162, 108, mask.GridSize[0], mask.GridSize[1]))
+	mask, _ := program.ItemRepo().Get("Bandage")
+	gocv.IMWrite(config.GetMetaPath()+"mask.png", *program.GetMasks()["item-corner"](54, 54, mask.GridSize[0], mask.GridSize[1]))
 	ui.GetUi().Window.ShowAndRun()
 
 	services.CloseTessClient()
