@@ -20,6 +20,7 @@ type ItemRepositoryInterface interface {
 	Count() int
 	GetAllWithProgramPrefix() map[string]*Item
 	GetAllSorted() []string
+	New() *Item
 }
 
 // PointRepositoryInterface defines the interface for Point data access operations.
@@ -32,6 +33,7 @@ type PointRepositoryInterface interface {
 	Delete(name string) error
 	Save() error
 	Count() int
+	New() *Point
 }
 
 // SearchAreaRepositoryInterface defines the interface for SearchArea data access operations.
@@ -44,6 +46,7 @@ type SearchAreaRepositoryInterface interface {
 	Delete(name string) error
 	Save() error
 	Count() int
+	New() *SearchArea
 }
 
 // ItemRepositoryFactory is a function type that creates ItemRepository instances.
