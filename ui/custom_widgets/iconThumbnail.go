@@ -4,7 +4,6 @@ import (
 	"Squire/internal/assets"
 	"Squire/internal/config"
 	"image/color"
-	"log"
 	"path/filepath"
 
 	"fyne.io/fyne/v2"
@@ -90,7 +89,7 @@ func (t *IconThumbnail) loadIcon() *canvas.Image {
 		fyne.NewSize(config.IconThumbnailSize, config.IconThumbnailSize),
 		canvas.ImageFillContain,
 	)
-	
+
 	if img != nil {
 		return img
 	}
@@ -102,7 +101,8 @@ func (t *IconThumbnail) loadIcon() *canvas.Image {
 // constructIconKey constructs the cache key from the icon file path
 // Key format: "programName|filename.png"
 // Example: "/home/user/Sqyre/images/icons/dark and darker/Health Potion.png"
-//          -> "dark and darker|Health Potion.png"
+//
+//	-> "dark and darker|Health Potion.png"
 func (t *IconThumbnail) constructIconKey() string {
 	if t.iconPath == "" {
 		return ""
@@ -117,7 +117,7 @@ func (t *IconThumbnail) constructIconKey() string {
 	// Construct key: programName|filename
 	key := parentDir + config.ProgramDelimiter + filename
 
-	log.Printf("DEBUG: IconThumbnail constructIconKey - iconPath: %s, key: %s, variant: %s", t.iconPath, key, t.variantName)
+	//log.Printf("DEBUG: IconThumbnail constructIconKey - iconPath: %s, key: %s, variant: %s", t.iconPath, key, t.variantName)
 	return key
 }
 
@@ -144,13 +144,13 @@ func (t *IconThumbnail) CreateRenderer() fyne.WidgetRenderer {
 // SetIconPath updates the icon path and reloads the image
 func (t *IconThumbnail) SetIconPath(path string) {
 	t.iconPath = path
-	
+
 	// Invalidate cache for the new path to ensure fresh load from disk
 	key := t.constructIconKey()
 	if key != "" {
 		assets.InvalidateFyneResourceCache(key)
 	}
-	
+
 	// Reload the image and update the existing UI
 	newImage := t.loadIcon()
 	if t.image != nil && t.container != nil {
@@ -162,7 +162,7 @@ func (t *IconThumbnail) SetIconPath(path string) {
 		t.image = newImage
 		t.createUI()
 	}
-	
+
 	t.Refresh()
 }
 
