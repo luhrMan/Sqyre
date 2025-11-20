@@ -41,7 +41,7 @@ func GetFyneResource(key string) *fyne.StaticResource {
 	fyneResourceMutex.RUnlock()
 
 	if exists {
-		log.Printf("DEBUG: Cache HIT for key: %s", key)
+		// log.Printf("DEBUG: Cache HIT for key: %s", key)
 		return resource
 	}
 
@@ -51,7 +51,7 @@ func GetFyneResource(key string) *fyne.StaticResource {
 
 	// Double-check after acquiring write lock (another goroutine might have loaded it)
 	if resource, exists := fyneResourceCache[key]; exists {
-		log.Printf("DEBUG: Cache HIT (after lock) for key: %s", key)
+		// log.Printf("DEBUG: Cache HIT (after lock) for key: %s", key)
 		return resource
 	}
 
@@ -70,7 +70,7 @@ func GetFyneResource(key string) *fyne.StaticResource {
 	iconsPath := config.GetIconsPath()
 	iconPath := filepath.Join(iconsPath, programName, filename)
 
-	log.Printf("DEBUG: Loading from disk - key: %s, path: %s", key, iconPath)
+	// log.Printf("DEBUG: Loading from disk - key: %s, path: %s", key, iconPath)
 
 	// Read icon file
 	iconBytes, err := os.ReadFile(iconPath)
@@ -84,7 +84,7 @@ func GetFyneResource(key string) *fyne.StaticResource {
 	// Cache and return
 	resource = fyne.NewStaticResource(key, iconBytes)
 	fyneResourceCache[key] = resource
-	log.Printf("DEBUG: Cached resource for key: %s", key)
+	// log.Printf("DEBUG: Cached resource for key: %s", key)
 	return resource
 }
 
@@ -205,7 +205,6 @@ func ClearFyneResourceCache() {
 }
 
 // GetCanvasImage returns a cached canvas.Image for the given key, creating it if necessary.
-// This prevents memory bloat from repeatedly decoding the same PNG data into pixel buffers.
 // The caller should set the desired minSize and fillMode on the returned image.
 func GetCanvasImage(key string, minSize fyne.Size, fillMode canvas.ImageFill) *canvas.Image {
 	// Check canvas image cache first
@@ -241,7 +240,7 @@ func GetCanvasImage(key string, minSize fyne.Size, fillMode canvas.ImageFill) *c
 
 	// Create new canvas.Image from resource
 	img := canvas.NewImageFromResource(resource)
-	
+
 	// Cache the base image without specific size/fill settings
 	canvasImageCache[key] = img
 
