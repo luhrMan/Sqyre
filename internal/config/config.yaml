@@ -340,7 +340,7 @@ programs:
                     - 1
                     - 1
                 tags: []
-                stackmax: 0
+                stackmax: 3
                 merchant: Collector
             Dog Collar:
                 name: Dog Collar
@@ -364,7 +364,7 @@ programs:
                     - 1
                     - 1
                 tags: []
-                stackmax: 0
+                stackmax: 3
                 merchant: Collector
             Empty Inventory Slot:
                 name: Empty Inventory Slot
@@ -940,7 +940,7 @@ programs:
                     - 1
                     - 1
                 tags: []
-                stackmax: 0
+                stackmax: 3
                 merchant: Collector
             Shine Bangle:
                 name: Shine Bangle
