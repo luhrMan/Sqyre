@@ -83,7 +83,9 @@ func setEditorLists() {
 	setAccordionAutoPicSearchAreasLists(
 		et.AutoPicTab.Widgets["Accordion"].(*widget.Accordion),
 	)
-	et.ProgramsTab.SelectedItem = &models.Program{}
+	et.ProgramsTab.SelectedItem = repositories.ProgramRepo().New()
+	// Note: For nested models, we need a program context to get repositories
+	// These will be set to proper instances when a program is selected
 	et.ItemsTab.SelectedItem = &models.Item{}
 	et.PointsTab.SelectedItem = &models.Point{}
 	et.SearchAreasTab.SelectedItem = &models.SearchArea{}
@@ -219,7 +221,7 @@ func setEditorForms() {
 				log.Printf("Error saving program %s: %v", p, err)
 				return
 			}
-			// w[p+"-searchbar"].(*widget.Entry).SetText(v.Name)
+			refreshAllProgramRelatedUI()
 		}
 	}
 	et.SearchAreasTab.Widgets["Form"].(*widget.Form).OnSubmit = func() {
@@ -255,8 +257,7 @@ func setEditorForms() {
 				}()
 				ui.GetUi().UpdateSearchAreaPreview(v)
 			}()
-
-			// w[p+"-searchbar"].(*widget.Entry).SetText(v.Name)
+			refreshAllProgramRelatedUI()
 		}
 	}
 
@@ -322,66 +323,72 @@ func setEditorButtons() {
 				dialog.ShowError(errors.New("an item with that name already exists"), ui.GetUi().Window)
 				return
 			}
-			// newItem := pro.ItemREpo.New()
-			i := models.Item{
-				Name:     n,
-				GridSize: [2]int{x, y},
-				StackMax: sm,
-			}
-			if err := pro.ItemRepo().Set(i.Name, &i); err != nil {
+			// Create new item using repository New() function
+			i := pro.ItemRepo().New()
+			i.Name = n
+			i.GridSize = [2]int{x, y}
+			i.StackMax = sm
+			if err := pro.ItemRepo().Set(i.Name, i); err != nil {
 				dialog.ShowError(err, ui.GetUi().Window)
 				return
 			}
-			v := &i
+			v := i
 			ui.GetUi().EditorTabs.ItemsTab.Widgets["Name"].(*widget.Entry).SetText(v.Name)
 			ui.GetUi().EditorTabs.ItemsTab.Widgets[program+"-list"].(*widget.GridWrap).Select(0)
-			setItemsWidgets(i)
+			setItemsWidgets(*i)
 			RefreshItemsAccordionItems()
 		case "Points":
 			n := ui.GetUi().EditorTabs.PointsTab.Widgets["Name"].(*widget.Entry).Text
 			x, _ := strconv.Atoi(ui.GetUi().EditorTabs.PointsTab.Widgets["X"].(*widget.Entry).Text)
 			y, _ := strconv.Atoi(ui.GetUi().EditorTabs.PointsTab.Widgets["Y"].(*widget.Entry).Text)
-			p := models.Point{
-				Name: n,
-				X:    x,
-				Y:    y,
-			}
+
 			pro := getProgram()
 			if pro == nil {
 				return
 			}
-			err := pro.PointRepo(config.MainMonitorSizeString).Set(p.Name, &p)
+
+			// Create new point using repository New() function
+			p := pro.PointRepo(config.MainMonitorSizeString).New()
+			p.Name = n
+			p.X = x
+			p.Y = y
+
+			err := pro.PointRepo(config.MainMonitorSizeString).Set(p.Name, p)
 			if err != nil {
 				dialog.ShowError(err, ui.GetUi().Window)
 				return
 			}
 			ui.GetUi().EditorTabs.PointsTab.Widgets["Name"].(*widget.Entry).SetText(p.Name)
 			ui.GetUi().EditorTabs.PointsTab.Widgets[program+"-list"].(*widget.List).Select(0)
+			refreshAllProgramRelatedUI()
 		case "Search Areas":
 			n := ui.GetUi().EditorTabs.SearchAreasTab.Widgets["Name"].(*widget.Entry).Text
 			lx, _ := strconv.Atoi(ui.GetUi().EditorTabs.SearchAreasTab.Widgets["LeftX"].(*widget.Entry).Text)
 			ty, _ := strconv.Atoi(ui.GetUi().EditorTabs.SearchAreasTab.Widgets["TopY"].(*widget.Entry).Text)
 			rx, _ := strconv.Atoi(ui.GetUi().EditorTabs.SearchAreasTab.Widgets["RightX"].(*widget.Entry).Text)
 			by, _ := strconv.Atoi(ui.GetUi().EditorTabs.SearchAreasTab.Widgets["BottomY"].(*widget.Entry).Text)
-			sa := models.SearchArea{
-				Name:    n,
-				LeftX:   lx,
-				TopY:    ty,
-				RightX:  rx,
-				BottomY: by,
-			}
+
 			pro := getProgram()
 			if pro == nil {
 				return
 			}
-			err := pro.SearchAreaRepo(config.MainMonitorSizeString).Set(sa.Name, &sa)
+
+			// Create new search area using repository New() function
+			sa := pro.SearchAreaRepo(config.MainMonitorSizeString).New()
+			sa.Name = n
+			sa.LeftX = lx
+			sa.TopY = ty
+			sa.RightX = rx
+			sa.BottomY = by
+
+			err := pro.SearchAreaRepo(config.MainMonitorSizeString).Set(sa.Name, sa)
 			if err != nil {
 				dialog.ShowError(err, ui.GetUi().Window)
 				return
 			}
 			ui.GetUi().EditorTabs.SearchAreasTab.Widgets["Name"].(*widget.Entry).SetText(sa.Name)
 			ui.GetUi().EditorTabs.SearchAreasTab.Widgets[program+"-list"].(*widget.List).Select(0)
-			ui.GetUi().EditorTabs.SearchAreasTab.Widgets[program+"-list"].Refresh()
+			refreshAllProgramRelatedUI()
 		}
 
 	}
@@ -407,7 +414,7 @@ func setEditorButtons() {
 			refreshAllProgramRelatedUI()
 			updateProgramSelectorOptions()
 
-			prot.SelectedItem = &models.Program{}
+			prot.SelectedItem = repositories.ProgramRepo().New()
 			// prot.SelectedItem, _ = repositories.ProgramRepo().Get("")
 			text := prot.Widgets["searchbar"].(*widget.Entry).Text
 			prot.Widgets["searchbar"].(*widget.Entry).SetText("uuid")
@@ -420,7 +427,12 @@ func setEditorButtons() {
 			if err := prog.ItemRepo().Delete(it.SelectedItem.(*models.Item).Name); err != nil {
 				log.Printf("Error deleting item %s: %v", it.SelectedItem.(*models.Item).Name, err)
 			}
-			it.SelectedItem = &models.Item{}
+			// Create new item using repository New() function if program exists
+			if prog != nil {
+				it.SelectedItem = prog.ItemRepo().New()
+			} else {
+				it.SelectedItem = &models.Item{}
+			}
 			text := it.Widgets[program+"-searchbar"].(*widget.Entry).Text
 			it.Widgets[program+"-searchbar"].(*widget.Entry).SetText("uuid")
 			it.Widgets[program+"-searchbar"].(*widget.Entry).SetText(text)
@@ -434,7 +446,12 @@ func setEditorButtons() {
 				return
 			}
 			err = prog.PointRepo(config.MainMonitorSizeString).Delete(pt.SelectedItem.(*models.Point).Name)
-			pt.SelectedItem = &models.Point{}
+			// Create new point using repository New() function if program exists
+			if prog != nil {
+				pt.SelectedItem = prog.PointRepo(config.MainMonitorSizeString).New()
+			} else {
+				pt.SelectedItem = &models.Point{}
+			}
 			text := pt.Widgets[program+"-searchbar"].(*widget.Entry).Text
 			pt.Widgets[program+"-searchbar"].(*widget.Entry).SetText("uuid")
 			pt.Widgets[program+"-searchbar"].(*widget.Entry).SetText(text)
@@ -454,7 +471,12 @@ func setEditorButtons() {
 				return
 			}
 
-			sat.SelectedItem = &models.SearchArea{}
+			// Create new search area using repository New() function if program exists
+			if prog != nil {
+				sat.SelectedItem = prog.SearchAreaRepo(config.MainMonitorSizeString).New()
+			} else {
+				sat.SelectedItem = &models.SearchArea{}
+			}
 			text := sat.Widgets[program+"-searchbar"].(*widget.Entry).Text
 			sat.Widgets[program+"-searchbar"].(*widget.Entry).SetText("uuid")
 			sat.Widgets[program+"-searchbar"].(*widget.Entry).SetText(text)
