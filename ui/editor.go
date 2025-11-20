@@ -1,14 +1,25 @@
 package ui
 
 import (
+	"Squire/internal/config"
+	"Squire/internal/models"
 	"Squire/internal/services"
 	"Squire/ui/custom_widgets"
+	"errors"
+	"fmt"
+	"image"
+	"os"
+	"path/filepath"
+	"time"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	fynetooltip "github.com/dweymouth/fyne-tooltip"
+	"github.com/go-vgo/robotgo"
 )
 
 type EditorUi struct {
@@ -23,6 +34,7 @@ type EditorUi struct {
 		ItemsTab       *EditorTab
 		PointsTab      *EditorTab
 		SearchAreasTab *EditorTab
+		AutoPicTab     *EditorTab
 	}
 }
 type EditorTab struct {
@@ -33,6 +45,7 @@ type EditorTab struct {
 
 	Widgets      map[string]fyne.Widget
 	SelectedItem any
+	previewImage *canvas.Image // For AutoPic tab
 }
 
 func NewEditorTab(name string, left, right *fyne.Container) *container.TabItem {
@@ -45,9 +58,9 @@ func (u *Ui) constructEditorTabs() {
 		name = "Name"
 		x    = "X"
 		y    = "Y"
-		x1   = "RightX"
+		x1   = "LeftX"
 		y1   = "TopY"
-		x2   = "LeftX"
+		x2   = "RightX"
 		y2   = "BottomY"
 		cols = "Cols"
 		rows = "Rows"
@@ -149,16 +162,66 @@ func (u *Ui) constructEditorTabs() {
 		widget.NewFormItem(y2, satw[y2]),
 	)
 	satw[form].(*widget.Form).SubmitText = "Update"
+
+	// Create preview image for Search Areas tab
+	searchAreaPreviewImage := canvas.NewImageFromImage(nil)
+	searchAreaPreviewImage.FillMode = canvas.ImageFillContain
+	searchAreaPreviewImage.SetMinSize(fyne.NewSize(400, 300))
+
+	// Store the image reference in the tab for later access
+	et.SearchAreasTab.previewImage = searchAreaPreviewImage
+
 	et.SearchAreasTab.TabItem = NewEditorTab(
 		"Search Areas",
 		container.NewBorder(nil, nil, nil, nil, satw[acc]),
-		container.NewBorder(nil, nil, nil, nil, satw[form]),
+		container.NewBorder(
+			satw[form],
+			nil,
+			nil,
+			nil,
+			searchAreaPreviewImage,
+		),
+	)
+
+	//===========================================================================================================AUTOPIC
+	atw := et.AutoPicTab.Widgets
+	atw["Accordion"] = widget.NewAccordion()
+	atw["saveButton"] = widget.NewButton("Save", u.onAutoPicSave)
+
+	// Create preview image and container
+	previewImage := canvas.NewImageFromImage(nil)
+	previewImage.FillMode = canvas.ImageFillContain
+	previewImage.SetMinSize(fyne.NewSize(400, 300))
+
+	// Store the image reference in the tab for later access
+	et.AutoPicTab.previewImage = previewImage
+
+	// Initially disable save button
+	atw["saveButton"].(*widget.Button).Disable()
+
+	et.AutoPicTab.TabItem = NewEditorTab(
+		"AutoPic",
+		container.NewBorder(
+			nil,
+			nil,
+			nil,
+			nil,
+			atw["Accordion"],
+		),
+		container.NewBorder(
+			nil,
+			atw["saveButton"],
+			nil,
+			nil,
+			previewImage,
+		),
 	)
 
 	et.Append(et.ProgramsTab.TabItem)
 	et.Append(et.ItemsTab.TabItem)
 	et.Append(et.PointsTab.TabItem)
 	et.Append(et.SearchAreasTab.TabItem)
+	et.Append(et.AutoPicTab.TabItem)
 }
 
 func (u *Ui) constructNavButton() {
@@ -180,4 +243,268 @@ func (u *Ui) constructRemoveButton() {
 	u.EditorUi.RemoveButton.Text = ""
 	u.EditorUi.RemoveButton.Icon = theme.ContentRemoveIcon()
 	u.EditorUi.RemoveButton.Importance = widget.DangerImportance
+}
+
+// AutoPic tab handlers
+
+func (u *Ui) onAutoPicSave() {
+	selectedItem := u.EditorTabs.AutoPicTab.SelectedItem
+	if selectedItem == nil {
+		dialog.ShowError(errors.New("AutoPic: Cannot save - no search area selected"), u.Window)
+		return
+	}
+
+	searchArea, ok := selectedItem.(*models.SearchArea)
+	if !ok {
+		dialog.ShowError(errors.New("AutoPic: Cannot save - selected item is not a search area"), u.Window)
+		return
+	}
+
+	// Validate search area
+	if searchArea == nil {
+		dialog.ShowError(errors.New("AutoPic: Cannot save - search area is nil"), u.Window)
+		return
+	}
+
+	// Validate search area dimensions
+	w := searchArea.RightX - searchArea.LeftX
+	h := searchArea.BottomY - searchArea.TopY
+
+	if w <= 0 || h <= 0 {
+		dialog.ShowError(fmt.Errorf("AutoPic: Cannot save - invalid search area dimensions - width: %d, height: %d (area: %s)", w, h, searchArea.Name), u.Window)
+		return
+	}
+
+	// Validate coordinates are within reasonable bounds
+	screenWidth := config.MonitorWidth
+	screenHeight := config.MonitorHeight
+
+	if searchArea.LeftX < 0 || searchArea.TopY < 0 ||
+		searchArea.RightX > screenWidth || searchArea.BottomY > screenHeight {
+		dialog.ShowError(fmt.Errorf("AutoPic: Cannot save - search area coordinates out of screen bounds - screen: %dx%d, area: (%d,%d) to (%d,%d) (area: %s)",
+			screenWidth, screenHeight, searchArea.LeftX, searchArea.TopY, searchArea.RightX, searchArea.BottomY, searchArea.Name), u.Window)
+		return
+	}
+
+	// Calculate capture coordinates with offsets
+	captureX := searchArea.LeftX + config.XOffset
+	captureY := searchArea.TopY + config.YOffset
+
+	// Additional validation for capture coordinates
+	if captureX < 0 || captureY < 0 {
+		dialog.ShowError(fmt.Errorf("AutoPic: Cannot save - invalid capture coordinates after offset - x: %d, y: %d (area: %s)", captureX, captureY, searchArea.Name), u.Window)
+		return
+	}
+
+	// Attempt to capture the screen area with error recovery
+	var captureImg image.Image
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				dialog.ShowError(fmt.Errorf("AutoPic: Screen capture panic recovered during save - %v (area: %s)", r, searchArea.Name), u.Window)
+				captureImg = nil
+			}
+		}()
+
+		captureImg = robotgo.CaptureImg(captureX, captureY, w, h)
+	}()
+
+	// Validate the captured image
+	if captureImg == nil {
+		dialog.ShowError(fmt.Errorf("AutoPic: Cannot save - screen capture returned nil image (area: %s)", searchArea.Name), u.Window)
+		return
+	}
+
+	// Create filename with timestamp
+	timestamp := time.Now().Format("20060102_150405")
+	filename := fmt.Sprintf("%s_%s.png", timestamp, searchArea.Name)
+
+	// Ensure AutoPic directory exists
+	autoPicPath := config.GetAutoPicPath()
+	if err := os.MkdirAll(autoPicPath, 0755); err != nil {
+		dialog.ShowError(fmt.Errorf("AutoPic: Error creating AutoPic directory: %v", err), u.Window)
+		return
+	}
+
+	// Validate the path
+	fullPath := filepath.Join(autoPicPath, filename)
+	if fullPath == "" {
+		dialog.ShowError(errors.New("AutoPic: Error creating file path"), u.Window)
+		return
+	}
+
+	// Save the image with error handling
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				dialog.ShowError(fmt.Errorf("AutoPic: Image save panic recovered - %v (path: %s)", r, fullPath), u.Window)
+			}
+		}()
+
+		if err := robotgo.SavePng(captureImg, fullPath); err != nil {
+			dialog.ShowError(fmt.Errorf("AutoPic: Error saving image to %s: %v", fullPath, err), u.Window)
+			return
+		}
+
+		dialog.ShowError(fmt.Errorf("AutoPic: Image saved successfully to: %s", fullPath), u.Window)
+	}()
+}
+
+func (u *Ui) UpdateAutoPicPreview(searchArea *models.SearchArea) {
+	// Validate search area
+	if searchArea == nil {
+		dialog.ShowError(errors.New("AutoPic: Cannot update preview - search area is nil"), u.Window)
+		return
+	}
+
+	// Validate search area dimensions
+	w := searchArea.RightX - searchArea.LeftX
+	h := searchArea.BottomY - searchArea.TopY
+
+	if w <= 0 || h <= 0 {
+		dialog.ShowError(fmt.Errorf("AutoPic: Invalid search area dimensions - width: %d, height: %d (area: %s)", w, h, searchArea.Name), u.Window)
+		u.clearPreviewImage()
+		return
+	}
+
+	// Validate coordinates are within reasonable bounds
+	screenWidth := config.MonitorWidth
+	screenHeight := config.MonitorHeight
+
+	if searchArea.LeftX < 0 || searchArea.TopY < 0 ||
+		searchArea.RightX > screenWidth || searchArea.BottomY > screenHeight {
+		dialog.ShowError(fmt.Errorf("AutoPic: Search area coordinates out of screen bounds - screen: %dx%d, area: (%d,%d) to (%d,%d) (area: %s)",
+			screenWidth, screenHeight, searchArea.LeftX, searchArea.TopY, searchArea.RightX, searchArea.BottomY, searchArea.Name), u.Window)
+		u.clearPreviewImage()
+		return
+	}
+
+	// Calculate capture coordinates with offsets
+	captureX := searchArea.LeftX + config.XOffset
+	captureY := searchArea.TopY + config.YOffset
+
+	// Additional validation for capture coordinates
+	if captureX < 0 || captureY < 0 {
+		dialog.ShowError(fmt.Errorf("AutoPic: Invalid capture coordinates after offset - x: %d, y: %d (area: %s)", captureX, captureY, searchArea.Name), u.Window)
+		u.clearPreviewImage()
+		return
+	}
+
+	// Attempt to capture the screen area with error recovery
+	defer func() {
+		if r := recover(); r != nil {
+			dialog.ShowError(fmt.Errorf("AutoPic: Screen capture panic recovered - %v (area: %s)", r, searchArea.Name), u.Window)
+			u.clearPreviewImage()
+		}
+	}()
+
+	captureImg := robotgo.CaptureImg(captureX, captureY, w, h)
+
+	// Validate the captured image
+	if captureImg == nil {
+		dialog.ShowError(fmt.Errorf("AutoPic: Screen capture returned nil image (area: %s)", searchArea.Name), u.Window)
+		u.clearPreviewImage()
+		return
+	}
+
+	// Update preview image
+	if previewImage := u.EditorTabs.AutoPicTab.previewImage; previewImage != nil {
+		previewImage.Image = captureImg
+		previewImage.Refresh()
+	} else {
+		dialog.ShowError(errors.New("AutoPic: Preview image widget is nil"), u.Window)
+	}
+}
+
+func (u *Ui) clearPreviewImage() {
+	if previewImage := u.EditorTabs.AutoPicTab.previewImage; previewImage != nil {
+		previewImage.Image = nil
+		previewImage.Refresh()
+	}
+}
+
+func (u *Ui) UpdateSearchAreaPreview(searchArea *models.SearchArea) {
+	// Validate search area
+	if searchArea == nil {
+		dialog.ShowError(errors.New("SearchArea: Cannot update preview - search area is nil"), u.Window)
+		return
+	}
+
+	// Validate search area dimensions
+	w := searchArea.RightX - searchArea.LeftX
+	h := searchArea.BottomY - searchArea.TopY
+
+	if w <= 0 || h <= 0 {
+		dialog.ShowError(fmt.Errorf("SearchArea: Invalid search area dimensions - width: %d, height: %d (area: %s)", w, h, searchArea.Name), u.Window)
+		u.clearSearchAreaPreviewImage()
+		return
+	}
+
+	// Validate coordinates are within reasonable bounds
+	screenWidth := config.MonitorWidth
+	screenHeight := config.MonitorHeight
+
+	if searchArea.LeftX < 0 || searchArea.TopY < 0 ||
+		searchArea.RightX > screenWidth || searchArea.BottomY > screenHeight {
+		dialog.ShowError(fmt.Errorf("SearchArea: Search area coordinates out of screen bounds - screen: %dx%d, area: (%d,%d) to (%d,%d) (area: %s)",
+			screenWidth, screenHeight, searchArea.LeftX, searchArea.TopY, searchArea.RightX, searchArea.BottomY, searchArea.Name), u.Window)
+		u.clearSearchAreaPreviewImage()
+		return
+	}
+
+	// Calculate capture coordinates with offsets
+	captureX := searchArea.LeftX + config.XOffset
+	captureY := searchArea.TopY + config.YOffset
+
+	// Additional validation for capture coordinates
+	if captureX < 0 || captureY < 0 {
+		dialog.ShowError(fmt.Errorf("SearchArea: Invalid capture coordinates after offset - x: %d, y: %d (area: %s)", captureX, captureY, searchArea.Name), u.Window)
+		u.clearSearchAreaPreviewImage()
+		return
+	}
+
+	// Attempt to capture the screen area with error recovery
+	defer func() {
+		if r := recover(); r != nil {
+			dialog.ShowError(fmt.Errorf("SearchArea: Screen capture panic recovered - %v (area: %s)", r, searchArea.Name), u.Window)
+			u.clearSearchAreaPreviewImage()
+		}
+	}()
+
+	captureImg := robotgo.CaptureImg(captureX, captureY, w, h)
+
+	// Validate the captured image
+	if captureImg == nil {
+		dialog.ShowError(fmt.Errorf("SearchArea: Screen capture returned nil image (area: %s)", searchArea.Name), u.Window)
+		u.clearSearchAreaPreviewImage()
+		return
+	}
+
+	// Update preview image
+	if previewImage := u.EditorTabs.SearchAreasTab.previewImage; previewImage != nil {
+		previewImage.Image = captureImg
+		previewImage.Refresh()
+	} else {
+		dialog.ShowError(errors.New("SearchArea: Preview image widget is nil"), u.Window)
+	}
+}
+
+func (u *Ui) clearSearchAreaPreviewImage() {
+	if previewImage := u.EditorTabs.SearchAreasTab.previewImage; previewImage != nil {
+		previewImage.Image = nil
+		previewImage.Refresh()
+	}
+}
+
+func (u *Ui) RefreshAutoPicSearchAreas() {
+	// Reset the selected item and disable save button
+	u.EditorTabs.AutoPicTab.SelectedItem = nil
+	if saveButton, ok := u.EditorTabs.AutoPicTab.Widgets["saveButton"].(*widget.Button); ok {
+		saveButton.Disable()
+	}
+	// Clear preview image
+	if previewImage := u.EditorTabs.AutoPicTab.previewImage; previewImage != nil {
+		previewImage.Image = nil
+		previewImage.Refresh()
+	}
 }
