@@ -268,15 +268,7 @@ programs:
                     - 2
                     - 2
                 tags: []
-                stackmax: 0
-                merchant: ""
-            Cobalt Ingot Stack:
-                name: Cobalt Ingot Stack
-                gridsize:
-                    - 2
-                    - 2
-                tags: []
-                stackmax: 0
+                stackmax: 5
                 merchant: ""
             Cobalt Ore:
                 name: Cobalt Ore
@@ -284,15 +276,7 @@ programs:
                     - 2
                     - 2
                 tags: []
-                stackmax: 0
-                merchant: ""
-            Cobalt Ore Stack:
-                name: Cobalt Ore Stack
-                gridsize:
-                    - 2
-                    - 2
-                tags: []
-                stackmax: 0
+                stackmax: 5
                 merchant: ""
             Copper Ingot:
                 name: Copper Ingot
@@ -300,15 +284,7 @@ programs:
                     - 2
                     - 2
                 tags: []
-                stackmax: 0
-                merchant: ""
-            Copper Ingot Stack:
-                name: Copper Ingot Stack
-                gridsize:
-                    - 2
-                    - 2
-                tags: []
-                stackmax: 0
+                stackmax: 5
                 merchant: ""
             Copper Ore:
                 name: Copper Ore
@@ -316,15 +292,7 @@ programs:
                     - 2
                     - 2
                 tags: []
-                stackmax: 0
-                merchant: ""
-            Copper Ore Stack:
-                name: Copper Ore Stack
-                gridsize:
-                    - 2
-                    - 2
-                tags: []
-                stackmax: 0
+                stackmax: 5
                 merchant: ""
             Cursed Crown:
                 name: Cursed Crown
@@ -468,15 +436,7 @@ programs:
                     - 2
                     - 2
                 tags: []
-                stackmax: 0
-                merchant: ""
-            Froststone Ingot Stack:
-                name: Froststone Ingot Stack
-                gridsize:
-                    - 2
-                    - 2
-                tags: []
-                stackmax: 0
+                stackmax: 5
                 merchant: ""
             Froststone Ore:
                 name: Froststone Ore
@@ -484,15 +444,7 @@ programs:
                     - 2
                     - 2
                 tags: []
-                stackmax: 0
-                merchant: ""
-            Froststone Ore Stack:
-                name: Froststone Ore Stack
-                gridsize:
-                    - 2
-                    - 2
-                tags: []
-                stackmax: 0
+                stackmax: 5
                 merchant: ""
             Frozen Heart:
                 name: Frozen Heart
@@ -614,14 +566,6 @@ programs:
                 tags: []
                 stackmax: 0
                 merchant: Collector
-            Gold Coin:
-                name: Gold Coin
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 0
-                merchant: Treasurer
             Gold Coins:
                 name: Gold Coins
                 gridsize:
@@ -652,15 +596,7 @@ programs:
                     - 2
                     - 2
                 tags: []
-                stackmax: 0
-                merchant: ""
-            Gold Ingot Stack:
-                name: Gold Ingot Stack
-                gridsize:
-                    - 2
-                    - 2
-                tags: []
-                stackmax: 0
+                stackmax: 5
                 merchant: ""
             Gold Ore:
                 name: Gold Ore
@@ -668,15 +604,7 @@ programs:
                     - 2
                     - 2
                 tags: []
-                stackmax: 0
-                merchant: ""
-            Gold Ore Stack:
-                name: Gold Ore Stack
-                gridsize:
-                    - 2
-                    - 2
-                tags: []
-                stackmax: 0
+                stackmax: 5
                 merchant: ""
             Gold Purse:
                 name: Gold Purse
@@ -740,15 +668,7 @@ programs:
                     - 2
                     - 2
                 tags: []
-                stackmax: 0
-                merchant: ""
-            Iron Ingot Stack:
-                name: Iron Ingot Stack
-                gridsize:
-                    - 2
-                    - 2
-                tags: []
-                stackmax: 0
+                stackmax: 5
                 merchant: ""
             Iron Ore:
                 name: Iron Ore
@@ -756,15 +676,7 @@ programs:
                     - 2
                     - 2
                 tags: []
-                stackmax: 0
-                merchant: ""
-            Iron Ore Stack:
-                name: Iron Ore Stack
-                gridsize:
-                    - 2
-                    - 2
-                tags: []
-                stackmax: 0
+                stackmax: 5
                 merchant: ""
             Kobolds Ear:
                 name: Kobolds Ear
@@ -1052,15 +964,7 @@ programs:
                     - 2
                     - 2
                 tags: []
-                stackmax: 0
-                merchant: ""
-            Silver Ingot Stack:
-                name: Silver Ingot Stack
-                gridsize:
-                    - 2
-                    - 2
-                tags: []
-                stackmax: 0
+                stackmax: 5
                 merchant: ""
             Simple Gold Bangle:
                 name: Simple Gold Bangle
@@ -1397,8 +1301,8 @@ programs:
                         topy: 10
                         rightx: 10
                         bottomy: 10
-    path of exile:
-        name: path of exile
+    path of exile 2:
+        name: path of exile 2
         items:
             Arcanists Etcher:
                 name: Arcanists Etcher
@@ -1407,6 +1311,238 @@ programs:
                     - 1
                 tags: []
                 stackmax: 20
+                merchant: ""
+            Armourers Scrap:
+                name: Armourers Scrap
+                gridsize:
+                    - 1
+                    - 1
+                tags: []
+                stackmax: 20
+                merchant: ""
+            Artificers Orb:
+                name: Artificers Orb
+                gridsize:
+                    - 1
+                    - 1
+                tags: []
+                stackmax: 20
+                merchant: ""
+            Artificers Shard:
+                name: Artificers Shard
+                gridsize:
+                    - 1
+                    - 1
+                tags: []
+                stackmax: 9
+                merchant: ""
+            Blacksmiths Whetstone:
+                name: Blacksmiths Whetstone
+                gridsize:
+                    - 1
+                    - 1
+                tags: []
+                stackmax: 20
+                merchant: ""
+            Body Rune:
+                name: Body Rune
+                gridsize:
+                    - 1
+                    - 1
+                tags: []
+                stackmax: 10
+                merchant: ""
+            Chance Shard:
+                name: Chance Shard
+                gridsize:
+                    - 1
+                    - 1
+                tags: []
+                stackmax: 9
+                merchant: ""
+            Chaos Orb:
+                name: Chaos Orb
+                gridsize:
+                    - 1
+                    - 1
+                tags: []
+                stackmax: 20
+                merchant: ""
+            Desert Rune:
+                name: Desert Rune
+                gridsize:
+                    - 1
+                    - 1
+                tags: []
+                stackmax: 10
+                merchant: ""
+            Divine Orb:
+                name: Divine Orb
+                gridsize:
+                    - 1
+                    - 1
+                tags: []
+                stackmax: 10
+                merchant: ""
+            Exalted Orb:
+                name: Exalted Orb
+                gridsize:
+                    - 1
+                    - 1
+                tags: []
+                stackmax: 20
+                merchant: ""
+            Gemcutters Prism:
+                name: Gemcutters Prism
+                gridsize:
+                    - 1
+                    - 1
+                tags: []
+                stackmax: 20
+                merchant: ""
+            Glacial Rune:
+                name: Glacial Rune
+                gridsize:
+                    - 1
+                    - 1
+                tags: []
+                stackmax: 10
+                merchant: ""
+            Glassblowers Bauble:
+                name: Glassblowers Bauble
+                gridsize:
+                    - 1
+                    - 1
+                tags: []
+                stackmax: 20
+                merchant: ""
+            Inspiration Rune:
+                name: Inspiration Rune
+                gridsize:
+                    - 1
+                    - 1
+                tags: []
+                stackmax: 10
+                merchant: ""
+            Iron Rune:
+                name: Iron Rune
+                gridsize:
+                    - 1
+                    - 1
+                tags: []
+                stackmax: 10
+                merchant: ""
+            Lesser Jewellers Orb:
+                name: Lesser Jewellers Orb
+                gridsize:
+                    - 1
+                    - 1
+                tags: []
+                stackmax: 20
+                merchant: ""
+            Mind Rune:
+                name: Mind Rune
+                gridsize:
+                    - 1
+                    - 1
+                tags: []
+                stackmax: 10
+                merchant: ""
+            Orb of Alchemy:
+                name: Orb of Alchemy
+                gridsize:
+                    - 1
+                    - 1
+                tags: []
+                stackmax: 20
+                merchant: ""
+            Orb of Augmentation:
+                name: Orb of Augmentation
+                gridsize:
+                    - 1
+                    - 1
+                tags: []
+                stackmax: 30
+                merchant: ""
+            Orb of Chance:
+                name: Orb of Chance
+                gridsize:
+                    - 1
+                    - 1
+                tags: []
+                stackmax: 10
+                merchant: ""
+            Orb of Transmutation:
+                name: Orb of Transmutation
+                gridsize:
+                    - 1
+                    - 1
+                tags: []
+                stackmax: 40
+                merchant: ""
+            Rebirth Rune:
+                name: Rebirth Rune
+                gridsize:
+                    - 1
+                    - 1
+                tags: []
+                stackmax: 10
+                merchant: ""
+            Regal Orb:
+                name: Regal Orb
+                gridsize:
+                    - 1
+                    - 1
+                tags: []
+                stackmax: 20
+                merchant: ""
+            Regal Shard:
+                name: Regal Shard
+                gridsize:
+                    - 1
+                    - 1
+                tags: []
+                stackmax: 9
+                merchant: ""
+            Scroll of Wisdom:
+                name: Scroll of Wisdom
+                gridsize:
+                    - 1
+                    - 1
+                tags: []
+                stackmax: 40
+                merchant: ""
+            Stone Rune:
+                name: Stone Rune
+                gridsize:
+                    - 1
+                    - 1
+                tags: []
+                stackmax: 10
+                merchant: ""
+            Storm Rune:
+                name: Storm Rune
+                gridsize:
+                    - 1
+                    - 1
+                tags: []
+                stackmax: 10
+                merchant: ""
+            Vaal Orb:
+                name: Vaal Orb
+                gridsize:
+                    - 1
+                    - 1
+                tags: []
+                stackmax: 20
+                merchant: ""
+            Vision Rune:
+                name: Vision Rune
+                gridsize:
+                    - 1
+                    - 1
+                tags: []
+                stackmax: 10
                 merchant: ""
         coordinates:
             1920x1080:

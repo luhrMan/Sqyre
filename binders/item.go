@@ -59,7 +59,7 @@ func RefreshItemsAccordionItems() {
 func RefreshProgramAccordionItem(programName string) {
 	// Refresh both the main action tabs accordion and the editor tabs accordion
 	refreshAccordionForProgram(ui.GetUi().ActionTabs.ImageSearchItemsAccordion, programName)
-	
+
 	if accordion, ok := ui.GetUi().EditorTabs.ItemsTab.Widgets["Accordion"].(*widget.Accordion); ok {
 		refreshAccordionForProgram(accordion, programName)
 	}
@@ -85,7 +85,7 @@ func RebuildItemsAccordion() {
 	if ui.GetUi().ActionTabs.ImageSearchItemsAccordion != nil {
 		setAccordionItemsLists(ui.GetUi().ActionTabs.ImageSearchItemsAccordion)
 	}
-	
+
 	// Rebuild the editor tabs accordion
 	if accordion, ok := ui.GetUi().EditorTabs.ItemsTab.Widgets["Accordion"].(*widget.Accordion); ok {
 		setAccordionItemsLists(accordion)
@@ -95,7 +95,7 @@ func RebuildItemsAccordion() {
 // RefreshItemInGrid refreshes a specific item in the grid by invalidating its cache and forcing a grid refresh
 func RefreshItemInGrid(programName, oldItemName, newItemName string) {
 	iconService := services.IconVariantServiceInstance()
-	
+
 	// Invalidate cache for both old and new item names if they're different
 	if oldItemName != newItemName {
 		// Get variants for the old item name and invalidate their cache
@@ -110,7 +110,7 @@ func RefreshItemInGrid(programName, oldItemName, newItemName string) {
 			}
 		}
 	}
-	
+
 	// Invalidate cache for the new item name (or current item if name didn't change)
 	if newVariants, err := iconService.GetVariants(programName, newItemName); err == nil {
 		for _, variant := range newVariants {
@@ -122,7 +122,7 @@ func RefreshItemInGrid(programName, oldItemName, newItemName string) {
 			assets.InvalidateFyneResourceCache(newCacheKey)
 		}
 	}
-	
+
 	// Force refresh the GridWrap by triggering a rebuild of the specific program's accordion
 	// This is necessary because the GridWrap uses a pre-computed iconCache that needs to be updated
 	if accordion, ok := ui.GetUi().EditorTabs.ItemsTab.Widgets["Accordion"].(*widget.Accordion); ok {
@@ -144,7 +144,7 @@ func RefreshItemInGrid(programName, oldItemName, newItemName string) {
 func rebuildProgramAccordionItem(accordion *widget.Accordion, program *models.Program, itemIndex int) {
 	// Create the accordion item content using the shared function
 	accordionItem := createProgramAccordionItem(program)
-	
+
 	// Replace the accordion item content
 	accordion.Items[itemIndex].Detail = accordionItem.Detail
 	accordion.Items[itemIndex].Detail.Refresh()
@@ -233,11 +233,11 @@ func createProgramAccordionItem(program *models.Program) *widget.AccordionItem {
 		},
 		func() fyne.CanvasObject {
 			rect := canvas.NewRectangle(color.RGBA{})
-			rect.SetMinSize(fyne.NewSquareSize(45))
+			rect.SetMinSize(fyne.NewSquareSize(75))
 			rect.CornerRadius = 5
 
 			icon := canvas.NewImageFromResource(theme.BrokenImageIcon())
-			icon.SetMinSize(fyne.NewSquareSize(40))
+			icon.SetMinSize(fyne.NewSquareSize(70))
 			icon.FillMode = canvas.ImageFillOriginal
 
 			stack := container.NewStack(rect, container.NewPadded(icon), ttwidget.NewLabel(""))
@@ -277,10 +277,12 @@ func createProgramAccordionItem(program *models.Program) *widget.AccordionItem {
 					iconContainer := stack.Objects[1].(*fyne.Container)
 					iconContainer.Objects[0] = newIcon
 				} else {
-					icon.Resource = theme.BrokenImageIcon()
+					icon.Resource = assets.AppIcon
+					// icon.Resource = theme.BrokenImageIcon()
 				}
 			} else {
-				icon.Resource = theme.BrokenImageIcon()
+				icon.Resource = assets.AppIcon
+				// icon.Resource = theme.BrokenImageIcon()
 			}
 			o.Refresh()
 		},
