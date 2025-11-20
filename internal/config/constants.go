@@ -10,6 +10,7 @@ const (
 	// User directory structure
 	SqyreDir           = "Sqyre"
 	UserImagesDir      = "images"
+	UserAutoPicDir     = "AutoPic"
 	UserIconsDir       = "icons"
 	UserMasksDir       = "masks"
 	UserMetaDir        = "meta"
@@ -71,10 +72,19 @@ func GetMetaPath() string {
 	return filepath.Join(homeDir, SqyreDir, UserImagesDir, UserMetaDir)
 }
 
+func GetAutoPicPath() string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		log.Fatalf("Could not get user home directory: %v", err)
+	}
+	return filepath.Join(homeDir, SqyreDir, UserImagesDir, UserAutoPicDir)
+}
+
 // InitializeDirectories creates the necessary directories in the user's home directory
 // Creates: ~/Sqyre/images/icons/
 func InitializeDirectories() error {
 	iconsPath := GetIconsPath()
+	autoPicPath := GetAutoPicPath()
 
 	// Create all parent directories as needed
 	if err := os.MkdirAll(iconsPath, 0755); err != nil {
@@ -82,6 +92,12 @@ func InitializeDirectories() error {
 		return err
 	}
 
+	if err := os.MkdirAll(autoPicPath, 0755); err != nil {
+		log.Printf("Failed to create AutoPic directory at %s: %v", autoPicPath, err)
+		return err
+	}
+
 	log.Printf("Initialized directory structure at: %s", iconsPath)
+	log.Printf("Initialized AutoPic directory at: %s", autoPicPath)
 	return nil
 }
