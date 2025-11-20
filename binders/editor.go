@@ -46,6 +46,9 @@ func refreshAllProgramRelatedUI() {
 	if accordion, ok := et.SearchAreasTab.Widgets["Accordion"].(*widget.Accordion); ok {
 		setAccordionSearchAreasLists(accordion)
 	}
+	if accordion, ok := et.AutoPicTab.Widgets["Accordion"].(*widget.Accordion); ok {
+		setAccordionAutoPicSearchAreasLists(accordion)
+	}
 
 	// Refresh action tab accordions
 	ats := ui.GetUi().ActionTabs
@@ -77,10 +80,14 @@ func setEditorLists() {
 	setAccordionSearchAreasLists(
 		et.SearchAreasTab.Widgets["Accordion"].(*widget.Accordion),
 	)
+	setAccordionAutoPicSearchAreasLists(
+		et.AutoPicTab.Widgets["Accordion"].(*widget.Accordion),
+	)
 	et.ProgramsTab.SelectedItem = &models.Program{}
 	et.ItemsTab.SelectedItem = &models.Item{}
 	et.PointsTab.SelectedItem = &models.Point{}
 	et.SearchAreasTab.SelectedItem = &models.SearchArea{}
+	et.AutoPicTab.SelectedItem = &models.SearchArea{}
 }
 
 func setEditorForms() {
@@ -238,6 +245,17 @@ func setEditorForms() {
 				log.Printf("Error saving program %s: %v", p, err)
 				return
 			}
+
+			// Update search area preview after form submission
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						log.Printf("SearchArea: Preview update panic recovered after form update - %v (area: %s)", r, v.Name)
+					}
+				}()
+				ui.GetUi().UpdateSearchAreaPreview(v)
+			}()
+
 			// w[p+"-searchbar"].(*widget.Entry).SetText(v.Name)
 		}
 	}
@@ -285,7 +303,7 @@ func setEditorButtons() {
 			refreshAllProgramRelatedUI()
 			updateProgramSelectorOptions()
 
-			ui.GetUi().EditorTabs.ProgramsTab.Widgets["searchbar"].(*widget.Entry).SetText(n)
+			// ui.GetUi().EditorTabs.ProgramsTab.Widgets["searchbar"].(*widget.Entry).SetText(n)
 			ui.GetUi().EditorTabs.ProgramsTab.Widgets["Name"].(*widget.Entry).SetText(n)
 			ui.GetUi().EditorTabs.ProgramsTab.Widgets["list"].(*widget.List).Select(0)
 		case "Items":
@@ -304,7 +322,7 @@ func setEditorButtons() {
 				dialog.ShowError(errors.New("an item with that name already exists"), ui.GetUi().Window)
 				return
 			}
-
+			// newItem := pro.ItemREpo.New()
 			i := models.Item{
 				Name:     n,
 				GridSize: [2]int{x, y},
@@ -315,7 +333,6 @@ func setEditorButtons() {
 				return
 			}
 			v := &i
-			ui.GetUi().EditorTabs.ItemsTab.Widgets[program+"-searchbar"].(*widget.Entry).SetText(v.Name)
 			ui.GetUi().EditorTabs.ItemsTab.Widgets["Name"].(*widget.Entry).SetText(v.Name)
 			ui.GetUi().EditorTabs.ItemsTab.Widgets[program+"-list"].(*widget.GridWrap).Select(0)
 			setItemsWidgets(i)
@@ -338,7 +355,6 @@ func setEditorButtons() {
 				dialog.ShowError(err, ui.GetUi().Window)
 				return
 			}
-			ui.GetUi().EditorTabs.PointsTab.Widgets[program+"-searchbar"].(*widget.Entry).SetText(p.Name)
 			ui.GetUi().EditorTabs.PointsTab.Widgets["Name"].(*widget.Entry).SetText(p.Name)
 			ui.GetUi().EditorTabs.PointsTab.Widgets[program+"-list"].(*widget.List).Select(0)
 		case "Search Areas":
@@ -363,10 +379,9 @@ func setEditorButtons() {
 				dialog.ShowError(err, ui.GetUi().Window)
 				return
 			}
-			ui.GetUi().EditorTabs.SearchAreasTab.Widgets[program+"-searchbar"].(*widget.Entry).SetText(sa.Name)
 			ui.GetUi().EditorTabs.SearchAreasTab.Widgets["Name"].(*widget.Entry).SetText(sa.Name)
 			ui.GetUi().EditorTabs.SearchAreasTab.Widgets[program+"-list"].(*widget.List).Select(0)
-
+			ui.GetUi().EditorTabs.SearchAreasTab.Widgets[program+"-list"].Refresh()
 		}
 
 	}
@@ -384,8 +399,6 @@ func setEditorButtons() {
 		}
 		switch ui.GetUi().EditorUi.EditorTabs.Selected().Text {
 		case "Programs":
-			log.Println(prot.SelectedItem)
-			log.Println(prot.SelectedItem.(*models.Program).Name)
 			if err := repositories.ProgramRepo().Delete(prot.SelectedItem.(*models.Program).Name); err != nil {
 				log.Printf("Error deleting program: %v", err)
 			}
@@ -434,7 +447,12 @@ func setEditorButtons() {
 				log.Printf("Error getting program %s: %v", program, err)
 				return
 			}
-			err = prog.SearchAreaRepo(config.MainMonitorSizeString).Delete(sat.SelectedItem.(*models.SearchArea).Name)
+			n := sat.SelectedItem.(*models.SearchArea).Name
+			err = prog.SearchAreaRepo(config.MainMonitorSizeString).Delete(n)
+			if err != nil {
+				log.Printf("Error deleting searcharea %s: %v", n, err)
+				return
+			}
 
 			sat.SelectedItem = &models.SearchArea{}
 			text := sat.Widgets[program+"-searchbar"].(*widget.Entry).Text
@@ -445,4 +463,5 @@ func setEditorButtons() {
 			sat.Widgets[program+"-list"].(*widget.List).Select(0)
 		}
 	}
+
 }

@@ -45,6 +45,7 @@ func InitializeUi(w fyne.Window) *Ui {
 				ItemsTab       *EditorTab
 				PointsTab      *EditorTab
 				SearchAreasTab *EditorTab
+				AutoPicTab     *EditorTab
 			}{
 				AppTabs: new(container.AppTabs),
 				ProgramsTab: &EditorTab{
@@ -57,6 +58,9 @@ func InitializeUi(w fyne.Window) *Ui {
 					Widgets: make(map[string]fyne.Widget),
 				},
 				SearchAreasTab: &EditorTab{
+					Widgets: make(map[string]fyne.Widget),
+				},
+				AutoPicTab: &EditorTab{
 					Widgets: make(map[string]fyne.Widget),
 				},
 			},
