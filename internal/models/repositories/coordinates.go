@@ -52,6 +52,15 @@ func NewPointRepository(program *models.Program, resolutionKey string) *PointRep
 	}
 }
 
+// New creates a new Point instance with default values.
+func (r *PointRepository) New() *models.Point {
+	return &models.Point{
+		Name: "",
+		X:    0,
+		Y:    0,
+	}
+}
+
 // SearchAreaRepository manages SearchArea persistence within a Program context.
 // It embeds NestedRepository to leverage generic CRUD operations while maintaining
 // program and resolution context for specialized behavior.
@@ -86,5 +95,16 @@ func NewSearchAreaRepository(program *models.Program, resolutionKey string) *Sea
 		),
 		resolutionKey: resolutionKey,
 		program:       program,
+	}
+}
+
+// New creates a new SearchArea instance with default values.
+func (r *SearchAreaRepository) New() *models.SearchArea {
+	return &models.SearchArea{
+		Name:    "",
+		LeftX:   0,
+		TopY:    0,
+		RightX:  0,
+		BottomY: 0,
 	}
 }

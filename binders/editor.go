@@ -99,7 +99,6 @@ func setEditorForms() {
 		n := w["Name"].(*widget.Entry).Text
 		if si, ok := et.ProgramsTab.SelectedItem.(*models.Program); ok {
 			v := si
-			// p := ui.GetUi().ProgramSelector.Text
 			if err := repositories.ProgramRepo().Delete(si.Name); err != nil {
 				log.Printf("Error deleting program %s: %v", si.Name, err)
 			}
@@ -112,9 +111,6 @@ func setEditorForms() {
 			// Update all UI components after renaming program
 			refreshAllProgramRelatedUI()
 			updateProgramSelectorOptions()
-
-			// }
-			// w["searchbar"].(*widget.Entry).SetText(v.Name)
 		}
 	}
 	et.ItemsTab.Widgets["Form"].(*widget.Form).OnSubmit = func() {
@@ -132,7 +128,6 @@ func setEditorForms() {
 				return
 			}
 
-			// Capture the old name before making changes
 			oldItemName := v.Name
 
 			// Check if the name is being changed and if the new name already exists
@@ -214,14 +209,32 @@ func setEditorForms() {
 				log.Printf("Error getting program %s: %v", p, err)
 				return
 			}
+			oldkey := v.Name
 			v.Name = n
 			v.X = x
 			v.Y = y
+
+			if err := program.PointRepo(config.MainMonitorSizeString).Set(v.Name, v); err != nil {
+				log.Printf("Error saving point %s: %v", v.Name, err)
+				dialog.ShowError(errors.New("failed to save point"), ui.GetUi().Window)
+				return
+			}
+
+			if oldkey != v.Name {
+				if err := program.PointRepo(config.MainMonitorSizeString).Delete(oldkey); err != nil {
+					log.Printf("Error deleting point %s: %v", oldkey, err)
+					dialog.ShowError(errors.New("failed to delete point"), ui.GetUi().Window)
+					return
+				}
+			}
+
 			if err := repositories.ProgramRepo().Set(program.Name, program); err != nil {
 				log.Printf("Error saving program %s: %v", p, err)
 				return
 			}
-			refreshAllProgramRelatedUI()
+			t := w[program.Name+"-searchbar"].(*widget.Entry).Text
+			w[program.Name+"-searchbar"].(*widget.Entry).SetText("random string of text for refreshing because poop")
+			w[program.Name+"-searchbar"].(*widget.Entry).SetText(t)
 		}
 	}
 	et.SearchAreasTab.Widgets["Form"].(*widget.Form).OnSubmit = func() {
@@ -238,11 +251,26 @@ func setEditorForms() {
 				log.Printf("Error getting program %s: %v", p, err)
 				return
 			}
+			oldkey := v.Name
 			v.Name = n
 			v.LeftX = lx
 			v.TopY = ty
 			v.RightX = rx
 			v.BottomY = by
+
+			if err := program.SearchAreaRepo(config.MainMonitorSizeString).Set(v.Name, v); err != nil {
+				log.Printf("Error saving search area %s: %v", v.Name, err)
+				dialog.ShowError(errors.New("failed to save search area"), ui.GetUi().Window)
+				return
+			}
+			if oldkey != v.Name {
+				if err := program.SearchAreaRepo(config.MainMonitorSizeString).Delete(oldkey); err != nil {
+					log.Printf("Error deleting search area %s: %v", oldkey, err)
+					dialog.ShowError(errors.New("failed to delete search area"), ui.GetUi().Window)
+					return
+				}
+			}
+
 			if err := repositories.ProgramRepo().Set(program.Name, program); err != nil {
 				log.Printf("Error saving program %s: %v", p, err)
 				return
@@ -257,26 +285,32 @@ func setEditorForms() {
 				}()
 				ui.GetUi().UpdateSearchAreaPreview(v)
 			}()
-			refreshAllProgramRelatedUI()
+			t := w[program.Name+"-searchbar"].(*widget.Entry).Text
+			w[program.Name+"-searchbar"].(*widget.Entry).SetText("random string of text for refreshing because poop")
+			w[program.Name+"-searchbar"].(*widget.Entry).SetText(t)
 		}
 	}
 
 }
 
 func setEditorButtons() {
+	// add := func(widgets []string, repo repositories.Repository[any]) {
+
+	// }
+
 	ui.GetUi().EditorUi.AddButton.OnTapped = func() {
 		program := ui.GetUi().EditorUi.ProgramSelector.Text
 
-		getProgram := func() *models.Program {
-			pro, err := repositories.ProgramRepo().Get(program)
+		getProgram := func(pn string) *models.Program {
+			pro, err := repositories.ProgramRepo().Get(pn)
 			if err != nil {
-				log.Println("editor binder: new program created")
 				pro = repositories.ProgramRepo().New()
-				pro.Name = ui.GetUi().ProgramSelector.Text
+				pro.Name = pn
 				if err := repositories.ProgramRepo().Set(pro.Name, pro); err != nil {
-					log.Printf("Error creating program %s: %v", pro.Name, err)
+					dialog.ShowError(err, ui.GetUi().Window)
 					return nil
 				}
+				log.Println("editor binder: new program created", pn)
 				setEditorLists()
 			}
 			return pro
@@ -285,35 +319,19 @@ func setEditorButtons() {
 		switch ui.GetUi().EditorUi.EditorTabs.Selected().Text {
 		case "Programs":
 			n := ui.GetUi().EditorTabs.ProgramsTab.Widgets["Name"].(*widget.Entry).Text
-
-			// Check if item already exists
-			_, err := repositories.ProgramRepo().Get(n)
-			if err == nil {
-				dialog.ShowError(errors.New("an item with that name already exists"), ui.GetUi().Window)
-				return
-			}
-
-			newProgram := repositories.ProgramRepo().New()
-			newProgram.Name = n
-			if err := repositories.ProgramRepo().Set(n, newProgram); err != nil {
-				dialog.ShowError(err, ui.GetUi().Window)
-				return
-			}
-
+			getProgram(n)
 			// Update all UI components after adding new program
 			refreshAllProgramRelatedUI()
 			updateProgramSelectorOptions()
 
-			// ui.GetUi().EditorTabs.ProgramsTab.Widgets["searchbar"].(*widget.Entry).SetText(n)
 			ui.GetUi().EditorTabs.ProgramsTab.Widgets["Name"].(*widget.Entry).SetText(n)
-			ui.GetUi().EditorTabs.ProgramsTab.Widgets["list"].(*widget.List).Select(0)
 		case "Items":
 			n := ui.GetUi().EditorTabs.ItemsTab.Widgets["Name"].(*widget.Entry).Text
 			x, _ := strconv.Atoi(ui.GetUi().EditorTabs.ItemsTab.Widgets["Cols"].(*widget.Entry).Text)
 			y, _ := strconv.Atoi(ui.GetUi().EditorTabs.ItemsTab.Widgets["Rows"].(*widget.Entry).Text)
 			sm, _ := strconv.Atoi(ui.GetUi().EditorTabs.ItemsTab.Widgets["StackMax"].(*widget.Entry).Text)
 
-			pro := getProgram()
+			pro := getProgram(program)
 			if pro == nil {
 				return
 			}
@@ -334,15 +352,17 @@ func setEditorButtons() {
 			}
 			v := i
 			ui.GetUi().EditorTabs.ItemsTab.Widgets["Name"].(*widget.Entry).SetText(v.Name)
-			ui.GetUi().EditorTabs.ItemsTab.Widgets[program+"-list"].(*widget.GridWrap).Select(0)
+			t := ui.GetUi().EditorTabs.ItemsTab.Widgets[program+"-searchbar"].(*widget.Entry).Text
+			ui.GetUi().EditorTabs.ItemsTab.Widgets[program+"-searchbar"].(*widget.Entry).SetText("random string of text for refreshing because poop")
+			ui.GetUi().EditorTabs.ItemsTab.Widgets[program+"-searchbar"].(*widget.Entry).SetText(t)
 			setItemsWidgets(*i)
-			RefreshItemsAccordionItems()
+			// RefreshItemsAccordionItems()
 		case "Points":
 			n := ui.GetUi().EditorTabs.PointsTab.Widgets["Name"].(*widget.Entry).Text
 			x, _ := strconv.Atoi(ui.GetUi().EditorTabs.PointsTab.Widgets["X"].(*widget.Entry).Text)
 			y, _ := strconv.Atoi(ui.GetUi().EditorTabs.PointsTab.Widgets["Y"].(*widget.Entry).Text)
 
-			pro := getProgram()
+			pro := getProgram(program)
 			if pro == nil {
 				return
 			}
@@ -359,8 +379,10 @@ func setEditorButtons() {
 				return
 			}
 			ui.GetUi().EditorTabs.PointsTab.Widgets["Name"].(*widget.Entry).SetText(p.Name)
-			ui.GetUi().EditorTabs.PointsTab.Widgets[program+"-list"].(*widget.List).Select(0)
-			refreshAllProgramRelatedUI()
+			t := ui.GetUi().EditorTabs.PointsTab.Widgets[program+"-searchbar"].(*widget.Entry).Text
+			ui.GetUi().EditorTabs.PointsTab.Widgets[program+"-searchbar"].(*widget.Entry).SetText("random string of text for refreshing because poop")
+			ui.GetUi().EditorTabs.PointsTab.Widgets[program+"-searchbar"].(*widget.Entry).SetText(t)
+			// refreshAllProgramRelatedUI()
 		case "Search Areas":
 			n := ui.GetUi().EditorTabs.SearchAreasTab.Widgets["Name"].(*widget.Entry).Text
 			lx, _ := strconv.Atoi(ui.GetUi().EditorTabs.SearchAreasTab.Widgets["LeftX"].(*widget.Entry).Text)
@@ -368,12 +390,11 @@ func setEditorButtons() {
 			rx, _ := strconv.Atoi(ui.GetUi().EditorTabs.SearchAreasTab.Widgets["RightX"].(*widget.Entry).Text)
 			by, _ := strconv.Atoi(ui.GetUi().EditorTabs.SearchAreasTab.Widgets["BottomY"].(*widget.Entry).Text)
 
-			pro := getProgram()
+			pro := getProgram(program)
 			if pro == nil {
 				return
 			}
 
-			// Create new search area using repository New() function
 			sa := pro.SearchAreaRepo(config.MainMonitorSizeString).New()
 			sa.Name = n
 			sa.LeftX = lx
@@ -387,23 +408,24 @@ func setEditorButtons() {
 				return
 			}
 			ui.GetUi().EditorTabs.SearchAreasTab.Widgets["Name"].(*widget.Entry).SetText(sa.Name)
-			ui.GetUi().EditorTabs.SearchAreasTab.Widgets[program+"-list"].(*widget.List).Select(0)
-			refreshAllProgramRelatedUI()
+			t := ui.GetUi().EditorTabs.SearchAreasTab.Widgets[program+"-searchbar"].(*widget.Entry).Text
+			ui.GetUi().EditorTabs.SearchAreasTab.Widgets[program+"-searchbar"].(*widget.Entry).SetText("random string of text for refreshing because poop")
+			ui.GetUi().EditorTabs.SearchAreasTab.Widgets[program+"-searchbar"].(*widget.Entry).SetText(t)
 		}
 
 	}
 	ui.GetUi().EditorUi.RemoveButton.OnTapped = func() {
-		program := ui.GetUi().EditorUi.ProgramSelector.Text
-		et := ui.GetUi().EditorTabs
-		prot := et.ProgramsTab
-		it := et.ItemsTab
-		pt := et.PointsTab
-		sat := et.SearchAreasTab
-		prog, err := repositories.ProgramRepo().Get(program)
+		var (
+			program           = ui.GetUi().EditorUi.ProgramSelector.Text
+			et                = ui.GetUi().EditorTabs
+			prot, it, pt, sat = et.ProgramsTab, et.ItemsTab, et.PointsTab, et.SearchAreasTab
+			prog, err         = repositories.ProgramRepo().Get(program)
+		)
 		if err != nil {
 			log.Printf("Error getting program %s: %v", program, err)
 			return
 		}
+
 		switch ui.GetUi().EditorUi.EditorTabs.Selected().Text {
 		case "Programs":
 			if err := repositories.ProgramRepo().Delete(prot.SelectedItem.(*models.Program).Name); err != nil {
@@ -415,15 +437,10 @@ func setEditorButtons() {
 			updateProgramSelectorOptions()
 
 			prot.SelectedItem = repositories.ProgramRepo().New()
-			// prot.SelectedItem, _ = repositories.ProgramRepo().Get("")
-			text := prot.Widgets["searchbar"].(*widget.Entry).Text
-			prot.Widgets["searchbar"].(*widget.Entry).SetText("uuid")
-			prot.Widgets["searchbar"].(*widget.Entry).SetText(text)
-			prot.Widgets["list"].(*widget.List).UnselectAll()
-
-			prot.Widgets["list"].(*widget.List).Select(0)
+			// text := prot.Widgets["searchbar"].(*widget.Entry).Text
+			// prot.Widgets["searchbar"].(*widget.Entry).SetText("uuid")
+			// prot.Widgets["searchbar"].(*widget.Entry).SetText(text)
 		case "Items":
-
 			if err := prog.ItemRepo().Delete(it.SelectedItem.(*models.Item).Name); err != nil {
 				log.Printf("Error deleting item %s: %v", it.SelectedItem.(*models.Item).Name, err)
 			}
@@ -436,16 +453,10 @@ func setEditorButtons() {
 			text := it.Widgets[program+"-searchbar"].(*widget.Entry).Text
 			it.Widgets[program+"-searchbar"].(*widget.Entry).SetText("uuid")
 			it.Widgets[program+"-searchbar"].(*widget.Entry).SetText(text)
-			it.Widgets[program+"-list"].(*widget.GridWrap).UnselectAll()
-
-			it.Widgets[program+"-list"].(*widget.GridWrap).Select(0)
 		case "Points":
-			prog, err := repositories.ProgramRepo().Get(program)
-			if err != nil {
-				log.Printf("Error getting program %s: %v", program, err)
-				return
+			if err := prog.PointRepo(config.MainMonitorSizeString).Delete(pt.SelectedItem.(*models.Point).Name); err != nil {
+				log.Printf("Error deleting point %s: %v", pt.SelectedItem.(*models.Point).Name, err)
 			}
-			err = prog.PointRepo(config.MainMonitorSizeString).Delete(pt.SelectedItem.(*models.Point).Name)
 			// Create new point using repository New() function if program exists
 			if prog != nil {
 				pt.SelectedItem = prog.PointRepo(config.MainMonitorSizeString).New()
@@ -455,15 +466,7 @@ func setEditorButtons() {
 			text := pt.Widgets[program+"-searchbar"].(*widget.Entry).Text
 			pt.Widgets[program+"-searchbar"].(*widget.Entry).SetText("uuid")
 			pt.Widgets[program+"-searchbar"].(*widget.Entry).SetText(text)
-			pt.Widgets[program+"-list"].(*widget.List).UnselectAll()
-
-			pt.Widgets[program+"-list"].(*widget.List).Select(0)
 		case "Search Areas":
-			prog, err := repositories.ProgramRepo().Get(program)
-			if err != nil {
-				log.Printf("Error getting program %s: %v", program, err)
-				return
-			}
 			n := sat.SelectedItem.(*models.SearchArea).Name
 			err = prog.SearchAreaRepo(config.MainMonitorSizeString).Delete(n)
 			if err != nil {
@@ -480,9 +483,6 @@ func setEditorButtons() {
 			text := sat.Widgets[program+"-searchbar"].(*widget.Entry).Text
 			sat.Widgets[program+"-searchbar"].(*widget.Entry).SetText("uuid")
 			sat.Widgets[program+"-searchbar"].(*widget.Entry).SetText(text)
-			sat.Widgets[program+"-list"].(*widget.List).UnselectAll()
-
-			sat.Widgets[program+"-list"].(*widget.List).Select(0)
 		}
 	}
 
