@@ -55,3 +55,14 @@ func (r *ItemRepository) GetAllWithProgramPrefix() map[string]*models.Item {
 func (r *ItemRepository) GetAllSorted() []string {
 	return r.GetAllKeys() // Use embedded NestedRepository method
 }
+
+// New creates a new Item instance with default values.
+func (r *ItemRepository) New() *models.Item {
+	return &models.Item{
+		Name:     "",
+		GridSize: [2]int{1, 1},
+		Tags:     []string{},
+		StackMax: 1,
+		Merchant: "",
+	}
+}

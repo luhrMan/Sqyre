@@ -423,6 +423,22 @@ func (u *Ui) clearPreviewImage() {
 	}
 }
 
+func (u *Ui) ErrorPopUp(s string) {
+	label := widget.NewLabel(s)
+	label.Importance = widget.DangerImportance
+
+	pu := widget.NewPopUp(
+		container.NewBorder(
+			nil, nil,
+			widget.NewIcon(theme.CancelIcon()),
+			nil,
+			label,
+		),
+		u.Window.Canvas(),
+	)
+	pu.Show()
+}
+
 func (u *Ui) UpdateSearchAreaPreview(searchArea *models.SearchArea) {
 	// Validate search area
 	if searchArea == nil {
@@ -435,8 +451,23 @@ func (u *Ui) UpdateSearchAreaPreview(searchArea *models.SearchArea) {
 	h := searchArea.BottomY - searchArea.TopY
 
 	if w <= 0 || h <= 0 {
-		dialog.ShowError(fmt.Errorf("SearchArea: Invalid search area dimensions - width: %d, height: %d (area: %s)", w, h, searchArea.Name), u.Window)
 		u.clearSearchAreaPreviewImage()
+		u.EditorTabs.SearchAreasTab.previewImage.Resource = theme.BrokenImageIcon()
+		u.ErrorPopUp(fmt.Sprintf("SearchArea: Invalid search area dimensions - width: %d, height: %d (area: %s)", w, h, searchArea.Name))
+		// label := widget.NewLabel(fmt.Sprintf("SearchArea: Invalid search area dimensions - width: %d, height: %d (area: %s)", w, h, searchArea.Name))
+		// label.Importance = widget.DangerImportance
+
+		// pu := widget.NewPopUp(
+		// 	container.NewBorder(
+		// 		nil, nil,
+		// 		widget.NewIcon(theme.CancelIcon()),
+		// 		nil,
+		// 		label,
+		// 	),
+		// 	u.Window.Canvas(),
+		// )
+		// pu.Show()
+		// dialog.ShowError(fmt.Errorf("SearchArea: Invalid search area dimensions - width: %d, height: %d (area: %s)", w, h, searchArea.Name), u.Window)
 		return
 	}
 
@@ -491,7 +522,9 @@ func (u *Ui) UpdateSearchAreaPreview(searchArea *models.SearchArea) {
 
 func (u *Ui) clearSearchAreaPreviewImage() {
 	if previewImage := u.EditorTabs.SearchAreasTab.previewImage; previewImage != nil {
-		previewImage.Image = nil
+		// previewImage.Image = nil
+		// previewImage.Resource = nil
+		previewImage = nil
 		previewImage.Refresh()
 	}
 }
