@@ -1,13 +1,10 @@
 package ui
 
 import (
-	"Squire/internal/config"
-	"Squire/internal/programs"
-	"Squire/ui/custom_widgets"
-
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/data/binding"
+	"fyne.io/fyne/v2/layout"
 	widget "fyne.io/fyne/v2/widget"
 	"github.com/go-vgo/robotgo"
 )
@@ -19,64 +16,105 @@ var (
 )
 
 type Ui struct {
-	win fyne.Window
+	Window   fyne.Window
+	MainMenu *fyne.MainMenu
+	*EditorUi
+	*MainUi
+}
 
-	mui *macroUi
-	at  *actionTabs
-
-	p *programs.Program
+type MainUi struct {
+	fyne.CanvasObject
+	Mui        *MacroUi
+	ActionTabs *ActionTabs
 }
 
 func GetUi() *Ui { return ui }
 func InitializeUi(w fyne.Window) *Ui {
 	ui = &Ui{
-		win: w,
-		mui: &macroUi{
-			mtabs: NewMacroTabs(),
+		Window:   w,
+		MainMenu: new(fyne.MainMenu),
+		EditorUi: &EditorUi{
+			CanvasObject:    new(fyne.Container),
+			NavButton:       new(widget.Button),
+			AddButton:       new(widget.Button),
+			RemoveButton:    new(widget.Button),
+			ProgramSelector: new(widget.SelectEntry),
+			EditorTabs: struct {
+				*container.AppTabs
+				ProgramsTab    *EditorTab
+				ItemsTab       *EditorTab
+				PointsTab      *EditorTab
+				SearchAreasTab *EditorTab
+				AutoPicTab     *EditorTab
+			}{
+				AppTabs: new(container.AppTabs),
+				ProgramsTab: &EditorTab{
+					Widgets: make(map[string]fyne.Widget),
+				},
+				ItemsTab: &EditorTab{
+					Widgets: make(map[string]fyne.Widget),
+				},
+				PointsTab: &EditorTab{
+					Widgets: make(map[string]fyne.Widget),
+				},
+				SearchAreasTab: &EditorTab{
+					Widgets: make(map[string]fyne.Widget),
+				},
+				AutoPicTab: &EditorTab{
+					Widgets: make(map[string]fyne.Widget),
+				},
+			},
 		},
-		at: &actionTabs{
-			AppTabs:           &container.AppTabs{},
-			boundTimeSlider:   widget.NewSliderWithData(0.0, 1000.0, binding.NewFloat()),
-			boundTimeEntry:    &widget.Entry{},
-			boundMoveXSlider:  widget.NewSliderWithData(-1.0, float64(config.MonitorWidth), binding.NewFloat()),
-			boundMoveYSlider:  widget.NewSliderWithData(-1.0, float64(config.MonitorHeight), binding.NewFloat()),
-			boundMoveXEntry:   widget.NewEntryWithData(binding.NewString()),
-			boundMoveYEntry:   widget.NewEntryWithData(binding.NewString()),
-			boundPointList:    &widget.List{},
-			boundButtonToggle: custom_widgets.NewToggleWithData(binding.NewBool()),
-			boundKeySelect:    widget.NewSelectWithData([]string{"ctrl", "alt", "shift"}, binding.NewString()),
-			boundStateToggle:  custom_widgets.NewToggleWithData(binding.NewBool()),
-
-			boundLoopNameEntry: widget.NewEntryWithData(binding.NewString()),
-			boundCountSlider:   widget.NewSliderWithData(1, 10, binding.IntToFloat(binding.NewInt())),
-			boundCountLabel:    widget.NewLabelWithData(binding.NewString()),
-
-			boundTargetsGridSearchBar:            &widget.Entry{},
-			boundTargetsGrid:                     &widget.GridWrap{},
-			boundImageSearchNameEntry:            widget.NewEntryWithData(binding.NewString()),
-			boundImageSearchAreaList:             &widget.List{},
-			boundImageSearchSearchAreaStringList: binding.BindStringList(&[]string{}),
-			boundOCRTargetEntry:                  &widget.Entry{},
-			boundOCRSearchAreaSelect:             &widget.Select{},
+		MainUi: &MainUi{
+			CanvasObject: new(fyne.Container),
+			Mui: &MacroUi{
+				MTabs:             NewMacroTabs(),
+				MacroSelectButton: new(widget.Button),
+				MacroToolbars: struct {
+					TopToolbar    *fyne.Container
+					BottomToolbar *fyne.Container
+				}{
+					TopToolbar:    new(fyne.Container),
+					BottomToolbar: new(fyne.Container),
+				},
+			},
+			ActionTabs: newActionTabs(),
 		},
 	}
 	return ui
 }
 func (u *Ui) ConstructUi() {
-	// assets.UnmarshalItemsFromJson()
-	hs := container.NewHSplit(u.at, u.mui.constructMacroUi())
-	hs.SetOffset(0.3333333333333333333333333333333333333)
-	u.win.SetMainMenu(u.createMainMenu())
-	u.at.constructActionSettingsTabs()
-	u.win.SetContent(
-		hs,
+	// construct main screen
+	u.MainUi.CanvasObject =
+		container.NewHSplit(
+			u.constructActionTabs(), u.constructMacroUi(),
+		)
+	u.MainUi.CanvasObject.(*container.Split).SetOffset(0.3)
+
+	// construct editor screen
+	u.EditorUi.CanvasObject = container.NewBorder(
+		nil,
+		container.NewBorder(
+			nil, nil,
+			ui.EditorUi.NavButton,
+			container.NewHBox(ui.EditorUi.AddButton, layout.NewSpacer(), ui.EditorUi.RemoveButton),
+			layout.NewSpacer(), ui.EditorUi.ProgramSelector,
+		),
+		nil,
+		nil,
+		ui.EditorUi.EditorTabs,
 	)
+	u.constructEditorTabs()
+	u.constructNavButton()
+	u.constructAddButton()
+	u.constructRemoveButton()
+	// construct main menu
+	u.Window.SetMainMenu(u.constructMainMenu())
+
 	toggleMousePos()
 }
 
-func (u *Ui) SetWindow(w fyne.Window)    { u.win = w }
-func (u *Ui) SetCurrentProgram(s string) { u.p = programs.GetPrograms().GetProgram(s) }
-
+// widget.NewSelect(repositories.ProgramRepo().GetAllAsStringSlice(), func(s string) {}),
 func toggleMousePos() {
 	locX, locY := robotgo.Location()
 	blocX, blocY := binding.BindInt(&locX), binding.BindInt(&locY)
