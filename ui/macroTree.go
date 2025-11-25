@@ -1,24 +1,26 @@
 package ui
 
 import (
-	"Squire/internal/programs/actions"
-	"Squire/internal/programs/macro"
+	"Squire/internal/models"
+	"Squire/internal/models/actions"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 )
 
-var selectedTreeItem = ""
+// var selectedTreeItem = ""
 
 type MacroTree struct {
 	widget.Tree
-	Macro *macro.Macro
+	Macro        *models.Macro
+	SelectedNode string
 }
 
-func NewMacroTree(m *macro.Macro) *MacroTree {
+func NewMacroTree(m *models.Macro) *MacroTree {
 	t := &MacroTree{}
 	t.ExtendBaseWidget(t)
 	t.Macro = m
@@ -72,52 +74,27 @@ func (mt *MacroTree) setTree() {
 		return ok
 	}
 	mt.CreateNode = func(branch bool) fyne.CanvasObject {
-		return container.NewHBox(widget.NewLabel("Template"), layout.NewSpacer(), &widget.Button{Icon: theme.CancelIcon(), Importance: widget.LowImportance})
+		return container.NewHBox(ttwidget.NewIcon(theme.ErrorIcon()), widget.NewLabel("Template"), layout.NewSpacer(), &widget.Button{Icon: theme.CancelIcon(), Importance: widget.LowImportance})
 	}
 	mt.UpdateNode = func(uid string, branch bool, obj fyne.CanvasObject) {
 		node := mt.Macro.Root.GetAction(uid)
 
 		c := obj.(*fyne.Container)
-		label := c.Objects[0].(*widget.Label)
-		removeButton := c.Objects[2].(*widget.Button)
+		icon := c.Objects[0].(*ttwidget.Icon)
+		label := c.Objects[1].(*widget.Label)
+		removeButton := c.Objects[3].(*widget.Button)
 
 		label.SetText(node.String())
+		icon.SetResource(node.Icon())
+		icon.SetToolTip(node.GetType())
 
 		removeButton.OnTapped = func() {
 			node.GetParent().RemoveSubAction(node)
 			mt.RefreshItem(uid)
 			if len(mt.Macro.Root.SubActions) == 0 {
-				selectedTreeItem = ""
+				mt.SelectedNode = ""
 			}
 		}
 		removeButton.Show()
-	}
-	mt.OnSelected = func(uid widget.TreeNodeID) {
-		selectedTreeItem = uid
-		switch node := mt.Macro.Root.GetAction(uid).(type) {
-		case *actions.Wait:
-			bindAction(node)
-			GetUi().at.SelectIndex(waittab)
-		case *actions.Move:
-			bindAction(node)
-			GetUi().at.SelectIndex(movetab)
-		case *actions.Click:
-			bindAction(node)
-			GetUi().at.SelectIndex(clicktab)
-		case *actions.Key:
-			bindAction(node)
-			GetUi().at.SelectIndex(keytab)
-
-		case *actions.Loop:
-			bindAction(node)
-			GetUi().at.SelectIndex(looptab)
-		case *actions.ImageSearch:
-			bindAction(node)
-			GetUi().at.boundTargetsGrid.Refresh()
-			GetUi().at.SelectIndex(imagesearchtab)
-		case *actions.Ocr:
-			bindAction(node)
-			GetUi().at.SelectIndex(ocrtab)
-		}
 	}
 }

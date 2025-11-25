@@ -12,3 +12,6 @@ notes.md
 *.test
 /internal/assets/images/meta/
 /fyne-cross/
+/.vscode
+/.kiro
+sqyre
