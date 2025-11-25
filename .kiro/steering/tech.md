@@ -15,7 +15,6 @@ inclusion: always
 - **Robotgo v1.0.0-rc2.1** - Mouse/keyboard automation and screen capture
 - **GoCV v0.41.0** - OpenCV bindings for computer vision and image matching
 - **Gosseract v2.4.1** - Tesseract OCR bindings for text recognition
-- **Viper v1.20.1** - Configuration management (YAML/JSON)
 - **gohook** - Global hotkey detection
 
 ## Build System

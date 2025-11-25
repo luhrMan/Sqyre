@@ -47,8 +47,6 @@ Models use repository pattern for persistence:
 - `repositories.MacroRepo()` - Manages macro definitions
 - `repositories.ProgramRepo()` - Manages program-specific configurations
 
-Repositories handle encoding/decoding via Viper with custom decode hooks.
-
 ### Service Layer
 
 Services in `internal/services/`:
