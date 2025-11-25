@@ -76,13 +76,13 @@ func match(img, imgDraw gocv.Mat, a *actions.ImageSearch) map[string][]robotgo.P
 			if err != nil {
 				log.Println("could not find variants for item during image search")
 			}
-			
+
 			// Accumulate all matches for this item across all variants
 			allMatches := []robotgo.Point{}
-			
+
 			for _, v := range variants { // search for the item variants also
 				ip := programName + config.ProgramDelimiter + itemName + config.ProgramDelimiter + v + config.PNG
-				
+
 				// Load icon on-demand from cache
 				resource := assets.GetFyneResource(ip)
 				if resource == nil {
@@ -90,7 +90,7 @@ func match(img, imgDraw gocv.Mat, a *actions.ImageSearch) map[string][]robotgo.P
 					continue
 				}
 				b := resource.Content()
-				
+
 				template := gocv.NewMat()
 				defer template.Close()
 				err = gocv.IMDecodeIntoMat(b, gocv.IMReadColor, &template)
@@ -101,7 +101,8 @@ func match(img, imgDraw gocv.Mat, a *actions.ImageSearch) map[string][]robotgo.P
 				}
 				// tmask := gocv.IMRead(path+"templates"+size+"-tmask"+config.PNG, gocv.IMReadColor)
 				tmask := gocv.NewMat()
-				cmask := *program.GetMasks()["item-corner"](template.Rows(), template.Cols(), i.GridSize[0], i.GridSize[1])
+				// cmask := *program.GetMasks()["item-corner"](template.Rows(), template.Cols(), i.GridSize[0], i.GridSize[1])
+				cmask := gocv.NewMat()
 
 				defer tmask.Close()
 				defer cmask.Close()
@@ -121,7 +122,7 @@ func match(img, imgDraw gocv.Mat, a *actions.ImageSearch) map[string][]robotgo.P
 				allMatches = append(allMatches, matches...)
 				DrawFoundMatches(matches, template.Cols(), template.Rows(), imgDraw, i.Name) // xSize*i.GridSize[0], ySize*i.GridSize[1]
 			}
-			
+
 			// Store accumulated matches once per item
 			resultsMutex.Lock()
 			results[t] = allMatches
