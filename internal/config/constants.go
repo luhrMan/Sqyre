@@ -1,15 +1,20 @@
 package config
 
+import (
+	"log"
+	"os"
+	"path/filepath"
+)
+
 const (
-	RootPath              string = "./"
-	UpDir                        = "../"
-	InternalPath                 = "internal/"
-	AssetsPath                   = InternalPath + "assets/"
-	ImagesPath                   = AssetsPath + "images/"
-	MetaImagesPath               = ImagesPath + "meta/"
-	MaskImagesPath               = ImagesPath + "masks/"
-	CalibrationImagesPath        = ImagesPath + "calibration/"
-	DarkAndDarker                = "dark and darker"
+	// User directory structure
+	SqyreDir           = "Sqyre"
+	UserImagesDir      = "images"
+	UserAutoPicDir     = "AutoPic"
+	UserIconsDir       = "icons"
+	UserMasksDir       = "masks"
+	UserMetaDir        = "meta"
+	UserCalibrationDir = "calibration"
 
 	Scr                   = "screen"
 	Inv                   = "inventory"
@@ -29,19 +34,70 @@ const (
 	GOB  = ".gob"
 	JSON = ".json"
 	YAML = ".yaml"
+
+	// Icon variant constants
+	IconThumbnailSize = 64  // pixels for thumbnail display
+	MaxIconVariants   = 100 // maximum variants per item
+
+	//since I have refactored the code to account for multiple programs at once,
+	// I need to append the program name to the program properties names,
+	// this is the delimiter between the program name and the property name
+	// e.g. dark and darker|Health potion
+	ProgramDelimiter = "|"
 )
 
-var Emojis = map[string]string{
-	"Move":         "↔️",
-	"Click":        "🖱️",
-	"Key":          "⌨️",
-	"Wait":         "⏳",
-	"Image Search": "🔍",
-	"OCR":          "🔬",
-	"Loop":         "🔁",
-	"Conditional":  "❓",
+// GetIconsPath returns the path to the icons directory in the user's home directory
+// Returns: ~/Sqyre/images/icons/
+func GetIconsPath() string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		log.Fatalf("Could not get user home directory: %v", err)
+	}
+	return filepath.Join(homeDir, SqyreDir, UserImagesDir, UserIconsDir)
 }
 
-func GetEmoji(key string) string {
-	return Emojis[key]
+func GetMasksPath() string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		log.Fatalf("Could not get user home directory: %v", err)
+	}
+	return filepath.Join(homeDir, SqyreDir, UserImagesDir, UserMasksDir)
+}
+
+func GetMetaPath() string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		log.Fatalf("Could not get user home directory: %v", err)
+	}
+	return filepath.Join(homeDir, SqyreDir, UserImagesDir, UserMetaDir)
+}
+
+func GetAutoPicPath() string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		log.Fatalf("Could not get user home directory: %v", err)
+	}
+	return filepath.Join(homeDir, SqyreDir, UserImagesDir, UserAutoPicDir)
+}
+
+// InitializeDirectories creates the necessary directories in the user's home directory
+// Creates: ~/Sqyre/images/icons/
+func InitializeDirectories() error {
+	iconsPath := GetIconsPath()
+	autoPicPath := GetAutoPicPath()
+
+	// Create all parent directories as needed
+	if err := os.MkdirAll(iconsPath, 0755); err != nil {
+		log.Printf("Failed to create icons directory at %s: %v", iconsPath, err)
+		return err
+	}
+
+	if err := os.MkdirAll(autoPicPath, 0755); err != nil {
+		log.Printf("Failed to create AutoPic directory at %s: %v", autoPicPath, err)
+		return err
+	}
+
+	log.Printf("Initialized directory structure at: %s", iconsPath)
+	log.Printf("Initialized AutoPic directory at: %s", autoPicPath)
+	return nil
 }
