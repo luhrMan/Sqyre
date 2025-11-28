@@ -35,6 +35,7 @@ type EditorUi struct {
 		PointsTab      *EditorTab
 		SearchAreasTab *EditorTab
 		AutoPicTab     *EditorTab
+		MasksTab       *EditorTab
 	}
 }
 type EditorTab struct {
@@ -45,7 +46,7 @@ type EditorTab struct {
 
 	Widgets      map[string]fyne.Widget
 	SelectedItem any
-	previewImage *canvas.Image // For AutoPic tab
+	PreviewImage *canvas.Image // For AutoPic tab and other tabs with preview
 }
 
 func NewEditorTab(name string, left, right *fyne.Container) *container.TabItem {
@@ -169,7 +170,7 @@ func (u *Ui) constructEditorTabs() {
 	searchAreaPreviewImage.SetMinSize(fyne.NewSize(400, 300))
 
 	// Store the image reference in the tab for later access
-	et.SearchAreasTab.previewImage = searchAreaPreviewImage
+	et.SearchAreasTab.PreviewImage = searchAreaPreviewImage
 
 	et.SearchAreasTab.TabItem = NewEditorTab(
 		"Search Areas",
@@ -194,7 +195,7 @@ func (u *Ui) constructEditorTabs() {
 	previewImage.SetMinSize(fyne.NewSize(400, 300))
 
 	// Store the image reference in the tab for later access
-	et.AutoPicTab.previewImage = previewImage
+	et.AutoPicTab.PreviewImage = previewImage
 
 	// Initially disable save button
 	atw["saveButton"].(*widget.Button).Disable()
@@ -217,11 +218,30 @@ func (u *Ui) constructEditorTabs() {
 		),
 	)
 
+	//===========================================================================================================MASKS
+	mtw := et.MasksTab.Widgets
+	mtw[acc] = widget.NewAccordion()
+
+	// Create preview image for Masks tab
+	masksPreviewImage := canvas.NewImageFromImage(nil)
+	masksPreviewImage.FillMode = canvas.ImageFillContain
+	masksPreviewImage.SetMinSize(fyne.NewSize(400, 300))
+
+	// Store the image reference in the tab for later access
+	et.MasksTab.PreviewImage = masksPreviewImage
+
+	et.MasksTab.TabItem = NewEditorTab(
+		"Masks",
+		container.NewBorder(nil, nil, nil, nil, mtw[acc]),
+		container.NewBorder(nil, nil, nil, nil, masksPreviewImage),
+	)
+
 	et.Append(et.ProgramsTab.TabItem)
 	et.Append(et.ItemsTab.TabItem)
 	et.Append(et.PointsTab.TabItem)
 	et.Append(et.SearchAreasTab.TabItem)
 	et.Append(et.AutoPicTab.TabItem)
+	et.Append(et.MasksTab.TabItem)
 }
 
 func (u *Ui) constructNavButton() {
@@ -408,7 +428,7 @@ func (u *Ui) UpdateAutoPicPreview(searchArea *models.SearchArea) {
 	}
 
 	// Update preview image
-	if previewImage := u.EditorTabs.AutoPicTab.previewImage; previewImage != nil {
+	if previewImage := u.EditorTabs.AutoPicTab.PreviewImage; previewImage != nil {
 		previewImage.Image = captureImg
 		previewImage.Refresh()
 	} else {
@@ -417,7 +437,7 @@ func (u *Ui) UpdateAutoPicPreview(searchArea *models.SearchArea) {
 }
 
 func (u *Ui) clearPreviewImage() {
-	if previewImage := u.EditorTabs.AutoPicTab.previewImage; previewImage != nil {
+	if previewImage := u.EditorTabs.AutoPicTab.PreviewImage; previewImage != nil {
 		previewImage.Image = nil
 		previewImage.Refresh()
 	}
@@ -452,7 +472,7 @@ func (u *Ui) UpdateSearchAreaPreview(searchArea *models.SearchArea) {
 
 	if w <= 0 || h <= 0 {
 		u.clearSearchAreaPreviewImage()
-		u.EditorTabs.SearchAreasTab.previewImage.Resource = theme.BrokenImageIcon()
+		u.EditorTabs.SearchAreasTab.PreviewImage.Resource = theme.BrokenImageIcon()
 		u.ErrorPopUp(fmt.Sprintf("SearchArea: Invalid search area dimensions - width: %d, height: %d (area: %s)", w, h, searchArea.Name))
 		// label := widget.NewLabel(fmt.Sprintf("SearchArea: Invalid search area dimensions - width: %d, height: %d (area: %s)", w, h, searchArea.Name))
 		// label.Importance = widget.DangerImportance
@@ -512,7 +532,7 @@ func (u *Ui) UpdateSearchAreaPreview(searchArea *models.SearchArea) {
 	}
 
 	// Update preview image
-	if previewImage := u.EditorTabs.SearchAreasTab.previewImage; previewImage != nil {
+	if previewImage := u.EditorTabs.SearchAreasTab.PreviewImage; previewImage != nil {
 		previewImage.Image = captureImg
 		previewImage.Refresh()
 	} else {
@@ -521,7 +541,7 @@ func (u *Ui) UpdateSearchAreaPreview(searchArea *models.SearchArea) {
 }
 
 func (u *Ui) clearSearchAreaPreviewImage() {
-	if previewImage := u.EditorTabs.SearchAreasTab.previewImage; previewImage != nil {
+	if previewImage := u.EditorTabs.SearchAreasTab.PreviewImage; previewImage != nil {
 		// previewImage.Image = nil
 		// previewImage.Resource = nil
 		previewImage = nil
@@ -536,7 +556,7 @@ func (u *Ui) RefreshAutoPicSearchAreas() {
 		saveButton.Disable()
 	}
 	// Clear preview image
-	if previewImage := u.EditorTabs.AutoPicTab.previewImage; previewImage != nil {
+	if previewImage := u.EditorTabs.AutoPicTab.PreviewImage; previewImage != nil {
 		previewImage.Image = nil
 		previewImage.Refresh()
 	}
