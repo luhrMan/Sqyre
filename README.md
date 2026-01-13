@@ -1,11 +1,3 @@
-# TODO:
-
-- get a kanban lol
-- change tree updates to data listeners; if the user wants to add an action, hit the deselect button to prevent updates to selected item
-- add copy action button
-
-~~This tool only works on 2560 x 1440 because of hard-set values. Feature Matching should allow for scale variant image matching. The color matching might also work.~~
-
 # What is it
 
 Squire is a Macro Builder built for Dark and Darker. Squire is written using GO, with a few notable libraries:
@@ -27,6 +19,8 @@ The structure of the fyne `widget.Tree`:
     - `Move`: move the mouse to specific coordinates
     - `Key`: Set a key state Up/Down
     - `Wait`: Wait for time set in milliseconds
+
+<img width="2562" height="1362" alt="Screenshot from 2026-01-13 13-09-30" src="https://github.com/user-attachments/assets/53acf1a0-bc89-43d9-a7ab-856b46c3be63" />
 
 # Why
 
