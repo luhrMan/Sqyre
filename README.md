@@ -20,7 +20,11 @@ The structure of the fyne `widget.Tree`:
     - `Key`: Set a key state Up/Down
     - `Wait`: Wait for time set in milliseconds
 
+# Main Screen
 <img width="2562" height="1362" alt="Screenshot from 2026-01-13 13-09-30" src="https://github.com/user-attachments/assets/53acf1a0-bc89-43d9-a7ab-856b46c3be63" />
+
+# ImageSearch in action
+![sqyre-imagesearch](https://github.com/user-attachments/assets/1a0fc8f4-06bb-4667-bb49-b1c4b2d5b508)
 
 # Why
 
