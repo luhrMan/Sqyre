@@ -232,6 +232,17 @@ func setEditorForms() {
 				log.Printf("Error saving program %s: %v", p, err)
 				return
 			}
+			
+			// Update point preview after form submission
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						log.Printf("Point: Preview update panic recovered after form update - %v (point: %s)", r, v.Name)
+					}
+				}()
+				ui.GetUi().UpdatePointPreview(v)
+			}()
+			
 			t := w[program.Name+"-searchbar"].(*widget.Entry).Text
 			w[program.Name+"-searchbar"].(*widget.Entry).SetText("random string of text for refreshing because poop")
 			w[program.Name+"-searchbar"].(*widget.Entry).SetText(t)
