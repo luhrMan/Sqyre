@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"image/color"
 	"os"
 	"path/filepath"
 	"time"
@@ -20,6 +21,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 	fynetooltip "github.com/dweymouth/fyne-tooltip"
 	"github.com/go-vgo/robotgo"
+	"gocv.io/x/gocv"
 )
 
 type EditorUi struct {
@@ -141,10 +143,25 @@ func (u *Ui) constructEditorTabs() {
 	)
 
 	ptw[form].(*widget.Form).SubmitText = "Update"
+
+	// Create preview image for Points tab
+	pointPreviewImage := canvas.NewImageFromImage(nil)
+	pointPreviewImage.FillMode = canvas.ImageFillContain
+	pointPreviewImage.SetMinSize(fyne.NewSize(400, 300))
+
+	// Store the image reference in the tab for later access
+	et.PointsTab.previewImage = pointPreviewImage
+
 	et.PointsTab.TabItem = NewEditorTab(
 		"Points",
 		container.NewBorder(nil, nil, nil, nil, ptw[acc]),
-		container.NewBorder(nil, nil, nil, nil, ptw[form]),
+		container.NewBorder(
+			ptw[form],
+			nil,
+			nil,
+			nil,
+			pointPreviewImage,
+		),
 	)
 
 	//===========================================================================================================SEARCHAREAS
@@ -525,6 +542,93 @@ func (u *Ui) clearSearchAreaPreviewImage() {
 		// previewImage.Image = nil
 		// previewImage.Resource = nil
 		previewImage = nil
+		previewImage.Refresh()
+	}
+}
+
+func (u *Ui) UpdatePointPreview(point *models.Point) {
+	// Validate point
+	if point == nil {
+		dialog.ShowError(errors.New("Point: Cannot update preview - point is nil"), u.Window)
+		return
+	}
+
+	// Validate coordinates are within reasonable bounds
+	screenWidth := config.MonitorWidth
+	screenHeight := config.MonitorHeight
+
+	if point.X < 0 || point.Y < 0 ||
+		point.X > screenWidth || point.Y > screenHeight {
+		dialog.ShowError(fmt.Errorf("Point: Point coordinates out of screen bounds - screen: %dx%d, point: (%d,%d) (point: %s)",
+			screenWidth, screenHeight, point.X, point.Y, point.Name), u.Window)
+		u.clearPointPreviewImage()
+		return
+	}
+
+	// Calculate capture coordinates with offsets
+	captureX := config.XOffset
+	captureY := config.YOffset
+
+	// Attempt to capture the full screen with error recovery
+	defer func() {
+		if r := recover(); r != nil {
+			dialog.ShowError(fmt.Errorf("Point: Screen capture panic recovered - %v (point: %s)", r, point.Name), u.Window)
+			u.clearPointPreviewImage()
+		}
+	}()
+
+	captureImg := robotgo.CaptureImg(captureX, captureY, screenWidth, screenHeight)
+
+	// Validate the captured image
+	if captureImg == nil {
+		dialog.ShowError(fmt.Errorf("Point: Screen capture returned nil image (point: %s)", point.Name), u.Window)
+		u.clearPointPreviewImage()
+		return
+	}
+
+	// Convert to gocv Mat for drawing
+	mat, err := gocv.ImageToMatRGB(captureImg)
+	if err != nil {
+		dialog.ShowError(fmt.Errorf("Point: Error converting image to Mat - %v (point: %s)", err, point.Name), u.Window)
+		u.clearPointPreviewImage()
+		return
+	}
+	defer mat.Close()
+
+	// Draw red marker at point coordinates
+	// Draw a circle with crosshair for visibility
+	center := image.Point{X: point.X, Y: point.Y}
+	redColor := color.RGBA{R: 255, A: 255}
+	
+	// Draw circle
+	gocv.Circle(&mat, center, 8, redColor, 2)
+	
+	// Draw crosshair lines
+	// Horizontal line
+	gocv.Line(&mat, image.Point{X: point.X - 15, Y: point.Y}, image.Point{X: point.X + 15, Y: point.Y}, redColor, 2)
+	// Vertical line
+	gocv.Line(&mat, image.Point{X: point.X, Y: point.Y - 15}, image.Point{X: point.X, Y: point.Y + 15}, redColor, 2)
+
+	// Convert back to image.Image
+	previewImg, err := mat.ToImage()
+	if err != nil {
+		dialog.ShowError(fmt.Errorf("Point: Error converting Mat to image - %v (point: %s)", err, point.Name), u.Window)
+		u.clearPointPreviewImage()
+		return
+	}
+
+	// Update preview image
+	if previewImage := u.EditorTabs.PointsTab.previewImage; previewImage != nil {
+		previewImage.Image = previewImg
+		previewImage.Refresh()
+	} else {
+		dialog.ShowError(errors.New("Point: Preview image widget is nil"), u.Window)
+	}
+}
+
+func (u *Ui) clearPointPreviewImage() {
+	if previewImage := u.EditorTabs.PointsTab.previewImage; previewImage != nil {
+		previewImage.Image = nil
 		previewImage.Refresh()
 	}
 }
