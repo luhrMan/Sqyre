@@ -11,6 +11,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
@@ -113,6 +114,58 @@ func setEditorForms() {
 			updateProgramSelectorOptions()
 		}
 	}
+	// Set up tag entry handler for adding new tags
+	if tagEntry, ok := et.ItemsTab.Widgets["tagEntry"].(*widget.Entry); ok {
+		tagEntry.OnSubmitted = func(tagText string) {
+			if tagText == "" {
+				return
+			}
+
+			// Trim whitespace
+			tagText = strings.TrimSpace(tagText)
+			if tagText == "" {
+				return
+			}
+
+			if v, ok := et.ItemsTab.SelectedItem.(*models.Item); ok {
+				// Check if tag already exists (avoid duplicates)
+				for _, existingTag := range v.Tags {
+					if existingTag == tagText {
+						return // Tag already exists, do nothing
+					}
+				}
+
+				// Add the tag
+				v.Tags = append(v.Tags, tagText)
+
+				// Save the item
+				p := ui.GetUi().ProgramSelector.Text
+				program, err := repositories.ProgramRepo().Get(p)
+				if err != nil {
+					log.Printf("Error getting program %s: %v", p, err)
+					return
+				}
+
+				if err := program.ItemRepo().Set(v.Name, v); err != nil {
+					log.Printf("Error saving item %s: %v", v.Name, err)
+					dialog.ShowError(errors.New("failed to save item"), ui.GetUi().Window)
+					return
+				}
+
+				if err := repositories.ProgramRepo().Set(program.Name, program); err != nil {
+					log.Printf("Error saving program %s: %v", p, err)
+					return
+				}
+
+				// Refresh the tags display
+				updateTagsDisplay(v)
+
+				// Clear the entry field
+				tagEntry.SetText("")
+			}
+		}
+	}
+
 	et.ItemsTab.Widgets["Form"].(*widget.Form).OnSubmit = func() {
 		w := et.ItemsTab.Widgets
 		n := w["Name"].(*widget.Entry).Text
@@ -361,6 +414,8 @@ func setEditorButtons() {
 				dialog.ShowError(err, ui.GetUi().Window)
 				return
 			}
+			// Set the selected item so tag operations work correctly
+			ui.GetUi().EditorTabs.ItemsTab.SelectedItem = i
 			v := i
 			ui.GetUi().EditorTabs.ItemsTab.Widgets["Name"].(*widget.Entry).SetText(v.Name)
 			t := ui.GetUi().EditorTabs.ItemsTab.Widgets[program+"-searchbar"].(*widget.Entry).Text

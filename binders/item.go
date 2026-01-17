@@ -33,6 +33,9 @@ func setItemsWidgets(i models.Item) {
 	// it["Tags"].(*widget.Entry).Bind(c.(binding.String))
 	it["StackMax"].(*widget.Entry).SetText(strconv.Itoa(i.StackMax))
 
+	// Update tags display
+	updateTagsDisplay(&i)
+
 	// Update IconVariantEditor with selected item
 	if editor, ok := it["iconVariantEditor"].(*custom_widgets.IconVariantEditor); ok {
 		programName := ui.GetUi().ProgramSelector.Text
@@ -48,6 +51,66 @@ func setItemsWidgets(i models.Item) {
 		// Update both program and item at once to avoid double refresh
 		editor.SetProgramAndItem(programName, baseName)
 	}
+}
+
+// updateTagsDisplay updates the tags grid container with the current item's tags
+func updateTagsDisplay(item *models.Item) {
+	it := ui.GetUi().EditorTabs.ItemsTab.Widgets
+	tagsContainer, ok := it["Tags"].(*fyne.Container)
+	if !ok {
+		return
+	}
+
+	// Clear existing tags
+	tagsContainer.Objects = []fyne.CanvasObject{}
+
+	// Add each tag as a label with a remove button
+	for _, tag := range item.Tags {
+		tagLabel := widget.NewLabel(tag)
+		removeButton := widget.NewButtonWithIcon("", theme.DeleteIcon(), func() {
+			removeTag(item, tag)
+		})
+		removeButton.Importance = widget.LowImportance
+
+		// Create horizontal container for tag label and remove button
+		tagContainer := container.NewHBox(tagLabel, removeButton)
+		tagsContainer.Add(tagContainer)
+	}
+
+	tagsContainer.Refresh()
+}
+
+// removeTag removes a tag from the current item and saves it
+func removeTag(item *models.Item, tagToRemove string) {
+	// Remove the tag from the slice
+	newTags := []string{}
+	for _, tag := range item.Tags {
+		if tag != tagToRemove {
+			newTags = append(newTags, tag)
+		}
+	}
+	item.Tags = newTags
+
+	// Save the item
+	p := ui.GetUi().ProgramSelector.Text
+	program, err := repositories.ProgramRepo().Get(p)
+	if err != nil {
+		log.Printf("Error getting program %s: %v", p, err)
+		return
+	}
+
+	if err := program.ItemRepo().Set(item.Name, item); err != nil {
+		log.Printf("Error saving item %s: %v", item.Name, err)
+		return
+	}
+
+	if err := repositories.ProgramRepo().Set(program.Name, program); err != nil {
+		log.Printf("Error saving program %s: %v", p, err)
+		return
+	}
+
+	// Update the tags display
+	updateTagsDisplay(item)
 }
 
 func RefreshItemsAccordionItems() {
