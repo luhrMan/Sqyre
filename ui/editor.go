@@ -45,7 +45,7 @@ type EditorTab struct {
 	Left  *fyne.Container
 	Right *fyne.Container
 
-	Widgets      map[string]fyne.Widget
+	Widgets      map[string]fyne.CanvasObject
 	SelectedItem any
 	previewImage *canvas.Image // For AutoPic tab
 }
@@ -100,7 +100,9 @@ func (u *Ui) constructEditorTabs() {
 	itw[name] = new(widget.Entry)
 	itw[cols] = new(widget.Entry)
 	itw[rows] = new(widget.Entry)
-	itw[tags] = widget.NewCard("test", "", nil)
+	itw["tagEntry"] = widget.NewEntry()
+	itw["tagEntry"].(*widget.Entry).PlaceHolder = "Enter tag name and press Enter"
+	itw[tags] = container.NewGridWithColumns(3) // Grid container for displaying tags
 	itw[sm] = new(widget.Entry)
 
 	// Create IconVariantEditor widget
@@ -117,7 +119,7 @@ func (u *Ui) constructEditorTabs() {
 		widget.NewFormItem(name, itw[name]),
 		widget.NewFormItem(cols, itw[cols]),
 		widget.NewFormItem(rows, itw[rows]),
-		widget.NewFormItem(tags, widget.NewEntry()),
+		widget.NewFormItem(tags, itw["tagEntry"]),
 		widget.NewFormItem("", itw[tags]),
 		widget.NewFormItem(sm, itw[sm]),
 		// widget.NewFormItem(m, ui.EditorTabs.ItemsTab.Widgets[m]),
@@ -457,6 +459,7 @@ func (u *Ui) ErrorPopUp(s string) {
 }
 
 func (u *Ui) UpdateSearchAreaPreview(searchArea *models.SearchArea) {
+	u.EditorTabs.SearchAreasTab.previewImage.Resource = nil
 	// Validate search area
 	if searchArea == nil {
 		dialog.ShowError(errors.New("SearchArea: Cannot update preview - search area is nil"), u.Window)
@@ -501,17 +504,8 @@ func (u *Ui) UpdateSearchAreaPreview(searchArea *models.SearchArea) {
 	}
 
 	// Calculate capture coordinates with offsets
-	captureX := searchArea.LeftX + config.XOffset
-	captureY := searchArea.TopY + config.YOffset
 
-	// Additional validation for capture coordinates
-	if captureX < 0 || captureY < 0 {
-		dialog.ShowError(fmt.Errorf("SearchArea: Invalid capture coordinates after offset - x: %d, y: %d (area: %s)", captureX, captureY, searchArea.Name), u.Window)
-		u.clearSearchAreaPreviewImage()
-		return
-	}
-
-	// Attempt to capture the screen area with error recovery
+	// Attempt to capture the full screen with error recovery
 	defer func() {
 		if r := recover(); r != nil {
 			dialog.ShowError(fmt.Errorf("SearchArea: Screen capture panic recovered - %v (area: %s)", r, searchArea.Name), u.Window)
@@ -519,7 +513,7 @@ func (u *Ui) UpdateSearchAreaPreview(searchArea *models.SearchArea) {
 		}
 	}()
 
-	captureImg := robotgo.CaptureImg(captureX, captureY, w, h)
+	captureImg := robotgo.CaptureImg(config.XOffset, config.YOffset, screenWidth, screenHeight)
 
 	// Validate the captured image
 	if captureImg == nil {
@@ -528,9 +522,31 @@ func (u *Ui) UpdateSearchAreaPreview(searchArea *models.SearchArea) {
 		return
 	}
 
+	// Convert to gocv Mat for drawing
+	mat, err := gocv.ImageToMatRGB(captureImg)
+	if err != nil {
+		dialog.ShowError(fmt.Errorf("SearchArea: Error converting image to Mat - %v (area: %s)", err, searchArea.Name), u.Window)
+		u.clearSearchAreaPreviewImage()
+		return
+	}
+	defer mat.Close()
+
+	// Draw red rectangle showing search area boundaries
+	rect := image.Rect(searchArea.LeftX, searchArea.TopY, searchArea.RightX, searchArea.BottomY)
+	redColor := color.RGBA{R: 255, A: 255}
+	gocv.Rectangle(&mat, rect, redColor, 2)
+
+	// Convert back to image.Image
+	previewImg, err := mat.ToImage()
+	if err != nil {
+		dialog.ShowError(fmt.Errorf("SearchArea: Error converting Mat to image - %v (area: %s)", err, searchArea.Name), u.Window)
+		u.clearSearchAreaPreviewImage()
+		return
+	}
+
 	// Update preview image
 	if previewImage := u.EditorTabs.SearchAreasTab.previewImage; previewImage != nil {
-		previewImage.Image = captureImg
+		previewImage.Image = previewImg
 		previewImage.Refresh()
 	} else {
 		dialog.ShowError(errors.New("SearchArea: Preview image widget is nil"), u.Window)
@@ -539,9 +555,7 @@ func (u *Ui) UpdateSearchAreaPreview(searchArea *models.SearchArea) {
 
 func (u *Ui) clearSearchAreaPreviewImage() {
 	if previewImage := u.EditorTabs.SearchAreasTab.previewImage; previewImage != nil {
-		// previewImage.Image = nil
-		// previewImage.Resource = nil
-		previewImage = nil
+		previewImage.Image = nil
 		previewImage.Refresh()
 	}
 }
@@ -565,10 +579,6 @@ func (u *Ui) UpdatePointPreview(point *models.Point) {
 		return
 	}
 
-	// Calculate capture coordinates with offsets
-	captureX := config.XOffset
-	captureY := config.YOffset
-
 	// Attempt to capture the full screen with error recovery
 	defer func() {
 		if r := recover(); r != nil {
@@ -577,7 +587,7 @@ func (u *Ui) UpdatePointPreview(point *models.Point) {
 		}
 	}()
 
-	captureImg := robotgo.CaptureImg(captureX, captureY, screenWidth, screenHeight)
+	captureImg := robotgo.CaptureImg(config.XOffset, config.YOffset, screenWidth, screenHeight)
 
 	// Validate the captured image
 	if captureImg == nil {
@@ -599,10 +609,10 @@ func (u *Ui) UpdatePointPreview(point *models.Point) {
 	// Draw a circle with crosshair for visibility
 	center := image.Point{X: point.X, Y: point.Y}
 	redColor := color.RGBA{R: 255, A: 255}
-	
+
 	// Draw circle
 	gocv.Circle(&mat, center, 8, redColor, 2)
-	
+
 	// Draw crosshair lines
 	// Horizontal line
 	gocv.Line(&mat, image.Point{X: point.X - 15, Y: point.Y}, image.Point{X: point.X + 15, Y: point.Y}, redColor, 2)
