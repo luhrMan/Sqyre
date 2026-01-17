@@ -49,19 +49,19 @@ func InitializeUi(w fyne.Window) *Ui {
 			}{
 				AppTabs: new(container.AppTabs),
 				ProgramsTab: &EditorTab{
-					Widgets: make(map[string]fyne.Widget),
+					Widgets: make(map[string]fyne.CanvasObject),
 				},
 				ItemsTab: &EditorTab{
-					Widgets: make(map[string]fyne.Widget),
+					Widgets: make(map[string]fyne.CanvasObject),
 				},
 				PointsTab: &EditorTab{
-					Widgets: make(map[string]fyne.Widget),
+					Widgets: make(map[string]fyne.CanvasObject),
 				},
 				SearchAreasTab: &EditorTab{
-					Widgets: make(map[string]fyne.Widget),
+					Widgets: make(map[string]fyne.CanvasObject),
 				},
 				AutoPicTab: &EditorTab{
-					Widgets: make(map[string]fyne.Widget),
+					Widgets: make(map[string]fyne.CanvasObject),
 				},
 			},
 		},
