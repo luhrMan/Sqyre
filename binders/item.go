@@ -14,12 +14,14 @@ import (
 	"slices"
 	"sort"
 	"strconv"
+	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+	xwidget "fyne.io/x/fyne/widget"
 	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 	"github.com/lithammer/fuzzysearch/fuzzy"
 )
@@ -30,7 +32,6 @@ func setItemsWidgets(i models.Item) {
 	it["Name"].(*widget.Entry).SetText(i.Name)
 	it["Cols"].(*widget.Entry).SetText(strconv.Itoa(i.GridSize[0]))
 	it["Rows"].(*widget.Entry).SetText(strconv.Itoa(i.GridSize[1]))
-	// it["Tags"].(*widget.Entry).Bind(c.(binding.String))
 	it["StackMax"].(*widget.Entry).SetText(strconv.Itoa(i.StackMax))
 
 	// Update tags display
@@ -109,8 +110,49 @@ func removeTag(item *models.Item, tagToRemove string) {
 		return
 	}
 
+	// Reload the item from the repository to ensure SelectedItem is in sync
+	updatedItem, err := program.ItemRepo().Get(item.Name)
+	if err != nil {
+		log.Printf("Error reloading item %s: %v", item.Name, err)
+		// Still update display with the modified item
+		updateTagsDisplay(item)
+		return
+	}
+
+	// Update the SelectedItem to the reloaded item
+	ui.GetUi().EditorTabs.ItemsTab.SelectedItem = updatedItem
+
 	// Update the tags display
-	updateTagsDisplay(item)
+	updateTagsDisplay(updatedItem)
+
+	// Refresh the tag entry's completion options to ensure deleted tags are removed from suggestions
+	it := ui.GetUi().EditorTabs.ItemsTab.Widgets
+	if tagEntry, ok := it["tagEntry"].(*xwidget.CompletionEntry); ok {
+		currentText := tagEntry.Text
+		// If there's text in the entry, refresh the completion options
+		if currentText != "" {
+			// Get fresh tags and filter them
+			allTags := getAllExistingTags()
+			searchLower := strings.ToLower(currentText)
+			matchingTags := []string{}
+			for _, tag := range allTags {
+				if strings.Contains(strings.ToLower(tag), searchLower) {
+					matchingTags = append(matchingTags, tag)
+				}
+			}
+			// Limit to 10 suggestions
+			if len(matchingTags) > 10 {
+				matchingTags = matchingTags[:10]
+			}
+			// Update the completion options with fresh data
+			tagEntry.SetOptions(matchingTags)
+			if len(matchingTags) > 0 {
+				tagEntry.ShowCompletion()
+			} else {
+				tagEntry.HideCompletion()
+			}
+		}
+	}
 }
 
 func RefreshItemsAccordionItems() {
@@ -413,9 +455,37 @@ func createProgramAccordionItem(program *models.Program) *widget.AccordionItem {
 				return
 			}
 			lists.filtered = []string{}
-			for _, i := range defaultList {
-				if fuzzy.MatchFold(s, i) {
-					lists.filtered = append(lists.filtered, i)
+			for _, baseName := range defaultList {
+				// Check if search term matches the base item name
+				if fuzzy.MatchFold(s, baseName) {
+					lists.filtered = append(lists.filtered, baseName)
+					continue
+				}
+
+				// Check if search term matches any of the item's tags
+				itemName, exists := baseNameToItemName[baseName]
+				if exists {
+					item, err := program.ItemRepo().Get(itemName)
+					if err == nil {
+						// Check each tag for a match
+						for _, tag := range item.Tags {
+							if fuzzy.MatchFold(s, tag) {
+								lists.filtered = append(lists.filtered, baseName)
+								break // Found a matching tag, no need to check more
+							}
+						}
+					}
+				} else {
+					// Fallback: try base name directly if not in mapping
+					item, err := program.ItemRepo().Get(baseName)
+					if err == nil {
+						for _, tag := range item.Tags {
+							if fuzzy.MatchFold(s, tag) {
+								lists.filtered = append(lists.filtered, baseName)
+								break
+							}
+						}
+					}
 				}
 			}
 		},
@@ -434,6 +504,31 @@ func createProgramAccordionItem(program *models.Program) *widget.AccordionItem {
 			lists.items,
 		),
 	)
+}
+
+// getAllExistingTags collects all unique tags from all items across all programs
+func getAllExistingTags() []string {
+	tagMap := make(map[string]bool)
+
+	for _, program := range repositories.ProgramRepo().GetAll() {
+		for _, itemName := range program.ItemRepo().GetAllKeys() {
+			item, err := program.ItemRepo().Get(itemName)
+			if err == nil {
+				for _, tag := range item.Tags {
+					tagMap[tag] = true
+				}
+			}
+		}
+	}
+
+	// Convert map to sorted slice
+	tags := make([]string, 0, len(tagMap))
+	for tag := range tagMap {
+		tags = append(tags, tag)
+	}
+	sort.Strings(tags)
+
+	return tags
 }
 
 // groupItemsByBaseName groups items by their base name (text before ProgramDelimiter)

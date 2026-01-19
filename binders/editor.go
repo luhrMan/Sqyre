@@ -8,13 +8,19 @@ import (
 	"Squire/ui"
 	"Squire/ui/custom_widgets"
 	"errors"
+	"fmt"
 	"log"
 	"os"
 	"strconv"
 	"strings"
 
+	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
+	xwidget "fyne.io/x/fyne/widget"
+	"github.com/go-vgo/robotgo"
+	hook "github.com/luhrMan/gohook"
 )
 
 func SetEditorUi() {
@@ -114,9 +120,14 @@ func setEditorForms() {
 			updateProgramSelectorOptions()
 		}
 	}
-	// Set up tag entry handler for adding new tags
-	if tagEntry, ok := et.ItemsTab.Widgets["tagEntry"].(*widget.Entry); ok {
-		tagEntry.OnSubmitted = func(tagText string) {
+	// Set up tag entry handler for adding new tags with completion
+	if tagEntry, ok := et.ItemsTab.Widgets["tagEntry"].(*xwidget.CompletionEntry); ok {
+		// Function to submit a tag (used by both Enter key and button)
+		submitTag := func() {
+			tagText := tagEntry.Text
+			// Hide completion popup when submitting
+			tagEntry.HideCompletion()
+
 			if tagText == "" {
 				return
 			}
@@ -164,6 +175,49 @@ func setEditorForms() {
 				tagEntry.SetText("")
 			}
 		}
+
+		// Set up OnChanged to show completion suggestions
+		tagEntry.OnChanged = func(text string) {
+			if text == "" {
+				tagEntry.HideCompletion()
+				return
+			}
+
+			// Get all existing tags
+			allTags := getAllExistingTags()
+
+			// Filter tags that match the search text (case-insensitive)
+			searchLower := strings.ToLower(text)
+			matchingTags := []string{}
+			for _, tag := range allTags {
+				if strings.Contains(strings.ToLower(tag), searchLower) {
+					matchingTags = append(matchingTags, tag)
+				}
+			}
+
+			// Limit to 10 suggestions
+			if len(matchingTags) > 10 {
+				matchingTags = matchingTags[:10]
+			}
+
+			if len(matchingTags) == 0 {
+				tagEntry.HideCompletion()
+				return
+			}
+
+			// Set options and show completion
+			tagEntry.SetOptions(matchingTags)
+			tagEntry.ShowCompletion()
+		}
+
+		tagEntry.OnSubmitted = func(tagText string) {
+			submitTag()
+		}
+
+		// Set up the submit button handler
+		if tagSubmitButton, ok := et.ItemsTab.Widgets["tagSubmitButton"].(*widget.Button); ok {
+			tagSubmitButton.OnTapped = submitTag
+		}
 	}
 
 	et.ItemsTab.Widgets["Form"].(*widget.Form).OnSubmit = func() {
@@ -172,7 +226,6 @@ func setEditorForms() {
 		x, _ := strconv.Atoi(w["Cols"].(*widget.Entry).Text)
 		y, _ := strconv.Atoi(w["Rows"].(*widget.Entry).Text)
 		sm, _ := strconv.Atoi(w["StackMax"].(*widget.Entry).Text)
-		// tags, _ := strconv.Atoi(w["Tags"].(*widget.Entry).Text)
 		if v, ok := et.ItemsTab.SelectedItem.(*models.Item); ok {
 			p := ui.GetUi().ProgramSelector.Text
 			program, err := repositories.ProgramRepo().Get(p)
@@ -285,7 +338,7 @@ func setEditorForms() {
 				log.Printf("Error saving program %s: %v", p, err)
 				return
 			}
-			
+
 			// Update point preview after form submission
 			func() {
 				defer func() {
@@ -295,12 +348,71 @@ func setEditorForms() {
 				}()
 				ui.GetUi().UpdatePointPreview(v)
 			}()
-			
+
 			t := w[program.Name+"-searchbar"].(*widget.Entry).Text
 			w[program.Name+"-searchbar"].(*widget.Entry).SetText("random string of text for refreshing because poop")
 			w[program.Name+"-searchbar"].(*widget.Entry).SetText(t)
 		}
 	}
+
+	// Set up record button handler for Points tab
+	if recordButton, ok := et.PointsTab.Widgets["recordButton"].(*widget.Button); ok {
+		recordButton.OnTapped = func() {
+			var dlg dialog.Dialog
+			content := container.NewVBox(
+				widget.NewLabel("Left click anwhere to record X and Y coordinates"),
+				widget.NewLabel("Right click to cancel"),
+			)
+
+			dlg = dialog.NewCustomWithoutButtons(
+				"Record Point Coordinates",
+				content,
+				ui.GetUi().Window,
+			)
+			// Set up a goroutine to detect a click outside the dialog and record the coordinates
+			go func() {
+				adjustedX, adjustedY := 0, 0
+				hook.Register(hook.MouseDown, []string{}, func(e hook.Event) {
+					switch e.Button {
+					case hook.MouseMap["left"]:
+						x, y := robotgo.Location()
+						adjustedX = x - config.XOffset
+						adjustedY = y - config.YOffset
+						fyne.CurrentApp().SendNotification(&fyne.Notification{
+							Title:   "Captured Point",
+							Content: fmt.Sprintf("X: %d, Y: %d", adjustedX, adjustedY),
+						})
+						if xEntry, ok := et.PointsTab.Widgets["X"].(*widget.Entry); ok {
+							xEntry.SetText(strconv.Itoa(adjustedX))
+						}
+						if yEntry, ok := et.PointsTab.Widgets["Y"].(*widget.Entry); ok {
+							yEntry.SetText(strconv.Itoa(adjustedY))
+						}
+						if point, ok := et.PointsTab.SelectedItem.(*models.Point); ok {
+							point.X = adjustedX
+							point.Y = adjustedY
+							func() {
+								defer func() {
+									if r := recover(); r != nil {
+										log.Printf("Point: Preview update panic recovered after recording - %v (point: %s)", r, point.Name)
+									}
+								}()
+								ui.GetUi().UpdatePointPreview(point)
+							}()
+						}
+						hook.Unregister(hook.MouseDown, []string{})
+						dlg.Dismiss()
+					default:
+						hook.Unregister(hook.MouseDown, []string{})
+						dlg.Dismiss()
+					}
+				})
+			}()
+
+			dlg.Show()
+		}
+	}
+
 	et.SearchAreasTab.Widgets["Form"].(*widget.Form).OnSubmit = func() {
 		w := et.SearchAreasTab.Widgets
 		n := w["Name"].(*widget.Entry).Text
