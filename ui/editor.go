@@ -17,8 +17,10 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+	xwidget "fyne.io/x/fyne/widget"
 	fynetooltip "github.com/dweymouth/fyne-tooltip"
 	"github.com/go-vgo/robotgo"
 	"gocv.io/x/gocv"
@@ -100,9 +102,14 @@ func (u *Ui) constructEditorTabs() {
 	itw[name] = new(widget.Entry)
 	itw[cols] = new(widget.Entry)
 	itw[rows] = new(widget.Entry)
-	itw["tagEntry"] = widget.NewEntry()
-	itw["tagEntry"].(*widget.Entry).PlaceHolder = "Enter tag name and press Enter"
-	itw[tags] = container.NewGridWithColumns(3) // Grid container for displaying tags
+	itw["tagEntry"] = xwidget.NewCompletionEntry([]string{})
+	itw["tagEntry"].(*xwidget.CompletionEntry).PlaceHolder = "Enter tag name and press Enter"
+	// Create a "+" button for submitting tags
+	itw["tagSubmitButton"] = widget.NewButtonWithIcon("", theme.ContentAddIcon(), nil)
+	itw["tagSubmitButton"].(*widget.Button).Importance = widget.MediumImportance
+	// Create container with tag entry and submit button
+	itw["tagEntryContainer"] = container.NewBorder(nil, nil, nil, itw["tagSubmitButton"], itw["tagEntry"])
+	itw[tags] = container.NewGridWithColumns(2) // Grid container for displaying tags
 	itw[sm] = new(widget.Entry)
 
 	// Create IconVariantEditor widget
@@ -119,8 +126,8 @@ func (u *Ui) constructEditorTabs() {
 		widget.NewFormItem(name, itw[name]),
 		widget.NewFormItem(cols, itw[cols]),
 		widget.NewFormItem(rows, itw[rows]),
-		widget.NewFormItem(tags, itw["tagEntry"]),
-		widget.NewFormItem("", itw[tags]),
+		widget.NewFormItem(tags, itw["tagEntryContainer"]),
+		widget.NewFormItem("", container.NewHScroll(itw[tags])),
 		widget.NewFormItem(sm, itw[sm]),
 		// widget.NewFormItem(m, ui.EditorTabs.ItemsTab.Widgets[m]),
 		// widget.NewFormItem("icons", container.NewGridWithRows(2, widget.NewIcon(theme.MediaFastForwardIcon()))),
@@ -138,10 +145,16 @@ func (u *Ui) constructEditorTabs() {
 	ptw[name] = new(widget.Entry)
 	ptw[x] = new(widget.Entry)
 	ptw[y] = new(widget.Entry)
+
+	// Create record button for capturing point coordinates
+	ptw["recordButton"] = widget.NewButtonWithIcon("", theme.MediaRecordIcon(), nil)
+	ptw["recordButton"].(*widget.Button).Importance = widget.DangerImportance
+
 	ptw[form] = widget.NewForm(
 		widget.NewFormItem(name, ptw[name]),
 		widget.NewFormItem(x, ptw[x]),
 		widget.NewFormItem(y, ptw[y]),
+		widget.NewFormItem("", container.NewHBox(layout.NewSpacer(), ptw["recordButton"])),
 	)
 
 	ptw[form].(*widget.Form).SubmitText = "Update"
