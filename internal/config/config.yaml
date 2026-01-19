@@ -139,7 +139,9 @@ programs:
                 gridsize:
                     - 2
                     - 3
-                tags: []
+                tags:
+                    - merchant/collector
+                    - treasure
                 stackmax: 0
                 merchant: Collector
             Badger Pendant:
@@ -147,7 +149,8 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - accessories/necklace
                 stackmax: 0
                 merchant: ""
             Bandage:
@@ -155,7 +158,9 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - utilities/consumable
+                    - merchant/surgeon
                 stackmax: 3
                 merchant: Surgeon
             Bat Claw:
@@ -163,7 +168,10 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - merchant/collector
+                    - hunting loot
+                    - crafting/mob
                 stackmax: 3
                 merchant: Collector
             Bear Pendant:
@@ -171,7 +179,8 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - accessories/necklace
                 stackmax: 0
                 merchant: ""
             Beetle Wings:
@@ -179,7 +188,9 @@ programs:
                 gridsize:
                     - 1
                     - 3
-                tags: []
+                tags:
+                    - merchant/collector
+                    - hunting loot
                 stackmax: 0
                 merchant: Collector
             Bone:
@@ -187,7 +198,10 @@ programs:
                 gridsize:
                     - 1
                     - 3
-                tags: []
+                tags:
+                    - hunting loot
+                    - merchant/collector
+                    - crafting/mob
                 stackmax: 3
                 merchant: Collector
             Bowstring:
@@ -195,7 +209,10 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - merchant/collector
+                    - hunting loot
+                    - crafting/mob
                 stackmax: 3
                 merchant: Collector
             Broken Skull:
@@ -203,7 +220,9 @@ programs:
                 gridsize:
                     - 2
                     - 2
-                tags: []
+                tags:
+                    - hunting loot
+                    - merchant/collector
                 stackmax: 2
                 merchant: Collector
             Bug Shell:
@@ -211,7 +230,9 @@ programs:
                 gridsize:
                     - 2
                     - 2
-                tags: []
+                tags:
+                    - merchant/collector
+                    - hunting loot
                 stackmax: 0
                 merchant: Collector
             Campfire:
@@ -219,7 +240,8 @@ programs:
                 gridsize:
                     - 2
                     - 2
-                tags: []
+                tags:
+                    - utilities/consumable
                 stackmax: 0
                 merchant: Woodsman
             Captured Mana Flakes:
@@ -227,7 +249,10 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - merchant/collector
+                    - hunting loot
+                    - crafting/mob
                 stackmax: 3
                 merchant: Collector
             Centaur Hoof:
@@ -235,7 +260,9 @@ programs:
                 gridsize:
                     - 2
                     - 2
-                tags: []
+                tags:
+                    - merchant/collector
+                    - hunting loot
                 stackmax: 0
                 merchant: Collector
             Centaur Horn:
@@ -243,7 +270,10 @@ programs:
                 gridsize:
                     - 2
                     - 2
-                tags: []
+                tags:
+                    - merchant/collector
+                    - hunting loot
+                    - crafting/mob
                 stackmax: 0
                 merchant: Collector
             Centaur Tail:
@@ -251,7 +281,10 @@ programs:
                 gridsize:
                     - 1
                     - 3
-                tags: []
+                tags:
+                    - merchant/collector
+                    - hunting loot
+                    - crafting/mob
                 stackmax: 0
                 merchant: Collector
             Ceremonial Dagger:
@@ -259,7 +292,9 @@ programs:
                 gridsize:
                     - 2
                     - 1
-                tags: []
+                tags:
+                    - treasure
+                    - merchant/collector
                 stackmax: 0
                 merchant: Collector
             Cobalt Ingot:
@@ -267,7 +302,8 @@ programs:
                 gridsize:
                     - 2
                     - 2
-                tags: []
+                tags:
+                    - crafting/ingot
                 stackmax: 5
                 merchant: ""
             Cobalt Ore:
@@ -275,7 +311,8 @@ programs:
                 gridsize:
                     - 2
                     - 2
-                tags: []
+                tags:
+                    - crafting/ore
                 stackmax: 5
                 merchant: ""
             Copper Ingot:
@@ -283,7 +320,8 @@ programs:
                 gridsize:
                     - 2
                     - 2
-                tags: []
+                tags:
+                    - crafting/ingot
                 stackmax: 5
                 merchant: ""
             Copper Ore:
@@ -291,7 +329,8 @@ programs:
                 gridsize:
                     - 2
                     - 2
-                tags: []
+                tags:
+                    - crafting/ore
                 stackmax: 5
                 merchant: ""
             Cursed Crown:
@@ -299,7 +338,10 @@ programs:
                 gridsize:
                     - 2
                     - 2
-                tags: []
+                tags:
+                    - hunting loot
+                    - merchant/collector
+                    - crafting/mob
                 stackmax: 0
                 merchant: Collector
             Cyclops Eye:
@@ -307,7 +349,10 @@ programs:
                 gridsize:
                     - 2
                     - 2
-                tags: []
+                tags:
+                    - merchant/collector
+                    - hunting loot
+                    - crafting/mob
                 stackmax: 0
                 merchant: Collector
             Cyclops Rags:
@@ -315,7 +360,10 @@ programs:
                 gridsize:
                     - 2
                     - 2
-                tags: []
+                tags:
+                    - merchant/collector
+                    - hunting loot
+                    - crafting/mob
                 stackmax: 0
                 merchant: Collector
             Demon Blood:
@@ -323,7 +371,10 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - hunting loot
+                    - merchant/collector
+                    - crafting/mob
                 stackmax: 3
                 merchant: Collector
             Demon Dog Thorn:
@@ -331,7 +382,10 @@ programs:
                 gridsize:
                     - 1
                     - 3
-                tags: []
+                tags:
+                    - crafting/mob
+                    - hunting loot
+                    - merchant/collector
                 stackmax: 0
                 merchant: Collector
             Diamond:
@@ -339,7 +393,8 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - treasure/gem
                 stackmax: 3
                 merchant: Collector
             Dog Collar:
@@ -347,7 +402,10 @@ programs:
                 gridsize:
                     - 2
                     - 2
-                tags: []
+                tags:
+                    - merchant/collector
+                    - crafting/mob
+                    - hunting loot
                 stackmax: 0
                 merchant: Collector
             Dotted Gold Bangle:
@@ -355,7 +413,8 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - treasure
                 stackmax: 0
                 merchant: Collector
             Emerald:
@@ -363,7 +422,8 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - treasure/gem
                 stackmax: 3
                 merchant: Collector
             Empty Inventory Slot:
@@ -379,7 +439,10 @@ programs:
                 gridsize:
                     - 2
                     - 2
-                tags: []
+                tags:
+                    - hunting loot
+                    - crafting/mob
+                    - merchant/collector
                 stackmax: 3
                 merchant: Collector
             Extra Thick Pelt:
@@ -387,7 +450,9 @@ programs:
                 gridsize:
                     - 2
                     - 2
-                tags: []
+                tags:
+                    - merchant/collector
+                    - hunting loot
                 stackmax: 3
                 merchant: Collector
             Fangs of Death:
@@ -395,7 +460,8 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - accessories/necklace
                 stackmax: 0
                 merchant: ""
             Fox Pendant:
@@ -403,7 +469,8 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - accessories/necklace
                 stackmax: 0
                 merchant: ""
             Francisca Axe:
@@ -411,7 +478,8 @@ programs:
                 gridsize:
                     - 1
                     - 2
-                tags: []
+                tags:
+                    - utilities/consumable
                 stackmax: 0
                 merchant: Woodsman
             Frost Amulet:
@@ -419,7 +487,8 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - accessories/necklace
                 stackmax: 0
                 merchant: ""
             Frost Wyverns Claws:
@@ -435,7 +504,8 @@ programs:
                 gridsize:
                     - 2
                     - 2
-                tags: []
+                tags:
+                    - crafting/ingot
                 stackmax: 5
                 merchant: ""
             Froststone Ore:
@@ -443,7 +513,8 @@ programs:
                 gridsize:
                     - 2
                     - 2
-                tags: []
+                tags:
+                    - crafting/ore
                 stackmax: 5
                 merchant: ""
             Frozen Heart:
@@ -451,7 +522,10 @@ programs:
                 gridsize:
                     - 2
                     - 2
-                tags: []
+                tags:
+                    - crafting/mob
+                    - hunting loot
+                    - merchant/collector
                 stackmax: 0
                 merchant: Collector
             Gem Necklace:
@@ -459,7 +533,9 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - treasure
+                    - merchant/collector
                 stackmax: 0
                 merchant: Collector
             Gem Ring:
@@ -467,7 +543,9 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - treasure
+                    - merchant/collector
                 stackmax: 0
                 merchant: Collector
             Giant Toe:
@@ -475,7 +553,9 @@ programs:
                 gridsize:
                     - 1
                     - 2
-                tags: []
+                tags:
+                    - merchant/collector
+                    - hunting loot
                 stackmax: 3
                 merchant: Collector
             Glimmer Bangle:
@@ -483,7 +563,9 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - treasure
+                    - merchant/collector
                 stackmax: 0
                 merchant: Collector
             Glowing Blue Ice Eyes:
@@ -491,7 +573,9 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - hunting loot
+                    - merchant/collector
                 stackmax: 3
                 merchant: Collector
             Goblet:
@@ -499,7 +583,9 @@ programs:
                 gridsize:
                     - 1
                     - 2
-                tags: []
+                tags:
+                    - merchant/collector
+                    - treasure
                 stackmax: 0
                 merchant: Collector
             Goblin Ear:
@@ -507,7 +593,9 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - merchant/collector
+                    - hunting loot
                 stackmax: 3
                 merchant: Collector
             Gold Bag:
@@ -515,7 +603,8 @@ programs:
                 gridsize:
                     - 2
                     - 2
-                tags: []
+                tags:
+                    - currency/container
                 stackmax: 1000
                 merchant: ""
             Gold Band:
@@ -523,7 +612,9 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - treasure
+                    - merchant/collector
                 stackmax: 0
                 merchant: Collector
             Gold Bowl:
@@ -531,7 +622,9 @@ programs:
                 gridsize:
                     - 2
                     - 2
-                tags: []
+                tags:
+                    - treasure
+                    - merchant/collector
                 stackmax: 0
                 merchant: Collector
             Gold Candelabra:
@@ -539,7 +632,9 @@ programs:
                 gridsize:
                     - 2
                     - 2
-                tags: []
+                tags:
+                    - treasure
+                    - merchant/collector
                 stackmax: 0
                 merchant: Collector
             Gold Candle Holder:
@@ -547,7 +642,8 @@ programs:
                 gridsize:
                     - 2
                     - 2
-                tags: []
+                tags:
+                    - treasure
                 stackmax: 0
                 merchant: Collector
             Gold Candle Platter:
@@ -555,7 +651,9 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - treasure
+                    - merchant/collector
                 stackmax: 0
                 merchant: Collector
             Gold Chalice:
@@ -571,7 +669,8 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - currency
                 stackmax: 10
                 merchant: Treasurer
             Gold Crown:
@@ -579,7 +678,9 @@ programs:
                 gridsize:
                     - 2
                     - 2
-                tags: []
+                tags:
+                    - treasure
+                    - merchant/collector
                 stackmax: 0
                 merchant: Collector
             Gold Goblet:
@@ -587,7 +688,9 @@ programs:
                 gridsize:
                     - 1
                     - 2
-                tags: []
+                tags:
+                    - treasure
+                    - merchant/collector
                 stackmax: 0
                 merchant: Collector
             Gold Ingot:
@@ -595,7 +698,8 @@ programs:
                 gridsize:
                     - 2
                     - 2
-                tags: []
+                tags:
+                    - crafting/ingot
                 stackmax: 5
                 merchant: ""
             Gold Ore:
@@ -603,7 +707,8 @@ programs:
                 gridsize:
                     - 2
                     - 2
-                tags: []
+                tags:
+                    - crafting/ore
                 stackmax: 5
                 merchant: ""
             Gold Purse:
@@ -611,7 +716,8 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - currency/container
                 stackmax: 0
                 merchant: Treasurer
             Gold Waterpot:
@@ -619,7 +725,9 @@ programs:
                 gridsize:
                     - 2
                     - 2
-                tags: []
+                tags:
+                    - treasure
+                    - merchant/collector
                 stackmax: 0
                 merchant: Collector
             Golden Teeth:
@@ -627,7 +735,10 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - hunting loot
+                    - crafting/mob
+                    - merchant/collector
                 stackmax: 3
                 merchant: Collector
             Grave Essence:
@@ -635,7 +746,9 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - hunting loot
+                    - merchant/collector
                 stackmax: 3
                 merchant: Collector
             Grimsmile Ring:
@@ -643,7 +756,8 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - accessories/ring
                 stackmax: 0
                 merchant: ""
             Healing Potion:
@@ -651,7 +765,9 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - utilities/consumable
+                    - merchant/alchemist
                 stackmax: 3
                 merchant: Alchemist
             Intact Skull:
@@ -659,7 +775,9 @@ programs:
                 gridsize:
                     - 2
                     - 2
-                tags: []
+                tags:
+                    - hunting loot
+                    - merchant/collector
                 stackmax: 2
                 merchant: Collector
             Iron Ingot:
@@ -667,7 +785,8 @@ programs:
                 gridsize:
                     - 2
                     - 2
-                tags: []
+                tags:
+                    - crafting/ingot
                 stackmax: 5
                 merchant: ""
             Iron Ore:
@@ -675,7 +794,8 @@ programs:
                 gridsize:
                     - 2
                     - 2
-                tags: []
+                tags:
+                    - crafting/ore
                 stackmax: 5
                 merchant: ""
             Kobolds Ear:
@@ -683,7 +803,9 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - hunting loot
+                    - merchant/collector
                 stackmax: 3
                 merchant: Collector
             Leaf Gold Bangle:
@@ -691,7 +813,9 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - treasure
+                    - merchant/collector
                 stackmax: 0
                 merchant: Collector
             Light Gold Bangle:
@@ -699,7 +823,9 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - treasure
+                    - merchant/collector
                 stackmax: 0
                 merchant: Collector
             Lockpick:
@@ -707,7 +833,8 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - utilities/consumable
                 stackmax: 3
                 merchant: ""
             Luck Potion:
@@ -715,7 +842,8 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - utilities/consumable
                 stackmax: 3
                 merchant: Alchemist
             Maggots:
@@ -723,7 +851,9 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - merchant/collector
+                    - hunting loot
                 stackmax: 3
                 merchant: Collector
             Magic Protection Potion:
@@ -731,7 +861,8 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - utilities/consumable
                 stackmax: 3
                 merchant: Alchemist
             Mimic Tongue:
@@ -739,7 +870,9 @@ programs:
                 gridsize:
                     - 2
                     - 2
-                tags: []
+                tags:
+                    - hunting loot
+                    - merchant/collector
                 stackmax: 0
                 merchant: Collector
             Mimic Tooth:
@@ -747,7 +880,9 @@ programs:
                 gridsize:
                     - 1
                     - 2
-                tags: []
+                tags:
+                    - merchant/collector
+                    - hunting loot
                 stackmax: 0
                 merchant: Collector
             Moldy Bread:
@@ -755,7 +890,9 @@ programs:
                 gridsize:
                     - 1
                     - 2
-                tags: []
+                tags:
+                    - merchant/collector
+                    - hunting loot
                 stackmax: 3
                 merchant: Collector
             Monkey Pendant:
@@ -763,7 +900,8 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - accessories/necklace
                 stackmax: 0
                 merchant: ""
             Necklace of Peace:
@@ -771,7 +909,8 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - accessories/necklace
                 stackmax: 0
                 merchant: ""
             Old Cloth:
@@ -779,7 +918,9 @@ programs:
                 gridsize:
                     - 2
                     - 2
-                tags: []
+                tags:
+                    - hunting loot
+                    - merchant/collector
                 stackmax: 3
                 merchant: Collector
             Owl Pendant:
@@ -787,7 +928,8 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - accessories/necklace
                 stackmax: 0
                 merchant: ""
             Ox Pendant:
@@ -795,7 +937,8 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - accessories/necklace
                 stackmax: 0
                 merchant: ""
             Patterned Gold Bangle:
@@ -803,7 +946,9 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - treasure
+                    - merchant/collector
                 stackmax: 0
                 merchant: Collector
             Pearl Necklace:
@@ -811,7 +956,9 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - treasure
+                    - merchant/collector
                 stackmax: 0
                 merchant: Collector
             Phoenix Choker:
@@ -819,7 +966,8 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - accessories/necklace
                 stackmax: 0
                 merchant: ""
             Primitive Bracelet:
@@ -827,7 +975,9 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - merchant/collector
+                    - hunting loot
                 stackmax: 3
                 merchant: Collector
             Protection Potion:
@@ -835,7 +985,8 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - utilities/consumable
                 stackmax: 3
                 merchant: Alchemist
             Rat Pendant:
@@ -843,7 +994,8 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - accessories/necklace
                 stackmax: 0
                 merchant: ""
             Ring of Courage:
@@ -851,7 +1003,8 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - accessories/ring
                 stackmax: 0
                 merchant: ""
             Ring of Finesse:
@@ -859,7 +1012,8 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - accessories/ring
                 stackmax: 0
                 merchant: ""
             Ring of Quickness:
@@ -867,7 +1021,8 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - accessories/ring
                 stackmax: 0
                 merchant: ""
             Ring of Resolve:
@@ -875,7 +1030,8 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - accessories/ring
                 stackmax: 0
                 merchant: ""
             Ring of Survival:
@@ -883,7 +1039,8 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - accessories/ring
                 stackmax: 0
                 merchant: ""
             Ring of Vitality:
@@ -891,7 +1048,8 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - accessories/ring
                 stackmax: 0
                 merchant: ""
             Ring of Wisdom:
@@ -899,7 +1057,8 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - accessories/ring
                 stackmax: 0
                 merchant: ""
             Rotten Fluids:
@@ -907,7 +1066,9 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - hunting loot
+                    - merchant/collector
                 stackmax: 3
                 merchant: Collector
             Ruby:
@@ -915,7 +1076,9 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - treasure/gem
+                    - merchant/collector
                 stackmax: 0
                 merchant: Collector
             Rubysilver Ore:
@@ -923,7 +1086,8 @@ programs:
                 gridsize:
                     - 2
                     - 2
-                tags: []
+                tags:
+                    - crafting/ore
                 stackmax: 5
                 merchant: ""
             Rusty Broken Sword:
@@ -931,7 +1095,9 @@ programs:
                 gridsize:
                     - 1
                     - 2
-                tags: []
+                tags:
+                    - hunting loot
+                    - merchant/collector
                 stackmax: 3
                 merchant: Collector
             Sapphire:
@@ -939,7 +1105,9 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - treasure/gem
+                    - merchant/collector
                 stackmax: 3
                 merchant: Collector
             Shine Bangle:
@@ -947,7 +1115,9 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - treasure
+                    - merchant/collector
                 stackmax: 0
                 merchant: Collector
             Silver Chalice:
@@ -955,7 +1125,9 @@ programs:
                 gridsize:
                     - 1
                     - 2
-                tags: []
+                tags:
+                    - treasure
+                    - merchant/collector
                 stackmax: 0
                 merchant: Collector
             Silver Ingot:
@@ -963,7 +1135,8 @@ programs:
                 gridsize:
                     - 2
                     - 2
-                tags: []
+                tags:
+                    - crafting/ingot
                 stackmax: 5
                 merchant: ""
             Simple Gold Bangle:
@@ -971,7 +1144,9 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - treasure
+                    - merchant/collector
                 stackmax: 0
                 merchant: Collector
             Slim Bangle:
@@ -979,7 +1154,9 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - treasure
+                    - merchant/collector
                 stackmax: 0
                 merchant: Collector
             Spider Silk:
@@ -987,7 +1164,10 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - hunting loot
+                    - merchant/collector
+                    - crafting/mob
                 stackmax: 3
                 merchant: Collector
             Surgical Kit:
@@ -995,7 +1175,8 @@ programs:
                 gridsize:
                     - 2
                     - 2
-                tags: []
+                tags:
+                    - utilities/consumable
                 stackmax: 0
                 merchant: ""
             Torn Bat Wing:
@@ -1003,7 +1184,9 @@ programs:
                 gridsize:
                     - 2
                     - 2
-                tags: []
+                tags:
+                    - hunting loot
+                    - merchant/collector
                 stackmax: 3
                 merchant: Collector
             Torq of Soul:
@@ -1011,7 +1194,8 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - accessories/necklace
                 stackmax: 0
                 merchant: ""
             Triple Gem Bangle:
@@ -1019,7 +1203,9 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - treasure
+                    - merchant/collector
                 stackmax: 0
                 merchant: Collector
             Troll Pelt:
@@ -1027,7 +1213,10 @@ programs:
                 gridsize:
                     - 2
                     - 2
-                tags: []
+                tags:
+                    - hunting loot
+                    - crafting/mob
+                    - merchant/collector
                 stackmax: 0
                 merchant: Collector
             Turquoise Gem Bangle:
@@ -1035,7 +1224,9 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - treasure
+                    - merchant/collector
                 stackmax: 0
                 merchant: Collector
             Volcanic Ash:
@@ -1043,15 +1234,19 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - hunting loot
+                    - merchant/collector
                 stackmax: 3
                 merchant: Collector
             Wendigos Antler Fragments:
                 name: Wendigos Antler Fragments
                 gridsize:
-                    - 1
-                    - 1
-                tags: []
+                    - 2
+                    - 2
+                tags:
+                    - hunting loot
+                    - merchant/collector
                 stackmax: 0
                 merchant: ""
             Wendigos Hoof:
@@ -1059,7 +1254,9 @@ programs:
                 gridsize:
                     - 2
                     - 2
-                tags: []
+                tags:
+                    - hunting loot
+                    - merchant/collector
                 stackmax: 0
                 merchant: Collector
             Wendigos Sharp Claws:
@@ -1067,7 +1264,9 @@ programs:
                 gridsize:
                     - 2
                     - 1
-                tags: []
+                tags:
+                    - hunting loot
+                    - merchant/collector
                 stackmax: 0
                 merchant: Collector
             Wind Locket:
@@ -1075,7 +1274,8 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - accessories/necklace
                 stackmax: 0
                 merchant: ""
             Wolf Claw:
@@ -1083,7 +1283,10 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - crafting/mob
+                    - hunting loot
+                    - merchant/collector
                 stackmax: 3
                 merchant: Collector
             Wolf Fang:
@@ -1091,7 +1294,9 @@ programs:
                 gridsize:
                     - 1
                     - 2
-                tags: []
+                tags:
+                    - hunting loot
+                    - merchant/collector
                 stackmax: 3
                 merchant: Collector
             Wolf Pelt:
@@ -1099,7 +1304,10 @@ programs:
                 gridsize:
                     - 2
                     - 2
-                tags: []
+                tags:
+                    - hunting loot
+                    - merchant/collector
+                    - crafting/mob
                 stackmax: 3
                 merchant: Collector
             Yetis Teeth:
@@ -1107,7 +1315,9 @@ programs:
                 gridsize:
                     - 1
                     - 1
-                tags: []
+                tags:
+                    - hunting loot
+                    - merchant/collector
                 stackmax: 3
                 merchant: Collector
         coordinates:
@@ -1556,6 +1766,21 @@ programs:
                 points:
                     test:
                         name: test
-                        x: 10
-                        "y": 10
+                        x: 158
+                        "y": 381
+                searchareas: {}
+    shadows of chroma tower:
+        name: shadows of chroma tower
+        items:
+            Healing Potion:
+                name: Healing Potion
+                gridsize:
+                    - 1
+                    - 1
+                tags: []
+                stackmax: 3
+                merchant: ""
+        coordinates:
+            2560x1440:
+                points: {}
                 searchareas: {}

@@ -106,8 +106,8 @@ func main() {
 	}
 	// mask, _ := program.ItemRepo().Get("Ancient Scroll")
 	// gocv.IMWrite(config.GetMetaPath()+"mask.png", *program.GetMasks()["item-corner"](162, 108, mask.GridSize[0], mask.GridSize[1]))
-	mask, _ := program.ItemRepo().Get("Bandage")
-	gocv.IMWrite(config.GetMetaPath()+"mask.png", *program.GetMasks()["item-corner"](54, 54, mask.GridSize[0], mask.GridSize[1]))
+	// mask, _ := program.ItemRepo().Get("Bandage")
+	// gocv.IMWrite(config.GetMetaPath()+"mask.png", *program.GetMasks()["item-corner"](54, 54, mask.GridSize[0], mask.GridSize[1]))
 	ui.GetUi().Window.ShowAndRun()
 
 	services.CloseTessClient()

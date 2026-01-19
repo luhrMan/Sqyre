@@ -22,6 +22,7 @@ require gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 
 require (
 	fyne.io/systray v1.11.0 // indirect
+	fyne.io/x/fyne v0.0.0-20251214153509-fa68a7d234d5 // indirect
 	github.com/BurntSushi/toml v1.5.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/ebitengine/purego v0.8.2 // indirect
