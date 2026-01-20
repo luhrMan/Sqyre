@@ -1,6 +1,6 @@
 # What is it
 
-Sqyre is a Macro Builder built for Dark and Darker. Sqyre is written using GO, with a few notable libraries:
+Sqyre is a Macro Builder originally built for Dark and Darker. Sqyre is written using GO, with a few notable libraries:
 
 - Fyne (GUI)
 - Robotgo (Automation)
