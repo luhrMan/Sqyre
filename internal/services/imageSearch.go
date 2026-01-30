@@ -123,8 +123,15 @@ func match(img, imgDraw gocv.Mat, a *actions.ImageSearch) map[string][]robotgo.P
 				// }
 
 				matches := FindTemplateMatches(img, template, Imask, tmask, cmask, a.Tolerance)
+				DrawFoundMatches(matches, template.Cols(), template.Rows(), imgDraw, i.Name) // draw rect at top-left
+				// Offset each match to the center of the icon (click middle, not top-left)
+				halfW := template.Cols() / 2
+				halfH := template.Rows() / 2
+				for i := range matches {
+					matches[i].X += halfW
+					matches[i].Y += halfH
+				}
 				allMatches = append(allMatches, matches...)
-				DrawFoundMatches(matches, template.Cols(), template.Rows(), imgDraw, i.Name) // xSize*i.GridSize[0], ySize*i.GridSize[1]
 			}
 
 			// Store accumulated matches once per item
