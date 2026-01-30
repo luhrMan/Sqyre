@@ -4,8 +4,10 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/data/binding"
+	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
 	widget "fyne.io/fyne/v2/widget"
+	fynetooltip "github.com/dweymouth/fyne-tooltip"
 	"github.com/go-vgo/robotgo"
 )
 
@@ -23,9 +25,9 @@ type Ui struct {
 }
 
 type MainUi struct {
-	fyne.CanvasObject
-	Mui        *MacroUi
-	ActionTabs *ActionTabs
+	Navigation   *container.Navigation
+	Mui          *MacroUi
+	ActionDialog dialog.Dialog
 }
 
 func GetUi() *Ui { return ui }
@@ -35,7 +37,6 @@ func InitializeUi(w fyne.Window) *Ui {
 		MainMenu: new(fyne.MainMenu),
 		EditorUi: &EditorUi{
 			CanvasObject:    new(fyne.Container),
-			NavButton:       new(widget.Button),
 			AddButton:       new(widget.Button),
 			RemoveButton:    new(widget.Button),
 			ProgramSelector: new(widget.SelectEntry),
@@ -66,7 +67,7 @@ func InitializeUi(w fyne.Window) *Ui {
 			},
 		},
 		MainUi: &MainUi{
-			CanvasObject: new(fyne.Container),
+			Navigation: new(container.Navigation), // Will be set in ConstructUi
 			Mui: &MacroUi{
 				MTabs:             NewMacroTabs(),
 				MacroSelectButton: new(widget.Button),
@@ -78,25 +79,20 @@ func InitializeUi(w fyne.Window) *Ui {
 					BottomToolbar: new(fyne.Container),
 				},
 			},
-			ActionTabs: newActionTabs(),
+			ActionDialog: new(dialog.CustomDialog),
 		},
 	}
 	return ui
 }
 func (u *Ui) ConstructUi() {
-	// construct main screen
-	u.MainUi.CanvasObject =
-		container.NewHSplit(
-			u.constructActionTabs(), u.constructMacroUi(),
-		)
-	u.MainUi.CanvasObject.(*container.Split).SetOffset(0.3)
+	// construct main screen - action tabs removed, only macro UI-
+	u.MainUi.Navigation = container.NewNavigation(u.constructMacroUi())
 
 	// construct editor screen
 	u.EditorUi.CanvasObject = container.NewBorder(
 		nil,
 		container.NewBorder(
-			nil, nil,
-			ui.EditorUi.NavButton,
+			nil, nil, nil,
 			container.NewHBox(ui.EditorUi.AddButton, layout.NewSpacer(), ui.EditorUi.RemoveButton),
 			layout.NewSpacer(), ui.EditorUi.ProgramSelector,
 		),
@@ -105,11 +101,14 @@ func (u *Ui) ConstructUi() {
 		ui.EditorUi.EditorTabs,
 	)
 	u.constructEditorTabs()
-	u.constructNavButton()
 	u.constructAddButton()
 	u.constructRemoveButton()
+
 	// construct main menu
 	u.Window.SetMainMenu(u.constructMainMenu())
+
+	// Set window content to Navigation container with tooltip layer
+	u.Window.SetContent(fynetooltip.AddWindowToolTipLayer(u.MainUi.Navigation, u.Window.Canvas()))
 
 	toggleMousePos()
 }

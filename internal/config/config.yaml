@@ -1,30 +1,17 @@
 macros:
     Get Gems:
-        globaldelay: 45
-        hotkey:
-            - ctrl
-            - shift
-            - "2"
         name: Get Gems
         root:
             count: 1
+            type: loop
             name: root
             subactions:
-                - time: 590
-                  type: wait
-                - key: ctrl
-                  state: true
-                  type: key
-                - colsplit: 1
-                  name: ""
-                  rowsplit: 1
-                  searcharea:
-                    bottomy: 1354
-                    leftx: 1832
-                    name: stash-screen-stash-inventory
-                    rightx: 2493
-                    topy: 261
-                  targets:
+                - type: wait
+                  time: 590
+                - type: key
+                  key: ctrl
+                  state: false
+                - targets:
                     - dark and darker|Ancient Scroll
                     - dark and darker|Gold Candle Holder
                     - dark and darker|Iron Ore Stack
@@ -32,68 +19,74 @@ macros:
                     - dark and darker|Shine Bangle
                     - dark and darker|Silver Ingot
                     - path of exile|Arcanists Etcher
+                  searcharea:
+                    name: stash-screen-stash-inventory
+                    leftx: 1832
+                    topy: 261
+                    rightx: 2493
+                    bottomy: 1354
+                  rowsplit: 1
+                  colsplit: 1
                   tolerance: 0.95
+                  outputxvariable: ""
+                  outputyvariable: ""
                   type: imagesearch
-            type: loop
+                  name: ""
+        globaldelay: 45
+        hotkey:
+            - ctrl
+            - shift
+            - "2"
+        variables:
+            variables: {}
     New macro 1:
-        globaldelay: 50
-        hotkey: []
         name: New macro 1
         root:
             count: 1
+            type: loop
             name: root
             subactions:
-                - colsplit: 1
-                  name: please help me
-                  rowsplit: 1
+                - targets:
+                    - dark and darker|Rubysilver Ore
                   searcharea:
-                    bottomy: 1354
-                    leftx: 1832
                     name: stash-screen-stash-inventory
-                    rightx: 2493
+                    leftx: 1832
                     topy: 261
+                    rightx: 2493
+                    bottomy: 1354
+                  rowsplit: 1
+                  colsplit: 1
+                  tolerance: 0.95
+                  outputxvariable: ""
+                  outputyvariable: ""
+                  type: imagesearch
+                  name: please help me
                   subactions:
-                    - point:
+                    - type: move
+                      point:
                         name: image search context
                         x: 2024
                         "y": 615
-                      type: move
-                  targets:
-                    - dark and darker|Rubysilver Ore
-                  tolerance: 0.95
-                  type: imagesearch
-            type: loop
-    Sell Treasures:
         globaldelay: 50
         hotkey: []
+        variables:
+            variables: {}
+    Sell Treasures:
         name: Sell Treasures
         root:
             count: 1
+            type: loop
             name: root
             subactions:
-                - key: shift
+                - type: key
+                  key: shift
                   state: true
-                  type: key
-                - colsplit: 1
-                  name: treasures
-                  rowsplit: 1
-                  searcharea:
-                    bottomy: 1354
-                    leftx: 1832
-                    name: stash-screen-stash-inventory
-                    rightx: 2493
-                    topy: 261
-                  subactions:
-                    - point:
-                        name: image search context
-                        x: 2456
-                        "y": 345
-                      type: move
-                    - button: true
-                      type: click
-                  targets:
+                - targets:
+                    - dark and darker|Ancient Scroll
+                    - dark and darker|Bandage
                     - dark and darker|Diamond
                     - dark and darker|Dotted Gold Bangle
+                    - dark and darker|Gem Necklace
                     - dark and darker|Gem Ring
                     - dark and darker|Glimmer Bangle
                     - dark and darker|Goblet
@@ -116,1210 +109,52 @@ macros:
                     - dark and darker|Slim Bangle
                     - dark and darker|Triple Gem Bangle
                     - dark and darker|Turquoise Gem Bangle
+                  searcharea:
+                    name: stash-screen-player-inventory
+                    leftx: 913
+                    topy: 830
+                    rightx: 1466
+                    bottomy: 1112
+                  rowsplit: 1
+                  colsplit: 1
                   tolerance: 0.95
+                  outputxvariable: foundX
+                  outputyvariable: foundY
                   type: imagesearch
-                - key: shift
+                  name: treasures
+                  subactions:
+                    - type: calculate
+                      expression: foundX+25
+                      outputvar: foundX
+                    - type: calculate
+                      expression: foundY+25
+                      outputvar: foundY
+                    - type: move
+                      point:
+                        name: image search context
+                        x: ${foundX}
+                        "y": ${foundY}
+                    - type: click
+                      button: true
+                - type: key
+                  key: shift
                   state: false
-                  type: key
-            type: loop
-    Standard:
-        globaldelay: 0
+        globaldelay: 25
         hotkey: []
-        name: Standard
+        variables:
+            variables: {}
+    Switch Chracters:
+        name: Switch Chracters
         root:
             count: 1
-            name: root
             type: loop
+            name: root
+        globaldelay: 0
+        hotkey: []
+        variables:
+            variables: {}
 programs:
     dark and darker:
-        name: dark and darker
-        items:
-            Ancient Scroll:
-                name: Ancient Scroll
-                gridsize:
-                    - 2
-                    - 3
-                tags:
-                    - merchant/collector
-                    - treasure
-                stackmax: 0
-                merchant: Collector
-            Badger Pendant:
-                name: Badger Pendant
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - accessories/necklace
-                stackmax: 0
-                merchant: ""
-            Bandage:
-                name: Bandage
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - utilities/consumable
-                    - merchant/surgeon
-                stackmax: 3
-                merchant: Surgeon
-            Bat Claw:
-                name: Bat Claw
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - merchant/collector
-                    - hunting loot
-                    - crafting/mob
-                stackmax: 3
-                merchant: Collector
-            Bear Pendant:
-                name: Bear Pendant
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - accessories/necklace
-                stackmax: 0
-                merchant: ""
-            Beetle Wings:
-                name: Beetle Wings
-                gridsize:
-                    - 1
-                    - 3
-                tags:
-                    - merchant/collector
-                    - hunting loot
-                stackmax: 0
-                merchant: Collector
-            Bone:
-                name: Bone
-                gridsize:
-                    - 1
-                    - 3
-                tags:
-                    - hunting loot
-                    - merchant/collector
-                    - crafting/mob
-                stackmax: 3
-                merchant: Collector
-            Bowstring:
-                name: Bowstring
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - merchant/collector
-                    - hunting loot
-                    - crafting/mob
-                stackmax: 3
-                merchant: Collector
-            Broken Skull:
-                name: Broken Skull
-                gridsize:
-                    - 2
-                    - 2
-                tags:
-                    - hunting loot
-                    - merchant/collector
-                stackmax: 2
-                merchant: Collector
-            Bug Shell:
-                name: Bug Shell
-                gridsize:
-                    - 2
-                    - 2
-                tags:
-                    - merchant/collector
-                    - hunting loot
-                stackmax: 0
-                merchant: Collector
-            Campfire:
-                name: Campfire
-                gridsize:
-                    - 2
-                    - 2
-                tags:
-                    - utilities/consumable
-                stackmax: 0
-                merchant: Woodsman
-            Captured Mana Flakes:
-                name: Captured Mana Flakes
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - merchant/collector
-                    - hunting loot
-                    - crafting/mob
-                stackmax: 3
-                merchant: Collector
-            Centaur Hoof:
-                name: Centaur Hoof
-                gridsize:
-                    - 2
-                    - 2
-                tags:
-                    - merchant/collector
-                    - hunting loot
-                stackmax: 0
-                merchant: Collector
-            Centaur Horn:
-                name: Centaur Horn
-                gridsize:
-                    - 2
-                    - 2
-                tags:
-                    - merchant/collector
-                    - hunting loot
-                    - crafting/mob
-                stackmax: 0
-                merchant: Collector
-            Centaur Tail:
-                name: Centaur Tail
-                gridsize:
-                    - 1
-                    - 3
-                tags:
-                    - merchant/collector
-                    - hunting loot
-                    - crafting/mob
-                stackmax: 0
-                merchant: Collector
-            Ceremonial Dagger:
-                name: Ceremonial Dagger
-                gridsize:
-                    - 2
-                    - 1
-                tags:
-                    - treasure
-                    - merchant/collector
-                stackmax: 0
-                merchant: Collector
-            Cobalt Ingot:
-                name: Cobalt Ingot
-                gridsize:
-                    - 2
-                    - 2
-                tags:
-                    - crafting/ingot
-                stackmax: 5
-                merchant: ""
-            Cobalt Ore:
-                name: Cobalt Ore
-                gridsize:
-                    - 2
-                    - 2
-                tags:
-                    - crafting/ore
-                stackmax: 5
-                merchant: ""
-            Copper Ingot:
-                name: Copper Ingot
-                gridsize:
-                    - 2
-                    - 2
-                tags:
-                    - crafting/ingot
-                stackmax: 5
-                merchant: ""
-            Copper Ore:
-                name: Copper Ore
-                gridsize:
-                    - 2
-                    - 2
-                tags:
-                    - crafting/ore
-                stackmax: 5
-                merchant: ""
-            Cursed Crown:
-                name: Cursed Crown
-                gridsize:
-                    - 2
-                    - 2
-                tags:
-                    - hunting loot
-                    - merchant/collector
-                    - crafting/mob
-                stackmax: 0
-                merchant: Collector
-            Cyclops Eye:
-                name: Cyclops Eye
-                gridsize:
-                    - 2
-                    - 2
-                tags:
-                    - merchant/collector
-                    - hunting loot
-                    - crafting/mob
-                stackmax: 0
-                merchant: Collector
-            Cyclops Rags:
-                name: Cyclops Rags
-                gridsize:
-                    - 2
-                    - 2
-                tags:
-                    - merchant/collector
-                    - hunting loot
-                    - crafting/mob
-                stackmax: 0
-                merchant: Collector
-            Demon Blood:
-                name: Demon Blood
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - hunting loot
-                    - merchant/collector
-                    - crafting/mob
-                stackmax: 3
-                merchant: Collector
-            Demon Dog Thorn:
-                name: Demon Dog Thorn
-                gridsize:
-                    - 1
-                    - 3
-                tags:
-                    - crafting/mob
-                    - hunting loot
-                    - merchant/collector
-                stackmax: 0
-                merchant: Collector
-            Diamond:
-                name: Diamond
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - treasure/gem
-                stackmax: 3
-                merchant: Collector
-            Dog Collar:
-                name: Dog Collar
-                gridsize:
-                    - 2
-                    - 2
-                tags:
-                    - merchant/collector
-                    - crafting/mob
-                    - hunting loot
-                stackmax: 0
-                merchant: Collector
-            Dotted Gold Bangle:
-                name: Dotted Gold Bangle
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - treasure
-                stackmax: 0
-                merchant: Collector
-            Emerald:
-                name: Emerald
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - treasure/gem
-                stackmax: 3
-                merchant: Collector
-            Empty Inventory Slot:
-                name: Empty Inventory Slot
-                gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 0
-                merchant: ""
-            Enchanted Dark Fabric:
-                name: Enchanted Dark Fabric
-                gridsize:
-                    - 2
-                    - 2
-                tags:
-                    - hunting loot
-                    - crafting/mob
-                    - merchant/collector
-                stackmax: 3
-                merchant: Collector
-            Extra Thick Pelt:
-                name: Extra Thick Pelt
-                gridsize:
-                    - 2
-                    - 2
-                tags:
-                    - merchant/collector
-                    - hunting loot
-                stackmax: 3
-                merchant: Collector
-            Fangs of Death:
-                name: Fangs of Death
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - accessories/necklace
-                stackmax: 0
-                merchant: ""
-            Fox Pendant:
-                name: Fox Pendant
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - accessories/necklace
-                stackmax: 0
-                merchant: ""
-            Francisca Axe:
-                name: Francisca Axe
-                gridsize:
-                    - 1
-                    - 2
-                tags:
-                    - utilities/consumable
-                stackmax: 0
-                merchant: Woodsman
-            Frost Amulet:
-                name: Frost Amulet
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - accessories/necklace
-                stackmax: 0
-                merchant: ""
-            Frost Wyverns Claws:
-                name: Frost Wyverns Claws
-                gridsize:
-                    - 2
-                    - 2
-                tags: []
-                stackmax: 0
-                merchant: Collector
-            Froststone Ingot:
-                name: Froststone Ingot
-                gridsize:
-                    - 2
-                    - 2
-                tags:
-                    - crafting/ingot
-                stackmax: 5
-                merchant: ""
-            Froststone Ore:
-                name: Froststone Ore
-                gridsize:
-                    - 2
-                    - 2
-                tags:
-                    - crafting/ore
-                stackmax: 5
-                merchant: ""
-            Frozen Heart:
-                name: Frozen Heart
-                gridsize:
-                    - 2
-                    - 2
-                tags:
-                    - crafting/mob
-                    - hunting loot
-                    - merchant/collector
-                stackmax: 0
-                merchant: Collector
-            Gem Necklace:
-                name: Gem Necklace
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - treasure
-                    - merchant/collector
-                stackmax: 0
-                merchant: Collector
-            Gem Ring:
-                name: Gem Ring
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - treasure
-                    - merchant/collector
-                stackmax: 0
-                merchant: Collector
-            Giant Toe:
-                name: Giant Toe
-                gridsize:
-                    - 1
-                    - 2
-                tags:
-                    - merchant/collector
-                    - hunting loot
-                stackmax: 3
-                merchant: Collector
-            Glimmer Bangle:
-                name: Glimmer Bangle
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - treasure
-                    - merchant/collector
-                stackmax: 0
-                merchant: Collector
-            Glowing Blue Ice Eyes:
-                name: Glowing Blue Ice Eyes
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - hunting loot
-                    - merchant/collector
-                stackmax: 3
-                merchant: Collector
-            Goblet:
-                name: Goblet
-                gridsize:
-                    - 1
-                    - 2
-                tags:
-                    - merchant/collector
-                    - treasure
-                stackmax: 0
-                merchant: Collector
-            Goblin Ear:
-                name: Goblin Ear
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - merchant/collector
-                    - hunting loot
-                stackmax: 3
-                merchant: Collector
-            Gold Bag:
-                name: Gold Bag
-                gridsize:
-                    - 2
-                    - 2
-                tags:
-                    - currency/container
-                stackmax: 1000
-                merchant: ""
-            Gold Band:
-                name: Gold Band
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - treasure
-                    - merchant/collector
-                stackmax: 0
-                merchant: Collector
-            Gold Bowl:
-                name: Gold Bowl
-                gridsize:
-                    - 2
-                    - 2
-                tags:
-                    - treasure
-                    - merchant/collector
-                stackmax: 0
-                merchant: Collector
-            Gold Candelabra:
-                name: Gold Candelabra
-                gridsize:
-                    - 2
-                    - 2
-                tags:
-                    - treasure
-                    - merchant/collector
-                stackmax: 0
-                merchant: Collector
-            Gold Candle Holder:
-                name: Gold Candle Holder
-                gridsize:
-                    - 2
-                    - 2
-                tags:
-                    - treasure
-                stackmax: 0
-                merchant: Collector
-            Gold Candle Platter:
-                name: Gold Candle Platter
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - treasure
-                    - merchant/collector
-                stackmax: 0
-                merchant: Collector
-            Gold Chalice:
-                name: Gold Chalice
-                gridsize:
-                    - 1
-                    - 2
-                tags: []
-                stackmax: 0
-                merchant: Collector
-            Gold Coins:
-                name: Gold Coins
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - currency
-                stackmax: 10
-                merchant: Treasurer
-            Gold Crown:
-                name: Gold Crown
-                gridsize:
-                    - 2
-                    - 2
-                tags:
-                    - treasure
-                    - merchant/collector
-                stackmax: 0
-                merchant: Collector
-            Gold Goblet:
-                name: Gold Goblet
-                gridsize:
-                    - 1
-                    - 2
-                tags:
-                    - treasure
-                    - merchant/collector
-                stackmax: 0
-                merchant: Collector
-            Gold Ingot:
-                name: Gold Ingot
-                gridsize:
-                    - 2
-                    - 2
-                tags:
-                    - crafting/ingot
-                stackmax: 5
-                merchant: ""
-            Gold Ore:
-                name: Gold Ore
-                gridsize:
-                    - 2
-                    - 2
-                tags:
-                    - crafting/ore
-                stackmax: 5
-                merchant: ""
-            Gold Purse:
-                name: Gold Purse
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - currency/container
-                stackmax: 0
-                merchant: Treasurer
-            Gold Waterpot:
-                name: Gold Waterpot
-                gridsize:
-                    - 2
-                    - 2
-                tags:
-                    - treasure
-                    - merchant/collector
-                stackmax: 0
-                merchant: Collector
-            Golden Teeth:
-                name: Golden Teeth
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - hunting loot
-                    - crafting/mob
-                    - merchant/collector
-                stackmax: 3
-                merchant: Collector
-            Grave Essence:
-                name: Grave Essence
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - hunting loot
-                    - merchant/collector
-                stackmax: 3
-                merchant: Collector
-            Grimsmile Ring:
-                name: Grimsmile Ring
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - accessories/ring
-                stackmax: 0
-                merchant: ""
-            Healing Potion:
-                name: Healing Potion
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - utilities/consumable
-                    - merchant/alchemist
-                stackmax: 3
-                merchant: Alchemist
-            Intact Skull:
-                name: Intact Skull
-                gridsize:
-                    - 2
-                    - 2
-                tags:
-                    - hunting loot
-                    - merchant/collector
-                stackmax: 2
-                merchant: Collector
-            Iron Ingot:
-                name: Iron Ingot
-                gridsize:
-                    - 2
-                    - 2
-                tags:
-                    - crafting/ingot
-                stackmax: 5
-                merchant: ""
-            Iron Ore:
-                name: Iron Ore
-                gridsize:
-                    - 2
-                    - 2
-                tags:
-                    - crafting/ore
-                stackmax: 5
-                merchant: ""
-            Kobolds Ear:
-                name: Kobolds Ear
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - hunting loot
-                    - merchant/collector
-                stackmax: 3
-                merchant: Collector
-            Leaf Gold Bangle:
-                name: Leaf Gold Bangle
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - treasure
-                    - merchant/collector
-                stackmax: 0
-                merchant: Collector
-            Light Gold Bangle:
-                name: Light Gold Bangle
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - treasure
-                    - merchant/collector
-                stackmax: 0
-                merchant: Collector
-            Lockpick:
-                name: Lockpick
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - utilities/consumable
-                stackmax: 3
-                merchant: ""
-            Luck Potion:
-                name: Luck Potion
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - utilities/consumable
-                stackmax: 3
-                merchant: Alchemist
-            Maggots:
-                name: Maggots
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - merchant/collector
-                    - hunting loot
-                stackmax: 3
-                merchant: Collector
-            Magic Protection Potion:
-                name: Magic Protection Potion
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - utilities/consumable
-                stackmax: 3
-                merchant: Alchemist
-            Mimic Tongue:
-                name: Mimic Tongue
-                gridsize:
-                    - 2
-                    - 2
-                tags:
-                    - hunting loot
-                    - merchant/collector
-                stackmax: 0
-                merchant: Collector
-            Mimic Tooth:
-                name: Mimic Tooth
-                gridsize:
-                    - 1
-                    - 2
-                tags:
-                    - merchant/collector
-                    - hunting loot
-                stackmax: 0
-                merchant: Collector
-            Moldy Bread:
-                name: Moldy Bread
-                gridsize:
-                    - 1
-                    - 2
-                tags:
-                    - merchant/collector
-                    - hunting loot
-                stackmax: 3
-                merchant: Collector
-            Monkey Pendant:
-                name: Monkey Pendant
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - accessories/necklace
-                stackmax: 0
-                merchant: ""
-            Necklace of Peace:
-                name: Necklace of Peace
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - accessories/necklace
-                stackmax: 0
-                merchant: ""
-            Old Cloth:
-                name: Old Cloth
-                gridsize:
-                    - 2
-                    - 2
-                tags:
-                    - hunting loot
-                    - merchant/collector
-                stackmax: 3
-                merchant: Collector
-            Owl Pendant:
-                name: Owl Pendant
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - accessories/necklace
-                stackmax: 0
-                merchant: ""
-            Ox Pendant:
-                name: Ox Pendant
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - accessories/necklace
-                stackmax: 0
-                merchant: ""
-            Patterned Gold Bangle:
-                name: Patterned Gold Bangle
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - treasure
-                    - merchant/collector
-                stackmax: 0
-                merchant: Collector
-            Pearl Necklace:
-                name: Pearl Necklace
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - treasure
-                    - merchant/collector
-                stackmax: 0
-                merchant: Collector
-            Phoenix Choker:
-                name: Phoenix Choker
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - accessories/necklace
-                stackmax: 0
-                merchant: ""
-            Primitive Bracelet:
-                name: Primitive Bracelet
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - merchant/collector
-                    - hunting loot
-                stackmax: 3
-                merchant: Collector
-            Protection Potion:
-                name: Protection Potion
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - utilities/consumable
-                stackmax: 3
-                merchant: Alchemist
-            Rat Pendant:
-                name: Rat Pendant
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - accessories/necklace
-                stackmax: 0
-                merchant: ""
-            Ring of Courage:
-                name: Ring of Courage
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - accessories/ring
-                stackmax: 0
-                merchant: ""
-            Ring of Finesse:
-                name: Ring of Finesse
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - accessories/ring
-                stackmax: 0
-                merchant: ""
-            Ring of Quickness:
-                name: Ring of Quickness
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - accessories/ring
-                stackmax: 0
-                merchant: ""
-            Ring of Resolve:
-                name: Ring of Resolve
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - accessories/ring
-                stackmax: 0
-                merchant: ""
-            Ring of Survival:
-                name: Ring of Survival
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - accessories/ring
-                stackmax: 0
-                merchant: ""
-            Ring of Vitality:
-                name: Ring of Vitality
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - accessories/ring
-                stackmax: 0
-                merchant: ""
-            Ring of Wisdom:
-                name: Ring of Wisdom
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - accessories/ring
-                stackmax: 0
-                merchant: ""
-            Rotten Fluids:
-                name: Rotten Fluids
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - hunting loot
-                    - merchant/collector
-                stackmax: 3
-                merchant: Collector
-            Ruby:
-                name: Ruby
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - treasure/gem
-                    - merchant/collector
-                stackmax: 0
-                merchant: Collector
-            Rubysilver Ore:
-                name: Rubysilver Ore
-                gridsize:
-                    - 2
-                    - 2
-                tags:
-                    - crafting/ore
-                stackmax: 5
-                merchant: ""
-            Rusty Broken Sword:
-                name: Rusty Broken Sword
-                gridsize:
-                    - 1
-                    - 2
-                tags:
-                    - hunting loot
-                    - merchant/collector
-                stackmax: 3
-                merchant: Collector
-            Sapphire:
-                name: Sapphire
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - treasure/gem
-                    - merchant/collector
-                stackmax: 3
-                merchant: Collector
-            Shine Bangle:
-                name: Shine Bangle
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - treasure
-                    - merchant/collector
-                stackmax: 0
-                merchant: Collector
-            Silver Chalice:
-                name: Silver Chalice
-                gridsize:
-                    - 1
-                    - 2
-                tags:
-                    - treasure
-                    - merchant/collector
-                stackmax: 0
-                merchant: Collector
-            Silver Ingot:
-                name: Silver Ingot
-                gridsize:
-                    - 2
-                    - 2
-                tags:
-                    - crafting/ingot
-                stackmax: 5
-                merchant: ""
-            Simple Gold Bangle:
-                name: Simple Gold Bangle
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - treasure
-                    - merchant/collector
-                stackmax: 0
-                merchant: Collector
-            Slim Bangle:
-                name: Slim Bangle
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - treasure
-                    - merchant/collector
-                stackmax: 0
-                merchant: Collector
-            Spider Silk:
-                name: Spider Silk
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - hunting loot
-                    - merchant/collector
-                    - crafting/mob
-                stackmax: 3
-                merchant: Collector
-            Surgical Kit:
-                name: Surgical Kit
-                gridsize:
-                    - 2
-                    - 2
-                tags:
-                    - utilities/consumable
-                stackmax: 0
-                merchant: ""
-            Torn Bat Wing:
-                name: Torn Bat Wing
-                gridsize:
-                    - 2
-                    - 2
-                tags:
-                    - hunting loot
-                    - merchant/collector
-                stackmax: 3
-                merchant: Collector
-            Torq of Soul:
-                name: Torq of Soul
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - accessories/necklace
-                stackmax: 0
-                merchant: ""
-            Triple Gem Bangle:
-                name: Triple Gem Bangle
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - treasure
-                    - merchant/collector
-                stackmax: 0
-                merchant: Collector
-            Troll Pelt:
-                name: Troll Pelt
-                gridsize:
-                    - 2
-                    - 2
-                tags:
-                    - hunting loot
-                    - crafting/mob
-                    - merchant/collector
-                stackmax: 0
-                merchant: Collector
-            Turquoise Gem Bangle:
-                name: Turquoise Gem Bangle
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - treasure
-                    - merchant/collector
-                stackmax: 0
-                merchant: Collector
-            Volcanic Ash:
-                name: Volcanic Ash
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - hunting loot
-                    - merchant/collector
-                stackmax: 3
-                merchant: Collector
-            Wendigos Antler Fragments:
-                name: Wendigos Antler Fragments
-                gridsize:
-                    - 2
-                    - 2
-                tags:
-                    - hunting loot
-                    - merchant/collector
-                stackmax: 0
-                merchant: ""
-            Wendigos Hoof:
-                name: Wendigos Hoof
-                gridsize:
-                    - 2
-                    - 2
-                tags:
-                    - hunting loot
-                    - merchant/collector
-                stackmax: 0
-                merchant: Collector
-            Wendigos Sharp Claws:
-                name: Wendigos Sharp Claws
-                gridsize:
-                    - 2
-                    - 1
-                tags:
-                    - hunting loot
-                    - merchant/collector
-                stackmax: 0
-                merchant: Collector
-            Wind Locket:
-                name: Wind Locket
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - accessories/necklace
-                stackmax: 0
-                merchant: ""
-            Wolf Claw:
-                name: Wolf Claw
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - crafting/mob
-                    - hunting loot
-                    - merchant/collector
-                stackmax: 3
-                merchant: Collector
-            Wolf Fang:
-                name: Wolf Fang
-                gridsize:
-                    - 1
-                    - 2
-                tags:
-                    - hunting loot
-                    - merchant/collector
-                stackmax: 3
-                merchant: Collector
-            Wolf Pelt:
-                name: Wolf Pelt
-                gridsize:
-                    - 2
-                    - 2
-                tags:
-                    - hunting loot
-                    - merchant/collector
-                    - crafting/mob
-                stackmax: 3
-                merchant: Collector
-            Yetis Teeth:
-                name: Yetis Teeth
-                gridsize:
-                    - 1
-                    - 1
-                tags:
-                    - hunting loot
-                    - merchant/collector
-                stackmax: 3
-                merchant: Collector
         coordinates:
             1920x1080:
                 points:
@@ -1329,35 +164,35 @@ programs:
                         "y": 10
                 searchareas:
                     test:
+                        bottomy: 10
+                        leftx: 10
                         name: test
-                        leftx: 10
-                        topy: 10
                         rightx: 10
-                        bottomy: 10
+                        topy: 10
                     test1:
-                        name: test1
-                        leftx: 100
-                        topy: 100
-                        rightx: 100
                         bottomy: 100
-                    test2:
-                        name: test2
-                        leftx: 1000
-                        topy: 1000
-                        rightx: 1000
-                        bottomy: 1000
-                    test3:
-                        name: test3
-                        leftx: 10
-                        topy: 10
-                        rightx: 1000
-                        bottomy: 1000
-                    test4:
-                        name: test4
                         leftx: 100
-                        topy: 10
+                        name: test1
                         rightx: 100
+                        topy: 100
+                    test2:
+                        bottomy: 1000
+                        leftx: 1000
+                        name: test2
+                        rightx: 1000
+                        topy: 1000
+                    test3:
+                        bottomy: 1000
+                        leftx: 10
+                        name: test3
+                        rightx: 1000
+                        topy: 10
+                    test4:
                         bottomy: 10
+                        leftx: 100
+                        name: test4
+                        rightx: 100
+                        topy: 10
             2560x1440:
                 points:
                     Alchemist:
@@ -1486,274 +321,1220 @@ programs:
                         "y": 0
                     image search context:
                         name: image search context
-                        x: -1
-                        "y": -1
+                        x: ${foundX}+25
+                        "y": ${foundY}+25
                     test:
                         name: test
                         x: 10
                         "y": 10
                 searchareas:
                     stash-screen-player-inventory:
-                        name: stash-screen-player-inventory
-                        leftx: 913
-                        topy: 830
-                        rightx: 1466
                         bottomy: 1112
+                        leftx: 913
+                        name: stash-screen-player-inventory
+                        rightx: 1466
+                        topy: 830
                     stash-screen-stash-inventory:
-                        name: stash-screen-stash-inventory
-                        leftx: 1832
-                        topy: 261
-                        rightx: 2493
                         bottomy: 1354
+                        leftx: 1832
+                        name: stash-screen-stash-inventory
+                        rightx: 2493
+                        topy: 261
                     test:
-                        name: test
-                        leftx: 10
-                        topy: 10
-                        rightx: 10
                         bottomy: 10
-    path of exile 2:
-        name: path of exile 2
+                        leftx: 10
+                        name: test
+                        rightx: 10
+                        topy: 10
         items:
-            Arcanists Etcher:
-                name: Arcanists Etcher
+            Ancient Scroll:
+                gridsize:
+                    - 2
+                    - 3
+                merchant: Collector
+                name: Ancient Scroll
+                stackmax: 0
+                tags:
+                    - merchant/collector
+                    - treasure
+            Badger Pendant:
                 gridsize:
                     - 1
                     - 1
-                tags: []
-                stackmax: 20
                 merchant: ""
-            Armourers Scrap:
-                name: Armourers Scrap
+                name: Badger Pendant
+                stackmax: 0
+                tags:
+                    - accessories/necklace
+            Bandage:
                 gridsize:
                     - 1
                     - 1
-                tags: []
-                stackmax: 20
+                merchant: Surgeon
+                name: Bandage
+                stackmax: 3
+                tags:
+                    - utilities/consumable
+                    - merchant/surgeon
+            Bat Claw:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: Collector
+                name: Bat Claw
+                stackmax: 3
+                tags:
+                    - merchant/collector
+                    - hunting loot
+                    - crafting/mob
+            Bear Pendant:
+                gridsize:
+                    - 1
+                    - 1
                 merchant: ""
-            Artificers Orb:
-                name: Artificers Orb
+                name: Bear Pendant
+                stackmax: 0
+                tags:
+                    - accessories/necklace
+            Beetle Wings:
+                gridsize:
+                    - 1
+                    - 3
+                merchant: Collector
+                name: Beetle Wings
+                stackmax: 0
+                tags:
+                    - merchant/collector
+                    - hunting loot
+            Bone:
+                gridsize:
+                    - 1
+                    - 3
+                merchant: Collector
+                name: Bone
+                stackmax: 3
+                tags:
+                    - hunting loot
+                    - merchant/collector
+                    - crafting/mob
+            Bowstring:
                 gridsize:
                     - 1
                     - 1
-                tags: []
-                stackmax: 20
+                merchant: Collector
+                name: Bowstring
+                stackmax: 3
+                tags:
+                    - merchant/collector
+                    - hunting loot
+                    - crafting/mob
+            Broken Skull:
+                gridsize:
+                    - 2
+                    - 2
+                merchant: Collector
+                name: Broken Skull
+                stackmax: 2
+                tags:
+                    - hunting loot
+                    - merchant/collector
+            Bug Shell:
+                gridsize:
+                    - 2
+                    - 2
+                merchant: Collector
+                name: Bug Shell
+                stackmax: 0
+                tags:
+                    - merchant/collector
+                    - hunting loot
+            Campfire:
+                gridsize:
+                    - 2
+                    - 2
+                merchant: Woodsman
+                name: Campfire
+                stackmax: 0
+                tags:
+                    - utilities/consumable
+            Captured Mana Flakes:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: Collector
+                name: Captured Mana Flakes
+                stackmax: 3
+                tags:
+                    - merchant/collector
+                    - hunting loot
+                    - crafting/mob
+            Centaur Hoof:
+                gridsize:
+                    - 2
+                    - 2
+                merchant: Collector
+                name: Centaur Hoof
+                stackmax: 0
+                tags:
+                    - merchant/collector
+                    - hunting loot
+            Centaur Horn:
+                gridsize:
+                    - 2
+                    - 2
+                merchant: Collector
+                name: Centaur Horn
+                stackmax: 0
+                tags:
+                    - merchant/collector
+                    - hunting loot
+                    - crafting/mob
+            Centaur Tail:
+                gridsize:
+                    - 1
+                    - 3
+                merchant: Collector
+                name: Centaur Tail
+                stackmax: 0
+                tags:
+                    - merchant/collector
+                    - hunting loot
+                    - crafting/mob
+            Ceremonial Dagger:
+                gridsize:
+                    - 2
+                    - 1
+                merchant: Collector
+                name: Ceremonial Dagger
+                stackmax: 0
+                tags:
+                    - treasure
+                    - merchant/collector
+            Cobalt Ingot:
+                gridsize:
+                    - 2
+                    - 2
                 merchant: ""
-            Artificers Shard:
-                name: Artificers Shard
+                name: Cobalt Ingot
+                stackmax: 5
+                tags:
+                    - crafting/ingot
+            Cobalt Ore:
                 gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 9
+                    - 2
+                    - 2
                 merchant: ""
-            Blacksmiths Whetstone:
-                name: Blacksmiths Whetstone
+                name: Cobalt Ore
+                stackmax: 5
+                tags:
+                    - crafting/ore
+            Copper Ingot:
                 gridsize:
-                    - 1
-                    - 1
-                tags: []
-                stackmax: 20
+                    - 2
+                    - 2
                 merchant: ""
-            Body Rune:
-                name: Body Rune
+                name: Copper Ingot
+                stackmax: 5
+                tags:
+                    - crafting/ingot
+            Copper Ore:
+                gridsize:
+                    - 2
+                    - 2
+                merchant: ""
+                name: Copper Ore
+                stackmax: 5
+                tags:
+                    - crafting/ore
+            Cursed Crown:
+                gridsize:
+                    - 2
+                    - 2
+                merchant: Collector
+                name: Cursed Crown
+                stackmax: 0
+                tags:
+                    - hunting loot
+                    - merchant/collector
+                    - crafting/mob
+            Cyclops Eye:
+                gridsize:
+                    - 2
+                    - 2
+                merchant: Collector
+                name: Cyclops Eye
+                stackmax: 0
+                tags:
+                    - merchant/collector
+                    - hunting loot
+                    - crafting/mob
+            Cyclops Rags:
+                gridsize:
+                    - 2
+                    - 2
+                merchant: Collector
+                name: Cyclops Rags
+                stackmax: 0
+                tags:
+                    - merchant/collector
+                    - hunting loot
+                    - crafting/mob
+            Demon Blood:
                 gridsize:
                     - 1
                     - 1
+                merchant: Collector
+                name: Demon Blood
+                stackmax: 3
+                tags:
+                    - hunting loot
+                    - merchant/collector
+                    - crafting/mob
+            Demon Dog Thorn:
+                gridsize:
+                    - 1
+                    - 3
+                merchant: Collector
+                name: Demon Dog Thorn
+                stackmax: 0
+                tags:
+                    - crafting/mob
+                    - hunting loot
+                    - merchant/collector
+            Diamond:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: Collector
+                name: Diamond
+                stackmax: 3
+                tags:
+                    - treasure/gem
+            Dog Collar:
+                gridsize:
+                    - 2
+                    - 2
+                merchant: Collector
+                name: Dog Collar
+                stackmax: 0
+                tags:
+                    - merchant/collector
+                    - crafting/mob
+                    - hunting loot
+            Dotted Gold Bangle:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: Collector
+                name: Dotted Gold Bangle
+                stackmax: 0
+                tags:
+                    - treasure
+            Emerald:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: Collector
+                name: Emerald
+                stackmax: 3
+                tags:
+                    - treasure/gem
+            Empty Inventory Slot:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Empty Inventory Slot
+                stackmax: 0
                 tags: []
+            Enchanted Dark Fabric:
+                gridsize:
+                    - 2
+                    - 2
+                merchant: Collector
+                name: Enchanted Dark Fabric
+                stackmax: 3
+                tags:
+                    - hunting loot
+                    - crafting/mob
+                    - merchant/collector
+            Extra Thick Pelt:
+                gridsize:
+                    - 2
+                    - 2
+                merchant: Collector
+                name: Extra Thick Pelt
+                stackmax: 3
+                tags:
+                    - merchant/collector
+                    - hunting loot
+            Fangs of Death:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Fangs of Death
+                stackmax: 0
+                tags:
+                    - accessories/necklace
+            Fox Pendant:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Fox Pendant
+                stackmax: 0
+                tags:
+                    - accessories/necklace
+            Francisca Axe:
+                gridsize:
+                    - 1
+                    - 2
+                merchant: Woodsman
+                name: Francisca Axe
+                stackmax: 0
+                tags:
+                    - utilities/consumable
+            Frost Amulet:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Frost Amulet
+                stackmax: 0
+                tags:
+                    - accessories/necklace
+            Frost Wyverns Claws:
+                gridsize:
+                    - 2
+                    - 2
+                merchant: Collector
+                name: Frost Wyverns Claws
+                stackmax: 0
+                tags: []
+            Froststone Ingot:
+                gridsize:
+                    - 2
+                    - 2
+                merchant: ""
+                name: Froststone Ingot
+                stackmax: 5
+                tags:
+                    - crafting/ingot
+            Froststone Ore:
+                gridsize:
+                    - 2
+                    - 2
+                merchant: ""
+                name: Froststone Ore
+                stackmax: 5
+                tags:
+                    - crafting/ore
+            Frozen Heart:
+                gridsize:
+                    - 2
+                    - 2
+                merchant: Collector
+                name: Frozen Heart
+                stackmax: 0
+                tags:
+                    - crafting/mob
+                    - hunting loot
+                    - merchant/collector
+            Gem Necklace:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: Collector
+                name: Gem Necklace
+                stackmax: 0
+                tags:
+                    - treasure
+                    - merchant/collector
+            Gem Ring:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: Collector
+                name: Gem Ring
+                stackmax: 0
+                tags:
+                    - treasure
+                    - merchant/collector
+            Giant Toe:
+                gridsize:
+                    - 1
+                    - 2
+                merchant: Collector
+                name: Giant Toe
+                stackmax: 3
+                tags:
+                    - merchant/collector
+                    - hunting loot
+            Glimmer Bangle:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: Collector
+                name: Glimmer Bangle
+                stackmax: 0
+                tags:
+                    - treasure
+                    - merchant/collector
+            Glowing Blue Ice Eyes:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: Collector
+                name: Glowing Blue Ice Eyes
+                stackmax: 3
+                tags:
+                    - hunting loot
+                    - merchant/collector
+            Goblet:
+                gridsize:
+                    - 1
+                    - 2
+                merchant: Collector
+                name: Goblet
+                stackmax: 0
+                tags:
+                    - merchant/collector
+                    - treasure
+            Goblin Ear:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: Collector
+                name: Goblin Ear
+                stackmax: 3
+                tags:
+                    - merchant/collector
+                    - hunting loot
+            Gold Bag:
+                gridsize:
+                    - 2
+                    - 2
+                merchant: ""
+                name: Gold Bag
+                stackmax: 1000
+                tags:
+                    - currency/container
+            Gold Band:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: Collector
+                name: Gold Band
+                stackmax: 0
+                tags:
+                    - treasure
+                    - merchant/collector
+            Gold Bowl:
+                gridsize:
+                    - 2
+                    - 2
+                merchant: Collector
+                name: Gold Bowl
+                stackmax: 0
+                tags:
+                    - treasure
+                    - merchant/collector
+            Gold Candelabra:
+                gridsize:
+                    - 2
+                    - 2
+                merchant: Collector
+                name: Gold Candelabra
+                stackmax: 0
+                tags:
+                    - treasure
+                    - merchant/collector
+            Gold Candle Holder:
+                gridsize:
+                    - 2
+                    - 2
+                merchant: Collector
+                name: Gold Candle Holder
+                stackmax: 0
+                tags:
+                    - treasure
+            Gold Candle Platter:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: Collector
+                name: Gold Candle Platter
+                stackmax: 0
+                tags:
+                    - treasure
+                    - merchant/collector
+            Gold Chalice:
+                gridsize:
+                    - 1
+                    - 2
+                merchant: Collector
+                name: Gold Chalice
+                stackmax: 0
+                tags: []
+            Gold Coins:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: Treasurer
+                name: Gold Coins
                 stackmax: 10
+                tags:
+                    - currency
+            Gold Crown:
+                gridsize:
+                    - 2
+                    - 2
+                merchant: Collector
+                name: Gold Crown
+                stackmax: 0
+                tags:
+                    - treasure
+                    - merchant/collector
+            Gold Goblet:
+                gridsize:
+                    - 1
+                    - 2
+                merchant: Collector
+                name: Gold Goblet
+                stackmax: 0
+                tags:
+                    - treasure
+                    - merchant/collector
+            Gold Ingot:
+                gridsize:
+                    - 2
+                    - 2
                 merchant: ""
-            Chance Shard:
-                name: Chance Shard
+                name: Gold Ingot
+                stackmax: 5
+                tags:
+                    - crafting/ingot
+            Gold Ore:
+                gridsize:
+                    - 2
+                    - 2
+                merchant: ""
+                name: Gold Ore
+                stackmax: 5
+                tags:
+                    - crafting/ore
+            Gold Purse:
                 gridsize:
                     - 1
                     - 1
-                tags: []
-                stackmax: 9
-                merchant: ""
-            Chaos Orb:
-                name: Chaos Orb
+                merchant: Treasurer
+                name: Gold Purse
+                stackmax: 0
+                tags:
+                    - currency/container
+            Gold Waterpot:
+                gridsize:
+                    - 2
+                    - 2
+                merchant: Collector
+                name: Gold Waterpot
+                stackmax: 0
+                tags:
+                    - treasure
+                    - merchant/collector
+            Golden Teeth:
                 gridsize:
                     - 1
                     - 1
-                tags: []
-                stackmax: 20
-                merchant: ""
-            Desert Rune:
-                name: Desert Rune
+                merchant: Collector
+                name: Golden Teeth
+                stackmax: 3
+                tags:
+                    - hunting loot
+                    - crafting/mob
+                    - merchant/collector
+            Grave Essence:
                 gridsize:
                     - 1
                     - 1
-                tags: []
-                stackmax: 10
-                merchant: ""
-            Divine Orb:
-                name: Divine Orb
+                merchant: Collector
+                name: Grave Essence
+                stackmax: 3
+                tags:
+                    - hunting loot
+                    - merchant/collector
+            Grimsmile Ring:
                 gridsize:
                     - 1
                     - 1
-                tags: []
-                stackmax: 10
                 merchant: ""
-            Exalted Orb:
-                name: Exalted Orb
+                name: Grimsmile Ring
+                stackmax: 0
+                tags:
+                    - accessories/ring
+            Healing Potion:
                 gridsize:
                     - 1
                     - 1
-                tags: []
-                stackmax: 20
+                merchant: Alchemist
+                name: Healing Potion
+                stackmax: 3
+                tags:
+                    - utilities/consumable
+                    - merchant/alchemist
+            Intact Skull:
+                gridsize:
+                    - 2
+                    - 2
+                merchant: Collector
+                name: Intact Skull
+                stackmax: 2
+                tags:
+                    - hunting loot
+                    - merchant/collector
+            Iron Ingot:
+                gridsize:
+                    - 2
+                    - 2
                 merchant: ""
-            Gemcutters Prism:
-                name: Gemcutters Prism
+                name: Iron Ingot
+                stackmax: 5
+                tags:
+                    - crafting/ingot
+            Iron Ore:
+                gridsize:
+                    - 2
+                    - 2
+                merchant: ""
+                name: Iron Ore
+                stackmax: 5
+                tags:
+                    - crafting/ore
+            Kobolds Ear:
                 gridsize:
                     - 1
                     - 1
-                tags: []
-                stackmax: 20
-                merchant: ""
-            Glacial Rune:
-                name: Glacial Rune
+                merchant: Collector
+                name: Kobolds Ear
+                stackmax: 3
+                tags:
+                    - hunting loot
+                    - merchant/collector
+            Leaf Gold Bangle:
                 gridsize:
                     - 1
                     - 1
-                tags: []
-                stackmax: 10
-                merchant: ""
-            Glassblowers Bauble:
-                name: Glassblowers Bauble
+                merchant: Collector
+                name: Leaf Gold Bangle
+                stackmax: 0
+                tags:
+                    - treasure
+                    - merchant/collector
+            Light Gold Bangle:
                 gridsize:
                     - 1
                     - 1
-                tags: []
-                stackmax: 20
-                merchant: ""
-            Inspiration Rune:
-                name: Inspiration Rune
+                merchant: Collector
+                name: Light Gold Bangle
+                stackmax: 0
+                tags:
+                    - treasure
+                    - merchant/collector
+            Lockpick:
                 gridsize:
                     - 1
                     - 1
-                tags: []
-                stackmax: 10
                 merchant: ""
-            Iron Rune:
-                name: Iron Rune
+                name: Lockpick
+                stackmax: 3
+                tags:
+                    - utilities/consumable
+            Luck Potion:
                 gridsize:
                     - 1
                     - 1
-                tags: []
-                stackmax: 10
-                merchant: ""
-            Lesser Jewellers Orb:
-                name: Lesser Jewellers Orb
+                merchant: Alchemist
+                name: Luck Potion
+                stackmax: 3
+                tags:
+                    - utilities/consumable
+            Maggots:
                 gridsize:
                     - 1
                     - 1
-                tags: []
-                stackmax: 20
-                merchant: ""
-            Mind Rune:
-                name: Mind Rune
+                merchant: Collector
+                name: Maggots
+                stackmax: 3
+                tags:
+                    - merchant/collector
+                    - hunting loot
+            Magic Protection Potion:
                 gridsize:
                     - 1
                     - 1
-                tags: []
-                stackmax: 10
-                merchant: ""
-            Orb of Alchemy:
-                name: Orb of Alchemy
+                merchant: Alchemist
+                name: Magic Protection Potion
+                stackmax: 3
+                tags:
+                    - utilities/consumable
+            Mimic Tongue:
+                gridsize:
+                    - 2
+                    - 2
+                merchant: Collector
+                name: Mimic Tongue
+                stackmax: 0
+                tags:
+                    - hunting loot
+                    - merchant/collector
+            Mimic Tooth:
+                gridsize:
+                    - 1
+                    - 2
+                merchant: Collector
+                name: Mimic Tooth
+                stackmax: 0
+                tags:
+                    - merchant/collector
+                    - hunting loot
+            Moldy Bread:
+                gridsize:
+                    - 1
+                    - 2
+                merchant: Collector
+                name: Moldy Bread
+                stackmax: 3
+                tags:
+                    - merchant/collector
+                    - hunting loot
+            Monkey Pendant:
                 gridsize:
                     - 1
                     - 1
-                tags: []
-                stackmax: 20
                 merchant: ""
-            Orb of Augmentation:
-                name: Orb of Augmentation
+                name: Monkey Pendant
+                stackmax: 0
+                tags:
+                    - accessories/necklace
+            Necklace of Peace:
                 gridsize:
                     - 1
                     - 1
-                tags: []
-                stackmax: 30
                 merchant: ""
-            Orb of Chance:
-                name: Orb of Chance
+                name: Necklace of Peace
+                stackmax: 0
+                tags:
+                    - accessories/necklace
+            Old Cloth:
+                gridsize:
+                    - 2
+                    - 2
+                merchant: Collector
+                name: Old Cloth
+                stackmax: 3
+                tags:
+                    - hunting loot
+                    - merchant/collector
+            Owl Pendant:
                 gridsize:
                     - 1
                     - 1
-                tags: []
-                stackmax: 10
                 merchant: ""
-            Orb of Transmutation:
-                name: Orb of Transmutation
+                name: Owl Pendant
+                stackmax: 0
+                tags:
+                    - accessories/necklace
+            Ox Pendant:
                 gridsize:
                     - 1
                     - 1
-                tags: []
-                stackmax: 40
                 merchant: ""
-            Rebirth Rune:
-                name: Rebirth Rune
+                name: Ox Pendant
+                stackmax: 0
+                tags:
+                    - accessories/necklace
+            Patterned Gold Bangle:
                 gridsize:
                     - 1
                     - 1
-                tags: []
-                stackmax: 10
-                merchant: ""
-            Regal Orb:
-                name: Regal Orb
+                merchant: Collector
+                name: Patterned Gold Bangle
+                stackmax: 0
+                tags:
+                    - treasure
+                    - merchant/collector
+            Pearl Necklace:
                 gridsize:
                     - 1
                     - 1
-                tags: []
-                stackmax: 20
-                merchant: ""
-            Regal Shard:
-                name: Regal Shard
+                merchant: Collector
+                name: Pearl Necklace
+                stackmax: 0
+                tags:
+                    - treasure
+                    - merchant/collector
+            Phoenix Choker:
                 gridsize:
                     - 1
                     - 1
-                tags: []
-                stackmax: 9
                 merchant: ""
-            Scroll of Wisdom:
-                name: Scroll of Wisdom
+                name: Phoenix Choker
+                stackmax: 0
+                tags:
+                    - accessories/necklace
+            Primitive Bracelet:
                 gridsize:
                     - 1
                     - 1
-                tags: []
-                stackmax: 40
-                merchant: ""
-            Stone Rune:
-                name: Stone Rune
+                merchant: Collector
+                name: Primitive Bracelet
+                stackmax: 3
+                tags:
+                    - merchant/collector
+                    - hunting loot
+            Protection Potion:
                 gridsize:
                     - 1
                     - 1
-                tags: []
-                stackmax: 10
-                merchant: ""
-            Storm Rune:
-                name: Storm Rune
+                merchant: Alchemist
+                name: Protection Potion
+                stackmax: 3
+                tags:
+                    - utilities/consumable
+            Rat Pendant:
                 gridsize:
                     - 1
                     - 1
-                tags: []
-                stackmax: 10
                 merchant: ""
-            Vaal Orb:
-                name: Vaal Orb
+                name: Rat Pendant
+                stackmax: 0
+                tags:
+                    - accessories/necklace
+            Ring of Courage:
                 gridsize:
                     - 1
                     - 1
-                tags: []
-                stackmax: 20
                 merchant: ""
-            Vision Rune:
-                name: Vision Rune
+                name: Ring of Courage
+                stackmax: 0
+                tags:
+                    - accessories/ring
+            Ring of Finesse:
                 gridsize:
                     - 1
                     - 1
-                tags: []
-                stackmax: 10
                 merchant: ""
+                name: Ring of Finesse
+                stackmax: 0
+                tags:
+                    - accessories/ring
+            Ring of Quickness:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Ring of Quickness
+                stackmax: 0
+                tags:
+                    - accessories/ring
+            Ring of Resolve:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Ring of Resolve
+                stackmax: 0
+                tags:
+                    - accessories/ring
+            Ring of Survival:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Ring of Survival
+                stackmax: 0
+                tags:
+                    - accessories/ring
+            Ring of Vitality:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Ring of Vitality
+                stackmax: 0
+                tags:
+                    - accessories/ring
+            Ring of Wisdom:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Ring of Wisdom
+                stackmax: 0
+                tags:
+                    - accessories/ring
+            Rotten Fluids:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: Collector
+                name: Rotten Fluids
+                stackmax: 3
+                tags:
+                    - hunting loot
+                    - merchant/collector
+            Ruby:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: Collector
+                name: Ruby
+                stackmax: 0
+                tags:
+                    - treasure/gem
+                    - merchant/collector
+            Rubysilver Ore:
+                gridsize:
+                    - 2
+                    - 2
+                merchant: ""
+                name: Rubysilver Ore
+                stackmax: 5
+                tags:
+                    - crafting/ore
+            Rusty Broken Sword:
+                gridsize:
+                    - 1
+                    - 2
+                merchant: Collector
+                name: Rusty Broken Sword
+                stackmax: 3
+                tags:
+                    - hunting loot
+                    - merchant/collector
+            Sapphire:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: Collector
+                name: Sapphire
+                stackmax: 3
+                tags:
+                    - treasure/gem
+                    - merchant/collector
+            Shine Bangle:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: Collector
+                name: Shine Bangle
+                stackmax: 0
+                tags:
+                    - treasure
+                    - merchant/collector
+            Silver Chalice:
+                gridsize:
+                    - 1
+                    - 2
+                merchant: Collector
+                name: Silver Chalice
+                stackmax: 0
+                tags:
+                    - treasure
+                    - merchant/collector
+            Silver Ingot:
+                gridsize:
+                    - 2
+                    - 2
+                merchant: ""
+                name: Silver Ingot
+                stackmax: 5
+                tags:
+                    - crafting/ingot
+            Simple Gold Bangle:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: Collector
+                name: Simple Gold Bangle
+                stackmax: 0
+                tags:
+                    - treasure
+                    - merchant/collector
+            Slim Bangle:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: Collector
+                name: Slim Bangle
+                stackmax: 0
+                tags:
+                    - treasure
+                    - merchant/collector
+            Spider Silk:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: Collector
+                name: Spider Silk
+                stackmax: 3
+                tags:
+                    - hunting loot
+                    - merchant/collector
+                    - crafting/mob
+            Surgical Kit:
+                gridsize:
+                    - 2
+                    - 2
+                merchant: ""
+                name: Surgical Kit
+                stackmax: 0
+                tags:
+                    - utilities/consumable
+            Torn Bat Wing:
+                gridsize:
+                    - 2
+                    - 2
+                merchant: Collector
+                name: Torn Bat Wing
+                stackmax: 3
+                tags:
+                    - hunting loot
+                    - merchant/collector
+            Torq of Soul:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Torq of Soul
+                stackmax: 0
+                tags:
+                    - accessories/necklace
+            Triple Gem Bangle:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: Collector
+                name: Triple Gem Bangle
+                stackmax: 0
+                tags:
+                    - treasure
+                    - merchant/collector
+            Troll Pelt:
+                gridsize:
+                    - 2
+                    - 2
+                merchant: Collector
+                name: Troll Pelt
+                stackmax: 0
+                tags:
+                    - hunting loot
+                    - crafting/mob
+                    - merchant/collector
+            Turquoise Gem Bangle:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: Collector
+                name: Turquoise Gem Bangle
+                stackmax: 0
+                tags:
+                    - treasure
+                    - merchant/collector
+            Volcanic Ash:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: Collector
+                name: Volcanic Ash
+                stackmax: 3
+                tags:
+                    - hunting loot
+                    - merchant/collector
+            Wendigos Antler Fragments:
+                gridsize:
+                    - 2
+                    - 2
+                merchant: ""
+                name: Wendigos Antler Fragments
+                stackmax: 0
+                tags:
+                    - hunting loot
+                    - merchant/collector
+            Wendigos Hoof:
+                gridsize:
+                    - 2
+                    - 2
+                merchant: Collector
+                name: Wendigos Hoof
+                stackmax: 0
+                tags:
+                    - hunting loot
+                    - merchant/collector
+            Wendigos Sharp Claws:
+                gridsize:
+                    - 2
+                    - 1
+                merchant: Collector
+                name: Wendigos Sharp Claws
+                stackmax: 0
+                tags:
+                    - hunting loot
+                    - merchant/collector
+            Wind Locket:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Wind Locket
+                stackmax: 0
+                tags:
+                    - accessories/necklace
+            Wolf Claw:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: Collector
+                name: Wolf Claw
+                stackmax: 3
+                tags:
+                    - crafting/mob
+                    - hunting loot
+                    - merchant/collector
+            Wolf Fang:
+                gridsize:
+                    - 1
+                    - 2
+                merchant: Collector
+                name: Wolf Fang
+                stackmax: 3
+                tags:
+                    - hunting loot
+                    - merchant/collector
+            Wolf Pelt:
+                gridsize:
+                    - 2
+                    - 2
+                merchant: Collector
+                name: Wolf Pelt
+                stackmax: 3
+                tags:
+                    - hunting loot
+                    - merchant/collector
+                    - crafting/mob
+            Yetis Teeth:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: Collector
+                name: Yetis Teeth
+                stackmax: 3
+                tags:
+                    - hunting loot
+                    - merchant/collector
+        name: dark and darker
+    path of exile 2:
         coordinates:
             1920x1080:
                 points:
@@ -1769,18 +1550,260 @@ programs:
                         x: 158
                         "y": 381
                 searchareas: {}
-    shadows of chroma tower:
-        name: shadows of chroma tower
         items:
-            Healing Potion:
-                name: Healing Potion
+            Arcanists Etcher:
                 gridsize:
                     - 1
                     - 1
-                tags: []
-                stackmax: 3
                 merchant: ""
+                name: Arcanists Etcher
+                stackmax: 20
+                tags: []
+            Armourers Scrap:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Armourers Scrap
+                stackmax: 20
+                tags: []
+            Artificers Orb:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Artificers Orb
+                stackmax: 20
+                tags: []
+            Artificers Shard:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Artificers Shard
+                stackmax: 9
+                tags: []
+            Blacksmiths Whetstone:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Blacksmiths Whetstone
+                stackmax: 20
+                tags: []
+            Body Rune:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Body Rune
+                stackmax: 10
+                tags: []
+            Chance Shard:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Chance Shard
+                stackmax: 9
+                tags: []
+            Chaos Orb:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Chaos Orb
+                stackmax: 20
+                tags: []
+            Desert Rune:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Desert Rune
+                stackmax: 10
+                tags: []
+            Divine Orb:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Divine Orb
+                stackmax: 10
+                tags: []
+            Exalted Orb:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Exalted Orb
+                stackmax: 20
+                tags: []
+            Gemcutters Prism:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Gemcutters Prism
+                stackmax: 20
+                tags: []
+            Glacial Rune:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Glacial Rune
+                stackmax: 10
+                tags: []
+            Glassblowers Bauble:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Glassblowers Bauble
+                stackmax: 20
+                tags: []
+            Inspiration Rune:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Inspiration Rune
+                stackmax: 10
+                tags: []
+            Iron Rune:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Iron Rune
+                stackmax: 10
+                tags: []
+            Lesser Jewellers Orb:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Lesser Jewellers Orb
+                stackmax: 20
+                tags: []
+            Mind Rune:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Mind Rune
+                stackmax: 10
+                tags: []
+            Orb of Alchemy:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Orb of Alchemy
+                stackmax: 20
+                tags: []
+            Orb of Augmentation:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Orb of Augmentation
+                stackmax: 30
+                tags: []
+            Orb of Chance:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Orb of Chance
+                stackmax: 10
+                tags: []
+            Orb of Transmutation:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Orb of Transmutation
+                stackmax: 40
+                tags: []
+            Rebirth Rune:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Rebirth Rune
+                stackmax: 10
+                tags: []
+            Regal Orb:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Regal Orb
+                stackmax: 20
+                tags: []
+            Regal Shard:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Regal Shard
+                stackmax: 9
+                tags: []
+            Scroll of Wisdom:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Scroll of Wisdom
+                stackmax: 40
+                tags: []
+            Stone Rune:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Stone Rune
+                stackmax: 10
+                tags: []
+            Storm Rune:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Storm Rune
+                stackmax: 10
+                tags: []
+            Vaal Orb:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Vaal Orb
+                stackmax: 20
+                tags: []
+            Vision Rune:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Vision Rune
+                stackmax: 10
+                tags: []
+        name: path of exile 2
+    shadows of chroma tower:
         coordinates:
             2560x1440:
                 points: {}
                 searchareas: {}
+        items:
+            Healing Potion:
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: Healing Potion
+                stackmax: 3
+                tags: []
+        name: shadows of chroma tower

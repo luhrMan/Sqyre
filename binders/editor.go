@@ -57,20 +57,20 @@ func refreshAllProgramRelatedUI() {
 		setAccordionAutoPicSearchAreasLists(accordion)
 	}
 
-	// Refresh action tab accordions
-	ats := ui.GetUi().ActionTabs
-	if ats.ImageSearchItemsAccordion != nil {
-		setAccordionItemsLists(ats.ImageSearchItemsAccordion)
-	}
-	if ats.PointsAccordion != nil {
-		setAccordionPointsLists(ats.PointsAccordion)
-	}
-	if ats.ImageSearchSAAccordion != nil {
-		setAccordionSearchAreasLists(ats.ImageSearchSAAccordion)
-	}
-	if ats.OcrSAAccordion != nil {
-		setAccordionSearchAreasLists(ats.OcrSAAccordion)
-	}
+	// // Refresh action tab accordions
+	// ats := ui.GetUi().ActionTabs
+	// if ats.ImageSearchItemsAccordion != nil {
+	// 	setAccordionItemsLists(ats.ImageSearchItemsAccordion)
+	// }
+	// if ats.PointsAccordion != nil {
+	// 	setAccordionPointsLists(ats.PointsAccordion)
+	// }
+	// if ats.ImageSearchSAAccordion != nil {
+	// 	setAccordionSearchAreasLists(ats.ImageSearchSAAccordion)
+	// }
+	// if ats.OcrSAAccordion != nil {
+	// 	setAccordionSearchAreasLists(ats.OcrSAAccordion)
+	// }
 }
 
 func setEditorLists() {
@@ -306,8 +306,19 @@ func setEditorForms() {
 	et.PointsTab.Widgets["Form"].(*widget.Form).OnSubmit = func() {
 		w := et.PointsTab.Widgets
 		n := w["Name"].(*widget.Entry).Text
-		x, _ := strconv.Atoi(w["X"].(*widget.Entry).Text)
-		y, _ := strconv.Atoi(w["Y"].(*widget.Entry).Text)
+		xText := w["X"].(*widget.Entry).Text
+		yText := w["Y"].(*widget.Entry).Text
+		var xVal, yVal interface{}
+		if x, err := strconv.Atoi(xText); err == nil {
+			xVal = x
+		} else {
+			xVal = xText
+		}
+		if y, err := strconv.Atoi(yText); err == nil {
+			yVal = y
+		} else {
+			yVal = yText
+		}
 		if v, ok := et.PointsTab.SelectedItem.(*models.Point); ok {
 			p := ui.GetUi().ProgramSelector.Text
 			program, err := repositories.ProgramRepo().Get(p)
@@ -317,8 +328,8 @@ func setEditorForms() {
 			}
 			oldkey := v.Name
 			v.Name = n
-			v.X = x
-			v.Y = y
+			v.X = xVal
+			v.Y = yVal
 
 			if err := program.PointRepo(config.MainMonitorSizeString).Set(v.Name, v); err != nil {
 				log.Printf("Error saving point %s: %v", v.Name, err)
@@ -537,8 +548,19 @@ func setEditorButtons() {
 			// RefreshItemsAccordionItems()
 		case "Points":
 			n := ui.GetUi().EditorTabs.PointsTab.Widgets["Name"].(*widget.Entry).Text
-			x, _ := strconv.Atoi(ui.GetUi().EditorTabs.PointsTab.Widgets["X"].(*widget.Entry).Text)
-			y, _ := strconv.Atoi(ui.GetUi().EditorTabs.PointsTab.Widgets["Y"].(*widget.Entry).Text)
+			xText := ui.GetUi().EditorTabs.PointsTab.Widgets["X"].(*widget.Entry).Text
+			yText := ui.GetUi().EditorTabs.PointsTab.Widgets["Y"].(*widget.Entry).Text
+			var xVal, yVal interface{}
+			if x, err := strconv.Atoi(xText); err == nil {
+				xVal = x
+			} else {
+				xVal = xText
+			}
+			if y, err := strconv.Atoi(yText); err == nil {
+				yVal = y
+			} else {
+				yVal = yText
+			}
 
 			pro := getProgram(program)
 			if pro == nil {
@@ -548,8 +570,8 @@ func setEditorButtons() {
 			// Create new point using repository New() function
 			p := pro.PointRepo(config.MainMonitorSizeString).New()
 			p.Name = n
-			p.X = x
-			p.Y = y
+			p.X = xVal
+			p.Y = yVal
 
 			err := pro.PointRepo(config.MainMonitorSizeString).Set(p.Name, p)
 			if err != nil {

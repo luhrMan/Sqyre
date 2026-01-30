@@ -163,7 +163,7 @@ func RefreshItemsAccordionItems() {
 // RefreshProgramAccordionItem refreshes only the accordion item for a specific program
 func RefreshProgramAccordionItem(programName string) {
 	// Refresh both the main action tabs accordion and the editor tabs accordion
-	refreshAccordionForProgram(ui.GetUi().ActionTabs.ImageSearchItemsAccordion, programName)
+	// refreshAccordionForProgram(ui.GetUi().ActionTabs.ImageSearchItemsAccordion, programName)
 
 	if accordion, ok := ui.GetUi().EditorTabs.ItemsTab.Widgets["Accordion"].(*widget.Accordion); ok {
 		refreshAccordionForProgram(accordion, programName)
@@ -187,9 +187,9 @@ func refreshAccordionForProgram(accordion *widget.Accordion, programName string)
 // RebuildItemsAccordion completely rebuilds the items accordion to refresh icon cache
 func RebuildItemsAccordion() {
 	// Rebuild the main action tabs accordion
-	if ui.GetUi().ActionTabs.ImageSearchItemsAccordion != nil {
-		setAccordionItemsLists(ui.GetUi().ActionTabs.ImageSearchItemsAccordion)
-	}
+	// if ui.GetUi().ActionTabs.ImageSearchItemsAccordion != nil {
+	// 	setAccordionItemsLists(ui.GetUi().ActionTabs.ImageSearchItemsAccordion)
+	// }
 
 	// Rebuild the editor tabs accordion
 	if accordion, ok := ui.GetUi().EditorTabs.ItemsTab.Widgets["Accordion"].(*widget.Accordion); ok {
@@ -267,7 +267,7 @@ func setAccordionItemsLists(acc *widget.Accordion) {
 // createProgramAccordionItem creates an accordion item for a specific program with icon cache
 func createProgramAccordionItem(program *models.Program) *widget.AccordionItem {
 	var (
-		ats         = ui.GetUi().ActionTabs
+		// ats         = ui.GetUi().ActionTabs
 		iconService = services.IconVariantServiceInstance()
 	)
 
@@ -357,9 +357,12 @@ func createProgramAccordionItem(program *models.Program) *widget.AccordionItem {
 			tt := stack.Objects[2].(*ttwidget.Label)
 			tt.SetToolTip(baseItemName)
 
-			ist, _ := ats.BoundImageSearch.GetValue("Targets")
-			t := ist.([]string)
-			if ui.GetUi().MainUi.Visible() {
+			// Get targets from the action node directly (bindings removed)
+			var t []string
+			if ui.GetUi().MainUi.Navigation.Visible() {
+				if v, ok := ui.GetUi().Mui.MTabs.SelectedTab().Macro.Root.GetAction(ui.GetUi().Mui.MTabs.SelectedTab().SelectedNode).(*actions.ImageSearch); ok {
+					t = v.Targets
+				}
 				// Check if this base item is selected (in targets)
 				fullItemName := programName + config.ProgramDelimiter + baseItemName
 				if slices.Contains(t, fullItemName) {
@@ -421,7 +424,7 @@ func createProgramAccordionItem(program *models.Program) *widget.AccordionItem {
 		ui.GetUi().EditorTabs.ItemsTab.SelectedItem = item
 
 		// Update image search targets if in main UI
-		if ui.GetUi().MainUi.Visible() {
+		if ui.GetUi().MainUi.Navigation.Visible() {
 			if v, ok := ui.GetUi().Mui.MTabs.SelectedTab().Macro.Root.GetAction(ui.GetUi().Mui.MTabs.SelectedTab().SelectedNode).(*actions.ImageSearch); ok {
 				t := v.Targets
 				name := programName + config.ProgramDelimiter + item.Name

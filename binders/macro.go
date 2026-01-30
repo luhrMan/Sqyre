@@ -17,7 +17,6 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
-	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 	"github.com/go-vgo/robotgo"
 	"github.com/google/uuid"
 )
@@ -42,7 +41,7 @@ func SetMacroUi() {
 	// }
 	setMtabSettingsAndWidgets()
 
-	setMacroToolbar()
+	// setMacroToolbar()
 	for _, m := range repositories.MacroRepo().GetAll() {
 		AddMacroTab(m)
 	}
@@ -99,7 +98,7 @@ func setMtabSettingsAndWidgets() {
 		mt := mtabs.SelectedTab()
 		mt.UnselectAll()
 		mt.SelectedNode = ""
-		ResetBinds()
+		// ResetBinds()
 		RefreshItemsAccordionItems()
 	}
 	mtabs.OnSelected = func(ti *container.TabItem) {
@@ -162,6 +161,10 @@ func setMtabSettingsAndWidgets() {
 		mt.Macro.GlobalDelay = gd
 		robotgo.MouseSleep = gd
 		robotgo.KeySleep = gd
+	}
+	mtabs.BoundGlobalDelayEntry.OnSubmitted = func(s string) {
+		mt := mtabs.SelectedTab()
+		repositories.MacroRepo().Set(mt.Macro.Name, mt.Macro)
 	}
 }
 
@@ -249,121 +252,106 @@ func setMacroSelect(b *widget.Button) {
 
 // MACRO TREE
 func setMacroTree(mt *ui.MacroTree) {
-	ats := ui.GetUi().ActionTabs
 	mt.Tree.OnSelected = func(uid widget.TreeNodeID) {
+		// Update selected node
 		ui.GetUi().Mui.MTabs.SelectedTab().SelectedNode = uid
-		switch node := mt.Macro.Root.GetAction(uid).(type) {
-		case *actions.Wait:
-			bindAction(node)
-			ats.SelectIndex(ui.WaitTab)
-		case *actions.Move:
-			bindAction(node)
-			ats.SelectIndex(ui.MoveTab)
-		case *actions.Click:
-			bindAction(node)
-			ats.SelectIndex(ui.ClickTab)
-		case *actions.Key:
-			bindAction(node)
-			ats.SelectIndex(ui.KeyTab)
-
-		case *actions.Loop:
-			bindAction(node)
-			ats.SelectIndex(ui.LoopTab)
-		case *actions.ImageSearch:
-			bindAction(node)
-			ats.SelectIndex(ui.ImageSearchTab)
-		case *actions.Ocr:
-			bindAction(node)
-			ats.SelectIndex(ui.OcrTab)
+		action := mt.Macro.Root.GetAction(uid)
+		if action != nil {
+			// Show dialog for editing the action (even if already selected)
+			ui.ShowActionDialog(action, func(updatedAction actions.ActionInterface) {
+				// Refresh the tree after saving
+				mt.RefreshItem(uid)
+				mt.Refresh()
+			})
 		}
 	}
-	mt.Tree.OnUnselected = func(uid widget.TreeNodeID) {
-		ResetBinds()
-	}
+	// mt.Tree.OnUnselected = func(uid widget.TreeNodeID) {
+	// 	ResetBinds()
+	// }
 }
 
-func setMacroToolbar() {
-	// ui.GetUi().Mui.MacroToolbars.TopToolbar.Objects[0].(*fyne.Container).Objects[0].(*widget.Toolbar).Prepend(widget.NewToolbarAction(theme.ContentAddIcon(), func() {
-	ui.GetUi().Mui.MacroToolbars.TopToolbar.Objects[0].(*fyne.Container).Objects[0].(*ttwidget.Button).OnTapped = func() {
-		var action actions.ActionInterface
-		mt := ui.GetUi().Mui.MTabs.SelectedTab()
-		ats := ui.GetUi().ActionTabs
-		selectedNode := mt.Macro.Root.GetAction(mt.SelectedNode)
-		if selectedNode == nil {
-			selectedNode = mt.Macro.Root
-		}
-		switch ui.ActionTabs.Selected(*ats).Text {
-		case "Wait":
-			time, e := ats.BoundWait.GetValue("Time")
-			if e != nil {
-				log.Println(e)
-			}
-			action = actions.NewWait(time.(int))
-		case "Move":
-			name, _ := ats.BoundPoint.GetValue("Name")
-			x, _ := ats.BoundPoint.GetValue("X")
-			y, _ := ats.BoundPoint.GetValue("Y")
-			action = actions.NewMove(actions.Point{Name: name.(string), X: x.(int), Y: y.(int)})
-		case "Click":
-			button, _ := ats.BoundClick.GetValue("Button")
-			action = actions.NewClick(button.(bool))
-		case "Key":
-			key, _ := ats.BoundKey.GetValue("Key")
-			state, _ := ats.BoundKey.GetValue("State")
-			action = actions.NewKey(key.(string), state.(bool))
-		case "Loop":
-			name, _ := ats.BoundLoopAA.GetValue("Name")
-			count, _ := ats.BoundLoop.GetValue("Count")
-			subactions := []actions.ActionInterface{}
-			action = actions.NewLoop(count.(int), name.(string), subactions)
-		case "Image":
-			name, _ := ats.BoundImageSearchAA.GetValue("Name")
-			subactions := []actions.ActionInterface{}
-			targets, _ := ats.BoundImageSearch.GetValue("Targets")
-			rs, _ := ats.BoundImageSearch.GetValue("RowSplit")
-			cs, _ := ats.BoundImageSearch.GetValue("ColSplit")
-			tol, _ := ats.BoundImageSearch.GetValue("Tolerance")
-			searchArea, _ := ats.BoundImageSearchSA.GetValue("Name")
-			x1, _ := ats.BoundImageSearchSA.GetValue("LeftX")
-			y1, _ := ats.BoundImageSearchSA.GetValue("TopY")
-			x2, _ := ats.BoundImageSearchSA.GetValue("RightX")
-			y2, _ := ats.BoundImageSearchSA.GetValue("BottomY")
-			action = actions.NewImageSearch(
-				name.(string),
-				subactions,
-				targets.([]string),
-				actions.SearchArea{Name: searchArea.(string), LeftX: x1.(int), TopY: y1.(int), RightX: x2.(int), BottomY: y2.(int)},
-				rs.(int), cs.(int), tol.(float32),
-				// binders.GetProgram(config.DarkAndDarker).Coordinates[config.MainMonitorSizeString].GetSearchArea(searchArea.(string))
-			)
-		case "OCR":
-			name, _ := ats.BoundOcrAA.GetValue("Name")
-			target, _ := ats.BoundOcr.GetValue("Target")
-			subactions := []actions.ActionInterface{}
-			searchArea, _ := ats.BoundOcrSA.GetValue("Name")
-			x1, _ := ats.BoundOcrSA.GetValue("LeftX")
-			y1, _ := ats.BoundOcrSA.GetValue("TopY")
-			x2, _ := ats.BoundOcrSA.GetValue("RightX")
-			y2, _ := ats.BoundOcrSA.GetValue("BottomY")
-			action = actions.NewOcr(
-				name.(string),
-				subactions,
-				target.(string),
-				actions.SearchArea{Name: searchArea.(string), LeftX: x1.(int), TopY: y1.(int), RightX: x2.(int), BottomY: y2.(int)},
-				// binders.GetProgram(config.DarkAndDarker).Coordinates[config.MainMonitorSizeString].GetSearchArea(searchArea.(string))
-			)
-		}
+// func setMacroToolbar() {
+// 	// ui.GetUi().Mui.MacroToolbars.TopToolbar.Objects[0].(*fyne.Container).Objects[0].(*widget.Toolbar).Prepend(widget.NewToolbarAction(theme.ContentAddIcon(), func() {
+// 	ui.GetUi().Mui.MacroToolbars.TopToolbar.Objects[0].(*fyne.Container).Objects[0].(*ttwidget.Button).OnTapped = func() {
+// 		var action actions.ActionInterface
+// 		mt := ui.GetUi().Mui.MTabs.SelectedTab()
+// 		// ats := ui.GetUi().ActionTabs
+// 		// selectedNode := mt.Macro.Root.GetAction(mt.SelectedNode)
+// 		// if selectedNode == nil {
+// 		// 	selectedNode = mt.Macro.Root
+// 		// }
+// 		// switch ui.ActionTabs.Selected(*ats).Text {
+// 		// case "Wait":
+// 		// 	time, e := ats.BoundWait.GetValue("Time")
+// 		// 	if e != nil {
+// 		// 		log.Println(e)
+// 		// 	}
+// 		// 	action = actions.NewWait(time.(int))
+// 		// case "Move":
+// 		// 	name, _ := ats.BoundPoint.GetValue("Name")
+// 		// 	x, _ := ats.BoundPoint.GetValue("X")
+// 		// 	y, _ := ats.BoundPoint.GetValue("Y")
+// 		// 	action = actions.NewMove(actions.Point{Name: name.(string), X: x.(int), Y: y.(int)})
+// 		// case "Click":
+// 		// 	button, _ := ats.BoundClick.GetValue("Button")
+// 		// 	action = actions.NewClick(button.(bool))
+// 		// case "Key":
+// 		// 	key, _ := ats.BoundKey.GetValue("Key")
+// 		// 	state, _ := ats.BoundKey.GetValue("State")
+// 		// 	action = actions.NewKey(key.(string), state.(bool))
+// 		// case "Loop":
+// 		// 	name, _ := ats.BoundLoopAA.GetValue("Name")
+// 		// 	count, _ := ats.BoundLoop.GetValue("Count")
+// 		// 	subactions := []actions.ActionInterface{}
+// 		// 	action = actions.NewLoop(count.(int), name.(string), subactions)
+// 		// case "Image":
+// 		// 	name, _ := ats.BoundImageSearchAA.GetValue("Name")
+// 		// 	subactions := []actions.ActionInterface{}
+// 		// 	targets, _ := ats.BoundImageSearch.GetValue("Targets")
+// 		// 	rs, _ := ats.BoundImageSearch.GetValue("RowSplit")
+// 		// 	cs, _ := ats.BoundImageSearch.GetValue("ColSplit")
+// 		// 	tol, _ := ats.BoundImageSearch.GetValue("Tolerance")
+// 		// 	searchArea, _ := ats.BoundImageSearchSA.GetValue("Name")
+// 		// 	x1, _ := ats.BoundImageSearchSA.GetValue("LeftX")
+// 		// 	y1, _ := ats.BoundImageSearchSA.GetValue("TopY")
+// 		// 	x2, _ := ats.BoundImageSearchSA.GetValue("RightX")
+// 		// 	y2, _ := ats.BoundImageSearchSA.GetValue("BottomY")
+// 		// 	action = actions.NewImageSearch(
+// 		// 		name.(string),
+// 		// 		subactions,
+// 		// 		targets.([]string),
+// 		// 		actions.SearchArea{Name: searchArea.(string), LeftX: x1.(int), TopY: y1.(int), RightX: x2.(int), BottomY: y2.(int)},
+// 		// 		rs.(int), cs.(int), tol.(float32),
+// 		// 		// binders.GetProgram(config.DarkAndDarker).Coordinates[config.MainMonitorSizeString].GetSearchArea(searchArea.(string))
+// 		// 	)
+// 		// case "OCR":
+// 		// 	name, _ := ats.BoundOcrAA.GetValue("Name")
+// 		// 	target, _ := ats.BoundOcr.GetValue("Target")
+// 		// 	subactions := []actions.ActionInterface{}
+// 		// 	searchArea, _ := ats.BoundOcrSA.GetValue("Name")
+// 		// 	x1, _ := ats.BoundOcrSA.GetValue("LeftX")
+// 		// 	y1, _ := ats.BoundOcrSA.GetValue("TopY")
+// 		// 	x2, _ := ats.BoundOcrSA.GetValue("RightX")
+// 		// 	y2, _ := ats.BoundOcrSA.GetValue("BottomY")
+// 		// 	action = actions.NewOcr(
+// 		// 		name.(string),
+// 		// 		subactions,
+// 		// 		target.(string),
+// 		// 		actions.SearchArea{Name: searchArea.(string), LeftX: x1.(int), TopY: y1.(int), RightX: x2.(int), BottomY: y2.(int)},
+// 		// 		// binders.GetProgram(config.DarkAndDarker).Coordinates[config.MainMonitorSizeString].GetSearchArea(searchArea.(string))
+// 		// 	)
+// 		// }
 
-		// if selectedNode == nil {
-		// 	selectedNode = mt.Macro.Root
-		// }
-		if s, ok := selectedNode.(actions.AdvancedActionInterface); ok {
-			s.AddSubAction(action)
-		} else {
-			selectedNode.GetParent().AddSubAction(action)
-		}
-		mt.Select(action.GetUID())
-		mt.RefreshItem(action.GetUID())
-	}
+// 		// if selectedNode == nil {
+// 		// 	selectedNode = mt.Macro.Root
+// 		// }
+// 		// if s, ok := selectedNode.(actions.AdvancedActionInterface); ok {
+// 		// 	s.AddSubAction(action)
+// 		// } else {
+// 		// 	selectedNode.GetParent().AddSubAction(action)
+// 		// }
+// 		mt.Select(action.GetUID())
+// 		mt.RefreshItem(action.GetUID())
+// 	}
 
-}
+// }

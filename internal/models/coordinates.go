@@ -1,10 +1,11 @@
 package models
 
-// Point represents a named screen coordinate used for click and move actions
+// Point represents a named screen coordinate used for click and move actions.
+// X and Y may be int (literal) or string (variable reference e.g. "${resultX}").
 type Point struct {
 	Name string
-	X    int
-	Y    int
+	X    interface{}
+	Y    interface{}
 }
 
 // GetKey returns the unique identifier for this Point.

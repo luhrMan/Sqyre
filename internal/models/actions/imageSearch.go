@@ -8,25 +8,28 @@ import (
 	"fyne.io/fyne/v2/theme"
 )
 
-
 type ImageSearch struct {
-	Targets         []string
-	SearchArea      SearchArea
-	RowSplit        int
-	ColSplit        int
-	Tolerance       float32
+	Targets         []string   `mapstructure:"targets"`
+	SearchArea      SearchArea `mapstructure:"searcharea"`
+	RowSplit        int        `mapstructure:"rowsplit"`
+	ColSplit        int        `mapstructure:"colsplit"`
+	Tolerance       float32    `mapstructure:"tolerance"`
+	OutputXVariable string     `mapstructure:"outputxvariable"` // Variable name to store X coordinate
+	OutputYVariable string     `mapstructure:"outputyvariable"` // Variable name to store Y coordinate
 	*AdvancedAction `yaml:",inline" mapstructure:",squash"`
 }
 
 func NewImageSearch(name string, subActions []ActionInterface, targets []string, searchbox SearchArea, rs, cs int, tol float32) *ImageSearch {
 	slices.Sort(targets)
 	return &ImageSearch{
-		AdvancedAction: newAdvancedAction(name, "imagesearch", subActions),
-		Targets:        targets,
-		SearchArea:     searchbox,
-		RowSplit:       rs,
-		ColSplit:       cs,
-		Tolerance:      tol,
+		AdvancedAction:  newAdvancedAction(name, "imagesearch", subActions),
+		Targets:         targets,
+		SearchArea:      searchbox,
+		RowSplit:        rs,
+		ColSplit:        cs,
+		Tolerance:       tol,
+		OutputXVariable: "",
+		OutputYVariable: "",
 	}
 }
 func (a *ImageSearch) String() string {
