@@ -6,6 +6,7 @@ import (
 	"Squire/internal/models/actions"
 	"Squire/internal/models/repositories"
 	"Squire/ui"
+	"fmt"
 	"log"
 	"strconv"
 
@@ -27,8 +28,8 @@ func setSearchAreaWidgets(sa models.SearchArea) {
 func setPointWidgets(p models.Point) {
 	pt := ui.GetUi().EditorTabs.PointsTab
 	pt.Widgets["Name"].(*widget.Entry).SetText(p.Name)
-	pt.Widgets["X"].(*widget.Entry).SetText(strconv.Itoa(p.X))
-	pt.Widgets["Y"].(*widget.Entry).SetText(strconv.Itoa(p.Y))
+	pt.Widgets["X"].(*widget.Entry).SetText(fmt.Sprintf("%v", p.X))
+	pt.Widgets["Y"].(*widget.Entry).SetText(fmt.Sprintf("%v", p.Y))
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -102,21 +103,21 @@ func setAccordionSearchAreasLists(acc *widget.Accordion) {
 				ui.GetUi().UpdateSearchAreaPreview(sa)
 			}()
 
-			if ui.GetUi().MainUi.Visible() {
-				if v, ok := ui.GetUi().Mui.MTabs.SelectedTab().Macro.Root.GetAction(ui.GetUi().Mui.MTabs.SelectedTab().SelectedNode).(*actions.ImageSearch); ok {
-					if ui.GetUi().ActionTabs.AppTabs.Selected().Text == "Image" {
-						v.SearchArea = actions.SearchArea{Name: sa.Name, LeftX: sa.LeftX, TopY: sa.TopY, RightX: sa.RightX, BottomY: sa.BottomY}
-						bindAction(v)
-					}
-				}
-				if v, ok := ui.GetUi().Mui.MTabs.SelectedTab().Macro.Root.GetAction(ui.GetUi().Mui.MTabs.SelectedTab().SelectedNode).(*actions.Ocr); ok {
-					if ui.GetUi().ActionTabs.AppTabs.Selected().Text == "OCR" {
-						v.SearchArea = actions.SearchArea{Name: sa.Name, LeftX: sa.LeftX, TopY: sa.TopY, RightX: sa.RightX, BottomY: sa.BottomY}
-						bindAction(v)
-					}
-				}
-				lists.searchareas.Unselect(id)
-			}
+			// if ui.GetUi().MainUi.Visible() {
+			// 	if v, ok := ui.GetUi().Mui.MTabs.SelectedTab().Macro.Root.GetAction(ui.GetUi().Mui.MTabs.SelectedTab().SelectedNode).(*actions.ImageSearch); ok {
+			// 		if ui.GetUi().ActionTabs.AppTabs.Selected().Text == "Image" {
+			// 			v.SearchArea = actions.SearchArea{Name: sa.Name, LeftX: sa.LeftX, TopY: sa.TopY, RightX: sa.RightX, BottomY: sa.BottomY}
+			// 			bindAction(v)
+			// 		}
+			// 	}
+			// 	if v, ok := ui.GetUi().Mui.MTabs.SelectedTab().Macro.Root.GetAction(ui.GetUi().Mui.MTabs.SelectedTab().SelectedNode).(*actions.Ocr); ok {
+			// 		if ui.GetUi().ActionTabs.AppTabs.Selected().Text == "OCR" {
+			// 			v.SearchArea = actions.SearchArea{Name: sa.Name, LeftX: sa.LeftX, TopY: sa.TopY, RightX: sa.RightX, BottomY: sa.BottomY}
+			// 			bindAction(v)
+			// 		}
+			// 	}
+			// 	lists.searchareas.Unselect(id)
+			// }
 		}
 		lists.searchbar = &widget.Entry{
 			PlaceHolder: "Search here",
@@ -205,9 +206,9 @@ func setAccordionPointsLists(acc *widget.Accordion) {
 			setPointWidgets(*point)
 			if v, ok := ui.GetUi().Mui.MTabs.SelectedTab().Macro.Root.GetAction(ui.GetUi().Mui.MTabs.SelectedTab().SelectedNode).(*actions.Move); ok {
 				v.Point = actions.Point{Name: point.Name, X: point.X, Y: point.Y}
-				bindAction(v)
+				// bindAction(v)
 			}
-			if ui.GetUi().MainUi.Visible() {
+			if ui.GetUi().MainUi.Navigation.Visible() {
 				lists.points.Unselect(id)
 			}
 		}
@@ -333,7 +334,7 @@ func setAccordionAutoPicSearchAreasLists(acc *widget.Accordion) {
 			}()
 
 			// Unselect after handling (same pattern as other tabs)
-			if ui.GetUi().MainUi.Visible() {
+			if ui.GetUi().MainUi.Navigation.Visible() {
 				lists.searchareas.Unselect(id)
 			}
 		}

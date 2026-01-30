@@ -7,8 +7,6 @@ import (
 	"fyne.io/fyne/v2/theme"
 )
 
-
-
 type Move struct {
 	*BaseAction `yaml:",inline" mapstructure:",squash"`
 	Point       Point
@@ -22,7 +20,7 @@ func NewMove(p Point) *Move {
 }
 
 func (a *Move) String() string {
-	return fmt.Sprintf("%v (%d, %d)", a.Point.Name, a.Point.X, a.Point.Y)
+	return fmt.Sprintf("%v (%v, %v)", a.Point.Name, a.Point.X, a.Point.Y)
 }
 
 func (a *Move) Icon() fyne.Resource {
