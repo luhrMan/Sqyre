@@ -21,14 +21,12 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	xwidget "fyne.io/x/fyne/widget"
-	fynetooltip "github.com/dweymouth/fyne-tooltip"
 	"github.com/go-vgo/robotgo"
 	"gocv.io/x/gocv"
 )
 
 type EditorUi struct {
 	fyne.CanvasObject
-	NavButton       *widget.Button
 	AddButton       *widget.Button
 	RemoveButton    *widget.Button
 	ProgramSelector *widget.SelectEntry
@@ -256,13 +254,13 @@ func (u *Ui) constructEditorTabs() {
 	et.Append(et.AutoPicTab.TabItem)
 }
 
-func (u *Ui) constructNavButton() {
-	u.EditorUi.NavButton.Text = "Back"
-	u.EditorUi.NavButton.Icon = theme.NavigateBackIcon()
-	u.EditorUi.NavButton.OnTapped = func() {
-		u.Window.SetContent(fynetooltip.AddWindowToolTipLayer(u.MainUi.CanvasObject, u.Window.Canvas()))
-	}
-}
+// func (u *Ui) constructNavButton() {
+// 	u.EditorUi.NavButton.Text = "Back"
+// 	u.EditorUi.NavButton.Icon = theme.NavigateBackIcon()
+// 	u.EditorUi.NavButton.OnTapped = func() {
+// 		u.MainUi.Navigation.Back()
+// 	}
+// }
 
 func (u *Ui) constructAddButton() {
 	u.EditorUi.AddButton.Text = "New"
@@ -330,6 +328,7 @@ func (u *Ui) onAutoPicSave() {
 
 	// Attempt to capture the screen area with error recovery
 	var captureImg image.Image
+	var err error
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -338,7 +337,11 @@ func (u *Ui) onAutoPicSave() {
 			}
 		}()
 
-		captureImg = robotgo.CaptureImg(captureX, captureY, w, h)
+		captureImg, err = robotgo.CaptureImg(captureX, captureY, w, h)
+		if err != nil {
+			dialog.ShowError(fmt.Errorf("AutoPic: Error capturing image - %v (area: %s)", err, searchArea.Name), u.Window)
+			captureImg = nil
+		}
 	}()
 
 	// Validate the captured image
@@ -430,7 +433,11 @@ func (u *Ui) UpdateAutoPicPreview(searchArea *models.SearchArea) {
 		}
 	}()
 
-	captureImg := robotgo.CaptureImg(captureX, captureY, w, h)
+	captureImg, err := robotgo.CaptureImg(captureX, captureY, w, h)
+	if err != nil {
+		dialog.ShowError(fmt.Errorf("AutoPic: Error capturing image - %v (area: %s)", err, searchArea.Name), u.Window)
+		captureImg = nil
+	}
 
 	// Validate the captured image
 	if captureImg == nil {
@@ -526,7 +533,11 @@ func (u *Ui) UpdateSearchAreaPreview(searchArea *models.SearchArea) {
 		}
 	}()
 
-	captureImg := robotgo.CaptureImg(config.XOffset, config.YOffset, screenWidth, screenHeight)
+	captureImg, err := robotgo.CaptureImg(config.XOffset, config.YOffset, screenWidth, screenHeight)
+	if err != nil {
+		dialog.ShowError(fmt.Errorf("SearchArea: Error capturing image - %v (area: %s)", err, searchArea.Name), u.Window)
+		captureImg = nil
+	}
 
 	// Validate the captured image
 	if captureImg == nil {
@@ -573,6 +584,18 @@ func (u *Ui) clearSearchAreaPreviewImage() {
 	}
 }
 
+// pointCoordToIntForPreview returns an int for preview drawing; literal ints are used, variable refs (string) yield 0.
+func pointCoordToIntForPreview(v interface{}) int {
+	switch val := v.(type) {
+	case int:
+		return val
+	case float64:
+		return int(val)
+	default:
+		return 0
+	}
+}
+
 func (u *Ui) UpdatePointPreview(point *models.Point) {
 	// Validate point
 	if point == nil {
@@ -580,14 +603,16 @@ func (u *Ui) UpdatePointPreview(point *models.Point) {
 		return
 	}
 
+	px := pointCoordToIntForPreview(point.X)
+	py := pointCoordToIntForPreview(point.Y)
+
 	// Validate coordinates are within reasonable bounds
 	screenWidth := config.MonitorWidth
 	screenHeight := config.MonitorHeight
 
-	if point.X < 0 || point.Y < 0 ||
-		point.X > screenWidth || point.Y > screenHeight {
+	if px < 0 || py < 0 || px > screenWidth || py > screenHeight {
 		dialog.ShowError(fmt.Errorf("Point: Point coordinates out of screen bounds - screen: %dx%d, point: (%d,%d) (point: %s)",
-			screenWidth, screenHeight, point.X, point.Y, point.Name), u.Window)
+			screenWidth, screenHeight, px, py, point.Name), u.Window)
 		u.clearPointPreviewImage()
 		return
 	}
@@ -600,8 +625,11 @@ func (u *Ui) UpdatePointPreview(point *models.Point) {
 		}
 	}()
 
-	captureImg := robotgo.CaptureImg(config.XOffset, config.YOffset, screenWidth, screenHeight)
-
+	captureImg, err := robotgo.CaptureImg(config.XOffset, config.YOffset, screenWidth, screenHeight)
+	if err != nil {
+		dialog.ShowError(fmt.Errorf("Point: Error capturing image - %v (point: %s)", err, point.Name), u.Window)
+		captureImg = nil
+	}
 	// Validate the captured image
 	if captureImg == nil {
 		dialog.ShowError(fmt.Errorf("Point: Screen capture returned nil image (point: %s)", point.Name), u.Window)
@@ -620,7 +648,7 @@ func (u *Ui) UpdatePointPreview(point *models.Point) {
 
 	// Draw red marker at point coordinates
 	// Draw a circle with crosshair for visibility
-	center := image.Point{X: point.X, Y: point.Y}
+	center := image.Point{X: px, Y: py}
 	redColor := color.RGBA{R: 255, A: 255}
 
 	// Draw circle
@@ -628,9 +656,9 @@ func (u *Ui) UpdatePointPreview(point *models.Point) {
 
 	// Draw crosshair lines
 	// Horizontal line
-	gocv.Line(&mat, image.Point{X: point.X - 15, Y: point.Y}, image.Point{X: point.X + 15, Y: point.Y}, redColor, 2)
+	gocv.Line(&mat, image.Point{X: px - 15, Y: py}, image.Point{X: px + 15, Y: py}, redColor, 2)
 	// Vertical line
-	gocv.Line(&mat, image.Point{X: point.X, Y: point.Y - 15}, image.Point{X: point.X, Y: point.Y + 15}, redColor, 2)
+	gocv.Line(&mat, image.Point{X: px, Y: py - 15}, image.Point{X: px, Y: py + 15}, redColor, 2)
 
 	// Convert back to image.Image
 	previewImg, err := mat.ToImage()

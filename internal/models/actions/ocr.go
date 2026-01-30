@@ -10,6 +10,7 @@ import (
 type Ocr struct {
 	Target          string
 	SearchArea      SearchArea
+	OutputVariable  string
 	*AdvancedAction `yaml:",inline" mapstructure:",squash"`
 }
 
@@ -18,6 +19,7 @@ func NewOcr(name string, subActions []ActionInterface, target string, searchbox 
 		AdvancedAction: newAdvancedAction(name, "ocr", subActions),
 		Target:         target,
 		SearchArea:     searchbox,
+		OutputVariable: "",
 	}
 }
 

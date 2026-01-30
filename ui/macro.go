@@ -26,13 +26,14 @@ func (u *Ui) constructMacroUi() *fyne.Container {
 	boundLocYLabel = widget.NewLabelWithData(binding.NewString())
 	mui := u.Mui
 
-	addNodeButton := ttwidget.NewButtonWithIcon("", theme.ContentAddIcon(), func() {
-
-	})
+	// addNodeButton := ttwidget.NewButtonWithIcon("", theme.ContentAddIcon(), func() {
+	// 	// Show action selection menu - for now, use the main menu
+	// 	// In the future, could show a popup menu here
+	// 	// For now, users can use the main menu to add actions
+	// })
 	unselectNodeButton := ttwidget.NewButtonWithIcon("", theme.RadioButtonIcon(), func() {
 		st := mui.MTabs.SelectedTab()
 		st.UnselectAll()
-		ui.ActionTabs.Selected().Content.Refresh()
 		st.SelectedNode = ""
 	})
 
@@ -48,11 +49,11 @@ func (u *Ui) constructMacroUi() *fyne.Container {
 	playMacroButton := ttwidget.NewButtonWithIcon("", theme.MediaPlayIcon(), func() {
 		st := mui.MTabs.SelectedTab()
 		go func() {
-			services.Execute(st.Macro.Root)
+			services.Execute(st.Macro.Root, st.Macro)
 		}()
 	})
 
-	addNodeButton.SetToolTip("add new action node")
+	// addNodeButton.SetToolTip("add new action node")
 	unselectNodeButton.SetToolTip("unselect nodes")
 	moveDownNodeButton.SetToolTip("move node down")
 	moveUpNodeButton.SetToolTip("move node up")
@@ -61,8 +62,8 @@ func (u *Ui) constructMacroUi() *fyne.Container {
 	mui.MacroToolbars.TopToolbar =
 		container.NewGridWithColumns(2,
 			container.NewHBox(
-				addNodeButton,
-				layout.NewSpacer(),
+				// addNodeButton,
+				// layout.NewSpacer(),
 				unselectNodeButton,
 				moveDownNodeButton,
 				moveUpNodeButton,
@@ -109,7 +110,7 @@ func (u *Ui) constructMacroUi() *fyne.Container {
 		container.NewBorder(
 			mui.MacroToolbars.TopToolbar,
 			mui.MacroToolbars.BottomToolbar,
-			widget.NewSeparator(),
+			nil,
 			nil,
 			mui.MTabs,
 		)

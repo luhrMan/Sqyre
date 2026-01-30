@@ -115,8 +115,32 @@ func (s *serializer) CreateActionFromMap(rawMap map[string]any, parent actions.A
 			targets = append(targets, t.(string))
 		}
 		action = actions.NewImageSearch(rawMap["name"].(string), []actions.ActionInterface{}, targets, createSearchBox(rawMap["searcharea"].(map[string]any)), rawMap["rowsplit"].(int), rawMap["colsplit"].(int), float32(rawMap["tolerance"].(float64)))
+		if is, ok := action.(*actions.ImageSearch); ok {
+			if v, ok := rawMap["outputxvariable"].(string); ok {
+				is.OutputXVariable = v
+			}
+			if v, ok := rawMap["outputyvariable"].(string); ok {
+				is.OutputYVariable = v
+			}
+		}
 	case "ocr":
 		action = actions.NewOcr(rawMap["name"].(string), []actions.ActionInterface{}, rawMap["target"].(string), createSearchBox(rawMap["searcharea"].(map[string]any)))
+	case "setvariable":
+		action = actions.NewSetVariable(rawMap["variablename"].(string), rawMap["value"])
+	case "calculate":
+		action = actions.NewCalculate(rawMap["expression"].(string), rawMap["outputvar"].(string))
+	case "datalist":
+		isFile := false
+		if ifVal, ok := rawMap["isfile"]; ok {
+			isFile = ifVal.(bool)
+		}
+		action = actions.NewDataList(rawMap["source"].(string), rawMap["outputvar"].(string), isFile)
+	case "savevariable":
+		append := false
+		if appendVal, ok := rawMap["append"]; ok {
+			append = appendVal.(bool)
+		}
+		action = actions.NewSaveVariable(rawMap["variablename"].(string), rawMap["destination"].(string), append)
 	}
 	action.SetParent(parent)
 	if advAction, ok := action.(actions.AdvancedActionInterface); ok {
@@ -144,10 +168,28 @@ func createSearchBox(rawMap map[string]any) actions.SearchArea {
 	}
 }
 
+// pointCoordFromMap returns x or y from raw map as interface{} (int or string) for actions.Point.
+func pointCoordFromMap(rawMap map[string]any, key string) interface{} {
+	v, ok := rawMap[key]
+	if !ok {
+		return 0
+	}
+	switch val := v.(type) {
+	case int:
+		return val
+	case string:
+		return val
+	case float64:
+		return int(val)
+	default:
+		return 0
+	}
+}
+
 func createPoint(rawMap map[string]any) actions.Point {
 	return actions.Point{
 		Name: rawMap["name"].(string),
-		X:    rawMap["x"].(int),
-		Y:    rawMap["y"].(int),
+		X:    pointCoordFromMap(rawMap, "x"),
+		Y:    pointCoordFromMap(rawMap, "y"),
 	}
 }

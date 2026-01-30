@@ -17,7 +17,7 @@ import (
 func decodeMacro(key string) (*models.Macro, error) {
 	yamlConfig := serialize.GetYAMLConfig()
 	macrosMap := yamlConfig.GetStringMap("macros")
-	
+
 	macroData, ok := macrosMap[key]
 	if !ok {
 		// Return empty macro for non-existent keys (matches Viper behavior)
@@ -33,7 +33,7 @@ func decodeMacro(key string) (*models.Macro, error) {
 	}
 
 	macro := &models.Macro{}
-	
+
 	// For now, use Viper's decode hook functionality by creating a temporary viper instance
 	// This maintains compatibility with existing macro decode logic
 	tempViper := viper.New()
@@ -41,10 +41,15 @@ func decodeMacro(key string) (*models.Macro, error) {
 	if err := tempViper.ReadConfig(bytes.NewReader(yamlBytes)); err != nil {
 		return nil, fmt.Errorf("%w: macro '%s': failed to read: %v", ErrDecodeFailed, key, err)
 	}
-	
+
 	err = tempViper.Unmarshal(macro, viper.DecodeHook(serialize.MacroDecodeHookFunc()))
 	if err != nil {
 		return nil, fmt.Errorf("%w: macro '%s': %v", ErrDecodeFailed, key, err)
+	}
+
+	// Ensure Variables is initialized so variable resolution works (e.g. Move with ${var})
+	if macro.Variables == nil {
+		macro.Variables = models.NewVariableStore()
 	}
 
 	log.Printf("Successfully decoded macro: %s", macro.Name)
@@ -57,7 +62,7 @@ func decodeMacro(key string) (*models.Macro, error) {
 func decodeProgram(key string) (*models.Program, error) {
 	yamlConfig := serialize.GetYAMLConfig()
 	programsMap := yamlConfig.GetStringMap("programs")
-	
+
 	programData, ok := programsMap[key]
 	if !ok {
 		// Return empty program for non-existent keys (matches Viper behavior)

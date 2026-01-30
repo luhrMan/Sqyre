@@ -28,7 +28,11 @@ func imageSearch(a *actions.ImageSearch) (map[string][]robotgo.Point, error) {
 		log.Println(err)
 		return nil, err
 	}
-	captureImg := robotgo.CaptureImg(sa.LeftX+config.XOffset, sa.TopY+config.YOffset, w, h)
+	captureImg, err := robotgo.CaptureImg(sa.LeftX+config.XOffset, sa.TopY+config.YOffset, w, h)
+	if err != nil {
+		log.Println("image search failed:", err)
+		return nil, err
+	}
 	img, err := gocv.ImageToMatRGB(captureImg)
 	if err != nil {
 		log.Println("image search failed:", err)
