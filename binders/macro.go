@@ -259,6 +259,10 @@ func setMacroTree(mt *ui.MacroTree) {
 		if action != nil {
 			// Show dialog for editing the action (even if already selected)
 			ui.ShowActionDialog(action, func(updatedAction actions.ActionInterface) {
+				// Persist macro to disk
+				if err := repositories.MacroRepo().Set(mt.Macro.Name, mt.Macro); err != nil {
+					log.Printf("failed to save macro after action edit: %v", err)
+				}
 				// Refresh the tree after saving
 				mt.RefreshItem(uid)
 				mt.Refresh()
