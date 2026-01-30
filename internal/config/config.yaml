@@ -123,12 +123,6 @@ macros:
                   type: imagesearch
                   name: treasures
                   subactions:
-                    - type: calculate
-                      expression: ${foundX}+25
-                      outputvar: foundX
-                    - type: calculate
-                      expression: ${foundY}+25
-                      outputvar: foundY
                     - type: move
                       point:
                         name: image search context
@@ -143,8 +137,10 @@ macros:
         hotkey: []
         variables:
             variables:
-                foundX: 1027
-                foundY: 836
+                foundX: 1865
+                foundY: 294
+                foundx: 1027
+                foundy: 836
     Switch Chracters:
         name: Switch Chracters
         root:
