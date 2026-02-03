@@ -110,11 +110,11 @@ macros:
                     - dark and darker|Triple Gem Bangle
                     - dark and darker|Turquoise Gem Bangle
                   searcharea:
-                    name: stash-screen-player-inventory
-                    leftx: 913
-                    topy: 830
-                    rightx: 1466
-                    bottomy: 1112
+                    name: stash-screen-stash-inventory
+                    leftx: 1832
+                    topy: 261
+                    rightx: 2493
+                    bottomy: 1354
                   rowsplit: 1
                   colsplit: 1
                   tolerance: 0.95
@@ -128,8 +128,33 @@ macros:
                         name: image search context
                         x: ${foundX}
                         "y": ${foundY}
-                    - type: click
-                      button: true
+                    - target: Rare
+                      searcharea:
+                        name: Item Description
+                        leftx: 0
+                        topy: ${foundY}+100
+                        rightx: 2559
+                        bottomy: ${foundY}-100
+                      outputvariable: ""
+                      type: ocr
+                      name: rarity
+                      subactions:
+                        - type: click
+                          button: true
+                    - targets: []
+                      searcharea:
+                        name: ""
+                        leftx: 0
+                        topy: 0
+                        rightx: 0
+                        bottomy: 0
+                      rowsplit: 1
+                      colsplit: 1
+                      tolerance: 0.95
+                      outputxvariable: itemDescLeftX
+                      outputyvariable: itemDescTopY
+                      type: imagesearch
+                      name: ""
                 - type: key
                   key: shift
                   state: false
@@ -137,10 +162,8 @@ macros:
         hotkey: []
         variables:
             variables:
-                foundX: 1865
-                foundY: 294
-                foundx: 1027
-                foundy: 836
+                foundx: 1865
+                foundy: 294
     Switch Chracters:
         name: Switch Chracters
         root:
@@ -326,6 +349,18 @@ programs:
                         x: 10
                         "y": 10
                 searchareas:
+                    Item Description:
+                        bottomy: ${foundY}-100
+                        leftx: 0
+                        name: Item Description
+                        rightx: 2559
+                        topy: ${foundY}+100
+                    Whole Screen:
+                        bottomy: 1440
+                        leftx: 0
+                        name: Whole Screen
+                        rightx: 2559
+                        topy: 0
                     stash-screen-player-inventory:
                         bottomy: 1112
                         leftx: 913
@@ -338,12 +373,6 @@ programs:
                         name: stash-screen-stash-inventory
                         rightx: 2493
                         topy: 261
-                    test:
-                        bottomy: 10
-                        leftx: 10
-                        name: test
-                        rightx: 10
-                        topy: 10
         items:
             Ancient Scroll:
                 gridsize:

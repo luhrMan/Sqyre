@@ -296,9 +296,13 @@ func (u *Ui) onAutoPicSave() {
 		return
 	}
 
-	// Validate search area dimensions
-	w := searchArea.RightX - searchArea.LeftX
-	h := searchArea.BottomY - searchArea.TopY
+	// Validate search area dimensions (variable refs yield 0 for preview)
+	lx := searchAreaCoordToInt(searchArea.LeftX)
+	ty := searchAreaCoordToInt(searchArea.TopY)
+	rx := searchAreaCoordToInt(searchArea.RightX)
+	by := searchAreaCoordToInt(searchArea.BottomY)
+	w := rx - lx
+	h := by - ty
 
 	if w <= 0 || h <= 0 {
 		dialog.ShowError(fmt.Errorf("AutoPic: Cannot save - invalid search area dimensions - width: %d, height: %d (area: %s)", w, h, searchArea.Name), u.Window)
@@ -309,16 +313,16 @@ func (u *Ui) onAutoPicSave() {
 	screenWidth := config.MonitorWidth
 	screenHeight := config.MonitorHeight
 
-	if searchArea.LeftX < 0 || searchArea.TopY < 0 ||
-		searchArea.RightX > screenWidth || searchArea.BottomY > screenHeight {
+	if lx < 0 || ty < 0 ||
+		rx > screenWidth || by > screenHeight {
 		dialog.ShowError(fmt.Errorf("AutoPic: Cannot save - search area coordinates out of screen bounds - screen: %dx%d, area: (%d,%d) to (%d,%d) (area: %s)",
-			screenWidth, screenHeight, searchArea.LeftX, searchArea.TopY, searchArea.RightX, searchArea.BottomY, searchArea.Name), u.Window)
+			screenWidth, screenHeight, lx, ty, rx, by, searchArea.Name), u.Window)
 		return
 	}
 
 	// Calculate capture coordinates with offsets
-	captureX := searchArea.LeftX + config.XOffset
-	captureY := searchArea.TopY + config.YOffset
+	captureX := lx + config.XOffset
+	captureY := ty + config.YOffset
 
 	// Additional validation for capture coordinates
 	if captureX < 0 || captureY < 0 {
@@ -392,9 +396,13 @@ func (u *Ui) UpdateAutoPicPreview(searchArea *models.SearchArea) {
 		return
 	}
 
-	// Validate search area dimensions
-	w := searchArea.RightX - searchArea.LeftX
-	h := searchArea.BottomY - searchArea.TopY
+	// Validate search area dimensions (variable refs yield 0 for preview)
+	lx := searchAreaCoordToInt(searchArea.LeftX)
+	ty := searchAreaCoordToInt(searchArea.TopY)
+	rx := searchAreaCoordToInt(searchArea.RightX)
+	by := searchAreaCoordToInt(searchArea.BottomY)
+	w := rx - lx
+	h := by - ty
 
 	if w <= 0 || h <= 0 {
 		dialog.ShowError(fmt.Errorf("AutoPic: Invalid search area dimensions - width: %d, height: %d (area: %s)", w, h, searchArea.Name), u.Window)
@@ -406,17 +414,17 @@ func (u *Ui) UpdateAutoPicPreview(searchArea *models.SearchArea) {
 	screenWidth := config.MonitorWidth
 	screenHeight := config.MonitorHeight
 
-	if searchArea.LeftX < 0 || searchArea.TopY < 0 ||
-		searchArea.RightX > screenWidth || searchArea.BottomY > screenHeight {
+	if lx < 0 || ty < 0 ||
+		rx > screenWidth || by > screenHeight {
 		dialog.ShowError(fmt.Errorf("AutoPic: Search area coordinates out of screen bounds - screen: %dx%d, area: (%d,%d) to (%d,%d) (area: %s)",
-			screenWidth, screenHeight, searchArea.LeftX, searchArea.TopY, searchArea.RightX, searchArea.BottomY, searchArea.Name), u.Window)
+			screenWidth, screenHeight, lx, ty, rx, by, searchArea.Name), u.Window)
 		u.clearPreviewImage()
 		return
 	}
 
 	// Calculate capture coordinates with offsets
-	captureX := searchArea.LeftX + config.XOffset
-	captureY := searchArea.TopY + config.YOffset
+	captureX := lx + config.XOffset
+	captureY := ty + config.YOffset
 
 	// Additional validation for capture coordinates
 	if captureX < 0 || captureY < 0 {
@@ -486,9 +494,13 @@ func (u *Ui) UpdateSearchAreaPreview(searchArea *models.SearchArea) {
 		return
 	}
 
-	// Validate search area dimensions
-	w := searchArea.RightX - searchArea.LeftX
-	h := searchArea.BottomY - searchArea.TopY
+	// Validate search area dimensions (variable refs yield 0 for preview)
+	lx := searchAreaCoordToInt(searchArea.LeftX)
+	ty := searchAreaCoordToInt(searchArea.TopY)
+	rx := searchAreaCoordToInt(searchArea.RightX)
+	by := searchAreaCoordToInt(searchArea.BottomY)
+	w := rx - lx
+	h := by - ty
 
 	if w <= 0 || h <= 0 {
 		u.clearSearchAreaPreviewImage()
@@ -515,15 +527,13 @@ func (u *Ui) UpdateSearchAreaPreview(searchArea *models.SearchArea) {
 	screenWidth := config.MonitorWidth
 	screenHeight := config.MonitorHeight
 
-	if searchArea.LeftX < 0 || searchArea.TopY < 0 ||
-		searchArea.RightX > screenWidth || searchArea.BottomY > screenHeight {
+	if lx < 0 || ty < 0 ||
+		rx > screenWidth || by > screenHeight {
 		dialog.ShowError(fmt.Errorf("SearchArea: Search area coordinates out of screen bounds - screen: %dx%d, area: (%d,%d) to (%d,%d) (area: %s)",
-			screenWidth, screenHeight, searchArea.LeftX, searchArea.TopY, searchArea.RightX, searchArea.BottomY, searchArea.Name), u.Window)
+			screenWidth, screenHeight, lx, ty, rx, by, searchArea.Name), u.Window)
 		u.clearSearchAreaPreviewImage()
 		return
 	}
-
-	// Calculate capture coordinates with offsets
 
 	// Attempt to capture the full screen with error recovery
 	defer func() {
@@ -556,7 +566,7 @@ func (u *Ui) UpdateSearchAreaPreview(searchArea *models.SearchArea) {
 	defer mat.Close()
 
 	// Draw red rectangle showing search area boundaries
-	rect := image.Rect(searchArea.LeftX, searchArea.TopY, searchArea.RightX, searchArea.BottomY)
+	rect := image.Rect(lx, ty, rx, by)
 	redColor := color.RGBA{R: 255, A: 255}
 	gocv.Rectangle(&mat, rect, redColor, 2)
 
@@ -586,6 +596,18 @@ func (u *Ui) clearSearchAreaPreviewImage() {
 
 // pointCoordToIntForPreview returns an int for preview drawing; literal ints are used, variable refs (string) yield 0.
 func pointCoordToIntForPreview(v interface{}) int {
+	switch val := v.(type) {
+	case int:
+		return val
+	case float64:
+		return int(val)
+	default:
+		return 0
+	}
+}
+
+// searchAreaCoordToInt returns an int for preview/validation; literal ints are used, variable refs (string) yield 0.
+func searchAreaCoordToInt(v interface{}) int {
 	switch val := v.(type) {
 	case int:
 		return val

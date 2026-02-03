@@ -8,7 +8,6 @@ import (
 	"Squire/ui"
 	"fmt"
 	"log"
-	"strconv"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -19,10 +18,10 @@ import (
 func setSearchAreaWidgets(sa models.SearchArea) {
 	st := ui.GetUi().EditorTabs.SearchAreasTab.Widgets
 	st["Name"].(*widget.Entry).SetText(sa.Name)
-	st["LeftX"].(*widget.Entry).SetText(strconv.Itoa(sa.LeftX))
-	st["TopY"].(*widget.Entry).SetText(strconv.Itoa(sa.TopY))
-	st["RightX"].(*widget.Entry).SetText(strconv.Itoa(sa.RightX))
-	st["BottomY"].(*widget.Entry).SetText(strconv.Itoa(sa.BottomY))
+	st["LeftX"].(*widget.Entry).SetText(fmt.Sprintf("%v", sa.LeftX))
+	st["TopY"].(*widget.Entry).SetText(fmt.Sprintf("%v", sa.TopY))
+	st["RightX"].(*widget.Entry).SetText(fmt.Sprintf("%v", sa.RightX))
+	st["BottomY"].(*widget.Entry).SetText(fmt.Sprintf("%v", sa.BottomY))
 }
 
 func setPointWidgets(p models.Point) {
@@ -103,21 +102,6 @@ func setAccordionSearchAreasLists(acc *widget.Accordion) {
 				ui.GetUi().UpdateSearchAreaPreview(sa)
 			}()
 
-			// if ui.GetUi().MainUi.Visible() {
-			// 	if v, ok := ui.GetUi().Mui.MTabs.SelectedTab().Macro.Root.GetAction(ui.GetUi().Mui.MTabs.SelectedTab().SelectedNode).(*actions.ImageSearch); ok {
-			// 		if ui.GetUi().ActionTabs.AppTabs.Selected().Text == "Image" {
-			// 			v.SearchArea = actions.SearchArea{Name: sa.Name, LeftX: sa.LeftX, TopY: sa.TopY, RightX: sa.RightX, BottomY: sa.BottomY}
-			// 			bindAction(v)
-			// 		}
-			// 	}
-			// 	if v, ok := ui.GetUi().Mui.MTabs.SelectedTab().Macro.Root.GetAction(ui.GetUi().Mui.MTabs.SelectedTab().SelectedNode).(*actions.Ocr); ok {
-			// 		if ui.GetUi().ActionTabs.AppTabs.Selected().Text == "OCR" {
-			// 			v.SearchArea = actions.SearchArea{Name: sa.Name, LeftX: sa.LeftX, TopY: sa.TopY, RightX: sa.RightX, BottomY: sa.BottomY}
-			// 			bindAction(v)
-			// 		}
-			// 	}
-			// 	lists.searchareas.Unselect(id)
-			// }
 		}
 		lists.searchbar = &widget.Entry{
 			PlaceHolder: "Search here",
@@ -206,7 +190,6 @@ func setAccordionPointsLists(acc *widget.Accordion) {
 			setPointWidgets(*point)
 			if v, ok := ui.GetUi().Mui.MTabs.SelectedTab().Macro.Root.GetAction(ui.GetUi().Mui.MTabs.SelectedTab().SelectedNode).(*actions.Move); ok {
 				v.Point = actions.Point{Name: point.Name, X: point.X, Y: point.Y}
-				// bindAction(v)
 			}
 			if ui.GetUi().MainUi.Navigation.Visible() {
 				lists.points.Unselect(id)

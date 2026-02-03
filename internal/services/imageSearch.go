@@ -3,6 +3,7 @@ package services
 import (
 	"Squire/internal/assets"
 	"Squire/internal/config"
+	"Squire/internal/models"
 	"Squire/internal/models/actions"
 	"Squire/internal/models/repositories"
 	"fmt"
@@ -18,17 +19,22 @@ import (
 	"gocv.io/x/gocv"
 )
 
-func imageSearch(a *actions.ImageSearch) (map[string][]robotgo.Point, error) {
+func imageSearch(a *actions.ImageSearch, macro *models.Macro) (map[string][]robotgo.Point, error) {
 	sa := a.SearchArea
-	w := sa.RightX - sa.LeftX
-	h := sa.BottomY - sa.TopY
-	log.Printf("Image Searching | %v in X1:%d Y1:%d X2:%d Y2:%d", a.Targets, sa.LeftX, sa.TopY, sa.RightX, sa.BottomY)
+	leftX, topY, rightX, bottomY, err := ResolveSearchAreaCoords(sa.LeftX, sa.TopY, sa.RightX, sa.BottomY, macro)
+	if err != nil {
+		log.Printf("Image search: failed to resolve search area coords: %v", err)
+		return nil, err
+	}
+	w := rightX - leftX
+	h := bottomY - topY
+	log.Printf("Image Searching | %v in X1:%d Y1:%d X2:%d Y2:%d", a.Targets, leftX, topY, rightX, bottomY)
 	if w+h == 0 {
 		err := fmt.Errorf("image search failed: cannot have an empty search area")
 		log.Println(err)
 		return nil, err
 	}
-	captureImg, err := robotgo.CaptureImg(sa.LeftX+config.XOffset, sa.TopY+config.YOffset, w, h)
+	captureImg, err := robotgo.CaptureImg(leftX+config.XOffset, topY+config.YOffset, w, h)
 	if err != nil {
 		log.Println("image search failed:", err)
 		return nil, err

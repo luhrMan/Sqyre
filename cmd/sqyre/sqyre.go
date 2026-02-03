@@ -8,13 +8,13 @@ import (
 	"Squire/internal/models/serialize"
 	"Squire/internal/services"
 	"Squire/ui"
+	"os"
 	"slices"
 
 	"github.com/go-vgo/robotgo"
 	hook "github.com/luhrMan/gohook"
 
 	"log"
-	"os"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
@@ -49,7 +49,7 @@ func init() {
 
 	a := app.NewWithID("Sqyre")
 	a.Settings().SetTheme(&assets.CustomTheme{})
-	os.Setenv("FYNE_SCALE", "1.25")
+	os.Setenv("FYNE_SCALE", "1")
 
 	w := a.NewWindow("Sqyre")
 
@@ -83,16 +83,7 @@ func init() {
 	ui.InitializeUi(w)
 	// construct the initialized 	(add widgets to ui)
 	ui.GetUi().ConstructUi()
-	// set bindings			(set bindings for ui widgets)
-	bindUi()
-
-	// editor := fyne.NewMenuItem("Open Data Editor", func() {
-	// 	fynetooltip.DestroyWindowToolTipLayer(ui.GetUi().Window.Canvas())
-	// 	ui.GetUi().Window.SetContent(fynetooltip.AddWindowToolTipLayer(ui.GetUi().EditorUi.CanvasObject, ui.GetUi().Window.Canvas()))
-	// 	ui.GetUi().Mui.MTabs.SelectedTab().UnselectAll()
-	// 	ui.GetUi().Mui.MTabs.SelectedTab().SelectedNode = ""
-	// })
-	// ui.GetUi().MainMenu.Items[0].Items = append(ui.GetUi().MainMenu.Items[0].Items, editor)
+	setUi()
 
 	w.SetContent(fynetooltip.AddWindowToolTipLayer(ui.GetUi().MainUi.Navigation, w.Canvas()))
 	w.RequestFocus()
@@ -144,10 +135,8 @@ func main() {
 	}
 }
 
-func bindUi() {
-	// binders.InitBinds()
+func setUi() {
 	binders.SetMacroUi()
-	// binders.SetActionTabBindings()
 	binders.SetEditorUi()
 }
 

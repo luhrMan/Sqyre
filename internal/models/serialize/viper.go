@@ -161,10 +161,24 @@ func (s *serializer) CreateActionFromMap(rawMap map[string]any, parent actions.A
 func createSearchBox(rawMap map[string]any) actions.SearchArea {
 	return actions.SearchArea{
 		Name:    rawMap["name"].(string),
-		LeftX:   rawMap["leftx"].(int),
-		TopY:    rawMap["topy"].(int),
-		RightX:  rawMap["rightx"].(int),
-		BottomY: rawMap["bottomy"].(int),
+		LeftX:   valueAsIntOrString(rawMap["leftx"]),
+		TopY:    valueAsIntOrString(rawMap["topy"]),
+		RightX:  valueAsIntOrString(rawMap["rightx"]),
+		BottomY: valueAsIntOrString(rawMap["bottomy"]),
+	}
+}
+
+// valueAsIntOrString converts an interface{} to either int or string as appropriate for SearchArea fields.
+func valueAsIntOrString(val interface{}) interface{} {
+	switch v := val.(type) {
+	case int:
+		return v
+	case float64:
+		return int(v)
+	case string:
+		return v
+	default:
+		return 0
 	}
 }
 
