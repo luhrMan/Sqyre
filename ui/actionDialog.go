@@ -66,7 +66,7 @@ func ShowActionDialog(action actions.ActionInterface, onSave func(actions.Action
 		content.Resize(fyne.NewSize(1000, 1000))
 	case *actions.Ocr:
 		content, saveFunc = createOcrDialogContent(node)
-		content.Resize(fyne.NewSize(300, 100))
+		content.Resize(fyne.NewSize(600, 500))
 	case *actions.SetVariable:
 		content, saveFunc = createSetVariableDialogContent(node)
 		content.Resize(fyne.NewSize(300, 100))
@@ -909,16 +909,112 @@ func createOcrDialogContent(action *actions.Ocr) (fyne.CanvasObject, func()) {
 	outputVarEntry := widget.NewEntry()
 	outputVarEntry.SetText(action.OutputVariable)
 
-	content := widget.NewForm(
+	// Temporary storage for changes (only applied on save)
+	tempSearchArea := action.SearchArea
+
+	// Create Search Areas accordion
+	searchAreasAccordion := widget.NewAccordion()
+	for _, p := range repositories.ProgramRepo().GetAll() {
+		lists := struct {
+			searchbar   *widget.Entry
+			searchareas *widget.List
+			filtered    []string
+		}{
+			filtered: p.SearchAreaRepo(config.MainMonitorSizeString).GetAllKeys(),
+		}
+
+		lists.searchbar = widget.NewEntry()
+		lists.searchareas = widget.NewList(
+			func() int {
+				return len(lists.filtered)
+			},
+			func() fyne.CanvasObject {
+				return widget.NewLabel("template")
+			},
+			func(id widget.ListItemID, co fyne.CanvasObject) {
+				name := lists.filtered[id]
+				label := co.(*widget.Label)
+				program, err := repositories.ProgramRepo().Get(p.Name)
+				if err != nil {
+					return
+				}
+				sa, err := program.SearchAreaRepo(config.MainMonitorSizeString).Get(name)
+				if err != nil {
+					return
+				}
+				label.SetText(sa.Name)
+			},
+		)
+
+		lists.searchareas.OnSelected = func(id widget.ListItemID) {
+			program, err := repositories.ProgramRepo().Get(p.Name)
+			if err != nil {
+				return
+			}
+			saName := lists.filtered[id]
+			sa, err := program.SearchAreaRepo(config.MainMonitorSizeString).Get(saName)
+			if err != nil {
+				return
+			}
+			tempSearchArea = actions.SearchArea{
+				Name:    sa.Name,
+				LeftX:   sa.LeftX,
+				TopY:    sa.TopY,
+				RightX:  sa.RightX,
+				BottomY: sa.BottomY,
+			}
+		}
+
+		lists.searchbar.PlaceHolder = "Search here"
+		lists.searchbar.OnChanged = func(s string) {
+			defaultList := p.SearchAreaRepo(config.MainMonitorSizeString).GetAllKeys()
+			if s == "" {
+				lists.filtered = defaultList
+			} else {
+				lists.filtered = []string{}
+				for _, i := range defaultList {
+					if fuzzy.MatchFold(s, i) {
+						lists.filtered = append(lists.filtered, i)
+					}
+				}
+			}
+			lists.searchareas.UnselectAll()
+			lists.searchareas.Refresh()
+		}
+
+		searchAreasAccordion.Append(widget.NewAccordionItem(
+			p.Name,
+			container.NewBorder(
+				lists.searchbar,
+				nil, nil, nil,
+				lists.searchareas,
+			),
+		))
+	}
+
+	form := widget.NewForm(
 		widget.NewFormItem("Name:", nameEntry),
 		widget.NewFormItem("Text Target:", targetEntry),
 		widget.NewFormItem("Output Variable:", outputVarEntry),
+	)
+
+	content := container.NewHSplit(
+		widget.NewAccordion(
+			widget.NewAccordionItem("Search Areas",
+				container.NewBorder(
+					nil, nil, nil, nil,
+					searchAreasAccordion,
+				),
+			),
+		),
+		form,
 	)
 
 	saveFunc := func() {
 		action.Name = nameEntry.Text
 		action.Target = targetEntry.Text
 		action.OutputVariable = outputVarEntry.Text
+		action.SearchArea = tempSearchArea
 	}
 
 	return content, saveFunc

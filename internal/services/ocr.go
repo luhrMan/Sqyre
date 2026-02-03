@@ -1,12 +1,15 @@
 package services
 
 import (
+	"Squire/internal/config"
+	"Squire/internal/models"
 	"Squire/internal/models/actions"
 	"bytes"
 	"fmt"
 	"image"
 	"image/png"
 	"log"
+	"strings"
 
 	"github.com/go-vgo/robotgo"
 	"github.com/otiai10/gosseract/v2"
@@ -35,16 +38,21 @@ func CheckImageForText(img image.Image) (error, string) {
 	return nil, text
 }
 
-func OCR(a *actions.Ocr) (string, error) {
-	log.Printf("%s OCR search | %s in X1:%d Y1:%d X2:%d Y2:%d", a.Target, a.SearchArea.Name, a.SearchArea.LeftX, a.SearchArea.TopY, a.SearchArea.RightX, a.SearchArea.BottomY)
+func OCR(a *actions.Ocr, macro *models.Macro) (string, error) {
+	sa := a.SearchArea
+	leftX, topY, rightX, bottomY, err := ResolveSearchAreaCoords(sa.LeftX, sa.TopY, sa.RightX, sa.BottomY, macro)
+	if err != nil {
+		log.Printf("OCR: failed to resolve search area coords: %v", err)
+		return "", err
+	}
+	log.Printf("%s OCR search | %s in X1:%d Y1:%d X2:%d Y2:%d", a.Target, a.SearchArea.Name, leftX, topY, rightX, bottomY)
 	var (
-		// 	img       image.Image
-		// 	err       error
+		img       image.Image
 		foundText string
 	)
-	// w := a.SearchArea.RightX - a.SearchArea.LeftX
-	// h := a.SearchArea.BottomY - a.SearchArea.TopY
-	// ppOptions := PreprocessOptions{MinThreshold: 50}
+	w := rightX - leftX
+	h := bottomY - topY
+	ppOptions := PreprocessOptions{MinThreshold: 50}
 	// if a.SearchArea.Name == "Item Description" {
 	// 	img, err = ItemDescriptionLocation()
 	// 	if err != nil {
@@ -56,24 +64,24 @@ func OCR(a *actions.Ocr) (string, error) {
 	// 		log.Fatal(err)
 	// 	}
 	// } else {
-	// 	img = robotgo.CaptureImg(a.SearchArea.LeftX, a.SearchArea.TopY+h/2, w, h/2)
-	// 	img = ImageToMatToImagePreprocess(img, true, true, false, false, ppOptions)
-	// 	err, foundText = CheckImageForText(img)
-	// 	if err != nil {
-	// 		log.Fatal(err)
-	// 	}
+	img, err = robotgo.CaptureImg(leftX+config.XOffset, topY+h/2+config.YOffset, w, h/2)
+	img = ImageToMatToImagePreprocess(img, true, true, false, false, ppOptions)
+	err, foundText = CheckImageForText(img)
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	// 	if !strings.Contains(foundText, a.Target) {
-	// 		img = robotgo.CaptureImg(a.SearchArea.LeftX, a.SearchArea.TopY, w, h/2)
-	// 		img = ImageToMatToImagePreprocess(img, true, true, false, false, ppOptions)
-	// 		err, foundText = CheckImageForText(img)
-	// 		if err != nil {
-	// 			log.Fatal(err)
-	// 		}
-	// 	}
+	if !strings.Contains(foundText, a.Target) {
+		img, err = robotgo.CaptureImg(leftX+config.XOffset, topY+config.YOffset, w, h/2)
+		img = ImageToMatToImagePreprocess(img, true, true, false, false, ppOptions)
+		err, foundText = CheckImageForText(img)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
 	// }
 
-	// log.Printf("FOUND TEXT: %v", foundText)
+	log.Printf("FOUND TEXT: %v", foundText)
 
 	return foundText, nil
 }

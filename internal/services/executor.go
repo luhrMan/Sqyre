@@ -113,17 +113,27 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 		return nil
 	case *actions.ImageSearch:
 		log.Println("Image Search:", node.String())
-		results, err := imageSearch(node)
+		results, err := imageSearch(node, macro)
 		if err != nil {
 			return err
+		}
+		searchLeftX, err := ResolveInt(node.SearchArea.LeftX, macro)
+		if err != nil {
+			log.Printf("Image Search: failed to resolve SearchArea.LeftX %v: %v, using 0", node.SearchArea.LeftX, err)
+			searchLeftX = 0
+		}
+		searchTopY, err := ResolveInt(node.SearchArea.TopY, macro)
+		if err != nil {
+			log.Printf("Image Search: failed to resolve SearchArea.TopY %v: %v, using 0", node.SearchArea.TopY, err)
+			searchTopY = 0
 		}
 		sorted := SortListOfPoints(results)
 		count := 0
 		var firstPoint *robotgo.Point
 		for _, point := range sorted {
 			count++
-			point.X += node.SearchArea.LeftX
-			point.Y += node.SearchArea.TopY
+			point.X += searchLeftX
+			point.Y += searchTopY
 			if firstPoint == nil {
 				firstPoint = &robotgo.Point{X: point.X, Y: point.Y}
 			}
@@ -139,12 +149,6 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 			}
 
 			for _, a := range node.SubActions {
-				// if v, ok := a.(*actions.Move); ok {
-				// 	if v.Point.Name == "image search context" {
-				// 		v.Point.X = point.X + 25
-				// 		v.Point.Y = point.Y + 25
-				// 	}
-				// }
 				if err := executeWithContext(a, macro); err != nil {
 					return err
 				}
@@ -163,7 +167,7 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 
 		return nil
 	case *actions.Ocr:
-		foundText, err := OCR(node)
+		foundText, err := OCR(node, macro)
 		if err != nil {
 			log.Println(err)
 			return err

@@ -427,10 +427,31 @@ func setEditorForms() {
 	et.SearchAreasTab.Widgets["Form"].(*widget.Form).OnSubmit = func() {
 		w := et.SearchAreasTab.Widgets
 		n := w["Name"].(*widget.Entry).Text
-		lx, _ := strconv.Atoi(w["LeftX"].(*widget.Entry).Text)
-		ty, _ := strconv.Atoi(w["TopY"].(*widget.Entry).Text)
-		rx, _ := strconv.Atoi(w["RightX"].(*widget.Entry).Text)
-		by, _ := strconv.Atoi(w["BottomY"].(*widget.Entry).Text)
+		lxText := w["LeftX"].(*widget.Entry).Text
+		tyText := w["TopY"].(*widget.Entry).Text
+		rxText := w["RightX"].(*widget.Entry).Text
+		byText := w["BottomY"].(*widget.Entry).Text
+		var lxVal, tyVal, rxVal, byVal interface{}
+		if v, err := strconv.Atoi(lxText); err == nil {
+			lxVal = v
+		} else {
+			lxVal = lxText
+		}
+		if v, err := strconv.Atoi(tyText); err == nil {
+			tyVal = v
+		} else {
+			tyVal = tyText
+		}
+		if v, err := strconv.Atoi(rxText); err == nil {
+			rxVal = v
+		} else {
+			rxVal = rxText
+		}
+		if v, err := strconv.Atoi(byText); err == nil {
+			byVal = v
+		} else {
+			byVal = byText
+		}
 		if v, ok := et.SearchAreasTab.SelectedItem.(*models.SearchArea); ok {
 			p := ui.GetUi().ProgramSelector.Text
 			program, err := repositories.ProgramRepo().Get(p)
@@ -440,10 +461,10 @@ func setEditorForms() {
 			}
 			oldkey := v.Name
 			v.Name = n
-			v.LeftX = lx
-			v.TopY = ty
-			v.RightX = rx
-			v.BottomY = by
+			v.LeftX = lxVal
+			v.TopY = tyVal
+			v.RightX = rxVal
+			v.BottomY = byVal
 
 			if err := program.SearchAreaRepo(config.MainMonitorSizeString).Set(v.Name, v); err != nil {
 				log.Printf("Error saving search area %s: %v", v.Name, err)
@@ -585,10 +606,31 @@ func setEditorButtons() {
 			// refreshAllProgramRelatedUI()
 		case "Search Areas":
 			n := ui.GetUi().EditorTabs.SearchAreasTab.Widgets["Name"].(*widget.Entry).Text
-			lx, _ := strconv.Atoi(ui.GetUi().EditorTabs.SearchAreasTab.Widgets["LeftX"].(*widget.Entry).Text)
-			ty, _ := strconv.Atoi(ui.GetUi().EditorTabs.SearchAreasTab.Widgets["TopY"].(*widget.Entry).Text)
-			rx, _ := strconv.Atoi(ui.GetUi().EditorTabs.SearchAreasTab.Widgets["RightX"].(*widget.Entry).Text)
-			by, _ := strconv.Atoi(ui.GetUi().EditorTabs.SearchAreasTab.Widgets["BottomY"].(*widget.Entry).Text)
+			lxText := ui.GetUi().EditorTabs.SearchAreasTab.Widgets["LeftX"].(*widget.Entry).Text
+			tyText := ui.GetUi().EditorTabs.SearchAreasTab.Widgets["TopY"].(*widget.Entry).Text
+			rxText := ui.GetUi().EditorTabs.SearchAreasTab.Widgets["RightX"].(*widget.Entry).Text
+			byText := ui.GetUi().EditorTabs.SearchAreasTab.Widgets["BottomY"].(*widget.Entry).Text
+			var lxVal, tyVal, rxVal, byVal interface{}
+			if v, err := strconv.Atoi(lxText); err == nil {
+				lxVal = v
+			} else {
+				lxVal = lxText
+			}
+			if v, err := strconv.Atoi(tyText); err == nil {
+				tyVal = v
+			} else {
+				tyVal = tyText
+			}
+			if v, err := strconv.Atoi(rxText); err == nil {
+				rxVal = v
+			} else {
+				rxVal = rxText
+			}
+			if v, err := strconv.Atoi(byText); err == nil {
+				byVal = v
+			} else {
+				byVal = byText
+			}
 
 			pro := getProgram(program)
 			if pro == nil {
@@ -597,10 +639,10 @@ func setEditorButtons() {
 
 			sa := pro.SearchAreaRepo(config.MainMonitorSizeString).New()
 			sa.Name = n
-			sa.LeftX = lx
-			sa.TopY = ty
-			sa.RightX = rx
-			sa.BottomY = by
+			sa.LeftX = lxVal
+			sa.TopY = tyVal
+			sa.RightX = rxVal
+			sa.BottomY = byVal
 
 			err := pro.SearchAreaRepo(config.MainMonitorSizeString).Set(sa.Name, sa)
 			if err != nil {
