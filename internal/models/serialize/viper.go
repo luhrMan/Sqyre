@@ -110,10 +110,7 @@ func (s *serializer) CreateActionFromMap(rawMap map[string]any, parent actions.A
 	case "key":
 		action = actions.NewKey(rawMap["key"].(string), rawMap["state"].(bool))
 	case "imagesearch":
-		targets := make([]string, 0)
-		for _, t := range rawMap["targets"].([]any) {
-			targets = append(targets, t.(string))
-		}
+		targets := targetsFromMap(rawMap["targets"])
 		action = actions.NewImageSearch(rawMap["name"].(string), []actions.ActionInterface{}, targets, createSearchBox(rawMap["searcharea"].(map[string]any)), rawMap["rowsplit"].(int), rawMap["colsplit"].(int), float32(rawMap["tolerance"].(float64)))
 		if is, ok := action.(*actions.ImageSearch); ok {
 			if v, ok := rawMap["outputxvariable"].(string); ok {
@@ -156,6 +153,26 @@ func (s *serializer) CreateActionFromMap(rawMap map[string]any, parent actions.A
 	}
 	// log.Printf("Unmarshalled action %s", action)
 	return action, nil
+}
+
+// targetsFromMap converts rawMap["targets"] to []string whether it is []string (from ActionToMap) or []any (from YAML).
+func targetsFromMap(v any) []string {
+	if v == nil {
+		return nil
+	}
+	if ss, ok := v.([]string); ok {
+		return ss
+	}
+	if slice, ok := v.([]any); ok {
+		out := make([]string, 0, len(slice))
+		for _, t := range slice {
+			if s, ok := t.(string); ok {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	return nil
 }
 
 func createSearchBox(rawMap map[string]any) actions.SearchArea {

@@ -16,6 +16,30 @@ import (
 var appIcon []byte
 var AppIcon = fyne.NewStaticResource("appIcon", appIcon)
 
+//go:embed double-up-chevron.svg
+var doubleUpChevron []byte
+
+//go:embed double-down-chevron.svg
+var doubleDownChevron []byte
+
+//go:embed chevron-up.svg
+var chevronUp []byte
+
+//go:embed chevron-down.svg
+var chevronDown []byte
+
+// DoubleUpChevronIcon is the double-up chevron icon for "push into advanced action above".
+var DoubleUpChevronIcon = fyne.NewStaticResource("doubleUpChevron", doubleUpChevron)
+
+// DoubleDownChevronIcon is the double-down chevron icon for "push into advanced action below".
+var DoubleDownChevronIcon = fyne.NewStaticResource("doubleDownChevron", doubleDownChevron)
+
+// ChevronUpIcon is the single up chevron icon for "move node up".
+var ChevronUpIcon = fyne.NewStaticResource("chevronUp", chevronUp)
+
+// ChevronDownIcon is the single down chevron icon for "move node down".
+var ChevronDownIcon = fyne.NewStaticResource("chevronDown", chevronDown)
+
 var (
 	// fyneResourceCache stores loaded Fyne resources keyed by file path
 	// Key format: "programName|filename.png"
