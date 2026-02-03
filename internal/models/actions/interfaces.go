@@ -26,6 +26,7 @@ type AdvancedActionInterface interface {
 	GetSubActions() []ActionInterface
 	AddSubAction(ActionInterface)
 	RemoveSubAction(ActionInterface)
+	SetSubActions([]ActionInterface)
 }
 
 func (a *BaseAction) GetUID() string                           { return a.uid }

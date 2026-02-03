@@ -32,6 +32,8 @@ macros:
                   outputyvariable: ""
                   type: imagesearch
                   name: ""
+                - type: wait
+                  time: 590
         globaldelay: 45
         hotkey:
             - ctrl
@@ -128,40 +130,80 @@ macros:
                         name: image search context
                         x: ${foundX}
                         "y": ${foundY}
-                    - target: Rare
-                      searcharea:
-                        name: Item Description
-                        leftx: 0
-                        topy: ${foundY}+100
-                        rightx: 2559
-                        bottomy: ${foundY}-100
-                      outputvariable: ""
-                      type: ocr
-                      name: rarity
-                      subactions:
-                        - type: click
-                          button: true
-                    - targets: []
-                      searcharea:
-                        name: ""
-                        leftx: 0
-                        topy: 0
-                        rightx: 0
-                        bottomy: 0
-                      rowsplit: 1
-                      colsplit: 1
-                      tolerance: 0.95
-                      outputxvariable: itemDescLeftX
-                      outputyvariable: itemDescTopY
-                      type: imagesearch
-                      name: ""
+                    - type: wait
+                      time: 387
+                    - type: move
+                      point:
+                        name: Alchemist
+                        x: 515
+                        "y": 299
+                    - type: wait
+                      time: 387
                 - type: key
                   key: shift
                   state: false
+                - targets:
+                    - dark and darker|Ancient Scroll
+                    - dark and darker|Bandage
+                    - dark and darker|Diamond
+                    - dark and darker|Dotted Gold Bangle
+                    - dark and darker|Gem Necklace
+                    - dark and darker|Gem Ring
+                    - dark and darker|Glimmer Bangle
+                    - dark and darker|Goblet
+                    - dark and darker|Gold Band
+                    - dark and darker|Gold Bowl
+                    - dark and darker|Gold Candelabra
+                    - dark and darker|Gold Candle Holder
+                    - dark and darker|Gold Candle Platter
+                    - dark and darker|Gold Chalice
+                    - dark and darker|Gold Crown
+                    - dark and darker|Gold Goblet
+                    - dark and darker|Gold Waterpot
+                    - dark and darker|Leaf Gold Bangle
+                    - dark and darker|Light Gold Bangle
+                    - dark and darker|Patterned Gold Bangle
+                    - dark and darker|Pearl Necklace
+                    - dark and darker|Shine Bangle
+                    - dark and darker|Silver Chalice
+                    - dark and darker|Simple Gold Bangle
+                    - dark and darker|Slim Bangle
+                    - dark and darker|Triple Gem Bangle
+                    - dark and darker|Turquoise Gem Bangle
+                  searcharea:
+                    name: stash-screen-stash-inventory
+                    leftx: 1832
+                    topy: 261
+                    rightx: 2493
+                    bottomy: 1354
+                  rowsplit: 1
+                  colsplit: 1
+                  tolerance: 0.95
+                  outputxvariable: foundX
+                  outputyvariable: foundY
+                  type: imagesearch
+                  name: treasures
+                  subactions:
+                    - type: move
+                      point:
+                        name: image search context
+                        x: ${foundX}
+                        "y": ${foundY}
+                    - type: wait
+                      time: 387
+                    - type: move
+                      point:
+                        name: Alchemist
+                        x: 515
+                        "y": 299
+                    - type: wait
+                      time: 387
         globaldelay: 25
         hotkey: []
         variables:
             variables:
+                foundX: 1918
+                foundY: 294
                 foundx: 1865
                 foundy: 294
     Switch Chracters:
@@ -170,6 +212,63 @@ macros:
             count: 1
             type: loop
             name: root
+            subactions:
+                - targets:
+                    - dark and darker|Ancient Scroll
+                    - dark and darker|Bandage
+                    - dark and darker|Diamond
+                    - dark and darker|Dotted Gold Bangle
+                    - dark and darker|Gem Necklace
+                    - dark and darker|Gem Ring
+                    - dark and darker|Glimmer Bangle
+                    - dark and darker|Goblet
+                    - dark and darker|Gold Band
+                    - dark and darker|Gold Bowl
+                    - dark and darker|Gold Candelabra
+                    - dark and darker|Gold Candle Holder
+                    - dark and darker|Gold Candle Platter
+                    - dark and darker|Gold Chalice
+                    - dark and darker|Gold Crown
+                    - dark and darker|Gold Goblet
+                    - dark and darker|Gold Waterpot
+                    - dark and darker|Leaf Gold Bangle
+                    - dark and darker|Light Gold Bangle
+                    - dark and darker|Patterned Gold Bangle
+                    - dark and darker|Pearl Necklace
+                    - dark and darker|Shine Bangle
+                    - dark and darker|Silver Chalice
+                    - dark and darker|Simple Gold Bangle
+                    - dark and darker|Slim Bangle
+                    - dark and darker|Triple Gem Bangle
+                    - dark and darker|Turquoise Gem Bangle
+                  searcharea:
+                    name: stash-screen-stash-inventory
+                    leftx: 1832
+                    topy: 261
+                    rightx: 2493
+                    bottomy: 1354
+                  rowsplit: 1
+                  colsplit: 1
+                  tolerance: 0.95
+                  outputxvariable: foundX
+                  outputyvariable: foundY
+                  type: imagesearch
+                  name: treasures
+                  subactions:
+                    - type: move
+                      point:
+                        name: image search context
+                        x: ${foundX}
+                        "y": ${foundY}
+                    - type: wait
+                      time: 387
+                    - type: move
+                      point:
+                        name: Alchemist
+                        x: 515
+                        "y": 299
+                    - type: wait
+                      time: 387
         globaldelay: 0
         hotkey: []
         variables:
@@ -382,8 +481,8 @@ programs:
                 name: Ancient Scroll
                 stackmax: 0
                 tags:
-                    - merchant/collector
                     - treasure
+                    - merchant/collector
             Badger Pendant:
                 gridsize:
                     - 1
@@ -1038,6 +1137,15 @@ programs:
                 stackmax: 5
                 tags:
                     - crafting/ore
+            'Item Description: Bottom Right':
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: 'Item Description: Bottom Right'
+                stackmax: 0
+                tags:
+                    - meta
             Kobolds Ear:
                 gridsize:
                     - 1
