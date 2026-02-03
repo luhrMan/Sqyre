@@ -18,13 +18,14 @@ func (p *Point) SetKey(key string) {
 	p.Name = key
 }
 
-// SearchArea represents a named rectangular region used for image search operations
+// SearchArea represents a named rectangular region used for image search operations.
+// LeftX, TopY, RightX, and BottomY may be int (literal) or string (variable reference e.g. "${leftX}").
 type SearchArea struct {
 	Name    string
-	LeftX   int
-	TopY    int
-	RightX  int
-	BottomY int
+	LeftX   interface{}
+	TopY    interface{}
+	RightX  interface{}
+	BottomY interface{}
 }
 
 // GetKey returns the unique identifier for this SearchArea.

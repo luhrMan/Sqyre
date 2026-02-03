@@ -14,11 +14,12 @@ func newAdvancedAction(name, t string, subActions []ActionInterface) *AdvancedAc
 	}
 }
 
-// SearchArea represents a rectangular region for image search and ocr operations
+// SearchArea represents a rectangular region for image search and ocr operations.
+// LeftX, TopY, RightX, and BottomY may be int (literal) or string (variable reference e.g. "${leftX}").
 type SearchArea struct {
 	Name    string
-	LeftX   int
-	TopY    int
-	RightX  int
-	BottomY int
+	LeftX   interface{}
+	TopY    interface{}
+	RightX  interface{}
+	BottomY interface{}
 }

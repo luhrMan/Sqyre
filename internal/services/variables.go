@@ -472,3 +472,25 @@ func ResolveString(value interface{}, macro *models.Macro) (string, error) {
 		return fmt.Sprintf("%v", v), nil
 	}
 }
+
+// ResolveSearchAreaCoords resolves LeftX, TopY, RightX, BottomY (variable refs or expressions) to ints.
+// Returns (leftX, topY, rightX, bottomY, error). Used by image search and OCR at runtime.
+func ResolveSearchAreaCoords(leftX, topY, rightX, bottomY interface{}, macro *models.Macro) (int, int, int, int, error) {
+	lx, err := ResolveInt(leftX, macro)
+	if err != nil {
+		return 0, 0, 0, 0, fmt.Errorf("LeftX: %w", err)
+	}
+	ty, err := ResolveInt(topY, macro)
+	if err != nil {
+		return 0, 0, 0, 0, fmt.Errorf("TopY: %w", err)
+	}
+	rx, err := ResolveInt(rightX, macro)
+	if err != nil {
+		return 0, 0, 0, 0, fmt.Errorf("RightX: %w", err)
+	}
+	by, err := ResolveInt(bottomY, macro)
+	if err != nil {
+		return 0, 0, 0, 0, fmt.Errorf("BottomY: %w", err)
+	}
+	return lx, ty, rx, by, nil
+}
