@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"Squire/internal/assets"
+	"Squire/internal/models/serialize"
 	"Squire/internal/services"
 
 	"fyne.io/fyne/v2"
@@ -11,6 +13,9 @@ import (
 	"fyne.io/fyne/v2/widget"
 	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 )
+
+// copiedNodeMap is the clipboard for macro tree copy/paste (nil when empty).
+var copiedNodeMap map[string]any
 
 type MacroUi struct {
 	MTabs             *MacroTabs
@@ -37,14 +42,32 @@ func (u *Ui) constructMacroUi() *fyne.Container {
 		st.SelectedNode = ""
 	})
 
-	moveDownNodeButton := ttwidget.NewButtonWithIcon("", theme.MoveDownIcon(), func() {
+	moveDownNodeButton := ttwidget.NewButtonWithIcon("", assets.ChevronDownIcon, func() {
 		st := mui.MTabs.SelectedTab()
 		st.moveNode(st.SelectedNode, false)
 	})
-	// upIcon := fyne.NewStaticResource("custom_arrowup", assets.CustomArrowUpIcon())
-	moveUpNodeButton := ttwidget.NewButtonWithIcon("", theme.MoveUpIcon(), func() {
+	moveUpNodeButton := ttwidget.NewButtonWithIcon("", assets.ChevronUpIcon, func() {
 		st := mui.MTabs.SelectedTab()
 		st.moveNode(st.SelectedNode, true)
+	})
+	copyNodeButton := ttwidget.NewButtonWithIcon("", theme.ContentCopyIcon(), func() {
+		st := mui.MTabs.SelectedTab()
+		if st.SelectedNode == "" {
+			return
+		}
+		node := st.Macro.Root.GetAction(st.SelectedNode)
+		if node == nil || node.GetParent() == nil {
+			return // don't copy root
+		}
+		m, err := serialize.ActionToMap(node)
+		if err != nil {
+			return
+		}
+		copiedNodeMap = m
+	})
+	pasteNodeButton := ttwidget.NewButtonWithIcon("", theme.ContentPasteIcon(), func() {
+		st := mui.MTabs.SelectedTab()
+		st.PasteNode(copiedNodeMap)
 	})
 	playMacroButton := ttwidget.NewButtonWithIcon("", theme.MediaPlayIcon(), func() {
 		st := mui.MTabs.SelectedTab()
@@ -57,6 +80,8 @@ func (u *Ui) constructMacroUi() *fyne.Container {
 	unselectNodeButton.SetToolTip("unselect nodes")
 	moveDownNodeButton.SetToolTip("move node down")
 	moveUpNodeButton.SetToolTip("move node up")
+	copyNodeButton.SetToolTip("copy node")
+	pasteNodeButton.SetToolTip("paste node below")
 	playMacroButton.SetToolTip("start macro execution")
 
 	mui.MacroToolbars.TopToolbar =
@@ -67,6 +92,8 @@ func (u *Ui) constructMacroUi() *fyne.Container {
 				unselectNodeButton,
 				moveDownNodeButton,
 				moveUpNodeButton,
+				copyNodeButton,
+				pasteNodeButton,
 				layout.NewSpacer(),
 				layout.NewSpacer(),
 				layout.NewSpacer(),

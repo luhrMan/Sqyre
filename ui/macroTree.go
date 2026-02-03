@@ -3,6 +3,7 @@ package ui
 import (
 	"Squire/internal/models"
 	"Squire/internal/models/actions"
+	"Squire/internal/models/serialize"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -91,10 +92,64 @@ func (mt *MacroTree) setTree() {
 		removeButton.OnTapped = func() {
 			node.GetParent().RemoveSubAction(node)
 			mt.RefreshItem(uid)
-			if len(mt.Macro.Root.SubActions) == 0 {
+			if len(mt.Macro.Root.SubActions) == 0 || mt.SelectedNode == node.GetUID() {
 				mt.SelectedNode = ""
 			}
 		}
 		removeButton.Show()
 	}
+}
+
+// PasteNode creates a copy of the action from clipboardMap and inserts it into
+// the current selection: if the selected node is an advanced action (has children),
+// the pasted node is added as its last child; otherwise it is inserted below the
+// selected node as a sibling. With no selection, pastes at the end of root.
+// Returns true if paste succeeded.
+func (mt *MacroTree) PasteNode(clipboardMap map[string]any) bool {
+	if clipboardMap == nil {
+		return false
+	}
+	var parent actions.AdvancedActionInterface
+	insertIndex := 0
+	if mt.SelectedNode != "" {
+		selected := mt.Macro.Root.GetAction(mt.SelectedNode)
+		if selected == nil {
+			return false
+		}
+		if adv, ok := selected.(actions.AdvancedActionInterface); ok {
+			// Paste into the selected advanced action as its last child
+			parent = adv
+			insertIndex = len(parent.GetSubActions())
+		} else {
+			// Paste below the selected node as a sibling
+			parent = selected.GetParent()
+			if parent == nil {
+				return false
+			}
+			psa := parent.GetSubActions()
+			for i, c := range psa {
+				if c.GetUID() == mt.SelectedNode {
+					insertIndex = i + 1
+					break
+				}
+			}
+		}
+	} else {
+		parent = mt.Macro.Root
+		insertIndex = len(parent.GetSubActions())
+	}
+	newAction, err := serialize.ViperSerializer.CreateActionFromMap(clipboardMap, parent)
+	if err != nil {
+		return false
+	}
+	subActions := parent.GetSubActions()
+	newSubs := make([]actions.ActionInterface, 0, len(subActions)+1)
+	newSubs = append(newSubs, subActions[:insertIndex]...)
+	newSubs = append(newSubs, newAction)
+	newSubs = append(newSubs, subActions[insertIndex:]...)
+	parent.SetSubActions(newSubs)
+	mt.Select(newAction.GetUID())
+	mt.SelectedNode = newAction.GetUID()
+	mt.Refresh()
+	return true
 }
