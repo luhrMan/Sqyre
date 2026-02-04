@@ -16,18 +16,18 @@ const (
 	UserMetaDir        = "meta"
 	UserCalibrationDir = "calibration"
 
-	Scr                   = "screen"
-	Inv                   = "inventory"
-	Empty                 = "empty"
-	StashScr              = "stash-" + Scr
-	MerchantsScr          = "merchants-" + Scr
-	PlayerInv             = "player-" + Inv
-	StashInv              = "stash-" + Inv
-	MerchantInv           = "merchant-" + Inv
-	StashScrPlayerInv     = StashScr + "-" + PlayerInv
-	StashScrStashInv      = StashScr + "-" + StashInv
-	MerchantsScrPlayerInv = MerchantsScr + "-" + PlayerInv
-	MerchantsScrStashInv  = MerchantsScr + "-" + StashInv
+	// Scr                   = "screen"
+	// Inv                   = "inventory"
+	// Empty                 = "empty"
+	// StashScr              = "stash-" + Scr
+	// MerchantsScr          = "merchants-" + Scr
+	// PlayerInv             = "player-" + Inv
+	// StashInv              = "stash-" + Inv
+	// MerchantInv           = "merchant-" + Inv
+	// StashScrPlayerInv     = StashScr + "-" + PlayerInv
+	// StashScrStashInv      = StashScr + "-" + StashInv
+	// MerchantsScrPlayerInv = MerchantsScr + "-" + PlayerInv
+	// MerchantsScrStashInv  = MerchantsScr + "-" + StashInv
 
 	PNG  = ".png"
 	JPG  = ".jpg"

@@ -394,10 +394,14 @@ func setEditorForms() {
 							Content: fmt.Sprintf("X: %d, Y: %d", adjustedX, adjustedY),
 						})
 						if xEntry, ok := et.PointsTab.Widgets["X"].(*widget.Entry); ok {
-							xEntry.SetText(strconv.Itoa(adjustedX))
+							fyne.DoAndWait(func() {
+								xEntry.SetText(strconv.Itoa(adjustedX))
+							})
 						}
 						if yEntry, ok := et.PointsTab.Widgets["Y"].(*widget.Entry); ok {
-							yEntry.SetText(strconv.Itoa(adjustedY))
+							fyne.DoAndWait(func() {
+								yEntry.SetText(strconv.Itoa(adjustedY))
+							})
 						}
 						if point, ok := et.PointsTab.SelectedItem.(*models.Point); ok {
 							point.X = adjustedX
@@ -412,10 +416,14 @@ func setEditorForms() {
 							}()
 						}
 						hook.Unregister(hook.MouseDown, []string{})
-						dlg.Dismiss()
+						fyne.DoAndWait(func() {
+							dlg.Dismiss()
+						})
 					default:
 						hook.Unregister(hook.MouseDown, []string{})
-						dlg.Dismiss()
+						fyne.DoAndWait(func() {
+							dlg.Dismiss()
+						})
 					}
 				})
 			}()

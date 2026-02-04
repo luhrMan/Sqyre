@@ -3,8 +3,9 @@ package actions
 import (
 	"fmt"
 
+	"Squire/internal/assets"
+
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/theme"
 )
 
 type Ocr struct {
@@ -28,5 +29,5 @@ func (a *Ocr) String() string {
 }
 
 func (a *Ocr) Icon() fyne.Resource {
-	return theme.ViewFullScreenIcon()
+	return assets.TextSearchIcon
 }

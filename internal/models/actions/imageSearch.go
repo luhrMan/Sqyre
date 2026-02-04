@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"slices"
 
+	"Squire/internal/assets"
+
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/theme"
 )
 
 type ImageSearch struct {
@@ -37,5 +38,5 @@ func (a *ImageSearch) String() string {
 }
 
 func (a *ImageSearch) Icon() fyne.Resource {
-	return theme.DesktopIcon()
+	return assets.ImageSearchIcon
 }

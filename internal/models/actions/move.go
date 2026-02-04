@@ -3,8 +3,9 @@ package actions
 import (
 	"fmt"
 
+	"Squire/internal/assets"
+
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/theme"
 )
 
 type Move struct {
@@ -24,5 +25,5 @@ func (a *Move) String() string {
 }
 
 func (a *Move) Icon() fyne.Resource {
-	return theme.MailForwardIcon()
+	return assets.MouseIcon
 }
