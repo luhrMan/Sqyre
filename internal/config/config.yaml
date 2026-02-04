@@ -5,72 +5,11 @@ macros:
             count: 1
             type: loop
             name: root
-            subactions:
-                - type: wait
-                  time: 590
-                - type: key
-                  key: ctrl
-                  state: false
-                - targets:
-                    - dark and darker|Ancient Scroll
-                    - dark and darker|Gold Candle Holder
-                    - dark and darker|Iron Ore Stack
-                    - dark and darker|Old Cloth
-                    - dark and darker|Shine Bangle
-                    - dark and darker|Silver Ingot
-                    - path of exile|Arcanists Etcher
-                  searcharea:
-                    name: stash-screen-stash-inventory
-                    leftx: 1832
-                    topy: 261
-                    rightx: 2493
-                    bottomy: 1354
-                  rowsplit: 1
-                  colsplit: 1
-                  tolerance: 0.95
-                  outputxvariable: ""
-                  outputyvariable: ""
-                  type: imagesearch
-                  name: ""
-                - type: wait
-                  time: 590
-        globaldelay: 45
+        globaldelay: 20
         hotkey:
             - ctrl
             - shift
             - "2"
-        variables:
-            variables: {}
-    New macro 1:
-        name: New macro 1
-        root:
-            count: 1
-            type: loop
-            name: root
-            subactions:
-                - targets:
-                    - dark and darker|Rubysilver Ore
-                  searcharea:
-                    name: stash-screen-stash-inventory
-                    leftx: 1832
-                    topy: 261
-                    rightx: 2493
-                    bottomy: 1354
-                  rowsplit: 1
-                  colsplit: 1
-                  tolerance: 0.95
-                  outputxvariable: ""
-                  outputyvariable: ""
-                  type: imagesearch
-                  name: please help me
-                  subactions:
-                    - type: move
-                      point:
-                        name: image search context
-                        x: 2024
-                        "y": 615
-        globaldelay: 50
-        hotkey: []
         variables:
             variables: {}
     Sell Treasures:
@@ -130,81 +69,14 @@ macros:
                         name: image search context
                         x: ${foundX}
                         "y": ${foundY}
-                    - type: wait
-                      time: 387
-                    - type: move
-                      point:
-                        name: Alchemist
-                        x: 515
-                        "y": 299
-                    - type: wait
-                      time: 387
                 - type: key
                   key: shift
                   state: false
-                - targets:
-                    - dark and darker|Ancient Scroll
-                    - dark and darker|Bandage
-                    - dark and darker|Diamond
-                    - dark and darker|Dotted Gold Bangle
-                    - dark and darker|Gem Necklace
-                    - dark and darker|Gem Ring
-                    - dark and darker|Glimmer Bangle
-                    - dark and darker|Goblet
-                    - dark and darker|Gold Band
-                    - dark and darker|Gold Bowl
-                    - dark and darker|Gold Candelabra
-                    - dark and darker|Gold Candle Holder
-                    - dark and darker|Gold Candle Platter
-                    - dark and darker|Gold Chalice
-                    - dark and darker|Gold Crown
-                    - dark and darker|Gold Goblet
-                    - dark and darker|Gold Waterpot
-                    - dark and darker|Leaf Gold Bangle
-                    - dark and darker|Light Gold Bangle
-                    - dark and darker|Patterned Gold Bangle
-                    - dark and darker|Pearl Necklace
-                    - dark and darker|Shine Bangle
-                    - dark and darker|Silver Chalice
-                    - dark and darker|Simple Gold Bangle
-                    - dark and darker|Slim Bangle
-                    - dark and darker|Triple Gem Bangle
-                    - dark and darker|Turquoise Gem Bangle
-                  searcharea:
-                    name: stash-screen-stash-inventory
-                    leftx: 1832
-                    topy: 261
-                    rightx: 2493
-                    bottomy: 1354
-                  rowsplit: 1
-                  colsplit: 1
-                  tolerance: 0.95
-                  outputxvariable: foundX
-                  outputyvariable: foundY
-                  type: imagesearch
-                  name: treasures
-                  subactions:
-                    - type: move
-                      point:
-                        name: image search context
-                        x: ${foundX}
-                        "y": ${foundY}
-                    - type: wait
-                      time: 387
-                    - type: move
-                      point:
-                        name: Alchemist
-                        x: 515
-                        "y": 299
-                    - type: wait
-                      time: 387
         globaldelay: 25
         hotkey: []
         variables:
             variables:
-                foundX: 1918
-                foundY: 294
-                foundx: 1865
+                foundx: 1918
                 foundy: 294
     Switch Chracters:
         name: Switch Chracters
@@ -1930,7 +1802,11 @@ programs:
     shadows of chroma tower:
         coordinates:
             2560x1440:
-                points: {}
+                points:
+                    test:
+                        name: test
+                        x: 385
+                        "y": 94
                 searchareas: {}
         items:
             Healing Potion:

@@ -28,8 +28,8 @@ func (m CustomTheme) Icon(name fyne.ThemeIconName) fyne.Resource {
 	// 	return fyne.NewStaticResource("myHome", homeBytes)
 	// }
 
-	minus, _ := fyne.LoadResourceFromPath("../../internal/assets/minus.svg")
-	plus, _ := fyne.LoadResourceFromPath("../../internal/assets/plus.svg")
+	minus, _ := fyne.LoadResourceFromPath("../../internal/assets/icons/minus.svg")
+	plus, _ := fyne.LoadResourceFromPath("../../internal/assets/icons/plus.svg")
 
 	switch name {
 	// case theme.IconNameMoveUp:

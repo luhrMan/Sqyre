@@ -48,7 +48,7 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 	basicActionsSubMenu.ChildMenu = fyne.NewMenu("",
 		fyne.NewMenuItem("Wait", func() { addActionAndRefresh(actions.NewWait(0)) }),
 		fyne.NewMenuItem("Mouse Move", func() { addActionAndRefresh(actions.NewMove(actions.Point{Name: "", X: 0, Y: 0})) }),
-		fyne.NewMenuItem("Click", func() { addActionAndRefresh(actions.NewClick(false)) }),
+		fyne.NewMenuItem("Click", func() { addActionAndRefresh(actions.NewClick(false, false)) }),
 		fyne.NewMenuItem("Key", func() { addActionAndRefresh(actions.NewKey("ctrl", true)) }),
 	)
 	advancedActionsSubMenu.ChildMenu = fyne.NewMenu("",

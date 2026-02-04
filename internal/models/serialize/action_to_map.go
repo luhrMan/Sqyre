@@ -27,6 +27,7 @@ func ActionToMap(action actions.ActionInterface) (map[string]any, error) {
 		m["time"] = a.Time
 	case *actions.Click:
 		m["button"] = a.Button
+		m["hold"] = a.Hold
 	case *actions.Move:
 		m["point"] = pointToMap(a.Point)
 	case *actions.Key:

@@ -399,6 +399,8 @@ func createMoveDialogContent(action *actions.Move) (fyne.CanvasObject, func()) {
 func createClickDialogContent(action *actions.Click) (fyne.CanvasObject, func()) {
 	buttonCheck := custom_widgets.NewToggle(func(b bool) {})
 	buttonCheck.SetToggled(action.Button)
+	holdCheck := custom_widgets.NewToggle(func(b bool) {})
+	holdCheck.SetToggled(action.Hold)
 
 	content := container.NewVBox(
 		container.NewHBox(
@@ -408,10 +410,15 @@ func createClickDialogContent(action *actions.Click) (fyne.CanvasObject, func())
 			widget.NewLabel("right"),
 			layout.NewSpacer(),
 		),
+		container.NewHBox(
+			widget.NewLabel("Hold"),
+			holdCheck,
+		),
 	)
 
 	saveFunc := func() {
 		action.Button = buttonCheck.Toggled
+		action.Hold = holdCheck.Toggled
 	}
 
 	return content, saveFunc

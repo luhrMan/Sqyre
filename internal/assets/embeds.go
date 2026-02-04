@@ -16,29 +16,44 @@ import (
 var appIcon []byte
 var AppIcon = fyne.NewStaticResource("appIcon", appIcon)
 
-//go:embed double-up-chevron.svg
+//go:embed icons/double-up-chevron.svg
 var doubleUpChevron []byte
 
-//go:embed double-down-chevron.svg
+//go:embed icons/double-down-chevron.svg
 var doubleDownChevron []byte
 
-//go:embed chevron-up.svg
+//go:embed icons/chevron-up.svg
 var chevronUp []byte
 
-//go:embed chevron-down.svg
+//go:embed icons/chevron-down.svg
 var chevronDown []byte
 
-// DoubleUpChevronIcon is the double-up chevron icon for "push into advanced action above".
-var DoubleUpChevronIcon = fyne.NewStaticResource("doubleUpChevron", doubleUpChevron)
+//go:embed icons/mouse-click.svg
+var mouseClick []byte
 
-// DoubleDownChevronIcon is the double-down chevron icon for "push into advanced action below".
-var DoubleDownChevronIcon = fyne.NewStaticResource("doubleDownChevron", doubleDownChevron)
+//go:embed icons/mouse-click-filled.svg
+var mouseClickFilled []byte
 
-// ChevronUpIcon is the single up chevron icon for "move node up".
-var ChevronUpIcon = fyne.NewStaticResource("chevronUp", chevronUp)
+//go:embed icons/mouse.svg
+var mouse []byte
 
-// ChevronDownIcon is the single down chevron icon for "move node down".
-var ChevronDownIcon = fyne.NewStaticResource("chevronDown", chevronDown)
+//go:embed icons/image-search.svg
+var imageSearch []byte
+
+//go:embed icons/text-search.svg
+var textSearch []byte
+
+var (
+	DoubleUpChevronIcon   = fyne.NewStaticResource("doubleUpChevron", doubleUpChevron)
+	DoubleDownChevronIcon = fyne.NewStaticResource("doubleDownChevron", doubleDownChevron)
+	ChevronUpIcon         = fyne.NewStaticResource("chevronUp", chevronUp)
+	ChevronDownIcon       = fyne.NewStaticResource("chevronDown", chevronDown)
+	MouseClickIcon        = fyne.NewStaticResource("mouseClick", mouseClick)
+	MouseClickFilledIcon  = fyne.NewStaticResource("mouseClickFilled", mouseClickFilled)
+	MouseIcon             = fyne.NewStaticResource("mouse", mouse)
+	ImageSearchIcon       = fyne.NewStaticResource("imageSearch", imageSearch)
+	TextSearchIcon        = fyne.NewStaticResource("textSearch", textSearch)
+)
 
 var (
 	// fyneResourceCache stores loaded Fyne resources keyed by file path
