@@ -693,7 +693,9 @@ func (u *Ui) UpdatePointPreview(point *models.Point) {
 	// Update preview image
 	if previewImage := u.EditorTabs.PointsTab.previewImage; previewImage != nil {
 		previewImage.Image = previewImg
-		previewImage.Refresh()
+		fyne.DoAndWait(func() {
+			previewImage.Refresh()
+		})
 	} else {
 		dialog.ShowError(errors.New("Point: Preview image widget is nil"), u.Window)
 	}

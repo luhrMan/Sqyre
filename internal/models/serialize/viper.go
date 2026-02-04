@@ -104,7 +104,11 @@ func (s *serializer) CreateActionFromMap(rawMap map[string]any, parent actions.A
 	case "wait":
 		action = actions.NewWait(rawMap["time"].(int))
 	case "click":
-		action = actions.NewClick(rawMap["button"].(bool))
+		hold := false
+		if v, ok := rawMap["hold"].(bool); ok {
+			hold = v
+		}
+		action = actions.NewClick(rawMap["button"].(bool), hold)
 	case "move":
 		action = actions.NewMove(createPoint(rawMap["point"].(map[string]any)))
 	case "key":

@@ -47,7 +47,12 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 		return nil
 	case *actions.Click:
 		log.Println("Click:", node.String())
-		robotgo.Click(actions.LeftOrRight(node.Button))
+		btn := actions.LeftOrRight(node.Button)
+		if node.Hold {
+			robotgo.MouseDown(btn)
+		} else {
+			robotgo.Click(btn)
+		}
 		return nil
 	case *actions.Key:
 		log.Println("Key:", node.String())
