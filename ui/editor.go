@@ -256,14 +256,6 @@ func (u *Ui) constructEditorTabs() {
 	et.Append(et.AutoPicTab.TabItem)
 }
 
-// func (u *Ui) constructNavButton() {
-// 	u.EditorUi.NavButton.Text = "Back"
-// 	u.EditorUi.NavButton.Icon = theme.NavigateBackIcon()
-// 	u.EditorUi.NavButton.OnTapped = func() {
-// 		u.MainUi.Navigation.Back()
-// 	}
-// }
-
 func (u *Ui) constructAddButton() {
 	u.EditorUi.AddButton.Text = "New"
 	u.EditorUi.AddButton.Icon = theme.ContentAddIcon()
