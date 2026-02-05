@@ -20,7 +20,9 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
-	xwidget "fyne.io/x/fyne/widget"
+
+	"Squire/ui/completionentry"
+
 	"github.com/go-vgo/robotgo"
 	"gocv.io/x/gocv"
 )
@@ -100,8 +102,8 @@ func (u *Ui) constructEditorTabs() {
 	itw[name] = new(widget.Entry)
 	itw[cols] = new(widget.Entry)
 	itw[rows] = new(widget.Entry)
-	itw["tagEntry"] = xwidget.NewCompletionEntry([]string{})
-	itw["tagEntry"].(*xwidget.CompletionEntry).PlaceHolder = "Enter tag name and press Enter"
+	itw["tagEntry"] = completionentry.NewCompletionEntry([]string{})
+	itw["tagEntry"].(*completionentry.CompletionEntry).PlaceHolder = "Enter tag name and press Enter"
 	// Create a "+" button for submitting tags
 	itw["tagSubmitButton"] = widget.NewButtonWithIcon("", theme.ContentAddIcon(), nil)
 	itw["tagSubmitButton"].(*widget.Button).Importance = widget.MediumImportance

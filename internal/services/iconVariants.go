@@ -259,6 +259,22 @@ func (s *IconVariantService) GetBaseItemName(fullItemName string) string {
 	return parts[0]
 }
 
+// GroupItemsByBaseName returns a sorted list of unique base item names
+// from the given full item names (e.g. repo keys). Used for accordion item lists.
+func (s *IconVariantService) GroupItemsByBaseName(itemNames []string) []string {
+	baseNameMap := make(map[string]bool)
+	for _, itemName := range itemNames {
+		baseName := s.GetBaseItemName(itemName)
+		baseNameMap[baseName] = true
+	}
+	uniqueBaseNames := make([]string, 0, len(baseNameMap))
+	for baseName := range baseNameMap {
+		uniqueBaseNames = append(uniqueBaseNames, baseName)
+	}
+	sort.Strings(uniqueBaseNames)
+	return uniqueBaseNames
+}
+
 // ValidateVariantFile checks if a file exists and is a valid PNG by verifying
 // the PNG file header signature.
 func (s *IconVariantService) ValidateVariantFile(path string) error {

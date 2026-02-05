@@ -14,11 +14,12 @@ import (
 	"strconv"
 	"strings"
 
+	"Squire/ui/completionentry"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
-	xwidget "fyne.io/x/fyne/widget"
 	"github.com/go-vgo/robotgo"
 	hook "github.com/luhrMan/gohook"
 )
@@ -121,7 +122,7 @@ func setEditorForms() {
 		}
 	}
 	// Set up tag entry handler for adding new tags with completion
-	if tagEntry, ok := et.ItemsTab.Widgets["tagEntry"].(*xwidget.CompletionEntry); ok {
+	if tagEntry, ok := et.ItemsTab.Widgets["tagEntry"].(*completionentry.CompletionEntry); ok {
 		// Function to submit a tag (used by both Enter key and button)
 		submitTag := func() {
 			tagText := tagEntry.Text
@@ -579,7 +580,7 @@ func setEditorButtons() {
 			n := ui.GetUi().EditorTabs.PointsTab.Widgets["Name"].(*widget.Entry).Text
 			xText := ui.GetUi().EditorTabs.PointsTab.Widgets["X"].(*widget.Entry).Text
 			yText := ui.GetUi().EditorTabs.PointsTab.Widgets["Y"].(*widget.Entry).Text
-			var xVal, yVal interface{}
+			var xVal, yVal any
 			if x, err := strconv.Atoi(xText); err == nil {
 				xVal = x
 			} else {
@@ -657,7 +658,9 @@ func setEditorButtons() {
 				dialog.ShowError(err, ui.GetUi().Window)
 				return
 			}
-			ui.GetUi().EditorTabs.SearchAreasTab.Widgets["Name"].(*widget.Entry).SetText(sa.Name)
+			// Select the newly added search area so it can be edited with Update
+			ui.GetUi().EditorTabs.SearchAreasTab.SelectedItem = sa
+			setSearchAreaWidgets(*sa)
 			t := ui.GetUi().EditorTabs.SearchAreasTab.Widgets[program+"-searchbar"].(*widget.Entry).Text
 			ui.GetUi().EditorTabs.SearchAreasTab.Widgets[program+"-searchbar"].(*widget.Entry).SetText("random string of text for refreshing because poop")
 			ui.GetUi().EditorTabs.SearchAreasTab.Widgets[program+"-searchbar"].(*widget.Entry).SetText(t)

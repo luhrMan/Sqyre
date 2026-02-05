@@ -45,26 +45,27 @@ func OCR(a *actions.Ocr, macro *models.Macro) (string, error) {
 		log.Printf("OCR: failed to resolve search area coords: %v", err)
 		return "", err
 	}
+	w := rightX - leftX
+	h := bottomY - topY
+	if w <= 0 || h <= 0 {
+		err := fmt.Errorf("OCR: invalid search area (width=%d height=%d); need positive dimensions", w, h)
+		log.Printf("OCR: %v (macro continues)", err)
+		return "", err
+	}
 	log.Printf("%s OCR search | %s in X1:%d Y1:%d X2:%d Y2:%d", a.Target, a.SearchArea.Name, leftX, topY, rightX, bottomY)
 	var (
 		img       image.Image
 		foundText string
 	)
-	w := rightX - leftX
-	h := bottomY - topY
 	ppOptions := PreprocessOptions{MinThreshold: 50}
-	// if a.SearchArea.Name == "Item Description" {
-	// 	img, err = ItemDescriptionLocation()
-	// 	if err != nil {
-	// 		log.Fatal(err)
-	// 	}
-	// 	img = ImageToMatToImagePreprocess(img, true, true, false, false, ppOptions)
-	// 	err, foundText = CheckImageForText(img)
-	// 	if err != nil {
-	// 		log.Fatal(err)
-	// 	}
-	// } else {
 	img, err = robotgo.CaptureImg(leftX+config.XOffset, topY+h/2+config.YOffset, w, h/2)
+	savedImg, err := gocv.ImageToMatRGB(img)
+	if err != nil {
+		log.Println("ocr failed:", err)
+		return "", err
+	}
+	gocv.IMWrite(config.GetMetaPath()+"ocr.png", savedImg)
+
 	img = ImageToMatToImagePreprocess(img, true, true, false, false, ppOptions)
 	err, foundText = CheckImageForText(img)
 	if err != nil {
@@ -79,8 +80,6 @@ func OCR(a *actions.Ocr, macro *models.Macro) (string, error) {
 			log.Fatal(err)
 		}
 	}
-	// }
-
 	log.Printf("FOUND TEXT: %v", foundText)
 
 	return foundText, nil
