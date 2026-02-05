@@ -13,22 +13,22 @@ import (
 )
 
 type DataList struct {
-	*BaseAction `yaml:",inline" mapstructure:",squash"`
-	Source         string // File path or manual text
-	OutputVar      string // Variable to store current line
-	LengthVar      string // Optional: variable to set to number of lines (e.g. for Loop count)
-	IsFile         bool   // True if Source is a file path, false if manual text
-	SkipBlankLines bool   // If true, blank lines are excluded from the list and from LineCount()
-	currentLine    int    // Current line index (not serialized)
+	*BaseAction    `yaml:",inline" mapstructure:",squash"`
+	Source         string   // File path or manual text
+	OutputVar      string   // Variable to store current line
+	LengthVar      string   // Optional: variable to set to number of lines (e.g. for Loop count)
+	IsFile         bool     // True if Source is a file path, false if manual text
+	SkipBlankLines bool     // If true, blank lines are excluded from the list and from LineCount()
+	currentLine    int      // Current line index (not serialized)
 	lines          []string // Cached lines (not serialized)
 }
 
 func NewDataList(source string, outputVar string, isFile bool) *DataList {
 	return &DataList{
-		BaseAction: newBaseAction("datalist"),
-		Source:     source,
-		OutputVar:  outputVar,
-		IsFile:     isFile,
+		BaseAction:  newBaseAction("datalist"),
+		Source:      source,
+		OutputVar:   outputVar,
+		IsFile:      isFile,
 		currentLine: 0,
 		lines:       []string{},
 	}
@@ -111,5 +111,5 @@ func (a *DataList) String() string {
 }
 
 func (a *DataList) Icon() fyne.Resource {
-	return theme.FileTextIcon()
+	return theme.StorageIcon()
 }

@@ -1,10 +1,10 @@
 package actions
 
 import (
+	"Squire/internal/assets"
 	"fmt"
 
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/theme"
 )
 
 type Calculate struct {
@@ -26,5 +26,5 @@ func (a *Calculate) String() string {
 }
 
 func (a *Calculate) Icon() fyne.Resource {
-	return theme.ContentAddIcon()
+	return assets.CalculateIcon
 }
