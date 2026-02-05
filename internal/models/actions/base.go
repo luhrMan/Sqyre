@@ -19,6 +19,6 @@ func newBaseAction(t string) *BaseAction {
 // X and Y may be int (literal) or string (variable reference e.g. "${resultX}").
 type Point struct {
 	Name string
-	X    interface{}
-	Y    interface{}
+	X    any
+	Y    any
 }

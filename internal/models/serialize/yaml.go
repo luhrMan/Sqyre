@@ -58,7 +58,7 @@ func (c *YAMLConfig) ReadConfig() error {
 		return fmt.Errorf("failed to read config file: %w", err)
 	}
 
-	c.data = make(map[string]interface{})
+	c.data = make(map[string]any)
 	if err := yaml.Unmarshal(data, &c.data); err != nil {
 		return fmt.Errorf("failed to unmarshal YAML: %w", err)
 	}
@@ -88,31 +88,31 @@ func (c *YAMLConfig) WriteConfig() error {
 }
 
 // Get retrieves a value by key (case-sensitive)
-func (c *YAMLConfig) Get(key string) interface{} {
+func (c *YAMLConfig) Get(key string) any {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.data[key]
 }
 
-// GetStringMap retrieves a map[string]interface{} by key
-func (c *YAMLConfig) GetStringMap(key string) map[string]interface{} {
+// GetStringMap retrieves a map[string]any by key
+func (c *YAMLConfig) GetStringMap(key string) map[string]any {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
 	val, ok := c.data[key]
 	if !ok {
-		return make(map[string]interface{})
+		return make(map[string]any)
 	}
 
-	if m, ok := val.(map[string]interface{}); ok {
+	if m, ok := val.(map[string]any); ok {
 		return m
 	}
 
-	return make(map[string]interface{})
+	return make(map[string]any)
 }
 
 // Set sets a value by key (case-sensitive)
-func (c *YAMLConfig) Set(key string, value interface{}) {
+func (c *YAMLConfig) Set(key string, value any) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.data[key] = value
@@ -122,5 +122,5 @@ func (c *YAMLConfig) Set(key string, value interface{}) {
 func (c *YAMLConfig) Clear() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.data = make(map[string]interface{})
+	c.data = make(map[string]any)
 }

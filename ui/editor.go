@@ -597,7 +597,7 @@ func (u *Ui) clearSearchAreaPreviewImage() {
 }
 
 // pointCoordToIntForPreview returns an int for preview drawing; literal ints are used, variable refs (string) yield 0.
-func pointCoordToIntForPreview(v interface{}) int {
+func pointCoordToIntForPreview(v any) int {
 	switch val := v.(type) {
 	case int:
 		return val
@@ -609,7 +609,7 @@ func pointCoordToIntForPreview(v interface{}) int {
 }
 
 // searchAreaCoordToInt returns an int for preview/validation; literal ints are used, variable refs (string) yield 0.
-func searchAreaCoordToInt(v interface{}) int {
+func searchAreaCoordToInt(v any) int {
 	switch val := v.(type) {
 	case int:
 		return val

@@ -8,12 +8,12 @@ import (
 )
 
 type SetVariable struct {
-	*BaseAction `yaml:",inline" mapstructure:",squash"`
+	*BaseAction  `yaml:",inline" mapstructure:",squash"`
 	VariableName string
-	Value        interface{} // Can be string, int, float, etc.
+	Value        any // Can be string, int, float, etc.
 }
 
-func NewSetVariable(name string, value interface{}) *SetVariable {
+func NewSetVariable(name string, value any) *SetVariable {
 	return &SetVariable{
 		BaseAction:   newBaseAction("setvariable"),
 		VariableName: name,

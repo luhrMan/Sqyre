@@ -309,7 +309,7 @@ func setEditorForms() {
 		n := w["Name"].(*widget.Entry).Text
 		xText := w["X"].(*widget.Entry).Text
 		yText := w["Y"].(*widget.Entry).Text
-		var xVal, yVal interface{}
+		var xVal, yVal any
 		if x, err := strconv.Atoi(xText); err == nil {
 			xVal = x
 		} else {
@@ -440,7 +440,7 @@ func setEditorForms() {
 		tyText := w["TopY"].(*widget.Entry).Text
 		rxText := w["RightX"].(*widget.Entry).Text
 		byText := w["BottomY"].(*widget.Entry).Text
-		var lxVal, tyVal, rxVal, byVal interface{}
+		var lxVal, tyVal, rxVal, byVal any
 		if v, err := strconv.Atoi(lxText); err == nil {
 			lxVal = v
 		} else {
@@ -619,7 +619,7 @@ func setEditorButtons() {
 			tyText := ui.GetUi().EditorTabs.SearchAreasTab.Widgets["TopY"].(*widget.Entry).Text
 			rxText := ui.GetUi().EditorTabs.SearchAreasTab.Widgets["RightX"].(*widget.Entry).Text
 			byText := ui.GetUi().EditorTabs.SearchAreasTab.Widgets["BottomY"].(*widget.Entry).Text
-			var lxVal, tyVal, rxVal, byVal interface{}
+			var lxVal, tyVal, rxVal, byVal any
 			if v, err := strconv.Atoi(lxText); err == nil {
 				lxVal = v
 			} else {
