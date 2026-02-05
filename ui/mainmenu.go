@@ -13,16 +13,13 @@ import (
 func (u *Ui) constructMainMenu() *fyne.MainMenu {
 	// ocrActionMenuItem.Icon, _ = fyne.LoadResourceFromPath("./internal/resources/images/Squire.png")
 	macroMenu := fyne.NewMenu("Macro")
-	programSelectSubMenu := fyne.NewMenuItem("Select Program", nil)
 	actionSubMenu := fyne.NewMenuItem("Add Blank Action", nil)
 	basicActionsSubMenu := fyne.NewMenuItem("Basic Actions", nil)
 	advancedActionsSubMenu := fyne.NewMenuItem("Advanced Actions", nil)
 
 	macroMenu.Items = append(macroMenu.Items,
-		programSelectSubMenu,
 		actionSubMenu,
 	)
-	programSelectSubMenu.ChildMenu = fyne.NewMenu("")
 	actionSubMenu.ChildMenu = fyne.NewMenu("")
 
 	actionSubMenu.ChildMenu.Items = append(actionSubMenu.ChildMenu.Items,
