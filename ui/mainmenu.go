@@ -91,46 +91,6 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 		GetUi().Mui.MTabs.SelectedTab().SelectedNode = ""
 	})
 
-	// ui.GetUi().Window.SetContent(fynetooltip.AddWindowToolTipLayer(ui.GetUi().EditorUi.CanvasObject, ui.GetUi().Window.Canvas()))
-
-	// screensize := strconv.Itoa(config.MonitorWidth) + "x" + strconv.Itoa(config.MonitorHeight)
-	// calibrationMenu := fyne.NewMenu("Coordinate Calibration",
-	// 	fyne.NewMenuItem("Everything", func() {
-	// 		robotgo.MouseSleep = 0
-	// 		robotgo.KeySleep = 0
-
-	// 		coordinates.CalibrateInventorySearchboxes(binders.GetProgram(config.DarkAndDarker).Coordinates[screensize])
-	// 		// u.at.boundImageSearchAreaSelect.SetOptions(programs.CurrentProgramAndScreenSizeCoordinates().GetSearchAreasAsStringSlice())
-	// 		coordinates.CalibrateTopMenuTabLocations(binders.GetProgram(config.DarkAndDarker).Coordinates[screensize])
-
-	// 		mt := u.mui.MTabs.selectedTab()
-	// 		robotgo.MouseSleep = mt.Macro.GlobalDelay
-	// 		robotgo.KeySleep = mt.Macro.GlobalDelay
-
-	// 	}),
-	// 	fyne.NewMenuItem("Top Menu", func() {
-	// 		coordinates.CalibrateTopMenuTabLocations(binders.GetProgram(config.DarkAndDarker).Coordinates[screensize])
-	// 	}),
-	// 	fyne.NewMenuItem("Inventories", func() {
-	// 		robotgo.MouseSleep = 0
-	// 		robotgo.KeySleep = 0
-	// 		coordinates.CalibrateInventorySearchboxes(binders.GetProgram(config.DarkAndDarker).Coordinates[screensize])
-	// 		// u.at.boundImageSearchAreaSelect.SetOptions(programs.CurrentProgramAndScreenSizeCoordinates().GetSearchAreasAsStringSlice())
-	// 		mt := u.mui.MTabs.selectedTab()
-	// 		robotgo.MouseSleep = mt.Macro.GlobalDelay
-	// 		robotgo.KeySleep = mt.Macro.GlobalDelay
-	// 	}),
-	// 	fyne.NewMenuItem("Stash-screen", func() {
-
-	// 	}),
-	// 	fyne.NewMenuItem("Merchants-screen", func() {
-
-	// 	}),
-	// 	fyne.NewMenuItem("Merchants Portraits", func() {
-	// 		coordinates.MerchantPortraitsLocation(binders.GetProgram(config.DarkAndDarker).Coordinates[screensize])
-	// 	}),
-	// )
-
 	// testMenu := fyne.NewMenu("Test",
 	// 	fyne.NewMenuItem("Add Item", func() { addItemWindow() }),
 	// 	fyne.NewMenuItem("Set Items from JSON", func() {

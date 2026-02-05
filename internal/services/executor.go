@@ -39,9 +39,6 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 	case *actions.Wait:
 		log.Println("Wait:", node.String())
 		time := node.Time
-		// Resolve time if Point.Name contains a variable reference
-		// For now, Time is an int, so variable resolution would need to happen at UI level
-		// or we'd need to change the type. For MVP, we'll resolve variables in string fields.
 		robotgo.MilliSleep(time)
 		return nil
 	case *actions.Move:
