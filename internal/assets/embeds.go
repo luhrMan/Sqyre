@@ -16,32 +16,30 @@ import (
 var appIcon []byte
 var AppIcon = fyne.NewStaticResource("appIcon", appIcon)
 
-//go:embed icons/double-up-chevron.svg
-var doubleUpChevron []byte
-
-//go:embed icons/double-down-chevron.svg
-var doubleDownChevron []byte
-
-//go:embed icons/chevron-up.svg
-var chevronUp []byte
-
-//go:embed icons/chevron-down.svg
-var chevronDown []byte
-
-//go:embed icons/mouse-click.svg
-var mouseClick []byte
-
-//go:embed icons/mouse-click-filled.svg
-var mouseClickFilled []byte
-
-//go:embed icons/mouse.svg
-var mouse []byte
-
-//go:embed icons/image-search.svg
-var imageSearch []byte
-
-//go:embed icons/text-search.svg
-var textSearch []byte
+var (
+	//go:embed icons/double-up-chevron.svg
+	doubleUpChevron []byte
+	//go:embed icons/double-down-chevron.svg
+	doubleDownChevron []byte
+	//go:embed icons/chevron-up.svg
+	chevronUp []byte
+	//go:embed icons/chevron-down.svg
+	chevronDown []byte
+	//go:embed icons/mouse-click.svg
+	mouseClick []byte
+	//go:embed icons/mouse-click-filled.svg
+	mouseClickFilled []byte
+	//go:embed icons/mouse.svg
+	mouse []byte
+	//go:embed icons/image-search.svg
+	imageSearch []byte
+	//go:embed icons/text-search.svg
+	textSearch []byte
+	//go:embed icons/calculate.svg
+	calculate []byte
+	//go:embed icons/variable.svg
+	variable []byte
+)
 
 var (
 	DoubleUpChevronIcon   = fyne.NewStaticResource("doubleUpChevron", doubleUpChevron)
@@ -53,6 +51,8 @@ var (
 	MouseIcon             = fyne.NewStaticResource("mouse", mouse)
 	ImageSearchIcon       = fyne.NewStaticResource("imageSearch", imageSearch)
 	TextSearchIcon        = fyne.NewStaticResource("textSearch", textSearch)
+	CalculateIcon         = fyne.NewStaticResource("calculate", calculate)
+	VariableIcon          = fyne.NewStaticResource("variable", variable)
 )
 
 var (

@@ -11,6 +11,7 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 )
 
 // var selectedTreeItem = ""
@@ -85,7 +86,8 @@ func (mt *MacroTree) setTree() {
 		itemIconsBox := container.NewHBox()
 		itemIconsScroll := container.NewHScroll(itemIconsBox)
 		itemIconsScroll.SetMinSize(fyne.NewSize(0, treeItemIconSize))
-		actionIconBtn := &widget.Button{Icon: theme.ErrorIcon(), Importance: widget.LowImportance}
+		actionIconBtn := ttwidget.NewButtonWithIcon("", theme.ErrorIcon(), nil)
+		actionIconBtn.Importance = widget.LowImportance
 		leftSide := container.NewHBox(
 			actionIconBtn,
 			widget.NewLabel("Template"),
@@ -99,13 +101,15 @@ func (mt *MacroTree) setTree() {
 		c := obj.(*fyne.Container)
 		// Border with nil top/bottom: Objects = [left, right, center]
 		leftSide := c.Objects[1].(*fyne.Container)
-		actionIconBtn := leftSide.Objects[0].(*widget.Button)
+		actionIconBtn := leftSide.Objects[0].(*ttwidget.Button)
 		label := leftSide.Objects[1].(*widget.Label)
 		removeButton := c.Objects[2].(*widget.Button)
 		itemIconsScroll := c.Objects[0].(*container.Scroll)
 
 		label.SetText(node.String())
 		actionIconBtn.SetIcon(node.Icon())
+		actionIconBtn.SetToolTip(node.GetType())
+		actionIconBtn.Importance = widget.MediumImportance
 		actionIconBtn.OnTapped = nil
 		if mt.OnOpenActionDialog != nil {
 			action := node
