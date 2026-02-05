@@ -1,13 +1,14 @@
 package ui
 
 import (
+	"Squire/internal/assets"
 	"Squire/internal/models"
 	"Squire/internal/models/actions"
 	"Squire/internal/models/serialize"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
@@ -74,20 +75,54 @@ func (mt *MacroTree) setTree() {
 		_, ok := node.(actions.AdvancedActionInterface)
 		return ok
 	}
+	// Tree row: Border with left=[icon, label], center=itemIconsScroll (fills space), right=removeButton
+	const treeItemIconSize = 24
 	mt.CreateNode = func(branch bool) fyne.CanvasObject {
-		return container.NewHBox(ttwidget.NewIcon(theme.ErrorIcon()), widget.NewLabel("Template"), layout.NewSpacer(), &widget.Button{Icon: theme.CancelIcon(), Importance: widget.LowImportance})
+		itemIconsBox := container.NewHBox()
+		itemIconsScroll := container.NewHScroll(itemIconsBox)
+		itemIconsScroll.SetMinSize(fyne.NewSize(0, treeItemIconSize))
+		leftSide := container.NewHBox(
+			ttwidget.NewIcon(theme.ErrorIcon()),
+			widget.NewLabel("Template"),
+		)
+		removeBtn := &widget.Button{Icon: theme.CancelIcon(), Importance: widget.LowImportance}
+		return container.NewBorder(nil, nil, leftSide, removeBtn, itemIconsScroll)
 	}
 	mt.UpdateNode = func(uid string, branch bool, obj fyne.CanvasObject) {
 		node := mt.Macro.Root.GetAction(uid)
 
 		c := obj.(*fyne.Container)
-		icon := c.Objects[0].(*ttwidget.Icon)
-		label := c.Objects[1].(*widget.Label)
-		removeButton := c.Objects[3].(*widget.Button)
+		// Border with nil top/bottom: Objects = [left, right, center]
+		leftSide := c.Objects[1].(*fyne.Container)
+		icon := leftSide.Objects[0].(*ttwidget.Icon)
+		label := leftSide.Objects[1].(*widget.Label)
+		removeButton := c.Objects[2].(*widget.Button)
+		itemIconsScroll := c.Objects[0].(*container.Scroll)
 
 		label.SetText(node.String())
 		icon.SetResource(node.Icon())
 		icon.SetToolTip(node.GetType())
+
+		// For image search actions, show selected item icons in a horizontal scroll
+		itemIconsBox := itemIconsScroll.Content.(*fyne.Container)
+		itemIconsBox.Objects = itemIconsBox.Objects[:0]
+		if is, ok := node.(*actions.ImageSearch); ok && len(is.Targets) > 0 {
+			previewSize := fyne.NewSize(treeItemIconSize, treeItemIconSize)
+			for _, target := range is.Targets {
+				if path := getIconPathForTarget(target); path != "" {
+					if res := assets.GetFyneResource(path); res != nil {
+						img := canvas.NewImageFromResource(res)
+						img.SetMinSize(previewSize)
+						img.FillMode = canvas.ImageFillContain
+						itemIconsBox.Add(img)
+					}
+				}
+			}
+			itemIconsScroll.Show()
+		} else {
+			itemIconsScroll.Hide()
+		}
+		itemIconsBox.Refresh()
 
 		removeButton.OnTapped = func() {
 			node.GetParent().RemoveSubAction(node)
