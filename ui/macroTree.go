@@ -11,15 +11,19 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
-	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 )
 
 // var selectedTreeItem = ""
 
+// OnOpenActionDialog is called when the user taps an action's icon to edit it.
+// If non-nil, the tree will open the action dialog from this callback.
+type OnOpenActionDialogFunc func(action actions.ActionInterface)
+
 type MacroTree struct {
 	widget.Tree
-	Macro        *models.Macro
-	SelectedNode string
+	Macro              *models.Macro
+	SelectedNode       string
+	OnOpenActionDialog OnOpenActionDialogFunc
 }
 
 func NewMacroTree(m *models.Macro) *MacroTree {
@@ -75,14 +79,15 @@ func (mt *MacroTree) setTree() {
 		_, ok := node.(actions.AdvancedActionInterface)
 		return ok
 	}
-	// Tree row: Border with left=[icon, label], center=itemIconsScroll (fills space), right=removeButton
+	// Tree row: Border with left=[actionIconButton, label], center=itemIconsScroll (fills space), right=removeButton
 	const treeItemIconSize = 24
 	mt.CreateNode = func(branch bool) fyne.CanvasObject {
 		itemIconsBox := container.NewHBox()
 		itemIconsScroll := container.NewHScroll(itemIconsBox)
 		itemIconsScroll.SetMinSize(fyne.NewSize(0, treeItemIconSize))
+		actionIconBtn := &widget.Button{Icon: theme.ErrorIcon(), Importance: widget.LowImportance}
 		leftSide := container.NewHBox(
-			ttwidget.NewIcon(theme.ErrorIcon()),
+			actionIconBtn,
 			widget.NewLabel("Template"),
 		)
 		removeBtn := &widget.Button{Icon: theme.CancelIcon(), Importance: widget.LowImportance}
@@ -94,14 +99,18 @@ func (mt *MacroTree) setTree() {
 		c := obj.(*fyne.Container)
 		// Border with nil top/bottom: Objects = [left, right, center]
 		leftSide := c.Objects[1].(*fyne.Container)
-		icon := leftSide.Objects[0].(*ttwidget.Icon)
+		actionIconBtn := leftSide.Objects[0].(*widget.Button)
 		label := leftSide.Objects[1].(*widget.Label)
 		removeButton := c.Objects[2].(*widget.Button)
 		itemIconsScroll := c.Objects[0].(*container.Scroll)
 
 		label.SetText(node.String())
-		icon.SetResource(node.Icon())
-		icon.SetToolTip(node.GetType())
+		actionIconBtn.SetIcon(node.Icon())
+		actionIconBtn.OnTapped = nil
+		if mt.OnOpenActionDialog != nil {
+			action := node
+			actionIconBtn.OnTapped = func() { mt.OnOpenActionDialog(action) }
+		}
 
 		// For image search actions, show selected item icons in a horizontal scroll
 		itemIconsBox := itemIconsScroll.Content.(*fyne.Container)

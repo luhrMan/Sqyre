@@ -9,18 +9,20 @@ import (
 )
 
 type SaveVariable struct {
-	*BaseAction `yaml:",inline" mapstructure:",squash"`
-	VariableName string
-	Destination  string // File path or "clipboard"
-	Append       bool   // Append to file if true, overwrite if false
+	*BaseAction   `yaml:",inline" mapstructure:",squash"`
+	VariableName  string
+	Destination   string // File path or "clipboard"
+	Append        bool   // Append to file if true, overwrite if false
+	AppendNewline bool   // When Append is true, write a newline before each value
 }
 
-func NewSaveVariable(varName string, destination string, append bool) *SaveVariable {
+func NewSaveVariable(varName string, destination string, append bool, appendNewline bool) *SaveVariable {
 	return &SaveVariable{
-		BaseAction:   newBaseAction("savevariable"),
-		VariableName: varName,
-		Destination:  destination,
-		Append:       append,
+		BaseAction:    newBaseAction("savevariable"),
+		VariableName:  varName,
+		Destination:   destination,
+		Append:        append,
+		AppendNewline: appendNewline,
 	}
 }
 
@@ -54,6 +56,9 @@ func (a *SaveVariable) SaveToFile(value string, filePath string) error {
 	}
 	defer file.Close()
 
+	if a.Append && a.AppendNewline {
+		value = "\n" + value
+	}
 	_, err = file.WriteString(value)
 	if err != nil {
 		return fmt.Errorf("failed to write to file %s: %w", filePath, err)

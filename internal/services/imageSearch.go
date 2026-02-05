@@ -33,7 +33,7 @@ func imageSearch(a *actions.ImageSearch, macro *models.Macro) (map[string][]robo
 		log.Printf("Image Search: %v (macro continues)", err)
 		return nil, err
 	}
-	log.Printf("Image Searching | %v in X1:%d Y1:%d X2:%d Y2:%d", a.Targets, leftX, topY, rightX, bottomY)
+	log.Printf("Image Searching | %v in X1:%d Y1:%d X2:%d Y2:%d, width:%d height:%d", a.Targets, leftX, topY, rightX, bottomY, w, h)
 	captureImg, err := robotgo.CaptureImg(leftX+config.XOffset, topY+config.YOffset, w, h)
 	if err != nil {
 		log.Printf("Image Search: capture failed: %v (macro continues)", err)
@@ -241,15 +241,6 @@ func ImageToMatToImagePreprocess(img image.Image, gray, blur, threshold, resize 
 		return nil
 	}
 	defer i.Close()
-	if ppOptions.BlurAmount == 0 {
-		ppOptions.BlurAmount = 3
-	}
-	if ppOptions.MinThreshold == 0 {
-		ppOptions.MinThreshold = 127
-	}
-	if ppOptions.ResizeScale == 0 {
-		ppOptions.ResizeScale = 2
-	}
 	if gray {
 		gocv.CvtColor(i, &i, gocv.ColorBGRToGray)
 	}

@@ -235,21 +235,19 @@ func setMacroSelect(b *widget.Button) {
 // MACRO TREE
 func setMacroTree(mt *ui.MacroTree) {
 	mt.Tree.OnSelected = func(uid widget.TreeNodeID) {
-		// Update selected node
 		ui.GetUi().Mui.MTabs.SelectedTab().SelectedNode = uid
-		action := mt.Macro.Root.GetAction(uid)
-		if action != nil {
-			// Show dialog for editing the action (even if already selected)
-			ui.ShowActionDialog(action, func(updatedAction actions.ActionInterface) {
-				// Persist macro to disk
-				if err := repositories.MacroRepo().Set(mt.Macro.Name, mt.Macro); err != nil {
-					log.Printf("failed to save macro after action edit: %v", err)
-				}
-				// Refresh the tree after saving
-				mt.RefreshItem(uid)
-				mt.Refresh()
-			})
-		}
 	}
-
+	mt.OnOpenActionDialog = func(action actions.ActionInterface) {
+		if action == nil {
+			return
+		}
+		uid := action.GetUID()
+		ui.ShowActionDialog(action, func(updatedAction actions.ActionInterface) {
+			if err := repositories.MacroRepo().Set(mt.Macro.Name, mt.Macro); err != nil {
+				log.Printf("failed to save macro after action edit: %v", err)
+			}
+			mt.RefreshItem(uid)
+			mt.Refresh()
+		})
+	}
 }
