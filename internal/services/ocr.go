@@ -9,7 +9,6 @@ import (
 	"image"
 	"image/png"
 	"log"
-	"strings"
 
 	"github.com/go-vgo/robotgo"
 	"github.com/otiai10/gosseract/v2"
@@ -53,12 +52,22 @@ func OCR(a *actions.Ocr, macro *models.Macro) (string, error) {
 		return "", err
 	}
 	log.Printf("%s OCR search | %s in X1:%d Y1:%d X2:%d Y2:%d", a.Target, a.SearchArea.Name, leftX, topY, rightX, bottomY)
-	var (
-		img       image.Image
-		foundText string
-	)
-	ppOptions := PreprocessOptions{MinThreshold: 50}
-	img, err = robotgo.CaptureImg(leftX+config.XOffset, topY+h/2+config.YOffset, w, h/2)
+
+	img, err := robotgo.CaptureImg(leftX+config.XOffset, topY+config.YOffset, w, h)
+	if err != nil || img == nil {
+		log.Printf("OCR: capture failed: %v", err)
+		return "", err
+	}
+	ppOptions := PreprocessOptions{
+		BlurAmount:   a.Blur,
+		MinThreshold: float32(a.MinThreshold),
+		ResizeScale:  a.Resize,
+	}
+	img = ImageToMatToImagePreprocess(img, a.Grayscale, a.Blur > 0, a.MinThreshold > 0, a.Resize != 1.0, ppOptions)
+	err, foundText := CheckImageForText(img)
+	if err != nil {
+		log.Fatal(err)
+	}
 	savedImg, err := gocv.ImageToMatRGB(img)
 	if err != nil {
 		log.Println("ocr failed:", err)
@@ -66,20 +75,6 @@ func OCR(a *actions.Ocr, macro *models.Macro) (string, error) {
 	}
 	gocv.IMWrite(config.GetMetaPath()+"ocr.png", savedImg)
 
-	img = ImageToMatToImagePreprocess(img, true, true, false, false, ppOptions)
-	err, foundText = CheckImageForText(img)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	if !strings.Contains(foundText, a.Target) {
-		img, err = robotgo.CaptureImg(leftX+config.XOffset, topY+config.YOffset, w, h/2)
-		img = ImageToMatToImagePreprocess(img, true, true, false, false, ppOptions)
-		err, foundText = CheckImageForText(img)
-		if err != nil {
-			log.Fatal(err)
-		}
-	}
 	log.Printf("FOUND TEXT: %v", foundText)
 
 	return foundText, nil

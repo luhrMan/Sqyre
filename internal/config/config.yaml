@@ -1,17 +1,110 @@
 macros:
-    Get Gems:
-        name: Get Gems
+    Click Every Inventory Slot:
+        name: Click Every Inventory Slot
         root:
             count: 1
             type: loop
             name: root
+            subactions:
+                - type: datalist
+                  source: stash-screen-player-inventory-slotsX.txt
+                  outputvar: ""
+                  lengthvar: lineCount
+                  isfile: true
+                  skipblanklines: true
+                - count: ${lineCount}
+                  type: loop
+                  name: loop through inventory slots
+                  subactions:
+                    - type: datalist
+                      source: stash-screen-player-inventory-slotsX.txt
+                      outputvar: foundX
+                      lengthvar: lineCount
+                      isfile: true
+                      skipblanklines: true
+                    - type: datalist
+                      source: stash-screen-player-inventory-slotsY.txt
+                      outputvar: foundY
+                      lengthvar: lineCount
+                      isfile: true
+                      skipblanklines: true
+                    - type: move
+                      point:
+                        name: image search context
+                        x: ${foundX}
+                        "y": ${foundY}
         globaldelay: 20
         hotkey:
             - ctrl
             - shift
             - "2"
         variables:
-            variables: {}
+            variables:
+                foundX: "1433"
+                foundY: "1079"
+                foundx: "1433"
+                foundy: "1079"
+                lineCount: 50
+                linecount: 50
+    Gather variables:
+        name: Gather variables
+        root:
+            count: 1
+            type: loop
+            name: root
+            subactions:
+                - type: savevariable
+                  variablename: a
+                  destination: stash-screen-player-inventory-slotsX.txt
+                  append: false
+                  appendnewline: false
+                - type: savevariable
+                  variablename: a
+                  destination: stash-screen-player-inventory-slotsY.txt
+                  append: false
+                  appendnewline: false
+                - targets:
+                    - dark and darker|Empty Inventory Slot
+                  searcharea:
+                    name: stash-screen-player-inventory
+                    leftx: 913
+                    topy: 830
+                    rightx: 1466
+                    bottomy: 1112
+                  rowsplit: 1
+                  colsplit: 1
+                  tolerance: 0.95
+                  blur: 5
+                  outputxvariable: x
+                  outputyvariable: "y"
+                  type: imagesearch
+                  name: find empty inv slots
+                  subactions:
+                    - type: savevariable
+                      variablename: x
+                      destination: stash-screen-player-inventory-slotsX.txt
+                      append: true
+                      appendnewline: true
+                    - type: savevariable
+                      variablename: "y"
+                      destination: stash-screen-player-inventory-slotsY.txt
+                      append: true
+                      appendnewline: true
+                - type: setvariable
+                  variablename: a
+                  value: ""
+        globaldelay: 0
+        hotkey:
+            - g
+            - a
+            - t
+            - h
+        variables:
+            variables:
+                stash-screen-stash-inventory-slotx: 1865
+                stash-screen-stash-inventory-sloty: 294
+                x: 947
+                "y": 863
     Sell Treasures:
         name: Sell Treasures
         root:
@@ -22,11 +115,15 @@ macros:
                 - type: key
                   key: shift
                   state: true
+                - type: setvariable
+                  variablename: itemDescriptionPadding
+                  value: "50"
                 - targets:
                     - dark and darker|Ancient Scroll
-                    - dark and darker|Bandage
+                    - dark and darker|Ceremonial Dagger
                     - dark and darker|Diamond
                     - dark and darker|Dotted Gold Bangle
+                    - dark and darker|Emerald
                     - dark and darker|Gem Necklace
                     - dark and darker|Gem Ring
                     - dark and darker|Glimmer Bangle
@@ -44,6 +141,8 @@ macros:
                     - dark and darker|Light Gold Bangle
                     - dark and darker|Patterned Gold Bangle
                     - dark and darker|Pearl Necklace
+                    - dark and darker|Ruby
+                    - dark and darker|Sapphire
                     - dark and darker|Shine Bangle
                     - dark and darker|Silver Chalice
                     - dark and darker|Simple Gold Bangle
@@ -51,14 +150,15 @@ macros:
                     - dark and darker|Triple Gem Bangle
                     - dark and darker|Turquoise Gem Bangle
                   searcharea:
-                    name: stash-screen-stash-inventory
-                    leftx: 1832
-                    topy: 261
-                    rightx: 2493
-                    bottomy: 1354
+                    name: stash-screen-player-inventory
+                    leftx: 913
+                    topy: 830
+                    rightx: 1466
+                    bottomy: 1112
                   rowsplit: 1
                   colsplit: 1
                   tolerance: 0.95
+                  blur: 5
                   outputxvariable: foundX
                   outputyvariable: foundY
                   type: imagesearch
@@ -69,15 +169,169 @@ macros:
                         name: image search context
                         x: ${foundX}
                         "y": ${foundY}
+                    - targets:
+                        - 'dark and darker|Item Description: Bottom Right'
+                      searcharea:
+                        name: Item Description - Horizontal Search
+                        leftx: 0
+                        topy: ${foundY}-${itemDescriptionPadding}
+                        rightx: 2559
+                        bottomy: ${foundY}+${itemDescriptionPadding}
+                      rowsplit: 1
+                      colsplit: 1
+                      tolerance: 0.97
+                      blur: 3
+                      outputxvariable: rightX
+                      outputyvariable: bottomY
+                      type: imagesearch
+                      name: item description bottom right
+                    - targets:
+                        - 'dark and darker|Item Description: Bottom Right'
+                      searcharea:
+                        name: Item Description - Vertical Search
+                        leftx: ${foundX}-${itemDescriptionPadding}
+                        topy: 0
+                        rightx: ${foundX}+${itemDescriptionPadding}
+                        bottomy: 1439
+                      rowsplit: 1
+                      colsplit: 1
+                      tolerance: 0.97
+                      blur: 3
+                      outputxvariable: rightX
+                      outputyvariable: bottomY
+                      type: imagesearch
+                      name: item description bottom right
+                    - targets:
+                        - 'dark and darker|Item Description: Bottom Left'
+                      searcharea:
+                        name: Item Description - Horizontal Search
+                        leftx: 0
+                        topy: ${foundY}-${itemDescriptionPadding}
+                        rightx: 2559
+                        bottomy: ${foundY}+${itemDescriptionPadding}
+                      rowsplit: 1
+                      colsplit: 1
+                      tolerance: 0.97
+                      blur: 3
+                      outputxvariable: leftX
+                      outputyvariable: bottomY
+                      type: imagesearch
+                      name: item description bottom left
+                    - targets:
+                        - 'dark and darker|Item Description: Bottom Left'
+                      searcharea:
+                        name: Item Description - Vertical Search
+                        leftx: ${foundX}-${itemDescriptionPadding}
+                        topy: 0
+                        rightx: ${foundX}+${itemDescriptionPadding}
+                        bottomy: 1439
+                      rowsplit: 1
+                      colsplit: 1
+                      tolerance: 0.97
+                      blur: 3
+                      outputxvariable: leftX
+                      outputyvariable: bottomY
+                      type: imagesearch
+                      name: item description bottom left
+                    - targets:
+                        - 'dark and darker|Item Description: Top Right'
+                      searcharea:
+                        name: Item Description - Horizontal Search
+                        leftx: 0
+                        topy: ${foundY}-${itemDescriptionPadding}
+                        rightx: 2559
+                        bottomy: ${foundY}+${itemDescriptionPadding}
+                      rowsplit: 1
+                      colsplit: 1
+                      tolerance: 0.97
+                      blur: 3
+                      outputxvariable: rightX
+                      outputyvariable: topY
+                      type: imagesearch
+                      name: item description top right
+                    - targets:
+                        - 'dark and darker|Item Description: Top Right'
+                      searcharea:
+                        name: Item Description - Vertical Search
+                        leftx: ${foundX}-${itemDescriptionPadding}
+                        topy: 0
+                        rightx: ${foundX}+${itemDescriptionPadding}
+                        bottomy: 1439
+                      rowsplit: 1
+                      colsplit: 1
+                      tolerance: 0.97
+                      blur: 3
+                      outputxvariable: rightX
+                      outputyvariable: topY
+                      type: imagesearch
+                      name: item description top right
+                    - targets:
+                        - 'dark and darker|Item Description: Top Left'
+                      searcharea:
+                        name: Item Description - Horizontal Search
+                        leftx: 0
+                        topy: ${foundY}-${itemDescriptionPadding}
+                        rightx: 2559
+                        bottomy: ${foundY}+${itemDescriptionPadding}
+                      rowsplit: 1
+                      colsplit: 1
+                      tolerance: 0.97
+                      blur: 3
+                      outputxvariable: leftX
+                      outputyvariable: topY
+                      type: imagesearch
+                      name: item description top left
+                    - targets:
+                        - 'dark and darker|Item Description: Top Left'
+                      searcharea:
+                        name: Item Description - Vertical Search
+                        leftx: ${foundX}-${itemDescriptionPadding}
+                        topy: 0
+                        rightx: ${foundX}+${itemDescriptionPadding}
+                        bottomy: 1439
+                      rowsplit: 1
+                      colsplit: 1
+                      tolerance: 0.97
+                      blur: 3
+                      outputxvariable: leftX
+                      outputyvariable: topY
+                      type: imagesearch
+                      name: 'item description top left '
+                    - target: Rare
+                      searcharea:
+                        name: Item Description
+                        leftx: ${leftX}
+                        topy: ${topY}
+                        rightx: ${rightX}
+                        bottomy: ${bottomY}
+                      outputvariable: ""
+                      blur: 3
+                      minthreshold: 50
+                      resize: 1
+                      grayscale: true
+                      type: ocr
+                      name: rarity
+                      subactions:
+                        - type: click
+                          button: true
+                          hold: false
                 - type: key
                   key: shift
                   state: false
         globaldelay: 25
-        hotkey: []
+        hotkey:
+            - ctrl
+            - shift
+            - "1"
         variables:
             variables:
-                foundx: 1918
-                foundy: 294
+                bottomy: 1343
+                foundx: 1000
+                foundy: 862
+                itemdescriptionpadding: "50"
+                leftx: 1327
+                rightx: 1718
+                topy: 1081
     Switch Chracters:
         name: Switch Chracters
         root:
@@ -122,6 +376,7 @@ macros:
                   rowsplit: 1
                   colsplit: 1
                   tolerance: 0.95
+                  blur: 5
                   outputxvariable: foundX
                   outputyvariable: foundY
                   type: imagesearch
@@ -144,7 +399,9 @@ macros:
         globaldelay: 0
         hotkey: []
         variables:
-            variables: {}
+            variables:
+                foundx: 1918
+                foundy: 294
 programs:
     dark and darker:
         coordinates:
@@ -313,19 +570,31 @@ programs:
                         "y": 0
                     image search context:
                         name: image search context
-                        x: ${foundX}+25
-                        "y": ${foundY}+25
+                        x: ${foundX}
+                        "y": ${foundY}
                     test:
                         name: test
                         x: 10
                         "y": 10
                 searchareas:
                     Item Description:
-                        bottomy: ${foundY}-100
-                        leftx: 0
+                        bottomy: ${bottomY}
+                        leftx: ${leftX}
                         name: Item Description
+                        rightx: ${rightX}
+                        topy: ${topY}
+                    Item Description - Horizontal Search:
+                        bottomy: ${foundY}+${itemDescriptionPadding}
+                        leftx: 0
+                        name: Item Description - Horizontal Search
                         rightx: 2559
-                        topy: ${foundY}+100
+                        topy: ${foundY}-${itemDescriptionPadding}
+                    Item Description - Vertical Search:
+                        bottomy: 1439
+                        leftx: ${foundX}-${itemDescriptionPadding}
+                        name: Item Description - Vertical Search
+                        rightx: ${foundX}+${itemDescriptionPadding}
+                        topy: 0
                     Whole Screen:
                         bottomy: 1440
                         leftx: 0
@@ -874,7 +1143,8 @@ programs:
                 merchant: Collector
                 name: Gold Chalice
                 stackmax: 0
-                tags: []
+                tags:
+                    - treasure
             Gold Coins:
                 gridsize:
                     - 1
@@ -1009,12 +1279,57 @@ programs:
                 stackmax: 5
                 tags:
                     - crafting/ore
+            'Item Description: Bottom Graphic':
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: 'Item Description: Bottom Graphic'
+                stackmax: 0
+                tags:
+                    - meta
+            'Item Description: Bottom Left':
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: 'Item Description: Bottom Left'
+                stackmax: 0
+                tags:
+                    - meta
             'Item Description: Bottom Right':
                 gridsize:
                     - 1
                     - 1
                 merchant: ""
                 name: 'Item Description: Bottom Right'
+                stackmax: 0
+                tags:
+                    - meta
+            'Item Description: Top Graphic':
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: 'Item Description: Top Graphic'
+                stackmax: 0
+                tags:
+                    - meta
+            'Item Description: Top Left':
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: 'Item Description: Top Left'
+                stackmax: 0
+                tags:
+                    - meta
+            'Item Description: Top Right':
+                gridsize:
+                    - 1
+                    - 1
+                merchant: ""
+                name: 'Item Description: Top Right'
                 stackmax: 0
                 tags:
                     - meta
@@ -1799,22 +2114,3 @@ programs:
                 stackmax: 10
                 tags: []
         name: path of exile 2
-    shadows of chroma tower:
-        coordinates:
-            2560x1440:
-                points:
-                    test:
-                        name: test
-                        x: 385
-                        "y": 94
-                searchareas: {}
-        items:
-            Healing Potion:
-                gridsize:
-                    - 1
-                    - 1
-                merchant: ""
-                name: Healing Potion
-                stackmax: 3
-                tags: []
-        name: shadows of chroma tower

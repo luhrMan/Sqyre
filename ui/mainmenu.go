@@ -39,8 +39,8 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 				selectedNode.GetParent().AddSubAction(a)
 			}
 			mt.Refresh()
-			// Select the action - this will trigger OnSelected which shows the dialog
 			mt.Select(a.GetUID())
+			mt.SelectedNode = a.GetUID()
 		}
 	basicActionsSubMenu.ChildMenu = fyne.NewMenu("",
 		fyne.NewMenuItem("Wait", func() { addActionAndRefresh(actions.NewWait(0)) }),
@@ -68,7 +68,7 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 		fyne.NewMenuItem("Set Variable", func() { addActionAndRefresh(actions.NewSetVariable("", "")) }),
 		fyne.NewMenuItem("Calculate", func() { addActionAndRefresh(actions.NewCalculate("", "")) }),
 		fyne.NewMenuItem("Data List", func() { addActionAndRefresh(actions.NewDataList("", "", false)) }),
-		fyne.NewMenuItem("Save Variable", func() { addActionAndRefresh(actions.NewSaveVariable("", "", false)) }),
+		fyne.NewMenuItem("Save Variable", func() { addActionAndRefresh(actions.NewSaveVariable("", "", false, false)) }),
 	)
 
 	computerInfo := fyne.NewMenuItem("Computer info", func() {

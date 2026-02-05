@@ -70,11 +70,14 @@ func ActionToMap(action actions.ActionInterface) (map[string]any, error) {
 	case *actions.DataList:
 		m["source"] = a.Source
 		m["outputvar"] = a.OutputVar
+		m["lengthvar"] = a.LengthVar
 		m["isfile"] = a.IsFile
+		m["skipblanklines"] = a.SkipBlankLines
 	case *actions.SaveVariable:
 		m["variablename"] = a.VariableName
 		m["destination"] = a.Destination
 		m["append"] = a.Append
+		m["appendnewline"] = a.AppendNewline
 	default:
 		return nil, fmt.Errorf("unknown action type: %T", action)
 	}

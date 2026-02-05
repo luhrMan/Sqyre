@@ -452,32 +452,32 @@ func createLoopDialogContent(action *actions.Loop) (fyne.CanvasObject, func()) {
 	nameEntry := widget.NewEntry()
 	nameEntry.SetText(action.Name)
 	countEntry := widget.NewEntry()
-	countEntry.SetText(fmt.Sprintf("%d", action.Count))
-	countSlider := widget.NewSlider(1.0, 10.0)
-	countSlider.SetValue(float64(action.Count))
-	countLabel := widget.NewLabel(fmt.Sprintf("%d", action.Count))
-	countSlider.OnChanged = func(f float64) {
-		count := int(f)
-		countEntry.SetText(fmt.Sprintf("%d", count))
-		countLabel.SetText(fmt.Sprintf("%d", count))
-	}
-	countEntry.OnChanged = func(s string) {
-		if val, err := strconv.Atoi(s); err == nil && val >= 1 && val <= 10 {
-			countSlider.SetValue(float64(val))
-		}
+	countEntry.SetPlaceHolder("e.g. 5 or ${countVar}")
+	switch c := action.Count.(type) {
+	case int:
+		countEntry.SetText(fmt.Sprintf("%d", c))
+	case string:
+		countEntry.SetText(c)
+	default:
+		countEntry.SetText(fmt.Sprintf("%v", c))
 	}
 
 	content := widget.NewForm(
 		widget.NewFormItem("Name:", nameEntry),
-		widget.NewFormItem("Loops:", container.NewBorder(
-			nil, nil, countLabel, nil, countSlider,
-		)),
+		widget.NewFormItem("Loops (number or variable):", countEntry),
 	)
 
 	saveFunc := func() {
 		action.Name = nameEntry.Text
-		if count, err := strconv.Atoi(countEntry.Text); err == nil {
+		s := strings.TrimSpace(countEntry.Text)
+		if s == "" {
+			action.Count = 1
+			return
+		}
+		if count, err := strconv.Atoi(s); err == nil {
 			action.Count = count
+		} else {
+			action.Count = s
 		}
 	}
 
@@ -640,7 +640,7 @@ func createImageSearchDialogContent(action *actions.ImageSearch) (fyne.CanvasObj
 	for _, p := range repositories.ProgramRepo().GetAll() {
 		prog := p
 		accordionItem := CreateProgramAccordionItem(ItemsAccordionOptions{
-			Program: prog,
+			Program:            prog,
 			GetSelectedTargets: func() []string { return *tempTargetsRef },
 			OnItemSelected: func(baseItemName string) {
 				name := prog.Name + config.ProgramDelimiter + baseItemName
@@ -906,21 +906,31 @@ func createCalculateDialogContent(action *actions.Calculate) (fyne.CanvasObject,
 func createDataListDialogContent(action *actions.DataList) (fyne.CanvasObject, func()) {
 	sourceEntry := widget.NewMultiLineEntry()
 	sourceEntry.SetText(action.Source)
+	sourceEntry.SetPlaceHolder("File: path relative to ~/Sqyre/variables/ (e.g. mylist.txt)\nOr paste text directly")
 	varEntry := widget.NewEntry()
 	varEntry.SetText(action.OutputVar)
-	isFileCheck := widget.NewCheck("Source is file path", nil)
+	lengthVarEntry := widget.NewEntry()
+	lengthVarEntry.SetText(action.LengthVar)
+	lengthVarEntry.SetPlaceHolder("e.g. lineCount (optional, for Loop)")
+	isFileCheck := widget.NewCheck("Source is file path (relative to ~/Sqyre/variables/)", nil)
 	isFileCheck.SetChecked(action.IsFile)
+	skipBlankCheck := widget.NewCheck("Skip blank lines (exclude from count and iteration)", nil)
+	skipBlankCheck.SetChecked(action.SkipBlankLines)
 
 	content := widget.NewForm(
 		widget.NewFormItem("Source (file path or text):", sourceEntry),
-		widget.NewFormItem("Output Variable:", varEntry),
 		widget.NewFormItem("", isFileCheck),
+		widget.NewFormItem("", skipBlankCheck),
+		widget.NewFormItem("Output Variable:", varEntry),
+		widget.NewFormItem("Length Variable (optional):", lengthVarEntry),
 	)
 
 	saveFunc := func() {
 		action.Source = sourceEntry.Text
 		action.OutputVar = varEntry.Text
+		action.LengthVar = strings.TrimSpace(lengthVarEntry.Text)
 		action.IsFile = isFileCheck.Checked
+		action.SkipBlankLines = skipBlankCheck.Checked
 	}
 
 	return content, saveFunc
@@ -931,19 +941,24 @@ func createSaveVariableDialogContent(action *actions.SaveVariable) (fyne.CanvasO
 	varEntry.SetText(action.VariableName)
 	destEntry := widget.NewEntry()
 	destEntry.SetText(action.Destination)
+	destEntry.SetPlaceHolder("~/Sqyre/variables/... or 'clipboard'")
 	appendCheck := widget.NewCheck("Append to file", nil)
 	appendCheck.SetChecked(action.Append)
+	appendNewlineCheck := widget.NewCheck("New line with every append", nil)
+	appendNewlineCheck.SetChecked(action.AppendNewline)
 
 	content := widget.NewForm(
 		widget.NewFormItem("Variable Name:", varEntry),
-		widget.NewFormItem("Destination (file path or 'clipboard'):", destEntry),
+		widget.NewFormItem("Destination (~/Sqyre/variables/... or 'clipboard'):", destEntry),
 		widget.NewFormItem("", appendCheck),
+		widget.NewFormItem("", appendNewlineCheck),
 	)
 
 	saveFunc := func() {
 		action.VariableName = varEntry.Text
 		action.Destination = destEntry.Text
 		action.Append = appendCheck.Checked
+		action.AppendNewline = appendNewlineCheck.Checked
 	}
 
 	return content, saveFunc
