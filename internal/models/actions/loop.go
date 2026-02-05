@@ -9,11 +9,11 @@ import (
 
 type Loop struct {
 	// Count is the number of iterations: int (literal) or string (variable reference e.g. "${count}").
-	Count           interface{}
+	Count           any
 	*AdvancedAction `yaml:",inline" mapstructure:",squash"`
 }
 
-func NewLoop(count interface{}, name string, subActions []ActionInterface) *Loop {
+func NewLoop(count any, name string, subActions []ActionInterface) *Loop {
 	if name == "root" {
 		r := &Loop{
 			AdvancedAction: newAdvancedAction(name, "loop", subActions),

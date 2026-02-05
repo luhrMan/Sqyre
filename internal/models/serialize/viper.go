@@ -216,8 +216,8 @@ func createSearchBox(rawMap map[string]any) actions.SearchArea {
 	}
 }
 
-// valueAsIntOrString converts an interface{} to either int or string as appropriate for SearchArea fields.
-func valueAsIntOrString(val interface{}) interface{} {
+// valueAsIntOrString converts an any to either int or string as appropriate for SearchArea fields.
+func valueAsIntOrString(val any) any {
 	switch v := val.(type) {
 	case int:
 		return v
@@ -230,8 +230,8 @@ func valueAsIntOrString(val interface{}) interface{} {
 	}
 }
 
-// pointCoordFromMap returns x or y from raw map as interface{} (int or string) for actions.Point.
-func pointCoordFromMap(rawMap map[string]any, key string) interface{} {
+// pointCoordFromMap returns x or y from raw map as any (int or string) for actions.Point.
+func pointCoordFromMap(rawMap map[string]any, key string) any {
 	v, ok := rawMap[key]
 	if !ok {
 		return 0

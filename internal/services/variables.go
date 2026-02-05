@@ -79,7 +79,7 @@ func ParseVariableReference(text string) []string {
 
 // EvaluateExpression evaluates a mathematical expression with variable substitution
 // Supports: +, -, *, /, ^, functions (sqrt, abs, round, floor, ceil, trunc, sin, cos, tan, ln), constants (~pi, ~e)
-func EvaluateExpression(expr string, macro *models.Macro) (interface{}, error) {
+func EvaluateExpression(expr string, macro *models.Macro) (any, error) {
 	// First resolve variables in the expression
 	resolved, err := ResolveVariables(expr, macro)
 	if err != nil {
@@ -410,7 +410,7 @@ func checkUnresolvedVariable(s string) error {
 }
 
 // ResolveInt resolves a variable reference or expression to an integer
-func ResolveInt(value interface{}, macro *models.Macro) (int, error) {
+func ResolveInt(value any, macro *models.Macro) (int, error) {
 	switch v := value.(type) {
 	case int:
 		return v, nil
@@ -448,7 +448,7 @@ func ResolveInt(value interface{}, macro *models.Macro) (int, error) {
 }
 
 // ResolveFloat resolves a variable reference or expression to a float
-func ResolveFloat(value interface{}, macro *models.Macro) (float64, error) {
+func ResolveFloat(value any, macro *models.Macro) (float64, error) {
 	switch v := value.(type) {
 	case float64:
 		return v, nil
@@ -486,7 +486,7 @@ func ResolveFloat(value interface{}, macro *models.Macro) (float64, error) {
 }
 
 // ResolveString resolves a variable reference to a string
-func ResolveString(value interface{}, macro *models.Macro) (string, error) {
+func ResolveString(value any, macro *models.Macro) (string, error) {
 	switch v := value.(type) {
 	case string:
 		return ResolveVariables(v, macro)
@@ -497,7 +497,7 @@ func ResolveString(value interface{}, macro *models.Macro) (string, error) {
 
 // ResolveSearchAreaCoords resolves LeftX, TopY, RightX, BottomY (variable refs or expressions) to ints.
 // Returns (leftX, topY, rightX, bottomY, error). Used by image search and OCR at runtime.
-func ResolveSearchAreaCoords(leftX, topY, rightX, bottomY interface{}, macro *models.Macro) (int, int, int, int, error) {
+func ResolveSearchAreaCoords(leftX, topY, rightX, bottomY any, macro *models.Macro) (int, int, int, int, error) {
 	lx, err := ResolveInt(leftX, macro)
 	if err != nil {
 		return 0, 0, 0, 0, fmt.Errorf("LeftX: %w", err)

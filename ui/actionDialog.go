@@ -193,7 +193,7 @@ func createWaitDialogContent(action *actions.Wait) (fyne.CanvasObject, func()) {
 }
 
 // pointCoordToInt returns an int for preview drawing; literal ints are used, variable refs (string) yield 0.
-func pointCoordToInt(v interface{}) int {
+func pointCoordToInt(v any) int {
 	switch val := v.(type) {
 	case int:
 		return val

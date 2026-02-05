@@ -18,8 +18,8 @@ func newAdvancedAction(name, t string, subActions []ActionInterface) *AdvancedAc
 // LeftX, TopY, RightX, and BottomY may be int (literal) or string (variable reference e.g. "${leftX}").
 type SearchArea struct {
 	Name    string
-	LeftX   interface{}
-	TopY    interface{}
-	RightX  interface{}
-	BottomY interface{}
+	LeftX   any
+	TopY    any
+	RightX  any
+	BottomY any
 }
