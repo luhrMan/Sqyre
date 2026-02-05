@@ -317,6 +317,15 @@ func createProgramAccordionItem(program *models.Program) *widget.AccordionItem {
 			ui.GetUi().EditorTabs.ItemsTab.Widgets[pname+"-searchbar"] = searchbar
 			ui.GetUi().EditorTabs.ItemsTab.Widgets[pname+"-list"] = list
 		},
+		OnSelectionChanged: func(newTargets []string) {
+			if !ui.GetUi().MainUi.Navigation.Visible() {
+				return
+			}
+			if v, ok := ui.GetUi().Mui.MTabs.SelectedTab().Macro.Root.GetAction(ui.GetUi().Mui.MTabs.SelectedTab().SelectedNode).(*actions.ImageSearch); ok {
+				v.Targets = newTargets
+				ui.GetUi().Mui.MTabs.SelectedTab().Tree.RefreshItem(v.GetUID())
+			}
+		},
 	})
 }
 

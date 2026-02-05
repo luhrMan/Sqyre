@@ -33,6 +33,10 @@ type ItemsAccordionOptions struct {
 	// RegisterWidgets, if non-nil, is called with the searchbar and grid so the editor
 	// can store them (e.g. for program-specific search).
 	RegisterWidgets func(programName string, searchbar *widget.Entry, list *widget.GridWrap)
+
+	// OnSelectionChanged is called when the user uses "select all visible" / "deselect all visible".
+	// It receives the new full list of selected target full names. If nil, the select-all button is hidden.
+	OnSelectionChanged func(newTargets []string)
 }
 
 // CreateProgramAccordionItem builds a single accordion item (one program's item grid)
@@ -192,6 +196,55 @@ func CreateProgramAccordionItem(opts ItemsAccordionOptions) *widget.AccordionIte
 		lists.items.Refresh()
 	}
 
+	// Search bar row: entry + optional "All" button (select/deselect all visible)
+	searchBarRow := container.NewBorder(nil, nil, nil, nil, lists.searchbar)
+	if opts.OnSelectionChanged != nil {
+		selectAllBtn := ttwidget.NewButton("All", func() {
+			current := []string{}
+			if opts.GetSelectedTargets != nil {
+				current = opts.GetSelectedTargets()
+			}
+			filteredFull := make([]string, 0, len(lists.filtered))
+			for _, baseName := range lists.filtered {
+				filteredFull = append(filteredFull, programName+config.ProgramDelimiter+baseName)
+			}
+			allSelected := len(filteredFull) > 0
+			for _, full := range filteredFull {
+				if !slices.Contains(current, full) {
+					allSelected = false
+					break
+				}
+			}
+			var newTargets []string
+			if allSelected {
+				newTargets = make([]string, 0, len(current))
+				for _, t := range current {
+					if !slices.Contains(filteredFull, t) {
+						newTargets = append(newTargets, t)
+					}
+				}
+			} else {
+				seen := make(map[string]bool)
+				for _, t := range current {
+					seen[t] = true
+				}
+				for _, full := range filteredFull {
+					seen[full] = true
+				}
+				newTargets = make([]string, 0, len(seen))
+				for t := range seen {
+					newTargets = append(newTargets, t)
+				}
+			}
+			slices.Sort(newTargets)
+			opts.OnSelectionChanged(newTargets)
+			lists.items.Refresh()
+		})
+		selectAllBtn.Importance = widget.MediumImportance
+		selectAllBtn.SetToolTip("Select all visible items, or deselect all if all visible are selected")
+		searchBarRow = container.NewBorder(nil, nil, nil, selectAllBtn, lists.searchbar)
+	}
+
 	if opts.RegisterWidgets != nil {
 		opts.RegisterWidgets(programName, lists.searchbar, lists.items)
 	}
@@ -199,7 +252,7 @@ func CreateProgramAccordionItem(opts ItemsAccordionOptions) *widget.AccordionIte
 	return widget.NewAccordionItem(
 		programName,
 		container.NewBorder(
-			lists.searchbar,
+			searchBarRow,
 			nil, nil, nil,
 			lists.items,
 		),

@@ -6,6 +6,7 @@ import (
 	"Squire/internal/models/actions"
 	"fmt"
 	"log"
+	"path/filepath"
 	"strings"
 
 	"fyne.io/fyne/v2"
@@ -19,6 +20,18 @@ func Execute(a actions.ActionInterface, macro ...*models.Macro) error {
 		macroCtx = macro[0]
 	}
 	return executeWithContext(a, macroCtx)
+}
+
+// resetDataListsInTree resets every DataList in the action tree so each macro run starts from line 0.
+func resetDataListsInTree(a actions.ActionInterface) {
+	if dl, ok := a.(*actions.DataList); ok {
+		dl.Reset()
+	}
+	if adv, ok := a.(actions.AdvancedActionInterface); ok {
+		for _, sub := range adv.GetSubActions() {
+			resetDataListsInTree(sub)
+		}
+	}
 }
 
 func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
@@ -47,12 +60,7 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 		return nil
 	case *actions.Click:
 		log.Println("Click:", node.String())
-		btn := actions.LeftOrRight(node.Button)
-		if node.Hold {
-			robotgo.MouseDown(btn)
-		} else {
-			robotgo.Click(btn)
-		}
+		robotgo.Click(actions.LeftOrRight(node.Button))
 		return nil
 	case *actions.Key:
 		log.Println("Key:", node.String())
@@ -79,8 +87,16 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 
 	case *actions.Loop:
 		log.Println("Loop:", node.String())
+		count, err := ResolveInt(node.Count, macro)
+		if err != nil {
+			return fmt.Errorf("loop count: %w", err)
+		}
+		if count < 1 {
+			return fmt.Errorf("loop count must be at least 1, got %d", count)
+		}
 		var progress, progressStep float64
 		if node.Name == "root" {
+			resetDataListsInTree(node)
 			progressStep = (100.0 / float64(len(node.GetSubActions()))) / 100
 			fyne.Do(func() {
 				MacroActiveIndicator().Show()
@@ -88,7 +104,7 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 			})
 		}
 
-		for i := range node.Count {
+		for i := range count {
 			fmt.Printf("Loop: %s iteration %d\n", node.Name, i+1)
 			for j, action := range node.GetSubActions() {
 				if node.Name == "root" {
@@ -120,12 +136,7 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 		log.Println("Image Search:", node.String())
 		results, err := imageSearch(node, macro)
 		if err != nil {
-			log.Printf("Image Search: skipping due to error (macro continues): %v", err)
-			if node.OutputXVariable != "" || node.OutputYVariable != "" {
-				log.Printf("Image Search: output variables were not set; later actions using ${%s}/${%s} may fail",
-					node.OutputXVariable, node.OutputYVariable)
-			}
-			return nil
+			return err
 		}
 		searchLeftX, err := ResolveInt(node.SearchArea.LeftX, macro)
 		if err != nil {
@@ -164,8 +175,7 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 				}
 			}
 		}
-		// After the loop, set output variables to the first match so sibling actions (e.g. Move, OCR) use first match.
-		// These use the same macro.Variables as ResolveSearchAreaCoords/ResolveInt; put Image Search before actions that use ${var}.
+		// After the loop, set output variables to the first match so sibling actions (e.g. Move after Image Search) use first match, not last
 		if firstPoint != nil && macro != nil && macro.Variables != nil {
 			if node.OutputXVariable != "" {
 				macro.Variables.Set(node.OutputXVariable, firstPoint.X)
@@ -180,8 +190,8 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 	case *actions.Ocr:
 		foundText, err := OCR(node, macro)
 		if err != nil {
-			log.Printf("OCR: skipping due to error (macro continues): %v", err)
-			return nil
+			log.Println(err)
+			return err
 		}
 
 		// Store found text in variable if configured
@@ -227,6 +237,13 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 				return fmt.Errorf("data list error: %w", err)
 			}
 			macro.Variables.Set(node.OutputVar, line)
+			if node.LengthVar != "" {
+				lineCount, err := node.LineCount()
+				if err != nil {
+					return fmt.Errorf("data list length: %w", err)
+				}
+				macro.Variables.Set(node.LengthVar, lineCount)
+			}
 			node.NextLine() // Advance to next line for next cycle
 		}
 		return nil
@@ -242,7 +259,8 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 			if node.Destination == "clipboard" {
 				robotgo.WriteAll(valStr)
 			} else {
-				if err := node.SaveToFile(valStr, node.Destination); err != nil {
+				filePath := filepath.Join(config.GetVariablesPath(), node.Destination)
+				if err := node.SaveToFile(valStr, filePath); err != nil {
 					return fmt.Errorf("failed to save variable to file: %w", err)
 				}
 			}

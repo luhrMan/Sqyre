@@ -3,7 +3,10 @@ package actions
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
+
+	"Squire/internal/config"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/theme"
@@ -11,11 +14,13 @@ import (
 
 type DataList struct {
 	*BaseAction `yaml:",inline" mapstructure:",squash"`
-	Source      string // File path or manual text
-	OutputVar   string // Variable to store current line
-	IsFile      bool   // True if Source is a file path, false if manual text
-	currentLine int    // Current line index (not serialized)
-	lines       []string // Cached lines (not serialized)
+	Source         string // File path or manual text
+	OutputVar      string // Variable to store current line
+	LengthVar      string // Optional: variable to set to number of lines (e.g. for Loop count)
+	IsFile         bool   // True if Source is a file path, false if manual text
+	SkipBlankLines bool   // If true, blank lines are excluded from the list and from LineCount()
+	currentLine    int    // Current line index (not serialized)
+	lines          []string // Cached lines (not serialized)
 }
 
 func NewDataList(source string, outputVar string, isFile bool) *DataList {
@@ -27,6 +32,16 @@ func NewDataList(source string, outputVar string, isFile bool) *DataList {
 		currentLine: 0,
 		lines:       []string{},
 	}
+}
+
+// LineCount returns the number of lines, loading from source if needed.
+func (a *DataList) LineCount() (int, error) {
+	if len(a.lines) == 0 {
+		if err := a.loadLines(); err != nil {
+			return 0, err
+		}
+	}
+	return len(a.lines), nil
 }
 
 // GetCurrentLine returns the current line from the data list
@@ -60,21 +75,30 @@ func (a *DataList) Reset() {
 // loadLines loads lines from source (file or manual text)
 func (a *DataList) loadLines() error {
 	if a.IsFile {
-		data, err := os.ReadFile(a.Source)
+		path := a.Source
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(config.GetVariablesPath(), path)
+		}
+		data, err := os.ReadFile(path)
 		if err != nil {
-			return fmt.Errorf("failed to read file %s: %w", a.Source, err)
+			return fmt.Errorf("failed to read file %s: %w", path, err)
 		}
 		a.lines = strings.Split(string(data), "\n")
-		// Remove empty lines at the end
-		for len(a.lines) > 0 && strings.TrimSpace(a.lines[len(a.lines)-1]) == "" {
-			a.lines = a.lines[:len(a.lines)-1]
-		}
 	} else {
 		a.lines = strings.Split(a.Source, "\n")
-		// Remove empty lines at the end
-		for len(a.lines) > 0 && strings.TrimSpace(a.lines[len(a.lines)-1]) == "" {
-			a.lines = a.lines[:len(a.lines)-1]
+	}
+	// Remove trailing blank lines
+	for len(a.lines) > 0 && strings.TrimSpace(a.lines[len(a.lines)-1]) == "" {
+		a.lines = a.lines[:len(a.lines)-1]
+	}
+	if a.SkipBlankLines {
+		filtered := a.lines[:0]
+		for _, line := range a.lines {
+			if strings.TrimSpace(line) != "" {
+				filtered = append(filtered, line)
+			}
 		}
+		a.lines = filtered
 	}
 	return nil
 }

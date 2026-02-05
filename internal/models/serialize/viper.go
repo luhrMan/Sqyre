@@ -100,7 +100,11 @@ func (s *serializer) CreateActionFromMap(rawMap map[string]any, parent actions.A
 	var action actions.ActionInterface
 	switch rawMap["type"] {
 	case "loop":
-		action = actions.NewLoop(rawMap["count"].(int), rawMap["name"].(string), []actions.ActionInterface{})
+		countVal := rawMap["count"]
+		if countVal == nil {
+			countVal = 1
+		}
+		action = actions.NewLoop(countVal, rawMap["name"].(string), []actions.ActionInterface{})
 	case "wait":
 		action = actions.NewWait(rawMap["time"].(int))
 	case "click":
@@ -147,12 +151,24 @@ func (s *serializer) CreateActionFromMap(rawMap map[string]any, parent actions.A
 			isFile = ifVal.(bool)
 		}
 		action = actions.NewDataList(rawMap["source"].(string), rawMap["outputvar"].(string), isFile)
+		if dl, ok := action.(*actions.DataList); ok {
+			if lv, ok := rawMap["lengthvar"].(string); ok {
+				dl.LengthVar = lv
+			}
+			if sb, ok := rawMap["skipblanklines"].(bool); ok {
+				dl.SkipBlankLines = sb
+			}
+		}
 	case "savevariable":
 		append := false
 		if appendVal, ok := rawMap["append"]; ok {
 			append = appendVal.(bool)
 		}
-		action = actions.NewSaveVariable(rawMap["variablename"].(string), rawMap["destination"].(string), append)
+		appendNewline := false
+		if nlVal, ok := rawMap["appendnewline"]; ok {
+			appendNewline = nlVal.(bool)
+		}
+		action = actions.NewSaveVariable(rawMap["variablename"].(string), rawMap["destination"].(string), append, appendNewline)
 	}
 	action.SetParent(parent)
 	if advAction, ok := action.(actions.AdvancedActionInterface); ok {
