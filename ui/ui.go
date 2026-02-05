@@ -132,28 +132,3 @@ func toggleMousePos() {
 		}
 	}()
 }
-
-// func (u *Ui) createSelect() {
-// 	var macroList []string
-// 	for _, m := range u.p.Macros {
-// 		macroList = append(macroList, m.Name)
-// 	}
-// 	u.sel = xwidget.NewCompletionEntry(macroList)
-// 	// u.sel.ActionItem = widget.NewButtonWithIcon("", theme.ViewRefreshIcon(), func() { macroList = getMacroList() })
-// 	u.sel.OnSubmitted = func(s string) { u.addMacroDocTab(u.p.GetMacroByName(s)) }
-// 	u.sel.OnChanged = func(s string) {
-// 		var matches []string
-// 		userPrefix := strings.ToLower(s)
-// 		for _, listStr := range macroList {
-// 			if len(listStr) < len(s) {
-// 				continue
-// 			}
-// 			listPrefix := strings.ToLower(listStr[:len(s)])
-// 			if userPrefix == listPrefix {
-// 				matches = append(matches, listStr)
-// 			}
-// 		}
-// 		u.sel.SetOptions(matches)
-// 		u.sel.ShowCompletion()
-// 	}
-// }

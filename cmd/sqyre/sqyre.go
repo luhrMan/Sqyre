@@ -56,11 +56,6 @@ func init() {
 	w.Resize(fyne.NewSize(1000, 500))
 	w.SetIcon(assets.AppIcon)
 	w.SetMaster()
-	// w.Canvas().SetOnTypedKey(func(e *fyne.KeyEvent) {
-	// 	if e.Name == fyne.KeyEscape {
-	// 		w.Show()
-	// 	}
-	// })
 
 	hook.Register(hook.KeyDown, []string{"esc"}, func(e hook.Event) {
 		if isWindowWithTitleActive("sqyre") {
