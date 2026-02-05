@@ -59,7 +59,7 @@ func ShowActionDialog(action actions.ActionInterface, onSave func(actions.Action
 		content.Resize(fyne.NewSize(300, 100))
 	case *actions.Loop:
 		content, saveFunc = createLoopDialogContent(node)
-		content.Resize(fyne.NewSize(300, 100))
+		content.Resize(fyne.NewSize(600, 100))
 	case *actions.ImageSearch:
 		content, saveFunc = createImageSearchDialogContent(node)
 		content.Resize(fyne.NewSize(1000, 1000))
@@ -68,16 +68,16 @@ func ShowActionDialog(action actions.ActionInterface, onSave func(actions.Action
 		content.Resize(fyne.NewSize(600, 500))
 	case *actions.SetVariable:
 		content, saveFunc = createSetVariableDialogContent(node)
-		content.Resize(fyne.NewSize(300, 100))
+		content.Resize(fyne.NewSize(600, 100))
 	case *actions.Calculate:
 		content, saveFunc = createCalculateDialogContent(node)
-		content.Resize(fyne.NewSize(300, 100))
+		content.Resize(fyne.NewSize(600, 100))
 	case *actions.DataList:
 		content, saveFunc = createDataListDialogContent(node)
-		content.Resize(fyne.NewSize(300, 100))
+		content.Resize(fyne.NewSize(600, 100))
 	case *actions.SaveVariable:
 		content, saveFunc = createSaveVariableDialogContent(node)
-		content.Resize(fyne.NewSize(300, 100))
+		content.Resize(fyne.NewSize(600, 100))
 	default:
 		content = widget.NewLabel("Unknown action type")
 		saveFunc = func() {}
