@@ -120,7 +120,12 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 		log.Println("Image Search:", node.String())
 		results, err := imageSearch(node, macro)
 		if err != nil {
-			return err
+			log.Printf("Image Search: skipping due to error (macro continues): %v", err)
+			if node.OutputXVariable != "" || node.OutputYVariable != "" {
+				log.Printf("Image Search: output variables were not set; later actions using ${%s}/${%s} may fail",
+					node.OutputXVariable, node.OutputYVariable)
+			}
+			return nil
 		}
 		searchLeftX, err := ResolveInt(node.SearchArea.LeftX, macro)
 		if err != nil {
@@ -159,7 +164,8 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 				}
 			}
 		}
-		// After the loop, set output variables to the first match so sibling actions (e.g. Move after Image Search) use first match, not last
+		// After the loop, set output variables to the first match so sibling actions (e.g. Move, OCR) use first match.
+		// These use the same macro.Variables as ResolveSearchAreaCoords/ResolveInt; put Image Search before actions that use ${var}.
 		if firstPoint != nil && macro != nil && macro.Variables != nil {
 			if node.OutputXVariable != "" {
 				macro.Variables.Set(node.OutputXVariable, firstPoint.X)
@@ -174,8 +180,8 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 	case *actions.Ocr:
 		foundText, err := OCR(node, macro)
 		if err != nil {
-			log.Println(err)
-			return err
+			log.Printf("OCR: skipping due to error (macro continues): %v", err)
+			return nil
 		}
 
 		// Store found text in variable if configured

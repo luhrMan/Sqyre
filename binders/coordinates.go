@@ -101,7 +101,9 @@ func setAccordionSearchAreasLists(acc *widget.Accordion) {
 				}()
 				ui.GetUi().UpdateSearchAreaPreview(sa)
 			}()
-
+			// if ui.GetUi().MainUi.Navigation.Visible() {
+			lists.searchareas.UnselectAll()
+			// }
 		}
 		lists.searchbar = &widget.Entry{
 			PlaceHolder: "Search here",

@@ -40,6 +40,7 @@ func ActionToMap(action actions.ActionInterface) (map[string]any, error) {
 		m["rowsplit"] = a.RowSplit
 		m["colsplit"] = a.ColSplit
 		m["tolerance"] = float64(a.Tolerance)
+		m["blur"] = a.Blur
 		if a.OutputXVariable != "" {
 			m["outputxvariable"] = a.OutputXVariable
 		}
