@@ -59,6 +59,7 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 				1,
 				1,
 				0.95,
+				5,
 			))
 		}),
 		fyne.NewMenuItem("OCR", func() {

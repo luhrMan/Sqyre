@@ -115,7 +115,18 @@ func (s *serializer) CreateActionFromMap(rawMap map[string]any, parent actions.A
 		action = actions.NewKey(rawMap["key"].(string), rawMap["state"].(bool))
 	case "imagesearch":
 		targets := targetsFromMap(rawMap["targets"])
-		action = actions.NewImageSearch(rawMap["name"].(string), []actions.ActionInterface{}, targets, createSearchBox(rawMap["searcharea"].(map[string]any)), rawMap["rowsplit"].(int), rawMap["colsplit"].(int), float32(rawMap["tolerance"].(float64)))
+		blur := 5
+		if v, ok := rawMap["blur"]; ok {
+			switch b := v.(type) {
+			case int:
+				blur = b
+			case int64:
+				blur = int(b)
+			case float64:
+				blur = int(b)
+			}
+		}
+		action = actions.NewImageSearch(rawMap["name"].(string), []actions.ActionInterface{}, targets, createSearchBox(rawMap["searcharea"].(map[string]any)), rawMap["rowsplit"].(int), rawMap["colsplit"].(int), float32(rawMap["tolerance"].(float64)), blur)
 		if is, ok := action.(*actions.ImageSearch); ok {
 			if v, ok := rawMap["outputxvariable"].(string); ok {
 				is.OutputXVariable = v

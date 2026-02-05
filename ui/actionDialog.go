@@ -3,7 +3,6 @@ package ui
 import (
 	"Squire/internal/assets"
 	"Squire/internal/config"
-	"Squire/internal/models"
 	"Squire/internal/models/actions"
 	"Squire/internal/models/repositories"
 	"Squire/internal/services"
@@ -492,6 +491,10 @@ func createImageSearchDialogContent(action *actions.ImageSearch) (fyne.CanvasObj
 	rowSplitEntry.SetText(fmt.Sprintf("%d", action.RowSplit))
 	colSplitEntry := widget.NewEntry()
 	colSplitEntry.SetText(fmt.Sprintf("%d", action.ColSplit))
+	toleranceEntry := widget.NewEntry()
+	toleranceEntry.SetText(fmt.Sprintf("%g", action.Tolerance))
+	blurEntry := widget.NewEntry()
+	blurEntry.SetText(fmt.Sprintf("%d", action.Blur))
 	outputXVarEntry := widget.NewEntry()
 	outputXVarEntry.SetText(action.OutputXVariable)
 	outputYVarEntry := widget.NewEntry()
@@ -500,6 +503,7 @@ func createImageSearchDialogContent(action *actions.ImageSearch) (fyne.CanvasObj
 	// Temporary storage for changes (only applied on save)
 	tempSearchArea := action.SearchArea
 	tempTargets := slices.Clone(action.Targets)
+	tempTargetsRef := &tempTargets
 
 	// Create Search Areas accordion
 	searchAreasAccordion := widget.NewAccordion()
@@ -631,10 +635,26 @@ func createImageSearchDialogContent(action *actions.ImageSearch) (fyne.CanvasObj
 	}
 	refreshPreview() // show initial selection
 
-	// Create Items accordion
+	// Create Items accordion (shared with editor Items tab)
 	itemsAccordion := widget.NewAccordion()
 	for _, p := range repositories.ProgramRepo().GetAll() {
-		accordionItem := createProgramAccordionItem(p, &tempTargets, refreshPreview)
+		prog := p
+		accordionItem := CreateProgramAccordionItem(ItemsAccordionOptions{
+			Program: prog,
+			GetSelectedTargets: func() []string { return *tempTargetsRef },
+			OnItemSelected: func(baseItemName string) {
+				name := prog.Name + config.ProgramDelimiter + baseItemName
+				t := *tempTargetsRef
+				if i := slices.Index(t, name); i != -1 {
+					t = slices.Delete(t, i, i+1)
+				} else {
+					t = append(t, name)
+				}
+				slices.Sort(t)
+				*tempTargetsRef = t
+				refreshPreview()
+			},
+		})
 		itemsAccordion.Append(accordionItem)
 	}
 
@@ -647,6 +667,8 @@ func createImageSearchDialogContent(action *actions.ImageSearch) (fyne.CanvasObj
 					widget.NewFormItem("Name:", nameEntry),
 					widget.NewFormItem("Row Split:", rowSplitEntry),
 					widget.NewFormItem("Col Split:", colSplitEntry),
+					widget.NewFormItem("Tolerance:", toleranceEntry),
+					widget.NewFormItem("Blur:", blurEntry),
 					widget.NewFormItem("Output X Variable:", outputXVarEntry),
 					widget.NewFormItem("Output Y Variable:", outputYVarEntry),
 				),
@@ -682,6 +704,12 @@ func createImageSearchDialogContent(action *actions.ImageSearch) (fyne.CanvasObj
 		if cs, err := strconv.Atoi(colSplitEntry.Text); err == nil {
 			action.ColSplit = cs
 		}
+		if tol, err := strconv.ParseFloat(toleranceEntry.Text, 32); err == nil {
+			action.Tolerance = float32(tol)
+		}
+		if b, err := strconv.Atoi(blurEntry.Text); err == nil {
+			action.Blur = b
+		}
 		action.OutputXVariable = outputXVarEntry.Text
 		action.OutputYVariable = outputYVarEntry.Text
 		// Apply temporary changes
@@ -691,182 +719,6 @@ func createImageSearchDialogContent(action *actions.ImageSearch) (fyne.CanvasObj
 	}
 
 	return content, saveFunc
-}
-
-// Helper function to group items by base name (from binders/item.go)
-// createProgramAccordionItem creates an accordion item for a specific program in the action dialog context.
-// onSelectionChanged is called when the user toggles an item so the preview can refresh.
-func createProgramAccordionItem(program *models.Program, tempTargets *[]string, onSelectionChanged func()) *widget.AccordionItem {
-	var (
-		// ats         = ui.GetUi().ActionTabs
-		iconService = services.IconVariantServiceInstance()
-	)
-
-	// Pre-cache variant information for this specific program
-	type itemIconInfo struct {
-		iconPath string
-		exists   bool
-	}
-	iconCache := make(map[string]itemIconInfo)
-
-	// Pre-compute icon paths and item mappings for this program
-	baseNames := groupItemsByBaseName(program.ItemRepo().GetAllKeys(), iconService)
-
-	// Build base name to full item name mapping for fast lookup
-	baseNameToItemName := make(map[string]string)
-	allItems := program.ItemRepo().GetAllKeys()
-	for _, itemName := range allItems {
-		baseName := iconService.GetBaseItemName(itemName)
-		if _, exists := baseNameToItemName[baseName]; !exists {
-			// Store first variant found for this base name
-			baseNameToItemName[baseName] = itemName
-		}
-	}
-
-	// Create program-specific cache to avoid collisions
-	programName := program.Name
-	for _, baseName := range baseNames {
-		cacheKey := programName + "|" + baseName
-		variants, err := iconService.GetVariants(programName, baseName)
-		if err == nil && len(variants) > 0 {
-			// Always use "Original" variant for the item grid
-			var selectedVariant string
-			for _, variant := range variants {
-				if variant == "Original" {
-					selectedVariant = variant
-					break
-				}
-			}
-
-			// If "Original" not found, fall back to first variant (shouldn't happen with new system)
-			if selectedVariant == "" {
-				selectedVariant = variants[0]
-			}
-
-			path := programName + config.ProgramDelimiter + baseName
-			if selectedVariant != "" {
-				path = path + config.ProgramDelimiter + selectedVariant
-			}
-			path = path + config.PNG
-			iconCache[cacheKey] = itemIconInfo{iconPath: path, exists: true}
-		}
-	}
-
-	lists := struct {
-		searchbar *widget.Entry
-		items     *widget.GridWrap
-		filtered  []string
-	}{
-		filtered: baseNames,
-	}
-
-	lists.searchbar = widget.NewEntry()
-	lists.items = widget.NewGridWrap(
-		func() int {
-			return len(lists.filtered)
-		},
-		func() fyne.CanvasObject {
-			rect := canvas.NewRectangle(theme.BackgroundColor())
-			rect.SetMinSize(fyne.NewSquareSize(75))
-			rect.CornerRadius = 5
-
-			icon := canvas.NewImageFromResource(theme.BrokenImageIcon())
-			icon.SetMinSize(fyne.NewSquareSize(70))
-			icon.FillMode = canvas.ImageFillOriginal
-
-			stack := container.NewStack(rect, container.NewPadded(icon), ttwidget.NewLabel(""))
-			return stack
-		},
-		func(id widget.GridWrapItemID, o fyne.CanvasObject) {
-			baseItemName := lists.filtered[id]
-			stack := o.(*fyne.Container)
-			rect := stack.Objects[0].(*canvas.Rectangle)
-			icon := stack.Objects[1].(*fyne.Container).Objects[0].(*canvas.Image)
-			tt := stack.Objects[2].(*ttwidget.Label)
-			tt.SetToolTip(baseItemName)
-
-			// Get targets from the action node directly (bindings removed)
-			var t []string
-			// if GetUi().MainUi.Visible() {
-			// if v, ok := GetUi().Mui.MTabs.SelectedTab().Macro.Root.GetAction(GetUi().Mui.MTabs.SelectedTab().SelectedNode).(*actions.ImageSearch); ok {
-			// 	t = v.Targets
-			// }
-			t = *tempTargets
-			// Check if this base item is selected (in targets)
-			fullItemName := programName + config.ProgramDelimiter + baseItemName
-			if slices.Contains(t, fullItemName) {
-				rect.FillColor = color.RGBA{R: 0, G: 128, B: 0, A: 128}
-			} else {
-				rect.FillColor = color.RGBA{}
-			}
-			// }
-			// Load icon from pre-computed cache
-			cacheKey := programName + config.ProgramDelimiter + baseItemName
-			if iconInfo, exists := iconCache[cacheKey]; exists {
-				// Create a new canvas.Image for this specific icon
-				if resource := assets.GetFyneResource(iconInfo.iconPath); resource != nil {
-					newIcon := canvas.NewImageFromResource(resource)
-					newIcon.SetMinSize(fyne.NewSquareSize(40))
-					newIcon.FillMode = canvas.ImageFillOriginal
-
-					// Replace the icon in the container
-					iconContainer := stack.Objects[1].(*fyne.Container)
-					iconContainer.Objects[0] = newIcon
-				} else {
-					icon.Resource = assets.AppIcon
-					// icon.Resource = theme.BrokenImageIcon()
-				}
-			} else {
-				icon.Resource = assets.AppIcon
-				// icon.Resource = theme.BrokenImageIcon()
-			}
-			o.Refresh()
-		},
-	)
-
-	lists.items.OnSelected = func(id widget.GridWrapItemID) {
-		baseItemName := lists.filtered[id]
-		name := programName + config.ProgramDelimiter + baseItemName
-		if i := slices.Index(*tempTargets, name); i != -1 {
-			// Item exists, remove it
-			*tempTargets = slices.Delete(*tempTargets, i, i+1)
-		} else {
-			// Item doesn't exist, add it
-			*tempTargets = append(*tempTargets, name)
-		}
-		slices.Sort(*tempTargets)
-		lists.items.Refresh()
-		lists.items.UnselectAll()
-		if onSelectionChanged != nil {
-			onSelectionChanged()
-		}
-	}
-
-	lists.searchbar.PlaceHolder = "Search here"
-	lists.searchbar.OnChanged = func(s string) {
-		defaultList := groupItemsByBaseName(program.ItemRepo().GetAllKeys(), iconService)
-		if s == "" {
-			lists.filtered = defaultList
-		} else {
-			lists.filtered = []string{}
-			for _, i := range defaultList {
-				if fuzzy.MatchFold(s, i) {
-					lists.filtered = append(lists.filtered, i)
-				}
-			}
-		}
-		lists.items.UnselectAll()
-		lists.items.Refresh()
-	}
-
-	return widget.NewAccordionItem(
-		programName,
-		container.NewBorder(
-			lists.searchbar,
-			nil, nil, nil,
-			lists.items,
-		),
-	)
 }
 
 // getIconPathForTarget returns the Fyne resource path for a target "ProgramName|baseName".
@@ -892,20 +744,6 @@ func getIconPathForTarget(target string) string {
 		selectedVariant = variants[0]
 	}
 	return programName + config.ProgramDelimiter + baseName + config.ProgramDelimiter + selectedVariant + config.PNG
-}
-
-func groupItemsByBaseName(itemNames []string, iconService *services.IconVariantService) []string {
-	baseNameSet := make(map[string]bool)
-	for _, itemName := range itemNames {
-		baseName := iconService.GetBaseItemName(itemName)
-		baseNameSet[baseName] = true
-	}
-	baseNames := make([]string, 0, len(baseNameSet))
-	for baseName := range baseNameSet {
-		baseNames = append(baseNames, baseName)
-	}
-	slices.Sort(baseNames)
-	return baseNames
 }
 
 func createOcrDialogContent(action *actions.Ocr) (fyne.CanvasObject, func()) {

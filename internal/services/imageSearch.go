@@ -28,15 +28,20 @@ func imageSearch(a *actions.ImageSearch, macro *models.Macro) (map[string][]robo
 	}
 	w := rightX - leftX
 	h := bottomY - topY
-	log.Printf("Image Searching | %v in X1:%d Y1:%d X2:%d Y2:%d", a.Targets, leftX, topY, rightX, bottomY)
-	if w+h == 0 {
-		err := fmt.Errorf("image search failed: cannot have an empty search area")
-		log.Println(err)
+	if w <= 0 || h <= 0 {
+		err := fmt.Errorf("image search: invalid search area (width=%d height=%d); need positive dimensions", w, h)
+		log.Printf("Image Search: %v (macro continues)", err)
 		return nil, err
 	}
+	log.Printf("Image Searching | %v in X1:%d Y1:%d X2:%d Y2:%d", a.Targets, leftX, topY, rightX, bottomY)
 	captureImg, err := robotgo.CaptureImg(leftX+config.XOffset, topY+config.YOffset, w, h)
 	if err != nil {
-		log.Println("image search failed:", err)
+		log.Printf("Image Search: capture failed: %v (macro continues)", err)
+		return nil, err
+	}
+	if captureImg == nil {
+		err := fmt.Errorf("image search: capture returned nil (invalid search area or display)")
+		log.Printf("Image Search: %v (macro continues)", err)
 		return nil, err
 	}
 	img, err := gocv.ImageToMatRGB(captureImg)
@@ -128,7 +133,7 @@ func match(img, imgDraw gocv.Mat, a *actions.ImageSearch) map[string][]robotgo.P
 				// 	return
 				// }
 
-				matches := FindTemplateMatches(img, template, Imask, tmask, cmask, a.Tolerance)
+				matches := FindTemplateMatches(img, template, Imask, tmask, cmask, a.Tolerance, a.Blur)
 				DrawFoundMatches(matches, template.Cols(), template.Rows(), imgDraw, i.Name) // draw rect at top-left
 				// Offset each match to the center of the icon (click middle, not top-left)
 				halfW := template.Cols() / 2
@@ -151,7 +156,7 @@ func match(img, imgDraw gocv.Mat, a *actions.ImageSearch) map[string][]robotgo.P
 	return results
 }
 
-func FindTemplateMatches(img, template, imask, tmask, cmask gocv.Mat, threshold float32) []robotgo.Point {
+func FindTemplateMatches(img, template, imask, tmask, cmask gocv.Mat, threshold float32, blur int) []robotgo.Point {
 	result := gocv.NewMat()
 	defer result.Close()
 
@@ -159,7 +164,10 @@ func FindTemplateMatches(img, template, imask, tmask, cmask gocv.Mat, threshold 
 	t := template.Clone()
 	defer i.Close()
 	defer t.Close()
-	kernel := image.Point{X: 5, Y: 5}
+	if blur <= 0 {
+		blur = 5
+	}
+	kernel := image.Point{X: blur, Y: blur}
 
 	// if Imask.Rows() > 0 && Imask.Cols() > 0 {
 	// 	gocv.Subtract(i, Imask, &i)

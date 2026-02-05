@@ -78,7 +78,7 @@ func ParseVariableReference(text string) []string {
 }
 
 // EvaluateExpression evaluates a mathematical expression with variable substitution
-// Supports: +, -, *, /, ^, functions (sqrt, abs, round, floor, ceil, trunc, sin, cos, tan, ln), constants (pi, e)
+// Supports: +, -, *, /, ^, functions (sqrt, abs, round, floor, ceil, trunc, sin, cos, tan, ln), constants (~pi, ~e)
 func EvaluateExpression(expr string, macro *models.Macro) (interface{}, error) {
 	// First resolve variables in the expression
 	resolved, err := ResolveVariables(expr, macro)
@@ -86,9 +86,9 @@ func EvaluateExpression(expr string, macro *models.Macro) (interface{}, error) {
 		return nil, err
 	}
 
-	// Replace constants
-	resolved = strings.ReplaceAll(resolved, "pi", fmt.Sprintf("%f", math.Pi))
-	resolved = strings.ReplaceAll(resolved, "e", fmt.Sprintf("%f", math.E))
+	// Replace escaped constants (~pi, ~e)
+	resolved = strings.ReplaceAll(resolved, "~pi", fmt.Sprintf("%f", math.Pi))
+	resolved = strings.ReplaceAll(resolved, "~e", fmt.Sprintf("%f", math.E))
 
 	// Replace function names with their values
 	resolved = replaceFunctions(resolved)
@@ -395,6 +395,20 @@ func parseNumber(s string) (float64, error) {
 	return strconv.ParseFloat(s, 64)
 }
 
+// checkUnresolvedVariable returns an error if s still contains an unresolved variable reference.
+func checkUnresolvedVariable(s string) error {
+	if strings.Contains(s, "${") {
+		if sub := varPattern.FindStringSubmatch(s); len(sub) > 1 {
+			return fmt.Errorf("variable %q not defined (set by an earlier Image Search output or macro variables; check execution order and matching names)", sub[1])
+		}
+		return fmt.Errorf("unresolved variable reference: %s", s)
+	}
+	if sub := varPatternAlt.FindStringSubmatch(s); len(sub) > 1 && !strings.HasPrefix(s, "${") {
+		return fmt.Errorf("variable %q not defined (set by an earlier Image Search output or macro variables; check execution order and matching names)", sub[1])
+	}
+	return nil
+}
+
 // ResolveInt resolves a variable reference or expression to an integer
 func ResolveInt(value interface{}, macro *models.Macro) (int, error) {
 	switch v := value.(type) {
@@ -408,8 +422,12 @@ func ResolveInt(value interface{}, macro *models.Macro) (int, error) {
 		if err != nil {
 			return 0, err
 		}
-		// Try to evaluate as expression
-		if strings.ContainsAny(resolved, "+-*/^(){}[]$") {
+		// Unresolved variable reference (e.g. variable not defined)
+		if err := checkUnresolvedVariable(resolved); err != nil {
+			return 0, err
+		}
+		// Try to evaluate as expression (only if it looks like one: has operators)
+		if strings.ContainsAny(resolved, "+-*/^()") {
 			result, err := EvaluateExpression(resolved, macro)
 			if err != nil {
 				return 0, err
@@ -442,7 +460,11 @@ func ResolveFloat(value interface{}, macro *models.Macro) (float64, error) {
 		if err != nil {
 			return 0, err
 		}
-		// Try to evaluate as expression
+		// Unresolved variable reference (e.g. variable not defined)
+		if err := checkUnresolvedVariable(resolved); err != nil {
+			return 0, err
+		}
+		// Try to evaluate as expression (only if it looks like one: has operators)
 		if strings.ContainsAny(resolved, "+-*/^()") {
 			result, err := EvaluateExpression(resolved, macro)
 			if err != nil {
