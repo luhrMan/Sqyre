@@ -71,8 +71,8 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 	variableActionsSubMenu.ChildMenu = fyne.NewMenu("",
 		fyne.NewMenuItem("Set", func() { addActionAndRefresh(actions.NewSetVariable("", "")) }),
 		fyne.NewMenuItem("Calculate", func() { addActionAndRefresh(actions.NewCalculate("", "")) }),
-		fyne.NewMenuItem("Data List", func() { addActionAndRefresh(actions.NewDataList("", "", false)) }),
-		fyne.NewMenuItem("Save to file", func() { addActionAndRefresh(actions.NewSaveVariable("", "", false, false)) }),
+		fyne.NewMenuItem("Read from", func() { addActionAndRefresh(actions.NewDataList("", "", false)) }),
+		fyne.NewMenuItem("Save to", func() { addActionAndRefresh(actions.NewSaveVariable("", "", false, false)) }),
 	)
 
 	computerInfo := fyne.NewMenuItem("Computer info", func() {
