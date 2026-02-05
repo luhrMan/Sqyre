@@ -4,8 +4,8 @@ package models
 // X and Y may be int (literal) or string (variable reference e.g. "${resultX}").
 type Point struct {
 	Name string
-	X    interface{}
-	Y    interface{}
+	X    any
+	Y    any
 }
 
 // GetKey returns the unique identifier for this Point.
@@ -22,10 +22,10 @@ func (p *Point) SetKey(key string) {
 // LeftX, TopY, RightX, and BottomY may be int (literal) or string (variable reference e.g. "${leftX}").
 type SearchArea struct {
 	Name    string
-	LeftX   interface{}
-	TopY    interface{}
-	RightX  interface{}
-	BottomY interface{}
+	LeftX   any
+	TopY    any
+	RightX  any
+	BottomY any
 }
 
 // GetKey returns the unique identifier for this SearchArea.

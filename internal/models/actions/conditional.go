@@ -2,10 +2,10 @@ package actions
 
 // type ConditionalAction struct {
 // 	advancedAction
-// 	Condition func(interface{}) bool
+// 	Condition func(any) bool
 // }
 
-// func (a *ConditionalAction) Execute(ctx interface{}) error {
+// func (a *ConditionalAction) Execute(ctx any) error {
 // 	if a.Condition(ctx) {
 // 		fmt.Println("Condition true. Executing subactions")
 // 		for _, action := range a.SubActions {

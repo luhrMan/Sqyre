@@ -4,20 +4,20 @@ import "strings"
 
 // VariableStore manages variables for a macro
 type VariableStore struct {
-	Variables map[string]interface{} `yaml:"variables"`
+	Variables map[string]any `yaml:"variables"`
 }
 
 // NewVariableStore creates a new VariableStore
 func NewVariableStore() *VariableStore {
 	return &VariableStore{
-		Variables: make(map[string]interface{}),
+		Variables: make(map[string]any),
 	}
 }
 
 // Set sets a variable value (name is trimmed so "foundX" and " foundX " match)
-func (vs *VariableStore) Set(name string, value interface{}) {
+func (vs *VariableStore) Set(name string, value any) {
 	if vs.Variables == nil {
-		vs.Variables = make(map[string]interface{})
+		vs.Variables = make(map[string]any)
 	}
 	name = strings.TrimSpace(name)
 	if name == "" {
@@ -27,7 +27,7 @@ func (vs *VariableStore) Set(name string, value interface{}) {
 }
 
 // Get retrieves a variable value
-func (vs *VariableStore) Get(name string) (interface{}, bool) {
+func (vs *VariableStore) Get(name string) (any, bool) {
 	if vs.Variables == nil {
 		return nil, false
 	}
@@ -37,7 +37,7 @@ func (vs *VariableStore) Get(name string) (interface{}, bool) {
 
 // Clear removes all variables
 func (vs *VariableStore) Clear() {
-	vs.Variables = make(map[string]interface{})
+	vs.Variables = make(map[string]any)
 }
 
 // Has checks if a variable exists
