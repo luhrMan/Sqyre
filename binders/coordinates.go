@@ -190,8 +190,10 @@ func setAccordionPointsLists(acc *widget.Accordion) {
 			}
 			ui.GetUi().EditorTabs.PointsTab.SelectedItem = point
 			setPointWidgets(*point)
-			if v, ok := ui.GetUi().Mui.MTabs.SelectedTab().Macro.Root.GetAction(ui.GetUi().Mui.MTabs.SelectedTab().SelectedNode).(*actions.Move); ok {
-				v.Point = actions.Point{Name: point.Name, X: point.X, Y: point.Y}
+			if st := ui.GetUi().Mui.MTabs.SelectedTab(); st != nil {
+				if v, ok := st.Macro.Root.GetAction(st.SelectedNode).(*actions.Move); ok {
+					v.Point = actions.Point{Name: point.Name, X: point.X, Y: point.Y}
+				}
 			}
 			if ui.GetUi().MainUi.Navigation.Visible() {
 				lists.points.Unselect(id)

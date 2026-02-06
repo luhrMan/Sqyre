@@ -31,6 +31,9 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 	addActionAndRefresh :=
 		func(a actions.ActionInterface) {
 			mt := u.Mui.MTabs.SelectedTab()
+			if mt == nil {
+				return
+			}
 			selectedNode := mt.Macro.Root.GetAction(mt.SelectedNode)
 			if selectedNode == nil {
 				selectedNode = mt.Macro.Root
@@ -91,8 +94,10 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 			fynetooltip.AddWindowToolTipLayer(u.EditorUi.CanvasObject, u.Window.Canvas()),
 			"Editor",
 		)
-		GetUi().Mui.MTabs.SelectedTab().UnselectAll()
-		GetUi().Mui.MTabs.SelectedTab().SelectedNode = ""
+		if mt := GetUi().Mui.MTabs.SelectedTab(); mt != nil {
+			mt.UnselectAll()
+			mt.SelectedNode = ""
+		}
 	})
 
 	// testMenu := fyne.NewMenu("Test",

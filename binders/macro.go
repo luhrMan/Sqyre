@@ -79,9 +79,11 @@ func setMtabSettingsAndWidgets() {
 
 	mtabs.OnUnselected = func(ti *container.TabItem) {
 		mt := mtabs.SelectedTab()
-		mt.UnselectAll()
-		mt.SelectedNode = ""
-		RefreshItemsAccordionItems()
+		if mt != nil {
+			mt.UnselectAll()
+			mt.SelectedNode = ""
+			RefreshItemsAccordionItems()
+		}
 	}
 	mtabs.OnSelected = func(ti *container.TabItem) {
 		m, err := repositories.MacroRepo().Get(ti.Text)
@@ -99,6 +101,9 @@ func setMtabSettingsAndWidgets() {
 	mtabs.MacroHotkeyEntry.PlaceHolder = "ctrl+shift+1 or ctrl+1 or ctrl+a+1"
 	saveHotkey := func() {
 		mt := mtabs.SelectedTab()
+		if mt == nil {
+			return
+		}
 		m := mt.Macro
 		services.UnregisterHotkey(mt.Macro.Hotkey)
 		m.Hotkey = services.ParseMacroHotkey(mtabs.MacroHotkeyEntry.Text)
@@ -125,6 +130,9 @@ func setMtabSettingsAndWidgets() {
 		}
 
 		mt := mtabs.SelectedTab()
+		if mt == nil {
+			return
+		}
 
 		repositories.MacroRepo().Delete(mt.Macro.Name)
 
@@ -138,6 +146,9 @@ func setMtabSettingsAndWidgets() {
 	}
 	mtabs.BoundGlobalDelayEntry.OnChanged = func(s string) {
 		mt := mtabs.SelectedTab()
+		if mt == nil {
+			return
+		}
 		gd, _ := strconv.Atoi(s)
 
 		mt.Macro.GlobalDelay = gd
@@ -146,6 +157,9 @@ func setMtabSettingsAndWidgets() {
 	}
 	mtabs.BoundGlobalDelayEntry.OnSubmitted = func(s string) {
 		mt := mtabs.SelectedTab()
+		if mt == nil {
+			return
+		}
 		repositories.MacroRepo().Set(mt.Macro.Name, mt.Macro)
 	}
 }
@@ -234,8 +248,13 @@ func setMacroSelect(b *widget.Button) {
 
 // MACRO TREE
 func setMacroTree(mt *ui.MacroTree) {
+	if mt == nil {
+		return
+	}
 	mt.Tree.OnSelected = func(uid widget.TreeNodeID) {
-		ui.GetUi().Mui.MTabs.SelectedTab().SelectedNode = uid
+		if st := ui.GetUi().Mui.MTabs.SelectedTab(); st != nil {
+			st.SelectedNode = uid
+		}
 	}
 	mt.OnOpenActionDialog = func(action actions.ActionInterface) {
 		if action == nil {

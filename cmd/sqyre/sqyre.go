@@ -32,15 +32,15 @@ func init() {
 	services.FailsafeHotkey()
 
 	// Initialize YAML config with proper file path
-	yamlConfig := serialize.GetYAMLConfig()
-	yamlConfig.SetConfigFile("../../internal/config/config.yaml")
-	if err := yamlConfig.ReadConfig(); err != nil {
+	yamlDb := serialize.GetYAMLConfig()
+	yamlDb.SetConfigFile(config.GetDbPath())
+	if err := yamlDb.ReadConfig(); err != nil {
 		log.Printf("Warning: Failed to read config file: %v", err)
 	}
 
-	serialize.Decode() // read config.yaml data and save into GO structs
+	serialize.Decode() // read db.yaml data and save into GO structs
 
-	// Initialize repositories - they will load data from config.yaml
+	// Initialize repositories - they will load data from db.yaml
 	macroRepo := repositories.MacroRepo()
 	log.Printf("Initialized MacroRepository with %d macros", macroRepo.Count())
 
