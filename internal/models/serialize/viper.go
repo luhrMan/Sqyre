@@ -1,8 +1,11 @@
 package serialize
 
 import (
+	"Squire/internal/config"
 	"Squire/internal/models/actions"
 	"fmt"
+	"os"
+	"path/filepath"
 	"reflect"
 
 	"github.com/go-viper/mapstructure/v2"
@@ -31,18 +34,42 @@ func GetViper() *viper.Viper {
 // }
 
 func Decode() error {
-	// v := viper.New()
-	// ViperInit()
+	configPath := config.GetDbPath()
 
-	GetViper().AddConfigPath("../../internal/config/")
+	// Ensure ~/Sqyre exists; create default config if missing
+	if err := ensureConfigFile(configPath); err != nil {
+		return fmt.Errorf("config setup: %w", err)
+	}
 
-	GetViper().SetConfigName("config")
+	GetViper().SetConfigFile(configPath)
 	GetViper().SetConfigType("yaml")
-	err := GetViper().ReadInConfig()
-	if err != nil {
+	if err := GetViper().ReadInConfig(); err != nil {
 		return fmt.Errorf("viper error reading in file: %v", err)
 	}
 
+	// Point YAMLConfig at the same file so repositories read/write ~/Sqyre/db.yaml
+	GetYAMLConfig().SetConfigFile(configPath)
+	if err := GetYAMLConfig().ReadConfig(); err != nil {
+		return fmt.Errorf("yaml db read: %w", err)
+	}
+
+	return nil
+}
+
+// ensureConfigFile creates ~/Sqyre and a minimal db.yaml if the file does not exist.
+func ensureConfigFile(configPath string) error {
+	if _, err := os.Stat(configPath); err == nil {
+		return nil
+	}
+	dir := filepath.Dir(configPath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("create config dir: %w", err)
+	}
+	// Write minimal config so Viper and YAMLConfig can load
+	body := []byte("macros: {}\nprograms: {}\n")
+	if err := os.WriteFile(configPath, body, 0644); err != nil {
+		return fmt.Errorf("write default config: %w", err)
+	}
 	return nil
 }
 

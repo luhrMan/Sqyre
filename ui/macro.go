@@ -38,21 +38,30 @@ func (u *Ui) constructMacroUi() *fyne.Container {
 	// })
 	unselectNodeButton := ttwidget.NewButtonWithIcon("", theme.RadioButtonIcon(), func() {
 		st := mui.MTabs.SelectedTab()
+		if st == nil {
+			return
+		}
 		st.UnselectAll()
 		st.SelectedNode = ""
 	})
 
 	moveDownNodeButton := ttwidget.NewButtonWithIcon("", assets.ChevronDownIcon, func() {
 		st := mui.MTabs.SelectedTab()
+		if st == nil {
+			return
+		}
 		st.moveNode(st.SelectedNode, false)
 	})
 	moveUpNodeButton := ttwidget.NewButtonWithIcon("", assets.ChevronUpIcon, func() {
 		st := mui.MTabs.SelectedTab()
+		if st == nil {
+			return
+		}
 		st.moveNode(st.SelectedNode, true)
 	})
 	copyNodeButton := ttwidget.NewButtonWithIcon("", theme.ContentCopyIcon(), func() {
 		st := mui.MTabs.SelectedTab()
-		if st.SelectedNode == "" {
+		if st == nil || st.SelectedNode == "" {
 			return
 		}
 		node := st.Macro.Root.GetAction(st.SelectedNode)
@@ -67,10 +76,16 @@ func (u *Ui) constructMacroUi() *fyne.Container {
 	})
 	pasteNodeButton := ttwidget.NewButtonWithIcon("", theme.ContentPasteIcon(), func() {
 		st := mui.MTabs.SelectedTab()
+		if st == nil {
+			return
+		}
 		st.PasteNode(copiedNodeMap)
 	})
 	playMacroButton := ttwidget.NewButtonWithIcon("", theme.MediaPlayIcon(), func() {
 		st := mui.MTabs.SelectedTab()
+		if st == nil {
+			return
+		}
 		go func() {
 			services.Execute(st.Macro.Root, st.Macro)
 		}()

@@ -22,20 +22,20 @@ func setupTestConfig(t *testing.T) {
 
 	// Configure YAML config to use writeable test config
 	yamlConfig := serialize.GetYAMLConfig()
-	configPath := filepath.Join(testdataPath, "writeable-config.yaml")
+	configPath := filepath.Join(testdataPath, "writeable-db.yaml")
 	yamlConfig.SetConfigFile(configPath)
-	
+
 	// Read the base config first
-	baseConfigPath := filepath.Join(testdataPath, "config.yaml")
+	baseConfigPath := filepath.Join(testdataPath, "db.yaml")
 	yamlConfig.SetConfigFile(baseConfigPath)
 	if err := yamlConfig.ReadConfig(); err != nil {
-		t.Fatalf("Failed to read test config: %v", err)
+		t.Fatalf("Failed to read test db: %v", err)
 	}
-	
+
 	// Set to writeable config for tests
 	yamlConfig.SetConfigFile(configPath)
 	if err := yamlConfig.WriteConfig(); err != nil {
-		t.Fatalf("Failed to write test config: %v", err)
+		t.Fatalf("Failed to write test db: %v", err)
 	}
 }
 

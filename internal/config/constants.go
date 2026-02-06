@@ -91,6 +91,26 @@ func GetVariablesPath() string {
 	return filepath.Join(homeDir, SqyreDir, UserVariablesDir)
 }
 
+// GetDbPath returns the path to the config file in the user's home directory.
+// Returns: ~/Sqyre/db.yaml
+func GetDbPath() string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		log.Fatalf("Could not get user home directory: %v", err)
+	}
+	return filepath.Join(homeDir, SqyreDir, "db.yaml")
+}
+
+// GetSqyreDir returns the Sqyre application directory in the user's home directory.
+// Returns: ~/Sqyre/
+func GetSqyreDir() string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		log.Fatalf("Could not get user home directory: %v", err)
+	}
+	return filepath.Join(homeDir, SqyreDir)
+}
+
 // InitializeDirectories creates the necessary directories in the user's home directory
 // Creates: ~/Sqyre/images/icons/, ~/Sqyre/variables/, etc.
 func InitializeDirectories() error {
