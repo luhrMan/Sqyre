@@ -3,10 +3,8 @@ package ui
 import (
 	"log"
 
-	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
-	"github.com/google/uuid"
 )
 
 type MacroTabs struct {
@@ -43,13 +41,10 @@ func (mtabs *MacroTabs) AddTab(name string, t *container.TabItem) {
 	mtabs.Select(t)
 }
 
+// SelectedTab returns the currently selected macro tree, or nil if no tab is open.
 func (mtabs *MacroTabs) SelectedTab() *MacroTree {
 	if mtabs.Selected() == nil {
-		t := mtabs.CreateTab()
-		go fyne.DoAndWait(func() {
-			mtabs.AddTab(uuid.NewString(), t)
-		})
-		return t.Content.(*MacroTree)
+		return nil
 	}
 	return mtabs.Selected().Content.(*MacroTree)
 }

@@ -278,7 +278,11 @@ func createProgramAccordionItem(program *models.Program) *widget.AccordionItem {
 			if !ui.GetUi().MainUi.Navigation.Visible() {
 				return nil
 			}
-			if v, ok := ui.GetUi().Mui.MTabs.SelectedTab().Macro.Root.GetAction(ui.GetUi().Mui.MTabs.SelectedTab().SelectedNode).(*actions.ImageSearch); ok {
+			st := ui.GetUi().Mui.MTabs.SelectedTab()
+			if st == nil {
+				return nil
+			}
+			if v, ok := st.Macro.Root.GetAction(st.SelectedNode).(*actions.ImageSearch); ok {
 				return v.Targets
 			}
 			return nil
@@ -301,14 +305,17 @@ func createProgramAccordionItem(program *models.Program) *widget.AccordionItem {
 			}
 			ui.GetUi().EditorTabs.ItemsTab.SelectedItem = item
 			if ui.GetUi().MainUi.Navigation.Visible() {
-				if v, ok := ui.GetUi().Mui.MTabs.SelectedTab().Macro.Root.GetAction(ui.GetUi().Mui.MTabs.SelectedTab().SelectedNode).(*actions.ImageSearch); ok {
-					name := programName + config.ProgramDelimiter + baseItemName
-					if i := slices.Index(v.Targets, name); i != -1 {
-						v.Targets = slices.Delete(v.Targets, i, i+1)
-					} else {
-						v.Targets = append(v.Targets, name)
+				st := ui.GetUi().Mui.MTabs.SelectedTab()
+				if st != nil {
+					if v, ok := st.Macro.Root.GetAction(st.SelectedNode).(*actions.ImageSearch); ok {
+						name := programName + config.ProgramDelimiter + baseItemName
+						if i := slices.Index(v.Targets, name); i != -1 {
+							v.Targets = slices.Delete(v.Targets, i, i+1)
+						} else {
+							v.Targets = append(v.Targets, name)
+						}
+						st.Tree.RefreshItem(v.GetUID())
 					}
-					ui.GetUi().Mui.MTabs.SelectedTab().Tree.RefreshItem(v.GetUID())
 				}
 			}
 			setItemsWidgets(*item)
@@ -321,9 +328,13 @@ func createProgramAccordionItem(program *models.Program) *widget.AccordionItem {
 			if !ui.GetUi().MainUi.Navigation.Visible() {
 				return
 			}
-			if v, ok := ui.GetUi().Mui.MTabs.SelectedTab().Macro.Root.GetAction(ui.GetUi().Mui.MTabs.SelectedTab().SelectedNode).(*actions.ImageSearch); ok {
+			st := ui.GetUi().Mui.MTabs.SelectedTab()
+			if st == nil {
+				return
+			}
+			if v, ok := st.Macro.Root.GetAction(st.SelectedNode).(*actions.ImageSearch); ok {
 				v.Targets = newTargets
-				ui.GetUi().Mui.MTabs.SelectedTab().Tree.RefreshItem(v.GetUID())
+				st.Tree.RefreshItem(v.GetUID())
 			}
 		},
 	})
