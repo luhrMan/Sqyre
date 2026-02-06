@@ -499,6 +499,15 @@ func createImageSearchDialogContent(action *actions.ImageSearch) (fyne.CanvasObj
 	outputXVarEntry.SetText(action.OutputXVariable)
 	outputYVarEntry := widget.NewEntry()
 	outputYVarEntry.SetText(action.OutputYVariable)
+	waitTilFoundCheck := widget.NewCheck("Wait until found", nil)
+	waitTilFoundCheck.SetChecked(action.WaitTilFound)
+	waitTilFoundSecondsEntry := widget.NewEntry()
+	if action.WaitTilFoundSeconds <= 0 {
+		waitTilFoundSecondsEntry.SetText("10")
+	} else {
+		waitTilFoundSecondsEntry.SetText(fmt.Sprintf("%d", action.WaitTilFoundSeconds))
+	}
+	waitTilFoundSecondsEntry.SetPlaceHolder("Seconds to keep trying if not found")
 
 	// Temporary storage for changes (only applied on save)
 	tempSearchArea := action.SearchArea
@@ -671,6 +680,8 @@ func createImageSearchDialogContent(action *actions.ImageSearch) (fyne.CanvasObj
 					widget.NewFormItem("Blur:", blurEntry),
 					widget.NewFormItem("Output X Variable:", outputXVarEntry),
 					widget.NewFormItem("Output Y Variable:", outputYVarEntry),
+					widget.NewFormItem("", waitTilFoundCheck),
+					widget.NewFormItem("Timeout (seconds):", waitTilFoundSecondsEntry),
 				),
 			),
 			previewBox,
@@ -712,6 +723,10 @@ func createImageSearchDialogContent(action *actions.ImageSearch) (fyne.CanvasObj
 		}
 		action.OutputXVariable = outputXVarEntry.Text
 		action.OutputYVariable = outputYVarEntry.Text
+		action.WaitTilFound = waitTilFoundCheck.Checked
+		if s, err := strconv.Atoi(waitTilFoundSecondsEntry.Text); err == nil && s >= 0 {
+			action.WaitTilFoundSeconds = s
+		}
 		// Apply temporary changes
 		action.SearchArea = tempSearchArea
 		action.Targets = tempTargets
@@ -753,6 +768,15 @@ func createOcrDialogContent(action *actions.Ocr) (fyne.CanvasObject, func()) {
 	targetEntry.SetText(action.Target)
 	outputVarEntry := widget.NewEntry()
 	outputVarEntry.SetText(action.OutputVariable)
+	waitTilFoundCheck := widget.NewCheck("Wait until found", nil)
+	waitTilFoundCheck.SetChecked(action.WaitTilFound)
+	waitTilFoundSecondsEntry := widget.NewEntry()
+	if action.WaitTilFoundSeconds <= 0 {
+		waitTilFoundSecondsEntry.SetText("10")
+	} else {
+		waitTilFoundSecondsEntry.SetText(fmt.Sprintf("%d", action.WaitTilFoundSeconds))
+	}
+	waitTilFoundSecondsEntry.SetPlaceHolder("Seconds to keep trying if not found")
 
 	// Temporary storage for changes (only applied on save)
 	tempSearchArea := action.SearchArea
@@ -841,6 +865,8 @@ func createOcrDialogContent(action *actions.Ocr) (fyne.CanvasObject, func()) {
 		widget.NewFormItem("Name:", nameEntry),
 		widget.NewFormItem("Text Target:", targetEntry),
 		widget.NewFormItem("Output Variable:", outputVarEntry),
+		widget.NewFormItem("", waitTilFoundCheck),
+		widget.NewFormItem("Timeout (seconds):", waitTilFoundSecondsEntry),
 	)
 
 	content := container.NewHSplit(
@@ -859,6 +885,10 @@ func createOcrDialogContent(action *actions.Ocr) (fyne.CanvasObject, func()) {
 		action.Name = nameEntry.Text
 		action.Target = targetEntry.Text
 		action.OutputVariable = outputVarEntry.Text
+		action.WaitTilFound = waitTilFoundCheck.Checked
+		if s, err := strconv.Atoi(waitTilFoundSecondsEntry.Text); err == nil && s >= 0 {
+			action.WaitTilFoundSeconds = s
+		}
 		action.SearchArea = tempSearchArea
 	}
 

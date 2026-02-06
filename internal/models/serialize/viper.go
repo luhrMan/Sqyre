@@ -165,9 +165,40 @@ func (s *serializer) CreateActionFromMap(rawMap map[string]any, parent actions.A
 			if v, ok := rawMap["outputyvariable"].(string); ok {
 				is.OutputYVariable = v
 			}
+			if v, ok := rawMap["waittilfound"].(bool); ok {
+				is.WaitTilFound = v
+			}
+			if v := rawMap["waittilfoundseconds"]; v != nil {
+				switch s := v.(type) {
+				case int:
+					is.WaitTilFoundSeconds = s
+				case int64:
+					is.WaitTilFoundSeconds = int(s)
+				case float64:
+					is.WaitTilFoundSeconds = int(s)
+				}
+			}
 		}
 	case "ocr":
 		action = actions.NewOcr(rawMap["name"].(string), []actions.ActionInterface{}, rawMap["target"].(string), createSearchBox(rawMap["searcharea"].(map[string]any)))
+		if oc, ok := action.(*actions.Ocr); ok {
+			if v, ok := rawMap["outputvariable"].(string); ok {
+				oc.OutputVariable = v
+			}
+			if v, ok := rawMap["waittilfound"].(bool); ok {
+				oc.WaitTilFound = v
+			}
+			if v := rawMap["waittilfoundseconds"]; v != nil {
+				switch s := v.(type) {
+				case int:
+					oc.WaitTilFoundSeconds = s
+				case int64:
+					oc.WaitTilFoundSeconds = int(s)
+				case float64:
+					oc.WaitTilFoundSeconds = int(s)
+				}
+			}
+		}
 	case "setvariable":
 		action = actions.NewSetVariable(rawMap["variablename"].(string), rawMap["value"])
 	case "calculate":
