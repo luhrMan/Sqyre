@@ -8,6 +8,7 @@ import (
 	"log"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"github.com/go-vgo/robotgo"
@@ -135,6 +136,16 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 		if err != nil {
 			return err
 		}
+		if node.WaitTilFound && node.WaitTilFoundSeconds > 0 {
+			deadline := time.Now().Add(time.Duration(node.WaitTilFoundSeconds) * time.Second)
+			for len(SortListOfPoints(results)) == 0 && time.Now().Before(deadline) {
+				time.Sleep(500 * time.Millisecond)
+				results, err = imageSearch(node, macro)
+				if err != nil {
+					return err
+				}
+			}
+		}
 		searchLeftX, err := ResolveInt(node.SearchArea.LeftX, macro)
 		if err != nil {
 			log.Printf("Image Search: failed to resolve SearchArea.LeftX %v: %v, using 0", node.SearchArea.LeftX, err)
@@ -189,6 +200,17 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 		if err != nil {
 			log.Println(err)
 			return err
+		}
+		if node.WaitTilFound && node.WaitTilFoundSeconds > 0 {
+			deadline := time.Now().Add(time.Duration(node.WaitTilFoundSeconds) * time.Second)
+			for !strings.Contains(foundText, node.Target) && time.Now().Before(deadline) {
+				time.Sleep(500 * time.Millisecond)
+				foundText, err = OCR(node, macro)
+				if err != nil {
+					log.Println(err)
+					return err
+				}
+			}
 		}
 
 		// Store found text in variable if configured

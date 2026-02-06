@@ -47,6 +47,10 @@ func ActionToMap(action actions.ActionInterface) (map[string]any, error) {
 		if a.OutputYVariable != "" {
 			m["outputyvariable"] = a.OutputYVariable
 		}
+		if a.WaitTilFound {
+			m["waittilfound"] = a.WaitTilFound
+			m["waittilfoundseconds"] = a.WaitTilFoundSeconds
+		}
 		subs, err := subActionsToMaps(a.GetSubActions())
 		if err != nil {
 			return nil, err
@@ -56,6 +60,13 @@ func ActionToMap(action actions.ActionInterface) (map[string]any, error) {
 		m["name"] = a.Name
 		m["target"] = a.Target
 		m["searcharea"] = searchAreaToMap(a.SearchArea)
+		if a.OutputVariable != "" {
+			m["outputvariable"] = a.OutputVariable
+		}
+		if a.WaitTilFound {
+			m["waittilfound"] = a.WaitTilFound
+			m["waittilfoundseconds"] = a.WaitTilFoundSeconds
+		}
 		subs, err := subActionsToMaps(a.GetSubActions())
 		if err != nil {
 			return nil, err

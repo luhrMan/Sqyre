@@ -10,15 +10,17 @@ import (
 )
 
 type ImageSearch struct {
-	Targets         []string   `mapstructure:"targets"`
-	SearchArea      SearchArea `mapstructure:"searcharea"`
-	RowSplit        int        `mapstructure:"rowsplit"`
-	ColSplit        int        `mapstructure:"colsplit"`
-	Tolerance       float32    `mapstructure:"tolerance"`
-	Blur            int        `mapstructure:"blur"`
-	OutputXVariable string     `mapstructure:"outputxvariable"` // Variable name to store X coordinate
-	OutputYVariable string     `mapstructure:"outputyvariable"` // Variable name to store Y coordinate
-	*AdvancedAction `yaml:",inline" mapstructure:",squash"`
+	Targets               []string   `mapstructure:"targets"`
+	SearchArea            SearchArea `mapstructure:"searcharea"`
+	RowSplit              int        `mapstructure:"rowsplit"`
+	ColSplit              int        `mapstructure:"colsplit"`
+	Tolerance             float32    `mapstructure:"tolerance"`
+	Blur                  int        `mapstructure:"blur"`
+	OutputXVariable       string     `mapstructure:"outputxvariable"`       // Variable name to store X coordinate
+	OutputYVariable       string     `mapstructure:"outputyvariable"`       // Variable name to store Y coordinate
+	WaitTilFound          bool       `mapstructure:"waittilfound"`          // If true, retry until found or timeout
+	WaitTilFoundSeconds   int        `mapstructure:"waittilfoundseconds"`   // Max seconds to keep trying when WaitTilFound (then continue without match)
+	*AdvancedAction       `yaml:",inline" mapstructure:",squash"`
 }
 
 func NewImageSearch(name string, subActions []ActionInterface, targets []string, searchbox SearchArea, rs, cs int, tol float32, blur int) *ImageSearch {
