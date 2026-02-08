@@ -134,6 +134,22 @@ func (s *serializer) CreateActionFromMap(rawMap map[string]any, parent actions.A
 		action = actions.NewLoop(countVal, rawMap["name"].(string), []actions.ActionInterface{})
 	case "wait":
 		action = actions.NewWait(rawMap["time"].(int))
+	case "waitforpixel":
+		name := stringFromMap(rawMap, "name")
+		point := actions.Point{}
+		if pm, ok := rawMap["point"].(map[string]any); ok {
+			point = createPoint(pm)
+		}
+		targetColor := stringFromMap(rawMap, "targetcolor")
+		if targetColor == "" {
+			targetColor = "ffffff"
+		}
+		colorTolerance := intFromMap(rawMap["colortolerance"])
+		if colorTolerance < 0 || colorTolerance > 100 {
+			colorTolerance = 0
+		}
+		timeoutSeconds := intFromMap(rawMap["timeoutseconds"])
+		action = actions.NewWaitForPixel(name, point, targetColor, colorTolerance, timeoutSeconds, []actions.ActionInterface{})
 	case "click":
 		hold := false
 		if v, ok := rawMap["hold"].(bool); ok {
@@ -227,6 +243,38 @@ func (s *serializer) CreateActionFromMap(rawMap map[string]any, parent actions.A
 			appendNewline = nlVal.(bool)
 		}
 		action = actions.NewSaveVariable(rawMap["variablename"].(string), rawMap["destination"].(string), append, appendNewline)
+	case "calibration":
+		name := stringFromMap(rawMap, "name")
+		programName := stringFromMap(rawMap, "programname")
+		searchArea := actions.SearchArea{}
+		if sa, ok := rawMap["searcharea"].(map[string]any); ok && len(sa) > 0 {
+			searchArea = createSearchBox(sa)
+		}
+		targets := calibrationTargetsFromMap(rawMap["targets"])
+		rowSplit, colSplit := 1, 1
+		if v := rawMap["rowsplit"]; v != nil {
+			rowSplit = intFromMap(v)
+		}
+		if v := rawMap["colsplit"]; v != nil {
+			colSplit = intFromMap(v)
+		}
+		tolerance := float32(0.95)
+		if v := rawMap["tolerance"]; v != nil {
+			switch t := v.(type) {
+			case float64:
+				tolerance = float32(t)
+			case float32:
+				tolerance = t
+			}
+		}
+		blur := 5
+		if v := rawMap["blur"]; v != nil {
+			blur = intFromMap(v)
+		}
+		action = actions.NewCalibration(name, programName, searchArea, targets, rowSplit, colSplit, tolerance, blur)
+		if cal, ok := action.(*actions.Calibration); ok {
+			cal.ResolutionKey = stringFromMap(rawMap, "resolutionkey")
+		}
 	}
 	action.SetParent(parent)
 	if advAction, ok := action.(actions.AdvancedActionInterface); ok {
@@ -265,13 +313,65 @@ func targetsFromMap(v any) []string {
 }
 
 func createSearchBox(rawMap map[string]any) actions.SearchArea {
+	name := ""
+	if n, ok := rawMap["name"].(string); ok {
+		name = n
+	}
 	return actions.SearchArea{
-		Name:    rawMap["name"].(string),
+		Name:    name,
 		LeftX:   valueAsIntOrString(rawMap["leftx"]),
 		TopY:    valueAsIntOrString(rawMap["topy"]),
 		RightX:  valueAsIntOrString(rawMap["rightx"]),
 		BottomY: valueAsIntOrString(rawMap["bottomy"]),
 	}
+}
+
+func stringFromMap(m map[string]any, key string) string {
+	if v, ok := m[key]; ok && v != nil {
+		if s, ok := v.(string); ok {
+			return s
+		}
+	}
+	return ""
+}
+
+func intFromMap(v any) int {
+	if v == nil {
+		return 0
+	}
+	switch n := v.(type) {
+	case int:
+		return n
+	case int64:
+		return int(n)
+	case float64:
+		return int(n)
+	default:
+		return 0
+	}
+}
+
+func calibrationTargetsFromMap(v any) []actions.CalibrationTarget {
+	if v == nil {
+		return nil
+	}
+	slice, ok := v.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]actions.CalibrationTarget, 0, len(slice))
+	for _, e := range slice {
+		m, ok := e.(map[string]any)
+		if !ok {
+			continue
+		}
+		out = append(out, actions.CalibrationTarget{
+			OutputName: stringFromMap(m, "outputname"),
+			OutputType: stringFromMap(m, "outputtype"),
+			Target:     stringFromMap(m, "target"),
+		})
+	}
+	return out
 }
 
 // valueAsIntOrString converts an any to either int or string as appropriate for SearchArea fields.
@@ -308,7 +408,7 @@ func pointCoordFromMap(rawMap map[string]any, key string) any {
 
 func createPoint(rawMap map[string]any) actions.Point {
 	return actions.Point{
-		Name: rawMap["name"].(string),
+		Name: stringFromMap(rawMap, "name"),
 		X:    pointCoordFromMap(rawMap, "x"),
 		Y:    pointCoordFromMap(rawMap, "y"),
 	}

@@ -70,6 +70,12 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 		fyne.NewMenuItem("OCR", func() {
 			addActionAndRefresh(actions.NewOcr("", []actions.ActionInterface{}, "template", actions.SearchArea{Name: "template search area"}))
 		}),
+		fyne.NewMenuItem("Calibration", func() {
+			addActionAndRefresh(actions.NewCalibration("", "", actions.SearchArea{}, nil, 1, 1, 0.95, 5))
+		}),
+		fyne.NewMenuItem("Wait for pixel", func() {
+			addActionAndRefresh(actions.NewWaitForPixel("", actions.Point{}, "ffffff", 0, 0, nil))
+		}),
 	)
 	variableActionsSubMenu.ChildMenu = fyne.NewMenu("",
 		fyne.NewMenuItem("Set", func() { addActionAndRefresh(actions.NewSetVariable("", "")) }),

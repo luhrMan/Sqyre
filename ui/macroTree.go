@@ -116,7 +116,7 @@ func (mt *MacroTree) setTree() {
 			actionIconBtn.OnTapped = func() { mt.OnOpenActionDialog(action) }
 		}
 
-		// For image search actions, show selected item icons in a horizontal scroll
+		// For image search actions, show selected item icons; for wait-for-pixel, show target color
 		itemIconsBox := itemIconsScroll.Content.(*fyne.Container)
 		itemIconsBox.Objects = itemIconsBox.Objects[:0]
 		if is, ok := node.(*actions.ImageSearch); ok && len(is.Targets) > 0 {
@@ -130,6 +130,13 @@ func (mt *MacroTree) setTree() {
 						itemIconsBox.Add(img)
 					}
 				}
+			}
+			itemIconsScroll.Show()
+		} else if wfp, ok := node.(*actions.WaitForPixel); ok {
+			if c, ok := hexToColor(wfp.TargetColor); ok {
+				swatch := canvas.NewRectangle(c)
+				swatch.SetMinSize(fyne.NewSize(treeItemIconSize, treeItemIconSize))
+				itemIconsBox.Add(swatch)
 			}
 			itemIconsScroll.Show()
 		} else {

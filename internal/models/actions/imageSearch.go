@@ -42,7 +42,7 @@ func (a *ImageSearch) String() string {
 	if a.WaitTilFound {
 		mode = fmt.Sprintf("wait %d seconds or until found", a.WaitTilFoundSeconds)
 	}
-	return fmt.Sprintf("%s | %d items in `%s` [%s]", a.Name, len(a.Targets), a.SearchArea.Name, mode)
+	return fmt.Sprintf("%s --- %d items in `%s` [%s]", a.Name, len(a.Targets), a.SearchArea.Name, mode)
 }
 
 func (a *ImageSearch) Icon() fyne.Resource {

@@ -137,7 +137,7 @@ func (u *Ui) constructMacroUi() *fyne.Container {
 	globaldelaytt := ttwidget.NewIcon(theme.HistoryIcon())
 	globaldelaytt.SetToolTip("global delay (ms)")
 	mui.MacroToolbars.BottomToolbar =
-		container.NewGridWithRows(2,
+		container.NewGridWithColumns(2,
 			container.NewBorder(
 				nil,
 				nil,
