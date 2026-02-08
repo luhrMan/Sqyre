@@ -275,6 +275,8 @@ func (s *serializer) CreateActionFromMap(rawMap map[string]any, parent actions.A
 		if cal, ok := action.(*actions.Calibration); ok {
 			cal.ResolutionKey = stringFromMap(rawMap, "resolutionkey")
 		}
+	case "focuswindow":
+		action = actions.NewFocusWindow(stringFromMap(rawMap, "windowtarget"))
 	}
 	action.SetParent(parent)
 	if advAction, ok := action.(actions.AdvancedActionInterface); ok {
