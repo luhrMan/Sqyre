@@ -288,6 +288,9 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 	case *actions.Calibration:
 		log.Println("Calibration:", node.String())
 		return RunCalibration(node, macro)
+	case *actions.FocusWindow:
+		log.Println("Focus Window:", node.String())
+		return RunFocusWindow(node)
 	case *actions.WaitForPixel:
 		log.Println("Wait for pixel:", node.String())
 		x, err := ResolveInt(node.Point.X, macro)

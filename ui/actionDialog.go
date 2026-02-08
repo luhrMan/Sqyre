@@ -85,6 +85,9 @@ func ShowActionDialog(action actions.ActionInterface, onSave func(actions.Action
 	case *actions.WaitForPixel:
 		content, saveFunc = createWaitForPixelDialogContent(node)
 		content.Resize(fyne.NewSize(450, 280))
+	case *actions.FocusWindow:
+		content, saveFunc = createFocusWindowDialogContent(node)
+		content.Resize(fyne.NewSize(500, 400))
 	default:
 		content = widget.NewLabel("Unknown action type")
 		saveFunc = func() {}
@@ -1158,6 +1161,100 @@ func createWaitForPixelDialogContent(action *actions.WaitForPixel) (fyne.CanvasO
 		if s, err := strconv.Atoi(strings.TrimSpace(timeoutEntry.Text)); err == nil && s >= 0 {
 			action.TimeoutSeconds = s
 		}
+	}
+
+	return content, saveFunc
+}
+
+func createFocusWindowDialogContent(action *actions.FocusWindow) (fyne.CanvasObject, func()) {
+	windowEntry := widget.NewEntry()
+	windowEntry.SetText(action.WindowTarget)
+	windowEntry.SetPlaceHolder("Type to search or pick from list (e.g. chrome, code)")
+
+	// Full list from API; filtered list is what the list widget shows
+	allWindowNames := []string{}
+	filteredNames := []string{}
+
+	applyFilter := func() {
+		q := strings.TrimSpace(strings.ToLower(windowEntry.Text))
+		if q == "" {
+			filteredNames = make([]string, len(allWindowNames))
+			copy(filteredNames, allWindowNames)
+		} else {
+			filteredNames = filteredNames[:0]
+			for _, name := range allWindowNames {
+				if fuzzy.Match(q, strings.ToLower(name)) {
+					filteredNames = append(filteredNames, name)
+				}
+			}
+		}
+	}
+
+	windowList := widget.NewList(
+		func() int { return len(filteredNames) },
+		func() fyne.CanvasObject { return widget.NewLabel("") },
+		func(id widget.ListItemID, co fyne.CanvasObject) {
+			if id < len(filteredNames) {
+				co.(*widget.Label).SetText(filteredNames[id])
+			}
+		},
+	)
+	windowList.OnSelected = func(id widget.ListItemID) {
+		if id >= 0 && id < len(filteredNames) {
+			windowEntry.SetText(filteredNames[id])
+		}
+	}
+
+	refreshList := func() {
+		applyFilter()
+		windowList.Refresh()
+	}
+
+	windowEntry.OnChanged = func(string) { refreshList() }
+
+	refreshBtn := widget.NewButton("Refresh list", func() {
+		names, err := services.ActiveWindowNames()
+		if err != nil {
+			allWindowNames = []string{fmt.Sprintf("(error: %v)", err)}
+		} else {
+			allWindowNames = names
+		}
+		refreshList()
+	})
+	// Load list on open
+	go func() {
+		names, err := services.ActiveWindowNames()
+		if err != nil {
+			fyne.Do(func() {
+				allWindowNames = []string{fmt.Sprintf("(error: %v)", err)}
+				refreshList()
+			})
+			return
+		}
+		fyne.Do(func() {
+			allWindowNames = names
+			refreshList()
+		})
+	}()
+
+	listCard := container.NewBorder(
+		widget.NewLabel("Active windows (list filters as you type):"),
+		refreshBtn,
+		nil, nil,
+		windowList,
+	)
+	listCard.Resize(fyne.NewSize(400, 200))
+
+	content := container.NewBorder(
+		widget.NewForm(
+			widget.NewFormItem("Window to focus / search:", windowEntry),
+		),
+		nil, nil, nil,
+		listCard,
+	)
+
+	saveFunc := func() {
+		action.WindowTarget = strings.TrimSpace(windowEntry.Text)
 	}
 
 	return content, saveFunc
