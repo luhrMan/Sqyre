@@ -24,6 +24,7 @@ import (
 	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 	"github.com/go-vgo/robotgo"
 	"github.com/lithammer/fuzzysearch/fuzzy"
+	hook "github.com/luhrMan/gohook"
 	"gocv.io/x/gocv"
 )
 
@@ -78,6 +79,12 @@ func ShowActionDialog(action actions.ActionInterface, onSave func(actions.Action
 	case *actions.SaveVariable:
 		content, saveFunc = createSaveVariableDialogContent(node)
 		content.Resize(fyne.NewSize(600, 100))
+	case *actions.Calibration:
+		content, saveFunc = createCalibrationDialogContent(node)
+		content.Resize(fyne.NewSize(600, 500))
+	case *actions.WaitForPixel:
+		content, saveFunc = createWaitForPixelDialogContent(node)
+		content.Resize(fyne.NewSize(450, 280))
 	default:
 		content = widget.NewLabel("Unknown action type")
 		saveFunc = func() {}
@@ -989,6 +996,317 @@ func createSaveVariableDialogContent(action *actions.SaveVariable) (fyne.CanvasO
 		action.Destination = destEntry.Text
 		action.Append = appendCheck.Checked
 		action.AppendNewline = appendNewlineCheck.Checked
+	}
+
+	return content, saveFunc
+}
+
+// hexToColor parses "#rrggbb", "rrggbb", or "aarrggbb" into a color. Alpha is ignored for display.
+func hexToColor(hex string) (color.Color, bool) {
+	hex = strings.TrimPrefix(strings.ToLower(strings.TrimSpace(hex)), "#")
+	if len(hex) == 8 {
+		hex = hex[2:]
+	}
+	if len(hex) != 6 {
+		return color.RGBA{}, false
+	}
+	var r, g, b uint8
+	if _, err := fmt.Sscanf(hex, "%02x%02x%02x", &r, &g, &b); err != nil {
+		return color.RGBA{}, false
+	}
+	return color.RGBA{R: r, G: g, B: b, A: 255}, true
+}
+
+func createWaitForPixelDialogContent(action *actions.WaitForPixel) (fyne.CanvasObject, func()) {
+	nameEntry := widget.NewEntry()
+	nameEntry.SetText(action.Name)
+	nameEntry.SetPlaceHolder("Optional name for this action")
+
+	xEntry := widget.NewEntry()
+	yEntry := widget.NewEntry()
+	switch v := action.Point.X.(type) {
+	case int:
+		xEntry.SetText(fmt.Sprintf("%d", v))
+	case string:
+		xEntry.SetText(v)
+	default:
+		xEntry.SetText(fmt.Sprintf("%v", v))
+	}
+	switch v := action.Point.Y.(type) {
+	case int:
+		yEntry.SetText(fmt.Sprintf("%d", v))
+	case string:
+		yEntry.SetText(v)
+	default:
+		yEntry.SetText(fmt.Sprintf("%v", v))
+	}
+	xEntry.SetPlaceHolder("X or ${var}")
+	yEntry.SetPlaceHolder("Y or ${var}")
+
+	colorEntry := widget.NewEntry()
+	colorEntry.SetText(action.TargetColor)
+	colorEntry.SetPlaceHolder("Hex e.g. ffffff or #ffffff")
+
+	// Color swatch: shows current color and stays in sync with colorEntry
+	swatch := canvas.NewRectangle(color.RGBA{128, 128, 128, 255})
+	swatch.SetMinSize(fyne.NewSize(32, 32))
+	swatch.StrokeWidth = 1
+	swatch.StrokeColor = color.RGBA{R: 80, G: 80, B: 80, A: 255}
+	updateSwatch := func() {
+		if c, ok := hexToColor(colorEntry.Text); ok {
+			swatch.FillColor = c
+		}
+		swatch.Refresh()
+	}
+	updateSwatch()
+	colorEntry.OnChanged = func(string) { updateSwatch() }
+
+	// Dropper: first click activates; second click (anywhere on screen) records X, Y and color at that pixel
+	dropperBtn := ttwidget.NewButtonWithIcon("", theme.DocumentCreateIcon(), func() {
+		go func() {
+			hook.Register(hook.MouseDown, []string{}, func(e hook.Event) {
+				switch e.Button {
+				case hook.MouseMap["left"]:
+					x, y := robotgo.Location()
+					logicalX := x - config.XOffset
+					logicalY := y - config.YOffset
+					hex := robotgo.GetPixelColor(x, y)
+					hex = strings.TrimPrefix(strings.ToLower(hex), "#")
+					if len(hex) == 8 {
+						hex = hex[2:]
+					}
+					fyne.Do(func() {
+						xEntry.SetText(fmt.Sprintf("%d", logicalX))
+						yEntry.SetText(fmt.Sprintf("%d", logicalY))
+						colorEntry.SetText(hex)
+						updateSwatch()
+					})
+				default:
+					// right or other: just cancel
+				}
+				hook.Unregister(hook.MouseDown, []string{})
+			})
+		}()
+	})
+	dropperBtn.SetToolTip("Click Dropper, then click on screen to record X, Y and color at that pixel")
+
+	colorRow := container.NewBorder(
+		nil, nil,
+		swatch, dropperBtn,
+		colorEntry,
+	)
+
+	toleranceEntry := widget.NewEntry()
+	toleranceEntry.SetText(fmt.Sprintf("%d", action.ColorTolerance))
+	toleranceEntry.SetPlaceHolder("0 = exact match")
+	toleranceSlider := widget.NewSlider(0, 100)
+	toleranceSlider.SetValue(float64(action.ColorTolerance))
+	toleranceSlider.OnChanged = func(f float64) {
+		toleranceEntry.SetText(fmt.Sprintf("%.0f", f))
+	}
+	toleranceEntry.OnChanged = func(s string) {
+		if val, err := strconv.ParseFloat(strings.TrimSpace(s), 64); err == nil {
+			if val < 0 {
+				val = 0
+			}
+			if val > 100 {
+				val = 100
+			}
+			toleranceSlider.SetValue(val)
+		}
+	}
+	toleranceRow := container.NewHBox(toleranceEntry, widget.NewLabel("%"), toleranceSlider)
+
+	timeoutEntry := widget.NewEntry()
+	if action.TimeoutSeconds > 0 {
+		timeoutEntry.SetText(fmt.Sprintf("%d", action.TimeoutSeconds))
+	} else {
+		timeoutEntry.SetPlaceHolder("0 = wait indefinitely")
+	}
+
+	content := widget.NewForm(
+		widget.NewFormItem("Name:", nameEntry),
+		widget.NewFormItem("X:", xEntry),
+		widget.NewFormItem("Y:", yEntry),
+		widget.NewFormItem("Target color:", colorRow),
+		widget.NewFormItem("Color tolerance:", toleranceRow),
+		widget.NewFormItem("Timeout:", timeoutEntry),
+	)
+
+	saveFunc := func() {
+		action.Name = strings.TrimSpace(nameEntry.Text)
+		if x, err := strconv.Atoi(strings.TrimSpace(xEntry.Text)); err == nil {
+			action.Point.X = x
+		} else {
+			action.Point.X = strings.TrimSpace(xEntry.Text)
+		}
+		if y, err := strconv.Atoi(strings.TrimSpace(yEntry.Text)); err == nil {
+			action.Point.Y = y
+		} else {
+			action.Point.Y = strings.TrimSpace(yEntry.Text)
+		}
+		action.TargetColor = strings.ToLower(strings.TrimPrefix(strings.TrimSpace(colorEntry.Text), "#"))
+		if t, err := strconv.Atoi(strings.TrimSpace(toleranceEntry.Text)); err == nil {
+			if t < 0 {
+				t = 0
+			}
+			if t > 100 {
+				t = 100
+			}
+			action.ColorTolerance = t
+		}
+		if s, err := strconv.Atoi(strings.TrimSpace(timeoutEntry.Text)); err == nil && s >= 0 {
+			action.TimeoutSeconds = s
+		}
+	}
+
+	return content, saveFunc
+}
+
+func createCalibrationDialogContent(action *actions.Calibration) (fyne.CanvasObject, func()) {
+	nameEntry := widget.NewEntry()
+	nameEntry.SetText(action.Name)
+	programEntry := widget.NewEntry()
+	programEntry.SetText(action.ProgramName)
+	programEntry.SetPlaceHolder("Program name (e.g. from Programs tab)")
+	resolutionEntry := widget.NewEntry()
+	resolutionEntry.SetText(action.ResolutionKey)
+	resolutionEntry.SetPlaceHolder("Leave empty for current monitor")
+	rowSplitEntry := widget.NewEntry()
+	rowSplitEntry.SetText(fmt.Sprintf("%d", action.RowSplit))
+	colSplitEntry := widget.NewEntry()
+	colSplitEntry.SetText(fmt.Sprintf("%d", action.ColSplit))
+	toleranceEntry := widget.NewEntry()
+	toleranceEntry.SetText(fmt.Sprintf("%g", action.Tolerance))
+	blurEntry := widget.NewEntry()
+	blurEntry.SetText(fmt.Sprintf("%d", action.Blur))
+
+	tempSearchArea := action.SearchArea
+	tempTargets := slices.Clone(action.Targets)
+
+	// Search area selector: pick program then area name
+	searchAreaProgramSelect := widget.NewSelect(repositories.ProgramRepo().GetAllKeys(), nil)
+	if action.ProgramName != "" {
+		searchAreaProgramSelect.SetSelected(action.ProgramName)
+	} else if len(repositories.ProgramRepo().GetAllKeys()) > 0 {
+		searchAreaProgramSelect.SetSelected(repositories.ProgramRepo().GetAllKeys()[0])
+	}
+	var searchAreaNameSelect *widget.Select
+	refreshSearchAreaNames := func() {
+		pname := searchAreaProgramSelect.Selected
+		if pname == "" {
+			return
+		}
+		p, _ := repositories.ProgramRepo().Get(pname)
+		if p == nil {
+			return
+		}
+		keys := p.SearchAreaRepo(config.MainMonitorSizeString).GetAllKeys()
+		if searchAreaNameSelect == nil {
+			searchAreaNameSelect = widget.NewSelect(keys, func(s string) {
+				sa, _ := p.SearchAreaRepo(config.MainMonitorSizeString).Get(s)
+				if sa != nil {
+					tempSearchArea = actions.SearchArea{Name: sa.Name, LeftX: sa.LeftX, TopY: sa.TopY, RightX: sa.RightX, BottomY: sa.BottomY}
+				}
+			})
+		} else {
+			searchAreaNameSelect.Options = keys
+			searchAreaNameSelect.Refresh()
+		}
+		if action.SearchArea.Name != "" {
+			for _, k := range keys {
+				if k == action.SearchArea.Name {
+					searchAreaNameSelect.SetSelected(k)
+					break
+				}
+			}
+		}
+	}
+	searchAreaProgramSelect.OnChanged = func(string) { refreshSearchAreaNames() }
+	refreshSearchAreaNames()
+
+	// Targets list
+	targetsList := widget.NewList(
+		func() int { return len(tempTargets) },
+		func() fyne.CanvasObject {
+			return container.NewHBox(
+				widget.NewEntry(),
+				widget.NewSelect([]string{"point", "searcharea"}, nil),
+				widget.NewEntry(),
+			)
+		},
+		func(id widget.ListItemID, co fyne.CanvasObject) {
+			row := co.(*fyne.Container).Objects
+			if id < len(tempTargets) {
+				t := tempTargets[id]
+				row[0].(*widget.Entry).SetText(t.OutputName)
+				row[1].(*widget.Select).SetSelected(t.OutputType)
+				if row[1].(*widget.Select).Selected == "" {
+					row[1].(*widget.Select).SetSelected("point")
+				}
+				row[2].(*widget.Entry).SetText(t.Target)
+			}
+			i := id
+			row[0].(*widget.Entry).OnChanged = func(s string) {
+				if i < len(tempTargets) {
+					tempTargets[i].OutputName = s
+				}
+			}
+			row[1].(*widget.Select).OnChanged = func(s string) {
+				if i < len(tempTargets) {
+					tempTargets[i].OutputType = s
+				}
+			}
+			row[2].(*widget.Entry).OnChanged = func(s string) {
+				if i < len(tempTargets) {
+					tempTargets[i].Target = s
+				}
+			}
+		},
+	)
+	addTargetBtn := ttwidget.NewButton("Add target", func() {
+		tempTargets = append(tempTargets, actions.CalibrationTarget{OutputType: "point"})
+		targetsList.Refresh()
+	})
+	content := container.NewVBox(
+		widget.NewForm(
+			widget.NewFormItem("Name:", nameEntry),
+			widget.NewFormItem("Program name:", programEntry),
+			widget.NewFormItem("Resolution (optional):", resolutionEntry),
+			widget.NewFormItem("Search area (optional) — program:", searchAreaProgramSelect),
+		),
+	)
+	if searchAreaNameSelect != nil {
+		content.Add(widget.NewForm(widget.NewFormItem("Search area name:", searchAreaNameSelect)))
+	}
+	content.Add(widget.NewForm(
+		widget.NewFormItem("Row split:", rowSplitEntry),
+		widget.NewFormItem("Col split:", colSplitEntry),
+		widget.NewFormItem("Tolerance:", toleranceEntry),
+		widget.NewFormItem("Blur:", blurEntry),
+	))
+	content.Add(widget.NewLabel("Calibration targets (output name, type, image target e.g. program|item):"))
+	content.Add(container.NewBorder(nil, nil, nil, addTargetBtn, targetsList))
+	content.Add(layout.NewSpacer())
+
+	saveFunc := func() {
+		action.Name = nameEntry.Text
+		action.ProgramName = programEntry.Text
+		action.ResolutionKey = strings.TrimSpace(resolutionEntry.Text)
+		action.SearchArea = tempSearchArea
+		action.Targets = tempTargets
+		if n, err := strconv.Atoi(rowSplitEntry.Text); err == nil {
+			action.RowSplit = n
+		}
+		if n, err := strconv.Atoi(colSplitEntry.Text); err == nil {
+			action.ColSplit = n
+		}
+		if f, err := strconv.ParseFloat(toleranceEntry.Text, 32); err == nil {
+			action.Tolerance = float32(f)
+		}
+		if n, err := strconv.Atoi(blurEntry.Text); err == nil {
+			action.Blur = n
+		}
 	}
 
 	return content, saveFunc

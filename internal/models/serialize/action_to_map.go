@@ -25,6 +25,17 @@ func ActionToMap(action actions.ActionInterface) (map[string]any, error) {
 		m["subactions"] = subs
 	case *actions.Wait:
 		m["time"] = a.Time
+	case *actions.WaitForPixel:
+		m["name"] = a.Name
+		m["point"] = pointToMap(a.Point)
+		m["targetcolor"] = a.TargetColor
+		m["colortolerance"] = a.ColorTolerance
+		m["timeoutseconds"] = a.TimeoutSeconds
+		subs, err := subActionsToMaps(a.GetSubActions())
+		if err != nil {
+			return nil, err
+		}
+		m["subactions"] = subs
 	case *actions.Click:
 		m["button"] = a.Button
 		m["hold"] = a.Hold
@@ -89,6 +100,18 @@ func ActionToMap(action actions.ActionInterface) (map[string]any, error) {
 		m["destination"] = a.Destination
 		m["append"] = a.Append
 		m["appendnewline"] = a.AppendNewline
+	case *actions.Calibration:
+		m["name"] = a.Name
+		m["programname"] = a.ProgramName
+		if a.ResolutionKey != "" {
+			m["resolutionkey"] = a.ResolutionKey
+		}
+		m["searcharea"] = searchAreaToMap(a.SearchArea)
+		m["targets"] = calibrationTargetsToMaps(a.Targets)
+		m["rowsplit"] = a.RowSplit
+		m["colsplit"] = a.ColSplit
+		m["tolerance"] = float64(a.Tolerance)
+		m["blur"] = a.Blur
 	default:
 		return nil, fmt.Errorf("unknown action type: %T", action)
 	}
@@ -123,4 +146,16 @@ func searchAreaToMap(s actions.SearchArea) map[string]any {
 		"rightx":  s.RightX,
 		"bottomy": s.BottomY,
 	}
+}
+
+func calibrationTargetsToMaps(t []actions.CalibrationTarget) []any {
+	out := make([]any, 0, len(t))
+	for _, c := range t {
+		out = append(out, map[string]any{
+			"outputname": c.OutputName,
+			"outputtype": c.OutputType,
+			"target":     c.Target,
+		})
+	}
+	return out
 }

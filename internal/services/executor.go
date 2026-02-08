@@ -139,7 +139,7 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 		if node.WaitTilFound && node.WaitTilFoundSeconds > 0 {
 			deadline := time.Now().Add(time.Duration(node.WaitTilFoundSeconds) * time.Second)
 			for len(SortListOfPoints(results)) == 0 && time.Now().Before(deadline) {
-				time.Sleep(500 * time.Millisecond)
+				time.Sleep(100 * time.Millisecond)
 				results, err = imageSearch(node, macro)
 				if err != nil {
 					return err
@@ -285,6 +285,43 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 			}
 		}
 		return nil
+	case *actions.Calibration:
+		log.Println("Calibration:", node.String())
+		return RunCalibration(node, macro)
+	case *actions.WaitForPixel:
+		log.Println("Wait for pixel:", node.String())
+		x, err := ResolveInt(node.Point.X, macro)
+		if err != nil {
+			log.Printf("WaitForPixel: failed to resolve X %v: %v, using 0", node.Point.X, err)
+			x = 0
+		}
+		y, err := ResolveInt(node.Point.Y, macro)
+		if err != nil {
+			log.Printf("WaitForPixel: failed to resolve Y %v: %v, using 0", node.Point.Y, err)
+			y = 0
+		}
+		screenX := x + config.XOffset
+		screenY := y + config.YOffset
+		var deadline time.Time
+		if node.TimeoutSeconds > 0 {
+			deadline = time.Now().Add(time.Duration(node.TimeoutSeconds) * time.Second)
+		}
+		for {
+			hex := robotgo.GetPixelColor(screenX, screenY)
+			if node.MatchColor(hex) {
+				for _, sub := range node.GetSubActions() {
+					if err := executeWithContext(sub, macro); err != nil {
+						return err
+					}
+				}
+				return nil
+			}
+			if node.TimeoutSeconds > 0 && !time.Now().Before(deadline) {
+				log.Println("WaitForPixel: timeout, continuing without children")
+				return nil
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
 	}
 	return nil
 }
