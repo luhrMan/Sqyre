@@ -40,7 +40,7 @@ func (a *Ocr) String() string {
 	if a.WaitTilFound {
 		mode = fmt.Sprintf("wait %d seconds or until found", a.WaitTilFoundSeconds)
 	}
-	return fmt.Sprintf("%s | `%s` in `%s` [%s]", a.Name, a.Target, a.SearchArea.Name, mode)
+	return fmt.Sprintf("%s --- `%s` in `%s` [%s]", a.Name, a.Target, a.SearchArea.Name, mode)
 }
 
 func (a *Ocr) Icon() fyne.Resource {
