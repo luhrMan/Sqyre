@@ -433,6 +433,92 @@ func setEditorForms() {
 		}
 	}
 
+	// Set up record button handler for Search Areas tab (two clicks: top-left, then bottom-right)
+	if saRecordButton, ok := et.SearchAreasTab.Widgets["recordButton"].(*widget.Button); ok {
+		saRecordButton.OnTapped = func() {
+			var dlg dialog.Dialog
+			content := container.NewVBox(
+				widget.NewLabel("First click: top-left corner of the search area."),
+				widget.NewLabel("Second click: bottom-right corner. Right click to cancel."),
+			)
+
+			dlg = dialog.NewCustomWithoutButtons(
+				"Record Search Area",
+				content,
+				ui.GetUi().Window,
+			)
+			go func() {
+				leftX, topY := 0, 0
+				firstClickDone := false
+				hook.Register(hook.MouseDown, []string{}, func(e hook.Event) {
+					if e.Button != hook.MouseMap["left"] {
+						hook.Unregister(hook.MouseDown, []string{})
+						fyne.DoAndWait(func() { dlg.Dismiss() })
+						return
+					}
+					x, y := robotgo.Location()
+					adjX := x - config.XOffset
+					adjY := y - config.YOffset
+					if !firstClickDone {
+						leftX = adjX
+						topY = adjY
+						firstClickDone = true
+						fyne.CurrentApp().SendNotification(&fyne.Notification{
+							Title:   "Search Area",
+							Content: "Top-left set. Click bottom-right corner.",
+						})
+						return
+					}
+					// Second click: bottom-right corner (normalize in case clicks were reversed)
+					rightX := adjX
+					bottomY := adjY
+					if leftX > rightX {
+						leftX, rightX = rightX, leftX
+					}
+					if topY > bottomY {
+						topY, bottomY = bottomY, topY
+					}
+					hook.Unregister(hook.MouseDown, []string{})
+					fyne.DoAndWait(func() {
+						if w, ok := et.SearchAreasTab.Widgets["LeftX"].(*widget.Entry); ok {
+							w.SetText(strconv.Itoa(leftX))
+						}
+						if w, ok := et.SearchAreasTab.Widgets["TopY"].(*widget.Entry); ok {
+							w.SetText(strconv.Itoa(topY))
+						}
+						if w, ok := et.SearchAreasTab.Widgets["RightX"].(*widget.Entry); ok {
+							w.SetText(strconv.Itoa(rightX))
+						}
+						if w, ok := et.SearchAreasTab.Widgets["BottomY"].(*widget.Entry); ok {
+							w.SetText(strconv.Itoa(bottomY))
+						}
+						if sa, ok := et.SearchAreasTab.SelectedItem.(*models.SearchArea); ok {
+							sa.LeftX = leftX
+							sa.TopY = topY
+							sa.RightX = rightX
+							sa.BottomY = bottomY
+							func() {
+								defer func() {
+									if r := recover(); r != nil {
+										log.Printf("SearchArea: Preview update panic recovered after recording - %v (area: %s)", r, sa.Name)
+									}
+								}()
+								ui.GetUi().UpdateSearchAreaPreview(sa)
+							}()
+						}
+						fyne.CurrentApp().SendNotification(&fyne.Notification{
+							Title:   "Captured Search Area",
+							Content: fmt.Sprintf("LeftX: %d, TopY: %d, RightX: %d, BottomY: %d", leftX, topY, rightX, bottomY),
+						})
+						dlg.Dismiss()
+					})
+				})
+			}()
+
+			dlg.Show()
+		}
+	}
+
 	et.SearchAreasTab.Widgets["Form"].(*widget.Form).OnSubmit = func() {
 		w := et.SearchAreasTab.Widgets
 		n := w["Name"].(*widget.Entry).Text

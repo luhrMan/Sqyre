@@ -11,7 +11,6 @@ import (
 )
 
 func (u *Ui) constructMainMenu() *fyne.MainMenu {
-	// ocrActionMenuItem.Icon, _ = fyne.LoadResourceFromPath("./internal/resources/images/Squire.png")
 	macroMenu := fyne.NewMenu("Macro")
 	actionSubMenu := fyne.NewMenuItem("Add Blank Action", nil)
 	basicActionsSubMenu := fyne.NewMenuItem("Basic", nil)
@@ -48,14 +47,17 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 			mt.SelectedNode = a.GetUID()
 		}
 	basicActionsSubMenu.ChildMenu = fyne.NewMenu("",
-		fyne.NewMenuItem("Wait", func() { addActionAndRefresh(actions.NewWait(0)) }),
-		fyne.NewMenuItem("Mouse Move", func() { addActionAndRefresh(actions.NewMove(actions.Point{Name: "", X: 0, Y: 0})) }),
-		fyne.NewMenuItem("Click", func() { addActionAndRefresh(actions.NewClick(false, false)) }),
-		fyne.NewMenuItem("Key", func() { addActionAndRefresh(actions.NewKey("ctrl", true)) }),
+		fyne.NewMenuItemWithIcon("Wait", actions.NewWait(0).Icon(), func() { addActionAndRefresh(actions.NewWait(0)) }),
+		fyne.NewMenuItemWithIcon("Mouse Move", actions.NewMove(actions.Point{Name: "", X: 0, Y: 0}).Icon(), func() { addActionAndRefresh(actions.NewMove(actions.Point{Name: "", X: 0, Y: 0})) }),
+		fyne.NewMenuItemWithIcon("Click", actions.NewClick(false, false).Icon(), func() { addActionAndRefresh(actions.NewClick(false, false)) }),
+		fyne.NewMenuItemWithIcon("Key", actions.NewKey("ctrl", true).Icon(), func() { addActionAndRefresh(actions.NewKey("ctrl", true)) }),
+		fyne.NewMenuItemWithIcon("Focus window", actions.NewFocusWindow("").Icon(), func() {
+			addActionAndRefresh(actions.NewFocusWindow(""))
+		}),
 	)
 	advancedActionsSubMenu.ChildMenu = fyne.NewMenu("",
-		fyne.NewMenuItem("Loop", func() { addActionAndRefresh(actions.NewLoop(1, "", []actions.ActionInterface{})) }),
-		fyne.NewMenuItem("Image Search", func() {
+		fyne.NewMenuItemWithIcon("Loop", actions.NewLoop(1, "", []actions.ActionInterface{}).Icon(), func() { addActionAndRefresh(actions.NewLoop(1, "", []actions.ActionInterface{})) }),
+		fyne.NewMenuItemWithIcon("Image Search", actions.NewImageSearch("", []actions.ActionInterface{}, []string{}, actions.SearchArea{}, 1, 1, 0.95, 5).Icon(), func() {
 			addActionAndRefresh(actions.NewImageSearch(
 				"",
 				[]actions.ActionInterface{},
@@ -67,21 +69,21 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 				5,
 			))
 		}),
-		fyne.NewMenuItem("OCR", func() {
+		fyne.NewMenuItemWithIcon("OCR", actions.NewOcr("", []actions.ActionInterface{}, "template", actions.SearchArea{Name: "template search area"}).Icon(), func() {
 			addActionAndRefresh(actions.NewOcr("", []actions.ActionInterface{}, "template", actions.SearchArea{Name: "template search area"}))
 		}),
-		fyne.NewMenuItem("Calibration", func() {
+		fyne.NewMenuItemWithIcon("Calibration", actions.NewCalibration("", "", actions.SearchArea{}, nil, 1, 1, 0.95, 5).Icon(), func() {
 			addActionAndRefresh(actions.NewCalibration("", "", actions.SearchArea{}, nil, 1, 1, 0.95, 5))
 		}),
-		fyne.NewMenuItem("Wait for pixel", func() {
+		fyne.NewMenuItemWithIcon("Wait for pixel", actions.NewWaitForPixel("", actions.Point{}, "ffffff", 0, 0, nil).Icon(), func() {
 			addActionAndRefresh(actions.NewWaitForPixel("", actions.Point{}, "ffffff", 0, 0, nil))
 		}),
 	)
 	variableActionsSubMenu.ChildMenu = fyne.NewMenu("",
-		fyne.NewMenuItem("Set", func() { addActionAndRefresh(actions.NewSetVariable("", "")) }),
-		fyne.NewMenuItem("Calculate", func() { addActionAndRefresh(actions.NewCalculate("", "")) }),
-		fyne.NewMenuItem("Read from", func() { addActionAndRefresh(actions.NewDataList("", "", false)) }),
-		fyne.NewMenuItem("Save to", func() { addActionAndRefresh(actions.NewSaveVariable("", "", false, false)) }),
+		fyne.NewMenuItemWithIcon("Set", actions.NewSetVariable("", "").Icon(), func() { addActionAndRefresh(actions.NewSetVariable("", "")) }),
+		fyne.NewMenuItemWithIcon("Calculate", actions.NewCalculate("", "").Icon(), func() { addActionAndRefresh(actions.NewCalculate("", "")) }),
+		fyne.NewMenuItemWithIcon("Read from", actions.NewDataList("", "", false).Icon(), func() { addActionAndRefresh(actions.NewDataList("", "", false)) }),
+		fyne.NewMenuItemWithIcon("Save to", actions.NewSaveVariable("", "", false, false).Icon(), func() { addActionAndRefresh(actions.NewSaveVariable("", "", false, false)) }),
 	)
 
 	computerInfo := fyne.NewMenuItem("Computer info", func() {

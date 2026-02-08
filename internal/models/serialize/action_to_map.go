@@ -112,6 +112,8 @@ func ActionToMap(action actions.ActionInterface) (map[string]any, error) {
 		m["colsplit"] = a.ColSplit
 		m["tolerance"] = float64(a.Tolerance)
 		m["blur"] = a.Blur
+	case *actions.FocusWindow:
+		m["windowtarget"] = a.WindowTarget
 	default:
 		return nil, fmt.Errorf("unknown action type: %T", action)
 	}

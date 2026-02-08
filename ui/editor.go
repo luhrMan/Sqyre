@@ -186,12 +186,16 @@ func (u *Ui) constructEditorTabs() {
 	satw[y1] = new(widget.Entry)
 	satw[x2] = new(widget.Entry)
 	satw[y2] = new(widget.Entry)
+	// Create record button for capturing search area rectangle (click and drag)
+	satw["recordButton"] = widget.NewButtonWithIcon("", theme.MediaRecordIcon(), nil)
+	satw["recordButton"].(*widget.Button).Importance = widget.DangerImportance
 	satw[form] = widget.NewForm(
 		widget.NewFormItem(name, satw[name]),
 		widget.NewFormItem(x1, satw[x1]),
 		widget.NewFormItem(y1, satw[y1]),
 		widget.NewFormItem(x2, satw[x2]),
 		widget.NewFormItem(y2, satw[y2]),
+		widget.NewFormItem("", container.NewHBox(layout.NewSpacer(), satw["recordButton"])),
 	)
 	satw[form].(*widget.Form).SubmitText = "Update"
 
