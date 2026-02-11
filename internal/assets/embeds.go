@@ -12,7 +12,7 @@ import (
 	"fyne.io/fyne/v2/canvas"
 )
 
-//go:embed images/icon.svg
+//go:embed icons/sqyre.svg
 var appIcon []byte
 var AppIcon = fyne.NewStaticResource("appIcon", appIcon)
 

@@ -1,0 +1,78 @@
+# Stage 1: Download MSYS2 MinGW packages and extract to sysroot.
+# Avoids Wine-based MSYS2 image which can trigger Docker lchown/subuid errors.
+# msys2dl requires Python 3.12+ (tarfile.data_filter).
+FROM python:3.12-slim-bookworm AS sysroot
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        curl \
+        gnupg \
+        zstd \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --break-system-packages msys2dl
+
+# Extract MSYS2 packages per README Windows native build: opencv, zlib, tesseract, leptonica (+ deps)
+RUN msys2dl extract --output /usr/local --env mingw64 \
+        opencv \
+        zlib \
+        tesseract-ocr \
+        leptonica
+
+# Download eng.traineddata; tesseract needs it at runtime (README: move to share/tessdata)
+RUN mkdir -p /usr/local/mingw64/share/tessdata \
+    && curl -sL -o /usr/local/mingw64/share/tessdata/eng.traineddata \
+        https://github.com/tesseract-ocr/tessdata/raw/main/eng.traineddata
+
+# Stage 2: fyne-cross Windows image with MinGW sysroot for CGO deps.
+FROM fyneio/fyne-cross-images:windows
+
+# Copy MinGW sysroot from stage 1
+COPY --from=sysroot /usr/local/mingw64 /usr/local/mingw64
+
+# pkg-config for gosseract; gcc-mingw-w64 so CC/CXX use MinGW (libstdc++) and match MSYS2 libs
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        pkg-config \
+        gcc-mingw-w64-x86-64 \
+        g++-mingw-w64-x86-64 \
+    && rm -rf /var/lib/apt/lists/*
+
+# gocv expects -lopencv_core4130 etc.; MSYS2 provides libopencv_*-413.dll.a and libopencv_*-413.dll (in bin/).
+# 1) Import libs: lib/opencv_*4130.dll.a -> libopencv_*-413.dll.a for link time.
+# 2) DLLs: Zig linker looks for opencv_*4130.dll in lib/; MSYS2 has libopencv_*-413.dll in bin/. Symlink so it finds them.
+RUN cd /usr/local/mingw64/lib && \
+    for f in libopencv_*-413.dll.a; do \
+        [ -f "$f" ] || continue; \
+        base=$(echo "$f" | sed 's/-413\.dll\.a//'); \
+        ln -sf "$f" "${base}4130.dll.a" 2>/dev/null || true; \
+    done && \
+    cd /usr/local/mingw64/bin && \
+    for f in libopencv_*-413.dll; do \
+        [ -f "$f" ] || continue; \
+        name=$(echo "$f" | sed 's/^libopencv_\(.*\)-413\.dll$/\1/'); \
+        ln -sf "../bin/$f" "/usr/local/mingw64/lib/opencv_${name}4130.dll" 2>/dev/null || true; \
+    done
+
+# Zig linker looks for leptonica/tesseract (DLL + import lib). MSYS2 has liblept*.dll, libtesseract*.dll in bin/ and .dll.a in lib/.
+RUN cd /usr/local/mingw64/bin && \
+    for f in liblept*.dll; do [ -f "$f" ] && ln -sf "../bin/$f" /usr/local/mingw64/lib/leptonica.dll && break; done && \
+    for f in libtesseract*.dll; do [ -f "$f" ] && ln -sf "../bin/$f" /usr/local/mingw64/lib/tesseract.dll && break; done
+RUN cd /usr/local/mingw64/lib && \
+    for f in liblept*.dll.a; do [ -f "$f" ] || continue; [ "$f" = "libleptonica.dll.a" ] && continue; ln -sf "$f" libleptonica.dll.a; break; done && \
+    for f in libtesseract*.dll.a; do [ -f "$f" ] || continue; [ "$f" = "libtesseract.dll.a" ] && continue; ln -sf "$f" libtesseract.dll.a; break; done
+
+# Use MinGW GCC/G++ for C/C++ so object files use libstdc++ and match MSYS2 libs.
+# (Default Zig/clang uses libc++ and causes undefined symbol errors when linking MSYS2 OpenCV/Tesseract.)
+ENV CC=x86_64-w64-mingw32-gcc \
+    CXX=x86_64-w64-mingw32-g++
+
+# CGO flags so MinGW finds headers and libs when cross-compiling.
+# Use -isystem for MinGW includes so they are searched after the C++ stdlib.
+# CGO_LDFLAGS overrides gocv's LDFLAGS, so we must include full -lopencv_* set.
+# PKG_CONFIG_PATH lets gosseract find tesseract/leptonica via pkg-config.
+ENV CGO_ENABLED=1 \
+    PKG_CONFIG_PATH="/usr/local/mingw64/lib/pkgconfig" \
+    CGO_CFLAGS="-isystem /usr/local/mingw64/include -isystem /usr/local/mingw64/include/opencv4" \
+    CGO_CPPFLAGS="-isystem /usr/local/mingw64/include -isystem /usr/local/mingw64/include/opencv4" \
+    CGO_CXXFLAGS="-std=c++11 -DNDEBUG -isystem /usr/local/mingw64/include -isystem /usr/local/mingw64/include/opencv4" \
+    CGO_LDFLAGS="-L/usr/local/mingw64/lib -lopencv_core4130 -lopencv_face4130 -lopencv_videoio4130 -lopencv_imgproc4130 -lopencv_highgui4130 -lopencv_imgcodecs4130 -lopencv_objdetect4130 -lopencv_features2d4130 -lopencv_video4130 -lopencv_dnn4130 -lopencv_xfeatures2d4130 -lopencv_plot4130 -lopencv_tracking4130 -lopencv_img_hash4130 -lopencv_calib3d4130 -lopencv_bgsegm4130 -lopencv_photo4130 -lopencv_aruco4130 -lopencv_wechat_qrcode4130 -lopencv_ximgproc4130 -lopencv_mcc4130"
+
+WORKDIR /app
