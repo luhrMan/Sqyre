@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop">
+  <id>com.sqyre.app</id>
+  <name>Sqyre</name>
+  <summary>Macro builder</summary>
+  <description>
+    <p>Sqyre is a macro builder built. It uses Fyne for the GUI, Robotgo for automation, Tesseract (OCR), and OpenCV for computer vision.</p>
+  </description>
+  <categories>
+    <category>Development</category>
+    <category>Utility</category>
+  </categories>
+  <releases/>
+</component>

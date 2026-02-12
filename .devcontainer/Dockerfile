@@ -43,6 +43,25 @@ ENV CGO_ENABLED=1
 ENV PATH="/usr/local/go/bin:${PATH}"
 ENV GOPATH=/go
 
+# AppImage builder: deps + pip install (for packaging/AppImageBuilder.yml)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    binutils \
+    coreutils \
+    desktop-file-utils \
+    fakeroot \
+    fuse \
+    gtk-update-icon-cache \
+    libgdk-pixbuf2.0-dev \
+    patchelf \
+    python3-pip \
+    python3-setuptools \
+    squashfs-tools \
+    strace \
+    util-linux \
+    zsync \
+    && pip3 install --break-system-packages appimage-builder \
+    && rm -rf /var/lib/apt/lists/*
+
 # fyne-cross for cross-compiling Fyne apps (e.g. Windows from Linux)
 RUN go install github.com/fyne-io/fyne-cross@latest
 ENV PATH="${PATH}:/go/bin"
