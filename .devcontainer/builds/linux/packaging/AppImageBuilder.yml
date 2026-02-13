@@ -1,9 +1,12 @@
 # AppImage recipe for Sqyre.
-# Run from repo root: appimage-builder --recipe packaging/AppImageBuilder.yml
+# To keep AppDir and the .AppImage under this folder, run from repo root:
+#   .devcontainer/builds/linux/packaging/build-appimage.sh
+# Or from this directory: ./build-appimage.sh
 #
-# Prerequisites (on the host or in the build environment):
-#   - Go 1.24+, OpenCV, Tesseract, Leptonica, and other build deps (see README Linux section)
-#   - appimage-builder: pip install appimage-builder, or use the AppImage from releases
+# AppDir approach: script installs the binary and metadata; appimage-builder then
+# traces the binary and bundles all required .so files (OpenCV, Tesseract, X11, etc.).
+# We do not use the recipe "apt" section because appimage-builder has a bug comparing
+# Ubuntu package versions (e.g. "1.22.6ubuntu6") with packaging.version.parse().
 
 version: 1
 script:
@@ -11,6 +14,12 @@ script:
   - go build -trimpath -o "$TARGET_APPDIR/usr/bin/sqyre" ./cmd/sqyre
   - install -Dm00644 internal/assets/icons/sqyre.png "$TARGET_APPDIR/usr/share/icons/hicolor/256x256/apps/com.sqyre.app.png"
   - install -Dm00644 .devcontainer/builds/linux/packaging/com.sqyre.app.desktop "$TARGET_APPDIR/usr/share/applications/com.sqyre.app.desktop"
+  # Bundle Tesseract English data so OCR works without system tessdata
+  - mkdir -p "$TARGET_APPDIR/usr/share/tessdata"
+  - |
+    if [ -f /usr/share/tessdata/eng.traineddata ]; then
+      cp /usr/share/tessdata/eng.traineddata "$TARGET_APPDIR/usr/share/tessdata/"
+    fi
 
 AppDir:
   path: "{{ TARGET_APPDIR }}"
@@ -21,14 +30,13 @@ AppDir:
     version: "0.5.0"
     exec: usr/bin/sqyre
     exec_args: "$@"
-  # Bundle runtime libs if your distro provides them (optional; appimage-builder may trace the binary)
-  # apt:
-  #   include:
-  #     - libopencv-core4
-  #     - libtesseract5
-  #   sources:
-  #     - sourceline: "deb http://archive.ubuntu.com/ubuntu jammy main universe"
-  #       key_url: "http://keyserver.ubuntu.com/pks/lookup?op=get&search=0x3b4fe6acc0b21f32"
+  files:
+    exclude:
+      - usr/share/man
+      - usr/share/doc/*
+  runtime:
+    env:
+      TESSDATA_PREFIX: "${APPDIR}/usr/share"
 
 AppImage:
   arch: x86_64
