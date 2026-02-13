@@ -16,3 +16,10 @@ notes.md
 /.kiro
 sqyre
 /out/
+/AppDir/
+/appimage-build/
+
+# Linux packaging build artifacts (AppDir and AppImage live under packaging/)
+.devcontainer/builds/linux/packaging/AppDir/
+.devcontainer/builds/linux/packaging/appimage-build/
+.devcontainer/builds/linux/packaging/*.AppImage

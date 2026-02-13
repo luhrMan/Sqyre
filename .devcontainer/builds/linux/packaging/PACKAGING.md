@@ -64,7 +64,15 @@ The manifest is at `packaging/com.sqyre.app.yml`. It expects the app to be built
 
 ### Build
 
-From the **repository root**:
+To keep AppDir and the AppImage under `.devcontainer/builds/linux/packaging/`, run from the **repository root**:
+
+```bash
+.devcontainer/builds/linux/packaging/build-appimage.sh
+```
+
+Or from the packaging directory: `./build-appimage.sh` (run `chmod +x build-appimage.sh` once). AppDir, appimage-build, and the .AppImage file are created inside the packaging folder (see `.gitignore`).
+
+Alternative (artifacts at repo root):
 
 ```bash
 appimage-builder --recipe .devcontainer/builds/linux/packaging/AppImageBuilder.yml
