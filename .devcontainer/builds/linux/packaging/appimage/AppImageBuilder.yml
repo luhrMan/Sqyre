@@ -1,19 +1,19 @@
 # AppImage recipe for Sqyre.
-# To keep AppDir and the .AppImage under this folder, run from repo root:
-#   .devcontainer/builds/linux/packaging/build-appimage.sh
+# Run from repo root: .devcontainer/builds/linux/packaging/appimage/build-appimage.sh
 # Or from this directory: ./build-appimage.sh
+# Uses sqyre.AppDir (set via build-appimage.sh --appdir).
 #
-# AppDir approach: script installs the binary and metadata; appimage-builder then
+# Script installs the binary and metadata; appimage-builder then
 # traces the binary and bundles all required .so files (OpenCV, Tesseract, X11, etc.).
 # We do not use the recipe "apt" section because appimage-builder has a bug comparing
 # Ubuntu package versions (e.g. "1.22.6ubuntu6") with packaging.version.parse().
 
 version: 1
 script:
-  - cd "$SOURCE_DIR/../../../.."
+  - cd "$SOURCE_DIR/../../../../.."
   - go build -trimpath -o "$TARGET_APPDIR/usr/bin/sqyre" ./cmd/sqyre
   - install -Dm00644 internal/assets/icons/sqyre.png "$TARGET_APPDIR/usr/share/icons/hicolor/256x256/apps/com.sqyre.app.png"
-  - install -Dm00644 .devcontainer/builds/linux/packaging/com.sqyre.app.desktop "$TARGET_APPDIR/usr/share/applications/com.sqyre.app.desktop"
+  - install -Dm00644 "$SOURCE_DIR/com.sqyre.app.desktop" "$TARGET_APPDIR/usr/share/applications/com.sqyre.app.desktop"
   # Bundle Tesseract English data so OCR works without system tessdata
   - mkdir -p "$TARGET_APPDIR/usr/share/tessdata"
   - |

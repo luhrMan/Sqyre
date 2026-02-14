@@ -100,18 +100,18 @@ func ActionToMap(action actions.ActionInterface) (map[string]any, error) {
 		m["destination"] = a.Destination
 		m["append"] = a.Append
 		m["appendnewline"] = a.AppendNewline
-	case *actions.Calibration:
-		m["name"] = a.Name
-		m["programname"] = a.ProgramName
-		if a.ResolutionKey != "" {
-			m["resolutionkey"] = a.ResolutionKey
-		}
-		m["searcharea"] = searchAreaToMap(a.SearchArea)
-		m["targets"] = calibrationTargetsToMaps(a.Targets)
-		m["rowsplit"] = a.RowSplit
-		m["colsplit"] = a.ColSplit
-		m["tolerance"] = float64(a.Tolerance)
-		m["blur"] = a.Blur
+	// case *actions.Calibration:
+	// 	m["name"] = a.Name
+	// 	m["programname"] = a.ProgramName
+	// 	if a.ResolutionKey != "" {
+	// 		m["resolutionkey"] = a.ResolutionKey
+	// 	}
+	// 	m["searcharea"] = searchAreaToMap(a.SearchArea)
+	// 	m["targets"] = calibrationTargetsToMaps(a.Targets)
+	// 	m["rowsplit"] = a.RowSplit
+	// 	m["colsplit"] = a.ColSplit
+	// 	m["tolerance"] = float64(a.Tolerance)
+	// 	m["blur"] = a.Blur
 	case *actions.FocusWindow:
 		m["windowtarget"] = a.WindowTarget
 	default:
@@ -150,14 +150,14 @@ func searchAreaToMap(s actions.SearchArea) map[string]any {
 	}
 }
 
-func calibrationTargetsToMaps(t []actions.CalibrationTarget) []any {
-	out := make([]any, 0, len(t))
-	for _, c := range t {
-		out = append(out, map[string]any{
-			"outputname": c.OutputName,
-			"outputtype": c.OutputType,
-			"target":     c.Target,
-		})
-	}
-	return out
-}
+// func calibrationTargetsToMaps(t []actions.CalibrationTarget) []any {
+// 	out := make([]any, 0, len(t))
+// 	for _, c := range t {
+// 		out = append(out, map[string]any{
+// 			"outputname": c.OutputName,
+// 			"outputtype": c.OutputType,
+// 			"target":     c.Target,
+// 		})
+// 	}
+// 	return out
+// }

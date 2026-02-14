@@ -62,6 +62,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && pip3 install --break-system-packages appimage-builder \
     && rm -rf /var/lib/apt/lists/*
 
+# Nix (for `nix develop` in .devcontainer/builds/linux/nix)
+# Installer expects /nix and group nixbld; create them (we run as root, no sudo).
+RUN apt-get update && apt-get install -y --no-install-recommends xz-utils && \
+    mkdir -m 0755 /nix && chown root:root /nix && \
+    groupadd --system nixbld || true && \
+    useradd --system --no-create-home -G nixbld nixbuilder && \
+    curl -L https://nixos.org/nix/install | sh -s -- --no-daemon && \
+    mkdir -p /root/.config/nix && echo 'experimental-features = nix-command flakes' >> /root/.config/nix/nix.conf && \
+    rm -rf /var/lib/apt/lists/*
+ENV PATH="/root/.nix-profile/bin:${PATH}"
+
 # fyne-cross for cross-compiling Fyne apps (e.g. Windows from Linux)
 RUN go install github.com/fyne-io/fyne-cross@latest
 ENV PATH="${PATH}:/go/bin"

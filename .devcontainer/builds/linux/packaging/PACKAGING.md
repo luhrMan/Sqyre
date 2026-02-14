@@ -2,6 +2,11 @@
 
 Sqyre is a Fyne app that uses **CGO** for OpenCV (gocv) and Tesseract (gosseract). Packaging therefore requires a build environment where these libraries (and their dev packages) are available.
 
+Layout:
+
+- **`flatpak/`** — Flatpak manifest, desktop file, and appdata
+- **`appimage/`** — AppImage recipe, build script, and desktop file
+
 ---
 
 ## Flatpak
@@ -33,17 +38,17 @@ The **freedesktop SDK does not include OpenCV or Tesseract**. You have two optio
 From the **repository root**:
 
 ```bash
-flatpak-builder --user --force-clean build-dir packaging/com.sqyre.app.yml
+flatpak-builder --user --force-clean build-dir .devcontainer/builds/linux/packaging/flatpak/com.sqyre.app.yml
 ```
 
 Install and run:
 
 ```bash
-flatpak-builder --user --install --force-clean build-dir packaging/com.sqyre.app.yml
+flatpak-builder --user --install --force-clean build-dir .devcontainer/builds/linux/packaging/flatpak/com.sqyre.app.yml
 flatpak run --user com.sqyre.app
 ```
 
-The manifest is at `packaging/com.sqyre.app.yml`. It expects the app to be built from `./cmd/sqyre` and uses metadata from `packaging/com.sqyre.app.desktop` and `packaging/com.sqyre.app.appdata.xml`.
+The manifest is at `flatpak/com.sqyre.app.yml`. It expects the app to be built from `./cmd/sqyre` and uses metadata from `flatpak/com.sqyre.app.desktop` and `flatpak/com.sqyre.app.appdata.xml`.
 
 ---
 
@@ -53,7 +58,7 @@ The manifest is at `packaging/com.sqyre.app.yml`. It expects the app to be built
 
 - A **Linux build environment** with:
   - Go 1.24+
-  - OpenCV and Tesseract (and Leptonica) dev libraries — same as in the main [README](../README.md) “Linux (non-NixOS)” section (e.g. `libtesseract-dev`, and OpenCV from gocv’s `make install` or distro packages).
+  - OpenCV and Tesseract (and Leptonica) dev libraries — same as in the main README “Linux (non-NixOS)” section (e.g. `libtesseract-dev`, and OpenCV from gocv’s `make install` or distro packages).
 - **appimage-builder**  
   Install e.g. with:
   ```bash
@@ -64,33 +69,25 @@ The manifest is at `packaging/com.sqyre.app.yml`. It expects the app to be built
 
 ### Build
 
-To keep AppDir and the AppImage under `.devcontainer/builds/linux/packaging/`, run from the **repository root**:
+To keep `sqyre.AppDir` and the AppImage under `appimage/`, run from the **repository root**:
 
 ```bash
-.devcontainer/builds/linux/packaging/build-appimage.sh
+.devcontainer/builds/linux/packaging/appimage/build-appimage.sh
 ```
 
-Or from the packaging directory: `./build-appimage.sh` (run `chmod +x build-appimage.sh` once). AppDir, appimage-build, and the .AppImage file are created inside the packaging folder (see `.gitignore`).
-
-Alternative (artifacts at repo root):
-
-```bash
-appimage-builder --recipe .devcontainer/builds/linux/packaging/AppImageBuilder.yml
-```
-
-This runs the recipe’s `script` (builds the binary with `go build ./cmd/sqyre` and installs it and the desktop/icon into the AppDir), then bundles dependencies and produces an AppImage. The output file name is set in the recipe (e.g. `Sqyre-0.5.0-x86_64.AppImage`).
+Or from the appimage directory: `cd .devcontainer/builds/linux/packaging/appimage && ./build-appimage.sh` (run `chmod +x build-appimage.sh` once). `sqyre.AppDir`, `appimage-build`, and the .AppImage file are created inside `appimage/` (see `.gitignore`).
 
 ### Tesseract data (OCR)
 
-For OCR to work, Tesseract needs language data (e.g. `eng.traineddata`). If the host has it in a standard path (e.g. `/usr/share/tessdata`), the bundled app may still look there at runtime. For a fully self-contained AppImage, you can copy `eng.traineddata` into the AppDir in the recipe (e.g. into `usr/share/tessdata/`) and set `TESSDATA_PREFIX` in the runtime environment in the recipe if needed.
+The recipe copies `eng.traineddata` from the host’s `/usr/share/tessdata/` into `sqyre.AppDir` when present, and sets `TESSDATA_PREFIX` at runtime so OCR works in the AppImage.
 
 ---
 
 ## Summary
 
-| Format   | Build from        | Main requirement                          |
-|----------|-------------------|-------------------------------------------|
-| **Flatpak** | Repo root, manifest in `packaging/` | OpenCV + Tesseract (and Leptonica) in build env or as manifest modules |
-| **AppImage** | Repo root, recipe in `packaging/`   | OpenCV + Tesseract on host + appimage-builder |
+| Format    | Build from | Main requirement |
+|-----------|------------|-------------------|
+| **Flatpak**  | Repo root, manifest in `flatpak/` | OpenCV + Tesseract (and Leptonica) in build env or as manifest modules |
+| **AppImage** | Repo root, script in `appimage/`   | OpenCV + Tesseract on host + appimage-builder |
 
 Both assume the application entrypoint is at **`./cmd/sqyre`** (see main README for building that target).
