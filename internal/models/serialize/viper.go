@@ -243,38 +243,38 @@ func (s *serializer) CreateActionFromMap(rawMap map[string]any, parent actions.A
 			appendNewline = nlVal.(bool)
 		}
 		action = actions.NewSaveVariable(rawMap["variablename"].(string), rawMap["destination"].(string), append, appendNewline)
-	case "calibration":
-		name := stringFromMap(rawMap, "name")
-		programName := stringFromMap(rawMap, "programname")
-		searchArea := actions.SearchArea{}
-		if sa, ok := rawMap["searcharea"].(map[string]any); ok && len(sa) > 0 {
-			searchArea = createSearchBox(sa)
-		}
-		targets := calibrationTargetsFromMap(rawMap["targets"])
-		rowSplit, colSplit := 1, 1
-		if v := rawMap["rowsplit"]; v != nil {
-			rowSplit = intFromMap(v)
-		}
-		if v := rawMap["colsplit"]; v != nil {
-			colSplit = intFromMap(v)
-		}
-		tolerance := float32(0.95)
-		if v := rawMap["tolerance"]; v != nil {
-			switch t := v.(type) {
-			case float64:
-				tolerance = float32(t)
-			case float32:
-				tolerance = t
-			}
-		}
-		blur := 5
-		if v := rawMap["blur"]; v != nil {
-			blur = intFromMap(v)
-		}
-		action = actions.NewCalibration(name, programName, searchArea, targets, rowSplit, colSplit, tolerance, blur)
-		if cal, ok := action.(*actions.Calibration); ok {
-			cal.ResolutionKey = stringFromMap(rawMap, "resolutionkey")
-		}
+	// case "calibration":
+	// 	name := stringFromMap(rawMap, "name")
+	// 	programName := stringFromMap(rawMap, "programname")
+	// 	searchArea := actions.SearchArea{}
+	// 	if sa, ok := rawMap["searcharea"].(map[string]any); ok && len(sa) > 0 {
+	// 		searchArea = createSearchBox(sa)
+	// 	}
+	// 	targets := calibrationTargetsFromMap(rawMap["targets"])
+	// 	rowSplit, colSplit := 1, 1
+	// 	if v := rawMap["rowsplit"]; v != nil {
+	// 		rowSplit = intFromMap(v)
+	// 	}
+	// 	if v := rawMap["colsplit"]; v != nil {
+	// 		colSplit = intFromMap(v)
+	// 	}
+	// 	tolerance := float32(0.95)
+	// 	if v := rawMap["tolerance"]; v != nil {
+	// 		switch t := v.(type) {
+	// 		case float64:
+	// 			tolerance = float32(t)
+	// 		case float32:
+	// 			tolerance = t
+	// 		}
+	// 	}
+	// 	blur := 5
+	// 	if v := rawMap["blur"]; v != nil {
+	// 		blur = intFromMap(v)
+	// 	}
+	// action = actions.NewCalibration(name, programName, searchArea, targets, rowSplit, colSplit, tolerance, blur)
+	// if cal, ok := action.(*actions.Calibration); ok {
+	// 	cal.ResolutionKey = stringFromMap(rawMap, "resolutionkey")
+	// }
 	case "focuswindow":
 		action = actions.NewFocusWindow(stringFromMap(rawMap, "windowtarget"))
 	}
@@ -353,28 +353,28 @@ func intFromMap(v any) int {
 	}
 }
 
-func calibrationTargetsFromMap(v any) []actions.CalibrationTarget {
-	if v == nil {
-		return nil
-	}
-	slice, ok := v.([]any)
-	if !ok {
-		return nil
-	}
-	out := make([]actions.CalibrationTarget, 0, len(slice))
-	for _, e := range slice {
-		m, ok := e.(map[string]any)
-		if !ok {
-			continue
-		}
-		out = append(out, actions.CalibrationTarget{
-			OutputName: stringFromMap(m, "outputname"),
-			OutputType: stringFromMap(m, "outputtype"),
-			Target:     stringFromMap(m, "target"),
-		})
-	}
-	return out
-}
+// func calibrationTargetsFromMap(v any) []actions.CalibrationTarget {
+// 	if v == nil {
+// 		return nil
+// 	}
+// 	slice, ok := v.([]any)
+// 	if !ok {
+// 		return nil
+// 	}
+// 	out := make([]actions.CalibrationTarget, 0, len(slice))
+// 	for _, e := range slice {
+// 		m, ok := e.(map[string]any)
+// 		if !ok {
+// 			continue
+// 		}
+// 		out = append(out, actions.CalibrationTarget{
+// 			OutputName: stringFromMap(m, "outputname"),
+// 			OutputType: stringFromMap(m, "outputtype"),
+// 			Target:     stringFromMap(m, "target"),
+// 		})
+// 	}
+// 	return out
+// }
 
 // valueAsIntOrString converts an any to either int or string as appropriate for SearchArea fields.
 func valueAsIntOrString(val any) any {

@@ -17,9 +17,8 @@ notes.md
 sqyre
 /out/
 /AppDir/
-/appimage-build/
-
-# Linux packaging build artifacts (AppDir and AppImage live under packaging/)
-.devcontainer/builds/linux/packaging/AppDir/
-.devcontainer/builds/linux/packaging/appimage-build/
-.devcontainer/builds/linux/packaging/*.AppImage
+/appimage-build/# Linux packaging build artifacts
+.devcontainer/builds/linux/packaging/appimage/sqyre.AppDir/
+.devcontainer/builds/linux/packaging/appimage/appimage-build/
+.devcontainer/builds/linux/packaging/appimage/*.AppImage
+.devcontainer/builds/linux/packaging/flatpak/build-dir/

@@ -79,9 +79,9 @@ func ShowActionDialog(action actions.ActionInterface, onSave func(actions.Action
 	case *actions.SaveVariable:
 		content, saveFunc = createSaveVariableDialogContent(node)
 		content.Resize(fyne.NewSize(600, 100))
-	case *actions.Calibration:
-		content, saveFunc = createCalibrationDialogContent(node)
-		content.Resize(fyne.NewSize(600, 500))
+	// case *actions.Calibration:
+	// 	content, saveFunc = createCalibrationDialogContent(node)
+	// 	content.Resize(fyne.NewSize(600, 500))
 	case *actions.WaitForPixel:
 		content, saveFunc = createWaitForPixelDialogContent(node)
 		content.Resize(fyne.NewSize(450, 280))
@@ -1260,151 +1260,151 @@ func createFocusWindowDialogContent(action *actions.FocusWindow) (fyne.CanvasObj
 	return content, saveFunc
 }
 
-func createCalibrationDialogContent(action *actions.Calibration) (fyne.CanvasObject, func()) {
-	nameEntry := widget.NewEntry()
-	nameEntry.SetText(action.Name)
-	programEntry := widget.NewEntry()
-	programEntry.SetText(action.ProgramName)
-	programEntry.SetPlaceHolder("Program name (e.g. from Programs tab)")
-	resolutionEntry := widget.NewEntry()
-	resolutionEntry.SetText(action.ResolutionKey)
-	resolutionEntry.SetPlaceHolder("Leave empty for current monitor")
-	rowSplitEntry := widget.NewEntry()
-	rowSplitEntry.SetText(fmt.Sprintf("%d", action.RowSplit))
-	colSplitEntry := widget.NewEntry()
-	colSplitEntry.SetText(fmt.Sprintf("%d", action.ColSplit))
-	toleranceEntry := widget.NewEntry()
-	toleranceEntry.SetText(fmt.Sprintf("%g", action.Tolerance))
-	blurEntry := widget.NewEntry()
-	blurEntry.SetText(fmt.Sprintf("%d", action.Blur))
+// func createCalibrationDialogContent(action *actions.Calibration) (fyne.CanvasObject, func()) {
+// 	nameEntry := widget.NewEntry()
+// 	nameEntry.SetText(action.Name)
+// 	programEntry := widget.NewEntry()
+// 	programEntry.SetText(action.ProgramName)
+// 	programEntry.SetPlaceHolder("Program name (e.g. from Programs tab)")
+// 	resolutionEntry := widget.NewEntry()
+// 	resolutionEntry.SetText(action.ResolutionKey)
+// 	resolutionEntry.SetPlaceHolder("Leave empty for current monitor")
+// 	rowSplitEntry := widget.NewEntry()
+// 	rowSplitEntry.SetText(fmt.Sprintf("%d", action.RowSplit))
+// 	colSplitEntry := widget.NewEntry()
+// 	colSplitEntry.SetText(fmt.Sprintf("%d", action.ColSplit))
+// 	toleranceEntry := widget.NewEntry()
+// 	toleranceEntry.SetText(fmt.Sprintf("%g", action.Tolerance))
+// 	blurEntry := widget.NewEntry()
+// 	blurEntry.SetText(fmt.Sprintf("%d", action.Blur))
 
-	tempSearchArea := action.SearchArea
-	tempTargets := slices.Clone(action.Targets)
+// 	tempSearchArea := action.SearchArea
+// 	tempTargets := slices.Clone(action.Targets)
 
-	// Search area selector: pick program then area name
-	searchAreaProgramSelect := widget.NewSelect(repositories.ProgramRepo().GetAllKeys(), nil)
-	if action.ProgramName != "" {
-		searchAreaProgramSelect.SetSelected(action.ProgramName)
-	} else if len(repositories.ProgramRepo().GetAllKeys()) > 0 {
-		searchAreaProgramSelect.SetSelected(repositories.ProgramRepo().GetAllKeys()[0])
-	}
-	var searchAreaNameSelect *widget.Select
-	refreshSearchAreaNames := func() {
-		pname := searchAreaProgramSelect.Selected
-		if pname == "" {
-			return
-		}
-		p, _ := repositories.ProgramRepo().Get(pname)
-		if p == nil {
-			return
-		}
-		keys := p.SearchAreaRepo(config.MainMonitorSizeString).GetAllKeys()
-		if searchAreaNameSelect == nil {
-			searchAreaNameSelect = widget.NewSelect(keys, func(s string) {
-				sa, _ := p.SearchAreaRepo(config.MainMonitorSizeString).Get(s)
-				if sa != nil {
-					tempSearchArea = actions.SearchArea{Name: sa.Name, LeftX: sa.LeftX, TopY: sa.TopY, RightX: sa.RightX, BottomY: sa.BottomY}
-				}
-			})
-		} else {
-			searchAreaNameSelect.Options = keys
-			searchAreaNameSelect.Refresh()
-		}
-		if action.SearchArea.Name != "" {
-			for _, k := range keys {
-				if k == action.SearchArea.Name {
-					searchAreaNameSelect.SetSelected(k)
-					break
-				}
-			}
-		}
-	}
-	searchAreaProgramSelect.OnChanged = func(string) { refreshSearchAreaNames() }
-	refreshSearchAreaNames()
+// 	// Search area selector: pick program then area name
+// 	searchAreaProgramSelect := widget.NewSelect(repositories.ProgramRepo().GetAllKeys(), nil)
+// 	if action.ProgramName != "" {
+// 		searchAreaProgramSelect.SetSelected(action.ProgramName)
+// 	} else if len(repositories.ProgramRepo().GetAllKeys()) > 0 {
+// 		searchAreaProgramSelect.SetSelected(repositories.ProgramRepo().GetAllKeys()[0])
+// 	}
+// 	var searchAreaNameSelect *widget.Select
+// 	refreshSearchAreaNames := func() {
+// 		pname := searchAreaProgramSelect.Selected
+// 		if pname == "" {
+// 			return
+// 		}
+// 		p, _ := repositories.ProgramRepo().Get(pname)
+// 		if p == nil {
+// 			return
+// 		}
+// 		keys := p.SearchAreaRepo(config.MainMonitorSizeString).GetAllKeys()
+// 		if searchAreaNameSelect == nil {
+// 			searchAreaNameSelect = widget.NewSelect(keys, func(s string) {
+// 				sa, _ := p.SearchAreaRepo(config.MainMonitorSizeString).Get(s)
+// 				if sa != nil {
+// 					tempSearchArea = actions.SearchArea{Name: sa.Name, LeftX: sa.LeftX, TopY: sa.TopY, RightX: sa.RightX, BottomY: sa.BottomY}
+// 				}
+// 			})
+// 		} else {
+// 			searchAreaNameSelect.Options = keys
+// 			searchAreaNameSelect.Refresh()
+// 		}
+// 		if action.SearchArea.Name != "" {
+// 			for _, k := range keys {
+// 				if k == action.SearchArea.Name {
+// 					searchAreaNameSelect.SetSelected(k)
+// 					break
+// 				}
+// 			}
+// 		}
+// 	}
+// 	searchAreaProgramSelect.OnChanged = func(string) { refreshSearchAreaNames() }
+// 	refreshSearchAreaNames()
 
-	// Targets list
-	targetsList := widget.NewList(
-		func() int { return len(tempTargets) },
-		func() fyne.CanvasObject {
-			return container.NewHBox(
-				widget.NewEntry(),
-				widget.NewSelect([]string{"point", "searcharea"}, nil),
-				widget.NewEntry(),
-			)
-		},
-		func(id widget.ListItemID, co fyne.CanvasObject) {
-			row := co.(*fyne.Container).Objects
-			if id < len(tempTargets) {
-				t := tempTargets[id]
-				row[0].(*widget.Entry).SetText(t.OutputName)
-				row[1].(*widget.Select).SetSelected(t.OutputType)
-				if row[1].(*widget.Select).Selected == "" {
-					row[1].(*widget.Select).SetSelected("point")
-				}
-				row[2].(*widget.Entry).SetText(t.Target)
-			}
-			i := id
-			row[0].(*widget.Entry).OnChanged = func(s string) {
-				if i < len(tempTargets) {
-					tempTargets[i].OutputName = s
-				}
-			}
-			row[1].(*widget.Select).OnChanged = func(s string) {
-				if i < len(tempTargets) {
-					tempTargets[i].OutputType = s
-				}
-			}
-			row[2].(*widget.Entry).OnChanged = func(s string) {
-				if i < len(tempTargets) {
-					tempTargets[i].Target = s
-				}
-			}
-		},
-	)
-	addTargetBtn := ttwidget.NewButton("Add target", func() {
-		tempTargets = append(tempTargets, actions.CalibrationTarget{OutputType: "point"})
-		targetsList.Refresh()
-	})
-	content := container.NewVBox(
-		widget.NewForm(
-			widget.NewFormItem("Name:", nameEntry),
-			widget.NewFormItem("Program name:", programEntry),
-			widget.NewFormItem("Resolution (optional):", resolutionEntry),
-			widget.NewFormItem("Search area (optional) — program:", searchAreaProgramSelect),
-		),
-	)
-	if searchAreaNameSelect != nil {
-		content.Add(widget.NewForm(widget.NewFormItem("Search area name:", searchAreaNameSelect)))
-	}
-	content.Add(widget.NewForm(
-		widget.NewFormItem("Row split:", rowSplitEntry),
-		widget.NewFormItem("Col split:", colSplitEntry),
-		widget.NewFormItem("Tolerance:", toleranceEntry),
-		widget.NewFormItem("Blur:", blurEntry),
-	))
-	content.Add(widget.NewLabel("Calibration targets (output name, type, image target e.g. program|item):"))
-	content.Add(container.NewBorder(nil, nil, nil, addTargetBtn, targetsList))
-	content.Add(layout.NewSpacer())
+// 	// Targets list
+// 	targetsList := widget.NewList(
+// 		func() int { return len(tempTargets) },
+// 		func() fyne.CanvasObject {
+// 			return container.NewHBox(
+// 				widget.NewEntry(),
+// 				widget.NewSelect([]string{"point", "searcharea"}, nil),
+// 				widget.NewEntry(),
+// 			)
+// 		},
+// 		func(id widget.ListItemID, co fyne.CanvasObject) {
+// 			row := co.(*fyne.Container).Objects
+// 			if id < len(tempTargets) {
+// 				t := tempTargets[id]
+// 				row[0].(*widget.Entry).SetText(t.OutputName)
+// 				row[1].(*widget.Select).SetSelected(t.OutputType)
+// 				if row[1].(*widget.Select).Selected == "" {
+// 					row[1].(*widget.Select).SetSelected("point")
+// 				}
+// 				row[2].(*widget.Entry).SetText(t.Target)
+// 			}
+// 			i := id
+// 			row[0].(*widget.Entry).OnChanged = func(s string) {
+// 				if i < len(tempTargets) {
+// 					tempTargets[i].OutputName = s
+// 				}
+// 			}
+// 			row[1].(*widget.Select).OnChanged = func(s string) {
+// 				if i < len(tempTargets) {
+// 					tempTargets[i].OutputType = s
+// 				}
+// 			}
+// 			row[2].(*widget.Entry).OnChanged = func(s string) {
+// 				if i < len(tempTargets) {
+// 					tempTargets[i].Target = s
+// 				}
+// 			}
+// 		},
+// 	)
+// 	addTargetBtn := ttwidget.NewButton("Add target", func() {
+// 		tempTargets = append(tempTargets, actions.CalibrationTarget{OutputType: "point"})
+// 		targetsList.Refresh()
+// 	})
+// 	content := container.NewVBox(
+// 		widget.NewForm(
+// 			widget.NewFormItem("Name:", nameEntry),
+// 			widget.NewFormItem("Program name:", programEntry),
+// 			widget.NewFormItem("Resolution (optional):", resolutionEntry),
+// 			widget.NewFormItem("Search area (optional) — program:", searchAreaProgramSelect),
+// 		),
+// 	)
+// 	if searchAreaNameSelect != nil {
+// 		content.Add(widget.NewForm(widget.NewFormItem("Search area name:", searchAreaNameSelect)))
+// 	}
+// 	content.Add(widget.NewForm(
+// 		widget.NewFormItem("Row split:", rowSplitEntry),
+// 		widget.NewFormItem("Col split:", colSplitEntry),
+// 		widget.NewFormItem("Tolerance:", toleranceEntry),
+// 		widget.NewFormItem("Blur:", blurEntry),
+// 	))
+// 	content.Add(widget.NewLabel("Calibration targets (output name, type, image target e.g. program|item):"))
+// 	content.Add(container.NewBorder(nil, nil, nil, addTargetBtn, targetsList))
+// 	content.Add(layout.NewSpacer())
 
-	saveFunc := func() {
-		action.Name = nameEntry.Text
-		action.ProgramName = programEntry.Text
-		action.ResolutionKey = strings.TrimSpace(resolutionEntry.Text)
-		action.SearchArea = tempSearchArea
-		action.Targets = tempTargets
-		if n, err := strconv.Atoi(rowSplitEntry.Text); err == nil {
-			action.RowSplit = n
-		}
-		if n, err := strconv.Atoi(colSplitEntry.Text); err == nil {
-			action.ColSplit = n
-		}
-		if f, err := strconv.ParseFloat(toleranceEntry.Text, 32); err == nil {
-			action.Tolerance = float32(f)
-		}
-		if n, err := strconv.Atoi(blurEntry.Text); err == nil {
-			action.Blur = n
-		}
-	}
+// 	saveFunc := func() {
+// 		action.Name = nameEntry.Text
+// 		action.ProgramName = programEntry.Text
+// 		action.ResolutionKey = strings.TrimSpace(resolutionEntry.Text)
+// 		action.SearchArea = tempSearchArea
+// 		action.Targets = tempTargets
+// 		if n, err := strconv.Atoi(rowSplitEntry.Text); err == nil {
+// 			action.RowSplit = n
+// 		}
+// 		if n, err := strconv.Atoi(colSplitEntry.Text); err == nil {
+// 			action.ColSplit = n
+// 		}
+// 		if f, err := strconv.ParseFloat(toleranceEntry.Text, 32); err == nil {
+// 			action.Tolerance = float32(f)
+// 		}
+// 		if n, err := strconv.Atoi(blurEntry.Text); err == nil {
+// 			action.Blur = n
+// 		}
+// 	}
 
-	return content, saveFunc
-}
+// 	return content, saveFunc
+// }

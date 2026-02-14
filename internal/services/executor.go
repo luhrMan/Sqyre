@@ -285,9 +285,9 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 			}
 		}
 		return nil
-	case *actions.Calibration:
-		log.Println("Calibration:", node.String())
-		return RunCalibration(node, macro)
+	// case *actions.Calibration:
+	// 	log.Println("Calibration:", node.String())
+	// 	return RunCalibration(node, macro)
 	case *actions.FocusWindow:
 		log.Println("Focus Window:", node.String())
 		return RunFocusWindow(node)

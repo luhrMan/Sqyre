@@ -3,7 +3,7 @@
 #
 # Usage:
 #   nix develop
-#   mkdir -p out && go build -o out/sqyre ./cmd/sqyre
+#   go build -o . ../../../../cmd/sqyre
 #   ./out/sqyre
 
 {

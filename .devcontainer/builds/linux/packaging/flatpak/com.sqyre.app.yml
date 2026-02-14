@@ -1,5 +1,5 @@
 # Flatpak manifest for Sqyre (Fyne app with CGO: OpenCV, Tesseract).
-# Build from repo root: flatpak-builder --user --force-clean build-dir packaging/com.sqyre.app.yml
+# Build from repo root: flatpak-builder --user --force-clean build-dir .devcontainer/builds/linux/packaging/flatpak/com.sqyre.app.yml
 #
 # Prerequisites:
 #   flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
@@ -46,8 +46,8 @@ modules:
       - $GOROOT/bin/go build -trimpath -o sqyre ./cmd/sqyre
       - install -Dm00755 sqyre ${FLATPAK_DEST}/bin/sqyre
       - install -Dm00644 internal/assets/icons/sqyre.png ${FLATPAK_DEST}/share/icons/hicolor/256x256/apps/${FLATPAK_ID}.png
-      - install -Dm00644 packaging/com.sqyre.app.desktop ${FLATPAK_DEST}/share/applications/${FLATPAK_ID}.desktop
-      - install -Dm00644 packaging/com.sqyre.app.appdata.xml ${FLATPAK_DEST}/share/appdata/${FLATPAK_ID}.appdata.xml
+      - install -Dm00644 .devcontainer/builds/linux/packaging/flatpak/com.sqyre.app.desktop ${FLATPAK_DEST}/share/applications/${FLATPAK_ID}.desktop
+      - install -Dm00644 .devcontainer/builds/linux/packaging/flatpak/com.sqyre.app.appdata.xml ${FLATPAK_DEST}/share/appdata/${FLATPAK_ID}.appdata.xml
     sources:
       - type: dir
-        path: ..
+        path: ../../../../..

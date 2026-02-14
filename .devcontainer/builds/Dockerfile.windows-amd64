@@ -1,0 +1,118 @@
+# Windows cross-compile image for Sqyre: OpenCV4 + MinGW sysroot so CGO (gocv, gosseract) builds.
+# Build from repo root: docker build -f .devcontainer/builds/Dockerfile.windows-amd64 -t fyne-cross-windows:local .
+# Then: fyne-cross windows -image fyne-cross-windows:local --app-id com.sqyre.app ./cmd/sqyre
+
+# ---------------------------------------------------------------------------
+# Stage 1: OpenCV4 and CGO deps for Windows (MinGW) via MSYS2 package extract
+# ---------------------------------------------------------------------------
+# MSYS2 provides prebuilt OpenCV 4.x, Tesseract, Leptonica for mingw64. We extract
+# them into a sysroot (no Wine); gocv and gosseract link against these for Windows.
+# msys2dl requires Python 3.12+ (tarfile.data_filter).
+FROM python:3.12-slim-bookworm AS sysroot
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        curl \
+        gnupg \
+        zstd \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --break-system-packages msys2dl
+
+# OpenCV4 + zlib, tesseract-ocr, leptonica (and their MSYS2 deps) for Windows native build
+RUN msys2dl extract --output /usr/local --env mingw64 \
+        opencv \
+        zlib \
+        tesseract-ocr \
+        leptonica
+
+# Download eng.traineddata; tesseract needs it at runtime (README: move to share/tessdata)
+RUN mkdir -p /usr/local/mingw64/share/tessdata \
+    && curl -sL -o /usr/local/mingw64/share/tessdata/eng.traineddata \
+        https://github.com/tesseract-ocr/tessdata/raw/main/eng.traineddata
+
+# ---------------------------------------------------------------------------
+# Stage 2: fyne-cross Windows image + OpenCV4/MinGW sysroot for CGO
+# ---------------------------------------------------------------------------
+FROM fyneio/fyne-cross-images:windows
+
+COPY --from=sysroot /usr/local/mingw64 /usr/local/mingw64
+
+# pkg-config for gosseract; gcc-mingw-w64 so CC/CXX use MinGW (libstdc++) and match MSYS2 libs
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        pkg-config \
+        gcc-mingw-w64-x86-64 \
+        g++-mingw-w64-x86-64 \
+    && rm -rf /var/lib/apt/lists/*
+
+# gocv expects -lopencv_core4130 etc.; MSYS2 provides libopencv_*-413.dll.a and libopencv_*-413.dll (in bin/).
+# 1) Import libs: lib/opencv_*4130.dll.a -> libopencv_*-413.dll.a for link time.
+# 2) DLLs: Zig linker looks for opencv_*4130.dll in lib/; MSYS2 has libopencv_*-413.dll in bin/. Symlink so it finds them.
+RUN cd /usr/local/mingw64/lib && \
+    for f in libopencv_*-413.dll.a; do \
+        [ -f "$f" ] || continue; \
+        base=$(echo "$f" | sed 's/-413\.dll\.a//'); \
+        ln -sf "$f" "${base}4130.dll.a" 2>/dev/null || true; \
+    done && \
+    cd /usr/local/mingw64/bin && \
+    for f in libopencv_*-413.dll; do \
+        [ -f "$f" ] || continue; \
+        name=$(echo "$f" | sed 's/^libopencv_\(.*\)-413\.dll$/\1/'); \
+        ln -sf "../bin/$f" "/usr/local/mingw64/lib/opencv_${name}4130.dll" 2>/dev/null || true; \
+    done
+
+# Zig linker looks for leptonica/tesseract (DLL + import lib). MSYS2 has liblept*.dll, libtesseract*.dll in bin/ and .dll.a in lib/.
+RUN cd /usr/local/mingw64/bin && \
+    for f in liblept*.dll; do [ -f "$f" ] && ln -sf "../bin/$f" /usr/local/mingw64/lib/leptonica.dll && break; done && \
+    for f in libtesseract*.dll; do [ -f "$f" ] && ln -sf "../bin/$f" /usr/local/mingw64/lib/tesseract.dll && break; done
+RUN cd /usr/local/mingw64/lib && \
+    for f in liblept*.dll.a; do [ -f "$f" ] || continue; [ "$f" = "libleptonica.dll.a" ] && continue; ln -sf "$f" libleptonica.dll.a; break; done && \
+    for f in libtesseract*.dll.a; do [ -f "$f" ] || continue; [ "$f" = "libtesseract.dll.a" ] && continue; ln -sf "$f" libtesseract.dll.a; break; done
+
+# OpenCV utility.hpp: ensure cv::Mutex and cv::AutoLock are defined for MinGW.
+# 1) Add #include <mutex> so std::recursive_mutex is available.
+# 2) Add #undef OPENCV_DISABLE_THREAD_SUPPORT so the header takes the branch that defines
+#    "typedef std::recursive_mutex Mutex" (MSYS2 build may set OPENCV_DISABLE_THREAD_SUPPORT, leaving cv::Mutex undefined).
+RUN sed -i '/#include <functional>/a #include <mutex>' /usr/local/mingw64/include/opencv4/opencv2/core/utility.hpp \
+    && sed -i '/#include <mutex>/a #undef OPENCV_DISABLE_THREAD_SUPPORT' /usr/local/mingw64/include/opencv4/opencv2/core/utility.hpp
+
+# gocv uses "pkg-config: opencv4" when building (host is Linux). Overwrite opencv4.pc so pkg-config
+# returns MinGW include/lib and -lopencv_*4130 for cross-compile (MSYS2 .pc may use different -l names).
+RUN printf '%s\n' \
+    'prefix=/usr/local/mingw64' \
+    'exec_prefix=${prefix}' \
+    'libdir=${prefix}/lib' \
+    'includedir=${prefix}/include' \
+    '' \
+    'Name: OpenCV' \
+    'Description: OpenCV (MinGW) for Windows cross-compile' \
+    'Version: 4.13.0' \
+    'Libs: -L${libdir} -fuse-ld=bfd -lopencv_core4130 -lopencv_face4130 -lopencv_videoio4130 -lopencv_imgproc4130 -lopencv_highgui4130 -lopencv_imgcodecs4130 -lopencv_objdetect4130 -lopencv_features2d4130 -lopencv_video4130 -lopencv_dnn4130 -lopencv_xfeatures2d4130 -lopencv_plot4130 -lopencv_tracking4130 -lopencv_img_hash4130 -lopencv_calib3d4130 -lopencv_bgsegm4130 -lopencv_photo4130 -lopencv_aruco4130 -lopencv_wechat_qrcode4130 -lopencv_ximgproc4130 -lopencv_mcc4130' \
+    'Cflags: -I${includedir} -I${includedir}/opencv4' \
+    'Cxxflags: -std=c++11 -DNDEBUG -I${includedir} -I${includedir}/opencv4' \
+    > /usr/local/mingw64/lib/pkgconfig/opencv4.pc
+
+# Record host MinGW C++ include dir so entrypoint can put it first in CGO_CXXFLAGS (so <mutex> is found from host stdlib, not sysroot).
+RUN ls -d /usr/x86_64-w64-mingw32/include/c++/* 2>/dev/null | head -1 > /etc/mingw-cxx-include-dir
+
+# Use MinGW GCC/G++ for C/C++ so object files use libstdc++ and match MSYS2 libs.
+# (Default Zig/clang uses libc++ and causes undefined symbol errors when linking MSYS2 OpenCV/Tesseract.)
+ENV CC=x86_64-w64-mingw32-gcc \
+    CXX=x86_64-w64-mingw32-g++
+
+# Entrypoint forces CC/CXX to MinGW so fyne-cross cannot override with Zig (lld) when running the container.
+# Build context must be repo root (e.g. docker build -f .devcontainer/builds/Dockerfile.windows-amd64 -t tag .).
+COPY .devcontainer/builds/windows/entrypoint-mingw.sh /usr/local/bin/entrypoint-mingw.sh
+RUN chmod +x /usr/local/bin/entrypoint-mingw.sh
+ENTRYPOINT ["/usr/local/bin/entrypoint-mingw.sh"]
+
+# CGO flags so MinGW finds headers and libs when cross-compiling.
+# PKG_CONFIG_PATH: gocv uses "pkg-config opencv4"; we provide opencv4.pc above. Also for gosseract.
+# GOFLAGS: gocv_specific_modules matches Linux dev build. opencv4.pc above makes pkg-config return correct MinGW flags.
+ENV CGO_ENABLED=1 \
+    PKG_CONFIG_PATH="/usr/local/mingw64/lib/pkgconfig" \
+    GOFLAGS="-tags=gocv_specific_modules" \
+    CGO_CFLAGS="-isystem /usr/local/mingw64/include -isystem /usr/local/mingw64/include/opencv4" \
+    CGO_CPPFLAGS="-isystem /usr/local/mingw64/include -isystem /usr/local/mingw64/include/opencv4" \
+    CGO_CXXFLAGS="-std=c++11 -DNDEBUG -isystem /usr/local/mingw64/include -isystem /usr/local/mingw64/include/opencv4" \
+    CGO_LDFLAGS="-L/usr/local/mingw64/lib -fuse-ld=bfd -lopencv_core4130 -lopencv_face4130 -lopencv_videoio4130 -lopencv_imgproc4130 -lopencv_highgui4130 -lopencv_imgcodecs4130 -lopencv_objdetect4130 -lopencv_features2d4130 -lopencv_video4130 -lopencv_dnn4130 -lopencv_xfeatures2d4130 -lopencv_plot4130 -lopencv_tracking4130 -lopencv_img_hash4130 -lopencv_calib3d4130 -lopencv_bgsegm4130 -lopencv_photo4130 -lopencv_aruco4130 -lopencv_wechat_qrcode4130 -lopencv_ximgproc4130 -lopencv_mcc4130"
+
+WORKDIR /app
