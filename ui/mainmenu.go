@@ -72,9 +72,9 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 		fyne.NewMenuItemWithIcon("OCR", actions.NewOcr("", []actions.ActionInterface{}, "template", actions.SearchArea{Name: "template search area"}).Icon(), func() {
 			addActionAndRefresh(actions.NewOcr("", []actions.ActionInterface{}, "template", actions.SearchArea{Name: "template search area"}))
 		}),
-		fyne.NewMenuItemWithIcon("Calibration", actions.NewCalibration("", "", actions.SearchArea{}, nil, 1, 1, 0.95, 5).Icon(), func() {
-			addActionAndRefresh(actions.NewCalibration("", "", actions.SearchArea{}, nil, 1, 1, 0.95, 5))
-		}),
+		// fyne.NewMenuItemWithIcon("Calibration", actions.NewCalibration("", "", actions.SearchArea{}, nil, 1, 1, 0.95, 5).Icon(), func() {
+		// 	addActionAndRefresh(actions.NewCalibration("", "", actions.SearchArea{}, nil, 1, 1, 0.95, 5))
+		// }),
 		fyne.NewMenuItemWithIcon("Wait for pixel", actions.NewWaitForPixel("", actions.Point{}, "ffffff", 0, 0, nil).Icon(), func() {
 			addActionAndRefresh(actions.NewWaitForPixel("", actions.Point{}, "ffffff", 0, 0, nil))
 		}),
