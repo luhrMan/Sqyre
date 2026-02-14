@@ -48,7 +48,6 @@ func init() {
 	log.Printf("Initialized ProgramRepository with %d programs", programRepo.Count())
 
 	a := app.NewWithID("Sqyre")
-	a.Settings().SetTheme(&assets.CustomTheme{})
 	os.Setenv("FYNE_SCALE", "1")
 
 	w := a.NewWindow("Sqyre")
