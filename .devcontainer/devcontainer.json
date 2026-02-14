@@ -14,9 +14,9 @@
     "vscode": {
       "tasks": [
         {
-          "label": "Build Linux (artifact in ./out)",
+          "label": "Build Linux",
           "type": "shell",
-          "command": "mkdir -p out && go build -o out/sqyre ./cmd/sqyre",
+          "command": "go build -o builds/linux ./cmd/sqyre",
           "group": { "kind": "build", "isDefault": true },
           "presentation": { "reveal": "silent", "panel": "shared" }
         },
