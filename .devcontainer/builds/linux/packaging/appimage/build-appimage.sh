@@ -6,9 +6,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-rm -rf "$SCRIPT_DIR/sqyre.AppDir/usr/lib" \
-       "$SCRIPT_DIR/sqyre.AppDir/usr/bin" \
-       "$SCRIPT_DIR/sqyre.AppDir/lib" \
+rm -rf "$SCRIPT_DIR/sqyre.AppDir" \
        "$SCRIPT_DIR/appimage-build"
 
 appimage-builder \

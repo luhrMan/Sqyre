@@ -1,78 +1,180 @@
-# Stage 1: Download MSYS2 MinGW packages and extract to sysroot.
-# Avoids Wine-based MSYS2 image which can trigger Docker lchown/subuid errors.
+# Cross-compile Sqyre for Windows (amd64) with OpenCV + Tesseract via MSYS2.
+#
+# Build from repo root:
+#   docker build -f .devcontainer/builds/windows/Dockerfile.windows-amd64 \
+#       -t fyne-cross-windows:local .
+#
+# Use with fyne-cross:
+#   fyne-cross windows -image fyne-cross-windows:local \
+#       --app-id com.sqyre.app ./cmd/sqyre
+
+# ===========================================================================
+# Stage 1: Extract MSYS2 MinGW-w64 packages into /usr/local/mingw64 sysroot
+# ===========================================================================
+# Uses msys2dl (Python) to download and extract pre-built binaries.
+# This avoids running MSYS2 under Wine which triggers Docker lchown/subuid errors.
 # msys2dl requires Python 3.12+ (tarfile.data_filter).
 FROM python:3.12-slim-bookworm AS sysroot
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        curl \
-        gnupg \
-        zstd \
+        curl gnupg zstd \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --break-system-packages msys2dl
 
-# Extract MSYS2 packages per README Windows native build: opencv, zlib, tesseract, leptonica (+ deps)
+# Extract MSYS2 mingw64 packages: OpenCV (with contrib), Tesseract, Leptonica,
+# zlib, and all their transitive dependencies.
 RUN msys2dl extract --output /usr/local --env mingw64 \
         opencv \
         zlib \
         tesseract-ocr \
         leptonica
 
-# Download eng.traineddata; tesseract needs it at runtime (README: move to share/tessdata)
+# Tesseract English trained data (needed at runtime)
 RUN mkdir -p /usr/local/mingw64/share/tessdata \
     && curl -sL -o /usr/local/mingw64/share/tessdata/eng.traineddata \
         https://github.com/tesseract-ocr/tessdata/raw/main/eng.traineddata
 
-# Stage 2: fyne-cross Windows image with MinGW sysroot for CGO deps.
+
+# ===========================================================================
+# Stage 2: fyne-cross Windows image with MSYS2 sysroot for CGO
+# ===========================================================================
 FROM fyneio/fyne-cross-images:windows
 
-# Copy MinGW sysroot from stage 1
+# Copy the complete MSYS2 sysroot
 COPY --from=sysroot /usr/local/mingw64 /usr/local/mingw64
 
-# pkg-config for gosseract; gcc-mingw-w64 so CC/CXX use MinGW (libstdc++) and match MSYS2 libs
+# MinGW GCC/G++ cross-compiler + pkg-config
+# We need MinGW GCC (not zig/clang) because MSYS2 libraries are built with
+# GCC/libstdc++. Using zig (libc++) causes ABI mismatch and undefined symbols.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         pkg-config \
         gcc-mingw-w64-x86-64 \
         g++-mingw-w64-x86-64 \
+        nsis \
     && rm -rf /var/lib/apt/lists/*
 
-# gocv expects -lopencv_core4130 etc.; MSYS2 provides libopencv_*-413.dll.a and libopencv_*-413.dll (in bin/).
-# 1) Import libs: lib/opencv_*4130.dll.a -> libopencv_*-413.dll.a for link time.
-# 2) DLLs: Zig linker looks for opencv_*4130.dll in lib/; MSYS2 has libopencv_*-413.dll in bin/. Symlink so it finds them.
+# ---------------------------------------------------------------------------
+# Fix MSYS2 pkg-config .pc files: adjust prefix /mingw64 → /usr/local/mingw64
+# ---------------------------------------------------------------------------
+RUN find /usr/local/mingw64/lib/pkgconfig -name '*.pc' -exec \
+        sed -i 's|^prefix=.*|prefix=/usr/local/mingw64|' {} +
+
+# ---------------------------------------------------------------------------
+# OpenCV import library symlinks
+# ---------------------------------------------------------------------------
+# MSYS2 provides unversioned import libs: libopencv_core.dll.a
+# gocv v0.43.0 hardcodes versioned names for Windows: -lopencv_core4130
+# (format: module name + MAJOR*1000 + MINOR*10 + PATCH, e.g. 4130 for 4.13.0)
+# Create versioned symlinks so the linker finds them.
 RUN cd /usr/local/mingw64/lib && \
-    for f in libopencv_*-413.dll.a; do \
+    # Create gocv-expected 4130-suffixed symlinks → unversioned import libs
+    for f in libopencv_*.dll.a; do \
         [ -f "$f" ] || continue; \
-        base=$(echo "$f" | sed 's/-413\.dll\.a//'); \
-        ln -sf "$f" "${base}4130.dll.a" 2>/dev/null || true; \
+        mod=$(echo "$f" | sed 's/\.dll\.a$//'); \
+        ln -sf "$f" "${mod}4130.dll.a"; \
     done && \
+    # Ensure DLLs are findable from lib/ (MSYS2 puts them in bin/)
     cd /usr/local/mingw64/bin && \
-    for f in libopencv_*-413.dll; do \
+    for f in libopencv_*.dll; do \
         [ -f "$f" ] || continue; \
-        name=$(echo "$f" | sed 's/^libopencv_\(.*\)-413\.dll$/\1/'); \
-        ln -sf "../bin/$f" "/usr/local/mingw64/lib/opencv_${name}4130.dll" 2>/dev/null || true; \
+        [ -f "/usr/local/mingw64/lib/$f" ] || \
+            ln -sf "../bin/$f" "/usr/local/mingw64/lib/$f"; \
     done
 
-# Zig linker looks for leptonica/tesseract (DLL + import lib). MSYS2 has liblept*.dll, libtesseract*.dll in bin/ and .dll.a in lib/.
-RUN cd /usr/local/mingw64/bin && \
-    for f in liblept*.dll; do [ -f "$f" ] && ln -sf "../bin/$f" /usr/local/mingw64/lib/leptonica.dll && break; done && \
-    for f in libtesseract*.dll; do [ -f "$f" ] && ln -sf "../bin/$f" /usr/local/mingw64/lib/tesseract.dll && break; done
+# ---------------------------------------------------------------------------
+# Tesseract / Leptonica import library symlinks
+# ---------------------------------------------------------------------------
+# gosseract v2.4.1 hardcodes: -L/usr/local/lib -lleptonica -ltesseract
+# MSYS2 provides: liblept.dll.a, libleptonica.dll.a, libtesseract.dll.a
+# in /usr/local/mingw64/lib/. We must also populate /usr/local/lib/ since
+# gosseract's cgo directive uses that path.
 RUN cd /usr/local/mingw64/lib && \
-    for f in liblept*.dll.a; do [ -f "$f" ] || continue; [ "$f" = "libleptonica.dll.a" ] && continue; ln -sf "$f" libleptonica.dll.a; break; done && \
-    for f in libtesseract*.dll.a; do [ -f "$f" ] || continue; [ "$f" = "libtesseract.dll.a" ] && continue; ln -sf "$f" libtesseract.dll.a; break; done
+    # Ensure unversioned import libs exist in mingw64/lib
+    if [ ! -f libtesseract.dll.a ]; then \
+        for f in libtesseract*.dll.a; do \
+            [ -f "$f" ] && ln -sf "$f" libtesseract.dll.a && break; \
+        done; \
+    fi && \
+    if [ ! -f liblept.dll.a ]; then \
+        for f in liblept*.dll.a; do \
+            [ -f "$f" ] && ln -sf "$f" liblept.dll.a && break; \
+        done; \
+    fi && \
+    if [ ! -f libleptonica.dll.a ]; then \
+        ln -sf liblept.dll.a libleptonica.dll.a 2>/dev/null || true; \
+    fi && \
+    # Also ensure DLLs are findable from lib/
+    cd /usr/local/mingw64/bin && \
+    for f in libtesseract*.dll liblept*.dll; do \
+        [ -f "$f" ] || continue; \
+        [ -f "/usr/local/mingw64/lib/$f" ] || \
+            ln -sf "../bin/$f" "/usr/local/mingw64/lib/$f"; \
+    done
+# gosseract cgo uses -L/usr/local/lib; create symlinks there too
+RUN mkdir -p /usr/local/lib && \
+    ln -sf /usr/local/mingw64/lib/libleptonica.dll.a /usr/local/lib/libleptonica.dll.a && \
+    ln -sf /usr/local/mingw64/lib/libtesseract.dll.a /usr/local/lib/libtesseract.dll.a && \
+    ln -sf /usr/local/mingw64/lib/liblept.dll.a /usr/local/lib/liblept.dll.a
 
-# Use MinGW GCC/G++ for C/C++ so object files use libstdc++ and match MSYS2 libs.
-# (Default Zig/clang uses libc++ and causes undefined symbol errors when linking MSYS2 OpenCV/Tesseract.)
-ENV CC=x86_64-w64-mingw32-gcc \
-    CXX=x86_64-w64-mingw32-g++
+# ---------------------------------------------------------------------------
+# Fix OpenCV utility.hpp: ensure cv::Mutex is defined for MinGW
+# ---------------------------------------------------------------------------
+# MSYS2's OpenCV build may set OPENCV_DISABLE_THREAD_SUPPORT, which removes
+# the cv::Mutex / cv::AutoLock typedefs that gocv expects. We add <mutex>
+# and undefine that macro so the header takes the branch defining
+# "typedef std::recursive_mutex Mutex".
+RUN UTILITY_HPP=/usr/local/mingw64/include/opencv4/opencv2/core/utility.hpp && \
+    if [ -f "$UTILITY_HPP" ]; then \
+        sed -i '/#include <functional>/a #include <mutex>' "$UTILITY_HPP" && \
+        sed -i '/#include <mutex>/a #undef OPENCV_DISABLE_THREAD_SUPPORT' "$UTILITY_HPP"; \
+    fi
 
-# CGO flags so MinGW finds headers and libs when cross-compiling.
-# Use -isystem for MinGW includes so they are searched after the C++ stdlib.
-# CGO_LDFLAGS overrides gocv's LDFLAGS, so we must include full -lopencv_* set.
-# PKG_CONFIG_PATH lets gosseract find tesseract/leptonica via pkg-config.
-ENV CGO_ENABLED=1 \
+# ---------------------------------------------------------------------------
+# Remove MSYS2 C++ stdlib headers to avoid conflicts with host MinGW GCC
+# ---------------------------------------------------------------------------
+# The host gcc-mingw-w64 package provides its own libstdc++ headers.
+# MSYS2's might be a different version, causing subtle ABI issues.
+RUN rm -rf /usr/local/mingw64/include/c++ 2>/dev/null || true
+
+# ---------------------------------------------------------------------------
+# Zig wrapper: intercept "zig cc/c++" → MinGW GCC
+# ---------------------------------------------------------------------------
+# fyne-cross may set CC="zig cc -target x86_64-windows-gnu" inside its build
+# scripts (not just via Docker -e). This wrapper intercepts those calls.
+RUN if [ -f /usr/local/bin/zig ]; then mv /usr/local/bin/zig /usr/local/bin/zig.real; fi
+COPY .devcontainer/builds/windows/zig-wrapper.sh /usr/local/bin/zig
+RUN chmod +x /usr/local/bin/zig
+
+# Record host MinGW C++ include dir for the entrypoint
+RUN ls -d /usr/x86_64-w64-mingw32/include/c++/* 2>/dev/null | head -1 \
+    > /etc/mingw-cxx-include-dir
+
+# ---------------------------------------------------------------------------
+# Entrypoint: force MinGW CC/CXX (override Docker -e from fyne-cross)
+# ---------------------------------------------------------------------------
+COPY .devcontainer/builds/windows/entrypoint-mingw.sh /usr/local/bin/entrypoint-mingw.sh
+RUN chmod +x /usr/local/bin/entrypoint-mingw.sh
+ENTRYPOINT ["/usr/local/bin/entrypoint-mingw.sh"]
+
+# ---------------------------------------------------------------------------
+# Environment
+# ---------------------------------------------------------------------------
+# CC/CXX: MinGW cross-compilers (match MSYS2 libstdc++ ABI)
+# CGO_ENABLED: required for gocv, gosseract, robotgo, gohook
+# PKG_CONFIG_PATH: gocv uses "pkg-config opencv4"; gosseract uses -ltesseract -llept
+# GOFLAGS: gocv_specific_modules limits which gocv modules are compiled
+# CGO_CPPFLAGS: include search paths for both C and C++ (searched after stdlib)
+# CGO_CXXFLAGS: C++ standard and defines
+# CGO_LDFLAGS: library search path + force BFD linker (compatible with MSYS2 import libs)
+ENV CC=x86_64-w64-mingw32-gcc-posix \
+    CXX=x86_64-w64-mingw32-g++-posix \
+    CGO_ENABLED=1 \
     PKG_CONFIG_PATH="/usr/local/mingw64/lib/pkgconfig" \
+    GOFLAGS="-tags=gocv_specific_modules" \
     CGO_CFLAGS="-isystem /usr/local/mingw64/include -isystem /usr/local/mingw64/include/opencv4" \
     CGO_CPPFLAGS="-isystem /usr/local/mingw64/include -isystem /usr/local/mingw64/include/opencv4" \
     CGO_CXXFLAGS="-std=c++11 -DNDEBUG -isystem /usr/local/mingw64/include -isystem /usr/local/mingw64/include/opencv4" \
-    CGO_LDFLAGS="-L/usr/local/mingw64/lib -lopencv_core4130 -lopencv_face4130 -lopencv_videoio4130 -lopencv_imgproc4130 -lopencv_highgui4130 -lopencv_imgcodecs4130 -lopencv_objdetect4130 -lopencv_features2d4130 -lopencv_video4130 -lopencv_dnn4130 -lopencv_xfeatures2d4130 -lopencv_plot4130 -lopencv_tracking4130 -lopencv_img_hash4130 -lopencv_calib3d4130 -lopencv_bgsegm4130 -lopencv_photo4130 -lopencv_aruco4130 -lopencv_wechat_qrcode4130 -lopencv_ximgproc4130 -lopencv_mcc4130"
+    CGO_LDFLAGS="-L/usr/local/mingw64/lib -fuse-ld=bfd"
 
 WORKDIR /app
