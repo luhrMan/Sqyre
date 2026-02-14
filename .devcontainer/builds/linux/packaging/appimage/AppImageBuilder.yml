@@ -20,6 +20,20 @@ script:
     if [ -f /usr/share/tessdata/eng.traineddata ]; then
       cp /usr/share/tessdata/eng.traineddata "$TARGET_APPDIR/usr/share/tessdata/"
     fi
+  # Explicitly bundle OpenCV, Tesseract, and Leptonica shared libraries.
+  # appimage-builder tracing may miss libs whose code paths aren't exercised
+  # during the brief strace run.
+  - mkdir -p "$TARGET_APPDIR/usr/lib"
+  - |
+    # OpenCV (built from source, installed to /usr/local/lib)
+    cp -aL /usr/local/lib/libopencv_*.so* "$TARGET_APPDIR/usr/lib/" 2>/dev/null || true
+    # Tesseract and Leptonica (from system packages)
+    cp -aL /usr/lib/x86_64-linux-gnu/libtesseract.so* "$TARGET_APPDIR/usr/lib/" 2>/dev/null || true
+    cp -aL /usr/lib/x86_64-linux-gnu/liblept.so* "$TARGET_APPDIR/usr/lib/" 2>/dev/null || true
+    # Transitive deps of OpenCV imgcodecs and Tesseract (image format libs)
+    for dep in libjpeg libpng libtiff libwebp libopenjp2 libIlmImf libHalf; do
+      cp -aL /usr/lib/x86_64-linux-gnu/${dep}*.so* "$TARGET_APPDIR/usr/lib/" 2>/dev/null || true
+    done
 
 AppDir:
   path: "{{ TARGET_APPDIR }}"
@@ -37,6 +51,7 @@ AppDir:
   runtime:
     env:
       TESSDATA_PREFIX: "${APPDIR}/usr/share"
+      APPDIR_LIBRARY_PATH: "${APPDIR}/usr/lib:${APPDIR}/lib/x86_64"
 
 AppImage:
   arch: x86_64
