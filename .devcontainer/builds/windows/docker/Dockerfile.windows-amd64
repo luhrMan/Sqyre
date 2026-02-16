@@ -1,0 +1,102 @@
+# Cross-compile Sqyre for Windows (amd64) with OpenCV + Tesseract.
+# Uses STATIC linking so the exe embeds OpenCV and Tesseract (no separate DLLs).
+#
+# Build from repo root:
+#   docker build -f .devcontainer/builds/windows/Dockerfile.windows-amd64 \
+#       -t fyne-cross-windows:local .
+#
+# Use with fyne-cross:
+#   fyne-cross windows -image fyne-cross-windows:local \
+#       --app-id com.sqyre.app ./cmd/sqyre
+
+# ===========================================================================
+# Stage 1: Build static OpenCV and Tesseract (and deps) for MinGW x86_64
+# ===========================================================================
+# Produces .a libraries only; no DLLs. Installed to /usr/local/mingw64-static.
+FROM debian:bookworm-slim AS staticbuild
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential cmake curl ca-certificates \
+        gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64 \
+        gcc-mingw-w64-x86-64-posix g++-mingw-w64-x86-64-posix \
+        pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY .devcontainer/builds/windows/build-static-libs.sh /build-static-libs.sh
+RUN sed -i 's/\r$//' /build-static-libs.sh && chmod +x /build-static-libs.sh && bash /build-static-libs.sh /usr/local/mingw64-static
+
+# Tesseract English trained data (needed at runtime)
+RUN mkdir -p /usr/local/mingw64-static/share/tessdata \
+    && curl -sL -o /usr/local/mingw64-static/share/tessdata/eng.traineddata \
+        https://github.com/tesseract-ocr/tessdata/raw/main/eng.traineddata
+
+# ===========================================================================
+# Stage 2: fyne-cross Windows image with static OpenCV + Tesseract sysroot
+# ===========================================================================
+FROM fyneio/fyne-cross-images:windows
+
+# Copy static libs, headers, pkg-config, and tessdata (no DLLs)
+COPY --from=staticbuild /usr/local/mingw64-static /usr/local/mingw64
+
+# MinGW GCC/G++ cross-compiler + pkg-config
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        pkg-config \
+        gcc-mingw-w64-x86-64 \
+        g++-mingw-w64-x86-64 \
+    && rm -rf /var/lib/apt/lists/*
+
+# gosseract cgo links -lleptonica -ltesseract from -L/usr/local/lib.
+# Leptonica installs as libleptonica-X.Y.Z.a (versioned); create unversioned names.
+RUN set -ex && mkdir -p /usr/local/lib \
+    && cp -v /usr/local/mingw64/lib/libleptonica*.a /usr/local/lib/ \
+    && cp -v /usr/local/mingw64/lib/libtesseract*.a /usr/local/lib/ \
+    && cd /usr/local/lib \
+    && [ ! -f libleptonica.a ] && ln -sf "$(ls libleptonica-*.a 2>/dev/null | head -1)" libleptonica.a || true \
+    && [ ! -f libtesseract.a ] && ln -sf "$(ls libtesseract[0-9]*.a 2>/dev/null | head -1)" libtesseract.a || true \
+    && ls -la /usr/local/lib/liblept* /usr/local/lib/libtesseract*
+
+# Fix OpenCV utility.hpp: ensure cv::Mutex is defined for MinGW
+RUN UTILITY_HPP=/usr/local/mingw64/include/opencv4/opencv2/core/utility.hpp && \
+    if [ -f "$UTILITY_HPP" ]; then \
+        sed -i '/#include <functional>/a #include <mutex>' "$UTILITY_HPP" && \
+        sed -i '/#include <mutex>/a #undef OPENCV_DISABLE_THREAD_SUPPORT' "$UTILITY_HPP"; \
+    fi
+
+# ---------------------------------------------------------------------------
+# Zig wrapper: intercept "zig cc/c++" → MinGW GCC
+# ---------------------------------------------------------------------------
+# fyne-cross may set CC="zig cc -target x86_64-windows-gnu" inside its build
+# scripts (not just via Docker -e). This wrapper intercepts those calls.
+RUN if [ -f /usr/local/bin/zig ]; then mv /usr/local/bin/zig /usr/local/bin/zig.real; fi
+COPY .devcontainer/builds/windows/zig-wrapper.sh /usr/local/bin/zig
+RUN chmod +x /usr/local/bin/zig
+
+# Record host MinGW C++ include dir for the entrypoint
+RUN ls -d /usr/x86_64-w64-mingw32/include/c++/* 2>/dev/null | head -1 \
+    > /etc/mingw-cxx-include-dir
+
+# ---------------------------------------------------------------------------
+# Entrypoint: force MinGW CC/CXX (override Docker -e from fyne-cross)
+# ---------------------------------------------------------------------------
+COPY .devcontainer/builds/windows/entrypoint-mingw.sh /usr/local/bin/entrypoint-mingw.sh
+RUN chmod +x /usr/local/bin/entrypoint-mingw.sh
+ENTRYPOINT ["/usr/local/bin/entrypoint-mingw.sh"]
+
+# ---------------------------------------------------------------------------
+# Environment
+# ---------------------------------------------------------------------------
+# CC/CXX: MinGW cross-compilers
+# CGO_ENABLED: required for gocv, gosseract, robotgo, gohook
+# CGO_LDFLAGS: -static links OpenCV and Tesseract into the exe (no separate DLLs);
+#   -static-libgcc -static-libstdc++ keep runtime libs static; -fuse-ld=bfd for stack patch
+ENV CC=x86_64-w64-mingw32-gcc-posix \
+    CXX=x86_64-w64-mingw32-g++-posix \
+    CGO_ENABLED=1 \
+    PKG_CONFIG_PATH="/usr/local/mingw64/lib/pkgconfig" \
+    GOFLAGS="-tags=customenv,gocv_specific_modules,gocv_imgproc,gocv_imgcodecs" \
+    CGO_CFLAGS="-isystem /usr/local/mingw64/include -isystem /usr/local/mingw64/include/opencv4" \
+    CGO_CPPFLAGS="-isystem /usr/local/mingw64/include -isystem /usr/local/mingw64/include/opencv4" \
+    CGO_CXXFLAGS="-std=c++11 -DNDEBUG -isystem /usr/local/mingw64/include -isystem /usr/local/mingw64/include/opencv4" \
+    CGO_LDFLAGS="-L/usr/local/mingw64/lib -L/usr/local/mingw64/lib/opencv4/3rdparty -L/usr/local/lib -static -static-libgcc -static-libstdc++ -fuse-ld=bfd -lopencv_imgcodecs4130 -lopencv_imgproc4130 -lopencv_core4130 -lopencv_flann4130 -llibprotobuf -ltesseract -lleptonica -lpng16 -ljpeg -lz -lole32"
+
+WORKDIR /app
