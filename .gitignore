@@ -11,6 +11,7 @@ notes.md
 *.prof
 *.test
 /internal/assets/images/meta/
+/internal/assets/tessdata/eng.traineddata
 
 /.vscode
 /.kiro

@@ -11,9 +11,33 @@ IMAGE_NAME="fyne-cross-windows:local"
 
 echo "=== Building Windows cross-compile image (OpenCV + Tesseract + MinGW) ==="
 docker build \
-    -f .devcontainer/builds/windows/Dockerfile.windows-amd64 \
+    -f .devcontainer/builds/windows/docker/Dockerfile.windows-amd64 \
     -t "$IMAGE_NAME" \
     .
+
+# Download tessdata for embedding into the binary via //go:embed
+echo ""
+echo "=== Downloading tessdata for embedding ==="
+TESSDATA_EMBED="$REPO_ROOT/internal/assets/tessdata/eng.traineddata"
+if [ ! -f "$TESSDATA_EMBED" ]; then
+    docker run --rm \
+        -v "$REPO_ROOT/internal/assets/tessdata:/out" \
+        "$IMAGE_NAME" \
+        bash -c 'cp /usr/local/mingw64/share/tessdata/eng.traineddata /out/'
+fi
+echo "  eng.traineddata ($(du -h "$TESSDATA_EMBED" | cut -f1))"
+
+# Verify libraries exist in the Docker image before compiling
+echo ""
+echo "=== Verifying libraries in Docker image ==="
+docker run --rm "$IMAGE_NAME" bash -c '
+    echo "--- find liblept/libtesseract under /usr/local ---"
+    find /usr/local -name "liblept*" -o -name "libtesseract*" 2>/dev/null | sort
+    echo "--- /usr/local/lib contents ---"
+    ls -la /usr/local/lib/ 2>/dev/null || echo "(empty or missing)"
+    echo "--- /usr/local/mingw64/lib lept/tess ---"
+    ls -la /usr/local/mingw64/lib/liblept* /usr/local/mingw64/lib/libtesseract* 2>/dev/null || echo "(none)"
+'
 
 echo ""
 echo "=== Cross-compiling Sqyre for Windows ==="
@@ -21,6 +45,9 @@ echo "=== Cross-compiling Sqyre for Windows ==="
     -image "$IMAGE_NAME" \
     --app-id com.sqyre.app \
     ./cmd/sqyre
+
+# Clean up embedded tessdata from source tree
+rm -f "$TESSDATA_EMBED"
 
 OUTPUT_DIR="$REPO_ROOT/.devcontainer/builds/windows/output"
 mkdir -p "$OUTPUT_DIR"
@@ -38,67 +65,12 @@ if [ ! -f "$EXE_PATH" ]; then
     exit 1
 fi
 
-# -----------------------------------------------------------------------
-# Stage installer files
-# -----------------------------------------------------------------------
-WINDOWS_DIR="$REPO_ROOT/.devcontainer/builds/windows"
-STAGING="$WINDOWS_DIR/staging"
-rm -rf "$STAGING"
-mkdir -p "$STAGING/tessdata"
-
+# Patch PE SizeOfStackReserve to 16MB to avoid STATUS_STACK_OVERFLOW (0xC00000FD) on Windows
 echo ""
-echo "=== Staging installer files ==="
+# echo "=== Patching PE stack size (16 MB) ==="
+# go run "$REPO_ROOT/.devcontainer/builds/windows/patch-pe-stack.go" "$EXE_PATH"
 
-# Copy the compiled executable
-cp "$EXE_PATH" "$STAGING/"
-echo "  Sqyre.exe"
-
-# Collect DLL dependencies from the Docker image
-echo ""
-echo "=== Collecting DLL dependencies ==="
-docker run --rm \
-    -v "$STAGING:/staging" \
-    -v "$EXE_PATH:/exe/Sqyre.exe:ro" \
-    -v "$WINDOWS_DIR/collect-dlls.sh:/collect-dlls.sh:ro" \
-    "$IMAGE_NAME" \
-    bash /collect-dlls.sh /exe/Sqyre.exe /staging
-
-# Copy tessdata from the Docker image
-echo ""
-echo "=== Extracting tessdata ==="
-docker run --rm \
-    -v "$STAGING/tessdata:/out" \
-    "$IMAGE_NAME" \
-    bash -c 'cp /usr/local/mingw64/share/tessdata/eng.traineddata /out/'
-echo "  tessdata/eng.traineddata"
-
-# -----------------------------------------------------------------------
-# Build the NSIS installer
-# -----------------------------------------------------------------------
-echo ""
-echo "=== Building Windows installer with NSIS ==="
-
-# Read version from FyneApp.toml if present
-APP_VERSION="0.5.0"
-if [ -f "$REPO_ROOT/FyneApp.toml" ]; then
-    VER=$(grep '^Version' "$REPO_ROOT/FyneApp.toml" | head -1 | sed 's/.*= *"//;s/".*//')
-    [ -n "$VER" ] && APP_VERSION="$VER"
-fi
-
-docker run --rm \
-    -v "$WINDOWS_DIR:/work" \
-    -v "$OUTPUT_DIR:/output" \
-    "$IMAGE_NAME" \
-    makensis \
-        -DAPP_VERSION="$APP_VERSION" \
-        -DSTAGING_DIR=/work/staging \
-        -DOUT_DIR=/output \
-        /work/sqyre-installer.nsi
-
-# Clean up staging
-rm -rf "$STAGING"
 
 echo ""
 echo "=== Build complete ==="
-echo "Installer: .devcontainer/builds/windows/output/SqyreSetup-${APP_VERSION}.exe"
-echo "Standalone exe + DLLs also available in: .devcontainer/builds/windows/output/"
+echo "Standalone exe: .devcontainer/builds/windows/output/Sqyre.exe"
