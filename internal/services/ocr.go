@@ -1,6 +1,7 @@
 package services
 
 import (
+	"Squire/internal/assets"
 	"Squire/internal/config"
 	"Squire/internal/models"
 	"Squire/internal/models/actions"
@@ -15,9 +16,14 @@ import (
 	"gocv.io/x/gocv"
 )
 
-var (
+var tessClient *gosseract.Client
+
+func init() {
 	tessClient = gosseract.NewClient()
-)
+	if prefix := assets.EnsureTessdata(); prefix != "" {
+		tessClient.SetTessdataPrefix(prefix)
+	}
+}
 
 func GetTessClient() *gosseract.Client { return tessClient }
 func CloseTessClient()                 { tessClient.Close() }

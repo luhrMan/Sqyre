@@ -8,8 +8,11 @@ import (
 	"Squire/internal/models/serialize"
 	"Squire/internal/services"
 	"Squire/ui"
+	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
+	"time"
 
 	"github.com/go-vgo/robotgo"
 	hook "github.com/luhrMan/gohook"
@@ -22,14 +25,32 @@ import (
 	fynetooltip "github.com/dweymouth/fyne-tooltip"
 )
 
+func debugLog(msg string) {
+	dir := os.TempDir()
+	if d := os.Getenv("APPDATA"); d != "" {
+		dir = filepath.Join(d, "Sqyre")
+		_ = os.MkdirAll(dir, 0755)
+	}
+	f, err := os.OpenFile(filepath.Join(dir, "sqyre-debug.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	f.WriteString(fmt.Sprintf("[%s] %s\n", time.Now().Format("15:04:05.000"), msg))
+}
+
 func init() {
+	debugLog("init started")
 	// Initialize directory structure first
 	if err := config.InitializeDirectories(); err != nil {
+		debugLog("init dirs failed: " + err.Error())
 		log.Printf("Warning: Failed to initialize directories: %v", err)
 	}
+	debugLog("directories OK")
 
-	go services.StartHook()
-	services.FailsafeHotkey()
+	if os.Getenv("SQYRE_NO_HOOK") != "1" {
+		go services.StartHook()
+	}
 
 	// Initialize YAML config with proper file path
 	yamlDb := serialize.GetYAMLConfig()
@@ -47,6 +68,7 @@ func init() {
 	programRepo := repositories.ProgramRepo()
 	log.Printf("Initialized ProgramRepository with %d programs", programRepo.Count())
 
+	debugLog("creating Fyne app")
 	a := app.NewWithID("Sqyre")
 	os.Setenv("FYNE_SCALE", "1")
 
@@ -56,8 +78,9 @@ func init() {
 	w.SetIcon(assets.AppIcon)
 	w.SetMaster()
 
-	hook.Register(hook.KeyDown, []string{"esc"}, func(e hook.Event) {
-		if isWindowWithTitleActive("sqyre") {
+	if os.Getenv("SQYRE_NO_HOOK") != "1" {
+		hook.Register(hook.KeyDown, []string{"esc"}, func(e hook.Event) {
+			if isWindowWithTitleActive("sqyre") {
 			fyne.Do(func() {
 				if ui.GetUi().ActionDialog != nil {
 					ui.GetUi().ActionDialog.Hide()
@@ -68,8 +91,9 @@ func init() {
 					ui.GetUi().Navigation.Back()
 				}
 			})
-		}
-	})
+			}
+		})
+	}
 
 	systemTraySetup(w)
 
@@ -81,9 +105,14 @@ func init() {
 
 	w.SetContent(fynetooltip.AddWindowToolTipLayer(ui.GetUi().MainUi.Navigation, w.Canvas()))
 	w.RequestFocus()
+	debugLog("init done")
 }
 
 func main() {
+	debugLog("main started")
+	if os.Getenv("SQYRE_NO_HOOK") != "1" {
+		services.FailsafeHotkey()
+	}
 	// Get the Dark and Darker program and set up the item-corner mask
 	// program, err := repositories.ProgramRepo().Get("dark and darker")
 	// if err != nil {
