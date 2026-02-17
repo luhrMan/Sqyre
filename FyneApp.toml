@@ -1,5 +1,5 @@
 [Details]
-Icon = "internal/assets/images/icon.svg"
+Icon = "internal/assets/icons/sqyre.png"
 Name = "Sqyre"
 ID = "com.sqyre.app"
 Version = "0.5.0"

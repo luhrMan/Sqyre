@@ -5,10 +5,11 @@ import (
 )
 
 type Macro struct {
-	Name        string        `mapstructure:"name"`
-	Root        *actions.Loop `mapstructure:"root"`
-	GlobalDelay int           `mapstructure:"globaldelay"`
-	Hotkey      []string      `mapstructure:"hotkey"`
+	Name        string         `mapstructure:"name"`
+	Root        *actions.Loop  `mapstructure:"root"`
+	GlobalDelay int            `mapstructure:"globaldelay"`
+	Hotkey      []string       `mapstructure:"hotkey"`
+	Variables   *VariableStore `mapstructure:"variables"`
 }
 
 // GetKey returns the unique identifier for this Macro.
@@ -29,5 +30,6 @@ func NewMacro(name string, delay int, hotkey []string) *Macro {
 		Root:        actions.NewLoop(1, "root", []actions.ActionInterface{}),
 		GlobalDelay: delay,
 		Hotkey:      hotkey,
+		Variables:   NewVariableStore(),
 	}
 }

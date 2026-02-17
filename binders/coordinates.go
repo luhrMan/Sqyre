@@ -6,8 +6,8 @@ import (
 	"Squire/internal/models/actions"
 	"Squire/internal/models/repositories"
 	"Squire/ui"
+	"fmt"
 	"log"
-	"strconv"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -18,17 +18,25 @@ import (
 func setSearchAreaWidgets(sa models.SearchArea) {
 	st := ui.GetUi().EditorTabs.SearchAreasTab.Widgets
 	st["Name"].(*widget.Entry).SetText(sa.Name)
-	st["LeftX"].(*widget.Entry).SetText(strconv.Itoa(sa.LeftX))
-	st["TopY"].(*widget.Entry).SetText(strconv.Itoa(sa.TopY))
-	st["RightX"].(*widget.Entry).SetText(strconv.Itoa(sa.RightX))
-	st["BottomY"].(*widget.Entry).SetText(strconv.Itoa(sa.BottomY))
+	st["LeftX"].(*widget.Entry).SetText(fmt.Sprintf("%v", sa.LeftX))
+	st["TopY"].(*widget.Entry).SetText(fmt.Sprintf("%v", sa.TopY))
+	st["RightX"].(*widget.Entry).SetText(fmt.Sprintf("%v", sa.RightX))
+	st["BottomY"].(*widget.Entry).SetText(fmt.Sprintf("%v", sa.BottomY))
 }
 
 func setPointWidgets(p models.Point) {
 	pt := ui.GetUi().EditorTabs.PointsTab
 	pt.Widgets["Name"].(*widget.Entry).SetText(p.Name)
-	pt.Widgets["X"].(*widget.Entry).SetText(strconv.Itoa(p.X))
-	pt.Widgets["Y"].(*widget.Entry).SetText(strconv.Itoa(p.Y))
+	pt.Widgets["X"].(*widget.Entry).SetText(fmt.Sprintf("%v", p.X))
+	pt.Widgets["Y"].(*widget.Entry).SetText(fmt.Sprintf("%v", p.Y))
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("Point: Preview update panic recovered - %v (point: %s)", r, p.Name)
+			}
+		}()
+		ui.GetUi().UpdatePointPreview(&p)
+	}()
 }
 
 func setAccordionSearchAreasLists(acc *widget.Accordion) {
@@ -83,7 +91,7 @@ func setAccordionSearchAreasLists(acc *widget.Accordion) {
 			}
 			ui.GetUi().EditorTabs.SearchAreasTab.SelectedItem = sa
 			setSearchAreaWidgets(*sa)
-			
+
 			// Update search area preview with error handling
 			func() {
 				defer func() {
@@ -93,22 +101,9 @@ func setAccordionSearchAreasLists(acc *widget.Accordion) {
 				}()
 				ui.GetUi().UpdateSearchAreaPreview(sa)
 			}()
-			
-			if ui.GetUi().MainUi.Visible() {
-				if v, ok := ui.GetUi().Mui.MTabs.SelectedTab().Macro.Root.GetAction(ui.GetUi().Mui.MTabs.SelectedTab().SelectedNode).(*actions.ImageSearch); ok {
-					if ui.GetUi().ActionTabs.AppTabs.Selected().Text == "Image" {
-						v.SearchArea = actions.SearchArea{Name: sa.Name, LeftX: sa.LeftX, TopY: sa.TopY, RightX: sa.RightX, BottomY: sa.BottomY}
-						bindAction(v)
-					}
-				}
-				if v, ok := ui.GetUi().Mui.MTabs.SelectedTab().Macro.Root.GetAction(ui.GetUi().Mui.MTabs.SelectedTab().SelectedNode).(*actions.Ocr); ok {
-					if ui.GetUi().ActionTabs.AppTabs.Selected().Text == "OCR" {
-						v.SearchArea = actions.SearchArea{Name: sa.Name, LeftX: sa.LeftX, TopY: sa.TopY, RightX: sa.RightX, BottomY: sa.BottomY}
-						bindAction(v)
-					}
-				}
-				lists.searchareas.Unselect(id)
-			}
+			// if ui.GetUi().MainUi.Navigation.Visible() {
+			lists.searchareas.UnselectAll()
+			// }
 		}
 		lists.searchbar = &widget.Entry{
 			PlaceHolder: "Search here",
@@ -195,11 +190,12 @@ func setAccordionPointsLists(acc *widget.Accordion) {
 			}
 			ui.GetUi().EditorTabs.PointsTab.SelectedItem = point
 			setPointWidgets(*point)
-			if v, ok := ui.GetUi().Mui.MTabs.SelectedTab().Macro.Root.GetAction(ui.GetUi().Mui.MTabs.SelectedTab().SelectedNode).(*actions.Move); ok {
-				v.Point = actions.Point{Name: point.Name, X: point.X, Y: point.Y}
-				bindAction(v)
+			if st := ui.GetUi().Mui.MTabs.SelectedTab(); st != nil {
+				if v, ok := st.Macro.Root.GetAction(st.SelectedNode).(*actions.Move); ok {
+					v.Point = actions.Point{Name: point.Name, X: point.X, Y: point.Y}
+				}
 			}
-			if ui.GetUi().MainUi.Visible() {
+			if ui.GetUi().MainUi.Navigation.Visible() {
 				lists.points.Unselect(id)
 			}
 		}
@@ -279,13 +275,13 @@ func setAccordionAutoPicSearchAreasLists(acc *widget.Accordion) {
 				log.Printf("AutoPic: Invalid selection ID %d, filtered list length: %d", id, len(lists.filtered))
 				return
 			}
-			
+
 			program, err := repositories.ProgramRepo().Get(p.Name)
 			if err != nil {
 				log.Printf("AutoPic: Error getting program %s: %v", p.Name, err)
 				return
 			}
-			
+
 			saName := lists.filtered[id]
 			if saName == "" {
 				log.Printf("AutoPic: Empty search area name at index %d", id)
@@ -297,15 +293,15 @@ func setAccordionAutoPicSearchAreasLists(acc *widget.Accordion) {
 				log.Printf("AutoPic: Error getting search area %s: %v", saName, err)
 				return
 			}
-			
+
 			if sa == nil {
 				log.Printf("AutoPic: Search area %s is nil", saName)
 				return
 			}
-			
+
 			// Set selected item for AutoPic tab
 			ui.GetUi().EditorTabs.AutoPicTab.SelectedItem = sa
-			
+
 			// Enable save button and update preview with error handling
 			atw := ui.GetUi().EditorTabs.AutoPicTab.Widgets
 			if saveButton, ok := atw["saveButton"].(*widget.Button); ok {
@@ -313,7 +309,7 @@ func setAccordionAutoPicSearchAreasLists(acc *widget.Accordion) {
 			} else {
 				log.Printf("AutoPic: Save button not found or wrong type")
 			}
-			
+
 			// Update preview with comprehensive error handling
 			func() {
 				defer func() {
@@ -323,13 +319,13 @@ func setAccordionAutoPicSearchAreasLists(acc *widget.Accordion) {
 				}()
 				ui.GetUi().UpdateAutoPicPreview(sa)
 			}()
-			
+
 			// Unselect after handling (same pattern as other tabs)
-			if ui.GetUi().MainUi.Visible() {
+			if ui.GetUi().MainUi.Navigation.Visible() {
 				lists.searchareas.Unselect(id)
 			}
 		}
-		
+
 		lists.searchbar = &widget.Entry{
 			PlaceHolder: "Search here",
 			OnChanged: func(s string) {
@@ -350,7 +346,7 @@ func setAccordionAutoPicSearchAreasLists(acc *widget.Accordion) {
 				}
 			},
 		}
-		
+
 		programSAListWidget := *widget.NewAccordionItem(
 			p.Name,
 			container.NewBorder(

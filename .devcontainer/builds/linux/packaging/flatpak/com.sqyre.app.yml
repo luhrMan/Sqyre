@@ -1,0 +1,53 @@
+# Flatpak manifest for Sqyre (Fyne app with CGO: OpenCV, Tesseract).
+# Build from repo root: flatpak-builder --user --force-clean build-dir .devcontainer/builds/linux/packaging/flatpak/com.sqyre.app.yml
+#
+# Prerequisites:
+#   flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+#   flatpak install flathub org.freedesktop.Platform//25.08 org.freedesktop.Sdk//25.08 org.freedesktop.Sdk.Extension.golang//25.08
+#
+# Sqyre needs OpenCV and Tesseract at build time. The freedesktop SDK does not include them.
+# Option A: Build on a host that has OpenCV and Tesseract installed (e.g. from your distro),
+#   and ensure they are visible in the Flatpak build (e.g. use --build-dir and a custom
+#   SDK that includes them, or add the dependency modules below).
+# Option B: Add leptonica, tesseract, and opencv as separate modules before the sqyre module;
+#   see PACKAGING.md and e.g. https://github.com/RajSolai/TextSnatcher/tree/master/manifests
+#   for tesseract/leptonica. You must set PKG_CONFIG_PATH and CGO_* so the Go build finds them.
+
+app-id: com.sqyre.app
+runtime: org.freedesktop.Platform
+runtime-version: "25.08"
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.golang
+command: sqyre
+
+finish-args:
+  - --share=ipc
+  - --socket=x11
+  - --device=dri
+  - --talk-name=org.freedesktop.Notifications
+  - --filesystem=home
+  - --share=network
+  - --socket=pulseaudio
+
+build-options:
+  env:
+    - GOBIN=/app/bin
+    - GOROOT=/usr/lib/sdk/golang
+    - CGO_ENABLED=1
+
+modules:
+  - name: sqyre
+    buildsystem: simple
+    build-commands:
+      - export PKG_CONFIG_PATH=${FLATPAK_DEST}/lib/pkgconfig
+      - export CGO_CPPFLAGS="-I${FLATPAK_DEST}/include"
+      - export CGO_LDFLAGS="-L${FLATPAK_DEST}/lib"
+      - $GOROOT/bin/go build -trimpath -o sqyre ./cmd/sqyre
+      - install -Dm00755 sqyre ${FLATPAK_DEST}/bin/sqyre
+      - install -Dm00644 internal/assets/icons/sqyre.png ${FLATPAK_DEST}/share/icons/hicolor/256x256/apps/${FLATPAK_ID}.png
+      - install -Dm00644 .devcontainer/builds/linux/packaging/flatpak/com.sqyre.app.desktop ${FLATPAK_DEST}/share/applications/${FLATPAK_ID}.desktop
+      - install -Dm00644 .devcontainer/builds/linux/packaging/flatpak/com.sqyre.app.appdata.xml ${FLATPAK_DEST}/share/appdata/${FLATPAK_ID}.appdata.xml
+    sources:
+      - type: dir
+        path: ../../../../..

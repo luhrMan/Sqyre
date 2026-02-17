@@ -8,20 +8,18 @@ import (
 	"Squire/internal/models/repositories"
 	"Squire/internal/services"
 	"Squire/ui"
+	"Squire/ui/completionentry"
 	"Squire/ui/custom_widgets"
-	"image/color"
 	"log"
 	"slices"
 	"sort"
 	"strconv"
+	"strings"
 
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
-	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
-	"github.com/lithammer/fuzzysearch/fuzzy"
 )
 
 func setItemsWidgets(i models.Item) {
@@ -30,8 +28,10 @@ func setItemsWidgets(i models.Item) {
 	it["Name"].(*widget.Entry).SetText(i.Name)
 	it["Cols"].(*widget.Entry).SetText(strconv.Itoa(i.GridSize[0]))
 	it["Rows"].(*widget.Entry).SetText(strconv.Itoa(i.GridSize[1]))
-	// it["Tags"].(*widget.Entry).Bind(c.(binding.String))
 	it["StackMax"].(*widget.Entry).SetText(strconv.Itoa(i.StackMax))
+
+	// Update tags display
+	updateTagsDisplay(&i)
 
 	// Update IconVariantEditor with selected item
 	if editor, ok := it["iconVariantEditor"].(*custom_widgets.IconVariantEditor); ok {
@@ -50,6 +50,107 @@ func setItemsWidgets(i models.Item) {
 	}
 }
 
+// updateTagsDisplay updates the tags grid container with the current item's tags
+func updateTagsDisplay(item *models.Item) {
+	it := ui.GetUi().EditorTabs.ItemsTab.Widgets
+	tagsContainer, ok := it["Tags"].(*fyne.Container)
+	if !ok {
+		return
+	}
+
+	// Clear existing tags
+	tagsContainer.Objects = []fyne.CanvasObject{}
+
+	// Add each tag as a label with a remove button
+	for _, tag := range item.Tags {
+		tagLabel := widget.NewLabel(tag)
+		removeButton := widget.NewButtonWithIcon("", theme.DeleteIcon(), func() {
+			removeTag(item, tag)
+		})
+		removeButton.Importance = widget.LowImportance
+
+		// Create horizontal container for tag label and remove button
+		tagContainer := container.NewHBox(tagLabel, removeButton)
+		tagsContainer.Add(tagContainer)
+	}
+
+	tagsContainer.Refresh()
+}
+
+// removeTag removes a tag from the current item and saves it
+func removeTag(item *models.Item, tagToRemove string) {
+	// Remove the tag from the slice
+	newTags := []string{}
+	for _, tag := range item.Tags {
+		if tag != tagToRemove {
+			newTags = append(newTags, tag)
+		}
+	}
+	item.Tags = newTags
+
+	// Save the item
+	p := ui.GetUi().ProgramSelector.Text
+	program, err := repositories.ProgramRepo().Get(p)
+	if err != nil {
+		log.Printf("Error getting program %s: %v", p, err)
+		return
+	}
+
+	if err := program.ItemRepo().Set(item.Name, item); err != nil {
+		log.Printf("Error saving item %s: %v", item.Name, err)
+		return
+	}
+
+	if err := repositories.ProgramRepo().Set(program.Name, program); err != nil {
+		log.Printf("Error saving program %s: %v", p, err)
+		return
+	}
+
+	// Reload the item from the repository to ensure SelectedItem is in sync
+	updatedItem, err := program.ItemRepo().Get(item.Name)
+	if err != nil {
+		log.Printf("Error reloading item %s: %v", item.Name, err)
+		// Still update display with the modified item
+		updateTagsDisplay(item)
+		return
+	}
+
+	// Update the SelectedItem to the reloaded item
+	ui.GetUi().EditorTabs.ItemsTab.SelectedItem = updatedItem
+
+	// Update the tags display
+	updateTagsDisplay(updatedItem)
+
+	// Refresh the tag entry's completion options to ensure deleted tags are removed from suggestions
+	it := ui.GetUi().EditorTabs.ItemsTab.Widgets
+	if tagEntry, ok := it["tagEntry"].(*completionentry.CompletionEntry); ok {
+		currentText := tagEntry.Text
+		// If there's text in the entry, refresh the completion options
+		if currentText != "" {
+			// Get fresh tags and filter them
+			allTags := getAllExistingTags()
+			searchLower := strings.ToLower(currentText)
+			matchingTags := []string{}
+			for _, tag := range allTags {
+				if strings.Contains(strings.ToLower(tag), searchLower) {
+					matchingTags = append(matchingTags, tag)
+				}
+			}
+			// Limit to 10 suggestions
+			if len(matchingTags) > 10 {
+				matchingTags = matchingTags[:10]
+			}
+			// Update the completion options with fresh data
+			tagEntry.SetOptions(matchingTags)
+			if len(matchingTags) > 0 {
+				tagEntry.ShowCompletion()
+			} else {
+				tagEntry.HideCompletion()
+			}
+		}
+	}
+}
+
 func RefreshItemsAccordionItems() {
 	// Use the complete rebuild function to ensure icon cache is updated
 	RebuildItemsAccordion()
@@ -58,7 +159,7 @@ func RefreshItemsAccordionItems() {
 // RefreshProgramAccordionItem refreshes only the accordion item for a specific program
 func RefreshProgramAccordionItem(programName string) {
 	// Refresh both the main action tabs accordion and the editor tabs accordion
-	refreshAccordionForProgram(ui.GetUi().ActionTabs.ImageSearchItemsAccordion, programName)
+	// refreshAccordionForProgram(ui.GetUi().ActionTabs.ImageSearchItemsAccordion, programName)
 
 	if accordion, ok := ui.GetUi().EditorTabs.ItemsTab.Widgets["Accordion"].(*widget.Accordion); ok {
 		refreshAccordionForProgram(accordion, programName)
@@ -82,9 +183,9 @@ func refreshAccordionForProgram(accordion *widget.Accordion, programName string)
 // RebuildItemsAccordion completely rebuilds the items accordion to refresh icon cache
 func RebuildItemsAccordion() {
 	// Rebuild the main action tabs accordion
-	if ui.GetUi().ActionTabs.ImageSearchItemsAccordion != nil {
-		setAccordionItemsLists(ui.GetUi().ActionTabs.ImageSearchItemsAccordion)
-	}
+	// if ui.GetUi().ActionTabs.ImageSearchItemsAccordion != nil {
+	// 	setAccordionItemsLists(ui.GetUi().ActionTabs.ImageSearchItemsAccordion)
+	// }
 
 	// Rebuild the editor tabs accordion
 	if accordion, ok := ui.GetUi().EditorTabs.ItemsTab.Widgets["Accordion"].(*widget.Accordion); ok {
@@ -159,240 +260,108 @@ func setAccordionItemsLists(acc *widget.Accordion) {
 	}
 }
 
-// createProgramAccordionItem creates an accordion item for a specific program with icon cache
+// createProgramAccordionItem creates an accordion item for the editor Items tab using shared UI.
 func createProgramAccordionItem(program *models.Program) *widget.AccordionItem {
-	var (
-		ats         = ui.GetUi().ActionTabs
-		iconService = services.IconVariantServiceInstance()
-	)
-
-	// Pre-cache variant information for this specific program
-	type itemIconInfo struct {
-		iconPath string
-		exists   bool
-	}
-	iconCache := make(map[string]itemIconInfo)
-
-	// Pre-compute icon paths and item mappings for this program
-	baseNames := groupItemsByBaseName(program.ItemRepo().GetAllKeys(), iconService)
-
-	// Build base name to full item name mapping for fast lookup
+	programName := program.Name
+	iconService := services.IconVariantServiceInstance()
 	baseNameToItemName := make(map[string]string)
-	allItems := program.ItemRepo().GetAllKeys()
-	for _, itemName := range allItems {
+	for _, itemName := range program.ItemRepo().GetAllKeys() {
 		baseName := iconService.GetBaseItemName(itemName)
 		if _, exists := baseNameToItemName[baseName]; !exists {
-			// Store first variant found for this base name
 			baseNameToItemName[baseName] = itemName
 		}
 	}
 
-	// Create program-specific cache to avoid collisions
-	programName := program.Name
-	for _, baseName := range baseNames {
-		cacheKey := programName + "|" + baseName
-		variants, err := iconService.GetVariants(programName, baseName)
-		if err == nil && len(variants) > 0 {
-			// Always use "Original" variant for the item grid
-			var selectedVariant string
-			for _, variant := range variants {
-				if variant == "Original" {
-					selectedVariant = variant
-					break
-				}
+	return ui.CreateProgramAccordionItem(ui.ItemsAccordionOptions{
+		Program: program,
+		GetSelectedTargets: func() []string {
+			if !ui.GetUi().MainUi.Navigation.Visible() {
+				return nil
 			}
-
-			// If "Original" not found, fall back to first variant (shouldn't happen with new system)
-			if selectedVariant == "" {
-				selectedVariant = variants[0]
+			st := ui.GetUi().Mui.MTabs.SelectedTab()
+			if st == nil {
+				return nil
 			}
-
-			path := programName + config.ProgramDelimiter + baseName
-			if selectedVariant != "" {
-				path = path + config.ProgramDelimiter + selectedVariant
+			if v, ok := st.Macro.Root.GetAction(st.SelectedNode).(*actions.ImageSearch); ok {
+				return v.Targets
 			}
-			path = path + config.PNG
-			iconCache[cacheKey] = itemIconInfo{iconPath: path, exists: true}
-		}
-	}
-
-	// Create the accordion item content
-	lists := struct {
-		searchbar *widget.Entry
-		items     *widget.GridWrap
-		filtered  []string
-	}{
-		searchbar: new(widget.Entry),
-		items:     new(widget.GridWrap),
-		filtered:  baseNames,
-	}
-
-	lists.items = widget.NewGridWrap(
-		func() int {
-			return len(lists.filtered)
+			return nil
 		},
-		func() fyne.CanvasObject {
-			rect := canvas.NewRectangle(color.RGBA{})
-			rect.SetMinSize(fyne.NewSquareSize(75))
-			rect.CornerRadius = 5
-
-			icon := canvas.NewImageFromResource(theme.BrokenImageIcon())
-			icon.SetMinSize(fyne.NewSquareSize(70))
-			icon.FillMode = canvas.ImageFillOriginal
-
-			stack := container.NewStack(rect, container.NewPadded(icon), ttwidget.NewLabel(""))
-			return stack
-		},
-		func(id widget.GridWrapItemID, o fyne.CanvasObject) {
-			baseItemName := lists.filtered[id]
-
-			stack := o.(*fyne.Container)
-			rect := stack.Objects[0].(*canvas.Rectangle)
-			icon := stack.Objects[1].(*fyne.Container).Objects[0].(*canvas.Image)
-			tt := stack.Objects[2].(*ttwidget.Label)
-			tt.SetToolTip(baseItemName)
-
-			ist, _ := ats.BoundImageSearch.GetValue("Targets")
-			t := ist.([]string)
-			if ui.GetUi().MainUi.Visible() {
-				// Check if this base item is selected (in targets)
-				fullItemName := programName + config.ProgramDelimiter + baseItemName
-				if slices.Contains(t, fullItemName) {
-					rect.FillColor = color.RGBA{R: 0, G: 128, B: 0, A: 128}
-				} else {
-					rect.FillColor = color.RGBA{}
-				}
-			}
-
-			// Load icon from pre-computed cache
-			cacheKey := programName + "|" + baseItemName
-			if iconInfo, exists := iconCache[cacheKey]; exists {
-				// Create a new canvas.Image for this specific icon
-				if resource := assets.GetFyneResource(iconInfo.iconPath); resource != nil {
-					newIcon := canvas.NewImageFromResource(resource)
-					newIcon.SetMinSize(fyne.NewSquareSize(40))
-					newIcon.FillMode = canvas.ImageFillOriginal
-
-					// Replace the icon in the container
-					iconContainer := stack.Objects[1].(*fyne.Container)
-					iconContainer.Objects[0] = newIcon
-				} else {
-					icon.Resource = assets.AppIcon
-					// icon.Resource = theme.BrokenImageIcon()
-				}
-			} else {
-				icon.Resource = assets.AppIcon
-				// icon.Resource = theme.BrokenImageIcon()
-			}
-			o.Refresh()
-		},
-	)
-
-	// Set up the item selection handler
-	lists.items.OnSelected = func(id widget.GridWrapItemID) {
-		program, err := repositories.ProgramRepo().Get(programName)
-		if err != nil {
-			log.Printf("Error getting program %s: %v", programName, err)
-			return
-		}
-		ui.GetUi().ProgramSelector.SetText(program.Name)
-		baseItemName := lists.filtered[id]
-
-		// Use pre-computed mapping for fast lookup
-		var item *models.Item
-		itemName, exists := baseNameToItemName[baseItemName]
-		if exists {
-			item, err = program.ItemRepo().Get(itemName)
-		} else {
-			// Fallback: try base name directly
-			item, err = program.ItemRepo().Get(baseItemName)
-		}
-
-		if err != nil {
-			log.Printf("Error getting item %s: %v", baseItemName, err)
-			return
-		}
-
-		ui.GetUi().EditorTabs.ItemsTab.SelectedItem = item
-
-		// Update image search targets if in main UI
-		if ui.GetUi().MainUi.Visible() {
-			if v, ok := ui.GetUi().Mui.MTabs.SelectedTab().Macro.Root.GetAction(ui.GetUi().Mui.MTabs.SelectedTab().SelectedNode).(*actions.ImageSearch); ok {
-				t := v.Targets
-				name := programName + config.ProgramDelimiter + item.Name
-				if i := slices.Index(t, name); i != -1 {
-					// Item exists, remove it
-					t = slices.Delete(t, i, i+1)
-				} else {
-					// Item doesn't exist, add it
-					t = append(t, name)
-				}
-				v.Targets = t
-				ui.GetUi().Mui.MTabs.SelectedTab().Tree.RefreshItem(v.GetUID())
-			}
-			lists.items.UnselectAll()
-		}
-
-		// Update the item editor widgets
-		setItemsWidgets(*item)
-	}
-
-	// Set up the search functionality
-	lists.searchbar = &widget.Entry{
-		PlaceHolder: "Search here",
-		OnChanged: func(s string) {
-			defaultList := groupItemsByBaseName(program.ItemRepo().GetAllKeys(), iconService)
-			defer lists.items.ScrollToTop()
-			defer lists.items.Refresh()
-
-			if s == "" {
-				lists.filtered = defaultList
+		OnItemSelected: func(baseItemName string) {
+			program, err := repositories.ProgramRepo().Get(programName)
+			if err != nil {
+				log.Printf("Error getting program %s: %v", programName, err)
 				return
 			}
-			lists.filtered = []string{}
-			for _, i := range defaultList {
-				if fuzzy.MatchFold(s, i) {
-					lists.filtered = append(lists.filtered, i)
+			ui.GetUi().ProgramSelector.SetText(program.Name)
+			itemName, exists := baseNameToItemName[baseItemName]
+			if !exists {
+				itemName = baseItemName
+			}
+			item, err := program.ItemRepo().Get(itemName)
+			if err != nil {
+				log.Printf("Error getting item %s: %v", baseItemName, err)
+				return
+			}
+			ui.GetUi().EditorTabs.ItemsTab.SelectedItem = item
+			if ui.GetUi().MainUi.Navigation.Visible() {
+				st := ui.GetUi().Mui.MTabs.SelectedTab()
+				if st != nil {
+					if v, ok := st.Macro.Root.GetAction(st.SelectedNode).(*actions.ImageSearch); ok {
+						name := programName + config.ProgramDelimiter + baseItemName
+						if i := slices.Index(v.Targets, name); i != -1 {
+							v.Targets = slices.Delete(v.Targets, i, i+1)
+						} else {
+							v.Targets = append(v.Targets, name)
+						}
+						st.Tree.RefreshItem(v.GetUID())
+					}
 				}
 			}
+			setItemsWidgets(*item)
 		},
-	}
-
-	// Update the widgets map
-	ui.GetUi().EditorTabs.ItemsTab.Widgets[programName+"-searchbar"] = lists.searchbar
-	ui.GetUi().EditorTabs.ItemsTab.Widgets[programName+"-list"] = lists.items
-
-	// Create and return the accordion item
-	return widget.NewAccordionItem(
-		programName,
-		container.NewBorder(
-			lists.searchbar,
-			nil, nil, nil,
-			lists.items,
-		),
-	)
+		RegisterWidgets: func(pname string, searchbar *widget.Entry, list *widget.GridWrap) {
+			ui.GetUi().EditorTabs.ItemsTab.Widgets[pname+"-searchbar"] = searchbar
+			ui.GetUi().EditorTabs.ItemsTab.Widgets[pname+"-list"] = list
+		},
+		OnSelectionChanged: func(newTargets []string) {
+			if !ui.GetUi().MainUi.Navigation.Visible() {
+				return
+			}
+			st := ui.GetUi().Mui.MTabs.SelectedTab()
+			if st == nil {
+				return
+			}
+			if v, ok := st.Macro.Root.GetAction(st.SelectedNode).(*actions.ImageSearch); ok {
+				v.Targets = newTargets
+				st.Tree.RefreshItem(v.GetUID())
+			}
+		},
+	})
 }
 
-// groupItemsByBaseName groups items by their base name (text before ProgramDelimiter)
-// to prevent duplicate entries in the filtered list. Returns a sorted list of unique
-// base item names.
-func groupItemsByBaseName(itemNames []string, iconService *services.IconVariantService) []string {
-	baseNameMap := make(map[string]bool)
+// getAllExistingTags collects all unique tags from all items across all programs
+func getAllExistingTags() []string {
+	tagMap := make(map[string]bool)
 
-	// Extract unique base names
-	for _, itemName := range itemNames {
-		baseName := iconService.GetBaseItemName(itemName)
-		baseNameMap[baseName] = true
+	for _, program := range repositories.ProgramRepo().GetAll() {
+		for _, itemName := range program.ItemRepo().GetAllKeys() {
+			item, err := program.ItemRepo().Get(itemName)
+			if err == nil {
+				for _, tag := range item.Tags {
+					tagMap[tag] = true
+				}
+			}
+		}
 	}
 
 	// Convert map to sorted slice
-	uniqueBaseNames := make([]string, 0, len(baseNameMap))
-	for baseName := range baseNameMap {
-		uniqueBaseNames = append(uniqueBaseNames, baseName)
+	tags := make([]string, 0, len(tagMap))
+	for tag := range tagMap {
+		tags = append(tags, tag)
 	}
+	sort.Strings(tags)
 
-	// Sort alphabetically by base item name
-	sort.Strings(uniqueBaseNames)
-
-	return uniqueBaseNames
+	return tags
 }
+

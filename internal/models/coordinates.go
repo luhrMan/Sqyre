@@ -1,10 +1,11 @@
 package models
 
-// Point represents a named screen coordinate used for click and move actions
+// Point represents a named screen coordinate used for click and move actions.
+// X and Y may be int (literal) or string (variable reference e.g. "${resultX}").
 type Point struct {
 	Name string
-	X    int
-	Y    int
+	X    any
+	Y    any
 }
 
 // GetKey returns the unique identifier for this Point.
@@ -17,13 +18,14 @@ func (p *Point) SetKey(key string) {
 	p.Name = key
 }
 
-// SearchArea represents a named rectangular region used for image search operations
+// SearchArea represents a named rectangular region used for image search operations.
+// LeftX, TopY, RightX, and BottomY may be int (literal) or string (variable reference e.g. "${leftX}").
 type SearchArea struct {
 	Name    string
-	LeftX   int
-	TopY    int
-	RightX  int
-	BottomY int
+	LeftX   any
+	TopY    any
+	RightX  any
+	BottomY any
 }
 
 // GetKey returns the unique identifier for this SearchArea.
