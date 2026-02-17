@@ -22,7 +22,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
-COPY .devcontainer/builds/windows/build-static-libs.sh /build-static-libs.sh
+COPY .devcontainer/builds/windows/docker/build-static-libs.sh /build-static-libs.sh
 RUN sed -i 's/\r$//' /build-static-libs.sh && chmod +x /build-static-libs.sh && bash /build-static-libs.sh /usr/local/mingw64-static
 
 # Tesseract English trained data (needed at runtime)
@@ -68,7 +68,7 @@ RUN UTILITY_HPP=/usr/local/mingw64/include/opencv4/opencv2/core/utility.hpp && \
 # fyne-cross may set CC="zig cc -target x86_64-windows-gnu" inside its build
 # scripts (not just via Docker -e). This wrapper intercepts those calls.
 RUN if [ -f /usr/local/bin/zig ]; then mv /usr/local/bin/zig /usr/local/bin/zig.real; fi
-COPY .devcontainer/builds/windows/zig-wrapper.sh /usr/local/bin/zig
+COPY .devcontainer/builds/windows/docker/zig-wrapper.sh /usr/local/bin/zig
 RUN chmod +x /usr/local/bin/zig
 
 # Record host MinGW C++ include dir for the entrypoint
@@ -78,7 +78,7 @@ RUN ls -d /usr/x86_64-w64-mingw32/include/c++/* 2>/dev/null | head -1 \
 # ---------------------------------------------------------------------------
 # Entrypoint: force MinGW CC/CXX (override Docker -e from fyne-cross)
 # ---------------------------------------------------------------------------
-COPY .devcontainer/builds/windows/entrypoint-mingw.sh /usr/local/bin/entrypoint-mingw.sh
+COPY .devcontainer/builds/windows/docker/entrypoint-mingw.sh /usr/local/bin/entrypoint-mingw.sh
 RUN chmod +x /usr/local/bin/entrypoint-mingw.sh
 ENTRYPOINT ["/usr/local/bin/entrypoint-mingw.sh"]
 

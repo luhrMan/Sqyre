@@ -6,6 +6,7 @@ require (
 	fyne.io/fyne/v2 v2.7.2
 	github.com/dweymouth/fyne-tooltip v0.4.0
 	github.com/go-vgo/robotgo v1.0.0
+	github.com/gofrs/flock v0.13.0
 	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/google/uuid v1.6.0
 	github.com/lithammer/fuzzysearch v1.1.8
