@@ -8,12 +8,20 @@ import (
 	"Squire/ui"
 	"Squire/ui/custom_widgets"
 	"errors"
+	"fmt"
 	"log"
 	"os"
 	"strconv"
+	"strings"
 
+	"Squire/ui/completionentry"
+
+	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
+	"github.com/go-vgo/robotgo"
+	hook "github.com/luhrMan/gohook"
 )
 
 func SetEditorUi() {
@@ -50,20 +58,20 @@ func refreshAllProgramRelatedUI() {
 		setAccordionAutoPicSearchAreasLists(accordion)
 	}
 
-	// Refresh action tab accordions
-	ats := ui.GetUi().ActionTabs
-	if ats.ImageSearchItemsAccordion != nil {
-		setAccordionItemsLists(ats.ImageSearchItemsAccordion)
-	}
-	if ats.PointsAccordion != nil {
-		setAccordionPointsLists(ats.PointsAccordion)
-	}
-	if ats.ImageSearchSAAccordion != nil {
-		setAccordionSearchAreasLists(ats.ImageSearchSAAccordion)
-	}
-	if ats.OcrSAAccordion != nil {
-		setAccordionSearchAreasLists(ats.OcrSAAccordion)
-	}
+	// // Refresh action tab accordions
+	// ats := ui.GetUi().ActionTabs
+	// if ats.ImageSearchItemsAccordion != nil {
+	// 	setAccordionItemsLists(ats.ImageSearchItemsAccordion)
+	// }
+	// if ats.PointsAccordion != nil {
+	// 	setAccordionPointsLists(ats.PointsAccordion)
+	// }
+	// if ats.ImageSearchSAAccordion != nil {
+	// 	setAccordionSearchAreasLists(ats.ImageSearchSAAccordion)
+	// }
+	// if ats.OcrSAAccordion != nil {
+	// 	setAccordionSearchAreasLists(ats.OcrSAAccordion)
+	// }
 }
 
 func setEditorLists() {
@@ -113,13 +121,112 @@ func setEditorForms() {
 			updateProgramSelectorOptions()
 		}
 	}
+	// Set up tag entry handler for adding new tags with completion
+	if tagEntry, ok := et.ItemsTab.Widgets["tagEntry"].(*completionentry.CompletionEntry); ok {
+		// Function to submit a tag (used by both Enter key and button)
+		submitTag := func() {
+			tagText := tagEntry.Text
+			// Hide completion popup when submitting
+			tagEntry.HideCompletion()
+
+			if tagText == "" {
+				return
+			}
+
+			// Trim whitespace
+			tagText = strings.TrimSpace(tagText)
+			if tagText == "" {
+				return
+			}
+
+			if v, ok := et.ItemsTab.SelectedItem.(*models.Item); ok {
+				// Check if tag already exists (avoid duplicates)
+				for _, existingTag := range v.Tags {
+					if existingTag == tagText {
+						return // Tag already exists, do nothing
+					}
+				}
+
+				// Add the tag
+				v.Tags = append(v.Tags, tagText)
+
+				// Save the item
+				p := ui.GetUi().ProgramSelector.Text
+				program, err := repositories.ProgramRepo().Get(p)
+				if err != nil {
+					log.Printf("Error getting program %s: %v", p, err)
+					return
+				}
+
+				if err := program.ItemRepo().Set(v.Name, v); err != nil {
+					log.Printf("Error saving item %s: %v", v.Name, err)
+					dialog.ShowError(errors.New("failed to save item"), ui.GetUi().Window)
+					return
+				}
+
+				if err := repositories.ProgramRepo().Set(program.Name, program); err != nil {
+					log.Printf("Error saving program %s: %v", p, err)
+					return
+				}
+
+				// Refresh the tags display
+				updateTagsDisplay(v)
+
+				// Clear the entry field
+				tagEntry.SetText("")
+			}
+		}
+
+		// Set up OnChanged to show completion suggestions
+		tagEntry.OnChanged = func(text string) {
+			if text == "" {
+				tagEntry.HideCompletion()
+				return
+			}
+
+			// Get all existing tags
+			allTags := getAllExistingTags()
+
+			// Filter tags that match the search text (case-insensitive)
+			searchLower := strings.ToLower(text)
+			matchingTags := []string{}
+			for _, tag := range allTags {
+				if strings.Contains(strings.ToLower(tag), searchLower) {
+					matchingTags = append(matchingTags, tag)
+				}
+			}
+
+			// Limit to 10 suggestions
+			if len(matchingTags) > 10 {
+				matchingTags = matchingTags[:10]
+			}
+
+			if len(matchingTags) == 0 {
+				tagEntry.HideCompletion()
+				return
+			}
+
+			// Set options and show completion
+			tagEntry.SetOptions(matchingTags)
+			tagEntry.ShowCompletion()
+		}
+
+		tagEntry.OnSubmitted = func(tagText string) {
+			submitTag()
+		}
+
+		// Set up the submit button handler
+		if tagSubmitButton, ok := et.ItemsTab.Widgets["tagSubmitButton"].(*widget.Button); ok {
+			tagSubmitButton.OnTapped = submitTag
+		}
+	}
+
 	et.ItemsTab.Widgets["Form"].(*widget.Form).OnSubmit = func() {
 		w := et.ItemsTab.Widgets
 		n := w["Name"].(*widget.Entry).Text
 		x, _ := strconv.Atoi(w["Cols"].(*widget.Entry).Text)
 		y, _ := strconv.Atoi(w["Rows"].(*widget.Entry).Text)
 		sm, _ := strconv.Atoi(w["StackMax"].(*widget.Entry).Text)
-		// tags, _ := strconv.Atoi(w["Tags"].(*widget.Entry).Text)
 		if v, ok := et.ItemsTab.SelectedItem.(*models.Item); ok {
 			p := ui.GetUi().ProgramSelector.Text
 			program, err := repositories.ProgramRepo().Get(p)
@@ -200,8 +307,19 @@ func setEditorForms() {
 	et.PointsTab.Widgets["Form"].(*widget.Form).OnSubmit = func() {
 		w := et.PointsTab.Widgets
 		n := w["Name"].(*widget.Entry).Text
-		x, _ := strconv.Atoi(w["X"].(*widget.Entry).Text)
-		y, _ := strconv.Atoi(w["Y"].(*widget.Entry).Text)
+		xText := w["X"].(*widget.Entry).Text
+		yText := w["Y"].(*widget.Entry).Text
+		var xVal, yVal any
+		if x, err := strconv.Atoi(xText); err == nil {
+			xVal = x
+		} else {
+			xVal = xText
+		}
+		if y, err := strconv.Atoi(yText); err == nil {
+			yVal = y
+		} else {
+			yVal = yText
+		}
 		if v, ok := et.PointsTab.SelectedItem.(*models.Point); ok {
 			p := ui.GetUi().ProgramSelector.Text
 			program, err := repositories.ProgramRepo().Get(p)
@@ -211,8 +329,8 @@ func setEditorForms() {
 			}
 			oldkey := v.Name
 			v.Name = n
-			v.X = x
-			v.Y = y
+			v.X = xVal
+			v.Y = yVal
 
 			if err := program.PointRepo(config.MainMonitorSizeString).Set(v.Name, v); err != nil {
 				log.Printf("Error saving point %s: %v", v.Name, err)
@@ -232,18 +350,203 @@ func setEditorForms() {
 				log.Printf("Error saving program %s: %v", p, err)
 				return
 			}
+
+			// Update point preview after form submission
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						log.Printf("Point: Preview update panic recovered after form update - %v (point: %s)", r, v.Name)
+					}
+				}()
+				ui.GetUi().UpdatePointPreview(v)
+			}()
+
 			t := w[program.Name+"-searchbar"].(*widget.Entry).Text
 			w[program.Name+"-searchbar"].(*widget.Entry).SetText("random string of text for refreshing because poop")
 			w[program.Name+"-searchbar"].(*widget.Entry).SetText(t)
 		}
 	}
+
+	// Set up record button handler for Points tab
+	if recordButton, ok := et.PointsTab.Widgets["recordButton"].(*widget.Button); ok {
+		recordButton.OnTapped = func() {
+			var dlg dialog.Dialog
+			content := container.NewVBox(
+				widget.NewLabel("Left click anwhere to record X and Y coordinates"),
+				widget.NewLabel("Right click to cancel"),
+			)
+
+			dlg = dialog.NewCustomWithoutButtons(
+				"Record Point Coordinates",
+				content,
+				ui.GetUi().Window,
+			)
+			// Set up a goroutine to detect a click outside the dialog and record the coordinates
+			go func() {
+				adjustedX, adjustedY := 0, 0
+				hook.Register(hook.MouseDown, []string{}, func(e hook.Event) {
+					switch e.Button {
+					case hook.MouseMap["left"]:
+						x, y := robotgo.Location()
+						adjustedX = x - config.XOffset
+						adjustedY = y - config.YOffset
+						fyne.CurrentApp().SendNotification(&fyne.Notification{
+							Title:   "Captured Point",
+							Content: fmt.Sprintf("X: %d, Y: %d", adjustedX, adjustedY),
+						})
+						if xEntry, ok := et.PointsTab.Widgets["X"].(*widget.Entry); ok {
+							fyne.DoAndWait(func() {
+								xEntry.SetText(strconv.Itoa(adjustedX))
+							})
+						}
+						if yEntry, ok := et.PointsTab.Widgets["Y"].(*widget.Entry); ok {
+							fyne.DoAndWait(func() {
+								yEntry.SetText(strconv.Itoa(adjustedY))
+							})
+						}
+						if point, ok := et.PointsTab.SelectedItem.(*models.Point); ok {
+							point.X = adjustedX
+							point.Y = adjustedY
+							func() {
+								defer func() {
+									if r := recover(); r != nil {
+										log.Printf("Point: Preview update panic recovered after recording - %v (point: %s)", r, point.Name)
+									}
+								}()
+								ui.GetUi().UpdatePointPreview(point)
+							}()
+						}
+						hook.Unregister(hook.MouseDown, []string{})
+						fyne.DoAndWait(func() {
+							dlg.Dismiss()
+						})
+					default:
+						hook.Unregister(hook.MouseDown, []string{})
+						fyne.DoAndWait(func() {
+							dlg.Dismiss()
+						})
+					}
+				})
+			}()
+
+			dlg.Show()
+		}
+	}
+
+	// Set up record button handler for Search Areas tab (two clicks: top-left, then bottom-right)
+	if saRecordButton, ok := et.SearchAreasTab.Widgets["recordButton"].(*widget.Button); ok {
+		saRecordButton.OnTapped = func() {
+			var dlg dialog.Dialog
+			content := container.NewVBox(
+				widget.NewLabel("First click: top-left corner of the search area."),
+				widget.NewLabel("Second click: bottom-right corner. Right click to cancel."),
+			)
+
+			dlg = dialog.NewCustomWithoutButtons(
+				"Record Search Area",
+				content,
+				ui.GetUi().Window,
+			)
+			go func() {
+				leftX, topY := 0, 0
+				firstClickDone := false
+				hook.Register(hook.MouseDown, []string{}, func(e hook.Event) {
+					if e.Button != hook.MouseMap["left"] {
+						hook.Unregister(hook.MouseDown, []string{})
+						fyne.DoAndWait(func() { dlg.Dismiss() })
+						return
+					}
+					x, y := robotgo.Location()
+					adjX := x - config.XOffset
+					adjY := y - config.YOffset
+					if !firstClickDone {
+						leftX = adjX
+						topY = adjY
+						firstClickDone = true
+						fyne.CurrentApp().SendNotification(&fyne.Notification{
+							Title:   "Search Area",
+							Content: "Top-left set. Click bottom-right corner.",
+						})
+						return
+					}
+					// Second click: bottom-right corner (normalize in case clicks were reversed)
+					rightX := adjX
+					bottomY := adjY
+					if leftX > rightX {
+						leftX, rightX = rightX, leftX
+					}
+					if topY > bottomY {
+						topY, bottomY = bottomY, topY
+					}
+					hook.Unregister(hook.MouseDown, []string{})
+					fyne.DoAndWait(func() {
+						if w, ok := et.SearchAreasTab.Widgets["LeftX"].(*widget.Entry); ok {
+							w.SetText(strconv.Itoa(leftX))
+						}
+						if w, ok := et.SearchAreasTab.Widgets["TopY"].(*widget.Entry); ok {
+							w.SetText(strconv.Itoa(topY))
+						}
+						if w, ok := et.SearchAreasTab.Widgets["RightX"].(*widget.Entry); ok {
+							w.SetText(strconv.Itoa(rightX))
+						}
+						if w, ok := et.SearchAreasTab.Widgets["BottomY"].(*widget.Entry); ok {
+							w.SetText(strconv.Itoa(bottomY))
+						}
+						if sa, ok := et.SearchAreasTab.SelectedItem.(*models.SearchArea); ok {
+							sa.LeftX = leftX
+							sa.TopY = topY
+							sa.RightX = rightX
+							sa.BottomY = bottomY
+							func() {
+								defer func() {
+									if r := recover(); r != nil {
+										log.Printf("SearchArea: Preview update panic recovered after recording - %v (area: %s)", r, sa.Name)
+									}
+								}()
+								ui.GetUi().UpdateSearchAreaPreview(sa)
+							}()
+						}
+						fyne.CurrentApp().SendNotification(&fyne.Notification{
+							Title:   "Captured Search Area",
+							Content: fmt.Sprintf("LeftX: %d, TopY: %d, RightX: %d, BottomY: %d", leftX, topY, rightX, bottomY),
+						})
+						dlg.Dismiss()
+					})
+				})
+			}()
+
+			dlg.Show()
+		}
+	}
+
 	et.SearchAreasTab.Widgets["Form"].(*widget.Form).OnSubmit = func() {
 		w := et.SearchAreasTab.Widgets
 		n := w["Name"].(*widget.Entry).Text
-		lx, _ := strconv.Atoi(w["LeftX"].(*widget.Entry).Text)
-		ty, _ := strconv.Atoi(w["TopY"].(*widget.Entry).Text)
-		rx, _ := strconv.Atoi(w["RightX"].(*widget.Entry).Text)
-		by, _ := strconv.Atoi(w["BottomY"].(*widget.Entry).Text)
+		lxText := w["LeftX"].(*widget.Entry).Text
+		tyText := w["TopY"].(*widget.Entry).Text
+		rxText := w["RightX"].(*widget.Entry).Text
+		byText := w["BottomY"].(*widget.Entry).Text
+		var lxVal, tyVal, rxVal, byVal any
+		if v, err := strconv.Atoi(lxText); err == nil {
+			lxVal = v
+		} else {
+			lxVal = lxText
+		}
+		if v, err := strconv.Atoi(tyText); err == nil {
+			tyVal = v
+		} else {
+			tyVal = tyText
+		}
+		if v, err := strconv.Atoi(rxText); err == nil {
+			rxVal = v
+		} else {
+			rxVal = rxText
+		}
+		if v, err := strconv.Atoi(byText); err == nil {
+			byVal = v
+		} else {
+			byVal = byText
+		}
 		if v, ok := et.SearchAreasTab.SelectedItem.(*models.SearchArea); ok {
 			p := ui.GetUi().ProgramSelector.Text
 			program, err := repositories.ProgramRepo().Get(p)
@@ -253,10 +556,10 @@ func setEditorForms() {
 			}
 			oldkey := v.Name
 			v.Name = n
-			v.LeftX = lx
-			v.TopY = ty
-			v.RightX = rx
-			v.BottomY = by
+			v.LeftX = lxVal
+			v.TopY = tyVal
+			v.RightX = rxVal
+			v.BottomY = byVal
 
 			if err := program.SearchAreaRepo(config.MainMonitorSizeString).Set(v.Name, v); err != nil {
 				log.Printf("Error saving search area %s: %v", v.Name, err)
@@ -350,6 +653,8 @@ func setEditorButtons() {
 				dialog.ShowError(err, ui.GetUi().Window)
 				return
 			}
+			// Set the selected item so tag operations work correctly
+			ui.GetUi().EditorTabs.ItemsTab.SelectedItem = i
 			v := i
 			ui.GetUi().EditorTabs.ItemsTab.Widgets["Name"].(*widget.Entry).SetText(v.Name)
 			t := ui.GetUi().EditorTabs.ItemsTab.Widgets[program+"-searchbar"].(*widget.Entry).Text
@@ -359,8 +664,19 @@ func setEditorButtons() {
 			// RefreshItemsAccordionItems()
 		case "Points":
 			n := ui.GetUi().EditorTabs.PointsTab.Widgets["Name"].(*widget.Entry).Text
-			x, _ := strconv.Atoi(ui.GetUi().EditorTabs.PointsTab.Widgets["X"].(*widget.Entry).Text)
-			y, _ := strconv.Atoi(ui.GetUi().EditorTabs.PointsTab.Widgets["Y"].(*widget.Entry).Text)
+			xText := ui.GetUi().EditorTabs.PointsTab.Widgets["X"].(*widget.Entry).Text
+			yText := ui.GetUi().EditorTabs.PointsTab.Widgets["Y"].(*widget.Entry).Text
+			var xVal, yVal any
+			if x, err := strconv.Atoi(xText); err == nil {
+				xVal = x
+			} else {
+				xVal = xText
+			}
+			if y, err := strconv.Atoi(yText); err == nil {
+				yVal = y
+			} else {
+				yVal = yText
+			}
 
 			pro := getProgram(program)
 			if pro == nil {
@@ -370,8 +686,8 @@ func setEditorButtons() {
 			// Create new point using repository New() function
 			p := pro.PointRepo(config.MainMonitorSizeString).New()
 			p.Name = n
-			p.X = x
-			p.Y = y
+			p.X = xVal
+			p.Y = yVal
 
 			err := pro.PointRepo(config.MainMonitorSizeString).Set(p.Name, p)
 			if err != nil {
@@ -385,10 +701,31 @@ func setEditorButtons() {
 			// refreshAllProgramRelatedUI()
 		case "Search Areas":
 			n := ui.GetUi().EditorTabs.SearchAreasTab.Widgets["Name"].(*widget.Entry).Text
-			lx, _ := strconv.Atoi(ui.GetUi().EditorTabs.SearchAreasTab.Widgets["LeftX"].(*widget.Entry).Text)
-			ty, _ := strconv.Atoi(ui.GetUi().EditorTabs.SearchAreasTab.Widgets["TopY"].(*widget.Entry).Text)
-			rx, _ := strconv.Atoi(ui.GetUi().EditorTabs.SearchAreasTab.Widgets["RightX"].(*widget.Entry).Text)
-			by, _ := strconv.Atoi(ui.GetUi().EditorTabs.SearchAreasTab.Widgets["BottomY"].(*widget.Entry).Text)
+			lxText := ui.GetUi().EditorTabs.SearchAreasTab.Widgets["LeftX"].(*widget.Entry).Text
+			tyText := ui.GetUi().EditorTabs.SearchAreasTab.Widgets["TopY"].(*widget.Entry).Text
+			rxText := ui.GetUi().EditorTabs.SearchAreasTab.Widgets["RightX"].(*widget.Entry).Text
+			byText := ui.GetUi().EditorTabs.SearchAreasTab.Widgets["BottomY"].(*widget.Entry).Text
+			var lxVal, tyVal, rxVal, byVal any
+			if v, err := strconv.Atoi(lxText); err == nil {
+				lxVal = v
+			} else {
+				lxVal = lxText
+			}
+			if v, err := strconv.Atoi(tyText); err == nil {
+				tyVal = v
+			} else {
+				tyVal = tyText
+			}
+			if v, err := strconv.Atoi(rxText); err == nil {
+				rxVal = v
+			} else {
+				rxVal = rxText
+			}
+			if v, err := strconv.Atoi(byText); err == nil {
+				byVal = v
+			} else {
+				byVal = byText
+			}
 
 			pro := getProgram(program)
 			if pro == nil {
@@ -397,17 +734,19 @@ func setEditorButtons() {
 
 			sa := pro.SearchAreaRepo(config.MainMonitorSizeString).New()
 			sa.Name = n
-			sa.LeftX = lx
-			sa.TopY = ty
-			sa.RightX = rx
-			sa.BottomY = by
+			sa.LeftX = lxVal
+			sa.TopY = tyVal
+			sa.RightX = rxVal
+			sa.BottomY = byVal
 
 			err := pro.SearchAreaRepo(config.MainMonitorSizeString).Set(sa.Name, sa)
 			if err != nil {
 				dialog.ShowError(err, ui.GetUi().Window)
 				return
 			}
-			ui.GetUi().EditorTabs.SearchAreasTab.Widgets["Name"].(*widget.Entry).SetText(sa.Name)
+			// Select the newly added search area so it can be edited with Update
+			ui.GetUi().EditorTabs.SearchAreasTab.SelectedItem = sa
+			setSearchAreaWidgets(*sa)
 			t := ui.GetUi().EditorTabs.SearchAreasTab.Widgets[program+"-searchbar"].(*widget.Entry).Text
 			ui.GetUi().EditorTabs.SearchAreasTab.Widgets[program+"-searchbar"].(*widget.Entry).SetText("random string of text for refreshing because poop")
 			ui.GetUi().EditorTabs.SearchAreasTab.Widgets[program+"-searchbar"].(*widget.Entry).SetText(t)

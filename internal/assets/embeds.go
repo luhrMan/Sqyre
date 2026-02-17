@@ -12,9 +12,48 @@ import (
 	"fyne.io/fyne/v2/canvas"
 )
 
-//go:embed images/icon.svg
+//go:embed icons/sqyre.svg
 var appIcon []byte
 var AppIcon = fyne.NewStaticResource("appIcon", appIcon)
+
+var (
+	//go:embed icons/double-up-chevron.svg
+	doubleUpChevron []byte
+	//go:embed icons/double-down-chevron.svg
+	doubleDownChevron []byte
+	//go:embed icons/chevron-up.svg
+	chevronUp []byte
+	//go:embed icons/chevron-down.svg
+	chevronDown []byte
+	//go:embed icons/mouse-click.svg
+	mouseClick []byte
+	//go:embed icons/mouse-click-filled.svg
+	mouseClickFilled []byte
+	//go:embed icons/mouse.svg
+	mouse []byte
+	//go:embed icons/image-search.svg
+	imageSearch []byte
+	//go:embed icons/text-search.svg
+	textSearch []byte
+	//go:embed icons/calculate.svg
+	calculate []byte
+	//go:embed icons/variable.svg
+	variable []byte
+)
+
+var (
+	DoubleUpChevronIcon   = fyne.NewStaticResource("doubleUpChevron", doubleUpChevron)
+	DoubleDownChevronIcon = fyne.NewStaticResource("doubleDownChevron", doubleDownChevron)
+	ChevronUpIcon         = fyne.NewStaticResource("chevronUp", chevronUp)
+	ChevronDownIcon       = fyne.NewStaticResource("chevronDown", chevronDown)
+	MouseClickIcon        = fyne.NewStaticResource("mouseClick", mouseClick)
+	MouseClickFilledIcon  = fyne.NewStaticResource("mouseClickFilled", mouseClickFilled)
+	MouseIcon             = fyne.NewStaticResource("mouse", mouse)
+	ImageSearchIcon       = fyne.NewStaticResource("imageSearch", imageSearch)
+	TextSearchIcon        = fyne.NewStaticResource("textSearch", textSearch)
+	CalculateIcon         = fyne.NewStaticResource("calculate", calculate)
+	VariableIcon          = fyne.NewStaticResource("variable", variable)
+)
 
 var (
 	// fyneResourceCache stores loaded Fyne resources keyed by file path

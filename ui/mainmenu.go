@@ -6,44 +6,58 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/dialog"
+	fynetooltip "github.com/dweymouth/fyne-tooltip"
 	"github.com/go-vgo/robotgo"
 )
 
 func (u *Ui) constructMainMenu() *fyne.MainMenu {
-	// ocrActionMenuItem.Icon, _ = fyne.LoadResourceFromPath("./internal/resources/images/Squire.png")
 	macroMenu := fyne.NewMenu("Macro")
-	programSelectSubMenu := fyne.NewMenuItem("Select Program", nil)
 	actionSubMenu := fyne.NewMenuItem("Add Blank Action", nil)
-	basicActionsSubMenu := fyne.NewMenuItem("Basic Actions", nil)
-	advancedActionsSubMenu := fyne.NewMenuItem("Advanced Actions", nil)
+	basicActionsSubMenu := fyne.NewMenuItem("Basic", nil)
+	advancedActionsSubMenu := fyne.NewMenuItem("Advanced", nil)
+	variableActionsSubMenu := fyne.NewMenuItem("Variable", nil)
 
 	macroMenu.Items = append(macroMenu.Items,
-		programSelectSubMenu,
 		actionSubMenu,
 	)
-	programSelectSubMenu.ChildMenu = fyne.NewMenu("")
 	actionSubMenu.ChildMenu = fyne.NewMenu("")
 
 	actionSubMenu.ChildMenu.Items = append(actionSubMenu.ChildMenu.Items,
 		basicActionsSubMenu,
 		advancedActionsSubMenu,
+		variableActionsSubMenu,
 	)
 	addActionAndRefresh :=
 		func(a actions.ActionInterface) {
 			mt := u.Mui.MTabs.SelectedTab()
-			mt.Macro.Root.AddSubAction(a)
-			mt.Select(a.GetUID())
+			if mt == nil {
+				return
+			}
+			selectedNode := mt.Macro.Root.GetAction(mt.SelectedNode)
+			if selectedNode == nil {
+				selectedNode = mt.Macro.Root
+			}
+			if s, ok := selectedNode.(actions.AdvancedActionInterface); ok {
+				s.AddSubAction(a)
+			} else {
+				selectedNode.GetParent().AddSubAction(a)
+			}
 			mt.Refresh()
+			mt.Select(a.GetUID())
+			mt.SelectedNode = a.GetUID()
 		}
 	basicActionsSubMenu.ChildMenu = fyne.NewMenu("",
-		fyne.NewMenuItem("Wait", func() { addActionAndRefresh(actions.NewWait(0)) }),
-		fyne.NewMenuItem("Mouse Move", func() { addActionAndRefresh(actions.NewMove(actions.Point{Name: "", X: 0, Y: 0})) }),
-		fyne.NewMenuItem("Click", func() { addActionAndRefresh(actions.NewClick(false)) }),
-		fyne.NewMenuItem("Key", func() { addActionAndRefresh(actions.NewKey("ctrl", true)) }),
+		fyne.NewMenuItemWithIcon("Wait", actions.NewWait(0).Icon(), func() { addActionAndRefresh(actions.NewWait(0)) }),
+		fyne.NewMenuItemWithIcon("Mouse Move", actions.NewMove(actions.Point{Name: "", X: 0, Y: 0}).Icon(), func() { addActionAndRefresh(actions.NewMove(actions.Point{Name: "", X: 0, Y: 0})) }),
+		fyne.NewMenuItemWithIcon("Click", actions.NewClick(false, false).Icon(), func() { addActionAndRefresh(actions.NewClick(false, false)) }),
+		fyne.NewMenuItemWithIcon("Key", actions.NewKey("ctrl", true).Icon(), func() { addActionAndRefresh(actions.NewKey("ctrl", true)) }),
+		fyne.NewMenuItemWithIcon("Focus window", actions.NewFocusWindow("").Icon(), func() {
+			addActionAndRefresh(actions.NewFocusWindow(""))
+		}),
 	)
 	advancedActionsSubMenu.ChildMenu = fyne.NewMenu("",
-		fyne.NewMenuItem("Loop", func() { addActionAndRefresh(actions.NewLoop(1, "", []actions.ActionInterface{})) }),
-		fyne.NewMenuItem("Image Search", func() {
+		fyne.NewMenuItemWithIcon("Loop", actions.NewLoop(1, "", []actions.ActionInterface{}).Icon(), func() { addActionAndRefresh(actions.NewLoop(1, "", []actions.ActionInterface{})) }),
+		fyne.NewMenuItemWithIcon("Image Search", actions.NewImageSearch("", []actions.ActionInterface{}, []string{}, actions.SearchArea{}, 1, 1, 0.95, 5).Icon(), func() {
 			addActionAndRefresh(actions.NewImageSearch(
 				"",
 				[]actions.ActionInterface{},
@@ -52,11 +66,24 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 				1,
 				1,
 				0.95,
+				5,
 			))
 		}),
-		fyne.NewMenuItem("OCR", func() {
+		fyne.NewMenuItemWithIcon("OCR", actions.NewOcr("", []actions.ActionInterface{}, "template", actions.SearchArea{Name: "template search area"}).Icon(), func() {
 			addActionAndRefresh(actions.NewOcr("", []actions.ActionInterface{}, "template", actions.SearchArea{Name: "template search area"}))
 		}),
+		// fyne.NewMenuItemWithIcon("Calibration", actions.NewCalibration("", "", actions.SearchArea{}, nil, 1, 1, 0.95, 5).Icon(), func() {
+		// 	addActionAndRefresh(actions.NewCalibration("", "", actions.SearchArea{}, nil, 1, 1, 0.95, 5))
+		// }),
+		fyne.NewMenuItemWithIcon("Wait for pixel", actions.NewWaitForPixel("", actions.Point{}, "ffffff", 0, 0, nil).Icon(), func() {
+			addActionAndRefresh(actions.NewWaitForPixel("", actions.Point{}, "ffffff", 0, 0, nil))
+		}),
+	)
+	variableActionsSubMenu.ChildMenu = fyne.NewMenu("",
+		fyne.NewMenuItemWithIcon("Set", actions.NewSetVariable("", "").Icon(), func() { addActionAndRefresh(actions.NewSetVariable("", "")) }),
+		fyne.NewMenuItemWithIcon("Calculate", actions.NewCalculate("", "").Icon(), func() { addActionAndRefresh(actions.NewCalculate("", "")) }),
+		fyne.NewMenuItemWithIcon("Read from", actions.NewDataList("", "", false).Icon(), func() { addActionAndRefresh(actions.NewDataList("", "", false)) }),
+		fyne.NewMenuItemWithIcon("Save to", actions.NewSaveVariable("", "", false, false).Icon(), func() { addActionAndRefresh(actions.NewSaveVariable("", "", false, false)) }),
 	)
 
 	computerInfo := fyne.NewMenuItem("Computer info", func() {
@@ -70,46 +97,16 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 		dialog.ShowInformation("Computer Information", str, u.Window)
 	})
 
-	// editor := fyne.NewMenuItem("Open Data Editor", func() {
-	// 	u.Window.SetContent(fynetooltip.AddWindowToolTipLayer(u.EditorUi.CanvasObject, u.Window.Canvas()))
-	// })
-	// screensize := strconv.Itoa(config.MonitorWidth) + "x" + strconv.Itoa(config.MonitorHeight)
-	// calibrationMenu := fyne.NewMenu("Coordinate Calibration",
-	// 	fyne.NewMenuItem("Everything", func() {
-	// 		robotgo.MouseSleep = 0
-	// 		robotgo.KeySleep = 0
-
-	// 		coordinates.CalibrateInventorySearchboxes(binders.GetProgram(config.DarkAndDarker).Coordinates[screensize])
-	// 		// u.at.boundImageSearchAreaSelect.SetOptions(programs.CurrentProgramAndScreenSizeCoordinates().GetSearchAreasAsStringSlice())
-	// 		coordinates.CalibrateTopMenuTabLocations(binders.GetProgram(config.DarkAndDarker).Coordinates[screensize])
-
-	// 		mt := u.mui.MTabs.selectedTab()
-	// 		robotgo.MouseSleep = mt.Macro.GlobalDelay
-	// 		robotgo.KeySleep = mt.Macro.GlobalDelay
-
-	// 	}),
-	// 	fyne.NewMenuItem("Top Menu", func() {
-	// 		coordinates.CalibrateTopMenuTabLocations(binders.GetProgram(config.DarkAndDarker).Coordinates[screensize])
-	// 	}),
-	// 	fyne.NewMenuItem("Inventories", func() {
-	// 		robotgo.MouseSleep = 0
-	// 		robotgo.KeySleep = 0
-	// 		coordinates.CalibrateInventorySearchboxes(binders.GetProgram(config.DarkAndDarker).Coordinates[screensize])
-	// 		// u.at.boundImageSearchAreaSelect.SetOptions(programs.CurrentProgramAndScreenSizeCoordinates().GetSearchAreasAsStringSlice())
-	// 		mt := u.mui.MTabs.selectedTab()
-	// 		robotgo.MouseSleep = mt.Macro.GlobalDelay
-	// 		robotgo.KeySleep = mt.Macro.GlobalDelay
-	// 	}),
-	// 	fyne.NewMenuItem("Stash-screen", func() {
-
-	// 	}),
-	// 	fyne.NewMenuItem("Merchants-screen", func() {
-
-	// 	}),
-	// 	fyne.NewMenuItem("Merchants Portraits", func() {
-	// 		coordinates.MerchantPortraitsLocation(binders.GetProgram(config.DarkAndDarker).Coordinates[screensize])
-	// 	}),
-	// )
+	editor := fyne.NewMenuItem("Open Data Editor", func() {
+		u.MainUi.Navigation.PushWithTitle(
+			fynetooltip.AddWindowToolTipLayer(u.EditorUi.CanvasObject, u.Window.Canvas()),
+			"Editor",
+		)
+		if mt := GetUi().Mui.MTabs.SelectedTab(); mt != nil {
+			mt.UnselectAll()
+			mt.SelectedNode = ""
+		}
+	})
 
 	// testMenu := fyne.NewMenu("Test",
 	// 	fyne.NewMenuItem("Add Item", func() { addItemWindow() }),
@@ -136,7 +133,6 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 	// )
 
 	// return fyne.NewMainMenu(fyne.NewMenu("Settings", computerInfo), macroMenu, calibrationMenu)
-	u.MainMenu.Items = append(u.MainMenu.Items, fyne.NewMenu("Settings", computerInfo), macroMenu)
+	u.MainMenu.Items = append(u.MainMenu.Items, fyne.NewMenu("Settings", computerInfo, editor), macroMenu)
 	return u.MainMenu
-	// return fyne.NewMainMenu(fyne.NewMenu("Settings", computerInfo, editor), macroMenu)
 }
