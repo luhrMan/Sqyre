@@ -3,6 +3,7 @@ package services
 import (
 	"Squire/internal/assets"
 	"Squire/internal/config"
+	"Squire/internal/models"
 	"Squire/internal/models/actions"
 	"Squire/internal/models/repositories"
 	"fmt"
@@ -18,17 +19,31 @@ import (
 	"gocv.io/x/gocv"
 )
 
-func imageSearch(a *actions.ImageSearch) (map[string][]robotgo.Point, error) {
+func imageSearch(a *actions.ImageSearch, macro *models.Macro) (map[string][]robotgo.Point, error) {
 	sa := a.SearchArea
-	w := sa.RightX - sa.LeftX
-	h := sa.BottomY - sa.TopY
-	log.Printf("Image Searching | %v in X1:%d Y1:%d X2:%d Y2:%d", a.Targets, sa.LeftX, sa.TopY, sa.RightX, sa.BottomY)
-	if w+h == 0 {
-		err := fmt.Errorf("image search failed: cannot have an empty search area")
-		log.Println(err)
+	leftX, topY, rightX, bottomY, err := ResolveSearchAreaCoords(sa.LeftX, sa.TopY, sa.RightX, sa.BottomY, macro)
+	if err != nil {
+		log.Printf("Image search: failed to resolve search area coords: %v", err)
 		return nil, err
 	}
-	captureImg := robotgo.CaptureImg(sa.LeftX+config.XOffset, sa.TopY+config.YOffset, w, h)
+	w := rightX - leftX
+	h := bottomY - topY
+	if w <= 0 || h <= 0 {
+		err := fmt.Errorf("image search: invalid search area (width=%d height=%d); need positive dimensions", w, h)
+		log.Printf("Image Search: %v (macro continues)", err)
+		return nil, err
+	}
+	log.Printf("Image Searching | %v in X1:%d Y1:%d X2:%d Y2:%d, width:%d height:%d", a.Targets, leftX, topY, rightX, bottomY, w, h)
+	captureImg, err := robotgo.CaptureImg(leftX+config.XOffset, topY+config.YOffset, w, h)
+	if err != nil {
+		log.Printf("Image Search: capture failed: %v (macro continues)", err)
+		return nil, err
+	}
+	if captureImg == nil {
+		err := fmt.Errorf("image search: capture returned nil (invalid search area or display)")
+		log.Printf("Image Search: %v (macro continues)", err)
+		return nil, err
+	}
 	img, err := gocv.ImageToMatRGB(captureImg)
 	if err != nil {
 		log.Println("image search failed:", err)
@@ -118,9 +133,16 @@ func match(img, imgDraw gocv.Mat, a *actions.ImageSearch) map[string][]robotgo.P
 				// 	return
 				// }
 
-				matches := FindTemplateMatches(img, template, Imask, tmask, cmask, a.Tolerance)
+				matches := FindTemplateMatches(img, template, Imask, tmask, cmask, a.Tolerance, a.Blur)
+				DrawFoundMatches(matches, template.Cols(), template.Rows(), imgDraw, i.Name) // draw rect at top-left
+				// Offset each match to the center of the icon (click middle, not top-left)
+				halfW := template.Cols() / 2
+				halfH := template.Rows() / 2
+				for i := range matches {
+					matches[i].X += halfW
+					matches[i].Y += halfH
+				}
 				allMatches = append(allMatches, matches...)
-				DrawFoundMatches(matches, template.Cols(), template.Rows(), imgDraw, i.Name) // xSize*i.GridSize[0], ySize*i.GridSize[1]
 			}
 
 			// Store accumulated matches once per item
@@ -134,7 +156,7 @@ func match(img, imgDraw gocv.Mat, a *actions.ImageSearch) map[string][]robotgo.P
 	return results
 }
 
-func FindTemplateMatches(img, template, imask, tmask, cmask gocv.Mat, threshold float32) []robotgo.Point {
+func FindTemplateMatches(img, template, imask, tmask, cmask gocv.Mat, threshold float32, blur int) []robotgo.Point {
 	result := gocv.NewMat()
 	defer result.Close()
 
@@ -142,7 +164,10 @@ func FindTemplateMatches(img, template, imask, tmask, cmask gocv.Mat, threshold 
 	t := template.Clone()
 	defer i.Close()
 	defer t.Close()
-	kernel := image.Point{X: 5, Y: 5}
+	if blur <= 0 {
+		blur = 5
+	}
+	kernel := image.Point{X: blur, Y: blur}
 
 	// if Imask.Rows() > 0 && Imask.Cols() > 0 {
 	// 	gocv.Subtract(i, Imask, &i)
@@ -216,15 +241,6 @@ func ImageToMatToImagePreprocess(img image.Image, gray, blur, threshold, resize 
 		return nil
 	}
 	defer i.Close()
-	if ppOptions.BlurAmount == 0 {
-		ppOptions.BlurAmount = 3
-	}
-	if ppOptions.MinThreshold == 0 {
-		ppOptions.MinThreshold = 127
-	}
-	if ppOptions.ResizeScale == 0 {
-		ppOptions.ResizeScale = 2
-	}
 	if gray {
 		gocv.CvtColor(i, &i, gocv.ColorBGRToGray)
 	}

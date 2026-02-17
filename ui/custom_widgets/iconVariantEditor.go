@@ -210,8 +210,8 @@ func (e *IconVariantEditor) showVariantNameDialog(sourcePath string) {
 			return
 		}
 
-		// Refresh the display
-		e.refreshDisplay()
+		// Refresh the display and notify that variants changed
+		e.refreshDisplay(true)
 	}, e.window)
 
 	formDialog.Resize(fyne.NewSize(400, 150))
@@ -251,8 +251,8 @@ func (e *IconVariantEditor) showDeleteConfirmation(variantName string) {
 				return
 			}
 
-			// Refresh the display
-			e.refreshDisplay()
+			// Refresh the display and notify that variants changed
+			e.refreshDisplay(true)
 		},
 		e.window,
 	)
@@ -276,8 +276,8 @@ func (e *IconVariantEditor) showOverwriteConfirmation(variantName, sourcePath st
 				return
 			}
 
-			// Refresh the display
-			e.refreshDisplay()
+			// Refresh the display and notify that variants changed
+			e.refreshDisplay(true)
 		},
 		e.window,
 	)
@@ -286,7 +286,8 @@ func (e *IconVariantEditor) showOverwriteConfirmation(variantName, sourcePath st
 }
 
 // refreshDisplay reloads variants and updates the UI
-func (e *IconVariantEditor) refreshDisplay() {
+// notifyChange indicates whether to call the onVariantChange callback
+func (e *IconVariantEditor) refreshDisplay(notifyChange bool) {
 	// Reload variants from filesystem
 	e.loadVariants()
 
@@ -297,8 +298,9 @@ func (e *IconVariantEditor) refreshDisplay() {
 	e.mainContent.Objects[0] = container.NewVScroll(e.variantList)
 	e.mainContent.Refresh()
 
-	// Call the variant change callback if provided
-	if e.onVariantChange != nil {
+	// Call the variant change callback only if explicitly requested
+	// This prevents unnecessary accordion refreshes when just selecting an item
+	if notifyChange && e.onVariantChange != nil {
 		e.onVariantChange()
 	}
 
@@ -330,6 +332,7 @@ func (e *IconVariantEditor) SetItemName(itemName string) {
 }
 
 // SetProgramAndItem updates both program and item name, then refreshes once
+// This does NOT trigger the onVariantChange callback to avoid unnecessary accordion refreshes
 func (e *IconVariantEditor) SetProgramAndItem(programName, itemName string) {
 	// Only refresh if values actually changed
 	if e.programName == programName && e.itemName == itemName {
@@ -341,7 +344,8 @@ func (e *IconVariantEditor) SetProgramAndItem(programName, itemName string) {
 
 	e.programName = programName
 	e.itemName = itemName
-	e.refreshDisplay()
+	// Don't notify change when just selecting an item - only notify when variants actually change
+	e.refreshDisplay(false)
 }
 
 // SetOnVariantChange updates the variant change callback

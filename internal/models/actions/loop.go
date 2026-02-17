@@ -8,11 +8,12 @@ import (
 )
 
 type Loop struct {
-	Count           int
+	// Count is the number of iterations: int (literal) or string (variable reference e.g. "${count}").
+	Count           any
 	*AdvancedAction `yaml:",inline" mapstructure:",squash"`
 }
 
-func NewLoop(count int, name string, subActions []ActionInterface) *Loop {
+func NewLoop(count any, name string, subActions []ActionInterface) *Loop {
 	if name == "root" {
 		r := &Loop{
 			AdvancedAction: newAdvancedAction(name, "loop", subActions),
@@ -22,6 +23,9 @@ func NewLoop(count int, name string, subActions []ActionInterface) *Loop {
 		r.SetParent(nil)
 		return r
 	}
+	if count == nil {
+		count = 1
+	}
 	return &Loop{
 		AdvancedAction: newAdvancedAction(name, "loop", subActions),
 		Count:          count,
@@ -29,7 +33,7 @@ func NewLoop(count int, name string, subActions []ActionInterface) *Loop {
 }
 
 func (a *Loop) String() string {
-	return fmt.Sprintf("%s | iterations: %d", a.Name, a.Count)
+	return fmt.Sprintf("%s | iterations: %v", a.Name, a.Count)
 }
 
 func (a *Loop) Icon() fyne.Resource {

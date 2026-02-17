@@ -15,19 +15,7 @@ const (
 	UserMasksDir       = "masks"
 	UserMetaDir        = "meta"
 	UserCalibrationDir = "calibration"
-
-	Scr                   = "screen"
-	Inv                   = "inventory"
-	Empty                 = "empty"
-	StashScr              = "stash-" + Scr
-	MerchantsScr          = "merchants-" + Scr
-	PlayerInv             = "player-" + Inv
-	StashInv              = "stash-" + Inv
-	MerchantInv           = "merchant-" + Inv
-	StashScrPlayerInv     = StashScr + "-" + PlayerInv
-	StashScrStashInv      = StashScr + "-" + StashInv
-	MerchantsScrPlayerInv = MerchantsScr + "-" + PlayerInv
-	MerchantsScrStashInv  = MerchantsScr + "-" + StashInv
+	UserVariablesDir   = "variables"
 
 	PNG  = ".png"
 	JPG  = ".jpg"
@@ -80,11 +68,42 @@ func GetAutoPicPath() string {
 	return filepath.Join(homeDir, SqyreDir, UserImagesDir, UserAutoPicDir)
 }
 
+// GetVariablesPath returns the path to the variables directory in the user's home directory
+// Returns: ~/Sqyre/variables/
+func GetVariablesPath() string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		log.Fatalf("Could not get user home directory: %v", err)
+	}
+	return filepath.Join(homeDir, SqyreDir, UserVariablesDir)
+}
+
+// GetDbPath returns the path to the config file in the user's home directory.
+// Returns: ~/Sqyre/db.yaml
+func GetDbPath() string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		log.Fatalf("Could not get user home directory: %v", err)
+	}
+	return filepath.Join(homeDir, SqyreDir, "db.yaml")
+}
+
+// GetSqyreDir returns the Sqyre application directory in the user's home directory.
+// Returns: ~/Sqyre/
+func GetSqyreDir() string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		log.Fatalf("Could not get user home directory: %v", err)
+	}
+	return filepath.Join(homeDir, SqyreDir)
+}
+
 // InitializeDirectories creates the necessary directories in the user's home directory
-// Creates: ~/Sqyre/images/icons/
+// Creates: ~/Sqyre/images/icons/, ~/Sqyre/variables/, etc.
 func InitializeDirectories() error {
 	iconsPath := GetIconsPath()
 	autoPicPath := GetAutoPicPath()
+	variablesPath := GetVariablesPath()
 
 	// Create all parent directories as needed
 	if err := os.MkdirAll(iconsPath, 0755); err != nil {
@@ -94,6 +113,11 @@ func InitializeDirectories() error {
 
 	if err := os.MkdirAll(autoPicPath, 0755); err != nil {
 		log.Printf("Failed to create AutoPic directory at %s: %v", autoPicPath, err)
+		return err
+	}
+
+	if err := os.MkdirAll(variablesPath, 0755); err != nil {
+		log.Printf("Failed to create variables directory at %s: %v", variablesPath, err)
 		return err
 	}
 

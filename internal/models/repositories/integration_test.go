@@ -45,15 +45,15 @@ func setupIntegrationTest(t *testing.T) (string, func()) {
 		yamlConfig := serialize.GetYAMLConfig()
 		// Reset YAML config to testdata config for other tests
 		testdataPath, _ := filepath.Abs("testdata")
-		baseConfigPath := filepath.Join(testdataPath, "config.yaml")
+		baseConfigPath := filepath.Join(testdataPath, "db.yaml")
 		yamlConfig.SetConfigFile(baseConfigPath)
 		yamlConfig.ReadConfig()
-		
-		writeableConfigPath := filepath.Join(testdataPath, "writeable-config.yaml")
+
+		writeableConfigPath := filepath.Join(testdataPath, "writeable-db.yaml")
 		yamlConfig.SetConfigFile(writeableConfigPath)
 		yamlConfig.WriteConfig()
 	}
-	configPath, _ := filepath.Abs("testdata/writeable-config.yaml")
+	configPath, _ := filepath.Abs("testdata/writeable-db.yaml")
 	return configPath, cleanup
 }
 
@@ -1287,4 +1287,3 @@ func TestIntegration_CoordinateRepositories_ConfigFileVerification(t *testing.T)
 		}
 	})
 }
-

@@ -45,7 +45,7 @@ type Repository[T any] interface {
 //
 // Use BaseRepository for:
 // - Top-level domain models (Macro, Program)
-// - Models that are stored directly in config.yaml under their own key
+// - Models that are stored directly in db.yaml under their own key
 // - Models that don't belong to another aggregate root
 // - Models that need independent persistence
 //
@@ -136,7 +136,7 @@ type BaseRepository[T any] struct {
 
 // NewBaseRepository creates a new BaseRepository instance.
 // The type parameter T should be a type where *T implements models.BaseModel.
-// configKey: the key in config.yaml (e.g., "macros", "programs")
+// configKey: the key in db.yaml (e.g., "macros", "programs")
 // decodeFunc: function to decode a single model from Viper
 // newFunc: function to create a new model instance
 func NewBaseRepository[T any](configKey string, decodeFunc DecodeFunc[T], newFunc NewFunc[T]) *BaseRepository[T] {
