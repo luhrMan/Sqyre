@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/go-vgo/robotgo"
+	"github.com/gofrs/flock"
 	hook "github.com/luhrMan/gohook"
 
 	"log"
@@ -24,6 +25,9 @@ import (
 	"fyne.io/fyne/v2/driver/desktop"
 	fynetooltip "github.com/dweymouth/fyne-tooltip"
 )
+
+// instanceLock is held for the process lifetime so only one instance runs.
+var instanceLock *flock.Flock
 
 func debugLog(msg string) {
 	dir := os.TempDir()
@@ -41,6 +45,19 @@ func debugLog(msg string) {
 
 func init() {
 	debugLog("init started")
+
+	// Single-instance check: if another Sqyre is already running, exit immediately.
+	lockPath := filepath.Join(config.GetSqyreDir(), "sqyre.lock")
+	if err := os.MkdirAll(config.GetSqyreDir(), 0755); err != nil {
+		debugLog("single-instance mkdir: " + err.Error())
+		os.Exit(1)
+	}
+	instanceLock = flock.New(lockPath)
+	ok, err := instanceLock.TryLock()
+	if err != nil || !ok {
+		os.Exit(0)
+	}
+
 	// Initialize directory structure first
 	if err := config.InitializeDirectories(); err != nil {
 		debugLog("init dirs failed: " + err.Error())
