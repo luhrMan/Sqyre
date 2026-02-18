@@ -54,8 +54,6 @@ mkdir -p "$OUTPUT_DIR"
 cp -r "$REPO_ROOT/fyne-cross/bin/windows-amd64/"* "$OUTPUT_DIR/" 2>/dev/null || true
 cp -r "$REPO_ROOT/fyne-cross/dist/windows-amd64/"* "$OUTPUT_DIR/" 2>/dev/null || true
 
-# Clean up fyne-cross working directory from project root
-rm -rf "$REPO_ROOT/fyne-cross"
 
 # fyne-cross names the exe after the app name in FyneApp.toml (e.g. Sqyre.exe)
 EXE_PATH="$OUTPUT_DIR/Sqyre.exe"
