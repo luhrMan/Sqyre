@@ -42,6 +42,7 @@ func refreshAllProgramRelatedUI() {
 	et := ui.GetUi().EditorTabs
 	if programList, ok := et.ProgramsTab.Widgets["list"].(*widget.List); ok {
 		setProgramList(programList)
+		programList.Refresh()
 	}
 
 	// Refresh editor tab accordions
