@@ -30,8 +30,8 @@ const (
 	//since I have refactored the code to account for multiple programs at once,
 	// I need to append the program name to the program properties names,
 	// this is the delimiter between the program name and the property name
-	// e.g. dark and darker|Health potion
-	ProgramDelimiter = "|"
+	// e.g. dark and darker~Health potion (tilde used: Windows disallows "|" in filenames)
+	ProgramDelimiter = "~"
 )
 
 // GetIconsPath returns the path to the icons directory in the user's home directory
