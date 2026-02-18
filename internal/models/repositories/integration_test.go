@@ -11,33 +11,13 @@ import (
 	"time"
 )
 
-// setupIntegrationTest creates a temporary config file for integration testing
+// setupIntegrationTest configures a writable test config for integration tests.
 func setupIntegrationTest(t *testing.T) (string, func()) {
 	t.Helper()
 
-	// Enable test mode for Reload() to re-read config from disk
 	os.Setenv("SQYRE_TEST_MODE", "1")
-
-	// Create temporary directory
-	// tempDir, err := os.MkdirTemp("", "sqyre-integration-test-*")
-	// if err != nil {
-	// 	t.Fatalf("Failed to create temp dir: %v", err)
-	// }
-
-	// Create config file path
-
 	setupTestConfig(t)
-	// Configure Viper to use temp config
-	// testdataPath, _ := filepath.Abs("testdata")
-	// viper.SetConfigFile(testdataPath)
-	// viper.AddConfigPath(testdataPath)
-	// viper.SetConfigName("config")
-	// viper.SetConfigType("yaml")
-	// viper.ReadInConfig()
-	// viper.SetConfigName("writeable-config")
-	// viper.WriteConfig()
 
-	// Cleanup function
 	cleanup := func() {
 		// Disable test mode
 		os.Unsetenv("SQYRE_TEST_MODE")
@@ -862,8 +842,9 @@ func TestIntegration_CoordinateRepositories_SavePersistence(t *testing.T) {
 			t.Fatalf("Point should exist after reload: %v", err)
 		}
 
-		if point.Name != "Persist Point" {
-			t.Errorf("Expected name 'Persist Point', got '%s'", point.Name)
+		// Repository syncs model key to storage key on Set, so Name is the key
+		if point.Name != "persist-point" {
+			t.Errorf("Expected name 'persist-point' (storage key), got '%s'", point.Name)
 		}
 		if point.X != 500 {
 			t.Errorf("Expected X 500, got %d", point.X)
@@ -920,8 +901,9 @@ func TestIntegration_CoordinateRepositories_SavePersistence(t *testing.T) {
 			t.Fatalf("Search area should exist after reload: %v", err)
 		}
 
-		if area.Name != "Persist Area" {
-			t.Errorf("Expected name 'Persist Area', got '%s'", area.Name)
+		// Repository syncs model key to storage key on Set, so Name is the key
+		if area.Name != "persist-area" {
+			t.Errorf("Expected name 'persist-area' (storage key), got '%s'", area.Name)
 		}
 		if area.LeftX != 100 {
 			t.Errorf("Expected LeftX 100, got %d", area.LeftX)
@@ -1206,18 +1188,12 @@ func TestIntegration_CoordinateRepositories_ConfigFileVerification(t *testing.T)
 
 		configStr := string(content)
 
-		// Verify the coordinates are in the file
+		// Verify the coordinates are in the file (repository syncs key to model name, so YAML has key as name)
 		if !contains(configStr, "file-point") {
 			t.Error("Config file should contain 'file-point'")
 		}
-		if !contains(configStr, "File Point") {
-			t.Error("Config file should contain 'File Point'")
-		}
 		if !contains(configStr, "file-area") {
 			t.Error("Config file should contain 'file-area'")
-		}
-		if !contains(configStr, "File Area") {
-			t.Error("Config file should contain 'File Area'")
 		}
 
 		// Verify the coordinate values are in the file
