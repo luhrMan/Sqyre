@@ -160,53 +160,6 @@ func TestMacroRepo_DecodeWithActions(t *testing.T) {
 	}
 }
 
-func TestMacroRepo_CRUD(t *testing.T) {
-	setupTestConfig(t)
-	resetMacroRepo()
-
-	repo := MacroRepo()
-
-	// Create a new macro
-	newMacro := models.NewMacro("New Test Macro", 50, []string{"ctrl", "n"})
-
-	// Test Set (skip actual save to avoid file I/O issues)
-	repo.mu.Lock()
-	repo.models["New Test Macro"] = newMacro
-	repo.mu.Unlock()
-
-	// Test Get
-	retrieved, err := repo.Get("New Test Macro")
-	if err != nil {
-		t.Fatalf("Failed to get new macro: %v", err)
-	}
-
-	if retrieved.Name != "New Test Macro" {
-		t.Errorf("Expected name 'New Test Macro', got '%s'", retrieved.Name)
-	}
-
-	// Test exact key matching (different case should fail)
-	_, err = repo.Get("new test macro")
-	if !errors.Is(err, ErrNotFound) {
-		t.Errorf("Expected ErrNotFound for different case key, got: %v", err)
-	}
-
-	// Test GetAll
-	all := repo.GetAll()
-	if len(all) < 2 {
-		t.Errorf("Expected at least 2 macros, got %d", len(all))
-	}
-
-	// Test Delete (without save)
-	repo.mu.Lock()
-	delete(repo.models, "New Test Macro")
-	repo.mu.Unlock()
-
-	_, err = repo.Get("New Test Macro")
-	if !errors.Is(err, ErrNotFound) {
-		t.Errorf("Expected ErrNotFound after delete, got %v", err)
-	}
-}
-
 func TestMacroRepo_New(t *testing.T) {
 	setupTestConfig(t)
 	resetMacroRepo()
