@@ -8,19 +8,16 @@ import (
 
 const (
 	// User directory structure
-	SqyreDir           = "Sqyre"
-	UserImagesDir      = "images"
-	UserAutoPicDir     = "AutoPic"
-	UserIconsDir       = "icons"
-	UserMasksDir       = "masks"
-	UserMetaDir        = "meta"
-	UserCalibrationDir = "calibration"
-	UserVariablesDir   = "variables"
+	SqyreDir         = "Sqyre"
+	UserImagesDir    = "images"
+	UserAutoPicDir   = "AutoPic"
+	UserIconsDir     = "icons"
+	UserMasksDir     = "masks"
+	UserMetaDir      = "meta"
+	UserVariablesDir = "variables"
 
 	PNG  = ".png"
 	JPG  = ".jpg"
-	GOB  = ".gob"
-	JSON = ".json"
 	YAML = ".yaml"
 
 	// Icon variant constants

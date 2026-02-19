@@ -6,8 +6,8 @@ require (
 	fyne.io/fyne/v2 v2.7.2
 	github.com/dweymouth/fyne-tooltip v0.4.0
 	github.com/go-vgo/robotgo v1.0.0
-	github.com/gofrs/flock v0.13.0
 	github.com/go-viper/mapstructure/v2 v2.5.0
+	github.com/gofrs/flock v0.13.0
 	github.com/google/uuid v1.6.0
 	github.com/lithammer/fuzzysearch v1.1.8
 	github.com/luhrMan/gohook v0.0.0-20250717231151-9fc28a31bf68
@@ -16,8 +16,6 @@ require (
 	gocv.io/x/gocv v0.43.0
 	gopkg.in/yaml.v3 v3.0.1
 )
-
-require gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 
 require (
 	fyne.io/systray v1.12.0 // indirect
