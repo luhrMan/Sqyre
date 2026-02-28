@@ -46,8 +46,8 @@ echo "=== Cross-compiling Sqyre for Windows ==="
     --app-id com.sqyre.app \
     ./cmd/sqyre
 
-# Clean up embedded tessdata from source tree
-rm -f "$TESSDATA_EMBED"
+# # Clean up embedded tessdata from source tree
+# rm -f "$TESSDATA_EMBED"
 
 OUTPUT_DIR="$REPO_ROOT/.devcontainer/builds/windows/output"
 mkdir -p "$OUTPUT_DIR"
@@ -64,7 +64,7 @@ if [ ! -f "$EXE_PATH" ]; then
 fi
 
 # Patch PE SizeOfStackReserve to 16MB to avoid STATUS_STACK_OVERFLOW (0xC00000FD) on Windows
-echo ""
+# echo ""
 # echo "=== Patching PE stack size (16 MB) ==="
 # go run "$REPO_ROOT/.devcontainer/builds/windows/patch-pe-stack.go" "$EXE_PATH"
 
