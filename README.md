@@ -32,70 +32,61 @@ fuck all that clicking
 
 # BUILD INSTRUCTIONS
 
+**Recommended:** Open this project in the **dev container** (e.g. in VS Code/Cursor: *Dev Containers: Reopen in Container*). All commands below are intended to be run from a terminal **inside the dev container**.
+
+---
+
 ## Linux
 
-### 1. Install dependencies
-
-```bash
-sudo apt install -y \
-  build-essential pkg-config cmake golang-go \
-  tesseract-ocr libtesseract-dev libleptonica-dev \
-  libgl1-mesa-dev libglvnd-dev libglfw3-dev \
-  libxkbcommon-dev libxkbcommon-x11-dev \
-  libx11-dev libx11-xcb-dev libxext-dev libxtst-dev \
-  libxcursor-dev libxrandr-dev libxinerama-dev \
-  libxxf86vm-dev libxt-dev \
-  libjpeg-dev libpng-dev libtiff-dev libwebp-dev libopenjp2-7-dev
-```
-
-### 2. Install OpenCV
-
-Squire uses **gocv**; OpenCV **≥ 4.6** is required. Either:
-
-- **Option A — Build via gocv (from repo root):**
-  ```bash
-  go get -u -d gocv.io/x/gocv
-  cd $(go env GOPATH)/pkg/mod/gocv.io/x/gocv@v0.43.0
-  make install
-  ```
-- **Option B — Build from source** (e.g. OpenCV 4.6+ with `core`, `imgproc`, `imgcodecs`; see `.devcontainer/Dockerfile` for a reference CMake setup).
-
-### 3. Build
-
-From the repository root:
+From the dev container (dependencies and OpenCV are pre-installed in the container):
 
 ```bash
 go build -o sqyre ./cmd/sqyre
 ./sqyre
 ```
 
+Logs are appended to `~/.sqyre/sqyre.log`.
+
 For **Flatpak** or **AppImage** packaging, see [.devcontainer/builds/linux/packaging/PACKAGING.md](.devcontainer/builds/linux/packaging/PACKAGING.md).
+
+<details>
+<summary>Linux without dev container</summary>
+
+If you build on a bare Linux system:
+
+1. **Install dependencies**
+   ```bash
+   sudo apt install -y \
+     build-essential pkg-config cmake golang-go \
+     tesseract-ocr libtesseract-dev libleptonica-dev \
+     libgl1-mesa-dev libglvnd-dev libglfw3-dev \
+     libxkbcommon-dev libxkbcommon-x11-dev \
+     libx11-dev libx11-xcb-dev libxext-dev libxtst-dev \
+     libxcursor-dev libxrandr-dev libxinerama-dev \
+     libxxf86vm-dev libxt-dev \
+     libjpeg-dev libpng-dev libtiff-dev libwebp-dev libopenjp2-7-dev
+   ```
+2. **Install OpenCV** — Sqyre uses **gocv**; OpenCV **≥ 4.6** is required. Either build via gocv (from repo root) or from source; see `.devcontainer/Dockerfile` for a reference.
+3. **Build:** `go build -o sqyre ./cmd/sqyre`
+</details>
 
 ---
 
 ## Windows
 
-### Recommended: Docker cross-compile (from Linux or WSL)
+### Docker cross-compile (from dev container)
 
-Build a standalone Windows `.exe` with OpenCV and Tesseract statically linked (no DLLs). Requires **Docker** and **fyne-cross**.
-
-From the **repository root**:
+Build a standalone Windows `.exe` with OpenCV and Tesseract statically linked (no DLLs). From **inside the dev container** (repository root), run the Windows build script:
 
 ```bash
-# Build the Windows image and compile (output: .devcontainer/builds/windows/output/Sqyre.exe)
 bash .devcontainer/builds/windows/build.sh
 ```
 
-If you're not in the dev container, ensure `fyne-cross` is installed (`go install github.com/fyne-io/fyne-cross@latest`) and run:
+Output: `.devcontainer/builds/windows/output/Sqyre.exe`
 
-```bash
-docker build -f .devcontainer/builds/windows/docker/Dockerfile.windows-amd64 -t fyne-cross-windows:local .
-fyne-cross windows -image fyne-cross-windows:local --app-id com.sqyre.app ./cmd/sqyre
-```
-
-The built executable is at `.devcontainer/builds/windows/output/Sqyre.exe`.
-
-### Native Windows (MSYS2)
+The dev container includes Docker-in-Docker and the required tooling.
+<details>
+<summary> No Dev Container/Native Windows (MSYS2)</summary>
 
 Using the **mingw64** shell in [MSYS2](https://www.msys2.org/):
 
@@ -119,3 +110,4 @@ Using the **mingw64** shell in [MSYS2](https://www.msys2.org/):
 4. **Build** from the repo (in mingw64): `go build -o sqyre.exe ./cmd/sqyre`
 
 To use the MSYS2 shell in VS Code: [integrate MSYS2 with VS Code](https://stackoverflow.com/questions/45836650/how-do-i-integrate-msys2-shell-into-visual-studio-code-on-windows).
+</details>
