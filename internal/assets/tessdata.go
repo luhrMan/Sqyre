@@ -12,7 +12,7 @@ var engTrainedData []byte
 
 // EnsureTessdata extracts the embedded eng.traineddata to the user's
 // application-data directory and returns the path to the tessdata folder.
-// On Windows this is typically %APPDATA%\Sqyre\tessdata.
+// On Windows this is typically %APPDATA%\.sqyre\tessdata.
 // If the file already exists on disk the extraction is skipped.
 // Returns "" if the extraction fails (caller should fall back to system tessdata).
 func EnsureTessdata() string {
@@ -50,5 +50,5 @@ func tessdataDir() string {
 		}
 		base = home
 	}
-	return filepath.Join(base, "Sqyre", "tessdata")
+	return filepath.Join(base, ".sqyre", "tessdata")
 }
