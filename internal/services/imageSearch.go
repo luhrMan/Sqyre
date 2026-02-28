@@ -34,7 +34,7 @@ func imageSearch(a *actions.ImageSearch, macro *models.Macro) (map[string][]robo
 		return nil, err
 	}
 	log.Printf("Image Searching | %v in X1:%d Y1:%d X2:%d Y2:%d, width:%d height:%d", a.Targets, leftX, topY, rightX, bottomY, w, h)
-	captureImg, err := robotgo.CaptureImg(leftX+config.XOffset, topY+config.YOffset, w, h)
+	captureImg, err := robotgo.CaptureImg(leftX, topY, w, h)
 	if err != nil {
 		log.Printf("Image Search: capture failed: %v (macro continues)", err)
 		return nil, err

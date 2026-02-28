@@ -36,7 +36,7 @@ func GetViper() *viper.Viper {
 func Decode() error {
 	configPath := config.GetDbPath()
 
-	// Ensure ~/Sqyre exists; create default config if missing
+	// Ensure ~/.sqyre exists; create default config if missing
 	if err := ensureConfigFile(configPath); err != nil {
 		return fmt.Errorf("config setup: %w", err)
 	}
@@ -47,7 +47,7 @@ func Decode() error {
 		return fmt.Errorf("viper error reading in file: %v", err)
 	}
 
-	// Point YAMLConfig at the same file so repositories read/write ~/Sqyre/db.yaml
+	// Point YAMLConfig at the same file so repositories read/write ~/.sqyre/db.yaml
 	GetYAMLConfig().SetConfigFile(configPath)
 	if err := GetYAMLConfig().ReadConfig(); err != nil {
 		return fmt.Errorf("yaml db read: %w", err)
@@ -56,7 +56,7 @@ func Decode() error {
 	return nil
 }
 
-// ensureConfigFile creates ~/Sqyre and a minimal db.yaml if the file does not exist.
+// ensureConfigFile creates ~/.sqyre and a minimal db.yaml if the file does not exist.
 func ensureConfigFile(configPath string) error {
 	if _, err := os.Stat(configPath); err == nil {
 		return nil

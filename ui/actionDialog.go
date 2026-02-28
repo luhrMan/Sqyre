@@ -260,7 +260,7 @@ func createMoveDialogContent(action *actions.Move) (fyne.CanvasObject, func()) {
 			}
 		}()
 
-		captureImg, err := robotgo.CaptureImg(config.XOffset, config.YOffset, screenWidth, screenHeight)
+		captureImg, err := robotgo.CaptureImg(0, 0, screenWidth, screenHeight)
 		if err != nil || captureImg == nil {
 			pointPreviewImage.Image = nil
 			pointPreviewImage.Refresh()
@@ -946,13 +946,13 @@ func createCalculateDialogContent(action *actions.Calculate) (fyne.CanvasObject,
 func createDataListDialogContent(action *actions.DataList) (fyne.CanvasObject, func()) {
 	sourceEntry := widget.NewMultiLineEntry()
 	sourceEntry.SetText(action.Source)
-	sourceEntry.SetPlaceHolder("File: path relative to ~/Sqyre/variables/ (e.g. mylist.txt)\nOr paste text directly")
+	sourceEntry.SetPlaceHolder("File: path relative to ~/.sqyre/variables/ (e.g. mylist.txt)\nOr paste text directly")
 	varEntry := widget.NewEntry()
 	varEntry.SetText(action.OutputVar)
 	lengthVarEntry := widget.NewEntry()
 	lengthVarEntry.SetText(action.LengthVar)
 	lengthVarEntry.SetPlaceHolder("e.g. lineCount (optional, for Loop)")
-	isFileCheck := widget.NewCheck("Source is file path (relative to ~/Sqyre/variables/)", nil)
+	isFileCheck := widget.NewCheck("Source is file path (relative to ~/.sqyre/variables/)", nil)
 	isFileCheck.SetChecked(action.IsFile)
 	skipBlankCheck := widget.NewCheck("Skip blank lines (exclude from count and iteration)", nil)
 	skipBlankCheck.SetChecked(action.SkipBlankLines)
@@ -981,7 +981,7 @@ func createSaveVariableDialogContent(action *actions.SaveVariable) (fyne.CanvasO
 	varEntry.SetText(action.VariableName)
 	destEntry := widget.NewEntry()
 	destEntry.SetText(action.Destination)
-	destEntry.SetPlaceHolder("~/Sqyre/variables/... or 'clipboard'")
+	destEntry.SetPlaceHolder("~/.sqyre/variables/... or 'clipboard'")
 	appendCheck := widget.NewCheck("Append to file", nil)
 	appendCheck.SetChecked(action.Append)
 	appendNewlineCheck := widget.NewCheck("New line with every append", nil)
@@ -989,7 +989,7 @@ func createSaveVariableDialogContent(action *actions.SaveVariable) (fyne.CanvasO
 
 	content := widget.NewForm(
 		widget.NewFormItem("Variable Name:", varEntry),
-		widget.NewFormItem("Destination (~/Sqyre/variables/... or 'clipboard'):", destEntry),
+		widget.NewFormItem("Destination (~/.sqyre/variables/... or 'clipboard'):", destEntry),
 		widget.NewFormItem("", appendCheck),
 		widget.NewFormItem("", appendNewlineCheck),
 	)
@@ -1071,23 +1071,21 @@ func createWaitForPixelDialogContent(action *actions.WaitForPixel) (fyne.CanvasO
 				switch e.Button {
 				case hook.MouseMap["left"]:
 					x, y := robotgo.Location()
-					logicalX := x - config.XOffset
-					logicalY := y - config.YOffset
 					hex := robotgo.GetPixelColor(x, y)
 					hex = strings.TrimPrefix(strings.ToLower(hex), "#")
 					if len(hex) == 8 {
 						hex = hex[2:]
 					}
 					fyne.Do(func() {
-						xEntry.SetText(fmt.Sprintf("%d", logicalX))
-						yEntry.SetText(fmt.Sprintf("%d", logicalY))
+						xEntry.SetText(fmt.Sprintf("%d", x))
+						yEntry.SetText(fmt.Sprintf("%d", y))
 						colorEntry.SetText(hex)
 						updateSwatch()
 					})
 				default:
-					// right or other: just cancel
+					// right or other: cancel without updating
 				}
-				hook.Unregister(hook.MouseDown, []string{})
+				go hook.Unregister(hook.MouseDown, []string{})
 			})
 		}()
 	})
