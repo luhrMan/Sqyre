@@ -54,7 +54,7 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 			log.Printf("Move: failed to resolve Y %v: %v, using 0 (ensure variable is set by an earlier action, e.g. Image Search output)", node.Point.Y, err)
 			y = 0
 		}
-		robotgo.Move(x+config.XOffset, y+config.YOffset)
+		robotgo.Move(x, y)
 		return nil
 	case *actions.Click:
 		log.Println("Click:", node.String())
@@ -303,8 +303,8 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 			log.Printf("WaitForPixel: failed to resolve Y %v: %v, using 0", node.Point.Y, err)
 			y = 0
 		}
-		screenX := x + config.XOffset
-		screenY := y + config.YOffset
+		screenX := x
+		screenY := y
 		var deadline time.Time
 		if node.TimeoutSeconds > 0 {
 			deadline = time.Now().Add(time.Duration(node.TimeoutSeconds) * time.Second)

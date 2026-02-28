@@ -97,7 +97,7 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 		dialog.ShowInformation("Computer Information", str, u.Window)
 	})
 
-	editor := fyne.NewMenuItem("Open Data Editor", func() {
+	editor := fyne.NewMenuItem("Data Editor", func() {
 		u.MainUi.Navigation.PushWithTitle(
 			fynetooltip.AddWindowToolTipLayer(u.EditorUi.CanvasObject, u.Window.Canvas()),
 			"Editor",
@@ -106,6 +106,13 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 			mt.UnselectAll()
 			mt.SelectedNode = ""
 		}
+	})
+
+	userSettings := fyne.NewMenuItem("User Settings", func() {
+		u.MainUi.Navigation.PushWithTitle(
+			fynetooltip.AddWindowToolTipLayer(u.SettingsUi.CanvasObject, u.Window.Canvas()),
+			"User Settings",
+		)
 	})
 
 	// testMenu := fyne.NewMenu("Test",
@@ -133,6 +140,6 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 	// )
 
 	// return fyne.NewMainMenu(fyne.NewMenu("Settings", computerInfo), macroMenu, calibrationMenu)
-	u.MainMenu.Items = append(u.MainMenu.Items, fyne.NewMenu("Settings", computerInfo, editor), macroMenu)
+	u.MainMenu.Items = append(u.MainMenu.Items, fyne.NewMenu("Settings", computerInfo, editor, userSettings), macroMenu)
 	return u.MainMenu
 }

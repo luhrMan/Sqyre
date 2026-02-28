@@ -21,6 +21,7 @@ type Ui struct {
 	Window   fyne.Window
 	MainMenu *fyne.MainMenu
 	*EditorUi
+	*SettingsUi
 	*MainUi
 }
 
@@ -66,6 +67,7 @@ func InitializeUi(w fyne.Window) *Ui {
 				},
 			},
 		},
+		SettingsUi: &SettingsUi{},
 		MainUi: &MainUi{
 			Navigation: new(container.Navigation), // Will be set in ConstructUi
 			Mui: &MacroUi{
@@ -79,7 +81,7 @@ func InitializeUi(w fyne.Window) *Ui {
 					BottomToolbar: new(fyne.Container),
 				},
 			},
-			ActionDialog: new(dialog.CustomDialog),
+			ActionDialog: nil, // set when a dialog is shown; Esc handler checks for nil before Hide()
 		},
 	}
 	return ui
@@ -103,6 +105,9 @@ func (u *Ui) ConstructUi() {
 	u.constructEditorTabs()
 	u.constructAddButton()
 	u.constructRemoveButton()
+
+	// construct settings screen
+	u.constructSettings()
 
 	// construct main menu
 	u.Window.SetMainMenu(u.constructMainMenu())
