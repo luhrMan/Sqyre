@@ -51,6 +51,7 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 		fyne.NewMenuItemWithIcon("Mouse Move", actions.NewMove(actions.Point{Name: "", X: 0, Y: 0}).Icon(), func() { addActionAndRefresh(actions.NewMove(actions.Point{Name: "", X: 0, Y: 0})) }),
 		fyne.NewMenuItemWithIcon("Click", actions.NewClick(false, false).Icon(), func() { addActionAndRefresh(actions.NewClick(false, false)) }),
 		fyne.NewMenuItemWithIcon("Key", actions.NewKey("ctrl", true).Icon(), func() { addActionAndRefresh(actions.NewKey("ctrl", true)) }),
+		fyne.NewMenuItemWithIcon("Type", actions.NewType("", 0).Icon(), func() { addActionAndRefresh(actions.NewType("", 0)) }),
 		fyne.NewMenuItemWithIcon("Focus window", actions.NewFocusWindow("").Icon(), func() {
 			addActionAndRefresh(actions.NewFocusWindow(""))
 		}),
