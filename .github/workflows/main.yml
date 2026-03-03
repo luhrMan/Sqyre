@@ -33,6 +33,20 @@ jobs:
           cache-from: type=gha,scope=sqyre-linux
           cache-to: type=gha,mode=max,scope=sqyre-linux
 
+      - name: Cache tessdata
+        id: tessdata-linux
+        uses: actions/cache@v4
+        with:
+          path: internal/assets/tessdata
+          key: tessdata-eng
+
+      - name: Download tessdata for embedding
+        if: steps.tessdata-linux.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p internal/assets/tessdata
+          curl -sL -o internal/assets/tessdata/eng.traineddata \
+            https://github.com/tesseract-ocr/tessdata/raw/main/eng.traineddata
+
       - name: Build Linux binary
         run: |
           docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace \
@@ -97,7 +111,15 @@ jobs:
           cache-from: type=gha,scope=sqyre-windows
           cache-to: type=gha,mode=max,scope=sqyre-windows
 
+      - name: Cache tessdata
+        id: tessdata-windows
+        uses: actions/cache@v4
+        with:
+          path: internal/assets/tessdata
+          key: tessdata-eng
+
       - name: Download tessdata for embedding
+        if: steps.tessdata-windows.outputs.cache-hit != 'true'
         run: |
           mkdir -p internal/assets/tessdata
           docker run --rm \
