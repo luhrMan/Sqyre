@@ -28,7 +28,7 @@ import (
 	"gocv.io/x/gocv"
 )
 
-// ShowActionDialog displays a dialog for editing an action
+// ShowActionDialog displays a dialog for editing an action.
 func ShowActionDialog(action actions.ActionInterface, onSave func(actions.ActionInterface)) {
 	u := GetUi()
 	if u == nil {
@@ -91,6 +91,9 @@ func ShowActionDialog(action actions.ActionInterface, onSave func(actions.Action
 	case *actions.FocusWindow:
 		content, saveFunc = createFocusWindowDialogContent(node)
 		content.Resize(fyne.NewSize(500, 400))
+	case *actions.RunMacro:
+		content, saveFunc = createRunMacroDialogContent(node)
+		content.Resize(fyne.NewSize(400, 120))
 	default:
 		content = widget.NewLabel("Unknown action type")
 		saveFunc = func() {}
@@ -1287,6 +1290,42 @@ func createFocusWindowDialogContent(action *actions.FocusWindow) (fyne.CanvasObj
 
 	saveFunc := func() {
 		action.WindowTarget = strings.TrimSpace(windowEntry.Text)
+	}
+
+	return content, saveFunc
+}
+
+func createRunMacroDialogContent(action *actions.RunMacro) (fyne.CanvasObject, func()) {
+	macroNames := repositories.MacroRepo().GetAllKeys()
+	// Exclude the currently open macro to prevent infinite recursion
+	if st := GetUi().Mui.MTabs.SelectedTab(); st != nil && st.Macro != nil && st.Macro.Name != "" {
+		macroNames = slices.DeleteFunc(macroNames, func(name string) bool { return name == st.Macro.Name })
+	}
+	if len(macroNames) == 0 {
+		macroNames = []string{""}
+	}
+	macroSelect := widget.NewSelect(macroNames, nil)
+	if action.MacroName != "" && !slices.Contains(macroNames, action.MacroName) {
+		// Macro was deleted or renamed; add current value so it's visible (unless it's the current macro - then clear)
+		st := GetUi().Mui.MTabs.SelectedTab()
+		if st != nil && st.Macro != nil && action.MacroName == st.Macro.Name {
+			macroNames = append([]string{""}, macroNames...)
+			macroSelect.Options = macroNames
+			macroSelect.SetSelected("")
+		} else {
+			macroSelect.Options = append([]string{action.MacroName}, macroNames...)
+			macroSelect.SetSelected(action.MacroName)
+		}
+	} else {
+		macroSelect.SetSelected(action.MacroName)
+	}
+
+	content := widget.NewForm(
+		widget.NewFormItem("Macro to run:", macroSelect),
+	)
+
+	saveFunc := func() {
+		action.MacroName = macroSelect.Selected
 	}
 
 	return content, saveFunc

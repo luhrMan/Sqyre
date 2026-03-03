@@ -4,6 +4,7 @@ import (
 	"Squire/internal/config"
 	"Squire/internal/models"
 	"Squire/internal/models/actions"
+	"Squire/internal/models/repositories"
 	"fmt"
 	"log"
 	"path/filepath"
@@ -311,6 +312,19 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 	case *actions.FocusWindow:
 		log.Println("Focus Window:", node.String())
 		return RunFocusWindow(node)
+	case *actions.RunMacro:
+		log.Println("Run Macro:", node.String())
+		if node.MacroName == "" {
+			return fmt.Errorf("run macro: macro name not set")
+		}
+		targetMacro, err := repositories.MacroRepo().Get(node.MacroName)
+		if err != nil {
+			return fmt.Errorf("run macro: %w", err)
+		}
+		if targetMacro.Root == nil {
+			return fmt.Errorf("run macro: macro %q has no root", node.MacroName)
+		}
+		return executeWithContext(targetMacro.Root, targetMacro)
 	case *actions.WaitForPixel:
 		log.Println("Wait for pixel:", node.String())
 		x, err := ResolveInt(node.Point.X, macro)
