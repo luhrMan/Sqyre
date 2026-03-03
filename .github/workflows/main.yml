@@ -96,7 +96,6 @@ jobs:
         run: |
           go install github.com/fyne-io/fyne-cross@latest
           echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
-          echo "$(go env GOPATH)/bin" >> $GITHUB_ENV
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
