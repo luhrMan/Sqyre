@@ -100,7 +100,7 @@ func (t *IconThumbnail) loadIcon() *canvas.Image {
 
 // constructIconKey constructs the cache key from the icon file path
 // Key format: "programName|filename.png"
-// Example: "/home/user/Sqyre/images/icons/dark and darker/Health Potion.png"
+// Example: "/home/user/.sqyre/images/icons/dark and darker/Health Potion.png"
 //
 //	-> "dark and darker|Health Potion.png"
 func (t *IconThumbnail) constructIconKey() string {

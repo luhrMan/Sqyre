@@ -44,6 +44,9 @@ func ActionToMap(action actions.ActionInterface) (map[string]any, error) {
 	case *actions.Key:
 		m["key"] = a.Key
 		m["state"] = a.State
+	case *actions.Type:
+		m["text"] = a.Text
+		m["delayms"] = a.DelayMs
 	case *actions.ImageSearch:
 		m["name"] = a.Name
 		m["targets"] = a.Targets
@@ -114,6 +117,8 @@ func ActionToMap(action actions.ActionInterface) (map[string]any, error) {
 	// 	m["blur"] = a.Blur
 	case *actions.FocusWindow:
 		m["windowtarget"] = a.WindowTarget
+	case *actions.RunMacro:
+		m["macroname"] = a.MacroName
 	default:
 		return nil, fmt.Errorf("unknown action type: %T", action)
 	}

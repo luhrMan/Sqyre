@@ -8,19 +8,16 @@ import (
 
 const (
 	// User directory structure
-	SqyreDir           = "Sqyre"
-	UserImagesDir      = "images"
-	UserAutoPicDir     = "AutoPic"
-	UserIconsDir       = "icons"
-	UserMasksDir       = "masks"
-	UserMetaDir        = "meta"
-	UserCalibrationDir = "calibration"
-	UserVariablesDir   = "variables"
+	SqyreDir         = ".sqyre"
+	UserImagesDir    = "images"
+	UserAutoPicDir   = "AutoPic"
+	UserIconsDir     = "icons"
+	UserMasksDir     = "masks"
+	UserMetaDir      = "meta"
+	UserVariablesDir = "variables"
 
 	PNG  = ".png"
 	JPG  = ".jpg"
-	GOB  = ".gob"
-	JSON = ".json"
 	YAML = ".yaml"
 
 	// Icon variant constants
@@ -30,12 +27,12 @@ const (
 	//since I have refactored the code to account for multiple programs at once,
 	// I need to append the program name to the program properties names,
 	// this is the delimiter between the program name and the property name
-	// e.g. dark and darker|Health potion
-	ProgramDelimiter = "|"
+	// e.g. dark and darker~Health potion (tilde used: Windows disallows "|" in filenames)
+	ProgramDelimiter = "~"
 )
 
 // GetIconsPath returns the path to the icons directory in the user's home directory
-// Returns: ~/Sqyre/images/icons/
+// Returns: ~/.sqyre/images/icons/
 func GetIconsPath() string {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
@@ -69,7 +66,7 @@ func GetAutoPicPath() string {
 }
 
 // GetVariablesPath returns the path to the variables directory in the user's home directory
-// Returns: ~/Sqyre/variables/
+// Returns: ~/.sqyre/variables/
 func GetVariablesPath() string {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
@@ -79,7 +76,7 @@ func GetVariablesPath() string {
 }
 
 // GetDbPath returns the path to the config file in the user's home directory.
-// Returns: ~/Sqyre/db.yaml
+// Returns: ~/.sqyre/db.yaml
 func GetDbPath() string {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
@@ -89,7 +86,7 @@ func GetDbPath() string {
 }
 
 // GetSqyreDir returns the Sqyre application directory in the user's home directory.
-// Returns: ~/Sqyre/
+// Returns: ~/.sqyre/
 func GetSqyreDir() string {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
@@ -99,7 +96,7 @@ func GetSqyreDir() string {
 }
 
 // InitializeDirectories creates the necessary directories in the user's home directory
-// Creates: ~/Sqyre/images/icons/, ~/Sqyre/variables/, etc.
+// Creates: ~/.sqyre/images/icons/, ~/.sqyre/variables/, etc.
 func InitializeDirectories() error {
 	iconsPath := GetIconsPath()
 	autoPicPath := GetAutoPicPath()

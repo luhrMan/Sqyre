@@ -59,7 +59,7 @@ func OCR(a *actions.Ocr, macro *models.Macro) (string, error) {
 	}
 	log.Printf("%s OCR search | %s in X1:%d Y1:%d X2:%d Y2:%d", a.Target, a.SearchArea.Name, leftX, topY, rightX, bottomY)
 
-	img, err := robotgo.CaptureImg(leftX+config.XOffset, topY+config.YOffset, w, h)
+	img, err := robotgo.CaptureImg(leftX, topY, w, h)
 	if err != nil || img == nil {
 		log.Printf("OCR: capture failed: %v", err)
 		return "", err

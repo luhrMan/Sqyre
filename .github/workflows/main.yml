@@ -1,0 +1,156 @@
+# Build and release Sqyre on merge to main.
+# Produces: Linux binary, AppImage, Windows .exe
+# Release tag format: vYYYY.MM.DD.HHMM (e.g. v2026.03.03.1643)
+
+name: Build and Release
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-22.04
+    outputs:
+      version: ${{ steps.version.outputs.VERSION }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set version
+        id: version
+        run: echo "VERSION=$(date +%Y.%m.%d.%H%M)" >> $GITHUB_OUTPUT
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Linux image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: .devcontainer/Dockerfile
+          load: true
+          tags: sqyre-linux-build:latest
+          cache-from: type=gha,scope=sqyre-linux
+          cache-to: type=gha,mode=max,scope=sqyre-linux
+
+      - name: Build Linux binary
+        run: |
+          docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace \
+            -e GOFLAGS="-tags=gocv_specific_modules" \
+            sqyre-linux-build \
+            bash -c 'go build -trimpath -o sqyre ./cmd/sqyre'
+
+      - name: Rename Linux binary
+        run: |
+          mv sqyre sqyre-v${{ steps.version.outputs.VERSION }}-linux-amd64
+
+      - name: Build AppImage
+        run: |
+          docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace \
+            -e GOFLAGS="-tags=gocv_specific_modules" \
+            sqyre-linux-build \
+            bash -c '.devcontainer/builds/linux/packaging/appimage/build-appimage.sh'
+          # Rename to versioned format
+          mv .devcontainer/builds/linux/packaging/appimage/Sqyre-0.5.0-x86_64.AppImage \
+             Sqyre-v${{ steps.version.outputs.VERSION }}-x86_64.AppImage
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-artifacts
+          path: |
+            sqyre-v${{ steps.version.outputs.VERSION }}-linux-amd64
+            Sqyre-v${{ steps.version.outputs.VERSION }}-x86_64.AppImage
+
+  build-windows:
+    runs-on: ubuntu-22.04
+    outputs:
+      version: ${{ steps.version.outputs.VERSION }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set version
+        id: version
+        run: echo "VERSION=$(date +%Y.%m.%d.%H%M)" >> $GITHUB_OUTPUT
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+
+      - name: Install fyne-cross
+        run: |
+          go install github.com/fyne-io/fyne-cross@latest
+          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+          echo "$(go env GOPATH)/bin" >> $GITHUB_ENV
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Windows image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: .devcontainer/builds/windows/docker/Dockerfile.windows-amd64
+          load: true
+          tags: fyne-cross-windows:local
+          cache-from: type=gha,scope=sqyre-windows
+          cache-to: type=gha,mode=max,scope=sqyre-windows
+
+      - name: Download tessdata for embedding
+        run: |
+          mkdir -p internal/assets/tessdata
+          docker run --rm \
+            -v ${{ github.workspace }}/internal/assets/tessdata:/out \
+            fyne-cross-windows:local \
+            bash -c 'cp /usr/local/mingw64/share/tessdata/eng.traineddata /out/ 2>/dev/null || true'
+          if [ ! -f internal/assets/tessdata/eng.traineddata ]; then
+            curl -sL -o internal/assets/tessdata/eng.traineddata \
+              https://github.com/tesseract-ocr/tessdata/raw/main/eng.traineddata
+          fi
+
+      - name: Cross-compile for Windows
+        run: |
+          fyne-cross windows \
+            -image fyne-cross-windows:local \
+            --app-id com.sqyre.app \
+            ./cmd/sqyre
+
+      - name: Locate and rename Windows exe
+        run: |
+          EXE=$(find fyne-cross -name "Sqyre.exe" -type f 2>/dev/null | head -1)
+          if [ -z "$EXE" ]; then
+            echo "Sqyre.exe not found in fyne-cross output"
+            find . -name "*.exe" 2>/dev/null
+            exit 1
+          fi
+          cp "$EXE" Sqyre-v${{ steps.version.outputs.VERSION }}-windows-amd64.exe
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-artifact
+          path: Sqyre-v${{ steps.version.outputs.VERSION }}-windows-amd64.exe
+
+  release:
+    needs: [build-linux, build-windows]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.build-linux.outputs.version }}
+          name: Release v${{ needs.build-linux.outputs.version }}
+          files: |
+            artifacts/linux-artifacts/*
+            artifacts/windows-artifact/*
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

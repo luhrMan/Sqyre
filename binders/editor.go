@@ -8,7 +8,6 @@ import (
 	"Squire/ui"
 	"Squire/ui/custom_widgets"
 	"errors"
-	"fmt"
 	"log"
 	"os"
 	"strconv"
@@ -42,6 +41,7 @@ func refreshAllProgramRelatedUI() {
 	et := ui.GetUi().EditorTabs
 	if programList, ok := et.ProgramsTab.Widgets["list"].(*widget.List); ok {
 		setProgramList(programList)
+		programList.Refresh()
 	}
 
 	// Refresh editor tab accordions
@@ -388,12 +388,8 @@ func setEditorForms() {
 					switch e.Button {
 					case hook.MouseMap["left"]:
 						x, y := robotgo.Location()
-						adjustedX = x - config.XOffset
-						adjustedY = y - config.YOffset
-						fyne.CurrentApp().SendNotification(&fyne.Notification{
-							Title:   "Captured Point",
-							Content: fmt.Sprintf("X: %d, Y: %d", adjustedX, adjustedY),
-						})
+						adjustedX = x
+						adjustedY = y
 						if xEntry, ok := et.PointsTab.Widgets["X"].(*widget.Entry); ok {
 							fyne.DoAndWait(func() {
 								xEntry.SetText(strconv.Itoa(adjustedX))
@@ -416,16 +412,15 @@ func setEditorForms() {
 								ui.GetUi().UpdatePointPreview(point)
 							}()
 						}
-						hook.Unregister(hook.MouseDown, []string{})
 						fyne.DoAndWait(func() {
 							dlg.Dismiss()
 						})
 					default:
-						hook.Unregister(hook.MouseDown, []string{})
 						fyne.DoAndWait(func() {
 							dlg.Dismiss()
 						})
 					}
+					go hook.Unregister(hook.MouseDown, []string{})
 				})
 			}()
 
@@ -452,21 +447,17 @@ func setEditorForms() {
 				firstClickDone := false
 				hook.Register(hook.MouseDown, []string{}, func(e hook.Event) {
 					if e.Button != hook.MouseMap["left"] {
-						hook.Unregister(hook.MouseDown, []string{})
 						fyne.DoAndWait(func() { dlg.Dismiss() })
+						go hook.Unregister(hook.MouseDown, []string{})
 						return
 					}
 					x, y := robotgo.Location()
-					adjX := x - config.XOffset
-					adjY := y - config.YOffset
+					adjX := x
+					adjY := y
 					if !firstClickDone {
 						leftX = adjX
 						topY = adjY
 						firstClickDone = true
-						fyne.CurrentApp().SendNotification(&fyne.Notification{
-							Title:   "Search Area",
-							Content: "Top-left set. Click bottom-right corner.",
-						})
 						return
 					}
 					// Second click: bottom-right corner (normalize in case clicks were reversed)
@@ -478,7 +469,6 @@ func setEditorForms() {
 					if topY > bottomY {
 						topY, bottomY = bottomY, topY
 					}
-					hook.Unregister(hook.MouseDown, []string{})
 					fyne.DoAndWait(func() {
 						if w, ok := et.SearchAreasTab.Widgets["LeftX"].(*widget.Entry); ok {
 							w.SetText(strconv.Itoa(leftX))
@@ -506,12 +496,9 @@ func setEditorForms() {
 								ui.GetUi().UpdateSearchAreaPreview(sa)
 							}()
 						}
-						fyne.CurrentApp().SendNotification(&fyne.Notification{
-							Title:   "Captured Search Area",
-							Content: fmt.Sprintf("LeftX: %d, TopY: %d, RightX: %d, BottomY: %d", leftX, topY, rightX, bottomY),
-						})
 						dlg.Dismiss()
 					})
+					go hook.Unregister(hook.MouseDown, []string{})
 				})
 			}()
 

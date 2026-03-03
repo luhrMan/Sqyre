@@ -28,7 +28,7 @@ import (
 	"gocv.io/x/gocv"
 )
 
-// ShowActionDialog displays a dialog for editing an action
+// ShowActionDialog displays a dialog for editing an action.
 func ShowActionDialog(action actions.ActionInterface, onSave func(actions.ActionInterface)) {
 	u := GetUi()
 	if u == nil {
@@ -58,6 +58,9 @@ func ShowActionDialog(action actions.ActionInterface, onSave func(actions.Action
 	case *actions.Key:
 		content, saveFunc = createKeyDialogContent(node)
 		content.Resize(fyne.NewSize(300, 100))
+	case *actions.Type:
+		content, saveFunc = createTypeDialogContent(node)
+		content.Resize(fyne.NewSize(400, 120))
 	case *actions.Loop:
 		content, saveFunc = createLoopDialogContent(node)
 		content.Resize(fyne.NewSize(600, 100))
@@ -88,6 +91,9 @@ func ShowActionDialog(action actions.ActionInterface, onSave func(actions.Action
 	case *actions.FocusWindow:
 		content, saveFunc = createFocusWindowDialogContent(node)
 		content.Resize(fyne.NewSize(500, 400))
+	case *actions.RunMacro:
+		content, saveFunc = createRunMacroDialogContent(node)
+		content.Resize(fyne.NewSize(400, 120))
 	default:
 		content = widget.NewLabel("Unknown action type")
 		saveFunc = func() {}
@@ -260,7 +266,7 @@ func createMoveDialogContent(action *actions.Move) (fyne.CanvasObject, func()) {
 			}
 		}()
 
-		captureImg, err := robotgo.CaptureImg(config.XOffset, config.YOffset, screenWidth, screenHeight)
+		captureImg, err := robotgo.CaptureImg(0, 0, screenWidth, screenHeight)
 		if err != nil || captureImg == nil {
 			pointPreviewImage.Image = nil
 			pointPreviewImage.Refresh()
@@ -453,6 +459,37 @@ func createKeyDialogContent(action *actions.Key) (fyne.CanvasObject, func()) {
 	saveFunc := func() {
 		action.Key = keySelect.Selected
 		action.State = wToggle.Toggled
+	}
+
+	return content, saveFunc
+}
+
+func createTypeDialogContent(action *actions.Type) (fyne.CanvasObject, func()) {
+	textEntry := widget.NewEntry()
+	textEntry.SetText(action.Text)
+	textEntry.SetPlaceHolder("Text to type (supports ${variable})")
+
+	delayEntry := widget.NewEntry()
+	delayEntry.SetText(fmt.Sprintf("%d", action.DelayMs))
+	delayEntry.SetPlaceHolder("Delay between key presses (ms)")
+	delayEntry.Validator = func(s string) error {
+		if s == "" {
+			return nil
+		}
+		_, err := strconv.Atoi(strings.TrimSpace(s))
+		return err
+	}
+
+	content := widget.NewForm(
+		widget.NewFormItem("Text to type:", textEntry),
+		widget.NewFormItem("Delay (ms):", delayEntry),
+	)
+
+	saveFunc := func() {
+		action.Text = textEntry.Text
+		if val, err := strconv.Atoi(strings.TrimSpace(delayEntry.Text)); err == nil && val >= 0 {
+			action.DelayMs = val
+		}
 	}
 
 	return content, saveFunc
@@ -946,13 +983,13 @@ func createCalculateDialogContent(action *actions.Calculate) (fyne.CanvasObject,
 func createDataListDialogContent(action *actions.DataList) (fyne.CanvasObject, func()) {
 	sourceEntry := widget.NewMultiLineEntry()
 	sourceEntry.SetText(action.Source)
-	sourceEntry.SetPlaceHolder("File: path relative to ~/Sqyre/variables/ (e.g. mylist.txt)\nOr paste text directly")
+	sourceEntry.SetPlaceHolder("File: path relative to ~/.sqyre/variables/ (e.g. mylist.txt)\nOr paste text directly")
 	varEntry := widget.NewEntry()
 	varEntry.SetText(action.OutputVar)
 	lengthVarEntry := widget.NewEntry()
 	lengthVarEntry.SetText(action.LengthVar)
 	lengthVarEntry.SetPlaceHolder("e.g. lineCount (optional, for Loop)")
-	isFileCheck := widget.NewCheck("Source is file path (relative to ~/Sqyre/variables/)", nil)
+	isFileCheck := widget.NewCheck("Source is file path (relative to ~/.sqyre/variables/)", nil)
 	isFileCheck.SetChecked(action.IsFile)
 	skipBlankCheck := widget.NewCheck("Skip blank lines (exclude from count and iteration)", nil)
 	skipBlankCheck.SetChecked(action.SkipBlankLines)
@@ -981,7 +1018,7 @@ func createSaveVariableDialogContent(action *actions.SaveVariable) (fyne.CanvasO
 	varEntry.SetText(action.VariableName)
 	destEntry := widget.NewEntry()
 	destEntry.SetText(action.Destination)
-	destEntry.SetPlaceHolder("~/Sqyre/variables/... or 'clipboard'")
+	destEntry.SetPlaceHolder("~/.sqyre/variables/... or 'clipboard'")
 	appendCheck := widget.NewCheck("Append to file", nil)
 	appendCheck.SetChecked(action.Append)
 	appendNewlineCheck := widget.NewCheck("New line with every append", nil)
@@ -989,7 +1026,7 @@ func createSaveVariableDialogContent(action *actions.SaveVariable) (fyne.CanvasO
 
 	content := widget.NewForm(
 		widget.NewFormItem("Variable Name:", varEntry),
-		widget.NewFormItem("Destination (~/Sqyre/variables/... or 'clipboard'):", destEntry),
+		widget.NewFormItem("Destination (~/.sqyre/variables/... or 'clipboard'):", destEntry),
 		widget.NewFormItem("", appendCheck),
 		widget.NewFormItem("", appendNewlineCheck),
 	)
@@ -1071,23 +1108,21 @@ func createWaitForPixelDialogContent(action *actions.WaitForPixel) (fyne.CanvasO
 				switch e.Button {
 				case hook.MouseMap["left"]:
 					x, y := robotgo.Location()
-					logicalX := x - config.XOffset
-					logicalY := y - config.YOffset
 					hex := robotgo.GetPixelColor(x, y)
 					hex = strings.TrimPrefix(strings.ToLower(hex), "#")
 					if len(hex) == 8 {
 						hex = hex[2:]
 					}
 					fyne.Do(func() {
-						xEntry.SetText(fmt.Sprintf("%d", logicalX))
-						yEntry.SetText(fmt.Sprintf("%d", logicalY))
+						xEntry.SetText(fmt.Sprintf("%d", x))
+						yEntry.SetText(fmt.Sprintf("%d", y))
 						colorEntry.SetText(hex)
 						updateSwatch()
 					})
 				default:
-					// right or other: just cancel
+					// right or other: cancel without updating
 				}
-				hook.Unregister(hook.MouseDown, []string{})
+				go hook.Unregister(hook.MouseDown, []string{})
 			})
 		}()
 	})
@@ -1255,6 +1290,42 @@ func createFocusWindowDialogContent(action *actions.FocusWindow) (fyne.CanvasObj
 
 	saveFunc := func() {
 		action.WindowTarget = strings.TrimSpace(windowEntry.Text)
+	}
+
+	return content, saveFunc
+}
+
+func createRunMacroDialogContent(action *actions.RunMacro) (fyne.CanvasObject, func()) {
+	macroNames := repositories.MacroRepo().GetAllKeys()
+	// Exclude the currently open macro to prevent infinite recursion
+	if st := GetUi().Mui.MTabs.SelectedTab(); st != nil && st.Macro != nil && st.Macro.Name != "" {
+		macroNames = slices.DeleteFunc(macroNames, func(name string) bool { return name == st.Macro.Name })
+	}
+	if len(macroNames) == 0 {
+		macroNames = []string{""}
+	}
+	macroSelect := widget.NewSelect(macroNames, nil)
+	if action.MacroName != "" && !slices.Contains(macroNames, action.MacroName) {
+		// Macro was deleted or renamed; add current value so it's visible (unless it's the current macro - then clear)
+		st := GetUi().Mui.MTabs.SelectedTab()
+		if st != nil && st.Macro != nil && action.MacroName == st.Macro.Name {
+			macroNames = append([]string{""}, macroNames...)
+			macroSelect.Options = macroNames
+			macroSelect.SetSelected("")
+		} else {
+			macroSelect.Options = append([]string{action.MacroName}, macroNames...)
+			macroSelect.SetSelected(action.MacroName)
+		}
+	} else {
+		macroSelect.SetSelected(action.MacroName)
+	}
+
+	content := widget.NewForm(
+		widget.NewFormItem("Macro to run:", macroSelect),
+	)
+
+	saveFunc := func() {
+		action.MacroName = macroSelect.Selected
 	}
 
 	return content, saveFunc

@@ -11,6 +11,12 @@ import (
 	hook "github.com/luhrMan/gohook"
 )
 
+// Hook lifecycle: StartHook() is started in init() (see cmd/sqyre/sqyre.go). It runs
+// hook.Start() then blocks on hook.Process(s), so all Register callbacks are dispatched
+// from that goroutine. When unregistering from inside a callback, call hook.Unregister
+// from a new goroutine (e.g. go hook.Unregister(...)) to avoid modifying hook state
+// while Process is iterating over handlers.
+
 func FailsafeHotkey() {
 	fs := []string{"esc", "ctrl", "shift"}
 	hook.Register(hook.KeyDown, fs, func(e hook.Event) {

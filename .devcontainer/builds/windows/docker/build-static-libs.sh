@@ -24,7 +24,8 @@ cd "$BUILD_DIR"
 
 # ----- zlib -----
 echo "=== Building zlib ==="
-curl -f -sL https://zlib.net/zlib-1.3.1.tar.gz -o zlib.tar.gz && tar xzf zlib.tar.gz
+curl -f -sL https://github.com/madler/zlib/archive/refs/tags/v1.3.1.tar.gz -o zlib.tar.gz
+tar xzf zlib.tar.gz
 cd zlib-1.3.1
 cmake -B build -G "Unix Makefiles" \
   -DCMAKE_SYSTEM_NAME=Windows -DCMAKE_C_COMPILER="$CC" \
