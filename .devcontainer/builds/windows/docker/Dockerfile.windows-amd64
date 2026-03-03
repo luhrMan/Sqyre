@@ -35,6 +35,15 @@ RUN mkdir -p /usr/local/mingw64-static/share/tessdata \
 # ===========================================================================
 FROM fyneio/fyne-cross-images:windows
 
+# Upgrade Go to 1.26 (base image has 1.24.6; go.mod requires >= 1.25)
+ARG GO_VERSION=1.26.0
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates && \
+    curl -sSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" -o /tmp/go.tgz && \
+    rm -rf /usr/local/go && tar -C /usr/local -xzf /tmp/go.tgz && rm /tmp/go.tgz && \
+    ln -sf /usr/local/go/bin/go /usr/local/bin/go && \
+    ln -sf /usr/local/go/bin/gofmt /usr/local/bin/gofmt && \
+    rm -rf /var/lib/apt/lists/*
+
 # Copy static libs, headers, pkg-config, and tessdata (no DLLs)
 COPY --from=staticbuild /usr/local/mingw64-static /usr/local/mingw64
 

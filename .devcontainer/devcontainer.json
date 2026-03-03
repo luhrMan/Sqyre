@@ -9,9 +9,15 @@
   "features": {
     "ghcr.io/devcontainers/features/docker-in-docker:2": {}
   },
-  "containerEnv": {"GOFLAGS": "-tags=gocv_specific_modules"},
+  "containerEnv": {
+    "GOFLAGS": "-tags=gocv_specific_modules",
+    "GOTOOLCHAIN": "auto"
+  },
   "customizations": {
     "vscode": {
+      "extensions": [
+        "golang.go"
+      ],
       "tasks": [
         {
           "label": "Build Linux",
