@@ -58,6 +58,9 @@ func ShowActionDialog(action actions.ActionInterface, onSave func(actions.Action
 	case *actions.Key:
 		content, saveFunc = createKeyDialogContent(node)
 		content.Resize(fyne.NewSize(300, 100))
+	case *actions.Type:
+		content, saveFunc = createTypeDialogContent(node)
+		content.Resize(fyne.NewSize(400, 120))
 	case *actions.Loop:
 		content, saveFunc = createLoopDialogContent(node)
 		content.Resize(fyne.NewSize(600, 100))
@@ -453,6 +456,37 @@ func createKeyDialogContent(action *actions.Key) (fyne.CanvasObject, func()) {
 	saveFunc := func() {
 		action.Key = keySelect.Selected
 		action.State = wToggle.Toggled
+	}
+
+	return content, saveFunc
+}
+
+func createTypeDialogContent(action *actions.Type) (fyne.CanvasObject, func()) {
+	textEntry := widget.NewEntry()
+	textEntry.SetText(action.Text)
+	textEntry.SetPlaceHolder("Text to type (supports ${variable})")
+
+	delayEntry := widget.NewEntry()
+	delayEntry.SetText(fmt.Sprintf("%d", action.DelayMs))
+	delayEntry.SetPlaceHolder("Delay between key presses (ms)")
+	delayEntry.Validator = func(s string) error {
+		if s == "" {
+			return nil
+		}
+		_, err := strconv.Atoi(strings.TrimSpace(s))
+		return err
+	}
+
+	content := widget.NewForm(
+		widget.NewFormItem("Text to type:", textEntry),
+		widget.NewFormItem("Delay (ms):", delayEntry),
+	)
+
+	saveFunc := func() {
+		action.Text = textEntry.Text
+		if val, err := strconv.Atoi(strings.TrimSpace(delayEntry.Text)); err == nil && val >= 0 {
+			action.DelayMs = val
+		}
 	}
 
 	return content, saveFunc

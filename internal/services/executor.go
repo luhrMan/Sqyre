@@ -82,6 +82,26 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 			}
 		}
 		return nil
+	case *actions.Type:
+		log.Println("Type:", node.String())
+		text := node.Text
+		if macro != nil {
+			resolved, err := ResolveString(text, macro)
+			if err == nil {
+				text = resolved
+			}
+		}
+		delayMs := node.DelayMs
+		if delayMs < 0 {
+			delayMs = 0
+		}
+		for _, r := range text {
+			robotgo.Type(string(r))
+			if delayMs > 0 {
+				robotgo.MilliSleep(delayMs)
+			}
+		}
+		return nil
 
 	case *actions.Loop:
 		log.Println("Loop:", node.String())

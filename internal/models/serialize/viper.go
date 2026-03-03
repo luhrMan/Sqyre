@@ -160,6 +160,13 @@ func (s *serializer) CreateActionFromMap(rawMap map[string]any, parent actions.A
 		action = actions.NewMove(createPoint(rawMap["point"].(map[string]any)))
 	case "key":
 		action = actions.NewKey(rawMap["key"].(string), rawMap["state"].(bool))
+	case "type":
+		text := stringFromMap(rawMap, "text")
+		delayMs := 0
+		if v := rawMap["delayms"]; v != nil {
+			delayMs = intFromMap(v)
+		}
+		action = actions.NewType(text, delayMs)
 	case "imagesearch":
 		targets := targetsFromMap(rawMap["targets"])
 		blur := 5
