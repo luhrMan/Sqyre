@@ -4,7 +4,7 @@ FROM ubuntu:22.04
 ARG DEBIAN_FRONTEND=noninteractive
 
 # Go (use full version e.g. 1.24.13; go1.24 is not a valid tarball)
-ARG GO_VERSION=1.24.13
+ARG GO_VERSION=1.26.0
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates && \
     curl -sSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" -o /tmp/go.tgz && \
     tar -C /usr/local -xzf /tmp/go.tgz && rm /tmp/go.tgz && \
