@@ -9,21 +9,22 @@ import (
 	"Squire/internal/services"
 	"Squire/ui"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"slices"
+	"strings"
 	"time"
-
-	"github.com/go-vgo/robotgo"
-	"github.com/gofrs/flock"
-	hook "github.com/luhrMan/gohook"
-
-	"log"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
+	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/driver/desktop"
 	fynetooltip "github.com/dweymouth/fyne-tooltip"
+	"github.com/go-vgo/robotgo"
+	"github.com/gofrs/flock"
+	hook "github.com/luhrMan/gohook"
 )
 
 // instanceLock is held for the process lifetime so only one instance runs.
@@ -40,7 +41,55 @@ func debugLog(msg string) {
 		return
 	}
 	defer f.Close()
-	f.WriteString(fmt.Sprintf("[%s] %s\n", time.Now().Format("15:04:05.000"), msg))
+	fmt.Fprintf(f, "[%s] %s\n", time.Now().Format("15:04:05.000"), msg)
+}
+
+const maxLogLines = 10000
+
+func setupLogFile() {
+	logPath := filepath.Join(config.GetSqyreDir(), "sqyre.log")
+	trimLogFileIfNeeded(logPath, maxLogLines)
+	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return
+	}
+	log.SetOutput(f)
+	log.SetFlags(log.Ldate | log.Ltime)
+}
+
+// logCrashAndRepanic writes the panic value and stack trace to sqyre.log and returns.
+// Called from a deferred recover in main() so the program continues instead of exiting.
+func logCrashAndRepanic(r interface{}) {
+	logPath := filepath.Join(config.GetSqyreDir(), "sqyre.log")
+	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		log.Printf("panic (log file unavailable): %v\n%s", r, debug.Stack())
+		return
+	}
+	defer f.Close()
+	ts := time.Now().Format("2006-01-02 15:04:05.000")
+	fmt.Fprintf(f, "\n[%s] panic recovered: %v\n", ts, r)
+	f.Write(debug.Stack())
+	fmt.Fprintf(f, "\n")
+}
+
+// trimLogFileIfNeeded keeps only the last maxLines in the file so sqyre.log does not grow unbounded.
+func trimLogFileIfNeeded(logPath string, maxLines int) {
+	content, err := os.ReadFile(logPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return
+		}
+		return
+	}
+	lines := strings.Split(string(content), "\n")
+	if len(lines) <= maxLines {
+		return
+	}
+	toKeep := lines[len(lines)-maxLines:]
+	if err := os.WriteFile(logPath, []byte(strings.Join(toKeep, "\n")+"\n"), 0644); err != nil {
+		return
+	}
 }
 
 func init() {
@@ -57,6 +106,9 @@ func init() {
 	if err != nil || !ok {
 		os.Exit(0)
 	}
+
+	// Append logs to ~/.sqyre/sqyre.log (file kept open for process lifetime)
+	setupLogFile()
 
 	// Initialize directory structure first
 	if err := config.InitializeDirectories(); err != nil {
@@ -97,18 +149,29 @@ func init() {
 
 	if os.Getenv("SQYRE_NO_HOOK") != "1" {
 		hook.Register(hook.KeyDown, []string{"esc"}, func(e hook.Event) {
-			if isWindowWithTitleActive("sqyre") {
+			if !isWindowWithTitleActive("sqyre") {
+				return
+			}
+			// Capture refs once to avoid TOCTOU: dialog/mainUi can be set nil on main thread
+			u := ui.GetUi()
+			if u == nil {
+				return
+			}
+			var actionDialog dialog.Dialog
+			var mainUi *ui.MainUi
+			if u.MainUi != nil {
+				actionDialog = u.MainUi.ActionDialog
+				mainUi = u.MainUi
+			}
 			fyne.Do(func() {
-				if ui.GetUi().ActionDialog != nil {
-					ui.GetUi().ActionDialog.Hide()
+				if actionDialog != nil {
+					actionDialog.Hide()
 				}
-				log.Println("checking visibility of ui")
-				if !ui.GetUi().MainUi.Navigation.Root.Visible() {
+				if mainUi != nil && mainUi.Navigation.Root != nil && !mainUi.Navigation.Root.Visible() {
 					log.Println("showing main ui")
-					ui.GetUi().Navigation.Back()
+					mainUi.Navigation.Back()
 				}
 			})
-			}
 		})
 	}
 
@@ -126,6 +189,11 @@ func init() {
 }
 
 func main() {
+	defer func() {
+		if r := recover(); r != nil {
+			logCrashAndRepanic(r)
+		}
+	}()
 	debugLog("main started")
 	if os.Getenv("SQYRE_NO_HOOK") != "1" {
 		services.FailsafeHotkey()

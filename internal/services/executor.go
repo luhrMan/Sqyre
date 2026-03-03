@@ -4,6 +4,7 @@ import (
 	"Squire/internal/config"
 	"Squire/internal/models"
 	"Squire/internal/models/actions"
+	"Squire/internal/models/repositories"
 	"fmt"
 	"log"
 	"path/filepath"
@@ -54,7 +55,7 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 			log.Printf("Move: failed to resolve Y %v: %v, using 0 (ensure variable is set by an earlier action, e.g. Image Search output)", node.Point.Y, err)
 			y = 0
 		}
-		robotgo.Move(x+config.XOffset, y+config.YOffset)
+		robotgo.Move(x, y)
 		return nil
 	case *actions.Click:
 		log.Println("Click:", node.String())
@@ -79,6 +80,26 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 			err := robotgo.KeyUp(key)
 			if err != nil {
 				return err
+			}
+		}
+		return nil
+	case *actions.Type:
+		log.Println("Type:", node.String())
+		text := node.Text
+		if macro != nil {
+			resolved, err := ResolveString(text, macro)
+			if err == nil {
+				text = resolved
+			}
+		}
+		delayMs := node.DelayMs
+		if delayMs < 0 {
+			delayMs = 0
+		}
+		for _, r := range text {
+			robotgo.Type(string(r))
+			if delayMs > 0 {
+				robotgo.MilliSleep(delayMs)
 			}
 		}
 		return nil
@@ -291,6 +312,19 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 	case *actions.FocusWindow:
 		log.Println("Focus Window:", node.String())
 		return RunFocusWindow(node)
+	case *actions.RunMacro:
+		log.Println("Run Macro:", node.String())
+		if node.MacroName == "" {
+			return fmt.Errorf("run macro: macro name not set")
+		}
+		targetMacro, err := repositories.MacroRepo().Get(node.MacroName)
+		if err != nil {
+			return fmt.Errorf("run macro: %w", err)
+		}
+		if targetMacro.Root == nil {
+			return fmt.Errorf("run macro: macro %q has no root", node.MacroName)
+		}
+		return executeWithContext(targetMacro.Root, targetMacro)
 	case *actions.WaitForPixel:
 		log.Println("Wait for pixel:", node.String())
 		x, err := ResolveInt(node.Point.X, macro)
@@ -303,8 +337,8 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 			log.Printf("WaitForPixel: failed to resolve Y %v: %v, using 0", node.Point.Y, err)
 			y = 0
 		}
-		screenX := x + config.XOffset
-		screenY := y + config.YOffset
+		screenX := x
+		screenY := y
 		var deadline time.Time
 		if node.TimeoutSeconds > 0 {
 			deadline = time.Now().Add(time.Duration(node.TimeoutSeconds) * time.Second)

@@ -51,8 +51,12 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 		fyne.NewMenuItemWithIcon("Mouse Move", actions.NewMove(actions.Point{Name: "", X: 0, Y: 0}).Icon(), func() { addActionAndRefresh(actions.NewMove(actions.Point{Name: "", X: 0, Y: 0})) }),
 		fyne.NewMenuItemWithIcon("Click", actions.NewClick(false, false).Icon(), func() { addActionAndRefresh(actions.NewClick(false, false)) }),
 		fyne.NewMenuItemWithIcon("Key", actions.NewKey("ctrl", true).Icon(), func() { addActionAndRefresh(actions.NewKey("ctrl", true)) }),
+		fyne.NewMenuItemWithIcon("Type", actions.NewType("", 0).Icon(), func() { addActionAndRefresh(actions.NewType("", 0)) }),
 		fyne.NewMenuItemWithIcon("Focus window", actions.NewFocusWindow("").Icon(), func() {
 			addActionAndRefresh(actions.NewFocusWindow(""))
+		}),
+		fyne.NewMenuItemWithIcon("Run macro", actions.NewRunMacro("").Icon(), func() {
+			addActionAndRefresh(actions.NewRunMacro(""))
 		}),
 	)
 	advancedActionsSubMenu.ChildMenu = fyne.NewMenu("",
@@ -97,7 +101,7 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 		dialog.ShowInformation("Computer Information", str, u.Window)
 	})
 
-	editor := fyne.NewMenuItem("Open Data Editor", func() {
+	editor := fyne.NewMenuItem("Data Editor", func() {
 		u.MainUi.Navigation.PushWithTitle(
 			fynetooltip.AddWindowToolTipLayer(u.EditorUi.CanvasObject, u.Window.Canvas()),
 			"Editor",
@@ -106,6 +110,13 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 			mt.UnselectAll()
 			mt.SelectedNode = ""
 		}
+	})
+
+	userSettings := fyne.NewMenuItem("User Settings", func() {
+		u.MainUi.Navigation.PushWithTitle(
+			fynetooltip.AddWindowToolTipLayer(u.SettingsUi.CanvasObject, u.Window.Canvas()),
+			"User Settings",
+		)
 	})
 
 	// testMenu := fyne.NewMenu("Test",
@@ -133,6 +144,6 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 	// )
 
 	// return fyne.NewMainMenu(fyne.NewMenu("Settings", computerInfo), macroMenu, calibrationMenu)
-	u.MainMenu.Items = append(u.MainMenu.Items, fyne.NewMenu("Settings", computerInfo, editor), macroMenu)
+	u.MainMenu.Items = append(u.MainMenu.Items, fyne.NewMenu("Settings", computerInfo, editor, userSettings), macroMenu)
 	return u.MainMenu
 }

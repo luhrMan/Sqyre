@@ -46,16 +46,14 @@ echo "=== Cross-compiling Sqyre for Windows ==="
     --app-id com.sqyre.app \
     ./cmd/sqyre
 
-# Clean up embedded tessdata from source tree
-rm -f "$TESSDATA_EMBED"
+# # Clean up embedded tessdata from source tree
+# rm -f "$TESSDATA_EMBED"
 
 OUTPUT_DIR="$REPO_ROOT/.devcontainer/builds/windows/output"
 mkdir -p "$OUTPUT_DIR"
 cp -r "$REPO_ROOT/fyne-cross/bin/windows-amd64/"* "$OUTPUT_DIR/" 2>/dev/null || true
 cp -r "$REPO_ROOT/fyne-cross/dist/windows-amd64/"* "$OUTPUT_DIR/" 2>/dev/null || true
 
-# Clean up fyne-cross working directory from project root
-rm -rf "$REPO_ROOT/fyne-cross"
 
 # fyne-cross names the exe after the app name in FyneApp.toml (e.g. Sqyre.exe)
 EXE_PATH="$OUTPUT_DIR/Sqyre.exe"
@@ -66,7 +64,7 @@ if [ ! -f "$EXE_PATH" ]; then
 fi
 
 # Patch PE SizeOfStackReserve to 16MB to avoid STATUS_STACK_OVERFLOW (0xC00000FD) on Windows
-echo ""
+# echo ""
 # echo "=== Patching PE stack size (16 MB) ==="
 # go run "$REPO_ROOT/.devcontainer/builds/windows/patch-pe-stack.go" "$EXE_PATH"
 
