@@ -41,68 +41,68 @@ func ShowActionDialog(action actions.ActionInterface, onSave func(actions.Action
 		u.MainUi.ActionDialog = nil
 	}
 
-	// Create dialog content based on action type
+	// Create dialog content based on action type.
+	// Size percentages (of app canvas): derived from original fixed sizes (300x100, 1000x600, etc.)
+	// assuming ~1000x500 base window.
 	var content fyne.CanvasObject
 	var saveFunc func()
+	var widthPct, heightPct float32
 
 	switch node := action.(type) {
 	case *actions.Wait:
 		content, saveFunc = createWaitDialogContent(node)
-		content.Resize(fyne.NewSize(300, 100))
+		widthPct, heightPct = 0.30, 0.20
 	case *actions.Move:
 		content, saveFunc = createMoveDialogContent(node)
-		content.Resize(fyne.NewSize(1000, 600))
+		widthPct, heightPct = 0.75, 0.75
 	case *actions.Click:
 		content, saveFunc = createClickDialogContent(node)
-		content.Resize(fyne.NewSize(300, 100))
+		widthPct, heightPct = 0.30, 0.20
 	case *actions.Key:
 		content, saveFunc = createKeyDialogContent(node)
-		content.Resize(fyne.NewSize(300, 100))
+		widthPct, heightPct = 0.30, 0.20
 	case *actions.Type:
 		content, saveFunc = createTypeDialogContent(node)
-		content.Resize(fyne.NewSize(400, 120))
+		widthPct, heightPct = 0.40, 0.24
 	case *actions.Loop:
 		content, saveFunc = createLoopDialogContent(node)
-		content.Resize(fyne.NewSize(600, 100))
+		widthPct, heightPct = 0.60, 0.20
 	case *actions.ImageSearch:
 		content, saveFunc = createImageSearchDialogContent(node)
-		content.Resize(fyne.NewSize(1000, 1000))
+		widthPct, heightPct = 0.75, 0.75
 	case *actions.Ocr:
 		content, saveFunc = createOcrDialogContent(node)
-		content.Resize(fyne.NewSize(600, 500))
+		widthPct, heightPct = 0.60, 0.75
 	case *actions.SetVariable:
 		content, saveFunc = createSetVariableDialogContent(node)
-		content.Resize(fyne.NewSize(600, 100))
+		widthPct, heightPct = 0.60, 0.20
 	case *actions.Calculate:
 		content, saveFunc = createCalculateDialogContent(node)
-		content.Resize(fyne.NewSize(600, 100))
+		widthPct, heightPct = 0.60, 0.20
 	case *actions.DataList:
 		content, saveFunc = createDataListDialogContent(node)
-		content.Resize(fyne.NewSize(600, 100))
+		widthPct, heightPct = 0.60, 0.20
 	case *actions.SaveVariable:
 		content, saveFunc = createSaveVariableDialogContent(node)
-		content.Resize(fyne.NewSize(600, 100))
-	// case *actions.Calibration:
-	// 	content, saveFunc = createCalibrationDialogContent(node)
-	// 	content.Resize(fyne.NewSize(600, 500))
+		widthPct, heightPct = 0.60, 0.20
 	case *actions.WaitForPixel:
 		content, saveFunc = createWaitForPixelDialogContent(node)
-		content.Resize(fyne.NewSize(450, 280))
+		widthPct, heightPct = 0.45, 0.56
 	case *actions.FocusWindow:
 		content, saveFunc = createFocusWindowDialogContent(node)
-		content.Resize(fyne.NewSize(500, 400))
+		widthPct, heightPct = 0.50, 0.80
 	case *actions.RunMacro:
 		content, saveFunc = createRunMacroDialogContent(node)
-		content.Resize(fyne.NewSize(400, 120))
+		widthPct, heightPct = 0.40, 0.24
 	default:
 		content = widget.NewLabel("Unknown action type")
 		saveFunc = func() {}
+		widthPct, heightPct = 0.40, 0.20
 	}
-	// Show custom dialog with save/cancel buttons
-	showCustomActionDialog(u, action, content, saveFunc, onSave)
+	showCustomActionDialog(u, action, content, saveFunc, onSave, widthPct, heightPct)
 }
 
-func showCustomActionDialog(u *Ui, action actions.ActionInterface, content fyne.CanvasObject, saveFunc func(), onSave func(actions.ActionInterface)) {
+func showCustomActionDialog(u *Ui, action actions.ActionInterface, content fyne.CanvasObject, saveFunc func(), onSave func(actions.ActionInterface), widthPct, heightPct float32) {
 	d := u.MainUi.ActionDialog
 	saveButton := ttwidget.NewButton("Save", func() {
 		saveFunc()
@@ -146,25 +146,8 @@ func showCustomActionDialog(u *Ui, action actions.ActionInterface, content fyne.
 		u.MainUi.ActionDialog = d
 	}
 	parentSize := u.Window.Canvas().Size()
-	width := parentSize.Width - 200
-	height := parentSize.Height - 200
-
-	// Get content's preferred size
-	contentMinSize := content.Size()
-	// Add padding for dialog chrome: title bar (~40px), buttons (~50px), padding (~20px total)
-	dialogPadding := fyne.NewSize(40, 110) // width padding, height padding
-	contentPreferredSize := fyne.NewSize(
-		contentMinSize.Width+dialogPadding.Width,
-		contentMinSize.Height+dialogPadding.Height,
-	)
-
-	// Use the smaller of calculated window size or content preferred size
-	if contentPreferredSize.Width < width {
-		width = contentPreferredSize.Width
-	}
-	if contentPreferredSize.Height < height {
-		height = contentPreferredSize.Height
-	}
+	width := parentSize.Width * widthPct
+	height := parentSize.Height * heightPct
 
 	// Ensure minimum size
 	if width < 200 {
