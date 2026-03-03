@@ -71,6 +71,6 @@ func UnregisterHotkey(hk []string) {
 func MacroHotkeyCallback(m *models.Macro) func(e hook.Event) {
 	return func(e hook.Event) {
 		log.Printf("pressed %v, executing %v", m.Hotkey, m.Name)
-		Execute(m.Root, m)
+		go ExecuteMacroWithLogging(m)
 	}
 }
