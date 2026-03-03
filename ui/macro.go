@@ -87,7 +87,7 @@ func (u *Ui) constructMacroUi() *fyne.Container {
 			return
 		}
 		go func() {
-			services.Execute(st.Macro.Root, st.Macro)
+			services.ExecuteMacroWithLogging(st.Macro)
 		}()
 	})
 

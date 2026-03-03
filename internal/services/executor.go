@@ -24,6 +24,30 @@ func Execute(a actions.ActionInterface, macro ...*models.Macro) error {
 	return executeWithContext(a, macroCtx)
 }
 
+// ExecuteMacroWithLogging runs a macro with log capture and shows the log popup.
+// Use this instead of Execute when running a macro from the UI or hotkey.
+func ExecuteMacroWithLogging(m *models.Macro) {
+	if m == nil {
+		return
+	}
+	if showMacroLogPopupFunc != nil {
+		fyne.DoAndWait(func() {
+			showMacroLogPopupFunc(m.Name)
+		})
+		defer StopMacroLogCapture()
+	}
+	_ = Execute(m.Root, m)
+}
+
+// showMacroLogPopupFunc is set by the ui package to avoid import cycle
+var showMacroLogPopupFunc func(macroName string)
+
+// SetShowMacroLogPopupFunc sets the callback to show the macro log popup.
+// Called from ui package during initialization.
+func SetShowMacroLogPopupFunc(fn func(macroName string)) {
+	showMacroLogPopupFunc = fn
+}
+
 // resetDataListsInTree resets every DataList in the action tree so each macro run starts from line 0.
 func resetDataListsInTree(a actions.ActionInterface) {
 	if dl, ok := a.(*actions.DataList); ok {
