@@ -25,3 +25,8 @@ sqyre
 .devcontainer/builds/linux/packaging/appimage/appimage-build/
 .devcontainer/builds/linux/packaging/appimage/*.AppImage
 .devcontainer/builds/linux/packaging/flatpak/build-dir/
+.devcontainer/builds/linux/packaging/flatpak/flatpak-deps/
+.devcontainer/builds/linux/packaging/flatpak/repo/
+.devcontainer/builds/linux/packaging/flatpak/*.flatpak
+.flatpak-builder/
+build-dir/

@@ -40,6 +40,9 @@
         opencv4
         tesseract
         leptonica
+        # Flatpak (build/install bundles)
+        flatpak
+        flatpak-builder
       ];
       PKG_CONFIG_PATH = "${pkgs.opencv4}/lib/pkgconfig";
       CGO_ENABLED = "1";

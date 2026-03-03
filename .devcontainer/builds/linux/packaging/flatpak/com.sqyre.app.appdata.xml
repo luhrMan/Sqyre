@@ -1,14 +1,27 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<component type="desktop">
+<component type="desktop-application">
   <id>com.sqyre.app</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
   <name>Sqyre</name>
   <summary>Macro builder</summary>
   <description>
-    <p>Sqyre is a macro builder built. It uses Fyne for the GUI, Robotgo for automation, Tesseract (OCR), and OpenCV for computer vision.</p>
+    <p>Sqyre is a macro builder. It uses Fyne for the GUI, Robotgo for automation, Tesseract (OCR), and OpenCV for computer vision.</p>
   </description>
+  <developer id="com.sqyre">
+    <name>Sqyre</name>
+  </developer>
+  <url type="homepage">https://github.com</url>
+  <launchable type="desktop-id">com.sqyre.app.desktop</launchable>
   <categories>
     <category>Development</category>
     <category>Utility</category>
   </categories>
-  <releases/>
+  <releases>
+    <release version="0.5.0" date="2025-01-01">
+      <description>
+        <p>Flatpak package.</p>
+      </description>
+    </release>
+  </releases>
 </component>

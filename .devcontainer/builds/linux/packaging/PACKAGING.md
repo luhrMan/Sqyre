@@ -25,30 +25,71 @@ flatpak install flathub org.freedesktop.Platform//25.08 org.freedesktop.Sdk//25.
 
 The **freedesktop SDK does not include OpenCV or Tesseract**. You have two options:
 
-1. **Add dependency modules to the manifest**  
-   Add modules that build **Leptonica**, **Tesseract**, and **OpenCV** from source before the Sqyre module, and set `PKG_CONFIG_PATH` / `CGO_*` so the Go build finds them. Examples for Tesseract/Leptonica:
-   - [TextSnatcher manifests](https://github.com/RajSolai/TextSnatcher/tree/master/manifests)  
-   Update the SHA256 hashes in the manifest (e.g. run `sha256sum` on the downloaded tarballs).
+1. **Reuse host OpenCV/Tesseract/Leptonica (e.g. devcontainer, same as AppImage)**  
+   When building inside the devcontainer (or any host with OpenCV in `/usr/local` and Tesseract/Leptonica from apt), run the prepare script once, then use the “host-deps” manifest so the Flatpak build reuses those libs instead of building OpenCV from source:
 
-2. **Use a custom SDK or build on a host that has them**  
-   If you build on a system with OpenCV and Tesseract installed (e.g. from your distro), you can try pointing the Flatpak build at them; this is less reproducible and may require a custom runtime/SDK that includes those libs.
+   ```bash
+   .devcontainer/builds/linux/packaging/flatpak/prepare-flatpak-deps.sh
+   flatpak-builder --user --force-clean build-dir .devcontainer/builds/linux/packaging/flatpak/com.sqyre.app.with-host-deps.yml
+   ```
+
+2. **Build Leptonica, Tesseract, and OpenCV from source in the manifest**  
+   Use the full manifest `com.sqyre.app.yml`, which adds modules that build those dependencies. Slower but works without a pre‑built host (e.g. in CI).
 
 ### Build (once dependencies are available)
 
 From the **repository root**:
 
+**Option A – with host deps (devcontainer):**
+```bash
+.devcontainer/builds/linux/packaging/flatpak/prepare-flatpak-deps.sh
+flatpak-builder --user --force-clean build-dir .devcontainer/builds/linux/packaging/flatpak/com.sqyre.app.with-host-deps.yml
+```
+
+**Option B – full manifest (builds OpenCV etc. in Flatpak):**
 ```bash
 flatpak-builder --user --force-clean build-dir .devcontainer/builds/linux/packaging/flatpak/com.sqyre.app.yml
 ```
 
-Install and run:
+**Install** (then run from menu or CLI):
 
 ```bash
-flatpak-builder --user --install --force-clean build-dir .devcontainer/builds/linux/packaging/flatpak/com.sqyre.app.yml
+flatpak-builder --user --install build-dir .devcontainer/builds/linux/packaging/flatpak/com.sqyre.app.yml
 flatpak run --user com.sqyre.app
 ```
 
+**Run without installing** (from the build directory; do not pass `--user` with `--run`):
+
+```bash
+flatpak-builder --run build-dir .devcontainer/builds/linux/packaging/flatpak/com.sqyre.app.yml sqyre
+```
+
+**Run on the host (e.g. from a devcontainer with no display):**  
+Export the build to a single-file bundle, copy it to your host, then install and run there:
+
+```bash
+# In devcontainer (from repo root), after a successful build:
+.devcontainer/builds/linux/packaging/flatpak/export-bundle.sh
+
+# Copy the generated .flatpak file to your host, then on the host:
+flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+flatpak install flathub org.freedesktop.Platform//25.08   # one-time, if needed
+flatpak install --user com.sqyre.app.flatpak
+flatpak run com.sqyre.app
+```
+
 The manifest is at `flatpak/com.sqyre.app.yml`. It expects the app to be built from `./cmd/sqyre` and uses metadata from `flatpak/com.sqyre.app.desktop` and `flatpak/com.sqyre.app.appdata.xml`.
+
+### App icon and appstream compose (e.g. Nix)
+
+If `flatpak-builder` fails with **appstreamcli compose** errors (`file-read-error`, `filters-but-no-output`) — for example when building under **Nix** — generate a 256×256 PNG from the SVG and commit it so the build uses the PNG instead of the SVG for the icon:
+
+```bash
+.devcontainer/builds/linux/packaging/flatpak/generate-app-icon-png.sh
+# Then commit internal/assets/icons/sqyre-256.png and rebuild.
+```
+
+You need `rsvg-convert` (librsvg) or `convert` (ImageMagick) to run the script.
 
 ---
 

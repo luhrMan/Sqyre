@@ -1,0 +1,71 @@
+# Flatpak manifest that reuses host OpenCV, Tesseract, and Leptonica (e.g. from devcontainer).
+# Use when building inside the devcontainer so we don't build OpenCV from source.
+#
+# 1. Prepare deps from host (run once):
+#      .devcontainer/builds/linux/packaging/flatpak/prepare-flatpak-deps.sh
+# 2. Build from repo root:
+#      flatpak-builder --user --force-clean build-dir .devcontainer/builds/linux/packaging/flatpak/com.sqyre.app.with-host-deps.yml
+#
+# Prerequisites: flatpak, flatpak-builder, Flathub runtime/SDK/Golang (see main manifest).
+# The prepare script must be run in an environment that has OpenCV in /usr/local and
+# Tesseract/Leptonica from apt (same as the AppImage build).
+
+app-id: com.sqyre.app
+runtime: org.freedesktop.Platform
+runtime-version: "25.08"
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.golang
+command: sqyre
+
+finish-args:
+  - --share=ipc
+  - --socket=x11
+  - --device=dri
+  - --talk-name=org.freedesktop.Notifications
+  - --filesystem=home
+  - --share=network
+  - --socket=pulseaudio
+
+build-options:
+  env:
+    - GOBIN=/app/bin
+    - GOROOT=/usr/lib/sdk/golang
+    - CGO_ENABLED=1
+  build-args:
+    - --share=network
+
+modules:
+  # Install pre-built OpenCV, Tesseract, Leptonica from host (from prepare-flatpak-deps.sh)
+  - name: host-deps
+    buildsystem: simple
+    build-commands:
+      - mkdir -p ${FLATPAK_DEST}/include ${FLATPAK_DEST}/lib/pkgconfig
+      - cp -a include/* ${FLATPAK_DEST}/include/
+      - cp -a lib/*.so* ${FLATPAK_DEST}/lib/ 2>/dev/null || true
+      - cp -a lib/pkgconfig/*.pc ${FLATPAK_DEST}/lib/pkgconfig/
+      - test -f ${FLATPAK_DEST}/lib/pkgconfig/opencv4.pc || (echo "Missing opencv4.pc. Run prepare-flatpak-deps.sh inside the devcontainer first." && exit 1)
+    sources:
+      - type: dir
+        path: flatpak-deps
+  - name: sqyre
+    buildsystem: simple
+    build-commands:
+      - mkdir -p internal/assets/tessdata
+      - curl -sL -o internal/assets/tessdata/eng.traineddata https://github.com/tesseract-ocr/tessdata/raw/main/eng.traineddata
+      - export PKG_CONFIG_PATH=${FLATPAK_DEST}/lib/pkgconfig
+      - export CGO_CPPFLAGS="-I${FLATPAK_DEST}/include"
+      - export CGO_LDFLAGS="-L${FLATPAK_DEST}/lib"
+      - $GOROOT/bin/go build -trimpath -o sqyre ./cmd/sqyre
+      - install -Dm00755 sqyre ${FLATPAK_DEST}/bin/sqyre
+      - |
+        if [ -f internal/assets/icons/sqyre-256.png ]; then
+          install -Dm00644 internal/assets/icons/sqyre-256.png ${FLATPAK_DEST}/share/icons/hicolor/256x256/apps/${FLATPAK_ID}.png;
+        else
+          install -Dm00644 internal/assets/icons/sqyre.svg ${FLATPAK_DEST}/share/icons/hicolor/scalable/apps/${FLATPAK_ID}.svg;
+        fi
+      - install -Dm00644 .devcontainer/builds/linux/packaging/flatpak/com.sqyre.app.desktop ${FLATPAK_DEST}/share/applications/${FLATPAK_ID}.desktop
+      - install -Dm00644 .devcontainer/builds/linux/packaging/flatpak/com.sqyre.app.appdata.xml ${FLATPAK_DEST}/share/appdata/${FLATPAK_ID}.appdata.xml
+    sources:
+      - type: dir
+        path: ../../../../..

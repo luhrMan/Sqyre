@@ -6,12 +6,14 @@
 #   flatpak install flathub org.freedesktop.Platform//25.08 org.freedesktop.Sdk//25.08 org.freedesktop.Sdk.Extension.golang//25.08
 #
 # Sqyre needs OpenCV and Tesseract at build time. The freedesktop SDK does not include them.
-# Option A: Build on a host that has OpenCV and Tesseract installed (e.g. from your distro),
-#   and ensure they are visible in the Flatpak build (e.g. use --build-dir and a custom
-#   SDK that includes them, or add the dependency modules below).
-# Option B: Add leptonica, tesseract, and opencv as separate modules before the sqyre module;
+# Option A (faster): Reuse host libs (e.g. devcontainer): run prepare-flatpak-deps.sh then
+#   build with com.sqyre.app.with-host-deps.yml.
+# Option B: This manifest builds leptonica, tesseract, and opencv as separate modules (below);
 #   see PACKAGING.md and e.g. https://github.com/RajSolai/TextSnatcher/tree/master/manifests
 #   for tesseract/leptonica. You must set PKG_CONFIG_PATH and CGO_* so the Go build finds them.
+#
+# If appstreamcli compose fails with file-read-error (e.g. in Nix), generate a 256x256 PNG and
+# commit it, then rebuild: .devcontainer/builds/linux/packaging/flatpak/generate-app-icon-png.sh
 
 app-id: com.sqyre.app
 runtime: org.freedesktop.Platform
@@ -35,17 +37,64 @@ build-options:
     - GOBIN=/app/bin
     - GOROOT=/usr/lib/sdk/golang
     - CGO_ENABLED=1
+  # Allow network during build so Go can fetch modules and we can download tessdata
+  build-args:
+    - --share=network
 
 modules:
+  # Leptonica (required by tesseract and gosseract)
+  - name: leptonica
+    config-opts:
+      - --disable-static
+    sources:
+      - type: git
+        url: https://github.com/DanBloomberg/leptonica.git
+        tag: 1.85.0
+  # Tesseract OCR (required by gosseract)
+  - name: tesseract
+    config-opts:
+      - --disable-static
+      - --disable-graphics
+      - --enable-legacy
+    sources:
+      - type: git
+        url: https://github.com/tesseract-ocr/tesseract.git
+        tag: 5.5.0
+  # OpenCV 4.13 (required by gocv v0.43 – 4.8 had API mismatches). Install to lib so pkg-config finds opencv4.pc.
+  - name: opencv
+    buildsystem: cmake
+    builddir: true
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DCMAKE_INSTALL_LIBDIR=lib
+      - -DOPENCV_GENERATE_PKGCONFIG=ON
+      - -DBUILD_opencv_apps=OFF
+      - -DBUILD_EXAMPLES=OFF
+      - -DBUILD_TESTS=OFF
+      - -DBUILD_PERF_TESTS=OFF
+      - -DBUILD_DOCS=OFF
+      - -DWITH_GTK=OFF
+      - -DWITH_QT=OFF
+    sources:
+      - type: git
+        url: https://github.com/opencv/opencv.git
+        tag: 4.13.0
   - name: sqyre
     buildsystem: simple
     build-commands:
-      - export PKG_CONFIG_PATH=${FLATPAK_DEST}/lib/pkgconfig
+      - mkdir -p internal/assets/tessdata
+      - curl -sL -o internal/assets/tessdata/eng.traineddata https://github.com/tesseract-ocr/tessdata/raw/main/eng.traineddata
+      - export PKG_CONFIG_PATH=${FLATPAK_DEST}/lib/pkgconfig:${FLATPAK_DEST}/lib64/pkgconfig
       - export CGO_CPPFLAGS="-I${FLATPAK_DEST}/include"
-      - export CGO_LDFLAGS="-L${FLATPAK_DEST}/lib"
+      - export CGO_LDFLAGS="-L${FLATPAK_DEST}/lib -L${FLATPAK_DEST}/lib64"
       - $GOROOT/bin/go build -trimpath -o sqyre ./cmd/sqyre
       - install -Dm00755 sqyre ${FLATPAK_DEST}/bin/sqyre
-      - install -Dm00644 internal/assets/icons/sqyre.png ${FLATPAK_DEST}/share/icons/hicolor/256x256/apps/${FLATPAK_ID}.png
+      - |
+        if [ -f internal/assets/icons/sqyre-256.png ]; then
+          install -Dm00644 internal/assets/icons/sqyre-256.png ${FLATPAK_DEST}/share/icons/hicolor/256x256/apps/${FLATPAK_ID}.png;
+        else
+          install -Dm00644 internal/assets/icons/sqyre.svg ${FLATPAK_DEST}/share/icons/hicolor/scalable/apps/${FLATPAK_ID}.svg;
+        fi
       - install -Dm00644 .devcontainer/builds/linux/packaging/flatpak/com.sqyre.app.desktop ${FLATPAK_DEST}/share/applications/${FLATPAK_ID}.desktop
       - install -Dm00644 .devcontainer/builds/linux/packaging/flatpak/com.sqyre.app.appdata.xml ${FLATPAK_DEST}/share/appdata/${FLATPAK_ID}.appdata.xml
     sources:
