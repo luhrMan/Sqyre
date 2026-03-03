@@ -318,16 +318,6 @@ func (u *Ui) onAutoPicSave() {
 		return
 	}
 
-	// Calculate capture coordinates with offsets
-	captureX := lx + config.XOffset
-	captureY := ty + config.YOffset
-
-	// Additional validation for capture coordinates
-	if captureX < 0 || captureY < 0 {
-		dialog.ShowError(fmt.Errorf("AutoPic: Cannot save - invalid capture coordinates after offset - x: %d, y: %d (area: %s)", captureX, captureY, searchArea.Name), u.Window)
-		return
-	}
-
 	// Attempt to capture the screen area with error recovery
 	var captureImg image.Image
 	var err error
@@ -339,7 +329,7 @@ func (u *Ui) onAutoPicSave() {
 			}
 		}()
 
-		captureImg, err = robotgo.CaptureImg(captureX, captureY, w, h)
+		captureImg, err = robotgo.CaptureImg(lx, ty, w, h)
 		if err != nil {
 			dialog.ShowError(fmt.Errorf("AutoPic: Error capturing image - %v (area: %s)", err, searchArea.Name), u.Window)
 			captureImg = nil
@@ -420,17 +410,6 @@ func (u *Ui) UpdateAutoPicPreview(searchArea *models.SearchArea) {
 		return
 	}
 
-	// Calculate capture coordinates with offsets
-	captureX := lx + config.XOffset
-	captureY := ty + config.YOffset
-
-	// Additional validation for capture coordinates
-	if captureX < 0 || captureY < 0 {
-		dialog.ShowError(fmt.Errorf("AutoPic: Invalid capture coordinates after offset - x: %d, y: %d (area: %s)", captureX, captureY, searchArea.Name), u.Window)
-		u.clearPreviewImage()
-		return
-	}
-
 	// Attempt to capture the screen area with error recovery
 	defer func() {
 		if r := recover(); r != nil {
@@ -439,7 +418,7 @@ func (u *Ui) UpdateAutoPicPreview(searchArea *models.SearchArea) {
 		}
 	}()
 
-	captureImg, err := robotgo.CaptureImg(captureX, captureY, w, h)
+	captureImg, err := robotgo.CaptureImg(lx, ty, w, h)
 	if err != nil {
 		dialog.ShowError(fmt.Errorf("AutoPic: Error capturing image - %v (area: %s)", err, searchArea.Name), u.Window)
 		captureImg = nil
@@ -541,7 +520,7 @@ func (u *Ui) UpdateSearchAreaPreview(searchArea *models.SearchArea) {
 		}
 	}()
 
-	captureImg, err := robotgo.CaptureImg(config.XOffset, config.YOffset, screenWidth, screenHeight)
+	captureImg, err := robotgo.CaptureImg(0, 0, screenWidth, screenHeight)
 	if err != nil {
 		dialog.ShowError(fmt.Errorf("SearchArea: Error capturing image - %v (area: %s)", err, searchArea.Name), u.Window)
 		captureImg = nil
@@ -645,7 +624,7 @@ func (u *Ui) UpdatePointPreview(point *models.Point) {
 		}
 	}()
 
-	captureImg, err := robotgo.CaptureImg(config.XOffset, config.YOffset, screenWidth, screenHeight)
+	captureImg, err := robotgo.CaptureImg(0, 0, screenWidth, screenHeight)
 	if err != nil {
 		dialog.ShowError(fmt.Errorf("Point: Error capturing image - %v (point: %s)", err, point.Name), u.Window)
 		captureImg = nil
