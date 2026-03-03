@@ -44,6 +44,9 @@ func ActionToMap(action actions.ActionInterface) (map[string]any, error) {
 	case *actions.Key:
 		m["key"] = a.Key
 		m["state"] = a.State
+	case *actions.Type:
+		m["text"] = a.Text
+		m["delayms"] = a.DelayMs
 	case *actions.ImageSearch:
 		m["name"] = a.Name
 		m["targets"] = a.Targets
