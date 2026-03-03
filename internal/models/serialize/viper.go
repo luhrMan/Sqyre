@@ -284,6 +284,8 @@ func (s *serializer) CreateActionFromMap(rawMap map[string]any, parent actions.A
 	// }
 	case "focuswindow":
 		action = actions.NewFocusWindow(stringFromMap(rawMap, "windowtarget"))
+	case "runmacro":
+		action = actions.NewRunMacro(stringFromMap(rawMap, "macroname"))
 	}
 	action.SetParent(parent)
 	if advAction, ok := action.(actions.AdvancedActionInterface); ok {

@@ -55,6 +55,9 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 		fyne.NewMenuItemWithIcon("Focus window", actions.NewFocusWindow("").Icon(), func() {
 			addActionAndRefresh(actions.NewFocusWindow(""))
 		}),
+		fyne.NewMenuItemWithIcon("Run macro", actions.NewRunMacro("").Icon(), func() {
+			addActionAndRefresh(actions.NewRunMacro(""))
+		}),
 	)
 	advancedActionsSubMenu.ChildMenu = fyne.NewMenu("",
 		fyne.NewMenuItemWithIcon("Loop", actions.NewLoop(1, "", []actions.ActionInterface{}).Icon(), func() { addActionAndRefresh(actions.NewLoop(1, "", []actions.ActionInterface{})) }),
