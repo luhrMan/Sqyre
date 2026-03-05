@@ -12,7 +12,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"runtime/debug"
 	"slices"
 	"strings"
 	"time"
@@ -55,22 +54,6 @@ func setupLogFile() {
 	}
 	log.SetOutput(f)
 	log.SetFlags(log.Ldate | log.Ltime)
-}
-
-// logCrashAndRepanic writes the panic value and stack trace to sqyre.log and returns.
-// Called from a deferred recover in main() so the program continues instead of exiting.
-func logCrashAndRepanic(r interface{}) {
-	logPath := filepath.Join(config.GetSqyreDir(), "sqyre.log")
-	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
-	if err != nil {
-		log.Printf("panic (log file unavailable): %v\n%s", r, debug.Stack())
-		return
-	}
-	defer f.Close()
-	ts := time.Now().Format("2006-01-02 15:04:05.000")
-	fmt.Fprintf(f, "\n[%s] panic recovered: %v\n", ts, r)
-	f.Write(debug.Stack())
-	fmt.Fprintf(f, "\n")
 }
 
 // trimLogFileIfNeeded keeps only the last maxLines in the file so sqyre.log does not grow unbounded.
@@ -191,7 +174,7 @@ func init() {
 func main() {
 	defer func() {
 		if r := recover(); r != nil {
-			logCrashAndRepanic(r)
+			services.LogPanicToFile(r)
 		}
 	}()
 	debugLog("main started")
