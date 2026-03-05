@@ -201,6 +201,16 @@ func (s *serializer) CreateActionFromMap(rawMap map[string]any, parent actions.A
 					is.WaitTilFoundSeconds = int(s)
 				}
 			}
+			if v := rawMap["waittilfoundintervalms"]; v != nil {
+				switch ms := v.(type) {
+				case int:
+					is.WaitTilFoundIntervalMs = ms
+				case int64:
+					is.WaitTilFoundIntervalMs = int(ms)
+				case float64:
+					is.WaitTilFoundIntervalMs = int(ms)
+				}
+			}
 		}
 	case "ocr":
 		action = actions.NewOcr(rawMap["name"].(string), []actions.ActionInterface{}, rawMap["target"].(string), createSearchBox(rawMap["searcharea"].(map[string]any)))

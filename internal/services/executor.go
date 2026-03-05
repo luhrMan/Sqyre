@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -30,6 +31,12 @@ func ExecuteMacroWithLogging(m *models.Macro) {
 	if m == nil {
 		return
 	}
+	defer func() {
+		if r := recover(); r != nil {
+			LogPanicToFile(r)
+			panic(r)
+		}
+	}()
 	if showMacroLogPopupFunc != nil {
 		fyne.DoAndWait(func() {
 			showMacroLogPopupFunc(m.Name)
@@ -183,8 +190,12 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 		}
 		if node.WaitTilFound && node.WaitTilFoundSeconds > 0 {
 			deadline := time.Now().Add(time.Duration(node.WaitTilFoundSeconds) * time.Second)
+			intervalMs := node.WaitTilFoundIntervalMs
+			if intervalMs <= 0 {
+				intervalMs = 100
+			}
 			for len(SortListOfPoints(results)) == 0 && time.Now().Before(deadline) {
-				time.Sleep(100 * time.Millisecond)
+				time.Sleep(time.Duration(intervalMs) * time.Millisecond)
 				results, err = imageSearch(node, macro)
 				if err != nil {
 					return err
@@ -202,9 +213,20 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 			searchTopY = 0
 		}
 		sorted := SortListOfPoints(results)
+		var foundNames, notFoundNames []string
+		for name, points := range results {
+			if len(points) > 0 {
+				foundNames = append(foundNames, name)
+			} else {
+				notFoundNames = append(notFoundNames, name)
+			}
+		}
+		slices.Sort(foundNames)
+		slices.Sort(notFoundNames)
 		count := 0
 		var firstPoint *robotgo.Point
-		for _, point := range sorted {
+		for _, np := range sorted {
+			point := np.Point
 			count++
 			point.X += searchLeftX
 			point.Y += searchTopY
@@ -212,13 +234,30 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 				firstPoint = &robotgo.Point{X: point.X, Y: point.Y}
 			}
 
-			// Store current match in variables so sub-actions see this match
+			// Store current match and item internal variables so sub-actions can use ${StackMax}, ${Cols}, ${Rows}, ${ItemName}, ${Merchant}
 			if macro != nil && macro.Variables != nil {
 				if node.OutputXVariable != "" {
 					macro.Variables.Set(node.OutputXVariable, point.X)
 				}
 				if node.OutputYVariable != "" {
 					macro.Variables.Set(node.OutputYVariable, point.Y)
+				}
+				// Set item parameters from current match target (programName~itemName)
+				if np.Name != "" {
+					parts := strings.SplitN(np.Name, config.ProgramDelimiter, 2)
+					if len(parts) == 2 {
+						program, _ := repositories.ProgramRepo().Get(parts[0])
+						if program != nil {
+							item, _ := program.ItemRepo().Get(parts[1])
+							if item != nil {
+								macro.Variables.Set("StackMax", item.StackMax)
+								macro.Variables.Set("Cols", item.GridSize[0])
+								macro.Variables.Set("Rows", item.GridSize[1])
+								macro.Variables.Set("ItemName", item.Name)
+								macro.Variables.Set("Merchant", item.Merchant)
+							}
+						}
+					}
 				}
 			}
 
@@ -237,7 +276,7 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 				macro.Variables.Set(node.OutputYVariable, firstPoint.Y)
 			}
 		}
-		log.Printf("Total # found: %v\n", count)
+		log.Printf("Total # found: %v (found: %v; not found: %v)\n", count, foundNames, notFoundNames)
 
 		return nil
 	case *actions.Ocr:

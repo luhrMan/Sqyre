@@ -41,68 +41,68 @@ func ShowActionDialog(action actions.ActionInterface, onSave func(actions.Action
 		u.MainUi.ActionDialog = nil
 	}
 
-	// Create dialog content based on action type.
-	// Size percentages (of app canvas): derived from original fixed sizes (300x100, 1000x600, etc.)
-	// assuming ~1000x500 base window.
+	// Create dialog content based on action type
 	var content fyne.CanvasObject
 	var saveFunc func()
-	var widthPct, heightPct float32
 
 	switch node := action.(type) {
 	case *actions.Wait:
 		content, saveFunc = createWaitDialogContent(node)
-		widthPct, heightPct = 0.30, 0.20
+		content.Resize(fyne.NewSize(300, 100))
 	case *actions.Move:
 		content, saveFunc = createMoveDialogContent(node)
-		widthPct, heightPct = 0.75, 0.75
+		content.Resize(fyne.NewSize(1000, 600))
 	case *actions.Click:
 		content, saveFunc = createClickDialogContent(node)
-		widthPct, heightPct = 0.30, 0.20
+		content.Resize(fyne.NewSize(300, 100))
 	case *actions.Key:
 		content, saveFunc = createKeyDialogContent(node)
-		widthPct, heightPct = 0.30, 0.20
+		content.Resize(fyne.NewSize(300, 100))
 	case *actions.Type:
 		content, saveFunc = createTypeDialogContent(node)
-		widthPct, heightPct = 0.40, 0.24
+		content.Resize(fyne.NewSize(400, 120))
 	case *actions.Loop:
 		content, saveFunc = createLoopDialogContent(node)
-		widthPct, heightPct = 0.60, 0.20
+		content.Resize(fyne.NewSize(600, 100))
 	case *actions.ImageSearch:
 		content, saveFunc = createImageSearchDialogContent(node)
-		widthPct, heightPct = 0.75, 0.75
+		content.Resize(fyne.NewSize(1000, 1000))
 	case *actions.Ocr:
 		content, saveFunc = createOcrDialogContent(node)
-		widthPct, heightPct = 0.60, 0.75
+		content.Resize(fyne.NewSize(600, 500))
 	case *actions.SetVariable:
 		content, saveFunc = createSetVariableDialogContent(node)
-		widthPct, heightPct = 0.60, 0.20
+		content.Resize(fyne.NewSize(600, 100))
 	case *actions.Calculate:
 		content, saveFunc = createCalculateDialogContent(node)
-		widthPct, heightPct = 0.60, 0.20
+		content.Resize(fyne.NewSize(600, 100))
 	case *actions.DataList:
 		content, saveFunc = createDataListDialogContent(node)
-		widthPct, heightPct = 0.60, 0.20
+		content.Resize(fyne.NewSize(600, 100))
 	case *actions.SaveVariable:
 		content, saveFunc = createSaveVariableDialogContent(node)
-		widthPct, heightPct = 0.60, 0.20
+		content.Resize(fyne.NewSize(600, 100))
+	// case *actions.Calibration:
+	// 	content, saveFunc = createCalibrationDialogContent(node)
+	// 	content.Resize(fyne.NewSize(600, 500))
 	case *actions.WaitForPixel:
 		content, saveFunc = createWaitForPixelDialogContent(node)
-		widthPct, heightPct = 0.45, 0.56
+		content.Resize(fyne.NewSize(450, 280))
 	case *actions.FocusWindow:
 		content, saveFunc = createFocusWindowDialogContent(node)
-		widthPct, heightPct = 0.50, 0.80
+		content.Resize(fyne.NewSize(500, 400))
 	case *actions.RunMacro:
 		content, saveFunc = createRunMacroDialogContent(node)
-		widthPct, heightPct = 0.40, 0.24
+		content.Resize(fyne.NewSize(400, 120))
 	default:
 		content = widget.NewLabel("Unknown action type")
 		saveFunc = func() {}
-		widthPct, heightPct = 0.40, 0.20
 	}
-	showCustomActionDialog(u, action, content, saveFunc, onSave, widthPct, heightPct)
+	// Show custom dialog with save/cancel buttons
+	showCustomActionDialog(u, action, content, saveFunc, onSave)
 }
 
-func showCustomActionDialog(u *Ui, action actions.ActionInterface, content fyne.CanvasObject, saveFunc func(), onSave func(actions.ActionInterface), widthPct, heightPct float32) {
+func showCustomActionDialog(u *Ui, action actions.ActionInterface, content fyne.CanvasObject, saveFunc func(), onSave func(actions.ActionInterface)) {
 	d := u.MainUi.ActionDialog
 	saveButton := ttwidget.NewButton("Save", func() {
 		saveFunc()
@@ -146,8 +146,25 @@ func showCustomActionDialog(u *Ui, action actions.ActionInterface, content fyne.
 		u.MainUi.ActionDialog = d
 	}
 	parentSize := u.Window.Canvas().Size()
-	width := parentSize.Width * widthPct
-	height := parentSize.Height * heightPct
+	width := parentSize.Width - 200
+	height := parentSize.Height - 200
+
+	// Get content's preferred size
+	contentMinSize := content.Size()
+	// Add padding for dialog chrome: title bar (~40px), buttons (~50px), padding (~20px total)
+	dialogPadding := fyne.NewSize(40, 110) // width padding, height padding
+	contentPreferredSize := fyne.NewSize(
+		contentMinSize.Width+dialogPadding.Width,
+		contentMinSize.Height+dialogPadding.Height,
+	)
+
+	// Use the smaller of calculated window size or content preferred size
+	if contentPreferredSize.Width < width {
+		width = contentPreferredSize.Width
+	}
+	if contentPreferredSize.Height < height {
+		height = contentPreferredSize.Height
+	}
 
 	// Ensure minimum size
 	if width < 200 {
@@ -455,13 +472,6 @@ func createTypeDialogContent(action *actions.Type) (fyne.CanvasObject, func()) {
 	delayEntry := widget.NewEntry()
 	delayEntry.SetText(fmt.Sprintf("%d", action.DelayMs))
 	delayEntry.SetPlaceHolder("Delay between key presses (ms)")
-	delayEntry.Validator = func(s string) error {
-		if s == "" {
-			return nil
-		}
-		_, err := strconv.Atoi(strings.TrimSpace(s))
-		return err
-	}
 
 	content := widget.NewForm(
 		widget.NewFormItem("Text to type:", textEntry),
@@ -527,8 +537,10 @@ func createImageSearchDialogContent(action *actions.ImageSearch) (fyne.CanvasObj
 	blurEntry.SetText(fmt.Sprintf("%d", action.Blur))
 	outputXVarEntry := widget.NewEntry()
 	outputXVarEntry.SetText(action.OutputXVariable)
+	outputXVarEntry.SetPlaceHolder("e.g. foundX (sub-actions also get ${StackMax}, ${Cols}, ${Rows}, ${ItemName}, ${Merchant})")
 	outputYVarEntry := widget.NewEntry()
 	outputYVarEntry.SetText(action.OutputYVariable)
+	outputYVarEntry.SetPlaceHolder("e.g. foundY")
 	waitTilFoundCheck := widget.NewCheck("Wait until found", nil)
 	waitTilFoundCheck.SetChecked(action.WaitTilFound)
 	waitTilFoundSecondsEntry := widget.NewEntry()
@@ -538,6 +550,13 @@ func createImageSearchDialogContent(action *actions.ImageSearch) (fyne.CanvasObj
 		waitTilFoundSecondsEntry.SetText(fmt.Sprintf("%d", action.WaitTilFoundSeconds))
 	}
 	waitTilFoundSecondsEntry.SetPlaceHolder("Seconds to keep trying if not found")
+	waitTilFoundIntervalEntry := widget.NewEntry()
+	if action.WaitTilFoundIntervalMs < 100 {
+		waitTilFoundIntervalEntry.SetText("100")
+	} else {
+		waitTilFoundIntervalEntry.SetText(fmt.Sprintf("%d", action.WaitTilFoundIntervalMs))
+	}
+	waitTilFoundIntervalEntry.SetPlaceHolder("Milliseconds between retries (default 100)")
 
 	// Temporary storage for changes (only applied on save)
 	tempSearchArea := action.SearchArea
@@ -712,6 +731,7 @@ func createImageSearchDialogContent(action *actions.ImageSearch) (fyne.CanvasObj
 					widget.NewFormItem("Output Y Variable:", outputYVarEntry),
 					widget.NewFormItem("", waitTilFoundCheck),
 					widget.NewFormItem("Timeout (seconds):", waitTilFoundSecondsEntry),
+					widget.NewFormItem("Search interval (ms):", waitTilFoundIntervalEntry),
 				),
 			),
 			previewBox,
@@ -756,6 +776,9 @@ func createImageSearchDialogContent(action *actions.ImageSearch) (fyne.CanvasObj
 		action.WaitTilFound = waitTilFoundCheck.Checked
 		if s, err := strconv.Atoi(waitTilFoundSecondsEntry.Text); err == nil && s >= 0 {
 			action.WaitTilFoundSeconds = s
+		}
+		if ms, err := strconv.Atoi(waitTilFoundIntervalEntry.Text); err == nil && ms >= 0 {
+			action.WaitTilFoundIntervalMs = ms
 		}
 		// Apply temporary changes
 		action.SearchArea = tempSearchArea
