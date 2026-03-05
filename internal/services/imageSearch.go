@@ -75,6 +75,12 @@ func match(img, imgDraw gocv.Mat, a *actions.ImageSearch) map[string][]robotgo.P
 		wg.Add(1)
 		go func(t string) {
 			defer wg.Done()
+			defer func() {
+				if r := recover(); r != nil {
+					LogPanicToFile(r)
+					panic(r)
+				}
+			}()
 			programName := strings.Split(t, config.ProgramDelimiter)[0]
 			program, err := repositories.ProgramRepo().Get(programName)
 			if err != nil {
@@ -276,6 +282,13 @@ func DrawFoundMatches(matches []robotgo.Point, rectSizeX, rectSizeY int, draw go
 	}
 }
 
+// NamedPoint pairs a match point with its target key (programName~itemName).
+// Used so Image Search sub-actions can resolve item internal variables (StackMax, Cols, Rows, etc.).
+type NamedPoint struct {
+	Name  string         // target key: programName + ProgramDelimiter + itemName
+	Point robotgo.Point
+}
+
 func SortPoints(points []robotgo.Point, sortBy string) []robotgo.Point {
 	switch sortBy {
 	case "TopLeftToBottomRight":
@@ -295,12 +308,24 @@ func SortPoints(points []robotgo.Point, sortBy string) []robotgo.Point {
 	return points
 }
 
-func SortListOfPoints(lop map[string][]robotgo.Point) []robotgo.Point {
-	var sort []robotgo.Point
-	for _, points := range lop {
-		sort = append(sort, points...)
+func SortListOfPoints(lop map[string][]robotgo.Point) []NamedPoint {
+	var list []NamedPoint
+	for name, points := range lop {
+		for _, pt := range points {
+			list = append(list, NamedPoint{Name: name, Point: pt})
+		}
 	}
-	return SortPoints(sort, "TopLeftToBottomRight")
+	// Same order as SortPoints(..., "TopLeftToBottomRight")
+	sort.Slice(list, func(i, j int) bool {
+		pi, pj := list[i].Point, list[j].Point
+		for a := 0; a <= 5; a++ {
+			if pi.Y+a == pj.Y || pi.Y == pj.Y+a {
+				return pi.X < pj.X
+			}
+		}
+		return pi.Y < pj.Y
+	})
+	return list
 }
 
 // func CalculateCornerMask(rows, cols int, r image.Rectangle) *gocv.Mat {

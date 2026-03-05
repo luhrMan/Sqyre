@@ -12,11 +12,12 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"Squire/ui/completionentry"
 
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 	"github.com/go-vgo/robotgo"
@@ -370,18 +371,13 @@ func setEditorForms() {
 	// Set up record button handler for Points tab
 	if recordButton, ok := et.PointsTab.Widgets["recordButton"].(*widget.Button); ok {
 		recordButton.OnTapped = func() {
-			var dlg dialog.Dialog
-			content := container.NewVBox(
-				widget.NewLabel("Left click anwhere to record X and Y coordinates"),
-				widget.NewLabel("Right click to cancel"),
+			dismissOverlay := ui.ShowRecordingOverlay(
+				"Record Point Coordinates",
+				"Left click anywhere to record X and Y coordinates",
+				"Right click to cancel",
 			)
 
-			dlg = dialog.NewCustomWithoutButtons(
-				"Record Point Coordinates",
-				content,
-				ui.GetUi().Window,
-			)
-			// Set up a goroutine to detect a click outside the dialog and record the coordinates
+			// Set up a goroutine to detect a click and record the coordinates
 			go func() {
 				adjustedX, adjustedY := 0, 0
 				hook.Register(hook.MouseDown, []string{}, func(e hook.Event) {
@@ -413,62 +409,96 @@ func setEditorForms() {
 							}()
 						}
 						fyne.DoAndWait(func() {
-							dlg.Dismiss()
+							dismissOverlay()
 						})
 					default:
 						fyne.DoAndWait(func() {
-							dlg.Dismiss()
+							dismissOverlay()
 						})
 					}
 					go hook.Unregister(hook.MouseDown, []string{})
 				})
 			}()
-
-			dlg.Show()
 		}
 	}
 
 	// Set up record button handler for Search Areas tab (two clicks: top-left, then bottom-right)
 	if saRecordButton, ok := et.SearchAreasTab.Widgets["recordButton"].(*widget.Button); ok {
 		saRecordButton.OnTapped = func() {
-			var dlg dialog.Dialog
-			content := container.NewVBox(
-				widget.NewLabel("First click: top-left corner of the search area."),
-				widget.NewLabel("Second click: bottom-right corner. Right click to cancel."),
+			dismissOverlay, setSelectionRect := ui.ShowSearchAreaRecordingOverlay(
+				"Record Search Area",
+				"First click: top-left corner of the search area.",
+				"Second click: bottom-right corner. Right click to cancel.",
 			)
 
-			dlg = dialog.NewCustomWithoutButtons(
-				"Record Search Area",
-				content,
-				ui.GetUi().Window,
-			)
 			go func() {
+				var mu sync.Mutex
 				leftX, topY := 0, 0
 				firstClickDone := false
+				stopPoll := make(chan struct{})
+				var stopOnce sync.Once
+				stopPolling := func() { stopOnce.Do(func() { close(stopPoll) }) }
+
+				// Poll cursor and draw selection rect from first click to current position
+				go func() {
+					for {
+						select {
+						case <-stopPoll:
+							return
+						default:
+							mu.Lock()
+							done := firstClickDone
+							lx, ty := leftX, topY
+							mu.Unlock()
+							if !done {
+								setSelectionRect(0, 0, 0, 0)
+							} else {
+								x, y := robotgo.Location()
+								rx, by := x, y
+								if lx > rx {
+									lx, rx = rx, lx
+								}
+								if ty > by {
+									ty, by = by, ty
+								}
+								setSelectionRect(lx, ty, rx, by)
+							}
+						}
+						select {
+						case <-stopPoll:
+							return
+						case <-time.After(50 * time.Millisecond):
+						}
+					}
+				}()
+
 				hook.Register(hook.MouseDown, []string{}, func(e hook.Event) {
 					if e.Button != hook.MouseMap["left"] {
-						fyne.DoAndWait(func() { dlg.Dismiss() })
+						stopPolling()
+						fyne.DoAndWait(func() { dismissOverlay() })
 						go hook.Unregister(hook.MouseDown, []string{})
 						return
 					}
 					x, y := robotgo.Location()
-					adjX := x
-					adjY := y
+					adjX, adjY := x, y
+					mu.Lock()
 					if !firstClickDone {
-						leftX = adjX
-						topY = adjY
+						leftX, topY = adjX, adjY
 						firstClickDone = true
+						mu.Unlock()
 						return
 					}
-					// Second click: bottom-right corner (normalize in case clicks were reversed)
-					rightX := adjX
-					bottomY := adjY
-					if leftX > rightX {
-						leftX, rightX = rightX, leftX
+					rightX, bottomY := adjX, adjY
+					lx, ty := leftX, topY
+					mu.Unlock()
+					if lx > rightX {
+						lx, rightX = rightX, lx
 					}
-					if topY > bottomY {
-						topY, bottomY = bottomY, topY
+					if ty > bottomY {
+						ty, bottomY = bottomY, ty
 					}
+					leftX, topY = lx, ty
+					stopPolling()
 					fyne.DoAndWait(func() {
 						if w, ok := et.SearchAreasTab.Widgets["LeftX"].(*widget.Entry); ok {
 							w.SetText(strconv.Itoa(leftX))
@@ -487,6 +517,7 @@ func setEditorForms() {
 							sa.TopY = topY
 							sa.RightX = rightX
 							sa.BottomY = bottomY
+							log.Printf("Recorded search area: (%d,%d) to (%d,%d)\n", leftX, topY, rightX, bottomY)
 							func() {
 								defer func() {
 									if r := recover(); r != nil {
@@ -496,13 +527,11 @@ func setEditorForms() {
 								ui.GetUi().UpdateSearchAreaPreview(sa)
 							}()
 						}
-						dlg.Dismiss()
+						dismissOverlay()
 					})
 					go hook.Unregister(hook.MouseDown, []string{})
 				})
 			}()
-
-			dlg.Show()
 		}
 	}
 

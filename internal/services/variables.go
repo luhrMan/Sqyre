@@ -16,8 +16,9 @@ var (
 	expressionExpr = regexp.MustCompile(`^[0-9+\-*/().\s\w]+$`)
 )
 
-// ResolveVariables resolves variable references in a string
-// Supports ${VarName} and {VarName} syntax
+// ResolveVariables resolves variable references in a string.
+// Supports ${VarName} and {VarName} syntax.
+// Image Search sub-actions also get internal item variables: ${StackMax}, ${Cols}, ${Rows}, ${ItemName}, ${Merchant}.
 func ResolveVariables(text string, macro *models.Macro) (string, error) {
 	if macro == nil || macro.Variables == nil {
 		return text, nil
