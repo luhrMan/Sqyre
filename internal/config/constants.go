@@ -24,6 +24,9 @@ const (
 	IconThumbnailSize = 64  // pixels for thumbnail display
 	MaxIconVariants   = 100 // maximum variants per item
 
+	// Fyne preference keys
+	PrefSaveMetaImages = "save_meta_images"
+
 	//since I have refactored the code to account for multiple programs at once,
 	// I need to append the program name to the program properties names,
 	// this is the delimiter between the program name and the property name
@@ -102,6 +105,8 @@ func InitializeDirectories() error {
 	autoPicPath := GetAutoPicPath()
 	variablesPath := GetVariablesPath()
 
+	metaPath := GetMetaPath()
+
 	// Create all parent directories as needed
 	if err := os.MkdirAll(iconsPath, 0755); err != nil {
 		log.Printf("Failed to create icons directory at %s: %v", iconsPath, err)
@@ -118,7 +123,13 @@ func InitializeDirectories() error {
 		return err
 	}
 
+	if err := os.MkdirAll(metaPath, 0755); err != nil {
+		log.Printf("Failed to create meta directory at %s: %v", metaPath, err)
+		return err
+	}
+
 	log.Printf("Initialized directory structure at: %s", iconsPath)
 	log.Printf("Initialized AutoPic directory at: %s", autoPicPath)
+	log.Printf("Initialized meta directory at: %s", metaPath)
 	return nil
 }
