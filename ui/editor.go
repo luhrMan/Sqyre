@@ -38,6 +38,7 @@ type EditorUi struct {
 		ItemsTab       *EditorTab
 		PointsTab      *EditorTab
 		SearchAreasTab *EditorTab
+		MasksTab       *EditorTab
 		AutoPicTab     *EditorTab
 	}
 }
@@ -47,9 +48,11 @@ type EditorTab struct {
 	Left  *fyne.Container
 	Right *fyne.Container
 
-	Widgets      map[string]fyne.CanvasObject
-	SelectedItem any
-	previewImage *canvas.Image // For AutoPic tab
+	Widgets        map[string]fyne.CanvasObject
+	SelectedItem   any
+	previewImage   *canvas.Image
+	UpdateButton   *widget.Button
+	OriginalValues map[string]string
 }
 
 func NewEditorTab(name string, left, right *fyne.Container) *container.TabItem {
@@ -59,18 +62,17 @@ func NewEditorTab(name string, left, right *fyne.Container) *container.TabItem {
 
 func (u *Ui) constructEditorTabs() {
 	var (
-		name = "Name"
-		x    = "X"
-		y    = "Y"
-		x1   = "LeftX"
-		y1   = "TopY"
-		x2   = "RightX"
-		y2   = "BottomY"
-		cols = "Cols"
-		rows = "Rows"
-		tags = "Tags"
-		sm   = "StackMax"
-		// m    = "Merchant"
+		name  = "Name"
+		x     = "X"
+		y     = "Y"
+		x1    = "LeftX"
+		y1    = "TopY"
+		x2    = "RightX"
+		y2    = "BottomY"
+		cols  = "Cols"
+		rows  = "Rows"
+		tags  = "Tags"
+		sm    = "StackMax"
 		form  = "Form"
 		acc   = "Accordion"
 		plist = "list"
@@ -89,12 +91,15 @@ func (u *Ui) constructEditorTabs() {
 	protw[form] = widget.NewForm(
 		widget.NewFormItem(name, protw[name]),
 	)
-	protw[form].(*widget.Form).SubmitText = "Update"
+
+	et.ProgramsTab.UpdateButton = widget.NewButton("Update", nil)
+	et.ProgramsTab.UpdateButton.Importance = widget.HighImportance
+	et.ProgramsTab.UpdateButton.Disable()
 
 	et.ProgramsTab.TabItem = NewEditorTab(
 		"Programs",
 		container.NewBorder(protw["searchbar"], nil, nil, nil, protw[plist]),
-		container.NewBorder(nil, nil, nil, nil, protw[form]),
+		container.NewBorder(nil, nil, nil, nil, container.NewVBox(protw[form], container.NewHBox(layout.NewSpacer(), et.ProgramsTab.UpdateButton))),
 	)
 
 	//===========================================================================================================ITEMS
@@ -111,6 +116,22 @@ func (u *Ui) constructEditorTabs() {
 	itw["tagEntryContainer"] = container.NewBorder(nil, nil, nil, itw["tagSubmitButton"], itw["tagEntry"])
 	itw[tags] = container.NewGridWithColumns(2) // Grid container for displaying tags
 	itw[sm] = new(widget.Entry)
+
+	// Mask selector: label showing current mask + button to open selection popup
+	itw["maskLabel"] = widget.NewLabel("None")
+	itw["maskSelectButton"] = widget.NewButtonWithIcon("Select", theme.SearchIcon(), nil)
+	itw["maskSelectButton"].(*widget.Button).Importance = widget.MediumImportance
+	itw["maskClearButton"] = widget.NewButtonWithIcon("", theme.ContentClearIcon(), nil)
+	itw["maskClearButton"].(*widget.Button).Importance = widget.LowImportance
+	itw["maskDetailsLabel"] = widget.NewLabel("")
+	itw["maskDetailsLabel"].(*widget.Label).TextStyle = fyne.TextStyle{Italic: true}
+	itw["maskContainer"] = container.NewVBox(
+		container.NewBorder(nil, nil, nil,
+			container.NewHBox(itw["maskSelectButton"], itw["maskClearButton"]),
+			itw["maskLabel"],
+		),
+		itw["maskDetailsLabel"],
+	)
 
 	// Create IconVariantEditor widget
 	iconService := services.IconVariantServiceInstance()
@@ -129,35 +150,47 @@ func (u *Ui) constructEditorTabs() {
 		widget.NewFormItem(tags, itw["tagEntryContainer"]),
 		widget.NewFormItem("", container.NewHScroll(itw[tags])),
 		widget.NewFormItem(sm, itw[sm]),
-		// widget.NewFormItem(m, ui.EditorTabs.ItemsTab.Widgets[m]),
-		// widget.NewFormItem("icons", container.NewGridWithRows(2, widget.NewIcon(theme.MediaFastForwardIcon()))),
+		widget.NewFormItem("Mask", itw["maskContainer"]),
 	)
-	itw[form].(*widget.Form).SubmitText = "Update"
+	et.ItemsTab.UpdateButton = widget.NewButton("Update", nil)
+	et.ItemsTab.UpdateButton.Importance = widget.HighImportance
+	et.ItemsTab.UpdateButton.Disable()
+
+	iveBorder := canvas.NewRectangle(color.NRGBA{})
+	iveBorder.StrokeColor = theme.ButtonColor()
+	iveBorder.StrokeWidth = 2
+	iveBorder.CornerRadius = 4
 
 	et.ItemsTab.TabItem = NewEditorTab(
 		"Items",
 		container.NewBorder(nil, nil, nil, nil, itw[acc]),
-		container.NewBorder(itw[form], nil, nil, nil, itw[ive]),
+		container.NewBorder(
+			container.NewVBox(itw[form], container.NewHBox(layout.NewSpacer(), et.ItemsTab.UpdateButton)),
+			nil, nil, nil,
+			container.NewStack(iveBorder, container.NewPadded(itw[ive])),
+		),
 	)
 
 	//===========================================================================================================POINTS
 	ptw[acc] = widget.NewAccordion()
 	ptw[name] = new(widget.Entry)
-	ptw[x] = new(widget.Entry)
-	ptw[y] = new(widget.Entry)
+	ptw[x] = custom_widgets.NewVarEntry(currentMacroVariables)
+	ptw[y] = custom_widgets.NewVarEntry(currentMacroVariables)
 
 	// Create record button for capturing point coordinates
 	ptw["recordButton"] = widget.NewButtonWithIcon("", theme.MediaRecordIcon(), nil)
 	ptw["recordButton"].(*widget.Button).Importance = widget.DangerImportance
 
+	et.PointsTab.UpdateButton = widget.NewButton("Update", nil)
+	et.PointsTab.UpdateButton.Importance = widget.HighImportance
+	et.PointsTab.UpdateButton.Disable()
+
 	ptw[form] = widget.NewForm(
 		widget.NewFormItem(name, ptw[name]),
 		widget.NewFormItem(x, ptw[x]),
 		widget.NewFormItem(y, ptw[y]),
-		widget.NewFormItem("", container.NewHBox(layout.NewSpacer(), ptw["recordButton"])),
+		widget.NewFormItem("", container.NewHBox(layout.NewSpacer(), ptw["recordButton"], et.PointsTab.UpdateButton)),
 	)
-
-	ptw[form].(*widget.Form).SubmitText = "Update"
 
 	// Create preview image for Points tab
 	pointPreviewImage := canvas.NewImageFromImage(nil)
@@ -182,22 +215,25 @@ func (u *Ui) constructEditorTabs() {
 	//===========================================================================================================SEARCHAREAS
 	satw[acc] = widget.NewAccordion()
 	satw[name] = new(widget.Entry)
-	satw[x1] = new(widget.Entry)
-	satw[y1] = new(widget.Entry)
-	satw[x2] = new(widget.Entry)
-	satw[y2] = new(widget.Entry)
+	satw[x1] = custom_widgets.NewVarEntry(currentMacroVariables)
+	satw[y1] = custom_widgets.NewVarEntry(currentMacroVariables)
+	satw[x2] = custom_widgets.NewVarEntry(currentMacroVariables)
+	satw[y2] = custom_widgets.NewVarEntry(currentMacroVariables)
 	// Create record button for capturing search area rectangle (click and drag)
 	satw["recordButton"] = widget.NewButtonWithIcon("", theme.MediaRecordIcon(), nil)
 	satw["recordButton"].(*widget.Button).Importance = widget.DangerImportance
+	et.SearchAreasTab.UpdateButton = widget.NewButton("Update", nil)
+	et.SearchAreasTab.UpdateButton.Importance = widget.HighImportance
+	et.SearchAreasTab.UpdateButton.Disable()
+
 	satw[form] = widget.NewForm(
 		widget.NewFormItem(name, satw[name]),
 		widget.NewFormItem(x1, satw[x1]),
 		widget.NewFormItem(y1, satw[y1]),
 		widget.NewFormItem(x2, satw[x2]),
 		widget.NewFormItem(y2, satw[y2]),
-		widget.NewFormItem("", container.NewHBox(layout.NewSpacer(), satw["recordButton"])),
+		widget.NewFormItem("", container.NewHBox(layout.NewSpacer(), satw["recordButton"], et.SearchAreasTab.UpdateButton)),
 	)
-	satw[form].(*widget.Form).SubmitText = "Update"
 
 	// Create preview image for Search Areas tab
 	searchAreaPreviewImage := canvas.NewImageFromImage(nil)
@@ -216,6 +252,107 @@ func (u *Ui) constructEditorTabs() {
 			nil,
 			nil,
 			searchAreaPreviewImage,
+		),
+	)
+
+	//===========================================================================================================MASKS
+	mtw := et.MasksTab.Widgets
+	mtw["Accordion"] = widget.NewAccordion()
+	mtw["Name"] = new(widget.Entry)
+	mtw["uploadButton"] = widget.NewButtonWithIcon("Upload Image", theme.FolderOpenIcon(), nil)
+	mtw["removeImageButton"] = widget.NewButtonWithIcon("Remove Image", theme.ContentRemoveIcon(), nil)
+	mtw["removeImageButton"].(*widget.Button).Importance = widget.DangerImportance
+	mtw["removeImageButton"].(*widget.Button).Hide()
+
+	maskPreviewImage := canvas.NewImageFromImage(nil)
+	maskPreviewImage.FillMode = canvas.ImageFillContain
+	maskPreviewImage.SetMinSize(fyne.NewSize(400, 300))
+	et.MasksTab.previewImage = maskPreviewImage
+
+	mtw["imageStatus"] = widget.NewLabel("")
+	mtw["imageStatus"].(*widget.Label).Hide()
+
+	// Shape selector: Rectangle or Circle
+	mtw["shapeSelect"] = widget.NewRadioGroup([]string{"Rectangle", "Circle"}, nil)
+	mtw["shapeSelect"].(*widget.RadioGroup).Horizontal = true
+	mtw["shapeSelect"].(*widget.RadioGroup).Required = true
+	mtw["shapeSelect"].(*widget.RadioGroup).SetSelected("Rectangle")
+
+	// Center location entries (percentage of template dimensions)
+	mtw["CenterX"] = custom_widgets.NewVarEntry(currentMacroVariables)
+	mtw["CenterX"].(*custom_widgets.VarEntry).PlaceHolder = "50"
+	mtw["CenterY"] = custom_widgets.NewVarEntry(currentMacroVariables)
+	mtw["CenterY"].(*custom_widgets.VarEntry).PlaceHolder = "50"
+	mtw["centerContainer"] = container.NewGridWithColumns(2,
+		container.NewBorder(nil, nil, widget.NewLabel("X %"), nil, mtw["CenterX"]),
+		container.NewBorder(nil, nil, widget.NewLabel("Y %"), nil, mtw["CenterY"]),
+	)
+
+	// Rectangle entries:  base * height
+	mtw["Base"] = custom_widgets.NewVarEntry(currentMacroVariables)
+	mtw["Base"].(*custom_widgets.VarEntry).PlaceHolder = "base"
+	mtw["Height"] = custom_widgets.NewVarEntry(currentMacroVariables)
+	mtw["Height"].(*custom_widgets.VarEntry).PlaceHolder = "height"
+	mtw["rectContainer"] =
+		container.NewGridWithColumns(3,
+			mtw["Base"],
+			container.NewCenter(widget.NewLabel("*")),
+			mtw["Height"],
+		)
+
+	// Circle entries:  π * radius²
+	mtw["Radius"] = custom_widgets.NewVarEntry(currentMacroVariables)
+	mtw["Radius"].(*custom_widgets.VarEntry).PlaceHolder = "radius"
+	mtw["circleContainer"] = container.NewBorder(
+		nil, nil,
+		widget.NewLabel("π *"), widget.NewLabel("²"),
+		mtw["Radius"],
+	)
+
+	// Initially show rectangle, hide circle
+	mtw["circleContainer"].(*fyne.Container).Hide()
+
+	// Shape container holds whichever is active
+	mtw["shapeParamsContainer"] = container.NewVBox(
+		mtw["rectContainer"],
+		mtw["circleContainer"],
+	)
+
+	// Toggle visibility when shape changes
+	mtw["shapeSelect"].(*widget.RadioGroup).OnChanged = func(selected string) {
+		switch selected {
+		case "Rectangle":
+			mtw["rectContainer"].(*fyne.Container).Show()
+			mtw["circleContainer"].(*fyne.Container).Hide()
+		case "Circle":
+			mtw["rectContainer"].(*fyne.Container).Hide()
+			mtw["circleContainer"].(*fyne.Container).Show()
+		}
+	}
+
+	et.MasksTab.UpdateButton = widget.NewButton("Update", nil)
+	et.MasksTab.UpdateButton.Importance = widget.HighImportance
+	et.MasksTab.UpdateButton.Disable()
+
+	mtw["Form"] = widget.NewForm(
+		widget.NewFormItem("Name", mtw["Name"]),
+		widget.NewFormItem("Shape", mtw["shapeSelect"]),
+		widget.NewFormItem("Center", mtw["centerContainer"]),
+		widget.NewFormItem("", mtw["shapeParamsContainer"]),
+	)
+
+	et.MasksTab.TabItem = NewEditorTab(
+		"Masks",
+		container.NewBorder(nil, nil, nil, nil, mtw["Accordion"]),
+		container.NewBorder(
+			container.NewVBox(
+				mtw["Form"],
+				container.NewHBox(layout.NewSpacer(), et.MasksTab.UpdateButton),
+				container.NewHBox(mtw["uploadButton"], mtw["removeImageButton"]),
+				mtw["imageStatus"],
+			),
+			nil, nil, nil,
+			maskPreviewImage,
 		),
 	)
 
@@ -257,6 +394,7 @@ func (u *Ui) constructEditorTabs() {
 	et.Append(et.ItemsTab.TabItem)
 	et.Append(et.PointsTab.TabItem)
 	et.Append(et.SearchAreasTab.TabItem)
+	et.Append(et.MasksTab.TabItem)
 	et.Append(et.AutoPicTab.TabItem)
 }
 
@@ -683,6 +821,79 @@ func (u *Ui) clearPointPreviewImage() {
 		previewImage.Image = nil
 		previewImage.Refresh()
 	}
+}
+
+// UpdateMaskPreview loads and displays the mask image for the given program and mask name.
+func (u *Ui) UpdateMaskPreview(programName, maskName string) {
+	masksPath := config.GetMasksPath()
+	imgPath := filepath.Join(masksPath, programName, maskName+config.PNG)
+
+	if _, err := os.Stat(imgPath); err != nil {
+		u.ClearMaskPreviewImage()
+		return
+	}
+
+	mat := gocv.IMRead(imgPath, gocv.IMReadColor)
+	if mat.Empty() {
+		u.ClearMaskPreviewImage()
+		return
+	}
+	defer mat.Close()
+
+	img, err := mat.ToImage()
+	if err != nil {
+		u.ClearMaskPreviewImage()
+		return
+	}
+
+	if previewImage := u.EditorTabs.MasksTab.previewImage; previewImage != nil {
+		previewImage.Image = img
+		previewImage.Refresh()
+	}
+}
+
+func (u *Ui) ClearMaskPreviewImage() {
+	if previewImage := u.EditorTabs.MasksTab.previewImage; previewImage != nil {
+		previewImage.Image = nil
+		previewImage.Refresh()
+	}
+}
+
+// SetMaskImageMode switches the right-side UI between variable entry and uploaded image display.
+// When hasImage is true, the value/shape entries are hidden and the image status + remove button are shown.
+func (u *Ui) SetMaskImageMode(hasImage bool) {
+	mtw := u.EditorTabs.MasksTab.Widgets
+	if hasImage {
+		mtw["shapeSelect"].(*widget.RadioGroup).Hide()
+		mtw["centerContainer"].(*fyne.Container).Hide()
+		mtw["shapeParamsContainer"].(*fyne.Container).Hide()
+		mtw["imageStatus"].(*widget.Label).SetText("Image mask uploaded")
+		mtw["imageStatus"].(*widget.Label).Show()
+		mtw["removeImageButton"].(*widget.Button).Show()
+	} else {
+		mtw["shapeSelect"].(*widget.RadioGroup).Show()
+		mtw["centerContainer"].(*fyne.Container).Show()
+		mtw["shapeParamsContainer"].(*fyne.Container).Show()
+		selected := mtw["shapeSelect"].(*widget.RadioGroup).Selected
+		switch selected {
+		case "Circle":
+			mtw["rectContainer"].(*fyne.Container).Hide()
+			mtw["circleContainer"].(*fyne.Container).Show()
+		default:
+			mtw["rectContainer"].(*fyne.Container).Show()
+			mtw["circleContainer"].(*fyne.Container).Hide()
+		}
+		mtw["imageStatus"].(*widget.Label).Hide()
+		mtw["removeImageButton"].(*widget.Button).Hide()
+	}
+}
+
+// HasMaskImage checks if an image file exists for the given program and mask.
+func HasMaskImage(programName, maskName string) bool {
+	masksPath := config.GetMasksPath()
+	imgPath := filepath.Join(masksPath, programName, maskName+config.PNG)
+	_, err := os.Stat(imgPath)
+	return err == nil
 }
 
 func (u *Ui) RefreshAutoPicSearchAreas() {

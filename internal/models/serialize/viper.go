@@ -134,11 +134,11 @@ func (s *serializer) CreateActionFromMap(rawMap map[string]any, parent actions.A
 		action = actions.NewLoop(countVal, rawMap["name"].(string), []actions.ActionInterface{})
 	case "wait":
 		action = actions.NewWait(rawMap["time"].(int))
-	case "waitforpixel":
+	case "findpixel":
 		name := stringFromMap(rawMap, "name")
-		point := actions.Point{}
-		if pm, ok := rawMap["point"].(map[string]any); ok {
-			point = createPoint(pm)
+		searchArea := actions.SearchArea{}
+		if sa, ok := rawMap["searcharea"].(map[string]any); ok && len(sa) > 0 {
+			searchArea = createSearchBox(sa)
 		}
 		targetColor := stringFromMap(rawMap, "targetcolor")
 		if targetColor == "" {
@@ -148,16 +148,50 @@ func (s *serializer) CreateActionFromMap(rawMap map[string]any, parent actions.A
 		if colorTolerance < 0 || colorTolerance > 100 {
 			colorTolerance = 0
 		}
-		timeoutSeconds := intFromMap(rawMap["timeoutseconds"])
-		action = actions.NewWaitForPixel(name, point, targetColor, colorTolerance, timeoutSeconds, []actions.ActionInterface{})
-	case "click":
-		hold := false
-		if v, ok := rawMap["hold"].(bool); ok {
-			hold = v
+		action = actions.NewFindPixel(name, searchArea, targetColor, colorTolerance, []actions.ActionInterface{})
+		if fp, ok := action.(*actions.FindPixel); ok {
+			if v, ok := rawMap["outputxvariable"].(string); ok {
+				fp.OutputXVariable = v
+			}
+			if v, ok := rawMap["outputyvariable"].(string); ok {
+				fp.OutputYVariable = v
+			}
+			if v, ok := rawMap["waittilfound"].(bool); ok {
+				fp.WaitTilFound = v
+			}
+			if v := rawMap["waittilfoundseconds"]; v != nil {
+				switch s := v.(type) {
+				case int:
+					fp.WaitTilFoundSeconds = s
+				case int64:
+					fp.WaitTilFoundSeconds = int(s)
+				case float64:
+					fp.WaitTilFoundSeconds = int(s)
+				}
+			}
+			if v := rawMap["waittilfoundintervalms"]; v != nil {
+				switch ms := v.(type) {
+				case int:
+					fp.WaitTilFoundIntervalMs = ms
+				case int64:
+					fp.WaitTilFoundIntervalMs = int(ms)
+				case float64:
+					fp.WaitTilFoundIntervalMs = int(ms)
+				}
+			}
 		}
-		action = actions.NewClick(rawMap["button"].(bool), hold)
+	case "click":
+		state := false
+		if v, ok := rawMap["state"].(bool); ok {
+			state = v
+		}
+		action = actions.NewClick(rawMap["button"].(bool), state)
 	case "move":
-		action = actions.NewMove(createPoint(rawMap["point"].(map[string]any)))
+		smooth := false
+		if v, ok := rawMap["smooth"].(bool); ok {
+			smooth = v
+		}
+		action = actions.NewMove(createPoint(rawMap["point"].(map[string]any)), smooth)
 	case "key":
 		action = actions.NewKey(rawMap["key"].(string), rawMap["state"].(bool))
 	case "type":

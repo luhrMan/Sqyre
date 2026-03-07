@@ -6,6 +6,7 @@ import (
 	"Squire/internal/models/actions"
 	"Squire/internal/models/repositories"
 	"Squire/ui"
+	"Squire/ui/custom_widgets"
 	"fmt"
 	"log"
 
@@ -18,17 +19,17 @@ import (
 func setSearchAreaWidgets(sa models.SearchArea) {
 	st := ui.GetUi().EditorTabs.SearchAreasTab.Widgets
 	st["Name"].(*widget.Entry).SetText(sa.Name)
-	st["LeftX"].(*widget.Entry).SetText(fmt.Sprintf("%v", sa.LeftX))
-	st["TopY"].(*widget.Entry).SetText(fmt.Sprintf("%v", sa.TopY))
-	st["RightX"].(*widget.Entry).SetText(fmt.Sprintf("%v", sa.RightX))
-	st["BottomY"].(*widget.Entry).SetText(fmt.Sprintf("%v", sa.BottomY))
+	custom_widgets.SetEntryText(st["LeftX"], fmt.Sprintf("%v", sa.LeftX))
+	custom_widgets.SetEntryText(st["TopY"], fmt.Sprintf("%v", sa.TopY))
+	custom_widgets.SetEntryText(st["RightX"], fmt.Sprintf("%v", sa.RightX))
+	custom_widgets.SetEntryText(st["BottomY"], fmt.Sprintf("%v", sa.BottomY))
 }
 
 func setPointWidgets(p models.Point) {
 	pt := ui.GetUi().EditorTabs.PointsTab
 	pt.Widgets["Name"].(*widget.Entry).SetText(p.Name)
-	pt.Widgets["X"].(*widget.Entry).SetText(fmt.Sprintf("%v", p.X))
-	pt.Widgets["Y"].(*widget.Entry).SetText(fmt.Sprintf("%v", p.Y))
+	custom_widgets.SetEntryText(pt.Widgets["X"], fmt.Sprintf("%v", p.X))
+	custom_widgets.SetEntryText(pt.Widgets["Y"], fmt.Sprintf("%v", p.Y))
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -101,6 +102,7 @@ func setAccordionSearchAreasLists(acc *widget.Accordion) {
 				}()
 				ui.GetUi().UpdateSearchAreaPreview(sa)
 			}()
+			markSearchAreasClean()
 			// if ui.GetUi().MainUi.Navigation.Visible() {
 			lists.searchareas.UnselectAll()
 			// }
@@ -190,6 +192,7 @@ func setAccordionPointsLists(acc *widget.Accordion) {
 			}
 			ui.GetUi().EditorTabs.PointsTab.SelectedItem = point
 			setPointWidgets(*point)
+			markPointsClean()
 			if st := ui.GetUi().Mui.MTabs.SelectedTab(); st != nil {
 				if v, ok := st.Macro.Root.GetAction(st.SelectedNode).(*actions.Move); ok {
 					v.Point = actions.Point{Name: point.Name, X: point.X, Y: point.Y}

@@ -11,22 +11,19 @@ import (
 type Click struct {
 	*BaseAction `yaml:",inline" mapstructure:",squash"`
 	Button      bool `yaml:"button" mapstructure:"button"`
-	Hold        bool `yaml:"hold" mapstructure:"hold"`
+	State       bool `yaml:"state" mapstructure:"state"`
 }
 
-func NewClick(button bool, hold bool) *Click {
+func NewClick(button bool, state bool) *Click {
 	return &Click{
 		BaseAction: newBaseAction("click"),
 		Button:     button,
-		Hold:       hold,
+		State:      state,
 	}
 }
 
 func (a *Click) String() string {
-	if a.Hold {
-		return fmt.Sprintf("%s click (hold)", LeftOrRight(a.Button))
-	}
-	return fmt.Sprintf("%s click", LeftOrRight(a.Button))
+	return fmt.Sprintf("%s click %s", LeftOrRight(a.Button), UpOrDown(a.State))
 }
 
 func LeftOrRight(b bool) string {
@@ -37,7 +34,7 @@ func LeftOrRight(b bool) string {
 }
 
 func (a *Click) Icon() fyne.Resource {
-	if a.Hold {
+	if a.State {
 		return assets.MouseClickFilledIcon
 	}
 	return assets.MouseClickIcon

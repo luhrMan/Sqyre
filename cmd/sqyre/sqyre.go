@@ -52,7 +52,7 @@ func setupLogFile() {
 	if err != nil {
 		return
 	}
-	log.SetOutput(f)
+	log.SetOutput(&services.SyncWriter{F: f})
 	log.SetFlags(log.Ldate | log.Ltime)
 }
 
@@ -101,7 +101,7 @@ func init() {
 	debugLog("directories OK")
 
 	if os.Getenv("SQYRE_NO_HOOK") != "1" {
-		go services.StartHook()
+		services.GoSafe(services.StartHook)
 	}
 
 	// Initialize YAML config with proper file path
@@ -165,6 +165,10 @@ func init() {
 	// construct the initialized 	(add widgets to ui)
 	ui.GetUi().ConstructUi()
 	setUi()
+
+	fyne.CurrentApp().Lifecycle().SetOnStopped(func() {
+		binders.SaveOpenMacros()
+	})
 
 	w.SetContent(fynetooltip.AddWindowToolTipLayer(ui.GetUi().MainUi.Navigation, w.Canvas()))
 	w.RequestFocus()
