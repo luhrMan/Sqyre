@@ -6,6 +6,7 @@ import (
 	"Squire/internal/models/repositories"
 	"Squire/internal/services"
 	"Squire/ui"
+	"encoding/json"
 	"errors"
 	"log"
 	"slices"
@@ -25,10 +26,50 @@ func SetMacroUi() {
 
 	setMtabSettingsAndWidgets()
 
-	for _, m := range repositories.MacroRepo().GetAll() {
-		AddMacroTab(m)
+	if names := getOpenMacroNames(); len(names) > 0 {
+		for _, name := range names {
+			m, err := repositories.MacroRepo().Get(name)
+			if err != nil {
+				log.Printf("Could not reopen macro %s: %v", name, err)
+				continue
+			}
+			AddMacroTab(m)
+		}
+	} else {
+		for _, m := range repositories.MacroRepo().GetAll() {
+			AddMacroTab(m)
+			break
+		}
 	}
 	setMacroSelect(ui.GetUi().MainUi.Mui.MacroSelectButton)
+}
+
+func SaveOpenMacros() {
+	mtabs := ui.GetUi().Mui.MTabs
+	var names []string
+	for _, item := range mtabs.Items {
+		names = append(names, item.Text)
+	}
+	data, err := json.Marshal(names)
+	if err != nil {
+		log.Printf("Error marshaling open macros: %v", err)
+		return
+	}
+	fyne.CurrentApp().Preferences().SetString("OPEN_MACROS", string(data))
+	log.Println("Saved open macros:", names)
+}
+
+func getOpenMacroNames() []string {
+	s := fyne.CurrentApp().Preferences().String("OPEN_MACROS")
+	if s == "" {
+		return nil
+	}
+	var names []string
+	if err := json.Unmarshal([]byte(s), &names); err != nil {
+		log.Printf("Error unmarshaling open macros preference: %v", err)
+		return nil
+	}
+	return names
 }
 
 func AddMacroTab(m *models.Macro) {

@@ -25,12 +25,24 @@ func ActionToMap(action actions.ActionInterface) (map[string]any, error) {
 		m["subactions"] = subs
 	case *actions.Wait:
 		m["time"] = a.Time
-	case *actions.WaitForPixel:
+	case *actions.FindPixel:
 		m["name"] = a.Name
-		m["point"] = pointToMap(a.Point)
+		m["searcharea"] = searchAreaToMap(a.SearchArea)
 		m["targetcolor"] = a.TargetColor
 		m["colortolerance"] = a.ColorTolerance
-		m["timeoutseconds"] = a.TimeoutSeconds
+		if a.OutputXVariable != "" {
+			m["outputxvariable"] = a.OutputXVariable
+		}
+		if a.OutputYVariable != "" {
+			m["outputyvariable"] = a.OutputYVariable
+		}
+		if a.WaitTilFound {
+			m["waittilfound"] = a.WaitTilFound
+			m["waittilfoundseconds"] = a.WaitTilFoundSeconds
+			if a.WaitTilFoundIntervalMs > 0 {
+				m["waittilfoundintervalms"] = a.WaitTilFoundIntervalMs
+			}
+		}
 		subs, err := subActionsToMaps(a.GetSubActions())
 		if err != nil {
 			return nil, err
@@ -38,9 +50,10 @@ func ActionToMap(action actions.ActionInterface) (map[string]any, error) {
 		m["subactions"] = subs
 	case *actions.Click:
 		m["button"] = a.Button
-		m["hold"] = a.Hold
+		m["state"] = a.State
 	case *actions.Move:
 		m["point"] = pointToMap(a.Point)
+		m["smooth"] = a.Smooth
 	case *actions.Key:
 		m["key"] = a.Key
 		m["state"] = a.State

@@ -1,11 +1,15 @@
 package services
 
 import (
+	"Squire/internal/assets"
 	"Squire/internal/config"
 	"Squire/internal/models"
 	"Squire/internal/models/actions"
 	"Squire/internal/models/repositories"
+	"bytes"
 	"fmt"
+	"image"
+	_ "image/png"
 	"log"
 	"path/filepath"
 	"slices"
@@ -34,7 +38,7 @@ func ExecuteMacroWithLogging(m *models.Macro) {
 	defer func() {
 		if r := recover(); r != nil {
 			LogPanicToFile(r)
-			panic(r)
+			log.Printf("Macro %q: recovered from panic: %v", m.Name, r)
 		}
 	}()
 	if showMacroLogPopupFunc != nil {
@@ -43,7 +47,9 @@ func ExecuteMacroWithLogging(m *models.Macro) {
 		})
 		defer StopMacroLogCapture()
 	}
-	_ = Execute(m.Root, m)
+	if err := Execute(m.Root, m); err != nil {
+		log.Printf("Macro %q: execution error: %v", m.Name, err)
+	}
 }
 
 // showMacroLogPopupFunc is set by the ui package to avoid import cycle
@@ -86,11 +92,20 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 			log.Printf("Move: failed to resolve Y %v: %v, using 0 (ensure variable is set by an earlier action, e.g. Image Search output)", node.Point.Y, err)
 			y = 0
 		}
-		robotgo.Move(x, y)
+		if node.Smooth {
+			robotgo.MoveSmooth(x, y, 0.5, 1.01)
+		} else {
+			robotgo.Move(x, y)
+		}
 		return nil
 	case *actions.Click:
 		log.Println("Click:", node.String())
-		robotgo.Click(actions.LeftOrRight(node.Button))
+		btn := actions.LeftOrRight(node.Button)
+		if node.State {
+			robotgo.Toggle(btn)
+		} else {
+			robotgo.Toggle(btn, "up")
+		}
 		return nil
 	case *actions.Key:
 		log.Println("Key:", node.String())
@@ -155,7 +170,7 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 		}
 
 		for i := range count {
-			fmt.Printf("Loop: %s iteration %d\n", node.Name, i+1)
+			log.Printf("Loop: %s iteration %d", node.Name, i+1)
 			for j, action := range node.GetSubActions() {
 				if node.Name == "root" {
 					progress = progressStep * float64(j+1)
@@ -234,7 +249,7 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 				firstPoint = &robotgo.Point{X: point.X, Y: point.Y}
 			}
 
-			// Store current match and item internal variables so sub-actions can use ${StackMax}, ${Cols}, ${Rows}, ${ItemName}, ${Merchant}
+			// Store current match and item internal variables so sub-actions can use ${StackMax}, ${Cols}, ${Rows}, ${ItemName}, ${ImagePixelWidth}, ${ImagePixelHeight}
 			if macro != nil && macro.Variables != nil {
 				if node.OutputXVariable != "" {
 					macro.Variables.Set(node.OutputXVariable, point.X)
@@ -254,7 +269,18 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 								macro.Variables.Set("Cols", item.GridSize[0])
 								macro.Variables.Set("Rows", item.GridSize[1])
 								macro.Variables.Set("ItemName", item.Name)
-								macro.Variables.Set("Merchant", item.Merchant)
+
+								vs := IconVariantServiceInstance()
+								variants, vErr := vs.GetVariants(parts[0], parts[1])
+								if vErr == nil && len(variants) > 0 {
+									ip := parts[0] + config.ProgramDelimiter + parts[1] + config.ProgramDelimiter + variants[0] + config.PNG
+									if res := assets.GetFyneResource(ip); res != nil {
+										if cfg, _, err := image.DecodeConfig(bytes.NewReader(res.Content())); err == nil {
+											macro.Variables.Set("ImagePixelWidth", cfg.Width)
+											macro.Variables.Set("ImagePixelHeight", cfg.Height)
+										}
+									}
+								}
 							}
 						}
 					}
@@ -388,39 +414,78 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 			return fmt.Errorf("run macro: macro %q has no root", node.MacroName)
 		}
 		return executeWithContext(targetMacro.Root, targetMacro)
-	case *actions.WaitForPixel:
-		log.Println("Wait for pixel:", node.String())
-		x, err := ResolveInt(node.Point.X, macro)
+	case *actions.FindPixel:
+		log.Println("Find pixel:", node.String())
+		sa := node.SearchArea
+		leftX, topY, rightX, bottomY, err := ResolveSearchAreaCoords(sa.LeftX, sa.TopY, sa.RightX, sa.BottomY, macro)
 		if err != nil {
-			log.Printf("WaitForPixel: failed to resolve X %v: %v, using 0", node.Point.X, err)
-			x = 0
+			log.Printf("FindPixel: failed to resolve search area coords: %v, using 0s", err)
 		}
-		y, err := ResolveInt(node.Point.Y, macro)
-		if err != nil {
-			log.Printf("WaitForPixel: failed to resolve Y %v: %v, using 0", node.Point.Y, err)
-			y = 0
+		if leftX > rightX {
+			leftX, rightX = rightX, leftX
 		}
-		screenX := x
-		screenY := y
-		var deadline time.Time
-		if node.TimeoutSeconds > 0 {
-			deadline = time.Now().Add(time.Duration(node.TimeoutSeconds) * time.Second)
+		if topY > bottomY {
+			topY, bottomY = bottomY, topY
 		}
-		for {
-			hex := robotgo.GetPixelColor(screenX, screenY)
-			if node.MatchColor(hex) {
-				for _, sub := range node.GetSubActions() {
-					if err := executeWithContext(sub, macro); err != nil {
-						return err
+		w := rightX - leftX
+		h := bottomY - topY
+		if w <= 0 || h <= 0 {
+			log.Printf("FindPixel: invalid search area (width=%d height=%d), skipping", w, h)
+			return nil
+		}
+
+		var foundX, foundY int
+		scanOnce := func() bool {
+			captureImg, capErr := robotgo.CaptureImg(leftX, topY, w, h)
+			if capErr != nil || captureImg == nil {
+				log.Printf("FindPixel: screen capture failed: %v", capErr)
+				return false
+			}
+			bounds := captureImg.Bounds()
+			for py := bounds.Min.Y; py < bounds.Max.Y; py++ {
+				for px := bounds.Min.X; px < bounds.Max.X; px++ {
+					r, g, b, _ := captureImg.At(px, py).RGBA()
+					hex := fmt.Sprintf("%02x%02x%02x", uint8(r>>8), uint8(g>>8), uint8(b>>8))
+					if node.MatchColor(hex) {
+						foundX = leftX + px - bounds.Min.X
+						foundY = topY + py - bounds.Min.Y
+						return true
 					}
 				}
-				return nil
 			}
-			if node.TimeoutSeconds > 0 && !time.Now().Before(deadline) {
-				log.Println("WaitForPixel: timeout, continuing without children")
-				return nil
+			return false
+		}
+
+		found := scanOnce()
+		if !found && node.WaitTilFound && node.WaitTilFoundSeconds > 0 {
+			deadline := time.Now().Add(time.Duration(node.WaitTilFoundSeconds) * time.Second)
+			intervalMs := node.WaitTilFoundIntervalMs
+			if intervalMs <= 0 {
+				intervalMs = 100
 			}
-			time.Sleep(50 * time.Millisecond)
+			for !found && time.Now().Before(deadline) {
+				time.Sleep(time.Duration(intervalMs) * time.Millisecond)
+				found = scanOnce()
+			}
+		}
+
+		if found {
+			log.Printf("FindPixel: found matching pixel at screen (%d, %d)", foundX, foundY)
+			if macro != nil && macro.Variables != nil {
+				if node.OutputXVariable != "" {
+					macro.Variables.Set(node.OutputXVariable, foundX)
+				}
+				if node.OutputYVariable != "" {
+					macro.Variables.Set(node.OutputYVariable, foundY)
+				}
+			}
+			for _, sub := range node.GetSubActions() {
+				if err := executeWithContext(sub, macro); err != nil {
+					return err
+				}
+			}
+		} else {
+			log.Println("FindPixel: pixel not found, continuing without children")
 		}
 	}
 	return nil

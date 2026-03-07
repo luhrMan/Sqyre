@@ -63,6 +63,5 @@ func (r *ItemRepository) New() *models.Item {
 		GridSize: [2]int{1, 1},
 		Tags:     []string{},
 		StackMax: 1,
-		Merchant: "",
 	}
 }

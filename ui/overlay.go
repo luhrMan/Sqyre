@@ -40,10 +40,10 @@ func (s *selectionRectLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
 }
 
 // showFullScreenOverlay captures the current screen, then creates a full-screen
-// overlay showing that screenshot with a slight dim and centered instruction
-// lines. It returns a dismiss function that safely closes the overlay on the
-// main UI thread. If withSelectionRect is true, it also returns setSelectionRect
-// to draw/update a rectangle from (leftX, topY) to (rightX, bottomY).
+// overlay showing that screenshot with centered instruction lines. It returns a
+// dismiss function that safely closes the overlay on the main UI thread. If
+// withSelectionRect is true, it also returns setSelectionRect to draw/update a
+// rectangle from (leftX, topY) to (rightX, bottomY).
 func showFullScreenOverlay(lines []string, withSelectionRect bool) (dismiss func(), setSelectionRect func(leftX, topY, rightX, bottomY int)) {
 	app := fyne.CurrentApp()
 	if app == nil {
@@ -53,7 +53,7 @@ func showFullScreenOverlay(lines []string, withSelectionRect bool) (dismiss func
 	w, h := config.MonitorWidth, config.MonitorHeight
 	captureImg, err := robotgo.CaptureImg(0, 0, w, h)
 	if err != nil || captureImg == nil {
-		log.Printf("overlay: screen capture failed: %v; using dim-only overlay", err)
+		log.Printf("overlay: screen capture failed: %v; using blank overlay", err)
 	}
 
 	win := app.NewWindow("")
@@ -69,9 +69,6 @@ func showFullScreenOverlay(lines []string, withSelectionRect bool) (dismiss func
 	} else {
 		bg = canvas.NewRectangle(color.NRGBA{R: 0, G: 0, B: 0, A: 25})
 	}
-
-	// Slight dim on top of the screenshot (or entire background if no capture)
-	dim := canvas.NewRectangle(color.NRGBA{R: 0, G: 0, B: 0, A: 25})
 
 	var selectionLayer fyne.CanvasObject
 	var selLayout *selectionRectLayout
@@ -101,7 +98,7 @@ func showFullScreenOverlay(lines []string, withSelectionRect bool) (dismiss func
 	content := container.NewVBox(labelObjects...)
 	centered := container.NewCenter(content)
 
-	win.SetContent(container.NewMax(bg, dim, selectionLayer, centered))
+	win.SetContent(container.NewMax(bg, selectionLayer, centered))
 	win.Show()
 
 	dismiss = func() {
@@ -127,7 +124,7 @@ func showFullScreenOverlay(lines []string, withSelectionRect bool) (dismiss func
 	return dismiss, setSelectionRect
 }
 
-// ShowRecordingOverlay displays a dimmed full-screen overlay with standard
+// ShowRecordingOverlay displays a full-screen overlay with standard
 // recording instructions and returns a dismiss function.
 func ShowRecordingOverlay(title, line1, line2 string) func() {
 	lines := []string{title, "", line1, line2}
@@ -142,4 +139,3 @@ func ShowSearchAreaRecordingOverlay(title, line1, line2 string) (dismiss func(),
 	lines := []string{title, "", line1, line2}
 	return showFullScreenOverlay(lines, true)
 }
-
