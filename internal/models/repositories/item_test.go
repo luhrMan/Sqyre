@@ -20,7 +20,6 @@ func createTestProgram(name string) *models.Program {
 		GridSize: [2]int{1, 1},
 		Tags:     []string{"consumable", "healing"},
 		StackMax: 5,
-		Merchant: "alchemist",
 	}
 
 	program.Items["sword"] = &models.Item{
@@ -28,7 +27,6 @@ func createTestProgram(name string) *models.Program {
 		GridSize: [2]int{1, 3},
 		Tags:     []string{"weapon", "melee"},
 		StackMax: 1,
-		Merchant: "blacksmith",
 	}
 
 	return program
@@ -539,7 +537,6 @@ func TestItemRepository_Integration_CreateAndSave(t *testing.T) {
 			GridSize: [2]int{1, 1},
 			Tags:     []string{"consumable", "healing"},
 			StackMax: 5,
-			Merchant: "alchemist",
 		}
 
 		program.Items["sword"] = &models.Item{
@@ -547,7 +544,6 @@ func TestItemRepository_Integration_CreateAndSave(t *testing.T) {
 			GridSize: [2]int{1, 3},
 			Tags:     []string{"weapon", "melee"},
 			StackMax: 1,
-			Merchant: "blacksmith",
 		}
 
 		// Save through ProgramRepository

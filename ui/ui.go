@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"Squire/internal/services"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/data/binding"
@@ -47,6 +49,7 @@ func InitializeUi(w fyne.Window) *Ui {
 				ItemsTab       *EditorTab
 				PointsTab      *EditorTab
 				SearchAreasTab *EditorTab
+				MasksTab       *EditorTab
 				AutoPicTab     *EditorTab
 			}{
 				AppTabs: new(container.AppTabs),
@@ -60,6 +63,9 @@ func InitializeUi(w fyne.Window) *Ui {
 					Widgets: make(map[string]fyne.CanvasObject),
 				},
 				SearchAreasTab: &EditorTab{
+					Widgets: make(map[string]fyne.CanvasObject),
+				},
+				MasksTab: &EditorTab{
 					Widgets: make(map[string]fyne.CanvasObject),
 				},
 				AutoPicTab: &EditorTab{
@@ -124,7 +130,7 @@ func toggleMousePos() {
 	blocX, blocY := binding.BindInt(&locX), binding.BindInt(&locY)
 	boundLocXLabel.Bind(binding.IntToString(blocX))
 	boundLocYLabel.Bind(binding.IntToString(blocY))
-	go func() {
+	services.GoSafe(func() {
 		for {
 			robotgo.MilliSleep(100)
 			newLocX, newLocY := robotgo.Location()
@@ -135,5 +141,5 @@ func toggleMousePos() {
 			blocX.Reload()
 			blocY.Reload()
 		}
-	}()
+	})
 }

@@ -10,6 +10,7 @@ import (
 	"Squire/ui"
 	"Squire/ui/completionentry"
 	"Squire/ui/custom_widgets"
+	"fmt"
 	"log"
 	"slices"
 	"sort"
@@ -29,6 +30,8 @@ func setItemsWidgets(i models.Item) {
 	it["Cols"].(*widget.Entry).SetText(strconv.Itoa(i.GridSize[0]))
 	it["Rows"].(*widget.Entry).SetText(strconv.Itoa(i.GridSize[1]))
 	it["StackMax"].(*widget.Entry).SetText(strconv.Itoa(i.StackMax))
+
+	updateMaskDisplay(i.Mask)
 
 	// Update tags display
 	updateTagsDisplay(&i)
@@ -319,6 +322,7 @@ func createProgramAccordionItem(program *models.Program) *widget.AccordionItem {
 				}
 			}
 			setItemsWidgets(*item)
+			markItemsClean()
 		},
 		RegisterWidgets: func(pname string, searchbar *widget.Entry, list *widget.GridWrap) {
 			ui.GetUi().EditorTabs.ItemsTab.Widgets[pname+"-searchbar"] = searchbar
@@ -338,6 +342,188 @@ func createProgramAccordionItem(program *models.Program) *widget.AccordionItem {
 			}
 		},
 	})
+}
+
+// updateMaskDisplay updates the mask label and details label on the Items tab.
+func updateMaskDisplay(maskName string) {
+	it := ui.GetUi().EditorTabs.ItemsTab.Widgets
+	maskLabel, _ := it["maskLabel"].(*widget.Label)
+	maskDetailsLabel, _ := it["maskDetailsLabel"].(*widget.Label)
+
+	if maskName == "" {
+		if maskLabel != nil {
+			maskLabel.SetText("None")
+		}
+		if maskDetailsLabel != nil {
+			maskDetailsLabel.SetText("")
+		}
+		return
+	}
+
+	if maskLabel != nil {
+		maskLabel.SetText(maskName)
+	}
+
+	if maskDetailsLabel == nil {
+		return
+	}
+
+	prog := ui.GetUi().ProgramSelector.Text
+	program, err := repositories.ProgramRepo().Get(prog)
+	if err != nil {
+		maskDetailsLabel.SetText("")
+		return
+	}
+
+	mask, err := program.MaskRepo().Get(maskName)
+	if err != nil {
+		maskDetailsLabel.SetText("")
+		return
+	}
+
+	if ui.HasMaskImage(prog, maskName) {
+		maskDetailsLabel.SetText("Image mask")
+		return
+	}
+
+	center := fmt.Sprintf("X: %s%%  Y: %s%%", mask.CenterX, mask.CenterY)
+	var equation string
+	switch mask.Shape {
+	case "circle":
+		equation = fmt.Sprintf("π × %s²", mask.Radius)
+	default:
+		equation = fmt.Sprintf("%s × %s", mask.Base, mask.Height)
+	}
+	maskDetailsLabel.SetText(fmt.Sprintf("%s  •  %s", center, equation))
+}
+
+// showMaskSelectionPopup displays a modal popup with mask accordions for the user to select a mask.
+func showMaskSelectionPopup() {
+	var popup *widget.PopUp
+
+	acc := widget.NewAccordion()
+	for _, p := range repositories.ProgramRepo().GetAll() {
+		programName := p.Name
+		allKeys := p.MaskRepo().GetAllKeys()
+		filtered := make([]string, len(allKeys))
+		copy(filtered, allKeys)
+
+		searchbar := widget.NewEntry()
+		searchbar.PlaceHolder = "Search masks"
+
+		maskList := widget.NewList(
+			func() int { return len(filtered) },
+			func() fyne.CanvasObject { return widget.NewLabel("template") },
+			func(id widget.ListItemID, co fyne.CanvasObject) {
+				if id < len(filtered) {
+					co.(*widget.Label).SetText(filtered[id])
+				}
+			},
+		)
+
+		maskList.OnSelected = func(id widget.ListItemID) {
+			if id >= len(filtered) {
+				return
+			}
+			maskName := filtered[id]
+
+			if v, ok := ui.GetUi().EditorTabs.ItemsTab.SelectedItem.(*models.Item); ok {
+				v.Mask = maskName
+
+				prog := ui.GetUi().ProgramSelector.Text
+				program, err := repositories.ProgramRepo().Get(prog)
+				if err != nil {
+					log.Printf("Error getting program %s: %v", prog, err)
+					return
+				}
+				if err := program.ItemRepo().Set(v.Name, v); err != nil {
+					log.Printf("Error saving item %s: %v", v.Name, err)
+					return
+				}
+				if err := repositories.ProgramRepo().Set(program.Name, program); err != nil {
+					log.Printf("Error saving program %s: %v", prog, err)
+					return
+				}
+
+				updateMaskDisplay(maskName)
+			}
+			popup.Hide()
+		}
+
+		searchbar.OnChanged = func(s string) {
+			defaultList := p.MaskRepo().GetAllKeys()
+			if s == "" {
+				filtered = defaultList
+			} else {
+				filtered = filtered[:0]
+				sLower := strings.ToLower(s)
+				for _, k := range defaultList {
+					if strings.Contains(strings.ToLower(k), sLower) {
+						filtered = append(filtered, k)
+					}
+				}
+			}
+			maskList.Refresh()
+			maskList.ScrollToTop()
+		}
+
+		_ = programName
+		acc.Append(widget.NewAccordionItem(
+			programName,
+			container.NewBorder(searchbar, nil, nil, nil, maskList),
+		))
+	}
+
+	closeButton := widget.NewButton("Close", func() { popup.Hide() })
+
+	popUpContent := container.NewBorder(
+		closeButton, nil, nil, nil,
+		acc,
+	)
+	popup = widget.NewModalPopUp(popUpContent, ui.GetUi().Window.Canvas())
+	popup.Resize(fyne.NewSize(400, 500))
+	popup.Show()
+}
+
+// setMaskSelectionButtons wires up the mask select and clear buttons on the Items tab.
+func setMaskSelectionButtons() {
+	it := ui.GetUi().EditorTabs.ItemsTab.Widgets
+
+	if btn, ok := it["maskSelectButton"].(*widget.Button); ok {
+		btn.OnTapped = func() {
+			if v, ok := ui.GetUi().EditorTabs.ItemsTab.SelectedItem.(*models.Item); ok {
+				if v.Name == "" {
+					return
+				}
+			}
+			showMaskSelectionPopup()
+		}
+	}
+
+	if btn, ok := it["maskClearButton"].(*widget.Button); ok {
+		btn.OnTapped = func() {
+			if v, ok := ui.GetUi().EditorTabs.ItemsTab.SelectedItem.(*models.Item); ok {
+				v.Mask = ""
+
+				prog := ui.GetUi().ProgramSelector.Text
+				program, err := repositories.ProgramRepo().Get(prog)
+				if err != nil {
+					log.Printf("Error getting program %s: %v", prog, err)
+					return
+				}
+				if err := program.ItemRepo().Set(v.Name, v); err != nil {
+					log.Printf("Error saving item %s: %v", v.Name, err)
+					return
+				}
+				if err := repositories.ProgramRepo().Set(program.Name, program); err != nil {
+					log.Printf("Error saving program %s: %v", prog, err)
+					return
+				}
+
+				updateMaskDisplay("")
+			}
+		}
+	}
 }
 
 // getAllExistingTags collects all unique tags from all items across all programs

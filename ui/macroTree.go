@@ -132,7 +132,7 @@ func (mt *MacroTree) setTree() {
 				}
 			}
 			itemIconsScroll.Show()
-		} else if wfp, ok := node.(*actions.WaitForPixel); ok {
+		} else if wfp, ok := node.(*actions.FindPixel); ok {
 			if c, ok := hexToColor(wfp.TargetColor); ok {
 				swatch := canvas.NewRectangle(c)
 				swatch.SetMinSize(fyne.NewSize(treeItemIconSize, treeItemIconSize))
