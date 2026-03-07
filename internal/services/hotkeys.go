@@ -21,6 +21,7 @@ func FailsafeHotkey() {
 	fs := []string{"esc", "ctrl", "shift"}
 	hook.Register(hook.KeyDown, fs, func(e hook.Event) {
 		log.Println("FAILSAFE INITIATED: EXITING PROGRAM...")
+		LogMatProfile()
 		os.Exit(0)
 	})
 }

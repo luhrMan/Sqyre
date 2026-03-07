@@ -36,6 +36,11 @@ func ExecuteMacroWithLogging(m *models.Macro) {
 		return
 	}
 	defer func() {
+		fyne.Do(func() {
+			if macroRunningCallback != nil {
+				macroRunningCallback(false)
+			}
+		})
 		if r := recover(); r != nil {
 			LogPanicToFile(r)
 			log.Printf("Macro %q: recovered from panic: %v", m.Name, r)
@@ -44,8 +49,17 @@ func ExecuteMacroWithLogging(m *models.Macro) {
 	if showMacroLogPopupFunc != nil {
 		fyne.DoAndWait(func() {
 			showMacroLogPopupFunc(m.Name)
+			if macroRunningCallback != nil {
+				macroRunningCallback(true)
+			}
 		})
 		defer StopMacroLogCapture()
+	} else {
+		fyne.DoAndWait(func() {
+			if macroRunningCallback != nil {
+				macroRunningCallback(true)
+			}
+		})
 	}
 	if err := Execute(m.Root, m); err != nil {
 		log.Printf("Macro %q: execution error: %v", m.Name, err)
@@ -59,6 +73,16 @@ var showMacroLogPopupFunc func(macroName string)
 // Called from ui package during initialization.
 func SetShowMacroLogPopupFunc(fn func(macroName string)) {
 	showMacroLogPopupFunc = fn
+}
+
+// macroRunningCallback is invoked on the UI thread when a macro starts (true) or stops (false).
+// Used to disable the macro play button while a macro is running.
+var macroRunningCallback func(running bool)
+
+// SetMacroRunningCallback sets the callback invoked when macro execution starts or stops.
+// The callback is always run on the Fyne UI thread.
+func SetMacroRunningCallback(fn func(running bool)) {
+	macroRunningCallback = fn
 }
 
 // resetDataListsInTree resets every DataList in the action tree so each macro run starts from line 0.
