@@ -1,13 +1,14 @@
 package ui
 
 import (
+	"Squire/internal/config"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
 )
 
 // SettingsUi holds the user settings screen and its widgets.
-// Add fields here as you add more settings (e.g. checkboxes, entries).
 type SettingsUi struct {
 	CanvasObject      fyne.CanvasObject
 	GeneralSection    *widget.Card
@@ -20,9 +21,15 @@ func (u *Ui) constructSettings() fyne.CanvasObject {
 	u.SettingsUi.Content = container.NewScroll(nil)
 	u.SettingsUi.Content.SetMinSize(fyne.NewSize(400, 300))
 
-	// General section (scaffold)
+	prefs := fyne.CurrentApp().Preferences()
+
+	saveMetaCheck := widget.NewCheck("Save meta images during execution", func(checked bool) {
+		prefs.SetBool(config.PrefSaveMetaImages, checked)
+	})
+	saveMetaCheck.SetChecked(prefs.BoolWithFallback(config.PrefSaveMetaImages, false))
+
 	u.SettingsUi.GeneralSection = widget.NewCard("General", "Application and behavior options.", container.NewVBox(
-		widget.NewLabel("General settings will appear here."),
+		saveMetaCheck,
 	))
 
 	// Appearance section (scaffold)
