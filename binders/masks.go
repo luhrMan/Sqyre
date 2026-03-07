@@ -41,6 +41,10 @@ func setMaskWidgets(m models.Mask, programName string) {
 	}
 	mtw["shapeSelect"].(*widget.RadioGroup).SetSelected(shape)
 
+	if inverseCheck, ok := mtw["Inverse"].(*widget.Check); ok {
+		inverseCheck.SetChecked(m.Inverse)
+	}
+
 	hasImage := ui.HasMaskImage(programName, m.Name)
 	ui.GetUi().SetMaskImageMode(hasImage)
 	if hasImage {
@@ -174,6 +178,9 @@ func setMasksForms() {
 		v.Base = custom_widgets.EntryText(w["Base"])
 		v.Height = custom_widgets.EntryText(w["Height"])
 		v.Radius = custom_widgets.EntryText(w["Radius"])
+		if inverseCheck, ok := w["Inverse"].(*widget.Check); ok {
+			v.Inverse = inverseCheck.Checked
+		}
 
 			if err := program.MaskRepo().Set(v.Name, v); err != nil {
 				log.Printf("Error saving mask %s: %v", v.Name, err)

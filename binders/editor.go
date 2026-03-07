@@ -30,7 +30,7 @@ var (
 	itemFields       = []string{"Name", "Cols", "Rows", "StackMax"}
 	pointFields      = []string{"Name", "X", "Y"}
 	searchAreaFields = []string{"Name", "LeftX", "TopY", "RightX", "BottomY"}
-	maskFields       = []string{"Name", "shapeSelect", "CenterX", "CenterY", "Base", "Height", "Radius"}
+	maskFields       = []string{"Name", "shapeSelect", "CenterX", "CenterY", "Base", "Height", "Radius", "Inverse"}
 )
 
 func getWidgetText(w fyne.CanvasObject) string {
@@ -41,6 +41,11 @@ func getWidgetText(w fyne.CanvasObject) string {
 		return e.Text
 	case *widget.RadioGroup:
 		return e.Selected
+	case *widget.Check:
+		if e.Checked {
+			return "true"
+		}
+		return "false"
 	}
 	return ""
 }
@@ -93,6 +98,14 @@ func setupDirtyTracking(tab *ui.EditorTab, fields []string) {
 			e.OnChanged = func(s string) {
 				if prev != nil {
 					prev(s)
+				}
+				checkTabDirty(tab, fields)
+			}
+		case *widget.Check:
+			prev := e.OnChanged
+			e.OnChanged = func(checked bool) {
+				if prev != nil {
+					prev(checked)
 				}
 				checkTabDirty(tab, fields)
 			}
