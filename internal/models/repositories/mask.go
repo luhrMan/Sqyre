@@ -48,5 +48,6 @@ func (r *MaskRepository) New() *models.Mask {
 		Base:    "",
 		Height:  "",
 		Radius:  "",
+		Inverse: false,
 	}
 }
