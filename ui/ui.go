@@ -35,6 +35,10 @@ type MainUi struct {
 
 func GetUi() *Ui { return ui }
 func InitializeUi(w fyne.Window) *Ui {
+	w.SetCloseIntercept(func() {
+		services.LogMatProfile()
+		w.Close()
+	})
 	ui = &Ui{
 		Window:   w,
 		MainMenu: new(fyne.MainMenu),

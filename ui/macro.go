@@ -90,6 +90,13 @@ func (u *Ui) constructMacroUi() *fyne.Container {
 			services.ExecuteMacroWithLogging(st.Macro)
 		}()
 	})
+	services.SetMacroRunningCallback(func(running bool) {
+		if running {
+			playMacroButton.Disable()
+		} else {
+			playMacroButton.Enable()
+		}
+	})
 
 	// addNodeButton.SetToolTip("add new action node")
 	unselectNodeButton.SetToolTip("unselect nodes")

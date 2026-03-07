@@ -49,6 +49,21 @@ Logs are appended to `~/.sqyre/sqyre.log`.
 
 For **Flatpak** or **AppImage** packaging, see [.devcontainer/builds/linux/packaging/PACKAGING.md](.devcontainer/builds/linux/packaging/PACKAGING.md).
 
+#### GoCV Mat profiling (leak detection)
+
+Build with **matprofile** to track gocv `Mat` allocations and find leaks (unclosed Mats). Logs and a pprof HTTP server are enabled.
+
+**Build with matprofile:**
+
+| Platform | Command |
+|----------|---------|
+| **Linux** | `go build -tags "gocv_specific_modules,matprofile" -o sqyre ./cmd/sqyre` |
+| **Windows** (from dev container) | `./.devcontainer/builds/windows/build-matprofile.sh` |
+
+**What you get:** Logs (including Mat profile on exit) go to **`~/.sqyre/sqyre.log`** (Windows: `%USERPROFILE%\.sqyre\sqyre.log`). The pprof server starts on 127.0.0.1:6060 (or 6061–6065 if 6060 is in use); the exact URL is printed in the log. Open it in a browser and use the **gocv.io/x/gocv.Mat** profile for leak stack traces.
+
+**Optional:** Set **`SQYRE_PPROF=0`** to disable the pprof server, or **`SQYRE_PPROF=127.0.0.1:9090`** to use a specific port. If the browser cannot connect, allow Sqyre in Windows Firewall or use a different port via `SQYRE_PPROF`.
+
 <details>
 <summary>Linux without dev container</summary>
 
