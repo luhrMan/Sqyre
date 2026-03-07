@@ -330,6 +330,8 @@ func (u *Ui) constructEditorTabs() {
 		}
 	}
 
+	mtw["Inverse"] = widget.NewCheck("Inverse (shape included, rest excluded)", nil)
+
 	et.MasksTab.UpdateButton = widget.NewButton("Update", nil)
 	et.MasksTab.UpdateButton.Importance = widget.HighImportance
 	et.MasksTab.UpdateButton.Disable()
@@ -339,6 +341,7 @@ func (u *Ui) constructEditorTabs() {
 		widget.NewFormItem("Shape", mtw["shapeSelect"]),
 		widget.NewFormItem("Center", mtw["centerContainer"]),
 		widget.NewFormItem("", mtw["shapeParamsContainer"]),
+		widget.NewFormItem("", mtw["Inverse"]),
 	)
 
 	et.MasksTab.TabItem = NewEditorTab(

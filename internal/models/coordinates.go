@@ -44,6 +44,8 @@ func (sa *SearchArea) SetKey(key string) {
 // Radius defines the unmasked circle (supports ${variables}).
 // CenterX and CenterY position the mask center as a percentage of the
 // template dimensions (0% = left/top, 50% = center, 100% = right/bottom).
+// When Inverse is true, the defined shape is included (white) and the rest
+// excluded (black); when false, the shape is excluded and the rest included.
 // When an image file is uploaded the mask is image-based and shape fields
 // are ignored.
 type Mask struct {
@@ -54,6 +56,7 @@ type Mask struct {
 	Base    string // rectangle base  (supports ${variables})
 	Height  string // rectangle height (supports ${variables})
 	Radius  string // circle radius    (supports ${variables})
+	Inverse bool   // if true, shape is included (white); if false, shape is excluded (black)
 }
 
 // GetKey returns the unique identifier for this Mask.

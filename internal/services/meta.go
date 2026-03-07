@@ -14,8 +14,8 @@ func SaveMetaImage(purpose string, img gocv.Mat) {
 	if !fyne.CurrentApp().Preferences().BoolWithFallback(config.PrefSaveMetaImages, false) {
 		return
 	}
-	ts := time.Now().Format("20060102150405")
-	filename := purpose + "-" + ts + config.PNG
+	ts := time.Now().Format("20060102-150405")
+	filename := ts + "-" + purpose + config.PNG
 	path := filepath.Join(config.GetMetaPath(), filename)
 	if ok := gocv.IMWrite(path, img); !ok {
 		log.Printf("meta: failed to write %s", path)

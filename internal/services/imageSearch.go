@@ -204,6 +204,7 @@ func buildMask(item *models.Item, program *models.Program, templateRows, templat
 	cy := clamp(templateRows*centerYPct/100, 0, templateRows-1)
 	bounds := image.Rect(0, 0, templateCols, templateRows)
 
+	var m gocv.Mat
 	switch mask.Shape {
 	case "circle":
 		radius, err := ResolveInt(mask.Radius, macro)
@@ -211,10 +212,9 @@ func buildMask(item *models.Item, program *models.Program, templateRows, templat
 			log.Printf("mask %q: invalid radius %v: %v", mask.Name, mask.Radius, err)
 			return gocv.NewMat()
 		}
-		m := gocv.NewMatWithSize(templateRows, templateCols, gocv.MatTypeCV8U)
-		m.SetTo(gocv.NewScalar(0, 0, 0, 0))
-		gocv.Circle(&m, image.Point{X: cx, Y: cy}, radius, color.RGBA{255, 255, 255, 0}, -1)
-		return m
+		m = gocv.NewMatWithSize(templateRows, templateCols, gocv.MatTypeCV8U)
+		m.SetTo(gocv.NewScalar(255, 255, 255, 0))
+		gocv.Circle(&m, image.Point{X: cx, Y: cy}, radius, color.RGBA{0, 0, 0, 0}, -1)
 
 	case "rectangle":
 		base, err := ResolveInt(mask.Base, macro)
@@ -232,17 +232,21 @@ func buildMask(item *models.Item, program *models.Program, templateRows, templat
 			log.Printf("mask %q: rectangle fully outside template (%dx%d)", mask.Name, templateCols, templateRows)
 			return gocv.NewMat()
 		}
-		m := gocv.NewMatWithSize(templateRows, templateCols, gocv.MatTypeCV8U)
+		m = gocv.NewMatWithSize(templateRows, templateCols, gocv.MatTypeCV8U)
 		m.SetTo(gocv.NewScalar(255, 255, 255, 0))
 		region := m.Region(rect)
 		region.SetTo(gocv.NewScalar(0, 0, 0, 0))
 		region.Close()
-		return m
 
 	default:
 		log.Printf("mask %q: unknown shape %q", mask.Name, mask.Shape)
 		return gocv.NewMat()
 	}
+
+	if mask.Inverse {
+		gocv.BitwiseNot(m, &m)
+	}
+	return m
 }
 
 func FindTemplateMatches(img, template, imask, tmask, cmask gocv.Mat, threshold float32, blur int) []robotgo.Point {
