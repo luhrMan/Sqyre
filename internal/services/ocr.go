@@ -2,7 +2,6 @@ package services
 
 import (
 	"Squire/internal/assets"
-	"Squire/internal/config"
 	"Squire/internal/models"
 	"Squire/internal/models/actions"
 	"bytes"
@@ -79,7 +78,7 @@ func OCR(a *actions.Ocr, macro *models.Macro) (string, error) {
 		log.Println("ocr failed:", err)
 		return "", err
 	}
-	gocv.IMWrite(config.GetMetaPath()+"ocr.png", savedImg)
+	SaveMetaImage("ocr", savedImg)
 
 	log.Printf("FOUND TEXT: %v", foundText)
 
