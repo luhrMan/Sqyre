@@ -21,6 +21,7 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+	"github.com/lithammer/fuzzysearch/fuzzy"
 )
 
 func setItemsWidgets(i models.Item) {
@@ -246,25 +247,75 @@ func RefreshItemInGrid(programName, oldItemName, newItemName string) {
 
 // rebuildProgramAccordionItem rebuilds a specific program's accordion item with updated icon cache
 func rebuildProgramAccordionItem(accordion *widget.Accordion, program *models.Program, itemIndex int) {
-	// Create the accordion item content using the shared function
-	accordionItem := createProgramAccordionItem(program)
-
-	// Replace the accordion item content
+	filterText := ""
+	if et := ui.GetUi().EditorTabs.ItemsTab; et.Widgets["searchbar"] != nil {
+		if sb, ok := et.Widgets["searchbar"].(*widget.Entry); ok {
+			filterText = sb.Text
+		}
+	}
+	accordionItem := createProgramAccordionItem(program, filterText)
 	accordion.Items[itemIndex].Detail = accordionItem.Detail
 	accordion.Items[itemIndex].Detail.Refresh()
 }
 
+// programHasMatchingItems returns true if the program has any item whose base name or tags
+// fuzzy-match filterText. Used to show program accordion when only content matches.
+func programHasMatchingItems(program *models.Program, filterText string) bool {
+	if filterText == "" {
+		return true
+	}
+	iconService := services.IconVariantServiceInstance()
+	baseNames := iconService.GroupItemsByBaseName(program.ItemRepo().GetAllKeys())
+	baseNameToItemName := make(map[string]string)
+	for _, itemName := range program.ItemRepo().GetAllKeys() {
+		baseName := iconService.GetBaseItemName(itemName)
+		if _, exists := baseNameToItemName[baseName]; !exists {
+			baseNameToItemName[baseName] = itemName
+		}
+	}
+	for _, baseName := range baseNames {
+		if fuzzy.MatchFold(filterText, baseName) {
+			return true
+		}
+		itemName, _ := baseNameToItemName[baseName]
+		if itemName == "" {
+			itemName = baseName
+		}
+		item, err := program.ItemRepo().Get(itemName)
+		if err == nil {
+			for _, tag := range item.Tags {
+				if fuzzy.MatchFold(filterText, tag) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 func setAccordionItemsLists(acc *widget.Accordion) {
 	acc.Items = []*widget.AccordionItem{}
+	et := ui.GetUi().EditorTabs.ItemsTab
+	filterText := ""
+	if sb, ok := et.Widgets["searchbar"].(*widget.Entry); ok {
+		filterText = sb.Text
+		// Wire searchbar to rebuild accordion when user types (idempotent to re-set)
+		sb.OnChanged = func(string) { setAccordionItemsLists(acc) }
+	}
 
-	for _, p := range repositories.ProgramRepo().GetAll() {
-		accordionItem := createProgramAccordionItem(p)
+	programs := repositories.ProgramRepo().GetAll()
+	for _, p := range programs {
+		// Show program if search is empty, or program name matches, or any item/tag matches
+		if filterText != "" && !fuzzy.MatchFold(filterText, p.Name) && !programHasMatchingItems(p, filterText) {
+			continue
+		}
+		accordionItem := createProgramAccordionItem(p, filterText)
 		acc.Append(accordionItem)
 	}
 }
 
 // createProgramAccordionItem creates an accordion item for the editor Items tab using shared UI.
-func createProgramAccordionItem(program *models.Program) *widget.AccordionItem {
+func createProgramAccordionItem(program *models.Program, filterText string) *widget.AccordionItem {
 	programName := program.Name
 	iconService := services.IconVariantServiceInstance()
 	baseNameToItemName := make(map[string]string)
@@ -275,8 +326,9 @@ func createProgramAccordionItem(program *models.Program) *widget.AccordionItem {
 		}
 	}
 
-	return ui.CreateProgramAccordionItem(ui.ItemsAccordionOptions{
-		Program: program,
+	item, _ := ui.CreateProgramAccordionItem(ui.ItemsAccordionOptions{
+		Program:    program,
+		FilterText: filterText,
 		GetSelectedTargets: func() []string {
 			if !ui.GetUi().MainUi.Navigation.Visible() {
 				return nil
@@ -324,24 +376,12 @@ func createProgramAccordionItem(program *models.Program) *widget.AccordionItem {
 			setItemsWidgets(*item)
 			markItemsClean()
 		},
-		RegisterWidgets: func(pname string, searchbar *widget.Entry, list *widget.GridWrap) {
-			ui.GetUi().EditorTabs.ItemsTab.Widgets[pname+"-searchbar"] = searchbar
+		RegisterWidgets: func(pname string, list *widget.GridWrap) {
 			ui.GetUi().EditorTabs.ItemsTab.Widgets[pname+"-list"] = list
 		},
-		OnSelectionChanged: func(newTargets []string) {
-			if !ui.GetUi().MainUi.Navigation.Visible() {
-				return
-			}
-			st := ui.GetUi().Mui.MTabs.SelectedTab()
-			if st == nil {
-				return
-			}
-			if v, ok := st.Macro.Root.GetAction(st.SelectedNode).(*actions.ImageSearch); ok {
-				v.Targets = newTargets
-				st.Tree.RefreshItem(v.GetUID())
-			}
-		},
+		// No OnSelectionChanged: "All" button is only in the action dialog, not the editor tab.
 	})
+	return item
 }
 
 // updateMaskDisplay updates the mask label and details label on the Items tab.

@@ -414,17 +414,6 @@ func SortListOfPoints(lop map[string][]robotgo.Point) []NamedPoint {
 	return list
 }
 
-// func CalculateCornerMask(rows, cols int, r image.Rectangle) *gocv.Mat {
-// 	cmask := gocv.NewMatWithSize(rows, cols, gocv.MatTypeCV8U)
-// 	cmask.SetTo(gocv.NewScalar(255, 255, 255, 0))
-
-// 	region := cmask.Region(r) // = gocv.NewScalar(0, 0, 0, 0) //.SetTo(gocv.NewScalar(0, 0, 0, 0))
-// 	defer region.Close()
-// 	region.SetTo(gocv.NewScalar(0, 0, 0, 0))
-
-// 	return &cmask
-// }
-
 func CalculateCornerMask(rows, cols int, r image.Rectangle) func() *gocv.Mat {
 	return func() *gocv.Mat {
 		cmask := gocv.NewMatWithSize(rows, cols, gocv.MatTypeCV8U)

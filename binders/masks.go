@@ -13,7 +13,6 @@ import (
 	"path/filepath"
 
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/storage"
 	"fyne.io/fyne/v2/widget"
@@ -56,24 +55,37 @@ func setMaskWidgets(m models.Mask, programName string) {
 
 func setAccordionMasksLists(acc *widget.Accordion) {
 	acc.Items = []*widget.AccordionItem{}
+	et := ui.GetUi().EditorTabs.MasksTab
+	filterText := ""
+	if sb, ok := et.Widgets["searchbar"].(*widget.Entry); ok {
+		filterText = sb.Text
+		sb.OnChanged = func(string) { setAccordionMasksLists(acc) }
+	}
+
 	for _, p := range repositories.ProgramRepo().GetAll() {
-		lists := struct {
-			searchbar *widget.Entry
-			masks     *widget.List
-			filtered  []string
-		}{
-			searchbar: new(widget.Entry),
-			masks:     new(widget.List),
-			filtered:  p.MaskRepo().GetAllKeys(),
+		defaultList := p.MaskRepo().GetAllKeys()
+		filtered := defaultList
+		if filterText != "" {
+			filtered = []string{}
+			for _, i := range defaultList {
+				if fuzzy.MatchFold(filterText, i) {
+					filtered = append(filtered, i)
+				}
+			}
+		}
+		// Show program if search is empty, or program name matches, or any mask name matches
+		if filterText != "" && !fuzzy.MatchFold(filterText, p.Name) && len(filtered) == 0 {
+			continue
 		}
 
+		lists := struct {
+			masks    *widget.List
+			filtered []string
+		}{filtered: filtered}
+
 		lists.masks = widget.NewList(
-			func() int {
-				return len(lists.filtered)
-			},
-			func() fyne.CanvasObject {
-				return widget.NewLabel("template")
-			},
+			func() int { return len(lists.filtered) },
+			func() fyne.CanvasObject { return widget.NewLabel("template") },
 			func(id widget.ListItemID, co fyne.CanvasObject) {
 				name := lists.filtered[id]
 				label := co.(*widget.Label)
@@ -98,7 +110,6 @@ func setAccordionMasksLists(acc *widget.Accordion) {
 			}
 			ui.GetUi().ProgramSelector.SetText(program.Name)
 			maskName := lists.filtered[id]
-
 			mask, err := program.MaskRepo().Get(maskName)
 			if err != nil {
 				return
@@ -106,40 +117,9 @@ func setAccordionMasksLists(acc *widget.Accordion) {
 			ui.GetUi().EditorTabs.MasksTab.SelectedItem = mask
 			setMaskWidgets(*mask, program.Name)
 			markMasksClean()
-
-			lists.masks.UnselectAll()
 		}
 
-		lists.searchbar = &widget.Entry{
-			PlaceHolder: "Search here",
-			OnChanged: func(s string) {
-				defaultList := p.MaskRepo().GetAllKeys()
-				defer lists.masks.ScrollToTop()
-				defer lists.masks.Refresh()
-
-				if s == "" {
-					lists.filtered = defaultList
-					return
-				}
-				lists.filtered = []string{}
-				for _, i := range defaultList {
-					if fuzzy.MatchFold(s, i) {
-						lists.filtered = append(lists.filtered, i)
-						lists.masks.UnselectAll()
-					}
-				}
-			},
-		}
-
-		programMaskListWidget := *widget.NewAccordionItem(
-			p.Name,
-			container.NewBorder(
-				lists.searchbar,
-				nil, nil, nil,
-				lists.masks,
-			),
-		)
-		ui.GetUi().EditorTabs.MasksTab.Widgets[p.Name+"-searchbar"] = lists.searchbar
+		programMaskListWidget := *widget.NewAccordionItem(p.Name, lists.masks)
 		ui.GetUi().EditorTabs.MasksTab.Widgets[p.Name+"-list"] = lists.masks
 		acc.Append(&programMaskListWidget)
 	}
@@ -206,9 +186,9 @@ func setMasksForms() {
 				ui.GetUi().UpdateMaskPreview(p, v.Name)
 			}
 
-			t := w[program.Name+"-searchbar"].(*widget.Entry).Text
-			w[program.Name+"-searchbar"].(*widget.Entry).SetText("refresh")
-			w[program.Name+"-searchbar"].(*widget.Entry).SetText(t)
+			if acc, ok := et.MasksTab.Widgets["Accordion"].(*widget.Accordion); ok {
+				setAccordionMasksLists(acc)
+			}
 			markMasksClean()
 		}
 	}
