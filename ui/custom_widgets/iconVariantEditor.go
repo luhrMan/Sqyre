@@ -1,7 +1,7 @@
 package custom_widgets
 
 import (
-	"Squire/internal/services"
+	"Sqyre/internal/services"
 	"fmt"
 
 	"fyne.io/fyne/v2"

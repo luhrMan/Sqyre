@@ -1,7 +1,7 @@
 package serialize
 
 import (
-	"Squire/internal/models/actions"
+	"Sqyre/internal/models/actions"
 	"fmt"
 )
 
@@ -92,6 +92,12 @@ func ActionToMap(action actions.ActionInterface) (map[string]any, error) {
 		m["searcharea"] = searchAreaToMap(a.SearchArea)
 		if a.OutputVariable != "" {
 			m["outputvariable"] = a.OutputVariable
+		}
+		if a.OutputXVariable != "" {
+			m["outputxvariable"] = a.OutputXVariable
+		}
+		if a.OutputYVariable != "" {
+			m["outputyvariable"] = a.OutputYVariable
 		}
 		if a.WaitTilFound {
 			m["waittilfound"] = a.WaitTilFound

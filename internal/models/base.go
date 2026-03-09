@@ -6,7 +6,7 @@ package models
 //
 // # Purpose
 //
-// BaseModel serves as the foundation for the repository pattern in Squire, enabling
+// BaseModel serves as the foundation for the repository pattern in Sqyre, enabling
 // type-safe, generic CRUD operations across different model types. By implementing
 // this interface, any model can be managed by BaseRepository or NestedRepository
 // without requiring custom repository implementations.
@@ -85,7 +85,7 @@ package models
 //
 // # Current Implementations
 //
-// The following models in Squire implement BaseModel:
+// The following models in Sqyre implement BaseModel:
 // - Macro: Top-level model for automation macros
 // - Program: Top-level model for game-specific configurations
 // - Item: Nested model within Program

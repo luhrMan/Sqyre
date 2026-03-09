@@ -1,11 +1,11 @@
 package binders
 
 import (
-	"Squire/internal/models"
-	"Squire/internal/models/actions"
-	"Squire/internal/models/repositories"
-	"Squire/internal/services"
-	"Squire/ui"
+	"Sqyre/internal/models"
+	"Sqyre/internal/models/actions"
+	"Sqyre/internal/models/repositories"
+	"Sqyre/internal/services"
+	"Sqyre/ui"
 	"encoding/json"
 	"errors"
 	"log"

@@ -1,11 +1,11 @@
 package binders
 
 import (
-	"Squire/internal/config"
-	"Squire/internal/models"
-	"Squire/internal/models/repositories"
-	"Squire/ui"
-	"Squire/ui/custom_widgets"
+	"Sqyre/internal/config"
+	"Sqyre/internal/models"
+	"Sqyre/internal/models/repositories"
+	"Sqyre/ui"
+	"Sqyre/ui/custom_widgets"
 	"fmt"
 	"io"
 	"log"

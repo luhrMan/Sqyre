@@ -1,7 +1,7 @@
 package services
 
 import (
-	"Squire/internal/assets"
+	"Sqyre/internal/assets"
 	"os"
 	"path/filepath"
 	"testing"

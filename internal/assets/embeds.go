@@ -1,7 +1,7 @@
 package assets
 
 import (
-	"Squire/internal/config"
+	"Sqyre/internal/config"
 	_ "embed"
 	"log"
 	"os"

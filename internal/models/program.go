@@ -1,7 +1,7 @@
 package models
 
 import (
-	"Squire/internal/config"
+	"Sqyre/internal/config"
 	"strconv"
 	"sync"
 

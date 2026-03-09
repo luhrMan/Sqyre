@@ -1,13 +1,13 @@
 package main
 
 import (
-	"Squire/binders"
-	"Squire/internal/assets"
-	"Squire/internal/config"
-	"Squire/internal/models/repositories"
-	"Squire/internal/models/serialize"
-	"Squire/internal/services"
-	"Squire/ui"
+	"Sqyre/binders"
+	"Sqyre/internal/assets"
+	"Sqyre/internal/config"
+	"Sqyre/internal/models/repositories"
+	"Sqyre/internal/models/serialize"
+	"Sqyre/internal/services"
+	"Sqyre/ui"
 	"fmt"
 	"log"
 	"os"

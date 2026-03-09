@@ -1,8 +1,8 @@
 package repositories
 
 import (
-	"Squire/internal/config"
-	"Squire/internal/models"
+	"Sqyre/internal/config"
+	"Sqyre/internal/models"
 	"errors"
 	"fmt"
 	"sync"

@@ -1,8 +1,8 @@
 package serialize
 
 import (
-	"Squire/internal/config"
-	"Squire/internal/models/actions"
+	"Sqyre/internal/config"
+	"Sqyre/internal/models/actions"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -251,6 +251,12 @@ func (s *serializer) CreateActionFromMap(rawMap map[string]any, parent actions.A
 		if oc, ok := action.(*actions.Ocr); ok {
 			if v, ok := rawMap["outputvariable"].(string); ok {
 				oc.OutputVariable = v
+			}
+			if v, ok := rawMap["outputxvariable"].(string); ok {
+				oc.OutputXVariable = v
+			}
+			if v, ok := rawMap["outputyvariable"].(string); ok {
+				oc.OutputYVariable = v
 			}
 			if v, ok := rawMap["waittilfound"].(bool); ok {
 				oc.WaitTilFound = v

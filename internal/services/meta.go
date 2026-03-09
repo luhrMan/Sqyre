@@ -1,7 +1,7 @@
 package services
 
 import (
-	"Squire/internal/config"
+	"Sqyre/internal/config"
 	"log"
 	"path/filepath"
 	"time"
