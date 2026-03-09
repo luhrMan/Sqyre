@@ -104,6 +104,8 @@ func (u *Ui) constructEditorTabs() {
 
 	//===========================================================================================================ITEMS
 	itw[acc] = widget.NewAccordion()
+	itw["searchbar"] = widget.NewEntry()
+	itw["searchbar"].(*widget.Entry).PlaceHolder = "Search here"
 	itw[name] = new(widget.Entry)
 	itw[cols] = new(widget.Entry)
 	itw[rows] = new(widget.Entry)
@@ -163,7 +165,7 @@ func (u *Ui) constructEditorTabs() {
 
 	et.ItemsTab.TabItem = NewEditorTab(
 		"Items",
-		container.NewBorder(nil, nil, nil, nil, itw[acc]),
+		container.NewBorder(itw["searchbar"], nil, nil, nil, itw[acc]),
 		container.NewBorder(
 			container.NewVBox(itw[form], container.NewHBox(layout.NewSpacer(), et.ItemsTab.UpdateButton)),
 			nil, nil, nil,
@@ -173,6 +175,8 @@ func (u *Ui) constructEditorTabs() {
 
 	//===========================================================================================================POINTS
 	ptw[acc] = widget.NewAccordion()
+	ptw["searchbar"] = widget.NewEntry()
+	ptw["searchbar"].(*widget.Entry).PlaceHolder = "Search here"
 	ptw[name] = new(widget.Entry)
 	ptw[x] = custom_widgets.NewVarEntry(currentMacroVariables)
 	ptw[y] = custom_widgets.NewVarEntry(currentMacroVariables)
@@ -202,7 +206,7 @@ func (u *Ui) constructEditorTabs() {
 
 	et.PointsTab.TabItem = NewEditorTab(
 		"Points",
-		container.NewBorder(nil, nil, nil, nil, ptw[acc]),
+		container.NewBorder(ptw["searchbar"], nil, nil, nil, ptw[acc]),
 		container.NewBorder(
 			ptw[form],
 			nil,
@@ -214,6 +218,8 @@ func (u *Ui) constructEditorTabs() {
 
 	//===========================================================================================================SEARCHAREAS
 	satw[acc] = widget.NewAccordion()
+	satw["searchbar"] = widget.NewEntry()
+	satw["searchbar"].(*widget.Entry).PlaceHolder = "Search here"
 	satw[name] = new(widget.Entry)
 	satw[x1] = custom_widgets.NewVarEntry(currentMacroVariables)
 	satw[y1] = custom_widgets.NewVarEntry(currentMacroVariables)
@@ -245,7 +251,7 @@ func (u *Ui) constructEditorTabs() {
 
 	et.SearchAreasTab.TabItem = NewEditorTab(
 		"Search Areas",
-		container.NewBorder(nil, nil, nil, nil, satw[acc]),
+		container.NewBorder(satw["searchbar"], nil, nil, nil, satw[acc]),
 		container.NewBorder(
 			satw[form],
 			nil,
@@ -258,6 +264,8 @@ func (u *Ui) constructEditorTabs() {
 	//===========================================================================================================MASKS
 	mtw := et.MasksTab.Widgets
 	mtw["Accordion"] = widget.NewAccordion()
+	mtw["searchbar"] = widget.NewEntry()
+	mtw["searchbar"].(*widget.Entry).PlaceHolder = "Search here"
 	mtw["Name"] = new(widget.Entry)
 	mtw["uploadButton"] = widget.NewButtonWithIcon("Upload Image", theme.FolderOpenIcon(), nil)
 	mtw["removeImageButton"] = widget.NewButtonWithIcon("Remove Image", theme.ContentRemoveIcon(), nil)
@@ -346,7 +354,7 @@ func (u *Ui) constructEditorTabs() {
 
 	et.MasksTab.TabItem = NewEditorTab(
 		"Masks",
-		container.NewBorder(nil, nil, nil, nil, mtw["Accordion"]),
+		container.NewBorder(mtw["searchbar"], nil, nil, nil, mtw["Accordion"]),
 		container.NewBorder(
 			container.NewVBox(
 				mtw["Form"],
@@ -362,6 +370,8 @@ func (u *Ui) constructEditorTabs() {
 	//===========================================================================================================AUTOPIC
 	atw := et.AutoPicTab.Widgets
 	atw["Accordion"] = widget.NewAccordion()
+	atw["searchbar"] = widget.NewEntry()
+	atw["searchbar"].(*widget.Entry).PlaceHolder = "Search here"
 	atw["saveButton"] = widget.NewButton("Save", u.onAutoPicSave)
 
 	// Create preview image and container
@@ -378,7 +388,7 @@ func (u *Ui) constructEditorTabs() {
 	et.AutoPicTab.TabItem = NewEditorTab(
 		"AutoPic",
 		container.NewBorder(
-			nil,
+			atw["searchbar"],
 			nil,
 			nil,
 			nil,
