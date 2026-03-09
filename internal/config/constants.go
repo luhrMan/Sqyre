@@ -1,10 +1,25 @@
 package config
 
 import (
-	"log"
+	"Sqyre/internal/logger"
 	"os"
 	"path/filepath"
 )
+
+// sqyreDirFallback is used when user home cannot be determined (no panic).
+var sqyreDirFallback string
+
+func getSqyreDir() string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		if sqyreDirFallback == "" {
+			sqyreDirFallback = filepath.Join(os.TempDir(), "sqyre")
+			logger.Errorf("Could not get user home directory: %v; using fallback: %s", err, sqyreDirFallback)
+		}
+		return sqyreDirFallback
+	}
+	return filepath.Join(homeDir, SqyreDir)
+}
 
 const (
 	// User directory structure
@@ -34,68 +49,39 @@ const (
 	ProgramDelimiter = "~"
 )
 
-// GetIconsPath returns the path to the icons directory in the user's home directory
-// Returns: ~/.sqyre/images/icons/
+// GetIconsPath returns the path to the icons directory in the user's home directory.
+// Returns ~/.sqyre/images/icons/ or a fallback under os.TempDir() if home is unavailable.
 func GetIconsPath() string {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		log.Fatalf("Could not get user home directory: %v", err)
-	}
-	return filepath.Join(homeDir, SqyreDir, UserImagesDir, UserIconsDir)
+	return filepath.Join(getSqyreDir(), UserImagesDir, UserIconsDir)
 }
 
 func GetMasksPath() string {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		log.Fatalf("Could not get user home directory: %v", err)
-	}
-	return filepath.Join(homeDir, SqyreDir, UserImagesDir, UserMasksDir)
+	return filepath.Join(getSqyreDir(), UserImagesDir, UserMasksDir)
 }
 
 func GetMetaPath() string {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		log.Fatalf("Could not get user home directory: %v", err)
-	}
-	return filepath.Join(homeDir, SqyreDir, UserImagesDir, UserMetaDir)
+	return filepath.Join(getSqyreDir(), UserImagesDir, UserMetaDir)
 }
 
 func GetAutoPicPath() string {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		log.Fatalf("Could not get user home directory: %v", err)
-	}
-	return filepath.Join(homeDir, SqyreDir, UserImagesDir, UserAutoPicDir)
+	return filepath.Join(getSqyreDir(), UserImagesDir, UserAutoPicDir)
 }
 
-// GetVariablesPath returns the path to the variables directory in the user's home directory
-// Returns: ~/.sqyre/variables/
+// GetVariablesPath returns the path to the variables directory.
+// Returns ~/.sqyre/variables/ or fallback if home is unavailable.
 func GetVariablesPath() string {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		log.Fatalf("Could not get user home directory: %v", err)
-	}
-	return filepath.Join(homeDir, SqyreDir, UserVariablesDir)
+	return filepath.Join(getSqyreDir(), UserVariablesDir)
 }
 
-// GetDbPath returns the path to the config file in the user's home directory.
-// Returns: ~/.sqyre/db.yaml
+// GetDbPath returns the path to the config file. Returns ~/.sqyre/db.yaml or fallback.
 func GetDbPath() string {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		log.Fatalf("Could not get user home directory: %v", err)
-	}
-	return filepath.Join(homeDir, SqyreDir, "db.yaml")
+	return filepath.Join(getSqyreDir(), "db.yaml")
 }
 
-// GetSqyreDir returns the Sqyre application directory in the user's home directory.
-// Returns: ~/.sqyre/
+// GetSqyreDir returns the Sqyre application directory.
+// Returns ~/.sqyre/ or a fallback under os.TempDir() if user home cannot be determined (no panic).
 func GetSqyreDir() string {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		log.Fatalf("Could not get user home directory: %v", err)
-	}
-	return filepath.Join(homeDir, SqyreDir)
+	return getSqyreDir()
 }
 
 // InitializeDirectories creates the necessary directories in the user's home directory
@@ -109,27 +95,27 @@ func InitializeDirectories() error {
 
 	// Create all parent directories as needed
 	if err := os.MkdirAll(iconsPath, 0755); err != nil {
-		log.Printf("Failed to create icons directory at %s: %v", iconsPath, err)
+		logger.Errorf("Failed to create icons directory at %s: %v", iconsPath, err)
 		return err
 	}
 
 	if err := os.MkdirAll(autoPicPath, 0755); err != nil {
-		log.Printf("Failed to create AutoPic directory at %s: %v", autoPicPath, err)
+		logger.Errorf("Failed to create AutoPic directory at %s: %v", autoPicPath, err)
 		return err
 	}
 
 	if err := os.MkdirAll(variablesPath, 0755); err != nil {
-		log.Printf("Failed to create variables directory at %s: %v", variablesPath, err)
+		logger.Errorf("Failed to create variables directory at %s: %v", variablesPath, err)
 		return err
 	}
 
 	if err := os.MkdirAll(metaPath, 0755); err != nil {
-		log.Printf("Failed to create meta directory at %s: %v", metaPath, err)
+		logger.Errorf("Failed to create meta directory at %s: %v", metaPath, err)
 		return err
 	}
 
-	log.Printf("Initialized directory structure at: %s", iconsPath)
-	log.Printf("Initialized AutoPic directory at: %s", autoPicPath)
-	log.Printf("Initialized meta directory at: %s", metaPath)
+	logger.Infof("Initialized directory structure at: %s", iconsPath)
+	logger.Infof("Initialized AutoPic directory at: %s", autoPicPath)
+	logger.Infof("Initialized meta directory at: %s", metaPath)
 	return nil
 }

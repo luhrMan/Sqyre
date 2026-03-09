@@ -1,7 +1,7 @@
 package services
 
 import (
-	"Squire/internal/models/actions"
+	"Sqyre/internal/models/actions"
 	"fmt"
 	"strings"
 

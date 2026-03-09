@@ -1,10 +1,10 @@
 package ui
 
 import (
-	"Squire/internal/config"
-	"Squire/internal/models"
-	"Squire/internal/services"
-	"Squire/ui/custom_widgets"
+	"Sqyre/internal/config"
+	"Sqyre/internal/models"
+	"Sqyre/internal/services"
+	"Sqyre/ui/custom_widgets"
 	"errors"
 	"fmt"
 	"image"
@@ -21,7 +21,7 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
-	"Squire/ui/completionentry"
+	"Sqyre/ui/completionentry"
 
 	"github.com/go-vgo/robotgo"
 	"gocv.io/x/gocv"
@@ -465,7 +465,7 @@ func (u *Ui) onAutoPicSave() {
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				dialog.ShowError(fmt.Errorf("AutoPic: Screen capture panic recovered during save - %v (area: %s)", r, searchArea.Name), u.Window)
+				services.LogPanicToFile(r, "AutoPic: Screen capture during save (area: "+searchArea.Name+")")
 				captureImg = nil
 			}
 		}()
@@ -505,7 +505,7 @@ func (u *Ui) onAutoPicSave() {
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				dialog.ShowError(fmt.Errorf("AutoPic: Image save panic recovered - %v (path: %s)", r, fullPath), u.Window)
+				services.LogPanicToFile(r, "AutoPic: Image save (path: "+fullPath+")")
 			}
 		}()
 
@@ -554,7 +554,7 @@ func (u *Ui) UpdateAutoPicPreview(searchArea *models.SearchArea) {
 	// Attempt to capture the screen area with error recovery
 	defer func() {
 		if r := recover(); r != nil {
-			dialog.ShowError(fmt.Errorf("AutoPic: Screen capture panic recovered - %v (area: %s)", r, searchArea.Name), u.Window)
+			services.LogPanicToFile(r, "AutoPic: Screen capture (area: "+searchArea.Name+")")
 			u.clearPreviewImage()
 		}
 	}()
@@ -656,7 +656,7 @@ func (u *Ui) UpdateSearchAreaPreview(searchArea *models.SearchArea) {
 	// Attempt to capture the full screen with error recovery
 	defer func() {
 		if r := recover(); r != nil {
-			dialog.ShowError(fmt.Errorf("SearchArea: Screen capture panic recovered - %v (area: %s)", r, searchArea.Name), u.Window)
+			services.LogPanicToFile(r, "SearchArea: Screen capture (area: "+searchArea.Name+")")
 			u.clearSearchAreaPreviewImage()
 		}
 	}()
@@ -760,7 +760,7 @@ func (u *Ui) UpdatePointPreview(point *models.Point) {
 	// Attempt to capture the full screen with error recovery
 	defer func() {
 		if r := recover(); r != nil {
-			dialog.ShowError(fmt.Errorf("Point: Screen capture panic recovered - %v (point: %s)", r, point.Name), u.Window)
+			services.LogPanicToFile(r, "Point: Screen capture (point: "+point.Name+")")
 			u.clearPointPreviewImage()
 		}
 	}()

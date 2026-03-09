@@ -1,7 +1,9 @@
 package ui
 
 import (
-	"Squire/internal/services"
+	"errors"
+
+	"Sqyre/internal/services"
 
 	"github.com/go-vgo/robotgo"
 
@@ -97,4 +99,13 @@ func HideMacroLogPopup() {
 
 func init() {
 	services.SetShowMacroLogPopupFunc(ShowMacroLogPopup)
+	// Notify user of any recovered panic (from any goroutine); run on UI thread.
+	services.OnPanicNotifyUser = func(message string) {
+		fyne.Do(func() {
+			u := GetUi()
+			if u != nil && u.Window != nil {
+				dialog.ShowError(errors.New(message), u.Window)
+			}
+		})
+	}
 }

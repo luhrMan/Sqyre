@@ -1,12 +1,13 @@
 package binders
 
 import (
-	"Squire/internal/config"
-	"Squire/internal/models"
-	"Squire/internal/models/actions"
-	"Squire/internal/models/repositories"
-	"Squire/ui"
-	"Squire/ui/custom_widgets"
+	"Sqyre/internal/config"
+	"Sqyre/internal/models"
+	"Sqyre/internal/models/actions"
+	"Sqyre/internal/models/repositories"
+	"Sqyre/internal/services"
+	"Sqyre/ui"
+	"Sqyre/ui/custom_widgets"
 	"fmt"
 	"log"
 
@@ -33,7 +34,7 @@ func setPointWidgets(p models.Point) {
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Printf("Point: Preview update panic recovered - %v (point: %s)", r, p.Name)
+				services.LogPanicToFile(r, "Point: Preview update (point: "+p.Name+")")
 			}
 		}()
 		ui.GetUi().UpdatePointPreview(&p)
@@ -97,7 +98,7 @@ func setAccordionSearchAreasLists(acc *widget.Accordion) {
 			func() {
 				defer func() {
 					if r := recover(); r != nil {
-						log.Printf("SearchArea: Preview update panic recovered - %v (area: %s)", r, sa.Name)
+						services.LogPanicToFile(r, "SearchArea: Preview update (area: "+sa.Name+")")
 					}
 				}()
 				ui.GetUi().UpdateSearchAreaPreview(sa)
@@ -317,7 +318,7 @@ func setAccordionAutoPicSearchAreasLists(acc *widget.Accordion) {
 			func() {
 				defer func() {
 					if r := recover(); r != nil {
-						log.Printf("AutoPic: Preview update panic recovered - %v (area: %s)", r, sa.Name)
+						services.LogPanicToFile(r, "AutoPic: Preview update (area: "+sa.Name+")")
 					}
 				}()
 				ui.GetUi().UpdateAutoPicPreview(sa)

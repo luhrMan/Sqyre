@@ -15,8 +15,8 @@ import (
 	"os"
 	"testing"
 
-	"Squire/internal/models/actions"
-	"Squire/ui"
+	"Sqyre/internal/models/actions"
+	"Sqyre/ui"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/test"

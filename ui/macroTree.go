@@ -1,10 +1,10 @@
 package ui
 
 import (
-	"Squire/internal/assets"
-	"Squire/internal/models"
-	"Squire/internal/models/actions"
-	"Squire/internal/models/serialize"
+	"Sqyre/internal/assets"
+	"Sqyre/internal/models"
+	"Sqyre/internal/models/actions"
+	"Sqyre/internal/models/serialize"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"

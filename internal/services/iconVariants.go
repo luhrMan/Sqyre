@@ -1,8 +1,8 @@
 package services
 
 import (
-	"Squire/internal/assets"
-	"Squire/internal/config"
+	"Sqyre/internal/assets"
+	"Sqyre/internal/config"
 	"fmt"
 	"io"
 	"os"

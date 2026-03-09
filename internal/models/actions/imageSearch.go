@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"slices"
 
-	"Squire/internal/assets"
+	"Sqyre/internal/assets"
 
 	"fyne.io/fyne/v2"
 )

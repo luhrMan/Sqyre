@@ -1,8 +1,8 @@
 package binders
 
 import (
-	"Squire/internal/models/repositories"
-	"Squire/ui"
+	"Sqyre/internal/models/repositories"
+	"Sqyre/ui"
 	"log"
 
 	"fyne.io/fyne/v2"

@@ -1,4 +1,4 @@
-module Squire
+module Sqyre
 
 go 1.25.0
 

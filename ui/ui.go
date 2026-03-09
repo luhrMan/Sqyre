@@ -1,7 +1,11 @@
 package ui
 
 import (
-	"Squire/internal/services"
+	"path/filepath"
+
+	"Sqyre/internal/config"
+	"Sqyre/internal/logger"
+	"Sqyre/internal/services"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -35,6 +39,8 @@ type MainUi struct {
 
 func GetUi() *Ui { return ui }
 func InitializeUi(w fyne.Window) *Ui {
+	fyne.CurrentApp().Settings().SetTheme(NewSqyreTheme())
+	logger.SetLogFile(filepath.Join(config.GetSqyreDir(), "sqyre.log"))
 	w.SetCloseIntercept(func() {
 		services.LogMatProfile()
 		w.Close()
