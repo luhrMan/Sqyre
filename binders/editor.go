@@ -1,12 +1,12 @@
 package binders
 
 import (
-	"Squire/internal/config"
-	"Squire/internal/models"
-	"Squire/internal/models/repositories"
-	"Squire/internal/services"
-	"Squire/ui"
-	"Squire/ui/custom_widgets"
+	"Sqyre/internal/config"
+	"Sqyre/internal/models"
+	"Sqyre/internal/models/repositories"
+	"Sqyre/internal/services"
+	"Sqyre/ui"
+	"Sqyre/ui/custom_widgets"
 	"errors"
 	"log"
 	"os"
@@ -16,7 +16,7 @@ import (
 	"sync"
 	"time"
 
-	"Squire/ui/completionentry"
+	"Sqyre/ui/completionentry"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/dialog"
@@ -486,7 +486,7 @@ func setEditorForms() {
 			func() {
 				defer func() {
 					if r := recover(); r != nil {
-						log.Printf("Point: Preview update panic recovered after form update - %v (point: %s)", r, v.Name)
+						services.LogPanicToFile(r, "Point: Preview update (point: "+v.Name+")")
 					}
 				}()
 				ui.GetUi().UpdatePointPreview(v)
@@ -682,7 +682,7 @@ func setEditorForms() {
 			func() {
 				defer func() {
 					if r := recover(); r != nil {
-						log.Printf("SearchArea: Preview update panic recovered after form update - %v (area: %s)", r, v.Name)
+						services.LogPanicToFile(r, "SearchArea: Preview update (area: "+v.Name+")")
 					}
 				}()
 				ui.GetUi().UpdateSearchAreaPreview(v)

@@ -1,7 +1,7 @@
 package models
 
 import (
-	"Squire/internal/models/actions"
+	"Sqyre/internal/models/actions"
 	"sort"
 )
 
@@ -84,6 +84,12 @@ func collectVarsFromAction(a actions.ActionInterface, seen map[string]struct{}) 
 	case *actions.Ocr:
 		if n.OutputVariable != "" {
 			seen[n.OutputVariable] = struct{}{}
+		}
+		if n.OutputXVariable != "" {
+			seen[n.OutputXVariable] = struct{}{}
+		}
+		if n.OutputYVariable != "" {
+			seen[n.OutputYVariable] = struct{}{}
 		}
 	case *actions.ImageSearch:
 		if n.OutputXVariable != "" {

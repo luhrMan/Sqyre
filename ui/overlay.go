@@ -4,7 +4,7 @@ import (
 	"image/color"
 	"log"
 
-	"Squire/internal/config"
+	"Sqyre/internal/config"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"

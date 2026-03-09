@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"Squire/internal/config"
+	"Sqyre/internal/config"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/theme"

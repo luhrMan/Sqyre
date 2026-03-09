@@ -1,7 +1,7 @@
 package services
 
 import (
-	"Squire/internal/models"
+	"Sqyre/internal/models"
 	"log"
 	"os"
 	"slices"

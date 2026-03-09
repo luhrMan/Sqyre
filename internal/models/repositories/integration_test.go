@@ -1,9 +1,9 @@
 package repositories
 
 import (
-	"Squire/internal/models"
-	"Squire/internal/models/actions"
-	"Squire/internal/models/serialize"
+	"Sqyre/internal/models"
+	"Sqyre/internal/models/actions"
+	"Sqyre/internal/models/serialize"
 	"os"
 	"path/filepath"
 	"sync"

@@ -1,7 +1,7 @@
 package repositories
 
 import (
-	"Squire/internal/models"
+	"Sqyre/internal/models"
 	"sync"
 )
 

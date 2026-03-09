@@ -1,11 +1,11 @@
 package services
 
 import (
-	"Squire/internal/assets"
-	"Squire/internal/config"
-	"Squire/internal/models"
-	"Squire/internal/models/actions"
-	"Squire/internal/models/repositories"
+	"Sqyre/internal/assets"
+	"Sqyre/internal/config"
+	"Sqyre/internal/models"
+	"Sqyre/internal/models/actions"
+	"Sqyre/internal/models/repositories"
 	"fmt"
 	"image"
 	"image/color"
@@ -80,11 +80,10 @@ func match(img, imgDraw gocv.Mat, a *actions.ImageSearch, macro *models.Macro) (
 			defer wg.Done()
 			defer func() {
 				if r := recover(); r != nil {
-					LogPanicToFile(r)
+					LogPanicToFile(r, fmt.Sprintf("Image Search (target %s)", t))
 					resultsMutex.Lock()
 					matchErr = fmt.Errorf("panic during image search for %s: %v", t, r)
 					resultsMutex.Unlock()
-					log.Printf("Image Search: recovered from panic for target %s: %v", t, r)
 				}
 			}()
 			programName := strings.Split(t, config.ProgramDelimiter)[0]
@@ -126,22 +125,12 @@ func match(img, imgDraw gocv.Mat, a *actions.ImageSearch, macro *models.Macro) (
 					log.Printf("Error reading template image: %v", err)
 					return
 				}
-			tmask := gocv.NewMat()
-			cmask := buildMask(i, program, template.Rows(), template.Cols(), macro)
+				tmask := gocv.NewMat()
+				cmask := buildMask(i, program, template.Rows(), template.Cols(), macro)
 
-			defer tmask.Close()
-			defer cmask.Close()
-			SaveMetaImage("cmask-"+i.Name+"-"+v, cmask)
-
-				// if Tmask.Cols() != template.Cols() && Tmask.Rows() != template.Rows() {
-				// 	log.Println("ERROR: template mask size does not match template!")
-				// 	log.Println("item: ", t)
-				// 	log.Println("Tmask cols: ", Tmask.Cols())
-				// 	log.Println("Tmask rows: ", Tmask.Rows())
-				// 	log.Println("t cols: ", template.Cols())
-				// 	log.Println("t rows: ", template.Rows())
-				// 	return
-				// }
+				defer tmask.Close()
+				defer cmask.Close()
+				SaveMetaImage("cmask-"+i.Name+"-"+v, cmask)
 
 				matches := FindTemplateMatches(img, template, Imask, tmask, cmask, a.Tolerance, a.Blur)
 				DrawFoundMatches(matches, template.Cols(), template.Rows(), imgDraw, i.Name) // draw rect at top-left

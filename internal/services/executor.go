@@ -1,11 +1,11 @@
 package services
 
 import (
-	"Squire/internal/assets"
-	"Squire/internal/config"
-	"Squire/internal/models"
-	"Squire/internal/models/actions"
-	"Squire/internal/models/repositories"
+	"Sqyre/internal/assets"
+	"Sqyre/internal/config"
+	"Sqyre/internal/models"
+	"Sqyre/internal/models/actions"
+	"Sqyre/internal/models/repositories"
 	"bytes"
 	"fmt"
 	"image"
@@ -42,8 +42,7 @@ func ExecuteMacroWithLogging(m *models.Macro) {
 			}
 		})
 		if r := recover(); r != nil {
-			LogPanicToFile(r)
-			log.Printf("Macro %q: recovered from panic: %v", m.Name, r)
+			LogPanicToFile(r, fmt.Sprintf("Macro %q", m.Name))
 		}
 	}()
 	if showMacroLogPopupFunc != nil {
@@ -330,7 +329,7 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 
 		return nil
 	case *actions.Ocr:
-		foundText, err := OCR(node, macro)
+		foundText, centerX, centerY, err := OCR(node, macro)
 		if err != nil {
 			log.Println(err)
 			return err
@@ -339,7 +338,7 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 			deadline := time.Now().Add(time.Duration(node.WaitTilFoundSeconds) * time.Second)
 			for !strings.Contains(foundText, node.Target) && time.Now().Before(deadline) {
 				time.Sleep(500 * time.Millisecond)
-				foundText, err = OCR(node, macro)
+				foundText, centerX, centerY, err = OCR(node, macro)
 				if err != nil {
 					log.Println(err)
 					return err
@@ -350,6 +349,15 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 		// Store found text in variable if configured
 		if macro != nil && macro.Variables != nil && node.OutputVariable != "" {
 			macro.Variables.Set(node.OutputVariable, foundText)
+		}
+		// Store center of search area in output X/Y variables when configured (same as Image Search)
+		if macro != nil && macro.Variables != nil {
+			if node.OutputXVariable != "" {
+				macro.Variables.Set(node.OutputXVariable, centerX)
+			}
+			if node.OutputYVariable != "" {
+				macro.Variables.Set(node.OutputYVariable, centerY)
+			}
 		}
 
 		if strings.Contains(foundText, node.Target) {

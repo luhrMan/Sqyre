@@ -1,8 +1,8 @@
 package custom_widgets
 
 import (
-	"Squire/internal/assets"
-	"Squire/internal/config"
+	"Sqyre/internal/assets"
+	"Sqyre/internal/config"
 	"image/color"
 	"path/filepath"
 

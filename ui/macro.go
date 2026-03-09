@@ -1,9 +1,9 @@
 package ui
 
 import (
-	"Squire/internal/assets"
-	"Squire/internal/models/serialize"
-	"Squire/internal/services"
+	"Sqyre/internal/assets"
+	"Sqyre/internal/models/serialize"
+	"Sqyre/internal/services"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"

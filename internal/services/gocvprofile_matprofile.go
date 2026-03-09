@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"Squire/internal/config"
+	"Sqyre/internal/config"
 
 	_ "net/http/pprof"
 

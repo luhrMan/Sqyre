@@ -1,12 +1,12 @@
 package ui
 
 import (
-	"Squire/internal/assets"
-	"Squire/internal/config"
-	"Squire/internal/models/actions"
-	"Squire/internal/models/repositories"
-	"Squire/internal/services"
-	"Squire/ui/custom_widgets"
+	"Sqyre/internal/assets"
+	"Sqyre/internal/config"
+	"Sqyre/internal/models/actions"
+	"Sqyre/internal/models/repositories"
+	"Sqyre/internal/services"
+	"Sqyre/ui/custom_widgets"
 	"fmt"
 	"image"
 	"image/color"
@@ -281,6 +281,7 @@ func createMoveDialogContent(action *actions.Move) (fyne.CanvasObject, func()) {
 		// Attempt to capture the full screen with error recovery
 		defer func() {
 			if r := recover(); r != nil {
+				services.LogPanicToFile(r, "Action dialog: point preview capture")
 				pointPreviewImage.Image = nil
 				pointPreviewImage.Refresh()
 			}
@@ -847,6 +848,12 @@ func createOcrDialogContent(action *actions.Ocr) (fyne.CanvasObject, func()) {
 	targetEntry.SetText(action.Target)
 	outputVarEntry := newVarEntry()
 	outputVarEntry.SetText(action.OutputVariable)
+	outputXVarEntry := newVarEntry()
+	outputXVarEntry.SetText(action.OutputXVariable)
+	outputXVarEntry.SetPlaceHolder("e.g. foundX")
+	outputYVarEntry := newVarEntry()
+	outputYVarEntry.SetText(action.OutputYVariable)
+	outputYVarEntry.SetPlaceHolder("e.g. foundY")
 	waitTilFoundCheck := widget.NewCheck("Wait until found", nil)
 	waitTilFoundCheck.SetChecked(action.WaitTilFound)
 	waitTilFoundSecondsEntry := widget.NewEntry()
@@ -944,6 +951,8 @@ func createOcrDialogContent(action *actions.Ocr) (fyne.CanvasObject, func()) {
 		widget.NewFormItem("Name:", nameEntry),
 		widget.NewFormItem("Text Target:", targetEntry),
 		widget.NewFormItem("Output Variable:", outputVarEntry),
+		widget.NewFormItem("Output X Variable:", outputXVarEntry),
+		widget.NewFormItem("Output Y Variable:", outputYVarEntry),
 		widget.NewFormItem("", waitTilFoundCheck),
 		widget.NewFormItem("Timeout (seconds):", waitTilFoundSecondsEntry),
 	)
@@ -964,6 +973,8 @@ func createOcrDialogContent(action *actions.Ocr) (fyne.CanvasObject, func()) {
 		action.Name = nameEntry.Text
 		action.Target = targetEntry.Text
 		action.OutputVariable = outputVarEntry.Text
+		action.OutputXVariable = outputXVarEntry.Text
+		action.OutputYVariable = outputYVarEntry.Text
 		action.WaitTilFound = waitTilFoundCheck.Checked
 		if s, err := strconv.Atoi(waitTilFoundSecondsEntry.Text); err == nil && s >= 0 {
 			action.WaitTilFoundSeconds = s

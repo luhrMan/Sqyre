@@ -3,7 +3,7 @@ package actions
 import (
 	"fmt"
 
-	"Squire/internal/assets"
+	"Sqyre/internal/assets"
 
 	"fyne.io/fyne/v2"
 )
