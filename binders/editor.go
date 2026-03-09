@@ -492,9 +492,9 @@ func setEditorForms() {
 				ui.GetUi().UpdatePointPreview(v)
 			}()
 
-			t := w[program.Name+"-searchbar"].(*widget.Entry).Text
-			w[program.Name+"-searchbar"].(*widget.Entry).SetText("random string of text for refreshing because poop")
-			w[program.Name+"-searchbar"].(*widget.Entry).SetText(t)
+			if acc, ok := et.PointsTab.Widgets["Accordion"].(*widget.Accordion); ok {
+				setAccordionPointsLists(acc)
+			}
 			markPointsClean()
 		}
 	}
@@ -687,9 +687,9 @@ func setEditorForms() {
 				}()
 				ui.GetUi().UpdateSearchAreaPreview(v)
 			}()
-			t := w[program.Name+"-searchbar"].(*widget.Entry).Text
-			w[program.Name+"-searchbar"].(*widget.Entry).SetText("random string of text for refreshing because poop")
-			w[program.Name+"-searchbar"].(*widget.Entry).SetText(t)
+			if acc, ok := et.SearchAreasTab.Widgets["Accordion"].(*widget.Accordion); ok {
+				setAccordionSearchAreasLists(acc)
+			}
 			markSearchAreasClean()
 		}
 	}
@@ -760,9 +760,9 @@ func setEditorButtons() {
 			ui.GetUi().EditorTabs.ItemsTab.SelectedItem = i
 			v := i
 			ui.GetUi().EditorTabs.ItemsTab.Widgets["Name"].(*widget.Entry).SetText(v.Name)
-			t := ui.GetUi().EditorTabs.ItemsTab.Widgets[program+"-searchbar"].(*widget.Entry).Text
-			ui.GetUi().EditorTabs.ItemsTab.Widgets[program+"-searchbar"].(*widget.Entry).SetText("random string of text for refreshing because poop")
-			ui.GetUi().EditorTabs.ItemsTab.Widgets[program+"-searchbar"].(*widget.Entry).SetText(t)
+			if acc, ok := ui.GetUi().EditorTabs.ItemsTab.Widgets["Accordion"].(*widget.Accordion); ok {
+				setAccordionItemsLists(acc)
+			}
 			setItemsWidgets(*i)
 			markItemsClean()
 		case "Points":
@@ -799,9 +799,9 @@ func setEditorButtons() {
 			}
 			ui.GetUi().EditorTabs.PointsTab.SelectedItem = p
 			setPointWidgets(*p)
-			t := ui.GetUi().EditorTabs.PointsTab.Widgets[program+"-searchbar"].(*widget.Entry).Text
-			ui.GetUi().EditorTabs.PointsTab.Widgets[program+"-searchbar"].(*widget.Entry).SetText("random string of text for refreshing because poop")
-			ui.GetUi().EditorTabs.PointsTab.Widgets[program+"-searchbar"].(*widget.Entry).SetText(t)
+			if acc, ok := ui.GetUi().EditorTabs.PointsTab.Widgets["Accordion"].(*widget.Accordion); ok {
+				setAccordionPointsLists(acc)
+			}
 			markPointsClean()
 		case "Masks":
 			w := ui.GetUi().EditorTabs.MasksTab.Widgets
@@ -828,9 +828,9 @@ func setEditorButtons() {
 			}
 			ui.GetUi().EditorTabs.MasksTab.SelectedItem = m
 			setMaskWidgets(*m, program)
-			t := ui.GetUi().EditorTabs.MasksTab.Widgets[program+"-searchbar"].(*widget.Entry).Text
-			ui.GetUi().EditorTabs.MasksTab.Widgets[program+"-searchbar"].(*widget.Entry).SetText("refresh")
-			ui.GetUi().EditorTabs.MasksTab.Widgets[program+"-searchbar"].(*widget.Entry).SetText(t)
+			if acc, ok := ui.GetUi().EditorTabs.MasksTab.Widgets["Accordion"].(*widget.Accordion); ok {
+				setAccordionMasksLists(acc)
+			}
 			markMasksClean()
 		case "Search Areas":
 			n := ui.GetUi().EditorTabs.SearchAreasTab.Widgets["Name"].(*widget.Entry).Text
@@ -880,9 +880,9 @@ func setEditorButtons() {
 			// Select the newly added search area so it can be edited with Update
 			ui.GetUi().EditorTabs.SearchAreasTab.SelectedItem = sa
 			setSearchAreaWidgets(*sa)
-			t := ui.GetUi().EditorTabs.SearchAreasTab.Widgets[program+"-searchbar"].(*widget.Entry).Text
-			ui.GetUi().EditorTabs.SearchAreasTab.Widgets[program+"-searchbar"].(*widget.Entry).SetText("random string of text for refreshing because poop")
-			ui.GetUi().EditorTabs.SearchAreasTab.Widgets[program+"-searchbar"].(*widget.Entry).SetText(t)
+			if acc, ok := ui.GetUi().EditorTabs.SearchAreasTab.Widgets["Accordion"].(*widget.Accordion); ok {
+				setAccordionSearchAreasLists(acc)
+			}
 			markSearchAreasClean()
 		}
 
@@ -911,9 +911,9 @@ func setEditorButtons() {
 			updateProgramSelectorOptions()
 
 			prot.SelectedItem = repositories.ProgramRepo().New()
-			// text := prot.Widgets["searchbar"].(*widget.Entry).Text
-			// prot.Widgets["searchbar"].(*widget.Entry).SetText("uuid")
-			// prot.Widgets["searchbar"].(*widget.Entry).SetText(text)
+			if list, ok := prot.Widgets["list"].(*widget.List); ok {
+				list.UnselectAll()
+			}
 		case "Items":
 			if err := prog.ItemRepo().Delete(it.SelectedItem.(*models.Item).Name); err != nil {
 				log.Printf("Error deleting item %s: %v", it.SelectedItem.(*models.Item).Name, err)
@@ -924,9 +924,12 @@ func setEditorButtons() {
 			} else {
 				it.SelectedItem = &models.Item{}
 			}
-			text := it.Widgets[program+"-searchbar"].(*widget.Entry).Text
-			it.Widgets[program+"-searchbar"].(*widget.Entry).SetText("uuid")
-			it.Widgets[program+"-searchbar"].(*widget.Entry).SetText(text)
+			if acc, ok := it.Widgets["Accordion"].(*widget.Accordion); ok {
+				setAccordionItemsLists(acc)
+			}
+			if list, ok := it.Widgets[program+"-list"].(*widget.GridWrap); ok {
+				list.UnselectAll()
+			}
 		case "Points":
 			if err := prog.PointRepo(config.MainMonitorSizeString).Delete(pt.SelectedItem.(*models.Point).Name); err != nil {
 				log.Printf("Error deleting point %s: %v", pt.SelectedItem.(*models.Point).Name, err)
@@ -937,9 +940,12 @@ func setEditorButtons() {
 			} else {
 				pt.SelectedItem = &models.Point{}
 			}
-			text := pt.Widgets[program+"-searchbar"].(*widget.Entry).Text
-			pt.Widgets[program+"-searchbar"].(*widget.Entry).SetText("uuid")
-			pt.Widgets[program+"-searchbar"].(*widget.Entry).SetText(text)
+			if acc, ok := pt.Widgets["Accordion"].(*widget.Accordion); ok {
+				setAccordionPointsLists(acc)
+			}
+			if list, ok := pt.Widgets[program+"-list"].(*widget.List); ok {
+				list.UnselectAll()
+			}
 		case "Masks":
 			n := mkt.SelectedItem.(*models.Mask).Name
 			err = prog.MaskRepo().Delete(n)
@@ -958,10 +964,11 @@ func setEditorButtons() {
 			mkt.SelectedItem = &models.Mask{}
 			ui.GetUi().SetMaskImageMode(false)
 			ui.GetUi().ClearMaskPreviewImage()
-			if searchbar, ok := mkt.Widgets[program+"-searchbar"].(*widget.Entry); ok {
-				text := searchbar.Text
-				searchbar.SetText("refresh")
-				searchbar.SetText(text)
+			if acc, ok := mkt.Widgets["Accordion"].(*widget.Accordion); ok {
+				setAccordionMasksLists(acc)
+			}
+			if list, ok := mkt.Widgets[program+"-list"].(*widget.List); ok {
+				list.UnselectAll()
 			}
 		case "Search Areas":
 			n := sat.SelectedItem.(*models.SearchArea).Name
@@ -977,9 +984,12 @@ func setEditorButtons() {
 			} else {
 				sat.SelectedItem = &models.SearchArea{}
 			}
-			text := sat.Widgets[program+"-searchbar"].(*widget.Entry).Text
-			sat.Widgets[program+"-searchbar"].(*widget.Entry).SetText("uuid")
-			sat.Widgets[program+"-searchbar"].(*widget.Entry).SetText(text)
+			if acc, ok := sat.Widgets["Accordion"].(*widget.Accordion); ok {
+				setAccordionSearchAreasLists(acc)
+			}
+			if list, ok := sat.Widgets[program+"-list"].(*widget.List); ok {
+				list.UnselectAll()
+			}
 		}
 	}
 
