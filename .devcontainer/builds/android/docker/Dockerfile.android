@@ -1,0 +1,20 @@
+# fyne-cross Android image with Go 1.26 (base has 1.24.6; go.mod requires >= 1.25).
+#
+# Build from repo root:
+#   docker build -f .devcontainer/builds/android/docker/Dockerfile.android \
+#     -t fyne-cross-android:local .
+#
+# Use with fyne-cross:
+#   fyne-cross android -image fyne-cross-android:local \
+#     --app-id com.sqyre.app ./cmd/sqyre
+
+FROM fyneio/fyne-cross-images:android
+
+# Upgrade Go to 1.26 (base has 1.24.6; go.mod requires >= 1.25)
+ARG GO_VERSION=1.26.0
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates && \
+    curl -sSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" -o /tmp/go.tgz && \
+    rm -rf /usr/local/go && tar -C /usr/local -xzf /tmp/go.tgz && rm /tmp/go.tgz && \
+    ln -sf /usr/local/go/bin/go /usr/local/bin/go && \
+    ln -sf /usr/local/go/bin/gofmt /usr/local/bin/gofmt && \
+    rm -rf /var/lib/apt/lists/*

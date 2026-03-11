@@ -1,3 +1,5 @@
+//go:build !android
+
 package models
 
 import (
@@ -7,59 +9,6 @@ import (
 
 	"gocv.io/x/gocv"
 )
-
-// ItemRepositoryInterface defines the interface for item data access operations.
-// This interface is defined in the models package to avoid circular dependencies.
-type ItemRepositoryInterface interface {
-	Get(name string) (*Item, error)
-	GetAll() map[string]*Item
-	GetAllKeys() []string
-	Set(name string, item *Item) error
-	Delete(name string) error
-	Save() error
-	Count() int
-	GetAllWithProgramPrefix() map[string]*Item
-	GetAllSorted() []string
-	New() *Item
-}
-
-// PointRepositoryInterface defines the interface for Point data access operations.
-// This interface is defined in the models package to avoid circular dependencies.
-type PointRepositoryInterface interface {
-	Get(name string) (*Point, error)
-	GetAll() map[string]*Point
-	GetAllKeys() []string
-	Set(name string, point *Point) error
-	Delete(name string) error
-	Save() error
-	Count() int
-	New() *Point
-}
-
-// SearchAreaRepositoryInterface defines the interface for SearchArea data access operations.
-// This interface is defined in the models package to avoid circular dependencies.
-type SearchAreaRepositoryInterface interface {
-	Get(name string) (*SearchArea, error)
-	GetAll() map[string]*SearchArea
-	GetAllKeys() []string
-	Set(name string, area *SearchArea) error
-	Delete(name string) error
-	Save() error
-	Count() int
-	New() *SearchArea
-}
-
-// ItemRepositoryFactory is a function type that creates ItemRepository instances.
-// This is set by the repositories package to avoid circular dependencies.
-var ItemRepositoryFactory func(*Program) ItemRepositoryInterface
-
-// PointRepositoryFactory is a function type that creates PointRepository instances.
-// This is set by the repositories package to avoid circular dependencies.
-var PointRepositoryFactory func(*Program, string) PointRepositoryInterface
-
-// SearchAreaRepositoryFactory is a function type that creates SearchAreaRepository instances.
-// This is set by the repositories package to avoid circular dependencies.
-var SearchAreaRepositoryFactory func(*Program, string) SearchAreaRepositoryInterface
 
 type Program struct {
 	Name        string
@@ -81,24 +30,6 @@ func (p *Program) GetKey() string {
 // SetKey updates the unique identifier for this Program.
 func (p *Program) SetKey(key string) {
 	p.Name = key
-}
-
-type Item struct {
-	Name     string   `json:"name"`
-	GridSize [2]int   `json:"gridSize"`
-	Tags     []string `json:"tags"`
-	StackMax int      `json:"stackMax"`
-	Merchant string   `json:"merchant"`
-}
-
-// GetKey returns the unique identifier for this Item.
-func (i *Item) GetKey() string {
-	return i.Name
-}
-
-// SetKey updates the unique identifier for this Item.
-func (i *Item) SetKey(key string) {
-	i.Name = key
 }
 
 func NewProgram() *Program {

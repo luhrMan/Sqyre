@@ -2,6 +2,7 @@ package binders
 
 import (
 	"Squire/internal/config"
+	"Squire/internal/desktop"
 	"Squire/internal/models"
 	"Squire/internal/models/repositories"
 	"Squire/internal/services"
@@ -19,8 +20,6 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
-	"github.com/go-vgo/robotgo"
-	hook "github.com/luhrMan/gohook"
 )
 
 func SetEditorUi() {
@@ -381,46 +380,34 @@ func setEditorForms() {
 				content,
 				ui.GetUi().Window,
 			)
-			// Set up a goroutine to detect a click outside the dialog and record the coordinates
 			go func() {
-				adjustedX, adjustedY := 0, 0
-				hook.Register(hook.MouseDown, []string{}, func(e hook.Event) {
-					switch e.Button {
-					case hook.MouseMap["left"]:
-						x, y := robotgo.Location()
-						adjustedX = x
-						adjustedY = y
-						if xEntry, ok := et.PointsTab.Widgets["X"].(*widget.Entry); ok {
-							fyne.DoAndWait(func() {
-								xEntry.SetText(strconv.Itoa(adjustedX))
-							})
-						}
-						if yEntry, ok := et.PointsTab.Widgets["Y"].(*widget.Entry); ok {
-							fyne.DoAndWait(func() {
-								yEntry.SetText(strconv.Itoa(adjustedY))
-							})
-						}
-						if point, ok := et.PointsTab.SelectedItem.(*models.Point); ok {
-							point.X = adjustedX
-							point.Y = adjustedY
-							func() {
-								defer func() {
-									if r := recover(); r != nil {
-										log.Printf("Point: Preview update panic recovered after recording - %v (point: %s)", r, point.Name)
-									}
-								}()
-								ui.GetUi().UpdatePointPreview(point)
-							}()
-						}
-						fyne.DoAndWait(func() {
-							dlg.Dismiss()
-						})
-					default:
-						fyne.DoAndWait(func() {
-							dlg.Dismiss()
-						})
+				var unreg func()
+				unreg = desktop.RegisterMouseDown(func(x, y, button int) {
+					if button != desktop.MouseButtonLeft {
+						fyne.DoAndWait(func() { dlg.Dismiss() })
+						unreg()
+						return
 					}
-					go hook.Unregister(hook.MouseDown, []string{})
+					if xEntry, ok := et.PointsTab.Widgets["X"].(*widget.Entry); ok {
+						fyne.DoAndWait(func() { xEntry.SetText(strconv.Itoa(x)) })
+					}
+					if yEntry, ok := et.PointsTab.Widgets["Y"].(*widget.Entry); ok {
+						fyne.DoAndWait(func() { yEntry.SetText(strconv.Itoa(y)) })
+					}
+					if point, ok := et.PointsTab.SelectedItem.(*models.Point); ok {
+						point.X = x
+						point.Y = y
+						func() {
+							defer func() {
+								if r := recover(); r != nil {
+									log.Printf("Point: Preview update panic recovered after recording - %v (point: %s)", r, point.Name)
+								}
+							}()
+							ui.GetUi().UpdatePointPreview(point)
+						}()
+					}
+					fyne.DoAndWait(func() { dlg.Dismiss() })
+					unreg()
 				})
 			}()
 
@@ -445,24 +432,19 @@ func setEditorForms() {
 			go func() {
 				leftX, topY := 0, 0
 				firstClickDone := false
-				hook.Register(hook.MouseDown, []string{}, func(e hook.Event) {
-					if e.Button != hook.MouseMap["left"] {
+				var unreg func()
+				unreg = desktop.RegisterMouseDown(func(x, y, button int) {
+					if button != desktop.MouseButtonLeft {
 						fyne.DoAndWait(func() { dlg.Dismiss() })
-						go hook.Unregister(hook.MouseDown, []string{})
+						unreg()
 						return
 					}
-					x, y := robotgo.Location()
-					adjX := x
-					adjY := y
 					if !firstClickDone {
-						leftX = adjX
-						topY = adjY
+						leftX, topY = x, y
 						firstClickDone = true
 						return
 					}
-					// Second click: bottom-right corner (normalize in case clicks were reversed)
-					rightX := adjX
-					bottomY := adjY
+					rightX, bottomY := x, y
 					if leftX > rightX {
 						leftX, rightX = rightX, leftX
 					}
@@ -498,7 +480,7 @@ func setEditorForms() {
 						}
 						dlg.Dismiss()
 					})
-					go hook.Unregister(hook.MouseDown, []string{})
+					unreg()
 				})
 			}()
 

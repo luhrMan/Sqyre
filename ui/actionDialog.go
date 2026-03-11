@@ -3,12 +3,12 @@ package ui
 import (
 	"Squire/internal/assets"
 	"Squire/internal/config"
+	"Squire/internal/desktop"
 	"Squire/internal/models/actions"
 	"Squire/internal/models/repositories"
 	"Squire/internal/services"
 	"Squire/ui/custom_widgets"
 	"fmt"
-	"image"
 	"image/color"
 	"slices"
 	"strconv"
@@ -22,10 +22,7 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
-	"github.com/go-vgo/robotgo"
 	"github.com/lithammer/fuzzysearch/fuzzy"
-	hook "github.com/luhrMan/gohook"
-	"gocv.io/x/gocv"
 )
 
 // ShowActionDialog displays a dialog for editing an action.
@@ -266,45 +263,18 @@ func createMoveDialogContent(action *actions.Move) (fyne.CanvasObject, func()) {
 			}
 		}()
 
-		captureImg, err := robotgo.CaptureImg(0, 0, screenWidth, screenHeight)
+		captureImg, err := desktop.CaptureRegion(0, 0, screenWidth, screenHeight)
 		if err != nil || captureImg == nil {
 			pointPreviewImage.Image = nil
 			pointPreviewImage.Refresh()
 			return
 		}
-
-		// Convert to gocv Mat for drawing
-		mat, err := gocv.ImageToMatRGB(captureImg)
+		previewImg, err := desktop.DrawCrosshairOnImage(captureImg, px, py)
 		if err != nil {
 			pointPreviewImage.Image = nil
 			pointPreviewImage.Refresh()
 			return
 		}
-		defer mat.Close()
-
-		// Draw red marker at point coordinates
-		// Draw a circle with crosshair for visibility
-		center := image.Point{X: px, Y: py}
-		redColor := color.RGBA{R: 255, A: 255}
-
-		// Draw circle
-		gocv.Circle(&mat, center, 8, redColor, 2)
-
-		// Draw crosshair lines
-		// Horizontal line
-		gocv.Line(&mat, image.Point{X: px - 15, Y: py}, image.Point{X: px + 15, Y: py}, redColor, 2)
-		// Vertical line
-		gocv.Line(&mat, image.Point{X: px, Y: py - 15}, image.Point{X: px, Y: py + 15}, redColor, 2)
-
-		// Convert back to image.Image
-		previewImg, err := mat.ToImage()
-		if err != nil {
-			pointPreviewImage.Image = nil
-			pointPreviewImage.Refresh()
-			return
-		}
-
-		// Update preview image
 		pointPreviewImage.Image = previewImg
 		pointPreviewImage.Refresh()
 	}
@@ -1103,28 +1073,25 @@ func createWaitForPixelDialogContent(action *actions.WaitForPixel) (fyne.CanvasO
 
 	// Dropper: first click activates; second click (anywhere on screen) records X, Y and color at that pixel
 	dropperBtn := ttwidget.NewButtonWithIcon("", theme.DocumentCreateIcon(), func() {
-		go func() {
-			hook.Register(hook.MouseDown, []string{}, func(e hook.Event) {
-				switch e.Button {
-				case hook.MouseMap["left"]:
-					x, y := robotgo.Location()
-					hex := robotgo.GetPixelColor(x, y)
-					hex = strings.TrimPrefix(strings.ToLower(hex), "#")
-					if len(hex) == 8 {
-						hex = hex[2:]
-					}
-					fyne.Do(func() {
-						xEntry.SetText(fmt.Sprintf("%d", x))
-						yEntry.SetText(fmt.Sprintf("%d", y))
-						colorEntry.SetText(hex)
-						updateSwatch()
-					})
-				default:
-					// right or other: cancel without updating
-				}
-				go hook.Unregister(hook.MouseDown, []string{})
+		var unreg func()
+		unreg = desktop.RegisterMouseDown(func(x, y, button int) {
+			if button != desktop.MouseButtonLeft {
+				unreg()
+				return
+			}
+			hex := desktop.GetPixelColor(x, y)
+			hex = strings.TrimPrefix(strings.ToLower(hex), "#")
+			if len(hex) == 8 {
+				hex = hex[2:]
+			}
+			fyne.Do(func() {
+				xEntry.SetText(fmt.Sprintf("%d", x))
+				yEntry.SetText(fmt.Sprintf("%d", y))
+				colorEntry.SetText(hex)
+				updateSwatch()
 			})
-		}()
+			unreg()
+		})
 	})
 	dropperBtn.SetToolTip("Click Dropper, then click on screen to record X, Y and color at that pixel")
 

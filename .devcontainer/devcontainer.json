@@ -11,7 +11,8 @@
   },
   "containerEnv": {
     "GOFLAGS": "-tags=gocv_specific_modules",
-    "GOTOOLCHAIN": "auto"
+    "GOTOOLCHAIN": "auto",
+    "ANDROID_NDK": "/opt/android-ndk"
   },
   "customizations": {
     "vscode": {

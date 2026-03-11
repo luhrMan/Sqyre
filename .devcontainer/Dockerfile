@@ -17,6 +17,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     pkg-config \
     cmake \
+    ninja-build \
     # OpenGL / Fyne
     libgl1-mesa-dev \
     libglvnd-dev \
@@ -44,6 +45,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libwebp-dev \
     libopenjp2-7-dev \
     && rm -rf /var/lib/apt/lists/*
+
+# Android NDK (for OpenCV-for-Android build and other Android toolchains)
+ARG NDK_REV=r25c
+RUN apt-get update && apt-get install -y --no-install-recommends unzip && \
+    mkdir -p /opt && cd /opt && \
+    curl -sSL "https://dl.google.com/android/repository/android-ndk-${NDK_REV}-linux.zip" -o ndk.zip && \
+    unzip -q ndk.zip && mv android-ndk-* android-ndk && rm ndk.zip && \
+    rm -rf /var/lib/apt/lists/*
+ENV ANDROID_NDK=/opt/android-ndk
 
 # Build OpenCV 4.6.0 from source (Ubuntu 22.04 only ships 4.5.4; gocv v0.43 needs >=4.6)
 ARG OPENCV_VERSION=4.6.0

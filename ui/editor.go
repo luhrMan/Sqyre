@@ -2,13 +2,13 @@ package ui
 
 import (
 	"Squire/internal/config"
+	"Squire/internal/desktop"
 	"Squire/internal/models"
 	"Squire/internal/services"
 	"Squire/ui/custom_widgets"
 	"errors"
 	"fmt"
 	"image"
-	"image/color"
 	"os"
 	"path/filepath"
 	"time"
@@ -22,9 +22,6 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"Squire/ui/completionentry"
-
-	"github.com/go-vgo/robotgo"
-	"gocv.io/x/gocv"
 )
 
 type EditorUi struct {
@@ -329,7 +326,7 @@ func (u *Ui) onAutoPicSave() {
 			}
 		}()
 
-		captureImg, err = robotgo.CaptureImg(lx, ty, w, h)
+		captureImg, err = desktop.CaptureRegion(lx, ty, w, h)
 		if err != nil {
 			dialog.ShowError(fmt.Errorf("AutoPic: Error capturing image - %v (area: %s)", err, searchArea.Name), u.Window)
 			captureImg = nil
@@ -368,7 +365,7 @@ func (u *Ui) onAutoPicSave() {
 			}
 		}()
 
-		if err := robotgo.SavePng(captureImg, fullPath); err != nil {
+		if err := desktop.SavePNG(captureImg, fullPath); err != nil {
 			dialog.ShowError(fmt.Errorf("AutoPic: Error saving image to %s: %v", fullPath, err), u.Window)
 			return
 		}
@@ -418,7 +415,7 @@ func (u *Ui) UpdateAutoPicPreview(searchArea *models.SearchArea) {
 		}
 	}()
 
-	captureImg, err := robotgo.CaptureImg(lx, ty, w, h)
+	captureImg, err := desktop.CaptureRegion(lx, ty, w, h)
 	if err != nil {
 		dialog.ShowError(fmt.Errorf("AutoPic: Error capturing image - %v (area: %s)", err, searchArea.Name), u.Window)
 		captureImg = nil
@@ -520,42 +517,26 @@ func (u *Ui) UpdateSearchAreaPreview(searchArea *models.SearchArea) {
 		}
 	}()
 
-	captureImg, err := robotgo.CaptureImg(0, 0, screenWidth, screenHeight)
+	captureImg, err := desktop.CaptureRegion(0, 0, screenWidth, screenHeight)
 	if err != nil {
 		dialog.ShowError(fmt.Errorf("SearchArea: Error capturing image - %v (area: %s)", err, searchArea.Name), u.Window)
-		captureImg = nil
+		u.clearSearchAreaPreviewImage()
+		return
 	}
-
-	// Validate the captured image
 	if captureImg == nil {
 		dialog.ShowError(fmt.Errorf("SearchArea: Screen capture returned nil image (area: %s)", searchArea.Name), u.Window)
 		u.clearSearchAreaPreviewImage()
 		return
 	}
 
-	// Convert to gocv Mat for drawing
-	mat, err := gocv.ImageToMatRGB(captureImg)
-	if err != nil {
-		dialog.ShowError(fmt.Errorf("SearchArea: Error converting image to Mat - %v (area: %s)", err, searchArea.Name), u.Window)
-		u.clearSearchAreaPreviewImage()
-		return
-	}
-	defer mat.Close()
-
-	// Draw red rectangle showing search area boundaries
 	rect := image.Rect(lx, ty, rx, by)
-	redColor := color.RGBA{R: 255, A: 255}
-	gocv.Rectangle(&mat, rect, redColor, 2)
-
-	// Convert back to image.Image
-	previewImg, err := mat.ToImage()
+	previewImg, err := desktop.DrawRectOnImage(captureImg, rect)
 	if err != nil {
-		dialog.ShowError(fmt.Errorf("SearchArea: Error converting Mat to image - %v (area: %s)", err, searchArea.Name), u.Window)
+		dialog.ShowError(fmt.Errorf("SearchArea: Error drawing rect - %v (area: %s)", err, searchArea.Name), u.Window)
 		u.clearSearchAreaPreviewImage()
 		return
 	}
 
-	// Update preview image
 	if previewImage := u.EditorTabs.SearchAreasTab.previewImage; previewImage != nil {
 		previewImage.Image = previewImg
 		previewImage.Refresh()
@@ -624,50 +605,25 @@ func (u *Ui) UpdatePointPreview(point *models.Point) {
 		}
 	}()
 
-	captureImg, err := robotgo.CaptureImg(0, 0, screenWidth, screenHeight)
+	captureImg, err := desktop.CaptureRegion(0, 0, screenWidth, screenHeight)
 	if err != nil {
 		dialog.ShowError(fmt.Errorf("Point: Error capturing image - %v (point: %s)", err, point.Name), u.Window)
-		captureImg = nil
+		u.clearPointPreviewImage()
+		return
 	}
-	// Validate the captured image
 	if captureImg == nil {
 		dialog.ShowError(fmt.Errorf("Point: Screen capture returned nil image (point: %s)", point.Name), u.Window)
 		u.clearPointPreviewImage()
 		return
 	}
 
-	// Convert to gocv Mat for drawing
-	mat, err := gocv.ImageToMatRGB(captureImg)
+	previewImg, err := desktop.DrawCrosshairOnImage(captureImg, px, py)
 	if err != nil {
-		dialog.ShowError(fmt.Errorf("Point: Error converting image to Mat - %v (point: %s)", err, point.Name), u.Window)
-		u.clearPointPreviewImage()
-		return
-	}
-	defer mat.Close()
-
-	// Draw red marker at point coordinates
-	// Draw a circle with crosshair for visibility
-	center := image.Point{X: px, Y: py}
-	redColor := color.RGBA{R: 255, A: 255}
-
-	// Draw circle
-	gocv.Circle(&mat, center, 8, redColor, 2)
-
-	// Draw crosshair lines
-	// Horizontal line
-	gocv.Line(&mat, image.Point{X: px - 15, Y: py}, image.Point{X: px + 15, Y: py}, redColor, 2)
-	// Vertical line
-	gocv.Line(&mat, image.Point{X: px, Y: py - 15}, image.Point{X: px, Y: py + 15}, redColor, 2)
-
-	// Convert back to image.Image
-	previewImg, err := mat.ToImage()
-	if err != nil {
-		dialog.ShowError(fmt.Errorf("Point: Error converting Mat to image - %v (point: %s)", err, point.Name), u.Window)
+		dialog.ShowError(fmt.Errorf("Point: Error drawing crosshair - %v (point: %s)", err, point.Name), u.Window)
 		u.clearPointPreviewImage()
 		return
 	}
 
-	// Update preview image
 	if previewImage := u.EditorTabs.PointsTab.previewImage; previewImage != nil {
 		previewImage.Image = previewImg
 		fyne.DoAndWait(func() {

@@ -1,6 +1,7 @@
 package binders
 
 import (
+	"Squire/internal/desktop"
 	"Squire/internal/models"
 	"Squire/internal/models/actions"
 	"Squire/internal/models/repositories"
@@ -17,7 +18,6 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
-	"github.com/go-vgo/robotgo"
 	"github.com/google/uuid"
 )
 
@@ -152,8 +152,7 @@ func setMtabSettingsAndWidgets() {
 		gd, _ := strconv.Atoi(s)
 
 		mt.Macro.GlobalDelay = gd
-		robotgo.MouseSleep = gd
-		robotgo.KeySleep = gd
+		desktop.SetMouseKeySleep(gd, gd)
 	}
 	mtabs.BoundGlobalDelayEntry.OnSubmitted = func(s string) {
 		mt := mtabs.SelectedTab()

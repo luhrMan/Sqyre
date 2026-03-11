@@ -1,13 +1,13 @@
 package ui
 
 import (
+	"Squire/internal/desktop"
 	"Squire/internal/models/actions"
 	"strconv"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/dialog"
 	fynetooltip "github.com/dweymouth/fyne-tooltip"
-	"github.com/go-vgo/robotgo"
 )
 
 func (u *Ui) constructMainMenu() *fyne.MainMenu {
@@ -92,11 +92,11 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 
 	computerInfo := fyne.NewMenuItem("Computer info", func() {
 		var str string
-		w, h := robotgo.GetScreenSize()
+		w, h := desktop.ScreenSize()
 		str = str + "Total Screen Size: " + strconv.Itoa(w) + "x" + strconv.Itoa(h) + "\n"
-		for d := range robotgo.DisplaysNum() {
-			_, _, mh, mw := robotgo.GetDisplayBounds(d)
-			str = str + "Monitor " + strconv.Itoa(d+1) + " Size: " + strconv.Itoa(mh) + "x" + strconv.Itoa(mw) + "\n"
+		for d := 0; d < desktop.DisplayCount(); d++ {
+			_, _, mw, mh := desktop.DisplayBounds(d)
+			str = str + "Monitor " + strconv.Itoa(d+1) + " Size: " + strconv.Itoa(mw) + "x" + strconv.Itoa(mh) + "\n"
 		}
 		dialog.ShowInformation("Computer Information", str, u.Window)
 	})

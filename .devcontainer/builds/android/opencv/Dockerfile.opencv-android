@@ -1,0 +1,57 @@
+# Build OpenCV for Android (multiple ABIs) using NDK + CMake.
+# Reference: https://gist.github.com/ogero/c19458cf64bd3e91faae85c3ac887481
+# Adapted for Linux: NDK toolchain, Ninja, OpenCV 4.x.
+#
+# Build from repo root:
+#   docker build -f .devcontainer/builds/android/opencv/Dockerfile.opencv-android \
+#     -t opencv-android:local .devcontainer/builds/android/opencv
+#
+# Or from this directory:
+#   docker build -f Dockerfile.opencv-android -t opencv-android:local .
+
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV ANDROID_NDK=/opt/android-ndk
+ENV OPENCV_VERSION=4.10.0
+ENV CONTRIB_VERSION=4.10.0
+ENV ANDROID_API_LEVEL=21
+
+# NDK r25c (LTS). Zip extracts to android-ndk-r25c.
+ARG NDK_REV=r25c
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        cmake \
+        ninja-build \
+        curl \
+        ca-certificates \
+        unzip \
+        python3 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Download and install Android NDK (command-line only)
+RUN mkdir -p /opt && cd /opt && \
+    curl -sL "https://dl.google.com/android/repository/android-ndk-${NDK_REV}-linux.zip" -o ndk.zip && \
+    unzip -q ndk.zip && \
+    mv android-ndk-* android-ndk && \
+    rm ndk.zip && \
+    ln -sf /opt/android-ndk "$ANDROID_NDK"
+
+COPY build-opencv-android.sh /build-opencv-android.sh
+RUN chmod +x /build-opencv-android.sh
+
+# Build OpenCV for all ABIs (takes a while)
+ENV BUILD_ROOT=/tmp/opencv-android-build
+ENV USE_CONTRIB=1
+
+# Default: output path for artifacts
+ENV OPENCV_ANDROID_SDK=/tmp/opencv-android-build/opencv-android-sdk
+
+# Allow build-arg to override ABIs (e.g. --build-arg ABIS=arm64-v8a for faster build)
+ARG ABIS=armeabi-v7a,arm64-v8a,x86,x86_64
+ENV ABIS=$ABIS
+
+RUN /build-opencv-android.sh
+RUN echo "OpenCV Android SDK at $OPENCV_ANDROID_SDK" && \
+    ls -la "$OPENCV_ANDROID_SDK/native/libs/" 2>/dev/null || true

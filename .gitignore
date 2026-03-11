@@ -21,10 +21,12 @@ sqyre
 /appimage-build/# Linux packaging build artifacts
 .devcontainer/builds/fyne-cross/
 .devcontainer/builds/windows/output/
+.devcontainer/builds/android/output/
 .devcontainer/builds/linux/packaging/appimage/sqyre.AppDir/
 .devcontainer/builds/linux/packaging/appimage/appimage-build/
 .devcontainer/builds/linux/packaging/appimage/*.AppImage
 .devcontainer/builds/linux/packaging/flatpak/build-dir/
 fyne-cross/
 internal/models/repositories/testdata/
-
+.flatpak-builder/
+com.sqyre.app.flatpak

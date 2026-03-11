@@ -1,15 +1,13 @@
-//go:build !android
+//go:build android
 
 package config
 
-import (
-	"strconv"
+import "strconv"
 
-	"github.com/go-vgo/robotgo"
-)
+type displayRect struct{ W, H int }
 
 var (
-	MainMonitorSize       = robotgo.GetDisplayRect(0)
+	MainMonitorSize       = displayRect{W: 1080, H: 1920}
 	MonitorWidth          = MainMonitorSize.W
 	MonitorHeight         = MainMonitorSize.H
 	MainMonitorSizeString = strconv.Itoa(MonitorWidth) + "x" + strconv.Itoa(MonitorHeight)

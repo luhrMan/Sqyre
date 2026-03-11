@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"Squire/internal/desktop"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/data/binding"
@@ -8,7 +10,6 @@ import (
 	"fyne.io/fyne/v2/layout"
 	widget "fyne.io/fyne/v2/widget"
 	fynetooltip "github.com/dweymouth/fyne-tooltip"
-	"github.com/go-vgo/robotgo"
 )
 
 var (
@@ -120,18 +121,18 @@ func (u *Ui) ConstructUi() {
 
 // widget.NewSelect(repositories.ProgramRepo().GetAllAsStringSlice(), func(s string) {}),
 func toggleMousePos() {
-	locX, locY := robotgo.Location()
+	locX, locY := desktop.MousePosition()
 	blocX, blocY := binding.BindInt(&locX), binding.BindInt(&locY)
 	boundLocXLabel.Bind(binding.IntToString(blocX))
 	boundLocYLabel.Bind(binding.IntToString(blocY))
 	go func() {
 		for {
-			robotgo.MilliSleep(100)
-			newLocX, newLocY := robotgo.Location()
+			desktop.MilliSleep(100)
+			newLocX, newLocY := desktop.MousePosition()
 			if locX == newLocX && locY == newLocY {
 				continue
 			}
-			locX, locY = robotgo.Location()
+			locX, locY = desktop.MousePosition()
 			blocX.Reload()
 			blocY.Reload()
 		}
