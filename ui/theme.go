@@ -24,11 +24,13 @@ func NewSqyreTheme() fyne.Theme {
 	return &sqyreTheme{Theme: theme.DefaultTheme()}
 }
 
-// Color returns the sqyre primary for ColorNamePrimary, dimmed primary for ColorNameSelection and ColorNameHover, otherwise the default theme color.
+// Color returns the sqyre primary for ColorNamePrimary and ColorNameSeparator, dimmed primary for ColorNameSelection and ColorNameHover, otherwise the default theme color.
 func (t *sqyreTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVariant) color.Color {
 	switch name {
 	case theme.ColorNamePrimary:
 		return sqyrePrimary
+	case theme.ColorNameSeparator:
+		return sqyreSelection
 	case theme.ColorNameSelection:
 		return sqyreSelection
 	case theme.ColorNameHover:
