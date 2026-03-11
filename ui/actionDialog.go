@@ -49,15 +49,6 @@ func newMultiLineVarEntry() *custom_widgets.VarEntry {
 	return custom_widgets.NewMultiLineVarEntry(currentMacroVariables)
 }
 
-// accordionWithBorder wraps an accordion (or any content) in a 1px stroke border using sqyrePrimary.
-func accordionWithBorder(obj fyne.CanvasObject) fyne.CanvasObject {
-	r := canvas.NewRectangle(color.Transparent)
-	r.StrokeColor = sqyrePrimary
-	r.StrokeWidth = 1
-	r.CornerRadius = theme.InputRadiusSize()
-	return container.NewStack(r, container.NewPadded(obj))
-}
-
 // programListAccordionConfig configures the generic program list accordion builder.
 // Callbacks receive the program and item key; implementors look up the model and invoke dialog-specific logic.
 type programListAccordionConfig struct {
@@ -556,7 +547,7 @@ func createMoveDialogContent(action *actions.Move) (fyne.CanvasObject, func()) {
 	content := container.NewVBox(
 		container.NewHBox(coordsLabel, layout.NewSpacer(), smoothCheck),
 		container.NewHSplit(
-			container.NewBorder(pointsSearchbar, nil, nil, nil, accordionWithBorder(pointsAccordion)),
+			container.NewBorder(pointsSearchbar, nil, nil, nil, pointsAccordion),
 			pointPreviewImage,
 		),
 	)
@@ -694,8 +685,9 @@ func createImageSearchDialogContent(action *actions.ImageSearch) (fyne.CanvasObj
 	colSplitEntry.SetText(fmt.Sprintf("%d", action.ColSplit))
 	toleranceEntry := widget.NewEntry()
 	toleranceEntry.SetText(fmt.Sprintf("%g", action.Tolerance))
-	blurEntry := widget.NewEntry()
-	blurEntry.SetText(fmt.Sprintf("%d", action.Blur))
+	blurMin, blurMax := 1, 21
+	blurIncrementer := custom_widgets.NewIncrementer(action.Blur, 2, &blurMin, &blurMax)
+	blurIncrementer.SetValue(action.Blur) // clamp to 1–21
 	outputXVarEntry := newVarEntry()
 	outputXVarEntry.SetText(action.OutputXVariable)
 	outputXVarEntry.SetPlaceHolder("e.g. foundX (sub-actions also get ${StackMax}, ${Cols}, ${Rows}, ${ItemName}, ${ImagePixelWidth}, ${ImagePixelHeight})")
@@ -837,7 +829,7 @@ func createImageSearchDialogContent(action *actions.ImageSearch) (fyne.CanvasObj
 					widget.NewFormItem("Row Split:", rowSplitEntry),
 					widget.NewFormItem("Col Split:", colSplitEntry),
 					widget.NewFormItem("Tolerance:", toleranceEntry),
-					widget.NewFormItem("Blur:", blurEntry),
+					widget.NewFormItem("Blur:", blurIncrementer),
 					widget.NewFormItem("Output X Variable:", outputXVarEntry),
 					widget.NewFormItem("Output Y Variable:", outputYVarEntry),
 					widget.NewFormItem("", waitTilFoundCheck),
@@ -851,7 +843,7 @@ func createImageSearchDialogContent(action *actions.ImageSearch) (fyne.CanvasObj
 
 	content :=
 		container.NewHSplit(
-			accordionWithBorder(widget.NewAccordion(
+			widget.NewAccordion(
 				widget.NewAccordionItem("Search Areas",
 					container.NewBorder(
 						searchAreasSearchbar, nil, nil, nil,
@@ -864,7 +856,7 @@ func createImageSearchDialogContent(action *actions.ImageSearch) (fyne.CanvasObj
 						itemsAccordion,
 					),
 				),
-			)),
+			),
 			rightPanel,
 		)
 
@@ -879,9 +871,7 @@ func createImageSearchDialogContent(action *actions.ImageSearch) (fyne.CanvasObj
 		if tol, err := strconv.ParseFloat(toleranceEntry.Text, 32); err == nil {
 			action.Tolerance = float32(tol)
 		}
-		if b, err := strconv.Atoi(blurEntry.Text); err == nil {
-			action.Blur = b
-		}
+		action.Blur = blurIncrementer.Value
 		action.OutputXVariable = outputXVarEntry.Text
 		action.OutputYVariable = outputYVarEntry.Text
 		action.WaitTilFound = waitTilFoundCheck.Checked
@@ -967,14 +957,14 @@ func createOcrDialogContent(action *actions.Ocr) (fyne.CanvasObject, func()) {
 	)
 
 	content := container.NewHSplit(
-		accordionWithBorder(widget.NewAccordion(
+		widget.NewAccordion(
 			widget.NewAccordionItem("Search Areas",
 				container.NewBorder(
 					searchAreasSearchbar, nil, nil, nil,
 					searchAreasAccordion,
 				),
 			),
-		)),
+		),
 		form,
 	)
 
@@ -1234,14 +1224,14 @@ func createFindPixelDialogContent(action *actions.FindPixel) (fyne.CanvasObject,
 	)
 
 	content := container.NewHSplit(
-		accordionWithBorder(widget.NewAccordion(
+		widget.NewAccordion(
 			widget.NewAccordionItem("Search Areas",
 				container.NewBorder(
 					searchAreasSearchbar, nil, nil, nil,
 					searchAreasAccordion,
 				),
 			),
-		)),
+		),
 		form,
 	)
 

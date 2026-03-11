@@ -1,0 +1,13 @@
+{{ define "title" }}{{ .Site.Title }}{{ end }}
+{{ define "main" }}
+<article class="home">
+  <h1>{{ .Title }}</h1>
+  <div class="content">
+    {{ .Content }}
+  </div>
+  <div class="cta">
+    <a href="{{ "features/" | relURL }}" class="btn">Features</a>
+    <a href="{{ "build/" | relURL }}" class="btn btn-outline">Build</a>
+  </div>
+</article>
+{{ end }}
