@@ -1,8 +1,9 @@
 {
-  "name": "Sqyre (Linux build)",
+  "name": "Sqyre",
   "build": {
     "dockerfile": "Dockerfile",
-    "context": ".."
+    "context": "..",
+    "target": "with-android"
   },
   "workspaceFolder": "/workspace",
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind",
@@ -11,29 +12,28 @@
   },
   "containerEnv": {
     "GOFLAGS": "-tags=gocv_specific_modules",
-    "GOTOOLCHAIN": "auto",
-    "ANDROID_NDK": "/opt/android-ndk"
+    "GOTOOLCHAIN": "auto"
   },
   "customizations": {
     "vscode": {
       "extensions": [
         "golang.go"
-      ],
-      "tasks": [
-        {
-          "label": "Build Linux",
-          "type": "shell",
-          "command": "go build -o builds/linux ./cmd/sqyre",
-          "group": { "kind": "build", "isDefault": true },
-          "presentation": { "reveal": "silent", "panel": "shared" }
-        },
-        {
-          "label": "Build Linux (current dir)",
-          "type": "shell",
-          "command": "go build -o sqyre ./cmd/sqyre",
-          "group": "build"
-        }
       ]
+      // "tasks": [
+      //   {
+      //     "label": "Build Linux",
+      //     "type": "shell",
+      //     "command": "go build -o builds/linux ./cmd/sqyre",
+      //     "group": { "kind": "build", "isDefault": true },
+      //     "presentation": { "reveal": "silent", "panel": "shared" }
+      //   },
+      //   {
+      //     "label": "Build Linux (current dir)",
+      //     "type": "shell",
+      //     "command": "go build -o sqyre ./cmd/sqyre",
+      //     "group": "build"
+      //   }
+      // ]
     }
   },
   "postCreateCommand": "go mod download",

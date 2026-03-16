@@ -30,10 +30,14 @@ func (u *Ui) constructSettings() fyne.CanvasObject {
 		widget.NewLabel("Appearance settings will appear here."),
 	))
 
-	u.SettingsUi.Content.Content = container.NewVBox(
+	contentCards := []fyne.CanvasObject{
 		u.SettingsUi.GeneralSection,
 		u.SettingsUi.AppearanceSection,
-	)
+	}
+	if permSection := androidPermissionsSection(); permSection != nil {
+		contentCards = append(contentCards, permSection)
+	}
+	u.SettingsUi.Content.Content = container.NewVBox(contentCards...)
 
 	root := container.NewBorder(
 		nil, nil, nil, nil,

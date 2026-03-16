@@ -31,68 +31,54 @@ const (
 	ProgramDelimiter = "~"
 )
 
+// getConfigBaseDirFn is the implementation for getConfigBaseDir. On Android it is
+// set in init() to use app internal storage (see constants_android.go).
+var getConfigBaseDirFn = func() string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		log.Fatalf("Could not get user home directory: %v", err)
+	}
+	return homeDir
+}
+
+func getConfigBaseDir() string {
+	return getConfigBaseDirFn()
+}
+
 // GetIconsPath returns the path to the icons directory in the user's home directory
 // Returns: ~/.sqyre/images/icons/
 func GetIconsPath() string {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		log.Fatalf("Could not get user home directory: %v", err)
-	}
-	return filepath.Join(homeDir, SqyreDir, UserImagesDir, UserIconsDir)
+	return filepath.Join(getConfigBaseDir(), SqyreDir, UserImagesDir, UserIconsDir)
 }
 
 func GetMasksPath() string {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		log.Fatalf("Could not get user home directory: %v", err)
-	}
-	return filepath.Join(homeDir, SqyreDir, UserImagesDir, UserMasksDir)
+	return filepath.Join(getConfigBaseDir(), SqyreDir, UserImagesDir, UserMasksDir)
 }
 
 func GetMetaPath() string {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		log.Fatalf("Could not get user home directory: %v", err)
-	}
-	return filepath.Join(homeDir, SqyreDir, UserImagesDir, UserMetaDir)
+	return filepath.Join(getConfigBaseDir(), SqyreDir, UserImagesDir, UserMetaDir)
 }
 
 func GetAutoPicPath() string {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		log.Fatalf("Could not get user home directory: %v", err)
-	}
-	return filepath.Join(homeDir, SqyreDir, UserImagesDir, UserAutoPicDir)
+	return filepath.Join(getConfigBaseDir(), SqyreDir, UserImagesDir, UserAutoPicDir)
 }
 
 // GetVariablesPath returns the path to the variables directory in the user's home directory
 // Returns: ~/.sqyre/variables/
 func GetVariablesPath() string {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		log.Fatalf("Could not get user home directory: %v", err)
-	}
-	return filepath.Join(homeDir, SqyreDir, UserVariablesDir)
+	return filepath.Join(getConfigBaseDir(), SqyreDir, UserVariablesDir)
 }
 
 // GetDbPath returns the path to the config file in the user's home directory.
 // Returns: ~/.sqyre/db.yaml
 func GetDbPath() string {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		log.Fatalf("Could not get user home directory: %v", err)
-	}
-	return filepath.Join(homeDir, SqyreDir, "db.yaml")
+	return filepath.Join(getConfigBaseDir(), SqyreDir, "db.yaml")
 }
 
 // GetSqyreDir returns the Sqyre application directory in the user's home directory.
 // Returns: ~/.sqyre/
 func GetSqyreDir() string {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		log.Fatalf("Could not get user home directory: %v", err)
-	}
-	return filepath.Join(homeDir, SqyreDir)
+	return filepath.Join(getConfigBaseDir(), SqyreDir)
 }
 
 // InitializeDirectories creates the necessary directories in the user's home directory

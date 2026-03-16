@@ -1,5 +1,6 @@
 # Cross-compile Sqyre for Windows (amd64) with OpenCV + Tesseract.
 # Uses STATIC linking so the exe embeds OpenCV and Tesseract (no separate DLLs).
+# Versions: GO_VERSION – bump when upgrading; keep in sync with main .devcontainer/Dockerfile.
 #
 # Build from repo root:
 #   docker build -f .devcontainer/builds/windows/Dockerfile.windows-amd64 \
@@ -23,7 +24,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY .devcontainer/builds/windows/docker/build-static-libs.sh /build-static-libs.sh
-RUN sed -i 's/\r$//' /build-static-libs.sh && chmod +x /build-static-libs.sh && bash /build-static-libs.sh /usr/local/mingw64-static
+COPY .devcontainer/builds/opencv/windows/build-opencv-windows.sh /build-opencv-windows.sh
+RUN sed -i 's/\r$//' /build-static-libs.sh /build-opencv-windows.sh && chmod +x /build-static-libs.sh /build-opencv-windows.sh && bash /build-static-libs.sh /usr/local/mingw64-static
 
 # Tesseract English trained data (needed at runtime)
 RUN mkdir -p /usr/local/mingw64-static/share/tessdata \

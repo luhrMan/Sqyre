@@ -1,4 +1,5 @@
 # fyne-cross Android image with Go 1.26 (base has 1.24.6; go.mod requires >= 1.25).
+# Versions: GO_VERSION – bump when upgrading; keep in sync with main .devcontainer/Dockerfile.
 #
 # Build from repo root:
 #   docker build -f .devcontainer/builds/android/docker/Dockerfile.android \

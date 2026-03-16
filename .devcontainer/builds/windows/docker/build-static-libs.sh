@@ -186,42 +186,13 @@ mkdir -p "$DESTDIR/lib/pkgconfig"
 cp tesseract.pc "$DESTDIR/lib/pkgconfig/" 2>/dev/null || true
 cd ../..
 
-# ----- OpenCV 4.13.0 -----
+# ----- OpenCV (script from builds/opencv/windows) -----
 # Build ALL modules (including contrib) so that ALL headers are installed.
 # CGO compiles every .cpp file in the gocv package directory regardless of Go
-# build tags, so headers for aruco, dnn, calib3d, etc. must exist even though
-# we only link core + imgproc + imgcodecs at link time (via customenv).
-echo "=== Building OpenCV ==="
-curl -f -sL https://github.com/opencv/opencv/archive/refs/tags/4.13.0.tar.gz -o opencv.tar.gz && tar xzf opencv.tar.gz
-curl -f -sL https://github.com/opencv/opencv_contrib/archive/refs/tags/4.13.0.tar.gz -o opencv_contrib.tar.gz && tar xzf opencv_contrib.tar.gz
-cd opencv-4.13.0
-mkdir build && cd build
-cmake .. $CMAKE_CROSS \
-  -DCMAKE_INSTALL_PREFIX="$DESTDIR" \
-  -DBUILD_SHARED_LIBS=OFF -DBUILD_opencv_apps=OFF -DBUILD_EXAMPLES=OFF -DBUILD_TESTS=OFF -DBUILD_PERF_TESTS=OFF \
-  -DWITH_QT=OFF -DWITH_GTK=OFF -DWITH_IPP=OFF -DWITH_OPENCL=OFF -DWITH_CUDA=OFF \
-  -DWITH_TIFF=OFF -DWITH_WEBP=OFF -DWITH_OPENJPEG=OFF -DWITH_OPENEXR=OFF -DWITH_JASPER=OFF \
-  -DWITH_DSHOW=OFF -DWITH_MSMF=OFF -DWITH_VFW=OFF \
-  -DBUILD_ZLIB=OFF -DBUILD_PNG=OFF -DBUILD_JPEG=OFF \
-  -DZLIB_ROOT="$DESTDIR" \
-  -DPNG_PNG_INCLUDE_DIR="$DESTDIR/include" -DPNG_LIBRARY_RELEASE="$DESTDIR/lib/libpng16.a" \
-  -DJPEG_INCLUDE_DIR="$DESTDIR/include" -DJPEG_LIBRARY="$DESTDIR/lib/libjpeg.a" \
-  -DOPENCV_GENERATE_PKGCONFIG=ON \
-  -DOPENCV_EXTRA_MODULES_PATH=../../opencv_contrib-4.13.0/modules
-make -j$(nproc)
-make install
-cd ../..
-
-# gocv's cgo.go hardcodes versioned lib names for Windows (e.g. -lopencv_core4130).
-# OpenCV installs as libopencv_core.a; create 4130 symlinks so the linker finds them.
-cd "$DESTDIR/lib"
-for f in libopencv_*.a; do
-  [ -f "$f" ] || continue
-  base="${f%.a}"
-  base="${base#lib}"
-  [ -e "lib${base}4130.a" ] || ln -sf "$f" "lib${base}4130.a"
-done
-cd "$BUILD_DIR"
+# build tags, so headers for aruco, dnn, calib3d, etc. must exist.
+# Compiled output lives under /opt/opencv/windows; install goes to DESTDIR.
+mkdir -p /opt/opencv/windows
+bash /build-opencv-windows.sh "$DESTDIR" "/opt/opencv/windows"
 
 echo "=== Static build complete: $DESTDIR ==="
 echo "Libraries:"

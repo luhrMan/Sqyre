@@ -3,8 +3,10 @@
 # Or from this directory: ./build-appimage.sh
 # Uses sqyre.AppDir (set via build-appimage.sh --appdir).
 #
-# Script installs the binary and metadata; appimage-builder then
-# traces the binary and bundles all required .so files (OpenCV, Tesseract, X11, etc.).
+# Bundle OpenCV, Tesseract, and their deps; use host for libs on the AppImage excludelist
+# (libGL, libGLX, libGLdispatch, libX11, libxcb, libX11-xcb, libstdc++, libgcc_s, libz).
+# Only the host's glibc/ld and excludelist libs are used from the system.
+# Script installs the binary and metadata; appimage-builder then traces and bundles .so files.
 # We do not use the recipe "apt" section because appimage-builder has a bug comparing
 # Ubuntu package versions (e.g. "1.22.6ubuntu6") with packaging.version.parse().
 
@@ -38,9 +40,25 @@ script:
     # Tesseract and Leptonica (from system packages)
     cp -aL /usr/lib/x86_64-linux-gnu/libtesseract.so* "$TARGET_APPDIR/usr/lib/" 2>/dev/null || true
     cp -aL /usr/lib/x86_64-linux-gnu/liblept.so* "$TARGET_APPDIR/usr/lib/" 2>/dev/null || true
-    # Transitive deps of OpenCV imgcodecs and Tesseract (image format libs)
-    for dep in libjpeg libpng libtiff libwebp libopenjp2 libIlmImf libHalf; do
+    # Transitive deps of OpenCV imgcodecs, Tesseract, and other bundled libs
+    for dep in libjpeg libpng libtiff libwebp libopenjp2 libIlmImf libHalf libgif libarchive; do
       cp -aL /usr/lib/x86_64-linux-gnu/${dep}*.so* "$TARGET_APPDIR/usr/lib/" 2>/dev/null || true
+    done
+    # X11 (Fyne/GLFW): bundle only libs not on excludelist (host provides libX11, libxcb, libX11-xcb, libGL, libGLX, libGLdispatch)
+    for dep in libXtst libxkbcommon libxkbcommon-x11 libXau libXdmcp libXext; do
+      cp -aL /usr/lib/x86_64-linux-gnu/${dep}*.so* "$TARGET_APPDIR/usr/lib/" 2>/dev/null || true
+    done
+    # Other libs (excludelist: do not bundle libstdc++, libgcc_s, libz — use host)
+    for dep in libgomp libzstd liblzma liblz4 libbz2; do
+      cp -aL /usr/lib/x86_64-linux-gnu/${dep}*.so* "$TARGET_APPDIR/usr/lib/" 2>/dev/null || true
+    done
+    # Image/archive transitive deps (libmd is dependency of libbsd)
+    for dep in libjbig libdeflate libnettle libacl libxml2 libbsd libmd; do
+      cp -aL /usr/lib/x86_64-linux-gnu/${dep}*.so* "$TARGET_APPDIR/usr/lib/" 2>/dev/null || true
+    done
+    # ICU (libxml2 dependency)
+    for dep in libicuuc libicudata libicui18n; do
+      cp -aL /usr/lib/x86_64-linux-gnu/${dep}.so* "$TARGET_APPDIR/usr/lib/" 2>/dev/null || true
     done
 
 AppDir:

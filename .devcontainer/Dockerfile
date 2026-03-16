@@ -1,107 +1,72 @@
-# Dev Container: build Sqyre for Linux. Run the built binary on your host or a Linux VM.
-FROM ubuntu:22.04
+# To reuse this image as base for Android OpenCV build (faster): tag it, e.g. sqyre-dev:latest.
+# Build targets:
+#   devcontainer (default) – Linux build only; no Android NDK.
+#   with-android            – same + Android NDK. Set in devcontainer.json: "build": { "target": "with-android" }
+FROM ubuntu:22.04 AS devcontainer
 
 ARG DEBIAN_FRONTEND=noninteractive
-
-# Go (use full version e.g. 1.24.13; go1.24 is not a valid tarball)
 ARG GO_VERSION=1.26.0
-RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates && \
-    curl -sSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" -o /tmp/go.tgz && \
+ARG OPENCV_VERSION=4.13.0
+
+# -----------------------------------------------------------------------------
+# Stage: toolchain downloads (curl, unzip). Rarely changes.
+# -----------------------------------------------------------------------------
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl ca-certificates unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+# -----------------------------------------------------------------------------
+# Stage: Go
+# -----------------------------------------------------------------------------
+RUN curl -sSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" -o /tmp/go.tgz && \
     tar -C /usr/local -xzf /tmp/go.tgz && rm /tmp/go.tgz && \
     ln -sf /usr/local/go/bin/go /usr/local/bin/go && \
     ln -sf /usr/local/go/bin/gofmt /usr/local/bin/gofmt
-
-# Build deps: C compiler, pkg-config, OpenGL/X11 (Fyne, glfw, robotgo, gohook), Tesseract/Leptonica
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    git \
-    build-essential \
-    pkg-config \
-    cmake \
-    ninja-build \
-    # OpenGL / Fyne
-    libgl1-mesa-dev \
-    libglvnd-dev \
-    libglfw3-dev \
-    libxkbcommon-dev \
-    libxkbcommon-x11-dev \
-    # X11
-    libx11-dev \
-    libx11-xcb-dev \
-    libxext-dev \
-    libxtst-dev \
-    libxcursor-dev \
-    libxrandr-dev \
-    libxinerama-dev \
-    libxxf86vm-dev \
-    libxt-dev \
-    # Tesseract, Leptonica
-    tesseract-ocr \
-    libtesseract-dev \
-    libleptonica-dev \
-    # OpenCV build deps (image format libs)
-    libjpeg-dev \
-    libpng-dev \
-    libtiff-dev \
-    libwebp-dev \
-    libopenjp2-7-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-# Android NDK (for OpenCV-for-Android build and other Android toolchains)
-ARG NDK_REV=r25c
-RUN apt-get update && apt-get install -y --no-install-recommends unzip && \
-    mkdir -p /opt && cd /opt && \
-    curl -sSL "https://dl.google.com/android/repository/android-ndk-${NDK_REV}-linux.zip" -o ndk.zip && \
-    unzip -q ndk.zip && mv android-ndk-* android-ndk && rm ndk.zip && \
-    rm -rf /var/lib/apt/lists/*
-ENV ANDROID_NDK=/opt/android-ndk
-
-# Build OpenCV 4.6.0 from source (Ubuntu 22.04 only ships 4.5.4; gocv v0.43 needs >=4.6)
-ARG OPENCV_VERSION=4.6.0
-RUN curl -sSL "https://github.com/opencv/opencv/archive/${OPENCV_VERSION}.tar.gz" -o /tmp/opencv.tgz && \
-    tar -xzf /tmp/opencv.tgz -C /tmp && rm /tmp/opencv.tgz && \
-    mkdir /tmp/opencv-build && cd /tmp/opencv-build && \
-    cmake /tmp/opencv-${OPENCV_VERSION} \
-      -DCMAKE_BUILD_TYPE=Release \
-      -DCMAKE_INSTALL_PREFIX=/usr/local \
-      -DBUILD_SHARED_LIBS=ON \
-      -DOPENCV_GENERATE_PKGCONFIG=ON \
-      -DBUILD_LIST=core,imgproc,imgcodecs,videoio,highgui,video,calib3d,features2d,objdetect,dnn,photo \
-      -DBUILD_TESTS=OFF \
-      -DBUILD_PERF_TESTS=OFF \
-      -DBUILD_EXAMPLES=OFF \
-      -DBUILD_opencv_apps=OFF \
-      -DWITH_JPEG=ON \
-      -DWITH_PNG=ON \
-      -DWITH_TIFF=ON \
-      -DWITH_WEBP=ON \
-      -DWITH_OPENJPEG=ON \
-      -DWITH_GTK=OFF \
-      -DWITH_QT=OFF \
-    && make -j"$(nproc)" && make install && ldconfig \
-    && rm -rf /tmp/opencv-${OPENCV_VERSION} /tmp/opencv-build
 
 ENV CGO_ENABLED=1
 ENV PATH="/usr/local/go/bin:${PATH}"
 ENV GOPATH=/go
 
-# AppImage builder: deps + pip install (for packaging/AppImageBuilder.yml)
+# -----------------------------------------------------------------------------
+# Stage: build deps for OpenCV + CGO (Fyne, X11, Tesseract, image libs).
+# Add packages here only if needed to build OpenCV or the Go app's C deps.
+# -----------------------------------------------------------------------------
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    binutils \
-    coreutils \
-    desktop-file-utils \
-    fakeroot \
-    fuse \
-    gtk-update-icon-cache \
-    libgdk-pixbuf2.0-dev \
-    patchelf \
-    python3-pip \
-    python3-setuptools \
-    squashfs-tools \
-    strace \
-    util-linux \
-    zsync \
-    && pip3 install appimage-builder \
+    git build-essential pkg-config cmake ninja-build \
+    libgl1-mesa-dev libglvnd-dev libglfw3-dev \
+    libxkbcommon-dev libxkbcommon-x11-dev \
+    libx11-dev libx11-xcb-dev libxext-dev libxtst-dev libxcursor-dev \
+    libxrandr-dev libxinerama-dev libxxf86vm-dev libxt-dev \
+    tesseract-ocr libtesseract-dev libleptonica-dev \
+    libjpeg-dev libpng-dev libtiff-dev libwebp-dev libopenjp2-7-dev libgif-dev \
     && rm -rf /var/lib/apt/lists/*
+
+# -----------------------------------------------------------------------------
+# Stage: fyne-cross (cross-compile Fyne). Pinned for cache; bump when upgrading.
+# -----------------------------------------------------------------------------
+RUN go install github.com/fyne-io/fyne-cross@v1.6.1
+ENV PATH="${PATH}:/go/bin"
+
+# -----------------------------------------------------------------------------
+# Stage: OpenCV from source (slow). Script lives under builds/opencv/linux/.
+# Only rebuilds when OPENCV_VERSION or build-deps change.
+# -----------------------------------------------------------------------------
+COPY .devcontainer/builds/opencv/linux/build-opencv-linux.sh /tmp/build-opencv-linux.sh
+RUN chmod +x /tmp/build-opencv-linux.sh && OPENCV_VERSION=${OPENCV_VERSION} OPENCV_ROOT=/opt/opencv/linux /tmp/build-opencv-linux.sh
+# Point pkg-config and runtime linker at OpenCV under its build folder
+ENV PKG_CONFIG_PATH="/opt/opencv/linux/install/lib/pkgconfig:${PKG_CONFIG_PATH}"
+ENV LD_LIBRARY_PATH="/opt/opencv/linux/install/lib:${LD_LIBRARY_PATH}"
+
+# -----------------------------------------------------------------------------
+# Stage: AppImage / extras. ADD NEW APT PACKAGES HERE so OpenCV is not rebuilt.
+# -----------------------------------------------------------------------------
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    binutils coreutils desktop-file-utils fakeroot fuse gtk-update-icon-cache \
+    libarchive13 libgcc-s1 libgdk-pixbuf2.0-dev libstdc++6 libxcb-xkb1 \
+    patchelf zlib1g python3-pip python3-setuptools squashfs-tools strace util-linux zsync \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip3 install --no-cache-dir appimage-builder
 
 # Nix (for `nix develop` in .devcontainer/builds/linux/nix)
 # Installer expects /nix and group nixbld; create them (we run as root, no sudo).
@@ -114,9 +79,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 #     rm -rf /var/lib/apt/lists/*
 # ENV PATH="/root/.nix-profile/bin:${PATH}"
 
-# fyne-cross for cross-compiling Fyne apps (e.g. Windows from Linux)
-RUN go install github.com/fyne-io/fyne-cross@latest
-ENV PATH="${PATH}:/go/bin"
-
-# Default: build for current (Linux). Binary ends up in workspace for copy-out.
 WORKDIR /workspace
+
+# -----------------------------------------------------------------------------
+# Stage: with-android – devcontainer + Android NDK (optional; use build target).
+# -----------------------------------------------------------------------------
+FROM devcontainer AS with-android
+
+ARG NDK_REV=r25c
+RUN mkdir -p /opt && cd /opt && \
+    curl -sSL "https://dl.google.com/android/repository/android-ndk-${NDK_REV}-linux.zip" -o ndk.zip && \
+    unzip -q ndk.zip && mv android-ndk-* android-ndk && rm ndk.zip
+ENV ANDROID_NDK=/opt/android-ndk

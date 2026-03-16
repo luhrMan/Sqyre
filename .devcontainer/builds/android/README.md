@@ -42,7 +42,13 @@ Output: `fyne-cross/dist/android-<arch>/` and `.devcontainer/builds/android/outp
 
 The GitHub workflow runs `build-android` on push to `main`, producing versioned APKs and attaching them to the release.
 
+## Initialization and packaging
+
+- **App init:** On Android, create the Fyne app with `app.New()` first (inside `fyne.DoAndWait`), then run config/repos and UI. See [ANDROID_INIT.md](ANDROID_INIT.md) for lifecycle and the zipalign requirement.
+- If logcat shows *"please zipalign to 4 bytes"*, align the APK before signing: `zipalign -v 4 in.apk out.apk` (requires Android SDK build-tools).
+
 ## Notes
 
 - The project uses a **custom** fyne-cross Android image (`Dockerfile.android`) that upgrades Go to 1.26 so it satisfies go.mod (≥1.25). If the app uses desktop-only dependencies (e.g. gocv, robotgo), add build tags or constraints so those packages are excluded when building for Android.
 - Android cross-compilation runs only on **amd64** hosts (e.g. GitHub’s `ubuntu-22.04` runners).
+- To build **OpenCV for Android** (optional, for gocv on Android), use the image and scripts under [../opencv/android/](../opencv/android/README.md).

@@ -4,10 +4,7 @@ package services
 
 import (
 	"Squire/internal/models"
-	"errors"
 	"strings"
-
-	"Squire/internal/models/actions"
 )
 
 // Event is a stub type for Android (desktop uses hook.Event).
@@ -43,9 +40,9 @@ func MacroHotkeyCallback(m *models.Macro) func(Event) {
 	return func(Event) {}
 }
 
-func Execute(a actions.ActionInterface, macro ...*models.Macro) error {
-	return errors.New("macro execution not supported on Android")
-}
+// Execute, ActiveWindowNames, RunFocusWindow: see executor_android.go
+
+// Execute is implemented in executor_android.go.
 
 type stubTessClient struct{}
 
@@ -55,10 +52,4 @@ func GetTessClient() *stubTessClient { return nil }
 
 func CloseTessClient() {}
 
-func ActiveWindowNames() ([]string, error) {
-	return nil, errors.New("not supported on Android")
-}
-
-func RunFocusWindow(a *actions.FocusWindow) error {
-	return errors.New("not supported on Android")
-}
+// ActiveWindowNames and RunFocusWindow are implemented in executor_android.go (via android bridge).
