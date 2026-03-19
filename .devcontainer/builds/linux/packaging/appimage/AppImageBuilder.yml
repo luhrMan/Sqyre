@@ -49,7 +49,7 @@ AppDir:
     id: com.sqyre.app
     name: Sqyre
     icon: com.sqyre.app
-    version: "0.5.0"
+    version: "__APP_VERSION__"
     exec: usr/bin/sqyre
     exec_args: "$@"
   files:
@@ -63,4 +63,4 @@ AppDir:
 
 AppImage:
   arch: x86_64
-  file_name: Sqyre-0.5.0-x86_64.AppImage
+  file_name: Sqyre-__APP_VERSION__-x86_64.AppImage
