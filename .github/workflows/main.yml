@@ -20,6 +20,11 @@ jobs:
         id: version
         run: echo "VERSION=$(date +%Y.%m.%d.%H%M)" >> $GITHUB_OUTPUT
 
+      - name: Sync FyneApp.toml with release version
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          sed -i 's/^Version = .*/Version = "'"$VERSION"'"/' FyneApp.toml
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -64,8 +69,8 @@ jobs:
             -e GOFLAGS="-tags=gocv_specific_modules -buildvcs=false" \
             sqyre-linux-build \
             bash -c '.devcontainer/builds/linux/packaging/appimage/build-appimage.sh'
-          # Rename to versioned format
-          mv .devcontainer/builds/linux/packaging/appimage/Sqyre-0.5.0-x86_64.AppImage \
+          # Rename to versioned format (basename matches FyneApp.toml / AppImage recipe)
+          mv .devcontainer/builds/linux/packaging/appimage/Sqyre-${{ steps.version.outputs.VERSION }}-x86_64.AppImage \
              Sqyre-v${{ steps.version.outputs.VERSION }}-x86_64.AppImage
 
       - name: Upload Linux artifacts
@@ -86,6 +91,11 @@ jobs:
       - name: Set version
         id: version
         run: echo "VERSION=$(date +%Y.%m.%d.%H%M)" >> $GITHUB_OUTPUT
+
+      - name: Sync FyneApp.toml with release version
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          sed -i 's/^Version = .*/Version = "'"$VERSION"'"/' FyneApp.toml
 
       - name: Set up Go
         uses: actions/setup-go@v5
