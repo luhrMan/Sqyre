@@ -22,6 +22,7 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+	fynetooltip "github.com/dweymouth/fyne-tooltip"
 	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 	"github.com/go-vgo/robotgo"
 	"github.com/lithammer/fuzzysearch/fuzzy"
@@ -314,8 +315,25 @@ func ShowActionDialog(action actions.ActionInterface, onSave func(actions.Action
 	showCustomActionDialog(u, action, content, saveFunc, onSave)
 }
 
+// actionModalDialog implements dialog.Dialog using widget.NewModalPopUp so content is not
+// inset by fyne dialog.Layout (padWidth/2); the bordered panel can align with the popup edge.
+type actionModalDialog struct {
+	pop *widget.PopUp
+}
+
+func (d *actionModalDialog) Show()                 { d.pop.Show() }
+func (d *actionModalDialog) Hide()                 { d.pop.Hide() }
+func (d *actionModalDialog) Dismiss()              { d.Hide() }
+func (d *actionModalDialog) SetDismissText(string) {}
+func (d *actionModalDialog) SetOnClosed(func())    {}
+func (d *actionModalDialog) Refresh()              { d.pop.Refresh() }
+func (d *actionModalDialog) Resize(s fyne.Size)    { d.pop.Resize(s) }
+func (d *actionModalDialog) MinSize() fyne.Size    { return d.pop.MinSize() }
+
+var _ dialog.Dialog = (*actionModalDialog)(nil)
+
 func showCustomActionDialog(u *Ui, action actions.ActionInterface, content fyne.CanvasObject, saveFunc func(), onSave func(actions.ActionInterface)) {
-	d := u.MainUi.ActionDialog
+	var d *actionModalDialog
 	saveButton := ttwidget.NewButton("Save", func() {
 		saveFunc()
 		if onSave != nil {
@@ -344,23 +362,32 @@ func showCustomActionDialog(u *Ui, action actions.ActionInterface, content fyne.
 		saveButton,
 	)
 
+	titleLabel := widget.NewLabel("Edit Action - " + action.GetType())
+	titleLabel.TextStyle = fyne.TextStyle{Bold: true}
+
 	dialogContent := container.NewBorder(
-		nil,
+		container.NewPadded(titleLabel),
 		buttons,
 		nil,
 		nil,
 		content,
 	)
 
+	th := fyne.CurrentApp().Settings().Theme()
+	v := fyne.CurrentApp().Settings().ThemeVariant()
+	panelBg := canvas.NewRectangle(th.Color(theme.ColorNameOverlayBackground, v))
+	panelBg.CornerRadius = theme.InputRadiusSize()
+
 	border := canvas.NewRectangle(color.Transparent)
 	border.StrokeColor = sqyrePrimary
 	border.StrokeWidth = 2
 	border.CornerRadius = theme.InputRadiusSize()
-	// Padding inside the border (content inset from the stroke); multiple layers for more space
 	innerPadded := container.NewPadded(container.NewPadded(container.NewPadded(container.NewPadded(dialogContent))))
-	borderedDialogContent := container.NewStack(border, innerPadded)
+	borderedDialogContent := container.NewStack(panelBg, border, innerPadded)
 
-	d = dialog.NewCustomWithoutButtons("Edit Action"+" - "+action.GetType(), borderedDialogContent, u.Window)
+	pop := widget.NewModalPopUp(borderedDialogContent, u.Window.Canvas())
+	fynetooltip.AddPopUpToolTipLayer(pop)
+	d = &actionModalDialog{pop: pop}
 	// Store the dialog on MainUi so other parts of the app can reference it
 	if u != nil && u.MainUi != nil {
 		u.MainUi.ActionDialog = d
