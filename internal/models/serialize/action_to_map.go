@@ -102,6 +102,9 @@ func ActionToMap(action actions.ActionInterface) (map[string]any, error) {
 		if a.WaitTilFound {
 			m["waittilfound"] = a.WaitTilFound
 			m["waittilfoundseconds"] = a.WaitTilFoundSeconds
+			if a.WaitTilFoundIntervalMs > 0 {
+				m["waittilfoundintervalms"] = a.WaitTilFoundIntervalMs
+			}
 		}
 		subs, err := subActionsToMaps(a.GetSubActions())
 		if err != nil {

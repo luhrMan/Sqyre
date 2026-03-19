@@ -95,7 +95,7 @@ func buildProgramListAccordionWithSearchbar(cfg programListAccordionConfig) (*wi
 				}
 				list.Unselect(id)
 			}
-			acc.Append(widget.NewAccordionItem(prog.Name, list))
+			acc.Append(widget.NewAccordionItem(fmt.Sprintf("%s (%d)", prog.Name, len(filtered)), list))
 		}
 		acc.Refresh()
 	}
@@ -683,11 +683,12 @@ func createImageSearchDialogContent(action *actions.ImageSearch) (fyne.CanvasObj
 	rowSplitEntry.SetText(fmt.Sprintf("%d", action.RowSplit))
 	colSplitEntry := widget.NewEntry()
 	colSplitEntry.SetText(fmt.Sprintf("%d", action.ColSplit))
-	toleranceEntry := widget.NewEntry()
-	toleranceEntry.SetText(fmt.Sprintf("%g", action.Tolerance))
+	toleranceMin, toleranceMax := 0.0, 1.0
+	toleranceIncrementer := custom_widgets.NewFloatIncrementer(float64(action.Tolerance), 0.01, &toleranceMin, &toleranceMax, 2)
+	toleranceIncrementer.SetValue(float64(action.Tolerance))
 	blurMin, blurMax := 1, 21
 	blurIncrementer := custom_widgets.NewIncrementer(action.Blur, 2, &blurMin, &blurMax)
-	blurIncrementer.SetValue(action.Blur) // clamp to 1–21
+	blurIncrementer.SetValue(action.Blur)
 	outputXVarEntry := newVarEntry()
 	outputXVarEntry.SetText(action.OutputXVariable)
 	outputXVarEntry.SetPlaceHolder("e.g. foundX (sub-actions also get ${StackMax}, ${Cols}, ${Rows}, ${ItemName}, ${ImagePixelWidth}, ${ImagePixelHeight})")
@@ -696,20 +697,31 @@ func createImageSearchDialogContent(action *actions.ImageSearch) (fyne.CanvasObj
 	outputYVarEntry.SetPlaceHolder("e.g. foundY")
 	waitTilFoundCheck := widget.NewCheck("Wait until found", nil)
 	waitTilFoundCheck.SetChecked(action.WaitTilFound)
-	waitTilFoundSecondsEntry := widget.NewEntry()
+	waitTilFoundSecondsMin := 0
+	waitTilFoundSecondsIncrementer := custom_widgets.NewIncrementer(action.WaitTilFoundSeconds, 1, &waitTilFoundSecondsMin, nil)
 	if action.WaitTilFoundSeconds <= 0 {
-		waitTilFoundSecondsEntry.SetText("10")
+		waitTilFoundSecondsIncrementer.SetValue(10)
 	} else {
-		waitTilFoundSecondsEntry.SetText(fmt.Sprintf("%d", action.WaitTilFoundSeconds))
+		waitTilFoundSecondsIncrementer.SetValue(action.WaitTilFoundSeconds)
 	}
-	waitTilFoundSecondsEntry.SetPlaceHolder("Seconds to keep trying if not found")
-	waitTilFoundIntervalEntry := widget.NewEntry()
+	waitTilFoundIntervalMin := 100
+	waitTilFoundIntervalIncrementer := custom_widgets.NewIncrementer(action.WaitTilFoundIntervalMs, 100, &waitTilFoundIntervalMin, nil)
 	if action.WaitTilFoundIntervalMs < 100 {
-		waitTilFoundIntervalEntry.SetText("100")
+		waitTilFoundIntervalIncrementer.SetValue(100)
 	} else {
-		waitTilFoundIntervalEntry.SetText(fmt.Sprintf("%d", action.WaitTilFoundIntervalMs))
+		waitTilFoundIntervalIncrementer.SetValue(action.WaitTilFoundIntervalMs)
 	}
-	waitTilFoundIntervalEntry.SetPlaceHolder("Milliseconds between retries (default 100)")
+	setWaitTilFoundEntriesEnabled := func(enabled bool) {
+		if enabled {
+			waitTilFoundSecondsIncrementer.Enable()
+			waitTilFoundIntervalIncrementer.Enable()
+			return
+		}
+		waitTilFoundSecondsIncrementer.Disable()
+		waitTilFoundIntervalIncrementer.Disable()
+	}
+	waitTilFoundCheck.OnChanged = setWaitTilFoundEntriesEnabled
+	setWaitTilFoundEntriesEnabled(waitTilFoundCheck.Checked)
 
 	// Temporary storage for changes (only applied on save)
 	tempSearchArea := action.SearchArea
@@ -828,13 +840,13 @@ func createImageSearchDialogContent(action *actions.ImageSearch) (fyne.CanvasObj
 					widget.NewFormItem("Name:", nameEntry),
 					widget.NewFormItem("Row Split:", rowSplitEntry),
 					widget.NewFormItem("Col Split:", colSplitEntry),
-					widget.NewFormItem("Tolerance:", toleranceEntry),
-					widget.NewFormItem("Blur:", blurIncrementer),
+					widget.NewFormItem("Tolerance:", toleranceIncrementer),
+					widget.NewFormItem("Blur:", container.NewVBox(blurIncrementer, layout.NewSpacer())),
 					widget.NewFormItem("Output X Variable:", outputXVarEntry),
 					widget.NewFormItem("Output Y Variable:", outputYVarEntry),
 					widget.NewFormItem("", waitTilFoundCheck),
-					widget.NewFormItem("Timeout (seconds):", waitTilFoundSecondsEntry),
-					widget.NewFormItem("Search interval (ms):", waitTilFoundIntervalEntry),
+					widget.NewFormItem("Timeout (seconds):", waitTilFoundSecondsIncrementer),
+					widget.NewFormItem("Search interval (ms):", waitTilFoundIntervalIncrementer),
 				),
 			),
 			previewBox,
@@ -868,18 +880,16 @@ func createImageSearchDialogContent(action *actions.ImageSearch) (fyne.CanvasObj
 		if cs, err := strconv.Atoi(colSplitEntry.Text); err == nil {
 			action.ColSplit = cs
 		}
-		if tol, err := strconv.ParseFloat(toleranceEntry.Text, 32); err == nil {
-			action.Tolerance = float32(tol)
-		}
+		action.Tolerance = float32(toleranceIncrementer.Value)
 		action.Blur = blurIncrementer.Value
 		action.OutputXVariable = outputXVarEntry.Text
 		action.OutputYVariable = outputYVarEntry.Text
 		action.WaitTilFound = waitTilFoundCheck.Checked
-		if s, err := strconv.Atoi(waitTilFoundSecondsEntry.Text); err == nil && s >= 0 {
-			action.WaitTilFoundSeconds = s
+		if waitTilFoundSecondsIncrementer.Value >= 0 {
+			action.WaitTilFoundSeconds = waitTilFoundSecondsIncrementer.Value
 		}
-		if ms, err := strconv.Atoi(waitTilFoundIntervalEntry.Text); err == nil && ms >= 0 {
-			action.WaitTilFoundIntervalMs = ms
+		if waitTilFoundIntervalIncrementer.Value >= 0 {
+			action.WaitTilFoundIntervalMs = waitTilFoundIntervalIncrementer.Value
 		}
 		// Apply temporary changes
 		action.SearchArea = tempSearchArea
@@ -930,13 +940,31 @@ func createOcrDialogContent(action *actions.Ocr) (fyne.CanvasObject, func()) {
 	outputYVarEntry.SetPlaceHolder("e.g. foundY")
 	waitTilFoundCheck := widget.NewCheck("Wait until found", nil)
 	waitTilFoundCheck.SetChecked(action.WaitTilFound)
-	waitTilFoundSecondsEntry := widget.NewEntry()
+	waitTilFoundSecondsMin := 0
+	waitTilFoundSecondsIncrementer := custom_widgets.NewIncrementer(action.WaitTilFoundSeconds, 1, &waitTilFoundSecondsMin, nil)
 	if action.WaitTilFoundSeconds <= 0 {
-		waitTilFoundSecondsEntry.SetText("10")
+		waitTilFoundSecondsIncrementer.SetValue(10)
 	} else {
-		waitTilFoundSecondsEntry.SetText(fmt.Sprintf("%d", action.WaitTilFoundSeconds))
+		waitTilFoundSecondsIncrementer.SetValue(action.WaitTilFoundSeconds)
 	}
-	waitTilFoundSecondsEntry.SetPlaceHolder("Seconds to keep trying if not found")
+	waitTilFoundIntervalMin := 0
+	waitTilFoundIntervalIncrementer := custom_widgets.NewIncrementer(action.WaitTilFoundIntervalMs, 100, &waitTilFoundIntervalMin, nil)
+	if action.WaitTilFoundIntervalMs < 100 {
+		waitTilFoundIntervalIncrementer.SetValue(100)
+	} else {
+		waitTilFoundIntervalIncrementer.SetValue(action.WaitTilFoundIntervalMs)
+	}
+	setWaitTilFoundEntriesEnabled := func(enabled bool) {
+		if enabled {
+			waitTilFoundSecondsIncrementer.Enable()
+			waitTilFoundIntervalIncrementer.Enable()
+			return
+		}
+		waitTilFoundSecondsIncrementer.Disable()
+		waitTilFoundIntervalIncrementer.Disable()
+	}
+	waitTilFoundCheck.OnChanged = setWaitTilFoundEntriesEnabled
+	setWaitTilFoundEntriesEnabled(waitTilFoundCheck.Checked)
 
 	// Temporary storage for changes (only applied on save)
 	tempSearchArea := action.SearchArea
@@ -953,7 +981,8 @@ func createOcrDialogContent(action *actions.Ocr) (fyne.CanvasObject, func()) {
 		widget.NewFormItem("Output X Variable:", outputXVarEntry),
 		widget.NewFormItem("Output Y Variable:", outputYVarEntry),
 		widget.NewFormItem("", waitTilFoundCheck),
-		widget.NewFormItem("Timeout (seconds):", waitTilFoundSecondsEntry),
+		widget.NewFormItem("Timeout (seconds):", waitTilFoundSecondsIncrementer),
+		widget.NewFormItem("Search interval (ms):", waitTilFoundIntervalIncrementer),
 	)
 
 	content := container.NewHSplit(
@@ -975,8 +1004,11 @@ func createOcrDialogContent(action *actions.Ocr) (fyne.CanvasObject, func()) {
 		action.OutputXVariable = outputXVarEntry.Text
 		action.OutputYVariable = outputYVarEntry.Text
 		action.WaitTilFound = waitTilFoundCheck.Checked
-		if s, err := strconv.Atoi(waitTilFoundSecondsEntry.Text); err == nil && s >= 0 {
-			action.WaitTilFoundSeconds = s
+		if waitTilFoundSecondsIncrementer.Value >= 0 {
+			action.WaitTilFoundSeconds = waitTilFoundSecondsIncrementer.Value
+		}
+		if waitTilFoundIntervalIncrementer.Value >= 0 {
+			action.WaitTilFoundIntervalMs = waitTilFoundIntervalIncrementer.Value
 		}
 		action.SearchArea = tempSearchArea
 	}
@@ -1391,152 +1423,3 @@ func createRunMacroDialogContent(action *actions.RunMacro) (fyne.CanvasObject, f
 
 	return content, saveFunc
 }
-
-// func createCalibrationDialogContent(action *actions.Calibration) (fyne.CanvasObject, func()) {
-// 	nameEntry := widget.NewEntry()
-// 	nameEntry.SetText(action.Name)
-// 	programEntry := widget.NewEntry()
-// 	programEntry.SetText(action.ProgramName)
-// 	programEntry.SetPlaceHolder("Program name (e.g. from Programs tab)")
-// 	resolutionEntry := widget.NewEntry()
-// 	resolutionEntry.SetText(action.ResolutionKey)
-// 	resolutionEntry.SetPlaceHolder("Leave empty for current monitor")
-// 	rowSplitEntry := widget.NewEntry()
-// 	rowSplitEntry.SetText(fmt.Sprintf("%d", action.RowSplit))
-// 	colSplitEntry := widget.NewEntry()
-// 	colSplitEntry.SetText(fmt.Sprintf("%d", action.ColSplit))
-// 	toleranceEntry := widget.NewEntry()
-// 	toleranceEntry.SetText(fmt.Sprintf("%g", action.Tolerance))
-// 	blurEntry := widget.NewEntry()
-// 	blurEntry.SetText(fmt.Sprintf("%d", action.Blur))
-
-// 	tempSearchArea := action.SearchArea
-// 	tempTargets := slices.Clone(action.Targets)
-
-// 	// Search area selector: pick program then area name
-// 	searchAreaProgramSelect := widget.NewSelect(repositories.ProgramRepo().GetAllKeys(), nil)
-// 	if action.ProgramName != "" {
-// 		searchAreaProgramSelect.SetSelected(action.ProgramName)
-// 	} else if len(repositories.ProgramRepo().GetAllKeys()) > 0 {
-// 		searchAreaProgramSelect.SetSelected(repositories.ProgramRepo().GetAllKeys()[0])
-// 	}
-// 	var searchAreaNameSelect *widget.Select
-// 	refreshSearchAreaNames := func() {
-// 		pname := searchAreaProgramSelect.Selected
-// 		if pname == "" {
-// 			return
-// 		}
-// 		p, _ := repositories.ProgramRepo().Get(pname)
-// 		if p == nil {
-// 			return
-// 		}
-// 		keys := p.SearchAreaRepo(config.MainMonitorSizeString).GetAllKeys()
-// 		if searchAreaNameSelect == nil {
-// 			searchAreaNameSelect = widget.NewSelect(keys, func(s string) {
-// 				sa, _ := p.SearchAreaRepo(config.MainMonitorSizeString).Get(s)
-// 				if sa != nil {
-// 					tempSearchArea = actions.SearchArea{Name: sa.Name, LeftX: sa.LeftX, TopY: sa.TopY, RightX: sa.RightX, BottomY: sa.BottomY}
-// 				}
-// 			})
-// 		} else {
-// 			searchAreaNameSelect.Options = keys
-// 			searchAreaNameSelect.Refresh()
-// 		}
-// 		if action.SearchArea.Name != "" {
-// 			for _, k := range keys {
-// 				if k == action.SearchArea.Name {
-// 					searchAreaNameSelect.SetSelected(k)
-// 					break
-// 				}
-// 			}
-// 		}
-// 	}
-// 	searchAreaProgramSelect.OnChanged = func(string) { refreshSearchAreaNames() }
-// 	refreshSearchAreaNames()
-
-// 	// Targets list
-// 	targetsList := widget.NewList(
-// 		func() int { return len(tempTargets) },
-// 		func() fyne.CanvasObject {
-// 			return container.NewHBox(
-// 				widget.NewEntry(),
-// 				widget.NewSelect([]string{"point", "searcharea"}, nil),
-// 				widget.NewEntry(),
-// 			)
-// 		},
-// 		func(id widget.ListItemID, co fyne.CanvasObject) {
-// 			row := co.(*fyne.Container).Objects
-// 			if id < len(tempTargets) {
-// 				t := tempTargets[id]
-// 				row[0].(*widget.Entry).SetText(t.OutputName)
-// 				row[1].(*widget.Select).SetSelected(t.OutputType)
-// 				if row[1].(*widget.Select).Selected == "" {
-// 					row[1].(*widget.Select).SetSelected("point")
-// 				}
-// 				row[2].(*widget.Entry).SetText(t.Target)
-// 			}
-// 			i := id
-// 			row[0].(*widget.Entry).OnChanged = func(s string) {
-// 				if i < len(tempTargets) {
-// 					tempTargets[i].OutputName = s
-// 				}
-// 			}
-// 			row[1].(*widget.Select).OnChanged = func(s string) {
-// 				if i < len(tempTargets) {
-// 					tempTargets[i].OutputType = s
-// 				}
-// 			}
-// 			row[2].(*widget.Entry).OnChanged = func(s string) {
-// 				if i < len(tempTargets) {
-// 					tempTargets[i].Target = s
-// 				}
-// 			}
-// 		},
-// 	)
-// 	addTargetBtn := ttwidget.NewButton("Add target", func() {
-// 		tempTargets = append(tempTargets, actions.CalibrationTarget{OutputType: "point"})
-// 		targetsList.Refresh()
-// 	})
-// 	content := container.NewVBox(
-// 		widget.NewForm(
-// 			widget.NewFormItem("Name:", nameEntry),
-// 			widget.NewFormItem("Program name:", programEntry),
-// 			widget.NewFormItem("Resolution (optional):", resolutionEntry),
-// 			widget.NewFormItem("Search area (optional) — program:", searchAreaProgramSelect),
-// 		),
-// 	)
-// 	if searchAreaNameSelect != nil {
-// 		content.Add(widget.NewForm(widget.NewFormItem("Search area name:", searchAreaNameSelect)))
-// 	}
-// 	content.Add(widget.NewForm(
-// 		widget.NewFormItem("Row split:", rowSplitEntry),
-// 		widget.NewFormItem("Col split:", colSplitEntry),
-// 		widget.NewFormItem("Tolerance:", toleranceEntry),
-// 		widget.NewFormItem("Blur:", blurEntry),
-// 	))
-// 	content.Add(widget.NewLabel("Calibration targets (output name, type, image target e.g. program|item):"))
-// 	content.Add(container.NewBorder(nil, nil, nil, addTargetBtn, targetsList))
-// 	content.Add(layout.NewSpacer())
-
-// 	saveFunc := func() {
-// 		action.Name = nameEntry.Text
-// 		action.ProgramName = programEntry.Text
-// 		action.ResolutionKey = strings.TrimSpace(resolutionEntry.Text)
-// 		action.SearchArea = tempSearchArea
-// 		action.Targets = tempTargets
-// 		if n, err := strconv.Atoi(rowSplitEntry.Text); err == nil {
-// 			action.RowSplit = n
-// 		}
-// 		if n, err := strconv.Atoi(colSplitEntry.Text); err == nil {
-// 			action.ColSplit = n
-// 		}
-// 		if f, err := strconv.ParseFloat(toleranceEntry.Text, 32); err == nil {
-// 			action.Tolerance = float32(f)
-// 		}
-// 		if n, err := strconv.Atoi(blurEntry.Text); err == nil {
-// 			action.Blur = n
-// 		}
-// 	}
-
-// 	return content, saveFunc
-// }

@@ -336,8 +336,12 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 		}
 		if node.WaitTilFound && node.WaitTilFoundSeconds > 0 {
 			deadline := time.Now().Add(time.Duration(node.WaitTilFoundSeconds) * time.Second)
+			intervalMs := node.WaitTilFoundIntervalMs
+			if intervalMs <= 0 {
+				intervalMs = 500
+			}
 			for !strings.Contains(foundText, node.Target) && time.Now().Before(deadline) {
-				time.Sleep(500 * time.Millisecond)
+				time.Sleep(time.Duration(intervalMs) * time.Millisecond)
 				foundText, centerX, centerY, err = OCR(node, macro)
 				if err != nil {
 					log.Println(err)

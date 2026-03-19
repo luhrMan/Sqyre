@@ -19,8 +19,9 @@ type Ocr struct {
 	MinThreshold        int
 	Resize              float64
 	Grayscale           bool
-	WaitTilFound        bool `mapstructure:"waittilfound"`        // If true, retry until target text found or timeout
-	WaitTilFoundSeconds int  `mapstructure:"waittilfoundseconds"` // Max seconds to keep trying when WaitTilFound (then continue without match)
+	WaitTilFound          bool `mapstructure:"waittilfound"`            // If true, retry until target text found or timeout
+	WaitTilFoundSeconds   int  `mapstructure:"waittilfoundseconds"`     // Max seconds to keep trying when WaitTilFound (then continue without match)
+	WaitTilFoundIntervalMs int `mapstructure:"waittilfoundintervalms"`  // Milliseconds between retries when WaitTilFound (0 = default 500ms)
 	*AdvancedAction     `yaml:",inline" mapstructure:",squash"`
 }
 

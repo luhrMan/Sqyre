@@ -3,6 +3,8 @@ package ui
 import (
 	"log"
 
+	"Sqyre/ui/custom_widgets"
+
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
 )
@@ -12,17 +14,21 @@ type MacroTabs struct {
 
 	BoundMacroListWidget  *widget.List
 	MacroNameEntry        *widget.Entry
-	BoundGlobalDelayEntry *widget.Entry
+	BoundGlobalDelayEntry *custom_widgets.Incrementer
+	globalDelayMin        int
+	globalDelayMax        int
 	MacroHotkeyEntry      *widget.Entry
 }
 
 func NewMacroTabs() *MacroTabs {
 	t := &MacroTabs{
-		BoundMacroListWidget:  &widget.List{},
-		MacroNameEntry:        widget.NewEntry(),
-		BoundGlobalDelayEntry: widget.NewEntry(),
-		MacroHotkeyEntry:      widget.NewEntry(),
+		BoundMacroListWidget: &widget.List{},
+		MacroNameEntry:       widget.NewEntry(),
+		globalDelayMin:       0,
+		globalDelayMax:       1000,
+		MacroHotkeyEntry:     widget.NewEntry(),
 	}
+	t.BoundGlobalDelayEntry = custom_widgets.NewIncrementer(0, 1, &t.globalDelayMin, &t.globalDelayMax)
 	t.ExtendBaseWidget(t)
 
 	return t

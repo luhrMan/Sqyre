@@ -254,6 +254,7 @@ func rebuildProgramAccordionItem(accordion *widget.Accordion, program *models.Pr
 		}
 	}
 	accordionItem := createProgramAccordionItem(program, filterText)
+	accordion.Items[itemIndex].Title = accordionItem.Title
 	accordion.Items[itemIndex].Detail = accordionItem.Detail
 	accordion.Items[itemIndex].Detail.Refresh()
 }
@@ -507,9 +508,8 @@ func showMaskSelectionPopup() {
 			maskList.ScrollToTop()
 		}
 
-		_ = programName
 		acc.Append(widget.NewAccordionItem(
-			programName,
+			fmt.Sprintf("%s (%d)", programName, len(allKeys)),
 			container.NewBorder(searchbar, nil, nil, nil, maskList),
 		))
 	}

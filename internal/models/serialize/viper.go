@@ -271,6 +271,16 @@ func (s *serializer) CreateActionFromMap(rawMap map[string]any, parent actions.A
 					oc.WaitTilFoundSeconds = int(s)
 				}
 			}
+			if v := rawMap["waittilfoundintervalms"]; v != nil {
+				switch ms := v.(type) {
+				case int:
+					oc.WaitTilFoundIntervalMs = ms
+				case int64:
+					oc.WaitTilFoundIntervalMs = int(ms)
+				case float64:
+					oc.WaitTilFoundIntervalMs = int(ms)
+				}
+			}
 		}
 	case "setvariable":
 		action = actions.NewSetVariable(rawMap["variablename"].(string), rawMap["value"])
