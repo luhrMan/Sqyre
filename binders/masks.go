@@ -119,7 +119,7 @@ func setAccordionMasksLists(acc *widget.Accordion) {
 			markMasksClean()
 		}
 
-		programMaskListWidget := *widget.NewAccordionItem(p.Name, lists.masks)
+		programMaskListWidget := *widget.NewAccordionItem(fmt.Sprintf("%s (%d)", p.Name, len(filtered)), lists.masks)
 		ui.GetUi().EditorTabs.MasksTab.Widgets[p.Name+"-list"] = lists.masks
 		acc.Append(&programMaskListWidget)
 	}

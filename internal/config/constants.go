@@ -41,6 +41,10 @@ const (
 
 	// Fyne preference keys
 	PrefSaveMetaImages = "save_meta_images"
+	PrefWindowX        = "window_x"
+	PrefWindowY        = "window_y"
+	PrefWindowWidth    = "window_width"
+	PrefWindowHeight   = "window_height"
 
 	//since I have refactored the code to account for multiple programs at once,
 	// I need to append the program name to the program properties names,

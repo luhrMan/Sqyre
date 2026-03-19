@@ -115,7 +115,7 @@ func setAccordionSearchAreasLists(acc *widget.Accordion) {
 		}
 
 		programSAListWidget := *widget.NewAccordionItem(
-			p.Name,
+			fmt.Sprintf("%s (%d)", p.Name, len(filtered)),
 			lists.searchareas,
 		)
 		ui.GetUi().EditorTabs.SearchAreasTab.Widgets[p.Name+"-list"] = lists.searchareas
@@ -194,7 +194,7 @@ func setAccordionPointsLists(acc *widget.Accordion) {
 			}
 		}
 
-		programPointListWidget := *widget.NewAccordionItem(p.Name, lists.points)
+		programPointListWidget := *widget.NewAccordionItem(fmt.Sprintf("%s (%d)", p.Name, len(filtered)), lists.points)
 		ui.GetUi().EditorTabs.PointsTab.Widgets[p.Name+"-list"] = lists.points
 		acc.Append(&programPointListWidget)
 	}
@@ -287,7 +287,7 @@ func setAccordionAutoPicSearchAreasLists(acc *widget.Accordion) {
 			}()
 		}
 
-		programSAListWidget := *widget.NewAccordionItem(p.Name, lists.searchareas)
+		programSAListWidget := *widget.NewAccordionItem(fmt.Sprintf("%s (%d)", p.Name, len(filtered)), lists.searchareas)
 		ui.GetUi().EditorTabs.AutoPicTab.Widgets[p.Name+"-list"] = lists.searchareas
 		acc.Append(&programSAListWidget)
 	}
