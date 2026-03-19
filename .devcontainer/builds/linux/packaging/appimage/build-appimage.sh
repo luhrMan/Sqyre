@@ -13,7 +13,9 @@ if [ -z "$APP_VERSION" ]; then
   exit 1
 fi
 
-RECIPE_TMP="$(mktemp)"
+# Recipe must live under this directory: appimage-builder sets SOURCE_DIR to the
+# recipe file's parent. A /tmp path makes SOURCE_DIR=/tmp and breaks `go build`.
+RECIPE_TMP="$(mktemp -p "$SCRIPT_DIR" .AppImageBuilder.XXXXXX.yml)"
 trap 'rm -f "$RECIPE_TMP"' EXIT
 sed "s#__APP_VERSION__#$APP_VERSION#g" "$SCRIPT_DIR/AppImageBuilder.yml" > "$RECIPE_TMP"
 
