@@ -10,7 +10,6 @@ import (
 	"errors"
 	"log"
 	"slices"
-	"strconv"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -134,7 +133,7 @@ func setMtabSettingsAndWidgets() {
 		}
 
 		mtabs.MacroNameEntry.SetText(m.Name)
-		mtabs.BoundGlobalDelayEntry.SetText(strconv.Itoa(m.GlobalDelay))
+		mtabs.BoundGlobalDelayEntry.SetValue(m.GlobalDelay)
 
 		mtabs.MacroHotkeyEntry.SetText(services.ReverseParseMacroHotkey(m.Hotkey))
 	}
@@ -185,22 +184,14 @@ func setMtabSettingsAndWidgets() {
 		mtabs.BoundMacroListWidget.Refresh()
 		mtabs.Refresh()
 	}
-	mtabs.BoundGlobalDelayEntry.OnChanged = func(s string) {
+	mtabs.BoundGlobalDelayEntry.OnChanged = func(gd int) {
 		mt := mtabs.SelectedTab()
 		if mt == nil {
 			return
 		}
-		gd, _ := strconv.Atoi(s)
-
 		mt.Macro.GlobalDelay = gd
 		robotgo.MouseSleep = gd
 		robotgo.KeySleep = gd
-	}
-	mtabs.BoundGlobalDelayEntry.OnSubmitted = func(s string) {
-		mt := mtabs.SelectedTab()
-		if mt == nil {
-			return
-		}
 		repositories.MacroRepo().Set(mt.Macro.Name, mt.Macro)
 	}
 }

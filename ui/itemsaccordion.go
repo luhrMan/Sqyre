@@ -5,6 +5,7 @@ import (
 	"Sqyre/internal/config"
 	"Sqyre/internal/models"
 	"Sqyre/internal/services"
+	"fmt"
 	"image/color"
 	"slices"
 
@@ -311,7 +312,7 @@ func CreateProgramAccordionItem(opts ItemsAccordionOptions) (*widget.AccordionIt
 	}
 
 	item := widget.NewAccordionItem(
-		programName,
+		fmt.Sprintf("%s (%d)", programName, len(lists.filtered)),
 		container.NewBorder(
 			contentTop,
 			nil, nil, nil,
