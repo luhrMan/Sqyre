@@ -9,6 +9,7 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/storage"
 	"fyne.io/fyne/v2/widget"
+	kxdialog "github.com/ErikKalkoken/fyne-kx/dialog"
 )
 
 // IconVariantEditor is a custom Fyne widget for managing icon variants in the item editor panel
@@ -146,7 +147,7 @@ func (e *IconVariantEditor) showAddVariantDialog() {
 	// Create file picker dialog
 	fileDialog := dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
 		if err != nil {
-			dialog.ShowError(err, e.window)
+			e.showErrorDismissible(err)
 			return
 		}
 		if reader == nil {
@@ -159,7 +160,7 @@ func (e *IconVariantEditor) showAddVariantDialog() {
 
 		// Validate the file is a PNG
 		if err := e.service.ValidateVariantFile(sourcePath); err != nil {
-			dialog.ShowError(fmt.Errorf("Invalid PNG file: %v", err), e.window)
+			e.showErrorDismissible(fmt.Errorf("Invalid PNG file: %v", err))
 			return
 		}
 
@@ -170,6 +171,7 @@ func (e *IconVariantEditor) showAddVariantDialog() {
 	// Set file filter to PNG files
 	fileDialog.SetFilter(storage.NewExtensionFileFilter([]string{".png"}))
 	fileDialog.Resize(fyne.NewSquareSize(500))
+	kxdialog.AddDialogKeyHandler(fileDialog, e.window)
 	fileDialog.Show()
 }
 
@@ -195,7 +197,7 @@ func (e *IconVariantEditor) showVariantNameDialog(sourcePath string) {
 
 		variantName := variantNameEntry.Text
 		if len(e.variants) > 0 && variantName == "" {
-			dialog.ShowError(fmt.Errorf("Variant name cannot be empty"), e.window)
+			e.showErrorDismissible(fmt.Errorf("Variant name cannot be empty"))
 			return
 		}
 
@@ -206,7 +208,7 @@ func (e *IconVariantEditor) showVariantNameDialog(sourcePath string) {
 				e.showOverwriteConfirmation(variantExistsErr.VariantName, sourcePath)
 				return
 			}
-			dialog.ShowError(fmt.Errorf("Failed to add variant: %v", err), e.window)
+			e.showErrorDismissible(fmt.Errorf("Failed to add variant: %v", err))
 			return
 		}
 
@@ -215,6 +217,7 @@ func (e *IconVariantEditor) showVariantNameDialog(sourcePath string) {
 	}, e.window)
 
 	formDialog.Resize(fyne.NewSize(400, 150))
+	kxdialog.AddDialogKeyHandler(formDialog, e.window)
 	formDialog.Show()
 }
 
@@ -222,13 +225,13 @@ func (e *IconVariantEditor) showVariantNameDialog(sourcePath string) {
 func (e *IconVariantEditor) showDeleteConfirmation(variantName string) {
 	// Prevent deletion of "Original" variant
 	if variantName == "Original" {
-		dialog.ShowInformation("Cannot Delete", "The 'Original' variant cannot be deleted.", e.window)
+		e.showInformationDismissible("Cannot Delete", "The 'Original' variant cannot be deleted.")
 		return
 	}
 
 	// Prevent deletion if only one variant remains
 	if len(e.variants) <= 1 {
-		dialog.ShowInformation("Cannot Delete", "Cannot delete the last icon variant. At least one variant must remain.", e.window)
+		e.showInformationDismissible("Cannot Delete", "Cannot delete the last icon variant. At least one variant must remain.")
 		return
 	}
 
@@ -247,7 +250,7 @@ func (e *IconVariantEditor) showDeleteConfirmation(variantName string) {
 
 			// Delete the variant
 			if err := e.service.DeleteVariant(e.programName, e.itemName, variantName); err != nil {
-				dialog.ShowError(fmt.Errorf("Failed to delete variant: %v", err), e.window)
+				e.showErrorDismissible(fmt.Errorf("Failed to delete variant: %v", err))
 				return
 			}
 
@@ -257,6 +260,7 @@ func (e *IconVariantEditor) showDeleteConfirmation(variantName string) {
 		e.window,
 	)
 
+	kxdialog.AddDialogKeyHandler(confirmDialog, e.window)
 	confirmDialog.Show()
 }
 
@@ -272,7 +276,7 @@ func (e *IconVariantEditor) showOverwriteConfirmation(variantName, sourcePath st
 
 			// Overwrite the variant
 			if err := e.service.OverwriteVariant(e.programName, e.itemName, variantName, sourcePath); err != nil {
-				dialog.ShowError(fmt.Errorf("Failed to overwrite variant: %v", err), e.window)
+				e.showErrorDismissible(fmt.Errorf("Failed to overwrite variant: %v", err))
 				return
 			}
 
@@ -282,7 +286,20 @@ func (e *IconVariantEditor) showOverwriteConfirmation(variantName, sourcePath st
 		e.window,
 	)
 
+	kxdialog.AddDialogKeyHandler(confirmDialog, e.window)
 	confirmDialog.Show()
+}
+
+func (e *IconVariantEditor) showErrorDismissible(err error) {
+	d := dialog.NewError(err, e.window)
+	kxdialog.AddDialogKeyHandler(d, e.window)
+	d.Show()
+}
+
+func (e *IconVariantEditor) showInformationDismissible(title, message string) {
+	d := dialog.NewInformation(title, message, e.window)
+	kxdialog.AddDialogKeyHandler(d, e.window)
+	d.Show()
 }
 
 // refreshDisplay reloads variants and updates the UI

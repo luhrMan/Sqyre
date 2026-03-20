@@ -182,7 +182,7 @@ func setMasksForms() {
 
 			if err := program.MaskRepo().Set(v.Name, v); err != nil {
 				log.Printf("Error saving mask %s: %v", v.Name, err)
-				dialog.ShowError(fmt.Errorf("failed to save mask"), ui.GetUi().Window)
+				ui.ShowErrorWithEscape(fmt.Errorf("failed to save mask"), ui.GetUi().Window)
 				return
 			}
 
@@ -220,18 +220,18 @@ func setMasksButtons() {
 		uploadBtn.OnTapped = func() {
 			mask, ok := et.MasksTab.SelectedItem.(*models.Mask)
 			if !ok || mask.Name == "" {
-				dialog.ShowError(fmt.Errorf("select a mask first"), ui.GetUi().Window)
+				ui.ShowErrorWithEscape(fmt.Errorf("select a mask first"), ui.GetUi().Window)
 				return
 			}
 			programName := ui.GetUi().ProgramSelector.Text
 			if programName == "" {
-				dialog.ShowError(fmt.Errorf("select a program first"), ui.GetUi().Window)
+				ui.ShowErrorWithEscape(fmt.Errorf("select a program first"), ui.GetUi().Window)
 				return
 			}
 
 			fd := dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
 				if err != nil {
-					dialog.ShowError(err, ui.GetUi().Window)
+					ui.ShowErrorWithEscape(err, ui.GetUi().Window)
 					return
 				}
 				if reader == nil {
@@ -242,20 +242,20 @@ func setMasksButtons() {
 				masksPath := config.GetMasksPath()
 				programMaskDir := filepath.Join(masksPath, programName)
 				if err := os.MkdirAll(programMaskDir, 0755); err != nil {
-					dialog.ShowError(fmt.Errorf("failed to create mask directory: %v", err), ui.GetUi().Window)
+					ui.ShowErrorWithEscape(fmt.Errorf("failed to create mask directory: %v", err), ui.GetUi().Window)
 					return
 				}
 
 				destPath := filepath.Join(programMaskDir, mask.Name+config.PNG)
 				destFile, err := os.Create(destPath)
 				if err != nil {
-					dialog.ShowError(fmt.Errorf("failed to create mask file: %v", err), ui.GetUi().Window)
+					ui.ShowErrorWithEscape(fmt.Errorf("failed to create mask file: %v", err), ui.GetUi().Window)
 					return
 				}
 				defer destFile.Close()
 
 				if _, err := io.Copy(destFile, reader); err != nil {
-					dialog.ShowError(fmt.Errorf("failed to write mask image: %v", err), ui.GetUi().Window)
+					ui.ShowErrorWithEscape(fmt.Errorf("failed to write mask image: %v", err), ui.GetUi().Window)
 					return
 				}
 
@@ -275,6 +275,7 @@ func setMasksButtons() {
 				ui.GetUi().UpdateMaskPreview(programName, mask.Name)
 			}, ui.GetUi().Window)
 			fd.SetFilter(storage.NewExtensionFileFilter([]string{".png", ".jpg", ".jpeg", ".bmp"}))
+			ui.AddDialogEscapeClose(fd, ui.GetUi().Window)
 			fd.Show()
 		}
 	}
@@ -290,7 +291,7 @@ func setMasksButtons() {
 			masksPath := config.GetMasksPath()
 			imgPath := filepath.Join(masksPath, programName, mask.Name+config.PNG)
 			if err := os.Remove(imgPath); err != nil && !os.IsNotExist(err) {
-				dialog.ShowError(fmt.Errorf("failed to remove mask image: %v", err), ui.GetUi().Window)
+				ui.ShowErrorWithEscape(fmt.Errorf("failed to remove mask image: %v", err), ui.GetUi().Window)
 				return
 			}
 			ui.GetUi().SetMaskImageMode(false)

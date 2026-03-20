@@ -378,17 +378,36 @@ func ShowActionDialog(action actions.ActionInterface, onSave func(actions.Action
 // actionModalDialog implements dialog.Dialog using widget.NewModalPopUp so content is not
 // inset by fyne dialog.Layout (padWidth/2); the bordered panel can align with the popup edge.
 type actionModalDialog struct {
-	pop *widget.PopUp
+	pop      *widget.PopUp
+	onClosed func()
 }
 
 func (d *actionModalDialog) Show()                 { d.pop.Show() }
-func (d *actionModalDialog) Hide()                 { d.pop.Hide() }
 func (d *actionModalDialog) Dismiss()              { d.Hide() }
 func (d *actionModalDialog) SetDismissText(string) {}
-func (d *actionModalDialog) SetOnClosed(func())    {}
-func (d *actionModalDialog) Refresh()              { d.pop.Refresh() }
-func (d *actionModalDialog) Resize(s fyne.Size)    { d.pop.Resize(s) }
-func (d *actionModalDialog) MinSize() fyne.Size    { return d.pop.MinSize() }
+func (d *actionModalDialog) SetOnClosed(closed func()) {
+	if closed == nil {
+		return
+	}
+	orig := d.onClosed
+	d.onClosed = func() {
+		if orig != nil {
+			orig()
+		}
+		closed()
+	}
+}
+func (d *actionModalDialog) Hide() {
+	d.pop.Hide()
+	if d.onClosed != nil {
+		cb := d.onClosed
+		d.onClosed = nil
+		cb()
+	}
+}
+func (d *actionModalDialog) Refresh()           { d.pop.Refresh() }
+func (d *actionModalDialog) Resize(s fyne.Size) { d.pop.Resize(s) }
+func (d *actionModalDialog) MinSize() fyne.Size { return d.pop.MinSize() }
 
 var _ dialog.Dialog = (*actionModalDialog)(nil)
 
@@ -400,19 +419,11 @@ func showCustomActionDialog(u *Ui, action actions.ActionInterface, content fyne.
 			onSave(action)
 		}
 		d.Hide()
-		// Clear the reference on the MainUi when the dialog is closed
-		if u != nil && u.MainUi != nil && u.MainUi.ActionDialog == d {
-			u.MainUi.ActionDialog = nil
-		}
 	})
 	saveButton.SetToolTip("Save changes to this action")
 
 	cancelButton := ttwidget.NewButton("Cancel", func() {
 		d.Hide()
-		// Clear the reference on the MainUi when the dialog is closed
-		if u != nil && u.MainUi != nil && u.MainUi.ActionDialog == d {
-			u.MainUi.ActionDialog = nil
-		}
 	})
 	cancelButton.SetToolTip("Cancel and discard changes")
 
@@ -452,6 +463,12 @@ func showCustomActionDialog(u *Ui, action actions.ActionInterface, content fyne.
 	if u != nil && u.MainUi != nil {
 		u.MainUi.ActionDialog = d
 	}
+	AddDialogEscapeClose(d, u.Window)
+	d.SetOnClosed(func() {
+		if u != nil && u.MainUi != nil && u.MainUi.ActionDialog == d {
+			u.MainUi.ActionDialog = nil
+		}
+	})
 	parentSize := u.Window.Canvas().Size()
 	width := parentSize.Width - 200
 	height := parentSize.Height - 200
