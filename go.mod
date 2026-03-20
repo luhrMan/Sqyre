@@ -4,15 +4,18 @@ go 1.26.0
 
 require (
 	fyne.io/fyne/v2 v2.7.3
+	github.com/ErikKalkoken/fyne-kx v0.7.2
 	github.com/dweymouth/fyne-tooltip v0.4.0
 	github.com/go-vgo/robotgo v1.0.1
 	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/gofrs/flock v0.13.0
 	github.com/google/uuid v1.6.0
+	github.com/jezek/xgb v1.3.0
 	github.com/lithammer/fuzzysearch v1.1.8
 	github.com/luhrMan/gohook v0.0.0-20250717231151-9fc28a31bf68
 	github.com/otiai10/gosseract/v2 v2.4.1
 	github.com/spf13/viper v1.21.0
+	github.com/vcaesar/screenshot v0.11.1
 	gocv.io/x/gocv v0.43.0
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -41,7 +44,6 @@ require (
 	github.com/hack-pad/go-indexeddb v0.3.2 // indirect
 	github.com/hack-pad/safejs v0.1.1 // indirect
 	github.com/jeandeaual/go-locale v0.0.0-20250612000132-0ef82f21eade // indirect
-	github.com/jezek/xgb v1.3.0 // indirect
 	github.com/jsummers/gobmp v0.0.0-20230614200233-a9de23ed2e25 // indirect
 	github.com/lufia/plan9stats v0.0.0-20260216142805-b3301c5f2a88 // indirect
 	github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646 // indirect
@@ -67,7 +69,6 @@ require (
 	github.com/vcaesar/gops v0.41.0 // indirect
 	github.com/vcaesar/imgo v0.41.0 // indirect
 	github.com/vcaesar/keycode v0.10.1 // indirect
-	github.com/vcaesar/screenshot v0.11.1 // indirect
 	github.com/vcaesar/tt v0.20.1 // indirect
 	github.com/yuin/goldmark v1.7.17 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect

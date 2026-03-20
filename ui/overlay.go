@@ -1,10 +1,11 @@
 package ui
 
 import (
+	"image"
 	"image/color"
 	"log"
 
-	"Sqyre/internal/config"
+	"Sqyre/internal/screen"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -39,22 +40,38 @@ func (s *selectionRectLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
 	return fyne.NewSize(0, 0)
 }
 
-// showFullScreenOverlay captures the current screen, then creates a full-screen
-// overlay showing that screenshot with centered instruction lines. It returns a
-// dismiss function that safely closes the overlay on the main UI thread. If
-// withSelectionRect is true, it also returns setSelectionRect to draw/update a
-// rectangle from (leftX, topY) to (rightX, bottomY).
+// showFullScreenOverlay captures the monitor under the cursor in absolute
+// desktop coordinates (same space as robotgo.Location), then creates a
+// full-screen overlay on that monitor. setSelectionRect expects absolute
+// coordinates from the caller and maps them to overlay-local space.
 func showFullScreenOverlay(lines []string, withSelectionRect bool) (dismiss func(), setSelectionRect func(leftX, topY, rightX, bottomY int)) {
 	app := fyne.CurrentApp()
 	if app == nil {
 		return func() {}, func(int, int, int, int) {}
 	}
 
-	w, h := config.MonitorWidth, config.MonitorHeight
-	captureImg, err := robotgo.CaptureImg(0, 0, w, h)
-	if err != nil || captureImg == nil {
-		log.Printf("overlay: screen capture failed: %v; using blank overlay", err)
+	idx := screen.MonitorIndexForOverlay()
+	absBounds := screen.DisplayBoundsAbs(idx)
+	if absBounds.Empty() {
+		absBounds = screen.DisplayBoundsAbs(0)
 	}
+	w, h := absBounds.Dx(), absBounds.Dy()
+	if w <= 0 || h <= 0 {
+		vb := screen.VirtualBounds()
+		w, h = vb.Dx(), vb.Dy()
+	}
+	var captureImg image.Image
+	if w <= 0 || h <= 0 || absBounds.Empty() {
+		log.Printf("overlay: could not resolve display bounds; using blank overlay")
+	} else {
+		var err error
+		captureImg, err = robotgo.CaptureImg(absBounds.Min.X, absBounds.Min.Y, w, h)
+		if err != nil {
+			log.Printf("overlay: screen capture failed: %v; using blank overlay", err)
+			captureImg = nil
+		}
+	}
+	originX, originY := absBounds.Min.X, absBounds.Min.Y
 
 	win := app.NewWindow("")
 	win.SetFullScreen(true)
@@ -110,10 +127,11 @@ func showFullScreenOverlay(lines []string, withSelectionRect bool) (dismiss func
 	if withSelectionRect && selLayout != nil && selectionLayerRefresher != nil {
 		setSelectionRect = func(leftX, topY, rightX, bottomY int) {
 			fyne.Do(func() {
-				selLayout.leftX = leftX
-				selLayout.topY = topY
-				selLayout.rightX = rightX
-				selLayout.bottomY = bottomY
+				// Bindings pass absolute desktop coords; layout is monitor-local.
+				selLayout.leftX = leftX - originX
+				selLayout.topY = topY - originY
+				selLayout.rightX = rightX - originX
+				selLayout.bottomY = bottomY - originY
 				selectionLayerRefresher.Refresh()
 			})
 		}

@@ -75,7 +75,7 @@ func updateTagsDisplay(item *models.Item) {
 
 		// Create horizontal container for tag label and remove button
 		tagContainer := container.NewHBox(tagLabel, removeButton)
-		tagsContainer.Add(tagContainer)
+		tagsContainer.Add(ui.WrapTagChip(tagContainer))
 	}
 
 	tagsContainer.Refresh()
@@ -304,8 +304,7 @@ func setAccordionItemsLists(acc *widget.Accordion) {
 		sb.OnChanged = func(string) { setAccordionItemsLists(acc) }
 	}
 
-	programs := repositories.ProgramRepo().GetAll()
-	for _, p := range programs {
+	for _, p := range repositories.ProgramRepo().GetAllSortedByName() {
 		// Show program if search is empty, or program name matches, or any item/tag matches
 		if filterText != "" && !fuzzy.MatchFold(filterText, p.Name) && !programHasMatchingItems(p, filterText) {
 			continue
@@ -443,11 +442,12 @@ func showMaskSelectionPopup() {
 	var popup *widget.PopUp
 
 	acc := widget.NewAccordion()
-	for _, p := range repositories.ProgramRepo().GetAll() {
+	for _, p := range repositories.ProgramRepo().GetAllSortedByName() {
 		programName := p.Name
 		allKeys := p.MaskRepo().GetAllKeys()
 		filtered := make([]string, len(allKeys))
 		copy(filtered, allKeys)
+		sortMaskKeysByDisplayName(p, filtered)
 
 		searchbar := widget.NewEntry()
 		searchbar.PlaceHolder = "Search masks"
@@ -504,6 +504,7 @@ func showMaskSelectionPopup() {
 					}
 				}
 			}
+			sortMaskKeysByDisplayName(p, filtered)
 			maskList.Refresh()
 			maskList.ScrollToTop()
 		}

@@ -33,8 +33,18 @@ script:
   # during the brief strace run.
   - mkdir -p "$TARGET_APPDIR/usr/lib"
   - |
-    # OpenCV (built from source, installed to /usr/local/lib)
-    cp -aL /usr/local/lib/libopencv_*.so* "$TARGET_APPDIR/usr/lib/" 2>/dev/null || true
+    # OpenCV: devcontainer installs under /opt/opencv/linux/install (see builds/opencv/linux).
+    opencv_lib=""
+    for d in /opt/opencv/linux/install/lib /usr/local/lib; do
+      for _cv in "$d"/libopencv_core.so*; do
+        if [ -e "$_cv" ]; then opencv_lib="$d"; break 2; fi
+      done
+    done
+    if [ -z "$opencv_lib" ]; then
+      echo "ERROR: OpenCV .so not found under /opt/opencv/linux/install/lib or /usr/local/lib (build OpenCV or use devcontainer)." >&2
+      exit 1
+    fi
+    cp -aL "$opencv_lib"/libopencv_*.so* "$TARGET_APPDIR/usr/lib/"
     # Tesseract and Leptonica (from system packages)
     cp -aL /usr/lib/x86_64-linux-gnu/libtesseract.so* "$TARGET_APPDIR/usr/lib/" 2>/dev/null || true
     cp -aL /usr/lib/x86_64-linux-gnu/liblept.so* "$TARGET_APPDIR/usr/lib/" 2>/dev/null || true

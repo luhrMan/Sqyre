@@ -6,12 +6,14 @@ import (
 	"Sqyre/internal/models"
 	"Sqyre/internal/models/actions"
 	"Sqyre/internal/models/repositories"
+	"Sqyre/internal/screen"
 	"Sqyre/internal/services"
 	"Sqyre/ui/custom_widgets"
 	"fmt"
 	"image"
 	"image/color"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -50,6 +52,61 @@ func newMultiLineVarEntry() *custom_widgets.VarEntry {
 	return custom_widgets.NewMultiLineVarEntry(currentMacroVariables)
 }
 
+// waitTilFoundForm bundles the "Wait until found" checkbox and timeout / interval
+// incrementers shared by OCR, Image Search, and Find Pixel dialogs.
+type waitTilFoundForm struct {
+	Check               *widget.Check
+	SecondsIncrementer  *custom_widgets.Incrementer
+	IntervalIncrementer *custom_widgets.Incrementer
+}
+
+// newWaitTilFoundForm builds wait-until-found UI. intervalUIMin is the minimum value
+// enforced by the interval incrementer (100 for image search / find pixel, 0 for OCR).
+func newWaitTilFoundForm(waitTilFound bool, waitSeconds, intervalMs int, intervalUIMin int) *waitTilFoundForm {
+	check := widget.NewCheck("Wait until found", nil)
+	check.SetChecked(waitTilFound)
+	secondsMin := 0
+	secondsInc := custom_widgets.NewIncrementer(waitSeconds, 1, &secondsMin, nil)
+	if waitSeconds <= 0 {
+		secondsInc.SetValue(10)
+	} else {
+		secondsInc.SetValue(waitSeconds)
+	}
+	intervalMin := intervalUIMin
+	intervalInc := custom_widgets.NewIncrementer(intervalMs, 100, &intervalMin, nil)
+	if intervalMs < 100 {
+		intervalInc.SetValue(100)
+	} else {
+		intervalInc.SetValue(intervalMs)
+	}
+	setEnabled := func(enabled bool) {
+		if enabled {
+			secondsInc.Enable()
+			intervalInc.Enable()
+			return
+		}
+		secondsInc.Disable()
+		intervalInc.Disable()
+	}
+	check.OnChanged = setEnabled
+	setEnabled(check.Checked)
+	return &waitTilFoundForm{
+		Check:               check,
+		SecondsIncrementer:  secondsInc,
+		IntervalIncrementer: intervalInc,
+	}
+}
+
+func (w *waitTilFoundForm) writeTo(waitTilFound *bool, seconds *int, intervalMs *int) {
+	*waitTilFound = w.Check.Checked
+	if w.SecondsIncrementer.Value >= 0 {
+		*seconds = w.SecondsIncrementer.Value
+	}
+	if w.IntervalIncrementer.Value >= 0 {
+		*intervalMs = w.IntervalIncrementer.Value
+	}
+}
+
 // programListAccordionConfig configures the generic program list accordion builder.
 // Callbacks receive the program and item key; implementors look up the model and invoke dialog-specific logic.
 type programListAccordionConfig struct {
@@ -67,7 +124,7 @@ func buildProgramListAccordionWithSearchbar(cfg programListAccordionConfig) (*wi
 	rebuild := func() {
 		filterText := searchbar.Text
 		acc.Items = nil
-		for _, p := range repositories.ProgramRepo().GetAll() {
+		for _, p := range repositories.ProgramRepo().GetAllSortedByName() {
 			defaultList := cfg.GetKeys(p)
 			filtered := defaultList
 			if filterText != "" {
@@ -78,6 +135,9 @@ func buildProgramListAccordionWithSearchbar(cfg programListAccordionConfig) (*wi
 					}
 				}
 			}
+			sort.Slice(filtered, func(i, j int) bool {
+				return strings.Compare(cfg.GetDisplayName(p, filtered[i]), cfg.GetDisplayName(p, filtered[j])) < 0
+			})
 			if filterText != "" && !fuzzy.MatchFold(filterText, p.Name) && len(filtered) == 0 {
 				continue
 			}
@@ -180,7 +240,7 @@ func buildItemsAccordionWithSearchbar(
 		filterText := searchbar.Text
 		acc.RemoveAll()
 		itemGrids = itemGrids[:0]
-		for _, p := range repositories.ProgramRepo().GetAll() {
+		for _, p := range repositories.ProgramRepo().GetAllSortedByName() {
 			if filterText != "" && !fuzzy.MatchFold(filterText, p.Name) && !programHasMatchingItemsDialog(p, filterText) {
 				continue
 			}
@@ -380,7 +440,7 @@ func showCustomActionDialog(u *Ui, action actions.ActionInterface, content fyne.
 
 	border := canvas.NewRectangle(color.Transparent)
 	border.StrokeColor = sqyrePrimary
-	border.StrokeWidth = 2
+	border.StrokeWidth = 1
 	border.CornerRadius = theme.InputRadiusSize()
 	innerPadded := container.NewPadded(container.NewPadded(container.NewPadded(container.NewPadded(dialogContent))))
 	borderedDialogContent := container.NewStack(panelBg, border, innerPadded)
@@ -495,11 +555,8 @@ func createMoveDialogContent(action *actions.Move) (fyne.CanvasObject, func()) {
 		px := pointCoordToInt(point.X)
 		py := pointCoordToInt(point.Y)
 
-		// Validate coordinates are within reasonable bounds
-		screenWidth := config.MonitorWidth
-		screenHeight := config.MonitorHeight
-
-		if px < 0 || py < 0 || px > screenWidth || py > screenHeight {
+		vb := screen.VirtualBounds()
+		if px < vb.Min.X || py < vb.Min.Y || px > vb.Max.X || py > vb.Max.Y {
 			pointPreviewImage.Image = nil
 			pointPreviewImage.Refresh()
 			return
@@ -514,7 +571,7 @@ func createMoveDialogContent(action *actions.Move) (fyne.CanvasObject, func()) {
 			}
 		}()
 
-		captureImg, err := robotgo.CaptureImg(0, 0, screenWidth, screenHeight)
+		captureImg, err := robotgo.CaptureImg(vb.Min.X, vb.Min.Y, vb.Dx(), vb.Dy())
 		if err != nil || captureImg == nil {
 			pointPreviewImage.Image = nil
 			pointPreviewImage.Refresh()
@@ -530,19 +587,13 @@ func createMoveDialogContent(action *actions.Move) (fyne.CanvasObject, func()) {
 		}
 		defer mat.Close()
 
-		// Draw red marker at point coordinates
-		// Draw a circle with crosshair for visibility
-		center := image.Point{X: px, Y: py}
+		center := image.Point{X: px - vb.Min.X, Y: py - vb.Min.Y}
 		redColor := color.RGBA{R: 255, A: 255}
 
-		// Draw circle
 		gocv.Circle(&mat, center, 8, redColor, 2)
 
-		// Draw crosshair lines
-		// Horizontal line
-		gocv.Line(&mat, image.Point{X: px - 15, Y: py}, image.Point{X: px + 15, Y: py}, redColor, 2)
-		// Vertical line
-		gocv.Line(&mat, image.Point{X: px, Y: py - 15}, image.Point{X: px, Y: py + 15}, redColor, 2)
+		gocv.Line(&mat, image.Point{X: center.X - 15, Y: center.Y}, image.Point{X: center.X + 15, Y: center.Y}, redColor, 2)
+		gocv.Line(&mat, image.Point{X: center.X, Y: center.Y - 15}, image.Point{X: center.X, Y: center.Y + 15}, redColor, 2)
 
 		// Convert back to image.Image
 		previewImg, err := mat.ToImage()
@@ -722,33 +773,7 @@ func createImageSearchDialogContent(action *actions.ImageSearch) (fyne.CanvasObj
 	outputYVarEntry := newVarEntry()
 	outputYVarEntry.SetText(action.OutputYVariable)
 	outputYVarEntry.SetPlaceHolder("e.g. foundY")
-	waitTilFoundCheck := widget.NewCheck("Wait until found", nil)
-	waitTilFoundCheck.SetChecked(action.WaitTilFound)
-	waitTilFoundSecondsMin := 0
-	waitTilFoundSecondsIncrementer := custom_widgets.NewIncrementer(action.WaitTilFoundSeconds, 1, &waitTilFoundSecondsMin, nil)
-	if action.WaitTilFoundSeconds <= 0 {
-		waitTilFoundSecondsIncrementer.SetValue(10)
-	} else {
-		waitTilFoundSecondsIncrementer.SetValue(action.WaitTilFoundSeconds)
-	}
-	waitTilFoundIntervalMin := 100
-	waitTilFoundIntervalIncrementer := custom_widgets.NewIncrementer(action.WaitTilFoundIntervalMs, 100, &waitTilFoundIntervalMin, nil)
-	if action.WaitTilFoundIntervalMs < 100 {
-		waitTilFoundIntervalIncrementer.SetValue(100)
-	} else {
-		waitTilFoundIntervalIncrementer.SetValue(action.WaitTilFoundIntervalMs)
-	}
-	setWaitTilFoundEntriesEnabled := func(enabled bool) {
-		if enabled {
-			waitTilFoundSecondsIncrementer.Enable()
-			waitTilFoundIntervalIncrementer.Enable()
-			return
-		}
-		waitTilFoundSecondsIncrementer.Disable()
-		waitTilFoundIntervalIncrementer.Disable()
-	}
-	waitTilFoundCheck.OnChanged = setWaitTilFoundEntriesEnabled
-	setWaitTilFoundEntriesEnabled(waitTilFoundCheck.Checked)
+	waitTil := newWaitTilFoundForm(action.WaitTilFound, action.WaitTilFoundSeconds, action.WaitTilFoundIntervalMs, 100)
 
 	// Temporary storage for changes (only applied on save)
 	tempSearchArea := action.SearchArea
@@ -871,9 +896,9 @@ func createImageSearchDialogContent(action *actions.ImageSearch) (fyne.CanvasObj
 					widget.NewFormItem("Blur:", container.NewVBox(blurIncrementer, layout.NewSpacer())),
 					widget.NewFormItem("Output X Variable:", outputXVarEntry),
 					widget.NewFormItem("Output Y Variable:", outputYVarEntry),
-					widget.NewFormItem("", waitTilFoundCheck),
-					widget.NewFormItem("Timeout (seconds):", waitTilFoundSecondsIncrementer),
-					widget.NewFormItem("Search interval (ms):", waitTilFoundIntervalIncrementer),
+					widget.NewFormItem("", waitTil.Check),
+					widget.NewFormItem("Timeout (seconds):", waitTil.SecondsIncrementer),
+					widget.NewFormItem("Search interval (ms):", waitTil.IntervalIncrementer),
 				),
 			),
 			previewBox,
@@ -911,13 +936,7 @@ func createImageSearchDialogContent(action *actions.ImageSearch) (fyne.CanvasObj
 		action.Blur = blurIncrementer.Value
 		action.OutputXVariable = outputXVarEntry.Text
 		action.OutputYVariable = outputYVarEntry.Text
-		action.WaitTilFound = waitTilFoundCheck.Checked
-		if waitTilFoundSecondsIncrementer.Value >= 0 {
-			action.WaitTilFoundSeconds = waitTilFoundSecondsIncrementer.Value
-		}
-		if waitTilFoundIntervalIncrementer.Value >= 0 {
-			action.WaitTilFoundIntervalMs = waitTilFoundIntervalIncrementer.Value
-		}
+		waitTil.writeTo(&action.WaitTilFound, &action.WaitTilFoundSeconds, &action.WaitTilFoundIntervalMs)
 		// Apply temporary changes
 		action.SearchArea = tempSearchArea
 		action.Targets = tempTargets
@@ -965,33 +984,7 @@ func createOcrDialogContent(action *actions.Ocr) (fyne.CanvasObject, func()) {
 	outputYVarEntry := newVarEntry()
 	outputYVarEntry.SetText(action.OutputYVariable)
 	outputYVarEntry.SetPlaceHolder("e.g. foundY")
-	waitTilFoundCheck := widget.NewCheck("Wait until found", nil)
-	waitTilFoundCheck.SetChecked(action.WaitTilFound)
-	waitTilFoundSecondsMin := 0
-	waitTilFoundSecondsIncrementer := custom_widgets.NewIncrementer(action.WaitTilFoundSeconds, 1, &waitTilFoundSecondsMin, nil)
-	if action.WaitTilFoundSeconds <= 0 {
-		waitTilFoundSecondsIncrementer.SetValue(10)
-	} else {
-		waitTilFoundSecondsIncrementer.SetValue(action.WaitTilFoundSeconds)
-	}
-	waitTilFoundIntervalMin := 0
-	waitTilFoundIntervalIncrementer := custom_widgets.NewIncrementer(action.WaitTilFoundIntervalMs, 100, &waitTilFoundIntervalMin, nil)
-	if action.WaitTilFoundIntervalMs < 100 {
-		waitTilFoundIntervalIncrementer.SetValue(100)
-	} else {
-		waitTilFoundIntervalIncrementer.SetValue(action.WaitTilFoundIntervalMs)
-	}
-	setWaitTilFoundEntriesEnabled := func(enabled bool) {
-		if enabled {
-			waitTilFoundSecondsIncrementer.Enable()
-			waitTilFoundIntervalIncrementer.Enable()
-			return
-		}
-		waitTilFoundSecondsIncrementer.Disable()
-		waitTilFoundIntervalIncrementer.Disable()
-	}
-	waitTilFoundCheck.OnChanged = setWaitTilFoundEntriesEnabled
-	setWaitTilFoundEntriesEnabled(waitTilFoundCheck.Checked)
+	waitTil := newWaitTilFoundForm(action.WaitTilFound, action.WaitTilFoundSeconds, action.WaitTilFoundIntervalMs, 0)
 
 	// Temporary storage for changes (only applied on save)
 	tempSearchArea := action.SearchArea
@@ -1007,9 +1000,9 @@ func createOcrDialogContent(action *actions.Ocr) (fyne.CanvasObject, func()) {
 		widget.NewFormItem("Output Variable:", outputVarEntry),
 		widget.NewFormItem("Output X Variable:", outputXVarEntry),
 		widget.NewFormItem("Output Y Variable:", outputYVarEntry),
-		widget.NewFormItem("", waitTilFoundCheck),
-		widget.NewFormItem("Timeout (seconds):", waitTilFoundSecondsIncrementer),
-		widget.NewFormItem("Search interval (ms):", waitTilFoundIntervalIncrementer),
+		widget.NewFormItem("", waitTil.Check),
+		widget.NewFormItem("Timeout (seconds):", waitTil.SecondsIncrementer),
+		widget.NewFormItem("Search interval (ms):", waitTil.IntervalIncrementer),
 	)
 
 	content := container.NewHSplit(
@@ -1030,13 +1023,7 @@ func createOcrDialogContent(action *actions.Ocr) (fyne.CanvasObject, func()) {
 		action.OutputVariable = outputVarEntry.Text
 		action.OutputXVariable = outputXVarEntry.Text
 		action.OutputYVariable = outputYVarEntry.Text
-		action.WaitTilFound = waitTilFoundCheck.Checked
-		if waitTilFoundSecondsIncrementer.Value >= 0 {
-			action.WaitTilFoundSeconds = waitTilFoundSecondsIncrementer.Value
-		}
-		if waitTilFoundIntervalIncrementer.Value >= 0 {
-			action.WaitTilFoundIntervalMs = waitTilFoundIntervalIncrementer.Value
-		}
+		waitTil.writeTo(&action.WaitTilFound, &action.WaitTilFoundSeconds, &action.WaitTilFoundIntervalMs)
 		action.SearchArea = tempSearchArea
 	}
 
@@ -1254,22 +1241,7 @@ func createFindPixelDialogContent(action *actions.FindPixel) (fyne.CanvasObject,
 	outputYVarEntry.SetText(action.OutputYVariable)
 	outputYVarEntry.SetPlaceHolder("e.g. foundY")
 
-	waitTilFoundCheck := widget.NewCheck("Wait until found", nil)
-	waitTilFoundCheck.SetChecked(action.WaitTilFound)
-	waitTilFoundSecondsEntry := widget.NewEntry()
-	if action.WaitTilFoundSeconds <= 0 {
-		waitTilFoundSecondsEntry.SetText("10")
-	} else {
-		waitTilFoundSecondsEntry.SetText(fmt.Sprintf("%d", action.WaitTilFoundSeconds))
-	}
-	waitTilFoundSecondsEntry.SetPlaceHolder("Seconds to keep trying if not found")
-	waitTilFoundIntervalEntry := widget.NewEntry()
-	if action.WaitTilFoundIntervalMs < 100 {
-		waitTilFoundIntervalEntry.SetText("100")
-	} else {
-		waitTilFoundIntervalEntry.SetText(fmt.Sprintf("%d", action.WaitTilFoundIntervalMs))
-	}
-	waitTilFoundIntervalEntry.SetPlaceHolder("Milliseconds between retries (default 100)")
+	waitTil := newWaitTilFoundForm(action.WaitTilFound, action.WaitTilFoundSeconds, action.WaitTilFoundIntervalMs, 100)
 
 	form := widget.NewForm(
 		widget.NewFormItem("Name:", nameEntry),
@@ -1277,9 +1249,9 @@ func createFindPixelDialogContent(action *actions.FindPixel) (fyne.CanvasObject,
 		widget.NewFormItem("Color tolerance:", toleranceRow),
 		widget.NewFormItem("Output X Variable:", outputXVarEntry),
 		widget.NewFormItem("Output Y Variable:", outputYVarEntry),
-		widget.NewFormItem("", waitTilFoundCheck),
-		widget.NewFormItem("Timeout (seconds):", waitTilFoundSecondsEntry),
-		widget.NewFormItem("Search interval (ms):", waitTilFoundIntervalEntry),
+		widget.NewFormItem("", waitTil.Check),
+		widget.NewFormItem("Timeout (seconds):", waitTil.SecondsIncrementer),
+		widget.NewFormItem("Search interval (ms):", waitTil.IntervalIncrementer),
 	)
 
 	content := container.NewHSplit(
@@ -1309,13 +1281,7 @@ func createFindPixelDialogContent(action *actions.FindPixel) (fyne.CanvasObject,
 		}
 		action.OutputXVariable = outputXVarEntry.Text
 		action.OutputYVariable = outputYVarEntry.Text
-		action.WaitTilFound = waitTilFoundCheck.Checked
-		if s, err := strconv.Atoi(waitTilFoundSecondsEntry.Text); err == nil && s >= 0 {
-			action.WaitTilFoundSeconds = s
-		}
-		if ms, err := strconv.Atoi(waitTilFoundIntervalEntry.Text); err == nil && ms >= 0 {
-			action.WaitTilFoundIntervalMs = ms
-		}
+		waitTil.writeTo(&action.WaitTilFound, &action.WaitTilFoundSeconds, &action.WaitTilFoundIntervalMs)
 	}
 
 	return content, saveFunc
