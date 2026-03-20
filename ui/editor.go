@@ -50,7 +50,7 @@ type EditorTab struct {
 
 	Widgets        map[string]fyne.CanvasObject
 	SelectedItem   any
-	previewImage   *canvas.Image
+	previewZoom    *editorPreviewZoom
 	UpdateButton   *widget.Button
 	OriginalValues map[string]string
 }
@@ -58,6 +58,15 @@ type EditorTab struct {
 func NewEditorTab(name string, left, right *fyne.Container) *container.TabItem {
 	split := container.NewHSplit(left, right)
 	return container.NewTabItem(name, split)
+}
+
+// wrapEditorPreviewImage adds a themed border around editor preview imagery (same treatment as the Items tab icon editor).
+func wrapEditorPreviewImage(inner fyne.CanvasObject) fyne.CanvasObject {
+	border := canvas.NewRectangle(color.NRGBA{})
+	border.StrokeColor = theme.ButtonColor()
+	border.StrokeWidth = 2
+	border.CornerRadius = 4
+	return container.NewStack(border, inner)
 }
 
 func (u *Ui) constructEditorTabs() {
@@ -196,13 +205,8 @@ func (u *Ui) constructEditorTabs() {
 		widget.NewFormItem("", container.NewHBox(layout.NewSpacer(), ptw["recordButton"], et.PointsTab.UpdateButton)),
 	)
 
-	// Create preview image for Points tab
-	pointPreviewImage := canvas.NewImageFromImage(nil)
-	pointPreviewImage.FillMode = canvas.ImageFillContain
-	pointPreviewImage.SetMinSize(fyne.NewSize(400, 300))
-
-	// Store the image reference in the tab for later access
-	et.PointsTab.previewImage = pointPreviewImage
+	pointPreview := newEditorPreviewZoom(400, 300)
+	et.PointsTab.previewZoom = pointPreview
 
 	et.PointsTab.TabItem = NewEditorTab(
 		"Points",
@@ -212,7 +216,7 @@ func (u *Ui) constructEditorTabs() {
 			nil,
 			nil,
 			nil,
-			pointPreviewImage,
+			wrapEditorPreviewImage(pointPreview.Content()),
 		),
 	)
 
@@ -241,13 +245,8 @@ func (u *Ui) constructEditorTabs() {
 		widget.NewFormItem("", container.NewHBox(layout.NewSpacer(), satw["recordButton"], et.SearchAreasTab.UpdateButton)),
 	)
 
-	// Create preview image for Search Areas tab
-	searchAreaPreviewImage := canvas.NewImageFromImage(nil)
-	searchAreaPreviewImage.FillMode = canvas.ImageFillContain
-	searchAreaPreviewImage.SetMinSize(fyne.NewSize(400, 300))
-
-	// Store the image reference in the tab for later access
-	et.SearchAreasTab.previewImage = searchAreaPreviewImage
+	searchAreaPreview := newEditorPreviewZoom(400, 300)
+	et.SearchAreasTab.previewZoom = searchAreaPreview
 
 	et.SearchAreasTab.TabItem = NewEditorTab(
 		"Search Areas",
@@ -257,7 +256,7 @@ func (u *Ui) constructEditorTabs() {
 			nil,
 			nil,
 			nil,
-			searchAreaPreviewImage,
+			wrapEditorPreviewImage(searchAreaPreview.Content()),
 		),
 	)
 
@@ -272,10 +271,8 @@ func (u *Ui) constructEditorTabs() {
 	mtw["removeImageButton"].(*widget.Button).Importance = widget.DangerImportance
 	mtw["removeImageButton"].(*widget.Button).Hide()
 
-	maskPreviewImage := canvas.NewImageFromImage(nil)
-	maskPreviewImage.FillMode = canvas.ImageFillContain
-	maskPreviewImage.SetMinSize(fyne.NewSize(400, 300))
-	et.MasksTab.previewImage = maskPreviewImage
+	maskPreview := newEditorPreviewZoom(400, 300)
+	et.MasksTab.previewZoom = maskPreview
 
 	mtw["imageStatus"] = widget.NewLabel("")
 	mtw["imageStatus"].(*widget.Label).Hide()
@@ -363,7 +360,7 @@ func (u *Ui) constructEditorTabs() {
 				mtw["imageStatus"],
 			),
 			nil, nil, nil,
-			maskPreviewImage,
+			wrapEditorPreviewImage(maskPreview.Content()),
 		),
 	)
 
@@ -374,13 +371,8 @@ func (u *Ui) constructEditorTabs() {
 	atw["searchbar"].(*widget.Entry).PlaceHolder = "Search here"
 	atw["saveButton"] = widget.NewButton("Save", u.onAutoPicSave)
 
-	// Create preview image and container
-	previewImage := canvas.NewImageFromImage(nil)
-	previewImage.FillMode = canvas.ImageFillContain
-	previewImage.SetMinSize(fyne.NewSize(400, 300))
-
-	// Store the image reference in the tab for later access
-	et.AutoPicTab.previewImage = previewImage
+	autoPicPreview := newEditorPreviewZoom(400, 300)
+	et.AutoPicTab.previewZoom = autoPicPreview
 
 	// Initially disable save button
 	atw["saveButton"].(*widget.Button).Disable()
@@ -399,7 +391,7 @@ func (u *Ui) constructEditorTabs() {
 			atw["saveButton"],
 			nil,
 			nil,
-			previewImage,
+			wrapEditorPreviewImage(autoPicPreview.Content()),
 		),
 	)
 
@@ -582,19 +574,16 @@ func (u *Ui) UpdateAutoPicPreview(searchArea *models.SearchArea) {
 		return
 	}
 
-	// Update preview image
-	if previewImage := u.EditorTabs.AutoPicTab.previewImage; previewImage != nil {
-		previewImage.Image = captureImg
-		previewImage.Refresh()
+	if pz := u.EditorTabs.AutoPicTab.previewZoom; pz != nil {
+		pz.SetImage(captureImg)
 	} else {
 		dialog.ShowError(errors.New("AutoPic: Preview image widget is nil"), u.Window)
 	}
 }
 
 func (u *Ui) clearPreviewImage() {
-	if previewImage := u.EditorTabs.AutoPicTab.previewImage; previewImage != nil {
-		previewImage.Image = nil
-		previewImage.Refresh()
+	if pz := u.EditorTabs.AutoPicTab.previewZoom; pz != nil {
+		pz.Clear()
 	}
 }
 
@@ -615,7 +604,6 @@ func (u *Ui) ErrorPopUp(s string) {
 }
 
 func (u *Ui) UpdateSearchAreaPreview(searchArea *models.SearchArea) {
-	u.EditorTabs.SearchAreasTab.previewImage.Resource = nil
 	// Validate search area
 	if searchArea == nil {
 		dialog.ShowError(errors.New("SearchArea: Cannot update preview - search area is nil"), u.Window)
@@ -631,8 +619,9 @@ func (u *Ui) UpdateSearchAreaPreview(searchArea *models.SearchArea) {
 	h := by - ty
 
 	if w <= 0 || h <= 0 {
-		u.clearSearchAreaPreviewImage()
-		u.EditorTabs.SearchAreasTab.previewImage.Resource = theme.BrokenImageIcon()
+		if pz := u.EditorTabs.SearchAreasTab.previewZoom; pz != nil {
+			pz.SetBrokenIcon()
+		}
 		u.ErrorPopUp(fmt.Sprintf("SearchArea: Invalid search area dimensions - width: %d, height: %d (area: %s)", w, h, searchArea.Name))
 		// label := widget.NewLabel(fmt.Sprintf("SearchArea: Invalid search area dimensions - width: %d, height: %d (area: %s)", w, h, searchArea.Name))
 		// label.Importance = widget.DangerImportance
@@ -706,19 +695,16 @@ func (u *Ui) UpdateSearchAreaPreview(searchArea *models.SearchArea) {
 		return
 	}
 
-	// Update preview image
-	if previewImage := u.EditorTabs.SearchAreasTab.previewImage; previewImage != nil {
-		previewImage.Image = previewImg
-		previewImage.Refresh()
+	if pz := u.EditorTabs.SearchAreasTab.previewZoom; pz != nil {
+		pz.SetImage(previewImg)
 	} else {
 		dialog.ShowError(errors.New("SearchArea: Preview image widget is nil"), u.Window)
 	}
 }
 
 func (u *Ui) clearSearchAreaPreviewImage() {
-	if previewImage := u.EditorTabs.SearchAreasTab.previewImage; previewImage != nil {
-		previewImage.Image = nil
-		previewImage.Refresh()
+	if pz := u.EditorTabs.SearchAreasTab.previewZoom; pz != nil {
+		pz.Clear()
 	}
 }
 
@@ -818,11 +804,9 @@ func (u *Ui) UpdatePointPreview(point *models.Point) {
 		return
 	}
 
-	// Update preview image
-	if previewImage := u.EditorTabs.PointsTab.previewImage; previewImage != nil {
-		previewImage.Image = previewImg
+	if pz := u.EditorTabs.PointsTab.previewZoom; pz != nil {
 		fyne.DoAndWait(func() {
-			previewImage.Refresh()
+			pz.SetImage(previewImg)
 		})
 	} else {
 		dialog.ShowError(errors.New("Point: Preview image widget is nil"), u.Window)
@@ -830,9 +814,8 @@ func (u *Ui) UpdatePointPreview(point *models.Point) {
 }
 
 func (u *Ui) clearPointPreviewImage() {
-	if previewImage := u.EditorTabs.PointsTab.previewImage; previewImage != nil {
-		previewImage.Image = nil
-		previewImage.Refresh()
+	if pz := u.EditorTabs.PointsTab.previewZoom; pz != nil {
+		pz.Clear()
 	}
 }
 
@@ -859,16 +842,14 @@ func (u *Ui) UpdateMaskPreview(programName, maskName string) {
 		return
 	}
 
-	if previewImage := u.EditorTabs.MasksTab.previewImage; previewImage != nil {
-		previewImage.Image = img
-		previewImage.Refresh()
+	if pz := u.EditorTabs.MasksTab.previewZoom; pz != nil {
+		pz.SetImage(img)
 	}
 }
 
 func (u *Ui) ClearMaskPreviewImage() {
-	if previewImage := u.EditorTabs.MasksTab.previewImage; previewImage != nil {
-		previewImage.Image = nil
-		previewImage.Refresh()
+	if pz := u.EditorTabs.MasksTab.previewZoom; pz != nil {
+		pz.Clear()
 	}
 }
 
@@ -915,9 +896,7 @@ func (u *Ui) RefreshAutoPicSearchAreas() {
 	if saveButton, ok := u.EditorTabs.AutoPicTab.Widgets["saveButton"].(*widget.Button); ok {
 		saveButton.Disable()
 	}
-	// Clear preview image
-	if previewImage := u.EditorTabs.AutoPicTab.previewImage; previewImage != nil {
-		previewImage.Image = nil
-		previewImage.Refresh()
+	if pz := u.EditorTabs.AutoPicTab.previewZoom; pz != nil {
+		pz.Clear()
 	}
 }
