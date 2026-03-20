@@ -1,6 +1,8 @@
 # Build and release Sqyre on merge to main.
 # Produces: Linux binary, AppImage, Windows .exe
-# Release tag format: vYYYY.MM.DD.HHMM (e.g. v2026.03.03.1643)
+# Release tag / artifact names: vYYYY.MM.DD.HHMM (e.g. v2026.03.03.1643).
+# Fyne -appVersion allows only x.y.z (digits and dots); Windows fyne-cross uses
+# YYYY.MM.DD in FyneApp.toml while binaries keep the full timestamp in filenames.
 
 name: Build and Release
 
@@ -90,12 +92,14 @@ jobs:
 
       - name: Set version
         id: version
-        run: echo "VERSION=$(date +%Y.%m.%d.%H%M)" >> $GITHUB_OUTPUT
-
-      - name: Sync FyneApp.toml with release version
         run: |
-          VERSION="${{ steps.version.outputs.VERSION }}"
-          sed -i 's/^Version = .*/Version = "'"$VERSION"'"/' FyneApp.toml
+          echo "VERSION=$(date +%Y.%m.%d.%H%M)" >> $GITHUB_OUTPUT
+          echo "FYNE_APP_VERSION=$(date +%Y.%m.%d)" >> $GITHUB_OUTPUT
+
+      - name: Sync FyneApp.toml for Fyne packaging (x.y.z only)
+        run: |
+          FYNE_VER="${{ steps.version.outputs.FYNE_APP_VERSION }}"
+          sed -i 's/^Version = .*/Version = "'"$FYNE_VER"'"/' FyneApp.toml
 
       - name: Set up Go
         uses: actions/setup-go@v5
