@@ -101,6 +101,14 @@ modules:
       - install -Dm00644 internal/assets/icons/sqyre.png ${FLATPAK_DEST}/share/icons/hicolor/256x256/apps/${FLATPAK_ID}.png
       - install -Dm00644 .devcontainer/builds/linux/packaging/flatpak/com.sqyre.app.desktop ${FLATPAK_DEST}/share/applications/${FLATPAK_ID}.desktop
       - install -Dm00644 .devcontainer/builds/linux/packaging/flatpak/com.sqyre.app.appdata.xml ${FLATPAK_DEST}/share/appdata/${FLATPAK_ID}.appdata.xml
+      # OSTree refuses group/other write bits on objects; some installs leave 0666/0777 (breaks .Debug install).
+      - find "${FLATPAK_DEST}" -type f -exec chmod u=rwX,go=rX {} +
+      - find "${FLATPAK_DEST}" -type d -exec chmod u=rwx,go=rx {} +
     sources:
       - type: dir
         path: ../../../../..
+
+# After strip/debug split (post-module), OSTree rejects g/o write bits on the .Debug ref.
+cleanup-commands:
+  - find /app -type f -exec chmod u=rwX,go=rX {} +
+  - find /app -type d -exec chmod u=rwx,go=rx {} +
