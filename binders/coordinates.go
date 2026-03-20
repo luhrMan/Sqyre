@@ -10,11 +10,44 @@ import (
 	"Sqyre/ui/custom_widgets"
 	"fmt"
 	"log"
+	"sort"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/widget"
 	"github.com/lithammer/fuzzysearch/fuzzy"
 )
+
+func sortPointKeysByDisplayName(p *models.Program, keys []string) {
+	repo := p.PointRepo(config.MainMonitorSizeString)
+	sort.Slice(keys, func(i, j int) bool {
+		a, _ := repo.Get(keys[i])
+		b, _ := repo.Get(keys[j])
+		na, nb := keys[i], keys[j]
+		if a != nil {
+			na = a.Name
+		}
+		if b != nil {
+			nb = b.Name
+		}
+		return na < nb
+	})
+}
+
+func sortSearchAreaKeysByDisplayName(p *models.Program, keys []string) {
+	repo := p.SearchAreaRepo(config.MainMonitorSizeString)
+	sort.Slice(keys, func(i, j int) bool {
+		a, _ := repo.Get(keys[i])
+		b, _ := repo.Get(keys[j])
+		na, nb := keys[i], keys[j]
+		if a != nil {
+			na = a.Name
+		}
+		if b != nil {
+			nb = b.Name
+		}
+		return na < nb
+	})
+}
 
 func setSearchAreaWidgets(sa models.SearchArea) {
 	st := ui.GetUi().EditorTabs.SearchAreasTab.Widgets
@@ -49,7 +82,7 @@ func setAccordionSearchAreasLists(acc *widget.Accordion) {
 		sb.OnChanged = func(string) { setAccordionSearchAreasLists(acc) }
 	}
 
-	for _, p := range repositories.ProgramRepo().GetAll() {
+	for _, p := range repositories.ProgramRepo().GetAllSortedByName() {
 		defaultList := p.SearchAreaRepo(config.MainMonitorSizeString).GetAllKeys()
 		filtered := defaultList
 		if filterText != "" {
@@ -60,6 +93,7 @@ func setAccordionSearchAreasLists(acc *widget.Accordion) {
 				}
 			}
 		}
+		sortSearchAreaKeysByDisplayName(p, filtered)
 		// Show program if search is empty, or program name matches, or any search area name matches
 		if filterText != "" && !fuzzy.MatchFold(filterText, p.Name) && len(filtered) == 0 {
 			continue
@@ -132,7 +166,7 @@ func setAccordionPointsLists(acc *widget.Accordion) {
 		sb.OnChanged = func(string) { setAccordionPointsLists(acc) }
 	}
 
-	for _, p := range repositories.ProgramRepo().GetAll() {
+	for _, p := range repositories.ProgramRepo().GetAllSortedByName() {
 		defaultList := p.PointRepo(config.MainMonitorSizeString).GetAllKeys()
 		filtered := defaultList
 		if filterText != "" {
@@ -143,6 +177,7 @@ func setAccordionPointsLists(acc *widget.Accordion) {
 				}
 			}
 		}
+		sortPointKeysByDisplayName(p, filtered)
 		// Show program if search is empty, or program name matches, or any point name matches
 		if filterText != "" && !fuzzy.MatchFold(filterText, p.Name) && len(filtered) == 0 {
 			continue
@@ -208,7 +243,7 @@ func setAccordionAutoPicSearchAreasLists(acc *widget.Accordion) {
 		sb.OnChanged = func(string) { setAccordionAutoPicSearchAreasLists(acc) }
 	}
 
-	for _, p := range repositories.ProgramRepo().GetAll() {
+	for _, p := range repositories.ProgramRepo().GetAllSortedByName() {
 		defaultList := p.SearchAreaRepo(config.MainMonitorSizeString).GetAllKeys()
 		filtered := defaultList
 		if filterText != "" {
@@ -219,6 +254,7 @@ func setAccordionAutoPicSearchAreasLists(acc *widget.Accordion) {
 				}
 			}
 		}
+		sortSearchAreaKeysByDisplayName(p, filtered)
 		// Show program if search is empty, or program name matches, or any search area name matches
 		if filterText != "" && !fuzzy.MatchFold(filterText, p.Name) && len(filtered) == 0 {
 			continue

@@ -58,7 +58,7 @@ The manifest is at `flatpak/com.sqyre.app.yml`. It expects the app to be built f
 
 - A **Linux build environment** with:
   - Go 1.24+
-  - OpenCV and Tesseract (and Leptonica) dev libraries — same as in the main README “Linux (non-NixOS)” section (e.g. `libtesseract-dev`, and OpenCV from gocv’s `make install` or distro packages).
+  - OpenCV and Tesseract (and Leptonica) dev libraries — same as in the main README “Linux (non-NixOS)” section (e.g. `libtesseract-dev`). The devcontainer installs OpenCV under **`/opt/opencv/linux/install`**; the AppImage recipe bundles `.so` files from there (or falls back to `/usr/local/lib`).
 - **appimage-builder**  
   Install e.g. with:
   ```bash

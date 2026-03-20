@@ -2,7 +2,7 @@
 Type=Application
 Name=Sqyre
 Comment=Macro builder
-Categories=Development;Utility;
+Categories=Development;Utility;Gaming;
 Keywords=sqyre;macro;automation;
 Icon=com.sqyre.app
 Exec=sqyre

@@ -140,6 +140,7 @@ func CreateProgramAccordionItem(opts ItemsAccordionOptions) (*widget.AccordionIt
 				}
 			}
 		}
+		slices.Sort(filtered)
 	}
 
 	lists := struct {

@@ -4,6 +4,8 @@ import (
 	"image/color"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
+	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/theme"
 )
 
@@ -38,4 +40,14 @@ func (t *sqyreTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVariant) 
 	default:
 		return t.Theme.Color(name, variant)
 	}
+}
+
+// WrapTagChip wraps each Items-tab tag row with a border and a ~95% transparent Sqyre primary fill (5% opacity).
+func WrapTagChip(inner fyne.CanvasObject) fyne.CanvasObject {
+	fill := color.NRGBA{R: sqyrePrimary.R, G: sqyrePrimary.G, B: sqyrePrimary.B, A: 13}
+	border := canvas.NewRectangle(fill)
+	border.StrokeColor = theme.ButtonColor()
+	border.StrokeWidth = 1
+	border.CornerRadius = 4
+	return container.NewStack(border, inner)
 }
