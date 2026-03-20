@@ -68,6 +68,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN pip3 install --no-cache-dir appimage-builder
 
+# -----------------------------------------------------------------------------
+# Stage: Flatpak — flatpak CLI + flatpak-builder 1.4.x from source.
+# Jammy’s apt only ships flatpak-builder 1.2.x, which breaks AppStream finish against
+# current org.freedesktop.Sdk; see PACKAGING.md and install-flatpak-builder-1.4-on-jammy.sh.
+# -----------------------------------------------------------------------------
+COPY .devcontainer/builds/linux/packaging/flatpak/install-flatpak-builder-1.4-on-jammy.sh /tmp/install-flatpak-builder-1.4-on-jammy.sh
+RUN chmod +x /tmp/install-flatpak-builder-1.4-on-jammy.sh && \
+    apt-get update && apt-get install -y --no-install-recommends \
+      flatpak \
+      fuse3 \
+      elfutils \
+    && rm -rf /var/lib/apt/lists/* \
+    && /tmp/install-flatpak-builder-1.4-on-jammy.sh \
+    && rm -f /tmp/install-flatpak-builder-1.4-on-jammy.sh
+ENV PATH="/usr/local/bin:${PATH}"
+
 # Nix (for `nix develop` in .devcontainer/builds/linux/nix)
 # Installer expects /nix and group nixbld; create them (we run as root, no sudo).
 # RUN apt-get update && apt-get install -y --no-install-recommends xz-utils && \
@@ -79,15 +95,45 @@ RUN pip3 install --no-cache-dir appimage-builder
 #     rm -rf /var/lib/apt/lists/*
 # ENV PATH="/root/.nix-profile/bin:${PATH}"
 
+# -----------------------------------------------------------------------------
+# Non-root user for bind mounts (permissions match host via devcontainer.json).
+# GOPATH (/go) is owned by this user; toolchain under /usr/local stays root-owned but world-readable.
+# -----------------------------------------------------------------------------
+ARG USERNAME=vscode
+ARG USER_UID=1000
+ARG USER_GID=1000
+RUN groupadd --gid "${USER_GID}" "${USERNAME}" \
+    && useradd --uid "${USER_UID}" --gid "${USER_GID}" -m -s /bin/bash "${USERNAME}" \
+    && apt-get update && apt-get install -y --no-install-recommends sudo \
+    && echo "${USERNAME} ALL=(root) NOPASSWD:ALL" > "/etc/sudoers.d/${USERNAME}" \
+    && chmod 0440 "/etc/sudoers.d/${USERNAME}" \
+    && chown -R "${USER_UID}:${USER_GID}" /go \
+    && rm -rf /var/lib/apt/lists/*
+
+USER ${USERNAME}
 WORKDIR /workspace
+
+# Pre-install Flathub runtimes for flatpak-builder (keep runtime-version in sync with
+# .devcontainer/builds/linux/packaging/flatpak/com.sqyre.app.yml). User install avoids
+# system D-Bus during image build; use flatpak-builder --user when building the app.
+RUN flatpak --user remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo \
+    && flatpak --user install -y flathub \
+        org.freedesktop.Platform//25.08 \
+        org.freedesktop.Sdk//25.08 \
+        org.freedesktop.Sdk.Extension.golang//25.08
 
 # -----------------------------------------------------------------------------
 # Stage: with-android – devcontainer + Android NDK (optional; use build target).
 # -----------------------------------------------------------------------------
 FROM devcontainer AS with-android
 
+USER root
+
 ARG NDK_REV=r25c
 RUN mkdir -p /opt && cd /opt && \
     curl -sSL "https://dl.google.com/android/repository/android-ndk-${NDK_REV}-linux.zip" -o ndk.zip && \
     unzip -q ndk.zip && mv android-ndk-* android-ndk && rm ndk.zip
 ENV ANDROID_NDK=/opt/android-ndk
+
+USER vscode
+WORKDIR /workspace
