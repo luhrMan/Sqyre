@@ -40,8 +40,9 @@ const (
 	MaxIconVariants   = 100 // maximum variants per item
 
 	// Fyne preference keys
-	PrefSaveMetaImages = "save_meta_images"
-	PrefWindowX        = "window_x"
+	PrefSaveMetaImages  = "save_meta_images"
+	PrefEnabledMonitors = "enabled_monitors" // comma-separated indices, e.g. "0,2"; empty = all (must match screen package key)
+	PrefWindowX         = "window_x"
 	PrefWindowY        = "window_y"
 	PrefWindowWidth    = "window_width"
 	PrefWindowHeight   = "window_height"

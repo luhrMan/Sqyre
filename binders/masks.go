@@ -11,6 +11,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/dialog"
@@ -18,6 +19,22 @@ import (
 	"fyne.io/fyne/v2/widget"
 	"github.com/lithammer/fuzzysearch/fuzzy"
 )
+
+func sortMaskKeysByDisplayName(p *models.Program, keys []string) {
+	repo := p.MaskRepo()
+	sort.Slice(keys, func(i, j int) bool {
+		a, _ := repo.Get(keys[i])
+		b, _ := repo.Get(keys[j])
+		na, nb := keys[i], keys[j]
+		if a != nil {
+			na = a.Name
+		}
+		if b != nil {
+			nb = b.Name
+		}
+		return na < nb
+	})
+}
 
 func setMaskWidgets(m models.Mask, programName string) {
 	mtw := ui.GetUi().EditorTabs.MasksTab.Widgets
@@ -62,7 +79,7 @@ func setAccordionMasksLists(acc *widget.Accordion) {
 		sb.OnChanged = func(string) { setAccordionMasksLists(acc) }
 	}
 
-	for _, p := range repositories.ProgramRepo().GetAll() {
+	for _, p := range repositories.ProgramRepo().GetAllSortedByName() {
 		defaultList := p.MaskRepo().GetAllKeys()
 		filtered := defaultList
 		if filterText != "" {
@@ -73,6 +90,7 @@ func setAccordionMasksLists(acc *widget.Accordion) {
 				}
 			}
 		}
+		sortMaskKeysByDisplayName(p, filtered)
 		// Show program if search is empty, or program name matches, or any mask name matches
 		if filterText != "" && !fuzzy.MatchFold(filterText, p.Name) && len(filtered) == 0 {
 			continue

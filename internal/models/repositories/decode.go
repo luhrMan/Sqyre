@@ -39,7 +39,7 @@ func decodeMacro(key string) (*models.Macro, error) {
 	tempViper := viper.New()
 	tempViper.SetConfigType("yaml")
 	if err := tempViper.ReadConfig(bytes.NewReader(yamlBytes)); err != nil {
-		return nil, fmt.Errorf("%w: macro '%s': failed to read: %v", ErrDecodeFailed, key, err)
+		return nil, fmt.Errorf("%w: macro '%s': failed to read: %w", ErrDecodeFailed, key, serialize.YAMLErrorWithContent(yamlBytes, err))
 	}
 
 	err = tempViper.Unmarshal(macro, viper.DecodeHook(serialize.MacroDecodeHookFunc()))
@@ -80,7 +80,7 @@ func decodeProgram(key string) (*models.Program, error) {
 
 	program := models.NewProgram()
 	if err := yaml.Unmarshal(yamlBytes, program); err != nil {
-		return nil, fmt.Errorf("%w: program '%s': %v", ErrDecodeFailed, key, err)
+		return nil, fmt.Errorf("%w: program '%s': %w", ErrDecodeFailed, key, serialize.YAMLErrorWithContent(yamlBytes, err))
 	}
 
 	log.Printf("Successfully decoded program: %s", program.Name)

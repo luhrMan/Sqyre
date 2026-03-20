@@ -44,6 +44,10 @@ func Decode() error {
 	GetViper().SetConfigFile(configPath)
 	GetViper().SetConfigType("yaml")
 	if err := GetViper().ReadInConfig(); err != nil {
+		data, readErr := os.ReadFile(configPath)
+		if readErr == nil && len(data) > 0 {
+			return fmt.Errorf("viper error reading config (%s): %w", configPath, YAMLErrorWithContent(data, err))
+		}
 		return fmt.Errorf("viper error reading in file: %v", err)
 	}
 
@@ -131,9 +135,17 @@ func (s *serializer) CreateActionFromMap(rawMap map[string]any, parent actions.A
 		if countVal == nil {
 			countVal = 1
 		}
-		action = actions.NewLoop(countVal, rawMap["name"].(string), []actions.ActionInterface{})
+		name, err := expectString(rawMap, "name")
+		if err != nil {
+			return nil, fmt.Errorf("action type loop: %w", err)
+		}
+		action = actions.NewLoop(countVal, name, []actions.ActionInterface{})
 	case "wait":
-		action = actions.NewWait(rawMap["time"].(int))
+		t, err := expectInt(rawMap, "time")
+		if err != nil {
+			return nil, fmt.Errorf("action type wait: %w", err)
+		}
+		action = actions.NewWait(t)
 	case "findpixel":
 		name := stringFromMap(rawMap, "name")
 		searchArea := actions.SearchArea{}
@@ -181,19 +193,35 @@ func (s *serializer) CreateActionFromMap(rawMap map[string]any, parent actions.A
 			}
 		}
 	case "click":
+		button, err := expectBool(rawMap, "button")
+		if err != nil {
+			return nil, fmt.Errorf("action type click: %w", err)
+		}
 		state := false
 		if v, ok := rawMap["state"].(bool); ok {
 			state = v
 		}
-		action = actions.NewClick(rawMap["button"].(bool), state)
+		action = actions.NewClick(button, state)
 	case "move":
+		pm, err := expectMap(rawMap, "point")
+		if err != nil {
+			return nil, fmt.Errorf("action type move: %w", err)
+		}
 		smooth := false
 		if v, ok := rawMap["smooth"].(bool); ok {
 			smooth = v
 		}
-		action = actions.NewMove(createPoint(rawMap["point"].(map[string]any)), smooth)
+		action = actions.NewMove(createPoint(pm), smooth)
 	case "key":
-		action = actions.NewKey(rawMap["key"].(string), rawMap["state"].(bool))
+		k, err := expectString(rawMap, "key")
+		if err != nil {
+			return nil, fmt.Errorf("action type key: %w", err)
+		}
+		st, err := expectBool(rawMap, "state")
+		if err != nil {
+			return nil, fmt.Errorf("action type key: %w", err)
+		}
+		action = actions.NewKey(k, st)
 	case "type":
 		text := stringFromMap(rawMap, "text")
 		delayMs := 0
@@ -214,7 +242,27 @@ func (s *serializer) CreateActionFromMap(rawMap map[string]any, parent actions.A
 				blur = int(b)
 			}
 		}
-		action = actions.NewImageSearch(rawMap["name"].(string), []actions.ActionInterface{}, targets, createSearchBox(rawMap["searcharea"].(map[string]any)), rawMap["rowsplit"].(int), rawMap["colsplit"].(int), float32(rawMap["tolerance"].(float64)), blur)
+		name, err := expectString(rawMap, "name")
+		if err != nil {
+			return nil, fmt.Errorf("action type imagesearch: %w", err)
+		}
+		sa, err := expectMap(rawMap, "searcharea")
+		if err != nil {
+			return nil, fmt.Errorf("action type imagesearch: %w", err)
+		}
+		row, err := expectInt(rawMap, "rowsplit")
+		if err != nil {
+			return nil, fmt.Errorf("action type imagesearch: %w", err)
+		}
+		col, err := expectInt(rawMap, "colsplit")
+		if err != nil {
+			return nil, fmt.Errorf("action type imagesearch: %w", err)
+		}
+		tol, err := expectFloat64(rawMap, "tolerance")
+		if err != nil {
+			return nil, fmt.Errorf("action type imagesearch: %w", err)
+		}
+		action = actions.NewImageSearch(name, []actions.ActionInterface{}, targets, createSearchBox(sa), row, col, float32(tol), blur)
 		if is, ok := action.(*actions.ImageSearch); ok {
 			if v, ok := rawMap["outputxvariable"].(string); ok {
 				is.OutputXVariable = v
@@ -247,7 +295,19 @@ func (s *serializer) CreateActionFromMap(rawMap map[string]any, parent actions.A
 			}
 		}
 	case "ocr":
-		action = actions.NewOcr(rawMap["name"].(string), []actions.ActionInterface{}, rawMap["target"].(string), createSearchBox(rawMap["searcharea"].(map[string]any)))
+		oname, err := expectString(rawMap, "name")
+		if err != nil {
+			return nil, fmt.Errorf("action type ocr: %w", err)
+		}
+		target, err := expectString(rawMap, "target")
+		if err != nil {
+			return nil, fmt.Errorf("action type ocr: %w", err)
+		}
+		sa, err := expectMap(rawMap, "searcharea")
+		if err != nil {
+			return nil, fmt.Errorf("action type ocr: %w", err)
+		}
+		action = actions.NewOcr(oname, []actions.ActionInterface{}, target, createSearchBox(sa))
 		if oc, ok := action.(*actions.Ocr); ok {
 			if v, ok := rawMap["outputvariable"].(string); ok {
 				oc.OutputVariable = v
@@ -283,15 +343,39 @@ func (s *serializer) CreateActionFromMap(rawMap map[string]any, parent actions.A
 			}
 		}
 	case "setvariable":
-		action = actions.NewSetVariable(rawMap["variablename"].(string), rawMap["value"])
+		vn, err := expectString(rawMap, "variablename")
+		if err != nil {
+			return nil, fmt.Errorf("action type setvariable: %w", err)
+		}
+		action = actions.NewSetVariable(vn, rawMap["value"])
 	case "calculate":
-		action = actions.NewCalculate(rawMap["expression"].(string), rawMap["outputvar"].(string))
+		expr, err := expectString(rawMap, "expression")
+		if err != nil {
+			return nil, fmt.Errorf("action type calculate: %w", err)
+		}
+		outv, err := expectString(rawMap, "outputvar")
+		if err != nil {
+			return nil, fmt.Errorf("action type calculate: %w", err)
+		}
+		action = actions.NewCalculate(expr, outv)
 	case "datalist":
 		isFile := false
-		if ifVal, ok := rawMap["isfile"]; ok {
-			isFile = ifVal.(bool)
+		if ifVal, ok := rawMap["isfile"]; ok && ifVal != nil {
+			b, ok := ifVal.(bool)
+			if !ok {
+				return nil, fmt.Errorf("action type datalist: field \"isfile\": expected bool, got %T", ifVal)
+			}
+			isFile = b
 		}
-		action = actions.NewDataList(rawMap["source"].(string), rawMap["outputvar"].(string), isFile)
+		src, err := expectString(rawMap, "source")
+		if err != nil {
+			return nil, fmt.Errorf("action type datalist: %w", err)
+		}
+		outVar, err := expectString(rawMap, "outputvar")
+		if err != nil {
+			return nil, fmt.Errorf("action type datalist: %w", err)
+		}
+		action = actions.NewDataList(src, outVar, isFile)
 		if dl, ok := action.(*actions.DataList); ok {
 			if lv, ok := rawMap["lengthvar"].(string); ok {
 				dl.LengthVar = lv
@@ -302,14 +386,30 @@ func (s *serializer) CreateActionFromMap(rawMap map[string]any, parent actions.A
 		}
 	case "savevariable":
 		append := false
-		if appendVal, ok := rawMap["append"]; ok {
-			append = appendVal.(bool)
+		if appendVal, ok := rawMap["append"]; ok && appendVal != nil {
+			b, ok := appendVal.(bool)
+			if !ok {
+				return nil, fmt.Errorf("action type savevariable: field \"append\": expected bool, got %T", appendVal)
+			}
+			append = b
 		}
 		appendNewline := false
-		if nlVal, ok := rawMap["appendnewline"]; ok {
-			appendNewline = nlVal.(bool)
+		if nlVal, ok := rawMap["appendnewline"]; ok && nlVal != nil {
+			b, ok := nlVal.(bool)
+			if !ok {
+				return nil, fmt.Errorf("action type savevariable: field \"appendnewline\": expected bool, got %T", nlVal)
+			}
+			appendNewline = b
 		}
-		action = actions.NewSaveVariable(rawMap["variablename"].(string), rawMap["destination"].(string), append, appendNewline)
+		vn, err := expectString(rawMap, "variablename")
+		if err != nil {
+			return nil, fmt.Errorf("action type savevariable: %w", err)
+		}
+		dest, err := expectString(rawMap, "destination")
+		if err != nil {
+			return nil, fmt.Errorf("action type savevariable: %w", err)
+		}
+		action = actions.NewSaveVariable(vn, dest, append, appendNewline)
 	// case "calibration":
 	// 	name := stringFromMap(rawMap, "name")
 	// 	programName := stringFromMap(rawMap, "programname")
@@ -346,14 +446,20 @@ func (s *serializer) CreateActionFromMap(rawMap map[string]any, parent actions.A
 		action = actions.NewFocusWindow(stringFromMap(rawMap, "windowtarget"))
 	case "runmacro":
 		action = actions.NewRunMacro(stringFromMap(rawMap, "macroname"))
+	default:
+		return nil, fmt.Errorf("unknown action type %v", rawMap["type"])
 	}
 	action.SetParent(parent)
 	if advAction, ok := action.(actions.AdvancedActionInterface); ok {
 		if subActionsRaw, ok := rawMap["subactions"].([]any); ok {
-			for _, subActionRaw := range subActionsRaw {
-				subAction, err := s.CreateActionFromMap(subActionRaw.(map[string]any), advAction)
+			for i, subActionRaw := range subActionsRaw {
+				subMap, ok := subActionRaw.(map[string]any)
+				if !ok {
+					return nil, fmt.Errorf("subactions[%d]: expected mapping, got %T", i, subActionRaw)
+				}
+				subAction, err := s.CreateActionFromMap(subMap, advAction)
 				if err != nil {
-					return nil, err
+					return nil, fmt.Errorf("subactions[%d]: %w", i, err)
 				}
 				advAction.AddSubAction(subAction)
 			}

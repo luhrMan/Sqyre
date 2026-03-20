@@ -3,6 +3,7 @@ package ui
 import (
 	"Sqyre/internal/config"
 	"Sqyre/internal/models"
+	"Sqyre/internal/screen"
 	"Sqyre/internal/services"
 	"Sqyre/ui/custom_widgets"
 	"errors"
@@ -23,6 +24,7 @@ import (
 
 	"Sqyre/ui/completionentry"
 
+	kxlayout "github.com/ErikKalkoken/fyne-kx/layout"
 	"github.com/go-vgo/robotgo"
 	"gocv.io/x/gocv"
 )
@@ -58,6 +60,84 @@ type EditorTab struct {
 func NewEditorTab(name string, left, right *fyne.Container) *container.TabItem {
 	split := container.NewHSplit(left, right)
 	return container.NewTabItem(name, split)
+}
+
+// wrapEditorPreviewImage adds a themed border around editor preview imagery (same treatment as the Items tab icon editor).
+func wrapEditorPreviewImage(inner fyne.CanvasObject) fyne.CanvasObject {
+	border := canvas.NewRectangle(color.NRGBA{})
+	border.StrokeColor = theme.ButtonColor()
+	border.StrokeWidth = 2
+	border.CornerRadius = 4
+	return container.NewStack(border, inner)
+}
+
+const (
+	editorPreviewMonitorDash = 10
+	editorPreviewMonitorGap  = 6
+)
+
+// editorPreviewMonitorOutline is the dotted monitor bezel color (matches search-area / point accent).
+var editorPreviewMonitorOutline = color.RGBA{R: 255, A: 255}
+
+func drawPreviewDottedHLine(mat *gocv.Mat, y, x0, x1 int, c color.RGBA, thick int) {
+	if x0 > x1 {
+		return
+	}
+	step := editorPreviewMonitorDash + editorPreviewMonitorGap
+	for x := x0; x <= x1; x += step {
+		xe := x + editorPreviewMonitorDash - 1
+		if xe > x1 {
+			xe = x1
+		}
+		gocv.Line(mat, image.Pt(x, y), image.Pt(xe, y), c, thick)
+	}
+}
+
+func drawPreviewDottedVLine(mat *gocv.Mat, x, y0, y1 int, c color.RGBA, thick int) {
+	if y0 > y1 {
+		return
+	}
+	step := editorPreviewMonitorDash + editorPreviewMonitorGap
+	for y := y0; y <= y1; y += step {
+		ye := y + editorPreviewMonitorDash - 1
+		if ye > y1 {
+			ye = y1
+		}
+		gocv.Line(mat, image.Pt(x, y), image.Pt(x, ye), c, thick)
+	}
+}
+
+func drawPreviewDottedRectOutline(mat *gocv.Mat, r image.Rectangle, c color.RGBA, thick int) {
+	if r.Empty() || r.Dx() <= 0 || r.Dy() <= 0 {
+		return
+	}
+	x0, y0 := r.Min.X, r.Min.Y
+	x1, y1 := r.Max.X-1, r.Max.Y-1
+	if x1 < x0 || y1 < y0 {
+		return
+	}
+	drawPreviewDottedHLine(mat, y0, x0, x1, c, thick)
+	drawPreviewDottedHLine(mat, y1, x0, x1, c, thick)
+	drawPreviewDottedVLine(mat, x0, y0, y1, c, thick)
+	drawPreviewDottedVLine(mat, x1, y0, y1, c, thick)
+}
+
+// drawEditorPreviewMonitorOutlines draws a dotted rectangle for each enabled monitor (clip to capture).
+func drawEditorPreviewMonitorOutlines(mat *gocv.Mat, vb image.Rectangle) {
+	const thick = 1
+	n := screen.NumDisplays()
+	for i := 0; i < n; i++ {
+		if !screen.IsMonitorEnabled(i) {
+			continue
+		}
+		b := screen.DisplayBoundsAbs(i)
+		inter := b.Intersect(vb)
+		if inter.Empty() {
+			continue
+		}
+		rel := image.Rect(inter.Min.X-vb.Min.X, inter.Min.Y-vb.Min.Y, inter.Max.X-vb.Min.X, inter.Max.Y-vb.Min.Y)
+		drawPreviewDottedRectOutline(mat, rel, editorPreviewMonitorOutline, thick)
+	}
 }
 
 func (u *Ui) constructEditorTabs() {
@@ -116,7 +196,7 @@ func (u *Ui) constructEditorTabs() {
 	itw["tagSubmitButton"].(*widget.Button).Importance = widget.MediumImportance
 	// Create container with tag entry and submit button
 	itw["tagEntryContainer"] = container.NewBorder(nil, nil, nil, itw["tagSubmitButton"], itw["tagEntry"])
-	itw[tags] = container.NewGridWithColumns(2) // Grid container for displaying tags
+	itw[tags] = container.New(kxlayout.NewRowWrapLayout())
 	itw[sm] = new(widget.Entry)
 
 	// Mask selector: label showing current mask + button to open selection popup
@@ -150,7 +230,7 @@ func (u *Ui) constructEditorTabs() {
 		widget.NewFormItem(cols, itw[cols]),
 		widget.NewFormItem(rows, itw[rows]),
 		widget.NewFormItem(tags, itw["tagEntryContainer"]),
-		widget.NewFormItem("", container.NewHScroll(itw[tags])),
+		widget.NewFormItem("", itw[tags]),
 		widget.NewFormItem(sm, itw[sm]),
 		widget.NewFormItem("Mask", itw["maskContainer"]),
 	)
@@ -212,7 +292,7 @@ func (u *Ui) constructEditorTabs() {
 			nil,
 			nil,
 			nil,
-			pointPreviewImage,
+			wrapEditorPreviewImage(pointPreviewImage),
 		),
 	)
 
@@ -257,7 +337,7 @@ func (u *Ui) constructEditorTabs() {
 			nil,
 			nil,
 			nil,
-			searchAreaPreviewImage,
+			wrapEditorPreviewImage(searchAreaPreviewImage),
 		),
 	)
 
@@ -363,7 +443,7 @@ func (u *Ui) constructEditorTabs() {
 				mtw["imageStatus"],
 			),
 			nil, nil, nil,
-			maskPreviewImage,
+			wrapEditorPreviewImage(maskPreviewImage),
 		),
 	)
 
@@ -399,7 +479,7 @@ func (u *Ui) constructEditorTabs() {
 			atw["saveButton"],
 			nil,
 			nil,
-			previewImage,
+			wrapEditorPreviewImage(previewImage),
 		),
 	)
 
@@ -458,14 +538,10 @@ func (u *Ui) onAutoPicSave() {
 		return
 	}
 
-	// Validate coordinates are within reasonable bounds
-	screenWidth := config.MonitorWidth
-	screenHeight := config.MonitorHeight
-
-	if lx < 0 || ty < 0 ||
-		rx > screenWidth || by > screenHeight {
-		dialog.ShowError(fmt.Errorf("AutoPic: Cannot save - search area coordinates out of screen bounds - screen: %dx%d, area: (%d,%d) to (%d,%d) (area: %s)",
-			screenWidth, screenHeight, lx, ty, rx, by, searchArea.Name), u.Window)
+	vb := screen.VirtualBounds()
+	if lx < vb.Min.X || ty < vb.Min.Y || rx > vb.Max.X || by > vb.Max.Y {
+		dialog.ShowError(fmt.Errorf("AutoPic: Cannot save - search area outside virtual desktop - desktop: (%d,%d)..(%d,%d), area: (%d,%d) to (%d,%d) (area: %s)",
+			vb.Min.X, vb.Min.Y, vb.Max.X, vb.Max.Y, lx, ty, rx, by, searchArea.Name), u.Window)
 		return
 	}
 
@@ -549,14 +625,10 @@ func (u *Ui) UpdateAutoPicPreview(searchArea *models.SearchArea) {
 		return
 	}
 
-	// Validate coordinates are within reasonable bounds
-	screenWidth := config.MonitorWidth
-	screenHeight := config.MonitorHeight
-
-	if lx < 0 || ty < 0 ||
-		rx > screenWidth || by > screenHeight {
-		dialog.ShowError(fmt.Errorf("AutoPic: Search area coordinates out of screen bounds - screen: %dx%d, area: (%d,%d) to (%d,%d) (area: %s)",
-			screenWidth, screenHeight, lx, ty, rx, by, searchArea.Name), u.Window)
+	vb := screen.VirtualBounds()
+	if lx < vb.Min.X || ty < vb.Min.Y || rx > vb.Max.X || by > vb.Max.Y {
+		dialog.ShowError(fmt.Errorf("AutoPic: Search area outside virtual desktop - desktop: (%d,%d)..(%d,%d), area: (%d,%d) to (%d,%d) (area: %s)",
+			vb.Min.X, vb.Min.Y, vb.Max.X, vb.Max.Y, lx, ty, rx, by, searchArea.Name), u.Window)
 		u.clearPreviewImage()
 		return
 	}
@@ -651,19 +723,15 @@ func (u *Ui) UpdateSearchAreaPreview(searchArea *models.SearchArea) {
 		return
 	}
 
-	// Validate coordinates are within reasonable bounds
-	screenWidth := config.MonitorWidth
-	screenHeight := config.MonitorHeight
-
-	if lx < 0 || ty < 0 ||
-		rx > screenWidth || by > screenHeight {
-		dialog.ShowError(fmt.Errorf("SearchArea: Search area coordinates out of screen bounds - screen: %dx%d, area: (%d,%d) to (%d,%d) (area: %s)",
-			screenWidth, screenHeight, lx, ty, rx, by, searchArea.Name), u.Window)
+	vb := screen.VirtualBounds()
+	if lx < vb.Min.X || ty < vb.Min.Y || rx > vb.Max.X || by > vb.Max.Y {
+		dialog.ShowError(fmt.Errorf("SearchArea: Search area outside virtual desktop - desktop: (%d,%d)..(%d,%d), area: (%d,%d) to (%d,%d) (area: %s)",
+			vb.Min.X, vb.Min.Y, vb.Max.X, vb.Max.Y, lx, ty, rx, by, searchArea.Name), u.Window)
 		u.clearSearchAreaPreviewImage()
 		return
 	}
 
-	// Attempt to capture the full screen with error recovery
+	// Attempt to capture the full virtual desktop (all enabled monitors)
 	defer func() {
 		if r := recover(); r != nil {
 			services.LogPanicToFile(r, "SearchArea: Screen capture (area: "+searchArea.Name+")")
@@ -671,7 +739,7 @@ func (u *Ui) UpdateSearchAreaPreview(searchArea *models.SearchArea) {
 		}
 	}()
 
-	captureImg, err := robotgo.CaptureImg(0, 0, screenWidth, screenHeight)
+	captureImg, err := robotgo.CaptureImg(vb.Min.X, vb.Min.Y, vb.Dx(), vb.Dy())
 	if err != nil {
 		dialog.ShowError(fmt.Errorf("SearchArea: Error capturing image - %v (area: %s)", err, searchArea.Name), u.Window)
 		captureImg = nil
@@ -693,8 +761,10 @@ func (u *Ui) UpdateSearchAreaPreview(searchArea *models.SearchArea) {
 	}
 	defer mat.Close()
 
-	// Draw red rectangle showing search area boundaries
-	rect := image.Rect(lx, ty, rx, by)
+	drawEditorPreviewMonitorOutlines(&mat, vb)
+
+	// Draw red rectangle (image coords relative to virtual capture origin)
+	rect := image.Rect(lx-vb.Min.X, ty-vb.Min.Y, rx-vb.Min.X, by-vb.Min.Y)
 	redColor := color.RGBA{R: 255, A: 255}
 	gocv.Rectangle(&mat, rect, redColor, 2)
 
@@ -756,18 +826,15 @@ func (u *Ui) UpdatePointPreview(point *models.Point) {
 	px := pointCoordToIntForPreview(point.X)
 	py := pointCoordToIntForPreview(point.Y)
 
-	// Validate coordinates are within reasonable bounds
-	screenWidth := config.MonitorWidth
-	screenHeight := config.MonitorHeight
-
-	if px < 0 || py < 0 || px > screenWidth || py > screenHeight {
-		dialog.ShowError(fmt.Errorf("Point: Point coordinates out of screen bounds - screen: %dx%d, point: (%d,%d) (point: %s)",
-			screenWidth, screenHeight, px, py, point.Name), u.Window)
+	vb := screen.VirtualBounds()
+	if px < vb.Min.X || py < vb.Min.Y || px > vb.Max.X || py > vb.Max.Y {
+		dialog.ShowError(fmt.Errorf("Point: Point outside virtual desktop - desktop: (%d,%d)..(%d,%d), point: (%d,%d) (point: %s)",
+			vb.Min.X, vb.Min.Y, vb.Max.X, vb.Max.Y, px, py, point.Name), u.Window)
 		u.clearPointPreviewImage()
 		return
 	}
 
-	// Attempt to capture the full screen with error recovery
+	// Attempt to capture the full virtual desktop (all enabled monitors)
 	defer func() {
 		if r := recover(); r != nil {
 			services.LogPanicToFile(r, "Point: Screen capture (point: "+point.Name+")")
@@ -775,7 +842,7 @@ func (u *Ui) UpdatePointPreview(point *models.Point) {
 		}
 	}()
 
-	captureImg, err := robotgo.CaptureImg(0, 0, screenWidth, screenHeight)
+	captureImg, err := robotgo.CaptureImg(vb.Min.X, vb.Min.Y, vb.Dx(), vb.Dy())
 	if err != nil {
 		dialog.ShowError(fmt.Errorf("Point: Error capturing image - %v (point: %s)", err, point.Name), u.Window)
 		captureImg = nil
@@ -796,19 +863,15 @@ func (u *Ui) UpdatePointPreview(point *models.Point) {
 	}
 	defer mat.Close()
 
-	// Draw red marker at point coordinates
-	// Draw a circle with crosshair for visibility
-	center := image.Point{X: px, Y: py}
+	drawEditorPreviewMonitorOutlines(&mat, vb)
+
+	// Draw red marker (coords relative to virtual capture origin)
+	center := image.Point{X: px - vb.Min.X, Y: py - vb.Min.Y}
 	redColor := color.RGBA{R: 255, A: 255}
 
-	// Draw circle
 	gocv.Circle(&mat, center, 8, redColor, 2)
-
-	// Draw crosshair lines
-	// Horizontal line
-	gocv.Line(&mat, image.Point{X: px - 15, Y: py}, image.Point{X: px + 15, Y: py}, redColor, 2)
-	// Vertical line
-	gocv.Line(&mat, image.Point{X: px, Y: py - 15}, image.Point{X: px, Y: py + 15}, redColor, 2)
+	gocv.Line(&mat, image.Point{X: center.X - 15, Y: center.Y}, image.Point{X: center.X + 15, Y: center.Y}, redColor, 2)
+	gocv.Line(&mat, image.Point{X: center.X, Y: center.Y - 15}, image.Point{X: center.X, Y: center.Y + 15}, redColor, 2)
 
 	// Convert back to image.Image
 	previewImg, err := mat.ToImage()
