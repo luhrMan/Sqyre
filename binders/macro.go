@@ -1,15 +1,15 @@
 package binders
 
 import (
-	"Squire/internal/models"
-	"Squire/internal/models/actions"
-	"Squire/internal/models/repositories"
-	"Squire/internal/services"
-	"Squire/ui"
+	"Sqyre/internal/models"
+	"Sqyre/internal/models/actions"
+	"Sqyre/internal/models/repositories"
+	"Sqyre/internal/services"
+	"Sqyre/ui"
+	"encoding/json"
 	"errors"
 	"log"
 	"slices"
-	"strconv"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -25,10 +25,50 @@ func SetMacroUi() {
 
 	setMtabSettingsAndWidgets()
 
-	for _, m := range repositories.MacroRepo().GetAll() {
-		AddMacroTab(m)
+	if names := getOpenMacroNames(); len(names) > 0 {
+		for _, name := range names {
+			m, err := repositories.MacroRepo().Get(name)
+			if err != nil {
+				log.Printf("Could not reopen macro %s: %v", name, err)
+				continue
+			}
+			AddMacroTab(m)
+		}
+	} else {
+		for _, m := range repositories.MacroRepo().GetAll() {
+			AddMacroTab(m)
+			break
+		}
 	}
 	setMacroSelect(ui.GetUi().MainUi.Mui.MacroSelectButton)
+}
+
+func SaveOpenMacros() {
+	mtabs := ui.GetUi().Mui.MTabs
+	var names []string
+	for _, item := range mtabs.Items {
+		names = append(names, item.Text)
+	}
+	data, err := json.Marshal(names)
+	if err != nil {
+		log.Printf("Error marshaling open macros: %v", err)
+		return
+	}
+	fyne.CurrentApp().Preferences().SetString("OPEN_MACROS", string(data))
+	log.Println("Saved open macros:", names)
+}
+
+func getOpenMacroNames() []string {
+	s := fyne.CurrentApp().Preferences().String("OPEN_MACROS")
+	if s == "" {
+		return nil
+	}
+	var names []string
+	if err := json.Unmarshal([]byte(s), &names); err != nil {
+		log.Printf("Error unmarshaling open macros preference: %v", err)
+		return nil
+	}
+	return names
 }
 
 func AddMacroTab(m *models.Macro) {
@@ -93,7 +133,7 @@ func setMtabSettingsAndWidgets() {
 		}
 
 		mtabs.MacroNameEntry.SetText(m.Name)
-		mtabs.BoundGlobalDelayEntry.SetText(strconv.Itoa(m.GlobalDelay))
+		mtabs.BoundGlobalDelayEntry.SetValue(m.GlobalDelay)
 
 		mtabs.MacroHotkeyEntry.SetText(services.ReverseParseMacroHotkey(m.Hotkey))
 	}
@@ -144,22 +184,14 @@ func setMtabSettingsAndWidgets() {
 		mtabs.BoundMacroListWidget.Refresh()
 		mtabs.Refresh()
 	}
-	mtabs.BoundGlobalDelayEntry.OnChanged = func(s string) {
+	mtabs.BoundGlobalDelayEntry.OnChanged = func(gd int) {
 		mt := mtabs.SelectedTab()
 		if mt == nil {
 			return
 		}
-		gd, _ := strconv.Atoi(s)
-
 		mt.Macro.GlobalDelay = gd
 		robotgo.MouseSleep = gd
 		robotgo.KeySleep = gd
-	}
-	mtabs.BoundGlobalDelayEntry.OnSubmitted = func(s string) {
-		mt := mtabs.SelectedTab()
-		if mt == nil {
-			return
-		}
 		repositories.MacroRepo().Set(mt.Macro.Name, mt.Macro)
 	}
 }

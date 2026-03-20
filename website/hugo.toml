@@ -1,0 +1,8 @@
+baseURL = "https://sqyre.io/"
+languageCode = "en-us"
+title = "Sqyre — Macro Builder"
+theme = ""
+
+[params]
+  description = "Sqyre is a macro builder written in Go. Automate clicks, keys, image search, and OCR."
+  author = "Sqyre"

@@ -1,9 +1,9 @@
 package ui
 
 import (
-	"Squire/internal/assets"
-	"Squire/internal/models/serialize"
-	"Squire/internal/services"
+	"Sqyre/internal/assets"
+	"Sqyre/internal/models/serialize"
+	"Sqyre/internal/services"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -87,8 +87,15 @@ func (u *Ui) constructMacroUi() *fyne.Container {
 			return
 		}
 		go func() {
-			services.Execute(st.Macro.Root, st.Macro)
+			services.ExecuteMacroWithLogging(st.Macro)
 		}()
+	})
+	services.SetMacroRunningCallback(func(running bool) {
+		if running {
+			playMacroButton.Disable()
+		} else {
+			playMacroButton.Enable()
+		}
 	})
 
 	// addNodeButton.SetToolTip("add new action node")

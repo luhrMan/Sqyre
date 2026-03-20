@@ -1,7 +1,7 @@
 package ui
 
 import (
-	"Squire/internal/models/actions"
+	"Sqyre/internal/models/actions"
 	"strconv"
 
 	"fyne.io/fyne/v2"
@@ -48,8 +48,8 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 		}
 	basicActionsSubMenu.ChildMenu = fyne.NewMenu("",
 		fyne.NewMenuItemWithIcon("Wait", actions.NewWait(0).Icon(), func() { addActionAndRefresh(actions.NewWait(0)) }),
-		fyne.NewMenuItemWithIcon("Mouse Move", actions.NewMove(actions.Point{Name: "", X: 0, Y: 0}).Icon(), func() { addActionAndRefresh(actions.NewMove(actions.Point{Name: "", X: 0, Y: 0})) }),
-		fyne.NewMenuItemWithIcon("Click", actions.NewClick(false, false).Icon(), func() { addActionAndRefresh(actions.NewClick(false, false)) }),
+		fyne.NewMenuItemWithIcon("Mouse Move", actions.NewMove(actions.Point{Name: "", X: 0, Y: 0}, false).Icon(), func() { addActionAndRefresh(actions.NewMove(actions.Point{Name: "", X: 0, Y: 0}, false)) }),
+		fyne.NewMenuItemWithIcon("Click", actions.NewClick(false, true).Icon(), func() { addActionAndRefresh(actions.NewClick(false, true)) }),
 		fyne.NewMenuItemWithIcon("Key", actions.NewKey("ctrl", true).Icon(), func() { addActionAndRefresh(actions.NewKey("ctrl", true)) }),
 		fyne.NewMenuItemWithIcon("Type", actions.NewType("", 0).Icon(), func() { addActionAndRefresh(actions.NewType("", 0)) }),
 		fyne.NewMenuItemWithIcon("Focus window", actions.NewFocusWindow("").Icon(), func() {
@@ -79,8 +79,8 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 		// fyne.NewMenuItemWithIcon("Calibration", actions.NewCalibration("", "", actions.SearchArea{}, nil, 1, 1, 0.95, 5).Icon(), func() {
 		// 	addActionAndRefresh(actions.NewCalibration("", "", actions.SearchArea{}, nil, 1, 1, 0.95, 5))
 		// }),
-		fyne.NewMenuItemWithIcon("Wait for pixel", actions.NewWaitForPixel("", actions.Point{}, "ffffff", 0, 0, nil).Icon(), func() {
-			addActionAndRefresh(actions.NewWaitForPixel("", actions.Point{}, "ffffff", 0, 0, nil))
+		fyne.NewMenuItemWithIcon("Find pixel", actions.NewFindPixel("", actions.SearchArea{}, "ffffff", 0, nil).Icon(), func() {
+			addActionAndRefresh(actions.NewFindPixel("", actions.SearchArea{}, "ffffff", 0, nil))
 		}),
 	)
 	variableActionsSubMenu.ChildMenu = fyne.NewMenu("",
