@@ -1,7 +1,7 @@
 package models
 
 import (
-	"Squire/internal/config"
+	"Sqyre/internal/config"
 	"strconv"
 	"sync"
 
@@ -49,6 +49,19 @@ type SearchAreaRepositoryInterface interface {
 	New() *SearchArea
 }
 
+// MaskRepositoryInterface defines the interface for Mask data access operations.
+// This interface is defined in the models package to avoid circular dependencies.
+type MaskRepositoryInterface interface {
+	Get(name string) (*Mask, error)
+	GetAll() map[string]*Mask
+	GetAllKeys() []string
+	Set(name string, mask *Mask) error
+	Delete(name string) error
+	Save() error
+	Count() int
+	New() *Mask
+}
+
 // ItemRepositoryFactory is a function type that creates ItemRepository instances.
 // This is set by the repositories package to avoid circular dependencies.
 var ItemRepositoryFactory func(*Program) ItemRepositoryInterface
@@ -61,15 +74,21 @@ var PointRepositoryFactory func(*Program, string) PointRepositoryInterface
 // This is set by the repositories package to avoid circular dependencies.
 var SearchAreaRepositoryFactory func(*Program, string) SearchAreaRepositoryInterface
 
+// MaskRepositoryFactory is a function type that creates MaskRepository instances.
+// This is set by the repositories package to avoid circular dependencies.
+var MaskRepositoryFactory func(*Program) MaskRepositoryInterface
+
 type Program struct {
 	Name        string
 	Items       map[string]*Item
 	Coordinates map[string]*Coordinates
+	Masks       map[string]*Mask
 	masks       map[string]func(f ...any) *gocv.Mat
 
 	itemRepo        ItemRepositoryInterface                  // Lazy-initialized ItemRepository
 	pointRepos      map[string]PointRepositoryInterface      // Lazy-initialized PointRepositories keyed by resolution
 	searchAreaRepos map[string]SearchAreaRepositoryInterface // Lazy-initialized SearchAreaRepositories keyed by resolution
+	maskRepo        MaskRepositoryInterface                  // Lazy-initialized MaskRepository
 	repoMu          sync.Mutex                               // Protects all repository initialization
 }
 
@@ -88,7 +107,7 @@ type Item struct {
 	GridSize [2]int   `json:"gridSize"`
 	Tags     []string `json:"tags"`
 	StackMax int      `json:"stackMax"`
-	Merchant string   `json:"merchant"`
+	Mask     string   `json:"mask"`
 }
 
 // GetKey returns the unique identifier for this Item.
@@ -110,6 +129,7 @@ func NewProgram() *Program {
 				SearchAreas: make(map[string]*SearchArea),
 			},
 		},
+		Masks: make(map[string]*Mask),
 		masks: make(map[string]func(f ...any) *gocv.Mat),
 	}
 }
@@ -156,6 +176,26 @@ func (p *Program) PointRepo(resolutionKey string) PointRepositoryInterface {
 	}
 
 	return p.pointRepos[resolutionKey]
+}
+
+// MaskRepo returns a MaskRepository for managing this program's masks.
+// The repository is lazily initialized on first access and provides
+// thread-safe CRUD operations for masks within this program.
+func (p *Program) MaskRepo() MaskRepositoryInterface {
+	p.repoMu.Lock()
+	defer p.repoMu.Unlock()
+
+	if p.maskRepo == nil {
+		if MaskRepositoryFactory == nil {
+			panic("MaskRepositoryFactory not initialized - repositories package not imported")
+		}
+		if p.Masks == nil {
+			p.Masks = make(map[string]*Mask)
+		}
+		p.maskRepo = MaskRepositoryFactory(p)
+	}
+
+	return p.maskRepo
 }
 
 // SearchAreaRepo returns a SearchAreaRepository for managing this program's search areas at the given resolution.

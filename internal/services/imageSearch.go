@@ -1,16 +1,18 @@
 package services
 
 import (
-	"Squire/internal/assets"
-	"Squire/internal/config"
-	"Squire/internal/models"
-	"Squire/internal/models/actions"
-	"Squire/internal/models/repositories"
+	"Sqyre/internal/assets"
+	"Sqyre/internal/config"
+	"Sqyre/internal/models"
+	"Sqyre/internal/models/actions"
+	"Sqyre/internal/models/repositories"
 	"fmt"
 	"image"
 	"image/color"
 	"log"
 	"math"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -50,19 +52,20 @@ func imageSearch(a *actions.ImageSearch, macro *models.Macro) (map[string][]robo
 		return nil, err
 	}
 	defer img.Close()
-	gocv.IMWrite(config.GetMetaPath()+"search-area.png", img)
+	SaveMetaImage("searcharea", img)
 
 	imgDraw := img.Clone()
 	defer imgDraw.Close()
 
-	results := match(img, imgDraw, a)
+	results, err := match(img, imgDraw, a, macro)
+	if err != nil {
+		log.Printf("Image Search: %v", err)
+		return results, err
+	}
 	return results, nil
 }
 
-func match(img, imgDraw gocv.Mat, a *actions.ImageSearch) map[string][]robotgo.Point {
-	// Note: We'll load icons on-demand per variant instead of loading all icons upfront
-	// xSize := img.Cols() / a.ColSplit
-	// ySize := img.Rows() / a.RowSplit
+func match(img, imgDraw gocv.Mat, a *actions.ImageSearch, macro *models.Macro) (map[string][]robotgo.Point, error) {
 	vs := IconVariantServiceInstance()
 	Imask := gocv.NewMat()
 	defer Imask.Close()
@@ -70,11 +73,19 @@ func match(img, imgDraw gocv.Mat, a *actions.ImageSearch) map[string][]robotgo.P
 	results := make(map[string][]robotgo.Point)
 	var wg sync.WaitGroup
 	resultsMutex := &sync.Mutex{}
-	for _, t := range a.Targets { // for each search target, create a goroutine
-		//NOT IMPLEMENTED: for each grid split, create a goroutine
+	var matchErr error
+	for _, t := range a.Targets {
 		wg.Add(1)
 		go func(t string) {
 			defer wg.Done()
+			defer func() {
+				if r := recover(); r != nil {
+					LogPanicToFile(r, fmt.Sprintf("Image Search (target %s)", t))
+					resultsMutex.Lock()
+					matchErr = fmt.Errorf("panic during image search for %s: %v", t, r)
+					resultsMutex.Unlock()
+				}
+			}()
 			programName := strings.Split(t, config.ProgramDelimiter)[0]
 			program, err := repositories.ProgramRepo().Get(programName)
 			if err != nil {
@@ -111,31 +122,19 @@ func match(img, imgDraw gocv.Mat, a *actions.ImageSearch) map[string][]robotgo.P
 				err = gocv.IMDecodeIntoMat(b, gocv.IMReadColor, &template)
 
 				if err != nil {
-					fmt.Println("Error reading template image:", err)
+					log.Printf("Error reading template image: %v", err)
 					return
 				}
-				// tmask := gocv.IMRead(path+"templates"+size+"-tmask"+config.PNG, gocv.IMReadColor)
 				tmask := gocv.NewMat()
-				// cmask := *program.GetMasks()["item-corner"](template.Rows(), template.Cols(), i.GridSize[0], i.GridSize[1])
-				cmask := gocv.NewMat()
+				cmask := buildMask(i, program, template.Rows(), template.Cols(), macro)
 
 				defer tmask.Close()
 				defer cmask.Close()
-				// gocv.IMWrite(config.UpDir+config.UpDir+config.MetaImagesPath+"cmask.png", *cmask)
-
-				// if Tmask.Cols() != template.Cols() && Tmask.Rows() != template.Rows() {
-				// 	log.Println("ERROR: template mask size does not match template!")
-				// 	log.Println("item: ", t)
-				// 	log.Println("Tmask cols: ", Tmask.Cols())
-				// 	log.Println("Tmask rows: ", Tmask.Rows())
-				// 	log.Println("t cols: ", template.Cols())
-				// 	log.Println("t rows: ", template.Rows())
-				// 	return
-				// }
+				SaveMetaImage("cmask-"+i.Name+"-"+v, cmask)
 
 				matches := FindTemplateMatches(img, template, Imask, tmask, cmask, a.Tolerance, a.Blur)
 				DrawFoundMatches(matches, template.Cols(), template.Rows(), imgDraw, i.Name) // draw rect at top-left
-				// Offset each match to the center of the icon (click middle, not top-left)
+				// Offset each match to the center of the icon
 				halfW := template.Cols() / 2
 				halfH := template.Rows() / 2
 				for i := range matches {
@@ -152,8 +151,91 @@ func match(img, imgDraw gocv.Mat, a *actions.ImageSearch) map[string][]robotgo.P
 		}(t)
 	}
 	wg.Wait()
-	gocv.IMWrite(config.GetMetaPath()+"founditems.png", imgDraw)
-	return results
+	SaveMetaImage("founditems", imgDraw)
+	return results, matchErr
+}
+
+func buildMask(item *models.Item, program *models.Program, templateRows, templateCols int, macro *models.Macro) gocv.Mat {
+	if item.Mask == "" {
+		return gocv.NewMat()
+	}
+
+	mask, err := program.MaskRepo().Get(item.Mask)
+	if err != nil {
+		log.Printf("mask %q not found for item %s: %v", item.Mask, item.Name, err)
+		return gocv.NewMat()
+	}
+
+	// Image-based mask takes precedence over shape-based
+	imgPath := filepath.Join(config.GetMasksPath(), program.Name, mask.Name+config.PNG)
+	if _, statErr := os.Stat(imgPath); statErr == nil {
+		m := gocv.IMRead(imgPath, gocv.IMReadGrayScale)
+		if m.Empty() {
+			log.Printf("mask image %s could not be loaded", imgPath)
+			return gocv.NewMat()
+		}
+		if m.Rows() != templateRows || m.Cols() != templateCols {
+			gocv.Resize(m, &m, image.Point{X: templateCols, Y: templateRows}, 0, 0, gocv.InterpolationLinear)
+		}
+		gocv.Threshold(m, &m, 127, 255, gocv.ThresholdBinary)
+		return m
+	}
+
+	centerXPct, err := ResolveInt(mask.CenterX, macro)
+	if err != nil {
+		centerXPct = 50
+	}
+	centerYPct, err := ResolveInt(mask.CenterY, macro)
+	if err != nil {
+		centerYPct = 50
+	}
+	cx := clamp(templateCols*centerXPct/100, 0, templateCols-1)
+	cy := clamp(templateRows*centerYPct/100, 0, templateRows-1)
+	bounds := image.Rect(0, 0, templateCols, templateRows)
+
+	var m gocv.Mat
+	switch mask.Shape {
+	case "circle":
+		radius, err := ResolveInt(mask.Radius, macro)
+		if err != nil || radius <= 0 {
+			log.Printf("mask %q: invalid radius %v: %v", mask.Name, mask.Radius, err)
+			return gocv.NewMat()
+		}
+		m = gocv.NewMatWithSize(templateRows, templateCols, gocv.MatTypeCV8U)
+		m.SetTo(gocv.NewScalar(255, 255, 255, 0))
+		gocv.Circle(&m, image.Point{X: cx, Y: cy}, radius, color.RGBA{0, 0, 0, 0}, -1)
+
+	case "rectangle":
+		base, err := ResolveInt(mask.Base, macro)
+		if err != nil || base <= 0 {
+			log.Printf("mask %q: invalid base %v: %v", mask.Name, mask.Base, err)
+			return gocv.NewMat()
+		}
+		height, err := ResolveInt(mask.Height, macro)
+		if err != nil || height <= 0 {
+			log.Printf("mask %q: invalid height %v: %v", mask.Name, mask.Height, err)
+			return gocv.NewMat()
+		}
+		rect := image.Rect(cx-base/2, cy-height/2, cx+base/2, cy+height/2).Intersect(bounds)
+		if rect.Empty() {
+			log.Printf("mask %q: rectangle fully outside template (%dx%d)", mask.Name, templateCols, templateRows)
+			return gocv.NewMat()
+		}
+		m = gocv.NewMatWithSize(templateRows, templateCols, gocv.MatTypeCV8U)
+		m.SetTo(gocv.NewScalar(255, 255, 255, 0))
+		region := m.Region(rect)
+		region.SetTo(gocv.NewScalar(0, 0, 0, 0))
+		region.Close()
+
+	default:
+		log.Printf("mask %q: unknown shape %q", mask.Name, mask.Shape)
+		return gocv.NewMat()
+	}
+
+	if mask.Inverse {
+		gocv.BitwiseNot(m, &m)
+	}
+	return m
 }
 
 func FindTemplateMatches(img, template, imask, tmask, cmask gocv.Mat, threshold float32, blur int) []robotgo.Point {
@@ -199,7 +281,7 @@ func GetMatchesFromTemplateMatchResult(result gocv.Mat, threshold float32, close
 				continue
 			}
 			if confidence >= threshold {
-				fmt.Printf("Position (%d, %d), Correlation: %.4f\n",
+				log.Printf("Position (%d, %d), Correlation: %.4f",
 					x, y, confidence)
 				newPoint := robotgo.Point{X: x, Y: y}
 				if !isNearExistingPoint(newPoint, matches, closeMatchesDistance) {
@@ -228,6 +310,16 @@ func abs(x int) int {
 	return x
 }
 
+func clamp(v, lo, hi int) int {
+	if v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
+	}
+	return v
+}
+
 type PreprocessOptions struct {
 	BlurAmount   int
 	MinThreshold float32
@@ -253,7 +345,7 @@ func ImageToMatToImagePreprocess(img image.Image, gray, blur, threshold, resize 
 	if resize {
 		gocv.Resize(i, &i, image.Point{}, ppOptions.ResizeScale, ppOptions.ResizeScale, gocv.InterpolationDefault)
 	}
-	gocv.IMWrite("./internal/resources/images/meta/imagetext-test.png", i)
+	// gocv.IMWrite("./internal/resources/images/meta/imagetext-test.png", i)
 	img, err = i.ToImage()
 	if err != nil {
 		log.Println(err)
@@ -276,6 +368,13 @@ func DrawFoundMatches(matches []robotgo.Point, rectSizeX, rectSizeY int, draw go
 	}
 }
 
+// NamedPoint pairs a match point with its target key (programName~itemName).
+// Used so Image Search sub-actions can resolve item internal variables (StackMax, Cols, Rows, etc.).
+type NamedPoint struct {
+	Name  string // target key: programName + ProgramDelimiter + itemName
+	Point robotgo.Point
+}
+
 func SortPoints(points []robotgo.Point, sortBy string) []robotgo.Point {
 	switch sortBy {
 	case "TopLeftToBottomRight":
@@ -295,34 +394,47 @@ func SortPoints(points []robotgo.Point, sortBy string) []robotgo.Point {
 	return points
 }
 
-func SortListOfPoints(lop map[string][]robotgo.Point) []robotgo.Point {
-	var sort []robotgo.Point
-	for _, points := range lop {
-		sort = append(sort, points...)
+func SortListOfPoints(lop map[string][]robotgo.Point) []NamedPoint {
+	var list []NamedPoint
+	for name, points := range lop {
+		for _, pt := range points {
+			list = append(list, NamedPoint{Name: name, Point: pt})
+		}
 	}
-	return SortPoints(sort, "TopLeftToBottomRight")
+	// Same order as SortPoints(..., "TopLeftToBottomRight")
+	sort.Slice(list, func(i, j int) bool {
+		pi, pj := list[i].Point, list[j].Point
+		for a := 0; a <= 5; a++ {
+			if pi.Y+a == pj.Y || pi.Y == pj.Y+a {
+				return pi.X < pj.X
+			}
+		}
+		return pi.Y < pj.Y
+	})
+	return list
 }
-
-// func CalculateCornerMask(rows, cols int, r image.Rectangle) *gocv.Mat {
-// 	cmask := gocv.NewMatWithSize(rows, cols, gocv.MatTypeCV8U)
-// 	cmask.SetTo(gocv.NewScalar(255, 255, 255, 0))
-
-// 	region := cmask.Region(r) // = gocv.NewScalar(0, 0, 0, 0) //.SetTo(gocv.NewScalar(0, 0, 0, 0))
-// 	defer region.Close()
-// 	region.SetTo(gocv.NewScalar(0, 0, 0, 0))
-
-// 	return &cmask
-// }
 
 func CalculateCornerMask(rows, cols int, r image.Rectangle) func() *gocv.Mat {
 	return func() *gocv.Mat {
 		cmask := gocv.NewMatWithSize(rows, cols, gocv.MatTypeCV8U)
 		cmask.SetTo(gocv.NewScalar(255, 255, 255, 0))
 
-		region := cmask.Region(r) // = gocv.NewScalar(0, 0, 0, 0) //.SetTo(gocv.NewScalar(0, 0, 0, 0))
+		region := cmask.Region(r)
 		defer region.Close()
 		region.SetTo(gocv.NewScalar(0, 0, 0, 0))
 
+		return &cmask
+	}
+}
+
+// CalculateCircleMask creates a mask with a filled circle within the image.
+func CalculateCircleMask(rows, cols int, center image.Point, radius int) func() *gocv.Mat {
+	return func() *gocv.Mat {
+		cmask := gocv.NewMatWithSize(rows, cols, gocv.MatTypeCV8U)
+		// Fill with zeros (fully masked)
+		cmask.SetTo(gocv.NewScalar(0, 0, 0, 0))
+		// Then draw a filled white circle (unmasked)
+		gocv.Circle(&cmask, center, radius, color.RGBA{255, 255, 255, 0}, -1)
 		return &cmask
 	}
 }

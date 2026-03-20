@@ -60,7 +60,11 @@ func (c *YAMLConfig) ReadConfig() error {
 
 	c.data = make(map[string]any)
 	if err := yaml.Unmarshal(data, &c.data); err != nil {
-		return fmt.Errorf("failed to unmarshal YAML: %w", err)
+		annotated := YAMLErrorWithContent(data, err)
+		if c.configFile != "" {
+			return fmt.Errorf("failed to unmarshal YAML (%s): %w", c.configFile, annotated)
+		}
+		return fmt.Errorf("failed to unmarshal YAML: %w", annotated)
 	}
 
 	return nil

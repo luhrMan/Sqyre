@@ -1,8 +1,8 @@
 package repositories
 
 import (
-	"Squire/internal/models"
-	"Squire/internal/models/serialize"
+	"Sqyre/internal/models"
+	"Sqyre/internal/models/serialize"
 	"fmt"
 	"log"
 	"maps"

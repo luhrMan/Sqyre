@@ -1,7 +1,7 @@
 package services
 
 import (
-	"Squire/internal/models"
+	"Sqyre/internal/models"
 	"log"
 	"os"
 	"slices"
@@ -21,6 +21,7 @@ func FailsafeHotkey() {
 	fs := []string{"esc", "ctrl", "shift"}
 	hook.Register(hook.KeyDown, fs, func(e hook.Event) {
 		log.Println("FAILSAFE INITIATED: EXITING PROGRAM...")
+		LogMatProfile()
 		os.Exit(0)
 	})
 }
@@ -71,6 +72,6 @@ func UnregisterHotkey(hk []string) {
 func MacroHotkeyCallback(m *models.Macro) func(e hook.Event) {
 	return func(e hook.Event) {
 		log.Printf("pressed %v, executing %v", m.Hotkey, m.Name)
-		Execute(m.Root, m)
+		go ExecuteMacroWithLogging(m)
 	}
 }

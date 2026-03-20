@@ -1,10 +1,10 @@
 package ui
 
 import (
-	"Squire/internal/assets"
-	"Squire/internal/models"
-	"Squire/internal/models/actions"
-	"Squire/internal/models/serialize"
+	"Sqyre/internal/assets"
+	"Sqyre/internal/models"
+	"Sqyre/internal/models/actions"
+	"Sqyre/internal/models/serialize"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -132,7 +132,7 @@ func (mt *MacroTree) setTree() {
 				}
 			}
 			itemIconsScroll.Show()
-		} else if wfp, ok := node.(*actions.WaitForPixel); ok {
+		} else if wfp, ok := node.(*actions.FindPixel); ok {
 			if c, ok := hexToColor(wfp.TargetColor); ok {
 				swatch := canvas.NewRectangle(c)
 				swatch.SetMinSize(fyne.NewSize(treeItemIconSize, treeItemIconSize))

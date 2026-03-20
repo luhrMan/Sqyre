@@ -1,16 +1,19 @@
 package ui
 
 import (
-	"Squire/internal/assets"
-	"Squire/internal/config"
-	"Squire/internal/models/actions"
-	"Squire/internal/models/repositories"
-	"Squire/internal/services"
-	"Squire/ui/custom_widgets"
+	"Sqyre/internal/assets"
+	"Sqyre/internal/config"
+	"Sqyre/internal/models"
+	"Sqyre/internal/models/actions"
+	"Sqyre/internal/models/repositories"
+	"Sqyre/internal/screen"
+	"Sqyre/internal/services"
+	"Sqyre/ui/custom_widgets"
 	"fmt"
 	"image"
 	"image/color"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -21,12 +24,282 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+	fynetooltip "github.com/dweymouth/fyne-tooltip"
 	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 	"github.com/go-vgo/robotgo"
 	"github.com/lithammer/fuzzysearch/fuzzy"
 	hook "github.com/luhrMan/gohook"
 	"gocv.io/x/gocv"
 )
+
+// currentMacroVariables returns all variable names defined in the currently
+// selected macro. Safe to call at any time; returns nil when no macro is open.
+func currentMacroVariables() []string {
+	st := GetUi().Mui.MTabs.SelectedTab()
+	if st == nil || st.Macro == nil {
+		return nil
+	}
+	return st.Macro.CollectDefinedVariables()
+}
+
+// newVarEntry creates a VarEntry wired to the current macro's variables.
+func newVarEntry() *custom_widgets.VarEntry {
+	return custom_widgets.NewVarEntry(currentMacroVariables)
+}
+
+// newMultiLineVarEntry creates a multi-line VarEntry wired to the current macro's variables.
+func newMultiLineVarEntry() *custom_widgets.VarEntry {
+	return custom_widgets.NewMultiLineVarEntry(currentMacroVariables)
+}
+
+// waitTilFoundForm bundles the "Wait until found" checkbox and timeout / interval
+// incrementers shared by OCR, Image Search, and Find Pixel dialogs.
+type waitTilFoundForm struct {
+	Check               *widget.Check
+	SecondsIncrementer  *custom_widgets.Incrementer
+	IntervalIncrementer *custom_widgets.Incrementer
+}
+
+// newWaitTilFoundForm builds wait-until-found UI. intervalUIMin is the minimum value
+// enforced by the interval incrementer (100 for image search / find pixel, 0 for OCR).
+func newWaitTilFoundForm(waitTilFound bool, waitSeconds, intervalMs int, intervalUIMin int) *waitTilFoundForm {
+	check := widget.NewCheck("Wait until found", nil)
+	check.SetChecked(waitTilFound)
+	secondsMin := 0
+	secondsInc := custom_widgets.NewIncrementer(waitSeconds, 1, &secondsMin, nil)
+	if waitSeconds <= 0 {
+		secondsInc.SetValue(10)
+	} else {
+		secondsInc.SetValue(waitSeconds)
+	}
+	intervalMin := intervalUIMin
+	intervalInc := custom_widgets.NewIncrementer(intervalMs, 100, &intervalMin, nil)
+	if intervalMs < 100 {
+		intervalInc.SetValue(100)
+	} else {
+		intervalInc.SetValue(intervalMs)
+	}
+	setEnabled := func(enabled bool) {
+		if enabled {
+			secondsInc.Enable()
+			intervalInc.Enable()
+			return
+		}
+		secondsInc.Disable()
+		intervalInc.Disable()
+	}
+	check.OnChanged = setEnabled
+	setEnabled(check.Checked)
+	return &waitTilFoundForm{
+		Check:               check,
+		SecondsIncrementer:  secondsInc,
+		IntervalIncrementer: intervalInc,
+	}
+}
+
+func (w *waitTilFoundForm) writeTo(waitTilFound *bool, seconds *int, intervalMs *int) {
+	*waitTilFound = w.Check.Checked
+	if w.SecondsIncrementer.Value >= 0 {
+		*seconds = w.SecondsIncrementer.Value
+	}
+	if w.IntervalIncrementer.Value >= 0 {
+		*intervalMs = w.IntervalIncrementer.Value
+	}
+}
+
+// programListAccordionConfig configures the generic program list accordion builder.
+// Callbacks receive the program and item key; implementors look up the model and invoke dialog-specific logic.
+type programListAccordionConfig struct {
+	GetKeys        func(*models.Program) []string
+	GetDisplayName func(*models.Program, string) string
+	OnSelect       func(*models.Program, string)
+}
+
+// buildProgramListAccordionWithSearchbar builds an accordion of programs, each with a list of items (e.g. points or search areas).
+// One searchbar above filters by program name or item key (fuzzy). Config provides key source, label text, and selection callback.
+func buildProgramListAccordionWithSearchbar(cfg programListAccordionConfig) (*widget.Entry, *widget.Accordion) {
+	searchbar := widget.NewEntry()
+	searchbar.SetPlaceHolder("Search here")
+	acc := widget.NewAccordion()
+	rebuild := func() {
+		filterText := searchbar.Text
+		acc.Items = nil
+		for _, p := range repositories.ProgramRepo().GetAllSortedByName() {
+			defaultList := cfg.GetKeys(p)
+			filtered := defaultList
+			if filterText != "" {
+				filtered = nil
+				for _, key := range defaultList {
+					if fuzzy.MatchFold(filterText, key) {
+						filtered = append(filtered, key)
+					}
+				}
+			}
+			sort.Slice(filtered, func(i, j int) bool {
+				return strings.Compare(cfg.GetDisplayName(p, filtered[i]), cfg.GetDisplayName(p, filtered[j])) < 0
+			})
+			if filterText != "" && !fuzzy.MatchFold(filterText, p.Name) && len(filtered) == 0 {
+				continue
+			}
+			list := widget.NewList(
+				func() int { return len(filtered) },
+				func() fyne.CanvasObject { return widget.NewLabel("template") },
+				func(id widget.ListItemID, co fyne.CanvasObject) {
+					key := filtered[id]
+					co.(*widget.Label).SetText(cfg.GetDisplayName(p, key))
+				},
+			)
+			prog := p
+			list.OnSelected = func(id widget.ListItemID) {
+				if id >= 0 && id < len(filtered) {
+					cfg.OnSelect(prog, filtered[id])
+				}
+				list.Unselect(id)
+			}
+			acc.Append(widget.NewAccordionItem(fmt.Sprintf("%s (%d)", prog.Name, len(filtered)), list))
+		}
+		acc.Refresh()
+	}
+	searchbar.OnChanged = func(string) { rebuild() }
+	rebuild()
+	return searchbar, acc
+}
+
+// buildPointsAccordionWithSearchbar builds a Points accordion with a single searchbar above it.
+// Filter matches program name or point name (fuzzy). onPointSelected is called when user selects a point.
+func buildPointsAccordionWithSearchbar(onPointSelected func(actions.Point)) (*widget.Entry, *widget.Accordion) {
+	return buildProgramListAccordionWithSearchbar(programListAccordionConfig{
+		GetKeys: func(p *models.Program) []string {
+			return p.PointRepo(config.MainMonitorSizeString).GetAllKeys()
+		},
+		GetDisplayName: func(p *models.Program, key string) string {
+			pt, _ := p.PointRepo(config.MainMonitorSizeString).Get(key)
+			if pt != nil {
+				return pt.Name
+			}
+			return key
+		},
+		OnSelect: func(p *models.Program, key string) {
+			pt, _ := p.PointRepo(config.MainMonitorSizeString).Get(key)
+			if pt != nil {
+				onPointSelected(actions.Point{Name: pt.Name, X: pt.X, Y: pt.Y})
+			}
+		},
+	})
+}
+
+// buildSearchAreasAccordionWithSearchbar builds a Search Areas accordion with a single searchbar above it.
+// Filter matches program name or search area name (fuzzy). onSelected is called when user selects a search area.
+func buildSearchAreasAccordionWithSearchbar(onSelected func(actions.SearchArea)) (*widget.Entry, *widget.Accordion) {
+	return buildProgramListAccordionWithSearchbar(programListAccordionConfig{
+		GetKeys: func(p *models.Program) []string {
+			return p.SearchAreaRepo(config.MainMonitorSizeString).GetAllKeys()
+		},
+		GetDisplayName: func(p *models.Program, key string) string {
+			sa, _ := p.SearchAreaRepo(config.MainMonitorSizeString).Get(key)
+			if sa != nil {
+				return sa.Name
+			}
+			return key
+		},
+		OnSelect: func(p *models.Program, key string) {
+			sa, _ := p.SearchAreaRepo(config.MainMonitorSizeString).Get(key)
+			if sa != nil {
+				onSelected(actions.SearchArea{
+					Name:    sa.Name,
+					LeftX:   sa.LeftX,
+					TopY:    sa.TopY,
+					RightX:  sa.RightX,
+					BottomY: sa.BottomY,
+				})
+			}
+		},
+	})
+}
+
+// buildItemsAccordionWithSearchbar builds an Items section with a searchbar above and an accordion
+// (extending Fyne's) where each program has a tri-state (empty/half/full) on the right of the header row.
+// Returns refreshAccordion so the dialog can refresh the accordion when selection changes (e.g. after tri-state or item click).
+func buildItemsAccordionWithSearchbar(
+	getTargets func() []string,
+	onItemSelected func(programName, baseItemName string),
+	onSelectionChanged func(newTargets []string),
+	refreshPreview func(),
+) (*widget.Entry, fyne.CanvasObject, func()) {
+	searchbar := widget.NewEntry()
+	searchbar.SetPlaceHolder("Search here")
+	acc := custom_widgets.NewAccordionWithHeaderWidgets()
+	var itemGrids []*widget.GridWrap
+	refreshAccordion := func() {
+		acc.Refresh()
+		for _, g := range itemGrids {
+			g.Refresh()
+		}
+	}
+	rebuild := func() {
+		filterText := searchbar.Text
+		acc.RemoveAll()
+		itemGrids = itemGrids[:0]
+		for _, p := range repositories.ProgramRepo().GetAllSortedByName() {
+			if filterText != "" && !fuzzy.MatchFold(filterText, p.Name) && !programHasMatchingItemsDialog(p, filterText) {
+				continue
+			}
+			prog := p
+			opts := ItemsAccordionOptions{
+				Program:            prog,
+				FilterText:         filterText,
+				GetSelectedTargets: getTargets,
+				OnItemSelected: func(baseItemName string) {
+					onItemSelected(prog.Name, baseItemName)
+				},
+				OnSelectionChanged:      onSelectionChanged,
+				AllButtonInHeader:       true,
+				OnSelectionMaybeChanged: refreshAccordion,
+				RegisterRefreshTarget:   func(grid *widget.GridWrap) { itemGrids = append(itemGrids, grid) },
+			}
+			item, allBtn := CreateProgramAccordionItem(opts)
+			acc.AppendWithHeader(item, allBtn)
+		}
+	}
+	searchbar.OnChanged = func(string) { rebuild() }
+	rebuild()
+	return searchbar, container.NewScroll(acc), refreshAccordion
+}
+
+// programHasMatchingItemsDialog returns true if the program has any item whose base name or tags match filterText (fuzzy).
+func programHasMatchingItemsDialog(program *models.Program, filterText string) bool {
+	if filterText == "" {
+		return true
+	}
+	// Use same logic as binders: baseNames + tag match
+	iconService := services.IconVariantServiceInstance()
+	baseNames := iconService.GroupItemsByBaseName(program.ItemRepo().GetAllKeys())
+	baseNameToItemName := make(map[string]string)
+	for _, itemName := range program.ItemRepo().GetAllKeys() {
+		baseName := iconService.GetBaseItemName(itemName)
+		if _, exists := baseNameToItemName[baseName]; !exists {
+			baseNameToItemName[baseName] = itemName
+		}
+	}
+	for _, baseName := range baseNames {
+		if fuzzy.MatchFold(filterText, baseName) {
+			return true
+		}
+		itemName := baseNameToItemName[baseName]
+		if itemName == "" {
+			itemName = baseName
+		}
+		item, err := program.ItemRepo().Get(itemName)
+		if err == nil {
+			for _, tag := range item.Tags {
+				if fuzzy.MatchFold(filterText, tag) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
 
 // ShowActionDialog displays a dialog for editing an action.
 func ShowActionDialog(action actions.ActionInterface, onSave func(actions.ActionInterface)) {
@@ -85,9 +358,9 @@ func ShowActionDialog(action actions.ActionInterface, onSave func(actions.Action
 	// case *actions.Calibration:
 	// 	content, saveFunc = createCalibrationDialogContent(node)
 	// 	content.Resize(fyne.NewSize(600, 500))
-	case *actions.WaitForPixel:
-		content, saveFunc = createWaitForPixelDialogContent(node)
-		content.Resize(fyne.NewSize(450, 280))
+	case *actions.FindPixel:
+		content, saveFunc = createFindPixelDialogContent(node)
+		content.Resize(fyne.NewSize(800, 500))
 	case *actions.FocusWindow:
 		content, saveFunc = createFocusWindowDialogContent(node)
 		content.Resize(fyne.NewSize(500, 400))
@@ -102,8 +375,25 @@ func ShowActionDialog(action actions.ActionInterface, onSave func(actions.Action
 	showCustomActionDialog(u, action, content, saveFunc, onSave)
 }
 
+// actionModalDialog implements dialog.Dialog using widget.NewModalPopUp so content is not
+// inset by fyne dialog.Layout (padWidth/2); the bordered panel can align with the popup edge.
+type actionModalDialog struct {
+	pop *widget.PopUp
+}
+
+func (d *actionModalDialog) Show()                 { d.pop.Show() }
+func (d *actionModalDialog) Hide()                 { d.pop.Hide() }
+func (d *actionModalDialog) Dismiss()              { d.Hide() }
+func (d *actionModalDialog) SetDismissText(string) {}
+func (d *actionModalDialog) SetOnClosed(func())    {}
+func (d *actionModalDialog) Refresh()              { d.pop.Refresh() }
+func (d *actionModalDialog) Resize(s fyne.Size)    { d.pop.Resize(s) }
+func (d *actionModalDialog) MinSize() fyne.Size    { return d.pop.MinSize() }
+
+var _ dialog.Dialog = (*actionModalDialog)(nil)
+
 func showCustomActionDialog(u *Ui, action actions.ActionInterface, content fyne.CanvasObject, saveFunc func(), onSave func(actions.ActionInterface)) {
-	d := u.MainUi.ActionDialog
+	var d *actionModalDialog
 	saveButton := ttwidget.NewButton("Save", func() {
 		saveFunc()
 		if onSave != nil {
@@ -132,15 +422,32 @@ func showCustomActionDialog(u *Ui, action actions.ActionInterface, content fyne.
 		saveButton,
 	)
 
+	titleLabel := widget.NewLabel("Edit Action - " + action.GetType())
+	titleLabel.TextStyle = fyne.TextStyle{Bold: true}
+
 	dialogContent := container.NewBorder(
-		nil,
+		container.NewPadded(titleLabel),
 		buttons,
 		nil,
 		nil,
 		content,
 	)
 
-	d = dialog.NewCustomWithoutButtons("Edit Action"+" - "+action.GetType(), dialogContent, u.Window)
+	th := fyne.CurrentApp().Settings().Theme()
+	v := fyne.CurrentApp().Settings().ThemeVariant()
+	panelBg := canvas.NewRectangle(th.Color(theme.ColorNameOverlayBackground, v))
+	panelBg.CornerRadius = theme.InputRadiusSize()
+
+	border := canvas.NewRectangle(color.Transparent)
+	border.StrokeColor = sqyrePrimary
+	border.StrokeWidth = 1
+	border.CornerRadius = theme.InputRadiusSize()
+	innerPadded := container.NewPadded(container.NewPadded(container.NewPadded(container.NewPadded(dialogContent))))
+	borderedDialogContent := container.NewStack(panelBg, border, innerPadded)
+
+	pop := widget.NewModalPopUp(borderedDialogContent, u.Window.Canvas())
+	fynetooltip.AddPopUpToolTipLayer(pop)
+	d = &actionModalDialog{pop: pop}
 	// Store the dialog on MainUi so other parts of the app can reference it
 	if u != nil && u.MainUi != nil {
 		u.MainUi.ActionDialog = d
@@ -180,7 +487,7 @@ func showCustomActionDialog(u *Ui, action actions.ActionInterface, content fyne.
 
 // Dialog content creators - these create independent widgets for editing
 func createWaitDialogContent(action *actions.Wait) (fyne.CanvasObject, func()) {
-	timeEntry := widget.NewEntry()
+	timeEntry := newVarEntry()
 	timeEntry.SetText(fmt.Sprintf("%d", action.Time))
 	timeSlider := widget.NewSlider(0.0, 1000.0)
 	timeSlider.SetValue(float64(action.Time))
@@ -248,11 +555,8 @@ func createMoveDialogContent(action *actions.Move) (fyne.CanvasObject, func()) {
 		px := pointCoordToInt(point.X)
 		py := pointCoordToInt(point.Y)
 
-		// Validate coordinates are within reasonable bounds
-		screenWidth := config.MonitorWidth
-		screenHeight := config.MonitorHeight
-
-		if px < 0 || py < 0 || px > screenWidth || py > screenHeight {
+		vb := screen.VirtualBounds()
+		if px < vb.Min.X || py < vb.Min.Y || px > vb.Max.X || py > vb.Max.Y {
 			pointPreviewImage.Image = nil
 			pointPreviewImage.Refresh()
 			return
@@ -261,12 +565,13 @@ func createMoveDialogContent(action *actions.Move) (fyne.CanvasObject, func()) {
 		// Attempt to capture the full screen with error recovery
 		defer func() {
 			if r := recover(); r != nil {
+				services.LogPanicToFile(r, "Action dialog: point preview capture")
 				pointPreviewImage.Image = nil
 				pointPreviewImage.Refresh()
 			}
 		}()
 
-		captureImg, err := robotgo.CaptureImg(0, 0, screenWidth, screenHeight)
+		captureImg, err := robotgo.CaptureImg(vb.Min.X, vb.Min.Y, vb.Dx(), vb.Dy())
 		if err != nil || captureImg == nil {
 			pointPreviewImage.Image = nil
 			pointPreviewImage.Refresh()
@@ -282,19 +587,13 @@ func createMoveDialogContent(action *actions.Move) (fyne.CanvasObject, func()) {
 		}
 		defer mat.Close()
 
-		// Draw red marker at point coordinates
-		// Draw a circle with crosshair for visibility
-		center := image.Point{X: px, Y: py}
+		center := image.Point{X: px - vb.Min.X, Y: py - vb.Min.Y}
 		redColor := color.RGBA{R: 255, A: 255}
 
-		// Draw circle
 		gocv.Circle(&mat, center, 8, redColor, 2)
 
-		// Draw crosshair lines
-		// Horizontal line
-		gocv.Line(&mat, image.Point{X: px - 15, Y: py}, image.Point{X: px + 15, Y: py}, redColor, 2)
-		// Vertical line
-		gocv.Line(&mat, image.Point{X: px, Y: py - 15}, image.Point{X: px, Y: py + 15}, redColor, 2)
+		gocv.Line(&mat, image.Point{X: center.X - 15, Y: center.Y}, image.Point{X: center.X + 15, Y: center.Y}, redColor, 2)
+		gocv.Line(&mat, image.Point{X: center.X, Y: center.Y - 15}, image.Point{X: center.X, Y: center.Y + 15}, redColor, 2)
 
 		// Convert back to image.Image
 		previewImg, err := mat.ToImage()
@@ -309,103 +608,31 @@ func createMoveDialogContent(action *actions.Move) (fyne.CanvasObject, func()) {
 		pointPreviewImage.Refresh()
 	}
 
-	// Create Points accordion
-	pointsAccordion := widget.NewAccordion()
-	for _, p := range repositories.ProgramRepo().GetAll() {
-		lists := struct {
-			searchBar *widget.Entry
-			points    *widget.List
-			filtered  []string
-		}{
-			filtered: p.PointRepo(config.MainMonitorSizeString).GetAllKeys(),
-		}
-
-		lists.points = widget.NewList(
-			func() int {
-				return len(lists.filtered)
-			},
-			func() fyne.CanvasObject {
-				return widget.NewLabel("template")
-			},
-			func(id widget.ListItemID, co fyne.CanvasObject) {
-				name := lists.filtered[id]
-				label := co.(*widget.Label)
-				program, err := repositories.ProgramRepo().Get(p.Name)
-				if err != nil {
-					return
-				}
-				point, err := program.PointRepo(config.MainMonitorSizeString).Get(name)
-				if err != nil {
-					return
-				}
-				label.SetText(point.Name)
-			},
-		)
-
-		lists.points.OnSelected = func(id widget.ListItemID) {
-			program, err := repositories.ProgramRepo().Get(p.Name)
-			if err != nil {
-				return
-			}
-			pointName := lists.filtered[id]
-			point, err := program.PointRepo(config.MainMonitorSizeString).Get(pointName)
-			if err != nil {
-				return
-			}
-			// Update temporary point (will be applied on save)
-			tempPoint = actions.Point{
-				Name: point.Name,
-				X:    point.X,
-				Y:    point.Y,
-			}
-			updateCoordsLabel(&tempPoint)
-			updatePreview(&tempPoint)
-			lists.points.Unselect(id)
-		}
-
-		lists.searchBar = widget.NewEntry()
-		lists.searchBar.PlaceHolder = "Search here"
-		lists.searchBar.OnChanged = func(s string) {
-			defaultList := p.PointRepo(config.MainMonitorSizeString).GetAllKeys()
-			if s == "" {
-				lists.filtered = defaultList
-			} else {
-				lists.filtered = []string{}
-				for _, i := range defaultList {
-					if fuzzy.MatchFold(s, i) {
-						lists.filtered = append(lists.filtered, i)
-					}
-				}
-			}
-			lists.points.UnselectAll()
-			lists.points.Refresh()
-		}
-
-		pointsAccordion.Append(widget.NewAccordionItem(
-			p.Name,
-			container.NewBorder(
-				lists.searchBar,
-				nil, nil, nil,
-				lists.points,
-			),
-		))
-	}
+	// Points accordion with searchbar above (fuzzy match program name + point name)
+	pointsSearchbar, pointsAccordion := buildPointsAccordionWithSearchbar(func(pt actions.Point) {
+		tempPoint = pt
+		updateCoordsLabel(&tempPoint)
+		updatePreview(&tempPoint)
+	})
 
 	// Update label and preview for initial point
 	updateCoordsLabel(&tempPoint)
 	updatePreview(&tempPoint)
 
+	smoothCheck := widget.NewCheck("Smooth", nil)
+	smoothCheck.SetChecked(action.Smooth)
+
 	content := container.NewVBox(
-		coordsLabel,
+		container.NewHBox(coordsLabel, layout.NewSpacer(), smoothCheck),
 		container.NewHSplit(
-			pointsAccordion,
+			container.NewBorder(pointsSearchbar, nil, nil, nil, pointsAccordion),
 			pointPreviewImage,
 		),
 	)
 
 	saveFunc := func() {
-		// Apply temporary point changes
 		action.Point = tempPoint
+		action.Smooth = smoothCheck.Checked
 	}
 
 	return content, saveFunc
@@ -414,8 +641,8 @@ func createMoveDialogContent(action *actions.Move) (fyne.CanvasObject, func()) {
 func createClickDialogContent(action *actions.Click) (fyne.CanvasObject, func()) {
 	buttonCheck := custom_widgets.NewToggle(func(b bool) {})
 	buttonCheck.SetToggled(action.Button)
-	holdCheck := custom_widgets.NewToggle(func(b bool) {})
-	holdCheck.SetToggled(action.Hold)
+	stateToggle := custom_widgets.NewToggle(func(b bool) {})
+	stateToggle.SetToggled(action.State)
 
 	content := container.NewVBox(
 		container.NewHBox(
@@ -426,14 +653,17 @@ func createClickDialogContent(action *actions.Click) (fyne.CanvasObject, func())
 			layout.NewSpacer(),
 		),
 		container.NewHBox(
-			widget.NewLabel("Hold"),
-			holdCheck,
+			layout.NewSpacer(),
+			widget.NewLabel("up"),
+			stateToggle,
+			widget.NewLabel("down"),
+			layout.NewSpacer(),
 		),
 	)
 
 	saveFunc := func() {
 		action.Button = buttonCheck.Toggled
-		action.Hold = holdCheck.Toggled
+		action.State = stateToggle.Toggled
 	}
 
 	return content, saveFunc
@@ -465,20 +695,13 @@ func createKeyDialogContent(action *actions.Key) (fyne.CanvasObject, func()) {
 }
 
 func createTypeDialogContent(action *actions.Type) (fyne.CanvasObject, func()) {
-	textEntry := widget.NewEntry()
+	textEntry := newVarEntry()
 	textEntry.SetText(action.Text)
 	textEntry.SetPlaceHolder("Text to type (supports ${variable})")
 
 	delayEntry := widget.NewEntry()
 	delayEntry.SetText(fmt.Sprintf("%d", action.DelayMs))
 	delayEntry.SetPlaceHolder("Delay between key presses (ms)")
-	delayEntry.Validator = func(s string) error {
-		if s == "" {
-			return nil
-		}
-		_, err := strconv.Atoi(strings.TrimSpace(s))
-		return err
-	}
 
 	content := widget.NewForm(
 		widget.NewFormItem("Text to type:", textEntry),
@@ -498,7 +721,7 @@ func createTypeDialogContent(action *actions.Type) (fyne.CanvasObject, func()) {
 func createLoopDialogContent(action *actions.Loop) (fyne.CanvasObject, func()) {
 	nameEntry := widget.NewEntry()
 	nameEntry.SetText(action.Name)
-	countEntry := widget.NewEntry()
+	countEntry := newVarEntry()
 	countEntry.SetPlaceHolder("e.g. 5 or ${countVar}")
 	switch c := action.Count.(type) {
 	case int:
@@ -538,119 +761,43 @@ func createImageSearchDialogContent(action *actions.ImageSearch) (fyne.CanvasObj
 	rowSplitEntry.SetText(fmt.Sprintf("%d", action.RowSplit))
 	colSplitEntry := widget.NewEntry()
 	colSplitEntry.SetText(fmt.Sprintf("%d", action.ColSplit))
-	toleranceEntry := widget.NewEntry()
-	toleranceEntry.SetText(fmt.Sprintf("%g", action.Tolerance))
-	blurEntry := widget.NewEntry()
-	blurEntry.SetText(fmt.Sprintf("%d", action.Blur))
-	outputXVarEntry := widget.NewEntry()
+	toleranceMin, toleranceMax := 0.0, 1.0
+	toleranceIncrementer := custom_widgets.NewFloatIncrementer(float64(action.Tolerance), 0.01, &toleranceMin, &toleranceMax, 2)
+	toleranceIncrementer.SetValue(float64(action.Tolerance))
+	blurMin, blurMax := 1, 21
+	blurIncrementer := custom_widgets.NewIncrementer(action.Blur, 2, &blurMin, &blurMax)
+	blurIncrementer.SetValue(action.Blur)
+	outputXVarEntry := newVarEntry()
 	outputXVarEntry.SetText(action.OutputXVariable)
-	outputYVarEntry := widget.NewEntry()
+	outputXVarEntry.SetPlaceHolder("e.g. foundX (sub-actions also get ${StackMax}, ${Cols}, ${Rows}, ${ItemName}, ${ImagePixelWidth}, ${ImagePixelHeight})")
+	outputYVarEntry := newVarEntry()
 	outputYVarEntry.SetText(action.OutputYVariable)
-	waitTilFoundCheck := widget.NewCheck("Wait until found", nil)
-	waitTilFoundCheck.SetChecked(action.WaitTilFound)
-	waitTilFoundSecondsEntry := widget.NewEntry()
-	if action.WaitTilFoundSeconds <= 0 {
-		waitTilFoundSecondsEntry.SetText("10")
-	} else {
-		waitTilFoundSecondsEntry.SetText(fmt.Sprintf("%d", action.WaitTilFoundSeconds))
-	}
-	waitTilFoundSecondsEntry.SetPlaceHolder("Seconds to keep trying if not found")
+	outputYVarEntry.SetPlaceHolder("e.g. foundY")
+	waitTil := newWaitTilFoundForm(action.WaitTilFound, action.WaitTilFoundSeconds, action.WaitTilFoundIntervalMs, 100)
 
 	// Temporary storage for changes (only applied on save)
 	tempSearchArea := action.SearchArea
 	tempTargets := slices.Clone(action.Targets)
 	tempTargetsRef := &tempTargets
 
-	// Create Search Areas accordion
-	searchAreasAccordion := widget.NewAccordion()
-	for _, p := range repositories.ProgramRepo().GetAll() {
-		lists := struct {
-			searchbar   *widget.Entry
-			searchareas *widget.List
-			filtered    []string
-		}{
-			filtered: p.SearchAreaRepo(config.MainMonitorSizeString).GetAllKeys(),
-		}
-
-		lists.searchbar = widget.NewEntry()
-		lists.searchareas = widget.NewList(
-			func() int {
-				return len(lists.filtered)
-			},
-			func() fyne.CanvasObject {
-				return widget.NewLabel("template")
-			},
-			func(id widget.ListItemID, co fyne.CanvasObject) {
-				name := lists.filtered[id]
-				label := co.(*widget.Label)
-				program, err := repositories.ProgramRepo().Get(p.Name)
-				if err != nil {
-					return
-				}
-				sa, err := program.SearchAreaRepo(config.MainMonitorSizeString).Get(name)
-				if err != nil {
-					return
-				}
-				label.SetText(sa.Name)
-			},
-		)
-
-		lists.searchareas.OnSelected = func(id widget.ListItemID) {
-			program, err := repositories.ProgramRepo().Get(p.Name)
-			if err != nil {
-				return
-			}
-			saName := lists.filtered[id]
-			sa, err := program.SearchAreaRepo(config.MainMonitorSizeString).Get(saName)
-			if err != nil {
-				return
-			}
-			// Update temporary search area (will be applied on save)
-			tempSearchArea = actions.SearchArea{
-				Name:    sa.Name,
-				LeftX:   sa.LeftX,
-				TopY:    sa.TopY,
-				RightX:  sa.RightX,
-				BottomY: sa.BottomY,
-			}
-		}
-
-		lists.searchbar.PlaceHolder = "Search here"
-		lists.searchbar.OnChanged = func(s string) {
-			defaultList := p.SearchAreaRepo(config.MainMonitorSizeString).GetAllKeys()
-			if s == "" {
-				lists.filtered = defaultList
-			} else {
-				lists.filtered = []string{}
-				for _, i := range defaultList {
-					if fuzzy.MatchFold(s, i) {
-						lists.filtered = append(lists.filtered, i)
-					}
-				}
-			}
-			lists.searchareas.UnselectAll()
-			lists.searchareas.Refresh()
-		}
-
-		searchAreasAccordion.Append(widget.NewAccordionItem(
-			p.Name,
-			container.NewBorder(
-				lists.searchbar,
-				nil, nil, nil,
-				lists.searchareas,
-			),
-		))
-	}
+	// Search Areas accordion with searchbar above (fuzzy match program name + search area name)
+	searchAreasSearchbar, searchAreasAccordion := buildSearchAreasAccordionWithSearchbar(func(sa actions.SearchArea) {
+		tempSearchArea = sa
+	})
 
 	previewSize := fyne.NewSquareSize(30)
+	var refreshItemsAccordion func()
+	var removeTarget func(target string)
+
 	previewList := widget.NewGridWrap(
 		func() int { return len(tempTargets) },
 		func() fyne.CanvasObject {
-			// Template is a container so we can replace the icon per cell (GridWrap reuses templates).
 			icon := canvas.NewImageFromResource(theme.BrokenImageIcon())
 			icon.SetMinSize(previewSize)
 			icon.FillMode = canvas.ImageFillContain
-			return container.NewStack(icon)
+			removeBtn := ttwidget.NewButtonWithIcon("", theme.CancelIcon(), nil)
+			removeBtn.Importance = widget.LowImportance
+			return container.NewStack(icon, removeBtn)
 		},
 		func(id widget.GridWrapItemID, o fyne.CanvasObject) {
 			if id >= len(tempTargets) {
@@ -671,6 +818,13 @@ func createImageSearchDialogContent(action *actions.ImageSearch) (fyne.CanvasObj
 			newIcon.SetMinSize(previewSize)
 			newIcon.FillMode = canvas.ImageFillContain
 			stack.Objects[0] = newIcon
+
+			removeBtn := stack.Objects[1].(*ttwidget.Button)
+			removeBtn.OnTapped = func() {
+				if removeTarget != nil {
+					removeTarget(target)
+				}
+			}
 		},
 	)
 	previewLabel := widget.NewLabel("Selected items:")
@@ -691,28 +845,43 @@ func createImageSearchDialogContent(action *actions.ImageSearch) (fyne.CanvasObj
 	}
 	refreshPreview() // show initial selection
 
-	// Create Items accordion (shared with editor Items tab)
-	itemsAccordion := widget.NewAccordion()
-	for _, p := range repositories.ProgramRepo().GetAll() {
-		prog := p
-		accordionItem := CreateProgramAccordionItem(ItemsAccordionOptions{
-			Program:            prog,
-			GetSelectedTargets: func() []string { return *tempTargetsRef },
-			OnItemSelected: func(baseItemName string) {
-				name := prog.Name + config.ProgramDelimiter + baseItemName
-				t := *tempTargetsRef
-				if i := slices.Index(t, name); i != -1 {
-					t = slices.Delete(t, i, i+1)
-				} else {
-					t = append(t, name)
-				}
-				slices.Sort(t)
-				*tempTargetsRef = t
-				refreshPreview()
-			},
-		})
-		itemsAccordion.Append(accordionItem)
+	removeTarget = func(target string) {
+		t := *tempTargetsRef
+		if i := slices.Index(t, target); i != -1 {
+			t = slices.Delete(t, i, i+1)
+			*tempTargetsRef = t
+		}
+		refreshPreview()
+		if refreshItemsAccordion != nil {
+			refreshItemsAccordion()
+		}
 	}
+
+	// Items accordion with searchbar above (fuzzy match program name + item name/tags)
+	var itemsSearchbar *widget.Entry
+	var itemsAccordion fyne.CanvasObject
+	itemsSearchbar, itemsAccordion, refreshItemsAccordion = buildItemsAccordionWithSearchbar(
+		func() []string { return *tempTargetsRef },
+		func(programName, baseItemName string) {
+			name := programName + config.ProgramDelimiter + baseItemName
+			t := *tempTargetsRef
+			if i := slices.Index(t, name); i != -1 {
+				t = slices.Delete(t, i, i+1)
+			} else {
+				t = append(t, name)
+			}
+			slices.Sort(t)
+			*tempTargetsRef = t
+			refreshPreview()
+			refreshItemsAccordion()
+		},
+		func(newTargets []string) {
+			*tempTargetsRef = newTargets
+			refreshPreview()
+			refreshItemsAccordion()
+		},
+		refreshPreview,
+	)
 
 	rightPanel := container.NewBorder(
 		nil, nil,
@@ -723,12 +892,13 @@ func createImageSearchDialogContent(action *actions.ImageSearch) (fyne.CanvasObj
 					widget.NewFormItem("Name:", nameEntry),
 					widget.NewFormItem("Row Split:", rowSplitEntry),
 					widget.NewFormItem("Col Split:", colSplitEntry),
-					widget.NewFormItem("Tolerance:", toleranceEntry),
-					widget.NewFormItem("Blur:", blurEntry),
+					widget.NewFormItem("Tolerance:", toleranceIncrementer),
+					widget.NewFormItem("Blur:", container.NewVBox(blurIncrementer, layout.NewSpacer())),
 					widget.NewFormItem("Output X Variable:", outputXVarEntry),
 					widget.NewFormItem("Output Y Variable:", outputYVarEntry),
-					widget.NewFormItem("", waitTilFoundCheck),
-					widget.NewFormItem("Timeout (seconds):", waitTilFoundSecondsEntry),
+					widget.NewFormItem("", waitTil.Check),
+					widget.NewFormItem("Timeout (seconds):", waitTil.SecondsIncrementer),
+					widget.NewFormItem("Search interval (ms):", waitTil.IntervalIncrementer),
 				),
 			),
 			previewBox,
@@ -740,13 +910,13 @@ func createImageSearchDialogContent(action *actions.ImageSearch) (fyne.CanvasObj
 			widget.NewAccordion(
 				widget.NewAccordionItem("Search Areas",
 					container.NewBorder(
-						nil, nil, nil, nil,
+						searchAreasSearchbar, nil, nil, nil,
 						searchAreasAccordion,
 					),
 				),
 				widget.NewAccordionItem("Items",
 					container.NewBorder(
-						nil, nil, nil, nil,
+						itemsSearchbar, nil, nil, nil,
 						itemsAccordion,
 					),
 				),
@@ -762,18 +932,11 @@ func createImageSearchDialogContent(action *actions.ImageSearch) (fyne.CanvasObj
 		if cs, err := strconv.Atoi(colSplitEntry.Text); err == nil {
 			action.ColSplit = cs
 		}
-		if tol, err := strconv.ParseFloat(toleranceEntry.Text, 32); err == nil {
-			action.Tolerance = float32(tol)
-		}
-		if b, err := strconv.Atoi(blurEntry.Text); err == nil {
-			action.Blur = b
-		}
+		action.Tolerance = float32(toleranceIncrementer.Value)
+		action.Blur = blurIncrementer.Value
 		action.OutputXVariable = outputXVarEntry.Text
 		action.OutputYVariable = outputYVarEntry.Text
-		action.WaitTilFound = waitTilFoundCheck.Checked
-		if s, err := strconv.Atoi(waitTilFoundSecondsEntry.Text); err == nil && s >= 0 {
-			action.WaitTilFoundSeconds = s
-		}
+		waitTil.writeTo(&action.WaitTilFound, &action.WaitTilFoundSeconds, &action.WaitTilFoundIntervalMs)
 		// Apply temporary changes
 		action.SearchArea = tempSearchArea
 		action.Targets = tempTargets
@@ -811,116 +974,42 @@ func getIconPathForTarget(target string) string {
 func createOcrDialogContent(action *actions.Ocr) (fyne.CanvasObject, func()) {
 	nameEntry := widget.NewEntry()
 	nameEntry.SetText(action.Name)
-	targetEntry := widget.NewEntry()
+	targetEntry := newVarEntry()
 	targetEntry.SetText(action.Target)
-	outputVarEntry := widget.NewEntry()
+	outputVarEntry := newVarEntry()
 	outputVarEntry.SetText(action.OutputVariable)
-	waitTilFoundCheck := widget.NewCheck("Wait until found", nil)
-	waitTilFoundCheck.SetChecked(action.WaitTilFound)
-	waitTilFoundSecondsEntry := widget.NewEntry()
-	if action.WaitTilFoundSeconds <= 0 {
-		waitTilFoundSecondsEntry.SetText("10")
-	} else {
-		waitTilFoundSecondsEntry.SetText(fmt.Sprintf("%d", action.WaitTilFoundSeconds))
-	}
-	waitTilFoundSecondsEntry.SetPlaceHolder("Seconds to keep trying if not found")
+	outputXVarEntry := newVarEntry()
+	outputXVarEntry.SetText(action.OutputXVariable)
+	outputXVarEntry.SetPlaceHolder("e.g. foundX")
+	outputYVarEntry := newVarEntry()
+	outputYVarEntry.SetText(action.OutputYVariable)
+	outputYVarEntry.SetPlaceHolder("e.g. foundY")
+	waitTil := newWaitTilFoundForm(action.WaitTilFound, action.WaitTilFoundSeconds, action.WaitTilFoundIntervalMs, 0)
 
 	// Temporary storage for changes (only applied on save)
 	tempSearchArea := action.SearchArea
 
-	// Create Search Areas accordion
-	searchAreasAccordion := widget.NewAccordion()
-	for _, p := range repositories.ProgramRepo().GetAll() {
-		lists := struct {
-			searchbar   *widget.Entry
-			searchareas *widget.List
-			filtered    []string
-		}{
-			filtered: p.SearchAreaRepo(config.MainMonitorSizeString).GetAllKeys(),
-		}
-
-		lists.searchbar = widget.NewEntry()
-		lists.searchareas = widget.NewList(
-			func() int {
-				return len(lists.filtered)
-			},
-			func() fyne.CanvasObject {
-				return widget.NewLabel("template")
-			},
-			func(id widget.ListItemID, co fyne.CanvasObject) {
-				name := lists.filtered[id]
-				label := co.(*widget.Label)
-				program, err := repositories.ProgramRepo().Get(p.Name)
-				if err != nil {
-					return
-				}
-				sa, err := program.SearchAreaRepo(config.MainMonitorSizeString).Get(name)
-				if err != nil {
-					return
-				}
-				label.SetText(sa.Name)
-			},
-		)
-
-		lists.searchareas.OnSelected = func(id widget.ListItemID) {
-			program, err := repositories.ProgramRepo().Get(p.Name)
-			if err != nil {
-				return
-			}
-			saName := lists.filtered[id]
-			sa, err := program.SearchAreaRepo(config.MainMonitorSizeString).Get(saName)
-			if err != nil {
-				return
-			}
-			tempSearchArea = actions.SearchArea{
-				Name:    sa.Name,
-				LeftX:   sa.LeftX,
-				TopY:    sa.TopY,
-				RightX:  sa.RightX,
-				BottomY: sa.BottomY,
-			}
-		}
-
-		lists.searchbar.PlaceHolder = "Search here"
-		lists.searchbar.OnChanged = func(s string) {
-			defaultList := p.SearchAreaRepo(config.MainMonitorSizeString).GetAllKeys()
-			if s == "" {
-				lists.filtered = defaultList
-			} else {
-				lists.filtered = []string{}
-				for _, i := range defaultList {
-					if fuzzy.MatchFold(s, i) {
-						lists.filtered = append(lists.filtered, i)
-					}
-				}
-			}
-			lists.searchareas.UnselectAll()
-			lists.searchareas.Refresh()
-		}
-
-		searchAreasAccordion.Append(widget.NewAccordionItem(
-			p.Name,
-			container.NewBorder(
-				lists.searchbar,
-				nil, nil, nil,
-				lists.searchareas,
-			),
-		))
-	}
+	// Search Areas accordion with searchbar above (fuzzy match program name + search area name)
+	searchAreasSearchbar, searchAreasAccordion := buildSearchAreasAccordionWithSearchbar(func(sa actions.SearchArea) {
+		tempSearchArea = sa
+	})
 
 	form := widget.NewForm(
 		widget.NewFormItem("Name:", nameEntry),
 		widget.NewFormItem("Text Target:", targetEntry),
 		widget.NewFormItem("Output Variable:", outputVarEntry),
-		widget.NewFormItem("", waitTilFoundCheck),
-		widget.NewFormItem("Timeout (seconds):", waitTilFoundSecondsEntry),
+		widget.NewFormItem("Output X Variable:", outputXVarEntry),
+		widget.NewFormItem("Output Y Variable:", outputYVarEntry),
+		widget.NewFormItem("", waitTil.Check),
+		widget.NewFormItem("Timeout (seconds):", waitTil.SecondsIncrementer),
+		widget.NewFormItem("Search interval (ms):", waitTil.IntervalIncrementer),
 	)
 
 	content := container.NewHSplit(
 		widget.NewAccordion(
 			widget.NewAccordionItem("Search Areas",
 				container.NewBorder(
-					nil, nil, nil, nil,
+					searchAreasSearchbar, nil, nil, nil,
 					searchAreasAccordion,
 				),
 			),
@@ -932,10 +1021,9 @@ func createOcrDialogContent(action *actions.Ocr) (fyne.CanvasObject, func()) {
 		action.Name = nameEntry.Text
 		action.Target = targetEntry.Text
 		action.OutputVariable = outputVarEntry.Text
-		action.WaitTilFound = waitTilFoundCheck.Checked
-		if s, err := strconv.Atoi(waitTilFoundSecondsEntry.Text); err == nil && s >= 0 {
-			action.WaitTilFoundSeconds = s
-		}
+		action.OutputXVariable = outputXVarEntry.Text
+		action.OutputYVariable = outputYVarEntry.Text
+		waitTil.writeTo(&action.WaitTilFound, &action.WaitTilFoundSeconds, &action.WaitTilFoundIntervalMs)
 		action.SearchArea = tempSearchArea
 	}
 
@@ -943,9 +1031,9 @@ func createOcrDialogContent(action *actions.Ocr) (fyne.CanvasObject, func()) {
 }
 
 func createSetVariableDialogContent(action *actions.SetVariable) (fyne.CanvasObject, func()) {
-	nameEntry := widget.NewEntry()
+	nameEntry := newVarEntry()
 	nameEntry.SetText(action.VariableName)
-	valueEntry := widget.NewEntry()
+	valueEntry := newVarEntry()
 	valueEntry.SetText(fmt.Sprintf("%v", action.Value))
 
 	content := widget.NewForm(
@@ -962,9 +1050,9 @@ func createSetVariableDialogContent(action *actions.SetVariable) (fyne.CanvasObj
 }
 
 func createCalculateDialogContent(action *actions.Calculate) (fyne.CanvasObject, func()) {
-	exprEntry := widget.NewEntry()
+	exprEntry := newVarEntry()
 	exprEntry.SetText(action.Expression)
-	varEntry := widget.NewEntry()
+	varEntry := newVarEntry()
 	varEntry.SetText(action.OutputVar)
 
 	content := widget.NewForm(
@@ -981,12 +1069,12 @@ func createCalculateDialogContent(action *actions.Calculate) (fyne.CanvasObject,
 }
 
 func createDataListDialogContent(action *actions.DataList) (fyne.CanvasObject, func()) {
-	sourceEntry := widget.NewMultiLineEntry()
+	sourceEntry := newMultiLineVarEntry()
 	sourceEntry.SetText(action.Source)
 	sourceEntry.SetPlaceHolder("File: path relative to ~/.sqyre/variables/ (e.g. mylist.txt)\nOr paste text directly")
-	varEntry := widget.NewEntry()
+	varEntry := newVarEntry()
 	varEntry.SetText(action.OutputVar)
-	lengthVarEntry := widget.NewEntry()
+	lengthVarEntry := newVarEntry()
 	lengthVarEntry.SetText(action.LengthVar)
 	lengthVarEntry.SetPlaceHolder("e.g. lineCount (optional, for Loop)")
 	isFileCheck := widget.NewCheck("Source is file path (relative to ~/.sqyre/variables/)", nil)
@@ -1014,9 +1102,9 @@ func createDataListDialogContent(action *actions.DataList) (fyne.CanvasObject, f
 }
 
 func createSaveVariableDialogContent(action *actions.SaveVariable) (fyne.CanvasObject, func()) {
-	varEntry := widget.NewEntry()
+	varEntry := newVarEntry()
 	varEntry.SetText(action.VariableName)
-	destEntry := widget.NewEntry()
+	destEntry := newVarEntry()
 	destEntry.SetText(action.Destination)
 	destEntry.SetPlaceHolder("~/.sqyre/variables/... or 'clipboard'")
 	appendCheck := widget.NewCheck("Append to file", nil)
@@ -1057,37 +1145,22 @@ func hexToColor(hex string) (color.Color, bool) {
 	return color.RGBA{R: r, G: g, B: b, A: 255}, true
 }
 
-func createWaitForPixelDialogContent(action *actions.WaitForPixel) (fyne.CanvasObject, func()) {
+func createFindPixelDialogContent(action *actions.FindPixel) (fyne.CanvasObject, func()) {
 	nameEntry := widget.NewEntry()
 	nameEntry.SetText(action.Name)
 	nameEntry.SetPlaceHolder("Optional name for this action")
 
-	xEntry := widget.NewEntry()
-	yEntry := widget.NewEntry()
-	switch v := action.Point.X.(type) {
-	case int:
-		xEntry.SetText(fmt.Sprintf("%d", v))
-	case string:
-		xEntry.SetText(v)
-	default:
-		xEntry.SetText(fmt.Sprintf("%v", v))
-	}
-	switch v := action.Point.Y.(type) {
-	case int:
-		yEntry.SetText(fmt.Sprintf("%d", v))
-	case string:
-		yEntry.SetText(v)
-	default:
-		yEntry.SetText(fmt.Sprintf("%v", v))
-	}
-	xEntry.SetPlaceHolder("X or ${var}")
-	yEntry.SetPlaceHolder("Y or ${var}")
+	tempSearchArea := action.SearchArea
+
+	// Search Areas accordion with searchbar above (fuzzy match program name + search area name)
+	searchAreasSearchbar, searchAreasAccordion := buildSearchAreasAccordionWithSearchbar(func(sa actions.SearchArea) {
+		tempSearchArea = sa
+	})
 
 	colorEntry := widget.NewEntry()
 	colorEntry.SetText(action.TargetColor)
 	colorEntry.SetPlaceHolder("Hex e.g. ffffff or #ffffff")
 
-	// Color swatch: shows current color and stays in sync with colorEntry
 	swatch := canvas.NewRectangle(color.RGBA{128, 128, 128, 255})
 	swatch.SetMinSize(fyne.NewSize(32, 32))
 	swatch.StrokeWidth = 1
@@ -1101,9 +1174,14 @@ func createWaitForPixelDialogContent(action *actions.WaitForPixel) (fyne.CanvasO
 	updateSwatch()
 	colorEntry.OnChanged = func(string) { updateSwatch() }
 
-	// Dropper: first click activates; second click (anywhere on screen) records X, Y and color at that pixel
-	dropperBtn := ttwidget.NewButtonWithIcon("", theme.DocumentCreateIcon(), func() {
-		go func() {
+	dropperBtn := ttwidget.NewButtonWithIcon("", theme.MediaRecordIcon(), func() {
+		dismissOverlay := ShowRecordingOverlay(
+			"Pick a Color",
+			"Left click anywhere to sample the pixel color",
+			"Right click to cancel",
+		)
+
+		services.GoSafe(func() {
 			hook.Register(hook.MouseDown, []string{}, func(e hook.Event) {
 				switch e.Button {
 				case hook.MouseMap["left"]:
@@ -1113,20 +1191,21 @@ func createWaitForPixelDialogContent(action *actions.WaitForPixel) (fyne.CanvasO
 					if len(hex) == 8 {
 						hex = hex[2:]
 					}
-					fyne.Do(func() {
-						xEntry.SetText(fmt.Sprintf("%d", x))
-						yEntry.SetText(fmt.Sprintf("%d", y))
+					fyne.DoAndWait(func() {
 						colorEntry.SetText(hex)
 						updateSwatch()
+						dismissOverlay()
 					})
 				default:
-					// right or other: cancel without updating
+					fyne.DoAndWait(func() {
+						dismissOverlay()
+					})
 				}
 				go hook.Unregister(hook.MouseDown, []string{})
 			})
-		}()
+		})
 	})
-	dropperBtn.SetToolTip("Click Dropper, then click on screen to record X, Y and color at that pixel")
+	dropperBtn.SetToolTip("Click Dropper, then click on screen to pick a color")
 
 	colorRow := container.NewBorder(
 		nil, nil,
@@ -1155,34 +1234,41 @@ func createWaitForPixelDialogContent(action *actions.WaitForPixel) (fyne.CanvasO
 	}
 	toleranceRow := container.NewHBox(toleranceEntry, widget.NewLabel("%"), toleranceSlider)
 
-	timeoutEntry := widget.NewEntry()
-	if action.TimeoutSeconds > 0 {
-		timeoutEntry.SetText(fmt.Sprintf("%d", action.TimeoutSeconds))
-	} else {
-		timeoutEntry.SetPlaceHolder("0 = wait indefinitely")
-	}
+	outputXVarEntry := newVarEntry()
+	outputXVarEntry.SetText(action.OutputXVariable)
+	outputXVarEntry.SetPlaceHolder("e.g. foundX")
+	outputYVarEntry := newVarEntry()
+	outputYVarEntry.SetText(action.OutputYVariable)
+	outputYVarEntry.SetPlaceHolder("e.g. foundY")
 
-	content := widget.NewForm(
+	waitTil := newWaitTilFoundForm(action.WaitTilFound, action.WaitTilFoundSeconds, action.WaitTilFoundIntervalMs, 100)
+
+	form := widget.NewForm(
 		widget.NewFormItem("Name:", nameEntry),
-		widget.NewFormItem("X:", xEntry),
-		widget.NewFormItem("Y:", yEntry),
 		widget.NewFormItem("Target color:", colorRow),
 		widget.NewFormItem("Color tolerance:", toleranceRow),
-		widget.NewFormItem("Timeout:", timeoutEntry),
+		widget.NewFormItem("Output X Variable:", outputXVarEntry),
+		widget.NewFormItem("Output Y Variable:", outputYVarEntry),
+		widget.NewFormItem("", waitTil.Check),
+		widget.NewFormItem("Timeout (seconds):", waitTil.SecondsIncrementer),
+		widget.NewFormItem("Search interval (ms):", waitTil.IntervalIncrementer),
+	)
+
+	content := container.NewHSplit(
+		widget.NewAccordion(
+			widget.NewAccordionItem("Search Areas",
+				container.NewBorder(
+					searchAreasSearchbar, nil, nil, nil,
+					searchAreasAccordion,
+				),
+			),
+		),
+		form,
 	)
 
 	saveFunc := func() {
 		action.Name = strings.TrimSpace(nameEntry.Text)
-		if x, err := strconv.Atoi(strings.TrimSpace(xEntry.Text)); err == nil {
-			action.Point.X = x
-		} else {
-			action.Point.X = strings.TrimSpace(xEntry.Text)
-		}
-		if y, err := strconv.Atoi(strings.TrimSpace(yEntry.Text)); err == nil {
-			action.Point.Y = y
-		} else {
-			action.Point.Y = strings.TrimSpace(yEntry.Text)
-		}
+		action.SearchArea = tempSearchArea
 		action.TargetColor = strings.ToLower(strings.TrimPrefix(strings.TrimSpace(colorEntry.Text), "#"))
 		if t, err := strconv.Atoi(strings.TrimSpace(toleranceEntry.Text)); err == nil {
 			if t < 0 {
@@ -1193,9 +1279,9 @@ func createWaitForPixelDialogContent(action *actions.WaitForPixel) (fyne.CanvasO
 			}
 			action.ColorTolerance = t
 		}
-		if s, err := strconv.Atoi(strings.TrimSpace(timeoutEntry.Text)); err == nil && s >= 0 {
-			action.TimeoutSeconds = s
-		}
+		action.OutputXVariable = outputXVarEntry.Text
+		action.OutputYVariable = outputYVarEntry.Text
+		waitTil.writeTo(&action.WaitTilFound, &action.WaitTilFoundSeconds, &action.WaitTilFoundIntervalMs)
 	}
 
 	return content, saveFunc
@@ -1257,7 +1343,7 @@ func createFocusWindowDialogContent(action *actions.FocusWindow) (fyne.CanvasObj
 		refreshList()
 	})
 	// Load list on open
-	go func() {
+	services.GoSafe(func() {
 		names, err := services.ActiveWindowNames()
 		if err != nil {
 			fyne.Do(func() {
@@ -1270,7 +1356,7 @@ func createFocusWindowDialogContent(action *actions.FocusWindow) (fyne.CanvasObj
 			allWindowNames = names
 			refreshList()
 		})
-	}()
+	})
 
 	listCard := container.NewBorder(
 		widget.NewLabel("Active windows (list filters as you type):"),
@@ -1330,152 +1416,3 @@ func createRunMacroDialogContent(action *actions.RunMacro) (fyne.CanvasObject, f
 
 	return content, saveFunc
 }
-
-// func createCalibrationDialogContent(action *actions.Calibration) (fyne.CanvasObject, func()) {
-// 	nameEntry := widget.NewEntry()
-// 	nameEntry.SetText(action.Name)
-// 	programEntry := widget.NewEntry()
-// 	programEntry.SetText(action.ProgramName)
-// 	programEntry.SetPlaceHolder("Program name (e.g. from Programs tab)")
-// 	resolutionEntry := widget.NewEntry()
-// 	resolutionEntry.SetText(action.ResolutionKey)
-// 	resolutionEntry.SetPlaceHolder("Leave empty for current monitor")
-// 	rowSplitEntry := widget.NewEntry()
-// 	rowSplitEntry.SetText(fmt.Sprintf("%d", action.RowSplit))
-// 	colSplitEntry := widget.NewEntry()
-// 	colSplitEntry.SetText(fmt.Sprintf("%d", action.ColSplit))
-// 	toleranceEntry := widget.NewEntry()
-// 	toleranceEntry.SetText(fmt.Sprintf("%g", action.Tolerance))
-// 	blurEntry := widget.NewEntry()
-// 	blurEntry.SetText(fmt.Sprintf("%d", action.Blur))
-
-// 	tempSearchArea := action.SearchArea
-// 	tempTargets := slices.Clone(action.Targets)
-
-// 	// Search area selector: pick program then area name
-// 	searchAreaProgramSelect := widget.NewSelect(repositories.ProgramRepo().GetAllKeys(), nil)
-// 	if action.ProgramName != "" {
-// 		searchAreaProgramSelect.SetSelected(action.ProgramName)
-// 	} else if len(repositories.ProgramRepo().GetAllKeys()) > 0 {
-// 		searchAreaProgramSelect.SetSelected(repositories.ProgramRepo().GetAllKeys()[0])
-// 	}
-// 	var searchAreaNameSelect *widget.Select
-// 	refreshSearchAreaNames := func() {
-// 		pname := searchAreaProgramSelect.Selected
-// 		if pname == "" {
-// 			return
-// 		}
-// 		p, _ := repositories.ProgramRepo().Get(pname)
-// 		if p == nil {
-// 			return
-// 		}
-// 		keys := p.SearchAreaRepo(config.MainMonitorSizeString).GetAllKeys()
-// 		if searchAreaNameSelect == nil {
-// 			searchAreaNameSelect = widget.NewSelect(keys, func(s string) {
-// 				sa, _ := p.SearchAreaRepo(config.MainMonitorSizeString).Get(s)
-// 				if sa != nil {
-// 					tempSearchArea = actions.SearchArea{Name: sa.Name, LeftX: sa.LeftX, TopY: sa.TopY, RightX: sa.RightX, BottomY: sa.BottomY}
-// 				}
-// 			})
-// 		} else {
-// 			searchAreaNameSelect.Options = keys
-// 			searchAreaNameSelect.Refresh()
-// 		}
-// 		if action.SearchArea.Name != "" {
-// 			for _, k := range keys {
-// 				if k == action.SearchArea.Name {
-// 					searchAreaNameSelect.SetSelected(k)
-// 					break
-// 				}
-// 			}
-// 		}
-// 	}
-// 	searchAreaProgramSelect.OnChanged = func(string) { refreshSearchAreaNames() }
-// 	refreshSearchAreaNames()
-
-// 	// Targets list
-// 	targetsList := widget.NewList(
-// 		func() int { return len(tempTargets) },
-// 		func() fyne.CanvasObject {
-// 			return container.NewHBox(
-// 				widget.NewEntry(),
-// 				widget.NewSelect([]string{"point", "searcharea"}, nil),
-// 				widget.NewEntry(),
-// 			)
-// 		},
-// 		func(id widget.ListItemID, co fyne.CanvasObject) {
-// 			row := co.(*fyne.Container).Objects
-// 			if id < len(tempTargets) {
-// 				t := tempTargets[id]
-// 				row[0].(*widget.Entry).SetText(t.OutputName)
-// 				row[1].(*widget.Select).SetSelected(t.OutputType)
-// 				if row[1].(*widget.Select).Selected == "" {
-// 					row[1].(*widget.Select).SetSelected("point")
-// 				}
-// 				row[2].(*widget.Entry).SetText(t.Target)
-// 			}
-// 			i := id
-// 			row[0].(*widget.Entry).OnChanged = func(s string) {
-// 				if i < len(tempTargets) {
-// 					tempTargets[i].OutputName = s
-// 				}
-// 			}
-// 			row[1].(*widget.Select).OnChanged = func(s string) {
-// 				if i < len(tempTargets) {
-// 					tempTargets[i].OutputType = s
-// 				}
-// 			}
-// 			row[2].(*widget.Entry).OnChanged = func(s string) {
-// 				if i < len(tempTargets) {
-// 					tempTargets[i].Target = s
-// 				}
-// 			}
-// 		},
-// 	)
-// 	addTargetBtn := ttwidget.NewButton("Add target", func() {
-// 		tempTargets = append(tempTargets, actions.CalibrationTarget{OutputType: "point"})
-// 		targetsList.Refresh()
-// 	})
-// 	content := container.NewVBox(
-// 		widget.NewForm(
-// 			widget.NewFormItem("Name:", nameEntry),
-// 			widget.NewFormItem("Program name:", programEntry),
-// 			widget.NewFormItem("Resolution (optional):", resolutionEntry),
-// 			widget.NewFormItem("Search area (optional) — program:", searchAreaProgramSelect),
-// 		),
-// 	)
-// 	if searchAreaNameSelect != nil {
-// 		content.Add(widget.NewForm(widget.NewFormItem("Search area name:", searchAreaNameSelect)))
-// 	}
-// 	content.Add(widget.NewForm(
-// 		widget.NewFormItem("Row split:", rowSplitEntry),
-// 		widget.NewFormItem("Col split:", colSplitEntry),
-// 		widget.NewFormItem("Tolerance:", toleranceEntry),
-// 		widget.NewFormItem("Blur:", blurEntry),
-// 	))
-// 	content.Add(widget.NewLabel("Calibration targets (output name, type, image target e.g. program|item):"))
-// 	content.Add(container.NewBorder(nil, nil, nil, addTargetBtn, targetsList))
-// 	content.Add(layout.NewSpacer())
-
-// 	saveFunc := func() {
-// 		action.Name = nameEntry.Text
-// 		action.ProgramName = programEntry.Text
-// 		action.ResolutionKey = strings.TrimSpace(resolutionEntry.Text)
-// 		action.SearchArea = tempSearchArea
-// 		action.Targets = tempTargets
-// 		if n, err := strconv.Atoi(rowSplitEntry.Text); err == nil {
-// 			action.RowSplit = n
-// 		}
-// 		if n, err := strconv.Atoi(colSplitEntry.Text); err == nil {
-// 			action.ColSplit = n
-// 		}
-// 		if f, err := strconv.ParseFloat(toleranceEntry.Text, 32); err == nil {
-// 			action.Tolerance = float32(f)
-// 		}
-// 		if n, err := strconv.Atoi(blurEntry.Text); err == nil {
-// 			action.Blur = n
-// 		}
-// 	}
-
-// 	return content, saveFunc
-// }

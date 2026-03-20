@@ -1,7 +1,9 @@
 package repositories
 
 import (
-	"Squire/internal/models"
+	"cmp"
+	"Sqyre/internal/models"
+	"slices"
 	"sync"
 )
 
@@ -33,4 +35,17 @@ func ProgramRepo() *ProgramRepository {
 		}
 	})
 	return programRepo
+}
+
+// GetAllSortedByName returns all programs sorted by Name ascending (stable UI order for accordions and lists).
+func (r *ProgramRepository) GetAllSortedByName() []*models.Program {
+	all := r.GetAll()
+	out := make([]*models.Program, 0, len(all))
+	for _, p := range all {
+		out = append(out, p)
+	}
+	slices.SortFunc(out, func(a, b *models.Program) int {
+		return cmp.Compare(a.Name, b.Name)
+	})
+	return out
 }

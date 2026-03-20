@@ -1,10 +1,11 @@
 package ui
 
 import (
-	"Squire/internal/config"
-	"Squire/internal/models"
-	"Squire/internal/services"
-	"Squire/ui/custom_widgets"
+	"Sqyre/internal/config"
+	"Sqyre/internal/models"
+	"Sqyre/internal/screen"
+	"Sqyre/internal/services"
+	"Sqyre/ui/custom_widgets"
 	"errors"
 	"fmt"
 	"image"
@@ -21,8 +22,9 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
-	"Squire/ui/completionentry"
+	"Sqyre/ui/completionentry"
 
+	kxlayout "github.com/ErikKalkoken/fyne-kx/layout"
 	"github.com/go-vgo/robotgo"
 	"gocv.io/x/gocv"
 )
@@ -38,6 +40,7 @@ type EditorUi struct {
 		ItemsTab       *EditorTab
 		PointsTab      *EditorTab
 		SearchAreasTab *EditorTab
+		MasksTab       *EditorTab
 		AutoPicTab     *EditorTab
 	}
 }
@@ -47,9 +50,11 @@ type EditorTab struct {
 	Left  *fyne.Container
 	Right *fyne.Container
 
-	Widgets      map[string]fyne.CanvasObject
-	SelectedItem any
-	previewImage *canvas.Image // For AutoPic tab
+	Widgets        map[string]fyne.CanvasObject
+	SelectedItem   any
+	previewImage   *canvas.Image
+	UpdateButton   *widget.Button
+	OriginalValues map[string]string
 }
 
 func NewEditorTab(name string, left, right *fyne.Container) *container.TabItem {
@@ -57,20 +62,97 @@ func NewEditorTab(name string, left, right *fyne.Container) *container.TabItem {
 	return container.NewTabItem(name, split)
 }
 
+// wrapEditorPreviewImage adds a themed border around editor preview imagery (same treatment as the Items tab icon editor).
+func wrapEditorPreviewImage(inner fyne.CanvasObject) fyne.CanvasObject {
+	border := canvas.NewRectangle(color.NRGBA{})
+	border.StrokeColor = theme.ButtonColor()
+	border.StrokeWidth = 2
+	border.CornerRadius = 4
+	return container.NewStack(border, inner)
+}
+
+const (
+	editorPreviewMonitorDash = 10
+	editorPreviewMonitorGap  = 6
+)
+
+// editorPreviewMonitorOutline is the dotted monitor bezel color (matches search-area / point accent).
+var editorPreviewMonitorOutline = color.RGBA{R: 255, A: 255}
+
+func drawPreviewDottedHLine(mat *gocv.Mat, y, x0, x1 int, c color.RGBA, thick int) {
+	if x0 > x1 {
+		return
+	}
+	step := editorPreviewMonitorDash + editorPreviewMonitorGap
+	for x := x0; x <= x1; x += step {
+		xe := x + editorPreviewMonitorDash - 1
+		if xe > x1 {
+			xe = x1
+		}
+		gocv.Line(mat, image.Pt(x, y), image.Pt(xe, y), c, thick)
+	}
+}
+
+func drawPreviewDottedVLine(mat *gocv.Mat, x, y0, y1 int, c color.RGBA, thick int) {
+	if y0 > y1 {
+		return
+	}
+	step := editorPreviewMonitorDash + editorPreviewMonitorGap
+	for y := y0; y <= y1; y += step {
+		ye := y + editorPreviewMonitorDash - 1
+		if ye > y1 {
+			ye = y1
+		}
+		gocv.Line(mat, image.Pt(x, y), image.Pt(x, ye), c, thick)
+	}
+}
+
+func drawPreviewDottedRectOutline(mat *gocv.Mat, r image.Rectangle, c color.RGBA, thick int) {
+	if r.Empty() || r.Dx() <= 0 || r.Dy() <= 0 {
+		return
+	}
+	x0, y0 := r.Min.X, r.Min.Y
+	x1, y1 := r.Max.X-1, r.Max.Y-1
+	if x1 < x0 || y1 < y0 {
+		return
+	}
+	drawPreviewDottedHLine(mat, y0, x0, x1, c, thick)
+	drawPreviewDottedHLine(mat, y1, x0, x1, c, thick)
+	drawPreviewDottedVLine(mat, x0, y0, y1, c, thick)
+	drawPreviewDottedVLine(mat, x1, y0, y1, c, thick)
+}
+
+// drawEditorPreviewMonitorOutlines draws a dotted rectangle for each enabled monitor (clip to capture).
+func drawEditorPreviewMonitorOutlines(mat *gocv.Mat, vb image.Rectangle) {
+	const thick = 1
+	n := screen.NumDisplays()
+	for i := 0; i < n; i++ {
+		if !screen.IsMonitorEnabled(i) {
+			continue
+		}
+		b := screen.DisplayBoundsAbs(i)
+		inter := b.Intersect(vb)
+		if inter.Empty() {
+			continue
+		}
+		rel := image.Rect(inter.Min.X-vb.Min.X, inter.Min.Y-vb.Min.Y, inter.Max.X-vb.Min.X, inter.Max.Y-vb.Min.Y)
+		drawPreviewDottedRectOutline(mat, rel, editorPreviewMonitorOutline, thick)
+	}
+}
+
 func (u *Ui) constructEditorTabs() {
 	var (
-		name = "Name"
-		x    = "X"
-		y    = "Y"
-		x1   = "LeftX"
-		y1   = "TopY"
-		x2   = "RightX"
-		y2   = "BottomY"
-		cols = "Cols"
-		rows = "Rows"
-		tags = "Tags"
-		sm   = "StackMax"
-		// m    = "Merchant"
+		name  = "Name"
+		x     = "X"
+		y     = "Y"
+		x1    = "LeftX"
+		y1    = "TopY"
+		x2    = "RightX"
+		y2    = "BottomY"
+		cols  = "Cols"
+		rows  = "Rows"
+		tags  = "Tags"
+		sm    = "StackMax"
 		form  = "Form"
 		acc   = "Accordion"
 		plist = "list"
@@ -89,16 +171,21 @@ func (u *Ui) constructEditorTabs() {
 	protw[form] = widget.NewForm(
 		widget.NewFormItem(name, protw[name]),
 	)
-	protw[form].(*widget.Form).SubmitText = "Update"
+
+	et.ProgramsTab.UpdateButton = widget.NewButton("Update", nil)
+	et.ProgramsTab.UpdateButton.Importance = widget.HighImportance
+	et.ProgramsTab.UpdateButton.Disable()
 
 	et.ProgramsTab.TabItem = NewEditorTab(
 		"Programs",
 		container.NewBorder(protw["searchbar"], nil, nil, nil, protw[plist]),
-		container.NewBorder(nil, nil, nil, nil, protw[form]),
+		container.NewBorder(nil, nil, nil, nil, container.NewVBox(protw[form], container.NewHBox(layout.NewSpacer(), et.ProgramsTab.UpdateButton))),
 	)
 
 	//===========================================================================================================ITEMS
 	itw[acc] = widget.NewAccordion()
+	itw["searchbar"] = widget.NewEntry()
+	itw["searchbar"].(*widget.Entry).PlaceHolder = "Search here"
 	itw[name] = new(widget.Entry)
 	itw[cols] = new(widget.Entry)
 	itw[rows] = new(widget.Entry)
@@ -109,8 +196,24 @@ func (u *Ui) constructEditorTabs() {
 	itw["tagSubmitButton"].(*widget.Button).Importance = widget.MediumImportance
 	// Create container with tag entry and submit button
 	itw["tagEntryContainer"] = container.NewBorder(nil, nil, nil, itw["tagSubmitButton"], itw["tagEntry"])
-	itw[tags] = container.NewGridWithColumns(2) // Grid container for displaying tags
+	itw[tags] = container.New(kxlayout.NewRowWrapLayout())
 	itw[sm] = new(widget.Entry)
+
+	// Mask selector: label showing current mask + button to open selection popup
+	itw["maskLabel"] = widget.NewLabel("None")
+	itw["maskSelectButton"] = widget.NewButtonWithIcon("Select", theme.SearchIcon(), nil)
+	itw["maskSelectButton"].(*widget.Button).Importance = widget.MediumImportance
+	itw["maskClearButton"] = widget.NewButtonWithIcon("", theme.ContentClearIcon(), nil)
+	itw["maskClearButton"].(*widget.Button).Importance = widget.LowImportance
+	itw["maskDetailsLabel"] = widget.NewLabel("")
+	itw["maskDetailsLabel"].(*widget.Label).TextStyle = fyne.TextStyle{Italic: true}
+	itw["maskContainer"] = container.NewVBox(
+		container.NewBorder(nil, nil, nil,
+			container.NewHBox(itw["maskSelectButton"], itw["maskClearButton"]),
+			itw["maskLabel"],
+		),
+		itw["maskDetailsLabel"],
+	)
 
 	// Create IconVariantEditor widget
 	iconService := services.IconVariantServiceInstance()
@@ -127,37 +230,51 @@ func (u *Ui) constructEditorTabs() {
 		widget.NewFormItem(cols, itw[cols]),
 		widget.NewFormItem(rows, itw[rows]),
 		widget.NewFormItem(tags, itw["tagEntryContainer"]),
-		widget.NewFormItem("", container.NewHScroll(itw[tags])),
+		widget.NewFormItem("", itw[tags]),
 		widget.NewFormItem(sm, itw[sm]),
-		// widget.NewFormItem(m, ui.EditorTabs.ItemsTab.Widgets[m]),
-		// widget.NewFormItem("icons", container.NewGridWithRows(2, widget.NewIcon(theme.MediaFastForwardIcon()))),
+		widget.NewFormItem("Mask", itw["maskContainer"]),
 	)
-	itw[form].(*widget.Form).SubmitText = "Update"
+	et.ItemsTab.UpdateButton = widget.NewButton("Update", nil)
+	et.ItemsTab.UpdateButton.Importance = widget.HighImportance
+	et.ItemsTab.UpdateButton.Disable()
+
+	iveBorder := canvas.NewRectangle(color.NRGBA{})
+	iveBorder.StrokeColor = theme.ButtonColor()
+	iveBorder.StrokeWidth = 2
+	iveBorder.CornerRadius = 4
 
 	et.ItemsTab.TabItem = NewEditorTab(
 		"Items",
-		container.NewBorder(nil, nil, nil, nil, itw[acc]),
-		container.NewBorder(itw[form], nil, nil, nil, itw[ive]),
+		container.NewBorder(itw["searchbar"], nil, nil, nil, itw[acc]),
+		container.NewBorder(
+			container.NewVBox(itw[form], container.NewHBox(layout.NewSpacer(), et.ItemsTab.UpdateButton)),
+			nil, nil, nil,
+			container.NewStack(iveBorder, container.NewPadded(itw[ive])),
+		),
 	)
 
 	//===========================================================================================================POINTS
 	ptw[acc] = widget.NewAccordion()
+	ptw["searchbar"] = widget.NewEntry()
+	ptw["searchbar"].(*widget.Entry).PlaceHolder = "Search here"
 	ptw[name] = new(widget.Entry)
-	ptw[x] = new(widget.Entry)
-	ptw[y] = new(widget.Entry)
+	ptw[x] = custom_widgets.NewVarEntry(currentMacroVariables)
+	ptw[y] = custom_widgets.NewVarEntry(currentMacroVariables)
 
 	// Create record button for capturing point coordinates
 	ptw["recordButton"] = widget.NewButtonWithIcon("", theme.MediaRecordIcon(), nil)
 	ptw["recordButton"].(*widget.Button).Importance = widget.DangerImportance
 
+	et.PointsTab.UpdateButton = widget.NewButton("Update", nil)
+	et.PointsTab.UpdateButton.Importance = widget.HighImportance
+	et.PointsTab.UpdateButton.Disable()
+
 	ptw[form] = widget.NewForm(
 		widget.NewFormItem(name, ptw[name]),
 		widget.NewFormItem(x, ptw[x]),
 		widget.NewFormItem(y, ptw[y]),
-		widget.NewFormItem("", container.NewHBox(layout.NewSpacer(), ptw["recordButton"])),
+		widget.NewFormItem("", container.NewHBox(layout.NewSpacer(), ptw["recordButton"], et.PointsTab.UpdateButton)),
 	)
-
-	ptw[form].(*widget.Form).SubmitText = "Update"
 
 	// Create preview image for Points tab
 	pointPreviewImage := canvas.NewImageFromImage(nil)
@@ -169,35 +286,40 @@ func (u *Ui) constructEditorTabs() {
 
 	et.PointsTab.TabItem = NewEditorTab(
 		"Points",
-		container.NewBorder(nil, nil, nil, nil, ptw[acc]),
+		container.NewBorder(ptw["searchbar"], nil, nil, nil, ptw[acc]),
 		container.NewBorder(
 			ptw[form],
 			nil,
 			nil,
 			nil,
-			pointPreviewImage,
+			wrapEditorPreviewImage(pointPreviewImage),
 		),
 	)
 
 	//===========================================================================================================SEARCHAREAS
 	satw[acc] = widget.NewAccordion()
+	satw["searchbar"] = widget.NewEntry()
+	satw["searchbar"].(*widget.Entry).PlaceHolder = "Search here"
 	satw[name] = new(widget.Entry)
-	satw[x1] = new(widget.Entry)
-	satw[y1] = new(widget.Entry)
-	satw[x2] = new(widget.Entry)
-	satw[y2] = new(widget.Entry)
+	satw[x1] = custom_widgets.NewVarEntry(currentMacroVariables)
+	satw[y1] = custom_widgets.NewVarEntry(currentMacroVariables)
+	satw[x2] = custom_widgets.NewVarEntry(currentMacroVariables)
+	satw[y2] = custom_widgets.NewVarEntry(currentMacroVariables)
 	// Create record button for capturing search area rectangle (click and drag)
 	satw["recordButton"] = widget.NewButtonWithIcon("", theme.MediaRecordIcon(), nil)
 	satw["recordButton"].(*widget.Button).Importance = widget.DangerImportance
+	et.SearchAreasTab.UpdateButton = widget.NewButton("Update", nil)
+	et.SearchAreasTab.UpdateButton.Importance = widget.HighImportance
+	et.SearchAreasTab.UpdateButton.Disable()
+
 	satw[form] = widget.NewForm(
 		widget.NewFormItem(name, satw[name]),
 		widget.NewFormItem(x1, satw[x1]),
 		widget.NewFormItem(y1, satw[y1]),
 		widget.NewFormItem(x2, satw[x2]),
 		widget.NewFormItem(y2, satw[y2]),
-		widget.NewFormItem("", container.NewHBox(layout.NewSpacer(), satw["recordButton"])),
+		widget.NewFormItem("", container.NewHBox(layout.NewSpacer(), satw["recordButton"], et.SearchAreasTab.UpdateButton)),
 	)
-	satw[form].(*widget.Form).SubmitText = "Update"
 
 	// Create preview image for Search Areas tab
 	searchAreaPreviewImage := canvas.NewImageFromImage(nil)
@@ -209,19 +331,127 @@ func (u *Ui) constructEditorTabs() {
 
 	et.SearchAreasTab.TabItem = NewEditorTab(
 		"Search Areas",
-		container.NewBorder(nil, nil, nil, nil, satw[acc]),
+		container.NewBorder(satw["searchbar"], nil, nil, nil, satw[acc]),
 		container.NewBorder(
 			satw[form],
 			nil,
 			nil,
 			nil,
-			searchAreaPreviewImage,
+			wrapEditorPreviewImage(searchAreaPreviewImage),
+		),
+	)
+
+	//===========================================================================================================MASKS
+	mtw := et.MasksTab.Widgets
+	mtw["Accordion"] = widget.NewAccordion()
+	mtw["searchbar"] = widget.NewEntry()
+	mtw["searchbar"].(*widget.Entry).PlaceHolder = "Search here"
+	mtw["Name"] = new(widget.Entry)
+	mtw["uploadButton"] = widget.NewButtonWithIcon("Upload Image", theme.FolderOpenIcon(), nil)
+	mtw["removeImageButton"] = widget.NewButtonWithIcon("Remove Image", theme.ContentRemoveIcon(), nil)
+	mtw["removeImageButton"].(*widget.Button).Importance = widget.DangerImportance
+	mtw["removeImageButton"].(*widget.Button).Hide()
+
+	maskPreviewImage := canvas.NewImageFromImage(nil)
+	maskPreviewImage.FillMode = canvas.ImageFillContain
+	maskPreviewImage.SetMinSize(fyne.NewSize(400, 300))
+	et.MasksTab.previewImage = maskPreviewImage
+
+	mtw["imageStatus"] = widget.NewLabel("")
+	mtw["imageStatus"].(*widget.Label).Hide()
+
+	// Shape selector: Rectangle or Circle
+	mtw["shapeSelect"] = widget.NewRadioGroup([]string{"Rectangle", "Circle"}, nil)
+	mtw["shapeSelect"].(*widget.RadioGroup).Horizontal = true
+	mtw["shapeSelect"].(*widget.RadioGroup).Required = true
+	mtw["shapeSelect"].(*widget.RadioGroup).SetSelected("Rectangle")
+
+	// Center location entries (percentage of template dimensions)
+	mtw["CenterX"] = custom_widgets.NewVarEntry(currentMacroVariables)
+	mtw["CenterX"].(*custom_widgets.VarEntry).PlaceHolder = "50"
+	mtw["CenterY"] = custom_widgets.NewVarEntry(currentMacroVariables)
+	mtw["CenterY"].(*custom_widgets.VarEntry).PlaceHolder = "50"
+	mtw["centerContainer"] = container.NewGridWithColumns(2,
+		container.NewBorder(nil, nil, widget.NewLabel("X %"), nil, mtw["CenterX"]),
+		container.NewBorder(nil, nil, widget.NewLabel("Y %"), nil, mtw["CenterY"]),
+	)
+
+	// Rectangle entries:  base * height
+	mtw["Base"] = custom_widgets.NewVarEntry(currentMacroVariables)
+	mtw["Base"].(*custom_widgets.VarEntry).PlaceHolder = "base"
+	mtw["Height"] = custom_widgets.NewVarEntry(currentMacroVariables)
+	mtw["Height"].(*custom_widgets.VarEntry).PlaceHolder = "height"
+	mtw["rectContainer"] =
+		container.NewGridWithColumns(3,
+			mtw["Base"],
+			container.NewCenter(widget.NewLabel("*")),
+			mtw["Height"],
+		)
+
+	// Circle entries:  π * radius²
+	mtw["Radius"] = custom_widgets.NewVarEntry(currentMacroVariables)
+	mtw["Radius"].(*custom_widgets.VarEntry).PlaceHolder = "radius"
+	mtw["circleContainer"] = container.NewBorder(
+		nil, nil,
+		widget.NewLabel("π *"), widget.NewLabel("²"),
+		mtw["Radius"],
+	)
+
+	// Initially show rectangle, hide circle
+	mtw["circleContainer"].(*fyne.Container).Hide()
+
+	// Shape container holds whichever is active
+	mtw["shapeParamsContainer"] = container.NewVBox(
+		mtw["rectContainer"],
+		mtw["circleContainer"],
+	)
+
+	// Toggle visibility when shape changes
+	mtw["shapeSelect"].(*widget.RadioGroup).OnChanged = func(selected string) {
+		switch selected {
+		case "Rectangle":
+			mtw["rectContainer"].(*fyne.Container).Show()
+			mtw["circleContainer"].(*fyne.Container).Hide()
+		case "Circle":
+			mtw["rectContainer"].(*fyne.Container).Hide()
+			mtw["circleContainer"].(*fyne.Container).Show()
+		}
+	}
+
+	mtw["Inverse"] = widget.NewCheck("Inverse (shape included, rest excluded)", nil)
+
+	et.MasksTab.UpdateButton = widget.NewButton("Update", nil)
+	et.MasksTab.UpdateButton.Importance = widget.HighImportance
+	et.MasksTab.UpdateButton.Disable()
+
+	mtw["Form"] = widget.NewForm(
+		widget.NewFormItem("Name", mtw["Name"]),
+		widget.NewFormItem("Shape", mtw["shapeSelect"]),
+		widget.NewFormItem("Center", mtw["centerContainer"]),
+		widget.NewFormItem("", mtw["shapeParamsContainer"]),
+		widget.NewFormItem("", mtw["Inverse"]),
+	)
+
+	et.MasksTab.TabItem = NewEditorTab(
+		"Masks",
+		container.NewBorder(mtw["searchbar"], nil, nil, nil, mtw["Accordion"]),
+		container.NewBorder(
+			container.NewVBox(
+				mtw["Form"],
+				container.NewHBox(layout.NewSpacer(), et.MasksTab.UpdateButton),
+				container.NewHBox(mtw["uploadButton"], mtw["removeImageButton"]),
+				mtw["imageStatus"],
+			),
+			nil, nil, nil,
+			wrapEditorPreviewImage(maskPreviewImage),
 		),
 	)
 
 	//===========================================================================================================AUTOPIC
 	atw := et.AutoPicTab.Widgets
 	atw["Accordion"] = widget.NewAccordion()
+	atw["searchbar"] = widget.NewEntry()
+	atw["searchbar"].(*widget.Entry).PlaceHolder = "Search here"
 	atw["saveButton"] = widget.NewButton("Save", u.onAutoPicSave)
 
 	// Create preview image and container
@@ -238,7 +468,7 @@ func (u *Ui) constructEditorTabs() {
 	et.AutoPicTab.TabItem = NewEditorTab(
 		"AutoPic",
 		container.NewBorder(
-			nil,
+			atw["searchbar"],
 			nil,
 			nil,
 			nil,
@@ -249,7 +479,7 @@ func (u *Ui) constructEditorTabs() {
 			atw["saveButton"],
 			nil,
 			nil,
-			previewImage,
+			wrapEditorPreviewImage(previewImage),
 		),
 	)
 
@@ -257,6 +487,7 @@ func (u *Ui) constructEditorTabs() {
 	et.Append(et.ItemsTab.TabItem)
 	et.Append(et.PointsTab.TabItem)
 	et.Append(et.SearchAreasTab.TabItem)
+	et.Append(et.MasksTab.TabItem)
 	et.Append(et.AutoPicTab.TabItem)
 }
 
@@ -307,14 +538,10 @@ func (u *Ui) onAutoPicSave() {
 		return
 	}
 
-	// Validate coordinates are within reasonable bounds
-	screenWidth := config.MonitorWidth
-	screenHeight := config.MonitorHeight
-
-	if lx < 0 || ty < 0 ||
-		rx > screenWidth || by > screenHeight {
-		dialog.ShowError(fmt.Errorf("AutoPic: Cannot save - search area coordinates out of screen bounds - screen: %dx%d, area: (%d,%d) to (%d,%d) (area: %s)",
-			screenWidth, screenHeight, lx, ty, rx, by, searchArea.Name), u.Window)
+	vb := screen.VirtualBounds()
+	if lx < vb.Min.X || ty < vb.Min.Y || rx > vb.Max.X || by > vb.Max.Y {
+		dialog.ShowError(fmt.Errorf("AutoPic: Cannot save - search area outside virtual desktop - desktop: (%d,%d)..(%d,%d), area: (%d,%d) to (%d,%d) (area: %s)",
+			vb.Min.X, vb.Min.Y, vb.Max.X, vb.Max.Y, lx, ty, rx, by, searchArea.Name), u.Window)
 		return
 	}
 
@@ -324,7 +551,7 @@ func (u *Ui) onAutoPicSave() {
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				dialog.ShowError(fmt.Errorf("AutoPic: Screen capture panic recovered during save - %v (area: %s)", r, searchArea.Name), u.Window)
+				services.LogPanicToFile(r, "AutoPic: Screen capture during save (area: "+searchArea.Name+")")
 				captureImg = nil
 			}
 		}()
@@ -364,7 +591,7 @@ func (u *Ui) onAutoPicSave() {
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				dialog.ShowError(fmt.Errorf("AutoPic: Image save panic recovered - %v (path: %s)", r, fullPath), u.Window)
+				services.LogPanicToFile(r, "AutoPic: Image save (path: "+fullPath+")")
 			}
 		}()
 
@@ -398,14 +625,10 @@ func (u *Ui) UpdateAutoPicPreview(searchArea *models.SearchArea) {
 		return
 	}
 
-	// Validate coordinates are within reasonable bounds
-	screenWidth := config.MonitorWidth
-	screenHeight := config.MonitorHeight
-
-	if lx < 0 || ty < 0 ||
-		rx > screenWidth || by > screenHeight {
-		dialog.ShowError(fmt.Errorf("AutoPic: Search area coordinates out of screen bounds - screen: %dx%d, area: (%d,%d) to (%d,%d) (area: %s)",
-			screenWidth, screenHeight, lx, ty, rx, by, searchArea.Name), u.Window)
+	vb := screen.VirtualBounds()
+	if lx < vb.Min.X || ty < vb.Min.Y || rx > vb.Max.X || by > vb.Max.Y {
+		dialog.ShowError(fmt.Errorf("AutoPic: Search area outside virtual desktop - desktop: (%d,%d)..(%d,%d), area: (%d,%d) to (%d,%d) (area: %s)",
+			vb.Min.X, vb.Min.Y, vb.Max.X, vb.Max.Y, lx, ty, rx, by, searchArea.Name), u.Window)
 		u.clearPreviewImage()
 		return
 	}
@@ -413,7 +636,7 @@ func (u *Ui) UpdateAutoPicPreview(searchArea *models.SearchArea) {
 	// Attempt to capture the screen area with error recovery
 	defer func() {
 		if r := recover(); r != nil {
-			dialog.ShowError(fmt.Errorf("AutoPic: Screen capture panic recovered - %v (area: %s)", r, searchArea.Name), u.Window)
+			services.LogPanicToFile(r, "AutoPic: Screen capture (area: "+searchArea.Name+")")
 			u.clearPreviewImage()
 		}
 	}()
@@ -500,27 +723,23 @@ func (u *Ui) UpdateSearchAreaPreview(searchArea *models.SearchArea) {
 		return
 	}
 
-	// Validate coordinates are within reasonable bounds
-	screenWidth := config.MonitorWidth
-	screenHeight := config.MonitorHeight
-
-	if lx < 0 || ty < 0 ||
-		rx > screenWidth || by > screenHeight {
-		dialog.ShowError(fmt.Errorf("SearchArea: Search area coordinates out of screen bounds - screen: %dx%d, area: (%d,%d) to (%d,%d) (area: %s)",
-			screenWidth, screenHeight, lx, ty, rx, by, searchArea.Name), u.Window)
+	vb := screen.VirtualBounds()
+	if lx < vb.Min.X || ty < vb.Min.Y || rx > vb.Max.X || by > vb.Max.Y {
+		dialog.ShowError(fmt.Errorf("SearchArea: Search area outside virtual desktop - desktop: (%d,%d)..(%d,%d), area: (%d,%d) to (%d,%d) (area: %s)",
+			vb.Min.X, vb.Min.Y, vb.Max.X, vb.Max.Y, lx, ty, rx, by, searchArea.Name), u.Window)
 		u.clearSearchAreaPreviewImage()
 		return
 	}
 
-	// Attempt to capture the full screen with error recovery
+	// Attempt to capture the full virtual desktop (all enabled monitors)
 	defer func() {
 		if r := recover(); r != nil {
-			dialog.ShowError(fmt.Errorf("SearchArea: Screen capture panic recovered - %v (area: %s)", r, searchArea.Name), u.Window)
+			services.LogPanicToFile(r, "SearchArea: Screen capture (area: "+searchArea.Name+")")
 			u.clearSearchAreaPreviewImage()
 		}
 	}()
 
-	captureImg, err := robotgo.CaptureImg(0, 0, screenWidth, screenHeight)
+	captureImg, err := robotgo.CaptureImg(vb.Min.X, vb.Min.Y, vb.Dx(), vb.Dy())
 	if err != nil {
 		dialog.ShowError(fmt.Errorf("SearchArea: Error capturing image - %v (area: %s)", err, searchArea.Name), u.Window)
 		captureImg = nil
@@ -542,8 +761,10 @@ func (u *Ui) UpdateSearchAreaPreview(searchArea *models.SearchArea) {
 	}
 	defer mat.Close()
 
-	// Draw red rectangle showing search area boundaries
-	rect := image.Rect(lx, ty, rx, by)
+	drawEditorPreviewMonitorOutlines(&mat, vb)
+
+	// Draw red rectangle (image coords relative to virtual capture origin)
+	rect := image.Rect(lx-vb.Min.X, ty-vb.Min.Y, rx-vb.Min.X, by-vb.Min.Y)
 	redColor := color.RGBA{R: 255, A: 255}
 	gocv.Rectangle(&mat, rect, redColor, 2)
 
@@ -605,26 +826,23 @@ func (u *Ui) UpdatePointPreview(point *models.Point) {
 	px := pointCoordToIntForPreview(point.X)
 	py := pointCoordToIntForPreview(point.Y)
 
-	// Validate coordinates are within reasonable bounds
-	screenWidth := config.MonitorWidth
-	screenHeight := config.MonitorHeight
-
-	if px < 0 || py < 0 || px > screenWidth || py > screenHeight {
-		dialog.ShowError(fmt.Errorf("Point: Point coordinates out of screen bounds - screen: %dx%d, point: (%d,%d) (point: %s)",
-			screenWidth, screenHeight, px, py, point.Name), u.Window)
+	vb := screen.VirtualBounds()
+	if px < vb.Min.X || py < vb.Min.Y || px > vb.Max.X || py > vb.Max.Y {
+		dialog.ShowError(fmt.Errorf("Point: Point outside virtual desktop - desktop: (%d,%d)..(%d,%d), point: (%d,%d) (point: %s)",
+			vb.Min.X, vb.Min.Y, vb.Max.X, vb.Max.Y, px, py, point.Name), u.Window)
 		u.clearPointPreviewImage()
 		return
 	}
 
-	// Attempt to capture the full screen with error recovery
+	// Attempt to capture the full virtual desktop (all enabled monitors)
 	defer func() {
 		if r := recover(); r != nil {
-			dialog.ShowError(fmt.Errorf("Point: Screen capture panic recovered - %v (point: %s)", r, point.Name), u.Window)
+			services.LogPanicToFile(r, "Point: Screen capture (point: "+point.Name+")")
 			u.clearPointPreviewImage()
 		}
 	}()
 
-	captureImg, err := robotgo.CaptureImg(0, 0, screenWidth, screenHeight)
+	captureImg, err := robotgo.CaptureImg(vb.Min.X, vb.Min.Y, vb.Dx(), vb.Dy())
 	if err != nil {
 		dialog.ShowError(fmt.Errorf("Point: Error capturing image - %v (point: %s)", err, point.Name), u.Window)
 		captureImg = nil
@@ -645,19 +863,15 @@ func (u *Ui) UpdatePointPreview(point *models.Point) {
 	}
 	defer mat.Close()
 
-	// Draw red marker at point coordinates
-	// Draw a circle with crosshair for visibility
-	center := image.Point{X: px, Y: py}
+	drawEditorPreviewMonitorOutlines(&mat, vb)
+
+	// Draw red marker (coords relative to virtual capture origin)
+	center := image.Point{X: px - vb.Min.X, Y: py - vb.Min.Y}
 	redColor := color.RGBA{R: 255, A: 255}
 
-	// Draw circle
 	gocv.Circle(&mat, center, 8, redColor, 2)
-
-	// Draw crosshair lines
-	// Horizontal line
-	gocv.Line(&mat, image.Point{X: px - 15, Y: py}, image.Point{X: px + 15, Y: py}, redColor, 2)
-	// Vertical line
-	gocv.Line(&mat, image.Point{X: px, Y: py - 15}, image.Point{X: px, Y: py + 15}, redColor, 2)
+	gocv.Line(&mat, image.Point{X: center.X - 15, Y: center.Y}, image.Point{X: center.X + 15, Y: center.Y}, redColor, 2)
+	gocv.Line(&mat, image.Point{X: center.X, Y: center.Y - 15}, image.Point{X: center.X, Y: center.Y + 15}, redColor, 2)
 
 	// Convert back to image.Image
 	previewImg, err := mat.ToImage()
@@ -683,6 +897,79 @@ func (u *Ui) clearPointPreviewImage() {
 		previewImage.Image = nil
 		previewImage.Refresh()
 	}
+}
+
+// UpdateMaskPreview loads and displays the mask image for the given program and mask name.
+func (u *Ui) UpdateMaskPreview(programName, maskName string) {
+	masksPath := config.GetMasksPath()
+	imgPath := filepath.Join(masksPath, programName, maskName+config.PNG)
+
+	if _, err := os.Stat(imgPath); err != nil {
+		u.ClearMaskPreviewImage()
+		return
+	}
+
+	mat := gocv.IMRead(imgPath, gocv.IMReadColor)
+	if mat.Empty() {
+		u.ClearMaskPreviewImage()
+		return
+	}
+	defer mat.Close()
+
+	img, err := mat.ToImage()
+	if err != nil {
+		u.ClearMaskPreviewImage()
+		return
+	}
+
+	if previewImage := u.EditorTabs.MasksTab.previewImage; previewImage != nil {
+		previewImage.Image = img
+		previewImage.Refresh()
+	}
+}
+
+func (u *Ui) ClearMaskPreviewImage() {
+	if previewImage := u.EditorTabs.MasksTab.previewImage; previewImage != nil {
+		previewImage.Image = nil
+		previewImage.Refresh()
+	}
+}
+
+// SetMaskImageMode switches the right-side UI between variable entry and uploaded image display.
+// When hasImage is true, the value/shape entries are hidden and the image status + remove button are shown.
+func (u *Ui) SetMaskImageMode(hasImage bool) {
+	mtw := u.EditorTabs.MasksTab.Widgets
+	if hasImage {
+		mtw["shapeSelect"].(*widget.RadioGroup).Hide()
+		mtw["centerContainer"].(*fyne.Container).Hide()
+		mtw["shapeParamsContainer"].(*fyne.Container).Hide()
+		mtw["imageStatus"].(*widget.Label).SetText("Image mask uploaded")
+		mtw["imageStatus"].(*widget.Label).Show()
+		mtw["removeImageButton"].(*widget.Button).Show()
+	} else {
+		mtw["shapeSelect"].(*widget.RadioGroup).Show()
+		mtw["centerContainer"].(*fyne.Container).Show()
+		mtw["shapeParamsContainer"].(*fyne.Container).Show()
+		selected := mtw["shapeSelect"].(*widget.RadioGroup).Selected
+		switch selected {
+		case "Circle":
+			mtw["rectContainer"].(*fyne.Container).Hide()
+			mtw["circleContainer"].(*fyne.Container).Show()
+		default:
+			mtw["rectContainer"].(*fyne.Container).Show()
+			mtw["circleContainer"].(*fyne.Container).Hide()
+		}
+		mtw["imageStatus"].(*widget.Label).Hide()
+		mtw["removeImageButton"].(*widget.Button).Hide()
+	}
+}
+
+// HasMaskImage checks if an image file exists for the given program and mask.
+func HasMaskImage(programName, maskName string) bool {
+	masksPath := config.GetMasksPath()
+	imgPath := filepath.Join(masksPath, programName, maskName+config.PNG)
+	_, err := os.Stat(imgPath)
+	return err == nil
 }
 
 func (u *Ui) RefreshAutoPicSearchAreas() {

@@ -128,19 +128,19 @@ func TestNewClick(t *testing.T) {
 	if c.GetType() != "click" {
 		t.Errorf("Type = %q", c.GetType())
 	}
-	if c.Button != false || c.Hold != false {
-		t.Errorf("Button=%v Hold=%v", c.Button, c.Hold)
+	if c.Button != false || c.State != false {
+		t.Errorf("Button=%v State=%v", c.Button, c.State)
 	}
 }
 
 func TestClick_String(t *testing.T) {
-	if got := NewClick(false, false).String(); got != "left click" {
+	if got := NewClick(false, false).String(); got != "left click up" {
 		t.Errorf("String() = %q", got)
 	}
-	if got := NewClick(true, false).String(); got != "right click" {
+	if got := NewClick(true, false).String(); got != "right click up" {
 		t.Errorf("String() = %q", got)
 	}
-	if got := NewClick(false, true).String(); got != "left click (hold)" {
+	if got := NewClick(false, true).String(); got != "left click down" {
 		t.Errorf("String() = %q", got)
 	}
 }
@@ -179,15 +179,26 @@ func TestWait_String(t *testing.T) {
 
 func TestNewMove(t *testing.T) {
 	p := Point{Name: "center", X: 100, Y: 200}
-	m := NewMove(p)
-	if m.GetType() != "move" || m.Point.Name != "center" || m.Point.X != 100 || m.Point.Y != 200 {
+	m := NewMove(p, false)
+	if m.GetType() != "move" || m.Point.Name != "center" || m.Point.X != 100 || m.Point.Y != 200 || m.Smooth != false {
 		t.Errorf("Move: %+v", m)
 	}
 }
 
+func TestNewMove_Smooth(t *testing.T) {
+	m := NewMove(Point{Name: "B", X: 5, Y: 10}, true)
+	if !m.Smooth {
+		t.Errorf("expected Smooth=true")
+	}
+}
+
 func TestMove_String(t *testing.T) {
-	m := NewMove(Point{Name: "A", X: 1, Y: 2})
+	m := NewMove(Point{Name: "A", X: 1, Y: 2}, false)
 	if got := m.String(); got != "A (1, 2)" {
+		t.Errorf("String() = %q", got)
+	}
+	m2 := NewMove(Point{Name: "A", X: 1, Y: 2}, true)
+	if got := m2.String(); got != "A (1, 2) smooth" {
 		t.Errorf("String() = %q", got)
 	}
 }
@@ -412,33 +423,33 @@ func TestImageSearch_String(t *testing.T) {
 	}
 }
 
-// --- WaitForPixel ---
+// --- FindPixel ---
 
-func TestNewWaitForPixel(t *testing.T) {
-	p := Point{Name: "p", X: 10, Y: 20}
-	w := NewWaitForPixel("wp", p, "#ff0000", 5, 10, nil)
-	if w.GetType() != "waitforpixel" || w.Name != "wp" || w.TimeoutSeconds != 10 || w.ColorTolerance != 5 {
-		t.Errorf("WaitForPixel: %+v", w)
+func TestNewFindPixel(t *testing.T) {
+	sa := SearchArea{Name: "sa", LeftX: 10, TopY: 20, RightX: 30, BottomY: 40}
+	w := NewFindPixel("fp", sa, "#ff0000", 5, nil)
+	if w.GetType() != "findpixel" || w.Name != "fp" || w.ColorTolerance != 5 {
+		t.Errorf("FindPixel: %+v", w)
 	}
 	if w.TargetColor != "ff0000" {
 		t.Errorf("TargetColor = %q", w.TargetColor)
 	}
 }
 
-func TestNewWaitForPixel_clampTolerance(t *testing.T) {
-	p := Point{}
-	w := NewWaitForPixel("w", p, "#000", -1, 0, nil)
+func TestNewFindPixel_clampTolerance(t *testing.T) {
+	sa := SearchArea{}
+	w := NewFindPixel("w", sa, "#000", -1, nil)
 	if w.ColorTolerance != 0 {
 		t.Errorf("ColorTolerance should be clamped to 0, got %d", w.ColorTolerance)
 	}
-	w2 := NewWaitForPixel("w2", p, "#000", 150, 0, nil)
+	w2 := NewFindPixel("w2", sa, "#000", 150, nil)
 	if w2.ColorTolerance != 100 {
 		t.Errorf("ColorTolerance should be clamped to 100, got %d", w2.ColorTolerance)
 	}
 }
 
-func TestWaitForPixel_NormalizeHex(t *testing.T) {
-	w := &WaitForPixel{}
+func TestFindPixel_NormalizeHex(t *testing.T) {
+	w := &FindPixel{}
 	tests := []struct{ in, want string }{
 		{"#FF00FF", "ff00ff"},
 		{"ff00ff", "ff00ff"},
@@ -452,8 +463,8 @@ func TestWaitForPixel_NormalizeHex(t *testing.T) {
 	}
 }
 
-func TestWaitForPixel_MatchColor(t *testing.T) {
-	w := &WaitForPixel{TargetColor: "ffffff", ColorTolerance: 0}
+func TestFindPixel_MatchColor(t *testing.T) {
+	w := &FindPixel{TargetColor: "ffffff", ColorTolerance: 0}
 	if !w.MatchColor("#ffffff") {
 		t.Error("exact match should be true")
 	}
@@ -461,25 +472,24 @@ func TestWaitForPixel_MatchColor(t *testing.T) {
 		t.Error("different color with 0 tolerance should be false")
 	}
 	w.ColorTolerance = 100
-	// 100% tolerance returns true only when both colors parse as hex
 	if !w.MatchColor("#000000") {
 		t.Error("100% tolerance should match any valid hex")
 	}
 	w.ColorTolerance = 50
 	w.TargetColor = "808080"
-	// 80 hex = 128; 128+64=192 = c0, 128-64=64 = 40. So 40-c0 range per channel.
 	if !w.MatchColor("c0c0c0") {
 		t.Error("within tolerance should match")
 	}
 }
 
-func TestWaitForPixel_String(t *testing.T) {
-	p := Point{X: 1, Y: 2}
-	w := NewWaitForPixel("W", p, "ff0000", 0, 0, nil)
-	if got := w.String(); !strings.Contains(got, "indefinitely") || !strings.Contains(got, "ff0000") {
+func TestFindPixel_String(t *testing.T) {
+	sa := SearchArea{LeftX: 1, TopY: 2, RightX: 100, BottomY: 200}
+	w := NewFindPixel("W", sa, "ff0000", 0, nil)
+	if got := w.String(); !strings.Contains(got, "instant") || !strings.Contains(got, "ff0000") {
 		t.Errorf("String() = %q", got)
 	}
-	w.TimeoutSeconds = 5
+	w.WaitTilFound = true
+	w.WaitTilFoundSeconds = 5
 	if got := w.String(); !strings.Contains(got, "5") {
 		t.Errorf("String() = %q", got)
 	}
@@ -627,12 +637,12 @@ func TestActionTypes_Icon(t *testing.T) {
 		{"Key", NewKey("k", false)},
 		{"KeyDown", NewKey("k", true)},
 		{"Loop", NewLoop(1, "l", nil)},
-		{"Move", NewMove(Point{})},
+		{"Move", NewMove(Point{}, false)},
 		{"Ocr", NewOcr("o", nil, "", SearchArea{})},
 		{"SaveVariable", NewSaveVariable("v", "d", false, false)},
 		{"SetVariable", NewSetVariable("v", 0)},
 		{"Wait", NewWait(0)},
-		{"WaitForPixel", NewWaitForPixel("w", Point{}, "000000", 0, 0, nil)},
+		{"FindPixel", NewFindPixel("w", SearchArea{}, "000000", 0, nil)},
 	}
 	for _, tt := range actions {
 		t.Run(tt.name, func(t *testing.T) {
@@ -671,9 +681,8 @@ func TestSaveVariable_SaveToFile_openError(t *testing.T) {
 	}
 }
 
-func TestWaitForPixel_MatchColor_invalidHexFallback(t *testing.T) {
-	w := &WaitForPixel{TargetColor: "nothex", ColorTolerance: 0}
-	// Both invalid hex -> fallback to exact string compare
+func TestFindPixel_MatchColor_invalidHexFallback(t *testing.T) {
+	w := &FindPixel{TargetColor: "nothex", ColorTolerance: 0}
 	if !w.MatchColor("nothex") {
 		t.Error("invalid hex fallback: same string should match")
 	}
@@ -682,13 +691,11 @@ func TestWaitForPixel_MatchColor_invalidHexFallback(t *testing.T) {
 	}
 }
 
-func TestWaitForPixel_MatchColor_deltaBranches(t *testing.T) {
-	// Hit "else" branches: sr > tr (so dr = sr - tr). Target darker than screen.
-	w := &WaitForPixel{TargetColor: "000000", ColorTolerance: 5}
+func TestFindPixel_MatchColor_deltaBranches(t *testing.T) {
+	w := &FindPixel{TargetColor: "000000", ColorTolerance: 5}
 	if !w.MatchColor("0a0a0a") {
 		t.Error("within delta when screen > target should match")
 	}
-	// Exact no match
 	if w.MatchColor("ffffff") {
 		t.Error("far color should not match")
 	}

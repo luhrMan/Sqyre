@@ -1,18 +1,17 @@
 package main
 
 import (
-	"Squire/binders"
-	"Squire/internal/assets"
-	"Squire/internal/config"
-	"Squire/internal/models/repositories"
-	"Squire/internal/models/serialize"
-	"Squire/internal/services"
-	"Squire/ui"
+	"Sqyre/binders"
+	"Sqyre/internal/assets"
+	"Sqyre/internal/config"
+	"Sqyre/internal/models/repositories"
+	"Sqyre/internal/models/serialize"
+	"Sqyre/internal/services"
+	"Sqyre/ui"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
-	"runtime/debug"
 	"slices"
 	"strings"
 	"time"
@@ -53,24 +52,8 @@ func setupLogFile() {
 	if err != nil {
 		return
 	}
-	log.SetOutput(f)
+	log.SetOutput(&services.SyncWriter{F: f})
 	log.SetFlags(log.Ldate | log.Ltime)
-}
-
-// logCrashAndRepanic writes the panic value and stack trace to sqyre.log and returns.
-// Called from a deferred recover in main() so the program continues instead of exiting.
-func logCrashAndRepanic(r interface{}) {
-	logPath := filepath.Join(config.GetSqyreDir(), "sqyre.log")
-	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
-	if err != nil {
-		log.Printf("panic (log file unavailable): %v\n%s", r, debug.Stack())
-		return
-	}
-	defer f.Close()
-	ts := time.Now().Format("2006-01-02 15:04:05.000")
-	fmt.Fprintf(f, "\n[%s] panic recovered: %v\n", ts, r)
-	f.Write(debug.Stack())
-	fmt.Fprintf(f, "\n")
 }
 
 // trimLogFileIfNeeded keeps only the last maxLines in the file so sqyre.log does not grow unbounded.
@@ -118,7 +101,7 @@ func init() {
 	debugLog("directories OK")
 
 	if os.Getenv("SQYRE_NO_HOOK") != "1" {
-		go services.StartHook()
+		services.GoSafe(services.StartHook)
 	}
 
 	// Initialize YAML config with proper file path
@@ -183,6 +166,10 @@ func init() {
 	ui.GetUi().ConstructUi()
 	setUi()
 
+	fyne.CurrentApp().Lifecycle().SetOnStopped(func() {
+		binders.SaveOpenMacros()
+	})
+
 	w.SetContent(fynetooltip.AddWindowToolTipLayer(ui.GetUi().MainUi.Navigation, w.Canvas()))
 	w.RequestFocus()
 	debugLog("init done")
@@ -191,7 +178,7 @@ func init() {
 func main() {
 	defer func() {
 		if r := recover(); r != nil {
-			logCrashAndRepanic(r)
+			services.LogPanicToFile(r)
 		}
 	}()
 	debugLog("main started")

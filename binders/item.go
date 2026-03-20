@@ -1,15 +1,16 @@
 package binders
 
 import (
-	"Squire/internal/assets"
-	"Squire/internal/config"
-	"Squire/internal/models"
-	"Squire/internal/models/actions"
-	"Squire/internal/models/repositories"
-	"Squire/internal/services"
-	"Squire/ui"
-	"Squire/ui/completionentry"
-	"Squire/ui/custom_widgets"
+	"Sqyre/internal/assets"
+	"Sqyre/internal/config"
+	"Sqyre/internal/models"
+	"Sqyre/internal/models/actions"
+	"Sqyre/internal/models/repositories"
+	"Sqyre/internal/services"
+	"Sqyre/ui"
+	"Sqyre/ui/completionentry"
+	"Sqyre/ui/custom_widgets"
+	"fmt"
 	"log"
 	"slices"
 	"sort"
@@ -20,6 +21,7 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+	"github.com/lithammer/fuzzysearch/fuzzy"
 )
 
 func setItemsWidgets(i models.Item) {
@@ -29,6 +31,8 @@ func setItemsWidgets(i models.Item) {
 	it["Cols"].(*widget.Entry).SetText(strconv.Itoa(i.GridSize[0]))
 	it["Rows"].(*widget.Entry).SetText(strconv.Itoa(i.GridSize[1]))
 	it["StackMax"].(*widget.Entry).SetText(strconv.Itoa(i.StackMax))
+
+	updateMaskDisplay(i.Mask)
 
 	// Update tags display
 	updateTagsDisplay(&i)
@@ -71,7 +75,7 @@ func updateTagsDisplay(item *models.Item) {
 
 		// Create horizontal container for tag label and remove button
 		tagContainer := container.NewHBox(tagLabel, removeButton)
-		tagsContainer.Add(tagContainer)
+		tagsContainer.Add(ui.WrapTagChip(tagContainer))
 	}
 
 	tagsContainer.Refresh()
@@ -243,25 +247,75 @@ func RefreshItemInGrid(programName, oldItemName, newItemName string) {
 
 // rebuildProgramAccordionItem rebuilds a specific program's accordion item with updated icon cache
 func rebuildProgramAccordionItem(accordion *widget.Accordion, program *models.Program, itemIndex int) {
-	// Create the accordion item content using the shared function
-	accordionItem := createProgramAccordionItem(program)
-
-	// Replace the accordion item content
+	filterText := ""
+	if et := ui.GetUi().EditorTabs.ItemsTab; et.Widgets["searchbar"] != nil {
+		if sb, ok := et.Widgets["searchbar"].(*widget.Entry); ok {
+			filterText = sb.Text
+		}
+	}
+	accordionItem := createProgramAccordionItem(program, filterText)
+	accordion.Items[itemIndex].Title = accordionItem.Title
 	accordion.Items[itemIndex].Detail = accordionItem.Detail
 	accordion.Items[itemIndex].Detail.Refresh()
 }
 
+// programHasMatchingItems returns true if the program has any item whose base name or tags
+// fuzzy-match filterText. Used to show program accordion when only content matches.
+func programHasMatchingItems(program *models.Program, filterText string) bool {
+	if filterText == "" {
+		return true
+	}
+	iconService := services.IconVariantServiceInstance()
+	baseNames := iconService.GroupItemsByBaseName(program.ItemRepo().GetAllKeys())
+	baseNameToItemName := make(map[string]string)
+	for _, itemName := range program.ItemRepo().GetAllKeys() {
+		baseName := iconService.GetBaseItemName(itemName)
+		if _, exists := baseNameToItemName[baseName]; !exists {
+			baseNameToItemName[baseName] = itemName
+		}
+	}
+	for _, baseName := range baseNames {
+		if fuzzy.MatchFold(filterText, baseName) {
+			return true
+		}
+		itemName, _ := baseNameToItemName[baseName]
+		if itemName == "" {
+			itemName = baseName
+		}
+		item, err := program.ItemRepo().Get(itemName)
+		if err == nil {
+			for _, tag := range item.Tags {
+				if fuzzy.MatchFold(filterText, tag) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 func setAccordionItemsLists(acc *widget.Accordion) {
 	acc.Items = []*widget.AccordionItem{}
+	et := ui.GetUi().EditorTabs.ItemsTab
+	filterText := ""
+	if sb, ok := et.Widgets["searchbar"].(*widget.Entry); ok {
+		filterText = sb.Text
+		// Wire searchbar to rebuild accordion when user types (idempotent to re-set)
+		sb.OnChanged = func(string) { setAccordionItemsLists(acc) }
+	}
 
-	for _, p := range repositories.ProgramRepo().GetAll() {
-		accordionItem := createProgramAccordionItem(p)
+	for _, p := range repositories.ProgramRepo().GetAllSortedByName() {
+		// Show program if search is empty, or program name matches, or any item/tag matches
+		if filterText != "" && !fuzzy.MatchFold(filterText, p.Name) && !programHasMatchingItems(p, filterText) {
+			continue
+		}
+		accordionItem := createProgramAccordionItem(p, filterText)
 		acc.Append(accordionItem)
 	}
 }
 
 // createProgramAccordionItem creates an accordion item for the editor Items tab using shared UI.
-func createProgramAccordionItem(program *models.Program) *widget.AccordionItem {
+func createProgramAccordionItem(program *models.Program, filterText string) *widget.AccordionItem {
 	programName := program.Name
 	iconService := services.IconVariantServiceInstance()
 	baseNameToItemName := make(map[string]string)
@@ -272,8 +326,9 @@ func createProgramAccordionItem(program *models.Program) *widget.AccordionItem {
 		}
 	}
 
-	return ui.CreateProgramAccordionItem(ui.ItemsAccordionOptions{
-		Program: program,
+	item, _ := ui.CreateProgramAccordionItem(ui.ItemsAccordionOptions{
+		Program:    program,
+		FilterText: filterText,
 		GetSelectedTargets: func() []string {
 			if !ui.GetUi().MainUi.Navigation.Visible() {
 				return nil
@@ -319,25 +374,197 @@ func createProgramAccordionItem(program *models.Program) *widget.AccordionItem {
 				}
 			}
 			setItemsWidgets(*item)
+			markItemsClean()
 		},
-		RegisterWidgets: func(pname string, searchbar *widget.Entry, list *widget.GridWrap) {
-			ui.GetUi().EditorTabs.ItemsTab.Widgets[pname+"-searchbar"] = searchbar
+		RegisterWidgets: func(pname string, list *widget.GridWrap) {
 			ui.GetUi().EditorTabs.ItemsTab.Widgets[pname+"-list"] = list
 		},
-		OnSelectionChanged: func(newTargets []string) {
-			if !ui.GetUi().MainUi.Navigation.Visible() {
-				return
-			}
-			st := ui.GetUi().Mui.MTabs.SelectedTab()
-			if st == nil {
-				return
-			}
-			if v, ok := st.Macro.Root.GetAction(st.SelectedNode).(*actions.ImageSearch); ok {
-				v.Targets = newTargets
-				st.Tree.RefreshItem(v.GetUID())
-			}
-		},
+		// No OnSelectionChanged: "All" button is only in the action dialog, not the editor tab.
 	})
+	return item
+}
+
+// updateMaskDisplay updates the mask label and details label on the Items tab.
+func updateMaskDisplay(maskName string) {
+	it := ui.GetUi().EditorTabs.ItemsTab.Widgets
+	maskLabel, _ := it["maskLabel"].(*widget.Label)
+	maskDetailsLabel, _ := it["maskDetailsLabel"].(*widget.Label)
+
+	if maskName == "" {
+		if maskLabel != nil {
+			maskLabel.SetText("None")
+		}
+		if maskDetailsLabel != nil {
+			maskDetailsLabel.SetText("")
+		}
+		return
+	}
+
+	if maskLabel != nil {
+		maskLabel.SetText(maskName)
+	}
+
+	if maskDetailsLabel == nil {
+		return
+	}
+
+	prog := ui.GetUi().ProgramSelector.Text
+	program, err := repositories.ProgramRepo().Get(prog)
+	if err != nil {
+		maskDetailsLabel.SetText("")
+		return
+	}
+
+	mask, err := program.MaskRepo().Get(maskName)
+	if err != nil {
+		maskDetailsLabel.SetText("")
+		return
+	}
+
+	if ui.HasMaskImage(prog, maskName) {
+		maskDetailsLabel.SetText("Image mask")
+		return
+	}
+
+	center := fmt.Sprintf("X: %s%%  Y: %s%%", mask.CenterX, mask.CenterY)
+	var equation string
+	switch mask.Shape {
+	case "circle":
+		equation = fmt.Sprintf("π × %s²", mask.Radius)
+	default:
+		equation = fmt.Sprintf("%s × %s", mask.Base, mask.Height)
+	}
+	maskDetailsLabel.SetText(fmt.Sprintf("%s  •  %s", center, equation))
+}
+
+// showMaskSelectionPopup displays a modal popup with mask accordions for the user to select a mask.
+func showMaskSelectionPopup() {
+	var popup *widget.PopUp
+
+	acc := widget.NewAccordion()
+	for _, p := range repositories.ProgramRepo().GetAllSortedByName() {
+		programName := p.Name
+		allKeys := p.MaskRepo().GetAllKeys()
+		filtered := make([]string, len(allKeys))
+		copy(filtered, allKeys)
+		sortMaskKeysByDisplayName(p, filtered)
+
+		searchbar := widget.NewEntry()
+		searchbar.PlaceHolder = "Search masks"
+
+		maskList := widget.NewList(
+			func() int { return len(filtered) },
+			func() fyne.CanvasObject { return widget.NewLabel("template") },
+			func(id widget.ListItemID, co fyne.CanvasObject) {
+				if id < len(filtered) {
+					co.(*widget.Label).SetText(filtered[id])
+				}
+			},
+		)
+
+		maskList.OnSelected = func(id widget.ListItemID) {
+			if id >= len(filtered) {
+				return
+			}
+			maskName := filtered[id]
+
+			if v, ok := ui.GetUi().EditorTabs.ItemsTab.SelectedItem.(*models.Item); ok {
+				v.Mask = maskName
+
+				prog := ui.GetUi().ProgramSelector.Text
+				program, err := repositories.ProgramRepo().Get(prog)
+				if err != nil {
+					log.Printf("Error getting program %s: %v", prog, err)
+					return
+				}
+				if err := program.ItemRepo().Set(v.Name, v); err != nil {
+					log.Printf("Error saving item %s: %v", v.Name, err)
+					return
+				}
+				if err := repositories.ProgramRepo().Set(program.Name, program); err != nil {
+					log.Printf("Error saving program %s: %v", prog, err)
+					return
+				}
+
+				updateMaskDisplay(maskName)
+			}
+			popup.Hide()
+		}
+
+		searchbar.OnChanged = func(s string) {
+			defaultList := p.MaskRepo().GetAllKeys()
+			if s == "" {
+				filtered = defaultList
+			} else {
+				filtered = filtered[:0]
+				sLower := strings.ToLower(s)
+				for _, k := range defaultList {
+					if strings.Contains(strings.ToLower(k), sLower) {
+						filtered = append(filtered, k)
+					}
+				}
+			}
+			sortMaskKeysByDisplayName(p, filtered)
+			maskList.Refresh()
+			maskList.ScrollToTop()
+		}
+
+		acc.Append(widget.NewAccordionItem(
+			fmt.Sprintf("%s (%d)", programName, len(allKeys)),
+			container.NewBorder(searchbar, nil, nil, nil, maskList),
+		))
+	}
+
+	closeButton := widget.NewButton("Close", func() { popup.Hide() })
+
+	popUpContent := container.NewBorder(
+		closeButton, nil, nil, nil,
+		acc,
+	)
+	popup = widget.NewModalPopUp(popUpContent, ui.GetUi().Window.Canvas())
+	popup.Resize(fyne.NewSize(400, 500))
+	popup.Show()
+}
+
+// setMaskSelectionButtons wires up the mask select and clear buttons on the Items tab.
+func setMaskSelectionButtons() {
+	it := ui.GetUi().EditorTabs.ItemsTab.Widgets
+
+	if btn, ok := it["maskSelectButton"].(*widget.Button); ok {
+		btn.OnTapped = func() {
+			if v, ok := ui.GetUi().EditorTabs.ItemsTab.SelectedItem.(*models.Item); ok {
+				if v.Name == "" {
+					return
+				}
+			}
+			showMaskSelectionPopup()
+		}
+	}
+
+	if btn, ok := it["maskClearButton"].(*widget.Button); ok {
+		btn.OnTapped = func() {
+			if v, ok := ui.GetUi().EditorTabs.ItemsTab.SelectedItem.(*models.Item); ok {
+				v.Mask = ""
+
+				prog := ui.GetUi().ProgramSelector.Text
+				program, err := repositories.ProgramRepo().Get(prog)
+				if err != nil {
+					log.Printf("Error getting program %s: %v", prog, err)
+					return
+				}
+				if err := program.ItemRepo().Set(v.Name, v); err != nil {
+					log.Printf("Error saving item %s: %v", v.Name, err)
+					return
+				}
+				if err := repositories.ProgramRepo().Set(program.Name, program); err != nil {
+					log.Printf("Error saving program %s: %v", prog, err)
+					return
+				}
+
+				updateMaskDisplay("")
+			}
+		}
+	}
 }
 
 // getAllExistingTags collects all unique tags from all items across all programs
