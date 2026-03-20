@@ -17,7 +17,6 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
@@ -509,19 +508,19 @@ func (u *Ui) constructRemoveButton() {
 func (u *Ui) onAutoPicSave() {
 	selectedItem := u.EditorTabs.AutoPicTab.SelectedItem
 	if selectedItem == nil {
-		dialog.ShowError(errors.New("AutoPic: Cannot save - no search area selected"), u.Window)
+		ShowErrorWithEscape(errors.New("AutoPic: Cannot save - no search area selected"), u.Window)
 		return
 	}
 
 	searchArea, ok := selectedItem.(*models.SearchArea)
 	if !ok {
-		dialog.ShowError(errors.New("AutoPic: Cannot save - selected item is not a search area"), u.Window)
+		ShowErrorWithEscape(errors.New("AutoPic: Cannot save - selected item is not a search area"), u.Window)
 		return
 	}
 
 	// Validate search area
 	if searchArea == nil {
-		dialog.ShowError(errors.New("AutoPic: Cannot save - search area is nil"), u.Window)
+		ShowErrorWithEscape(errors.New("AutoPic: Cannot save - search area is nil"), u.Window)
 		return
 	}
 
@@ -534,13 +533,13 @@ func (u *Ui) onAutoPicSave() {
 	h := by - ty
 
 	if w <= 0 || h <= 0 {
-		dialog.ShowError(fmt.Errorf("AutoPic: Cannot save - invalid search area dimensions - width: %d, height: %d (area: %s)", w, h, searchArea.Name), u.Window)
+		ShowErrorWithEscape(fmt.Errorf("AutoPic: Cannot save - invalid search area dimensions - width: %d, height: %d (area: %s)", w, h, searchArea.Name), u.Window)
 		return
 	}
 
 	vb := screen.VirtualBounds()
 	if lx < vb.Min.X || ty < vb.Min.Y || rx > vb.Max.X || by > vb.Max.Y {
-		dialog.ShowError(fmt.Errorf("AutoPic: Cannot save - search area outside virtual desktop - desktop: (%d,%d)..(%d,%d), area: (%d,%d) to (%d,%d) (area: %s)",
+		ShowErrorWithEscape(fmt.Errorf("AutoPic: Cannot save - search area outside virtual desktop - desktop: (%d,%d)..(%d,%d), area: (%d,%d) to (%d,%d) (area: %s)",
 			vb.Min.X, vb.Min.Y, vb.Max.X, vb.Max.Y, lx, ty, rx, by, searchArea.Name), u.Window)
 		return
 	}
@@ -558,14 +557,14 @@ func (u *Ui) onAutoPicSave() {
 
 		captureImg, err = robotgo.CaptureImg(lx, ty, w, h)
 		if err != nil {
-			dialog.ShowError(fmt.Errorf("AutoPic: Error capturing image - %v (area: %s)", err, searchArea.Name), u.Window)
+			ShowErrorWithEscape(fmt.Errorf("AutoPic: Error capturing image - %v (area: %s)", err, searchArea.Name), u.Window)
 			captureImg = nil
 		}
 	}()
 
 	// Validate the captured image
 	if captureImg == nil {
-		dialog.ShowError(fmt.Errorf("AutoPic: Cannot save - screen capture returned nil image (area: %s)", searchArea.Name), u.Window)
+		ShowErrorWithEscape(fmt.Errorf("AutoPic: Cannot save - screen capture returned nil image (area: %s)", searchArea.Name), u.Window)
 		return
 	}
 
@@ -576,14 +575,14 @@ func (u *Ui) onAutoPicSave() {
 	// Ensure AutoPic directory exists
 	autoPicPath := config.GetAutoPicPath()
 	if err := os.MkdirAll(autoPicPath, 0755); err != nil {
-		dialog.ShowError(fmt.Errorf("AutoPic: Error creating AutoPic directory: %v", err), u.Window)
+		ShowErrorWithEscape(fmt.Errorf("AutoPic: Error creating AutoPic directory: %v", err), u.Window)
 		return
 	}
 
 	// Validate the path
 	fullPath := filepath.Join(autoPicPath, filename)
 	if fullPath == "" {
-		dialog.ShowError(errors.New("AutoPic: Error creating file path"), u.Window)
+		ShowErrorWithEscape(errors.New("AutoPic: Error creating file path"), u.Window)
 		return
 	}
 
@@ -596,18 +595,18 @@ func (u *Ui) onAutoPicSave() {
 		}()
 
 		if err := robotgo.SavePng(captureImg, fullPath); err != nil {
-			dialog.ShowError(fmt.Errorf("AutoPic: Error saving image to %s: %v", fullPath, err), u.Window)
+			ShowErrorWithEscape(fmt.Errorf("AutoPic: Error saving image to %s: %v", fullPath, err), u.Window)
 			return
 		}
 
-		dialog.ShowError(fmt.Errorf("AutoPic: Image saved successfully to: %s", fullPath), u.Window)
+		ShowErrorWithEscape(fmt.Errorf("AutoPic: Image saved successfully to: %s", fullPath), u.Window)
 	}()
 }
 
 func (u *Ui) UpdateAutoPicPreview(searchArea *models.SearchArea) {
 	// Validate search area
 	if searchArea == nil {
-		dialog.ShowError(errors.New("AutoPic: Cannot update preview - search area is nil"), u.Window)
+		ShowErrorWithEscape(errors.New("AutoPic: Cannot update preview - search area is nil"), u.Window)
 		return
 	}
 
@@ -620,14 +619,14 @@ func (u *Ui) UpdateAutoPicPreview(searchArea *models.SearchArea) {
 	h := by - ty
 
 	if w <= 0 || h <= 0 {
-		dialog.ShowError(fmt.Errorf("AutoPic: Invalid search area dimensions - width: %d, height: %d (area: %s)", w, h, searchArea.Name), u.Window)
+		ShowErrorWithEscape(fmt.Errorf("AutoPic: Invalid search area dimensions - width: %d, height: %d (area: %s)", w, h, searchArea.Name), u.Window)
 		u.clearPreviewImage()
 		return
 	}
 
 	vb := screen.VirtualBounds()
 	if lx < vb.Min.X || ty < vb.Min.Y || rx > vb.Max.X || by > vb.Max.Y {
-		dialog.ShowError(fmt.Errorf("AutoPic: Search area outside virtual desktop - desktop: (%d,%d)..(%d,%d), area: (%d,%d) to (%d,%d) (area: %s)",
+		ShowErrorWithEscape(fmt.Errorf("AutoPic: Search area outside virtual desktop - desktop: (%d,%d)..(%d,%d), area: (%d,%d) to (%d,%d) (area: %s)",
 			vb.Min.X, vb.Min.Y, vb.Max.X, vb.Max.Y, lx, ty, rx, by, searchArea.Name), u.Window)
 		u.clearPreviewImage()
 		return
@@ -643,13 +642,13 @@ func (u *Ui) UpdateAutoPicPreview(searchArea *models.SearchArea) {
 
 	captureImg, err := robotgo.CaptureImg(lx, ty, w, h)
 	if err != nil {
-		dialog.ShowError(fmt.Errorf("AutoPic: Error capturing image - %v (area: %s)", err, searchArea.Name), u.Window)
+		ShowErrorWithEscape(fmt.Errorf("AutoPic: Error capturing image - %v (area: %s)", err, searchArea.Name), u.Window)
 		captureImg = nil
 	}
 
 	// Validate the captured image
 	if captureImg == nil {
-		dialog.ShowError(fmt.Errorf("AutoPic: Screen capture returned nil image (area: %s)", searchArea.Name), u.Window)
+		ShowErrorWithEscape(fmt.Errorf("AutoPic: Screen capture returned nil image (area: %s)", searchArea.Name), u.Window)
 		u.clearPreviewImage()
 		return
 	}
@@ -659,7 +658,7 @@ func (u *Ui) UpdateAutoPicPreview(searchArea *models.SearchArea) {
 		previewImage.Image = captureImg
 		previewImage.Refresh()
 	} else {
-		dialog.ShowError(errors.New("AutoPic: Preview image widget is nil"), u.Window)
+		ShowErrorWithEscape(errors.New("AutoPic: Preview image widget is nil"), u.Window)
 	}
 }
 
@@ -690,7 +689,7 @@ func (u *Ui) UpdateSearchAreaPreview(searchArea *models.SearchArea) {
 	u.EditorTabs.SearchAreasTab.previewImage.Resource = nil
 	// Validate search area
 	if searchArea == nil {
-		dialog.ShowError(errors.New("SearchArea: Cannot update preview - search area is nil"), u.Window)
+		ShowErrorWithEscape(errors.New("SearchArea: Cannot update preview - search area is nil"), u.Window)
 		return
 	}
 
@@ -719,13 +718,13 @@ func (u *Ui) UpdateSearchAreaPreview(searchArea *models.SearchArea) {
 		// 	u.Window.Canvas(),
 		// )
 		// pu.Show()
-		// dialog.ShowError(fmt.Errorf("SearchArea: Invalid search area dimensions - width: %d, height: %d (area: %s)", w, h, searchArea.Name), u.Window)
+		// ShowErrorWithEscape(fmt.Errorf("SearchArea: Invalid search area dimensions - width: %d, height: %d (area: %s)", w, h, searchArea.Name), u.Window)
 		return
 	}
 
 	vb := screen.VirtualBounds()
 	if lx < vb.Min.X || ty < vb.Min.Y || rx > vb.Max.X || by > vb.Max.Y {
-		dialog.ShowError(fmt.Errorf("SearchArea: Search area outside virtual desktop - desktop: (%d,%d)..(%d,%d), area: (%d,%d) to (%d,%d) (area: %s)",
+		ShowErrorWithEscape(fmt.Errorf("SearchArea: Search area outside virtual desktop - desktop: (%d,%d)..(%d,%d), area: (%d,%d) to (%d,%d) (area: %s)",
 			vb.Min.X, vb.Min.Y, vb.Max.X, vb.Max.Y, lx, ty, rx, by, searchArea.Name), u.Window)
 		u.clearSearchAreaPreviewImage()
 		return
@@ -741,13 +740,13 @@ func (u *Ui) UpdateSearchAreaPreview(searchArea *models.SearchArea) {
 
 	captureImg, err := robotgo.CaptureImg(vb.Min.X, vb.Min.Y, vb.Dx(), vb.Dy())
 	if err != nil {
-		dialog.ShowError(fmt.Errorf("SearchArea: Error capturing image - %v (area: %s)", err, searchArea.Name), u.Window)
+		ShowErrorWithEscape(fmt.Errorf("SearchArea: Error capturing image - %v (area: %s)", err, searchArea.Name), u.Window)
 		captureImg = nil
 	}
 
 	// Validate the captured image
 	if captureImg == nil {
-		dialog.ShowError(fmt.Errorf("SearchArea: Screen capture returned nil image (area: %s)", searchArea.Name), u.Window)
+		ShowErrorWithEscape(fmt.Errorf("SearchArea: Screen capture returned nil image (area: %s)", searchArea.Name), u.Window)
 		u.clearSearchAreaPreviewImage()
 		return
 	}
@@ -755,7 +754,7 @@ func (u *Ui) UpdateSearchAreaPreview(searchArea *models.SearchArea) {
 	// Convert to gocv Mat for drawing
 	mat, err := gocv.ImageToMatRGB(captureImg)
 	if err != nil {
-		dialog.ShowError(fmt.Errorf("SearchArea: Error converting image to Mat - %v (area: %s)", err, searchArea.Name), u.Window)
+		ShowErrorWithEscape(fmt.Errorf("SearchArea: Error converting image to Mat - %v (area: %s)", err, searchArea.Name), u.Window)
 		u.clearSearchAreaPreviewImage()
 		return
 	}
@@ -771,7 +770,7 @@ func (u *Ui) UpdateSearchAreaPreview(searchArea *models.SearchArea) {
 	// Convert back to image.Image
 	previewImg, err := mat.ToImage()
 	if err != nil {
-		dialog.ShowError(fmt.Errorf("SearchArea: Error converting Mat to image - %v (area: %s)", err, searchArea.Name), u.Window)
+		ShowErrorWithEscape(fmt.Errorf("SearchArea: Error converting Mat to image - %v (area: %s)", err, searchArea.Name), u.Window)
 		u.clearSearchAreaPreviewImage()
 		return
 	}
@@ -781,7 +780,7 @@ func (u *Ui) UpdateSearchAreaPreview(searchArea *models.SearchArea) {
 		previewImage.Image = previewImg
 		previewImage.Refresh()
 	} else {
-		dialog.ShowError(errors.New("SearchArea: Preview image widget is nil"), u.Window)
+		ShowErrorWithEscape(errors.New("SearchArea: Preview image widget is nil"), u.Window)
 	}
 }
 
@@ -819,7 +818,7 @@ func searchAreaCoordToInt(v any) int {
 func (u *Ui) UpdatePointPreview(point *models.Point) {
 	// Validate point
 	if point == nil {
-		dialog.ShowError(errors.New("Point: Cannot update preview - point is nil"), u.Window)
+		ShowErrorWithEscape(errors.New("Point: Cannot update preview - point is nil"), u.Window)
 		return
 	}
 
@@ -828,7 +827,7 @@ func (u *Ui) UpdatePointPreview(point *models.Point) {
 
 	vb := screen.VirtualBounds()
 	if px < vb.Min.X || py < vb.Min.Y || px > vb.Max.X || py > vb.Max.Y {
-		dialog.ShowError(fmt.Errorf("Point: Point outside virtual desktop - desktop: (%d,%d)..(%d,%d), point: (%d,%d) (point: %s)",
+		ShowErrorWithEscape(fmt.Errorf("Point: Point outside virtual desktop - desktop: (%d,%d)..(%d,%d), point: (%d,%d) (point: %s)",
 			vb.Min.X, vb.Min.Y, vb.Max.X, vb.Max.Y, px, py, point.Name), u.Window)
 		u.clearPointPreviewImage()
 		return
@@ -844,12 +843,12 @@ func (u *Ui) UpdatePointPreview(point *models.Point) {
 
 	captureImg, err := robotgo.CaptureImg(vb.Min.X, vb.Min.Y, vb.Dx(), vb.Dy())
 	if err != nil {
-		dialog.ShowError(fmt.Errorf("Point: Error capturing image - %v (point: %s)", err, point.Name), u.Window)
+		ShowErrorWithEscape(fmt.Errorf("Point: Error capturing image - %v (point: %s)", err, point.Name), u.Window)
 		captureImg = nil
 	}
 	// Validate the captured image
 	if captureImg == nil {
-		dialog.ShowError(fmt.Errorf("Point: Screen capture returned nil image (point: %s)", point.Name), u.Window)
+		ShowErrorWithEscape(fmt.Errorf("Point: Screen capture returned nil image (point: %s)", point.Name), u.Window)
 		u.clearPointPreviewImage()
 		return
 	}
@@ -857,7 +856,7 @@ func (u *Ui) UpdatePointPreview(point *models.Point) {
 	// Convert to gocv Mat for drawing
 	mat, err := gocv.ImageToMatRGB(captureImg)
 	if err != nil {
-		dialog.ShowError(fmt.Errorf("Point: Error converting image to Mat - %v (point: %s)", err, point.Name), u.Window)
+		ShowErrorWithEscape(fmt.Errorf("Point: Error converting image to Mat - %v (point: %s)", err, point.Name), u.Window)
 		u.clearPointPreviewImage()
 		return
 	}
@@ -876,7 +875,7 @@ func (u *Ui) UpdatePointPreview(point *models.Point) {
 	// Convert back to image.Image
 	previewImg, err := mat.ToImage()
 	if err != nil {
-		dialog.ShowError(fmt.Errorf("Point: Error converting Mat to image - %v (point: %s)", err, point.Name), u.Window)
+		ShowErrorWithEscape(fmt.Errorf("Point: Error converting Mat to image - %v (point: %s)", err, point.Name), u.Window)
 		u.clearPointPreviewImage()
 		return
 	}
@@ -888,7 +887,7 @@ func (u *Ui) UpdatePointPreview(point *models.Point) {
 			previewImage.Refresh()
 		})
 	} else {
-		dialog.ShowError(errors.New("Point: Preview image widget is nil"), u.Window)
+		ShowErrorWithEscape(errors.New("Point: Preview image widget is nil"), u.Window)
 	}
 }
 

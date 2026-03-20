@@ -19,7 +19,6 @@ import (
 	"Sqyre/ui/completionentry"
 
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 	"github.com/go-vgo/robotgo"
 	hook "github.com/luhrMan/gohook"
@@ -290,7 +289,7 @@ func setEditorForms() {
 
 				if err := program.ItemRepo().Set(v.Name, v); err != nil {
 					log.Printf("Error saving item %s: %v", v.Name, err)
-					dialog.ShowError(errors.New("failed to save item"), ui.GetUi().Window)
+					ui.ShowErrorWithEscape(errors.New("failed to save item"), ui.GetUi().Window)
 					return
 				}
 
@@ -372,7 +371,7 @@ func setEditorForms() {
 				// Check if an item with the new name already exists
 				_, err := program.ItemRepo().Get(n)
 				if err == nil {
-					dialog.ShowError(errors.New("an item with that name already exists"), ui.GetUi().Window)
+					ui.ShowErrorWithEscape(errors.New("an item with that name already exists"), ui.GetUi().Window)
 					return
 				}
 
@@ -400,7 +399,7 @@ func setEditorForms() {
 				// Delete the old item entry since we're changing the name
 				if err := program.ItemRepo().Delete(v.Name); err != nil {
 					log.Printf("Error deleting old item %s: %v", v.Name, err)
-					dialog.ShowError(errors.New("failed to update item name"), ui.GetUi().Window)
+					ui.ShowErrorWithEscape(errors.New("failed to update item name"), ui.GetUi().Window)
 					return
 				}
 			}
@@ -413,7 +412,7 @@ func setEditorForms() {
 			// Save the item with the new name
 			if err := program.ItemRepo().Set(v.Name, v); err != nil {
 				log.Printf("Error saving item %s: %v", v.Name, err)
-				dialog.ShowError(errors.New("failed to save item"), ui.GetUi().Window)
+				ui.ShowErrorWithEscape(errors.New("failed to save item"), ui.GetUi().Window)
 				return
 			}
 
@@ -465,14 +464,14 @@ func setEditorForms() {
 
 			if err := program.PointRepo(config.MainMonitorSizeString).Set(v.Name, v); err != nil {
 				log.Printf("Error saving point %s: %v", v.Name, err)
-				dialog.ShowError(errors.New("failed to save point"), ui.GetUi().Window)
+				ui.ShowErrorWithEscape(errors.New("failed to save point"), ui.GetUi().Window)
 				return
 			}
 
 			if oldkey != v.Name {
 				if err := program.PointRepo(config.MainMonitorSizeString).Delete(oldkey); err != nil {
 					log.Printf("Error deleting point %s: %v", oldkey, err)
-					dialog.ShowError(errors.New("failed to delete point"), ui.GetUi().Window)
+					ui.ShowErrorWithEscape(errors.New("failed to delete point"), ui.GetUi().Window)
 					return
 				}
 			}
@@ -662,13 +661,13 @@ func setEditorForms() {
 
 			if err := program.SearchAreaRepo(config.MainMonitorSizeString).Set(v.Name, v); err != nil {
 				log.Printf("Error saving search area %s: %v", v.Name, err)
-				dialog.ShowError(errors.New("failed to save search area"), ui.GetUi().Window)
+				ui.ShowErrorWithEscape(errors.New("failed to save search area"), ui.GetUi().Window)
 				return
 			}
 			if oldkey != v.Name {
 				if err := program.SearchAreaRepo(config.MainMonitorSizeString).Delete(oldkey); err != nil {
 					log.Printf("Error deleting search area %s: %v", oldkey, err)
-					dialog.ShowError(errors.New("failed to delete search area"), ui.GetUi().Window)
+					ui.ShowErrorWithEscape(errors.New("failed to delete search area"), ui.GetUi().Window)
 					return
 				}
 			}
@@ -710,7 +709,7 @@ func setEditorButtons() {
 				pro = repositories.ProgramRepo().New()
 				pro.Name = pn
 				if err := repositories.ProgramRepo().Set(pro.Name, pro); err != nil {
-					dialog.ShowError(err, ui.GetUi().Window)
+					ui.ShowErrorWithEscape(err, ui.GetUi().Window)
 					return nil
 				}
 				log.Println("editor binder: new program created", pn)
@@ -744,7 +743,7 @@ func setEditorButtons() {
 			// Check if item already exists
 			_, err := pro.ItemRepo().Get(n)
 			if err == nil {
-				dialog.ShowError(errors.New("an item with that name already exists"), ui.GetUi().Window)
+				ui.ShowErrorWithEscape(errors.New("an item with that name already exists"), ui.GetUi().Window)
 				return
 			}
 			// Create new item using repository New() function
@@ -753,7 +752,7 @@ func setEditorButtons() {
 			i.GridSize = [2]int{x, y}
 			i.StackMax = sm
 			if err := pro.ItemRepo().Set(i.Name, i); err != nil {
-				dialog.ShowError(err, ui.GetUi().Window)
+				ui.ShowErrorWithEscape(err, ui.GetUi().Window)
 				return
 			}
 			// Set the selected item so tag operations work correctly
@@ -794,7 +793,7 @@ func setEditorButtons() {
 
 			err := pro.PointRepo(config.MainMonitorSizeString).Set(p.Name, p)
 			if err != nil {
-				dialog.ShowError(err, ui.GetUi().Window)
+				ui.ShowErrorWithEscape(err, ui.GetUi().Window)
 				return
 			}
 			ui.GetUi().EditorTabs.PointsTab.SelectedItem = p
@@ -823,7 +822,7 @@ func setEditorButtons() {
 
 			err := pro.MaskRepo().Set(m.Name, m)
 			if err != nil {
-				dialog.ShowError(err, ui.GetUi().Window)
+				ui.ShowErrorWithEscape(err, ui.GetUi().Window)
 				return
 			}
 			ui.GetUi().EditorTabs.MasksTab.SelectedItem = m
@@ -874,7 +873,7 @@ func setEditorButtons() {
 
 			err := pro.SearchAreaRepo(config.MainMonitorSizeString).Set(sa.Name, sa)
 			if err != nil {
-				dialog.ShowError(err, ui.GetUi().Window)
+				ui.ShowErrorWithEscape(err, ui.GetUi().Window)
 				return
 			}
 			// Select the newly added search area so it can be edited with Update
