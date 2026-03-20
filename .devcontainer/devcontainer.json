@@ -1,5 +1,5 @@
 {
-  "name": "Sqyre (Linux build)",
+  "name": "Sqyre",
   "build": {
     "dockerfile": "Dockerfile",
     "context": ".."
@@ -17,24 +17,10 @@
     "vscode": {
       "extensions": [
         "golang.go"
-      ],
-      "tasks": [
-        {
-          "label": "Build Linux",
-          "type": "shell",
-          "command": "go build -o builds/linux ./cmd/sqyre",
-          "group": { "kind": "build", "isDefault": true },
-          "presentation": { "reveal": "silent", "panel": "shared" }
-        },
-        {
-          "label": "Build Linux (current dir)",
-          "type": "shell",
-          "command": "go build -o sqyre ./cmd/sqyre",
-          "group": "build"
-        }
       ]
     }
   },
   "postCreateCommand": "go mod download",
-  "remoteUser": "root"
+  "remoteUser": "vscode",
+  "updateRemoteUserUID": true
 }

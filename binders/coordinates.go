@@ -1,38 +1,72 @@
 package binders
 
 import (
-	"Squire/internal/config"
-	"Squire/internal/models"
-	"Squire/internal/models/actions"
-	"Squire/internal/models/repositories"
-	"Squire/ui"
+	"Sqyre/internal/config"
+	"Sqyre/internal/models"
+	"Sqyre/internal/models/actions"
+	"Sqyre/internal/models/repositories"
+	"Sqyre/internal/services"
+	"Sqyre/ui"
+	"Sqyre/ui/custom_widgets"
 	"fmt"
 	"log"
+	"sort"
 
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
 	"github.com/lithammer/fuzzysearch/fuzzy"
 )
 
+func sortPointKeysByDisplayName(p *models.Program, keys []string) {
+	repo := p.PointRepo(config.MainMonitorSizeString)
+	sort.Slice(keys, func(i, j int) bool {
+		a, _ := repo.Get(keys[i])
+		b, _ := repo.Get(keys[j])
+		na, nb := keys[i], keys[j]
+		if a != nil {
+			na = a.Name
+		}
+		if b != nil {
+			nb = b.Name
+		}
+		return na < nb
+	})
+}
+
+func sortSearchAreaKeysByDisplayName(p *models.Program, keys []string) {
+	repo := p.SearchAreaRepo(config.MainMonitorSizeString)
+	sort.Slice(keys, func(i, j int) bool {
+		a, _ := repo.Get(keys[i])
+		b, _ := repo.Get(keys[j])
+		na, nb := keys[i], keys[j]
+		if a != nil {
+			na = a.Name
+		}
+		if b != nil {
+			nb = b.Name
+		}
+		return na < nb
+	})
+}
+
 func setSearchAreaWidgets(sa models.SearchArea) {
 	st := ui.GetUi().EditorTabs.SearchAreasTab.Widgets
 	st["Name"].(*widget.Entry).SetText(sa.Name)
-	st["LeftX"].(*widget.Entry).SetText(fmt.Sprintf("%v", sa.LeftX))
-	st["TopY"].(*widget.Entry).SetText(fmt.Sprintf("%v", sa.TopY))
-	st["RightX"].(*widget.Entry).SetText(fmt.Sprintf("%v", sa.RightX))
-	st["BottomY"].(*widget.Entry).SetText(fmt.Sprintf("%v", sa.BottomY))
+	custom_widgets.SetEntryText(st["LeftX"], fmt.Sprintf("%v", sa.LeftX))
+	custom_widgets.SetEntryText(st["TopY"], fmt.Sprintf("%v", sa.TopY))
+	custom_widgets.SetEntryText(st["RightX"], fmt.Sprintf("%v", sa.RightX))
+	custom_widgets.SetEntryText(st["BottomY"], fmt.Sprintf("%v", sa.BottomY))
 }
 
 func setPointWidgets(p models.Point) {
 	pt := ui.GetUi().EditorTabs.PointsTab
 	pt.Widgets["Name"].(*widget.Entry).SetText(p.Name)
-	pt.Widgets["X"].(*widget.Entry).SetText(fmt.Sprintf("%v", p.X))
-	pt.Widgets["Y"].(*widget.Entry).SetText(fmt.Sprintf("%v", p.Y))
+	custom_widgets.SetEntryText(pt.Widgets["X"], fmt.Sprintf("%v", p.X))
+	custom_widgets.SetEntryText(pt.Widgets["Y"], fmt.Sprintf("%v", p.Y))
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Printf("Point: Preview update panic recovered - %v (point: %s)", r, p.Name)
+				services.LogPanicToFile(r, "Point: Preview update (point: "+p.Name+")")
 			}
 		}()
 		ui.GetUi().UpdatePointPreview(&p)
@@ -41,27 +75,40 @@ func setPointWidgets(p models.Point) {
 
 func setAccordionSearchAreasLists(acc *widget.Accordion) {
 	acc.Items = []*widget.AccordionItem{}
-	for _, p := range repositories.ProgramRepo().GetAll() {
-		lists := struct {
-			searchbar   *widget.Entry
-			searchareas *widget.List
-			filtered    []string
-		}{
-			searchbar:   new(widget.Entry),
-			searchareas: new(widget.List),
-			filtered:    p.SearchAreaRepo(config.MainMonitorSizeString).GetAllKeys(),
+	et := ui.GetUi().EditorTabs.SearchAreasTab
+	filterText := ""
+	if sb, ok := et.Widgets["searchbar"].(*widget.Entry); ok {
+		filterText = sb.Text
+		sb.OnChanged = func(string) { setAccordionSearchAreasLists(acc) }
+	}
+
+	for _, p := range repositories.ProgramRepo().GetAllSortedByName() {
+		defaultList := p.SearchAreaRepo(config.MainMonitorSizeString).GetAllKeys()
+		filtered := defaultList
+		if filterText != "" {
+			filtered = []string{}
+			for _, i := range defaultList {
+				if fuzzy.MatchFold(filterText, i) {
+					filtered = append(filtered, i)
+				}
+			}
+		}
+		sortSearchAreaKeysByDisplayName(p, filtered)
+		// Show program if search is empty, or program name matches, or any search area name matches
+		if filterText != "" && !fuzzy.MatchFold(filterText, p.Name) && len(filtered) == 0 {
+			continue
 		}
 
+		lists := struct {
+			searchareas *widget.List
+			filtered    []string
+		}{filtered: filtered}
+
 		lists.searchareas = widget.NewList(
-			func() int {
-				return len(lists.filtered)
-			},
-			func() fyne.CanvasObject {
-				return widget.NewLabel("template")
-			},
+			func() int { return len(lists.filtered) },
+			func() fyne.CanvasObject { return widget.NewLabel("template") },
 			func(id widget.ListItemID, co fyne.CanvasObject) {
 				name := lists.filtered[id]
-
 				label := co.(*widget.Label)
 				program, err := repositories.ProgramRepo().Get(p.Name)
 				if err != nil {
@@ -84,57 +131,27 @@ func setAccordionSearchAreasLists(acc *widget.Accordion) {
 			}
 			ui.GetUi().ProgramSelector.SetText(program.Name)
 			saName := lists.filtered[id]
-
 			sa, err := program.SearchAreaRepo(config.MainMonitorSizeString).Get(saName)
 			if err != nil {
 				return
 			}
 			ui.GetUi().EditorTabs.SearchAreasTab.SelectedItem = sa
 			setSearchAreaWidgets(*sa)
-
-			// Update search area preview with error handling
 			func() {
 				defer func() {
 					if r := recover(); r != nil {
-						log.Printf("SearchArea: Preview update panic recovered - %v (area: %s)", r, sa.Name)
+						services.LogPanicToFile(r, "SearchArea: Preview update (area: "+sa.Name+")")
 					}
 				}()
 				ui.GetUi().UpdateSearchAreaPreview(sa)
 			}()
-			// if ui.GetUi().MainUi.Navigation.Visible() {
-			lists.searchareas.UnselectAll()
-			// }
+			markSearchAreasClean()
 		}
-		lists.searchbar = &widget.Entry{
-			PlaceHolder: "Search here",
-			OnChanged: func(s string) {
-				defaultList := p.SearchAreaRepo(config.MainMonitorSizeString).GetAllKeys()
-				defer lists.searchareas.ScrollToTop()
-				defer lists.searchareas.Refresh()
 
-				if s == "" {
-					lists.filtered = defaultList
-					return
-				}
-				lists.filtered = []string{}
-				for _, i := range defaultList {
-					if fuzzy.MatchFold(s, i) {
-						lists.filtered = append(lists.filtered, i)
-						lists.searchareas.UnselectAll()
-
-					}
-				}
-			},
-		}
 		programSAListWidget := *widget.NewAccordionItem(
-			p.Name,
-			container.NewBorder(
-				lists.searchbar,
-				nil, nil, nil,
-				lists.searchareas,
-			),
+			fmt.Sprintf("%s (%d)", p.Name, len(filtered)),
+			lists.searchareas,
 		)
-		ui.GetUi().EditorTabs.SearchAreasTab.Widgets[p.Name+"-searchbar"] = lists.searchbar
 		ui.GetUi().EditorTabs.SearchAreasTab.Widgets[p.Name+"-list"] = lists.searchareas
 		acc.Append(&programSAListWidget)
 	}
@@ -142,23 +159,38 @@ func setAccordionSearchAreasLists(acc *widget.Accordion) {
 
 func setAccordionPointsLists(acc *widget.Accordion) {
 	acc.Items = []*widget.AccordionItem{}
-	for _, p := range repositories.ProgramRepo().GetAll() {
-		lists := struct {
-			searchBar *widget.Entry
-			points    *widget.List
-			filtered  []string
-		}{
-			searchBar: new(widget.Entry),
-			points:    new(widget.List),
-			filtered:  p.PointRepo(config.MainMonitorSizeString).GetAllKeys(),
+	et := ui.GetUi().EditorTabs.PointsTab
+	filterText := ""
+	if sb, ok := et.Widgets["searchbar"].(*widget.Entry); ok {
+		filterText = sb.Text
+		sb.OnChanged = func(string) { setAccordionPointsLists(acc) }
+	}
+
+	for _, p := range repositories.ProgramRepo().GetAllSortedByName() {
+		defaultList := p.PointRepo(config.MainMonitorSizeString).GetAllKeys()
+		filtered := defaultList
+		if filterText != "" {
+			filtered = []string{}
+			for _, i := range defaultList {
+				if fuzzy.MatchFold(filterText, i) {
+					filtered = append(filtered, i)
+				}
+			}
 		}
+		sortPointKeysByDisplayName(p, filtered)
+		// Show program if search is empty, or program name matches, or any point name matches
+		if filterText != "" && !fuzzy.MatchFold(filterText, p.Name) && len(filtered) == 0 {
+			continue
+		}
+
+		lists := struct {
+			points   *widget.List
+			filtered []string
+		}{filtered: filtered}
+
 		lists.points = widget.NewList(
-			func() int {
-				return len(lists.filtered)
-			},
-			func() fyne.CanvasObject {
-				return widget.NewLabel("template")
-			},
+			func() int { return len(lists.filtered) },
+			func() fyne.CanvasObject { return widget.NewLabel("template") },
 			func(id widget.ListItemID, co fyne.CanvasObject) {
 				name := lists.filtered[id]
 				label := co.(*widget.Label)
@@ -182,7 +214,6 @@ func setAccordionPointsLists(acc *widget.Accordion) {
 				return
 			}
 			ui.GetUi().ProgramSelector.SetText(program.Name)
-
 			pointName := lists.filtered[id]
 			point, err := p.PointRepo(config.MainMonitorSizeString).Get(pointName)
 			if err != nil {
@@ -190,71 +221,55 @@ func setAccordionPointsLists(acc *widget.Accordion) {
 			}
 			ui.GetUi().EditorTabs.PointsTab.SelectedItem = point
 			setPointWidgets(*point)
+			markPointsClean()
 			if st := ui.GetUi().Mui.MTabs.SelectedTab(); st != nil {
 				if v, ok := st.Macro.Root.GetAction(st.SelectedNode).(*actions.Move); ok {
 					v.Point = actions.Point{Name: point.Name, X: point.X, Y: point.Y}
 				}
 			}
-			if ui.GetUi().MainUi.Navigation.Visible() {
-				lists.points.Unselect(id)
-			}
 		}
-		lists.searchBar = &widget.Entry{
-			PlaceHolder: "Search here",
-			OnChanged: func(s string) {
-				defaultList := p.PointRepo(config.MainMonitorSizeString).GetAllKeys()
-				defer lists.points.ScrollToTop()
-				defer lists.points.Refresh()
 
-				if s == "" {
-					lists.filtered = defaultList
-					return
-				}
-				lists.filtered = []string{}
-				for _, i := range defaultList {
-					if fuzzy.MatchFold(s, i) {
-						lists.filtered = append(lists.filtered, i)
-						lists.points.UnselectAll()
-					}
-				}
-			},
-		}
-		programPointListWidget := *widget.NewAccordionItem(
-			p.Name,
-			container.NewBorder(
-				lists.searchBar,
-				nil, nil, nil,
-				lists.points,
-			),
-		)
-		ui.GetUi().EditorTabs.PointsTab.Widgets[p.Name+"-searchbar"] = lists.searchBar
+		programPointListWidget := *widget.NewAccordionItem(fmt.Sprintf("%s (%d)", p.Name, len(filtered)), lists.points)
 		ui.GetUi().EditorTabs.PointsTab.Widgets[p.Name+"-list"] = lists.points
 		acc.Append(&programPointListWidget)
 	}
 }
 func setAccordionAutoPicSearchAreasLists(acc *widget.Accordion) {
 	acc.Items = []*widget.AccordionItem{}
-	for _, p := range repositories.ProgramRepo().GetAll() {
-		lists := struct {
-			searchbar   *widget.Entry
-			searchareas *widget.List
-			filtered    []string
-		}{
-			searchbar:   new(widget.Entry),
-			searchareas: new(widget.List),
-			filtered:    p.SearchAreaRepo(config.MainMonitorSizeString).GetAllKeys(),
+	et := ui.GetUi().EditorTabs.AutoPicTab
+	filterText := ""
+	if sb, ok := et.Widgets["searchbar"].(*widget.Entry); ok {
+		filterText = sb.Text
+		sb.OnChanged = func(string) { setAccordionAutoPicSearchAreasLists(acc) }
+	}
+
+	for _, p := range repositories.ProgramRepo().GetAllSortedByName() {
+		defaultList := p.SearchAreaRepo(config.MainMonitorSizeString).GetAllKeys()
+		filtered := defaultList
+		if filterText != "" {
+			filtered = []string{}
+			for _, i := range defaultList {
+				if fuzzy.MatchFold(filterText, i) {
+					filtered = append(filtered, i)
+				}
+			}
+		}
+		sortSearchAreaKeysByDisplayName(p, filtered)
+		// Show program if search is empty, or program name matches, or any search area name matches
+		if filterText != "" && !fuzzy.MatchFold(filterText, p.Name) && len(filtered) == 0 {
+			continue
 		}
 
+		lists := struct {
+			searchareas *widget.List
+			filtered    []string
+		}{filtered: filtered}
+
 		lists.searchareas = widget.NewList(
-			func() int {
-				return len(lists.filtered)
-			},
-			func() fyne.CanvasObject {
-				return widget.NewLabel("template")
-			},
+			func() int { return len(lists.filtered) },
+			func() fyne.CanvasObject { return widget.NewLabel("template") },
 			func(id widget.ListItemID, co fyne.CanvasObject) {
 				name := lists.filtered[id]
-
 				label := co.(*widget.Label)
 				program, err := repositories.ProgramRepo().Get(p.Name)
 				if err != nil {
@@ -270,92 +285,45 @@ func setAccordionAutoPicSearchAreasLists(acc *widget.Accordion) {
 		)
 
 		lists.searchareas.OnSelected = func(id widget.ListItemID) {
-			// Validate selection ID
 			if id < 0 || id >= len(lists.filtered) {
 				log.Printf("AutoPic: Invalid selection ID %d, filtered list length: %d", id, len(lists.filtered))
 				return
 			}
-
 			program, err := repositories.ProgramRepo().Get(p.Name)
 			if err != nil {
 				log.Printf("AutoPic: Error getting program %s: %v", p.Name, err)
 				return
 			}
-
 			saName := lists.filtered[id]
 			if saName == "" {
 				log.Printf("AutoPic: Empty search area name at index %d", id)
 				return
 			}
-
 			sa, err := program.SearchAreaRepo(config.MainMonitorSizeString).Get(saName)
 			if err != nil {
 				log.Printf("AutoPic: Error getting search area %s: %v", saName, err)
 				return
 			}
-
 			if sa == nil {
 				log.Printf("AutoPic: Search area %s is nil", saName)
 				return
 			}
-
-			// Set selected item for AutoPic tab
 			ui.GetUi().EditorTabs.AutoPicTab.SelectedItem = sa
-
-			// Enable save button and update preview with error handling
 			atw := ui.GetUi().EditorTabs.AutoPicTab.Widgets
 			if saveButton, ok := atw["saveButton"].(*widget.Button); ok {
 				saveButton.Enable()
-			} else {
-				log.Printf("AutoPic: Save button not found or wrong type")
 			}
-
-			// Update preview with comprehensive error handling
 			func() {
 				defer func() {
 					if r := recover(); r != nil {
-						log.Printf("AutoPic: Preview update panic recovered - %v (area: %s)", r, sa.Name)
+						services.LogPanicToFile(r, "AutoPic: Preview update (area: "+sa.Name+")")
 					}
 				}()
 				ui.GetUi().UpdateAutoPicPreview(sa)
 			}()
-
-			// Unselect after handling (same pattern as other tabs)
-			if ui.GetUi().MainUi.Navigation.Visible() {
-				lists.searchareas.Unselect(id)
-			}
 		}
 
-		lists.searchbar = &widget.Entry{
-			PlaceHolder: "Search here",
-			OnChanged: func(s string) {
-				defaultList := p.SearchAreaRepo(config.MainMonitorSizeString).GetAllKeys()
-				defer lists.searchareas.ScrollToTop()
-				defer lists.searchareas.Refresh()
-
-				if s == "" {
-					lists.filtered = defaultList
-					return
-				}
-				lists.filtered = []string{}
-				for _, i := range defaultList {
-					if fuzzy.MatchFold(s, i) {
-						lists.filtered = append(lists.filtered, i)
-						lists.searchareas.UnselectAll()
-					}
-				}
-			},
-		}
-
-		programSAListWidget := *widget.NewAccordionItem(
-			p.Name,
-			container.NewBorder(
-				lists.searchbar,
-				nil, nil, nil,
-				lists.searchareas,
-			),
-		)
-		ui.GetUi().EditorTabs.AutoPicTab.Widgets[p.Name+"-searchbar"] = lists.searchbar
+		programSAListWidget := *widget.NewAccordionItem(fmt.Sprintf("%s (%d)", p.Name, len(filtered)), lists.searchareas)
 		ui.GetUi().EditorTabs.AutoPicTab.Widgets[p.Name+"-list"] = lists.searchareas
 		acc.Append(&programSAListWidget)
 	}

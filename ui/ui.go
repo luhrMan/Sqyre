@@ -1,6 +1,12 @@
 package ui
 
 import (
+	"path/filepath"
+
+	"Sqyre/internal/config"
+	"Sqyre/internal/logger"
+	"Sqyre/internal/services"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/data/binding"
@@ -33,6 +39,14 @@ type MainUi struct {
 
 func GetUi() *Ui { return ui }
 func InitializeUi(w fyne.Window) *Ui {
+	fyne.CurrentApp().Settings().SetTheme(NewSqyreTheme())
+	logger.SetLogFile(filepath.Join(config.GetSqyreDir(), "sqyre.log"))
+	restoreWindowGeometry(w)
+	w.SetCloseIntercept(func() {
+		saveWindowGeometry(w)
+		services.LogMatProfile()
+		w.Close()
+	})
 	ui = &Ui{
 		Window:   w,
 		MainMenu: new(fyne.MainMenu),
@@ -47,6 +61,7 @@ func InitializeUi(w fyne.Window) *Ui {
 				ItemsTab       *EditorTab
 				PointsTab      *EditorTab
 				SearchAreasTab *EditorTab
+				MasksTab       *EditorTab
 				AutoPicTab     *EditorTab
 			}{
 				AppTabs: new(container.AppTabs),
@@ -60,6 +75,9 @@ func InitializeUi(w fyne.Window) *Ui {
 					Widgets: make(map[string]fyne.CanvasObject),
 				},
 				SearchAreasTab: &EditorTab{
+					Widgets: make(map[string]fyne.CanvasObject),
+				},
+				MasksTab: &EditorTab{
 					Widgets: make(map[string]fyne.CanvasObject),
 				},
 				AutoPicTab: &EditorTab{
@@ -86,6 +104,37 @@ func InitializeUi(w fyne.Window) *Ui {
 	}
 	return ui
 }
+
+func restoreWindowGeometry(w fyne.Window) {
+	prefs := fyne.CurrentApp().Preferences()
+	savedWidth := prefs.IntWithFallback(config.PrefWindowWidth, 1000)
+	savedHeight := prefs.IntWithFallback(config.PrefWindowHeight, 1000)
+	if savedWidth > 0 && savedHeight > 0 {
+		w.Resize(fyne.NewSize(float32(savedWidth), float32(savedHeight)))
+	}
+}
+
+func saveWindowGeometry(w fyne.Window) {
+	prefs := fyne.CurrentApp().Preferences()
+
+	// Persist content size from Fyne.
+	size := w.Canvas().Size()
+	if size.Width > 0 && size.Height > 0 {
+		prefs.SetInt(config.PrefWindowWidth, int(size.Width))
+		prefs.SetInt(config.PrefWindowHeight, int(size.Height))
+	}
+
+	// Persist desktop window bounds (x, y, w, h) from current process window.
+	pid := robotgo.GetPid()
+	x, y, width, height := robotgo.GetBounds(pid)
+	if width > 0 && height > 0 {
+		prefs.SetInt(config.PrefWindowX, x)
+		prefs.SetInt(config.PrefWindowY, y)
+		prefs.SetInt(config.PrefWindowWidth, width)
+		prefs.SetInt(config.PrefWindowHeight, height)
+	}
+}
+
 func (u *Ui) ConstructUi() {
 	// construct main screen - action tabs removed, only macro UI-
 	u.MainUi.Navigation = container.NewNavigation(u.constructMacroUi())
@@ -124,7 +173,7 @@ func toggleMousePos() {
 	blocX, blocY := binding.BindInt(&locX), binding.BindInt(&locY)
 	boundLocXLabel.Bind(binding.IntToString(blocX))
 	boundLocYLabel.Bind(binding.IntToString(blocY))
-	go func() {
+	services.GoSafe(func() {
 		for {
 			robotgo.MilliSleep(100)
 			newLocX, newLocY := robotgo.Location()
@@ -135,5 +184,5 @@ func toggleMousePos() {
 			blocX.Reload()
 			blocY.Reload()
 		}
-	}()
+	})
 }

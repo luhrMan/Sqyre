@@ -9,27 +9,31 @@ import (
 	"fyne.io/fyne/v2/theme"
 )
 
-// WaitForPixel pauses macro playback until a specified display pixel changes to the target color,
-// or until timeout; sub-actions run when the pixel is found. See https://www.macrorecorder.com/doc/wait/#pixel
-type WaitForPixel struct {
-	Point           Point  `mapstructure:"point"`
-	TargetColor     string `mapstructure:"targetcolor"`    // Hex e.g. "ffffff" or "aarrggbb"
-	ColorTolerance  int    `mapstructure:"colortolerance"` // 0-100%; 0 = exact match, 100 = any color
-	TimeoutSeconds  int    `mapstructure:"timeoutseconds"` // 0 = wait indefinitely; on timeout, continue without running children
-	*AdvancedAction `yaml:",inline" mapstructure:",squash"`
+// FindPixel scans a search area for a pixel matching the target color.
+// When WaitTilFound is true it retries at WaitTilFoundIntervalMs intervals
+// up to WaitTilFoundSeconds; sub-actions run when the pixel is found.
+type FindPixel struct {
+	SearchArea             SearchArea `mapstructure:"searcharea"`
+	TargetColor            string     `mapstructure:"targetcolor"`
+	ColorTolerance         int        `mapstructure:"colortolerance"`
+	WaitTilFound           bool       `mapstructure:"waittilfound"`
+	WaitTilFoundSeconds    int        `mapstructure:"waittilfoundseconds"`
+	WaitTilFoundIntervalMs int        `mapstructure:"waittilfoundintervalms"`
+	OutputXVariable        string     `mapstructure:"outputxvariable"`
+	OutputYVariable        string     `mapstructure:"outputyvariable"`
+	*AdvancedAction        `yaml:",inline" mapstructure:",squash"`
 }
 
 // NormalizeHex returns lowercase hex without alpha for comparison (robotgo returns 8-char hex on some platforms).
-func (a *WaitForPixel) NormalizeHex(hex string) string {
+func (a *FindPixel) NormalizeHex(hex string) string {
 	hex = strings.TrimPrefix(strings.ToLower(hex), "#")
 	if len(hex) == 8 {
-		hex = hex[2:] // drop alpha for comparison
+		hex = hex[2:]
 	}
 	return hex
 }
 
-// hexToRGB parses 6-char hex to r, g, b (0-255). Returns false if invalid.
-func (a *WaitForPixel) hexToRGB(hex string) (r, g, b uint8, ok bool) {
+func (a *FindPixel) hexToRGB(hex string) (r, g, b uint8, ok bool) {
 	hex = a.NormalizeHex(hex)
 	if len(hex) != 6 {
 		return 0, 0, 0, false
@@ -44,12 +48,11 @@ func (a *WaitForPixel) hexToRGB(hex string) (r, g, b uint8, ok bool) {
 }
 
 // MatchColor returns true if screenHex matches the target color within ColorTolerance (0-100%).
-// 0% = exact match; 100% = any color matches (per-channel delta up to 255).
-func (a *WaitForPixel) MatchColor(screenHex string) bool {
+func (a *FindPixel) MatchColor(screenHex string) bool {
 	tr, tg, tb, tok := a.hexToRGB(a.TargetColor)
 	sr, sg, sb, sok := a.hexToRGB(screenHex)
 	if !tok || !sok {
-		return a.NormalizeHex(screenHex) == a.NormalizeHex(a.TargetColor) // fallback exact
+		return a.NormalizeHex(screenHex) == a.NormalizeHex(a.TargetColor)
 	}
 	if a.ColorTolerance >= 100 {
 		return true
@@ -82,29 +85,33 @@ func (a *WaitForPixel) MatchColor(screenHex string) bool {
 	return dr <= delta && dg <= delta && db <= delta
 }
 
-func NewWaitForPixel(name string, point Point, targetColor string, colorTolerance int, timeoutSeconds int, subActions []ActionInterface) *WaitForPixel {
+func NewFindPixel(name string, searchArea SearchArea, targetColor string, colorTolerance int, subActions []ActionInterface) *FindPixel {
 	if colorTolerance < 0 {
 		colorTolerance = 0
 	}
 	if colorTolerance > 100 {
 		colorTolerance = 100
 	}
-	return &WaitForPixel{
-		AdvancedAction: newAdvancedAction(name, "waitforpixel", subActions),
-		Point:          point,
+	return &FindPixel{
+		AdvancedAction: newAdvancedAction(name, "findpixel", subActions),
+		SearchArea:     searchArea,
 		TargetColor:    strings.ToLower(strings.TrimPrefix(targetColor, "#")),
 		ColorTolerance: colorTolerance,
-		TimeoutSeconds: timeoutSeconds,
 	}
 }
 
-func (a *WaitForPixel) String() string {
-	if a.TimeoutSeconds > 0 {
-		return fmt.Sprintf("%s --- Wait %ds at %v, %v for color #%s", a.Name, a.TimeoutSeconds, a.Point.X, a.Point.Y, a.TargetColor)
+func (a *FindPixel) String() string {
+	areaLabel := a.SearchArea.Name
+	if areaLabel == "" {
+		areaLabel = fmt.Sprintf("(%v,%v)-(%v,%v)", a.SearchArea.LeftX, a.SearchArea.TopY, a.SearchArea.RightX, a.SearchArea.BottomY)
 	}
-	return fmt.Sprintf("%s --- Wait indefinitely at %v, %v for color #%s", a.Name, a.Point.X, a.Point.Y, a.TargetColor)
+	mode := "instant"
+	if a.WaitTilFound {
+		mode = fmt.Sprintf("wait %ds", a.WaitTilFoundSeconds)
+	}
+	return fmt.Sprintf("%s --- Find #%s in %s [%s]", a.Name, a.TargetColor, areaLabel, mode)
 }
 
-func (a *WaitForPixel) Icon() fyne.Resource {
+func (a *FindPixel) Icon() fyne.Resource {
 	return theme.ColorChromaticIcon()
 }

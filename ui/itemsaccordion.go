@@ -1,10 +1,11 @@
 package ui
 
 import (
-	"Squire/internal/assets"
-	"Squire/internal/config"
-	"Squire/internal/models"
-	"Squire/internal/services"
+	"Sqyre/internal/assets"
+	"Sqyre/internal/config"
+	"Sqyre/internal/models"
+	"Sqyre/internal/services"
+	"fmt"
 	"image/color"
 	"slices"
 
@@ -15,12 +16,24 @@ import (
 	"fyne.io/fyne/v2/widget"
 	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 	"github.com/lithammer/fuzzysearch/fuzzy"
+	"Sqyre/ui/custom_widgets"
 )
+
+// HeaderButtonOption describes an optional button shown at the right end of an accordion item's
+// header area (rendered as the top-right of the item content, since Fyne's accordion header is title-only).
+type HeaderButtonOption struct {
+	Label    string
+	Tooltip  string // optional
+	OnTapped func()
+}
 
 // ItemsAccordionOptions configures how the program items accordion behaves.
 // Used by both the editor Items tab and the Image Search action dialog.
 type ItemsAccordionOptions struct {
 	Program *models.Program
+
+	// FilterText is the tab-level search filter; applied to baseNames (and tags). Empty = no filter.
+	FilterText string
 
 	// GetSelectedTargets returns the current list of selected item full names (Program|BaseName)
 	// for highlighting. Return nil or empty to hide selection highlight.
@@ -30,21 +43,35 @@ type ItemsAccordionOptions struct {
 	// baseItemName is the base name (no variant). Full name is Program.Name + delim + baseItemName.
 	OnItemSelected func(baseItemName string)
 
-	// RegisterWidgets, if non-nil, is called with the searchbar and grid so the editor
-	// can store them (e.g. for program-specific search).
-	RegisterWidgets func(programName string, searchbar *widget.Entry, list *widget.GridWrap)
+	// RegisterWidgets, if non-nil, is called with the grid so the editor can store it (e.g. programName+"-list").
+	RegisterWidgets func(programName string, list *widget.GridWrap)
 
 	// OnSelectionChanged is called when the user uses "select all visible" / "deselect all visible".
 	// It receives the new full list of selected target full names. If nil, the select-all button is hidden.
 	OnSelectionChanged func(newTargets []string)
+
+	// AllButtonInHeader, when true, returns the tri-state (empty/half/full) control as the second return value
+	// for use in the accordion header row. Requires OnSelectionChanged != nil.
+	AllButtonInHeader bool
+
+	// OnSelectionMaybeChanged, if set, is called when selection might have changed (e.g. user clicked an item)
+	// so the accordion can refresh and update tri-state displays.
+	OnSelectionMaybeChanged func()
+
+	// RegisterRefreshTarget, if non-nil, is called with the item grid so the builder can refresh it when selection changes (e.g. from the Selected Items preview).
+	RegisterRefreshTarget func(grid *widget.GridWrap)
+
+	// HeaderButton, if non-nil, adds a button at the right end of this accordion item's header area.
+	HeaderButton *HeaderButtonOption
 }
 
 // CreateProgramAccordionItem builds a single accordion item (one program's item grid)
 // with shared behavior: icon cache, search (including tag search), selection highlight,
 // and selection callback. Use the same code path for editor and action dialog.
-func CreateProgramAccordionItem(opts ItemsAccordionOptions) *widget.AccordionItem {
+// When AllButtonInHeader is true, the second return value is the "All" button for use in the header row; otherwise it is nil.
+func CreateProgramAccordionItem(opts ItemsAccordionOptions) (*widget.AccordionItem, fyne.CanvasObject) {
 	if opts.Program == nil {
-		return widget.NewAccordionItem("", container.NewStack())
+		return widget.NewAccordionItem("", container.NewStack()), nil
 	}
 
 	program := opts.Program
@@ -90,13 +117,37 @@ func CreateProgramAccordionItem(opts ItemsAccordionOptions) *widget.AccordionIte
 		}
 	}
 
+	// Apply tab-level filter to baseNames (by name and tags)
+	filtered := baseNames
+	if opts.FilterText != "" {
+		filtered = []string{}
+		for _, baseName := range baseNames {
+			if fuzzy.MatchFold(opts.FilterText, baseName) {
+				filtered = append(filtered, baseName)
+				continue
+			}
+			itemName, exists := baseNameToItemName[baseName]
+			if !exists {
+				itemName = baseName
+			}
+			item, err := program.ItemRepo().Get(itemName)
+			if err == nil {
+				for _, tag := range item.Tags {
+					if fuzzy.MatchFold(opts.FilterText, tag) {
+						filtered = append(filtered, baseName)
+						break
+					}
+				}
+			}
+		}
+		slices.Sort(filtered)
+	}
+
 	lists := struct {
-		searchbar *widget.Entry
-		items     *widget.GridWrap
-		filtered  []string
+		items    *widget.GridWrap
+		filtered []string
 	}{
-		searchbar: widget.NewEntry(),
-		filtered:  baseNames,
+		filtered: filtered,
 	}
 
 	lists.items = widget.NewGridWrap(
@@ -153,53 +204,16 @@ func CreateProgramAccordionItem(opts ItemsAccordionOptions) *widget.AccordionIte
 			opts.OnItemSelected(baseItemName)
 		}
 		lists.items.UnselectAll()
-	}
-
-	lists.searchbar.PlaceHolder = "Search here"
-	lists.searchbar.OnChanged = func(s string) {
-		defaultList := iconService.GroupItemsByBaseName(program.ItemRepo().GetAllKeys())
-		if s == "" {
-			lists.filtered = defaultList
-		} else {
-			lists.filtered = []string{}
-			for _, baseName := range defaultList {
-				if fuzzy.MatchFold(s, baseName) {
-					lists.filtered = append(lists.filtered, baseName)
-					continue
-				}
-				itemName, exists := baseNameToItemName[baseName]
-				if exists {
-					item, err := program.ItemRepo().Get(itemName)
-					if err == nil {
-						for _, tag := range item.Tags {
-							if fuzzy.MatchFold(s, tag) {
-								lists.filtered = append(lists.filtered, baseName)
-								break
-							}
-						}
-					}
-				} else {
-					item, err := program.ItemRepo().Get(baseName)
-					if err == nil {
-						for _, tag := range item.Tags {
-							if fuzzy.MatchFold(s, tag) {
-								lists.filtered = append(lists.filtered, baseName)
-								break
-							}
-						}
-					}
-				}
-			}
+		if opts.OnSelectionMaybeChanged != nil {
+			opts.OnSelectionMaybeChanged()
 		}
-		lists.items.ScrollToTop()
-		lists.items.UnselectAll()
-		lists.items.Refresh()
 	}
 
-	// Search bar row: entry + optional "All" button (select/deselect all visible)
-	searchBarRow := container.NewBorder(nil, nil, nil, nil, lists.searchbar)
+	// Optional tri-state (empty/half/full) or legacy "All" button: in content row (editor) or returned for header (action dialog).
+	var contentTop fyne.CanvasObject
+	var allButtonForHeader fyne.CanvasObject
 	if opts.OnSelectionChanged != nil {
-		selectAllBtn := ttwidget.NewButton("All", func() {
+		doSelectAllToggle := func() {
 			current := []string{}
 			if opts.GetSelectedTargets != nil {
 				current = opts.GetSelectedTargets()
@@ -239,22 +253,72 @@ func CreateProgramAccordionItem(opts ItemsAccordionOptions) *widget.AccordionIte
 			slices.Sort(newTargets)
 			opts.OnSelectionChanged(newTargets)
 			lists.items.Refresh()
-		})
-		selectAllBtn.Importance = widget.MediumImportance
-		selectAllBtn.SetToolTip("Select all visible items, or deselect all if all visible are selected")
-		searchBarRow = container.NewBorder(nil, nil, nil, selectAllBtn, lists.searchbar)
+		}
+		getState := func() int {
+			current := []string{}
+			if opts.GetSelectedTargets != nil {
+				current = opts.GetSelectedTargets()
+			}
+			filteredFull := make([]string, 0, len(lists.filtered))
+			for _, baseName := range lists.filtered {
+				filteredFull = append(filteredFull, programName+config.ProgramDelimiter+baseName)
+			}
+			if len(filteredFull) == 0 {
+				return 0
+			}
+			selected := 0
+			for _, full := range filteredFull {
+				if slices.Contains(current, full) {
+					selected++
+				}
+			}
+			if selected == 0 {
+				return 0
+			}
+			if selected == len(filteredFull) {
+				return 2
+			}
+			return 1
+		}
+		if opts.AllButtonInHeader {
+			triState := custom_widgets.NewTriStateSelectAll(getState, doSelectAllToggle)
+			allButtonForHeader = triState
+		} else {
+			selectAllBtn := ttwidget.NewButton("All", doSelectAllToggle)
+			selectAllBtn.Importance = widget.MediumImportance
+			selectAllBtn.SetToolTip("Select all visible items, or deselect all if all visible are selected")
+			contentTop = container.NewBorder(nil, nil, nil, selectAllBtn, nil)
+		}
+	}
+	if opts.HeaderButton != nil {
+		hb := opts.HeaderButton
+		headerBtn := ttwidget.NewButton(hb.Label, hb.OnTapped)
+		if hb.Tooltip != "" {
+			headerBtn.SetToolTip(hb.Tooltip)
+		}
+		headerBtn.Importance = widget.MediumImportance
+		headerButtonRow := container.NewBorder(nil, nil, nil, headerBtn, nil)
+		if contentTop != nil {
+			contentTop = container.NewVBox(headerButtonRow, contentTop)
+		} else {
+			contentTop = headerButtonRow
+		}
 	}
 
 	if opts.RegisterWidgets != nil {
-		opts.RegisterWidgets(programName, lists.searchbar, lists.items)
+		opts.RegisterWidgets(programName, lists.items)
+	}
+	if opts.RegisterRefreshTarget != nil {
+		opts.RegisterRefreshTarget(lists.items)
 	}
 
-	return widget.NewAccordionItem(
-		programName,
+	item := widget.NewAccordionItem(
+		fmt.Sprintf("%s (%d)", programName, len(lists.filtered)),
 		container.NewBorder(
-			searchBarRow,
+			contentTop,
 			nil, nil, nil,
 			lists.items,
 		),
 	)
+	return item, allButtonForHeader
 }

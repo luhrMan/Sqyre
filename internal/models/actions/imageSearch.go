@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"slices"
 
-	"Squire/internal/assets"
+	"Sqyre/internal/assets"
 
 	"fyne.io/fyne/v2"
 )
@@ -18,9 +18,10 @@ type ImageSearch struct {
 	Blur                int        `mapstructure:"blur"`
 	OutputXVariable     string     `mapstructure:"outputxvariable"`     // Variable name to store X coordinate
 	OutputYVariable     string     `mapstructure:"outputyvariable"`     // Variable name to store Y coordinate
-	WaitTilFound        bool       `mapstructure:"waittilfound"`        // If true, retry until found or timeout
-	WaitTilFoundSeconds int        `mapstructure:"waittilfoundseconds"` // Max seconds to keep trying when WaitTilFound (then continue without match)
-	*AdvancedAction     `yaml:",inline" mapstructure:",squash"`
+	WaitTilFound           bool       `mapstructure:"waittilfound"`             // If true, retry until found or timeout
+	WaitTilFoundSeconds    int        `mapstructure:"waittilfoundseconds"`      // Max seconds to keep trying when WaitTilFound (then continue without match)
+	WaitTilFoundIntervalMs int        `mapstructure:"waittilfoundintervalms"`   // Milliseconds between retries when WaitTilFound (0 = default 100ms)
+	*AdvancedAction        `yaml:",inline" mapstructure:",squash"`
 }
 
 func NewImageSearch(name string, subActions []ActionInterface, targets []string, searchbox SearchArea, rs, cs int, tol float32, blur int) *ImageSearch {
@@ -33,8 +34,8 @@ func NewImageSearch(name string, subActions []ActionInterface, targets []string,
 		ColSplit:        cs,
 		Tolerance:       tol,
 		Blur:            blur,
-		OutputXVariable: "",
-		OutputYVariable: "",
+		OutputXVariable: "foundX",
+		OutputYVariable: "foundY",
 	}
 }
 func (a *ImageSearch) String() string {

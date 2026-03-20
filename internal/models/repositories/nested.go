@@ -1,7 +1,7 @@
 package repositories
 
 import (
-	"Squire/internal/models"
+	"Sqyre/internal/models"
 	"fmt"
 	"maps"
 	"slices"
@@ -26,7 +26,7 @@ import (
 // - Changes to children trigger persistence of the entire aggregate
 // - The root maintains consistency across all its children
 //
-// In Squire:
+// In Sqyre:
 // - Program is an aggregate root that owns Items, Points, and SearchAreas
 // - When an Item changes, we save the entire Program
 // - This ensures Items are always consistent with their Program

@@ -1,9 +1,9 @@
 package repositories
 
 import (
-	"Squire/internal/models"
-	"Squire/internal/models/actions"
-	"Squire/internal/models/serialize"
+	"Sqyre/internal/models"
+	"Sqyre/internal/models/actions"
+	"Sqyre/internal/models/serialize"
 	"os"
 	"path/filepath"
 	"sync"
@@ -73,7 +73,6 @@ func TestIntegration_FullSaveAndReloadCycle(t *testing.T) {
 		GridSize: [2]int{1, 2},
 		Tags:     []string{"new"},
 		StackMax: 15,
-		Merchant: "new merchant",
 	}
 
 	programRepo.mu.Lock()
@@ -281,7 +280,6 @@ func TestIntegration_SaveReloadCycle_WithModifications(t *testing.T) {
 		GridSize: [2]int{3, 3},
 		Tags:     []string{"modified"},
 		StackMax: 99,
-		Merchant: "modified merchant",
 	}
 
 	programRepo.mu.Lock()
@@ -474,14 +472,12 @@ func TestIntegration_NestedStructurePersistence(t *testing.T) {
 		GridSize: [2]int{1, 1},
 		Tags:     []string{"tag1", "tag2"},
 		StackMax: 10,
-		Merchant: "merchant1",
 	}
 	program.Items["item2"] = &models.Item{
 		Name:     "Item 2",
 		GridSize: [2]int{2, 2},
 		Tags:     []string{"tag3"},
 		StackMax: 5,
-		Merchant: "merchant2",
 	}
 
 	// Add coordinates with multiple points and areas

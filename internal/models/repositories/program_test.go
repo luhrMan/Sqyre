@@ -126,10 +126,6 @@ func TestProgramRepo_ConcurrentSingletonAccess(t *testing.T) {
 // 		t.Errorf("Expected StackMax 10, got %d", testItem.StackMax)
 // 	}
 
-// 	if testItem.Merchant != "test merchant" {
-// 		t.Errorf("Expected merchant 'test merchant', got '%s'", testItem.Merchant)
-// 	}
-
 // 	// Verify Coordinates structure
 // 	coords, exists := program.Coordinates["1920x1080"]
 // 	if !exists {
@@ -332,7 +328,6 @@ func TestDecodeProgram_InvalidKey(t *testing.T) {
 // 		GridSize: [2]int{2, 2},
 // 		Tags:     []string{"new"},
 // 		StackMax: 5,
-// 		Merchant: "new merchant",
 // 	}
 
 // 	if len(program.Items) != 2 {
