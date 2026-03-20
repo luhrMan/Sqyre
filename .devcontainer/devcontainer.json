@@ -21,5 +21,6 @@
     }
   },
   "postCreateCommand": "go mod download",
-  "remoteUser": "root"
+  "remoteUser": "vscode",
+  "updateRemoteUserUID": true
 }
