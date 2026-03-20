@@ -27,3 +27,4 @@ sqyre
 .devcontainer/builds/linux/packaging/flatpak/build-dir/
 fyne-cross/
 internal/models/repositories/testdata/
+.flatpak-builder/
