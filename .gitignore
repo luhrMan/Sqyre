@@ -25,6 +25,7 @@ sqyre
 .devcontainer/builds/linux/packaging/appimage/appimage-build/
 .devcontainer/builds/linux/packaging/appimage/*.AppImage
 .devcontainer/builds/linux/packaging/flatpak/build-dir/
+.devcontainer/builds/android/output/
+.flatpak-builder/
 fyne-cross/
 internal/models/repositories/testdata/
-.flatpak-builder/
