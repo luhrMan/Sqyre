@@ -786,6 +786,7 @@ func createImageSearchDialogContent(action *actions.ImageSearch) (fyne.CanvasObj
 	})
 
 	previewSize := fyne.NewSquareSize(30)
+	const previewRemoveBtnFraction = float32(0.35)
 	var refreshItemsAccordion func()
 	var removeTarget func(target string)
 
@@ -796,15 +797,15 @@ func createImageSearchDialogContent(action *actions.ImageSearch) (fyne.CanvasObj
 			icon.SetMinSize(previewSize)
 			icon.FillMode = canvas.ImageFillContain
 			removeBtn := ttwidget.NewButtonWithIcon("", theme.CancelIcon(), nil)
-			removeBtn.Importance = widget.LowImportance
-			return container.NewStack(icon, removeBtn)
+			removeBtn.Importance = widget.DangerImportance
+			return container.New(&iconTopRightButtonLayout{fraction: previewRemoveBtnFraction}, icon, removeBtn)
 		},
 		func(id widget.GridWrapItemID, o fyne.CanvasObject) {
 			if id >= len(tempTargets) {
 				return
 			}
 			target := tempTargets[id]
-			stack := o.(*fyne.Container)
+			cell := o.(*fyne.Container)
 			var newIcon *canvas.Image
 			if path := getIconPathForTarget(target); path != "" {
 				if res := assets.GetFyneResource(path); res != nil {
@@ -817,9 +818,9 @@ func createImageSearchDialogContent(action *actions.ImageSearch) (fyne.CanvasObj
 			}
 			newIcon.SetMinSize(previewSize)
 			newIcon.FillMode = canvas.ImageFillContain
-			stack.Objects[0] = newIcon
+			cell.Objects[0] = newIcon
 
-			removeBtn := stack.Objects[1].(*ttwidget.Button)
+			removeBtn := cell.Objects[1].(*ttwidget.Button)
 			removeBtn.OnTapped = func() {
 				if removeTarget != nil {
 					removeTarget(target)
