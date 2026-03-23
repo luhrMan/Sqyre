@@ -56,7 +56,8 @@ jobs:
 
       - name: Build Linux binary
         run: |
-          docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace \
+          docker run --rm -u "$(id -u):$(id -g)" \
+            -v ${{ github.workspace }}:/workspace -w /workspace \
             -e GOFLAGS="-tags=gocv_specific_modules -buildvcs=false" \
             sqyre-linux-build \
             bash -c 'go build -trimpath -o sqyre ./cmd/sqyre'
@@ -67,7 +68,8 @@ jobs:
 
       - name: Build AppImage
         run: |
-          docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace \
+          docker run --rm -u "$(id -u):$(id -g)" \
+            -v ${{ github.workspace }}:/workspace -w /workspace \
             -e GOFLAGS="-tags=gocv_specific_modules -buildvcs=false" \
             sqyre-linux-build \
             bash -c '.devcontainer/builds/linux/packaging/appimage/build-appimage.sh'
