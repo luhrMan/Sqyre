@@ -49,7 +49,8 @@ script:
     cp -aL /usr/lib/x86_64-linux-gnu/libtesseract.so* "$TARGET_APPDIR/usr/lib/" 2>/dev/null || true
     cp -aL /usr/lib/x86_64-linux-gnu/liblept.so* "$TARGET_APPDIR/usr/lib/" 2>/dev/null || true
     # Transitive deps of OpenCV imgcodecs and Tesseract (image format libs)
-    for dep in libjpeg libpng libtiff libwebp libopenjp2 libIlmImf libHalf; do
+    # libarchive / compression: strace may not load these; bundle explicitly.
+    for dep in libjpeg libpng libtiff libjbig libwebp libdeflate libopenjp2 libIlmImf libHalf libgif libarchive libbz2 libzstd liblz4 libnettle libacl libxml2 libicuuc libicudata; do
       cp -aL /usr/lib/x86_64-linux-gnu/${dep}*.so* "$TARGET_APPDIR/usr/lib/" 2>/dev/null || true
     done
 
