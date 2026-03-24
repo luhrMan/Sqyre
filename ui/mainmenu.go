@@ -3,7 +3,6 @@ package ui
 import (
 	"Sqyre/internal/models/actions"
 	"Sqyre/internal/models/repositories"
-	"image/color"
 	"log"
 	"strconv"
 
@@ -19,6 +18,7 @@ import (
 
 type actionTemplate struct {
 	label    string
+	actionType string
 	category string
 	icon     fyne.Resource
 	create   func() actions.ActionInterface
@@ -26,73 +26,35 @@ type actionTemplate struct {
 
 func buildActionTemplates() []actionTemplate {
 	return []actionTemplate{
-		{label: "Mouse Move", category: "Mouse & Keyboard", icon: actions.NewMove(actions.Point{Name: "", X: 0, Y: 0}, false).Icon(), create: func() actions.ActionInterface {
+		{label: "Mouse Move", actionType: "move", category: "Mouse & Keyboard", icon: actions.NewMove(actions.Point{Name: "", X: 0, Y: 0}, false).Icon(), create: func() actions.ActionInterface {
 			return actions.NewMove(actions.Point{Name: "", X: 0, Y: 0}, false)
 		}},
-		{label: "Click", category: "Mouse & Keyboard", icon: actions.NewClick(false, true).Icon(), create: func() actions.ActionInterface { return actions.NewClick(false, true) }},
-		{label: "Key", category: "Mouse & Keyboard", icon: actions.NewKey("ctrl", true).Icon(), create: func() actions.ActionInterface { return actions.NewKey("ctrl", true) }},
-		{label: "Type", category: "Mouse & Keyboard", icon: actions.NewType("", 0).Icon(), create: func() actions.ActionInterface { return actions.NewType("", 0) }},
-		{label: "Wait", category: "Miscellaneous", icon: actions.NewWait(0).Icon(), create: func() actions.ActionInterface { return actions.NewWait(0) }},
-		{label: "Focus window", category: "Miscellaneous", icon: actions.NewFocusWindow("").Icon(), create: func() actions.ActionInterface { return actions.NewFocusWindow("") }},
-		{label: "Run macro", category: "Miscellaneous", icon: actions.NewRunMacro("").Icon(), create: func() actions.ActionInterface { return actions.NewRunMacro("") }},
+		{label: "Click", actionType: "click", category: "Mouse & Keyboard", icon: actions.NewClick(false, true).Icon(), create: func() actions.ActionInterface { return actions.NewClick(false, true) }},
+		{label: "Key", actionType: "key", category: "Mouse & Keyboard", icon: actions.NewKey("ctrl", true).Icon(), create: func() actions.ActionInterface { return actions.NewKey("ctrl", true) }},
+		{label: "Type", actionType: "type", category: "Mouse & Keyboard", icon: actions.NewType("", 0).Icon(), create: func() actions.ActionInterface { return actions.NewType("", 0) }},
+		{label: "Wait", actionType: "wait", category: "Miscellaneous", icon: actions.NewWait(0).Icon(), create: func() actions.ActionInterface { return actions.NewWait(0) }},
+		{label: "Focus window", actionType: "focuswindow", category: "Miscellaneous", icon: actions.NewFocusWindow("").Icon(), create: func() actions.ActionInterface { return actions.NewFocusWindow("") }},
+		{label: "Run macro", actionType: "runmacro", category: "Miscellaneous", icon: actions.NewRunMacro("").Icon(), create: func() actions.ActionInterface { return actions.NewRunMacro("") }},
 
-		{label: "Loop", category: "Miscellaneous", icon: actions.NewLoop(1, "", []actions.ActionInterface{}).Icon(), create: func() actions.ActionInterface {
+		{label: "Loop", actionType: "loop", category: "Miscellaneous", icon: actions.NewLoop(1, "", []actions.ActionInterface{}).Icon(), create: func() actions.ActionInterface {
 			return actions.NewLoop(1, "", []actions.ActionInterface{})
 		}},
-		{label: "Image Search", category: "Detection", icon: actions.NewImageSearch("", []actions.ActionInterface{}, []string{}, actions.SearchArea{}, 1, 1, 0.95, 5).Icon(), create: func() actions.ActionInterface {
+		{label: "Image Search", actionType: "imagesearch", category: "Detection", icon: actions.NewImageSearch("", []actions.ActionInterface{}, []string{}, actions.SearchArea{}, 1, 1, 0.95, 5).Icon(), create: func() actions.ActionInterface {
 			return actions.NewImageSearch("", []actions.ActionInterface{}, []string{}, actions.SearchArea{}, 1, 1, 0.95, 5)
 		}},
-		{label: "OCR", category: "Detection", icon: actions.NewOcr("", []actions.ActionInterface{}, "template", actions.SearchArea{Name: "template search area"}).Icon(), create: func() actions.ActionInterface {
+		{label: "OCR", actionType: "ocr", category: "Detection", icon: actions.NewOcr("", []actions.ActionInterface{}, "template", actions.SearchArea{Name: "template search area"}).Icon(), create: func() actions.ActionInterface {
 			return actions.NewOcr("", []actions.ActionInterface{}, "template", actions.SearchArea{Name: "template search area"})
 		}},
-		{label: "Find pixel", category: "Detection", icon: actions.NewFindPixel("", actions.SearchArea{}, "ffffff", 0, nil).Icon(), create: func() actions.ActionInterface {
+		{label: "Find pixel", actionType: "findpixel", category: "Detection", icon: actions.NewFindPixel("", actions.SearchArea{}, "ffffff", 0, nil).Icon(), create: func() actions.ActionInterface {
 			return actions.NewFindPixel("", actions.SearchArea{}, "ffffff", 0, nil)
 		}},
 
-		{label: "Set", category: "Variables", icon: actions.NewSetVariable("", "").Icon(), create: func() actions.ActionInterface { return actions.NewSetVariable("", "") }},
-		{label: "Calculate", category: "Variables", icon: actions.NewCalculate("", "").Icon(), create: func() actions.ActionInterface { return actions.NewCalculate("", "") }},
-		{label: "Read from", category: "Variables", icon: actions.NewDataList("", "", false).Icon(), create: func() actions.ActionInterface { return actions.NewDataList("", "", false) }},
-		{label: "Save to", category: "Variables", icon: actions.NewSaveVariable("", "", false, false).Icon(), create: func() actions.ActionInterface {
+		{label: "Set", actionType: "setvariable", category: "Variables", icon: actions.NewSetVariable("", "").Icon(), create: func() actions.ActionInterface { return actions.NewSetVariable("", "") }},
+		{label: "Calculate", actionType: "calculate", category: "Variables", icon: actions.NewCalculate("", "").Icon(), create: func() actions.ActionInterface { return actions.NewCalculate("", "") }},
+		{label: "Read from", actionType: "datalist", category: "Variables", icon: actions.NewDataList("", "", false).Icon(), create: func() actions.ActionInterface { return actions.NewDataList("", "", false) }},
+		{label: "Save to", actionType: "savevariable", category: "Variables", icon: actions.NewSaveVariable("", "", false, false).Icon(), create: func() actions.ActionInterface {
 			return actions.NewSaveVariable("", "", false, false)
 		}},
-	}
-}
-
-func actionPastelColor(label, category string) color.Color {
-	isDark := fyne.CurrentApp().Settings().ThemeVariant() == theme.VariantDark
-	if isDark {
-		if label == "Wait" {
-			return color.NRGBA{R: 0x7B, G: 0x4E, B: 0x3E, A: 0xFF} // dark earth rust
-		}
-		switch category {
-		case "Mouse & Keyboard":
-			return color.NRGBA{R: 0x5E, G: 0x6B, B: 0x4A, A: 0xFF} // dark earth olive
-		case "Detection":
-			return color.NRGBA{R: 0x5A, G: 0x4A, B: 0x44, A: 0xFF} // dark earth umber
-		case "Variables":
-			return color.NRGBA{R: 0x7A, G: 0x63, B: 0x45, A: 0xFF} // dark earth tan
-		case "Miscellaneous":
-			return color.NRGBA{R: 0x6A, G: 0x5A, B: 0x3F, A: 0xFF} // dark earth ochre
-		default:
-			return color.NRGBA{R: 0x5C, G: 0x54, B: 0x49, A: 0xFF} // dark earth neutral
-		}
-	}
-
-	// Light theme palette
-	if label == "Wait" {
-		return color.NRGBA{R: 0xC9, G: 0x8D, B: 0x6A, A: 0xFF} // earth terracotta
-	}
-	switch category {
-	case "Mouse & Keyboard":
-		return color.NRGBA{R: 0xA1, G: 0xB0, B: 0x7A, A: 0xFF} // earth sage
-	case "Detection":
-		return color.NRGBA{R: 0xB4, G: 0x9A, B: 0x84, A: 0xFF} // earth clay
-	case "Variables":
-		return color.NRGBA{R: 0xC7, G: 0xAE, B: 0x7B, A: 0xFF} // earth sand
-	case "Miscellaneous":
-		return color.NRGBA{R: 0xB8, G: 0x9A, B: 0x6A, A: 0xFF} // earth ochre
-	default:
-		return color.NRGBA{R: 0xB2, G: 0xA4, B: 0x8E, A: 0xFF} // earth neutral
 	}
 }
 
@@ -107,7 +69,7 @@ func showAddActionDialog(u *Ui, addActionAndRefresh func(actions.ActionInterface
 	}
 	for _, tmpl := range templates {
 		t := tmpl
-		bg := canvas.NewRectangle(actionPastelColor(t.label, t.category))
+		bg := canvas.NewRectangle(actions.ActionPastelColor(t.actionType))
 		bg.CornerRadius = 8
 		bg.StrokeColor = theme.ShadowColor()
 		bg.StrokeWidth = 1

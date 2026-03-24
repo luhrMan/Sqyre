@@ -13,6 +13,7 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
+	kxlayout "github.com/ErikKalkoken/fyne-kx/layout"
 )
 
 // var selectedTreeItem = ""
@@ -29,20 +30,7 @@ type MacroTree struct {
 }
 
 func macroTreeActionColor(action actions.ActionInterface) color.Color {
-	switch action.(type) {
-	case *actions.Move, *actions.Click, *actions.Key, *actions.Type:
-		return actionPastelColor("", "Mouse & Keyboard")
-	case *actions.ImageSearch, *actions.Ocr, *actions.FindPixel:
-		return actionPastelColor("", "Detection")
-	case *actions.SetVariable, *actions.Calculate, *actions.DataList, *actions.SaveVariable:
-		return actionPastelColor("", "Variables")
-	case *actions.Wait:
-		return actionPastelColor("Wait", "Miscellaneous")
-	case *actions.FocusWindow, *actions.RunMacro, *actions.Loop:
-		return actionPastelColor("", "Miscellaneous")
-	default:
-		return actionPastelColor("", "")
-	}
+	return actions.ActionPastelColor(action.GetType())
 }
 
 func NewMacroTree(m *models.Macro) *MacroTree {
@@ -101,22 +89,25 @@ func (mt *MacroTree) setTree() {
 	// Tree row: Border with left=[actionIconButton, label], center=itemIconsScroll (fills space), right=removeButton
 	const treeItemIconSize = 24
 	mt.CreateNode = func(branch bool) fyne.CanvasObject {
-		itemIconsBox := container.NewHBox()
-		itemIconsScroll := container.NewHScroll(itemIconsBox)
-		itemIconsScroll.SetMinSize(fyne.NewSize(0, treeItemIconSize))
 		actionIconBtn := ttwidget.NewButtonWithIcon("", theme.ErrorIcon(), nil)
 		actionIconBtn.Importance = widget.LowImportance
-		iconBg := canvas.NewRectangle(actionPastelColor("", ""))
+		iconBg := canvas.NewRectangle(actions.ActionPastelColor(""))
 		iconBg.CornerRadius = 6
 		iconBg.StrokeColor = theme.ShadowColor()
 		iconBg.StrokeWidth = 1
 		iconStack := container.NewStack(iconBg, actionIconBtn)
 		leftSide := container.NewHBox(
 			iconStack,
-			widget.NewLabel("Template"),
 		)
+		displayContainer := container.New(kxlayout.NewRowWrapLayout())
+		itemIconsBox := container.NewHBox()
+		displayHolder := container.NewCenter(displayContainer)
+		itemIconsHolder := container.NewCenter(itemIconsBox)
+		scrollContent := container.NewHBox(displayHolder, itemIconsHolder)
+		contentScroll := container.NewHScroll(scrollContent)
+		contentScroll.SetMinSize(fyne.NewSize(0, treeItemIconSize))
 		removeBtn := &widget.Button{Icon: theme.CancelIcon(), Importance: widget.LowImportance}
-		return container.NewBorder(nil, nil, leftSide, removeBtn, itemIconsScroll)
+		return container.NewBorder(nil, nil, leftSide, removeBtn, contentScroll)
 	}
 	mt.UpdateNode = func(uid string, branch bool, obj fyne.CanvasObject) {
 		node := mt.Macro.Root.GetAction(uid)
@@ -127,11 +118,19 @@ func (mt *MacroTree) setTree() {
 		iconStack := leftSide.Objects[0].(*fyne.Container)
 		iconBg := iconStack.Objects[0].(*canvas.Rectangle)
 		actionIconBtn := iconStack.Objects[1].(*ttwidget.Button)
-		label := leftSide.Objects[1].(*widget.Label)
 		removeButton := c.Objects[2].(*widget.Button)
-		itemIconsScroll := c.Objects[0].(*container.Scroll)
+		contentScroll := c.Objects[0].(*container.Scroll)
+		scrollContent, ok := contentScroll.Content.(*fyne.Container)
+		if !ok || len(scrollContent.Objects) < 2 {
+			return
+		}
+		displayHolder := scrollContent.Objects[0].(*fyne.Container)
+		itemIconsHolder := scrollContent.Objects[1].(*fyne.Container)
+		displayContainer := displayHolder.Objects[0].(*fyne.Container)
+		itemIconsBox := itemIconsHolder.Objects[0].(*fyne.Container)
 
-		label.SetText(node.String())
+		displayContainer.Objects = []fyne.CanvasObject{node.Display()}
+		displayContainer.Refresh()
 		iconBg.FillColor = macroTreeActionColor(node)
 		iconBg.Refresh()
 		actionIconBtn.SetIcon(node.Icon())
@@ -144,7 +143,6 @@ func (mt *MacroTree) setTree() {
 		}
 
 		// For image search actions, show selected item icons; for wait-for-pixel, show target color
-		itemIconsBox := itemIconsScroll.Content.(*fyne.Container)
 		itemIconsBox.Objects = itemIconsBox.Objects[:0]
 		if is, ok := node.(*actions.ImageSearch); ok && len(is.Targets) > 0 {
 			previewSize := fyne.NewSize(treeItemIconSize, treeItemIconSize)
@@ -158,16 +156,12 @@ func (mt *MacroTree) setTree() {
 					}
 				}
 			}
-			itemIconsScroll.Show()
 		} else if wfp, ok := node.(*actions.FindPixel); ok {
 			if c, ok := hexToColor(wfp.TargetColor); ok {
 				swatch := canvas.NewRectangle(c)
 				swatch.SetMinSize(fyne.NewSize(treeItemIconSize, treeItemIconSize))
 				itemIconsBox.Add(swatch)
 			}
-			itemIconsScroll.Show()
-		} else {
-			itemIconsScroll.Hide()
 		}
 		itemIconsBox.Refresh()
 

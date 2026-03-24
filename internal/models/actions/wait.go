@@ -20,7 +20,18 @@ func NewWait(time int) *Wait {
 }
 
 func (a *Wait) String() string {
-	return fmt.Sprintf("Time:%d ms", a.Time)
+	return stringifyParams(a.parameters())
+}
+
+func (a *Wait) Display() fyne.CanvasObject {
+	return displayFromParams(a.parameters())
+}
+
+func (a *Wait) parameters() []actionParam {
+	return []actionParam{
+		newParam("Type", a.GetType()),
+		newParam("Time", fmt.Sprintf("%d ms", a.Time)),
+	}
 }
 
 func (a *Wait) Icon() fyne.Resource {

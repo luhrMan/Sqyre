@@ -101,6 +101,14 @@ func NewFindPixel(name string, searchArea SearchArea, targetColor string, colorT
 }
 
 func (a *FindPixel) String() string {
+	return stringifyParams(a.parameters())
+}
+
+func (a *FindPixel) Display() fyne.CanvasObject {
+	return displayFromParams(a.parameters())
+}
+
+func (a *FindPixel) parameters() []actionParam {
 	areaLabel := a.SearchArea.Name
 	if areaLabel == "" {
 		areaLabel = fmt.Sprintf("(%v,%v)-(%v,%v)", a.SearchArea.LeftX, a.SearchArea.TopY, a.SearchArea.RightX, a.SearchArea.BottomY)
@@ -109,7 +117,14 @@ func (a *FindPixel) String() string {
 	if a.WaitTilFound {
 		mode = fmt.Sprintf("wait %ds", a.WaitTilFoundSeconds)
 	}
-	return fmt.Sprintf("%s --- Find #%s in %s [%s]", a.Name, a.TargetColor, areaLabel, mode)
+	return []actionParam{
+		newParam("Type", a.GetType()),
+		newParam("Name", a.Name),
+		newParam("Color", a.TargetColor),
+		newParam("Tolerance", fmt.Sprintf("%d%%", a.ColorTolerance)),
+		newParam("Search Area", areaLabel),
+		newParam("Wait", mode),
+	}
 }
 
 func (a *FindPixel) Icon() fyne.Resource {

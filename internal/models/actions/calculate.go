@@ -2,7 +2,6 @@ package actions
 
 import (
 	"Sqyre/internal/assets"
-	"fmt"
 
 	"fyne.io/fyne/v2"
 )
@@ -22,7 +21,19 @@ func NewCalculate(expr string, outputVar string) *Calculate {
 }
 
 func (a *Calculate) String() string {
-	return fmt.Sprintf("Calculate: %s -> %s", a.Expression, a.OutputVar)
+	return stringifyParams(a.parameters())
+}
+
+func (a *Calculate) Display() fyne.CanvasObject {
+	return displayFromParams(a.parameters())
+}
+
+func (a *Calculate) parameters() []actionParam {
+	return []actionParam{
+		newParam("Type", a.GetType()),
+		newParam("Expression", a.Expression),
+		newParam("Output", a.OutputVar),
+	}
 }
 
 func (a *Calculate) Icon() fyne.Resource {
