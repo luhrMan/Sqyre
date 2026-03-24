@@ -19,10 +19,9 @@ import (
 	"Sqyre/ui/completionentry"
 
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/widget"
 	"github.com/go-vgo/robotgo"
-	hook "github.com/luhrMan/gohook"
 )
 
 var (
@@ -149,8 +148,147 @@ func SetEditorUi() {
 	setMasksForms()
 	setMasksButtons()
 	setMaskSelectionButtons()
+	setEditorPreviewRefreshButtons()
 	updateProgramSelectorOptions()
 	setupAllDirtyTracking()
+	selectFirstProgramInEditorIfAny()
+}
+
+// setEditorPreviewRefreshButtons wires preview refresh actions from current form entries (or disk/repo for masks/AutoPic).
+func setEditorPreviewRefreshButtons() {
+	et := ui.GetUi().EditorTabs
+
+	if et.PointsTab.PreviewRefreshButton != nil {
+		et.PointsTab.PreviewRefreshButton.OnTapped = func() {
+			w := et.PointsTab.Widgets
+			n := w["Name"].(*widget.Entry).Text
+			xText := custom_widgets.EntryText(w["X"])
+			yText := custom_widgets.EntryText(w["Y"])
+			var xVal, yVal any
+			if x, err := strconv.Atoi(xText); err == nil {
+				xVal = x
+			} else {
+				xVal = xText
+			}
+			if y, err := strconv.Atoi(yText); err == nil {
+				yVal = y
+			} else {
+				yVal = yText
+			}
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						services.LogPanicToFile(r, "Point: Preview refresh (point: "+n+")")
+					}
+				}()
+				ui.GetUi().UpdatePointPreview(&models.Point{Name: n, X: xVal, Y: yVal})
+			}()
+		}
+	}
+
+	if et.SearchAreasTab.PreviewRefreshButton != nil {
+		et.SearchAreasTab.PreviewRefreshButton.OnTapped = func() {
+			w := et.SearchAreasTab.Widgets
+			n := w["Name"].(*widget.Entry).Text
+			lxText := custom_widgets.EntryText(w["LeftX"])
+			tyText := custom_widgets.EntryText(w["TopY"])
+			rxText := custom_widgets.EntryText(w["RightX"])
+			byText := custom_widgets.EntryText(w["BottomY"])
+			var lxVal, tyVal, rxVal, byVal any
+			if v, err := strconv.Atoi(lxText); err == nil {
+				lxVal = v
+			} else {
+				lxVal = lxText
+			}
+			if v, err := strconv.Atoi(tyText); err == nil {
+				tyVal = v
+			} else {
+				tyVal = tyText
+			}
+			if v, err := strconv.Atoi(rxText); err == nil {
+				rxVal = v
+			} else {
+				rxVal = rxText
+			}
+			if v, err := strconv.Atoi(byText); err == nil {
+				byVal = v
+			} else {
+				byVal = byText
+			}
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						services.LogPanicToFile(r, "SearchArea: Preview refresh (area: "+n+")")
+					}
+				}()
+				ui.GetUi().UpdateSearchAreaPreview(&models.SearchArea{
+					Name:    n,
+					LeftX:   lxVal,
+					TopY:    tyVal,
+					RightX:  rxVal,
+					BottomY: byVal,
+				})
+			}()
+		}
+	}
+
+	if et.MasksTab.PreviewRefreshButton != nil {
+		et.MasksTab.PreviewRefreshButton.OnTapped = func() {
+			p := ui.GetUi().ProgramSelector.Text
+			if p == "" {
+				return
+			}
+			n := et.MasksTab.Widgets["Name"].(*widget.Entry).Text
+			if n == "" {
+				return
+			}
+			if ui.HasMaskImage(p, n) {
+				ui.GetUi().UpdateMaskPreview(p, n)
+			} else {
+				ui.GetUi().ClearMaskPreviewImage()
+			}
+		}
+	}
+
+	if et.AutoPicTab.PreviewRefreshButton != nil {
+		et.AutoPicTab.PreviewRefreshButton.OnTapped = func() {
+			sa, ok := et.AutoPicTab.SelectedItem.(*models.SearchArea)
+			if !ok || sa == nil || sa.Name == "" {
+				return
+			}
+			p := ui.GetUi().ProgramSelector.Text
+			program, err := repositories.ProgramRepo().Get(p)
+			if err != nil {
+				log.Printf("Error getting program %s: %v", p, err)
+				return
+			}
+			fresh, err := program.SearchAreaRepo(config.MainMonitorSizeString).Get(sa.Name)
+			toPreview := sa
+			if err == nil && fresh != nil {
+				toPreview = fresh
+			}
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						services.LogPanicToFile(r, "AutoPic: Preview refresh (area: "+toPreview.Name+")")
+					}
+				}()
+				ui.GetUi().UpdateAutoPicPreview(toPreview)
+			}()
+		}
+	}
+}
+
+// selectFirstProgramInEditorIfAny selects the first program (sorted keys) in the list and
+// program selector when the editor UI is first wired up.
+func selectFirstProgramInEditorIfAny() {
+	if len(repositories.ProgramRepo().GetAllKeys()) == 0 {
+		return
+	}
+	et := ui.GetUi().EditorTabs
+	if programList, ok := et.ProgramsTab.Widgets["list"].(*widget.List); ok {
+		programList.Select(0)
+	}
 }
 
 // updateProgramSelectorOptions refreshes the program selector with current programs
@@ -183,21 +321,6 @@ func refreshAllProgramRelatedUI() {
 	if accordion, ok := et.MasksTab.Widgets["Accordion"].(*widget.Accordion); ok {
 		setAccordionMasksLists(accordion)
 	}
-
-	// // Refresh action tab accordions
-	// ats := ui.GetUi().ActionTabs
-	// if ats.ImageSearchItemsAccordion != nil {
-	// 	setAccordionItemsLists(ats.ImageSearchItemsAccordion)
-	// }
-	// if ats.PointsAccordion != nil {
-	// 	setAccordionPointsLists(ats.PointsAccordion)
-	// }
-	// if ats.ImageSearchSAAccordion != nil {
-	// 	setAccordionSearchAreasLists(ats.ImageSearchSAAccordion)
-	// }
-	// if ats.OcrSAAccordion != nil {
-	// 	setAccordionSearchAreasLists(ats.OcrSAAccordion)
-	// }
 }
 
 func setEditorLists() {
@@ -290,7 +413,7 @@ func setEditorForms() {
 
 				if err := program.ItemRepo().Set(v.Name, v); err != nil {
 					log.Printf("Error saving item %s: %v", v.Name, err)
-					dialog.ShowError(errors.New("failed to save item"), ui.GetUi().Window)
+					ui.ShowErrorWithEscape(errors.New("failed to save item"), ui.GetUi().Window)
 					return
 				}
 
@@ -372,7 +495,7 @@ func setEditorForms() {
 				// Check if an item with the new name already exists
 				_, err := program.ItemRepo().Get(n)
 				if err == nil {
-					dialog.ShowError(errors.New("an item with that name already exists"), ui.GetUi().Window)
+					ui.ShowErrorWithEscape(errors.New("an item with that name already exists"), ui.GetUi().Window)
 					return
 				}
 
@@ -400,7 +523,7 @@ func setEditorForms() {
 				// Delete the old item entry since we're changing the name
 				if err := program.ItemRepo().Delete(v.Name); err != nil {
 					log.Printf("Error deleting old item %s: %v", v.Name, err)
-					dialog.ShowError(errors.New("failed to update item name"), ui.GetUi().Window)
+					ui.ShowErrorWithEscape(errors.New("failed to update item name"), ui.GetUi().Window)
 					return
 				}
 			}
@@ -413,7 +536,7 @@ func setEditorForms() {
 			// Save the item with the new name
 			if err := program.ItemRepo().Set(v.Name, v); err != nil {
 				log.Printf("Error saving item %s: %v", v.Name, err)
-				dialog.ShowError(errors.New("failed to save item"), ui.GetUi().Window)
+				ui.ShowErrorWithEscape(errors.New("failed to save item"), ui.GetUi().Window)
 				return
 			}
 
@@ -465,14 +588,14 @@ func setEditorForms() {
 
 			if err := program.PointRepo(config.MainMonitorSizeString).Set(v.Name, v); err != nil {
 				log.Printf("Error saving point %s: %v", v.Name, err)
-				dialog.ShowError(errors.New("failed to save point"), ui.GetUi().Window)
+				ui.ShowErrorWithEscape(errors.New("failed to save point"), ui.GetUi().Window)
 				return
 			}
 
 			if oldkey != v.Name {
 				if err := program.PointRepo(config.MainMonitorSizeString).Delete(oldkey); err != nil {
 					log.Printf("Error deleting point %s: %v", oldkey, err)
-					dialog.ShowError(errors.New("failed to delete point"), ui.GetUi().Window)
+					ui.ShowErrorWithEscape(errors.New("failed to delete point"), ui.GetUi().Window)
 					return
 				}
 			}
@@ -502,119 +625,136 @@ func setEditorForms() {
 	// Set up record button handler for Points tab
 	if recordButton, ok := et.PointsTab.Widgets["recordButton"].(*widget.Button); ok {
 		recordButton.OnTapped = func() {
-			dismissOverlay := ui.ShowRecordingOverlay(
-				"Record Point Coordinates",
-				"Left click anywhere to record X and Y coordinates",
-				"Right click to cancel",
-			)
-
-			services.GoSafe(func() {
-				hook.Register(hook.MouseDown, []string{}, func(e hook.Event) {
-					switch e.Button {
-					case hook.MouseMap["left"]:
-						x, y := robotgo.Location()
-						fyne.DoAndWait(func() {
+			var dismissOverlay func()
+			dismissOverlay = ui.ShowRecordingOverlay(
+				nil,
+				func(ev *desktop.MouseEvent) {
+					fyne.DoAndWait(func() {
+						switch ev.Button {
+						case desktop.MouseButtonPrimary:
+							x, y := robotgo.Location()
 							custom_widgets.SetEntryText(et.PointsTab.Widgets["X"], strconv.Itoa(x))
 							custom_widgets.SetEntryText(et.PointsTab.Widgets["Y"], strconv.Itoa(y))
 							dismissOverlay()
-						})
-					default:
-						fyne.DoAndWait(func() {
+							if v, ok := et.PointsTab.SelectedItem.(*models.Point); ok {
+								func() {
+									defer func() {
+										if r := recover(); r != nil {
+											services.LogPanicToFile(r, "Point: Preview update after record (point: "+v.Name+")")
+										}
+									}()
+									ui.GetUi().UpdatePointPreview(&models.Point{Name: v.Name, X: x, Y: y})
+								}()
+							}
+						default:
 							dismissOverlay()
-						})
-					}
-					go hook.Unregister(hook.MouseDown, []string{})
-				})
-			})
+						}
+					})
+				},
+			)
 		}
 	}
 
 	// Set up record button handler for Search Areas tab (two clicks: top-left, then bottom-right)
 	if saRecordButton, ok := et.SearchAreasTab.Widgets["recordButton"].(*widget.Button); ok {
 		saRecordButton.OnTapped = func() {
-			dismissOverlay, setSelectionRect := ui.ShowSearchAreaRecordingOverlay(
-				"Record Search Area",
-				"First click: top-left corner of the search area.",
-				"Second click: bottom-right corner. Right click to cancel.",
-			)
-
-		services.GoSafe(func() {
-			var mu sync.Mutex
-			leftX, topY := 0, 0
-			firstClickDone := false
 			stopPoll := make(chan struct{})
 			var stopOnce sync.Once
 			stopPolling := func() { stopOnce.Do(func() { close(stopPoll) }) }
 
-			services.GoSafe(func() {
-				for {
-					select {
-					case <-stopPoll:
-						return
-					default:
+			var mu sync.Mutex
+			leftX, topY := 0, 0
+			firstClickDone := false
+
+			var dismissOverlay func()
+			var setSelectionRect func(leftX, topY, rightX, bottomY int)
+			dismissOverlay, setSelectionRect = ui.ShowSearchAreaRecordingOverlay(
+				func() {
+					stopPolling()
+				},
+				func(ev *desktop.MouseEvent) {
+					fyne.DoAndWait(func() {
+						if ev.Button != desktop.MouseButtonPrimary {
+							dismissOverlay()
+							return
+						}
+						adjX, adjY := robotgo.Location()
 						mu.Lock()
-						done := firstClickDone
+						if !firstClickDone {
+							leftX, topY = adjX, adjY
+							firstClickDone = true
+							mu.Unlock()
+							return
+						}
+						rightX, bottomY := adjX, adjY
 						lx, ty := leftX, topY
 						mu.Unlock()
-						if !done {
-							setSelectionRect(0, 0, 0, 0)
-						} else {
-							x, y := robotgo.Location()
-							rx, by := x, y
-							if lx > rx {
-								lx, rx = rx, lx
+						if lx > rightX {
+							lx, rightX = rightX, lx
+						}
+						if ty > bottomY {
+							ty, bottomY = bottomY, ty
+						}
+						leftX, topY = lx, ty
+						stopPolling()
+						custom_widgets.SetEntryText(et.SearchAreasTab.Widgets["LeftX"], strconv.Itoa(leftX))
+						custom_widgets.SetEntryText(et.SearchAreasTab.Widgets["TopY"], strconv.Itoa(topY))
+						custom_widgets.SetEntryText(et.SearchAreasTab.Widgets["RightX"], strconv.Itoa(rightX))
+						custom_widgets.SetEntryText(et.SearchAreasTab.Widgets["BottomY"], strconv.Itoa(bottomY))
+						dismissOverlay()
+						if v, ok := et.SearchAreasTab.SelectedItem.(*models.SearchArea); ok {
+							func() {
+								defer func() {
+									if r := recover(); r != nil {
+										services.LogPanicToFile(r, "SearchArea: Preview update after record (area: "+v.Name+")")
+									}
+								}()
+								ui.GetUi().UpdateSearchAreaPreview(&models.SearchArea{
+									Name:    v.Name,
+									LeftX:   leftX,
+									TopY:    topY,
+									RightX:  rightX,
+									BottomY: bottomY,
+								})
+							}()
+						}
+					})
+				},
+			)
+
+			services.GoSafe(func() {
+				services.GoSafe(func() {
+					for {
+						select {
+						case <-stopPoll:
+							return
+						default:
+							mu.Lock()
+							done := firstClickDone
+							lx, ty := leftX, topY
+							mu.Unlock()
+							if !done {
+								setSelectionRect(0, 0, 0, 0)
+							} else {
+								x, y := robotgo.Location()
+								rx, by := x, y
+								if lx > rx {
+									lx, rx = rx, lx
+								}
+								if ty > by {
+									ty, by = by, ty
+								}
+								setSelectionRect(lx, ty, rx, by)
 							}
-							if ty > by {
-								ty, by = by, ty
-							}
-							setSelectionRect(lx, ty, rx, by)
+						}
+						select {
+						case <-stopPoll:
+							return
+						case <-time.After(50 * time.Millisecond):
 						}
 					}
-					select {
-					case <-stopPoll:
-						return
-					case <-time.After(50 * time.Millisecond):
-					}
-				}
-			})
-
-			hook.Register(hook.MouseDown, []string{}, func(e hook.Event) {
-				if e.Button != hook.MouseMap["left"] {
-					stopPolling()
-					fyne.DoAndWait(func() { dismissOverlay() })
-					go hook.Unregister(hook.MouseDown, []string{})
-					return
-				}
-				x, y := robotgo.Location()
-				adjX, adjY := x, y
-				mu.Lock()
-				if !firstClickDone {
-					leftX, topY = adjX, adjY
-					firstClickDone = true
-					mu.Unlock()
-					return
-				}
-				rightX, bottomY := adjX, adjY
-				lx, ty := leftX, topY
-				mu.Unlock()
-				if lx > rightX {
-					lx, rightX = rightX, lx
-				}
-				if ty > bottomY {
-					ty, bottomY = bottomY, ty
-				}
-				leftX, topY = lx, ty
-				stopPolling()
-		fyne.DoAndWait(func() {
-			custom_widgets.SetEntryText(et.SearchAreasTab.Widgets["LeftX"], strconv.Itoa(leftX))
-			custom_widgets.SetEntryText(et.SearchAreasTab.Widgets["TopY"], strconv.Itoa(topY))
-			custom_widgets.SetEntryText(et.SearchAreasTab.Widgets["RightX"], strconv.Itoa(rightX))
-			custom_widgets.SetEntryText(et.SearchAreasTab.Widgets["BottomY"], strconv.Itoa(bottomY))
-					dismissOverlay()
 				})
-				go hook.Unregister(hook.MouseDown, []string{})
 			})
-		})
 		}
 	}
 
@@ -662,13 +802,13 @@ func setEditorForms() {
 
 			if err := program.SearchAreaRepo(config.MainMonitorSizeString).Set(v.Name, v); err != nil {
 				log.Printf("Error saving search area %s: %v", v.Name, err)
-				dialog.ShowError(errors.New("failed to save search area"), ui.GetUi().Window)
+				ui.ShowErrorWithEscape(errors.New("failed to save search area"), ui.GetUi().Window)
 				return
 			}
 			if oldkey != v.Name {
 				if err := program.SearchAreaRepo(config.MainMonitorSizeString).Delete(oldkey); err != nil {
 					log.Printf("Error deleting search area %s: %v", oldkey, err)
-					dialog.ShowError(errors.New("failed to delete search area"), ui.GetUi().Window)
+					ui.ShowErrorWithEscape(errors.New("failed to delete search area"), ui.GetUi().Window)
 					return
 				}
 			}
@@ -710,7 +850,7 @@ func setEditorButtons() {
 				pro = repositories.ProgramRepo().New()
 				pro.Name = pn
 				if err := repositories.ProgramRepo().Set(pro.Name, pro); err != nil {
-					dialog.ShowError(err, ui.GetUi().Window)
+					ui.ShowErrorWithEscape(err, ui.GetUi().Window)
 					return nil
 				}
 				log.Println("editor binder: new program created", pn)
@@ -744,7 +884,7 @@ func setEditorButtons() {
 			// Check if item already exists
 			_, err := pro.ItemRepo().Get(n)
 			if err == nil {
-				dialog.ShowError(errors.New("an item with that name already exists"), ui.GetUi().Window)
+				ui.ShowErrorWithEscape(errors.New("an item with that name already exists"), ui.GetUi().Window)
 				return
 			}
 			// Create new item using repository New() function
@@ -753,7 +893,7 @@ func setEditorButtons() {
 			i.GridSize = [2]int{x, y}
 			i.StackMax = sm
 			if err := pro.ItemRepo().Set(i.Name, i); err != nil {
-				dialog.ShowError(err, ui.GetUi().Window)
+				ui.ShowErrorWithEscape(err, ui.GetUi().Window)
 				return
 			}
 			// Set the selected item so tag operations work correctly
@@ -794,7 +934,7 @@ func setEditorButtons() {
 
 			err := pro.PointRepo(config.MainMonitorSizeString).Set(p.Name, p)
 			if err != nil {
-				dialog.ShowError(err, ui.GetUi().Window)
+				ui.ShowErrorWithEscape(err, ui.GetUi().Window)
 				return
 			}
 			ui.GetUi().EditorTabs.PointsTab.SelectedItem = p
@@ -823,7 +963,7 @@ func setEditorButtons() {
 
 			err := pro.MaskRepo().Set(m.Name, m)
 			if err != nil {
-				dialog.ShowError(err, ui.GetUi().Window)
+				ui.ShowErrorWithEscape(err, ui.GetUi().Window)
 				return
 			}
 			ui.GetUi().EditorTabs.MasksTab.SelectedItem = m
@@ -874,7 +1014,7 @@ func setEditorButtons() {
 
 			err := pro.SearchAreaRepo(config.MainMonitorSizeString).Set(sa.Name, sa)
 			if err != nil {
-				dialog.ShowError(err, ui.GetUi().Window)
+				ui.ShowErrorWithEscape(err, ui.GetUi().Window)
 				return
 			}
 			// Select the newly added search area so it can be edited with Update

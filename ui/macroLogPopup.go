@@ -69,6 +69,7 @@ func ShowMacroLogPopup(macroName string) {
 	canvasSize := u.Window.Canvas().Size()
 	popupSize := fyne.NewSize(canvasSize.Width*0.75, canvasSize.Height*0.75)
 	popup.Resize(popupSize)
+	AddDialogEscapeClose(popup, u.Window)
 
 	macroLogPopup = popup
 
@@ -104,7 +105,7 @@ func init() {
 		fyne.Do(func() {
 			u := GetUi()
 			if u != nil && u.Window != nil {
-				dialog.ShowError(errors.New(message), u.Window)
+				ShowErrorWithEscape(errors.New(message), u.Window)
 			}
 		})
 	}
