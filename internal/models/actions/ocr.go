@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"Sqyre/internal/assets"
-	"Sqyre/internal/config"
 
 	"fyne.io/fyne/v2"
 )
@@ -42,11 +41,25 @@ func NewOcr(name string, subActions []ActionInterface, target string, searchbox 
 }
 
 func (a *Ocr) String() string {
+	return stringifyParams(a.parameters())
+}
+
+func (a *Ocr) Display() fyne.CanvasObject {
+	return displayFromParams(a.parameters())
+}
+
+func (a *Ocr) parameters() []actionParam {
 	mode := "instant"
 	if a.WaitTilFound {
 		mode = fmt.Sprintf("wait %d seconds or until found", a.WaitTilFoundSeconds)
 	}
-	return fmt.Sprintf("Name: %s %s Target Text: %s %s Search Area: %s %s Wait: %s", a.Name, config.DescriptionDelimiter, a.Target, config.DescriptionDelimiter, a.SearchArea.Name, config.DescriptionDelimiter, mode)
+	return []actionParam{
+		newParam("Type", a.GetType()),
+		newParam("Name", a.Name),
+		newParam("Target Text", a.Target),
+		newParam("Search Area", a.SearchArea.Name),
+		newParam("Wait", mode),
+	}
 }
 
 func (a *Ocr) Icon() fyne.Resource {

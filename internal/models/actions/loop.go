@@ -1,9 +1,6 @@
 package actions
 
 import (
-	"Sqyre/internal/config"
-	"fmt"
-
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/theme"
 )
@@ -34,7 +31,19 @@ func NewLoop(count any, name string, subActions []ActionInterface) *Loop {
 }
 
 func (a *Loop) String() string {
-	return fmt.Sprintf("Name: %s %s iterations: %v", a.Name, config.DescriptionDelimiter, a.Count)
+	return stringifyParams(a.parameters())
+}
+
+func (a *Loop) Display() fyne.CanvasObject {
+	return displayFromParams(a.parameters())
+}
+
+func (a *Loop) parameters() []actionParam {
+	return []actionParam{
+		newParam("Type", a.GetType()),
+		newParam("Name", a.Name),
+		newParam("Iterations", a.Count),
+	}
 }
 
 func (a *Loop) Icon() fyne.Resource {

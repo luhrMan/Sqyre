@@ -5,7 +5,6 @@ import (
 	"slices"
 
 	"Sqyre/internal/assets"
-	"Sqyre/internal/config"
 
 	"fyne.io/fyne/v2"
 )
@@ -40,11 +39,27 @@ func NewImageSearch(name string, subActions []ActionInterface, targets []string,
 	}
 }
 func (a *ImageSearch) String() string {
+	return stringifyParams(a.parameters())
+}
+
+func (a *ImageSearch) Display() fyne.CanvasObject {
+	return displayFromParams(a.parameters())
+}
+
+func (a *ImageSearch) parameters() []actionParam {
 	mode := "instant"
 	if a.WaitTilFound {
 		mode = fmt.Sprintf("wait %d seconds or until found", a.WaitTilFoundSeconds)
 	}
-	return fmt.Sprintf("Name: %s %s %d items %s Search Area:%s %s Wait: %s", a.Name, config.DescriptionDelimiter, len(a.Targets), config.DescriptionDelimiter, a.SearchArea.Name, config.DescriptionDelimiter, mode)
+	return []actionParam{
+		newParam("Type", a.GetType()),
+		newParam("Name", a.Name),
+		newParam("Items", len(a.Targets)),
+		newParam("Search Area", a.SearchArea.Name),
+		newParam("Wait", mode),
+		newParam("Tolerance", a.Tolerance),
+		newParam("Blur", a.Blur),
+	}
 }
 
 func (a *ImageSearch) Icon() fyne.Resource {
