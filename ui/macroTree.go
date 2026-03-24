@@ -5,6 +5,7 @@ import (
 	"Sqyre/internal/models"
 	"Sqyre/internal/models/actions"
 	"Sqyre/internal/models/serialize"
+	"image/color"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -25,6 +26,23 @@ type MacroTree struct {
 	Macro              *models.Macro
 	SelectedNode       string
 	OnOpenActionDialog OnOpenActionDialogFunc
+}
+
+func macroTreeActionColor(action actions.ActionInterface) color.Color {
+	switch action.(type) {
+	case *actions.Move, *actions.Click, *actions.Key, *actions.Type:
+		return actionPastelColor("", "Mouse & Keyboard")
+	case *actions.ImageSearch, *actions.Ocr, *actions.FindPixel:
+		return actionPastelColor("", "Detection")
+	case *actions.SetVariable, *actions.Calculate, *actions.DataList, *actions.SaveVariable:
+		return actionPastelColor("", "Variables")
+	case *actions.Wait:
+		return actionPastelColor("Wait", "Miscellaneous")
+	case *actions.FocusWindow, *actions.RunMacro, *actions.Loop:
+		return actionPastelColor("", "Miscellaneous")
+	default:
+		return actionPastelColor("", "")
+	}
 }
 
 func NewMacroTree(m *models.Macro) *MacroTree {
@@ -88,8 +106,13 @@ func (mt *MacroTree) setTree() {
 		itemIconsScroll.SetMinSize(fyne.NewSize(0, treeItemIconSize))
 		actionIconBtn := ttwidget.NewButtonWithIcon("", theme.ErrorIcon(), nil)
 		actionIconBtn.Importance = widget.LowImportance
+		iconBg := canvas.NewRectangle(actionPastelColor("", ""))
+		iconBg.CornerRadius = 6
+		iconBg.StrokeColor = theme.ShadowColor()
+		iconBg.StrokeWidth = 1
+		iconStack := container.NewStack(iconBg, actionIconBtn)
 		leftSide := container.NewHBox(
-			actionIconBtn,
+			iconStack,
 			widget.NewLabel("Template"),
 		)
 		removeBtn := &widget.Button{Icon: theme.CancelIcon(), Importance: widget.LowImportance}
@@ -101,15 +124,19 @@ func (mt *MacroTree) setTree() {
 		c := obj.(*fyne.Container)
 		// Border with nil top/bottom: Objects = [left, right, center]
 		leftSide := c.Objects[1].(*fyne.Container)
-		actionIconBtn := leftSide.Objects[0].(*ttwidget.Button)
+		iconStack := leftSide.Objects[0].(*fyne.Container)
+		iconBg := iconStack.Objects[0].(*canvas.Rectangle)
+		actionIconBtn := iconStack.Objects[1].(*ttwidget.Button)
 		label := leftSide.Objects[1].(*widget.Label)
 		removeButton := c.Objects[2].(*widget.Button)
 		itemIconsScroll := c.Objects[0].(*container.Scroll)
 
 		label.SetText(node.String())
+		iconBg.FillColor = macroTreeActionColor(node)
+		iconBg.Refresh()
 		actionIconBtn.SetIcon(node.Icon())
 		actionIconBtn.SetToolTip(node.GetType())
-		actionIconBtn.Importance = widget.MediumImportance
+		actionIconBtn.Importance = widget.LowImportance
 		actionIconBtn.OnTapped = nil
 		if mt.OnOpenActionDialog != nil {
 			action := node
