@@ -1,6 +1,7 @@
 package actions
 
 import (
+	"Sqyre/internal/config"
 	"fmt"
 
 	"fyne.io/fyne/v2"
@@ -33,7 +34,7 @@ func NewLoop(count any, name string, subActions []ActionInterface) *Loop {
 }
 
 func (a *Loop) String() string {
-	return fmt.Sprintf("%s | iterations: %v", a.Name, a.Count)
+	return fmt.Sprintf("Name: %s %s iterations: %v", a.Name, config.DescriptionDelimiter, a.Count)
 }
 
 func (a *Loop) Icon() fyne.Resource {

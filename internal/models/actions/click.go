@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"Sqyre/internal/assets"
+	"Sqyre/internal/config"
 
 	"fyne.io/fyne/v2"
 )
@@ -23,7 +24,7 @@ func NewClick(button bool, state bool) *Click {
 }
 
 func (a *Click) String() string {
-	return fmt.Sprintf("%s click %s", LeftOrRight(a.Button), UpOrDown(a.State))
+	return fmt.Sprintf("button: %s %s state: %s", LeftOrRight(a.Button), config.DescriptionDelimiter, UpOrDown(a.State))
 }
 
 func LeftOrRight(b bool) string {

@@ -1,6 +1,7 @@
 package actions
 
 import (
+	"Sqyre/internal/config"
 	"fmt"
 
 	"fyne.io/fyne/v2"
@@ -22,7 +23,7 @@ func NewKey(key string, state bool) *Key {
 }
 
 func (a *Key) String() string {
-	return fmt.Sprintf("%s %s ", a.Key, UpOrDown(a.State))
+	return fmt.Sprintf("Key: %s %s State: %s", a.Key, config.DescriptionDelimiter, UpOrDown(a.State))
 }
 
 func (a *Key) Icon() fyne.Resource {

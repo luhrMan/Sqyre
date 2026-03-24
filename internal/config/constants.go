@@ -43,15 +43,16 @@ const (
 	PrefSaveMetaImages  = "save_meta_images"
 	PrefEnabledMonitors = "enabled_monitors" // comma-separated indices, e.g. "0,2"; empty = all (must match screen package key)
 	PrefWindowX         = "window_x"
-	PrefWindowY        = "window_y"
-	PrefWindowWidth    = "window_width"
-	PrefWindowHeight   = "window_height"
+	PrefWindowY         = "window_y"
+	PrefWindowWidth     = "window_width"
+	PrefWindowHeight    = "window_height"
 
 	//since I have refactored the code to account for multiple programs at once,
 	// I need to append the program name to the program properties names,
 	// this is the delimiter between the program name and the property name
 	// e.g. dark and darker~Health potion (tilde used: Windows disallows "|" in filenames)
-	ProgramDelimiter = "~"
+	ProgramDelimiter     = "~"
+	DescriptionDelimiter = " / "
 )
 
 // GetIconsPath returns the path to the icons directory in the user's home directory.
