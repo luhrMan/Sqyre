@@ -55,7 +55,7 @@ func (a *ImageSearch) parameters() []actionParam {
 		newParam("Type", a.GetType()),
 		newParam("Name", a.Name),
 		newParam("Items", len(a.Targets)),
-		newParam("Search Area", a.SearchArea.Name),
+		newParam("Search Area", formatSearchAreaLabel(a.SearchArea)),
 		newParam("Wait", mode),
 		newParam("Tolerance", a.Tolerance),
 		newParam("Blur", a.Blur),
