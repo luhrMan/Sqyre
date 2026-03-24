@@ -3,6 +3,8 @@ package custom_widgets
 import (
 	"fmt"
 	"image/color"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -45,6 +47,9 @@ func (halfHeightLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
 
 // Incrementer is a compact widget that displays an integer value with two stacked
 // buttons (up/down) to increment or decrement by Step.
+//
+// Value display is either a Label (NewIncrementer) or an Entry (NewIncrementerWithStepEntry),
+// never both.
 type Incrementer struct {
 	widget.BaseWidget
 
@@ -54,7 +59,11 @@ type Incrementer struct {
 
 	OnChanged func(int)
 
-	label   *widget.Label
+	label      *widget.Label
+	valueEntry *widget.Entry // when non-nil, replaces label as the value display (editable)
+	// suppressValueEntry avoids valueEntry OnChanged when SetText is driven by the incrementer.
+	suppressValueEntry bool
+
 	upBtn   *holdRepeatButton
 	downBtn *holdRepeatButton
 }
@@ -204,8 +213,68 @@ func NewIncrementer(value int, step int, min, max *int) *Incrementer {
 	inc.label = widget.NewLabel("")
 	inc.upBtn = newHoldRepeatButton(theme.MenuDropUpIcon(), func() { inc.adjust(1) })
 	inc.downBtn = newHoldRepeatButton(theme.MenuDropDownIcon(), func() { inc.adjust(-1) })
-	inc.updateLabel()
+	inc.syncValueDisplay()
 	return inc
+}
+
+// NewIncrementerWithEntry creates an incrementer with an editable value entry (no label).
+func NewIncrementerWithEntry(value int, step int, min, max *int) *Incrementer {
+	if step <= 0 {
+		step = 1
+	}
+	inc := &Incrementer{Value: value, Step: step, Min: min, Max: max}
+	inc.ExtendBaseWidget(inc)
+	ve := widget.NewEntry()
+	ve.SetText(strconv.Itoa(value))
+	inc.valueEntry = ve
+	inc.upBtn = newHoldRepeatButton(theme.MenuDropUpIcon(), func() { inc.adjust(1) })
+	inc.downBtn = newHoldRepeatButton(theme.MenuDropDownIcon(), func() { inc.adjust(-1) })
+
+	inc.valueEntry.OnChanged = func(s string) {
+		if inc.suppressValueEntry {
+			return
+		}
+		v, err := strconv.Atoi(strings.TrimSpace(s))
+		if err != nil {
+			return
+		}
+		if inc.Min != nil && v < *inc.Min {
+			v = *inc.Min
+			inc.setValueEntryText(strconv.Itoa(v))
+			inc.Value = v
+			if inc.OnChanged != nil {
+				inc.OnChanged(inc.Value)
+			}
+			return
+		}
+		if inc.Max != nil && v > *inc.Max {
+			v = *inc.Max
+			inc.setValueEntryText(strconv.Itoa(v))
+			inc.Value = v
+			if inc.OnChanged != nil {
+				inc.OnChanged(inc.Value)
+			}
+			return
+		}
+		if v == inc.Value {
+			return
+		}
+		inc.Value = v
+		if inc.OnChanged != nil {
+			inc.OnChanged(inc.Value)
+		}
+	}
+
+	return inc
+}
+
+func (inc *Incrementer) setValueEntryText(s string) {
+	if inc.valueEntry == nil {
+		return
+	}
+	inc.suppressValueEntry = true
+	inc.valueEntry.SetText(s)
+	inc.suppressValueEntry = false
 }
 
 func (inc *Incrementer) adjust(delta int) {
@@ -213,7 +282,13 @@ func (inc *Incrementer) adjust(delta int) {
 	if step <= 0 {
 		step = 1
 	}
-	newVal := inc.Value + delta*step
+	base := inc.Value
+	if inc.valueEntry != nil {
+		if v, err := strconv.Atoi(strings.TrimSpace(inc.valueEntry.Text)); err == nil {
+			base = v
+		}
+	}
+	newVal := base + delta*step
 	if inc.Min != nil && newVal < *inc.Min {
 		newVal = *inc.Min
 	}
@@ -224,15 +299,21 @@ func (inc *Incrementer) adjust(delta int) {
 		return
 	}
 	inc.Value = newVal
-	inc.updateLabel()
+	inc.syncValueDisplay()
 	if inc.OnChanged != nil {
 		inc.OnChanged(inc.Value)
 	}
 	inc.Refresh()
 }
 
-func (inc *Incrementer) updateLabel() {
-	inc.label.SetText(fmt.Sprintf("%d", inc.Value))
+func (inc *Incrementer) syncValueDisplay() {
+	if inc.valueEntry != nil {
+		inc.setValueEntryText(strconv.Itoa(inc.Value))
+		return
+	}
+	if inc.label != nil {
+		inc.label.SetText(fmt.Sprintf("%d", inc.Value))
+	}
 }
 
 // SetValue sets the value and refreshes the display. It clamps to Min/Max if set.
@@ -244,11 +325,12 @@ func (inc *Incrementer) SetValue(v int) {
 		v = *inc.Max
 	}
 	inc.Value = v
-	inc.updateLabel()
+	inc.syncValueDisplay()
 	inc.Refresh()
 }
 
-// CreateRenderer builds the layout: value label on the left, two stacked buttons on the right (at half height).
+// CreateRenderer builds the layout: value label or value entry on the left,
+// with two stacked buttons on the right (at half height).
 func (inc *Incrementer) CreateRenderer() fyne.WidgetRenderer {
 	inc.upBtn.Importance = widget.LowImportance
 	inc.downBtn.Importance = widget.LowImportance
@@ -257,7 +339,14 @@ func (inc *Incrementer) CreateRenderer() fyne.WidgetRenderer {
 		borderedIncrementButton(inc.downBtn),
 	)
 	buttonsHalf := container.New(&halfHeightLayout{}, buttons)
-	content := container.NewBorder(nil, nil, nil, buttonsHalf, inc.label)
+	var right fyne.CanvasObject = buttonsHalf
+	var center fyne.CanvasObject
+	if inc.valueEntry != nil {
+		center = inc.valueEntry
+	} else {
+		center = inc.label
+	}
+	content := container.NewBorder(nil, nil, nil, right, center)
 	return widget.NewSimpleRenderer(content)
 }
 
@@ -265,6 +354,9 @@ func (inc *Incrementer) CreateRenderer() fyne.WidgetRenderer {
 func (inc *Incrementer) Disable() {
 	inc.upBtn.Disable()
 	inc.downBtn.Disable()
+	if inc.valueEntry != nil {
+		inc.valueEntry.Disable()
+	}
 	inc.Refresh()
 }
 
@@ -272,6 +364,9 @@ func (inc *Incrementer) Disable() {
 func (inc *Incrementer) Enable() {
 	inc.upBtn.Enable()
 	inc.downBtn.Enable()
+	if inc.valueEntry != nil {
+		inc.valueEntry.Enable()
+	}
 	inc.Refresh()
 }
 

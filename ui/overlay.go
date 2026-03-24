@@ -10,10 +10,37 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 	"github.com/go-vgo/robotgo"
 )
+
+// recordingMouseLayer sits on top of the overlay stack and receives mouse clicks
+// via Fyne (overlay window has focus) instead of a global low-level hook.
+type recordingMouseLayer struct {
+	widget.BaseWidget
+	onMouseDown func(*desktop.MouseEvent)
+}
+
+func newRecordingMouseLayer(onMouseDown func(*desktop.MouseEvent)) *recordingMouseLayer {
+	r := &recordingMouseLayer{onMouseDown: onMouseDown}
+	r.ExtendBaseWidget(r)
+	return r
+}
+
+func (r *recordingMouseLayer) MouseDown(ev *desktop.MouseEvent) {
+	if r.onMouseDown != nil {
+		r.onMouseDown(ev)
+	}
+}
+
+func (r *recordingMouseLayer) MouseUp(*desktop.MouseEvent) {}
+
+func (r *recordingMouseLayer) CreateRenderer() fyne.WidgetRenderer {
+	rect := canvas.NewRectangle(color.Transparent)
+	return widget.NewSimpleRenderer(rect)
+}
 
 // selectionRectLayout positions a single child (the selection rectangle) at
 // (leftX, topY) with size (rightX-leftX, bottomY-topY) in Fyne canvas units.
@@ -55,7 +82,7 @@ func (s *selectionRectLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
 // desktop coordinates (same space as robotgo.Location), then creates a
 // full-screen overlay on that monitor. setSelectionRect expects absolute
 // coordinates from the caller and maps them to overlay-local space.
-func showFullScreenOverlay(lines []string, withSelectionRect bool) (dismiss func(), setSelectionRect func(leftX, topY, rightX, bottomY int)) {
+func showFullScreenOverlay(withSelectionRect bool, onClosed func(), onMouseDown func(*desktop.MouseEvent)) (dismiss func(), setSelectionRect func(leftX, topY, rightX, bottomY int)) {
 	app := fyne.CurrentApp()
 	if app == nil {
 		return func() {}, func(int, int, int, int) {}
@@ -116,33 +143,34 @@ func showFullScreenOverlay(lines []string, withSelectionRect bool) (dismiss func
 		selectionLayer = layout.NewSpacer()
 	}
 
-	var labelObjects []fyne.CanvasObject
-	for _, line := range lines {
-		if line == "" {
-			continue
-		}
-		lbl := widget.NewLabel(line)
-		lbl.Alignment = fyne.TextAlignCenter
-		labelObjects = append(labelObjects, lbl)
+	dismiss = func() {
+		fyne.Do(func() {
+			win.Close()
+		})
 	}
-
-	content := container.NewVBox(labelObjects...)
-	centered := container.NewCenter(content)
-
-	win.SetContent(container.NewMax(bg, selectionLayer, centered))
+	if onClosed != nil {
+		win.SetOnClosed(onClosed)
+	}
+	var stack fyne.CanvasObject
+	if onMouseDown != nil {
+		stack = container.NewMax(bg, selectionLayer, newRecordingMouseLayer(onMouseDown))
+	} else {
+		stack = container.NewMax(bg, selectionLayer)
+	}
+	win.SetContent(stack)
+	win.Canvas().SetOnTypedKey(func(e *fyne.KeyEvent) {
+		if e.Name == fyne.KeyEscape {
+			dismiss()
+		}
+	})
 	win.Show()
+	win.RequestFocus()
 	// Fyne sizes are canvas (logical) units; robotgo uses physical screen pixels.
 	if bgImage != nil {
 		lw := screenPxToCanvas(win, w)
 		lh := screenPxToCanvas(win, h)
 		bgImage.SetMinSize(fyne.NewSize(lw, lh))
 		bgImage.Refresh()
-	}
-
-	dismiss = func() {
-		fyne.Do(func() {
-			win.Close()
-		})
 	}
 
 	if withSelectionRect && selLayout != nil && selectionLayerRefresher != nil {
@@ -163,18 +191,11 @@ func showFullScreenOverlay(lines []string, withSelectionRect bool) (dismiss func
 	return dismiss, setSelectionRect
 }
 
-// ShowRecordingOverlay displays a full-screen overlay with standard
-// recording instructions and returns a dismiss function.
-func ShowRecordingOverlay(title, line1, line2 string) func() {
-	lines := []string{title, "", line1, line2}
-	dismiss, _ := showFullScreenOverlay(lines, false)
+func ShowRecordingOverlay(onClosed func(), onMouseDown func(*desktop.MouseEvent)) func() {
+	dismiss, _ := showFullScreenOverlay(false, onClosed, onMouseDown)
 	return dismiss
 }
 
-// ShowSearchAreaRecordingOverlay is like ShowRecordingOverlay but also returns
-// setSelectionRect(leftX, topY, rightX, bottomY) to draw a live selection
-// rectangle from the first click to the current cursor.
-func ShowSearchAreaRecordingOverlay(title, line1, line2 string) (dismiss func(), setSelectionRect func(leftX, topY, rightX, bottomY int)) {
-	lines := []string{title, "", line1, line2}
-	return showFullScreenOverlay(lines, true)
+func ShowSearchAreaRecordingOverlay(onClosed func(), onMouseDown func(*desktop.MouseEvent)) (dismiss func(), setSelectionRect func(leftX, topY, rightX, bottomY int)) {
+	return showFullScreenOverlay(true, onClosed, onMouseDown)
 }
