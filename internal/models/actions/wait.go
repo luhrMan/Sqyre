@@ -20,7 +20,7 @@ func NewWait(time int) *Wait {
 }
 
 func (a *Wait) String() string {
-	return fmt.Sprintf("%d ms", a.Time)
+	return fmt.Sprintf("Time:%d ms", a.Time)
 }
 
 func (a *Wait) Icon() fyne.Resource {

@@ -154,7 +154,6 @@ func buildProgramListAccordionWithSearchbar(cfg programListAccordionConfig) (*wi
 				if id >= 0 && id < len(filtered) {
 					cfg.OnSelect(prog, filtered[id])
 				}
-				list.Unselect(id)
 			}
 			acc.Append(widget.NewAccordionItem(fmt.Sprintf("%s (%d)", prog.Name, len(filtered)), list))
 		}
@@ -463,12 +462,12 @@ func showCustomActionDialog(u *Ui, action actions.ActionInterface, content fyne.
 	if u != nil && u.MainUi != nil {
 		u.MainUi.ActionDialog = d
 	}
-	AddDialogEscapeClose(d, u.Window)
 	d.SetOnClosed(func() {
 		if u != nil && u.MainUi != nil && u.MainUi.ActionDialog == d {
 			u.MainUi.ActionDialog = nil
 		}
 	})
+	AddDialogEscapeClose(d, u.Window)
 	parentSize := u.Window.Canvas().Size()
 	width := parentSize.Width - 200
 	height := parentSize.Height - 200

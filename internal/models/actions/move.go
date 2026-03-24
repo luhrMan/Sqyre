@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"Sqyre/internal/assets"
+	"Sqyre/internal/config"
 
 	"fyne.io/fyne/v2"
 )
@@ -23,10 +24,11 @@ func NewMove(p Point, smooth bool) *Move {
 }
 
 func (a *Move) String() string {
+	s := fmt.Sprintf("Point: %v %s Coordinates: (%v, %v)", a.Point.Name, config.DescriptionDelimiter, a.Point.X, a.Point.Y)
 	if a.Smooth {
-		return fmt.Sprintf("%v (%v, %v) smooth", a.Point.Name, a.Point.X, a.Point.Y)
+		return s + config.DescriptionDelimiter + "Smooth"
 	}
-	return fmt.Sprintf("%v (%v, %v)", a.Point.Name, a.Point.X, a.Point.Y)
+	return s
 }
 
 func (a *Move) Icon() fyne.Resource {
