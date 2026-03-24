@@ -28,7 +28,7 @@ func NewMacroTabs() *MacroTabs {
 		globalDelayMax:       1000,
 		MacroHotkeyEntry:     widget.NewEntry(),
 	}
-	t.BoundGlobalDelayEntry = custom_widgets.NewIncrementer(0, 1, &t.globalDelayMin, &t.globalDelayMax)
+	t.BoundGlobalDelayEntry = custom_widgets.NewIncrementerWithEntry(0, 1, &t.globalDelayMin, &t.globalDelayMax)
 	t.ExtendBaseWidget(t)
 
 	return t

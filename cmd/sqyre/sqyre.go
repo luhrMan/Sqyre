@@ -18,12 +18,10 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
-	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/driver/desktop"
 	fynetooltip "github.com/dweymouth/fyne-tooltip"
 	"github.com/go-vgo/robotgo"
 	"github.com/gofrs/flock"
-	hook "github.com/luhrMan/gohook"
 )
 
 // instanceLock is held for the process lifetime so only one instance runs.
@@ -129,34 +127,6 @@ func init() {
 	w.Resize(fyne.NewSize(1000, 500))
 	w.SetIcon(assets.AppIcon)
 	w.SetMaster()
-
-	if os.Getenv("SQYRE_NO_HOOK") != "1" {
-		hook.Register(hook.KeyDown, []string{"esc"}, func(e hook.Event) {
-			if !isWindowWithTitleActive("sqyre") {
-				return
-			}
-			// Capture refs once to avoid TOCTOU: dialog/mainUi can be set nil on main thread
-			u := ui.GetUi()
-			if u == nil {
-				return
-			}
-			var actionDialog dialog.Dialog
-			var mainUi *ui.MainUi
-			if u.MainUi != nil {
-				actionDialog = u.MainUi.ActionDialog
-				mainUi = u.MainUi
-			}
-			fyne.Do(func() {
-				if actionDialog != nil {
-					actionDialog.Hide()
-				}
-				if mainUi != nil && mainUi.Navigation.Root != nil && !mainUi.Navigation.Root.Visible() {
-					log.Println("showing main ui")
-					mainUi.Navigation.Back()
-				}
-			})
-		})
-	}
 
 	systemTraySetup(w)
 
