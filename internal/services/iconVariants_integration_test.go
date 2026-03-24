@@ -2,6 +2,7 @@ package services
 
 import (
 	"Sqyre/internal/assets"
+	"Sqyre/internal/config"
 	"os"
 	"path/filepath"
 	"testing"
@@ -517,7 +518,7 @@ func TestIntegration_CacheInvalidation_AddVariant(t *testing.T) {
 	}
 
 	// Verify the variant file was created with correct naming
-	expectedFilename := itemName + "|Original.png"
+	expectedFilename := itemName + config.ProgramDelimiter + "Original.png"
 	actualFilename := filepath.Base(originalPath)
 	if actualFilename != expectedFilename {
 		t.Errorf("Expected filename '%s', got '%s'", expectedFilename, actualFilename)
@@ -650,7 +651,7 @@ func TestIntegration_EndToEnd_LoadAddReload(t *testing.T) {
 	}
 
 	// Step 1: Create initial variant
-	initialVariantPath := filepath.Join(programIconsDir, itemName+"|Initial.png")
+	initialVariantPath := filepath.Join(programIconsDir, itemName+config.ProgramDelimiter+"Initial.png")
 	if err := createTestPNG(initialVariantPath); err != nil {
 		t.Fatalf("Failed to create initial variant: %v", err)
 	}
@@ -752,12 +753,12 @@ func TestIntegration_EndToEnd_LoadDeletePlaceholder(t *testing.T) {
 	}
 
 	// Step 1: Create two variants - one to delete, one to keep
-	variantToDeletePath := filepath.Join(programIconsDir, itemName+"|"+variantName+".png")
+	variantToDeletePath := filepath.Join(programIconsDir, itemName+config.ProgramDelimiter+variantName+".png")
 	if err := createTestPNG(variantToDeletePath); err != nil {
 		t.Fatalf("Failed to create variant to delete: %v", err)
 	}
 
-	variantToKeepPath := filepath.Join(programIconsDir, itemName+"|"+keepVariantName+".png")
+	variantToKeepPath := filepath.Join(programIconsDir, itemName+config.ProgramDelimiter+keepVariantName+".png")
 	if err := createTestPNG(variantToKeepPath); err != nil {
 		t.Fatalf("Failed to create variant to keep: %v", err)
 	}

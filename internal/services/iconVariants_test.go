@@ -1,6 +1,7 @@
 package services
 
 import (
+	"Sqyre/internal/config"
 	"os"
 	"path/filepath"
 	"testing"
@@ -59,7 +60,7 @@ func TestGetBaseItemName(t *testing.T) {
 	}{
 		{
 			name:     "Item with variant",
-			input:    "Health Potion|Ice",
+			input:    "Health Potion" + config.ProgramDelimiter + "Ice",
 			expected: "Health Potion",
 		},
 		{
@@ -69,7 +70,7 @@ func TestGetBaseItemName(t *testing.T) {
 		},
 		{
 			name:     "Item with multiple delimiters",
-			input:    "Health Potion|Ice|Blue",
+			input:    "Health Potion" + config.ProgramDelimiter + "Ice" + config.ProgramDelimiter + "Blue",
 			expected: "Health Potion",
 		},
 		{
@@ -79,12 +80,12 @@ func TestGetBaseItemName(t *testing.T) {
 		},
 		{
 			name:     "Only delimiter",
-			input:    "|",
+			input:    config.ProgramDelimiter,
 			expected: "",
 		},
 		{
 			name:     "Delimiter at end",
-			input:    "Health Potion|",
+			input:    "Health Potion" + config.ProgramDelimiter,
 			expected: "Health Potion",
 		},
 	}
@@ -190,9 +191,9 @@ func TestGetVariants(t *testing.T) {
 
 	t.Run("Multiple variants exist", func(t *testing.T) {
 		// Create test icon files
-		createTestIconFile(t, filepath.Join(iconsPath, "Health Potion|Ice.png"))
-		createTestIconFile(t, filepath.Join(iconsPath, "Health Potion|Fire.png"))
-		createTestIconFile(t, filepath.Join(iconsPath, "Health Potion|Original.png"))
+		createTestIconFile(t, filepath.Join(iconsPath, "Health Potion"+config.ProgramDelimiter+"Ice.png"))
+		createTestIconFile(t, filepath.Join(iconsPath, "Health Potion"+config.ProgramDelimiter+"Fire.png"))
+		createTestIconFile(t, filepath.Join(iconsPath, "Health Potion"+config.ProgramDelimiter+"Original.png"))
 
 		variants, err := service.GetVariants(programName, itemName)
 		if err != nil {
@@ -233,7 +234,7 @@ func TestGetVariants(t *testing.T) {
 	t.Run("Mixed legacy and variant icons", func(t *testing.T) {
 		// Create both legacy and variant icons
 		createTestIconFile(t, filepath.Join(iconsPath, "Sword.png"))
-		createTestIconFile(t, filepath.Join(iconsPath, "Sword|Enchanted.png"))
+		createTestIconFile(t, filepath.Join(iconsPath, "Sword"+config.ProgramDelimiter+"Enchanted.png"))
 
 		variants, err := service.GetVariants(programName, "Sword")
 		if err != nil {
@@ -278,7 +279,7 @@ func TestGetVariantPath(t *testing.T) {
 
 	t.Run("Variant with name", func(t *testing.T) {
 		path := service.GetVariantPath(programName, itemName, "Ice")
-		expected := filepath.Join(tempDir, "icons", programName, "Health Potion|Ice.png")
+		expected := filepath.Join(tempDir, "icons", programName, "Health Potion"+config.ProgramDelimiter+"Ice.png")
 
 		if path != expected {
 			t.Errorf("Expected path '%s', got '%s'", expected, path)
@@ -419,7 +420,7 @@ func TestDeleteVariant(t *testing.T) {
 
 	t.Run("Delete existing variant", func(t *testing.T) {
 		// Create variant file
-		variantPath := filepath.Join(iconsPath, "Health Potion|Ice.png")
+		variantPath := filepath.Join(iconsPath, "Health Potion"+config.ProgramDelimiter+"Ice.png")
 		createTestIconFile(t, variantPath)
 
 		// Verify file exists
