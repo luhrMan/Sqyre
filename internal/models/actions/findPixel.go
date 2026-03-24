@@ -109,10 +109,7 @@ func (a *FindPixel) Display() fyne.CanvasObject {
 }
 
 func (a *FindPixel) parameters() []actionParam {
-	areaLabel := a.SearchArea.Name
-	if areaLabel == "" {
-		areaLabel = fmt.Sprintf("(%v,%v)-(%v,%v)", a.SearchArea.LeftX, a.SearchArea.TopY, a.SearchArea.RightX, a.SearchArea.BottomY)
-	}
+	areaLabel := formatSearchAreaLabel(a.SearchArea)
 	mode := "instant"
 	if a.WaitTilFound {
 		mode = fmt.Sprintf("wait %ds", a.WaitTilFoundSeconds)
