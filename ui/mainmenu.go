@@ -5,7 +5,6 @@ import (
 	"strconv"
 
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/dialog"
 	fynetooltip "github.com/dweymouth/fyne-tooltip"
 	"github.com/go-vgo/robotgo"
 )
@@ -98,7 +97,7 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 			_, _, mh, mw := robotgo.GetDisplayBounds(d)
 			str = str + "Monitor " + strconv.Itoa(d+1) + " Size: " + strconv.Itoa(mh) + "x" + strconv.Itoa(mw) + "\n"
 		}
-		dialog.ShowInformation("Computer Information", str, u.Window)
+		ShowInformationWithEscape("Computer Information", str, u.Window)
 	})
 
 	editor := fyne.NewMenuItem("Data Editor", func() {

@@ -159,12 +159,13 @@ func setMtabSettingsAndWidgets() {
 	mtabs.MacroNameEntry.OnSubmitted = func(sub string) {
 		if sub == "" {
 			e := dialog.NewError(errors.New("macro name cannot be empty"), ui.GetUi().Window)
+			ui.AddDialogEscapeClose(e, ui.GetUi().Window)
 			e.Show()
 			return
 		}
 		for _, m := range repositories.MacroRepo().GetAll() {
 			if m.Name == sub {
-				dialog.ShowError(errors.New("macro name already exists"), ui.GetUi().Window)
+				ui.ShowErrorWithEscape(errors.New("macro name already exists"), ui.GetUi().Window)
 				return
 			}
 		}
@@ -230,7 +231,7 @@ func setMacroSelect(b *widget.Button) {
 						log.Printf("Error getting macro %s: %v", v, err)
 						return
 					}
-					dialog.ShowConfirm("Delete Macro", "Are you sure you want to delete this macro?", func(b bool) {
+					ui.ShowConfirmWithEscape("Delete Macro", "Are you sure you want to delete this macro?", func(b bool) {
 						if b {
 							if err := repositories.MacroRepo().Delete(v); err != nil {
 								log.Printf("Error deleting macro %s: %v", v, err)

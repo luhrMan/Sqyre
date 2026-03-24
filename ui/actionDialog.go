@@ -21,6 +21,7 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
@@ -28,7 +29,6 @@ import (
 	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 	"github.com/go-vgo/robotgo"
 	"github.com/lithammer/fuzzysearch/fuzzy"
-	hook "github.com/luhrMan/gohook"
 	"gocv.io/x/gocv"
 )
 
@@ -66,14 +66,14 @@ func newWaitTilFoundForm(waitTilFound bool, waitSeconds, intervalMs int, interva
 	check := widget.NewCheck("Wait until found", nil)
 	check.SetChecked(waitTilFound)
 	secondsMin := 0
-	secondsInc := custom_widgets.NewIncrementer(waitSeconds, 1, &secondsMin, nil)
+	secondsInc := custom_widgets.NewIncrementerWithEntry(waitSeconds, 1, &secondsMin, nil)
 	if waitSeconds <= 0 {
 		secondsInc.SetValue(10)
 	} else {
 		secondsInc.SetValue(waitSeconds)
 	}
 	intervalMin := intervalUIMin
-	intervalInc := custom_widgets.NewIncrementer(intervalMs, 100, &intervalMin, nil)
+	intervalInc := custom_widgets.NewIncrementerWithEntry(intervalMs, 100, &intervalMin, nil)
 	if intervalMs < 100 {
 		intervalInc.SetValue(100)
 	} else {
@@ -378,17 +378,36 @@ func ShowActionDialog(action actions.ActionInterface, onSave func(actions.Action
 // actionModalDialog implements dialog.Dialog using widget.NewModalPopUp so content is not
 // inset by fyne dialog.Layout (padWidth/2); the bordered panel can align with the popup edge.
 type actionModalDialog struct {
-	pop *widget.PopUp
+	pop      *widget.PopUp
+	onClosed func()
 }
 
 func (d *actionModalDialog) Show()                 { d.pop.Show() }
-func (d *actionModalDialog) Hide()                 { d.pop.Hide() }
 func (d *actionModalDialog) Dismiss()              { d.Hide() }
 func (d *actionModalDialog) SetDismissText(string) {}
-func (d *actionModalDialog) SetOnClosed(func())    {}
-func (d *actionModalDialog) Refresh()              { d.pop.Refresh() }
-func (d *actionModalDialog) Resize(s fyne.Size)    { d.pop.Resize(s) }
-func (d *actionModalDialog) MinSize() fyne.Size    { return d.pop.MinSize() }
+func (d *actionModalDialog) SetOnClosed(closed func()) {
+	if closed == nil {
+		return
+	}
+	orig := d.onClosed
+	d.onClosed = func() {
+		if orig != nil {
+			orig()
+		}
+		closed()
+	}
+}
+func (d *actionModalDialog) Hide() {
+	d.pop.Hide()
+	if d.onClosed != nil {
+		cb := d.onClosed
+		d.onClosed = nil
+		cb()
+	}
+}
+func (d *actionModalDialog) Refresh()           { d.pop.Refresh() }
+func (d *actionModalDialog) Resize(s fyne.Size) { d.pop.Resize(s) }
+func (d *actionModalDialog) MinSize() fyne.Size { return d.pop.MinSize() }
 
 var _ dialog.Dialog = (*actionModalDialog)(nil)
 
@@ -400,19 +419,11 @@ func showCustomActionDialog(u *Ui, action actions.ActionInterface, content fyne.
 			onSave(action)
 		}
 		d.Hide()
-		// Clear the reference on the MainUi when the dialog is closed
-		if u != nil && u.MainUi != nil && u.MainUi.ActionDialog == d {
-			u.MainUi.ActionDialog = nil
-		}
 	})
 	saveButton.SetToolTip("Save changes to this action")
 
 	cancelButton := ttwidget.NewButton("Cancel", func() {
 		d.Hide()
-		// Clear the reference on the MainUi when the dialog is closed
-		if u != nil && u.MainUi != nil && u.MainUi.ActionDialog == d {
-			u.MainUi.ActionDialog = nil
-		}
 	})
 	cancelButton.SetToolTip("Cancel and discard changes")
 
@@ -452,6 +463,12 @@ func showCustomActionDialog(u *Ui, action actions.ActionInterface, content fyne.
 	if u != nil && u.MainUi != nil {
 		u.MainUi.ActionDialog = d
 	}
+	AddDialogEscapeClose(d, u.Window)
+	d.SetOnClosed(func() {
+		if u != nil && u.MainUi != nil && u.MainUi.ActionDialog == d {
+			u.MainUi.ActionDialog = nil
+		}
+	})
 	parentSize := u.Window.Canvas().Size()
 	width := parentSize.Width - 200
 	height := parentSize.Height - 200
@@ -1175,37 +1192,31 @@ func createFindPixelDialogContent(action *actions.FindPixel) (fyne.CanvasObject,
 	colorEntry.OnChanged = func(string) { updateSwatch() }
 
 	dropperBtn := ttwidget.NewButtonWithIcon("", theme.MediaRecordIcon(), func() {
-		dismissOverlay := ShowRecordingOverlay(
-			"Pick a Color",
-			"Left click anywhere to sample the pixel color",
-			"Right click to cancel",
-		)
-
-		services.GoSafe(func() {
-			hook.Register(hook.MouseDown, []string{}, func(e hook.Event) {
-				switch e.Button {
-				case hook.MouseMap["left"]:
-					x, y := robotgo.Location()
-					hex := robotgo.GetPixelColor(x, y)
-					hex = strings.TrimPrefix(strings.ToLower(hex), "#")
-					if len(hex) == 8 {
-						hex = hex[2:]
-					}
-					fyne.DoAndWait(func() {
+		var dismissOverlay func()
+		dismissOverlay = ShowRecordingOverlay(
+			nil,
+			func(ev *desktop.MouseEvent) {
+				fyne.DoAndWait(func() {
+					switch ev.Button {
+					case desktop.MouseButtonPrimary:
+						x, y := robotgo.Location()
+						hex := robotgo.GetPixelColor(x, y)
+						hex = strings.TrimPrefix(strings.ToLower(hex), "#")
+						if len(hex) == 8 {
+							hex = hex[2:]
+						}
 						colorEntry.SetText(hex)
 						updateSwatch()
 						dismissOverlay()
-					})
-				default:
-					fyne.DoAndWait(func() {
+					default:
 						dismissOverlay()
-					})
-				}
-				go hook.Unregister(hook.MouseDown, []string{})
-			})
-		})
+					}
+				})
+			},
+		)
 	})
-	dropperBtn.SetToolTip("Click Dropper, then click on screen to pick a color")
+	dropperBtn.Importance = widget.DangerImportance
+	dropperBtn.SetToolTip("Pick a Color\nLeft click anywhere to sample the pixel color\nRight click or Escape to cancel")
 
 	colorRow := container.NewBorder(
 		nil, nil,
