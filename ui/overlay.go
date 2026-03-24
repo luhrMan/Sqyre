@@ -16,9 +16,10 @@ import (
 )
 
 // selectionRectLayout positions a single child (the selection rectangle) at
-// (leftX, topY) with size (rightX-leftX, bottomY-topY). Zero size hides it.
+// (leftX, topY) with size (rightX-leftX, bottomY-topY) in Fyne canvas units.
+// Zero size hides it.
 type selectionRectLayout struct {
-	leftX, topY, rightX, bottomY int
+	leftX, topY, rightX, bottomY float32
 }
 
 func (s *selectionRectLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
@@ -32,8 +33,18 @@ func (s *selectionRectLayout) Layout(objects []fyne.CanvasObject, size fyne.Size
 		objects[0].Move(fyne.NewPos(0, 0))
 		return
 	}
-	objects[0].Move(fyne.NewPos(float32(s.leftX), float32(s.topY)))
-	objects[0].Resize(fyne.NewSize(float32(w), float32(h)))
+	objects[0].Move(fyne.NewPos(s.leftX, s.topY))
+	objects[0].Resize(fyne.NewSize(w, h))
+}
+
+// screenPxToCanvas converts a delta in physical screen pixels (robotgo space)
+// to Fyne canvas coordinates for the given window.
+func screenPxToCanvas(win fyne.Window, deltaPx int) float32 {
+	scale := win.Canvas().Scale()
+	if scale <= 0 {
+		scale = 1
+	}
+	return float32(deltaPx) / scale
 }
 
 func (s *selectionRectLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
@@ -78,11 +89,14 @@ func showFullScreenOverlay(lines []string, withSelectionRect bool) (dismiss func
 	win.SetPadded(false)
 
 	var bg fyne.CanvasObject
+	var bgImage *canvas.Image
 	if captureImg != nil {
 		img := canvas.NewImageFromImage(captureImg)
 		img.FillMode = canvas.ImageFillStretch
+		// Physical pixel size; adjusted to canvas units after Show() when Scale() is known.
 		img.SetMinSize(fyne.NewSize(float32(w), float32(h)))
 		bg = img
+		bgImage = img
 	} else {
 		bg = canvas.NewRectangle(color.NRGBA{R: 0, G: 0, B: 0, A: 25})
 	}
@@ -117,6 +131,13 @@ func showFullScreenOverlay(lines []string, withSelectionRect bool) (dismiss func
 
 	win.SetContent(container.NewMax(bg, selectionLayer, centered))
 	win.Show()
+	// Fyne sizes are canvas (logical) units; robotgo uses physical screen pixels.
+	if bgImage != nil {
+		lw := screenPxToCanvas(win, w)
+		lh := screenPxToCanvas(win, h)
+		bgImage.SetMinSize(fyne.NewSize(lw, lh))
+		bgImage.Refresh()
+	}
 
 	dismiss = func() {
 		fyne.Do(func() {
@@ -127,11 +148,11 @@ func showFullScreenOverlay(lines []string, withSelectionRect bool) (dismiss func
 	if withSelectionRect && selLayout != nil && selectionLayerRefresher != nil {
 		setSelectionRect = func(leftX, topY, rightX, bottomY int) {
 			fyne.Do(func() {
-				// Bindings pass absolute desktop coords; layout is monitor-local.
-				selLayout.leftX = leftX - originX
-				selLayout.topY = topY - originY
-				selLayout.rightX = rightX - originX
-				selLayout.bottomY = bottomY - originY
+				// Absolute desktop coords -> monitor-local physical pixels -> Fyne canvas coords.
+				selLayout.leftX = screenPxToCanvas(win, leftX-originX)
+				selLayout.topY = screenPxToCanvas(win, topY-originY)
+				selLayout.rightX = screenPxToCanvas(win, rightX-originX)
+				selLayout.bottomY = screenPxToCanvas(win, bottomY-originY)
 				selectionLayerRefresher.Refresh()
 			})
 		}
