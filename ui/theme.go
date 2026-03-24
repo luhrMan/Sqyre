@@ -7,6 +7,7 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/theme"
+	kxtheme "github.com/ErikKalkoken/fyne-kx/theme"
 )
 
 var sqyrePrimary = color.NRGBA{R: 0xdc, G: 0x9d, B: 0x2e, A: 0xff}
@@ -23,7 +24,7 @@ type sqyreTheme struct {
 }
 
 func NewSqyreTheme() fyne.Theme {
-	return &sqyreTheme{Theme: theme.DefaultTheme()}
+	return &sqyreTheme{Theme: kxtheme.DefaultWithFixedVariant(theme.VariantDark)}
 }
 
 // Color returns the sqyre primary for ColorNamePrimary and ColorNameSeparator, dimmed primary for ColorNameSelection and ColorNameHover, otherwise the default theme color.

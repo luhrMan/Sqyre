@@ -155,38 +155,7 @@ func main() {
 	if os.Getenv("SQYRE_NO_HOOK") != "1" {
 		services.FailsafeHotkey()
 	}
-	// Get the Dark and Darker program and set up the item-corner mask
-	// program, err := repositories.ProgramRepo().Get("dark and darker")
-	// if err != nil {
-	// 	log.Printf("Warning: Could not load %s program: %v", "dark and darker", err)
-	// } else {
-	// 	program.GetMasks()["item-corner"] = func(f ...any) *gocv.Mat {
-	// 		rows, cols, x, y :=
-	// 			f[0].(int), f[1].(int), f[2].(int), f[3].(int)
-	// 		roi :=
-	// 			image.Rect(
-	// 				// (cols/x)/2,
-	// 				// (rows/y)/2,
-	// 				(cols/x)-cols,
-	// 				(rows/y)-rows,
-	// 				cols,
-	// 				rows,
-	// 			)
 
-	// 		cmask := gocv.NewMatWithSize(rows, cols, gocv.MatTypeCV8U)
-	// 		cmask.SetTo(gocv.NewScalar(255, 255, 255, 0))
-
-	// 		region := cmask.Region(roi)
-	// 		defer region.Close()
-	// 		region.SetTo(gocv.NewScalar(0, 0, 0, 0))
-
-	// 		return &cmask
-	// 	}
-	// }
-	// mask, _ := program.ItemRepo().Get("Ancient Scroll")
-	// gocv.IMWrite(config.GetMetaPath()+"mask.png", *program.GetMasks()["item-corner"](162, 108, mask.GridSize[0], mask.GridSize[1]))
-	// mask, _ := program.ItemRepo().Get("Bandage")
-	// gocv.IMWrite(config.GetMetaPath()+"mask.png", *program.GetMasks()["item-corner"](54, 54, mask.GridSize[0], mask.GridSize[1]))
 	ui.GetUi().Window.ShowAndRun()
 
 	services.CloseTessClient()
