@@ -57,7 +57,7 @@ func (a *Ocr) parameters() []actionParam {
 		newParam("Type", a.GetType()),
 		newParam("Name", a.Name),
 		newParam("Target Text", a.Target),
-		newParam("Search Area", a.SearchArea.Name),
+		newParam("Search Area", formatSearchAreaLabel(a.SearchArea)),
 		newParam("Wait", mode),
 	}
 }

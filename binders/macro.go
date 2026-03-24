@@ -41,6 +41,7 @@ func SetMacroUi() {
 		}
 	}
 	setMacroSelect(ui.GetUi().MainUi.Mui.MacroSelectButton)
+	syncMacroToolbarFieldsFromSelection()
 }
 
 func SaveOpenMacros() {
@@ -83,7 +84,19 @@ func AddMacroTab(m *models.Macro) {
 	t := container.NewTabItem(m.Name, ui.NewMacroTree(m))
 	mtabs.AddTab(m.Name, t)
 	setMacroTree(mtabs.SelectedTab())
+	syncMacroToolbarFieldsFromSelection()
 	services.RegisterHotkey(m.Hotkey, services.MacroHotkeyCallback(m))
+}
+
+func syncMacroToolbarFieldsFromSelection() {
+	mtabs := ui.GetUi().Mui.MTabs
+	st := mtabs.SelectedTab()
+	if st == nil || st.Macro == nil {
+		return
+	}
+	mtabs.MacroNameEntry.SetText(st.Macro.Name)
+	mtabs.BoundGlobalDelayEntry.SetValue(st.Macro.GlobalDelay)
+	mtabs.MacroHotkeyEntry.SetText(services.ReverseParseMacroHotkey(st.Macro.Hotkey))
 }
 
 func setMtabSettingsAndWidgets() {
@@ -126,16 +139,12 @@ func setMtabSettingsAndWidgets() {
 		}
 	}
 	mtabs.OnSelected = func(ti *container.TabItem) {
-		m, err := repositories.MacroRepo().Get(ti.Text)
-		if err != nil {
+		if _, err := repositories.MacroRepo().Get(ti.Text); err != nil {
 			log.Printf("Error getting macro %s: %v", ti.Text, err)
 			return
 		}
 
-		mtabs.MacroNameEntry.SetText(m.Name)
-		mtabs.BoundGlobalDelayEntry.SetValue(m.GlobalDelay)
-
-		mtabs.MacroHotkeyEntry.SetText(services.ReverseParseMacroHotkey(m.Hotkey))
+		syncMacroToolbarFieldsFromSelection()
 	}
 
 	mtabs.MacroHotkeyEntry.PlaceHolder = "ctrl+shift+1 or ctrl+1 or ctrl+a+1"

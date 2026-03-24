@@ -34,6 +34,23 @@ func stringifyParams(params []actionParam) string {
 	return strings.Join(parts, " "+config.DescriptionDelimiter+" ")
 }
 
+func formatSearchAreaLabel(area SearchArea) string {
+	name := strings.TrimSpace(area.Name)
+	coordinates := fmt.Sprintf(
+		"TopY: %v, LeftX: %v, BottomY: %v, RightX: %v",
+		area.TopY,
+		area.LeftX,
+		area.BottomY,
+		area.RightX,
+	)
+
+	if name == "" {
+		return coordinates
+	}
+
+	return fmt.Sprintf("%s (%s)", name, coordinates)
+}
+
 func displayFromParams(params []actionParam) fyne.CanvasObject {
 	line := container.NewHBox()
 	actionType := actionTypeFromParams(params)
