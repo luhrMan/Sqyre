@@ -2,42 +2,10 @@ package repositories
 
 import (
 	"Sqyre/internal/models"
-	"Sqyre/internal/models/serialize"
 	"errors"
-	"os"
-	"path/filepath"
 	"sync"
 	"testing"
 )
-
-// setupTestConfig initializes YAML config with test configuration
-func setupTestConfig(t *testing.T) {
-	t.Helper()
-
-	// Get the path to testdata
-	testdataPath, err := filepath.Abs("testdata")
-	if err != nil {
-		t.Fatalf("Failed to get testdata path: %v", err)
-	}
-
-	// Configure YAML config to use writeable test config
-	yamlConfig := serialize.GetYAMLConfig()
-	configPath := filepath.Join(testdataPath, "writeable-db.yaml")
-	yamlConfig.SetConfigFile(configPath)
-
-	// Read the base config first
-	baseConfigPath := filepath.Join(testdataPath, "db.yaml")
-	yamlConfig.SetConfigFile(baseConfigPath)
-	if err := yamlConfig.ReadConfig(); err != nil {
-		t.Fatalf("Failed to read test db: %v", err)
-	}
-
-	// Set to writeable config for tests
-	yamlConfig.SetConfigFile(configPath)
-	if err := yamlConfig.WriteConfig(); err != nil {
-		t.Fatalf("Failed to write test db: %v", err)
-	}
-}
 
 // resetMacroRepo resets the singleton for testing
 func resetMacroRepo() {
@@ -98,14 +66,14 @@ func TestMacroRepo_LoadFromConfig(t *testing.T) {
 	}
 
 	// Get the test macro
-	macro, err := repo.Get("Test Macro")
+	macro, err := repo.Get("Integration Test Macro")
 	if err != nil {
 		t.Fatalf("Failed to get test macro: %v", err)
 	}
 
 	// Verify macro properties
-	if macro.Name != "Test Macro" {
-		t.Errorf("Expected name 'Test Macro', got '%s'", macro.Name)
+	if macro.Name != "Integration Test Macro" {
+		t.Errorf("Expected name 'Integration Test Macro', got '%s'", macro.Name)
 	}
 
 	if macro.GlobalDelay != 100 {
@@ -131,7 +99,7 @@ func TestMacroRepo_DecodeWithActions(t *testing.T) {
 
 	repo := MacroRepo()
 
-	macro, err := repo.Get("Test Macro")
+	macro, err := repo.Get("Integration Test Macro")
 	if err != nil {
 		t.Fatalf("Failed to get test macro: %v", err)
 	}
@@ -227,17 +195,8 @@ func TestMacroRepo_Reload(t *testing.T) {
 	}
 
 	// Original macro should still exist
-	_, err = repo.Get("Test Macro")
+	_, err = repo.Get("Integration Test Macro")
 	if err != nil {
 		t.Errorf("Original macro should exist after reload: %v", err)
 	}
-}
-
-// TestMain sets up and tears down test environment
-func TestMain(m *testing.M) {
-	// Run tests
-	code := m.Run()
-
-	// Cleanup
-	os.Exit(code)
 }

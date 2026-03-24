@@ -63,7 +63,7 @@ ENV LD_LIBRARY_PATH="/opt/opencv/linux/install/lib:${LD_LIBRARY_PATH}"
 RUN apt-get update && apt-get install -y --no-install-recommends \
     binutils coreutils desktop-file-utils fakeroot fuse gtk-update-icon-cache \
     libarchive13 libgcc-s1 libgdk-pixbuf2.0-dev libstdc++6 libxcb-xkb1 \
-    patchelf zlib1g python3-pip python3-setuptools squashfs-tools strace util-linux zsync \
+    patchelf zlib1g python3-pip python3-setuptools squashfs-tools strace util-linux xdotool xvfb zsync \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip3 install --no-cache-dir appimage-builder
