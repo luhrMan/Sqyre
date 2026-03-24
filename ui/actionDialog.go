@@ -21,6 +21,7 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
@@ -28,7 +29,6 @@ import (
 	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 	"github.com/go-vgo/robotgo"
 	"github.com/lithammer/fuzzysearch/fuzzy"
-	hook "github.com/luhrMan/gohook"
 	"gocv.io/x/gocv"
 )
 
@@ -66,14 +66,14 @@ func newWaitTilFoundForm(waitTilFound bool, waitSeconds, intervalMs int, interva
 	check := widget.NewCheck("Wait until found", nil)
 	check.SetChecked(waitTilFound)
 	secondsMin := 0
-	secondsInc := custom_widgets.NewIncrementer(waitSeconds, 1, &secondsMin, nil)
+	secondsInc := custom_widgets.NewIncrementerWithEntry(waitSeconds, 1, &secondsMin, nil)
 	if waitSeconds <= 0 {
 		secondsInc.SetValue(10)
 	} else {
 		secondsInc.SetValue(waitSeconds)
 	}
 	intervalMin := intervalUIMin
-	intervalInc := custom_widgets.NewIncrementer(intervalMs, 100, &intervalMin, nil)
+	intervalInc := custom_widgets.NewIncrementerWithEntry(intervalMs, 100, &intervalMin, nil)
 	if intervalMs < 100 {
 		intervalInc.SetValue(100)
 	} else {
@@ -1192,37 +1192,31 @@ func createFindPixelDialogContent(action *actions.FindPixel) (fyne.CanvasObject,
 	colorEntry.OnChanged = func(string) { updateSwatch() }
 
 	dropperBtn := ttwidget.NewButtonWithIcon("", theme.MediaRecordIcon(), func() {
-		dismissOverlay := ShowRecordingOverlay(
-			"Pick a Color",
-			"Left click anywhere to sample the pixel color",
-			"Right click to cancel",
-		)
-
-		services.GoSafe(func() {
-			hook.Register(hook.MouseDown, []string{}, func(e hook.Event) {
-				switch e.Button {
-				case hook.MouseMap["left"]:
-					x, y := robotgo.Location()
-					hex := robotgo.GetPixelColor(x, y)
-					hex = strings.TrimPrefix(strings.ToLower(hex), "#")
-					if len(hex) == 8 {
-						hex = hex[2:]
-					}
-					fyne.DoAndWait(func() {
+		var dismissOverlay func()
+		dismissOverlay = ShowRecordingOverlay(
+			nil,
+			func(ev *desktop.MouseEvent) {
+				fyne.DoAndWait(func() {
+					switch ev.Button {
+					case desktop.MouseButtonPrimary:
+						x, y := robotgo.Location()
+						hex := robotgo.GetPixelColor(x, y)
+						hex = strings.TrimPrefix(strings.ToLower(hex), "#")
+						if len(hex) == 8 {
+							hex = hex[2:]
+						}
 						colorEntry.SetText(hex)
 						updateSwatch()
 						dismissOverlay()
-					})
-				default:
-					fyne.DoAndWait(func() {
+					default:
 						dismissOverlay()
-					})
-				}
-				go hook.Unregister(hook.MouseDown, []string{})
-			})
-		})
+					}
+				})
+			},
+		)
 	})
-	dropperBtn.SetToolTip("Click Dropper, then click on screen to pick a color")
+	dropperBtn.Importance = widget.DangerImportance
+	dropperBtn.SetToolTip("Pick a Color\nLeft click anywhere to sample the pixel color\nRight click or Escape to cancel")
 
 	colorRow := container.NewBorder(
 		nil, nil,

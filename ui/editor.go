@@ -49,11 +49,12 @@ type EditorTab struct {
 	Left  *fyne.Container
 	Right *fyne.Container
 
-	Widgets        map[string]fyne.CanvasObject
-	SelectedItem   any
-	previewImage   *canvas.Image
-	UpdateButton   *widget.Button
-	OriginalValues map[string]string
+	Widgets              map[string]fyne.CanvasObject
+	SelectedItem         any
+	previewImage         *canvas.Image
+	UpdateButton         *widget.Button
+	PreviewRefreshButton *widget.Button
+	OriginalValues       map[string]string
 }
 
 func NewEditorTab(name string, left, right *fyne.Container) *container.TabItem {
@@ -283,6 +284,9 @@ func (u *Ui) constructEditorTabs() {
 	// Store the image reference in the tab for later access
 	et.PointsTab.previewImage = pointPreviewImage
 
+	et.PointsTab.PreviewRefreshButton = widget.NewButtonWithIcon("Refresh preview", theme.ViewRefreshIcon(), nil)
+	et.PointsTab.PreviewRefreshButton.Importance = widget.LowImportance
+
 	et.PointsTab.TabItem = NewEditorTab(
 		"Points",
 		container.NewBorder(ptw["searchbar"], nil, nil, nil, ptw[acc]),
@@ -291,7 +295,11 @@ func (u *Ui) constructEditorTabs() {
 			nil,
 			nil,
 			nil,
-			wrapEditorPreviewImage(pointPreviewImage),
+			container.NewBorder(
+				container.NewHBox(layout.NewSpacer(), et.PointsTab.PreviewRefreshButton),
+				nil, nil, nil,
+				wrapEditorPreviewImage(pointPreviewImage),
+			),
 		),
 	)
 
@@ -328,6 +336,9 @@ func (u *Ui) constructEditorTabs() {
 	// Store the image reference in the tab for later access
 	et.SearchAreasTab.previewImage = searchAreaPreviewImage
 
+	et.SearchAreasTab.PreviewRefreshButton = widget.NewButtonWithIcon("Refresh preview", theme.ViewRefreshIcon(), nil)
+	et.SearchAreasTab.PreviewRefreshButton.Importance = widget.LowImportance
+
 	et.SearchAreasTab.TabItem = NewEditorTab(
 		"Search Areas",
 		container.NewBorder(satw["searchbar"], nil, nil, nil, satw[acc]),
@@ -336,7 +347,11 @@ func (u *Ui) constructEditorTabs() {
 			nil,
 			nil,
 			nil,
-			wrapEditorPreviewImage(searchAreaPreviewImage),
+			container.NewBorder(
+				container.NewHBox(layout.NewSpacer(), et.SearchAreasTab.PreviewRefreshButton),
+				nil, nil, nil,
+				wrapEditorPreviewImage(searchAreaPreviewImage),
+			),
 		),
 	)
 
@@ -431,6 +446,9 @@ func (u *Ui) constructEditorTabs() {
 		widget.NewFormItem("", mtw["Inverse"]),
 	)
 
+	et.MasksTab.PreviewRefreshButton = widget.NewButtonWithIcon("Refresh preview", theme.ViewRefreshIcon(), nil)
+	et.MasksTab.PreviewRefreshButton.Importance = widget.LowImportance
+
 	et.MasksTab.TabItem = NewEditorTab(
 		"Masks",
 		container.NewBorder(mtw["searchbar"], nil, nil, nil, mtw["Accordion"]),
@@ -442,7 +460,11 @@ func (u *Ui) constructEditorTabs() {
 				mtw["imageStatus"],
 			),
 			nil, nil, nil,
-			wrapEditorPreviewImage(maskPreviewImage),
+			container.NewBorder(
+				container.NewHBox(layout.NewSpacer(), et.MasksTab.PreviewRefreshButton),
+				nil, nil, nil,
+				wrapEditorPreviewImage(maskPreviewImage),
+			),
 		),
 	)
 
@@ -464,6 +486,9 @@ func (u *Ui) constructEditorTabs() {
 	// Initially disable save button
 	atw["saveButton"].(*widget.Button).Disable()
 
+	et.AutoPicTab.PreviewRefreshButton = widget.NewButtonWithIcon("Refresh preview", theme.ViewRefreshIcon(), nil)
+	et.AutoPicTab.PreviewRefreshButton.Importance = widget.LowImportance
+
 	et.AutoPicTab.TabItem = NewEditorTab(
 		"AutoPic",
 		container.NewBorder(
@@ -474,7 +499,7 @@ func (u *Ui) constructEditorTabs() {
 			atw["Accordion"],
 		),
 		container.NewBorder(
-			nil,
+			container.NewHBox(layout.NewSpacer(), et.AutoPicTab.PreviewRefreshButton),
 			atw["saveButton"],
 			nil,
 			nil,
