@@ -49,6 +49,21 @@ Logs are appended to `~/.sqyre/sqyre.log`.
 
 For **Flatpak** or **AppImage** packaging, see [.devcontainer/builds/linux/packaging/PACKAGING.md](.devcontainer/builds/linux/packaging/PACKAGING.md).
 
+## Testing (UI)
+
+`robotgo` requires an X display on Linux. To run UI tests in headless environments,
+use the wrapper script, which starts a virtual display automatically when needed:
+
+```bash
+./scripts/test-ui.sh
+```
+
+Pass through any `go test` flags after the script name, for example:
+
+```bash
+./scripts/test-ui.sh -run TestGUI
+```
+
 #### GoCV Mat profiling (leak detection)
 
 Build with **matprofile** to track gocv `Mat` allocations and find leaks (unclosed Mats). Logs and a pprof HTTP server are enabled.

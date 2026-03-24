@@ -3,9 +3,7 @@ package repositories
 import (
 	"Sqyre/internal/models"
 	"Sqyre/internal/models/actions"
-	"Sqyre/internal/models/serialize"
 	"os"
-	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -16,24 +14,11 @@ func setupIntegrationTest(t *testing.T) (string, func()) {
 	t.Helper()
 
 	os.Setenv("SQYRE_TEST_MODE", "1")
-	setupTestConfig(t)
+	configPath := setupTestConfig(t)
 
 	cleanup := func() {
-		// Disable test mode
 		os.Unsetenv("SQYRE_TEST_MODE")
-
-		yamlConfig := serialize.GetYAMLConfig()
-		// Reset YAML config to testdata config for other tests
-		testdataPath, _ := filepath.Abs("testdata")
-		baseConfigPath := filepath.Join(testdataPath, "db.yaml")
-		yamlConfig.SetConfigFile(baseConfigPath)
-		yamlConfig.ReadConfig()
-
-		writeableConfigPath := filepath.Join(testdataPath, "writeable-db.yaml")
-		yamlConfig.SetConfigFile(writeableConfigPath)
-		yamlConfig.WriteConfig()
 	}
-	configPath, _ := filepath.Abs("testdata/writeable-db.yaml")
 	return configPath, cleanup
 }
 
