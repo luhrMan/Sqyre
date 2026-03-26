@@ -183,10 +183,6 @@ func systemTraySetup(w fyne.Window) {
 		desk.SetSystemTrayMenu(m)
 		desk.SetSystemTrayIcon(assets.AppIcon)
 	}
-
-	w.SetCloseIntercept(func() {
-		w.Hide()
-	})
 }
 
 func isWindowWithTitleActive(targetTitle string) bool {

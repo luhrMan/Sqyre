@@ -21,7 +21,6 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
-	"github.com/lithammer/fuzzysearch/fuzzy"
 )
 
 func setItemsWidgets(i models.Item) {
@@ -165,21 +164,27 @@ func RefreshProgramAccordionItem(programName string) {
 	// Refresh both the main action tabs accordion and the editor tabs accordion
 	// refreshAccordionForProgram(ui.GetUi().ActionTabs.ImageSearchItemsAccordion, programName)
 
-	if accordion, ok := ui.GetUi().EditorTabs.ItemsTab.Widgets["Accordion"].(*widget.Accordion); ok {
+	if accordion, ok := ui.GetUi().EditorTabs.ItemsTab.Widgets["Accordion"].(*custom_widgets.AccordionWithHeaderWidgets); ok {
 		refreshAccordionForProgram(accordion, programName)
 	}
 }
 
-// refreshAccordionForProgram rebuilds the accordion item for a specific program with updated icon cache
-func refreshAccordionForProgram(accordion *widget.Accordion, programName string) {
+// itemsAccordionRowIndexForProgram finds the row for a program. Titles are "ProgramName (n)", not bare names.
+func itemsAccordionRowIndexForProgram(accordion *custom_widgets.AccordionWithHeaderWidgets, programName string) int {
+	prefix := programName + " ("
 	for i, item := range accordion.Items {
-		if item.Title == programName {
-			// Get the program and rebuild just this accordion item
-			if program, err := repositories.ProgramRepo().Get(programName); err == nil {
-				// Rebuild the accordion item for this specific program
-				rebuildProgramAccordionItem(accordion, program, i)
-			}
-			break
+		if strings.HasPrefix(item.Title, prefix) {
+			return i
+		}
+	}
+	return -1
+}
+
+// refreshAccordionForProgram rebuilds the accordion item for a specific program with updated icon cache
+func refreshAccordionForProgram(accordion *custom_widgets.AccordionWithHeaderWidgets, programName string) {
+	if i := itemsAccordionRowIndexForProgram(accordion, programName); i >= 0 {
+		if program, err := repositories.ProgramRepo().Get(programName); err == nil {
+			rebuildProgramAccordionItem(accordion, program, i)
 		}
 	}
 }
@@ -192,7 +197,7 @@ func RebuildItemsAccordion() {
 	// }
 
 	// Rebuild the editor tabs accordion
-	if accordion, ok := ui.GetUi().EditorTabs.ItemsTab.Widgets["Accordion"].(*widget.Accordion); ok {
+	if accordion, ok := ui.GetUi().EditorTabs.ItemsTab.Widgets["Accordion"].(*custom_widgets.AccordionWithHeaderWidgets); ok {
 		setAccordionItemsLists(accordion)
 	}
 }
@@ -230,92 +235,48 @@ func RefreshItemInGrid(programName, oldItemName, newItemName string) {
 
 	// Force refresh the GridWrap by triggering a rebuild of the specific program's accordion
 	// This is necessary because the GridWrap uses a pre-computed iconCache that needs to be updated
-	if accordion, ok := ui.GetUi().EditorTabs.ItemsTab.Widgets["Accordion"].(*widget.Accordion); ok {
-		// Find and rebuild only the specific program's accordion item
-		for i, item := range accordion.Items {
-			if item.Title == programName {
-				// Get the program and rebuild just this accordion item
-				if program, err := repositories.ProgramRepo().Get(programName); err == nil {
-					// Rebuild the accordion item for this specific program
-					rebuildProgramAccordionItem(accordion, program, i)
-				}
-				break
+	if accordion, ok := ui.GetUi().EditorTabs.ItemsTab.Widgets["Accordion"].(*custom_widgets.AccordionWithHeaderWidgets); ok {
+		if i := itemsAccordionRowIndexForProgram(accordion, programName); i >= 0 {
+			if program, err := repositories.ProgramRepo().Get(programName); err == nil {
+				rebuildProgramAccordionItem(accordion, program, i)
 			}
 		}
 	}
 }
 
 // rebuildProgramAccordionItem rebuilds a specific program's accordion item with updated icon cache
-func rebuildProgramAccordionItem(accordion *widget.Accordion, program *models.Program, itemIndex int) {
+func rebuildProgramAccordionItem(accordion *custom_widgets.AccordionWithHeaderWidgets, program *models.Program, itemIndex int) {
 	filterText := ""
 	if et := ui.GetUi().EditorTabs.ItemsTab; et.Widgets["searchbar"] != nil {
 		if sb, ok := et.Widgets["searchbar"].(*widget.Entry); ok {
 			filterText = sb.Text
 		}
 	}
-	accordionItem := createProgramAccordionItem(program, filterText)
-	accordion.Items[itemIndex].Title = accordionItem.Title
-	accordion.Items[itemIndex].Detail = accordionItem.Detail
-	accordion.Items[itemIndex].Detail.Refresh()
+	newItem, header := ui.CreateProgramAccordionItem(editorItemsAccordionOptions(program, filterText))
+	it := accordion.Items[itemIndex]
+	wasOpen := it.Open
+	it.Title = newItem.Title
+	it.Detail = newItem.Detail
+	it.Open = wasOpen
+	accordion.UpdateHeaderAt(itemIndex, header)
 }
 
-// programHasMatchingItems returns true if the program has any item whose base name or tags
-// fuzzy-match filterText. Used to show program accordion when only content matches.
-func programHasMatchingItems(program *models.Program, filterText string) bool {
-	if filterText == "" {
-		return true
-	}
-	iconService := services.IconVariantServiceInstance()
-	baseNames := iconService.GroupItemsByBaseName(program.ItemRepo().GetAllKeys())
-	baseNameToItemName := make(map[string]string)
-	for _, itemName := range program.ItemRepo().GetAllKeys() {
-		baseName := iconService.GetBaseItemName(itemName)
-		if _, exists := baseNameToItemName[baseName]; !exists {
-			baseNameToItemName[baseName] = itemName
-		}
-	}
-	for _, baseName := range baseNames {
-		if fuzzy.MatchFold(filterText, baseName) {
-			return true
-		}
-		itemName, _ := baseNameToItemName[baseName]
-		if itemName == "" {
-			itemName = baseName
-		}
-		item, err := program.ItemRepo().Get(itemName)
-		if err == nil {
-			for _, tag := range item.Tags {
-				if fuzzy.MatchFold(filterText, tag) {
-					return true
-				}
-			}
-		}
-	}
-	return false
-}
-
-func setAccordionItemsLists(acc *widget.Accordion) {
-	acc.Items = []*widget.AccordionItem{}
+func setAccordionItemsLists(acc *custom_widgets.AccordionWithHeaderWidgets) {
 	et := ui.GetUi().EditorTabs.ItemsTab
 	filterText := ""
 	if sb, ok := et.Widgets["searchbar"].(*widget.Entry); ok {
 		filterText = sb.Text
-		// Wire searchbar to rebuild accordion when user types (idempotent to re-set)
 		sb.OnChanged = func(string) { setAccordionItemsLists(acc) }
 	}
-
-	for _, p := range repositories.ProgramRepo().GetAllSortedByName() {
-		// Show program if search is empty, or program name matches, or any item/tag matches
-		if filterText != "" && !fuzzy.MatchFold(filterText, p.Name) && !programHasMatchingItems(p, filterText) {
-			continue
-		}
-		accordionItem := createProgramAccordionItem(p, filterText)
-		acc.Append(accordionItem)
-	}
+	ui.PopulateItemsSearchAccordion(acc, filterText, func(p *models.Program) ui.ItemsAccordionOptions {
+		return editorItemsAccordionOptions(p, filterText)
+	})
 }
 
-// createProgramAccordionItem creates an accordion item for the editor Items tab using shared UI.
-func createProgramAccordionItem(program *models.Program, filterText string) *widget.AccordionItem {
+// editorItemsAccordionOptions builds CreateProgramAccordionItem options for the editor tab (single-item
+// pick + load form). Image Search action dialog uses the same grid/filter via PopulateItemsSearchAccordion
+// with OnSelectionChanged / tri-state header instead.
+func editorItemsAccordionOptions(program *models.Program, filterText string) ui.ItemsAccordionOptions {
 	programName := program.Name
 	iconService := services.IconVariantServiceInstance()
 	baseNameToItemName := make(map[string]string)
@@ -326,7 +287,7 @@ func createProgramAccordionItem(program *models.Program, filterText string) *wid
 		}
 	}
 
-	item, _ := ui.CreateProgramAccordionItem(ui.ItemsAccordionOptions{
+	return ui.ItemsAccordionOptions{
 		Program:    program,
 		FilterText: filterText,
 		GetSelectedTargets: func() []string {
@@ -379,9 +340,7 @@ func createProgramAccordionItem(program *models.Program, filterText string) *wid
 		RegisterWidgets: func(pname string, list *widget.GridWrap) {
 			ui.GetUi().EditorTabs.ItemsTab.Widgets[pname+"-list"] = list
 		},
-		// No OnSelectionChanged: "All" button is only in the action dialog, not the editor tab.
-	})
-	return item
+	}
 }
 
 // updateMaskDisplay updates the mask label and details label on the Items tab.

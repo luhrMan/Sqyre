@@ -11,6 +11,7 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/layout"
 	widget "fyne.io/fyne/v2/widget"
 	fynetooltip "github.com/dweymouth/fyne-tooltip"
@@ -44,6 +45,11 @@ func InitializeUi(w fyne.Window) *Ui {
 	restoreWindowGeometry(w)
 	w.SetCloseIntercept(func() {
 		saveWindowGeometry(w)
+		if _, ok := fyne.CurrentApp().(desktop.App); ok {
+			// System tray is available (see cmd/sqyre systemTraySetup); keep running in background.
+			w.Hide()
+			return
+		}
 		services.LogMatProfile()
 		w.Close()
 	})
