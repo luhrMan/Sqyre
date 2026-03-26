@@ -183,7 +183,7 @@ func (u *Ui) constructEditorTabs() {
 	)
 
 	//===========================================================================================================ITEMS
-	itw[acc] = widget.NewAccordion()
+	itw[acc] = custom_widgets.NewAccordionWithHeaderWidgets()
 	itw["searchbar"] = widget.NewEntry()
 	itw["searchbar"].(*widget.Entry).PlaceHolder = "Search here"
 	itw[name] = new(widget.Entry)

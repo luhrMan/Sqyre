@@ -237,14 +237,9 @@ func buildItemsAccordionWithSearchbar(
 	}
 	rebuild := func() {
 		filterText := searchbar.Text
-		acc.RemoveAll()
 		itemGrids = itemGrids[:0]
-		for _, p := range repositories.ProgramRepo().GetAllSortedByName() {
-			if filterText != "" && !fuzzy.MatchFold(filterText, p.Name) && !programHasMatchingItemsDialog(p, filterText) {
-				continue
-			}
-			prog := p
-			opts := ItemsAccordionOptions{
+		PopulateItemsSearchAccordion(acc, filterText, func(prog *models.Program) ItemsAccordionOptions {
+			return ItemsAccordionOptions{
 				Program:            prog,
 				FilterText:         filterText,
 				GetSelectedTargets: getTargets,
@@ -256,48 +251,11 @@ func buildItemsAccordionWithSearchbar(
 				OnSelectionMaybeChanged: refreshAccordion,
 				RegisterRefreshTarget:   func(grid *widget.GridWrap) { itemGrids = append(itemGrids, grid) },
 			}
-			item, allBtn := CreateProgramAccordionItem(opts)
-			acc.AppendWithHeader(item, allBtn)
-		}
+		})
 	}
 	searchbar.OnChanged = func(string) { rebuild() }
 	rebuild()
 	return searchbar, container.NewScroll(acc), refreshAccordion
-}
-
-// programHasMatchingItemsDialog returns true if the program has any item whose base name or tags match filterText (fuzzy).
-func programHasMatchingItemsDialog(program *models.Program, filterText string) bool {
-	if filterText == "" {
-		return true
-	}
-	// Use same logic as binders: baseNames + tag match
-	iconService := services.IconVariantServiceInstance()
-	baseNames := iconService.GroupItemsByBaseName(program.ItemRepo().GetAllKeys())
-	baseNameToItemName := make(map[string]string)
-	for _, itemName := range program.ItemRepo().GetAllKeys() {
-		baseName := iconService.GetBaseItemName(itemName)
-		if _, exists := baseNameToItemName[baseName]; !exists {
-			baseNameToItemName[baseName] = itemName
-		}
-	}
-	for _, baseName := range baseNames {
-		if fuzzy.MatchFold(filterText, baseName) {
-			return true
-		}
-		itemName := baseNameToItemName[baseName]
-		if itemName == "" {
-			itemName = baseName
-		}
-		item, err := program.ItemRepo().Get(itemName)
-		if err == nil {
-			for _, tag := range item.Tags {
-				if fuzzy.MatchFold(filterText, tag) {
-					return true
-				}
-			}
-		}
-	}
-	return false
 }
 
 // ShowActionDialog displays a dialog for editing an action.
