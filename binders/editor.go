@@ -306,7 +306,7 @@ func refreshAllProgramRelatedUI() {
 	}
 
 	// Refresh editor tab accordions
-	if accordion, ok := et.ItemsTab.Widgets["Accordion"].(*widget.Accordion); ok {
+	if accordion, ok := et.ItemsTab.Widgets["Accordion"].(*custom_widgets.AccordionWithHeaderWidgets); ok {
 		setAccordionItemsLists(accordion)
 	}
 	if accordion, ok := et.PointsTab.Widgets["Accordion"].(*widget.Accordion); ok {
@@ -329,7 +329,7 @@ func setEditorLists() {
 		et.ProgramsTab.Widgets["list"].(*widget.List),
 	)
 	setAccordionItemsLists(
-		et.ItemsTab.Widgets["Accordion"].(*widget.Accordion),
+		et.ItemsTab.Widgets["Accordion"].(*custom_widgets.AccordionWithHeaderWidgets),
 	)
 	setAccordionPointsLists(
 		et.PointsTab.Widgets["Accordion"].(*widget.Accordion),
@@ -900,7 +900,7 @@ func setEditorButtons() {
 			ui.GetUi().EditorTabs.ItemsTab.SelectedItem = i
 			v := i
 			ui.GetUi().EditorTabs.ItemsTab.Widgets["Name"].(*widget.Entry).SetText(v.Name)
-			if acc, ok := ui.GetUi().EditorTabs.ItemsTab.Widgets["Accordion"].(*widget.Accordion); ok {
+			if acc, ok := ui.GetUi().EditorTabs.ItemsTab.Widgets["Accordion"].(*custom_widgets.AccordionWithHeaderWidgets); ok {
 				setAccordionItemsLists(acc)
 			}
 			setItemsWidgets(*i)
@@ -1064,7 +1064,7 @@ func setEditorButtons() {
 			} else {
 				it.SelectedItem = &models.Item{}
 			}
-			if acc, ok := it.Widgets["Accordion"].(*widget.Accordion); ok {
+			if acc, ok := it.Widgets["Accordion"].(*custom_widgets.AccordionWithHeaderWidgets); ok {
 				setAccordionItemsLists(acc)
 			}
 			if list, ok := it.Widgets[program+"-list"].(*widget.GridWrap); ok {
