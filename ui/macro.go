@@ -143,6 +143,13 @@ func (u *Ui) constructMacroUi() *fyne.Container {
 
 	globaldelaytt := ttwidget.NewIcon(theme.HistoryIcon())
 	globaldelaytt.SetToolTip("global delay (ms)")
+	hotkeyBlock := container.NewVBox(
+		mui.MTabs.MacroHotkeyEntry,
+		container.NewHBox(
+			widget.NewLabel("Trigger:"),
+			mui.MTabs.HotkeyTriggerRadio,
+		),
+	)
 	mui.MacroToolbars.BottomToolbar =
 		container.NewGridWithColumns(2,
 			container.NewBorder(
@@ -150,7 +157,7 @@ func (u *Ui) constructMacroUi() *fyne.Container {
 				nil,
 				container.NewHBox(globaldelaytt, mui.MTabs.BoundGlobalDelayEntry),
 				mousePosition, //right
-				mui.MTabs.MacroHotkeyEntry,
+				hotkeyBlock,
 			),
 			services.MacroProgressBar(),
 		)
