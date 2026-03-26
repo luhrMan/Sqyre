@@ -85,7 +85,7 @@ func AddMacroTab(m *models.Macro) {
 	mtabs.AddTab(m.Name, t)
 	setMacroTree(mtabs.SelectedTab())
 	syncMacroToolbarFieldsFromSelection()
-	services.RegisterHotkey(m.Hotkey, services.MacroHotkeyCallback(m))
+	services.RegisterMacroHotkey(m)
 }
 
 func syncMacroToolbarFieldsFromSelection() {
@@ -97,6 +97,7 @@ func syncMacroToolbarFieldsFromSelection() {
 	mtabs.MacroNameEntry.SetText(st.Macro.Name)
 	mtabs.BoundGlobalDelayEntry.SetValue(st.Macro.GlobalDelay)
 	mtabs.MacroHotkeyEntry.SetText(services.ReverseParseMacroHotkey(st.Macro.Hotkey))
+	mtabs.HotkeyTriggerRadio.SetSelected(models.ParseHotkeyTrigger(st.Macro.HotkeyTrigger).UILabel())
 }
 
 func setMtabSettingsAndWidgets() {
@@ -124,7 +125,7 @@ func setMtabSettingsAndWidgets() {
 	mtabs.OnClosed = func(ti *container.TabItem) {
 		m, err := repositories.MacroRepo().Get(ti.Text)
 		if err == nil {
-			services.UnregisterHotkey(m.Hotkey)
+			services.UnregisterMacroHotkey(m)
 		}
 		mtabs.SelectIndex(0)
 		mtabs.BoundMacroListWidget.Refresh()
@@ -153,15 +154,25 @@ func setMtabSettingsAndWidgets() {
 		if mt == nil {
 			return
 		}
-		m := mt.Macro
-		services.UnregisterHotkey(mt.Macro.Hotkey)
-		m.Hotkey = services.ParseMacroHotkey(mtabs.MacroHotkeyEntry.Text)
-		services.RegisterHotkey(mt.Macro.Hotkey, services.MacroHotkeyCallback(m))
+		oldHk := slices.Clone(mt.Macro.Hotkey)
+		oldTr := mt.Macro.HotkeyTrigger
+		services.UnregisterHotkeyKeys(oldHk, oldTr)
+
+		mt.Macro.Hotkey = services.ParseMacroHotkey(mtabs.MacroHotkeyEntry.Text)
+		mt.Macro.HotkeyTrigger = string(models.HotkeyTriggerFromUILabel(mtabs.HotkeyTriggerRadio.Selected))
+
+		services.RegisterMacroHotkey(mt.Macro)
+		if err := repositories.MacroRepo().Set(mt.Macro.Name, mt.Macro); err != nil {
+			log.Printf("save hotkey: persist macro: %v", err)
+		}
 	}
 	mtabs.MacroHotkeyEntry.ActionItem = widget.NewButtonWithIcon("", theme.DocumentSaveIcon(), func() {
 		saveHotkey()
 	})
 	mtabs.MacroHotkeyEntry.OnSubmitted = func(s string) {
+		saveHotkey()
+	}
+	mtabs.HotkeyTriggerRadio.OnChanged = func(string) {
 		saveHotkey()
 	}
 

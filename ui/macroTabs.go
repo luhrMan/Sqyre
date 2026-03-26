@@ -18,6 +18,7 @@ type MacroTabs struct {
 	globalDelayMin        int
 	globalDelayMax        int
 	MacroHotkeyEntry      *widget.Entry
+	HotkeyTriggerRadio    *widget.RadioGroup
 }
 
 func NewMacroTabs() *MacroTabs {
@@ -26,8 +27,12 @@ func NewMacroTabs() *MacroTabs {
 		MacroNameEntry:       widget.NewEntry(),
 		globalDelayMin:       0,
 		globalDelayMax:       1000,
-		MacroHotkeyEntry:     widget.NewEntry(),
+		MacroHotkeyEntry:  widget.NewEntry(),
+		HotkeyTriggerRadio: widget.NewRadioGroup([]string{"On press", "On release"}, nil),
 	}
+	t.HotkeyTriggerRadio.Horizontal = true
+	t.HotkeyTriggerRadio.Required = true
+	t.HotkeyTriggerRadio.SetSelected("On press")
 	t.BoundGlobalDelayEntry = custom_widgets.NewIncrementerWithEntry(0, 1, &t.globalDelayMin, &t.globalDelayMax)
 	t.ExtendBaseWidget(t)
 
