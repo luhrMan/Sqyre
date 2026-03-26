@@ -4,10 +4,13 @@ import (
 	"Sqyre/internal/assets"
 	"Sqyre/internal/config"
 	"Sqyre/internal/models"
+	"Sqyre/internal/models/repositories"
 	"Sqyre/internal/services"
 	"fmt"
 	"image/color"
 	"slices"
+
+	"Sqyre/ui/custom_widgets"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -16,7 +19,6 @@ import (
 	"fyne.io/fyne/v2/widget"
 	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 	"github.com/lithammer/fuzzysearch/fuzzy"
-	"Sqyre/ui/custom_widgets"
 )
 
 // HeaderButtonOption describes an optional button shown at the right end of an accordion item's
@@ -63,6 +65,69 @@ type ItemsAccordionOptions struct {
 
 	// HeaderButton, if non-nil, adds a button at the right end of this accordion item's header area.
 	HeaderButton *HeaderButtonOption
+}
+
+// ProgramRowVisibleInItemsSearch reports whether a program accordion row should appear for filterText
+// (program name match, or any item base name / tag matches). Empty filter shows all programs.
+func ProgramRowVisibleInItemsSearch(program *models.Program, filterText string) bool {
+	if filterText == "" {
+		return true
+	}
+	if fuzzy.MatchFold(filterText, program.Name) {
+		return true
+	}
+	return programHasItemsOrTagsMatchingSearch(program, filterText)
+}
+
+func programHasItemsOrTagsMatchingSearch(program *models.Program, filterText string) bool {
+	iconService := services.IconVariantServiceInstance()
+	baseNames := iconService.GroupItemsByBaseName(program.ItemRepo().GetAllKeys())
+	baseNameToItemName := make(map[string]string)
+	for _, itemName := range program.ItemRepo().GetAllKeys() {
+		baseName := iconService.GetBaseItemName(itemName)
+		if _, exists := baseNameToItemName[baseName]; !exists {
+			baseNameToItemName[baseName] = itemName
+		}
+	}
+	for _, baseName := range baseNames {
+		if fuzzy.MatchFold(filterText, baseName) {
+			return true
+		}
+		itemName, exists := baseNameToItemName[baseName]
+		if !exists {
+			itemName = baseName
+		}
+		item, err := program.ItemRepo().Get(itemName)
+		if err == nil {
+			for _, tag := range item.Tags {
+				if fuzzy.MatchFold(filterText, tag) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// PopulateItemsSearchAccordion clears acc and rebuilds it from the program list using the same row rules
+// for both the editor Items tab and the Image Search action dialog. buildOpts supplies per-program options;
+// only selection-related fields should differ between those screens.
+func PopulateItemsSearchAccordion(
+	acc *custom_widgets.AccordionWithHeaderWidgets,
+	filterText string,
+	buildOpts func(*models.Program) ItemsAccordionOptions,
+) {
+	acc.RemoveAll()
+	for _, p := range repositories.ProgramRepo().GetAllSortedByName() {
+		if !ProgramRowVisibleInItemsSearch(p, filterText) {
+			continue
+		}
+		prog := p
+		opts := buildOpts(prog)
+		item, hdr := CreateProgramAccordionItem(opts)
+		acc.AppendWithHeader(item, hdr)
+	}
+	acc.Refresh()
 }
 
 // CreateProgramAccordionItem builds a single accordion item (one program's item grid)
@@ -162,7 +227,11 @@ func CreateProgramAccordionItem(opts ItemsAccordionOptions) (*widget.AccordionIt
 			return container.NewStack(rect, container.NewPadded(icon), ttwidget.NewLabel(""))
 		},
 		func(id widget.GridWrapItemID, o fyne.CanvasObject) {
-			baseItemName := lists.filtered[id]
+			idx := int(id)
+			if idx < 0 || idx >= len(lists.filtered) {
+				return
+			}
+			baseItemName := lists.filtered[idx]
 			stack := o.(*fyne.Container)
 			rect := stack.Objects[0].(*canvas.Rectangle)
 			icon := stack.Objects[1].(*fyne.Container).Objects[0].(*canvas.Image)
@@ -199,7 +268,11 @@ func CreateProgramAccordionItem(opts ItemsAccordionOptions) (*widget.AccordionIt
 	)
 
 	lists.items.OnSelected = func(id widget.GridWrapItemID) {
-		baseItemName := lists.filtered[id]
+		idx := int(id)
+		if idx < 0 || idx >= len(lists.filtered) {
+			return
+		}
+		baseItemName := lists.filtered[idx]
 		if opts.OnItemSelected != nil {
 			opts.OnItemSelected(baseItemName)
 		}
