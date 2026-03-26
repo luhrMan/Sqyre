@@ -25,6 +25,7 @@ import "C"
 
 import (
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 	"unsafe"
@@ -144,6 +145,30 @@ func ChordFullyReleased(cmds []string) bool {
 		}
 	}
 	return true
+}
+
+// PressedKeyNames returns sorted key names for physical keys currently held, using Keycode
+// names (same strings as Register / ParseMacroHotkey). When multiple names map to the same
+// keycode, the lexicographically smallest name is used.
+func PressedKeyNames() []string {
+	lck.RLock()
+	defer lck.RUnlock()
+	byCode := make(map[uint16]string)
+	for name, code := range Keycode {
+		if !pressed[code] {
+			continue
+		}
+		prev, ok := byCode[code]
+		if !ok || name < prev {
+			byCode[code] = name
+		}
+	}
+	out := make([]string, 0, len(byCode))
+	for _, name := range byCode {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // Register register gohook event

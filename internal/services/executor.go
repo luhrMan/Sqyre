@@ -182,10 +182,8 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 		if count < 1 {
 			return fmt.Errorf("loop count must be at least 1, got %d", count)
 		}
-		var progress, progressStep float64
 		if node.Name == "root" {
 			resetDataListsInTree(node)
-			progressStep = (100.0 / float64(len(node.GetSubActions()))) / 100
 			fyne.Do(func() {
 				MacroActiveIndicator().Show()
 				MacroActiveIndicator().Start()
@@ -194,15 +192,7 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 
 		for i := range count {
 			log.Printf("Loop: %s iteration %d", node.Name, i+1)
-			for j, action := range node.GetSubActions() {
-				if node.Name == "root" {
-					progress = progressStep * float64(j+1)
-					log.Println(progress)
-					fyne.Do(func() {
-						MacroProgressBar().SetValue(progress)
-						MacroProgressBar().Refresh()
-					})
-				}
+			for _, action := range node.GetSubActions() {
 				if err := executeWithContext(action, macro); err != nil {
 					fyne.DoAndWait(func() {
 						MacroActiveIndicator().Stop()
