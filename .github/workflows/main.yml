@@ -87,13 +87,32 @@ jobs:
           mv .devcontainer/builds/linux/packaging/appimage/Sqyre-${{ steps.version.outputs.VERSION }}-x86_64.AppImage \
              Sqyre-v${{ steps.version.outputs.VERSION }}-x86_64.AppImage
 
-      - name: Upload Linux artifacts
+      - name: Install zip
+        run: sudo apt-get update && sudo apt-get install -y zip
+
+      - name: Zip Linux binary
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          zip -9 "sqyre-v${VERSION}-linux-amd64.zip" \
+            "sqyre-v${VERSION}-linux-amd64"
+
+      - name: Zip Linux AppImage
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          zip -9 "Sqyre-v${VERSION}-x86_64.AppImage.zip" \
+            "Sqyre-v${VERSION}-x86_64.AppImage"
+
+      - name: Upload Linux binary artifact (zipped)
         uses: actions/upload-artifact@v4
         with:
-          name: linux-artifacts
-          path: |
-            sqyre-v${{ steps.version.outputs.VERSION }}-linux-amd64
-            Sqyre-v${{ steps.version.outputs.VERSION }}-x86_64.AppImage
+          name: linux-binary-zip
+          path: sqyre-v${{ steps.version.outputs.VERSION }}-linux-amd64.zip
+
+      - name: Upload Linux AppImage artifact (zipped)
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-appimage-zip
+          path: Sqyre-v${{ steps.version.outputs.VERSION }}-x86_64.AppImage.zip
 
   build-windows:
     runs-on: ubuntu-22.04
@@ -173,11 +192,20 @@ jobs:
           fi
           cp "$EXE" Sqyre-v${{ steps.version.outputs.VERSION }}-windows-amd64.exe
 
-      - name: Upload Windows artifact
+      - name: Install zip
+        run: sudo apt-get update && sudo apt-get install -y zip
+
+      - name: Zip Windows artifact
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          zip -9 "Sqyre-v${VERSION}-windows-amd64.zip" \
+            "Sqyre-v${VERSION}-windows-amd64.exe"
+
+      - name: Upload Windows artifact (zipped)
         uses: actions/upload-artifact@v4
         with:
-          name: windows-artifact
-          path: Sqyre-v${{ steps.version.outputs.VERSION }}-windows-amd64.exe
+          name: windows-artifact-zip
+          path: Sqyre-v${{ steps.version.outputs.VERSION }}-windows-amd64.zip
 
   release:
     needs: [build-linux, build-windows]
@@ -197,8 +225,9 @@ jobs:
           tag_name: v${{ needs.build-linux.outputs.version }}
           name: Release v${{ needs.build-linux.outputs.version }}
           files: |
-            artifacts/linux-artifacts/*
-            artifacts/windows-artifact/*
+            artifacts/linux-binary-zip/*.zip
+            artifacts/linux-appimage-zip/*.zip
+            artifacts/windows-artifact-zip/*.zip
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
