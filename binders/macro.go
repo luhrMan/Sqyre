@@ -10,6 +10,7 @@ import (
 	"errors"
 	"log"
 	"slices"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -96,7 +97,11 @@ func syncMacroToolbarFieldsFromSelection() {
 	}
 	mtabs.MacroNameEntry.SetText(st.Macro.Name)
 	mtabs.BoundGlobalDelayEntry.SetValue(st.Macro.GlobalDelay)
-	mtabs.MacroHotkeyEntry.SetText(services.ReverseParseMacroHotkey(st.Macro.Hotkey))
+	if len(st.Macro.Hotkey) == 0 {
+		mtabs.MacroHotkeyLabel.SetText("—")
+	} else {
+		mtabs.MacroHotkeyLabel.SetText(services.ReverseParseMacroHotkey(st.Macro.Hotkey))
+	}
 	mtabs.HotkeyTriggerRadio.SetSelected(models.ParseHotkeyTrigger(st.Macro.HotkeyTrigger).UILabel())
 }
 
@@ -148,32 +153,40 @@ func setMtabSettingsAndWidgets() {
 		syncMacroToolbarFieldsFromSelection()
 	}
 
-	mtabs.MacroHotkeyEntry.PlaceHolder = "ctrl+shift+1 or ctrl+1 or ctrl+a+1"
-	saveHotkey := func() {
+	saveHotkey := func(deferHookRegister bool) {
 		mt := mtabs.SelectedTab()
 		if mt == nil {
 			return
 		}
 		oldHk := slices.Clone(mt.Macro.Hotkey)
 		oldTr := mt.Macro.HotkeyTrigger
-		services.UnregisterHotkeyKeys(oldHk, oldTr)
+		if !deferHookRegister {
+			services.UnregisterHotkeyKeys(oldHk, oldTr)
+		}
 
-		mt.Macro.Hotkey = services.ParseMacroHotkey(mtabs.MacroHotkeyEntry.Text)
+		disp := mtabs.MacroHotkeyLabel.Text
+		if disp == "" || disp == "—" {
+			mt.Macro.Hotkey = []string{}
+		} else {
+			mt.Macro.Hotkey = services.ParseMacroHotkey(disp)
+		}
 		mt.Macro.HotkeyTrigger = string(models.HotkeyTriggerFromUILabel(mtabs.HotkeyTriggerRadio.Selected))
 
-		services.RegisterMacroHotkey(mt.Macro)
+		if !deferHookRegister {
+			services.RegisterMacroHotkey(mt.Macro)
+		}
 		if err := repositories.MacroRepo().Set(mt.Macro.Name, mt.Macro); err != nil {
 			log.Printf("save hotkey: persist macro: %v", err)
 		}
 	}
-	mtabs.MacroHotkeyEntry.ActionItem = widget.NewButtonWithIcon("", theme.DocumentSaveIcon(), func() {
-		saveHotkey()
-	})
-	mtabs.MacroHotkeyEntry.OnSubmitted = func(s string) {
-		saveHotkey()
+	mtabs.MacroHotkeyRecordBtn.OnTapped = func() {
+		ui.ShowHotkeyRecordDialog(ui.GetUi().Window, 1*time.Second, func(keys []string) {
+			mtabs.MacroHotkeyLabel.SetText(services.ReverseParseMacroHotkey(keys))
+			saveHotkey(true)
+		})
 	}
 	mtabs.HotkeyTriggerRadio.OnChanged = func(string) {
-		saveHotkey()
+		saveHotkey(false)
 	}
 
 	mtabs.MacroNameEntry.OnSubmitted = func(sub string) {

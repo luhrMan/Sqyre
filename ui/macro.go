@@ -1,11 +1,14 @@
 package ui
 
 import (
+	"image/color"
+
 	"Sqyre/internal/assets"
 	"Sqyre/internal/models/serialize"
 	"Sqyre/internal/services"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/layout"
@@ -143,24 +146,18 @@ func (u *Ui) constructMacroUi() *fyne.Container {
 
 	globaldelaytt := ttwidget.NewIcon(theme.HistoryIcon())
 	globaldelaytt.SetToolTip("global delay (ms)")
-	hotkeyBlock := container.NewVBox(
-		mui.MTabs.MacroHotkeyEntry,
-		container.NewHBox(
-			widget.NewLabel("Trigger:"),
-			mui.MTabs.HotkeyTriggerRadio,
-		),
+	bottomLeftContent := container.NewHBox(globaldelaytt, mui.MTabs.BoundGlobalDelayEntry, mousePosition)
+	bottomLeft := WrapSqyreFrame(container.NewPadded(bottomLeftContent))
+	bottomFiller := canvas.NewRectangle(color.Transparent)
+	bottomRightContent := container.NewHBox(
+		widget.NewLabel("Hotkey:"),
+		mui.MTabs.MacroHotkeyLabel,
+		widget.NewLabel("Trigger:"),
+		mui.MTabs.HotkeyTriggerRadio,
+		mui.MTabs.MacroHotkeyRecordBtn,
 	)
-	mui.MacroToolbars.BottomToolbar =
-		container.NewGridWithColumns(2,
-			container.NewBorder(
-				nil,
-				nil,
-				container.NewHBox(globaldelaytt, mui.MTabs.BoundGlobalDelayEntry),
-				mousePosition, //right
-				hotkeyBlock,
-			),
-			services.MacroProgressBar(),
-		)
+	bottomRight := WrapSqyreFrame(container.NewPadded(bottomRightContent))
+	mui.MacroToolbars.BottomToolbar = container.NewBorder(nil, nil, bottomLeft, bottomRight, bottomFiller)
 
 	macroUi :=
 		container.NewBorder(
