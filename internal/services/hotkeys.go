@@ -3,6 +3,7 @@ package services
 import (
 	"Sqyre/internal/hotkeytrigger"
 	"Sqyre/internal/models"
+	"Sqyre/internal/models/repositories"
 	"log"
 	"os"
 	"slices"
@@ -11,6 +12,11 @@ import (
 	"time"
 
 	hook "github.com/luhrMan/gohook"
+)
+
+var (
+	macroHotkeySuspendMu    sync.Mutex
+	macroHotkeySuspendCount int
 )
 
 // Hook lifecycle: StartHook() is started in init() (see cmd/sqyre/sqyre.go). It runs
@@ -56,6 +62,35 @@ func ReverseParseMacroHotkey(hk []string) string {
 		str = str + " + " + k
 	}
 	return str
+}
+
+// SuspendMacroHotkeys unregisters every macro hotkey. Nested calls count; each Suspend must be
+// paired with ResumeMacroHotkeys so hooks are restored when the outermost suspend ends.
+func SuspendMacroHotkeys() {
+	macroHotkeySuspendMu.Lock()
+	defer macroHotkeySuspendMu.Unlock()
+	if macroHotkeySuspendCount == 0 {
+		for _, m := range repositories.MacroRepo().GetAll() {
+			UnregisterMacroHotkey(m)
+		}
+	}
+	macroHotkeySuspendCount++
+}
+
+// ResumeMacroHotkeys re-registers all macro hotkeys from the repository after the matching
+// SuspendMacroHotkeys (see suspend refcount).
+func ResumeMacroHotkeys() {
+	macroHotkeySuspendMu.Lock()
+	defer macroHotkeySuspendMu.Unlock()
+	if macroHotkeySuspendCount == 0 {
+		return
+	}
+	macroHotkeySuspendCount--
+	if macroHotkeySuspendCount == 0 {
+		for _, m := range repositories.MacroRepo().GetAll() {
+			RegisterMacroHotkey(m)
+		}
+	}
 }
 
 // RegisterMacroHotkey registers the macro's global hotkey using its Hotkey slice and HotkeyTrigger.
@@ -163,4 +198,3 @@ func macroHotkeyCallbackPress(m *models.Macro) func(e hook.Event) {
 		}()
 	}
 }
-

@@ -5,7 +5,9 @@ import (
 
 	"Sqyre/ui/custom_widgets"
 
+	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -17,18 +19,24 @@ type MacroTabs struct {
 	BoundGlobalDelayEntry *custom_widgets.Incrementer
 	globalDelayMin        int
 	globalDelayMax        int
-	MacroHotkeyEntry      *widget.Entry
+	MacroHotkeyLabel      *widget.Label
+	MacroHotkeyRecordBtn  *widget.Button
 	HotkeyTriggerRadio    *widget.RadioGroup
 }
 
 func NewMacroTabs() *MacroTabs {
+	hkLabel := widget.NewLabel("—")
+	hkLabel.Wrapping = fyne.TextWrapOff
+	hkLabel.TextStyle = fyne.TextStyle{Monospace: true}
+
 	t := &MacroTabs{
 		BoundMacroListWidget: &widget.List{},
 		MacroNameEntry:       widget.NewEntry(),
 		globalDelayMin:       0,
 		globalDelayMax:       1000,
-		MacroHotkeyEntry:  widget.NewEntry(),
-		HotkeyTriggerRadio: widget.NewRadioGroup([]string{"On press", "On release"}, nil),
+		MacroHotkeyLabel:     hkLabel,
+		MacroHotkeyRecordBtn: widget.NewButtonWithIcon("", theme.MediaRecordIcon(), nil),
+		HotkeyTriggerRadio:   widget.NewRadioGroup([]string{"On press", "On release"}, nil),
 	}
 	t.HotkeyTriggerRadio.Horizontal = true
 	t.HotkeyTriggerRadio.Required = true
