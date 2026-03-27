@@ -56,6 +56,7 @@ func setSearchAreaWidgets(sa models.SearchArea) {
 	custom_widgets.SetEntryText(st["TopY"], fmt.Sprintf("%v", sa.TopY))
 	custom_widgets.SetEntryText(st["RightX"], fmt.Sprintf("%v", sa.RightX))
 	custom_widgets.SetEntryText(st["BottomY"], fmt.Sprintf("%v", sa.BottomY))
+	ui.GetUi().RefreshEditorActionBar()
 }
 
 func setPointWidgets(p models.Point) {
@@ -71,6 +72,7 @@ func setPointWidgets(p models.Point) {
 		}()
 		ui.GetUi().UpdatePointPreview(&p)
 	}()
+	ui.GetUi().RefreshEditorActionBar()
 }
 
 func setAccordionSearchAreasLists(acc *widget.Accordion) {
@@ -129,7 +131,7 @@ func setAccordionSearchAreasLists(acc *widget.Accordion) {
 				log.Printf("Error getting program %s: %v", p.Name, err)
 				return
 			}
-			ui.GetUi().ProgramSelector.SetText(program.Name)
+			ui.GetUi().EditorTabs.SearchAreasTab.ProgramSelector.SetSelected(program.Name)
 			saName := lists.filtered[id]
 			sa, err := program.SearchAreaRepo(config.MainMonitorSizeString).Get(saName)
 			if err != nil {
@@ -213,7 +215,7 @@ func setAccordionPointsLists(acc *widget.Accordion) {
 				log.Printf("Error getting program %s: %v", p.Name, err)
 				return
 			}
-			ui.GetUi().ProgramSelector.SetText(program.Name)
+			ui.GetUi().EditorTabs.PointsTab.ProgramSelector.SetSelected(program.Name)
 			pointName := lists.filtered[id]
 			point, err := p.PointRepo(config.MainMonitorSizeString).Get(pointName)
 			if err != nil {

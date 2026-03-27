@@ -38,7 +38,7 @@ func setItemsWidgets(i models.Item) {
 
 	// Update IconVariantEditor with selected item
 	if editor, ok := it["iconVariantEditor"].(*custom_widgets.IconVariantEditor); ok {
-		programName := ui.GetUi().ProgramSelector.Text
+		programName := ui.GetUi().EditorTabs.ItemsTab.ProgramSelector.Selected
 		iconService := services.IconVariantServiceInstance()
 		baseName := iconService.GetBaseItemName(i.Name)
 
@@ -51,6 +51,7 @@ func setItemsWidgets(i models.Item) {
 		// Update both program and item at once to avoid double refresh
 		editor.SetProgramAndItem(programName, baseName)
 	}
+	ui.GetUi().RefreshEditorActionBar()
 }
 
 // updateTagsDisplay updates the tags grid container with the current item's tags
@@ -92,7 +93,7 @@ func removeTag(item *models.Item, tagToRemove string) {
 	item.Tags = newTags
 
 	// Save the item
-	p := ui.GetUi().ProgramSelector.Text
+	p := ui.GetUi().EditorTabs.ItemsTab.ProgramSelector.Selected
 	program, err := repositories.ProgramRepo().Get(p)
 	if err != nil {
 		log.Printf("Error getting program %s: %v", p, err)
@@ -120,6 +121,7 @@ func removeTag(item *models.Item, tagToRemove string) {
 
 	// Update the SelectedItem to the reloaded item
 	ui.GetUi().EditorTabs.ItemsTab.SelectedItem = updatedItem
+	ui.GetUi().RefreshEditorActionBar()
 
 	// Update the tags display
 	updateTagsDisplay(updatedItem)
@@ -309,7 +311,7 @@ func editorItemsAccordionOptions(program *models.Program, filterText string) ui.
 				log.Printf("Error getting program %s: %v", programName, err)
 				return
 			}
-			ui.GetUi().ProgramSelector.SetText(program.Name)
+			ui.GetUi().EditorTabs.ItemsTab.ProgramSelector.SetSelected(program.Name)
 			itemName, exists := baseNameToItemName[baseItemName]
 			if !exists {
 				itemName = baseItemName
@@ -367,7 +369,7 @@ func updateMaskDisplay(maskName string) {
 		return
 	}
 
-	prog := ui.GetUi().ProgramSelector.Text
+	prog := ui.GetUi().EditorTabs.ItemsTab.ProgramSelector.Selected
 	program, err := repositories.ProgramRepo().Get(prog)
 	if err != nil {
 		maskDetailsLabel.SetText("")
@@ -430,7 +432,7 @@ func showMaskSelectionPopup() {
 			if v, ok := ui.GetUi().EditorTabs.ItemsTab.SelectedItem.(*models.Item); ok {
 				v.Mask = maskName
 
-				prog := ui.GetUi().ProgramSelector.Text
+				prog := ui.GetUi().EditorTabs.ItemsTab.ProgramSelector.Selected
 				program, err := repositories.ProgramRepo().Get(prog)
 				if err != nil {
 					log.Printf("Error getting program %s: %v", prog, err)
@@ -505,7 +507,7 @@ func setMaskSelectionButtons() {
 			if v, ok := ui.GetUi().EditorTabs.ItemsTab.SelectedItem.(*models.Item); ok {
 				v.Mask = ""
 
-				prog := ui.GetUi().ProgramSelector.Text
+				prog := ui.GetUi().EditorTabs.ItemsTab.ProgramSelector.Selected
 				program, err := repositories.ProgramRepo().Get(prog)
 				if err != nil {
 					log.Printf("Error getting program %s: %v", prog, err)

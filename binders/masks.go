@@ -50,9 +50,10 @@ func setMaskWidgets(m models.Mask, programName string) {
 		shape = "Rectangle"
 	}
 	// Capitalize for RadioGroup display values
-	if shape == "rectangle" {
+	switch shape {
+	case "rectangle":
 		shape = "Rectangle"
-	} else if shape == "circle" {
+	case "circle":
 		shape = "Circle"
 	}
 	mtw["shapeSelect"].(*widget.RadioGroup).SetSelected(shape)
@@ -68,6 +69,7 @@ func setMaskWidgets(m models.Mask, programName string) {
 	} else {
 		ui.GetUi().ClearMaskPreviewImage()
 	}
+	ui.GetUi().RefreshEditorActionBar()
 }
 
 func setAccordionMasksLists(acc *widget.Accordion) {
@@ -126,7 +128,7 @@ func setAccordionMasksLists(acc *widget.Accordion) {
 				log.Printf("Error getting program %s: %v", p.Name, err)
 				return
 			}
-			ui.GetUi().ProgramSelector.SetText(program.Name)
+			ui.GetUi().EditorTabs.MasksTab.ProgramSelector.SetSelected(program.Name)
 			maskName := lists.filtered[id]
 			mask, err := program.MaskRepo().Get(maskName)
 			if err != nil {
@@ -162,52 +164,68 @@ func setMasksForms() {
 		n := w["Name"].(*widget.Entry).Text
 
 		if v, ok := et.MasksTab.SelectedItem.(*models.Mask); ok {
-			p := ui.GetUi().ProgramSelector.Text
+			p := ui.GetUi().EditorTabs.MasksTab.ProgramSelector.Selected
+			if p == "" {
+				ui.ShowErrorWithEscape(fmt.Errorf("program cannot be empty"), ui.GetUi().Window)
+				return
+			}
 			program, err := repositories.ProgramRepo().Get(p)
 			if err != nil {
 				log.Printf("Error getting program %s: %v", p, err)
 				return
 			}
-		oldkey := v.Name
-		v.Name = n
-		v.Shape = readMaskShapeFromUI()
-		v.CenterX = custom_widgets.EntryText(w["CenterX"])
-		v.CenterY = custom_widgets.EntryText(w["CenterY"])
-		v.Base = custom_widgets.EntryText(w["Base"])
-		v.Height = custom_widgets.EntryText(w["Height"])
-		v.Radius = custom_widgets.EntryText(w["Radius"])
-		if inverseCheck, ok := w["Inverse"].(*widget.Check); ok {
-			v.Inverse = inverseCheck.Checked
-		}
-
-			if err := program.MaskRepo().Set(v.Name, v); err != nil {
-				log.Printf("Error saving mask %s: %v", v.Name, err)
-				ui.ShowErrorWithEscape(fmt.Errorf("failed to save mask"), ui.GetUi().Window)
-				return
-			}
-
-			if oldkey != v.Name {
-				if err := program.MaskRepo().Delete(oldkey); err != nil {
-					log.Printf("Error deleting mask %s: %v", oldkey, err)
+			applyMaskUpdate := func() {
+				oldkey := v.Name
+				v.Name = n
+				v.Shape = readMaskShapeFromUI()
+				v.CenterX = custom_widgets.EntryText(w["CenterX"])
+				v.CenterY = custom_widgets.EntryText(w["CenterY"])
+				v.Base = custom_widgets.EntryText(w["Base"])
+				v.Height = custom_widgets.EntryText(w["Height"])
+				v.Radius = custom_widgets.EntryText(w["Radius"])
+				if inverseCheck, ok := w["Inverse"].(*widget.Check); ok {
+					v.Inverse = inverseCheck.Checked
 				}
-				renameMaskImage(p, oldkey, v.Name)
+
+				if err := program.MaskRepo().Set(v.Name, v); err != nil {
+					log.Printf("Error saving mask %s: %v", v.Name, err)
+					ui.ShowErrorWithEscape(fmt.Errorf("failed to save mask"), ui.GetUi().Window)
+					return
+				}
+
+				if oldkey != v.Name {
+					if err := program.MaskRepo().Delete(oldkey); err != nil {
+						log.Printf("Error deleting mask %s: %v", oldkey, err)
+					}
+					renameMaskImage(p, oldkey, v.Name)
+				}
+
+				if err := repositories.ProgramRepo().Set(program.Name, program); err != nil {
+					log.Printf("Error saving program %s: %v", p, err)
+					return
+				}
+
+				hasImage := ui.HasMaskImage(p, v.Name)
+				ui.GetUi().SetMaskImageMode(hasImage)
+				if hasImage {
+					ui.GetUi().UpdateMaskPreview(p, v.Name)
+				}
+
+				if acc, ok := et.MasksTab.Widgets["Accordion"].(*widget.Accordion); ok {
+					setAccordionMasksLists(acc)
+				}
+				markMasksClean()
 			}
 
-			if err := repositories.ProgramRepo().Set(program.Name, program); err != nil {
-				log.Printf("Error saving program %s: %v", p, err)
-				return
+			if v.Name != n {
+				if shouldConfirmOverwrite("mask", n, func(name string) bool {
+					_, err := program.MaskRepo().Get(name)
+					return err == nil
+				}, ui.GetUi().Window, applyMaskUpdate) {
+					return
+				}
 			}
-
-			hasImage := ui.HasMaskImage(p, v.Name)
-			ui.GetUi().SetMaskImageMode(hasImage)
-			if hasImage {
-				ui.GetUi().UpdateMaskPreview(p, v.Name)
-			}
-
-			if acc, ok := et.MasksTab.Widgets["Accordion"].(*widget.Accordion); ok {
-				setAccordionMasksLists(acc)
-			}
-			markMasksClean()
+			applyMaskUpdate()
 		}
 	}
 }
@@ -223,7 +241,7 @@ func setMasksButtons() {
 				ui.ShowErrorWithEscape(fmt.Errorf("select a mask first"), ui.GetUi().Window)
 				return
 			}
-			programName := ui.GetUi().ProgramSelector.Text
+			programName := ui.GetUi().EditorTabs.MasksTab.ProgramSelector.Selected
 			if programName == "" {
 				ui.ShowErrorWithEscape(fmt.Errorf("select a program first"), ui.GetUi().Window)
 				return
@@ -287,7 +305,7 @@ func setMasksButtons() {
 			if !ok || mask.Name == "" {
 				return
 			}
-			programName := ui.GetUi().ProgramSelector.Text
+			programName := ui.GetUi().EditorTabs.MasksTab.ProgramSelector.Selected
 			masksPath := config.GetMasksPath()
 			imgPath := filepath.Join(masksPath, programName, mask.Name+config.PNG)
 			if err := os.Remove(imgPath); err != nil && !os.IsNotExist(err) {
