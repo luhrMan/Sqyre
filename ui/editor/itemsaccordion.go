@@ -1,4 +1,4 @@
-package ui
+package editor
 
 import (
 	"Sqyre/internal/assets"

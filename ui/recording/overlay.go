@@ -1,4 +1,4 @@
-package ui
+package recording
 
 import (
 	"image"

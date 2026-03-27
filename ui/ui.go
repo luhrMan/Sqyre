@@ -6,6 +6,8 @@ import (
 	"Sqyre/internal/config"
 	"Sqyre/internal/logger"
 	"Sqyre/internal/services"
+	"Sqyre/ui/editor"
+	"Sqyre/ui/macro"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -27,14 +29,14 @@ var (
 type Ui struct {
 	Window   fyne.Window
 	MainMenu *fyne.MainMenu
-	*EditorUi
+	*editor.EditorUi
 	*SettingsUi
 	*MainUi
 }
 
 type MainUi struct {
 	Navigation   *container.Navigation
-	Mui          *MacroUi
+	Mui          *macro.MacroUi
 	ActionDialog dialog.Dialog
 }
 
@@ -56,36 +58,36 @@ func InitializeUi(w fyne.Window) *Ui {
 	ui = &Ui{
 		Window:   w,
 		MainMenu: new(fyne.MainMenu),
-		EditorUi: &EditorUi{
+		EditorUi: &editor.EditorUi{
 			CanvasObject: new(fyne.Container),
 			AddButton:    new(widget.Button),
 			RemoveButton: new(widget.Button),
 			EditorTabs: struct {
 				*container.AppTabs
-				ProgramsTab    *EditorTab
-				ItemsTab       *EditorTab
-				PointsTab      *EditorTab
-				SearchAreasTab *EditorTab
-				MasksTab       *EditorTab
-				AutoPicTab     *EditorTab
+				ProgramsTab    *editor.EditorTab
+				ItemsTab       *editor.EditorTab
+				PointsTab      *editor.EditorTab
+				SearchAreasTab *editor.EditorTab
+				MasksTab       *editor.EditorTab
+				AutoPicTab     *editor.EditorTab
 			}{
 				AppTabs: new(container.AppTabs),
-				ProgramsTab: &EditorTab{
+				ProgramsTab: &editor.EditorTab{
 					Widgets: make(map[string]fyne.CanvasObject),
 				},
-				ItemsTab: &EditorTab{
+				ItemsTab: &editor.EditorTab{
 					Widgets: make(map[string]fyne.CanvasObject),
 				},
-				PointsTab: &EditorTab{
+				PointsTab: &editor.EditorTab{
 					Widgets: make(map[string]fyne.CanvasObject),
 				},
-				SearchAreasTab: &EditorTab{
+				SearchAreasTab: &editor.EditorTab{
 					Widgets: make(map[string]fyne.CanvasObject),
 				},
-				MasksTab: &EditorTab{
+				MasksTab: &editor.EditorTab{
 					Widgets: make(map[string]fyne.CanvasObject),
 				},
-				AutoPicTab: &EditorTab{
+				AutoPicTab: &editor.EditorTab{
 					Widgets: make(map[string]fyne.CanvasObject),
 				},
 			},
@@ -93,8 +95,8 @@ func InitializeUi(w fyne.Window) *Ui {
 		SettingsUi: &SettingsUi{},
 		MainUi: &MainUi{
 			Navigation: new(container.Navigation), // Will be set in ConstructUi
-			Mui: &MacroUi{
-				MTabs:             NewMacroTabs(),
+			Mui: &macro.MacroUi{
+				MTabs:             macro.NewMacroTabs(),
 				MacroSelectButton: new(widget.Button),
 				MacroToolbars: struct {
 					TopToolbar    *fyne.Container
@@ -145,20 +147,19 @@ func (u *Ui) ConstructUi() {
 	u.MainUi.Navigation = container.NewNavigation(u.constructMacroUi())
 
 	// construct editor screen
-	u.constructEditorTabs()
-	u.constructAddButton()
-	u.constructRemoveButton()
+	editor.ConstructEditorTabs(u.EditorUi, u.Window)
+	editor.PrepareToolbarButtons(u.EditorUi)
 	u.EditorUi.ActionBar = container.NewHBox(layout.NewSpacer(), u.EditorUi.AddButton, u.EditorUi.RemoveButton)
 	u.EditorUi.CanvasObject = container.NewBorder(
 		nil,
 		u.EditorUi.ActionBar,
 		nil,
 		nil,
-		ui.EditorUi.EditorTabs,
+		u.EditorUi.EditorTabs,
 	)
-	u.refreshEditorActionBar()
+	u.EditorUi.RefreshEditorActionBar()
 	u.EditorUi.EditorTabs.OnSelected = func(*container.TabItem) {
-		u.refreshEditorActionBar()
+		u.EditorUi.RefreshEditorActionBar()
 	}
 
 	// construct settings screen
@@ -170,10 +171,19 @@ func (u *Ui) ConstructUi() {
 	// Set window content to Navigation container with tooltip layer
 	u.Window.SetContent(fynetooltip.AddWindowToolTipLayer(u.MainUi.Navigation, u.Window.Canvas()))
 
+	SetEditorUi()
+	SetActionDialogDeps()
+	SetMacroUi()
+
+	macro.InitMacroLogPopup(
+		func() fyne.Window { return GetUi().Window },
+		AddDialogEscapeClose,
+		ShowErrorWithEscape,
+	)
+
 	toggleMousePos()
 }
 
-// widget.NewSelect(repositories.ProgramRepo().GetAllAsStringSlice(), func(s string) {}),
 func toggleMousePos() {
 	locX, locY := robotgo.Location()
 	blocX, blocY := binding.BindInt(&locX), binding.BindInt(&locY)

@@ -1,4 +1,4 @@
-package ui
+package recording
 
 import (
 	"fmt"
@@ -22,7 +22,12 @@ import (
 // ShowHotkeyRecordDialog shows keys currently held (via gohook). If the same non-empty
 // set stays held for stableDuration without changing, onRecorded runs and the dialog closes.
 // Esc dismisses without calling onRecorded.
-func ShowHotkeyRecordDialog(parent fyne.Window, stableDuration time.Duration, onRecorded func(keys []string)) {
+func ShowHotkeyRecordDialog(
+	parent fyne.Window,
+	stableDuration time.Duration,
+	addDialogEscapeClose func(d dialog.Dialog, parent fyne.Window),
+	onRecorded func(keys []string),
+) {
 	if parent == nil || onRecorded == nil {
 		return
 	}
@@ -56,7 +61,9 @@ func ShowHotkeyRecordDialog(parent fyne.Window, stableDuration time.Duration, on
 	)
 
 	d := dialog.NewCustomWithoutButtons("Record hotkey", content, parent)
-	AddDialogEscapeClose(d, parent)
+	if addDialogEscapeClose != nil {
+		addDialogEscapeClose(d, parent)
+	}
 
 	done := make(chan struct{})
 	var stopOnce sync.Once

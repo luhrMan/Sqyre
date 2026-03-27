@@ -1,4 +1,4 @@
-package binders
+package editor
 
 import (
 	"Sqyre/internal/config"
@@ -6,61 +6,26 @@ import (
 	"Sqyre/internal/models/actions"
 	"Sqyre/internal/models/repositories"
 	"Sqyre/internal/services"
-	"Sqyre/ui"
 	"Sqyre/ui/custom_widgets"
 	"fmt"
 	"log"
-	"sort"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/widget"
-	"github.com/lithammer/fuzzysearch/fuzzy"
 )
 
-func sortPointKeysByDisplayName(p *models.Program, keys []string) {
-	repo := p.PointRepo(config.MainMonitorSizeString)
-	sort.Slice(keys, func(i, j int) bool {
-		a, _ := repo.Get(keys[i])
-		b, _ := repo.Get(keys[j])
-		na, nb := keys[i], keys[j]
-		if a != nil {
-			na = a.Name
-		}
-		if b != nil {
-			nb = b.Name
-		}
-		return na < nb
-	})
-}
-
-func sortSearchAreaKeysByDisplayName(p *models.Program, keys []string) {
-	repo := p.SearchAreaRepo(config.MainMonitorSizeString)
-	sort.Slice(keys, func(i, j int) bool {
-		a, _ := repo.Get(keys[i])
-		b, _ := repo.Get(keys[j])
-		na, nb := keys[i], keys[j]
-		if a != nil {
-			na = a.Name
-		}
-		if b != nil {
-			nb = b.Name
-		}
-		return na < nb
-	})
-}
-
 func setSearchAreaWidgets(sa models.SearchArea) {
-	st := ui.GetUi().EditorTabs.SearchAreasTab.Widgets
+	st := shell().EditorTabs.SearchAreasTab.Widgets
 	st["Name"].(*widget.Entry).SetText(sa.Name)
 	custom_widgets.SetEntryText(st["LeftX"], fmt.Sprintf("%v", sa.LeftX))
 	custom_widgets.SetEntryText(st["TopY"], fmt.Sprintf("%v", sa.TopY))
 	custom_widgets.SetEntryText(st["RightX"], fmt.Sprintf("%v", sa.RightX))
 	custom_widgets.SetEntryText(st["BottomY"], fmt.Sprintf("%v", sa.BottomY))
-	ui.GetUi().RefreshEditorActionBar()
+	shell().RefreshEditorActionBar()
 }
 
 func setPointWidgets(p models.Point) {
-	pt := ui.GetUi().EditorTabs.PointsTab
+	pt := shell().EditorTabs.PointsTab
 	pt.Widgets["Name"].(*widget.Entry).SetText(p.Name)
 	custom_widgets.SetEntryText(pt.Widgets["X"], fmt.Sprintf("%v", p.X))
 	custom_widgets.SetEntryText(pt.Widgets["Y"], fmt.Sprintf("%v", p.Y))
@@ -70,14 +35,14 @@ func setPointWidgets(p models.Point) {
 				services.LogPanicToFile(r, "Point: Preview update (point: "+p.Name+")")
 			}
 		}()
-		ui.GetUi().UpdatePointPreview(&p)
+		shell().UpdatePointPreview(&p)
 	}()
-	ui.GetUi().RefreshEditorActionBar()
+	shell().RefreshEditorActionBar()
 }
 
 func setAccordionSearchAreasLists(acc *widget.Accordion) {
 	acc.Items = []*widget.AccordionItem{}
-	et := ui.GetUi().EditorTabs.SearchAreasTab
+	et := shell().EditorTabs.SearchAreasTab
 	filterText := ""
 	if sb, ok := et.Widgets["searchbar"].(*widget.Entry); ok {
 		filterText = sb.Text
@@ -86,18 +51,9 @@ func setAccordionSearchAreasLists(acc *widget.Accordion) {
 
 	for _, p := range repositories.ProgramRepo().GetAllSortedByName() {
 		defaultList := p.SearchAreaRepo(config.MainMonitorSizeString).GetAllKeys()
-		filtered := defaultList
-		if filterText != "" {
-			filtered = []string{}
-			for _, i := range defaultList {
-				if fuzzy.MatchFold(filterText, i) {
-					filtered = append(filtered, i)
-				}
-			}
-		}
+		filtered := filterKeysByFuzzy(filterText, defaultList)
 		sortSearchAreaKeysByDisplayName(p, filtered)
-		// Show program if search is empty, or program name matches, or any search area name matches
-		if filterText != "" && !fuzzy.MatchFold(filterText, p.Name) && len(filtered) == 0 {
+		if skipProgramAccordionRow(filterText, p.Name, filtered) {
 			continue
 		}
 
@@ -131,13 +87,13 @@ func setAccordionSearchAreasLists(acc *widget.Accordion) {
 				log.Printf("Error getting program %s: %v", p.Name, err)
 				return
 			}
-			ui.GetUi().EditorTabs.SearchAreasTab.ProgramSelector.SetSelected(program.Name)
+			shell().EditorTabs.SearchAreasTab.ProgramSelector.SetSelected(program.Name)
 			saName := lists.filtered[id]
 			sa, err := program.SearchAreaRepo(config.MainMonitorSizeString).Get(saName)
 			if err != nil {
 				return
 			}
-			ui.GetUi().EditorTabs.SearchAreasTab.SelectedItem = sa
+			shell().EditorTabs.SearchAreasTab.SelectedItem = sa
 			setSearchAreaWidgets(*sa)
 			func() {
 				defer func() {
@@ -145,7 +101,7 @@ func setAccordionSearchAreasLists(acc *widget.Accordion) {
 						services.LogPanicToFile(r, "SearchArea: Preview update (area: "+sa.Name+")")
 					}
 				}()
-				ui.GetUi().UpdateSearchAreaPreview(sa)
+				shell().UpdateSearchAreaPreview(sa)
 			}()
 			markSearchAreasClean()
 		}
@@ -154,14 +110,14 @@ func setAccordionSearchAreasLists(acc *widget.Accordion) {
 			fmt.Sprintf("%s (%d)", p.Name, len(filtered)),
 			lists.searchareas,
 		)
-		ui.GetUi().EditorTabs.SearchAreasTab.Widgets[p.Name+"-list"] = lists.searchareas
+		shell().EditorTabs.SearchAreasTab.Widgets[p.Name+"-list"] = lists.searchareas
 		acc.Append(&programSAListWidget)
 	}
 }
 
 func setAccordionPointsLists(acc *widget.Accordion) {
 	acc.Items = []*widget.AccordionItem{}
-	et := ui.GetUi().EditorTabs.PointsTab
+	et := shell().EditorTabs.PointsTab
 	filterText := ""
 	if sb, ok := et.Widgets["searchbar"].(*widget.Entry); ok {
 		filterText = sb.Text
@@ -170,18 +126,9 @@ func setAccordionPointsLists(acc *widget.Accordion) {
 
 	for _, p := range repositories.ProgramRepo().GetAllSortedByName() {
 		defaultList := p.PointRepo(config.MainMonitorSizeString).GetAllKeys()
-		filtered := defaultList
-		if filterText != "" {
-			filtered = []string{}
-			for _, i := range defaultList {
-				if fuzzy.MatchFold(filterText, i) {
-					filtered = append(filtered, i)
-				}
-			}
-		}
+		filtered := filterKeysByFuzzy(filterText, defaultList)
 		sortPointKeysByDisplayName(p, filtered)
-		// Show program if search is empty, or program name matches, or any point name matches
-		if filterText != "" && !fuzzy.MatchFold(filterText, p.Name) && len(filtered) == 0 {
+		if skipProgramAccordionRow(filterText, p.Name, filtered) {
 			continue
 		}
 
@@ -215,16 +162,16 @@ func setAccordionPointsLists(acc *widget.Accordion) {
 				log.Printf("Error getting program %s: %v", p.Name, err)
 				return
 			}
-			ui.GetUi().EditorTabs.PointsTab.ProgramSelector.SetSelected(program.Name)
+			shell().EditorTabs.PointsTab.ProgramSelector.SetSelected(program.Name)
 			pointName := lists.filtered[id]
 			point, err := p.PointRepo(config.MainMonitorSizeString).Get(pointName)
 			if err != nil {
 				return
 			}
-			ui.GetUi().EditorTabs.PointsTab.SelectedItem = point
+			shell().EditorTabs.PointsTab.SelectedItem = point
 			setPointWidgets(*point)
 			markPointsClean()
-			if st := ui.GetUi().Mui.MTabs.SelectedTab(); st != nil {
+			if st := activeWire.MacroMTabs().SelectedTab(); st != nil {
 				if v, ok := st.Macro.Root.GetAction(st.SelectedNode).(*actions.Move); ok {
 					v.Point = actions.Point{Name: point.Name, X: point.X, Y: point.Y}
 				}
@@ -232,13 +179,13 @@ func setAccordionPointsLists(acc *widget.Accordion) {
 		}
 
 		programPointListWidget := *widget.NewAccordionItem(fmt.Sprintf("%s (%d)", p.Name, len(filtered)), lists.points)
-		ui.GetUi().EditorTabs.PointsTab.Widgets[p.Name+"-list"] = lists.points
+		shell().EditorTabs.PointsTab.Widgets[p.Name+"-list"] = lists.points
 		acc.Append(&programPointListWidget)
 	}
 }
 func setAccordionAutoPicSearchAreasLists(acc *widget.Accordion) {
 	acc.Items = []*widget.AccordionItem{}
-	et := ui.GetUi().EditorTabs.AutoPicTab
+	et := shell().EditorTabs.AutoPicTab
 	filterText := ""
 	if sb, ok := et.Widgets["searchbar"].(*widget.Entry); ok {
 		filterText = sb.Text
@@ -247,18 +194,9 @@ func setAccordionAutoPicSearchAreasLists(acc *widget.Accordion) {
 
 	for _, p := range repositories.ProgramRepo().GetAllSortedByName() {
 		defaultList := p.SearchAreaRepo(config.MainMonitorSizeString).GetAllKeys()
-		filtered := defaultList
-		if filterText != "" {
-			filtered = []string{}
-			for _, i := range defaultList {
-				if fuzzy.MatchFold(filterText, i) {
-					filtered = append(filtered, i)
-				}
-			}
-		}
+		filtered := filterKeysByFuzzy(filterText, defaultList)
 		sortSearchAreaKeysByDisplayName(p, filtered)
-		// Show program if search is empty, or program name matches, or any search area name matches
-		if filterText != "" && !fuzzy.MatchFold(filterText, p.Name) && len(filtered) == 0 {
+		if skipProgramAccordionRow(filterText, p.Name, filtered) {
 			continue
 		}
 
@@ -310,8 +248,8 @@ func setAccordionAutoPicSearchAreasLists(acc *widget.Accordion) {
 				log.Printf("AutoPic: Search area %s is nil", saName)
 				return
 			}
-			ui.GetUi().EditorTabs.AutoPicTab.SelectedItem = sa
-			atw := ui.GetUi().EditorTabs.AutoPicTab.Widgets
+			shell().EditorTabs.AutoPicTab.SelectedItem = sa
+			atw := shell().EditorTabs.AutoPicTab.Widgets
 			if saveButton, ok := atw["saveButton"].(*widget.Button); ok {
 				saveButton.Enable()
 			}
@@ -321,12 +259,12 @@ func setAccordionAutoPicSearchAreasLists(acc *widget.Accordion) {
 						services.LogPanicToFile(r, "AutoPic: Preview update (area: "+sa.Name+")")
 					}
 				}()
-				ui.GetUi().UpdateAutoPicPreview(sa)
+				shell().UpdateAutoPicPreview(sa)
 			}()
 		}
 
 		programSAListWidget := *widget.NewAccordionItem(fmt.Sprintf("%s (%d)", p.Name, len(filtered)), lists.searchareas)
-		ui.GetUi().EditorTabs.AutoPicTab.Widgets[p.Name+"-list"] = lists.searchareas
+		shell().EditorTabs.AutoPicTab.Widgets[p.Name+"-list"] = lists.searchareas
 		acc.Append(&programSAListWidget)
 	}
 }
