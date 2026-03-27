@@ -30,10 +30,10 @@ import (
 
 type EditorUi struct {
 	fyne.CanvasObject
-	AddButton       *widget.Button
-	RemoveButton    *widget.Button
-	ProgramSelector *widget.SelectEntry
-	EditorTabs      struct {
+	AddButton    *widget.Button
+	RemoveButton *widget.Button
+	ActionBar    *fyne.Container
+	EditorTabs   struct {
 		*container.AppTabs
 		ProgramsTab    *EditorTab
 		ItemsTab       *EditorTab
@@ -49,6 +49,7 @@ type EditorTab struct {
 	Left  *fyne.Container
 	Right *fyne.Container
 
+	ProgramSelector      *widget.Select
 	Widgets              map[string]fyne.CanvasObject
 	SelectedItem         any
 	previewImage         *canvas.Image
@@ -60,6 +61,45 @@ type EditorTab struct {
 func NewEditorTab(name string, left, right *fyne.Container) *container.TabItem {
 	split := container.NewHSplit(left, right)
 	return container.NewTabItem(name, split)
+}
+
+// LabeledProgramSelector wraps a ProgramSelector with a "Program" label to its left.
+func LabeledProgramSelector(sel *widget.Select) *fyne.Container {
+	lbl := widget.NewLabel("Program")
+	lbl.TextStyle = fyne.TextStyle{Bold: true}
+	return container.NewBorder(nil, nil, lbl, nil, sel)
+}
+
+// ActiveProgramName returns the ProgramSelector Selected value from the currently selected editor tab.
+func (eu *EditorUi) ActiveProgramName() string {
+	tab := eu.ActiveTab()
+	if tab == nil || tab.ProgramSelector == nil {
+		return ""
+	}
+	return tab.ProgramSelector.Selected
+}
+
+// ActiveTab returns the EditorTab corresponding to the currently selected AppTabs tab.
+func (eu *EditorUi) ActiveTab() *EditorTab {
+	sel := eu.EditorTabs.Selected()
+	if sel == nil {
+		return nil
+	}
+	switch sel.Text {
+	case "Programs":
+		return eu.EditorTabs.ProgramsTab
+	case "Items":
+		return eu.EditorTabs.ItemsTab
+	case "Points":
+		return eu.EditorTabs.PointsTab
+	case "Search Areas":
+		return eu.EditorTabs.SearchAreasTab
+	case "Masks":
+		return eu.EditorTabs.MasksTab
+	case "AutoPic":
+		return eu.EditorTabs.AutoPicTab
+	}
+	return nil
 }
 
 // wrapEditorPreviewImage adds a themed border around editor preview imagery (same treatment as the Items tab icon editor).
@@ -173,13 +213,14 @@ func (u *Ui) constructEditorTabs() {
 	)
 
 	et.ProgramsTab.UpdateButton = widget.NewButton("Update", nil)
+	et.ProgramsTab.UpdateButton.Icon = theme.ViewRefreshIcon()
 	et.ProgramsTab.UpdateButton.Importance = widget.HighImportance
 	et.ProgramsTab.UpdateButton.Disable()
 
 	et.ProgramsTab.TabItem = NewEditorTab(
 		"Programs",
 		container.NewBorder(protw["searchbar"], nil, nil, nil, protw[plist]),
-		container.NewBorder(nil, nil, nil, nil, container.NewVBox(protw[form], container.NewHBox(layout.NewSpacer(), et.ProgramsTab.UpdateButton))),
+		container.NewBorder(nil, nil, nil, nil, protw[form]),
 	)
 
 	//===========================================================================================================ITEMS
@@ -235,6 +276,7 @@ func (u *Ui) constructEditorTabs() {
 		widget.NewFormItem("Mask", itw["maskContainer"]),
 	)
 	et.ItemsTab.UpdateButton = widget.NewButton("Update", nil)
+	et.ItemsTab.UpdateButton.Icon = theme.ViewRefreshIcon()
 	et.ItemsTab.UpdateButton.Importance = widget.HighImportance
 	et.ItemsTab.UpdateButton.Disable()
 
@@ -243,11 +285,12 @@ func (u *Ui) constructEditorTabs() {
 	iveBorder.StrokeWidth = 2
 	iveBorder.CornerRadius = 4
 
+	et.ItemsTab.ProgramSelector = widget.NewSelect(nil, nil)
 	et.ItemsTab.TabItem = NewEditorTab(
 		"Items",
 		container.NewBorder(itw["searchbar"], nil, nil, nil, itw[acc]),
 		container.NewBorder(
-			container.NewVBox(itw[form], container.NewHBox(layout.NewSpacer(), et.ItemsTab.UpdateButton)),
+			container.NewVBox(LabeledProgramSelector(et.ItemsTab.ProgramSelector), itw[form]),
 			nil, nil, nil,
 			container.NewStack(iveBorder, container.NewPadded(itw[ive])),
 		),
@@ -266,6 +309,7 @@ func (u *Ui) constructEditorTabs() {
 	ptw["recordButton"].(*widget.Button).Importance = widget.DangerImportance
 
 	et.PointsTab.UpdateButton = widget.NewButton("Update", nil)
+	et.PointsTab.UpdateButton.Icon = theme.ViewRefreshIcon()
 	et.PointsTab.UpdateButton.Importance = widget.HighImportance
 	et.PointsTab.UpdateButton.Disable()
 
@@ -273,7 +317,7 @@ func (u *Ui) constructEditorTabs() {
 		widget.NewFormItem(name, ptw[name]),
 		widget.NewFormItem(x, ptw[x]),
 		widget.NewFormItem(y, ptw[y]),
-		widget.NewFormItem("", container.NewHBox(layout.NewSpacer(), ptw["recordButton"], et.PointsTab.UpdateButton)),
+		widget.NewFormItem("", container.NewHBox(layout.NewSpacer(), ptw["recordButton"])),
 	)
 
 	// Create preview image for Points tab
@@ -287,18 +331,18 @@ func (u *Ui) constructEditorTabs() {
 	et.PointsTab.PreviewRefreshButton = widget.NewButtonWithIcon("Refresh preview", theme.ViewRefreshIcon(), nil)
 	et.PointsTab.PreviewRefreshButton.Importance = widget.LowImportance
 
+	et.PointsTab.ProgramSelector = widget.NewSelect(nil, nil)
 	et.PointsTab.TabItem = NewEditorTab(
 		"Points",
 		container.NewBorder(ptw["searchbar"], nil, nil, nil, ptw[acc]),
 		container.NewBorder(
-			ptw[form],
+			container.NewVBox(LabeledProgramSelector(et.PointsTab.ProgramSelector), ptw[form]),
 			nil,
 			nil,
 			nil,
-			container.NewBorder(
-				container.NewHBox(layout.NewSpacer(), et.PointsTab.PreviewRefreshButton),
-				nil, nil, nil,
+			container.NewVBox(
 				wrapEditorPreviewImage(pointPreviewImage),
+				container.NewHBox(layout.NewSpacer(), et.PointsTab.PreviewRefreshButton),
 			),
 		),
 	)
@@ -316,6 +360,7 @@ func (u *Ui) constructEditorTabs() {
 	satw["recordButton"] = widget.NewButtonWithIcon("", theme.MediaRecordIcon(), nil)
 	satw["recordButton"].(*widget.Button).Importance = widget.DangerImportance
 	et.SearchAreasTab.UpdateButton = widget.NewButton("Update", nil)
+	et.SearchAreasTab.UpdateButton.Icon = theme.ViewRefreshIcon()
 	et.SearchAreasTab.UpdateButton.Importance = widget.HighImportance
 	et.SearchAreasTab.UpdateButton.Disable()
 
@@ -325,7 +370,7 @@ func (u *Ui) constructEditorTabs() {
 		widget.NewFormItem(y1, satw[y1]),
 		widget.NewFormItem(x2, satw[x2]),
 		widget.NewFormItem(y2, satw[y2]),
-		widget.NewFormItem("", container.NewHBox(layout.NewSpacer(), satw["recordButton"], et.SearchAreasTab.UpdateButton)),
+		widget.NewFormItem("", container.NewHBox(layout.NewSpacer(), satw["recordButton"])),
 	)
 
 	// Create preview image for Search Areas tab
@@ -339,18 +384,18 @@ func (u *Ui) constructEditorTabs() {
 	et.SearchAreasTab.PreviewRefreshButton = widget.NewButtonWithIcon("Refresh preview", theme.ViewRefreshIcon(), nil)
 	et.SearchAreasTab.PreviewRefreshButton.Importance = widget.LowImportance
 
+	et.SearchAreasTab.ProgramSelector = widget.NewSelect(nil, nil)
 	et.SearchAreasTab.TabItem = NewEditorTab(
 		"Search Areas",
 		container.NewBorder(satw["searchbar"], nil, nil, nil, satw[acc]),
 		container.NewBorder(
-			satw[form],
+			container.NewVBox(LabeledProgramSelector(et.SearchAreasTab.ProgramSelector), satw[form]),
 			nil,
 			nil,
 			nil,
-			container.NewBorder(
-				container.NewHBox(layout.NewSpacer(), et.SearchAreasTab.PreviewRefreshButton),
-				nil, nil, nil,
+			container.NewVBox(
 				wrapEditorPreviewImage(searchAreaPreviewImage),
+				container.NewHBox(layout.NewSpacer(), et.SearchAreasTab.PreviewRefreshButton),
 			),
 		),
 	)
@@ -435,6 +480,7 @@ func (u *Ui) constructEditorTabs() {
 	mtw["Inverse"] = widget.NewCheck("Inverse (shape included, rest excluded)", nil)
 
 	et.MasksTab.UpdateButton = widget.NewButton("Update", nil)
+	et.MasksTab.UpdateButton.Icon = theme.ViewRefreshIcon()
 	et.MasksTab.UpdateButton.Importance = widget.HighImportance
 	et.MasksTab.UpdateButton.Disable()
 
@@ -449,21 +495,21 @@ func (u *Ui) constructEditorTabs() {
 	et.MasksTab.PreviewRefreshButton = widget.NewButtonWithIcon("Refresh preview", theme.ViewRefreshIcon(), nil)
 	et.MasksTab.PreviewRefreshButton.Importance = widget.LowImportance
 
+	et.MasksTab.ProgramSelector = widget.NewSelect(nil, nil)
 	et.MasksTab.TabItem = NewEditorTab(
 		"Masks",
 		container.NewBorder(mtw["searchbar"], nil, nil, nil, mtw["Accordion"]),
 		container.NewBorder(
 			container.NewVBox(
+				LabeledProgramSelector(et.MasksTab.ProgramSelector),
 				mtw["Form"],
-				container.NewHBox(layout.NewSpacer(), et.MasksTab.UpdateButton),
 				container.NewHBox(mtw["uploadButton"], mtw["removeImageButton"]),
 				mtw["imageStatus"],
 			),
 			nil, nil, nil,
-			container.NewBorder(
-				container.NewHBox(layout.NewSpacer(), et.MasksTab.PreviewRefreshButton),
-				nil, nil, nil,
+			container.NewVBox(
 				wrapEditorPreviewImage(maskPreviewImage),
+				container.NewHBox(layout.NewSpacer(), et.MasksTab.PreviewRefreshButton),
 			),
 		),
 	)
@@ -499,11 +545,14 @@ func (u *Ui) constructEditorTabs() {
 			atw["Accordion"],
 		),
 		container.NewBorder(
-			container.NewHBox(layout.NewSpacer(), et.AutoPicTab.PreviewRefreshButton),
+			nil,
 			atw["saveButton"],
 			nil,
 			nil,
-			wrapEditorPreviewImage(previewImage),
+			container.NewVBox(
+				wrapEditorPreviewImage(previewImage),
+				container.NewHBox(layout.NewSpacer(), et.AutoPicTab.PreviewRefreshButton),
+			),
 		),
 	)
 
@@ -515,6 +564,74 @@ func (u *Ui) constructEditorTabs() {
 	et.Append(et.AutoPicTab.TabItem)
 }
 
+func (u *Ui) activeUpdateButton() *widget.Button {
+	tab := u.EditorUi.ActiveTab()
+	if tab == nil {
+		return nil
+	}
+	return tab.UpdateButton
+}
+
+func (u *Ui) refreshEditorActionBar() {
+	if u.EditorUi.ActionBar == nil {
+		return
+	}
+	objects := []fyne.CanvasObject{layout.NewSpacer()}
+	if sel := u.EditorUi.EditorTabs.Selected(); sel == nil || sel.Text != "AutoPic" {
+		objects = append(objects, u.EditorUi.AddButton)
+	}
+	if update := u.activeUpdateButton(); update != nil {
+		objects = append(objects, update)
+	}
+	if sel := u.EditorUi.EditorTabs.Selected(); sel == nil || sel.Text != "AutoPic" {
+		if u.canDeleteActiveEditorSelection() {
+			u.EditorUi.RemoveButton.Enable()
+		} else {
+			u.EditorUi.RemoveButton.Disable()
+		}
+		objects = append(objects, u.EditorUi.RemoveButton)
+	} else {
+		u.EditorUi.RemoveButton.Disable()
+	}
+	u.EditorUi.ActionBar.Objects = objects
+	u.EditorUi.ActionBar.Refresh()
+}
+
+func (u *Ui) canDeleteActiveEditorSelection() bool {
+	et := u.EditorTabs
+	sel := u.EditorTabs.Selected()
+	if sel == nil {
+		return false
+	}
+	switch sel.Text {
+	case "Programs":
+		if v, ok := et.ProgramsTab.SelectedItem.(*models.Program); ok {
+			return v != nil && v.Name != ""
+		}
+	case "Items":
+		if v, ok := et.ItemsTab.SelectedItem.(*models.Item); ok {
+			return v != nil && v.Name != ""
+		}
+	case "Points":
+		if v, ok := et.PointsTab.SelectedItem.(*models.Point); ok {
+			return v != nil && v.Name != ""
+		}
+	case "Search Areas":
+		if v, ok := et.SearchAreasTab.SelectedItem.(*models.SearchArea); ok {
+			return v != nil && v.Name != ""
+		}
+	case "Masks":
+		if v, ok := et.MasksTab.SelectedItem.(*models.Mask); ok {
+			return v != nil && v.Name != ""
+		}
+	}
+	return false
+}
+
+func (u *Ui) RefreshEditorActionBar() {
+	u.refreshEditorActionBar()
+}
+
 func (u *Ui) constructAddButton() {
 	u.EditorUi.AddButton.Text = "New"
 	u.EditorUi.AddButton.Icon = theme.ContentAddIcon()
@@ -523,9 +640,10 @@ func (u *Ui) constructAddButton() {
 }
 
 func (u *Ui) constructRemoveButton() {
-	u.EditorUi.RemoveButton.Text = ""
+	u.EditorUi.RemoveButton.Text = "Delete"
 	u.EditorUi.RemoveButton.Icon = theme.ContentRemoveIcon()
 	u.EditorUi.RemoveButton.Importance = widget.DangerImportance
+	u.EditorUi.RemoveButton.Disable()
 }
 
 // AutoPic tab handlers

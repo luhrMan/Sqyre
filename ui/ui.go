@@ -57,10 +57,9 @@ func InitializeUi(w fyne.Window) *Ui {
 		Window:   w,
 		MainMenu: new(fyne.MainMenu),
 		EditorUi: &EditorUi{
-			CanvasObject:    new(fyne.Container),
-			AddButton:       new(widget.Button),
-			RemoveButton:    new(widget.Button),
-			ProgramSelector: new(widget.SelectEntry),
+			CanvasObject: new(fyne.Container),
+			AddButton:    new(widget.Button),
+			RemoveButton: new(widget.Button),
 			EditorTabs: struct {
 				*container.AppTabs
 				ProgramsTab    *EditorTab
@@ -146,20 +145,21 @@ func (u *Ui) ConstructUi() {
 	u.MainUi.Navigation = container.NewNavigation(u.constructMacroUi())
 
 	// construct editor screen
+	u.constructEditorTabs()
+	u.constructAddButton()
+	u.constructRemoveButton()
+	u.EditorUi.ActionBar = container.NewHBox(layout.NewSpacer(), u.EditorUi.AddButton, u.EditorUi.RemoveButton)
 	u.EditorUi.CanvasObject = container.NewBorder(
 		nil,
-		container.NewBorder(
-			nil, nil, nil,
-			container.NewHBox(ui.EditorUi.AddButton, layout.NewSpacer(), ui.EditorUi.RemoveButton),
-			layout.NewSpacer(), ui.EditorUi.ProgramSelector,
-		),
+		u.EditorUi.ActionBar,
 		nil,
 		nil,
 		ui.EditorUi.EditorTabs,
 	)
-	u.constructEditorTabs()
-	u.constructAddButton()
-	u.constructRemoveButton()
+	u.refreshEditorActionBar()
+	u.EditorUi.EditorTabs.OnSelected = func(*container.TabItem) {
+		u.refreshEditorActionBar()
+	}
 
 	// construct settings screen
 	u.constructSettings()
