@@ -1,10 +1,9 @@
-package binders
+package editor
 
 import (
 	"Sqyre/internal/config"
 	"Sqyre/internal/models"
 	"Sqyre/internal/models/repositories"
-	"Sqyre/ui"
 	"Sqyre/ui/custom_widgets"
 	"errors"
 	"fmt"
@@ -56,7 +55,7 @@ func showCreateDialog(cfg createDialogConfig, parent fyne.Window) {
 	var d dialog.Dialog
 	saveButton := widget.NewButton("Create", func() {
 		if err := cfg.onSave(widgets); err != nil {
-			ui.ShowErrorWithEscape(err, parent)
+			activeWire.ShowErrorWithEscape(err, parent)
 			return
 		}
 		if cfg.afterSave != nil {
@@ -70,7 +69,7 @@ func showCreateDialog(cfg createDialogConfig, parent fyne.Window) {
 	saveButton.Importance = widget.SuccessImportance
 	buttonBar := container.NewHBox(layout.NewSpacer(), saveButton, cancelButton)
 	d = dialog.NewCustomWithoutButtons(cfg.title, container.NewBorder(nil, buttonBar, nil, nil, content), parent)
-	ui.AddDialogEscapeClose(d, parent)
+	activeWire.AddDialogEscapeClose(d, parent)
 	d.Resize(fyne.NewSize(500, 300))
 	d.Show()
 }
@@ -88,7 +87,7 @@ func programCreateConfig() createDialogConfig {
 			return form, w
 		},
 		prefill: func(w map[string]fyne.CanvasObject) {
-			src := ui.GetUi().EditorTabs.ProgramsTab.Widgets
+			src := shell().EditorTabs.ProgramsTab.Widgets
 			w["Name"].(*widget.Entry).SetText(src["Name"].(*widget.Entry).Text)
 		},
 		onSave: func(w map[string]fyne.CanvasObject) error {
@@ -106,8 +105,8 @@ func programCreateConfig() createDialogConfig {
 			if err := repositories.ProgramRepo().Set(pro.Name, pro); err != nil {
 				return err
 			}
-			ui.GetUi().EditorTabs.ProgramsTab.SelectedItem = pro
-			ui.GetUi().RefreshEditorActionBar()
+			shell().EditorTabs.ProgramsTab.SelectedItem = pro
+			shell().RefreshEditorActionBar()
 			return nil
 		},
 		afterSave: func() {
@@ -136,11 +135,11 @@ func itemCreateConfig() createDialogConfig {
 				widget.NewFormItem("Rows", w["Rows"]),
 				widget.NewFormItem("StackMax", w["StackMax"]),
 			)
-			return container.NewVBox(ui.LabeledProgramSelector(ps), form), w
+			return container.NewVBox(LabeledProgramSelector(ps), form), w
 		},
 		prefill: func(w map[string]fyne.CanvasObject) {
-			src := ui.GetUi().EditorTabs.ItemsTab.Widgets
-			w["ProgramSelector"].(*widget.Select).SetSelected(ui.GetUi().EditorTabs.ItemsTab.ProgramSelector.Selected)
+			src := shell().EditorTabs.ItemsTab.Widgets
+			w["ProgramSelector"].(*widget.Select).SetSelected(shell().EditorTabs.ItemsTab.ProgramSelector.Selected)
 			w["Name"].(*widget.Entry).SetText(src["Name"].(*widget.Entry).Text)
 			w["Cols"].(*widget.Entry).SetText(src["Cols"].(*widget.Entry).Text)
 			w["Rows"].(*widget.Entry).SetText(src["Rows"].(*widget.Entry).Text)
@@ -174,13 +173,13 @@ func itemCreateConfig() createDialogConfig {
 			if err := pro.ItemRepo().Set(i.Name, i); err != nil {
 				return err
 			}
-			ui.GetUi().EditorTabs.ItemsTab.SelectedItem = i
-			ui.GetUi().EditorTabs.ItemsTab.ProgramSelector.SetSelected(programName)
+			shell().EditorTabs.ItemsTab.SelectedItem = i
+			shell().EditorTabs.ItemsTab.ProgramSelector.SetSelected(programName)
 			setItemsWidgets(*i)
 			return nil
 		},
 		afterSave: func() {
-			if acc, ok := ui.GetUi().EditorTabs.ItemsTab.Widgets["Accordion"].(*custom_widgets.AccordionWithHeaderWidgets); ok {
+			if acc, ok := shell().EditorTabs.ItemsTab.Widgets["Accordion"].(*custom_widgets.AccordionWithHeaderWidgets); ok {
 				setAccordionItemsLists(acc)
 			}
 			markItemsClean()
@@ -204,11 +203,11 @@ func pointCreateConfig() createDialogConfig {
 				widget.NewFormItem("X", w["X"]),
 				widget.NewFormItem("Y", w["Y"]),
 			)
-			return container.NewVBox(ui.LabeledProgramSelector(ps), form), w
+			return container.NewVBox(LabeledProgramSelector(ps), form), w
 		},
 		prefill: func(w map[string]fyne.CanvasObject) {
-			src := ui.GetUi().EditorTabs.PointsTab.Widgets
-			w["ProgramSelector"].(*widget.Select).SetSelected(ui.GetUi().EditorTabs.PointsTab.ProgramSelector.Selected)
+			src := shell().EditorTabs.PointsTab.Widgets
+			w["ProgramSelector"].(*widget.Select).SetSelected(shell().EditorTabs.PointsTab.ProgramSelector.Selected)
 			w["Name"].(*widget.Entry).SetText(src["Name"].(*widget.Entry).Text)
 			w["X"].(*widget.Entry).SetText(custom_widgets.EntryText(src["X"]))
 			w["Y"].(*widget.Entry).SetText(custom_widgets.EntryText(src["Y"]))
@@ -240,13 +239,13 @@ func pointCreateConfig() createDialogConfig {
 			if err := pro.PointRepo(config.MainMonitorSizeString).Set(p.Name, p); err != nil {
 				return err
 			}
-			ui.GetUi().EditorTabs.PointsTab.SelectedItem = p
-			ui.GetUi().EditorTabs.PointsTab.ProgramSelector.SetSelected(programName)
+			shell().EditorTabs.PointsTab.SelectedItem = p
+			shell().EditorTabs.PointsTab.ProgramSelector.SetSelected(programName)
 			setPointWidgets(*p)
 			return nil
 		},
 		afterSave: func() {
-			if acc, ok := ui.GetUi().EditorTabs.PointsTab.Widgets["Accordion"].(*widget.Accordion); ok {
+			if acc, ok := shell().EditorTabs.PointsTab.Widgets["Accordion"].(*widget.Accordion); ok {
 				setAccordionPointsLists(acc)
 			}
 			markPointsClean()
@@ -274,11 +273,11 @@ func searchAreaCreateConfig() createDialogConfig {
 				widget.NewFormItem("RightX", w["RightX"]),
 				widget.NewFormItem("BottomY", w["BottomY"]),
 			)
-			return container.NewVBox(ui.LabeledProgramSelector(ps), form), w
+			return container.NewVBox(LabeledProgramSelector(ps), form), w
 		},
 		prefill: func(w map[string]fyne.CanvasObject) {
-			src := ui.GetUi().EditorTabs.SearchAreasTab.Widgets
-			w["ProgramSelector"].(*widget.Select).SetSelected(ui.GetUi().EditorTabs.SearchAreasTab.ProgramSelector.Selected)
+			src := shell().EditorTabs.SearchAreasTab.Widgets
+			w["ProgramSelector"].(*widget.Select).SetSelected(shell().EditorTabs.SearchAreasTab.ProgramSelector.Selected)
 			w["Name"].(*widget.Entry).SetText(src["Name"].(*widget.Entry).Text)
 			w["LeftX"].(*widget.Entry).SetText(custom_widgets.EntryText(src["LeftX"]))
 			w["TopY"].(*widget.Entry).SetText(custom_widgets.EntryText(src["TopY"]))
@@ -312,13 +311,13 @@ func searchAreaCreateConfig() createDialogConfig {
 			if err := pro.SearchAreaRepo(config.MainMonitorSizeString).Set(sa.Name, sa); err != nil {
 				return err
 			}
-			ui.GetUi().EditorTabs.SearchAreasTab.SelectedItem = sa
-			ui.GetUi().EditorTabs.SearchAreasTab.ProgramSelector.SetSelected(programName)
+			shell().EditorTabs.SearchAreasTab.SelectedItem = sa
+			shell().EditorTabs.SearchAreasTab.ProgramSelector.SetSelected(programName)
 			setSearchAreaWidgets(*sa)
 			return nil
 		},
 		afterSave: func() {
-			if acc, ok := ui.GetUi().EditorTabs.SearchAreasTab.Widgets["Accordion"].(*widget.Accordion); ok {
+			if acc, ok := shell().EditorTabs.SearchAreasTab.Widgets["Accordion"].(*widget.Accordion); ok {
 				setAccordionSearchAreasLists(acc)
 			}
 			markSearchAreasClean()
@@ -379,11 +378,11 @@ func maskCreateConfig() createDialogConfig {
 				widget.NewFormItem("", container.NewVBox(rectContainer, circleContainer)),
 				widget.NewFormItem("", w["Inverse"]),
 			)
-			return container.NewVBox(ui.LabeledProgramSelector(ps), form), w
+			return container.NewVBox(LabeledProgramSelector(ps), form), w
 		},
 		prefill: func(w map[string]fyne.CanvasObject) {
-			src := ui.GetUi().EditorTabs.MasksTab.Widgets
-			w["ProgramSelector"].(*widget.Select).SetSelected(ui.GetUi().EditorTabs.MasksTab.ProgramSelector.Selected)
+			src := shell().EditorTabs.MasksTab.Widgets
+			w["ProgramSelector"].(*widget.Select).SetSelected(shell().EditorTabs.MasksTab.ProgramSelector.Selected)
 			w["Name"].(*widget.Entry).SetText(src["Name"].(*widget.Entry).Text)
 			shape := src["shapeSelect"].(*widget.RadioGroup).Selected
 			if shape == "" {
@@ -435,13 +434,13 @@ func maskCreateConfig() createDialogConfig {
 			if err := pro.MaskRepo().Set(m.Name, m); err != nil {
 				return err
 			}
-			ui.GetUi().EditorTabs.MasksTab.SelectedItem = m
-			ui.GetUi().EditorTabs.MasksTab.ProgramSelector.SetSelected(programName)
+			shell().EditorTabs.MasksTab.SelectedItem = m
+			shell().EditorTabs.MasksTab.ProgramSelector.SetSelected(programName)
 			setMaskWidgets(*m, programName)
 			return nil
 		},
 		afterSave: func() {
-			if acc, ok := ui.GetUi().EditorTabs.MasksTab.Widgets["Accordion"].(*widget.Accordion); ok {
+			if acc, ok := shell().EditorTabs.MasksTab.Widgets["Accordion"].(*widget.Accordion); ok {
 				setAccordionMasksLists(acc)
 			}
 			markMasksClean()
@@ -451,11 +450,11 @@ func maskCreateConfig() createDialogConfig {
 
 // performDeleteForTab executes the delete operation for the currently active editor tab.
 func performDeleteForTab() {
-	program := ui.GetUi().EditorUi.ActiveProgramName()
-	et := ui.GetUi().EditorTabs
+	program := shell().ActiveProgramName()
+	et := shell().EditorTabs
 	prog, err := repositories.ProgramRepo().Get(program)
 
-	switch ui.GetUi().EditorUi.EditorTabs.Selected().Text {
+	switch shell().EditorTabs.Selected().Text {
 	case "Programs":
 		if v, ok := et.ProgramsTab.SelectedItem.(*models.Program); ok {
 			if err := repositories.ProgramRepo().Delete(v.Name); err != nil {
@@ -526,8 +525,8 @@ func performDeleteForTab() {
 				log.Printf("Warning: Failed to remove mask image %s: %v", imgPath, removeErr)
 			}
 			et.MasksTab.SelectedItem = &models.Mask{}
-			ui.GetUi().SetMaskImageMode(false)
-			ui.GetUi().ClearMaskPreviewImage()
+			shell().SetMaskImageMode(false)
+			shell().ClearMaskPreviewImage()
 			if acc, ok := et.MasksTab.Widgets["Accordion"].(*widget.Accordion); ok {
 				setAccordionMasksLists(acc)
 			}
@@ -558,5 +557,5 @@ func performDeleteForTab() {
 			}
 		}
 	}
-	ui.GetUi().RefreshEditorActionBar()
+	shell().RefreshEditorActionBar()
 }

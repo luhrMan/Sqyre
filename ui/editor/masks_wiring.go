@@ -1,43 +1,24 @@
-package binders
+package editor
 
 import (
 	"Sqyre/internal/config"
 	"Sqyre/internal/models"
 	"Sqyre/internal/models/repositories"
-	"Sqyre/ui"
 	"Sqyre/ui/custom_widgets"
 	"fmt"
 	"io"
 	"log"
 	"os"
 	"path/filepath"
-	"sort"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/storage"
 	"fyne.io/fyne/v2/widget"
-	"github.com/lithammer/fuzzysearch/fuzzy"
 )
 
-func sortMaskKeysByDisplayName(p *models.Program, keys []string) {
-	repo := p.MaskRepo()
-	sort.Slice(keys, func(i, j int) bool {
-		a, _ := repo.Get(keys[i])
-		b, _ := repo.Get(keys[j])
-		na, nb := keys[i], keys[j]
-		if a != nil {
-			na = a.Name
-		}
-		if b != nil {
-			nb = b.Name
-		}
-		return na < nb
-	})
-}
-
 func setMaskWidgets(m models.Mask, programName string) {
-	mtw := ui.GetUi().EditorTabs.MasksTab.Widgets
+	mtw := shell().EditorTabs.MasksTab.Widgets
 	mtw["Name"].(*widget.Entry).SetText(m.Name)
 	custom_widgets.SetEntryText(mtw["CenterX"], m.CenterX)
 	custom_widgets.SetEntryText(mtw["CenterY"], m.CenterY)
@@ -62,19 +43,19 @@ func setMaskWidgets(m models.Mask, programName string) {
 		inverseCheck.SetChecked(m.Inverse)
 	}
 
-	hasImage := ui.HasMaskImage(programName, m.Name)
-	ui.GetUi().SetMaskImageMode(hasImage)
+	hasImage := HasMaskImage(programName, m.Name)
+	shell().SetMaskImageMode(hasImage)
 	if hasImage {
-		ui.GetUi().UpdateMaskPreview(programName, m.Name)
+		shell().UpdateMaskPreview(programName, m.Name)
 	} else {
-		ui.GetUi().ClearMaskPreviewImage()
+		shell().ClearMaskPreviewImage()
 	}
-	ui.GetUi().RefreshEditorActionBar()
+	shell().RefreshEditorActionBar()
 }
 
 func setAccordionMasksLists(acc *widget.Accordion) {
 	acc.Items = []*widget.AccordionItem{}
-	et := ui.GetUi().EditorTabs.MasksTab
+	et := shell().EditorTabs.MasksTab
 	filterText := ""
 	if sb, ok := et.Widgets["searchbar"].(*widget.Entry); ok {
 		filterText = sb.Text
@@ -83,18 +64,9 @@ func setAccordionMasksLists(acc *widget.Accordion) {
 
 	for _, p := range repositories.ProgramRepo().GetAllSortedByName() {
 		defaultList := p.MaskRepo().GetAllKeys()
-		filtered := defaultList
-		if filterText != "" {
-			filtered = []string{}
-			for _, i := range defaultList {
-				if fuzzy.MatchFold(filterText, i) {
-					filtered = append(filtered, i)
-				}
-			}
-		}
+		filtered := filterKeysByFuzzy(filterText, defaultList)
 		sortMaskKeysByDisplayName(p, filtered)
-		// Show program if search is empty, or program name matches, or any mask name matches
-		if filterText != "" && !fuzzy.MatchFold(filterText, p.Name) && len(filtered) == 0 {
+		if skipProgramAccordionRow(filterText, p.Name, filtered) {
 			continue
 		}
 
@@ -128,25 +100,25 @@ func setAccordionMasksLists(acc *widget.Accordion) {
 				log.Printf("Error getting program %s: %v", p.Name, err)
 				return
 			}
-			ui.GetUi().EditorTabs.MasksTab.ProgramSelector.SetSelected(program.Name)
+			shell().EditorTabs.MasksTab.ProgramSelector.SetSelected(program.Name)
 			maskName := lists.filtered[id]
 			mask, err := program.MaskRepo().Get(maskName)
 			if err != nil {
 				return
 			}
-			ui.GetUi().EditorTabs.MasksTab.SelectedItem = mask
+			shell().EditorTabs.MasksTab.SelectedItem = mask
 			setMaskWidgets(*mask, program.Name)
 			markMasksClean()
 		}
 
 		programMaskListWidget := *widget.NewAccordionItem(fmt.Sprintf("%s (%d)", p.Name, len(filtered)), lists.masks)
-		ui.GetUi().EditorTabs.MasksTab.Widgets[p.Name+"-list"] = lists.masks
+		shell().EditorTabs.MasksTab.Widgets[p.Name+"-list"] = lists.masks
 		acc.Append(&programMaskListWidget)
 	}
 }
 
 func readMaskShapeFromUI() string {
-	mtw := ui.GetUi().EditorTabs.MasksTab.Widgets
+	mtw := shell().EditorTabs.MasksTab.Widgets
 	sel := mtw["shapeSelect"].(*widget.RadioGroup).Selected
 	switch sel {
 	case "Circle":
@@ -157,16 +129,16 @@ func readMaskShapeFromUI() string {
 }
 
 func setMasksForms() {
-	et := ui.GetUi().EditorTabs
+	et := shell().EditorTabs
 
 	et.MasksTab.UpdateButton.OnTapped = func() {
 		w := et.MasksTab.Widgets
 		n := w["Name"].(*widget.Entry).Text
 
 		if v, ok := et.MasksTab.SelectedItem.(*models.Mask); ok {
-			p := ui.GetUi().EditorTabs.MasksTab.ProgramSelector.Selected
+			p := shell().EditorTabs.MasksTab.ProgramSelector.Selected
 			if p == "" {
-				ui.ShowErrorWithEscape(fmt.Errorf("program cannot be empty"), ui.GetUi().Window)
+				activeWire.ShowErrorWithEscape(fmt.Errorf("program cannot be empty"), activeWire.Window)
 				return
 			}
 			program, err := repositories.ProgramRepo().Get(p)
@@ -189,7 +161,7 @@ func setMasksForms() {
 
 				if err := program.MaskRepo().Set(v.Name, v); err != nil {
 					log.Printf("Error saving mask %s: %v", v.Name, err)
-					ui.ShowErrorWithEscape(fmt.Errorf("failed to save mask"), ui.GetUi().Window)
+					activeWire.ShowErrorWithEscape(fmt.Errorf("failed to save mask"), activeWire.Window)
 					return
 				}
 
@@ -205,10 +177,10 @@ func setMasksForms() {
 					return
 				}
 
-				hasImage := ui.HasMaskImage(p, v.Name)
-				ui.GetUi().SetMaskImageMode(hasImage)
+				hasImage := HasMaskImage(p, v.Name)
+				shell().SetMaskImageMode(hasImage)
 				if hasImage {
-					ui.GetUi().UpdateMaskPreview(p, v.Name)
+					shell().UpdateMaskPreview(p, v.Name)
 				}
 
 				if acc, ok := et.MasksTab.Widgets["Accordion"].(*widget.Accordion); ok {
@@ -221,7 +193,7 @@ func setMasksForms() {
 				if shouldConfirmOverwrite("mask", n, func(name string) bool {
 					_, err := program.MaskRepo().Get(name)
 					return err == nil
-				}, ui.GetUi().Window, applyMaskUpdate) {
+				}, activeWire.Window, applyMaskUpdate) {
 					return
 				}
 			}
@@ -231,25 +203,25 @@ func setMasksForms() {
 }
 
 func setMasksButtons() {
-	et := ui.GetUi().EditorTabs
+	et := shell().EditorTabs
 
 	// Upload image button
 	if uploadBtn, ok := et.MasksTab.Widgets["uploadButton"].(*widget.Button); ok {
 		uploadBtn.OnTapped = func() {
 			mask, ok := et.MasksTab.SelectedItem.(*models.Mask)
 			if !ok || mask.Name == "" {
-				ui.ShowErrorWithEscape(fmt.Errorf("select a mask first"), ui.GetUi().Window)
+				activeWire.ShowErrorWithEscape(fmt.Errorf("select a mask first"), activeWire.Window)
 				return
 			}
-			programName := ui.GetUi().EditorTabs.MasksTab.ProgramSelector.Selected
+			programName := shell().EditorTabs.MasksTab.ProgramSelector.Selected
 			if programName == "" {
-				ui.ShowErrorWithEscape(fmt.Errorf("select a program first"), ui.GetUi().Window)
+				activeWire.ShowErrorWithEscape(fmt.Errorf("select a program first"), activeWire.Window)
 				return
 			}
 
 			fd := dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
 				if err != nil {
-					ui.ShowErrorWithEscape(err, ui.GetUi().Window)
+					activeWire.ShowErrorWithEscape(err, activeWire.Window)
 					return
 				}
 				if reader == nil {
@@ -260,20 +232,20 @@ func setMasksButtons() {
 				masksPath := config.GetMasksPath()
 				programMaskDir := filepath.Join(masksPath, programName)
 				if err := os.MkdirAll(programMaskDir, 0755); err != nil {
-					ui.ShowErrorWithEscape(fmt.Errorf("failed to create mask directory: %v", err), ui.GetUi().Window)
+					activeWire.ShowErrorWithEscape(fmt.Errorf("failed to create mask directory: %v", err), activeWire.Window)
 					return
 				}
 
 				destPath := filepath.Join(programMaskDir, mask.Name+config.PNG)
 				destFile, err := os.Create(destPath)
 				if err != nil {
-					ui.ShowErrorWithEscape(fmt.Errorf("failed to create mask file: %v", err), ui.GetUi().Window)
+					activeWire.ShowErrorWithEscape(fmt.Errorf("failed to create mask file: %v", err), activeWire.Window)
 					return
 				}
 				defer destFile.Close()
 
 				if _, err := io.Copy(destFile, reader); err != nil {
-					ui.ShowErrorWithEscape(fmt.Errorf("failed to write mask image: %v", err), ui.GetUi().Window)
+					activeWire.ShowErrorWithEscape(fmt.Errorf("failed to write mask image: %v", err), activeWire.Window)
 					return
 				}
 
@@ -289,11 +261,11 @@ func setMasksButtons() {
 					log.Printf("Error saving program %s: %v", programName, err)
 				}
 
-				ui.GetUi().SetMaskImageMode(true)
-				ui.GetUi().UpdateMaskPreview(programName, mask.Name)
-			}, ui.GetUi().Window)
+				shell().SetMaskImageMode(true)
+				shell().UpdateMaskPreview(programName, mask.Name)
+			}, activeWire.Window)
 			fd.SetFilter(storage.NewExtensionFileFilter([]string{".png", ".jpg", ".jpeg", ".bmp"}))
-			ui.AddDialogEscapeClose(fd, ui.GetUi().Window)
+			activeWire.AddDialogEscapeClose(fd, activeWire.Window)
 			fd.Show()
 		}
 	}
@@ -305,15 +277,15 @@ func setMasksButtons() {
 			if !ok || mask.Name == "" {
 				return
 			}
-			programName := ui.GetUi().EditorTabs.MasksTab.ProgramSelector.Selected
+			programName := shell().EditorTabs.MasksTab.ProgramSelector.Selected
 			masksPath := config.GetMasksPath()
 			imgPath := filepath.Join(masksPath, programName, mask.Name+config.PNG)
 			if err := os.Remove(imgPath); err != nil && !os.IsNotExist(err) {
-				ui.ShowErrorWithEscape(fmt.Errorf("failed to remove mask image: %v", err), ui.GetUi().Window)
+				activeWire.ShowErrorWithEscape(fmt.Errorf("failed to remove mask image: %v", err), activeWire.Window)
 				return
 			}
-			ui.GetUi().SetMaskImageMode(false)
-			ui.GetUi().ClearMaskPreviewImage()
+			shell().SetMaskImageMode(false)
+			shell().ClearMaskPreviewImage()
 		}
 	}
 }

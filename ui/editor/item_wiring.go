@@ -1,4 +1,4 @@
-package binders
+package editor
 
 import (
 	"Sqyre/internal/assets"
@@ -7,7 +7,6 @@ import (
 	"Sqyre/internal/models/actions"
 	"Sqyre/internal/models/repositories"
 	"Sqyre/internal/services"
-	"Sqyre/ui"
 	"Sqyre/ui/completionentry"
 	"Sqyre/ui/custom_widgets"
 	"fmt"
@@ -24,7 +23,7 @@ import (
 )
 
 func setItemsWidgets(i models.Item) {
-	it := ui.GetUi().EditorTabs.ItemsTab.Widgets
+	it := shell().EditorTabs.ItemsTab.Widgets
 
 	it["Name"].(*widget.Entry).SetText(i.Name)
 	it["Cols"].(*widget.Entry).SetText(strconv.Itoa(i.GridSize[0]))
@@ -38,7 +37,7 @@ func setItemsWidgets(i models.Item) {
 
 	// Update IconVariantEditor with selected item
 	if editor, ok := it["iconVariantEditor"].(*custom_widgets.IconVariantEditor); ok {
-		programName := ui.GetUi().EditorTabs.ItemsTab.ProgramSelector.Selected
+		programName := shell().EditorTabs.ItemsTab.ProgramSelector.Selected
 		iconService := services.IconVariantServiceInstance()
 		baseName := iconService.GetBaseItemName(i.Name)
 
@@ -51,12 +50,12 @@ func setItemsWidgets(i models.Item) {
 		// Update both program and item at once to avoid double refresh
 		editor.SetProgramAndItem(programName, baseName)
 	}
-	ui.GetUi().RefreshEditorActionBar()
+	shell().RefreshEditorActionBar()
 }
 
 // updateTagsDisplay updates the tags grid container with the current item's tags
 func updateTagsDisplay(item *models.Item) {
-	it := ui.GetUi().EditorTabs.ItemsTab.Widgets
+	it := shell().EditorTabs.ItemsTab.Widgets
 	tagsContainer, ok := it["Tags"].(*fyne.Container)
 	if !ok {
 		return
@@ -75,7 +74,7 @@ func updateTagsDisplay(item *models.Item) {
 
 		// Create horizontal container for tag label and remove button
 		tagContainer := container.NewHBox(tagLabel, removeButton)
-		tagsContainer.Add(ui.WrapTagChip(tagContainer))
+		tagsContainer.Add(wrapTagChip(tagContainer))
 	}
 
 	tagsContainer.Refresh()
@@ -93,7 +92,7 @@ func removeTag(item *models.Item, tagToRemove string) {
 	item.Tags = newTags
 
 	// Save the item
-	p := ui.GetUi().EditorTabs.ItemsTab.ProgramSelector.Selected
+	p := shell().EditorTabs.ItemsTab.ProgramSelector.Selected
 	program, err := repositories.ProgramRepo().Get(p)
 	if err != nil {
 		log.Printf("Error getting program %s: %v", p, err)
@@ -120,14 +119,14 @@ func removeTag(item *models.Item, tagToRemove string) {
 	}
 
 	// Update the SelectedItem to the reloaded item
-	ui.GetUi().EditorTabs.ItemsTab.SelectedItem = updatedItem
-	ui.GetUi().RefreshEditorActionBar()
+	shell().EditorTabs.ItemsTab.SelectedItem = updatedItem
+	shell().RefreshEditorActionBar()
 
 	// Update the tags display
 	updateTagsDisplay(updatedItem)
 
 	// Refresh the tag entry's completion options to ensure deleted tags are removed from suggestions
-	it := ui.GetUi().EditorTabs.ItemsTab.Widgets
+	it := shell().EditorTabs.ItemsTab.Widgets
 	if tagEntry, ok := it["tagEntry"].(*completionentry.CompletionEntry); ok {
 		currentText := tagEntry.Text
 		// If there's text in the entry, refresh the completion options
@@ -164,9 +163,9 @@ func RefreshItemsAccordionItems() {
 // RefreshProgramAccordionItem refreshes only the accordion item for a specific program
 func RefreshProgramAccordionItem(programName string) {
 	// Refresh both the main action tabs accordion and the editor tabs accordion
-	// refreshAccordionForProgram(ui.GetUi().ActionTabs.ImageSearchItemsAccordion, programName)
+	// refreshAccordionForProgram(GetUi().ActionTabs.ImageSearchItemsAccordion, programName)
 
-	if accordion, ok := ui.GetUi().EditorTabs.ItemsTab.Widgets["Accordion"].(*custom_widgets.AccordionWithHeaderWidgets); ok {
+	if accordion, ok := shell().EditorTabs.ItemsTab.Widgets["Accordion"].(*custom_widgets.AccordionWithHeaderWidgets); ok {
 		refreshAccordionForProgram(accordion, programName)
 	}
 }
@@ -194,12 +193,12 @@ func refreshAccordionForProgram(accordion *custom_widgets.AccordionWithHeaderWid
 // RebuildItemsAccordion completely rebuilds the items accordion to refresh icon cache
 func RebuildItemsAccordion() {
 	// Rebuild the main action tabs accordion
-	// if ui.GetUi().ActionTabs.ImageSearchItemsAccordion != nil {
-	// 	setAccordionItemsLists(ui.GetUi().ActionTabs.ImageSearchItemsAccordion)
+	// if GetUi().ActionTabs.ImageSearchItemsAccordion != nil {
+	// 	setAccordionItemsLists(GetUi().ActionTabs.ImageSearchItemsAccordion)
 	// }
 
 	// Rebuild the editor tabs accordion
-	if accordion, ok := ui.GetUi().EditorTabs.ItemsTab.Widgets["Accordion"].(*custom_widgets.AccordionWithHeaderWidgets); ok {
+	if accordion, ok := shell().EditorTabs.ItemsTab.Widgets["Accordion"].(*custom_widgets.AccordionWithHeaderWidgets); ok {
 		setAccordionItemsLists(accordion)
 	}
 }
@@ -237,7 +236,7 @@ func RefreshItemInGrid(programName, oldItemName, newItemName string) {
 
 	// Force refresh the GridWrap by triggering a rebuild of the specific program's accordion
 	// This is necessary because the GridWrap uses a pre-computed iconCache that needs to be updated
-	if accordion, ok := ui.GetUi().EditorTabs.ItemsTab.Widgets["Accordion"].(*custom_widgets.AccordionWithHeaderWidgets); ok {
+	if accordion, ok := shell().EditorTabs.ItemsTab.Widgets["Accordion"].(*custom_widgets.AccordionWithHeaderWidgets); ok {
 		if i := itemsAccordionRowIndexForProgram(accordion, programName); i >= 0 {
 			if program, err := repositories.ProgramRepo().Get(programName); err == nil {
 				rebuildProgramAccordionItem(accordion, program, i)
@@ -249,12 +248,12 @@ func RefreshItemInGrid(programName, oldItemName, newItemName string) {
 // rebuildProgramAccordionItem rebuilds a specific program's accordion item with updated icon cache
 func rebuildProgramAccordionItem(accordion *custom_widgets.AccordionWithHeaderWidgets, program *models.Program, itemIndex int) {
 	filterText := ""
-	if et := ui.GetUi().EditorTabs.ItemsTab; et.Widgets["searchbar"] != nil {
+	if et := shell().EditorTabs.ItemsTab; et.Widgets["searchbar"] != nil {
 		if sb, ok := et.Widgets["searchbar"].(*widget.Entry); ok {
 			filterText = sb.Text
 		}
 	}
-	newItem, header := ui.CreateProgramAccordionItem(editorItemsAccordionOptions(program, filterText))
+	newItem, header := CreateProgramAccordionItem(editorItemsAccordionOptions(program, filterText))
 	it := accordion.Items[itemIndex]
 	wasOpen := it.Open
 	it.Title = newItem.Title
@@ -264,13 +263,13 @@ func rebuildProgramAccordionItem(accordion *custom_widgets.AccordionWithHeaderWi
 }
 
 func setAccordionItemsLists(acc *custom_widgets.AccordionWithHeaderWidgets) {
-	et := ui.GetUi().EditorTabs.ItemsTab
+	et := shell().EditorTabs.ItemsTab
 	filterText := ""
 	if sb, ok := et.Widgets["searchbar"].(*widget.Entry); ok {
 		filterText = sb.Text
 		sb.OnChanged = func(string) { setAccordionItemsLists(acc) }
 	}
-	ui.PopulateItemsSearchAccordion(acc, filterText, func(p *models.Program) ui.ItemsAccordionOptions {
+	PopulateItemsSearchAccordion(acc, filterText, func(p *models.Program) ItemsAccordionOptions {
 		return editorItemsAccordionOptions(p, filterText)
 	})
 }
@@ -278,7 +277,7 @@ func setAccordionItemsLists(acc *custom_widgets.AccordionWithHeaderWidgets) {
 // editorItemsAccordionOptions builds CreateProgramAccordionItem options for the editor tab (single-item
 // pick + load form). Image Search action dialog uses the same grid/filter via PopulateItemsSearchAccordion
 // with OnSelectionChanged / tri-state header instead.
-func editorItemsAccordionOptions(program *models.Program, filterText string) ui.ItemsAccordionOptions {
+func editorItemsAccordionOptions(program *models.Program, filterText string) ItemsAccordionOptions {
 	programName := program.Name
 	iconService := services.IconVariantServiceInstance()
 	baseNameToItemName := make(map[string]string)
@@ -289,14 +288,14 @@ func editorItemsAccordionOptions(program *models.Program, filterText string) ui.
 		}
 	}
 
-	return ui.ItemsAccordionOptions{
+	return ItemsAccordionOptions{
 		Program:    program,
 		FilterText: filterText,
 		GetSelectedTargets: func() []string {
-			if !ui.GetUi().MainUi.Navigation.Visible() {
+			if !activeWire.NavigationVisible() {
 				return nil
 			}
-			st := ui.GetUi().Mui.MTabs.SelectedTab()
+			st := activeWire.MacroMTabs().SelectedTab()
 			if st == nil {
 				return nil
 			}
@@ -311,7 +310,7 @@ func editorItemsAccordionOptions(program *models.Program, filterText string) ui.
 				log.Printf("Error getting program %s: %v", programName, err)
 				return
 			}
-			ui.GetUi().EditorTabs.ItemsTab.ProgramSelector.SetSelected(program.Name)
+			shell().EditorTabs.ItemsTab.ProgramSelector.SetSelected(program.Name)
 			itemName, exists := baseNameToItemName[baseItemName]
 			if !exists {
 				itemName = baseItemName
@@ -321,9 +320,9 @@ func editorItemsAccordionOptions(program *models.Program, filterText string) ui.
 				log.Printf("Error getting item %s: %v", baseItemName, err)
 				return
 			}
-			ui.GetUi().EditorTabs.ItemsTab.SelectedItem = item
-			if ui.GetUi().MainUi.Navigation.Visible() {
-				st := ui.GetUi().Mui.MTabs.SelectedTab()
+			shell().EditorTabs.ItemsTab.SelectedItem = item
+			if activeWire.NavigationVisible() {
+				st := activeWire.MacroMTabs().SelectedTab()
 				if st != nil {
 					if v, ok := st.Macro.Root.GetAction(st.SelectedNode).(*actions.ImageSearch); ok {
 						name := programName + config.ProgramDelimiter + baseItemName
@@ -340,14 +339,14 @@ func editorItemsAccordionOptions(program *models.Program, filterText string) ui.
 			markItemsClean()
 		},
 		RegisterWidgets: func(pname string, list *widget.GridWrap) {
-			ui.GetUi().EditorTabs.ItemsTab.Widgets[pname+"-list"] = list
+			shell().EditorTabs.ItemsTab.Widgets[pname+"-list"] = list
 		},
 	}
 }
 
 // updateMaskDisplay updates the mask label and details label on the Items tab.
 func updateMaskDisplay(maskName string) {
-	it := ui.GetUi().EditorTabs.ItemsTab.Widgets
+	it := shell().EditorTabs.ItemsTab.Widgets
 	maskLabel, _ := it["maskLabel"].(*widget.Label)
 	maskDetailsLabel, _ := it["maskDetailsLabel"].(*widget.Label)
 
@@ -369,7 +368,7 @@ func updateMaskDisplay(maskName string) {
 		return
 	}
 
-	prog := ui.GetUi().EditorTabs.ItemsTab.ProgramSelector.Selected
+	prog := shell().EditorTabs.ItemsTab.ProgramSelector.Selected
 	program, err := repositories.ProgramRepo().Get(prog)
 	if err != nil {
 		maskDetailsLabel.SetText("")
@@ -382,7 +381,7 @@ func updateMaskDisplay(maskName string) {
 		return
 	}
 
-	if ui.HasMaskImage(prog, maskName) {
+	if HasMaskImage(prog, maskName) {
 		maskDetailsLabel.SetText("Image mask")
 		return
 	}
@@ -429,10 +428,10 @@ func showMaskSelectionPopup() {
 			}
 			maskName := filtered[id]
 
-			if v, ok := ui.GetUi().EditorTabs.ItemsTab.SelectedItem.(*models.Item); ok {
+			if v, ok := shell().EditorTabs.ItemsTab.SelectedItem.(*models.Item); ok {
 				v.Mask = maskName
 
-				prog := ui.GetUi().EditorTabs.ItemsTab.ProgramSelector.Selected
+				prog := shell().EditorTabs.ItemsTab.ProgramSelector.Selected
 				program, err := repositories.ProgramRepo().Get(prog)
 				if err != nil {
 					log.Printf("Error getting program %s: %v", prog, err)
@@ -482,18 +481,18 @@ func showMaskSelectionPopup() {
 		closeButton, nil, nil, nil,
 		acc,
 	)
-	popup = widget.NewModalPopUp(popUpContent, ui.GetUi().Window.Canvas())
+	popup = widget.NewModalPopUp(popUpContent, activeWire.Window.Canvas())
 	popup.Resize(fyne.NewSize(400, 500))
 	popup.Show()
 }
 
 // setMaskSelectionButtons wires up the mask select and clear buttons on the Items tab.
 func setMaskSelectionButtons() {
-	it := ui.GetUi().EditorTabs.ItemsTab.Widgets
+	it := shell().EditorTabs.ItemsTab.Widgets
 
 	if btn, ok := it["maskSelectButton"].(*widget.Button); ok {
 		btn.OnTapped = func() {
-			if v, ok := ui.GetUi().EditorTabs.ItemsTab.SelectedItem.(*models.Item); ok {
+			if v, ok := shell().EditorTabs.ItemsTab.SelectedItem.(*models.Item); ok {
 				if v.Name == "" {
 					return
 				}
@@ -504,10 +503,10 @@ func setMaskSelectionButtons() {
 
 	if btn, ok := it["maskClearButton"].(*widget.Button); ok {
 		btn.OnTapped = func() {
-			if v, ok := ui.GetUi().EditorTabs.ItemsTab.SelectedItem.(*models.Item); ok {
+			if v, ok := shell().EditorTabs.ItemsTab.SelectedItem.(*models.Item); ok {
 				v.Mask = ""
 
-				prog := ui.GetUi().EditorTabs.ItemsTab.ProgramSelector.Selected
+				prog := shell().EditorTabs.ItemsTab.ProgramSelector.Selected
 				program, err := repositories.ProgramRepo().Get(prog)
 				if err != nil {
 					log.Printf("Error getting program %s: %v", prog, err)

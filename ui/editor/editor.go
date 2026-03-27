@@ -1,4 +1,4 @@
-package ui
+package editor
 
 import (
 	"Sqyre/internal/config"
@@ -30,6 +30,7 @@ import (
 
 type EditorUi struct {
 	fyne.CanvasObject
+	win          fyne.Window
 	AddButton    *widget.Button
 	RemoveButton *widget.Button
 	ActionBar    *fyne.Container
@@ -180,7 +181,9 @@ func drawEditorPreviewMonitorOutlines(mat *gocv.Mat, vb image.Rectangle) {
 	}
 }
 
-func (u *Ui) constructEditorTabs() {
+// ConstructEditorTabs builds all editor tab widgets. Call before SetEditorUi.
+func ConstructEditorTabs(eu *EditorUi, win fyne.Window) {
+	eu.win = win
 	var (
 		name  = "Name"
 		x     = "X"
@@ -198,7 +201,7 @@ func (u *Ui) constructEditorTabs() {
 		plist = "list"
 		ive   = "iconVariantEditor"
 
-		et    = ui.EditorTabs
+		et    = eu.EditorTabs
 		protw = et.ProgramsTab.Widgets
 		itw   = et.ItemsTab.Widgets
 		ptw   = et.PointsTab.Widgets
@@ -232,15 +235,11 @@ func (u *Ui) constructEditorTabs() {
 	itw[rows] = new(widget.Entry)
 	itw["tagEntry"] = completionentry.NewCompletionEntry([]string{})
 	itw["tagEntry"].(*completionentry.CompletionEntry).PlaceHolder = "Enter tag name and press Enter"
-	// Create a "+" button for submitting tags
 	itw["tagSubmitButton"] = widget.NewButtonWithIcon("", theme.ContentAddIcon(), nil)
 	itw["tagSubmitButton"].(*widget.Button).Importance = widget.MediumImportance
-	// Create container with tag entry and submit button
 	itw["tagEntryContainer"] = container.NewBorder(nil, nil, nil, itw["tagSubmitButton"], itw["tagEntry"])
 	itw[tags] = container.New(kxlayout.NewRowWrapLayout())
 	itw[sm] = new(widget.Entry)
-
-	// Mask selector: label showing current mask + button to open selection popup
 	itw["maskLabel"] = widget.NewLabel("None")
 	itw["maskSelectButton"] = widget.NewButtonWithIcon("Select", theme.SearchIcon(), nil)
 	itw["maskSelectButton"].(*widget.Button).Importance = widget.MediumImportance
@@ -262,8 +261,8 @@ func (u *Ui) constructEditorTabs() {
 		"", // programName will be set when item is selected
 		"", // itemName will be set when item is selected
 		iconService,
-		ui.Window,
-		nil, // onVariantChange callback will be set in binders
+		win,
+		nil, // onVariantChange set in setItemsWidgets (editor_wiring.go)
 	)
 
 	itw[form] = widget.NewForm(
@@ -301,8 +300,8 @@ func (u *Ui) constructEditorTabs() {
 	ptw["searchbar"] = widget.NewEntry()
 	ptw["searchbar"].(*widget.Entry).PlaceHolder = "Search here"
 	ptw[name] = new(widget.Entry)
-	ptw[x] = custom_widgets.NewVarEntry(currentMacroVariables)
-	ptw[y] = custom_widgets.NewVarEntry(currentMacroVariables)
+	ptw[x] = custom_widgets.NewVarEntry(macroVarNames)
+	ptw[y] = custom_widgets.NewVarEntry(macroVarNames)
 
 	// Create record button for capturing point coordinates
 	ptw["recordButton"] = widget.NewButtonWithIcon("", theme.MediaRecordIcon(), nil)
@@ -352,10 +351,10 @@ func (u *Ui) constructEditorTabs() {
 	satw["searchbar"] = widget.NewEntry()
 	satw["searchbar"].(*widget.Entry).PlaceHolder = "Search here"
 	satw[name] = new(widget.Entry)
-	satw[x1] = custom_widgets.NewVarEntry(currentMacroVariables)
-	satw[y1] = custom_widgets.NewVarEntry(currentMacroVariables)
-	satw[x2] = custom_widgets.NewVarEntry(currentMacroVariables)
-	satw[y2] = custom_widgets.NewVarEntry(currentMacroVariables)
+	satw[x1] = custom_widgets.NewVarEntry(macroVarNames)
+	satw[y1] = custom_widgets.NewVarEntry(macroVarNames)
+	satw[x2] = custom_widgets.NewVarEntry(macroVarNames)
+	satw[y2] = custom_widgets.NewVarEntry(macroVarNames)
 	// Create record button for capturing search area rectangle (click and drag)
 	satw["recordButton"] = widget.NewButtonWithIcon("", theme.MediaRecordIcon(), nil)
 	satw["recordButton"].(*widget.Button).Importance = widget.DangerImportance
@@ -426,9 +425,9 @@ func (u *Ui) constructEditorTabs() {
 	mtw["shapeSelect"].(*widget.RadioGroup).SetSelected("Rectangle")
 
 	// Center location entries (percentage of template dimensions)
-	mtw["CenterX"] = custom_widgets.NewVarEntry(currentMacroVariables)
+	mtw["CenterX"] = custom_widgets.NewVarEntry(macroVarNames)
 	mtw["CenterX"].(*custom_widgets.VarEntry).PlaceHolder = "50"
-	mtw["CenterY"] = custom_widgets.NewVarEntry(currentMacroVariables)
+	mtw["CenterY"] = custom_widgets.NewVarEntry(macroVarNames)
 	mtw["CenterY"].(*custom_widgets.VarEntry).PlaceHolder = "50"
 	mtw["centerContainer"] = container.NewGridWithColumns(2,
 		container.NewBorder(nil, nil, widget.NewLabel("X %"), nil, mtw["CenterX"]),
@@ -436,9 +435,9 @@ func (u *Ui) constructEditorTabs() {
 	)
 
 	// Rectangle entries:  base * height
-	mtw["Base"] = custom_widgets.NewVarEntry(currentMacroVariables)
+	mtw["Base"] = custom_widgets.NewVarEntry(macroVarNames)
 	mtw["Base"].(*custom_widgets.VarEntry).PlaceHolder = "base"
-	mtw["Height"] = custom_widgets.NewVarEntry(currentMacroVariables)
+	mtw["Height"] = custom_widgets.NewVarEntry(macroVarNames)
 	mtw["Height"].(*custom_widgets.VarEntry).PlaceHolder = "height"
 	mtw["rectContainer"] =
 		container.NewGridWithColumns(3,
@@ -448,7 +447,7 @@ func (u *Ui) constructEditorTabs() {
 		)
 
 	// Circle entries:  π * radius²
-	mtw["Radius"] = custom_widgets.NewVarEntry(currentMacroVariables)
+	mtw["Radius"] = custom_widgets.NewVarEntry(macroVarNames)
 	mtw["Radius"].(*custom_widgets.VarEntry).PlaceHolder = "radius"
 	mtw["circleContainer"] = container.NewBorder(
 		nil, nil,
@@ -519,7 +518,7 @@ func (u *Ui) constructEditorTabs() {
 	atw["Accordion"] = widget.NewAccordion()
 	atw["searchbar"] = widget.NewEntry()
 	atw["searchbar"].(*widget.Entry).PlaceHolder = "Search here"
-	atw["saveButton"] = widget.NewButton("Save", u.onAutoPicSave)
+	atw["saveButton"] = widget.NewButton("Save", eu.onAutoPicSave)
 
 	// Create preview image and container
 	previewImage := canvas.NewImageFromImage(nil)
@@ -564,42 +563,42 @@ func (u *Ui) constructEditorTabs() {
 	et.Append(et.AutoPicTab.TabItem)
 }
 
-func (u *Ui) activeUpdateButton() *widget.Button {
-	tab := u.EditorUi.ActiveTab()
+func (eu *EditorUi) activeUpdateButton() *widget.Button {
+	tab := eu.ActiveTab()
 	if tab == nil {
 		return nil
 	}
 	return tab.UpdateButton
 }
 
-func (u *Ui) refreshEditorActionBar() {
-	if u.EditorUi.ActionBar == nil {
+func (eu *EditorUi) refreshEditorActionBar() {
+	if eu.ActionBar == nil {
 		return
 	}
 	objects := []fyne.CanvasObject{layout.NewSpacer()}
-	if sel := u.EditorUi.EditorTabs.Selected(); sel == nil || sel.Text != "AutoPic" {
-		objects = append(objects, u.EditorUi.AddButton)
+	if sel := eu.EditorTabs.Selected(); sel == nil || sel.Text != "AutoPic" {
+		objects = append(objects, eu.AddButton)
 	}
-	if update := u.activeUpdateButton(); update != nil {
+	if update := eu.activeUpdateButton(); update != nil {
 		objects = append(objects, update)
 	}
-	if sel := u.EditorUi.EditorTabs.Selected(); sel == nil || sel.Text != "AutoPic" {
-		if u.canDeleteActiveEditorSelection() {
-			u.EditorUi.RemoveButton.Enable()
+	if sel := eu.EditorTabs.Selected(); sel == nil || sel.Text != "AutoPic" {
+		if eu.canDeleteActiveEditorSelection() {
+			eu.RemoveButton.Enable()
 		} else {
-			u.EditorUi.RemoveButton.Disable()
+			eu.RemoveButton.Disable()
 		}
-		objects = append(objects, u.EditorUi.RemoveButton)
+		objects = append(objects, eu.RemoveButton)
 	} else {
-		u.EditorUi.RemoveButton.Disable()
+		eu.RemoveButton.Disable()
 	}
-	u.EditorUi.ActionBar.Objects = objects
-	u.EditorUi.ActionBar.Refresh()
+	eu.ActionBar.Objects = objects
+	eu.ActionBar.Refresh()
 }
 
-func (u *Ui) canDeleteActiveEditorSelection() bool {
-	et := u.EditorTabs
-	sel := u.EditorTabs.Selected()
+func (eu *EditorUi) canDeleteActiveEditorSelection() bool {
+	et := eu.EditorTabs
+	sel := eu.EditorTabs.Selected()
 	if sel == nil {
 		return false
 	}
@@ -628,42 +627,48 @@ func (u *Ui) canDeleteActiveEditorSelection() bool {
 	return false
 }
 
-func (u *Ui) RefreshEditorActionBar() {
-	u.refreshEditorActionBar()
+func (eu *EditorUi) RefreshEditorActionBar() {
+	eu.refreshEditorActionBar()
 }
 
-func (u *Ui) constructAddButton() {
-	u.EditorUi.AddButton.Text = "New"
-	u.EditorUi.AddButton.Icon = theme.ContentAddIcon()
-	u.EditorUi.AddButton.Importance = widget.SuccessImportance
+func (eu *EditorUi) constructAddButton() {
+	eu.AddButton.Text = "New"
+	eu.AddButton.Icon = theme.ContentAddIcon()
+	eu.AddButton.Importance = widget.SuccessImportance
 
 }
 
-func (u *Ui) constructRemoveButton() {
-	u.EditorUi.RemoveButton.Text = "Delete"
-	u.EditorUi.RemoveButton.Icon = theme.ContentRemoveIcon()
-	u.EditorUi.RemoveButton.Importance = widget.DangerImportance
-	u.EditorUi.RemoveButton.Disable()
+func (eu *EditorUi) constructRemoveButton() {
+	eu.RemoveButton.Text = "Delete"
+	eu.RemoveButton.Icon = theme.ContentRemoveIcon()
+	eu.RemoveButton.Importance = widget.DangerImportance
+	eu.RemoveButton.Disable()
+}
+
+// PrepareToolbarButtons sets New/Delete button labels and icons after ConstructEditorTabs.
+func PrepareToolbarButtons(eu *EditorUi) {
+	eu.constructAddButton()
+	eu.constructRemoveButton()
 }
 
 // AutoPic tab handlers
 
-func (u *Ui) onAutoPicSave() {
-	selectedItem := u.EditorTabs.AutoPicTab.SelectedItem
+func (eu *EditorUi) onAutoPicSave() {
+	selectedItem := eu.EditorTabs.AutoPicTab.SelectedItem
 	if selectedItem == nil {
-		ShowErrorWithEscape(errors.New("AutoPic: Cannot save - no search area selected"), u.Window)
+		activeWire.ShowErrorWithEscape(errors.New("AutoPic: Cannot save - no search area selected"), eu.win)
 		return
 	}
 
 	searchArea, ok := selectedItem.(*models.SearchArea)
 	if !ok {
-		ShowErrorWithEscape(errors.New("AutoPic: Cannot save - selected item is not a search area"), u.Window)
+		activeWire.ShowErrorWithEscape(errors.New("AutoPic: Cannot save - selected item is not a search area"), eu.win)
 		return
 	}
 
 	// Validate search area
 	if searchArea == nil {
-		ShowErrorWithEscape(errors.New("AutoPic: Cannot save - search area is nil"), u.Window)
+		activeWire.ShowErrorWithEscape(errors.New("AutoPic: Cannot save - search area is nil"), eu.win)
 		return
 	}
 
@@ -676,14 +681,14 @@ func (u *Ui) onAutoPicSave() {
 	h := by - ty
 
 	if w <= 0 || h <= 0 {
-		ShowErrorWithEscape(fmt.Errorf("AutoPic: Cannot save - invalid search area dimensions - width: %d, height: %d (area: %s)", w, h, searchArea.Name), u.Window)
+		activeWire.ShowErrorWithEscape(fmt.Errorf("AutoPic: Cannot save - invalid search area dimensions - width: %d, height: %d (area: %s)", w, h, searchArea.Name), eu.win)
 		return
 	}
 
 	vb := screen.VirtualBounds()
 	if lx < vb.Min.X || ty < vb.Min.Y || rx > vb.Max.X || by > vb.Max.Y {
-		ShowErrorWithEscape(fmt.Errorf("AutoPic: Cannot save - search area outside virtual desktop - desktop: (%d,%d)..(%d,%d), area: (%d,%d) to (%d,%d) (area: %s)",
-			vb.Min.X, vb.Min.Y, vb.Max.X, vb.Max.Y, lx, ty, rx, by, searchArea.Name), u.Window)
+		activeWire.ShowErrorWithEscape(fmt.Errorf("AutoPic: Cannot save - search area outside virtual desktop - desktop: (%d,%d)..(%d,%d), area: (%d,%d) to (%d,%d) (area: %s)",
+			vb.Min.X, vb.Min.Y, vb.Max.X, vb.Max.Y, lx, ty, rx, by, searchArea.Name), eu.win)
 		return
 	}
 
@@ -700,14 +705,14 @@ func (u *Ui) onAutoPicSave() {
 
 		captureImg, err = robotgo.CaptureImg(lx, ty, w, h)
 		if err != nil {
-			ShowErrorWithEscape(fmt.Errorf("AutoPic: Error capturing image - %v (area: %s)", err, searchArea.Name), u.Window)
+			activeWire.ShowErrorWithEscape(fmt.Errorf("AutoPic: Error capturing image - %v (area: %s)", err, searchArea.Name), eu.win)
 			captureImg = nil
 		}
 	}()
 
 	// Validate the captured image
 	if captureImg == nil {
-		ShowErrorWithEscape(fmt.Errorf("AutoPic: Cannot save - screen capture returned nil image (area: %s)", searchArea.Name), u.Window)
+		activeWire.ShowErrorWithEscape(fmt.Errorf("AutoPic: Cannot save - screen capture returned nil image (area: %s)", searchArea.Name), eu.win)
 		return
 	}
 
@@ -718,14 +723,14 @@ func (u *Ui) onAutoPicSave() {
 	// Ensure AutoPic directory exists
 	autoPicPath := config.GetAutoPicPath()
 	if err := os.MkdirAll(autoPicPath, 0755); err != nil {
-		ShowErrorWithEscape(fmt.Errorf("AutoPic: Error creating AutoPic directory: %v", err), u.Window)
+		activeWire.ShowErrorWithEscape(fmt.Errorf("AutoPic: Error creating AutoPic directory: %v", err), eu.win)
 		return
 	}
 
 	// Validate the path
 	fullPath := filepath.Join(autoPicPath, filename)
 	if fullPath == "" {
-		ShowErrorWithEscape(errors.New("AutoPic: Error creating file path"), u.Window)
+		activeWire.ShowErrorWithEscape(errors.New("AutoPic: Error creating file path"), eu.win)
 		return
 	}
 
@@ -738,18 +743,18 @@ func (u *Ui) onAutoPicSave() {
 		}()
 
 		if err := robotgo.SavePng(captureImg, fullPath); err != nil {
-			ShowErrorWithEscape(fmt.Errorf("AutoPic: Error saving image to %s: %v", fullPath, err), u.Window)
+			activeWire.ShowErrorWithEscape(fmt.Errorf("AutoPic: Error saving image to %s: %v", fullPath, err), eu.win)
 			return
 		}
 
-		ShowErrorWithEscape(fmt.Errorf("AutoPic: Image saved successfully to: %s", fullPath), u.Window)
+		activeWire.ShowErrorWithEscape(fmt.Errorf("AutoPic: Image saved successfully to: %s", fullPath), eu.win)
 	}()
 }
 
-func (u *Ui) UpdateAutoPicPreview(searchArea *models.SearchArea) {
+func (eu *EditorUi) UpdateAutoPicPreview(searchArea *models.SearchArea) {
 	// Validate search area
 	if searchArea == nil {
-		ShowErrorWithEscape(errors.New("AutoPic: Cannot update preview - search area is nil"), u.Window)
+		activeWire.ShowErrorWithEscape(errors.New("AutoPic: Cannot update preview - search area is nil"), eu.win)
 		return
 	}
 
@@ -762,16 +767,16 @@ func (u *Ui) UpdateAutoPicPreview(searchArea *models.SearchArea) {
 	h := by - ty
 
 	if w <= 0 || h <= 0 {
-		ShowErrorWithEscape(fmt.Errorf("AutoPic: Invalid search area dimensions - width: %d, height: %d (area: %s)", w, h, searchArea.Name), u.Window)
-		u.clearPreviewImage()
+		activeWire.ShowErrorWithEscape(fmt.Errorf("AutoPic: Invalid search area dimensions - width: %d, height: %d (area: %s)", w, h, searchArea.Name), eu.win)
+		eu.clearPreviewImage()
 		return
 	}
 
 	vb := screen.VirtualBounds()
 	if lx < vb.Min.X || ty < vb.Min.Y || rx > vb.Max.X || by > vb.Max.Y {
-		ShowErrorWithEscape(fmt.Errorf("AutoPic: Search area outside virtual desktop - desktop: (%d,%d)..(%d,%d), area: (%d,%d) to (%d,%d) (area: %s)",
-			vb.Min.X, vb.Min.Y, vb.Max.X, vb.Max.Y, lx, ty, rx, by, searchArea.Name), u.Window)
-		u.clearPreviewImage()
+		activeWire.ShowErrorWithEscape(fmt.Errorf("AutoPic: Search area outside virtual desktop - desktop: (%d,%d)..(%d,%d), area: (%d,%d) to (%d,%d) (area: %s)",
+			vb.Min.X, vb.Min.Y, vb.Max.X, vb.Max.Y, lx, ty, rx, by, searchArea.Name), eu.win)
+		eu.clearPreviewImage()
 		return
 	}
 
@@ -779,40 +784,40 @@ func (u *Ui) UpdateAutoPicPreview(searchArea *models.SearchArea) {
 	defer func() {
 		if r := recover(); r != nil {
 			services.LogPanicToFile(r, "AutoPic: Screen capture (area: "+searchArea.Name+")")
-			u.clearPreviewImage()
+			eu.clearPreviewImage()
 		}
 	}()
 
 	captureImg, err := robotgo.CaptureImg(lx, ty, w, h)
 	if err != nil {
-		ShowErrorWithEscape(fmt.Errorf("AutoPic: Error capturing image - %v (area: %s)", err, searchArea.Name), u.Window)
+		activeWire.ShowErrorWithEscape(fmt.Errorf("AutoPic: Error capturing image - %v (area: %s)", err, searchArea.Name), eu.win)
 		captureImg = nil
 	}
 
 	// Validate the captured image
 	if captureImg == nil {
-		ShowErrorWithEscape(fmt.Errorf("AutoPic: Screen capture returned nil image (area: %s)", searchArea.Name), u.Window)
-		u.clearPreviewImage()
+		activeWire.ShowErrorWithEscape(fmt.Errorf("AutoPic: Screen capture returned nil image (area: %s)", searchArea.Name), eu.win)
+		eu.clearPreviewImage()
 		return
 	}
 
 	// Update preview image
-	if previewImage := u.EditorTabs.AutoPicTab.previewImage; previewImage != nil {
+	if previewImage := eu.EditorTabs.AutoPicTab.previewImage; previewImage != nil {
 		previewImage.Image = captureImg
 		previewImage.Refresh()
 	} else {
-		ShowErrorWithEscape(errors.New("AutoPic: Preview image widget is nil"), u.Window)
+		activeWire.ShowErrorWithEscape(errors.New("AutoPic: Preview image widget is nil"), eu.win)
 	}
 }
 
-func (u *Ui) clearPreviewImage() {
-	if previewImage := u.EditorTabs.AutoPicTab.previewImage; previewImage != nil {
+func (eu *EditorUi) clearPreviewImage() {
+	if previewImage := eu.EditorTabs.AutoPicTab.previewImage; previewImage != nil {
 		previewImage.Image = nil
 		previewImage.Refresh()
 	}
 }
 
-func (u *Ui) ErrorPopUp(s string) {
+func (eu *EditorUi) ErrorPopUp(s string) {
 	label := widget.NewLabel(s)
 	label.Importance = widget.DangerImportance
 
@@ -823,16 +828,16 @@ func (u *Ui) ErrorPopUp(s string) {
 			nil,
 			label,
 		),
-		u.Window.Canvas(),
+		eu.win.Canvas(),
 	)
 	pu.Show()
 }
 
-func (u *Ui) UpdateSearchAreaPreview(searchArea *models.SearchArea) {
-	u.EditorTabs.SearchAreasTab.previewImage.Resource = nil
+func (eu *EditorUi) UpdateSearchAreaPreview(searchArea *models.SearchArea) {
+	eu.EditorTabs.SearchAreasTab.previewImage.Resource = nil
 	// Validate search area
 	if searchArea == nil {
-		ShowErrorWithEscape(errors.New("SearchArea: Cannot update preview - search area is nil"), u.Window)
+		activeWire.ShowErrorWithEscape(errors.New("SearchArea: Cannot update preview - search area is nil"), eu.win)
 		return
 	}
 
@@ -845,9 +850,9 @@ func (u *Ui) UpdateSearchAreaPreview(searchArea *models.SearchArea) {
 	h := by - ty
 
 	if w <= 0 || h <= 0 {
-		u.clearSearchAreaPreviewImage()
-		u.EditorTabs.SearchAreasTab.previewImage.Resource = theme.BrokenImageIcon()
-		u.ErrorPopUp(fmt.Sprintf("SearchArea: Invalid search area dimensions - width: %d, height: %d (area: %s)", w, h, searchArea.Name))
+		eu.clearSearchAreaPreviewImage()
+		eu.EditorTabs.SearchAreasTab.previewImage.Resource = theme.BrokenImageIcon()
+		eu.ErrorPopUp(fmt.Sprintf("SearchArea: Invalid search area dimensions - width: %d, height: %d (area: %s)", w, h, searchArea.Name))
 		// label := widget.NewLabel(fmt.Sprintf("SearchArea: Invalid search area dimensions - width: %d, height: %d (area: %s)", w, h, searchArea.Name))
 		// label.Importance = widget.DangerImportance
 
@@ -858,18 +863,18 @@ func (u *Ui) UpdateSearchAreaPreview(searchArea *models.SearchArea) {
 		// 		nil,
 		// 		label,
 		// 	),
-		// 	u.Window.Canvas(),
+		// 	eu.win.Canvas(),
 		// )
 		// pu.Show()
-		// ShowErrorWithEscape(fmt.Errorf("SearchArea: Invalid search area dimensions - width: %d, height: %d (area: %s)", w, h, searchArea.Name), u.Window)
+		// activeWire.ShowErrorWithEscape(fmt.Errorf("SearchArea: Invalid search area dimensions - width: %d, height: %d (area: %s)", w, h, searchArea.Name), eu.win)
 		return
 	}
 
 	vb := screen.VirtualBounds()
 	if lx < vb.Min.X || ty < vb.Min.Y || rx > vb.Max.X || by > vb.Max.Y {
-		ShowErrorWithEscape(fmt.Errorf("SearchArea: Search area outside virtual desktop - desktop: (%d,%d)..(%d,%d), area: (%d,%d) to (%d,%d) (area: %s)",
-			vb.Min.X, vb.Min.Y, vb.Max.X, vb.Max.Y, lx, ty, rx, by, searchArea.Name), u.Window)
-		u.clearSearchAreaPreviewImage()
+		activeWire.ShowErrorWithEscape(fmt.Errorf("SearchArea: Search area outside virtual desktop - desktop: (%d,%d)..(%d,%d), area: (%d,%d) to (%d,%d) (area: %s)",
+			vb.Min.X, vb.Min.Y, vb.Max.X, vb.Max.Y, lx, ty, rx, by, searchArea.Name), eu.win)
+		eu.clearSearchAreaPreviewImage()
 		return
 	}
 
@@ -877,28 +882,28 @@ func (u *Ui) UpdateSearchAreaPreview(searchArea *models.SearchArea) {
 	defer func() {
 		if r := recover(); r != nil {
 			services.LogPanicToFile(r, "SearchArea: Screen capture (area: "+searchArea.Name+")")
-			u.clearSearchAreaPreviewImage()
+			eu.clearSearchAreaPreviewImage()
 		}
 	}()
 
 	captureImg, err := robotgo.CaptureImg(vb.Min.X, vb.Min.Y, vb.Dx(), vb.Dy())
 	if err != nil {
-		ShowErrorWithEscape(fmt.Errorf("SearchArea: Error capturing image - %v (area: %s)", err, searchArea.Name), u.Window)
+		activeWire.ShowErrorWithEscape(fmt.Errorf("SearchArea: Error capturing image - %v (area: %s)", err, searchArea.Name), eu.win)
 		captureImg = nil
 	}
 
 	// Validate the captured image
 	if captureImg == nil {
-		ShowErrorWithEscape(fmt.Errorf("SearchArea: Screen capture returned nil image (area: %s)", searchArea.Name), u.Window)
-		u.clearSearchAreaPreviewImage()
+		activeWire.ShowErrorWithEscape(fmt.Errorf("SearchArea: Screen capture returned nil image (area: %s)", searchArea.Name), eu.win)
+		eu.clearSearchAreaPreviewImage()
 		return
 	}
 
 	// Convert to gocv Mat for drawing
 	mat, err := gocv.ImageToMatRGB(captureImg)
 	if err != nil {
-		ShowErrorWithEscape(fmt.Errorf("SearchArea: Error converting image to Mat - %v (area: %s)", err, searchArea.Name), u.Window)
-		u.clearSearchAreaPreviewImage()
+		activeWire.ShowErrorWithEscape(fmt.Errorf("SearchArea: Error converting image to Mat - %v (area: %s)", err, searchArea.Name), eu.win)
+		eu.clearSearchAreaPreviewImage()
 		return
 	}
 	defer mat.Close()
@@ -913,22 +918,22 @@ func (u *Ui) UpdateSearchAreaPreview(searchArea *models.SearchArea) {
 	// Convert back to image.Image
 	previewImg, err := mat.ToImage()
 	if err != nil {
-		ShowErrorWithEscape(fmt.Errorf("SearchArea: Error converting Mat to image - %v (area: %s)", err, searchArea.Name), u.Window)
-		u.clearSearchAreaPreviewImage()
+		activeWire.ShowErrorWithEscape(fmt.Errorf("SearchArea: Error converting Mat to image - %v (area: %s)", err, searchArea.Name), eu.win)
+		eu.clearSearchAreaPreviewImage()
 		return
 	}
 
 	// Update preview image
-	if previewImage := u.EditorTabs.SearchAreasTab.previewImage; previewImage != nil {
+	if previewImage := eu.EditorTabs.SearchAreasTab.previewImage; previewImage != nil {
 		previewImage.Image = previewImg
 		previewImage.Refresh()
 	} else {
-		ShowErrorWithEscape(errors.New("SearchArea: Preview image widget is nil"), u.Window)
+		activeWire.ShowErrorWithEscape(errors.New("SearchArea: Preview image widget is nil"), eu.win)
 	}
 }
 
-func (u *Ui) clearSearchAreaPreviewImage() {
-	if previewImage := u.EditorTabs.SearchAreasTab.previewImage; previewImage != nil {
+func (eu *EditorUi) clearSearchAreaPreviewImage() {
+	if previewImage := eu.EditorTabs.SearchAreasTab.previewImage; previewImage != nil {
 		previewImage.Image = nil
 		previewImage.Refresh()
 	}
@@ -958,10 +963,10 @@ func searchAreaCoordToInt(v any) int {
 	}
 }
 
-func (u *Ui) UpdatePointPreview(point *models.Point) {
+func (eu *EditorUi) UpdatePointPreview(point *models.Point) {
 	// Validate point
 	if point == nil {
-		ShowErrorWithEscape(errors.New("Point: Cannot update preview - point is nil"), u.Window)
+		activeWire.ShowErrorWithEscape(errors.New("Point: Cannot update preview - point is nil"), eu.win)
 		return
 	}
 
@@ -970,9 +975,9 @@ func (u *Ui) UpdatePointPreview(point *models.Point) {
 
 	vb := screen.VirtualBounds()
 	if px < vb.Min.X || py < vb.Min.Y || px > vb.Max.X || py > vb.Max.Y {
-		ShowErrorWithEscape(fmt.Errorf("Point: Point outside virtual desktop - desktop: (%d,%d)..(%d,%d), point: (%d,%d) (point: %s)",
-			vb.Min.X, vb.Min.Y, vb.Max.X, vb.Max.Y, px, py, point.Name), u.Window)
-		u.clearPointPreviewImage()
+		activeWire.ShowErrorWithEscape(fmt.Errorf("Point: Point outside virtual desktop - desktop: (%d,%d)..(%d,%d), point: (%d,%d) (point: %s)",
+			vb.Min.X, vb.Min.Y, vb.Max.X, vb.Max.Y, px, py, point.Name), eu.win)
+		eu.clearPointPreviewImage()
 		return
 	}
 
@@ -980,27 +985,27 @@ func (u *Ui) UpdatePointPreview(point *models.Point) {
 	defer func() {
 		if r := recover(); r != nil {
 			services.LogPanicToFile(r, "Point: Screen capture (point: "+point.Name+")")
-			u.clearPointPreviewImage()
+			eu.clearPointPreviewImage()
 		}
 	}()
 
 	captureImg, err := robotgo.CaptureImg(vb.Min.X, vb.Min.Y, vb.Dx(), vb.Dy())
 	if err != nil {
-		ShowErrorWithEscape(fmt.Errorf("Point: Error capturing image - %v (point: %s)", err, point.Name), u.Window)
+		activeWire.ShowErrorWithEscape(fmt.Errorf("Point: Error capturing image - %v (point: %s)", err, point.Name), eu.win)
 		captureImg = nil
 	}
 	// Validate the captured image
 	if captureImg == nil {
-		ShowErrorWithEscape(fmt.Errorf("Point: Screen capture returned nil image (point: %s)", point.Name), u.Window)
-		u.clearPointPreviewImage()
+		activeWire.ShowErrorWithEscape(fmt.Errorf("Point: Screen capture returned nil image (point: %s)", point.Name), eu.win)
+		eu.clearPointPreviewImage()
 		return
 	}
 
 	// Convert to gocv Mat for drawing
 	mat, err := gocv.ImageToMatRGB(captureImg)
 	if err != nil {
-		ShowErrorWithEscape(fmt.Errorf("Point: Error converting image to Mat - %v (point: %s)", err, point.Name), u.Window)
-		u.clearPointPreviewImage()
+		activeWire.ShowErrorWithEscape(fmt.Errorf("Point: Error converting image to Mat - %v (point: %s)", err, point.Name), eu.win)
+		eu.clearPointPreviewImage()
 		return
 	}
 	defer mat.Close()
@@ -1018,60 +1023,60 @@ func (u *Ui) UpdatePointPreview(point *models.Point) {
 	// Convert back to image.Image
 	previewImg, err := mat.ToImage()
 	if err != nil {
-		ShowErrorWithEscape(fmt.Errorf("Point: Error converting Mat to image - %v (point: %s)", err, point.Name), u.Window)
-		u.clearPointPreviewImage()
+		activeWire.ShowErrorWithEscape(fmt.Errorf("Point: Error converting Mat to image - %v (point: %s)", err, point.Name), eu.win)
+		eu.clearPointPreviewImage()
 		return
 	}
 
 	// Update preview image
-	if previewImage := u.EditorTabs.PointsTab.previewImage; previewImage != nil {
+	if previewImage := eu.EditorTabs.PointsTab.previewImage; previewImage != nil {
 		previewImage.Image = previewImg
 		fyne.DoAndWait(func() {
 			previewImage.Refresh()
 		})
 	} else {
-		ShowErrorWithEscape(errors.New("Point: Preview image widget is nil"), u.Window)
+		activeWire.ShowErrorWithEscape(errors.New("Point: Preview image widget is nil"), eu.win)
 	}
 }
 
-func (u *Ui) clearPointPreviewImage() {
-	if previewImage := u.EditorTabs.PointsTab.previewImage; previewImage != nil {
+func (eu *EditorUi) clearPointPreviewImage() {
+	if previewImage := eu.EditorTabs.PointsTab.previewImage; previewImage != nil {
 		previewImage.Image = nil
 		previewImage.Refresh()
 	}
 }
 
 // UpdateMaskPreview loads and displays the mask image for the given program and mask name.
-func (u *Ui) UpdateMaskPreview(programName, maskName string) {
+func (eu *EditorUi) UpdateMaskPreview(programName, maskName string) {
 	masksPath := config.GetMasksPath()
 	imgPath := filepath.Join(masksPath, programName, maskName+config.PNG)
 
 	if _, err := os.Stat(imgPath); err != nil {
-		u.ClearMaskPreviewImage()
+		eu.ClearMaskPreviewImage()
 		return
 	}
 
 	mat := gocv.IMRead(imgPath, gocv.IMReadColor)
 	if mat.Empty() {
-		u.ClearMaskPreviewImage()
+		eu.ClearMaskPreviewImage()
 		return
 	}
 	defer mat.Close()
 
 	img, err := mat.ToImage()
 	if err != nil {
-		u.ClearMaskPreviewImage()
+		eu.ClearMaskPreviewImage()
 		return
 	}
 
-	if previewImage := u.EditorTabs.MasksTab.previewImage; previewImage != nil {
+	if previewImage := eu.EditorTabs.MasksTab.previewImage; previewImage != nil {
 		previewImage.Image = img
 		previewImage.Refresh()
 	}
 }
 
-func (u *Ui) ClearMaskPreviewImage() {
-	if previewImage := u.EditorTabs.MasksTab.previewImage; previewImage != nil {
+func (eu *EditorUi) ClearMaskPreviewImage() {
+	if previewImage := eu.EditorTabs.MasksTab.previewImage; previewImage != nil {
 		previewImage.Image = nil
 		previewImage.Refresh()
 	}
@@ -1079,8 +1084,8 @@ func (u *Ui) ClearMaskPreviewImage() {
 
 // SetMaskImageMode switches the right-side UI between variable entry and uploaded image display.
 // When hasImage is true, the value/shape entries are hidden and the image status + remove button are shown.
-func (u *Ui) SetMaskImageMode(hasImage bool) {
-	mtw := u.EditorTabs.MasksTab.Widgets
+func (eu *EditorUi) SetMaskImageMode(hasImage bool) {
+	mtw := eu.EditorTabs.MasksTab.Widgets
 	if hasImage {
 		mtw["shapeSelect"].(*widget.RadioGroup).Hide()
 		mtw["centerContainer"].(*fyne.Container).Hide()
@@ -1114,14 +1119,14 @@ func HasMaskImage(programName, maskName string) bool {
 	return err == nil
 }
 
-func (u *Ui) RefreshAutoPicSearchAreas() {
+func (eu *EditorUi) RefreshAutoPicSearchAreas() {
 	// Reset the selected item and disable save button
-	u.EditorTabs.AutoPicTab.SelectedItem = nil
-	if saveButton, ok := u.EditorTabs.AutoPicTab.Widgets["saveButton"].(*widget.Button); ok {
+	eu.EditorTabs.AutoPicTab.SelectedItem = nil
+	if saveButton, ok := eu.EditorTabs.AutoPicTab.Widgets["saveButton"].(*widget.Button); ok {
 		saveButton.Disable()
 	}
 	// Clear preview image
-	if previewImage := u.EditorTabs.AutoPicTab.previewImage; previewImage != nil {
+	if previewImage := eu.EditorTabs.AutoPicTab.previewImage; previewImage != nil {
 		previewImage.Image = nil
 		previewImage.Refresh()
 	}

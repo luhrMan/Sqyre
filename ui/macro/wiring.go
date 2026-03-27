@@ -1,11 +1,10 @@
-package binders
+package macro
 
 import (
 	"Sqyre/internal/models"
 	"Sqyre/internal/models/actions"
 	"Sqyre/internal/models/repositories"
 	"Sqyre/internal/services"
-	"Sqyre/ui"
 	"encoding/json"
 	"errors"
 	"log"
@@ -22,9 +21,24 @@ import (
 	"github.com/google/uuid"
 )
 
-func SetMacroUi() {
+// WireDeps supplies window, macro UI shell, and dialog callbacks from package ui (avoids import cycle).
+type WireDeps struct {
+	Window                fyne.Window
+	Mui                   *MacroUi
+	RefreshItemsAccordion func()
+	ShowHotkeyRecordDialog func(parent fyne.Window, stableDuration time.Duration, onRecorded func(keys []string))
+	ShowErrorWithEscape    func(err error, parent fyne.Window)
+	AddDialogEscapeClose   func(d dialog.Dialog, parent fyne.Window)
+	ShowConfirmWithEscape  func(title, message string, callback func(bool), parent fyne.Window)
+	ShowActionDialog       func(action actions.ActionInterface, onSave func(actions.ActionInterface))
+}
 
-	setMtabSettingsAndWidgets()
+var activeWire WireDeps
+
+// SetMacroUi wires macro tabs, toolbar handlers, and restores open macros from preferences.
+func SetMacroUi(d WireDeps) {
+	activeWire = d
+	setMtabSettingsAndWidgets(d)
 
 	if names := getOpenMacroNames(); len(names) > 0 {
 		for _, name := range names {
@@ -41,12 +55,13 @@ func SetMacroUi() {
 			break
 		}
 	}
-	setMacroSelect(ui.GetUi().MainUi.Mui.MacroSelectButton)
+	setMacroSelect(d.Mui.MacroSelectButton, d)
 	syncMacroToolbarFieldsFromSelection()
 }
 
+// SaveOpenMacros persists which macro tabs are open.
 func SaveOpenMacros() {
-	mtabs := ui.GetUi().Mui.MTabs
+	mtabs := activeWire.Mui.MTabs
 	var names []string
 	for _, item := range mtabs.Items {
 		names = append(names, item.Text)
@@ -73,8 +88,9 @@ func getOpenMacroNames() []string {
 	return names
 }
 
+// AddMacroTab opens a macro in a new tab (or selects it if already open).
 func AddMacroTab(m *models.Macro) {
-	mtabs := ui.GetUi().Mui.MTabs
+	mtabs := activeWire.Mui.MTabs
 	for _, d := range mtabs.Items {
 		if d.Text == m.Name {
 			log.Println("macro already open")
@@ -82,7 +98,7 @@ func AddMacroTab(m *models.Macro) {
 			return
 		}
 	}
-	t := container.NewTabItem(m.Name, ui.NewMacroTree(m))
+	t := container.NewTabItem(m.Name, NewMacroTree(m))
 	mtabs.AddTab(m.Name, t)
 	setMacroTree(mtabs.SelectedTab())
 	syncMacroToolbarFieldsFromSelection()
@@ -90,7 +106,7 @@ func AddMacroTab(m *models.Macro) {
 }
 
 func syncMacroToolbarFieldsFromSelection() {
-	mtabs := ui.GetUi().Mui.MTabs
+	mtabs := activeWire.Mui.MTabs
 	st := mtabs.SelectedTab()
 	if st == nil || st.Macro == nil {
 		return
@@ -105,23 +121,18 @@ func syncMacroToolbarFieldsFromSelection() {
 	mtabs.HotkeyTriggerRadio.SetSelected(models.ParseHotkeyTrigger(st.Macro.HotkeyTrigger).UILabel())
 }
 
-func setMtabSettingsAndWidgets() {
-	mtabs := ui.GetUi().Mui.MTabs
+func setMtabSettingsAndWidgets(d WireDeps) {
+	mtabs := d.Mui.MTabs
 	mtabs.CreateTab = func() *container.TabItem {
 		name := "new macro " + uuid.NewString()
 		m := models.NewMacro(name, 0, []string{})
 		repositories.MacroRepo().Set(m.Name, m)
-		// m, err := repositories.MacroRepo().Get(name)
-		// if err != nil {
-		// 	log.Println("Error creating macro tab")
-		// 	return nil
-		// }
 		ti := container.NewTabItem(
 			name,
-			ui.NewMacroTree(m),
+			NewMacroTree(m),
 		)
 
-		setMacroTree(ti.Content.(*ui.MacroTree))
+		setMacroTree(ti.Content.(*MacroTree))
 		go fyne.DoAndWait(func() {
 			mtabs.BoundMacroListWidget.Refresh()
 		})
@@ -136,12 +147,14 @@ func setMtabSettingsAndWidgets() {
 		mtabs.BoundMacroListWidget.Refresh()
 	}
 
-	mtabs.OnUnselected = func(ti *container.TabItem) {
+	mtabs.OnUnselected = func(_ *container.TabItem) {
 		mt := mtabs.SelectedTab()
 		if mt != nil {
 			mt.UnselectAll()
 			mt.SelectedNode = ""
-			RefreshItemsAccordionItems()
+			if d.RefreshItemsAccordion != nil {
+				d.RefreshItemsAccordion()
+			}
 		}
 	}
 	mtabs.OnSelected = func(ti *container.TabItem) {
@@ -180,7 +193,7 @@ func setMtabSettingsAndWidgets() {
 		}
 	}
 	mtabs.MacroHotkeyRecordBtn.OnTapped = func() {
-		ui.ShowHotkeyRecordDialog(ui.GetUi().Window, 1*time.Second, func(keys []string) {
+		d.ShowHotkeyRecordDialog(d.Window, 1*time.Second, func(keys []string) {
 			mtabs.MacroHotkeyLabel.SetText(services.ReverseParseMacroHotkey(keys))
 			saveHotkey(true)
 		})
@@ -191,14 +204,14 @@ func setMtabSettingsAndWidgets() {
 
 	mtabs.MacroNameEntry.OnSubmitted = func(sub string) {
 		if sub == "" {
-			e := dialog.NewError(errors.New("macro name cannot be empty"), ui.GetUi().Window)
-			ui.AddDialogEscapeClose(e, ui.GetUi().Window)
+			e := dialog.NewError(errors.New("macro name cannot be empty"), d.Window)
+			d.AddDialogEscapeClose(e, d.Window)
 			e.Show()
 			return
 		}
 		for _, m := range repositories.MacroRepo().GetAll() {
 			if m.Name == sub {
-				ui.ShowErrorWithEscape(errors.New("macro name already exists"), ui.GetUi().Window)
+				d.ShowErrorWithEscape(errors.New("macro name already exists"), d.Window)
 				return
 			}
 		}
@@ -230,12 +243,12 @@ func setMtabSettingsAndWidgets() {
 	}
 }
 
-func setMacroSelect(b *widget.Button) {
+func setMacroSelect(b *widget.Button, d WireDeps) {
 	var popup *widget.PopUp
 	b.Text = ""
 	b.Icon = theme.ListIcon()
 	b.OnTapped = func() {
-		ui.GetUi().Mui.MTabs.BoundMacroListWidget = widget.NewList(
+		d.Mui.MTabs.BoundMacroListWidget = widget.NewList(
 			func() int {
 				return len(repositories.MacroRepo().GetAll())
 			},
@@ -247,13 +260,12 @@ func setMacroSelect(b *widget.Button) {
 				c := co.(*fyne.Container)
 				label := c.Objects[0].(*widget.Label)
 				removeButton := c.Objects[2].(*widget.Button)
-				// label := co.(*widget.Label)
 				slices.Sort(k)
 				v := k[id]
 				label.SetText(v)
 				label.Importance = widget.MediumImportance
-				for _, d := range ui.GetUi().Mui.MTabs.Items {
-					if d.Text == v {
+				for _, tab := range d.Mui.MTabs.Items {
+					if tab.Text == v {
 						label.Importance = widget.SuccessImportance
 					}
 				}
@@ -264,27 +276,27 @@ func setMacroSelect(b *widget.Button) {
 						log.Printf("Error getting macro %s: %v", v, err)
 						return
 					}
-					ui.ShowConfirmWithEscape("Delete Macro", "Are you sure you want to delete this macro?", func(b bool) {
-						if b {
+					d.ShowConfirmWithEscape("Delete Macro", "Are you sure you want to delete this macro?", func(ok bool) {
+						if ok {
 							if err := repositories.MacroRepo().Delete(v); err != nil {
 								log.Printf("Error deleting macro %s: %v", v, err)
 								return
 							}
-							ui.GetUi().Mui.MTabs.BoundMacroListWidget.RefreshItem(id)
-							for _, ti := range ui.GetUi().Mui.MTabs.Items {
+							d.Mui.MTabs.BoundMacroListWidget.RefreshItem(id)
+							for _, ti := range d.Mui.MTabs.Items {
 								if m.Name == ti.Text {
-									ui.GetUi().Mui.MTabs.Remove(ti)
+									d.Mui.MTabs.Remove(ti)
 								}
 							}
-							ui.GetUi().Mui.MTabs.Refresh()
+							d.Mui.MTabs.Refresh()
 						}
-					}, ui.GetUi().Window)
+					}, d.Window)
 				}
 				removeButton.Show()
 
 			},
 		)
-		ui.GetUi().Mui.MTabs.BoundMacroListWidget.OnSelected =
+		d.Mui.MTabs.BoundMacroListWidget.OnSelected =
 			func(id widget.ListItemID) {
 				k := repositories.MacroRepo().GetAllKeys()
 				slices.Sort(k)
@@ -295,30 +307,30 @@ func setMacroSelect(b *widget.Button) {
 					return
 				}
 				AddMacroTab(m)
-				ui.GetUi().Mui.MTabs.BoundMacroListWidget.RefreshItem(id)
-				ui.GetUi().Mui.MTabs.BoundMacroListWidget.UnselectAll()
+				d.Mui.MTabs.BoundMacroListWidget.RefreshItem(id)
+				d.Mui.MTabs.BoundMacroListWidget.UnselectAll()
 			}
 		popUpContent := container.NewBorder(
 			widget.NewButton("Close", func() {
-				popup.Hide() // Function to hide the pop-up
+				popup.Hide()
 			}), nil, nil, nil,
 			container.NewAdaptiveGrid(1,
-				ui.GetUi().Mui.MTabs.BoundMacroListWidget,
+				d.Mui.MTabs.BoundMacroListWidget,
 			),
 		)
-		popup = widget.NewModalPopUp(popUpContent, ui.GetUi().Window.Canvas())
+		popup = widget.NewModalPopUp(popUpContent, d.Window.Canvas())
 		popup.Resize(fyne.NewSize(300, 500))
 		popup.Show()
 	}
 }
 
-// MACRO TREE
-func setMacroTree(mt *ui.MacroTree) {
+func setMacroTree(mt *MacroTree) {
 	if mt == nil {
 		return
 	}
+	d := activeWire
 	mt.Tree.OnSelected = func(uid widget.TreeNodeID) {
-		if st := ui.GetUi().Mui.MTabs.SelectedTab(); st != nil {
+		if st := d.Mui.MTabs.SelectedTab(); st != nil {
 			st.SelectedNode = uid
 		}
 	}
@@ -327,7 +339,7 @@ func setMacroTree(mt *ui.MacroTree) {
 			return
 		}
 		uid := action.GetUID()
-		ui.ShowActionDialog(action, func(updatedAction actions.ActionInterface) {
+		d.ShowActionDialog(action, func(updatedAction actions.ActionInterface) {
 			if err := repositories.MacroRepo().Set(mt.Macro.Name, mt.Macro); err != nil {
 				log.Printf("failed to save macro after action edit: %v", err)
 			}

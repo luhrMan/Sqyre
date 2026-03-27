@@ -1,7 +1,6 @@
 package main
 
 import (
-	"Sqyre/binders"
 	"Sqyre/internal/assets"
 	"Sqyre/internal/config"
 	"Sqyre/internal/models/repositories"
@@ -137,7 +136,7 @@ func init() {
 	setUi()
 
 	fyne.CurrentApp().Lifecycle().SetOnStopped(func() {
-		binders.SaveOpenMacros()
+		ui.SaveOpenMacros()
 	})
 
 	w.SetContent(fynetooltip.AddWindowToolTipLayer(ui.GetUi().MainUi.Navigation, w.Canvas()))
@@ -170,8 +169,8 @@ func main() {
 }
 
 func setUi() {
-	binders.SetMacroUi()
-	binders.SetEditorUi()
+	ui.SetMacroUi()
+	ui.SetEditorUi()
 }
 
 func systemTraySetup(w fyne.Window) {

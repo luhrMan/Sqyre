@@ -1,4 +1,4 @@
-package ui
+package macro
 
 import (
 	"log"
@@ -48,7 +48,6 @@ func NewMacroTabs() *MacroTabs {
 }
 
 func (mtabs *MacroTabs) AddTab(name string, t *container.TabItem) {
-	//check if already open. if it is, select it.
 	for _, d := range mtabs.Items {
 		if d.Text == name {
 			log.Println("macro already open")
