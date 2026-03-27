@@ -1,4 +1,4 @@
-package ui
+package macro
 
 import (
 	"errors"
@@ -17,11 +17,39 @@ import (
 
 var macroLogPopup dialog.Dialog
 
+var (
+	macroLogGetWindow            func() fyne.Window
+	macroLogAddDialogEscapeClose func(d dialog.Dialog, parent fyne.Window)
+	macroLogShowErrorWithEscape  func(err error, parent fyne.Window)
+)
+
+// InitMacroLogPopup registers the macro log popup and panic UI with services.
+// Call once from package ui after the main window exists (avoids ui↔macro import cycle).
+func InitMacroLogPopup(
+	getWindow func() fyne.Window,
+	addDialogEscapeClose func(d dialog.Dialog, parent fyne.Window),
+	showErrorWithEscape func(err error, parent fyne.Window),
+) {
+	macroLogGetWindow = getWindow
+	macroLogAddDialogEscapeClose = addDialogEscapeClose
+	macroLogShowErrorWithEscape = showErrorWithEscape
+
+	services.SetShowMacroLogPopupFunc(ShowMacroLogPopup)
+	services.OnPanicNotifyUser = func(message string) {
+		fyne.Do(func() {
+			w := macroLogGetWindow()
+			if w != nil && macroLogShowErrorWithEscape != nil {
+				macroLogShowErrorWithEscape(errors.New(message), w)
+			}
+		})
+	}
+}
+
 // ShowMacroLogPopup displays a popup showing the currently running macro and its log output.
 // It is shown when a macro starts and can be closed by the user.
 func ShowMacroLogPopup(macroName string) {
-	u := GetUi()
-	if u == nil || u.Window == nil {
+	w := macroLogGetWindow()
+	if w == nil {
 		return
 	}
 
@@ -65,11 +93,13 @@ func ShowMacroLogPopup(macroName string) {
 		scrollContainer,
 	)
 
-	popup := dialog.NewCustomWithoutButtons("Macro Log", content, u.Window)
-	canvasSize := u.Window.Canvas().Size()
+	popup := dialog.NewCustomWithoutButtons("Macro Log", content, w)
+	canvasSize := w.Canvas().Size()
 	popupSize := fyne.NewSize(canvasSize.Width*0.75, canvasSize.Height*0.75)
 	popup.Resize(popupSize)
-	AddDialogEscapeClose(popup, u.Window)
+	if macroLogAddDialogEscapeClose != nil {
+		macroLogAddDialogEscapeClose(popup, w)
+	}
 
 	macroLogPopup = popup
 
@@ -95,18 +125,5 @@ func HideMacroLogPopup() {
 	if macroLogPopup != nil {
 		macroLogPopup.Hide()
 		macroLogPopup = nil
-	}
-}
-
-func init() {
-	services.SetShowMacroLogPopupFunc(ShowMacroLogPopup)
-	// Notify user of any recovered panic (from any goroutine); run on UI thread.
-	services.OnPanicNotifyUser = func(message string) {
-		fyne.Do(func() {
-			u := GetUi()
-			if u != nil && u.Window != nil {
-				ShowErrorWithEscape(errors.New(message), u.Window)
-			}
-		})
 	}
 }

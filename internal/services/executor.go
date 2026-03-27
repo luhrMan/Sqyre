@@ -65,7 +65,7 @@ func ExecuteMacroWithLogging(m *models.Macro) {
 	}
 }
 
-// showMacroLogPopupFunc is set by the ui package to avoid import cycle
+// showMacroLogPopupFunc is set by ui/macro to avoid import cycle
 var showMacroLogPopupFunc func(macroName string)
 
 // SetShowMacroLogPopupFunc sets the callback to show the macro log popup.

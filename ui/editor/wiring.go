@@ -1,11 +1,10 @@
-package binders
+package editor
 
 import (
 	"Sqyre/internal/config"
 	"Sqyre/internal/models"
 	"Sqyre/internal/models/repositories"
 	"Sqyre/internal/services"
-	"Sqyre/ui"
 	"Sqyre/ui/custom_widgets"
 	"errors"
 	"fmt"
@@ -49,7 +48,7 @@ func getWidgetText(w fyne.CanvasObject) string {
 	return ""
 }
 
-func markTabClean(tab *ui.EditorTab, fields []string) {
+func markTabClean(tab *EditorTab, fields []string) {
 	tab.OriginalValues = make(map[string]string)
 	for _, f := range fields {
 		tab.OriginalValues[f] = getWidgetText(tab.Widgets[f])
@@ -59,7 +58,7 @@ func markTabClean(tab *ui.EditorTab, fields []string) {
 	}
 }
 
-func checkTabDirty(tab *ui.EditorTab, fields []string) {
+func checkTabDirty(tab *EditorTab, fields []string) {
 	if tab.UpdateButton == nil || tab.OriginalValues == nil {
 		return
 	}
@@ -72,7 +71,7 @@ func checkTabDirty(tab *ui.EditorTab, fields []string) {
 	tab.UpdateButton.Disable()
 }
 
-func setupDirtyTracking(tab *ui.EditorTab, fields []string) {
+func setupDirtyTracking(tab *EditorTab, fields []string) {
 	for _, f := range fields {
 		w := tab.Widgets[f]
 		switch e := w.(type) {
@@ -113,7 +112,7 @@ func setupDirtyTracking(tab *ui.EditorTab, fields []string) {
 }
 
 func setupAllDirtyTracking() {
-	et := ui.GetUi().EditorTabs
+	et := shell().EditorTabs
 	setupDirtyTracking(et.ProgramsTab, programFields)
 	setupDirtyTracking(et.ItemsTab, itemFields)
 	setupDirtyTracking(et.PointsTab, pointFields)
@@ -122,41 +121,28 @@ func setupAllDirtyTracking() {
 }
 
 func markProgramsClean() {
-	markTabClean(ui.GetUi().EditorTabs.ProgramsTab, programFields)
+	markTabClean(shell().EditorTabs.ProgramsTab, programFields)
 }
 
 func markItemsClean() {
-	markTabClean(ui.GetUi().EditorTabs.ItemsTab, itemFields)
+	markTabClean(shell().EditorTabs.ItemsTab, itemFields)
 }
 
 func markPointsClean() {
-	markTabClean(ui.GetUi().EditorTabs.PointsTab, pointFields)
+	markTabClean(shell().EditorTabs.PointsTab, pointFields)
 }
 
 func markSearchAreasClean() {
-	markTabClean(ui.GetUi().EditorTabs.SearchAreasTab, searchAreaFields)
+	markTabClean(shell().EditorTabs.SearchAreasTab, searchAreaFields)
 }
 
 func markMasksClean() {
-	markTabClean(ui.GetUi().EditorTabs.MasksTab, maskFields)
-}
-
-func SetEditorUi() {
-	setEditorLists()
-	setEditorForms()
-	setEditorButtons()
-	setMasksForms()
-	setMasksButtons()
-	setMaskSelectionButtons()
-	setEditorPreviewRefreshButtons()
-	updateProgramSelectorOptions()
-	setupAllDirtyTracking()
-	selectFirstProgramInEditorIfAny()
+	markTabClean(shell().EditorTabs.MasksTab, maskFields)
 }
 
 // setEditorPreviewRefreshButtons wires preview refresh actions from current form entries (or disk/repo for masks/AutoPic).
 func setEditorPreviewRefreshButtons() {
-	et := ui.GetUi().EditorTabs
+	et := shell().EditorTabs
 
 	if et.PointsTab.PreviewRefreshButton != nil {
 		et.PointsTab.PreviewRefreshButton.OnTapped = func() {
@@ -181,7 +167,7 @@ func setEditorPreviewRefreshButtons() {
 						services.LogPanicToFile(r, "Point: Preview refresh (point: "+n+")")
 					}
 				}()
-				ui.GetUi().UpdatePointPreview(&models.Point{Name: n, X: xVal, Y: yVal})
+				shell().UpdatePointPreview(&models.Point{Name: n, X: xVal, Y: yVal})
 			}()
 		}
 	}
@@ -221,7 +207,7 @@ func setEditorPreviewRefreshButtons() {
 						services.LogPanicToFile(r, "SearchArea: Preview refresh (area: "+n+")")
 					}
 				}()
-				ui.GetUi().UpdateSearchAreaPreview(&models.SearchArea{
+				shell().UpdateSearchAreaPreview(&models.SearchArea{
 					Name:    n,
 					LeftX:   lxVal,
 					TopY:    tyVal,
@@ -234,7 +220,7 @@ func setEditorPreviewRefreshButtons() {
 
 	if et.MasksTab.PreviewRefreshButton != nil {
 		et.MasksTab.PreviewRefreshButton.OnTapped = func() {
-			p := ui.GetUi().EditorTabs.MasksTab.ProgramSelector.Selected
+			p := shell().EditorTabs.MasksTab.ProgramSelector.Selected
 			if p == "" {
 				return
 			}
@@ -242,10 +228,10 @@ func setEditorPreviewRefreshButtons() {
 			if n == "" {
 				return
 			}
-			if ui.HasMaskImage(p, n) {
-				ui.GetUi().UpdateMaskPreview(p, n)
+			if HasMaskImage(p, n) {
+				shell().UpdateMaskPreview(p, n)
 			} else {
-				ui.GetUi().ClearMaskPreviewImage()
+				shell().ClearMaskPreviewImage()
 			}
 		}
 	}
@@ -262,7 +248,7 @@ func setEditorPreviewRefreshButtons() {
 						services.LogPanicToFile(r, "AutoPic: Preview refresh (area: "+sa.Name+")")
 					}
 				}()
-				ui.GetUi().UpdateAutoPicPreview(sa)
+				shell().UpdateAutoPicPreview(sa)
 			}()
 		}
 	}
@@ -274,7 +260,7 @@ func selectFirstProgramInEditorIfAny() {
 	if len(repositories.ProgramRepo().GetAllKeys()) == 0 {
 		return
 	}
-	et := ui.GetUi().EditorTabs
+	et := shell().EditorTabs
 	if programList, ok := et.ProgramsTab.Widgets["list"].(*widget.List); ok {
 		programList.Select(0)
 	}
@@ -283,8 +269,8 @@ func selectFirstProgramInEditorIfAny() {
 // updateProgramSelectorOptions refreshes every per-tab program selector with current programs.
 func updateProgramSelectorOptions() {
 	opts := repositories.ProgramRepo().GetAllKeys()
-	et := ui.GetUi().EditorTabs
-	for _, tab := range []*ui.EditorTab{
+	et := shell().EditorTabs
+	for _, tab := range []*EditorTab{
 		et.ItemsTab, et.PointsTab,
 		et.SearchAreasTab, et.MasksTab,
 	} {
@@ -298,7 +284,7 @@ func updateProgramSelectorOptions() {
 // refreshAllProgramRelatedUI refreshes all accordions and program list when programs are modified
 func refreshAllProgramRelatedUI() {
 	// Refresh program list
-	et := ui.GetUi().EditorTabs
+	et := shell().EditorTabs
 	if programList, ok := et.ProgramsTab.Widgets["list"].(*widget.List); ok {
 		setProgramList(programList)
 		programList.Refresh()
@@ -323,7 +309,7 @@ func refreshAllProgramRelatedUI() {
 }
 
 func setEditorLists() {
-	et := ui.GetUi().EditorTabs
+	et := shell().EditorTabs
 	setProgramList(
 		et.ProgramsTab.Widgets["list"].(*widget.List),
 	)
@@ -350,11 +336,11 @@ func setEditorLists() {
 	et.SearchAreasTab.SelectedItem = &models.SearchArea{}
 	et.MasksTab.SelectedItem = &models.Mask{}
 	et.AutoPicTab.SelectedItem = &models.SearchArea{}
-	ui.GetUi().RefreshEditorActionBar()
+	shell().RefreshEditorActionBar()
 }
 
 func setEditorForms() {
-	et := ui.GetUi().EditorTabs
+	et := shell().EditorTabs
 	et.ProgramsTab.UpdateButton.OnTapped = func() {
 		w := et.ProgramsTab.Widgets
 		n := w["Name"].(*widget.Entry).Text
@@ -379,7 +365,7 @@ func setEditorForms() {
 				if shouldConfirmOverwrite("program", n, func(name string) bool {
 					_, err := repositories.ProgramRepo().Get(name)
 					return err == nil
-				}, ui.GetUi().Window, applyProgramUpdate) {
+				}, activeWire.Window, applyProgramUpdate) {
 					return
 				}
 			}
@@ -416,7 +402,7 @@ func setEditorForms() {
 				v.Tags = append(v.Tags, tagText)
 
 				// Save the item
-				p := ui.GetUi().EditorTabs.ItemsTab.ProgramSelector.Selected
+				p := shell().EditorTabs.ItemsTab.ProgramSelector.Selected
 				program, err := repositories.ProgramRepo().Get(p)
 				if err != nil {
 					log.Printf("Error getting program %s: %v", p, err)
@@ -425,7 +411,7 @@ func setEditorForms() {
 
 				if err := program.ItemRepo().Set(v.Name, v); err != nil {
 					log.Printf("Error saving item %s: %v", v.Name, err)
-					ui.ShowErrorWithEscape(errors.New("failed to save item"), ui.GetUi().Window)
+					activeWire.ShowErrorWithEscape(errors.New("failed to save item"), activeWire.Window)
 					return
 				}
 
@@ -493,9 +479,9 @@ func setEditorForms() {
 		y, _ := strconv.Atoi(w["Rows"].(*widget.Entry).Text)
 		sm, _ := strconv.Atoi(w["StackMax"].(*widget.Entry).Text)
 		if v, ok := et.ItemsTab.SelectedItem.(*models.Item); ok {
-			p := ui.GetUi().EditorTabs.ItemsTab.ProgramSelector.Selected
+			p := shell().EditorTabs.ItemsTab.ProgramSelector.Selected
 			if p == "" {
-				ui.ShowErrorWithEscape(errors.New("program cannot be empty"), ui.GetUi().Window)
+				activeWire.ShowErrorWithEscape(errors.New("program cannot be empty"), activeWire.Window)
 				return
 			}
 			program, err := repositories.ProgramRepo().Get(p)
@@ -532,7 +518,7 @@ func setEditorForms() {
 					// Delete the old item entry since we're changing the name
 					if err := program.ItemRepo().Delete(v.Name); err != nil {
 						log.Printf("Error deleting old item %s: %v", v.Name, err)
-						ui.ShowErrorWithEscape(errors.New("failed to update item name"), ui.GetUi().Window)
+						activeWire.ShowErrorWithEscape(errors.New("failed to update item name"), activeWire.Window)
 						return
 					}
 				}
@@ -544,7 +530,7 @@ func setEditorForms() {
 				// Save the item with the new name
 				if err := program.ItemRepo().Set(v.Name, v); err != nil {
 					log.Printf("Error saving item %s: %v", v.Name, err)
-					ui.ShowErrorWithEscape(errors.New("failed to save item"), ui.GetUi().Window)
+					activeWire.ShowErrorWithEscape(errors.New("failed to save item"), activeWire.Window)
 					return
 				}
 
@@ -569,7 +555,7 @@ func setEditorForms() {
 				if shouldConfirmOverwrite("item", n, func(name string) bool {
 					_, err := program.ItemRepo().Get(name)
 					return err == nil
-				}, ui.GetUi().Window, applyItemUpdate) {
+				}, activeWire.Window, applyItemUpdate) {
 					return
 				}
 			}
@@ -593,9 +579,9 @@ func setEditorForms() {
 			yVal = yText
 		}
 		if v, ok := et.PointsTab.SelectedItem.(*models.Point); ok {
-			p := ui.GetUi().EditorTabs.PointsTab.ProgramSelector.Selected
+			p := shell().EditorTabs.PointsTab.ProgramSelector.Selected
 			if p == "" {
-				ui.ShowErrorWithEscape(errors.New("program cannot be empty"), ui.GetUi().Window)
+				activeWire.ShowErrorWithEscape(errors.New("program cannot be empty"), activeWire.Window)
 				return
 			}
 			program, err := repositories.ProgramRepo().Get(p)
@@ -611,14 +597,14 @@ func setEditorForms() {
 
 				if err := program.PointRepo(config.MainMonitorSizeString).Set(v.Name, v); err != nil {
 					log.Printf("Error saving point %s: %v", v.Name, err)
-					ui.ShowErrorWithEscape(errors.New("failed to save point"), ui.GetUi().Window)
+					activeWire.ShowErrorWithEscape(errors.New("failed to save point"), activeWire.Window)
 					return
 				}
 
 				if oldkey != v.Name {
 					if err := program.PointRepo(config.MainMonitorSizeString).Delete(oldkey); err != nil {
 						log.Printf("Error deleting point %s: %v", oldkey, err)
-						ui.ShowErrorWithEscape(errors.New("failed to delete point"), ui.GetUi().Window)
+						activeWire.ShowErrorWithEscape(errors.New("failed to delete point"), activeWire.Window)
 						return
 					}
 				}
@@ -635,7 +621,7 @@ func setEditorForms() {
 							services.LogPanicToFile(r, "Point: Preview update (point: "+v.Name+")")
 						}
 					}()
-					ui.GetUi().UpdatePointPreview(v)
+					shell().UpdatePointPreview(v)
 				}()
 
 				if acc, ok := et.PointsTab.Widgets["Accordion"].(*widget.Accordion); ok {
@@ -648,7 +634,7 @@ func setEditorForms() {
 				if shouldConfirmOverwrite("point", n, func(name string) bool {
 					_, err := program.PointRepo(config.MainMonitorSizeString).Get(name)
 					return err == nil
-				}, ui.GetUi().Window, applyPointUpdate) {
+				}, activeWire.Window, applyPointUpdate) {
 					return
 				}
 			}
@@ -660,7 +646,7 @@ func setEditorForms() {
 	if recordButton, ok := et.PointsTab.Widgets["recordButton"].(*widget.Button); ok {
 		recordButton.OnTapped = func() {
 			var dismissOverlay func()
-			dismissOverlay = ui.ShowRecordingOverlay(
+			dismissOverlay = activeWire.ShowRecordingOverlay(
 				nil,
 				func(ev *desktop.MouseEvent) {
 					fyne.DoAndWait(func() {
@@ -677,7 +663,7 @@ func setEditorForms() {
 											services.LogPanicToFile(r, "Point: Preview update after record (point: "+v.Name+")")
 										}
 									}()
-									ui.GetUi().UpdatePointPreview(&models.Point{Name: v.Name, X: x, Y: y})
+									shell().UpdatePointPreview(&models.Point{Name: v.Name, X: x, Y: y})
 								}()
 							}
 						default:
@@ -702,7 +688,7 @@ func setEditorForms() {
 
 			var dismissOverlay func()
 			var setSelectionRect func(leftX, topY, rightX, bottomY int)
-			dismissOverlay, setSelectionRect = ui.ShowSearchAreaRecordingOverlay(
+			dismissOverlay, setSelectionRect = activeWire.ShowSearchAreaRecordingOverlay(
 				func() {
 					stopPolling()
 				},
@@ -743,7 +729,7 @@ func setEditorForms() {
 										services.LogPanicToFile(r, "SearchArea: Preview update after record (area: "+v.Name+")")
 									}
 								}()
-								ui.GetUi().UpdateSearchAreaPreview(&models.SearchArea{
+								shell().UpdateSearchAreaPreview(&models.SearchArea{
 									Name:    v.Name,
 									LeftX:   leftX,
 									TopY:    topY,
@@ -821,9 +807,9 @@ func setEditorForms() {
 			byVal = byText
 		}
 		if v, ok := et.SearchAreasTab.SelectedItem.(*models.SearchArea); ok {
-			p := ui.GetUi().EditorTabs.SearchAreasTab.ProgramSelector.Selected
+			p := shell().EditorTabs.SearchAreasTab.ProgramSelector.Selected
 			if p == "" {
-				ui.ShowErrorWithEscape(errors.New("program cannot be empty"), ui.GetUi().Window)
+				activeWire.ShowErrorWithEscape(errors.New("program cannot be empty"), activeWire.Window)
 				return
 			}
 			program, err := repositories.ProgramRepo().Get(p)
@@ -841,13 +827,13 @@ func setEditorForms() {
 
 				if err := program.SearchAreaRepo(config.MainMonitorSizeString).Set(v.Name, v); err != nil {
 					log.Printf("Error saving search area %s: %v", v.Name, err)
-					ui.ShowErrorWithEscape(errors.New("failed to save search area"), ui.GetUi().Window)
+					activeWire.ShowErrorWithEscape(errors.New("failed to save search area"), activeWire.Window)
 					return
 				}
 				if oldkey != v.Name {
 					if err := program.SearchAreaRepo(config.MainMonitorSizeString).Delete(oldkey); err != nil {
 						log.Printf("Error deleting search area %s: %v", oldkey, err)
-						ui.ShowErrorWithEscape(errors.New("failed to delete search area"), ui.GetUi().Window)
+						activeWire.ShowErrorWithEscape(errors.New("failed to delete search area"), activeWire.Window)
 						return
 					}
 				}
@@ -864,7 +850,7 @@ func setEditorForms() {
 							services.LogPanicToFile(r, "SearchArea: Preview update (area: "+v.Name+")")
 						}
 					}()
-					ui.GetUi().UpdateSearchAreaPreview(v)
+					shell().UpdateSearchAreaPreview(v)
 				}()
 				if acc, ok := et.SearchAreasTab.Widgets["Accordion"].(*widget.Accordion); ok {
 					setAccordionSearchAreasLists(acc)
@@ -876,7 +862,7 @@ func setEditorForms() {
 				if shouldConfirmOverwrite("search area", n, func(name string) bool {
 					_, err := program.SearchAreaRepo(config.MainMonitorSizeString).Get(name)
 					return err == nil
-				}, ui.GetUi().Window, applySearchAreaUpdate) {
+				}, activeWire.Window, applySearchAreaUpdate) {
 					return
 				}
 			}
@@ -890,7 +876,7 @@ func shouldConfirmOverwrite(entityType, targetName string, existsFn func(name st
 	if !existsFn(targetName) {
 		return false
 	}
-	ui.ShowConfirmWithEscape(
+	activeWire.ShowConfirmWithEscape(
 		"Confirm Overwrite",
 		fmt.Sprintf("A %s named \"%s\" already exists. Overwrite it?", entityType, targetName),
 		func(confirmed bool) {
@@ -911,7 +897,7 @@ func getOrCreateProgram(pn string) *models.Program {
 		pro = repositories.ProgramRepo().New()
 		pro.Name = pn
 		if err := repositories.ProgramRepo().Set(pro.Name, pro); err != nil {
-			ui.ShowErrorWithEscape(err, ui.GetUi().Window)
+			activeWire.ShowErrorWithEscape(err, activeWire.Window)
 			return nil
 		}
 		log.Println("editor binder: new program created", pn)
@@ -922,8 +908,8 @@ func getOrCreateProgram(pn string) *models.Program {
 
 // getSelectedEntityName returns the display name of the currently selected entity on the active tab.
 func getSelectedEntityName() string {
-	et := ui.GetUi().EditorTabs
-	switch ui.GetUi().EditorUi.EditorTabs.Selected().Text {
+	et := shell().EditorTabs
+	switch shell().EditorTabs.Selected().Text {
 	case "Programs":
 		if v, ok := et.ProgramsTab.SelectedItem.(*models.Program); ok {
 			return v.Name
@@ -957,9 +943,9 @@ func parseIntOrString(s string) any {
 }
 
 func setEditorButtons() {
-	ui.GetUi().EditorUi.AddButton.OnTapped = func() {
+	shell().AddButton.OnTapped = func() {
 		var cfg createDialogConfig
-		switch ui.GetUi().EditorUi.EditorTabs.Selected().Text {
+		switch shell().EditorTabs.Selected().Text {
 		case "Programs":
 			cfg = programCreateConfig()
 		case "Items":
@@ -973,16 +959,16 @@ func setEditorButtons() {
 		default:
 			return
 		}
-		showCreateDialog(cfg, ui.GetUi().Window)
+		showCreateDialog(cfg, activeWire.Window)
 	}
-	ui.GetUi().EditorUi.RemoveButton.OnTapped = func() {
-		tabName := ui.GetUi().EditorUi.EditorTabs.Selected().Text
+	shell().RemoveButton.OnTapped = func() {
+		tabName := shell().EditorTabs.Selected().Text
 		entityName := getSelectedEntityName()
 		if entityName == "" {
 			return
 		}
 
-		ui.ShowConfirmWithEscape(
+		activeWire.ShowConfirmWithEscape(
 			"Confirm Delete",
 			fmt.Sprintf("Are you sure you want to delete %s \"%s\"?",
 				strings.ToLower(tabName), entityName),
@@ -992,7 +978,7 @@ func setEditorButtons() {
 				}
 				performDeleteForTab()
 			},
-			ui.GetUi().Window,
+			activeWire.Window,
 		)
 	}
 

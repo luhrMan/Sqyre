@@ -1,10 +1,11 @@
-package ui
+package macro
 
 import (
 	"Sqyre/internal/assets"
 	"Sqyre/internal/models"
 	"Sqyre/internal/models/actions"
 	"Sqyre/internal/models/serialize"
+	"Sqyre/internal/uiutil"
 	"image/color"
 
 	"fyne.io/fyne/v2"
@@ -15,8 +16,6 @@ import (
 	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 	kxlayout "github.com/ErikKalkoken/fyne-kx/layout"
 )
-
-// var selectedTreeItem = ""
 
 // OnOpenActionDialog is called when the user taps an action's icon to edit it.
 // If non-nil, the tree will open the action dialog from this callback.
@@ -86,7 +85,6 @@ func (mt *MacroTree) setTree() {
 		_, ok := node.(actions.AdvancedActionInterface)
 		return ok
 	}
-	// Tree row: Border with left=[actionIconButton, label], center=itemIconsScroll (fills space), right=removeButton
 	const treeItemIconSize = 24
 	mt.CreateNode = func(branch bool) fyne.CanvasObject {
 		actionIconBtn := ttwidget.NewButtonWithIcon("", theme.ErrorIcon(), nil)
@@ -113,7 +111,6 @@ func (mt *MacroTree) setTree() {
 		node := mt.Macro.Root.GetAction(uid)
 
 		c := obj.(*fyne.Container)
-		// Border with nil top/bottom: Objects = [left, right, center]
 		leftSide := c.Objects[1].(*fyne.Container)
 		iconStack := leftSide.Objects[0].(*fyne.Container)
 		iconBg := iconStack.Objects[0].(*canvas.Rectangle)
@@ -142,12 +139,11 @@ func (mt *MacroTree) setTree() {
 			actionIconBtn.OnTapped = func() { mt.OnOpenActionDialog(action) }
 		}
 
-		// For image search actions, show selected item icons; for wait-for-pixel, show target color
 		itemIconsBox.Objects = itemIconsBox.Objects[:0]
 		if is, ok := node.(*actions.ImageSearch); ok && len(is.Targets) > 0 {
 			previewSize := fyne.NewSize(treeItemIconSize, treeItemIconSize)
 			for _, target := range is.Targets {
-				if path := getIconPathForTarget(target); path != "" {
+				if path := uiutil.IconPathForTarget(target); path != "" {
 					if res := assets.GetFyneResource(path); res != nil {
 						img := canvas.NewImageFromResource(res)
 						img.SetMinSize(previewSize)
@@ -157,8 +153,8 @@ func (mt *MacroTree) setTree() {
 				}
 			}
 		} else if wfp, ok := node.(*actions.FindPixel); ok {
-			if c, ok := hexToColor(wfp.TargetColor); ok {
-				swatch := canvas.NewRectangle(c)
+			if col, ok := uiutil.HexToColor(wfp.TargetColor); ok {
+				swatch := canvas.NewRectangle(col)
 				swatch.SetMinSize(fyne.NewSize(treeItemIconSize, treeItemIconSize))
 				itemIconsBox.Add(swatch)
 			}
@@ -193,11 +189,9 @@ func (mt *MacroTree) PasteNode(clipboardMap map[string]any) bool {
 			return false
 		}
 		if adv, ok := selected.(actions.AdvancedActionInterface); ok {
-			// Paste into the selected advanced action as its last child
 			parent = adv
 			insertIndex = len(parent.GetSubActions())
 		} else {
-			// Paste below the selected node as a sibling
 			parent = selected.GetParent()
 			if parent == nil {
 				return false

@@ -3,6 +3,7 @@ package ui
 import (
 	"Sqyre/internal/models/actions"
 	"Sqyre/internal/models/repositories"
+	"Sqyre/ui/macro/actiondialog"
 	"log"
 	"strconv"
 
@@ -12,16 +13,15 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
-	fynetooltip "github.com/dweymouth/fyne-tooltip"
 	"github.com/go-vgo/robotgo"
 )
 
 type actionTemplate struct {
-	label    string
+	label      string
 	actionType string
-	category string
-	icon     fyne.Resource
-	create   func() actions.ActionInterface
+	category   string
+	icon       fyne.Resource
+	create     func() actions.ActionInterface
 }
 
 func buildActionTemplates() []actionTemplate {
@@ -147,7 +147,7 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 			mt.Select(a.GetUID())
 			mt.SelectedNode = a.GetUID()
 			uid := a.GetUID()
-			ShowActionDialog(a, func(updatedAction actions.ActionInterface) {
+			actiondialog.ShowActionDialog(a, func(updatedAction actions.ActionInterface) {
 				if err := repositories.MacroRepo().Set(mt.Macro.Name, mt.Macro); err != nil {
 					log.Printf("failed to save macro after new action edit: %v", err)
 				}
@@ -198,7 +198,7 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 
 	editor := fyne.NewMenuItem("Data Editor", func() {
 		u.MainUi.Navigation.PushWithTitle(
-			fynetooltip.AddWindowToolTipLayer(u.EditorUi.CanvasObject, u.Window.Canvas()),
+			u.EditorUi.CanvasObject,
 			"Editor",
 		)
 		if mt := GetUi().Mui.MTabs.SelectedTab(); mt != nil {
@@ -209,7 +209,7 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 
 	userSettings := fyne.NewMenuItem("User Settings", func() {
 		u.MainUi.Navigation.PushWithTitle(
-			fynetooltip.AddWindowToolTipLayer(u.SettingsUi.CanvasObject, u.Window.Canvas()),
+			u.SettingsUi.CanvasObject,
 			"User Settings",
 		)
 	})

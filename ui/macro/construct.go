@@ -1,4 +1,4 @@
-package ui
+package macro
 
 import (
 	"image/color"
@@ -10,7 +10,6 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
@@ -29,16 +28,11 @@ type MacroUi struct {
 	}
 }
 
-func (u *Ui) constructMacroUi() *fyne.Container {
-	boundLocXLabel = widget.NewLabelWithData(binding.NewString())
-	boundLocYLabel = widget.NewLabelWithData(binding.NewString())
-	mui := u.Mui
+// WrapSqyreFrame matches ui.WrapSqyreFrame; injected to avoid importing package ui.
+type WrapSqyreFrameFunc func(inner fyne.CanvasObject) fyne.CanvasObject
 
-	// addNodeButton := ttwidget.NewButtonWithIcon("", theme.ContentAddIcon(), func() {
-	// 	// Show action selection menu - for now, use the main menu
-	// 	// In the future, could show a popup menu here
-	// 	// For now, users can use the main menu to add actions
-	// })
+// ConstructMacroUi builds the macro toolbar and tab strip. boundLocX/Y labels are bound to mouse position elsewhere.
+func ConstructMacroUi(mui *MacroUi, boundLocXLabel, boundLocYLabel *widget.Label, wrapFrame WrapSqyreFrameFunc) *fyne.Container {
 	unselectNodeButton := ttwidget.NewButtonWithIcon("", theme.RadioButtonIcon(), func() {
 		st := mui.MTabs.SelectedTab()
 		if st == nil {
@@ -69,7 +63,7 @@ func (u *Ui) constructMacroUi() *fyne.Container {
 		}
 		node := st.Macro.Root.GetAction(st.SelectedNode)
 		if node == nil || node.GetParent() == nil {
-			return // don't copy root
+			return
 		}
 		m, err := serialize.ActionToMap(node)
 		if err != nil {
@@ -101,7 +95,6 @@ func (u *Ui) constructMacroUi() *fyne.Container {
 		}
 	})
 
-	// addNodeButton.SetToolTip("add new action node")
 	unselectNodeButton.SetToolTip("unselect nodes")
 	moveDownNodeButton.SetToolTip("move node down")
 	moveUpNodeButton.SetToolTip("move node up")
@@ -112,8 +105,6 @@ func (u *Ui) constructMacroUi() *fyne.Container {
 	mui.MacroToolbars.TopToolbar =
 		container.NewGridWithColumns(2,
 			container.NewHBox(
-				// addNodeButton,
-				// layout.NewSpacer(),
 				unselectNodeButton,
 				moveDownNodeButton,
 				moveUpNodeButton,
@@ -147,7 +138,7 @@ func (u *Ui) constructMacroUi() *fyne.Container {
 	globaldelaytt := ttwidget.NewIcon(theme.HistoryIcon())
 	globaldelaytt.SetToolTip("global delay (ms)")
 	bottomLeftContent := container.NewHBox(globaldelaytt, mui.MTabs.BoundGlobalDelayEntry, mousePosition)
-	bottomLeft := WrapSqyreFrame(container.NewPadded(bottomLeftContent))
+	bottomLeft := wrapFrame(container.NewPadded(bottomLeftContent))
 	bottomFiller := canvas.NewRectangle(color.Transparent)
 	bottomRightContent := container.NewHBox(
 		widget.NewLabel("Hotkey:"),
@@ -156,17 +147,14 @@ func (u *Ui) constructMacroUi() *fyne.Container {
 		mui.MTabs.HotkeyTriggerRadio,
 		mui.MTabs.MacroHotkeyRecordBtn,
 	)
-	bottomRight := WrapSqyreFrame(container.NewPadded(bottomRightContent))
+	bottomRight := wrapFrame(container.NewPadded(bottomRightContent))
 	mui.MacroToolbars.BottomToolbar = container.NewBorder(nil, nil, bottomLeft, bottomRight, bottomFiller)
 
-	macroUi :=
-		container.NewBorder(
-			mui.MacroToolbars.TopToolbar,
-			mui.MacroToolbars.BottomToolbar,
-			nil,
-			nil,
-			mui.MTabs,
-		)
-
-	return macroUi
+	return container.NewBorder(
+		mui.MacroToolbars.TopToolbar,
+		mui.MacroToolbars.BottomToolbar,
+		nil,
+		nil,
+		mui.MTabs,
+	)
 }
