@@ -52,7 +52,7 @@ func setProgramList(list *widget.List) {
 		}
 		log.Println("selected", program.Name)
 		ui.GetUi().EditorTabs.ProgramsTab.SelectedItem = program
-		ui.GetUi().ProgramSelector.SetText(filtered[id])
 		markProgramsClean()
+		ui.GetUi().RefreshEditorActionBar()
 	}
 }
