@@ -1,0 +1,54 @@
+# Build OpenCV for Android (multiple ABIs) using NDK + CMake.
+# Reference: https://gist.github.com/ogero/c19458cf64bd3e91faae85c3ac887481
+# Adapted for Linux: NDK toolchain, Ninja, OpenCV 4.x.
+#
+# Build context: scripts/android (this directory).
+#   docker build -f scripts/android/Dockerfile.opencv-android \
+#     -t opencv-android:local scripts/android
+#
+# Reuse devcontainer to skip NDK/apt and speed up rebuilds (build devcontainer first, then):
+#   docker build -f scripts/android/Dockerfile.opencv-android \
+#     --build-arg BASE_IMAGE=sqyre-dev:latest -t opencv-android:local scripts/android
+#
+# Versions: NDK_REV, OPENCV_VERSION, CONTRIB_VERSION – bump when upgrading.
+
+ARG BASE_IMAGE=ubuntu:22.04
+FROM ${BASE_IMAGE}
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV ANDROID_NDK=/opt/android-ndk
+ENV OPENCV_VERSION=4.10.0
+ENV CONTRIB_VERSION=4.10.0
+ENV ANDROID_API_LEVEL=21
+
+# NDK r25c (LTS). Only used when BASE_IMAGE is ubuntu (standalone build).
+ARG NDK_REV=r25c
+
+# If base already has NDK + build deps (e.g. devcontainer), skip install; else install.
+RUN if [ ! -d /opt/android-ndk ] || [ ! -f /opt/android-ndk/build/cmake/android.toolchain.cmake ]; then \
+      apt-get update && apt-get install -y --no-install-recommends \
+        build-essential cmake ninja-build curl ca-certificates unzip python3 \
+      && rm -rf /var/lib/apt/lists/* \
+      && mkdir -p /opt && cd /opt \
+      && curl -sL "https://dl.google.com/android/repository/android-ndk-${NDK_REV}-linux.zip" -o ndk.zip \
+      && unzip -q ndk.zip && mv android-ndk-* android-ndk && rm ndk.zip \
+      && ln -sf /opt/android-ndk "$ANDROID_NDK"; \
+    fi
+
+COPY build-opencv-android.sh /build-opencv-android.sh
+RUN chmod +x /build-opencv-android.sh
+
+# Build OpenCV for all ABIs (takes a while). Compiled output under /opt/opencv/android.
+ENV BUILD_ROOT=/opt/opencv/android
+ENV USE_CONTRIB=1
+
+# SDK-style output path (inside the same build folder)
+ENV OPENCV_ANDROID_SDK=/opt/opencv/android/opencv-android-sdk
+
+# Allow build-arg to override ABIs (e.g. --build-arg ABIS=arm64-v8a for faster build)
+ARG ABIS=armeabi-v7a,arm64-v8a,x86,x86_64
+ENV ABIS=$ABIS
+
+RUN /build-opencv-android.sh
+RUN echo "OpenCV Android SDK at $OPENCV_ANDROID_SDK" && \
+    ls -la "$OPENCV_ANDROID_SDK/native/libs/" 2>/dev/null || true

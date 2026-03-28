@@ -6,6 +6,11 @@
   },
   "workspaceFolder": "/workspace",
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind",
+  "mounts": [
+    "source=sqyre-go-mod-cache,target=/go/pkg/mod,type=volume",
+    "source=sqyre-go-build-cache,target=/home/vscode/.cache/go-build,type=volume",
+    "source=sqyre-opencv-linux,target=/opt/opencv/linux,type=volume"
+  ],
   "features": {
     "ghcr.io/devcontainers/features/docker-in-docker:2": {}
   },
@@ -20,7 +25,7 @@
       ]
     }
   },
-  "postCreateCommand": "go mod download",
+  "postCreateCommand": "sudo chown -R vscode:vscode /go/pkg/mod /home/vscode/.cache/go-build && go mod download",
   "remoteUser": "vscode",
   "updateRemoteUserUID": true
 }
