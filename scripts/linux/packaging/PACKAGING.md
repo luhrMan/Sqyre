@@ -4,8 +4,8 @@ Sqyre is a Fyne app that uses **CGO** for OpenCV (gocv) and Tesseract (gosseract
 
 Layout:
 
-- **`.devcontainer/builds/linux/packaging/flatpak/`** — Flatpak manifest (`com.sqyre.app.yml`), desktop file, and appdata
-- **`.devcontainer/builds/linux/packaging/appimage/`** — AppImage recipe, build script, and desktop file
+- **`scripts/linux/packaging/flatpak/`** — Flatpak manifest (`com.sqyre.app.yml`), desktop file, and appdata
+- **`scripts/linux/packaging/appimage/`** — AppImage recipe, build script, and desktop file
 
 ---
 
@@ -42,7 +42,7 @@ Check with `flatpak-builder --version`.
 **If you must stay on Ubuntu 22.04** (no newer distro), install **1.4.x** yourself:
 
 - **Automated (recommended):** from the repo root, run  
-  `sudo .devcontainer/builds/linux/packaging/flatpak/install-flatpak-builder-1.4-on-jammy.sh`  
+  `sudo scripts/linux/packaging/flatpak/install-flatpak-builder-1.4-on-jammy.sh`  
   This builds [flatpak-builder 1.4.7](https://github.com/flatpak/flatpak-builder/releases) with Meson and installs to **`/usr/local`** (override with `PREFIX=...`). Put **`/usr/local/bin` before `/usr/bin`** in `PATH` so `flatpak-builder --version` reports 1.4.x, not 1.2.x.
 - **Manual:** same dependencies as in that script, then download the release `.tar.xz`, `meson setup build --prefix=/usr/local -Dtests=false`, `meson compile -C build`, `sudo meson install -C build`.
 
@@ -70,8 +70,8 @@ From the **repository root**, use a **build directory on the same filesystem** a
 
 ```bash
 flatpak-builder --user --force-clean \
-  .devcontainer/builds/linux/packaging/flatpak/build-dir \
-  .devcontainer/builds/linux/packaging/flatpak/com.sqyre.app.yml
+  scripts/linux/packaging/flatpak/build-dir \
+  scripts/linux/packaging/flatpak/com.sqyre.app.yml
 ```
 
 The manifest enables network during the build so `go` can download modules. For a fully offline build, run `go mod vendor` at the repo root and change the `go build` line to use `-mod=vendor` (see manifest comments).
@@ -82,12 +82,12 @@ Install and run:
 
 ```bash
 flatpak-builder --user --install --force-clean \
-  .devcontainer/builds/linux/packaging/flatpak/build-dir \
-  .devcontainer/builds/linux/packaging/flatpak/com.sqyre.app.yml
+  scripts/linux/packaging/flatpak/build-dir \
+  scripts/linux/packaging/flatpak/com.sqyre.app.yml
 flatpak run --user com.sqyre.app
 ```
 
-The manifest is at `.devcontainer/builds/linux/packaging/flatpak/com.sqyre.app.yml`. It expects the app to be built from `./cmd/sqyre` and uses metadata from `com.sqyre.app.desktop` and `com.sqyre.app.appdata.xml` in the same directory.
+The manifest is at `scripts/linux/packaging/flatpak/com.sqyre.app.yml`. It expects the app to be built from `./cmd/sqyre` and uses metadata from `com.sqyre.app.desktop` and `com.sqyre.app.appdata.xml` in the same directory.
 
 ---
 
@@ -111,10 +111,10 @@ The manifest is at `.devcontainer/builds/linux/packaging/flatpak/com.sqyre.app.y
 To keep `sqyre.AppDir` and the AppImage under `appimage/`, run from the **repository root**:
 
 ```bash
-.devcontainer/builds/linux/packaging/appimage/build-appimage.sh
+scripts/linux/packaging/appimage/build-appimage.sh
 ```
 
-Or from the appimage directory: `cd .devcontainer/builds/linux/packaging/appimage && ./build-appimage.sh` (run `chmod +x build-appimage.sh` once). `sqyre.AppDir`, `appimage-build`, and the .AppImage file are created inside `appimage/` (see `.gitignore`).
+Or from the appimage directory: `cd scripts/linux/packaging/appimage && ./build-appimage.sh` (run `chmod +x build-appimage.sh` once). `sqyre.AppDir` and `appimage-build` stay under `appimage/`; the `.AppImage` file is written to **`bin/`** at the repo root (see `.gitignore`).
 
 ### Tesseract data (OCR)
 
@@ -126,7 +126,7 @@ The recipe copies `eng.traineddata` from the host’s `/usr/share/tessdata/` int
 
 | Format    | Build from | Main requirement |
 |-----------|------------|-------------------|
-| **Flatpak**  | Repo root, manifest under `.devcontainer/builds/linux/packaging/flatpak/` | Manifest includes Leptonica, Tesseract, and OpenCV modules; first OpenCV build is slow |
+| **Flatpak**  | Repo root, manifest under `scripts/linux/packaging/flatpak/` | Manifest includes Leptonica, Tesseract, and OpenCV modules; first OpenCV build is slow |
 | **AppImage** | Repo root, script in `appimage/`   | OpenCV + Tesseract on host + appimage-builder |
 
 Both assume the application entrypoint is at **`./cmd/sqyre`** (see main README for building that target).

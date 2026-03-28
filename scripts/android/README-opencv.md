@@ -18,9 +18,9 @@ Build OpenCV (and optional opencv_contrib) for Android ABIs using the Android ND
 From the **repository root**:
 
 ```bash
-docker build -f .devcontainer/builds/opencv/android/Dockerfile.opencv-android \
+docker build -f scripts/android/Dockerfile.opencv-android \
   -t opencv-android:local \
-  .devcontainer/builds/opencv/android
+  scripts/android
 ```
 
 Build time is long (download OpenCV + contrib, then compile for four ABIs).
@@ -34,19 +34,19 @@ If you already have the devcontainer image (e.g. from opening the project in a d
 docker tag <your-devcontainer-image> sqyre-dev:latest
 
 # Build OpenCV for Android using that base (skips NDK + apt layer)
-docker build -f .devcontainer/builds/opencv/android/Dockerfile.opencv-android \
+docker build -f scripts/android/Dockerfile.opencv-android \
   --build-arg BASE_IMAGE=sqyre-dev:latest \
   -t opencv-android:local \
-  .devcontainer/builds/opencv/android
+  scripts/android
 ```
 
 To build only one ABI:
 
 ```bash
-docker build -f .devcontainer/builds/opencv/android/Dockerfile.opencv-android \
+docker build -f scripts/android/Dockerfile.opencv-android \
   --build-arg ABIS=arm64-v8a \
   -t opencv-android:local \
-  .devcontainer/builds/opencv/android
+  scripts/android
 ```
 
 Artifacts inside the image (under `/opt/opencv/android/`):
@@ -69,7 +69,7 @@ docker rm opencv-android
 3. Run:
 
 ```bash
-.devcontainer/builds/opencv/android/build-opencv-android.sh
+scripts/android/build-opencv-android.sh
 ```
 
 Environment variables:

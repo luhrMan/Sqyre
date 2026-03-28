@@ -48,10 +48,10 @@ RUN go install github.com/fyne-io/fyne-cross@v1.6.1
 ENV PATH="${PATH}:/go/bin"
 
 # -----------------------------------------------------------------------------
-# Stage: OpenCV from source (slow). Script lives under builds/opencv/linux/.
+# Stage: OpenCV from source (slow). Script: scripts/linux/build-opencv-linux.sh
 # Only rebuilds when OPENCV_VERSION or build-deps change.
 # -----------------------------------------------------------------------------
-COPY .devcontainer/builds/opencv/linux/build-opencv-linux.sh /tmp/build-opencv-linux.sh
+COPY scripts/linux/build-opencv-linux.sh /tmp/build-opencv-linux.sh
 RUN chmod +x /tmp/build-opencv-linux.sh && OPENCV_VERSION=${OPENCV_VERSION} OPENCV_ROOT=/opt/opencv/linux /tmp/build-opencv-linux.sh
 # Point pkg-config and runtime linker at OpenCV under its build folder
 ENV PKG_CONFIG_PATH="/opt/opencv/linux/install/lib/pkgconfig:${PKG_CONFIG_PATH}"
@@ -73,7 +73,7 @@ RUN pip3 install --no-cache-dir appimage-builder
 # Jammy’s apt only ships flatpak-builder 1.2.x, which breaks AppStream finish against
 # current org.freedesktop.Sdk; see PACKAGING.md and install-flatpak-builder-1.4-on-jammy.sh.
 # -----------------------------------------------------------------------------
-# COPY .devcontainer/builds/linux/packaging/flatpak/install-flatpak-builder-1.4-on-jammy.sh /tmp/install-flatpak-builder-1.4-on-jammy.sh
+# COPY scripts/linux/packaging/flatpak/install-flatpak-builder-1.4-on-jammy.sh /tmp/install-flatpak-builder-1.4-on-jammy.sh
 # RUN chmod +x /tmp/install-flatpak-builder-1.4-on-jammy.sh && \
 #     apt-get update && apt-get install -y --no-install-recommends \
 #       flatpak \
@@ -84,7 +84,7 @@ RUN pip3 install --no-cache-dir appimage-builder
 #     && rm -f /tmp/install-flatpak-builder-1.4-on-jammy.sh
 # ENV PATH="/usr/local/bin:${PATH}"
 
-# Nix (for `nix develop` in .devcontainer/builds/linux/nix)
+# Nix (for `nix develop` in scripts/linux/nix)
 # Installer expects /nix and group nixbld; create them (we run as root, no sudo).
 # RUN apt-get update && apt-get install -y --no-install-recommends xz-utils && \
 #     mkdir -m 0755 /nix && chown root:root /nix && \
@@ -115,7 +115,7 @@ USER ${USERNAME}
 WORKDIR /workspace
 
 # Pre-install Flathub runtimes for flatpak-builder (keep runtime-version in sync with
-# .devcontainer/builds/linux/packaging/flatpak/com.sqyre.app.yml). User install avoids
+# scripts/linux/packaging/flatpak/com.sqyre.app.yml). User install avoids
 # system D-Bus during image build; use flatpak-builder --user when building the app.
 # RUN flatpak --user remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo \
 #     && flatpak --user install -y flathub \

@@ -7,7 +7,9 @@
 # Optional: EXTRA_GO_TAGS=foo ./build.sh to add build tags.
 set -e
 
-REPO_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
+_here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/lib/repo-root.sh
+. "$_here/../lib/repo-root.sh"
 cd "$REPO_ROOT"
 
 IMAGE_NAME="fyne-cross-windows:local"
@@ -19,7 +21,7 @@ fi
 
 echo "=== Building Windows cross-compile image (OpenCV + Tesseract + MinGW) ==="
 docker build \
-    -f .devcontainer/builds/windows/docker/Dockerfile.windows-amd64 \
+    -f scripts/windows/docker/Dockerfile.windows-amd64 \
     -t "$IMAGE_NAME" \
     .
 
@@ -60,12 +62,12 @@ echo "=== Cross-compiling Sqyre for Windows (tags: $BUILD_TAGS) ==="
 # # Clean up embedded tessdata from source tree
 # rm -f "$TESSDATA_EMBED"
 
-OUTPUT_DIR="$REPO_ROOT/.devcontainer/builds/windows/output"
+OUTPUT_DIR="${BIN_DIR:-$REPO_ROOT/bin}/windows-amd64"
 mkdir -p "$OUTPUT_DIR"
 cp -r "$REPO_ROOT/fyne-cross/bin/windows-amd64/"* "$OUTPUT_DIR/" 2>/dev/null || true
 cp -r "$REPO_ROOT/fyne-cross/dist/windows-amd64/"* "$OUTPUT_DIR/" 2>/dev/null || true
 # Copy run script so Windows users can double-click Run-Sqyre.cmd next to the exe
-cp "$REPO_ROOT/.devcontainer/builds/windows/Run-Sqyre.cmd" "$OUTPUT_DIR/" 2>/dev/null || true
+cp "$REPO_ROOT/scripts/windows/Run-Sqyre.cmd" "$OUTPUT_DIR/" 2>/dev/null || true
 
 
 # fyne-cross names the exe after the app name in FyneApp.toml (e.g. Sqyre.exe)
@@ -79,10 +81,10 @@ fi
 # Patch PE SizeOfStackReserve to 16MB to avoid STATUS_STACK_OVERFLOW (0xC00000FD) on Windows
 # echo ""
 # echo "=== Patching PE stack size (16 MB) ==="
-# go run "$REPO_ROOT/.devcontainer/builds/windows/patch-pe-stack.go" "$EXE_PATH"
+# go run "$REPO_ROOT/scripts/windows/patch-pe-stack.go" "$EXE_PATH"
 
 
 echo ""
 echo "=== Build complete ==="
-echo "Exe: .devcontainer/builds/windows/output/Sqyre.exe"
+echo "Exe: $OUTPUT_DIR/Sqyre.exe"
 echo "Copy output/ to Windows and run Sqyre.exe. For Mat profiling build, run build-matprofile.sh instead."
