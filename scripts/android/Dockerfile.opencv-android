@@ -2,13 +2,13 @@
 # Reference: https://gist.github.com/ogero/c19458cf64bd3e91faae85c3ac887481
 # Adapted for Linux: NDK toolchain, Ninja, OpenCV 4.x.
 #
-# Build from repo root (standalone; installs NDK + deps in this image):
-#   docker build -f .devcontainer/builds/opencv/android/Dockerfile.opencv-android \
-#     -t opencv-android:local .devcontainer/builds/opencv/android
+# Build context: scripts/android (this directory).
+#   docker build -f scripts/android/Dockerfile.opencv-android \
+#     -t opencv-android:local scripts/android
 #
 # Reuse devcontainer to skip NDK/apt and speed up rebuilds (build devcontainer first, then):
-#   docker build -f .devcontainer/builds/opencv/android/Dockerfile.opencv-android \
-#     --build-arg BASE_IMAGE=sqyre-dev:latest -t opencv-android:local .devcontainer/builds/opencv/android
+#   docker build -f scripts/android/Dockerfile.opencv-android \
+#     --build-arg BASE_IMAGE=sqyre-dev:latest -t opencv-android:local scripts/android
 #
 # Versions: NDK_REV, OPENCV_VERSION, CONTRIB_VERSION – bump when upgrading.
 
