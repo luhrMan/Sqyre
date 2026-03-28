@@ -19,13 +19,11 @@ sqyre
 /out/
 /AppDir/
 /appimage-build/# Linux packaging build artifacts
-.devcontainer/builds/fyne-cross/
-.devcontainer/builds/windows/output/
-.devcontainer/builds/linux/packaging/appimage/sqyre.AppDir/
-.devcontainer/builds/linux/packaging/appimage/appimage-build/
-.devcontainer/builds/linux/packaging/appimage/*.AppImage
-.devcontainer/builds/linux/packaging/flatpak/build-dir/
-.devcontainer/builds/android/output/
+/bin/
+scripts/linux/packaging/appimage/sqyre.AppDir/
+scripts/linux/packaging/appimage/appimage-build/
+scripts/linux/packaging/flatpak/build-dir/
+scripts/android/output/
 .flatpak-builder/
 fyne-cross/
 internal/models/repositories/testdata/
