@@ -3,15 +3,54 @@ package models
 import (
 	"Sqyre/internal/models/actions"
 	"sort"
+	"strings"
 )
 
+// HotkeyTrigger selects when a macro hotkey runs: chord complete on press or after full chord release.
+type HotkeyTrigger string
+
+const (
+	HotkeyTriggerPress   HotkeyTrigger = "press"
+	HotkeyTriggerRelease HotkeyTrigger = "release"
+)
+
+// ParseHotkeyTrigger normalizes persisted or UI values to a trigger. Unknown values default to press.
+func ParseHotkeyTrigger(s string) HotkeyTrigger {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case string(HotkeyTriggerRelease):
+		return HotkeyTriggerRelease
+	default:
+		return HotkeyTriggerPress
+	}
+}
+
+// UILabel returns the macro toolbar radio label for this trigger.
+func (t HotkeyTrigger) UILabel() string {
+	switch t {
+	case HotkeyTriggerRelease:
+		return "On release"
+	default:
+		return "On press"
+	}
+}
+
+// HotkeyTriggerFromUILabel maps a radio option back to a persisted trigger value.
+func HotkeyTriggerFromUILabel(s string) HotkeyTrigger {
+	switch s {
+	case "On release":
+		return HotkeyTriggerRelease
+	default:
+		return HotkeyTriggerPress
+	}
+}
 
 type Macro struct {
-	Name        string         `mapstructure:"name"`
-	Root        *actions.Loop  `mapstructure:"root"`
-	GlobalDelay int            `mapstructure:"globaldelay"`
-	Hotkey      []string       `mapstructure:"hotkey"`
-	Variables   *VariableStore `mapstructure:"variables"`
+	Name           string         `mapstructure:"name"`
+	Root           *actions.Loop  `mapstructure:"root"`
+	GlobalDelay    int            `mapstructure:"globaldelay"`
+	Hotkey         []string       `mapstructure:"hotkey"`
+	HotkeyTrigger  string         `mapstructure:"hotkey_trigger"`
+	Variables      *VariableStore `mapstructure:"variables"`
 }
 
 // GetKey returns the unique identifier for this Macro.

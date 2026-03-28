@@ -10,6 +10,19 @@ import (
 	"fyne.io/fyne/v2/test"
 )
 
+func TestMain(m *testing.M) {
+	tempHome, err := os.MkdirTemp("", "sqyre-ui-tests-home-*")
+	if err != nil {
+		panic(err)
+	}
+	defer os.RemoveAll(tempHome)
+
+	_ = os.Setenv("HOME", tempHome)
+	_ = os.Setenv("APPDATA", tempHome)
+
+	os.Exit(m.Run())
+}
+
 // setupTestIconFile creates a temporary test icon file and returns its path
 func setupTestIconFile(t *testing.T, programName, filename string) string {
 	t.Helper()
@@ -95,9 +108,9 @@ func TestLoadIconCreatesCanvasImageFromCachedResource(t *testing.T) {
 	}
 }
 
-// TestMultipleIconThumbnailInstancesShareCanvasImages verifies that
-// multiple IconThumbnail instances share the same cached canvas.Image object
-// to prevent memory bloat from repeatedly decoding the same PNG
+// TestMultipleIconThumbnailInstancesShareCanvasImages verifies that multiple IconThumbnail
+// instances for the same file share the same cached Fyne Resource. GetCanvasImage returns
+// distinct canvas.Image wrappers so each widget can set min size/fill without mutating cache.
 func TestMultipleIconThumbnailInstancesShareCanvasImages(t *testing.T) {
 	// Clear cache before test
 	assets.ClearFyneResourceCache()
@@ -118,19 +131,11 @@ func TestMultipleIconThumbnailInstancesShareCanvasImages(t *testing.T) {
 		t.Fatal("Expected all images to be non-nil")
 	}
 
-	// Verify they are the SAME canvas.Image instances (same pointers)
-	// This is the optimization - sharing decoded pixel buffers
-	if thumbnail1.image != thumbnail2.image {
-		t.Error("Expected thumbnail1 and thumbnail2 to share the same canvas.Image instance (cached)")
-	}
-	if thumbnail1.image != thumbnail3.image {
-		t.Error("Expected thumbnail1 and thumbnail3 to share the same canvas.Image instance (cached)")
-	}
-	if thumbnail2.image != thumbnail3.image {
-		t.Error("Expected thumbnail2 and thumbnail3 to share the same canvas.Image instance (cached)")
+	if thumbnail1.image.Resource != thumbnail2.image.Resource || thumbnail1.image.Resource != thumbnail3.image.Resource {
+		t.Error("Expected all thumbnails to use the same cached fyne.Resource")
 	}
 
-	// Verify they all reference the same cached Fyne Resource
+	// Verify they all reference the same cached Fyne Resource map entry
 	icons := assets.BytesToFyneIcons()
 	cacheKey := programName + config.ProgramDelimiter + filename
 	cachedResource, exists := icons[cacheKey]
@@ -138,9 +143,11 @@ func TestMultipleIconThumbnailInstancesShareCanvasImages(t *testing.T) {
 		t.Fatalf("Expected icon to be cached with key: %s", cacheKey)
 	}
 
-	// Verify all thumbnails use the same cached resource
 	if cachedResource == nil {
 		t.Error("Expected cached resource to be non-nil")
+	}
+	if thumbnail1.image.Resource != cachedResource {
+		t.Error("Expected thumbnail image resource to match BytesToFyneIcons cache entry")
 	}
 }
 
@@ -256,12 +263,12 @@ func TestConstructIconKey(t *testing.T) {
 		{
 			name:        "Standard icon path",
 			iconPath:    filepath.Join(config.GetIconsPath(), "dark and darker", "Health Potion.png"),
-			expectedKey: "dark and darker|Health Potion.png",
+			expectedKey: "dark and darker" + config.ProgramDelimiter + "Health Potion.png",
 		},
 		{
 			name:        "Icon with variant",
-			iconPath:    filepath.Join(config.GetIconsPath(), "path of exile 2", "Scroll|Variant1.png"),
-			expectedKey: "path of exile 2|Scroll|Variant1.png",
+			iconPath:    filepath.Join(config.GetIconsPath(), "path of exile 2", "Scroll"+config.ProgramDelimiter+"Variant1.png"),
+			expectedKey: "path of exile 2" + config.ProgramDelimiter + "Scroll" + config.ProgramDelimiter + "Variant1.png",
 		},
 		{
 			name:        "Empty path",

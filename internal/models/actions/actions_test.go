@@ -93,7 +93,7 @@ func TestAdvancedAction_SetSubActions(t *testing.T) {
 
 func TestBaseAction_String_Icon(t *testing.T) {
 	b := newBaseAction("custom")
-	if got := b.String(); got != "This is a baseAction" {
+	if got := b.String(); got != "Type: custom" {
 		t.Errorf("BaseAction.String() = %q", got)
 	}
 	if b.Icon() == nil {
@@ -103,7 +103,7 @@ func TestBaseAction_String_Icon(t *testing.T) {
 
 func TestAdvancedAction_String(t *testing.T) {
 	adv := newAdvancedAction("myname", "loop", nil)
-	if got := adv.String(); got != "Advanced Action: loop" {
+	if got := adv.String(); got != "Name: myname  /  Type: loop" {
 		t.Errorf("AdvancedAction.String() = %q", got)
 	}
 }
@@ -134,13 +134,13 @@ func TestNewClick(t *testing.T) {
 }
 
 func TestClick_String(t *testing.T) {
-	if got := NewClick(false, false).String(); got != "left click up" {
+	if got := NewClick(false, false).String(); got != "Type: click  /  Button: left  /  State: up" {
 		t.Errorf("String() = %q", got)
 	}
-	if got := NewClick(true, false).String(); got != "right click up" {
+	if got := NewClick(true, false).String(); got != "Type: click  /  Button: right  /  State: up" {
 		t.Errorf("String() = %q", got)
 	}
-	if got := NewClick(false, true).String(); got != "left click down" {
+	if got := NewClick(false, true).String(); got != "Type: click  /  Button: left  /  State: down" {
 		t.Errorf("String() = %q", got)
 	}
 }
@@ -170,7 +170,7 @@ func TestNewWait(t *testing.T) {
 }
 
 func TestWait_String(t *testing.T) {
-	if got := NewWait(100).String(); got != "100 ms" {
+	if got := NewWait(100).String(); got != "Type: wait  /  Time: 100 ms" {
 		t.Errorf("String() = %q", got)
 	}
 }
@@ -194,11 +194,11 @@ func TestNewMove_Smooth(t *testing.T) {
 
 func TestMove_String(t *testing.T) {
 	m := NewMove(Point{Name: "A", X: 1, Y: 2}, false)
-	if got := m.String(); got != "A (1, 2)" {
+	if got := m.String(); got != "Type: move  /  Point: A  /  X: 1  /  Y: 2" {
 		t.Errorf("String() = %q", got)
 	}
 	m2 := NewMove(Point{Name: "A", X: 1, Y: 2}, true)
-	if got := m2.String(); got != "A (1, 2) smooth" {
+	if got := m2.String(); got != "Type: move  /  Point: A  /  X: 1  /  Y: 2  /  Smooth: true" {
 		t.Errorf("String() = %q", got)
 	}
 }
@@ -237,7 +237,7 @@ func TestNewSetVariable(t *testing.T) {
 }
 
 func TestSetVariable_String(t *testing.T) {
-	if got := NewSetVariable("foo", "bar").String(); got != "Set foo = bar" {
+	if got := NewSetVariable("foo", "bar").String(); got != "Type: setvariable  /  Variable: foo  /  Value: bar" {
 		t.Errorf("String() = %q", got)
 	}
 }
@@ -252,13 +252,13 @@ func TestNewSaveVariable(t *testing.T) {
 }
 
 func TestSaveVariable_String(t *testing.T) {
-	if got := NewSaveVariable("x", "clipboard", false, false).String(); got != "Save x to clipboard" {
+	if got := NewSaveVariable("x", "clipboard", false, false).String(); got != "Type: savevariable  /  Variable: x  /  Destination: clipboard  /  Mode: overwrite  /  Append Newline: off" {
 		t.Errorf("String() = %q", got)
 	}
-	if got := NewSaveVariable("x", "/f", true, false).String(); got != "Append x to /f" {
+	if got := NewSaveVariable("x", "/f", true, false).String(); got != "Type: savevariable  /  Variable: x  /  Destination: /f  /  Mode: append  /  Append Newline: off" {
 		t.Errorf("String() = %q", got)
 	}
-	if got := NewSaveVariable("x", "/f", false, false).String(); got != "Save x to /f" {
+	if got := NewSaveVariable("x", "/f", false, false).String(); got != "Type: savevariable  /  Variable: x  /  Destination: /f  /  Mode: overwrite  /  Append Newline: off" {
 		t.Errorf("String() = %q", got)
 	}
 }
@@ -310,7 +310,7 @@ func TestNewCalculate(t *testing.T) {
 }
 
 func TestCalculate_String(t *testing.T) {
-	if got := NewCalculate("x+y", "z").String(); got != "Calculate: x+y -> z" {
+	if got := NewCalculate("x+y", "z").String(); got != "Type: calculate  /  Expression: x+y  /  Output: z" {
 		t.Errorf("String() = %q", got)
 	}
 }
@@ -325,10 +325,10 @@ func TestNewFocusWindow(t *testing.T) {
 }
 
 func TestFocusWindow_String(t *testing.T) {
-	if got := NewFocusWindow("code").String(); got != "Focus: code" {
+	if got := NewFocusWindow("code").String(); got != "Type: focuswindow  /  Window: code" {
 		t.Errorf("String() = %q", got)
 	}
-	if got := NewFocusWindow("").String(); got != "Focus window (not set)" {
+	if got := NewFocusWindow("").String(); got != "Type: focuswindow  /  Window: not set" {
 		t.Errorf("String() = %q", got)
 	}
 }
@@ -364,7 +364,7 @@ func TestNewLoop_nilCount(t *testing.T) {
 
 func TestLoop_String(t *testing.T) {
 	l := NewLoop(3, "L", nil)
-	if got := l.String(); got != "L | iterations: 3" {
+	if got := l.String(); got != "Type: loop  /  Name: L  /  Iterations: 3" {
 		t.Errorf("String() = %q", got)
 	}
 }
@@ -413,7 +413,7 @@ func TestNewImageSearch(t *testing.T) {
 func TestImageSearch_String(t *testing.T) {
 	area := SearchArea{Name: "R"}
 	is := NewImageSearch("S", nil, []string{"a"}, area, 1, 1, 0, 0)
-	if got := is.String(); !strings.Contains(got, "1 items") || !strings.Contains(got, "R") {
+	if got := is.String(); !strings.Contains(got, "Items: 1") || !strings.Contains(got, "Search Area: R") {
 		t.Errorf("String() = %q", got)
 	}
 	is.WaitTilFound = true
@@ -615,7 +615,7 @@ func TestDataList_GetCurrentLine_outOfRange(t *testing.T) {
 func TestDataList_String(t *testing.T) {
 	d := NewDataList("a\nb", "out", false)
 	_, _ = d.LineCount()
-	if got := d.String(); !strings.Contains(got, "2 lines") || !strings.Contains(got, "out") {
+	if got := d.String(); !strings.Contains(got, "Lines: 2") || !strings.Contains(got, "Output: out") {
 		t.Errorf("String() = %q", got)
 	}
 	d2 := NewDataList("/path/file", "v", true)
