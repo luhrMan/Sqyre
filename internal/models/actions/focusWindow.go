@@ -1,8 +1,6 @@
 package actions
 
 import (
-	"fmt"
-
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/theme"
 )
@@ -23,10 +21,22 @@ func NewFocusWindow(windowTarget string) *FocusWindow {
 }
 
 func (a *FocusWindow) String() string {
-	if a.WindowTarget == "" {
-		return "Focus window (not set)"
+	return stringifyParams(a.parameters())
+}
+
+func (a *FocusWindow) Display() fyne.CanvasObject {
+	return displayFromParams(a.parameters())
+}
+
+func (a *FocusWindow) parameters() []actionParam {
+	target := a.WindowTarget
+	if target == "" {
+		target = "not set"
 	}
-	return fmt.Sprintf("Focus: %s", a.WindowTarget)
+	return []actionParam{
+		newParam("Type", a.GetType()),
+		newParam("Window", target),
+	}
 }
 
 func (a *FocusWindow) Icon() fyne.Resource {

@@ -52,3 +52,13 @@ func WrapTagChip(inner fyne.CanvasObject) fyne.CanvasObject {
 	border.CornerRadius = 4
 	return container.NewStack(border, inner)
 }
+
+// WrapSqyreFrame wraps inner with rounded corners, a subtle Sqyre primary fill, and a stroke in the theme primary (Sqyre gold).
+func WrapSqyreFrame(inner fyne.CanvasObject) fyne.CanvasObject {
+	fill := color.NRGBA{R: sqyrePrimary.R, G: sqyrePrimary.G, B: sqyrePrimary.B, A: 13}
+	border := canvas.NewRectangle(fill)
+	border.StrokeColor = theme.Color(theme.ColorNamePrimary)
+	border.StrokeWidth = 1
+	border.CornerRadius = 4
+	return container.NewStack(border, inner)
+}

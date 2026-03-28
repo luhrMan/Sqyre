@@ -1,8 +1,6 @@
 package actions
 
 import (
-	"fmt"
-
 	"Sqyre/internal/assets"
 
 	"fyne.io/fyne/v2"
@@ -23,10 +21,24 @@ func NewMove(p Point, smooth bool) *Move {
 }
 
 func (a *Move) String() string {
-	if a.Smooth {
-		return fmt.Sprintf("%v (%v, %v) smooth", a.Point.Name, a.Point.X, a.Point.Y)
+	return stringifyParams(a.parameters())
+}
+
+func (a *Move) Display() fyne.CanvasObject {
+	return displayFromParams(a.parameters())
+}
+
+func (a *Move) parameters() []actionParam {
+	params := []actionParam{
+		newParam("Type", a.GetType()),
+		newParam("Point", a.Point.Name),
+		newParam("X", a.Point.X),
+		newParam("Y", a.Point.Y),
 	}
-	return fmt.Sprintf("%v (%v, %v)", a.Point.Name, a.Point.X, a.Point.Y)
+	if a.Smooth {
+		params = append(params, newParam("Smooth", true))
+	}
+	return params
 }
 
 func (a *Move) Icon() fyne.Resource {
