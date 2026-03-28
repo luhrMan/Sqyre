@@ -22,6 +22,8 @@ require (
 
 replace github.com/otiai10/gosseract/v2 => ./internal/gosseract
 
+replace github.com/luhrMan/gohook => ./third_party/gohook
+
 require (
 	fyne.io/systray v1.12.0 // indirect
 	github.com/BurntSushi/toml v1.6.0 // indirect

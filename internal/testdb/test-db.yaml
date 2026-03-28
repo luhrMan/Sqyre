@@ -1,0 +1,109 @@
+macros:
+    Integration Test Macro:
+        name: Integration Test Macro
+        root:
+            count: 1
+            type: loop
+            name: root
+            subactions:
+                - type: wait
+                  time: 100
+                - type: click
+                  button: true
+                  state: true
+                - type: move
+                  point:
+                    name: p1
+                    x: 10
+                    "y": 20
+                  smooth: false
+        globaldelay: 100
+        hotkey:
+            - ctrl
+            - shift
+            - a
+        variables:
+            variables: {}
+    Macro B:
+        name: Macro B
+        root:
+            count: 1
+            type: loop
+            name: root
+        globaldelay: 0
+        hotkey: []
+        variables:
+            variables: {}
+programs:
+    Program 1:
+        name: Program 1
+        items: {}
+        coordinates:
+            "0x0":
+                points: {}
+                searchareas: {}
+        masks: {}
+    Program 2:
+        name: Program 2
+        items: {}
+        coordinates:
+            "0x0":
+                points: {}
+                searchareas: {}
+        masks: {}
+    Program 3:
+        name: Program 3
+        items: {}
+        coordinates:
+            "0x0":
+                points: {}
+                searchareas: {}
+        masks: {}
+    Program 4:
+        name: Program 4
+        items: {}
+        coordinates:
+            "0x0":
+                points: {}
+                searchareas: {}
+        masks: {}
+    Program 5:
+        name: Program 5
+        items: {}
+        coordinates:
+            "0x0":
+                points: {}
+                searchareas: {}
+        masks: {}
+    Program 6:
+        name: Program 6
+        items: {}
+        coordinates:
+            "0x0":
+                points: {}
+                searchareas: {}
+        masks: {}
+    Program 7:
+        name: Program 7
+        items: {}
+        coordinates:
+            "0x0":
+                points: {}
+                searchareas: {}
+        masks: {}
+    Program 8:
+        name: Program 8
+        items: {}
+        coordinates:
+            "0x0":
+                points: {}
+                searchareas: {}
+        masks: {}
+    integration test program:
+        name: integration test program
+        items: {}
+        coordinates:
+            "0x0":
+                points: {}
+                searchareas: {}
+        masks: {}

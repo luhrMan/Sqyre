@@ -1,8 +1,6 @@
 package actions
 
 import (
-	"fmt"
-
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/theme"
 )
@@ -22,7 +20,19 @@ func NewKey(key string, state bool) *Key {
 }
 
 func (a *Key) String() string {
-	return fmt.Sprintf("%s %s ", a.Key, UpOrDown(a.State))
+	return stringifyParams(a.parameters())
+}
+
+func (a *Key) Display() fyne.CanvasObject {
+	return displayFromParams(a.parameters())
+}
+
+func (a *Key) parameters() []actionParam {
+	return []actionParam{
+		newParam("Type", a.GetType()),
+		newParam("Key", a.Key),
+		newParam("State", UpOrDown(a.State)),
+	}
 }
 
 func (a *Key) Icon() fyne.Resource {
