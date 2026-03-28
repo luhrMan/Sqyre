@@ -12,7 +12,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/jezek/xgb v1.3.0
 	github.com/lithammer/fuzzysearch v1.1.8
-	github.com/luhrMan/gohook v0.0.0-20250717231151-9fc28a31bf68
+	github.com/luhrMan/gohook v0.0.0-20260328051255-ab117b35bd48
 	github.com/otiai10/gosseract/v2 v2.4.1
 	github.com/spf13/viper v1.21.0
 	github.com/vcaesar/screenshot v0.11.1
@@ -21,8 +21,6 @@ require (
 )
 
 replace github.com/otiai10/gosseract/v2 => ./internal/gosseract
-
-replace github.com/luhrMan/gohook => ./third_party/gohook
 
 require (
 	fyne.io/systray v1.12.0 // indirect
