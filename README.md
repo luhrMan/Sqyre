@@ -1,90 +1,95 @@
-# What is it
+<p align="center">
+  <img src="internal/assets/icons/sqyre.svg" width="120" height="120" alt="Sqyre logo" />
+</p>
 
-Sqyre is a Macro Builder, written using GO, with a few notable libraries:
+<h1 align="center">Sqyre</h1>
 
-- Fyne (GUI)
-- Robotgo (Automation)
-- Gosseract aka Tesseract (OCR)
-- GoCV aka OpenCV (Computer Vision)
-
-The structure of the fyne `widget.Tree`:
-
-- (Root) 1 Loop Action
-- (Branch) Action with SubAction (Advanced Actions)
-    - `Loop`
-    - `Image Search`
-    - `OCR`
-- (Leaf) Action
-    - `Click`: click the mouse where cursor is at
-    - `Move`: move the mouse to specific coordinates
-    - `Key`: Set a key state Up/Down
-    - `Wait`: Wait for time set in milliseconds
-
-# Main Screen
-<img width="2562" height="1362" alt="Screenshot from 2026-01-13 13-09-30" src="https://github.com/user-attachments/assets/53acf1a0-bc89-43d9-a7ab-856b46c3be63" />
-
-# ImageSearch in action
-![sqyre-imagesearch](https://github.com/user-attachments/assets/1a0fc8f4-06bb-4667-bb49-b1c4b2d5b508)
-
-# Why
-
-fuck all that clicking
-
-# BUILD INSTRUCTIONS
-
-**Recommended:** Open this project in the **dev container** (e.g. in VS Code/Cursor: *Dev Containers: Reopen in Container*). All commands below are intended to be run from a terminal **inside the dev container**.
+<p align="center">
+  <strong>Desktop macro builder</strong> for automating clicks, keys, waits, and screen-based steps — with image search and OCR when you need to react to what’s on screen.
+</p>
 
 ---
 
-## Linux
+## Features
 
-From the dev container (dependencies and OpenCV are pre-installed in the container):
+- **Visual macro tree** — Organize automation as a tree: one root **loop**, branches for advanced flows (**loop**, **image search**, **OCR**), and leaf actions for concrete steps.
+- **Mouse automation** — **Click** at the cursor, **move** to coordinates.
+- **Keyboard** — **Key** actions with up/down state control.
+- **Timing** — **Wait** for a chosen number of milliseconds.
+- **Image search** — Find a template on screen (OpenCV-backed) and drive clicks or flow from matches.
+- **OCR** — Read on-screen text with Tesseract (via gosseract) for conditions or data-driven steps.
+- **Cross-platform** — Linux and Windows builds supported (see [Developer setup](#developer-setup)); primary workflow uses the dev container for reproducible builds.
 
-```bash
-go build -o sqyre ./cmd/sqyre
-./sqyre
+Stack highlights: [Fyne](https://fyne.io/) (GUI), [robotgo](https://github.com/go-vgo/robotgo) (automation), [gocv](https://gocv.io/) / OpenCV (vision), [gosseract](https://github.com/otiai10/gosseract) / Tesseract (OCR).
+
+---
+
+## What it’s for
+
+Sqyre is for **repetitive desktop work** — games, tools, or internal apps where you want repeatable sequences without writing a full script each time. You build a macro in the UI, run it, and iterate: less manual clicking, clearer structure than ad-hoc hotkey scripts.
+
+---
+
+## Usage
+
+1. **Build or install** a binary for your OS (see [Developer setup](#developer-setup)).
+2. **Launch Sqyre** and use the tree to add a **loop** at the root, then add **actions** under it.
+3. **Configure** each node (coordinates, keys, delays, image paths, OCR regions, etc.) using the UI.
+4. **Run** your macro from the app when you’re ready.
+
+The tree mirrors how macros are structured in code: the root loop drives repetition; **image search** and **OCR** branches help when the next step depends on the screen; leaf actions are the atomic steps (**click**, **move**, **key**, **wait**).
+
+---
+
+## Examples
+
+Static screenshots (replace or extend with GIFs when you have them):
+
+### Main window
+
+<img width="800" alt="Sqyre main screen" src="https://github.com/user-attachments/assets/53acf1a0-bc89-43d9-a7ab-856b46c3be63" />
+
+### Image search
+
+![Sqyre image search](https://github.com/user-attachments/assets/1a0fc8f4-06bb-4667-bb49-b1c4b2d5b508)
+
+### GIF placeholders
+
+Add short demos under e.g. `docs/images/` and embed them here:
+
+```markdown
+![Building a macro](docs/images/demo-macro.gif)
+![Image search workflow](docs/images/demo-image-search.gif)
+![OCR branch](docs/images/demo-ocr.gif)
 ```
 
-Logs are appended to `~/.sqyre/sqyre.log`.
+Until those files exist, you can host GIFs via [GitHub release assets](https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository) or [user-attachments](https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/attaching-files) and use the full image URL in `![alt](url)` form.
 
-For **Flatpak** or **AppImage** packaging, see [.devcontainer/builds/linux/packaging/PACKAGING.md](.devcontainer/builds/linux/packaging/PACKAGING.md).
+---
 
-## Testing (UI)
+## Developer setup
 
-`robotgo` requires an X display on Linux. To run UI tests in headless environments,
-use the wrapper script, which starts a virtual display automatically when needed:
+**Recommended:** open the repo in the **dev container** (dependencies and OpenCV are aligned with what the app expects).
 
-```bash
-./scripts/test-ui.sh
-```
+### Linux
 
-Pass through any `go test` flags after the script name, for example:
+From the dev container (repository root):
 
-```bash
-./scripts/test-ui.sh -run TestGUI
-```
+| Goal | Command |
+|------|---------|
+| Debug / dev binary | `make linux` → `./bin/sqyre` (override build tags with `BUILD_TAGS=...`) |
+| AppImage | `make appimage` |
+| Tesseract data helper | `make tessdata` / `./scripts/download-tessdata.sh` |
 
-#### GoCV Mat profiling (leak detection)
+For **Flatpak** or **AppImage** details, see [scripts/linux/packaging/PACKAGING.md](scripts/linux/packaging/PACKAGING.md).
 
-Build with **matprofile** to track gocv `Mat` allocations and find leaks (unclosed Mats). Logs and a pprof HTTP server are enabled.
-
-**Build with matprofile:**
-
-| Platform | Command |
-|----------|---------|
-| **Linux** | `go build -tags "gocv_specific_modules,matprofile" -o sqyre ./cmd/sqyre` |
-| **Windows** (from dev container) | `./.devcontainer/builds/windows/build-matprofile.sh` |
-
-**What you get:** Logs (including Mat profile on exit) go to **`~/.sqyre/sqyre.log`** (Windows: `%USERPROFILE%\.sqyre\sqyre.log`). The pprof server starts on 127.0.0.1:6060 (or 6061–6065 if 6060 is in use); the exact URL is printed in the log. Open it in a browser and use the **gocv.io/x/gocv.Mat** profile for leak stack traces.
-
-**Optional:** Set **`SQYRE_PPROF=0`** to disable the pprof server, or **`SQYRE_PPROF=127.0.0.1:9090`** to use a specific port. If the browser cannot connect, allow Sqyre in Windows Firewall or use a different port via `SQYRE_PPROF`.
+OpenCV is built with the helper scripts [scripts/linux/build-opencv-linux.sh](scripts/linux/build-opencv-linux.sh) and [scripts/windows/build-opencv-windows.sh](scripts/windows/build-opencv-windows.sh); Android-oriented notes live in [scripts/android/README-opencv.md](scripts/android/README-opencv.md). The dev container [Dockerfile](.devcontainer/Dockerfile) is the reference for Linux dependency versions.
 
 <details>
-<summary>Linux without dev container</summary>
+<summary>no devcontainer (not up to date)</summary>
 
-If you build on a bare Linux system:
+1. **Install dependencies** (Debian/Ubuntu-style example):
 
-1. **Install dependencies**
    ```bash
    sudo apt install -y \
      build-essential pkg-config cmake golang-go \
@@ -96,48 +101,66 @@ If you build on a bare Linux system:
      libxxf86vm-dev libxt-dev \
      libjpeg-dev libpng-dev libtiff-dev libwebp-dev libopenjp2-7-dev
    ```
-2. **Install OpenCV** — Sqyre uses **gocv**; OpenCV **≥ 4.6** is required. Either build via gocv (from repo root) or from source; see `.devcontainer/Dockerfile` for a reference.
+
+2. **OpenCV** — Sqyre uses **gocv**; OpenCV **≥ 4.6** is required. Build or install to match gocv’s expectations; see `.devcontainer/Dockerfile` and `scripts/linux/build-opencv-linux.sh` for a concrete recipe.
+
 3. **Build:** `go build -o sqyre ./cmd/sqyre`
+
 </details>
 
----
-
-## Windows
-
-### Docker cross-compile (from dev container)
-
-Build a standalone Windows `.exe` with OpenCV and Tesseract statically linked (no DLLs). From **inside the dev container** (repository root), run the Windows build script:
-
+### Windows
 ```bash
-bash .devcontainer/builds/windows/build.sh
+make windows
 ```
 
-Output: `.devcontainer/builds/windows/output/Sqyre.exe`
-
-The dev container includes Docker-in-Docker and the required tooling.
 <details>
-<summary> No Dev Container/Native Windows (MSYS2)</summary>
+<summary>no devcontainer (not up to date)</summary>
 
 Using the **mingw64** shell in [MSYS2](https://www.msys2.org/):
 
-1. **Install packages**
-   - [mingw-w64-x86_64-toolchain](https://packages.msys2.org/groups/mingw-w64-x86_64-toolchain)
-   - [mingw-w64-x86_64-gcc](https://packages.msys2.org/package/mingw-w64-x86_64-gcc)
-   - [mingw-w64-x86_64-opencv](https://packages.msys2.org/package/mingw-w64-x86_64-opencv)
-   - [mingw-w64-x86_64-zlib](https://packages.msys2.org/package/mingw-w64-x86_64-zlib)
-   - [mingw-w64-x86_64-tesseract-ocr](https://packages.msys2.org/package/mingw-w64-x86_64-tesseract-ocr)
-   - [mingw-w64-x86_64-leptonica](https://packages.msys2.org/package/mingw-w64-x86_64-leptonica)
-   - Optional: [mingw-w64-x86_64-go](https://packages.msys2.org/package/mingw-w64-x86_64-go?repo=mingw64) if you want Go inside MSYS2.
+1. **Install packages** — e.g. [mingw-w64-x86_64-toolchain](https://packages.msys2.org/groups/mingw-w64-x86_64-toolchain), [mingw-w64-x86_64-opencv](https://packages.msys2.org/package/mingw-w64-x86_64-opencv), [mingw-w64-x86_64-tesseract-ocr](https://packages.msys2.org/package/mingw-w64-x86_64-tesseract-ocr), [mingw-w64-x86_64-leptonica](https://packages.msys2.org/package/mingw-w64-x86_64-leptonica), plus [mingw-w64-x86_64-go](https://packages.msys2.org/package/mingw-w64-x86_64-go?repo=mingw64) if you build Go inside MSYS2.
 
-2. **Tesseract English data**
-   - Download [eng.traineddata](https://github.com/tesseract-ocr/tessdata/blob/main/eng.traineddata) and put it in `C:\msys64\mingw64\share\tessdata`.
-   - In mingw64: `export TESSDATA_PREFIX=C:/msys64/mingw64/share/tessdata`
+2. **Tesseract English data** — Download [eng.traineddata](https://github.com/tesseract-ocr/tessdata/blob/main/eng.traineddata) into `C:\msys64\mingw64\share\tessdata` and set `TESSDATA_PREFIX=C:/msys64/mingw64/share/tessdata` in mingw64.
 
-3. **Optional: set Go env (if using MSYS2 Go)**
-   - `export GOROOT=/mingw64/lib/go`
-   - `export GOPATH=/mingw64`
+3. **Optional Go env (MSYS2 Go)** — `export GOROOT=/mingw64/lib/go` and `export GOPATH=/mingw64`.
 
-4. **Build** from the repo (in mingw64): `go build -o sqyre.exe ./cmd/sqyre`
+4. **Build:** `go build -o sqyre.exe ./cmd/sqyre`
 
-To use the MSYS2 shell in VS Code: [integrate MSYS2 with VS Code](https://stackoverflow.com/questions/45836650/how-do-i-integrate-msys2-shell-into-visual-studio-code-on-windows).
+VS Code + MSYS2: [integrate the mingw64 shell](https://stackoverflow.com/questions/45836650/how-do-i-integrate-msys2-shell-into-visual-studio-code-on-windows).
+
 </details>
+
+### UI tests (Linux)
+
+`robotgo` needs an X display. In headless CI or SSH sessions, use:
+
+```bash
+./scripts/test-ui.sh
+./scripts/test-ui.sh -run TestGUI
+```
+
+### GoCV `Mat` profiling (leak detection)
+
+Build with the **matprofile** tag to track `gocv.Mat` allocations and spot unclosed Mats. Logs go to **`~/.sqyre/sqyre.log`** (Windows: `%USERPROFILE%\.sqyre\sqyre.log`). A pprof HTTP server starts on `127.0.0.1:6060` (or the next free port in 6061–6065); the log prints the exact URL — open **gocv.io/x/gocv.Mat** in the browser for stack traces.
+
+| Platform | Command |
+|----------|---------|
+| Linux | `go build -tags "gocv_specific_modules,matprofile" -o sqyre ./cmd/sqyre` |
+| Windows (from dev container) | `make windows-matprofile` or `./scripts/windows/build-matprofile.sh` |
+
+Optional env: **`SQYRE_PPROF=0`** disables pprof; **`SQYRE_PPROF=127.0.0.1:9090`** sets a fixed port (adjust firewall on Windows if the browser cannot connect).
+
+### License
+
+Sqyre is licensed under the **GNU General Public License v3.0** — see [LICENSE](LICENSE).
+
+---
+
+## Donations
+
+If Sqyre saves you time, consider supporting development:
+
+- monero
+- - ``
+- [Buy Me A Coffee]()
+- **[GitHub Sponsors — @luhrMan](https://github.com/sponsors/luhrMan)**
