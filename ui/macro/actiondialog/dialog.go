@@ -2,15 +2,17 @@ package actiondialog
 
 import (
 	"Sqyre/internal/config"
+	"Sqyre/internal/fyneui"
 	"Sqyre/internal/models"
 	"Sqyre/internal/models/actions"
-	"Sqyre/internal/models/repositories"
+	"Sqyre/internal/appdata"
 	"Sqyre/ui/custom_widgets"
 	"Sqyre/ui/editor"
 	"fmt"
 	"image/color"
 	"sort"
 	"strings"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -142,7 +144,7 @@ func buildProgramListAccordionWithSearchbar(cfg programListAccordionConfig) (*wi
 	rebuild := func() {
 		filterText := searchbar.Text
 		acc.Items = nil
-		for _, p := range repositories.ProgramRepo().GetAllSortedByName() {
+		for _, p := range appdata.Programs().GetAllSortedByName() {
 			defaultList := cfg.GetKeys(p)
 			filtered := defaultList
 			if filterText != "" {
@@ -163,12 +165,14 @@ func buildProgramListAccordionWithSearchbar(cfg programListAccordionConfig) (*wi
 				func() int { return len(filtered) },
 				func() fyne.CanvasObject { return ttwidget.NewLabel("template") },
 				func(id widget.ListItemID, co fyne.CanvasObject) {
-					key := filtered[id]
-					lbl := co.(*ttwidget.Label)
-					lbl.SetText(cfg.GetDisplayName(p, key))
-					if cfg.GetTooltip != nil {
-						lbl.SetToolTip(cfg.GetTooltip(p, key))
-					}
+					fyneui.RunOnMain(func() {
+						key := filtered[id]
+						lbl := co.(*ttwidget.Label)
+						lbl.SetText(cfg.GetDisplayName(p, key))
+						if cfg.GetTooltip != nil {
+							lbl.SetToolTip(cfg.GetTooltip(p, key))
+						}
+					})
 				},
 			)
 			prog := p
@@ -265,13 +269,23 @@ func buildItemsAccordionWithSearchbar(
 	searchbar.SetPlaceHolder("Filter programs and items (fuzzy match)")
 	acc := custom_widgets.NewAccordionWithHeaderWidgets()
 	var itemGrids []*widget.GridWrap
+	// Map for O(1) selection highlight per cell (avoids GetSelectedTargets + slice scan per icon on wasm).
+	selectedSet := make(map[string]struct{})
+	syncSelectedSet := func() {
+		clear(selectedSet)
+		for _, t := range getTargets() {
+			selectedSet[t] = struct{}{}
+		}
+	}
 	refreshAccordion := func() {
-		acc.Refresh()
+		syncSelectedSet()
 		for _, g := range itemGrids {
 			g.Refresh()
 		}
+		acc.Refresh()
 	}
 	rebuild := func() {
+		syncSelectedSet()
 		filterText := searchbar.Text
 		itemGrids = itemGrids[:0]
 		editor.PopulateItemsSearchAccordion(acc, filterText, func(prog *models.Program) editor.ItemsAccordionOptions {
@@ -279,6 +293,10 @@ func buildItemsAccordionWithSearchbar(
 				Program:            prog,
 				FilterText:         filterText,
 				GetSelectedTargets: getTargets,
+				IsTargetSelected: func(full string) bool {
+					_, ok := selectedSet[full]
+					return ok
+				},
 				OnItemSelected: func(baseItemName string) {
 					onItemSelected(prog.Name, baseItemName)
 				},
@@ -289,7 +307,16 @@ func buildItemsAccordionWithSearchbar(
 			}
 		})
 	}
-	searchbar.OnChanged = func(string) { rebuild() }
+	const filterDebounce = 220 * time.Millisecond
+	var filterTimer *time.Timer
+	searchbar.OnChanged = func(string) {
+		if filterTimer != nil {
+			filterTimer.Stop()
+		}
+		filterTimer = time.AfterFunc(filterDebounce, func() {
+			fyne.Do(rebuild)
+		})
+	}
 	rebuild()
 	return searchbar, container.NewScroll(acc), refreshAccordion
 }

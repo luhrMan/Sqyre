@@ -5,7 +5,8 @@ import (
 	"Sqyre/internal/config"
 	"Sqyre/internal/models"
 	"Sqyre/internal/models/actions"
-	"Sqyre/internal/models/repositories"
+	"Sqyre/internal/appdata"
+	"Sqyre/internal/fyneui"
 	"Sqyre/internal/services"
 	"Sqyre/ui/completionentry"
 	"Sqyre/ui/custom_widgets"
@@ -93,7 +94,7 @@ func removeTag(item *models.Item, tagToRemove string) {
 
 	// Save the item
 	p := shell().EditorTabs.ItemsTab.ProgramSelector.Selected
-	program, err := repositories.ProgramRepo().Get(p)
+	program, err := appdata.Programs().Get(p)
 	if err != nil {
 		log.Printf("Error getting program %s: %v", p, err)
 		return
@@ -104,7 +105,7 @@ func removeTag(item *models.Item, tagToRemove string) {
 		return
 	}
 
-	if err := repositories.ProgramRepo().Set(program.Name, program); err != nil {
+	if err := appdata.Programs().Set(program.Name, program); err != nil {
 		log.Printf("Error saving program %s: %v", p, err)
 		return
 	}
@@ -156,18 +157,19 @@ func removeTag(item *models.Item, tagToRemove string) {
 }
 
 func RefreshItemsAccordionItems() {
-	// Use the complete rebuild function to ensure icon cache is updated
-	RebuildItemsAccordion()
+	// May be invoked from tab callbacks that are not on the Fyne main thread (e.g. wasm).
+	fyneui.RunOnMain(func() {
+		RebuildItemsAccordion()
+	})
 }
 
 // RefreshProgramAccordionItem refreshes only the accordion item for a specific program
 func RefreshProgramAccordionItem(programName string) {
-	// Refresh both the main action tabs accordion and the editor tabs accordion
-	// refreshAccordionForProgram(GetUi().ActionTabs.ImageSearchItemsAccordion, programName)
-
-	if accordion, ok := shell().EditorTabs.ItemsTab.Widgets["Accordion"].(*custom_widgets.AccordionWithHeaderWidgets); ok {
-		refreshAccordionForProgram(accordion, programName)
-	}
+	fyneui.RunOnMain(func() {
+		if accordion, ok := shell().EditorTabs.ItemsTab.Widgets["Accordion"].(*custom_widgets.AccordionWithHeaderWidgets); ok {
+			refreshAccordionForProgram(accordion, programName)
+		}
+	})
 }
 
 // itemsAccordionRowIndexForProgram finds the row for a program. Titles are "ProgramName (n)", not bare names.
@@ -184,7 +186,7 @@ func itemsAccordionRowIndexForProgram(accordion *custom_widgets.AccordionWithHea
 // refreshAccordionForProgram rebuilds the accordion item for a specific program with updated icon cache
 func refreshAccordionForProgram(accordion *custom_widgets.AccordionWithHeaderWidgets, programName string) {
 	if i := itemsAccordionRowIndexForProgram(accordion, programName); i >= 0 {
-		if program, err := repositories.ProgramRepo().Get(programName); err == nil {
+		if program, err := appdata.Programs().Get(programName); err == nil {
 			rebuildProgramAccordionItem(accordion, program, i)
 		}
 	}
@@ -238,7 +240,7 @@ func RefreshItemInGrid(programName, oldItemName, newItemName string) {
 	// This is necessary because the GridWrap uses a pre-computed iconCache that needs to be updated
 	if accordion, ok := shell().EditorTabs.ItemsTab.Widgets["Accordion"].(*custom_widgets.AccordionWithHeaderWidgets); ok {
 		if i := itemsAccordionRowIndexForProgram(accordion, programName); i >= 0 {
-			if program, err := repositories.ProgramRepo().Get(programName); err == nil {
+			if program, err := appdata.Programs().Get(programName); err == nil {
 				rebuildProgramAccordionItem(accordion, program, i)
 			}
 		}
@@ -305,7 +307,7 @@ func editorItemsAccordionOptions(program *models.Program, filterText string) Ite
 			return nil
 		},
 		OnItemSelected: func(baseItemName string) {
-			program, err := repositories.ProgramRepo().Get(programName)
+			program, err := appdata.Programs().Get(programName)
 			if err != nil {
 				log.Printf("Error getting program %s: %v", programName, err)
 				return
@@ -369,7 +371,7 @@ func updateMaskDisplay(maskName string) {
 	}
 
 	prog := shell().EditorTabs.ItemsTab.ProgramSelector.Selected
-	program, err := repositories.ProgramRepo().Get(prog)
+	program, err := appdata.Programs().Get(prog)
 	if err != nil {
 		maskDetailsLabel.SetText("")
 		return
@@ -402,7 +404,7 @@ func showMaskSelectionPopup() {
 	var popup *widget.PopUp
 
 	acc := widget.NewAccordion()
-	for _, p := range repositories.ProgramRepo().GetAllSortedByName() {
+	for _, p := range appdata.Programs().GetAllSortedByName() {
 		programName := p.Name
 		allKeys := p.MaskRepo().GetAllKeys()
 		filtered := make([]string, len(allKeys))
@@ -416,9 +418,11 @@ func showMaskSelectionPopup() {
 			func() int { return len(filtered) },
 			func() fyne.CanvasObject { return widget.NewLabel("template") },
 			func(id widget.ListItemID, co fyne.CanvasObject) {
-				if id < len(filtered) {
-					co.(*widget.Label).SetText(filtered[id])
-				}
+				fyneui.RunOnMain(func() {
+					if id < len(filtered) {
+						co.(*widget.Label).SetText(filtered[id])
+					}
+				})
 			},
 		)
 
@@ -432,7 +436,7 @@ func showMaskSelectionPopup() {
 				v.Mask = maskName
 
 				prog := shell().EditorTabs.ItemsTab.ProgramSelector.Selected
-				program, err := repositories.ProgramRepo().Get(prog)
+				program, err := appdata.Programs().Get(prog)
 				if err != nil {
 					log.Printf("Error getting program %s: %v", prog, err)
 					return
@@ -441,7 +445,7 @@ func showMaskSelectionPopup() {
 					log.Printf("Error saving item %s: %v", v.Name, err)
 					return
 				}
-				if err := repositories.ProgramRepo().Set(program.Name, program); err != nil {
+				if err := appdata.Programs().Set(program.Name, program); err != nil {
 					log.Printf("Error saving program %s: %v", prog, err)
 					return
 				}
@@ -507,7 +511,7 @@ func setMaskSelectionButtons() {
 				v.Mask = ""
 
 				prog := shell().EditorTabs.ItemsTab.ProgramSelector.Selected
-				program, err := repositories.ProgramRepo().Get(prog)
+				program, err := appdata.Programs().Get(prog)
 				if err != nil {
 					log.Printf("Error getting program %s: %v", prog, err)
 					return
@@ -516,7 +520,7 @@ func setMaskSelectionButtons() {
 					log.Printf("Error saving item %s: %v", v.Name, err)
 					return
 				}
-				if err := repositories.ProgramRepo().Set(program.Name, program); err != nil {
+				if err := appdata.Programs().Set(program.Name, program); err != nil {
 					log.Printf("Error saving program %s: %v", prog, err)
 					return
 				}
@@ -531,7 +535,7 @@ func setMaskSelectionButtons() {
 func getAllExistingTags() []string {
 	tagMap := make(map[string]bool)
 
-	for _, program := range repositories.ProgramRepo().GetAll() {
+	for _, program := range appdata.Programs().GetAll() {
 		for _, itemName := range program.ItemRepo().GetAllKeys() {
 			item, err := program.ItemRepo().Get(itemName)
 			if err == nil {

@@ -3,7 +3,7 @@ package editor
 import (
 	"Sqyre/internal/config"
 	"Sqyre/internal/models"
-	"Sqyre/internal/models/repositories"
+	"Sqyre/internal/appdata"
 	"Sqyre/ui/custom_widgets"
 	"errors"
 	"fmt"
@@ -96,13 +96,13 @@ func programCreateConfig() createDialogConfig {
 				return err
 			}
 			if err := ensureNameAvailable(n, "program", func(name string) (any, error) {
-				return repositories.ProgramRepo().Get(name)
+				return appdata.Programs().Get(name)
 			}); err != nil {
 				return err
 			}
-			pro := repositories.ProgramRepo().New()
+			pro := appdata.Programs().New()
 			pro.Name = n
-			if err := repositories.ProgramRepo().Set(pro.Name, pro); err != nil {
+			if err := appdata.Programs().Set(pro.Name, pro); err != nil {
 				return err
 			}
 			shell().EditorTabs.ProgramsTab.SelectedItem = pro
@@ -121,7 +121,7 @@ func itemCreateConfig() createDialogConfig {
 	return createDialogConfig{
 		title: "New Item",
 		buildForm: func() (fyne.CanvasObject, map[string]fyne.CanvasObject) {
-			ps := widget.NewSelect(repositories.ProgramRepo().GetAllKeys(), nil)
+			ps := widget.NewSelect(appdata.Programs().GetAllKeys(), nil)
 			w := map[string]fyne.CanvasObject{
 				"ProgramSelector": ps,
 				"Name":            widget.NewEntry(),
@@ -191,7 +191,7 @@ func pointCreateConfig() createDialogConfig {
 	return createDialogConfig{
 		title: "New Point",
 		buildForm: func() (fyne.CanvasObject, map[string]fyne.CanvasObject) {
-			ps := widget.NewSelect(repositories.ProgramRepo().GetAllKeys(), nil)
+			ps := widget.NewSelect(appdata.Programs().GetAllKeys(), nil)
 			w := map[string]fyne.CanvasObject{
 				"ProgramSelector": ps,
 				"Name":            widget.NewEntry(),
@@ -257,7 +257,7 @@ func searchAreaCreateConfig() createDialogConfig {
 	return createDialogConfig{
 		title: "New Search Area",
 		buildForm: func() (fyne.CanvasObject, map[string]fyne.CanvasObject) {
-			ps := widget.NewSelect(repositories.ProgramRepo().GetAllKeys(), nil)
+			ps := widget.NewSelect(appdata.Programs().GetAllKeys(), nil)
 			w := map[string]fyne.CanvasObject{
 				"ProgramSelector": ps,
 				"Name":            widget.NewEntry(),
@@ -329,7 +329,7 @@ func maskCreateConfig() createDialogConfig {
 	return createDialogConfig{
 		title: "New Mask",
 		buildForm: func() (fyne.CanvasObject, map[string]fyne.CanvasObject) {
-			ps := widget.NewSelect(repositories.ProgramRepo().GetAllKeys(), nil)
+			ps := widget.NewSelect(appdata.Programs().GetAllKeys(), nil)
 			w := map[string]fyne.CanvasObject{
 				"ProgramSelector": ps,
 				"Name":            widget.NewEntry(),
@@ -452,17 +452,17 @@ func maskCreateConfig() createDialogConfig {
 func performDeleteForTab() {
 	program := shell().ActiveProgramName()
 	et := shell().EditorTabs
-	prog, err := repositories.ProgramRepo().Get(program)
+	prog, err := appdata.Programs().Get(program)
 
 	switch shell().EditorTabs.Selected().Text {
 	case "Programs":
 		if v, ok := et.ProgramsTab.SelectedItem.(*models.Program); ok {
-			if err := repositories.ProgramRepo().Delete(v.Name); err != nil {
+			if err := appdata.Programs().Delete(v.Name); err != nil {
 				log.Printf("Error deleting program: %v", err)
 			}
 			refreshAllProgramRelatedUI()
 			updateProgramSelectorOptions()
-			et.ProgramsTab.SelectedItem = repositories.ProgramRepo().New()
+			et.ProgramsTab.SelectedItem = appdata.Programs().New()
 			if list, ok := et.ProgramsTab.Widgets["list"].(*widget.List); ok {
 				list.UnselectAll()
 			}

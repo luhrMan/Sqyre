@@ -3,8 +3,9 @@ package editor
 import (
 	"Sqyre/internal/assets"
 	"Sqyre/internal/config"
+	"Sqyre/internal/fyneui"
 	"Sqyre/internal/models"
-	"Sqyre/internal/models/repositories"
+	"Sqyre/internal/appdata"
 	"Sqyre/internal/services"
 	"fmt"
 	"image/color"
@@ -40,6 +41,10 @@ type ItemsAccordionOptions struct {
 	// GetSelectedTargets returns the current list of selected item full names (Program|BaseName)
 	// for highlighting. Return nil or empty to hide selection highlight.
 	GetSelectedTargets func() []string
+
+	// IsTargetSelected, if non-nil, is used for per-cell selection highlight instead of calling
+	// GetSelectedTargets on every cell (O(1) map lookup; avoids allocations in hot paths).
+	IsTargetSelected func(fullItemName string) bool
 
 	// OnItemSelected is called when the user selects an item in the grid.
 	// baseItemName is the base name (no variant). Full name is Program.Name + delim + baseItemName.
@@ -109,6 +114,32 @@ func programHasItemsOrTagsMatchingSearch(program *models.Program, filterText str
 	return false
 }
 
+// itemGridIconResource loads the display icon for one base item (variant + PNG path). Called lazily from
+// GridWrap cell updates so opening the items UI does not run GetVariants/GetFyneResource for every item
+// in every program up front (very expensive in the browser).
+func itemGridIconResource(iconService *services.IconVariantService, programName, baseItemName string) fyne.Resource {
+	variants, err := iconService.GetVariants(programName, baseItemName)
+	if err != nil || len(variants) == 0 {
+		return nil
+	}
+	selectedVariant := ""
+	for _, variant := range variants {
+		if variant == "Original" {
+			selectedVariant = variant
+			break
+		}
+	}
+	if selectedVariant == "" {
+		selectedVariant = variants[0]
+	}
+	path := programName + config.ProgramDelimiter + baseItemName
+	if selectedVariant != "" {
+		path = path + config.ProgramDelimiter + selectedVariant
+	}
+	path += config.PNG
+	return assets.GetFyneResource(path)
+}
+
 // PopulateItemsSearchAccordion clears acc and rebuilds it from the program list using the same row rules
 // for both the editor Items tab and the Image Search action dialog. buildOpts supplies per-program options;
 // only selection-related fields should differ between those screens.
@@ -118,7 +149,7 @@ func PopulateItemsSearchAccordion(
 	buildOpts func(*models.Program) ItemsAccordionOptions,
 ) {
 	acc.RemoveAll()
-	for _, p := range repositories.ProgramRepo().GetAllSortedByName() {
+	for _, p := range appdata.Programs().GetAllSortedByName() {
 		if !ProgramRowVisibleInItemsSearch(p, filterText) {
 			continue
 		}
@@ -143,11 +174,12 @@ func CreateProgramAccordionItem(opts ItemsAccordionOptions) (*widget.AccordionIt
 	iconService := services.IconVariantServiceInstance()
 	programName := program.Name
 
-	type itemIconInfo struct {
-		iconPath string
-		exists   bool
+	// Lazily filled when each grid cell is first rendered (avoids O(programs × items) icon work at build time).
+	type iconMemoEntry struct {
+		done bool
+		res  fyne.Resource
 	}
-	iconCache := make(map[string]itemIconInfo)
+	iconMemo := make(map[string]iconMemoEntry)
 
 	baseNames := iconService.GroupItemsByBaseName(program.ItemRepo().GetAllKeys())
 
@@ -156,29 +188,6 @@ func CreateProgramAccordionItem(opts ItemsAccordionOptions) (*widget.AccordionIt
 		baseName := iconService.GetBaseItemName(itemName)
 		if _, exists := baseNameToItemName[baseName]; !exists {
 			baseNameToItemName[baseName] = itemName
-		}
-	}
-
-	for _, baseName := range baseNames {
-		cacheKey := programName + config.ProgramDelimiter + baseName
-		variants, err := iconService.GetVariants(programName, baseName)
-		if err == nil && len(variants) > 0 {
-			var selectedVariant string
-			for _, variant := range variants {
-				if variant == "Original" {
-					selectedVariant = variant
-					break
-				}
-			}
-			if selectedVariant == "" {
-				selectedVariant = variants[0]
-			}
-			path := programName + config.ProgramDelimiter + baseName
-			if selectedVariant != "" {
-				path = path + config.ProgramDelimiter + selectedVariant
-			}
-			path = path + config.PNG
-			iconCache[cacheKey] = itemIconInfo{iconPath: path, exists: true}
 		}
 	}
 
@@ -227,43 +236,48 @@ func CreateProgramAccordionItem(opts ItemsAccordionOptions) (*widget.AccordionIt
 			return container.NewStack(rect, container.NewPadded(icon), ttwidget.NewLabel(""))
 		},
 		func(id widget.GridWrapItemID, o fyne.CanvasObject) {
-			idx := int(id)
-			if idx < 0 || idx >= len(lists.filtered) {
-				return
-			}
-			baseItemName := lists.filtered[idx]
-			stack := o.(*fyne.Container)
-			rect := stack.Objects[0].(*canvas.Rectangle)
-			icon := stack.Objects[1].(*fyne.Container).Objects[0].(*canvas.Image)
-			tt := stack.Objects[2].(*ttwidget.Label)
-			tt.SetToolTip(baseItemName)
+			// On wasm, batch cell work into one fyne.Do per wave (see fyneui.RunCellUpdatesBatched).
+			fyneui.RunCellUpdatesBatched(func() {
+				idx := int(id)
+				if idx < 0 || idx >= len(lists.filtered) {
+					return
+				}
+				baseItemName := lists.filtered[idx]
+				stack := o.(*fyne.Container)
+				rect := stack.Objects[0].(*canvas.Rectangle)
+				icon := stack.Objects[1].(*fyne.Container).Objects[0].(*canvas.Image)
+				tt := stack.Objects[2].(*ttwidget.Label)
+				tt.SetToolTip(baseItemName)
 
-			var t []string
-			if opts.GetSelectedTargets != nil {
-				t = opts.GetSelectedTargets()
-			}
-			fullItemName := programName + config.ProgramDelimiter + baseItemName
-			if slices.Contains(t, fullItemName) {
-				rect.FillColor = color.RGBA{R: 0, G: 128, B: 0, A: 128}
-			} else {
-				rect.FillColor = color.RGBA{}
-			}
+				fullItemName := programName + config.ProgramDelimiter + baseItemName
+				sel := false
+				if opts.IsTargetSelected != nil {
+					sel = opts.IsTargetSelected(fullItemName)
+				} else if opts.GetSelectedTargets != nil {
+					sel = slices.Contains(opts.GetSelectedTargets(), fullItemName)
+				}
+				if sel {
+					rect.FillColor = color.RGBA{R: 0, G: 128, B: 0, A: 128}
+				} else {
+					rect.FillColor = color.RGBA{}
+				}
 
-			cacheKey := programName + config.ProgramDelimiter + baseItemName
-			if iconInfo, exists := iconCache[cacheKey]; exists {
-				if resource := assets.GetFyneResource(iconInfo.iconPath); resource != nil {
-					newIcon := canvas.NewImageFromResource(resource)
-					newIcon.SetMinSize(fyne.NewSquareSize(40))
-					newIcon.FillMode = canvas.ImageFillOriginal
-					iconContainer := stack.Objects[1].(*fyne.Container)
-					iconContainer.Objects[0] = newIcon
+				cacheKey := programName + config.ProgramDelimiter + baseItemName
+				ent := iconMemo[cacheKey]
+				if !ent.done {
+					ent.res = itemGridIconResource(iconService, programName, baseItemName)
+					ent.done = true
+					iconMemo[cacheKey] = ent
+				}
+				if ent.res != nil {
+					icon.SetMinSize(fyne.NewSquareSize(40))
+					icon.FillMode = canvas.ImageFillOriginal
+					icon.Resource = ent.res
 				} else {
 					icon.Resource = assets.AppIcon
 				}
-			} else {
-				icon.Resource = assets.AppIcon
-			}
-			o.Refresh()
+				o.Refresh()
+			})
 		},
 	)
 
@@ -325,13 +339,11 @@ func CreateProgramAccordionItem(opts ItemsAccordionOptions) (*widget.AccordionIt
 			}
 			slices.Sort(newTargets)
 			opts.OnSelectionChanged(newTargets)
-			lists.items.Refresh()
+			fyneui.RunOnMain(func() {
+				lists.items.Refresh()
+			})
 		}
 		getState := func() int {
-			current := []string{}
-			if opts.GetSelectedTargets != nil {
-				current = opts.GetSelectedTargets()
-			}
 			filteredFull := make([]string, 0, len(lists.filtered))
 			for _, baseName := range lists.filtered {
 				filteredFull = append(filteredFull, programName+config.ProgramDelimiter+baseName)
@@ -340,9 +352,21 @@ func CreateProgramAccordionItem(opts ItemsAccordionOptions) (*widget.AccordionIt
 				return 0
 			}
 			selected := 0
-			for _, full := range filteredFull {
-				if slices.Contains(current, full) {
-					selected++
+			if opts.IsTargetSelected != nil {
+				for _, full := range filteredFull {
+					if opts.IsTargetSelected(full) {
+						selected++
+					}
+				}
+			} else {
+				var current []string
+				if opts.GetSelectedTargets != nil {
+					current = opts.GetSelectedTargets()
+				}
+				for _, full := range filteredFull {
+					if slices.Contains(current, full) {
+						selected++
+					}
 				}
 			}
 			if selected == 0 {

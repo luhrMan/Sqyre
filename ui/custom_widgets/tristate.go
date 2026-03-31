@@ -1,6 +1,8 @@
 package custom_widgets
 
 import (
+	"Sqyre/internal/fyneui"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/widget"
 )
@@ -34,8 +36,10 @@ func NewTriStateSelectAll(getState func() int, onTapped func()) *TriStateSelectA
 		}
 		// The underlying Check updates its own state on tap; immediately re-apply our tri-state
 		// derived from getState so the UI doesn't drift.
-		t.applyState()
-		t.check.Refresh()
+		fyneui.RunOnMain(func() {
+			t.applyState()
+			t.check.Refresh()
+		})
 	})
 	t.ExtendBaseWidget(t)
 	t.applyState()
@@ -49,8 +53,10 @@ func (t *TriStateSelectAll) CreateRenderer() fyne.WidgetRenderer {
 
 // Refresh updates the checkbox state from getState (do not call BaseWidget.Refresh to avoid recursion).
 func (t *TriStateSelectAll) Refresh() {
-	t.applyState()
-	t.check.Refresh()
+	fyneui.RunOnMain(func() {
+		t.applyState()
+		t.check.Refresh()
+	})
 }
 
 type triStateRenderer struct {
@@ -72,8 +78,10 @@ func (r *triStateRenderer) MinSize() fyne.Size {
 }
 
 func (r *triStateRenderer) Refresh() {
-	r.tri.applyState()
-	r.check.Refresh()
+	fyneui.RunOnMain(func() {
+		r.tri.applyState()
+		r.check.Refresh()
+	})
 }
 
 func (r *triStateRenderer) Destroy() {}

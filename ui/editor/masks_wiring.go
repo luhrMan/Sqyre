@@ -2,8 +2,9 @@ package editor
 
 import (
 	"Sqyre/internal/config"
+	"Sqyre/internal/fyneui"
 	"Sqyre/internal/models"
-	"Sqyre/internal/models/repositories"
+	"Sqyre/internal/appdata"
 	"Sqyre/ui/custom_widgets"
 	"fmt"
 	"io"
@@ -62,7 +63,7 @@ func setAccordionMasksLists(acc *widget.Accordion) {
 		sb.OnChanged = func(string) { setAccordionMasksLists(acc) }
 	}
 
-	for _, p := range repositories.ProgramRepo().GetAllSortedByName() {
+	for _, p := range appdata.Programs().GetAllSortedByName() {
 		defaultList := p.MaskRepo().GetAllKeys()
 		filtered := filterKeysByFuzzy(filterText, defaultList)
 		sortMaskKeysByDisplayName(p, filtered)
@@ -79,23 +80,25 @@ func setAccordionMasksLists(acc *widget.Accordion) {
 			func() int { return len(lists.filtered) },
 			func() fyne.CanvasObject { return widget.NewLabel("template") },
 			func(id widget.ListItemID, co fyne.CanvasObject) {
-				name := lists.filtered[id]
-				label := co.(*widget.Label)
-				program, err := repositories.ProgramRepo().Get(p.Name)
-				if err != nil {
-					log.Printf("Error getting program %s: %v", p.Name, err)
-					return
-				}
-				mask, err := program.MaskRepo().Get(name)
-				if err != nil {
-					return
-				}
-				label.SetText(mask.Name)
+				fyneui.RunOnMain(func() {
+					name := lists.filtered[id]
+					label := co.(*widget.Label)
+					program, err := appdata.Programs().Get(p.Name)
+					if err != nil {
+						log.Printf("Error getting program %s: %v", p.Name, err)
+						return
+					}
+					mask, err := program.MaskRepo().Get(name)
+					if err != nil {
+						return
+					}
+					label.SetText(mask.Name)
+				})
 			},
 		)
 
 		lists.masks.OnSelected = func(id widget.ListItemID) {
-			program, err := repositories.ProgramRepo().Get(p.Name)
+			program, err := appdata.Programs().Get(p.Name)
 			if err != nil {
 				log.Printf("Error getting program %s: %v", p.Name, err)
 				return
@@ -141,7 +144,7 @@ func setMasksForms() {
 				activeWire.ShowErrorWithEscape(fmt.Errorf("program cannot be empty"), activeWire.Window)
 				return
 			}
-			program, err := repositories.ProgramRepo().Get(p)
+			program, err := appdata.Programs().Get(p)
 			if err != nil {
 				log.Printf("Error getting program %s: %v", p, err)
 				return
@@ -172,7 +175,7 @@ func setMasksForms() {
 					renameMaskImage(p, oldkey, v.Name)
 				}
 
-				if err := repositories.ProgramRepo().Set(program.Name, program); err != nil {
+				if err := appdata.Programs().Set(program.Name, program); err != nil {
 					log.Printf("Error saving program %s: %v", p, err)
 					return
 				}
@@ -249,7 +252,7 @@ func setMasksButtons() {
 					return
 				}
 
-				program, err := repositories.ProgramRepo().Get(programName)
+				program, err := appdata.Programs().Get(programName)
 				if err != nil {
 					log.Printf("Error getting program %s: %v", programName, err)
 					return
@@ -257,7 +260,7 @@ func setMasksButtons() {
 				if err := program.MaskRepo().Set(mask.Name, mask); err != nil {
 					log.Printf("Error saving mask %s: %v", mask.Name, err)
 				}
-				if err := repositories.ProgramRepo().Set(program.Name, program); err != nil {
+				if err := appdata.Programs().Set(program.Name, program); err != nil {
 					log.Printf("Error saving program %s: %v", programName, err)
 				}
 

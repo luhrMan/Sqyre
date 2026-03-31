@@ -3,6 +3,7 @@ package actiondialog
 import (
 	"Sqyre/internal/assets"
 	"Sqyre/internal/config"
+	"Sqyre/internal/fyneui"
 	"Sqyre/internal/models/actions"
 	"Sqyre/internal/services"
 	"Sqyre/internal/uiutil"
@@ -21,7 +22,6 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
-	"github.com/go-vgo/robotgo"
 	"github.com/lithammer/fuzzysearch/fuzzy"
 )
 
@@ -74,32 +74,33 @@ func createImageSearchDialogContent(action *actions.ImageSearch) (fyne.CanvasObj
 			return container.NewStack(icon, removeBtn)
 		},
 		func(id widget.GridWrapItemID, o fyne.CanvasObject) {
-			if id >= len(tempTargets) {
-				return
-			}
-			target := tempTargets[id]
-			stack := o.(*fyne.Container)
-			var newIcon *canvas.Image
-			if path := uiutil.IconPathForTarget(target); path != "" {
-				if res := assets.GetFyneResource(path); res != nil {
-					newIcon = canvas.NewImageFromResource(res)
+			fyneui.RunCellUpdatesBatched(func() {
+				if id >= len(tempTargets) {
+					return
+				}
+				target := tempTargets[id]
+				stack := o.(*fyne.Container)
+				icon := stack.Objects[0].(*canvas.Image)
+				if path := uiutil.IconPathForTarget(target); path != "" {
+					if res := assets.GetFyneResource(path); res != nil {
+						icon.Resource = res
+					} else {
+						icon.Resource = assets.AppIcon
+					}
 				} else {
-					newIcon = canvas.NewImageFromResource(assets.AppIcon)
+					icon.Resource = assets.AppIcon
 				}
-			} else {
-				newIcon = canvas.NewImageFromResource(assets.AppIcon)
-			}
-			newIcon.SetMinSize(previewSize)
-			newIcon.FillMode = canvas.ImageFillContain
-			stack.Objects[0] = newIcon
+				icon.SetMinSize(previewSize)
+				icon.FillMode = canvas.ImageFillContain
 
-			removeBtn := stack.Objects[1].(*ttwidget.Button)
-			removeBtn.OnTapped = func() {
-				if removeTarget != nil {
-					removeTarget(target)
+				removeBtn := stack.Objects[1].(*ttwidget.Button)
+				removeBtn.OnTapped = func() {
+					if removeTarget != nil {
+						removeTarget(target)
+					}
 				}
-			}
-			removeBtn.SetToolTip("Remove this program/item from the search targets (does not delete the item from your data).")
+				removeBtn.SetToolTip("Remove this program/item from the search targets (does not delete the item from your data).")
+			})
 		},
 	)
 	previewLabel := ttwidget.NewLabel("Selected items:")
@@ -322,8 +323,8 @@ func createFindPixelDialogContent(action *actions.FindPixel) (fyne.CanvasObject,
 				fyne.DoAndWait(func() {
 					switch ev.Button {
 					case desktop.MouseButtonPrimary:
-						x, y := robotgo.Location()
-						hex := robotgo.GetPixelColor(x, y)
+						x, y := screenPointerXY()
+						hex := pixelColorHexAt(x, y)
 						hex = strings.TrimPrefix(strings.ToLower(hex), "#")
 						if len(hex) == 8 {
 							hex = hex[2:]
@@ -450,9 +451,11 @@ func createFocusWindowDialogContent(action *actions.FocusWindow) (fyne.CanvasObj
 		func() int { return len(filteredNames) },
 		func() fyne.CanvasObject { return widget.NewLabel("") },
 		func(id widget.ListItemID, co fyne.CanvasObject) {
-			if id < len(filteredNames) {
-				co.(*widget.Label).SetText(filteredNames[id])
-			}
+			fyneui.RunOnMain(func() {
+				if id < len(filteredNames) {
+					co.(*widget.Label).SetText(filteredNames[id])
+				}
+			})
 		},
 	)
 	windowList.OnSelected = func(id widget.ListItemID) {

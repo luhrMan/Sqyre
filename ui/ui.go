@@ -1,23 +1,17 @@
 package ui
 
 import (
-	"path/filepath"
-
 	"Sqyre/internal/config"
-	"Sqyre/internal/logger"
-	"Sqyre/internal/services"
 	"Sqyre/ui/editor"
 	"Sqyre/ui/macro"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/layout"
 	widget "fyne.io/fyne/v2/widget"
 	fynetooltip "github.com/dweymouth/fyne-tooltip"
-	"github.com/go-vgo/robotgo"
 )
 
 var (
@@ -43,7 +37,7 @@ type MainUi struct {
 func GetUi() *Ui { return ui }
 func InitializeUi(w fyne.Window) *Ui {
 	fyne.CurrentApp().Settings().SetTheme(NewSqyreTheme())
-	logger.SetLogFile(filepath.Join(config.GetSqyreDir(), "sqyre.log"))
+	setupUILogger()
 	restoreWindowGeometry(w)
 	w.SetCloseIntercept(func() {
 		saveWindowGeometry(w)
@@ -52,7 +46,7 @@ func InitializeUi(w fyne.Window) *Ui {
 			w.Hide()
 			return
 		}
-		services.LogMatProfile()
+		onCloseWithoutTray()
 		w.Close()
 	})
 	ui = &Ui{
@@ -131,15 +125,7 @@ func saveWindowGeometry(w fyne.Window) {
 		prefs.SetInt(config.PrefWindowHeight, int(size.Height))
 	}
 
-	// Persist desktop window bounds (x, y, w, h) from current process window.
-	pid := robotgo.GetPid()
-	x, y, width, height := robotgo.GetBounds(pid)
-	if width > 0 && height > 0 {
-		prefs.SetInt(config.PrefWindowX, x)
-		prefs.SetInt(config.PrefWindowY, y)
-		prefs.SetInt(config.PrefWindowWidth, width)
-		prefs.SetInt(config.PrefWindowHeight, height)
-	}
+	saveNativeWindowBounds(w, prefs)
 }
 
 func (u *Ui) ConstructUi() {
@@ -185,20 +171,5 @@ func (u *Ui) ConstructUi() {
 }
 
 func toggleMousePos() {
-	locX, locY := robotgo.Location()
-	blocX, blocY := binding.BindInt(&locX), binding.BindInt(&locY)
-	boundLocXLabel.Bind(binding.IntToString(blocX))
-	boundLocYLabel.Bind(binding.IntToString(blocY))
-	services.GoSafe(func() {
-		for {
-			robotgo.MilliSleep(100)
-			newLocX, newLocY := robotgo.Location()
-			if locX == newLocX && locY == newLocY {
-				continue
-			}
-			locX, locY = robotgo.Location()
-			blocX.Reload()
-			blocY.Reload()
-		}
-	})
+	runMousePositionReadout()
 }

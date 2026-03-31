@@ -16,7 +16,7 @@ help:
 	@echo "  windows        - cross-compile exe -> $(BIN)/windows-amd64/ (Docker + fyne-cross)"
 	@echo "  windows-matprofile - same with matprofile tag"
 	@echo "  appimage       - AppImage -> $(BIN)/ (AppDir still under scripts/linux/packaging/appimage/)"
-	@echo "  wasm           - browser demo -> $(BIN)/sqyre.wasm (needs CGO_ENABLED=0; set automatically)"
+	@echo "  wasm           - browser demo -> $(BIN)/sqyre-wasm.wasm (needs CGO_ENABLED=0; set automatically)"
 	@echo "  wasm-serve     - fyne serve web demo (CGO_ENABLED=0; port WASM_PORT=$(WASM_PORT))"
 
 $(BIN):
@@ -38,7 +38,7 @@ appimage:
 	./scripts/linux/packaging/appimage/build-appimage.sh
 
 wasm: $(BIN)
-	CGO_ENABLED=0 GOOS=js GOARCH=wasm go build -trimpath -buildvcs=false -o $(BIN)/sqyre.wasm ./cmd/sqyre-wasm
+	CGO_ENABLED=0 GOOS=js GOARCH=wasm go build -trimpath -buildvcs=false -o $(BIN)/sqyre-wasm.wasm ./cmd/sqyre-wasm
 
 wasm-serve:
 	CGO_ENABLED=0 $(FYNE) serve --src cmd/sqyre-wasm --icon $(ICON) --http-port $(WASM_PORT)

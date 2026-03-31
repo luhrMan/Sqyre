@@ -2,7 +2,7 @@ package actiondialog
 
 import (
 	"Sqyre/internal/models/actions"
-	"Sqyre/internal/models/repositories"
+	"Sqyre/internal/appdata"
 	"fmt"
 	"slices"
 	"strings"
@@ -112,7 +112,7 @@ func createSaveVariableDialogContent(action *actions.SaveVariable) (fyne.CanvasO
 }
 
 func createRunMacroDialogContent(action *actions.RunMacro) (fyne.CanvasObject, func()) {
-	macroNames := repositories.MacroRepo().GetAllKeys()
+	macroNames := appdata.Macros().GetAllKeys()
 	// Exclude the currently open macro to prevent infinite recursion
 	if cur := currentMacroName(); cur != "" {
 		macroNames = slices.DeleteFunc(macroNames, func(name string) bool { return name == cur })

@@ -1,3 +1,5 @@
+//go:build !js
+
 package services
 
 import (
@@ -7,7 +9,6 @@ import (
 	"log"
 	"os"
 	"slices"
-	"strings"
 	"sync"
 	"time"
 
@@ -38,30 +39,6 @@ func StartHook() {
 	log.Println("hook started")
 	s := hook.Start()
 	<-hook.Process(s)
-}
-
-func ParseMacroHotkey(hk string) []string {
-	if hk == "" {
-		return []string{}
-	}
-	parts := strings.Split(hk, "+")
-
-	for i, part := range parts {
-		parts[i] = strings.TrimSpace(part)
-	}
-	return parts
-}
-
-func ReverseParseMacroHotkey(hk []string) string {
-	var str string
-	for i, k := range hk {
-		if i == 0 {
-			str = k
-			continue
-		}
-		str = str + " + " + k
-	}
-	return str
 }
 
 // SuspendMacroHotkeys unregisters every macro hotkey. Nested calls count; each Suspend must be

@@ -1,3 +1,5 @@
+//go:build !js
+
 // Package screen provides desktop bounds in absolute coordinates: the same
 // space as robotgo.GetMousePos / robotgo.CaptureImg (virtual framebuffer / root
 // origin), not primary-monitor-relative.

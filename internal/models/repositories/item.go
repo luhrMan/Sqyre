@@ -29,6 +29,9 @@ func NewItemRepository(program *models.Program) *ItemRepository {
 			program.Items,
 			program.GetKey(),
 			func() error {
+				if models.PersistProgram != nil {
+					return models.PersistProgram(program)
+				}
 				return ProgramRepo().Set(program.GetKey(), program)
 			},
 		),

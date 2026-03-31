@@ -2,9 +2,10 @@ package editor
 
 import (
 	"Sqyre/internal/config"
+	"Sqyre/internal/fyneui"
 	"Sqyre/internal/models"
 	"Sqyre/internal/models/actions"
-	"Sqyre/internal/models/repositories"
+	"Sqyre/internal/appdata"
 	"Sqyre/internal/services"
 	"Sqyre/ui/custom_widgets"
 	"fmt"
@@ -49,7 +50,7 @@ func setAccordionSearchAreasLists(acc *widget.Accordion) {
 		sb.OnChanged = func(string) { setAccordionSearchAreasLists(acc) }
 	}
 
-	for _, p := range repositories.ProgramRepo().GetAllSortedByName() {
+	for _, p := range appdata.Programs().GetAllSortedByName() {
 		defaultList := p.SearchAreaRepo(config.MainMonitorSizeString).GetAllKeys()
 		filtered := filterKeysByFuzzy(filterText, defaultList)
 		sortSearchAreaKeysByDisplayName(p, filtered)
@@ -66,23 +67,25 @@ func setAccordionSearchAreasLists(acc *widget.Accordion) {
 			func() int { return len(lists.filtered) },
 			func() fyne.CanvasObject { return widget.NewLabel("template") },
 			func(id widget.ListItemID, co fyne.CanvasObject) {
-				name := lists.filtered[id]
-				label := co.(*widget.Label)
-				program, err := repositories.ProgramRepo().Get(p.Name)
-				if err != nil {
-					log.Printf("Error getting program %s: %v", p.Name, err)
-					return
-				}
-				sa, err := program.SearchAreaRepo(config.MainMonitorSizeString).Get(name)
-				if err != nil {
-					return
-				}
-				label.SetText(sa.Name)
+				fyneui.RunOnMain(func() {
+					name := lists.filtered[id]
+					label := co.(*widget.Label)
+					program, err := appdata.Programs().Get(p.Name)
+					if err != nil {
+						log.Printf("Error getting program %s: %v", p.Name, err)
+						return
+					}
+					sa, err := program.SearchAreaRepo(config.MainMonitorSizeString).Get(name)
+					if err != nil {
+						return
+					}
+					label.SetText(sa.Name)
+				})
 			},
 		)
 
 		lists.searchareas.OnSelected = func(id widget.ListItemID) {
-			program, err := repositories.ProgramRepo().Get(p.Name)
+			program, err := appdata.Programs().Get(p.Name)
 			if err != nil {
 				log.Printf("Error getting program %s: %v", p.Name, err)
 				return
@@ -124,7 +127,7 @@ func setAccordionPointsLists(acc *widget.Accordion) {
 		sb.OnChanged = func(string) { setAccordionPointsLists(acc) }
 	}
 
-	for _, p := range repositories.ProgramRepo().GetAllSortedByName() {
+	for _, p := range appdata.Programs().GetAllSortedByName() {
 		defaultList := p.PointRepo(config.MainMonitorSizeString).GetAllKeys()
 		filtered := filterKeysByFuzzy(filterText, defaultList)
 		sortPointKeysByDisplayName(p, filtered)
@@ -141,23 +144,25 @@ func setAccordionPointsLists(acc *widget.Accordion) {
 			func() int { return len(lists.filtered) },
 			func() fyne.CanvasObject { return widget.NewLabel("template") },
 			func(id widget.ListItemID, co fyne.CanvasObject) {
-				name := lists.filtered[id]
-				label := co.(*widget.Label)
-				program, err := repositories.ProgramRepo().Get(p.Name)
-				if err != nil {
-					log.Printf("Error getting program %s: %v", p.Name, err)
-					return
-				}
-				point, err := program.PointRepo(config.MainMonitorSizeString).Get(name)
-				if err != nil {
-					return
-				}
-				label.SetText(point.Name)
+				fyneui.RunOnMain(func() {
+					name := lists.filtered[id]
+					label := co.(*widget.Label)
+					program, err := appdata.Programs().Get(p.Name)
+					if err != nil {
+						log.Printf("Error getting program %s: %v", p.Name, err)
+						return
+					}
+					point, err := program.PointRepo(config.MainMonitorSizeString).Get(name)
+					if err != nil {
+						return
+					}
+					label.SetText(point.Name)
+				})
 			},
 		)
 
 		lists.points.OnSelected = func(id widget.ListItemID) {
-			program, err := repositories.ProgramRepo().Get(p.Name)
+			program, err := appdata.Programs().Get(p.Name)
 			if err != nil {
 				log.Printf("Error getting program %s: %v", p.Name, err)
 				return
@@ -192,7 +197,7 @@ func setAccordionAutoPicSearchAreasLists(acc *widget.Accordion) {
 		sb.OnChanged = func(string) { setAccordionAutoPicSearchAreasLists(acc) }
 	}
 
-	for _, p := range repositories.ProgramRepo().GetAllSortedByName() {
+	for _, p := range appdata.Programs().GetAllSortedByName() {
 		defaultList := p.SearchAreaRepo(config.MainMonitorSizeString).GetAllKeys()
 		filtered := filterKeysByFuzzy(filterText, defaultList)
 		sortSearchAreaKeysByDisplayName(p, filtered)
@@ -209,18 +214,20 @@ func setAccordionAutoPicSearchAreasLists(acc *widget.Accordion) {
 			func() int { return len(lists.filtered) },
 			func() fyne.CanvasObject { return widget.NewLabel("template") },
 			func(id widget.ListItemID, co fyne.CanvasObject) {
-				name := lists.filtered[id]
-				label := co.(*widget.Label)
-				program, err := repositories.ProgramRepo().Get(p.Name)
-				if err != nil {
-					log.Printf("Error getting program %s: %v", p.Name, err)
-					return
-				}
-				sa, err := program.SearchAreaRepo(config.MainMonitorSizeString).Get(name)
-				if err != nil {
-					return
-				}
-				label.SetText(sa.Name)
+				fyneui.RunOnMain(func() {
+					name := lists.filtered[id]
+					label := co.(*widget.Label)
+					program, err := appdata.Programs().Get(p.Name)
+					if err != nil {
+						log.Printf("Error getting program %s: %v", p.Name, err)
+						return
+					}
+					sa, err := program.SearchAreaRepo(config.MainMonitorSizeString).Get(name)
+					if err != nil {
+						return
+					}
+					label.SetText(sa.Name)
+				})
 			},
 		)
 
@@ -229,7 +236,7 @@ func setAccordionAutoPicSearchAreasLists(acc *widget.Accordion) {
 				log.Printf("AutoPic: Invalid selection ID %d, filtered list length: %d", id, len(lists.filtered))
 				return
 			}
-			program, err := repositories.ProgramRepo().Get(p.Name)
+			program, err := appdata.Programs().Get(p.Name)
 			if err != nil {
 				log.Printf("AutoPic: Error getting program %s: %v", p.Name, err)
 				return

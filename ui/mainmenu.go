@@ -1,11 +1,10 @@
 package ui
 
 import (
+	"Sqyre/internal/appdata"
 	"Sqyre/internal/models/actions"
-	"Sqyre/internal/models/repositories"
 	"Sqyre/ui/macro/actiondialog"
 	"log"
-	"strconv"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -13,7 +12,6 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
-	"github.com/go-vgo/robotgo"
 )
 
 type actionTemplate struct {
@@ -148,7 +146,7 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 			mt.SelectedNode = a.GetUID()
 			uid := a.GetUID()
 			actiondialog.ShowActionDialog(a, func(updatedAction actions.ActionInterface) {
-				if err := repositories.MacroRepo().Set(mt.Macro.Name, mt.Macro); err != nil {
+				if err := appdata.Macros().Set(mt.Macro.Name, mt.Macro); err != nil {
 					log.Printf("failed to save macro after new action edit: %v", err)
 				}
 				mt.RefreshItem(uid)
@@ -186,14 +184,7 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 	miscActionsSubMenu.ChildMenu = fyne.NewMenu("", miscItems...)
 
 	computerInfo := fyne.NewMenuItem("Computer info", func() {
-		var str string
-		w, h := robotgo.GetScreenSize()
-		str = str + "Total Screen Size: " + strconv.Itoa(w) + "x" + strconv.Itoa(h) + "\n"
-		for d := range robotgo.DisplaysNum() {
-			_, _, mh, mw := robotgo.GetDisplayBounds(d)
-			str = str + "Monitor " + strconv.Itoa(d+1) + " Size: " + strconv.Itoa(mh) + "x" + strconv.Itoa(mw) + "\n"
-		}
-		ShowInformationWithEscape("Computer Information", str, u.Window)
+		ShowInformationWithEscape("Computer Information", computerInfoText(), u.Window)
 	})
 
 	editor := fyne.NewMenuItem("Data Editor", func() {

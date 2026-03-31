@@ -2,12 +2,8 @@ package actiondialog
 
 import (
 	"Sqyre/internal/models/actions"
-	"Sqyre/internal/screen"
-	"Sqyre/internal/services"
 	"Sqyre/ui/custom_widgets"
 	"fmt"
-	"image"
-	"image/color"
 	"strconv"
 	"strings"
 
@@ -17,8 +13,6 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
-	"github.com/go-vgo/robotgo"
-	"gocv.io/x/gocv"
 )
 
 func createWaitDialogContent(action *actions.Wait) (fyne.CanvasObject, func()) {
@@ -82,68 +76,8 @@ func createMoveDialogContent(action *actions.Move) (fyne.CanvasObject, func()) {
 		}
 	}
 
-	// Helper function to update preview image (uses pointCoordToInt so variable refs show no marker)
 	updatePreview := func(point *actions.Point) {
-		if point == nil {
-			pointPreviewImage.Image = nil
-			pointPreviewImage.Refresh()
-			return
-		}
-
-		px := pointCoordToInt(point.X)
-		py := pointCoordToInt(point.Y)
-
-		vb := screen.VirtualBounds()
-		if px < vb.Min.X || py < vb.Min.Y || px > vb.Max.X || py > vb.Max.Y {
-			pointPreviewImage.Image = nil
-			pointPreviewImage.Refresh()
-			return
-		}
-
-		// Attempt to capture the full screen with error recovery
-		defer func() {
-			if r := recover(); r != nil {
-				services.LogPanicToFile(r, "Action dialog: point preview capture")
-				pointPreviewImage.Image = nil
-				pointPreviewImage.Refresh()
-			}
-		}()
-
-		captureImg, err := robotgo.CaptureImg(vb.Min.X, vb.Min.Y, vb.Dx(), vb.Dy())
-		if err != nil || captureImg == nil {
-			pointPreviewImage.Image = nil
-			pointPreviewImage.Refresh()
-			return
-		}
-
-		// Convert to gocv Mat for drawing
-		mat, err := gocv.ImageToMatRGB(captureImg)
-		if err != nil {
-			pointPreviewImage.Image = nil
-			pointPreviewImage.Refresh()
-			return
-		}
-		defer mat.Close()
-
-		center := image.Point{X: px - vb.Min.X, Y: py - vb.Min.Y}
-		redColor := color.RGBA{R: 255, A: 255}
-
-		gocv.Circle(&mat, center, 8, redColor, 2)
-
-		gocv.Line(&mat, image.Point{X: center.X - 15, Y: center.Y}, image.Point{X: center.X + 15, Y: center.Y}, redColor, 2)
-		gocv.Line(&mat, image.Point{X: center.X, Y: center.Y - 15}, image.Point{X: center.X, Y: center.Y + 15}, redColor, 2)
-
-		// Convert back to image.Image
-		previewImg, err := mat.ToImage()
-		if err != nil {
-			pointPreviewImage.Image = nil
-			pointPreviewImage.Refresh()
-			return
-		}
-
-		// Update preview image
-		pointPreviewImage.Image = previewImg
-		pointPreviewImage.Refresh()
+		refreshMovePointPreview(pointPreviewImage, point)
 	}
 
 	// Points accordion with searchbar above (fuzzy match program name + point name)

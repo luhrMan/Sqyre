@@ -31,6 +31,9 @@ func NewMaskRepository(program *models.Program) *MaskRepository {
 			program.Masks,
 			program.GetKey(),
 			func() error {
+				if models.PersistProgram != nil {
+					return models.PersistProgram(program)
+				}
 				return ProgramRepo().Set(program.GetKey(), program)
 			},
 		),

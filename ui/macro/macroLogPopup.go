@@ -5,8 +5,6 @@ import (
 
 	"Sqyre/internal/services"
 
-	"github.com/go-vgo/robotgo"
-
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
@@ -71,7 +69,9 @@ func ShowMacroLogPopup(macroName string) {
 	scrollContainer := container.NewScroll(logEntry)
 
 	copyBtn := widget.NewButtonWithIcon("Copy", theme.ContentCopyIcon(), func() {
-		robotgo.WriteAll(logEntry.Text)
+		if c := fyne.CurrentApp().Clipboard(); c != nil {
+			c.SetContent(logEntry.Text)
+		}
 	})
 	copyBtn.Importance = widget.MediumImportance
 

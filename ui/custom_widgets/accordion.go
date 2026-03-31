@@ -1,6 +1,8 @@
 package custom_widgets
 
 import (
+	"Sqyre/internal/fyneui"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
@@ -169,10 +171,13 @@ func (r *accordionWithHeaderRenderer) MinSize() fyne.Size {
 }
 
 func (r *accordionWithHeaderRenderer) Refresh() {
-	r.minSizeCache = fyne.Size{}
-	r.updateObjects()
-	r.Layout(r.acc.Size())
-	canvas.Refresh(r.acc)
+	// Renderer refresh can run from the wasm/JS path; child widget Refresh must use the Fyne main thread.
+	fyneui.RunOnMain(func() {
+		r.minSizeCache = fyne.Size{}
+		r.updateObjects()
+		r.Layout(r.acc.Size())
+		canvas.Refresh(r.acc)
+	})
 }
 
 func (r *accordionWithHeaderRenderer) updateObjects() {

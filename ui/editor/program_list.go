@@ -1,7 +1,8 @@
 package editor
 
 import (
-	"Sqyre/internal/models/repositories"
+	"Sqyre/internal/appdata"
+	"Sqyre/internal/fyneui"
 	"log"
 
 	"fyne.io/fyne/v2"
@@ -12,11 +13,11 @@ import (
 func setProgramList(list *widget.List) {
 	et := shell().EditorTabs.ProgramsTab
 	searchbar := et.Widgets["searchbar"].(*widget.Entry)
-	var filtered = repositories.ProgramRepo().GetAllKeys()
+	var filtered = appdata.Programs().GetAllKeys()
 
 	searchbar.SetPlaceHolder("Search here")
 	searchbar.OnChanged = func(s string) {
-		defaultList := repositories.ProgramRepo().GetAllKeys()
+		defaultList := appdata.Programs().GetAllKeys()
 		defer list.ScrollToTop()
 		defer list.Refresh()
 
@@ -39,13 +40,15 @@ func setProgramList(list *widget.List) {
 		return widget.NewLabel("template")
 	}
 	list.UpdateItem = func(lii widget.ListItemID, co fyne.CanvasObject) {
-		label := co.(*widget.Label)
-		pname := filtered[lii]
-		label.SetText(pname)
+		fyneui.RunOnMain(func() {
+			label := co.(*widget.Label)
+			pname := filtered[lii]
+			label.SetText(pname)
+		})
 	}
 	list.OnSelected = func(id widget.ListItemID) {
 		et.Widgets["Name"].(*widget.Entry).SetText(filtered[id])
-		program, err := repositories.ProgramRepo().Get(filtered[id])
+		program, err := appdata.Programs().Get(filtered[id])
 		if err != nil {
 			log.Printf("Error getting program %s: %v", filtered[id], err)
 			return

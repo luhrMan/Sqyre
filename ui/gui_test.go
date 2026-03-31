@@ -1,3 +1,5 @@
+//go:build !js
+
 // Package ui_test runs GUI tests using Fyne's headless test driver.
 //
 // Run with SQUIRE_UI_TEST=1 so the UI skips robotgo for mouse position and

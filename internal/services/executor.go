@@ -1,3 +1,5 @@
+//go:build !js
+
 package services
 
 import (
@@ -25,6 +27,12 @@ func Execute(a actions.ActionInterface, macro ...*models.Macro) error {
 	var macroCtx *models.Macro
 	if len(macro) > 0 {
 		macroCtx = macro[0]
+	}
+	if macroCtx != nil {
+		if macroCtx.Variables == nil {
+			macroCtx.Variables = models.NewVariableStore()
+		}
+		ApplyScreenBoundsVariables(macroCtx.Variables)
 	}
 	return executeWithContext(a, macroCtx)
 }
@@ -439,6 +447,10 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 		if targetMacro.Root == nil {
 			return fmt.Errorf("run macro: macro %q has no root", node.MacroName)
 		}
+		if targetMacro.Variables == nil {
+			targetMacro.Variables = models.NewVariableStore()
+		}
+		ApplyScreenBoundsVariables(targetMacro.Variables)
 		return executeWithContext(targetMacro.Root, targetMacro)
 	case *actions.FindPixel:
 		log.Println("Find pixel:", node.String())

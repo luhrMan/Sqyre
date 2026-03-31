@@ -3,7 +3,7 @@ package editor
 import (
 	"Sqyre/internal/config"
 	"Sqyre/internal/models"
-	"Sqyre/internal/models/repositories"
+	"Sqyre/internal/appdata"
 	"Sqyre/internal/services"
 	"Sqyre/ui/custom_widgets"
 	"errors"
@@ -20,7 +20,6 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/widget"
-	"github.com/go-vgo/robotgo"
 )
 
 var (
@@ -257,7 +256,7 @@ func setEditorPreviewRefreshButtons() {
 // selectFirstProgramInEditorIfAny selects the first program (sorted keys) in the list and
 // program selector when the editor UI is first wired up.
 func selectFirstProgramInEditorIfAny() {
-	if len(repositories.ProgramRepo().GetAllKeys()) == 0 {
+	if len(appdata.Programs().GetAllKeys()) == 0 {
 		return
 	}
 	et := shell().EditorTabs
@@ -268,7 +267,7 @@ func selectFirstProgramInEditorIfAny() {
 
 // updateProgramSelectorOptions refreshes every per-tab program selector with current programs.
 func updateProgramSelectorOptions() {
-	opts := repositories.ProgramRepo().GetAllKeys()
+	opts := appdata.Programs().GetAllKeys()
 	et := shell().EditorTabs
 	for _, tab := range []*EditorTab{
 		et.ItemsTab, et.PointsTab,
@@ -328,7 +327,7 @@ func setEditorLists() {
 	setAccordionMasksLists(
 		et.MasksTab.Widgets["Accordion"].(*widget.Accordion),
 	)
-	et.ProgramsTab.SelectedItem = repositories.ProgramRepo().New()
+	et.ProgramsTab.SelectedItem = appdata.Programs().New()
 	// Note: For nested models, we need a program context to get repositories
 	// These will be set to proper instances when a program is selected
 	et.ItemsTab.SelectedItem = &models.Item{}
@@ -347,11 +346,11 @@ func setEditorForms() {
 		if si, ok := et.ProgramsTab.SelectedItem.(*models.Program); ok {
 			applyProgramUpdate := func() {
 				v := si
-				if err := repositories.ProgramRepo().Delete(si.Name); err != nil {
+				if err := appdata.Programs().Delete(si.Name); err != nil {
 					log.Printf("Error deleting program %s: %v", si.Name, err)
 				}
 				v.Name = n
-				if err := repositories.ProgramRepo().Set(v.Name, v); err != nil {
+				if err := appdata.Programs().Set(v.Name, v); err != nil {
 					log.Printf("Error setting program %s: %v", v.Name, err)
 					return
 				}
@@ -363,7 +362,7 @@ func setEditorForms() {
 
 			if si.Name != n {
 				if shouldConfirmOverwrite("program", n, func(name string) bool {
-					_, err := repositories.ProgramRepo().Get(name)
+					_, err := appdata.Programs().Get(name)
 					return err == nil
 				}, activeWire.Window, applyProgramUpdate) {
 					return
@@ -403,7 +402,7 @@ func setEditorForms() {
 
 				// Save the item
 				p := shell().EditorTabs.ItemsTab.ProgramSelector.Selected
-				program, err := repositories.ProgramRepo().Get(p)
+				program, err := appdata.Programs().Get(p)
 				if err != nil {
 					log.Printf("Error getting program %s: %v", p, err)
 					return
@@ -415,7 +414,7 @@ func setEditorForms() {
 					return
 				}
 
-				if err := repositories.ProgramRepo().Set(program.Name, program); err != nil {
+				if err := appdata.Programs().Set(program.Name, program); err != nil {
 					log.Printf("Error saving program %s: %v", p, err)
 					return
 				}
@@ -484,7 +483,7 @@ func setEditorForms() {
 				activeWire.ShowErrorWithEscape(errors.New("program cannot be empty"), activeWire.Window)
 				return
 			}
-			program, err := repositories.ProgramRepo().Get(p)
+			program, err := appdata.Programs().Get(p)
 			if err != nil {
 				log.Printf("Error getting program %s: %v", p, err)
 				return
@@ -534,7 +533,7 @@ func setEditorForms() {
 					return
 				}
 
-				if err := repositories.ProgramRepo().Set(program.Name, program); err != nil {
+				if err := appdata.Programs().Set(program.Name, program); err != nil {
 					log.Printf("Error saving program %s: %v", p, err)
 					return
 				}
@@ -584,7 +583,7 @@ func setEditorForms() {
 				activeWire.ShowErrorWithEscape(errors.New("program cannot be empty"), activeWire.Window)
 				return
 			}
-			program, err := repositories.ProgramRepo().Get(p)
+			program, err := appdata.Programs().Get(p)
 			if err != nil {
 				log.Printf("Error getting program %s: %v", p, err)
 				return
@@ -609,7 +608,7 @@ func setEditorForms() {
 					}
 				}
 
-				if err := repositories.ProgramRepo().Set(program.Name, program); err != nil {
+				if err := appdata.Programs().Set(program.Name, program); err != nil {
 					log.Printf("Error saving program %s: %v", p, err)
 					return
 				}
@@ -652,7 +651,7 @@ func setEditorForms() {
 					fyne.DoAndWait(func() {
 						switch ev.Button {
 						case desktop.MouseButtonPrimary:
-							x, y := robotgo.Location()
+							x, y := screenPointerAbs()
 							custom_widgets.SetEntryText(et.PointsTab.Widgets["X"], strconv.Itoa(x))
 							custom_widgets.SetEntryText(et.PointsTab.Widgets["Y"], strconv.Itoa(y))
 							dismissOverlay()
@@ -698,7 +697,7 @@ func setEditorForms() {
 							dismissOverlay()
 							return
 						}
-						adjX, adjY := robotgo.Location()
+						adjX, adjY := screenPointerAbs()
 						mu.Lock()
 						if !firstClickDone {
 							leftX, topY = adjX, adjY
@@ -756,7 +755,7 @@ func setEditorForms() {
 							if !done {
 								setSelectionRect(0, 0, 0, 0)
 							} else {
-								x, y := robotgo.Location()
+								x, y := screenPointerAbs()
 								rx, by := x, y
 								if lx > rx {
 									lx, rx = rx, lx
@@ -812,7 +811,7 @@ func setEditorForms() {
 				activeWire.ShowErrorWithEscape(errors.New("program cannot be empty"), activeWire.Window)
 				return
 			}
-			program, err := repositories.ProgramRepo().Get(p)
+			program, err := appdata.Programs().Get(p)
 			if err != nil {
 				log.Printf("Error getting program %s: %v", p, err)
 				return
@@ -838,7 +837,7 @@ func setEditorForms() {
 					}
 				}
 
-				if err := repositories.ProgramRepo().Set(program.Name, program); err != nil {
+				if err := appdata.Programs().Set(program.Name, program); err != nil {
 					log.Printf("Error saving program %s: %v", p, err)
 					return
 				}
@@ -892,11 +891,11 @@ func shouldConfirmOverwrite(entityType, targetName string, existsFn func(name st
 
 // getOrCreateProgram retrieves a program by name or creates it if it doesn't exist.
 func getOrCreateProgram(pn string) *models.Program {
-	pro, err := repositories.ProgramRepo().Get(pn)
+	pro, err := appdata.Programs().Get(pn)
 	if err != nil {
-		pro = repositories.ProgramRepo().New()
+		pro = appdata.Programs().New()
 		pro.Name = pn
-		if err := repositories.ProgramRepo().Set(pro.Name, pro); err != nil {
+		if err := appdata.Programs().Set(pro.Name, pro); err != nil {
 			activeWire.ShowErrorWithEscape(err, activeWire.Window)
 			return nil
 		}

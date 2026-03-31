@@ -2,6 +2,7 @@ package macro
 
 import (
 	"Sqyre/internal/assets"
+	"Sqyre/internal/fyneui"
 	"Sqyre/internal/models"
 	"Sqyre/internal/models/actions"
 	"Sqyre/internal/models/serialize"
@@ -108,67 +109,70 @@ func (mt *MacroTree) setTree() {
 		return container.NewBorder(nil, nil, leftSide, removeBtn, contentScroll)
 	}
 	mt.UpdateNode = func(uid string, branch bool, obj fyne.CanvasObject) {
-		node := mt.Macro.Root.GetAction(uid)
+		// Tree updates can run from the wasm/JS event path; keep UI work on the Fyne main thread.
+		fyneui.RunOnMain(func() {
+			node := mt.Macro.Root.GetAction(uid)
 
-		c := obj.(*fyne.Container)
-		leftSide := c.Objects[1].(*fyne.Container)
-		iconStack := leftSide.Objects[0].(*fyne.Container)
-		iconBg := iconStack.Objects[0].(*canvas.Rectangle)
-		actionIconBtn := iconStack.Objects[1].(*ttwidget.Button)
-		removeButton := c.Objects[2].(*widget.Button)
-		contentScroll := c.Objects[0].(*container.Scroll)
-		scrollContent, ok := contentScroll.Content.(*fyne.Container)
-		if !ok || len(scrollContent.Objects) < 2 {
-			return
-		}
-		displayHolder := scrollContent.Objects[0].(*fyne.Container)
-		itemIconsHolder := scrollContent.Objects[1].(*fyne.Container)
-		displayContainer := displayHolder.Objects[0].(*fyne.Container)
-		itemIconsBox := itemIconsHolder.Objects[0].(*fyne.Container)
+			c := obj.(*fyne.Container)
+			leftSide := c.Objects[1].(*fyne.Container)
+			iconStack := leftSide.Objects[0].(*fyne.Container)
+			iconBg := iconStack.Objects[0].(*canvas.Rectangle)
+			actionIconBtn := iconStack.Objects[1].(*ttwidget.Button)
+			removeButton := c.Objects[2].(*widget.Button)
+			contentScroll := c.Objects[0].(*container.Scroll)
+			scrollContent, ok := contentScroll.Content.(*fyne.Container)
+			if !ok || len(scrollContent.Objects) < 2 {
+				return
+			}
+			displayHolder := scrollContent.Objects[0].(*fyne.Container)
+			itemIconsHolder := scrollContent.Objects[1].(*fyne.Container)
+			displayContainer := displayHolder.Objects[0].(*fyne.Container)
+			itemIconsBox := itemIconsHolder.Objects[0].(*fyne.Container)
 
-		displayContainer.Objects = []fyne.CanvasObject{node.Display()}
-		displayContainer.Refresh()
-		iconBg.FillColor = macroTreeActionColor(node)
-		iconBg.Refresh()
-		actionIconBtn.SetIcon(node.Icon())
-		actionIconBtn.SetToolTip(node.GetType())
-		actionIconBtn.Importance = widget.LowImportance
-		actionIconBtn.OnTapped = nil
-		if mt.OnOpenActionDialog != nil {
-			action := node
-			actionIconBtn.OnTapped = func() { mt.OnOpenActionDialog(action) }
-		}
+			displayContainer.Objects = []fyne.CanvasObject{node.Display()}
+			displayContainer.Refresh()
+			iconBg.FillColor = macroTreeActionColor(node)
+			iconBg.Refresh()
+			actionIconBtn.SetIcon(node.Icon())
+			actionIconBtn.SetToolTip(node.GetType())
+			actionIconBtn.Importance = widget.LowImportance
+			actionIconBtn.OnTapped = nil
+			if mt.OnOpenActionDialog != nil {
+				action := node
+				actionIconBtn.OnTapped = func() { mt.OnOpenActionDialog(action) }
+			}
 
-		itemIconsBox.Objects = itemIconsBox.Objects[:0]
-		if is, ok := node.(*actions.ImageSearch); ok && len(is.Targets) > 0 {
-			previewSize := fyne.NewSize(treeItemIconSize, treeItemIconSize)
-			for _, target := range is.Targets {
-				if path := uiutil.IconPathForTarget(target); path != "" {
-					if res := assets.GetFyneResource(path); res != nil {
-						img := canvas.NewImageFromResource(res)
-						img.SetMinSize(previewSize)
-						img.FillMode = canvas.ImageFillContain
-						itemIconsBox.Add(img)
+			itemIconsBox.Objects = itemIconsBox.Objects[:0]
+			if is, ok := node.(*actions.ImageSearch); ok && len(is.Targets) > 0 {
+				previewSize := fyne.NewSize(treeItemIconSize, treeItemIconSize)
+				for _, target := range is.Targets {
+					if path := uiutil.IconPathForTarget(target); path != "" {
+						if res := assets.GetFyneResource(path); res != nil {
+							img := canvas.NewImageFromResource(res)
+							img.SetMinSize(previewSize)
+							img.FillMode = canvas.ImageFillContain
+							itemIconsBox.Add(img)
+						}
 					}
 				}
+			} else if wfp, ok := node.(*actions.FindPixel); ok {
+				if col, ok := uiutil.HexToColor(wfp.TargetColor); ok {
+					swatch := canvas.NewRectangle(col)
+					swatch.SetMinSize(fyne.NewSize(treeItemIconSize, treeItemIconSize))
+					itemIconsBox.Add(swatch)
+				}
 			}
-		} else if wfp, ok := node.(*actions.FindPixel); ok {
-			if col, ok := uiutil.HexToColor(wfp.TargetColor); ok {
-				swatch := canvas.NewRectangle(col)
-				swatch.SetMinSize(fyne.NewSize(treeItemIconSize, treeItemIconSize))
-				itemIconsBox.Add(swatch)
-			}
-		}
-		itemIconsBox.Refresh()
+			itemIconsBox.Refresh()
 
-		removeButton.OnTapped = func() {
-			node.GetParent().RemoveSubAction(node)
-			mt.RefreshItem(uid)
-			if len(mt.Macro.Root.SubActions) == 0 || mt.SelectedNode == node.GetUID() {
-				mt.SelectedNode = ""
+			removeButton.OnTapped = func() {
+				node.GetParent().RemoveSubAction(node)
+				mt.RefreshItem(uid)
+				if len(mt.Macro.Root.SubActions) == 0 || mt.SelectedNode == node.GetUID() {
+					mt.SelectedNode = ""
+				}
 			}
-		}
-		removeButton.Show()
+			removeButton.Show()
+		})
 	}
 }
 

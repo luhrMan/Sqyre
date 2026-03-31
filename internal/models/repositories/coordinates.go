@@ -44,6 +44,9 @@ func NewPointRepository(program *models.Program, resolutionKey string) *PointRep
 			coords.Points,
 			program.GetKey()+"|"+resolutionKey,
 			func() error {
+				if models.PersistProgram != nil {
+					return models.PersistProgram(program)
+				}
 				return ProgramRepo().Set(program.GetKey(), program)
 			},
 		),
@@ -90,6 +93,9 @@ func NewSearchAreaRepository(program *models.Program, resolutionKey string) *Sea
 			coords.SearchAreas,
 			program.GetKey()+"|"+resolutionKey,
 			func() error {
+				if models.PersistProgram != nil {
+					return models.PersistProgram(program)
+				}
 				return ProgramRepo().Set(program.GetKey(), program)
 			},
 		),

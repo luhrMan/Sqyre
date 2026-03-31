@@ -4,8 +4,6 @@ import (
 	"Sqyre/internal/config"
 	"strconv"
 	"sync"
-
-	"gocv.io/x/gocv"
 )
 
 // ItemRepositoryInterface defines the interface for item data access operations.
@@ -82,8 +80,7 @@ type Program struct {
 	Name        string
 	Items       map[string]*Item
 	Coordinates map[string]*Coordinates
-	Masks       map[string]*Mask
-	masks       map[string]func(f ...any) *gocv.Mat
+	Masks map[string]*Mask
 
 	itemRepo        ItemRepositoryInterface                  // Lazy-initialized ItemRepository
 	pointRepos      map[string]PointRepositoryInterface      // Lazy-initialized PointRepositories keyed by resolution
@@ -130,12 +127,7 @@ func NewProgram() *Program {
 			},
 		},
 		Masks: make(map[string]*Mask),
-		masks: make(map[string]func(f ...any) *gocv.Mat),
 	}
-}
-
-func (p *Program) GetMasks() map[string]func(f ...any) *gocv.Mat {
-	return p.masks
 }
 
 // ItemRepo returns an ItemRepository for managing this program's items.
