@@ -1,0 +1,9 @@
+# Smaller/faster docker build context (images only COPY under scripts/ and similar).
+.git
+.github
+.cache
+*.test
+bin
+*.AppImage
+*.zip
+*.exe

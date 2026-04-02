@@ -13,6 +13,9 @@ on:
 jobs:
   build-linux:
     runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      packages: write
     outputs:
       version: ${{ steps.version.outputs.VERSION }}
     steps:
@@ -30,6 +33,21 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: GHCR image ref for Buildx cache
+        id: ghcr
+        run: |
+          o=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          n=$(echo "${{ github.event.repository.name }}" | tr '[:upper:]' '[:lower:]')
+          echo "buildcache=ghcr.io/${o}/${n}-buildcache:linux" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GitHub Container Registry (Buildx cache)
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # GHA cache can evict large layers; GHCR registry cache keeps OpenCV build layers across runs.
       - name: Build Linux image
         uses: docker/build-push-action@v6
         with:
@@ -37,8 +55,12 @@ jobs:
           file: .devcontainer/Dockerfile
           load: true
           tags: sqyre-linux-build:latest
-          cache-from: type=gha,scope=sqyre-linux
-          cache-to: type=gha,mode=max,scope=sqyre-linux
+          cache-from: |
+            type=registry,ref=${{ steps.ghcr.outputs.buildcache }}
+            type=gha,scope=sqyre-linux
+          cache-to: |
+            type=gha,mode=max,scope=sqyre-linux
+            type=registry,ref=${{ steps.ghcr.outputs.buildcache }},mode=max
 
       - name: Cache tessdata
         id: tessdata-linux
@@ -116,6 +138,9 @@ jobs:
 
   build-windows:
     runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      packages: write
     outputs:
       version: ${{ steps.version.outputs.VERSION }}
     steps:
@@ -145,6 +170,20 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: GHCR image ref for Buildx cache
+        id: ghcr
+        run: |
+          o=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          n=$(echo "${{ github.event.repository.name }}" | tr '[:upper:]' '[:lower:]')
+          echo "buildcache=ghcr.io/${o}/${n}-buildcache:windows" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GitHub Container Registry (Buildx cache)
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build Windows image
         uses: docker/build-push-action@v6
         with:
@@ -152,8 +191,12 @@ jobs:
           file: scripts/windows/docker/Dockerfile.windows-amd64
           load: true
           tags: fyne-cross-windows:local
-          cache-from: type=gha,scope=sqyre-windows
-          cache-to: type=gha,mode=max,scope=sqyre-windows
+          cache-from: |
+            type=registry,ref=${{ steps.ghcr.outputs.buildcache }}
+            type=gha,scope=sqyre-windows
+          cache-to: |
+            type=gha,mode=max,scope=sqyre-windows
+            type=registry,ref=${{ steps.ghcr.outputs.buildcache }},mode=max
 
       - name: Cache tessdata
         id: tessdata-windows
