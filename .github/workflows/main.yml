@@ -76,6 +76,17 @@ jobs:
           curl -sL -o internal/assets/tessdata/eng.traineddata \
             https://github.com/tesseract-ocr/tessdata/raw/main/eng.traineddata
 
+      # Persist module + build cache for dockerized `go build` (bind-mounted paths).
+      - name: Cache Go modules and build cache (Linux)
+        uses: actions/cache@v4
+        with:
+          path: |
+            .cache/go-mod
+            .cache/go-build
+          key: linux-go-${{ hashFiles('go.sum') }}
+          restore-keys: |
+            linux-go-
+
       - name: Prepare shared Go caches
         run: |
           mkdir -p .cache/go-build .cache/go-mod
@@ -160,7 +171,8 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.25"
+          go-version-file: go.mod
+          cache: true
 
       - name: Install fyne-cross
         run: |
@@ -218,9 +230,20 @@ jobs:
               https://github.com/tesseract-ocr/tessdata/raw/main/eng.traineddata
           fi
 
+      # fyne-cross stores downloaded modules/sources under -cache (default ~/.cache/fyne-cross).
+      - name: Cache fyne-cross dependencies
+        uses: actions/cache@v4
+        with:
+          path: .cache/fyne-cross
+          key: windows-fyne-cross-${{ hashFiles('go.sum') }}
+          restore-keys: |
+            windows-fyne-cross-
+
       - name: Cross-compile for Windows
         run: |
+          mkdir -p .cache/fyne-cross
           fyne-cross windows \
+            -cache "${{ github.workspace }}/.cache/fyne-cross" \
             -image fyne-cross-windows:local \
             --app-id com.sqyre.app \
             ./cmd/sqyre
