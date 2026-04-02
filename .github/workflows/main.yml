@@ -256,9 +256,12 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Download all artifacts
+      # Only release zips — do not use "download all": Buildx GHA cache uploads
+      # *.dockerbuild artifacts on the same run; those are not valid release inputs and can fail to extract.
+      - name: Download release zip artifacts
         uses: actions/download-artifact@v4
         with:
+          pattern: "*-zip"
           path: artifacts
 
       - name: Create Release
