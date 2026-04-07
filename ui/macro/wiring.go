@@ -1,6 +1,7 @@
 package macro
 
 import (
+	"Sqyre/internal/desktop"
 	"Sqyre/internal/models"
 	"Sqyre/internal/models/actions"
 	"Sqyre/internal/models/repositories"
@@ -17,7 +18,6 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
-	"github.com/go-vgo/robotgo"
 	"github.com/google/uuid"
 )
 
@@ -237,8 +237,8 @@ func setMtabSettingsAndWidgets(d WireDeps) {
 			return
 		}
 		mt.Macro.GlobalDelay = gd
-		robotgo.MouseSleep = gd
-		robotgo.KeySleep = gd
+		desktop.Default.SetMouseSleep(gd)
+		desktop.Default.SetKeySleep(gd)
 		repositories.MacroRepo().Set(mt.Macro.Name, mt.Macro)
 	}
 }

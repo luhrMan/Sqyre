@@ -2,6 +2,7 @@ package editor
 
 import (
 	"Sqyre/internal/config"
+	sqdesktop "Sqyre/internal/desktop"
 	"Sqyre/internal/models"
 	"Sqyre/internal/models/repositories"
 	"Sqyre/internal/services"
@@ -20,7 +21,6 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/widget"
-	"github.com/go-vgo/robotgo"
 )
 
 var (
@@ -652,7 +652,7 @@ func setEditorForms() {
 					fyne.DoAndWait(func() {
 						switch ev.Button {
 						case desktop.MouseButtonPrimary:
-							x, y := robotgo.Location()
+							x, y := sqdesktop.Default.Location()
 							custom_widgets.SetEntryText(et.PointsTab.Widgets["X"], strconv.Itoa(x))
 							custom_widgets.SetEntryText(et.PointsTab.Widgets["Y"], strconv.Itoa(y))
 							dismissOverlay()
@@ -698,7 +698,7 @@ func setEditorForms() {
 							dismissOverlay()
 							return
 						}
-						adjX, adjY := robotgo.Location()
+						adjX, adjY := sqdesktop.Default.Location()
 						mu.Lock()
 						if !firstClickDone {
 							leftX, topY = adjX, adjY
@@ -756,7 +756,7 @@ func setEditorForms() {
 							if !done {
 								setSelectionRect(0, 0, 0, 0)
 							} else {
-								x, y := robotgo.Location()
+								x, y := sqdesktop.Default.Location()
 								rx, by := x, y
 								if lx > rx {
 									lx, rx = rx, lx

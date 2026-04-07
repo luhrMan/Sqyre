@@ -1,9 +1,11 @@
 package ui
 
 import (
+	"os"
 	"path/filepath"
 
 	"Sqyre/internal/config"
+	sqdesktop "Sqyre/internal/desktop"
 	"Sqyre/internal/logger"
 	"Sqyre/internal/services"
 	"Sqyre/ui/editor"
@@ -17,7 +19,6 @@ import (
 	"fyne.io/fyne/v2/layout"
 	widget "fyne.io/fyne/v2/widget"
 	fynetooltip "github.com/dweymouth/fyne-tooltip"
-	"github.com/go-vgo/robotgo"
 )
 
 var (
@@ -132,8 +133,8 @@ func saveWindowGeometry(w fyne.Window) {
 	}
 
 	// Persist desktop window bounds (x, y, w, h) from current process window.
-	pid := robotgo.GetPid()
-	x, y, width, height := robotgo.GetBounds(pid)
+	pid := sqdesktop.Default.ProcessID()
+	x, y, width, height := sqdesktop.Default.WindowBounds(pid)
 	if width > 0 && height > 0 {
 		prefs.SetInt(config.PrefWindowX, x)
 		prefs.SetInt(config.PrefWindowY, y)
@@ -185,18 +186,21 @@ func (u *Ui) ConstructUi() {
 }
 
 func toggleMousePos() {
-	locX, locY := robotgo.Location()
+	if os.Getenv("SQUIRE_UI_TEST") == "1" {
+		return
+	}
+	locX, locY := sqdesktop.Default.Location()
 	blocX, blocY := binding.BindInt(&locX), binding.BindInt(&locY)
 	boundLocXLabel.Bind(binding.IntToString(blocX))
 	boundLocYLabel.Bind(binding.IntToString(blocY))
 	services.GoSafe(func() {
 		for {
-			robotgo.MilliSleep(100)
-			newLocX, newLocY := robotgo.Location()
+			sqdesktop.Default.MilliSleep(100)
+			newLocX, newLocY := sqdesktop.Default.Location()
 			if locX == newLocX && locY == newLocY {
 				continue
 			}
-			locX, locY = robotgo.Location()
+			locX, locY = sqdesktop.Default.Location()
 			blocX.Reload()
 			blocY.Reload()
 		}

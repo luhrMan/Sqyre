@@ -5,6 +5,7 @@ import (
 	"image/color"
 	"log"
 
+	sqdesktop "Sqyre/internal/desktop"
 	"Sqyre/internal/screen"
 
 	"fyne.io/fyne/v2"
@@ -13,7 +14,6 @@ import (
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
-	"github.com/go-vgo/robotgo"
 )
 
 // recordingMouseLayer sits on top of the overlay stack and receives mouse clicks
@@ -64,7 +64,7 @@ func (s *selectionRectLayout) Layout(objects []fyne.CanvasObject, size fyne.Size
 	objects[0].Resize(fyne.NewSize(w, h))
 }
 
-// screenPxToCanvas converts a delta in physical screen pixels (robotgo space)
+// screenPxToCanvas converts a delta in physical screen pixels (absolute desktop space)
 // to Fyne canvas coordinates for the given window.
 func screenPxToCanvas(win fyne.Window, deltaPx int) float32 {
 	scale := win.Canvas().Scale()
@@ -79,8 +79,8 @@ func (s *selectionRectLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
 }
 
 // showFullScreenOverlay captures the monitor under the cursor in absolute
-// desktop coordinates (same space as robotgo.Location), then creates a
-// full-screen overlay on that monitor. setSelectionRect expects absolute
+// desktop coordinates (same space as pointer location APIs), then creates a
+// full-screen overlay on that monitor. setSelectionRect expects absolute desktop
 // coordinates from the caller and maps them to overlay-local space.
 func showFullScreenOverlay(withSelectionRect bool, onClosed func(), onMouseDown func(*desktop.MouseEvent)) (dismiss func(), setSelectionRect func(leftX, topY, rightX, bottomY int)) {
 	app := fyne.CurrentApp()
@@ -88,7 +88,8 @@ func showFullScreenOverlay(withSelectionRect bool, onClosed func(), onMouseDown 
 		return func() {}, func(int, int, int, int) {}
 	}
 
-	idx := screen.MonitorIndexForOverlay()
+	mx, my := sqdesktop.Default.Location()
+	idx := screen.MonitorIndexForOverlay(mx, my)
 	absBounds := screen.DisplayBoundsAbs(idx)
 	if absBounds.Empty() {
 		absBounds = screen.DisplayBoundsAbs(0)
@@ -103,7 +104,7 @@ func showFullScreenOverlay(withSelectionRect bool, onClosed func(), onMouseDown 
 		log.Printf("overlay: could not resolve display bounds; using blank overlay")
 	} else {
 		var err error
-		captureImg, err = robotgo.CaptureImg(absBounds.Min.X, absBounds.Min.Y, w, h)
+		captureImg, err = sqdesktop.Default.CaptureImg(absBounds.Min.X, absBounds.Min.Y, w, h)
 		if err != nil {
 			log.Printf("overlay: screen capture failed: %v; using blank overlay", err)
 			captureImg = nil
@@ -165,7 +166,7 @@ func showFullScreenOverlay(withSelectionRect bool, onClosed func(), onMouseDown 
 	})
 	win.Show()
 	win.RequestFocus()
-	// Fyne sizes are canvas (logical) units; robotgo uses physical screen pixels.
+	// Fyne sizes are canvas (logical) units; capture uses physical screen pixels.
 	if bgImage != nil {
 		lw := screenPxToCanvas(win, w)
 		lh := screenPxToCanvas(win, h)

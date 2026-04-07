@@ -2,6 +2,7 @@ package editor
 
 import (
 	"Sqyre/internal/config"
+	"Sqyre/internal/desktop"
 	"Sqyre/internal/models"
 	"Sqyre/internal/screen"
 	"Sqyre/internal/services"
@@ -24,8 +25,6 @@ import (
 	"Sqyre/ui/completionentry"
 
 	kxlayout "github.com/ErikKalkoken/fyne-kx/layout"
-	"github.com/go-vgo/robotgo"
-	"gocv.io/x/gocv"
 )
 
 type EditorUi struct {
@@ -112,73 +111,16 @@ func wrapEditorPreviewImage(inner fyne.CanvasObject) fyne.CanvasObject {
 	return container.NewStack(border, inner)
 }
 
-const (
-	editorPreviewMonitorDash = 10
-	editorPreviewMonitorGap  = 6
-)
-
-// editorPreviewMonitorOutline is the dotted monitor bezel color (matches search-area / point accent).
-var editorPreviewMonitorOutline = color.RGBA{R: 255, A: 255}
-
-func drawPreviewDottedHLine(mat *gocv.Mat, y, x0, x1 int, c color.RGBA, thick int) {
-	if x0 > x1 {
-		return
-	}
-	step := editorPreviewMonitorDash + editorPreviewMonitorGap
-	for x := x0; x <= x1; x += step {
-		xe := x + editorPreviewMonitorDash - 1
-		if xe > x1 {
-			xe = x1
-		}
-		gocv.Line(mat, image.Pt(x, y), image.Pt(xe, y), c, thick)
-	}
-}
-
-func drawPreviewDottedVLine(mat *gocv.Mat, x, y0, y1 int, c color.RGBA, thick int) {
-	if y0 > y1 {
-		return
-	}
-	step := editorPreviewMonitorDash + editorPreviewMonitorGap
-	for y := y0; y <= y1; y += step {
-		ye := y + editorPreviewMonitorDash - 1
-		if ye > y1 {
-			ye = y1
-		}
-		gocv.Line(mat, image.Pt(x, y), image.Pt(x, ye), c, thick)
-	}
-}
-
-func drawPreviewDottedRectOutline(mat *gocv.Mat, r image.Rectangle, c color.RGBA, thick int) {
-	if r.Empty() || r.Dx() <= 0 || r.Dy() <= 0 {
-		return
-	}
-	x0, y0 := r.Min.X, r.Min.Y
-	x1, y1 := r.Max.X-1, r.Max.Y-1
-	if x1 < x0 || y1 < y0 {
-		return
-	}
-	drawPreviewDottedHLine(mat, y0, x0, x1, c, thick)
-	drawPreviewDottedHLine(mat, y1, x0, x1, c, thick)
-	drawPreviewDottedVLine(mat, x0, y0, y1, c, thick)
-	drawPreviewDottedVLine(mat, x1, y0, y1, c, thick)
-}
-
-// drawEditorPreviewMonitorOutlines draws a dotted rectangle for each enabled monitor (clip to capture).
-func drawEditorPreviewMonitorOutlines(mat *gocv.Mat, vb image.Rectangle) {
-	const thick = 1
+func editorMonitorOutlines() []desktop.MonitorOutline {
 	n := screen.NumDisplays()
+	out := make([]desktop.MonitorOutline, 0, n)
 	for i := 0; i < n; i++ {
-		if !screen.IsMonitorEnabled(i) {
-			continue
-		}
-		b := screen.DisplayBoundsAbs(i)
-		inter := b.Intersect(vb)
-		if inter.Empty() {
-			continue
-		}
-		rel := image.Rect(inter.Min.X-vb.Min.X, inter.Min.Y-vb.Min.Y, inter.Max.X-vb.Min.X, inter.Max.Y-vb.Min.Y)
-		drawPreviewDottedRectOutline(mat, rel, editorPreviewMonitorOutline, thick)
+		out = append(out, desktop.MonitorOutline{
+			AbsBounds: screen.DisplayBoundsAbs(i),
+			Enabled:   screen.IsMonitorEnabled(i),
+		})
 	}
+	return out
 }
 
 // ConstructEditorTabs builds all editor tab widgets. Call before SetEditorUi.
@@ -703,7 +645,7 @@ func (eu *EditorUi) onAutoPicSave() {
 			}
 		}()
 
-		captureImg, err = robotgo.CaptureImg(lx, ty, w, h)
+		captureImg, err = desktop.Default.CaptureImg(lx, ty, w, h)
 		if err != nil {
 			activeWire.ShowErrorWithEscape(fmt.Errorf("AutoPic: Error capturing image - %v (area: %s)", err, searchArea.Name), eu.win)
 			captureImg = nil
@@ -742,7 +684,7 @@ func (eu *EditorUi) onAutoPicSave() {
 			}
 		}()
 
-		if err := robotgo.SavePng(captureImg, fullPath); err != nil {
+		if err := desktop.Default.SavePng(captureImg, fullPath); err != nil {
 			activeWire.ShowErrorWithEscape(fmt.Errorf("AutoPic: Error saving image to %s: %v", fullPath, err), eu.win)
 			return
 		}
@@ -788,7 +730,7 @@ func (eu *EditorUi) UpdateAutoPicPreview(searchArea *models.SearchArea) {
 		}
 	}()
 
-	captureImg, err := robotgo.CaptureImg(lx, ty, w, h)
+	captureImg, err := desktop.Default.CaptureImg(lx, ty, w, h)
 	if err != nil {
 		activeWire.ShowErrorWithEscape(fmt.Errorf("AutoPic: Error capturing image - %v (area: %s)", err, searchArea.Name), eu.win)
 		captureImg = nil
@@ -886,39 +828,14 @@ func (eu *EditorUi) UpdateSearchAreaPreview(searchArea *models.SearchArea) {
 		}
 	}()
 
-	captureImg, err := robotgo.CaptureImg(vb.Min.X, vb.Min.Y, vb.Dx(), vb.Dy())
+	previewImg, err := desktop.SearchAreaPreviewImage(vb, lx, ty, rx, by, editorMonitorOutlines())
 	if err != nil {
-		activeWire.ShowErrorWithEscape(fmt.Errorf("SearchArea: Error capturing image - %v (area: %s)", err, searchArea.Name), eu.win)
-		captureImg = nil
+		activeWire.ShowErrorWithEscape(fmt.Errorf("SearchArea: Error building preview - %v (area: %s)", err, searchArea.Name), eu.win)
+		eu.clearSearchAreaPreviewImage()
+		return
 	}
-
-	// Validate the captured image
-	if captureImg == nil {
+	if previewImg == nil {
 		activeWire.ShowErrorWithEscape(fmt.Errorf("SearchArea: Screen capture returned nil image (area: %s)", searchArea.Name), eu.win)
-		eu.clearSearchAreaPreviewImage()
-		return
-	}
-
-	// Convert to gocv Mat for drawing
-	mat, err := gocv.ImageToMatRGB(captureImg)
-	if err != nil {
-		activeWire.ShowErrorWithEscape(fmt.Errorf("SearchArea: Error converting image to Mat - %v (area: %s)", err, searchArea.Name), eu.win)
-		eu.clearSearchAreaPreviewImage()
-		return
-	}
-	defer mat.Close()
-
-	drawEditorPreviewMonitorOutlines(&mat, vb)
-
-	// Draw red rectangle (image coords relative to virtual capture origin)
-	rect := image.Rect(lx-vb.Min.X, ty-vb.Min.Y, rx-vb.Min.X, by-vb.Min.Y)
-	redColor := color.RGBA{R: 255, A: 255}
-	gocv.Rectangle(&mat, rect, redColor, 2)
-
-	// Convert back to image.Image
-	previewImg, err := mat.ToImage()
-	if err != nil {
-		activeWire.ShowErrorWithEscape(fmt.Errorf("SearchArea: Error converting Mat to image - %v (area: %s)", err, searchArea.Name), eu.win)
 		eu.clearSearchAreaPreviewImage()
 		return
 	}
@@ -989,41 +906,14 @@ func (eu *EditorUi) UpdatePointPreview(point *models.Point) {
 		}
 	}()
 
-	captureImg, err := robotgo.CaptureImg(vb.Min.X, vb.Min.Y, vb.Dx(), vb.Dy())
+	previewImg, err := desktop.PointPreviewImage(vb, px, py, editorMonitorOutlines())
 	if err != nil {
-		activeWire.ShowErrorWithEscape(fmt.Errorf("Point: Error capturing image - %v (point: %s)", err, point.Name), eu.win)
-		captureImg = nil
+		activeWire.ShowErrorWithEscape(fmt.Errorf("Point: Error building preview - %v (point: %s)", err, point.Name), eu.win)
+		eu.clearPointPreviewImage()
+		return
 	}
-	// Validate the captured image
-	if captureImg == nil {
+	if previewImg == nil {
 		activeWire.ShowErrorWithEscape(fmt.Errorf("Point: Screen capture returned nil image (point: %s)", point.Name), eu.win)
-		eu.clearPointPreviewImage()
-		return
-	}
-
-	// Convert to gocv Mat for drawing
-	mat, err := gocv.ImageToMatRGB(captureImg)
-	if err != nil {
-		activeWire.ShowErrorWithEscape(fmt.Errorf("Point: Error converting image to Mat - %v (point: %s)", err, point.Name), eu.win)
-		eu.clearPointPreviewImage()
-		return
-	}
-	defer mat.Close()
-
-	drawEditorPreviewMonitorOutlines(&mat, vb)
-
-	// Draw red marker (coords relative to virtual capture origin)
-	center := image.Point{X: px - vb.Min.X, Y: py - vb.Min.Y}
-	redColor := color.RGBA{R: 255, A: 255}
-
-	gocv.Circle(&mat, center, 8, redColor, 2)
-	gocv.Line(&mat, image.Point{X: center.X - 15, Y: center.Y}, image.Point{X: center.X + 15, Y: center.Y}, redColor, 2)
-	gocv.Line(&mat, image.Point{X: center.X, Y: center.Y - 15}, image.Point{X: center.X, Y: center.Y + 15}, redColor, 2)
-
-	// Convert back to image.Image
-	previewImg, err := mat.ToImage()
-	if err != nil {
-		activeWire.ShowErrorWithEscape(fmt.Errorf("Point: Error converting Mat to image - %v (point: %s)", err, point.Name), eu.win)
 		eu.clearPointPreviewImage()
 		return
 	}
@@ -1056,15 +946,8 @@ func (eu *EditorUi) UpdateMaskPreview(programName, maskName string) {
 		return
 	}
 
-	mat := gocv.IMRead(imgPath, gocv.IMReadColor)
-	if mat.Empty() {
-		eu.ClearMaskPreviewImage()
-		return
-	}
-	defer mat.Close()
-
-	img, err := mat.ToImage()
-	if err != nil {
+	img, err := desktop.MaskImageFromFile(imgPath)
+	if err != nil || img == nil {
 		eu.ClearMaskPreviewImage()
 		return
 	}

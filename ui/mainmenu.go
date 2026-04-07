@@ -1,11 +1,12 @@
 package ui
 
 import (
+	"fmt"
 	"Sqyre/internal/models/actions"
 	"Sqyre/internal/models/repositories"
+	"Sqyre/internal/screen"
 	"Sqyre/ui/macro/actiondialog"
 	"log"
-	"strconv"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -13,7 +14,6 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
-	"github.com/go-vgo/robotgo"
 )
 
 type actionTemplate struct {
@@ -186,12 +186,11 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 	miscActionsSubMenu.ChildMenu = fyne.NewMenu("", miscItems...)
 
 	computerInfo := fyne.NewMenuItem("Computer info", func() {
-		var str string
-		w, h := robotgo.GetScreenSize()
-		str = str + "Total Screen Size: " + strconv.Itoa(w) + "x" + strconv.Itoa(h) + "\n"
-		for d := range robotgo.DisplaysNum() {
-			_, _, mh, mw := robotgo.GetDisplayBounds(d)
-			str = str + "Monitor " + strconv.Itoa(d+1) + " Size: " + strconv.Itoa(mh) + "x" + strconv.Itoa(mw) + "\n"
+		vb := screen.VirtualBounds()
+		str := fmt.Sprintf("Total Screen Size: %dx%d\n", vb.Dx(), vb.Dy())
+		for d := 0; d < screen.NumDisplays(); d++ {
+			b := screen.DisplayBoundsAbs(d)
+			str += fmt.Sprintf("Monitor %d Size: %dx%d\n", d+1, b.Dx(), b.Dy())
 		}
 		ShowInformationWithEscape("Computer Information", str, u.Window)
 	})

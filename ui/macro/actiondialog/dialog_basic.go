@@ -1,13 +1,12 @@
 package actiondialog
 
 import (
+	"Sqyre/internal/desktop"
 	"Sqyre/internal/models/actions"
 	"Sqyre/internal/screen"
 	"Sqyre/internal/services"
 	"Sqyre/ui/custom_widgets"
 	"fmt"
-	"image"
-	"image/color"
 	"strconv"
 	"strings"
 
@@ -17,8 +16,6 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
-	"github.com/go-vgo/robotgo"
-	"gocv.io/x/gocv"
 )
 
 func createWaitDialogContent(action *actions.Wait) (fyne.CanvasObject, func()) {
@@ -49,6 +46,18 @@ func createWaitDialogContent(action *actions.Wait) (fyne.CanvasObject, func()) {
 	}
 
 	return content, saveFunc
+}
+
+func actionDialogMonitorOutlines() []desktop.MonitorOutline {
+	n := screen.NumDisplays()
+	out := make([]desktop.MonitorOutline, 0, n)
+	for i := 0; i < n; i++ {
+		out = append(out, desktop.MonitorOutline{
+			AbsBounds: screen.DisplayBoundsAbs(i),
+			Enabled:   screen.IsMonitorEnabled(i),
+		})
+	}
+	return out
 }
 
 // pointCoordToInt returns an int for preview drawing; literal ints are used, variable refs (string) yield 0.
@@ -109,33 +118,8 @@ func createMoveDialogContent(action *actions.Move) (fyne.CanvasObject, func()) {
 			}
 		}()
 
-		captureImg, err := robotgo.CaptureImg(vb.Min.X, vb.Min.Y, vb.Dx(), vb.Dy())
-		if err != nil || captureImg == nil {
-			pointPreviewImage.Image = nil
-			pointPreviewImage.Refresh()
-			return
-		}
-
-		// Convert to gocv Mat for drawing
-		mat, err := gocv.ImageToMatRGB(captureImg)
-		if err != nil {
-			pointPreviewImage.Image = nil
-			pointPreviewImage.Refresh()
-			return
-		}
-		defer mat.Close()
-
-		center := image.Point{X: px - vb.Min.X, Y: py - vb.Min.Y}
-		redColor := color.RGBA{R: 255, A: 255}
-
-		gocv.Circle(&mat, center, 8, redColor, 2)
-
-		gocv.Line(&mat, image.Point{X: center.X - 15, Y: center.Y}, image.Point{X: center.X + 15, Y: center.Y}, redColor, 2)
-		gocv.Line(&mat, image.Point{X: center.X, Y: center.Y - 15}, image.Point{X: center.X, Y: center.Y + 15}, redColor, 2)
-
-		// Convert back to image.Image
-		previewImg, err := mat.ToImage()
-		if err != nil {
+		previewImg, err := desktop.PointPreviewImage(vb, px, py, actionDialogMonitorOutlines())
+		if err != nil || previewImg == nil {
 			pointPreviewImage.Image = nil
 			pointPreviewImage.Refresh()
 			return

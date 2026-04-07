@@ -1,12 +1,11 @@
 // Package screen provides desktop bounds in absolute coordinates: the same
-// space as robotgo.GetMousePos / robotgo.CaptureImg (virtual framebuffer / root
+// space as desktop screen capture and pointer APIs (virtual framebuffer / root
 // origin), not primary-monitor-relative.
 package screen
 
 import (
 	"image"
 
-	"github.com/go-vgo/robotgo"
 	"github.com/vcaesar/screenshot"
 )
 
@@ -60,9 +59,9 @@ func MonitorIndexAt(absX, absY int) int {
 // MonitorIndexForOverlay chooses the display that should show the recording overlay:
 // the monitor containing the mouse (where the user is about to click).
 // If the mouse is on a disabled monitor, the first enabled monitor is used.
-func MonitorIndexForOverlay() int {
-	x, y := robotgo.Location()
-	idx := MonitorIndexAt(x, y)
+// mouseX, mouseY must be in the same absolute desktop coordinate space as DisplayBoundsAbs.
+func MonitorIndexForOverlay(mouseX, mouseY int) int {
+	idx := MonitorIndexAt(mouseX, mouseY)
 	if IsMonitorEnabled(idx) {
 		return idx
 	}

@@ -3,6 +3,7 @@ package actiondialog
 import (
 	"Sqyre/internal/assets"
 	"Sqyre/internal/config"
+	sqdesktop "Sqyre/internal/desktop"
 	"Sqyre/internal/models/actions"
 	"Sqyre/internal/services"
 	"Sqyre/internal/uiutil"
@@ -21,7 +22,6 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
-	"github.com/go-vgo/robotgo"
 	"github.com/lithammer/fuzzysearch/fuzzy"
 )
 
@@ -322,12 +322,8 @@ func createFindPixelDialogContent(action *actions.FindPixel) (fyne.CanvasObject,
 				fyne.DoAndWait(func() {
 					switch ev.Button {
 					case desktop.MouseButtonPrimary:
-						x, y := robotgo.Location()
-						hex := robotgo.GetPixelColor(x, y)
-						hex = strings.TrimPrefix(strings.ToLower(hex), "#")
-						if len(hex) == 8 {
-							hex = hex[2:]
-						}
+						x, y := sqdesktop.Default.Location()
+						hex := sqdesktop.Default.PixelColorHex(x, y)
 						colorEntry.SetText(hex)
 						updateSwatch()
 						dismissOverlay()

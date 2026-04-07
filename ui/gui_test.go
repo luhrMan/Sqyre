@@ -1,12 +1,12 @@
 // Package ui_test runs GUI tests using Fyne's headless test driver.
 //
-// Run with SQUIRE_UI_TEST=1 so the UI skips robotgo for mouse position and
+// Run with SQUIRE_UI_TEST=1 so the UI skips the mouse-position poller and
 // config uses a stub display size. Example:
 //
 //	SQUIRE_UI_TEST=1 go test -v ./ui/ -run TestGUI
 //
-// Note: The robotgo dependency may still open an X11 display when the package
-// is loaded. On headless CI (no DISPLAY), run tests under a virtual display, e.g.:
+// Note: Other packages may still open an X11 display when tests load the full app.
+// On headless CI (no DISPLAY), run tests under a virtual display, e.g.:
 //
 //	xvfb-run -a go test -v ./ui/ -run TestGUI
 //
@@ -36,7 +36,7 @@ import (
 )
 
 func init() {
-	// Set so ConstructUi skips robotgo (toggleMousePos). For config display size
+	// Ensures ConstructUi skips toggleMousePos (SQUIRE_UI_TEST). For config display size
 	// stub, run the test with SQUIRE_UI_TEST=1 in the environment before go test.
 	if os.Getenv("SQUIRE_UI_TEST") == "" {
 		_ = os.Setenv("SQUIRE_UI_TEST", "1")
