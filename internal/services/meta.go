@@ -6,12 +6,16 @@ import (
 	"path/filepath"
 	"time"
 
-	"fyne.io/fyne/v2"
 	"gocv.io/x/gocv"
 )
 
+// BoolPreference reads a boolean preference by key with a fallback.
+// Set to fyne.CurrentApp().Preferences().BoolWithFallback by the UI layer;
+// defaults to always returning the fallback for headless/test use.
+var BoolPreference = func(key string, fallback bool) bool { return fallback }
+
 func SaveMetaImage(purpose string, img gocv.Mat) {
-	if !fyne.CurrentApp().Preferences().BoolWithFallback(config.PrefSaveMetaImages, false) {
+	if !BoolPreference(config.PrefSaveMetaImages, false) {
 		return
 	}
 	if img.Empty() {

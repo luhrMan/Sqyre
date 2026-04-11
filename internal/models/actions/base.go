@@ -8,8 +8,8 @@ type BaseAction struct {
 	Parent AdvancedActionInterface `yaml:"-" gob:"-" mapstructure:"-"`
 }
 
-func (a *BaseAction) parameters() []actionParam {
-	return []actionParam{
+func (a *BaseAction) parameters() []ActionParam {
+	return []ActionParam{
 		newParam("Type", a.Type),
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"Sqyre/internal/models/actions"
 	"Sqyre/internal/models/repositories"
 	"Sqyre/internal/screen"
+	"Sqyre/ui/actionrender"
 	"Sqyre/ui/macro/actiondialog"
 	"log"
 
@@ -26,33 +27,33 @@ type actionTemplate struct {
 
 func buildActionTemplates() []actionTemplate {
 	return []actionTemplate{
-		{label: "Mouse Move", actionType: "move", category: "Mouse & Keyboard", icon: actions.NewMove(actions.Point{Name: "", X: 0, Y: 0}, false).Icon(), create: func() actions.ActionInterface {
+		{label: "Mouse Move", actionType: "move", category: "Mouse & Keyboard", icon: actionrender.ActionIcon(actions.NewMove(actions.Point{Name: "", X: 0, Y: 0}, false)), create: func() actions.ActionInterface {
 			return actions.NewMove(actions.Point{Name: "", X: 0, Y: 0}, false)
 		}},
-		{label: "Click", actionType: "click", category: "Mouse & Keyboard", icon: actions.NewClick(false, true).Icon(), create: func() actions.ActionInterface { return actions.NewClick(false, true) }},
-		{label: "Key", actionType: "key", category: "Mouse & Keyboard", icon: actions.NewKey("ctrl", true).Icon(), create: func() actions.ActionInterface { return actions.NewKey("ctrl", true) }},
-		{label: "Type", actionType: "type", category: "Mouse & Keyboard", icon: actions.NewType("", 0).Icon(), create: func() actions.ActionInterface { return actions.NewType("", 0) }},
-		{label: "Wait", actionType: "wait", category: "Miscellaneous", icon: actions.NewWait(0).Icon(), create: func() actions.ActionInterface { return actions.NewWait(0) }},
-		{label: "Focus window", actionType: "focuswindow", category: "Miscellaneous", icon: actions.NewFocusWindow("").Icon(), create: func() actions.ActionInterface { return actions.NewFocusWindow("") }},
-		{label: "Run macro", actionType: "runmacro", category: "Miscellaneous", icon: actions.NewRunMacro("").Icon(), create: func() actions.ActionInterface { return actions.NewRunMacro("") }},
+		{label: "Click", actionType: "click", category: "Mouse & Keyboard", icon: actionrender.ActionIcon(actions.NewClick(false, true)), create: func() actions.ActionInterface { return actions.NewClick(false, true) }},
+		{label: "Key", actionType: "key", category: "Mouse & Keyboard", icon: actionrender.ActionIcon(actions.NewKey("ctrl", true)), create: func() actions.ActionInterface { return actions.NewKey("ctrl", true) }},
+		{label: "Type", actionType: "type", category: "Mouse & Keyboard", icon: actionrender.ActionIcon(actions.NewType("", 0)), create: func() actions.ActionInterface { return actions.NewType("", 0) }},
+		{label: "Wait", actionType: "wait", category: "Miscellaneous", icon: actionrender.ActionIcon(actions.NewWait(0)), create: func() actions.ActionInterface { return actions.NewWait(0) }},
+		{label: "Focus window", actionType: "focuswindow", category: "Miscellaneous", icon: actionrender.ActionIcon(actions.NewFocusWindow("")), create: func() actions.ActionInterface { return actions.NewFocusWindow("") }},
+		{label: "Run macro", actionType: "runmacro", category: "Miscellaneous", icon: actionrender.ActionIcon(actions.NewRunMacro("")), create: func() actions.ActionInterface { return actions.NewRunMacro("") }},
 
-		{label: "Loop", actionType: "loop", category: "Miscellaneous", icon: actions.NewLoop(1, "", []actions.ActionInterface{}).Icon(), create: func() actions.ActionInterface {
+		{label: "Loop", actionType: "loop", category: "Miscellaneous", icon: actionrender.ActionIcon(actions.NewLoop(1, "", []actions.ActionInterface{})), create: func() actions.ActionInterface {
 			return actions.NewLoop(1, "", []actions.ActionInterface{})
 		}},
-		{label: "Image Search", actionType: "imagesearch", category: "Detection", icon: actions.NewImageSearch("", []actions.ActionInterface{}, []string{}, actions.SearchArea{}, 1, 1, 0.95, 5).Icon(), create: func() actions.ActionInterface {
+		{label: "Image Search", actionType: "imagesearch", category: "Detection", icon: actionrender.ActionIcon(actions.NewImageSearch("", []actions.ActionInterface{}, []string{}, actions.SearchArea{}, 1, 1, 0.95, 5)), create: func() actions.ActionInterface {
 			return actions.NewImageSearch("", []actions.ActionInterface{}, []string{}, actions.SearchArea{}, 1, 1, 0.95, 5)
 		}},
-		{label: "OCR", actionType: "ocr", category: "Detection", icon: actions.NewOcr("", []actions.ActionInterface{}, "template", actions.SearchArea{Name: "template search area"}).Icon(), create: func() actions.ActionInterface {
+		{label: "OCR", actionType: "ocr", category: "Detection", icon: actionrender.ActionIcon(actions.NewOcr("", []actions.ActionInterface{}, "template", actions.SearchArea{Name: "template search area"})), create: func() actions.ActionInterface {
 			return actions.NewOcr("", []actions.ActionInterface{}, "template", actions.SearchArea{Name: "template search area"})
 		}},
-		{label: "Find pixel", actionType: "findpixel", category: "Detection", icon: actions.NewFindPixel("", actions.SearchArea{}, "ffffff", 0, nil).Icon(), create: func() actions.ActionInterface {
+		{label: "Find pixel", actionType: "findpixel", category: "Detection", icon: actionrender.ActionIcon(actions.NewFindPixel("", actions.SearchArea{}, "ffffff", 0, nil)), create: func() actions.ActionInterface {
 			return actions.NewFindPixel("", actions.SearchArea{}, "ffffff", 0, nil)
 		}},
 
-		{label: "Set", actionType: "setvariable", category: "Variables", icon: actions.NewSetVariable("", "").Icon(), create: func() actions.ActionInterface { return actions.NewSetVariable("", "") }},
-		{label: "Calculate", actionType: "calculate", category: "Variables", icon: actions.NewCalculate("", "").Icon(), create: func() actions.ActionInterface { return actions.NewCalculate("", "") }},
-		{label: "Read from", actionType: "datalist", category: "Variables", icon: actions.NewDataList("", "", false).Icon(), create: func() actions.ActionInterface { return actions.NewDataList("", "", false) }},
-		{label: "Save to", actionType: "savevariable", category: "Variables", icon: actions.NewSaveVariable("", "", false, false).Icon(), create: func() actions.ActionInterface {
+		{label: "Set", actionType: "setvariable", category: "Variables", icon: actionrender.ActionIcon(actions.NewSetVariable("", "")), create: func() actions.ActionInterface { return actions.NewSetVariable("", "") }},
+		{label: "Calculate", actionType: "calculate", category: "Variables", icon: actionrender.ActionIcon(actions.NewCalculate("", "")), create: func() actions.ActionInterface { return actions.NewCalculate("", "") }},
+		{label: "Read from", actionType: "datalist", category: "Variables", icon: actionrender.ActionIcon(actions.NewDataList("", "", false)), create: func() actions.ActionInterface { return actions.NewDataList("", "", false) }},
+		{label: "Save to", actionType: "savevariable", category: "Variables", icon: actionrender.ActionIcon(actions.NewSaveVariable("", "", false, false)), create: func() actions.ActionInterface {
 			return actions.NewSaveVariable("", "", false, false)
 		}},
 	}
@@ -69,7 +70,7 @@ func showAddActionDialog(u *Ui, addActionAndRefresh func(actions.ActionInterface
 	}
 	for _, tmpl := range templates {
 		t := tmpl
-		bg := canvas.NewRectangle(actions.ActionPastelColor(t.actionType))
+		bg := canvas.NewRectangle(actionrender.ActionPastelColor(t.actionType))
 		bg.CornerRadius = 8
 		bg.StrokeColor = theme.ShadowColor()
 		bg.StrokeWidth = 1

@@ -4,21 +4,20 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-
-	"fyne.io/fyne/v2"
 )
 
 // prefEnabledMonitorsKey must stay in sync with config.PrefEnabledMonitors.
 const prefEnabledMonitorsKey = "enabled_monitors"
 
+// StringPreference reads a string preference by key.
+// Set to fyne.CurrentApp().Preferences().String by the UI layer;
+// defaults to returning "" for headless/test use.
+var StringPreference = func(key string) string { return "" }
+
 // EnabledMonitorIndices returns the monitor indices the user selected in settings.
 // nil means all monitors are enabled (default when the preference is empty or invalid).
 func EnabledMonitorIndices() []int {
-	app := fyne.CurrentApp()
-	if app == nil {
-		return nil
-	}
-	s := strings.TrimSpace(app.Preferences().String(prefEnabledMonitorsKey))
+	s := strings.TrimSpace(StringPreference(prefEnabledMonitorsKey))
 	if s == "" {
 		return nil
 	}

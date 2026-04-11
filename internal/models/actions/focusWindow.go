@@ -1,10 +1,5 @@
 package actions
 
-import (
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/theme"
-)
-
 // FocusWindow activates/focuses a window chosen by the user. The user can pick from
 // a list of active windows (process names) or type a name (e.g. partial match) themselves.
 type FocusWindow struct {
@@ -20,25 +15,16 @@ func NewFocusWindow(windowTarget string) *FocusWindow {
 	}
 }
 
-func (a *FocusWindow) String() string {
-	return stringifyParams(a.parameters())
-}
+func (a *FocusWindow) String() string           { return stringifyParams(a.parameters()) }
+func (a *FocusWindow) Parameters() []ActionParam { return a.parameters() }
 
-func (a *FocusWindow) Display() fyne.CanvasObject {
-	return displayFromParams(a.parameters())
-}
-
-func (a *FocusWindow) parameters() []actionParam {
+func (a *FocusWindow) parameters() []ActionParam {
 	target := a.WindowTarget
 	if target == "" {
 		target = "not set"
 	}
-	return []actionParam{
+	return []ActionParam{
 		newParam("Type", a.GetType()),
 		newParam("Window", target),
 	}
-}
-
-func (a *FocusWindow) Icon() fyne.Resource {
-	return theme.VisibilityIcon()
 }

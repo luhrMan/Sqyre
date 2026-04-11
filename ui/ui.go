@@ -7,6 +7,7 @@ import (
 	"Sqyre/internal/config"
 	sqdesktop "Sqyre/internal/desktop"
 	"Sqyre/internal/logger"
+	"Sqyre/internal/screen"
 	"Sqyre/internal/services"
 	"Sqyre/ui/editor"
 	"Sqyre/ui/macro"
@@ -43,6 +44,10 @@ type MainUi struct {
 
 func GetUi() *Ui { return ui }
 func InitializeUi(w fyne.Window) *Ui {
+	services.RunOnMainThread = fyne.Do
+	services.RunOnMainThreadAndWait = fyne.DoAndWait
+	services.BoolPreference = fyne.CurrentApp().Preferences().BoolWithFallback
+	screen.StringPreference = fyne.CurrentApp().Preferences().String
 	fyne.CurrentApp().Settings().SetTheme(NewSqyreTheme())
 	logger.SetLogFile(filepath.Join(config.GetSqyreDir(), "sqyre.log"))
 	restoreWindowGeometry(w)

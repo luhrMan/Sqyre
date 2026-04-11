@@ -91,13 +91,10 @@ func TestAdvancedAction_SetSubActions(t *testing.T) {
 	}
 }
 
-func TestBaseAction_String_Icon(t *testing.T) {
+func TestBaseAction_String(t *testing.T) {
 	b := newBaseAction("custom")
 	if got := b.String(); got != "Type: custom" {
 		t.Errorf("BaseAction.String() = %q", got)
-	}
-	if b.Icon() == nil {
-		t.Error("BaseAction.Icon() should not be nil")
 	}
 }
 
@@ -148,15 +145,6 @@ func TestClick_String(t *testing.T) {
 func TestLeftOrRight(t *testing.T) {
 	if LeftOrRight(false) != "left" || LeftOrRight(true) != "right" {
 		t.Error("LeftOrRight mismatch")
-	}
-}
-
-func TestClick_Icon(t *testing.T) {
-	if NewClick(false, false).Icon() == nil {
-		t.Error("Icon() left click should not be nil")
-	}
-	if NewClick(false, true).Icon() == nil {
-		t.Error("Icon() hold should not be nil")
 	}
 }
 
@@ -624,8 +612,8 @@ func TestDataList_String(t *testing.T) {
 	}
 }
 
-// TestActionTypes_Icon ensures Icon() is called on every action type for coverage.
-func TestActionTypes_Icon(t *testing.T) {
+// TestActionTypes_Parameters ensures Parameters() returns non-empty for every action type.
+func TestActionTypes_Parameters(t *testing.T) {
 	actions := []struct {
 		name string
 		a    ActionInterface
@@ -646,8 +634,19 @@ func TestActionTypes_Icon(t *testing.T) {
 	}
 	for _, tt := range actions {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.a.Icon() == nil {
-				t.Error("Icon() should not be nil")
+			params := tt.a.Parameters()
+			if len(params) == 0 {
+				t.Error("Parameters() should not be empty")
+			}
+			hasType := false
+			for _, p := range params {
+				if p.Label == "Type" {
+					hasType = true
+					break
+				}
+			}
+			if !hasType {
+				t.Error("Parameters() should include a Type param")
 			}
 		})
 	}
@@ -698,5 +697,121 @@ func TestFindPixel_MatchColor_deltaBranches(t *testing.T) {
 	}
 	if w.MatchColor("ffffff") {
 		t.Error("far color should not match")
+	}
+}
+
+// --- RunMacro ---
+
+func TestNewRunMacro(t *testing.T) {
+	r := NewRunMacro("my-macro")
+	if r.GetType() != "runmacro" || r.MacroName != "my-macro" {
+		t.Errorf("RunMacro: %+v", r)
+	}
+}
+
+func TestRunMacro_String(t *testing.T) {
+	if got := NewRunMacro("test").String(); got != "Type: runmacro  /  Macro: test" {
+		t.Errorf("String() = %q", got)
+	}
+	if got := NewRunMacro("").String(); got != "Type: runmacro  /  Macro: not set" {
+		t.Errorf("String() = %q", got)
+	}
+}
+
+func TestRunMacro_Parameters(t *testing.T) {
+	r := NewRunMacro("m1")
+	params := r.Parameters()
+	if len(params) != 2 {
+		t.Fatalf("expected 2 params, got %d", len(params))
+	}
+	if params[0].Label != "Type" || params[0].Value != "runmacro" {
+		t.Errorf("params[0] = %+v", params[0])
+	}
+	if params[1].Label != "Macro" || params[1].Value != "m1" {
+		t.Errorf("params[1] = %+v", params[1])
+	}
+}
+
+// --- Type ---
+
+func TestNewType(t *testing.T) {
+	ta := NewType("hello", 50)
+	if ta.GetType() != "type" || ta.Text != "hello" || ta.DelayMs != 50 {
+		t.Errorf("Type: %+v", ta)
+	}
+}
+
+func TestType_String(t *testing.T) {
+	got := NewType("abc", 0).String()
+	if !strings.Contains(got, "type") || !strings.Contains(got, `"abc"`) {
+		t.Errorf("String() = %q", got)
+	}
+	gotWithDelay := NewType("x", 100).String()
+	if !strings.Contains(gotWithDelay, "100 ms") {
+		t.Errorf("String() = %q", gotWithDelay)
+	}
+}
+
+func TestType_Parameters(t *testing.T) {
+	ta := NewType("hi", 0)
+	params := ta.Parameters()
+	if len(params) != 2 {
+		t.Fatalf("expected 2 params (no delay), got %d", len(params))
+	}
+	taWithDelay := NewType("hi", 50)
+	params = taWithDelay.Parameters()
+	if len(params) != 3 {
+		t.Fatalf("expected 3 params (with delay), got %d", len(params))
+	}
+	if params[2].Label != "Delay" {
+		t.Errorf("expected Delay param, got %+v", params[2])
+	}
+}
+
+// --- FormatSearchAreaLabel ---
+
+func TestFormatSearchAreaLabel(t *testing.T) {
+	sa := SearchArea{Name: "test", LeftX: 10, TopY: 20, RightX: 100, BottomY: 200}
+	got := FormatSearchAreaLabel(sa)
+	if !strings.Contains(got, "test") || !strings.Contains(got, "10") {
+		t.Errorf("FormatSearchAreaLabel = %q", got)
+	}
+	saNoName := SearchArea{LeftX: 0, TopY: 0, RightX: 50, BottomY: 50}
+	got2 := FormatSearchAreaLabel(saNoName)
+	if strings.Contains(got2, "(") {
+		t.Errorf("no-name area should not contain parens: %q", got2)
+	}
+}
+
+// --- Parameters consistency with String ---
+
+func TestParameters_ConsistentWithString(t *testing.T) {
+	cases := []ActionInterface{
+		NewClick(false, true),
+		NewWait(250),
+		NewMove(Point{Name: "P", X: 10, Y: 20}, false),
+		NewKey("enter", true),
+		NewLoop(3, "loop1", nil),
+		NewSetVariable("v", "val"),
+		NewCalculate("1+1", "r"),
+		NewFocusWindow("chrome"),
+		NewRunMacro("m"),
+		NewType("text", 0),
+	}
+	for _, a := range cases {
+		t.Run(a.GetType(), func(t *testing.T) {
+			str := a.String()
+			params := a.Parameters()
+			for _, p := range params {
+				if p.Label == "Type" {
+					continue
+				}
+				val := strings.TrimSpace(strings.ReplaceAll(p.Label+": "+strings.TrimSpace(strings.ReplaceAll(str, p.Label, "")), "  ", " "))
+				_ = val
+				if !strings.Contains(str, p.Label) {
+					t.Errorf("String() %q missing param label %q", str, p.Label)
+				}
+			}
+		})
 	}
 }

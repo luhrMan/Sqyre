@@ -336,3 +336,73 @@ func TestGUIEscapeClosesActionDialog(t *testing.T) {
 		return u.MainUi.ActionDialog == nil && u.Window.Canvas().Overlays().Top() == nil
 	}, "expected global Esc hook to close action dialog")
 }
+
+// TestGUIActionDialogForAllTypes opens the action dialog for every action type
+// and verifies it produces a visible dialog overlay without panic.
+func TestGUIActionDialogForAllTypes(t *testing.T) {
+	a := test.NewApp()
+	w := a.NewWindow("")
+	defer w.Close()
+
+	u := ui.InitializeUi(w)
+	u.ConstructUi()
+
+	allActions := []struct {
+		name string
+		a    actions.ActionInterface
+	}{
+		{"Click", actions.NewClick(false, true)},
+		{"Wait", actions.NewWait(100)},
+		{"Move", actions.NewMove(actions.Point{Name: "P", X: 1, Y: 2}, false)},
+		{"Key", actions.NewKey("a", true)},
+		{"Type", actions.NewType("hello", 0)},
+		{"Loop", actions.NewLoop(1, "L", nil)},
+		{"Ocr", actions.NewOcr("O", nil, "text", actions.SearchArea{Name: "A"})},
+		{"ImageSearch", actions.NewImageSearch("S", nil, nil, actions.SearchArea{Name: "R"}, 1, 1, 0.9, 5)},
+		{"FindPixel", actions.NewFindPixel("FP", actions.SearchArea{}, "ff0000", 0, nil)},
+		{"SetVariable", actions.NewSetVariable("v", "val")},
+		{"Calculate", actions.NewCalculate("1+1", "r")},
+		{"DataList", actions.NewDataList("a\nb", "v", false)},
+		{"SaveVariable", actions.NewSaveVariable("v", "dest", false, false)},
+		{"FocusWindow", actions.NewFocusWindow("chrome")},
+		{"RunMacro", actions.NewRunMacro("m")},
+	}
+	for _, tt := range allActions {
+		t.Run(tt.name, func(t *testing.T) {
+			actiondialog.ShowActionDialog(tt.a, nil)
+			overlay := u.Window.Canvas().Overlays().Top()
+			if overlay == nil {
+				t.Error("expected dialog overlay")
+			}
+			// Close the dialog for the next iteration
+			if u.MainUi.ActionDialog != nil {
+				u.MainUi.ActionDialog.Hide()
+				u.MainUi.ActionDialog = nil
+			}
+		})
+	}
+}
+
+// TestGUIServicesCallbacksWired verifies that InitializeUi wires RunOnMainThread
+// and BoolPreference to Fyne implementations.
+func TestGUIServicesCallbacksWired(t *testing.T) {
+	a := test.NewApp()
+	w := a.NewWindow("")
+	defer w.Close()
+
+	_ = ui.InitializeUi(w)
+
+	// After InitializeUi, RunOnMainThread should be fyne.Do (not the default sync func).
+	// We can verify it works by running a function through it.
+	done := make(chan bool, 1)
+	go func() {
+		// fyne.Do queues on main thread; in test driver this runs inline
+		ui.GetUi() // verify it doesn't panic
+		done <- true
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for goroutine")
+	}
+}

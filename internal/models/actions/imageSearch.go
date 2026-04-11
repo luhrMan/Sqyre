@@ -3,10 +3,6 @@ package actions
 import (
 	"fmt"
 	"slices"
-
-	"Sqyre/internal/assets"
-
-	"fyne.io/fyne/v2"
 )
 
 type ImageSearch struct {
@@ -16,11 +12,11 @@ type ImageSearch struct {
 	ColSplit               int        `mapstructure:"colsplit"`
 	Tolerance              float32    `mapstructure:"tolerance"`
 	Blur                   int        `mapstructure:"blur"`
-	OutputXVariable        string     `mapstructure:"outputxvariable"`        // Variable name to store X coordinate
-	OutputYVariable        string     `mapstructure:"outputyvariable"`        // Variable name to store Y coordinate
-	WaitTilFound           bool       `mapstructure:"waittilfound"`           // If true, retry until found or timeout
-	WaitTilFoundSeconds    int        `mapstructure:"waittilfoundseconds"`    // Max seconds to keep trying when WaitTilFound (then continue without match)
-	WaitTilFoundIntervalMs int        `mapstructure:"waittilfoundintervalms"` // Milliseconds between retries when WaitTilFound (0 = default 100ms)
+	OutputXVariable        string     `mapstructure:"outputxvariable"`
+	OutputYVariable        string     `mapstructure:"outputyvariable"`
+	WaitTilFound           bool       `mapstructure:"waittilfound"`
+	WaitTilFoundSeconds    int        `mapstructure:"waittilfoundseconds"`
+	WaitTilFoundIntervalMs int        `mapstructure:"waittilfoundintervalms"`
 	*AdvancedAction        `yaml:",inline" mapstructure:",squash"`
 }
 
@@ -38,30 +34,22 @@ func NewImageSearch(name string, subActions []ActionInterface, targets []string,
 		OutputYVariable: "foundY",
 	}
 }
-func (a *ImageSearch) String() string {
-	return stringifyParams(a.parameters())
-}
 
-func (a *ImageSearch) Display() fyne.CanvasObject {
-	return displayFromParams(a.parameters())
-}
+func (a *ImageSearch) String() string           { return stringifyParams(a.parameters()) }
+func (a *ImageSearch) Parameters() []ActionParam { return a.parameters() }
 
-func (a *ImageSearch) parameters() []actionParam {
+func (a *ImageSearch) parameters() []ActionParam {
 	mode := "instant"
 	if a.WaitTilFound {
 		mode = fmt.Sprintf("wait %d seconds or until found", a.WaitTilFoundSeconds)
 	}
-	return []actionParam{
+	return []ActionParam{
 		newParam("Type", a.GetType()),
 		newParam("Name", a.Name),
 		newParam("Items", len(a.Targets)),
-		newParam("Search Area", formatSearchAreaLabel(a.SearchArea)),
+		newParam("Search Area", FormatSearchAreaLabel(a.SearchArea)),
 		newParam("Wait", mode),
 		newParam("Tolerance", a.Tolerance),
 		newParam("Blur", a.Blur),
 	}
-}
-
-func (a *ImageSearch) Icon() fyne.Resource {
-	return assets.ImageSearchIcon
 }

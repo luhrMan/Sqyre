@@ -6,6 +6,7 @@ import (
 	"Sqyre/internal/models/actions"
 	"Sqyre/internal/models/serialize"
 	"Sqyre/internal/uiutil"
+	"Sqyre/ui/actionrender"
 	"image/color"
 
 	"fyne.io/fyne/v2"
@@ -29,7 +30,7 @@ type MacroTree struct {
 }
 
 func macroTreeActionColor(action actions.ActionInterface) color.Color {
-	return actions.ActionPastelColor(action.GetType())
+	return actionrender.ActionPastelColor(action.GetType())
 }
 
 func NewMacroTree(m *models.Macro) *MacroTree {
@@ -89,7 +90,7 @@ func (mt *MacroTree) setTree() {
 	mt.CreateNode = func(branch bool) fyne.CanvasObject {
 		actionIconBtn := ttwidget.NewButtonWithIcon("", theme.ErrorIcon(), nil)
 		actionIconBtn.Importance = widget.LowImportance
-		iconBg := canvas.NewRectangle(actions.ActionPastelColor(""))
+		iconBg := canvas.NewRectangle(actionrender.ActionPastelColor(""))
 		iconBg.CornerRadius = 6
 		iconBg.StrokeColor = theme.ShadowColor()
 		iconBg.StrokeWidth = 1
@@ -126,11 +127,11 @@ func (mt *MacroTree) setTree() {
 		displayContainer := displayHolder.Objects[0].(*fyne.Container)
 		itemIconsBox := itemIconsHolder.Objects[0].(*fyne.Container)
 
-		displayContainer.Objects = []fyne.CanvasObject{node.Display()}
+		displayContainer.Objects = []fyne.CanvasObject{actionrender.DisplayWidget(node)}
 		displayContainer.Refresh()
 		iconBg.FillColor = macroTreeActionColor(node)
 		iconBg.Refresh()
-		actionIconBtn.SetIcon(node.Icon())
+		actionIconBtn.SetIcon(actionrender.ActionIcon(node))
 		actionIconBtn.SetToolTip(node.GetType())
 		actionIconBtn.Importance = widget.LowImportance
 		actionIconBtn.OnTapped = nil

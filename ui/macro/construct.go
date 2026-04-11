@@ -102,6 +102,9 @@ func ConstructMacroUi(mui *MacroUi, boundLocXLabel, boundLocYLabel *widget.Label
 	pasteNodeButton.SetToolTip("paste node below")
 	playMacroButton.SetToolTip("start macro execution")
 
+	macroActivity := &widget.Activity{}
+	services.SetActivityReporter(macroActivity)
+
 	mui.MacroToolbars.TopToolbar =
 		container.NewGridWithColumns(2,
 			container.NewHBox(
@@ -114,7 +117,7 @@ func ConstructMacroUi(mui *MacroUi, boundLocXLabel, boundLocYLabel *widget.Label
 				layout.NewSpacer(),
 				layout.NewSpacer(),
 				playMacroButton,
-				services.MacroActiveIndicator(),
+				macroActivity,
 				widget.NewLabel("Macro Name:"),
 			),
 			container.NewBorder(nil, nil, nil,

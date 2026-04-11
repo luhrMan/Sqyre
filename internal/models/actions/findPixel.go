@@ -4,9 +4,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/theme"
 )
 
 // FindPixel scans a search area for a pixel matching the target color.
@@ -100,21 +97,16 @@ func NewFindPixel(name string, searchArea SearchArea, targetColor string, colorT
 	}
 }
 
-func (a *FindPixel) String() string {
-	return stringifyParams(a.parameters())
-}
+func (a *FindPixel) String() string           { return stringifyParams(a.parameters()) }
+func (a *FindPixel) Parameters() []ActionParam { return a.parameters() }
 
-func (a *FindPixel) Display() fyne.CanvasObject {
-	return displayFromParams(a.parameters())
-}
-
-func (a *FindPixel) parameters() []actionParam {
-	areaLabel := formatSearchAreaLabel(a.SearchArea)
+func (a *FindPixel) parameters() []ActionParam {
+	areaLabel := FormatSearchAreaLabel(a.SearchArea)
 	mode := "instant"
 	if a.WaitTilFound {
 		mode = fmt.Sprintf("wait %ds", a.WaitTilFoundSeconds)
 	}
-	return []actionParam{
+	return []ActionParam{
 		newParam("Type", a.GetType()),
 		newParam("Name", a.Name),
 		newParam("Color", a.TargetColor),
@@ -122,8 +114,4 @@ func (a *FindPixel) parameters() []actionParam {
 		newParam("Search Area", areaLabel),
 		newParam("Wait", mode),
 	}
-}
-
-func (a *FindPixel) Icon() fyne.Resource {
-	return theme.ColorChromaticIcon()
 }

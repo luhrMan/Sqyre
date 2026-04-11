@@ -7,9 +7,6 @@ import (
 	"strings"
 
 	"Sqyre/internal/config"
-
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/theme"
 )
 
 type DataList struct {
@@ -103,31 +100,22 @@ func (a *DataList) loadLines() error {
 	return nil
 }
 
-func (a *DataList) String() string {
-	return stringifyParams(a.parameters())
-}
+func (a *DataList) String() string           { return stringifyParams(a.parameters()) }
+func (a *DataList) Parameters() []ActionParam { return a.parameters() }
 
-func (a *DataList) Display() fyne.CanvasObject {
-	return displayFromParams(a.parameters())
-}
-
-func (a *DataList) parameters() []actionParam {
+func (a *DataList) parameters() []ActionParam {
 	if a.IsFile {
-		return []actionParam{
+		return []ActionParam{
 			newParam("Type", a.GetType()),
 			newParam("Source Type", "file"),
 			newParam("Source", a.Source),
 			newParam("Output", a.OutputVar),
 		}
 	}
-	return []actionParam{
+	return []ActionParam{
 		newParam("Type", a.GetType()),
 		newParam("Source Type", "text"),
 		newParam("Lines", len(a.lines)),
 		newParam("Output", a.OutputVar),
 	}
-}
-
-func (a *DataList) Icon() fyne.Resource {
-	return theme.StorageIcon()
 }

@@ -1,11 +1,6 @@
 package actions
 
-import (
-	"fmt"
-
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/theme"
-)
+import "fmt"
 
 // Type automates keyboard input by typing a string with a configurable
 // delay between each key press.
@@ -23,16 +18,11 @@ func NewType(text string, delayMs int) *Type {
 	}
 }
 
-func (a *Type) String() string {
-	return stringifyParams(a.parameters())
-}
+func (a *Type) String() string           { return stringifyParams(a.parameters()) }
+func (a *Type) Parameters() []ActionParam { return a.parameters() }
 
-func (a *Type) Display() fyne.CanvasObject {
-	return displayFromParams(a.parameters())
-}
-
-func (a *Type) parameters() []actionParam {
-	params := []actionParam{
+func (a *Type) parameters() []ActionParam {
+	params := []ActionParam{
 		newParam("Type", a.GetType()),
 		newParam("Text", fmt.Sprintf("%q", a.Text)),
 	}
@@ -41,8 +31,3 @@ func (a *Type) parameters() []actionParam {
 	}
 	return params
 }
-
-func (a *Type) Icon() fyne.Resource {
-	return theme.DocumentIcon()
-}
-

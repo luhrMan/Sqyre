@@ -1,11 +1,5 @@
 package actions
 
-import (
-	"Sqyre/internal/assets"
-
-	"fyne.io/fyne/v2"
-)
-
 type Click struct {
 	*BaseAction `yaml:",inline" mapstructure:",squash"`
 	Button      bool `yaml:"button" mapstructure:"button"`
@@ -20,16 +14,11 @@ func NewClick(button bool, state bool) *Click {
 	}
 }
 
-func (a *Click) String() string {
-	return stringifyParams(a.parameters())
-}
+func (a *Click) String() string           { return stringifyParams(a.parameters()) }
+func (a *Click) Parameters() []ActionParam { return a.parameters() }
 
-func (a *Click) Display() fyne.CanvasObject {
-	return displayFromParams(a.parameters())
-}
-
-func (a *Click) parameters() []actionParam {
-	return []actionParam{
+func (a *Click) parameters() []ActionParam {
+	return []ActionParam{
 		newParam("Type", a.GetType()),
 		newParam("Button", LeftOrRight(a.Button)),
 		newParam("State", UpOrDown(a.State)),
@@ -41,11 +30,4 @@ func LeftOrRight(b bool) string {
 		return "right"
 	}
 	return "left"
-}
-
-func (a *Click) Icon() fyne.Resource {
-	if a.State {
-		return assets.MouseClickFilledIcon
-	}
-	return assets.MouseClickIcon
 }

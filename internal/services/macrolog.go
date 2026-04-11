@@ -6,8 +6,6 @@ import (
 	"log"
 	"strings"
 	"sync"
-
-	"fyne.io/fyne/v2"
 )
 
 var (
@@ -89,7 +87,7 @@ func (w *macroLogWriter) Write(p []byte) (n int, err error) {
 		text := strings.TrimSuffix(string(p), "\n")
 		if text != "" {
 			line := text
-			fyne.Do(func() {
+			RunOnMainThread(func() {
 				w.onLine(line)
 			})
 		}

@@ -1,4 +1,4 @@
-package actions
+package actionrender
 
 import (
 	"image/color"

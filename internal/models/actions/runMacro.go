@@ -1,10 +1,5 @@
 package actions
 
-import (
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/theme"
-)
-
 // RunMacro executes another macro by name. The user selects from existing macros.
 type RunMacro struct {
 	*BaseAction `yaml:",inline" mapstructure:",squash"`
@@ -18,25 +13,16 @@ func NewRunMacro(macroName string) *RunMacro {
 	}
 }
 
-func (a *RunMacro) String() string {
-	return stringifyParams(a.parameters())
-}
+func (a *RunMacro) String() string           { return stringifyParams(a.parameters()) }
+func (a *RunMacro) Parameters() []ActionParam { return a.parameters() }
 
-func (a *RunMacro) Display() fyne.CanvasObject {
-	return displayFromParams(a.parameters())
-}
-
-func (a *RunMacro) parameters() []actionParam {
+func (a *RunMacro) parameters() []ActionParam {
 	target := a.MacroName
 	if target == "" {
 		target = "not set"
 	}
-	return []actionParam{
+	return []ActionParam{
 		newParam("Type", a.GetType()),
 		newParam("Macro", target),
 	}
-}
-
-func (a *RunMacro) Icon() fyne.Resource {
-	return theme.MediaPlayIcon()
 }

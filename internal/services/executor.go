@@ -16,7 +16,6 @@ import (
 	"strings"
 	"time"
 
-	"fyne.io/fyne/v2"
 	"github.com/go-vgo/robotgo"
 )
 
@@ -36,7 +35,7 @@ func ExecuteMacroWithLogging(m *models.Macro) {
 		return
 	}
 	defer func() {
-		fyne.Do(func() {
+		RunOnMainThread(func() {
 			if macroRunningCallback != nil {
 				macroRunningCallback(false)
 			}
@@ -46,7 +45,7 @@ func ExecuteMacroWithLogging(m *models.Macro) {
 		}
 	}()
 	if showMacroLogPopupFunc != nil {
-		fyne.DoAndWait(func() {
+		RunOnMainThreadAndWait(func() {
 			showMacroLogPopupFunc(m.Name)
 			if macroRunningCallback != nil {
 				macroRunningCallback(true)
@@ -54,7 +53,7 @@ func ExecuteMacroWithLogging(m *models.Macro) {
 		})
 		defer StopMacroLogCapture()
 	} else {
-		fyne.DoAndWait(func() {
+		RunOnMainThreadAndWait(func() {
 			if macroRunningCallback != nil {
 				macroRunningCallback(true)
 			}
@@ -184,9 +183,9 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 		}
 		if node.Name == "root" {
 			resetDataListsInTree(node)
-			fyne.Do(func() {
-				MacroActiveIndicator().Show()
-				MacroActiveIndicator().Start()
+			RunOnMainThread(func() {
+				GetActivityReporter().Show()
+				GetActivityReporter().Start()
 			})
 		}
 
@@ -194,17 +193,17 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 			log.Printf("Loop: %s iteration %d", node.Name, i+1)
 			for _, action := range node.GetSubActions() {
 				if err := executeWithContext(action, macro); err != nil {
-					fyne.DoAndWait(func() {
-						MacroActiveIndicator().Stop()
-						MacroActiveIndicator().Hide()
+					RunOnMainThreadAndWait(func() {
+						GetActivityReporter().Stop()
+						GetActivityReporter().Hide()
 					})
 					return err
 				}
 			}
 			if node.Name == "root" {
-				fyne.Do(func() {
-					MacroActiveIndicator().Stop()
-					MacroActiveIndicator().Hide()
+				RunOnMainThread(func() {
+					GetActivityReporter().Stop()
+					GetActivityReporter().Hide()
 				})
 			}
 

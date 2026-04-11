@@ -1,11 +1,6 @@
 package actions
 
-import (
-	"fmt"
-
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/theme"
-)
+import "fmt"
 
 type Wait struct {
 	*BaseAction `yaml:",inline" mapstructure:",squash"`
@@ -19,21 +14,12 @@ func NewWait(time int) *Wait {
 	}
 }
 
-func (a *Wait) String() string {
-	return stringifyParams(a.parameters())
-}
+func (a *Wait) String() string           { return stringifyParams(a.parameters()) }
+func (a *Wait) Parameters() []ActionParam { return a.parameters() }
 
-func (a *Wait) Display() fyne.CanvasObject {
-	return displayFromParams(a.parameters())
-}
-
-func (a *Wait) parameters() []actionParam {
-	return []actionParam{
+func (a *Wait) parameters() []ActionParam {
+	return []ActionParam{
 		newParam("Type", a.GetType()),
 		newParam("Time", fmt.Sprintf("%d ms", a.Time)),
 	}
-}
-
-func (a *Wait) Icon() fyne.Resource {
-	return theme.HistoryIcon()
 }
