@@ -317,9 +317,7 @@ func searchAreaCreateConfig() createDialogConfig {
 			return nil
 		},
 		afterSave: func() {
-			if acc, ok := shell().EditorTabs.SearchAreasTab.Widgets["Accordion"].(*widget.Accordion); ok {
-				setAccordionSearchAreasLists(acc)
-			}
+			syncEditorSearchAreaAccordions()
 			markSearchAreasClean()
 		},
 	}
@@ -549,9 +547,7 @@ func performDeleteForTab() {
 			} else {
 				et.SearchAreasTab.SelectedItem = &models.SearchArea{}
 			}
-			if acc, ok := et.SearchAreasTab.Widgets["Accordion"].(*widget.Accordion); ok {
-				setAccordionSearchAreasLists(acc)
-			}
+			syncEditorSearchAreaAccordions()
 			if list, ok := et.SearchAreasTab.Widgets[program+"-list"].(*widget.List); ok {
 				list.UnselectAll()
 			}

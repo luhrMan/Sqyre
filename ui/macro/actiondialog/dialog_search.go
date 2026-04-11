@@ -149,7 +149,7 @@ func createImageSearchDialogContent(action *actions.ImageSearch) (fyne.CanvasObj
 			slices.Sort(t)
 			*tempTargetsRef = t
 			refreshPreview()
-			refreshItemsAccordion()
+			// Selection visuals and tri-state headers refresh via OnSelectionMaybeChanged after this callback.
 		},
 		func(newTargets []string) {
 			*tempTargetsRef = newTargets

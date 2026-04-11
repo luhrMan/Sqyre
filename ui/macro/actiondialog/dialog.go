@@ -141,7 +141,7 @@ func buildProgramListAccordionWithSearchbar(cfg programListAccordionConfig) (*wi
 	acc := widget.NewAccordion()
 	rebuild := func() {
 		filterText := searchbar.Text
-		acc.Items = nil
+		var items []*widget.AccordionItem
 		for _, p := range repositories.ProgramRepo().GetAllSortedByName() {
 			defaultList := cfg.GetKeys(p)
 			filtered := defaultList
@@ -177,8 +177,9 @@ func buildProgramListAccordionWithSearchbar(cfg programListAccordionConfig) (*wi
 					cfg.OnSelect(prog, filtered[id])
 				}
 			}
-			acc.Append(widget.NewAccordionItem(fmt.Sprintf("%s (%d)", prog.Name, len(filtered)), list))
+			items = append(items, widget.NewAccordionItem(fmt.Sprintf("%s (%d)", prog.Name, len(filtered)), list))
 		}
+		acc.Items = items
 		acc.Refresh()
 	}
 	searchbar.OnChanged = func(string) { rebuild() }
@@ -266,10 +267,10 @@ func buildItemsAccordionWithSearchbar(
 	acc := custom_widgets.NewAccordionWithHeaderWidgets()
 	var itemGrids []*widget.GridWrap
 	refreshAccordion := func() {
-		acc.Refresh()
 		for _, g := range itemGrids {
 			g.Refresh()
 		}
+		acc.RefreshHeaderWidgets()
 	}
 	rebuild := func() {
 		filterText := searchbar.Text

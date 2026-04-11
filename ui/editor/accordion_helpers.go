@@ -4,9 +4,22 @@ import (
 	"Sqyre/internal/config"
 	"Sqyre/internal/models"
 	"sort"
+	"strings"
 
+	"fyne.io/fyne/v2/widget"
 	"github.com/lithammer/fuzzysearch/fuzzy"
 )
+
+// accordionRowIndexForProgram finds the accordion row for a program. Titles are "ProgramName (n)".
+func accordionRowIndexForProgram(acc *widget.Accordion, programName string) int {
+	prefix := programName + " ("
+	for i, item := range acc.Items {
+		if strings.HasPrefix(item.Title, prefix) {
+			return i
+		}
+	}
+	return -1
+}
 
 // sortKeysByRepoDisplayName sorts keys by entity display name from get; falls back to key string.
 func sortKeysByRepoDisplayName(keys []string, get func(string) string) {

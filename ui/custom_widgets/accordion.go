@@ -51,6 +51,31 @@ func (a *AccordionWithHeaderWidgets) RemoveAll() {
 	a.Refresh()
 }
 
+// SetItemsWithHeaders replaces all accordion rows and optional header widgets, then refreshes once.
+// Use this instead of RemoveAll + repeated AppendWithHeader to avoid O(n) full accordion refreshes.
+// If headers is shorter than items, missing entries are treated as nil; if longer, it is truncated.
+func (a *AccordionWithHeaderWidgets) SetItemsWithHeaders(items []*widget.AccordionItem, headers []fyne.CanvasObject) {
+	a.Items = items
+	n := len(items)
+	a.headerWidgets = make([]fyne.CanvasObject, n)
+	for i := range n {
+		if i < len(headers) {
+			a.headerWidgets[i] = headers[i]
+		}
+	}
+	a.Refresh()
+}
+
+// RefreshHeaderWidgets refreshes only the optional right-side header widgets (e.g. tri-state controls).
+// Use when item content/grids already refresh themselves and a full accordion renderer pass is unnecessary.
+func (a *AccordionWithHeaderWidgets) RefreshHeaderWidgets() {
+	for _, hw := range a.headerWidgets {
+		if hw != nil {
+			hw.Refresh()
+		}
+	}
+}
+
 // UpdateHeaderAt sets the optional right-side header widget for an existing item (e.g. after rebuilding one row).
 func (a *AccordionWithHeaderWidgets) UpdateHeaderAt(index int, header fyne.CanvasObject) {
 	for len(a.headerWidgets) < len(a.Items) {

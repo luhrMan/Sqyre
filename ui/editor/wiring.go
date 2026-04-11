@@ -297,12 +297,7 @@ func refreshAllProgramRelatedUI() {
 	if accordion, ok := et.PointsTab.Widgets["Accordion"].(*widget.Accordion); ok {
 		setAccordionPointsLists(accordion)
 	}
-	if accordion, ok := et.SearchAreasTab.Widgets["Accordion"].(*widget.Accordion); ok {
-		setAccordionSearchAreasLists(accordion)
-	}
-	if accordion, ok := et.AutoPicTab.Widgets["Accordion"].(*widget.Accordion); ok {
-		setAccordionAutoPicSearchAreasLists(accordion)
-	}
+	syncEditorSearchAreaAccordions()
 	if accordion, ok := et.MasksTab.Widgets["Accordion"].(*widget.Accordion); ok {
 		setAccordionMasksLists(accordion)
 	}
@@ -319,12 +314,7 @@ func setEditorLists() {
 	setAccordionPointsLists(
 		et.PointsTab.Widgets["Accordion"].(*widget.Accordion),
 	)
-	setAccordionSearchAreasLists(
-		et.SearchAreasTab.Widgets["Accordion"].(*widget.Accordion),
-	)
-	setAccordionAutoPicSearchAreasLists(
-		et.AutoPicTab.Widgets["Accordion"].(*widget.Accordion),
-	)
+	syncEditorSearchAreaAccordions()
 	setAccordionMasksLists(
 		et.MasksTab.Widgets["Accordion"].(*widget.Accordion),
 	)
@@ -625,7 +615,7 @@ func setEditorForms() {
 				}()
 
 				if acc, ok := et.PointsTab.Widgets["Accordion"].(*widget.Accordion); ok {
-					setAccordionPointsLists(acc)
+					refreshPointsAccordionProgramRow(acc, p)
 				}
 				markPointsClean()
 			}
@@ -852,9 +842,7 @@ func setEditorForms() {
 					}()
 					shell().UpdateSearchAreaPreview(v)
 				}()
-				if acc, ok := et.SearchAreasTab.Widgets["Accordion"].(*widget.Accordion); ok {
-					setAccordionSearchAreasLists(acc)
-				}
+				refreshEditorSearchAreaAccordionsForProgram(p)
 				markSearchAreasClean()
 			}
 

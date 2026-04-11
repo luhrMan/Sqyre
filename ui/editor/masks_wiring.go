@@ -53,68 +53,104 @@ func setMaskWidgets(m models.Mask, programName string) {
 	shell().RefreshEditorActionBar()
 }
 
+func buildMaskAccordionItemForProgram(p *models.Program, filterText string) *widget.AccordionItem {
+	defaultList := p.MaskRepo().GetAllKeys()
+	filtered := filterKeysByFuzzy(filterText, defaultList)
+	sortMaskKeysByDisplayName(p, filtered)
+	if skipProgramAccordionRow(filterText, p.Name, filtered) {
+		return nil
+	}
+	prog := p
+	lists := struct {
+		masks    *widget.List
+		filtered []string
+	}{filtered: filtered}
+
+	lists.masks = widget.NewList(
+		func() int { return len(lists.filtered) },
+		func() fyne.CanvasObject { return widget.NewLabel("template") },
+		func(id widget.ListItemID, co fyne.CanvasObject) {
+			name := lists.filtered[id]
+			label := co.(*widget.Label)
+			program, err := repositories.ProgramRepo().Get(prog.Name)
+			if err != nil {
+				log.Printf("Error getting program %s: %v", prog.Name, err)
+				return
+			}
+			mask, err := program.MaskRepo().Get(name)
+			if err != nil {
+				return
+			}
+			label.SetText(mask.Name)
+		},
+	)
+
+	lists.masks.OnSelected = func(id widget.ListItemID) {
+		program, err := repositories.ProgramRepo().Get(prog.Name)
+		if err != nil {
+			log.Printf("Error getting program %s: %v", prog.Name, err)
+			return
+		}
+		shell().EditorTabs.MasksTab.ProgramSelector.SetSelected(program.Name)
+		maskName := lists.filtered[id]
+		mask, err := program.MaskRepo().Get(maskName)
+		if err != nil {
+			return
+		}
+		shell().EditorTabs.MasksTab.SelectedItem = mask
+		setMaskWidgets(*mask, program.Name)
+		markMasksClean()
+	}
+
+	shell().EditorTabs.MasksTab.Widgets[prog.Name+"-list"] = lists.masks
+	return widget.NewAccordionItem(fmt.Sprintf("%s (%d)", prog.Name, len(filtered)), lists.masks)
+}
+
 func setAccordionMasksLists(acc *widget.Accordion) {
-	acc.Items = []*widget.AccordionItem{}
 	et := shell().EditorTabs.MasksTab
 	filterText := ""
 	if sb, ok := et.Widgets["searchbar"].(*widget.Entry); ok {
 		filterText = sb.Text
 		sb.OnChanged = func(string) { setAccordionMasksLists(acc) }
 	}
-
+	var items []*widget.AccordionItem
 	for _, p := range repositories.ProgramRepo().GetAllSortedByName() {
-		defaultList := p.MaskRepo().GetAllKeys()
-		filtered := filterKeysByFuzzy(filterText, defaultList)
-		sortMaskKeysByDisplayName(p, filtered)
-		if skipProgramAccordionRow(filterText, p.Name, filtered) {
-			continue
+		if it := buildMaskAccordionItemForProgram(p, filterText); it != nil {
+			items = append(items, it)
 		}
-
-		lists := struct {
-			masks    *widget.List
-			filtered []string
-		}{filtered: filtered}
-
-		lists.masks = widget.NewList(
-			func() int { return len(lists.filtered) },
-			func() fyne.CanvasObject { return widget.NewLabel("template") },
-			func(id widget.ListItemID, co fyne.CanvasObject) {
-				name := lists.filtered[id]
-				label := co.(*widget.Label)
-				program, err := repositories.ProgramRepo().Get(p.Name)
-				if err != nil {
-					log.Printf("Error getting program %s: %v", p.Name, err)
-					return
-				}
-				mask, err := program.MaskRepo().Get(name)
-				if err != nil {
-					return
-				}
-				label.SetText(mask.Name)
-			},
-		)
-
-		lists.masks.OnSelected = func(id widget.ListItemID) {
-			program, err := repositories.ProgramRepo().Get(p.Name)
-			if err != nil {
-				log.Printf("Error getting program %s: %v", p.Name, err)
-				return
-			}
-			shell().EditorTabs.MasksTab.ProgramSelector.SetSelected(program.Name)
-			maskName := lists.filtered[id]
-			mask, err := program.MaskRepo().Get(maskName)
-			if err != nil {
-				return
-			}
-			shell().EditorTabs.MasksTab.SelectedItem = mask
-			setMaskWidgets(*mask, program.Name)
-			markMasksClean()
-		}
-
-		programMaskListWidget := *widget.NewAccordionItem(fmt.Sprintf("%s (%d)", p.Name, len(filtered)), lists.masks)
-		shell().EditorTabs.MasksTab.Widgets[p.Name+"-list"] = lists.masks
-		acc.Append(&programMaskListWidget)
 	}
+	acc.Items = items
+	acc.Refresh()
+}
+
+// refreshMasksAccordionProgramRow rebuilds one program row after an in-place edit (e.g. Update).
+func refreshMasksAccordionProgramRow(acc *widget.Accordion, programName string) {
+	p, err := repositories.ProgramRepo().Get(programName)
+	if err != nil {
+		log.Printf("Error getting program %s: %v", programName, err)
+		return
+	}
+	et := shell().EditorTabs.MasksTab
+	filterText := ""
+	if sb, ok := et.Widgets["searchbar"].(*widget.Entry); ok {
+		filterText = sb.Text
+	}
+	i := accordionRowIndexForProgram(acc, programName)
+	newItem := buildMaskAccordionItemForProgram(p, filterText)
+	if newItem == nil {
+		if i >= 0 {
+			setAccordionMasksLists(acc)
+		}
+		return
+	}
+	if i < 0 {
+		setAccordionMasksLists(acc)
+		return
+	}
+	wasOpen := acc.Items[i].Open
+	newItem.Open = wasOpen
+	acc.Items[i] = newItem
+	acc.Refresh()
 }
 
 func readMaskShapeFromUI() string {
@@ -184,7 +220,7 @@ func setMasksForms() {
 				}
 
 				if acc, ok := et.MasksTab.Widgets["Accordion"].(*widget.Accordion); ok {
-					setAccordionMasksLists(acc)
+					refreshMasksAccordionProgramRow(acc, p)
 				}
 				markMasksClean()
 			}

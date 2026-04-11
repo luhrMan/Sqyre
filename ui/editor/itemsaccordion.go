@@ -117,7 +117,8 @@ func PopulateItemsSearchAccordion(
 	filterText string,
 	buildOpts func(*models.Program) ItemsAccordionOptions,
 ) {
-	acc.RemoveAll()
+	var items []*widget.AccordionItem
+	var headers []fyne.CanvasObject
 	for _, p := range repositories.ProgramRepo().GetAllSortedByName() {
 		if !ProgramRowVisibleInItemsSearch(p, filterText) {
 			continue
@@ -125,9 +126,10 @@ func PopulateItemsSearchAccordion(
 		prog := p
 		opts := buildOpts(prog)
 		item, hdr := CreateProgramAccordionItem(opts)
-		acc.AppendWithHeader(item, hdr)
+		items = append(items, item)
+		headers = append(headers, hdr)
 	}
-	acc.Refresh()
+	acc.SetItemsWithHeaders(items, headers)
 }
 
 // CreateProgramAccordionItem builds a single accordion item (one program's item grid)
