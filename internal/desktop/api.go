@@ -23,6 +23,19 @@ type Bridge interface {
 	WindowBounds(pid int) (x, y, width, height int)
 	SetMouseSleep(ms int)
 	SetKeySleep(ms int)
+
+	// Input automation
+	Move(x, y int)
+	MoveSmooth(x, y int, low, high float64)
+	MouseToggle(btn string, downUp ...string)
+	KeyDown(key string) error
+	KeyUp(key string) error
+	TypeChar(s string)
+	ClipboardWrite(text string)
+
+	// Window management
+	FindWindowNames() ([]string, error)
+	ActiveWindowByName(name string) error
 }
 
 // Default is the process-wide bridge. The native build sets this in init.
@@ -49,3 +62,21 @@ func (noopBridge) WindowBounds(int) (int, int, int, int) { return 0, 0, 0, 0 }
 func (noopBridge) SetMouseSleep(int) {}
 
 func (noopBridge) SetKeySleep(int) {}
+
+func (noopBridge) Move(int, int) {}
+
+func (noopBridge) MoveSmooth(int, int, float64, float64) {}
+
+func (noopBridge) MouseToggle(string, ...string) {}
+
+func (noopBridge) KeyDown(string) error { return ErrUnavailable }
+
+func (noopBridge) KeyUp(string) error { return ErrUnavailable }
+
+func (noopBridge) TypeChar(string) {}
+
+func (noopBridge) ClipboardWrite(string) {}
+
+func (noopBridge) FindWindowNames() ([]string, error) { return nil, ErrUnavailable }
+
+func (noopBridge) ActiveWindowByName(string) error { return ErrUnavailable }

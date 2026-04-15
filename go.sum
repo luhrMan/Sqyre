@@ -8,6 +8,10 @@ github.com/BurntSushi/toml v1.6.0 h1:dRaEfpa2VI55EwlIW72hMRHdWouJeRF7TPYhI+AUQjk
 github.com/BurntSushi/toml v1.6.0/go.mod h1:ukJfTF/6rtPPRCnwkur4qwRxa8vTRFBF0uk2lLoLwho=
 github.com/ErikKalkoken/fyne-kx v0.7.2 h1:KD2F4FBFcAUpHlGQ1bpfvw2NRYTVIBVDo9DjdwYmaes=
 github.com/ErikKalkoken/fyne-kx v0.7.2/go.mod h1:d8dJ1hhvwfgZZ3n/zSKhtjhNC+qGFqsn/EcUaaREpDU=
+github.com/bnema/libwldevices-go v0.1.4 h1:jRatAQKd2djz/5K4uV1mVodbDf9VgXFjTefFhGbDun8=
+github.com/bnema/libwldevices-go v0.1.4/go.mod h1:dsFJJ/ByMyubBtUExLsXJCt9nDwBYcyFm+6+dwF5of8=
+github.com/bnema/wlturbo v0.1.0 h1:cAV/sJPB9T5fqQiogoQY+RU2gak1PlD/X53gR8D5vTQ=
+github.com/bnema/wlturbo v0.1.0/go.mod h1:ZtYioGSi+7W6nWjDJHUrZHYPC4j11X4F46lWq5M5dbc=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/dblohm7/wingoes v0.0.0-20250822163801-6d8e6105c62d h1:QRKpU+9ZBDs62LyBfwhZkJdB5DJX2Sm3p4kUh7l1aA0=

@@ -14,6 +14,7 @@ require (
 	github.com/lithammer/fuzzysearch v1.1.8
 	github.com/luhrMan/gohook v0.0.0-20260328051255-ab117b35bd48
 	github.com/otiai10/gosseract/v2 v2.4.1
+	github.com/rymdport/portal v0.4.2
 	github.com/spf13/viper v1.21.0
 	github.com/vcaesar/screenshot v0.11.1
 	gocv.io/x/gocv v0.43.0
@@ -25,6 +26,8 @@ replace github.com/otiai10/gosseract/v2 => ./internal/gosseract
 require (
 	fyne.io/systray v1.12.0 // indirect
 	github.com/BurntSushi/toml v1.6.0 // indirect
+	github.com/bnema/libwldevices-go v0.1.4 // indirect
+	github.com/bnema/wlturbo v0.1.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dblohm7/wingoes v0.0.0-20250822163801-6d8e6105c62d // indirect
 	github.com/ebitengine/purego v0.10.0 // indirect
@@ -53,7 +56,6 @@ require (
 	github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 // indirect
 	github.com/robotn/xgb v0.10.0 // indirect
 	github.com/robotn/xgbutil v0.10.0 // indirect
-	github.com/rymdport/portal v0.4.2 // indirect
 	github.com/sagikazarmark/locafero v0.12.0 // indirect
 	github.com/shirou/gopsutil/v4 v4.26.2 // indirect
 	github.com/spf13/afero v1.15.0 // indirect

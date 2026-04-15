@@ -7,7 +7,6 @@ import (
 	"image"
 	"image/color"
 
-	"github.com/go-vgo/robotgo"
 	"gocv.io/x/gocv"
 )
 
@@ -85,7 +84,7 @@ func drawPreviewMonitorOutlines(mat *gocv.Mat, vb image.Rectangle, monitors []Mo
 
 // SearchAreaPreviewImage captures the virtual rectangle vb and draws monitor outlines plus a red selection rect.
 func SearchAreaPreviewImage(vb image.Rectangle, lx, ty, rx, by int, monitors []MonitorOutline) (image.Image, error) {
-	captureImg, err := robotgo.CaptureImg(vb.Min.X, vb.Min.Y, vb.Dx(), vb.Dy())
+	captureImg, err := Default.CaptureImg(vb.Min.X, vb.Min.Y, vb.Dx(), vb.Dy())
 	if err != nil {
 		return nil, err
 	}
@@ -109,7 +108,7 @@ func SearchAreaPreviewImage(vb image.Rectangle, lx, ty, rx, by int, monitors []M
 
 // PointPreviewImage captures vb and draws a crosshair at absolute px, py.
 func PointPreviewImage(vb image.Rectangle, px, py int, monitors []MonitorOutline) (image.Image, error) {
-	captureImg, err := robotgo.CaptureImg(vb.Min.X, vb.Min.Y, vb.Dx(), vb.Dy())
+	captureImg, err := Default.CaptureImg(vb.Min.X, vb.Min.Y, vb.Dx(), vb.Dy())
 	if err != nil {
 		return nil, err
 	}

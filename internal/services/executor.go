@@ -3,6 +3,7 @@ package services
 import (
 	"Sqyre/internal/assets"
 	"Sqyre/internal/config"
+	"Sqyre/internal/desktop"
 	"Sqyre/internal/models"
 	"Sqyre/internal/models/actions"
 	"Sqyre/internal/models/repositories"
@@ -15,8 +16,6 @@ import (
 	"slices"
 	"strings"
 	"time"
-
-	"github.com/go-vgo/robotgo"
 )
 
 // Execute executes an action with optional macro context for variable resolution
@@ -100,7 +99,7 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 	case *actions.Wait:
 		log.Println("Wait:", node.String())
 		time := node.Time
-		robotgo.MilliSleep(time)
+		desktop.Default.MilliSleep(time)
 		return nil
 	case *actions.Move:
 		log.Println("Move:", node.String())
@@ -115,18 +114,18 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 			y = 0
 		}
 		if node.Smooth {
-			robotgo.MoveSmooth(x, y, 0.5, 1.01)
+			desktop.Default.MoveSmooth(x, y, 0.5, 1.01)
 		} else {
-			robotgo.Move(x, y)
+			desktop.Default.Move(x, y)
 		}
 		return nil
 	case *actions.Click:
 		log.Println("Click:", node.String())
 		btn := actions.LeftOrRight(node.Button)
 		if node.State {
-			robotgo.Toggle(btn)
+			desktop.Default.MouseToggle(btn)
 		} else {
-			robotgo.Toggle(btn, "up")
+			desktop.Default.MouseToggle(btn, "up")
 		}
 		return nil
 	case *actions.Key:
@@ -140,12 +139,12 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 			}
 		}
 		if node.State {
-			err := robotgo.KeyDown(key)
+			err := desktop.Default.KeyDown(key)
 			if err != nil {
 				return err
 			}
 		} else {
-			err := robotgo.KeyUp(key)
+			err := desktop.Default.KeyUp(key)
 			if err != nil {
 				return err
 			}
@@ -165,9 +164,9 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 			delayMs = 0
 		}
 		for _, r := range text {
-			robotgo.Type(string(r))
+			desktop.Default.TypeChar(string(r))
 			if delayMs > 0 {
-				robotgo.MilliSleep(delayMs)
+				desktop.Default.MilliSleep(delayMs)
 			}
 		}
 		return nil
@@ -251,14 +250,14 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 		slices.Sort(foundNames)
 		slices.Sort(notFoundNames)
 		count := 0
-		var firstPoint *robotgo.Point
+		var firstPoint *image.Point
 		for _, np := range sorted {
 			point := np.Point
 			count++
 			point.X += searchLeftX
 			point.Y += searchTopY
 			if firstPoint == nil {
-				firstPoint = &robotgo.Point{X: point.X, Y: point.Y}
+				firstPoint = &image.Point{X: point.X, Y: point.Y}
 			}
 
 			// Store current match and item internal variables so sub-actions can use ${StackMax}, ${Cols}, ${Rows}, ${ItemName}, ${ImagePixelWidth}, ${ImagePixelHeight}
@@ -411,7 +410,7 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 			valStr := fmt.Sprintf("%v", val)
 
 			if node.Destination == "clipboard" {
-				robotgo.WriteAll(valStr)
+				desktop.Default.ClipboardWrite(valStr)
 			} else {
 				filePath := filepath.Join(config.GetVariablesPath(), node.Destination)
 				if err := node.SaveToFile(valStr, filePath); err != nil {
@@ -461,7 +460,7 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 
 		var foundX, foundY int
 		scanOnce := func() bool {
-			captureImg, capErr := robotgo.CaptureImg(leftX, topY, w, h)
+			captureImg, capErr := desktop.Default.CaptureImg(leftX, topY, w, h)
 			if capErr != nil || captureImg == nil {
 				log.Printf("FindPixel: screen capture failed: %v", capErr)
 				return false

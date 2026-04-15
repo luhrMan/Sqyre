@@ -1,17 +1,16 @@
 package services
 
 import (
+	"Sqyre/internal/desktop"
 	"Sqyre/internal/models/actions"
 	"fmt"
 	"strings"
-
-	"github.com/go-vgo/robotgo"
 )
 
 // ActiveWindowNames returns a list of process/window names that can be used with ActiveName.
 // The list is suitable for showing in a dropdown; empty names are filtered out.
 func ActiveWindowNames() ([]string, error) {
-	names, err := robotgo.FindNames()
+	names, err := desktop.Default.FindWindowNames()
 	if err != nil {
 		return nil, fmt.Errorf("list windows: %w", err)
 	}
@@ -34,7 +33,7 @@ func RunFocusWindow(a *actions.FocusWindow) error {
 	if target == "" {
 		return fmt.Errorf("focus window: no window target set")
 	}
-	if err := robotgo.ActiveName(target); err != nil {
+	if err := desktop.Default.ActiveWindowByName(target); err != nil {
 		return fmt.Errorf("focus window %q: %w", target, err)
 	}
 	return nil

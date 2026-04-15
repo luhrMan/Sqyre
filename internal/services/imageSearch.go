@@ -3,6 +3,7 @@ package services
 import (
 	"Sqyre/internal/assets"
 	"Sqyre/internal/config"
+	"Sqyre/internal/desktop"
 	"Sqyre/internal/models"
 	"Sqyre/internal/models/actions"
 	"Sqyre/internal/models/repositories"
@@ -17,11 +18,10 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/go-vgo/robotgo"
 	"gocv.io/x/gocv"
 )
 
-func imageSearch(a *actions.ImageSearch, macro *models.Macro) (map[string][]robotgo.Point, error) {
+func imageSearch(a *actions.ImageSearch, macro *models.Macro) (map[string][]image.Point, error) {
 	sa := a.SearchArea
 	leftX, topY, rightX, bottomY, err := ResolveSearchAreaCoords(sa.LeftX, sa.TopY, sa.RightX, sa.BottomY, macro)
 	if err != nil {
@@ -36,7 +36,7 @@ func imageSearch(a *actions.ImageSearch, macro *models.Macro) (map[string][]robo
 		return nil, err
 	}
 	log.Printf("Image Searching | %v in X1:%d Y1:%d X2:%d Y2:%d, width:%d height:%d", a.Targets, leftX, topY, rightX, bottomY, w, h)
-	captureImg, err := robotgo.CaptureImg(leftX, topY, w, h)
+	captureImg, err := desktop.Default.CaptureImg(leftX, topY, w, h)
 	if err != nil {
 		log.Printf("Image Search: capture failed: %v (macro continues)", err)
 		return nil, err
@@ -65,12 +65,12 @@ func imageSearch(a *actions.ImageSearch, macro *models.Macro) (map[string][]robo
 	return results, nil
 }
 
-func match(img, imgDraw gocv.Mat, a *actions.ImageSearch, macro *models.Macro) (map[string][]robotgo.Point, error) {
+func match(img, imgDraw gocv.Mat, a *actions.ImageSearch, macro *models.Macro) (map[string][]image.Point, error) {
 	vs := IconVariantServiceInstance()
 	Imask := gocv.NewMat()
 	defer Imask.Close()
 
-	results := make(map[string][]robotgo.Point)
+	results := make(map[string][]image.Point)
 	var wg sync.WaitGroup
 	resultsMutex := &sync.Mutex{}
 	var matchErr error
@@ -104,7 +104,7 @@ func match(img, imgDraw gocv.Mat, a *actions.ImageSearch, macro *models.Macro) (
 			}
 
 			// Accumulate all matches for this item across all variants
-			allMatches := []robotgo.Point{}
+			allMatches := []image.Point{}
 
 			for _, v := range variants { // search for the item variants also
 				ip := programName + config.ProgramDelimiter + itemName + config.ProgramDelimiter + v + config.PNG
@@ -238,7 +238,7 @@ func buildMask(item *models.Item, program *models.Program, templateRows, templat
 	return m
 }
 
-func FindTemplateMatches(img, template, imask, tmask, cmask gocv.Mat, threshold float32, blur int) []robotgo.Point {
+func FindTemplateMatches(img, template, imask, tmask, cmask gocv.Mat, threshold float32, blur int) []image.Point {
 	result := gocv.NewMat()
 	defer result.Close()
 
@@ -269,11 +269,11 @@ func FindTemplateMatches(img, template, imask, tmask, cmask gocv.Mat, threshold 
 	return matches
 }
 
-func GetMatchesFromTemplateMatchResult(result gocv.Mat, threshold float32, closeMatchesDistance int) []robotgo.Point {
+func GetMatchesFromTemplateMatchResult(result gocv.Mat, threshold float32, closeMatchesDistance int) []image.Point {
 	resultRows := result.Rows()
 	resultCols := result.Cols()
 
-	var matches []robotgo.Point
+	var matches []image.Point
 	for y := 0; y < resultRows; y++ {
 		for x := 0; x < resultCols; x++ {
 			confidence := result.GetFloatAt(y, x)
@@ -283,7 +283,7 @@ func GetMatchesFromTemplateMatchResult(result gocv.Mat, threshold float32, close
 			if confidence >= threshold {
 				log.Printf("Position (%d, %d), Correlation: %.4f",
 					x, y, confidence)
-				newPoint := robotgo.Point{X: x, Y: y}
+				newPoint := image.Point{X: x, Y: y}
 				if !isNearExistingPoint(newPoint, matches, closeMatchesDistance) {
 					matches = append(matches, newPoint)
 				}
@@ -294,7 +294,7 @@ func GetMatchesFromTemplateMatchResult(result gocv.Mat, threshold float32, close
 	return matches
 }
 
-func isNearExistingPoint(point robotgo.Point, matches []robotgo.Point, distance int) bool {
+func isNearExistingPoint(point image.Point, matches []image.Point, distance int) bool {
 	for _, existing := range matches {
 		if abs(existing.X-point.X) <= distance && abs(existing.Y-point.Y) <= distance {
 			return true
@@ -354,7 +354,7 @@ func ImageToMatToImagePreprocess(img image.Image, gray, blur, threshold, resize 
 	return img
 }
 
-func DrawFoundMatches(matches []robotgo.Point, rectSizeX, rectSizeY int, draw gocv.Mat, text string) {
+func DrawFoundMatches(matches []image.Point, rectSizeX, rectSizeY int, draw gocv.Mat, text string) {
 	for _, match := range matches {
 		rect := image.Rect(
 			match.X,
@@ -372,10 +372,10 @@ func DrawFoundMatches(matches []robotgo.Point, rectSizeX, rectSizeY int, draw go
 // Used so Image Search sub-actions can resolve item internal variables (StackMax, Cols, Rows, etc.).
 type NamedPoint struct {
 	Name  string // target key: programName + ProgramDelimiter + itemName
-	Point robotgo.Point
+	Point image.Point
 }
 
-func SortPoints(points []robotgo.Point, sortBy string) []robotgo.Point {
+func SortPoints(points []image.Point, sortBy string) []image.Point {
 	switch sortBy {
 	case "TopLeftToBottomRight":
 		sort.Slice(points, func(i, j int) bool {
@@ -394,7 +394,7 @@ func SortPoints(points []robotgo.Point, sortBy string) []robotgo.Point {
 	return points
 }
 
-func SortListOfPoints(lop map[string][]robotgo.Point) []NamedPoint {
+func SortListOfPoints(lop map[string][]image.Point) []NamedPoint {
 	var list []NamedPoint
 	for name, points := range lop {
 		for _, pt := range points {

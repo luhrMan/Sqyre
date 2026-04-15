@@ -2,6 +2,7 @@ package services
 
 import (
 	"Sqyre/internal/assets"
+	"Sqyre/internal/desktop"
 	"Sqyre/internal/models"
 	"Sqyre/internal/models/actions"
 	"bytes"
@@ -11,7 +12,6 @@ import (
 	"log"
 	"strings"
 
-	"github.com/go-vgo/robotgo"
 	"github.com/otiai10/gosseract/v2"
 	"gocv.io/x/gocv"
 )
@@ -140,7 +140,7 @@ func OCR(a *actions.Ocr, macro *models.Macro) (foundText string, outX, outY int,
 	searchCenterY := (topY + bottomY) / 2
 	log.Printf("%s OCR search | %s in X1:%d Y1:%d X2:%d Y2:%d", a.Target, a.SearchArea.Name, leftX, topY, rightX, bottomY)
 
-	img, err := robotgo.CaptureImg(leftX, topY, w, h)
+	img, err := desktop.Default.CaptureImg(leftX, topY, w, h)
 	if err != nil || img == nil {
 		log.Printf("OCR: capture failed: %v", err)
 		return "", 0, 0, err
