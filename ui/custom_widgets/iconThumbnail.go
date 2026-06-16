@@ -98,26 +98,13 @@ func (t *IconThumbnail) loadIcon() *canvas.Image {
 	return t.createPlaceholder(true)
 }
 
-// constructIconKey constructs the cache key from the icon file path
-// Key format: "programName|filename.png"
-// Example: "/home/user/.sqyre/images/icons/dark and darker/Health Potion.png"
-//
-//	-> "dark and darker|Health Potion.png"
 func (t *IconThumbnail) constructIconKey() string {
 	if t.iconPath == "" {
 		return ""
 	}
-
-	// Get the filename (e.g., "Health Potion.png" or "Health Potion|Variant1.png")
 	filename := filepath.Base(t.iconPath)
-
-	// Get the parent directory name (program name, e.g., "dark and darker")
 	parentDir := filepath.Base(filepath.Dir(t.iconPath))
-
-	// Construct key: programName|filename
 	key := parentDir + config.ProgramDelimiter + filename
-
-	//log.Printf("DEBUG: IconThumbnail constructIconKey - iconPath: %s, key: %s, variant: %s", t.iconPath, key, t.variantName)
 	return key
 }
 

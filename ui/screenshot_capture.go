@@ -2,16 +2,10 @@ package ui
 
 import (
 	"bytes"
-	"image/color"
 	"image/png"
 
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/canvas"
-	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/driver/software"
-	"fyne.io/fyne/v2/layout"
-	"fyne.io/fyne/v2/theme"
-	"fyne.io/fyne/v2/widget"
 )
 
 const screenshotWindowW, screenshotWindowH = 1000, 500
@@ -131,38 +125,4 @@ func RenderObjectPNG(obj fyne.CanvasObject, size fyne.Size) ([]byte, error) {
 		return nil, err
 	}
 	return buf.Bytes(), nil
-}
-
-// buildActionDialogPanel builds the bordered edit panel used in modal dialogs.
-func buildActionDialogPanel(actionType string, content fyne.CanvasObject) fyne.CanvasObject {
-	saveButton := widget.NewButton("Save", nil)
-	cancelButton := widget.NewButton("Cancel", nil)
-	buttons := container.NewHBox(
-		layout.NewSpacer(),
-		cancelButton,
-		saveButton,
-	)
-	titleLabel := widget.NewLabel("Edit Action - " + actionType)
-	titleLabel.TextStyle = fyne.TextStyle{Bold: true}
-	dialogContent := container.NewBorder(
-		container.NewPadded(titleLabel),
-		buttons,
-		nil,
-		nil,
-		content,
-	)
-	return buildBorderedPanel(dialogContent)
-}
-
-func buildBorderedPanel(dialogContent fyne.CanvasObject) fyne.CanvasObject {
-	th := fyne.CurrentApp().Settings().Theme()
-	v := fyne.CurrentApp().Settings().ThemeVariant()
-	panelBg := canvas.NewRectangle(th.Color(theme.ColorNameOverlayBackground, v))
-	panelBg.CornerRadius = theme.InputRadiusSize()
-	border := canvas.NewRectangle(color.Transparent)
-	border.StrokeColor = sqyrePrimary
-	border.StrokeWidth = 1
-	border.CornerRadius = theme.InputRadiusSize()
-	innerPadded := container.NewPadded(container.NewPadded(container.NewPadded(container.NewPadded(dialogContent))))
-	return container.NewStack(panelBg, border, innerPadded)
 }

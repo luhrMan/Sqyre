@@ -1,8 +1,6 @@
 package actions
 
 import (
-	"fmt"
-
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/theme"
 )
@@ -21,10 +19,22 @@ func NewRunMacro(macroName string) *RunMacro {
 }
 
 func (a *RunMacro) String() string {
-	if a.MacroName == "" {
-		return "Run macro (not set)"
+	return stringifyParams(a.parameters())
+}
+
+func (a *RunMacro) Display() fyne.CanvasObject {
+	return displayFromParams(a.parameters())
+}
+
+func (a *RunMacro) parameters() []actionParam {
+	target := a.MacroName
+	if target == "" {
+		target = "not set"
 	}
-	return fmt.Sprintf("Run: %s", a.MacroName)
+	return []actionParam{
+		newParam("Type", a.GetType()),
+		newParam("Macro", target),
+	}
 }
 
 func (a *RunMacro) Icon() fyne.Resource {

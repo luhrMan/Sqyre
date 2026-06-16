@@ -104,10 +104,28 @@ func (a *DataList) loadLines() error {
 }
 
 func (a *DataList) String() string {
+	return stringifyParams(a.parameters())
+}
+
+func (a *DataList) Display() fyne.CanvasObject {
+	return displayFromParams(a.parameters())
+}
+
+func (a *DataList) parameters() []actionParam {
 	if a.IsFile {
-		return fmt.Sprintf("DataList from file: %s -> %s", a.Source, a.OutputVar)
+		return []actionParam{
+			newParam("Type", a.GetType()),
+			newParam("Source Type", "file"),
+			newParam("Source", a.Source),
+			newParam("Output", a.OutputVar),
+		}
 	}
-	return fmt.Sprintf("DataList: %d lines -> %s", len(a.lines), a.OutputVar)
+	return []actionParam{
+		newParam("Type", a.GetType()),
+		newParam("Source Type", "text"),
+		newParam("Lines", len(a.lines)),
+		newParam("Output", a.OutputVar),
+	}
 }
 
 func (a *DataList) Icon() fyne.Resource {

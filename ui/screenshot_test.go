@@ -15,10 +15,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"Sqyre/binders"
 	"Sqyre/internal/models/actions"
 	"Sqyre/internal/testsupport"
 	"Sqyre/ui"
+	"Sqyre/ui/macro/actiondialog"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/test"
@@ -53,8 +53,6 @@ func setupDocsUi(t *testing.T) (*ui.Ui, fyne.Window) {
 	w := a.NewWindow("Sqyre")
 	u := ui.InitializeUi(w)
 	u.ConstructUi()
-	binders.SetMacroUi()
-	binders.SetEditorUi()
 	return u, w
 }
 
@@ -112,7 +110,7 @@ func TestDocsScreenshots(t *testing.T) {
 	}
 	writeOrComparePNG(t, filepath.Join(dir, "main-window.png"), mainPNG, 5000)
 
-	panel := ui.ActionDialogPanelForScreenshot(actions.NewWait(500))
+	panel := actiondialog.PanelForScreenshot(actions.NewWait(500))
 	waitPNG, err := ui.RenderObjectPNG(panel, fyne.NewSize(420, 220))
 	if err != nil {
 		t.Fatalf("render wait dialog panel: %v", err)
@@ -140,7 +138,7 @@ func writeDemoFrames(t *testing.T, u *ui.Ui) {
 	}
 	writeFrameFile(t, framesDir, "demo-macro-001.png", mainFrame, 5000)
 
-	panel := ui.ActionDialogPanelForScreenshot(actions.NewWait(500))
+	panel := actiondialog.PanelForScreenshot(actions.NewWait(500))
 	dialogFrame, err := ui.RenderObjectPNG(panel, fyne.NewSize(420, 220))
 	if err != nil {
 		t.Fatalf("capture frame 2: %v", err)
