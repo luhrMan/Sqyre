@@ -29,3 +29,4 @@ fyne-cross/
 # CI / local Go caches when using workspace paths (e.g. GOMODCACHE=./.cache/go-mod)
 .cache/
 internal/models/repositories/testdata/
+.devcontainer/builds/
