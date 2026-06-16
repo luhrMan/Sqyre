@@ -101,7 +101,7 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 	case *actions.Wait:
 		log.Println("Wait:", node.String())
 		time := node.Time
-		robotgo.MilliSleep(time)
+		getAutomationBackend().MilliSleep(time)
 		return nil
 	case *actions.Move:
 		log.Println("Move:", node.String())
@@ -115,21 +115,15 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 			log.Printf("Move: failed to resolve Y %v: %v, using 0 (ensure variable is set by an earlier action, e.g. Image Search output)", node.Point.Y, err)
 			y = 0
 		}
-		if node.Smooth {
-			robotgo.MoveSmooth(x, y, 0.5, 1.01)
-		} else {
-			robotgo.Move(x, y)
-		}
+		getAutomationBackend().Move(x, y, node.Smooth)
 		return nil
 	case *actions.Click:
 		log.Println("Click:", node.String())
 		btn := actions.LeftOrRight(node.Button)
 		if node.State {
-			robotgo.Toggle(btn)
-		} else {
-			robotgo.Toggle(btn, "up")
+			return getAutomationBackend().Click(btn, true)
 		}
-		return nil
+		return getAutomationBackend().Click(btn, false)
 	case *actions.Key:
 		log.Println("Key:", node.String())
 		key := node.Key
@@ -141,17 +135,9 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 			}
 		}
 		if node.State {
-			err := robotgo.KeyDown(key)
-			if err != nil {
-				return err
-			}
-		} else {
-			err := robotgo.KeyUp(key)
-			if err != nil {
-				return err
-			}
+			return getAutomationBackend().KeyDown(key)
 		}
-		return nil
+		return getAutomationBackend().KeyUp(key)
 	case *actions.Type:
 		log.Println("Type:", node.String())
 		text := node.Text
@@ -165,10 +151,11 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 		if delayMs < 0 {
 			delayMs = 0
 		}
+		backend := getAutomationBackend()
 		for _, r := range text {
-			robotgo.Type(string(r))
+			backend.TypeChar(string(r))
 			if delayMs > 0 {
-				robotgo.MilliSleep(delayMs)
+				backend.MilliSleep(delayMs)
 			}
 		}
 		return nil
@@ -422,7 +409,9 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 			valStr := fmt.Sprintf("%v", val)
 
 			if node.Destination == "clipboard" {
-				robotgo.WriteAll(valStr)
+				if err := getAutomationBackend().WriteClipboard(valStr); err != nil {
+					return fmt.Errorf("failed to write clipboard: %w", err)
+				}
 			} else {
 				filePath := filepath.Join(config.GetVariablesPath(), node.Destination)
 				if err := node.SaveToFile(valStr, filePath); err != nil {
