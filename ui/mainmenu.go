@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"Sqyre/internal/config"
 	"Sqyre/internal/models/actions"
 	"strconv"
 
@@ -91,11 +92,15 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 
 	computerInfo := fyne.NewMenuItem("Computer info", func() {
 		var str string
-		w, h := robotgo.GetScreenSize()
-		str = str + "Total Screen Size: " + strconv.Itoa(w) + "x" + strconv.Itoa(h) + "\n"
-		for d := range robotgo.DisplaysNum() {
-			_, _, mh, mw := robotgo.GetDisplayBounds(d)
-			str = str + "Monitor " + strconv.Itoa(d+1) + " Size: " + strconv.Itoa(mh) + "x" + strconv.Itoa(mw) + "\n"
+		if config.IsUITestMode() {
+			str = "Total Screen Size: 1920x1080\nMonitor 1 Size: 1080x1920\n"
+		} else {
+			w, h := robotgo.GetScreenSize()
+			str = str + "Total Screen Size: " + strconv.Itoa(w) + "x" + strconv.Itoa(h) + "\n"
+			for d := range robotgo.DisplaysNum() {
+				_, _, mh, mw := robotgo.GetDisplayBounds(d)
+				str = str + "Monitor " + strconv.Itoa(d+1) + " Size: " + strconv.Itoa(mh) + "x" + strconv.Itoa(mw) + "\n"
+			}
 		}
 		ShowInformationWithEscape("Computer Information", str, u.Window)
 	})

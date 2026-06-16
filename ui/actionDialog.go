@@ -444,17 +444,7 @@ func showCustomActionDialog(u *Ui, action actions.ActionInterface, content fyne.
 		content,
 	)
 
-	th := fyne.CurrentApp().Settings().Theme()
-	v := fyne.CurrentApp().Settings().ThemeVariant()
-	panelBg := canvas.NewRectangle(th.Color(theme.ColorNameOverlayBackground, v))
-	panelBg.CornerRadius = theme.InputRadiusSize()
-
-	border := canvas.NewRectangle(color.Transparent)
-	border.StrokeColor = sqyrePrimary
-	border.StrokeWidth = 1
-	border.CornerRadius = theme.InputRadiusSize()
-	innerPadded := container.NewPadded(container.NewPadded(container.NewPadded(container.NewPadded(dialogContent))))
-	borderedDialogContent := container.NewStack(panelBg, border, innerPadded)
+	borderedDialogContent := buildBorderedPanel(dialogContent)
 
 	pop := widget.NewModalPopUp(borderedDialogContent, u.Window.Canvas())
 	fynetooltip.AddPopUpToolTipLayer(pop)
@@ -530,6 +520,19 @@ func createWaitDialogContent(action *actions.Wait) (fyne.CanvasObject, func()) {
 	}
 
 	return content, saveFunc
+}
+
+// ActionDialogPanelForScreenshot returns a standalone action edit panel for docs/tests.
+func ActionDialogPanelForScreenshot(action actions.ActionInterface) fyne.CanvasObject {
+	var content fyne.CanvasObject
+	switch node := action.(type) {
+	case *actions.Wait:
+		content, _ = createWaitDialogContent(node)
+		content.Resize(fyne.NewSize(300, 100))
+	default:
+		content = widget.NewLabel("Unsupported action type for screenshot: " + action.GetType())
+	}
+	return buildActionDialogPanel(action.GetType(), content)
 }
 
 // pointCoordToInt returns an int for preview drawing; literal ints are used, variable refs (string) yield 0.

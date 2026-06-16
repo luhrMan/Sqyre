@@ -124,6 +124,10 @@ func saveWindowGeometry(w fyne.Window) {
 		prefs.SetInt(config.PrefWindowHeight, int(size.Height))
 	}
 
+	if config.IsUITestMode() {
+		return
+	}
+
 	// Persist desktop window bounds (x, y, w, h) from current process window.
 	pid := robotgo.GetPid()
 	x, y, width, height := robotgo.GetBounds(pid)
@@ -164,7 +168,9 @@ func (u *Ui) ConstructUi() {
 	// Set window content to Navigation container with tooltip layer
 	u.Window.SetContent(fynetooltip.AddWindowToolTipLayer(u.MainUi.Navigation, u.Window.Canvas()))
 
-	toggleMousePos()
+	if !config.IsUITestMode() {
+		toggleMousePos()
+	}
 }
 
 // widget.NewSelect(repositories.ProgramRepo().GetAllAsStringSlice(), func(s string) {}),
