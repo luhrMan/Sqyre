@@ -44,7 +44,8 @@ func NewIconVariantService() *IconVariantService {
 }
 
 // GetVariants returns all variant names for an item by scanning the filesystem.
-// It discovers variants by looking for files matching the pattern "{ItemName}|*.png".
+// It discovers variants in both modern "{ItemName}<delimiter>{Variant}.png"
+// and legacy "{ItemName}.png" formats.
 // Returns a sorted list of variant names for consistent UI display.
 func (s *IconVariantService) GetVariants(programName, itemName string) ([]string, error) {
 	if programName == "" || itemName == "" {
@@ -58,29 +59,41 @@ func (s *IconVariantService) GetVariants(programName, itemName string) ([]string
 		return []string{}, nil
 	}
 
-	// Pattern to match: {ItemName}|*.png
-	pattern := filepath.Join(iconsPath, itemName+config.ProgramDelimiter+"*"+config.PNG)
-
-	matches, err := filepath.Glob(pattern)
+	// Discover modern variant icons.
+	variantPattern := filepath.Join(iconsPath, itemName+config.ProgramDelimiter+"*"+config.PNG)
+	variantMatches, err := filepath.Glob(variantPattern)
 	if err != nil {
 		return nil, fmt.Errorf("failed to search for variants: %w", err)
 	}
 
-	// Extract variant names from file paths
-	variants := make([]string, 0, len(matches))
-	for _, match := range matches {
-		filename := filepath.Base(match)
-		// Remove .png extension
-		nameWithoutExt := strings.TrimSuffix(filename, config.PNG)
+	// Discover legacy icon filename with no variant suffix.
+	legacyPath := filepath.Join(iconsPath, itemName+config.PNG)
+	legacyExists := false
+	if _, err := os.Stat(legacyPath); err == nil {
+		legacyExists = true
+	} else if !os.IsNotExist(err) {
+		return nil, fmt.Errorf("failed to stat legacy icon path: %w", err)
+	}
 
-		// Check if it contains the delimiter
+	// Extract and deduplicate variant names.
+	variantSet := make(map[string]struct{}, len(variantMatches)+1)
+	for _, match := range variantMatches {
+		filename := filepath.Base(match)
+		nameWithoutExt := strings.TrimSuffix(filename, config.PNG)
 		if strings.Contains(nameWithoutExt, config.ProgramDelimiter) {
-			// Extract variant name (text after delimiter)
 			parts := strings.SplitN(nameWithoutExt, config.ProgramDelimiter, 2)
 			if len(parts) == 2 {
-				variants = append(variants, parts[1])
+				variantSet[parts[1]] = struct{}{}
 			}
 		}
+	}
+	if legacyExists {
+		variantSet[""] = struct{}{}
+	}
+
+	variants := make([]string, 0, len(variantSet))
+	for v := range variantSet {
+		variants = append(variants, v)
 	}
 
 	// Sort for consistent UI display
@@ -92,9 +105,10 @@ func (s *IconVariantService) GetVariants(programName, itemName string) ([]string
 // GetVariantPath constructs the full path to a variant icon file.
 func (s *IconVariantService) GetVariantPath(programName, itemName, variantName string) string {
 	iconsPath := s.getIconsPath(programName)
-
-	// Variant icon with delimiter
-	filename := itemName + config.ProgramDelimiter + variantName + config.PNG
+	filename := itemName + config.PNG
+	if variantName != "" {
+		filename = itemName + config.ProgramDelimiter + variantName + config.PNG
+	}
 	return filepath.Join(iconsPath, filename)
 }
 

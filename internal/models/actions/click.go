@@ -1,8 +1,6 @@
 package actions
 
 import (
-	"fmt"
-
 	"Sqyre/internal/assets"
 
 	"fyne.io/fyne/v2"
@@ -23,7 +21,19 @@ func NewClick(button bool, state bool) *Click {
 }
 
 func (a *Click) String() string {
-	return fmt.Sprintf("%s click %s", LeftOrRight(a.Button), UpOrDown(a.State))
+	return stringifyParams(a.parameters())
+}
+
+func (a *Click) Display() fyne.CanvasObject {
+	return displayFromParams(a.parameters())
+}
+
+func (a *Click) parameters() []actionParam {
+	return []actionParam{
+		newParam("Type", a.GetType()),
+		newParam("Button", LeftOrRight(a.Button)),
+		newParam("State", UpOrDown(a.State)),
+	}
 }
 
 func LeftOrRight(b bool) string {

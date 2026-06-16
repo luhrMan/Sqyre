@@ -9,7 +9,6 @@ import (
 	"image"
 	"image/png"
 	"log"
-	"os"
 	"strings"
 
 	"github.com/go-vgo/robotgo"
@@ -21,17 +20,9 @@ var tessClient *gosseract.Client
 
 func init() {
 	tessClient = gosseract.NewClient()
-	// Prefer in-memory traineddata (no disk write); works on Windows without path/permission issues.
-	if err := tessClient.SetTessdataFromMemory(assets.EngTrainedData()); err == nil {
-		tessClient.SetLanguage("eng")
-		return
-	}
-	// Fallback: extract to disk and set TESSDATA_PREFIX (normalized path for Windows).
-	if prefix := assets.EnsureTessdata(); prefix != "" {
-		os.Setenv("TESSDATA_PREFIX", prefix)
-		tessClient.SetTessdataPrefix(prefix)
-		tessClient.SetLanguage("eng")
-	}
+	// Initialize from embedded traineddata in memory only (no filesystem writes).
+	_ = tessClient.SetTessdataFromMemory(assets.EngTrainedData())
+	_ = tessClient.SetLanguage("eng")
 }
 
 func GetTessClient() *gosseract.Client { return tessClient }

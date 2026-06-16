@@ -1,0 +1,114 @@
+# Flatpak manifest for Sqyre (Fyne app with CGO: OpenCV, Tesseract).
+# Build from repo root: flatpak-builder --user --force-clean build-dir scripts/linux/packaging/flatpak/com.sqyre.app.yml
+#
+# Prerequisites:
+#   flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+#   flatpak install flathub org.freedesktop.Platform//25.08 org.freedesktop.Sdk//25.08 org.freedesktop.Sdk.Extension.golang//25.08
+#
+# Sqyre needs OpenCV and Tesseract at build time. The freedesktop SDK does not include them.
+# Option A: Build on a host that has OpenCV and Tesseract installed (e.g. from your distro),
+#   and ensure they are visible in the Flatpak build (e.g. use --build-dir and a custom
+#   SDK that includes them, or add the dependency modules below).
+# Option B: Add leptonica, tesseract, and opencv as separate modules before the sqyre module;
+#   see PACKAGING.md and e.g. https://github.com/RajSolai/TextSnatcher/tree/master/manifests
+#   for tesseract/leptonica. You must set PKG_CONFIG_PATH and CGO_* so the Go build finds them.
+#
+# Offline Go modules: from repo root run `go mod vendor`, then use `go build -mod=vendor ...` below.
+#
+# Parallelism: NINJA_JOBS + MAKEFLAGS cap concurrent C/C++ compiles. Raise for speed, lower (e.g. 2)
+# if the host OOMs. Top-level `jobs:` is not supported by all flatpak-builder versions — use env below.
+
+app-id: com.sqyre.app
+runtime: org.freedesktop.Platform
+runtime-version: "25.08"
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.golang
+command: sqyre
+
+finish-args:
+  - --share=ipc
+  - --socket=x11
+  - --device=dri
+  - --talk-name=org.freedesktop.Notifications
+  - --filesystem=home
+  - --share=network
+  - --socket=pulseaudio
+
+build-options:
+  # Allow `go` to fetch modules during the build (flatpak build sandbox is offline by default).
+  build-args:
+    - --share=network
+  env:
+    - GOBIN=/app/bin
+    - GOROOT=/usr/lib/sdk/golang
+    - CGO_ENABLED=1
+    # Leptonica (autotools). Ninja modules read NINJA_JOBS below.
+    - MAKEFLAGS=-j24
+    - NINJA_JOBS=24
+
+modules:
+  # CGO deps (not in org.freedesktop.Sdk): built into ${FLATPAK_DEST} (/app) before the Go binary.
+  - name: leptonica
+    buildsystem: autotools
+    config-opts:
+      - --disable-static
+    sources:
+      - type: archive
+        url: https://github.com/DanBloomberg/leptonica/releases/download/1.84.1/leptonica-1.84.1.tar.gz
+        sha256: 2b3e1254b1cca381e77c819b59ca99774ff43530209b9aeb511e1d46588a64f6
+
+  # Tesseract forbids in-source CMake; use an explicit out-of-tree build (older flatpak-builder cmake-ninja may not).
+  - name: tesseract
+    buildsystem: simple
+    build-options:
+      env:
+        # FLATPAK_DEST is /app; ${VAR} in YAML env may not expand in all flatpak-builder versions.
+        PKG_CONFIG_PATH: /app/lib/pkgconfig
+    build-commands:
+      - cmake -S . -B _build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=${FLATPAK_DEST} -DBUILD_SHARED_LIBS=ON -DBUILD_TRAINING_TOOLS=OFF
+      - ninja -C _build -j${NINJA_JOBS:-24}
+      - ninja -C _build -j${NINJA_JOBS:-24} install
+    sources:
+      - type: archive
+        url: https://github.com/tesseract-ocr/tesseract/archive/5.5.0.tar.gz
+        sha256: f2fb34ca035b6d087a42875a35a7a5c4155fa9979c6132365b1e5a28ebc3fc11
+
+  # Matches scripts/linux/build-opencv-linux.sh feature set (no GTK/Qt).
+  # OpenCV forbids in-source CMake; out-of-tree build required (same as Tesseract above).
+  - name: opencv
+    buildsystem: simple
+    build-commands:
+      - cmake -S . -B _build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=${FLATPAK_DEST} -DBUILD_SHARED_LIBS=ON -DOPENCV_GENERATE_PKGCONFIG=ON -DBUILD_LIST=core,imgproc,imgcodecs,videoio,highgui,video,calib3d,features2d,objdetect,dnn,photo -DBUILD_TESTS=OFF -DBUILD_PERF_TESTS=OFF -DBUILD_EXAMPLES=OFF -DBUILD_opencv_apps=OFF -DWITH_JPEG=ON -DWITH_PNG=ON -DWITH_TIFF=ON -DWITH_WEBP=ON -DWITH_OPENJPEG=ON -DWITH_GTK=OFF -DWITH_QT=OFF -DWITH_V4L=OFF -DWITH_FFMPEG=OFF
+      - ninja -C _build -j${NINJA_JOBS:-24}
+      - ninja -C _build -j${NINJA_JOBS:-24} install
+    sources:
+      - type: archive
+        url: https://github.com/opencv/opencv/archive/4.13.0.tar.gz
+        sha256: 1d40ca017ea51c533cf9fd5cbde5b5fe7ae248291ddf2af99d4c17cf8e13017d
+
+  - name: sqyre
+    buildsystem: simple
+    build-commands:
+      - |
+        set -e
+        export PKG_CONFIG_PATH="${FLATPAK_DEST}/lib/pkgconfig:${FLATPAK_DEST}/lib64/pkgconfig"
+        export CGO_CPPFLAGS="-I${FLATPAK_DEST}/include"
+        export CGO_LDFLAGS="-L${FLATPAK_DEST}/lib64 -L${FLATPAK_DEST}/lib"
+        P="${NINJA_JOBS:-24}"
+        "$GOROOT/bin/go" build -trimpath -p "$P" -o sqyre ./cmd/sqyre
+      - install -Dm00755 sqyre ${FLATPAK_DEST}/bin/sqyre
+      - install -Dm00644 internal/assets/icons/sqyre.png ${FLATPAK_DEST}/share/icons/hicolor/256x256/apps/${FLATPAK_ID}.png
+      - install -Dm00644 scripts/linux/packaging/flatpak/com.sqyre.app.desktop ${FLATPAK_DEST}/share/applications/${FLATPAK_ID}.desktop
+      - install -Dm00644 scripts/linux/packaging/flatpak/com.sqyre.app.appdata.xml ${FLATPAK_DEST}/share/appdata/${FLATPAK_ID}.appdata.xml
+      # OSTree refuses group/other write bits on objects; some installs leave 0666/0777 (breaks .Debug install).
+      - find "${FLATPAK_DEST}" -type f -exec chmod u=rwX,go=rX {} +
+      - find "${FLATPAK_DEST}" -type d -exec chmod u=rwx,go=rx {} +
+    sources:
+      - type: dir
+        path: ../../../..
+
+# After strip/debug split (post-module), OSTree rejects g/o write bits on the .Debug ref.
+cleanup-commands:
+  - find /app -type f -exec chmod u=rwX,go=rX {} +
+  - find /app -type d -exec chmod u=rwx,go=rx {} +
