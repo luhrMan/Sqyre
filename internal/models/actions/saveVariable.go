@@ -27,13 +27,29 @@ func NewSaveVariable(varName string, destination string, append bool, appendNewl
 }
 
 func (a *SaveVariable) String() string {
-	if a.Destination == "clipboard" {
-		return fmt.Sprintf("Save %s to clipboard", a.VariableName)
-	}
+	return stringifyParams(a.parameters())
+}
+
+func (a *SaveVariable) Display() fyne.CanvasObject {
+	return displayFromParams(a.parameters())
+}
+
+func (a *SaveVariable) parameters() []actionParam {
+	mode := "overwrite"
 	if a.Append {
-		return fmt.Sprintf("Append %s to %s", a.VariableName, a.Destination)
+		mode = "append"
 	}
-	return fmt.Sprintf("Save %s to %s", a.VariableName, a.Destination)
+	newline := "off"
+	if a.AppendNewline {
+		newline = "on"
+	}
+	return []actionParam{
+		newParam("Type", a.GetType()),
+		newParam("Variable", a.VariableName),
+		newParam("Destination", a.Destination),
+		newParam("Mode", mode),
+		newParam("Append Newline", newline),
+	}
 }
 
 func (a *SaveVariable) Icon() fyne.Resource {

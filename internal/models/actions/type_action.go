@@ -24,10 +24,22 @@ func NewType(text string, delayMs int) *Type {
 }
 
 func (a *Type) String() string {
-	if a.DelayMs > 0 {
-		return fmt.Sprintf("%q (%d ms)", a.Text, a.DelayMs)
+	return stringifyParams(a.parameters())
+}
+
+func (a *Type) Display() fyne.CanvasObject {
+	return displayFromParams(a.parameters())
+}
+
+func (a *Type) parameters() []actionParam {
+	params := []actionParam{
+		newParam("Type", a.GetType()),
+		newParam("Text", fmt.Sprintf("%q", a.Text)),
 	}
-	return fmt.Sprintf("%q", a.Text)
+	if a.DelayMs > 0 {
+		params = append(params, newParam("Delay", fmt.Sprintf("%d ms", a.DelayMs)))
+	}
+	return params
 }
 
 func (a *Type) Icon() fyne.Resource {

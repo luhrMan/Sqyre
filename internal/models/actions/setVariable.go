@@ -2,7 +2,6 @@ package actions
 
 import (
 	"Sqyre/internal/assets"
-	"fmt"
 
 	"fyne.io/fyne/v2"
 )
@@ -22,7 +21,19 @@ func NewSetVariable(name string, value any) *SetVariable {
 }
 
 func (a *SetVariable) String() string {
-	return fmt.Sprintf("Set %s = %v", a.VariableName, a.Value)
+	return stringifyParams(a.parameters())
+}
+
+func (a *SetVariable) Display() fyne.CanvasObject {
+	return displayFromParams(a.parameters())
+}
+
+func (a *SetVariable) parameters() []actionParam {
+	return []actionParam{
+		newParam("Type", a.GetType()),
+		newParam("Variable", a.VariableName),
+		newParam("Value", a.Value),
+	}
 }
 
 func (a *SetVariable) Icon() fyne.Resource {

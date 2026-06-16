@@ -17,24 +17,49 @@ type AccordionWithHeaderWidgets struct {
 
 // NewAccordionWithHeaderWidgets creates an accordion that supports an optional widget at the
 // right end of each item's header row. Use AppendWithHeader to add items with a header widget.
+//
+// The embedded Accordion must NOT be copied from widget.NewAccordion(): that sets BaseWidget.impl
+// to a separate *Accordion on the heap. ExtendBaseWidget would then no-op (impl already set), so
+// Refresh/Open would update an off-tree widget and the visible accordion would never repaint.
 func NewAccordionWithHeaderWidgets() *AccordionWithHeaderWidgets {
 	a := &AccordionWithHeaderWidgets{}
-	a.Accordion = *widget.NewAccordion()
 	a.ExtendBaseWidget(a)
 	return a
 }
 
+// Append appends an item with no right-side header widget (editor Items tab). Prefer AppendWithHeader when
+// using a header control; this shadows the embedded Accordion.Append so Refresh runs on this widget.
+func (a *AccordionWithHeaderWidgets) Append(item *widget.AccordionItem) {
+	a.AppendWithHeader(item, nil)
+}
+
 // AppendWithHeader appends an accordion item and an optional widget shown at the right end of its header row.
 // headerWidget may be nil to show no widget.
+// Do not call the embedded Accordion.Append: it Refresh()es with the inner Accordion receiver, so the
+// AccordionWithHeaderWidgets renderer (header row + headerWidgets) would not reliably update—same bug
+// as Points/Search Areas accordions avoiding a stale UI is fixed by refreshing this outer widget.
 func (a *AccordionWithHeaderWidgets) AppendWithHeader(item *widget.AccordionItem, headerWidget fyne.CanvasObject) {
-	a.Accordion.Append(item)
+	a.Items = append(a.Items, item)
 	a.headerWidgets = append(a.headerWidgets, headerWidget)
+	a.Refresh()
 }
 
 // RemoveAll removes all items and header widgets so the accordion can be repopulated (e.g. when filter changes).
 func (a *AccordionWithHeaderWidgets) RemoveAll() {
 	a.Items = a.Items[:0]
 	a.headerWidgets = a.headerWidgets[:0]
+	a.Refresh()
+}
+
+// UpdateHeaderAt sets the optional right-side header widget for an existing item (e.g. after rebuilding one row).
+func (a *AccordionWithHeaderWidgets) UpdateHeaderAt(index int, header fyne.CanvasObject) {
+	for len(a.headerWidgets) < len(a.Items) {
+		a.headerWidgets = append(a.headerWidgets, nil)
+	}
+	if index < 0 || index >= len(a.Items) {
+		return
+	}
+	a.headerWidgets[index] = header
 	a.Refresh()
 }
 
@@ -46,11 +71,11 @@ func (a *AccordionWithHeaderWidgets) CreateRenderer() fyne.WidgetRenderer {
 }
 
 type accordionWithHeaderRenderer struct {
-	acc         *AccordionWithHeaderWidgets
-	headers     []*widget.Button
-	headerRows  []fyne.CanvasObject
-	dividers    []fyne.CanvasObject
-	objects     []fyne.CanvasObject
+	acc          *AccordionWithHeaderWidgets
+	headers      []*widget.Button
+	headerRows   []fyne.CanvasObject
+	dividers     []fyne.CanvasObject
+	objects      []fyne.CanvasObject
 	minSizeCache fyne.Size
 }
 
@@ -204,11 +229,15 @@ func (r *accordionWithHeaderRenderer) updateObjects() {
 		r.headers[i].Hide()
 	}
 
-	// Dividers (reuse existing, create more only if needed)
+	// Dividers (reuse existing, create more only if needed). n==0 => n-1 is -1; [:n-1] panics.
 	for len(r.dividers) < n-1 {
 		r.dividers = append(r.dividers, widget.NewSeparator())
 	}
-	r.dividers = r.dividers[:n-1]
+	if n > 0 {
+		r.dividers = r.dividers[:n-1]
+	} else {
+		r.dividers = r.dividers[:0]
+	}
 
 	objects := make([]fyne.CanvasObject, 0, n*2+len(r.dividers))
 	for _, row := range r.headerRows {

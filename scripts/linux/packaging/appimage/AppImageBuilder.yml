@@ -1,0 +1,77 @@
+# AppImage recipe for Sqyre.
+# Run from repo root: scripts/linux/packaging/appimage/build-appimage.sh
+# Or from this directory: ./build-appimage.sh
+# Uses sqyre.AppDir (set via build-appimage.sh --appdir).
+#
+# Script installs the binary and metadata; appimage-builder then
+# traces the binary and bundles all required .so files (OpenCV, Tesseract, X11, etc.).
+# We do not use the recipe "apt" section because appimage-builder has a bug comparing
+# Ubuntu package versions (e.g. "1.22.6ubuntu6") with packaging.version.parse().
+
+version: 1
+script:
+  - cd "$SOURCE_DIR/../../../.."
+  - go build -trimpath -o "$TARGET_APPDIR/usr/bin/sqyre" ./cmd/sqyre
+  - install -Dm00644 internal/assets/icons/sqyre.png "$TARGET_APPDIR/usr/share/icons/hicolor/256x256/apps/com.sqyre.app.png"
+  - install -Dm00644 "$SOURCE_DIR/com.sqyre.app.desktop" "$TARGET_APPDIR/usr/share/applications/com.sqyre.app.desktop"
+  # Bundle Tesseract English data so OCR works without system tessdata.
+  # Ubuntu 22.04 places tessdata under /usr/share/tesseract-ocr/4.00/tessdata/,
+  # other distros may use /usr/share/tessdata/ or /usr/share/tesseract-ocr/5/tessdata/.
+  - mkdir -p "$TARGET_APPDIR/usr/share/tessdata"
+  - |
+    eng=""
+    for d in /usr/share/tesseract-ocr/*/tessdata /usr/share/tessdata /usr/local/share/tessdata; do
+      if [ -f "$d/eng.traineddata" ]; then eng="$d/eng.traineddata"; break; fi
+    done
+    if [ -n "$eng" ]; then
+      cp "$eng" "$TARGET_APPDIR/usr/share/tessdata/"
+    else
+      echo "WARNING: eng.traineddata not found; Tesseract OCR will not work in the AppImage" >&2
+    fi
+  # Explicitly bundle OpenCV, Tesseract, and Leptonica shared libraries.
+  # appimage-builder tracing may miss libs whose code paths aren't exercised
+  # during the brief strace run.
+  - mkdir -p "$TARGET_APPDIR/usr/lib"
+  - |
+    # OpenCV: devcontainer installs under /opt/opencv/linux/install (see scripts/linux/build-opencv-linux.sh).
+    opencv_lib=""
+    for d in /opt/opencv/linux/install/lib /usr/local/lib; do
+      for _cv in "$d"/libopencv_core.so*; do
+        if [ -e "$_cv" ]; then opencv_lib="$d"; break 2; fi
+      done
+    done
+    if [ -z "$opencv_lib" ]; then
+      echo "ERROR: OpenCV .so not found under /opt/opencv/linux/install/lib or /usr/local/lib (build OpenCV or use devcontainer)." >&2
+      exit 1
+    fi
+    cp -aL "$opencv_lib"/libopencv_*.so* "$TARGET_APPDIR/usr/lib/"
+    # Tesseract and Leptonica (from system packages)
+    cp -aL /usr/lib/x86_64-linux-gnu/libtesseract.so* "$TARGET_APPDIR/usr/lib/" 2>/dev/null || true
+    cp -aL /usr/lib/x86_64-linux-gnu/liblept.so* "$TARGET_APPDIR/usr/lib/" 2>/dev/null || true
+    # Transitive deps of OpenCV imgcodecs and Tesseract (image format libs)
+    # libarchive / compression: strace may not load these; bundle explicitly.
+    for dep in libjpeg libpng libtiff libjbig libwebp libdeflate libopenjp2 libIlmImf libHalf libgif libarchive libbz2 libzstd liblz4 libnettle libacl libxml2 libicuuc libicudata; do
+      cp -aL /usr/lib/x86_64-linux-gnu/${dep}*.so* "$TARGET_APPDIR/usr/lib/" 2>/dev/null || true
+    done
+
+AppDir:
+  path: "{{ TARGET_APPDIR }}"
+  app_info:
+    id: com.sqyre.app
+    name: Sqyre
+    icon: com.sqyre.app
+    version: "__APP_VERSION__"
+    exec: usr/bin/sqyre
+    exec_args: "$@"
+  files:
+    exclude:
+      - usr/share/man
+      - usr/share/doc/*
+  runtime:
+    env:
+      TESSDATA_PREFIX: "${APPDIR}/usr/share/tessdata"
+      APPDIR_LIBRARY_PATH: "${APPDIR}/usr/lib:${APPDIR}/lib/x86_64"
+
+AppImage:
+  arch: x86_64
+  file_name: Sqyre-__APP_VERSION__-x86_64.AppImage
