@@ -341,6 +341,24 @@ func (s *serializer) CreateActionFromMap(rawMap map[string]any, parent actions.A
 					oc.WaitTilFoundIntervalMs = int(ms)
 				}
 			}
+			if v, ok := rawMap["grayscale"].(bool); ok {
+				oc.Grayscale = v
+			}
+			if v := rawMap["blur"]; v != nil {
+				oc.Blur = intFromMap(v)
+			}
+			if v := rawMap["minthreshold"]; v != nil {
+				oc.MinThreshold = intFromMap(v)
+			}
+			if v := rawMap["resize"]; v != nil {
+				oc.Resize = floatFromMap(v)
+			}
+			if v, ok := rawMap["thresholdotsu"].(bool); ok {
+				oc.ThresholdOtsu = v
+			}
+			if v, ok := rawMap["thresholdinvert"].(bool); ok {
+				oc.ThresholdInvert = v
+			}
 		}
 	case "setvariable":
 		vn, err := expectString(rawMap, "variablename")

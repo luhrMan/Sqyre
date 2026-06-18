@@ -106,6 +106,24 @@ func ActionToMap(action actions.ActionInterface) (map[string]any, error) {
 				m["waittilfoundintervalms"] = a.WaitTilFoundIntervalMs
 			}
 		}
+		if !a.Grayscale {
+			m["grayscale"] = a.Grayscale
+		}
+		if a.Blur != 0 {
+			m["blur"] = a.Blur
+		}
+		if a.MinThreshold != 0 {
+			m["minthreshold"] = a.MinThreshold
+		}
+		if a.Resize != 1.0 {
+			m["resize"] = a.Resize
+		}
+		if a.ThresholdOtsu {
+			m["thresholdotsu"] = a.ThresholdOtsu
+		}
+		if a.ThresholdInvert {
+			m["thresholdinvert"] = a.ThresholdInvert
+		}
 		subs, err := subActionsToMaps(a.GetSubActions())
 		if err != nil {
 			return nil, err

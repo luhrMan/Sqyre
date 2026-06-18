@@ -240,6 +240,37 @@ func createOcrDialogContent(action *actions.Ocr) (fyne.CanvasObject, func()) {
 	outputYVarEntry.SetPlaceHolder("e.g. foundY")
 	waitTil := newWaitTilFoundForm(action.WaitTilFound, action.WaitTilFoundSeconds, action.WaitTilFoundIntervalMs, 0)
 
+	grayscaleCheck := widget.NewCheck("Grayscale", nil)
+	grayscaleCheck.SetChecked(action.Grayscale)
+
+	blurMin, blurMax := 0, 30
+	blurIncrementer := custom_widgets.NewIncrementer(action.Blur, 2, &blurMin, &blurMax)
+	blurIncrementer.SetValue(action.Blur)
+
+	thresholdMin, thresholdMax := 0, 255
+	thresholdIncrementer := custom_widgets.NewIncrementer(action.MinThreshold, 5, &thresholdMin, &thresholdMax)
+	thresholdIncrementer.SetValue(action.MinThreshold)
+
+	thresholdOtsuCheck := widget.NewCheck("Auto threshold (Otsu)", nil)
+	thresholdOtsuCheck.SetChecked(action.ThresholdOtsu)
+
+	thresholdInvertCheck := widget.NewCheck("Invert threshold", nil)
+	thresholdInvertCheck.SetChecked(action.ThresholdInvert)
+
+	syncThresholdControls := func() {
+		if thresholdOtsuCheck.Checked {
+			thresholdIncrementer.Disable()
+		} else {
+			thresholdIncrementer.Enable()
+		}
+	}
+	thresholdOtsuCheck.OnChanged = func(bool) { syncThresholdControls() }
+	syncThresholdControls()
+
+	resizeMin, resizeMax := 1.0, 10.0
+	resizeIncrementer := custom_widgets.NewFloatIncrementer(action.Resize, 0.5, &resizeMin, &resizeMax, 1)
+	resizeIncrementer.SetValue(action.Resize)
+
 	// Temporary storage for changes (only applied on save)
 	tempSearchArea := action.SearchArea
 
@@ -257,6 +288,12 @@ func createOcrDialogContent(action *actions.Ocr) (fyne.CanvasObject, func()) {
 		formHint("", waitTil.Check, ""),
 		formHint("Timeout (seconds):", waitTil.SecondsIncrementer, "With wait-until-found: maximum time to keep scanning before continuing."),
 		formHint("Search interval (ms):", waitTil.IntervalIncrementer, "Delay between OCR attempts when wait-until-found is enabled."),
+		formHint("Grayscale:", grayscaleCheck, "Convert the capture to grayscale before OCR. Usually improves accuracy on UI text."),
+		formHint("Blur:", container.NewVBox(blurIncrementer, layout.NewSpacer()), "Gaussian blur kernel size (0 = off). Applied before thresholding to reduce noise."),
+		formHint("Threshold:", container.NewVBox(thresholdIncrementer, layout.NewSpacer()), "Fixed binarization level (0 = off). Ignored when auto threshold is enabled."),
+		formHint("", thresholdOtsuCheck, "Pick the threshold automatically per capture. Useful when lighting or contrast varies."),
+		formHint("", thresholdInvertCheck, "Swap foreground and background after thresholding. Enable for light text on a dark background."),
+		formHint("Resize:", resizeIncrementer, "Scale factor applied after preprocessing (1.0 = off). Values above 1 enlarge small text for OCR."),
 	)
 
 	content := container.NewHSplit(
@@ -279,6 +316,12 @@ func createOcrDialogContent(action *actions.Ocr) (fyne.CanvasObject, func()) {
 		action.OutputYVariable = outputYVarEntry.Text
 		waitTil.writeTo(&action.WaitTilFound, &action.WaitTilFoundSeconds, &action.WaitTilFoundIntervalMs)
 		action.SearchArea = tempSearchArea
+		action.Grayscale = grayscaleCheck.Checked
+		action.Blur = blurIncrementer.Value
+		action.MinThreshold = thresholdIncrementer.Value
+		action.ThresholdOtsu = thresholdOtsuCheck.Checked
+		action.ThresholdInvert = thresholdInvertCheck.Checked
+		action.Resize = resizeIncrementer.Value
 	}
 
 	return content, saveFunc
