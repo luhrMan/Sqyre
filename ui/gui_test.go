@@ -322,7 +322,7 @@ func TestGUIEscapeClosesActionDialog(t *testing.T) {
 	u.ConstructUi()
 
 	// Open the action dialog directly (same as when user taps an action to edit)
-	actiondialog.ShowActionDialog(actions.NewWait(0), nil)
+	actiondialog.ShowActionDialog(actions.NewWait(0), nil, nil)
 	if u.MainUi.ActionDialog == nil {
 		t.Fatal("expected action dialog to be open after ShowActionDialog")
 	}

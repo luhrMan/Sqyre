@@ -5,78 +5,12 @@ import (
 	"image/png"
 
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/driver/software"
+	"fyne.io/fyne/v2/test"
 )
 
 const screenshotWindowW, screenshotWindowH = 1000, 500
 
-// PrepareWindowForCapture sizes the window and runs layout on the live canvas tree.
-func PrepareWindowForCapture(w fyne.Window) {
-	size := fyne.NewSize(screenshotWindowW, screenshotWindowH)
-	w.Resize(size)
-	w.Show()
-	if content := w.Canvas().Content(); content != nil {
-		_, area := w.Canvas().InteractiveArea()
-		propagateLayout(content, area)
-		content.Refresh()
-		w.Canvas().Refresh(content)
-	}
-}
-
-func propagateLayout(obj fyne.CanvasObject, size fyne.Size) {
-	if obj == nil || size.Width <= 0 || size.Height <= 0 {
-		return
-	}
-	obj.Resize(size)
-	switch node := obj.(type) {
-	case *fyne.Container:
-		if node.Layout != nil {
-			node.Layout.Layout(node.Objects, size)
-		}
-		for _, child := range node.Objects {
-			childSize := child.Size()
-			if childSize.Width <= 0 || childSize.Height <= 0 {
-				childSize = child.MinSize()
-			}
-			propagateLayout(child, childSize)
-		}
-	case fyne.Widget:
-		node.Refresh()
-	}
-}
-
-func layoutDetached(obj fyne.CanvasObject, size fyne.Size) {
-	if obj == nil || size.Width <= 0 || size.Height <= 0 {
-		return
-	}
-	obj.Resize(size)
-	switch node := obj.(type) {
-	case *fyne.Container:
-		if node.Layout != nil {
-			node.Layout.Layout(node.Objects, size)
-		}
-		for _, child := range node.Objects {
-			childSize := child.Size()
-			if childSize.Width <= 0 || childSize.Height <= 0 {
-				childSize = child.MinSize()
-			}
-			layoutDetached(child, childSize)
-		}
-	case fyne.Widget:
-		r := node.CreateRenderer()
-		r.Layout(size)
-		for _, child := range r.Objects() {
-			childSize := child.Size()
-			if childSize.Width <= 0 || childSize.Height <= 0 {
-				childSize = child.MinSize()
-			}
-			layoutDetached(child, childSize)
-		}
-		r.Refresh()
-	}
-}
-
-// MacroScreenForScreenshot returns a detached macro editor layout for docs/tests.
+// MacroScreenForScreenshot returns the macro editor layout for docs/tests.
 func MacroScreenForScreenshot(u *Ui) fyne.CanvasObject {
 	return u.constructMacroUi()
 }
@@ -84,6 +18,17 @@ func MacroScreenForScreenshot(u *Ui) fyne.CanvasObject {
 // EditorScreenForScreenshot returns the data editor layout for docs/tests.
 func EditorScreenForScreenshot(u *Ui) fyne.CanvasObject {
 	return u.EditorUi.CanvasObject
+}
+
+// PrepareWindowForCapture sizes the window and refreshes the live canvas tree.
+func PrepareWindowForCapture(w fyne.Window) {
+	size := fyne.NewSize(screenshotWindowW, screenshotWindowH)
+	w.Resize(size)
+	w.Show()
+	if content := w.Canvas().Content(); content != nil {
+		content.Refresh()
+		w.Canvas().Refresh(content)
+	}
 }
 
 // CaptureWindowPNG captures the rendered window canvas (widgets stay on the canvas).
@@ -100,23 +45,31 @@ func CaptureWindowPNG(w fyne.Window) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// RenderObjectPNG renders a standalone widget tree (never attached to another canvas).
+// RenderObjectPNG renders a widget tree on a headless test window with Fyne's layout engine.
 func RenderObjectPNG(obj fyne.CanvasObject, size fyne.Size) ([]byte, error) {
-	if size.Width <= 0 || size.Height <= 0 {
-		size = obj.MinSize()
+	w := test.NewWindow(obj)
+	defer w.Close()
+
+	canvasSize := obj.MinSize().Max(obj.Size())
+	if size.Width > 0 && size.Width > canvasSize.Width {
+		canvasSize.Width = size.Width
 	}
-	if size.Width < 200 {
-		size.Width = 400
+	if size.Height > 0 && size.Height > canvasSize.Height {
+		canvasSize.Height = size.Height
 	}
-	if size.Height < 100 {
-		size.Height = 250
+	if canvasSize.Width < 200 {
+		canvasSize.Width = 200
 	}
-	c := software.NewCanvas()
-	c.SetPadded(false)
-	c.Resize(size)
-	c.SetContent(obj)
-	layoutDetached(obj, size)
-	img := c.Capture()
+	if canvasSize.Height < 100 {
+		canvasSize.Height = 100
+	}
+
+	w.Resize(canvasSize)
+	w.Show()
+	obj.Refresh()
+	w.Canvas().Refresh(obj)
+
+	img := w.Canvas().Capture()
 	if img == nil {
 		return nil, nil
 	}
