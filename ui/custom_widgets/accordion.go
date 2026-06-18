@@ -51,6 +51,21 @@ func (a *AccordionWithHeaderWidgets) RemoveAll() {
 	a.Refresh()
 }
 
+// Open expands the item at the given index and refreshes any GridWrap in its detail.
+// GridWrap caches layout before it has a known width; refreshing after open removes excess blank space.
+func (a *AccordionWithHeaderWidgets) Open(index int) {
+	a.Accordion.Open(index)
+	a.Refresh()
+	if index < 0 || index >= len(a.Items) {
+		return
+	}
+	detail := a.Items[index].Detail
+	if gw := FindGridWrap(detail); gw != nil {
+		gw.Refresh()
+		fyne.Do(func() { gw.Refresh() })
+	}
+}
+
 // UpdateHeaderAt sets the optional right-side header widget for an existing item (e.g. after rebuilding one row).
 func (a *AccordionWithHeaderWidgets) UpdateHeaderAt(index int, header fyne.CanvasObject) {
 	for len(a.headerWidgets) < len(a.Items) {

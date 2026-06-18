@@ -260,6 +260,9 @@ func rebuildProgramAccordionItem(accordion *custom_widgets.AccordionWithHeaderWi
 	it.Detail = newItem.Detail
 	it.Open = wasOpen
 	accordion.UpdateHeaderAt(itemIndex, header)
+	if gw := custom_widgets.FindGridWrap(newItem.Detail); gw != nil {
+		gw.Refresh()
+	}
 }
 
 func setAccordionItemsLists(acc *custom_widgets.AccordionWithHeaderWidgets) {
