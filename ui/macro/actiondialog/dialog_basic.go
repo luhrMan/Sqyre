@@ -274,6 +274,82 @@ func createTypeDialogContent(action *actions.Type) (fyne.CanvasObject, func()) {
 	return content, saveFunc
 }
 
+func createConditionalDialogContent(action *actions.Conditional) (fyne.CanvasObject, func()) {
+	nameEntry := widget.NewEntry()
+	nameEntry.SetText(action.Name)
+
+	leftEntry := newVarEntry()
+	leftEntry.SetPlaceHolder("e.g. ${score} or 10")
+	leftEntry.SetText(operandToString(action.Left))
+
+	rightEntry := newVarEntry()
+	rightEntry.SetPlaceHolder("e.g. ${target} or 100")
+	rightEntry.SetText(operandToString(action.Right))
+
+	operatorSelect := widget.NewSelect(actions.ConditionalOperators, nil)
+	if action.Operator != "" {
+		operatorSelect.SetSelected(action.Operator)
+	} else {
+		operatorSelect.SetSelected(actions.OpEquals)
+	}
+
+	updateRightState := func(op string) {
+		if actions.OperatorIsUnary(op) {
+			rightEntry.Disable()
+		} else {
+			rightEntry.Enable()
+		}
+	}
+	operatorSelect.OnChanged = updateRightState
+	updateRightState(operatorSelect.Selected)
+
+	content := widget.NewForm(
+		formHint("Name:", nameEntry, "Label for this conditional in the tree. Used for readability and logging."),
+		formHint("If (left):", leftEntry, "Left side of the comparison. Literal or ${variable}."),
+		formHint("Operator:", operatorSelect, "Comparison operator. Numbers compare numerically; otherwise text is compared. 'is set' / 'is empty' only use the left value."),
+		formHint("Value (right):", rightEntry, "Right side of the comparison. Literal or ${variable}. Ignored for 'is set' / 'is empty'."),
+	)
+
+	saveFunc := func() {
+		action.Name = nameEntry.Text
+		if operatorSelect.Selected != "" {
+			action.Operator = operatorSelect.Selected
+		} else {
+			action.Operator = actions.OpEquals
+		}
+		action.Left = parseOperand(leftEntry.Text)
+		action.Right = parseOperand(rightEntry.Text)
+	}
+
+	return content, saveFunc
+}
+
+// operandToString renders a conditional operand (int or string) for an entry field.
+func operandToString(v any) string {
+	switch val := v.(type) {
+	case nil:
+		return ""
+	case string:
+		return val
+	case int:
+		return strconv.Itoa(val)
+	default:
+		return fmt.Sprintf("%v", val)
+	}
+}
+
+// parseOperand converts entry text to an int literal when possible, else keeps the string.
+func parseOperand(text string) any {
+	s := strings.TrimSpace(text)
+	if s == "" {
+		return ""
+	}
+	if n, err := strconv.Atoi(s); err == nil {
+		return n
+	}
+	return s
+}
+
 func createLoopDialogContent(action *actions.Loop) (fyne.CanvasObject, func()) {
 	nameEntry := widget.NewEntry()
 	nameEntry.SetText(action.Name)
