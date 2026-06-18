@@ -19,7 +19,9 @@ var (
 
 // ResolveVariables resolves variable references in a string.
 // Supports ${VarName} and {VarName} syntax.
-// Image Search sub-actions also get internal item variables: ${StackMax}, ${Cols}, ${Rows}, ${ItemName}, ${ImagePixelWidth}, ${ImagePixelHeight}.
+// Item mask shape fields also resolve ${StackMax}, ${Cols}, ${Rows}, ${ItemName}, ${ImagePixelWidth}, ${ImagePixelHeight} from the template being matched.
+// Image Search sub-actions get the same item variables after each match.
+// For Each Row sub-actions also get ${Row} (1-based) and ${RowCount}.
 // Every macro run also sets monitor builtins: ${monitor1Width}, ${monitor1Height}, ${monitor2Width}, ...
 func ResolveVariables(text string, macro *models.Macro) (string, error) {
 	if macro == nil || macro.Variables == nil {
@@ -491,6 +493,101 @@ func parseNumber(s string) (float64, error) {
 	return strconv.ParseFloat(s, 64)
 }
 
+func lookupVariable(name string, macro *models.Macro, overrides map[string]any) (any, bool) {
+	name = strings.TrimSpace(name)
+	if overrides != nil {
+		if v, ok := overrides[name]; ok {
+			return v, true
+		}
+		lower := strings.ToLower(name)
+		for k, v := range overrides {
+			if strings.ToLower(k) == lower {
+				return v, true
+			}
+		}
+	}
+	if macro != nil && macro.Variables != nil {
+		return macro.Variables.Get(name)
+	}
+	return nil, false
+}
+
+func resolveVariablesWithOverrides(text string, macro *models.Macro, overrides map[string]any) (string, error) {
+	if overrides == nil && (macro == nil || macro.Variables == nil) {
+		return text, nil
+	}
+
+	result := text
+	result = varPattern.ReplaceAllStringFunc(result, func(match string) string {
+		varName := strings.TrimSpace(varPattern.FindStringSubmatch(match)[1])
+		if val, ok := lookupVariable(varName, macro, overrides); ok {
+			return fmt.Sprintf("%v", val)
+		}
+		return match
+	})
+
+	result = varPatternAlt.ReplaceAllStringFunc(result, func(match string) string {
+		if strings.HasPrefix(match, "${") {
+			return match
+		}
+		varName := strings.TrimSpace(varPatternAlt.FindStringSubmatch(match)[1])
+		if val, ok := lookupVariable(varName, macro, overrides); ok {
+			return fmt.Sprintf("%v", val)
+		}
+		return match
+	})
+
+	return result, nil
+}
+
+func evaluateExpressionWithOverrides(expr string, macro *models.Macro, overrides map[string]any) (any, error) {
+	resolved, err := resolveVariablesWithOverrides(expr, macro, overrides)
+	if err != nil {
+		return nil, err
+	}
+	resolved = strings.ReplaceAll(resolved, "~pi", fmt.Sprintf("%f", math.Pi))
+	resolved = strings.ReplaceAll(resolved, "~e", fmt.Sprintf("%f", math.E))
+	resolved = replaceFunctions(resolved)
+	result, err := evaluateSimpleExpression(resolved)
+	if err != nil {
+		return nil, fmt.Errorf("failed to evaluate expression: %w", err)
+	}
+	return result, nil
+}
+
+func resolveIntWithOverrides(value any, macro *models.Macro, overrides map[string]any) (int, error) {
+	switch v := value.(type) {
+	case int:
+		return v, nil
+	case float64:
+		return int(v), nil
+	case string:
+		resolved, err := resolveVariablesWithOverrides(v, macro, overrides)
+		if err != nil {
+			return 0, err
+		}
+		if err := checkUnresolvedVariable(resolved); err != nil {
+			return 0, err
+		}
+		if strings.ContainsAny(resolved, "+-*/^()") {
+			result, err := evaluateExpressionWithOverrides(resolved, macro, overrides)
+			if err != nil {
+				return 0, err
+			}
+			if f, ok := result.(float64); ok {
+				return int(f), nil
+			}
+		}
+		val, err := strconv.Atoi(resolved)
+		if err != nil {
+			return 0, fmt.Errorf("cannot convert %s to int: %w", resolved, err)
+		}
+		return val, nil
+	default:
+		return 0, fmt.Errorf("unsupported type for int resolution: %T", value)
+	}
+}
+
 // checkUnresolvedVariable returns an error if s still contains an unresolved variable reference.
 func checkUnresolvedVariable(s string) error {
 	if strings.Contains(s, "${") {
@@ -587,12 +684,21 @@ func ResolveSetVariableValue(value any, macro *models.Macro) (any, error) {
 	case int, int64, float32, float64, bool:
 		return v, nil
 	case string:
-		resolved, err := ResolveString(v, macro)
+		resolved, err := ResolveVariables(v, macro)
 		if err != nil {
+			return nil, err
+		}
+		if err := checkUnresolvedVariable(resolved); err != nil {
 			return nil, err
 		}
 		if resolved == "" {
 			return "", nil
+		}
+		// Evaluate arithmetic when the value contains operators (same as ResolveInt/ResolveFloat).
+		if strings.ContainsAny(resolved, "+-*/^()") {
+			if result, err := EvaluateExpression(v, macro); err == nil {
+				return result, nil
+			}
 		}
 		if i, err := strconv.Atoi(resolved); err == nil {
 			return i, nil
