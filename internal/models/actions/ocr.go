@@ -14,11 +14,13 @@ type Ocr struct {
 	OutputVariable  string
 	OutputXVariable string `mapstructure:"outputxvariable"` // Variable name to store X coordinate (center of search area when found)
 	OutputYVariable string `mapstructure:"outputyvariable"` // Variable name to store Y coordinate (center of search area when found)
-	// Preprocessing: Blur 0-30 (0=off), MinThreshold 0-255 (0=off), Resize 1.0-10.0, Grayscale
+	// Preprocessing: Blur 0-30 (0=off), MinThreshold 0-255 (0=off unless Otsu), Resize 1.0-10.0, Grayscale
 	Blur                   int
 	MinThreshold           int
 	Resize                 float64
 	Grayscale              bool
+	ThresholdOtsu          bool `mapstructure:"thresholdotsu"`          // Auto threshold via Otsu's method
+	ThresholdInvert        bool `mapstructure:"thresholdinvert"`        // Invert binarization (light text on dark background)
 	WaitTilFound           bool `mapstructure:"waittilfound"`           // If true, retry until target text found or timeout
 	WaitTilFoundSeconds    int  `mapstructure:"waittilfoundseconds"`    // Max seconds to keep trying when WaitTilFound (then continue without match)
 	WaitTilFoundIntervalMs int  `mapstructure:"waittilfoundintervalms"` // Milliseconds between retries when WaitTilFound (0 = default 500ms)
@@ -33,10 +35,12 @@ func NewOcr(name string, subActions []ActionInterface, target string, searchbox 
 		OutputVariable:  "",
 		OutputXVariable: "foundX",
 		OutputYVariable: "foundY",
-		Blur:            3,
-		MinThreshold:    50,
+		Blur:            0,
+		MinThreshold:    0,
 		Resize:          1.0,
 		Grayscale:       true,
+		ThresholdOtsu:   false,
+		ThresholdInvert: false,
 	}
 }
 

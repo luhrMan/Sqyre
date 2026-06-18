@@ -377,8 +377,9 @@ func TestNewOcr(t *testing.T) {
 	if o.GetType() != "ocr" || o.Name != "myocr" || o.Target != "target" || o.SearchArea.Name != "box" {
 		t.Errorf("Ocr: %+v", o)
 	}
-	if o.Blur != 3 || o.MinThreshold != 50 || o.Resize != 1.0 || !o.Grayscale {
-		t.Errorf("Ocr defaults: Blur=%d MinThreshold=%d Resize=%v Grayscale=%v", o.Blur, o.MinThreshold, o.Resize, o.Grayscale)
+	if o.Blur != 0 || o.MinThreshold != 0 || o.Resize != 1.0 || !o.Grayscale || o.ThresholdOtsu || o.ThresholdInvert {
+		t.Errorf("Ocr defaults: Blur=%d MinThreshold=%d Resize=%v Grayscale=%v ThresholdOtsu=%v ThresholdInvert=%v",
+			o.Blur, o.MinThreshold, o.Resize, o.Grayscale, o.ThresholdOtsu, o.ThresholdInvert)
 	}
 }
 
