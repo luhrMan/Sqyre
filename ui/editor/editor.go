@@ -527,7 +527,7 @@ func (eu *EditorUi) UpdatePointPreview(point *models.Point) {
 		return
 	}
 
-	fyne.DoAndWait(func() { panel.setImage(previewImg) })
+	panel.setImage(previewImg)
 }
 
 func (eu *EditorUi) clearPointPreviewImage() {
