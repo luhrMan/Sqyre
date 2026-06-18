@@ -130,6 +130,21 @@ func PopulateItemsSearchAccordion(
 	}
 	applyAccordionOpenByProgram(acc.Items, openState)
 	acc.Refresh()
+	refreshAccordionItemGrids(acc.Items)
+	// GridWrap may compute column count before width is known; defer refresh until after layout.
+	fyne.Do(func() { refreshAccordionItemGrids(acc.Items) })
+}
+
+// refreshAccordionItemGrids refreshes item grids inside open accordion rows so column count
+// matches the available width. Without this, GridWrap initially lays out one column and leaves
+// a tall blank area until something else triggers a refresh (e.g. selecting an item).
+func refreshAccordionItemGrids(items []*widget.AccordionItem) {
+	for _, item := range items {
+		if item == nil || !item.Open {
+			continue
+		}
+		custom_widgets.RefreshGridWraps(item.Detail)
+	}
 }
 
 // CreateProgramAccordionItem builds a single accordion item (one program's item grid)
