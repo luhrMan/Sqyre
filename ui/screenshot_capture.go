@@ -2,7 +2,14 @@ package ui
 
 import (
 	"bytes"
+	"fmt"
+	"image"
+	"image/color"
+	"image/draw"
 	"image/png"
+
+	"Sqyre/internal/models/actions"
+	"Sqyre/ui/macro/actiondialog"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/test"
@@ -29,6 +36,43 @@ func PrepareWindowForCapture(w fyne.Window) {
 		content.Refresh()
 		w.Canvas().Refresh(content)
 	}
+}
+
+// OverlayActionDialogOnMainPNG composites a dimmed main-window capture with a centered action dialog.
+func OverlayActionDialogOnMainPNG(mainPNG []byte, action actions.ActionInterface) ([]byte, error) {
+	base, err := png.Decode(bytes.NewReader(mainPNG))
+	if err != nil {
+		return nil, fmt.Errorf("decode main window png: %w", err)
+	}
+	parent := fyne.NewSize(screenshotWindowW, screenshotWindowH)
+	panel := actiondialog.PanelForScreenshot(action)
+	panelSize := actiondialog.ScreenshotSizeOnParent(parent, action)
+	panel.Resize(panelSize)
+	dialogPNG, err := RenderObjectPNG(panel, panelSize)
+	if err != nil {
+		return nil, err
+	}
+	dialogImg, err := png.Decode(bytes.NewReader(dialogPNG))
+	if err != nil {
+		return nil, fmt.Errorf("decode dialog png: %w", err)
+	}
+
+	bounds := base.Bounds()
+	out := image.NewRGBA(bounds)
+	draw.Draw(out, bounds, base, image.Point{}, draw.Src)
+	scrim := image.NewUniform(color.NRGBA{R: 0, G: 0, B: 0, A: 160})
+	draw.Draw(out, bounds, scrim, image.Point{}, draw.Over)
+
+	dx := (bounds.Dx() - dialogImg.Bounds().Dx()) / 2
+	dy := (bounds.Dy() - dialogImg.Bounds().Dy()) / 2
+	dialogRect := dialogImg.Bounds().Add(image.Pt(dx, dy))
+	draw.Draw(out, dialogRect, dialogImg, image.Point{}, draw.Over)
+
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, out); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
 
 // CaptureWindowPNG captures the rendered window canvas (widgets stay on the canvas).
