@@ -3,13 +3,22 @@ package actiondialog
 import (
 	"Sqyre/internal/models/actions"
 	"Sqyre/internal/models/repositories"
+	"Sqyre/ui/custom_widgets"
 	"fmt"
 	"slices"
 	"strings"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
 	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
+)
+
+const (
+	forEachRowSourceEntryMinHeight = float32(120)
+	forEachRowSourcesScrollMinHeight = float32(320)
+	forEachRowDialogWidth            = float32(720)
+	forEachRowDialogHeight           = float32(620)
 )
 
 func createSetVariableDialogContent(action *actions.SetVariable) (fyne.CanvasObject, func()) {
@@ -25,7 +34,7 @@ func createSetVariableDialogContent(action *actions.SetVariable) (fyne.CanvasObj
 
 	saveFunc := func() {
 		action.VariableName = nameEntry.Text
-		action.Value = valueEntry.Text // Could be enhanced to parse different types
+		action.Value = valueEntry.Text
 	}
 
 	return content, saveFunc
@@ -50,34 +59,118 @@ func createCalculateDialogContent(action *actions.Calculate) (fyne.CanvasObject,
 	return content, saveFunc
 }
 
-func createDataListDialogContent(action *actions.DataList) (fyne.CanvasObject, func()) {
-	sourceEntry := newMultiLineVarEntry()
-	sourceEntry.SetText(action.Source)
-	sourceEntry.SetPlaceHolder("File: path relative to ~/.sqyre/variables/ (e.g. mylist.txt)\nOr paste text directly")
-	varEntry := newVarNameEntry()
-	varEntry.SetText(action.OutputVar)
-	lengthVarEntry := newVarNameEntry()
-	lengthVarEntry.SetText(action.LengthVar)
-	lengthVarEntry.SetPlaceHolder("e.g. lineCount (optional, for Loop)")
-	isFileCheck := ttwidget.NewCheck("Source is file path (relative to ~/.sqyre/variables/)", nil)
-	isFileCheck.SetChecked(action.IsFile)
-	skipBlankCheck := ttwidget.NewCheck("Skip blank lines (exclude from count and iteration)", nil)
-	skipBlankCheck.SetChecked(action.SkipBlankLines)
+type sourceRowWidgets struct {
+	source    *custom_widgets.VarRefEntry
+	outputVar *custom_widgets.VarNameEntry
+	isFile    *ttwidget.Check
+	skipBlank *ttwidget.Check
+}
+
+func newSourceRowWidgets() sourceRowWidgets {
+	source := newMultiLineVarEntry()
+	source.SetPlaceHolder("File path or one value per line")
+	return sourceRowWidgets{
+		source:    source,
+		outputVar: newVarNameEntry(),
+		isFile:    ttwidget.NewCheck("Source is file path", nil),
+		skipBlank: ttwidget.NewCheck("Skip blank lines", nil),
+	}
+}
+
+func forEachRowSourceField(source *custom_widgets.VarRefEntry) fyne.CanvasObject {
+	return container.NewGridWrap(
+		fyne.NewSize(forEachRowDialogWidth-200, forEachRowSourceEntryMinHeight),
+		source,
+	)
+}
+
+func createForEachRowDialogContent(action *actions.ForEachRow) (fyne.CanvasObject, func()) {
+	nameEntry := widget.NewEntry()
+	nameEntry.SetText(action.Name)
+
+	rows := make([]sourceRowWidgets, len(action.Sources))
+	for i, s := range action.Sources {
+		rows[i] = newSourceRowWidgets()
+		rows[i].source.SetText(s.Source)
+		rows[i].outputVar.SetText(s.OutputVar)
+		rows[i].isFile.SetChecked(s.IsFile)
+		rows[i].skipBlank.SetChecked(s.SkipBlankLines)
+	}
+	if len(rows) == 0 {
+		rows = append(rows, newSourceRowWidgets())
+	}
+
+	rowsBox := container.NewVBox()
+	var rebuild func()
+	rebuild = func() {
+		rowsBox.Objects = nil
+		for i := range rows {
+			idx := i
+			row := rows[idx]
+			removeBtn := widget.NewButton("Remove", func() {
+				if len(rows) <= 1 {
+					return
+				}
+				rows = append(rows[:idx], rows[idx+1:]...)
+				rebuild()
+			})
+			if len(rows) <= 1 {
+				removeBtn.Disable()
+			}
+			header := container.NewHBox(
+				widget.NewLabelWithStyle("Source column", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+				widget.NewLabel("(first column sets row count)"),
+			)
+			rowForm := widget.NewForm(
+				formHint("Source:", forEachRowSourceField(row.source), "File path under ~/.sqyre/variables/ or pasted line-separated text."),
+				formHint("", row.isFile, "Read Source as a file path when checked."),
+				formHint("", row.skipBlank, "Ignore empty lines in this column."),
+				formHint("Output Variable:", row.outputVar, "Macro variable for the current row value. Sub-actions also get ${Row} and ${RowCount}."),
+			)
+			rowsBox.Add(container.NewVBox(
+				header,
+				rowForm,
+				removeBtn,
+				widget.NewSeparator(),
+			))
+		}
+	}
+	rebuild()
+
+	addBtn := widget.NewButton("Add source column", func() {
+		rows = append(rows, newSourceRowWidgets())
+		rebuild()
+	})
+
+	sourceScroll := container.NewVScroll(rowsBox)
+	sourceScroll.SetMinSize(fyne.NewSize(forEachRowDialogWidth-120, forEachRowSourcesScrollMinHeight))
 
 	content := widget.NewForm(
-		formHint("Source (file path or text):", sourceEntry, "Either paste lines here or a relative file path under ~/.sqyre/variables/ when the checkbox is on."),
-		formHint("", isFileCheck, "When checked, Source is read as a path under ~/.sqyre/variables/. When unchecked, Source is the list content itself."),
-		formHint("", skipBlankCheck, "When enabled, empty lines are ignored for line count and iteration indexing."),
-		formHint("Output Variable:", varEntry, "Variable holding the current line when iterating with a Data List loop."),
-		formHint("Length Variable (optional):", lengthVarEntry, "Optional variable set to the total line count (useful for loops and bounds)."),
+		formHint("Name:", nameEntry, "Label for this iterator in the tree."),
 	)
+	content.Append("Sources", container.NewBorder(
+		addBtn,
+		nil, nil, nil,
+		sourceScroll,
+	))
 
 	saveFunc := func() {
-		action.Source = sourceEntry.Text
-		action.OutputVar = varEntry.Text
-		action.LengthVar = strings.TrimSpace(lengthVarEntry.Text)
-		action.IsFile = isFileCheck.Checked
-		action.SkipBlankLines = skipBlankCheck.Checked
+		action.Name = nameEntry.Text
+		sources := make([]actions.ListColumn, 0, len(rows))
+		for _, row := range rows {
+			src := strings.TrimSpace(row.source.Text)
+			out := strings.TrimSpace(row.outputVar.Text)
+			if src == "" && out == "" {
+				continue
+			}
+			sources = append(sources, actions.ListColumn{
+				Source:         row.source.Text,
+				OutputVar:      out,
+				IsFile:         row.isFile.Checked,
+				SkipBlankLines: row.skipBlank.Checked,
+			})
+		}
+		action.Sources = sources
 	}
 
 	return content, saveFunc
@@ -113,7 +206,6 @@ func createSaveVariableDialogContent(action *actions.SaveVariable) (fyne.CanvasO
 
 func createRunMacroDialogContent(action *actions.RunMacro) (fyne.CanvasObject, func()) {
 	macroNames := repositories.MacroRepo().GetAllKeys()
-	// Exclude the currently open macro to prevent infinite recursion
 	if cur := currentMacroName(); cur != "" {
 		macroNames = slices.DeleteFunc(macroNames, func(name string) bool { return name == cur })
 	}
@@ -122,7 +214,6 @@ func createRunMacroDialogContent(action *actions.RunMacro) (fyne.CanvasObject, f
 	}
 	macroSelect := ttwidget.NewSelect(macroNames, nil)
 	if action.MacroName != "" && !slices.Contains(macroNames, action.MacroName) {
-		// Macro was deleted or renamed; add current value so it's visible (unless it's the current macro - then clear)
 		if cur := currentMacroName(); action.MacroName != "" && action.MacroName == cur && cur != "" {
 			macroNames = append([]string{""}, macroNames...)
 			macroSelect.Options = macroNames

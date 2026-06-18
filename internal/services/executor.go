@@ -92,16 +92,50 @@ func SetMacroRunningCallback(fn func(running bool)) {
 	macroRunningCallback = fn
 }
 
-// resetDataListsInTree resets every DataList in the action tree so each macro run starts from line 0.
-func resetDataListsInTree(a actions.ActionInterface) {
-	if dl, ok := a.(*actions.DataList); ok {
-		dl.Reset()
+// resetListSourcesInTree resets line cursors for every for-each row in the tree.
+func resetListSourcesInTree(a actions.ActionInterface) {
+	if fer, ok := a.(*actions.ForEachRow); ok {
+		fer.Reset()
 	}
 	if adv, ok := a.(actions.AdvancedActionInterface); ok {
 		for _, sub := range adv.GetSubActions() {
-			resetDataListsInTree(sub)
+			resetListSourcesInTree(sub)
 		}
 	}
+}
+
+func executeForEachRow(node *actions.ForEachRow, macro *models.Macro) error {
+	if len(node.Sources) == 0 {
+		return fmt.Errorf("for each row %q: at least one source is required", node.Name)
+	}
+	rowCount, err := node.Sources[0].LineCount()
+	if err != nil {
+		return fmt.Errorf("for each row %q: %w", node.Name, err)
+	}
+	for i := 0; i < rowCount; i++ {
+		for j := range node.Sources {
+			col := &node.Sources[j]
+			col.SetLineIndex(i)
+			line, err := col.GetCurrentLine()
+			if err != nil {
+				return fmt.Errorf("for each row %q source %d (%s): %w", node.Name, j+1, col.OutputVar, err)
+			}
+			if macro != nil && col.OutputVar != "" {
+				setMacroVariable(macro, col.OutputVar, line)
+			}
+		}
+		if macro != nil {
+			setMacroVariable(macro, actions.ForEachRowBuiltinRow, i+1)
+			setMacroVariable(macro, actions.ForEachRowBuiltinRowCount, rowCount)
+		}
+		log.Printf("For each row: %s row %d/%d", node.Name, i+1, rowCount)
+		for _, action := range node.GetSubActions() {
+			if err := executeWithContext(action, macro); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
@@ -178,7 +212,7 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 			return fmt.Errorf("loop count must be at least 1, got %d", count)
 		}
 		if node.Name == "root" {
-			resetDataListsInTree(node)
+			resetListSourcesInTree(node)
 			fyne.Do(func() {
 				MacroActiveIndicator().Show()
 				MacroActiveIndicator().Start()
@@ -403,24 +437,9 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 		}
 		log.Println("successfully calculated")
 		return nil
-	case *actions.DataList:
-		log.Println("Data List:", node.String())
-		if macro != nil {
-			line, err := node.GetCurrentLine()
-			if err != nil {
-				return fmt.Errorf("data list error: %w", err)
-			}
-			setMacroVariable(macro, node.OutputVar, line)
-			if node.LengthVar != "" {
-				lineCount, err := node.LineCount()
-				if err != nil {
-					return fmt.Errorf("data list length: %w", err)
-				}
-				setMacroVariable(macro, node.LengthVar, lineCount)
-			}
-			node.NextLine() // Advance to next line for next cycle
-		}
-		return nil
+	case *actions.ForEachRow:
+		log.Println("For each row:", node.String())
+		return executeForEachRow(node, macro)
 	case *actions.SaveVariable:
 		log.Println("Save Variable:", node.String())
 		if macro != nil && macro.Variables != nil {

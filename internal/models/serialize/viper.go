@@ -382,32 +382,16 @@ func (s *serializer) CreateActionFromMap(rawMap map[string]any, parent actions.A
 		left := operandFromMap(rawMap, "left")
 		right := operandFromMap(rawMap, "right")
 		action = actions.NewConditional(left, operator, right, name, []actions.ActionInterface{})
-	case "datalist":
-		isFile := false
-		if ifVal, ok := rawMap["isfile"]; ok && ifVal != nil {
-			b, ok := ifVal.(bool)
-			if !ok {
-				return nil, fmt.Errorf("action type datalist: field \"isfile\": expected bool, got %T", ifVal)
-			}
-			isFile = b
-		}
-		src, err := expectString(rawMap, "source")
+	case "foreachrow":
+		name := stringFromMap(rawMap, "name")
+		sources, err := sourcesFromMap(rawMap["sources"])
 		if err != nil {
-			return nil, fmt.Errorf("action type datalist: %w", err)
+			return nil, fmt.Errorf("action type foreachrow: %w", err)
 		}
-		outVar, err := expectString(rawMap, "outputvar")
-		if err != nil {
-			return nil, fmt.Errorf("action type datalist: %w", err)
+		if sources == nil {
+			sources = []actions.ListColumn{}
 		}
-		action = actions.NewDataList(src, outVar, isFile)
-		if dl, ok := action.(*actions.DataList); ok {
-			if lv, ok := rawMap["lengthvar"].(string); ok {
-				dl.LengthVar = lv
-			}
-			if sb, ok := rawMap["skipblanklines"].(bool); ok {
-				dl.SkipBlankLines = sb
-			}
-		}
+		action = actions.NewForEachRow(name, sources, []actions.ActionInterface{})
 	case "savevariable":
 		append := false
 		if appendVal, ok := rawMap["append"]; ok && appendVal != nil {
@@ -568,6 +552,24 @@ func intFromMap(v any) int {
 		return int(n)
 	case float64:
 		return int(n)
+	default:
+		return 0
+	}
+}
+
+func floatFromMap(v any) float64 {
+	if v == nil {
+		return 0
+	}
+	switch n := v.(type) {
+	case float64:
+		return n
+	case float32:
+		return float64(n)
+	case int:
+		return float64(n)
+	case int64:
+		return float64(n)
 	default:
 		return 0
 	}

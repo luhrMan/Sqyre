@@ -1,10 +1,20 @@
 package models
 
-import "fmt"
+import (
+	"fmt"
+
+	"Sqyre/internal/models/actions"
+)
 
 // ImageSearchBuiltinVars are set at runtime inside Image Search sub-actions.
 var ImageSearchBuiltinVars = []string{
 	"StackMax", "Cols", "Rows", "ItemName", "ImagePixelWidth", "ImagePixelHeight",
+}
+
+// ForEachRowBuiltinVars are set at runtime inside For Each Row sub-actions.
+var ForEachRowBuiltinVars = []string{
+	actions.ForEachRowBuiltinRow,
+	actions.ForEachRowBuiltinRowCount,
 }
 
 // MonitorBuiltinVarNames returns monitor1Width, monitor1Height, ... for each display (1-based).

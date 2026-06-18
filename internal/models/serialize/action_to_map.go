@@ -145,12 +145,14 @@ func ActionToMap(action actions.ActionInterface) (map[string]any, error) {
 			return nil, err
 		}
 		m["subactions"] = subs
-	case *actions.DataList:
-		m["source"] = a.Source
-		m["outputvar"] = a.OutputVar
-		m["lengthvar"] = a.LengthVar
-		m["isfile"] = a.IsFile
-		m["skipblanklines"] = a.SkipBlankLines
+	case *actions.ForEachRow:
+		m["name"] = a.Name
+		m["sources"] = listColumnsToMaps(a.Sources)
+		subs, err := subActionsToMaps(a.GetSubActions())
+		if err != nil {
+			return nil, err
+		}
+		m["subactions"] = subs
 	case *actions.SaveVariable:
 		m["variablename"] = a.VariableName
 		m["destination"] = a.Destination
