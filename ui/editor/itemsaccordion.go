@@ -117,6 +117,7 @@ func PopulateItemsSearchAccordion(
 	filterText string,
 	buildOpts func(*models.Program) ItemsAccordionOptions,
 ) {
+	openState := captureAccordionOpenByProgram(acc.Items)
 	acc.RemoveAll()
 	for _, p := range repositories.ProgramRepo().GetAllSortedByName() {
 		if !ProgramRowVisibleInItemsSearch(p, filterText) {
@@ -127,6 +128,7 @@ func PopulateItemsSearchAccordion(
 		item, hdr := CreateProgramAccordionItem(opts)
 		acc.AppendWithHeader(item, hdr)
 	}
+	applyAccordionOpenByProgram(acc.Items, openState)
 	acc.Refresh()
 }
 
