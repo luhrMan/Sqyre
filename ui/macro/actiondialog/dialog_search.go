@@ -41,10 +41,10 @@ func createImageSearchDialogContent(action *actions.ImageSearch) (fyne.CanvasObj
 	blurMin, blurMax := 1, 21
 	blurIncrementer := custom_widgets.NewIncrementer(action.Blur, 2, &blurMin, &blurMax)
 	blurIncrementer.SetValue(action.Blur)
-	outputXVarEntry := newVarEntry()
+	outputXVarEntry := newVarNameEntry()
 	outputXVarEntry.SetText(action.OutputXVariable)
 	outputXVarEntry.SetPlaceHolder("e.g. foundX (sub-actions also get ${StackMax}, ${Cols}, ${Rows}, ${ItemName}, ${ImagePixelWidth}, ${ImagePixelHeight})")
-	outputYVarEntry := newVarEntry()
+	outputYVarEntry := newVarNameEntry()
 	outputYVarEntry.SetText(action.OutputYVariable)
 	outputYVarEntry.SetPlaceHolder("e.g. foundY")
 	waitTil := newWaitTilFoundForm(action.WaitTilFound, action.WaitTilFoundSeconds, action.WaitTilFoundIntervalMs, 100)
@@ -181,24 +181,26 @@ func createImageSearchDialogContent(action *actions.ImageSearch) (fyne.CanvasObj
 		),
 	)
 
-	content :=
-		container.NewHSplit(
-			widget.NewAccordion(
-				widget.NewAccordionItem("Search Areas",
-					container.NewBorder(
-						searchAreasSearchbar, nil, nil, nil,
-						searchAreasAccordion,
-					),
-				),
-				widget.NewAccordionItem("Items",
-					container.NewBorder(
-						itemsSearchbar, nil, nil, nil,
-						itemsAccordion,
-					),
-				),
+	leftAccordion := widget.NewAccordion(
+		widget.NewAccordionItem("Search Areas",
+			container.NewBorder(
+				searchAreasSearchbar, nil, nil, nil,
+				searchAreasAccordion,
 			),
-			rightPanel,
-		)
+		),
+		widget.NewAccordionItem("Items",
+			container.NewBorder(
+				itemsSearchbar, nil, nil, nil,
+				itemsAccordion,
+			),
+		),
+	)
+	leftAccordion.Open(0)
+
+	content := container.NewHSplit(
+		leftAccordion,
+		rightPanel,
+	)
 
 	saveFunc := func() {
 		action.Name = nameEntry.Text
@@ -228,12 +230,12 @@ func createOcrDialogContent(action *actions.Ocr) (fyne.CanvasObject, func()) {
 	nameEntry.SetText(action.Name)
 	targetEntry := newVarEntry()
 	targetEntry.SetText(action.Target)
-	outputVarEntry := newVarEntry()
+	outputVarEntry := newVarNameEntry()
 	outputVarEntry.SetText(action.OutputVariable)
-	outputXVarEntry := newVarEntry()
+	outputXVarEntry := newVarNameEntry()
 	outputXVarEntry.SetText(action.OutputXVariable)
 	outputXVarEntry.SetPlaceHolder("e.g. foundX")
-	outputYVarEntry := newVarEntry()
+	outputYVarEntry := newVarNameEntry()
 	outputYVarEntry.SetText(action.OutputYVariable)
 	outputYVarEntry.SetPlaceHolder("e.g. foundY")
 	waitTil := newWaitTilFoundForm(action.WaitTilFound, action.WaitTilFoundSeconds, action.WaitTilFoundIntervalMs, 0)
@@ -369,10 +371,10 @@ func createFindPixelDialogContent(action *actions.FindPixel) (fyne.CanvasObject,
 	pctLbl := widget.NewLabel("%")
 	toleranceRow := container.NewHBox(toleranceEntry, pctLbl, toleranceSlider)
 
-	outputXVarEntry := newVarEntry()
+	outputXVarEntry := newVarNameEntry()
 	outputXVarEntry.SetText(action.OutputXVariable)
 	outputXVarEntry.SetPlaceHolder("e.g. foundX")
-	outputYVarEntry := newVarEntry()
+	outputYVarEntry := newVarNameEntry()
 	outputYVarEntry.SetText(action.OutputYVariable)
 	outputYVarEntry.SetPlaceHolder("e.g. foundY")
 

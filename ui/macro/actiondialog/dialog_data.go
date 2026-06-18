@@ -13,7 +13,7 @@ import (
 )
 
 func createSetVariableDialogContent(action *actions.SetVariable) (fyne.CanvasObject, func()) {
-	nameEntry := newVarEntry()
+	nameEntry := newVarNameEntry()
 	nameEntry.SetText(action.VariableName)
 	valueEntry := newVarEntry()
 	valueEntry.SetText(fmt.Sprintf("%v", action.Value))
@@ -34,7 +34,7 @@ func createSetVariableDialogContent(action *actions.SetVariable) (fyne.CanvasObj
 func createCalculateDialogContent(action *actions.Calculate) (fyne.CanvasObject, func()) {
 	exprEntry := newVarEntry()
 	exprEntry.SetText(action.Expression)
-	varEntry := newVarEntry()
+	varEntry := newVarNameEntry()
 	varEntry.SetText(action.OutputVar)
 
 	content := widget.NewForm(
@@ -54,9 +54,9 @@ func createDataListDialogContent(action *actions.DataList) (fyne.CanvasObject, f
 	sourceEntry := newMultiLineVarEntry()
 	sourceEntry.SetText(action.Source)
 	sourceEntry.SetPlaceHolder("File: path relative to ~/.sqyre/variables/ (e.g. mylist.txt)\nOr paste text directly")
-	varEntry := newVarEntry()
+	varEntry := newVarNameEntry()
 	varEntry.SetText(action.OutputVar)
-	lengthVarEntry := newVarEntry()
+	lengthVarEntry := newVarNameEntry()
 	lengthVarEntry.SetText(action.LengthVar)
 	lengthVarEntry.SetPlaceHolder("e.g. lineCount (optional, for Loop)")
 	isFileCheck := ttwidget.NewCheck("Source is file path (relative to ~/.sqyre/variables/)", nil)
@@ -84,7 +84,7 @@ func createDataListDialogContent(action *actions.DataList) (fyne.CanvasObject, f
 }
 
 func createSaveVariableDialogContent(action *actions.SaveVariable) (fyne.CanvasObject, func()) {
-	varEntry := newVarEntry()
+	varEntry := newVarNameEntry()
 	varEntry.SetText(action.VariableName)
 	destEntry := newVarEntry()
 	destEntry.SetText(action.Destination)
@@ -136,7 +136,7 @@ func createRunMacroDialogContent(action *actions.RunMacro) (fyne.CanvasObject, f
 	}
 
 	content := widget.NewForm(
-		formHint("Macro to run:", macroSelect, "Choose which saved macro executes when this action runs. The current macro cannot call itself (it is omitted from this list)."),
+		formHint("Macro to run:", macroSelect, "Choose which saved macro executes when this action runs. The current macro cannot call itself (it is omitted from this list). The called macro uses its own variable store; variables are not shared with the caller."),
 	)
 
 	saveFunc := func() {

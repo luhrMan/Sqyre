@@ -13,16 +13,94 @@ import (
 	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 )
 
+const screenshotDialogPadW = 48
+const screenshotDialogPadH = 120
+
 // PanelForScreenshot returns a standalone action edit panel for docs/tests.
 func PanelForScreenshot(action actions.ActionInterface) fyne.CanvasObject {
-	var content fyne.CanvasObject
-	switch node := action.(type) {
-	case *actions.Wait:
-		content, _ = createWaitDialogContent(node)
-	default:
-		content = widget.NewLabel("Unsupported action type for screenshot: " + action.GetType())
+	content, _ := panelContentForAction(action)
+	if sz := contentResizeForAction(action); sz.Width > 0 && sz.Height > 0 {
+		content.Resize(sz)
 	}
 	return buildScreenshotPanel(action.GetType(), content)
+}
+
+func panelContentForAction(action actions.ActionInterface) (fyne.CanvasObject, func()) {
+	switch node := action.(type) {
+	case *actions.Wait:
+		return createWaitDialogContent(node)
+	case *actions.Move:
+		return createMoveDialogContent(node)
+	case *actions.Click:
+		return createClickDialogContent(node)
+	case *actions.Key:
+		return createKeyDialogContent(node)
+	case *actions.Type:
+		return createTypeDialogContent(node)
+	case *actions.Loop:
+		return createLoopDialogContent(node)
+	case *actions.ImageSearch:
+		return createImageSearchDialogContent(node)
+	case *actions.Ocr:
+		return createOcrDialogContent(node)
+	case *actions.SetVariable:
+		return createSetVariableDialogContent(node)
+	case *actions.Calculate:
+		return createCalculateDialogContent(node)
+	case *actions.DataList:
+		return createDataListDialogContent(node)
+	case *actions.SaveVariable:
+		return createSaveVariableDialogContent(node)
+	case *actions.FindPixel:
+		return createFindPixelDialogContent(node)
+	case *actions.FocusWindow:
+		return createFocusWindowDialogContent(node)
+	case *actions.RunMacro:
+		return createRunMacroDialogContent(node)
+	default:
+		return widget.NewLabel("Unsupported action type for screenshot: " + action.GetType()), func() {}
+	}
+}
+
+// contentResizeForAction mirrors ShowActionDialog content sizing so screenshot layout matches the live UI.
+func contentResizeForAction(action actions.ActionInterface) fyne.Size {
+	switch action.(type) {
+	case *actions.Wait:
+		return fyne.NewSize(300, 100)
+	case *actions.Move:
+		return fyne.NewSize(1000, 600)
+	case *actions.Click:
+		return fyne.NewSize(300, 100)
+	case *actions.Key:
+		return fyne.NewSize(300, 100)
+	case *actions.Type:
+		return fyne.NewSize(400, 120)
+	case *actions.Loop:
+		return fyne.NewSize(600, 100)
+	case *actions.ImageSearch:
+		return fyne.NewSize(1000, 1000)
+	case *actions.Ocr:
+		return fyne.NewSize(600, 500)
+	case *actions.SetVariable, *actions.Calculate, *actions.DataList, *actions.SaveVariable:
+		return fyne.NewSize(600, 100)
+	case *actions.FindPixel:
+		return fyne.NewSize(800, 500)
+	case *actions.FocusWindow:
+		return fyne.NewSize(500, 400)
+	case *actions.RunMacro:
+		return fyne.NewSize(400, 120)
+	default:
+		return fyne.Size{}
+	}
+}
+
+// ScreenshotSizeForAction returns a render hint for the full screenshot panel (content + chrome).
+func ScreenshotSizeForAction(action actions.ActionInterface) fyne.Size {
+	contentSz := contentResizeForAction(action)
+	if contentSz.Width <= 0 || contentSz.Height <= 0 {
+		return fyne.Size{}
+	}
+	return fyne.NewSize(contentSz.Width+screenshotDialogPadW, contentSz.Height+screenshotDialogPadH)
 }
 
 func buildScreenshotPanel(actionType string, content fyne.CanvasObject) fyne.CanvasObject {
