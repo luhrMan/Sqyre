@@ -4,6 +4,7 @@ import (
 	"Sqyre/internal/config"
 	"Sqyre/internal/logger"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"runtime/debug"
@@ -30,14 +31,19 @@ func LogPanicToFile(r interface{}, context ...string) {
 		logger.Errorf("panic (log file unavailable): %v", r)
 		fmt.Fprintf(os.Stderr, "panic: %v\n%s", r, stack)
 	} else {
-		defer f.Close()
 		ts := time.Now().Format("2006-01-02 15:04:05.000")
 		fmt.Fprintf(f, "\n[%s] panic recovered: %v\n", ts, r)
+		if len(context) > 0 && context[0] != "" {
+			fmt.Fprintf(f, "context: %s\n", context[0])
+		}
 		f.Write(stack)
 		fmt.Fprintf(f, "\n")
-		f.Sync()
+		_ = f.Sync()
+		_ = f.Close()
 	}
 	logger.Errorf("panic recovered: %v", r)
+	log.Printf("panic recovered: %s", userMsg)
+	log.Printf("panic stack:\n%s", stack)
 	if OnPanicNotifyUser != nil {
 		OnPanicNotifyUser(userMsg)
 	}
