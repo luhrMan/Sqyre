@@ -2,6 +2,7 @@ package services
 
 import (
 	"Sqyre/internal/models"
+	"Sqyre/internal/models/actions"
 	"fmt"
 	"math"
 	"regexp"
@@ -19,6 +20,7 @@ var (
 // ResolveVariables resolves variable references in a string.
 // Supports ${VarName} and {VarName} syntax.
 // Image Search sub-actions also get internal item variables: ${StackMax}, ${Cols}, ${Rows}, ${ItemName}, ${ImagePixelWidth}, ${ImagePixelHeight}.
+// Every macro run also sets monitor builtins: ${monitor1Width}, ${monitor1Height}, ${monitor2Width}, ...
 func ResolveVariables(text string, macro *models.Macro) (string, error) {
 	if macro == nil || macro.Variables == nil {
 		return text, nil
@@ -76,6 +78,99 @@ func ParseVariableReference(text string) []string {
 		result = append(result, name)
 	}
 	return result
+}
+
+// EvaluateCondition resolves a Conditional action's operands and evaluates its
+// comparison. Numeric operands are compared numerically; otherwise comparison
+// falls back to string semantics. Unary operators (is set / is empty) inspect
+// only the left operand.
+func EvaluateCondition(node *actions.Conditional, macro *models.Macro) (bool, error) {
+	left, err := resolveOperand(node.Left, macro)
+	if err != nil {
+		return false, fmt.Errorf("left operand: %w", err)
+	}
+
+	switch node.Operator {
+	case actions.OpIsSet:
+		return left != "" && checkUnresolvedVariable(left) == nil, nil
+	case actions.OpIsEmpty:
+		return left == "" || checkUnresolvedVariable(left) != nil, nil
+	}
+
+	right, err := resolveOperand(node.Right, macro)
+	if err != nil {
+		return false, fmt.Errorf("right operand: %w", err)
+	}
+
+	switch node.Operator {
+	case actions.OpContains:
+		return strings.Contains(left, right), nil
+	case actions.OpStartsWith:
+		return strings.HasPrefix(left, right), nil
+	case actions.OpEndsWith:
+		return strings.HasSuffix(left, right), nil
+	}
+
+	// Numeric comparison when both operands parse as numbers, otherwise string.
+	lf, lok := parseConditionNumber(left)
+	rf, rok := parseConditionNumber(right)
+	numeric := lok && rok
+
+	switch node.Operator {
+	case actions.OpEquals:
+		if numeric {
+			return lf == rf, nil
+		}
+		return left == right, nil
+	case actions.OpNotEquals:
+		if numeric {
+			return lf != rf, nil
+		}
+		return left != right, nil
+	case actions.OpLess:
+		if numeric {
+			return lf < rf, nil
+		}
+		return left < right, nil
+	case actions.OpLessEqual:
+		if numeric {
+			return lf <= rf, nil
+		}
+		return left <= right, nil
+	case actions.OpGreater:
+		if numeric {
+			return lf > rf, nil
+		}
+		return left > right, nil
+	case actions.OpGreaterEq:
+		if numeric {
+			return lf >= rf, nil
+		}
+		return left >= right, nil
+	default:
+		return false, fmt.Errorf("unknown operator %q", node.Operator)
+	}
+}
+
+// resolveOperand resolves variable references in an operand to a string.
+func resolveOperand(value any, macro *models.Macro) (string, error) {
+	switch v := value.(type) {
+	case nil:
+		return "", nil
+	case string:
+		return ResolveVariables(v, macro)
+	default:
+		return fmt.Sprintf("%v", v), nil
+	}
+}
+
+// parseConditionNumber reports whether s parses as a number and returns its value.
+func parseConditionNumber(s string) (float64, bool) {
+	f, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
+	if err != nil {
+		return 0, false
+	}
+	return f, true
 }
 
 // EvaluateExpression evaluates a mathematical expression with variable substitution
@@ -483,6 +578,31 @@ func ResolveFloat(value any, macro *models.Macro) (float64, error) {
 		return val, nil
 	default:
 		return 0, fmt.Errorf("unsupported type for float resolution: %T", value)
+	}
+}
+
+// ResolveSetVariableValue resolves ${references} in a Set Variable value and parses numbers when possible.
+func ResolveSetVariableValue(value any, macro *models.Macro) (any, error) {
+	switch v := value.(type) {
+	case int, int64, float32, float64, bool:
+		return v, nil
+	case string:
+		resolved, err := ResolveString(v, macro)
+		if err != nil {
+			return nil, err
+		}
+		if resolved == "" {
+			return "", nil
+		}
+		if i, err := strconv.Atoi(resolved); err == nil {
+			return i, nil
+		}
+		if f, err := strconv.ParseFloat(resolved, 64); err == nil {
+			return f, nil
+		}
+		return resolved, nil
+	default:
+		return fmt.Sprintf("%v", v), nil
 	}
 }
 
