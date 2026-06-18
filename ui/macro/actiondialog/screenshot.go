@@ -96,6 +96,31 @@ func contentResizeForAction(action actions.ActionInterface) fyne.Size {
 	}
 }
 
+// ScreenshotSizeOnParent returns the dialog panel size on a parent window (matches live ShowActionDialog sizing).
+func ScreenshotSizeOnParent(parent fyne.Size, action actions.ActionInterface) fyne.Size {
+	width := parent.Width - 200
+	height := parent.Height - 200
+	contentSz := contentResizeForAction(action)
+	dialogPadding := fyne.NewSize(40, 110)
+	contentPreferredSize := fyne.NewSize(
+		contentSz.Width+dialogPadding.Width,
+		contentSz.Height+dialogPadding.Height,
+	)
+	if contentPreferredSize.Width < width {
+		width = contentPreferredSize.Width
+	}
+	if contentPreferredSize.Height < height {
+		height = contentPreferredSize.Height
+	}
+	if width < 200 {
+		width = 200
+	}
+	if height < 200 {
+		height = 200
+	}
+	return fyne.NewSize(width, height)
+}
+
 // ScreenshotSizeForAction returns a render hint for the full screenshot panel (content + chrome).
 func ScreenshotSizeForAction(action actions.ActionInterface) fyne.Size {
 	contentSz := contentResizeForAction(action)
