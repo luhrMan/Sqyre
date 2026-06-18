@@ -1,6 +1,8 @@
 package actiondialog
 
 import (
+	"Sqyre/ui/macrocxt"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/driver/desktop"
@@ -14,6 +16,7 @@ type Deps struct {
 	SetActionDialog            func(d dialog.Dialog)
 	ClearActionDialogIfCurrent func(d dialog.Dialog)
 
+	MacroContext     macrocxt.Provider
 	MacroVariables   func() []string
 	CurrentMacroName func() string
 
@@ -29,6 +32,9 @@ func SetDeps(d Deps) { active = d }
 func macroVarNames() []string {
 	if active.MacroVariables != nil {
 		return active.MacroVariables()
+	}
+	if active.MacroContext.CurrentMacro != nil {
+		return active.MacroContext.VariableNames()
 	}
 	return nil
 }

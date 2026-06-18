@@ -33,7 +33,7 @@ func formHint(label string, w fyne.CanvasObject, hint string) *widget.FormItem {
 
 func isNameFieldLabel(label string) bool {
 	switch strings.TrimSpace(label) {
-	case "Name:", "Variable Name:":
+	case "Name:", "Variable Name:", "Output Variable:", "Output X Variable:", "Output Y Variable:", "Length Variable (optional):":
 		return true
 	default:
 		return false
@@ -57,14 +57,19 @@ func applyFieldTooltip(label string, w fyne.CanvasObject, hint string) fyne.Canv
 	return container.NewBorder(nil, nil, icon, nil, w)
 }
 
-// newVarEntry creates a VarEntry wired to the current macro's variables.
-func newVarEntry() *custom_widgets.VarEntry {
-	return custom_widgets.NewVarEntry(macroVarNames)
+// newVarEntry creates a VarRefEntry wired to the current macro's variables.
+func newVarEntry() *custom_widgets.VarRefEntry {
+	return custom_widgets.NewVarRefEntry(macroVarNames)
 }
 
-// newMultiLineVarEntry creates a multi-line VarEntry wired to the current macro's variables.
-func newMultiLineVarEntry() *custom_widgets.VarEntry {
-	return custom_widgets.NewMultiLineVarEntry(macroVarNames)
+// newVarNameEntry creates an entry for defining a variable name.
+func newVarNameEntry() *custom_widgets.VarNameEntry {
+	return custom_widgets.NewVarNameEntry(macroVarNames)
+}
+
+// newMultiLineVarEntry creates a multi-line VarRefEntry wired to the current macro's variables.
+func newMultiLineVarEntry() *custom_widgets.VarRefEntry {
+	return custom_widgets.NewMultiLineVarRefEntry(macroVarNames)
 }
 
 // waitTilFoundForm bundles the "Wait until found" checkbox and timeout / interval
@@ -295,7 +300,8 @@ func buildItemsAccordionWithSearchbar(
 }
 
 // ShowActionDialog displays a dialog for editing an action.
-func ShowActionDialog(action actions.ActionInterface, onSave func(actions.ActionInterface)) {
+// When onCancel is set, it runs if the dialog is dismissed without saving (Cancel or Escape).
+func ShowActionDialog(action actions.ActionInterface, onSave func(actions.ActionInterface), onCancel func()) {
 	if active.Window == nil {
 		return
 	}
@@ -326,6 +332,9 @@ func ShowActionDialog(action actions.ActionInterface, onSave func(actions.Action
 	case *actions.Loop:
 		content, saveFunc = createLoopDialogContent(node)
 		content.Resize(fyne.NewSize(600, 100))
+	case *actions.Conditional:
+		content, saveFunc = createConditionalDialogContent(node)
+		content.Resize(fyne.NewSize(600, 160))
 	case *actions.ImageSearch:
 		content, saveFunc = createImageSearchDialogContent(node)
 		content.Resize(fyne.NewSize(1000, 1000))
@@ -363,7 +372,7 @@ func ShowActionDialog(action actions.ActionInterface, onSave func(actions.Action
 		saveFunc = func() {}
 	}
 	// Show custom dialog with save/cancel buttons
-	showCustomActionDialog(action, content, saveFunc, onSave)
+	showCustomActionDialog(action, content, saveFunc, onSave, onCancel)
 }
 
 // actionModalDialog implements dialog.Dialog using widget.NewModalPopUp so content is not
@@ -402,13 +411,15 @@ func (d *actionModalDialog) MinSize() fyne.Size { return d.pop.MinSize() }
 
 var _ dialog.Dialog = (*actionModalDialog)(nil)
 
-func showCustomActionDialog(action actions.ActionInterface, content fyne.CanvasObject, saveFunc func(), onSave func(actions.ActionInterface)) {
+func showCustomActionDialog(action actions.ActionInterface, content fyne.CanvasObject, saveFunc func(), onSave func(actions.ActionInterface), onCancel func()) {
 	var d *actionModalDialog
+	var saved bool
 	saveButton := ttwidget.NewButton("Save", func() {
 		saveFunc()
 		if onSave != nil {
 			onSave(action)
 		}
+		saved = true
 		d.Hide()
 	})
 	saveButton.SetToolTip("Save changes to this action")
@@ -455,6 +466,9 @@ func showCustomActionDialog(action actions.ActionInterface, content fyne.CanvasO
 		active.SetActionDialog(d)
 	}
 	d.SetOnClosed(func() {
+		if !saved && onCancel != nil {
+			onCancel()
+		}
 		if active.ClearActionDialogIfCurrent != nil {
 			active.ClearActionDialogIfCurrent(d)
 		}
