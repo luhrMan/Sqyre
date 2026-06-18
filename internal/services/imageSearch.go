@@ -28,24 +28,14 @@ func imageSearch(a *actions.ImageSearch, macro *models.Macro) (map[string][]robo
 		log.Printf("Image search: failed to resolve search area coords: %v", err)
 		return nil, err
 	}
+	captureImg, leftX, topY, rightX, bottomY, err := CaptureSearchArea(leftX, topY, rightX, bottomY)
+	if err != nil {
+		log.Printf("Image Search: %v (macro continues)", err)
+		return nil, err
+	}
 	w := rightX - leftX
 	h := bottomY - topY
-	if w <= 0 || h <= 0 {
-		err := fmt.Errorf("image search: invalid search area (width=%d height=%d); need positive dimensions", w, h)
-		log.Printf("Image Search: %v (macro continues)", err)
-		return nil, err
-	}
 	log.Printf("Image Searching | %v in X1:%d Y1:%d X2:%d Y2:%d, width:%d height:%d", a.Targets, leftX, topY, rightX, bottomY, w, h)
-	captureImg, err := robotgo.CaptureImg(leftX, topY, w, h)
-	if err != nil {
-		log.Printf("Image Search: capture failed: %v (macro continues)", err)
-		return nil, err
-	}
-	if captureImg == nil {
-		err := fmt.Errorf("image search: capture returned nil (invalid search area or display)")
-		log.Printf("Image Search: %v (macro continues)", err)
-		return nil, err
-	}
 	img, err := gocv.ImageToMatRGB(captureImg)
 	if err != nil {
 		log.Println("image search failed:", err)
