@@ -65,3 +65,14 @@ func (a *ImageSearch) parameters() []actionParam {
 func (a *ImageSearch) Icon() fyne.Resource {
 	return assets.ImageSearchIcon
 }
+
+func (a *ImageSearch) VariableBindings() []VariableBinding {
+	var out []VariableBinding
+	if a.OutputXVariable != "" {
+		out = append(out, VariableBinding{Name: a.OutputXVariable, Role: "output_x"})
+	}
+	if a.OutputYVariable != "" {
+		out = append(out, VariableBinding{Name: a.OutputYVariable, Role: "output_y"})
+	}
+	return out
+}

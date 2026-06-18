@@ -47,9 +47,13 @@ func decodeMacro(key string) (*models.Macro, error) {
 		return nil, fmt.Errorf("%w: macro '%s': %v", ErrDecodeFailed, key, err)
 	}
 
-	// Ensure Variables is initialized so variable resolution works (e.g. Move with ${var})
-	if macro.Variables == nil {
+	// Viper lowercases map keys; re-parse variables from YAML bytes to preserve casing.
+	if vs := models.VariableStoreFromYAMLBytes(yamlBytes); vs != nil {
+		macro.Variables = vs
+	} else if macro.Variables == nil {
 		macro.Variables = models.NewVariableStore()
+	} else {
+		macro.Variables.NormalizeKeys()
 	}
 
 	log.Printf("Successfully decoded macro: %s", macro.Name)

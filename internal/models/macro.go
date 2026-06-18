@@ -2,7 +2,6 @@ package models
 
 import (
 	"Sqyre/internal/models/actions"
-	"sort"
 	"strings"
 )
 
@@ -78,70 +77,34 @@ func NewMacro(name string, delay int, hotkey []string) *Macro {
 // CollectDefinedVariables walks the macro's action tree and returns a sorted,
 // deduplicated list of every variable name that actions define or output.
 func (m *Macro) CollectDefinedVariables() []string {
-	seen := make(map[string]struct{})
-
-	builtins := []string{"StackMax", "Cols", "Rows", "ItemName", "ImagePixelWidth", "ImagePixelHeight"}
-	for _, b := range builtins {
-		seen[b] = struct{}{}
-	}
-
-	if m.Variables != nil {
-		for _, name := range m.Variables.GetAll() {
-			seen[name] = struct{}{}
-		}
-	}
-
-	if m.Root != nil {
-		collectVarsFromAction(m.Root, seen)
-	}
-
-	names := make([]string, 0, len(seen))
-	for name := range seen {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names
+	return CollectDefinedVariableNames(m)
 }
 
-func collectVarsFromAction(a actions.ActionInterface, seen map[string]struct{}) {
-	switch n := a.(type) {
-	case *actions.SetVariable:
-		if n.VariableName != "" {
-			seen[n.VariableName] = struct{}{}
-		}
-	case *actions.Calculate:
-		if n.OutputVar != "" {
-			seen[n.OutputVar] = struct{}{}
-		}
-	case *actions.DataList:
-		if n.OutputVar != "" {
-			seen[n.OutputVar] = struct{}{}
-		}
-		if n.LengthVar != "" {
-			seen[n.LengthVar] = struct{}{}
-		}
-	case *actions.Ocr:
-		if n.OutputVariable != "" {
-			seen[n.OutputVariable] = struct{}{}
-		}
-		if n.OutputXVariable != "" {
-			seen[n.OutputXVariable] = struct{}{}
-		}
-		if n.OutputYVariable != "" {
-			seen[n.OutputYVariable] = struct{}{}
-		}
-	case *actions.ImageSearch:
-		if n.OutputXVariable != "" {
-			seen[n.OutputXVariable] = struct{}{}
-		}
-		if n.OutputYVariable != "" {
-			seen[n.OutputYVariable] = struct{}{}
-		}
-	}
+// CollectVariableDefs returns variable definitions with source metadata.
+func (m *Macro) CollectVariableDefs() []VariableDef {
+	return CollectVariableDefs(m)
+}
 
-	if adv, ok := a.(actions.AdvancedActionInterface); ok {
-		for _, sub := range adv.GetSubActions() {
-			collectVarsFromAction(sub, seen)
-		}
+// SetInitialVariable sets a preset value stored on the macro (persisted in YAML).
+func (m *Macro) SetInitialVariable(name, value string) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return
 	}
+	if m.Variables == nil {
+		m.Variables = NewVariableStore()
+	}
+	if value == "" {
+		m.Variables.Delete(name)
+		return
+	}
+	m.Variables.Set(name, value)
+}
+
+// FindActionByUID returns the action with the given UID in this macro's tree.
+func (m *Macro) FindActionByUID(uid string) actions.ActionInterface {
+	if m == nil || m.Root == nil || uid == "" {
+		return nil
+	}
+	return m.Root.GetAction(uid)
 }
