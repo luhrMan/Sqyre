@@ -117,6 +117,16 @@ func ActionToMap(action actions.ActionInterface) (map[string]any, error) {
 	case *actions.Calculate:
 		m["expression"] = a.Expression
 		m["outputvar"] = a.OutputVar
+	case *actions.Conditional:
+		m["name"] = a.Name
+		m["operator"] = a.Operator
+		m["left"] = a.Left
+		m["right"] = a.Right
+		subs, err := subActionsToMaps(a.GetSubActions())
+		if err != nil {
+			return nil, err
+		}
+		m["subactions"] = subs
 	case *actions.DataList:
 		m["source"] = a.Source
 		m["outputvar"] = a.OutputVar
