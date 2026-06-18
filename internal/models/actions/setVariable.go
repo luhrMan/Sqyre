@@ -39,3 +39,10 @@ func (a *SetVariable) parameters() []actionParam {
 func (a *SetVariable) Icon() fyne.Resource {
 	return assets.VariableIcon
 }
+
+func (a *SetVariable) VariableBindings() []VariableBinding {
+	if a.VariableName == "" {
+		return nil
+	}
+	return []VariableBinding{{Name: a.VariableName, Role: "value"}}
+}

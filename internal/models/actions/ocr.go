@@ -65,3 +65,17 @@ func (a *Ocr) parameters() []actionParam {
 func (a *Ocr) Icon() fyne.Resource {
 	return assets.TextSearchIcon
 }
+
+func (a *Ocr) VariableBindings() []VariableBinding {
+	var out []VariableBinding
+	if a.OutputVariable != "" {
+		out = append(out, VariableBinding{Name: a.OutputVariable, Role: "output"})
+	}
+	if a.OutputXVariable != "" {
+		out = append(out, VariableBinding{Name: a.OutputXVariable, Role: "output_x"})
+	}
+	if a.OutputYVariable != "" {
+		out = append(out, VariableBinding{Name: a.OutputYVariable, Role: "output_y"})
+	}
+	return out
+}
