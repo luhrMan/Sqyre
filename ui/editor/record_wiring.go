@@ -24,20 +24,18 @@ func wirePointRecordButton(w map[string]fyne.CanvasObject, onRecorded func(x, y 
 		dismissOverlay = activeWire.ShowRecordingOverlay(
 			nil,
 			func(ev *desktop.MouseEvent) {
-				fyne.DoAndWait(func() {
-					switch ev.Button {
-					case desktop.MouseButtonPrimary:
-						x, y := robotgo.Location()
-						custom_widgets.SetEntryText(w["X"], strconv.Itoa(x))
-						custom_widgets.SetEntryText(w["Y"], strconv.Itoa(y))
-						dismissOverlay()
-						if onRecorded != nil {
-							onRecorded(x, y)
-						}
-					default:
-						dismissOverlay()
+				switch ev.Button {
+				case desktop.MouseButtonPrimary:
+					x, y := robotgo.Location()
+					custom_widgets.SetEntryText(w["X"], strconv.Itoa(x))
+					custom_widgets.SetEntryText(w["Y"], strconv.Itoa(y))
+					dismissOverlay()
+					if onRecorded != nil {
+						onRecorded(x, y)
 					}
-				})
+				default:
+					dismissOverlay()
+				}
 			},
 		)
 	}
@@ -62,39 +60,37 @@ func wireSearchAreaRecordButton(w map[string]fyne.CanvasObject, onRecorded func(
 		dismissOverlay, setSelectionRect = activeWire.ShowSearchAreaRecordingOverlay(
 			func() { stopPolling() },
 			func(ev *desktop.MouseEvent) {
-				fyne.DoAndWait(func() {
-					if ev.Button != desktop.MouseButtonPrimary {
-						dismissOverlay()
-						return
-					}
-					adjX, adjY := robotgo.Location()
-					mu.Lock()
-					if !firstClickDone {
-						leftX, topY = adjX, adjY
-						firstClickDone = true
-						mu.Unlock()
-						return
-					}
-					rightX, bottomY := adjX, adjY
-					lx, ty := leftX, topY
-					mu.Unlock()
-					if lx > rightX {
-						lx, rightX = rightX, lx
-					}
-					if ty > bottomY {
-						ty, bottomY = bottomY, ty
-					}
-					leftX, topY = lx, ty
-					stopPolling()
-					custom_widgets.SetEntryText(w["LeftX"], strconv.Itoa(leftX))
-					custom_widgets.SetEntryText(w["TopY"], strconv.Itoa(topY))
-					custom_widgets.SetEntryText(w["RightX"], strconv.Itoa(rightX))
-					custom_widgets.SetEntryText(w["BottomY"], strconv.Itoa(bottomY))
+				if ev.Button != desktop.MouseButtonPrimary {
 					dismissOverlay()
-					if onRecorded != nil {
-						onRecorded(leftX, topY, rightX, bottomY)
-					}
-				})
+					return
+				}
+				adjX, adjY := robotgo.Location()
+				mu.Lock()
+				if !firstClickDone {
+					leftX, topY = adjX, adjY
+					firstClickDone = true
+					mu.Unlock()
+					return
+				}
+				rightX, bottomY := adjX, adjY
+				lx, ty := leftX, topY
+				mu.Unlock()
+				if lx > rightX {
+					lx, rightX = rightX, lx
+				}
+				if ty > bottomY {
+					ty, bottomY = bottomY, ty
+				}
+				leftX, topY = lx, ty
+				stopPolling()
+				custom_widgets.SetEntryText(w["LeftX"], strconv.Itoa(leftX))
+				custom_widgets.SetEntryText(w["TopY"], strconv.Itoa(topY))
+				custom_widgets.SetEntryText(w["RightX"], strconv.Itoa(rightX))
+				custom_widgets.SetEntryText(w["BottomY"], strconv.Itoa(bottomY))
+				dismissOverlay()
+				if onRecorded != nil {
+					onRecorded(leftX, topY, rightX, bottomY)
+				}
 			},
 		)
 
