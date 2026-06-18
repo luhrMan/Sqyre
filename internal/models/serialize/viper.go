@@ -358,6 +358,12 @@ func (s *serializer) CreateActionFromMap(rawMap map[string]any, parent actions.A
 			return nil, fmt.Errorf("action type calculate: %w", err)
 		}
 		action = actions.NewCalculate(expr, outv)
+	case "conditional":
+		name := stringFromMap(rawMap, "name")
+		operator := stringFromMap(rawMap, "operator")
+		left := operandFromMap(rawMap, "left")
+		right := operandFromMap(rawMap, "right")
+		action = actions.NewConditional(left, operator, right, name, []actions.ActionInterface{})
 	case "datalist":
 		isFile := false
 		if ifVal, ok := rawMap["isfile"]; ok && ifVal != nil {
@@ -500,6 +506,27 @@ func createSearchBox(rawMap map[string]any) actions.SearchArea {
 		TopY:    valueAsIntOrString(rawMap["topy"]),
 		RightX:  valueAsIntOrString(rawMap["rightx"]),
 		BottomY: valueAsIntOrString(rawMap["bottomy"]),
+	}
+}
+
+// operandFromMap returns a conditional operand as int (literal) or string
+// (literal or variable reference), defaulting to "" when missing.
+func operandFromMap(rawMap map[string]any, key string) any {
+	v, ok := rawMap[key]
+	if !ok || v == nil {
+		return ""
+	}
+	switch val := v.(type) {
+	case int:
+		return val
+	case int64:
+		return int(val)
+	case float64:
+		return int(val)
+	case string:
+		return val
+	default:
+		return fmt.Sprintf("%v", val)
 	}
 }
 
