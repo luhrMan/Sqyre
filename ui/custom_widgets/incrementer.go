@@ -25,24 +25,14 @@ func borderedIncrementButton(btn fyne.CanvasObject) fyne.CanvasObject {
 	return container.NewStack(border, btn)
 }
 
-// halfHeightLayout constrains a single child to half the allocated height (and reports half min height).
-type halfHeightLayout struct{}
-
-func (halfHeightLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
-	if len(objects) == 0 {
-		return
-	}
-	// Pass full allocated size through; half-height is applied only in MinSize.
-	objects[0].Resize(fyne.NewSize(size.Width, size.Height))
-	objects[0].Move(fyne.NewPos(0, 0))
-}
-
-func (halfHeightLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
-	if len(objects) == 0 {
-		return fyne.NewSize(0, 0)
-	}
-	min := objects[0].MinSize()
-	return fyne.NewSize(min.Width, min.Height/2)
+func compactSpinnerStack(up, down fyne.CanvasObject) fyne.CanvasObject {
+	// Keep spinner controls compact so incrementers do not force oversized row heights.
+	const spinnerW = 18
+	const spinnerH = 14
+	return container.NewVBox(
+		container.NewGridWrap(fyne.NewSize(spinnerW, spinnerH), borderedIncrementButton(up)),
+		container.NewGridWrap(fyne.NewSize(spinnerW, spinnerH), borderedIncrementButton(down)),
+	)
 }
 
 // Incrementer is a compact widget that displays an integer value with two stacked
@@ -334,12 +324,7 @@ func (inc *Incrementer) SetValue(v int) {
 func (inc *Incrementer) CreateRenderer() fyne.WidgetRenderer {
 	inc.upBtn.Importance = widget.LowImportance
 	inc.downBtn.Importance = widget.LowImportance
-	buttons := container.NewGridWithRows(2,
-		borderedIncrementButton(inc.upBtn),
-		borderedIncrementButton(inc.downBtn),
-	)
-	buttonsHalf := container.New(&halfHeightLayout{}, buttons)
-	var right fyne.CanvasObject = buttonsHalf
+	var right fyne.CanvasObject = compactSpinnerStack(inc.upBtn, inc.downBtn)
 	var center fyne.CanvasObject
 	if inc.valueEntry != nil {
 		center = inc.valueEntry
@@ -438,12 +423,7 @@ func (inc *FloatIncrementer) SetValue(v float64) {
 func (inc *FloatIncrementer) CreateRenderer() fyne.WidgetRenderer {
 	inc.upBtn.Importance = widget.LowImportance
 	inc.downBtn.Importance = widget.LowImportance
-	buttons := container.NewGridWithRows(2,
-		borderedIncrementButton(inc.upBtn),
-		borderedIncrementButton(inc.downBtn),
-	)
-	buttonsHalf := container.New(&halfHeightLayout{}, buttons)
-	content := container.NewBorder(nil, nil, nil, buttonsHalf, inc.label)
+	content := container.NewBorder(nil, nil, nil, compactSpinnerStack(inc.upBtn, inc.downBtn), inc.label)
 	return widget.NewSimpleRenderer(content)
 }
 
