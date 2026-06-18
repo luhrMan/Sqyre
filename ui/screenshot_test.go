@@ -99,23 +99,67 @@ func writeFrameFile(t *testing.T, dir, name string, data []byte, minBytes int) {
 	}
 }
 
+type docScreenshot struct {
+	file     string
+	action   actions.ActionInterface
+	minBytes int
+}
+
+func docActionScreenshots() []docScreenshot {
+	return []docScreenshot{
+		{"action-dialog-move.png", actions.NewMove(actions.Point{Name: "center", X: 500, Y: 300}, false), 3000},
+		{"action-dialog-click.png", actions.NewClick(false, true), 3000},
+		{"action-dialog-key.png", actions.NewKey("ctrl", true), 3000},
+		{"action-dialog-type.png", actions.NewType("hello", 50), 3000},
+		{"action-dialog-wait.png", actions.NewWait(500), 3000},
+		{"action-dialog-focuswindow.png", actions.NewFocusWindow("Notepad"), 3000},
+		{"action-dialog-runmacro.png", actions.NewRunMacro("Demo Macro"), 3000},
+		{"action-dialog-loop.png", actions.NewLoop(5, "repeat", []actions.ActionInterface{}), 3000},
+		{"action-dialog-imagesearch.png", actions.NewImageSearch("find item", []actions.ActionInterface{}, []string{}, actions.SearchArea{Name: "Main area"}, 1, 1, 0.95, 5), 3000},
+		{"action-dialog-ocr.png", actions.NewOcr("read text", []actions.ActionInterface{}, "template", actions.SearchArea{Name: "Main area"}), 3000},
+		{"action-dialog-findpixel.png", actions.NewFindPixel("find color", actions.SearchArea{Name: "Main area"}, "ffffff", 0, nil), 3000},
+		{"action-dialog-setvariable.png", actions.NewSetVariable("counter", "0"), 3000},
+		{"action-dialog-calculate.png", actions.NewCalculate("1 + 1", "result"), 3000},
+		{"action-dialog-datalist.png", actions.NewDataList("mylist", "value", false), 3000},
+		{"action-dialog-savevariable.png", actions.NewSaveVariable("value", "output.txt", false, false), 3000},
+	}
+}
+
+func captureActionDialogPNG(t *testing.T, action actions.ActionInterface) []byte {
+	t.Helper()
+	panel := actiondialog.PanelForScreenshot(action)
+	size := actiondialog.ScreenshotSizeForAction(action)
+	pngData, err := ui.RenderObjectPNG(panel, size)
+	if err != nil {
+		t.Fatalf("render %s dialog: %v", action.GetType(), err)
+	}
+	return pngData
+}
+
 func TestDocsScreenshots(t *testing.T) {
 	dir := docsImagesDir(t)
 	u, w := setupDocsUi(t)
 	defer w.Close()
 
-	mainPNG, err := ui.RenderObjectPNG(ui.MacroScreenForScreenshot(u), fyne.NewSize(1000, 500))
+	mainPNG, err := ui.RenderObjectPNG(u.MainUi.Navigation.Root, fyne.NewSize(1000, 500))
 	if err != nil {
 		t.Fatalf("render main window: %v", err)
 	}
 	writeOrComparePNG(t, filepath.Join(dir, "main-window.png"), mainPNG, 5000)
 
-	panel := actiondialog.PanelForScreenshot(actions.NewWait(500))
-	waitPNG, err := ui.RenderObjectPNG(panel, fyne.NewSize(420, 220))
+	pickerPNG, err := ui.RenderObjectPNG(ui.AddActionPickerForScreenshot(), fyne.NewSize(980, 460))
 	if err != nil {
-		t.Fatalf("render wait dialog panel: %v", err)
+		t.Fatalf("render add action picker: %v", err)
 	}
-	writeOrComparePNG(t, filepath.Join(dir, "action-dialog-wait.png"), waitPNG, 3000)
+	writeOrComparePNG(t, filepath.Join(dir, "add-action-picker.png"), pickerPNG, 5000)
+
+	for _, shot := range docActionScreenshots() {
+		shot := shot
+		t.Run(shot.file, func(t *testing.T) {
+			pngData := captureActionDialogPNG(t, shot.action)
+			writeOrComparePNG(t, filepath.Join(dir, shot.file), pngData, shot.minBytes)
+		})
+	}
 
 	editorPNG, err := ui.RenderObjectPNG(ui.EditorScreenForScreenshot(u), fyne.NewSize(1000, 500))
 	if err != nil {
@@ -124,22 +168,23 @@ func TestDocsScreenshots(t *testing.T) {
 	writeOrComparePNG(t, filepath.Join(dir, "data-editor.png"), editorPNG, 5000)
 
 	if updateScreenshots() {
-		writeDemoFrames(t, u)
+		writeDemoFrames(t, u, w)
 	}
 }
 
-func writeDemoFrames(t *testing.T, u *ui.Ui) {
+func writeDemoFrames(t *testing.T, u *ui.Ui, w fyne.Window) {
 	t.Helper()
 	framesDir := demoFramesDir(t)
+	_ = w
 
-	mainFrame, err := ui.RenderObjectPNG(ui.MacroScreenForScreenshot(u), fyne.NewSize(1000, 500))
+	mainFrame, err := ui.RenderObjectPNG(u.MainUi.Navigation.Root, fyne.NewSize(1000, 500))
 	if err != nil {
 		t.Fatalf("capture frame 1: %v", err)
 	}
 	writeFrameFile(t, framesDir, "demo-macro-001.png", mainFrame, 5000)
 
 	panel := actiondialog.PanelForScreenshot(actions.NewWait(500))
-	dialogFrame, err := ui.RenderObjectPNG(panel, fyne.NewSize(420, 220))
+	dialogFrame, err := ui.RenderObjectPNG(panel, actiondialog.ScreenshotSizeForAction(actions.NewWait(500)))
 	if err != nil {
 		t.Fatalf("capture frame 2: %v", err)
 	}
@@ -155,7 +200,7 @@ func writeDemoFrames(t *testing.T, u *ui.Ui) {
 	mt.Macro.Root.AddSubAction(wait)
 	mt.Refresh()
 	mt.Select(wait.GetUID())
-	treeFrame, err := ui.RenderObjectPNG(ui.MacroScreenForScreenshot(u), fyne.NewSize(1000, 500))
+	treeFrame, err := ui.RenderObjectPNG(u.MainUi.Navigation.Root, fyne.NewSize(1000, 500))
 	if err != nil {
 		t.Fatalf("capture frame 4: %v", err)
 	}
