@@ -39,3 +39,10 @@ func (a *Calculate) parameters() []actionParam {
 func (a *Calculate) Icon() fyne.Resource {
 	return assets.CalculateIcon
 }
+
+func (a *Calculate) VariableBindings() []VariableBinding {
+	if a.OutputVar == "" {
+		return nil
+	}
+	return []VariableBinding{{Name: a.OutputVar, Role: "output"}}
+}

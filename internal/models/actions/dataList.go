@@ -131,3 +131,14 @@ func (a *DataList) parameters() []actionParam {
 func (a *DataList) Icon() fyne.Resource {
 	return theme.StorageIcon()
 }
+
+func (a *DataList) VariableBindings() []VariableBinding {
+	var out []VariableBinding
+	if a.OutputVar != "" {
+		out = append(out, VariableBinding{Name: a.OutputVar, Role: "output"})
+	}
+	if a.LengthVar != "" {
+		out = append(out, VariableBinding{Name: a.LengthVar, Role: "length"})
+	}
+	return out
+}

@@ -127,3 +127,14 @@ func (a *FindPixel) parameters() []actionParam {
 func (a *FindPixel) Icon() fyne.Resource {
 	return theme.ColorChromaticIcon()
 }
+
+func (a *FindPixel) VariableBindings() []VariableBinding {
+	var out []VariableBinding
+	if a.OutputXVariable != "" {
+		out = append(out, VariableBinding{Name: a.OutputXVariable, Role: "output_x"})
+	}
+	if a.OutputYVariable != "" {
+		out = append(out, VariableBinding{Name: a.OutputYVariable, Role: "output_y"})
+	}
+	return out
+}
