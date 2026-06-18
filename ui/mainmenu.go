@@ -40,6 +40,9 @@ func buildActionTemplates() []actionTemplate {
 		{label: "Loop", actionType: "loop", category: "Miscellaneous", icon: actions.NewLoop(1, "", []actions.ActionInterface{}).Icon(), create: func() actions.ActionInterface {
 			return actions.NewLoop(1, "", []actions.ActionInterface{})
 		}},
+		{label: "If", actionType: "conditional", category: "Miscellaneous", icon: actions.NewConditional("", actions.OpEquals, "", "", []actions.ActionInterface{}).Icon(), create: func() actions.ActionInterface {
+			return actions.NewConditional("", actions.OpEquals, "", "", []actions.ActionInterface{})
+		}},
 		{label: "Image Search", actionType: "imagesearch", category: "Detection", icon: actions.NewImageSearch("", []actions.ActionInterface{}, []string{}, actions.SearchArea{}, 1, 1, 0.95, 5).Icon(), create: func() actions.ActionInterface {
 			return actions.NewImageSearch("", []actions.ActionInterface{}, []string{}, actions.SearchArea{}, 1, 1, 0.95, 5)
 		}},
@@ -59,8 +62,7 @@ func buildActionTemplates() []actionTemplate {
 	}
 }
 
-func showAddActionDialog(u *Ui, addActionAndRefresh func(actions.ActionInterface), templates []actionTemplate) {
-	var d dialog.Dialog
+func buildAddActionPickerContent(templates []actionTemplate, onPick func(actionTemplate)) fyne.CanvasObject {
 	categoryColumns := []string{"Mouse & Keyboard", "Detection", "Variables", "Miscellaneous"}
 	categoryTiles := map[string][]fyne.CanvasObject{
 		"Mouse & Keyboard": {},
@@ -76,15 +78,14 @@ func showAddActionDialog(u *Ui, addActionAndRefresh func(actions.ActionInterface
 		bg.StrokeWidth = 1
 
 		btn := widget.NewButtonWithIcon(t.label, t.icon, func() {
-			if d != nil {
-				d.Hide()
+			if onPick != nil {
+				onPick(t)
 			}
-			addActionAndRefresh(t.create())
 		})
 		btn.Importance = widget.LowImportance
 
 		tile := container.NewStack(bg, container.NewPadded(btn))
-		categoryTiles[t.category] = append(categoryTiles[t.category], tile)
+		categoryTiles[t.category] = append(categoryTiles[t.category], container.NewPadded(tile))
 	}
 
 	columnObjects := make([]fyne.CanvasObject, 0, len(categoryColumns))
@@ -96,11 +97,26 @@ func showAddActionDialog(u *Ui, addActionAndRefresh func(actions.ActionInterface
 	}
 
 	grid := container.NewGridWithColumns(4, columnObjects...)
-	content := container.NewBorder(
+	return container.NewBorder(
 		widget.NewLabel("Pick an action type"),
 		nil, nil, nil,
 		container.NewVScroll(grid),
 	)
+}
+
+// AddActionPickerForScreenshot returns the Add Action picker grid for docs/tests.
+func AddActionPickerForScreenshot() fyne.CanvasObject {
+	return buildAddActionPickerContent(buildActionTemplates(), nil)
+}
+
+func showAddActionDialog(u *Ui, addActionAndRefresh func(actions.ActionInterface), templates []actionTemplate) {
+	var d dialog.Dialog
+	content := buildAddActionPickerContent(templates, func(t actionTemplate) {
+		if d != nil {
+			d.Hide()
+		}
+		addActionAndRefresh(t.create())
+	})
 
 	d = dialog.NewCustom("Add Action", "Close", content, u.Window)
 	AddDialogEscapeClose(d, u.Window)
@@ -153,6 +169,14 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 					log.Printf("failed to save macro after new action edit: %v", err)
 				}
 				mt.RefreshItem(uid)
+				mt.Refresh()
+			}, func() {
+				if parent := a.GetParent(); parent != nil {
+					parent.RemoveSubAction(a)
+				}
+				if mt.SelectedNode == uid {
+					mt.SelectedNode = ""
+				}
 				mt.Refresh()
 			})
 		}
