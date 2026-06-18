@@ -47,8 +47,8 @@ func panelContentForAction(action actions.ActionInterface) (fyne.CanvasObject, f
 		return createSetVariableDialogContent(node)
 	case *actions.Calculate:
 		return createCalculateDialogContent(node)
-	case *actions.DataList:
-		return createDataListDialogContent(node)
+	case *actions.ForEachRow:
+		return createForEachRowDialogContent(node)
 	case *actions.SaveVariable:
 		return createSaveVariableDialogContent(node)
 	case *actions.FindPixel:
@@ -80,8 +80,10 @@ func contentResizeForAction(action actions.ActionInterface) fyne.Size {
 	case *actions.ImageSearch:
 		return fyne.NewSize(1000, 1000)
 	case *actions.Ocr:
-		return fyne.NewSize(600, 500)
-	case *actions.SetVariable, *actions.Calculate, *actions.DataList, *actions.SaveVariable:
+		return fyne.NewSize(700, 680)
+	case *actions.ForEachRow:
+		return fyne.NewSize(forEachRowDialogWidth, forEachRowDialogHeight)
+	case *actions.SetVariable, *actions.Calculate, *actions.SaveVariable:
 		return fyne.NewSize(600, 100)
 	case *actions.FindPixel:
 		return fyne.NewSize(800, 500)

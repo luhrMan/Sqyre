@@ -14,7 +14,7 @@ func ActionCategoryForType(actionType string) string {
 		return "Mouse & Keyboard"
 	case "imagesearch", "ocr", "findpixel":
 		return "Detection"
-	case "setvariable", "calculate", "datalist", "savevariable":
+	case "setvariable", "calculate", "foreachrow", "savevariable":
 		return "Variables"
 	case "wait", "focuswindow", "runmacro", "loop", "conditional":
 		return "Miscellaneous"

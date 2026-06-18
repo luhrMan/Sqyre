@@ -340,16 +340,16 @@ func ShowActionDialog(action actions.ActionInterface, onSave func(actions.Action
 		content.Resize(fyne.NewSize(1000, 1000))
 	case *actions.Ocr:
 		content, saveFunc = createOcrDialogContent(node)
-		content.Resize(fyne.NewSize(600, 500))
+		content.Resize(fyne.NewSize(700, 680))
 	case *actions.SetVariable:
 		content, saveFunc = createSetVariableDialogContent(node)
 		content.Resize(fyne.NewSize(600, 100))
 	case *actions.Calculate:
 		content, saveFunc = createCalculateDialogContent(node)
 		content.Resize(fyne.NewSize(600, 100))
-	case *actions.DataList:
-		content, saveFunc = createDataListDialogContent(node)
-		content.Resize(fyne.NewSize(600, 100))
+	case *actions.ForEachRow:
+		content, saveFunc = createForEachRowDialogContent(node)
+		content.Resize(fyne.NewSize(forEachRowDialogWidth, forEachRowDialogHeight))
 	case *actions.SaveVariable:
 		content, saveFunc = createSaveVariableDialogContent(node)
 		content.Resize(fyne.NewSize(600, 100))

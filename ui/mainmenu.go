@@ -55,7 +55,9 @@ func buildActionTemplates() []actionTemplate {
 
 		{label: "Set", actionType: "setvariable", category: "Variables", icon: actions.NewSetVariable("", "").Icon(), create: func() actions.ActionInterface { return actions.NewSetVariable("", "") }},
 		{label: "Calculate", actionType: "calculate", category: "Variables", icon: actions.NewCalculate("", "").Icon(), create: func() actions.ActionInterface { return actions.NewCalculate("", "") }},
-		{label: "Read from", actionType: "datalist", category: "Variables", icon: actions.NewDataList("", "", false).Icon(), create: func() actions.ActionInterface { return actions.NewDataList("", "", false) }},
+		{label: "For each row", actionType: "foreachrow", category: "Variables", icon: actions.NewForEachRow("", []actions.ListColumn{{}}, nil).Icon(), create: func() actions.ActionInterface {
+			return actions.NewForEachRow("", []actions.ListColumn{{}}, nil)
+		}},
 		{label: "Save to", actionType: "savevariable", category: "Variables", icon: actions.NewSaveVariable("", "", false, false).Icon(), create: func() actions.ActionInterface {
 			return actions.NewSaveVariable("", "", false, false)
 		}},
