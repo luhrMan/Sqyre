@@ -37,6 +37,8 @@ func ExecuteMacroWithLogging(m *models.Macro) {
 	}
 	defer func() {
 		fyne.Do(func() {
+			MacroActiveIndicator().Stop()
+			MacroActiveIndicator().Hide()
 			if macroRunningCallback != nil {
 				macroRunningCallback(false)
 			}
@@ -225,7 +227,10 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 		log.Println("Image Search:", node.String())
 		results, err := imageSearch(node, macro)
 		if err != nil {
-			return err
+			log.Printf("Image Search: %v (macro continues)", err)
+			if results == nil {
+				results = make(map[string][]robotgo.Point)
+			}
 		}
 		if node.WaitTilFound && node.WaitTilFoundSeconds > 0 {
 			deadline := time.Now().Add(time.Duration(node.WaitTilFoundSeconds) * time.Second)
@@ -237,7 +242,10 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 				time.Sleep(time.Duration(intervalMs) * time.Millisecond)
 				results, err = imageSearch(node, macro)
 				if err != nil {
-					return err
+					log.Printf("Image Search: %v (macro continues)", err)
+					if results == nil {
+						results = make(map[string][]robotgo.Point)
+					}
 				}
 			}
 		}

@@ -21,7 +21,21 @@ import (
 	"gocv.io/x/gocv"
 )
 
-func imageSearch(a *actions.ImageSearch, macro *models.Macro) (map[string][]robotgo.Point, error) {
+func imageSearch(a *actions.ImageSearch, macro *models.Macro) (results map[string][]robotgo.Point, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			LogPanicToFile(r, "Image Search")
+			if results == nil {
+				results = make(map[string][]robotgo.Point)
+			}
+			err = fmt.Errorf("image search panic: %v", r)
+			log.Printf("Image Search: %v (macro continues)", err)
+		}
+	}()
+	return imageSearchCapture(a, macro)
+}
+
+func imageSearchCapture(a *actions.ImageSearch, macro *models.Macro) (map[string][]robotgo.Point, error) {
 	sa := a.SearchArea
 	leftX, topY, rightX, bottomY, err := ResolveSearchAreaCoords(sa.LeftX, sa.TopY, sa.RightX, sa.BottomY, macro)
 	if err != nil {
@@ -42,6 +56,11 @@ func imageSearch(a *actions.ImageSearch, macro *models.Macro) (map[string][]robo
 		return nil, err
 	}
 	defer img.Close()
+	if img.Empty() {
+		err := fmt.Errorf("screen capture produced empty image (%dx%d area)", w, h)
+		log.Printf("Image Search: %v (macro continues)", err)
+		return nil, err
+	}
 	SaveMetaImage("searcharea", img)
 
 	imgDraw := img.Clone()
@@ -49,13 +68,27 @@ func imageSearch(a *actions.ImageSearch, macro *models.Macro) (map[string][]robo
 
 	results, err := match(img, imgDraw, a, macro)
 	if err != nil {
-		log.Printf("Image Search: %v", err)
+		log.Printf("Image Search: %v (macro continues)", err)
 		return results, err
 	}
 	return results, nil
 }
 
-func match(img, imgDraw gocv.Mat, a *actions.ImageSearch, macro *models.Macro) (map[string][]robotgo.Point, error) {
+func match(img, imgDraw gocv.Mat, a *actions.ImageSearch, macro *models.Macro) (results map[string][]robotgo.Point, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			LogPanicToFile(r, "Image Search match")
+			if results == nil {
+				results = make(map[string][]robotgo.Point)
+			}
+			err = fmt.Errorf("image search match panic: %v", r)
+			log.Printf("Image Search: %v (macro continues)", err)
+		}
+	}()
+	return matchParallel(img, imgDraw, a, macro)
+}
+
+func matchParallel(img, imgDraw gocv.Mat, a *actions.ImageSearch, macro *models.Macro) (map[string][]robotgo.Point, error) {
 	vs := IconVariantServiceInstance()
 	Imask := gocv.NewMat()
 	defer Imask.Close()
@@ -76,13 +109,17 @@ func match(img, imgDraw gocv.Mat, a *actions.ImageSearch, macro *models.Macro) (
 					resultsMutex.Unlock()
 				}
 			}()
-			programName := strings.Split(t, config.ProgramDelimiter)[0]
+			parts := strings.SplitN(t, config.ProgramDelimiter, 2)
+			if len(parts) != 2 {
+				log.Printf("Image Search: invalid target %q (expected program%vitem)", t, config.ProgramDelimiter)
+				return
+			}
+			programName, itemName := parts[0], parts[1]
 			program, err := repositories.ProgramRepo().Get(programName)
 			if err != nil {
 				log.Printf("Error getting program %s: %v", programName, err)
 				return
 			}
-			itemName := strings.Split(t, config.ProgramDelimiter)[1]
 			i, err := program.ItemRepo().Get(itemName)
 			if err != nil {
 				log.Printf("Error getting item %s from program %s: %v", itemName, programName, err)
@@ -93,48 +130,43 @@ func match(img, imgDraw gocv.Mat, a *actions.ImageSearch, macro *models.Macro) (
 				log.Println("could not find variants for item during image search")
 			}
 
-			// Accumulate all matches for this item across all variants
 			allMatches := []robotgo.Point{}
 
-			for _, v := range variants { // search for the item variants also
-				ip := programName + config.ProgramDelimiter + itemName + config.ProgramDelimiter + v + config.PNG
+			for _, v := range variants {
+				func() {
+					ip := programName + config.ProgramDelimiter + itemName + config.ProgramDelimiter + v + config.PNG
 
-				// Load icon on-demand from cache
-				resource := assets.GetFyneResource(ip)
-				if resource == nil {
-					log.Printf("Could not load icon resource for %s", ip)
-					continue
-				}
-				b := resource.Content()
+					resource := assets.GetFyneResource(ip)
+					if resource == nil {
+						log.Printf("Could not load icon resource for %s", ip)
+						return
+					}
+					b := resource.Content()
 
-				template := gocv.NewMat()
-				defer template.Close()
-				err = gocv.IMDecodeIntoMat(b, gocv.IMReadColor, &template)
+					template := gocv.NewMat()
+					defer template.Close()
+					if err := gocv.IMDecodeIntoMat(b, gocv.IMReadColor, &template); err != nil {
+						log.Printf("Error reading template image: %v", err)
+						return
+					}
+					tmask := gocv.NewMat()
+					defer tmask.Close()
+					cmask := buildMask(i, program, template.Rows(), template.Cols(), macro)
+					defer cmask.Close()
+					SaveMetaImage("cmask-"+i.Name+"-"+v, cmask)
 
-				if err != nil {
-					log.Printf("Error reading template image: %v", err)
-					return
-				}
-				tmask := gocv.NewMat()
-				cmask := buildMask(i, program, template.Rows(), template.Cols(), macro)
-
-				defer tmask.Close()
-				defer cmask.Close()
-				SaveMetaImage("cmask-"+i.Name+"-"+v, cmask)
-
-				matches := FindTemplateMatches(img, template, Imask, tmask, cmask, a.Tolerance, a.Blur)
-				DrawFoundMatches(matches, template.Cols(), template.Rows(), imgDraw, i.Name) // draw rect at top-left
-				// Offset each match to the center of the icon
-				halfW := template.Cols() / 2
-				halfH := template.Rows() / 2
-				for i := range matches {
-					matches[i].X += halfW
-					matches[i].Y += halfH
-				}
-				allMatches = append(allMatches, matches...)
+					matches := FindTemplateMatches(img, template, Imask, tmask, cmask, a.Tolerance, a.Blur)
+					DrawFoundMatches(matches, template.Cols(), template.Rows(), imgDraw, i.Name)
+					halfW := template.Cols() / 2
+					halfH := template.Rows() / 2
+					for j := range matches {
+						matches[j].X += halfW
+						matches[j].Y += halfH
+					}
+					allMatches = append(allMatches, matches...)
+				}()
 			}
 
-			// Store accumulated matches once per item
 			resultsMutex.Lock()
 			results[t] = allMatches
 			resultsMutex.Unlock()
@@ -143,6 +175,20 @@ func match(img, imgDraw gocv.Mat, a *actions.ImageSearch, macro *models.Macro) (
 	wg.Wait()
 	SaveMetaImage("founditems", imgDraw)
 	return results, matchErr
+}
+
+func maskItemVariableOverrides(item *models.Item, templateCols, templateRows int) map[string]any {
+	overrides := map[string]any{
+		"ImagePixelWidth":  templateCols,
+		"ImagePixelHeight": templateRows,
+	}
+	if item != nil {
+		overrides["ItemName"] = item.Name
+		overrides["StackMax"] = item.StackMax
+		overrides["Cols"] = item.GridSize[0]
+		overrides["Rows"] = item.GridSize[1]
+	}
+	return overrides
 }
 
 func buildMask(item *models.Item, program *models.Program, templateRows, templateCols int, macro *models.Macro) gocv.Mat {
@@ -171,11 +217,13 @@ func buildMask(item *models.Item, program *models.Program, templateRows, templat
 		return m
 	}
 
-	centerXPct, err := ResolveInt(mask.CenterX, macro)
+	maskVars := maskItemVariableOverrides(item, templateCols, templateRows)
+
+	centerXPct, err := resolveIntWithOverrides(mask.CenterX, macro, maskVars)
 	if err != nil {
 		centerXPct = 50
 	}
-	centerYPct, err := ResolveInt(mask.CenterY, macro)
+	centerYPct, err := resolveIntWithOverrides(mask.CenterY, macro, maskVars)
 	if err != nil {
 		centerYPct = 50
 	}
@@ -186,7 +234,7 @@ func buildMask(item *models.Item, program *models.Program, templateRows, templat
 	var m gocv.Mat
 	switch mask.Shape {
 	case "circle":
-		radius, err := ResolveInt(mask.Radius, macro)
+		radius, err := resolveIntWithOverrides(mask.Radius, macro, maskVars)
 		if err != nil || radius <= 0 {
 			log.Printf("mask %q: invalid radius %v: %v", mask.Name, mask.Radius, err)
 			return gocv.NewMat()
@@ -196,12 +244,12 @@ func buildMask(item *models.Item, program *models.Program, templateRows, templat
 		gocv.Circle(&m, image.Point{X: cx, Y: cy}, radius, color.RGBA{0, 0, 0, 0}, -1)
 
 	case "rectangle":
-		base, err := ResolveInt(mask.Base, macro)
+		base, err := resolveIntWithOverrides(mask.Base, macro, maskVars)
 		if err != nil || base <= 0 {
 			log.Printf("mask %q: invalid base %v: %v", mask.Name, mask.Base, err)
 			return gocv.NewMat()
 		}
-		height, err := ResolveInt(mask.Height, macro)
+		height, err := resolveIntWithOverrides(mask.Height, macro, maskVars)
 		if err != nil || height <= 0 {
 			log.Printf("mask %q: invalid height %v: %v", mask.Name, mask.Height, err)
 			return gocv.NewMat()
@@ -228,7 +276,44 @@ func buildMask(item *models.Item, program *models.Program, templateRows, templat
 	return m
 }
 
-func FindTemplateMatches(img, template, imask, tmask, cmask gocv.Mat, threshold float32, blur int) []robotgo.Point {
+// validateMatchInputs guards against OpenCV preconditions that otherwise cause CGo segfaults.
+func validateMatchInputs(img, template, cmask gocv.Mat, blur int) error {
+	if img.Empty() || template.Empty() {
+		return fmt.Errorf("empty search image or template")
+	}
+	imgRows, imgCols := img.Rows(), img.Cols()
+	tmplRows, tmplCols := template.Rows(), template.Cols()
+	if imgRows <= 0 || imgCols <= 0 || tmplRows <= 0 || tmplCols <= 0 {
+		return fmt.Errorf("invalid image/template dimensions (%dx%d vs %dx%d)", imgCols, imgRows, tmplCols, tmplRows)
+	}
+	if tmplRows > imgRows || tmplCols > imgCols {
+		return fmt.Errorf("template (%dx%d) larger than search image (%dx%d)", tmplCols, tmplRows, imgCols, imgRows)
+	}
+	if !cmask.Empty() && (cmask.Rows() != tmplRows || cmask.Cols() != tmplCols) {
+		return fmt.Errorf("mask (%dx%d) does not match template (%dx%d)", cmask.Cols(), cmask.Rows(), tmplCols, tmplRows)
+	}
+	if blur <= 0 {
+		blur = 5
+	}
+	if blur%2 == 0 {
+		blur++
+	}
+	if blur > imgRows || blur > imgCols || blur > tmplRows || blur > tmplCols {
+		return fmt.Errorf("blur kernel %d too large for image (%dx%d) or template (%dx%d)", blur, imgCols, imgRows, tmplCols, tmplRows)
+	}
+	return nil
+}
+
+func FindTemplateMatches(img, template, imask, tmask, cmask gocv.Mat, threshold float32, blur int) (matches []robotgo.Point) {
+	defer func() {
+		if r := recover(); r != nil {
+			LogPanicToFile(r, "FindTemplateMatches")
+		}
+	}()
+	if err := validateMatchInputs(img, template, cmask, blur); err != nil {
+		log.Printf("Image Search: skipping template match: %v", err)
+		return nil
+	}
 	result := gocv.NewMat()
 	defer result.Close()
 
@@ -255,8 +340,8 @@ func FindTemplateMatches(img, template, imask, tmask, cmask gocv.Mat, threshold 
 
 	//method 5 works best
 	gocv.MatchTemplate(i, t, &result, gocv.TemplateMatchMode(5), cmask)
-	matches := GetMatchesFromTemplateMatchResult(result, threshold, 10)
-	return matches
+	matches = GetMatchesFromTemplateMatchResult(result, threshold, 10)
+	return
 }
 
 func GetMatchesFromTemplateMatchResult(result gocv.Mat, threshold float32, closeMatchesDistance int) []robotgo.Point {
@@ -311,31 +396,54 @@ func clamp(v, lo, hi int) int {
 }
 
 type PreprocessOptions struct {
-	BlurAmount   int
-	MinThreshold float32
-	ResizeScale  float64
+	Grayscale       bool
+	Blur            bool
+	BlurAmount      int
+	Threshold       bool
+	MinThreshold    float32
+	ThresholdOtsu   bool
+	ThresholdInvert bool
+	Resize          bool
+	ResizeScale     float64
 }
 
-func ImageToMatToImagePreprocess(img image.Image, gray, blur, threshold, resize bool, ppOptions PreprocessOptions) image.Image {
+func ImageToMatToImagePreprocess(img image.Image, opts PreprocessOptions) image.Image {
 	i, err := gocv.ImageToMatRGB(img)
 	if err != nil {
 		log.Println(err)
 		return nil
 	}
 	defer i.Close()
-	if gray {
+	if opts.Grayscale {
 		gocv.CvtColor(i, &i, gocv.ColorBGRToGray)
 	}
-	if threshold {
-		gocv.Threshold(i, &i, ppOptions.MinThreshold, 255, gocv.ThresholdBinaryInv)
+	if opts.Blur && opts.BlurAmount > 0 {
+		kernel := opts.BlurAmount
+		if kernel%2 == 0 {
+			kernel++
+		}
+		gocv.GaussianBlur(i, &i, image.Point{X: kernel, Y: kernel}, 0, 0, gocv.BorderDefault)
 	}
-	if blur {
-		gocv.GaussianBlur(i, &i, image.Point{X: ppOptions.BlurAmount, Y: ppOptions.BlurAmount}, 0, 0, gocv.BorderDefault)
+	if opts.Threshold {
+		threshType := gocv.ThresholdBinary
+		if opts.ThresholdInvert {
+			threshType = gocv.ThresholdBinaryInv
+		}
+		if opts.ThresholdOtsu {
+			threshType |= gocv.ThresholdOtsu
+		}
+		gocv.Threshold(i, &i, opts.MinThreshold, 255, threshType)
+		kernel := gocv.GetStructuringElement(gocv.MorphRect, image.Pt(2, 2))
+		gocv.MorphologyEx(i, &i, gocv.MorphOpen, kernel)
+		kernel.Close()
 	}
-	if resize {
-		gocv.Resize(i, &i, image.Point{}, ppOptions.ResizeScale, ppOptions.ResizeScale, gocv.InterpolationDefault)
+	if opts.Resize && opts.ResizeScale > 0 && opts.ResizeScale != 1.0 {
+		interp := gocv.InterpolationDefault
+		if opts.ResizeScale > 1.0 {
+			interp = gocv.InterpolationCubic
+		}
+		gocv.Resize(i, &i, image.Point{}, opts.ResizeScale, opts.ResizeScale, interp)
 	}
-	// gocv.IMWrite("./internal/resources/images/meta/imagetext-test.png", i)
 	img, err = i.ToImage()
 	if err != nil {
 		log.Println(err)
@@ -345,6 +453,11 @@ func ImageToMatToImagePreprocess(img image.Image, gray, blur, threshold, resize 
 }
 
 func DrawFoundMatches(matches []robotgo.Point, rectSizeX, rectSizeY int, draw gocv.Mat, text string) {
+	defer func() {
+		if r := recover(); r != nil {
+			LogPanicToFile(r, "DrawFoundMatches")
+		}
+	}()
 	for _, match := range matches {
 		rect := image.Rect(
 			match.X,
