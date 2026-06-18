@@ -321,22 +321,20 @@ func createFindPixelDialogContent(action *actions.FindPixel) (fyne.CanvasObject,
 		dismissOverlay = active.ShowRecordingOverlay(
 			nil,
 			func(ev *desktop.MouseEvent) {
-				fyne.DoAndWait(func() {
-					switch ev.Button {
-					case desktop.MouseButtonPrimary:
-						x, y := robotgo.Location()
-						hex := robotgo.GetPixelColor(x, y)
-						hex = strings.TrimPrefix(strings.ToLower(hex), "#")
-						if len(hex) == 8 {
-							hex = hex[2:]
-						}
-						colorEntry.SetText(hex)
-						updateSwatch()
-						dismissOverlay()
-					default:
-						dismissOverlay()
+				switch ev.Button {
+				case desktop.MouseButtonPrimary:
+					x, y := robotgo.Location()
+					hex := robotgo.GetPixelColor(x, y)
+					hex = strings.TrimPrefix(strings.ToLower(hex), "#")
+					if len(hex) == 8 {
+						hex = hex[2:]
 					}
-				})
+					colorEntry.SetText(hex)
+					updateSwatch()
+					dismissOverlay()
+				default:
+					dismissOverlay()
+				}
 			},
 		)
 	})
