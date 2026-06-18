@@ -149,11 +149,17 @@ func ocrCapture(a *actions.Ocr, macro *models.Macro) (foundText string, outX, ou
 	searchCenterY := (topY + bottomY) / 2
 	log.Printf("%s OCR search | %s in X1:%d Y1:%d X2:%d Y2:%d", a.Target, a.SearchArea.Name, leftX, topY, rightX, bottomY)
 	ppOptions := PreprocessOptions{
-		BlurAmount:   a.Blur,
-		MinThreshold: float32(a.MinThreshold),
-		ResizeScale:  a.Resize,
+		Grayscale:       a.Grayscale,
+		Blur:            a.Blur > 0,
+		BlurAmount:      a.Blur,
+		Threshold:       a.MinThreshold > 0 || a.ThresholdOtsu,
+		MinThreshold:    float32(a.MinThreshold),
+		ThresholdOtsu:   a.ThresholdOtsu,
+		ThresholdInvert: a.ThresholdInvert,
+		Resize:          a.Resize != 1.0,
+		ResizeScale:     a.Resize,
 	}
-	img = ImageToMatToImagePreprocess(img, a.Grayscale, a.Blur > 0, a.MinThreshold > 0, a.Resize != 1.0, ppOptions)
+	img = ImageToMatToImagePreprocess(img, ppOptions)
 	if img == nil {
 		err := fmt.Errorf("OCR: image preprocessing failed")
 		log.Printf("OCR: %v (macro continues)", err)
