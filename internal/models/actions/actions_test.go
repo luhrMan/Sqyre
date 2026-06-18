@@ -496,132 +496,18 @@ func TestFindPixel_String(t *testing.T) {
 	}
 }
 
-// --- DataList ---
-
-func TestNewDataList(t *testing.T) {
-	d := NewDataList("line1\nline2", "out", false)
-	if d.GetType() != "datalist" || d.Source != "line1\nline2" || d.OutputVar != "out" || d.IsFile != false {
-		t.Errorf("DataList: %+v", d)
+func TestForEachRow_SourcesAndSubActions(t *testing.T) {
+	sub := NewWait(5)
+	fer := NewForEachRow("rows", []ListColumn{
+		{Source: "a", OutputVar: "x"},
+		{Source: "b", OutputVar: "y"},
+	}, []ActionInterface{sub})
+	if fer.Name != "rows" || len(fer.Sources) != 2 {
+		t.Errorf("ForEachRow: %+v", fer)
 	}
-}
-
-func TestDataList_manualText_LineCount_GetCurrentLine_NextLine_Reset(t *testing.T) {
-	d := NewDataList("a\nb\nc", "v", false)
-	n, err := d.LineCount()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if n != 3 {
-		t.Errorf("LineCount() = %d, want 3", n)
-	}
-	first, err := d.GetCurrentLine()
-	if err != nil || first != "a" {
-		t.Errorf("GetCurrentLine() = %q, err=%v", first, err)
-	}
-	d.NextLine()
-	line, _ := d.GetCurrentLine()
-	if line != "b" {
-		t.Errorf("after NextLine GetCurrentLine() = %q", line)
-	}
-	d.NextLine()
-	line, _ = d.GetCurrentLine()
-	if line != "c" {
-		t.Errorf("GetCurrentLine() = %q", line)
-	}
-	d.NextLine() // wrap from last line back to first
-	line, _ = d.GetCurrentLine()
-	if line != first {
-		t.Errorf("after wrap GetCurrentLine() = %q, want first line %q", line, first)
-	}
-	d.Reset()
-	line, _ = d.GetCurrentLine()
-	if line != first {
-		t.Errorf("after Reset GetCurrentLine() = %q", line)
-	}
-}
-
-func TestDataList_manualText_trailingNewline(t *testing.T) {
-	d := NewDataList("x\ny\n", "v", false)
-	n, err := d.LineCount()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if n != 2 {
-		t.Errorf("trailing newline should give 2 lines, got %d", n)
-	}
-}
-
-func TestDataList_manualText_skipBlankLines(t *testing.T) {
-	d := NewDataList("a\n\nb\n  \nc", "v", false)
-	d.SkipBlankLines = true
-	n, err := d.LineCount()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if n != 3 {
-		t.Errorf("LineCount() with SkipBlankLines = %d, want 3", n)
-	}
-	line, _ := d.GetCurrentLine()
-	if line != "a" {
-		t.Errorf("GetCurrentLine() = %q", line)
-	}
-	d.NextLine()
-	line, _ = d.GetCurrentLine()
-	if line != "b" {
-		t.Errorf("GetCurrentLine() = %q", line)
-	}
-	d.NextLine()
-	line, _ = d.GetCurrentLine()
-	if line != "c" {
-		t.Errorf("GetCurrentLine() = %q", line)
-	}
-}
-
-func TestDataList_file_absolutePath(t *testing.T) {
-	dir := t.TempDir()
-	f := filepath.Join(dir, "lines.txt")
-	if err := os.WriteFile(f, []byte("first\nsecond\nthird\n"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	d := NewDataList(f, "v", true)
-	// Force file path to be used as absolute so we don't depend on config.GetVariablesPath
-	d.Source = f
-	n, err := d.LineCount()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if n != 3 {
-		t.Errorf("LineCount() = %d, want 3", n)
-	}
-	line, err := d.GetCurrentLine()
-	if err != nil || line != "first" {
-		t.Errorf("GetCurrentLine() = %q, err=%v", line, err)
-	}
-}
-
-func TestDataList_GetCurrentLine_outOfRange(t *testing.T) {
-	d := NewDataList("only", "v", false)
-	_, _ = d.LineCount()
-	_, err := d.GetCurrentLine()
-	if err != nil {
-		t.Fatal(err)
-	}
-	d.currentLine = 5
-	_, err = d.GetCurrentLine()
-	if err == nil {
-		t.Error("expected error when currentLine out of range")
-	}
-}
-
-func TestDataList_String(t *testing.T) {
-	d := NewDataList("a\nb", "out", false)
-	_, _ = d.LineCount()
-	if got := d.String(); !strings.Contains(got, "Lines: 2") || !strings.Contains(got, "Output: out") {
-		t.Errorf("String() = %q", got)
-	}
-	d2 := NewDataList("/path/file", "v", true)
-	if got := d2.String(); !strings.Contains(got, "file") || !strings.Contains(got, "/path/file") {
-		t.Errorf("String() = %q", got)
+	subs := fer.GetSubActions()
+	if len(subs) != 1 || subs[0] != sub {
+		t.Errorf("GetSubActions() = %+v", subs)
 	}
 }
 
@@ -632,7 +518,7 @@ func TestActionTypes_Icon(t *testing.T) {
 		a    ActionInterface
 	}{
 		{"Calculate", NewCalculate("1", "x")},
-		{"DataList", NewDataList("x", "v", false)},
+		{"ForEachRow", NewForEachRow("r", nil, nil)},
 		{"FocusWindow", NewFocusWindow("w")},
 		{"ImageSearch", NewImageSearch("s", nil, nil, SearchArea{}, 0, 0, 0, 0)},
 		{"Key", NewKey("k", false)},
@@ -651,24 +537,6 @@ func TestActionTypes_Icon(t *testing.T) {
 				t.Error("Icon() should not be nil")
 			}
 		})
-	}
-}
-
-func TestDataList_LineCount_fileNotFound(t *testing.T) {
-	d := NewDataList("nonexistent-file-actions-test-12345.txt", "v", true)
-	// IsFile true + non-absolute path -> loadLines joins with config path and reads; file missing
-	_, err := d.LineCount()
-	if err == nil {
-		t.Error("LineCount() with missing file should return error")
-	}
-}
-
-func TestDataList_GetCurrentLine_loadError(t *testing.T) {
-	d := NewDataList("nonexistent-getcurrentline-12345.txt", "v", true)
-	// GetCurrentLine loads on demand; missing file causes loadLines to fail
-	_, err := d.GetCurrentLine()
-	if err == nil {
-		t.Error("GetCurrentLine() with missing file should return error")
 	}
 }
 

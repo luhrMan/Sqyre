@@ -15,6 +15,7 @@ func CollectVariableDefs(m *Macro) []VariableDef {
 	}
 	seen := make(map[string]VariableDef) // keyed by strings.ToLower(name)
 	hasImageSearch := false
+	hasForEachRow := false
 
 	addDef := func(name string, def VariableDef) {
 		key := strings.ToLower(name)
@@ -39,6 +40,9 @@ func CollectVariableDefs(m *Macro) []VariableDef {
 		walkMacroActions(m.Root, func(a actions.ActionInterface) {
 			if _, ok := a.(*actions.ImageSearch); ok {
 				hasImageSearch = true
+			}
+			if _, ok := a.(*actions.ForEachRow); ok {
+				hasForEachRow = true
 			}
 			producer, ok := a.(actions.VariableProducer)
 			if !ok {
@@ -69,6 +73,19 @@ func CollectVariableDefs(m *Macro) []VariableDef {
 				Source: VariableSource{
 					ActionType:  "imagesearch",
 					ActionName:  "Image Search (sub-action)",
+					Conditional: true,
+				},
+			})
+		}
+	}
+
+	if hasForEachRow {
+		for _, name := range ForEachRowBuiltinVars {
+			addDef(name, VariableDef{
+				Role: VariableRoleBuiltin,
+				Source: VariableSource{
+					ActionType:  "foreachrow",
+					ActionName:  "For each row (sub-action)",
 					Conditional: true,
 				},
 			})
@@ -172,6 +189,10 @@ func variableActionLabel(a actions.ActionInterface) string {
 			return n.Name
 		}
 	case *actions.FindPixel:
+		if n.Name != "" {
+			return n.Name
+		}
+	case *actions.ForEachRow:
 		if n.Name != "" {
 			return n.Name
 		}
