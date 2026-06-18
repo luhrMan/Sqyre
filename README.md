@@ -47,9 +47,20 @@ Screenshots and GIFs are generated from automated UI tests. Regenerate with:
 
 ![Sqyre main screen](docs/images/main-window.png)
 
-### Wait action dialog
+### Add action picker
 
-![Sqyre wait action dialog](docs/images/action-dialog-wait.png)
+![Sqyre add action picker](docs/images/add-action-picker.png)
+
+### Action dialogs
+
+Each action type has its own edit panel:
+
+| Category | Actions |
+|----------|---------|
+| Mouse & Keyboard | [Move](docs/images/action-dialog-move.png) · [Click](docs/images/action-dialog-click.png) · [Key](docs/images/action-dialog-key.png) · [Type](docs/images/action-dialog-type.png) |
+| Detection | [Image Search](docs/images/action-dialog-imagesearch.png) · [OCR](docs/images/action-dialog-ocr.png) · [Find pixel](docs/images/action-dialog-findpixel.png) |
+| Variables | [Set](docs/images/action-dialog-setvariable.png) · [Calculate](docs/images/action-dialog-calculate.png) · [Read from](docs/images/action-dialog-datalist.png) · [Save to](docs/images/action-dialog-savevariable.png) |
+| Miscellaneous | [Wait](docs/images/action-dialog-wait.png) · [Focus window](docs/images/action-dialog-focuswindow.png) · [Run macro](docs/images/action-dialog-runmacro.png) · [Loop](docs/images/action-dialog-loop.png) |
 
 ### Data editor
 

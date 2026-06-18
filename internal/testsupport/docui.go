@@ -1,6 +1,7 @@
 package testsupport
 
 import (
+	"Sqyre/internal/config"
 	"Sqyre/internal/models"
 	"Sqyre/internal/models/actions"
 	"Sqyre/internal/models/repositories"
@@ -49,6 +50,21 @@ func InitDocUIEnv(t *testing.T) {
 
 	demoProgram := programRepo.New()
 	demoProgram.Name = "Demo Program"
+	demoProgram.Items["demo-item"] = &models.Item{
+		Name:     "demo-item",
+		GridSize: [2]int{1, 1},
+		StackMax: 1,
+	}
+	if coords := demoProgram.Coordinates[config.MainMonitorSizeString]; coords != nil {
+		coords.Points["center"] = &models.Point{Name: "center", X: 500, Y: 300}
+		coords.SearchAreas["Main area"] = &models.SearchArea{
+			Name:    "Main area",
+			LeftX:   100,
+			TopY:    100,
+			RightX:  900,
+			BottomY: 600,
+		}
+	}
 	if err := programRepo.Set("Demo Program", demoProgram); err != nil {
 		t.Fatalf("set demo program: %v", err)
 	}
