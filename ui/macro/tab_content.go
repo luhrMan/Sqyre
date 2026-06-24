@@ -91,6 +91,17 @@ func (c *MacroTabContent) CreateRenderer() fyne.WidgetRenderer {
 	return widget.NewSimpleRenderer(c.innerTabs)
 }
 
+// GoToAction switches to the Actions sub-tab and navigates to the action with uid.
+func (c *MacroTabContent) GoToAction(uid string) {
+	if c == nil || c.Tree == nil || uid == "" {
+		return
+	}
+	if c.innerTabs != nil {
+		c.innerTabs.SelectIndex(0)
+	}
+	c.Tree.GoToAction(uid)
+}
+
 // RefreshVariablesPanel reloads the variables list (call after action edits).
 func (c *MacroTabContent) RefreshVariablesPanel() {
 	if c != nil && c.VariablesPanel != nil {
