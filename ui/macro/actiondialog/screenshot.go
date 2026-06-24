@@ -57,6 +57,10 @@ func panelContentForAction(action actions.ActionInterface) (fyne.CanvasObject, f
 		return createFocusWindowDialogContent(node)
 	case *actions.RunMacro:
 		return createRunMacroDialogContent(node)
+	case *actions.Break:
+		return createBreakDialogContent()
+	case *actions.Continue:
+		return createContinueDialogContent()
 	default:
 		return widget.NewLabel("Unsupported action type for screenshot: " + action.GetType()), func() {}
 	}
@@ -66,7 +70,7 @@ func panelContentForAction(action actions.ActionInterface) (fyne.CanvasObject, f
 func contentResizeForAction(action actions.ActionInterface) fyne.Size {
 	switch action.(type) {
 	case *actions.Wait:
-		return fyne.NewSize(300, 100)
+		return fyne.NewSize(500, 160)
 	case *actions.Move:
 		return fyne.NewSize(1000, 600)
 	case *actions.Click:
@@ -83,14 +87,18 @@ func contentResizeForAction(action actions.ActionInterface) fyne.Size {
 		return fyne.NewSize(700, 680)
 	case *actions.ForEachRow:
 		return fyne.NewSize(forEachRowDialogWidth, forEachRowDialogHeight)
-	case *actions.SetVariable, *actions.Calculate, *actions.SaveVariable:
+	case *actions.SetVariable, *actions.SaveVariable:
 		return fyne.NewSize(600, 100)
+	case *actions.Calculate:
+		return fyne.NewSize(640, 360)
 	case *actions.FindPixel:
 		return fyne.NewSize(800, 500)
 	case *actions.FocusWindow:
 		return fyne.NewSize(500, 400)
 	case *actions.RunMacro:
 		return fyne.NewSize(400, 120)
+	case *actions.Break, *actions.Continue:
+		return fyne.NewSize(400, 100)
 	default:
 		return fyne.Size{}
 	}
