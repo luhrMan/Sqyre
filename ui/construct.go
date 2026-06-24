@@ -3,10 +3,11 @@ package ui
 import (
 	"Sqyre/internal/models"
 	"Sqyre/internal/models/actions"
-	"Sqyre/ui/macrocxt"
+	"Sqyre/internal/services"
 	"Sqyre/ui/editor"
 	"Sqyre/ui/macro"
 	"Sqyre/ui/macro/actiondialog"
+	"Sqyre/ui/macrocxt"
 	"Sqyre/ui/recording"
 	"time"
 
@@ -94,9 +95,20 @@ func SetActionDialogDeps() {
 			}
 			return st.Macro.Name
 		},
+		PreviewExpression:    previewExpression,
 		AddDialogEscapeClose: AddDialogEscapeClose,
 		ShowRecordingOverlay: recording.ShowRecordingOverlay,
 	})
+}
+
+// previewExpression validates and evaluates a Calculate expression against the
+// currently selected macro's declared and action-produced variables.
+func previewExpression(expr string) (string, error) {
+	m := macroContext().CurrentMacro()
+	if m == nil {
+		return "", nil
+	}
+	return services.PreviewCalculate(expr, m)
 }
 
 // SetMacroUi wires macro tab behavior and restores open macros (implementation in ui/macro).

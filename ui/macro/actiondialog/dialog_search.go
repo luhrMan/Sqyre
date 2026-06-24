@@ -55,8 +55,8 @@ func createImageSearchDialogContent(action *actions.ImageSearch) (fyne.CanvasObj
 	tempTargetsRef := &tempTargets
 
 	// Search Areas accordion with searchbar above (fuzzy match program name + search area name)
-	searchAreasSearchbar, searchAreasAccordion := buildSearchAreasAccordionWithSearchbar(func(sa actions.SearchArea) {
-		tempSearchArea = sa
+	searchAreasSearchbar, searchAreasAccordion := buildSearchAreasAccordionWithSearchbar(func(ref actions.CoordinateRef) {
+		tempSearchArea = ref
 	})
 
 	previewSize := fyne.NewSquareSize(30)
@@ -228,8 +228,8 @@ func createOcrDialogContent(action *actions.Ocr) (fyne.CanvasObject, func()) {
 	nameEntry := widget.NewEntry()
 	nameEntry.SetPlaceHolder("Display name for this action")
 	nameEntry.SetText(action.Name)
-	targetEntry := newVarEntry()
-	targetEntry.SetText(action.Target)
+	targetEntry := newValidatedVarEntry(validateVariableReferences)
+	targetEntry.Entry.SetText(action.Target)
 	outputVarEntry := newVarNameEntry()
 	outputVarEntry.SetText(action.OutputVariable)
 	outputXVarEntry := newVarNameEntry()
@@ -243,7 +243,7 @@ func createOcrDialogContent(action *actions.Ocr) (fyne.CanvasObject, func()) {
 	grayscaleCheck := widget.NewCheck("Grayscale", nil)
 	grayscaleCheck.SetChecked(action.Grayscale)
 
-	blurMin, blurMax := 0, 30
+	blurMin, blurMax := 1, 30
 	blurIncrementer := custom_widgets.NewIncrementer(action.Blur, 2, &blurMin, &blurMax)
 	blurIncrementer.SetValue(action.Blur)
 
@@ -275,8 +275,8 @@ func createOcrDialogContent(action *actions.Ocr) (fyne.CanvasObject, func()) {
 	tempSearchArea := action.SearchArea
 
 	// Search Areas accordion with searchbar above (fuzzy match program name + search area name)
-	searchAreasSearchbar, searchAreasAccordion := buildSearchAreasAccordionWithSearchbar(func(sa actions.SearchArea) {
-		tempSearchArea = sa
+	searchAreasSearchbar, searchAreasAccordion := buildSearchAreasAccordionWithSearchbar(func(ref actions.CoordinateRef) {
+		tempSearchArea = ref
 	})
 
 	form := widget.NewForm(
@@ -289,7 +289,7 @@ func createOcrDialogContent(action *actions.Ocr) (fyne.CanvasObject, func()) {
 		formHint("Timeout (seconds):", waitTil.SecondsIncrementer, "With wait-until-found: maximum time to keep scanning before continuing."),
 		formHint("Search interval (ms):", waitTil.IntervalIncrementer, "Delay between OCR attempts when wait-until-found is enabled."),
 		formHint("Grayscale:", grayscaleCheck, "Convert the capture to grayscale before OCR. Usually improves accuracy on UI text."),
-		formHint("Blur:", container.NewVBox(blurIncrementer, layout.NewSpacer()), "Gaussian blur kernel size (0 = off). Applied before thresholding to reduce noise."),
+		formHint("Blur:", container.NewVBox(blurIncrementer, layout.NewSpacer()), "Gaussian blur kernel size applied before thresholding to reduce noise. Odd values; larger smooths noise but reduces sharp detail."),
 		formHint("Threshold:", container.NewVBox(thresholdIncrementer, layout.NewSpacer()), "Fixed binarization level (0 = off). Ignored when auto threshold is enabled."),
 		formHint("", thresholdOtsuCheck, "Pick the threshold automatically per capture. Useful when lighting or contrast varies."),
 		formHint("", thresholdInvertCheck, "Swap foreground and background after thresholding. Enable for light text on a dark background."),
@@ -310,7 +310,7 @@ func createOcrDialogContent(action *actions.Ocr) (fyne.CanvasObject, func()) {
 
 	saveFunc := func() {
 		action.Name = nameEntry.Text
-		action.Target = targetEntry.Text
+		action.Target = targetEntry.Entry.Text
 		action.OutputVariable = outputVarEntry.Text
 		action.OutputXVariable = outputXVarEntry.Text
 		action.OutputYVariable = outputYVarEntry.Text
@@ -335,8 +335,8 @@ func createFindPixelDialogContent(action *actions.FindPixel) (fyne.CanvasObject,
 	tempSearchArea := action.SearchArea
 
 	// Search Areas accordion with searchbar above (fuzzy match program name + search area name)
-	searchAreasSearchbar, searchAreasAccordion := buildSearchAreasAccordionWithSearchbar(func(sa actions.SearchArea) {
-		tempSearchArea = sa
+	searchAreasSearchbar, searchAreasAccordion := buildSearchAreasAccordionWithSearchbar(func(ref actions.CoordinateRef) {
+		tempSearchArea = ref
 	})
 
 	colorEntry := widget.NewEntry()
