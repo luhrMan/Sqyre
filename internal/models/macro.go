@@ -44,12 +44,16 @@ func HotkeyTriggerFromUILabel(s string) HotkeyTrigger {
 }
 
 type Macro struct {
-	Name           string         `mapstructure:"name"`
-	Root           *actions.Loop  `mapstructure:"root"`
-	GlobalDelay    int            `mapstructure:"globaldelay"`
-	Hotkey         []string       `mapstructure:"hotkey"`
-	HotkeyTrigger  string         `mapstructure:"hotkey_trigger"`
-	Variables      *VariableStore `mapstructure:"variables"`
+	Name          string         `mapstructure:"name"`
+	Root          *actions.Loop  `mapstructure:"root"`
+	GlobalDelay   int            `mapstructure:"globaldelay"`
+	Hotkey        []string       `mapstructure:"hotkey"`
+	HotkeyTrigger string         `mapstructure:"hotkey_trigger"`
+	// VariableDecls is the persisted list of user-declared variables.
+	VariableDecls []VariableDecl `yaml:"variables" mapstructure:"variables"`
+	// Variables is the runtime store, rebuilt from VariableDecls at run start.
+	// It is never persisted.
+	Variables *VariableStore `yaml:"-" mapstructure:"-"`
 }
 
 // GetKey returns the unique identifier for this Macro.
@@ -85,20 +89,27 @@ func (m *Macro) CollectVariableDefs() []VariableDef {
 	return CollectVariableDefs(m)
 }
 
-// SetInitialVariable sets a preset value stored on the macro (persisted in YAML).
-func (m *Macro) SetInitialVariable(name, value string) {
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return
+// CollectVariableUsages returns every location name appears in this macro.
+func (m *Macro) CollectVariableUsages(name string) []VariableUsage {
+	return CollectVariableUsages(m, name)
+}
+
+// InitRuntimeVariables rebuilds the runtime variable store from the macro's
+// declarations. Called at the start of every macro run so each execution begins
+// from a clean, isolated store seeded with declared initial values.
+func (m *Macro) InitRuntimeVariables() {
+	vs := NewVariableStore()
+	for _, d := range m.VariableDecls {
+		name := strings.TrimSpace(d.Name)
+		if name == "" {
+			continue
+		}
+		if strings.TrimSpace(d.InitialValue) == "" {
+			continue
+		}
+		vs.Set(name, d.initialStoredValue())
 	}
-	if m.Variables == nil {
-		m.Variables = NewVariableStore()
-	}
-	if value == "" {
-		m.Variables.Delete(name)
-		return
-	}
-	m.Variables.Set(name, value)
+	m.Variables = vs
 }
 
 // FindActionByUID returns the action with the given UID in this macro's tree.
