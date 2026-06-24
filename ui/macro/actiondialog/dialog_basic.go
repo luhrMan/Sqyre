@@ -1,6 +1,7 @@
 package actiondialog
 
 import (
+	"Sqyre/internal/config"
 	"Sqyre/internal/models/actions"
 	"Sqyre/internal/screen"
 	"Sqyre/internal/services"
@@ -22,13 +23,23 @@ import (
 )
 
 func createWaitDialogContent(action *actions.Wait) (fyne.CanvasObject, func()) {
-	timeEntry := newVarEntry()
-	timeEntry.SetText(fmt.Sprintf("%d", action.Time))
-	timeEntry.SetPlaceHolder("Milliseconds (or ${variable})")
+	timeEntry := newValidatedVarEntry(validateNumericExpression)
+	timeEntry.Entry.SetPlaceHolder("Milliseconds (or ${variable})")
+	switch t := action.Time.(type) {
+	case int:
+		timeEntry.Entry.SetText(fmt.Sprintf("%d", t))
+	case string:
+		timeEntry.Entry.SetText(t)
+	default:
+		timeEntry.Entry.SetText(fmt.Sprintf("%v", action.Time))
+	}
 	timeSlider := ttwidget.NewSlider(0.0, 1000.0)
-	timeSlider.SetValue(float64(action.Time))
+	if t, ok := action.Time.(int); ok {
+		timeSlider.SetValue(float64(t))
+	}
 	timeSlider.OnChanged = func(f float64) {
-		timeEntry.SetText(fmt.Sprintf("%.0f", f))
+		timeEntry.Entry.SetText(fmt.Sprintf("%.0f", f))
+		timeEntry.Revalidate()
 	}
 	timeEntry.OnChanged = func(s string) {
 		if val, err := strconv.ParseFloat(s, 64); err == nil {
@@ -43,8 +54,15 @@ func createWaitDialogContent(action *actions.Wait) (fyne.CanvasObject, func()) {
 	)
 
 	saveFunc := func() {
-		if val, err := strconv.Atoi(timeEntry.Text); err == nil {
+		s := strings.TrimSpace(timeEntry.Entry.Text)
+		if s == "" {
+			action.Time = 0
+			return
+		}
+		if val, err := strconv.Atoi(s); err == nil {
 			action.Time = val
+		} else {
+			action.Time = s
 		}
 	}
 
@@ -65,33 +83,42 @@ func pointCoordToInt(v any) int {
 }
 
 func createMoveDialogContent(action *actions.Move) (fyne.CanvasObject, func()) {
-	// Temporary storage for the selected point (only applied on save)
 	tempPoint := action.Point
 
-	// Create preview image for point preview
 	pointPreviewImage := canvas.NewImageFromImage(nil)
 	pointPreviewImage.FillMode = canvas.ImageFillContain
 	pointPreviewImage.SetMinSize(fyne.NewSize(400, 300))
 
-	// Label showing X and Y expression for the selected point
-	coordsLabel := ttwidget.NewLabel(fmt.Sprintf("X: %v, Y: %v", tempPoint.X, tempPoint.Y))
+	coordsLabel := ttwidget.NewLabel("")
 	coordsLabel.SetToolTip("Current X/Y coordinates for the point (numbers or ${variable} expressions). Pick a saved point below or use the preview.")
-	updateCoordsLabel := func(point *actions.Point) {
-		if point != nil {
-			coordsLabel.SetText(fmt.Sprintf("X: %v, Y: %v", point.X, point.Y))
+	updateCoordsLabel := func(ref actions.CoordinateRef) {
+		if ref.IsEmpty() {
+			coordsLabel.SetText("No point selected")
+			return
 		}
+		pt, err := services.LookupPoint(ref, config.MainMonitorSizeString)
+		if err != nil {
+			coordsLabel.SetText(ref.DisplayLabel())
+			return
+		}
+		coordsLabel.SetText(fmt.Sprintf("%s — X: %v, Y: %v", ref.DisplayLabel(), pt.X, pt.Y))
 	}
 
-	// Helper function to update preview image (uses pointCoordToInt so variable refs show no marker)
-	updatePreview := func(point *actions.Point) {
-		if point == nil {
+	updatePreview := func(ref actions.CoordinateRef) {
+		if ref.IsEmpty() {
+			pointPreviewImage.Image = nil
+			pointPreviewImage.Refresh()
+			return
+		}
+		pt, err := services.LookupPoint(ref, config.MainMonitorSizeString)
+		if err != nil {
 			pointPreviewImage.Image = nil
 			pointPreviewImage.Refresh()
 			return
 		}
 
-		px := pointCoordToInt(point.X)
-		py := pointCoordToInt(point.Y)
+		px := pointCoordToInt(pt.X)
+		py := pointCoordToInt(pt.Y)
 
 		vb := screen.VirtualBounds()
 		if px < vb.Min.X || py < vb.Min.Y || px > vb.Max.X || py > vb.Max.Y {
@@ -100,7 +127,6 @@ func createMoveDialogContent(action *actions.Move) (fyne.CanvasObject, func()) {
 			return
 		}
 
-		// Attempt to capture the full screen with error recovery
 		defer func() {
 			if r := recover(); r != nil {
 				services.LogPanicToFile(r, "Action dialog: point preview capture")
@@ -116,7 +142,6 @@ func createMoveDialogContent(action *actions.Move) (fyne.CanvasObject, func()) {
 			return
 		}
 
-		// Convert to gocv Mat for drawing
 		mat, err := gocv.ImageToMatRGB(captureImg)
 		if err != nil {
 			pointPreviewImage.Image = nil
@@ -133,7 +158,6 @@ func createMoveDialogContent(action *actions.Move) (fyne.CanvasObject, func()) {
 		gocv.Line(&mat, image.Point{X: center.X - 15, Y: center.Y}, image.Point{X: center.X + 15, Y: center.Y}, redColor, 2)
 		gocv.Line(&mat, image.Point{X: center.X, Y: center.Y - 15}, image.Point{X: center.X, Y: center.Y + 15}, redColor, 2)
 
-		// Convert back to image.Image
 		previewImg, err := mat.ToImage()
 		if err != nil {
 			pointPreviewImage.Image = nil
@@ -141,31 +165,34 @@ func createMoveDialogContent(action *actions.Move) (fyne.CanvasObject, func()) {
 			return
 		}
 
-		// Update preview image
 		pointPreviewImage.Image = previewImg
 		pointPreviewImage.Refresh()
 	}
 
-	// Points accordion with searchbar above (fuzzy match program name + point name)
-	pointsSearchbar, pointsAccordion := buildPointsAccordionWithSearchbar(func(pt actions.Point) {
-		tempPoint = pt
-		updateCoordsLabel(&tempPoint)
-		updatePreview(&tempPoint)
+	pointsSearchbar, pointsAccordion := buildPointsAccordionWithSearchbar(func(ref actions.CoordinateRef) {
+		tempPoint = ref
+		updateCoordsLabel(tempPoint)
+		updatePreview(tempPoint)
 	})
 
-	// Update label and preview for initial point
-	updateCoordsLabel(&tempPoint)
-	updatePreview(&tempPoint)
+	updateCoordsLabel(tempPoint)
+	updatePreview(tempPoint)
 
-	smoothCheck := ttwidget.NewCheck("Smooth", nil)
-	smoothCheck.SetChecked(action.Smooth)
-	smoothCheck.SetToolTip("When enabled, the mouse moves along a smooth path to the target. When disabled, the cursor jumps instantly.")
+	smoothForm := newSmoothMoveForm(
+		action.Smooth,
+		action.EffectiveSmoothLow(),
+		action.EffectiveSmoothHigh(),
+		action.EffectiveSmoothDelayMs(),
+	)
 
 	previewLbl := ttwidget.NewLabel("Preview")
 	previewLbl.SetToolTip("Screen snapshot with a crosshair when X/Y are literal numbers (not variables). Variable coordinates skip preview.")
 
+	smoothSettings := widget.NewForm(smoothForm.formItems()...)
+
 	content := container.NewVBox(
-		container.NewHBox(coordsLabel, layout.NewSpacer(), smoothCheck),
+		container.NewHBox(coordsLabel, layout.NewSpacer(), smoothForm.Check),
+		smoothSettings,
 		container.NewHSplit(
 			container.NewBorder(pointsSearchbar, nil, nil, nil, pointsAccordion),
 			container.NewBorder(previewLbl, nil, nil, nil, pointPreviewImage),
@@ -174,7 +201,15 @@ func createMoveDialogContent(action *actions.Move) (fyne.CanvasObject, func()) {
 
 	saveFunc := func() {
 		action.Point = tempPoint
-		action.Smooth = smoothCheck.Checked
+		var low float64
+		var high float64
+		var delayMs int
+		smoothForm.writeTo(&action.Smooth, &low, &high, &delayMs)
+		if action.Smooth {
+			action.SmoothLow = low
+			action.SmoothHigh = high
+			action.SmoothDelayMs = delayMs
+		}
 	}
 
 	return content, saveFunc
@@ -251,9 +286,9 @@ func createKeyDialogContent(action *actions.Key) (fyne.CanvasObject, func()) {
 }
 
 func createTypeDialogContent(action *actions.Type) (fyne.CanvasObject, func()) {
-	textEntry := newVarEntry()
-	textEntry.SetText(action.Text)
-	textEntry.SetPlaceHolder("Text to type (supports ${variable})")
+	textEntry := newValidatedVarEntry(validateVariableReferences)
+	textEntry.Entry.SetText(action.Text)
+	textEntry.Entry.SetPlaceHolder("Text to type (supports ${variable})")
 
 	delayEntry := widget.NewEntry()
 	delayEntry.SetText(fmt.Sprintf("%d", action.DelayMs))
@@ -265,7 +300,7 @@ func createTypeDialogContent(action *actions.Type) (fyne.CanvasObject, func()) {
 	)
 
 	saveFunc := func() {
-		action.Text = textEntry.Text
+		action.Text = textEntry.Entry.Text
 		if val, err := strconv.Atoi(strings.TrimSpace(delayEntry.Text)); err == nil && val >= 0 {
 			action.DelayMs = val
 		}
@@ -278,13 +313,13 @@ func createConditionalDialogContent(action *actions.Conditional) (fyne.CanvasObj
 	nameEntry := widget.NewEntry()
 	nameEntry.SetText(action.Name)
 
-	leftEntry := newVarEntry()
-	leftEntry.SetPlaceHolder("e.g. ${score} or 10")
-	leftEntry.SetText(operandToString(action.Left))
+	leftEntry := newValidatedVarEntry(validateVariableReferences)
+	leftEntry.Entry.SetPlaceHolder("e.g. ${score} or 10")
+	leftEntry.Entry.SetText(operandToString(action.Left))
 
-	rightEntry := newVarEntry()
-	rightEntry.SetPlaceHolder("e.g. ${target} or 100")
-	rightEntry.SetText(operandToString(action.Right))
+	rightEntry := newValidatedVarEntry(validateVariableReferences)
+	rightEntry.Entry.SetPlaceHolder("e.g. ${target} or 100")
+	rightEntry.Entry.SetText(operandToString(action.Right))
 
 	operatorSelect := widget.NewSelect(actions.ConditionalOperators, nil)
 	if action.Operator != "" {
@@ -295,9 +330,9 @@ func createConditionalDialogContent(action *actions.Conditional) (fyne.CanvasObj
 
 	updateRightState := func(op string) {
 		if actions.OperatorIsUnary(op) {
-			rightEntry.Disable()
+			rightEntry.Entry.Disable()
 		} else {
-			rightEntry.Enable()
+			rightEntry.Entry.Enable()
 		}
 	}
 	operatorSelect.OnChanged = updateRightState
@@ -317,8 +352,8 @@ func createConditionalDialogContent(action *actions.Conditional) (fyne.CanvasObj
 		} else {
 			action.Operator = actions.OpEquals
 		}
-		action.Left = parseOperand(leftEntry.Text)
-		action.Right = parseOperand(rightEntry.Text)
+		action.Left = parseOperand(leftEntry.Entry.Text)
+		action.Right = parseOperand(rightEntry.Entry.Text)
 	}
 
 	return content, saveFunc
@@ -353,15 +388,15 @@ func parseOperand(text string) any {
 func createLoopDialogContent(action *actions.Loop) (fyne.CanvasObject, func()) {
 	nameEntry := widget.NewEntry()
 	nameEntry.SetText(action.Name)
-	countEntry := newVarEntry()
-	countEntry.SetPlaceHolder("e.g. 5 or ${countVar}")
+	countEntry := newValidatedVarEntry(validateNumericExpression)
+	countEntry.Entry.SetPlaceHolder("e.g. 5 or ${countVar}")
 	switch c := action.Count.(type) {
 	case int:
-		countEntry.SetText(fmt.Sprintf("%d", c))
+		countEntry.Entry.SetText(fmt.Sprintf("%d", c))
 	case string:
-		countEntry.SetText(c)
+		countEntry.Entry.SetText(c)
 	default:
-		countEntry.SetText(fmt.Sprintf("%v", c))
+		countEntry.Entry.SetText(fmt.Sprintf("%v", c))
 	}
 
 	content := widget.NewForm(
@@ -371,7 +406,7 @@ func createLoopDialogContent(action *actions.Loop) (fyne.CanvasObject, func()) {
 
 	saveFunc := func() {
 		action.Name = nameEntry.Text
-		s := strings.TrimSpace(countEntry.Text)
+		s := strings.TrimSpace(countEntry.Entry.Text)
 		if s == "" {
 			action.Count = 1
 			return

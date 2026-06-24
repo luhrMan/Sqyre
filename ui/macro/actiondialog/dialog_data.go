@@ -10,6 +10,7 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 )
@@ -24,8 +25,8 @@ const (
 func createSetVariableDialogContent(action *actions.SetVariable) (fyne.CanvasObject, func()) {
 	nameEntry := newVarNameEntry()
 	nameEntry.SetText(action.VariableName)
-	valueEntry := newVarEntry()
-	valueEntry.SetText(fmt.Sprintf("%v", action.Value))
+	valueEntry := newValidatedVarEntry(validateSetVariableValue)
+	valueEntry.Entry.SetText(fmt.Sprintf("%v", action.Value))
 
 	content := widget.NewForm(
 		formHint("Variable Name:", nameEntry, "Name of the macro variable to assign (used as ${Name} in later actions)."),
@@ -34,33 +35,135 @@ func createSetVariableDialogContent(action *actions.SetVariable) (fyne.CanvasObj
 
 	saveFunc := func() {
 		action.VariableName = nameEntry.Text
-		action.Value = valueEntry.Text
+		action.Value = valueEntry.Entry.Text
 	}
 
 	return content, saveFunc
 }
 
+// calculateFunctions are the functions supported by the expression evaluator.
+// Each inserts a call template into the expression entry.
+var calculateFunctions = []string{"sqrt", "abs", "round", "floor", "ceil", "trunc", "sin", "cos", "tan", "ln"}
+
+// calculateConstants are the constants supported by the evaluator.
+var calculateConstants = []string{"~pi", "~e"}
+
 func createCalculateDialogContent(action *actions.Calculate) (fyne.CanvasObject, func()) {
-	exprEntry := newVarEntry()
-	exprEntry.SetText(action.Expression)
+	exprEntry := newValidatedMultiLineVarEntry(validateCalculateExpression)
+	exprEntry.Entry.SetText(action.Expression)
 	varEntry := newVarNameEntry()
 	varEntry.SetText(action.OutputVar)
 
-	content := widget.NewForm(
-		formHint("Expression:", exprEntry, "Arithmetic or expression to evaluate (macro variables as ${name}). Result is stored in the output variable."),
-		formHint("Output Variable:", varEntry, "Variable that receives the calculated result."),
+	preview := widget.NewLabel("")
+	preview.Wrapping = fyne.TextWrapWord
+	updatePreview := func() {
+		if strings.TrimSpace(exprEntry.Entry.Text) == "" {
+			preview.SetText("")
+			return
+		}
+		if !exprEntry.Valid() {
+			preview.SetText("")
+			return
+		}
+		result, err := previewExpression(exprEntry.Entry.Text)
+		if err != nil {
+			preview.SetText("")
+			return
+		}
+		preview.SetText("Preview: " + result)
+	}
+	exprEntry.OnChanged = func(string) { updatePreview() }
+	exprEntry.SetOnValidationChanged(updatePreview)
+
+	toolbar := calculateBuilderToolbar(exprEntry.Entry)
+
+	exprField := container.NewGridWrap(fyne.NewSize(560, 96), exprEntry)
+
+	content := container.NewVBox(
+		widget.NewLabelWithStyle("Expression", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+		toolbar,
+		exprField,
+		preview,
+		widget.NewSeparator(),
+		widget.NewForm(
+			formHint("Output Variable:", varEntry, "Variable that receives the calculated result."),
+		),
 	)
 
+	updatePreview()
+
 	saveFunc := func() {
-		action.Expression = exprEntry.Text
+		action.Expression = exprEntry.Entry.Text
 		action.OutputVar = varEntry.Text
 	}
 
 	return content, saveFunc
 }
 
+// calculateBuilderToolbar builds the insert-variable, operator, and function
+// controls that write into the expression entry at the cursor.
+func calculateBuilderToolbar(exprEntry *custom_widgets.VarEntry) fyne.CanvasObject {
+	var varBtn *widget.Button
+	varBtn = widget.NewButtonWithIcon("Variable", theme.ContentAddIcon(), func() {
+		names := macroVarNames()
+		if len(names) == 0 {
+			return
+		}
+		items := make([]*fyne.MenuItem, len(names))
+		for i, n := range names {
+			name := n
+			items[i] = fyne.NewMenuItem(name, func() {
+				exprEntry.InsertAtCursor("${" + name + "}")
+			})
+		}
+		popUpMenuBelow(fyne.NewMenu("", items...), varBtn)
+	})
+
+	operators := []string{"+", "-", "*", "/", "^", "(", ")"}
+	opButtons := make([]fyne.CanvasObject, 0, len(operators))
+	for _, op := range operators {
+		token := op
+		b := widget.NewButton(op, func() { exprEntry.InsertAtCursor(token) })
+		b.Importance = widget.LowImportance
+		opButtons = append(opButtons, b)
+	}
+
+	var fxBtn *widget.Button
+	fxBtn = widget.NewButton("f(x)", func() {
+		items := make([]*fyne.MenuItem, 0, len(calculateFunctions)+len(calculateConstants)+1)
+		for _, f := range calculateFunctions {
+			fn := f
+			items = append(items, fyne.NewMenuItem(fn+"( )", func() {
+				exprEntry.InsertAtCursor(fn + "()")
+			}))
+		}
+		items = append(items, fyne.NewMenuItemSeparator())
+		for _, c := range calculateConstants {
+			cst := c
+			items = append(items, fyne.NewMenuItem(cst, func() {
+				exprEntry.InsertAtCursor(cst)
+			}))
+		}
+		popUpMenuBelow(fyne.NewMenu("", items...), fxBtn)
+	})
+
+	left := container.NewHBox(varBtn, fxBtn)
+	ops := container.NewHBox(opButtons...)
+	return container.NewBorder(nil, nil, left, nil, ops)
+}
+
+func popUpMenuBelow(menu *fyne.Menu, anchor fyne.CanvasObject) {
+	driver := fyne.CurrentApp().Driver()
+	c := driver.CanvasForObject(anchor)
+	if c == nil {
+		return
+	}
+	pos := driver.AbsolutePositionForObject(anchor)
+	widget.ShowPopUpMenuAtPosition(menu, c, pos.Add(fyne.NewPos(0, anchor.Size().Height)))
+}
+
 type sourceRowWidgets struct {
-	source    *custom_widgets.VarRefEntry
+	source    *custom_widgets.VarEntry
 	outputVar *custom_widgets.VarNameEntry
 	isFile    *ttwidget.Check
 	skipBlank *ttwidget.Check
@@ -77,7 +180,7 @@ func newSourceRowWidgets() sourceRowWidgets {
 	}
 }
 
-func forEachRowSourceField(source *custom_widgets.VarRefEntry) fyne.CanvasObject {
+func forEachRowSourceField(source *custom_widgets.VarEntry) fyne.CanvasObject {
 	return container.NewGridWrap(
 		fyne.NewSize(forEachRowDialogWidth-200, forEachRowSourceEntryMinHeight),
 		source,
@@ -179,9 +282,9 @@ func createForEachRowDialogContent(action *actions.ForEachRow) (fyne.CanvasObjec
 func createSaveVariableDialogContent(action *actions.SaveVariable) (fyne.CanvasObject, func()) {
 	varEntry := newVarNameEntry()
 	varEntry.SetText(action.VariableName)
-	destEntry := newVarEntry()
-	destEntry.SetText(action.Destination)
-	destEntry.SetPlaceHolder("~/.sqyre/variables/... or 'clipboard'")
+	destEntry := newValidatedVarEntry(validateVariableReferences)
+	destEntry.Entry.SetText(action.Destination)
+	destEntry.Entry.SetPlaceHolder("~/.sqyre/variables/... or 'clipboard'")
 	appendCheck := ttwidget.NewCheck("Append to file", nil)
 	appendCheck.SetChecked(action.Append)
 	appendNewlineCheck := ttwidget.NewCheck("New line with every append", nil)
@@ -196,7 +299,7 @@ func createSaveVariableDialogContent(action *actions.SaveVariable) (fyne.CanvasO
 
 	saveFunc := func() {
 		action.VariableName = varEntry.Text
-		action.Destination = destEntry.Text
+		action.Destination = destEntry.Entry.Text
 		action.Append = appendCheck.Checked
 		action.AppendNewline = appendNewlineCheck.Checked
 	}

@@ -62,4 +62,5 @@ func SetEditorUi(d WireDeps) {
 	updateProgramSelectorOptions()
 	setupAllDirtyTracking()
 	selectFirstProgramInEditorIfAny()
+	RefreshVarEntryInsertButtons()
 }
