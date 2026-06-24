@@ -10,22 +10,31 @@ import (
 	"image/png"
 	"log"
 	"strings"
+	"sync"
 
 	"github.com/otiai10/gosseract/v2"
 	"gocv.io/x/gocv"
 )
 
-var tessClient *gosseract.Client
+var (
+	tessClient *gosseract.Client
+	tessOnce   sync.Once
+)
 
-func init() {
-	tessClient = gosseract.NewClient()
-	// Initialize from embedded traineddata in memory only (no filesystem writes).
-	_ = tessClient.SetTessdataFromMemory(assets.EngTrainedData())
-	_ = tessClient.SetLanguage("eng")
+func GetTessClient() *gosseract.Client {
+	tessOnce.Do(func() {
+		tessClient = gosseract.NewClient()
+		_ = tessClient.SetTessdataFromMemory(assets.EngTrainedData())
+		_ = tessClient.SetLanguage("eng")
+	})
+	return tessClient
 }
 
-func GetTessClient() *gosseract.Client { return tessClient }
-func CloseTessClient()                 { tessClient.Close() }
+func CloseTessClient() {
+	if tessClient != nil {
+		tessClient.Close()
+	}
+}
 
 func CheckImageForText(img image.Image) (error, string) {
 	var buf bytes.Buffer
@@ -134,10 +143,9 @@ func OCR(a *actions.Ocr, macro *models.Macro) (foundText string, outX, outY int,
 }
 
 func ocrCapture(a *actions.Ocr, macro *models.Macro) (foundText string, outX, outY int, err error) {
-	sa := a.SearchArea
-	resolvedLeftX, resolvedTopY, resolvedRightX, resolvedBottomY, err := ResolveSearchAreaCoords(sa.LeftX, sa.TopY, sa.RightX, sa.BottomY, macro)
+	resolvedLeftX, resolvedTopY, resolvedRightX, resolvedBottomY, err := ResolveSearchAreaCoordsFromRef(a.SearchArea, macro, DefaultResolutionKey())
 	if err != nil {
-		log.Printf("OCR: failed to resolve search area coords: %v", err)
+		log.Printf("OCR: failed to resolve search area %q: %v", a.SearchArea, err)
 		return "", 0, 0, err
 	}
 	img, leftX, topY, rightX, bottomY, err := CaptureSearchArea(resolvedLeftX, resolvedTopY, resolvedRightX, resolvedBottomY)
@@ -147,7 +155,7 @@ func ocrCapture(a *actions.Ocr, macro *models.Macro) (foundText string, outX, ou
 	}
 	searchCenterX := (leftX + rightX) / 2
 	searchCenterY := (topY + bottomY) / 2
-	log.Printf("%s OCR search | %s in X1:%d Y1:%d X2:%d Y2:%d", a.Target, a.SearchArea.Name, leftX, topY, rightX, bottomY)
+	log.Printf("%s OCR search | %s in X1:%d Y1:%d X2:%d Y2:%d", a.Target, a.SearchArea.DisplayLabel(), leftX, topY, rightX, bottomY)
 	ppOptions := PreprocessOptions{
 		Grayscale:       a.Grayscale,
 		Blur:            a.Blur > 0,

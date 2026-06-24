@@ -16,7 +16,7 @@ func ActionCategoryForType(actionType string) string {
 		return "Detection"
 	case "setvariable", "calculate", "foreachrow", "savevariable":
 		return "Variables"
-	case "wait", "focuswindow", "runmacro", "loop", "conditional":
+	case "wait", "focuswindow", "runmacro", "loop", "conditional", "break", "continue":
 		return "Miscellaneous"
 	default:
 		return ""
