@@ -28,7 +28,7 @@ func main() {
 	integrationMacro.Root.SetSubActions([]actions.ActionInterface{
 		actions.NewWait(100),
 		actions.NewClick(true, true),
-		actions.NewMove(actions.Point{Name: "p1", X: 10, Y: 20}, false),
+		actions.NewMove("p1", false),
 	})
 
 	macros := map[string]interface{}{

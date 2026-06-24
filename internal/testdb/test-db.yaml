@@ -22,8 +22,7 @@ macros:
             - ctrl
             - shift
             - a
-        variables:
-            variables: {}
+        variables: []
     Macro B:
         name: Macro B
         root:
@@ -32,8 +31,7 @@ macros:
             name: root
         globaldelay: 0
         hotkey: []
-        variables:
-            variables: {}
+        variables: []
 programs:
     Program 1:
         name: Program 1

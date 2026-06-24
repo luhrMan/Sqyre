@@ -3,7 +3,6 @@ package models
 import (
 	"Sqyre/internal/models/actions"
 	"Sqyre/internal/screen"
-	"fmt"
 	"sort"
 	"strings"
 )
@@ -24,6 +23,12 @@ func CollectVariableDefs(m *Macro) []VariableDef {
 			merged.Name = preferVariableName(existing.Name, name)
 			if def.InitialValue != "" {
 				merged.InitialValue = def.InitialValue
+			}
+			if def.Type != "" {
+				merged.Type = def.Type
+			}
+			if def.Description != "" {
+				merged.Description = def.Description
 			}
 			if existing.Source.ActionType == "initial" && def.Source.ActionType != "" {
 				merged.Source = def.Source
@@ -102,30 +107,29 @@ func CollectVariableDefs(m *Macro) []VariableDef {
 		})
 	}
 
-	if m.Variables != nil {
-		for _, name := range m.Variables.GetAll() {
-			initial := ""
-			if v, ok := m.Variables.Get(name); ok {
-				initial = fmt.Sprintf("%v", v)
-			}
-			addDef(name, VariableDef{
-				Role:         VariableRoleValue,
-				InitialValue: initial,
-				Source: VariableSource{
-					ActionType: "initial",
-					ActionName: "Initial value",
-				},
-			})
+	for _, decl := range m.VariableDecls {
+		name := strings.TrimSpace(decl.Name)
+		if name == "" {
+			continue
 		}
+		typ := decl.Type
+		if typ == "" {
+			typ = VariableTypeAuto
+		}
+		addDef(name, VariableDef{
+			Role:         VariableRoleValue,
+			Type:         typ,
+			Description:  decl.Description,
+			InitialValue: decl.InitialValue,
+			Source: VariableSource{
+				ActionType: "initial",
+				ActionName: "Initial value",
+			},
+		})
 	}
 
 	defs := make([]VariableDef, 0, len(seen))
 	for _, d := range seen {
-		if d.InitialValue == "" && m.Variables != nil {
-			if v, ok := m.Variables.Get(d.Name); ok {
-				d.InitialValue = fmt.Sprintf("%v", v)
-			}
-		}
 		defs = append(defs, d)
 	}
 	sort.Slice(defs, func(i, j int) bool { return defs[i].Name < defs[j].Name })

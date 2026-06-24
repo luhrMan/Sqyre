@@ -3,11 +3,9 @@ package repositories
 import (
 	"Sqyre/internal/models"
 	"Sqyre/internal/models/serialize"
-	"bytes"
 	"fmt"
 	"log"
 
-	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
 )
 
@@ -26,34 +24,9 @@ func decodeMacro(key string) (*models.Macro, error) {
 		return macro, nil
 	}
 
-	// Convert to YAML bytes and back to handle the decode properly
-	yamlBytes, err := yaml.Marshal(macroData)
-	if err != nil {
-		return nil, fmt.Errorf("%w: macro '%s': failed to marshal: %v", ErrDecodeFailed, key, err)
-	}
-
-	macro := &models.Macro{}
-
-	// For now, use Viper's decode hook functionality by creating a temporary viper instance
-	// This maintains compatibility with existing macro decode logic
-	tempViper := viper.New()
-	tempViper.SetConfigType("yaml")
-	if err := tempViper.ReadConfig(bytes.NewReader(yamlBytes)); err != nil {
-		return nil, fmt.Errorf("%w: macro '%s': failed to read: %w", ErrDecodeFailed, key, serialize.YAMLErrorWithContent(yamlBytes, err))
-	}
-
-	err = tempViper.Unmarshal(macro, viper.DecodeHook(serialize.MacroDecodeHookFunc()))
+	macro, err := serialize.DecodeMacroFromMap(macroData)
 	if err != nil {
 		return nil, fmt.Errorf("%w: macro '%s': %v", ErrDecodeFailed, key, err)
-	}
-
-	// Viper lowercases map keys; re-parse variables from YAML bytes to preserve casing.
-	if vs := models.VariableStoreFromYAMLBytes(yamlBytes); vs != nil {
-		macro.Variables = vs
-	} else if macro.Variables == nil {
-		macro.Variables = models.NewVariableStore()
-	} else {
-		macro.Variables.NormalizeKeys()
 	}
 
 	log.Printf("Successfully decoded macro: %s", macro.Name)

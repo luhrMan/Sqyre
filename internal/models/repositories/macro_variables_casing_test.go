@@ -8,7 +8,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func TestDecodeMacro_variableKeyCasingFromYAML(t *testing.T) {
+func TestDecodeMacro_variableDeclCasingFromYAML(t *testing.T) {
 	setupTestConfig(t)
 	yamlConfig := serialize.GetYAMLConfig()
 	prevPath := yamlConfig.GetConfigFile()
@@ -25,17 +25,15 @@ func TestDecodeMacro_variableKeyCasingFromYAML(t *testing.T) {
 			"globaldelay": 0,
 			"hotkey":      []any{},
 			"root": map[string]any{
-				"type":  "loop",
-				"name":  "root",
-				"count": 1,
+				"type":       "loop",
+				"name":       "root",
+				"count":      1,
 				"subactions": []any{},
 			},
-			"variables": map[string]any{
-				"variables": map[string]any{
-					"topY":     "10",
-					"bottomY":  "20",
-					"StackMax": "5",
-				},
+			"variables": []any{
+				map[string]any{"name": "topY", "initialvalue": "10"},
+				map[string]any{"name": "bottomY", "initialvalue": "20"},
+				map[string]any{"name": "StackMax", "initialvalue": "5"},
 			},
 		},
 	})
@@ -44,9 +42,16 @@ func TestDecodeMacro_variableKeyCasingFromYAML(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	declNames := map[string]bool{}
+	for _, d := range macro.VariableDecls {
+		declNames[d.Name] = true
+	}
 	for _, want := range []string{"topY", "bottomY", "StackMax"} {
+		if !declNames[want] {
+			t.Errorf("missing decl %q after decode; decls=%v", want, macro.VariableDecls)
+		}
 		if _, ok := macro.Variables.Get(want); !ok {
-			t.Errorf("missing %q after decode; keys=%v", want, macro.Variables.GetAll())
+			t.Errorf("runtime store missing %q after decode; keys=%v", want, macro.Variables.GetAll())
 		}
 	}
 }
