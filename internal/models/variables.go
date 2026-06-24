@@ -2,11 +2,12 @@ package models
 
 import (
 	"strings"
-
-	"gopkg.in/yaml.v3"
 )
 
-// VariableStore manages variables for a macro
+// VariableStore is the runtime variable store for a macro. It holds the live
+// values produced while a macro executes (initial declaration values, action
+// outputs, monitor builtins, etc.). It is not persisted directly; the persisted
+// source of truth for user-declared variables is Macro.VariableDecls.
 type VariableStore struct {
 	Variables map[string]any `yaml:"variables"`
 }
@@ -16,59 +17,6 @@ func NewVariableStore() *VariableStore {
 	return &VariableStore{
 		Variables: make(map[string]any),
 	}
-}
-
-// VariableStoreFromYAMLBytes extracts macro variables from YAML, preserving key casing.
-// Viper/mapstructure lowercases map keys during macro decode; use this on raw YAML bytes instead.
-func VariableStoreFromYAMLBytes(macroYAML []byte) *VariableStore {
-	var raw map[string]any
-	if err := yaml.Unmarshal(macroYAML, &raw); err != nil {
-		return nil
-	}
-	return VariableStoreFromMap(raw["variables"])
-}
-
-// VariableStoreFromMap builds a store from decoded YAML (nested or flat variables block).
-func VariableStoreFromMap(data any) *VariableStore {
-	if data == nil {
-		return nil
-	}
-	m, ok := data.(map[string]any)
-	if !ok {
-		return NewVariableStore()
-	}
-	if inner, ok := m["variables"].(map[string]any); ok {
-		m = inner
-	}
-	vs := NewVariableStore()
-	for k, v := range m {
-		vs.Variables[k] = v
-	}
-	return vs
-}
-
-// NormalizeKeys collapses case-insensitive duplicate names, keeping the preferred spelling.
-func (vs *VariableStore) NormalizeKeys() {
-	if vs == nil || len(vs.Variables) < 2 {
-		return
-	}
-	out := make(map[string]any, len(vs.Variables))
-	canonical := make(map[string]string)
-	for name, val := range vs.Variables {
-		lower := strings.ToLower(name)
-		if prev, ok := canonical[lower]; ok {
-			chosen := preferVariableName(prev, name)
-			canonical[lower] = chosen
-			out[chosen] = val
-			if chosen != prev {
-				delete(out, prev)
-			}
-			continue
-		}
-		canonical[lower] = name
-		out[name] = val
-	}
-	vs.Variables = out
 }
 
 func preferVariableName(a, b string) string {

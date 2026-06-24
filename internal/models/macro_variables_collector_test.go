@@ -11,7 +11,7 @@ func TestCollectDefinedVariableNames_fromActions(t *testing.T) {
 	m.Root = actions.NewLoop(1, "root", []actions.ActionInterface{
 		actions.NewSetVariable("counter", 0),
 		actions.NewCalculate("counter + 1", "result"),
-		actions.NewImageSearch("search", nil, nil, actions.SearchArea{}, 1, 1, 0.95, 5),
+		actions.NewImageSearch("search", nil, nil, "", 1, 1, 0.95, 5),
 	})
 
 	names := CollectDefinedVariableNames(m)
@@ -33,7 +33,7 @@ func TestCollectDefinedVariableNames_fromActions(t *testing.T) {
 
 func TestCollectDefinedVariableNames_findPixelOutputs(t *testing.T) {
 	m := NewMacro("t", 0, nil)
-	fp := actions.NewFindPixel("px", actions.SearchArea{}, "ffffff", 0, nil)
+	fp := actions.NewFindPixel("px", "", "ffffff", 0)
 	fp.OutputXVariable = "pxX"
 	fp.OutputYVariable = "pxY"
 	m.Root = actions.NewLoop(1, "root", []actions.ActionInterface{fp})
@@ -50,7 +50,7 @@ func TestCollectDefinedVariableNames_findPixelOutputs(t *testing.T) {
 
 func TestCollectVariableDefs_initialValue(t *testing.T) {
 	m := NewMacro("t", 0, nil)
-	m.SetInitialVariable("seed", "42")
+	m.UpsertVariable(VariableDecl{Name: "seed", InitialValue: "42"})
 	defs := CollectVariableDefs(m)
 	found := false
 	for _, d := range defs {

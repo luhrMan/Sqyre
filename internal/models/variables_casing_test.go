@@ -1,13 +1,12 @@
 package models
 
 import (
-	"os"
 	"strings"
 	"testing"
 
 	"Sqyre/internal/models/actions"
 
-	"github.com/spf13/viper"
+	"gopkg.in/yaml.v3"
 )
 
 func TestVariableStore_SetMergesCaseInsensitiveKeys(t *testing.T) {
@@ -25,30 +24,15 @@ func TestVariableStore_SetMergesCaseInsensitiveKeys(t *testing.T) {
 	}
 }
 
-func TestVariableStore_NormalizeKeys(t *testing.T) {
-	vs := NewVariableStore()
-	vs.Variables["stackmax"] = 1
-	vs.Variables["StackMax"] = 2
-	vs.NormalizeKeys()
-	if len(vs.Variables) != 1 {
-		t.Fatalf("expected 1 key, got %v", vs.Variables)
-	}
-	for k, v := range vs.Variables {
-		if k != "StackMax" || v != 2 {
-			t.Fatalf("got %q=%v", k, v)
-		}
-	}
-}
-
 func TestCollectVariableDefs_noCaseInsensitiveDuplicates(t *testing.T) {
 	m := NewMacro("test", 0, nil)
-	m.Variables.Set("topy", "10")
-	m.Variables.Set("bottomy", "20")
-	m.Variables.Set("stackmax", "1")
+	m.UpsertVariable(VariableDecl{Name: "topY", InitialValue: "10"})
+	m.UpsertVariable(VariableDecl{Name: "bottomY", InitialValue: "20"})
+	// Declared with different casing than the ImageSearch builtin "StackMax".
+	m.UpsertVariable(VariableDecl{Name: "stackmax", InitialValue: "1"})
 	m.Root = actions.NewLoop(1, "root", []actions.ActionInterface{
-		actions.NewImageSearch("search", nil, nil, actions.SearchArea{}, 1, 1, 0.95, 5),
+		actions.NewImageSearch("search", nil, nil, "", 1, 1, 0.95, 5),
 	})
-	m.Variables.Set("StackMax", 15)
 
 	defs := CollectVariableDefs(m)
 	for i, a := range defs {
@@ -60,37 +44,29 @@ func TestCollectVariableDefs_noCaseInsensitiveDuplicates(t *testing.T) {
 	}
 }
 
-func TestVariableStore_viperRoundtripPreservesKeyCasing(t *testing.T) {
+func TestVariableDecls_yamlRoundtripPreservesNameCasing(t *testing.T) {
 	m := NewMacro("test", 0, nil)
-	m.SetInitialVariable("topY", "100")
-	m.SetInitialVariable("StackMax", "5")
-	m.SetInitialVariable("bottomY", "200")
+	m.UpsertVariable(VariableDecl{Name: "topY", InitialValue: "100"})
+	m.UpsertVariable(VariableDecl{Name: "StackMax", Type: VariableTypeNumber, InitialValue: "5"})
+	m.UpsertVariable(VariableDecl{Name: "bottomY", InitialValue: "200"})
 
-	path := t.TempDir() + "/macro.yaml"
-	v := viper.New()
-	v.Set("macro", m)
-	if err := v.WriteConfigAs(path); err != nil {
-		t.Fatal(err)
-	}
-	data, err := os.ReadFile(path)
+	data, err := yaml.Marshal(m)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Logf("YAML:\n%s", data)
 
-	vs := VariableStoreFromYAMLBytes([]byte(`
-variables:
-  variables:
-    StackMax: "5"
-    bottomY: "200"
-    topY: "100"
-`))
-	if vs == nil {
-		t.Fatal("expected variables from yaml bytes")
+	var got Macro
+	if err := yaml.Unmarshal(data, &got); err != nil {
+		t.Fatal(err)
+	}
+	gotNames := map[string]bool{}
+	for _, d := range got.VariableDecls {
+		gotNames[d.Name] = true
 	}
 	for _, want := range []string{"topY", "StackMax", "bottomY"} {
-		if _, ok := vs.Get(want); !ok {
-			t.Errorf("missing key %q; keys=%v", want, vs.GetAll())
+		if !gotNames[want] {
+			t.Errorf("missing decl %q; got=%v", want, got.VariableDecls)
 		}
 	}
 }

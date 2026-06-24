@@ -175,6 +175,177 @@ func parseConditionNumber(s string) (float64, bool) {
 	return f, true
 }
 
+// EntryValidation is the outcome of validating a variable entry value in the UI.
+// Warnings (e.g. undefined ${variable}) are shown but do not block submission.
+// Errors (e.g. malformed expressions) block submission.
+type EntryValidation struct {
+	Warning string
+	Error   string
+}
+
+// BlocksSubmit reports whether the entry should prevent saving.
+func (v EntryValidation) BlocksSubmit() bool {
+	return v.Error != ""
+}
+
+// UnknownVariableWarning returns a warning when text references undefined variables.
+func UnknownVariableWarning(text string, macro *models.Macro) string {
+	if strings.TrimSpace(text) == "" || macro == nil {
+		return ""
+	}
+
+	known := make(map[string]bool)
+	for _, n := range macro.CollectDefinedVariables() {
+		known[strings.ToLower(strings.TrimSpace(n))] = true
+	}
+
+	var unknown []string
+	for _, r := range ParseVariableReference(text) {
+		name := strings.TrimSpace(r)
+		if name == "" {
+			continue
+		}
+		if !known[strings.ToLower(name)] {
+			unknown = append(unknown, name)
+		}
+	}
+	if len(unknown) == 1 {
+		return fmt.Sprintf("unknown variable %q", unknown[0])
+	}
+	if len(unknown) > 1 {
+		return fmt.Sprintf("unknown variables: %s", strings.Join(unknown, ", "))
+	}
+	return ""
+}
+
+// validateExpressionStructure checks that an expression parses and evaluates when
+// every referenced variable is seeded with a numeric placeholder.
+func validateExpressionStructure(expr string, macro *models.Macro) error {
+	if strings.TrimSpace(expr) == "" || macro == nil {
+		return nil
+	}
+
+	macro.InitRuntimeVariables()
+	for _, r := range ParseVariableReference(expr) {
+		name := strings.TrimSpace(r)
+		if name == "" {
+			continue
+		}
+		if _, ok := macro.Variables.Get(name); !ok {
+			macro.Variables.Set(name, 0)
+		}
+	}
+	_, err := EvaluateExpression(expr, macro)
+	return err
+}
+
+// LooksLikeExpression reports whether text will be evaluated as arithmetic at runtime.
+func LooksLikeExpression(text string) bool {
+	t := strings.TrimSpace(text)
+	if t == "" {
+		return false
+	}
+	if strings.ContainsAny(t, "+-*/^()") {
+		return true
+	}
+	lower := strings.ToLower(t)
+	for _, fn := range []string{"sqrt", "abs", "round", "floor", "ceil", "trunc", "sin", "cos", "tan", "ln"} {
+		if strings.Contains(lower, fn+"(") {
+			return true
+		}
+	}
+	return strings.Contains(t, "~pi") || strings.Contains(t, "~e")
+}
+
+// ValidateVariableReferences returns a warning-only validation for ${variable} references.
+func ValidateVariableReferences(text string, macro *models.Macro) EntryValidation {
+	return EntryValidation{Warning: UnknownVariableWarning(text, macro)}
+}
+
+// ValidateNumericExpression checks that text is empty, a literal number, or a valid
+// arithmetic expression. Unknown variables produce a warning but do not block.
+func ValidateNumericExpression(text string, macro *models.Macro) EntryValidation {
+	if strings.TrimSpace(text) == "" {
+		return EntryValidation{}
+	}
+	v := EntryValidation{Warning: UnknownVariableWarning(text, macro)}
+	if err := validateExpressionStructure(text, macro); err != nil {
+		v.Error = err.Error()
+	}
+	return v
+}
+
+// ValidateCalculateExpression checks a Calculate action expression.
+func ValidateCalculateExpression(text string, macro *models.Macro) EntryValidation {
+	if strings.TrimSpace(text) == "" {
+		return EntryValidation{}
+	}
+	v := EntryValidation{Warning: UnknownVariableWarning(text, macro)}
+	if err := validateExpressionStructure(text, macro); err != nil {
+		v.Error = err.Error()
+	}
+	return v
+}
+
+// ValidateSetVariableValue checks set-variable values: plain text is allowed.
+// Unknown variables warn; invalid arithmetic blocks.
+func ValidateSetVariableValue(text string, macro *models.Macro) EntryValidation {
+	if strings.TrimSpace(text) == "" {
+		return EntryValidation{}
+	}
+	v := EntryValidation{Warning: UnknownVariableWarning(text, macro)}
+	if LooksLikeExpression(text) {
+		if err := validateExpressionStructure(text, macro); err != nil {
+			v.Error = err.Error()
+		}
+	}
+	return v
+}
+
+// PreviewCalculate validates and evaluates a Calculate expression for the editor
+// preview. It distinguishes these cases:
+//   - undefined ${variable} references -> preview still runs (warning shown in the entry field)
+//   - all referenced variables are defined and have current values -> "= <result>"
+//   - referenced variables without current values yet -> "valid (result depends on runtime values)"
+//
+// An empty expression returns ("", nil).
+func PreviewCalculate(expr string, macro *models.Macro) (string, error) {
+	if strings.TrimSpace(expr) == "" || macro == nil {
+		return "", nil
+	}
+
+	macro.InitRuntimeVariables()
+
+	refs := ParseVariableReference(expr)
+
+	// Seed every referenced variable with a numeric placeholder so structurally valid
+	// expressions evaluate even when names are not declared yet.
+	runtimeDependent := false
+	for _, r := range refs {
+		name := strings.TrimSpace(r)
+		if name == "" {
+			continue
+		}
+		if _, ok := macro.Variables.Get(name); !ok {
+			macro.Variables.Set(name, 0)
+			runtimeDependent = true
+		}
+	}
+
+	res, err := EvaluateExpression(expr, macro)
+	if err != nil {
+		return "", err
+	}
+
+	if runtimeDependent || UnknownVariableWarning(expr, macro) != "" {
+		return "valid (result depends on runtime values)", nil
+	}
+	if f, ok := res.(float64); ok {
+		return "= " + strconv.FormatFloat(f, 'g', -1, 64), nil
+	}
+	return "= " + fmt.Sprintf("%v", res), nil
+}
+
 // EvaluateExpression evaluates a mathematical expression with variable substitution
 // Supports: +, -, *, /, ^, functions (sqrt, abs, round, floor, ceil, trunc, sin, cos, tan, ln), constants (~pi, ~e)
 func EvaluateExpression(expr string, macro *models.Macro) (any, error) {
