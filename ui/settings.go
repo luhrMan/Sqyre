@@ -31,8 +31,20 @@ func (u *Ui) constructSettings() fyne.CanvasObject {
 	})
 	saveMetaCheck.SetChecked(prefs.BoolWithFallback(config.PrefSaveMetaImages, false))
 
+	highlightEnabled := prefs.BoolWithFallback(config.PrefHighlightActiveAction, false)
+	services.SetHighlightEnabled(highlightEnabled)
+	highlightCheck := widget.NewCheck("Highlight the currently executing action", func(checked bool) {
+		prefs.SetBool(config.PrefHighlightActiveAction, checked)
+		services.SetHighlightEnabled(checked)
+		if !checked {
+			services.ClearHighlights()
+		}
+	})
+	highlightCheck.SetChecked(highlightEnabled)
+
 	u.SettingsUi.GeneralSection = widget.NewCard("General", "Application and behavior options.", container.NewVBox(
 		saveMetaCheck,
+		highlightCheck,
 	))
 
 	sqyrePathLabel := widget.NewLabel(config.GetSqyreDir())
