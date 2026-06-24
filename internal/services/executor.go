@@ -26,7 +26,12 @@ func Execute(a actions.ActionInterface, macro ...*models.Macro) error {
 	if len(macro) > 0 {
 		macroCtx = macro[0]
 	}
-	return executeWithContext(a, macroCtx)
+	err := executeWithContext(a, macroCtx)
+	if actions.IsFlowControl(err) {
+		log.Printf("Flow control %v outside loop (ignored)", err)
+		return nil
+	}
+	return err
 }
 
 // ExecuteMacroWithLogging runs a macro with log capture and shows the log popup.
@@ -36,6 +41,7 @@ func ExecuteMacroWithLogging(m *models.Macro) {
 		return
 	}
 	defer func() {
+		ClearHighlights()
 		fyne.Do(func() {
 			MacroActiveIndicator().Stop()
 			MacroActiveIndicator().Hide()
@@ -63,9 +69,7 @@ func ExecuteMacroWithLogging(m *models.Macro) {
 		})
 	}
 	ClearRuntimeVariables()
-	if m.Variables != nil {
-		m.Variables.NormalizeKeys()
-	}
+	m.InitRuntimeVariables()
 	ApplyMonitorBuiltinVariables(m)
 	SnapshotRuntimeVariables(m)
 	if err := Execute(m.Root, m); err != nil {
@@ -113,6 +117,9 @@ func executeForEachRow(node *actions.ForEachRow, macro *models.Macro) error {
 		return fmt.Errorf("for each row %q: %w", node.Name, err)
 	}
 	for i := 0; i < rowCount; i++ {
+		if macro != nil && rowCount > 0 {
+			highlightFill(macro.Name, node.GetUID(), float64(i)/float64(rowCount))
+		}
 		for j := range node.Sources {
 			col := &node.Sources[j]
 			col.SetLineIndex(i)
@@ -129,35 +136,107 @@ func executeForEachRow(node *actions.ForEachRow, macro *models.Macro) error {
 			setMacroVariable(macro, actions.ForEachRowBuiltinRowCount, rowCount)
 		}
 		log.Printf("For each row: %s row %d/%d", node.Name, i+1, rowCount)
-		for _, action := range node.GetSubActions() {
-			if err := executeWithContext(action, macro); err != nil {
-				return err
-			}
+		brk, cont, err := handleLoopFlow(executeSubActions(node.GetSubActions(), macro))
+		if err != nil {
+			return err
 		}
+		if cont {
+			continue
+		}
+		if brk {
+			break
+		}
+	}
+	if macro != nil {
+		highlightClear(macro.Name, node.GetUID())
 	}
 	return nil
 }
 
+// executeRunMacroTree runs the target macro's top-level actions while driving a
+// progress fill highlight on the calling Run Macro action. The fill advances as
+// each top-level action of the target completes, so the Run Macro node stays
+// highlighted until the designated macro has finished executing.
+func executeRunMacroTree(rm *actions.RunMacro, target *models.Macro, caller *models.Macro) error {
+	root := target.Root
+	resetListSourcesInTree(root)
+	subs := root.GetSubActions()
+	total := len(subs)
+	for i, action := range subs {
+		brk, cont, err := handleLoopFlow(executeWithContext(action, target))
+		if err != nil {
+			return err
+		}
+		if cont {
+			continue
+		}
+		if brk {
+			break
+		}
+		if caller != nil && total > 0 {
+			highlightFill(caller.Name, rm.GetUID(), float64(i+1)/float64(total))
+		}
+	}
+	// Clear the target tree's moving cursor so it doesn't linger after return.
+	highlightCursor(target.Name, "")
+	return nil
+}
+
 func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
+	err := executeAction(a, macro)
+	if err == nil || actions.IsFlowControl(err) {
+		applyGlobalDelay(macro)
+	}
+	return err
+}
+
+func moveOpts(node *actions.Move) MoveOptions {
+	if !node.Smooth {
+		return MoveOptions{Smooth: false}
+	}
+	return MoveOptions{
+		Smooth:  true,
+		Low:     node.EffectiveSmoothLow(),
+		High:    node.EffectiveSmoothHigh(),
+		DelayMs: node.EffectiveSmoothDelayMs(),
+	}
+}
+
+func executeAction(a actions.ActionInterface, macro *models.Macro) error {
+	if macro != nil && a != nil {
+		// Skip the synthetic root loop: it is not a visible tree node.
+		if macro.Root == nil || a.GetUID() != macro.Root.GetUID() {
+			highlightCursor(macro.Name, a.GetUID())
+		}
+	}
 	switch node := a.(type) {
 	case *actions.Wait:
 		log.Println("Wait:", node.String())
-		time := node.Time
+		time, err := ResolveInt(node.Time, macro)
+		if err != nil {
+			return fmt.Errorf("wait time: %w", err)
+		}
 		getAutomationBackend().MilliSleep(time)
 		return nil
 	case *actions.Move:
 		log.Println("Move:", node.String())
-		x, err := ResolveInt(node.Point.X, macro)
+		pt, err := LookupPoint(node.Point, DefaultResolutionKey())
 		if err != nil {
-			log.Printf("Move: failed to resolve X %v: %v, using 0 (ensure variable is set by an earlier action, e.g. Image Search output)", node.Point.X, err)
+			log.Printf("Move: failed to lookup point %q: %v, using (0,0)", node.Point, err)
+			getAutomationBackend().Move(0, 0, moveOpts(node))
+			return nil
+		}
+		x, err := ResolveInt(pt.X, macro)
+		if err != nil {
+			log.Printf("Move: failed to resolve X %v: %v, using 0 (ensure variable is set by an earlier action, e.g. Image Search output)", pt.X, err)
 			x = 0
 		}
-		y, err := ResolveInt(node.Point.Y, macro)
+		y, err := ResolveInt(pt.Y, macro)
 		if err != nil {
-			log.Printf("Move: failed to resolve Y %v: %v, using 0 (ensure variable is set by an earlier action, e.g. Image Search output)", node.Point.Y, err)
+			log.Printf("Move: failed to resolve Y %v: %v, using 0 (ensure variable is set by an earlier action, e.g. Image Search output)", pt.Y, err)
 			y = 0
 		}
-		getAutomationBackend().Move(x, y, node.Smooth)
+		getAutomationBackend().Move(x, y, moveOpts(node))
 		return nil
 	case *actions.Click:
 		log.Println("Click:", node.String())
@@ -221,22 +300,28 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 
 		for i := range count {
 			log.Printf("Loop: %s iteration %d", node.Name, i+1)
-			for _, action := range node.GetSubActions() {
-				if err := executeWithContext(action, macro); err != nil {
+			brk, cont, err := handleLoopFlow(executeSubActions(node.GetSubActions(), macro))
+			if err != nil {
+				if node.Name == "root" {
 					fyne.DoAndWait(func() {
 						MacroActiveIndicator().Stop()
 						MacroActiveIndicator().Hide()
 					})
-					return err
 				}
+				return err
 			}
-			if node.Name == "root" {
-				fyne.Do(func() {
-					MacroActiveIndicator().Stop()
-					MacroActiveIndicator().Hide()
-				})
+			if cont {
+				continue
 			}
-
+			if brk {
+				break
+			}
+		}
+		if node.Name == "root" {
+			fyne.Do(func() {
+				MacroActiveIndicator().Stop()
+				MacroActiveIndicator().Hide()
+			})
 		}
 		return nil
 	case *actions.Conditional:
@@ -251,14 +336,13 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 			return nil
 		}
 		log.Printf("Conditional %q: true, running branch", node.Name)
-		for _, action := range node.GetSubActions() {
-			if err := executeWithContext(action, macro); err != nil {
-				return err
-			}
-		}
-		return nil
+		return executeSubActions(node.GetSubActions(), macro)
 	case *actions.ImageSearch:
 		log.Println("Image Search:", node.String())
+		if macro != nil {
+			highlightFill(macro.Name, node.GetUID(), 0)
+			defer highlightClear(macro.Name, node.GetUID())
+		}
 		results, err := imageSearch(node, macro)
 		if err != nil {
 			log.Printf("Image Search: %v (macro continues)", err)
@@ -283,14 +367,10 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 				}
 			}
 		}
-		searchLeftX, err := ResolveInt(node.SearchArea.LeftX, macro)
+		searchLeftX, searchTopY, _, _, err := ResolveSearchAreaCoordsFromRef(node.SearchArea, macro, DefaultResolutionKey())
 		if err != nil {
-			log.Printf("Image Search: failed to resolve SearchArea.LeftX %v: %v, using 0", node.SearchArea.LeftX, err)
+			log.Printf("Image Search: failed to resolve search area %q: %v, using 0 offset", node.SearchArea, err)
 			searchLeftX = 0
-		}
-		searchTopY, err := ResolveInt(node.SearchArea.TopY, macro)
-		if err != nil {
-			log.Printf("Image Search: failed to resolve SearchArea.TopY %v: %v, using 0", node.SearchArea.TopY, err)
 			searchTopY = 0
 		}
 		sorted := SortListOfPoints(results)
@@ -305,8 +385,12 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 		slices.Sort(foundNames)
 		slices.Sort(notFoundNames)
 		count := 0
+		totalMatches := len(sorted)
 		var firstPoint *robotgo.Point
 		for _, np := range sorted {
+			if macro != nil && totalMatches > 0 {
+				highlightFill(macro.Name, node.GetUID(), float64(count)/float64(totalMatches))
+			}
 			point := np.Point
 			count++
 			point.X += searchLeftX
@@ -353,10 +437,15 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 				}
 			}
 
-			for _, a := range node.SubActions {
-				if err := executeWithContext(a, macro); err != nil {
-					return err
-				}
+			brk, cont, err := handleLoopFlow(executeSubActions(node.SubActions, macro))
+			if err != nil {
+				return err
+			}
+			if cont {
+				continue
+			}
+			if brk {
+				break
 			}
 		}
 		// After the loop, set output variables to the first match so sibling actions (e.g. Move after Image Search) use first match, not last
@@ -403,14 +492,6 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 			}
 			if node.OutputYVariable != "" {
 				setMacroVariable(macro, node.OutputYVariable, centerY)
-			}
-		}
-
-		if strings.Contains(foundText, node.Target) {
-			for _, action := range node.SubActions {
-				if err := executeWithContext(action, macro); err != nil {
-					return err
-				}
 			}
 		}
 		return nil
@@ -479,33 +560,43 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 		if targetMacro.Root == nil {
 			return fmt.Errorf("run macro: macro %q has no root", node.MacroName)
 		}
-		if targetMacro.Variables != nil {
-			targetMacro.Variables.NormalizeKeys()
-		}
+		targetMacro.InitRuntimeVariables()
 		ApplyMonitorBuiltinVariables(targetMacro)
-		return executeWithContext(targetMacro.Root, targetMacro)
+		if macro != nil {
+			highlightFill(macro.Name, node.GetUID(), 0)
+			defer highlightClear(macro.Name, node.GetUID())
+		}
+		return executeRunMacroTree(node, targetMacro, macro)
+	case *actions.Break:
+		log.Println("Break")
+		return actions.ErrBreak
+	case *actions.Continue:
+		log.Println("Continue")
+		return actions.ErrContinue
 	case *actions.FindPixel:
 		log.Println("Find pixel:", node.String())
-		sa := node.SearchArea
-		leftX, topY, rightX, bottomY, err := ResolveSearchAreaCoords(sa.LeftX, sa.TopY, sa.RightX, sa.BottomY, macro)
+		leftX, topY, rightX, bottomY, err := ResolveSearchAreaCoordsFromRef(node.SearchArea, macro, DefaultResolutionKey())
 		if err != nil {
-			log.Printf("FindPixel: failed to resolve search area coords: %v, skipping", err)
+			log.Printf("FindPixel: failed to resolve search area %q: %v, skipping", node.SearchArea, err)
 			return nil
 		}
 
 		var foundX, foundY int
+		matchColor := node.ColorMatcher()
 		scanOnce := func() bool {
 			captureImg, capLeftX, capTopY, _, _, capErr := CaptureSearchArea(leftX, topY, rightX, bottomY)
 			if capErr != nil || captureImg == nil {
 				log.Printf("FindPixel: screen capture failed: %v", capErr)
 				return false
 			}
-			bounds := captureImg.Bounds()
+			// Scan the raw RGBA buffer directly: avoids an interface call,
+			// hex formatting, and hex parsing for every pixel.
+			rgba := captureToRGBA(captureImg)
+			bounds := rgba.Bounds()
 			for py := bounds.Min.Y; py < bounds.Max.Y; py++ {
 				for px := bounds.Min.X; px < bounds.Max.X; px++ {
-					r, g, b, _ := captureImg.At(px, py).RGBA()
-					hex := fmt.Sprintf("%02x%02x%02x", uint8(r>>8), uint8(g>>8), uint8(b>>8))
-					if node.MatchColor(hex) {
+					o := rgba.PixOffset(px, py)
+					if matchColor(rgba.Pix[o], rgba.Pix[o+1], rgba.Pix[o+2]) {
 						foundX = capLeftX + px - bounds.Min.X
 						foundY = capTopY + py - bounds.Min.Y
 						return true
@@ -538,14 +629,10 @@ func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 					setMacroVariable(macro, node.OutputYVariable, foundY)
 				}
 			}
-			for _, sub := range node.GetSubActions() {
-				if err := executeWithContext(sub, macro); err != nil {
-					return err
-				}
-			}
 		} else {
-			log.Println("FindPixel: pixel not found, continuing without children")
+			log.Println("FindPixel: pixel not found")
 		}
+		return nil
 	}
 	return nil
 }

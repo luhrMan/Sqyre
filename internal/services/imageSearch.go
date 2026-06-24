@@ -36,10 +36,9 @@ func imageSearch(a *actions.ImageSearch, macro *models.Macro) (results map[strin
 }
 
 func imageSearchCapture(a *actions.ImageSearch, macro *models.Macro) (map[string][]robotgo.Point, error) {
-	sa := a.SearchArea
-	leftX, topY, rightX, bottomY, err := ResolveSearchAreaCoords(sa.LeftX, sa.TopY, sa.RightX, sa.BottomY, macro)
+	leftX, topY, rightX, bottomY, err := ResolveSearchAreaCoordsFromRef(a.SearchArea, macro, DefaultResolutionKey())
 	if err != nil {
-		log.Printf("Image search: failed to resolve search area coords: %v", err)
+		log.Printf("Image search: failed to resolve search area %q: %v", a.SearchArea, err)
 		return nil, err
 	}
 	captureImg, leftX, topY, rightX, bottomY, err := CaptureSearchArea(leftX, topY, rightX, bottomY)
@@ -93,9 +92,17 @@ func matchParallel(img, imgDraw gocv.Mat, a *actions.ImageSearch, macro *models.
 	Imask := gocv.NewMat()
 	defer Imask.Close()
 
+	// Blur the search image once per capture instead of once per target/variant.
+	// The result is identical to blurring inside each FindTemplateMatches call,
+	// but avoids cloning and blurring the full screen image N times.
+	searchImg := blurForSearch(img, a.Blur)
+	defer searchImg.Close()
+
 	results := make(map[string][]robotgo.Point)
 	var wg sync.WaitGroup
 	resultsMutex := &sync.Mutex{}
+	// drawMutex guards concurrent writes to the shared imgDraw debug overlay.
+	drawMutex := &sync.Mutex{}
 	var matchErr error
 	for _, t := range a.Targets {
 		wg.Add(1)
@@ -155,8 +162,10 @@ func matchParallel(img, imgDraw gocv.Mat, a *actions.ImageSearch, macro *models.
 					defer cmask.Close()
 					SaveMetaImage("cmask-"+i.Name+"-"+v, cmask)
 
-					matches := FindTemplateMatches(img, template, Imask, tmask, cmask, a.Tolerance, a.Blur)
+					matches := FindTemplateMatches(searchImg, template, Imask, tmask, cmask, a.Tolerance, a.Blur)
+					drawMutex.Lock()
 					DrawFoundMatches(matches, template.Cols(), template.Rows(), imgDraw, i.Name)
+					drawMutex.Unlock()
 					halfW := template.Cols() / 2
 					halfH := template.Rows() / 2
 					for j := range matches {
@@ -304,42 +313,53 @@ func validateMatchInputs(img, template, cmask gocv.Mat, blur int) error {
 	return nil
 }
 
-func FindTemplateMatches(img, template, imask, tmask, cmask gocv.Mat, threshold float32, blur int) (matches []robotgo.Point) {
+// searchBlurKernel normalizes a blur amount to a positive odd Gaussian kernel size.
+// GaussianBlur requires an odd, positive kernel; default to 5 when unset.
+func searchBlurKernel(blur int) int {
+	if blur <= 0 {
+		blur = 5
+	}
+	if blur%2 == 0 {
+		blur++
+	}
+	return blur
+}
+
+// blurForSearch returns a blurred clone of the search image using the shared
+// kernel. If the kernel is too large for the image, the unblurred clone is
+// returned (validateMatchInputs will skip the match in that case anyway).
+func blurForSearch(img gocv.Mat, blur int) gocv.Mat {
+	out := img.Clone()
+	k := searchBlurKernel(blur)
+	if k <= img.Rows() && k <= img.Cols() {
+		gocv.GaussianBlur(out, &out, image.Point{X: k, Y: k}, 0, 0, gocv.BorderDefault)
+	}
+	return out
+}
+
+// FindTemplateMatches matches template against searchImg, which must already be
+// blurred via blurForSearch using the same blur amount. Only the template is
+// blurred here so the search image is processed once per capture, not per variant.
+func FindTemplateMatches(searchImg, template, imask, tmask, cmask gocv.Mat, threshold float32, blur int) (matches []robotgo.Point) {
 	defer func() {
 		if r := recover(); r != nil {
 			LogPanicToFile(r, "FindTemplateMatches")
 		}
 	}()
-	if err := validateMatchInputs(img, template, cmask, blur); err != nil {
+	if err := validateMatchInputs(searchImg, template, cmask, blur); err != nil {
 		log.Printf("Image Search: skipping template match: %v", err)
 		return nil
 	}
 	result := gocv.NewMat()
 	defer result.Close()
 
-	i := img.Clone()
 	t := template.Clone()
-	defer i.Close()
 	defer t.Close()
-	if blur <= 0 {
-		blur = 5
-	}
-	kernel := image.Point{X: blur, Y: blur}
-
-	// if Imask.Rows() > 0 && Imask.Cols() > 0 {
-	// 	gocv.Subtract(i, Imask, &i)
-	// 	gocv.IMWrite(config.UpDir+config.UpDir+config.MetaImagesPath+"imageSubtraction.png", i)
-	// }
-	// if Tmask.Rows() > 0 && Tmask.Cols() > 0 {
-	// 	gocv.Subtract(t, Tmask, &t)
-	// 	gocv.IMWrite(config.UpDir+config.UpDir+config.MetaImagesPath+"templateSubtraction.png", t)
-	// }
-
-	gocv.GaussianBlur(i, &i, kernel, 0, 0, gocv.BorderDefault)
+	kernel := image.Point{X: searchBlurKernel(blur), Y: searchBlurKernel(blur)}
 	gocv.GaussianBlur(t, &t, kernel, 0, 0, gocv.BorderDefault)
 
 	//method 5 works best
-	gocv.MatchTemplate(i, t, &result, gocv.TemplateMatchMode(5), cmask)
+	gocv.MatchTemplate(searchImg, t, &result, gocv.TemplateMatchMode(5), cmask)
 	matches = GetMatchesFromTemplateMatchResult(result, threshold, 10)
 	return
 }
@@ -347,25 +367,50 @@ func FindTemplateMatches(img, template, imask, tmask, cmask gocv.Mat, threshold 
 func GetMatchesFromTemplateMatchResult(result gocv.Mat, threshold float32, closeMatchesDistance int) []robotgo.Point {
 	resultRows := result.Rows()
 	resultCols := result.Cols()
+	if resultRows <= 0 || resultCols <= 0 {
+		return nil
+	}
+
+	// Read the result buffer once instead of a CGo GetFloatAt call per cell.
+	data, err := result.DataPtrFloat32()
+	if err != nil || len(data) < resultRows*resultCols {
+		return getMatchesFromTemplateMatchResultSlow(result, threshold, closeMatchesDistance, resultRows, resultCols)
+	}
 
 	var matches []robotgo.Point
 	for y := 0; y < resultRows; y++ {
+		row := y * resultCols
 		for x := 0; x < resultCols; x++ {
-			confidence := result.GetFloatAt(y, x)
-			if math.IsInf(float64(confidence), 0) || math.IsNaN(float64(confidence)) {
+			confidence := data[row+x]
+			if confidence < threshold || math.IsInf(float64(confidence), 0) || math.IsNaN(float64(confidence)) {
 				continue
 			}
-			if confidence >= threshold {
-				log.Printf("Position (%d, %d), Correlation: %.4f",
-					x, y, confidence)
-				newPoint := robotgo.Point{X: x, Y: y}
-				if !isNearExistingPoint(newPoint, matches, closeMatchesDistance) {
-					matches = append(matches, newPoint)
-				}
+			newPoint := robotgo.Point{X: x, Y: y}
+			if !isNearExistingPoint(newPoint, matches, closeMatchesDistance) {
+				matches = append(matches, newPoint)
 			}
 		}
 	}
 
+	return matches
+}
+
+// getMatchesFromTemplateMatchResultSlow is the fallback path used when the
+// result buffer cannot be accessed directly (non-contiguous Mat).
+func getMatchesFromTemplateMatchResultSlow(result gocv.Mat, threshold float32, closeMatchesDistance, resultRows, resultCols int) []robotgo.Point {
+	var matches []robotgo.Point
+	for y := 0; y < resultRows; y++ {
+		for x := 0; x < resultCols; x++ {
+			confidence := result.GetFloatAt(y, x)
+			if confidence < threshold || math.IsInf(float64(confidence), 0) || math.IsNaN(float64(confidence)) {
+				continue
+			}
+			newPoint := robotgo.Point{X: x, Y: y}
+			if !isNearExistingPoint(newPoint, matches, closeMatchesDistance) {
+				matches = append(matches, newPoint)
+			}
+		}
+	}
 	return matches
 }
 

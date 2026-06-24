@@ -9,11 +9,15 @@ import (
 	"fyne.io/fyne/v2/theme"
 )
 
-// FindPixel scans a search area for a pixel matching the target color.
+// FindPixel is a leaf (basic) action: it scans a search area for a pixel
+// matching the target color and writes the match coordinates to variables.
 // When WaitTilFound is true it retries at WaitTilFoundIntervalMs intervals
-// up to WaitTilFoundSeconds; sub-actions run when the pixel is found.
+// up to WaitTilFoundSeconds. It no longer branches on whether the pixel was
+// found — use a Conditional action on the output variable for true/false
+// branching.
 type FindPixel struct {
-	SearchArea             SearchArea `mapstructure:"searcharea"`
+	Name                   string
+	SearchArea             CoordinateRef `mapstructure:"searcharea"`
 	TargetColor            string     `mapstructure:"targetcolor"`
 	ColorTolerance         int        `mapstructure:"colortolerance"`
 	WaitTilFound           bool       `mapstructure:"waittilfound"`
@@ -21,7 +25,7 @@ type FindPixel struct {
 	WaitTilFoundIntervalMs int        `mapstructure:"waittilfoundintervalms"`
 	OutputXVariable        string     `mapstructure:"outputxvariable"`
 	OutputYVariable        string     `mapstructure:"outputyvariable"`
-	*AdvancedAction        `yaml:",inline" mapstructure:",squash"`
+	*BaseAction            `yaml:",inline" mapstructure:",squash"`
 }
 
 // NormalizeHex returns lowercase hex without alpha for comparison (robotgo returns 8-char hex on some platforms).
@@ -54,6 +58,12 @@ func (a *FindPixel) MatchColor(screenHex string) bool {
 	if !tok || !sok {
 		return a.NormalizeHex(screenHex) == a.NormalizeHex(a.TargetColor)
 	}
+	return a.matchRGB(tr, tg, tb, sr, sg, sb)
+}
+
+// matchRGB reports whether screen RGB (sr,sg,sb) matches target RGB (tr,tg,tb)
+// within ColorTolerance (0-100%).
+func (a *FindPixel) matchRGB(tr, tg, tb, sr, sg, sb uint8) bool {
 	if a.ColorTolerance >= 100 {
 		return true
 	}
@@ -61,31 +71,38 @@ func (a *FindPixel) MatchColor(screenHex string) bool {
 		return tr == sr && tg == sg && tb == sb
 	}
 	delta := uint8(255 * a.ColorTolerance / 100)
-	if delta > 255 {
-		delta = 255
-	}
-	dr := uint8(0)
-	if tr > sr {
-		dr = tr - sr
-	} else {
-		dr = sr - tr
-	}
-	dg := uint8(0)
-	if tg > sg {
-		dg = tg - sg
-	} else {
-		dg = sg - tg
-	}
-	db := uint8(0)
-	if tb > sb {
-		db = tb - sb
-	} else {
-		db = sb - tb
-	}
-	return dr <= delta && dg <= delta && db <= delta
+	return absDiffU8(tr, sr) <= delta && absDiffU8(tg, sg) <= delta && absDiffU8(tb, sb) <= delta
 }
 
-func NewFindPixel(name string, searchArea SearchArea, targetColor string, colorTolerance int, subActions []ActionInterface) *FindPixel {
+// ColorMatcher precomputes the target color and tolerance once and returns a
+// closure that matches raw RGB bytes. Use this for hot pixel-scan loops to
+// avoid per-pixel hex formatting and parsing. Returns a never-matching closure
+// when the target color is not a valid hex value.
+func (a *FindPixel) ColorMatcher() func(r, g, b uint8) bool {
+	tr, tg, tb, tok := a.hexToRGB(a.TargetColor)
+	if !tok {
+		return func(_, _, _ uint8) bool { return false }
+	}
+	if a.ColorTolerance >= 100 {
+		return func(_, _, _ uint8) bool { return true }
+	}
+	if a.ColorTolerance <= 0 {
+		return func(r, g, b uint8) bool { return r == tr && g == tg && b == tb }
+	}
+	delta := uint8(255 * a.ColorTolerance / 100)
+	return func(r, g, b uint8) bool {
+		return absDiffU8(r, tr) <= delta && absDiffU8(g, tg) <= delta && absDiffU8(b, tb) <= delta
+	}
+}
+
+func absDiffU8(a, b uint8) uint8 {
+	if a > b {
+		return a - b
+	}
+	return b - a
+}
+
+func NewFindPixel(name string, searchArea CoordinateRef, targetColor string, colorTolerance int) *FindPixel {
 	if colorTolerance < 0 {
 		colorTolerance = 0
 	}
@@ -93,7 +110,8 @@ func NewFindPixel(name string, searchArea SearchArea, targetColor string, colorT
 		colorTolerance = 100
 	}
 	return &FindPixel{
-		AdvancedAction: newAdvancedAction(name, "findpixel", subActions),
+		BaseAction:     newBaseAction("findpixel"),
+		Name:           name,
 		SearchArea:     searchArea,
 		TargetColor:    strings.ToLower(strings.TrimPrefix(targetColor, "#")),
 		ColorTolerance: colorTolerance,
@@ -109,7 +127,6 @@ func (a *FindPixel) Display() fyne.CanvasObject {
 }
 
 func (a *FindPixel) parameters() []actionParam {
-	areaLabel := formatSearchAreaLabel(a.SearchArea)
 	mode := "instant"
 	if a.WaitTilFound {
 		mode = fmt.Sprintf("wait %ds", a.WaitTilFoundSeconds)
@@ -119,7 +136,7 @@ func (a *FindPixel) parameters() []actionParam {
 		newParam("Name", a.Name),
 		newParam("Color", a.TargetColor),
 		newParam("Tolerance", fmt.Sprintf("%d%%", a.ColorTolerance)),
-		newParam("Search Area", areaLabel),
+		newParam("Search Area", a.SearchArea.DisplayLabel()),
 		newParam("Wait", mode),
 	}
 }

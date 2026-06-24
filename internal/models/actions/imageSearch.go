@@ -11,7 +11,7 @@ import (
 
 type ImageSearch struct {
 	Targets                []string   `mapstructure:"targets"`
-	SearchArea             SearchArea `mapstructure:"searcharea"`
+	SearchArea             CoordinateRef `mapstructure:"searcharea"`
 	RowSplit               int        `mapstructure:"rowsplit"`
 	ColSplit               int        `mapstructure:"colsplit"`
 	Tolerance              float32    `mapstructure:"tolerance"`
@@ -24,7 +24,7 @@ type ImageSearch struct {
 	*AdvancedAction        `yaml:",inline" mapstructure:",squash"`
 }
 
-func NewImageSearch(name string, subActions []ActionInterface, targets []string, searchbox SearchArea, rs, cs int, tol float32, blur int) *ImageSearch {
+func NewImageSearch(name string, subActions []ActionInterface, targets []string, searchbox CoordinateRef, rs, cs int, tol float32, blur int) *ImageSearch {
 	slices.Sort(targets)
 	return &ImageSearch{
 		AdvancedAction:  newAdvancedAction(name, "imagesearch", subActions),
@@ -55,7 +55,7 @@ func (a *ImageSearch) parameters() []actionParam {
 		newParam("Type", a.GetType()),
 		newParam("Name", a.Name),
 		newParam("Items", len(a.Targets)),
-		newParam("Search Area", formatSearchAreaLabel(a.SearchArea)),
+		newParam("Search Area", a.SearchArea.DisplayLabel()),
 		newParam("Wait", mode),
 		newParam("Tolerance", a.Tolerance),
 		newParam("Blur", a.Blur),

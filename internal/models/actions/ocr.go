@@ -8,13 +8,18 @@ import (
 	"fyne.io/fyne/v2"
 )
 
+// Ocr is a leaf (basic) action: it captures a region, runs OCR, and writes the
+// recognized text and match coordinates to variables. It no longer branches on
+// whether the target text was found — use a Conditional action (e.g. "contains")
+// on the output variable for true/false branching.
 type Ocr struct {
+	Name            string
 	Target          string
-	SearchArea      SearchArea
+	SearchArea      CoordinateRef `mapstructure:"searcharea"`
 	OutputVariable  string
 	OutputXVariable string `mapstructure:"outputxvariable"` // Variable name to store X coordinate (center of search area when found)
 	OutputYVariable string `mapstructure:"outputyvariable"` // Variable name to store Y coordinate (center of search area when found)
-	// Preprocessing: Blur 0-30 (0=off), MinThreshold 0-255 (0=off unless Otsu), Resize 1.0-10.0, Grayscale
+	// Preprocessing: Blur 1-30 (odd), MinThreshold 0-255 (0=off unless Otsu), Resize 1.0-10.0, Grayscale
 	Blur                   int
 	MinThreshold           int
 	Resize                 float64
@@ -24,18 +29,19 @@ type Ocr struct {
 	WaitTilFound           bool `mapstructure:"waittilfound"`           // If true, retry until target text found or timeout
 	WaitTilFoundSeconds    int  `mapstructure:"waittilfoundseconds"`    // Max seconds to keep trying when WaitTilFound (then continue without match)
 	WaitTilFoundIntervalMs int  `mapstructure:"waittilfoundintervalms"` // Milliseconds between retries when WaitTilFound (0 = default 500ms)
-	*AdvancedAction        `yaml:",inline" mapstructure:",squash"`
+	*BaseAction            `yaml:",inline" mapstructure:",squash"`
 }
 
-func NewOcr(name string, subActions []ActionInterface, target string, searchbox SearchArea) *Ocr {
+func NewOcr(name string, target string, searchbox CoordinateRef) *Ocr {
 	return &Ocr{
-		AdvancedAction:  newAdvancedAction(name, "ocr", subActions),
+		BaseAction:      newBaseAction("ocr"),
+		Name:            name,
 		Target:          target,
 		SearchArea:      searchbox,
 		OutputVariable:  "",
 		OutputXVariable: "foundX",
 		OutputYVariable: "foundY",
-		Blur:            0,
+		Blur:            1,
 		MinThreshold:    0,
 		Resize:          1.0,
 		Grayscale:       true,
@@ -61,7 +67,7 @@ func (a *Ocr) parameters() []actionParam {
 		newParam("Type", a.GetType()),
 		newParam("Name", a.Name),
 		newParam("Target Text", a.Target),
-		newParam("Search Area", formatSearchAreaLabel(a.SearchArea)),
+		newParam("Search Area", a.SearchArea.DisplayLabel()),
 		newParam("Wait", mode),
 	}
 }
