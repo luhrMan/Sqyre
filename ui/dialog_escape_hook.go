@@ -1,3 +1,5 @@
+//go:build !nohook
+
 package ui
 
 import (
