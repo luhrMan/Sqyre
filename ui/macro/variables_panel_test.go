@@ -14,16 +14,19 @@ func TestVariableListRowFrom_findsButtonsAfterHBoxGrew(t *testing.T) {
 	if !ok {
 		t.Fatal("variableListRowFrom returned false")
 	}
+	if got.iconBg == nil || got.iconBtn == nil || got.pillsBox == nil {
+		t.Fatal("expected icon and pills widgets")
+	}
+	if got.detailsBtn == nil {
+		t.Fatal("detailsBtn not found")
+	}
 	if got.editBtn == nil {
 		t.Fatal("editBtn not found")
 	}
 	if got.removeBtn == nil {
 		t.Fatal("removeBtn not found")
 	}
-	if got.nameLbl == nil || got.sourceLbl == nil || got.initialEntry == nil {
-		t.Fatal("expected label and entry widgets")
-	}
-	if row.editBtn != got.editBtn || row.removeBtn != got.removeBtn {
+	if row.detailsBtn != got.detailsBtn || row.editBtn != got.editBtn || row.removeBtn != got.removeBtn {
 		t.Fatal("parsed buttons do not match created row")
 	}
 	if got.removeBtn.Importance != widget.DangerImportance {

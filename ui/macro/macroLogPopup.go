@@ -3,19 +3,12 @@ package macro
 import (
 	"errors"
 
+	"Sqyre/internal/models/repositories"
 	"Sqyre/internal/services"
 
-	"github.com/go-vgo/robotgo"
-
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/layout"
-	"fyne.io/fyne/v2/theme"
-	"fyne.io/fyne/v2/widget"
 )
-
-var macroLogPopup dialog.Dialog
 
 var (
 	macroLogGetWindow            func() fyne.Window
@@ -23,7 +16,7 @@ var (
 	macroLogShowErrorWithEscape  func(err error, parent fyne.Window)
 )
 
-// InitMacroLogPopup registers the macro log popup and panic UI with services.
+// InitMacroLogPopup wires the execution-log view and panic UI with services.
 // Call once from package ui after the main window exists (avoids ui↔macro import cycle).
 func InitMacroLogPopup(
 	getWindow func() fyne.Window,
@@ -34,7 +27,7 @@ func InitMacroLogPopup(
 	macroLogAddDialogEscapeClose = addDialogEscapeClose
 	macroLogShowErrorWithEscape = showErrorWithEscape
 
-	services.SetShowMacroLogPopupFunc(ShowMacroLogPopup)
+	services.SetShowMacroLogPopupFunc(ActivateMacroLog)
 	services.OnPanicNotifyUser = func(message string) {
 		fyne.Do(func() {
 			w := macroLogGetWindow()
@@ -45,120 +38,49 @@ func InitMacroLogPopup(
 	}
 }
 
-// ShowMacroLogPopup displays a popup showing the currently running macro and its log output.
-// It is shown when a macro starts and can be closed by the user.
-func ShowMacroLogPopup(macroName string) {
-	w := macroLogGetWindow()
-	if w == nil {
+// ActivateMacroLog binds the running macro's log capture to its tab's Log view.
+// It selects the macro's tab (so its actions and execution highlight are visible)
+// but leaves the inner tab on Actions so highlighting can be seen. If the macro
+// isn't open in a tab (e.g. hotkey-triggered while closed) it is opened first.
+// Called on the UI thread when a macro starts.
+func ActivateMacroLog(macroName string) {
+	mtabs := activeWire.Mui.MTabs
+	if mtabs == nil {
 		return
 	}
 
-	// Close existing popup if any
-	if macroLogPopup != nil {
-		macroLogPopup.Hide()
-	}
-
-	titleLabel := widget.NewLabel("Macro: " + macroName)
-	titleLabel.TextStyle = fyne.TextStyle{Bold: true}
-
-	logEntry := widget.NewMultiLineEntry()
-	logEntry.Disable()
-	logEntry.Wrapping = fyne.TextWrapOff
-
-	// Initial content from buffer (in case macro already produced logs)
-	logEntry.SetText(services.GetMacroLogBuffer())
-
-	logScroll := container.NewScroll(logEntry)
-
-	varsList, refreshVars := buildRuntimeVariablesView()
-	varsScroll := container.NewScroll(varsList)
-	emptyVarsLabel := widget.NewLabel("No variables set yet.")
-	emptyVarsLabel.Alignment = fyne.TextAlignCenter
-	varsPane := container.NewStack(emptyVarsLabel, varsScroll)
-
-	tabs := container.NewAppTabs(
-		container.NewTabItem("Log", logScroll),
-		container.NewTabItem("Live variables", varsPane),
-	)
-
-	services.SetRuntimeVariablesListener(func() {
-		refreshVars()
-		vals := services.GetRuntimeVariables()
-		if len(vals) == 0 {
-			emptyVarsLabel.Show()
-			varsScroll.Hide()
-		} else {
-			emptyVarsLabel.Hide()
-			varsScroll.Show()
-		}
-	})
-
-	scrollContainer := logScroll
-
-	copyBtn := widget.NewButtonWithIcon("Copy", theme.ContentCopyIcon(), func() {
-		robotgo.WriteAll(logEntry.Text)
-	})
-	copyBtn.Importance = widget.MediumImportance
-
-	closeBtn := widget.NewButtonWithIcon("Close", theme.CancelIcon(), func() {
-		services.SetRuntimeVariablesListener(nil)
-		if macroLogPopup != nil {
-			macroLogPopup.Hide()
-			macroLogPopup = nil
-		}
-	})
-	closeBtn.Importance = widget.HighImportance
-
-	buttonBar := container.NewHBox(layout.NewSpacer(), copyBtn, closeBtn)
-
-	content := container.NewBorder(
-		titleLabel,
-		buttonBar,
-		nil,
-		nil,
-		tabs,
-	)
-
-	popup := dialog.NewCustomWithoutButtons("Macro Log", content, w)
-	canvasSize := w.Canvas().Size()
-	popupSize := fyne.NewSize(canvasSize.Width*0.75, canvasSize.Height*0.75)
-	popup.Resize(popupSize)
-	if macroLogAddDialogEscapeClose != nil {
-		macroLogAddDialogEscapeClose(popup, w)
-	}
-
-	macroLogPopup = popup
-
-	// Register callback to append new log lines in real-time
-	onLine := func(line string) {
-		if macroLogPopup == nil {
+	content := contentForMacro(mtabs, macroName)
+	if content == nil {
+		// Macro isn't open in a tab; open it so the log/live variables and the
+		// action highlight are visible during execution.
+		m, err := repositories.MacroRepo().Get(macroName)
+		if err != nil || m == nil {
 			return
 		}
-		prev := logEntry.Text
-		if prev != "" {
-			prev += "\n"
-		}
-		logEntry.SetText(prev + line)
-		scrollContainer.ScrollToBottom()
-		refreshVars()
-		vals := services.GetRuntimeVariables()
-		if len(vals) == 0 {
-			emptyVarsLabel.Show()
-			varsScroll.Hide()
-		} else {
-			emptyVarsLabel.Hide()
-			varsScroll.Show()
+		// openMacroTabNoHotkey avoids re-registering the hotkey that may have
+		// just triggered this run (AddMacroTab would re-register it).
+		openMacroTabForLog(m)
+		content = contentForMacro(mtabs, macroName)
+		if content == nil {
+			return
 		}
 	}
 
-	services.StartMacroLogCapture(macroName, onLine)
-	popup.Show()
+	for _, item := range mtabs.Items {
+		if item.Text == macroName {
+			mtabs.Select(item)
+			break
+		}
+	}
+	content.BindLog(macroName)
 }
 
-// HideMacroLogPopup closes the macro log popup if it is open.
-func HideMacroLogPopup() {
-	if macroLogPopup != nil {
-		macroLogPopup.Hide()
-		macroLogPopup = nil
+func contentForMacro(mtabs *MacroTabs, macroName string) *MacroTabContent {
+	for _, item := range mtabs.Items {
+		if item.Text != macroName {
+			continue
+		}
+		return ensureMacroTabContent(item.Content)
 	}
+	return nil
 }
