@@ -52,7 +52,7 @@ func copyTabWidgetsToDialog(src, dst map[string]fyne.CanvasObject, keys ...strin
 func wireCreateItemDialog(w map[string]fyne.CanvasObject, programSelector *widget.Select, ctx *createDialogContext) {
 	ctx.draftItem = &models.Item{}
 
-	wireItemTagHandlers(w, ctx.draftItem)
+	wireItemTagHandlers(w, programSelector, ctx.draftItem)
 	wireItemMaskHandlers(w, programSelector, ctx.draftItem)
 
 	if editor, ok := w["iconVariantEditor"].(*custom_widgets.IconVariantEditor); ok {
@@ -71,7 +71,7 @@ func wireCreateItemDialog(w map[string]fyne.CanvasObject, programSelector *widge
 	}
 }
 
-func wireItemTagHandlers(w map[string]fyne.CanvasObject, item *models.Item) {
+func wireItemTagHandlers(w map[string]fyne.CanvasObject, programSelector *widget.Select, item *models.Item) {
 	tagEntry, ok := w["tagEntry"].(*completionentry.CompletionEntry)
 	if !ok {
 		return
@@ -124,17 +124,7 @@ func wireItemTagHandlers(w map[string]fyne.CanvasObject, item *models.Item) {
 			tagEntry.HideCompletion()
 			return
 		}
-		allTags := getAllExistingTags()
-		searchLower := strings.ToLower(text)
-		matching := []string{}
-		for _, tag := range allTags {
-			if strings.Contains(strings.ToLower(tag), searchLower) {
-				matching = append(matching, tag)
-			}
-		}
-		if len(matching) > 10 {
-			matching = matching[:10]
-		}
+		matching := tagCompletionOptions(programSelector.Selected, text, item, 10)
 		if len(matching) == 0 {
 			tagEntry.HideCompletion()
 			return
@@ -144,7 +134,19 @@ func wireItemTagHandlers(w map[string]fyne.CanvasObject, item *models.Item) {
 	}
 	tagEntry.OnSubmitted = func(string) { submitTag() }
 	if tagSubmitButton, ok := w["tagSubmitButton"].(*widget.Button); ok {
-		tagSubmitButton.OnTapped = submitTag
+		tagSubmitButton.OnTapped = func() {
+			if strings.TrimSpace(tagEntry.Text) != "" {
+				submitTag()
+				return
+			}
+			programTags := tagCompletionOptions(programSelector.Selected, "", item, 0)
+			if len(programTags) == 0 {
+				tagEntry.HideCompletion()
+				return
+			}
+			tagEntry.SetOptions(programTags)
+			tagEntry.ShowCompletion()
+		}
 	}
 }
 
