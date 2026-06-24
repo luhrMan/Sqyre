@@ -12,7 +12,7 @@ display_usable() {
 
 run_tests() {
   export SQUIRE_UI_TEST=1
-  export SQYRE_NO_HOOK=1
+  unset SQYRE_NO_HOOK
   go test -v "$@" ./ui/
   go test -v "$@" ./ui/custom_widgets/
   go test -v "$@" ./internal/models/actions/
