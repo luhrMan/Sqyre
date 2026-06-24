@@ -1,3 +1,5 @@
+//go:build !nohook
+
 package recording
 
 import (
@@ -8,7 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"Sqyre/internal/services"
+	"Sqyre/internal/macrohotkey"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -82,14 +84,14 @@ func ShowHotkeyRecordDialog(
 				for !hook.ChordFullyReleased(kk) {
 					time.Sleep(8 * time.Millisecond)
 				}
-				services.ResumeMacroHotkeys()
+				macrohotkey.ResumeMacroHotkeys()
 			}()
 			return
 		}
-		services.ResumeMacroHotkeys()
+		macrohotkey.ResumeMacroHotkeys()
 	})
 
-	services.SuspendMacroHotkeys()
+	macrohotkey.SuspendMacroHotkeys()
 
 	cancelBtn.OnTapped = func() {
 		d.Hide()

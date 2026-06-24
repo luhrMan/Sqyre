@@ -1,13 +1,15 @@
-package services
+//go:build !nohook
+
+package macrohotkey
 
 import (
 	"Sqyre/internal/hotkeytrigger"
 	"Sqyre/internal/models"
 	"Sqyre/internal/models/repositories"
+	"Sqyre/internal/services"
 	"log"
 	"os"
 	"slices"
-	"strings"
 	"sync"
 	"time"
 
@@ -19,7 +21,7 @@ var (
 	macroHotkeySuspendCount int
 )
 
-// Hook lifecycle: StartHook() is started in init() (see cmd/sqyre/sqyre.go). It runs
+// Hook lifecycle: StartHook() is started from cmd/sqyre when SQYRE_NO_HOOK is unset. It runs
 // hook.Start() then blocks on hook.Process(s), so all Register callbacks are dispatched
 // from that goroutine. When unregistering from inside a callback, call hook.Unregister
 // from a new goroutine (e.g. go hook.Unregister(...)) to avoid modifying hook state
@@ -29,7 +31,7 @@ func FailsafeHotkey() {
 	fs := []string{"esc", "ctrl", "shift"}
 	hook.Register(hook.KeyDown, fs, func(e hook.Event) {
 		log.Println("FAILSAFE INITIATED: EXITING PROGRAM...")
-		LogMatProfile()
+		services.LogMatProfile()
 		os.Exit(0)
 	})
 }
@@ -38,30 +40,6 @@ func StartHook() {
 	log.Println("hook started")
 	s := hook.Start()
 	<-hook.Process(s)
-}
-
-func ParseMacroHotkey(hk string) []string {
-	if hk == "" {
-		return []string{}
-	}
-	parts := strings.Split(hk, "+")
-
-	for i, part := range parts {
-		parts[i] = strings.TrimSpace(part)
-	}
-	return parts
-}
-
-func ReverseParseMacroHotkey(hk []string) string {
-	var str string
-	for i, k := range hk {
-		if i == 0 {
-			str = k
-			continue
-		}
-		str = str + " + " + k
-	}
-	return str
 }
 
 // SuspendMacroHotkeys unregisters every macro hotkey. Nested calls count; each Suspend must be
@@ -108,7 +86,6 @@ func RegisterMacroHotkey(m *models.Macro) {
 	case models.HotkeyTriggerRelease:
 		registerReleaseHotkey(m)
 	default:
-		// KeyDown fires repeatedly from OS key-repeat while the chord stays down; latch until release.
 		hook.Register(hook.KeyDown, m.Hotkey, macroHotkeyCallbackPress(m))
 	}
 }
@@ -123,7 +100,7 @@ func UnregisterMacroHotkey(m *models.Macro) {
 	unregisterHotkeyByTrigger(m.Hotkey, t)
 }
 
-// UnregisterHotkeyKeys removes a prior registration for the given key chord and trigger (e.g. before changing hotkey or mode).
+// UnregisterHotkeyKeys removes a prior registration for the given key chord and trigger.
 func UnregisterHotkeyKeys(hk []string, trigger string) {
 	if len(hk) == 0 {
 		return
@@ -134,16 +111,12 @@ func UnregisterHotkeyKeys(hk []string, trigger string) {
 
 func unregisterHotkeyByTrigger(hk []string, t models.HotkeyTrigger) {
 	if t == models.HotkeyTriggerRelease {
-		// Release uses KeyDown only (see registerReleaseHotkey); no per-key KeyUp hooks.
 		hook.Unregister(hook.KeyDown, hk)
 		return
 	}
 	hook.Unregister(hook.KeyDown, hk)
 }
 
-// registerReleaseHotkey runs the macro once after a full chord KeyDown and then a full release
-// of every chord key. We cannot use gohook KeyUp handlers per key: Process clears the global
-// uppressed map when the first KeyUp handler runs, so later keys' KeyUp callbacks often never fire.
 func registerReleaseHotkey(m *models.Macro) {
 	hk := append([]string(nil), m.Hotkey...)
 	var mu sync.Mutex
@@ -170,7 +143,7 @@ func registerReleaseHotkey(m *models.Macro) {
 				8*time.Millisecond,
 				func() {
 					log.Printf("hotkey %v (release), executing %v", hk, m.Name)
-					go ExecuteMacroWithLogging(m)
+					go services.ExecuteMacroWithLogging(m)
 				},
 			)
 		}()
@@ -190,7 +163,7 @@ func macroHotkeyCallbackPress(m *models.Macro) func(e hook.Event) {
 		}
 
 		log.Printf("hotkey %v (press), executing %v", m.Hotkey, m.Name)
-		go ExecuteMacroWithLogging(m)
+		go services.ExecuteMacroWithLogging(m)
 
 		go func() {
 			hotkeytrigger.WaitWhileAllPressed(func() bool { return hook.AllKeysPressed(hk) }, 8*time.Millisecond)
