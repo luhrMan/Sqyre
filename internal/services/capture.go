@@ -4,10 +4,23 @@ import (
 	"Sqyre/internal/screen"
 	"fmt"
 	"image"
+	"image/draw"
 	"log"
 
 	"github.com/go-vgo/robotgo"
 )
+
+// captureToRGBA returns img as an *image.RGBA, reusing it directly when possible
+// so callers can scan the raw pixel buffer instead of using per-pixel At() calls.
+func captureToRGBA(img image.Image) *image.RGBA {
+	if rgba, ok := img.(*image.RGBA); ok {
+		return rgba
+	}
+	b := img.Bounds()
+	out := image.NewRGBA(image.Rect(0, 0, b.Dx(), b.Dy()))
+	draw.Draw(out, out.Bounds(), img, b.Min, draw.Src)
+	return out
+}
 
 // ValidateSearchAreaBounds crops out-of-bounds edges to enabled displays and reports
 // whether the resulting rectangle has positive size.

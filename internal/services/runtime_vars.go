@@ -6,22 +6,12 @@ import (
 	"sync"
 
 	"Sqyre/internal/models"
-
-	"fyne.io/fyne/v2"
 )
 
 var (
-	runtimeVarsMu       sync.RWMutex
-	runtimeVars         map[string]string
-	runtimeVarsListener func()
+	runtimeVarsMu sync.RWMutex
+	runtimeVars   map[string]string
 )
-
-// SetRuntimeVariablesListener is called on the UI thread when the live variable snapshot updates.
-func SetRuntimeVariablesListener(fn func()) {
-	runtimeVarsMu.Lock()
-	defer runtimeVarsMu.Unlock()
-	runtimeVarsListener = fn
-}
 
 // ClearRuntimeVariables resets the live variable snapshot shown during macro execution.
 func ClearRuntimeVariables() {
@@ -51,9 +41,6 @@ func SnapshotRuntimeVariables(m *models.Macro) {
 		}
 	}
 	runtimeVars = out
-	if runtimeVarsListener != nil {
-		fyne.Do(runtimeVarsListener)
-	}
 }
 
 // GetRuntimeVariables returns the latest snapshot (empty map if none).

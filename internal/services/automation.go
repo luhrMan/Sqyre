@@ -8,9 +8,17 @@ import (
 
 // AutomationBackend abstracts mouse, keyboard, timing, and clipboard operations
 // so executor logic can be tested without real hardware input.
+// MoveOptions configures mouse movement; Smooth=false ignores the other fields.
+type MoveOptions struct {
+	Smooth  bool
+	Low     float64
+	High    float64
+	DelayMs int
+}
+
 type AutomationBackend interface {
 	MilliSleep(ms int)
-	Move(x, y int, smooth bool)
+	Move(x, y int, opts MoveOptions)
 	Click(button string, down bool) error
 	KeyDown(key string) error
 	KeyUp(key string) error
@@ -21,7 +29,7 @@ type AutomationBackend interface {
 type robotgoBackend struct{}
 
 func (robotgoBackend) MilliSleep(ms int)              { robotgo.MilliSleep(ms) }
-func (robotgoBackend) Move(x, y int, smooth bool)     { moveMouse(x, y, smooth) }
+func (robotgoBackend) Move(x, y int, opts MoveOptions) { moveMouse(x, y, opts) }
 func (robotgoBackend) Click(button string, down bool) error {
 	if down {
 		return robotgo.Toggle(button)
@@ -33,9 +41,9 @@ func (robotgoBackend) KeyUp(key string) error    { return robotgo.KeyUp(key) }
 func (robotgoBackend) TypeChar(s string)         { robotgo.Type(s) }
 func (robotgoBackend) WriteClipboard(s string) error { return robotgo.WriteAll(s) }
 
-func moveMouse(x, y int, smooth bool) {
-	if smooth {
-		robotgo.MoveSmooth(x, y, 0.5, 1.01)
+func moveMouse(x, y int, opts MoveOptions) {
+	if opts.Smooth {
+		robotgo.MoveSmooth(x, y, opts.Low, opts.High, opts.DelayMs)
 	} else {
 		robotgo.Move(x, y)
 	}
@@ -69,7 +77,10 @@ type RecordedCall struct {
 	Op     string
 	Ms     int
 	X, Y   int
-	Smooth bool
+	Smooth        bool
+	SmoothLow     float64
+	SmoothHigh    float64
+	SmoothDelayMs int
 	Button string
 	Down   bool
 	Key    string
@@ -86,8 +97,16 @@ func (r *RecordingBackend) MilliSleep(ms int) {
 	r.Calls = append(r.Calls, RecordedCall{Op: "sleep", Ms: ms})
 }
 
-func (r *RecordingBackend) Move(x, y int, smooth bool) {
-	r.Calls = append(r.Calls, RecordedCall{Op: "move", X: x, Y: y, Smooth: smooth})
+func (r *RecordingBackend) Move(x, y int, opts MoveOptions) {
+	r.Calls = append(r.Calls, RecordedCall{
+		Op:            "move",
+		X:             x,
+		Y:             y,
+		Smooth:        opts.Smooth,
+		SmoothLow:     opts.Low,
+		SmoothHigh:    opts.High,
+		SmoothDelayMs: opts.DelayMs,
+	})
 }
 
 func (r *RecordingBackend) Click(button string, down bool) error {
