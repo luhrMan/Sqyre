@@ -1,0 +1,47 @@
+---
+description: Do not preserve backwards compatibility; prefer clean breaks
+alwaysApply: true
+---
+
+# No Backwards Compatibility
+
+This project does not maintain backwards compatibility. Prefer clean, breaking changes over compatibility layers.
+
+## Default behavior
+
+- Do not add deprecation shims, aliases, or re-exports to keep old APIs working
+- Do not keep dual code paths for old and new behavior
+- Do not add version checks, feature flags, or fallbacks solely to support prior behavior
+- Remove dead code, legacy fields, and obsolete migrations when you touch related code
+- Rename, move, or delete APIs directly instead of leaving wrappers
+
+## When changing interfaces
+
+- Update all call sites in the same change when practical
+- Delete old types, endpoints, config keys, and CLI flags instead of marking them deprecated
+- Change schemas and migrations directly; do not write multi-step compatibility migrations unless the user explicitly asks
+
+## Exceptions
+
+Only preserve backwards compatibility when the user explicitly requests it in the current task.
+
+## Examples
+
+```typescript
+// ❌ BAD — compatibility shim
+export const getUser = fetchUser;
+export function fetchUserLegacy(id: string) { /* old shape */ }
+
+// ✅ GOOD — one API, breaking change applied everywhere
+export function fetchUser(id: string): User { /* new shape */ }
+```
+
+```python
+# ❌ BAD — dual behavior
+if use_legacy_parser:
+    return parse_v1(data)
+return parse_v2(data)
+
+# ✅ GOOD — remove v1 and migrate callers
+return parse_v2(data)
+```
