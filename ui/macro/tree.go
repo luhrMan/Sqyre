@@ -48,6 +48,9 @@ type MacroTree struct {
 	// execOpenedBranches tracks branches expanded during execution so collapse
 	// can close them without walking the entire tree.
 	execOpenedBranches map[string]struct{}
+	// suppressBranchOpenScroll skips OnBranchOpened auto-scroll during
+	// programmatic expansion (execution highlight, GoToAction, etc.).
+	suppressBranchOpenScroll int
 }
 
 const collapseDebounceMs = 150
@@ -207,6 +210,8 @@ func (mt *MacroTree) openAncestorBranches(uid string) {
 	for p := node.GetParent(); p != nil && p.GetUID() != rootUID; p = p.GetParent() {
 		ancestors = append(ancestors, p.GetUID())
 	}
+	mt.suppressBranchOpenScroll++
+	defer func() { mt.suppressBranchOpenScroll-- }()
 	for i := len(ancestors) - 1; i >= 0; i-- {
 		a := ancestors[i]
 		if !mt.IsBranchOpen(a) {
@@ -214,6 +219,37 @@ func (mt *MacroTree) openAncestorBranches(uid string) {
 			mt.trackExecOpened(a)
 		}
 	}
+}
+
+// OpenAllBranches expands every branch in the macro tree.
+func (mt *MacroTree) OpenAllBranches() {
+	mt.stopCollapseDebounce()
+	mt.execOpenedBranches = nil
+	mt.suppressBranchOpenScroll++
+	defer func() { mt.suppressBranchOpenScroll-- }()
+	mt.Tree.OpenAllBranches()
+}
+
+// CloseAllBranches collapses every branch in the macro tree.
+func (mt *MacroTree) CloseAllBranches() {
+	mt.stopCollapseDebounce()
+	mt.execOpenedBranches = nil
+	mt.Tree.CloseAllBranches()
+	mt.scheduleClampScroll()
+}
+
+// GoToAction selects uid, expands ancestor branches, and scrolls it into view.
+func (mt *MacroTree) GoToAction(uid string) {
+	if uid == "" || mt.Macro == nil || mt.Macro.Root == nil {
+		return
+	}
+	if mt.Macro.Root.GetAction(uid) == nil {
+		return
+	}
+	mt.Select(uid)
+	mt.SelectedNode = uid
+	mt.lastScrollUID = ""
+	mt.revealNode(uid)
 }
 
 // revealNode expands ancestor branches and scrolls so uid is visible.
@@ -361,14 +397,19 @@ func (mt *MacroTree) collapseStaleBranches() {
 		return
 	}
 	keep := mt.branchesToKeepOpen()
+	closed := false
 	for uid := range mt.execOpenedBranches {
 		if keep[uid] {
 			continue
 		}
 		if mt.IsBranchOpen(uid) {
-			mt.CloseBranch(uid)
+			mt.Tree.CloseBranch(uid)
+			closed = true
 		}
 		mt.untrackExecOpenedBranch(uid)
+	}
+	if closed {
+		mt.scheduleClampScroll()
 	}
 }
 
@@ -548,6 +589,22 @@ func (mt *MacroTree) setTree() {
 
 		mt.markNodeBound(obj, uid)
 		mt.applyHighlightOverlay(uid, hlBg)
+	}
+	mt.Tree.OnBranchOpened = func(uid widget.TreeNodeID) {
+		if mt.suppressBranchOpenScroll > 0 {
+			return
+		}
+		target := uid
+		if children := mt.ChildUIDs(uid); len(children) > 0 {
+			target = children[0]
+		}
+		scrollUID := target
+		fyne.Do(func() {
+			mt.ScrollTo(scrollUID)
+		})
+	}
+	mt.Tree.OnBranchClosed = func(widget.TreeNodeID) {
+		mt.scheduleClampScroll()
 	}
 }
 

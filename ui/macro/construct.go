@@ -85,6 +85,20 @@ func ConstructMacroUi(mui *MacroUi, boundLocXLabel, boundLocYLabel *widget.Label
 			log.Printf("failed to save macro after paste: %v", err)
 		}
 	})
+	expandAllBtn := ttwidget.NewButtonWithIcon("", assets.DoubleDownChevronIcon, func() {
+		st := mui.MTabs.SelectedTab()
+		if st == nil {
+			return
+		}
+		st.OpenAllBranches()
+	})
+	collapseAllBtn := ttwidget.NewButtonWithIcon("", assets.DoubleUpChevronIcon, func() {
+		st := mui.MTabs.SelectedTab()
+		if st == nil {
+			return
+		}
+		st.CloseAllBranches()
+	})
 	playMacroButton := ttwidget.NewButtonWithIcon("", theme.MediaPlayIcon(), func() {
 		st := mui.MTabs.SelectedTab()
 		if st == nil {
@@ -113,6 +127,8 @@ func ConstructMacroUi(mui *MacroUi, boundLocXLabel, boundLocYLabel *widget.Label
 	moveUpNodeButton.SetToolTip("move node up")
 	copyNodeButton.SetToolTip("copy node")
 	pasteNodeButton.SetToolTip("paste node below")
+	expandAllBtn.SetToolTip("expand all branches")
+	collapseAllBtn.SetToolTip("collapse all branches")
 	playMacroButton.SetToolTip("start macro execution")
 
 	mui.MacroToolbars.TopToolbar =
@@ -123,6 +139,8 @@ func ConstructMacroUi(mui *MacroUi, boundLocXLabel, boundLocYLabel *widget.Label
 				moveUpNodeButton,
 				copyNodeButton,
 				pasteNodeButton,
+				expandAllBtn,
+				collapseAllBtn,
 				layout.NewSpacer(),
 				layout.NewSpacer(),
 				layout.NewSpacer(),
