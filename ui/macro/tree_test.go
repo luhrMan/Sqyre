@@ -126,10 +126,10 @@ func TestOpenTreeContentHeight_nestedBranches(t *testing.T) {
 	mt.setTree()
 
 	// Only top-level row visible when outer is collapsed.
-	if h := mt.openTreeContentHeight(); h <= 0 {
-		t.Fatalf("collapsed height = %v, want positive", h)
+	collapsed := mt.openTreeContentHeight()
+	if collapsed <= 0 {
+		t.Fatalf("collapsed height = %v, want positive", collapsed)
 	}
-	collapsed := h
 
 	mt.OpenAllBranches()
 	expanded := mt.openTreeContentHeight()
