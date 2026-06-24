@@ -38,6 +38,7 @@ type MainUi struct {
 	Navigation   *container.Navigation
 	Mui          *macro.MacroUi
 	ActionDialog dialog.Dialog
+	overlayKind  overlayKind
 }
 
 func GetUi() *Ui { return ui }
@@ -173,6 +174,7 @@ func (u *Ui) constructUiShell() {
 
 func (u *Ui) constructUiFinish() {
 	u.constructSettings()
+	u.wireNavigation()
 
 	u.Window.SetMainMenu(u.constructMainMenu())
 

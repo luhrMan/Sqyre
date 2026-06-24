@@ -235,10 +235,7 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 
 	editor := fyne.NewMenuItem("Data Editor", func() {
 		EnsureDataEditor()
-		u.MainUi.Navigation.PushWithTitle(
-			u.EditorUi.CanvasObject,
-			"Editor",
-		)
+		u.showOverlay(u.EditorUi.CanvasObject, "Editor", overlayEditor)
 		if mt := GetUi().Mui.MTabs.SelectedTab(); mt != nil {
 			mt.UnselectAll()
 			mt.SelectedNode = ""
@@ -246,10 +243,7 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 	})
 
 	userSettings := fyne.NewMenuItem("User Settings", func() {
-		u.MainUi.Navigation.PushWithTitle(
-			u.SettingsUi.CanvasObject,
-			"User Settings",
-		)
+		u.showOverlay(u.SettingsUi.CanvasObject, "User Settings", overlaySettings)
 	})
 
 	// testMenu := fyne.NewMenu("Test",
