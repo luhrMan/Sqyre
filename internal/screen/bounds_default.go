@@ -5,7 +5,6 @@ package screen
 import (
 	"image"
 
-	"github.com/go-vgo/robotgo"
 	"github.com/vcaesar/screenshot"
 )
 
@@ -18,9 +17,12 @@ func displayBoundsAbsImpl(displayIndex int) image.Rectangle {
 }
 
 func virtualBoundsImpl() image.Rectangle {
+	if r, ok := headlessVirtualBounds(); ok {
+		return r
+	}
 	n := screenshot.NumActiveDisplays()
 	if n <= 0 {
-		w, h := robotgo.GetScreenSize()
+		w, h := robotgoScreenSizeFallback()
 		return image.Rect(0, 0, w, h)
 	}
 	var u image.Rectangle
@@ -28,7 +30,7 @@ func virtualBoundsImpl() image.Rectangle {
 		u = u.Union(DisplayBoundsAbs(i))
 	}
 	if u.Empty() {
-		w, h := robotgo.GetScreenSize()
+		w, h := robotgoScreenSizeFallback()
 		return image.Rect(0, 0, w, h)
 	}
 	return u
