@@ -85,11 +85,16 @@ func TestDecodeMacroFromMap_conditional(t *testing.T) {
 			"count": 1,
 			"subactions": []any{
 				map[string]any{
-					"type":     "conditional",
-					"name":     "if",
-					"operator": "==",
-					"left":     "1",
-					"right":    "1",
+					"type": "conditional",
+					"name": "if",
+					"match": "all",
+					"clauses": []any{
+						map[string]any{
+							"operator": "==",
+							"left":     "1",
+							"right":    "1",
+						},
+					},
 					"subactions": []any{
 						map[string]any{"type": "break"},
 					},

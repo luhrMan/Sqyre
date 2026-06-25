@@ -176,7 +176,9 @@ func TestExecute_LoopContinue(t *testing.T) {
 func TestExecute_LoopBreakViaConditional(t *testing.T) {
 	rec := withRecordingBackend(t)
 	loop := actions.NewLoop(3, "inner", []actions.ActionInterface{
-		actions.NewConditional(1, actions.OpEquals, 1, "c", []actions.ActionInterface{
+		actions.NewConditional([]actions.ConditionClause{
+			{Left: 1, Operator: actions.OpEquals, Right: 1},
+		}, actions.MatchAll, "c", []actions.ActionInterface{
 			actions.NewBreak(),
 		}),
 		actions.NewWait(10),
