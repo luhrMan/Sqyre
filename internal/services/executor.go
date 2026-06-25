@@ -108,6 +108,16 @@ func resetListSourcesInTree(a actions.ActionInterface) {
 	}
 }
 
+// resolveRowBound resolves a For Each Row StartRow/EndRow value (int literal or
+// "${variable}") to a 1-based row number. An unset value (nil or blank string)
+// yields def.
+func resolveRowBound(v any, def int, macro *models.Macro) (int, error) {
+	if !actions.RowBoundIsSet(v) {
+		return def, nil
+	}
+	return ResolveInt(v, macro)
+}
+
 func executeForEachRow(node *actions.ForEachRow, macro *models.Macro) error {
 	if len(node.Sources) == 0 {
 		return fmt.Errorf("for each row %q: at least one source is required", node.Name)
@@ -116,7 +126,21 @@ func executeForEachRow(node *actions.ForEachRow, macro *models.Macro) error {
 	if err != nil {
 		return fmt.Errorf("for each row %q: %w", node.Name, err)
 	}
-	for i := 0; i < rowCount; i++ {
+	start, err := resolveRowBound(node.StartRow, 1, macro)
+	if err != nil {
+		return fmt.Errorf("for each row %q start row: %w", node.Name, err)
+	}
+	end, err := resolveRowBound(node.EndRow, rowCount, macro)
+	if err != nil {
+		return fmt.Errorf("for each row %q end row: %w", node.Name, err)
+	}
+	if start < 1 {
+		start = 1
+	}
+	if end > rowCount {
+		end = rowCount
+	}
+	for i := start - 1; i < end; i++ {
 		if macro != nil && rowCount > 0 {
 			highlightFill(macro.Name, node.GetUID(), float64(i)/float64(rowCount))
 		}

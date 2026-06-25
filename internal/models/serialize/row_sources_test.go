@@ -34,3 +34,153 @@ func TestActionToMap_forEachRow_roundTrip(t *testing.T) {
 		t.Fatalf("subactions = %d", len(fer.GetSubActions()))
 	}
 }
+
+func TestActionToMap_forEachRow_rowRangeRoundTrip(t *testing.T) {
+	orig := actions.NewForEachRow("rows", []actions.ListColumn{
+		{Source: "a\nb", OutputVar: "x"},
+	}, []actions.ActionInterface{actions.NewWait(1)})
+	orig.StartRow = 2
+	orig.EndRow = "${last}"
+
+	m, err := ActionToMap(orig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m["startrow"] != 2 {
+		t.Fatalf("startrow = %v", m["startrow"])
+	}
+	if m["endrow"] != "${last}" {
+		t.Fatalf("endrow = %v", m["endrow"])
+	}
+
+	back, err := ViperSerializer.CreateActionFromMap(m, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fer := back.(*actions.ForEachRow)
+	if fer.StartRow != 2 {
+		t.Fatalf("StartRow = %v, want 2", fer.StartRow)
+	}
+	if fer.EndRow != "${last}" {
+		t.Fatalf("EndRow = %v, want ${last}", fer.EndRow)
+	}
+}
+
+func TestActionToMap_forEachRow_unsetRangeOmitted(t *testing.T) {
+	orig := actions.NewForEachRow("rows", []actions.ListColumn{
+		{Source: "a", OutputVar: "x"},
+	}, nil)
+
+	m, err := ActionToMap(orig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := m["startrow"]; ok {
+		t.Fatalf("startrow should be omitted when unset")
+	}
+	if _, ok := m["endrow"]; ok {
+		t.Fatalf("endrow should be omitted when unset")
+	}
+}
+
+func TestCreateActionFromMap_forEachRow_missingSourcesDefaults(t *testing.T) {
+	back, err := ViperSerializer.CreateActionFromMap(map[string]any{
+		"type": "foreachrow",
+		"name": "rows",
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fer, ok := back.(*actions.ForEachRow)
+	if !ok {
+		t.Fatalf("got %T", back)
+	}
+	if fer.Name != "rows" {
+		t.Fatalf("name = %q", fer.Name)
+	}
+	if len(fer.Sources) != 0 {
+		t.Fatalf("sources = %+v, want empty", fer.Sources)
+	}
+}
+
+func TestCreateActionFromMap_forEachRow_malformedSourcesDefaults(t *testing.T) {
+	back, err := ViperSerializer.CreateActionFromMap(map[string]any{
+		"type":    "foreachrow",
+		"name":    "rows",
+		"sources": "not-a-list",
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fer := back.(*actions.ForEachRow)
+	if len(fer.Sources) != 0 {
+		t.Fatalf("sources = %+v, want empty", fer.Sources)
+	}
+}
+
+func TestCreateActionFromMap_forEachRow_partialSourceEntryUsesDefaults(t *testing.T) {
+	back, err := ViperSerializer.CreateActionFromMap(map[string]any{
+		"type": "foreachrow",
+		"name": "rows",
+		"sources": []any{
+			map[string]any{"source": "a\nb"},
+			"bad-entry",
+		},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fer := back.(*actions.ForEachRow)
+	if len(fer.Sources) != 1 {
+		t.Fatalf("sources = %+v", fer.Sources)
+	}
+	if fer.Sources[0].Source != "a\nb" || fer.Sources[0].OutputVar != "" {
+		t.Fatalf("source column = %+v", fer.Sources[0])
+	}
+}
+
+func TestCreateActionFromMap_dataListLegacyUpgradesToForEachRow(t *testing.T) {
+	back, err := ViperSerializer.CreateActionFromMap(map[string]any{
+		"type":           "datalist",
+		"source":         "items.txt",
+		"outputvar":      "item",
+		"isfile":         true,
+		"skipblanklines": true,
+		"subactions": []any{
+			map[string]any{"type": "wait", "time": 5},
+		},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fer, ok := back.(*actions.ForEachRow)
+	if !ok {
+		t.Fatalf("expected foreachrow upgrade, got %T", back)
+	}
+	if len(fer.Sources) != 1 {
+		t.Fatalf("sources = %+v", fer.Sources)
+	}
+	col := fer.Sources[0]
+	if col.Source != "items.txt" || col.OutputVar != "item" || !col.IsFile || !col.SkipBlankLines {
+		t.Fatalf("source column = %+v", col)
+	}
+	if len(fer.GetSubActions()) != 1 {
+		t.Fatalf("subactions = %d", len(fer.GetSubActions()))
+	}
+}
+
+func TestCreateActionFromMap_forEachRow_legacyFlatFields(t *testing.T) {
+	back, err := ViperSerializer.CreateActionFromMap(map[string]any{
+		"type":      "foreachrow",
+		"name":      "rows",
+		"source":    "a\nb",
+		"outputvar": "letter",
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fer := back.(*actions.ForEachRow)
+	if len(fer.Sources) != 1 || fer.Sources[0].Source != "a\nb" || fer.Sources[0].OutputVar != "letter" {
+		t.Fatalf("sources = %+v", fer.Sources)
+	}
+}
