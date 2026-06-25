@@ -143,6 +143,12 @@ func ActionToMap(action actions.ActionInterface) (map[string]any, error) {
 	case *actions.ForEachRow:
 		m["name"] = a.Name
 		m["sources"] = listColumnsToMaps(a.Sources)
+		if actions.RowBoundIsSet(a.StartRow) {
+			m["startrow"] = a.StartRow
+		}
+		if actions.RowBoundIsSet(a.EndRow) {
+			m["endrow"] = a.EndRow
+		}
 		subs, err := subActionsToMaps(a.GetSubActions())
 		if err != nil {
 			return nil, err
