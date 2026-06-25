@@ -371,7 +371,7 @@ func (s *serializer) CreateActionFromMap(rawMap map[string]any, parent actions.A
 		clauses := clausesFromMap(rawMap)
 		match := stringFromMap(rawMap, "match")
 		action = actions.NewConditional(clauses, match, name, []actions.ActionInterface{})
-	case "datalist", "foreachrow":
+	case "foreachrow":
 		name := stringFromMap(rawMap, "name")
 		sources := forEachRowSourcesFromMap(rawMap)
 		fer := actions.NewForEachRow(name, sources, []actions.ActionInterface{})

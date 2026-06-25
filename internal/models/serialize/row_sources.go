@@ -43,29 +43,14 @@ func sourcesListFromMap(v any) []actions.ListColumn {
 	return out
 }
 
-// forEachRowSourcesFromMap loads For Each Row sources from the current serialized
-// shape (sources array) or legacy flat fields (DataList / early foreachrow).
+// forEachRowSourcesFromMap loads For Each Row sources from the sources array.
 // When nothing usable is present, returns an empty slice.
 func forEachRowSourcesFromMap(rawMap map[string]any) []actions.ListColumn {
-	if cols := sourcesListFromMap(rawMap["sources"]); len(cols) > 0 {
-		return cols
+	cols := sourcesListFromMap(rawMap["sources"])
+	if cols == nil {
+		return []actions.ListColumn{}
 	}
-	if hasLegacyForEachRowFields(rawMap) {
-		return []actions.ListColumn{listColumnFromMap(rawMap)}
-	}
-	return []actions.ListColumn{}
-}
-
-func hasLegacyForEachRowFields(rawMap map[string]any) bool {
-	for _, key := range []string{"source", "outputvar", "isfile", "skipblanklines"} {
-		if v, ok := rawMap[key]; ok && v != nil {
-			if s, ok := v.(string); ok && s == "" {
-				continue
-			}
-			return true
-		}
-	}
-	return false
+	return cols
 }
 
 func listColumnsToMaps(cols []actions.ListColumn) []map[string]any {

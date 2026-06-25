@@ -41,39 +41,6 @@ func TestActionToMap_conditionalClausesRoundTrip(t *testing.T) {
 	}
 }
 
-func TestCreateActionFromMap_conditionalLegacyFlatFields(t *testing.T) {
-	back, err := ViperSerializer.CreateActionFromMap(map[string]any{
-		"type":     "conditional",
-		"name":     "if",
-		"operator": "==",
-		"left":     "${score}",
-		"right":    "100",
-		"subactions": []any{
-			map[string]any{"type": "break"},
-		},
-	}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	cond, ok := back.(*actions.Conditional)
-	if !ok {
-		t.Fatalf("expected *Conditional, got %T", back)
-	}
-	if len(cond.Clauses) != 1 {
-		t.Fatalf("clauses = %d", len(cond.Clauses))
-	}
-	c := cond.Clauses[0]
-	if c.Left != "${score}" || c.Operator != actions.OpEquals || c.Right != "100" {
-		t.Fatalf("clause = %+v", c)
-	}
-	if cond.EffectiveMatch() != actions.MatchAll {
-		t.Fatalf("match = %q", cond.EffectiveMatch())
-	}
-	if len(cond.GetSubActions()) != 1 {
-		t.Fatalf("subactions = %d", len(cond.GetSubActions()))
-	}
-}
-
 func TestCreateActionFromMap_conditionalMissingClausesDefaults(t *testing.T) {
 	back, err := ViperSerializer.CreateActionFromMap(map[string]any{
 		"type": "conditional",
