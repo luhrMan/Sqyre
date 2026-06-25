@@ -34,27 +34,11 @@ func clausesListFromMap(v any) []actions.ConditionClause {
 	return out
 }
 
-func hasLegacyConditionalFields(rawMap map[string]any) bool {
-	for _, key := range []string{"left", "operator", "right"} {
-		if v, ok := rawMap[key]; ok && v != nil {
-			if s, ok := v.(string); ok && s == "" {
-				continue
-			}
-			return true
-		}
-	}
-	return false
-}
-
-// clausesFromMap decodes conditional clauses from the current serialized shape
-// (clauses array) or legacy flat fields (left / operator / right). When nothing
-// usable is present, returns a single empty default clause.
+// clausesFromMap decodes conditional clauses from the clauses array.
+// When nothing usable is present, returns a single empty default clause.
 func clausesFromMap(rawMap map[string]any) []actions.ConditionClause {
 	if cols := clausesListFromMap(rawMap["clauses"]); len(cols) > 0 {
 		return cols
-	}
-	if hasLegacyConditionalFields(rawMap) {
-		return []actions.ConditionClause{clauseFromMap(rawMap)}
 	}
 	return []actions.ConditionClause{{Left: "", Operator: actions.OpEquals, Right: ""}}
 }
