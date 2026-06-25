@@ -40,8 +40,8 @@ func buildActionTemplates() []actionTemplate {
 		{label: "Loop", actionType: "loop", category: "Miscellaneous", icon: actions.NewLoop(1, "", []actions.ActionInterface{}).Icon(), create: func() actions.ActionInterface {
 			return actions.NewLoop(1, "", []actions.ActionInterface{})
 		}},
-		{label: "If", actionType: "conditional", category: "Miscellaneous", icon: actions.NewConditional("", actions.OpEquals, "", "", []actions.ActionInterface{}).Icon(), create: func() actions.ActionInterface {
-			return actions.NewConditional("", actions.OpEquals, "", "", []actions.ActionInterface{})
+		{label: "If", actionType: "conditional", category: "Miscellaneous", icon: actions.NewConditional(nil, actions.MatchAll, "", []actions.ActionInterface{}).Icon(), create: func() actions.ActionInterface {
+			return actions.NewConditional(nil, actions.MatchAll, "", []actions.ActionInterface{})
 		}},
 		{label: "Break", actionType: "break", category: "Miscellaneous", icon: actions.NewBreak().Icon(), create: func() actions.ActionInterface {
 			return actions.NewBreak()
