@@ -5,9 +5,112 @@ import (
 
 	"Sqyre/internal/models"
 	"Sqyre/internal/models/actions"
+	"Sqyre/internal/models/serialize"
 
 	"fyne.io/fyne/v2"
 )
+
+func buildInsertTestTree(t *testing.T) (mt *MacroTree, waitA, waitB, waitC *actions.Wait, loop *actions.Loop) {
+	t.Helper()
+	waitA = actions.NewWait(1)
+	waitB = actions.NewWait(2)
+	waitC = actions.NewWait(3)
+	loop = actions.NewLoop(1, "loop", nil)
+	loop.AddSubAction(waitB)
+	root := actions.NewLoop(1, "root", nil)
+	root.AddSubAction(waitA)
+	root.AddSubAction(loop)
+	root.AddSubAction(waitC)
+	return &MacroTree{Macro: &models.Macro{Root: root}}, waitA, waitB, waitC, loop
+}
+
+func TestInsertActionBelowSelection(t *testing.T) {
+	t.Run("no selection appends to root", func(t *testing.T) {
+		mt, waitA, _, waitC, loop := buildInsertTestTree(t)
+		newWait := actions.NewWait(99)
+		if !mt.InsertActionBelowSelection(newWait) {
+			t.Fatal("InsertActionBelowSelection returned false")
+		}
+		got := childUIDs(mt.Macro.Root)
+		want := []string{waitA.GetUID(), loop.GetUID(), waitC.GetUID(), newWait.GetUID()}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Fatalf("root children = %v, want %v", got, want)
+			}
+		}
+	})
+
+	t.Run("selected leaf inserts below sibling", func(t *testing.T) {
+		mt, waitA, _, waitC, loop := buildInsertTestTree(t)
+		newWait := actions.NewWait(100)
+		mt.SelectedNode = waitA.GetUID()
+		if !mt.InsertActionBelowSelection(newWait) {
+			t.Fatal("InsertActionBelowSelection returned false")
+		}
+		got := childUIDs(mt.Macro.Root)
+		want := []string{waitA.GetUID(), newWait.GetUID(), loop.GetUID(), waitC.GetUID()}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Fatalf("root children = %v, want %v", got, want)
+			}
+		}
+	})
+
+	t.Run("selected branch inserts below not inside", func(t *testing.T) {
+		mt, waitA, waitB, waitC, loop := buildInsertTestTree(t)
+		newWait := actions.NewWait(101)
+		mt.SelectedNode = loop.GetUID()
+		if !mt.InsertActionBelowSelection(newWait) {
+			t.Fatal("InsertActionBelowSelection returned false")
+		}
+		got := childUIDs(mt.Macro.Root)
+		want := []string{waitA.GetUID(), loop.GetUID(), newWait.GetUID(), waitC.GetUID()}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Fatalf("root children = %v, want %v", got, want)
+			}
+		}
+		if len(childUIDs(loop)) != 1 || childUIDs(loop)[0] != waitB.GetUID() {
+			t.Fatalf("loop children changed unexpectedly: %v", childUIDs(loop))
+		}
+	})
+
+	t.Run("selected nested leaf inserts below inside branch", func(t *testing.T) {
+		mt, _, waitB, _, loop := buildInsertTestTree(t)
+		newWait := actions.NewWait(102)
+		mt.SelectedNode = waitB.GetUID()
+		if !mt.InsertActionBelowSelection(newWait) {
+			t.Fatal("InsertActionBelowSelection returned false")
+		}
+		got := childUIDs(loop)
+		want := []string{waitB.GetUID(), newWait.GetUID()}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Fatalf("loop children = %v, want %v", got, want)
+			}
+		}
+	})
+}
+
+func TestPasteNode_insertsBelowSelection(t *testing.T) {
+	mt, waitA, _, _, loop := buildInsertTestTree(t)
+	clipboard, err := serialize.ActionToMap(actions.NewWait(77))
+	if err != nil {
+		t.Fatalf("ActionToMap: %v", err)
+	}
+
+	mt.SelectedNode = waitA.GetUID()
+	if !mt.PasteNode(clipboard) {
+		t.Fatal("PasteNode returned false")
+	}
+	got := childUIDs(mt.Macro.Root)
+	if len(got) != 4 || got[0] != waitA.GetUID() || got[2] != loop.GetUID() {
+		t.Fatalf("root children = %v, want waitA, pasted, loop, waitC", got)
+	}
+	if mt.SelectedNode != got[1] {
+		t.Fatalf("selection = %q, want pasted node %q", mt.SelectedNode, got[1])
+	}
+}
 
 func TestGoToAction_ignoresEmptyUID(t *testing.T) {
 	mt := &MacroTree{}
