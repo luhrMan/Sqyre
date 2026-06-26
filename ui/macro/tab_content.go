@@ -7,6 +7,7 @@ import (
 	"Sqyre/internal/services"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
@@ -78,7 +79,7 @@ func NewMacroTabContent(m *models.Macro) *MacroTabContent {
 	logTab := container.NewTabItem("Log", logPane)
 	content.logTab = logTab
 	content.innerTabs = container.NewAppTabs(
-		container.NewTabItem("Actions", tree),
+		container.NewTabItem("Actions", buildActionsPane(tree)),
 		container.NewTabItem("Variables", variablesPanelChrome(panel, m)),
 		container.NewTabItem("Live variables", varsPane),
 		logTab,
@@ -89,6 +90,18 @@ func NewMacroTabContent(m *models.Macro) *MacroTabContent {
 
 func (c *MacroTabContent) CreateRenderer() fyne.WidgetRenderer {
 	return widget.NewSimpleRenderer(c.innerTabs)
+}
+
+// buildActionsPane stacks the macro tree with a transparent overlay that hosts
+// the drag-and-drop drop indicator (insertion line and reparent box).
+func buildActionsPane(tree *MacroTree) fyne.CanvasObject {
+	dropLine := canvas.NewRectangle(dropLineColor)
+	dropLine.Hide()
+	dropBox := canvas.NewRectangle(dropZoneColor)
+	dropBox.Hide()
+	overlay := container.NewWithoutLayout(dropBox, dropLine)
+	tree.attachDropOverlay(overlay, dropLine, dropBox)
+	return container.NewStack(tree, overlay)
 }
 
 // GoToAction switches to the Actions sub-tab and navigates to the action with uid.

@@ -111,6 +111,9 @@ func ConstructMacroUi(mui *MacroUi, boundLocXLabel, boundLocYLabel *widget.Label
 	highlightPump := newHighlightPump(mui)
 	services.SetHighlightCallback(highlightPump.handle)
 	services.SetMacroRunningCallback(func(running bool) {
+		for _, t := range mui.MTabs.AllTrees() {
+			t.SetExecuting(running)
+		}
 		if running {
 			playMacroButton.Disable()
 			startLogPump()

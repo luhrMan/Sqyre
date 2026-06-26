@@ -159,14 +159,8 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 			if mt == nil {
 				return
 			}
-			selectedNode := mt.Macro.Root.GetAction(mt.SelectedNode)
-			if selectedNode == nil {
-				selectedNode = mt.Macro.Root
-			}
-			if s, ok := selectedNode.(actions.AdvancedActionInterface); ok {
-				s.AddSubAction(a)
-			} else {
-				selectedNode.GetParent().AddSubAction(a)
+			if !mt.InsertActionBelowSelection(a) {
+				return
 			}
 			mt.Refresh()
 			mt.Select(a.GetUID())
