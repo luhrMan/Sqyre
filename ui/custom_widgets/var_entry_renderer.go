@@ -2,6 +2,7 @@ package custom_widgets
 
 import (
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/container"
 )
 
 type varEntryRendererWrap struct {
@@ -81,17 +82,21 @@ func (r *varEntryRendererWrap) Refresh() {
 	r.inner.Refresh()
 	show := r.entry.hideTextForPills
 	r.setTextContentVisible(!show)
-	r.overlay.sync(r.entry.Text, r.entry.MultiLine, r.entry.TextStyle, show)
+	r.overlay.sync(r.entry.Text, r.entry.MultiLine, r.entry.TextStyle, show, r.entry.knownVariables())
 	r.layoutOverlay()
 }
 
-// textContentObject returns the entry scroll or content canvas object (index 2).
 func (r *varEntryRendererWrap) textContentObject() fyne.CanvasObject {
-	objs := r.inner.Objects()
-	if len(objs) < 3 {
-		return nil
+	for _, obj := range r.inner.Objects() {
+		if scroll, ok := obj.(*container.Scroll); ok {
+			return scroll
+		}
 	}
-	return objs[2]
+	objs := r.inner.Objects()
+	if len(objs) >= 3 {
+		return objs[2]
+	}
+	return nil
 }
 
 func (r *varEntryRendererWrap) setTextContentVisible(visible bool) {

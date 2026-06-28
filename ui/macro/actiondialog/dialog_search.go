@@ -242,7 +242,7 @@ func createOcrDialogContent(action *actions.Ocr) (fyne.CanvasObject, func()) {
 	nameEntry := widget.NewEntry()
 	nameEntry.SetPlaceHolder("Display name for this action")
 	nameEntry.SetText(action.Name)
-	targetEntry := newValidatedVarEntry(validateVariableReferences)
+	targetEntry := newReferenceVarEntry()
 	targetEntry.Entry.SetText(action.Target)
 	outputVarEntry := newVarNameEntry()
 	outputVarEntry.SetText(action.OutputVariable)
