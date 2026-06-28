@@ -393,8 +393,10 @@ func FindTemplateMatches(searchImg, template, imask, tmask, cmask gocv.Mat, thre
 	kernel := image.Point{X: searchBlurKernel(blur), Y: searchBlurKernel(blur)}
 	gocv.GaussianBlur(t, &t, kernel, 0, 0, gocv.BorderDefault)
 
-	//method 5 works best
+	// MatchTemplate reads searchImg; parallel workers share one blurred capture Mat.
+	openCVMu.Lock()
 	gocv.MatchTemplate(searchImg, t, &result, gocv.TemplateMatchMode(5), cmask)
+	openCVMu.Unlock()
 	matches = GetMatchesFromTemplateMatchResult(result, threshold, ImageSearchCloseMatchesDistance())
 	return
 }
