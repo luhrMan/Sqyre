@@ -1,6 +1,6 @@
 //go:build linux && cgo
 
-package services
+package vision
 
 /*
 #include <malloc.h>
@@ -31,3 +31,5 @@ func ConfigureNativeAllocator() {
 func trimNativeHeap() {
 	C.malloc_trim(0)
 }
+
+func TrimNativeHeap() { trimNativeHeap() }

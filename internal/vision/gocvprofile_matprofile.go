@@ -1,6 +1,6 @@
 //go:build matprofile
 
-package services
+package vision
 
 import (
 	"bytes"
