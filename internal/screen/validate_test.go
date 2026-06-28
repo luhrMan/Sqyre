@@ -71,6 +71,33 @@ func TestValidateSearchAreaOnDisplaysCropsPastMonitorEdges(t *testing.T) {
 	}
 }
 
+func TestValidateSearchAreaClampedOriginForImageSearchOffset(t *testing.T) {
+	displays := []image.Rectangle{image.Rect(0, 0, 1920, 1080)}
+	requestedLeftX, requestedTopY := -50, -20
+	requestedRightX, requestedBottomY := 100, 100
+
+	lx, ty, _, _, _, _, err := validateSearchAreaOnDisplays(requestedLeftX, requestedTopY, requestedRightX, requestedBottomY, displays)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if lx != 0 || ty != 0 {
+		t.Fatalf("expected clamped origin (0,0), got (%d,%d)", lx, ty)
+	}
+
+	matchInCaptureX, matchInCaptureY := 10, 20
+	screenX := matchInCaptureX + lx
+	screenY := matchInCaptureY + ty
+	if screenX != 10 || screenY != 20 {
+		t.Fatalf("screen coords = (%d,%d)", screenX, screenY)
+	}
+
+	wrongX := matchInCaptureX + requestedLeftX
+	wrongY := matchInCaptureY + requestedTopY
+	if wrongX == screenX || wrongY == screenY {
+		t.Fatalf("unclamped origin (%d,%d) should not match screen coords (%d,%d)", wrongX, wrongY, screenX, screenY)
+	}
+}
+
 func TestValidateSearchAreaOnDisplaysCropsPastSingleMonitorEdge(t *testing.T) {
 	displays := []image.Rectangle{
 		image.Rect(0, 0, 1920, 1080),

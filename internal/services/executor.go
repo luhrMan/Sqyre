@@ -1,16 +1,15 @@
 package services
 
 import (
-	"Sqyre/internal/assets"
 	"Sqyre/internal/config"
 	"Sqyre/internal/models"
 	"Sqyre/internal/models/actions"
 	"Sqyre/internal/models/repositories"
-	"bytes"
 	"fmt"
 	"image"
 	_ "image/png"
 	"log"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -52,6 +51,10 @@ func ExecuteMacroWithLogging(m *models.Macro) {
 		if r := recover(); r != nil {
 			LogPanicToFile(r, fmt.Sprintf("Macro %q", m.Name))
 		}
+		// Reclaim after the queued UI teardown (highlight clear, tree collapse,
+		// log pump stop) has run, so its allocation spike is actually scavenged
+		// instead of left resident until the background scavenger catches up.
+		scheduleMemoryReclaim(m.Name)
 	}()
 	if showMacroLogPopupFunc != nil {
 		fyne.DoAndWait(func() {
@@ -75,6 +78,7 @@ func ExecuteMacroWithLogging(m *models.Macro) {
 	if err := Execute(m.Root, m); err != nil {
 		log.Printf("Macro %q: execution error: %v", m.Name, err)
 	}
+	ReleaseMacroLogCapture()
 }
 
 // showMacroLogPopupFunc is set by ui/macro to avoid import cycle
@@ -367,7 +371,7 @@ func executeAction(a actions.ActionInterface, macro *models.Macro) error {
 			highlightFill(macro.Name, node.GetUID(), 0)
 			defer highlightClear(macro.Name, node.GetUID())
 		}
-		results, err := imageSearch(node, macro)
+		results, searchLeftX, searchTopY, err := imageSearch(node, macro)
 		if err != nil {
 			log.Printf("Image Search: %v (macro continues)", err)
 			if results == nil {
@@ -382,7 +386,7 @@ func executeAction(a actions.ActionInterface, macro *models.Macro) error {
 			}
 			for len(SortListOfPoints(results)) == 0 && time.Now().Before(deadline) {
 				time.Sleep(time.Duration(intervalMs) * time.Millisecond)
-				results, err = imageSearch(node, macro)
+				results, searchLeftX, searchTopY, err = imageSearch(node, macro)
 				if err != nil {
 					log.Printf("Image Search: %v (macro continues)", err)
 					if results == nil {
@@ -390,12 +394,6 @@ func executeAction(a actions.ActionInterface, macro *models.Macro) error {
 					}
 				}
 			}
-		}
-		searchLeftX, searchTopY, _, _, err := ResolveSearchAreaCoordsFromRef(node.SearchArea, macro, DefaultResolutionKey())
-		if err != nil {
-			log.Printf("Image Search: failed to resolve search area %q: %v, using 0 offset", node.SearchArea, err)
-			searchLeftX = 0
-			searchTopY = 0
 		}
 		sorted := SortListOfPoints(results)
 		var foundNames, notFoundNames []string
@@ -447,9 +445,11 @@ func executeAction(a actions.ActionInterface, macro *models.Macro) error {
 								vs := IconVariantServiceInstance()
 								variants, vErr := vs.GetVariants(parts[0], parts[1])
 								if vErr == nil && len(variants) > 0 {
-									ip := parts[0] + config.ProgramDelimiter + parts[1] + config.ProgramDelimiter + variants[0] + config.PNG
-									if res := assets.GetFyneResource(ip); res != nil {
-										if cfg, _, err := image.DecodeConfig(bytes.NewReader(res.Content())); err == nil {
+									iconPath := vs.GetVariantPath(parts[0], parts[1], variants[0])
+									if f, openErr := os.Open(iconPath); openErr == nil {
+										cfg, _, decErr := image.DecodeConfig(f)
+										_ = f.Close()
+										if decErr == nil {
 											setMacroVariable(macro, "ImagePixelWidth", cfg.Width)
 											setMacroVariable(macro, "ImagePixelHeight", cfg.Height)
 										}
@@ -470,6 +470,11 @@ func executeAction(a actions.ActionInterface, macro *models.Macro) error {
 			}
 			if brk {
 				break
+			}
+		}
+		if len(sorted) == 0 && node.RunBranchOnNoFind {
+			if _, _, err := handleLoopFlow(executeSubActions(node.SubActions, macro)); err != nil {
+				return err
 			}
 		}
 		// After the loop, set output variables to the first match so sibling actions (e.g. Move after Image Search) use first match, not last
