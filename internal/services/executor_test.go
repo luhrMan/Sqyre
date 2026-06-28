@@ -209,6 +209,34 @@ func TestExecute_ForEachRowContinue(t *testing.T) {
 	}
 }
 
+func TestExecute_NestedLoopBreak(t *testing.T) {
+	rec := withRecordingBackend(t)
+	outer := actions.NewLoop(3, "outer", []actions.ActionInterface{
+		actions.NewLoop(3, "inner", []actions.ActionInterface{
+			actions.NewWait(10),
+			actions.NewBreak(),
+			actions.NewWait(20),
+		}),
+		actions.NewWait(30),
+	})
+	if err := Execute(outer, nil); err != nil {
+		t.Fatalf("Execute nested loop break: %v", err)
+	}
+	count10, count30 := 0, 0
+	for _, c := range rec.Calls {
+		switch c.Ms {
+		case 10:
+			count10++
+		case 30:
+			count30++
+		}
+	}
+	// Innermost-only break: outer keeps iterating (3x inner wait + 3x outer wait after inner).
+	if count10 != 3 || count30 != 3 {
+		t.Fatalf("expected 3x10ms and 3x30ms (innermost break only), got 10ms=%d 30ms=%d calls=%+v", count10, count30, rec.Calls)
+	}
+}
+
 func TestExecute_BreakOutsideLoopIgnored(t *testing.T) {
 	rec := withRecordingBackend(t)
 	if err := Execute(actions.NewBreak(), nil); err != nil {
