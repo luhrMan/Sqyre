@@ -2,6 +2,7 @@ package services
 
 import (
 	"sync"
+	"time"
 
 	"github.com/go-vgo/robotgo"
 )
@@ -90,11 +91,15 @@ type RecordedCall struct {
 
 // RecordingBackend records automation calls for assertions in tests.
 type RecordingBackend struct {
-	Calls []RecordedCall
+	Calls     []RecordedCall
+	RealSleep bool
 }
 
 func (r *RecordingBackend) MilliSleep(ms int) {
 	r.Calls = append(r.Calls, RecordedCall{Op: "sleep", Ms: ms})
+	if r.RealSleep {
+		time.Sleep(time.Duration(ms) * time.Millisecond)
+	}
 }
 
 func (r *RecordingBackend) Move(x, y int, opts MoveOptions) {
