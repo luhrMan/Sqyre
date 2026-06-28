@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"image/color"
 	"slices"
+	"sort"
 
 	"Sqyre/ui/custom_widgets"
 
@@ -65,6 +66,51 @@ type ItemsAccordionOptions struct {
 
 	// HeaderButton, if non-nil, adds a button at the right end of this accordion item's header area.
 	HeaderButton *HeaderButtonOption
+
+	// itemData is the per-program base-name/tag data, computed once per populate
+	// pass and shared with the visibility check to avoid repeated repo scans.
+	// When nil, CreateProgramAccordionItem computes it on demand.
+	itemData *programItemData
+}
+
+// programItemData holds derived item information for a single program: the unique
+// base item names, the representative full item name for each base name, and the
+// tags of that representative item. It is computed once per program per populate
+// pass and reused by the row-visibility check and the accordion item builder so
+// the items grid no longer rescans the repo (and reads tags) multiple times.
+type programItemData struct {
+	baseNames          []string
+	baseNameToItemName map[string]string
+	tagsByBaseName     map[string][]string
+}
+
+// collectProgramItemData builds programItemData for program with a single pass
+// over its item keys and one repo read per representative item.
+func collectProgramItemData(program *models.Program) *programItemData {
+	iconService := services.IconVariantServiceInstance()
+	keys := program.ItemRepo().GetAllKeys()
+
+	data := &programItemData{
+		baseNameToItemName: make(map[string]string, len(keys)),
+		tagsByBaseName:     make(map[string][]string, len(keys)),
+	}
+	baseNameSet := make(map[string]struct{}, len(keys))
+	for _, itemName := range keys {
+		baseName := iconService.GetBaseItemName(itemName)
+		baseNameSet[baseName] = struct{}{}
+		if _, exists := data.baseNameToItemName[baseName]; !exists {
+			data.baseNameToItemName[baseName] = itemName
+			if item, err := program.ItemRepo().Get(itemName); err == nil {
+				data.tagsByBaseName[baseName] = item.Tags
+			}
+		}
+	}
+	data.baseNames = make([]string, 0, len(baseNameSet))
+	for baseName := range baseNameSet {
+		data.baseNames = append(data.baseNames, baseName)
+	}
+	sort.Strings(data.baseNames)
+	return data
 }
 
 // ProgramRowVisibleInItemsSearch reports whether a program accordion row should appear for filterText
@@ -73,36 +119,25 @@ func ProgramRowVisibleInItemsSearch(program *models.Program, filterText string) 
 	if filterText == "" {
 		return true
 	}
-	if fuzzy.MatchFold(filterText, program.Name) {
-		return true
-	}
-	return programHasItemsOrTagsMatchingSearch(program, filterText)
+	return programRowVisible(program.Name, collectProgramItemData(program), filterText)
 }
 
-func programHasItemsOrTagsMatchingSearch(program *models.Program, filterText string) bool {
-	iconService := services.IconVariantServiceInstance()
-	baseNames := iconService.GroupItemsByBaseName(program.ItemRepo().GetAllKeys())
-	baseNameToItemName := make(map[string]string)
-	for _, itemName := range program.ItemRepo().GetAllKeys() {
-		baseName := iconService.GetBaseItemName(itemName)
-		if _, exists := baseNameToItemName[baseName]; !exists {
-			baseNameToItemName[baseName] = itemName
-		}
+// programRowVisible reports whether a program row matches filterText using
+// precomputed item data, avoiding repeated repo scans.
+func programRowVisible(programName string, data *programItemData, filterText string) bool {
+	if filterText == "" {
+		return true
 	}
-	for _, baseName := range baseNames {
+	if fuzzy.MatchFold(filterText, programName) {
+		return true
+	}
+	for _, baseName := range data.baseNames {
 		if fuzzy.MatchFold(filterText, baseName) {
 			return true
 		}
-		itemName, exists := baseNameToItemName[baseName]
-		if !exists {
-			itemName = baseName
-		}
-		item, err := program.ItemRepo().Get(itemName)
-		if err == nil {
-			for _, tag := range item.Tags {
-				if fuzzy.MatchFold(filterText, tag) {
-					return true
-				}
+		for _, tag := range data.tagsByBaseName[baseName] {
+			if fuzzy.MatchFold(filterText, tag) {
+				return true
 			}
 		}
 	}
@@ -120,11 +155,13 @@ func PopulateItemsSearchAccordion(
 	openState := captureAccordionOpenByProgram(acc.Items)
 	acc.RemoveAll()
 	for _, p := range repositories.ProgramRepo().GetAllSortedByName() {
-		if !ProgramRowVisibleInItemsSearch(p, filterText) {
+		prog := p
+		data := collectProgramItemData(prog)
+		if !programRowVisible(prog.Name, data, filterText) {
 			continue
 		}
-		prog := p
 		opts := buildOpts(prog)
+		opts.itemData = data
 		item, hdr := CreateProgramAccordionItem(opts)
 		acc.AppendWithHeader(item, hdr)
 	}
@@ -166,15 +203,11 @@ func CreateProgramAccordionItem(opts ItemsAccordionOptions) (*widget.AccordionIt
 	}
 	iconCache := make(map[string]itemIconInfo)
 
-	baseNames := iconService.GroupItemsByBaseName(program.ItemRepo().GetAllKeys())
-
-	baseNameToItemName := make(map[string]string)
-	for _, itemName := range program.ItemRepo().GetAllKeys() {
-		baseName := iconService.GetBaseItemName(itemName)
-		if _, exists := baseNameToItemName[baseName]; !exists {
-			baseNameToItemName[baseName] = itemName
-		}
+	data := opts.itemData
+	if data == nil {
+		data = collectProgramItemData(program)
 	}
+	baseNames := data.baseNames
 
 	lookupIcon := func(baseName string) (itemIconInfo, bool) {
 		cacheKey := programName + config.ProgramDelimiter + baseName
@@ -211,17 +244,10 @@ func CreateProgramAccordionItem(opts ItemsAccordionOptions) (*widget.AccordionIt
 				filtered = append(filtered, baseName)
 				continue
 			}
-			itemName, exists := baseNameToItemName[baseName]
-			if !exists {
-				itemName = baseName
-			}
-			item, err := program.ItemRepo().Get(itemName)
-			if err == nil {
-				for _, tag := range item.Tags {
-					if fuzzy.MatchFold(opts.FilterText, tag) {
-						filtered = append(filtered, baseName)
-						break
-					}
+			for _, tag := range data.tagsByBaseName[baseName] {
+				if fuzzy.MatchFold(opts.FilterText, tag) {
+					filtered = append(filtered, baseName)
+					break
 				}
 			}
 		}
@@ -244,7 +270,7 @@ func CreateProgramAccordionItem(opts ItemsAccordionOptions) (*widget.AccordionIt
 			icon := canvas.NewImageFromResource(theme.BrokenImageIcon())
 			icon.SetMinSize(fyne.NewSquareSize(70))
 			icon.FillMode = canvas.ImageFillOriginal
-			return container.NewStack(rect, container.NewPadded(icon), ttwidget.NewLabel(""))
+			return container.NewStack(rect, container.NewPadded(icon), custom_widgets.NewItemTooltipLabel())
 		},
 		func(id widget.GridWrapItemID, o fyne.CanvasObject) {
 			idx := int(id)
@@ -255,8 +281,8 @@ func CreateProgramAccordionItem(opts ItemsAccordionOptions) (*widget.AccordionIt
 			stack := o.(*fyne.Container)
 			rect := stack.Objects[0].(*canvas.Rectangle)
 			icon := stack.Objects[1].(*fyne.Container).Objects[0].(*canvas.Image)
-			tt := stack.Objects[2].(*ttwidget.Label)
-			tt.SetToolTip(baseItemName)
+			tooltip := stack.Objects[2].(*custom_widgets.ItemTooltipLabel)
+			tooltip.SetItem(baseItemName, data.tagsByBaseName[baseItemName])
 
 			var t []string
 			if opts.GetSelectedTargets != nil {
@@ -269,18 +295,20 @@ func CreateProgramAccordionItem(opts ItemsAccordionOptions) (*widget.AccordionIt
 				rect.FillColor = color.RGBA{}
 			}
 
+			// Reuse the existing image widget (swap resource) rather than creating
+			// a fresh canvas.Image on every bind, which defeats cell recycling.
 			if iconInfo, ok := lookupIcon(baseItemName); ok {
 				if resource := assets.GetFyneResource(iconInfo.iconPath); resource != nil {
-					newIcon := canvas.NewImageFromResource(resource)
-					newIcon.SetMinSize(fyne.NewSquareSize(40))
-					newIcon.FillMode = canvas.ImageFillOriginal
-					iconContainer := stack.Objects[1].(*fyne.Container)
-					iconContainer.Objects[0] = newIcon
+					icon.Resource = resource
+					icon.SetMinSize(fyne.NewSquareSize(40))
+					icon.FillMode = canvas.ImageFillOriginal
 				} else {
 					icon.Resource = assets.AppIcon
+					icon.SetMinSize(fyne.NewSquareSize(70))
 				}
 			} else {
 				icon.Resource = assets.AppIcon
+				icon.SetMinSize(fyne.NewSquareSize(70))
 			}
 			o.Refresh()
 		},

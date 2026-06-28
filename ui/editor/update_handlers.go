@@ -103,7 +103,6 @@ func setItemUpdateHandler() {
 				return program.ItemRepo().Set(v.Name, v)
 			},
 			onSuccess: func() {
-				saveProgramAfterMutation(program, p)
 				RefreshItemInGrid(p, oldItemName, v.Name)
 				if editor, ok := w["iconVariantEditor"].(*custom_widgets.IconVariantEditor); ok {
 					iconService := services.IconVariantServiceInstance()
@@ -148,11 +147,8 @@ func setPointUpdateHandler() {
 				return repo.Set(v.Name, v)
 			},
 			onSuccess: func() {
-				saveProgramAfterMutation(program, programName)
 				safeUpdatePointPreview(v)
-				if acc, ok := tab.Widgets["Accordion"].(*widget.Accordion); ok {
-					setAccordionPointsLists(acc)
-				}
+				refreshPointsAccordionForProgram(programName)
 				markPointsClean()
 			},
 		})
@@ -194,11 +190,8 @@ func setSearchAreaUpdateHandler() {
 				return repo.Set(v.Name, v)
 			},
 			onSuccess: func() {
-				saveProgramAfterMutation(program, programName)
 				safeUpdateSearchAreaPreview(v)
-				if acc, ok := tab.Widgets["Accordion"].(*widget.Accordion); ok {
-					setAccordionSearchAreasLists(acc)
-				}
+				refreshSearchAreasAccordionForProgram(programName)
 				markSearchAreasClean()
 			},
 		})
@@ -241,15 +234,12 @@ func setMaskUpdateHandler() {
 				return repo.Set(v.Name, v)
 			},
 			onSuccess: func() {
-				saveProgramAfterMutation(program, programName)
 				hasImage := HasMaskImage(programName, v.Name)
 				shell().SetMaskImageMode(hasImage)
 				if hasImage {
 					shell().UpdateMaskPreview(programName, v.Name)
 				}
-				if acc, ok := tab.Widgets["Accordion"].(*widget.Accordion); ok {
-					setAccordionMasksLists(acc)
-				}
+				refreshMasksAccordionForProgram(programName)
 				markMasksClean()
 			},
 		})
@@ -286,10 +276,7 @@ func setItemTagHandlers(tab *EditorTab) {
 			editorRepoErr("save", "item", v.Name, err)
 			return
 		}
-		if !saveProgramAfterMutation(program, p) {
-			return
-		}
-		updateTagsDisplay(v)
+		appendTagChip(v, tagText)
 		tagEntry.SetText("")
 	}
 	tagEntry.OnChanged = func(text string) {

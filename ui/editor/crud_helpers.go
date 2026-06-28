@@ -16,16 +16,24 @@ type renamableSaveConfig struct {
 }
 
 // saveRenamableEntity handles overwrite confirmation and delete-then-save rename ordering.
+// The delete and save are coalesced into a single disk write via BatchSave so a
+// rename persists the (whole) parent aggregate once instead of twice.
 func saveRenamableEntity(cfg renamableSaveConfig) {
 	apply := func() {
-		if cfg.oldName != cfg.newName && cfg.deleteOld != nil {
-			if err := cfg.deleteOld(cfg.oldName); err != nil {
-				editorRepoErr("delete", cfg.entityType, cfg.oldName, err)
-				return
+		err := repositories.BatchSave(func() error {
+			if cfg.oldName != cfg.newName && cfg.deleteOld != nil {
+				if derr := cfg.deleteOld(cfg.oldName); derr != nil {
+					editorRepoErr("delete", cfg.entityType, cfg.oldName, derr)
+					return derr
+				}
 			}
-		}
-		if err := cfg.save(); err != nil {
-			editorRepoErr("save", cfg.entityType, cfg.newName, err)
+			if serr := cfg.save(); serr != nil {
+				editorRepoErr("save", cfg.entityType, cfg.newName, serr)
+				return serr
+			}
+			return nil
+		})
+		if err != nil {
 			return
 		}
 		if cfg.onSuccess != nil {
@@ -39,14 +47,6 @@ func saveRenamableEntity(cfg renamableSaveConfig) {
 		}
 	}
 	apply()
-}
-
-func saveProgramAfterMutation(program *models.Program, programName string) bool {
-	if err := repositories.ProgramRepo().Set(program.Name, program); err != nil {
-		editorRepoErr("save", "program", programName, err)
-		return false
-	}
-	return true
 }
 
 func getProgramForEditor(programName string) (*models.Program, bool) {

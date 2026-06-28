@@ -66,17 +66,31 @@ func updateTagsDisplay(item *models.Item) {
 
 	// Add each tag as a label with a remove button
 	for _, tag := range item.Tags {
-		tagLabel := widget.NewLabel(tag)
-		removeButton := widget.NewButtonWithIcon("", theme.DeleteIcon(), func() {
-			removeTag(item, tag)
-		})
-		removeButton.Importance = widget.LowImportance
-
-		// Create horizontal container for tag label and remove button
-		tagContainer := container.NewHBox(tagLabel, removeButton)
-		tagsContainer.Add(wrapTagChip(tagContainer))
+		tagsContainer.Add(newTagChip(item, tag))
 	}
 
+	tagsContainer.Refresh()
+}
+
+// newTagChip builds a single tag chip (label + remove button) for item.
+func newTagChip(item *models.Item, tag string) fyne.CanvasObject {
+	tagLabel := widget.NewLabel(tag)
+	removeButton := widget.NewButtonWithIcon("", theme.DeleteIcon(), func() {
+		removeTag(item, tag)
+	})
+	removeButton.Importance = widget.LowImportance
+	return wrapTagChip(container.NewHBox(tagLabel, removeButton))
+}
+
+// appendTagChip adds a single chip for tag to the Items tab tags container without
+// rebuilding the existing chips (used on the hot "add tag" path).
+func appendTagChip(item *models.Item, tag string) {
+	it := shell().EditorTabs.ItemsTab.Widgets
+	tagsContainer, ok := it["Tags"].(*fyne.Container)
+	if !ok {
+		return
+	}
+	tagsContainer.Add(newTagChip(item, tag))
 	tagsContainer.Refresh()
 }
 
@@ -101,11 +115,6 @@ func removeTag(item *models.Item, tagToRemove string) {
 
 	if err := program.ItemRepo().Set(item.Name, item); err != nil {
 		log.Printf("Error saving item %s: %v", item.Name, err)
-		return
-	}
-
-	if err := repositories.ProgramRepo().Set(program.Name, program); err != nil {
-		log.Printf("Error saving program %s: %v", p, err)
 		return
 	}
 
@@ -265,7 +274,9 @@ func setAccordionItemsLists(acc *custom_widgets.AccordionWithHeaderWidgets) {
 	filterText := ""
 	if sb, ok := et.Widgets["searchbar"].(*widget.Entry); ok {
 		filterText = sb.Text
-		sb.OnChanged = func(string) { setAccordionItemsLists(acc) }
+		sb.OnChanged = func(string) {
+			et.SearchDebouncer().Call(func() { setAccordionItemsLists(acc) })
+		}
 	}
 	PopulateItemsSearchAccordion(acc, filterText, func(p *models.Program) ItemsAccordionOptions {
 		return editorItemsAccordionOptions(p, filterText)
@@ -407,6 +418,7 @@ func showMaskSelectionPopup() {
 		copy(filtered, allKeys)
 		sortMaskKeysByDisplayName(p, filtered)
 
+		searchDebounce := custom_widgets.NewDebouncer(custom_widgets.DefaultSearchDebounce)
 		searchbar := widget.NewEntry()
 		searchbar.PlaceHolder = "Search masks"
 
@@ -439,10 +451,6 @@ func showMaskSelectionPopup() {
 					log.Printf("Error saving item %s: %v", v.Name, err)
 					return
 				}
-				if err := repositories.ProgramRepo().Set(program.Name, program); err != nil {
-					log.Printf("Error saving program %s: %v", prog, err)
-					return
-				}
 
 				updateMaskDisplay(maskName)
 			}
@@ -450,21 +458,24 @@ func showMaskSelectionPopup() {
 		}
 
 		searchbar.OnChanged = func(s string) {
-			defaultList := p.MaskRepo().GetAllKeys()
-			if s == "" {
-				filtered = defaultList
-			} else {
-				filtered = filtered[:0]
-				sLower := strings.ToLower(s)
-				for _, k := range defaultList {
-					if strings.Contains(strings.ToLower(k), sLower) {
-						filtered = append(filtered, k)
+			searchDebounce.Call(func() {
+				defaultList := p.MaskRepo().GetAllKeys()
+				if s == "" {
+					filtered = defaultList
+				} else {
+					next := make([]string, 0, len(defaultList))
+					sLower := strings.ToLower(s)
+					for _, k := range defaultList {
+						if strings.Contains(strings.ToLower(k), sLower) {
+							next = append(next, k)
+						}
 					}
+					filtered = next
 				}
-			}
-			sortMaskKeysByDisplayName(p, filtered)
-			maskList.Refresh()
-			maskList.ScrollToTop()
+				sortMaskKeysByDisplayName(p, filtered)
+				maskList.Refresh()
+				maskList.ScrollToTop()
+			})
 		}
 
 		acc.Append(widget.NewAccordionItem(
@@ -512,10 +523,6 @@ func setMaskSelectionButtons() {
 				}
 				if err := program.ItemRepo().Set(v.Name, v); err != nil {
 					log.Printf("Error saving item %s: %v", v.Name, err)
-					return
-				}
-				if err := repositories.ProgramRepo().Set(program.Name, program); err != nil {
-					log.Printf("Error saving program %s: %v", prog, err)
 					return
 				}
 
