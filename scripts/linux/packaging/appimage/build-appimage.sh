@@ -17,7 +17,18 @@ fi
 RECIPE_TMP="$(mktemp -p "$SCRIPT_DIR" .AppImageBuilder.XXXXXX.yml)"
 TOOLS_DIR="$(mktemp -d)"
 trap 'rm -f "$RECIPE_TMP"; rm -rf "$TOOLS_DIR"' EXIT
-sed "s#__APP_VERSION__#$APP_VERSION#g" "$SCRIPT_DIR/AppImageBuilder.yml" > "$RECIPE_TMP"
+BUILD_TAGS="${BUILD_TAGS:-gocv_specific_modules}"
+if [ -n "${EXTRA_GO_TAGS:-}" ]; then
+  BUILD_TAGS="$BUILD_TAGS,$EXTRA_GO_TAGS"
+fi
+APP_SUFFIX=""
+if [[ ",$BUILD_TAGS," == *",matprofile,"* ]]; then
+  APP_SUFFIX="-matprofile"
+fi
+sed -e "s#__APP_VERSION__#$APP_VERSION#g" \
+    -e "s#__BUILD_TAGS__#$BUILD_TAGS#g" \
+    -e "s#__APP_SUFFIX__#$APP_SUFFIX#g" \
+    "$SCRIPT_DIR/AppImageBuilder.yml" > "$RECIPE_TMP"
 
 # appimage-builder calls mksquashfs with xattrs enabled; POSIX ACLs on the AppDir
 # (common on bind-mounted repos with default ACLs) become system.posix_acl_* xattrs
@@ -37,7 +48,7 @@ appimage-builder \
 
 OUT_DIR="$REPO_ROOT/bin"
 mkdir -p "$OUT_DIR"
-APP_IMAGE_NAME="Sqyre-${APP_VERSION}-x86_64.AppImage"
+APP_IMAGE_NAME="Sqyre-${APP_VERSION}${APP_SUFFIX}-x86_64.AppImage"
 mv -f "$SCRIPT_DIR/$APP_IMAGE_NAME" "$OUT_DIR/$APP_IMAGE_NAME"
 
 echo "AppDir: $SCRIPT_DIR/sqyre.AppDir"
