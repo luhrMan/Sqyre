@@ -135,6 +135,16 @@ func (s *serializer) CreateActionFromMap(rawMap map[string]any, parent actions.A
 			timeVal = 0
 		}
 		action = actions.NewWait(timeVal)
+	case "pause":
+		passThrough := false
+		if v, ok := rawMap["passthrough"].(bool); ok {
+			passThrough = v
+		}
+		action = actions.NewPause(
+			stringFromMap(rawMap, "message"),
+			stringSliceFromAny(rawMap["continuekey"]),
+			passThrough,
+		)
 	case "findpixel":
 		name := stringFromMap(rawMap, "name")
 		searchArea := parseCoordinateRef(rawMap["searcharea"])
@@ -452,6 +462,9 @@ func (s *serializer) CreateActionFromMap(rawMap map[string]any, parent actions.A
 		action = actions.NewContinue()
 	default:
 		return nil, fmt.Errorf("unknown action type %v", rawMap["type"])
+	}
+	if uid := stringFromMap(rawMap, "uid"); uid != "" {
+		actions.RestoreUID(action, uid)
 	}
 	action.SetParent(parent)
 	if advAction, ok := action.(actions.AdvancedActionInterface); ok {

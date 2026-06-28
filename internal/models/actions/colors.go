@@ -47,7 +47,7 @@ func ActionCategoryForType(actionType string) string {
 		return "Detection"
 	case "setvariable", "calculate", "foreachrow", "savevariable":
 		return "Variables"
-	case "wait", "focuswindow", "runmacro", "loop", "conditional", "break", "continue":
+	case "wait", "pause", "focuswindow", "runmacro", "loop", "conditional", "break", "continue":
 		return "Miscellaneous"
 	default:
 		return ""
@@ -56,7 +56,7 @@ func ActionCategoryForType(actionType string) string {
 
 func actionColorKey(actionType string) string {
 	t := strings.ToLower(strings.TrimSpace(actionType))
-	if t == "wait" {
+	if t == "wait" || t == "pause" {
 		return ActionColorKeyWait
 	}
 	switch ActionCategoryForType(t) {
@@ -76,8 +76,18 @@ func actionColorKey(actionType string) string {
 // DefaultActionPastelColor returns the built-in pastel color for an action type.
 func DefaultActionPastelColor(actionType string) color.NRGBA {
 	t := strings.ToLower(strings.TrimSpace(actionType))
+	if t == "warning" {
+		isDark := false
+		if app := fyne.CurrentApp(); app != nil {
+			isDark = app.Settings().ThemeVariant() == theme.VariantDark
+		}
+		if isDark {
+			return color.NRGBA{R: 0x8A, G: 0x5A, B: 0x2A, A: 0xFF}
+		}
+		return color.NRGBA{R: 0xF0, G: 0xC0, B: 0x6A, A: 0xFF}
+	}
 	category := ActionCategoryForType(t)
-	isWait := t == "wait"
+	isWait := t == "wait" || t == "pause"
 
 	isDark := false
 	if app := fyne.CurrentApp(); app != nil {
