@@ -337,17 +337,17 @@ func TestCalculate_String(t *testing.T) {
 // --- FocusWindow ---
 
 func TestNewFocusWindow(t *testing.T) {
-	f := NewFocusWindow("chrome")
-	if f.GetType() != "focuswindow" || f.WindowTarget != "chrome" {
+	f := NewFocusWindow("/usr/bin/chrome", "New Tab - Chrome")
+	if f.GetType() != "focuswindow" || f.ProcessPath != "/usr/bin/chrome" || f.WindowTitle != "New Tab - Chrome" {
 		t.Errorf("FocusWindow: %+v", f)
 	}
 }
 
 func TestFocusWindow_String(t *testing.T) {
-	if got := NewFocusWindow("code").String(); got != "Type: focuswindow  /  Window: code" {
+	if got := NewFocusWindow("/usr/bin/code", "main.go - Code").String(); got != "Type: focuswindow  /  Title: main.go - Code  /  App: /usr/bin/code" {
 		t.Errorf("String() = %q", got)
 	}
-	if got := NewFocusWindow("").String(); got != "Type: focuswindow  /  Window: not set" {
+	if got := NewFocusWindow("", "").String(); got != "Type: focuswindow  /  Title: not set  /  App: not set" {
 		t.Errorf("String() = %q", got)
 	}
 }
@@ -549,7 +549,7 @@ func TestActionTypes_Icon(t *testing.T) {
 	}{
 		{"Calculate", NewCalculate("1", "x")},
 		{"ForEachRow", NewForEachRow("r", nil, nil)},
-		{"FocusWindow", NewFocusWindow("w")},
+		{"FocusWindow", NewFocusWindow("/app", "Window")},
 		{"ImageSearch", NewImageSearch("s", nil, nil, "", 0, 0, 0, 0)},
 		{"Key", NewKey("k", false)},
 		{"KeyDown", NewKey("k", true)},
