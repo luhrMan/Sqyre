@@ -209,3 +209,41 @@ func TestEvaluateCondition_emptyClauses(t *testing.T) {
 		t.Fatal("empty clauses should be false")
 	}
 }
+
+func TestEvaluateExpression_negativeVariableSubtraction(t *testing.T) {
+	m := models.NewMacro("t", 0, nil)
+	m.Variables.Set("topExpander", -30)
+
+	result, err := EvaluateExpression("${topExpander}-250", m)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if f, ok := result.(float64); !ok || f != -280 {
+		t.Fatalf("got %v (%T) want -280", result, result)
+	}
+}
+
+func TestEvaluateExpression_negativeLiteral(t *testing.T) {
+	m := models.NewMacro("t", 0, nil)
+
+	result, err := EvaluateExpression("-30", m)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if f, ok := result.(float64); !ok || f != -30 {
+		t.Fatalf("got %v (%T) want -30", result, result)
+	}
+}
+
+func TestEvaluateExpression_negativeVariableAddition(t *testing.T) {
+	m := models.NewMacro("t", 0, nil)
+	m.Variables.Set("x", -5)
+
+	result, err := EvaluateExpression("${x}+3", m)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if f, ok := result.(float64); !ok || f != -2 {
+		t.Fatalf("got %v (%T) want -2", result, result)
+	}
+}
