@@ -110,7 +110,7 @@ func docActionScreenshots() []docScreenshot {
 		{"action-dialog-key.png", actions.NewKey("ctrl", true), 5000},
 		{"action-dialog-type.png", actions.NewType("hello", 50), 5000},
 		{"action-dialog-wait.png", actions.NewWait(500), 5000},
-		{"action-dialog-focuswindow.png", actions.NewFocusWindow("Notepad"), 5000},
+		{"action-dialog-focuswindow.png", actions.NewFocusWindow("/usr/bin/notepad", "Untitled - Notepad"), 5000},
 		{"action-dialog-runmacro.png", actions.NewRunMacro("Demo Macro"), 5000},
 		{"action-dialog-loop.png", actions.NewLoop(5, "repeat", []actions.ActionInterface{}), 5000},
 		{"action-dialog-imagesearch.png", actions.NewImageSearch("find item", []actions.ActionInterface{}, []string{}, actions.NewCoordinateRef("Demo Program", "Main area"), 1, 1, 0.95, 5), 5000},
@@ -151,7 +151,7 @@ func TestDocsScreenshots(t *testing.T) {
 		})
 	}
 
-	pickerPNG, err := ui.RenderObjectPNG(ui.AddActionPickerForScreenshot(), fyne.NewSize(980, 460))
+	pickerPNG, err := ui.RenderObjectPNG(ui.AddActionPickerForScreenshot(), ui.AddActionPickerSize)
 	if err != nil {
 		t.Fatalf("render add action picker: %v", err)
 	}
