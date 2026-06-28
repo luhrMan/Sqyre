@@ -28,6 +28,48 @@ func (mt *MacroTree) scheduleClampScroll() {
 	})
 }
 
+// scrollToIfNeeded scrolls when uid is not already in the tree viewport.
+// ScrollTo relayouts the entire tree, so we skip it when the row is on screen.
+func (mt *MacroTree) scrollToIfNeeded(uid string) {
+	if uid == "" {
+		return
+	}
+	if mt.lastScrollUID == uid {
+		return
+	}
+	if mt.isRowInViewport(uid) {
+		mt.lastScrollUID = uid
+		return
+	}
+	mt.ScrollTo(uid)
+	mt.lastScrollUID = uid
+}
+
+// isRowInViewport reports whether uid's row intersects the tree's visible area.
+func (mt *MacroTree) isRowInViewport(uid string) bool {
+	idx := indexOfString(mt.visibleRowUIDs(), uid)
+	if idx < 0 {
+		return false
+	}
+	rowH, pitch := mt.dragMetrics()
+	scroll, ok := treeScrollOffsetY(&mt.Tree)
+	if !ok {
+		return false
+	}
+	viewH := mt.Size().Height
+	if viewH <= 0 {
+		return false
+	}
+	return rowInViewport(idx, rowH, pitch, scroll, viewH)
+}
+
+// rowInViewport is the viewport intersection test used by isRowInViewport.
+func rowInViewport(idx int, rowH, pitch, scroll, viewH float32) bool {
+	localRowTop := float32(idx)*pitch - scroll
+	localRowBottom := localRowTop + rowH
+	return localRowBottom > 0 && localRowTop < viewH
+}
+
 // clampScrollOffset keeps the scroll position within the visible tree height after
 // branches collapse and content shrinks.
 func (mt *MacroTree) clampScrollOffset() {

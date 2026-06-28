@@ -7,6 +7,7 @@ import (
 	"Sqyre/internal/models/serialize"
 	"Sqyre/internal/uiutil"
 	"image/color"
+	"log"
 	"math"
 	"time"
 
@@ -56,6 +57,12 @@ type MacroTree struct {
 	// (drag-and-drop reorder or move up/down) so the macro can be persisted.
 	OnTreeChanged func()
 
+	// OnHistoryChanged is invoked when undo/redo availability changes.
+	OnHistoryChanged func()
+
+	history         *treeHistory
+	applyingHistory bool
+
 	// executing is true while a macro runs; drag-and-drop is disabled then.
 	executing bool
 
@@ -90,9 +97,33 @@ type MacroTree struct {
 	// expanded so the user can drop inside it.
 	autoExpandUID   string
 	autoExpandTimer *time.Timer
+
+	// rowContentCache stores display widgets keyed by action UID.
+	rowContentCache map[string]cachedRowContent
+	// highlightOverlays maps action UIDs to row overlay widgets so execution
+	// highlights can update without RefreshItem / tree relayout.
+	highlightOverlays map[string]highlightRow
+	// preExecClosedBranches records branches collapsed before a macro run so
+	// they can be restored when execution finishes.
+	preExecClosedBranches map[string]struct{}
+	// execFullyExpanded is true while all branches are held open for execution.
+	execFullyExpanded bool
 }
 
 const collapseDebounceMs = 150
+const treeItemIconSize = 24
+
+// cachedRowContent holds reusable display widgets for a tree row so highlight
+// refreshes and branch open/close do not rebuild pills and PNG thumbnails.
+type cachedRowContent struct {
+	display   fyne.CanvasObject
+	itemIcons fyne.CanvasObject
+}
+
+type highlightRow struct {
+	stack *fyne.Container
+	hlBg  *fyne.Container
+}
 
 // Highlight colors for the active-action execution overlay.
 var (
@@ -133,12 +164,171 @@ func macroTreeActionColor(action actions.ActionInterface) color.Color {
 }
 
 func NewMacroTree(m *models.Macro) *MacroTree {
-	t := &MacroTree{fills: map[string]float64{}}
+	t := &MacroTree{fills: map[string]float64{}, history: newTreeHistory()}
 	t.ExtendBaseWidget(t)
 	t.Macro = m
 	t.setTree()
 
 	return t
+}
+
+// RecordMutation saves the current tree state on the undo stack. Call before
+// any direct mutation that does not go through tree helpers that record already.
+func (mt *MacroTree) RecordMutation() {
+	mt.recordMutation()
+}
+
+func (mt *MacroTree) recordMutation() {
+	if mt.applyingHistory || mt.Macro == nil || mt.Macro.Root == nil {
+		return
+	}
+	if mt.history == nil {
+		mt.history = newTreeHistory()
+	}
+	mt.history.push(mt.Macro.Root, mt.SelectedNode)
+	mt.notifyHistoryChanged()
+}
+
+func (mt *MacroTree) notifyHistoryChanged() {
+	if mt.OnHistoryChanged != nil {
+		mt.OnHistoryChanged()
+	}
+}
+
+func (mt *MacroTree) CanUndo() bool {
+	return mt.history != nil && mt.history.canUndo()
+}
+
+func (mt *MacroTree) CanRedo() bool {
+	return mt.history != nil && mt.history.canRedo()
+}
+
+func (mt *MacroTree) Undo() bool {
+	if !mt.CanUndo() {
+		return false
+	}
+	current, err := snapshotTree(mt.Macro.Root, mt.SelectedNode)
+	if err != nil {
+		log.Printf("tree undo: snapshot current failed: %v", err)
+		return false
+	}
+	prev, ok := mt.history.popUndo()
+	if !ok {
+		return false
+	}
+	mt.history.pushRedo(current)
+	if err := mt.applySnapshot(prev); err != nil {
+		log.Printf("tree undo: restore failed: %v", err)
+		return false
+	}
+	return true
+}
+
+func (mt *MacroTree) Redo() bool {
+	if !mt.CanRedo() {
+		return false
+	}
+	current, err := snapshotTree(mt.Macro.Root, mt.SelectedNode)
+	if err != nil {
+		log.Printf("tree redo: snapshot current failed: %v", err)
+		return false
+	}
+	next, ok := mt.history.popRedo()
+	if !ok {
+		return false
+	}
+	mt.history.pushUndo(current)
+	if err := mt.applySnapshot(next); err != nil {
+		log.Printf("tree redo: restore failed: %v", err)
+		return false
+	}
+	return true
+}
+
+func (mt *MacroTree) applySnapshot(snap treeSnapshot) error {
+	if mt.Macro == nil {
+		return nil
+	}
+	root, err := restoreTreeRoot(snap.rootMap)
+	if err != nil {
+		return err
+	}
+	mt.applyingHistory = true
+	defer func() { mt.applyingHistory = false }()
+
+	mt.Macro.Root = root
+	mt.clearRowCache()
+	mt.SelectedNode = snap.selectedUID
+	if snap.selectedUID != "" && mt.Macro.Root.GetAction(snap.selectedUID) == nil {
+		mt.SelectedNode = ""
+	}
+	mt.flushNodeCache()
+	if mt.SelectedNode != "" {
+		mt.Select(mt.SelectedNode)
+	} else {
+		mt.UnselectAll()
+	}
+	if mt.OnTreeChanged != nil {
+		mt.OnTreeChanged()
+	}
+	mt.notifyHistoryChanged()
+	return nil
+}
+
+// Refresh rebuilds the tree and clears cached row widgets (e.g. after edits).
+func (mt *MacroTree) Refresh() {
+	mt.clearRowCache()
+	mt.Tree.Refresh()
+}
+
+func (mt *MacroTree) clearRowCache() {
+	mt.rowContentCache = nil
+	mt.highlightOverlays = nil
+	mt.nodeBoundUID = nil
+}
+
+func (mt *MacroTree) invalidateRowCache(uid string) {
+	if mt.rowContentCache != nil && uid != "" {
+		delete(mt.rowContentCache, uid)
+	}
+}
+
+func (mt *MacroTree) cachedRowContent(node actions.ActionInterface) cachedRowContent {
+	uid := node.GetUID()
+	if mt.rowContentCache != nil {
+		if cached, ok := mt.rowContentCache[uid]; ok {
+			return cached
+		}
+	}
+	entry := cachedRowContent{display: node.Display()}
+	if is, ok := node.(*actions.ImageSearch); ok && len(is.Targets) > 0 {
+		previewSize := fyne.NewSize(treeItemIconSize, treeItemIconSize)
+		box := container.NewHBox()
+		for _, target := range is.Targets {
+			if path := uiutil.IconPathForTarget(target); path != "" {
+				if res := assets.GetFyneResource(path); res != nil {
+					img := canvas.NewImageFromResource(res)
+					img.SetMinSize(previewSize)
+					img.FillMode = canvas.ImageFillContain
+					box.Add(img)
+				}
+			}
+		}
+		if len(box.Objects) > 0 {
+			entry.itemIcons = box
+		}
+	} else if wfp, ok := node.(*actions.FindPixel); ok {
+		if col, ok := uiutil.HexToColor(wfp.TargetColor); ok {
+			swatch := canvas.NewRectangle(col)
+			swatch.SetMinSize(fyne.NewSize(treeItemIconSize, treeItemIconSize))
+			entry.itemIcons = swatch
+		}
+	}
+	if mt.rowContentCache == nil {
+		mt.rowContentCache = map[string]cachedRowContent{}
+	}
+	mt.rowContentCache[uid] = entry
+	return entry
 }
 
 // SetCursor moves the single "currently executing" highlight to uid (or clears
@@ -150,27 +340,25 @@ func (mt *MacroTree) SetCursor(uid string) {
 	}
 	mt.cursorUID = uid
 	if old != "" {
-		mt.markHighlightRefresh(old)
-		mt.RefreshItem(old)
+		mt.refreshHighlightOverlay(old)
 	}
 	if uid != "" {
-		mt.openAncestorBranches(uid)
-		mt.markHighlightRefresh(uid)
-		mt.RefreshItem(uid)
+		if !mt.execFullyExpanded {
+			mt.openAncestorBranches(uid)
+		}
+		mt.refreshHighlightOverlay(uid)
 		targetUID := uid
 		fyne.Do(func() {
-			if mt.cursorUID == targetUID && mt.lastScrollUID != targetUID {
-				mt.ScrollTo(targetUID)
-				mt.lastScrollUID = targetUID
+			if mt.cursorUID == targetUID {
+				mt.scrollToIfNeeded(targetUID)
 			}
 		})
 	} else {
 		mt.lastScrollUID = ""
 	}
-	// Always debounce-collapse: ancestor paths can match while a previously
-	// opened child branch (e.g. LoopInner) should close when the cursor moves
-	// to a sibling under the same parent.
-	mt.scheduleCollapseStale()
+	if !mt.executing {
+		mt.scheduleCollapseStale()
+	}
 }
 
 // SetFill sets the horizontal fill fraction (0..1) for a container action and
@@ -188,11 +376,20 @@ func (mt *MacroTree) SetFill(uid string, fraction float64) {
 	}
 	mt.fills[uid] = fraction
 	if !existed {
-		mt.openAncestorBranches(uid)
-		mt.scheduleCollapseStale()
+		if !mt.execFullyExpanded {
+			mt.openAncestorBranches(uid)
+		}
+		if !mt.executing {
+			mt.scheduleCollapseStale()
+		}
+		targetUID := uid
+		fyne.Do(func() {
+			if _, ok := mt.fills[targetUID]; ok {
+				mt.scrollToIfNeeded(targetUID)
+			}
+		})
 	}
-	mt.markHighlightRefresh(uid)
-	mt.RefreshItem(uid)
+	mt.refreshHighlightOverlay(uid)
 }
 
 // ClearHighlight removes any highlight (fill or cursor) on a single action.
@@ -207,8 +404,7 @@ func (mt *MacroTree) ClearHighlight(uid string) {
 		changed = true
 	}
 	if changed {
-		mt.markHighlightRefresh(uid)
-		mt.RefreshItem(uid)
+		mt.refreshHighlightOverlay(uid)
 	}
 	mt.stopCollapseDebounce()
 	mt.collapseStaleBranches()
@@ -228,8 +424,7 @@ func (mt *MacroTree) ClearAllHighlights() {
 	mt.lastScrollUID = ""
 	mt.execOpenedBranches = nil
 	for _, k := range affected {
-		mt.markHighlightRefresh(k)
-		mt.RefreshItem(k)
+		mt.refreshHighlightOverlay(k)
 	}
 	mt.stopCollapseDebounce()
 	mt.collapseStaleBranches()
@@ -294,10 +489,7 @@ func (mt *MacroTree) GoToAction(uid string) {
 // revealNode expands ancestor branches and scrolls so uid is visible.
 func (mt *MacroTree) revealNode(uid string) {
 	mt.openAncestorBranches(uid)
-	if mt.lastScrollUID != uid {
-		mt.ScrollTo(uid)
-		mt.lastScrollUID = uid
-	}
+	mt.scrollToIfNeeded(uid)
 }
 
 // ancestorUIDs returns parent branch UIDs from the macro root down to uid's parent.
@@ -366,33 +558,92 @@ func (mt *MacroTree) nodeObjectShowsUID(obj fyne.CanvasObject, uid string) bool 
 	return mt.nodeBoundUID[obj] == uid
 }
 
+func (mt *MacroTree) registerHighlightOverlay(uid string, stack *fyne.Container, hlBg *fyne.Container) {
+	if mt.highlightOverlays == nil {
+		mt.highlightOverlays = map[string]highlightRow{}
+	}
+	mt.highlightOverlays[uid] = highlightRow{stack: stack, hlBg: hlBg}
+	mt.markNodeBound(stack, uid)
+}
+
+// refreshHighlightOverlay updates the execution highlight on uid when its row
+// overlay is already bound, avoiding RefreshItem and tree relayout.
+func (mt *MacroTree) refreshHighlightOverlay(uid string) {
+	if uid == "" {
+		return
+	}
+	if row, ok := mt.highlightOverlays[uid]; ok && mt.nodeObjectShowsUID(row.stack, uid) {
+		mt.applyHighlightOverlay(uid, row.hlBg)
+		return
+	}
+	mt.markHighlightRefresh(uid)
+	mt.RefreshItem(uid)
+}
+
+func rgbaEqual(a, b color.Color) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	ar, ag, ab, aa := a.RGBA()
+	br, bg, bb, ba := b.RGBA()
+	return ar == br && ag == bg && ab == bb && aa == ba
+}
+
 func (mt *MacroTree) applyHighlightOverlay(uid string, hlBg *fyne.Container) {
 	fl := hlBg.Layout.(*fillLayout)
 	hlSimple := hlBg.Objects[0].(*canvas.Rectangle)
 	hlFill := hlBg.Objects[1].(*canvas.Rectangle)
-	if mt.dragActive && uid == mt.dragSrcUID {
-		fl.fraction = 0
-		hlSimple.FillColor = dragSourceColor
-		hlSimple.Show()
-		hlFill.Hide()
-	} else if frac, ok := mt.fills[uid]; ok {
-		fl.fraction = frac
+
+	var wantFrac float64
+	var wantSimpleVisible, wantFillVisible bool
+	var wantSimpleColor color.Color
+
+	switch {
+	case mt.dragActive && uid == mt.dragSrcUID:
+		wantSimpleVisible = true
+		wantSimpleColor = dragSourceColor
+	default:
+		if frac, ok := mt.fills[uid]; ok {
+			wantFrac = frac
+			wantFillVisible = true
+		} else if uid == mt.cursorUID {
+			wantSimpleVisible = true
+			wantSimpleColor = highlightSimpleColor
+		}
+	}
+
+	simpleVisible := hlSimple.Visible()
+	fillVisible := hlFill.Visible()
+	if fl.fraction == wantFrac &&
+		simpleVisible == wantSimpleVisible &&
+		fillVisible == wantFillVisible &&
+		(!wantSimpleVisible || rgbaEqual(hlSimple.FillColor, wantSimpleColor)) {
+		return
+	}
+
+	fl.fraction = wantFrac
+	if wantFillVisible {
 		hlFill.Show()
 		hlSimple.Hide()
-	} else if uid == mt.cursorUID {
-		fl.fraction = 0
-		hlSimple.FillColor = highlightSimpleColor
+	} else if wantSimpleVisible {
+		hlSimple.FillColor = wantSimpleColor
 		hlSimple.Show()
 		hlFill.Hide()
 	} else {
-		fl.fraction = 0
 		hlSimple.Hide()
 		hlFill.Hide()
 	}
-	hlBg.Refresh()
+	hlSimple.Refresh()
+	hlFill.Refresh()
 }
 
 func (mt *MacroTree) scheduleCollapseStale() {
+	if mt.executing {
+		return
+	}
 	if mt.collapseDebounce != nil {
 		mt.collapseDebounce.Stop()
 	}
@@ -438,7 +689,7 @@ func (mt *MacroTree) branchesToKeepOpen() map[string]bool {
 // collapseStaleBranches closes branches opened during execution that no longer
 // contain the active highlight.
 func (mt *MacroTree) collapseStaleBranches() {
-	if mt.execOpenedBranches == nil {
+	if mt.executing || mt.execOpenedBranches == nil {
 		return
 	}
 	keep := mt.branchesToKeepOpen()
@@ -503,10 +754,12 @@ func (mt *MacroTree) moveNode(selectedUID string, up bool) {
 
 	moved := false
 	if up && index > 0 {
+		mt.recordMutation()
 		psa[index-1], psa[index] = psa[index], psa[index-1]
 		mt.Select(psa[index-1].GetUID())
 		moved = true
 	} else if !up && index < len(psa)-1 {
+		mt.recordMutation()
 		psa[index], psa[index+1] = psa[index+1], psa[index]
 		mt.Select(psa[index+1].GetUID())
 		moved = true
@@ -535,7 +788,6 @@ func (mt *MacroTree) setTree() {
 		_, ok := node.(actions.AdvancedActionInterface)
 		return ok
 	}
-	const treeItemIconSize = 24
 	mt.CreateNode = func(branch bool) fyne.CanvasObject {
 		actionIconBtn := ttwidget.NewButtonWithIcon("", theme.ErrorIcon(), nil)
 		actionIconBtn.Importance = widget.LowImportance
@@ -577,6 +829,7 @@ func (mt *MacroTree) setTree() {
 		c := stack.Objects[0].(*fyne.Container)
 		hlBg := stack.Objects[1].(*fyne.Container)
 		if mt.consumeHighlightRefresh(uid) && mt.nodeObjectShowsUID(obj, uid) {
+			mt.registerHighlightOverlay(uid, stack, hlBg)
 			mt.applyHighlightOverlay(uid, hlBg)
 			return
 		}
@@ -604,7 +857,15 @@ func (mt *MacroTree) setTree() {
 		displayContainer := displayHolder.Objects[0].(*fyne.Container)
 		itemIconsBox := itemIconsHolder.Objects[0].(*fyne.Container)
 
-		displayContainer.Objects = []fyne.CanvasObject{node.Display()}
+		rowContent := mt.cachedRowContent(node)
+		displayContainer.Objects = []fyne.CanvasObject{rowContent.display}
+		if mt.executing {
+			itemIconsBox.Objects = nil
+		} else if rowContent.itemIcons != nil {
+			itemIconsBox.Objects = []fyne.CanvasObject{rowContent.itemIcons}
+		} else {
+			itemIconsBox.Objects = nil
+		}
 		displayContainer.Refresh()
 		iconBg.FillColor = macroTreeActionColor(node)
 		iconBg.Refresh()
@@ -616,39 +877,23 @@ func (mt *MacroTree) setTree() {
 			action := node
 			actionIconBtn.OnTapped = func() { mt.OnOpenActionDialog(action) }
 		}
-
-		itemIconsBox.Objects = itemIconsBox.Objects[:0]
-		if is, ok := node.(*actions.ImageSearch); ok && len(is.Targets) > 0 {
-			previewSize := fyne.NewSize(treeItemIconSize, treeItemIconSize)
-			for _, target := range is.Targets {
-				if path := uiutil.IconPathForTarget(target); path != "" {
-					if res := assets.GetFyneResource(path); res != nil {
-						img := canvas.NewImageFromResource(res)
-						img.SetMinSize(previewSize)
-						img.FillMode = canvas.ImageFillContain
-						itemIconsBox.Add(img)
-					}
-				}
-			}
-		} else if wfp, ok := node.(*actions.FindPixel); ok {
-			if col, ok := uiutil.HexToColor(wfp.TargetColor); ok {
-				swatch := canvas.NewRectangle(col)
-				swatch.SetMinSize(fyne.NewSize(treeItemIconSize, treeItemIconSize))
-				itemIconsBox.Add(swatch)
-			}
-		}
 		itemIconsBox.Refresh()
 
 		removeButton.OnTapped = func() {
+			mt.recordMutation()
+			mt.invalidateRowCache(uid)
 			node.GetParent().RemoveSubAction(node)
 			mt.RefreshItem(uid)
 			if len(mt.Macro.Root.SubActions) == 0 || mt.SelectedNode == node.GetUID() {
 				mt.SelectedNode = ""
 			}
+			if mt.OnTreeChanged != nil {
+				mt.OnTreeChanged()
+			}
 		}
 		removeButton.Show()
 
-		mt.markNodeBound(obj, uid)
+		mt.registerHighlightOverlay(uid, stack, hlBg)
 		mt.applyHighlightOverlay(uid, hlBg)
 	}
 	mt.Tree.OnBranchOpened = func(uid widget.TreeNodeID) {
@@ -670,8 +915,9 @@ func (mt *MacroTree) setTree() {
 }
 
 // insertLocationBelowSelection returns the parent and index at which a new action
-// should be inserted directly below the current selection. With no selection, or
-// when root is selected, appends to the end of root.
+// should be inserted relative to the current selection. With no selection, or when
+// root is selected, appends to the end of root. When a branch is selected, inserts
+// as its first child. Otherwise inserts directly below the selected leaf.
 func (mt *MacroTree) insertLocationBelowSelection() (actions.AdvancedActionInterface, int, bool) {
 	if mt.Macro == nil || mt.Macro.Root == nil {
 		return nil, 0, false
@@ -683,6 +929,9 @@ func (mt *MacroTree) insertLocationBelowSelection() (actions.AdvancedActionInter
 	selected := mt.Macro.Root.GetAction(mt.SelectedNode)
 	if selected == nil || selected.GetUID() == mt.Macro.Root.GetUID() {
 		return root, len(root.GetSubActions()), true
+	}
+	if branch, ok := selected.(actions.AdvancedActionInterface); ok {
+		return branch, 0, true
 	}
 	parent := selected.GetParent()
 	if parent == nil {
@@ -708,21 +957,23 @@ func (mt *MacroTree) insertActionAt(parent actions.AdvancedActionInterface, inse
 	parent.SetSubActions(newSubs)
 }
 
-// InsertActionBelowSelection inserts action directly below the current selection.
-// With no selection, appends to the end of root. Returns false when the macro tree
-// has no root.
+// InsertActionBelowSelection inserts action relative to the current selection.
+// Branches receive the action as their first child; leaves receive it as the next
+// sibling. With no selection, appends to the end of root. Returns false when the
+// macro tree has no root.
 func (mt *MacroTree) InsertActionBelowSelection(action actions.ActionInterface) bool {
 	parent, insertIndex, ok := mt.insertLocationBelowSelection()
 	if !ok {
 		return false
 	}
+	mt.recordMutation()
 	mt.insertActionAt(parent, insertIndex, action)
 	return true
 }
 
-// PasteNode creates a copy of the action from clipboardMap and inserts it directly
-// below the current selection. With no selection, pastes at the end of root.
-// Returns true if paste succeeded.
+// PasteNode creates a copy of the action from clipboardMap and inserts it using
+// the same placement rules as InsertActionBelowSelection. Returns true if paste
+// succeeded.
 func (mt *MacroTree) PasteNode(clipboardMap map[string]any) bool {
 	if clipboardMap == nil {
 		return false
@@ -735,6 +986,7 @@ func (mt *MacroTree) PasteNode(clipboardMap map[string]any) bool {
 	if err != nil {
 		return false
 	}
+	mt.recordMutation()
 	mt.insertActionAt(parent, insertIndex, newAction)
 	mt.Select(newAction.GetUID())
 	mt.SelectedNode = newAction.GetUID()

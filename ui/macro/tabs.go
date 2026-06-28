@@ -22,6 +22,9 @@ type MacroTabs struct {
 	MacroHotkeyLabel      *widget.Label
 	MacroHotkeyRecordBtn  *widget.Button
 	HotkeyTriggerRadio    *widget.RadioGroup
+
+	// OnHistoryButtonsSync updates undo/redo toolbar button enabled state.
+	OnHistoryButtonsSync func()
 }
 
 func NewMacroTabs() *MacroTabs {
@@ -102,6 +105,25 @@ func (mtabs *MacroTabs) AllTrees() []*MacroTree {
 		}
 	}
 	return trees
+}
+
+// RefreshActionDisplayColors rebuilds open macro trees and variable rows so
+// action icon backgrounds and display pills pick up new colors.
+func (mtabs *MacroTabs) RefreshActionDisplayColors() {
+	for _, item := range mtabs.Items {
+		if c := macroTabContentFrom(item.Content); c != nil {
+			if c.Tree != nil {
+				c.Tree.Refresh()
+			}
+			if c.VariablesPanel != nil {
+				c.VariablesPanel.RefreshDefs()
+			}
+			continue
+		}
+		if tree, ok := item.Content.(*MacroTree); ok && tree != nil {
+			tree.Refresh()
+		}
+	}
 }
 
 // SelectedMacroContent returns the full tab content wrapper when present.
