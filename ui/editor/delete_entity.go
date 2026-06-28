@@ -107,9 +107,7 @@ func performDeleteForTab() {
 					}
 				},
 				refresh: func() {
-					if acc, ok := et.PointsTab.Widgets["Accordion"].(*widget.Accordion); ok {
-						setAccordionPointsLists(acc)
-					}
+					refreshPointsAccordionForProgram(programName)
 				},
 			}, program)
 		}
@@ -140,9 +138,7 @@ func performDeleteForTab() {
 					}
 				},
 				refresh: func() {
-					if acc, ok := et.MasksTab.Widgets["Accordion"].(*widget.Accordion); ok {
-						setAccordionMasksLists(acc)
-					}
+					refreshMasksAccordionForProgram(programName)
 				},
 			}, program)
 		}
@@ -165,9 +161,7 @@ func performDeleteForTab() {
 					}
 				},
 				refresh: func() {
-					if acc, ok := et.SearchAreasTab.Widgets["Accordion"].(*widget.Accordion); ok {
-						setAccordionSearchAreasLists(acc)
-					}
+					refreshSearchAreasAccordionForProgram(programName)
 				},
 			}, program)
 		}

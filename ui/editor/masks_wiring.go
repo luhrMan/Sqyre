@@ -51,9 +51,9 @@ func setMaskWidgets(m models.Mask, programName string) {
 	shell().RefreshEditorActionBar()
 }
 
-func setAccordionMasksLists(acc *widget.Accordion) {
+func masksAccordionConfig() entityAccordionConfig {
 	tab := shell().EditorTabs.MasksTab
-	populateProgramEntityAccordion(acc, entityAccordionConfig{
+	return entityAccordionConfig{
 		tab: tab,
 		getKeys: func(p *models.Program) []string {
 			return p.MaskRepo().GetAllKeys()
@@ -75,7 +75,19 @@ func setAccordionMasksLists(acc *widget.Accordion) {
 			setMaskWidgets(*mask, p.Name)
 			markMasksClean()
 		},
-	})
+	}
+}
+
+func setAccordionMasksLists(acc *widget.Accordion) {
+	populateProgramEntityAccordion(acc, masksAccordionConfig())
+}
+
+// refreshMasksAccordionForProgram rebuilds only the given program's row in the
+// Masks accordion (instead of every program's row).
+func refreshMasksAccordionForProgram(programName string) {
+	if acc, ok := shell().EditorTabs.MasksTab.Widgets["Accordion"].(*widget.Accordion); ok {
+		refreshProgramEntityAccordionRow(acc, masksAccordionConfig(), programName)
+	}
 }
 
 func setMasksForms() {}
@@ -134,7 +146,6 @@ func setMasksButtons() {
 					editorRepoErr("save", "mask", mask.Name, err)
 					return
 				}
-				saveProgramAfterMutation(program, programName)
 				shell().SetMaskImageMode(true)
 				shell().UpdateMaskPreview(programName, mask.Name)
 			}, activeWire.Window)
