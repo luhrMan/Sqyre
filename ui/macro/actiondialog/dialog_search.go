@@ -48,6 +48,9 @@ func createImageSearchDialogContent(action *actions.ImageSearch) (fyne.CanvasObj
 	outputYVarEntry.SetText(action.OutputYVariable)
 	outputYVarEntry.SetPlaceHolder("e.g. foundY")
 	waitTil := newWaitTilFoundForm(action.WaitTilFound, action.WaitTilFoundSeconds, action.WaitTilFoundIntervalMs, 100)
+	runBranchOnNoFindCheck := ttwidget.NewCheck("Run branch when nothing found", nil)
+	runBranchOnNoFindCheck.SetChecked(action.RunBranchOnNoFind)
+	runBranchOnNoFindCheck.SetToolTip("When enabled, sub-actions run once if no targets are found. When disabled, sub-actions only run for each match.")
 
 	// Temporary storage for changes (only applied on save)
 	tempSearchArea := action.SearchArea
@@ -57,7 +60,7 @@ func createImageSearchDialogContent(action *actions.ImageSearch) (fyne.CanvasObj
 	// Search Areas accordion with searchbar above (fuzzy match program name + search area name)
 	searchAreasSearchbar, searchAreasAccordion := buildSearchAreasAccordionWithSearchbar(func(ref actions.CoordinateRef) {
 		tempSearchArea = ref
-	})
+	}, tempSearchArea)
 
 	previewSize := fyne.NewSquareSize(30)
 	var refreshItemsAccordion func()
@@ -93,18 +96,24 @@ func createImageSearchDialogContent(action *actions.ImageSearch) (fyne.CanvasObj
 			newIcon.FillMode = canvas.ImageFillContain
 			stack.Objects[0] = newIcon
 
+			_, itemName, ok := strings.Cut(target, config.ProgramDelimiter)
+			if !ok {
+				itemName = target
+			}
+
 			removeBtn := stack.Objects[1].(*ttwidget.Button)
 			removeBtn.OnTapped = func() {
 				if removeTarget != nil {
 					removeTarget(target)
 				}
 			}
-			removeBtn.SetToolTip("Remove this program/item from the search targets (does not delete the item from your data).")
+			removeBtn.SetToolTip(itemName)
 		},
 	)
 	previewLabel := ttwidget.NewLabel("Selected items:")
 	previewLabel.SetToolTip("Icons for each item currently targeted. Sub-actions run for every match found, in order.")
 	previewScroll := container.NewScroll(previewList)
+	previewScroll.SetMinSize(fyne.NewSize(0, listAreaMinH))
 	previewBox := container.NewBorder(
 		previewLabel, nil, nil, nil,
 		previewScroll,
@@ -163,19 +172,23 @@ func createImageSearchDialogContent(action *actions.ImageSearch) (fyne.CanvasObj
 		nil, nil,
 		nil, nil,
 		container.NewVSplit(
-			container.NewVBox(
-				widget.NewForm(
-					formHint("Name:", nameEntry, "Display name for this action in the macro tree."),
-					formHint("Row Split:", rowSplitEntry, "Persisted with the action for compatibility; the current matcher does not use this field."),
-					formHint("Col Split:", colSplitEntry, "Persisted with the action for compatibility; the current matcher does not use this field."),
-					formHint("Tolerance:", toleranceIncrementer, "Template match confidence threshold (0–1). Higher = stricter match; lower finds more candidates but may add false positives."),
-					formHint("Blur:", container.NewVBox(blurIncrementer, layout.NewSpacer()), "Gaussian blur kernel size applied before matching. Odd values; larger smooths noise but reduces sharp detail."),
-					formHint("Output X Variable:", outputXVarEntry, "Macro variable to store the matched X coordinate (screen pixels). Sub-actions can use ${StackMax}, ${Cols}, ${Rows}, ${ItemName}, ${ImagePixelWidth}, ${ImagePixelHeight} from the matched item."),
-					formHint("Output Y Variable:", outputYVarEntry, "Macro variable to store the matched Y coordinate (screen pixels)."),
-					formHint("", waitTil.Check, ""),
-					formHint("Timeout (seconds):", waitTil.SecondsIncrementer, "With wait-until-found: maximum time to keep retrying before giving up."),
-					formHint("Search interval (ms):", waitTil.IntervalIncrementer, "Delay between attempts when wait-until-found is enabled (minimum 100 ms in this dialog)."),
+			scrollWithMin(
+				container.NewVBox(
+					widget.NewForm(
+						formHint("Name:", nameEntry, "Display name for this action in the macro tree."),
+						formHint("Row Split:", rowSplitEntry, "Persisted with the action for compatibility; the current matcher does not use this field."),
+						formHint("Col Split:", colSplitEntry, "Persisted with the action for compatibility; the current matcher does not use this field."),
+						formHint("Tolerance:", toleranceIncrementer, "Template match confidence threshold (0–1). Higher = stricter match; lower finds more candidates but may add false positives."),
+						formHint("Blur:", container.NewVBox(blurIncrementer, layout.NewSpacer()), "Gaussian blur kernel size applied before matching. Odd values; larger smooths noise but reduces sharp detail."),
+						formHint("Output X Variable:", outputXVarEntry, "Macro variable to store the matched X coordinate (screen pixels). Sub-actions can use ${StackMax}, ${Cols}, ${Rows}, ${ItemName}, ${ImagePixelWidth}, ${ImagePixelHeight} from the matched item."),
+						formHint("Output Y Variable:", outputYVarEntry, "Macro variable to store the matched Y coordinate (screen pixels)."),
+						formHint("", runBranchOnNoFindCheck, ""),
+						formHint("", waitTil.Check, ""),
+						formHint("Timeout (seconds):", waitTil.SecondsIncrementer, "With wait-until-found: maximum time to keep retrying before giving up."),
+						formHint("Search interval (ms):", waitTil.IntervalIncrementer, "Delay between attempts when wait-until-found is enabled (minimum 100 ms in this dialog)."),
+					),
 				),
+				fyne.NewSize(wideSplitPanelMinW, accordionPanelMinH),
 			),
 			previewBox,
 		),
@@ -198,7 +211,7 @@ func createImageSearchDialogContent(action *actions.ImageSearch) (fyne.CanvasObj
 	leftAccordion.Open(0)
 
 	content := container.NewHSplit(
-		leftAccordion,
+		scrollWithMin(leftAccordion, fyne.NewSize(wideSplitPanelMinW, accordionPanelMinH)),
 		rightPanel,
 	)
 
@@ -214,6 +227,7 @@ func createImageSearchDialogContent(action *actions.ImageSearch) (fyne.CanvasObj
 		action.Blur = blurIncrementer.Value
 		action.OutputXVariable = outputXVarEntry.Text
 		action.OutputYVariable = outputYVarEntry.Text
+		action.RunBranchOnNoFind = runBranchOnNoFindCheck.Checked
 		waitTil.writeTo(&action.WaitTilFound, &action.WaitTilFoundSeconds, &action.WaitTilFoundIntervalMs)
 		// Apply temporary changes
 		action.SearchArea = tempSearchArea
@@ -277,7 +291,7 @@ func createOcrDialogContent(action *actions.Ocr) (fyne.CanvasObject, func()) {
 	// Search Areas accordion with searchbar above (fuzzy match program name + search area name)
 	searchAreasSearchbar, searchAreasAccordion := buildSearchAreasAccordionWithSearchbar(func(ref actions.CoordinateRef) {
 		tempSearchArea = ref
-	})
+	}, tempSearchArea)
 
 	form := widget.NewForm(
 		formHint("Name:", nameEntry, "Display name for this OCR action in the macro tree."),
@@ -296,16 +310,18 @@ func createOcrDialogContent(action *actions.Ocr) (fyne.CanvasObject, func()) {
 		formHint("Resize:", resizeIncrementer, "Scale factor applied after preprocessing (1.0 = off). Values above 1 enlarge small text for OCR."),
 	)
 
-	content := container.NewHSplit(
-		widget.NewAccordion(
-			widget.NewAccordionItem("Search Areas",
-				container.NewBorder(
-					searchAreasSearchbar, nil, nil, nil,
-					searchAreasAccordion,
-				),
+	ocrLeftAccordion := widget.NewAccordion(
+		widget.NewAccordionItem("Search Areas",
+			container.NewBorder(
+				searchAreasSearchbar, nil, nil, nil,
+				searchAreasAccordion,
 			),
 		),
-		form,
+	)
+
+	content := container.NewHSplit(
+		scrollWithMin(ocrLeftAccordion, fyne.NewSize(splitPanelMinW, scrollAreaMinH)),
+		scrollWithMin(form, fyne.NewSize(wideSplitPanelMinW, scrollAreaMinH)),
 	)
 
 	saveFunc := func() {
@@ -337,7 +353,7 @@ func createFindPixelDialogContent(action *actions.FindPixel) (fyne.CanvasObject,
 	// Search Areas accordion with searchbar above (fuzzy match program name + search area name)
 	searchAreasSearchbar, searchAreasAccordion := buildSearchAreasAccordionWithSearchbar(func(ref actions.CoordinateRef) {
 		tempSearchArea = ref
-	})
+	}, tempSearchArea)
 
 	colorEntry := widget.NewEntry()
 	colorEntry.SetText(action.TargetColor)
@@ -432,15 +448,17 @@ func createFindPixelDialogContent(action *actions.FindPixel) (fyne.CanvasObject,
 		formHint("Search interval (ms):", waitTil.IntervalIncrementer, "Delay between pixel scans when wait-until-found is enabled."),
 	)
 
-	content := container.NewHSplit(
-		widget.NewAccordion(
-			widget.NewAccordionItem("Search Areas",
-				container.NewBorder(
-					searchAreasSearchbar, nil, nil, nil,
-					searchAreasAccordion,
-				),
+	leftAccordion := widget.NewAccordion(
+		widget.NewAccordionItem("Search Areas",
+			container.NewBorder(
+				searchAreasSearchbar, nil, nil, nil,
+				searchAreasAccordion,
 			),
 		),
+	)
+
+	content := container.NewHSplit(
+		scrollWithMin(leftAccordion, fyne.NewSize(splitPanelMinW, scrollAreaMinH)),
 		form,
 	)
 
@@ -466,41 +484,47 @@ func createFindPixelDialogContent(action *actions.FindPixel) (fyne.CanvasObject,
 }
 
 func createFocusWindowDialogContent(action *actions.FocusWindow) (fyne.CanvasObject, func()) {
-	windowEntry := widget.NewEntry()
-	windowEntry.SetText(action.WindowTarget)
-	windowEntry.SetPlaceHolder("Type to search or pick from list (e.g. chrome, code)")
+	titleEntry := widget.NewEntry()
+	titleEntry.SetText(action.WindowTitle)
+	titleEntry.SetPlaceHolder("Window title (e.g. project - Cursor)")
 
-	// Full list from API; filtered list is what the list widget shows
-	allWindowNames := []string{}
-	filteredNames := []string{}
+	pathEntry := widget.NewEntry()
+	pathEntry.SetText(action.ProcessPath)
+	pathEntry.SetPlaceHolder("Executable path (e.g. /usr/bin/firefox)")
+
+	allWindows := []services.WindowInfo{}
+	filteredWindows := []services.WindowInfo{}
 
 	applyFilter := func() {
-		q := strings.TrimSpace(strings.ToLower(windowEntry.Text))
+		q := strings.TrimSpace(strings.ToLower(titleEntry.Text + " " + pathEntry.Text))
 		if q == "" {
-			filteredNames = make([]string, len(allWindowNames))
-			copy(filteredNames, allWindowNames)
+			filteredWindows = make([]services.WindowInfo, len(allWindows))
+			copy(filteredWindows, allWindows)
 		} else {
-			filteredNames = filteredNames[:0]
-			for _, name := range allWindowNames {
-				if fuzzy.Match(q, strings.ToLower(name)) {
-					filteredNames = append(filteredNames, name)
+			filteredWindows = filteredWindows[:0]
+			for _, w := range allWindows {
+				label := strings.ToLower(w.Label())
+				if fuzzy.Match(q, label) || fuzzy.Match(q, strings.ToLower(w.Title)) || fuzzy.Match(q, strings.ToLower(w.ProcessPath)) {
+					filteredWindows = append(filteredWindows, w)
 				}
 			}
 		}
 	}
 
 	windowList := widget.NewList(
-		func() int { return len(filteredNames) },
+		func() int { return len(filteredWindows) },
 		func() fyne.CanvasObject { return widget.NewLabel("") },
 		func(id widget.ListItemID, co fyne.CanvasObject) {
-			if id < len(filteredNames) {
-				co.(*widget.Label).SetText(filteredNames[id])
+			if id < len(filteredWindows) {
+				co.(*widget.Label).SetText(filteredWindows[id].Label())
 			}
 		},
 	)
 	windowList.OnSelected = func(id widget.ListItemID) {
-		if id >= 0 && id < len(filteredNames) {
-			windowEntry.SetText(filteredNames[id])
+		if id >= 0 && id < len(filteredWindows) {
+			w := filteredWindows[id]
+			titleEntry.SetText(w.Title)
+			pathEntry.SetText(w.ProcessPath)
 		}
 	}
 
@@ -509,55 +533,59 @@ func createFocusWindowDialogContent(action *actions.FocusWindow) (fyne.CanvasObj
 		windowList.Refresh()
 	}
 
-	windowEntry.OnChanged = func(string) { refreshList() }
+	onFieldChanged := func(string) { refreshList() }
+	titleEntry.OnChanged = onFieldChanged
+	pathEntry.OnChanged = onFieldChanged
 
 	refreshBtn := ttwidget.NewButton("Refresh list", func() {
-		names, err := services.ActiveWindowNames()
+		windows, err := services.ActiveWindows()
 		if err != nil {
-			allWindowNames = []string{fmt.Sprintf("(error: %v)", err)}
+			allWindows = []services.WindowInfo{{Title: fmt.Sprintf("(error: %v)", err)}}
 		} else {
-			allWindowNames = names
+			allWindows = windows
 		}
 		refreshList()
 	})
-	refreshBtn.SetToolTip("Reload the list of top-level window titles from the OS.")
-	// Load list on open
+	refreshBtn.SetToolTip("Reload open windows from the OS. Each row shows title, process name, and executable path.")
 	services.GoSafe(func() {
-		names, err := services.ActiveWindowNames()
+		windows, err := services.ActiveWindows()
 		if err != nil {
 			fyne.Do(func() {
-				allWindowNames = []string{fmt.Sprintf("(error: %v)", err)}
+				allWindows = []services.WindowInfo{{Title: fmt.Sprintf("(error: %v)", err)}}
 				refreshList()
 			})
 			return
 		}
 		fyne.Do(func() {
-			allWindowNames = names
+			allWindows = windows
 			refreshList()
 		})
 	})
 
-	listHdr := ttwidget.NewLabel("Active windows (list filters as you type):")
-	listHdr.SetToolTip("Windows currently reported by the system. Typing in the field above filters this list; click a row to fill the field.")
+	listHdr := ttwidget.NewLabel("Open windows (title + executable path):")
+	listHdr.SetToolTip("Pick a row to fill both fields. Executable path and title together identify a window across restarts.")
+
+	windowListScroll := scrollWithMin(windowList, fyne.NewSize(wideFormMinW-160, listAreaMinH))
 
 	listCard := container.NewBorder(
 		listHdr,
 		refreshBtn,
 		nil, nil,
-		windowList,
+		windowListScroll,
 	)
-	listCard.Resize(fyne.NewSize(400, 200))
 
 	content := container.NewBorder(
 		widget.NewForm(
-			formHint("Window to focus / search:", windowEntry, "Substring or title used to find and activate a window. Fuzzy-matches against the list below."),
+			formHint("Window title:", titleEntry, "The window title shown in the title bar. Used with the executable path to pick one window."),
+			formHint("Executable path:", pathEntry, "Full path to the application binary. Stable across restarts; distinguishes apps with the same process name."),
 		),
 		nil, nil, nil,
 		listCard,
 	)
 
 	saveFunc := func() {
-		action.WindowTarget = strings.TrimSpace(windowEntry.Text)
+		action.WindowTitle = strings.TrimSpace(titleEntry.Text)
+		action.ProcessPath = strings.TrimSpace(pathEntry.Text)
 	}
 
 	return content, saveFunc

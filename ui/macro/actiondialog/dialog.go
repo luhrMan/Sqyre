@@ -8,12 +8,11 @@ import (
 	"Sqyre/ui/custom_widgets"
 	"Sqyre/ui/editor"
 	"fmt"
-	"image/color"
+	"slices"
 	"sort"
 	"strings"
 
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
@@ -196,15 +195,42 @@ type programListAccordionConfig struct {
 	OnSelect   func(*models.Program, string)
 }
 
+// resolveCoordinateRefKey finds the repository key for ref within program p, if present.
+func resolveCoordinateRefKey(ref actions.CoordinateRef, p *models.Program, getKeys func(*models.Program) []string) (string, bool) {
+	if ref.IsEmpty() {
+		return "", false
+	}
+	name := ref.Name()
+	if programName := ref.Program(); programName != "" {
+		if programName != p.Name {
+			return "", false
+		}
+		if slices.Contains(getKeys(p), name) {
+			return name, true
+		}
+		return "", false
+	}
+	if slices.Contains(getKeys(p), name) {
+		return name, true
+	}
+	return "", false
+}
+
 // buildProgramListAccordionWithSearchbar builds an accordion of programs, each with a list of items (e.g. points or search areas).
 // One searchbar above filters by program name or item key (fuzzy). Config provides key source, label text, and selection callback.
-func buildProgramListAccordionWithSearchbar(cfg programListAccordionConfig) (*widget.Entry, *widget.Accordion) {
+// When initialRef is set, the matching program accordion row is opened and the item is selected.
+func buildProgramListAccordionWithSearchbar(cfg programListAccordionConfig, initialRef actions.CoordinateRef) (*widget.Entry, *widget.Accordion) {
 	searchbar := widget.NewEntry()
 	searchbar.SetPlaceHolder("Filter programs and entries (fuzzy match)")
+	searchDebounce := custom_widgets.NewDebouncer(custom_widgets.DefaultSearchDebounce)
 	acc := widget.NewAccordion()
 	rebuild := func() {
 		filterText := searchbar.Text
 		acc.Items = nil
+		var selectAccordionIndex int = -1
+		var selectList *widget.List
+		var selectListIndex widget.ListItemID = -1
+		accordionIndex := 0
 		for _, p := range repositories.ProgramRepo().GetAllSortedByName() {
 			defaultList := cfg.GetKeys(p)
 			filtered := defaultList
@@ -240,18 +266,32 @@ func buildProgramListAccordionWithSearchbar(cfg programListAccordionConfig) (*wi
 					cfg.OnSelect(prog, filtered[id])
 				}
 			}
+			if selectListIndex < 0 {
+				if key, ok := resolveCoordinateRefKey(initialRef, p, cfg.GetKeys); ok {
+					if idx := slices.Index(filtered, key); idx >= 0 {
+						selectAccordionIndex = accordionIndex
+						selectList = list
+						selectListIndex = widget.ListItemID(idx)
+					}
+				}
+			}
 			acc.Append(widget.NewAccordionItem(fmt.Sprintf("%s (%d)", prog.Name, len(filtered)), list))
+			accordionIndex++
 		}
 		acc.Refresh()
+		if selectListIndex >= 0 && selectList != nil {
+			acc.Open(selectAccordionIndex)
+			selectList.Select(selectListIndex)
+		}
 	}
-	searchbar.OnChanged = func(string) { rebuild() }
+	searchbar.OnChanged = func(string) { searchDebounce.Call(rebuild) }
 	rebuild()
 	return searchbar, acc
 }
 
 // buildPointsAccordionWithSearchbar builds a Points accordion with a single searchbar above it.
 // Filter matches program name or point name (fuzzy). onPointSelected is called when user selects a point.
-func buildPointsAccordionWithSearchbar(onPointSelected func(actions.CoordinateRef)) (*widget.Entry, *widget.Accordion) {
+func buildPointsAccordionWithSearchbar(onPointSelected func(actions.CoordinateRef), initialRef actions.CoordinateRef) (*widget.Entry, *widget.Accordion) {
 	return buildProgramListAccordionWithSearchbar(programListAccordionConfig{
 		GetKeys: func(p *models.Program) []string {
 			return p.PointRepo(config.MainMonitorSizeString).GetAllKeys()
@@ -273,12 +313,12 @@ func buildPointsAccordionWithSearchbar(onPointSelected func(actions.CoordinateRe
 		OnSelect: func(p *models.Program, key string) {
 			onPointSelected(actions.NewCoordinateRef(p.Name, key))
 		},
-	})
+	}, initialRef)
 }
 
 // buildSearchAreasAccordionWithSearchbar builds a Search Areas accordion with a single searchbar above it.
 // Filter matches program name or search area name (fuzzy). onSelected is called when user selects a search area.
-func buildSearchAreasAccordionWithSearchbar(onSelected func(actions.CoordinateRef)) (*widget.Entry, *widget.Accordion) {
+func buildSearchAreasAccordionWithSearchbar(onSelected func(actions.CoordinateRef), initialRef actions.CoordinateRef) (*widget.Entry, *widget.Accordion) {
 	return buildProgramListAccordionWithSearchbar(programListAccordionConfig{
 		GetKeys: func(p *models.Program) []string {
 			return p.SearchAreaRepo(config.MainMonitorSizeString).GetAllKeys()
@@ -300,7 +340,7 @@ func buildSearchAreasAccordionWithSearchbar(onSelected func(actions.CoordinateRe
 		OnSelect: func(p *models.Program, key string) {
 			onSelected(actions.NewCoordinateRef(p.Name, key))
 		},
-	})
+	}, initialRef)
 }
 
 // buildItemsAccordionWithSearchbar builds an Items section with a searchbar above and an accordion
@@ -314,6 +354,7 @@ func buildItemsAccordionWithSearchbar(
 ) (*widget.Entry, fyne.CanvasObject, func()) {
 	searchbar := widget.NewEntry()
 	searchbar.SetPlaceHolder("Filter programs and items (fuzzy match)")
+	searchDebounce := custom_widgets.NewDebouncer(custom_widgets.DefaultSearchDebounce)
 	acc := custom_widgets.NewAccordionWithHeaderWidgets()
 	var itemGrids []*widget.GridWrap
 	refreshAccordion := func() {
@@ -340,7 +381,7 @@ func buildItemsAccordionWithSearchbar(
 			}
 		})
 	}
-	searchbar.OnChanged = func(string) { rebuild() }
+	searchbar.OnChanged = func(string) { searchDebounce.Call(rebuild) }
 	rebuild()
 	return searchbar, container.NewScroll(acc), refreshAccordion
 }
@@ -363,61 +404,42 @@ func ShowActionDialog(action actions.ActionInterface, onSave func(actions.Action
 	switch node := action.(type) {
 	case *actions.Wait:
 		content, saveFunc = createWaitDialogContent(node)
-		content.Resize(fyne.NewSize(500, 160))
 	case *actions.Move:
 		content, saveFunc = createMoveDialogContent(node)
-		content.Resize(fyne.NewSize(1000, 600))
 	case *actions.Click:
 		content, saveFunc = createClickDialogContent(node)
-		content.Resize(fyne.NewSize(300, 100))
 	case *actions.Key:
 		content, saveFunc = createKeyDialogContent(node)
-		content.Resize(fyne.NewSize(300, 100))
 	case *actions.Type:
 		content, saveFunc = createTypeDialogContent(node)
-		content.Resize(fyne.NewSize(400, 120))
 	case *actions.Loop:
 		content, saveFunc = createLoopDialogContent(node)
-		content.Resize(fyne.NewSize(600, 100))
 	case *actions.Conditional:
 		content, saveFunc = createConditionalDialogContent(node)
-		content.Resize(fyne.NewSize(conditionalDialogWidth, conditionalDialogHeight))
 	case *actions.ImageSearch:
 		content, saveFunc = createImageSearchDialogContent(node)
-		content.Resize(fyne.NewSize(1000, 1000))
 	case *actions.Ocr:
 		content, saveFunc = createOcrDialogContent(node)
-		content.Resize(fyne.NewSize(700, 680))
 	case *actions.SetVariable:
 		content, saveFunc = createSetVariableDialogContent(node)
-		content.Resize(fyne.NewSize(600, 100))
 	case *actions.Calculate:
 		content, saveFunc = createCalculateDialogContent(node)
-		content.Resize(fyne.NewSize(640, 360))
 	case *actions.ForEachRow:
 		content, saveFunc = createForEachRowDialogContent(node)
-		content.Resize(fyne.NewSize(forEachRowDialogWidth, forEachRowDialogHeight))
 	case *actions.SaveVariable:
 		content, saveFunc = createSaveVariableDialogContent(node)
-		content.Resize(fyne.NewSize(600, 100))
 	// case *actions.Calibration:
 	// 	content, saveFunc = createCalibrationDialogContent(node)
-	// 	content.Resize(fyne.NewSize(600, 500))
 	case *actions.FindPixel:
 		content, saveFunc = createFindPixelDialogContent(node)
-		content.Resize(fyne.NewSize(800, 500))
 	case *actions.FocusWindow:
 		content, saveFunc = createFocusWindowDialogContent(node)
-		content.Resize(fyne.NewSize(500, 400))
 	case *actions.RunMacro:
 		content, saveFunc = createRunMacroDialogContent(node)
-		content.Resize(fyne.NewSize(400, 120))
 	case *actions.Break:
 		content, saveFunc = createBreakDialogContent()
-		content.Resize(fyne.NewSize(400, 100))
 	case *actions.Continue:
 		content, saveFunc = createContinueDialogContent()
-		content.Resize(fyne.NewSize(400, 100))
 	default:
 		unknown := ttwidget.NewLabel("Unknown action type")
 		unknown.SetToolTip("This action type is not supported in the editor yet.")
@@ -501,32 +523,12 @@ func showCustomActionDialog(action actions.ActionInterface, content fyne.CanvasO
 		saveButton,
 	)
 
-	titleLabel := ttwidget.NewLabel("Edit Action - " + action.GetType())
-	titleLabel.TextStyle = fyne.TextStyle{Bold: true}
-	titleLabel.SetToolTip("Edit fields for this action type, then Save to apply or Cancel to discard.")
-
-	dialogContent := container.NewBorder(
-		container.NewPadded(titleLabel),
-		buttons,
-		nil,
-		nil,
-		content,
-	)
-
-	th := fyne.CurrentApp().Settings().Theme()
-	v := fyne.CurrentApp().Settings().ThemeVariant()
-	panelBg := canvas.NewRectangle(th.Color(theme.ColorNameOverlayBackground, v))
-	panelBg.CornerRadius = theme.InputRadiusSize()
-
-	border := canvas.NewRectangle(color.Transparent)
-	border.StrokeColor = th.Color(theme.ColorNamePrimary, v)
-	border.StrokeWidth = 1
-	border.CornerRadius = theme.InputRadiusSize()
-	innerPadded := container.NewPadded(container.NewPadded(container.NewPadded(container.NewPadded(dialogContent))))
-	borderedDialogContent := container.NewStack(panelBg, border, innerPadded)
+	title := "Edit Action - " + action.GetType()
+	borderedDialogContent := buildActionDialogPanel(title, wrapActionDialogContent(action, content), buttons)
 
 	pop := widget.NewModalPopUp(borderedDialogContent, active.Window.Canvas())
 	fynetooltip.AddPopUpToolTipLayer(pop)
+	custom_widgets.AddPopUpItemTooltipLayer(pop)
 	d = &actionModalDialog{pop: pop}
 	if active.SetActionDialog != nil {
 		active.SetActionDialog(d)
@@ -542,35 +544,7 @@ func showCustomActionDialog(action actions.ActionInterface, content fyne.CanvasO
 	if active.AddDialogEscapeClose != nil {
 		active.AddDialogEscapeClose(d, active.Window)
 	}
-	parentSize := active.Window.Canvas().Size()
-	width := parentSize.Width - 200
-	height := parentSize.Height - 200
-
-	// Get content's preferred size
-	contentMinSize := content.Size()
-	// Add padding for dialog chrome: title bar (~40px), buttons (~50px), padding (~20px total)
-	dialogPadding := fyne.NewSize(40, 110) // width padding, height padding
-	contentPreferredSize := fyne.NewSize(
-		contentMinSize.Width+dialogPadding.Width,
-		contentMinSize.Height+dialogPadding.Height,
-	)
-
-	// Use the smaller of calculated window size or content preferred size
-	if contentPreferredSize.Width < width {
-		width = contentPreferredSize.Width
-	}
-	if contentPreferredSize.Height < height {
-		height = contentPreferredSize.Height
-	}
-
-	// Ensure minimum size
-	if width < 200 {
-		width = 200
-	}
-	if height < 200 {
-		height = 200
-	}
-	d.Resize(fyne.NewSize(width, height))
+	d.Resize(actionDialogSize(active.Window.Canvas().Size(), action, pop.MinSize()))
 
 	d.Show()
 }
