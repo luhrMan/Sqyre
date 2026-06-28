@@ -171,6 +171,7 @@ func Bootstrap(mainWindow, splashWindow fyne.Window, report BootstrapReporter) {
 	macroRepo := repositories.MacroRepo()
 	log.Printf("Initialized MacroRepository with %d macros", macroRepo.Count())
 	startupprof.Mark("macros loaded")
+	go services.WarmUpOCR()
 
 	report.setStatus("Loading programs…")
 	report.setProgress(progressPrograms)

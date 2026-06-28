@@ -325,6 +325,12 @@ func (client *Client) init() error {
 	return nil
 }
 
+// WarmUp loads tessdata and initializes the Tesseract API without requiring an image.
+// Safe to call multiple times; subsequent calls are no-ops.
+func (client *Client) WarmUp() error {
+	return client.ensureInitialized()
+}
+
 func (client *Client) ensureInitialized() error {
 	if !client.shouldInit {
 		return nil
