@@ -1,0 +1,102 @@
+package services
+
+import (
+	"Sqyre/internal/models"
+	"Sqyre/internal/models/actions"
+	"fmt"
+	"log"
+)
+
+func init() {
+	registerActionRunner("wait", executeWait)
+	registerActionRunner("move", executeMove)
+	registerActionRunner("click", executeClick)
+	registerActionRunner("key", executeKey)
+	registerActionRunner("type", executeType)
+}
+
+func executeWait(a actions.ActionInterface, macro *models.Macro) error {
+	node := a.(*actions.Wait)
+	log.Println("Wait:", node.String())
+	time, err := ResolveInt(node.Time, macro)
+	if err != nil {
+		return fmt.Errorf("wait time: %w", err)
+	}
+	return interruptibleSleep(time)
+}
+
+func executeMove(a actions.ActionInterface, macro *models.Macro) error {
+	node := a.(*actions.Move)
+	log.Println("Move:", node.String())
+	pt, err := LookupPoint(node.Point, DefaultResolutionKey())
+	if err != nil {
+		log.Printf("Move: failed to lookup point %q: %v, using (0,0)", node.Point, err)
+		getAutomationBackend().Move(0, 0, moveOpts(node))
+		return nil
+	}
+	x, err := ResolveInt(pt.X, macro)
+	if err != nil {
+		log.Printf("Move: failed to resolve X %v: %v, using 0 (ensure variable is set by an earlier action, e.g. Image Search output)", pt.X, err)
+		x = 0
+	}
+	y, err := ResolveInt(pt.Y, macro)
+	if err != nil {
+		log.Printf("Move: failed to resolve Y %v: %v, using 0 (ensure variable is set by an earlier action, e.g. Image Search output)", pt.Y, err)
+		y = 0
+	}
+	getAutomationBackend().Move(x, y, moveOpts(node))
+	return nil
+}
+
+func executeClick(a actions.ActionInterface, macro *models.Macro) error {
+	node := a.(*actions.Click)
+	log.Println("Click:", node.String())
+	btn := actions.LeftOrRight(node.Button)
+	if node.State {
+		return getAutomationBackend().Click(btn, true)
+	}
+	return getAutomationBackend().Click(btn, false)
+}
+
+func executeKey(a actions.ActionInterface, macro *models.Macro) error {
+	node := a.(*actions.Key)
+	log.Println("Key:", node.String())
+	key := node.Key
+	if macro != nil {
+		if resolved, err := ResolveString(key, macro); err == nil {
+			key = resolved
+		}
+	}
+	if node.State {
+		return getAutomationBackend().KeyDown(key)
+	}
+	return getAutomationBackend().KeyUp(key)
+}
+
+func executeType(a actions.ActionInterface, macro *models.Macro) error {
+	node := a.(*actions.Type)
+	log.Println("Type:", node.String())
+	text := node.Text
+	if macro != nil {
+		if resolved, err := ResolveString(text, macro); err == nil {
+			text = resolved
+		}
+	}
+	delayMs := node.DelayMs
+	if delayMs < 0 {
+		delayMs = 0
+	}
+	backend := getAutomationBackend()
+	for _, r := range text {
+		if err := checkMacroStop(); err != nil {
+			return err
+		}
+		backend.TypeChar(string(r))
+		if delayMs > 0 {
+			if err := interruptibleSleep(delayMs); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
