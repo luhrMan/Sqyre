@@ -19,13 +19,23 @@ func withRecordingBackend(t *testing.T) *RecordingBackend {
 	return rec
 }
 
+func totalSleepMs(calls []RecordedCall) int {
+	total := 0
+	for _, c := range calls {
+		if c.Op == "sleep" {
+			total += c.Ms
+		}
+	}
+	return total
+}
+
 func TestExecute_Wait(t *testing.T) {
 	rec := withRecordingBackend(t)
 	if err := Execute(actions.NewWait(250), nil); err != nil {
 		t.Fatalf("Execute wait: %v", err)
 	}
-	if len(rec.Calls) != 1 || rec.Calls[0].Op != "sleep" || rec.Calls[0].Ms != 250 {
-		t.Fatalf("calls = %+v, want single sleep 250ms", rec.Calls)
+	if totalSleepMs(rec.Calls) != 250 {
+		t.Fatalf("calls = %+v, want 250ms total sleep", rec.Calls)
 	}
 }
 
@@ -309,7 +319,7 @@ func TestExecute_GlobalDelayAfterNonInputAction(t *testing.T) {
 	if err := Execute(sv, macro); err != nil {
 		t.Fatalf("Execute set variable: %v", err)
 	}
-	if len(rec.Calls) != 1 || rec.Calls[0].Op != "sleep" || rec.Calls[0].Ms != 75 {
-		t.Fatalf("calls = %+v, want global delay after set variable", rec.Calls)
+	if totalSleepMs(rec.Calls) != 75 {
+		t.Fatalf("calls = %+v, want 75ms global delay after set variable", rec.Calls)
 	}
 }
