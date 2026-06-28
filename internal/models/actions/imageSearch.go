@@ -21,6 +21,7 @@ type ImageSearch struct {
 	WaitTilFound           bool       `mapstructure:"waittilfound"`           // If true, retry until found or timeout
 	WaitTilFoundSeconds    int        `mapstructure:"waittilfoundseconds"`    // Max seconds to keep trying when WaitTilFound (then continue without match)
 	WaitTilFoundIntervalMs int        `mapstructure:"waittilfoundintervalms"` // Milliseconds between retries when WaitTilFound (0 = default 100ms)
+	RunBranchOnNoFind      bool       `mapstructure:"runbranchonnofind"`      // If true, run sub-actions once when no targets are found
 	*AdvancedAction        `yaml:",inline" mapstructure:",squash"`
 }
 
@@ -51,7 +52,7 @@ func (a *ImageSearch) parameters() []actionParam {
 	if a.WaitTilFound {
 		mode = fmt.Sprintf("wait %d seconds or until found", a.WaitTilFoundSeconds)
 	}
-	return []actionParam{
+	params := []actionParam{
 		newParam("Type", a.GetType()),
 		newParam("Name", a.Name),
 		newParam("Items", len(a.Targets)),
@@ -60,6 +61,10 @@ func (a *ImageSearch) parameters() []actionParam {
 		newParam("Tolerance", a.Tolerance),
 		newParam("Blur", a.Blur),
 	}
+	if a.RunBranchOnNoFind {
+		params = append(params, newParam("Run on no find", "yes"))
+	}
+	return params
 }
 
 func (a *ImageSearch) Icon() fyne.Resource {
