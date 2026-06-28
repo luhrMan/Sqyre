@@ -34,6 +34,9 @@ func buildActionTemplates() []actionTemplate {
 		{label: "Key", actionType: "key", category: "Mouse & Keyboard", icon: actions.NewKey("ctrl", true).Icon(), create: func() actions.ActionInterface { return actions.NewKey("ctrl", true) }},
 		{label: "Type", actionType: "type", category: "Mouse & Keyboard", icon: actions.NewType("", 0).Icon(), create: func() actions.ActionInterface { return actions.NewType("", 0) }},
 		{label: "Wait", actionType: "wait", category: "Miscellaneous", icon: actions.NewWait(0).Icon(), create: func() actions.ActionInterface { return actions.NewWait(0) }},
+		{label: "Pause", actionType: "pause", category: "Miscellaneous", icon: actions.NewPause("", nil, false).Icon(), create: func() actions.ActionInterface {
+			return actions.NewPause("", nil, false)
+		}},
 		{label: "Focus window", actionType: "focuswindow", category: "Miscellaneous", icon: actions.NewFocusWindow("", "").Icon(), create: func() actions.ActionInterface { return actions.NewFocusWindow("", "") }},
 		{label: "Run macro", actionType: "runmacro", category: "Miscellaneous", icon: actions.NewRunMacro("").Icon(), create: func() actions.ActionInterface { return actions.NewRunMacro("") }},
 

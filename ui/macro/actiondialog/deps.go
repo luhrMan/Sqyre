@@ -5,6 +5,7 @@ import (
 	"Sqyre/internal/services"
 	"Sqyre/ui/custom_widgets"
 	"Sqyre/ui/macrocxt"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/dialog"
@@ -16,34 +17,31 @@ type Deps struct {
 	Window fyne.Window
 
 	ClearOpenActionDialog      func()
-	SetActionDialog            func(d dialog.Dialog)
+	SetActionDialog            func(dialog.Dialog)
 	ClearActionDialogIfCurrent func(d dialog.Dialog)
 
-	MacroContext     macrocxt.Provider
-	MacroVariables   func() []string
-	CurrentMacroName func() string
+	MacroContext       macrocxt.Provider
+	MacroVariables     func() []string
+	MacroVariableDefs  func() []models.VariableDef
+	CurrentMacroName   func() string
 
-	// PreviewExpression evaluates a Calculate expression against the current
-	// macro's variables and returns a formatted result or an error.
 	PreviewExpression func(expr string) (string, error)
 
 	AddDialogEscapeClose func(d dialog.Dialog, parent fyne.Window)
 	ShowRecordingOverlay func(onClosed func(), onMouseDown func(*desktop.MouseEvent)) func()
+	ShowHotkeyRecordDialog func(parent fyne.Window, stableDuration time.Duration, onRecorded func(keys []string))
 }
 
 var active Deps
 
-// SetDeps wires the action dialog shell. Call from ui during ConstructUi before SetMacroUi.
 func SetDeps(d Deps) { active = d }
 
 func macroVarNames() []string {
-	if active.MacroVariables != nil {
-		return active.MacroVariables()
-	}
-	if active.MacroContext.CurrentMacro != nil {
-		return active.MacroContext.VariableNames()
-	}
-	return nil
+	return macrocxt.VariableNames(active.MacroContext, active.MacroVariables)
+}
+
+func macroVariableDefs() []models.VariableDef {
+	return macrocxt.VariableDefs(active.MacroContext, active.MacroVariableDefs)
 }
 
 func currentMacroName() string {
@@ -53,8 +51,6 @@ func currentMacroName() string {
 	return ""
 }
 
-// previewExpression evaluates expr against the current macro for the live
-// Calculate preview. Returns ("", nil) when no preview provider is wired.
 func previewExpression(expr string) (string, error) {
 	if active.PreviewExpression != nil {
 		return active.PreviewExpression(expr)
@@ -85,7 +81,14 @@ func validateVariableReferences(text string) services.EntryValidation {
 	return services.ValidateVariableReferences(text, currentMacro())
 }
 
-// dialogValidatedFields collects validated entries for the active action dialog.
+func resolveVariablePreview(text string) string {
+	resolved, err := services.ResolveVariables(text, currentMacro())
+	if err != nil || resolved == text {
+		return ""
+	}
+	return "→ " + resolved
+}
+
 var dialogValidatedFields []*custom_widgets.VarEntryField
 
 func resetDialogValidation() {
@@ -98,11 +101,23 @@ func trackValidatedField(field *custom_widgets.VarEntryField) *custom_widgets.Va
 }
 
 func newValidatedVarEntry(validate func(text string) services.EntryValidation) *custom_widgets.VarEntryField {
-	return trackValidatedField(custom_widgets.NewVarEntryField(macroVarNames, validate))
+	return trackValidatedField(custom_widgets.NewVarEntryFieldWithDefs(macroVariableDefs, validate))
 }
 
 func newValidatedMultiLineVarEntry(validate func(text string) services.EntryValidation) *custom_widgets.VarEntryField {
-	return trackValidatedField(custom_widgets.NewMultiLineVarEntryField(macroVarNames, validate))
+	return trackValidatedField(custom_widgets.NewMultiLineVarEntryFieldWithDefs(macroVariableDefs, validate))
+}
+
+func newReferenceVarEntry() *custom_widgets.VarEntryField {
+	f := newValidatedVarEntry(validateVariableReferences)
+	f.ResolvePreview = resolveVariablePreview
+	return f
+}
+
+func newReferenceMultiLineVarEntry() *custom_widgets.VarEntryField {
+	f := newValidatedMultiLineVarEntry(validateVariableReferences)
+	f.ResolvePreview = resolveVariablePreview
+	return f
 }
 
 func allDialogFieldsValid() bool {

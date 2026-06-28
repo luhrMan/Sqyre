@@ -53,8 +53,9 @@ func SetEditorUi() {
 		Window:     u.Window,
 		EU:         u.EditorUi,
 		MacroMTabs: func() *macro.MacroTabs { return u.Mui.MTabs },
-		MacroContext: ctx,
-		MacroVariables: ctx.VariableNames,
+		MacroContext:      ctx,
+		MacroVariables:    ctx.VariableNames,
+		MacroVariableDefs: ctx.VariableDefs,
 		NavigationVisible:              func() bool { return u.MainUi.Navigation.Visible() },
 		ShowErrorWithEscape:            ShowErrorWithEscape,
 		ShowConfirmWithEscape:          ShowConfirmWithEscape,
@@ -86,8 +87,9 @@ func SetActionDialogDeps() {
 				u.MainUi.ActionDialog = nil
 			}
 		},
-		MacroContext: ctx,
-		MacroVariables: ctx.VariableNames,
+		MacroContext:        ctx,
+		MacroVariables:      ctx.VariableNames,
+		MacroVariableDefs:   ctx.VariableDefs,
 		CurrentMacroName: func() string {
 			st := u.Mui.MTabs.SelectedTab()
 			if st == nil || st.Macro == nil {
@@ -98,6 +100,9 @@ func SetActionDialogDeps() {
 		PreviewExpression:    previewExpression,
 		AddDialogEscapeClose: AddDialogEscapeClose,
 		ShowRecordingOverlay: recording.ShowRecordingOverlay,
+		ShowHotkeyRecordDialog: func(parent fyne.Window, stableDuration time.Duration, onRecorded func(keys []string)) {
+			recording.ShowHotkeyRecordDialog(parent, stableDuration, AddDialogEscapeClose, onRecorded)
+		},
 	})
 }
 
