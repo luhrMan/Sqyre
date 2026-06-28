@@ -19,6 +19,9 @@ type macroLogCaptureState struct {
 	pending  []string // lines not yet drained by the UI
 }
 
+const maxMacroLogBufferBytes = 512 * 1024
+const maxMacroLogPendingLines = 400
+
 // StartMacroLogCapture begins capturing log output for the given macro.
 //
 // Lines are buffered (for Copy) and appended to a pending queue that the UI
@@ -35,6 +38,18 @@ func StartMacroLogCapture(macroName string) {
 		original: log.Writer(),
 	}
 	log.SetOutput(&macroLogWriter{original: macroLogCapture.original})
+}
+
+// ReleaseMacroLogCapture drops retained log buffers after a macro finishes.
+// The UI keeps its own trimmed view; this frees backend memory held for Copy.
+func ReleaseMacroLogCapture() {
+	macroLogMu.Lock()
+	defer macroLogMu.Unlock()
+	if macroLogCapture == nil {
+		return
+	}
+	macroLogCapture.buffer = nil
+	macroLogCapture.pending = nil
 }
 
 // StopMacroLogCapture stops capturing and restores the original log output.
@@ -86,11 +101,11 @@ func (w *macroLogWriter) Write(p []byte) (n int, err error) {
 	}
 	macroLogMu.Lock()
 	if macroLogCapture != nil {
-		if macroLogCapture.buffer != nil {
+		if macroLogCapture.buffer != nil && macroLogCapture.buffer.Len() < maxMacroLogBufferBytes {
 			_, _ = macroLogCapture.buffer.Write(p)
 		}
 		text := strings.TrimSuffix(string(p), "\n")
-		if text != "" {
+		if text != "" && len(macroLogCapture.pending) < maxMacroLogPendingLines {
 			macroLogCapture.pending = append(macroLogCapture.pending, text)
 		}
 	}
