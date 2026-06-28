@@ -3,6 +3,7 @@ package actions
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -157,6 +158,25 @@ func TestClick_Icon(t *testing.T) {
 	}
 	if NewClick(false, true).Icon() == nil {
 		t.Error("Icon() hold should not be nil")
+	}
+}
+
+// --- Pause ---
+
+func TestNewPause(t *testing.T) {
+	p := NewPause("hold", []string{"ctrl", "f9"}, false)
+	if p.GetType() != "pause" {
+		t.Errorf("Type=%q", p.GetType())
+	}
+	if p.Message != "hold" || !slices.Equal(p.ContinueKey, []string{"ctrl", "f9"}) || p.PassThrough {
+		t.Errorf("Pause: %+v", p)
+	}
+}
+
+func TestPause_String(t *testing.T) {
+	got := NewPause("note", []string{"f9"}, true).String()
+	if !strings.Contains(got, "f9") || !strings.Contains(got, "pass through") {
+		t.Errorf("String() = %q", got)
 	}
 }
 
@@ -559,6 +579,7 @@ func TestActionTypes_Icon(t *testing.T) {
 		{"SaveVariable", NewSaveVariable("v", "d", false, false)},
 		{"SetVariable", NewSetVariable("v", 0)},
 		{"Wait", NewWait(0)},
+		{"Pause", NewPause("", []string{"f9"}, false)},
 		{"FindPixel", NewFindPixel("w", "", "000000", 0)},
 		{"Break", NewBreak()},
 		{"Continue", NewContinue()},

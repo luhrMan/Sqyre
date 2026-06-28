@@ -256,6 +256,8 @@ func (mt *MacroTree) applySnapshot(snap treeSnapshot) error {
 	mt.applyingHistory = true
 	defer func() { mt.applyingHistory = false }()
 
+	view := mt.captureViewState()
+
 	mt.Macro.Root = root
 	mt.clearRowCache()
 	mt.SelectedNode = snap.selectedUID
@@ -263,11 +265,8 @@ func (mt *MacroTree) applySnapshot(snap treeSnapshot) error {
 		mt.SelectedNode = ""
 	}
 	mt.flushNodeCache()
-	if mt.SelectedNode != "" {
-		mt.Select(mt.SelectedNode)
-	} else {
-		mt.UnselectAll()
-	}
+	mt.restoreViewState(view)
+	mt.selectPreservingScroll(mt.SelectedNode)
 	if mt.OnTreeChanged != nil {
 		mt.OnTreeChanged()
 	}
