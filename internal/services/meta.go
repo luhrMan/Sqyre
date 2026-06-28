@@ -39,7 +39,10 @@ func SaveMetaImage(purpose string, img gocv.Mat) {
 
 	filename := fmt.Sprintf("%s-%06d-%s%s", ts, seq, purpose, config.PNG)
 	path := filepath.Join(config.GetMetaPath(), filename)
-	if ok := gocv.IMWrite(path, img); !ok {
+	openCVMu.Lock()
+	ok := gocv.IMWrite(path, img)
+	openCVMu.Unlock()
+	if !ok {
 		log.Printf("meta: failed to write %s", path)
 	}
 }
