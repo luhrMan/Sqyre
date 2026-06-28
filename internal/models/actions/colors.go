@@ -3,9 +3,40 @@ package actions
 import (
 	"image/color"
 	"strings"
+	"sync"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/theme"
+)
+
+const (
+	ActionColorKeyMouseKeyboard = "mouse_keyboard"
+	ActionColorKeyDetection     = "detection"
+	ActionColorKeyVariables     = "variables"
+	ActionColorKeyMiscellaneous = "miscellaneous"
+	ActionColorKeyWait          = "wait"
+	ActionColorKeyDefault       = "default"
+)
+
+// ActionColorCategory describes one customizable action color group in settings.
+type ActionColorCategory struct {
+	Key   string
+	Label string
+}
+
+// ActionColorCategories lists every action color group the user can customize.
+var ActionColorCategories = []ActionColorCategory{
+	{Key: ActionColorKeyMouseKeyboard, Label: "Mouse & Keyboard"},
+	{Key: ActionColorKeyDetection, Label: "Detection"},
+	{Key: ActionColorKeyVariables, Label: "Variables"},
+	{Key: ActionColorKeyMiscellaneous, Label: "Miscellaneous"},
+	{Key: ActionColorKeyWait, Label: "Wait"},
+	{Key: ActionColorKeyDefault, Label: "Default"},
+}
+
+var (
+	customColorsMu sync.RWMutex
+	customColors   map[string]color.NRGBA
 )
 
 func ActionCategoryForType(actionType string) string {
@@ -23,12 +54,35 @@ func ActionCategoryForType(actionType string) string {
 	}
 }
 
-func ActionPastelColor(actionType string) color.NRGBA {
+func actionColorKey(actionType string) string {
+	t := strings.ToLower(strings.TrimSpace(actionType))
+	if t == "wait" {
+		return ActionColorKeyWait
+	}
+	switch ActionCategoryForType(t) {
+	case "Mouse & Keyboard":
+		return ActionColorKeyMouseKeyboard
+	case "Detection":
+		return ActionColorKeyDetection
+	case "Variables":
+		return ActionColorKeyVariables
+	case "Miscellaneous":
+		return ActionColorKeyMiscellaneous
+	default:
+		return ActionColorKeyDefault
+	}
+}
+
+// DefaultActionPastelColor returns the built-in pastel color for an action type.
+func DefaultActionPastelColor(actionType string) color.NRGBA {
 	t := strings.ToLower(strings.TrimSpace(actionType))
 	category := ActionCategoryForType(t)
 	isWait := t == "wait"
 
-	isDark := fyne.CurrentApp().Settings().ThemeVariant() == theme.VariantDark
+	isDark := false
+	if app := fyne.CurrentApp(); app != nil {
+		isDark = app.Settings().ThemeVariant() == theme.VariantDark
+	}
 	if isDark {
 		if isWait {
 			return color.NRGBA{R: 0x7B, G: 0x4E, B: 0x3E, A: 0xFF}
@@ -61,4 +115,41 @@ func ActionPastelColor(actionType string) color.NRGBA {
 	default:
 		return color.NRGBA{R: 0xB2, G: 0xA4, B: 0x8E, A: 0xFF}
 	}
+}
+
+// ActionPastelColor returns the display color for an action type, using a user
+// override when one is set.
+func ActionPastelColor(actionType string) color.NRGBA {
+	key := actionColorKey(actionType)
+	customColorsMu.RLock()
+	c, ok := customColors[key]
+	customColorsMu.RUnlock()
+	if ok {
+		return c
+	}
+	return DefaultActionPastelColor(actionType)
+}
+
+// SetCustomActionColor stores a user-chosen color for a category key.
+func SetCustomActionColor(categoryKey string, c color.NRGBA) {
+	customColorsMu.Lock()
+	defer customColorsMu.Unlock()
+	if customColors == nil {
+		customColors = make(map[string]color.NRGBA)
+	}
+	customColors[categoryKey] = c
+}
+
+// ClearCustomActionColor removes a user override for a category key.
+func ClearCustomActionColor(categoryKey string) {
+	customColorsMu.Lock()
+	defer customColorsMu.Unlock()
+	delete(customColors, categoryKey)
+}
+
+// ClearAllCustomActionColors removes every user override.
+func ClearAllCustomActionColors() {
+	customColorsMu.Lock()
+	defer customColorsMu.Unlock()
+	customColors = nil
 }

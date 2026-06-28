@@ -3,6 +3,8 @@ package ui
 import (
 	"image/color"
 
+	"Sqyre/internal/config"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
@@ -18,13 +20,24 @@ var sqyreSelection = color.NRGBA{R: 0xdc, G: 0x9d, B: 0x2e, A: 0x40}
 // sqyreHover is a dimmed version of sqyrePrimary for menu/item hover.
 var sqyreHover = color.NRGBA{R: 0xdc, G: 0x9d, B: 0x2e, A: 0x40}
 
+var currentSqyreTheme *sqyreTheme
+
 // sqyreTheme wraps the default theme and overrides the primary, selection, and hover colors.
 type sqyreTheme struct {
 	fyne.Theme
+	fontSize float32
+	uiScale  float32
 }
 
 func NewSqyreTheme() fyne.Theme {
-	return &sqyreTheme{Theme: kxtheme.DefaultWithFixedVariant(theme.VariantDark)}
+	if currentSqyreTheme == nil {
+		currentSqyreTheme = &sqyreTheme{
+			Theme:    kxtheme.DefaultWithFixedVariant(theme.VariantDark),
+			fontSize: config.DefaultUIFontSize,
+			uiScale:  config.DefaultUIScale,
+		}
+	}
+	return currentSqyreTheme
 }
 
 // Color returns the sqyre primary for ColorNamePrimary and ColorNameSeparator, dimmed primary for ColorNameSelection and ColorNameHover, otherwise the default theme color.
@@ -40,6 +53,31 @@ func (t *sqyreTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVariant) 
 		return sqyreHover
 	default:
 		return t.Theme.Color(name, variant)
+	}
+}
+
+func (t *sqyreTheme) Size(name fyne.ThemeSizeName) float32 {
+	base := t.Theme.Size(name)
+	scale := t.uiScale
+	if scale <= 0 {
+		scale = config.DefaultUIScale
+	}
+	fontSize := t.fontSize
+	if fontSize <= 0 {
+		fontSize = config.DefaultUIFontSize
+	}
+
+	switch name {
+	case theme.SizeNameText:
+		return fontSize
+	case theme.SizeNameCaptionText:
+		return fontSize * 11 / config.DefaultUIFontSize
+	case theme.SizeNameHeadingText:
+		return fontSize * 24 / config.DefaultUIFontSize
+	case theme.SizeNameSubHeadingText:
+		return fontSize * 18 / config.DefaultUIFontSize
+	default:
+		return base * scale
 	}
 }
 
