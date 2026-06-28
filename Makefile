@@ -1,5 +1,5 @@
 # Sqyre build helpers. Default output: ./bin (workspace /workspace/bin in devcontainer).
-.PHONY: all linux sqyre tessdata windows windows-matprofile appimage help
+.PHONY: all linux sqyre tessdata windows windows-matprofile appimage appimage-matprofile help
 
 BIN := $(abspath bin)
 BUILD_TAGS ?= gocv_specific_modules
@@ -13,6 +13,7 @@ help:
 	@echo "  windows        - cross-compile exe -> $(BIN)/windows-amd64/ (Docker + fyne-cross)"
 	@echo "  windows-matprofile - same with matprofile tag"
 	@echo "  appimage       - AppImage -> $(BIN)/ (AppDir still under scripts/linux/packaging/appimage/)"
+	@echo "  appimage-matprofile - same with matprofile tag -> $(BIN)/Sqyre-*-matprofile-x86_64.AppImage"
 
 $(BIN):
 	mkdir -p $(BIN)
@@ -31,3 +32,6 @@ windows-matprofile: $(BIN)
 
 appimage:
 	./scripts/linux/packaging/appimage/build-appimage.sh
+
+appimage-matprofile: $(BIN)
+	./scripts/linux/packaging/appimage/build-appimage-matprofile.sh
