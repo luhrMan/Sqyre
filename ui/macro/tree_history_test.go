@@ -68,6 +68,26 @@ func TestTreeHistory_undoRedo_moveNode(t *testing.T) {
 	}
 }
 
+func TestTreeHistory_snapshotPreservesUIDs(t *testing.T) {
+	waitA := actions.NewWait(1)
+	waitB := actions.NewWait(2)
+	root := actions.NewLoop(1, "root", []actions.ActionInterface{waitA, waitB})
+	uidA, uidB := waitA.GetUID(), waitB.GetUID()
+
+	snap, err := snapshotTree(root, uidB)
+	if err != nil {
+		t.Fatalf("snapshotTree: %v", err)
+	}
+	restored, err := restoreTreeRoot(snap.rootMap)
+	if err != nil {
+		t.Fatalf("restoreTreeRoot: %v", err)
+	}
+	got := childUIDs(restored)
+	if len(got) != 2 || got[0] != uidA || got[1] != uidB {
+		t.Fatalf("restored uids = %v, want %q and %q", got, uidA, uidB)
+	}
+}
+
 func TestTreeHistory_applyingHistoryDoesNotRecord(t *testing.T) {
 	wait := actions.NewWait(1)
 	root := actions.NewLoop(1, "root", []actions.ActionInterface{wait})
