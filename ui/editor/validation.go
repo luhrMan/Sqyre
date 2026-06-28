@@ -4,6 +4,7 @@ import (
 	"Sqyre/internal/models"
 	"Sqyre/internal/services"
 	"Sqyre/ui/custom_widgets"
+	"Sqyre/ui/macrocxt"
 )
 
 func currentMacro() *models.Macro {
@@ -13,12 +14,20 @@ func currentMacro() *models.Macro {
 	return nil
 }
 
+func macroVarNames() []string {
+	return macrocxt.VariableNames(activeWire.MacroContext, activeWire.MacroVariables)
+}
+
+func macroVariableDefs() []models.VariableDef {
+	return macrocxt.VariableDefs(activeWire.MacroContext, activeWire.MacroVariableDefs)
+}
+
 func validateNumericExpression(text string) services.EntryValidation {
 	return services.ValidateNumericExpression(text, currentMacro())
 }
 
 func newValidatedCoordEntry() *custom_widgets.VarEntryField {
-	return custom_widgets.NewVarEntryField(macroVarNames, validateNumericExpression)
+	return custom_widgets.NewVarEntryFieldWithDefs(macroVariableDefs, validateNumericExpression)
 }
 
 func tabValidatedFields(tab *EditorTab) []*custom_widgets.VarEntryField {
@@ -43,20 +52,5 @@ func allTabFieldsValid(tab *EditorTab) bool {
 	return true
 }
 
-// RefreshVarEntryInsertButtons re-evaluates + button state on all coordinate fields.
-// Editor widgets are built before macro variable wiring, so this must run after SetEditorUi
-// and whenever the data editor is shown.
-func RefreshVarEntryInsertButtons() {
-	eu := shell()
-	if eu == nil {
-		return
-	}
-	et := eu.EditorTabs
-	for _, tab := range []*EditorTab{
-		et.PointsTab, et.SearchAreasTab, et.MasksTab,
-	} {
-		for _, f := range tabValidatedFields(tab) {
-			f.Entry.UpdateInsertButton()
-		}
-	}
-}
+// RefreshVarEntryInsertButtons is retained for callers; insert buttons update on focus.
+func RefreshVarEntryInsertButtons() {}
