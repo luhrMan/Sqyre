@@ -1,8 +1,9 @@
-package services
+package vision
 
 import (
 	"Sqyre/internal/assets"
 	"Sqyre/internal/config"
+	macropkg "Sqyre/internal/macro"
 	"Sqyre/internal/models"
 	"Sqyre/internal/models/actions"
 	"Sqyre/internal/models/repositories"
@@ -48,7 +49,7 @@ func WarmUpOCR() {
 	})
 }
 
-func macroUsesOCR(m *models.Macro) bool {
+func MacroUsesOCR(m *models.Macro) bool {
 	seen := make(map[string]bool)
 	return macroUsesOCRRec(m, seen)
 }
@@ -101,6 +102,14 @@ func setTessImageFromMat(mat gocv.Mat) error {
 	if mat.Empty() {
 		return fmt.Errorf("empty OCR image")
 	}
+	var err error
+	WithOpenCV(func() {
+		err = setTessImageFromMatLocked(mat)
+	})
+	return err
+}
+
+func setTessImageFromMatLocked(mat gocv.Mat) error {
 	working := mat
 	if mat.Channels() == 3 {
 		rgb := gocv.NewMat()
@@ -120,12 +129,17 @@ func setTessImageFromMat(mat gocv.Mat) error {
 }
 
 func setTessImageFromGo(img image.Image) error {
-	mat, err := gocv.ImageToMatRGB(img)
-	if err != nil {
-		return err
-	}
-	defer mat.Close()
-	return setTessImageFromMat(mat)
+	var err error
+	WithOpenCV(func() {
+		mat, matErr := gocv.ImageToMatRGB(img)
+		if matErr != nil {
+			err = matErr
+			return
+		}
+		defer mat.Close()
+		err = setTessImageFromMatLocked(mat)
+	})
+	return err
 }
 
 func CheckImageForText(img image.Image) (error, string) {
@@ -242,7 +256,7 @@ func findTargetInBoxes(boxes []gosseract.BoundingBox, target string) (centerX, c
 func OCR(a *actions.Ocr, macro *models.Macro) (foundText string, outX, outY int, err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			LogPanicToFile(r, "OCR")
+			macropkg.LogPanicToFile(r, "OCR")
 			foundText, outX, outY = "", 0, 0
 			err = fmt.Errorf("OCR panic: %v", r)
 			log.Printf("OCR: %v (macro continues)", err)
@@ -253,12 +267,12 @@ func OCR(a *actions.Ocr, macro *models.Macro) (foundText string, outX, outY int,
 
 func ocrCapture(a *actions.Ocr, macro *models.Macro) (foundText string, outX, outY int, err error) {
 	defer releaseTessClientImage()
-	resolvedLeftX, resolvedTopY, resolvedRightX, resolvedBottomY, err := ResolveSearchAreaCoordsFromRef(a.SearchArea, macro, DefaultResolutionKey())
+	resolvedLeftX, resolvedTopY, resolvedRightX, resolvedBottomY, err := macropkg.ResolveSearchAreaCoordsFromRef(a.SearchArea, macro, macropkg.DefaultResolutionKey())
 	if err != nil {
 		log.Printf("OCR: failed to resolve search area %q: %v", a.SearchArea, err)
 		return "", 0, 0, err
 	}
-	img, leftX, topY, rightX, bottomY, err := CaptureSearchArea(resolvedLeftX, resolvedTopY, resolvedRightX, resolvedBottomY)
+	img, leftX, topY, rightX, bottomY, err := macropkg.CaptureSearchArea(resolvedLeftX, resolvedTopY, resolvedRightX, resolvedBottomY)
 	if err != nil {
 		log.Printf("OCR: %v (macro continues)", err)
 		return "", 0, 0, err

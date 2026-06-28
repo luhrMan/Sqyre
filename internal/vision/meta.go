@@ -1,4 +1,4 @@
-package services
+package vision
 
 import (
 	"Sqyre/internal/config"
@@ -20,6 +20,16 @@ var (
 )
 
 func SaveMetaImage(purpose string, img gocv.Mat) {
+	saveMetaImage(purpose, img, false)
+}
+
+// SaveMetaImageLocked is like SaveMetaImage but must be called while holding the
+// OpenCV lock (see WithOpenCV).
+func SaveMetaImageLocked(purpose string, img gocv.Mat) {
+	saveMetaImage(purpose, img, true)
+}
+
+func saveMetaImage(purpose string, img gocv.Mat, openCVLocked bool) {
 	if !fyne.CurrentApp().Preferences().BoolWithFallback(config.PrefSaveMetaImages, false) {
 		return
 	}
@@ -39,9 +49,13 @@ func SaveMetaImage(purpose string, img gocv.Mat) {
 
 	filename := fmt.Sprintf("%s-%06d-%s%s", ts, seq, purpose, config.PNG)
 	path := filepath.Join(config.GetMetaPath(), filename)
-	openCVMu.Lock()
-	ok := gocv.IMWrite(path, img)
-	openCVMu.Unlock()
+	var ok bool
+	write := func() { ok = gocv.IMWrite(path, img) }
+	if openCVLocked {
+		write()
+	} else {
+		WithOpenCV(write)
+	}
 	if !ok {
 		log.Printf("meta: failed to write %s", path)
 	}
