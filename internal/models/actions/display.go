@@ -71,7 +71,7 @@ func displayFromParams(params []actionParam) fyne.CanvasObject {
 // NewDisplayPill renders a rounded label chip using the pastel color for actionType.
 func NewDisplayPill(text string, actionType string) fyne.CanvasObject {
 	label := canvas.NewText(text, theme.Color(theme.ColorNameForeground))
-	label.TextSize = 11
+	label.TextSize = theme.CaptionTextSize()
 	fill := actionPillColor(actionType)
 	bg := canvas.NewRectangle(fill)
 	bg.StrokeColor = theme.Color(theme.ColorNameSeparator)
