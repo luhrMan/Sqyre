@@ -1,4 +1,4 @@
-package services
+package macro
 
 import (
 	"testing"
@@ -12,7 +12,7 @@ func TestResolveIntWithOverrides_ImagePixelWidth(t *testing.T) {
 		"ImagePixelWidth":  64,
 		"ImagePixelHeight": 32,
 	}
-	n, err := resolveIntWithOverrides("${ImagePixelWidth}", nil, overrides)
+	n, err := ResolveIntWithOverrides("${ImagePixelWidth}", nil, overrides)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -20,7 +20,7 @@ func TestResolveIntWithOverrides_ImagePixelWidth(t *testing.T) {
 		t.Fatalf("got %d want 64", n)
 	}
 
-	n, err = resolveIntWithOverrides("${ImagePixelWidth}/2", nil, overrides)
+	n, err = ResolveIntWithOverrides("${ImagePixelWidth}/2", nil, overrides)
 	if err != nil {
 		t.Fatal(err)
 	}
