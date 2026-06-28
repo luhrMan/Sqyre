@@ -289,7 +289,7 @@ func createKeyDialogContent(action *actions.Key) (fyne.CanvasObject, func()) {
 }
 
 func createTypeDialogContent(action *actions.Type) (fyne.CanvasObject, func()) {
-	textEntry := newValidatedVarEntry(validateVariableReferences)
+	textEntry := newReferenceVarEntry()
 	textEntry.Entry.SetText(action.Text)
 	textEntry.Entry.SetPlaceHolder("Text to type (supports ${variable})")
 
@@ -410,11 +410,11 @@ type clauseRowWidgets struct {
 }
 
 func newClauseRowWidgets(c actions.ConditionClause) clauseRowWidgets {
-	left := newValidatedVarEntry(validateVariableReferences)
+	left := newReferenceVarEntry()
 	left.Entry.SetPlaceHolder("e.g. ${score} or 10")
 	left.Entry.SetText(operandToString(c.Left))
 
-	right := newValidatedVarEntry(validateVariableReferences)
+	right := newReferenceVarEntry()
 	right.Entry.SetPlaceHolder("e.g. ${target} or 100")
 	right.Entry.SetText(operandToString(c.Right))
 

@@ -1,6 +1,7 @@
 package editor
 
 import (
+	"Sqyre/internal/models"
 	"Sqyre/ui/macro"
 
 	"fyne.io/fyne/v2"
@@ -17,7 +18,8 @@ type WireDeps struct {
 	MacroMTabs            func() *macro.MacroTabs
 	MacroContext          macrocxt.Provider
 	// MacroVariables returns variable names from the currently selected macro (for VarEntry completion).
-	MacroVariables        func() []string
+	MacroVariables      func() []string
+	MacroVariableDefs   func() []models.VariableDef
 	NavigationVisible     func() bool
 	ShowErrorWithEscape   func(err error, parent fyne.Window)
 	ShowConfirmWithEscape func(title, message string, callback func(bool), parent fyne.Window)
@@ -31,13 +33,6 @@ type WireDeps struct {
 var activeWire WireDeps
 
 func shell() *EditorUi { return activeWire.EU }
-
-func macroVarNames() []string {
-	if activeWire.MacroVariables != nil {
-		return activeWire.MacroVariables()
-	}
-	return activeWire.MacroContext.VariableNames()
-}
 
 func wrapTagChip(inner fyne.CanvasObject) fyne.CanvasObject {
 	if activeWire.WrapTagChip != nil {
@@ -62,5 +57,4 @@ func SetEditorUi(d WireDeps) {
 	updateProgramSelectorOptions()
 	setupAllDirtyTracking()
 	selectFirstProgramInEditorIfAny()
-	RefreshVarEntryInsertButtons()
 }

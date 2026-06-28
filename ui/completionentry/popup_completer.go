@@ -26,13 +26,19 @@ type PopupCompleter struct {
 	visible       bool
 }
 
-// Show displays the completion popup with the given options, focusing the list
-// for keyboard navigation while keeping the entry editable. Showing with no
-// options hides the popup.
+// Show displays the completion popup with the given options.
 func (p *PopupCompleter) Show(options []string) {
+	p.ShowLabels(options, options)
+}
+
+// ShowLabels displays options with separate display labels. OnSelected receives the option value.
+func (p *PopupCompleter) ShowLabels(options, labels []string) {
 	if len(options) == 0 || p.Host == nil || p.Entry == nil {
 		p.Hide()
 		return
+	}
+	if len(labels) != len(options) {
+		labels = options
 	}
 	holder := fyne.CurrentApp().Driver().CanvasForObject(p.Host)
 	if holder == nil {
@@ -51,6 +57,7 @@ func (p *PopupCompleter) Show(options []string) {
 	} else {
 		p.navigableList.SetOptions(options)
 	}
+	p.navigableList.SetLabels(labels)
 
 	if p.popupMenu == nil {
 		p.popupMenu = widget.NewPopUp(p.navigableList, holder)
