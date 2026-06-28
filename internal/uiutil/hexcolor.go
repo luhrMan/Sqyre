@@ -21,3 +21,9 @@ func HexToColor(hex string) (color.Color, bool) {
 	}
 	return color.RGBA{R: r, G: g, B: b, A: 255}, true
 }
+
+// ColorToHex formats a color as lowercase #rrggbb.
+func ColorToHex(c color.Color) string {
+	r, g, b, _ := c.RGBA()
+	return fmt.Sprintf("#%02x%02x%02x", byte(r>>8), byte(g>>8), byte(b>>8))
+}

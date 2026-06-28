@@ -7,6 +7,7 @@ import (
 	"Sqyre/internal/config"
 	"Sqyre/internal/logger"
 	"Sqyre/internal/services"
+	"Sqyre/ui/custom_widgets"
 	"Sqyre/ui/editor"
 	"Sqyre/ui/macro"
 
@@ -43,7 +44,7 @@ type MainUi struct {
 
 func GetUi() *Ui { return ui }
 func InitializeUi(w fyne.Window) *Ui {
-	fyne.CurrentApp().Settings().SetTheme(NewSqyreTheme())
+	ApplyAppearanceFromPrefs()
 	logger.SetLogFile(filepath.Join(config.GetSqyreDir(), "sqyre.log"))
 	restoreWindowGeometry(w)
 	w.SetCloseIntercept(func() {
@@ -123,6 +124,7 @@ func restoreWindowGeometry(w fyne.Window) {
 }
 
 func saveWindowGeometry(w fyne.Window) {
+	FlushAppearancePrefs()
 	prefs := fyne.CurrentApp().Preferences()
 
 	// Persist content size from Fyne.
@@ -169,7 +171,8 @@ func (u *Ui) ConstructUi() {
 
 func (u *Ui) constructUiShell() {
 	u.MainUi.Navigation = container.NewNavigation(u.constructMacroUi())
-	u.Window.SetContent(fynetooltip.AddWindowToolTipLayer(u.MainUi.Navigation, u.Window.Canvas()))
+	mainContent := fynetooltip.AddWindowToolTipLayer(u.MainUi.Navigation, u.Window.Canvas())
+	u.Window.SetContent(custom_widgets.AddWindowItemTooltipLayer(mainContent, u.Window.Canvas()))
 }
 
 func (u *Ui) constructUiFinish() {
