@@ -16,16 +16,13 @@ import (
 // found — use a Conditional action on the output variable for true/false
 // branching.
 type FindPixel struct {
-	Name                   string
-	SearchArea             CoordinateRef `mapstructure:"searcharea"`
-	TargetColor            string     `mapstructure:"targetcolor"`
-	ColorTolerance         int        `mapstructure:"colortolerance"`
-	WaitTilFound           bool       `mapstructure:"waittilfound"`
-	WaitTilFoundSeconds    int        `mapstructure:"waittilfoundseconds"`
-	WaitTilFoundIntervalMs int        `mapstructure:"waittilfoundintervalms"`
-	OutputXVariable        string     `mapstructure:"outputxvariable"`
-	OutputYVariable        string     `mapstructure:"outputyvariable"`
-	*BaseAction            `yaml:",inline" mapstructure:",squash"`
+	Name           string
+	SearchArea     CoordinateRef `mapstructure:"searcharea"`
+	TargetColor    string        `mapstructure:"targetcolor"`
+	ColorTolerance int           `mapstructure:"colortolerance"`
+	WaitTilFoundConfig `yaml:",inline" mapstructure:",squash"`
+	CoordinateOutputs  `yaml:",inline" mapstructure:",squash"`
+	*BaseAction        `yaml:",inline" mapstructure:",squash"`
 }
 
 // NormalizeHex returns lowercase hex without alpha for comparison (robotgo returns 8-char hex on some platforms).
@@ -127,10 +124,7 @@ func (a *FindPixel) Display() fyne.CanvasObject {
 }
 
 func (a *FindPixel) parameters() []actionParam {
-	mode := "instant"
-	if a.WaitTilFound {
-		mode = fmt.Sprintf("wait %ds", a.WaitTilFoundSeconds)
-	}
+	mode := a.WaitTilFoundConfig.DisplayWaitMode("instant")
 	return []actionParam{
 		newParam("Type", a.GetType()),
 		newParam("Name", a.Name),
@@ -146,12 +140,5 @@ func (a *FindPixel) Icon() fyne.Resource {
 }
 
 func (a *FindPixel) VariableBindings() []VariableBinding {
-	var out []VariableBinding
-	if a.OutputXVariable != "" {
-		out = append(out, VariableBinding{Name: a.OutputXVariable, Role: "output_x"})
-	}
-	if a.OutputYVariable != "" {
-		out = append(out, VariableBinding{Name: a.OutputYVariable, Role: "output_y"})
-	}
-	return out
+	return a.CoordinateOutputs.VariableBindings()
 }
