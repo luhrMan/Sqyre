@@ -30,6 +30,13 @@ void Clear(TessBaseAPI a) {
     }
 }
 
+void ClearAdaptiveClassifier(TessBaseAPI a) {
+    tesseract::TessBaseAPI* api = (tesseract::TessBaseAPI*)a;
+    if (api != nullptr) {
+        api->ClearAdaptiveClassifier();
+    }
+}
+
 void ClearPersistentCache(TessBaseAPI a) {
     tesseract::TessBaseAPI* api = (tesseract::TessBaseAPI*)a;
     api->ClearPersistentCache();
@@ -105,6 +112,16 @@ void SetPixImage(TessBaseAPI a, PixImage pix) {
     }
 }
 
+void SetRawImage(TessBaseAPI a, unsigned char* data, int width, int height, int bytes_per_pixel, int bytes_per_line) {
+    tesseract::TessBaseAPI* api = (tesseract::TessBaseAPI*)a;
+    if (api != nullptr && data != nullptr && width > 0 && height > 0 && bytes_per_pixel > 0 && bytes_per_line > 0) {
+        api->SetImage(data, width, height, bytes_per_pixel, bytes_per_line);
+        if (api->GetSourceYResolution() < 70) {
+            api->SetSourceResolution(70);
+        }
+    }
+}
+
 void SetPageSegMode(TessBaseAPI a, int m) {
     tesseract::TessBaseAPI* api = (tesseract::TessBaseAPI*)a;
     tesseract::PageSegMode mode = (tesseract::PageSegMode)m;
@@ -126,6 +143,27 @@ char* HOCRText(TessBaseAPI a) {
     return api->GetHOCRText(0);
 }
 
+void FreeUTF8Text(char* text) {
+    if (text != nullptr) {
+        delete[] text;
+    }
+}
+
+void FreeBoundingBoxes(bounding_boxes* box_array) {
+    if (box_array == nullptr) {
+        return;
+    }
+    if (box_array->boxes != nullptr) {
+        for (int i = 0; i < box_array->length; i++) {
+            if (box_array->boxes[i].word != nullptr) {
+                delete[] box_array->boxes[i].word;
+            }
+        }
+        free(box_array->boxes);
+    }
+    free(box_array);
+}
+
 bounding_boxes* GetBoundingBoxesVerbose(TessBaseAPI a) {
     using namespace tesseract;
     tesseract::TessBaseAPI* api = (tesseract::TessBaseAPI*)a;
@@ -144,48 +182,51 @@ bounding_boxes* GetBoundingBoxesVerbose(TessBaseAPI a) {
     int word_num = 0;
 
     ResultIterator* res_it = api->GetIterator();
-    while (!res_it->Empty(RIL_BLOCK)) {
-        if (res_it->Empty(RIL_WORD)) {
+    if (res_it != nullptr) {
+        while (!res_it->Empty(RIL_BLOCK)) {
+            if (res_it->Empty(RIL_WORD)) {
+                res_it->Next(RIL_WORD);
+                continue;
+            }
+            // Add rows for any new block/paragraph/textline.
+            if (res_it->IsAtBeginningOf(RIL_BLOCK)) {
+                block_num++;
+                par_num = 0;
+                line_num = 0;
+                word_num = 0;
+            }
+            if (res_it->IsAtBeginningOf(RIL_PARA)) {
+                par_num++;
+                line_num = 0;
+                word_num = 0;
+            }
+            if (res_it->IsAtBeginningOf(RIL_TEXTLINE)) {
+                line_num++;
+                word_num = 0;
+            }
+            word_num++;
+
+            if (box_array->length >= realloc_threshold) {
+                capacity += realloc_raise;
+                box_array->boxes = (bounding_box*)realloc(box_array->boxes, capacity * sizeof(bounding_box));
+                realloc_threshold += realloc_raise;
+            }
+
+            box_array->boxes[box_array->length].word = res_it->GetUTF8Text(RIL_WORD);
+            box_array->boxes[box_array->length].confidence = res_it->Confidence(RIL_WORD);
+            res_it->BoundingBox(RIL_WORD, &box_array->boxes[box_array->length].x1, &box_array->boxes[box_array->length].y1,
+                                &box_array->boxes[box_array->length].x2, &box_array->boxes[box_array->length].y2);
+
+            // block, para, line, word numbers
+            box_array->boxes[box_array->length].block_num = block_num;
+            box_array->boxes[box_array->length].par_num = par_num;
+            box_array->boxes[box_array->length].line_num = line_num;
+            box_array->boxes[box_array->length].word_num = word_num;
+
+            box_array->length++;
             res_it->Next(RIL_WORD);
-            continue;
         }
-        // Add rows for any new block/paragraph/textline.
-        if (res_it->IsAtBeginningOf(RIL_BLOCK)) {
-            block_num++;
-            par_num = 0;
-            line_num = 0;
-            word_num = 0;
-        }
-        if (res_it->IsAtBeginningOf(RIL_PARA)) {
-            par_num++;
-            line_num = 0;
-            word_num = 0;
-        }
-        if (res_it->IsAtBeginningOf(RIL_TEXTLINE)) {
-            line_num++;
-            word_num = 0;
-        }
-        word_num++;
-
-        if (box_array->length >= realloc_threshold) {
-            capacity += realloc_raise;
-            box_array->boxes = (bounding_box*)realloc(box_array->boxes, capacity * sizeof(bounding_box));
-            realloc_threshold += realloc_raise;
-        }
-
-        box_array->boxes[box_array->length].word = res_it->GetUTF8Text(RIL_WORD);
-        box_array->boxes[box_array->length].confidence = res_it->Confidence(RIL_WORD);
-        res_it->BoundingBox(RIL_WORD, &box_array->boxes[box_array->length].x1, &box_array->boxes[box_array->length].y1,
-                            &box_array->boxes[box_array->length].x2, &box_array->boxes[box_array->length].y2);
-
-        // block, para, line, word numbers
-        box_array->boxes[box_array->length].block_num = block_num;
-        box_array->boxes[box_array->length].par_num = par_num;
-        box_array->boxes[box_array->length].line_num = line_num;
-        box_array->boxes[box_array->length].word_num = word_num;
-
-        box_array->length++;
-        res_it->Next(RIL_WORD);
+        delete res_it;
     }
 
     return box_array;
@@ -218,6 +259,7 @@ bounding_boxes* GetBoundingBoxes(TessBaseAPI a, int pageIteratorLevel) {
                             &box_array->boxes[box_array->length].x2, &box_array->boxes[box_array->length].y2);
             box_array->length++;
         } while (ri->Next(level));
+        delete ri;
     }
 
     return box_array;
