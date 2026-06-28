@@ -54,6 +54,22 @@ type EditorTab struct {
 	UpdateButton         *widget.Button
 	PreviewRefreshButton *widget.Button
 	OriginalValues       map[string]string
+
+	// searchDebouncer coalesces searchbar keystrokes so the accordion/list is
+	// rebuilt once per burst instead of on every character. Lazily created.
+	searchDebouncer *custom_widgets.Debouncer
+
+	// listState backs the Programs tab list (filtered keys) so its callbacks are
+	// wired once and only the data is refreshed afterwards.
+	listState *programListState
+}
+
+// SearchDebouncer returns the tab's lazily-created search debouncer.
+func (t *EditorTab) SearchDebouncer() *custom_widgets.Debouncer {
+	if t.searchDebouncer == nil {
+		t.searchDebouncer = custom_widgets.NewDebouncer(custom_widgets.DefaultSearchDebounce)
+	}
+	return t.searchDebouncer
 }
 
 func NewEditorTab(name string, left, right fyne.CanvasObject) *container.TabItem {
