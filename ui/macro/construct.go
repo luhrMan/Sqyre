@@ -21,6 +21,43 @@ import (
 // copiedNodeMap is the clipboard for macro tree copy/paste (nil when empty).
 var copiedNodeMap map[string]any
 
+func copyMacroTreeSelection(mt *MacroTree) bool {
+	if mt == nil || mt.SelectedNode == "" {
+		return false
+	}
+	node := mt.Macro.Root.GetAction(mt.SelectedNode)
+	if node == nil || node.GetParent() == nil {
+		return false
+	}
+	m, err := serialize.ActionToMap(node)
+	if err != nil {
+		return false
+	}
+	copiedNodeMap = m
+	return true
+}
+
+func pasteMacroTreeClipboard(mt *MacroTree) bool {
+	if mt == nil {
+		return false
+	}
+	if !mt.PasteNode(copiedNodeMap) {
+		return false
+	}
+	if err := repositories.MacroRepo().Set(mt.Macro.Name, mt.Macro); err != nil {
+		log.Printf("failed to save macro after paste: %v", err)
+		return false
+	}
+	return true
+}
+
+func moveMacroTreeSelection(mt *MacroTree, up bool) {
+	if mt == nil || mt.SelectedNode == "" {
+		return
+	}
+	mt.moveNode(mt.SelectedNode, up)
+}
+
 type MacroUi struct {
 	MTabs             *MacroTabs
 	MacroSelectButton *widget.Button
@@ -45,46 +82,50 @@ func ConstructMacroUi(mui *MacroUi, boundLocXLabel, boundLocYLabel *widget.Label
 	})
 
 	moveDownNodeButton := ttwidget.NewButtonWithIcon("", assets.ChevronDownIcon, func() {
-		st := mui.MTabs.SelectedTab()
-		if st == nil {
-			return
-		}
-		st.moveNode(st.SelectedNode, false)
+		moveMacroTreeSelection(mui.MTabs.SelectedTab(), false)
 	})
 	moveUpNodeButton := ttwidget.NewButtonWithIcon("", assets.ChevronUpIcon, func() {
-		st := mui.MTabs.SelectedTab()
-		if st == nil {
-			return
-		}
-		st.moveNode(st.SelectedNode, true)
+		moveMacroTreeSelection(mui.MTabs.SelectedTab(), true)
 	})
 	copyNodeButton := ttwidget.NewButtonWithIcon("", theme.ContentCopyIcon(), func() {
-		st := mui.MTabs.SelectedTab()
-		if st == nil || st.SelectedNode == "" {
-			return
-		}
-		node := st.Macro.Root.GetAction(st.SelectedNode)
-		if node == nil || node.GetParent() == nil {
-			return
-		}
-		m, err := serialize.ActionToMap(node)
-		if err != nil {
-			return
-		}
-		copiedNodeMap = m
+		copyMacroTreeSelection(mui.MTabs.SelectedTab())
 	})
 	pasteNodeButton := ttwidget.NewButtonWithIcon("", theme.ContentPasteIcon(), func() {
+		pasteMacroTreeClipboard(mui.MTabs.SelectedTab())
+	})
+	undoNodeButton := ttwidget.NewButtonWithIcon("", theme.ContentUndoIcon(), func() {
 		st := mui.MTabs.SelectedTab()
 		if st == nil {
 			return
 		}
-		if !st.PasteNode(copiedNodeMap) {
+		st.Undo()
+	})
+	redoNodeButton := ttwidget.NewButtonWithIcon("", theme.ContentRedoIcon(), func() {
+		st := mui.MTabs.SelectedTab()
+		if st == nil {
 			return
 		}
-		if err := repositories.MacroRepo().Set(st.Macro.Name, st.Macro); err != nil {
-			log.Printf("failed to save macro after paste: %v", err)
-		}
+		st.Redo()
 	})
+	syncHistoryButtons := func() {
+		st := mui.MTabs.SelectedTab()
+		if st == nil {
+			undoNodeButton.Disable()
+			redoNodeButton.Disable()
+			return
+		}
+		if st.CanUndo() {
+			undoNodeButton.Enable()
+		} else {
+			undoNodeButton.Disable()
+		}
+		if st.CanRedo() {
+			redoNodeButton.Enable()
+		} else {
+			redoNodeButton.Disable()
+		}
+	}
+	mui.MTabs.OnHistoryButtonsSync = syncHistoryButtons
 	expandAllBtn := ttwidget.NewButtonWithIcon("", assets.DoubleDownChevronIcon, func() {
 		st := mui.MTabs.SelectedTab()
 		if st == nil {
@@ -126,13 +167,16 @@ func ConstructMacroUi(mui *MacroUi, boundLocXLabel, boundLocYLabel *widget.Label
 	})
 
 	unselectNodeButton.SetToolTip("unselect nodes")
-	moveDownNodeButton.SetToolTip("move node down")
-	moveUpNodeButton.SetToolTip("move node up")
-	copyNodeButton.SetToolTip("copy node")
-	pasteNodeButton.SetToolTip("paste node below")
+	moveDownNodeButton.SetToolTip("move node down (Alt+Down)")
+	moveUpNodeButton.SetToolTip("move node up (Alt+Up)")
+	copyNodeButton.SetToolTip("copy node (Ctrl+C)")
+	pasteNodeButton.SetToolTip("paste node below (Ctrl+V)")
+	undoNodeButton.SetToolTip("undo (Ctrl+Z)")
+	redoNodeButton.SetToolTip("redo (Ctrl+Y)")
 	expandAllBtn.SetToolTip("expand all branches")
 	collapseAllBtn.SetToolTip("collapse all branches")
 	playMacroButton.SetToolTip("start macro execution")
+	syncHistoryButtons()
 
 	mui.MacroToolbars.TopToolbar =
 		container.NewGridWithColumns(2,
@@ -142,6 +186,8 @@ func ConstructMacroUi(mui *MacroUi, boundLocXLabel, boundLocYLabel *widget.Label
 				moveUpNodeButton,
 				copyNodeButton,
 				pasteNodeButton,
+				undoNodeButton,
+				redoNodeButton,
 				expandAllBtn,
 				collapseAllBtn,
 				layout.NewSpacer(),

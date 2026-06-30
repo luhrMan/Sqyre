@@ -39,14 +39,32 @@ const (
 	IconThumbnailSize = 64  // pixels for thumbnail display
 	MaxIconVariants   = 100 // maximum variants per item
 
+	// Image search: pixels within which duplicate template matches are ignored.
+	DefaultImageSearchCloseMatchesDistance = 10
+
+	// UI appearance defaults
+	DefaultUIFontSize = 14
+	DefaultUIScale    = 1.0
+
 	// Fyne preference keys
-	PrefSaveMetaImages        = "save_meta_images"
-	PrefHighlightActiveAction = "highlight_active_action"
+	PrefSaveMetaImages                      = "save_meta_images"
+	PrefHighlightActiveAction               = "highlight_active_action"
+	PrefImageSearchCloseMatchesDistance     = "image_search_close_matches_distance"
 	PrefEnabledMonitors       = "enabled_monitors" // comma-separated indices, e.g. "0,2"; empty = all (must match screen package key)
 	PrefWindowX               = "window_x"
 	PrefWindowY               = "window_y"
 	PrefWindowWidth           = "window_width"
 	PrefWindowHeight          = "window_height"
+
+	// Action display colors in the macro tree (hex #rrggbb; empty = built-in default).
+	PrefActionColorMouseKeyboard = "action_color_mouse_keyboard"
+	PrefActionColorDetection     = "action_color_detection"
+	PrefActionColorVariables     = "action_color_variables"
+	PrefActionColorMiscellaneous = "action_color_miscellaneous"
+	PrefActionColorWait          = "action_color_wait"
+	PrefActionColorDefault       = "action_color_default"
+	PrefUIFontSize               = "ui_font_size"
+	PrefUIScale                  = "ui_scale"
 
 	//since I have refactored the code to account for multiple programs at once,
 	// I need to append the program name to the program properties names,

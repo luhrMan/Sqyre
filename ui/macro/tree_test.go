@@ -56,7 +56,7 @@ func TestInsertActionBelowSelection(t *testing.T) {
 		}
 	})
 
-	t.Run("selected branch inserts below not inside", func(t *testing.T) {
+	t.Run("selected branch inserts as first child", func(t *testing.T) {
 		mt, waitA, waitB, waitC, loop := buildInsertTestTree(t)
 		newWait := actions.NewWait(101)
 		mt.SelectedNode = loop.GetUID()
@@ -64,14 +64,18 @@ func TestInsertActionBelowSelection(t *testing.T) {
 			t.Fatal("InsertActionBelowSelection returned false")
 		}
 		got := childUIDs(mt.Macro.Root)
-		want := []string{waitA.GetUID(), loop.GetUID(), newWait.GetUID(), waitC.GetUID()}
+		want := []string{waitA.GetUID(), loop.GetUID(), waitC.GetUID()}
 		for i := range want {
 			if got[i] != want[i] {
 				t.Fatalf("root children = %v, want %v", got, want)
 			}
 		}
-		if len(childUIDs(loop)) != 1 || childUIDs(loop)[0] != waitB.GetUID() {
-			t.Fatalf("loop children changed unexpectedly: %v", childUIDs(loop))
+		gotLoop := childUIDs(loop)
+		wantLoop := []string{newWait.GetUID(), waitB.GetUID()}
+		for i := range wantLoop {
+			if gotLoop[i] != wantLoop[i] {
+				t.Fatalf("loop children = %v, want %v", gotLoop, wantLoop)
+			}
 		}
 	})
 
@@ -193,6 +197,30 @@ func TestBranchesToKeepOpen(t *testing.T) {
 			t.Fatalf("keep = %#v, want empty", keep)
 		}
 	})
+}
+
+func TestRowInViewport(t *testing.T) {
+	const rowH, pitch, viewH float32 = 24, 28, 100
+	tests := []struct {
+		name   string
+		idx    int
+		scroll float32
+		want   bool
+	}{
+		{name: "above viewport", idx: 0, scroll: 50, want: false},
+		{name: "below viewport", idx: 10, scroll: 0, want: false},
+		{name: "fully visible", idx: 2, scroll: 0, want: true},
+		{name: "partially visible top", idx: 3, scroll: 70, want: true},
+		{name: "partially visible bottom", idx: 3, scroll: 0, want: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := rowInViewport(tc.idx, rowH, pitch, tc.scroll, viewH)
+			if got != tc.want {
+				t.Fatalf("rowInViewport() = %v, want %v", got, tc.want)
+			}
+		})
+	}
 }
 
 func TestClampScrollY(t *testing.T) {

@@ -4,38 +4,25 @@ import (
 	"Sqyre/internal/models/actions"
 	"fmt"
 	"strings"
-
-	"github.com/go-vgo/robotgo"
 )
 
-// ActiveWindowNames returns a list of process/window names that can be used with ActiveName.
-// The list is suitable for showing in a dropdown; empty names are filtered out.
-func ActiveWindowNames() ([]string, error) {
-	names, err := robotgo.FindNames()
-	if err != nil {
-		return nil, fmt.Errorf("list windows: %w", err)
-	}
-	out := make([]string, 0, len(names))
-	seen := make(map[string]bool)
-	for _, n := range names {
-		n = strings.TrimSpace(n)
-		if n == "" || seen[n] {
-			continue
-		}
-		seen[n] = true
-		out = append(out, n)
-	}
-	return out, nil
+// ActiveWindows returns open top-level windows with stable executable path and title.
+func ActiveWindows() ([]WindowInfo, error) {
+	return listOpenWindows()
 }
 
-// RunFocusWindow activates/focuses the window specified by the action.
+// RunFocusWindow activates the window identified by executable path and title.
 func RunFocusWindow(a *actions.FocusWindow) error {
-	target := strings.TrimSpace(a.WindowTarget)
-	if target == "" {
-		return fmt.Errorf("focus window: no window target set")
+	path := strings.TrimSpace(a.ProcessPath)
+	title := strings.TrimSpace(a.WindowTitle)
+	if path == "" {
+		return fmt.Errorf("focus window: no executable path set")
 	}
-	if err := robotgo.ActiveName(target); err != nil {
-		return fmt.Errorf("focus window %q: %w", target, err)
+	if title == "" {
+		return fmt.Errorf("focus window: no window title set")
+	}
+	if err := activateWindow(path, title); err != nil {
+		return fmt.Errorf("focus window %q (%s): %w", title, path, err)
 	}
 	return nil
 }

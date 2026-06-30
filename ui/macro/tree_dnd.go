@@ -106,10 +106,18 @@ func (mt *MacroTree) attachDropOverlay(overlay *fyne.Container, line, box *canva
 // SetExecuting toggles whether a macro is running. Drag-and-drop is disabled
 // while executing to avoid mutating the tree under the highlight cursor.
 func (mt *MacroTree) SetExecuting(running bool) {
-	mt.executing = running
 	if running && mt.dragActive {
 		mt.endDrag()
 	}
+	if running {
+		mt.executing = true
+		mt.beginExecutionExpand()
+		return
+	}
+	mt.executing = false
+	mt.endExecutionExpand()
+	mt.stopCollapseDebounce()
+	mt.collapseStaleBranches()
 }
 
 // visibleRowUIDs returns the flattened list of currently visible row UIDs in
@@ -556,6 +564,7 @@ func (mt *MacroTree) performMove() bool {
 	}
 	parent := mt.dropParent
 
+	mt.recordMutation()
 	oldParent.RemoveSubAction(node)
 	subs := parent.GetSubActions()
 
@@ -607,9 +616,9 @@ func (mt *MacroTree) flushNodeCache() {
 	mt.suppressBranchOpenScroll++
 	defer func() { mt.suppressBranchOpenScroll-- }()
 	mt.Tree.Root = flushNodeCacheSentinel
-	mt.Tree.Refresh()
+	mt.Refresh()
 	mt.Tree.Root = ""
-	mt.Tree.Refresh()
+	mt.Refresh()
 }
 
 func indexOfString(s []string, v string) int {

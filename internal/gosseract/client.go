@@ -65,6 +65,9 @@ type Client struct {
 	// internal flag to check if the instance should be initialized again
 	// i.e, we should create a new gosseract client when language or config file change
 	shouldInit bool
+
+	// usesRawImage is true when the current page image was set via SetRawImage (not Pix).
+	usesRawImage bool
 }
 
 // NewClient construct new Client. It's due to caller to Close this client.
@@ -77,6 +80,28 @@ func NewClient() *Client {
 		Languages:  []string{"eng"},
 	}
 	return client
+}
+
+// Clear releases recognition results for the current image while keeping the API initialized.
+func (client *Client) Clear() {
+	if client.api != nil {
+		C.Clear(client.api)
+	}
+}
+
+// ClearAdaptiveClassifier clears Tesseract's adaptive classifier template cache for this page.
+func (client *Client) ClearAdaptiveClassifier() {
+	if client.api != nil {
+		C.ClearAdaptiveClassifier(client.api)
+	}
+}
+
+// ClearPixImage destroys the current Leptonica image held by the client.
+func (client *Client) ClearPixImage() {
+	if client.pixImage != nil {
+		C.DestroyPixImage(client.pixImage)
+		client.pixImage = nil
+	}
 }
 
 // Close frees allocated API. This MUST be called for ANY client constructed by "NewClient" function.
@@ -124,6 +149,7 @@ func (client *Client) SetImage(imagepath string) error {
 
 	img := C.CreatePixImageByFilePath(p)
 	client.pixImage = img
+	client.usesRawImage = false
 
 	return nil
 }
@@ -145,7 +171,36 @@ func (client *Client) SetImageFromBytes(data []byte) error {
 
 	img := C.CreatePixImageFromBytes((*C.uchar)(unsafe.Pointer(&data[0])), C.int(len(data)))
 	client.pixImage = img
+	client.usesRawImage = false
 
+	return nil
+}
+
+// SetRawImage sets a raw pixel buffer on the API. Tesseract copies the buffer immediately.
+// For 3-channel input, pixels must be RGB order. For grayscale, use bytesPerPixel=1.
+func (client *Client) SetRawImage(data []byte, width, height, bytesPerPixel, bytesPerLine int) error {
+	if client.api == nil {
+		return fmt.Errorf("TessBaseAPI is not constructed, please use `gosseract.NewClient`")
+	}
+	if len(data) == 0 || width <= 0 || height <= 0 || bytesPerPixel <= 0 || bytesPerLine <= 0 {
+		return fmt.Errorf("invalid raw image parameters")
+	}
+	if client.pixImage != nil {
+		C.DestroyPixImage(client.pixImage)
+		client.pixImage = nil
+	}
+	if err := client.ensureInitialized(); err != nil {
+		return err
+	}
+	C.SetRawImage(
+		client.api,
+		(*C.uchar)(unsafe.Pointer(&data[0])),
+		C.int(width),
+		C.int(height),
+		C.int(bytesPerPixel),
+		C.int(bytesPerLine),
+	)
+	client.usesRawImage = true
 	return nil
 }
 
@@ -253,9 +308,25 @@ func (client *Client) SetTessdataFromMemory(data []byte) error {
 
 // Initialize tesseract::TessBaseAPI
 func (client *Client) init() error {
-
 	if !client.shouldInit {
+		if client.pixImage != nil && !client.usesRawImage {
+			C.SetPixImage(client.api, client.pixImage)
+		}
+		return nil
+	}
+	if err := client.ensureInitialized(); err != nil {
+		return err
+	}
+	if client.pixImage != nil {
 		C.SetPixImage(client.api, client.pixImage)
+	} else if !client.usesRawImage {
+		return fmt.Errorf("PixImage is not set, use SetImage or SetImageFromBytes before Text or HOCRText")
+	}
+	return nil
+}
+
+func (client *Client) ensureInitialized() error {
+	if !client.shouldInit {
 		return nil
 	}
 
@@ -274,7 +345,6 @@ func (client *Client) init() error {
 	errbuf := [512]C.char{}
 	var res C.int
 	if len(client.TessdataFromMemory) > 0 {
-		// Init from memory (no disk write) — works on Windows without TESSDATA_PREFIX path issues.
 		data := (*C.uchar)(unsafe.Pointer(&client.TessdataFromMemory[0]))
 		res = C.InitFromMemory(client.api, data, C.int(len(client.TessdataFromMemory)), languages, &errbuf[0])
 	} else {
@@ -295,14 +365,7 @@ func (client *Client) init() error {
 		return err
 	}
 
-	if client.pixImage == nil {
-		return fmt.Errorf("PixImage is not set, use SetImage or SetImageFromBytes before Text or HOCRText")
-	}
-
-	C.SetPixImage(client.api, client.pixImage)
-
 	client.shouldInit = false
-
 	return nil
 }
 
@@ -347,7 +410,9 @@ func (client *Client) Text() (out string, err error) {
 	if err = client.init(); err != nil {
 		return
 	}
-	out = C.GoString(C.UTF8Text(client.api))
+	cText := C.UTF8Text(client.api)
+	out = C.GoString(cText)
+	C.FreeUTF8Text(cText)
 	if client.Trim {
 		out = strings.Trim(out, "\n")
 	}
@@ -360,7 +425,9 @@ func (client *Client) HOCRText() (out string, err error) {
 	if err = client.init(); err != nil {
 		return
 	}
-	out = C.GoString(C.HOCRText(client.api))
+	cText := C.HOCRText(client.api)
+	out = C.GoString(cText)
+	C.FreeUTF8Text(cText)
 	return
 }
 
@@ -382,8 +449,7 @@ func (client *Client) GetBoundingBoxes(level PageIteratorLevel) (out []BoundingB
 	}
 	boxArray := C.GetBoundingBoxes(client.api, C.int(level))
 	length := int(boxArray.length)
-	defer C.free(unsafe.Pointer(boxArray.boxes))
-	defer C.free(unsafe.Pointer(boxArray))
+	defer C.FreeBoundingBoxes(boxArray)
 	out = make([]BoundingBox, 0, length)
 	for i := 0; i < length; i++ {
 		// cast to bounding_box: boxes + i*sizeof(box)
@@ -423,8 +489,7 @@ func (client *Client) GetBoundingBoxesVerbose() (out []BoundingBox, err error) {
 	}
 	boxArray := C.GetBoundingBoxesVerbose(client.api)
 	length := int(boxArray.length)
-	defer C.free(unsafe.Pointer(boxArray.boxes))
-	defer C.free(unsafe.Pointer(boxArray))
+	defer C.FreeBoundingBoxes(boxArray)
 	out = make([]BoundingBox, 0, length)
 	for i := 0; i < length; i++ {
 		// cast to bounding_box: boxes + i*sizeof(box)

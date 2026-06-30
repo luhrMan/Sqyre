@@ -2,6 +2,7 @@ package services
 
 import (
 	"Sqyre/internal/assets"
+	"Sqyre/internal/config"
 	"Sqyre/internal/models"
 	"Sqyre/internal/models/actions"
 	"bytes"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"sync"
 
+	"fyne.io/fyne/v2"
 	"github.com/otiai10/gosseract/v2"
 	"gocv.io/x/gocv"
 )
@@ -36,7 +38,46 @@ func CloseTessClient() {
 	}
 }
 
+func releaseTessClientImage() {
+	client := GetTessClient()
+	client.ClearAdaptiveClassifier()
+	client.Clear()
+	client.ClearPixImage()
+}
+
+func setTessImageFromMat(mat gocv.Mat) error {
+	if mat.Empty() {
+		return fmt.Errorf("empty OCR image")
+	}
+	working := mat
+	if mat.Channels() == 3 {
+		rgb := gocv.NewMat()
+		defer rgb.Close()
+		gocv.CvtColor(mat, &rgb, gocv.ColorBGRToRGB)
+		working = rgb
+	}
+	data, err := working.DataPtrUint8()
+	if err != nil {
+		return err
+	}
+	ch := working.Channels()
+	if ch <= 0 {
+		return fmt.Errorf("invalid OCR image channels")
+	}
+	return GetTessClient().SetRawImage(data, working.Cols(), working.Rows(), ch, working.Step())
+}
+
+func setTessImageFromGo(img image.Image) error {
+	mat, err := gocv.ImageToMatRGB(img)
+	if err != nil {
+		return err
+	}
+	defer mat.Close()
+	return setTessImageFromMat(mat)
+}
+
 func CheckImageForText(img image.Image) (error, string) {
+	defer releaseTessClientImage()
 	var buf bytes.Buffer
 	if err := png.Encode(&buf, img); err != nil {
 		return err, ""
@@ -51,25 +92,41 @@ func CheckImageForText(img image.Image) (error, string) {
 	return nil, text
 }
 
-// ocrImage runs OCR on the preprocessed image and returns full text plus word-level bounding boxes.
-// The client must have the image set; boxes are in preprocessed image pixel coordinates.
-func ocrImageWithBoxes(img image.Image) (text string, boxes []gosseract.BoundingBox, err error) {
-	var buf bytes.Buffer
-	if err := png.Encode(&buf, img); err != nil {
-		return "", nil, err
-	}
-	if err := GetTessClient().SetImageFromBytes(buf.Bytes()); err != nil {
-		return "", nil, err
-	}
-	text, err = GetTessClient().Text()
-	if err != nil {
+func ocrMatWithBoxes(mat gocv.Mat) (text string, boxes []gosseract.BoundingBox, err error) {
+	if err := setTessImageFromMat(mat); err != nil {
 		return "", nil, err
 	}
 	boxes, err = GetTessClient().GetBoundingBoxes(gosseract.RIL_WORD)
 	if err != nil {
-		return text, nil, err
+		return "", nil, err
 	}
+	text = textFromOCRBoxes(boxes)
 	return text, boxes, nil
+}
+
+// ocrImageWithBoxes runs OCR on a preprocessed Go image.
+func ocrImageWithBoxes(img image.Image) (text string, boxes []gosseract.BoundingBox, err error) {
+	mat, err := gocv.ImageToMatRGB(img)
+	if err != nil {
+		return "", nil, err
+	}
+	defer mat.Close()
+	return ocrMatWithBoxes(mat)
+}
+
+func textFromOCRBoxes(boxes []gosseract.BoundingBox) string {
+	var b strings.Builder
+	for _, box := range boxes {
+		word := strings.TrimSpace(box.Word)
+		if word == "" {
+			continue
+		}
+		if b.Len() > 0 {
+			b.WriteByte(' ')
+		}
+		b.WriteString(word)
+	}
+	return strings.Trim(b.String(), "\n")
 }
 
 // findTargetInBoxes returns the center (in image coords) of the bounding box(es) that match the target text.
@@ -143,6 +200,7 @@ func OCR(a *actions.Ocr, macro *models.Macro) (foundText string, outX, outY int,
 }
 
 func ocrCapture(a *actions.Ocr, macro *models.Macro) (foundText string, outX, outY int, err error) {
+	defer releaseTessClientImage()
 	resolvedLeftX, resolvedTopY, resolvedRightX, resolvedBottomY, err := ResolveSearchAreaCoordsFromRef(a.SearchArea, macro, DefaultResolutionKey())
 	if err != nil {
 		log.Printf("OCR: failed to resolve search area %q: %v", a.SearchArea, err)
@@ -167,24 +225,21 @@ func ocrCapture(a *actions.Ocr, macro *models.Macro) (foundText string, outX, ou
 		Resize:          a.Resize != 1.0,
 		ResizeScale:     a.Resize,
 	}
-	img = ImageToMatToImagePreprocess(img, ppOptions)
-	if img == nil {
-		err := fmt.Errorf("OCR: image preprocessing failed")
-		log.Printf("OCR: %v (macro continues)", err)
-		return "", 0, 0, err
+	mat, err := preprocessCaptureMat(img, ppOptions)
+	if err != nil {
+		log.Printf("OCR: image preprocessing failed: %v (macro continues)", err)
+		return "", 0, 0, fmt.Errorf("OCR: image preprocessing failed")
 	}
-	foundText, boxes, checkErr := ocrImageWithBoxes(img)
+	defer mat.Close()
+	foundText, boxes, checkErr := ocrMatWithBoxes(mat)
 	if checkErr != nil {
 		return "", 0, 0, checkErr
 	}
-	savedImg, err := gocv.ImageToMatRGB(img)
-	if err != nil {
-		log.Println("ocr failed:", err)
-		return "", 0, 0, err
+	if fyne.CurrentApp().Preferences().BoolWithFallback(config.PrefSaveMetaImages, false) {
+		SaveMetaImage("ocr", mat)
 	}
-	SaveMetaImage("ocr", savedImg)
 
-	log.Printf("FOUND TEXT: %v", foundText)
+	log.Printf("FOUND TEXT: %d chars", len(foundText))
 
 	// Resolve position of the target text on screen
 	outX = searchCenterX

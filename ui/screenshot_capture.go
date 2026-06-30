@@ -47,7 +47,7 @@ func OverlayActionDialogOnMainPNG(mainPNG []byte, action actions.ActionInterface
 	}
 	parent := fyne.NewSize(screenshotWindowW, screenshotWindowH)
 	panel := actiondialog.PanelForScreenshot(action)
-	panelSize := actiondialog.ScreenshotSizeOnParent(parent, action)
+	panelSize := actiondialog.ScreenshotSizeOnParent(parent, action, panel)
 	panel.Resize(panelSize)
 	dialogPNG, err := RenderObjectPNG(panel, panelSize)
 	if err != nil {
