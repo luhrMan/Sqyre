@@ -5,182 +5,90 @@
 <h1 align="center">Sqyre</h1>
 
 <p align="center">
-  <strong>Desktop macro builder</strong> for automating clicks, keys, waits, and screen-based steps — with image search and OCR when you need to react to what’s on screen.
+  <strong>Desktop macro builder</strong> — automate mouse, keyboard, and screen-aware steps with a visual tree editor.
 </p>
 
 ---
 
-## Features
+## What it does
 
-- **Visual macro tree** — Organize automation as a tree: one root **loop**, branches for advanced flows (**loop**, **image search**, **OCR**), and leaf actions for concrete steps.
-- **Mouse automation** — **Click** at the cursor, **move** to coordinates.
-- **Keyboard** — **Key** actions with up/down state control.
-- **Timing** — **Wait** for a chosen number of milliseconds.
-- **Image search** — Find a template on screen (OpenCV-backed) and drive clicks or flow from matches.
-- **OCR** — Read on-screen text with Tesseract (via gosseract) for conditions or data-driven steps.
-- **Cross-platform** — Linux and Windows builds supported (see [Developer setup](#developer-setup)); primary workflow uses the dev container for reproducible builds.
+Sqyre lets you build and run macros without writing code. Each macro is a tree of actions: loops and branches for flow control, detection steps when the screen matters, and leaf actions for concrete input. Macros, images, masks, and data tables live under **`~/.sqyre/`** (config in `db.yaml`).
 
-Stack highlights: [Fyne](https://fyne.io/) (GUI), [robotgo](https://github.com/go-vgo/robotgo) (automation), [gocv](https://gocv.io/) / OpenCV (vision), [gosseract](https://github.com/otiai10/gosseract) / Tesseract (OCR).
+**Platforms:** Linux and Windows (see [Developing](docs/DEVELOPING.md)).
+
+---
+
+## Actions
+
+| Category | Actions |
+|----------|---------|
+| **Mouse & keyboard** | Move, click, key, type |
+| **Detection** | Image search (OpenCV), OCR (Tesseract), find pixel |
+| **Variables** | Set, calculate, for each row, save to file or clipboard |
+| **Loop flow** | Loop, break, continue |
+| **Miscellaneous** | Wait, pause, focus window, run macro, if (conditional) |
+
+**Also in the app:** data editor for reusable images, masks, and tabular sources; macro hotkeys (on press or release); global delay per macro; runtime variable panel while a macro runs.
+
+**Stack:** [Fyne](https://fyne.io/) · [robotgo](https://github.com/go-vgo/robotgo) · [gocv](https://gocv.io/) / OpenCV · [gosseract](https://github.com/otiai10/gosseract) / Tesseract
 
 ---
 
 ## Usage
 
-1. **Build or install** a binary for your OS (see [Developer setup](#developer-setup)).
-2. **Launch Sqyre** and use the tree to add a **loop** at the root, then add **actions** under it.
-3. **Configure** each node (coordinates, keys, delays, image paths, OCR regions, etc.) using the UI.
-4. **Run** your macro from the app when you’re ready.
+1. **Build or install** for your OS — `make linux` or `make windows` (see [Developing](docs/DEVELOPING.md)).
+2. **Launch** `./bin/sqyre` (Linux) or the Windows binary from `bin/windows-amd64/`.
+3. **Create a macro** — the root is always a **loop**; add child actions from the picker.
+4. **Configure** each node in its dialog (coordinates, keys, templates, OCR regions, variables, etc.).
+5. **Run** from the toolbar, or assign a **hotkey** to the macro.
 
-The tree mirrors how macros are structured in code: the root loop drives repetition; **image search** and **OCR** branches help when the next step depends on the screen; leaf actions are the atomic steps (**click**, **move**, **key**, **wait**).
+Branching actions (**image search**, **OCR**, **find pixel**, **if**) run child steps only when their condition matches. **Loop** / **for each row** repeat children; **break** and **continue** control those loops.
 
 ---
 
-## Examples
+## Screenshots
 
-Screenshots and GIFs are generated from automated UI tests. Regenerate with:
+Assets under `docs/images/` are generated from UI tests (`./scripts/generate-docs-media.sh`). CI checks they stay in sync.
 
-```bash
-./scripts/generate-docs-media.sh
-```
+| | |
+|---|---|
+| Main window | ![Main window](docs/images/main-window.png) |
+| Add action picker | ![Add action picker](docs/images/add-action-picker.png) |
+| Data editor | ![Data editor](docs/images/data-editor.png) |
+| Building a macro | ![Demo](docs/images/demo-macro.gif) |
 
-### Main window
+<details>
+<summary>Action dialog screenshots</summary>
 
-![Sqyre main screen](docs/images/main-window.png)
-
-### Add action picker
-
-![Sqyre add action picker](docs/images/add-action-picker.png)
-
-### Action dialogs
-
-Each action type has its own edit panel:
-
-| Category | Actions |
-|----------|---------|
-| Mouse & Keyboard | [Move](docs/images/action-dialog-move.png) · [Click](docs/images/action-dialog-click.png) · [Key](docs/images/action-dialog-key.png) · [Type](docs/images/action-dialog-type.png) |
-| Detection | [Image Search](docs/images/action-dialog-imagesearch.png) · [OCR](docs/images/action-dialog-ocr.png) · [Find pixel](docs/images/action-dialog-findpixel.png) |
+| Category | |
+|----------|---|
+| Mouse & keyboard | [Move](docs/images/action-dialog-move.png) · [Click](docs/images/action-dialog-click.png) · [Key](docs/images/action-dialog-key.png) · [Type](docs/images/action-dialog-type.png) |
+| Detection | [Image search](docs/images/action-dialog-imagesearch.png) · [OCR](docs/images/action-dialog-ocr.png) · [Find pixel](docs/images/action-dialog-findpixel.png) |
 | Variables | [Set](docs/images/action-dialog-setvariable.png) · [Calculate](docs/images/action-dialog-calculate.png) · [For each row](docs/images/action-dialog-foreachrow.png) · [Save to](docs/images/action-dialog-savevariable.png) |
 | Miscellaneous | [Wait](docs/images/action-dialog-wait.png) · [Focus window](docs/images/action-dialog-focuswindow.png) · [Run macro](docs/images/action-dialog-runmacro.png) · [Loop](docs/images/action-dialog-loop.png) |
 
-### Data editor
-
-![Sqyre data editor](docs/images/data-editor.png)
-
-### Building a macro (animated)
-
-![Building a macro](docs/images/demo-macro.gif)
-
-To verify committed assets match the current UI in CI, run:
-
-```bash
-go test -v ./ui/ -run 'TestDocsScreenshots|TestDemoWorkflowFrames'
-```
-
-(Use `./scripts/test-ui.sh` on headless machines — it wraps `xvfb-run`.)
+</details>
 
 ---
 
-## Developer setup
+## Build (quick start)
 
-**Recommended:** open the repo in the **dev container** (dependencies and OpenCV are aligned with what the app expects).
-
-### Linux
-
-From the dev container (repository root):
+**Recommended:** open the repo in the **dev container** — dependencies and OpenCV match what the app expects.
 
 | Goal | Command |
 |------|---------|
-| Debug / dev binary | `make linux` → `./bin/sqyre` (override build tags with `BUILD_TAGS=...`) |
+| Linux dev binary | `make linux` → `./bin/sqyre` |
+| Windows exe | `make windows` → `bin/windows-amd64/` |
 | AppImage | `make appimage` |
-| Tesseract data helper | `make tessdata` / `./scripts/download-tessdata.sh` |
+| Tesseract data | `make tessdata` |
 
-For **Flatpak** or **AppImage** details, see [scripts/linux/packaging/PACKAGING.md](scripts/linux/packaging/PACKAGING.md).
+Override Go build tags with `BUILD_TAGS=...` (default: `gocv_specific_modules`).
 
-OpenCV is built with the helper scripts [scripts/linux/build-opencv-linux.sh](scripts/linux/build-opencv-linux.sh) and [scripts/windows/build-opencv-windows.sh](scripts/windows/build-opencv-windows.sh); Android-oriented notes live in [scripts/android/README-opencv.md](scripts/android/README-opencv.md). The dev container [Dockerfile](.devcontainer/Dockerfile) is the reference for Linux dependency versions.
+More detail — manual host setup, tests, profiling, packaging — is in **[docs/DEVELOPING.md](docs/DEVELOPING.md)** and **[docs/README.md](docs/README.md)**.
 
-<details>
-<summary>no devcontainer (not up to date)</summary>
+---
 
-1. **Install dependencies** (Debian/Ubuntu-style example):
-
-   ```bash
-   sudo apt install -y \
-     build-essential pkg-config cmake golang-go \
-     tesseract-ocr libtesseract-dev libleptonica-dev \
-     libgl1-mesa-dev libglvnd-dev libglfw3-dev \
-     libxkbcommon-dev libxkbcommon-x11-dev \
-     libx11-dev libx11-xcb-dev libxext-dev libxtst-dev \
-     libxcursor-dev libxrandr-dev libxinerama-dev \
-     libxxf86vm-dev libxt-dev \
-     libjpeg-dev libpng-dev libtiff-dev libwebp-dev libopenjp2-7-dev
-   ```
-
-2. **OpenCV** — Sqyre uses **gocv**; OpenCV **≥ 4.6** is required. Build or install to match gocv’s expectations; see `.devcontainer/Dockerfile` and `scripts/linux/build-opencv-linux.sh` for a concrete recipe.
-
-3. **Build:** `go build -o sqyre ./cmd/sqyre`
-
-</details>
-
-### Windows
-```bash
-make windows
-```
-
-<details>
-<summary>no devcontainer (not up to date)</summary>
-
-Using the **mingw64** shell in [MSYS2](https://www.msys2.org/):
-
-1. **Install packages** — e.g. [mingw-w64-x86_64-toolchain](https://packages.msys2.org/groups/mingw-w64-x86_64-toolchain), [mingw-w64-x86_64-opencv](https://packages.msys2.org/package/mingw-w64-x86_64-opencv), [mingw-w64-x86_64-tesseract-ocr](https://packages.msys2.org/package/mingw-w64-x86_64-tesseract-ocr), [mingw-w64-x86_64-leptonica](https://packages.msys2.org/package/mingw-w64-x86_64-leptonica), plus [mingw-w64-x86_64-go](https://packages.msys2.org/package/mingw-w64-x86_64-go?repo=mingw64) if you build Go inside MSYS2.
-
-2. **Tesseract English data** — Download [eng.traineddata](https://github.com/tesseract-ocr/tessdata/blob/main/eng.traineddata) into `C:\msys64\mingw64\share\tessdata` and set `TESSDATA_PREFIX=C:/msys64/mingw64/share/tessdata` in mingw64.
-
-3. **Optional Go env (MSYS2 Go)** — `export GOROOT=/mingw64/lib/go` and `export GOPATH=/mingw64`.
-
-4. **Build:** `go build -o sqyre.exe ./cmd/sqyre`
-
-VS Code + MSYS2: [integrate the mingw64 shell](https://stackoverflow.com/questions/45836650/how-do-i-integrate-msys2-shell-into-visual-studio-code-on-windows).
-
-</details>
-
-### Tests (Linux)
-
-Most tests run headless without an X display:
-
-```bash
-./scripts/test.sh
-./scripts/test.sh -v ./internal/services/ -run TestExecute
-```
-
-This uses `-tags=nohook` so the native keyboard hook is not linked (plain `go test` can segfault when `DISPLAY` is unset).
-
-Hook, screenshot, and display-dependent tests need a virtual framebuffer:
-
-```bash
-./scripts/test-ui.sh
-./scripts/test-ui.sh -run TestGUIEscape
-```
-
-Regenerate README screenshots and the demo GIF:
-
-```bash
-./scripts/generate-docs-media.sh
-```
-
-Set `SQYRE_UPDATE_SCREENSHOTS=1` when adding new golden screenshots; CI compares committed PNGs to fresh captures.
-
-### GoCV `Mat` profiling (leak detection)
-
-Build with the **matprofile** tag to track `gocv.Mat` allocations and spot unclosed Mats. Logs go to **`~/.sqyre/sqyre.log`** (Windows: `%USERPROFILE%\.sqyre\sqyre.log`). A pprof HTTP server starts on `127.0.0.1:6060` (or the next free port in 6061–6065); the log prints the exact URL — open **gocv.io/x/gocv.Mat** in the browser for stack traces.
-
-| Platform | Command |
-|----------|---------|
-| Linux | `go build -tags "gocv_specific_modules,matprofile" -o sqyre ./cmd/sqyre` |
-| Windows (from dev container) | `make windows-matprofile` or `./scripts/windows/build-matprofile.sh` |
-
-Optional env: **`SQYRE_PPROF=0`** disables pprof; **`SQYRE_PPROF=127.0.0.1:9090`** sets a fixed port (adjust firewall on Windows if the browser cannot connect).
-
-### License
+## License
 
 Sqyre is licensed under the **GNU General Public License v3.0** — see [LICENSE](LICENSE).
 
@@ -190,7 +98,5 @@ Sqyre is licensed under the **GNU General Public License v3.0** — see [LICENSE
 
 If Sqyre saves you time, consider supporting development:
 
-- monero
-- `85rMS89cS9M8w8cD7ByC1EVXqenx9VBooakM46MLFptN8aRr3uojqfFPUNapWjTk3DPKZy5hadwN6UoGYrt5c7qkTqVWKdU`
-- [Buy Me A Coffee]()
+- **Monero:** `85rMS89cS9M8w8cD7ByC1EVXqenx9VBooakM46MLFptN8aRr3uojqfFPUNapWjTk3DPKZy5hadwN6UoGYrt5c7qkTqVWKdU`
 - **[GitHub Sponsors — @luhrMan](https://github.com/sponsors/luhrMan)**
