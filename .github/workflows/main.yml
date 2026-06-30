@@ -9,8 +9,38 @@ name: Build and Release
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
 
 jobs:
+  test:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Linux image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: .devcontainer/Dockerfile
+          load: true
+          tags: sqyre-linux-build:latest
+          cache-from: type=gha,scope=sqyre-linux-test
+          cache-to: type=gha,mode=max,scope=sqyre-linux-test
+
+      - name: Run tests
+        run: |
+          docker run --rm -u "$(id -u):$(id -g)" \
+            -v ${{ github.workspace }}:/workspace -w /workspace \
+            -e HOME=/tmp \
+            -e GOCACHE=/workspace/.cache/go-build \
+            -e GOMODCACHE=/workspace/.cache/go-mod \
+            sqyre-linux-build \
+            bash -c 'apt-get update -qq && apt-get install -y -qq xvfb ffmpeg >/dev/null && ./scripts/test.sh && ./scripts/test-ui.sh -run "TestGUIEscape|TestDocsScreenshots|TestDemoWorkflowFrames"'
+
   build-linux:
     runs-on: ubuntu-22.04
     permissions:

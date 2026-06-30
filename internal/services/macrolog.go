@@ -6,8 +6,6 @@ import (
 	"log"
 	"strings"
 	"sync"
-
-	"fyne.io/fyne/v2"
 )
 
 var (
@@ -18,34 +16,30 @@ var (
 type macroLogCaptureState struct {
 	buffer   *bytes.Buffer
 	original io.Writer
+	pending  []string // lines not yet drained by the UI
 }
 
 // StartMacroLogCapture begins capturing log output for the given macro.
-// Logs are forwarded to onLine for display in the UI and buffered for initial display.
-// Call StopMacroLogCapture when the macro finishes.
-func StartMacroLogCapture(macroName string, onLine func(line string)) {
+//
+// Lines are buffered (for Copy) and appended to a pending queue that the UI
+// drains on its own schedule via DrainMacroLogLines. Crucially, capture does NOT
+// touch the UI thread per line: a fast macro can emit thousands of log lines
+// without flooding the Fyne event queue (which would also delay highlight
+// updates). Call StopMacroLogCapture when the macro finishes.
+func StartMacroLogCapture(macroName string) {
 	macroLogMu.Lock()
 	defer macroLogMu.Unlock()
-
-	if macroLogCapture != nil {
-		return // already capturing
-	}
 
 	macroLogCapture = &macroLogCaptureState{
 		buffer:   &bytes.Buffer{},
 		original: log.Writer(),
 	}
-
-	// Custom writer: buffer + original (sqyre.log), and forward lines to onLine for UI
-	w := &macroLogWriter{
-		buffer:   macroLogCapture.buffer,
-		original: macroLogCapture.original,
-		onLine:   onLine,
-	}
-	log.SetOutput(w)
+	log.SetOutput(&macroLogWriter{original: macroLogCapture.original})
 }
 
 // StopMacroLogCapture stops capturing and restores the original log output.
+// The captured buffer and any undrained pending lines are retained so the UI can
+// perform a final drain (and so Copy still works) until the next capture starts.
 func StopMacroLogCapture() {
 	macroLogMu.Lock()
 	defer macroLogMu.Unlock()
@@ -53,46 +47,53 @@ func StopMacroLogCapture() {
 	if macroLogCapture == nil {
 		return
 	}
-
 	log.SetOutput(macroLogCapture.original)
-	macroLogCapture = nil
 }
 
-// GetMacroLogBuffer returns the current log buffer content. Empty if not capturing.
+// DrainMacroLogLines returns and clears the lines accumulated since the last
+// drain. Returns nil when there is nothing new.
+func DrainMacroLogLines() []string {
+	macroLogMu.Lock()
+	defer macroLogMu.Unlock()
+	if macroLogCapture == nil || len(macroLogCapture.pending) == 0 {
+		return nil
+	}
+	lines := macroLogCapture.pending
+	macroLogCapture.pending = nil
+	return lines
+}
+
+// GetMacroLogBuffer returns the full captured log text (empty if never captured).
 func GetMacroLogBuffer() string {
 	macroLogMu.Lock()
 	defer macroLogMu.Unlock()
-	if macroLogCapture == nil {
+	if macroLogCapture == nil || macroLogCapture.buffer == nil {
 		return ""
 	}
 	return macroLogCapture.buffer.String()
 }
 
-// macroLogWriter writes to buffer and original log, and forwards each line to onLine for UI display.
+// macroLogWriter writes to the original log sink (sqyre.log) and accumulates
+// captured lines for the UI to drain. It never calls into the UI directly.
 type macroLogWriter struct {
-	buffer   *bytes.Buffer
 	original io.Writer
-	onLine   func(line string)
 }
 
 func (w *macroLogWriter) Write(p []byte) (n int, err error) {
 	n = len(p)
-	// Write to buffer and original (sqyre.log)
-	if w.buffer != nil {
-		_, _ = w.buffer.Write(p)
-	}
 	if w.original != nil {
 		_, _ = w.original.Write(p)
 	}
-	// Forward line to UI callback for display in dialog
-	if w.onLine != nil && len(p) > 0 {
+	macroLogMu.Lock()
+	if macroLogCapture != nil {
+		if macroLogCapture.buffer != nil {
+			_, _ = macroLogCapture.buffer.Write(p)
+		}
 		text := strings.TrimSuffix(string(p), "\n")
 		if text != "" {
-			line := text
-			fyne.Do(func() {
-				w.onLine(line)
-			})
+			macroLogCapture.pending = append(macroLogCapture.pending, text)
 		}
 	}
+	macroLogMu.Unlock()
 	return n, nil
 }

@@ -68,7 +68,32 @@ func ShowMacroLogPopup(macroName string) {
 	// Initial content from buffer (in case macro already produced logs)
 	logEntry.SetText(services.GetMacroLogBuffer())
 
-	scrollContainer := container.NewScroll(logEntry)
+	logScroll := container.NewScroll(logEntry)
+
+	varsList, refreshVars := buildRuntimeVariablesView()
+	varsScroll := container.NewScroll(varsList)
+	emptyVarsLabel := widget.NewLabel("No variables set yet.")
+	emptyVarsLabel.Alignment = fyne.TextAlignCenter
+	varsPane := container.NewStack(emptyVarsLabel, varsScroll)
+
+	tabs := container.NewAppTabs(
+		container.NewTabItem("Log", logScroll),
+		container.NewTabItem("Live variables", varsPane),
+	)
+
+	services.SetRuntimeVariablesListener(func() {
+		refreshVars()
+		vals := services.GetRuntimeVariables()
+		if len(vals) == 0 {
+			emptyVarsLabel.Show()
+			varsScroll.Hide()
+		} else {
+			emptyVarsLabel.Hide()
+			varsScroll.Show()
+		}
+	})
+
+	scrollContainer := logScroll
 
 	copyBtn := widget.NewButtonWithIcon("Copy", theme.ContentCopyIcon(), func() {
 		robotgo.WriteAll(logEntry.Text)
@@ -76,6 +101,7 @@ func ShowMacroLogPopup(macroName string) {
 	copyBtn.Importance = widget.MediumImportance
 
 	closeBtn := widget.NewButtonWithIcon("Close", theme.CancelIcon(), func() {
+		services.SetRuntimeVariablesListener(nil)
 		if macroLogPopup != nil {
 			macroLogPopup.Hide()
 			macroLogPopup = nil
@@ -90,7 +116,7 @@ func ShowMacroLogPopup(macroName string) {
 		buttonBar,
 		nil,
 		nil,
-		scrollContainer,
+		tabs,
 	)
 
 	popup := dialog.NewCustomWithoutButtons("Macro Log", content, w)
@@ -114,6 +140,15 @@ func ShowMacroLogPopup(macroName string) {
 		}
 		logEntry.SetText(prev + line)
 		scrollContainer.ScrollToBottom()
+		refreshVars()
+		vals := services.GetRuntimeVariables()
+		if len(vals) == 0 {
+			emptyVarsLabel.Show()
+			varsScroll.Hide()
+		} else {
+			emptyVarsLabel.Hide()
+			varsScroll.Show()
+		}
 	}
 
 	services.StartMacroLogCapture(macroName, onLine)

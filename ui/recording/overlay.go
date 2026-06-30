@@ -144,9 +144,7 @@ func showFullScreenOverlay(withSelectionRect bool, onClosed func(), onMouseDown 
 	}
 
 	dismiss = func() {
-		fyne.Do(func() {
-			win.Close()
-		})
+		win.Close()
 	}
 	if onClosed != nil {
 		win.SetOnClosed(onClosed)

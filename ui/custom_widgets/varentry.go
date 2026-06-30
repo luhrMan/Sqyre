@@ -124,23 +124,27 @@ func (e *VarEntry) insertVariable(name string) {
 	e.Refresh()
 }
 
-// EntryText returns the Text field from a *widget.Entry or *VarEntry.
+// EntryText returns the Text field from a *widget.Entry, *VarEntry, or *VarRefEntry.
 func EntryText(w fyne.CanvasObject) string {
 	switch e := w.(type) {
 	case *widget.Entry:
 		return e.Text
 	case *VarEntry:
 		return e.Text
+	case *VarRefEntry:
+		return e.Text
 	}
 	return ""
 }
 
-// SetEntryText calls SetText on a *widget.Entry or *VarEntry.
+// SetEntryText calls SetText on supported entry types.
 func SetEntryText(w fyne.CanvasObject, text string) {
 	switch e := w.(type) {
 	case *widget.Entry:
 		e.SetText(text)
 	case *VarEntry:
+		e.SetText(text)
+	case *VarRefEntry:
 		e.SetText(text)
 	}
 }
