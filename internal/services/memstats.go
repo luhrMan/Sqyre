@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"Sqyre/internal/vision"
 )
 
 // ProcessRSSBytes returns the resident set size (RSS) of this process in bytes,
@@ -83,7 +85,7 @@ func scheduleMemoryReclaim(tag string) {
 		// Return native (glibc) free memory to the OS. The Go GC above only
 		// reclaims the Go heap; OpenCV/OCR buffers live in the C heap, which
 		// glibc retains until malloc_trim forces a release.
-		trimNativeHeap()
+		vision.TrimNativeHeap()
 		LogMemoryUsage("post-macro/after-reclaim:" + tag)
 	}()
 }
