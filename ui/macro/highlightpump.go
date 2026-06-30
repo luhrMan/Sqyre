@@ -12,7 +12,7 @@ import (
 // highlightPumpInterval is how often the UI thread drains pending highlight
 // updates during macro execution. Coalescing still applies, but this caps lag
 // when the Fyne queue is busy with log rendering or tree layout.
-const highlightPumpInterval = 16 * time.Millisecond
+const highlightPumpInterval = 100 * time.Millisecond
 
 // highlightPump coalesces cursor highlight updates on the UI thread so a backlog
 // of fyne.Do callbacks cannot paint stale actions after execution has moved on.

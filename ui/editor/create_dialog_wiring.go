@@ -220,6 +220,7 @@ func showMaskSelectionPopupForItem(programName string, onSelect func(maskName st
 		filtered := append([]string(nil), allKeys...)
 		sortMaskKeysByDisplayName(p, filtered)
 
+		searchDebounce := custom_widgets.NewDebouncer(custom_widgets.DefaultSearchDebounce)
 		searchbar := widget.NewEntry()
 		searchbar.PlaceHolder = "Search masks"
 		maskList := widget.NewList(
@@ -239,21 +240,24 @@ func showMaskSelectionPopupForItem(programName string, onSelect func(maskName st
 			popup.Hide()
 		}
 		searchbar.OnChanged = func(s string) {
-			defaultList := p.MaskRepo().GetAllKeys()
-			if s == "" {
-				filtered = defaultList
-			} else {
-				filtered = filtered[:0]
-				sLower := strings.ToLower(s)
-				for _, k := range defaultList {
-					if strings.Contains(strings.ToLower(k), sLower) {
-						filtered = append(filtered, k)
+			searchDebounce.Call(func() {
+				defaultList := p.MaskRepo().GetAllKeys()
+				if s == "" {
+					filtered = defaultList
+				} else {
+					next := make([]string, 0, len(defaultList))
+					sLower := strings.ToLower(s)
+					for _, k := range defaultList {
+						if strings.Contains(strings.ToLower(k), sLower) {
+							next = append(next, k)
+						}
 					}
+					filtered = next
 				}
-			}
-			sortMaskKeysByDisplayName(p, filtered)
-			maskList.Refresh()
-			maskList.ScrollToTop()
+				sortMaskKeysByDisplayName(p, filtered)
+				maskList.Refresh()
+				maskList.ScrollToTop()
+			})
 		}
 		acc.Append(widget.NewAccordionItem(
 			fmt.Sprintf("%s (%d)", pName, len(allKeys)),

@@ -16,12 +16,6 @@ import (
 	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 )
 
-const (
-	forEachRowSourceEntryMinHeight = float32(120)
-	forEachRowSourcesScrollMinHeight = float32(320)
-	forEachRowDialogWidth            = float32(720)
-	forEachRowDialogHeight           = float32(620)
-)
 
 func createSetVariableDialogContent(action *actions.SetVariable) (fyne.CanvasObject, func()) {
 	nameEntry := newVarNameEntry()
@@ -183,7 +177,7 @@ func newSourceRowWidgets() sourceRowWidgets {
 
 func forEachRowSourceField(source *custom_widgets.VarEntry) fyne.CanvasObject {
 	return container.NewGridWrap(
-		fyne.NewSize(forEachRowDialogWidth-200, forEachRowSourceEntryMinHeight),
+		fyne.NewSize(forEachRowSourceFieldMinW, forEachRowSourceEntryMinHeight),
 		source,
 	)
 }
@@ -267,7 +261,7 @@ func createForEachRowDialogContent(action *actions.ForEachRow) (fyne.CanvasObjec
 	})
 
 	sourceScroll := container.NewVScroll(rowsBox)
-	sourceScroll.SetMinSize(fyne.NewSize(forEachRowDialogWidth-120, forEachRowSourcesScrollMinHeight))
+	sourceScroll.SetMinSize(fyne.NewSize(wideFormMinW-160, forEachRowSourcesScrollMinHeight))
 
 	content := widget.NewForm(
 		formHint("Name:", nameEntry, "Label for this iterator in the tree."),

@@ -11,6 +11,16 @@ import (
 	"sync"
 )
 
+// BatchSave coalesces all repository persistence performed inside fn into a
+// single disk write. Each repository Set/Delete normally rewrites the entire
+// config file; wrapping a multi-step mutation (e.g. a rename that deletes the
+// old key and sets the new one) in BatchSave collapses those into one write.
+// The write happens when fn returns. fn's error is returned in preference to a
+// write error.
+func BatchSave(fn func() error) error {
+	return serialize.GetYAMLConfig().Batch(fn)
+}
+
 // DecodeFunc is a function type that decodes a model from Viper configuration by key
 type DecodeFunc[T any] func(key string) (*T, error)
 

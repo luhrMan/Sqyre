@@ -6,7 +6,9 @@ import (
 	"Sqyre/internal/macrohotkey"
 	"Sqyre/internal/models/repositories"
 	"Sqyre/internal/models/serialize"
+	"Sqyre/internal/services"
 	"Sqyre/internal/startupprof"
+	"Sqyre/ui/custom_widgets"
 	"log"
 	"os"
 	"sync/atomic"
@@ -184,7 +186,8 @@ func Bootstrap(mainWindow, splashWindow fyne.Window, report BootstrapReporter) {
 		startupprof.Mark("InitializeUi done")
 		u := GetUi()
 		u.constructUiShell()
-		mainWindow.SetContent(fynetooltip.AddWindowToolTipLayer(u.MainUi.Navigation, mainWindow.Canvas()))
+		mainContent := fynetooltip.AddWindowToolTipLayer(u.MainUi.Navigation, mainWindow.Canvas())
+		mainWindow.SetContent(custom_widgets.AddWindowItemTooltipLayer(mainContent, mainWindow.Canvas()))
 		startupprof.Mark("UI shell built")
 		report.setStatusDirect("Finishing setup…")
 		report.setProgressDirect(progressFinish)
@@ -200,6 +203,7 @@ func Bootstrap(mainWindow, splashWindow fyne.Window, report BootstrapReporter) {
 		mainWindow.RequestFocus()
 		startupprof.Mark("bootstrap done (main window shown)")
 		startupprof.Dump()
+		services.LogMemoryUsage("startup-idle")
 		if startupprof.Enabled() {
 			fyne.CurrentApp().Quit()
 		}

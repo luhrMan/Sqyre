@@ -22,11 +22,6 @@ import (
 	"gocv.io/x/gocv"
 )
 
-const (
-	conditionalDialogWidth            = float32(720)
-	conditionalDialogHeight           = float32(520)
-	conditionalClausesScrollMinHeight = float32(360)
-)
 
 func createWaitDialogContent(action *actions.Wait) (fyne.CanvasObject, func()) {
 	timeEntry := newValidatedVarEntry(validateNumericExpression)
@@ -93,7 +88,7 @@ func createMoveDialogContent(action *actions.Move) (fyne.CanvasObject, func()) {
 
 	pointPreviewImage := canvas.NewImageFromImage(nil)
 	pointPreviewImage.FillMode = canvas.ImageFillContain
-	pointPreviewImage.SetMinSize(fyne.NewSize(400, 300))
+	pointPreviewImage.SetMinSize(previewMin)
 
 	coordsLabel := ttwidget.NewLabel("")
 	coordsLabel.SetToolTip("Current X/Y coordinates for the point (numbers or ${variable} expressions). Pick a saved point below or use the preview.")
@@ -179,7 +174,7 @@ func createMoveDialogContent(action *actions.Move) (fyne.CanvasObject, func()) {
 		tempPoint = ref
 		updateCoordsLabel(tempPoint)
 		updatePreview(tempPoint)
-	})
+	}, tempPoint)
 
 	updateCoordsLabel(tempPoint)
 	updatePreview(tempPoint)
@@ -196,11 +191,13 @@ func createMoveDialogContent(action *actions.Move) (fyne.CanvasObject, func()) {
 
 	smoothSettings := widget.NewForm(smoothForm.formItems()...)
 
+	pointsScroll := scrollWithMin(pointsAccordion, fyne.NewSize(splitPanelMinW, previewMinH))
+
 	content := container.NewVBox(
 		container.NewHBox(coordsLabel, layout.NewSpacer(), smoothForm.Check),
 		smoothSettings,
 		container.NewHSplit(
-			container.NewBorder(pointsSearchbar, nil, nil, nil, pointsAccordion),
+			container.NewBorder(pointsSearchbar, nil, nil, nil, pointsScroll),
 			container.NewBorder(previewLbl, nil, nil, nil, pointPreviewImage),
 		),
 	)
@@ -369,7 +366,7 @@ func createConditionalDialogContent(action *actions.Conditional) (fyne.CanvasObj
 	})
 
 	clausesScroll := container.NewVScroll(rowsBox)
-	clausesScroll.SetMinSize(fyne.NewSize(conditionalDialogWidth-120, conditionalClausesScrollMinHeight))
+	clausesScroll.SetMinSize(fyne.NewSize(wideFormMinW-160, scrollAreaMinH))
 
 	content := widget.NewForm(
 		formHint("Name:", nameEntry, "Label for this conditional in the tree. Used for readability and logging."),

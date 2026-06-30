@@ -109,6 +109,12 @@ func main() {
 
 	startupprof.Mark("main() entered")
 	debugLog("main started")
+
+	// Constrain glibc malloc before any native worker threads (OpenCV, OCR,
+	// screen capture) are created, so their freed buffers can be returned to
+	// the OS instead of being retained across per-thread arenas.
+	services.ConfigureNativeAllocator()
+
 	if !acquireSingleInstance() {
 		os.Exit(0)
 	}

@@ -62,5 +62,7 @@ func flushActiveLog() {
 		return
 	}
 	c.appendDrainedLog(services.DrainMacroLogLines())
-	c.updateLiveVars()
+	if c.liveVarsTabVisible() {
+		c.updateLiveVars()
+	}
 }
