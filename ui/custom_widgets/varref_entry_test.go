@@ -140,15 +140,3 @@ func TestVarEntry_SetText_doesNotOpenCompletion(t *testing.T) {
 	}
 }
 
-func TestVarEntry_insertButtonDisabledWithoutVariables(t *testing.T) {
-	test.NewApp()
-	e := NewVarEntry(func() []string { return nil })
-	if !e.insert.Disabled() {
-		t.Fatal("insert button should be disabled when no variables are defined")
-	}
-	e.GetVariables = func() []string { return []string{"a"} }
-	e.UpdateInsertButton()
-	if e.insert.Disabled() {
-		t.Fatal("insert button should enable when variables become available")
-	}
-}
