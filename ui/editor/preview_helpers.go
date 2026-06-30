@@ -1,9 +1,10 @@
 package editor
 
 import (
+	"Sqyre/internal/macro"
 	"Sqyre/internal/models"
 	"Sqyre/internal/screen"
-	"Sqyre/internal/services"
+	"Sqyre/internal/vision"
 	"fmt"
 	"image"
 
@@ -11,7 +12,6 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
-	"github.com/go-vgo/robotgo"
 	"gocv.io/x/gocv"
 )
 
@@ -110,47 +110,36 @@ func resolveSearchAreaBounds(prefix string, sa *models.SearchArea, b searchAreaB
 
 func captureVirtualDesktop(drawOverlay func(*gocv.Mat, image.Rectangle)) (image.Image, error) {
 	vb := screen.VirtualBounds()
-	defer func() {
-		if r := recover(); r != nil {
-			services.LogPanicToFile(r, "editor: virtual desktop capture")
-		}
-	}()
 
-	captureImg, err := robotgo.CaptureImg(vb.Min.X, vb.Min.Y, vb.Dx(), vb.Dy())
+	captureImg, err := macro.CaptureRect(vb.Min.X, vb.Min.Y, vb.Dx(), vb.Dy())
 	if err != nil {
 		return nil, fmt.Errorf("error capturing image: %w", err)
 	}
-	if captureImg == nil {
-		return nil, fmt.Errorf("screen capture returned nil image")
-	}
 
-	mat, err := gocv.ImageToMatRGB(captureImg)
-	if err != nil {
-		return nil, fmt.Errorf("error converting image to Mat: %w", err)
-	}
-	defer mat.Close()
+	var out image.Image
+	var matErr error
+	vision.WithOpenCV(func() {
+		mat, err := gocv.ImageToMatRGB(captureImg)
+		if err != nil {
+			matErr = fmt.Errorf("error converting image to Mat: %w", err)
+			return
+		}
+		defer mat.Close()
 
-	drawEditorPreviewMonitorOutlines(&mat, vb)
-	if drawOverlay != nil {
-		drawOverlay(&mat, vb)
-	}
+		drawEditorPreviewMonitorOutlines(&mat, vb)
+		if drawOverlay != nil {
+			drawOverlay(&mat, vb)
+		}
 
-	return mat.ToImage()
+		out, matErr = mat.ToImage()
+	})
+	if matErr != nil {
+		return nil, matErr
+	}
+	return out, nil
 }
 
 
 func captureCroppedArea(lx, ty, w, h int) (image.Image, error) {
-	defer func() {
-		if r := recover(); r != nil {
-			services.LogPanicToFile(r, "editor: cropped area capture")
-		}
-	}()
-	captureImg, err := robotgo.CaptureImg(lx, ty, w, h)
-	if err != nil {
-		return nil, err
-	}
-	if captureImg == nil {
-		return nil, fmt.Errorf("screen capture returned nil image")
-	}
-	return captureImg, nil
+	return macro.CaptureRect(lx, ty, w, h)
 }
