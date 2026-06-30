@@ -18,12 +18,6 @@ func (r *varEntryRendererWrap) Destroy() {
 func (r *varEntryRendererWrap) Layout(size fyne.Size) {
 	x := size.Width
 
-	if r.entry.insert != nil {
-		insertWidth := r.entry.insert.MinSize().Width
-		x -= insertWidth
-		r.entry.insert.Resize(fyne.NewSize(insertWidth, size.Height))
-		r.entry.insert.Move(fyne.NewPos(x, 0))
-	}
 	if r.entry.feedbackIcon != nil && !r.entry.feedbackIcon.Hidden {
 		iconWidth := r.entry.feedbackIcon.MinSize().Width
 		x -= iconWidth
@@ -39,9 +33,6 @@ func (r *varEntryRendererWrap) trailingWidth() float32 {
 	var w float32
 	if r.entry.feedbackIcon != nil && !r.entry.feedbackIcon.Hidden {
 		w += r.entry.feedbackIcon.MinSize().Width
-	}
-	if r.entry.insert != nil {
-		w += r.entry.insert.MinSize().Width
 	}
 	return w
 }
@@ -70,14 +61,10 @@ func (r *varEntryRendererWrap) Objects() []fyne.CanvasObject {
 	if r.entry.feedbackIcon != nil {
 		objs = append(objs, r.entry.feedbackIcon)
 	}
-	if r.entry.insert != nil {
-		objs = append(objs, r.entry.insert)
-	}
 	return objs
 }
 
 func (r *varEntryRendererWrap) Refresh() {
-	r.entry.UpdateInsertButton()
 	r.entry.syncPillDisplay()
 	r.inner.Refresh()
 	show := r.entry.hideTextForPills

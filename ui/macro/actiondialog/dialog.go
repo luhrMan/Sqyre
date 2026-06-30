@@ -481,7 +481,7 @@ var _ dialog.Dialog = (*actionModalDialog)(nil)
 func showCustomActionDialog(action actions.ActionInterface, content fyne.CanvasObject, saveFunc func(), onSave func(actions.ActionInterface), onCancel func()) {
 	var d *actionModalDialog
 	var saved bool
-	saveButton := ttwidget.NewButton("Save", func() {
+	submitAction := func() {
 		if !allDialogFieldsValid() {
 			return
 		}
@@ -497,7 +497,8 @@ func showCustomActionDialog(action actions.ActionInterface, content fyne.CanvasO
 		}
 		saved = true
 		d.Hide()
-	})
+	}
+	saveButton := ttwidget.NewButton("Save", submitAction)
 	saveButton.SetToolTip("Save changes to this action")
 
 	updateSaveState := func() {
@@ -541,6 +542,9 @@ func showCustomActionDialog(action actions.ActionInterface, content fyne.CanvasO
 	})
 	if active.AddDialogEscapeClose != nil {
 		active.AddDialogEscapeClose(d, active.Window)
+	}
+	if active.AddActionDialogEnterSave != nil {
+		active.AddActionDialogEnterSave(d, active.Window, submitAction)
 	}
 	d.Resize(actionDialogSize(active.Window.Canvas().Size(), action, pop.MinSize()))
 

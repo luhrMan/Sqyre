@@ -11,7 +11,6 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 )
@@ -95,20 +94,9 @@ func createCalculateDialogContent(action *actions.Calculate) (fyne.CanvasObject,
 	return content, saveFunc
 }
 
-// calculateBuilderToolbar builds the insert-variable, operator, and function
-// controls that write into the expression entry at the cursor.
+// calculateBuilderToolbar builds operator and function controls that write into
+// the expression entry at the cursor.
 func calculateBuilderToolbar(exprEntry *custom_widgets.VarEntry) fyne.CanvasObject {
-	var varBtn *widget.Button
-	varBtn = widget.NewButtonWithIcon("Variable", theme.ContentAddIcon(), func() {
-		defs := macroVariableDefs()
-		if len(defs) == 0 {
-			return
-		}
-		custom_widgets.ShowVariablePicker(varBtn, defs, func(name string) {
-			exprEntry.InsertAtCursor("${" + name + "}")
-		})
-	})
-
 	operators := []string{"+", "-", "*", "/", "^", "(", ")"}
 	opButtons := make([]fyne.CanvasObject, 0, len(operators))
 	for _, op := range operators {
@@ -137,7 +125,7 @@ func calculateBuilderToolbar(exprEntry *custom_widgets.VarEntry) fyne.CanvasObje
 		popUpMenuBelow(fyne.NewMenu("", items...), fxBtn)
 	})
 
-	left := container.NewHBox(varBtn, fxBtn)
+	left := container.NewHBox(fxBtn)
 	ops := container.NewHBox(opButtons...)
 	return container.NewBorder(nil, nil, left, nil, ops)
 }

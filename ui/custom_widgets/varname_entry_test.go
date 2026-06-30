@@ -20,18 +20,3 @@ func TestVarNameEntry_pickVariable(t *testing.T) {
 	}
 }
 
-func TestVarNameEntry_insertButtonDisabledWithoutVariables(t *testing.T) {
-	test.NewApp()
-	e := NewVarNameEntryWithDefs(func() []models.VariableDef { return nil })
-	if !e.insert.Disabled() {
-		t.Fatal("insert button should be disabled when no variables exist")
-	}
-	e.GetVariableDefs = func() []models.VariableDef {
-		return []models.VariableDef{{Name: "a"}}
-	}
-	e.InvalidateVariableCache()
-	e.UpdateInsertButton()
-	if e.insert.Disabled() {
-		t.Fatal("insert button should enable when variables become available")
-	}
-}
