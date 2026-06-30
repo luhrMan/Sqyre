@@ -3,6 +3,7 @@ package editor
 import (
 	"Sqyre/internal/config"
 	"Sqyre/internal/models"
+	"Sqyre/internal/services"
 	"fmt"
 	"io"
 	"os"
@@ -146,6 +147,7 @@ func setMasksButtons() {
 					editorRepoErr("save", "mask", mask.Name, err)
 					return
 				}
+				services.InvalidateSearchTemplateCacheProgram(programName)
 				shell().SetMaskImageMode(true)
 				shell().UpdateMaskPreview(programName, mask.Name)
 			}, activeWire.Window)

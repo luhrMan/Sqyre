@@ -122,9 +122,14 @@ func encodeFindPixel(action actions.ActionInterface) (map[string]any, error) {
 }
 
 func decodeClick(rawMap map[string]any) (actions.ActionInterface, error) {
-	button, err := expectBool(rawMap, "button")
+	button, err := expectString(rawMap, "button")
 	if err != nil {
 		return nil, fmt.Errorf("action type click: %w", err)
+	}
+	switch button {
+	case actions.ClickButtonLeft, actions.ClickButtonRight, actions.ClickButtonCenter, actions.ClickButtonScroll:
+	default:
+		return nil, fmt.Errorf("action type click: field %q: unknown button %q", "button", button)
 	}
 	state := false
 	if v, ok := rawMap["state"].(bool); ok {

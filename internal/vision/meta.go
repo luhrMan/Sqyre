@@ -30,7 +30,8 @@ func SaveMetaImageLocked(purpose string, img gocv.Mat) {
 }
 
 func saveMetaImage(purpose string, img gocv.Mat, openCVLocked bool) {
-	if !fyne.CurrentApp().Preferences().BoolWithFallback(config.PrefSaveMetaImages, false) {
+	app := fyne.CurrentApp()
+	if app == nil || !app.Preferences().BoolWithFallback(config.PrefSaveMetaImages, false) {
 		return
 	}
 	if img.Empty() {

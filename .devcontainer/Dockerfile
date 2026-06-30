@@ -44,7 +44,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # -----------------------------------------------------------------------------
 # Stage: fyne-cross (cross-compile Fyne). Pinned for cache; bump when upgrading.
 # -----------------------------------------------------------------------------
-RUN go install github.com/fyne-io/fyne-cross@v1.6.1
+RUN go install github.com/fyne-io/fyne-cross@v1.6.2
 ENV PATH="${PATH}:/go/bin"
 
 # -----------------------------------------------------------------------------

@@ -32,6 +32,7 @@ func SetupYAMLConfig(t *testing.T) string {
 
 	yamlConfig := serialize.GetYAMLConfig()
 	yamlConfig.SetConfigFile(dbPath)
+	yamlConfig.SetDebounceWrites(false)
 	if err := yamlConfig.ReadConfig(); err != nil {
 		t.Fatalf("testdb: read config: %v", err)
 	}

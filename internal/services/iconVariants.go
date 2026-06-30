@@ -181,6 +181,7 @@ func (s *IconVariantService) AddVariant(programName, itemName, variantName, sour
 	// Invalidate cache for the new variant
 	cacheKey := constructCacheKey(programName, itemName, variantName)
 	assets.InvalidateFyneResourceCache(cacheKey)
+	InvalidateSearchTemplateCache(programName, itemName)
 
 	return nil
 }
@@ -224,6 +225,7 @@ func (s *IconVariantService) OverwriteVariant(programName, itemName, variantName
 	// Invalidate cache for the overwritten variant
 	cacheKey := constructCacheKey(programName, itemName, variantName)
 	assets.InvalidateFyneResourceCache(cacheKey)
+	InvalidateSearchTemplateCache(programName, itemName)
 
 	return nil
 }
@@ -257,6 +259,7 @@ func (s *IconVariantService) DeleteVariant(programName, itemName, variantName st
 	// Invalidate cache for the deleted variant
 	cacheKey := constructCacheKey(programName, itemName, variantName)
 	assets.InvalidateFyneResourceCache(cacheKey)
+	InvalidateSearchTemplateCache(programName, itemName)
 
 	return nil
 }
