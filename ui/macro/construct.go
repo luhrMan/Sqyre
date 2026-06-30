@@ -2,8 +2,10 @@ package macro
 
 import (
 	"image/color"
+	"log"
 
 	"Sqyre/internal/assets"
+	"Sqyre/internal/models/repositories"
 	"Sqyre/internal/models/serialize"
 	"Sqyre/internal/services"
 
@@ -76,7 +78,12 @@ func ConstructMacroUi(mui *MacroUi, boundLocXLabel, boundLocYLabel *widget.Label
 		if st == nil {
 			return
 		}
-		st.PasteNode(copiedNodeMap)
+		if !st.PasteNode(copiedNodeMap) {
+			return
+		}
+		if err := repositories.MacroRepo().Set(st.Macro.Name, st.Macro); err != nil {
+			log.Printf("failed to save macro after paste: %v", err)
+		}
 	})
 	playMacroButton := ttwidget.NewButtonWithIcon("", theme.MediaPlayIcon(), func() {
 		st := mui.MTabs.SelectedTab()
@@ -87,11 +94,17 @@ func ConstructMacroUi(mui *MacroUi, boundLocXLabel, boundLocYLabel *widget.Label
 			services.ExecuteMacroWithLogging(st.Macro)
 		}()
 	})
+	highlightPump := newHighlightPump(mui)
+	services.SetHighlightCallback(highlightPump.handle)
 	services.SetMacroRunningCallback(func(running bool) {
 		if running {
 			playMacroButton.Disable()
+			startLogPump()
+			highlightPump.startTicker()
 		} else {
 			playMacroButton.Enable()
+			stopLogPump()
+			highlightPump.stopTicker()
 		}
 	})
 
@@ -136,7 +149,7 @@ func ConstructMacroUi(mui *MacroUi, boundLocXLabel, boundLocYLabel *widget.Label
 		)
 
 	globaldelaytt := ttwidget.NewIcon(theme.HistoryIcon())
-	globaldelaytt.SetToolTip("global delay (ms)")
+	globaldelaytt.SetToolTip("delay between actions (ms)")
 	bottomLeftContent := container.NewHBox(globaldelaytt, mui.MTabs.BoundGlobalDelayEntry, mousePosition)
 	bottomLeft := wrapFrame(container.NewPadded(bottomLeftContent))
 	bottomFiller := canvas.NewRectangle(color.Transparent)

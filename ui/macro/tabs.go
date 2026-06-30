@@ -64,7 +64,7 @@ func (mtabs *MacroTabs) SelectedTab() *MacroTree {
 	if mtabs.Selected() == nil {
 		return nil
 	}
-	if c := macroTabContentFrom(mtabs.Selected().Content); c != nil {
+	if c := ensureMacroTabContent(mtabs.Selected().Content); c != nil {
 		return c.Tree
 	}
 	if tree, ok := mtabs.Selected().Content.(*MacroTree); ok {
@@ -73,10 +73,41 @@ func (mtabs *MacroTabs) SelectedTab() *MacroTree {
 	return nil
 }
 
+// TreeForMacro returns the open tab's tree for the given macro name, or nil.
+func (mtabs *MacroTabs) TreeForMacro(name string) *MacroTree {
+	for _, item := range mtabs.Items {
+		if item.Text != name {
+			continue
+		}
+		if c := ensureMacroTabContent(item.Content); c != nil {
+			return c.Tree
+		}
+		if tree, ok := item.Content.(*MacroTree); ok {
+			return tree
+		}
+	}
+	return nil
+}
+
+// AllTrees returns every open macro tree (built tabs only).
+func (mtabs *MacroTabs) AllTrees() []*MacroTree {
+	trees := make([]*MacroTree, 0, len(mtabs.Items))
+	for _, item := range mtabs.Items {
+		if c := macroTabContentFrom(item.Content); c != nil && c.Tree != nil {
+			trees = append(trees, c.Tree)
+			continue
+		}
+		if tree, ok := item.Content.(*MacroTree); ok {
+			trees = append(trees, tree)
+		}
+	}
+	return trees
+}
+
 // SelectedMacroContent returns the full tab content wrapper when present.
 func (mtabs *MacroTabs) SelectedMacroContent() *MacroTabContent {
 	if mtabs.Selected() == nil {
 		return nil
 	}
-	return macroTabContentFrom(mtabs.Selected().Content)
+	return ensureMacroTabContent(mtabs.Selected().Content)
 }

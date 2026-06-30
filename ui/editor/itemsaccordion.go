@@ -176,27 +176,30 @@ func CreateProgramAccordionItem(opts ItemsAccordionOptions) (*widget.AccordionIt
 		}
 	}
 
-	for _, baseName := range baseNames {
+	lookupIcon := func(baseName string) (itemIconInfo, bool) {
 		cacheKey := programName + config.ProgramDelimiter + baseName
-		variants, err := iconService.GetVariants(programName, baseName)
-		if err == nil && len(variants) > 0 {
-			var selectedVariant string
-			for _, variant := range variants {
-				if variant == "Original" {
-					selectedVariant = variant
-					break
-				}
-			}
-			if selectedVariant == "" {
-				selectedVariant = variants[0]
-			}
-			path := programName + config.ProgramDelimiter + baseName
-			if selectedVariant != "" {
-				path = path + config.ProgramDelimiter + selectedVariant
-			}
-			path = path + config.PNG
-			iconCache[cacheKey] = itemIconInfo{iconPath: path, exists: true}
+		if info, ok := iconCache[cacheKey]; ok {
+			return info, true
 		}
+		variants, err := iconService.GetVariants(programName, baseName)
+		if err != nil || len(variants) == 0 {
+			return itemIconInfo{}, false
+		}
+		selectedVariant := variants[0]
+		for _, variant := range variants {
+			if variant == "Original" {
+				selectedVariant = variant
+				break
+			}
+		}
+		path := programName + config.ProgramDelimiter + baseName
+		if selectedVariant != "" {
+			path = path + config.ProgramDelimiter + selectedVariant
+		}
+		path = path + config.PNG
+		info := itemIconInfo{iconPath: path, exists: true}
+		iconCache[cacheKey] = info
+		return info, true
 	}
 
 	// Apply tab-level filter to baseNames (by name and tags)
@@ -266,8 +269,7 @@ func CreateProgramAccordionItem(opts ItemsAccordionOptions) (*widget.AccordionIt
 				rect.FillColor = color.RGBA{}
 			}
 
-			cacheKey := programName + config.ProgramDelimiter + baseItemName
-			if iconInfo, exists := iconCache[cacheKey]; exists {
+			if iconInfo, ok := lookupIcon(baseItemName); ok {
 				if resource := assets.GetFyneResource(iconInfo.iconPath); resource != nil {
 					newIcon := canvas.NewImageFromResource(resource)
 					newIcon.SetMinSize(fyne.NewSquareSize(40))

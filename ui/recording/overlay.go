@@ -1,11 +1,16 @@
 package recording
 
 import (
+	"errors"
 	"image"
 	"image/color"
+	"image/draw"
 	"log"
+	"sync"
+	"time"
 
 	"Sqyre/internal/screen"
+	"Sqyre/internal/services"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -15,6 +20,8 @@ import (
 	"fyne.io/fyne/v2/widget"
 	"github.com/go-vgo/robotgo"
 )
+
+var errCaptureNil = errors.New("screen capture returned nil image")
 
 // recordingMouseLayer sits on top of the overlay stack and receives mouse clicks
 // via Fyne (overlay window has focus) instead of a global low-level hook.
@@ -42,9 +49,6 @@ func (r *recordingMouseLayer) CreateRenderer() fyne.WidgetRenderer {
 	return widget.NewSimpleRenderer(rect)
 }
 
-// selectionRectLayout positions a single child (the selection rectangle) at
-// (leftX, topY) with size (rightX-leftX, bottomY-topY) in Fyne canvas units.
-// Zero size hides it.
 type selectionRectLayout struct {
 	leftX, topY, rightX, bottomY float32
 }
@@ -64,8 +68,10 @@ func (s *selectionRectLayout) Layout(objects []fyne.CanvasObject, size fyne.Size
 	objects[0].Resize(fyne.NewSize(w, h))
 }
 
-// screenPxToCanvas converts a delta in physical screen pixels (robotgo space)
-// to Fyne canvas coordinates for the given window.
+func (s *selectionRectLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
+	return fyne.NewSize(0, 0)
+}
+
 func screenPxToCanvas(win fyne.Window, deltaPx int) float32 {
 	scale := win.Canvas().Scale()
 	if scale <= 0 {
@@ -74,63 +80,103 @@ func screenPxToCanvas(win fyne.Window, deltaPx int) float32 {
 	return float32(deltaPx) / scale
 }
 
-func (s *selectionRectLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
-	return fyne.NewSize(0, 0)
+type fyneDesktopOverlay struct {
+	win          fyne.Window
+	desktopBounds image.Rectangle
+	bgImage      *canvas.Image
+	widthPx      int
+	heightPx     int
+	selLayout    *selectionRectLayout
+	selRefresher interface{ Refresh() }
+	stopPosition chan struct{}
 }
 
-// showFullScreenOverlay captures the monitor under the cursor in absolute
-// desktop coordinates (same space as robotgo.Location), then creates a
-// full-screen overlay on that monitor. setSelectionRect expects absolute
-// coordinates from the caller and maps them to overlay-local space.
+func captureVirtualDesktop(vb image.Rectangle) (image.Image, error) {
+	img, err := robotgo.CaptureImg(vb.Min.X, vb.Min.Y, vb.Dx(), vb.Dy())
+	if err != nil {
+		return nil, err
+	}
+	if img == nil {
+		return nil, errCaptureNil
+	}
+	b := img.Bounds()
+	rgba := image.NewRGBA(image.Rect(0, 0, b.Dx(), b.Dy()))
+	draw.Draw(rgba, rgba.Bounds(), img, b.Min, draw.Src)
+	return rgba, nil
+}
+
+func (o *fyneDesktopOverlay) resizeBackground() {
+	if o.bgImage == nil {
+		return
+	}
+	lw := screenPxToCanvas(o.win, o.widthPx)
+	lh := screenPxToCanvas(o.win, o.heightPx)
+	o.bgImage.SetMinSize(fyne.NewSize(lw, lh))
+	o.bgImage.Refresh()
+}
+
+func (o *fyneDesktopOverlay) reposition() {
+	positionFyneOverlayWindow(o.win, o.desktopBounds)
+	o.resizeBackground()
+}
+
+// startPositionLoop keeps the overlay pinned to desktopBounds. Fyne/GLFW may
+// reset window geometry after Show(); RunNative positioning is also queued
+// asynchronously, so we retry until the overlay is dismissed.
+func (o *fyneDesktopOverlay) startPositionLoop() {
+	services.GoSafe(func() {
+		delays := []time.Duration{0, 50, 100, 200, 400, 800, 1200}
+		for _, d := range delays {
+			select {
+			case <-o.stopPosition:
+				return
+			case <-time.After(d):
+				fyne.Do(o.reposition)
+			}
+		}
+		ticker := time.NewTicker(250 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-o.stopPosition:
+				return
+			case <-ticker.C:
+				fyne.Do(o.reposition)
+			}
+		}
+	})
+}
+
 func showFullScreenOverlay(withSelectionRect bool, onClosed func(), onMouseDown func(*desktop.MouseEvent)) (dismiss func(), setSelectionRect func(leftX, topY, rightX, bottomY int)) {
 	app := fyne.CurrentApp()
 	if app == nil {
 		return func() {}, func(int, int, int, int) {}
 	}
 
-	idx := screen.MonitorIndexForOverlay()
-	absBounds := screen.DisplayBoundsAbs(idx)
-	if absBounds.Empty() {
-		absBounds = screen.DisplayBoundsAbs(0)
+	vb := screen.VirtualBounds()
+	if vb.Empty() || vb.Dx() <= 0 || vb.Dy() <= 0 {
+		log.Printf("overlay: invalid virtual bounds %v", vb)
+		return func() {}, func(int, int, int, int) {}
 	}
-	w, h := absBounds.Dx(), absBounds.Dy()
-	if w <= 0 || h <= 0 {
-		vb := screen.VirtualBounds()
-		w, h = vb.Dx(), vb.Dy()
-	}
-	var captureImg image.Image
-	if w <= 0 || h <= 0 || absBounds.Empty() {
-		log.Printf("overlay: could not resolve display bounds; using blank overlay")
-	} else {
-		var err error
-		captureImg, err = robotgo.CaptureImg(absBounds.Min.X, absBounds.Min.Y, w, h)
-		if err != nil {
-			log.Printf("overlay: screen capture failed: %v; using blank overlay", err)
-			captureImg = nil
-		}
-	}
-	originX, originY := absBounds.Min.X, absBounds.Min.Y
 
+	captureImg, err := captureVirtualDesktop(vb)
+	if err != nil {
+		log.Printf("overlay: virtual desktop capture failed: %v", err)
+		return func() {}, func(int, int, int, int) {}
+	}
+
+	w, h := vb.Dx(), vb.Dy()
 	win := app.NewWindow("")
-	win.SetFullScreen(true)
 	win.SetPadded(false)
+	win.SetFixedSize(true)
 
-	var bg fyne.CanvasObject
-	var bgImage *canvas.Image
-	if captureImg != nil {
-		img := canvas.NewImageFromImage(captureImg)
-		img.FillMode = canvas.ImageFillStretch
-		// Physical pixel size; adjusted to canvas units after Show() when Scale() is known.
-		img.SetMinSize(fyne.NewSize(float32(w), float32(h)))
-		bg = img
-		bgImage = img
-	} else {
-		bg = canvas.NewRectangle(color.NRGBA{R: 0, G: 0, B: 0, A: 25})
-	}
+	bgImage := canvas.NewImageFromImage(captureImg)
+	bgImage.FillMode = canvas.ImageFillStretch
+	bgImage.SetMinSize(fyne.NewSize(float32(w), float32(h)))
 
-	var selectionLayer fyne.CanvasObject
 	var selLayout *selectionRectLayout
-	var selectionLayerRefresher interface{ Refresh() }
+	var selRefresher interface{ Refresh() }
+	var selectionLayer fyne.CanvasObject
 	if withSelectionRect {
 		selLayout = &selectionRectLayout{}
 		selRect := canvas.NewRectangle(color.Transparent)
@@ -138,48 +184,63 @@ func showFullScreenOverlay(withSelectionRect bool, onClosed func(), onMouseDown 
 		selRect.StrokeWidth = 2
 		selContainer := container.New(selLayout, selRect)
 		selectionLayer = selContainer
-		selectionLayerRefresher = selContainer
+		selRefresher = selContainer
 	} else {
 		selectionLayer = layout.NewSpacer()
 	}
 
-	dismiss = func() {
-		win.Close()
-	}
-	if onClosed != nil {
-		win.SetOnClosed(onClosed)
-	}
 	var stack fyne.CanvasObject
 	if onMouseDown != nil {
-		stack = container.NewMax(bg, selectionLayer, newRecordingMouseLayer(onMouseDown))
+		stack = container.NewMax(bgImage, selectionLayer, newRecordingMouseLayer(onMouseDown))
 	} else {
-		stack = container.NewMax(bg, selectionLayer)
+		stack = container.NewMax(bgImage, selectionLayer)
 	}
 	win.SetContent(stack)
+
+	overlay := &fyneDesktopOverlay{
+		win:           win,
+		desktopBounds: vb,
+		bgImage:       bgImage,
+		widthPx:       w,
+		heightPx:      h,
+		selLayout:     selLayout,
+		selRefresher:  selRefresher,
+		stopPosition:  make(chan struct{}),
+	}
+
+	var dismissOnce sync.Once
+	var closedOnce sync.Once
+	dismiss = func() {
+		dismissOnce.Do(func() {
+			close(overlay.stopPosition)
+			win.Close()
+		})
+	}
+	if onClosed != nil {
+		win.SetOnClosed(func() { closedOnce.Do(onClosed) })
+	}
 	win.Canvas().SetOnTypedKey(func(e *fyne.KeyEvent) {
 		if e.Name == fyne.KeyEscape {
 			dismiss()
 		}
 	})
-	win.Show()
-	win.RequestFocus()
-	// Fyne sizes are canvas (logical) units; robotgo uses physical screen pixels.
-	if bgImage != nil {
-		lw := screenPxToCanvas(win, w)
-		lh := screenPxToCanvas(win, h)
-		bgImage.SetMinSize(fyne.NewSize(lw, lh))
-		bgImage.Refresh()
-	}
 
-	if withSelectionRect && selLayout != nil && selectionLayerRefresher != nil {
+	win.Show()
+	overlay.startPositionLoop()
+	win.RequestFocus()
+
+	if withSelectionRect && selLayout != nil && selRefresher != nil {
 		setSelectionRect = func(leftX, topY, rightX, bottomY int) {
 			fyne.Do(func() {
-				// Absolute desktop coords -> monitor-local physical pixels -> Fyne canvas coords.
-				selLayout.leftX = screenPxToCanvas(win, leftX-originX)
-				selLayout.topY = screenPxToCanvas(win, topY-originY)
-				selLayout.rightX = screenPxToCanvas(win, rightX-originX)
-				selLayout.bottomY = screenPxToCanvas(win, bottomY-originY)
-				selectionLayerRefresher.Refresh()
+				if local, ok := clipRectToDesktop(leftX, topY, rightX, bottomY, vb); ok {
+					selLayout.leftX = screenPxToCanvas(win, local.Min.X)
+					selLayout.topY = screenPxToCanvas(win, local.Min.Y)
+					selLayout.rightX = screenPxToCanvas(win, local.Max.X)
+					selLayout.bottomY = screenPxToCanvas(win, local.Max.Y)
+				} else {
+					selLayout.leftX, selLayout.topY, selLayout.rightX, selLayout.bottomY = 0, 0, 0, 0
+				}
+				selRefresher.Refresh()
 			})
 		}
 	} else {
@@ -187,6 +248,40 @@ func showFullScreenOverlay(withSelectionRect bool, onClosed func(), onMouseDown 
 	}
 
 	return dismiss, setSelectionRect
+}
+
+func clipRectToDesktop(leftX, topY, rightX, bottomY int, vb image.Rectangle) (image.Rectangle, bool) {
+	if leftX > rightX {
+		leftX, rightX = rightX, leftX
+	}
+	if topY > bottomY {
+		topY, bottomY = bottomY, topY
+	}
+	intersect := image.Rect(leftX, topY, rightX, bottomY).Intersect(vb)
+	if intersect.Empty() {
+		return image.Rectangle{}, false
+	}
+	return image.Rect(
+		intersect.Min.X-vb.Min.X,
+		intersect.Min.Y-vb.Min.Y,
+		intersect.Max.X-vb.Min.X,
+		intersect.Max.Y-vb.Min.Y,
+	), true
+}
+
+// clipRectToMonitor maps absolute desktop coordinates to the intersection within bounds.
+func clipRectToMonitor(leftX, topY, rightX, bottomY int, bounds image.Rectangle) (localLeft, localTop, localRight, localBottom int, ok bool) {
+	if leftX > rightX {
+		leftX, rightX = rightX, leftX
+	}
+	if topY > bottomY {
+		topY, bottomY = bottomY, topY
+	}
+	intersect := image.Rect(leftX, topY, rightX, bottomY).Intersect(bounds)
+	if intersect.Empty() {
+		return 0, 0, 0, 0, false
+	}
+	return intersect.Min.X, intersect.Min.Y, intersect.Max.X, intersect.Max.Y, true
 }
 
 func ShowRecordingOverlay(onClosed func(), onMouseDown func(*desktop.MouseEvent)) func() {

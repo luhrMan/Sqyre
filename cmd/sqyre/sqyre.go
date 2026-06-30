@@ -1,29 +1,25 @@
 package main
 
 import (
-	"Sqyre/internal/assets"
 	"Sqyre/internal/config"
+	"Sqyre/internal/macrohotkey"
 	"Sqyre/internal/models/repositories"
-	"Sqyre/internal/models/serialize"
 	"Sqyre/internal/services"
+	"Sqyre/internal/startupprof"
 	"Sqyre/ui"
+	"bufio"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"time"
 
-	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
-	"fyne.io/fyne/v2/driver/desktop"
-	fynetooltip "github.com/dweymouth/fyne-tooltip"
-	"github.com/go-vgo/robotgo"
 	"github.com/gofrs/flock"
 )
 
-// instanceLock is held for the process lifetime so only one instance runs.
 var instanceLock *flock.Flock
 
 func debugLog(msg string) {
@@ -53,95 +49,55 @@ func setupLogFile() {
 	log.SetFlags(log.Ldate | log.Ltime)
 }
 
-// trimLogFileIfNeeded keeps only the last maxLines in the file so sqyre.log does not grow unbounded.
 func trimLogFileIfNeeded(logPath string, maxLines int) {
-	content, err := os.ReadFile(logPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return
-		}
+	info, err := os.Stat(logPath)
+	if err != nil || info.Size() == 0 {
 		return
 	}
-	lines := strings.Split(string(content), "\n")
-	if len(lines) <= maxLines {
+	const avgLineBytes = 128
+	if info.Size() <= int64(maxLines*avgLineBytes) {
+		data, err := os.ReadFile(logPath)
+		if err != nil {
+			return
+		}
+		if strings.Count(string(data), "\n") <= maxLines {
+			return
+		}
+	}
+	tailBytes := int64(maxLines * avgLineBytes * 2)
+	if tailBytes > info.Size() {
+		tailBytes = info.Size()
+	}
+	f, err := os.Open(logPath)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	if _, err := f.Seek(info.Size()-tailBytes, io.SeekStart); err != nil {
+		return
+	}
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+	var lines []string
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
+	}
+	if err := scanner.Err(); err != nil || len(lines) <= maxLines {
 		return
 	}
 	toKeep := lines[len(lines)-maxLines:]
-	if err := os.WriteFile(logPath, []byte(strings.Join(toKeep, "\n")+"\n"), 0644); err != nil {
-		return
-	}
+	_ = os.WriteFile(logPath, []byte(strings.Join(toKeep, "\n")+"\n"), 0644)
 }
 
-func init() {
-	debugLog("init started")
-
-	// Single-instance check: if another Sqyre is already running, exit immediately.
+func acquireSingleInstance() bool {
 	lockPath := filepath.Join(config.GetSqyreDir(), "sqyre.lock")
 	if err := os.MkdirAll(config.GetSqyreDir(), 0755); err != nil {
 		debugLog("single-instance mkdir: " + err.Error())
-		os.Exit(1)
+		return false
 	}
 	instanceLock = flock.New(lockPath)
 	ok, err := instanceLock.TryLock()
-	if err != nil || !ok {
-		os.Exit(0)
-	}
-
-	// Append logs to ~/.sqyre/sqyre.log (file kept open for process lifetime)
-	setupLogFile()
-
-	// Initialize directory structure first
-	if err := config.InitializeDirectories(); err != nil {
-		debugLog("init dirs failed: " + err.Error())
-		log.Printf("Warning: Failed to initialize directories: %v", err)
-	}
-	debugLog("directories OK")
-
-	if os.Getenv("SQYRE_NO_HOOK") != "1" {
-		services.GoSafe(services.StartHook)
-	}
-
-	// Initialize YAML config with proper file path
-	yamlDb := serialize.GetYAMLConfig()
-	yamlDb.SetConfigFile(config.GetDbPath())
-	if err := yamlDb.ReadConfig(); err != nil {
-		log.Printf("Warning: Failed to read config file: %v", err)
-	}
-
-	serialize.Decode() // read db.yaml data and save into GO structs
-
-	// Initialize repositories - they will load data from db.yaml
-	macroRepo := repositories.MacroRepo()
-	log.Printf("Initialized MacroRepository with %d macros", macroRepo.Count())
-
-	programRepo := repositories.ProgramRepo()
-	log.Printf("Initialized ProgramRepository with %d programs", programRepo.Count())
-
-	debugLog("creating Fyne app")
-	a := app.NewWithID("Sqyre")
-	os.Setenv("FYNE_SCALE", "1")
-
-	w := a.NewWindow("Sqyre")
-
-	w.Resize(fyne.NewSize(1000, 500))
-	w.SetIcon(assets.AppIcon)
-	w.SetMaster()
-
-	systemTraySetup(w)
-
-	//Initialize ui 		(provide an object for each property of ui)
-	ui.InitializeUi(w)
-	// construct the initialized 	(add widgets to ui)
-	ui.GetUi().ConstructUi()
-	setUi()
-
-	fyne.CurrentApp().Lifecycle().SetOnStopped(func() {
-		ui.SaveOpenMacros()
-	})
-
-	w.SetContent(fynetooltip.AddWindowToolTipLayer(ui.GetUi().MainUi.Navigation, w.Canvas()))
-	w.RequestFocus()
-	debugLog("init done")
+	return err == nil && ok
 }
 
 func main() {
@@ -150,47 +106,52 @@ func main() {
 			services.LogPanicToFile(r)
 		}
 	}()
+
+	startupprof.Mark("main() entered")
 	debugLog("main started")
-	if os.Getenv("SQYRE_NO_HOOK") != "1" {
-		services.FailsafeHotkey()
+	if !acquireSingleInstance() {
+		os.Exit(0)
 	}
 
-	ui.GetUi().Window.ShowAndRun()
+	debugLog("creating Fyne app")
+	a := app.NewWithID("Sqyre")
+	os.Setenv("FYNE_SCALE", "1")
+	a.Settings().SetTheme(ui.NewSqyreTheme())
+	startupprof.Mark("fyne app created")
+
+	splash, report := ui.NewSplashWindow(a)
+	splash.Show()
+	startupprof.Mark("splash window shown")
+
+	mainWindow := ui.PrepareMainWindow(a)
+
+	a.Lifecycle().SetOnStopped(func() {
+		ui.SaveOpenMacros()
+	})
+
+	a.Lifecycle().SetOnStarted(func() {
+		startupprof.Mark("event loop started (splash visible)")
+		report.PaintInitial()
+		if os.Getenv("SQYRE_NO_HOOK") != "1" {
+			services.GoSafe(macrohotkey.StartHook)
+		}
+		go func() {
+			setupLogFile()
+			ui.Bootstrap(mainWindow, splash, report)
+			debugLog("UI ready")
+		}()
+	})
+
+	a.Run()
 
 	services.CloseTessClient()
 
-	// Save all repositories on shutdown
-	if err := repositories.ProgramRepo().Save(); err != nil {
-		log.Printf("Error saving programs: %v", err)
+	if ui.BootstrapDone() {
+		if err := repositories.ProgramRepo().Save(); err != nil {
+			log.Printf("Error saving programs: %v", err)
+		}
+		if err := repositories.MacroRepo().Save(); err != nil {
+			log.Printf("Error saving macros: %v", err)
+		}
 	}
-	if err := repositories.MacroRepo().Save(); err != nil {
-		log.Printf("Error saving macros: %v", err)
-	}
-}
-
-func setUi() {
-	ui.SetMacroUi()
-	ui.SetEditorUi()
-}
-
-func systemTraySetup(w fyne.Window) {
-	if desk, ok := fyne.CurrentApp().(desktop.App); ok {
-		m := fyne.NewMenu("Sqyre",
-			fyne.NewMenuItem("Show", func() {
-				w.Show()
-			}))
-		desk.SetSystemTrayMenu(m)
-		desk.SetSystemTrayIcon(assets.AppIcon)
-	}
-}
-
-func isWindowWithTitleActive(targetTitle string) bool {
-	pids, err := robotgo.FindIds(targetTitle)
-	if err != nil || len(pids) == 0 {
-		return false
-	}
-	log.Println(pids)
-	currentPid := robotgo.GetPid()
-	log.Println(currentPid)
-	return slices.Contains(pids, currentPid)
 }

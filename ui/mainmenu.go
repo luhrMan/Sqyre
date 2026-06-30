@@ -27,8 +27,8 @@ type actionTemplate struct {
 
 func buildActionTemplates() []actionTemplate {
 	return []actionTemplate{
-		{label: "Mouse Move", actionType: "move", category: "Mouse & Keyboard", icon: actions.NewMove(actions.Point{Name: "", X: 0, Y: 0}, false).Icon(), create: func() actions.ActionInterface {
-			return actions.NewMove(actions.Point{Name: "", X: 0, Y: 0}, false)
+		{label: "Mouse Move", actionType: "move", category: "Mouse & Keyboard", icon: actions.NewMove("", false).Icon(), create: func() actions.ActionInterface {
+			return actions.NewMove("", false)
 		}},
 		{label: "Click", actionType: "click", category: "Mouse & Keyboard", icon: actions.NewClick(false, true).Icon(), create: func() actions.ActionInterface { return actions.NewClick(false, true) }},
 		{label: "Key", actionType: "key", category: "Mouse & Keyboard", icon: actions.NewKey("ctrl", true).Icon(), create: func() actions.ActionInterface { return actions.NewKey("ctrl", true) }},
@@ -43,14 +43,20 @@ func buildActionTemplates() []actionTemplate {
 		{label: "If", actionType: "conditional", category: "Miscellaneous", icon: actions.NewConditional("", actions.OpEquals, "", "", []actions.ActionInterface{}).Icon(), create: func() actions.ActionInterface {
 			return actions.NewConditional("", actions.OpEquals, "", "", []actions.ActionInterface{})
 		}},
-		{label: "Image Search", actionType: "imagesearch", category: "Detection", icon: actions.NewImageSearch("", []actions.ActionInterface{}, []string{}, actions.SearchArea{}, 1, 1, 0.95, 5).Icon(), create: func() actions.ActionInterface {
-			return actions.NewImageSearch("", []actions.ActionInterface{}, []string{}, actions.SearchArea{}, 1, 1, 0.95, 5)
+		{label: "Break", actionType: "break", category: "Miscellaneous", icon: actions.NewBreak().Icon(), create: func() actions.ActionInterface {
+			return actions.NewBreak()
 		}},
-		{label: "OCR", actionType: "ocr", category: "Detection", icon: actions.NewOcr("", []actions.ActionInterface{}, "template", actions.SearchArea{Name: "template search area"}).Icon(), create: func() actions.ActionInterface {
-			return actions.NewOcr("", []actions.ActionInterface{}, "template", actions.SearchArea{Name: "template search area"})
+		{label: "Continue", actionType: "continue", category: "Miscellaneous", icon: actions.NewContinue().Icon(), create: func() actions.ActionInterface {
+			return actions.NewContinue()
 		}},
-		{label: "Find pixel", actionType: "findpixel", category: "Detection", icon: actions.NewFindPixel("", actions.SearchArea{}, "ffffff", 0, nil).Icon(), create: func() actions.ActionInterface {
-			return actions.NewFindPixel("", actions.SearchArea{}, "ffffff", 0, nil)
+		{label: "Image Search", actionType: "imagesearch", category: "Detection", icon: actions.NewImageSearch("", []actions.ActionInterface{}, []string{}, "", 1, 1, 0.95, 5).Icon(), create: func() actions.ActionInterface {
+			return actions.NewImageSearch("", []actions.ActionInterface{}, []string{}, "", 1, 1, 0.95, 5)
+		}},
+		{label: "OCR", actionType: "ocr", category: "Detection", icon: actions.NewOcr("", "template", "template search area").Icon(), create: func() actions.ActionInterface {
+			return actions.NewOcr("", "template", "template search area")
+		}},
+		{label: "Find pixel", actionType: "findpixel", category: "Detection", icon: actions.NewFindPixel("", "", "ffffff", 0).Icon(), create: func() actions.ActionInterface {
+			return actions.NewFindPixel("", "", "ffffff", 0)
 		}},
 
 		{label: "Set", actionType: "setvariable", category: "Variables", icon: actions.NewSetVariable("", "").Icon(), create: func() actions.ActionInterface { return actions.NewSetVariable("", "") }},
@@ -228,6 +234,7 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 	})
 
 	editor := fyne.NewMenuItem("Data Editor", func() {
+		EnsureDataEditor()
 		u.MainUi.Navigation.PushWithTitle(
 			u.EditorUi.CanvasObject,
 			"Editor",

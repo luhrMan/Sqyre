@@ -107,8 +107,8 @@ func buildItemsRightPanel(programSelector *widget.Select, w map[string]fyne.Canv
 // populatePointsFormWidgets creates Points tab right-side form widgets.
 func populatePointsFormWidgets(w map[string]fyne.CanvasObject) {
 	w["Name"] = new(widget.Entry)
-	w["X"] = custom_widgets.NewVarEntry(macroVarNames)
-	w["Y"] = custom_widgets.NewVarEntry(macroVarNames)
+	w["X"] = newValidatedCoordEntry()
+	w["Y"] = newValidatedCoordEntry()
 	w["recordButton"] = widget.NewButtonWithIcon("", theme.MediaRecordIcon(), nil)
 	w["recordButton"].(*widget.Button).Importance = widget.DangerImportance
 	w["Form"] = widget.NewForm(
@@ -130,10 +130,10 @@ func buildPointsRightPanel(programSelector *widget.Select, w map[string]fyne.Can
 // populateSearchAreasFormWidgets creates Search Areas tab right-side form widgets.
 func populateSearchAreasFormWidgets(w map[string]fyne.CanvasObject) {
 	w["Name"] = new(widget.Entry)
-	w["LeftX"] = custom_widgets.NewVarEntry(macroVarNames)
-	w["TopY"] = custom_widgets.NewVarEntry(macroVarNames)
-	w["RightX"] = custom_widgets.NewVarEntry(macroVarNames)
-	w["BottomY"] = custom_widgets.NewVarEntry(macroVarNames)
+	w["LeftX"] = newValidatedCoordEntry()
+	w["TopY"] = newValidatedCoordEntry()
+	w["RightX"] = newValidatedCoordEntry()
+	w["BottomY"] = newValidatedCoordEntry()
 	w["recordButton"] = widget.NewButtonWithIcon("", theme.MediaRecordIcon(), nil)
 	w["recordButton"].(*widget.Button).Importance = widget.DangerImportance
 	w["Form"] = widget.NewForm(
@@ -169,27 +169,27 @@ func populateMasksFormWidgets(w map[string]fyne.CanvasObject) {
 	w["shapeSelect"].(*widget.RadioGroup).Required = true
 	w["shapeSelect"].(*widget.RadioGroup).SetSelected("Rectangle")
 
-	w["CenterX"] = custom_widgets.NewVarEntry(macroVarNames)
-	w["CenterX"].(*custom_widgets.VarEntry).PlaceHolder = "50"
-	w["CenterY"] = custom_widgets.NewVarEntry(macroVarNames)
-	w["CenterY"].(*custom_widgets.VarEntry).PlaceHolder = "50"
+	w["CenterX"] = newValidatedCoordEntry()
+	w["CenterX"].(*custom_widgets.VarEntryField).Entry.SetPlaceHolder("50")
+	w["CenterY"] = newValidatedCoordEntry()
+	w["CenterY"].(*custom_widgets.VarEntryField).Entry.SetPlaceHolder("50")
 	w["centerContainer"] = container.NewGridWithColumns(2,
 		container.NewBorder(nil, nil, widget.NewLabel("X %"), nil, w["CenterX"]),
 		container.NewBorder(nil, nil, widget.NewLabel("Y %"), nil, w["CenterY"]),
 	)
 
-	w["Base"] = custom_widgets.NewVarEntry(macroVarNames)
-	w["Base"].(*custom_widgets.VarEntry).PlaceHolder = "base"
-	w["Height"] = custom_widgets.NewVarEntry(macroVarNames)
-	w["Height"].(*custom_widgets.VarEntry).PlaceHolder = "height"
+	w["Base"] = newValidatedCoordEntry()
+	w["Base"].(*custom_widgets.VarEntryField).Entry.SetPlaceHolder("base")
+	w["Height"] = newValidatedCoordEntry()
+	w["Height"].(*custom_widgets.VarEntryField).Entry.SetPlaceHolder("height")
 	w["rectContainer"] = container.NewGridWithColumns(3,
 		w["Base"],
 		container.NewCenter(widget.NewLabel("*")),
 		w["Height"],
 	)
 
-	w["Radius"] = custom_widgets.NewVarEntry(macroVarNames)
-	w["Radius"].(*custom_widgets.VarEntry).PlaceHolder = "radius"
+	w["Radius"] = newValidatedCoordEntry()
+	w["Radius"].(*custom_widgets.VarEntryField).Entry.SetPlaceHolder("radius")
 	w["circleContainer"] = container.NewBorder(
 		nil, nil,
 		widget.NewLabel("π *"), widget.NewLabel("²"),
