@@ -184,12 +184,33 @@ func setMtabSettingsAndWidgets(d WireDeps) {
 		})
 		return ti
 	}
+	refreshMacroTabSelection := func(ti *container.TabItem) {
+		if ti == nil {
+			return
+		}
+		if _, err := repositories.MacroRepo().Get(ti.Text); err != nil {
+			log.Printf("Error getting macro %s: %v", ti.Text, err)
+			return
+		}
+		ensureMacroTabContent(ti.Content)
+		syncMacroToolbarFieldsFromSelection()
+		if c := macroTabContentFrom(ti.Content); c != nil {
+			c.RefreshVariablesPanel()
+		}
+		if mtabs.OnHistoryButtonsSync != nil {
+			mtabs.OnHistoryButtonsSync()
+		}
+	}
+
 	mtabs.OnClosed = func(ti *container.TabItem) {
 		m, err := repositories.MacroRepo().Get(ti.Text)
 		if err == nil {
 			macrohotkey.UnregisterMacroHotkey(m)
 		}
 		mtabs.SelectIndex(0)
+		// Fyne does not fire OnSelected when the remaining tab is already at index 0
+		// (common when closing the first/selected tab), so refresh toolbar fields here.
+		refreshMacroTabSelection(mtabs.Selected())
 		mtabs.BoundMacroListWidget.Refresh()
 	}
 
@@ -203,19 +224,7 @@ func setMtabSettingsAndWidgets(d WireDeps) {
 		}
 	}
 	mtabs.OnSelected = func(ti *container.TabItem) {
-		if _, err := repositories.MacroRepo().Get(ti.Text); err != nil {
-			log.Printf("Error getting macro %s: %v", ti.Text, err)
-			return
-		}
-
-		ensureMacroTabContent(ti.Content)
-		syncMacroToolbarFieldsFromSelection()
-		if c := macroTabContentFrom(ti.Content); c != nil {
-			c.RefreshVariablesPanel()
-		}
-		if mtabs.OnHistoryButtonsSync != nil {
-			mtabs.OnHistoryButtonsSync()
-		}
+		refreshMacroTabSelection(ti)
 	}
 
 	saveHotkey := func(deferHookRegister bool) {
