@@ -6,14 +6,13 @@ import (
 	"strings"
 
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 )
 
 // VarEntry is a widget.Entry for values that may contain ${Variable} references.
-// It provides ${ and { partial-name completion, a searchable variable picker (+),
-// a Variables context-menu action, and pill rendering when unfocused.
+// It provides ${ and { partial-name completion, a context-menu variable picker,
+// and pill rendering when unfocused.
 type VarEntry struct {
 	widget.Entry
 
@@ -33,7 +32,6 @@ type VarEntry struct {
 	FocusChangedFn func(focused bool)
 
 	completer        *completionentry.PopupCompleter
-	insert           *ttwidget.Button
 	feedbackIcon     *ttwidget.Icon
 	hasFocus         bool
 	hideTextForPills bool
@@ -89,7 +87,6 @@ func (e *VarEntry) initCompletion() {
 		OnSelected: e.completeVarRef,
 	}
 	e.OnChanged = e.handleChanged
-	e.ensureInsertButton()
 }
 
 func (e *VarEntry) InvalidateVariableCache() {
@@ -141,37 +138,12 @@ func (e *VarEntry) knownVariables() map[string]bool {
 	return e.cachedKnown
 }
 
-// SetFeedbackIcon attaches a trailing validation icon rendered immediately before the insert button.
+// SetFeedbackIcon attaches a trailing validation icon on the entry.
 func (e *VarEntry) SetFeedbackIcon(icon *ttwidget.Icon) {
 	e.feedbackIcon = icon
 }
 
-func (e *VarEntry) ensureInsertButton() {
-	if e.insert != nil {
-		return
-	}
-	e.insert = ttwidget.NewButtonWithIcon("", theme.ContentAddIcon(), func() {
-		e.openVariablePicker()
-	})
-	e.insert.Importance = widget.LowImportance
-	e.insert.SetToolTip("Insert variable reference (${name})")
-	e.UpdateInsertButton()
-}
-
-// UpdateInsertButton enables the insert button when variables are available.
-func (e *VarEntry) UpdateInsertButton() {
-	if e.insert == nil {
-		return
-	}
-	if len(e.variableDefs()) > 0 {
-		e.insert.Enable()
-		return
-	}
-	e.insert.Disable()
-}
-
 func (e *VarEntry) openVariablePicker() {
-	e.UpdateInsertButton()
 	defs := e.variableDefs()
 	if len(defs) == 0 {
 		return
@@ -195,7 +167,6 @@ func (e *VarEntry) CreateRenderer() fyne.WidgetRenderer {
 func (e *VarEntry) FocusGained() {
 	e.hasFocus = true
 	e.Entry.FocusGained()
-	e.UpdateInsertButton()
 	e.syncPillDisplay()
 	if e.FocusChangedFn != nil {
 		e.FocusChangedFn(true)

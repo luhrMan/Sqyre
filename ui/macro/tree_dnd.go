@@ -1,14 +1,17 @@
 package macro
 
 import (
+	"fmt"
 	"image/color"
 	"math"
 	"time"
 
+	"Sqyre/internal/config"
 	"Sqyre/internal/models/actions"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
+	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
@@ -26,31 +29,29 @@ const (
 	dropIntoEnd
 )
 
-// dropLineColor draws the insertion line shown between rows during a drag.
-var dropLineColor = color.NRGBA{R: 60, G: 140, B: 255, A: 255}
+// dropGhostColor fills the overlay preview at the resolved drop slot.
+var dropGhostColor = color.NRGBA{R: 60, G: 140, B: 255, A: 50}
 
-// dropZoneColor fills a branch row when the drop will reparent into it.
-var dropZoneColor = color.NRGBA{R: 60, G: 140, B: 255, A: 70}
+// dropGhostStrokeColor outlines the placement preview row.
+var dropGhostStrokeColor = color.NRGBA{R: 60, G: 140, B: 255, A: 200}
 
-// dragSourceColor tints the row of the action currently being dragged.
+// dragSourceColor tints the row being dragged at its original position.
 var dragSourceColor = color.NRGBA{R: 60, G: 140, B: 255, A: 90}
 
-const dropLineThickness = 3
+const branchOpenDebounceMs = 200
 
-// autoExpandDelayMs is how long a drag must dwell over a collapsed branch before
-// it is expanded.
-const autoExpandDelayMs = 500
+// dragOrigin records where a dragged action lived when the gesture began.
+type dragOrigin struct {
+	parent actions.AdvancedActionInterface
+	index  int
+}
 
-// Edge auto-scroll tuning: how often the scroll ticker fires and how many pixels
-// each tick advances the viewport while the pointer sits in an edge margin.
+// Edge auto-scroll tuning.
 const (
 	autoScrollIntervalMs = 16
 	autoScrollSpeed      = 8
 )
 
-// dragHandle is the grip control on the left of each tree row. Dragging it
-// reorders the action within the macro tree. It is a leaf Draggable so the tree
-// scroller does not consume the gesture.
 type dragHandle struct {
 	widget.BaseWidget
 	tree *MacroTree
@@ -94,17 +95,32 @@ func (h *dragHandle) DragEnd() {
 	}
 }
 
-// attachDropOverlay connects the drop indicator objects created by the tab
-// content. The overlay shares the tree's coordinate space (both fill the same
-// Stack), so indicator positions are computed in tree-local pixels.
-func (mt *MacroTree) attachDropOverlay(overlay *fyne.Container, line, box *canvas.Rectangle) {
-	mt.dropOverlay = overlay
-	mt.dropLine = line
-	mt.dropBox = box
+func (h *dragHandle) TappedSecondary(pe *fyne.PointEvent) {
+	showMacroTreeActionContextMenu(h.tree, h, pe, h.uid)
 }
 
-// SetExecuting toggles whether a macro is running. Drag-and-drop is disabled
-// while executing to avoid mutating the tree under the highlight cursor.
+var _ fyne.SecondaryTappable = (*dragHandle)(nil)
+
+func (mt *MacroTree) attachDropOverlay(overlay *fyne.Container, ghost *fyne.Container, ghostInset *canvas.Rectangle, ghostRow *fyne.Container) {
+	mt.dropOverlay = overlay
+	mt.dropGhost = ghost
+	mt.dropGhostInset = ghostInset
+	mt.dropGhostRow = ghostRow
+}
+
+func newDropGhostShell() (ghost *fyne.Container, inset *canvas.Rectangle, row *fyne.Container) {
+	bg := canvas.NewRectangle(dropGhostColor)
+	bg.CornerRadius = 6
+	bg.StrokeColor = dropGhostStrokeColor
+	bg.StrokeWidth = 1
+	inset = canvas.NewRectangle(color.Transparent)
+	row = container.NewHBox()
+	inner := container.NewBorder(nil, nil, inset, nil, row)
+	ghost = container.NewStack(bg, inner)
+	ghost.Hide()
+	return ghost, inset, row
+}
+
 func (mt *MacroTree) SetExecuting(running bool) {
 	if running && mt.dragActive {
 		mt.endDrag()
@@ -120,8 +136,6 @@ func (mt *MacroTree) SetExecuting(running bool) {
 	mt.collapseStaleBranches()
 }
 
-// visibleRowUIDs returns the flattened list of currently visible row UIDs in
-// top-to-bottom order (open branches expanded, closed branches collapsed).
 func (mt *MacroTree) visibleRowUIDs() []string {
 	if mt.Macro == nil || mt.Macro.Root == nil {
 		return nil
@@ -140,8 +154,6 @@ func (mt *MacroTree) visibleRowUIDs() []string {
 	return out
 }
 
-// dragMetrics returns the row height and the vertical pitch (row height plus
-// inter-row padding) used to map pointer position to rows.
 func (mt *MacroTree) dragMetrics() (rowH, pitch float32) {
 	bH, lH := treeRowHeights(&mt.Tree)
 	rowH = lH
@@ -152,8 +164,6 @@ func (mt *MacroTree) dragMetrics() (rowH, pitch float32) {
 	return rowH, rowH + pad
 }
 
-// beginDrag captures the fixed tree-top anchor from the first drag event. It
-// returns false if the drag cannot start (macro running, source not visible).
 func (mt *MacroTree) beginDrag(h *dragHandle, e *fyne.DragEvent) bool {
 	if mt.executing || h.uid == "" {
 		return false
@@ -168,12 +178,6 @@ func (mt *MacroTree) beginDrag(h *dragHandle, e *fyne.DragEvent) bool {
 	if handleH <= 0 {
 		handleH = rowH
 	}
-	// The drag event position is relative to the handle, so subtracting it from
-	// the absolute position yields the handle's top in canvas coordinates. The
-	// handle is vertically centered in its row, so its center approximates the
-	// source row's center. From that known row we back out the canvas Y of the
-	// tree content's top (content Y 0 at scroll 0), which stays fixed for the
-	// whole gesture and lets hit-testing stay correct as the tree scrolls.
 	handleCenterY := (e.AbsolutePosition.Y - e.Position.Y) + handleH/2
 	scroll0, _ := treeScrollOffsetY(&mt.Tree)
 	mt.dragTreeTop = handleCenterY - float32(idx)*pitch - rowH/2 + scroll0
@@ -182,27 +186,40 @@ func (mt *MacroTree) beginDrag(h *dragHandle, e *fyne.DragEvent) bool {
 	mt.dragVisible = vis
 	mt.dragActive = true
 	mt.dragLastPointerY = e.AbsolutePosition.Y
+	mt.dropIndicatorKey = ""
+	mt.dropGhostContentKey = ""
+	mt.dragPreviewInTree = false
+	mt.dragPreviewKey = ""
+	mt.dragUndoSnapshotOK = false
+	mt.cancelDragPreviewDebounce()
+	mt.initDragBranchState()
 
-	// Tint the source row so the user can see which action is being dragged.
+	node := mt.Macro.Root.GetAction(h.uid)
+	if node == nil {
+		return false
+	}
+	if snap, err := snapshotTree(mt.Macro.Root, mt.SelectedNode); err != nil {
+		mt.dragUndoSnapshotOK = false
+	} else {
+		mt.dragUndoSnapshot = snap
+		mt.dragUndoSnapshotOK = true
+	}
+	mt.captureDragOrigin(node)
+	mt.rebuildDropGhostRow(node)
 	mt.markHighlightRefresh(h.uid)
 	mt.RefreshItem(h.uid)
 	return true
 }
 
-// updateDrag handles a pointer move during a drag: it updates edge auto-scroll
-// and re-resolves the drop target.
 func (mt *MacroTree) updateDrag(e *fyne.DragEvent) {
 	mt.dragLastPointerY = e.AbsolutePosition.Y
 	mt.updateAutoScroll(e.AbsolutePosition.Y)
 	mt.resolveDropAt(e.AbsolutePosition.Y)
 }
 
-// resolveDropAt maps a canvas-absolute pointer Y to a target row using the live
-// scroll offset, then resolves the drop and redraws the indicator. Working in
-// content coordinates keeps results correct across scrolling and auto-expand.
 func (mt *MacroTree) resolveDropAt(pointerY float32) {
-	n := len(mt.dragVisible)
-	if n == 0 {
+	mt.dragVisible = mt.visibleRowUIDs()
+	if len(mt.dragVisible) == 0 {
 		return
 	}
 	rowH, pitch := mt.dragMetrics()
@@ -211,23 +228,143 @@ func (mt *MacroTree) resolveDropAt(pointerY float32) {
 	}
 	scroll, _ := treeScrollOffsetY(&mt.Tree)
 	contentY := pointerY - mt.dragTreeTop + scroll
-	k := int(math.Floor(float64(contentY / pitch)))
-	if k < 0 {
-		k = 0
-	}
-	if k > n-1 {
-		k = n - 1
-	}
-	centerK := float32(k)*pitch + rowH/2
-	offset := contentY - centerK
 
-	mt.resolveDrop(k, offset, rowH)
-	mt.updateDropIndicator(k, rowH, pitch)
-	mt.updateAutoExpand(k)
+	resolveAt := func() (k int) {
+		n := len(mt.dragVisible)
+		if n == 0 {
+			return -1
+		}
+		k = int(math.Floor(float64(contentY / pitch)))
+		if k < 0 {
+			k = 0
+		}
+		if k > n-1 {
+			k = n - 1
+		}
+		offset := contentY - (float32(k)*pitch + rowH/2)
+		mt.resolveDrop(k, offset, rowH)
+		if mt.shouldDropAtRootBelowLastBranch(k, offset, rowH) {
+			mt.setDropRootAfterLastChild()
+			mt.validateDrop()
+		}
+		return k
+	}
+
+	n := len(mt.dragVisible)
+	if contentY >= float32(n)*pitch-rowH*0.25 {
+		mt.setDropRootAfterLastChild()
+		mt.validateDrop()
+		if mt.syncDragAutoOpenedBranches(-1) {
+			mt.dragVisible = mt.visibleRowUIDs()
+		}
+		mt.updateBranchOpenDebounce(-1)
+		indicatorKey := mt.dropIndicatorKeyForState()
+		if indicatorKey != mt.dropIndicatorKey {
+			mt.dropIndicatorKey = indicatorKey
+			mt.updateDropIndicator()
+		}
+		mt.scheduleDragPreview()
+		return
+	}
+
+	k := resolveAt()
+	if k < 0 {
+		return
+	}
+	if mt.syncDragAutoOpenedBranches(k) {
+		mt.dragVisible = mt.visibleRowUIDs()
+		k = resolveAt()
+		if k < 0 {
+			return
+		}
+	}
+
+	mt.updateBranchOpenDebounce(k)
+
+	indicatorKey := mt.dropIndicatorKeyForState()
+	if indicatorKey != mt.dropIndicatorKey {
+		mt.dropIndicatorKey = indicatorKey
+		mt.updateDropIndicator()
+	}
+	mt.scheduleDragPreview()
 }
 
-// updateAutoScroll starts, stops, or redirects edge auto-scroll based on whether
-// the pointer is within the top or bottom margin of the viewport.
+func (mt *MacroTree) setDropRootAfterLastChild() {
+	if mt.Macro == nil || mt.Macro.Root == nil {
+		return
+	}
+	subs := mt.Macro.Root.GetSubActions()
+	if len(subs) == 0 {
+		mt.setDropInto(mt.Macro.Root, dropIntoEnd)
+		return
+	}
+	mt.setDropSibling(subs[len(subs)-1], dropAfter)
+}
+
+func (mt *MacroTree) lastRootChildUID() string {
+	if mt.Macro == nil || mt.Macro.Root == nil {
+		return ""
+	}
+	subs := mt.Macro.Root.GetSubActions()
+	if len(subs) == 0 {
+		return mt.Macro.Root.GetUID()
+	}
+	return subs[len(subs)-1].GetUID()
+}
+
+func (mt *MacroTree) shouldDropAtRootBelowLastBranch(k int, offset, rowH float32) bool {
+	if k != len(mt.dragVisible)-1 {
+		return false
+	}
+	if offset <= rowH*0.25 {
+		return false
+	}
+	lastRootUID := mt.lastRootChildUID()
+	if lastRootUID == "" || !mt.IsBranch(lastRootUID) {
+		return false
+	}
+	lastVisibleUID := mt.dragVisible[k]
+	return lastVisibleUID == lastRootUID || mt.isDescendantOf(lastVisibleUID, lastRootUID)
+}
+
+func (mt *MacroTree) branchOpenCandidate(k int) string {
+	if (mt.dropMode == dropIntoStart || mt.dropMode == dropIntoEnd) &&
+		mt.IsBranch(mt.dropTargetUID) && !mt.IsBranchOpen(mt.dropTargetUID) &&
+		mt.dropTargetUID != mt.dragSrcUID && !mt.isDescendantOf(mt.dropTargetUID, mt.dragSrcUID) {
+		return mt.dropTargetUID
+	}
+	if k >= 0 && k < len(mt.dragVisible) {
+		uid := mt.dragVisible[k]
+		if mt.IsBranch(uid) && !mt.IsBranchOpen(uid) &&
+			uid != mt.dragSrcUID && !mt.isDescendantOf(uid, mt.dragSrcUID) {
+			return uid
+		}
+	}
+	return ""
+}
+
+func (mt *MacroTree) updateBranchOpenDebounce(k int) {
+	uid := mt.branchOpenCandidate(k)
+	if uid == "" {
+		mt.cancelAutoExpand()
+		return
+	}
+	mt.cancelAutoExpand()
+	mt.autoExpandUID = uid
+	mt.autoExpandTimer = time.AfterFunc(branchOpenDebounceMs*time.Millisecond, func() {
+		fyne.Do(func() {
+			mt.doAutoExpand(uid)
+		})
+	})
+}
+
+func (mt *MacroTree) dropIndicatorKeyForState() string {
+	if !mt.dropValid {
+		return ""
+	}
+	return mt.dropFingerprint()
+}
+
 func (mt *MacroTree) updateAutoScroll(pointerY float32) {
 	viewH := mt.Size().Height
 	if viewH <= 0 {
@@ -247,8 +384,6 @@ func (mt *MacroTree) updateAutoScroll(pointerY float32) {
 	}
 }
 
-// setAutoScroll sets the scroll direction, launching or stopping the ticker
-// goroutine as needed. Runs on the Fyne UI thread.
 func (mt *MacroTree) setAutoScroll(dir int) {
 	if mt.autoScrollDir == dir {
 		return
@@ -259,7 +394,7 @@ func (mt *MacroTree) setAutoScroll(dir int) {
 		return
 	}
 	if mt.autoScrollStop != nil {
-		return // ticker already running; it will read the new direction
+		return
 	}
 	stop := make(chan struct{})
 	mt.autoScrollStop = stop
@@ -277,7 +412,6 @@ func (mt *MacroTree) setAutoScroll(dir int) {
 	}()
 }
 
-// stopAutoScroll halts the ticker goroutine. Runs on the Fyne UI thread.
 func (mt *MacroTree) stopAutoScroll() {
 	if mt.autoScrollStop != nil {
 		close(mt.autoScrollStop)
@@ -286,8 +420,6 @@ func (mt *MacroTree) stopAutoScroll() {
 	mt.autoScrollDir = 0
 }
 
-// autoScrollStep advances the scroll offset one tick and re-resolves the drop
-// target at the last known pointer position. Runs on the Fyne UI thread.
 func (mt *MacroTree) autoScrollStep() {
 	if !mt.dragActive || mt.autoScrollDir == 0 {
 		return
@@ -308,43 +440,12 @@ func (mt *MacroTree) autoScrollStep() {
 		newOff = maxOff
 	}
 	if newOff == scroll {
-		return // already at the edge
+		return
 	}
 	mt.ScrollToOffset(newOff)
 	mt.resolveDropAt(mt.dragLastPointerY)
 }
 
-// updateAutoExpand schedules expansion of the collapsed branch under the pointer
-// (row k), cancelling any pending expansion when the hovered branch changes.
-func (mt *MacroTree) updateAutoExpand(k int) {
-	candidate := ""
-	if k >= 0 && k < len(mt.dragVisible) {
-		uid := mt.dragVisible[k]
-		if mt.IsBranch(uid) && !mt.IsBranchOpen(uid) &&
-			uid != mt.dragSrcUID && !mt.isDescendantOf(uid, mt.dragSrcUID) {
-			candidate = uid
-		}
-	}
-	if candidate == "" {
-		mt.cancelAutoExpand()
-		return
-	}
-	if mt.autoExpandUID == candidate {
-		return
-	}
-	mt.cancelAutoExpand()
-	mt.autoExpandUID = candidate
-	uid := candidate
-	mt.autoExpandTimer = time.AfterFunc(autoExpandDelayMs*time.Millisecond, func() {
-		fyne.Do(func() {
-			mt.doAutoExpand(uid)
-		})
-	})
-}
-
-// doAutoExpand opens the dwelled-on branch and rebuilds the visible row list.
-// Hit-testing works in content coordinates, so the reflow from the inserted
-// child rows is picked up automatically on the next resolve.
 func (mt *MacroTree) doAutoExpand(uid string) {
 	mt.autoExpandUID = ""
 	mt.autoExpandTimer = nil
@@ -354,9 +455,17 @@ func (mt *MacroTree) doAutoExpand(uid string) {
 	mt.suppressBranchOpenScroll++
 	mt.OpenBranch(uid)
 	mt.suppressBranchOpenScroll--
-
+	if !mt.wasOpenAtDragStart(uid) {
+		if mt.dragAutoOpenedBranches == nil {
+			mt.dragAutoOpenedBranches = map[string]struct{}{}
+		}
+		mt.dragAutoOpenedBranches[uid] = struct{}{}
+	}
 	mt.dragVisible = mt.visibleRowUIDs()
+	mt.dropIndicatorKey = "" // branch open changes preview slot
+	mt.updateDropIndicator()
 	mt.resolveDropAt(mt.dragLastPointerY)
+	mt.scheduleDragPreview()
 }
 
 func (mt *MacroTree) cancelAutoExpand() {
@@ -367,8 +476,129 @@ func (mt *MacroTree) cancelAutoExpand() {
 	mt.autoExpandUID = ""
 }
 
-// resolveDrop sets dropParent / dropTargetUID / dropMode / dropValid based on
-// the target row k and the pointer's vertical offset from that row's center.
+func (mt *MacroTree) initDragBranchState() {
+	mt.dragStartOpenBranches = map[string]struct{}{}
+	for _, uid := range mt.collectOpenBranchUIDs() {
+		mt.dragStartOpenBranches[uid] = struct{}{}
+	}
+	mt.dragAutoOpenedBranches = nil
+}
+
+func (mt *MacroTree) finishDragBranchState() {
+	mt.collapseDragAutoOpenedBranchesExcept(mt.dragBranchesToKeepAfterDrop())
+	mt.dragStartOpenBranches = nil
+	mt.dragAutoOpenedBranches = nil
+}
+
+func (mt *MacroTree) dragBranchesToKeepAfterDrop() map[string]struct{} {
+	keep := map[string]struct{}{}
+	if !mt.dropValid || mt.dragAutoOpenedBranches == nil {
+		return keep
+	}
+	for uid := range mt.dragAutoOpenedBranches {
+		if mt.dropMode == dropIntoStart || mt.dropMode == dropIntoEnd {
+			if mt.dropTargetUID == uid {
+				keep[uid] = struct{}{}
+			}
+		}
+		if mt.dropParent != nil {
+			pUID := mt.dropParent.GetUID()
+			if pUID == uid || mt.isDescendantOf(pUID, uid) {
+				keep[uid] = struct{}{}
+			}
+		}
+	}
+	return keep
+}
+
+func (mt *MacroTree) wasOpenAtDragStart(uid string) bool {
+	if mt.dragStartOpenBranches == nil {
+		return mt.IsBranchOpen(uid)
+	}
+	_, ok := mt.dragStartOpenBranches[uid]
+	return ok
+}
+
+func (mt *MacroTree) dragBranchesToKeepOpen(k int) map[string]struct{} {
+	keep := map[string]struct{}{}
+	if mt.dragAutoOpenedBranches == nil {
+		if cand := mt.branchOpenCandidate(k); cand != "" {
+			keep[cand] = struct{}{}
+		}
+		if mt.autoExpandUID != "" {
+			keep[mt.autoExpandUID] = struct{}{}
+		}
+		return keep
+	}
+
+	var rowUID string
+	if k >= 0 && k < len(mt.dragVisible) {
+		rowUID = mt.dragVisible[k]
+	}
+
+	for uid := range mt.dragAutoOpenedBranches {
+		if rowUID != "" && (rowUID == uid || mt.isDescendantOf(rowUID, uid)) {
+			keep[uid] = struct{}{}
+		}
+		if mt.dropParent != nil {
+			pUID := mt.dropParent.GetUID()
+			if pUID == uid || mt.isDescendantOf(pUID, uid) {
+				keep[uid] = struct{}{}
+			}
+		}
+		if mt.dropTargetUID != "" && (mt.dropTargetUID == uid || mt.isDescendantOf(mt.dropTargetUID, uid)) {
+			keep[uid] = struct{}{}
+		}
+		if (mt.dropMode == dropIntoStart || mt.dropMode == dropIntoEnd) && mt.dropTargetUID == uid {
+			keep[uid] = struct{}{}
+		}
+	}
+
+	if cand := mt.branchOpenCandidate(k); cand != "" {
+		keep[cand] = struct{}{}
+	}
+	if mt.autoExpandUID != "" {
+		keep[mt.autoExpandUID] = struct{}{}
+	}
+	return keep
+}
+
+func (mt *MacroTree) syncDragAutoOpenedBranches(k int) bool {
+	if mt.dragAutoOpenedBranches == nil {
+		return false
+	}
+	return mt.collapseDragAutoOpenedBranchesExcept(mt.dragBranchesToKeepOpen(k))
+}
+
+func (mt *MacroTree) collapseDragAutoOpenedBranchesExcept(keep map[string]struct{}) bool {
+	if mt.dragAutoOpenedBranches == nil {
+		return false
+	}
+	changed := false
+	for uid := range mt.dragAutoOpenedBranches {
+		if keep != nil {
+			if _, ok := keep[uid]; ok {
+				continue
+			}
+		}
+		if mt.IsBranchOpen(uid) {
+			mt.suppressBranchOpenScroll++
+			mt.CloseBranch(uid)
+			mt.suppressBranchOpenScroll--
+			changed = true
+		}
+		delete(mt.dragAutoOpenedBranches, uid)
+	}
+	if mt.autoExpandUID != "" {
+		if keep == nil {
+			mt.cancelAutoExpand()
+		} else if _, ok := keep[mt.autoExpandUID]; !ok {
+			mt.cancelAutoExpand()
+		}
+	}
+	return changed
+}
+
 func (mt *MacroTree) resolveDrop(k int, offset, rowH float32) {
 	mt.dropMode = dropNone
 	mt.dropParent = nil
@@ -390,8 +620,6 @@ func (mt *MacroTree) resolveDrop(k int, offset, rowH float32) {
 
 	switch {
 	case isBranch && isOpen:
-		// The visually-next row is this branch's first child, so anything below
-		// the upper zone means "drop as first child".
 		if offset < upper {
 			mt.setDropSibling(node, dropBefore)
 		} else {
@@ -415,6 +643,435 @@ func (mt *MacroTree) resolveDrop(k int, offset, rowH float32) {
 	mt.validateDrop()
 }
 
+// updateDropIndicator moves a lightweight overlay ghost to the slot where the
+// action would be inserted. After the debounced live preview applies the ghost
+// is hidden because the real row occupies that slot.
+func (mt *MacroTree) updateDropIndicator() {
+	if mt.dropGhost == nil {
+		return
+	}
+	if !mt.dropValid {
+		mt.hideDropIndicator()
+		return
+	}
+	if mt.dragPreviewInTree && mt.dragPreviewKey == mt.dropFingerprint() {
+		mt.hideDropIndicator()
+		return
+	}
+	y, depth, isBranch, ok := mt.dropGhostGeometry()
+	if !ok {
+		mt.hideDropIndicator()
+		return
+	}
+	key := mt.dropFingerprint()
+	if key != mt.dropGhostContentKey {
+		mt.dropGhostContentKey = key
+		if node := mt.Macro.Root.GetAction(mt.dragSrcUID); node != nil {
+			mt.rebuildDropGhostRow(node)
+		}
+	}
+	rowH, _ := mt.dragMetrics()
+	mt.showDropGhost(y, rowH, mt.Size().Width, mt.rowContentLeftInset(depth, isBranch))
+}
+
+func (mt *MacroTree) dropFingerprint() string {
+	if mt.dropParent == nil {
+		return ""
+	}
+	return fmt.Sprintf("%s|%s|%d", mt.dropParent.GetUID(), mt.dropTargetUID, mt.dropMode)
+}
+
+func (mt *MacroTree) previewVisibleRowUIDs() []string {
+	vis := mt.dragVisible
+	if len(vis) == 0 {
+		vis = mt.visibleRowUIDs()
+	}
+	src := mt.dragSrcUID
+	filtered := make([]string, 0, len(vis))
+	for _, uid := range vis {
+		if uid != src {
+			filtered = append(filtered, uid)
+		}
+	}
+	insertAt := mt.previewInsertIndex(filtered)
+	out := make([]string, 0, len(filtered)+1)
+	out = append(out, filtered[:insertAt]...)
+	out = append(out, src)
+	out = append(out, filtered[insertAt:]...)
+	return out
+}
+
+func (mt *MacroTree) previewInsertIndex(vis []string) int {
+	switch mt.dropMode {
+	case dropBefore:
+		if i := indexOfString(vis, mt.dropTargetUID); i >= 0 {
+			return i
+		}
+	case dropAfter:
+		if i := indexOfString(vis, mt.dropTargetUID); i >= 0 {
+			if mt.IsBranch(mt.dropTargetUID) && mt.IsBranchOpen(mt.dropTargetUID) {
+				return mt.lastVisibleDescendantIndexInList(vis, mt.dropTargetUID) + 1
+			}
+			return i + 1
+		}
+	case dropIntoStart, dropIntoEnd:
+		if mt.IsBranch(mt.dropTargetUID) && !mt.IsBranchOpen(mt.dropTargetUID) {
+			if i := indexOfString(vis, mt.dropTargetUID); i >= 0 {
+				return i
+			}
+		}
+		if mt.dropMode == dropIntoStart {
+			if i := indexOfString(vis, mt.dropTargetUID); i >= 0 {
+				return i + 1
+			}
+		}
+		if i := indexOfString(vis, mt.dropTargetUID); i >= 0 {
+			return mt.lastVisibleDescendantIndexInList(vis, mt.dropTargetUID) + 1
+		}
+	}
+	return len(vis)
+}
+
+func (mt *MacroTree) lastVisibleDescendantIndexInList(vis []string, branchUID string) int {
+	idx := indexOfString(vis, branchUID)
+	if idx < 0 {
+		return idx
+	}
+	last := idx
+	for i := idx + 1; i < len(vis); i++ {
+		if mt.isDescendantOf(vis[i], branchUID) {
+			last = i
+			continue
+		}
+		break
+	}
+	return last
+}
+
+func (mt *MacroTree) dropGhostGeometry() (y float32, depth int, isBranch bool, ok bool) {
+	rowH, pitch := mt.dragMetrics()
+	scroll, scrollOK := treeScrollOffsetY(&mt.Tree)
+	if pitch <= 0 || !scrollOK {
+		return 0, 0, false, false
+	}
+	src := mt.Macro.Root.GetAction(mt.dragSrcUID)
+	if src == nil {
+		return 0, 0, false, false
+	}
+	_, isBranch = src.(actions.AdvancedActionInterface)
+
+	if mt.dropMode == dropIntoStart || mt.dropMode == dropIntoEnd {
+		if mt.IsBranch(mt.dropTargetUID) && !mt.IsBranchOpen(mt.dropTargetUID) {
+			k := indexOfString(mt.dragVisible, mt.dropTargetUID)
+			if k < 0 {
+				return 0, 0, false, false
+			}
+			return float32(k)*pitch - scroll, mt.rowIndentDepth(mt.dropTargetUID) + 1, isBranch, true
+		}
+	}
+
+	preview := mt.previewVisibleRowUIDs()
+	slot := indexOfString(preview, mt.dragSrcUID)
+	if slot < 0 {
+		return 0, 0, false, false
+	}
+	depth = mt.insertIndentDepth()
+	_ = rowH
+	return float32(slot)*pitch - scroll, depth, isBranch, true
+}
+
+func (mt *MacroTree) rowIndentDepth(uid string) int {
+	node := mt.Macro.Root.GetAction(uid)
+	if node == nil {
+		return 0
+	}
+	depth := 0
+	for p := node.GetParent(); p != nil; p = p.GetParent() {
+		if p == mt.Macro.Root {
+			break
+		}
+		depth++
+	}
+	return depth
+}
+
+func (mt *MacroTree) rowContentLeftInset(depth int, isBranch bool) float32 {
+	th := mt.Theme()
+	pad := th.Size(theme.SizeNamePadding)
+	iconSize := th.Size(theme.SizeNameInlineIcon)
+	unit := iconSize + pad
+	x := pad + float32(depth)*unit
+	if isBranch {
+		x += iconSize + pad
+	}
+	return x
+}
+
+func (mt *MacroTree) rebuildDropGhostRow(node actions.ActionInterface) {
+	if mt.dropGhostRow == nil {
+		return
+	}
+	iconBg := canvas.NewRectangle(macroTreeActionColor(node))
+	iconBg.CornerRadius = 6
+	iconBg.StrokeColor = theme.ShadowColor()
+	iconBg.StrokeWidth = 1
+	iconBg.SetMinSize(fyne.NewSize(treeItemIconSize, treeItemIconSize))
+	iconBtn := widget.NewIcon(node.Icon())
+	iconStack := container.NewStack(iconBg, iconBtn)
+	display := node.Display()
+	mt.dropGhostRow.Objects = []fyne.CanvasObject{iconStack, display}
+	mt.dropGhostRow.Refresh()
+}
+
+func (mt *MacroTree) showDropGhost(y, rowH, width, insetX float32) {
+	if mt.dropGhost == nil {
+		return
+	}
+	if mt.dropGhostInset != nil {
+		mt.dropGhostInset.SetMinSize(fyne.NewSize(insetX, rowH))
+	}
+	mt.dropGhost.Move(fyne.NewPos(0, y))
+	mt.dropGhost.Resize(fyne.NewSize(width, rowH))
+	mt.dropGhost.Show()
+	if mt.dropOverlay != nil {
+		mt.dropOverlay.Refresh()
+	}
+}
+
+func (mt *MacroTree) hideDropIndicator() {
+	if mt.dropGhost != nil {
+		mt.dropGhost.Hide()
+	}
+	if mt.dropOverlay != nil {
+		mt.dropOverlay.Refresh()
+	}
+}
+
+func (mt *MacroTree) cancelDragPreviewDebounce() {
+	if mt.dragPreviewTimer != nil {
+		mt.dragPreviewTimer.Stop()
+		mt.dragPreviewTimer = nil
+	}
+}
+
+func (mt *MacroTree) scheduleDragPreview() {
+	if !mt.dragActive {
+		return
+	}
+	if mt.dragPreviewInTree && mt.dropValid && mt.dragPreviewKey == mt.dropFingerprint() {
+		return
+	}
+	mt.cancelDragPreviewDebounce()
+	if !mt.dropValid {
+		if mt.dragPreviewInTree {
+			mt.revertDragPreview()
+		}
+		return
+	}
+	key := mt.dropFingerprint()
+	if mt.dragPreviewInTree && mt.dragPreviewKey != key {
+		mt.revertDragPreview()
+	}
+	scheduled := key
+	debounce := mt.dragPreviewDebounceDuration()
+	mt.dragPreviewTimer = time.AfterFunc(debounce, func() {
+		fyne.Do(func() {
+			mt.applyDragPreview(scheduled)
+		})
+	})
+}
+
+func (mt *MacroTree) dragPreviewDebounceDuration() time.Duration {
+	app := fyne.CurrentApp()
+	if app == nil {
+		return time.Duration(config.DefaultDragPreviewDebounceMs) * time.Millisecond
+	}
+	ms := app.Preferences().IntWithFallback(config.PrefDragPreviewDebounceMs, config.DefaultDragPreviewDebounceMs)
+	if ms < config.MinDragPreviewDebounceMs {
+		ms = config.DefaultDragPreviewDebounceMs
+	}
+	return time.Duration(ms) * time.Millisecond
+}
+
+func (mt *MacroTree) applyDragPreview(key string) {
+	mt.dragPreviewTimer = nil
+	if !mt.dragActive || !mt.dropValid || mt.dropFingerprint() != key {
+		return
+	}
+	if mt.dragPreviewInTree && mt.dragPreviewKey == key {
+		return
+	}
+	prevParentUID := mt.draggedNodeParentUID()
+	if !mt.relocateDraggedNode(false) {
+		return
+	}
+	newParentUID := mt.dropParentUID()
+	mt.dragPreviewInTree = true
+	mt.dragPreviewKey = key
+	mt.refreshAfterDragLayout(mt.dragMutationNeedsFlush(prevParentUID, newParentUID))
+	if mt.dragSrcUID != "" {
+		mt.invalidateRowCache(mt.dragSrcUID)
+		mt.RefreshItem(mt.dragSrcUID)
+	}
+	mt.updateDropIndicator()
+}
+
+func (mt *MacroTree) restoreDragOrigin() bool {
+	node := mt.Macro.Root.GetAction(mt.dragSrcUID)
+	if node == nil || mt.dragOrigin.parent == nil {
+		return false
+	}
+	if cur := node.GetParent(); cur != nil {
+		cur.RemoveSubAction(node)
+	}
+	subs := mt.dragOrigin.parent.GetSubActions()
+	idx := mt.dragOrigin.index
+	if idx < 0 {
+		idx = 0
+	}
+	if idx > len(subs) {
+		idx = len(subs)
+	}
+	newSubs := make([]actions.ActionInterface, 0, len(subs)+1)
+	newSubs = append(newSubs, subs[:idx]...)
+	newSubs = append(newSubs, node)
+	newSubs = append(newSubs, subs[idx:]...)
+	mt.dragOrigin.parent.SetSubActions(newSubs)
+	node.SetParent(mt.dragOrigin.parent)
+	return true
+}
+
+func (mt *MacroTree) revertDragPreview() {
+	if !mt.dragPreviewInTree {
+		return
+	}
+	prevParentUID := mt.draggedNodeParentUID()
+	originParentUID := mt.dragOriginParentUID()
+	mt.restoreDragOrigin()
+	mt.dragPreviewInTree = false
+	mt.dragPreviewKey = ""
+	mt.refreshAfterDragLayout(mt.dragMutationNeedsFlush(prevParentUID, originParentUID))
+	if mt.dragSrcUID != "" {
+		mt.invalidateRowCache(mt.dragSrcUID)
+		mt.RefreshItem(mt.dragSrcUID)
+	}
+}
+
+func (mt *MacroTree) captureDragOrigin(node actions.ActionInterface) {
+	parent := node.GetParent()
+	if parent == nil {
+		return
+	}
+	mt.dragOrigin = dragOrigin{
+		parent: parent,
+		index:  indexOfAction(parent.GetSubActions(), node.GetUID()),
+	}
+}
+
+func (mt *MacroTree) draggedNodeParentUID() string {
+	node := mt.Macro.Root.GetAction(mt.dragSrcUID)
+	if node == nil {
+		return ""
+	}
+	if p := node.GetParent(); p != nil {
+		return p.GetUID()
+	}
+	return ""
+}
+
+func (mt *MacroTree) dragOriginParentUID() string {
+	if mt.dragOrigin.parent == nil {
+		return ""
+	}
+	return mt.dragOrigin.parent.GetUID()
+}
+
+func (mt *MacroTree) dropParentUID() string {
+	if mt.dropParent == nil {
+		return ""
+	}
+	return mt.dropParent.GetUID()
+}
+
+// dragMutationNeedsFlush reports whether the Fyne tree must rebuild row depth
+// after a drag mutation. Refresh alone is enough when only sibling order changes
+// under the same parent at the same indent level.
+func (mt *MacroTree) dragMutationNeedsFlush(prevParentUID, newParentUID string) bool {
+	if prevParentUID != newParentUID {
+		return true
+	}
+	originUID := mt.dragOriginParentUID()
+	if originUID != "" && originUID != newParentUID {
+		return true
+	}
+	return mt.childIndentDepthForParentUID(prevParentUID) != mt.childIndentDepthForParentUID(newParentUID)
+}
+
+func (mt *MacroTree) childIndentDepthForParentUID(parentUID string) int {
+	if mt.Macro == nil || mt.Macro.Root == nil || parentUID == "" {
+		return 0
+	}
+	if parentUID == mt.Macro.Root.GetUID() {
+		return 0
+	}
+	return mt.rowIndentDepth(parentUID) + 1
+}
+
+func (mt *MacroTree) childIndentDepth(parent actions.AdvancedActionInterface) int {
+	if parent == nil || mt.Macro == nil || mt.Macro.Root == nil {
+		return 0
+	}
+	return mt.childIndentDepthForParentUID(parent.GetUID())
+}
+
+func (mt *MacroTree) insertIndentDepth() int {
+	if mt.dropParent == nil {
+		return 0
+	}
+	switch mt.dropMode {
+	case dropIntoStart, dropIntoEnd:
+		if mt.IsBranch(mt.dropTargetUID) && !mt.IsBranchOpen(mt.dropTargetUID) {
+			return mt.rowIndentDepth(mt.dropTargetUID) + 1
+		}
+		return mt.childIndentDepth(mt.dropParent)
+	default:
+		return mt.childIndentDepth(mt.dropParent)
+	}
+}
+
+func (mt *MacroTree) dropInsertIndex(subs []actions.ActionInterface) int {
+	switch mt.dropMode {
+	case dropIntoStart:
+		return 0
+	case dropIntoEnd:
+		return len(subs)
+	case dropBefore:
+		if i := indexOfAction(subs, mt.dropTargetUID); i >= 0 {
+			return i
+		}
+	case dropAfter:
+		if i := indexOfAction(subs, mt.dropTargetUID); i >= 0 {
+			return i + 1
+		}
+	}
+	return len(subs)
+}
+
+func (mt *MacroTree) dragLayoutNeedsFlush(prevParentUID, newParentUID string) bool {
+	return mt.dragMutationNeedsFlush(prevParentUID, newParentUID)
+}
+
+func (mt *MacroTree) refreshAfterDragLayout(flushDepth bool) {
+	mt.suppressBranchOpenScroll++
+	if flushDepth {
+		mt.flushNodeCache()
+	} else {
+		mt.Refresh()
+	}
+	mt.suppressBranchOpenScroll--
+	mt.dragVisible = mt.visibleRowUIDs()
+}
+
 func (mt *MacroTree) setDropSibling(node actions.ActionInterface, mode dropMode) {
 	mt.dropMode = mode
 	mt.dropTargetUID = node.GetUID()
@@ -431,8 +1088,6 @@ func (mt *MacroTree) setDropInto(node actions.ActionInterface, mode dropMode) {
 	mt.dropParent = adv
 }
 
-// validateDrop rejects drops that would create a cycle (into the dragged node or
-// its own subtree) or that target the dragged row itself.
 func (mt *MacroTree) validateDrop() {
 	mt.dropValid = false
 	if mt.dropParent == nil || mt.dropMode == dropNone {
@@ -443,93 +1098,60 @@ func (mt *MacroTree) validateDrop() {
 	if pUID == src || mt.isDescendantOf(pUID, src) {
 		return
 	}
-	// Dropping a node immediately before/after itself is a no-op; treat it as
-	// invalid so no indicator is shown.
 	if (mt.dropMode == dropBefore || mt.dropMode == dropAfter) && mt.dropTargetUID == src {
 		return
 	}
 	mt.dropValid = true
 }
 
-// updateDropIndicator positions the insertion line or reparent box in tree-local
-// coordinates. localRowTop mirrors the scroll math in openTreeContentHeight
-// (first row top at content Y 0).
-func (mt *MacroTree) updateDropIndicator(k int, rowH, pitch float32) {
-	if mt.dropOverlay == nil || mt.dropLine == nil || mt.dropBox == nil {
-		return
-	}
-	if !mt.dropValid {
-		mt.hideIndicators()
-		return
-	}
-	scroll, _ := treeScrollOffsetY(&mt.Tree)
-	localRowTop := float32(k)*pitch - scroll
-	width := mt.Size().Width
-
-	switch mt.dropMode {
-	case dropBefore:
-		mt.showLine(localRowTop-dropLineThickness/2, width)
-	case dropAfter:
-		mt.showLine(localRowTop+rowH-dropLineThickness/2, width)
-	case dropIntoStart, dropIntoEnd:
-		mt.showBox(localRowTop, rowH, width)
-	default:
-		mt.hideIndicators()
-	}
-}
-
-func (mt *MacroTree) showLine(y, width float32) {
-	mt.dropBox.Hide()
-	mt.dropLine.FillColor = dropLineColor
-	mt.dropLine.Move(fyne.NewPos(0, y))
-	mt.dropLine.Resize(fyne.NewSize(width, dropLineThickness))
-	mt.dropLine.Show()
-	mt.dropOverlay.Refresh()
-}
-
-func (mt *MacroTree) showBox(y, rowH, width float32) {
-	mt.dropLine.Hide()
-	mt.dropBox.FillColor = dropZoneColor
-	mt.dropBox.Move(fyne.NewPos(0, y))
-	mt.dropBox.Resize(fyne.NewSize(width, rowH))
-	mt.dropBox.Show()
-	mt.dropOverlay.Refresh()
-}
-
-func (mt *MacroTree) hideIndicators() {
-	if mt.dropLine != nil {
-		mt.dropLine.Hide()
-	}
-	if mt.dropBox != nil {
-		mt.dropBox.Hide()
-	}
-	if mt.dropOverlay != nil {
-		mt.dropOverlay.Refresh()
-	}
-}
-
-// endDrag commits the move (if valid), refreshes the tree, and clears drag
-// state.
 func (mt *MacroTree) endDrag() {
 	if !mt.dragActive {
 		return
 	}
 	mt.dragActive = false
 	mt.cancelAutoExpand()
+	mt.finishDragBranchState()
+	mt.cancelDragPreviewDebounce()
 	mt.stopAutoScroll()
-	mt.hideIndicators()
+	mt.hideDropIndicator()
 
 	src := mt.dragSrcUID
+	originParent := ""
+	if mt.dragOrigin.parent != nil {
+		originParent = mt.dragOrigin.parent.GetUID()
+	}
 
-	if mt.dropValid && mt.dropParent != nil {
-		if mt.performMove() {
-			mt.flushNodeCache()
-			mt.openAncestorBranches(mt.dragSrcUID)
-			mt.Select(mt.dragSrcUID)
-			mt.SelectedNode = mt.dragSrcUID
-			if mt.OnTreeChanged != nil {
-				mt.OnTreeChanged()
+	committed := false
+	if mt.dropValid {
+		key := mt.dropFingerprint()
+		if mt.dragPreviewInTree && mt.dragPreviewKey == key {
+			committed = true
+		} else if mt.relocateDraggedNode(false) {
+			newParentUID := mt.dropParentUID()
+			mt.refreshAfterDragLayout(mt.dragMutationNeedsFlush(originParent, newParentUID))
+			if src != "" {
+				mt.invalidateRowCache(src)
 			}
+			committed = true
+		} else if mt.dragPreviewInTree {
+			mt.revertDragPreview()
+		}
+	} else if mt.dragPreviewInTree {
+		mt.revertDragPreview()
+	}
+
+	if committed {
+		mt.commitDragUndoSnapshot()
+		mt.dragPreviewInTree = false
+		mt.dragPreviewKey = ""
+		if node := mt.Macro.Root.GetAction(src); node != nil && mt.dragMutationNeedsFlush(mt.dragOriginParentUID(), mt.draggedNodeParentUID()) {
+			mt.refreshAfterDragLayout(true)
+		}
+		mt.openAncestorBranches(src)
+		mt.Select(src)
+		mt.SelectedNode = src
+		if mt.OnTreeChanged != nil {
+			mt.OnTreeChanged()
 		}
 	}
 
@@ -539,17 +1161,34 @@ func (mt *MacroTree) endDrag() {
 	mt.dropMode = dropNone
 	mt.dropValid = false
 	mt.dragVisible = nil
+	mt.dropIndicatorKey = ""
+	mt.dropGhostContentKey = ""
+	mt.dragPreviewInTree = false
+	mt.dragPreviewKey = ""
+	mt.dragUndoSnapshotOK = false
 
-	// Clear the source-row tint (no-op if a move already rebuilt the rows).
 	if src != "" {
 		mt.markHighlightRefresh(src)
 		mt.RefreshItem(src)
 	}
 }
 
-// performMove relocates the dragged action into dropParent at the resolved
-// index. It returns false on a no-op or invalid move.
+func (mt *MacroTree) commitDragUndoSnapshot() {
+	if mt.applyingHistory || !mt.dragUndoSnapshotOK {
+		return
+	}
+	if mt.history == nil {
+		mt.history = newTreeHistory()
+	}
+	mt.history.pushSnapshot(mt.dragUndoSnapshot)
+	mt.notifyHistoryChanged()
+}
+
 func (mt *MacroTree) performMove() bool {
+	return mt.relocateDraggedNode(true)
+}
+
+func (mt *MacroTree) relocateDraggedNode(record bool) bool {
 	src := mt.dragSrcUID
 	if (mt.dropMode == dropBefore || mt.dropMode == dropAfter) && mt.dropTargetUID == src {
 		return false
@@ -558,38 +1197,26 @@ func (mt *MacroTree) performMove() bool {
 	if node == nil {
 		return false
 	}
+	if record {
+		mt.recordMutation()
+	}
 	oldParent := node.GetParent()
-	if oldParent == nil {
-		return false
+	if oldParent != nil {
+		oldParent.RemoveSubAction(node)
 	}
 	parent := mt.dropParent
-
-	mt.recordMutation()
-	oldParent.RemoveSubAction(node)
-	subs := parent.GetSubActions()
-
-	index := len(subs)
-	switch mt.dropMode {
-	case dropIntoStart:
-		index = 0
-	case dropIntoEnd:
-		index = len(subs)
-	case dropBefore:
-		if i := indexOfAction(subs, mt.dropTargetUID); i >= 0 {
-			index = i
-		}
-	case dropAfter:
-		if i := indexOfAction(subs, mt.dropTargetUID); i >= 0 {
-			index = i + 1
-		}
+	if parent == nil {
+		return false
 	}
+
+	subs := parent.GetSubActions()
+	index := mt.dropInsertIndex(subs)
 	if index > len(subs) {
 		index = len(subs)
 	}
 	if index < 0 {
 		index = 0
 	}
-
 	newSubs := make([]actions.ActionInterface, 0, len(subs)+1)
 	newSubs = append(newSubs, subs[:index]...)
 	newSubs = append(newSubs, node)
@@ -599,22 +1226,12 @@ func (mt *MacroTree) performMove() bool {
 	return true
 }
 
-// flushNodeCacheSentinel is a transient Root value used to evict every cached
-// tree row. It must never collide with a real action UID (a UUID).
 const flushNodeCacheSentinel = "\x00sqyre-flush-node-cache\x00"
 
-// flushNodeCache forces widget.Tree to discard its cached row objects so that
-// reparented actions are rebuilt with the correct depth (indentation).
-//
-// Fyne's tree assigns a row's depth only when the row object is created on a
-// cache miss; a reused row keeps its previous depth. After a reparent the moved
-// subtree therefore renders at its old sub-level. Pointing Root at a sentinel
-// and refreshing walks none of the real nodes, returning them all to the object
-// pool; restoring Root rebuilds every visible node as a cache miss at its new
-// depth. The two refreshes are synchronous, so only the final state is painted.
 func (mt *MacroTree) flushNodeCache() {
 	mt.suppressBranchOpenScroll++
 	defer func() { mt.suppressBranchOpenScroll-- }()
+	mt.clearRowCache()
 	mt.Tree.Root = flushNodeCacheSentinel
 	mt.Refresh()
 	mt.Tree.Root = ""

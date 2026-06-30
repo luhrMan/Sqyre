@@ -7,20 +7,16 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
-	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 )
 
 // VarNameEntry is for fields that define a variable name (not ${references}).
-// It offers prefix completion, a searchable variable picker (+), and a context-menu picker.
+// It offers prefix completion and a context-menu variable picker.
 type VarNameEntry struct {
 	completionentry.CompletionEntry
 
 	getNames        func() []string
 	GetVariableDefs func() []models.VariableDef
-
-	insert *ttwidget.Button
 
 	cachedDefFP string
 	cachedDefs  []models.VariableDef
@@ -48,7 +44,6 @@ func (e *VarNameEntry) init() {
 		e.refreshOptions()
 	}
 	e.initRichCompletion()
-	e.ensureInsertButton()
 }
 
 func (e *VarNameEntry) initRichCompletion() {
@@ -114,31 +109,7 @@ func (e *VarNameEntry) InvalidateVariableCache() {
 	e.cachedNames = nil
 }
 
-func (e *VarNameEntry) ensureInsertButton() {
-	if e.insert != nil {
-		return
-	}
-	e.insert = ttwidget.NewButtonWithIcon("", theme.ContentAddIcon(), func() {
-		e.openVariablePicker()
-	})
-	e.insert.Importance = widget.LowImportance
-	e.insert.SetToolTip("Pick an existing variable name")
-	e.UpdateInsertButton()
-}
-
-func (e *VarNameEntry) UpdateInsertButton() {
-	if e.insert == nil {
-		return
-	}
-	if len(e.variableDefs()) > 0 {
-		e.insert.Enable()
-		return
-	}
-	e.insert.Disable()
-}
-
 func (e *VarNameEntry) openVariablePicker() {
-	e.UpdateInsertButton()
 	defs := e.variableDefs()
 	if len(defs) == 0 {
 		return
@@ -177,7 +148,6 @@ func (e *VarNameEntry) TypedRune(r rune) {
 
 func (e *VarNameEntry) FocusGained() {
 	e.CompletionEntry.FocusGained()
-	e.UpdateInsertButton()
 	e.refreshOptions()
 	if strings.TrimSpace(e.Text) != "" && len(e.Options) > 0 {
 		e.ShowCompletion()
