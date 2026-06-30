@@ -27,7 +27,8 @@ type Deps struct {
 
 	PreviewExpression func(expr string) (string, error)
 
-	AddDialogEscapeClose func(d dialog.Dialog, parent fyne.Window)
+	AddDialogEscapeClose     func(d dialog.Dialog, parent fyne.Window)
+	AddActionDialogEnterSave func(d dialog.Dialog, parent fyne.Window, onSave func())
 	ShowRecordingOverlay func(onClosed func(), onMouseDown func(*desktop.MouseEvent)) func()
 	ShowHotkeyRecordDialog func(parent fyne.Window, stableDuration time.Duration, onRecorded func(keys []string))
 }
