@@ -8,6 +8,8 @@ import (
 	"Sqyre/internal/models/serialize"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/widget"
 )
 
 func buildInsertTestTree(t *testing.T) (mt *MacroTree, waitA, waitB, waitC *actions.Wait, loop *actions.Loop) {
@@ -321,5 +323,55 @@ func TestHighlightOnlyRefreshRequiresBoundNode(t *testing.T) {
 	mt.markHighlightRefresh(uid)
 	if !mt.consumeHighlightRefresh(uid) {
 		t.Fatal("expected highlight refresh flag to be consumed")
+	}
+}
+
+func TestTreeRowBody_doubleClickOpensActionDialog(t *testing.T) {
+	wait := actions.NewWait(100)
+	root := actions.NewLoop(1, "root", nil)
+	root.AddSubAction(wait)
+	mt := &MacroTree{
+		Macro: &models.Macro{Root: root},
+	}
+	mt.setTree()
+
+	var opened actions.ActionInterface
+	mt.OnOpenActionDialog = func(action actions.ActionInterface) {
+		opened = action
+	}
+
+	scroll := container.NewHScroll(widget.NewLabel("wait"))
+	rowBody := newTreeRowBody(scroll)
+	rowBody.tree = mt
+	rowBody.uid = wait.GetUID()
+
+	rowBody.DoubleTapped(nil)
+	if opened != wait {
+		t.Fatalf("DoubleTapped opened %v, want wait action %v", opened, wait)
+	}
+}
+
+func TestTreeRowBody_doubleClickSkippedWhileExecuting(t *testing.T) {
+	wait := actions.NewWait(100)
+	root := actions.NewLoop(1, "root", nil)
+	root.AddSubAction(wait)
+	mt := &MacroTree{
+		Macro:     &models.Macro{Root: root},
+		executing: true,
+	}
+	mt.setTree()
+
+	called := false
+	mt.OnOpenActionDialog = func(actions.ActionInterface) {
+		called = true
+	}
+
+	rowBody := newTreeRowBody(container.NewHScroll(widget.NewLabel("wait")))
+	rowBody.tree = mt
+	rowBody.uid = wait.GetUID()
+	rowBody.DoubleTapped(nil)
+
+	if called {
+		t.Fatal("DoubleTapped should not open dialog while executing")
 	}
 }

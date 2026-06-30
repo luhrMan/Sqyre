@@ -1,5 +1,7 @@
 package macro
 
+import "fyne.io/fyne/v2"
+
 // treeViewState captures scroll position and branch expansion so undo/redo
 // does not reset the user's place in the macro tree.
 type treeViewState struct {
@@ -46,6 +48,20 @@ func (mt *MacroTree) restoreViewState(v treeViewState) {
 		mt.ScrollToOffset(v.scrollY)
 	}
 	mt.scheduleClampScroll()
+}
+
+// unselectMacroTreeAction clears macro tree selection and the focus highlight
+// that remains after UnselectAll while the tree widget still has focus.
+func unselectMacroTreeAction(mt *MacroTree) {
+	if mt == nil {
+		return
+	}
+	mt.SelectedNode = ""
+	mt.UnselectAll()
+	if c := fyne.CurrentApp().Driver().CanvasForObject(mt); c != nil && c.Focused() == mt {
+		c.Unfocus()
+	}
+	mt.Refresh()
 }
 
 // selectPreservingScroll updates selection without ScrollTo jumping the viewport.

@@ -31,6 +31,7 @@ type WireDeps struct {
 	AddDialogEscapeClose   func(d dialog.Dialog, parent fyne.Window)
 	ShowConfirmWithEscape  func(title, message string, callback func(bool), parent fyne.Window)
 	ShowActionDialog       func(action actions.ActionInterface, onSave func(actions.ActionInterface), onCancel func())
+	ShowAddActionPicker    func()
 }
 
 var activeWire WireDeps
@@ -195,8 +196,7 @@ func setMtabSettingsAndWidgets(d WireDeps) {
 	mtabs.OnUnselected = func(_ *container.TabItem) {
 		mt := mtabs.SelectedTab()
 		if mt != nil {
-			mt.UnselectAll()
-			mt.SelectedNode = ""
+			unselectMacroTreeAction(mt)
 			if d.RefreshItemsAccordion != nil {
 				d.RefreshItemsAccordion()
 			}
@@ -311,6 +311,11 @@ func setMacroTree(mt *MacroTree) {
 			st.SelectedNode = uid
 		}
 	}
+	mt.Tree.OnUnselected = func(uid widget.TreeNodeID) {
+		if st := d.Mui.MTabs.SelectedTab(); st != nil && st.SelectedNode == string(uid) {
+			st.SelectedNode = ""
+		}
+	}
 	mt.OnTreeChanged = func() {
 		if err := repositories.MacroRepo().Set(mt.Macro.Name, mt.Macro); err != nil {
 			log.Printf("failed to save macro after tree change: %v", err)
@@ -341,6 +346,50 @@ func setMacroTree(mt *MacroTree) {
 			}
 		}, nil)
 	}
+	mt.onShowAddActionPicker = func() {
+		if d.ShowAddActionPicker != nil {
+			d.ShowAddActionPicker()
+		}
+	}
+}
+
+func handleMacroTreeShortcut(mt *MacroTree, shortcut fyne.Shortcut) {
+	if mt == nil {
+		return
+	}
+	switch shortcut.(type) {
+	case *fyne.ShortcutSelectAll:
+		if mt.onShowAddActionPicker != nil {
+			mt.onShowAddActionPicker()
+		}
+	case *fyne.ShortcutCopy:
+		copyMacroTreeSelection(mt)
+	case *fyne.ShortcutPaste:
+		pasteMacroTreeClipboard(mt)
+	case *fyne.ShortcutUndo:
+		mt.Undo()
+	case *fyne.ShortcutRedo:
+		mt.Redo()
+	default:
+		custom, ok := shortcut.(*desktop.CustomShortcut)
+		if !ok {
+			return
+		}
+		switch custom.KeyName {
+		case fyne.KeyD:
+			if custom.Modifier == fyne.KeyModifierControl {
+				mt.DeleteSelectedAction()
+			}
+		case fyne.KeyUp:
+			if custom.Modifier == fyne.KeyModifierAlt {
+				moveMacroTreeSelection(mt, true)
+			}
+		case fyne.KeyDown:
+			if custom.Modifier == fyne.KeyModifierAlt {
+				moveMacroTreeSelection(mt, false)
+			}
+		}
+	}
 }
 
 func registerMacroTreeShortcuts(d WireDeps) {
@@ -348,44 +397,34 @@ func registerMacroTreeShortcuts(d WireDeps) {
 		return
 	}
 	canvas := d.Window.Canvas()
-	canvas.AddShortcut(&desktop.CustomShortcut{
-		KeyName:  fyne.KeyZ,
-		Modifier: fyne.KeyModifierControl,
-	}, func(fyne.Shortcut) {
-		if st := d.Mui.MTabs.SelectedTab(); st != nil {
-			st.Undo()
-		}
+	canvas.AddShortcut(&fyne.ShortcutUndo{}, func(shortcut fyne.Shortcut) {
+		handleMacroTreeShortcut(d.Mui.MTabs.SelectedTab(), shortcut)
 	})
-	canvas.AddShortcut(&desktop.CustomShortcut{
-		KeyName:  fyne.KeyY,
-		Modifier: fyne.KeyModifierControl,
-	}, func(fyne.Shortcut) {
-		if st := d.Mui.MTabs.SelectedTab(); st != nil {
-			st.Redo()
-		}
+	canvas.AddShortcut(&fyne.ShortcutRedo{}, func(shortcut fyne.Shortcut) {
+		handleMacroTreeShortcut(d.Mui.MTabs.SelectedTab(), shortcut)
 	})
-	canvas.AddShortcut(&desktop.CustomShortcut{
-		KeyName:  fyne.KeyC,
-		Modifier: fyne.KeyModifierControl,
-	}, func(fyne.Shortcut) {
-		copyMacroTreeSelection(d.Mui.MTabs.SelectedTab())
+	canvas.AddShortcut(&fyne.ShortcutCopy{}, func(shortcut fyne.Shortcut) {
+		handleMacroTreeShortcut(d.Mui.MTabs.SelectedTab(), shortcut)
 	})
-	canvas.AddShortcut(&desktop.CustomShortcut{
-		KeyName:  fyne.KeyV,
-		Modifier: fyne.KeyModifierControl,
-	}, func(fyne.Shortcut) {
-		pasteMacroTreeClipboard(d.Mui.MTabs.SelectedTab())
+	canvas.AddShortcut(&fyne.ShortcutPaste{}, func(shortcut fyne.Shortcut) {
+		handleMacroTreeShortcut(d.Mui.MTabs.SelectedTab(), shortcut)
 	})
 	canvas.AddShortcut(&desktop.CustomShortcut{
 		KeyName:  fyne.KeyUp,
 		Modifier: fyne.KeyModifierAlt,
-	}, func(fyne.Shortcut) {
-		moveMacroTreeSelection(d.Mui.MTabs.SelectedTab(), true)
+	}, func(shortcut fyne.Shortcut) {
+		handleMacroTreeShortcut(d.Mui.MTabs.SelectedTab(), shortcut)
 	})
 	canvas.AddShortcut(&desktop.CustomShortcut{
 		KeyName:  fyne.KeyDown,
 		Modifier: fyne.KeyModifierAlt,
-	}, func(fyne.Shortcut) {
-		moveMacroTreeSelection(d.Mui.MTabs.SelectedTab(), false)
+	}, func(shortcut fyne.Shortcut) {
+		handleMacroTreeShortcut(d.Mui.MTabs.SelectedTab(), shortcut)
+	})
+	canvas.AddShortcut(&desktop.CustomShortcut{
+		KeyName:  fyne.KeyD,
+		Modifier: fyne.KeyModifierControl,
+	}, func(shortcut fyne.Shortcut) {
+		handleMacroTreeShortcut(d.Mui.MTabs.SelectedTab(), shortcut)
 	})
 }

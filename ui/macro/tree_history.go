@@ -59,17 +59,21 @@ func injectActionUID(m map[string]any, action actions.ActionInterface) {
 	}
 }
 
+func (h *treeHistory) pushSnapshot(snap treeSnapshot) {
+	h.undo = append(h.undo, snap)
+	if len(h.undo) > maxTreeHistoryEntries {
+		h.undo = append([]treeSnapshot(nil), h.undo[len(h.undo)-maxTreeHistoryEntries:]...)
+	}
+	h.redo = h.redo[:0]
+}
+
 func (h *treeHistory) push(root *actions.Loop, selectedUID string) {
 	snap, err := snapshotTree(root, selectedUID)
 	if err != nil {
 		log.Printf("tree history: snapshot failed: %v", err)
 		return
 	}
-	h.undo = append(h.undo, snap)
-	if len(h.undo) > maxTreeHistoryEntries {
-		h.undo = append([]treeSnapshot(nil), h.undo[len(h.undo)-maxTreeHistoryEntries:]...)
-	}
-	h.redo = h.redo[:0]
+	h.pushSnapshot(snap)
 }
 
 func (h *treeHistory) canUndo() bool {

@@ -7,7 +7,6 @@ import (
 	"Sqyre/internal/services"
 
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
@@ -103,15 +102,11 @@ func (c *MacroTabContent) CreateRenderer() fyne.WidgetRenderer {
 	return widget.NewSimpleRenderer(c.innerTabs)
 }
 
-// buildActionsPane stacks the macro tree with a transparent overlay that hosts
-// the drag-and-drop drop indicator (insertion line and reparent box).
+// buildActionsPane stacks the macro tree with a lightweight drop-preview overlay.
 func buildActionsPane(tree *MacroTree) fyne.CanvasObject {
-	dropLine := canvas.NewRectangle(dropLineColor)
-	dropLine.Hide()
-	dropBox := canvas.NewRectangle(dropZoneColor)
-	dropBox.Hide()
-	overlay := container.NewWithoutLayout(dropBox, dropLine)
-	tree.attachDropOverlay(overlay, dropLine, dropBox)
+	dropGhost, dropGhostInset, dropGhostRow := newDropGhostShell()
+	overlay := container.NewWithoutLayout(dropGhost)
+	tree.attachDropOverlay(overlay, dropGhost, dropGhostInset, dropGhostRow)
 	return container.NewStack(tree, overlay)
 }
 

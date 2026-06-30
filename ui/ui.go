@@ -25,6 +25,7 @@ var (
 	ui             *Ui
 	boundLocXLabel *widget.Label
 	boundLocYLabel *widget.Label
+	mousePosStop   chan struct{}
 )
 
 type Ui struct {
@@ -51,6 +52,7 @@ func InitializeUi(w fyne.Window) *Ui {
 		saveWindowGeometry(w)
 		if _, ok := fyne.CurrentApp().(desktop.App); ok {
 			// System tray is available (see cmd/sqyre systemTraySetup); keep running in background.
+			stopMousePosPolling()
 			w.Hide()
 			return
 		}
@@ -156,7 +158,6 @@ func EnsureDataEditor() {
 	editorUiOnce.Do(func() {
 		SetEditorUi()
 	})
-	editor.RefreshVarEntryInsertButtons()
 }
 
 var editorUiOnce sync.Once
@@ -204,8 +205,15 @@ func toggleMousePos() {
 	blocX, blocY := binding.BindInt(&locX), binding.BindInt(&locY)
 	boundLocXLabel.Bind(binding.IntToString(blocX))
 	boundLocYLabel.Bind(binding.IntToString(blocY))
+	stop := make(chan struct{})
+	mousePosStop = stop
 	services.GoSafe(func() {
 		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
 			robotgo.MilliSleep(100)
 			newLocX, newLocY := robotgo.Location()
 			if locX == newLocX && locY == newLocY {
@@ -216,4 +224,18 @@ func toggleMousePos() {
 			blocY.Reload()
 		}
 	})
+}
+
+func stopMousePosPolling() {
+	if mousePosStop != nil {
+		close(mousePosStop)
+		mousePosStop = nil
+	}
+}
+
+func startMousePosPolling() {
+	if mousePosStop != nil {
+		return
+	}
+	toggleMousePos()
 }
