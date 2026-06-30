@@ -1,6 +1,7 @@
 package editor
 
 import (
+	"Sqyre/internal/config"
 	"Sqyre/internal/macro"
 	"Sqyre/internal/models"
 	"Sqyre/internal/screen"
@@ -26,7 +27,7 @@ type editorPreviewPanel struct {
 func newEditorPreviewPanel() *editorPreviewPanel {
 	img := canvas.NewImageFromImage(nil)
 	img.FillMode = canvas.ImageFillContain
-	img.SetMinSize(fyne.NewSize(400, 300))
+	img.SetMinSize(fyne.NewSize(config.ImagePreviewWidth, config.ImagePreviewHeight))
 
 	errLbl := widget.NewLabel("")
 	errLbl.Wrapping = fyne.TextWrapWord
