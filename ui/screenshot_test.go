@@ -105,7 +105,7 @@ type docScreenshot struct {
 
 func docActionScreenshots() []docScreenshot {
 	return []docScreenshot{
-		{"action-dialog-move.png", actions.NewMove(actions.Point{Name: "center", X: 500, Y: 300}, false), 5000},
+		{"action-dialog-move.png", actions.NewMove(actions.NewCoordinateRef("Demo Program", "center"), false), 5000},
 		{"action-dialog-click.png", actions.NewClick(false, true), 5000},
 		{"action-dialog-key.png", actions.NewKey("ctrl", true), 5000},
 		{"action-dialog-type.png", actions.NewType("hello", 50), 5000},
@@ -113,9 +113,9 @@ func docActionScreenshots() []docScreenshot {
 		{"action-dialog-focuswindow.png", actions.NewFocusWindow("Notepad"), 5000},
 		{"action-dialog-runmacro.png", actions.NewRunMacro("Demo Macro"), 5000},
 		{"action-dialog-loop.png", actions.NewLoop(5, "repeat", []actions.ActionInterface{}), 5000},
-		{"action-dialog-imagesearch.png", actions.NewImageSearch("find item", []actions.ActionInterface{}, []string{}, actions.SearchArea{Name: "Main area"}, 1, 1, 0.95, 5), 5000},
-		{"action-dialog-ocr.png", actions.NewOcr("read text", []actions.ActionInterface{}, "template", actions.SearchArea{Name: "Main area"}), 5000},
-		{"action-dialog-findpixel.png", actions.NewFindPixel("find color", actions.SearchArea{Name: "Main area"}, "ffffff", 0, nil), 5000},
+		{"action-dialog-imagesearch.png", actions.NewImageSearch("find item", []actions.ActionInterface{}, []string{}, actions.NewCoordinateRef("Demo Program", "Main area"), 1, 1, 0.95, 5), 5000},
+		{"action-dialog-ocr.png", actions.NewOcr("read text", "template", actions.NewCoordinateRef("Demo Program", "Main area")), 5000},
+		{"action-dialog-findpixel.png", actions.NewFindPixel("find color", actions.NewCoordinateRef("Demo Program", "Main area"), "ffffff", 0), 5000},
 		{"action-dialog-setvariable.png", actions.NewSetVariable("counter", "0"), 5000},
 		{"action-dialog-calculate.png", actions.NewCalculate("1 + 1", "result"), 5000},
 		{"action-dialog-foreachrow.png", actions.NewForEachRow("items", []actions.ListColumn{{Source: "mylist", OutputVar: "value"}}, nil), 5000},

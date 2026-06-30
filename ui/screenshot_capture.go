@@ -24,6 +24,7 @@ func MacroScreenForScreenshot(u *Ui) fyne.CanvasObject {
 
 // EditorScreenForScreenshot returns the data editor layout for docs/tests.
 func EditorScreenForScreenshot(u *Ui) fyne.CanvasObject {
+	EnsureDataEditor()
 	return u.EditorUi.CanvasObject
 }
 

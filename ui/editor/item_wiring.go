@@ -131,20 +131,12 @@ func removeTag(item *models.Item, tagToRemove string) {
 		currentText := tagEntry.Text
 		// If there's text in the entry, refresh the completion options
 		if currentText != "" {
-			// Get fresh tags and filter them
-			allTags := getAllExistingTags()
-			searchLower := strings.ToLower(currentText)
-			matchingTags := []string{}
-			for _, tag := range allTags {
-				if strings.Contains(strings.ToLower(tag), searchLower) {
-					matchingTags = append(matchingTags, tag)
-				}
+			programName := shell().EditorTabs.ItemsTab.ProgramSelector.Selected
+			var item *models.Item
+			if v, ok := shell().EditorTabs.ItemsTab.SelectedItem.(*models.Item); ok {
+				item = v
 			}
-			// Limit to 10 suggestions
-			if len(matchingTags) > 10 {
-				matchingTags = matchingTags[:10]
-			}
-			// Update the completion options with fresh data
+			matchingTags := tagCompletionOptions(programName, currentText, item, 10)
 			tagEntry.SetOptions(matchingTags)
 			if len(matchingTags) > 0 {
 				tagEntry.ShowCompletion()
@@ -156,6 +148,9 @@ func removeTag(item *models.Item, tagToRemove string) {
 }
 
 func RefreshItemsAccordionItems() {
+	if !IsBuilt() {
+		return
+	}
 	// Use the complete rebuild function to ensure icon cache is updated
 	RebuildItemsAccordion()
 }
@@ -530,28 +525,72 @@ func setMaskSelectionButtons() {
 	}
 }
 
-// getAllExistingTags collects all unique tags from all items across all programs
-func getAllExistingTags() []string {
-	tagMap := make(map[string]bool)
+// getProgramTags collects all unique tags from items in the given program.
+func getProgramTags(programName string) []string {
+	if programName == "" {
+		return nil
+	}
+	program, err := repositories.ProgramRepo().Get(programName)
+	if err != nil {
+		return nil
+	}
 
-	for _, program := range repositories.ProgramRepo().GetAll() {
-		for _, itemName := range program.ItemRepo().GetAllKeys() {
-			item, err := program.ItemRepo().Get(itemName)
-			if err == nil {
-				for _, tag := range item.Tags {
-					tagMap[tag] = true
-				}
-			}
+	tagMap := make(map[string]bool)
+	for _, itemName := range program.ItemRepo().GetAllKeys() {
+		item, err := program.ItemRepo().Get(itemName)
+		if err != nil {
+			continue
+		}
+		for _, tag := range item.Tags {
+			tagMap[tag] = true
 		}
 	}
 
-	// Convert map to sorted slice
 	tags := make([]string, 0, len(tagMap))
 	for tag := range tagMap {
 		tags = append(tags, tag)
 	}
 	sort.Strings(tags)
-
 	return tags
+}
+
+// tagCompletionOptions returns program tags matching search, excluding tags already on item.
+// limit <= 0 means no limit.
+func tagCompletionOptions(programName, search string, item *models.Item, limit int) []string {
+	tags := getProgramTags(programName)
+	if item != nil {
+		tags = excludeTagsOnItem(tags, item.Tags)
+	}
+	if search == "" {
+		if limit > 0 && len(tags) > limit {
+			return tags[:limit]
+		}
+		return tags
+	}
+
+	searchLower := strings.ToLower(search)
+	matching := make([]string, 0, len(tags))
+	for _, tag := range tags {
+		if strings.Contains(strings.ToLower(tag), searchLower) {
+			matching = append(matching, tag)
+		}
+	}
+	if limit > 0 && len(matching) > limit {
+		return matching[:limit]
+	}
+	return matching
+}
+
+func excludeTagsOnItem(tags []string, onItem []string) []string {
+	if len(onItem) == 0 {
+		return tags
+	}
+	filtered := make([]string, 0, len(tags))
+	for _, tag := range tags {
+		if !slices.Contains(onItem, tag) {
+			filtered = append(filtered, tag)
+		}
+	}
+	return filtered
 }
 

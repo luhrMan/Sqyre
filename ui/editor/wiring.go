@@ -27,6 +27,8 @@ func getWidgetText(w fyne.CanvasObject) string {
 		return e.Text
 	case *custom_widgets.VarEntry:
 		return e.Text
+	case *custom_widgets.VarEntryField:
+		return e.Entry.Text
 	case *widget.RadioGroup:
 		return e.Selected
 	case *widget.Check:
@@ -52,13 +54,18 @@ func checkTabDirty(tab *EditorTab, fields []string) {
 	if tab.UpdateButton == nil || tab.OriginalValues == nil {
 		return
 	}
+	dirty := false
 	for _, f := range fields {
 		if getWidgetText(tab.Widgets[f]) != tab.OriginalValues[f] {
-			tab.UpdateButton.Enable()
-			return
+			dirty = true
+			break
 		}
 	}
-	tab.UpdateButton.Disable()
+	if dirty && allTabFieldsValid(tab) {
+		tab.UpdateButton.Enable()
+	} else {
+		tab.UpdateButton.Disable()
+	}
 }
 
 func setupDirtyTracking(tab *EditorTab, fields []string) {
@@ -74,13 +81,24 @@ func setupDirtyTracking(tab *EditorTab, fields []string) {
 				checkTabDirty(tab, fields)
 			}
 		case *custom_widgets.VarEntry:
-			prev := e.OnChanged
-			e.OnChanged = func(s string) {
+			prev := e.ChangedFn
+			e.ChangedFn = func(s string) {
 				if prev != nil {
 					prev(s)
 				}
 				checkTabDirty(tab, fields)
 			}
+		case *custom_widgets.VarEntryField:
+			prevChanged := e.OnChanged
+			e.OnChanged = func(s string) {
+				if prevChanged != nil {
+					prevChanged(s)
+				}
+				checkTabDirty(tab, fields)
+			}
+			e.SetOnValidationChanged(func() {
+				checkTabDirty(tab, fields)
+			})
 		case *widget.RadioGroup:
 			prev := e.OnChanged
 			e.OnChanged = func(s string) {

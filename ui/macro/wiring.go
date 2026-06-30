@@ -1,10 +1,11 @@
 package macro
 
 import (
+	"Sqyre/internal/config"
+	"Sqyre/internal/macrohotkey"
 	"Sqyre/internal/models"
 	"Sqyre/internal/models/actions"
 	"Sqyre/internal/models/repositories"
-	"Sqyre/internal/services"
 	"encoding/json"
 	"errors"
 	"log"
@@ -17,15 +18,14 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
-	"github.com/go-vgo/robotgo"
 	"github.com/google/uuid"
 )
 
 // WireDeps supplies window, macro UI shell, and dialog callbacks from package ui (avoids import cycle).
 type WireDeps struct {
-	Window                fyne.Window
-	Mui                   *MacroUi
-	RefreshItemsAccordion func()
+	Window                 fyne.Window
+	Mui                    *MacroUi
+	RefreshItemsAccordion  func()
 	ShowHotkeyRecordDialog func(parent fyne.Window, stableDuration time.Duration, onRecorded func(keys []string))
 	ShowErrorWithEscape    func(err error, parent fyne.Window)
 	AddDialogEscapeClose   func(d dialog.Dialog, parent fyne.Window)
@@ -40,6 +40,7 @@ func SetMacroUi(d WireDeps) {
 	activeWire = d
 	setMtabSettingsAndWidgets(d)
 
+	eager := config.IsUITestMode()
 	if names := getOpenMacroNames(); len(names) > 0 {
 		for _, name := range names {
 			m, err := repositories.MacroRepo().Get(name)
@@ -47,13 +48,16 @@ func SetMacroUi(d WireDeps) {
 				log.Printf("Could not reopen macro %s: %v", name, err)
 				continue
 			}
-			AddMacroTab(m)
+			addMacroTab(m, eager)
 		}
 	} else {
 		for _, m := range repositories.MacroRepo().GetAll() {
-			AddMacroTab(m)
+			addMacroTab(m, eager)
 			break
 		}
+	}
+	if sel := d.Mui.MTabs.Selected(); sel != nil {
+		ensureMacroTabContent(sel.Content)
 	}
 	setMacroSelect(d.Mui.MacroSelectButton, d)
 	syncMacroToolbarFieldsFromSelection()
@@ -61,6 +65,9 @@ func SetMacroUi(d WireDeps) {
 
 // SaveOpenMacros persists which macro tabs are open.
 func SaveOpenMacros() {
+	if activeWire.Mui == nil || activeWire.Mui.MTabs == nil {
+		return
+	}
 	mtabs := activeWire.Mui.MTabs
 	var names []string
 	for _, item := range mtabs.Items {
@@ -90,19 +97,56 @@ func getOpenMacroNames() []string {
 
 // AddMacroTab opens a macro in a new tab (or selects it if already open).
 func AddMacroTab(m *models.Macro) {
+	addMacroTab(m, true)
+}
+
+func addMacroTab(m *models.Macro, eagerBuild bool) {
 	mtabs := activeWire.Mui.MTabs
 	for _, d := range mtabs.Items {
 		if d.Text == m.Name {
 			log.Println("macro already open")
 			mtabs.Select(d)
+			if eagerBuild {
+				ensureMacroTabContent(d.Content)
+			}
 			return
 		}
 	}
-	t := container.NewTabItem(m.Name, NewMacroTabContent(m))
-	mtabs.AddTab(m.Name, t)
-	setMacroTree(mtabs.SelectedTab())
+	var content fyne.CanvasObject
+	if eagerBuild {
+		built := NewMacroTabContent(m)
+		content = built
+		t := container.NewTabItem(m.Name, content)
+		mtabs.AddTab(m.Name, t)
+		setMacroTree(built.Tree)
+	} else {
+		content = NewLazyMacroTabHost(m)
+		t := container.NewTabItem(m.Name, content)
+		mtabs.AddTab(m.Name, t)
+	}
 	syncMacroToolbarFieldsFromSelection()
-	services.RegisterMacroHotkey(m)
+	macrohotkey.RegisterMacroHotkey(m)
+}
+
+// openMacroTabForLog opens a macro tab like AddMacroTab but does NOT register the
+// macro hotkey. Used when a running macro (possibly hotkey-triggered) needs its
+// tab opened to show the execution log; re-registering here would duplicate the
+// hotkey that just fired.
+func openMacroTabForLog(m *models.Macro) {
+	mtabs := activeWire.Mui.MTabs
+	for _, d := range mtabs.Items {
+		if d.Text == m.Name {
+			mtabs.Select(d)
+			ensureMacroTabContent(d.Content)
+			syncMacroToolbarFieldsFromSelection()
+			return
+		}
+	}
+	built := NewMacroTabContent(m)
+	t := container.NewTabItem(m.Name, built)
+	mtabs.AddTab(m.Name, t)
+	setMacroTree(built.Tree)
+	syncMacroToolbarFieldsFromSelection()
 }
 
 func syncMacroToolbarFieldsFromSelection() {
@@ -116,7 +160,7 @@ func syncMacroToolbarFieldsFromSelection() {
 	if len(st.Macro.Hotkey) == 0 {
 		mtabs.MacroHotkeyLabel.SetText("—")
 	} else {
-		mtabs.MacroHotkeyLabel.SetText(services.ReverseParseMacroHotkey(st.Macro.Hotkey))
+		mtabs.MacroHotkeyLabel.SetText(macrohotkey.ReverseParseMacroHotkey(st.Macro.Hotkey))
 	}
 	mtabs.HotkeyTriggerRadio.SetSelected(models.ParseHotkeyTrigger(st.Macro.HotkeyTrigger).UILabel())
 }
@@ -141,7 +185,7 @@ func setMtabSettingsAndWidgets(d WireDeps) {
 	mtabs.OnClosed = func(ti *container.TabItem) {
 		m, err := repositories.MacroRepo().Get(ti.Text)
 		if err == nil {
-			services.UnregisterMacroHotkey(m)
+			macrohotkey.UnregisterMacroHotkey(m)
 		}
 		mtabs.SelectIndex(0)
 		mtabs.BoundMacroListWidget.Refresh()
@@ -163,6 +207,7 @@ func setMtabSettingsAndWidgets(d WireDeps) {
 			return
 		}
 
+		ensureMacroTabContent(ti.Content)
 		syncMacroToolbarFieldsFromSelection()
 		if c := macroTabContentFrom(ti.Content); c != nil {
 			c.RefreshVariablesPanel()
@@ -177,19 +222,19 @@ func setMtabSettingsAndWidgets(d WireDeps) {
 		oldHk := slices.Clone(mt.Macro.Hotkey)
 		oldTr := mt.Macro.HotkeyTrigger
 		if !deferHookRegister {
-			services.UnregisterHotkeyKeys(oldHk, oldTr)
+			macrohotkey.UnregisterHotkeyKeys(oldHk, oldTr)
 		}
 
 		disp := mtabs.MacroHotkeyLabel.Text
 		if disp == "" || disp == "—" {
 			mt.Macro.Hotkey = []string{}
 		} else {
-			mt.Macro.Hotkey = services.ParseMacroHotkey(disp)
+			mt.Macro.Hotkey = macrohotkey.ParseMacroHotkey(disp)
 		}
 		mt.Macro.HotkeyTrigger = string(models.HotkeyTriggerFromUILabel(mtabs.HotkeyTriggerRadio.Selected))
 
 		if !deferHookRegister {
-			services.RegisterMacroHotkey(mt.Macro)
+			macrohotkey.RegisterMacroHotkey(mt.Macro)
 		}
 		if err := repositories.MacroRepo().Set(mt.Macro.Name, mt.Macro); err != nil {
 			log.Printf("save hotkey: persist macro: %v", err)
@@ -197,7 +242,7 @@ func setMtabSettingsAndWidgets(d WireDeps) {
 	}
 	mtabs.MacroHotkeyRecordBtn.OnTapped = func() {
 		d.ShowHotkeyRecordDialog(d.Window, 1*time.Second, func(keys []string) {
-			mtabs.MacroHotkeyLabel.SetText(services.ReverseParseMacroHotkey(keys))
+			mtabs.MacroHotkeyLabel.SetText(macrohotkey.ReverseParseMacroHotkey(keys))
 			saveHotkey(true)
 		})
 	}
@@ -240,8 +285,6 @@ func setMtabSettingsAndWidgets(d WireDeps) {
 			return
 		}
 		mt.Macro.GlobalDelay = gd
-		robotgo.MouseSleep = gd
-		robotgo.KeySleep = gd
 		repositories.MacroRepo().Set(mt.Macro.Name, mt.Macro)
 	}
 }
@@ -354,4 +397,3 @@ func setMacroTree(mt *MacroTree) {
 		}, nil)
 	}
 }
-
