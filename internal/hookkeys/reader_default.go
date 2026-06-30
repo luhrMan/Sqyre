@@ -1,4 +1,4 @@
-//go:build !linux || nohook
+//go:build !linux && !nohook
 
 package hookkeys
 

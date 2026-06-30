@@ -106,7 +106,7 @@ type docScreenshot struct {
 func docActionScreenshots() []docScreenshot {
 	return []docScreenshot{
 		{"action-dialog-move.png", actions.NewMove(actions.NewCoordinateRef("Demo Program", "center"), false), 5000},
-		{"action-dialog-click.png", actions.NewClick(false, true), 5000},
+		{"action-dialog-click.png", actions.NewClick(actions.ClickButtonLeft, true), 5000},
 		{"action-dialog-key.png", actions.NewKey("ctrl", true), 5000},
 		{"action-dialog-type.png", actions.NewType("hello", 50), 5000},
 		{"action-dialog-wait.png", actions.NewWait(500), 5000},
