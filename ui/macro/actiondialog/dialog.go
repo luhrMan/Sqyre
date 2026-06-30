@@ -381,7 +381,7 @@ func ShowActionDialog(action actions.ActionInterface, onSave func(actions.Action
 		content.Resize(fyne.NewSize(600, 100))
 	case *actions.Conditional:
 		content, saveFunc = createConditionalDialogContent(node)
-		content.Resize(fyne.NewSize(600, 160))
+		content.Resize(fyne.NewSize(conditionalDialogWidth, conditionalDialogHeight))
 	case *actions.ImageSearch:
 		content, saveFunc = createImageSearchDialogContent(node)
 		content.Resize(fyne.NewSize(1000, 1000))

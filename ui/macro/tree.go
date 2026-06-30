@@ -48,6 +48,48 @@ type MacroTree struct {
 	// execOpenedBranches tracks branches expanded during execution so collapse
 	// can close them without walking the entire tree.
 	execOpenedBranches map[string]struct{}
+	// suppressBranchOpenScroll skips OnBranchOpened auto-scroll during
+	// programmatic expansion (execution highlight, GoToAction, etc.).
+	suppressBranchOpenScroll int
+
+	// OnTreeChanged is invoked after the tree structure is mutated by the user
+	// (drag-and-drop reorder or move up/down) so the macro can be persisted.
+	OnTreeChanged func()
+
+	// executing is true while a macro runs; drag-and-drop is disabled then.
+	executing bool
+
+	// Drag-and-drop reorder state. dragVisible is the flattened list of visible
+	// row UIDs captured when the drag begins (rebuilt on auto-expand).
+	// dragTreeTop is the canvas-absolute Y of the tree content's top (content
+	// Y 0 at scroll 0); it stays fixed during the drag. dragLastPointerY is the
+	// most recent pointer Y in canvas coordinates, used to re-resolve the drop
+	// target while auto-scrolling without a new pointer event.
+	dragActive      bool
+	dragSrcUID      string
+	dragTreeTop     float32
+	dragLastPointerY float32
+	dragVisible     []string
+	dropParent      actions.AdvancedActionInterface
+	dropTargetUID   string
+	dropMode        dropMode
+	dropValid       bool
+
+	// Edge auto-scroll state. autoScrollDir is -1 (up), 0 (idle), or 1 (down).
+	// autoScrollStop signals the ticker goroutine to exit.
+	autoScrollDir  int
+	autoScrollStop chan struct{}
+
+	// Drop indicator overlay objects, attached by the tab content via
+	// attachDropOverlay. Nil in headless tests.
+	dropOverlay *fyne.Container
+	dropLine    *canvas.Rectangle
+	dropBox     *canvas.Rectangle
+
+	// autoExpand state: when a drag dwells over a collapsed branch, it is
+	// expanded so the user can drop inside it.
+	autoExpandUID   string
+	autoExpandTimer *time.Timer
 }
 
 const collapseDebounceMs = 150
@@ -207,6 +249,8 @@ func (mt *MacroTree) openAncestorBranches(uid string) {
 	for p := node.GetParent(); p != nil && p.GetUID() != rootUID; p = p.GetParent() {
 		ancestors = append(ancestors, p.GetUID())
 	}
+	mt.suppressBranchOpenScroll++
+	defer func() { mt.suppressBranchOpenScroll-- }()
 	for i := len(ancestors) - 1; i >= 0; i-- {
 		a := ancestors[i]
 		if !mt.IsBranchOpen(a) {
@@ -214,6 +258,37 @@ func (mt *MacroTree) openAncestorBranches(uid string) {
 			mt.trackExecOpened(a)
 		}
 	}
+}
+
+// OpenAllBranches expands every branch in the macro tree.
+func (mt *MacroTree) OpenAllBranches() {
+	mt.stopCollapseDebounce()
+	mt.execOpenedBranches = nil
+	mt.suppressBranchOpenScroll++
+	defer func() { mt.suppressBranchOpenScroll-- }()
+	mt.Tree.OpenAllBranches()
+}
+
+// CloseAllBranches collapses every branch in the macro tree.
+func (mt *MacroTree) CloseAllBranches() {
+	mt.stopCollapseDebounce()
+	mt.execOpenedBranches = nil
+	mt.Tree.CloseAllBranches()
+	mt.scheduleClampScroll()
+}
+
+// GoToAction selects uid, expands ancestor branches, and scrolls it into view.
+func (mt *MacroTree) GoToAction(uid string) {
+	if uid == "" || mt.Macro == nil || mt.Macro.Root == nil {
+		return
+	}
+	if mt.Macro.Root.GetAction(uid) == nil {
+		return
+	}
+	mt.Select(uid)
+	mt.SelectedNode = uid
+	mt.lastScrollUID = ""
+	mt.revealNode(uid)
 }
 
 // revealNode expands ancestor branches and scrolls so uid is visible.
@@ -295,12 +370,18 @@ func (mt *MacroTree) applyHighlightOverlay(uid string, hlBg *fyne.Container) {
 	fl := hlBg.Layout.(*fillLayout)
 	hlSimple := hlBg.Objects[0].(*canvas.Rectangle)
 	hlFill := hlBg.Objects[1].(*canvas.Rectangle)
-	if frac, ok := mt.fills[uid]; ok {
+	if mt.dragActive && uid == mt.dragSrcUID {
+		fl.fraction = 0
+		hlSimple.FillColor = dragSourceColor
+		hlSimple.Show()
+		hlFill.Hide()
+	} else if frac, ok := mt.fills[uid]; ok {
 		fl.fraction = frac
 		hlFill.Show()
 		hlSimple.Hide()
 	} else if uid == mt.cursorUID {
 		fl.fraction = 0
+		hlSimple.FillColor = highlightSimpleColor
 		hlSimple.Show()
 		hlFill.Hide()
 	} else {
@@ -361,14 +442,19 @@ func (mt *MacroTree) collapseStaleBranches() {
 		return
 	}
 	keep := mt.branchesToKeepOpen()
+	closed := false
 	for uid := range mt.execOpenedBranches {
 		if keep[uid] {
 			continue
 		}
 		if mt.IsBranchOpen(uid) {
-			mt.CloseBranch(uid)
+			mt.Tree.CloseBranch(uid)
+			closed = true
 		}
 		mt.untrackExecOpenedBranch(uid)
+	}
+	if closed {
+		mt.scheduleClampScroll()
 	}
 }
 
@@ -415,14 +501,20 @@ func (mt *MacroTree) moveNode(selectedUID string, up bool) {
 		}
 	}
 
+	moved := false
 	if up && index > 0 {
 		psa[index-1], psa[index] = psa[index], psa[index-1]
 		mt.Select(psa[index-1].GetUID())
+		moved = true
 	} else if !up && index < len(psa)-1 {
 		psa[index], psa[index+1] = psa[index+1], psa[index]
 		mt.Select(psa[index+1].GetUID())
+		moved = true
 	}
 	mt.Refresh()
+	if moved && mt.OnTreeChanged != nil {
+		mt.OnTreeChanged()
+	}
 }
 
 func (mt *MacroTree) setTree() {
@@ -452,7 +544,10 @@ func (mt *MacroTree) setTree() {
 		iconBg.StrokeColor = theme.ShadowColor()
 		iconBg.StrokeWidth = 1
 		iconStack := container.NewStack(iconBg, actionIconBtn)
+		dh := newDragHandle()
+		dh.tree = mt
 		leftSide := container.NewHBox(
+			dh,
 			iconStack,
 		)
 		displayContainer := container.New(kxlayout.NewRowWrapLayout())
@@ -487,8 +582,15 @@ func (mt *MacroTree) setTree() {
 		}
 
 		node := mt.Macro.Root.GetAction(uid)
+		if node == nil {
+			// Can occur transiently during a node-cache flush (sentinel root).
+			return
+		}
 		leftSide := c.Objects[1].(*fyne.Container)
-		iconStack := leftSide.Objects[0].(*fyne.Container)
+		dh := leftSide.Objects[0].(*dragHandle)
+		dh.tree = mt
+		dh.uid = uid
+		iconStack := leftSide.Objects[1].(*fyne.Container)
 		iconBg := iconStack.Objects[0].(*canvas.Rectangle)
 		actionIconBtn := iconStack.Objects[1].(*ttwidget.Button)
 		removeButton := c.Objects[2].(*widget.Button)
@@ -549,54 +651,91 @@ func (mt *MacroTree) setTree() {
 		mt.markNodeBound(obj, uid)
 		mt.applyHighlightOverlay(uid, hlBg)
 	}
+	mt.Tree.OnBranchOpened = func(uid widget.TreeNodeID) {
+		if mt.suppressBranchOpenScroll > 0 {
+			return
+		}
+		target := uid
+		if children := mt.ChildUIDs(uid); len(children) > 0 {
+			target = children[0]
+		}
+		scrollUID := target
+		fyne.Do(func() {
+			mt.ScrollTo(scrollUID)
+		})
+	}
+	mt.Tree.OnBranchClosed = func(widget.TreeNodeID) {
+		mt.scheduleClampScroll()
+	}
 }
 
-// PasteNode creates a copy of the action from clipboardMap and inserts it into
-// the current selection: if the selected node is an advanced action (has children),
-// the pasted node is added as its last child; otherwise it is inserted below the
-// selected node as a sibling. With no selection, pastes at the end of root.
+// insertLocationBelowSelection returns the parent and index at which a new action
+// should be inserted directly below the current selection. With no selection, or
+// when root is selected, appends to the end of root.
+func (mt *MacroTree) insertLocationBelowSelection() (actions.AdvancedActionInterface, int, bool) {
+	if mt.Macro == nil || mt.Macro.Root == nil {
+		return nil, 0, false
+	}
+	root := actions.AdvancedActionInterface(mt.Macro.Root)
+	if mt.SelectedNode == "" {
+		return root, len(root.GetSubActions()), true
+	}
+	selected := mt.Macro.Root.GetAction(mt.SelectedNode)
+	if selected == nil || selected.GetUID() == mt.Macro.Root.GetUID() {
+		return root, len(root.GetSubActions()), true
+	}
+	parent := selected.GetParent()
+	if parent == nil {
+		return root, len(root.GetSubActions()), true
+	}
+	insertIndex := len(parent.GetSubActions())
+	for i, c := range parent.GetSubActions() {
+		if c.GetUID() == mt.SelectedNode {
+			insertIndex = i + 1
+			break
+		}
+	}
+	return parent, insertIndex, true
+}
+
+func (mt *MacroTree) insertActionAt(parent actions.AdvancedActionInterface, insertIndex int, action actions.ActionInterface) {
+	action.SetParent(parent)
+	subActions := parent.GetSubActions()
+	newSubs := make([]actions.ActionInterface, 0, len(subActions)+1)
+	newSubs = append(newSubs, subActions[:insertIndex]...)
+	newSubs = append(newSubs, action)
+	newSubs = append(newSubs, subActions[insertIndex:]...)
+	parent.SetSubActions(newSubs)
+}
+
+// InsertActionBelowSelection inserts action directly below the current selection.
+// With no selection, appends to the end of root. Returns false when the macro tree
+// has no root.
+func (mt *MacroTree) InsertActionBelowSelection(action actions.ActionInterface) bool {
+	parent, insertIndex, ok := mt.insertLocationBelowSelection()
+	if !ok {
+		return false
+	}
+	mt.insertActionAt(parent, insertIndex, action)
+	return true
+}
+
+// PasteNode creates a copy of the action from clipboardMap and inserts it directly
+// below the current selection. With no selection, pastes at the end of root.
 // Returns true if paste succeeded.
 func (mt *MacroTree) PasteNode(clipboardMap map[string]any) bool {
 	if clipboardMap == nil {
 		return false
 	}
-	var parent actions.AdvancedActionInterface
-	insertIndex := 0
-	if mt.SelectedNode != "" {
-		selected := mt.Macro.Root.GetAction(mt.SelectedNode)
-		if selected == nil {
-			return false
-		}
-		if adv, ok := selected.(actions.AdvancedActionInterface); ok {
-			parent = adv
-			insertIndex = len(parent.GetSubActions())
-		} else {
-			parent = selected.GetParent()
-			if parent == nil {
-				return false
-			}
-			psa := parent.GetSubActions()
-			for i, c := range psa {
-				if c.GetUID() == mt.SelectedNode {
-					insertIndex = i + 1
-					break
-				}
-			}
-		}
-	} else {
-		parent = mt.Macro.Root
-		insertIndex = len(parent.GetSubActions())
+	parent, insertIndex, ok := mt.insertLocationBelowSelection()
+	if !ok {
+		return false
 	}
 	newAction, err := serialize.ViperSerializer.CreateActionFromMap(clipboardMap, parent)
 	if err != nil {
 		return false
 	}
-	subActions := parent.GetSubActions()
-	newSubs := make([]actions.ActionInterface, 0, len(subActions)+1)
-	newSubs = append(newSubs, subActions[:insertIndex]...)
-	newSubs = append(newSubs, newAction)
-	newSubs = append(newSubs, subActions[insertIndex:]...)
-	parent.SetSubActions(newSubs)
+	mt.insertActionAt(parent, insertIndex, newAction)
 	mt.Select(newAction.GetUID())
 	mt.SelectedNode = newAction.GetUID()
 	mt.Refresh()
