@@ -1,4 +1,4 @@
-package services
+package macro
 
 import (
 	"Sqyre/internal/screen"
@@ -6,13 +6,18 @@ import (
 	"image"
 	"image/draw"
 	"log"
+	"sync"
 
 	"github.com/go-vgo/robotgo"
 )
 
+// captureMu serializes robotgo screen capture. The native backend is not safe
+// under concurrent capture calls (e.g. macro image search + UI preview).
+var captureMu sync.Mutex
+
 // captureToRGBA returns img as an *image.RGBA, reusing it directly when possible
 // so callers can scan the raw pixel buffer instead of using per-pixel At() calls.
-func captureToRGBA(img image.Image) *image.RGBA {
+func CaptureToRGBA(img image.Image) *image.RGBA {
 	if rgba, ok := img.(*image.RGBA); ok {
 		return rgba
 	}
@@ -28,6 +33,31 @@ func ValidateSearchAreaBounds(leftX, topY, rightX, bottomY int) (lx, ty, rx, by,
 	return screen.ValidateSearchAreaRect(leftX, topY, rightX, bottomY)
 }
 
+// CaptureRect captures a screen rectangle via robotgo. Calls are serialized and
+// panics from the native backend are recovered and returned as errors.
+func CaptureRect(x, y, w, h int) (image.Image, error) {
+	var img image.Image
+	var capErr error
+	captureMu.Lock()
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				LogPanicToFile(r, "CaptureRect")
+				capErr = fmt.Errorf("screen capture panic: %v", r)
+			}
+		}()
+		img, capErr = robotgo.CaptureImg(x, y, w, h)
+	}()
+	captureMu.Unlock()
+	if capErr != nil {
+		return nil, capErr
+	}
+	if img == nil {
+		return nil, fmt.Errorf("screen capture returned nil image")
+	}
+	return img, nil
+}
+
 // CaptureSearchArea captures the given search rectangle after validating bounds.
 // Uses robotgo.CaptureImg because search areas are stored in absolute virtual-desktop
 // coordinates (same space as robotgo.Location). screenshot.Capture expects coords
@@ -41,23 +71,10 @@ func CaptureSearchArea(leftX, topY, rightX, bottomY int) (image.Image, int, int,
 
 	var img image.Image
 	var capErr error
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				LogPanicToFile(r, "CaptureSearchArea")
-				capErr = fmt.Errorf("screen capture panic: %v", r)
-			}
-		}()
-		img, capErr = robotgo.CaptureImg(lx, ty, w, h)
-	}()
+	img, capErr = CaptureRect(lx, ty, w, h)
 	if capErr != nil {
 		log.Printf("CaptureSearchArea: capture failed: %v", capErr)
 		return nil, lx, ty, rx, by, capErr
-	}
-	if img == nil {
-		err := fmt.Errorf("screen capture returned nil image")
-		log.Printf("CaptureSearchArea: %v", err)
-		return nil, lx, ty, rx, by, err
 	}
 	return img, lx, ty, rx, by, nil
 }
