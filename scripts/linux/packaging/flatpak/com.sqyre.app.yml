@@ -10,7 +10,7 @@
 #   and ensure they are visible in the Flatpak build (e.g. use --build-dir and a custom
 #   SDK that includes them, or add the dependency modules below).
 # Option B: Add leptonica, tesseract, and opencv as separate modules before the sqyre module;
-#   see PACKAGING.md and e.g. https://github.com/RajSolai/TextSnatcher/tree/master/manifests
+#   see scripts/linux/packaging/PACKAGING.md
 #   for tesseract/leptonica. You must set PKG_CONFIG_PATH and CGO_* so the Go build finds them.
 #
 # Offline Go modules: from repo root run `go mod vendor`, then use `go build -mod=vendor ...` below.
