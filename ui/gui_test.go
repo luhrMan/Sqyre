@@ -1,55 +1,52 @@
 // Package ui_test runs GUI tests using Fyne's headless test driver.
 //
-// Run with SQUIRE_UI_TEST=1 so the UI skips robotgo for mouse position and
-// config uses a stub display size. Example:
+// Headless runs (no X11 display) should use ./scripts/test.sh or:
 //
-//	SQUIRE_UI_TEST=1 go test -v ./ui/ -run TestGUI
+//	GOFLAGS="-tags=gocv_specific_modules,nohook" SQUIRE_UI_TEST=1 go test ./...
 //
-// Note: The robotgo dependency may still open an X11 display when the package
-// is loaded. On headless CI (no DISPLAY), run tests under a virtual display, e.g.:
+// Full hook/display tests (Esc via gohook, screenshot golden files) need xvfb:
 //
-//	xvfb-run -a go test -v ./ui/ -run TestGUI
-//
-// Escape-to-close on dialogs uses the global keyboard hook (github.com/luhrMan/gohook),
-// same pipeline as macro hotkeys — not Fyne canvas OnTypedKey. TestMain starts hook.Process
-// so ui.AddDialogEscapeClose handlers run. Esc tests send a real Escape with xdotool (install
-// xdotool; use xvfb-run for DISPLAY); tests skip if xdotool is missing.
+//	./scripts/test-ui.sh
 package ui_test
 
 import (
 	"log"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
 
-	"Sqyre/internal/models/actions"
 	"Sqyre/internal/models/serialize"
 	"Sqyre/internal/testdb"
 	"Sqyre/ui"
-	"Sqyre/ui/macro/actiondialog"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/test"
-	hook "github.com/luhrMan/gohook"
 )
 
 func init() {
-	// Set so ConstructUi skips robotgo (toggleMousePos). For config display size
-	// stub, run the test with SQUIRE_UI_TEST=1 in the environment before go test.
 	if os.Getenv("SQUIRE_UI_TEST") == "" {
 		_ = os.Setenv("SQUIRE_UI_TEST", "1")
 	}
+	if os.Getenv("SQYRE_NO_HOOK") == "" {
+		_ = os.Setenv("SQYRE_NO_HOOK", "1")
+	}
 }
 
+var uiTestDBDir string
+
 func TestMain(m *testing.M) {
-	// Same db.yaml fixture as repository tests so MacroRepo/ProgramRepo see stable data if loaded.
+	initUITestDB()
+	defer os.RemoveAll(uiTestDBDir)
+	os.Exit(m.Run())
+}
+
+func initUITestDB() {
 	dbDir, err := os.MkdirTemp("", "sqyre-ui-testdb-*")
 	if err != nil {
 		log.Fatalf("testdb: %v", err)
 	}
-	defer os.RemoveAll(dbDir)
+	uiTestDBDir = dbDir
 	dbPath := filepath.Join(dbDir, "db.yaml")
 	if err := os.WriteFile(dbPath, testdb.Fixture(), 0644); err != nil {
 		log.Fatalf("testdb: %v", err)
@@ -59,15 +56,6 @@ func TestMain(m *testing.M) {
 	if err := yc.ReadConfig(); err != nil {
 		log.Fatalf("testdb: %v", err)
 	}
-
-	// Global hook: must run hook.Process so KeyDown handlers registered by
-	// ui.AddDialogEscapeClose are invoked (see dialog_escape.go).
-	s := hook.Start()
-	procDone := hook.Process(s)
-	go func() { <-procDone }()
-	code := m.Run()
-	hook.End()
-	os.Exit(code)
 }
 
 func waitUntil(t *testing.T, timeout time.Duration, cond func() bool, msg string) {
@@ -80,21 +68,6 @@ func waitUntil(t *testing.T, timeout time.Duration, cond func() bool, msg string
 		time.Sleep(15 * time.Millisecond)
 	}
 	t.Fatal(msg)
-}
-
-// sendEscapeViaGlobalHook asks the OS to synthesize Escape; the same global hook
-// pipeline (hook.Start + hook.Process) used for macro hotkeys delivers KeyDown to
-// ui.AddDialogEscapeClose. Prefer xdotool under Xvfb — hook.AddEvent can block in C.
-func sendEscapeViaGlobalHook(t *testing.T) {
-	t.Helper()
-	path, err := exec.LookPath("xdotool")
-	if err != nil {
-		t.Skip("xdotool not on PATH: cannot synthesize Esc for global hook test")
-	}
-	cmd := exec.Command(path, "key", "Escape")
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("xdotool key Escape: %v", err)
-	}
 }
 
 // TestGUIBuild verifies the main UI builds and window has content and main menu.
@@ -189,7 +162,6 @@ func TestGUIDataEditorNavigation(t *testing.T) {
 	}
 
 	dataEditorAction()
-	// Navigation should have pushed editor; window content still the navigation container.
 	if u.Window.Canvas().Content() == nil {
 		t.Error("Window content is nil after Data Editor")
 	}
@@ -269,70 +241,4 @@ func TestGUIMacroMenuHasAddAction(t *testing.T) {
 			t.Errorf("Macro submenu %q not found", name)
 		}
 	}
-}
-
-// TestGUIEscapeClosesInformationDialog verifies Esc dismisses the Computer info dialog
-// via the global gohook handler (ui.AddDialogEscapeClose), not canvas key events.
-func TestGUIEscapeClosesInformationDialog(t *testing.T) {
-	a := test.NewApp()
-	w := a.NewWindow("")
-	defer w.Close()
-
-	u := ui.InitializeUi(w)
-	u.ConstructUi()
-
-	// Open "Computer info" dialog from Settings menu (shows an information dialog)
-	var computerInfoAction func()
-	for _, m := range u.MainMenu.Items {
-		if m.Label != "Settings" {
-			continue
-		}
-		for _, it := range m.Items {
-			if it.Label == "Computer info" {
-				computerInfoAction = it.Action
-				break
-			}
-		}
-		break
-	}
-	if computerInfoAction == nil {
-		t.Fatal("Computer info menu action not found")
-	}
-
-	computerInfoAction()
-	overlays := u.Window.Canvas().Overlays()
-	if overlays.Top() == nil {
-		t.Fatal("expected overlay (dialog) to be visible after opening Computer info")
-	}
-
-	sendEscapeViaGlobalHook(t)
-	waitUntil(t, 3*time.Second, func() bool {
-		return u.Window.Canvas().Overlays().Top() == nil
-	}, "expected global Esc hook to close information dialog")
-}
-
-// TestGUIEscapeClosesActionDialog verifies Esc dismisses the action edit dialog
-// via the same global gohook path registered in showCustomActionDialog.
-func TestGUIEscapeClosesActionDialog(t *testing.T) {
-	a := test.NewApp()
-	w := a.NewWindow("")
-	defer w.Close()
-
-	u := ui.InitializeUi(w)
-	u.ConstructUi()
-
-	// Open the action dialog directly (same as when user taps an action to edit)
-	actiondialog.ShowActionDialog(actions.NewWait(0), nil)
-	if u.MainUi.ActionDialog == nil {
-		t.Fatal("expected action dialog to be open after ShowActionDialog")
-	}
-	overlays := u.Window.Canvas().Overlays()
-	if overlays.Top() == nil {
-		t.Fatal("expected overlay to be visible when action dialog is open")
-	}
-
-	sendEscapeViaGlobalHook(t)
-	waitUntil(t, 3*time.Second, func() bool {
-		return u.MainUi.ActionDialog == nil && u.Window.Canvas().Overlays().Top() == nil
-	}, "expected global Esc hook to close action dialog")
 }

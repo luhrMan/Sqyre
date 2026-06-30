@@ -1,7 +1,9 @@
 package ui
 
 import (
+	"Sqyre/internal/models"
 	"Sqyre/internal/models/actions"
+	"Sqyre/ui/macrocxt"
 	"Sqyre/ui/editor"
 	"Sqyre/ui/macro"
 	"Sqyre/ui/macro/actiondialog"
@@ -25,20 +27,33 @@ func SaveOpenMacros() {
 	macro.SaveOpenMacros()
 }
 
+// macroContext returns variable metadata for the currently selected macro tab.
+func macroContext() macrocxt.Provider {
+	u := GetUi()
+	return macrocxt.Provider{
+		CurrentMacro: func() *models.Macro {
+			if u == nil || u.Mui == nil || u.Mui.MTabs == nil {
+				return nil
+			}
+			st := u.Mui.MTabs.SelectedTab()
+			if st == nil {
+				return nil
+			}
+			return st.Macro
+		},
+	}
+}
+
 // SetEditorUi wires editor lists, forms, and handlers (implementation in ui/editor).
 func SetEditorUi() {
 	u := GetUi()
+	ctx := macroContext()
 	editor.SetEditorUi(editor.WireDeps{
 		Window:     u.Window,
 		EU:         u.EditorUi,
 		MacroMTabs: func() *macro.MacroTabs { return u.Mui.MTabs },
-		MacroVariables: func() []string {
-			st := u.Mui.MTabs.SelectedTab()
-			if st == nil || st.Macro == nil {
-				return nil
-			}
-			return st.Macro.CollectDefinedVariables()
-		},
+		MacroContext: ctx,
+		MacroVariables: ctx.VariableNames,
 		NavigationVisible:              func() bool { return u.MainUi.Navigation.Visible() },
 		ShowErrorWithEscape:            ShowErrorWithEscape,
 		ShowConfirmWithEscape:          ShowConfirmWithEscape,
@@ -52,6 +67,7 @@ func SetEditorUi() {
 // SetActionDialogDeps wires the macro action editor dialog (implementation in ui/macro/actiondialog).
 func SetActionDialogDeps() {
 	u := GetUi()
+	ctx := macroContext()
 	actiondialog.SetDeps(actiondialog.Deps{
 		Window: u.Window,
 		ClearOpenActionDialog: func() {
@@ -69,13 +85,8 @@ func SetActionDialogDeps() {
 				u.MainUi.ActionDialog = nil
 			}
 		},
-		MacroVariables: func() []string {
-			st := u.Mui.MTabs.SelectedTab()
-			if st == nil || st.Macro == nil {
-				return nil
-			}
-			return st.Macro.CollectDefinedVariables()
-		},
+		MacroContext: ctx,
+		MacroVariables: ctx.VariableNames,
 		CurrentMacroName: func() string {
 			st := u.Mui.MTabs.SelectedTab()
 			if st == nil || st.Macro == nil {
@@ -101,8 +112,8 @@ func SetMacroUi() {
 		ShowErrorWithEscape:   ShowErrorWithEscape,
 		AddDialogEscapeClose:  AddDialogEscapeClose,
 		ShowConfirmWithEscape: ShowConfirmWithEscape,
-		ShowActionDialog: func(action actions.ActionInterface, onSave func(actions.ActionInterface)) {
-			actiondialog.ShowActionDialog(action, onSave)
+		ShowActionDialog: func(action actions.ActionInterface, onSave func(actions.ActionInterface), onCancel func()) {
+			actiondialog.ShowActionDialog(action, onSave, onCancel)
 		},
 	})
 }

@@ -27,7 +27,7 @@ func ActionToMap(action actions.ActionInterface) (map[string]any, error) {
 		m["time"] = a.Time
 	case *actions.FindPixel:
 		m["name"] = a.Name
-		m["searcharea"] = searchAreaToMap(a.SearchArea)
+		m["searcharea"] = coordinateRefToMap(a.SearchArea)
 		m["targetcolor"] = a.TargetColor
 		m["colortolerance"] = a.ColorTolerance
 		if a.OutputXVariable != "" {
@@ -43,17 +43,17 @@ func ActionToMap(action actions.ActionInterface) (map[string]any, error) {
 				m["waittilfoundintervalms"] = a.WaitTilFoundIntervalMs
 			}
 		}
-		subs, err := subActionsToMaps(a.GetSubActions())
-		if err != nil {
-			return nil, err
-		}
-		m["subactions"] = subs
 	case *actions.Click:
 		m["button"] = a.Button
 		m["state"] = a.State
 	case *actions.Move:
-		m["point"] = pointToMap(a.Point)
+		m["point"] = coordinateRefToMap(a.Point)
 		m["smooth"] = a.Smooth
+		if a.Smooth {
+			m["smoothlow"] = a.EffectiveSmoothLow()
+			m["smoothhigh"] = a.EffectiveSmoothHigh()
+			m["smoothdelayms"] = a.EffectiveSmoothDelayMs()
+		}
 	case *actions.Key:
 		m["key"] = a.Key
 		m["state"] = a.State
@@ -63,7 +63,7 @@ func ActionToMap(action actions.ActionInterface) (map[string]any, error) {
 	case *actions.ImageSearch:
 		m["name"] = a.Name
 		m["targets"] = a.Targets
-		m["searcharea"] = searchAreaToMap(a.SearchArea)
+		m["searcharea"] = coordinateRefToMap(a.SearchArea)
 		m["rowsplit"] = a.RowSplit
 		m["colsplit"] = a.ColSplit
 		m["tolerance"] = float64(a.Tolerance)
@@ -89,7 +89,7 @@ func ActionToMap(action actions.ActionInterface) (map[string]any, error) {
 	case *actions.Ocr:
 		m["name"] = a.Name
 		m["target"] = a.Target
-		m["searcharea"] = searchAreaToMap(a.SearchArea)
+		m["searcharea"] = coordinateRefToMap(a.SearchArea)
 		if a.OutputVariable != "" {
 			m["outputvariable"] = a.OutputVariable
 		}
@@ -106,23 +106,48 @@ func ActionToMap(action actions.ActionInterface) (map[string]any, error) {
 				m["waittilfoundintervalms"] = a.WaitTilFoundIntervalMs
 			}
 		}
-		subs, err := subActionsToMaps(a.GetSubActions())
-		if err != nil {
-			return nil, err
+		if !a.Grayscale {
+			m["grayscale"] = a.Grayscale
 		}
-		m["subactions"] = subs
+		if a.Blur != 1 {
+			m["blur"] = a.Blur
+		}
+		if a.MinThreshold != 0 {
+			m["minthreshold"] = a.MinThreshold
+		}
+		if a.Resize != 1.0 {
+			m["resize"] = a.Resize
+		}
+		if a.ThresholdOtsu {
+			m["thresholdotsu"] = a.ThresholdOtsu
+		}
+		if a.ThresholdInvert {
+			m["thresholdinvert"] = a.ThresholdInvert
+		}
 	case *actions.SetVariable:
 		m["variablename"] = a.VariableName
 		m["value"] = a.Value
 	case *actions.Calculate:
 		m["expression"] = a.Expression
 		m["outputvar"] = a.OutputVar
-	case *actions.DataList:
-		m["source"] = a.Source
-		m["outputvar"] = a.OutputVar
-		m["lengthvar"] = a.LengthVar
-		m["isfile"] = a.IsFile
-		m["skipblanklines"] = a.SkipBlankLines
+	case *actions.Conditional:
+		m["name"] = a.Name
+		m["operator"] = a.Operator
+		m["left"] = a.Left
+		m["right"] = a.Right
+		subs, err := subActionsToMaps(a.GetSubActions())
+		if err != nil {
+			return nil, err
+		}
+		m["subactions"] = subs
+	case *actions.ForEachRow:
+		m["name"] = a.Name
+		m["sources"] = listColumnsToMaps(a.Sources)
+		subs, err := subActionsToMaps(a.GetSubActions())
+		if err != nil {
+			return nil, err
+		}
+		m["subactions"] = subs
 	case *actions.SaveVariable:
 		m["variablename"] = a.VariableName
 		m["destination"] = a.Destination
@@ -144,6 +169,8 @@ func ActionToMap(action actions.ActionInterface) (map[string]any, error) {
 		m["windowtarget"] = a.WindowTarget
 	case *actions.RunMacro:
 		m["macroname"] = a.MacroName
+	case *actions.Break, *actions.Continue:
+		// type only
 	default:
 		return nil, fmt.Errorf("unknown action type: %T", action)
 	}
@@ -162,22 +189,11 @@ func subActionsToMaps(sa []actions.ActionInterface) ([]any, error) {
 	return out, nil
 }
 
-func pointToMap(p actions.Point) map[string]any {
-	return map[string]any{
-		"name": p.Name,
-		"x":    p.X,
-		"y":    p.Y,
+func coordinateRefToMap(r actions.CoordinateRef) any {
+	if r.IsEmpty() {
+		return nil
 	}
-}
-
-func searchAreaToMap(s actions.SearchArea) map[string]any {
-	return map[string]any{
-		"name":    s.Name,
-		"leftx":   s.LeftX,
-		"topy":    s.TopY,
-		"rightx":  s.RightX,
-		"bottomy": s.BottomY,
-	}
+	return string(r)
 }
 
 // func calibrationTargetsToMaps(t []actions.CalibrationTarget) []any {

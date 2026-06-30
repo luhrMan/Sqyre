@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"Sqyre/internal/config"
 	"Sqyre/internal/models/actions"
 	"Sqyre/internal/models/repositories"
 	"Sqyre/ui/macro/actiondialog"
@@ -39,6 +40,9 @@ func buildActionTemplates() []actionTemplate {
 		{label: "Loop", actionType: "loop", category: "Miscellaneous", icon: actions.NewLoop(1, "", []actions.ActionInterface{}).Icon(), create: func() actions.ActionInterface {
 			return actions.NewLoop(1, "", []actions.ActionInterface{})
 		}},
+		{label: "If", actionType: "conditional", category: "Miscellaneous", icon: actions.NewConditional("", actions.OpEquals, "", "", []actions.ActionInterface{}).Icon(), create: func() actions.ActionInterface {
+			return actions.NewConditional("", actions.OpEquals, "", "", []actions.ActionInterface{})
+		}},
 		{label: "Image Search", actionType: "imagesearch", category: "Detection", icon: actions.NewImageSearch("", []actions.ActionInterface{}, []string{}, actions.SearchArea{}, 1, 1, 0.95, 5).Icon(), create: func() actions.ActionInterface {
 			return actions.NewImageSearch("", []actions.ActionInterface{}, []string{}, actions.SearchArea{}, 1, 1, 0.95, 5)
 		}},
@@ -51,15 +55,16 @@ func buildActionTemplates() []actionTemplate {
 
 		{label: "Set", actionType: "setvariable", category: "Variables", icon: actions.NewSetVariable("", "").Icon(), create: func() actions.ActionInterface { return actions.NewSetVariable("", "") }},
 		{label: "Calculate", actionType: "calculate", category: "Variables", icon: actions.NewCalculate("", "").Icon(), create: func() actions.ActionInterface { return actions.NewCalculate("", "") }},
-		{label: "Read from", actionType: "datalist", category: "Variables", icon: actions.NewDataList("", "", false).Icon(), create: func() actions.ActionInterface { return actions.NewDataList("", "", false) }},
+		{label: "For each row", actionType: "foreachrow", category: "Variables", icon: actions.NewForEachRow("", []actions.ListColumn{{}}, nil).Icon(), create: func() actions.ActionInterface {
+			return actions.NewForEachRow("", []actions.ListColumn{{}}, nil)
+		}},
 		{label: "Save to", actionType: "savevariable", category: "Variables", icon: actions.NewSaveVariable("", "", false, false).Icon(), create: func() actions.ActionInterface {
 			return actions.NewSaveVariable("", "", false, false)
 		}},
 	}
 }
 
-func showAddActionDialog(u *Ui, addActionAndRefresh func(actions.ActionInterface), templates []actionTemplate) {
-	var d dialog.Dialog
+func buildAddActionPickerContent(templates []actionTemplate, onPick func(actionTemplate)) fyne.CanvasObject {
 	categoryColumns := []string{"Mouse & Keyboard", "Detection", "Variables", "Miscellaneous"}
 	categoryTiles := map[string][]fyne.CanvasObject{
 		"Mouse & Keyboard": {},
@@ -75,15 +80,14 @@ func showAddActionDialog(u *Ui, addActionAndRefresh func(actions.ActionInterface
 		bg.StrokeWidth = 1
 
 		btn := widget.NewButtonWithIcon(t.label, t.icon, func() {
-			if d != nil {
-				d.Hide()
+			if onPick != nil {
+				onPick(t)
 			}
-			addActionAndRefresh(t.create())
 		})
 		btn.Importance = widget.LowImportance
 
 		tile := container.NewStack(bg, container.NewPadded(btn))
-		categoryTiles[t.category] = append(categoryTiles[t.category], tile)
+		categoryTiles[t.category] = append(categoryTiles[t.category], container.NewPadded(tile))
 	}
 
 	columnObjects := make([]fyne.CanvasObject, 0, len(categoryColumns))
@@ -95,11 +99,26 @@ func showAddActionDialog(u *Ui, addActionAndRefresh func(actions.ActionInterface
 	}
 
 	grid := container.NewGridWithColumns(4, columnObjects...)
-	content := container.NewBorder(
+	return container.NewBorder(
 		widget.NewLabel("Pick an action type"),
 		nil, nil, nil,
 		container.NewVScroll(grid),
 	)
+}
+
+// AddActionPickerForScreenshot returns the Add Action picker grid for docs/tests.
+func AddActionPickerForScreenshot() fyne.CanvasObject {
+	return buildAddActionPickerContent(buildActionTemplates(), nil)
+}
+
+func showAddActionDialog(u *Ui, addActionAndRefresh func(actions.ActionInterface), templates []actionTemplate) {
+	var d dialog.Dialog
+	content := buildAddActionPickerContent(templates, func(t actionTemplate) {
+		if d != nil {
+			d.Hide()
+		}
+		addActionAndRefresh(t.create())
+	})
 
 	d = dialog.NewCustom("Add Action", "Close", content, u.Window)
 	AddDialogEscapeClose(d, u.Window)
@@ -153,6 +172,14 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 				}
 				mt.RefreshItem(uid)
 				mt.Refresh()
+			}, func() {
+				if parent := a.GetParent(); parent != nil {
+					parent.RemoveSubAction(a)
+				}
+				if mt.SelectedNode == uid {
+					mt.SelectedNode = ""
+				}
+				mt.Refresh()
 			})
 		}
 	templates := buildActionTemplates()
@@ -187,11 +214,15 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 
 	computerInfo := fyne.NewMenuItem("Computer info", func() {
 		var str string
-		w, h := robotgo.GetScreenSize()
-		str = str + "Total Screen Size: " + strconv.Itoa(w) + "x" + strconv.Itoa(h) + "\n"
-		for d := range robotgo.DisplaysNum() {
-			_, _, mh, mw := robotgo.GetDisplayBounds(d)
-			str = str + "Monitor " + strconv.Itoa(d+1) + " Size: " + strconv.Itoa(mh) + "x" + strconv.Itoa(mw) + "\n"
+		if config.IsUITestMode() {
+			str = "Total Screen Size: 1920x1080\nMonitor 1 Size: 1080x1920\n"
+		} else {
+			w, h := robotgo.GetScreenSize()
+			str = str + "Total Screen Size: " + strconv.Itoa(w) + "x" + strconv.Itoa(h) + "\n"
+			for d := range robotgo.DisplaysNum() {
+				_, _, mh, mw := robotgo.GetDisplayBounds(d)
+				str = str + "Monitor " + strconv.Itoa(d+1) + " Size: " + strconv.Itoa(mh) + "x" + strconv.Itoa(mw) + "\n"
+			}
 		}
 		ShowInformationWithEscape("Computer Information", str, u.Window)
 	})

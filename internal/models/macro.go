@@ -2,7 +2,6 @@ package models
 
 import (
 	"Sqyre/internal/models/actions"
-	"sort"
 	"strings"
 )
 
@@ -45,12 +44,16 @@ func HotkeyTriggerFromUILabel(s string) HotkeyTrigger {
 }
 
 type Macro struct {
-	Name           string         `mapstructure:"name"`
-	Root           *actions.Loop  `mapstructure:"root"`
-	GlobalDelay    int            `mapstructure:"globaldelay"`
-	Hotkey         []string       `mapstructure:"hotkey"`
-	HotkeyTrigger  string         `mapstructure:"hotkey_trigger"`
-	Variables      *VariableStore `mapstructure:"variables"`
+	Name          string         `mapstructure:"name"`
+	Root          *actions.Loop  `mapstructure:"root"`
+	GlobalDelay   int            `mapstructure:"globaldelay"`
+	Hotkey        []string       `mapstructure:"hotkey"`
+	HotkeyTrigger string         `mapstructure:"hotkey_trigger"`
+	// VariableDecls is the persisted list of user-declared variables.
+	VariableDecls []VariableDecl `yaml:"variables" mapstructure:"variables"`
+	// Variables is the runtime store, rebuilt from VariableDecls at run start.
+	// It is never persisted.
+	Variables *VariableStore `yaml:"-" mapstructure:"-"`
 }
 
 // GetKey returns the unique identifier for this Macro.
@@ -78,70 +81,41 @@ func NewMacro(name string, delay int, hotkey []string) *Macro {
 // CollectDefinedVariables walks the macro's action tree and returns a sorted,
 // deduplicated list of every variable name that actions define or output.
 func (m *Macro) CollectDefinedVariables() []string {
-	seen := make(map[string]struct{})
-
-	builtins := []string{"StackMax", "Cols", "Rows", "ItemName", "ImagePixelWidth", "ImagePixelHeight"}
-	for _, b := range builtins {
-		seen[b] = struct{}{}
-	}
-
-	if m.Variables != nil {
-		for _, name := range m.Variables.GetAll() {
-			seen[name] = struct{}{}
-		}
-	}
-
-	if m.Root != nil {
-		collectVarsFromAction(m.Root, seen)
-	}
-
-	names := make([]string, 0, len(seen))
-	for name := range seen {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names
+	return CollectDefinedVariableNames(m)
 }
 
-func collectVarsFromAction(a actions.ActionInterface, seen map[string]struct{}) {
-	switch n := a.(type) {
-	case *actions.SetVariable:
-		if n.VariableName != "" {
-			seen[n.VariableName] = struct{}{}
-		}
-	case *actions.Calculate:
-		if n.OutputVar != "" {
-			seen[n.OutputVar] = struct{}{}
-		}
-	case *actions.DataList:
-		if n.OutputVar != "" {
-			seen[n.OutputVar] = struct{}{}
-		}
-		if n.LengthVar != "" {
-			seen[n.LengthVar] = struct{}{}
-		}
-	case *actions.Ocr:
-		if n.OutputVariable != "" {
-			seen[n.OutputVariable] = struct{}{}
-		}
-		if n.OutputXVariable != "" {
-			seen[n.OutputXVariable] = struct{}{}
-		}
-		if n.OutputYVariable != "" {
-			seen[n.OutputYVariable] = struct{}{}
-		}
-	case *actions.ImageSearch:
-		if n.OutputXVariable != "" {
-			seen[n.OutputXVariable] = struct{}{}
-		}
-		if n.OutputYVariable != "" {
-			seen[n.OutputYVariable] = struct{}{}
-		}
-	}
+// CollectVariableDefs returns variable definitions with source metadata.
+func (m *Macro) CollectVariableDefs() []VariableDef {
+	return CollectVariableDefs(m)
+}
 
-	if adv, ok := a.(actions.AdvancedActionInterface); ok {
-		for _, sub := range adv.GetSubActions() {
-			collectVarsFromAction(sub, seen)
+// CollectVariableUsages returns every location name appears in this macro.
+func (m *Macro) CollectVariableUsages(name string) []VariableUsage {
+	return CollectVariableUsages(m, name)
+}
+
+// InitRuntimeVariables rebuilds the runtime variable store from the macro's
+// declarations. Called at the start of every macro run so each execution begins
+// from a clean, isolated store seeded with declared initial values.
+func (m *Macro) InitRuntimeVariables() {
+	vs := NewVariableStore()
+	for _, d := range m.VariableDecls {
+		name := strings.TrimSpace(d.Name)
+		if name == "" {
+			continue
 		}
+		if strings.TrimSpace(d.InitialValue) == "" {
+			continue
+		}
+		vs.Set(name, d.initialStoredValue())
 	}
+	m.Variables = vs
+}
+
+// FindActionByUID returns the action with the given UID in this macro's tree.
+func (m *Macro) FindActionByUID(uid string) actions.ActionInterface {
+	if m == nil || m.Root == nil || uid == "" {
+		return nil
+	}
+	return m.Root.GetAction(uid)
 }

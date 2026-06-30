@@ -10,23 +10,31 @@ import (
 	"image/png"
 	"log"
 	"strings"
+	"sync"
 
-	"github.com/go-vgo/robotgo"
 	"github.com/otiai10/gosseract/v2"
 	"gocv.io/x/gocv"
 )
 
-var tessClient *gosseract.Client
+var (
+	tessClient *gosseract.Client
+	tessOnce   sync.Once
+)
 
-func init() {
-	tessClient = gosseract.NewClient()
-	// Initialize from embedded traineddata in memory only (no filesystem writes).
-	_ = tessClient.SetTessdataFromMemory(assets.EngTrainedData())
-	_ = tessClient.SetLanguage("eng")
+func GetTessClient() *gosseract.Client {
+	tessOnce.Do(func() {
+		tessClient = gosseract.NewClient()
+		_ = tessClient.SetTessdataFromMemory(assets.EngTrainedData())
+		_ = tessClient.SetLanguage("eng")
+	})
+	return tessClient
 }
 
-func GetTessClient() *gosseract.Client { return tessClient }
-func CloseTessClient()                 { tessClient.Close() }
+func CloseTessClient() {
+	if tessClient != nil {
+		tessClient.Close()
+	}
+}
 
 func CheckImageForText(img image.Image) (error, string) {
 	var buf bytes.Buffer
@@ -123,34 +131,48 @@ func findTargetInBoxes(boxes []gosseract.BoundingBox, target string) (centerX, c
 // target text was found (center of its bounding box). If the target is not found in word boxes,
 // returns the center of the search area as fallback.
 func OCR(a *actions.Ocr, macro *models.Macro) (foundText string, outX, outY int, err error) {
-	sa := a.SearchArea
-	leftX, topY, rightX, bottomY, err := ResolveSearchAreaCoords(sa.LeftX, sa.TopY, sa.RightX, sa.BottomY, macro)
+	defer func() {
+		if r := recover(); r != nil {
+			LogPanicToFile(r, "OCR")
+			foundText, outX, outY = "", 0, 0
+			err = fmt.Errorf("OCR panic: %v", r)
+			log.Printf("OCR: %v (macro continues)", err)
+		}
+	}()
+	return ocrCapture(a, macro)
+}
+
+func ocrCapture(a *actions.Ocr, macro *models.Macro) (foundText string, outX, outY int, err error) {
+	resolvedLeftX, resolvedTopY, resolvedRightX, resolvedBottomY, err := ResolveSearchAreaCoordsFromRef(a.SearchArea, macro, DefaultResolutionKey())
 	if err != nil {
-		log.Printf("OCR: failed to resolve search area coords: %v", err)
+		log.Printf("OCR: failed to resolve search area %q: %v", a.SearchArea, err)
 		return "", 0, 0, err
 	}
-	w := rightX - leftX
-	h := bottomY - topY
-	if w <= 0 || h <= 0 {
-		err := fmt.Errorf("OCR: invalid search area (width=%d height=%d); need positive dimensions", w, h)
+	img, leftX, topY, rightX, bottomY, err := CaptureSearchArea(resolvedLeftX, resolvedTopY, resolvedRightX, resolvedBottomY)
+	if err != nil {
 		log.Printf("OCR: %v (macro continues)", err)
 		return "", 0, 0, err
 	}
 	searchCenterX := (leftX + rightX) / 2
 	searchCenterY := (topY + bottomY) / 2
-	log.Printf("%s OCR search | %s in X1:%d Y1:%d X2:%d Y2:%d", a.Target, a.SearchArea.Name, leftX, topY, rightX, bottomY)
-
-	img, err := robotgo.CaptureImg(leftX, topY, w, h)
-	if err != nil || img == nil {
-		log.Printf("OCR: capture failed: %v", err)
+	log.Printf("%s OCR search | %s in X1:%d Y1:%d X2:%d Y2:%d", a.Target, a.SearchArea.DisplayLabel(), leftX, topY, rightX, bottomY)
+	ppOptions := PreprocessOptions{
+		Grayscale:       a.Grayscale,
+		Blur:            a.Blur > 0,
+		BlurAmount:      a.Blur,
+		Threshold:       a.MinThreshold > 0 || a.ThresholdOtsu,
+		MinThreshold:    float32(a.MinThreshold),
+		ThresholdOtsu:   a.ThresholdOtsu,
+		ThresholdInvert: a.ThresholdInvert,
+		Resize:          a.Resize != 1.0,
+		ResizeScale:     a.Resize,
+	}
+	img = ImageToMatToImagePreprocess(img, ppOptions)
+	if img == nil {
+		err := fmt.Errorf("OCR: image preprocessing failed")
+		log.Printf("OCR: %v (macro continues)", err)
 		return "", 0, 0, err
 	}
-	ppOptions := PreprocessOptions{
-		BlurAmount:   a.Blur,
-		MinThreshold: float32(a.MinThreshold),
-		ResizeScale:  a.Resize,
-	}
-	img = ImageToMatToImagePreprocess(img, a.Grayscale, a.Blur > 0, a.MinThreshold > 0, a.Resize != 1.0, ppOptions)
 	foundText, boxes, checkErr := ocrImageWithBoxes(img)
 	if checkErr != nil {
 		return "", 0, 0, checkErr

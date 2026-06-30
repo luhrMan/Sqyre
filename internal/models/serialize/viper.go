@@ -33,25 +33,14 @@ func GetViper() *viper.Viper {
 // 	return nil
 // }
 
-func Decode() error {
+// LoadConfig ensures ~/.sqyre/db.yaml exists and loads it into YAMLConfig (single parse).
+func LoadConfig() error {
 	configPath := config.GetDbPath()
 
-	// Ensure ~/.sqyre exists; create default config if missing
 	if err := ensureConfigFile(configPath); err != nil {
 		return fmt.Errorf("config setup: %w", err)
 	}
 
-	GetViper().SetConfigFile(configPath)
-	GetViper().SetConfigType("yaml")
-	if err := GetViper().ReadInConfig(); err != nil {
-		data, readErr := os.ReadFile(configPath)
-		if readErr == nil && len(data) > 0 {
-			return fmt.Errorf("viper error reading config (%s): %w", configPath, YAMLErrorWithContent(data, err))
-		}
-		return fmt.Errorf("viper error reading in file: %v", err)
-	}
-
-	// Point YAMLConfig at the same file so repositories read/write ~/.sqyre/db.yaml
 	GetYAMLConfig().SetConfigFile(configPath)
 	if err := GetYAMLConfig().ReadConfig(); err != nil {
 		return fmt.Errorf("yaml db read: %w", err)
@@ -141,17 +130,14 @@ func (s *serializer) CreateActionFromMap(rawMap map[string]any, parent actions.A
 		}
 		action = actions.NewLoop(countVal, name, []actions.ActionInterface{})
 	case "wait":
-		t, err := expectInt(rawMap, "time")
-		if err != nil {
-			return nil, fmt.Errorf("action type wait: %w", err)
+		timeVal := rawMap["time"]
+		if timeVal == nil {
+			timeVal = 0
 		}
-		action = actions.NewWait(t)
+		action = actions.NewWait(timeVal)
 	case "findpixel":
 		name := stringFromMap(rawMap, "name")
-		searchArea := actions.SearchArea{}
-		if sa, ok := rawMap["searcharea"].(map[string]any); ok && len(sa) > 0 {
-			searchArea = createSearchBox(sa)
-		}
+		searchArea := parseCoordinateRef(rawMap["searcharea"])
 		targetColor := stringFromMap(rawMap, "targetcolor")
 		if targetColor == "" {
 			targetColor = "ffffff"
@@ -160,7 +146,7 @@ func (s *serializer) CreateActionFromMap(rawMap map[string]any, parent actions.A
 		if colorTolerance < 0 || colorTolerance > 100 {
 			colorTolerance = 0
 		}
-		action = actions.NewFindPixel(name, searchArea, targetColor, colorTolerance, []actions.ActionInterface{})
+		action = actions.NewFindPixel(name, searchArea, targetColor, colorTolerance)
 		if fp, ok := action.(*actions.FindPixel); ok {
 			if v, ok := rawMap["outputxvariable"].(string); ok {
 				fp.OutputXVariable = v
@@ -203,15 +189,22 @@ func (s *serializer) CreateActionFromMap(rawMap map[string]any, parent actions.A
 		}
 		action = actions.NewClick(button, state)
 	case "move":
-		pm, err := expectMap(rawMap, "point")
-		if err != nil {
-			return nil, fmt.Errorf("action type move: %w", err)
-		}
+		pointRef := parseCoordinateRef(rawMap["point"])
 		smooth := false
 		if v, ok := rawMap["smooth"].(bool); ok {
 			smooth = v
 		}
-		action = actions.NewMove(createPoint(pm), smooth)
+		move := actions.NewMove(pointRef, smooth)
+		if v := rawMap["smoothlow"]; v != nil {
+			move.SmoothLow = floatFromMap(v)
+		}
+		if v := rawMap["smoothhigh"]; v != nil {
+			move.SmoothHigh = floatFromMap(v)
+		}
+		if v := rawMap["smoothdelayms"]; v != nil {
+			move.SmoothDelayMs = intFromMap(v)
+		}
+		action = move
 	case "key":
 		k, err := expectString(rawMap, "key")
 		if err != nil {
@@ -246,10 +239,7 @@ func (s *serializer) CreateActionFromMap(rawMap map[string]any, parent actions.A
 		if err != nil {
 			return nil, fmt.Errorf("action type imagesearch: %w", err)
 		}
-		sa, err := expectMap(rawMap, "searcharea")
-		if err != nil {
-			return nil, fmt.Errorf("action type imagesearch: %w", err)
-		}
+		sa := parseCoordinateRef(rawMap["searcharea"])
 		row, err := expectInt(rawMap, "rowsplit")
 		if err != nil {
 			return nil, fmt.Errorf("action type imagesearch: %w", err)
@@ -262,7 +252,7 @@ func (s *serializer) CreateActionFromMap(rawMap map[string]any, parent actions.A
 		if err != nil {
 			return nil, fmt.Errorf("action type imagesearch: %w", err)
 		}
-		action = actions.NewImageSearch(name, []actions.ActionInterface{}, targets, createSearchBox(sa), row, col, float32(tol), blur)
+		action = actions.NewImageSearch(name, []actions.ActionInterface{}, targets, sa, row, col, float32(tol), blur)
 		if is, ok := action.(*actions.ImageSearch); ok {
 			if v, ok := rawMap["outputxvariable"].(string); ok {
 				is.OutputXVariable = v
@@ -303,11 +293,8 @@ func (s *serializer) CreateActionFromMap(rawMap map[string]any, parent actions.A
 		if err != nil {
 			return nil, fmt.Errorf("action type ocr: %w", err)
 		}
-		sa, err := expectMap(rawMap, "searcharea")
-		if err != nil {
-			return nil, fmt.Errorf("action type ocr: %w", err)
-		}
-		action = actions.NewOcr(oname, []actions.ActionInterface{}, target, createSearchBox(sa))
+		sa := parseCoordinateRef(rawMap["searcharea"])
+		action = actions.NewOcr(oname, target, sa)
 		if oc, ok := action.(*actions.Ocr); ok {
 			if v, ok := rawMap["outputvariable"].(string); ok {
 				oc.OutputVariable = v
@@ -341,6 +328,27 @@ func (s *serializer) CreateActionFromMap(rawMap map[string]any, parent actions.A
 					oc.WaitTilFoundIntervalMs = int(ms)
 				}
 			}
+			if v, ok := rawMap["grayscale"].(bool); ok {
+				oc.Grayscale = v
+			}
+			if v := rawMap["blur"]; v != nil {
+				oc.Blur = intFromMap(v)
+			}
+			if oc.Blur < 1 {
+				oc.Blur = 1
+			}
+			if v := rawMap["minthreshold"]; v != nil {
+				oc.MinThreshold = intFromMap(v)
+			}
+			if v := rawMap["resize"]; v != nil {
+				oc.Resize = floatFromMap(v)
+			}
+			if v, ok := rawMap["thresholdotsu"].(bool); ok {
+				oc.ThresholdOtsu = v
+			}
+			if v, ok := rawMap["thresholdinvert"].(bool); ok {
+				oc.ThresholdInvert = v
+			}
 		}
 	case "setvariable":
 		vn, err := expectString(rawMap, "variablename")
@@ -358,32 +366,22 @@ func (s *serializer) CreateActionFromMap(rawMap map[string]any, parent actions.A
 			return nil, fmt.Errorf("action type calculate: %w", err)
 		}
 		action = actions.NewCalculate(expr, outv)
-	case "datalist":
-		isFile := false
-		if ifVal, ok := rawMap["isfile"]; ok && ifVal != nil {
-			b, ok := ifVal.(bool)
-			if !ok {
-				return nil, fmt.Errorf("action type datalist: field \"isfile\": expected bool, got %T", ifVal)
-			}
-			isFile = b
-		}
-		src, err := expectString(rawMap, "source")
+	case "conditional":
+		name := stringFromMap(rawMap, "name")
+		operator := stringFromMap(rawMap, "operator")
+		left := operandFromMap(rawMap, "left")
+		right := operandFromMap(rawMap, "right")
+		action = actions.NewConditional(left, operator, right, name, []actions.ActionInterface{})
+	case "foreachrow":
+		name := stringFromMap(rawMap, "name")
+		sources, err := sourcesFromMap(rawMap["sources"])
 		if err != nil {
-			return nil, fmt.Errorf("action type datalist: %w", err)
+			return nil, fmt.Errorf("action type foreachrow: %w", err)
 		}
-		outVar, err := expectString(rawMap, "outputvar")
-		if err != nil {
-			return nil, fmt.Errorf("action type datalist: %w", err)
+		if sources == nil {
+			sources = []actions.ListColumn{}
 		}
-		action = actions.NewDataList(src, outVar, isFile)
-		if dl, ok := action.(*actions.DataList); ok {
-			if lv, ok := rawMap["lengthvar"].(string); ok {
-				dl.LengthVar = lv
-			}
-			if sb, ok := rawMap["skipblanklines"].(bool); ok {
-				dl.SkipBlankLines = sb
-			}
-		}
+		action = actions.NewForEachRow(name, sources, []actions.ActionInterface{})
 	case "savevariable":
 		append := false
 		if appendVal, ok := rawMap["append"]; ok && appendVal != nil {
@@ -446,6 +444,10 @@ func (s *serializer) CreateActionFromMap(rawMap map[string]any, parent actions.A
 		action = actions.NewFocusWindow(stringFromMap(rawMap, "windowtarget"))
 	case "runmacro":
 		action = actions.NewRunMacro(stringFromMap(rawMap, "macroname"))
+	case "break":
+		action = actions.NewBreak()
+	case "continue":
+		action = actions.NewContinue()
 	default:
 		return nil, fmt.Errorf("unknown action type %v", rawMap["type"])
 	}
@@ -489,17 +491,43 @@ func targetsFromMap(v any) []string {
 	return nil
 }
 
-func createSearchBox(rawMap map[string]any) actions.SearchArea {
-	name := ""
-	if n, ok := rawMap["name"].(string); ok {
-		name = n
+func parseCoordinateRef(v any) actions.CoordinateRef {
+	if v == nil {
+		return ""
 	}
-	return actions.SearchArea{
-		Name:    name,
-		LeftX:   valueAsIntOrString(rawMap["leftx"]),
-		TopY:    valueAsIntOrString(rawMap["topy"]),
-		RightX:  valueAsIntOrString(rawMap["rightx"]),
-		BottomY: valueAsIntOrString(rawMap["bottomy"]),
+	switch val := v.(type) {
+	case string:
+		return actions.CoordinateRef(val)
+	case map[string]any:
+		name := stringFromMap(val, "name")
+		if name == "" {
+			return ""
+		}
+		// Legacy embedded format: keep only the name as a lookup key.
+		return actions.CoordinateRef(name)
+	default:
+		return ""
+	}
+}
+
+// operandFromMap returns a conditional operand as int (literal) or string
+// (literal or variable reference), defaulting to "" when missing.
+func operandFromMap(rawMap map[string]any, key string) any {
+	v, ok := rawMap[key]
+	if !ok || v == nil {
+		return ""
+	}
+	switch val := v.(type) {
+	case int:
+		return val
+	case int64:
+		return int(val)
+	case float64:
+		return int(val)
+	case string:
+		return val
+	default:
+		return fmt.Sprintf("%v", val)
 	}
 }
 
@@ -528,6 +556,24 @@ func intFromMap(v any) int {
 	}
 }
 
+func floatFromMap(v any) float64 {
+	if v == nil {
+		return 0
+	}
+	switch n := v.(type) {
+	case float64:
+		return n
+	case float32:
+		return float64(n)
+	case int:
+		return float64(n)
+	case int64:
+		return float64(n)
+	default:
+		return 0
+	}
+}
+
 // func calibrationTargetsFromMap(v any) []actions.CalibrationTarget {
 // 	if v == nil {
 // 		return nil
@@ -551,42 +597,3 @@ func intFromMap(v any) int {
 // 	return out
 // }
 
-// valueAsIntOrString converts an any to either int or string as appropriate for SearchArea fields.
-func valueAsIntOrString(val any) any {
-	switch v := val.(type) {
-	case int:
-		return v
-	case float64:
-		return int(v)
-	case string:
-		return v
-	default:
-		return 0
-	}
-}
-
-// pointCoordFromMap returns x or y from raw map as any (int or string) for actions.Point.
-func pointCoordFromMap(rawMap map[string]any, key string) any {
-	v, ok := rawMap[key]
-	if !ok {
-		return 0
-	}
-	switch val := v.(type) {
-	case int:
-		return val
-	case string:
-		return val
-	case float64:
-		return int(val)
-	default:
-		return 0
-	}
-}
-
-func createPoint(rawMap map[string]any) actions.Point {
-	return actions.Point{
-		Name: stringFromMap(rawMap, "name"),
-		X:    pointCoordFromMap(rawMap, "x"),
-		Y:    pointCoordFromMap(rawMap, "y"),
-	}
-}

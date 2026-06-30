@@ -131,6 +131,10 @@ func saveWindowGeometry(w fyne.Window) {
 		prefs.SetInt(config.PrefWindowHeight, int(size.Height))
 	}
 
+	if config.IsUITestMode() {
+		return
+	}
+
 	// Persist desktop window bounds (x, y, w, h) from current process window.
 	pid := robotgo.GetPid()
 	x, y, width, height := robotgo.GetBounds(pid)
@@ -181,7 +185,9 @@ func (u *Ui) ConstructUi() {
 		ShowErrorWithEscape,
 	)
 
-	toggleMousePos()
+	if !config.IsUITestMode() {
+		toggleMousePos()
+	}
 }
 
 func toggleMousePos() {

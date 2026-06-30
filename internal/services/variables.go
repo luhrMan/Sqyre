@@ -2,6 +2,7 @@ package services
 
 import (
 	"Sqyre/internal/models"
+	"Sqyre/internal/models/actions"
 	"fmt"
 	"math"
 	"regexp"
@@ -18,7 +19,10 @@ var (
 
 // ResolveVariables resolves variable references in a string.
 // Supports ${VarName} and {VarName} syntax.
-// Image Search sub-actions also get internal item variables: ${StackMax}, ${Cols}, ${Rows}, ${ItemName}, ${ImagePixelWidth}, ${ImagePixelHeight}.
+// Item mask shape fields also resolve ${StackMax}, ${Cols}, ${Rows}, ${ItemName}, ${ImagePixelWidth}, ${ImagePixelHeight} from the template being matched.
+// Image Search sub-actions get the same item variables after each match.
+// For Each Row sub-actions also get ${Row} (1-based) and ${RowCount}.
+// Every macro run also sets monitor builtins: ${monitor1Width}, ${monitor1Height}, ${monitor2Width}, ...
 func ResolveVariables(text string, macro *models.Macro) (string, error) {
 	if macro == nil || macro.Variables == nil {
 		return text, nil
@@ -76,6 +80,270 @@ func ParseVariableReference(text string) []string {
 		result = append(result, name)
 	}
 	return result
+}
+
+// EvaluateCondition resolves a Conditional action's operands and evaluates its
+// comparison. Numeric operands are compared numerically; otherwise comparison
+// falls back to string semantics. Unary operators (is set / is empty) inspect
+// only the left operand.
+func EvaluateCondition(node *actions.Conditional, macro *models.Macro) (bool, error) {
+	left, err := resolveOperand(node.Left, macro)
+	if err != nil {
+		return false, fmt.Errorf("left operand: %w", err)
+	}
+
+	switch node.Operator {
+	case actions.OpIsSet:
+		return left != "" && checkUnresolvedVariable(left) == nil, nil
+	case actions.OpIsEmpty:
+		return left == "" || checkUnresolvedVariable(left) != nil, nil
+	}
+
+	right, err := resolveOperand(node.Right, macro)
+	if err != nil {
+		return false, fmt.Errorf("right operand: %w", err)
+	}
+
+	switch node.Operator {
+	case actions.OpContains:
+		return strings.Contains(left, right), nil
+	case actions.OpStartsWith:
+		return strings.HasPrefix(left, right), nil
+	case actions.OpEndsWith:
+		return strings.HasSuffix(left, right), nil
+	}
+
+	// Numeric comparison when both operands parse as numbers, otherwise string.
+	lf, lok := parseConditionNumber(left)
+	rf, rok := parseConditionNumber(right)
+	numeric := lok && rok
+
+	switch node.Operator {
+	case actions.OpEquals:
+		if numeric {
+			return lf == rf, nil
+		}
+		return left == right, nil
+	case actions.OpNotEquals:
+		if numeric {
+			return lf != rf, nil
+		}
+		return left != right, nil
+	case actions.OpLess:
+		if numeric {
+			return lf < rf, nil
+		}
+		return left < right, nil
+	case actions.OpLessEqual:
+		if numeric {
+			return lf <= rf, nil
+		}
+		return left <= right, nil
+	case actions.OpGreater:
+		if numeric {
+			return lf > rf, nil
+		}
+		return left > right, nil
+	case actions.OpGreaterEq:
+		if numeric {
+			return lf >= rf, nil
+		}
+		return left >= right, nil
+	default:
+		return false, fmt.Errorf("unknown operator %q", node.Operator)
+	}
+}
+
+// resolveOperand resolves variable references in an operand to a string.
+func resolveOperand(value any, macro *models.Macro) (string, error) {
+	switch v := value.(type) {
+	case nil:
+		return "", nil
+	case string:
+		return ResolveVariables(v, macro)
+	default:
+		return fmt.Sprintf("%v", v), nil
+	}
+}
+
+// parseConditionNumber reports whether s parses as a number and returns its value.
+func parseConditionNumber(s string) (float64, bool) {
+	f, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
+	if err != nil {
+		return 0, false
+	}
+	return f, true
+}
+
+// EntryValidation is the outcome of validating a variable entry value in the UI.
+// Warnings (e.g. undefined ${variable}) are shown but do not block submission.
+// Errors (e.g. malformed expressions) block submission.
+type EntryValidation struct {
+	Warning string
+	Error   string
+}
+
+// BlocksSubmit reports whether the entry should prevent saving.
+func (v EntryValidation) BlocksSubmit() bool {
+	return v.Error != ""
+}
+
+// UnknownVariableWarning returns a warning when text references undefined variables.
+func UnknownVariableWarning(text string, macro *models.Macro) string {
+	if strings.TrimSpace(text) == "" || macro == nil {
+		return ""
+	}
+
+	known := make(map[string]bool)
+	for _, n := range macro.CollectDefinedVariables() {
+		known[strings.ToLower(strings.TrimSpace(n))] = true
+	}
+
+	var unknown []string
+	for _, r := range ParseVariableReference(text) {
+		name := strings.TrimSpace(r)
+		if name == "" {
+			continue
+		}
+		if !known[strings.ToLower(name)] {
+			unknown = append(unknown, name)
+		}
+	}
+	if len(unknown) == 1 {
+		return fmt.Sprintf("unknown variable %q", unknown[0])
+	}
+	if len(unknown) > 1 {
+		return fmt.Sprintf("unknown variables: %s", strings.Join(unknown, ", "))
+	}
+	return ""
+}
+
+// validateExpressionStructure checks that an expression parses and evaluates when
+// every referenced variable is seeded with a numeric placeholder.
+func validateExpressionStructure(expr string, macro *models.Macro) error {
+	if strings.TrimSpace(expr) == "" || macro == nil {
+		return nil
+	}
+
+	macro.InitRuntimeVariables()
+	for _, r := range ParseVariableReference(expr) {
+		name := strings.TrimSpace(r)
+		if name == "" {
+			continue
+		}
+		if _, ok := macro.Variables.Get(name); !ok {
+			macro.Variables.Set(name, 0)
+		}
+	}
+	_, err := EvaluateExpression(expr, macro)
+	return err
+}
+
+// LooksLikeExpression reports whether text will be evaluated as arithmetic at runtime.
+func LooksLikeExpression(text string) bool {
+	t := strings.TrimSpace(text)
+	if t == "" {
+		return false
+	}
+	if strings.ContainsAny(t, "+-*/^()") {
+		return true
+	}
+	lower := strings.ToLower(t)
+	for _, fn := range []string{"sqrt", "abs", "round", "floor", "ceil", "trunc", "sin", "cos", "tan", "ln"} {
+		if strings.Contains(lower, fn+"(") {
+			return true
+		}
+	}
+	return strings.Contains(t, "~pi") || strings.Contains(t, "~e")
+}
+
+// ValidateVariableReferences returns a warning-only validation for ${variable} references.
+func ValidateVariableReferences(text string, macro *models.Macro) EntryValidation {
+	return EntryValidation{Warning: UnknownVariableWarning(text, macro)}
+}
+
+// ValidateNumericExpression checks that text is empty, a literal number, or a valid
+// arithmetic expression. Unknown variables produce a warning but do not block.
+func ValidateNumericExpression(text string, macro *models.Macro) EntryValidation {
+	if strings.TrimSpace(text) == "" {
+		return EntryValidation{}
+	}
+	v := EntryValidation{Warning: UnknownVariableWarning(text, macro)}
+	if err := validateExpressionStructure(text, macro); err != nil {
+		v.Error = err.Error()
+	}
+	return v
+}
+
+// ValidateCalculateExpression checks a Calculate action expression.
+func ValidateCalculateExpression(text string, macro *models.Macro) EntryValidation {
+	if strings.TrimSpace(text) == "" {
+		return EntryValidation{}
+	}
+	v := EntryValidation{Warning: UnknownVariableWarning(text, macro)}
+	if err := validateExpressionStructure(text, macro); err != nil {
+		v.Error = err.Error()
+	}
+	return v
+}
+
+// ValidateSetVariableValue checks set-variable values: plain text is allowed.
+// Unknown variables warn; invalid arithmetic blocks.
+func ValidateSetVariableValue(text string, macro *models.Macro) EntryValidation {
+	if strings.TrimSpace(text) == "" {
+		return EntryValidation{}
+	}
+	v := EntryValidation{Warning: UnknownVariableWarning(text, macro)}
+	if LooksLikeExpression(text) {
+		if err := validateExpressionStructure(text, macro); err != nil {
+			v.Error = err.Error()
+		}
+	}
+	return v
+}
+
+// PreviewCalculate validates and evaluates a Calculate expression for the editor
+// preview. It distinguishes these cases:
+//   - undefined ${variable} references -> preview still runs (warning shown in the entry field)
+//   - all referenced variables are defined and have current values -> "= <result>"
+//   - referenced variables without current values yet -> "valid (result depends on runtime values)"
+//
+// An empty expression returns ("", nil).
+func PreviewCalculate(expr string, macro *models.Macro) (string, error) {
+	if strings.TrimSpace(expr) == "" || macro == nil {
+		return "", nil
+	}
+
+	macro.InitRuntimeVariables()
+
+	refs := ParseVariableReference(expr)
+
+	// Seed every referenced variable with a numeric placeholder so structurally valid
+	// expressions evaluate even when names are not declared yet.
+	runtimeDependent := false
+	for _, r := range refs {
+		name := strings.TrimSpace(r)
+		if name == "" {
+			continue
+		}
+		if _, ok := macro.Variables.Get(name); !ok {
+			macro.Variables.Set(name, 0)
+			runtimeDependent = true
+		}
+	}
+
+	res, err := EvaluateExpression(expr, macro)
+	if err != nil {
+		return "", err
+	}
+
+	if runtimeDependent || UnknownVariableWarning(expr, macro) != "" {
+		return "valid (result depends on runtime values)", nil
+	}
+	if f, ok := res.(float64); ok {
+		return "= " + strconv.FormatFloat(f, 'g', -1, 64), nil
+	}
+	return "= " + fmt.Sprintf("%v", res), nil
 }
 
 // EvaluateExpression evaluates a mathematical expression with variable substitution
@@ -396,6 +664,101 @@ func parseNumber(s string) (float64, error) {
 	return strconv.ParseFloat(s, 64)
 }
 
+func lookupVariable(name string, macro *models.Macro, overrides map[string]any) (any, bool) {
+	name = strings.TrimSpace(name)
+	if overrides != nil {
+		if v, ok := overrides[name]; ok {
+			return v, true
+		}
+		lower := strings.ToLower(name)
+		for k, v := range overrides {
+			if strings.ToLower(k) == lower {
+				return v, true
+			}
+		}
+	}
+	if macro != nil && macro.Variables != nil {
+		return macro.Variables.Get(name)
+	}
+	return nil, false
+}
+
+func resolveVariablesWithOverrides(text string, macro *models.Macro, overrides map[string]any) (string, error) {
+	if overrides == nil && (macro == nil || macro.Variables == nil) {
+		return text, nil
+	}
+
+	result := text
+	result = varPattern.ReplaceAllStringFunc(result, func(match string) string {
+		varName := strings.TrimSpace(varPattern.FindStringSubmatch(match)[1])
+		if val, ok := lookupVariable(varName, macro, overrides); ok {
+			return fmt.Sprintf("%v", val)
+		}
+		return match
+	})
+
+	result = varPatternAlt.ReplaceAllStringFunc(result, func(match string) string {
+		if strings.HasPrefix(match, "${") {
+			return match
+		}
+		varName := strings.TrimSpace(varPatternAlt.FindStringSubmatch(match)[1])
+		if val, ok := lookupVariable(varName, macro, overrides); ok {
+			return fmt.Sprintf("%v", val)
+		}
+		return match
+	})
+
+	return result, nil
+}
+
+func evaluateExpressionWithOverrides(expr string, macro *models.Macro, overrides map[string]any) (any, error) {
+	resolved, err := resolveVariablesWithOverrides(expr, macro, overrides)
+	if err != nil {
+		return nil, err
+	}
+	resolved = strings.ReplaceAll(resolved, "~pi", fmt.Sprintf("%f", math.Pi))
+	resolved = strings.ReplaceAll(resolved, "~e", fmt.Sprintf("%f", math.E))
+	resolved = replaceFunctions(resolved)
+	result, err := evaluateSimpleExpression(resolved)
+	if err != nil {
+		return nil, fmt.Errorf("failed to evaluate expression: %w", err)
+	}
+	return result, nil
+}
+
+func resolveIntWithOverrides(value any, macro *models.Macro, overrides map[string]any) (int, error) {
+	switch v := value.(type) {
+	case int:
+		return v, nil
+	case float64:
+		return int(v), nil
+	case string:
+		resolved, err := resolveVariablesWithOverrides(v, macro, overrides)
+		if err != nil {
+			return 0, err
+		}
+		if err := checkUnresolvedVariable(resolved); err != nil {
+			return 0, err
+		}
+		if strings.ContainsAny(resolved, "+-*/^()") {
+			result, err := evaluateExpressionWithOverrides(resolved, macro, overrides)
+			if err != nil {
+				return 0, err
+			}
+			if f, ok := result.(float64); ok {
+				return int(f), nil
+			}
+		}
+		val, err := strconv.Atoi(resolved)
+		if err != nil {
+			return 0, fmt.Errorf("cannot convert %s to int: %w", resolved, err)
+		}
+		return val, nil
+	default:
+		return 0, fmt.Errorf("unsupported type for int resolution: %T", value)
+	}
+}
+
 // checkUnresolvedVariable returns an error if s still contains an unresolved variable reference.
 func checkUnresolvedVariable(s string) error {
 	if strings.Contains(s, "${") {
@@ -483,6 +846,40 @@ func ResolveFloat(value any, macro *models.Macro) (float64, error) {
 		return val, nil
 	default:
 		return 0, fmt.Errorf("unsupported type for float resolution: %T", value)
+	}
+}
+
+// ResolveSetVariableValue resolves ${references} in a Set Variable value and parses numbers when possible.
+func ResolveSetVariableValue(value any, macro *models.Macro) (any, error) {
+	switch v := value.(type) {
+	case int, int64, float32, float64, bool:
+		return v, nil
+	case string:
+		resolved, err := ResolveVariables(v, macro)
+		if err != nil {
+			return nil, err
+		}
+		if err := checkUnresolvedVariable(resolved); err != nil {
+			return nil, err
+		}
+		if resolved == "" {
+			return "", nil
+		}
+		// Evaluate arithmetic when the value contains operators (same as ResolveInt/ResolveFloat).
+		if strings.ContainsAny(resolved, "+-*/^()") {
+			if result, err := EvaluateExpression(v, macro); err == nil {
+				return result, nil
+			}
+		}
+		if i, err := strconv.Atoi(resolved); err == nil {
+			return i, nil
+		}
+		if f, err := strconv.ParseFloat(resolved, 64); err == nil {
+			return f, nil
+		}
+		return resolved, nil
+	default:
+		return fmt.Sprintf("%v", v), nil
 	}
 }
 
