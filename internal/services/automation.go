@@ -21,6 +21,7 @@ type AutomationBackend interface {
 	MilliSleep(ms int)
 	Move(x, y int, opts MoveOptions)
 	Click(button string, down bool) error
+	Scroll(up bool) error
 	KeyDown(key string) error
 	KeyUp(key string) error
 	TypeChar(s string)
@@ -36,6 +37,14 @@ func (robotgoBackend) Click(button string, down bool) error {
 		return robotgo.Toggle(button)
 	}
 	return robotgo.Toggle(button, "up")
+}
+func (robotgoBackend) Scroll(up bool) error {
+	dir := "down"
+	if up {
+		dir = "up"
+	}
+	robotgo.ScrollDir(120, dir)
+	return nil
 }
 func (robotgoBackend) KeyDown(key string) error  { return robotgo.KeyDown(key) }
 func (robotgoBackend) KeyUp(key string) error    { return robotgo.KeyUp(key) }
@@ -116,6 +125,15 @@ func (r *RecordingBackend) Move(x, y int, opts MoveOptions) {
 
 func (r *RecordingBackend) Click(button string, down bool) error {
 	r.Calls = append(r.Calls, RecordedCall{Op: "click", Button: button, Down: down})
+	return nil
+}
+
+func (r *RecordingBackend) Scroll(up bool) error {
+	dir := "down"
+	if up {
+		dir = "up"
+	}
+	r.Calls = append(r.Calls, RecordedCall{Op: "scroll", Button: dir})
 	return nil
 }
 

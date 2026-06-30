@@ -6,13 +6,22 @@ import (
 	"fyne.io/fyne/v2"
 )
 
+const (
+	ClickButtonLeft   = "left"
+	ClickButtonRight  = "right"
+	ClickButtonCenter = "center"
+	ClickButtonScroll = "scroll"
+)
+
+var ClickButtons = []string{ClickButtonLeft, ClickButtonRight, ClickButtonCenter, ClickButtonScroll}
+
 type Click struct {
 	*BaseAction `yaml:",inline" mapstructure:",squash"`
-	Button      bool `yaml:"button" mapstructure:"button"`
-	State       bool `yaml:"state" mapstructure:"state"`
+	Button      string `yaml:"button" mapstructure:"button"`
+	State       bool   `yaml:"state" mapstructure:"state"`
 }
 
-func NewClick(button bool, state bool) *Click {
+func NewClick(button string, state bool) *Click {
 	return &Click{
 		BaseAction: newBaseAction("click"),
 		Button:     button,
@@ -31,16 +40,22 @@ func (a *Click) Display() fyne.CanvasObject {
 func (a *Click) parameters() []actionParam {
 	return []actionParam{
 		newParam("Type", a.GetType()),
-		newParam("Button", LeftOrRight(a.Button)),
+		newParam("Button", ClickButtonLabel(a.Button)),
 		newParam("State", UpOrDown(a.State)),
 	}
 }
 
-func LeftOrRight(b bool) string {
-	if b {
+func ClickButtonLabel(button string) string {
+	switch button {
+	case ClickButtonRight:
 		return "right"
+	case ClickButtonCenter:
+		return "center"
+	case ClickButtonScroll:
+		return "scroll"
+	default:
+		return "left"
 	}
-	return "left"
 }
 
 func (a *Click) Icon() fyne.Resource {

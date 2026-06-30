@@ -9,7 +9,7 @@ macros:
                 - type: wait
                   time: 100
                 - type: click
-                  button: true
+                  button: right
                   state: true
                 - type: move
                   point:

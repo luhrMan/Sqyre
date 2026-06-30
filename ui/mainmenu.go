@@ -30,7 +30,7 @@ func buildActionTemplates() []actionTemplate {
 		{label: "Mouse Move", actionType: "move", category: "Mouse & Keyboard", icon: actions.NewMove("", false).Icon(), create: func() actions.ActionInterface {
 			return actions.NewMove("", false)
 		}},
-		{label: "Click", actionType: "click", category: "Mouse & Keyboard", icon: actions.NewClick(false, true).Icon(), create: func() actions.ActionInterface { return actions.NewClick(false, true) }},
+		{label: "Click", actionType: "click", category: "Mouse & Keyboard", icon: actions.NewClick(actions.ClickButtonLeft, true).Icon(), create: func() actions.ActionInterface { return actions.NewClick(actions.ClickButtonLeft, true) }},
 		{label: "Key", actionType: "key", category: "Mouse & Keyboard", icon: actions.NewKey("ctrl", true).Icon(), create: func() actions.ActionInterface { return actions.NewKey("ctrl", true) }},
 		{label: "Type", actionType: "type", category: "Mouse & Keyboard", icon: actions.NewType("", 0).Icon(), create: func() actions.ActionInterface { return actions.NewType("", 0) }},
 		{label: "Wait", actionType: "wait", category: "Miscellaneous", icon: actions.NewWait(0).Icon(), create: func() actions.ActionInterface { return actions.NewWait(0) }},
@@ -75,7 +75,7 @@ func buildActionTemplates() []actionTemplate {
 }
 
 // AddActionPickerSize is the default size for the Add Action picker dialog and screenshots.
-var AddActionPickerSize = fyne.NewSize(1240, 460)
+var AddActionPickerSize = fyne.NewSize(1500, 600)
 
 func buildAddActionPickerContent(templates []actionTemplate, onPick func(actionTemplate)) fyne.CanvasObject {
 	categoryColumns := []string{"Mouse & Keyboard", "Detection", "Variables", "Loop flow", "Miscellaneous"}
@@ -140,6 +140,46 @@ func showAddActionDialog(u *Ui, addActionAndRefresh func(actions.ActionInterface
 	d.Show()
 }
 
+func (u *Ui) newAddActionAndRefresh() func(actions.ActionInterface) {
+	return func(a actions.ActionInterface) {
+		mt := u.Mui.MTabs.SelectedTab()
+		if mt == nil {
+			return
+		}
+		if !mt.InsertActionBelowSelection(a) {
+			return
+		}
+		mt.Refresh()
+		mt.Select(a.GetUID())
+		mt.SelectedNode = a.GetUID()
+		uid := a.GetUID()
+		actiondialog.ShowActionDialog(a, func(updatedAction actions.ActionInterface) {
+			if err := repositories.MacroRepo().Set(mt.Macro.Name, mt.Macro); err != nil {
+				log.Printf("failed to save macro after new action edit: %v", err)
+			}
+			mt.RefreshItem(uid)
+			mt.Refresh()
+		}, func() {
+			mt.RecordMutation()
+			if parent := a.GetParent(); parent != nil {
+				parent.RemoveSubAction(a)
+			}
+			if mt.SelectedNode == uid {
+				mt.SelectedNode = ""
+			}
+			mt.Refresh()
+			if mt.OnTreeChanged != nil {
+				mt.OnTreeChanged()
+			}
+		})
+	}
+}
+
+// ShowAddActionPicker opens the new-action picker for the selected macro tab.
+func (u *Ui) ShowAddActionPicker() {
+	showAddActionDialog(u, u.newAddActionAndRefresh(), buildActionTemplates())
+}
+
 func (u *Ui) constructMainMenu() *fyne.MainMenu {
 	macroMenu := fyne.NewMenu("Macro")
 	actionSubMenu := fyne.NewMenuItem("Add Blank Action", nil)
@@ -163,39 +203,7 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 		loopFlowActionsSubMenu,
 		miscActionsSubMenu,
 	)
-	addActionAndRefresh :=
-		func(a actions.ActionInterface) {
-			mt := u.Mui.MTabs.SelectedTab()
-			if mt == nil {
-				return
-			}
-			if !mt.InsertActionBelowSelection(a) {
-				return
-			}
-			mt.Refresh()
-			mt.Select(a.GetUID())
-			mt.SelectedNode = a.GetUID()
-			uid := a.GetUID()
-			actiondialog.ShowActionDialog(a, func(updatedAction actions.ActionInterface) {
-				if err := repositories.MacroRepo().Set(mt.Macro.Name, mt.Macro); err != nil {
-					log.Printf("failed to save macro after new action edit: %v", err)
-				}
-				mt.RefreshItem(uid)
-				mt.Refresh()
-			}, func() {
-				mt.RecordMutation()
-				if parent := a.GetParent(); parent != nil {
-					parent.RemoveSubAction(a)
-				}
-				if mt.SelectedNode == uid {
-					mt.SelectedNode = ""
-				}
-				mt.Refresh()
-				if mt.OnTreeChanged != nil {
-					mt.OnTreeChanged()
-				}
-			})
-		}
+	addActionAndRefresh := u.newAddActionAndRefresh()
 	templates := buildActionTemplates()
 	actionPickerItem.Action = func() {
 		showAddActionDialog(u, addActionAndRefresh, templates)
