@@ -73,7 +73,8 @@ func TestVarEntry_varRefContext(t *testing.T) {
 		{"empty after dollar-brace", "x = ${", 6, "", true},
 		{"partial after dollar-brace", "x = ${cou", 9, "cou", true},
 		{"closed reference", "x = ${count}", 12, "", false},
-		{"bare brace not triggered", "x = {cou", 8, "", false},
+		{"bare brace partial", "x = {cou", 8, "cou", true},
+		{"bare brace not at cursor", "x = {cou", 3, "", false},
 		{"plain text", "1 + 2", 5, "", false},
 	}
 	for _, tc := range cases {

@@ -31,7 +31,32 @@ func snapshotTree(root *actions.Loop, selectedUID string) (treeSnapshot, error) 
 	if err != nil {
 		return treeSnapshot{}, err
 	}
+	injectActionUID(rootMap, root)
 	return treeSnapshot{rootMap: rootMap, selectedUID: selectedUID}, nil
+}
+
+// injectActionUID stores action UIDs in snapshot maps so undo/redo restores
+// stable identities without affecting copy/paste (which omits uid).
+func injectActionUID(m map[string]any, action actions.ActionInterface) {
+	if uid := action.GetUID(); uid != "" {
+		m["uid"] = uid
+	}
+	adv, ok := action.(actions.AdvancedActionInterface)
+	if !ok {
+		return
+	}
+	subsRaw, ok := m["subactions"].([]any)
+	if !ok {
+		return
+	}
+	subs := adv.GetSubActions()
+	for i := 0; i < len(subs) && i < len(subsRaw); i++ {
+		subMap, ok := subsRaw[i].(map[string]any)
+		if !ok {
+			continue
+		}
+		injectActionUID(subMap, subs[i])
+	}
 }
 
 func (h *treeHistory) push(root *actions.Loop, selectedUID string) {

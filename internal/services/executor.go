@@ -35,12 +35,19 @@ func Execute(a actions.ActionInterface, macro ...*models.Macro) error {
 
 // ExecuteMacroWithLogging runs a macro with log capture and shows the log popup.
 // Use this instead of Execute when running a macro from the UI or hotkey.
+// Only one macro may run at a time; concurrent requests are ignored.
 func ExecuteMacroWithLogging(m *models.Macro) {
 	if m == nil {
 		return
 	}
+	if !tryStartMacroRun(m.Name) {
+		log.Printf("Macro %q: not started — %q is already running", m.Name, RunningMacroName())
+		return
+	}
+	defer endMacroRun()
 	defer func() {
 		ClearHighlights()
+		NotifyMacroPause(false, "", "")
 		fyne.Do(func() {
 			MacroActiveIndicator().Stop()
 			MacroActiveIndicator().Hide()
@@ -75,8 +82,15 @@ func ExecuteMacroWithLogging(m *models.Macro) {
 	m.InitRuntimeVariables()
 	ApplyMonitorBuiltinVariables(m)
 	SnapshotRuntimeVariables(m)
+	if macroUsesOCR(m) {
+		WarmUpOCR()
+	}
 	if err := Execute(m.Root, m); err != nil {
-		log.Printf("Macro %q: execution error: %v", m.Name, err)
+		if actions.IsStopped(err) {
+			log.Printf("Macro %q: stopped by user", m.Name)
+		} else {
+			log.Printf("Macro %q: execution error: %v", m.Name, err)
+		}
 	}
 	ReleaseMacroLogCapture()
 }
@@ -91,7 +105,7 @@ func SetShowMacroLogPopupFunc(fn func(macroName string)) {
 }
 
 // macroRunningCallback is invoked on the UI thread when a macro starts (true) or stops (false).
-// Used to disable the macro play button while a macro is running.
+// Used to swap the macro play button for a stop button while a macro is running.
 var macroRunningCallback func(running bool)
 
 // SetMacroRunningCallback sets the callback invoked when macro execution starts or stops.
@@ -145,6 +159,9 @@ func executeForEachRow(node *actions.ForEachRow, macro *models.Macro) error {
 		end = rowCount
 	}
 	for i := start - 1; i < end; i++ {
+		if err := checkMacroStop(); err != nil {
+			return err
+		}
 		if macro != nil && rowCount > 0 {
 			highlightFill(macro.Name, node.GetUID(), float64(i)/float64(rowCount))
 		}
@@ -191,6 +208,9 @@ func executeRunMacroTree(rm *actions.RunMacro, target *models.Macro, caller *mod
 	subs := root.GetSubActions()
 	total := len(subs)
 	for i, action := range subs {
+		if err := checkMacroStop(); err != nil {
+			return err
+		}
 		brk, cont, err := handleLoopFlow(executeWithContext(action, target))
 		if err != nil {
 			return err
@@ -213,7 +233,9 @@ func executeRunMacroTree(rm *actions.RunMacro, target *models.Macro, caller *mod
 func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 	err := executeAction(a, macro)
 	if err == nil || actions.IsFlowControl(err) {
-		applyGlobalDelay(macro)
+		if delayErr := applyGlobalDelay(macro); delayErr != nil {
+			return delayErr
+		}
 	}
 	return err
 }
@@ -244,8 +266,7 @@ func executeAction(a actions.ActionInterface, macro *models.Macro) error {
 		if err != nil {
 			return fmt.Errorf("wait time: %w", err)
 		}
-		getAutomationBackend().MilliSleep(time)
-		return nil
+		return interruptibleSleep(time)
 	case *actions.Move:
 		log.Println("Move:", node.String())
 		pt, err := LookupPoint(node.Point, DefaultResolutionKey())
@@ -302,9 +323,14 @@ func executeAction(a actions.ActionInterface, macro *models.Macro) error {
 		}
 		backend := getAutomationBackend()
 		for _, r := range text {
+			if err := checkMacroStop(); err != nil {
+				return err
+			}
 			backend.TypeChar(string(r))
 			if delayMs > 0 {
-				backend.MilliSleep(delayMs)
+				if err := interruptibleSleep(delayMs); err != nil {
+					return err
+				}
 			}
 		}
 		return nil
@@ -327,6 +353,15 @@ func executeAction(a actions.ActionInterface, macro *models.Macro) error {
 		}
 
 		for i := range count {
+			if err := checkMacroStop(); err != nil {
+				if node.Name == "root" {
+					fyne.Do(func() {
+						MacroActiveIndicator().Stop()
+						MacroActiveIndicator().Hide()
+					})
+				}
+				return err
+			}
 			log.Printf("Loop: %s iteration %d", node.Name, i+1)
 			brk, cont, err := handleLoopFlow(executeSubActions(node.GetSubActions(), macro))
 			if err != nil {
@@ -386,6 +421,9 @@ func executeAction(a actions.ActionInterface, macro *models.Macro) error {
 			}
 			for len(SortListOfPoints(results)) == 0 && time.Now().Before(deadline) {
 				time.Sleep(time.Duration(intervalMs) * time.Millisecond)
+				if err := checkMacroStop(); err != nil {
+					return err
+				}
 				results, searchLeftX, searchTopY, err = imageSearch(node, macro)
 				if err != nil {
 					log.Printf("Image Search: %v (macro continues)", err)
@@ -503,6 +541,9 @@ func executeAction(a actions.ActionInterface, macro *models.Macro) error {
 			}
 			for !strings.Contains(foundText, node.Target) && time.Now().Before(deadline) {
 				time.Sleep(time.Duration(intervalMs) * time.Millisecond)
+				if err := checkMacroStop(); err != nil {
+					return err
+				}
 				foundText, centerX, centerY, err = OCR(node, macro)
 				if err != nil {
 					log.Printf("OCR: %v (macro continues)", err)
@@ -602,6 +643,38 @@ func executeAction(a actions.ActionInterface, macro *models.Macro) error {
 	case *actions.Continue:
 		log.Println("Continue")
 		return actions.ErrContinue
+	case *actions.Pause:
+		log.Println("Pause:", node.String())
+		msg := node.Message
+		if macro != nil {
+			if resolved, err := ResolveString(msg, macro); err == nil {
+				msg = resolved
+			}
+		}
+		keyLabel := actions.FormatContinueKey(node.ContinueKey)
+		if msg != "" {
+			log.Printf("Pause: waiting for %s — %q", keyLabel, msg)
+		} else {
+			log.Printf("Pause: waiting for %s", keyLabel)
+		}
+		NotifyMacroPause(true, msg, keyLabel)
+		defer NotifyMacroPause(false, "", "")
+		keys := append([]string(nil), node.ContinueKey...)
+		passThrough := node.PassThrough
+		err := WaitForContinueKey(ContinueWaitOptions{
+			Keys:        keys,
+			PassThrough: passThrough,
+			OnMatch: func() {
+				if !passThrough {
+					SuppressContinueChord(keys)
+				}
+			},
+		})
+		if err != nil {
+			return err
+		}
+		log.Printf("Pause: continued (%s)", keyLabel)
+		return nil
 	case *actions.FindPixel:
 		log.Println("Find pixel:", node.String())
 		leftX, topY, rightX, bottomY, err := ResolveSearchAreaCoordsFromRef(node.SearchArea, macro, DefaultResolutionKey())
@@ -644,6 +717,9 @@ func executeAction(a actions.ActionInterface, macro *models.Macro) error {
 			}
 			for !found && time.Now().Before(deadline) {
 				time.Sleep(time.Duration(intervalMs) * time.Millisecond)
+				if err := checkMacroStop(); err != nil {
+					return err
+				}
 				found = scanOnce()
 			}
 		}

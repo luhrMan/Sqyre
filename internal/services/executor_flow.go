@@ -8,15 +8,18 @@ import (
 )
 
 // applyGlobalDelay sleeps for the macro's GlobalDelay (ms) after an action completes.
-func applyGlobalDelay(macro *models.Macro) {
+func applyGlobalDelay(macro *models.Macro) error {
 	if macro == nil || macro.GlobalDelay <= 0 {
-		return
+		return nil
 	}
-	getAutomationBackend().MilliSleep(macro.GlobalDelay)
+	return interruptibleSleep(macro.GlobalDelay)
 }
 
 func executeSubActions(subs []actions.ActionInterface, macro *models.Macro) error {
 	for _, action := range subs {
+		if err := checkMacroStop(); err != nil {
+			return err
+		}
 		if err := executeWithContext(action, macro); err != nil {
 			return err
 		}

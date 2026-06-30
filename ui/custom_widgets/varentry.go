@@ -1,6 +1,7 @@
 package custom_widgets
 
 import (
+	"Sqyre/internal/models"
 	"Sqyre/ui/completionentry"
 	"strings"
 
@@ -11,19 +12,25 @@ import (
 )
 
 // VarEntry is a widget.Entry for values that may contain ${Variable} references.
-// It provides ${ partial-name completion, a Variables right-click submenu, a + button
-// to pick a variable, and pill rendering when unfocused.
+// It provides ${ and { partial-name completion, a searchable variable picker (+),
+// a Variables context-menu action, and pill rendering when unfocused.
 type VarEntry struct {
 	widget.Entry
 
-	// GetVariables is called each time the context menu opens.
-	// It should return the current list of available variable names.
+	// GetVariables returns variable names for completion. Prefer GetVariableDefs when available.
 	GetVariables func() []string
+
+	// GetVariableDefs returns rich variable metadata for pickers and pill validation.
+	// When set, names are derived from defs and results are cached until the fingerprint changes.
+	GetVariableDefs func() []models.VariableDef
 
 	// ChangedFn, if set, is called whenever the text changes. VarEntry owns the
 	// embedded Entry.OnChanged to drive variable completion, so callers must use
 	// this field instead of setting OnChanged directly.
 	ChangedFn func(string)
+
+	// FocusChangedFn is called when the entry gains or loses focus.
+	FocusChangedFn func(focused bool)
 
 	completer        *completionentry.PopupCompleter
 	insert           *ttwidget.Button
@@ -31,11 +38,15 @@ type VarEntry struct {
 	hasFocus         bool
 	hideTextForPills bool
 	overlay          *variableRefOverlay
-	// suppressChanged blocks completion and ChangedFn while SetText loads values programmatically.
-	suppressChanged bool
+	suppressChanged  bool
+
+	cachedDefFP   string
+	cachedDefs    []models.VariableDef
+	cachedNames   []string
+	cachedKnown   map[string]bool
 }
 
-// NewVarEntry creates a single-line entry with a Variables context menu.
+// NewVarEntry creates a single-line entry with variable insertion support.
 func NewVarEntry(getVars func() []string) *VarEntry {
 	e := &VarEntry{GetVariables: getVars}
 	e.ExtendBaseWidget(e)
@@ -43,7 +54,15 @@ func NewVarEntry(getVars func() []string) *VarEntry {
 	return e
 }
 
-// NewMultiLineVarEntry creates a multi-line entry with a Variables context menu.
+// NewVarEntryWithDefs creates a VarEntry backed by variable definitions.
+func NewVarEntryWithDefs(getDefs func() []models.VariableDef) *VarEntry {
+	e := &VarEntry{GetVariableDefs: getDefs}
+	e.ExtendBaseWidget(e)
+	e.initCompletion()
+	return e
+}
+
+// NewMultiLineVarEntry creates a multi-line entry with variable insertion support.
 func NewMultiLineVarEntry(getVars func() []string) *VarEntry {
 	e := &VarEntry{GetVariables: getVars}
 	e.MultiLine = true
@@ -53,8 +72,16 @@ func NewMultiLineVarEntry(getVars func() []string) *VarEntry {
 	return e
 }
 
-// initCompletion wires the variable-reference completion popup and the
-// internal OnChanged dispatcher. It must be called after ExtendBaseWidget.
+// NewMultiLineVarEntryWithDefs creates a multi-line VarEntry backed by definitions.
+func NewMultiLineVarEntryWithDefs(getDefs func() []models.VariableDef) *VarEntry {
+	e := &VarEntry{GetVariableDefs: getDefs}
+	e.MultiLine = true
+	e.Wrapping = fyne.TextWrapWord
+	e.ExtendBaseWidget(e)
+	e.initCompletion()
+	return e
+}
+
 func (e *VarEntry) initCompletion() {
 	e.completer = &completionentry.PopupCompleter{
 		Host:       e,
@@ -63,6 +90,55 @@ func (e *VarEntry) initCompletion() {
 	}
 	e.OnChanged = e.handleChanged
 	e.ensureInsertButton()
+}
+
+func (e *VarEntry) InvalidateVariableCache() {
+	e.cachedDefFP = ""
+	e.cachedDefs = nil
+	e.cachedNames = nil
+	e.cachedKnown = nil
+}
+
+func (e *VarEntry) variableDefs() []models.VariableDef {
+	if e.GetVariableDefs != nil {
+		defs := e.GetVariableDefs()
+		fp := variableDefsFingerprint(defs)
+		if fp == e.cachedDefFP {
+			return e.cachedDefs
+		}
+		e.cachedDefFP = fp
+		e.cachedDefs = defs
+		e.cachedNames = namesFromDefs(defs)
+		e.cachedKnown = knownVariableSet(defs)
+		return defs
+	}
+	if e.GetVariables != nil {
+		names := e.GetVariables()
+		fp := strings.Join(names, "\x00")
+		if fp == e.cachedDefFP {
+			return e.cachedDefs
+		}
+		e.cachedDefFP = fp
+		e.cachedNames = names
+		defs := make([]models.VariableDef, len(names))
+		for i, n := range names {
+			defs[i] = models.VariableDef{Name: n}
+		}
+		e.cachedDefs = defs
+		e.cachedKnown = knownVariableSet(defs)
+		return defs
+	}
+	return nil
+}
+
+func (e *VarEntry) variableNames() []string {
+	e.variableDefs()
+	return e.cachedNames
+}
+
+func (e *VarEntry) knownVariables() map[string]bool {
+	e.variableDefs()
+	return e.cachedKnown
 }
 
 // SetFeedbackIcon attaches a trailing validation icon rendered immediately before the insert button.
@@ -75,7 +151,7 @@ func (e *VarEntry) ensureInsertButton() {
 		return
 	}
 	e.insert = ttwidget.NewButtonWithIcon("", theme.ContentAddIcon(), func() {
-		e.showVariableMenu()
+		e.openVariablePicker()
 	})
 	e.insert.Importance = widget.LowImportance
 	e.insert.SetToolTip("Insert variable reference (${name})")
@@ -87,32 +163,20 @@ func (e *VarEntry) UpdateInsertButton() {
 	if e.insert == nil {
 		return
 	}
-	if e.GetVariables != nil && len(e.GetVariables()) > 0 {
+	if len(e.variableDefs()) > 0 {
 		e.insert.Enable()
 		return
 	}
 	e.insert.Disable()
 }
 
-func (e *VarEntry) showVariableMenu() {
+func (e *VarEntry) openVariablePicker() {
 	e.UpdateInsertButton()
-	if e.GetVariables == nil {
+	defs := e.variableDefs()
+	if len(defs) == 0 {
 		return
 	}
-	vars := e.GetVariables()
-	if len(vars) == 0 {
-		return
-	}
-	items := make([]*fyne.MenuItem, len(vars))
-	for i, v := range vars {
-		name := v
-		items[i] = fyne.NewMenuItem(name, func() {
-			e.insertVariable(name)
-		})
-	}
-	c := fyne.CurrentApp().Driver().CanvasForObject(e)
-	pos := fyne.CurrentApp().Driver().AbsolutePositionForObject(e)
-	widget.ShowPopUpMenuAtPosition(fyne.NewMenu("", items...), c, pos.Add(fyne.NewPos(0, e.Size().Height)))
+	ShowVariablePicker(e, defs, e.insertVariable)
 }
 
 func (e *VarEntry) CreateRenderer() fyne.WidgetRenderer {
@@ -120,7 +184,6 @@ func (e *VarEntry) CreateRenderer() fyne.WidgetRenderer {
 		e.overlay = newVariableRefOverlay()
 	}
 	base := e.Entry.CreateRenderer()
-	// Entry.CreateRenderer resets impl to *Entry; restore *VarEntry for focus/theme routing.
 	e.ExtendBaseWidget(e)
 	return &varEntryRendererWrap{
 		inner:   base,
@@ -132,7 +195,11 @@ func (e *VarEntry) CreateRenderer() fyne.WidgetRenderer {
 func (e *VarEntry) FocusGained() {
 	e.hasFocus = true
 	e.Entry.FocusGained()
+	e.UpdateInsertButton()
 	e.syncPillDisplay()
+	if e.FocusChangedFn != nil {
+		e.FocusChangedFn(true)
+	}
 	e.Refresh()
 }
 
@@ -140,6 +207,9 @@ func (e *VarEntry) FocusLost() {
 	e.hasFocus = false
 	e.Entry.FocusLost()
 	e.syncPillDisplay()
+	if e.FocusChangedFn != nil {
+		e.FocusChangedFn(false)
+	}
 	e.Refresh()
 }
 
@@ -175,10 +245,8 @@ func (e *VarEntry) handleChanged(s string) {
 	}
 }
 
-// updateVarCompletion shows or hides the variable completion popup based on
-// whether "${" (optionally followed by a partial name) sits behind the cursor.
 func (e *VarEntry) updateVarCompletion() {
-	if e.completer == nil || e.GetVariables == nil {
+	if e.completer == nil {
 		return
 	}
 	partial, ok := e.varRefContext()
@@ -186,26 +254,48 @@ func (e *VarEntry) updateVarCompletion() {
 		e.completer.Hide()
 		return
 	}
-	filtered := filterVarNames(e.GetVariables(), partial)
-	e.completer.Show(filtered)
+	filtered := filterVarNames(e.variableNames(), partial)
+	labels := make([]string, len(filtered))
+	for i, n := range filtered {
+		labels[i] = n
+		for _, d := range e.cachedDefs {
+			if d.Name == n {
+				labels[i] = VariableDefLabel(d)
+				break
+			}
+		}
+	}
+	e.completer.ShowLabels(filtered, labels)
 }
 
-// varRefContext reports the partial variable name being typed when the text
-// directly behind the cursor is "${" optionally followed by name characters.
 func (e *VarEntry) varRefContext() (string, bool) {
 	line, col := e.cursorLine()
+	if partial, ok := partialVarRefAt(line, col, true); ok {
+		return partial, true
+	}
+	return partialVarRefAt(line, col, false)
+}
+
+func partialVarRefAt(line []rune, col int, dollar bool) (string, bool) {
 	j := col
 	for j > 0 && isVarNameRune(line[j-1]) {
 		j--
 	}
-	if j >= 2 && line[j-1] == '{' && line[j-2] == '$' {
+	if dollar {
+		if j >= 2 && line[j-1] == '{' && line[j-2] == '$' {
+			return string(line[j:col]), true
+		}
+		return "", false
+	}
+	if j >= 1 && line[j-1] == '{' {
+		if j >= 2 && line[j-2] == '$' {
+			return "", false
+		}
 		return string(line[j:col]), true
 	}
 	return "", false
 }
 
-// completeVarRef replaces the "${partial" behind the cursor with "${name}" and
-// positions the cursor after the closing brace.
 func (e *VarEntry) completeVarRef(name string) {
 	lines := splitLines(e.Text)
 	row := e.CursorRow
@@ -221,14 +311,10 @@ func (e *VarEntry) completeVarRef(name string) {
 	if col > len(line) {
 		col = len(line)
 	}
-	j := col
-	for j > 0 && isVarNameRune(line[j-1]) {
-		j--
-	}
-	if !(j >= 2 && line[j-1] == '{' && line[j-2] == '$') {
+	start, ok := varRefReplaceStart(line, col)
+	if !ok {
 		return
 	}
-	start := j - 2
 	replacement := []rune("${" + name + "}")
 	newLine := append(append(append([]rune{}, line[:start]...), replacement...), line[col:]...)
 	lines[row] = string(newLine)
@@ -238,7 +324,33 @@ func (e *VarEntry) completeVarRef(name string) {
 	e.Refresh()
 }
 
-// cursorLine returns the current line (as runes) and the cursor column within it.
+func varRefReplaceStart(line []rune, col int) (int, bool) {
+	if start, ok := varRefStartAt(line, col, true); ok {
+		return start, true
+	}
+	return varRefStartAt(line, col, false)
+}
+
+func varRefStartAt(line []rune, col int, dollar bool) (int, bool) {
+	j := col
+	for j > 0 && isVarNameRune(line[j-1]) {
+		j--
+	}
+	if dollar {
+		if j >= 2 && line[j-1] == '{' && line[j-2] == '$' {
+			return j - 2, true
+		}
+		return 0, false
+	}
+	if j >= 1 && line[j-1] == '{' {
+		if j >= 2 && line[j-2] == '$' {
+			return 0, false
+		}
+		return j - 1, true
+	}
+	return 0, false
+}
+
 func (e *VarEntry) cursorLine() ([]rune, int) {
 	lines := splitLines(e.Text)
 	row := 0
@@ -274,7 +386,6 @@ func filterVarNames(names []string, partial string) []string {
 	return out
 }
 
-// TappedSecondary shows the standard context menu plus a Variables submenu.
 func (e *VarEntry) TappedSecondary(pe *fyne.PointEvent) {
 	if e.Disabled() && e.Password {
 		return
@@ -304,20 +415,11 @@ func (e *VarEntry) TappedSecondary(pe *fyne.PointEvent) {
 		menuItems = append(menuItems, cutItem, copyItem, pasteItem, selectAllItem)
 	}
 
-	if e.GetVariables != nil {
-		vars := e.GetVariables()
-		if len(vars) > 0 {
-			varChildren := make([]*fyne.MenuItem, len(vars))
-			for i, v := range vars {
-				varName := v
-				varChildren[i] = fyne.NewMenuItem(varName, func() {
-					e.insertVariable(varName)
-				})
-			}
-			varsItem := fyne.NewMenuItem("Variables", nil)
-			varsItem.ChildMenu = fyne.NewMenu("", varChildren...)
-			menuItems = append(menuItems, fyne.NewMenuItemSeparator(), varsItem)
-		}
+	if len(e.variableDefs()) > 0 {
+		menuItems = append(menuItems, fyne.NewMenuItemSeparator())
+		menuItems = append(menuItems, fyne.NewMenuItem("Insert Variable…", func() {
+			e.openVariablePicker()
+		}))
 	}
 
 	driver := fyne.CurrentApp().Driver()
@@ -332,17 +434,14 @@ func (e *VarEntry) insertVariable(name string) {
 }
 
 // InsertAtCursor inserts text at the current cursor position, replacing the
-// current selection if there is one. Used to build expressions by inserting
-// variable references, operators, and functions.
+// current selection if there is one.
 func (e *VarEntry) InsertAtCursor(text string) {
 	if text == "" {
 		return
 	}
 
-	if e.SelectedText() != "" {
-		clipboard := fyne.CurrentApp().Clipboard()
-		clipboard.SetContent(text)
-		e.TypedShortcut(&fyne.ShortcutPaste{Clipboard: clipboard})
+	if sel := e.SelectedText(); sel != "" {
+		e.replaceSelection(text)
 		return
 	}
 
@@ -375,7 +474,47 @@ func (e *VarEntry) InsertAtCursor(text string) {
 	e.Refresh()
 }
 
-// setTextFromEdit applies text from user-driven edits after the cursor position is known.
+func (e *VarEntry) replaceSelection(replacement string) {
+	off := e.CursorTextOffset()
+	selRunes := len([]rune(e.SelectedText()))
+	start := off - selRunes
+	if start < 0 {
+		start = 0
+	}
+	runes := []rune(e.Text)
+	end := off
+	if end > len(runes) {
+		end = len(runes)
+	}
+	newRunes := append(append(append([]rune{}, runes[:start]...), []rune(replacement)...), runes[end:]...)
+	newText := string(newRunes)
+	e.setTextFromEdit(newText)
+	newOff := start + len([]rune(replacement))
+	row, col := textOffsetToCursor(newText, e.MultiLine, newOff)
+	e.CursorRow = row
+	e.CursorColumn = col
+}
+
+func textOffsetToCursor(text string, multiLine bool, offset int) (row, col int) {
+	if !multiLine {
+		return 0, offset
+	}
+	pos := 0
+	for i, line := range splitLines(text) {
+		lineRunes := []rune(line)
+		lineEnd := pos + len(lineRunes)
+		if offset <= lineEnd {
+			return i, offset - pos
+		}
+		pos = lineEnd + 1
+	}
+	if len(text) == 0 {
+		return 0, 0
+	}
+	lines := splitLines(text)
+	return len(lines) - 1, len([]rune(lines[len(lines)-1]))
+}
+
 func (e *VarEntry) setTextFromEdit(text string) {
 	e.suppressChanged = true
 	e.Entry.SetText(text)
@@ -410,25 +549,9 @@ func SetEntryText(w fyne.CanvasObject, text string) {
 }
 
 func splitLines(s string) []string {
-	lines := []string{}
-	start := 0
-	for i, ch := range s {
-		if ch == '\n' {
-			lines = append(lines, s[start:i])
-			start = i + 1
-		}
-	}
-	lines = append(lines, s[start:])
-	return lines
+	return strings.Split(s, "\n")
 }
 
 func joinLines(lines []string) string {
-	if len(lines) == 0 {
-		return ""
-	}
-	result := lines[0]
-	for i := 1; i < len(lines); i++ {
-		result += "\n" + lines[i]
-	}
-	return result
+	return strings.Join(lines, "\n")
 }

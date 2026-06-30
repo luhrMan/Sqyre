@@ -100,18 +100,13 @@ func createCalculateDialogContent(action *actions.Calculate) (fyne.CanvasObject,
 func calculateBuilderToolbar(exprEntry *custom_widgets.VarEntry) fyne.CanvasObject {
 	var varBtn *widget.Button
 	varBtn = widget.NewButtonWithIcon("Variable", theme.ContentAddIcon(), func() {
-		names := macroVarNames()
-		if len(names) == 0 {
+		defs := macroVariableDefs()
+		if len(defs) == 0 {
 			return
 		}
-		items := make([]*fyne.MenuItem, len(names))
-		for i, n := range names {
-			name := n
-			items[i] = fyne.NewMenuItem(name, func() {
-				exprEntry.InsertAtCursor("${" + name + "}")
-			})
-		}
-		popUpMenuBelow(fyne.NewMenu("", items...), varBtn)
+		custom_widgets.ShowVariablePicker(varBtn, defs, func(name string) {
+			exprEntry.InsertAtCursor("${" + name + "}")
+		})
 	})
 
 	operators := []string{"+", "-", "*", "/", "^", "(", ")"}
@@ -165,10 +160,10 @@ type sourceRowWidgets struct {
 }
 
 func newSourceRowWidgets() sourceRowWidgets {
-	source := newMultiLineVarEntry()
-	source.SetPlaceHolder("File path or one value per line")
+	sourceField := newReferenceMultiLineVarEntry()
+	sourceField.Entry.SetPlaceHolder("File path or one value per line")
 	return sourceRowWidgets{
-		source:    source,
+		source:    sourceField.Entry,
 		outputVar: newVarNameEntry(),
 		isFile:    ttwidget.NewCheck("Source is file path", nil),
 		skipBlank: ttwidget.NewCheck("Skip blank lines", nil),
@@ -301,7 +296,7 @@ func createForEachRowDialogContent(action *actions.ForEachRow) (fyne.CanvasObjec
 func createSaveVariableDialogContent(action *actions.SaveVariable) (fyne.CanvasObject, func()) {
 	varEntry := newVarNameEntry()
 	varEntry.SetText(action.VariableName)
-	destEntry := newValidatedVarEntry(validateVariableReferences)
+	destEntry := newReferenceVarEntry()
 	destEntry.Entry.SetText(action.Destination)
 	destEntry.Entry.SetPlaceHolder("~/.sqyre/variables/... or 'clipboard'")
 	appendCheck := ttwidget.NewCheck("Append to file", nil)
