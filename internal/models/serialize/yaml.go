@@ -2,11 +2,15 @@ package serialize
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"sync"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
+
+const configWriteDebounce = 300 * time.Millisecond
 
 // YAMLConfig manages case-sensitive YAML configuration
 type YAMLConfig struct {
@@ -19,6 +23,11 @@ type YAMLConfig struct {
 	batchMu      sync.Mutex
 	batchDepth   int
 	batchPending bool
+
+	debounceMu      sync.Mutex
+	debounceTimer   *time.Timer
+	debouncePending bool
+	debounceDisabled bool
 }
 
 var (
@@ -76,6 +85,42 @@ func (c *YAMLConfig) ReadConfig() error {
 	return nil
 }
 
+// SetDebounceWrites controls whether WriteConfig coalesces rapid writes. Tests
+// should disable debouncing so saves are synchronous.
+func (c *YAMLConfig) SetDebounceWrites(enabled bool) {
+	c.debounceMu.Lock()
+	c.debounceDisabled = !enabled
+	if !enabled {
+		c.cancelDebouncedWriteLocked()
+	}
+	c.debounceMu.Unlock()
+}
+
+func (c *YAMLConfig) debounceWritesEnabled() bool {
+	if os.Getenv("SQYRE_TEST_MODE") == "1" {
+		return false
+	}
+	c.debounceMu.Lock()
+	defer c.debounceMu.Unlock()
+	return !c.debounceDisabled
+}
+
+func (c *YAMLConfig) cancelDebouncedWriteLocked() {
+	if c.debounceTimer != nil {
+		c.debounceTimer.Stop()
+		c.debounceTimer = nil
+	}
+	c.debouncePending = false
+}
+
+// FlushPendingWrite performs any debounced write immediately.
+func (c *YAMLConfig) FlushPendingWrite() error {
+	c.debounceMu.Lock()
+	c.cancelDebouncedWriteLocked()
+	c.debounceMu.Unlock()
+	return c.writeNow()
+}
+
 // WriteConfig writes the current config to disk. When called inside a Batch, the
 // write is deferred and coalesced into a single write performed when the
 // outermost batch ends, avoiding repeated whole-file marshals for a logical
@@ -88,7 +133,31 @@ func (c *YAMLConfig) WriteConfig() error {
 		return nil
 	}
 	c.batchMu.Unlock()
-	return c.writeNow()
+
+	if !c.debounceWritesEnabled() {
+		return c.writeNow()
+	}
+
+	c.debounceMu.Lock()
+	defer c.debounceMu.Unlock()
+	c.debouncePending = true
+	if c.debounceTimer != nil {
+		c.debounceTimer.Stop()
+	}
+	c.debounceTimer = time.AfterFunc(configWriteDebounce, func() {
+		c.debounceMu.Lock()
+		if !c.debouncePending {
+			c.debounceMu.Unlock()
+			return
+		}
+		c.debouncePending = false
+		c.debounceTimer = nil
+		c.debounceMu.Unlock()
+		if err := c.writeNow(); err != nil {
+			log.Printf("config: debounced write failed: %v", err)
+		}
+	})
+	return nil
 }
 
 // writeNow marshals the in-memory config and writes it to disk immediately.
