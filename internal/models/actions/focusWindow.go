@@ -28,7 +28,14 @@ func (a *FocusWindow) String() string {
 }
 
 func (a *FocusWindow) Display() fyne.CanvasObject {
-	return displayFromParams(a.parameters())
+	title := a.WindowTitle
+	if title == "" {
+		title = "not set"
+	}
+	return displayFromParams([]actionParam{
+		newParam("Type", a.GetType()),
+		newParam("Title", title),
+	})
 }
 
 func (a *FocusWindow) parameters() []actionParam {
