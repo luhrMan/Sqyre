@@ -52,5 +52,3 @@ func allTabFieldsValid(tab *EditorTab) bool {
 	return true
 }
 
-// RefreshVarEntryInsertButtons is retained for callers; insert buttons update on focus.
-func RefreshVarEntryInsertButtons() {}

@@ -57,6 +57,118 @@ func moveMacroTreeSelection(mt *MacroTree, up bool) {
 	mt.moveNode(mt.SelectedNode, up)
 }
 
+func canCopyMacroTreeSelection(mt *MacroTree) bool {
+	if mt == nil || mt.SelectedNode == "" || mt.Macro == nil || mt.Macro.Root == nil {
+		return false
+	}
+	node := mt.Macro.Root.GetAction(mt.SelectedNode)
+	return node != nil && node.GetParent() != nil
+}
+
+func canPasteMacroTreeClipboard(mt *MacroTree) bool {
+	if mt == nil || copiedNodeMap == nil {
+		return false
+	}
+	_, _, ok := mt.insertLocationBelowSelection()
+	return ok
+}
+
+func canMoveMacroTreeSelection(mt *MacroTree, up bool) bool {
+	if mt == nil || mt.SelectedNode == "" || mt.Macro == nil || mt.Macro.Root == nil {
+		return false
+	}
+	node := mt.Macro.Root.GetAction(mt.SelectedNode)
+	if node == nil || node.GetParent() == nil {
+		return false
+	}
+	psa := node.GetParent().GetSubActions()
+	index := -1
+	for i, child := range psa {
+		if child == node {
+			index = i
+			break
+		}
+	}
+	if index < 0 {
+		return false
+	}
+	if up {
+		return index > 0
+	}
+	return index < len(psa)-1
+}
+
+func newMacroTreeActionContextMenu(mt *MacroTree) *fyne.Menu {
+	unselectItem := fyne.NewMenuItemWithIcon("Unselect", theme.RadioButtonIcon(), func() {
+		unselectMacroTreeAction(mt)
+	})
+	unselectItem.Disabled = mt == nil || mt.SelectedNode == ""
+
+	moveDownItem := fyne.NewMenuItemWithIcon("Move Down", assets.ChevronDownIcon, func() {
+		moveMacroTreeSelection(mt, false)
+	})
+	moveDownItem.Disabled = !canMoveMacroTreeSelection(mt, false)
+
+	moveUpItem := fyne.NewMenuItemWithIcon("Move Up", assets.ChevronUpIcon, func() {
+		moveMacroTreeSelection(mt, true)
+	})
+	moveUpItem.Disabled = !canMoveMacroTreeSelection(mt, true)
+
+	copyItem := fyne.NewMenuItemWithIcon("Copy", theme.ContentCopyIcon(), func() {
+		copyMacroTreeSelection(mt)
+	})
+	copyItem.Disabled = !canCopyMacroTreeSelection(mt)
+
+	pasteItem := fyne.NewMenuItemWithIcon("Paste", theme.ContentPasteIcon(), func() {
+		pasteMacroTreeClipboard(mt)
+	})
+	pasteItem.Disabled = !canPasteMacroTreeClipboard(mt)
+
+	undoItem := fyne.NewMenuItemWithIcon("Undo", theme.ContentUndoIcon(), func() {
+		mt.Undo()
+	})
+	undoItem.Disabled = mt == nil || !mt.CanUndo()
+
+	redoItem := fyne.NewMenuItemWithIcon("Redo", theme.ContentRedoIcon(), func() {
+		mt.Redo()
+	})
+	redoItem.Disabled = mt == nil || !mt.CanRedo()
+
+	expandAllItem := fyne.NewMenuItemWithIcon("Expand All", assets.DoubleDownChevronIcon, func() {
+		mt.OpenAllBranches()
+	})
+	collapseAllItem := fyne.NewMenuItemWithIcon("Collapse All", assets.DoubleUpChevronIcon, func() {
+		mt.CloseAllBranches()
+	})
+
+	return fyne.NewMenu("",
+		unselectItem,
+		moveUpItem,
+		moveDownItem,
+		copyItem,
+		pasteItem,
+		undoItem,
+		redoItem,
+		fyne.NewMenuItemSeparator(),
+		expandAllItem,
+		collapseAllItem,
+	)
+}
+
+func showMacroTreeActionContextMenu(mt *MacroTree, target fyne.CanvasObject, pe *fyne.PointEvent, uid string) {
+	if mt == nil || mt.executing {
+		return
+	}
+	if uid != "" {
+		mt.Select(uid)
+		mt.SelectedNode = uid
+	}
+	driver := fyne.CurrentApp().Driver()
+	popUpPos := driver.AbsolutePositionForObject(target).Add(pe.Position)
+	c := driver.CanvasForObject(target)
+	widget.ShowPopUpMenuAtPosition(newMacroTreeActionContextMenu(mt), c, popUpPos)
+}
+
 type MacroUi struct {
 	MTabs             *MacroTabs
 	MacroSelectButton *widget.Button
@@ -76,8 +188,7 @@ func ConstructMacroUi(mui *MacroUi, boundLocXLabel, boundLocYLabel *widget.Label
 		if st == nil {
 			return
 		}
-		st.UnselectAll()
-		st.SelectedNode = ""
+		unselectMacroTreeAction(st)
 	})
 
 	moveDownNodeButton := ttwidget.NewButtonWithIcon("", assets.ChevronDownIcon, func() {

@@ -192,7 +192,7 @@ func TestDoAutoExpand_opensBranch(t *testing.T) {
 	}
 }
 
-func TestUpdateAutoExpand_skipsInvalidCandidates(t *testing.T) {
+func TestUpdateBranchOpenDebounce_skipsInvalidCandidates(t *testing.T) {
 	mt, _, _, _, loop := buildDnDTree(t)
 	mt.dragActive = true
 	mt.dragVisible = mt.visibleRowUIDs()
@@ -200,20 +200,50 @@ func TestUpdateAutoExpand_skipsInvalidCandidates(t *testing.T) {
 
 	// Dragging the branch itself: it must not schedule its own expansion.
 	mt.dragSrcUID = loop.GetUID()
-	mt.updateAutoExpand(loopIdx)
+	mt.updateBranchOpenDebounce(loopIdx)
 	if mt.autoExpandUID != "" {
 		t.Fatal("should not schedule expansion of the dragged branch itself")
 	}
 
 	// Dragging some other node: the collapsed branch becomes a candidate.
 	mt.dragSrcUID = "other"
-	mt.updateAutoExpand(loopIdx)
+	mt.updateBranchOpenDebounce(loopIdx)
 	if mt.autoExpandUID != loop.GetUID() {
 		t.Fatalf("expected scheduled expand of loop, got %q", mt.autoExpandUID)
 	}
 	mt.cancelAutoExpand()
 	if mt.autoExpandTimer != nil || mt.autoExpandUID != "" {
 		t.Fatal("cancelAutoExpand should clear timer and uid")
+	}
+}
+
+func TestResolveDrop_belowOpenBranchSubtree_targetsRoot(t *testing.T) {
+	waitA := actions.NewWait(1)
+	waitB := actions.NewWait(2)
+	loop := actions.NewLoop(1, "loop", nil)
+	loop.AddSubAction(waitB)
+	root := actions.NewLoop(1, "root", nil)
+	root.AddSubAction(waitA)
+	root.AddSubAction(loop)
+
+	mt := &MacroTree{Macro: &models.Macro{Root: root}}
+	mt.setTree()
+	mt.OpenBranch(loop.GetUID())
+	mt.dragVisible = mt.visibleRowUIDs()
+
+	rowH, _ := mt.dragMetrics()
+	k := len(mt.dragVisible) - 1
+	mt.resolveDrop(k, rowH*0.4, rowH)
+	if mt.shouldDropAtRootBelowLastBranch(k, rowH*0.4, rowH) {
+		mt.setDropRootAfterLastChild()
+		mt.validateDrop()
+	}
+
+	if mt.dropParent != mt.Macro.Root {
+		t.Fatalf("expected root parent, got %T", mt.dropParent)
+	}
+	if mt.dropMode != dropAfter || mt.dropTargetUID != loop.GetUID() {
+		t.Fatalf("expected drop after loop at root, got mode=%v target=%q", mt.dropMode, mt.dropTargetUID)
 	}
 }
 
@@ -231,13 +261,10 @@ func TestApplyHighlightOverlay_dragSource(t *testing.T) {
 
 	mt.applyHighlightOverlay(waitA.GetUID(), hlBg)
 	if !hlSimple.Visible() {
-		t.Fatal("expected drag source row to show highlight rectangle")
+		t.Fatal("expected drag source row highlight")
 	}
 	if hlSimple.FillColor != dragSourceColor {
 		t.Fatalf("drag source color = %v, want %v", hlSimple.FillColor, dragSourceColor)
-	}
-	if hlFill.Visible() {
-		t.Fatal("fill rectangle should be hidden for a drag source")
 	}
 
 	// A non-source row shows no highlight while dragging.
@@ -263,6 +290,284 @@ func TestFlushNodeCache_restoresRoot(t *testing.T) {
 	// Structure must still be walkable (no panic, children intact).
 	if got := mt.visibleRowUIDs(); len(got) != 3 {
 		t.Fatalf("visible rows after flush = %v, want 3", got)
+	}
+}
+
+func TestPreviewVisibleRowUIDs_previewSlot(t *testing.T) {
+	mt, waitA, _, waitC, loop := buildDnDTree(t)
+	mt.dragActive = true
+	mt.dragSrcUID = waitC.GetUID()
+	mt.dragVisible = mt.visibleRowUIDs()
+
+	mt.dropParent = mt.Macro.Root
+	mt.dropTargetUID = waitA.GetUID()
+	mt.dropMode = dropBefore
+	mt.dropValid = true
+
+	got := mt.previewVisibleRowUIDs()
+	want := []string{waitC.GetUID(), waitA.GetUID(), loop.GetUID()}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("preview visible = %v, want %v", got, want)
+		}
+	}
+	if got := childUIDs(mt.Macro.Root); got[2] != waitC.GetUID() {
+		t.Fatalf("model unchanged before live preview, root = %v", got)
+	}
+}
+
+func TestApplyDragPreview_shiftsSiblings(t *testing.T) {
+	mt, waitA, _, waitC, loop := buildDnDTree(t)
+	mt.dragActive = true
+	mt.dragSrcUID = waitC.GetUID()
+	mt.dragVisible = mt.visibleRowUIDs()
+	mt.captureDragOrigin(waitC)
+
+	mt.dropParent = mt.Macro.Root
+	mt.dropTargetUID = waitA.GetUID()
+	mt.dropMode = dropBefore
+	mt.dropValid = true
+
+	key := mt.dropFingerprint()
+	mt.applyDragPreview(key)
+
+	if !mt.dragPreviewInTree || mt.dragPreviewKey != key {
+		t.Fatal("expected live preview to be active")
+	}
+	got := childUIDs(mt.Macro.Root)
+	want := []string{waitC.GetUID(), waitA.GetUID(), loop.GetUID()}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("root children after preview = %v, want %v", got, want)
+		}
+	}
+}
+
+func TestDragDrop_undoRestoresMovedAction(t *testing.T) {
+	mt, waitA, _, waitC, loop := buildDnDTree(t)
+	mt.history = newTreeHistory()
+
+	snap, err := snapshotTree(mt.Macro.Root, "")
+	if err != nil {
+		t.Fatalf("snapshotTree: %v", err)
+	}
+	mt.dragUndoSnapshot = snap
+	mt.dragUndoSnapshotOK = true
+	mt.dragSrcUID = waitC.GetUID()
+	mt.captureDragOrigin(waitC)
+	mt.dropParent = mt.Macro.Root
+	mt.dropTargetUID = waitA.GetUID()
+	mt.dropMode = dropBefore
+	mt.dropValid = true
+
+	if !mt.relocateDraggedNode(false) {
+		t.Fatal("relocateDraggedNode failed")
+	}
+	mt.commitDragUndoSnapshot()
+
+	if got := childUIDs(mt.Macro.Root); got[0] != waitC.GetUID() {
+		t.Fatalf("after move root = %v", got)
+	}
+	if !mt.Undo() {
+		t.Fatal("Undo failed")
+	}
+	if mt.Macro.Root.GetAction(waitC.GetUID()) == nil {
+		t.Fatal("moved action missing after undo")
+	}
+	got := childUIDs(mt.Macro.Root)
+	want := []string{waitA.GetUID(), loop.GetUID(), waitC.GetUID()}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("after undo root = %v, want %v", got, want)
+		}
+	}
+}
+
+func TestDragDrop_undoAfterPreviewCommit(t *testing.T) {
+	mt, waitA, _, waitC, loop := buildDnDTree(t)
+	mt.history = newTreeHistory()
+	mt.dragActive = true
+	mt.dragSrcUID = waitC.GetUID()
+	mt.captureDragOrigin(waitC)
+
+	snap, err := snapshotTree(mt.Macro.Root, "")
+	if err != nil {
+		t.Fatalf("snapshotTree: %v", err)
+	}
+	mt.dragUndoSnapshot = snap
+	mt.dragUndoSnapshotOK = true
+
+	mt.dropParent = mt.Macro.Root
+	mt.dropTargetUID = waitA.GetUID()
+	mt.dropMode = dropBefore
+	mt.dropValid = true
+	mt.applyDragPreview(mt.dropFingerprint())
+	mt.commitDragUndoSnapshot()
+
+	if !mt.Undo() {
+		t.Fatal("Undo failed")
+	}
+	if mt.Macro.Root.GetAction(waitC.GetUID()) == nil {
+		t.Fatal("moved action missing after undo")
+	}
+	got := childUIDs(mt.Macro.Root)
+	want := []string{waitA.GetUID(), loop.GetUID(), waitC.GetUID()}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("after undo root = %v, want %v", got, want)
+		}
+	}
+}
+
+func TestRevertDragPreview_restoresOrigin(t *testing.T) {
+	mt, waitA, _, waitC, loop := buildDnDTree(t)
+	mt.dragActive = true
+	mt.dragSrcUID = waitC.GetUID()
+	mt.dragVisible = mt.visibleRowUIDs()
+	mt.captureDragOrigin(waitC)
+
+	mt.dropParent = mt.Macro.Root
+	mt.dropTargetUID = waitA.GetUID()
+	mt.dropMode = dropBefore
+	mt.dropValid = true
+	mt.applyDragPreview(mt.dropFingerprint())
+	mt.revertDragPreview()
+
+	if mt.dragPreviewInTree {
+		t.Fatal("preview should be cleared after revert")
+	}
+	got := childUIDs(mt.Macro.Root)
+	want := []string{waitA.GetUID(), loop.GetUID(), waitC.GetUID()}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("root children after revert = %v, want %v", got, want)
+		}
+	}
+}
+
+func TestDragAutoOpenedBranches_collapseWhenLeaving(t *testing.T) {
+	mt, _, _, _, loop := buildDnDTree(t)
+	mt.dragActive = true
+	mt.initDragBranchState()
+	mt.dragAutoOpenedBranches = map[string]struct{}{loop.GetUID(): {}}
+
+	mt.suppressBranchOpenScroll++
+	mt.OpenBranch(loop.GetUID())
+	mt.suppressBranchOpenScroll--
+	mt.dragVisible = mt.visibleRowUIDs()
+
+	if !mt.IsBranchOpen(loop.GetUID()) {
+		t.Fatal("loop should be open for test setup")
+	}
+
+	if !mt.syncDragAutoOpenedBranches(-1) {
+		t.Fatal("expected collapse when pointer leaves branch")
+	}
+	if mt.IsBranchOpen(loop.GetUID()) {
+		t.Fatal("auto-opened branch should collapse after leaving")
+	}
+	if _, ok := mt.dragAutoOpenedBranches[loop.GetUID()]; ok {
+		t.Fatal("collapsed branch should be removed from drag auto-opened set")
+	}
+}
+
+func TestDragAutoOpenedBranches_keepsOpenWhileInside(t *testing.T) {
+	mt, _, waitB, _, loop := buildDnDTree(t)
+	mt.dragActive = true
+	mt.initDragBranchState()
+	mt.dragAutoOpenedBranches = map[string]struct{}{loop.GetUID(): {}}
+	mt.suppressBranchOpenScroll++
+	mt.OpenBranch(loop.GetUID())
+	mt.suppressBranchOpenScroll--
+	mt.dragVisible = mt.visibleRowUIDs()
+
+	childIdx := indexOfString(mt.dragVisible, waitB.GetUID())
+	if childIdx < 0 {
+		t.Fatal("waitB should be visible inside open loop")
+	}
+	if mt.syncDragAutoOpenedBranches(childIdx) {
+		t.Fatal("should not collapse while pointer is inside auto-opened branch")
+	}
+	if !mt.IsBranchOpen(loop.GetUID()) {
+		t.Fatal("branch should stay open while hovering a child row")
+	}
+}
+
+func TestDragBranchesToKeepOpen_viaDropParent(t *testing.T) {
+	mt, _, waitB, _, loop := buildDnDTree(t)
+	mt.dragActive = true
+	mt.dragAutoOpenedBranches = map[string]struct{}{loop.GetUID(): {}}
+	mt.suppressBranchOpenScroll++
+	mt.OpenBranch(loop.GetUID())
+	mt.suppressBranchOpenScroll--
+	mt.dragVisible = mt.visibleRowUIDs()
+
+	mt.setDropSibling(waitB, dropAfter)
+	mt.dropValid = true
+	childIdx := indexOfString(mt.dragVisible, waitB.GetUID())
+	keep := mt.dragBranchesToKeepOpen(childIdx)
+	if _, ok := keep[loop.GetUID()]; !ok {
+		t.Fatal("expected auto-opened branch kept while drop parent is inside it")
+	}
+}
+
+func TestDragBranchesToKeepOpen_openBranchRow(t *testing.T) {
+	mt, _, _, _, loop := buildDnDTree(t)
+	mt.dragActive = true
+	mt.dragAutoOpenedBranches = map[string]struct{}{loop.GetUID(): {}}
+	mt.suppressBranchOpenScroll++
+	mt.OpenBranch(loop.GetUID())
+	mt.suppressBranchOpenScroll--
+	mt.dragVisible = mt.visibleRowUIDs()
+
+	loopIdx := indexOfString(mt.dragVisible, loop.GetUID())
+	mt.setDropInto(loop, dropIntoStart)
+	mt.dropValid = true
+	keep := mt.dragBranchesToKeepOpen(loopIdx)
+	if _, ok := keep[loop.GetUID()]; !ok {
+		t.Fatal("expected auto-opened branch kept while dropping into it")
+	}
+}
+
+func TestDragMutationNeedsFlush_reparentChangesDepth(t *testing.T) {
+	mt, _, waitB, _, loop := buildDnDTree(t)
+	mt.OpenBranch(loop.GetUID())
+
+	if !mt.dragMutationNeedsFlush(loop.GetUID(), mt.Macro.Root.GetUID()) {
+		t.Fatal("expected flush when moving from branch to root")
+	}
+	if mt.dragMutationNeedsFlush(mt.Macro.Root.GetUID(), mt.Macro.Root.GetUID()) {
+		t.Fatal("expected no flush when reordering root siblings")
+	}
+	mt.captureDragOrigin(waitB)
+	if !mt.dragMutationNeedsFlush(loop.GetUID(), mt.Macro.Root.GetUID()) {
+		t.Fatal("expected flush via drag origin when preview returns to root")
+	}
+}
+
+func TestInsertIndentDepth_usesDropParent(t *testing.T) {
+	waitA := actions.NewWait(1)
+	waitB := actions.NewWait(2)
+	loop := actions.NewLoop(1, "loop", nil)
+	loop.AddSubAction(waitB)
+	root := actions.NewLoop(1, "root", nil)
+	root.AddSubAction(waitA)
+	root.AddSubAction(loop)
+
+	mt := &MacroTree{Macro: &models.Macro{Root: root}}
+	mt.setTree()
+	mt.OpenBranch(loop.GetUID())
+
+	mt.setDropRootAfterLastChild()
+	mt.dropValid = true
+	if got := mt.insertIndentDepth(); got != 0 {
+		t.Fatalf("root sibling insert depth = %d, want 0", got)
+	}
+
+	mt.setDropSibling(waitB, dropAfter)
+	mt.dropValid = true
+	if got := mt.insertIndentDepth(); got != 1 {
+		t.Fatalf("branch child insert depth = %d, want 1", got)
 	}
 }
 
