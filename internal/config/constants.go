@@ -35,12 +35,21 @@ const (
 	JPG  = ".jpg"
 	YAML = ".yaml"
 
+	// Editor preview dimensions (points, search areas, masks, AutoPic tabs)
+	ImagePreviewWidth  = 600
+	ImagePreviewHeight = 450
+
 	// Icon variant constants
 	IconThumbnailSize = 64  // pixels for thumbnail display
 	MaxIconVariants   = 100 // maximum variants per item
 
 	// Image search: pixels within which duplicate template matches are ignored.
 	DefaultImageSearchCloseMatchesDistance = 10
+
+	// Macro tree drag-and-drop: milliseconds the pointer must rest before siblings
+	// shift to preview the drop position.
+	DefaultDragPreviewDebounceMs = 150
+	MinDragPreviewDebounceMs     = 25
 
 	// UI appearance defaults
 	DefaultUIFontSize = 14
@@ -50,6 +59,7 @@ const (
 	PrefSaveMetaImages                      = "save_meta_images"
 	PrefHighlightActiveAction               = "highlight_active_action"
 	PrefImageSearchCloseMatchesDistance     = "image_search_close_matches_distance"
+	PrefDragPreviewDebounceMs               = "drag_preview_debounce_ms"
 	PrefEnabledMonitors       = "enabled_monitors" // comma-separated indices, e.g. "0,2"; empty = all (must match screen package key)
 	PrefWindowX               = "window_x"
 	PrefWindowY               = "window_y"
