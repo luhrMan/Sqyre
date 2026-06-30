@@ -1,21 +1,14 @@
-# OpenCV for Android (from source)
+# OpenCV for Android
 
-Build OpenCV (and optional opencv_contrib) for Android ABIs using the Android NDK and CMake, following the approach described in [this gist](https://gist.github.com/ogero/c19458cf64bd3e91faae85c3ac887481), adapted for **Linux** and **OpenCV 4.x**.
+Build OpenCV (and optional opencv_contrib) for Android ABIs with the NDK and CMake. Based on [this gist](https://gist.github.com/ogero/c19458cf64bd3e91faae85c3ac887481), adapted for Linux and OpenCV 4.x.
 
-## Differences from the gist
+- **OpenCV 4.10.0** (gocv-compatible)
+- One build per ABI: `armeabi-v7a`, `arm64-v8a`, `x86`, `x86_64`
+- CMake + Ninja; contrib optional via `OPENCV_EXTRA_MODULES_PATH`
 
-- **Platform**: Linux + NDK toolchain (no MinGW; the gist used Windows + MinGW).
-- **OpenCV**: 4.10.0 (compatible with gocv; the gist used 3.4.1).
-- **Build**: CMake + Ninja, one build per ABI (`armeabi-v7a`, `arm64-v8a`, `x86`, `x86_64`).
-- **Options**: Same spirit as the gist: `BUILD_JAVA=OFF`, `BUILD_SHARED_LIBS=ON`, `BUILD_*_EXAMPLES/TESTS/DOCS=OFF`, optional contrib via `OPENCV_EXTRA_MODULES_PATH`.
+## Docker (recommended)
 
-## Requirements
-
-- Docker (for the image), or on the host: Android NDK, CMake, Ninja, and the script deps.
-
-## Build with Docker (recommended)
-
-From the **repository root**:
+From the repo root:
 
 ```bash
 docker build -f scripts/android/Dockerfile.opencv-android \
@@ -23,24 +16,17 @@ docker build -f scripts/android/Dockerfile.opencv-android \
   scripts/android
 ```
 
-Build time is long (download OpenCV + contrib, then compile for four ABIs).
-
-### Reuse devcontainer to reduce build time
-
-If you already have the devcontainer image (e.g. from opening the project in a dev container), tag it and use it as the base so this image reuses NDK and build deps instead of reinstalling them:
+Reuse the devcontainer image to skip reinstalling the NDK:
 
 ```bash
-# After the devcontainer has been built, tag it (use the image ID or name from docker images)
-docker tag <your-devcontainer-image> sqyre-dev:latest
-
-# Build OpenCV for Android using that base (skips NDK + apt layer)
+docker tag <devcontainer-image> sqyre-dev:latest
 docker build -f scripts/android/Dockerfile.opencv-android \
   --build-arg BASE_IMAGE=sqyre-dev:latest \
   -t opencv-android:local \
   scripts/android
 ```
 
-To build only one ABI:
+Single ABI:
 
 ```bash
 docker build -f scripts/android/Dockerfile.opencv-android \
@@ -49,12 +35,7 @@ docker build -f scripts/android/Dockerfile.opencv-android \
   scripts/android
 ```
 
-Artifacts inside the image (under `/opt/opencv/android/`):
-
-- Per-ABI: `/opt/opencv/android/install_<abi>/` (libs + headers).
-- SDK-style: `/opt/opencv/android/opencv-android-sdk/native/libs/<abi>/` and `.../jni/include/`.
-
-Copy them out:
+Extract artifacts:
 
 ```bash
 docker create --name opencv-android opencv-android:local
@@ -62,40 +43,30 @@ docker cp opencv-android:/opt/opencv/android/opencv-android-sdk ./opencv-android
 docker rm opencv-android
 ```
 
-## Build on the host (no Docker)
+Inside the image: `/opt/opencv/android/install_<abi>/` and SDK layout under `/opt/opencv/android/opencv-android-sdk/`.
+
+## Host build
 
 1. Install Android NDK (e.g. r25c), CMake, Ninja.
-2. Set `ANDROID_NDK` to the NDK root (e.g. `/opt/android-ndk` or `$HOME/Android/Sdk/ndk/25.2.9519653`).
-3. Run:
-
-```bash
-scripts/android/build-opencv-android.sh
-```
-
-Environment variables:
+2. Set `ANDROID_NDK` to the NDK root.
+3. Run `scripts/android/build-opencv-android.sh`.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `ANDROID_NDK` | `/opt/android-ndk` | NDK root (must contain `build/cmake/android.toolchain.cmake`) |
-| `ANDROID_API_LEVEL` | `21` | Minimum Android API level |
+| `ANDROID_NDK` | `/opt/android-ndk` | NDK root |
+| `ANDROID_API_LEVEL` | `21` | Minimum API level |
 | `OPENCV_VERSION` | `4.10.0` | OpenCV tag |
-| `CONTRIB_VERSION` | `4.10.0` | opencv_contrib tag (must match OpenCV) |
-| `ABIS` | `armeabi-v7a,arm64-v8a,x86,x86_64` | Comma-separated ABIs |
-| `USE_CONTRIB` | `1` | Set to `0` to skip contrib |
-| `BUILD_ROOT` | `/opt/opencv/android` | Source, build, and install directory (compiled output lives here) |
+| `CONTRIB_VERSION` | `4.10.0` | opencv_contrib tag |
+| `ABIS` | all four ABIs | Comma-separated list |
+| `USE_CONTRIB` | `1` | Set `0` to skip contrib |
+| `BUILD_ROOT` | `/opt/opencv/android` | Source, build, install root |
 
-## Output layout (SDK-style)
+## Output layout
 
 ```
 opencv-android-sdk/
-  native/
-    libs/
-      armeabi-v7a/   libopencv_*.so
-      arm64-v8a/     ...
-      x86/           ...
-      x86_64/        ...
-    jni/
-      include/       opencv2/ ...
+  native/libs/<abi>/libopencv_*.so
+  native/jni/include/opencv2/...
 ```
 
-This layout matches what the [OpenCV Android build](https://github.com/opencv/opencv/wiki/Custom-OpenCV-Android-SDK-and-AAR-package-build) and the [reference gist](https://gist.github.com/ogero/c19458cf64bd3e91faae85c3ac887481) describe (shared libs under `libs/<abi>`, headers under `jni/include`).
+Matches the [OpenCV Android SDK](https://github.com/opencv/opencv/wiki/Custom-OpenCV-Android-SDK-and-AAR-package-build) convention.
