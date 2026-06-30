@@ -30,19 +30,44 @@ func executeImageSearch(a actions.ActionInterface, macro *models.Macro) error {
 		highlightFill(macro.Name, node.GetUID(), 0)
 		defer highlightClear(macro.Name, node.GetUID())
 	}
-	results, searchLeftX, searchTopY, err := imageSearch(node, macro)
+
+	frame, searchLeftX, searchTopY, err := captureImageSearchFrame(node, macro)
+	defer func() {
+		if frame != nil {
+			frame.Close()
+		}
+	}()
+
+	results := make(map[string][]robotgo.Point)
+	if err == nil && frame != nil {
+		results, err = matchImageSearchFrame(frame, node, macro)
+	}
 	if err != nil {
 		log.Printf("Image Search: %v (macro continues)", err)
 		if results == nil {
 			results = make(map[string][]robotgo.Point)
 		}
 	}
+
 	if node.WaitTilFoundConfig.Active() && len(SortListOfPoints(results)) == 0 {
 		_ = retryWhileNotFound(node.WaitTilFoundConfig, 100, func() (bool, error) {
-			var retryErr error
-			results, searchLeftX, searchTopY, retryErr = imageSearch(node, macro)
-			if retryErr != nil {
-				log.Printf("Image Search: %v (macro continues)", retryErr)
+			if frame != nil {
+				frame.Close()
+				frame = nil
+			}
+			var capErr error
+			frame, searchLeftX, searchTopY, capErr = captureImageSearchFrame(node, macro)
+			if capErr != nil {
+				log.Printf("Image Search: %v (macro continues)", capErr)
+				if results == nil {
+					results = make(map[string][]robotgo.Point)
+				}
+				return false, nil
+			}
+			var matchErr error
+			results, matchErr = matchImageSearchFrame(frame, node, macro)
+			if matchErr != nil {
+				log.Printf("Image Search: %v (macro continues)", matchErr)
 				if results == nil {
 					results = make(map[string][]robotgo.Point)
 				}
@@ -50,6 +75,11 @@ func executeImageSearch(a actions.ActionInterface, macro *models.Macro) error {
 			return len(SortListOfPoints(results)) > 0, nil
 		})
 	}
+
+	return runImageSearchMatches(node, macro, results, searchLeftX, searchTopY)
+}
+
+func runImageSearchMatches(node *actions.ImageSearch, macro *models.Macro, results map[string][]robotgo.Point, searchLeftX, searchTopY int) error {
 	sorted := SortListOfPoints(results)
 	var foundNames, notFoundNames []string
 	for name, points := range results {
@@ -169,27 +199,24 @@ func executeFindPixel(a actions.ActionInterface, macro *models.Macro) error {
 		return nil
 	}
 
+	tr, tg, tb, colorOK := rgbFromHex(node.NormalizeHex(node.TargetColor))
+	if !colorOK {
+		log.Printf("FindPixel: invalid target color %q", node.TargetColor)
+		return nil
+	}
+
 	var foundX, foundY int
-	matchColor := node.ColorMatcher()
 	scanOnce := func() bool {
 		captureImg, capLeftX, capTopY, _, _, capErr := macropkg.CaptureSearchArea(leftX, topY, rightX, bottomY)
 		if capErr != nil || captureImg == nil {
 			log.Printf("FindPixel: screen capture failed: %v", capErr)
 			return false
 		}
-		rgba := macropkg.CaptureToRGBA(captureImg)
-		bounds := rgba.Bounds()
-		for py := bounds.Min.Y; py < bounds.Max.Y; py++ {
-			for px := bounds.Min.X; px < bounds.Max.X; px++ {
-				o := rgba.PixOffset(px, py)
-				if matchColor(rgba.Pix[o], rgba.Pix[o+1], rgba.Pix[o+2]) {
-					foundX = capLeftX + px - bounds.Min.X
-					foundY = capTopY + py - bounds.Min.Y
-					return true
-				}
-			}
+		x, y, ok := findPixelInCapture(captureImg, capLeftX, capTopY, tr, tg, tb, node.ColorTolerance)
+		if ok {
+			foundX, foundY = x, y
 		}
-		return false
+		return ok
 	}
 
 	found := scanOnce()
