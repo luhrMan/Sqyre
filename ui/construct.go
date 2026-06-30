@@ -98,8 +98,9 @@ func SetActionDialogDeps() {
 			return st.Macro.Name
 		},
 		PreviewExpression:    previewExpression,
-		AddDialogEscapeClose: AddDialogEscapeClose,
-		ShowRecordingOverlay: recording.ShowRecordingOverlay,
+		AddDialogEscapeClose:     AddDialogEscapeClose,
+		AddActionDialogEnterSave: AddActionDialogEnterSave,
+		ShowRecordingOverlay:     recording.ShowRecordingOverlay,
 		ShowHotkeyRecordDialog: func(parent fyne.Window, stableDuration time.Duration, onRecorded func(keys []string)) {
 			recording.ShowHotkeyRecordDialog(parent, stableDuration, AddDialogEscapeClose, onRecorded)
 		},
@@ -131,6 +132,9 @@ func SetMacroUi() {
 		ShowConfirmWithEscape: ShowConfirmWithEscape,
 		ShowActionDialog: func(action actions.ActionInterface, onSave func(actions.ActionInterface), onCancel func()) {
 			actiondialog.ShowActionDialog(action, onSave, onCancel)
+		},
+		ShowAddActionPicker: func() {
+			u.ShowAddActionPicker()
 		},
 	})
 }
