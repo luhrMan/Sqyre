@@ -5,6 +5,7 @@ import (
 	"Sqyre/internal/config"
 	"Sqyre/internal/models"
 	"Sqyre/internal/models/actions"
+	"Sqyre/internal/models/repositories"
 	"bytes"
 	"fmt"
 	"image"
@@ -12,6 +13,7 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"github.com/otiai10/gosseract/v2"
@@ -21,6 +23,7 @@ import (
 var (
 	tessClient *gosseract.Client
 	tessOnce   sync.Once
+	tessWarmOnce sync.Once
 )
 
 func GetTessClient() *gosseract.Client {
@@ -30,6 +33,55 @@ func GetTessClient() *gosseract.Client {
 		_ = tessClient.SetLanguage("eng")
 	})
 	return tessClient
+}
+
+// WarmUpOCR loads embedded tessdata and initializes Tesseract so the first OCR
+// action in a macro does not pay one-time startup cost.
+func WarmUpOCR() {
+	tessWarmOnce.Do(func() {
+		start := time.Now()
+		if err := GetTessClient().WarmUp(); err != nil {
+			log.Printf("OCR warmup: %v", err)
+			return
+		}
+		log.Printf("OCR engine ready in %s", time.Since(start).Round(time.Millisecond))
+	})
+}
+
+func macroUsesOCR(m *models.Macro) bool {
+	seen := make(map[string]bool)
+	return macroUsesOCRRec(m, seen)
+}
+
+func macroUsesOCRRec(m *models.Macro, seen map[string]bool) bool {
+	if m == nil || m.Root == nil {
+		return false
+	}
+	if m.Name != "" {
+		if seen[m.Name] {
+			return false
+		}
+		seen[m.Name] = true
+	}
+	var uses bool
+	models.WalkActions(m.Root, func(a actions.ActionInterface) {
+		if uses {
+			return
+		}
+		if _, ok := a.(*actions.Ocr); ok {
+			uses = true
+			return
+		}
+		rm, ok := a.(*actions.RunMacro)
+		if !ok || rm.MacroName == "" {
+			return
+		}
+		target, err := repositories.MacroRepo().Get(rm.MacroName)
+		if err == nil && macroUsesOCRRec(target, seen) {
+			uses = true
+		}
+	})
+	return uses
 }
 
 func CloseTessClient() {

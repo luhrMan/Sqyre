@@ -25,6 +25,16 @@ func ActionToMap(action actions.ActionInterface) (map[string]any, error) {
 		m["subactions"] = subs
 	case *actions.Wait:
 		m["time"] = a.Time
+	case *actions.Pause:
+		if a.Message != "" {
+			m["message"] = a.Message
+		}
+		if len(a.ContinueKey) > 0 {
+			m["continuekey"] = a.ContinueKey
+		}
+		if a.PassThrough {
+			m["passthrough"] = a.PassThrough
+		}
 	case *actions.FindPixel:
 		m["name"] = a.Name
 		m["searcharea"] = coordinateRefToMap(a.SearchArea)

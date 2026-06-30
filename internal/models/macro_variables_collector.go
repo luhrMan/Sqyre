@@ -149,6 +149,11 @@ func CollectDefinedVariableNames(m *Macro) []string {
 	return names
 }
 
+// WalkActions visits every action in an action tree, including nested sub-actions.
+func WalkActions(a actions.ActionInterface, visit func(actions.ActionInterface)) {
+	walkMacroActions(a, visit)
+}
+
 func walkMacroActions(a actions.ActionInterface, visit func(actions.ActionInterface)) {
 	if a == nil {
 		return

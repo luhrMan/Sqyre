@@ -56,19 +56,9 @@ func applyFieldTooltip(label string, w fyne.CanvasObject, hint string) fyne.Canv
 	return container.NewBorder(nil, nil, icon, nil, w)
 }
 
-// newVarEntry creates a VarEntry wired to the current macro's variables.
-func newVarEntry() *custom_widgets.VarEntry {
-	return custom_widgets.NewVarEntry(macroVarNames)
-}
-
-// newVarNameEntry creates an entry for defining a variable name.
+// newVarNameEntry creates an entry for defining or selecting a macro variable name.
 func newVarNameEntry() *custom_widgets.VarNameEntry {
-	return custom_widgets.NewVarNameEntry(macroVarNames)
-}
-
-// newMultiLineVarEntry creates a multi-line VarEntry wired to the current macro's variables.
-func newMultiLineVarEntry() *custom_widgets.VarEntry {
-	return custom_widgets.NewMultiLineVarEntry(macroVarNames)
+	return custom_widgets.NewVarNameEntryWithDefs(macroVariableDefs)
 }
 
 // waitTilFoundForm bundles the "Wait until found" checkbox and timeout / interval
@@ -404,6 +394,8 @@ func ShowActionDialog(action actions.ActionInterface, onSave func(actions.Action
 	switch node := action.(type) {
 	case *actions.Wait:
 		content, saveFunc = createWaitDialogContent(node)
+	case *actions.Pause:
+		content, saveFunc = createPauseDialogContent(node)
 	case *actions.Move:
 		content, saveFunc = createMoveDialogContent(node)
 	case *actions.Click:
@@ -494,6 +486,12 @@ func showCustomActionDialog(action actions.ActionInterface, content fyne.CanvasO
 			return
 		}
 		saveFunc()
+		if p, ok := action.(*actions.Pause); ok {
+			if err := validatePauseAction(p); err != nil {
+				dialog.ShowError(err, active.Window)
+				return
+			}
+		}
 		if onSave != nil {
 			onSave(action)
 		}
