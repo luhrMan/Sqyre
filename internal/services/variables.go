@@ -82,29 +82,58 @@ func ParseVariableReference(text string) []string {
 	return result
 }
 
-// EvaluateCondition resolves a Conditional action's operands and evaluates its
-// comparison. Numeric operands are compared numerically; otherwise comparison
-// falls back to string semantics. Unary operators (is set / is empty) inspect
-// only the left operand.
+// EvaluateCondition evaluates a Conditional action's clauses using its match
+// mode (all = AND, any = OR). An empty clause list is treated as false.
 func EvaluateCondition(node *actions.Conditional, macro *models.Macro) (bool, error) {
-	left, err := resolveOperand(node.Left, macro)
+	if len(node.Clauses) == 0 {
+		return false, nil
+	}
+	if node.EffectiveMatch() == actions.MatchAny {
+		for i, clause := range node.Clauses {
+			ok, err := evaluateClause(clause, macro)
+			if err != nil {
+				return false, fmt.Errorf("clause %d: %w", i+1, err)
+			}
+			if ok {
+				return true, nil
+			}
+		}
+		return false, nil
+	}
+	for i, clause := range node.Clauses {
+		ok, err := evaluateClause(clause, macro)
+		if err != nil {
+			return false, fmt.Errorf("clause %d: %w", i+1, err)
+		}
+		if !ok {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+// evaluateClause resolves operands and evaluates one comparison. Numeric operands
+// are compared numerically; otherwise comparison falls back to string semantics.
+// Unary operators (is set / is empty) inspect only the left operand.
+func evaluateClause(clause actions.ConditionClause, macro *models.Macro) (bool, error) {
+	left, err := resolveOperand(clause.Left, macro)
 	if err != nil {
 		return false, fmt.Errorf("left operand: %w", err)
 	}
 
-	switch node.Operator {
+	switch clause.Operator {
 	case actions.OpIsSet:
 		return left != "" && checkUnresolvedVariable(left) == nil, nil
 	case actions.OpIsEmpty:
 		return left == "" || checkUnresolvedVariable(left) != nil, nil
 	}
 
-	right, err := resolveOperand(node.Right, macro)
+	right, err := resolveOperand(clause.Right, macro)
 	if err != nil {
 		return false, fmt.Errorf("right operand: %w", err)
 	}
 
-	switch node.Operator {
+	switch clause.Operator {
 	case actions.OpContains:
 		return strings.Contains(left, right), nil
 	case actions.OpStartsWith:
@@ -118,7 +147,7 @@ func EvaluateCondition(node *actions.Conditional, macro *models.Macro) (bool, er
 	rf, rok := parseConditionNumber(right)
 	numeric := lok && rok
 
-	switch node.Operator {
+	switch clause.Operator {
 	case actions.OpEquals:
 		if numeric {
 			return lf == rf, nil
@@ -150,7 +179,7 @@ func EvaluateCondition(node *actions.Conditional, macro *models.Macro) (bool, er
 		}
 		return left >= right, nil
 	default:
-		return false, fmt.Errorf("unknown operator %q", node.Operator)
+		return false, fmt.Errorf("unknown operator %q", clause.Operator)
 	}
 }
 

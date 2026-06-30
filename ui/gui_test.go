@@ -165,6 +165,17 @@ func TestGUIDataEditorNavigation(t *testing.T) {
 	if u.Window.Canvas().Content() == nil {
 		t.Error("Window content is nil after Data Editor")
 	}
+	if !u.EditorUi.CanvasObject.Visible() {
+		t.Error("Data Editor content not visible after first open")
+	}
+
+	dataEditorAction()
+	if !u.EditorUi.CanvasObject.Visible() {
+		t.Error("Data Editor content not visible after reopening while already open")
+	}
+	if u.EditorUi.CanvasObject.MinSize().Width == 0 || u.EditorUi.CanvasObject.MinSize().Height == 0 {
+		t.Error("Data Editor content has zero size after reopening while already open")
+	}
 }
 
 // TestGUIUserSettingsNavigation invokes the User Settings menu action and verifies it runs without panic.
@@ -196,6 +207,17 @@ func TestGUIUserSettingsNavigation(t *testing.T) {
 	userSettingsAction()
 	if u.Window.Canvas().Content() == nil {
 		t.Error("Window content is nil after User Settings")
+	}
+	if !u.SettingsUi.CanvasObject.Visible() {
+		t.Error("User Settings content not visible after first open")
+	}
+
+	userSettingsAction()
+	if !u.SettingsUi.CanvasObject.Visible() {
+		t.Error("User Settings content not visible after reopening while already open")
+	}
+	if u.SettingsUi.CanvasObject.MinSize().Width == 0 || u.SettingsUi.CanvasObject.MinSize().Height == 0 {
+		t.Error("User Settings content has zero size after reopening while already open")
 	}
 }
 

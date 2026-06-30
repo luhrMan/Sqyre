@@ -368,20 +368,16 @@ func (s *serializer) CreateActionFromMap(rawMap map[string]any, parent actions.A
 		action = actions.NewCalculate(expr, outv)
 	case "conditional":
 		name := stringFromMap(rawMap, "name")
-		operator := stringFromMap(rawMap, "operator")
-		left := operandFromMap(rawMap, "left")
-		right := operandFromMap(rawMap, "right")
-		action = actions.NewConditional(left, operator, right, name, []actions.ActionInterface{})
+		clauses := clausesFromMap(rawMap)
+		match := stringFromMap(rawMap, "match")
+		action = actions.NewConditional(clauses, match, name, []actions.ActionInterface{})
 	case "foreachrow":
 		name := stringFromMap(rawMap, "name")
-		sources, err := sourcesFromMap(rawMap["sources"])
-		if err != nil {
-			return nil, fmt.Errorf("action type foreachrow: %w", err)
-		}
-		if sources == nil {
-			sources = []actions.ListColumn{}
-		}
-		action = actions.NewForEachRow(name, sources, []actions.ActionInterface{})
+		sources := forEachRowSourcesFromMap(rawMap)
+		fer := actions.NewForEachRow(name, sources, []actions.ActionInterface{})
+		fer.StartRow = rowBoundFromMap(rawMap, "startrow")
+		fer.EndRow = rowBoundFromMap(rawMap, "endrow")
+		action = fer
 	case "savevariable":
 		append := false
 		if appendVal, ok := rawMap["append"]; ok && appendVal != nil {
@@ -510,12 +506,49 @@ func parseCoordinateRef(v any) actions.CoordinateRef {
 	}
 }
 
+// anySlice normalizes YAML/JSON slice values to []any.
+func anySlice(v any) ([]any, error) {
+	switch t := v.(type) {
+	case []any:
+		return t, nil
+	case []map[string]any:
+		out := make([]any, len(t))
+		for i, m := range t {
+			out[i] = m
+		}
+		return out, nil
+	default:
+		return nil, fmt.Errorf("expected list, got %T", v)
+	}
+}
+
 // operandFromMap returns a conditional operand as int (literal) or string
 // (literal or variable reference), defaulting to "" when missing.
 func operandFromMap(rawMap map[string]any, key string) any {
 	v, ok := rawMap[key]
 	if !ok || v == nil {
 		return ""
+	}
+	switch val := v.(type) {
+	case int:
+		return val
+	case int64:
+		return int(val)
+	case float64:
+		return int(val)
+	case string:
+		return val
+	default:
+		return fmt.Sprintf("%v", val)
+	}
+}
+
+// rowBoundFromMap returns a For Each Row StartRow/EndRow value as int (literal)
+// or string (variable reference), or nil when the key is absent.
+func rowBoundFromMap(rawMap map[string]any, key string) any {
+	v, ok := rawMap[key]
+	if !ok || v == nil {
+		return nil
 	}
 	switch val := v.(type) {
 	case int:

@@ -81,6 +81,8 @@ func contentResizeForAction(action actions.ActionInterface) fyne.Size {
 		return fyne.NewSize(400, 120)
 	case *actions.Loop:
 		return fyne.NewSize(600, 100)
+	case *actions.Conditional:
+		return fyne.NewSize(conditionalDialogWidth, conditionalDialogHeight)
 	case *actions.ImageSearch:
 		return fyne.NewSize(1000, 1000)
 	case *actions.Ocr:
