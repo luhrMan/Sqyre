@@ -85,7 +85,7 @@ func TestAdvancedAction_SetSubActions(t *testing.T) {
 	if len(adv.GetSubActions()) != 2 {
 		t.Fatalf("initial SubActions len = %d", len(adv.GetSubActions()))
 	}
-	newSubs := []ActionInterface{NewClick(false, false)}
+	newSubs := []ActionInterface{NewClick(ClickButtonLeft, false)}
 	adv.SetSubActions(newSubs)
 	if len(adv.GetSubActions()) != 1 || adv.GetSubActions()[0] != newSubs[0] {
 		t.Error("SetSubActions did not update correctly")
@@ -125,38 +125,47 @@ func TestAdvancedAction_GetAction_nested(t *testing.T) {
 // --- Click ---
 
 func TestNewClick(t *testing.T) {
-	c := NewClick(false, false)
+	c := NewClick(ClickButtonLeft, false)
 	if c.GetType() != "click" {
 		t.Errorf("Type = %q", c.GetType())
 	}
-	if c.Button != false || c.State != false {
+	if c.Button != ClickButtonLeft || c.State != false {
 		t.Errorf("Button=%v State=%v", c.Button, c.State)
 	}
 }
 
 func TestClick_String(t *testing.T) {
-	if got := NewClick(false, false).String(); got != "Type: click  /  Button: left  /  State: up" {
+	if got := NewClick(ClickButtonLeft, false).String(); got != "Type: click  /  Button: left  /  State: up" {
 		t.Errorf("String() = %q", got)
 	}
-	if got := NewClick(true, false).String(); got != "Type: click  /  Button: right  /  State: up" {
+	if got := NewClick(ClickButtonRight, false).String(); got != "Type: click  /  Button: right  /  State: up" {
 		t.Errorf("String() = %q", got)
 	}
-	if got := NewClick(false, true).String(); got != "Type: click  /  Button: left  /  State: down" {
+	if got := NewClick(ClickButtonLeft, true).String(); got != "Type: click  /  Button: left  /  State: down" {
+		t.Errorf("String() = %q", got)
+	}
+	if got := NewClick(ClickButtonCenter, false).String(); got != "Type: click  /  Button: center  /  State: up" {
+		t.Errorf("String() = %q", got)
+	}
+	if got := NewClick(ClickButtonScroll, true).String(); got != "Type: click  /  Button: scroll  /  State: down" {
 		t.Errorf("String() = %q", got)
 	}
 }
 
-func TestLeftOrRight(t *testing.T) {
-	if LeftOrRight(false) != "left" || LeftOrRight(true) != "right" {
-		t.Error("LeftOrRight mismatch")
+func TestClickButtonLabel(t *testing.T) {
+	if ClickButtonLabel(ClickButtonLeft) != "left" || ClickButtonLabel(ClickButtonRight) != "right" {
+		t.Error("ClickButtonLabel mismatch")
+	}
+	if ClickButtonLabel(ClickButtonCenter) != "center" || ClickButtonLabel(ClickButtonScroll) != "scroll" {
+		t.Error("ClickButtonLabel center/scroll mismatch")
 	}
 }
 
 func TestClick_Icon(t *testing.T) {
-	if NewClick(false, false).Icon() == nil {
+	if NewClick(ClickButtonLeft, false).Icon() == nil {
 		t.Error("Icon() left click should not be nil")
 	}
-	if NewClick(false, true).Icon() == nil {
+	if NewClick(ClickButtonLeft, true).Icon() == nil {
 		t.Error("Icon() hold should not be nil")
 	}
 }

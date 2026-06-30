@@ -90,10 +90,36 @@ func initTestConfig(t *testing.T) {
 
 func TestExecute_Click(t *testing.T) {
 	rec := withRecordingBackend(t)
-	if err := Execute(actions.NewClick(true, false), nil); err != nil {
+	if err := Execute(actions.NewClick(actions.ClickButtonRight, true), nil); err != nil {
 		t.Fatalf("Execute click: %v", err)
 	}
-	if len(rec.Calls) != 1 || rec.Calls[0].Op != "click" || rec.Calls[0].Button != "right" || rec.Calls[0].Down {
+	if len(rec.Calls) != 1 || rec.Calls[0].Op != "click" || rec.Calls[0].Button != "right" || !rec.Calls[0].Down {
+		t.Fatalf("calls = %+v", rec.Calls)
+	}
+}
+
+func TestExecute_ClickCenter(t *testing.T) {
+	rec := withRecordingBackend(t)
+	if err := Execute(actions.NewClick(actions.ClickButtonCenter, false), nil); err != nil {
+		t.Fatalf("Execute center click: %v", err)
+	}
+	if len(rec.Calls) != 1 || rec.Calls[0].Op != "click" || rec.Calls[0].Button != "center" || rec.Calls[0].Down {
+		t.Fatalf("calls = %+v", rec.Calls)
+	}
+}
+
+func TestExecute_ClickScroll(t *testing.T) {
+	rec := withRecordingBackend(t)
+	if err := Execute(actions.NewClick(actions.ClickButtonScroll, false), nil); err != nil {
+		t.Fatalf("Execute scroll: %v", err)
+	}
+	if len(rec.Calls) != 1 || rec.Calls[0].Op != "scroll" || rec.Calls[0].Button != "up" {
+		t.Fatalf("calls = %+v", rec.Calls)
+	}
+	if err := Execute(actions.NewClick(actions.ClickButtonScroll, true), nil); err != nil {
+		t.Fatalf("Execute scroll down: %v", err)
+	}
+	if len(rec.Calls) != 2 || rec.Calls[1].Op != "scroll" || rec.Calls[1].Button != "down" {
 		t.Fatalf("calls = %+v", rec.Calls)
 	}
 }

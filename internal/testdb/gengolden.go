@@ -27,7 +27,7 @@ func main() {
 	integrationMacro := models.NewMacro("Integration Test Macro", 100, []string{"ctrl", "shift", "a"})
 	integrationMacro.Root.SetSubActions([]actions.ActionInterface{
 		actions.NewWait(100),
-		actions.NewClick(true, true),
+		actions.NewClick(actions.ClickButtonRight, true),
 		actions.NewMove("p1", false),
 	})
 

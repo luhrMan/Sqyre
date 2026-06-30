@@ -219,26 +219,25 @@ func createMoveDialogContent(action *actions.Move) (fyne.CanvasObject, func()) {
 }
 
 func createClickDialogContent(action *actions.Click) (fyne.CanvasObject, func()) {
-	buttonCheck := custom_widgets.NewToggle(func(b bool) {})
-	buttonCheck.SetToggled(action.Button)
+	buttonSelect := ttwidget.NewSelect(actions.ClickButtons, nil)
+	buttonSelect.SetSelected(action.Button)
+	if buttonSelect.Selected == "" {
+		buttonSelect.SetSelected(actions.ClickButtonLeft)
+	}
+	buttonSelect.SetToolTip("Which mouse button or scroll wheel to act on.")
+
 	stateToggle := custom_widgets.NewToggle(func(b bool) {})
 	stateToggle.SetToggled(action.State)
 
-	leftLbl := ttwidget.NewLabel("left")
-	leftLbl.SetToolTip("Toggle toward this side to use the left mouse button.")
-	rightLbl := ttwidget.NewLabel("right")
-	rightLbl.SetToolTip("Toggle toward this side to use the right mouse button.")
 	upLbl := ttwidget.NewLabel("up")
-	upLbl.SetToolTip("Toggle toward up to release the button (button-up).")
+	upLbl.SetToolTip("Release the button (button-up), or scroll up when scroll is selected.")
 	downLbl := ttwidget.NewLabel("down")
-	downLbl.SetToolTip("Toggle toward down to press the button (button-down).")
+	downLbl.SetToolTip("Press the button (button-down), or scroll down when scroll is selected.")
 
 	content := container.NewVBox(
 		container.NewHBox(
 			layout.NewSpacer(),
-			leftLbl,
-			buttonCheck,
-			rightLbl,
+			buttonSelect,
 			layout.NewSpacer(),
 		),
 		container.NewHBox(
@@ -251,7 +250,7 @@ func createClickDialogContent(action *actions.Click) (fyne.CanvasObject, func())
 	)
 
 	saveFunc := func() {
-		action.Button = buttonCheck.Toggled
+		action.Button = buttonSelect.Selected
 		action.State = stateToggle.Toggled
 	}
 

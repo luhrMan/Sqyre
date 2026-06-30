@@ -51,11 +51,18 @@ func executeMove(a actions.ActionInterface, macro *models.Macro) error {
 func executeClick(a actions.ActionInterface, macro *models.Macro) error {
 	node := a.(*actions.Click)
 	log.Println("Click:", node.String())
-	btn := actions.LeftOrRight(node.Button)
-	if node.State {
-		return getAutomationBackend().Click(btn, true)
+	backend := getAutomationBackend()
+	if node.Button == actions.ClickButtonScroll {
+		return backend.Scroll(!node.State)
 	}
-	return getAutomationBackend().Click(btn, false)
+	btn := node.Button
+	if btn != actions.ClickButtonLeft && btn != actions.ClickButtonRight && btn != actions.ClickButtonCenter {
+		btn = actions.ClickButtonLeft
+	}
+	if node.State {
+		return backend.Click(btn, true)
+	}
+	return backend.Click(btn, false)
 }
 
 func executeKey(a actions.ActionInterface, macro *models.Macro) error {
