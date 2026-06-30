@@ -64,5 +64,19 @@ func (mtabs *MacroTabs) SelectedTab() *MacroTree {
 	if mtabs.Selected() == nil {
 		return nil
 	}
-	return mtabs.Selected().Content.(*MacroTree)
+	if c := macroTabContentFrom(mtabs.Selected().Content); c != nil {
+		return c.Tree
+	}
+	if tree, ok := mtabs.Selected().Content.(*MacroTree); ok {
+		return tree
+	}
+	return nil
+}
+
+// SelectedMacroContent returns the full tab content wrapper when present.
+func (mtabs *MacroTabs) SelectedMacroContent() *MacroTabContent {
+	if mtabs.Selected() == nil {
+		return nil
+	}
+	return macroTabContentFrom(mtabs.Selected().Content)
 }

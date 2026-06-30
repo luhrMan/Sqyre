@@ -30,7 +30,7 @@ type WireDeps struct {
 	ShowErrorWithEscape    func(err error, parent fyne.Window)
 	AddDialogEscapeClose   func(d dialog.Dialog, parent fyne.Window)
 	ShowConfirmWithEscape  func(title, message string, callback func(bool), parent fyne.Window)
-	ShowActionDialog       func(action actions.ActionInterface, onSave func(actions.ActionInterface))
+	ShowActionDialog       func(action actions.ActionInterface, onSave func(actions.ActionInterface), onCancel func())
 }
 
 var activeWire WireDeps
@@ -98,7 +98,7 @@ func AddMacroTab(m *models.Macro) {
 			return
 		}
 	}
-	t := container.NewTabItem(m.Name, NewMacroTree(m))
+	t := container.NewTabItem(m.Name, NewMacroTabContent(m))
 	mtabs.AddTab(m.Name, t)
 	setMacroTree(mtabs.SelectedTab())
 	syncMacroToolbarFieldsFromSelection()
@@ -129,10 +129,10 @@ func setMtabSettingsAndWidgets(d WireDeps) {
 		repositories.MacroRepo().Set(m.Name, m)
 		ti := container.NewTabItem(
 			name,
-			NewMacroTree(m),
+			NewMacroTabContent(m),
 		)
 
-		setMacroTree(ti.Content.(*MacroTree))
+		setMacroTree(ti.Content.(*MacroTabContent).Tree)
 		go fyne.DoAndWait(func() {
 			mtabs.BoundMacroListWidget.Refresh()
 		})
@@ -164,6 +164,9 @@ func setMtabSettingsAndWidgets(d WireDeps) {
 		}
 
 		syncMacroToolbarFieldsFromSelection()
+		if c := macroTabContentFrom(ti.Content); c != nil {
+			c.RefreshVariablesPanel()
+		}
 	}
 
 	saveHotkey := func(deferHookRegister bool) {
@@ -345,6 +348,10 @@ func setMacroTree(mt *MacroTree) {
 			}
 			mt.RefreshItem(uid)
 			mt.Refresh()
-		})
+			if c := d.Mui.MTabs.SelectedMacroContent(); c != nil {
+				c.RefreshVariablesPanel()
+			}
+		}, nil)
 	}
 }
+

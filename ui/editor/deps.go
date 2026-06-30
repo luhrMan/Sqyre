@@ -6,6 +6,8 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/driver/desktop"
+
+	"Sqyre/ui/macrocxt"
 )
 
 // WireDeps supplies the editor shell and callbacks from package ui (avoids import cycle).
@@ -13,6 +15,7 @@ type WireDeps struct {
 	Window                fyne.Window
 	EU                    *EditorUi
 	MacroMTabs            func() *macro.MacroTabs
+	MacroContext          macrocxt.Provider
 	// MacroVariables returns variable names from the currently selected macro (for VarEntry completion).
 	MacroVariables        func() []string
 	NavigationVisible     func() bool
@@ -33,7 +36,7 @@ func macroVarNames() []string {
 	if activeWire.MacroVariables != nil {
 		return activeWire.MacroVariables()
 	}
-	return nil
+	return activeWire.MacroContext.VariableNames()
 }
 
 func wrapTagChip(inner fyne.CanvasObject) fyne.CanvasObject {
@@ -52,10 +55,10 @@ func SetEditorUi(d WireDeps) {
 	setEditorLists()
 	setEditorForms()
 	setEditorButtons()
-	setMasksForms()
 	setMasksButtons()
 	setMaskSelectionButtons()
-	setEditorPreviewRefreshButtons()
+	setEditorRecordHandlers()
+	setEditorPreviewRefreshHandlers()
 	updateProgramSelectorOptions()
 	setupAllDirtyTracking()
 	selectFirstProgramInEditorIfAny()

@@ -4,9 +4,43 @@ import (
 	"Sqyre/internal/config"
 	"Sqyre/internal/models"
 	"sort"
+	"strings"
+
+	"fyne.io/fyne/v2/widget"
 
 	"github.com/lithammer/fuzzysearch/fuzzy"
 )
+
+// accordionProgramNameFromTitle extracts "MyProgram" from titles like "MyProgram (3)".
+func accordionProgramNameFromTitle(title string) string {
+	if i := strings.LastIndex(title, " ("); i > 0 {
+		return title[:i]
+	}
+	return title
+}
+
+func captureAccordionOpenByProgram(items []*widget.AccordionItem) map[string]bool {
+	open := make(map[string]bool, len(items))
+	for _, item := range items {
+		if item == nil {
+			continue
+		}
+		open[accordionProgramNameFromTitle(item.Title)] = item.Open
+	}
+	return open
+}
+
+func applyAccordionOpenByProgram(items []*widget.AccordionItem, open map[string]bool) {
+	for _, item := range items {
+		if item == nil {
+			continue
+		}
+		name := accordionProgramNameFromTitle(item.Title)
+		if was, ok := open[name]; ok {
+			item.Open = was
+		}
+	}
+}
 
 // sortKeysByRepoDisplayName sorts keys by entity display name from get; falls back to key string.
 func sortKeysByRepoDisplayName(keys []string, get func(string) string) {

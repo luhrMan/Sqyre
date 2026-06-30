@@ -22,33 +22,34 @@ func newParam(label string, value any) actionParam {
 	return actionParam{Label: label, Value: value}
 }
 
+func formatParamValue(value any) string {
+	switch v := value.(type) {
+	case float32:
+		return formatFloatUpTo2Decimals(float64(v))
+	case float64:
+		return formatFloatUpTo2Decimals(v)
+	default:
+		return fmt.Sprintf("%v", value)
+	}
+}
+
+func formatFloatUpTo2Decimals(f float64) string {
+	s := fmt.Sprintf("%.2f", f)
+	s = strings.TrimRight(s, "0")
+	s = strings.TrimRight(s, ".")
+	return s
+}
+
 func stringifyParams(params []actionParam) string {
 	parts := make([]string, 0, len(params))
 	for _, p := range params {
-		value := strings.TrimSpace(fmt.Sprintf("%v", p.Value))
+		value := strings.TrimSpace(formatParamValue(p.Value))
 		if value == "" {
 			continue
 		}
 		parts = append(parts, fmt.Sprintf("%s: %s", p.Label, value))
 	}
 	return strings.Join(parts, " "+config.DescriptionDelimiter+" ")
-}
-
-func formatSearchAreaLabel(area SearchArea) string {
-	name := strings.TrimSpace(area.Name)
-	coordinates := fmt.Sprintf(
-		"TopY: %v, LeftX: %v, BottomY: %v, RightX: %v",
-		area.TopY,
-		area.LeftX,
-		area.BottomY,
-		area.RightX,
-	)
-
-	if name == "" {
-		return coordinates
-	}
-
-	return fmt.Sprintf("%s (%s)", name, coordinates)
 }
 
 func displayFromParams(params []actionParam) fyne.CanvasObject {
@@ -58,16 +59,17 @@ func displayFromParams(params []actionParam) fyne.CanvasObject {
 		if strings.EqualFold(p.Label, "Type") {
 			continue
 		}
-		value := strings.TrimSpace(fmt.Sprintf("%v", p.Value))
+		value := strings.TrimSpace(formatParamValue(p.Value))
 		if value == "" {
 			continue
 		}
-		line.Add(newParamPill(fmt.Sprintf("%s: %s", p.Label, value), actionType))
+		line.Add(NewDisplayPill(fmt.Sprintf("%s: %s", p.Label, value), actionType))
 	}
 	return line
 }
 
-func newParamPill(text string, actionType string) fyne.CanvasObject {
+// NewDisplayPill renders a rounded label chip using the pastel color for actionType.
+func NewDisplayPill(text string, actionType string) fyne.CanvasObject {
 	label := canvas.NewText(text, theme.Color(theme.ColorNameForeground))
 	label.TextSize = 11
 	fill := actionPillColor(actionType)

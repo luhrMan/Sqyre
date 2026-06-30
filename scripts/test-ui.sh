@@ -1,24 +1,37 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Run UI tests under a virtual X display so robotgo can initialize in headless environments.
-run_tests() {
-  export SQUIRE_UI_TEST=1
-  go test ./ui ./ui/custom_widgets "$@"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
+
+export GOFLAGS="${GOFLAGS:--tags=gocv_specific_modules -buildvcs=false}"
+
+display_usable() {
+  [[ -n "${DISPLAY:-}" ]] && command -v xdpyinfo >/dev/null 2>&1 && xdpyinfo >/dev/null 2>&1
 }
 
-if [[ -n "${DISPLAY:-}" ]]; then
+run_tests() {
+  export SQUIRE_UI_TEST=1
+  unset SQYRE_NO_HOOK
+  go test -v "$@" ./ui/
+  go test -v "$@" ./ui/custom_widgets/
+  go test -v "$@" ./internal/models/actions/
+  go test -v "$@" ./internal/services/ -run '^TestExecute'
+}
+
+if [[ "${1:-}" == "--xvfb-inner" ]]; then
+  shift
+  run_tests "$@"
+  exit 0
+fi
+
+if display_usable; then
   run_tests "$@"
   exit 0
 fi
 
 if command -v xvfb-run >/dev/null 2>&1; then
-  xvfb-run -a --server-args="-screen 0 1920x1080x24" bash -lc '
-    set -euo pipefail
-    export SQUIRE_UI_TEST=1
-    go test ./ui ./ui/custom_widgets "$@"
-  ' -- "$@"
-  exit 0
+  exec xvfb-run -a --server-args="-screen 0 1920x1080x24" "$0" --xvfb-inner "$@"
 fi
 
 if command -v Xvfb >/dev/null 2>&1; then
@@ -31,6 +44,6 @@ if command -v Xvfb >/dev/null 2>&1; then
   exit 0
 fi
 
-echo "No DISPLAY is set and neither xvfb-run nor Xvfb is installed." >&2
+echo "No usable DISPLAY and neither xvfb-run nor Xvfb is installed." >&2
 echo "Install xvfb or run with an active display to execute UI tests." >&2
 exit 1

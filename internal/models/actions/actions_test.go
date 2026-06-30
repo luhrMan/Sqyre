@@ -164,8 +164,24 @@ func TestClick_Icon(t *testing.T) {
 
 func TestNewWait(t *testing.T) {
 	w := NewWait(500)
-	if w.GetType() != "wait" || w.Time != 500 {
-		t.Errorf("Type=%q Time=%d", w.GetType(), w.Time)
+	if w.GetType() != "wait" {
+		t.Errorf("Type=%q", w.GetType())
+	}
+	if time, ok := w.Time.(int); !ok || time != 500 {
+		t.Errorf("Time=%v", w.Time)
+	}
+}
+
+func TestNewWait_Variable(t *testing.T) {
+	w := NewWait("${delay}")
+	if time, ok := w.Time.(string); !ok || time != "${delay}" {
+		t.Errorf("Time=%v", w.Time)
+	}
+}
+
+func TestWait_String_Variable(t *testing.T) {
+	if got := NewWait("${delay}").String(); got != "Type: wait  /  Time: ${delay}" {
+		t.Errorf("String() = %q", got)
 	}
 }
 
@@ -178,27 +194,30 @@ func TestWait_String(t *testing.T) {
 // --- Move ---
 
 func TestNewMove(t *testing.T) {
-	p := Point{Name: "center", X: 100, Y: 200}
-	m := NewMove(p, false)
-	if m.GetType() != "move" || m.Point.Name != "center" || m.Point.X != 100 || m.Point.Y != 200 || m.Smooth != false {
+	ref := NewCoordinateRef("prog", "center")
+	m := NewMove(ref, false)
+	if m.GetType() != "move" || m.Point != ref || m.Smooth != false {
 		t.Errorf("Move: %+v", m)
 	}
 }
 
 func TestNewMove_Smooth(t *testing.T) {
-	m := NewMove(Point{Name: "B", X: 5, Y: 10}, true)
+	m := NewMove(NewCoordinateRef("prog", "B"), true)
 	if !m.Smooth {
 		t.Errorf("expected Smooth=true")
+	}
+	if m.SmoothLow != DefaultSmoothLow || m.SmoothHigh != DefaultSmoothHigh || m.SmoothDelayMs != DefaultSmoothDelayMs {
+		t.Errorf("expected default smooth settings, got low=%v high=%v delay=%v", m.SmoothLow, m.SmoothHigh, m.SmoothDelayMs)
 	}
 }
 
 func TestMove_String(t *testing.T) {
-	m := NewMove(Point{Name: "A", X: 1, Y: 2}, false)
-	if got := m.String(); got != "Type: move  /  Point: A  /  X: 1  /  Y: 2" {
+	m := NewMove(NewCoordinateRef("prog", "A"), false)
+	if got := m.String(); got != "Type: move  /  Point: prog~A" {
 		t.Errorf("String() = %q", got)
 	}
-	m2 := NewMove(Point{Name: "A", X: 1, Y: 2}, true)
-	if got := m2.String(); got != "Type: move  /  Point: A  /  X: 1  /  Y: 2  /  Smooth: true" {
+	m2 := NewMove(NewCoordinateRef("prog", "A"), true)
+	if got := m2.String(); got != "Type: move  /  Point: prog~A  /  Smooth: true  /  Smooth low: 0.1  /  Smooth high: 0.5  /  Smooth delay (ms): 1" {
 		t.Errorf("String() = %q", got)
 	}
 }
@@ -372,21 +391,26 @@ func TestLoop_String(t *testing.T) {
 // --- Ocr ---
 
 func TestNewOcr(t *testing.T) {
-	area := SearchArea{Name: "box", LeftX: 0, TopY: 0, RightX: 100, BottomY: 100}
-	o := NewOcr("myocr", nil, "target", area)
-	if o.GetType() != "ocr" || o.Name != "myocr" || o.Target != "target" || o.SearchArea.Name != "box" {
+	area := NewCoordinateRef("prog", "box")
+	o := NewOcr("myocr", "target", area)
+	if o.GetType() != "ocr" || o.Name != "myocr" || o.Target != "target" || o.SearchArea.Name() != "box" {
 		t.Errorf("Ocr: %+v", o)
 	}
-	if o.Blur != 3 || o.MinThreshold != 50 || o.Resize != 1.0 || !o.Grayscale {
-		t.Errorf("Ocr defaults: Blur=%d MinThreshold=%d Resize=%v Grayscale=%v", o.Blur, o.MinThreshold, o.Resize, o.Grayscale)
+	if o.Blur != 1 || o.MinThreshold != 0 || o.Resize != 1.0 || !o.Grayscale || o.ThresholdOtsu || o.ThresholdInvert {
+		t.Errorf("Ocr defaults: Blur=%d MinThreshold=%d Resize=%v Grayscale=%v ThresholdOtsu=%v ThresholdInvert=%v",
+			o.Blur, o.MinThreshold, o.Resize, o.Grayscale, o.ThresholdOtsu, o.ThresholdInvert)
 	}
 }
 
 func TestOcr_String(t *testing.T) {
-	area := SearchArea{Name: "A"}
-	o := NewOcr("O", nil, "text", area)
-	if got := o.String(); !strings.Contains(got, "O") || !strings.Contains(got, "text") || !strings.Contains(got, "A") || !strings.Contains(got, "instant") {
+	area := NewCoordinateRef("prog", "A")
+	o := NewOcr("O", "text", area)
+	got := o.String()
+	if !strings.Contains(got, "O") || !strings.Contains(got, "text") || !strings.Contains(got, "Search Area: prog~A") || !strings.Contains(got, "instant") {
 		t.Errorf("String() = %q", got)
+	}
+	if strings.Contains(got, "TopY") || strings.Contains(got, "LeftX") {
+		t.Errorf("String() should not show search area coordinates, got %q", got)
 	}
 	o.WaitTilFound = true
 	o.WaitTilFoundSeconds = 10
@@ -398,7 +422,7 @@ func TestOcr_String(t *testing.T) {
 // --- ImageSearch ---
 
 func TestNewImageSearch(t *testing.T) {
-	area := SearchArea{Name: "region"}
+	area := NewCoordinateRef("prog", "region")
 	targets := []string{"b.png", "a.png"}
 	is := NewImageSearch("im", nil, targets, area, 2, 3, 0.9, 1)
 	if is.GetType() != "imagesearch" || is.Name != "im" || is.RowSplit != 2 || is.ColSplit != 3 || is.Tolerance != 0.9 || is.Blur != 1 {
@@ -411,10 +435,14 @@ func TestNewImageSearch(t *testing.T) {
 }
 
 func TestImageSearch_String(t *testing.T) {
-	area := SearchArea{Name: "R"}
+	area := NewCoordinateRef("prog", "R")
 	is := NewImageSearch("S", nil, []string{"a"}, area, 1, 1, 0, 0)
-	if got := is.String(); !strings.Contains(got, "Items: 1") || !strings.Contains(got, "Search Area: R") {
+	got := is.String()
+	if !strings.Contains(got, "Items: 1") || !strings.Contains(got, "Search Area: prog~R") {
 		t.Errorf("String() = %q", got)
+	}
+	if strings.Contains(got, "TopY") || strings.Contains(got, "LeftX") {
+		t.Errorf("String() should not show search area coordinates, got %q", got)
 	}
 	is.WaitTilFound = true
 	is.WaitTilFoundSeconds = 5
@@ -426,8 +454,8 @@ func TestImageSearch_String(t *testing.T) {
 // --- FindPixel ---
 
 func TestNewFindPixel(t *testing.T) {
-	sa := SearchArea{Name: "sa", LeftX: 10, TopY: 20, RightX: 30, BottomY: 40}
-	w := NewFindPixel("fp", sa, "#ff0000", 5, nil)
+	sa := NewCoordinateRef("prog", "sa")
+	w := NewFindPixel("fp", sa, "#ff0000", 5)
 	if w.GetType() != "findpixel" || w.Name != "fp" || w.ColorTolerance != 5 {
 		t.Errorf("FindPixel: %+v", w)
 	}
@@ -437,12 +465,11 @@ func TestNewFindPixel(t *testing.T) {
 }
 
 func TestNewFindPixel_clampTolerance(t *testing.T) {
-	sa := SearchArea{}
-	w := NewFindPixel("w", sa, "#000", -1, nil)
+	w := NewFindPixel("w", "", "#000", -1)
 	if w.ColorTolerance != 0 {
 		t.Errorf("ColorTolerance should be clamped to 0, got %d", w.ColorTolerance)
 	}
-	w2 := NewFindPixel("w2", sa, "#000", 150, nil)
+	w2 := NewFindPixel("w2", "", "#000", 150)
 	if w2.ColorTolerance != 100 {
 		t.Errorf("ColorTolerance should be clamped to 100, got %d", w2.ColorTolerance)
 	}
@@ -483,10 +510,14 @@ func TestFindPixel_MatchColor(t *testing.T) {
 }
 
 func TestFindPixel_String(t *testing.T) {
-	sa := SearchArea{LeftX: 1, TopY: 2, RightX: 100, BottomY: 200}
-	w := NewFindPixel("W", sa, "ff0000", 0, nil)
-	if got := w.String(); !strings.Contains(got, "instant") || !strings.Contains(got, "ff0000") {
+	sa := NewCoordinateRef("prog", "region")
+	w := NewFindPixel("W", sa, "ff0000", 0)
+	got := w.String()
+	if !strings.Contains(got, "instant") || !strings.Contains(got, "ff0000") || !strings.Contains(got, "Search Area: prog~region") {
 		t.Errorf("String() = %q", got)
+	}
+	if strings.Contains(got, "TopY") || strings.Contains(got, "LeftX") {
+		t.Errorf("String() should not show search area coordinates, got %q", got)
 	}
 	w.WaitTilFound = true
 	w.WaitTilFoundSeconds = 5
@@ -495,132 +526,18 @@ func TestFindPixel_String(t *testing.T) {
 	}
 }
 
-// --- DataList ---
-
-func TestNewDataList(t *testing.T) {
-	d := NewDataList("line1\nline2", "out", false)
-	if d.GetType() != "datalist" || d.Source != "line1\nline2" || d.OutputVar != "out" || d.IsFile != false {
-		t.Errorf("DataList: %+v", d)
+func TestForEachRow_SourcesAndSubActions(t *testing.T) {
+	sub := NewWait(5)
+	fer := NewForEachRow("rows", []ListColumn{
+		{Source: "a", OutputVar: "x"},
+		{Source: "b", OutputVar: "y"},
+	}, []ActionInterface{sub})
+	if fer.Name != "rows" || len(fer.Sources) != 2 {
+		t.Errorf("ForEachRow: %+v", fer)
 	}
-}
-
-func TestDataList_manualText_LineCount_GetCurrentLine_NextLine_Reset(t *testing.T) {
-	d := NewDataList("a\nb\nc", "v", false)
-	n, err := d.LineCount()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if n != 3 {
-		t.Errorf("LineCount() = %d, want 3", n)
-	}
-	first, err := d.GetCurrentLine()
-	if err != nil || first != "a" {
-		t.Errorf("GetCurrentLine() = %q, err=%v", first, err)
-	}
-	d.NextLine()
-	line, _ := d.GetCurrentLine()
-	if line != "b" {
-		t.Errorf("after NextLine GetCurrentLine() = %q", line)
-	}
-	d.NextLine()
-	line, _ = d.GetCurrentLine()
-	if line != "c" {
-		t.Errorf("GetCurrentLine() = %q", line)
-	}
-	d.NextLine() // wrap from last line back to first
-	line, _ = d.GetCurrentLine()
-	if line != first {
-		t.Errorf("after wrap GetCurrentLine() = %q, want first line %q", line, first)
-	}
-	d.Reset()
-	line, _ = d.GetCurrentLine()
-	if line != first {
-		t.Errorf("after Reset GetCurrentLine() = %q", line)
-	}
-}
-
-func TestDataList_manualText_trailingNewline(t *testing.T) {
-	d := NewDataList("x\ny\n", "v", false)
-	n, err := d.LineCount()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if n != 2 {
-		t.Errorf("trailing newline should give 2 lines, got %d", n)
-	}
-}
-
-func TestDataList_manualText_skipBlankLines(t *testing.T) {
-	d := NewDataList("a\n\nb\n  \nc", "v", false)
-	d.SkipBlankLines = true
-	n, err := d.LineCount()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if n != 3 {
-		t.Errorf("LineCount() with SkipBlankLines = %d, want 3", n)
-	}
-	line, _ := d.GetCurrentLine()
-	if line != "a" {
-		t.Errorf("GetCurrentLine() = %q", line)
-	}
-	d.NextLine()
-	line, _ = d.GetCurrentLine()
-	if line != "b" {
-		t.Errorf("GetCurrentLine() = %q", line)
-	}
-	d.NextLine()
-	line, _ = d.GetCurrentLine()
-	if line != "c" {
-		t.Errorf("GetCurrentLine() = %q", line)
-	}
-}
-
-func TestDataList_file_absolutePath(t *testing.T) {
-	dir := t.TempDir()
-	f := filepath.Join(dir, "lines.txt")
-	if err := os.WriteFile(f, []byte("first\nsecond\nthird\n"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	d := NewDataList(f, "v", true)
-	// Force file path to be used as absolute so we don't depend on config.GetVariablesPath
-	d.Source = f
-	n, err := d.LineCount()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if n != 3 {
-		t.Errorf("LineCount() = %d, want 3", n)
-	}
-	line, err := d.GetCurrentLine()
-	if err != nil || line != "first" {
-		t.Errorf("GetCurrentLine() = %q, err=%v", line, err)
-	}
-}
-
-func TestDataList_GetCurrentLine_outOfRange(t *testing.T) {
-	d := NewDataList("only", "v", false)
-	_, _ = d.LineCount()
-	_, err := d.GetCurrentLine()
-	if err != nil {
-		t.Fatal(err)
-	}
-	d.currentLine = 5
-	_, err = d.GetCurrentLine()
-	if err == nil {
-		t.Error("expected error when currentLine out of range")
-	}
-}
-
-func TestDataList_String(t *testing.T) {
-	d := NewDataList("a\nb", "out", false)
-	_, _ = d.LineCount()
-	if got := d.String(); !strings.Contains(got, "Lines: 2") || !strings.Contains(got, "Output: out") {
-		t.Errorf("String() = %q", got)
-	}
-	d2 := NewDataList("/path/file", "v", true)
-	if got := d2.String(); !strings.Contains(got, "file") || !strings.Contains(got, "/path/file") {
-		t.Errorf("String() = %q", got)
+	subs := fer.GetSubActions()
+	if len(subs) != 1 || subs[0] != sub {
+		t.Errorf("GetSubActions() = %+v", subs)
 	}
 }
 
@@ -631,18 +548,20 @@ func TestActionTypes_Icon(t *testing.T) {
 		a    ActionInterface
 	}{
 		{"Calculate", NewCalculate("1", "x")},
-		{"DataList", NewDataList("x", "v", false)},
+		{"ForEachRow", NewForEachRow("r", nil, nil)},
 		{"FocusWindow", NewFocusWindow("w")},
-		{"ImageSearch", NewImageSearch("s", nil, nil, SearchArea{}, 0, 0, 0, 0)},
+		{"ImageSearch", NewImageSearch("s", nil, nil, "", 0, 0, 0, 0)},
 		{"Key", NewKey("k", false)},
 		{"KeyDown", NewKey("k", true)},
 		{"Loop", NewLoop(1, "l", nil)},
-		{"Move", NewMove(Point{}, false)},
-		{"Ocr", NewOcr("o", nil, "", SearchArea{})},
+		{"Move", NewMove("", false)},
+		{"Ocr", NewOcr("o", "", "")},
 		{"SaveVariable", NewSaveVariable("v", "d", false, false)},
 		{"SetVariable", NewSetVariable("v", 0)},
 		{"Wait", NewWait(0)},
-		{"FindPixel", NewFindPixel("w", SearchArea{}, "000000", 0, nil)},
+		{"FindPixel", NewFindPixel("w", "", "000000", 0)},
+		{"Break", NewBreak()},
+		{"Continue", NewContinue()},
 	}
 	for _, tt := range actions {
 		t.Run(tt.name, func(t *testing.T) {
@@ -650,24 +569,6 @@ func TestActionTypes_Icon(t *testing.T) {
 				t.Error("Icon() should not be nil")
 			}
 		})
-	}
-}
-
-func TestDataList_LineCount_fileNotFound(t *testing.T) {
-	d := NewDataList("nonexistent-file-actions-test-12345.txt", "v", true)
-	// IsFile true + non-absolute path -> loadLines joins with config path and reads; file missing
-	_, err := d.LineCount()
-	if err == nil {
-		t.Error("LineCount() with missing file should return error")
-	}
-}
-
-func TestDataList_GetCurrentLine_loadError(t *testing.T) {
-	d := NewDataList("nonexistent-getcurrentline-12345.txt", "v", true)
-	// GetCurrentLine loads on demand; missing file causes loadLines to fail
-	_, err := d.GetCurrentLine()
-	if err == nil {
-		t.Error("GetCurrentLine() with missing file should return error")
 	}
 }
 

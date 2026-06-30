@@ -1,8 +1,13 @@
 package models
 
-import "strings"
+import (
+	"strings"
+)
 
-// VariableStore manages variables for a macro
+// VariableStore is the runtime variable store for a macro. It holds the live
+// values produced while a macro executes (initial declaration values, action
+// outputs, monitor builtins, etc.). It is not persisted directly; the persisted
+// source of truth for user-declared variables is Macro.VariableDecls.
 type VariableStore struct {
 	Variables map[string]any `yaml:"variables"`
 }
@@ -14,7 +19,36 @@ func NewVariableStore() *VariableStore {
 	}
 }
 
-// Set sets a variable value (name is trimmed so "foundX" and " foundX " match)
+func preferVariableName(a, b string) string {
+	aLower := a == strings.ToLower(a)
+	bLower := b == strings.ToLower(b)
+	if aLower && !bLower {
+		return b
+	}
+	if bLower && !aLower {
+		return a
+	}
+	return a
+}
+
+func (vs *VariableStore) findKey(name string) (string, bool) {
+	if vs.Variables == nil {
+		return "", false
+	}
+	if _, ok := vs.Variables[name]; ok {
+		return name, true
+	}
+	lower := strings.ToLower(name)
+	for k := range vs.Variables {
+		if strings.ToLower(k) == lower {
+			return k, true
+		}
+	}
+	return "", false
+}
+
+// Set sets a variable value (name is trimmed so "foundX" and " foundX " match).
+// Reuses an existing key when the name matches case-insensitively.
 func (vs *VariableStore) Set(name string, value any) {
 	if vs.Variables == nil {
 		vs.Variables = make(map[string]any)
@@ -23,16 +57,27 @@ func (vs *VariableStore) Set(name string, value any) {
 	if name == "" {
 		return
 	}
+	if existing, ok := vs.findKey(name); ok {
+		delete(vs.Variables, existing)
+	}
 	vs.Variables[name] = value
 }
 
-// Get retrieves a variable value
+// Get retrieves a variable value (case-insensitive name match).
 func (vs *VariableStore) Get(name string) (any, bool) {
 	if vs.Variables == nil {
 		return nil, false
 	}
-	val, ok := vs.Variables[name]
-	return val, ok
+	if val, ok := vs.Variables[name]; ok {
+		return val, true
+	}
+	lower := strings.ToLower(name)
+	for k, v := range vs.Variables {
+		if strings.ToLower(k) == lower {
+			return v, true
+		}
+	}
+	return nil, false
 }
 
 // Clear removes all variables
@@ -40,13 +85,20 @@ func (vs *VariableStore) Clear() {
 	vs.Variables = make(map[string]any)
 }
 
-// Has checks if a variable exists
+// Has checks if a variable exists (case-insensitive).
 func (vs *VariableStore) Has(name string) bool {
-	if vs.Variables == nil {
-		return false
-	}
-	_, ok := vs.Variables[name]
+	_, ok := vs.Get(name)
 	return ok
+}
+
+// Delete removes a variable by name (case-insensitive).
+func (vs *VariableStore) Delete(name string) {
+	if vs.Variables == nil {
+		return
+	}
+	if existing, ok := vs.findKey(name); ok {
+		delete(vs.Variables, existing)
+	}
 }
 
 // GetAll returns all variable names

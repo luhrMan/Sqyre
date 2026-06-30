@@ -32,29 +32,52 @@ var (
 	minLevel  = Info
 	stderrOut = log.New(os.Stderr, "", 0)
 	fileOut   *log.Logger
+	logFile   *os.File
 	filePath  string
 )
 
+// syncFileWriter flushes each write to disk so logs survive abrupt process death.
+type syncFileWriter struct {
+	F *os.File
+}
+
+func (w *syncFileWriter) Write(p []byte) (int, error) {
+	n, err := w.F.Write(p)
+	_ = w.F.Sync()
+	return n, err
+}
+
 // SetLogFile enables writing logs to path (e.g. ~/.sqyre/sqyre.log).
+// The standard library log package is also redirected so log.Printf reaches the file.
 // If path is empty or opening fails, only stderr is used.
 func SetLogFile(path string) {
 	mu.Lock()
 	defer mu.Unlock()
 	filePath = path
+	if logFile != nil {
+		_ = logFile.Close()
+		logFile = nil
+	}
 	if path == "" {
 		fileOut = nil
+		log.SetOutput(os.Stderr)
 		return
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		fileOut = nil
+		log.SetOutput(os.Stderr)
 		return
 	}
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
 		fileOut = nil
+		log.SetOutput(os.Stderr)
 		return
 	}
-	fileOut = log.New(f, "", 0)
+	logFile = f
+	sw := &syncFileWriter{F: f}
+	fileOut = log.New(sw, "", 0)
+	log.SetOutput(io.MultiWriter(os.Stderr, sw))
 }
 
 // SetLevel sets the minimum level to log (default Info).
