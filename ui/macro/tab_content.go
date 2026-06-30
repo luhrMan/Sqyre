@@ -29,10 +29,12 @@ type MacroTabContent struct {
 	VariablesPanel *VariablesPanel
 	innerTabs      *container.AppTabs
 	logTab         *container.TabItem
+	liveVarsTab    *container.TabItem
 
 	logEntry        *widget.Entry
 	logScroll       *container.Scroll
 	logLines        []string
+	logRenderedLines int
 	refreshLiveVars func()
 	liveVarsEmpty   *widget.Label
 	liveVarsScroll  *container.Scroll
@@ -60,6 +62,8 @@ func NewMacroTabContent(m *models.Macro) *MacroTabContent {
 	})
 	clearBtn := widget.NewButtonWithIcon("Clear", theme.DeleteIcon(), func() {
 		logEntry.SetText("")
+		content.logRenderedLines = 0
+		content.logLines = content.logLines[:0]
 	})
 	logBar := container.NewHBox(layout.NewSpacer(), clearBtn, copyBtn)
 	logPane := container.NewBorder(nil, logBar, nil, nil, logScroll)
@@ -78,12 +82,19 @@ func NewMacroTabContent(m *models.Macro) *MacroTabContent {
 
 	logTab := container.NewTabItem("Log", logPane)
 	content.logTab = logTab
+	liveVarsTab := container.NewTabItem("Live variables", varsPane)
+	content.liveVarsTab = liveVarsTab
 	content.innerTabs = container.NewAppTabs(
 		container.NewTabItem("Actions", buildActionsPane(tree)),
 		container.NewTabItem("Variables", variablesPanelChrome(panel, m)),
-		container.NewTabItem("Live variables", varsPane),
+		liveVarsTab,
 		logTab,
 	)
+	content.innerTabs.OnSelected = func(*container.TabItem) {
+		if content.logTabVisible() {
+			content.syncLogEntry()
+		}
+	}
 	content.ExtendBaseWidget(content)
 	return content
 }
@@ -141,6 +152,7 @@ func (c *MacroTabContent) updateLiveVars() {
 // the UI thread when execution starts.
 func (c *MacroTabContent) BindLog(macroName string) {
 	c.logLines = c.logLines[:0]
+	c.logRenderedLines = 0
 	c.logEntry.SetText("")
 	c.logScroll.ScrollToBottom()
 	c.updateLiveVars()
@@ -149,16 +161,49 @@ func (c *MacroTabContent) BindLog(macroName string) {
 	setActiveLogContent(c)
 }
 
+func (c *MacroTabContent) logTabVisible() bool {
+	if c == nil || c.innerTabs == nil || c.logTab == nil {
+		return false
+	}
+	return c.innerTabs.Selected() == c.logTab
+}
+
+func (c *MacroTabContent) liveVarsTabVisible() bool {
+	if c == nil || c.innerTabs == nil || c.liveVarsTab == nil {
+		return false
+	}
+	return c.innerTabs.Selected() == c.liveVarsTab
+}
+
+func (c *MacroTabContent) syncLogEntry() {
+	if c == nil || c.logEntry == nil {
+		return
+	}
+	c.logEntry.SetText(strings.Join(c.logLines, "\n"))
+	c.logRenderedLines = len(c.logLines)
+	c.logScroll.ScrollToBottom()
+}
+
 // appendDrainedLog appends a batch of drained log lines, trims to the cap, and
-// re-renders the Entry once. Called on the UI thread by the log pump.
+// updates the Entry incrementally when the Log tab is visible.
 func (c *MacroTabContent) appendDrainedLog(lines []string) {
 	if len(lines) == 0 {
 		return
 	}
+	trimmed := len(c.logLines)+len(lines) > maxLogLines
 	c.logLines = append(c.logLines, lines...)
 	if len(c.logLines) > maxLogLines {
 		c.logLines = append([]string(nil), c.logLines[len(c.logLines)-maxLogLines:]...)
 	}
-	c.logEntry.SetText(strings.Join(c.logLines, "\n"))
+	if !c.logTabVisible() {
+		c.logRenderedLines = 0
+		return
+	}
+	if trimmed || c.logRenderedLines == 0 {
+		c.syncLogEntry()
+		return
+	}
+	c.logEntry.SetText(c.logEntry.Text + "\n" + strings.Join(lines, "\n"))
+	c.logRenderedLines += len(lines)
 	c.logScroll.ScrollToBottom()
 }

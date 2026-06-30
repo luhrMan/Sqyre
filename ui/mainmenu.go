@@ -34,19 +34,20 @@ func buildActionTemplates() []actionTemplate {
 		{label: "Key", actionType: "key", category: "Mouse & Keyboard", icon: actions.NewKey("ctrl", true).Icon(), create: func() actions.ActionInterface { return actions.NewKey("ctrl", true) }},
 		{label: "Type", actionType: "type", category: "Mouse & Keyboard", icon: actions.NewType("", 0).Icon(), create: func() actions.ActionInterface { return actions.NewType("", 0) }},
 		{label: "Wait", actionType: "wait", category: "Miscellaneous", icon: actions.NewWait(0).Icon(), create: func() actions.ActionInterface { return actions.NewWait(0) }},
-		{label: "Focus window", actionType: "focuswindow", category: "Miscellaneous", icon: actions.NewFocusWindow("").Icon(), create: func() actions.ActionInterface { return actions.NewFocusWindow("") }},
+		{label: "Focus window", actionType: "focuswindow", category: "Miscellaneous", icon: actions.NewFocusWindow("", "").Icon(), create: func() actions.ActionInterface { return actions.NewFocusWindow("", "") }},
 		{label: "Run macro", actionType: "runmacro", category: "Miscellaneous", icon: actions.NewRunMacro("").Icon(), create: func() actions.ActionInterface { return actions.NewRunMacro("") }},
 
-		{label: "Loop", actionType: "loop", category: "Miscellaneous", icon: actions.NewLoop(1, "", []actions.ActionInterface{}).Icon(), create: func() actions.ActionInterface {
-			return actions.NewLoop(1, "", []actions.ActionInterface{})
-		}},
 		{label: "If", actionType: "conditional", category: "Miscellaneous", icon: actions.NewConditional(nil, actions.MatchAll, "", []actions.ActionInterface{}).Icon(), create: func() actions.ActionInterface {
 			return actions.NewConditional(nil, actions.MatchAll, "", []actions.ActionInterface{})
 		}},
-		{label: "Break", actionType: "break", category: "Miscellaneous", icon: actions.NewBreak().Icon(), create: func() actions.ActionInterface {
+
+		{label: "Loop", actionType: "loop", category: "Loop flow", icon: actions.NewLoop(1, "", []actions.ActionInterface{}).Icon(), create: func() actions.ActionInterface {
+			return actions.NewLoop(1, "", []actions.ActionInterface{})
+		}},
+		{label: "Break", actionType: "break", category: "Loop flow", icon: actions.NewBreak().Icon(), create: func() actions.ActionInterface {
 			return actions.NewBreak()
 		}},
-		{label: "Continue", actionType: "continue", category: "Miscellaneous", icon: actions.NewContinue().Icon(), create: func() actions.ActionInterface {
+		{label: "Continue", actionType: "continue", category: "Loop flow", icon: actions.NewContinue().Icon(), create: func() actions.ActionInterface {
 			return actions.NewContinue()
 		}},
 		{label: "Image Search", actionType: "imagesearch", category: "Detection", icon: actions.NewImageSearch("", []actions.ActionInterface{}, []string{}, "", 1, 1, 0.95, 5).Icon(), create: func() actions.ActionInterface {
@@ -70,12 +71,16 @@ func buildActionTemplates() []actionTemplate {
 	}
 }
 
+// AddActionPickerSize is the default size for the Add Action picker dialog and screenshots.
+var AddActionPickerSize = fyne.NewSize(1240, 460)
+
 func buildAddActionPickerContent(templates []actionTemplate, onPick func(actionTemplate)) fyne.CanvasObject {
-	categoryColumns := []string{"Mouse & Keyboard", "Detection", "Variables", "Miscellaneous"}
+	categoryColumns := []string{"Mouse & Keyboard", "Detection", "Variables", "Loop flow", "Miscellaneous"}
 	categoryTiles := map[string][]fyne.CanvasObject{
 		"Mouse & Keyboard": {},
 		"Detection":        {},
 		"Variables":        {},
+		"Loop flow":        {},
 		"Miscellaneous":    {},
 	}
 	for _, tmpl := range templates {
@@ -104,7 +109,7 @@ func buildAddActionPickerContent(templates []actionTemplate, onPick func(actionT
 		columnObjects = append(columnObjects, container.NewVBox(content...))
 	}
 
-	grid := container.NewGridWithColumns(4, columnObjects...)
+	grid := container.NewGridWithColumns(5, columnObjects...)
 	return container.NewBorder(
 		widget.NewLabel("Pick an action type"),
 		nil, nil, nil,
@@ -128,7 +133,7 @@ func showAddActionDialog(u *Ui, addActionAndRefresh func(actions.ActionInterface
 
 	d = dialog.NewCustom("Add Action", "Close", content, u.Window)
 	AddDialogEscapeClose(d, u.Window)
-	d.Resize(fyne.NewSize(980, 460))
+	d.Resize(AddActionPickerSize)
 	d.Show()
 }
 
@@ -139,6 +144,7 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 	basicActionsSubMenu := fyne.NewMenuItem("Mouse & Keyboard", nil)
 	advancedActionsSubMenu := fyne.NewMenuItem("Detection", nil)
 	variableActionsSubMenu := fyne.NewMenuItem("Variables", nil)
+	loopFlowActionsSubMenu := fyne.NewMenuItem("Loop flow", nil)
 	miscActionsSubMenu := fyne.NewMenuItem("Miscellaneous", nil)
 
 	macroMenu.Items = append(macroMenu.Items,
@@ -151,6 +157,7 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 		basicActionsSubMenu,
 		advancedActionsSubMenu,
 		variableActionsSubMenu,
+		loopFlowActionsSubMenu,
 		miscActionsSubMenu,
 	)
 	addActionAndRefresh :=
@@ -173,6 +180,7 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 				mt.RefreshItem(uid)
 				mt.Refresh()
 			}, func() {
+				mt.RecordMutation()
 				if parent := a.GetParent(); parent != nil {
 					parent.RemoveSubAction(a)
 				}
@@ -180,6 +188,9 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 					mt.SelectedNode = ""
 				}
 				mt.Refresh()
+				if mt.OnTreeChanged != nil {
+					mt.OnTreeChanged()
+				}
 			})
 		}
 	templates := buildActionTemplates()
@@ -190,6 +201,7 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 	basicItems := make([]*fyne.MenuItem, 0)
 	advancedItems := make([]*fyne.MenuItem, 0)
 	variableItems := make([]*fyne.MenuItem, 0)
+	loopFlowItems := make([]*fyne.MenuItem, 0)
 	miscItems := make([]*fyne.MenuItem, 0)
 	for _, tmpl := range templates {
 		t := tmpl
@@ -203,6 +215,8 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 			advancedItems = append(advancedItems, item)
 		case "Variables":
 			variableItems = append(variableItems, item)
+		case "Loop flow":
+			loopFlowItems = append(loopFlowItems, item)
 		case "Miscellaneous":
 			miscItems = append(miscItems, item)
 		}
@@ -210,6 +224,7 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 	basicActionsSubMenu.ChildMenu = fyne.NewMenu("", basicItems...)
 	advancedActionsSubMenu.ChildMenu = fyne.NewMenu("", advancedItems...)
 	variableActionsSubMenu.ChildMenu = fyne.NewMenu("", variableItems...)
+	loopFlowActionsSubMenu.ChildMenu = fyne.NewMenu("", loopFlowItems...)
 	miscActionsSubMenu.ChildMenu = fyne.NewMenu("", miscItems...)
 
 	computerInfo := fyne.NewMenuItem("Computer info", func() {

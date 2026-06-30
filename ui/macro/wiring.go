@@ -15,7 +15,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/layout"
+	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"github.com/google/uuid"
@@ -61,6 +61,7 @@ func SetMacroUi(d WireDeps) {
 	}
 	setMacroSelect(d.Mui.MacroSelectButton, d)
 	syncMacroToolbarFieldsFromSelection()
+	registerMacroTreeShortcuts(d)
 }
 
 // SaveOpenMacros persists which macro tabs are open.
@@ -212,6 +213,9 @@ func setMtabSettingsAndWidgets(d WireDeps) {
 		if c := macroTabContentFrom(ti.Content); c != nil {
 			c.RefreshVariablesPanel()
 		}
+		if mtabs.OnHistoryButtonsSync != nil {
+			mtabs.OnHistoryButtonsSync()
+		}
 	}
 
 	saveHotkey := func(deferHookRegister bool) {
@@ -290,83 +294,10 @@ func setMtabSettingsAndWidgets(d WireDeps) {
 }
 
 func setMacroSelect(b *widget.Button, d WireDeps) {
-	var popup *widget.PopUp
 	b.Text = ""
 	b.Icon = theme.ListIcon()
 	b.OnTapped = func() {
-		d.Mui.MTabs.BoundMacroListWidget = widget.NewList(
-			func() int {
-				return len(repositories.MacroRepo().GetAll())
-			},
-			func() fyne.CanvasObject {
-				return container.NewHBox(widget.NewLabel("Template"), layout.NewSpacer(), &widget.Button{Icon: theme.CancelIcon(), Importance: widget.LowImportance})
-			},
-			func(id widget.ListItemID, co fyne.CanvasObject) {
-				k := repositories.MacroRepo().GetAllKeys()
-				c := co.(*fyne.Container)
-				label := c.Objects[0].(*widget.Label)
-				removeButton := c.Objects[2].(*widget.Button)
-				slices.Sort(k)
-				v := k[id]
-				label.SetText(v)
-				label.Importance = widget.MediumImportance
-				for _, tab := range d.Mui.MTabs.Items {
-					if tab.Text == v {
-						label.Importance = widget.SuccessImportance
-					}
-				}
-				label.Refresh()
-				removeButton.OnTapped = func() {
-					m, err := repositories.MacroRepo().Get(v)
-					if err != nil {
-						log.Printf("Error getting macro %s: %v", v, err)
-						return
-					}
-					d.ShowConfirmWithEscape("Delete Macro", "Are you sure you want to delete this macro?", func(ok bool) {
-						if ok {
-							if err := repositories.MacroRepo().Delete(v); err != nil {
-								log.Printf("Error deleting macro %s: %v", v, err)
-								return
-							}
-							d.Mui.MTabs.BoundMacroListWidget.RefreshItem(id)
-							for _, ti := range d.Mui.MTabs.Items {
-								if m.Name == ti.Text {
-									d.Mui.MTabs.Remove(ti)
-								}
-							}
-							d.Mui.MTabs.Refresh()
-						}
-					}, d.Window)
-				}
-				removeButton.Show()
-
-			},
-		)
-		d.Mui.MTabs.BoundMacroListWidget.OnSelected =
-			func(id widget.ListItemID) {
-				k := repositories.MacroRepo().GetAllKeys()
-				slices.Sort(k)
-				log.Println(k[id])
-				m, err := repositories.MacroRepo().Get(k[id])
-				if err != nil {
-					log.Printf("Error getting macro %s: %v", k[id], err)
-					return
-				}
-				AddMacroTab(m)
-				d.Mui.MTabs.BoundMacroListWidget.RefreshItem(id)
-				d.Mui.MTabs.BoundMacroListWidget.UnselectAll()
-			}
-		popUpContent := container.NewBorder(
-			widget.NewButton("Close", func() {
-				popup.Hide()
-			}), nil, nil, nil,
-			container.NewAdaptiveGrid(1,
-				d.Mui.MTabs.BoundMacroListWidget,
-			),
-		)
-		popup = widget.NewModalPopUp(popUpContent, d.Window.Canvas())
-		popup.Resize(fyne.NewSize(300, 500))
-		popup.Show()
+		showMacroListPopup(d)
 	}
 }
 
@@ -388,11 +319,17 @@ func setMacroTree(mt *MacroTree) {
 			c.RefreshVariablesPanel()
 		}
 	}
+	mt.OnHistoryChanged = func() {
+		if d.Mui.MTabs.OnHistoryButtonsSync != nil {
+			d.Mui.MTabs.OnHistoryButtonsSync()
+		}
+	}
 	mt.OnOpenActionDialog = func(action actions.ActionInterface) {
 		if action == nil {
 			return
 		}
 		uid := action.GetUID()
+		mt.RecordMutation()
 		d.ShowActionDialog(action, func(updatedAction actions.ActionInterface) {
 			if err := repositories.MacroRepo().Set(mt.Macro.Name, mt.Macro); err != nil {
 				log.Printf("failed to save macro after action edit: %v", err)
@@ -404,4 +341,51 @@ func setMacroTree(mt *MacroTree) {
 			}
 		}, nil)
 	}
+}
+
+func registerMacroTreeShortcuts(d WireDeps) {
+	if d.Window == nil {
+		return
+	}
+	canvas := d.Window.Canvas()
+	canvas.AddShortcut(&desktop.CustomShortcut{
+		KeyName:  fyne.KeyZ,
+		Modifier: fyne.KeyModifierControl,
+	}, func(fyne.Shortcut) {
+		if st := d.Mui.MTabs.SelectedTab(); st != nil {
+			st.Undo()
+		}
+	})
+	canvas.AddShortcut(&desktop.CustomShortcut{
+		KeyName:  fyne.KeyY,
+		Modifier: fyne.KeyModifierControl,
+	}, func(fyne.Shortcut) {
+		if st := d.Mui.MTabs.SelectedTab(); st != nil {
+			st.Redo()
+		}
+	})
+	canvas.AddShortcut(&desktop.CustomShortcut{
+		KeyName:  fyne.KeyC,
+		Modifier: fyne.KeyModifierControl,
+	}, func(fyne.Shortcut) {
+		copyMacroTreeSelection(d.Mui.MTabs.SelectedTab())
+	})
+	canvas.AddShortcut(&desktop.CustomShortcut{
+		KeyName:  fyne.KeyV,
+		Modifier: fyne.KeyModifierControl,
+	}, func(fyne.Shortcut) {
+		pasteMacroTreeClipboard(d.Mui.MTabs.SelectedTab())
+	})
+	canvas.AddShortcut(&desktop.CustomShortcut{
+		KeyName:  fyne.KeyUp,
+		Modifier: fyne.KeyModifierAlt,
+	}, func(fyne.Shortcut) {
+		moveMacroTreeSelection(d.Mui.MTabs.SelectedTab(), true)
+	})
+	canvas.AddShortcut(&desktop.CustomShortcut{
+		KeyName:  fyne.KeyDown,
+		Modifier: fyne.KeyModifierAlt,
+	}, func(fyne.Shortcut) {
+		moveMacroTreeSelection(d.Mui.MTabs.SelectedTab(), false)
+	})
 }

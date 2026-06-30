@@ -62,13 +62,6 @@ var (
 
 	// fyneResourceMutex protects concurrent access to fyneResourceCache
 	fyneResourceMutex sync.RWMutex
-
-	// canvasImageCache stores decoded canvas.Image objects to prevent memory bloat
-	// from repeatedly decoding the same PNG data
-	canvasImageCache = make(map[string]*canvas.Image)
-
-	// canvasImageMutex protects concurrent access to canvasImageCache
-	canvasImageMutex sync.RWMutex
 )
 
 // GetFyneResource returns a single cached Fyne resource by key, loading from disk if not cached.
@@ -221,12 +214,9 @@ func BytesToFyneIcons() map[string]*fyne.StaticResource {
 // Called by IconVariantService after add/delete operations
 func InvalidateFyneResourceCache(key string) {
 	fyneResourceMutex.Lock()
-	canvasImageMutex.Lock()
 	defer fyneResourceMutex.Unlock()
-	defer canvasImageMutex.Unlock()
 
 	delete(fyneResourceCache, key)
-	delete(canvasImageCache, key)
 	log.Printf("Invalidated cache entry for key: %s", key)
 }
 
@@ -234,58 +224,23 @@ func InvalidateFyneResourceCache(key string) {
 // Useful for testing or full cache reset
 func ClearFyneResourceCache() {
 	fyneResourceMutex.Lock()
-	canvasImageMutex.Lock()
 	defer fyneResourceMutex.Unlock()
-	defer canvasImageMutex.Unlock()
 
 	fyneResourceCache = make(map[string]*fyne.StaticResource)
-	canvasImageCache = make(map[string]*canvas.Image)
 	log.Printf("Cleared all cache entries")
 }
 
-// GetCanvasImage returns a cached canvas.Image for the given key, creating it if necessary.
-// The caller should set the desired minSize and fillMode on the returned image.
+// GetCanvasImage returns a fresh canvas.Image wrapping the cached fyne.Resource
+// for key, with the requested minSize and fillMode applied. The underlying
+// resource bytes are shared via the resource cache (see GetFyneResource), so the
+// only per-call cost is a lightweight wrapper. Returns nil if the icon is missing.
 func GetCanvasImage(key string, minSize fyne.Size, fillMode canvas.ImageFill) *canvas.Image {
-	// Check canvas image cache first
-	canvasImageMutex.RLock()
-	if img, exists := canvasImageCache[key]; exists {
-		canvasImageMutex.RUnlock()
-		// Create a copy with the requested settings to avoid modifying the cached version
-		newImg := canvas.NewImageFromResource(img.Resource)
-		newImg.FillMode = fillMode
-		newImg.SetMinSize(minSize)
-		return newImg
-	}
-	canvasImageMutex.RUnlock()
-
-	// Get the Fyne resource
 	resource := GetFyneResource(key)
 	if resource == nil {
 		return nil
 	}
-
-	// Create canvas image with write lock
-	canvasImageMutex.Lock()
-	defer canvasImageMutex.Unlock()
-
-	// Double-check after acquiring write lock
-	if img, exists := canvasImageCache[key]; exists {
-		// Create a copy with the requested settings
-		newImg := canvas.NewImageFromResource(img.Resource)
-		newImg.FillMode = fillMode
-		newImg.SetMinSize(minSize)
-		return newImg
-	}
-
-	// Create new canvas.Image from resource
 	img := canvas.NewImageFromResource(resource)
-
-	// Cache the base image without specific size/fill settings
-	canvasImageCache[key] = img
-
-	// Return a copy with the requested settings
-	newImg := canvas.NewImageFromResource(resource)
-	newImg.FillMode = fillMode
-	newImg.SetMinSize(minSize)
-	return newImg
+	img.FillMode = fillMode
+	img.SetMinSize(minSize)
+	return img
 }

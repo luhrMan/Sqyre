@@ -250,9 +250,7 @@ func pointCreateConfig() createDialogConfig {
 			return nil
 		},
 		afterSave: func() {
-			if acc, ok := shell().EditorTabs.PointsTab.Widgets["Accordion"].(*widget.Accordion); ok {
-				setAccordionPointsLists(acc)
-			}
+			refreshPointsAccordionForProgram(shell().EditorTabs.PointsTab.ProgramSelector.Selected)
 			markPointsClean()
 		},
 	}
@@ -323,9 +321,7 @@ func searchAreaCreateConfig() createDialogConfig {
 			return nil
 		},
 		afterSave: func() {
-			if acc, ok := shell().EditorTabs.SearchAreasTab.Widgets["Accordion"].(*widget.Accordion); ok {
-				setAccordionSearchAreasLists(acc)
-			}
+			refreshSearchAreasAccordionForProgram(shell().EditorTabs.SearchAreasTab.ProgramSelector.Selected)
 			markSearchAreasClean()
 		},
 	}
@@ -383,9 +379,7 @@ func maskCreateConfig() createDialogConfig {
 			return nil
 		},
 		afterSave: func() {
-			if acc, ok := shell().EditorTabs.MasksTab.Widgets["Accordion"].(*widget.Accordion); ok {
-				setAccordionMasksLists(acc)
-			}
+			refreshMasksAccordionForProgram(shell().EditorTabs.MasksTab.ProgramSelector.Selected)
 			markMasksClean()
 		},
 	}

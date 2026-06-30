@@ -21,6 +21,7 @@ TessBaseAPI Create(void);
 
 void Free(TessBaseAPI);
 void Clear(TessBaseAPI);
+void ClearAdaptiveClassifier(TessBaseAPI);
 void ClearPersistentCache(TessBaseAPI);
 int Init(TessBaseAPI, char*, char*, char*, char*);
 int InitFromMemory(TessBaseAPI, unsigned char*, int, char*, char*);
@@ -28,10 +29,13 @@ struct bounding_boxes* GetBoundingBoxes(TessBaseAPI, int);
 struct bounding_boxes* GetBoundingBoxesVerbose(TessBaseAPI);
 bool SetVariable(TessBaseAPI, char*, char*);
 void SetPixImage(TessBaseAPI a, PixImage pix);
+void SetRawImage(TessBaseAPI a, unsigned char* data, int width, int height, int bytes_per_pixel, int bytes_per_line);
 void SetPageSegMode(TessBaseAPI, int);
 int GetPageSegMode(TessBaseAPI);
 char* UTF8Text(TessBaseAPI);
 char* HOCRText(TessBaseAPI);
+void FreeUTF8Text(char*);
+void FreeBoundingBoxes(struct bounding_boxes*);
 const char* Version(TessBaseAPI);
 const char* GetDataPath();
 

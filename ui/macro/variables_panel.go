@@ -607,11 +607,18 @@ func variablesPanelChrome(panel *VariablesPanel, m *models.Macro) fyne.CanvasObj
 				return
 			}
 			sv := actions.NewSetVariable(name, valueEntry.Text)
+			st := activeWire.Mui.MTabs.SelectedTab()
+			if st != nil {
+				st.RecordMutation()
+			}
 			m.Root.AddSubAction(sv)
 			_ = repositories.MacroRepo().Set(m.Name, m)
 			panel.RefreshDefs()
-			if st := activeWire.Mui.MTabs.SelectedTab(); st != nil {
+			if st != nil {
 				st.Refresh()
+				if st.OnTreeChanged != nil {
+					st.OnTreeChanged()
+				}
 			}
 			if panel.onChange != nil {
 				panel.onChange()

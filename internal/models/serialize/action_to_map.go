@@ -81,6 +81,9 @@ func ActionToMap(action actions.ActionInterface) (map[string]any, error) {
 				m["waittilfoundintervalms"] = a.WaitTilFoundIntervalMs
 			}
 		}
+		if a.RunBranchOnNoFind {
+			m["runbranchonnofind"] = a.RunBranchOnNoFind
+		}
 		subs, err := subActionsToMaps(a.GetSubActions())
 		if err != nil {
 			return nil, err
@@ -179,7 +182,8 @@ func ActionToMap(action actions.ActionInterface) (map[string]any, error) {
 	// 	m["tolerance"] = float64(a.Tolerance)
 	// 	m["blur"] = a.Blur
 	case *actions.FocusWindow:
-		m["windowtarget"] = a.WindowTarget
+		m["processpath"] = a.ProcessPath
+		m["windowtitle"] = a.WindowTitle
 	case *actions.RunMacro:
 		m["macroname"] = a.MacroName
 	case *actions.Break, *actions.Continue:

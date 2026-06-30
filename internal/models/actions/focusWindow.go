@@ -5,18 +5,21 @@ import (
 	"fyne.io/fyne/v2/theme"
 )
 
-// FocusWindow activates/focuses a window chosen by the user. The user can pick from
-// a list of active windows (process names) or type a name (e.g. partial match) themselves.
+// FocusWindow activates a specific window identified by executable path and title.
+// Both fields are stable across restarts and distinguish windows that share a process name.
 type FocusWindow struct {
 	*BaseAction `yaml:",inline" mapstructure:",squash"`
-	// WindowTarget is the window/process name to focus (e.g. "chrome", "code", or a custom string).
-	WindowTarget string `mapstructure:"windowtarget"`
+	// ProcessPath is the application executable path (e.g. /usr/bin/firefox).
+	ProcessPath string `mapstructure:"processpath"`
+	// WindowTitle is the window title at selection time (e.g. "Inbox - Mozilla Thunderbird").
+	WindowTitle string `mapstructure:"windowtitle"`
 }
 
-func NewFocusWindow(windowTarget string) *FocusWindow {
+func NewFocusWindow(processPath, windowTitle string) *FocusWindow {
 	return &FocusWindow{
-		BaseAction:   newBaseAction("focuswindow"),
-		WindowTarget: windowTarget,
+		BaseAction:  newBaseAction("focuswindow"),
+		ProcessPath: processPath,
+		WindowTitle: windowTitle,
 	}
 }
 
@@ -29,13 +32,18 @@ func (a *FocusWindow) Display() fyne.CanvasObject {
 }
 
 func (a *FocusWindow) parameters() []actionParam {
-	target := a.WindowTarget
-	if target == "" {
-		target = "not set"
+	title := a.WindowTitle
+	if title == "" {
+		title = "not set"
+	}
+	path := a.ProcessPath
+	if path == "" {
+		path = "not set"
 	}
 	return []actionParam{
 		newParam("Type", a.GetType()),
-		newParam("Window", target),
+		newParam("Title", title),
+		newParam("App", path),
 	}
 }
 

@@ -283,6 +283,9 @@ func (s *serializer) CreateActionFromMap(rawMap map[string]any, parent actions.A
 					is.WaitTilFoundIntervalMs = int(ms)
 				}
 			}
+			if v, ok := rawMap["runbranchonnofind"].(bool); ok {
+				is.RunBranchOnNoFind = v
+			}
 		}
 	case "ocr":
 		oname, err := expectString(rawMap, "name")
@@ -437,7 +440,10 @@ func (s *serializer) CreateActionFromMap(rawMap map[string]any, parent actions.A
 	// 	cal.ResolutionKey = stringFromMap(rawMap, "resolutionkey")
 	// }
 	case "focuswindow":
-		action = actions.NewFocusWindow(stringFromMap(rawMap, "windowtarget"))
+		action = actions.NewFocusWindow(
+			stringFromMap(rawMap, "processpath"),
+			stringFromMap(rawMap, "windowtitle"),
+		)
 	case "runmacro":
 		action = actions.NewRunMacro(stringFromMap(rawMap, "macroname"))
 	case "break":

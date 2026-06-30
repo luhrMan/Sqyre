@@ -611,33 +611,15 @@ func evaluateArithmetic(expr string) (float64, error) {
 		expr = fmt.Sprintf("%f", result)
 	}
 
-	// Handle addition and subtraction (skip +/- that are part of scientific notation, e.g. 1e-10)
+	// Handle addition and subtraction (skip unary signs and scientific notation, e.g. 1e-10)
 	addSubIter := 0
-	for (strings.Contains(expr, "+") || strings.Contains(expr, "-")) && !strings.HasPrefix(expr, "-") {
+	for {
+		opIdx, op := indexBinaryAddSub(expr)
+		if opIdx < 0 {
+			break
+		}
 		if addSubIter++; addSubIter > maxEvalIterations {
 			return 0, fmt.Errorf("expression too complex (add/sub)")
-		}
-		plusIdx := indexNotInScientific(expr, "+")
-		minusIdx := indexNotInScientific(expr, "-")
-
-		var opIdx int
-		var op string
-		if plusIdx >= 0 && minusIdx >= 0 {
-			if plusIdx < minusIdx {
-				opIdx = plusIdx
-				op = "+"
-			} else {
-				opIdx = minusIdx
-				op = "-"
-			}
-		} else if plusIdx >= 0 {
-			opIdx = plusIdx
-			op = "+"
-		} else if minusIdx >= 0 {
-			opIdx = minusIdx
-			op = "-"
-		} else {
-			break
 		}
 
 		left, right, err := splitOperator(expr, opIdx, 1)
@@ -662,6 +644,39 @@ func evaluateArithmetic(expr string) (float64, error) {
 		expr = fmt.Sprintf("%f", result)
 	}
 	return parseNumber(expr)
+}
+
+// indexBinaryAddSub returns the index and operator of the first binary + or - in expr.
+// Unary leading signs and operators after (+, -, *, /, () are skipped.
+func indexBinaryAddSub(expr string) (int, string) {
+	plusIdx := indexNotInScientific(expr, "+")
+
+	minusIdx := -1
+	for i := 0; i < len(expr); i++ {
+		if expr[i] != '-' {
+			continue
+		}
+		if i > 0 && (expr[i-1] == 'e' || expr[i-1] == 'E') {
+			continue
+		}
+		if i == 0 {
+			continue
+		}
+		switch expr[i-1] {
+		case '+', '-', '*', '/', '(':
+			continue
+		}
+		minusIdx = i
+		break
+	}
+
+	if plusIdx >= 0 && (minusIdx < 0 || plusIdx < minusIdx) {
+		return plusIdx, "+"
+	}
+	if minusIdx >= 0 {
+		return minusIdx, "-"
+	}
+	return -1, ""
 }
 
 // indexNotInScientific returns the index of the first occurrence of sep in expr

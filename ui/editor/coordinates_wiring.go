@@ -28,9 +28,9 @@ func setPointWidgets(p models.Point) {
 	shell().RefreshEditorActionBar()
 }
 
-func setAccordionSearchAreasLists(acc *widget.Accordion) {
+func searchAreasAccordionConfig() entityAccordionConfig {
 	tab := shell().EditorTabs.SearchAreasTab
-	populateProgramEntityAccordion(acc, entityAccordionConfig{
+	return entityAccordionConfig{
 		tab: tab,
 		getKeys: func(p *models.Program) []string {
 			return p.SearchAreaRepo(config.MainMonitorSizeString).GetAllKeys()
@@ -53,12 +53,24 @@ func setAccordionSearchAreasLists(acc *widget.Accordion) {
 			safeUpdateSearchAreaPreview(sa)
 			markSearchAreasClean()
 		},
-	})
+	}
 }
 
-func setAccordionPointsLists(acc *widget.Accordion) {
+func setAccordionSearchAreasLists(acc *widget.Accordion) {
+	populateProgramEntityAccordion(acc, searchAreasAccordionConfig())
+}
+
+// refreshSearchAreasAccordionForProgram rebuilds only the given program's row in
+// the Search Areas accordion (instead of every program's row).
+func refreshSearchAreasAccordionForProgram(programName string) {
+	if acc, ok := shell().EditorTabs.SearchAreasTab.Widgets["Accordion"].(*widget.Accordion); ok {
+		refreshProgramEntityAccordionRow(acc, searchAreasAccordionConfig(), programName)
+	}
+}
+
+func pointsAccordionConfig() entityAccordionConfig {
 	tab := shell().EditorTabs.PointsTab
-	populateProgramEntityAccordion(acc, entityAccordionConfig{
+	return entityAccordionConfig{
 		tab: tab,
 		getKeys: func(p *models.Program) []string {
 			return p.PointRepo(config.MainMonitorSizeString).GetAllKeys()
@@ -80,7 +92,19 @@ func setAccordionPointsLists(acc *widget.Accordion) {
 			setPointWidgets(*point)
 			markPointsClean()
 		},
-	})
+	}
+}
+
+func setAccordionPointsLists(acc *widget.Accordion) {
+	populateProgramEntityAccordion(acc, pointsAccordionConfig())
+}
+
+// refreshPointsAccordionForProgram rebuilds only the given program's row in the
+// Points accordion (instead of every program's row).
+func refreshPointsAccordionForProgram(programName string) {
+	if acc, ok := shell().EditorTabs.PointsTab.Widgets["Accordion"].(*widget.Accordion); ok {
+		refreshProgramEntityAccordionRow(acc, pointsAccordionConfig(), programName)
+	}
 }
 
 func setAccordionAutoPicSearchAreasLists(acc *widget.Accordion) {
