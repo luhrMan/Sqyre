@@ -281,22 +281,41 @@ func (r *BaseRepository[T]) Reload() error {
 
 	configMap := yamlConfig.GetStringMap(r.configKey)
 
+	type decodeResult struct {
+		key   string
+		model *T
+		err   error
+	}
+
+	keys := make([]string, 0, len(configMap))
+	for key := range configMap {
+		keys = append(keys, key)
+	}
+
+	results := make([]decodeResult, len(keys))
+	var wg sync.WaitGroup
+	for i, key := range keys {
+		wg.Add(1)
+		go func(i int, key string) {
+			defer wg.Done()
+			model, err := r.decodeFunc(key)
+			results[i] = decodeResult{key: key, model: model, err: err}
+		}(i, key)
+	}
+	wg.Wait()
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	// Clear existing models
 	r.models = make(map[string]*T)
 
-	// Decode each model
 	successCount := 0
-	for key := range configMap {
-		model, err := r.decodeFunc(key)
-		if err != nil {
-			log.Printf("Warning: failed to decode %s '%s': %v", r.configKey, key, err)
+	for _, res := range results {
+		if res.err != nil {
+			log.Printf("Warning: failed to decode %s '%s': %v", r.configKey, res.key, res.err)
 			continue
 		}
-
-		r.models[key] = model
+		r.models[res.key] = res.model
 		successCount++
 	}
 
