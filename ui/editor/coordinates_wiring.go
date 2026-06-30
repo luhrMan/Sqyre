@@ -79,7 +79,6 @@ func setAccordionPointsLists(acc *widget.Accordion) {
 			tab.SelectedItem = point
 			setPointWidgets(*point)
 			markPointsClean()
-			macroPointSync(point)
 		},
 	})
 }

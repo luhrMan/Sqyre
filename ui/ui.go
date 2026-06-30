@@ -2,6 +2,7 @@ package ui
 
 import (
 	"path/filepath"
+	"sync"
 
 	"Sqyre/internal/config"
 	"Sqyre/internal/logger"
@@ -14,7 +15,6 @@ import (
 	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/driver/desktop"
-	"fyne.io/fyne/v2/layout"
 	widget "fyne.io/fyne/v2/widget"
 	fynetooltip "github.com/dweymouth/fyne-tooltip"
 	"github.com/go-vgo/robotgo"
@@ -146,36 +146,36 @@ func saveWindowGeometry(w fyne.Window) {
 	}
 }
 
+// EnsureDataEditor builds the data editor UI on first open and wires its handlers.
+func EnsureDataEditor() {
+	u := GetUi()
+	editor.EnsureBuilt(u.EditorUi, u.Window)
+	editorUiOnce.Do(func() {
+		SetEditorUi()
+	})
+	editor.RefreshVarEntryInsertButtons()
+}
+
+var editorUiOnce sync.Once
+
 func (u *Ui) ConstructUi() {
-	// construct main screen - action tabs removed, only macro UI-
-	u.MainUi.Navigation = container.NewNavigation(u.constructMacroUi())
-
-	// construct editor screen
-	editor.ConstructEditorTabs(u.EditorUi, u.Window)
-	editor.PrepareToolbarButtons(u.EditorUi)
-	u.EditorUi.ActionBar = container.NewHBox(layout.NewSpacer(), u.EditorUi.AddButton, u.EditorUi.RemoveButton)
-	u.EditorUi.CanvasObject = container.NewBorder(
-		nil,
-		u.EditorUi.ActionBar,
-		nil,
-		nil,
-		u.EditorUi.EditorTabs,
-	)
-	u.EditorUi.RefreshEditorActionBar()
-	u.EditorUi.EditorTabs.OnSelected = func(*container.TabItem) {
-		u.EditorUi.RefreshEditorActionBar()
+	u.constructUiShell()
+	u.constructUiFinish()
+	if config.IsUITestMode() {
+		bootstrapDone.Store(true)
 	}
+}
 
-	// construct settings screen
+func (u *Ui) constructUiShell() {
+	u.MainUi.Navigation = container.NewNavigation(u.constructMacroUi())
+	u.Window.SetContent(fynetooltip.AddWindowToolTipLayer(u.MainUi.Navigation, u.Window.Canvas()))
+}
+
+func (u *Ui) constructUiFinish() {
 	u.constructSettings()
 
-	// construct main menu
 	u.Window.SetMainMenu(u.constructMainMenu())
 
-	// Set window content to Navigation container with tooltip layer
-	u.Window.SetContent(fynetooltip.AddWindowToolTipLayer(u.MainUi.Navigation, u.Window.Canvas()))
-
-	SetEditorUi()
 	SetActionDialogDeps()
 	SetMacroUi()
 
@@ -184,6 +184,10 @@ func (u *Ui) ConstructUi() {
 		AddDialogEscapeClose,
 		ShowErrorWithEscape,
 	)
+
+	if config.IsUITestMode() {
+		EnsureDataEditor()
+	}
 
 	if !config.IsUITestMode() {
 		toggleMousePos()

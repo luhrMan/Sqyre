@@ -3,7 +3,6 @@ package editor
 import (
 	"Sqyre/internal/config"
 	"Sqyre/internal/models"
-	"Sqyre/internal/models/actions"
 	"Sqyre/internal/models/repositories"
 	"Sqyre/internal/services"
 	"Sqyre/ui/completionentry"
@@ -119,6 +118,9 @@ func setItemUpdateHandler() {
 func setPointUpdateHandler() {
 	tab := shell().EditorTabs.PointsTab
 	tab.UpdateButton.OnTapped = func() {
+		if !allTabFieldsValid(tab) {
+			return
+		}
 		p := pointFromWidgets(tab.Widgets)
 		v, ok := tab.SelectedItem.(*models.Point)
 		if !ok {
@@ -160,6 +162,9 @@ func setPointUpdateHandler() {
 func setSearchAreaUpdateHandler() {
 	tab := shell().EditorTabs.SearchAreasTab
 	tab.UpdateButton.OnTapped = func() {
+		if !allTabFieldsValid(tab) {
+			return
+		}
 		sa := searchAreaFromWidgets(tab.Widgets)
 		v, ok := tab.SelectedItem.(*models.SearchArea)
 		if !ok {
@@ -203,6 +208,9 @@ func setSearchAreaUpdateHandler() {
 func setMaskUpdateHandler() {
 	tab := shell().EditorTabs.MasksTab
 	tab.UpdateButton.OnTapped = func() {
+		if !allTabFieldsValid(tab) {
+			return
+		}
 		m := maskFromWidgets(tab.Widgets)
 		v, ok := tab.SelectedItem.(*models.Mask)
 		if !ok {
@@ -289,17 +297,11 @@ func setItemTagHandlers(tab *EditorTab) {
 			tagEntry.HideCompletion()
 			return
 		}
-		allTags := getAllExistingTags()
-		searchLower := strings.ToLower(text)
-		matchingTags := []string{}
-		for _, tag := range allTags {
-			if strings.Contains(strings.ToLower(tag), searchLower) {
-				matchingTags = append(matchingTags, tag)
-			}
+		var item *models.Item
+		if v, ok := tab.SelectedItem.(*models.Item); ok {
+			item = v
 		}
-		if len(matchingTags) > 10 {
-			matchingTags = matchingTags[:10]
-		}
+		matchingTags := tagCompletionOptions(tab.ProgramSelector.Selected, text, item, 10)
 		if len(matchingTags) == 0 {
 			tagEntry.HideCompletion()
 			return
@@ -309,7 +311,23 @@ func setItemTagHandlers(tab *EditorTab) {
 	}
 	tagEntry.OnSubmitted = func(string) { submitTag() }
 	if tagSubmitButton, ok := tab.Widgets["tagSubmitButton"].(*widget.Button); ok {
-		tagSubmitButton.OnTapped = submitTag
+		tagSubmitButton.OnTapped = func() {
+			if strings.TrimSpace(tagEntry.Text) != "" {
+				submitTag()
+				return
+			}
+			var item *models.Item
+			if v, ok := tab.SelectedItem.(*models.Item); ok {
+				item = v
+			}
+			programTags := tagCompletionOptions(tab.ProgramSelector.Selected, "", item, 0)
+			if len(programTags) == 0 {
+				tagEntry.HideCompletion()
+				return
+			}
+			tagEntry.SetOptions(programTags)
+			tagEntry.ShowCompletion()
+		}
 	}
 }
 
@@ -384,12 +402,4 @@ func safeUpdateAutoPicPreview(sa *models.SearchArea) {
 		}
 	}()
 	shell().UpdateAutoPicPreview(sa)
-}
-
-func macroPointSync(point *models.Point) {
-	if st := activeWire.MacroMTabs().SelectedTab(); st != nil {
-		if v, ok := st.Macro.Root.GetAction(st.SelectedNode).(*actions.Move); ok {
-			v.Point = actions.Point{Name: point.Name, X: point.X, Y: point.Y}
-		}
-	}
 }

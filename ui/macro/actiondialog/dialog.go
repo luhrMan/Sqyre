@@ -57,9 +57,9 @@ func applyFieldTooltip(label string, w fyne.CanvasObject, hint string) fyne.Canv
 	return container.NewBorder(nil, nil, icon, nil, w)
 }
 
-// newVarEntry creates a VarRefEntry wired to the current macro's variables.
-func newVarEntry() *custom_widgets.VarRefEntry {
-	return custom_widgets.NewVarRefEntry(macroVarNames)
+// newVarEntry creates a VarEntry wired to the current macro's variables.
+func newVarEntry() *custom_widgets.VarEntry {
+	return custom_widgets.NewVarEntry(macroVarNames)
 }
 
 // newVarNameEntry creates an entry for defining a variable name.
@@ -67,9 +67,9 @@ func newVarNameEntry() *custom_widgets.VarNameEntry {
 	return custom_widgets.NewVarNameEntry(macroVarNames)
 }
 
-// newMultiLineVarEntry creates a multi-line VarRefEntry wired to the current macro's variables.
-func newMultiLineVarEntry() *custom_widgets.VarRefEntry {
-	return custom_widgets.NewMultiLineVarRefEntry(macroVarNames)
+// newMultiLineVarEntry creates a multi-line VarEntry wired to the current macro's variables.
+func newMultiLineVarEntry() *custom_widgets.VarEntry {
+	return custom_widgets.NewMultiLineVarEntry(macroVarNames)
 }
 
 // waitTilFoundForm bundles the "Wait until found" checkbox and timeout / interval
@@ -125,6 +125,64 @@ func (w *waitTilFoundForm) writeTo(waitTilFound *bool, seconds *int, intervalMs 
 	}
 	if w.IntervalIncrementer.Value >= 0 {
 		*intervalMs = w.IntervalIncrementer.Value
+	}
+}
+
+// smoothMoveForm bundles the smooth-move checkbox and speed / delay controls.
+type smoothMoveForm struct {
+	Check             *ttwidget.Check
+	LowIncrementer    *custom_widgets.FloatIncrementer
+	HighIncrementer   *custom_widgets.FloatIncrementer
+	DelayIncrementer  *custom_widgets.Incrementer
+}
+
+func newSmoothMoveForm(smooth bool, low, high float64, delayMs int) *smoothMoveForm {
+	check := ttwidget.NewCheck("Smooth", nil)
+	check.SetChecked(smooth)
+	check.SetToolTip("When enabled, the mouse moves along a smooth path to the target. When disabled, the cursor jumps instantly.")
+
+	lowMin, lowMax := 0.05, 10.0
+	highMin, highMax := 0.05, 50.0
+	lowInc := custom_widgets.NewFloatIncrementer(low, 0.05, &lowMin, &lowMax, 2)
+	highInc := custom_widgets.NewFloatIncrementer(high, 0.05, &highMin, &highMax, 2)
+	delayMin, delayMax := 0, 200
+	delayInc := custom_widgets.NewIncrementerWithEntry(delayMs, 1, &delayMin, &delayMax)
+	delayInc.SetValue(delayMs)
+
+	setEnabled := func(enabled bool) {
+		if enabled {
+			lowInc.Enable()
+			highInc.Enable()
+			delayInc.Enable()
+			return
+		}
+		lowInc.Disable()
+		highInc.Disable()
+		delayInc.Disable()
+	}
+	check.OnChanged = setEnabled
+	setEnabled(check.Checked)
+
+	return &smoothMoveForm{
+		Check:            check,
+		LowIncrementer:   lowInc,
+		HighIncrementer:  highInc,
+		DelayIncrementer: delayInc,
+	}
+}
+
+func (s *smoothMoveForm) writeTo(smooth *bool, low, high *float64, delayMs *int) {
+	*smooth = s.Check.Checked
+	*low = s.LowIncrementer.Value
+	*high = s.HighIncrementer.Value
+	*delayMs = s.DelayIncrementer.Value
+}
+
+func (s *smoothMoveForm) formItems() []*widget.FormItem {
+	return []*widget.FormItem{
+		formHint("Speed min:", s.LowIncrementer, "Shortest pause between cursor steps, in milliseconds. Lower values make the move faster; higher values slow it down."),
+		formHint("Speed max:", s.HighIncrementer, "Longest pause between cursor steps, in milliseconds. Each step waits a random time between Speed min and this value. Should be at least Speed min."),
+		formHint("Step delay (ms):", s.DelayIncrementer, "Extra pause in milliseconds after the smooth move finishes. Increase to add a brief hold at the destination."),
 	}
 }
 
@@ -193,7 +251,7 @@ func buildProgramListAccordionWithSearchbar(cfg programListAccordionConfig) (*wi
 
 // buildPointsAccordionWithSearchbar builds a Points accordion with a single searchbar above it.
 // Filter matches program name or point name (fuzzy). onPointSelected is called when user selects a point.
-func buildPointsAccordionWithSearchbar(onPointSelected func(actions.Point)) (*widget.Entry, *widget.Accordion) {
+func buildPointsAccordionWithSearchbar(onPointSelected func(actions.CoordinateRef)) (*widget.Entry, *widget.Accordion) {
 	return buildProgramListAccordionWithSearchbar(programListAccordionConfig{
 		GetKeys: func(p *models.Program) []string {
 			return p.PointRepo(config.MainMonitorSizeString).GetAllKeys()
@@ -213,17 +271,14 @@ func buildPointsAccordionWithSearchbar(onPointSelected func(actions.Point)) (*wi
 			return fmt.Sprintf("X: %v, Y: %v", pt.X, pt.Y)
 		},
 		OnSelect: func(p *models.Program, key string) {
-			pt, _ := p.PointRepo(config.MainMonitorSizeString).Get(key)
-			if pt != nil {
-				onPointSelected(actions.Point{Name: pt.Name, X: pt.X, Y: pt.Y})
-			}
+			onPointSelected(actions.NewCoordinateRef(p.Name, key))
 		},
 	})
 }
 
 // buildSearchAreasAccordionWithSearchbar builds a Search Areas accordion with a single searchbar above it.
 // Filter matches program name or search area name (fuzzy). onSelected is called when user selects a search area.
-func buildSearchAreasAccordionWithSearchbar(onSelected func(actions.SearchArea)) (*widget.Entry, *widget.Accordion) {
+func buildSearchAreasAccordionWithSearchbar(onSelected func(actions.CoordinateRef)) (*widget.Entry, *widget.Accordion) {
 	return buildProgramListAccordionWithSearchbar(programListAccordionConfig{
 		GetKeys: func(p *models.Program) []string {
 			return p.SearchAreaRepo(config.MainMonitorSizeString).GetAllKeys()
@@ -243,16 +298,7 @@ func buildSearchAreasAccordionWithSearchbar(onSelected func(actions.SearchArea))
 			return fmt.Sprintf("Left: %v, Top: %v, Right: %v, Bottom: %v", sa.LeftX, sa.TopY, sa.RightX, sa.BottomY)
 		},
 		OnSelect: func(p *models.Program, key string) {
-			sa, _ := p.SearchAreaRepo(config.MainMonitorSizeString).Get(key)
-			if sa != nil {
-				onSelected(actions.SearchArea{
-					Name:    sa.Name,
-					LeftX:   sa.LeftX,
-					TopY:    sa.TopY,
-					RightX:  sa.RightX,
-					BottomY: sa.BottomY,
-				})
-			}
+			onSelected(actions.NewCoordinateRef(p.Name, key))
 		},
 	})
 }
@@ -308,6 +354,7 @@ func ShowActionDialog(action actions.ActionInterface, onSave func(actions.Action
 	if active.ClearOpenActionDialog != nil {
 		active.ClearOpenActionDialog()
 	}
+	resetDialogValidation()
 
 	// Create dialog content based on action type
 	var content fyne.CanvasObject
@@ -316,7 +363,7 @@ func ShowActionDialog(action actions.ActionInterface, onSave func(actions.Action
 	switch node := action.(type) {
 	case *actions.Wait:
 		content, saveFunc = createWaitDialogContent(node)
-		content.Resize(fyne.NewSize(300, 100))
+		content.Resize(fyne.NewSize(500, 160))
 	case *actions.Move:
 		content, saveFunc = createMoveDialogContent(node)
 		content.Resize(fyne.NewSize(1000, 600))
@@ -346,7 +393,7 @@ func ShowActionDialog(action actions.ActionInterface, onSave func(actions.Action
 		content.Resize(fyne.NewSize(600, 100))
 	case *actions.Calculate:
 		content, saveFunc = createCalculateDialogContent(node)
-		content.Resize(fyne.NewSize(600, 100))
+		content.Resize(fyne.NewSize(640, 360))
 	case *actions.ForEachRow:
 		content, saveFunc = createForEachRowDialogContent(node)
 		content.Resize(fyne.NewSize(forEachRowDialogWidth, forEachRowDialogHeight))
@@ -365,6 +412,12 @@ func ShowActionDialog(action actions.ActionInterface, onSave func(actions.Action
 	case *actions.RunMacro:
 		content, saveFunc = createRunMacroDialogContent(node)
 		content.Resize(fyne.NewSize(400, 120))
+	case *actions.Break:
+		content, saveFunc = createBreakDialogContent()
+		content.Resize(fyne.NewSize(400, 100))
+	case *actions.Continue:
+		content, saveFunc = createContinueDialogContent()
+		content.Resize(fyne.NewSize(400, 100))
 	default:
 		unknown := ttwidget.NewLabel("Unknown action type")
 		unknown.SetToolTip("This action type is not supported in the editor yet.")
@@ -415,6 +468,9 @@ func showCustomActionDialog(action actions.ActionInterface, content fyne.CanvasO
 	var d *actionModalDialog
 	var saved bool
 	saveButton := ttwidget.NewButton("Save", func() {
+		if !allDialogFieldsValid() {
+			return
+		}
 		saveFunc()
 		if onSave != nil {
 			onSave(action)
@@ -423,6 +479,16 @@ func showCustomActionDialog(action actions.ActionInterface, content fyne.CanvasO
 		d.Hide()
 	})
 	saveButton.SetToolTip("Save changes to this action")
+
+	updateSaveState := func() {
+		if allDialogFieldsValid() {
+			saveButton.Enable()
+		} else {
+			saveButton.Disable()
+		}
+	}
+	wireDialogValidation(updateSaveState)
+	updateSaveState()
 
 	cancelButton := ttwidget.NewButton("Cancel", func() {
 		d.Hide()

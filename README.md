@@ -143,16 +143,23 @@ VS Code + MSYS2: [integrate the mingw64 shell](https://stackoverflow.com/questio
 
 </details>
 
-### UI tests (Linux)
+### Tests (Linux)
 
-`robotgo` needs an X display. In headless CI or SSH sessions, use:
+Most tests run headless without an X display:
+
+```bash
+./scripts/test.sh
+./scripts/test.sh -v ./internal/services/ -run TestExecute
+```
+
+This uses `-tags=nohook` so the native keyboard hook is not linked (plain `go test` can segfault when `DISPLAY` is unset).
+
+Hook, screenshot, and display-dependent tests need a virtual framebuffer:
 
 ```bash
 ./scripts/test-ui.sh
-./scripts/test-ui.sh -run TestGUI
+./scripts/test-ui.sh -run TestGUIEscape
 ```
-
-Executor action tests use a recording backend (no real mouse/keyboard) and run as part of `./scripts/test-ui.sh` or `go test ./internal/services/ -run TestExecute`.
 
 Regenerate README screenshots and the demo GIF:
 

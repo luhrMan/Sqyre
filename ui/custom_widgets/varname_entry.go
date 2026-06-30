@@ -48,10 +48,14 @@ func (e *VarNameEntry) TypedRune(r rune) {
 	}
 }
 
-// FocusGained refreshes completion options when focused.
+// FocusGained refreshes completion options when focused and automatically
+// shows the list of available variables.
 func (e *VarNameEntry) FocusGained() {
 	e.CompletionEntry.FocusGained()
 	e.refreshOptions()
+	if len(e.Options) > 0 {
+		e.ShowCompletion()
+	}
 }
 
 // TappedSecondary shows standard entry menu without variable-reference insertion.
