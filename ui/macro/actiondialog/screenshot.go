@@ -26,6 +26,8 @@ func panelContentForAction(action actions.ActionInterface) (fyne.CanvasObject, f
 	switch node := action.(type) {
 	case *actions.Wait:
 		return createWaitDialogContent(node)
+	case *actions.Pause:
+		return createPauseDialogContent(node)
 	case *actions.Move:
 		return createMoveDialogContent(node)
 	case *actions.Click:

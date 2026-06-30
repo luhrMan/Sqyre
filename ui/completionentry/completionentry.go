@@ -157,6 +157,7 @@ type navigableList struct {
 	hide            func()
 	navigating      bool
 	items           []string
+	labels          []string
 
 	customCreate func() fyne.CanvasObject
 	customUpdate func(id widget.ListItemID, object fyne.CanvasObject)
@@ -189,7 +190,11 @@ func newNavigableList(items []string, entry *widget.Entry, setTextFromMenu func(
 				fn(i, o)
 				return
 			}
-			o.(*widget.Label).SetText(n.items[i])
+			text := n.items[i]
+			if i < len(n.labels) && n.labels[i] != "" {
+				text = n.labels[i]
+			}
+			o.(*widget.Label).SetText(text)
 		},
 		OnSelected: func(id widget.ListItemID) {
 			if !n.navigating && id > -1 {
@@ -213,8 +218,16 @@ func (n *navigableList) FocusLost() {
 func (n *navigableList) SetOptions(items []string) {
 	n.Unselect(n.selected)
 	n.items = items
+	if len(n.labels) != len(items) {
+		n.labels = nil
+	}
 	n.Refresh()
 	n.selected = -1
+}
+
+func (n *navigableList) SetLabels(labels []string) {
+	n.labels = labels
+	n.Refresh()
 }
 
 func (n *navigableList) TypedKey(event *fyne.KeyEvent) {

@@ -14,6 +14,26 @@ func (a *BaseAction) parameters() []actionParam {
 	}
 }
 
+// SetUID replaces the action UID when restoring from a snapshot (undo/redo).
+func (a *BaseAction) SetUID(uid string) {
+	if uid != "" {
+		a.uid = uid
+	}
+}
+
+// RestoreUID sets uid on a when non-empty (snapshot restore).
+func RestoreUID(a ActionInterface, uid string) {
+	if uid == "" || a == nil {
+		return
+	}
+	type uidSetter interface {
+		SetUID(string)
+	}
+	if s, ok := a.(uidSetter); ok {
+		s.SetUID(uid)
+	}
+}
+
 func newBaseAction(t string) *BaseAction {
 	return &BaseAction{
 		Type: t,

@@ -3,6 +3,7 @@ package custom_widgets
 import (
 	"Sqyre/internal/services"
 	"testing"
+	"time"
 
 	"fyne.io/fyne/v2/test"
 )
@@ -54,6 +55,7 @@ func TestVarEntryField_OnChanged(t *testing.T) {
 	called := false
 	field.OnChanged = func(string) { called = true }
 	field.Entry.InsertAtCursor("x")
+	time.Sleep(validationDebounce + 50*time.Millisecond)
 	if !called {
 		t.Fatal("OnChanged not called")
 	}

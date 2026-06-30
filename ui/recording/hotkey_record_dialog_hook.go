@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"Sqyre/internal/hookkeys"
 	"Sqyre/internal/macrohotkey"
 
 	"fyne.io/fyne/v2"
@@ -21,7 +22,7 @@ import (
 	hook "github.com/luhrMan/gohook"
 )
 
-// ShowHotkeyRecordDialog shows keys currently held (via gohook). If the same non-empty
+// ShowHotkeyRecordDialog shows keys currently held. If the same non-empty
 // set stays held for stableDuration without changing, onRecorded runs and the dialog closes.
 // Esc dismisses without calling onRecorded.
 func ShowHotkeyRecordDialog(
@@ -67,6 +68,19 @@ func ShowHotkeyRecordDialog(
 		addDialogEscapeClose(d, parent)
 	}
 
+	macrohotkey.SuspendMacroHotkeys()
+
+	keysReader, err := hookkeys.NewReader()
+	if err != nil {
+		macrohotkey.ResumeMacroHotkeys()
+		dialog.NewError(err, parent).Show()
+		return
+	}
+	var closeKeysReader sync.Once
+	closeReader := func() {
+		closeKeysReader.Do(func() { keysReader.Close() })
+	}
+
 	done := make(chan struct{})
 	var stopOnce sync.Once
 	stop := func() { stopOnce.Do(func() { close(done) }) }
@@ -81,17 +95,17 @@ func ShowHotkeyRecordDialog(
 		if len(k) > 0 {
 			kk := append([]string(nil), k...)
 			go func() {
-				for !hook.ChordFullyReleased(kk) {
+				defer closeReader()
+				for !hookkeys.ChordFullyReleased(keysReader, kk) {
 					time.Sleep(8 * time.Millisecond)
 				}
 				macrohotkey.ResumeMacroHotkeys()
 			}()
 			return
 		}
+		closeReader()
 		macrohotkey.ResumeMacroHotkeys()
 	})
-
-	macrohotkey.SuspendMacroHotkeys()
 
 	cancelBtn.OnTapped = func() {
 		d.Hide()
@@ -112,7 +126,10 @@ func ShowHotkeyRecordDialog(
 				if finished.Load() {
 					return
 				}
-				names := hook.PressedKeyNames()
+				names := keysReader.PressedKeyNames()
+				if len(names) == 0 {
+					names = hook.PressedKeyNames()
+				}
 				if !slices.Equal(names, lastNames) {
 					lastNames = append([]string(nil), names...)
 					stableStart = time.Now()
