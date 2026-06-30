@@ -20,15 +20,79 @@ import (
 	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 )
 
-// OnOpenActionDialog is called when the user taps an action's icon to edit it.
-// If non-nil, the tree will open the action dialog from this callback.
+// OnOpenActionDialog is called when the user taps an action's icon or double-clicks
+// its row to edit it. If non-nil, the tree will open the action dialog from this callback.
 type OnOpenActionDialogFunc func(action actions.ActionInterface)
+
+// treeRowBody is the tappable center of each action row. Single click selects the
+// row; double click opens the action editor dialog.
+type treeRowBody struct {
+	widget.BaseWidget
+	tree   *MacroTree
+	uid    string
+	scroll *container.Scroll
+}
+
+func newTreeRowBody(scroll *container.Scroll) *treeRowBody {
+	b := &treeRowBody{scroll: scroll}
+	b.ExtendBaseWidget(b)
+	return b
+}
+
+func (b *treeRowBody) CreateRenderer() fyne.WidgetRenderer {
+	return widget.NewSimpleRenderer(b.scroll)
+}
+
+func (b *treeRowBody) MinSize() fyne.Size {
+	if b.scroll == nil {
+		return fyne.NewSize(0, treeItemIconSize)
+	}
+	return b.scroll.MinSize()
+}
+
+func (b *treeRowBody) Tapped(*fyne.PointEvent) {
+	if b.tree == nil || b.uid == "" {
+		return
+	}
+	b.tree.Select(b.uid)
+	canvas := fyne.CurrentApp().Driver().CanvasForObject(b.tree)
+	if canvas != nil && canvas.Focused() != b.tree {
+		if !fyne.CurrentDevice().IsMobile() {
+			canvas.Focus(b.tree)
+		}
+	}
+}
+
+func (b *treeRowBody) DoubleTapped(*fyne.PointEvent) {
+	if b.tree == nil || b.tree.executing || b.tree.OnOpenActionDialog == nil || b.uid == "" {
+		return
+	}
+	if b.tree.Macro == nil || b.tree.Macro.Root == nil {
+		return
+	}
+	node := b.tree.Macro.Root.GetAction(b.uid)
+	if node != nil {
+		b.tree.OnOpenActionDialog(node)
+	}
+}
+
+func (b *treeRowBody) TappedSecondary(pe *fyne.PointEvent) {
+	showMacroTreeActionContextMenu(b.tree, b, pe, b.uid)
+}
+
+var (
+	_ fyne.Tappable           = (*treeRowBody)(nil)
+	_ fyne.DoubleTappable     = (*treeRowBody)(nil)
+	_ fyne.SecondaryTappable  = (*treeRowBody)(nil)
+)
 
 type MacroTree struct {
 	widget.Tree
 	Macro              *models.Macro
 	SelectedNode       string
 	OnOpenActionDialog OnOpenActionDialogFunc
+	// onShowAddActionPicker opens the new-action picker (Ctrl+A when tree focused).
+	onShowAddActionPicker func()
 
 	// cursorUID is the single action currently executing (moving highlight).
 	cursorUID string
@@ -67,36 +131,52 @@ type MacroTree struct {
 	executing bool
 
 	// Drag-and-drop reorder state. dragVisible is the flattened list of visible
-	// row UIDs captured when the drag begins (rebuilt on auto-expand).
+	// row UIDs captured when the drag begins (rebuilt on auto-expand and preview).
 	// dragTreeTop is the canvas-absolute Y of the tree content's top (content
 	// Y 0 at scroll 0); it stays fixed during the drag. dragLastPointerY is the
 	// most recent pointer Y in canvas coordinates, used to re-resolve the drop
 	// target while auto-scrolling without a new pointer event.
-	dragActive      bool
-	dragSrcUID      string
-	dragTreeTop     float32
-	dragLastPointerY float32
-	dragVisible     []string
-	dropParent      actions.AdvancedActionInterface
-	dropTargetUID   string
-	dropMode        dropMode
-	dropValid       bool
+	dragActive         bool
+	dragSrcUID         string
+	dragTreeTop        float32
+	dragLastPointerY   float32
+	dragVisible        []string
+	dropParent         actions.AdvancedActionInterface
+	dropTargetUID      string
+	dropMode           dropMode
+	dropValid           bool
+	dragOrigin          dragOrigin
+	dropIndicatorKey    string
+	dropGhostContentKey string
+
+	// Debounced live preview: after the pointer rests on a valid drop target the
+	// dragged action is temporarily inserted so sibling rows shift aside.
+	dragPreviewInTree   bool
+	dragPreviewKey      string
+	dragPreviewTimer    *time.Timer
+	dragUndoSnapshot    treeSnapshot
+	dragUndoSnapshotOK  bool
 
 	// Edge auto-scroll state. autoScrollDir is -1 (up), 0 (idle), or 1 (down).
 	// autoScrollStop signals the ticker goroutine to exit.
 	autoScrollDir  int
 	autoScrollStop chan struct{}
 
-	// Drop indicator overlay objects, attached by the tab content via
-	// attachDropOverlay. Nil in headless tests.
-	dropOverlay *fyne.Container
-	dropLine    *canvas.Rectangle
-	dropBox     *canvas.Rectangle
+	// Drop placement overlay shown while dragging. Nil in headless tests.
+	dropOverlay    *fyne.Container
+	dropGhost      *fyne.Container
+	dropGhostInset *canvas.Rectangle
+	dropGhostRow   *fyne.Container
 
 	// autoExpand state: when a drag dwells over a collapsed branch, it is
 	// expanded so the user can drop inside it.
 	autoExpandUID   string
 	autoExpandTimer *time.Timer
+	// dragStartOpenBranches records branches open when a drag begins.
+	dragStartOpenBranches map[string]struct{}
+	// dragAutoOpenedBranches tracks branches opened during drag so they can
+	// collapse again when the pointer leaves.
+	dragAutoOpenedBranches map[string]struct{}
 
 	// rowContentCache stores display widgets keyed by action UID.
 	rowContentCache map[string]cachedRowContent
@@ -110,9 +190,10 @@ type MacroTree struct {
 	execFullyExpanded bool
 }
 
-const collapseDebounceMs = 150
-const treeItemIconSize = 24
-
+const (
+	collapseDebounceMs = 150
+	treeItemIconSize   = 24
+)
 // cachedRowContent holds reusable display widgets for a tree row so highlight
 // refreshes and branch open/close do not rebuild pills and PNG thumbnails.
 type cachedRowContent struct {
@@ -170,6 +251,23 @@ func NewMacroTree(m *models.Macro) *MacroTree {
 	t.setTree()
 
 	return t
+}
+
+var _ fyne.Shortcutable = (*MacroTree)(nil)
+
+// TypedShortcut handles keyboard shortcuts while the macro tree has focus.
+func (mt *MacroTree) TypedShortcut(shortcut fyne.Shortcut) {
+	handleMacroTreeShortcut(mt, shortcut)
+}
+
+// FocusGained forwards focus to the embedded tree so keyboard navigation works.
+func (mt *MacroTree) FocusGained() {
+	mt.Tree.FocusGained()
+}
+
+// FocusLost forwards focus loss to the embedded tree.
+func (mt *MacroTree) FocusLost() {
+	mt.Tree.FocusLost()
 }
 
 // RecordMutation saves the current tree state on the undo stack. Call before
@@ -769,6 +867,33 @@ func (mt *MacroTree) moveNode(selectedUID string, up bool) {
 	}
 }
 
+// DeleteSelectedAction removes the currently selected action from the tree.
+func (mt *MacroTree) DeleteSelectedAction() bool {
+	if mt == nil || mt.SelectedNode == "" || mt.Macro == nil || mt.Macro.Root == nil {
+		return false
+	}
+	node := mt.Macro.Root.GetAction(mt.SelectedNode)
+	return mt.deleteAction(node)
+}
+
+func (mt *MacroTree) deleteAction(node actions.ActionInterface) bool {
+	if node == nil || node.GetParent() == nil {
+		return false
+	}
+	uid := node.GetUID()
+	mt.recordMutation()
+	mt.invalidateRowCache(uid)
+	node.GetParent().RemoveSubAction(node)
+	mt.RefreshItem(uid)
+	if len(mt.Macro.Root.SubActions) == 0 || mt.SelectedNode == uid {
+		mt.SelectedNode = ""
+	}
+	if mt.OnTreeChanged != nil {
+		mt.OnTreeChanged()
+	}
+	return true
+}
+
 func (mt *MacroTree) setTree() {
 	mt.ChildUIDs = func(uid string) []string {
 		if aa, ok := mt.Macro.Root.GetAction(uid).(actions.AdvancedActionInterface); ok {
@@ -808,8 +933,10 @@ func (mt *MacroTree) setTree() {
 		scrollContent := container.NewHBox(displayHolder, itemIconsHolder)
 		contentScroll := container.NewHScroll(scrollContent)
 		contentScroll.SetMinSize(fyne.NewSize(0, treeItemIconSize))
+		rowBody := newTreeRowBody(contentScroll)
+		rowBody.tree = mt
 		removeBtn := &widget.Button{Icon: theme.CancelIcon(), Importance: widget.LowImportance}
-		border := container.NewBorder(nil, nil, leftSide, removeBtn, contentScroll)
+		border := container.NewBorder(nil, nil, leftSide, removeBtn, rowBody)
 
 		hlSimple := canvas.NewRectangle(highlightSimpleColor)
 		hlSimple.CornerRadius = 6
@@ -846,7 +973,10 @@ func (mt *MacroTree) setTree() {
 		iconBg := iconStack.Objects[0].(*canvas.Rectangle)
 		actionIconBtn := iconStack.Objects[1].(*ttwidget.Button)
 		removeButton := c.Objects[2].(*widget.Button)
-		contentScroll := c.Objects[0].(*container.Scroll)
+		rowBody := c.Objects[0].(*treeRowBody)
+		rowBody.tree = mt
+		rowBody.uid = uid
+		contentScroll := rowBody.scroll
 		scrollContent, ok := contentScroll.Content.(*fyne.Container)
 		if !ok || len(scrollContent.Objects) < 2 {
 			return
@@ -879,16 +1009,7 @@ func (mt *MacroTree) setTree() {
 		itemIconsBox.Refresh()
 
 		removeButton.OnTapped = func() {
-			mt.recordMutation()
-			mt.invalidateRowCache(uid)
-			node.GetParent().RemoveSubAction(node)
-			mt.RefreshItem(uid)
-			if len(mt.Macro.Root.SubActions) == 0 || mt.SelectedNode == node.GetUID() {
-				mt.SelectedNode = ""
-			}
-			if mt.OnTreeChanged != nil {
-				mt.OnTreeChanged()
-			}
+			mt.deleteAction(node)
 		}
 		removeButton.Show()
 

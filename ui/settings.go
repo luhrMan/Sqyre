@@ -56,11 +56,27 @@ func (u *Ui) constructSettings() fyne.CanvasObject {
 	closeMatchesHint := widget.NewLabel("Image search: ignore duplicate matches within this many pixels.")
 	closeMatchesHint.Wrapping = fyne.TextWrapWord
 
+	dragPreviewMin := config.MinDragPreviewDebounceMs
+	dragPreviewMax := 1000
+	dragPreviewDebounce := prefs.IntWithFallback(config.PrefDragPreviewDebounceMs, config.DefaultDragPreviewDebounceMs)
+	if dragPreviewDebounce < dragPreviewMin {
+		dragPreviewDebounce = config.DefaultDragPreviewDebounceMs
+	}
+	dragPreviewInc := custom_widgets.NewIncrementer(dragPreviewDebounce, 25, &dragPreviewMin, &dragPreviewMax)
+	dragPreviewInc.SetValue(dragPreviewDebounce)
+	dragPreviewInc.OnChanged = func(v int) {
+		prefs.SetInt(config.PrefDragPreviewDebounceMs, v)
+	}
+	dragPreviewHint := widget.NewLabel("Macro tree drag preview delay (ms). How long the pointer must rest before rows shift to show the drop position.")
+	dragPreviewHint.Wrapping = fyne.TextWrapWord
+
 	u.SettingsUi.GeneralSection = widget.NewCard("General", "Application and behavior options.", container.NewVBox(
 		saveMetaCheck,
 		highlightCheck,
 		closeMatchesHint,
 		closeMatchesInc,
+		dragPreviewHint,
+		container.NewHBox(widget.NewLabel("Drag preview delay (ms):"), dragPreviewInc),
 	))
 
 	sqyrePathLabel := widget.NewLabel(config.GetSqyreDir())

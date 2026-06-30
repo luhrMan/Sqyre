@@ -125,6 +125,7 @@ func setupSystemTray(w fyne.Window) {
 		m := fyne.NewMenu("Sqyre",
 			fyne.NewMenuItem("Show", func() {
 				w.Show()
+				startMousePosPolling()
 			}))
 		desk.SetSystemTrayMenu(m)
 		desk.SetSystemTrayIcon(assets.AppIcon)
@@ -166,17 +167,15 @@ func Bootstrap(mainWindow, splashWindow fyne.Window, report BootstrapReporter) {
 	}
 	startupprof.Mark("config loaded")
 
-	report.setStatus("Loading macros…")
+	report.setStatus("Loading macros and programs…")
 	report.setProgress(progressMacros)
-	macroRepo := repositories.MacroRepo()
-	log.Printf("Initialized MacroRepository with %d macros", macroRepo.Count())
+	repositories.LoadAll()
+	log.Printf("Initialized MacroRepository with %d macros", repositories.MacroRepo().Count())
 	startupprof.Mark("macros loaded")
 	go services.WarmUpOCR()
 
-	report.setStatus("Loading programs…")
 	report.setProgress(progressPrograms)
-	programRepo := repositories.ProgramRepo()
-	log.Printf("Initialized ProgramRepository with %d programs", programRepo.Count())
+	log.Printf("Initialized ProgramRepository with %d programs", repositories.ProgramRepo().Count())
 	startupprof.Mark("programs loaded")
 
 	report.setStatus("Building interface…")
