@@ -155,3 +155,57 @@ func TestLooksLikeExpression(t *testing.T) {
 		t.Fatal("function call should look like expression")
 	}
 }
+
+func TestEvaluateCondition_matchAll(t *testing.T) {
+	m := models.NewMacro("t", 0, nil)
+	m.Variables.Set("a", 1)
+	m.Variables.Set("b", 2)
+
+	ok, err := EvaluateCondition(actions.NewConditional([]actions.ConditionClause{
+		{Left: "${a}", Operator: actions.OpEquals, Right: 1},
+		{Left: "${b}", Operator: actions.OpEquals, Right: 2},
+	}, actions.MatchAll, "", nil), m)
+	if err != nil || !ok {
+		t.Fatalf("all true: ok=%v err=%v", ok, err)
+	}
+
+	ok, err = EvaluateCondition(actions.NewConditional([]actions.ConditionClause{
+		{Left: "${a}", Operator: actions.OpEquals, Right: 1},
+		{Left: "${b}", Operator: actions.OpEquals, Right: 3},
+	}, actions.MatchAll, "", nil), m)
+	if err != nil || ok {
+		t.Fatalf("one false: ok=%v err=%v", ok, err)
+	}
+}
+
+func TestEvaluateCondition_matchAny(t *testing.T) {
+	m := models.NewMacro("t", 0, nil)
+	m.Variables.Set("a", 1)
+	m.Variables.Set("b", 2)
+
+	ok, err := EvaluateCondition(actions.NewConditional([]actions.ConditionClause{
+		{Left: "${a}", Operator: actions.OpEquals, Right: 9},
+		{Left: "${b}", Operator: actions.OpEquals, Right: 2},
+	}, actions.MatchAny, "", nil), m)
+	if err != nil || !ok {
+		t.Fatalf("one true: ok=%v err=%v", ok, err)
+	}
+
+	ok, err = EvaluateCondition(actions.NewConditional([]actions.ConditionClause{
+		{Left: "${a}", Operator: actions.OpEquals, Right: 9},
+		{Left: "${b}", Operator: actions.OpEquals, Right: 8},
+	}, actions.MatchAny, "", nil), m)
+	if err != nil || ok {
+		t.Fatalf("none true: ok=%v err=%v", ok, err)
+	}
+}
+
+func TestEvaluateCondition_emptyClauses(t *testing.T) {
+	ok, err := EvaluateCondition(&actions.Conditional{Clauses: nil}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok {
+		t.Fatal("empty clauses should be false")
+	}
+}

@@ -245,6 +245,21 @@ func (p *VariablesPanel) refreshMacroTree() {
 	}
 }
 
+func (p *VariablesPanel) goToAction(uid string) bool {
+	if uid == "" || p.macro == nil || p.macro.FindActionByUID(uid) == nil {
+		return false
+	}
+	if c := activeWire.Mui.MTabs.SelectedMacroContent(); c != nil {
+		c.GoToAction(uid)
+		return true
+	}
+	if st := activeWire.Mui.MTabs.SelectedTab(); st != nil {
+		st.GoToAction(uid)
+		return true
+	}
+	return false
+}
+
 func (p *VariablesPanel) updateListRow(id widget.ListItemID, row *variableListRow) {
 	d := p.defs[id]
 	actionType := variablePillActionType(d)
@@ -321,6 +336,7 @@ func (p *VariablesPanel) showUsagesDialog(d models.VariableDef) {
 		usage models.VariableUsage
 	}
 	rows := make([]usageRow, len(usages))
+	var hideUsages func()
 	list := widget.NewList(
 		func() int { return len(rows) },
 		func() fyne.CanvasObject {
@@ -355,13 +371,8 @@ func (p *VariablesPanel) showUsagesDialog(d models.VariableDef) {
 				goBtn.Enable()
 				uid := u.ActionUID
 				goBtn.OnTapped = func() {
-					action := p.macro.FindActionByUID(uid)
-					if action == nil {
-						return
-					}
-					if st := activeWire.Mui.MTabs.SelectedTab(); st != nil {
-						st.Select(uid)
-						st.OnOpenActionDialog(action)
+					if p.goToAction(uid) && hideUsages != nil {
+						hideUsages()
 					}
 				}
 			}
@@ -378,7 +389,8 @@ func (p *VariablesPanel) showUsagesDialog(d models.VariableDef) {
 	title := fmt.Sprintf("Usages of %q", d.Name)
 	content := container.NewBorder(nil, container.NewHBox(layout.NewSpacer(), closeBtn), nil, nil, scroll)
 	dlg := dialog.NewCustomWithoutButtons(title, content, w)
-	closeBtn.OnTapped = func() { dlg.Hide() }
+	hideUsages = dlg.Hide
+	closeBtn.OnTapped = hideUsages
 	if activeWire.AddDialogEscapeClose != nil {
 		activeWire.AddDialogEscapeClose(dlg, w)
 	}

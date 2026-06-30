@@ -6,6 +6,7 @@ import (
 	"Sqyre/ui/custom_widgets"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	"fyne.io/fyne/v2"
@@ -187,9 +188,29 @@ func forEachRowSourceField(source *custom_widgets.VarEntry) fyne.CanvasObject {
 	)
 }
 
+// parseRowBound converts a Start/End row entry to an int literal when possible,
+// a "${variable}" string otherwise, or nil when blank (meaning use the default).
+func parseRowBound(text string) any {
+	s := strings.TrimSpace(text)
+	if s == "" {
+		return nil
+	}
+	if n, err := strconv.Atoi(s); err == nil {
+		return n
+	}
+	return s
+}
+
 func createForEachRowDialogContent(action *actions.ForEachRow) (fyne.CanvasObject, func()) {
 	nameEntry := widget.NewEntry()
 	nameEntry.SetText(action.Name)
+
+	startEntry := newValidatedVarEntry(validateNumericExpression)
+	startEntry.Entry.SetPlaceHolder("e.g. 1 or ${start} (default 1)")
+	startEntry.Entry.SetText(operandToString(action.StartRow))
+	endEntry := newValidatedVarEntry(validateNumericExpression)
+	endEntry.Entry.SetPlaceHolder("e.g. 10 or ${RowCount} (default last row)")
+	endEntry.Entry.SetText(operandToString(action.EndRow))
 
 	rows := make([]sourceRowWidgets, len(action.Sources))
 	for i, s := range action.Sources {
@@ -250,6 +271,8 @@ func createForEachRowDialogContent(action *actions.ForEachRow) (fyne.CanvasObjec
 
 	content := widget.NewForm(
 		formHint("Name:", nameEntry, "Label for this iterator in the tree."),
+		formHint("Start row:", startEntry, "First 1-based row to process. Number or ${variable}. Empty = 1."),
+		formHint("End row:", endEntry, "Last 1-based row to process (inclusive). Number or ${variable}. Empty = last row."),
 	)
 	content.Append("Sources", container.NewBorder(
 		addBtn,
@@ -259,6 +282,8 @@ func createForEachRowDialogContent(action *actions.ForEachRow) (fyne.CanvasObjec
 
 	saveFunc := func() {
 		action.Name = nameEntry.Text
+		action.StartRow = parseRowBound(startEntry.Entry.Text)
+		action.EndRow = parseRowBound(endEntry.Entry.Text)
 		sources := make([]actions.ListColumn, 0, len(rows))
 		for _, row := range rows {
 			src := strings.TrimSpace(row.source.Text)

@@ -1,6 +1,9 @@
 package actions
 
 import (
+	"fmt"
+	"strings"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/theme"
 )
@@ -20,6 +23,12 @@ const (
 	OpIsEmpty    = "is empty"
 )
 
+// Match modes for combining multiple condition clauses.
+const (
+	MatchAll = "all" // AND — every clause must be true
+	MatchAny = "any" // OR — at least one clause must be true
+)
+
 // ConditionalOperators lists every operator in display order for UI selectors.
 var ConditionalOperators = []string{
 	OpEquals,
@@ -35,35 +44,83 @@ var ConditionalOperators = []string{
 	OpIsEmpty,
 }
 
+// ConditionalMatchModes lists match modes in display order for UI selectors.
+var ConditionalMatchModes = []string{MatchAll, MatchAny}
+
 // OperatorIsUnary reports whether an operator only uses the left operand
 // (the right operand is ignored for these).
 func OperatorIsUnary(op string) bool {
 	return op == OpIsSet || op == OpIsEmpty
 }
 
-// Conditional is an advanced action that compares two operands and, when the
-// comparison is true, runs its sub-actions (the branch). When false, execution
-// continues past the branch without running the sub-actions.
-//
+// ConditionClause is one comparison within a Conditional action.
 // Left and Right may be int (literal) or string (literal or variable reference
 // e.g. "${score}").
+type ConditionClause struct {
+	Left     any
+	Operator string
+	Right    any
+}
+
+// Summary returns a compact human-readable form of the clause.
+func (c ConditionClause) Summary() string {
+	if OperatorIsUnary(c.Operator) {
+		return fmt.Sprintf("%v %s", c.Left, c.Operator)
+	}
+	return fmt.Sprintf("%v %s %v", c.Left, c.Operator, c.Right)
+}
+
+// Conditional is an advanced action that evaluates one or more comparisons and,
+// when the combined result is true, runs its sub-actions (the branch). When false,
+// execution continues past the branch without running the sub-actions.
 type Conditional struct {
-	Left            any
-	Operator        string
-	Right           any
+	Clauses []ConditionClause
+	Match   string // MatchAll (AND) or MatchAny (OR); empty defaults to MatchAll
 	*AdvancedAction `yaml:",inline" mapstructure:",squash"`
 }
 
-func NewConditional(left any, operator string, right any, name string, subActions []ActionInterface) *Conditional {
-	if operator == "" {
-		operator = OpEquals
+// EffectiveMatch returns MatchAny when set, otherwise MatchAll.
+func (a *Conditional) EffectiveMatch() string {
+	if a.Match == MatchAny {
+		return MatchAny
+	}
+	return MatchAll
+}
+
+// MatchLabel returns a display label for the current match mode.
+func (a *Conditional) MatchLabel() string {
+	if a.EffectiveMatch() == MatchAny {
+		return "any (OR)"
+	}
+	return "all (AND)"
+}
+
+func NewConditional(clauses []ConditionClause, match string, name string, subActions []ActionInterface) *Conditional {
+	if len(clauses) == 0 {
+		clauses = []ConditionClause{{Left: "", Operator: OpEquals, Right: ""}}
+	}
+	for i := range clauses {
+		if clauses[i].Operator == "" {
+			clauses[i].Operator = OpEquals
+		}
 	}
 	return &Conditional{
 		AdvancedAction: newAdvancedAction(name, "conditional", subActions),
-		Left:           left,
-		Operator:       operator,
-		Right:          right,
+		Clauses:        clauses,
+		Match:          match,
 	}
+}
+
+func (a *Conditional) conditionSummary() string {
+	sep := " AND "
+	if a.EffectiveMatch() == MatchAny {
+		sep = " OR "
+	}
+	parts := make([]string, len(a.Clauses))
+	for i, c := range a.Clauses {
+		parts[i] = c.Summary()
+	}
+	return strings.Join(parts, sep)
 }
 
 func (a *Conditional) String() string {
@@ -75,16 +132,12 @@ func (a *Conditional) Display() fyne.CanvasObject {
 }
 
 func (a *Conditional) parameters() []actionParam {
-	params := []actionParam{
+	return []actionParam{
 		newParam("Type", a.GetType()),
 		newParam("Name", a.Name),
-		newParam("If", a.Left),
-		newParam("Op", a.Operator),
+		newParam("Match", a.MatchLabel()),
+		newParam("If", a.conditionSummary()),
 	}
-	if !OperatorIsUnary(a.Operator) {
-		params = append(params, newParam("Value", a.Right))
-	}
-	return params
 }
 
 func (a *Conditional) Icon() fyne.Resource {

@@ -1,8 +1,6 @@
 package serialize
 
 import (
-	"fmt"
-
 	"Sqyre/internal/models/actions"
 )
 
@@ -15,44 +13,44 @@ func boolFromMap(m map[string]any, key string) bool {
 	return ok && b
 }
 
-func sourcesFromMap(v any) ([]actions.ListColumn, error) {
+func listColumnFromMap(m map[string]any) actions.ListColumn {
+	return actions.ListColumn{
+		Source:         stringFromMap(m, "source"),
+		OutputVar:      stringFromMap(m, "outputvar"),
+		IsFile:         boolFromMap(m, "isfile"),
+		SkipBlankLines: boolFromMap(m, "skipblanklines"),
+	}
+}
+
+// sourcesListFromMap decodes a sources array, skipping entries that are not mappings.
+// Returns nil when v is nil or not a list.
+func sourcesListFromMap(v any) []actions.ListColumn {
 	if v == nil {
-		return []actions.ListColumn{}, nil
+		return nil
 	}
-	var raw []any
-	switch t := v.(type) {
-	case []any:
-		raw = t
-	case []map[string]any:
-		raw = make([]any, len(t))
-		for i, m := range t {
-			raw[i] = m
-		}
-	default:
-		return nil, fmt.Errorf("sources: expected array, got %T", v)
+	list, err := anySlice(v)
+	if err != nil {
+		return nil
 	}
-	out := make([]actions.ListColumn, 0, len(raw))
-	for i, item := range raw {
+	out := make([]actions.ListColumn, 0, len(list))
+	for _, item := range list {
 		m, ok := item.(map[string]any)
 		if !ok {
-			return nil, fmt.Errorf("sources[%d]: expected mapping, got %T", i, item)
+			continue
 		}
-		src, err := expectString(m, "source")
-		if err != nil {
-			return nil, fmt.Errorf("sources[%d]: %w", i, err)
-		}
-		outVar, err := expectString(m, "outputvar")
-		if err != nil {
-			return nil, fmt.Errorf("sources[%d]: %w", i, err)
-		}
-		out = append(out, actions.ListColumn{
-			Source:         src,
-			OutputVar:      outVar,
-			IsFile:         boolFromMap(m, "isfile"),
-			SkipBlankLines: boolFromMap(m, "skipblanklines"),
-		})
+		out = append(out, listColumnFromMap(m))
 	}
-	return out, nil
+	return out
+}
+
+// forEachRowSourcesFromMap loads For Each Row sources from the sources array.
+// When nothing usable is present, returns an empty slice.
+func forEachRowSourcesFromMap(rawMap map[string]any) []actions.ListColumn {
+	cols := sourcesListFromMap(rawMap["sources"])
+	if cols == nil {
+		return []actions.ListColumn{}
+	}
+	return cols
 }
 
 func listColumnsToMaps(cols []actions.ListColumn) []map[string]any {

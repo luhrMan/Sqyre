@@ -22,6 +22,12 @@ import (
 	"gocv.io/x/gocv"
 )
 
+const (
+	conditionalDialogWidth            = float32(720)
+	conditionalDialogHeight           = float32(520)
+	conditionalClausesScrollMinHeight = float32(360)
+)
+
 func createWaitDialogContent(action *actions.Wait) (fyne.CanvasObject, func()) {
 	timeEntry := newValidatedVarEntry(validateNumericExpression)
 	timeEntry.Entry.SetPlaceHolder("Milliseconds (or ${variable})")
@@ -313,50 +319,130 @@ func createConditionalDialogContent(action *actions.Conditional) (fyne.CanvasObj
 	nameEntry := widget.NewEntry()
 	nameEntry.SetText(action.Name)
 
-	leftEntry := newValidatedVarEntry(validateVariableReferences)
-	leftEntry.Entry.SetPlaceHolder("e.g. ${score} or 10")
-	leftEntry.Entry.SetText(operandToString(action.Left))
+	matchSelect := widget.NewSelect(actions.ConditionalMatchModes, nil)
+	matchSelect.SetSelected(action.EffectiveMatch())
 
-	rightEntry := newValidatedVarEntry(validateVariableReferences)
-	rightEntry.Entry.SetPlaceHolder("e.g. ${target} or 100")
-	rightEntry.Entry.SetText(operandToString(action.Right))
+	rows := make([]clauseRowWidgets, len(action.Clauses))
+	for i, c := range action.Clauses {
+		rows[i] = newClauseRowWidgets(c)
+	}
+	if len(rows) == 0 {
+		rows = append(rows, newClauseRowWidgets(actions.ConditionClause{}))
+	}
+
+	rowsBox := container.NewVBox()
+	var rebuild func()
+	rebuild = func() {
+		rowsBox.Objects = nil
+		for i := range rows {
+			idx := i
+			row := rows[idx]
+			removeBtn := widget.NewButton("Remove", func() {
+				if len(rows) <= 1 {
+					return
+				}
+				rows = append(rows[:idx], rows[idx+1:]...)
+				rebuild()
+			})
+			if len(rows) <= 1 {
+				removeBtn.Disable()
+			}
+			header := widget.NewLabelWithStyle(fmt.Sprintf("Clause %d", idx+1), fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+			rowForm := widget.NewForm(
+				formHint("If (left):", row.left, "Left side of the comparison. Literal or ${variable}."),
+				formHint("Operator:", row.operator, "Comparison operator. Numbers compare numerically; otherwise text is compared. 'is set' / 'is empty' only use the left value."),
+				formHint("Value (right):", row.right, "Right side of the comparison. Literal or ${variable}. Ignored for 'is set' / 'is empty'."),
+			)
+			rowsBox.Add(container.NewVBox(
+				header,
+				rowForm,
+				removeBtn,
+				widget.NewSeparator(),
+			))
+		}
+	}
+	rebuild()
+
+	addBtn := widget.NewButton("Add clause", func() {
+		rows = append(rows, newClauseRowWidgets(actions.ConditionClause{}))
+		rebuild()
+	})
+
+	clausesScroll := container.NewVScroll(rowsBox)
+	clausesScroll.SetMinSize(fyne.NewSize(conditionalDialogWidth-120, conditionalClausesScrollMinHeight))
+
+	content := widget.NewForm(
+		formHint("Name:", nameEntry, "Label for this conditional in the tree. Used for readability and logging."),
+		formHint("Match:", matchSelect, "How to combine clauses: all (AND) requires every clause to be true; any (OR) requires at least one."),
+	)
+	content.Append("Clauses", container.NewBorder(
+		addBtn,
+		nil, nil, nil,
+		clausesScroll,
+	))
+
+	saveFunc := func() {
+		action.Name = nameEntry.Text
+		if matchSelect.Selected != "" {
+			action.Match = matchSelect.Selected
+		} else {
+			action.Match = actions.MatchAll
+		}
+		clauses := make([]actions.ConditionClause, 0, len(rows))
+		for _, row := range rows {
+			op := row.operator.Selected
+			if op == "" {
+				op = actions.OpEquals
+			}
+			clauses = append(clauses, actions.ConditionClause{
+				Left:     parseOperand(row.left.Entry.Text),
+				Operator: op,
+				Right:    parseOperand(row.right.Entry.Text),
+			})
+		}
+		action.Clauses = clauses
+	}
+
+	return content, saveFunc
+}
+
+type clauseRowWidgets struct {
+	left     *custom_widgets.VarEntryField
+	operator *widget.Select
+	right    *custom_widgets.VarEntryField
+}
+
+func newClauseRowWidgets(c actions.ConditionClause) clauseRowWidgets {
+	left := newValidatedVarEntry(validateVariableReferences)
+	left.Entry.SetPlaceHolder("e.g. ${score} or 10")
+	left.Entry.SetText(operandToString(c.Left))
+
+	right := newValidatedVarEntry(validateVariableReferences)
+	right.Entry.SetPlaceHolder("e.g. ${target} or 100")
+	right.Entry.SetText(operandToString(c.Right))
 
 	operatorSelect := widget.NewSelect(actions.ConditionalOperators, nil)
-	if action.Operator != "" {
-		operatorSelect.SetSelected(action.Operator)
+	if c.Operator != "" {
+		operatorSelect.SetSelected(c.Operator)
 	} else {
 		operatorSelect.SetSelected(actions.OpEquals)
 	}
 
 	updateRightState := func(op string) {
 		if actions.OperatorIsUnary(op) {
-			rightEntry.Entry.Disable()
+			right.Entry.Disable()
 		} else {
-			rightEntry.Entry.Enable()
+			right.Entry.Enable()
 		}
 	}
 	operatorSelect.OnChanged = updateRightState
 	updateRightState(operatorSelect.Selected)
 
-	content := widget.NewForm(
-		formHint("Name:", nameEntry, "Label for this conditional in the tree. Used for readability and logging."),
-		formHint("If (left):", leftEntry, "Left side of the comparison. Literal or ${variable}."),
-		formHint("Operator:", operatorSelect, "Comparison operator. Numbers compare numerically; otherwise text is compared. 'is set' / 'is empty' only use the left value."),
-		formHint("Value (right):", rightEntry, "Right side of the comparison. Literal or ${variable}. Ignored for 'is set' / 'is empty'."),
-	)
-
-	saveFunc := func() {
-		action.Name = nameEntry.Text
-		if operatorSelect.Selected != "" {
-			action.Operator = operatorSelect.Selected
-		} else {
-			action.Operator = actions.OpEquals
-		}
-		action.Left = parseOperand(leftEntry.Entry.Text)
-		action.Right = parseOperand(rightEntry.Entry.Text)
+	return clauseRowWidgets{
+		left:     left,
+		operator: operatorSelect,
+		right:    right,
 	}
-
-	return content, saveFunc
 }
 
 // operandToString renders a conditional operand (int or string) for an entry field.

@@ -40,8 +40,8 @@ func buildActionTemplates() []actionTemplate {
 		{label: "Loop", actionType: "loop", category: "Miscellaneous", icon: actions.NewLoop(1, "", []actions.ActionInterface{}).Icon(), create: func() actions.ActionInterface {
 			return actions.NewLoop(1, "", []actions.ActionInterface{})
 		}},
-		{label: "If", actionType: "conditional", category: "Miscellaneous", icon: actions.NewConditional("", actions.OpEquals, "", "", []actions.ActionInterface{}).Icon(), create: func() actions.ActionInterface {
-			return actions.NewConditional("", actions.OpEquals, "", "", []actions.ActionInterface{})
+		{label: "If", actionType: "conditional", category: "Miscellaneous", icon: actions.NewConditional(nil, actions.MatchAll, "", []actions.ActionInterface{}).Icon(), create: func() actions.ActionInterface {
+			return actions.NewConditional(nil, actions.MatchAll, "", []actions.ActionInterface{})
 		}},
 		{label: "Break", actionType: "break", category: "Miscellaneous", icon: actions.NewBreak().Icon(), create: func() actions.ActionInterface {
 			return actions.NewBreak()
@@ -159,14 +159,8 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 			if mt == nil {
 				return
 			}
-			selectedNode := mt.Macro.Root.GetAction(mt.SelectedNode)
-			if selectedNode == nil {
-				selectedNode = mt.Macro.Root
-			}
-			if s, ok := selectedNode.(actions.AdvancedActionInterface); ok {
-				s.AddSubAction(a)
-			} else {
-				selectedNode.GetParent().AddSubAction(a)
+			if !mt.InsertActionBelowSelection(a) {
+				return
 			}
 			mt.Refresh()
 			mt.Select(a.GetUID())
@@ -235,10 +229,7 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 
 	editor := fyne.NewMenuItem("Data Editor", func() {
 		EnsureDataEditor()
-		u.MainUi.Navigation.PushWithTitle(
-			u.EditorUi.CanvasObject,
-			"Editor",
-		)
+		u.showOverlay(u.EditorUi.CanvasObject, "Editor", overlayEditor)
 		if mt := GetUi().Mui.MTabs.SelectedTab(); mt != nil {
 			mt.UnselectAll()
 			mt.SelectedNode = ""
@@ -246,10 +237,7 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 	})
 
 	userSettings := fyne.NewMenuItem("User Settings", func() {
-		u.MainUi.Navigation.PushWithTitle(
-			u.SettingsUi.CanvasObject,
-			"User Settings",
-		)
+		u.showOverlay(u.SettingsUi.CanvasObject, "User Settings", overlaySettings)
 	})
 
 	// testMenu := fyne.NewMenu("Test",

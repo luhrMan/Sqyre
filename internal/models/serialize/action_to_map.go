@@ -132,9 +132,16 @@ func ActionToMap(action actions.ActionInterface) (map[string]any, error) {
 		m["outputvar"] = a.OutputVar
 	case *actions.Conditional:
 		m["name"] = a.Name
-		m["operator"] = a.Operator
-		m["left"] = a.Left
-		m["right"] = a.Right
+		m["match"] = a.EffectiveMatch()
+		clauses := make([]map[string]any, len(a.Clauses))
+		for i, c := range a.Clauses {
+			clauses[i] = map[string]any{
+				"left":     c.Left,
+				"operator": c.Operator,
+				"right":    c.Right,
+			}
+		}
+		m["clauses"] = clauses
 		subs, err := subActionsToMaps(a.GetSubActions())
 		if err != nil {
 			return nil, err
@@ -143,6 +150,12 @@ func ActionToMap(action actions.ActionInterface) (map[string]any, error) {
 	case *actions.ForEachRow:
 		m["name"] = a.Name
 		m["sources"] = listColumnsToMaps(a.Sources)
+		if actions.RowBoundIsSet(a.StartRow) {
+			m["startrow"] = a.StartRow
+		}
+		if actions.RowBoundIsSet(a.EndRow) {
+			m["endrow"] = a.EndRow
+		}
 		subs, err := subActionsToMaps(a.GetSubActions())
 		if err != nil {
 			return nil, err

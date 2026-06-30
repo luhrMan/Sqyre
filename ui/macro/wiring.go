@@ -380,6 +380,14 @@ func setMacroTree(mt *MacroTree) {
 			st.SelectedNode = uid
 		}
 	}
+	mt.OnTreeChanged = func() {
+		if err := repositories.MacroRepo().Set(mt.Macro.Name, mt.Macro); err != nil {
+			log.Printf("failed to save macro after tree change: %v", err)
+		}
+		if c := d.Mui.MTabs.SelectedMacroContent(); c != nil {
+			c.RefreshVariablesPanel()
+		}
+	}
 	mt.OnOpenActionDialog = func(action actions.ActionInterface) {
 		if action == nil {
 			return
