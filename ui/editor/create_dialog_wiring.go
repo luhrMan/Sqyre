@@ -213,6 +213,7 @@ func wireItemMaskHandlers(w map[string]fyne.CanvasObject, programSelector *widge
 
 func showMaskSelectionPopupForItem(programName string, onSelect func(maskName string)) {
 	var popup *widget.PopUp
+	var hide func()
 	acc := widget.NewAccordion()
 	for _, p := range repositories.ProgramRepo().GetAllSortedByName() {
 		pName := p.Name
@@ -237,7 +238,7 @@ func showMaskSelectionPopupForItem(programName string, onSelect func(maskName st
 				return
 			}
 			onSelect(filtered[id])
-			popup.Hide()
+			hide()
 		}
 		searchbar.OnChanged = func(s string) {
 			searchDebounce.Call(func() {
@@ -263,11 +264,13 @@ func showMaskSelectionPopupForItem(programName string, onSelect func(maskName st
 			container.NewBorder(searchbar, nil, nil, nil, maskList),
 		))
 	}
-	closeButton := widget.NewButton("Close", func() { popup.Hide() })
+	closeButton := widget.NewButton("Close", func() { hide() })
 	popUpContent := container.NewBorder(closeButton, nil, nil, nil, acc)
 	popup = widget.NewModalPopUp(popUpContent, activeWire.Window.Canvas())
-	popup.Resize(fyne.NewSize(400, 500))
-	popup.Show()
+	dlg := activeWire.AddPopupEscapeClose(popup, activeWire.Window)
+	hide = dlg.Hide
+	dlg.Resize(fyne.NewSize(400, 500))
+	dlg.Show()
 }
 
 func wireCreateMaskDialog(w map[string]fyne.CanvasObject, programSelector *widget.Select, previewPanel *editorPreviewPanel, refreshBtn *widget.Button) {
