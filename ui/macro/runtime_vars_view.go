@@ -5,6 +5,7 @@ import (
 
 	"Sqyre/internal/models/actions"
 	"Sqyre/internal/services"
+	"Sqyre/ui/custom_widgets"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -43,7 +44,7 @@ func buildRuntimeVariablesView() (*widget.List, func()) {
 			names = append(names, n)
 		}
 		sort.Strings(names)
-		varList.Refresh()
+		custom_widgets.RefreshListPreservingScroll(varList)
 	}
 	refresh()
 	return varList, refresh

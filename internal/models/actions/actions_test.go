@@ -246,7 +246,7 @@ func TestMove_String(t *testing.T) {
 		t.Errorf("String() = %q", got)
 	}
 	m2 := NewMove(NewCoordinateRef("prog", "A"), true)
-	if got := m2.String(); got != "Type: move  /  Point: prog~A  /  Smooth: true  /  Smooth low: 0.1  /  Smooth high: 0.5  /  Smooth delay (ms): 1" {
+	if got := m2.String(); got != "Type: move  /  Point: prog~A  /  Smooth: true  /  Smooth low: 0.05  /  Smooth high: 0.2  /  Smooth delay (ms): 1" {
 		t.Errorf("String() = %q", got)
 	}
 }
