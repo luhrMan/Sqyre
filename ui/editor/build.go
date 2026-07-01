@@ -31,12 +31,13 @@ func EnsureBuilt(eu *EditorUi, win fyne.Window) {
 	ConstructEditorTabs(eu, win)
 	PrepareToolbarButtons(eu)
 	eu.ActionBar = container.NewHBox(layout.NewSpacer(), eu.AddButton, eu.RemoveButton)
+	editorScroll := container.NewScroll(eu.EditorTabs)
 	eu.CanvasObject = container.NewBorder(
 		nil,
 		eu.ActionBar,
 		nil,
 		nil,
-		eu.EditorTabs,
+		editorScroll,
 	)
 	eu.RefreshEditorActionBar()
 	eu.EditorTabs.OnSelected = func(*container.TabItem) {
