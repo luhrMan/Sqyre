@@ -16,6 +16,7 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/layout"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 	"github.com/go-vgo/robotgo"
@@ -34,18 +35,23 @@ func createWaitDialogContent(action *actions.Wait) (fyne.CanvasObject, func()) {
 	default:
 		timeEntry.Entry.SetText(fmt.Sprintf("%v", action.Time))
 	}
-	timeSlider := ttwidget.NewSlider(0.0, 1000.0)
-	if t, ok := action.Time.(int); ok {
+	const waitSliderMax = 1000.0
+	timeSlider := ttwidget.NewSlider(0.0, waitSliderMax)
+	if t, ok := action.Time.(int); ok && t >= 0 && t <= int(waitSliderMax) {
 		timeSlider.SetValue(float64(t))
+	} else if t, ok := action.Time.(int); ok && t > int(waitSliderMax) {
+		timeSlider.SetValue(waitSliderMax)
 	}
 	timeSlider.OnChanged = func(f float64) {
 		timeEntry.Entry.SetText(fmt.Sprintf("%.0f", f))
 		timeEntry.Revalidate()
 	}
 	timeEntry.OnChanged = func(s string) {
-		if val, err := strconv.ParseFloat(s, 64); err == nil {
-			timeSlider.SetValue(val)
+		val, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
+		if err != nil || val < 0 || val > waitSliderMax {
+			return
 		}
+		timeSlider.SetValue(val)
 	}
 
 	content := widget.NewForm(
@@ -170,7 +176,7 @@ func createMoveDialogContent(action *actions.Move) (fyne.CanvasObject, func()) {
 		pointPreviewImage.Refresh()
 	}
 
-	pointsSearchbar, pointsAccordion := buildPointsAccordionWithSearchbar(func(ref actions.CoordinateRef) {
+	pointsSearchbar, pointsList := buildPointsListWithSearchbar(func(ref actions.CoordinateRef) {
 		tempPoint = ref
 		updateCoordsLabel(tempPoint)
 		updatePreview(tempPoint)
@@ -191,15 +197,21 @@ func createMoveDialogContent(action *actions.Move) (fyne.CanvasObject, func()) {
 
 	smoothSettings := widget.NewForm(smoothForm.formItems()...)
 
-	pointsScroll := scrollWithMin(pointsAccordion, fyne.NewSize(splitPanelMinW, previewMinH))
+	pointsScroll := scrollWithMin(pointsList, fyne.NewSize(splitPanelMinW, accordionPanelMinH))
 
-	content := container.NewVBox(
-		container.NewHBox(coordsLabel, layout.NewSpacer(), smoothForm.Check),
-		smoothSettings,
-		container.NewHSplit(
-			container.NewBorder(pointsSearchbar, nil, nil, nil, pointsScroll),
-			container.NewBorder(previewLbl, nil, nil, nil, pointPreviewImage),
+	moveSplit := container.NewHSplit(
+		container.NewBorder(pointsSearchbar, nil, nil, nil, pointsScroll),
+		container.NewBorder(previewLbl, nil, nil, nil, pointPreviewImage),
+	)
+	moveSplit.SetOffset(0.3)
+
+	content := container.NewBorder(
+		container.NewVBox(
+			container.NewHBox(coordsLabel, layout.NewSpacer(), smoothForm.Check),
+			smoothSettings,
 		),
+		nil, nil, nil,
+		moveSplit,
 	)
 
 	saveFunc := func() {
@@ -258,20 +270,39 @@ func createClickDialogContent(action *actions.Click) (fyne.CanvasObject, func())
 }
 
 func createKeyDialogContent(action *actions.Key) (fyne.CanvasObject, func()) {
-	keySelect := ttwidget.NewSelect([]string{"ctrl", "alt", "shift", "win"}, nil)
-	keySelect.SetSelected(action.Key)
-	keySelect.SetToolTip("Which modifier key to press or release (combined with up/down).")
+	keyLabel := widget.NewLabel(action.Key)
+	if keyLabel.Text == "" {
+		keyLabel.SetText("(not set)")
+	}
+	keyLabel.TextStyle = fyne.TextStyle{Monospace: true}
+
+	recordBtn := widget.NewButtonWithIcon("Record key", theme.MediaRecordIcon(), func() {
+		if active.ShowKeyRecordDialog == nil || active.Window == nil {
+			return
+		}
+		active.ShowKeyRecordDialog(active.Window, func(key string) {
+			action.Key = key
+			keyLabel.SetText(key)
+			if keyLabel.Text == "" {
+				keyLabel.SetText("(not set)")
+			}
+		})
+	})
+
 	wToggle := custom_widgets.NewToggle(func(b bool) {})
 	wToggle.SetToggled(action.State)
 	upKLbl := ttwidget.NewLabel("up")
-	upKLbl.SetToolTip("Release the modifier (key-up).")
+	upKLbl.SetToolTip("Release the key (key-up).")
 	downKLbl := ttwidget.NewLabel("down")
-	downKLbl.SetToolTip("Press the modifier (key-down).")
+	downKLbl.SetToolTip("Press the key (key-down).")
 
 	content := container.NewVBox(
+		widget.NewForm(
+			formHint("Key:", container.NewVBox(keyLabel, recordBtn),
+				"Press Record key and hold the key you want. Letters, numbers, function keys, arrows, modifiers, and Escape are supported."),
+		),
 		container.NewHBox(
 			layout.NewSpacer(),
-			keySelect,
 			upKLbl,
 			wToggle,
 			downKLbl,
@@ -280,11 +311,17 @@ func createKeyDialogContent(action *actions.Key) (fyne.CanvasObject, func()) {
 	)
 
 	saveFunc := func() {
-		action.Key = keySelect.Selected
 		action.State = wToggle.Toggled
 	}
 
 	return content, saveFunc
+}
+
+func validateKeyAction(action *actions.Key) error {
+	if strings.TrimSpace(action.Key) == "" {
+		return fmt.Errorf("key: record a key before saving")
+	}
+	return nil
 }
 
 func createTypeDialogContent(action *actions.Type) (fyne.CanvasObject, func()) {
