@@ -104,9 +104,6 @@ func SetActionDialogDeps() {
 		ShowHotkeyRecordDialog: func(parent fyne.Window, stableDuration time.Duration, onRecorded func(keys []string)) {
 			recording.ShowHotkeyRecordDialog(parent, stableDuration, AddDialogEscapeClose, onRecorded)
 		},
-		ShowKeyRecordDialog: func(parent fyne.Window, onRecorded func(key string)) {
-			recording.ShowKeyRecordDialog(parent, AddDialogEscapeClose, onRecorded)
-		},
 	})
 }
 
