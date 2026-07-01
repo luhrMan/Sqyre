@@ -16,8 +16,56 @@ import (
 	kxlayout "github.com/ErikKalkoken/fyne-kx/layout"
 )
 
+const macroTagChipBtnSize float32 = 20
+
 func newMacroTagsContainer() *fyne.Container {
 	return container.New(kxlayout.NewRowWrapLayout())
+}
+
+// tagEntrySplitLayout keeps the tag entry at entryMinFraction of the row width;
+// the tags area gets the remainder and scrolls when chips overflow.
+type tagEntrySplitLayout struct {
+	entryMinFraction float32
+}
+
+func (l *tagEntrySplitLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
+	if len(objects) == 0 {
+		return fyne.NewSize(0, 0)
+	}
+	entryMin := objects[0].MinSize()
+	height := entryMin.Height
+	if len(objects) > 1 {
+		if h := objects[1].MinSize().Height; h > height {
+			height = h
+		}
+	}
+	minWidth := entryMin.Width / l.entryMinFraction
+	if len(objects) > 1 {
+		if need := entryMin.Width + objects[1].MinSize().Width; need > minWidth {
+			minWidth = need
+		}
+	}
+	return fyne.NewSize(minWidth, height)
+}
+
+func (l *tagEntrySplitLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	if len(objects) < 2 {
+		return
+	}
+	entryW := size.Width * l.entryMinFraction
+	tagsW := size.Width - entryW
+	h := size.Height
+	objects[0].Resize(fyne.NewSize(entryW, h))
+	objects[0].Move(fyne.NewPos(0, 0))
+	objects[1].Resize(fyne.NewSize(tagsW, h))
+	objects[1].Move(fyne.NewPos(entryW, 0))
+}
+
+func newMacroTagEntryRow(entry fyne.CanvasObject, tags *fyne.Container) fyne.CanvasObject {
+	tagsScroll := container.NewHScroll(tags)
+	entryMin := entry.MinSize()
+	tagsScroll.SetMinSize(fyne.NewSize(0, entryMin.Height))
+	return container.New(&tagEntrySplitLayout{entryMinFraction: 0.5}, entry, tagsScroll)
 }
 
 func wrapMacroTagChip(inner fyne.CanvasObject) fyne.CanvasObject {
@@ -96,13 +144,17 @@ func updateMacroTagsDisplay(mtabs *MacroTabs, m *models.Macro) {
 
 func newMacroTagChip(mtabs *MacroTabs, m *models.Macro, tag string) fyne.CanvasObject {
 	tagLabel := widget.NewLabel(tag)
-	tagLabel.Importance = widget.MediumImportance
+	tagLabel.Wrapping = fyne.TextWrapOff
 	tagToRemove := tag
-	removeButton := widget.NewButtonWithIcon("", theme.DeleteIcon(), func() {
+	removeButton := widget.NewButtonWithIcon("", theme.CancelIcon(), func() {
 		removeMacroTag(mtabs, m, tagToRemove)
 	})
 	removeButton.Importance = widget.LowImportance
-	return wrapMacroTagChip(container.NewPadded(container.NewHBox(tagLabel, removeButton)))
+	chip := container.NewHBox(
+		tagLabel,
+		container.NewGridWrap(fyne.NewSize(macroTagChipBtnSize, macroTagChipBtnSize), removeButton),
+	)
+	return wrapMacroTagChip(chip)
 }
 
 func removeMacroTag(mtabs *MacroTabs, m *models.Macro, tagToRemove string) {

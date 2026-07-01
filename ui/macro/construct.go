@@ -356,13 +356,10 @@ func ConstructMacroUi(mui *MacroUi, boundLocXLabel, boundLocYLabel *widget.Label
 	globaldelaytt.SetToolTip("delay between actions (ms)")
 	bottomLeftContent := container.NewHBox(globaldelaytt, mui.MTabs.BoundGlobalDelayEntry, mousePosition)
 	bottomLeft := wrapFrame(container.NewPadded(bottomLeftContent))
-	bottomCenterContent := container.NewVBox(
-		container.NewBorder(nil, nil,
-			widget.NewLabel("Tags:"),
-			container.NewHBox(mui.MTabs.MacroTagSubmitBtn),
-			mui.MTabs.MacroTagEntry,
-		),
-		mui.MTabs.MacroTagsContainer,
+	bottomCenterContent := container.NewBorder(nil, nil,
+		widget.NewLabel("Tags:"),
+		mui.MTabs.MacroTagSubmitBtn,
+		newMacroTagEntryRow(mui.MTabs.MacroTagEntry, mui.MTabs.MacroTagsContainer),
 	)
 	bottomCenter := wrapFrame(container.NewPadded(bottomCenterContent))
 	bottomRightContent := container.NewHBox(
