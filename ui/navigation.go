@@ -61,4 +61,7 @@ func (u *Ui) showOverlay(obj fyne.CanvasObject, title string, kind overlayKind) 
 	}
 	nav.PushWithTitle(obj, title)
 	u.MainUi.overlayKind = kind
+	if kind == overlayEditor {
+		clampWindowToScreen(u.Window)
+	}
 }
