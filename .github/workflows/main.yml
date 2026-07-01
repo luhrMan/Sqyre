@@ -16,13 +16,13 @@ jobs:
   test:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Build Linux image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: .devcontainer/Dockerfile
@@ -33,7 +33,7 @@ jobs:
 
       - name: Cache tessdata
         id: tessdata-test
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: internal/assets/tessdata
           key: tessdata-eng
@@ -43,7 +43,7 @@ jobs:
         run: ./scripts/download-tessdata.sh
 
       - name: Cache Go modules and build cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             .cache/go-mod
@@ -63,7 +63,10 @@ jobs:
             -e GOCACHE=/workspace/.cache/go-build \
             -e GOMODCACHE=/workspace/.cache/go-mod \
             sqyre-linux-build \
-            bash -c './scripts/test.sh && ./scripts/test-ui.sh -run "TestGUIEscape|TestDocsScreenshots|TestDemoWorkflowFrames"'
+            bash -c 'set -x
+              ./scripts/test.sh
+              echo "=== UI / hook tests (xvfb) ==="
+              ./scripts/test-ui.sh -run "TestGUIEscape|TestDocsScreenshots|TestDemoWorkflowFrames"'
 
   build-linux:
     runs-on: ubuntu-22.04
@@ -73,7 +76,7 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.VERSION }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set version
         id: version
@@ -85,7 +88,7 @@ jobs:
           sed -i 's/^Version = .*/Version = "'"$VERSION"'"/' FyneApp.toml
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: GHCR image ref for Buildx cache
         id: ghcr
@@ -95,7 +98,7 @@ jobs:
           echo "buildcache=ghcr.io/${o}/${n}-buildcache:linux" >> "$GITHUB_OUTPUT"
 
       - name: Log in to GitHub Container Registry (Buildx cache)
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -103,7 +106,7 @@ jobs:
 
       # GHA cache can evict large layers; GHCR registry cache keeps OpenCV build layers across runs.
       - name: Build Linux image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: .devcontainer/Dockerfile
@@ -118,7 +121,7 @@ jobs:
 
       - name: Cache tessdata
         id: tessdata-linux
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: internal/assets/tessdata
           key: tessdata-eng
@@ -132,7 +135,7 @@ jobs:
 
       # Shared with test job: bind-mounted GOMODCACHE/GOCACHE under .cache/.
       - name: Cache GoLang modules and build cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             .cache/go-mod
@@ -190,13 +193,13 @@ jobs:
             "Sqyre-v${VERSION}-x86_64.AppImage"
 
       - name: Upload Linux binary artifact (zipped)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: linux-binary-zip
           path: sqyre-v${{ steps.version.outputs.VERSION }}-linux-amd64.zip
 
       - name: Upload Linux AppImage artifact (zipped)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: linux-appimage-zip
           path: Sqyre-v${{ steps.version.outputs.VERSION }}-x86_64.AppImage.zip
@@ -209,7 +212,7 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.VERSION }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set version
         id: version
@@ -223,7 +226,7 @@ jobs:
           sed -i 's/^Version = .*/Version = "'"$FYNE_VER"'"/' FyneApp.toml
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
@@ -234,7 +237,7 @@ jobs:
           echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: GHCR image ref for Buildx cache
         id: ghcr
@@ -244,14 +247,14 @@ jobs:
           echo "buildcache=ghcr.io/${o}/${n}-buildcache:windows" >> "$GITHUB_OUTPUT"
 
       - name: Log in to GitHub Container Registry (Buildx cache)
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build Windows image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: scripts/windows/docker/Dockerfile.windows-amd64
@@ -266,7 +269,7 @@ jobs:
 
       - name: Cache tessdata
         id: tessdata-windows
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: internal/assets/tessdata
           key: tessdata-eng
@@ -286,7 +289,7 @@ jobs:
 
       # fyne-cross stores downloaded modules/sources under -cache (default ~/.cache/fyne-cross).
       - name: Cache fyne-cross dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .cache/fyne-cross
           key: windows-fyne-cross-${{ hashFiles('go.sum') }}
@@ -322,7 +325,7 @@ jobs:
             "Sqyre-v${VERSION}-windows-amd64.exe"
 
       - name: Upload Windows artifact (zipped)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-artifact-zip
           path: Sqyre-v${{ steps.version.outputs.VERSION }}-windows-amd64.zip
@@ -336,13 +339,13 @@ jobs:
       # Only release zips — do not use "download all": Buildx GHA cache uploads
       # *.dockerbuild artifacts on the same run; those are not valid release inputs and can fail to extract.
       - name: Download release zip artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: "*-zip"
           path: artifacts
 
       - name: Create Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ needs.build-linux.outputs.version }}
           name: Release v${{ needs.build-linux.outputs.version }}
