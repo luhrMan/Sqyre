@@ -27,7 +27,7 @@ type editorPreviewPanel struct {
 func newEditorPreviewPanel() *editorPreviewPanel {
 	img := canvas.NewImageFromImage(nil)
 	img.FillMode = canvas.ImageFillContain
-	img.SetMinSize(fyne.NewSize(config.ImagePreviewWidth, config.ImagePreviewHeight))
+	img.SetMinSize(fyne.NewSize(config.ImagePreviewMinWidth, config.ImagePreviewMinHeight))
 
 	errLbl := widget.NewLabel("")
 	errLbl.Wrapping = fyne.TextWrapWord
