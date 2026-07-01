@@ -2,7 +2,6 @@ package completionentry
 
 import (
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -62,8 +61,9 @@ func (p *PopupCompleter) ShowLabels(options, labels []string) {
 	if p.popupMenu == nil {
 		p.popupMenu = widget.NewPopUp(p.navigableList, holder)
 	}
-	p.popupMenu.Resize(p.maxSize(holder))
-	p.popupMenu.ShowAtPosition(p.popUpPos())
+	geo := p.popupGeometry()
+	p.popupMenu.Resize(geo.size)
+	p.popupMenu.ShowAtPosition(geo.pos)
 	holder.Focus(p.navigableList)
 	p.visible = true
 }
@@ -104,22 +104,17 @@ func (p *PopupCompleter) Visible() bool {
 	return p.visible
 }
 
-func (p *PopupCompleter) maxSize(holder fyne.Canvas) fyne.Size {
-	if p.itemHeight == 0 && p.navigableList != nil {
+func (p *PopupCompleter) popupGeometry() popupGeometry {
+	count := 0
+	if p.navigableList != nil {
+		count = len(p.navigableList.items)
+	}
+	measureItemHeight := func() float32 {
+		if p.navigableList == nil {
+			return 0
+		}
 		p.itemHeight = p.navigableList.CreateItem().MinSize().Height
+		return p.itemHeight
 	}
-	hostSize := p.Host.Size()
-	hostPos := fyne.CurrentApp().Driver().AbsolutePositionForObject(p.Host)
-	count := float32(len(p.navigableList.items))
-	listHeight := count*(p.itemHeight+2*theme.Padding()+theme.SeparatorThicknessSize()) + 2*theme.Padding()
-	maxHeight := holder.Size().Height - hostPos.Y - hostSize.Height - 2*theme.Padding()
-	if listHeight > maxHeight {
-		listHeight = maxHeight
-	}
-	return fyne.NewSize(hostSize.Width, listHeight)
-}
-
-func (p *PopupCompleter) popUpPos() fyne.Position {
-	hostPos := fyne.CurrentApp().Driver().AbsolutePositionForObject(p.Host)
-	return hostPos.Add(fyne.NewPos(0, p.Host.Size().Height))
+	return popupGeometryFor(p.Host, count, p.itemHeight, measureItemHeight)
 }
