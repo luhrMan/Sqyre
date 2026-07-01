@@ -119,9 +119,9 @@ func InitializeUi(w fyne.Window) *Ui {
 func restoreWindowGeometry(w fyne.Window) {
 	prefs := fyne.CurrentApp().Preferences()
 	savedWidth := prefs.IntWithFallback(config.PrefWindowWidth, 1000)
-	savedHeight := prefs.IntWithFallback(config.PrefWindowHeight, 1000)
+	savedHeight := prefs.IntWithFallback(config.PrefWindowHeight, 500)
 	if savedWidth > 0 && savedHeight > 0 {
-		w.Resize(fyne.NewSize(float32(savedWidth), float32(savedHeight)))
+		w.Resize(clampWindowSize(fyne.NewSize(float32(savedWidth), float32(savedHeight))))
 	}
 }
 

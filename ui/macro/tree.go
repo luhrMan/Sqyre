@@ -54,6 +54,15 @@ func (b *treeRowBody) Tapped(*fyne.PointEvent) {
 	if b.tree == nil || b.uid == "" {
 		return
 	}
+	now := time.Now()
+	if b.uid == b.tree.lastRowTapUID && now.Sub(b.tree.lastRowTapTime) < treeRowDoubleClickInterval {
+		b.tree.lastRowTapUID = ""
+		b.openActionDialog()
+		return
+	}
+	b.tree.lastRowTapUID = b.uid
+	b.tree.lastRowTapTime = now
+
 	b.tree.Select(b.uid)
 	canvas := fyne.CurrentApp().Driver().CanvasForObject(b.tree)
 	if canvas != nil && canvas.Focused() != b.tree {
@@ -63,7 +72,7 @@ func (b *treeRowBody) Tapped(*fyne.PointEvent) {
 	}
 }
 
-func (b *treeRowBody) DoubleTapped(*fyne.PointEvent) {
+func (b *treeRowBody) openActionDialog() {
 	if b.tree == nil || b.tree.executing || b.tree.OnOpenActionDialog == nil || b.uid == "" {
 		return
 	}
@@ -81,9 +90,8 @@ func (b *treeRowBody) TappedSecondary(pe *fyne.PointEvent) {
 }
 
 var (
-	_ fyne.Tappable           = (*treeRowBody)(nil)
-	_ fyne.DoubleTappable     = (*treeRowBody)(nil)
-	_ fyne.SecondaryTappable  = (*treeRowBody)(nil)
+	_ fyne.Tappable          = (*treeRowBody)(nil)
+	_ fyne.SecondaryTappable = (*treeRowBody)(nil)
 )
 
 type MacroTree struct {
@@ -188,11 +196,17 @@ type MacroTree struct {
 	preExecClosedBranches map[string]struct{}
 	// execFullyExpanded is true while all branches are held open for execution.
 	execFullyExpanded bool
+
+	// lastRowTapUID/lastRowTapTime detect double-clicks without fyne.DoubleTappable,
+	// which delays single taps by the driver double-tap interval (~300ms).
+	lastRowTapUID  string
+	lastRowTapTime time.Time
 }
 
 const (
-	collapseDebounceMs = 150
-	treeItemIconSize   = 24
+	collapseDebounceMs          = 150
+	treeItemIconSize            = 24
+	treeRowDoubleClickInterval  = 300 * time.Millisecond
 )
 // cachedRowContent holds reusable display widgets for a tree row so highlight
 // refreshes and branch open/close do not rebuild pills and PNG thumbnails.
@@ -251,6 +265,22 @@ func NewMacroTree(m *models.Macro) *MacroTree {
 	t.setTree()
 
 	return t
+}
+
+// Select marks uid selected without scrolling when the row is already visible.
+func (mt *MacroTree) Select(uid widget.TreeNodeID) {
+	if uid == "" {
+		mt.UnselectAll()
+		mt.SelectedNode = ""
+		return
+	}
+	scrollY, ok := treeScrollOffsetY(&mt.Tree)
+	inView := ok && mt.isRowInViewport(string(uid))
+	mt.Tree.Select(uid)
+	mt.SelectedNode = string(uid)
+	if inView && ok {
+		mt.ScrollToOffset(scrollY)
+	}
 }
 
 var _ fyne.Shortcutable = (*MacroTree)(nil)
@@ -374,8 +404,13 @@ func (mt *MacroTree) applySnapshot(snap treeSnapshot) error {
 
 // Refresh rebuilds the tree and clears cached row widgets (e.g. after edits).
 func (mt *MacroTree) Refresh() {
+	scrollY, ok := treeScrollOffsetY(&mt.Tree)
 	mt.clearRowCache()
 	mt.Tree.Refresh()
+	if ok {
+		mt.ScrollToOffset(scrollY)
+		mt.scheduleClampScroll()
+	}
 }
 
 func (mt *MacroTree) clearRowCache() {

@@ -77,7 +77,7 @@ func ShowVariablePicker(anchor fyne.CanvasObject, defs []models.VariableDef, onS
 			}
 		}
 		list.UnselectAll()
-		list.Refresh()
+		RefreshListPreservingScroll(list)
 	}
 
 	filter.OnChanged = applyFilter

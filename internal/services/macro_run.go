@@ -22,6 +22,7 @@ func tryStartMacroRun(name string) bool {
 	}
 	macroRunning.Store(true)
 	macroStopRequested.Store(false)
+	macroEscSuppressUntil.Store(0)
 	runningMacroName = name
 	return true
 }
@@ -32,6 +33,7 @@ func endMacroRun() {
 	macroRunMu.Unlock()
 	macroRunning.Store(false)
 	macroStopRequested.Store(false)
+	macroEscSuppressUntil.Store(0)
 }
 
 // RequestMacroStop asks the currently running macro to stop at the next checkpoint.

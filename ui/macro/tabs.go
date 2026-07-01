@@ -3,6 +3,7 @@ package macro
 import (
 	"log"
 
+	"Sqyre/ui/completionentry"
 	"Sqyre/ui/custom_widgets"
 
 	"fyne.io/fyne/v2"
@@ -21,7 +22,11 @@ type MacroTabs struct {
 	globalDelayMax        int
 	MacroHotkeyLabel      *widget.Label
 	MacroHotkeyRecordBtn  *widget.Button
+	MacroHotkeyClearBtn   *widget.Button
 	HotkeyTriggerRadio    *widget.RadioGroup
+	MacroTagEntry         *completionentry.CompletionEntry
+	MacroTagSubmitBtn     *widget.Button
+	MacroTagsContainer    *fyne.Container
 
 	// OnHistoryButtonsSync updates undo/redo toolbar button enabled state.
 	OnHistoryButtonsSync func()
@@ -32,6 +37,11 @@ func NewMacroTabs() *MacroTabs {
 	hkLabel.Wrapping = fyne.TextWrapOff
 	hkLabel.TextStyle = fyne.TextStyle{Monospace: true}
 
+	tagEntry := completionentry.NewCompletionEntry([]string{})
+	tagEntry.PlaceHolder = "Add tag…"
+	tagSubmitBtn := widget.NewButtonWithIcon("", theme.ContentAddIcon(), nil)
+	tagSubmitBtn.Importance = widget.MediumImportance
+
 	t := &MacroTabs{
 		BoundMacroListWidget: &widget.List{},
 		MacroNameEntry:       widget.NewEntry(),
@@ -39,8 +49,13 @@ func NewMacroTabs() *MacroTabs {
 		globalDelayMax:       1000,
 		MacroHotkeyLabel:     hkLabel,
 		MacroHotkeyRecordBtn: widget.NewButtonWithIcon("", theme.MediaRecordIcon(), nil),
+		MacroHotkeyClearBtn:  widget.NewButtonWithIcon("", theme.ContentClearIcon(), nil),
 		HotkeyTriggerRadio:   widget.NewRadioGroup([]string{"On press", "On release"}, nil),
+		MacroTagEntry:        tagEntry,
+		MacroTagSubmitBtn:    tagSubmitBtn,
+		MacroTagsContainer:   newMacroTagsContainer(),
 	}
+	t.MacroHotkeyClearBtn.Importance = widget.LowImportance
 	t.HotkeyTriggerRadio.Horizontal = true
 	t.HotkeyTriggerRadio.Required = true
 	t.HotkeyTriggerRadio.SetSelected("On press")

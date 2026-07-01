@@ -137,6 +137,49 @@ func TestExecute_Key(t *testing.T) {
 	}
 }
 
+func TestExecute_KeyEscapeSuppressesMacroStop(t *testing.T) {
+	if !tryStartMacroRun("test") {
+		t.Fatal("start should succeed")
+	}
+	defer endMacroRun()
+
+	backend := &escapeSuppressCheckBackend{t: t, RecordingBackend: RecordingBackend{}}
+	SetAutomationBackend(backend)
+	t.Cleanup(ResetAutomationBackend)
+
+	if err := Execute(actions.NewKey("esc", true), nil); err != nil {
+		t.Fatalf("Execute key down esc: %v", err)
+	}
+	if ShouldEscapeStopMacro() {
+		t.Fatal("escape should stay suppressed briefly after Key action returns")
+	}
+	if err := Execute(actions.NewKey("esc", false), nil); err != nil {
+		t.Fatalf("Execute key up esc: %v", err)
+	}
+	if ShouldEscapeStopMacro() {
+		t.Fatal("escape should stay suppressed briefly after Key up returns")
+	}
+}
+
+type escapeSuppressCheckBackend struct {
+	RecordingBackend
+	t *testing.T
+}
+
+func (b *escapeSuppressCheckBackend) KeyDown(key string) error {
+	if IsEscapeKey(key) && ShouldEscapeStopMacro() {
+		b.t.Fatal("escape should not stop macro while Key action is sending escape")
+	}
+	return b.RecordingBackend.KeyDown(key)
+}
+
+func (b *escapeSuppressCheckBackend) KeyUp(key string) error {
+	if IsEscapeKey(key) && ShouldEscapeStopMacro() {
+		b.t.Fatal("escape should not stop macro while Key action is sending escape")
+	}
+	return b.RecordingBackend.KeyUp(key)
+}
+
 func TestExecute_Type(t *testing.T) {
 	rec := withRecordingBackend(t)
 	if err := Execute(actions.NewType("ab", 0), nil); err != nil {
