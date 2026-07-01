@@ -3,7 +3,9 @@
 package ui_test
 
 import (
+	"context"
 	"os/exec"
+	"sync"
 	"testing"
 	"time"
 
@@ -15,10 +17,17 @@ import (
 	hook "github.com/luhrMan/gohook"
 )
 
-func init() {
-	s := hook.Start()
-	procDone := hook.Process(s)
-	go func() { <-procDone }()
+var startUITestHookOnce sync.Once
+
+// ensureUITestHook starts the global hook processor for Esc synthesis tests only.
+// Do not call from init: gohook polls X11 and can stall Fyne screenshot tests under xvfb.
+func ensureUITestHook(t *testing.T) {
+	t.Helper()
+	startUITestHookOnce.Do(func() {
+		s := hook.Start()
+		procDone := hook.Process(s)
+		go func() { <-procDone }()
+	})
 }
 
 // sendEscapeViaGlobalHook asks the OS to synthesize Escape; the same global hook
@@ -30,7 +39,9 @@ func sendEscapeViaGlobalHook(t *testing.T) {
 	if err != nil {
 		t.Skip("xdotool not on PATH: cannot synthesize Esc for global hook test")
 	}
-	cmd := exec.Command(path, "key", "Escape")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, path, "key", "Escape")
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("xdotool key Escape: %v", err)
 	}
@@ -39,6 +50,7 @@ func sendEscapeViaGlobalHook(t *testing.T) {
 // TestGUIEscapeClosesInformationDialog verifies Esc dismisses the Computer info dialog
 // via the global gohook handler (ui.AddDialogEscapeClose), not canvas key events.
 func TestGUIEscapeClosesInformationDialog(t *testing.T) {
+	ensureUITestHook(t)
 	a := test.NewApp()
 	w := a.NewWindow("")
 	defer w.Close()
@@ -78,6 +90,7 @@ func TestGUIEscapeClosesInformationDialog(t *testing.T) {
 // TestGUIEscapeClosesActionDialog verifies Esc dismisses the action edit dialog
 // via the same global gohook path registered in showCustomActionDialog.
 func TestGUIEscapeClosesActionDialog(t *testing.T) {
+	ensureUITestHook(t)
 	a := test.NewApp()
 	w := a.NewWindow("")
 	defer w.Close()

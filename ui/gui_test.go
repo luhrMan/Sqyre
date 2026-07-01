@@ -28,9 +28,6 @@ func init() {
 	if os.Getenv("SQUIRE_UI_TEST") == "" {
 		_ = os.Setenv("SQUIRE_UI_TEST", "1")
 	}
-	if os.Getenv("SQYRE_NO_HOOK") == "" {
-		_ = os.Setenv("SQYRE_NO_HOOK", "1")
-	}
 }
 
 var uiTestDBDir string
