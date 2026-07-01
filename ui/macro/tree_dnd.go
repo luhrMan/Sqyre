@@ -299,6 +299,7 @@ func (mt *MacroTree) setDropRootAfterLastChild() {
 		return
 	}
 	mt.setDropSibling(subs[len(subs)-1], dropAfter)
+	mt.dropParent = mt.Macro.Root
 }
 
 func (mt *MacroTree) lastRootChildUID() string {
@@ -782,12 +783,13 @@ func (mt *MacroTree) dropGhostGeometry() (y float32, depth int, isBranch bool, o
 
 func (mt *MacroTree) rowIndentDepth(uid string) int {
 	node := mt.Macro.Root.GetAction(uid)
-	if node == nil {
+	if node == nil || mt.Macro == nil || mt.Macro.Root == nil {
 		return 0
 	}
+	rootUID := mt.Macro.Root.GetUID()
 	depth := 0
 	for p := node.GetParent(); p != nil; p = p.GetParent() {
-		if p == mt.Macro.Root {
+		if p.GetUID() == rootUID {
 			break
 		}
 		depth++
