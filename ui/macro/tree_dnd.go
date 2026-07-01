@@ -912,8 +912,10 @@ func (mt *MacroTree) applyDragPreview(key string) {
 	mt.dragPreviewKey = key
 	mt.refreshAfterDragLayout(mt.dragMutationNeedsFlush(prevParentUID, newParentUID))
 	if mt.dragSrcUID != "" {
-		mt.invalidateRowCache(mt.dragSrcUID)
-		mt.RefreshItem(mt.dragSrcUID)
+		mt.withPreservedScroll(func() {
+			mt.invalidateRowCache(mt.dragSrcUID)
+			mt.RefreshItem(mt.dragSrcUID)
+		})
 	}
 	mt.updateDropIndicator()
 }
@@ -954,8 +956,10 @@ func (mt *MacroTree) revertDragPreview() {
 	mt.dragPreviewKey = ""
 	mt.refreshAfterDragLayout(mt.dragMutationNeedsFlush(prevParentUID, originParentUID))
 	if mt.dragSrcUID != "" {
-		mt.invalidateRowCache(mt.dragSrcUID)
-		mt.RefreshItem(mt.dragSrcUID)
+		mt.withPreservedScroll(func() {
+			mt.invalidateRowCache(mt.dragSrcUID)
+			mt.RefreshItem(mt.dragSrcUID)
+		})
 	}
 }
 
@@ -1064,13 +1068,15 @@ func (mt *MacroTree) dragLayoutNeedsFlush(prevParentUID, newParentUID string) bo
 }
 
 func (mt *MacroTree) refreshAfterDragLayout(flushDepth bool) {
-	mt.suppressBranchOpenScroll++
-	if flushDepth {
-		mt.flushNodeCache()
-	} else {
-		mt.Refresh()
-	}
-	mt.suppressBranchOpenScroll--
+	mt.withPreservedScroll(func() {
+		mt.suppressBranchOpenScroll++
+		if flushDepth {
+			mt.flushNodeCache()
+		} else {
+			mt.Refresh()
+		}
+		mt.suppressBranchOpenScroll--
+	})
 	mt.dragVisible = mt.visibleRowUIDs()
 }
 
@@ -1110,7 +1116,8 @@ func (mt *MacroTree) endDrag() {
 	if !mt.dragActive {
 		return
 	}
-	mt.dragActive = false
+	dropScrollY, dropScrollOK := treeScrollOffsetY(&mt.Tree)
+
 	mt.cancelAutoExpand()
 	mt.finishDragBranchState()
 	mt.cancelDragPreviewDebounce()
@@ -1150,12 +1157,14 @@ func (mt *MacroTree) endDrag() {
 			mt.refreshAfterDragLayout(true)
 		}
 		mt.openAncestorBranches(src)
-		mt.Select(src)
+		mt.Tree.Select(widget.TreeNodeID(src))
 		mt.SelectedNode = src
 		if mt.OnTreeChanged != nil {
 			mt.OnTreeChanged()
 		}
 	}
+
+	mt.dragActive = false
 
 	mt.dragSrcUID = ""
 	mt.dropParent = nil
@@ -1170,8 +1179,13 @@ func (mt *MacroTree) endDrag() {
 	mt.dragUndoSnapshotOK = false
 
 	if src != "" {
-		mt.markHighlightRefresh(src)
-		mt.RefreshItem(src)
+		mt.withPreservedScroll(func() {
+			mt.markHighlightRefresh(src)
+			mt.RefreshItem(src)
+		})
+	}
+	if dropScrollOK {
+		mt.restoreScrollOffset(dropScrollY)
 	}
 }
 

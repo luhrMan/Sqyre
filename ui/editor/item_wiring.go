@@ -409,6 +409,7 @@ func updateMaskDisplay(maskName string) {
 // showMaskSelectionPopup displays a modal popup with mask accordions for the user to select a mask.
 func showMaskSelectionPopup() {
 	var popup *widget.PopUp
+	var hide func()
 
 	acc := widget.NewAccordion()
 	for _, p := range repositories.ProgramRepo().GetAllSortedByName() {
@@ -454,7 +455,7 @@ func showMaskSelectionPopup() {
 
 				updateMaskDisplay(maskName)
 			}
-			popup.Hide()
+			hide()
 		}
 
 		searchbar.OnChanged = func(s string) {
@@ -483,15 +484,17 @@ func showMaskSelectionPopup() {
 		))
 	}
 
-	closeButton := widget.NewButton("Close", func() { popup.Hide() })
+	closeButton := widget.NewButton("Close", func() { hide() })
 
 	popUpContent := container.NewBorder(
 		closeButton, nil, nil, nil,
 		acc,
 	)
 	popup = widget.NewModalPopUp(popUpContent, activeWire.Window.Canvas())
-	popup.Resize(fyne.NewSize(400, 500))
-	popup.Show()
+	dlg := activeWire.AddPopupEscapeClose(popup, activeWire.Window)
+	hide = dlg.Hide
+	dlg.Resize(fyne.NewSize(400, 500))
+	dlg.Show()
 }
 
 // setMaskSelectionButtons wires up the mask select and clear buttons on the Items tab.
