@@ -139,5 +139,6 @@ func SetMacroUi() {
 		ShowAddActionPicker: func() {
 			u.ShowAddActionPicker()
 		},
+		WrapTagChip: WrapTagChip,
 	})
 }

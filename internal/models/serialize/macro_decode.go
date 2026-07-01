@@ -26,6 +26,7 @@ func DecodeMacroFromMap(data any) (*models.Macro, error) {
 	if ht, ok := rawMap["hotkey_trigger"].(string); ok {
 		macro.HotkeyTrigger = ht
 	}
+	macro.Tags = stringSliceFromAny(rawMap["tags"])
 	if v, ok := rawMap["variables"]; ok && v != nil {
 		b, err := yaml.Marshal(v)
 		if err != nil {
