@@ -1,6 +1,9 @@
 package macro
 
-import "fyne.io/fyne/v2"
+import (
+	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/widget"
+)
 
 // treeViewState captures scroll position and branch expansion so undo/redo
 // does not reset the user's place in the macro tree.
@@ -66,14 +69,5 @@ func unselectMacroTreeAction(mt *MacroTree) {
 
 // selectPreservingScroll updates selection without ScrollTo jumping the viewport.
 func (mt *MacroTree) selectPreservingScroll(uid string) {
-	scrollY, hadScroll := treeScrollOffsetY(&mt.Tree)
-	if uid == "" {
-		mt.UnselectAll()
-		return
-	}
-	mt.Select(uid)
-	if hadScroll {
-		mt.ScrollToOffset(scrollY)
-	}
-	mt.SelectedNode = uid
+	mt.Select(widget.TreeNodeID(uid))
 }

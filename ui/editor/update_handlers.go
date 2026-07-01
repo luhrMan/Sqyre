@@ -14,6 +14,34 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
+func refreshOpenMacroTreesAfterRename() {
+	if mtabs := activeWire.MacroMTabs(); mtabs != nil {
+		for _, tree := range mtabs.AllTrees() {
+			tree.Refresh()
+		}
+	}
+}
+
+func propagateProgramRename(oldName, newName string) {
+	if _, err := repositories.PropagateProgramRename(oldName, newName); err != nil {
+		editorRepoLog("propagate rename", "program", oldName, err)
+	}
+	refreshOpenMacroTreesAfterRename()
+}
+
+func propagateEntityRename(kind models.ProgramEntityKind, program, oldName, newName string) {
+	if _, err := repositories.PropagateProgramEntityRename(kind, program, oldName, newName); err != nil {
+		editorRepoLog("propagate rename", program, oldName, err)
+	}
+	refreshOpenMacroTreesAfterRename()
+}
+
+func propagateMaskRename(program, oldName, newName string) {
+	if _, err := repositories.PropagateMaskRenameInProgram(program, oldName, newName); err != nil {
+		editorRepoLog("propagate rename", "mask", oldName, err)
+	}
+}
+
 func setEditorUpdateHandlers() {
 	setProgramUpdateHandler()
 	setItemUpdateHandler()
@@ -30,9 +58,10 @@ func setProgramUpdateHandler() {
 		if !ok {
 			return
 		}
+		oldProgramName := si.Name
 		saveRenamableEntity(renamableSaveConfig{
 			entityType: "program",
-			oldName:    si.Name,
+			oldName:    oldProgramName,
 			newName:    n,
 			exists: func(name string) bool {
 				_, err := repositories.ProgramRepo().Get(name)
@@ -44,6 +73,7 @@ func setProgramUpdateHandler() {
 				return repositories.ProgramRepo().Set(si.Name, si)
 			},
 			onSuccess: func() {
+				propagateProgramRename(oldProgramName, n)
 				refreshAllProgramRelatedUI()
 				updateProgramSelectorOptions()
 				markProgramsClean()
@@ -103,6 +133,7 @@ func setItemUpdateHandler() {
 				return program.ItemRepo().Set(v.Name, v)
 			},
 			onSuccess: func() {
+				propagateEntityRename(models.ProgramEntityItem, p, oldItemName, n)
 				RefreshItemInGrid(p, oldItemName, v.Name)
 				if editor, ok := w["iconVariantEditor"].(*custom_widgets.IconVariantEditor); ok {
 					iconService := services.IconVariantServiceInstance()
@@ -131,9 +162,10 @@ func setPointUpdateHandler() {
 			return
 		}
 		repo := program.PointRepo(config.MainMonitorSizeString)
+		oldPointName := v.Name
 		saveRenamableEntity(renamableSaveConfig{
 			entityType: "point",
-			oldName:    v.Name,
+			oldName:    oldPointName,
 			newName:    p.Name,
 			exists: func(name string) bool {
 				_, err := repo.Get(name)
@@ -147,6 +179,7 @@ func setPointUpdateHandler() {
 				return repo.Set(v.Name, v)
 			},
 			onSuccess: func() {
+				propagateEntityRename(models.ProgramEntityPoint, programName, oldPointName, p.Name)
 				safeUpdatePointPreview(v)
 				refreshPointsAccordionForProgram(programName)
 				markPointsClean()
@@ -172,9 +205,10 @@ func setSearchAreaUpdateHandler() {
 			return
 		}
 		repo := program.SearchAreaRepo(config.MainMonitorSizeString)
+		oldAreaName := v.Name
 		saveRenamableEntity(renamableSaveConfig{
 			entityType: "search area",
-			oldName:    v.Name,
+			oldName:    oldAreaName,
 			newName:    sa.Name,
 			exists: func(name string) bool {
 				_, err := repo.Get(name)
@@ -190,6 +224,7 @@ func setSearchAreaUpdateHandler() {
 				return repo.Set(v.Name, v)
 			},
 			onSuccess: func() {
+				propagateEntityRename(models.ProgramEntitySearchArea, programName, oldAreaName, sa.Name)
 				safeUpdateSearchAreaPreview(v)
 				refreshSearchAreasAccordionForProgram(programName)
 				markSearchAreasClean()
@@ -215,9 +250,10 @@ func setMaskUpdateHandler() {
 			return
 		}
 		repo := program.MaskRepo()
+		oldMaskName := v.Name
 		saveRenamableEntity(renamableSaveConfig{
 			entityType: "mask",
-			oldName:    v.Name,
+			oldName:    oldMaskName,
 			newName:    m.Name,
 			exists: func(name string) bool {
 				_, err := repo.Get(name)
@@ -234,6 +270,7 @@ func setMaskUpdateHandler() {
 				return repo.Set(v.Name, v)
 			},
 			onSuccess: func() {
+				propagateMaskRename(programName, oldMaskName, m.Name)
 				hasImage := HasMaskImage(programName, v.Name)
 				shell().SetMaskImageMode(hasImage)
 				if hasImage {

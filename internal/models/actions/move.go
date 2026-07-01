@@ -7,8 +7,8 @@ import (
 )
 
 const (
-	DefaultSmoothLow     = 0.1
-	DefaultSmoothHigh    = 0.5
+	DefaultSmoothLow     = 0.05
+	DefaultSmoothHigh    = 0.20
 	DefaultSmoothDelayMs = 1
 )
 

@@ -4,8 +4,10 @@ import (
 	"Sqyre/internal/config"
 	"Sqyre/internal/macrohotkey"
 	"Sqyre/internal/models"
+	"Sqyre/internal/services"
 	"Sqyre/internal/models/actions"
 	"Sqyre/internal/models/repositories"
+	"Sqyre/ui/custom_widgets"
 	"encoding/json"
 	"errors"
 	"log"
@@ -32,6 +34,7 @@ type WireDeps struct {
 	ShowConfirmWithEscape  func(title, message string, callback func(bool), parent fyne.Window)
 	ShowActionDialog       func(action actions.ActionInterface, onSave func(actions.ActionInterface), onCancel func())
 	ShowAddActionPicker    func()
+	WrapTagChip            func(inner fyne.CanvasObject) fyne.CanvasObject
 }
 
 var activeWire WireDeps
@@ -61,6 +64,7 @@ func SetMacroUi(d WireDeps) {
 		ensureMacroTabContent(sel.Content)
 	}
 	setMacroSelect(d.Mui.MacroSelectButton, d)
+	wireMacroTagHandlers(d.Mui.MTabs)
 	syncMacroToolbarFieldsFromSelection()
 	registerMacroTreeShortcuts(d)
 }
@@ -164,7 +168,16 @@ func syncMacroToolbarFieldsFromSelection() {
 	} else {
 		mtabs.MacroHotkeyLabel.SetText(macrohotkey.ReverseParseMacroHotkey(st.Macro.Hotkey))
 	}
+	mtabs.MacroHotkeyClearBtn.Disable()
+	if len(st.Macro.Hotkey) > 0 {
+		mtabs.MacroHotkeyClearBtn.Enable()
+	}
 	mtabs.HotkeyTriggerRadio.SetSelected(models.ParseHotkeyTrigger(st.Macro.HotkeyTrigger).UILabel())
+	updateMacroTagsDisplay(mtabs, st.Macro)
+	if mtabs.MacroTagEntry != nil {
+		mtabs.MacroTagEntry.SetText("")
+		mtabs.MacroTagEntry.HideCompletion()
+	}
 }
 
 func setMtabSettingsAndWidgets(d WireDeps) {
@@ -180,7 +193,7 @@ func setMtabSettingsAndWidgets(d WireDeps) {
 
 		setMacroTree(ti.Content.(*MacroTabContent).Tree)
 		go fyne.DoAndWait(func() {
-			mtabs.BoundMacroListWidget.Refresh()
+			custom_widgets.RefreshListPreservingScroll(mtabs.BoundMacroListWidget)
 		})
 		return ti
 	}
@@ -211,7 +224,7 @@ func setMtabSettingsAndWidgets(d WireDeps) {
 		// Fyne does not fire OnSelected when the remaining tab is already at index 0
 		// (common when closing the first/selected tab), so refresh toolbar fields here.
 		refreshMacroTabSelection(mtabs.Selected())
-		mtabs.BoundMacroListWidget.Refresh()
+		custom_widgets.RefreshListPreservingScroll(mtabs.BoundMacroListWidget)
 	}
 
 	mtabs.OnUnselected = func(_ *container.TabItem) {
@@ -257,7 +270,17 @@ func setMtabSettingsAndWidgets(d WireDeps) {
 		d.ShowHotkeyRecordDialog(d.Window, 1*time.Second, func(keys []string) {
 			mtabs.MacroHotkeyLabel.SetText(macrohotkey.ReverseParseMacroHotkey(keys))
 			saveHotkey(true)
+			syncMacroToolbarFieldsFromSelection()
 		})
+	}
+	mtabs.MacroHotkeyClearBtn.OnTapped = func() {
+		mt := mtabs.SelectedTab()
+		if mt == nil || len(mt.Macro.Hotkey) == 0 {
+			return
+		}
+		mtabs.MacroHotkeyLabel.SetText("—")
+		saveHotkey(false)
+		syncMacroToolbarFieldsFromSelection()
 	}
 	mtabs.HotkeyTriggerRadio.OnChanged = func(string) {
 		saveHotkey(false)
@@ -282,14 +305,21 @@ func setMtabSettingsAndWidgets(d WireDeps) {
 			return
 		}
 
-		repositories.MacroRepo().Delete(mt.Macro.Name)
+		oldName := mt.Macro.Name
+		repositories.MacroRepo().Delete(oldName)
 
 		mt.Macro.Name = sub
 		mtabs.Selected().Text = sub
 
 		repositories.MacroRepo().Set(mt.Macro.Name, mt.Macro)
+		if _, err := repositories.PropagateMacroRename(oldName, sub); err != nil {
+			log.Printf("propagate macro rename %q -> %q: %v", oldName, sub, err)
+		}
+		for _, tree := range mtabs.AllTrees() {
+			tree.Refresh()
+		}
 
-		mtabs.BoundMacroListWidget.Refresh()
+		custom_widgets.RefreshListPreservingScroll(mtabs.BoundMacroListWidget)
 		mtabs.Refresh()
 	}
 	mtabs.BoundGlobalDelayEntry.OnChanged = func(gd int) {
@@ -435,5 +465,12 @@ func registerMacroTreeShortcuts(d WireDeps) {
 		Modifier: fyne.KeyModifierControl,
 	}, func(shortcut fyne.Shortcut) {
 		handleMacroTreeShortcut(d.Mui.MTabs.SelectedTab(), shortcut)
+	})
+	canvas.AddShortcut(&desktop.CustomShortcut{
+		KeyName: fyne.KeyEscape,
+	}, func(fyne.Shortcut) {
+		if services.ShouldEscapeStopMacro() {
+			services.RequestMacroStop()
+		}
 	})
 }
