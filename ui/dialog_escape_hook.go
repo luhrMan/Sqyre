@@ -3,9 +3,11 @@
 package ui
 
 import (
+	"Sqyre/internal/macrohotkey"
+	"Sqyre/ui/recording"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/dialog"
-	hook "github.com/luhrMan/gohook"
 )
 
 // AddDialogEscapeClose enables Escape to dismiss the dialog and restores the window key handler when it closes.
@@ -21,15 +23,15 @@ func AddDialogEscapeClose(d dialog.Dialog, parent fyne.Window) {
 
 	// Global fallback: while this dialog is open, Esc closes it even if focus is inside
 	// a widget that swallows local key events.
-	escCombo := []string{"esc"}
-	hook.Register(hook.KeyDown, escCombo, func(hook.Event) {
+	unregisterEsc := macrohotkey.RegisterEscapeHandler(func() {
+		if recording.KeyRecordSessionActive() {
+			return
+		}
 		fyne.Do(closeDialog)
 	})
 
 	d.SetOnClosed(func() {
-		// Unregister on a new goroutine to avoid modifying hook handlers while they
-		// may be processing the current event callback.
-		go hook.Unregister(hook.KeyDown, escCombo)
+		unregisterEsc()
 	})
 }
 
