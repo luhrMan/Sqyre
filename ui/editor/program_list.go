@@ -2,6 +2,7 @@ package editor
 
 import (
 	"Sqyre/internal/models/repositories"
+	"Sqyre/ui/custom_widgets"
 	"log"
 
 	"fyne.io/fyne/v2"
@@ -22,7 +23,7 @@ func setProgramList(list *widget.List) {
 	if et.listState != nil {
 		// Already wired: just refresh the backing data and the widget.
 		applyProgramListFilter(et.listState, currentProgramSearchText(et))
-		list.Refresh()
+		custom_widgets.RefreshListPreservingScroll(list)
 		return
 	}
 
@@ -34,8 +35,7 @@ func setProgramList(list *widget.List) {
 	searchbar.OnChanged = func(s string) {
 		et.SearchDebouncer().Call(func() {
 			applyProgramListFilter(st, searchbar.Text)
-			list.ScrollToTop()
-			list.Refresh()
+			custom_widgets.RefreshListPreservingScroll(list)
 		})
 	}
 

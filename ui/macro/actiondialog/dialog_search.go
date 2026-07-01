@@ -125,7 +125,7 @@ func createImageSearchDialogContent(action *actions.ImageSearch) (fyne.CanvasObj
 			previewBox.Hide()
 		} else {
 			previewBox.Show()
-			previewList.Refresh()
+			custom_widgets.RefreshGridWrapPreservingScroll(previewList)
 		}
 	}
 	refreshPreview() // show initial selection
@@ -530,7 +530,7 @@ func createFocusWindowDialogContent(action *actions.FocusWindow) (fyne.CanvasObj
 
 	refreshList := func() {
 		applyFilter()
-		windowList.Refresh()
+		custom_widgets.RefreshListPreservingScroll(windowList)
 	}
 
 	onFieldChanged := func(string) { refreshList() }

@@ -372,7 +372,7 @@ func CreateProgramAccordionItem(opts ItemsAccordionOptions) (*widget.AccordionIt
 			}
 			slices.Sort(newTargets)
 			opts.OnSelectionChanged(newTargets)
-			lists.items.Refresh()
+			custom_widgets.RefreshGridWrapPreservingScroll(lists.items)
 		}
 		getState := func() int {
 			current := []string{}
