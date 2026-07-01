@@ -182,7 +182,7 @@ func refreshAllProgramRelatedUI() {
 	et := shell().EditorTabs
 	if programList, ok := et.ProgramsTab.Widgets["list"].(*widget.List); ok {
 		setProgramList(programList)
-		programList.Refresh()
+		custom_widgets.RefreshListPreservingScroll(programList)
 	}
 
 	// Refresh editor tab accordions

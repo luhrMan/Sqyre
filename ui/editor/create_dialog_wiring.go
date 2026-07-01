@@ -255,8 +255,7 @@ func showMaskSelectionPopupForItem(programName string, onSelect func(maskName st
 					filtered = next
 				}
 				sortMaskKeysByDisplayName(p, filtered)
-				maskList.Refresh()
-				maskList.ScrollToTop()
+				custom_widgets.RefreshListPreservingScroll(maskList)
 			})
 		}
 		acc.Append(widget.NewAccordionItem(
