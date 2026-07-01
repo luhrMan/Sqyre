@@ -49,6 +49,7 @@ type Macro struct {
 	GlobalDelay   int            `mapstructure:"globaldelay"`
 	Hotkey        []string       `mapstructure:"hotkey"`
 	HotkeyTrigger string         `mapstructure:"hotkey_trigger"`
+	Tags          []string       `yaml:"tags" mapstructure:"tags"`
 	// VariableDecls is the persisted list of user-declared variables.
 	VariableDecls []VariableDecl `yaml:"variables" mapstructure:"variables"`
 	// Variables is the runtime store, rebuilt from VariableDecls at run start.

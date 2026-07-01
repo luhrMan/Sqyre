@@ -83,11 +83,11 @@ func (t *sqyreTheme) Size(name fyne.ThemeSizeName) float32 {
 
 // WrapTagChip wraps each Items-tab tag row with a border and a ~95% transparent Sqyre primary fill (5% opacity).
 func WrapTagChip(inner fyne.CanvasObject) fyne.CanvasObject {
-	fill := color.NRGBA{R: sqyrePrimary.R, G: sqyrePrimary.G, B: sqyrePrimary.B, A: 13}
+	fill := color.NRGBA{R: sqyrePrimary.R, G: sqyrePrimary.G, B: sqyrePrimary.B, A: 28}
 	border := canvas.NewRectangle(fill)
 	border.StrokeColor = theme.ButtonColor()
 	border.StrokeWidth = 1
-	border.CornerRadius = 4
+	border.CornerRadius = 6
 	return container.NewStack(border, inner)
 }
 

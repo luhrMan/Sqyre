@@ -6,6 +6,25 @@ import (
 	"Sqyre/internal/models/actions"
 )
 
+func TestDecodeMacroFromMap_tags(t *testing.T) {
+	data := map[string]any{
+		"name": "tagged",
+		"tags": []any{"combat", "daily"},
+		"root": map[string]any{
+			"type":  "loop",
+			"name":  "root",
+			"count": 1,
+		},
+	}
+	m, err := DecodeMacroFromMap(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m.Tags) != 2 || m.Tags[0] != "combat" || m.Tags[1] != "daily" {
+		t.Fatalf("tags = %v", m.Tags)
+	}
+}
+
 func TestDecodeMacroFromMap_minimal(t *testing.T) {
 	data := map[string]any{
 		"name":        "test-macro",

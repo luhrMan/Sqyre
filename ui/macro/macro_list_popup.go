@@ -16,7 +16,6 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
-	"github.com/lithammer/fuzzysearch/fuzzy"
 )
 
 type macroListSort int
@@ -25,6 +24,9 @@ const (
 	macroSortNameAsc macroListSort = iota
 	macroSortNameDesc
 	macroSortOpenFirst
+
+	macroListPopupWidth  float32 = 520
+	macroListPopupHeight float32 = 700
 )
 
 var macroSortLabels = []string{"Name (A–Z)", "Name (Z–A)", "Open first"}
@@ -52,7 +54,7 @@ func showMacroListPopup(d WireDeps) {
 	}
 
 	searchEntry := widget.NewEntry()
-	searchEntry.SetPlaceHolder("Search macros…")
+	searchEntry.SetPlaceHolder("Search macros or tags…")
 
 	applyFilter := func() {
 		query := strings.TrimSpace(searchEntry.Text)
@@ -63,7 +65,7 @@ func showMacroListPopup(d WireDeps) {
 		}
 		filtered = nil
 		for _, name := range allKeys {
-			if fuzzy.MatchFold(query, name) {
+			if macroMatchesSearch(name, query) {
 				filtered = append(filtered, name)
 			}
 		}
@@ -79,11 +81,16 @@ func showMacroListPopup(d WireDeps) {
 			return len(filtered)
 		},
 		func() fyne.CanvasObject {
-			return container.NewHBox(
-				widget.NewLabel("Template"),
-				layout.NewSpacer(),
-				widget.NewButtonWithIcon("", theme.ContentCopyIcon(), nil),
-				widget.NewButtonWithIcon("", theme.DeleteIcon(), nil),
+			return container.NewPadded(
+				container.NewVBox(
+					container.NewHBox(
+						widget.NewLabel("Template"),
+						layout.NewSpacer(),
+						widget.NewButtonWithIcon("", theme.ContentCopyIcon(), nil),
+						widget.NewButtonWithIcon("", theme.DeleteIcon(), nil),
+					),
+					widget.NewLabel(""),
+				),
 			)
 		},
 		func(id widget.ListItemID, co fyne.CanvasObject) {
@@ -91,10 +98,12 @@ func showMacroListPopup(d WireDeps) {
 				return
 			}
 			name := filtered[id]
-			c := co.(*fyne.Container)
-			label := c.Objects[0].(*widget.Label)
-			duplicateBtn := c.Objects[2].(*widget.Button)
-			removeBtn := c.Objects[3].(*widget.Button)
+			c := co.(*fyne.Container).Objects[0].(*fyne.Container)
+			nameRow := c.Objects[0].(*fyne.Container)
+			tagsLabel := c.Objects[1].(*widget.Label)
+			label := nameRow.Objects[0].(*widget.Label)
+			duplicateBtn := nameRow.Objects[2].(*widget.Button)
+			removeBtn := nameRow.Objects[3].(*widget.Button)
 
 			label.SetText(name)
 			label.Importance = widget.MediumImportance
@@ -102,6 +111,21 @@ func showMacroListPopup(d WireDeps) {
 				label.Importance = widget.SuccessImportance
 			}
 			label.Refresh()
+
+			if m, err := repositories.MacroRepo().Get(name); err == nil {
+				if tagText := formatMacroListTags(m); tagText != "" {
+					tagsLabel.SetText(tagText)
+					tagsLabel.Importance = widget.MediumImportance
+					tagsLabel.Wrapping = fyne.TextWrapWord
+					tagsLabel.Show()
+				} else {
+					tagsLabel.SetText("")
+					tagsLabel.Hide()
+				}
+			} else {
+				tagsLabel.Hide()
+			}
+			tagsLabel.Refresh()
 
 			duplicateBtn.Importance = widget.LowImportance
 			duplicateBtn.OnTapped = func() {
@@ -117,7 +141,7 @@ func showMacroListPopup(d WireDeps) {
 					return
 				}
 				applyFilter()
-				list.Refresh()
+				custom_widgets.RefreshListPreservingScroll(list)
 				AddMacroTab(dup)
 			}
 
@@ -143,8 +167,7 @@ func showMacroListPopup(d WireDeps) {
 					}
 					d.Mui.MTabs.Refresh()
 					applyFilter()
-					list.ScrollToTop()
-					list.Refresh()
+					custom_widgets.RefreshListPreservingScroll(list)
 				}, d.Window)
 			}
 		},
@@ -168,15 +191,13 @@ func showMacroListPopup(d WireDeps) {
 	searchEntry.OnChanged = func(string) {
 		searchDebounce.Call(func() {
 			applyFilter()
-			list.ScrollToTop()
-			list.Refresh()
+			custom_widgets.RefreshListPreservingScroll(list)
 		})
 	}
 	sortSelect.OnChanged = func(label string) {
 		sortBy = macroListSortFromLabel(label)
 		applyFilter()
-		list.ScrollToTop()
-		list.Refresh()
+		custom_widgets.RefreshListPreservingScroll(list)
 	}
 
 	applyFilter()
@@ -190,7 +211,7 @@ func showMacroListPopup(d WireDeps) {
 		list,
 	)
 	popup = widget.NewModalPopUp(popUpContent, d.Window.Canvas())
-	popup.Resize(fyne.NewSize(360, 520))
+	popup.Resize(fyne.NewSize(macroListPopupWidth, macroListPopupHeight))
 	popup.Show()
 }
 
@@ -249,10 +270,12 @@ func cloneMacro(src *models.Macro) (*models.Macro, error) {
 	}
 	decls := make([]models.VariableDecl, len(src.VariableDecls))
 	copy(decls, src.VariableDecls)
+	tags := append([]string(nil), src.Tags...)
 
 	dup := models.NewMacro("", src.GlobalDelay, nil)
 	dup.Root = root
 	dup.VariableDecls = decls
+	dup.Tags = tags
 	dup.InitRuntimeVariables()
 	return dup, nil
 }
