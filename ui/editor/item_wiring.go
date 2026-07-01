@@ -473,8 +473,7 @@ func showMaskSelectionPopup() {
 					filtered = next
 				}
 				sortMaskKeysByDisplayName(p, filtered)
-				maskList.Refresh()
-				maskList.ScrollToTop()
+				custom_widgets.RefreshListPreservingScroll(maskList)
 			})
 		}
 
