@@ -195,6 +195,7 @@ func Bootstrap(mainWindow, splashWindow fyne.Window, report BootstrapReporter) {
 		u.constructUiFinish()
 		if os.Getenv("SQYRE_NO_HOOK") != "1" {
 			macrohotkey.FailsafeHotkey()
+			macrohotkey.MacroStopHotkey()
 		}
 		report.setProgressDirect(progressComplete)
 		bootstrapDone.Store(true)

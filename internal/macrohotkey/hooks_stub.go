@@ -4,8 +4,9 @@ package macrohotkey
 
 import "Sqyre/internal/models"
 
-func FailsafeHotkey() {}
-func StartHook()      {}
+func FailsafeHotkey()   {}
+func MacroStopHotkey()  {}
+func StartHook()        {}
 
 func SuspendMacroHotkeys() {}
 func ResumeMacroHotkeys()  {}

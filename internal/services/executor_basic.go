@@ -68,16 +68,21 @@ func executeClick(a actions.ActionInterface, macro *models.Macro) error {
 func executeKey(a actions.ActionInterface, macro *models.Macro) error {
 	node := a.(*actions.Key)
 	log.Println("Key:", node.String())
-	key := node.Key
-	if macro != nil {
-		if resolved, err := ResolveString(key, macro); err == nil {
-			key = resolved
-		}
+	suppressEsc := IsEscapeKey(node.Key)
+	if suppressEsc {
+		BeginMacroKeyActionEscape()
+		defer EndMacroKeyActionEscape()
 	}
+	var err error
 	if node.State {
-		return getAutomationBackend().KeyDown(key)
+		err = getAutomationBackend().KeyDown(node.Key)
+	} else {
+		err = getAutomationBackend().KeyUp(node.Key)
 	}
-	return getAutomationBackend().KeyUp(key)
+	if suppressEsc && err == nil {
+		extendMacroEscapeSuppress(macroEscapeSuppressGrace)
+	}
+	return err
 }
 
 func executeType(a actions.ActionInterface, macro *models.Macro) error {
