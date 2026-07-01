@@ -31,6 +31,7 @@ type WireDeps struct {
 	ShowHotkeyRecordDialog func(parent fyne.Window, stableDuration time.Duration, onRecorded func(keys []string))
 	ShowErrorWithEscape    func(err error, parent fyne.Window)
 	AddDialogEscapeClose   func(d dialog.Dialog, parent fyne.Window)
+	AddPopupEscapeClose    func(pop *widget.PopUp, parent fyne.Window) dialog.Dialog
 	ShowConfirmWithEscape  func(title, message string, callback func(bool), parent fyne.Window)
 	ShowActionDialog       func(action actions.ActionInterface, onSave func(actions.ActionInterface), onCancel func())
 	ShowAddActionPicker    func()
