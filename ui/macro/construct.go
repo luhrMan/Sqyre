@@ -1,7 +1,6 @@
 package macro
 
 import (
-	"image/color"
 	"log"
 
 	"Sqyre/internal/assets"
@@ -10,7 +9,6 @@ import (
 	"Sqyre/internal/services"
 
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
@@ -358,16 +356,25 @@ func ConstructMacroUi(mui *MacroUi, boundLocXLabel, boundLocYLabel *widget.Label
 	globaldelaytt.SetToolTip("delay between actions (ms)")
 	bottomLeftContent := container.NewHBox(globaldelaytt, mui.MTabs.BoundGlobalDelayEntry, mousePosition)
 	bottomLeft := wrapFrame(container.NewPadded(bottomLeftContent))
-	bottomFiller := canvas.NewRectangle(color.Transparent)
+	bottomCenterContent := container.NewVBox(
+		container.NewBorder(nil, nil,
+			widget.NewLabel("Tags:"),
+			container.NewHBox(mui.MTabs.MacroTagSubmitBtn),
+			mui.MTabs.MacroTagEntry,
+		),
+		mui.MTabs.MacroTagsContainer,
+	)
+	bottomCenter := wrapFrame(container.NewPadded(bottomCenterContent))
 	bottomRightContent := container.NewHBox(
 		widget.NewLabel("Hotkey:"),
 		mui.MTabs.MacroHotkeyLabel,
 		widget.NewLabel("Trigger:"),
 		mui.MTabs.HotkeyTriggerRadio,
 		mui.MTabs.MacroHotkeyRecordBtn,
+		mui.MTabs.MacroHotkeyClearBtn,
 	)
 	bottomRight := wrapFrame(container.NewPadded(bottomRightContent))
-	mui.MacroToolbars.BottomToolbar = container.NewBorder(nil, nil, bottomLeft, bottomRight, bottomFiller)
+	mui.MacroToolbars.BottomToolbar = container.NewBorder(nil, nil, bottomLeft, bottomRight, bottomCenter)
 
 	return container.NewBorder(
 		mui.MacroToolbars.TopToolbar,
