@@ -31,6 +31,7 @@ type WireDeps struct {
 	ShowHotkeyRecordDialog func(parent fyne.Window, stableDuration time.Duration, onRecorded func(keys []string))
 	ShowErrorWithEscape    func(err error, parent fyne.Window)
 	AddDialogEscapeClose   func(d dialog.Dialog, parent fyne.Window)
+	AddPopupEscapeClose    func(pop *widget.PopUp, parent fyne.Window) dialog.Dialog
 	ShowConfirmWithEscape  func(title, message string, callback func(bool), parent fyne.Window)
 	ShowActionDialog       func(action actions.ActionInterface, onSave func(actions.ActionInterface), onCancel func())
 	ShowAddActionPicker    func()
@@ -104,6 +105,28 @@ func getOpenMacroNames() []string {
 // AddMacroTab opens a macro in a new tab (or selects it if already open).
 func AddMacroTab(m *models.Macro) {
 	addMacroTab(m, true)
+}
+
+// OpenMacroTabs opens each named macro in a tab. Already-open tabs are unchanged.
+// Tab content is built lazily until selected.
+func OpenMacroTabs(names []string) {
+	mtabs := activeWire.Mui.MTabs
+	open := make(map[string]bool, len(mtabs.Items))
+	for _, ti := range mtabs.Items {
+		open[ti.Text] = true
+	}
+	for _, name := range names {
+		if open[name] {
+			continue
+		}
+		m, err := repositories.MacroRepo().Get(name)
+		if err != nil {
+			log.Printf("Error getting macro %s: %v", name, err)
+			continue
+		}
+		addMacroTab(m, false)
+		open[name] = true
+	}
 }
 
 func addMacroTab(m *models.Macro, eagerBuild bool) {

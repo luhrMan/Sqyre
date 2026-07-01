@@ -6,7 +6,6 @@ package completionentry
 
 import (
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -106,37 +105,23 @@ func (c *CompletionEntry) onCanvas() bool {
 	return fyne.CurrentApp().Driver().CanvasForObject(c) != nil
 }
 
-// calculate the max size to make the popup to cover everything below the entry
-func (c *CompletionEntry) maxSize() fyne.Size {
-	cnv := fyne.CurrentApp().Driver().CanvasForObject(c)
-	if cnv == nil {
-		return c.Size()
-	}
-
-	if c.itemHeight == 0 {
+func (c *CompletionEntry) popupGeometry() popupGeometry {
+	measureItemHeight := func() float32 {
 		if c.navigableList == nil {
-			return c.Size()
+			return 0
 		}
 		c.itemHeight = c.navigableList.CreateItem().MinSize().Height
+		return c.itemHeight
 	}
-
-	canvasSize := cnv.Size()
-	entrySize := c.Size()
-	entryPos := fyne.CurrentApp().Driver().AbsolutePositionForObject(c)
-	listHeight := float32(len(c.Options))*(c.itemHeight+2*theme.Padding()+theme.SeparatorThicknessSize()) + 2*theme.Padding()
-	maxHeight := canvasSize.Height - entryPos.Y - entrySize.Height - 2*theme.Padding()
-
-	if listHeight > maxHeight {
-		listHeight = maxHeight
-	}
-
-	return fyne.NewSize(entrySize.Width, listHeight)
+	return popupGeometryFor(c, len(c.Options), c.itemHeight, measureItemHeight)
 }
 
-// calculate where the popup should appear
+func (c *CompletionEntry) maxSize() fyne.Size {
+	return c.popupGeometry().size
+}
+
 func (c *CompletionEntry) popUpPos() fyne.Position {
-	entryPos := fyne.CurrentApp().Driver().AbsolutePositionForObject(c)
-	return entryPos.Add(fyne.NewPos(0, c.Size().Height))
+	return c.popupGeometry().pos
 }
 
 // Prevent the menu to open when the user validate value from the menu.
