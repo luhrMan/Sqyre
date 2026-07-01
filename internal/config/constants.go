@@ -35,9 +35,10 @@ const (
 	JPG  = ".jpg"
 	YAML = ".yaml"
 
-	// Editor preview dimensions (points, search areas, masks, AutoPic tabs)
-	ImagePreviewWidth  = 600
-	ImagePreviewHeight = 450
+	// Editor preview minimum layout size (points, search areas, masks, AutoPic tabs).
+	// Images scale within the allocated area via FillContain.
+	ImagePreviewMinWidth  = 200
+	ImagePreviewMinHeight = 150
 
 	// Icon variant constants
 	IconThumbnailSize = 64  // pixels for thumbnail display
