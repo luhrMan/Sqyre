@@ -23,8 +23,32 @@ func clampedScrollY(contentH, viewH, currentY float32) float32 {
 
 // scheduleClampScroll runs clampScrollOffset on the next UI frame after layout.
 func (mt *MacroTree) scheduleClampScroll() {
+	if mt.dragActive {
+		return
+	}
 	fyne.Do(func() {
+		if mt.dragActive {
+			return
+		}
 		mt.clampScrollOffset()
+	})
+}
+
+// withPreservedScroll runs fn and restores the tree scroll offset afterward.
+func (mt *MacroTree) withPreservedScroll(fn func()) {
+	scrollY, ok := treeScrollOffsetY(&mt.Tree)
+	fn()
+	if ok {
+		mt.ScrollToOffset(scrollY)
+	}
+}
+
+// restoreScrollOffset sets the tree scroll position now and again on the next
+// frame so deferred layout handlers cannot override a drop-time restore.
+func (mt *MacroTree) restoreScrollOffset(scrollY float32) {
+	mt.ScrollToOffset(scrollY)
+	fyne.Do(func() {
+		mt.ScrollToOffset(scrollY)
 	})
 }
 
