@@ -60,6 +60,7 @@ func SetEditorUi() {
 		ShowErrorWithEscape:            ShowErrorWithEscape,
 		ShowConfirmWithEscape:          ShowConfirmWithEscape,
 		AddDialogEscapeClose:           AddDialogEscapeClose,
+		AddPopupEscapeClose:            AddPopupEscapeClose,
 		ShowRecordingOverlay:           recording.ShowRecordingOverlay,
 		ShowSearchAreaRecordingOverlay: recording.ShowSearchAreaRecordingOverlay,
 		WrapTagChip:                    WrapTagChip,
@@ -132,6 +133,7 @@ func SetMacroUi() {
 		},
 		ShowErrorWithEscape:   ShowErrorWithEscape,
 		AddDialogEscapeClose:  AddDialogEscapeClose,
+		AddPopupEscapeClose:   AddPopupEscapeClose,
 		ShowConfirmWithEscape: ShowConfirmWithEscape,
 		ShowActionDialog: func(action actions.ActionInterface, onSave func(actions.ActionInterface), onCancel func()) {
 			actiondialog.ShowActionDialog(action, onSave, onCancel)
