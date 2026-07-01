@@ -409,7 +409,9 @@ func (mt *MacroTree) Refresh() {
 	mt.Tree.Refresh()
 	if ok {
 		mt.ScrollToOffset(scrollY)
-		mt.scheduleClampScroll()
+		if !mt.dragActive {
+			mt.scheduleClampScroll()
+		}
 	}
 }
 
@@ -1052,7 +1054,7 @@ func (mt *MacroTree) setTree() {
 		mt.applyHighlightOverlay(uid, hlBg)
 	}
 	mt.Tree.OnBranchOpened = func(uid widget.TreeNodeID) {
-		if mt.suppressBranchOpenScroll > 0 {
+		if mt.suppressBranchOpenScroll > 0 || mt.dragActive {
 			return
 		}
 		target := uid
@@ -1061,6 +1063,9 @@ func (mt *MacroTree) setTree() {
 		}
 		scrollUID := target
 		fyne.Do(func() {
+			if mt.suppressBranchOpenScroll > 0 || mt.dragActive {
+				return
+			}
 			mt.ScrollTo(scrollUID)
 		})
 	}
