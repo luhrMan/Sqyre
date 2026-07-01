@@ -31,6 +31,17 @@ jobs:
           cache-from: type=gha,scope=sqyre-linux-test
           cache-to: type=gha,mode=max,scope=sqyre-linux-test
 
+      - name: Cache tessdata
+        id: tessdata-test
+        uses: actions/cache@v4
+        with:
+          path: internal/assets/tessdata
+          key: tessdata-eng
+
+      - name: Download tessdata for embedding
+        if: steps.tessdata-test.outputs.cache-hit != 'true'
+        run: ./scripts/download-tessdata.sh
+
       - name: Run tests
         run: |
           docker run --rm -u "$(id -u):$(id -g)" \
