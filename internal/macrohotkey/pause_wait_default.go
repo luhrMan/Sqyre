@@ -3,6 +3,7 @@
 package macrohotkey
 
 import (
+	"slices"
 	"sync"
 	"time"
 
@@ -18,6 +19,8 @@ func waitForContinueKey(opts services.ContinueWaitOptions) error {
 	if err := ValidateContinueKey(keys); err != nil {
 		return err
 	}
+	services.BeginMacroPauseWait(slices.Equal(keys, []string{"esc"}))
+	defer services.EndMacroPauseWait()
 
 	SuspendMacroHotkeys()
 	defer ResumeMacroHotkeys()
@@ -38,18 +41,26 @@ func waitForContinueKey(opts services.ContinueWaitOptions) error {
 		})
 	}
 
-	cb := func(hook.Event) {
+	onMatch := func() {
 		if opts.OnMatch != nil {
 			opts.OnMatch()
 		}
 		signalDone()
-		go hook.Unregister(hook.KeyDown, keys)
 	}
 
-	hook.Register(hook.KeyDown, keys, cb)
-	defer func() {
-		go hook.Unregister(hook.KeyDown, keys)
-	}()
+	if slices.Equal(keys, []string{"esc"}) {
+		unregisterEsc := RegisterEscapeHandler(onMatch)
+		defer unregisterEsc()
+	} else {
+		cb := func(hook.Event) {
+			onMatch()
+			go hook.Unregister(hook.KeyDown, keys)
+		}
+		hook.Register(hook.KeyDown, keys, cb)
+		defer func() {
+			go hook.Unregister(hook.KeyDown, keys)
+		}()
+	}
 
 	stopPoll := time.NewTicker(50 * time.Millisecond)
 	defer stopPoll.Stop()
