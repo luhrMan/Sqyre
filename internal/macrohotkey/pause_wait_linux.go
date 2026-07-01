@@ -3,6 +3,7 @@
 package macrohotkey
 
 import (
+	"slices"
 	"time"
 
 	"Sqyre/internal/hookkeys"
@@ -16,6 +17,8 @@ func waitForContinueKey(opts services.ContinueWaitOptions) error {
 	if err := ValidateContinueKey(keys); err != nil {
 		return err
 	}
+	services.BeginMacroPauseWait(slices.Equal(keys, []string{"esc"}))
+	defer services.EndMacroPauseWait()
 
 	SuspendMacroHotkeys()
 	defer ResumeMacroHotkeys()
