@@ -27,8 +27,8 @@ type actionTemplate struct {
 
 func buildActionTemplates() []actionTemplate {
 	return []actionTemplate{
-		{label: "Mouse Move", actionType: "move", category: "Mouse & Keyboard", icon: actions.NewMove("", false).Icon(), create: func() actions.ActionInterface {
-			return actions.NewMove("", false)
+		{label: "Mouse Move", actionType: "move", category: "Mouse & Keyboard", icon: actions.NewMove("", true).Icon(), create: func() actions.ActionInterface {
+			return actions.NewMove("", true)
 		}},
 		{label: "Click", actionType: "click", category: "Mouse & Keyboard", icon: actions.NewClick(actions.ClickButtonLeft, true).Icon(), create: func() actions.ActionInterface { return actions.NewClick(actions.ClickButtonLeft, true) }},
 		{label: "Key", actionType: "key", category: "Mouse & Keyboard", icon: actions.NewKey("ctrl", true).Icon(), create: func() actions.ActionInterface { return actions.NewKey("ctrl", true) }},
