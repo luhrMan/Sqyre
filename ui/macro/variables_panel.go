@@ -5,6 +5,7 @@ import (
 	"Sqyre/internal/models"
 	"Sqyre/internal/models/actions"
 	"Sqyre/internal/models/repositories"
+	"Sqyre/ui/custom_widgets"
 	"fmt"
 	"strings"
 
@@ -537,7 +538,7 @@ func (p *VariablesPanel) RefreshDefs() {
 	if p.list == nil {
 		return
 	}
-	p.list.Refresh()
+	custom_widgets.RefreshListPreservingScroll(p.list)
 }
 
 func variablesPanelChrome(panel *VariablesPanel, m *models.Macro) fyne.CanvasObject {
