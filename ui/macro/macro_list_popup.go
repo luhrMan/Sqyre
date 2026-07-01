@@ -25,8 +25,8 @@ const (
 	macroSortNameDesc
 	macroSortOpenFirst
 
-	macroListPopupWidth  float32 = 520
-	macroListPopupHeight float32 = 700
+	macroListPopupWidth  float32 = 720
+	macroListPopupHeight float32 = 900
 )
 
 var macroSortLabels = []string{"Name (A–Z)", "Name (Z–A)", "Open first"}
@@ -56,11 +56,24 @@ func showMacroListPopup(d WireDeps) {
 	searchEntry := widget.NewEntry()
 	searchEntry.SetPlaceHolder("Search macros or tags…")
 
+	openAllBtn := widget.NewButton("Open all", nil)
+	openAllBtn.Disable()
+
+	syncOpenAllBtn := func() {
+		query := strings.TrimSpace(searchEntry.Text)
+		if query == "" || len(filtered) == 0 {
+			openAllBtn.Disable()
+		} else {
+			openAllBtn.Enable()
+		}
+	}
+
 	applyFilter := func() {
 		query := strings.TrimSpace(searchEntry.Text)
 		allKeys := repositories.MacroRepo().GetAllKeys()
 		if query == "" {
 			filtered = sortedMacroKeys(allKeys, sortBy, openTabNames())
+			syncOpenAllBtn()
 			return
 		}
 		filtered = nil
@@ -70,6 +83,7 @@ func showMacroListPopup(d WireDeps) {
 			}
 		}
 		filtered = sortedMacroKeys(filtered, sortBy, openTabNames())
+		syncOpenAllBtn()
 	}
 
 	sortSelect := widget.NewSelect(macroSortLabels, nil)
@@ -200,19 +214,28 @@ func showMacroListPopup(d WireDeps) {
 		custom_widgets.RefreshListPreservingScroll(list)
 	}
 
+	openAllBtn.OnTapped = func() {
+		OpenMacroTabs(filtered)
+		custom_widgets.RefreshListPreservingScroll(list)
+	}
+
 	applyFilter()
 	d.Mui.MTabs.BoundMacroListWidget = list
 
 	top := container.NewBorder(nil, nil, nil, sortSelect, searchEntry)
+	closeBtn := widget.NewButton("Close", nil)
+	bottom := container.NewHBox(openAllBtn, layout.NewSpacer(), closeBtn)
 	popUpContent := container.NewBorder(
 		top,
-		widget.NewButton("Close", func() { popup.Hide() }),
+		bottom,
 		nil, nil,
 		list,
 	)
 	popup = widget.NewModalPopUp(popUpContent, d.Window.Canvas())
-	popup.Resize(fyne.NewSize(macroListPopupWidth, macroListPopupHeight))
-	popup.Show()
+	dlg := d.AddPopupEscapeClose(popup, d.Window)
+	closeBtn.OnTapped = func() { dlg.Hide() }
+	dlg.Resize(fyne.NewSize(macroListPopupWidth, macroListPopupHeight))
+	dlg.Show()
 }
 
 func sortedMacroKeys(keys []string, sortBy macroListSort, openTabs map[string]bool) []string {
