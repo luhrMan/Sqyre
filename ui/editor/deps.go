@@ -7,6 +7,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/driver/desktop"
+	"fyne.io/fyne/v2/widget"
 
 	"Sqyre/ui/macrocxt"
 )
@@ -24,6 +25,7 @@ type WireDeps struct {
 	ShowErrorWithEscape   func(err error, parent fyne.Window)
 	ShowConfirmWithEscape func(title, message string, callback func(bool), parent fyne.Window)
 	AddDialogEscapeClose  func(d dialog.Dialog, parent fyne.Window)
+	AddPopupEscapeClose   func(pop *widget.PopUp, parent fyne.Window) dialog.Dialog
 	ShowRecordingOverlay    func(onClosed func(), onMouseDown func(*desktop.MouseEvent)) func()
 	ShowSearchAreaRecordingOverlay func(onClosed func(), onMouseDown func(*desktop.MouseEvent)) (dismiss func(), setSelectionRect func(leftX, topY, rightX, bottomY int))
 	// WrapTagChip styles tag rows in the Items tab (from ui theme helpers; avoids import cycle).
