@@ -279,10 +279,96 @@ func buildProgramListAccordionWithSearchbar(cfg programListAccordionConfig, init
 	return searchbar, acc
 }
 
-// buildPointsAccordionWithSearchbar builds a Points accordion with a single searchbar above it.
+type programListEntry struct {
+	program *models.Program
+	key     string
+}
+
+// buildProgramFlatListWithSearchbar builds a single scrollable list of items across all programs.
+// Filter matches program name or item key/display name (fuzzy). When initialRef is set, the matching row is selected.
+func buildProgramFlatListWithSearchbar(cfg programListAccordionConfig, initialRef actions.CoordinateRef) (*widget.Entry, *widget.List) {
+	searchbar := widget.NewEntry()
+	searchbar.SetPlaceHolder("Filter programs and entries (fuzzy match)")
+	searchDebounce := custom_widgets.NewDebouncer(custom_widgets.DefaultSearchDebounce)
+
+	var entries []programListEntry
+	var list *widget.List
+
+	selectInitial := func() {
+		if list == nil {
+			return
+		}
+		for i, e := range entries {
+			if key, ok := resolveCoordinateRefKey(initialRef, e.program, cfg.GetKeys); ok && key == e.key {
+				list.Select(widget.ListItemID(i))
+				return
+			}
+		}
+	}
+
+	rebuild := func() {
+		filterText := searchbar.Text
+		entries = entries[:0]
+		for _, p := range repositories.ProgramRepo().GetAllSortedByName() {
+			for _, key := range cfg.GetKeys(p) {
+				displayName := cfg.GetDisplayName(p, key)
+				if filterText != "" &&
+					!fuzzy.MatchFold(filterText, p.Name) &&
+					!fuzzy.MatchFold(filterText, key) &&
+					!fuzzy.MatchFold(filterText, displayName) {
+					continue
+				}
+				entries = append(entries, programListEntry{program: p, key: key})
+			}
+		}
+		sort.Slice(entries, func(i, j int) bool {
+			pi, pj := entries[i].program.Name, entries[j].program.Name
+			if pi != pj {
+				return strings.Compare(pi, pj) < 0
+			}
+			return strings.Compare(
+				cfg.GetDisplayName(entries[i].program, entries[i].key),
+				cfg.GetDisplayName(entries[j].program, entries[j].key),
+			) < 0
+		})
+		if list != nil {
+			list.UnselectAll()
+			custom_widgets.RefreshListPreservingScroll(list)
+			selectInitial()
+		}
+	}
+
+	list = widget.NewList(
+		func() int { return len(entries) },
+		func() fyne.CanvasObject { return ttwidget.NewLabel("template") },
+		func(id widget.ListItemID, co fyne.CanvasObject) {
+			if id < 0 || id >= len(entries) {
+				return
+			}
+			e := entries[id]
+			lbl := co.(*ttwidget.Label)
+			lbl.SetText(fmt.Sprintf("%s · %s", cfg.GetDisplayName(e.program, e.key), e.program.Name))
+			if cfg.GetTooltip != nil {
+				lbl.SetToolTip(cfg.GetTooltip(e.program, e.key))
+			}
+		},
+	)
+	list.OnSelected = func(id widget.ListItemID) {
+		if id >= 0 && id < len(entries) {
+			e := entries[id]
+			cfg.OnSelect(e.program, e.key)
+		}
+	}
+
+	searchbar.OnChanged = func(string) { searchDebounce.Call(rebuild) }
+	rebuild()
+	return searchbar, list
+}
+
+// buildPointsListWithSearchbar builds a flat points list with a searchbar above it.
 // Filter matches program name or point name (fuzzy). onPointSelected is called when user selects a point.
-func buildPointsAccordionWithSearchbar(onPointSelected func(actions.CoordinateRef), initialRef actions.CoordinateRef) (*widget.Entry, *widget.Accordion) {
-	return buildProgramListAccordionWithSearchbar(programListAccordionConfig{
+func buildPointsListWithSearchbar(onPointSelected func(actions.CoordinateRef), initialRef actions.CoordinateRef) (*widget.Entry, *widget.List) {
+	return buildProgramFlatListWithSearchbar(programListAccordionConfig{
 		GetKeys: func(p *models.Program) []string {
 			return p.PointRepo(config.MainMonitorSizeString).GetAllKeys()
 		},
@@ -488,6 +574,12 @@ func showCustomActionDialog(action actions.ActionInterface, content fyne.CanvasO
 		saveFunc()
 		if p, ok := action.(*actions.Pause); ok {
 			if err := validatePauseAction(p); err != nil {
+				dialog.ShowError(err, active.Window)
+				return
+			}
+		}
+		if k, ok := action.(*actions.Key); ok {
+			if err := validateKeyAction(k); err != nil {
 				dialog.ShowError(err, active.Window)
 				return
 			}
