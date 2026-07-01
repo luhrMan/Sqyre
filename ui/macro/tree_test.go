@@ -345,9 +345,10 @@ func TestTreeRowBody_doubleClickOpensActionDialog(t *testing.T) {
 	rowBody.tree = mt
 	rowBody.uid = wait.GetUID()
 
-	rowBody.DoubleTapped(nil)
+	rowBody.Tapped(nil)
+	rowBody.Tapped(nil)
 	if opened != wait {
-		t.Fatalf("DoubleTapped opened %v, want wait action %v", opened, wait)
+		t.Fatalf("double tap opened %v, want wait action %v", opened, wait)
 	}
 }
 
@@ -369,9 +370,10 @@ func TestTreeRowBody_doubleClickSkippedWhileExecuting(t *testing.T) {
 	rowBody := newTreeRowBody(container.NewHScroll(widget.NewLabel("wait")))
 	rowBody.tree = mt
 	rowBody.uid = wait.GetUID()
-	rowBody.DoubleTapped(nil)
+	rowBody.Tapped(nil)
+	rowBody.Tapped(nil)
 
 	if called {
-		t.Fatal("DoubleTapped should not open dialog while executing")
+		t.Fatal("double tap should not open dialog while executing")
 	}
 }
