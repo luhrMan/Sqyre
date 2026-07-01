@@ -42,6 +42,19 @@ jobs:
         if: steps.tessdata-test.outputs.cache-hit != 'true'
         run: ./scripts/download-tessdata.sh
 
+      - name: Cache Go modules and build cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            .cache/go-mod
+            .cache/go-build
+          key: go-${{ hashFiles('go.sum') }}
+          restore-keys: |
+            go-
+
+      - name: Prepare shared Go caches
+        run: mkdir -p .cache/go-build .cache/go-mod
+
       - name: Run tests
         run: |
           docker run --rm -u "$(id -u):$(id -g)" \
@@ -117,16 +130,16 @@ jobs:
           curl -sL -o internal/assets/tessdata/eng.traineddata \
             https://github.com/tesseract-ocr/tessdata/raw/main/eng.traineddata
 
-      # Persist module + build cache for dockerized `go build` (bind-mounted paths).
-      - name: Cache Go modules and build cache (Linux)
+      # Shared with test job: bind-mounted GOMODCACHE/GOCACHE under .cache/.
+      - name: Cache GoLang modules and build cache
         uses: actions/cache@v4
         with:
           path: |
             .cache/go-mod
             .cache/go-build
-          key: linux-go-${{ hashFiles('go.sum') }}
+          key: go-${{ hashFiles('go.sum') }}
           restore-keys: |
-            linux-go-
+            go-
 
       - name: Prepare shared Go caches
         run: |
