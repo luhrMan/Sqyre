@@ -594,3 +594,12 @@ func TestResolveDrop_branchZones(t *testing.T) {
 		t.Fatalf("bottom zone mode = %v, want dropAfter", mt.dropMode)
 	}
 }
+
+func TestScheduleClampScroll_skippedDuringDrag(t *testing.T) {
+	mt, _, _, _, _ := buildDnDTree(t)
+	mt.dragActive = true
+	mt.scheduleClampScroll()
+	if !mt.dragActive {
+		t.Fatal("dragActive should remain true")
+	}
+}
