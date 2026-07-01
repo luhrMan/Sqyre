@@ -39,7 +39,7 @@ jobs:
             -e GOCACHE=/workspace/.cache/go-build \
             -e GOMODCACHE=/workspace/.cache/go-mod \
             sqyre-linux-build \
-            bash -c 'apt-get update -qq && apt-get install -y -qq xvfb ffmpeg >/dev/null && ./scripts/test.sh && ./scripts/test-ui.sh -run "TestGUIEscape|TestDocsScreenshots|TestDemoWorkflowFrames"'
+            bash -c './scripts/test.sh && ./scripts/test-ui.sh -run "TestGUIEscape|TestDocsScreenshots|TestDemoWorkflowFrames"'
 
   build-linux:
     runs-on: ubuntu-22.04
