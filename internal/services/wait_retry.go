@@ -24,8 +24,10 @@ func retryWhileNotFound(cfg actions.WaitTilFoundConfig, defaultIntervalMs int, r
 	}
 
 	for time.Now().Before(deadline) {
-		time.Sleep(time.Duration(intervalMs) * time.Millisecond)
 		if err := checkMacroStop(); err != nil {
+			return err
+		}
+		if err := interruptibleSleep(intervalMs); err != nil {
 			return err
 		}
 		found, err := retry()
