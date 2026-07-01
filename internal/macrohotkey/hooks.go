@@ -36,6 +36,16 @@ func FailsafeHotkey() {
 	})
 }
 
+// MacroStopHotkey registers Escape to stop the currently running macro.
+func MacroStopHotkey() {
+	RegisterEscapeHandler(func() {
+		if services.ShouldEscapeStopMacro() {
+			log.Println("Escape: stopping macro execution")
+			services.RequestMacroStop()
+		}
+	})
+}
+
 func StartHook() {
 	log.Println("hook started")
 	s := hook.Start()
