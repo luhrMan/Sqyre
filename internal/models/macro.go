@@ -5,6 +5,11 @@ import (
 	"strings"
 )
 
+const (
+	DefaultKeyboardDelay = 25
+	DefaultMouseDelay    = 25
+)
+
 // HotkeyTrigger selects when a macro hotkey runs: chord complete on press or after full chord release.
 type HotkeyTrigger string
 
@@ -46,7 +51,9 @@ func HotkeyTriggerFromUILabel(s string) HotkeyTrigger {
 type Macro struct {
 	Name          string         `mapstructure:"name"`
 	Root          *actions.Loop  `mapstructure:"root"`
-	GlobalDelay   int            `mapstructure:"globaldelay"`
+	GlobalDelay    int `mapstructure:"globaldelay"`
+	KeyboardDelay  int `mapstructure:"keyboarddelay"`
+	MouseDelay     int `mapstructure:"mousedelay"`
 	Hotkey        []string       `mapstructure:"hotkey"`
 	HotkeyTrigger string         `mapstructure:"hotkey_trigger"`
 	Tags          []string       `yaml:"tags" mapstructure:"tags"`
@@ -71,11 +78,13 @@ func (m *Macro) SetKey(key string) {
 // The macro is initialized with an empty root loop.
 func NewMacro(name string, delay int, hotkey []string) *Macro {
 	return &Macro{
-		Name:        name,
-		Root:        actions.NewLoop(1, "root", []actions.ActionInterface{}),
-		GlobalDelay: delay,
-		Hotkey:      hotkey,
-		Variables:   NewVariableStore(),
+		Name:          name,
+		Root:          actions.NewLoop(1, "root", []actions.ActionInterface{}),
+		GlobalDelay:   delay,
+		KeyboardDelay: DefaultKeyboardDelay,
+		MouseDelay:    DefaultMouseDelay,
+		Hotkey:        hotkey,
+		Variables:     NewVariableStore(),
 	}
 }
 

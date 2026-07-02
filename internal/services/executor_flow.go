@@ -7,12 +7,53 @@ import (
 	"Sqyre/internal/models/actions"
 )
 
-// applyGlobalDelay sleeps for the macro's GlobalDelay (ms) after an action completes.
-func applyGlobalDelay(macro *models.Macro) error {
-	if macro == nil || macro.GlobalDelay <= 0 {
+func isKeyboardAction(a actions.ActionInterface) bool {
+	if a == nil {
+		return false
+	}
+	switch a.GetType() {
+	case "key", "type":
+		return true
+	default:
+		return false
+	}
+}
+
+func isMouseAction(a actions.ActionInterface) bool {
+	if a == nil {
+		return false
+	}
+	switch a.GetType() {
+	case "move", "click":
+		return true
+	default:
+		return false
+	}
+}
+
+// applyActionDelay sleeps for the macro's configured delays (ms) after an action completes.
+// Global delay applies after every action; keyboard and mouse delays add extra time for
+// their respective action categories.
+func applyActionDelay(macro *models.Macro, a actions.ActionInterface) error {
+	if macro == nil {
 		return nil
 	}
-	return interruptibleSleep(macro.GlobalDelay)
+	if macro.GlobalDelay > 0 {
+		if err := interruptibleSleep(macro.GlobalDelay); err != nil {
+			return err
+		}
+	}
+	if isKeyboardAction(a) && macro.KeyboardDelay > 0 {
+		if err := interruptibleSleep(macro.KeyboardDelay); err != nil {
+			return err
+		}
+	}
+	if isMouseAction(a) && macro.MouseDelay > 0 {
+		if err := interruptibleSleep(macro.MouseDelay); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func executeSubActions(subs []actions.ActionInterface, macro *models.Macro) error {
