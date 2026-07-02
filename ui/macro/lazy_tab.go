@@ -68,3 +68,17 @@ func macroTabContentFrom(obj fyne.CanvasObject) *MacroTabContent {
 	}
 	return nil
 }
+
+// macroFromTabContent returns the macro for tab content without building lazy hosts.
+func macroFromTabContent(obj fyne.CanvasObject) *models.Macro {
+	if c, ok := obj.(*MacroTabContent); ok && c.Macro != nil {
+		return c.Macro
+	}
+	if h, ok := obj.(*LazyMacroTabHost); ok && h.Macro != nil {
+		return h.Macro
+	}
+	if tree, ok := obj.(*MacroTree); ok && tree.Macro != nil {
+		return tree.Macro
+	}
+	return nil
+}
