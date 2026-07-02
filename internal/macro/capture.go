@@ -58,6 +58,20 @@ func CaptureRect(x, y, w, h int) (image.Image, error) {
 	return img, nil
 }
 
+// CaptureVirtualDesktop captures the union of enabled displays in absolute
+// virtual-desktop coordinates (same space as robotgo.Location).
+func CaptureVirtualDesktop() (image.Image, image.Rectangle, error) {
+	vb := screen.VirtualBounds()
+	if vb.Empty() || vb.Dx() <= 0 || vb.Dy() <= 0 {
+		return nil, vb, fmt.Errorf("invalid virtual bounds %v", vb)
+	}
+	img, err := CaptureRect(vb.Min.X, vb.Min.Y, vb.Dx(), vb.Dy())
+	if err != nil {
+		return nil, vb, err
+	}
+	return CaptureToRGBA(img), vb, nil
+}
+
 // CaptureSearchArea captures the given search rectangle after validating bounds.
 // Uses robotgo.CaptureImg because search areas are stored in absolute virtual-desktop
 // coordinates (same space as robotgo.Location). screenshot.Capture expects coords
