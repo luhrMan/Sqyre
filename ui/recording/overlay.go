@@ -243,123 +243,182 @@ func showFullScreenOverlay(withSelectionRect bool, onClosed func(), onMouseDown 
 	}
 
 	hiddenAppWindows := hideAppWindowsDuringRecording(app)
-	monitorCaptures := make(map[int]image.Image, len(plan.Monitors))
-	diag := capture.OverlayDiagnosticsEnabled()
-	for _, mon := range plan.Monitors {
-		captureImg, source, err := capture.OverlayMonitorImage(plan, session, mon.DisplayIndex)
-		if diag {
-			log.Printf("overlay source diag: display=%d source=%s", mon.DisplayIndex, source)
-		}
-		if err != nil {
-			log.Printf("overlay: capture failed display=%d backend=%s: %v", mon.DisplayIndex, plan.Backend, err)
-			continue
-		}
-		if captureImg == nil {
-			continue
-		}
-		monitorCaptures[mon.DisplayIndex] = captureImg
-	}
-	if diag {
-		log.Printf("overlay source diag: backend=%s per_monitor=%v", plan.Backend, !useVirtualDesktopOverlay())
-	}
 
-	var overlays []*fyneDesktopOverlay
-	if useVirtualDesktopOverlay() {
-		composedImg, unionBounds, ok := composeOverlayImage(plan.Monitors, monitorCaptures)
-		if !ok {
-			showAppWindows(hiddenAppWindows)
-			log.Printf("overlay: no overlay windows built")
-			return func() {}, func(int, int, int, int) {}
-		}
-		overlays = append(overlays, newOverlayWindow(app, composedImg, unionBounds, 0, withSelectionRect, onMouseDown))
-	} else {
-		for _, mon := range plan.Monitors {
-			img := monitorCaptures[mon.DisplayIndex]
-			if img == nil {
-				continue
-			}
-			overlays = append(overlays, newOverlayWindow(app, img, mon.DesktopBounds, mon.DisplayIndex, withSelectionRect, onMouseDown))
-		}
-		if len(overlays) == 0 {
-			showAppWindows(hiddenAppWindows)
-			log.Printf("overlay: no overlay windows built")
-			return func() {}, func(int, int, int, int) {}
-		}
-	}
+	var (
+		lifecycleMu      sync.Mutex
+		overlays         []*fyneDesktopOverlay
+		pendingTimer     *time.Timer
+		pendingCancelled bool
+		dismissOnce      sync.Once
+		closedOnce       sync.Once
+		restoreOnce      sync.Once
+		setSelectionFn   func(leftX, topY, rightX, bottomY int)
+	)
 
-	for _, overlay := range overlays {
-		overlay.reposition()
-	}
-	for _, overlay := range overlays {
-		overlay.win.Show()
-		overlay.reposition()
-		overlay.startPositionLoop()
-	}
-
-	var dismissOnce sync.Once
-	var closedOnce sync.Once
-	var restoreOnce sync.Once
 	restoreHidden := func() {
 		restoreOnce.Do(func() {
 			showAppWindows(hiddenAppWindows)
 		})
 	}
+
+	cancelPending := func() {
+		lifecycleMu.Lock()
+		defer lifecycleMu.Unlock()
+		pendingCancelled = true
+		if pendingTimer != nil {
+			pendingTimer.Stop()
+		}
+	}
+
+	pendingStillActive := func() bool {
+		lifecycleMu.Lock()
+		defer lifecycleMu.Unlock()
+		return !pendingCancelled
+	}
+
 	dismiss = func() {
 		dismissOnce.Do(func() {
-			for _, o := range overlays {
+			cancelPending()
+			lifecycleMu.Lock()
+			ovs := overlays
+			lifecycleMu.Unlock()
+			for _, o := range ovs {
 				close(o.stopPosition)
 				o.win.Close()
 			}
 			restoreHidden()
 		})
 	}
-	for i, overlay := range overlays {
-		if onClosed != nil {
-			overlay.win.SetOnClosed(func() {
-				restoreHidden()
-				closedOnce.Do(onClosed)
-			})
-		} else {
-			overlay.win.SetOnClosed(restoreHidden)
+
+	setSelectionRect = func(leftX, topY, rightX, bottomY int) {
+		if setSelectionFn != nil {
+			setSelectionFn(leftX, topY, rightX, bottomY)
 		}
-		overlay.win.Canvas().SetOnTypedKey(func(e *fyne.KeyEvent) {
-			if e.Name == fyne.KeyEscape {
-				dismiss()
-			}
-		})
-		if i == 0 {
-			overlay.win.RequestFocus()
-		}
-	}
-	logOverlayWindowDiagnostics(overlays)
-	if capture.OverlayDiagnosticsEnabled() {
-		services.GoSafe(func() {
-			time.Sleep(250 * time.Millisecond)
-			fyne.Do(func() { logOverlayWindowDiagnostics(overlays) })
-		})
 	}
 
-	if withSelectionRect {
-		setSelectionRect = func(leftX, topY, rightX, bottomY int) {
-			fyne.Do(func() {
-				for _, o := range overlays {
-					if o.selLayout == nil || o.selRefresher == nil {
-						continue
-					}
-					l, t, r, b, ok := absoluteRectToOverlayLocal(leftX, topY, rightX, bottomY, o.desktopBounds)
-					if ok {
-						o.selLayout.leftX, o.selLayout.topY = mapOverlayPxToCanvas(o, l, t)
-						o.selLayout.rightX, o.selLayout.bottomY = mapOverlayPxToCanvas(o, r, b)
-					} else {
-						o.selLayout.leftX, o.selLayout.topY, o.selLayout.rightX, o.selLayout.bottomY = 0, 0, 0, 0
-					}
-					o.selRefresher.Refresh()
+	presentOverlay := func() {
+		if !pendingStillActive() {
+			restoreHidden()
+			return
+		}
+
+		monitorCaptures := make(map[int]image.Image, len(plan.Monitors))
+		diag := capture.OverlayDiagnosticsEnabled()
+		for _, mon := range plan.Monitors {
+			captureImg, source, err := capture.OverlayMonitorImage(plan, session, mon.DisplayIndex)
+			if diag {
+				log.Printf("overlay source diag: display=%d source=%s", mon.DisplayIndex, source)
+			}
+			if err != nil {
+				log.Printf("overlay: capture failed display=%d backend=%s: %v", mon.DisplayIndex, plan.Backend, err)
+				continue
+			}
+			if captureImg == nil {
+				continue
+			}
+			monitorCaptures[mon.DisplayIndex] = captureImg
+		}
+		if diag {
+			log.Printf("overlay source diag: backend=%s per_monitor=%v", plan.Backend, !useVirtualDesktopOverlay())
+		}
+
+		var built []*fyneDesktopOverlay
+		if useVirtualDesktopOverlay() {
+			composedImg, unionBounds, ok := composeOverlayImage(plan.Monitors, monitorCaptures)
+			if !ok {
+				restoreHidden()
+				log.Printf("overlay: no overlay windows built")
+				return
+			}
+			built = append(built, newOverlayWindow(app, composedImg, unionBounds, 0, withSelectionRect, onMouseDown))
+		} else {
+			for _, mon := range plan.Monitors {
+				img := monitorCaptures[mon.DisplayIndex]
+				if img == nil {
+					continue
+				}
+				built = append(built, newOverlayWindow(app, img, mon.DesktopBounds, mon.DisplayIndex, withSelectionRect, onMouseDown))
+			}
+			if len(built) == 0 {
+				restoreHidden()
+				log.Printf("overlay: no overlay windows built")
+				return
+			}
+		}
+
+		if !pendingStillActive() {
+			for _, o := range built {
+				close(o.stopPosition)
+				o.win.Close()
+			}
+			restoreHidden()
+			return
+		}
+
+		for _, overlay := range built {
+			overlay.reposition()
+		}
+		for _, overlay := range built {
+			overlay.win.Show()
+			overlay.reposition()
+			overlay.startPositionLoop()
+		}
+
+		lifecycleMu.Lock()
+		overlays = built
+		lifecycleMu.Unlock()
+
+		for i, overlay := range built {
+			if onClosed != nil {
+				overlay.win.SetOnClosed(func() {
+					restoreHidden()
+					closedOnce.Do(onClosed)
+				})
+			} else {
+				overlay.win.SetOnClosed(restoreHidden)
+			}
+			overlay.win.Canvas().SetOnTypedKey(func(e *fyne.KeyEvent) {
+				if e.Name == fyne.KeyEscape {
+					dismiss()
 				}
 			})
+			if i == 0 {
+				overlay.win.RequestFocus()
+			}
 		}
-	} else {
-		setSelectionRect = func(int, int, int, int) {}
+
+		logOverlayWindowDiagnostics(built)
+		if capture.OverlayDiagnosticsEnabled() {
+			services.GoSafe(func() {
+				time.Sleep(250 * time.Millisecond)
+				fyne.Do(func() { logOverlayWindowDiagnostics(built) })
+			})
+		}
+
+		if withSelectionRect {
+			setSelectionFn = func(leftX, topY, rightX, bottomY int) {
+				fyne.Do(func() {
+					for _, o := range built {
+						if o.selLayout == nil || o.selRefresher == nil {
+							continue
+						}
+						l, t, r, b, ok := absoluteRectToOverlayLocal(leftX, topY, rightX, bottomY, o.desktopBounds)
+						if ok {
+							o.selLayout.leftX, o.selLayout.topY = mapOverlayPxToCanvas(o, l, t)
+							o.selLayout.rightX, o.selLayout.bottomY = mapOverlayPxToCanvas(o, r, b)
+						} else {
+							o.selLayout.leftX, o.selLayout.topY, o.selLayout.rightX, o.selLayout.bottomY = 0, 0, 0, 0
+						}
+						o.selRefresher.Refresh()
+					}
+				})
+			}
+		}
 	}
+
+	lifecycleMu.Lock()
+	pendingTimer = scheduleAfterHidingApp(hiddenAppWindows, presentOverlay)
+	lifecycleMu.Unlock()
 
 	return dismiss, setSelectionRect
 }
