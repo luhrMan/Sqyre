@@ -103,7 +103,7 @@ func TestBaseRepository_Reload_ReadConfigFailureInTestMode(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected Reload to fail when ReadConfig fails in test mode")
 	}
-	if err != nil && !errors.Is(err, ErrLoadFailed) {
+	if !errors.Is(err, ErrLoadFailed) {
 		// Message should mention "re-read config in test mode"
 		if msg := err.Error(); msg != "" && len(msg) < 10 {
 			t.Errorf("unexpected error: %v", err)
@@ -166,7 +166,7 @@ func TestNestedRepository_Set_SaveFuncFailure(t *testing.T) {
 		t.Fatal("expected Set to fail when saveFunc fails")
 	}
 	// Error wraps save failure (not necessarily ErrSaveFailed from our package)
-	if err != nil && err.Error() == "" {
+	if err.Error() == "" {
 		t.Error("expected non-empty error message")
 	}
 }

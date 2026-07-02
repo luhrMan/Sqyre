@@ -4,6 +4,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
+	fynetooltip "github.com/dweymouth/fyne-tooltip"
 )
 
 // modalPopupDialog implements dialog.Dialog for widget.NewModalPopUp overlays.
@@ -48,6 +49,7 @@ var _ dialog.Dialog = (*modalPopupDialog)(nil)
 
 // AddPopupEscapeClose wraps a modal popup as a dialog and registers Escape to dismiss it.
 func AddPopupEscapeClose(pop *widget.PopUp, parent fyne.Window) dialog.Dialog {
+	fynetooltip.AddPopUpToolTipLayer(pop)
 	d := WrapModalPopup(pop)
 	AddDialogEscapeClose(d, parent)
 	return d
