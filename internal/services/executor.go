@@ -36,6 +36,7 @@ func ExecuteMacroWithLogging(m *models.Macro) {
 	}
 	defer endMacroRun()
 	defer func() {
+		ReleaseAllMacroInputs()
 		ClearHighlights()
 		NotifyMacroPause(false, "", "")
 		fyne.Do(func() {
@@ -67,6 +68,7 @@ func ExecuteMacroWithLogging(m *models.Macro) {
 	}
 	ClearRuntimeVariables()
 	m.InitRuntimeVariables()
+	resetMacroHeldKeys()
 	ApplyMonitorBuiltinVariables(m)
 	SnapshotRuntimeVariables(m)
 	if macroUsesOCR(m) {
