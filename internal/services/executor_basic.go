@@ -76,8 +76,14 @@ func executeKey(a actions.ActionInterface, macro *models.Macro) error {
 	var err error
 	if node.State {
 		err = getAutomationBackend().KeyDown(node.Key)
+		if err == nil {
+			noteMacroKeyDown(node.Key)
+		}
 	} else {
 		err = getAutomationBackend().KeyUp(node.Key)
+		if err == nil {
+			noteMacroKeyUp(node.Key)
+		}
 	}
 	if suppressEsc && err == nil {
 		extendMacroEscapeSuppress(macroEscapeSuppressGrace)
