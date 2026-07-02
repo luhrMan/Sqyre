@@ -3,6 +3,7 @@ package services
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"Sqyre/internal/models"
@@ -95,6 +96,53 @@ func TestExecute_Click(t *testing.T) {
 	}
 	if len(rec.Calls) != 1 || rec.Calls[0].Op != "click" || rec.Calls[0].Button != "right" || !rec.Calls[0].Down {
 		t.Fatalf("calls = %+v", rec.Calls)
+	}
+}
+
+func TestReleaseAllMacroInputs(t *testing.T) {
+	rec := withRecordingBackend(t)
+	if !tryStartMacroRun("test") {
+		t.Fatal("start should succeed")
+	}
+	defer endMacroRun()
+
+	if err := Execute(actions.NewKey("a", true), nil); err != nil {
+		t.Fatalf("Execute key down: %v", err)
+	}
+	if err := Execute(actions.NewKey("shift", true), nil); err != nil {
+		t.Fatalf("Execute key down shift: %v", err)
+	}
+	rec.Calls = nil
+
+	ReleaseAllMacroInputs()
+
+	var keyUps []string
+	for _, c := range rec.Calls {
+		if c.Op == "keyup" {
+			keyUps = append(keyUps, c.Key)
+		}
+	}
+	if len(keyUps) < 2 {
+		t.Fatalf("key-up calls = %v, want held keys and modifiers released", keyUps)
+	}
+	if !slices.Contains(keyUps, "a") {
+		t.Fatalf("key-up calls = %v, want release of held key a", keyUps)
+	}
+
+	var mouseUps []string
+	for _, c := range rec.Calls {
+		if c.Op == "click" && !c.Down {
+			mouseUps = append(mouseUps, c.Button)
+		}
+	}
+	wantMouse := []string{"left", "right", "center"}
+	if len(mouseUps) != len(wantMouse) {
+		t.Fatalf("mouse button-up calls = %v, want %v", mouseUps, wantMouse)
+	}
+	for i, btn := range wantMouse {
+		if mouseUps[i] != btn {
+			t.Fatalf("mouse button-up[%d] = %q, want %q", i, mouseUps[i], btn)
+		}
 	}
 }
 
