@@ -9,83 +9,40 @@ name: Build and Release
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "**.md"
   pull_request:
     branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "**.md"
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  test:
+  version:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-22.04
+    outputs:
+      version: ${{ steps.version.outputs.VERSION }}
+      fyne_app_version: ${{ steps.version.outputs.FYNE_APP_VERSION }}
     steps:
-      - uses: actions/checkout@v6
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Build Linux image
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: .devcontainer/Dockerfile
-          load: true
-          tags: sqyre-linux-build:latest
-          cache-from: type=gha,scope=sqyre-linux-test
-          cache-to: type=gha,mode=max,scope=sqyre-linux-test
-
-      - name: Cache tessdata
-        id: tessdata-test
-        uses: actions/cache@v6
-        with:
-          path: internal/assets/tessdata
-          key: tessdata-eng
-
-      - name: Download tessdata for embedding
-        if: steps.tessdata-test.outputs.cache-hit != 'true'
-        run: ./scripts/download-tessdata.sh
-
-      - name: Cache Go modules and build cache
-        uses: actions/cache@v6
-        with:
-          path: |
-            .cache/go-mod
-            .cache/go-build
-          key: go-${{ hashFiles('go.sum') }}
-          restore-keys: |
-            go-
-
-      - name: Prepare shared Go caches
-        run: mkdir -p .cache/go-build .cache/go-mod
-
-      - name: Run tests
+      - name: Set version
+        id: version
         run: |
-          docker run --rm -u "$(id -u):$(id -g)" \
-            -v ${{ github.workspace }}:/workspace -w /workspace \
-            -e HOME=/tmp \
-            -e GOCACHE=/workspace/.cache/go-build \
-            -e GOMODCACHE=/workspace/.cache/go-mod \
-            sqyre-linux-build \
-            bash -c 'set -x
-              ./scripts/test.sh
-              echo "=== Global hook Esc tests (xvfb) ==="
-              ./scripts/test-ui.sh -run TestGUIEscape'
+          echo "VERSION=$(date +%Y.%m.%d.%H%M)" >> "$GITHUB_OUTPUT"
+          echo "FYNE_APP_VERSION=$(date +%Y.%m.%d)" >> "$GITHUB_OUTPUT"
 
-  build-linux:
+  test:
     runs-on: ubuntu-22.04
     permissions:
       contents: read
       packages: write
-    outputs:
-      version: ${{ steps.version.outputs.VERSION }}
     steps:
       - uses: actions/checkout@v6
-
-      - name: Set version
-        id: version
-        run: echo "VERSION=$(date +%Y.%m.%d.%H%M)" >> $GITHUB_OUTPUT
-
-      - name: Sync FyneApp.toml with release version
-        run: |
-          VERSION="${{ steps.version.outputs.VERSION }}"
-          sed -i 's/^Version = .*/Version = "'"$VERSION"'"/' FyneApp.toml
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -120,6 +77,91 @@ jobs:
             type=registry,ref=${{ steps.ghcr.outputs.buildcache }},mode=max
 
       - name: Cache tessdata
+        id: tessdata-test
+        uses: actions/cache@v6
+        with:
+          path: internal/assets/tessdata
+          key: tessdata-eng
+
+      - name: Download tessdata for embedding
+        if: steps.tessdata-test.outputs.cache-hit != 'true'
+        run: ./scripts/download-tessdata.sh
+
+      - name: Cache Go modules and build cache
+        uses: actions/cache@v6
+        with:
+          path: |
+            .cache/go-mod
+            .cache/go-build
+          key: go-${{ hashFiles('go.mod', 'go.sum') }}
+          restore-keys: |
+            go-
+
+      - name: Prepare shared Go caches
+        run: mkdir -p .cache/go-build .cache/go-mod
+
+      - name: Run tests
+        run: |
+          docker run --rm -u "$(id -u):$(id -g)" \
+            -v ${{ github.workspace }}:/workspace -w /workspace \
+            -e HOME=/tmp \
+            -e GOCACHE=/workspace/.cache/go-build \
+            -e GOMODCACHE=/workspace/.cache/go-mod \
+            sqyre-linux-build \
+            bash -c 'set -x
+              ./scripts/test.sh
+              echo "=== Global hook Esc tests (xvfb) ==="
+              ./scripts/test-ui.sh -run TestGUIEscape'
+
+  build-linux:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: version
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      version: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Sync FyneApp.toml with release version
+        run: |
+          VERSION="${{ needs.version.outputs.version }}"
+          sed -i 's/^Version = .*/Version = "'"$VERSION"'"/' FyneApp.toml
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: GHCR image ref for Buildx cache
+        id: ghcr
+        run: |
+          o=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          n=$(echo "${{ github.event.repository.name }}" | tr '[:upper:]' '[:lower:]')
+          echo "buildcache=ghcr.io/${o}/${n}-buildcache:linux" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GitHub Container Registry (Buildx cache)
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Linux image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: .devcontainer/Dockerfile
+          load: true
+          tags: sqyre-linux-build:latest
+          cache-from: |
+            type=registry,ref=${{ steps.ghcr.outputs.buildcache }}
+            type=gha,scope=sqyre-linux
+          cache-to: |
+            type=gha,mode=max,scope=sqyre-linux
+            type=registry,ref=${{ steps.ghcr.outputs.buildcache }},mode=max
+
+      - name: Cache tessdata
         id: tessdata-linux
         uses: actions/cache@v6
         with:
@@ -128,67 +170,52 @@ jobs:
 
       - name: Download tessdata for embedding
         if: steps.tessdata-linux.outputs.cache-hit != 'true'
-        run: |
-          mkdir -p internal/assets/tessdata
-          curl -sL -o internal/assets/tessdata/eng.traineddata \
-            https://github.com/tesseract-ocr/tessdata/raw/main/eng.traineddata
+        run: ./scripts/download-tessdata.sh
 
-      # Shared with test job: bind-mounted GOMODCACHE/GOCACHE under .cache/.
-      - name: Cache GoLang modules and build cache
+      - name: Cache Go modules and build cache
         uses: actions/cache@v6
         with:
           path: |
             .cache/go-mod
             .cache/go-build
-          key: go-${{ hashFiles('go.sum') }}
+          key: go-${{ hashFiles('go.mod', 'go.sum') }}
           restore-keys: |
             go-
 
       - name: Prepare shared Go caches
-        run: |
-          mkdir -p .cache/go-build .cache/go-mod
+        run: mkdir -p .cache/go-build .cache/go-mod
 
-      - name: Build Linux binary
+      # AppImage recipe runs go build once; reuse that binary for the standalone zip.
+      - name: Build Linux binary and AppImage
         run: |
+          VERSION="${{ needs.version.outputs.version }}"
           docker run --rm -u "$(id -u):$(id -g)" \
             -v ${{ github.workspace }}:/workspace -w /workspace \
             -e HOME=/tmp \
             -e GOCACHE=/workspace/.cache/go-build \
             -e GOMODCACHE=/workspace/.cache/go-mod \
             -e GOFLAGS="-tags=gocv_specific_modules -buildvcs=false" \
+            -e RELEASE_VERSION="$VERSION" \
             sqyre-linux-build \
-            bash -c 'go build -trimpath -o sqyre ./cmd/sqyre'
-
-      - name: Rename Linux binary
-        run: |
-          mv sqyre sqyre-v${{ steps.version.outputs.VERSION }}-linux-amd64
-
-      - name: Build AppImage
-        run: |
-          docker run --rm -u "$(id -u):$(id -g)" \
-            -v ${{ github.workspace }}:/workspace -w /workspace \
-            -e HOME=/tmp \
-            -e GOCACHE=/workspace/.cache/go-build \
-            -e GOMODCACHE=/workspace/.cache/go-mod \
-            -e GOFLAGS="-tags=gocv_specific_modules -buildvcs=false" \
-            sqyre-linux-build \
-            bash -c 'scripts/linux/packaging/appimage/build-appimage.sh'
-          # Rename to versioned format (basename matches FyneApp.toml / AppImage recipe)
-          mv bin/Sqyre-${{ steps.version.outputs.VERSION }}-x86_64.AppImage \
-             Sqyre-v${{ steps.version.outputs.VERSION }}-x86_64.AppImage
+            bash -c 'set -euo pipefail
+              scripts/linux/packaging/appimage/build-appimage.sh
+              cp scripts/linux/packaging/appimage/sqyre.AppDir/usr/bin/sqyre \
+                "/workspace/sqyre-v${RELEASE_VERSION}-linux-amd64"'
+          mv "bin/Sqyre-${VERSION}-x86_64.AppImage" \
+             "Sqyre-v${VERSION}-x86_64.AppImage"
 
       - name: Install zip
         run: sudo apt-get update && sudo apt-get install -y zip
 
       - name: Zip Linux binary
         run: |
-          VERSION="${{ steps.version.outputs.VERSION }}"
+          VERSION="${{ needs.version.outputs.version }}"
           zip -9 "sqyre-v${VERSION}-linux-amd64.zip" \
             "sqyre-v${VERSION}-linux-amd64"
 
       - name: Zip Linux AppImage
         run: |
-          VERSION="${{ steps.version.outputs.VERSION }}"
+          VERSION="${{ needs.version.outputs.version }}"
           zip -9 "Sqyre-v${VERSION}-x86_64.AppImage.zip" \
             "Sqyre-v${VERSION}-x86_64.AppImage"
 
@@ -196,33 +223,29 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: linux-binary-zip
-          path: sqyre-v${{ steps.version.outputs.VERSION }}-linux-amd64.zip
+          path: sqyre-v${{ needs.version.outputs.version }}-linux-amd64.zip
 
       - name: Upload Linux AppImage artifact (zipped)
         uses: actions/upload-artifact@v7
         with:
           name: linux-appimage-zip
-          path: Sqyre-v${{ steps.version.outputs.VERSION }}-x86_64.AppImage.zip
+          path: Sqyre-v${{ needs.version.outputs.version }}-x86_64.AppImage.zip
 
   build-windows:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: version
     runs-on: ubuntu-22.04
     permissions:
       contents: read
       packages: write
     outputs:
-      version: ${{ steps.version.outputs.VERSION }}
+      version: ${{ needs.version.outputs.version }}
     steps:
       - uses: actions/checkout@v6
 
-      - name: Set version
-        id: version
-        run: |
-          echo "VERSION=$(date +%Y.%m.%d.%H%M)" >> $GITHUB_OUTPUT
-          echo "FYNE_APP_VERSION=$(date +%Y.%m.%d)" >> $GITHUB_OUTPUT
-
       - name: Sync FyneApp.toml for Fyne packaging (x.y.z only)
         run: |
-          FYNE_VER="${{ steps.version.outputs.FYNE_APP_VERSION }}"
+          FYNE_VER="${{ needs.version.outputs.fyne_app_version }}"
           sed -i 's/^Version = .*/Version = "'"$FYNE_VER"'"/' FyneApp.toml
 
       - name: Set up Go
@@ -231,10 +254,23 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Cache fyne-cross binary
+        id: fyne-cross-bin
+        uses: actions/cache@v6
+        with:
+          path: .cache/go-bin
+          key: fyne-cross-v1.6.2-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
+          restore-keys: |
+            fyne-cross-v1.6.2-${{ runner.os }}-
+
       - name: Install fyne-cross
         run: |
-          go install github.com/fyne-io/fyne-cross@latest
-          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+          mkdir -p .cache/go-bin
+          if [ ! -x .cache/go-bin/fyne-cross ]; then
+            GOBIN="${{ github.workspace }}/.cache/go-bin" \
+              go install github.com/fyne-io/fyne-cross@v1.6.2
+          fi
+          echo "${{ github.workspace }}/.cache/go-bin" >> "$GITHUB_PATH"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -276,23 +312,13 @@ jobs:
 
       - name: Download tessdata for embedding
         if: steps.tessdata-windows.outputs.cache-hit != 'true'
-        run: |
-          mkdir -p internal/assets/tessdata
-          docker run --rm \
-            -v ${{ github.workspace }}/internal/assets/tessdata:/out \
-            fyne-cross-windows:local \
-            bash -c 'cp /usr/local/mingw64/share/tessdata/eng.traineddata /out/ 2>/dev/null || true'
-          if [ ! -f internal/assets/tessdata/eng.traineddata ]; then
-            curl -sL -o internal/assets/tessdata/eng.traineddata \
-              https://github.com/tesseract-ocr/tessdata/raw/main/eng.traineddata
-          fi
+        run: ./scripts/download-tessdata.sh
 
-      # fyne-cross stores downloaded modules/sources under -cache (default ~/.cache/fyne-cross).
       - name: Cache fyne-cross dependencies
         uses: actions/cache@v6
         with:
           path: .cache/fyne-cross
-          key: windows-fyne-cross-${{ hashFiles('go.sum') }}
+          key: windows-fyne-cross-${{ hashFiles('go.mod', 'go.sum') }}
           restore-keys: |
             windows-fyne-cross-
 
@@ -313,14 +339,14 @@ jobs:
             find . -name "*.exe" 2>/dev/null
             exit 1
           fi
-          cp "$EXE" Sqyre-v${{ steps.version.outputs.VERSION }}-windows-amd64.exe
+          cp "$EXE" "Sqyre-v${{ needs.version.outputs.version }}-windows-amd64.exe"
 
       - name: Install zip
         run: sudo apt-get update && sudo apt-get install -y zip
 
       - name: Zip Windows artifact
         run: |
-          VERSION="${{ steps.version.outputs.VERSION }}"
+          VERSION="${{ needs.version.outputs.version }}"
           zip -9 "Sqyre-v${VERSION}-windows-amd64.zip" \
             "Sqyre-v${VERSION}-windows-amd64.exe"
 
@@ -328,9 +354,10 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: windows-artifact-zip
-          path: Sqyre-v${{ steps.version.outputs.VERSION }}-windows-amd64.zip
+          path: Sqyre-v${{ needs.version.outputs.version }}-windows-amd64.zip
 
   release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [build-linux, build-windows]
     runs-on: ubuntu-22.04
     permissions:
