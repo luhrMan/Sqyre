@@ -25,6 +25,19 @@ func displayBoundsAbsImpl(displayIndex int) image.Rectangle {
 	return rel
 }
 
+func numDisplaysImpl() int {
+	c, err := xgb.NewConn()
+	if err == nil {
+		defer c.Close()
+		if err := xinerama.Init(c); err == nil {
+			if reply, err := xinerama.QueryScreens(c).Reply(); err == nil && reply.Number > 0 {
+				return int(reply.Number)
+			}
+		}
+	}
+	return screenshot.NumActiveDisplays()
+}
+
 func virtualBoundsImpl() image.Rectangle {
 	if r, ok := headlessVirtualBounds(); ok {
 		return r
