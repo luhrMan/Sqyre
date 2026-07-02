@@ -3,25 +3,18 @@ package actiondialog
 import (
 	"Sqyre/internal/config"
 	"Sqyre/internal/models/actions"
-	"Sqyre/internal/screen"
 	"Sqyre/internal/services"
-	"os"
 	"Sqyre/ui/custom_widgets"
 	"fmt"
-	"image"
-	"image/color"
 	"strconv"
 	"strings"
 
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
-	"github.com/go-vgo/robotgo"
-	"gocv.io/x/gocv"
 )
 
 
@@ -44,15 +37,25 @@ func createWaitDialogContent(action *actions.Wait) (fyne.CanvasObject, func()) {
 		timeSlider.SetValue(waitSliderMax)
 	}
 	timeSlider.OnChanged = func(f float64) {
-		timeEntry.Entry.SetText(fmt.Sprintf("%.0f", f))
-		timeEntry.Revalidate()
+		// Do not push slider values into the entry while it is focused; that
+		// races with typing and overwrites partial input.
+		if timeEntry.Entry.HasFocus() {
+			return
+		}
+		text := fmt.Sprintf("%.0f", f)
+		if timeEntry.Entry.Text != text {
+			timeEntry.Entry.SetText(text)
+			timeEntry.Revalidate()
+		}
 	}
 	timeEntry.OnChanged = func(s string) {
 		val, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
 		if err != nil || val < 0 || val > waitSliderMax {
 			return
 		}
-		timeSlider.SetValue(val)
+		if timeSlider.Value != val {
+			timeSlider.SetValue(val)
+		}
 	}
 
 	content := widget.NewForm(
@@ -77,28 +80,11 @@ func createWaitDialogContent(action *actions.Wait) (fyne.CanvasObject, func()) {
 	return content, saveFunc
 }
 
-// pointCoordToInt returns an int for preview drawing; literal ints are used, variable refs (string) yield 0.
-
-func pointCoordToInt(v any) int {
-	switch val := v.(type) {
-	case int:
-		return val
-	case float64:
-		return int(val)
-	default:
-		return 0
-	}
-}
-
 func createMoveDialogContent(action *actions.Move) (fyne.CanvasObject, func()) {
 	tempPoint := action.Point
 
-	pointPreviewImage := canvas.NewImageFromImage(nil)
-	pointPreviewImage.FillMode = canvas.ImageFillContain
-	pointPreviewImage.SetMinSize(previewMin)
-
 	coordsLabel := ttwidget.NewLabel("")
-	coordsLabel.SetToolTip("Current X/Y coordinates for the point (numbers or ${variable} expressions). Pick a saved point below or use the preview.")
+	coordsLabel.SetToolTip("Current X/Y coordinates for the point (numbers or ${variable} expressions). Pick a saved point below.")
 	updateCoordsLabel := func(ref actions.CoordinateRef) {
 		if ref.IsEmpty() {
 			coordsLabel.SetText("No point selected")
@@ -112,85 +98,12 @@ func createMoveDialogContent(action *actions.Move) (fyne.CanvasObject, func()) {
 		coordsLabel.SetText(fmt.Sprintf("%s — X: %v, Y: %v", ref.DisplayLabel(), pt.X, pt.Y))
 	}
 
-	updatePreview := func(ref actions.CoordinateRef) {
-		if ref.IsEmpty() {
-			pointPreviewImage.Image = nil
-			pointPreviewImage.Refresh()
-			return
-		}
-		pt, err := services.LookupPoint(ref, config.MainMonitorSizeString)
-		if err != nil {
-			pointPreviewImage.Image = nil
-			pointPreviewImage.Refresh()
-			return
-		}
-
-		px := pointCoordToInt(pt.X)
-		py := pointCoordToInt(pt.Y)
-
-		vb := screen.VirtualBounds()
-		if px < vb.Min.X || py < vb.Min.Y || px > vb.Max.X || py > vb.Max.Y {
-			pointPreviewImage.Image = nil
-			pointPreviewImage.Refresh()
-			return
-		}
-
-		if config.IsUITestMode() || os.Getenv("DISPLAY") == "" {
-			pointPreviewImage.Image = nil
-			pointPreviewImage.Refresh()
-			return
-		}
-
-		defer func() {
-			if r := recover(); r != nil {
-				services.LogPanicToFile(r, "Action dialog: point preview capture")
-				pointPreviewImage.Image = nil
-				pointPreviewImage.Refresh()
-			}
-		}()
-
-		captureImg, err := robotgo.CaptureImg(vb.Min.X, vb.Min.Y, vb.Dx(), vb.Dy())
-		if err != nil || captureImg == nil {
-			pointPreviewImage.Image = nil
-			pointPreviewImage.Refresh()
-			return
-		}
-
-		mat, err := gocv.ImageToMatRGB(captureImg)
-		if err != nil {
-			pointPreviewImage.Image = nil
-			pointPreviewImage.Refresh()
-			return
-		}
-		defer mat.Close()
-
-		center := image.Point{X: px - vb.Min.X, Y: py - vb.Min.Y}
-		redColor := color.RGBA{R: 255, A: 255}
-
-		gocv.Circle(&mat, center, 8, redColor, 2)
-
-		gocv.Line(&mat, image.Point{X: center.X - 15, Y: center.Y}, image.Point{X: center.X + 15, Y: center.Y}, redColor, 2)
-		gocv.Line(&mat, image.Point{X: center.X, Y: center.Y - 15}, image.Point{X: center.X, Y: center.Y + 15}, redColor, 2)
-
-		previewImg, err := mat.ToImage()
-		if err != nil {
-			pointPreviewImage.Image = nil
-			pointPreviewImage.Refresh()
-			return
-		}
-
-		pointPreviewImage.Image = previewImg
-		pointPreviewImage.Refresh()
-	}
-
 	pointsSearchbar, pointsList := buildPointsListWithSearchbar(func(ref actions.CoordinateRef) {
 		tempPoint = ref
 		updateCoordsLabel(tempPoint)
-		updatePreview(tempPoint)
 	}, tempPoint)
 
 	updateCoordsLabel(tempPoint)
-	updatePreview(tempPoint)
 
 	smoothForm := newSmoothMoveForm(
 		action.Smooth,
@@ -199,18 +112,9 @@ func createMoveDialogContent(action *actions.Move) (fyne.CanvasObject, func()) {
 		action.EffectiveSmoothDelayMs(),
 	)
 
-	previewLbl := ttwidget.NewLabel("Preview")
-	previewLbl.SetToolTip("Screen snapshot with a crosshair when X/Y are literal numbers (not variables). Variable coordinates skip preview.")
-
 	smoothSettings := widget.NewForm(smoothForm.formItems()...)
 
 	pointsScroll := scrollWithMin(pointsList, fyne.NewSize(splitPanelMinW, accordionPanelMinH))
-
-	moveSplit := container.NewHSplit(
-		container.NewBorder(pointsSearchbar, nil, nil, nil, pointsScroll),
-		container.NewBorder(previewLbl, nil, nil, nil, pointPreviewImage),
-	)
-	moveSplit.SetOffset(0.3)
 
 	content := container.NewBorder(
 		container.NewVBox(
@@ -218,7 +122,7 @@ func createMoveDialogContent(action *actions.Move) (fyne.CanvasObject, func()) {
 			smoothSettings,
 		),
 		nil, nil, nil,
-		moveSplit,
+		container.NewBorder(pointsSearchbar, nil, nil, nil, pointsScroll),
 	)
 
 	saveFunc := func() {

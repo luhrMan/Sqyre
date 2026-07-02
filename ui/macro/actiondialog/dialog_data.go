@@ -3,6 +3,7 @@ package actiondialog
 import (
 	"Sqyre/internal/models/actions"
 	"Sqyre/internal/models/repositories"
+	"Sqyre/ui/completionentry"
 	"Sqyre/ui/custom_widgets"
 	"fmt"
 	"slices"
@@ -314,30 +315,42 @@ func createRunMacroDialogContent(action *actions.RunMacro) (fyne.CanvasObject, f
 	if cur := currentMacroName(); cur != "" {
 		macroNames = slices.DeleteFunc(macroNames, func(name string) bool { return name == cur })
 	}
-	if len(macroNames) == 0 {
-		macroNames = []string{""}
-	}
-	macroSelect := ttwidget.NewSelect(macroNames, nil)
-	if action.MacroName != "" && !slices.Contains(macroNames, action.MacroName) {
-		if cur := currentMacroName(); action.MacroName != "" && action.MacroName == cur && cur != "" {
-			macroNames = append([]string{""}, macroNames...)
-			macroSelect.Options = macroNames
-			macroSelect.SetSelected("")
+
+	macroEntry := completionentry.NewCompletionEntry(macroNames)
+	macroEntry.SetPlaceHolder("Start typing a macro name...")
+	macroEntry.SetText(action.MacroName)
+	macroEntry.OnChanged = func(text string) {
+		filtered := filterRunMacroCompletionOptions(text, macroNames)
+		macroEntry.SetOptions(filtered)
+		if len(filtered) > 0 {
+			macroEntry.ShowCompletion()
 		} else {
-			macroSelect.Options = append([]string{action.MacroName}, macroNames...)
-			macroSelect.SetSelected(action.MacroName)
+			macroEntry.HideCompletion()
 		}
-	} else {
-		macroSelect.SetSelected(action.MacroName)
 	}
 
 	content := widget.NewForm(
-		formHint("Macro to run:", macroSelect, "Choose which saved macro executes when this action runs. The current macro cannot call itself (it is omitted from this list). The called macro uses its own variable store; variables are not shared with the caller."),
+		formHint("Macro to run:", macroEntry, "Choose which saved macro executes when this action runs. The current macro cannot call itself (it is omitted from this list). The called macro uses its own variable store; variables are not shared with the caller."),
 	)
 
 	saveFunc := func() {
-		action.MacroName = macroSelect.Selected
+		macroEntry.HideCompletion()
+		action.MacroName = strings.TrimSpace(macroEntry.Text)
 	}
 
 	return content, saveFunc
+}
+
+func filterRunMacroCompletionOptions(query string, macroNames []string) []string {
+	q := strings.ToLower(strings.TrimSpace(query))
+	if q == "" {
+		return slices.Clone(macroNames)
+	}
+	filtered := make([]string, 0, len(macroNames))
+	for _, name := range macroNames {
+		if strings.Contains(strings.ToLower(name), q) {
+			filtered = append(filtered, name)
+		}
+	}
+	return filtered
 }

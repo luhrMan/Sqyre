@@ -22,6 +22,12 @@ func DecodeMacroFromMap(data any) (*models.Macro, error) {
 	if gd := rawMap["globaldelay"]; gd != nil {
 		macro.GlobalDelay = intFromAny(gd)
 	}
+	if kd := rawMap["keyboarddelay"]; kd != nil {
+		macro.KeyboardDelay = intFromAny(kd)
+	}
+	if md := rawMap["mousedelay"]; md != nil {
+		macro.MouseDelay = intFromAny(md)
+	}
 	macro.Hotkey = stringSliceFromAny(rawMap["hotkey"])
 	if ht, ok := rawMap["hotkey_trigger"].(string); ok {
 		macro.HotkeyTrigger = ht

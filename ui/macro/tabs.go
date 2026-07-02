@@ -2,6 +2,7 @@ package macro
 
 import (
 	"log"
+	"slices"
 
 	"Sqyre/ui/completionentry"
 	"Sqyre/ui/custom_widgets"
@@ -10,6 +11,7 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 )
 
 type MacroTabs struct {
@@ -17,19 +19,27 @@ type MacroTabs struct {
 
 	BoundMacroListWidget  *widget.List
 	MacroNameEntry        *widget.Entry
-	BoundGlobalDelayEntry *custom_widgets.Incrementer
-	globalDelayMin        int
-	globalDelayMax        int
+	BoundGlobalDelayEntry    *custom_widgets.Incrementer
+	BoundKeyboardDelayEntry  *custom_widgets.Incrementer
+	BoundMouseDelayEntry     *custom_widgets.Incrementer
+	delayMin                 int
+	delayMax                 int
+	MacroDelayBtn            *ttwidget.Button
+	macroDelayPopup          *widget.PopUp
 	MacroHotkeyLabel      *widget.Label
 	MacroHotkeyRecordBtn  *widget.Button
 	MacroHotkeyClearBtn   *widget.Button
 	HotkeyTriggerRadio    *widget.RadioGroup
 	MacroTagEntry         *completionentry.CompletionEntry
 	MacroTagSubmitBtn     *widget.Button
+	MacroTagsBtn          *ttwidget.Button
 	MacroTagsContainer    *fyne.Container
+	macroTagsPopup        *widget.PopUp
 
 	// OnHistoryButtonsSync updates undo/redo toolbar button enabled state.
 	OnHistoryButtonsSync func()
+	// OnTabMoveButtonsSync updates tab move button enabled state.
+	OnTabMoveButtonsSync func()
 }
 
 func NewMacroTabs() *MacroTabs {
@@ -41,25 +51,32 @@ func NewMacroTabs() *MacroTabs {
 	tagEntry.PlaceHolder = "Add tag…"
 	tagSubmitBtn := widget.NewButtonWithIcon("", theme.ContentAddIcon(), nil)
 	tagSubmitBtn.Importance = widget.MediumImportance
+	tagsBtn := ttwidget.NewButtonWithIcon("", theme.InfoIcon(), nil)
+
+	delayBtn := ttwidget.NewButtonWithIcon("", theme.HistoryIcon(), nil)
 
 	t := &MacroTabs{
 		BoundMacroListWidget: &widget.List{},
 		MacroNameEntry:       widget.NewEntry(),
-		globalDelayMin:       0,
-		globalDelayMax:       1000,
+		delayMin:             0,
+		delayMax:             1000,
+		MacroDelayBtn:        delayBtn,
 		MacroHotkeyLabel:     hkLabel,
 		MacroHotkeyRecordBtn: widget.NewButtonWithIcon("", theme.MediaRecordIcon(), nil),
 		MacroHotkeyClearBtn:  widget.NewButtonWithIcon("", theme.ContentClearIcon(), nil),
 		HotkeyTriggerRadio:   widget.NewRadioGroup([]string{"On press", "On release"}, nil),
 		MacroTagEntry:        tagEntry,
 		MacroTagSubmitBtn:    tagSubmitBtn,
+		MacroTagsBtn:         tagsBtn,
 		MacroTagsContainer:   newMacroTagsContainer(),
 	}
 	t.MacroHotkeyClearBtn.Importance = widget.LowImportance
 	t.HotkeyTriggerRadio.Horizontal = true
 	t.HotkeyTriggerRadio.Required = true
 	t.HotkeyTriggerRadio.SetSelected("On press")
-	t.BoundGlobalDelayEntry = custom_widgets.NewIncrementerWithEntry(0, 1, &t.globalDelayMin, &t.globalDelayMax)
+	t.BoundGlobalDelayEntry = custom_widgets.NewIncrementerWithEntry(0, 1, &t.delayMin, &t.delayMax)
+	t.BoundKeyboardDelayEntry = custom_widgets.NewIncrementerWithEntry(0, 1, &t.delayMin, &t.delayMax)
+	t.BoundMouseDelayEntry = custom_widgets.NewIncrementerWithEntry(0, 1, &t.delayMin, &t.delayMax)
 	t.ExtendBaseWidget(t)
 
 	return t
@@ -147,4 +164,44 @@ func (mtabs *MacroTabs) SelectedMacroContent() *MacroTabContent {
 		return nil
 	}
 	return ensureMacroTabContent(mtabs.Selected().Content)
+}
+
+// CanMoveSelectedTab reports whether the selected tab can move by delta slots.
+func (mtabs *MacroTabs) CanMoveSelectedTab(delta int) bool {
+	if delta == 0 || len(mtabs.Items) < 2 {
+		return false
+	}
+	from := mtabs.SelectedIndex()
+	if from < 0 || from >= len(mtabs.Items) {
+		return false
+	}
+	to := from + delta
+	return to >= 0 && to < len(mtabs.Items)
+}
+
+// MoveSelectedTab reorders the selected tab by delta slots.
+func (mtabs *MacroTabs) MoveSelectedTab(delta int) bool {
+	if !mtabs.CanMoveSelectedTab(delta) {
+		return false
+	}
+	from := mtabs.SelectedIndex()
+	to := from + delta
+	selected := mtabs.Selected()
+	if selected == nil {
+		return false
+	}
+	items := slices.Clone(mtabs.Items)
+	item := items[from]
+	items = append(items[:from], items[from+1:]...)
+	if to >= len(items) {
+		items = append(items, item)
+	} else {
+		items = append(items[:to], append([]*container.TabItem{item}, items[to:]...)...)
+	}
+	mtabs.SetItems(items)
+	mtabs.Select(selected)
+	if mtabs.OnTabMoveButtonsSync != nil {
+		mtabs.OnTabMoveButtonsSync()
+	}
+	return true
 }

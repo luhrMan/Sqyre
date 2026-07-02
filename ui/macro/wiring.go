@@ -66,6 +66,7 @@ func SetMacroUi(d WireDeps) {
 	}
 	setMacroSelect(d.Mui.MacroSelectButton, d)
 	wireMacroTagHandlers(d.Mui.MTabs)
+	wireMacroDelayHandlers(d.Mui.MTabs)
 	syncMacroToolbarFieldsFromSelection()
 	registerMacroTreeShortcuts(d)
 }
@@ -129,6 +130,27 @@ func OpenMacroTabs(names []string) {
 	}
 }
 
+// CloseMacroTabs closes tabs for each named macro that is currently open.
+func CloseMacroTabs(names []string) {
+	if len(names) == 0 {
+		return
+	}
+	mtabs := activeWire.Mui.MTabs
+	toClose := make(map[string]bool, len(names))
+	for _, name := range names {
+		toClose[name] = true
+	}
+	var items []*container.TabItem
+	for _, ti := range mtabs.Items {
+		if toClose[ti.Text] {
+			items = append(items, ti)
+		}
+	}
+	for _, ti := range items {
+		mtabs.Remove(ti)
+	}
+}
+
 func addMacroTab(m *models.Macro, eagerBuild bool) {
 	mtabs := activeWire.Mui.MTabs
 	for _, d := range mtabs.Items {
@@ -181,11 +203,18 @@ func openMacroTabForLog(m *models.Macro) {
 func syncMacroToolbarFieldsFromSelection() {
 	mtabs := activeWire.Mui.MTabs
 	st := mtabs.SelectedTab()
+	if mtabs.macroDelayPopup != nil {
+		mtabs.macroDelayPopup.Hide()
+		mtabs.macroDelayPopup = nil
+	}
 	if st == nil || st.Macro == nil {
 		return
 	}
 	mtabs.MacroNameEntry.SetText(st.Macro.Name)
 	mtabs.BoundGlobalDelayEntry.SetValue(st.Macro.GlobalDelay)
+	mtabs.BoundKeyboardDelayEntry.SetValue(st.Macro.KeyboardDelay)
+	mtabs.BoundMouseDelayEntry.SetValue(st.Macro.MouseDelay)
+	updateMacroDelayButton(mtabs, st.Macro)
 	if len(st.Macro.Hotkey) == 0 {
 		mtabs.MacroHotkeyLabel.SetText("—")
 	} else {
@@ -236,11 +265,13 @@ func setMtabSettingsAndWidgets(d WireDeps) {
 		if mtabs.OnHistoryButtonsSync != nil {
 			mtabs.OnHistoryButtonsSync()
 		}
+		if mtabs.OnTabMoveButtonsSync != nil {
+			mtabs.OnTabMoveButtonsSync()
+		}
 	}
 
 	mtabs.OnClosed = func(ti *container.TabItem) {
-		m, err := repositories.MacroRepo().Get(ti.Text)
-		if err == nil {
+		if m := macroFromTabContent(ti.Content); m != nil {
 			macrohotkey.UnregisterMacroHotkey(m)
 		}
 		mtabs.SelectIndex(0)
@@ -248,6 +279,7 @@ func setMtabSettingsAndWidgets(d WireDeps) {
 		// (common when closing the first/selected tab), so refresh toolbar fields here.
 		refreshMacroTabSelection(mtabs.Selected())
 		custom_widgets.RefreshListPreservingScroll(mtabs.BoundMacroListWidget)
+		SaveOpenMacros()
 	}
 
 	mtabs.OnUnselected = func(_ *container.TabItem) {
@@ -344,14 +376,6 @@ func setMtabSettingsAndWidgets(d WireDeps) {
 
 		custom_widgets.RefreshListPreservingScroll(mtabs.BoundMacroListWidget)
 		mtabs.Refresh()
-	}
-	mtabs.BoundGlobalDelayEntry.OnChanged = func(gd int) {
-		mt := mtabs.SelectedTab()
-		if mt == nil {
-			return
-		}
-		mt.Macro.GlobalDelay = gd
-		repositories.MacroRepo().Set(mt.Macro.Name, mt.Macro)
 	}
 }
 

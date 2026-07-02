@@ -259,6 +259,29 @@ func ConstructMacroUi(mui *MacroUi, boundLocXLabel, boundLocYLabel *widget.Label
 		}
 		go services.ExecuteMacroWithLogging(st.Macro)
 	})
+	moveTabLeftButton := ttwidget.NewButtonWithIcon("", theme.NavigateBackIcon(), func() {
+		if mui.MTabs.MoveSelectedTab(-1) {
+			SaveOpenMacros()
+		}
+	})
+	moveTabRightButton := ttwidget.NewButtonWithIcon("", theme.NavigateNextIcon(), func() {
+		if mui.MTabs.MoveSelectedTab(1) {
+			SaveOpenMacros()
+		}
+	})
+	syncTabMoveButtons := func() {
+		if mui.MTabs.CanMoveSelectedTab(-1) {
+			moveTabLeftButton.Enable()
+		} else {
+			moveTabLeftButton.Disable()
+		}
+		if mui.MTabs.CanMoveSelectedTab(1) {
+			moveTabRightButton.Enable()
+		} else {
+			moveTabRightButton.Disable()
+		}
+	}
+	mui.MTabs.OnTabMoveButtonsSync = syncTabMoveButtons
 	pauseStatusLabel := widget.NewLabel("")
 	pauseStatusLabel.Hide()
 	pauseStatusLabel.Wrapping = fyne.TextWrapOff
@@ -310,7 +333,10 @@ func ConstructMacroUi(mui *MacroUi, boundLocXLabel, boundLocYLabel *widget.Label
 	expandAllBtn.SetToolTip("expand all branches")
 	collapseAllBtn.SetToolTip("collapse all branches")
 	playMacroButton.SetToolTip("start macro execution")
+	moveTabLeftButton.SetToolTip("move macro tab left")
+	moveTabRightButton.SetToolTip("move macro tab right")
 	syncHistoryButtons()
+	syncTabMoveButtons()
 
 	mui.MacroToolbars.TopToolbar =
 		container.NewGridWithColumns(2,
@@ -330,6 +356,8 @@ func ConstructMacroUi(mui *MacroUi, boundLocXLabel, boundLocYLabel *widget.Label
 				container.NewHBox(
 					playMacroButton,
 					services.MacroActiveIndicator(),
+					moveTabLeftButton,
+					moveTabRightButton,
 					widget.NewLabel("Macro Name:"),
 				),
 				pauseStatusLabel,
@@ -352,14 +380,16 @@ func ConstructMacroUi(mui *MacroUi, boundLocXLabel, boundLocYLabel *widget.Label
 			),
 		)
 
-	globaldelaytt := ttwidget.NewIcon(theme.HistoryIcon())
-	globaldelaytt.SetToolTip("delay between actions (ms)")
-	bottomLeftContent := container.NewHBox(globaldelaytt, mui.MTabs.BoundGlobalDelayEntry, mousePosition)
+	bottomLeftContent := container.NewHBox(mui.MTabs.MacroDelayBtn, mousePosition)
 	bottomLeft := wrapFrame(container.NewPadded(bottomLeftContent))
 	bottomCenterContent := container.NewBorder(nil, nil,
 		widget.NewLabel("Tags:"),
 		mui.MTabs.MacroTagSubmitBtn,
-		newMacroTagEntryRow(mui.MTabs.MacroTagEntry, mui.MTabs.MacroTagsContainer),
+		container.NewBorder(nil, nil,
+			mui.MTabs.MacroTagsBtn,
+			nil,
+			mui.MTabs.MacroTagEntry,
+		),
 	)
 	bottomCenter := wrapFrame(container.NewPadded(bottomCenterContent))
 	bottomRightContent := container.NewHBox(
