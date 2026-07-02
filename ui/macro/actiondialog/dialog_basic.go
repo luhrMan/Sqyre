@@ -5,6 +5,7 @@ import (
 	"Sqyre/internal/models/actions"
 	"Sqyre/internal/screen"
 	"Sqyre/internal/services"
+	"os"
 	"Sqyre/ui/custom_widgets"
 	"fmt"
 	"image"
@@ -129,6 +130,12 @@ func createMoveDialogContent(action *actions.Move) (fyne.CanvasObject, func()) {
 
 		vb := screen.VirtualBounds()
 		if px < vb.Min.X || py < vb.Min.Y || px > vb.Max.X || py > vb.Max.Y {
+			pointPreviewImage.Image = nil
+			pointPreviewImage.Refresh()
+			return
+		}
+
+		if config.IsUITestMode() || os.Getenv("DISPLAY") == "" {
 			pointPreviewImage.Image = nil
 			pointPreviewImage.Refresh()
 			return
