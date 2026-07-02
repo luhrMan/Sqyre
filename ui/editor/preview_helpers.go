@@ -6,6 +6,7 @@ import (
 	"Sqyre/internal/models"
 	"Sqyre/internal/screen"
 	"Sqyre/internal/vision"
+	"Sqyre/ui/desktopview"
 	"fmt"
 	"image"
 
@@ -26,7 +27,7 @@ type editorPreviewPanel struct {
 
 func newEditorPreviewPanel() *editorPreviewPanel {
 	img := canvas.NewImageFromImage(nil)
-	img.FillMode = canvas.ImageFillContain
+	img.FillMode = desktopview.PreviewSnapshotFill
 	img.SetMinSize(fyne.NewSize(config.ImagePreviewMinWidth, config.ImagePreviewMinHeight))
 
 	errLbl := widget.NewLabel("")
@@ -110,9 +111,7 @@ func resolveSearchAreaBounds(prefix string, sa *models.SearchArea, b searchAreaB
 }
 
 func captureVirtualDesktop(drawOverlay func(*gocv.Mat, image.Rectangle)) (image.Image, error) {
-	vb := screen.VirtualBounds()
-
-	captureImg, err := macro.CaptureRect(vb.Min.X, vb.Min.Y, vb.Dx(), vb.Dy())
+	captureImg, vb, err := macro.CaptureVirtualDesktop()
 	if err != nil {
 		return nil, fmt.Errorf("error capturing image: %w", err)
 	}
