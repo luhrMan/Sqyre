@@ -1,7 +1,6 @@
 package recording
 
 import (
-	"errors"
 	"image"
 	"image/color"
 	"image/draw"
@@ -9,8 +8,9 @@ import (
 	"sync"
 	"time"
 
-	"Sqyre/internal/screen"
+	"Sqyre/internal/capture"
 	"Sqyre/internal/services"
+	"Sqyre/ui/desktopview"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -18,10 +18,7 @@ import (
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
-	"github.com/go-vgo/robotgo"
 )
-
-var errCaptureNil = errors.New("screen capture returned nil image")
 
 // recordingMouseLayer sits on top of the overlay stack and receives mouse clicks
 // via Fyne (overlay window has focus) instead of a global low-level hook.
@@ -72,47 +69,136 @@ func (s *selectionRectLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
 	return fyne.NewSize(0, 0)
 }
 
-func screenPxToCanvas(win fyne.Window, deltaPx int) float32 {
-	scale := win.Canvas().Scale()
-	if scale <= 0 {
-		scale = 1
-	}
-	return float32(deltaPx) / scale
-}
-
 type fyneDesktopOverlay struct {
-	win          fyne.Window
+	win           fyne.Window
+	displayIndex  int
 	desktopBounds image.Rectangle
-	bgImage      *canvas.Image
-	widthPx      int
-	heightPx     int
-	selLayout    *selectionRectLayout
-	selRefresher interface{ Refresh() }
-	stopPosition chan struct{}
+	bgImage       *canvas.Image
+	widthPx       int
+	heightPx      int
+	selLayout     *selectionRectLayout
+	selRefresher  interface{ Refresh() }
+	stopPosition  chan struct{}
 }
 
-func captureVirtualDesktop(vb image.Rectangle) (image.Image, error) {
-	img, err := robotgo.CaptureImg(vb.Min.X, vb.Min.Y, vb.Dx(), vb.Dy())
-	if err != nil {
-		return nil, err
+func logOverlayWindowDiagnostics(overlays []*fyneDesktopOverlay) {
+	if !capture.OverlayDiagnosticsEnabled() {
+		return
 	}
-	if img == nil {
-		return nil, errCaptureNil
+	for _, o := range overlays {
+		if o == nil || o.win == nil {
+			continue
+		}
+		sz := o.win.Canvas().Size()
+		log.Printf(
+			"overlay window diag: display=%d bounds=%v monitor_px=%dx%d canvas_size=%.1fx%.1f scale=%.3f",
+			o.displayIndex, o.desktopBounds, o.widthPx, o.heightPx, sz.Width, sz.Height, desktopview.CanvasScale(o.win),
+		)
 	}
-	b := img.Bounds()
-	rgba := image.NewRGBA(image.Rect(0, 0, b.Dx(), b.Dy()))
-	draw.Draw(rgba, rgba.Bounds(), img, b.Min, draw.Src)
-	return rgba, nil
+}
+
+func composeOverlayImage(monitors []capture.MonitorPlan, captures map[int]image.Image) (image.Image, image.Rectangle, bool) {
+	var union image.Rectangle
+	have := false
+	for _, mon := range monitors {
+		if img, ok := captures[mon.DisplayIndex]; ok && img != nil {
+			union = union.Union(mon.DesktopBounds)
+			have = true
+		}
+	}
+	if !have || union.Empty() || union.Dx() <= 0 || union.Dy() <= 0 {
+		return nil, image.Rectangle{}, false
+	}
+	out := image.NewRGBA(image.Rect(0, 0, union.Dx(), union.Dy()))
+	for _, mon := range monitors {
+		img, ok := captures[mon.DisplayIndex]
+		if !ok || img == nil {
+			continue
+		}
+		dstMin := image.Pt(mon.DesktopBounds.Min.X-union.Min.X, mon.DesktopBounds.Min.Y-union.Min.Y)
+		dst := image.Rectangle{Min: dstMin, Max: dstMin.Add(img.Bounds().Size())}
+		draw.Draw(out, dst, img, img.Bounds().Min, draw.Src)
+	}
+	return out, union, true
+}
+
+func newOverlayWindow(
+	app fyne.App,
+	captureImg image.Image,
+	desktopBounds image.Rectangle,
+	displayIndex int,
+	withSelectionRect bool,
+	onMouseDown func(*desktop.MouseEvent),
+) *fyneDesktopOverlay {
+	win := app.NewWindow("")
+	win.SetPadded(false)
+	win.SetFixedSize(true)
+	widthPx := desktopBounds.Dx()
+	heightPx := desktopBounds.Dy()
+	win.Resize(fyne.NewSize(
+		desktopview.PhysicalToCanvas(win, widthPx),
+		desktopview.PhysicalToCanvas(win, heightPx),
+	))
+	bgImage := desktopview.NewOverlaySnapshotImage(captureImg, win, widthPx, heightPx)
+
+	var selLayout *selectionRectLayout
+	var selRefresher interface{ Refresh() }
+	var selectionLayer fyne.CanvasObject
+	if withSelectionRect {
+		selLayout = &selectionRectLayout{}
+		selRect := canvas.NewRectangle(color.Transparent)
+		selRect.StrokeColor = color.NRGBA{R: 255, G: 200, B: 0, A: 255}
+		selRect.StrokeWidth = 2
+		selContainer := container.New(selLayout, selRect)
+		selectionLayer = selContainer
+		selRefresher = selContainer
+	} else {
+		selectionLayer = layout.NewSpacer()
+	}
+	var stack fyne.CanvasObject
+	if onMouseDown != nil {
+		stack = container.NewMax(bgImage, selectionLayer, newRecordingMouseLayer(onMouseDown))
+	} else {
+		stack = container.NewMax(bgImage, selectionLayer)
+	}
+	win.SetContent(stack)
+	return &fyneDesktopOverlay{
+		win:           win,
+		displayIndex:  displayIndex,
+		desktopBounds: desktopBounds,
+		bgImage:       bgImage,
+		widthPx:       widthPx,
+		heightPx:      heightPx,
+		selLayout:     selLayout,
+		selRefresher:  selRefresher,
+		stopPosition:  make(chan struct{}),
+	}
+}
+
+func absoluteRectToOverlayLocal(leftX, topY, rightX, bottomY int, bounds image.Rectangle) (left, top, right, bottom float32, ok bool) {
+	local, ok := desktopview.ClipAbsoluteRectToVirtualLocal(leftX, topY, rightX, bottomY, bounds)
+	if !ok {
+		return 0, 0, 0, 0, false
+	}
+	return float32(local.Min.X), float32(local.Min.Y), float32(local.Max.X), float32(local.Max.Y), true
+}
+
+func mapOverlayPxToCanvas(o *fyneDesktopOverlay, pxX, pxY float32) (float32, float32) {
+	if o == nil || o.win == nil || o.widthPx <= 0 || o.heightPx <= 0 {
+		return pxX, pxY
+	}
+	sz := o.win.Canvas().Size()
+	if sz.Width <= 0 || sz.Height <= 0 {
+		return pxX, pxY
+	}
+	return pxX * (sz.Width / float32(o.widthPx)), pxY * (sz.Height / float32(o.heightPx))
 }
 
 func (o *fyneDesktopOverlay) resizeBackground() {
 	if o.bgImage == nil {
 		return
 	}
-	lw := screenPxToCanvas(o.win, o.widthPx)
-	lh := screenPxToCanvas(o.win, o.heightPx)
-	o.bgImage.SetMinSize(fyne.NewSize(lw, lh))
-	o.bgImage.Refresh()
+	desktopview.ResizeOverlaySnapshot(o.bgImage, o.win, o.widthPx, o.heightPx)
 }
 
 func (o *fyneDesktopOverlay) reposition() {
@@ -134,16 +220,8 @@ func (o *fyneDesktopOverlay) startPositionLoop() {
 				fyne.Do(o.reposition)
 			}
 		}
-		ticker := time.NewTicker(250 * time.Millisecond)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-o.stopPosition:
-				return
-			case <-ticker.C:
-				fyne.Do(o.reposition)
-			}
-		}
+		// Stop after initial retries to avoid continuous native reconfiguration
+		// that can disrupt compositor rendering on some multi-monitor setups.
 	})
 }
 
@@ -153,94 +231,130 @@ func showFullScreenOverlay(withSelectionRect bool, onClosed func(), onMouseDown 
 		return func() {}, func(int, int, int, int) {}
 	}
 
-	vb := screen.VirtualBounds()
-	if vb.Empty() || vb.Dx() <= 0 || vb.Dy() <= 0 {
-		log.Printf("overlay: invalid virtual bounds %v", vb)
+	plan, planErr := capture.SessionPlanForOverlay()
+	if planErr != nil {
+		log.Printf("overlay: capture probe failed: %v", planErr)
+		return func() {}, func(int, int, int, int) {}
+	}
+	session, sessionErr := capture.NewSession(plan)
+	if sessionErr != nil {
+		log.Printf("overlay: capture session init failed: %v", sessionErr)
 		return func() {}, func(int, int, int, int) {}
 	}
 
-	captureImg, err := captureVirtualDesktop(vb)
-	if err != nil {
-		log.Printf("overlay: virtual desktop capture failed: %v", err)
-		return func() {}, func(int, int, int, int) {}
+	hiddenAppWindows := hideAppWindowsDuringRecording(app)
+	monitorCaptures := make(map[int]image.Image, len(plan.Monitors))
+	diag := capture.OverlayDiagnosticsEnabled()
+	for _, mon := range plan.Monitors {
+		captureImg, source, err := capture.OverlayMonitorImage(plan, session, mon.DisplayIndex)
+		if diag {
+			log.Printf("overlay source diag: display=%d source=%s", mon.DisplayIndex, source)
+		}
+		if err != nil {
+			log.Printf("overlay: capture failed display=%d backend=%s: %v", mon.DisplayIndex, plan.Backend, err)
+			continue
+		}
+		if captureImg == nil {
+			continue
+		}
+		monitorCaptures[mon.DisplayIndex] = captureImg
+	}
+	if diag {
+		log.Printf("overlay source diag: backend=%s per_monitor=%v", plan.Backend, !useVirtualDesktopOverlay())
 	}
 
-	w, h := vb.Dx(), vb.Dy()
-	win := app.NewWindow("")
-	win.SetPadded(false)
-	win.SetFixedSize(true)
-
-	bgImage := canvas.NewImageFromImage(captureImg)
-	bgImage.FillMode = canvas.ImageFillStretch
-	bgImage.SetMinSize(fyne.NewSize(float32(w), float32(h)))
-
-	var selLayout *selectionRectLayout
-	var selRefresher interface{ Refresh() }
-	var selectionLayer fyne.CanvasObject
-	if withSelectionRect {
-		selLayout = &selectionRectLayout{}
-		selRect := canvas.NewRectangle(color.Transparent)
-		selRect.StrokeColor = color.NRGBA{R: 255, G: 200, B: 0, A: 255}
-		selRect.StrokeWidth = 2
-		selContainer := container.New(selLayout, selRect)
-		selectionLayer = selContainer
-		selRefresher = selContainer
+	var overlays []*fyneDesktopOverlay
+	if useVirtualDesktopOverlay() {
+		composedImg, unionBounds, ok := composeOverlayImage(plan.Monitors, monitorCaptures)
+		if !ok {
+			showAppWindows(hiddenAppWindows)
+			log.Printf("overlay: no overlay windows built")
+			return func() {}, func(int, int, int, int) {}
+		}
+		overlays = append(overlays, newOverlayWindow(app, composedImg, unionBounds, 0, withSelectionRect, onMouseDown))
 	} else {
-		selectionLayer = layout.NewSpacer()
+		for _, mon := range plan.Monitors {
+			img := monitorCaptures[mon.DisplayIndex]
+			if img == nil {
+				continue
+			}
+			overlays = append(overlays, newOverlayWindow(app, img, mon.DesktopBounds, mon.DisplayIndex, withSelectionRect, onMouseDown))
+		}
+		if len(overlays) == 0 {
+			showAppWindows(hiddenAppWindows)
+			log.Printf("overlay: no overlay windows built")
+			return func() {}, func(int, int, int, int) {}
+		}
 	}
 
-	var stack fyne.CanvasObject
-	if onMouseDown != nil {
-		stack = container.NewMax(bgImage, selectionLayer, newRecordingMouseLayer(onMouseDown))
-	} else {
-		stack = container.NewMax(bgImage, selectionLayer)
+	for _, overlay := range overlays {
+		overlay.reposition()
 	}
-	win.SetContent(stack)
-
-	overlay := &fyneDesktopOverlay{
-		win:           win,
-		desktopBounds: vb,
-		bgImage:       bgImage,
-		widthPx:       w,
-		heightPx:      h,
-		selLayout:     selLayout,
-		selRefresher:  selRefresher,
-		stopPosition:  make(chan struct{}),
+	for _, overlay := range overlays {
+		overlay.win.Show()
+		overlay.reposition()
+		overlay.startPositionLoop()
 	}
 
 	var dismissOnce sync.Once
 	var closedOnce sync.Once
-	dismiss = func() {
-		dismissOnce.Do(func() {
-			close(overlay.stopPosition)
-			win.Close()
+	var restoreOnce sync.Once
+	restoreHidden := func() {
+		restoreOnce.Do(func() {
+			showAppWindows(hiddenAppWindows)
 		})
 	}
-	if onClosed != nil {
-		win.SetOnClosed(func() { closedOnce.Do(onClosed) })
+	dismiss = func() {
+		dismissOnce.Do(func() {
+			for _, o := range overlays {
+				close(o.stopPosition)
+				o.win.Close()
+			}
+			restoreHidden()
+		})
 	}
-	win.Canvas().SetOnTypedKey(func(e *fyne.KeyEvent) {
-		if e.Name == fyne.KeyEscape {
-			dismiss()
+	for i, overlay := range overlays {
+		if onClosed != nil {
+			overlay.win.SetOnClosed(func() {
+				restoreHidden()
+				closedOnce.Do(onClosed)
+			})
+		} else {
+			overlay.win.SetOnClosed(restoreHidden)
 		}
-	})
+		overlay.win.Canvas().SetOnTypedKey(func(e *fyne.KeyEvent) {
+			if e.Name == fyne.KeyEscape {
+				dismiss()
+			}
+		})
+		if i == 0 {
+			overlay.win.RequestFocus()
+		}
+	}
+	logOverlayWindowDiagnostics(overlays)
+	if capture.OverlayDiagnosticsEnabled() {
+		services.GoSafe(func() {
+			time.Sleep(250 * time.Millisecond)
+			fyne.Do(func() { logOverlayWindowDiagnostics(overlays) })
+		})
+	}
 
-	win.Show()
-	overlay.startPositionLoop()
-	win.RequestFocus()
-
-	if withSelectionRect && selLayout != nil && selRefresher != nil {
+	if withSelectionRect {
 		setSelectionRect = func(leftX, topY, rightX, bottomY int) {
 			fyne.Do(func() {
-				if local, ok := clipRectToDesktop(leftX, topY, rightX, bottomY, vb); ok {
-					selLayout.leftX = screenPxToCanvas(win, local.Min.X)
-					selLayout.topY = screenPxToCanvas(win, local.Min.Y)
-					selLayout.rightX = screenPxToCanvas(win, local.Max.X)
-					selLayout.bottomY = screenPxToCanvas(win, local.Max.Y)
-				} else {
-					selLayout.leftX, selLayout.topY, selLayout.rightX, selLayout.bottomY = 0, 0, 0, 0
+				for _, o := range overlays {
+					if o.selLayout == nil || o.selRefresher == nil {
+						continue
+					}
+					l, t, r, b, ok := absoluteRectToOverlayLocal(leftX, topY, rightX, bottomY, o.desktopBounds)
+					if ok {
+						o.selLayout.leftX, o.selLayout.topY = mapOverlayPxToCanvas(o, l, t)
+						o.selLayout.rightX, o.selLayout.bottomY = mapOverlayPxToCanvas(o, r, b)
+					} else {
+						o.selLayout.leftX, o.selLayout.topY, o.selLayout.rightX, o.selLayout.bottomY = 0, 0, 0, 0
+					}
+					o.selRefresher.Refresh()
 				}
-				selRefresher.Refresh()
 			})
 		}
 	} else {
@@ -248,40 +362,6 @@ func showFullScreenOverlay(withSelectionRect bool, onClosed func(), onMouseDown 
 	}
 
 	return dismiss, setSelectionRect
-}
-
-func clipRectToDesktop(leftX, topY, rightX, bottomY int, vb image.Rectangle) (image.Rectangle, bool) {
-	if leftX > rightX {
-		leftX, rightX = rightX, leftX
-	}
-	if topY > bottomY {
-		topY, bottomY = bottomY, topY
-	}
-	intersect := image.Rect(leftX, topY, rightX, bottomY).Intersect(vb)
-	if intersect.Empty() {
-		return image.Rectangle{}, false
-	}
-	return image.Rect(
-		intersect.Min.X-vb.Min.X,
-		intersect.Min.Y-vb.Min.Y,
-		intersect.Max.X-vb.Min.X,
-		intersect.Max.Y-vb.Min.Y,
-	), true
-}
-
-// clipRectToMonitor maps absolute desktop coordinates to the intersection within bounds.
-func clipRectToMonitor(leftX, topY, rightX, bottomY int, bounds image.Rectangle) (localLeft, localTop, localRight, localBottom int, ok bool) {
-	if leftX > rightX {
-		leftX, rightX = rightX, leftX
-	}
-	if topY > bottomY {
-		topY, bottomY = bottomY, topY
-	}
-	intersect := image.Rect(leftX, topY, rightX, bottomY).Intersect(bounds)
-	if intersect.Empty() {
-		return 0, 0, 0, 0, false
-	}
-	return intersect.Min.X, intersect.Min.Y, intersect.Max.X, intersect.Max.Y, true
 }
 
 func ShowRecordingOverlay(onClosed func(), onMouseDown func(*desktop.MouseEvent)) func() {
