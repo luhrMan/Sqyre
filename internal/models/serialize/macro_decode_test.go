@@ -25,6 +25,33 @@ func TestDecodeMacroFromMap_tags(t *testing.T) {
 	}
 }
 
+func TestDecodeMacroFromMap_delays(t *testing.T) {
+	data := map[string]any{
+		"name":          "delayed",
+		"globaldelay":   50,
+		"keyboarddelay": 25,
+		"mousedelay":    75,
+		"root": map[string]any{
+			"type":  "loop",
+			"name":  "root",
+			"count": 1,
+		},
+	}
+	m, err := DecodeMacroFromMap(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.GlobalDelay != 50 {
+		t.Fatalf("globaldelay = %d", m.GlobalDelay)
+	}
+	if m.KeyboardDelay != 25 {
+		t.Fatalf("keyboarddelay = %d", m.KeyboardDelay)
+	}
+	if m.MouseDelay != 75 {
+		t.Fatalf("mousedelay = %d", m.MouseDelay)
+	}
+}
+
 func TestDecodeMacroFromMap_minimal(t *testing.T) {
 	data := map[string]any{
 		"name":        "test-macro",

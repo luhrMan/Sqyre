@@ -1,6 +1,7 @@
 package macro
 
 import (
+	"Sqyre/internal/macrohotkey"
 	"Sqyre/internal/models"
 	"Sqyre/internal/models/actions"
 	"Sqyre/internal/models/repositories"
@@ -16,6 +17,7 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 )
 
 type macroListSort int
@@ -58,6 +60,8 @@ func showMacroListPopup(d WireDeps) {
 
 	openAllBtn := widget.NewButton("Open all", nil)
 	openAllBtn.Disable()
+	closeAllBtn := widget.NewButton("Close all", nil)
+	closeAllBtn.Disable()
 
 	syncOpenAllBtn := func() {
 		query := strings.TrimSpace(searchEntry.Text)
@@ -68,12 +72,24 @@ func showMacroListPopup(d WireDeps) {
 		}
 	}
 
+	syncCloseAllBtn := func() {
+		openTabs := openTabNames()
+		for _, name := range filtered {
+			if openTabs[name] {
+				closeAllBtn.Enable()
+				return
+			}
+		}
+		closeAllBtn.Disable()
+	}
+
 	applyFilter := func() {
 		query := strings.TrimSpace(searchEntry.Text)
 		allKeys := repositories.MacroRepo().GetAllKeys()
 		if query == "" {
 			filtered = sortedMacroKeys(allKeys, sortBy, openTabNames())
 			syncOpenAllBtn()
+			syncCloseAllBtn()
 			return
 		}
 		filtered = nil
@@ -84,6 +100,7 @@ func showMacroListPopup(d WireDeps) {
 		}
 		filtered = sortedMacroKeys(filtered, sortBy, openTabNames())
 		syncOpenAllBtn()
+		syncCloseAllBtn()
 	}
 
 	sortSelect := widget.NewSelect(macroSortLabels, nil)
@@ -96,14 +113,13 @@ func showMacroListPopup(d WireDeps) {
 		},
 		func() fyne.CanvasObject {
 			return container.NewPadded(
-				container.NewVBox(
-					container.NewHBox(
-						widget.NewLabel("Template"),
-						layout.NewSpacer(),
-						widget.NewButtonWithIcon("", theme.ContentCopyIcon(), nil),
-						widget.NewButtonWithIcon("", theme.DeleteIcon(), nil),
-					),
-					widget.NewLabel(""),
+				container.NewHBox(
+					widget.NewLabel("Template"),
+					layout.NewSpacer(),
+					widget.NewButtonWithIcon("", theme.CancelIcon(), nil),
+					ttwidget.NewButtonWithIcon("", theme.InfoIcon(), nil),
+					widget.NewButtonWithIcon("", theme.ContentCopyIcon(), nil),
+					widget.NewButtonWithIcon("", theme.DeleteIcon(), nil),
 				),
 			)
 		},
@@ -112,34 +128,53 @@ func showMacroListPopup(d WireDeps) {
 				return
 			}
 			name := filtered[id]
-			c := co.(*fyne.Container).Objects[0].(*fyne.Container)
-			nameRow := c.Objects[0].(*fyne.Container)
-			tagsLabel := c.Objects[1].(*widget.Label)
+			nameRow := co.(*fyne.Container).Objects[0].(*fyne.Container)
+			closeBtn := nameRow.Objects[2].(*widget.Button)
+			tagsBtn := nameRow.Objects[3].(*ttwidget.Button)
 			label := nameRow.Objects[0].(*widget.Label)
-			duplicateBtn := nameRow.Objects[2].(*widget.Button)
-			removeBtn := nameRow.Objects[3].(*widget.Button)
+			duplicateBtn := nameRow.Objects[4].(*widget.Button)
+			removeBtn := nameRow.Objects[5].(*widget.Button)
 
 			label.SetText(name)
 			label.Importance = widget.MediumImportance
-			if openTabNames()[name] {
+			isOpen := openTabNames()[name]
+			if isOpen {
 				label.Importance = widget.SuccessImportance
 			}
 			label.Refresh()
 
-			if m, err := repositories.MacroRepo().Get(name); err == nil {
-				if tagText := formatMacroListTags(m); tagText != "" {
-					tagsLabel.SetText(tagText)
-					tagsLabel.Importance = widget.MediumImportance
-					tagsLabel.Wrapping = fyne.TextWrapWord
-					tagsLabel.Show()
-				} else {
-					tagsLabel.SetText("")
-					tagsLabel.Hide()
+			closeBtn.Importance = widget.LowImportance
+			if isOpen {
+				closeBtn.Enable()
+				closeBtn.OnTapped = func() {
+					CloseMacroTabs([]string{name})
+					custom_widgets.RefreshListPreservingScroll(list)
+					syncCloseAllBtn()
 				}
 			} else {
-				tagsLabel.Hide()
+				closeBtn.Disable()
+				closeBtn.OnTapped = nil
 			}
-			tagsLabel.Refresh()
+
+			m, macroErr := repositories.MacroRepo().Get(name)
+			if macroErr == nil {
+				tagsBtn.SetToolTip(macroTagsListButtonTooltip(m))
+			} else {
+				tagsBtn.SetToolTip("Edit tags")
+			}
+			tagsBtn.Importance = widget.LowImportance
+			tagsBtn.Enable()
+			tagsBtn.OnTapped = func() {
+				m, err := repositories.MacroRepo().Get(name)
+				if err != nil {
+					log.Printf("Error getting macro %s: %v", name, err)
+					return
+				}
+				showMacroTagsEditorPopup(tagsBtn, m, func(*models.Macro) {
+					custom_widgets.RefreshListPreservingScroll(list)
+				})
+			}
+			tagsBtn.Refresh()
 
 			duplicateBtn.Importance = widget.LowImportance
 			duplicateBtn.OnTapped = func() {
@@ -170,6 +205,7 @@ func showMacroListPopup(d WireDeps) {
 					if !ok {
 						return
 					}
+					macrohotkey.UnregisterMacroHotkey(m)
 					if err := repositories.MacroRepo().Delete(name); err != nil {
 						log.Printf("Error deleting macro %s: %v", name, err)
 						return
@@ -217,6 +253,13 @@ func showMacroListPopup(d WireDeps) {
 	openAllBtn.OnTapped = func() {
 		OpenMacroTabs(filtered)
 		custom_widgets.RefreshListPreservingScroll(list)
+		syncCloseAllBtn()
+	}
+
+	closeAllBtn.OnTapped = func() {
+		CloseMacroTabs(filtered)
+		custom_widgets.RefreshListPreservingScroll(list)
+		syncCloseAllBtn()
 	}
 
 	applyFilter()
@@ -224,7 +267,7 @@ func showMacroListPopup(d WireDeps) {
 
 	top := container.NewBorder(nil, nil, nil, sortSelect, searchEntry)
 	closeBtn := widget.NewButton("Close", nil)
-	bottom := container.NewHBox(openAllBtn, layout.NewSpacer(), closeBtn)
+	bottom := container.NewHBox(openAllBtn, closeAllBtn, layout.NewSpacer(), closeBtn)
 	popUpContent := container.NewBorder(
 		top,
 		bottom,
@@ -233,7 +276,10 @@ func showMacroListPopup(d WireDeps) {
 	)
 	popup = widget.NewModalPopUp(popUpContent, d.Window.Canvas())
 	dlg := d.AddPopupEscapeClose(popup, d.Window)
-	closeBtn.OnTapped = func() { dlg.Hide() }
+	closeBtn.OnTapped = func() {
+		hideMacroTagsEditorPopup()
+		dlg.Hide()
+	}
 	dlg.Resize(fyne.NewSize(macroListPopupWidth, macroListPopupHeight))
 	dlg.Show()
 }
@@ -296,6 +342,8 @@ func cloneMacro(src *models.Macro) (*models.Macro, error) {
 	tags := append([]string(nil), src.Tags...)
 
 	dup := models.NewMacro("", src.GlobalDelay, nil)
+	dup.KeyboardDelay = src.KeyboardDelay
+	dup.MouseDelay = src.MouseDelay
 	dup.Root = root
 	dup.VariableDecls = decls
 	dup.Tags = tags

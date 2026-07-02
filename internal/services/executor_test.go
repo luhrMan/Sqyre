@@ -3,6 +3,7 @@ package services
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"Sqyre/internal/models"
@@ -95,6 +96,53 @@ func TestExecute_Click(t *testing.T) {
 	}
 	if len(rec.Calls) != 1 || rec.Calls[0].Op != "click" || rec.Calls[0].Button != "right" || !rec.Calls[0].Down {
 		t.Fatalf("calls = %+v", rec.Calls)
+	}
+}
+
+func TestReleaseAllMacroInputs(t *testing.T) {
+	rec := withRecordingBackend(t)
+	if !tryStartMacroRun("test") {
+		t.Fatal("start should succeed")
+	}
+	defer endMacroRun()
+
+	if err := Execute(actions.NewKey("a", true), nil); err != nil {
+		t.Fatalf("Execute key down: %v", err)
+	}
+	if err := Execute(actions.NewKey("shift", true), nil); err != nil {
+		t.Fatalf("Execute key down shift: %v", err)
+	}
+	rec.Calls = nil
+
+	ReleaseAllMacroInputs()
+
+	var keyUps []string
+	for _, c := range rec.Calls {
+		if c.Op == "keyup" {
+			keyUps = append(keyUps, c.Key)
+		}
+	}
+	if len(keyUps) < 2 {
+		t.Fatalf("key-up calls = %v, want held keys and modifiers released", keyUps)
+	}
+	if !slices.Contains(keyUps, "a") {
+		t.Fatalf("key-up calls = %v, want release of held key a", keyUps)
+	}
+
+	var mouseUps []string
+	for _, c := range rec.Calls {
+		if c.Op == "click" && !c.Down {
+			mouseUps = append(mouseUps, c.Button)
+		}
+	}
+	wantMouse := []string{"left", "right", "center"}
+	if len(mouseUps) != len(wantMouse) {
+		t.Fatalf("mouse button-up calls = %v, want %v", mouseUps, wantMouse)
+	}
+	for i, btn := range wantMouse {
+		if mouseUps[i] != btn {
+			t.Fatalf("mouse button-up[%d] = %q, want %q", i, mouseUps[i], btn)
+		}
 	}
 }
 
@@ -390,5 +438,57 @@ func TestExecute_GlobalDelayAfterNonInputAction(t *testing.T) {
 	}
 	if totalSleepMs(rec.Calls) != 75 {
 		t.Fatalf("calls = %+v, want 75ms global delay after set variable", rec.Calls)
+	}
+}
+
+func TestExecute_KeyboardDelayAfterKeyAction(t *testing.T) {
+	rec := withRecordingBackend(t)
+	macro := models.NewMacro("test", 0, nil)
+	macro.KeyboardDelay = 40
+	key := actions.NewKey("a", true)
+	if err := Execute(key, macro); err != nil {
+		t.Fatalf("Execute key: %v", err)
+	}
+	if totalSleepMs(rec.Calls) != 40 {
+		t.Fatalf("calls = %+v, want 40ms keyboard delay", rec.Calls)
+	}
+}
+
+func TestExecute_MouseDelayAfterClickAction(t *testing.T) {
+	rec := withRecordingBackend(t)
+	macro := models.NewMacro("test", 0, nil)
+	macro.MouseDelay = 30
+	click := actions.NewClick(actions.ClickButtonLeft, false)
+	if err := Execute(click, macro); err != nil {
+		t.Fatalf("Execute click: %v", err)
+	}
+	if totalSleepMs(rec.Calls) != 30 {
+		t.Fatalf("calls = %+v, want 30ms mouse delay", rec.Calls)
+	}
+}
+
+func TestExecute_StackedDelaysForKeyboardAction(t *testing.T) {
+	rec := withRecordingBackend(t)
+	macro := models.NewMacro("test", 10, nil)
+	macro.KeyboardDelay = 20
+	key := actions.NewKey("a", true)
+	if err := Execute(key, macro); err != nil {
+		t.Fatalf("Execute key: %v", err)
+	}
+	if totalSleepMs(rec.Calls) != 30 {
+		t.Fatalf("calls = %+v, want 30ms stacked global+keyboard delay", rec.Calls)
+	}
+}
+
+func TestExecute_StackedDelaysForMouseAction(t *testing.T) {
+	rec := withRecordingBackend(t)
+	macro := models.NewMacro("test", 10, nil)
+	macro.MouseDelay = 15
+	move := actions.NewMove(actions.NewCoordinateRef("", ""), false)
+	if err := Execute(move, macro); err != nil {
+		t.Fatalf("Execute move: %v", err)
+	}
+	if totalSleepMs(rec.Calls) != 25 {
+		t.Fatalf("calls = %+v, want 25ms stacked global+mouse delay", rec.Calls)
 	}
 }
