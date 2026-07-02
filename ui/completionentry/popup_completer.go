@@ -65,6 +65,9 @@ func (p *PopupCompleter) ShowLabels(options, labels []string) {
 	p.popupMenu.Resize(geo.size)
 	p.popupMenu.ShowAtPosition(geo.pos)
 	holder.Focus(p.navigableList)
+	if !p.visible {
+		registerCompletionShown()
+	}
 	p.visible = true
 }
 
@@ -86,6 +89,7 @@ func (p *PopupCompleter) hide(refocus bool) {
 		return
 	}
 	p.visible = false
+	registerCompletionHidden()
 	if p.navigableList != nil {
 		p.navigableList.selected = -1
 	}
