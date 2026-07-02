@@ -184,6 +184,11 @@ func (e *VarEntry) FocusLost() {
 	e.Refresh()
 }
 
+// HasFocus reports whether this entry currently has keyboard focus.
+func (e *VarEntry) HasFocus() bool {
+	return e.hasFocus
+}
+
 func (e *VarEntry) SetText(text string) {
 	if e.completer != nil {
 		e.completer.HideWithoutRefocus()

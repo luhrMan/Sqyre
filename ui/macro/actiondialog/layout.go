@@ -28,12 +28,7 @@ const (
 	forEachRowSourceEntryMinHeight   = float32(120)
 	forEachRowSourcesScrollMinHeight = float32(320)
 	forEachRowSourceFieldMinW        = float32(520)
-
-	previewMinW = float32(400)
-	previewMinH = float32(300)
 )
-
-var previewMin = fyne.NewSize(previewMinW, previewMinH)
 
 func dialogMaxSize(parent fyne.Size) fyne.Size {
 	usable := 1 - 2*dialogEdgeGapFraction
@@ -102,7 +97,7 @@ func minContentSizeFor(action actions.ActionInterface) fyne.Size {
 	case *actions.ImageSearch:
 		return fyne.NewSize(960, 720)
 	case *actions.Move:
-		return fyne.NewSize(960, 600)
+		return fyne.NewSize(640, 480)
 	case *actions.Conditional:
 		return fyne.NewSize(wideFormMinW, 520)
 	case *actions.Ocr:
