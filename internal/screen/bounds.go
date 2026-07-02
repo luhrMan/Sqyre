@@ -5,14 +5,11 @@ package screen
 
 import (
 	"image"
-
-	"github.com/go-vgo/robotgo"
-	"github.com/vcaesar/screenshot"
 )
 
 // NumDisplays returns the number of active displays.
 func NumDisplays() int {
-	n := screenshot.NumActiveDisplays()
+	n := numDisplaysImpl()
 	if n > 0 {
 		return n
 	}
@@ -53,21 +50,6 @@ func MonitorIndexAt(absX, absY int) int {
 		if !b.Empty() && p.In(b) {
 			return i
 		}
-	}
-	return 0
-}
-
-// MonitorIndexForOverlay chooses the display that should show the recording overlay:
-// the monitor containing the mouse (where the user is about to click).
-// If the mouse is on a disabled monitor, the first enabled monitor is used.
-func MonitorIndexForOverlay() int {
-	x, y := robotgo.Location()
-	idx := MonitorIndexAt(x, y)
-	if IsMonitorEnabled(idx) {
-		return idx
-	}
-	for _, i := range EnabledMonitorIndices() {
-		return i
 	}
 	return 0
 }
