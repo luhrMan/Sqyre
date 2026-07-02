@@ -2,9 +2,15 @@ package recording
 
 import (
 	"Sqyre/internal/config"
+	"time"
 
 	"fyne.io/fyne/v2"
 )
+
+// hideBeforeCaptureDelay lets the event loop and compositor repaint after Fyne
+// windows are hidden. Capture inside the same UI handler runs before that
+// repaint, so screenshots would still include Sqyre.
+const hideBeforeCaptureDelay = 200 * time.Millisecond
 
 func hideAppWindowsDuringRecording(app fyne.App) []fyne.Window {
 	if !hideAppDuringRecording(app) {
@@ -37,6 +43,20 @@ func hideAppWindows(app fyne.App) []fyne.Window {
 		hidden = append(hidden, win)
 	}
 	return hidden
+}
+
+// scheduleAfterHidingApp runs fn on the main Fyne loop after Sqyre windows have had
+// time to unmap when hidden is non-empty. When nothing was hidden, fn is still
+// queued for the next loop tick so capture/window creation does not run inside the
+// button handler that started recording.
+func scheduleAfterHidingApp(hidden []fyne.Window, fn func()) *time.Timer {
+	if len(hidden) == 0 {
+		fyne.Do(fn)
+		return nil
+	}
+	return time.AfterFunc(hideBeforeCaptureDelay, func() {
+		fyne.Do(fn)
+	})
 }
 
 // skipHideForRecording excludes Fyne-internal windows that must never be shown to
