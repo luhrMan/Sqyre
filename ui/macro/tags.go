@@ -3,6 +3,7 @@ package macro
 import (
 	"Sqyre/internal/models"
 	"Sqyre/internal/models/repositories"
+	"Sqyre/ui/completionentry"
 	"sort"
 	"slices"
 	"strings"
@@ -18,54 +19,14 @@ import (
 
 const macroTagChipBtnSize float32 = 20
 
+const (
+	macroTagsPopupMinWidth        float32 = 320
+	macroTagsPopupPreferredHeight float32 = 280
+	macroTagsPopupMinScrollHeight float32 = 160
+)
+
 func newMacroTagsContainer() *fyne.Container {
 	return container.New(kxlayout.NewRowWrapLayout())
-}
-
-// tagEntrySplitLayout keeps the tag entry at entryMinFraction of the row width;
-// the tags area gets the remainder and scrolls when chips overflow.
-type tagEntrySplitLayout struct {
-	entryMinFraction float32
-}
-
-func (l *tagEntrySplitLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
-	if len(objects) == 0 {
-		return fyne.NewSize(0, 0)
-	}
-	entryMin := objects[0].MinSize()
-	height := entryMin.Height
-	if len(objects) > 1 {
-		if h := objects[1].MinSize().Height; h > height {
-			height = h
-		}
-	}
-	minWidth := entryMin.Width / l.entryMinFraction
-	if len(objects) > 1 {
-		if need := entryMin.Width + objects[1].MinSize().Width; need > minWidth {
-			minWidth = need
-		}
-	}
-	return fyne.NewSize(minWidth, height)
-}
-
-func (l *tagEntrySplitLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
-	if len(objects) < 2 {
-		return
-	}
-	entryW := size.Width * l.entryMinFraction
-	tagsW := size.Width - entryW
-	h := size.Height
-	objects[0].Resize(fyne.NewSize(entryW, h))
-	objects[0].Move(fyne.NewPos(0, 0))
-	objects[1].Resize(fyne.NewSize(tagsW, h))
-	objects[1].Move(fyne.NewPos(entryW, 0))
-}
-
-func newMacroTagEntryRow(entry fyne.CanvasObject, tags *fyne.Container) fyne.CanvasObject {
-	tagsScroll := container.NewHScroll(tags)
-	entryMin := entry.MinSize()
-	tagsScroll.SetMinSize(fyne.NewSize(0, entryMin.Height))
-	return container.New(&tagEntrySplitLayout{entryMinFraction: 0.5}, entry, tagsScroll)
 }
 
 func wrapMacroTagChip(inner fyne.CanvasObject) fyne.CanvasObject {
@@ -127,28 +88,132 @@ func excludeMacroTagsOnMacro(tags []string, onMacro []string) []string {
 	return filtered
 }
 
+func rebuildMacroTagsContainer(tagsContainer *fyne.Container, m *models.Macro, onRemove func(tag string)) {
+	if tagsContainer == nil {
+		return
+	}
+	tagsContainer.Objects = nil
+	if m != nil {
+		for _, tag := range m.Tags {
+			tagToRemove := tag
+			tagsContainer.Add(newMacroTagChip(tagToRemove, func() { onRemove(tagToRemove) }))
+		}
+	}
+	tagsContainer.Refresh()
+}
+
 func updateMacroTagsDisplay(mtabs *MacroTabs, m *models.Macro) {
 	if mtabs == nil || mtabs.MacroTagsContainer == nil {
 		return
 	}
-	mtabs.MacroTagsContainer.Objects = nil
-	if m == nil {
-		mtabs.MacroTagsContainer.Refresh()
-		return
+	rebuildMacroTagsContainer(mtabs.MacroTagsContainer, m, func(tag string) {
+		removeMacroTag(mtabs, m, tag)
+	})
+	updateMacroTagsButton(mtabs, m)
+	if (m == nil || len(m.Tags) == 0) && mtabs.macroTagsPopup != nil {
+		mtabs.macroTagsPopup.Hide()
+		mtabs.macroTagsPopup = nil
 	}
-	for _, tag := range m.Tags {
-		mtabs.MacroTagsContainer.Add(newMacroTagChip(mtabs, m, tag))
-	}
-	mtabs.MacroTagsContainer.Refresh()
 }
 
-func newMacroTagChip(mtabs *MacroTabs, m *models.Macro, tag string) fyne.CanvasObject {
+func updateMacroTagsButton(mtabs *MacroTabs, m *models.Macro) {
+	if mtabs == nil || mtabs.MacroTagsBtn == nil {
+		return
+	}
+	btn := mtabs.MacroTagsBtn
+	if m == nil || len(m.Tags) == 0 {
+		btn.SetToolTip("No tags")
+		btn.Disable()
+		btn.Refresh()
+		return
+	}
+	btn.SetToolTip(formatMacroTagsTooltip(m))
+	btn.Enable()
+	btn.Refresh()
+}
+
+func showMacroTagsPopup(mtabs *MacroTabs) {
+	if mtabs == nil || mtabs.MacroTagsBtn == nil || mtabs.MacroTagsContainer == nil {
+		return
+	}
+	mt := mtabs.SelectedTab()
+	if mt == nil || mt.Macro == nil || len(mt.Macro.Tags) == 0 {
+		return
+	}
+	anchor := mtabs.MacroTagsBtn
+	holder := fyne.CurrentApp().Driver().CanvasForObject(anchor)
+	if holder == nil {
+		return
+	}
+
+	content := container.NewPadded(mtabs.MacroTagsContainer)
+	scroll := container.NewScroll(content)
+	popup := widget.NewPopUp(scroll, holder)
+	mtabs.macroTagsPopup = popup
+
+	popupSize, scrollSize := macroTagsPopupSize(holder.Size(), anchor, content.MinSize(), nil)
+	scroll.Resize(scrollSize)
+	popup.Resize(popupSize)
+
+	pos := fyne.CurrentApp().Driver().AbsolutePositionForObject(anchor)
+	popup.ShowAtPosition(pos.Add(fyne.NewPos(0, anchor.Size().Height)))
+}
+
+func macroTagsPopupSize(canvasSize fyne.Size, anchor fyne.CanvasObject, bodyMin fyne.Size, footer fyne.CanvasObject) (popupSize, scrollSize fyne.Size) {
+	padding := theme.Padding() * 4
+	footerH := float32(0)
+	if footer != nil {
+		footerH = footer.MinSize().Height
+	}
+
+	width := bodyMin.Width + padding
+	if width < macroTagsPopupMinWidth {
+		width = macroTagsPopupMinWidth
+	}
+	if anchor != nil {
+		if anchorW := anchor.Size().Width * 3; anchorW > width {
+			width = anchorW
+		}
+	}
+	if maxW := canvasSize.Width - padding; maxW > 0 && width > maxW {
+		width = maxW
+	}
+
+	maxH := canvasSize.Height * 0.55
+	popupH := macroTagsPopupPreferredHeight
+	if popupH > maxH {
+		popupH = maxH
+	}
+
+	scrollH := popupH - footerH - padding
+	if scrollH < macroTagsPopupMinScrollHeight {
+		scrollH = macroTagsPopupMinScrollHeight
+		popupH = scrollH + footerH + padding
+		if popupH > maxH {
+			popupH = maxH
+			scrollH = popupH - footerH - padding
+		}
+	}
+	if bodyMin.Height > scrollH {
+		scrollH = bodyMin.Height
+		popupH = scrollH + footerH + padding
+		if popupH > maxH {
+			popupH = maxH
+			scrollH = popupH - footerH - padding
+		}
+	}
+
+	innerW := width - padding
+	if innerW < macroTagsPopupMinWidth-padding {
+		innerW = macroTagsPopupMinWidth - padding
+	}
+	return fyne.NewSize(width, popupH), fyne.NewSize(innerW, scrollH)
+}
+
+func newMacroTagChip(tag string, onRemove func()) fyne.CanvasObject {
 	tagLabel := widget.NewLabel(tag)
 	tagLabel.Wrapping = fyne.TextWrapOff
-	tagToRemove := tag
-	removeButton := widget.NewButtonWithIcon("", theme.CancelIcon(), func() {
-		removeMacroTag(mtabs, m, tagToRemove)
-	})
+	removeButton := widget.NewButtonWithIcon("", theme.CancelIcon(), onRemove)
 	removeButton.Importance = widget.LowImportance
 	chip := container.NewHBox(
 		tagLabel,
@@ -157,9 +222,26 @@ func newMacroTagChip(mtabs *MacroTabs, m *models.Macro, tag string) fyne.CanvasO
 	return wrapMacroTagChip(chip)
 }
 
-func removeMacroTag(mtabs *MacroTabs, m *models.Macro, tagToRemove string) {
+func addMacroTag(m *models.Macro, tagText string) bool {
 	if m == nil {
-		return
+		return false
+	}
+	tagText = strings.TrimSpace(tagText)
+	if tagText == "" {
+		return false
+	}
+	for _, existing := range m.Tags {
+		if existing == tagText {
+			return false
+		}
+	}
+	m.Tags = append(m.Tags, tagText)
+	return repositories.MacroRepo().Set(m.Name, m) == nil
+}
+
+func removeMacroTagFromMacro(m *models.Macro, tagToRemove string) bool {
+	if m == nil {
+		return false
 	}
 	newTags := make([]string, 0, len(m.Tags))
 	for _, tag := range m.Tags {
@@ -168,7 +250,27 @@ func removeMacroTag(mtabs *MacroTabs, m *models.Macro, tagToRemove string) {
 		}
 	}
 	m.Tags = newTags
-	if err := repositories.MacroRepo().Set(m.Name, m); err != nil {
+	return repositories.MacroRepo().Set(m.Name, m) == nil
+}
+
+func notifyMacroTagsChanged(m *models.Macro) {
+	if m == nil || activeWire.Mui == nil || activeWire.Mui.MTabs == nil {
+		return
+	}
+	mtabs := activeWire.Mui.MTabs
+	if tree := mtabs.TreeForMacro(m.Name); tree != nil && tree.Macro != nil {
+		tree.Macro.Tags = append([]string(nil), m.Tags...)
+	}
+	mt := mtabs.SelectedTab()
+	if mt != nil && mt.Macro != nil && mt.Macro.Name == m.Name {
+		mt.Macro.Tags = append([]string(nil), m.Tags...)
+		updateMacroTagsDisplay(mtabs, m)
+		refreshMacroTagEntryCompletion(mtabs, m)
+	}
+}
+
+func removeMacroTag(mtabs *MacroTabs, m *models.Macro, tagToRemove string) {
+	if !removeMacroTagFromMacro(m, tagToRemove) {
 		return
 	}
 	updateMacroTagsDisplay(mtabs, m)
@@ -203,24 +305,14 @@ func wireMacroTagHandlers(mtabs *MacroTabs) {
 			return
 		}
 		m := mt.Macro
-		tagText := strings.TrimSpace(mtabs.MacroTagEntry.Text)
+		tagText := mtabs.MacroTagEntry.Text
 		mtabs.MacroTagEntry.HideCompletion()
-		if tagText == "" {
-			return
-		}
-		for _, existing := range m.Tags {
-			if existing == tagText {
-				mtabs.MacroTagEntry.SetText("")
-				return
-			}
-		}
-		m.Tags = append(m.Tags, tagText)
-		if err := repositories.MacroRepo().Set(m.Name, m); err != nil {
+		if !addMacroTag(m, tagText) && strings.TrimSpace(tagText) != "" {
+			mtabs.MacroTagEntry.SetText("")
 			return
 		}
 		mtabs.MacroTagEntry.SetText("")
-		mtabs.MacroTagsContainer.Add(newMacroTagChip(mtabs, m, tagText))
-		mtabs.MacroTagsContainer.Refresh()
+		updateMacroTagsDisplay(mtabs, m)
 	}
 
 	mtabs.MacroTagEntry.OnChanged = func(text string) {
@@ -245,6 +337,10 @@ func wireMacroTagHandlers(mtabs *MacroTabs) {
 	if mtabs.MacroTagSubmitBtn != nil {
 		mtabs.MacroTagSubmitBtn.OnTapped = submitTag
 	}
+	if mtabs.MacroTagsBtn != nil {
+		mtabs.MacroTagsBtn.Importance = widget.LowImportance
+		mtabs.MacroTagsBtn.OnTapped = func() { showMacroTagsPopup(mtabs) }
+	}
 }
 
 func macroMatchesSearch(name, query string) bool {
@@ -263,9 +359,120 @@ func macroMatchesSearch(name, query string) bool {
 	return false
 }
 
-func formatMacroListTags(m *models.Macro) string {
+func formatMacroTagsTooltip(m *models.Macro) string {
 	if m == nil || len(m.Tags) == 0 {
 		return ""
 	}
-	return strings.Join(m.Tags, " · ")
+	return strings.Join(m.Tags, "\n")
+}
+
+func macroTagsListButtonTooltip(m *models.Macro) string {
+	if tip := formatMacroTagsTooltip(m); tip != "" {
+		return tip
+	}
+	return "Edit tags"
+}
+
+var activeMacroTagsEditorPopup *widget.PopUp
+
+func hideMacroTagsEditorPopup() {
+	if activeMacroTagsEditorPopup != nil {
+		activeMacroTagsEditorPopup.Hide()
+		activeMacroTagsEditorPopup = nil
+	}
+}
+
+func showMacroTagsEditorPopup(anchor fyne.CanvasObject, m *models.Macro, onChanged func(*models.Macro)) {
+	if anchor == nil || m == nil {
+		return
+	}
+	holder := fyne.CurrentApp().Driver().CanvasForObject(anchor)
+	if holder == nil {
+		return
+	}
+	hideMacroTagsEditorPopup()
+
+	tagsContainer := newMacroTagsContainer()
+	tagEntry := completionentry.NewCompletionEntry([]string{})
+	tagEntry.PlaceHolder = "Add tag…"
+	tagSubmitBtn := widget.NewButtonWithIcon("", theme.ContentAddIcon(), nil)
+	tagSubmitBtn.Importance = widget.MediumImportance
+
+	refreshTagEntryCompletion := func() {
+		currentText := tagEntry.Text
+		if strings.TrimSpace(currentText) == "" {
+			tagEntry.HideCompletion()
+			return
+		}
+		matching := macroTagCompletionOptions(currentText, m, 10)
+		tagEntry.SetOptions(matching)
+		if len(matching) > 0 {
+			tagEntry.ShowCompletion()
+		} else {
+			tagEntry.HideCompletion()
+		}
+	}
+
+	var refreshTags func()
+	refreshTags = func() {
+		rebuildMacroTagsContainer(tagsContainer, m, func(tag string) {
+			if removeMacroTagFromMacro(m, tag) {
+				refreshTags()
+				refreshTagEntryCompletion()
+				notifyMacroTagsChanged(m)
+				if onChanged != nil {
+					onChanged(m)
+				}
+			}
+		})
+	}
+
+	submitTag := func() {
+		tagText := tagEntry.Text
+		tagEntry.HideCompletion()
+		if addMacroTag(m, tagText) {
+			tagEntry.SetText("")
+			refreshTags()
+			notifyMacroTagsChanged(m)
+			if onChanged != nil {
+				onChanged(m)
+			}
+			return
+		}
+		if strings.TrimSpace(tagText) != "" {
+			tagEntry.SetText("")
+		}
+	}
+
+	tagEntry.OnChanged = func(text string) {
+		if strings.TrimSpace(text) == "" {
+			tagEntry.HideCompletion()
+			return
+		}
+		matching := macroTagCompletionOptions(text, m, 10)
+		if len(matching) == 0 {
+			tagEntry.HideCompletion()
+			return
+		}
+		tagEntry.SetOptions(matching)
+		tagEntry.ShowCompletion()
+	}
+	tagEntry.OnSubmitted = func(string) { submitTag() }
+	tagSubmitBtn.OnTapped = submitTag
+
+	refreshTags()
+
+	entryRow := container.NewBorder(nil, nil, nil, tagSubmitBtn, tagEntry)
+	scroll := container.NewScroll(tagsContainer)
+	inner := container.NewBorder(nil, entryRow, nil, nil, scroll)
+	content := container.NewPadded(inner)
+	popup := widget.NewPopUp(content, holder)
+	activeMacroTagsEditorPopup = popup
+
+	popupSize, scrollSize := macroTagsPopupSize(holder.Size(), anchor, tagsContainer.MinSize(), entryRow)
+	scroll.Resize(scrollSize)
+	popup.Resize(popupSize)
+
+	pos := fyne.CurrentApp().Driver().AbsolutePositionForObject(anchor)
+	popup.ShowAtPosition(pos.Add(fyne.NewPos(0, anchor.Size().Height)))
 }

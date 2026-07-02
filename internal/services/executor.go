@@ -36,6 +36,7 @@ func ExecuteMacroWithLogging(m *models.Macro) {
 	}
 	defer endMacroRun()
 	defer func() {
+		ReleaseAllMacroInputs()
 		ClearHighlights()
 		NotifyMacroPause(false, "", "")
 		fyne.Do(func() {
@@ -67,6 +68,7 @@ func ExecuteMacroWithLogging(m *models.Macro) {
 	}
 	ClearRuntimeVariables()
 	m.InitRuntimeVariables()
+	resetMacroHeldKeys()
 	ApplyMonitorBuiltinVariables(m)
 	SnapshotRuntimeVariables(m)
 	if macroUsesOCR(m) {
@@ -204,7 +206,7 @@ func executeRunMacroTree(rm *actions.RunMacro, target *models.Macro, caller *mod
 func executeWithContext(a actions.ActionInterface, macro *models.Macro) error {
 	err := executeAction(a, macro)
 	if err == nil || actions.IsFlowControl(err) {
-		if delayErr := applyGlobalDelay(macro); delayErr != nil {
+		if delayErr := applyActionDelay(macro, a); delayErr != nil {
 			return delayErr
 		}
 	}

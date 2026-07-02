@@ -17,6 +17,7 @@ type CompletionEntry struct {
 	Options       []string
 	pause         bool
 	itemHeight    float32
+	visible       bool
 
 	CustomCreate func() fyne.CanvasObject
 	CustomUpdate func(id widget.ListItemID, object fyne.CanvasObject)
@@ -33,6 +34,10 @@ func NewCompletionEntry(options []string) *CompletionEntry {
 func (c *CompletionEntry) HideCompletion() {
 	if c.popupMenu != nil {
 		c.popupMenu.Hide()
+	}
+	if c.visible {
+		c.visible = false
+		registerCompletionHidden()
 	}
 }
 
@@ -98,6 +103,10 @@ func (c *CompletionEntry) ShowCompletion() {
 	c.popupMenu.Resize(c.maxSize())
 	c.popupMenu.ShowAtPosition(c.popUpPos())
 	holder.Focus(c.navigableList)
+	if !c.visible {
+		registerCompletionShown()
+	}
+	c.visible = true
 }
 
 // onCanvas returns true if the widget is currently attached to a canvas (e.g. visible).
@@ -131,7 +140,7 @@ func (c *CompletionEntry) setTextFromMenu(s string) {
 	c.Entry.CursorColumn = len([]rune(s))
 	c.Entry.Refresh()
 	c.pause = false
-	c.popupMenu.Hide()
+	c.HideCompletion()
 }
 
 type navigableList struct {
@@ -235,6 +244,7 @@ func (n *navigableList) TypedKey(event *fyne.KeyEvent) {
 		n.navigating = true
 		n.Select(n.selected)
 	case fyne.KeyReturn, fyne.KeyEnter:
+		suppressActionDialogEnter()
 		if n.selected == -1 { // so the user want to submit the entry
 			n.hide()
 			n.entry.TypedKey(event)

@@ -82,6 +82,18 @@ func ResetAutomationBackend() {
 	SetAutomationBackend(robotgoBackend{})
 }
 
+// mouseButtons is the set of mouse buttons that can be held down between click actions.
+var mouseButtons = []string{"left", "right", "center"}
+
+// ReleaseAllMouseButtons sends button-up for left, right, and center so no click
+// remains physically held after a macro run ends.
+func ReleaseAllMouseButtons() {
+	backend := getAutomationBackend()
+	for _, btn := range mouseButtons {
+		_ = backend.Click(btn, false)
+	}
+}
+
 // RecordedCall is one automation operation captured by RecordingBackend.
 type RecordedCall struct {
 	Op     string
