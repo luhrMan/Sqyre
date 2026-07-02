@@ -52,20 +52,24 @@ const (
 	DefaultDragPreviewDebounceMs = 150
 	MinDragPreviewDebounceMs     = 25
 
+	// Recording overlay: hide Sqyre windows before capturing the desktop snapshot.
+	DefaultHideAppDuringRecording = true
+
 	// UI appearance defaults
 	DefaultUIFontSize = 14
 	DefaultUIScale    = 1.0
 
 	// Fyne preference keys
-	PrefSaveMetaImages                      = "save_meta_images"
-	PrefHighlightActiveAction               = "highlight_active_action"
-	PrefImageSearchCloseMatchesDistance     = "image_search_close_matches_distance"
-	PrefDragPreviewDebounceMs               = "drag_preview_debounce_ms"
-	PrefEnabledMonitors       = "enabled_monitors" // comma-separated indices, e.g. "0,2"; empty = all (must match screen package key)
-	PrefWindowX               = "window_x"
-	PrefWindowY               = "window_y"
-	PrefWindowWidth           = "window_width"
-	PrefWindowHeight          = "window_height"
+	PrefSaveMetaImages                  = "save_meta_images"
+	PrefHighlightActiveAction           = "highlight_active_action"
+	PrefImageSearchCloseMatchesDistance = "image_search_close_matches_distance"
+	PrefDragPreviewDebounceMs           = "drag_preview_debounce_ms"
+	PrefHideAppDuringRecording          = "hide_app_during_recording"
+	PrefEnabledMonitors                 = "enabled_monitors" // comma-separated indices, e.g. "0,2"; empty = all (must match screen package key)
+	PrefWindowX                         = "window_x"
+	PrefWindowY                         = "window_y"
+	PrefWindowWidth                     = "window_width"
+	PrefWindowHeight                    = "window_height"
 
 	// Action display colors in the macro tree (hex #rrggbb; empty = built-in default).
 	PrefActionColorMouseKeyboard = "action_color_mouse_keyboard"

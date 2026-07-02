@@ -70,9 +70,19 @@ func (u *Ui) constructSettings() fyne.CanvasObject {
 	dragPreviewHint := widget.NewLabel("Macro tree drag preview delay (ms). How long the pointer must rest before rows shift to show the drop position.")
 	dragPreviewHint.Wrapping = fyne.TextWrapWord
 
+	hideDuringRecording := prefs.BoolWithFallback(config.PrefHideAppDuringRecording, config.DefaultHideAppDuringRecording)
+	hideDuringRecordingCheck := widget.NewCheck("Hide Sqyre while recording points and search areas", func(checked bool) {
+		prefs.SetBool(config.PrefHideAppDuringRecording, checked)
+	})
+	hideDuringRecordingCheck.SetChecked(hideDuringRecording)
+	hideDuringRecordingHint := widget.NewLabel("When enabled, Sqyre windows are hidden before the desktop snapshot used by the recording overlay.")
+	hideDuringRecordingHint.Wrapping = fyne.TextWrapWord
+
 	u.SettingsUi.GeneralSection = widget.NewCard("General", "Application and behavior options.", container.NewVBox(
 		saveMetaCheck,
 		highlightCheck,
+		hideDuringRecordingCheck,
+		hideDuringRecordingHint,
 		closeMatchesHint,
 		closeMatchesInc,
 		dragPreviewHint,
