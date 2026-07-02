@@ -12,5 +12,5 @@ export GOFLAGS="-tags=gocv_specific_modules,nohook -buildvcs=false"
 export SQUIRE_UI_TEST=1
 export SQYRE_NO_HOOK=1
 
-# Screenshot and global-hook tests need xvfb; run via ./scripts/test-ui.sh.
-go test -skip 'TestDocsScreenshots|TestDemoWorkflowFrames|TestGUIEscape' "$@" ./...
+# Global-hook Esc tests need xvfb; run via ./scripts/test-ui.sh.
+go test -skip 'TestGUIEscape' "$@" ./...
