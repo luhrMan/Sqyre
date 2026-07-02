@@ -65,8 +65,8 @@ jobs:
             sqyre-linux-build \
             bash -c 'set -x
               ./scripts/test.sh
-              echo "=== UI / hook tests (xvfb) ==="
-              ./scripts/test-ui.sh -run "TestGUIEscape|TestDocsScreenshots|TestDemoWorkflowFrames"'
+              echo "=== Global hook Esc tests (xvfb) ==="
+              ./scripts/test-ui.sh -run TestGUIEscape'
 
   build-linux:
     runs-on: ubuntu-22.04

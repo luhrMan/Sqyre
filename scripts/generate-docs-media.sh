@@ -8,16 +8,12 @@ cd "$ROOT"
 export SQUIRE_UI_TEST=1
 export SQYRE_NO_HOOK=1
 export SQYRE_UPDATE_SCREENSHOTS=1
-export GOFLAGS="${GOFLAGS:--tags=gocv_specific_modules -buildvcs=false}"
+export GOFLAGS="-tags=gocv_specific_modules,nohook -buildvcs=false"
 
 mkdir -p docs/images/frames
 
-if ! command -v xvfb-run >/dev/null 2>&1; then
-  echo "xvfb-run not found; install xvfb (e.g. apt install xvfb)" >&2
-  exit 1
-fi
-
-xvfb-run -a go test -v ./ui/ -run TestDocsScreenshots
+# Headless Fyne test driver (no xvfb): matches ./scripts/test.sh screenshot checks in CI.
+env -u DISPLAY go test -v ./ui/ -run 'TestDocsScreenshots|TestDemoWorkflowFrames'
 
 if command -v ffmpeg >/dev/null 2>&1; then
   ffmpeg -y -framerate 1 -i docs/images/frames/demo-macro-%03d.png \

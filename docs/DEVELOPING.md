@@ -82,14 +82,14 @@ Or cross-compile from Linux with `make windows`.
 
 ## Tests
 
-**Headless** (no display; uses `-tags=nohook` so the keyboard hook is not linked):
+**Headless** (no display; uses `-tags=nohook` so the keyboard hook is not linked). Includes README screenshot golden checks (`TestDocsScreenshots`, `TestDemoWorkflowFrames`):
 
 ```bash
 ./scripts/test.sh
 ./scripts/test.sh -v ./internal/services/ -run TestExecute
 ```
 
-**UI / display** (virtual framebuffer via `xvfb-run`):
+**Global hook / Esc** (virtual framebuffer via `Xvfb`; links gohook):
 
 ```bash
 ./scripts/test-ui.sh
@@ -108,13 +108,12 @@ Regenerate assets in `docs/images/`:
 ./scripts/generate-docs-media.sh
 ```
 
-Requires `xvfb-run`; `ffmpeg` builds the demo GIF from captured frames.
+Requires `ffmpeg` for the demo GIF. Uses the same headless Fyne driver as `./scripts/test.sh` (no xvfb).
 
 Verify committed PNGs match the current UI:
 
 ```bash
-go test -v ./ui/ -run 'TestDocsScreenshots|TestDemoWorkflowFrames'
-# or: ./scripts/test-ui.sh with the same -run filter
+./scripts/test.sh -v ./ui/ -run 'TestDocsScreenshots|TestDemoWorkflowFrames'
 ```
 
 Set `SQYRE_UPDATE_SCREENSHOTS=1` when intentionally updating golden images (the generate script sets this).
