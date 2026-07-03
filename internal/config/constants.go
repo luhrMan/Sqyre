@@ -37,8 +37,12 @@ const (
 
 	// Editor preview minimum layout size (points, search areas, masks, AutoPic tabs).
 	// Images scale within the allocated area via FillContain.
-	ImagePreviewMinWidth  = 200
-	ImagePreviewMinHeight = 150
+	ImagePreviewMinWidth  = 400
+	ImagePreviewMinHeight = 300
+
+	// Cropped editor previews capture a local region instead of the full desktop.
+	EditorPreviewMinCaptureSize = 320 // minimum width and height of the capture rect (px)
+	EditorPreviewPadding        = 48  // extra margin around search-area rectangles (px)
 
 	// Icon variant constants
 	IconThumbnailSize = 64  // pixels for thumbnail display

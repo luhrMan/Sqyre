@@ -372,8 +372,8 @@ func setEditorRecordHandlers() {
 
 func setEditorPreviewRefreshHandlers() {
 	et := shell().EditorTabs
-	wirePointPreviewRefresh(et.PointsTab.PreviewRefreshButton, et.PointsTab.Widgets)
-	wireSearchAreaPreviewRefresh(et.SearchAreasTab.PreviewRefreshButton, et.SearchAreasTab.Widgets)
+	wirePointPreviewRefresh(et.PointsTab.previewPanel, et.PointsTab.PreviewRefreshButton, et.PointsTab.Widgets)
+	wireSearchAreaPreviewRefresh(et.SearchAreasTab.previewPanel, et.SearchAreasTab.PreviewRefreshButton, et.SearchAreasTab.Widgets)
 
 	if et.MasksTab.PreviewRefreshButton != nil {
 		et.MasksTab.PreviewRefreshButton.OnTapped = func() {

@@ -182,7 +182,31 @@ type programListAccordionConfig struct {
 	GetDisplayName func(*models.Program, string) string
 	// GetTooltip is optional; when set, each list row shows this text as a hover tooltip (e.g. coordinates).
 	GetTooltip func(*models.Program, string) string
-	OnSelect   func(*models.Program, string)
+	// GetPreviewImage is optional; when set, each list row shows a hover popup with a screen capture preview.
+	GetPreviewImage func(*models.Program, string) (custom_widgets.PreviewTooltipResult, error)
+	OnSelect        func(*models.Program, string)
+}
+
+func newProgramListRowTemplate(cfg programListAccordionConfig) fyne.CanvasObject {
+	if cfg.GetPreviewImage != nil {
+		return custom_widgets.PreviewListRowTemplate()
+	}
+	return ttwidget.NewLabel("template")
+}
+
+func bindProgramListRow(co fyne.CanvasObject, cfg programListAccordionConfig, program *models.Program, key, labelText string) {
+	if cfg.GetPreviewImage != nil {
+		prog := program
+		custom_widgets.BindPreviewListRow(co, labelText, func() (custom_widgets.PreviewTooltipResult, error) {
+			return cfg.GetPreviewImage(prog, key)
+		})
+		return
+	}
+	lbl := co.(*ttwidget.Label)
+	lbl.SetText(labelText)
+	if cfg.GetTooltip != nil {
+		lbl.SetToolTip(cfg.GetTooltip(program, key))
+	}
 }
 
 // resolveCoordinateRefKey finds the repository key for ref within program p, if present.
@@ -240,14 +264,10 @@ func buildProgramListAccordionWithSearchbar(cfg programListAccordionConfig, init
 			}
 			list := widget.NewList(
 				func() int { return len(filtered) },
-				func() fyne.CanvasObject { return ttwidget.NewLabel("template") },
+				func() fyne.CanvasObject { return newProgramListRowTemplate(cfg) },
 				func(id widget.ListItemID, co fyne.CanvasObject) {
 					key := filtered[id]
-					lbl := co.(*ttwidget.Label)
-					lbl.SetText(cfg.GetDisplayName(p, key))
-					if cfg.GetTooltip != nil {
-						lbl.SetToolTip(cfg.GetTooltip(p, key))
-					}
+					bindProgramListRow(co, cfg, p, key, cfg.GetDisplayName(p, key))
 				},
 			)
 			prog := p
@@ -340,17 +360,13 @@ func buildProgramFlatListWithSearchbar(cfg programListAccordionConfig, initialRe
 
 	list = widget.NewList(
 		func() int { return len(entries) },
-		func() fyne.CanvasObject { return ttwidget.NewLabel("template") },
+		func() fyne.CanvasObject { return newProgramListRowTemplate(cfg) },
 		func(id widget.ListItemID, co fyne.CanvasObject) {
 			if id < 0 || id >= len(entries) {
 				return
 			}
 			e := entries[id]
-			lbl := co.(*ttwidget.Label)
-			lbl.SetText(fmt.Sprintf("%s · %s", cfg.GetDisplayName(e.program, e.key), e.program.Name))
-			if cfg.GetTooltip != nil {
-				lbl.SetToolTip(cfg.GetTooltip(e.program, e.key))
-			}
+			bindProgramListRow(co, cfg, e.program, e.key, fmt.Sprintf("%s · %s", cfg.GetDisplayName(e.program, e.key), e.program.Name))
 		},
 	)
 	list.OnSelected = func(id widget.ListItemID) {
@@ -387,17 +403,7 @@ func buildPointsListWithSearchbar(onPointSelected func(actions.CoordinateRef), i
 			}
 			return key
 		},
-		GetTooltip: func(p *models.Program, key string) string {
-			repo := editor.ProgramPointRepo(p, config.MainMonitorSizeString)
-			if repo == nil {
-				return ""
-			}
-			pt, _ := repo.Get(key)
-			if pt == nil {
-				return ""
-			}
-			return fmt.Sprintf("X: %v, Y: %v", pt.X, pt.Y)
-		},
+		GetPreviewImage: editor.LoadPointPreviewImage,
 		OnSelect: func(p *models.Program, key string) {
 			onPointSelected(actions.NewCoordinateRef(p.Name, key))
 		},
@@ -426,17 +432,7 @@ func buildSearchAreasAccordionWithSearchbar(onSelected func(actions.CoordinateRe
 			}
 			return key
 		},
-		GetTooltip: func(p *models.Program, key string) string {
-			repo := editor.ProgramSearchAreaRepo(p, config.MainMonitorSizeString)
-			if repo == nil {
-				return ""
-			}
-			sa, _ := repo.Get(key)
-			if sa == nil {
-				return ""
-			}
-			return fmt.Sprintf("Left: %v, Top: %v, Right: %v, Bottom: %v", sa.LeftX, sa.TopY, sa.RightX, sa.BottomY)
-		},
+		GetPreviewImage: editor.LoadSearchAreaPreviewImage,
 		OnSelect: func(p *models.Program, key string) {
 			onSelected(actions.NewCoordinateRef(p.Name, key))
 		},

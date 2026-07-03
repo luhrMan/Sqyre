@@ -4,7 +4,6 @@ import (
 	"Sqyre/internal/config"
 	"Sqyre/internal/models"
 	"Sqyre/internal/screen"
-	"Sqyre/internal/vision"
 	"Sqyre/ui/custom_widgets"
 	"errors"
 	"fmt"
@@ -399,12 +398,12 @@ func (eu *EditorUi) UpdateAutoPicPreview(searchArea *models.SearchArea) {
 		return
 	}
 
-	captureImg, err := captureCroppedArea(b.lx, b.ty, b.w, b.h)
+	previewImg, err := captureSearchAreaPreview(b.lx, b.ty, b.rx, b.by)
 	if err != nil {
 		panel.setError(fmt.Errorf("AutoPic: %w (area: %s)", err, searchArea.Name))
 		return
 	}
-	panel.setImage(captureImg)
+	panel.setImage(previewImg)
 }
 
 func (eu *EditorUi) clearPreviewImage() {
@@ -414,25 +413,7 @@ func (eu *EditorUi) clearPreviewImage() {
 }
 
 func (eu *EditorUi) UpdateSearchAreaPreview(searchArea *models.SearchArea) {
-	panel := eu.EditorTabs.SearchAreasTab.previewPanel
-	if searchArea == nil {
-		panel.setError(errors.New("SearchArea: Cannot update preview - search area is nil"))
-		return
-	}
-
-	b := searchAreaBoundsFrom(searchArea)
-	b, err := resolveSearchAreaBounds("SearchArea", searchArea, b)
-	if err != nil {
-		panel.setError(err)
-		return
-	}
-
-	previewImg, err := captureSearchAreaPreview(b.lx, b.ty, b.rx, b.by)
-	if err != nil {
-		panel.setError(fmt.Errorf("SearchArea: %w (area: %s)", err, searchArea.Name))
-		return
-	}
-	panel.setImage(previewImg)
+	updateSearchAreaPreviewPanel(eu.EditorTabs.SearchAreasTab.previewPanel, searchArea)
 }
 
 func (eu *EditorUi) clearSearchAreaPreviewImage() {
@@ -442,28 +423,7 @@ func (eu *EditorUi) clearSearchAreaPreviewImage() {
 }
 
 func (eu *EditorUi) UpdatePointPreview(point *models.Point) {
-	panel := eu.EditorTabs.PointsTab.previewPanel
-	if point == nil {
-		panel.setError(errors.New("Point: Cannot update preview - point is nil"))
-		return
-	}
-
-	px := coordToIntForPreview(point.X)
-	py := coordToIntForPreview(point.Y)
-	vb := screen.VirtualBounds()
-	if px < vb.Min.X || py < vb.Min.Y || px > vb.Max.X || py > vb.Max.Y {
-		panel.setError(fmt.Errorf("Point: Point outside virtual desktop - desktop: (%d,%d)..(%d,%d), point: (%d,%d) (point: %s)",
-			vb.Min.X, vb.Min.Y, vb.Max.X, vb.Max.Y, px, py, point.Name))
-		return
-	}
-
-	previewImg, err := capturePointPreview(px, py)
-	if err != nil {
-		panel.setError(fmt.Errorf("Point: %w (point: %s)", err, point.Name))
-		return
-	}
-
-	panel.setImage(previewImg)
+	updatePointPreviewPanel(eu.EditorTabs.PointsTab.previewPanel, point)
 }
 
 func (eu *EditorUi) clearPointPreviewImage() {
@@ -472,25 +432,8 @@ func (eu *EditorUi) clearPointPreviewImage() {
 	}
 }
 
-// UpdateMaskPreview loads and displays the mask image for the given program and mask name.
 func (eu *EditorUi) UpdateMaskPreview(programName, maskName string) {
-	masksPath := config.GetMasksPath()
-	imgPath := filepath.Join(masksPath, programName, maskName+config.PNG)
-
-	if _, err := os.Stat(imgPath); err != nil {
-		eu.ClearMaskPreviewImage()
-		return
-	}
-
-	img, err := vision.ReadColorImage(imgPath)
-	if err != nil {
-		eu.ClearMaskPreviewImage()
-		return
-	}
-
-	if panel := eu.EditorTabs.MasksTab.previewPanel; panel != nil {
-		panel.setImage(img)
-	}
+	updateMaskPreviewPanel(eu.EditorTabs.MasksTab.previewPanel, programName, maskName)
 }
 
 func (eu *EditorUi) ClearMaskPreviewImage() {
