@@ -197,9 +197,13 @@ func newProgramListRowTemplate(cfg programListAccordionConfig) fyne.CanvasObject
 func bindProgramListRow(co fyne.CanvasObject, cfg programListAccordionConfig, program *models.Program, key, labelText string) {
 	if cfg.GetPreviewImage != nil {
 		prog := program
+		var onEdit custom_widgets.PreviewTooltipEditFunc
+		if cfg.OnSelect != nil {
+			onEdit = func() { cfg.OnSelect(prog, key) }
+		}
 		custom_widgets.BindPreviewListRow(co, labelText, func() (custom_widgets.PreviewTooltipResult, error) {
 			return cfg.GetPreviewImage(prog, key)
-		})
+		}, onEdit)
 		return
 	}
 	lbl := co.(*ttwidget.Label)

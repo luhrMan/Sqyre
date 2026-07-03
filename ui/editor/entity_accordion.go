@@ -83,8 +83,23 @@ func buildProgramEntityAccordionRow(cfg entityAccordionConfig, program *models.P
 				return
 			}
 			prog := program
+			listID := id
 			custom_widgets.BindPreviewListRow(co, name, func() (custom_widgets.PreviewTooltipResult, error) {
 				return cfg.getPreviewImage(prog, key)
+			}, func() {
+				pro, err := repositories.ProgramRepo().Get(program.Name)
+				if err != nil {
+					editorRepoLog("load", "program", program.Name, err)
+					return
+				}
+				if cfg.tab.ProgramSelector != nil {
+					cfg.tab.ProgramSelector.SetSelected(pro.Name)
+				}
+				cfg.onSelected(pro, key)
+				if cfg.extraOnSelected != nil {
+					cfg.extraOnSelected()
+				}
+				state.list.Select(listID)
 			})
 		},
 	)
