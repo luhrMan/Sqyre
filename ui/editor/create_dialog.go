@@ -90,10 +90,7 @@ func programCreateConfig() createDialogConfig {
 			populateProgramsFormWidgets(w)
 			return buildProgramsRightPanel(w), w
 		},
-		prefill: func(w map[string]fyne.CanvasObject) {
-			src := shell().EditorTabs.ProgramsTab.Widgets
-			copyTabWidgetsToDialog(src, w, "Name")
-		},
+		prefill: prefillProgramCreateDialog,
 		onSave: func(w map[string]fyne.CanvasObject) error {
 			n := w["Name"].(*widget.Entry).Text
 			if err := validateCreateName(n); err != nil {
@@ -125,7 +122,7 @@ func itemCreateConfig() createDialogConfig {
 	var draftCtx createDialogContext
 	return createDialogConfig{
 		title:      "New Item",
-		dialogSize: fyne.NewSize(700, 650),
+		dialogSize: fyne.NewSize(800, 700),
 		buildForm: func() (fyne.CanvasObject, map[string]fyne.CanvasObject) {
 			w := make(map[string]fyne.CanvasObject)
 			ps := widget.NewSelect(repositories.ProgramRepo().GetAllKeys(), nil)
@@ -134,10 +131,7 @@ func itemCreateConfig() createDialogConfig {
 			return buildItemsRightPanel(ps, w), w
 		},
 		prefill: func(w map[string]fyne.CanvasObject) {
-			src := shell().EditorTabs.ItemsTab.Widgets
-			tab := shell().EditorTabs.ItemsTab
-			w["ProgramSelector"].(*widget.Select).SetSelected(tab.ProgramSelector.Selected)
-			copyTabWidgetsToDialog(src, w, "Name", "Cols", "Rows", "StackMax")
+			prefillItemCreateDialog(w, &draftCtx)
 		},
 		wire: func(w map[string]fyne.CanvasObject) {
 			ps := w["ProgramSelector"].(*widget.Select)
@@ -194,30 +188,29 @@ func pointCreateConfig() createDialogConfig {
 	var refreshBtn *widget.Button
 	return createDialogConfig{
 		title:      "New Point",
-		dialogSize: fyne.NewSize(700, 550),
+		dialogSize: fyne.NewSize(850, 650),
 		buildForm: func() (fyne.CanvasObject, map[string]fyne.CanvasObject) {
 			w := make(map[string]fyne.CanvasObject)
 			ps := widget.NewSelect(repositories.ProgramRepo().GetAllKeys(), nil)
 			w["ProgramSelector"] = ps
-			populatePointsFormWidgets(w)
+			populatePointsCreateFormWidgets(w)
 			previewPanel = newEditorPreviewPanel()
 			refreshBtn = newEditorPreviewRefreshButton()
 			return buildPointsRightPanel(ps, w, previewPanel, refreshBtn), w
 		},
-		prefill: func(w map[string]fyne.CanvasObject) {
-			src := shell().EditorTabs.PointsTab.Widgets
-			tab := shell().EditorTabs.PointsTab
-			w["ProgramSelector"].(*widget.Select).SetSelected(tab.ProgramSelector.Selected)
-			copyTabWidgetsToDialog(src, w, "Name", "X", "Y")
-		},
+		prefill: prefillPointCreateDialog,
 		wire: func(w map[string]fyne.CanvasObject) {
+			wireCreateCoordPreview(w, []string{"X", "Y"}, func() {
+				safeUpdatePointPreviewPanel(previewPanel, pointFromWidgets(w))
+			})
 			wirePointRecordButton(w, func(x, y int) {
 				p := pointFromWidgets(w)
 				p.X = x
 				p.Y = y
-				shell().UpdatePointPreview(p)
+				safeUpdatePointPreviewPanel(previewPanel, p)
 			})
-			wirePointPreviewRefresh(refreshBtn, w)
+			wirePointPreviewRefresh(previewPanel, refreshBtn, w)
+			safeUpdatePointPreviewPanel(previewPanel, pointFromWidgets(w))
 		},
 		onSave: func(w map[string]fyne.CanvasObject) error {
 			p := pointFromWidgets(w)
@@ -261,32 +254,31 @@ func searchAreaCreateConfig() createDialogConfig {
 	var refreshBtn *widget.Button
 	return createDialogConfig{
 		title:      "New Search Area",
-		dialogSize: fyne.NewSize(700, 550),
+		dialogSize: fyne.NewSize(850, 650),
 		buildForm: func() (fyne.CanvasObject, map[string]fyne.CanvasObject) {
 			w := make(map[string]fyne.CanvasObject)
 			ps := widget.NewSelect(repositories.ProgramRepo().GetAllKeys(), nil)
 			w["ProgramSelector"] = ps
-			populateSearchAreasFormWidgets(w)
+			populateSearchAreasCreateFormWidgets(w)
 			previewPanel = newEditorPreviewPanel()
 			refreshBtn = newEditorPreviewRefreshButton()
 			return buildSearchAreasRightPanel(ps, w, previewPanel, refreshBtn), w
 		},
-		prefill: func(w map[string]fyne.CanvasObject) {
-			src := shell().EditorTabs.SearchAreasTab.Widgets
-			tab := shell().EditorTabs.SearchAreasTab
-			w["ProgramSelector"].(*widget.Select).SetSelected(tab.ProgramSelector.Selected)
-			copyTabWidgetsToDialog(src, w, "Name", "LeftX", "TopY", "RightX", "BottomY")
-		},
+		prefill: prefillSearchAreaCreateDialog,
 		wire: func(w map[string]fyne.CanvasObject) {
+			wireCreateCoordPreview(w, []string{"LeftX", "TopY", "RightX", "BottomY"}, func() {
+				safeUpdateSearchAreaPreviewPanel(previewPanel, searchAreaFromWidgets(w))
+			})
 			wireSearchAreaRecordButton(w, func(lx, ty, rx, by int) {
 				sa := searchAreaFromWidgets(w)
 				sa.LeftX = lx
 				sa.TopY = ty
 				sa.RightX = rx
 				sa.BottomY = by
-				shell().UpdateSearchAreaPreview(sa)
+				safeUpdateSearchAreaPreviewPanel(previewPanel, sa)
 			})
-			wireSearchAreaPreviewRefresh(refreshBtn, w)
+			wireSearchAreaPreviewRefresh(previewPanel, refreshBtn, w)
+			safeUpdateSearchAreaPreviewPanel(previewPanel, searchAreaFromWidgets(w))
 		},
 		onSave: func(w map[string]fyne.CanvasObject) error {
 			sa := searchAreaFromWidgets(w)
@@ -332,22 +324,17 @@ func maskCreateConfig() createDialogConfig {
 	var refreshBtn *widget.Button
 	return createDialogConfig{
 		title:      "New Mask",
-		dialogSize: fyne.NewSize(700, 550),
+		dialogSize: fyne.NewSize(850, 650),
 		buildForm: func() (fyne.CanvasObject, map[string]fyne.CanvasObject) {
 			w := make(map[string]fyne.CanvasObject)
 			ps := widget.NewSelect(repositories.ProgramRepo().GetAllKeys(), nil)
 			w["ProgramSelector"] = ps
-			populateMasksFormWidgets(w)
+			populateMasksCreateFormWidgets(w)
 			previewPanel = newEditorPreviewPanel()
 			refreshBtn = newEditorPreviewRefreshButton()
 			return buildMasksRightPanel(ps, w, previewPanel, refreshBtn), w
 		},
-		prefill: func(w map[string]fyne.CanvasObject) {
-			src := shell().EditorTabs.MasksTab.Widgets
-			tab := shell().EditorTabs.MasksTab
-			w["ProgramSelector"].(*widget.Select).SetSelected(tab.ProgramSelector.Selected)
-			copyTabWidgetsToDialog(src, w, "Name", "CenterX", "CenterY", "Base", "Height", "Radius", "shapeSelect", "Inverse")
-		},
+		prefill: prefillMaskCreateDialog,
 		wire: func(w map[string]fyne.CanvasObject) {
 			ps := w["ProgramSelector"].(*widget.Select)
 			wireCreateMaskDialog(w, ps, previewPanel, refreshBtn)

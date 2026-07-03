@@ -3,6 +3,7 @@ package custom_widgets
 import (
 	"Sqyre/internal/models"
 	"Sqyre/ui/completionentry"
+	"strconv"
 	"strings"
 
 	"fyne.io/fyne/v2"
@@ -495,6 +496,8 @@ func EntryText(w fyne.CanvasObject) string {
 		return e.Text
 	case *VarEntryField:
 		return e.Entry.Text
+	case *Incrementer:
+		return strconv.Itoa(e.Value)
 	}
 	return ""
 }
@@ -509,6 +512,10 @@ func SetEntryText(w fyne.CanvasObject, text string) {
 	case *VarEntryField:
 		e.Entry.SetText(text)
 		e.Revalidate()
+	case *Incrementer:
+		if v, err := strconv.Atoi(strings.TrimSpace(text)); err == nil {
+			e.SetValue(v)
+		}
 	}
 }
 
