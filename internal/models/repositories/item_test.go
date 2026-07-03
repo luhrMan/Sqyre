@@ -38,7 +38,7 @@ func TestItemRepository_ThreadSafety_ConcurrentReads(t *testing.T) {
 	program.Name = "concurrent test"
 
 	// Populate with items
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		key := fmt.Sprintf("item%d", i)
 		program.Items[key] = &models.Item{
 			Name:     fmt.Sprintf("Item %d", i),
@@ -53,7 +53,7 @@ func TestItemRepository_ThreadSafety_ConcurrentReads(t *testing.T) {
 	errors := make(chan error, 100)
 
 	// Concurrent reads
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
@@ -97,7 +97,7 @@ func TestItemRepository_ThreadSafety_ConcurrentWrites(t *testing.T) {
 	errors := make(chan error, 100)
 
 	// Concurrent writes
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
@@ -138,7 +138,7 @@ func TestItemRepository_ThreadSafety_MixedOperations(t *testing.T) {
 	program.Name = "mixed operations"
 
 	// Populate with initial data
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		key := fmt.Sprintf("item%d", i)
 		program.Items[key] = &models.Item{
 			Name:     fmt.Sprintf("Item %d", i),
@@ -159,7 +159,7 @@ func TestItemRepository_ThreadSafety_MixedOperations(t *testing.T) {
 	errors := make(chan error, 200)
 
 	// Concurrent reads
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
@@ -189,27 +189,23 @@ func TestItemRepository_ThreadSafety_MixedOperations(t *testing.T) {
 	}
 
 	// Concurrent GetAll
-	for i := 0; i < 50; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 50 {
+		wg.Go(func() {
 			all := repo.GetAll()
 			if len(all) < 50 {
 				errors <- fmt.Errorf("GetAll returned too few items: %d", len(all))
 			}
-		}()
+		})
 	}
 
 	// Concurrent GetAllKeys
-	for i := 0; i < 50; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 50 {
+		wg.Go(func() {
 			keys := repo.GetAllKeys()
 			if len(keys) < 50 {
 				errors <- fmt.Errorf("GetAllKeys returned too few keys: %d", len(keys))
 			}
-		}()
+		})
 	}
 
 	wg.Wait()
@@ -234,7 +230,7 @@ func TestItemRepository_ThreadSafety_ConcurrentDeletes(t *testing.T) {
 	program.Name = "concurrent deletes"
 
 	// Populate with items
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		key := fmt.Sprintf("item%d", i)
 		program.Items[key] = &models.Item{
 			Name:     fmt.Sprintf("Item %d", i),
@@ -254,7 +250,7 @@ func TestItemRepository_ThreadSafety_ConcurrentDeletes(t *testing.T) {
 	var wg sync.WaitGroup
 
 	// Concurrent deletes (direct map access to avoid file I/O)
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
@@ -273,7 +269,7 @@ func TestItemRepository_ThreadSafety_ConcurrentDeletes(t *testing.T) {
 	}
 
 	// Verify deleted items are gone
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		key := fmt.Sprintf("item%d", i)
 		_, err := repo.Get(key)
 		if !errors.Is(err, ErrNotFound) {
@@ -876,7 +872,10 @@ func TestItemRepository_Integration_ProgramItemRepo(t *testing.T) {
 		}
 
 		// Access ItemRepository through Program.ItemRepo()
-		itemRepo := retrieved.ItemRepo()
+		itemRepo, err := retrieved.ItemRepo()
+		if err != nil {
+			t.Fatalf("ItemRepo(): %v", err)
+		}
 		if itemRepo == nil {
 			t.Fatal("ItemRepo() should not return nil")
 		}
@@ -913,9 +912,12 @@ func TestItemRepository_Integration_ProgramItemRepo(t *testing.T) {
 		program.Name = "Singleton Test"
 
 		// Call ItemRepo() multiple times
-		repo1 := program.ItemRepo()
-		repo2 := program.ItemRepo()
-		repo3 := program.ItemRepo()
+		repo1, err := program.ItemRepo()
+		if err != nil {
+			t.Fatalf("ItemRepo(): %v", err)
+		}
+		repo2, _ := program.ItemRepo()
+		repo3, _ := program.ItemRepo()
 
 		// Verify they're the same instance (pointer comparison)
 		if repo1 != repo2 || repo2 != repo3 {

@@ -44,6 +44,25 @@ var globalSearchCache = &searchCache{
 	imageMasks: make(map[string]imageMaskCacheEntry),
 }
 
+// ResetSearchCacheForTesting clears all cached search templates and variant lists.
+func ResetSearchCacheForTesting() {
+	globalSearchCache.mu.Lock()
+	defer globalSearchCache.mu.Unlock()
+	for _, entry := range globalSearchCache.templates {
+		if !entry.blurred.Empty() {
+			entry.blurred.Close()
+		}
+	}
+	for _, entry := range globalSearchCache.imageMasks {
+		if !entry.mask.Empty() {
+			entry.mask.Close()
+		}
+	}
+	globalSearchCache.variants = make(map[string]variantListCacheEntry)
+	globalSearchCache.templates = make(map[string]templateCacheEntry)
+	globalSearchCache.imageMasks = make(map[string]imageMaskCacheEntry)
+}
+
 func templateCacheKey(iconPath string, blurKernel int) string {
 	return iconPath + "\x00" + strconv.Itoa(blurKernel)
 }

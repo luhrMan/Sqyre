@@ -171,10 +171,7 @@ func probeBackend(kind BackendKind, specs []monitorSpec, opts probeOptions) (Bac
 		if geomMismatch {
 			mp.Passed = false
 		} else {
-			requiredPasses := 2
-			if opts.Frames < requiredPasses {
-				requiredPasses = opts.Frames
-			}
+			requiredPasses := min(opts.Frames, 2)
 			mp.Passed = passFrames >= requiredPasses
 			if !mp.Passed && mp.Reason == "" {
 				mp.Reason = "similarity below threshold"
@@ -365,7 +362,7 @@ func buildMonitorPlans(specs []monitorSpec) []MonitorPlan {
 func enabledMonitorSpecs() []monitorSpec {
 	n := screen.NumDisplays()
 	out := make([]monitorSpec, 0, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		b := screen.DisplayBoundsAbs(i)
 		if b.Empty() || b.Dx() <= 0 || b.Dy() <= 0 {
 			continue
@@ -408,10 +405,10 @@ func imageSimilarity(a, b image.Image) float64 {
 	const sy = 24
 	var total float64
 	var n int
-	for yi := 0; yi < sy; yi++ {
+	for yi := range sy {
 		ay := ab.Min.Y + (yi*(ab.Dy()-1))/maxInt(1, sy-1)
 		by := bb.Min.Y + (yi*(bb.Dy()-1))/maxInt(1, sy-1)
-		for xi := 0; xi < sx; xi++ {
+		for xi := range sx {
 			ax := ab.Min.X + (xi*(ab.Dx()-1))/maxInt(1, sx-1)
 			bx := bb.Min.X + (xi*(bb.Dx()-1))/maxInt(1, sx-1)
 			ac := ar.RGBAAt(ax-ab.Min.X, ay-ab.Min.Y)

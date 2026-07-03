@@ -3,7 +3,9 @@ package ui
 import (
 	"Sqyre/internal/config"
 	"Sqyre/internal/models/actions"
+	"Sqyre/ui/actiondisplay"
 	"Sqyre/internal/models/repositories"
+	"Sqyre/internal/screen"
 	"Sqyre/ui/macro/actiondialog"
 	"log"
 	"strconv"
@@ -14,7 +16,6 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
-	"github.com/go-vgo/robotgo"
 )
 
 type actionTemplate struct {
@@ -27,48 +28,48 @@ type actionTemplate struct {
 
 func buildActionTemplates() []actionTemplate {
 	return []actionTemplate{
-		{label: "Mouse Move", actionType: "move", category: "Mouse & Keyboard", icon: actions.NewMove("", true).Icon(), create: func() actions.ActionInterface {
+		{label: "Mouse Move", actionType: "move", category: "Mouse & Keyboard", icon: actiondisplay.Icon(actions.NewMove("", true)), create: func() actions.ActionInterface {
 			return actions.NewMove("", true)
 		}},
-		{label: "Click", actionType: "click", category: "Mouse & Keyboard", icon: actions.NewClick(actions.ClickButtonLeft, true).Icon(), create: func() actions.ActionInterface { return actions.NewClick(actions.ClickButtonLeft, true) }},
-		{label: "Key", actionType: "key", category: "Mouse & Keyboard", icon: actions.NewKey("ctrl", true).Icon(), create: func() actions.ActionInterface { return actions.NewKey("ctrl", true) }},
-		{label: "Type", actionType: "type", category: "Mouse & Keyboard", icon: actions.NewType("", 0).Icon(), create: func() actions.ActionInterface { return actions.NewType("", 0) }},
-		{label: "Wait", actionType: "wait", category: "Miscellaneous", icon: actions.NewWait(0).Icon(), create: func() actions.ActionInterface { return actions.NewWait(0) }},
-		{label: "Pause", actionType: "pause", category: "Miscellaneous", icon: actions.NewPause("", nil, false).Icon(), create: func() actions.ActionInterface {
+		{label: "Click", actionType: "click", category: "Mouse & Keyboard", icon: actiondisplay.Icon(actions.NewClick(actions.ClickButtonLeft, true)), create: func() actions.ActionInterface { return actions.NewClick(actions.ClickButtonLeft, true) }},
+		{label: "Key", actionType: "key", category: "Mouse & Keyboard", icon: actiondisplay.Icon(actions.NewKey("ctrl", true)), create: func() actions.ActionInterface { return actions.NewKey("ctrl", true) }},
+		{label: "Type", actionType: "type", category: "Mouse & Keyboard", icon: actiondisplay.Icon(actions.NewType("", 0)), create: func() actions.ActionInterface { return actions.NewType("", 0) }},
+		{label: "Wait", actionType: "wait", category: "Miscellaneous", icon: actiondisplay.Icon(actions.NewWait(0)), create: func() actions.ActionInterface { return actions.NewWait(0) }},
+		{label: "Pause", actionType: "pause", category: "Miscellaneous", icon: actiondisplay.Icon(actions.NewPause("", nil, false)), create: func() actions.ActionInterface {
 			return actions.NewPause("", nil, false)
 		}},
-		{label: "Focus window", actionType: "focuswindow", category: "Miscellaneous", icon: actions.NewFocusWindow("", "").Icon(), create: func() actions.ActionInterface { return actions.NewFocusWindow("", "") }},
-		{label: "Run macro", actionType: "runmacro", category: "Miscellaneous", icon: actions.NewRunMacro("").Icon(), create: func() actions.ActionInterface { return actions.NewRunMacro("") }},
+		{label: "Focus window", actionType: "focuswindow", category: "Miscellaneous", icon: actiondisplay.Icon(actions.NewFocusWindow("", "")), create: func() actions.ActionInterface { return actions.NewFocusWindow("", "") }},
+		{label: "Run macro", actionType: "runmacro", category: "Miscellaneous", icon: actiondisplay.Icon(actions.NewRunMacro("")), create: func() actions.ActionInterface { return actions.NewRunMacro("") }},
 
-		{label: "If", actionType: "conditional", category: "Miscellaneous", icon: actions.NewConditional(nil, actions.MatchAll, "", []actions.ActionInterface{}).Icon(), create: func() actions.ActionInterface {
+		{label: "If", actionType: "conditional", category: "Miscellaneous", icon: actiondisplay.Icon(actions.NewConditional(nil, actions.MatchAll, "", []actions.ActionInterface{})), create: func() actions.ActionInterface {
 			return actions.NewConditional(nil, actions.MatchAll, "", []actions.ActionInterface{})
 		}},
 
-		{label: "Loop", actionType: "loop", category: "Loop flow", icon: actions.NewLoop(1, "", []actions.ActionInterface{}).Icon(), create: func() actions.ActionInterface {
+		{label: "Loop", actionType: "loop", category: "Loop flow", icon: actiondisplay.Icon(actions.NewLoop(1, "", []actions.ActionInterface{})), create: func() actions.ActionInterface {
 			return actions.NewLoop(1, "", []actions.ActionInterface{})
 		}},
-		{label: "Break", actionType: "break", category: "Loop flow", icon: actions.NewBreak().Icon(), create: func() actions.ActionInterface {
+		{label: "Break", actionType: "break", category: "Loop flow", icon: actiondisplay.Icon(actions.NewBreak()), create: func() actions.ActionInterface {
 			return actions.NewBreak()
 		}},
-		{label: "Continue", actionType: "continue", category: "Loop flow", icon: actions.NewContinue().Icon(), create: func() actions.ActionInterface {
+		{label: "Continue", actionType: "continue", category: "Loop flow", icon: actiondisplay.Icon(actions.NewContinue()), create: func() actions.ActionInterface {
 			return actions.NewContinue()
 		}},
-		{label: "Image Search", actionType: "imagesearch", category: "Detection", icon: actions.NewImageSearch("", []actions.ActionInterface{}, []string{}, "", 1, 1, 0.95, 5).Icon(), create: func() actions.ActionInterface {
+		{label: "Image Search", actionType: "imagesearch", category: "Detection", icon: actiondisplay.Icon(actions.NewImageSearch("", []actions.ActionInterface{}, []string{}, "", 1, 1, 0.95, 5)), create: func() actions.ActionInterface {
 			return actions.NewImageSearch("", []actions.ActionInterface{}, []string{}, "", 1, 1, 0.95, 5)
 		}},
-		{label: "OCR", actionType: "ocr", category: "Detection", icon: actions.NewOcr("", "template", "template search area").Icon(), create: func() actions.ActionInterface {
+		{label: "OCR", actionType: "ocr", category: "Detection", icon: actiondisplay.Icon(actions.NewOcr("", "template", "template search area")), create: func() actions.ActionInterface {
 			return actions.NewOcr("", "template", "template search area")
 		}},
-		{label: "Find pixel", actionType: "findpixel", category: "Detection", icon: actions.NewFindPixel("", "", "ffffff", 0).Icon(), create: func() actions.ActionInterface {
+		{label: "Find pixel", actionType: "findpixel", category: "Detection", icon: actiondisplay.Icon(actions.NewFindPixel("", "", "ffffff", 0)), create: func() actions.ActionInterface {
 			return actions.NewFindPixel("", "", "ffffff", 0)
 		}},
 
-		{label: "Set", actionType: "setvariable", category: "Variables", icon: actions.NewSetVariable("", "").Icon(), create: func() actions.ActionInterface { return actions.NewSetVariable("", "") }},
-		{label: "Calculate", actionType: "calculate", category: "Variables", icon: actions.NewCalculate("", "").Icon(), create: func() actions.ActionInterface { return actions.NewCalculate("", "") }},
-		{label: "For each row", actionType: "foreachrow", category: "Variables", icon: actions.NewForEachRow("", []actions.ListColumn{{}}, nil).Icon(), create: func() actions.ActionInterface {
+		{label: "Set", actionType: "setvariable", category: "Variables", icon: actiondisplay.Icon(actions.NewSetVariable("", "")), create: func() actions.ActionInterface { return actions.NewSetVariable("", "") }},
+		{label: "Calculate", actionType: "calculate", category: "Variables", icon: actiondisplay.Icon(actions.NewCalculate("", "")), create: func() actions.ActionInterface { return actions.NewCalculate("", "") }},
+		{label: "For each row", actionType: "foreachrow", category: "Variables", icon: actiondisplay.Icon(actions.NewForEachRow("", []actions.ListColumn{{}}, nil)), create: func() actions.ActionInterface {
 			return actions.NewForEachRow("", []actions.ListColumn{{}}, nil)
 		}},
-		{label: "Save to", actionType: "savevariable", category: "Variables", icon: actions.NewSaveVariable("", "", false, false).Icon(), create: func() actions.ActionInterface {
+		{label: "Save to", actionType: "savevariable", category: "Variables", icon: actiondisplay.Icon(actions.NewSaveVariable("", "", false, false)), create: func() actions.ActionInterface {
 			return actions.NewSaveVariable("", "", false, false)
 		}},
 	}
@@ -88,7 +89,7 @@ func buildAddActionPickerContent(templates []actionTemplate, onPick func(actionT
 	}
 	for _, tmpl := range templates {
 		t := tmpl
-		bg := canvas.NewRectangle(actions.ActionPastelColor(t.actionType))
+		bg := canvas.NewRectangle(actiondisplay.ActionPastelColorForApp(t.actionType))
 		bg.CornerRadius = 8
 		bg.StrokeColor = theme.ShadowColor()
 		bg.StrokeWidth = 1
@@ -243,10 +244,10 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 		if config.IsUITestMode() {
 			str = "Total Screen Size: 1920x1080\nMonitor 1 Size: 1080x1920\n"
 		} else {
-			w, h := robotgo.GetScreenSize()
+			w, h := screen.GetScreenSize()
 			str = str + "Total Screen Size: " + strconv.Itoa(w) + "x" + strconv.Itoa(h) + "\n"
-			for d := range robotgo.DisplaysNum() {
-				_, _, mh, mw := robotgo.GetDisplayBounds(d)
+			for d := 0; d < screen.NumDisplays(); d++ {
+				_, _, mw, mh := screen.GetDisplayBounds(d)
 				str = str + "Monitor " + strconv.Itoa(d+1) + " Size: " + strconv.Itoa(mh) + "x" + strconv.Itoa(mw) + "\n"
 			}
 		}
@@ -256,7 +257,7 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 	editor := fyne.NewMenuItem("Data Editor", func() {
 		EnsureDataEditor()
 		u.showOverlay(u.EditorUi.CanvasObject, "Editor", overlayEditor)
-		if mt := GetUi().Mui.MTabs.SelectedTab(); mt != nil {
+		if mt := u.Mui.MTabs.SelectedTab(); mt != nil {
 			mt.UnselectAll()
 			mt.SelectedNode = ""
 		}
@@ -266,31 +267,6 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 		u.showOverlay(u.SettingsUi.CanvasObject, "User Settings", overlaySettings)
 	})
 
-	// testMenu := fyne.NewMenu("Test",
-	// 	fyne.NewMenuItem("Add Item", func() { addItemWindow() }),
-	// 	fyne.NewMenuItem("Set Items from JSON", func() {
-	// 		dialog.ShowFileOpen(func(reader fyne.URIReadCloser, err error) {
-	// 			log.Println(reader.URI().Path())
-	// 			i := items.ParseItemsFromJson(reader.URI().Path())
-	// 			for _, item := range i {
-	// 				programs.CurrentProgram().Items[item.Name] = item
-	// 			}
-	// 			items.SetItemsMap(programs.CurrentProgram().Items)
-	// 		}, u.win)
-	// 	}),
-	// 	fyne.NewMenuItem("Test string slice", func() {
-	// 		log.Println("String Map:",
-	// 			config.ViperConfig.Get("programs"+"."+config.DarkAndDarker+"."+"macros"),
-	// 		)
-	// 	}),
-	// 	fyne.NewMenuItem("unregister failsafe", func() {
-	// 		fs := []string{"esc", "ctrl", "shift"}
-
-	// 		hook.Unregister(hook.KeyDown, fs)
-	// 	}),
-	// )
-
-	// return fyne.NewMainMenu(fyne.NewMenu("Settings", computerInfo), macroMenu, calibrationMenu)
 	u.MainMenu.Items = append(u.MainMenu.Items, fyne.NewMenu("Settings", computerInfo, editor, userSettings), macroMenu)
 	return u.MainMenu
 }

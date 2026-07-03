@@ -1,10 +1,5 @@
 package actions
 
-import (
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/theme"
-)
-
 // FocusWindow activates a specific window identified by executable path and title.
 // Both fields are stable across restarts and distinguish windows that share a process name.
 type FocusWindow struct {
@@ -24,21 +19,10 @@ func NewFocusWindow(processPath, windowTitle string) *FocusWindow {
 }
 
 func (a *FocusWindow) String() string {
-	return stringifyParams(a.parameters())
+	return stringifyParams(a.Params())
 }
 
-func (a *FocusWindow) Display() fyne.CanvasObject {
-	title := a.WindowTitle
-	if title == "" {
-		title = "not set"
-	}
-	return displayFromParams([]actionParam{
-		newParam("Type", a.GetType()),
-		newParam("Title", title),
-	})
-}
-
-func (a *FocusWindow) parameters() []actionParam {
+func (a *FocusWindow) Params() []Param {
 	title := a.WindowTitle
 	if title == "" {
 		title = "not set"
@@ -47,13 +31,9 @@ func (a *FocusWindow) parameters() []actionParam {
 	if path == "" {
 		path = "not set"
 	}
-	return []actionParam{
+	return []Param{
 		newParam("Type", a.GetType()),
 		newParam("Title", title),
 		newParam("App", path),
 	}
-}
-
-func (a *FocusWindow) Icon() fyne.Resource {
-	return theme.VisibilityIcon()
 }

@@ -343,9 +343,7 @@ func setMtabSettingsAndWidgets(d WireDeps) {
 
 	mtabs.MacroNameEntry.OnSubmitted = func(sub string) {
 		if sub == "" {
-			e := dialog.NewError(errors.New("macro name cannot be empty"), d.Window)
-			d.AddDialogEscapeClose(e, d.Window)
-			e.Show()
+			d.ShowErrorWithEscape(errors.New("macro name cannot be empty"), d.Window)
 			return
 		}
 		for _, m := range repositories.MacroRepo().GetAll() {

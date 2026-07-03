@@ -73,10 +73,10 @@ func performDeleteForTab() {
 				entityType: "item",
 				name:       v.Name,
 				delete: func(p *models.Program) error {
-					return p.ItemRepo().Delete(v.Name)
+					return ProgramItemRepo(p).Delete(v.Name)
 				},
 				reset: func(p *models.Program) {
-					et.ItemsTab.SelectedItem = p.ItemRepo().New()
+					et.ItemsTab.SelectedItem = ProgramItemRepo(p).New()
 					if list, ok := et.ItemsTab.Widgets[programName+"-list"].(*widget.GridWrap); ok {
 						list.UnselectAll()
 					}
@@ -98,10 +98,10 @@ func performDeleteForTab() {
 				entityType: "point",
 				name:       v.Name,
 				delete: func(p *models.Program) error {
-					return p.PointRepo(config.MainMonitorSizeString).Delete(v.Name)
+					return ProgramPointRepo(p, config.MainMonitorSizeString).Delete(v.Name)
 				},
 				reset: func(p *models.Program) {
-					et.PointsTab.SelectedItem = p.PointRepo(config.MainMonitorSizeString).New()
+					et.PointsTab.SelectedItem = ProgramPointRepo(p, config.MainMonitorSizeString).New()
 					if list, ok := et.PointsTab.Widgets[programName+"-list"].(*widget.List); ok {
 						list.UnselectAll()
 					}
@@ -121,7 +121,7 @@ func performDeleteForTab() {
 				entityType: "mask",
 				name:       v.Name,
 				delete: func(p *models.Program) error {
-					return p.MaskRepo().Delete(v.Name)
+					return ProgramMaskRepo(p).Delete(v.Name)
 				},
 				cleanup: func() {
 					imgPath := filepath.Join(config.GetMasksPath(), programName, v.Name+config.PNG)
@@ -152,10 +152,10 @@ func performDeleteForTab() {
 				entityType: "search area",
 				name:       v.Name,
 				delete: func(p *models.Program) error {
-					return p.SearchAreaRepo(config.MainMonitorSizeString).Delete(v.Name)
+					return ProgramSearchAreaRepo(p, config.MainMonitorSizeString).Delete(v.Name)
 				},
 				reset: func(p *models.Program) {
-					et.SearchAreasTab.SelectedItem = p.SearchAreaRepo(config.MainMonitorSizeString).New()
+					et.SearchAreasTab.SelectedItem = ProgramSearchAreaRepo(p, config.MainMonitorSizeString).New()
 					if list, ok := et.SearchAreasTab.Widgets[programName+"-list"].(*widget.List); ok {
 						list.UnselectAll()
 					}

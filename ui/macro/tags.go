@@ -4,8 +4,8 @@ import (
 	"Sqyre/internal/models"
 	"Sqyre/internal/models/repositories"
 	"Sqyre/ui/completionentry"
-	"sort"
 	"slices"
+	"sort"
 	"strings"
 
 	"fyne.io/fyne/v2"
@@ -230,10 +230,8 @@ func addMacroTag(m *models.Macro, tagText string) bool {
 	if tagText == "" {
 		return false
 	}
-	for _, existing := range m.Tags {
-		if existing == tagText {
-			return false
-		}
+	if slices.Contains(m.Tags, tagText) {
+		return false
 	}
 	m.Tags = append(m.Tags, tagText)
 	return repositories.MacroRepo().Set(m.Name, m) == nil

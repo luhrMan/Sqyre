@@ -184,7 +184,7 @@ func TestConcurrentAccess(t *testing.T) {
 	results := make(chan map[string]*fyne.StaticResource, numGoroutines)
 
 	// Launch multiple goroutines that all call BytesToFyneIcons concurrently
-	for i := 0; i < numGoroutines; i++ {
+	for range numGoroutines {
 		go func() {
 			defer wg.Done()
 			icons := BytesToFyneIcons()
@@ -392,7 +392,7 @@ func TestGetFyneResource_ConcurrentAccess(t *testing.T) {
 	results := make(chan *fyne.StaticResource, numGoroutines)
 
 	// Launch multiple goroutines that all call GetFyneResource concurrently
-	for i := 0; i < numGoroutines; i++ {
+	for range numGoroutines {
 		go func() {
 			defer wg.Done()
 			resource := GetFyneResource(key)

@@ -57,18 +57,18 @@ func masksAccordionConfig() entityAccordionConfig {
 	return entityAccordionConfig{
 		tab: tab,
 		getKeys: func(p *models.Program) []string {
-			return p.MaskRepo().GetAllKeys()
+			return ProgramMaskRepo(p).GetAllKeys()
 		},
 		sortKeys: sortMaskKeysByDisplayName,
 		getEntity: func(p *models.Program, key string) (string, error) {
-			mask, err := p.MaskRepo().Get(key)
+			mask, err := ProgramMaskRepo(p).Get(key)
 			if err != nil {
 				return "", err
 			}
 			return mask.Name, nil
 		},
 		onSelected: func(p *models.Program, key string) {
-			mask, err := p.MaskRepo().Get(key)
+			mask, err := ProgramMaskRepo(p).Get(key)
 			if err != nil {
 				return
 			}
@@ -143,7 +143,7 @@ func setMasksButtons() {
 				if !ok {
 					return
 				}
-				if err := program.MaskRepo().Set(mask.Name, mask); err != nil {
+				if err := ProgramMaskRepo(program).Set(mask.Name, mask); err != nil {
 					editorRepoErr("save", "mask", mask.Name, err)
 					return
 				}

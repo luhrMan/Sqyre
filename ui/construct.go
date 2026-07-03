@@ -59,6 +59,7 @@ func SetEditorUi() {
 		NavigationVisible:              func() bool { return u.MainUi.Navigation.Visible() },
 		ShowErrorWithEscape:            ShowErrorWithEscape,
 		ShowConfirmWithEscape:          ShowConfirmWithEscape,
+		ShowInformationWithEscape:      ShowInformationWithEscape,
 		AddDialogEscapeClose:           AddDialogEscapeClose,
 		AddPopupEscapeClose:            AddPopupEscapeClose,
 		ShowRecordingOverlay:           recording.ShowRecordingOverlay,

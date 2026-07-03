@@ -58,7 +58,11 @@ func searchAreaFromProgram(programName, name, resolutionKey string) (*models.Sea
 	if err != nil {
 		return nil, err
 	}
-	sa, err := program.SearchAreaRepo(resolutionKey).Get(name)
+	saRepo, err := program.SearchAreaRepo(resolutionKey)
+	if err != nil {
+		return nil, err
+	}
+	sa, err := saRepo.Get(name)
 	if err != nil {
 		return nil, err
 	}
@@ -70,7 +74,11 @@ func pointFromProgram(programName, name, resolutionKey string) (*models.Point, e
 	if err != nil {
 		return nil, err
 	}
-	pt, err := program.PointRepo(resolutionKey).Get(name)
+	ptRepo, err := program.PointRepo(resolutionKey)
+	if err != nil {
+		return nil, err
+	}
+	pt, err := ptRepo.Get(name)
 	if err != nil {
 		return nil, err
 	}

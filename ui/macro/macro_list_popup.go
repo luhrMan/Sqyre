@@ -1,11 +1,10 @@
 package macro
 
 import (
+	macrologic "Sqyre/internal/macro"
 	"Sqyre/internal/macrohotkey"
 	"Sqyre/internal/models"
-	"Sqyre/internal/models/actions"
 	"Sqyre/internal/models/repositories"
-	"Sqyre/internal/models/serialize"
 	"Sqyre/ui/custom_widgets"
 	"fmt"
 	"log"
@@ -313,41 +312,11 @@ func duplicateMacro(sourceName string) (*models.Macro, error) {
 	if err != nil {
 		return nil, err
 	}
-	dup, err := cloneMacro(src)
+	dup, err := macrologic.CloneMacro(src)
 	if err != nil {
 		return nil, err
 	}
 	dup.Name = uniqueMacroCopyName(sourceName)
-	return dup, nil
-}
-
-func cloneMacro(src *models.Macro) (*models.Macro, error) {
-	if src == nil || src.Root == nil {
-		return nil, fmt.Errorf("cannot clone macro")
-	}
-	rootMap, err := serialize.ActionToMap(src.Root)
-	if err != nil {
-		return nil, err
-	}
-	rootAction, err := serialize.ViperSerializer.CreateActionFromMap(rootMap, nil)
-	if err != nil {
-		return nil, err
-	}
-	root, ok := rootAction.(*actions.Loop)
-	if !ok {
-		return nil, fmt.Errorf("macro root is not a loop")
-	}
-	decls := make([]models.VariableDecl, len(src.VariableDecls))
-	copy(decls, src.VariableDecls)
-	tags := append([]string(nil), src.Tags...)
-
-	dup := models.NewMacro("", src.GlobalDelay, nil)
-	dup.KeyboardDelay = src.KeyboardDelay
-	dup.MouseDelay = src.MouseDelay
-	dup.Root = root
-	dup.VariableDecls = decls
-	dup.Tags = tags
-	dup.InitRuntimeVariables()
 	return dup, nil
 }
 

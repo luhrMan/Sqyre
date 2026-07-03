@@ -9,22 +9,29 @@ import (
 )
 
 var (
-	editorBuilt   bool
-	editorBuildMu sync.Mutex
+	editorBuiltFor *EditorUi
+	editorBuildMu  sync.Mutex
 )
 
 // IsBuilt reports whether the data editor UI has been constructed.
 func IsBuilt() bool {
 	editorBuildMu.Lock()
 	defer editorBuildMu.Unlock()
-	return editorBuilt
+	return editorBuiltFor != nil
 }
 
-// EnsureBuilt constructs the data editor on first use.
+// ResetBuiltForTesting clears the built marker so the next EditorUi is constructed fresh.
+func ResetBuiltForTesting() {
+	editorBuildMu.Lock()
+	defer editorBuildMu.Unlock()
+	editorBuiltFor = nil
+}
+
+// EnsureBuilt constructs the data editor on first use for each EditorUi instance.
 func EnsureBuilt(eu *EditorUi, win fyne.Window) {
 	editorBuildMu.Lock()
 	defer editorBuildMu.Unlock()
-	if editorBuilt {
+	if eu == editorBuiltFor {
 		return
 	}
 
@@ -43,5 +50,5 @@ func EnsureBuilt(eu *EditorUi, win fyne.Window) {
 	eu.EditorTabs.OnSelected = func(*container.TabItem) {
 		eu.RefreshEditorActionBar()
 	}
-	editorBuilt = true
+	editorBuiltFor = eu
 }

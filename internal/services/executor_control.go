@@ -5,8 +5,6 @@ import (
 	"Sqyre/internal/models/actions"
 	"fmt"
 	"log"
-
-	"fyne.io/fyne/v2"
 )
 
 func init() {
@@ -29,19 +27,15 @@ func executeLoop(a actions.ActionInterface, macro *models.Macro) error {
 	}
 	if node.Name == "root" {
 		resetListSourcesInTree(node)
-		fyne.Do(func() {
-			MacroActiveIndicator().Show()
-			MacroActiveIndicator().Start()
-		})
+		showMacroIndicator()
+		startMacroIndicator()
 	}
 
 	for i := range count {
 		if err := checkMacroStop(); err != nil {
 			if node.Name == "root" {
-				fyne.Do(func() {
-					MacroActiveIndicator().Stop()
-					MacroActiveIndicator().Hide()
-				})
+				stopMacroIndicator()
+				hideMacroIndicator()
 			}
 			return err
 		}
@@ -49,9 +43,9 @@ func executeLoop(a actions.ActionInterface, macro *models.Macro) error {
 		brk, cont, err := handleLoopFlow(executeSubActions(node.GetSubActions(), macro))
 		if err != nil {
 			if node.Name == "root" {
-				fyne.DoAndWait(func() {
-					MacroActiveIndicator().Stop()
-					MacroActiveIndicator().Hide()
+				onUIThreadAndWait(func() {
+					stopMacroIndicator()
+					hideMacroIndicator()
 				})
 			}
 			return err
@@ -64,10 +58,8 @@ func executeLoop(a actions.ActionInterface, macro *models.Macro) error {
 		}
 	}
 	if node.Name == "root" {
-		fyne.Do(func() {
-			MacroActiveIndicator().Stop()
-			MacroActiveIndicator().Hide()
-		})
+		stopMacroIndicator()
+		hideMacroIndicator()
 	}
 	return nil
 }
