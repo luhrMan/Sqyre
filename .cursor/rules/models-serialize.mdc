@@ -1,0 +1,38 @@
+---
+description: Action models and YAML serialization conventions
+globs: "internal/models/**/*.go"
+alwaysApply: false
+---
+
+# Models & Serialization
+
+## Action types
+
+- Each action: struct in `internal/models/actions/`, `New*` constructor, `GetType()` string matching the YAML `type` key (lowercase, no spaces).
+- Macro root is always a `loop`; tree mutations go through `AdvancedActionInterface` (`AddSubAction`, `SetSubActions`).
+- Variable references use `${name}` strings; keep parsing/validation in `actions/`, not in serialize.
+
+## Adding or changing an action
+
+Update all of these in one change:
+
+1. Action struct + `New*` in `internal/models/actions/`
+2. `decode*` / `encode*` + `registerActionCodec` in `internal/models/serialize/action_codecs.go`
+3. Round-trip test: build action → `ActionToMap` → `CreateActionFromMap` → compare fields
+4. At least one `DecodeMacroFromMap` or YAML fixture test if macro-level keys change
+
+```go
+// ✅ GOOD — register in action_codecs.go init()
+registerActionCodec("wait", decodeWait, encodeWait)
+```
+
+## YAML shape
+
+- Keys are lowercase (`globaldelay`, `subactions`, `hotkey_trigger`).
+- Decode tolerates `[]any` from YAML and `[]string` from in-memory maps (see `targetsFromMap`, `stringSliceFromAny`).
+- Prefer `DecodeMacroFromMap` in tests over writing temp `db.yaml` unless persistence is under test.
+
+## Repositories
+
+- Access entities via `MacroRepo()` / `ProgramRepo()`; call `ResetAllForTesting()` in tests before rebinding config.
+- Entity CRUD tests live beside repositories (`*_test.go`, `integration_test.go`); keep decode/encode tests in `serialize/`.
