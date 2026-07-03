@@ -450,7 +450,6 @@ func buildItemsAccordionWithSearchbar(
 	getTargets func() []string,
 	onItemSelected func(programName, baseItemName string),
 	onSelectionChanged func(newTargets []string),
-	refreshPreview func(),
 ) (*widget.Entry, fyne.CanvasObject, func()) {
 	searchbar := widget.NewEntry()
 	searchbar.SetPlaceHolder("Filter programs and items (fuzzy match)")

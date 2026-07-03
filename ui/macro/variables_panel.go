@@ -87,7 +87,7 @@ func newVariableListRow() (fyne.CanvasObject, *variableListRow) {
 	row := &variableListRow{}
 	row.iconBg = canvas.NewRectangle(actiondisplay.ActionPastelColorForApp("setvariable"))
 	row.iconBg.CornerRadius = 6
-	row.iconBg.StrokeColor = theme.ShadowColor()
+	row.iconBg.StrokeColor = theme.Color(theme.ColorNameShadow)
 	row.iconBg.StrokeWidth = 1
 	row.iconBtn = ttwidget.NewButtonWithIcon("", assets.VariableIcon, nil)
 	row.iconBtn.Importance = widget.LowImportance

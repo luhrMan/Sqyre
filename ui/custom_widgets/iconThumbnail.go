@@ -79,7 +79,7 @@ func (t *IconThumbnail) loadIcon() *canvas.Image {
 	// Construct cache key from icon path
 	key := t.constructIconKey()
 	if key == "" {
-		return t.createPlaceholder(true)
+		return t.createPlaceholder()
 	}
 
 	// Get cached canvas.Image (includes decoded pixel data)
@@ -95,7 +95,7 @@ func (t *IconThumbnail) loadIcon() *canvas.Image {
 	}
 
 	// Resource not found in cache, return placeholder
-	return t.createPlaceholder(true)
+	return t.createPlaceholder()
 }
 
 func (t *IconThumbnail) constructIconKey() string {
@@ -109,7 +109,7 @@ func (t *IconThumbnail) constructIconKey() string {
 }
 
 // createPlaceholder creates a placeholder image with error indicator
-func (t *IconThumbnail) createPlaceholder(showError bool) *canvas.Image {
+func (t *IconThumbnail) createPlaceholder() *canvas.Image {
 	// Create a rectangle as placeholder
 	rect := canvas.NewRectangle(color.RGBA{R: 200, G: 200, B: 200, A: 255})
 	rect.SetMinSize(fyne.NewSize(config.IconThumbnailSize, config.IconThumbnailSize))

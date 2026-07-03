@@ -23,12 +23,12 @@ func saveRenamableEntity(cfg renamableSaveConfig) {
 		err := repositories.BatchSave(func() error {
 			if cfg.oldName != cfg.newName && cfg.deleteOld != nil {
 				if derr := cfg.deleteOld(cfg.oldName); derr != nil {
-					editorRepoErr("delete", cfg.entityType, cfg.oldName, derr)
+					editorRepoErr("delete", cfg.oldName, derr)
 					return derr
 				}
 			}
 			if serr := cfg.save(); serr != nil {
-				editorRepoErr("save", cfg.entityType, cfg.newName, serr)
+				editorRepoErr("save", cfg.newName, serr)
 				return serr
 			}
 			return nil
