@@ -3,9 +3,6 @@ package actions
 import (
 	"slices"
 
-	"Sqyre/internal/assets"
-
-	"fyne.io/fyne/v2"
 )
 
 type ImageSearch struct {
@@ -38,16 +35,12 @@ func NewImageSearch(name string, subActions []ActionInterface, targets []string,
 	}
 }
 func (a *ImageSearch) String() string {
-	return stringifyParams(a.parameters())
+	return stringifyParams(a.Params())
 }
 
-func (a *ImageSearch) Display() fyne.CanvasObject {
-	return displayFromParams(a.parameters())
-}
-
-func (a *ImageSearch) parameters() []actionParam {
+func (a *ImageSearch) Params() []Param {
 	mode := a.WaitTilFoundConfig.DisplayWaitMode("instant")
-	params := []actionParam{
+	params := []Param{
 		newParam("Type", a.GetType()),
 		newParam("Name", a.Name),
 		newParam("Items", len(a.Targets)),
@@ -60,10 +53,6 @@ func (a *ImageSearch) parameters() []actionParam {
 		params = append(params, newParam("Run on no find", "yes"))
 	}
 	return params
-}
-
-func (a *ImageSearch) Icon() fyne.Resource {
-	return assets.ImageSearchIcon
 }
 
 func (a *ImageSearch) VariableBindings() []VariableBinding {

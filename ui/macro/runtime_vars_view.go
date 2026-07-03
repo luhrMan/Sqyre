@@ -3,7 +3,7 @@ package macro
 import (
 	"sort"
 
-	"Sqyre/internal/models/actions"
+	"Sqyre/ui/actiondisplay"
 	"Sqyre/internal/services"
 	"Sqyre/ui/custom_widgets"
 
@@ -18,8 +18,8 @@ func buildRuntimeVariablesView() (*widget.List, func()) {
 		func() int { return len(names) },
 		func() fyne.CanvasObject {
 			return container.NewHBox(
-				actions.NewDisplayPill("", "setvariable"),
-				actions.NewDisplayPill("", "setvariable"),
+				actiondisplay.NewDisplayPill("", "setvariable"),
+				actiondisplay.NewDisplayPill("", "setvariable"),
 			)
 		},
 		func(id widget.ListItemID, obj fyne.CanvasObject) {
@@ -32,8 +32,8 @@ func buildRuntimeVariablesView() (*widget.List, func()) {
 			}
 			name := names[id]
 			vals := services.GetRuntimeVariables()
-			row.Objects[0] = actions.NewDisplayPill("Name: "+name, "setvariable")
-			row.Objects[1] = actions.NewDisplayPill("Value: "+vals[name], "setvariable")
+			row.Objects[0] = actiondisplay.NewDisplayPill("Name: "+name, "setvariable")
+			row.Objects[1] = actiondisplay.NewDisplayPill("Value: "+vals[name], "setvariable")
 			row.Refresh()
 		},
 	)

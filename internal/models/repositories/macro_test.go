@@ -35,7 +35,7 @@ func TestMacroRepo_ConcurrentSingletonAccess(t *testing.T) {
 	repos := make([]*MacroRepository, 100)
 
 	// Concurrent access to singleton
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()

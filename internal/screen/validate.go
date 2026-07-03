@@ -13,7 +13,7 @@ func EnabledDisplayRects() []image.Rectangle {
 	enabled := EnabledMonitorIndices()
 	var indices []int
 	if enabled == nil {
-		for i := 0; i < n; i++ {
+		for i := range n {
 			indices = append(indices, i)
 		}
 	} else {

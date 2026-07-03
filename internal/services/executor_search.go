@@ -113,23 +113,26 @@ func runImageSearchMatches(node *actions.ImageSearch, macro *models.Macro, resul
 				if len(parts) == 2 {
 					program, _ := repositories.ProgramRepo().Get(parts[0])
 					if program != nil {
-						item, _ := program.ItemRepo().Get(parts[1])
-						if item != nil {
-							setMacroVariable(macro, "StackMax", item.StackMax)
-							setMacroVariable(macro, "Cols", item.GridSize[0])
-							setMacroVariable(macro, "Rows", item.GridSize[1])
-							setMacroVariable(macro, "ItemName", item.Name)
+						itemRepo, _ := program.ItemRepo()
+						if itemRepo != nil {
+							item, _ := itemRepo.Get(parts[1])
+							if item != nil {
+								setMacroVariable(macro, "StackMax", item.StackMax)
+								setMacroVariable(macro, "Cols", item.GridSize[0])
+								setMacroVariable(macro, "Rows", item.GridSize[1])
+								setMacroVariable(macro, "ItemName", item.Name)
 
-							vs := IconVariantServiceInstance()
-							variants, vErr := vs.GetVariants(parts[0], parts[1])
-							if vErr == nil && len(variants) > 0 {
-								iconPath := vs.GetVariantPath(parts[0], parts[1], variants[0])
-								if f, openErr := os.Open(iconPath); openErr == nil {
-									cfg, _, decErr := image.DecodeConfig(f)
-									_ = f.Close()
-									if decErr == nil {
-										setMacroVariable(macro, "ImagePixelWidth", cfg.Width)
-										setMacroVariable(macro, "ImagePixelHeight", cfg.Height)
+								vs := IconVariantServiceInstance()
+								variants, vErr := vs.GetVariants(parts[0], parts[1])
+								if vErr == nil && len(variants) > 0 {
+									iconPath := vs.GetVariantPath(parts[0], parts[1], variants[0])
+									if f, openErr := os.Open(iconPath); openErr == nil {
+										cfg, _, decErr := image.DecodeConfig(f)
+										_ = f.Close()
+										if decErr == nil {
+											setMacroVariable(macro, "ImagePixelWidth", cfg.Width)
+											setMacroVariable(macro, "ImagePixelHeight", cfg.Height)
+										}
 									}
 								}
 							}

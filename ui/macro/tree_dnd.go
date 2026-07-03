@@ -8,6 +8,7 @@ import (
 
 	"Sqyre/internal/config"
 	"Sqyre/internal/models/actions"
+	"Sqyre/ui/actiondisplay"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -234,13 +235,7 @@ func (mt *MacroTree) resolveDropAt(pointerY float32) {
 		if n == 0 {
 			return -1
 		}
-		k = int(math.Floor(float64(contentY / pitch)))
-		if k < 0 {
-			k = 0
-		}
-		if k > n-1 {
-			k = n - 1
-		}
+		k = min(max(int(math.Floor(float64(contentY/pitch))), 0), n-1)
 		offset := contentY - (float32(k)*pitch + rowH/2)
 		mt.resolveDrop(k, offset, rowH)
 		if mt.shouldDropAtRootBelowLastBranch(k, offset, rowH) {
@@ -818,9 +813,9 @@ func (mt *MacroTree) rebuildDropGhostRow(node actions.ActionInterface) {
 	iconBg.StrokeColor = theme.ShadowColor()
 	iconBg.StrokeWidth = 1
 	iconBg.SetMinSize(fyne.NewSize(treeItemIconSize, treeItemIconSize))
-	iconBtn := widget.NewIcon(node.Icon())
+	iconBtn := widget.NewIcon(actiondisplay.Icon(node))
 	iconStack := container.NewStack(iconBg, iconBtn)
-	display := node.Display()
+	display := actiondisplay.Display(node)
 	mt.dropGhostRow.Objects = []fyne.CanvasObject{iconStack, display}
 	mt.dropGhostRow.Refresh()
 }
@@ -929,13 +924,7 @@ func (mt *MacroTree) restoreDragOrigin() bool {
 		cur.RemoveSubAction(node)
 	}
 	subs := mt.dragOrigin.parent.GetSubActions()
-	idx := mt.dragOrigin.index
-	if idx < 0 {
-		idx = 0
-	}
-	if idx > len(subs) {
-		idx = len(subs)
-	}
+	idx := min(max(mt.dragOrigin.index, 0), len(subs))
 	newSubs := make([]actions.ActionInterface, 0, len(subs)+1)
 	newSubs = append(newSubs, subs[:idx]...)
 	newSubs = append(newSubs, node)
@@ -1226,13 +1215,7 @@ func (mt *MacroTree) relocateDraggedNode(record bool) bool {
 	}
 
 	subs := parent.GetSubActions()
-	index := mt.dropInsertIndex(subs)
-	if index > len(subs) {
-		index = len(subs)
-	}
-	if index < 0 {
-		index = 0
-	}
+	index := max(min(mt.dropInsertIndex(subs), len(subs)), 0)
 	newSubs := make([]actions.ActionInterface, 0, len(subs)+1)
 	newSubs = append(newSubs, subs[:index]...)
 	newSubs = append(newSubs, node)

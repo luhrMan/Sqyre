@@ -5,6 +5,7 @@ import (
 	"Sqyre/internal/config"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -19,7 +20,7 @@ func TestIntegration_IconVariants_EndToEnd(t *testing.T) {
 
 	// Create icon variant service with test base path
 	service := &IconVariantService{basePath: tempIconsDir}
-	
+
 	// Create a test program directory
 	programName := "test-program"
 	programIconsDir := filepath.Join(tempIconsDir, programName)
@@ -34,7 +35,7 @@ func TestIntegration_IconVariants_EndToEnd(t *testing.T) {
 			return err
 		}
 		defer file.Close()
-		
+
 		// Write PNG signature
 		pngSignature := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
 		_, err = file.Write(pngSignature)
@@ -69,7 +70,7 @@ func TestIntegration_IconVariants_EndToEnd(t *testing.T) {
 		// Verify files exist in filesystem
 		variant1Path := service.GetVariantPath(programName, itemName, "Original") // First variant is always "Original"
 		variant2Path := service.GetVariantPath(programName, itemName, "Blue")
-		
+
 		if _, err := os.Stat(variant1Path); os.IsNotExist(err) {
 			t.Error("Original variant file should exist")
 		}
@@ -114,7 +115,7 @@ func TestIntegration_IconVariants_EndToEnd(t *testing.T) {
 		if err == nil {
 			t.Error("Should not allow duplicate variant names")
 		}
-		
+
 		// Check that it's the correct error type
 		if _, ok := err.(*VariantExistsError); !ok {
 			t.Errorf("Expected VariantExistsError, got %T", err)
@@ -125,8 +126,8 @@ func TestIntegration_IconVariants_EndToEnd(t *testing.T) {
 		itemName := "Limited Item"
 
 		// Create 100 variants (the maximum)
-		for i := 0; i < 100; i++ {
-			variantName := string(rune('A' + (i % 26))) + string(rune('0' + (i / 26)))
+		for i := range 100 {
+			variantName := string(rune('A'+(i%26))) + string(rune('0'+(i/26)))
 			err := service.AddVariant(programName, itemName, variantName, sourcePNG1)
 			if err != nil {
 				t.Fatalf("Failed to add variant %d: %v", i, err)
@@ -196,7 +197,7 @@ func TestIntegration_IconVariants_DeleteVariant(t *testing.T) {
 
 	programName := "delete-test-program"
 	itemName := "Test Item"
-	
+
 	// Create program icons directory
 	programIconsDir := filepath.Join(tempIconsDir, programName)
 	if err := os.MkdirAll(programIconsDir, 0755); err != nil {
@@ -210,7 +211,7 @@ func TestIntegration_IconVariants_DeleteVariant(t *testing.T) {
 			return err
 		}
 		defer file.Close()
-		
+
 		// Write PNG signature
 		pngSignature := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
 		_, err = file.Write(pngSignature)
@@ -236,7 +237,7 @@ func TestIntegration_IconVariants_DeleteVariant(t *testing.T) {
 	// Verify both files exist
 	originalPath := service.GetVariantPath(programName, itemName, "Original") // First variant is always "Original"
 	variant2Path := service.GetVariantPath(programName, itemName, "Variant2")
-	
+
 	if _, err := os.Stat(originalPath); os.IsNotExist(err) {
 		t.Fatal("Original variant should exist before deletion")
 	}
@@ -292,7 +293,7 @@ func TestIntegration_IconVariants_LoadWithVariants(t *testing.T) {
 
 	programName := "load-test-program"
 	itemName := "Mana Potion"
-	
+
 	// Create program icons directory
 	programIconsDir := filepath.Join(tempIconsDir, programName)
 	if err := os.MkdirAll(programIconsDir, 0755); err != nil {
@@ -306,7 +307,7 @@ func TestIntegration_IconVariants_LoadWithVariants(t *testing.T) {
 			return err
 		}
 		defer file.Close()
-		
+
 		// Write PNG signature
 		pngSignature := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
 		_, err = file.Write(pngSignature)
@@ -377,7 +378,7 @@ func TestIntegration_IconVariants_MultiplePrograms(t *testing.T) {
 			return err
 		}
 		defer file.Close()
-		
+
 		// Write PNG signature
 		pngSignature := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
 		_, err = file.Write(pngSignature)
@@ -451,7 +452,7 @@ func TestIntegration_IconVariants_MultiplePrograms(t *testing.T) {
 			for _, variant := range prog1.variants {
 				wrongPath := service.GetVariantPath(prog2.name, prog1.itemName, variant)
 				if _, err := os.Stat(wrongPath); !os.IsNotExist(err) {
-					t.Errorf("Variant %s from %s should not exist in %s directory", 
+					t.Errorf("Variant %s from %s should not exist in %s directory",
 						variant, prog1.name, prog2.name)
 				}
 			}
@@ -575,7 +576,7 @@ func TestIntegration_CacheInvalidation_DeleteVariant(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to add first variant: %v", err)
 	}
-	
+
 	err = service.AddVariant(programName, itemName, variantName, sourcePNG)
 	if err != nil {
 		t.Fatalf("Failed to add test variant: %v", err)
@@ -807,13 +808,7 @@ func TestIntegration_EndToEnd_LoadDeletePlaceholder(t *testing.T) {
 	}
 
 	// Verify the kept variant is still in the list
-	foundKeptVariant := false
-	for _, v := range variantsAfterDelete {
-		if v == keepVariantName {
-			foundKeptVariant = true
-			break
-		}
-	}
+	foundKeptVariant := slices.Contains(variantsAfterDelete, keepVariantName)
 	if !foundKeptVariant {
 		t.Errorf("Expected kept variant '%s' to still be in GetVariants result", keepVariantName)
 	}

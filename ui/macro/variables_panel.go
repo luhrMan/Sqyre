@@ -4,6 +4,7 @@ import (
 	"Sqyre/internal/assets"
 	"Sqyre/internal/models"
 	"Sqyre/internal/models/actions"
+	"Sqyre/ui/actiondisplay"
 	"Sqyre/internal/models/repositories"
 	"Sqyre/ui/custom_widgets"
 	"fmt"
@@ -58,19 +59,19 @@ func variablePillActionType(d models.VariableDef) string {
 func variableDisplayPills(d models.VariableDef) fyne.CanvasObject {
 	line := container.NewHBox()
 	actionType := variablePillActionType(d)
-	line.Add(actions.NewDisplayPill("Name: "+d.Name, actionType))
+	line.Add(actiondisplay.NewDisplayPill("Name: "+d.Name, actionType))
 
 	typ := d.Type
 	if typ == "" {
 		typ = models.VariableTypeAuto
 	}
-	line.Add(actions.NewDisplayPill("Type: "+string(typ), actionType))
+	line.Add(actiondisplay.NewDisplayPill("Type: "+string(typ), actionType))
 
 	if v := strings.TrimSpace(d.InitialValue); v != "" {
-		line.Add(actions.NewDisplayPill("Initial: "+v, actionType))
+		line.Add(actiondisplay.NewDisplayPill("Initial: "+v, actionType))
 	}
 	if desc := strings.TrimSpace(d.Description); desc != "" {
-		line.Add(actions.NewDisplayPill("Description: "+desc, actionType))
+		line.Add(actiondisplay.NewDisplayPill("Description: "+desc, actionType))
 	}
 
 	role := string(d.Role)
@@ -78,13 +79,13 @@ func variableDisplayPills(d models.VariableDef) fyne.CanvasObject {
 		role += " (conditional)"
 	}
 	source := fmt.Sprintf("%s · %s · %s", d.Source.ActionType, d.Source.ActionName, role)
-	line.Add(actions.NewDisplayPill("Source: "+source, actionType))
+	line.Add(actiondisplay.NewDisplayPill("Source: "+source, actionType))
 	return line
 }
 
 func newVariableListRow() (fyne.CanvasObject, *variableListRow) {
 	row := &variableListRow{}
-	row.iconBg = canvas.NewRectangle(actions.ActionPastelColor("setvariable"))
+	row.iconBg = canvas.NewRectangle(actiondisplay.ActionPastelColorForApp("setvariable"))
 	row.iconBg.CornerRadius = 6
 	row.iconBg.StrokeColor = theme.ShadowColor()
 	row.iconBg.StrokeWidth = 1
@@ -265,7 +266,7 @@ func (p *VariablesPanel) updateListRow(id widget.ListItemID, row *variableListRo
 	d := p.defs[id]
 	actionType := variablePillActionType(d)
 
-	row.iconBg.FillColor = actions.ActionPastelColor(actionType)
+	row.iconBg.FillColor = actiondisplay.ActionPastelColorForApp(actionType)
 	row.iconBg.Refresh()
 	row.iconBtn.SetToolTip("View all usages in this macro")
 	row.iconBtn.OnTapped = func() { p.showUsagesDialog(d) }
@@ -511,7 +512,7 @@ func (p *VariablesPanel) confirmRemove(name string) {
 	}
 	w := activeWire.Window
 	msg := fmt.Sprintf("Remove variable %q?", name)
-	dlg := dialog.NewConfirm("Remove variable", msg, func(ok bool) {
+	activeWire.ShowConfirmWithEscape("Remove variable", msg, func(ok bool) {
 		if !ok {
 			return
 		}
@@ -522,10 +523,6 @@ func (p *VariablesPanel) confirmRemove(name string) {
 			p.onChange()
 		}
 	}, w)
-	if activeWire.AddDialogEscapeClose != nil {
-		activeWire.AddDialogEscapeClose(dlg, w)
-	}
-	dlg.Show()
 }
 
 // RefreshDefs reloads variable definitions from the macro and rebuilds the list.

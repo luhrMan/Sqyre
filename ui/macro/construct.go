@@ -1,11 +1,7 @@
 package macro
 
 import (
-	"log"
-
 	"Sqyre/internal/assets"
-	"Sqyre/internal/models/repositories"
-	"Sqyre/internal/models/serialize"
 	"Sqyre/internal/services"
 
 	"fyne.io/fyne/v2"
@@ -15,60 +11,11 @@ import (
 	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 )
 
-// copiedNodeMap is the clipboard for macro tree copy/paste (nil when empty).
-var copiedNodeMap map[string]any
-
-func copyMacroTreeSelection(mt *MacroTree) bool {
-	if mt == nil || mt.SelectedNode == "" {
-		return false
-	}
-	node := mt.Macro.Root.GetAction(mt.SelectedNode)
-	if node == nil || node.GetParent() == nil {
-		return false
-	}
-	m, err := serialize.ActionToMap(node)
-	if err != nil {
-		return false
-	}
-	copiedNodeMap = m
-	return true
-}
-
-func pasteMacroTreeClipboard(mt *MacroTree) bool {
-	if mt == nil {
-		return false
-	}
-	if !mt.PasteNode(copiedNodeMap) {
-		return false
-	}
-	if err := repositories.MacroRepo().Set(mt.Macro.Name, mt.Macro); err != nil {
-		log.Printf("failed to save macro after paste: %v", err)
-		return false
-	}
-	return true
-}
-
 func moveMacroTreeSelection(mt *MacroTree, up bool) {
 	if mt == nil || mt.SelectedNode == "" {
 		return
 	}
 	mt.moveNode(mt.SelectedNode, up)
-}
-
-func canCopyMacroTreeSelection(mt *MacroTree) bool {
-	if mt == nil || mt.SelectedNode == "" || mt.Macro == nil || mt.Macro.Root == nil {
-		return false
-	}
-	node := mt.Macro.Root.GetAction(mt.SelectedNode)
-	return node != nil && node.GetParent() != nil
-}
-
-func canPasteMacroTreeClipboard(mt *MacroTree) bool {
-	if mt == nil || copiedNodeMap == nil {
-		return false
-	}
-	_, _, ok := mt.insertLocationBelowSelection()
-	return ok
 }
 
 func canMoveMacroTreeSelection(mt *MacroTree, up bool) bool {
@@ -330,6 +277,13 @@ func ConstructMacroUi(mui *MacroUi, boundLocXLabel, boundLocYLabel *widget.Label
 	pasteNodeButton.SetToolTip("paste node below (Ctrl+V)")
 	undoNodeButton.SetToolTip("undo (Ctrl+Z)")
 	redoNodeButton.SetToolTip("redo (Ctrl+Y)")
+	macroActiveIndicator := widget.NewActivity()
+	services.SetMacroIndicatorUI(services.MacroIndicatorUI{
+		Show:  macroActiveIndicator.Show,
+		Hide:  macroActiveIndicator.Hide,
+		Start: macroActiveIndicator.Start,
+		Stop:  macroActiveIndicator.Stop,
+	})
 	expandAllBtn.SetToolTip("expand all branches")
 	collapseAllBtn.SetToolTip("collapse all branches")
 	playMacroButton.SetToolTip("start macro execution")
@@ -355,7 +309,7 @@ func ConstructMacroUi(mui *MacroUi, boundLocXLabel, boundLocYLabel *widget.Label
 				),
 				container.NewHBox(
 					playMacroButton,
-					services.MacroActiveIndicator(),
+					macroActiveIndicator,
 					moveTabLeftButton,
 					moveTabRightButton,
 					widget.NewLabel("Macro Name:"),

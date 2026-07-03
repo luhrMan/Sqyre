@@ -4,6 +4,7 @@ import (
 	"Sqyre/internal/config"
 	"Sqyre/internal/models/actions"
 	"Sqyre/internal/uiutil"
+	"Sqyre/ui/actiondisplay"
 	"image/color"
 
 	"fyne.io/fyne/v2"
@@ -100,18 +101,17 @@ func colorToNRGBA(c color.Color) color.NRGBA {
 
 func currentActionColor(categoryKey string) color.Color {
 	sample := sampleActionTypeForColorKey(categoryKey)
-	return actions.ActionPastelColor(sample)
+	return actiondisplay.ActionPastelColorForApp(sample)
 }
 
-func refreshOpenMacroActionColors() {
-	u := GetUi()
-	if u == nil || u.MainUi == nil || u.MainUi.Mui == nil {
+func refreshOpenMacroActionColors(u *Ui) {
+	if u == nil || u.MainUi == nil || u.Mui == nil {
 		return
 	}
 	u.MainUi.Mui.MTabs.RefreshActionDisplayColors()
 }
 
-func buildActionColorSettings(parent fyne.Window, prefs fyne.Preferences) fyne.CanvasObject {
+func buildActionColorSettings(u *Ui, prefs fyne.Preferences) fyne.CanvasObject {
 	loadActionColorsFromPrefs(prefs)
 
 	rows := make([]fyne.CanvasObject, 0, len(actions.ActionColorCategories)+1)
@@ -134,8 +134,8 @@ func buildActionColorSettings(parent fyne.Window, prefs fyne.Preferences) fyne.C
 				saveActionColorPref(prefs, categoryKey, c)
 				swatch.FillColor = c
 				swatch.Refresh()
-				refreshOpenMacroActionColors()
-			}, parent)
+				refreshOpenMacroActionColors(u)
+			}, u.Window)
 			picker.Advanced = true
 			picker.SetColor(currentActionColor(categoryKey))
 			picker.Show()
@@ -144,7 +144,7 @@ func buildActionColorSettings(parent fyne.Window, prefs fyne.Preferences) fyne.C
 			clearActionColorPref(prefs, categoryKey)
 			swatch.FillColor = currentActionColor(categoryKey)
 			swatch.Refresh()
-			refreshOpenMacroActionColors()
+			refreshOpenMacroActionColors(u)
 		})
 
 		row := container.NewBorder(nil, nil, label, container.NewHBox(swatch, chooseBtn, resetBtn))
@@ -159,7 +159,7 @@ func buildActionColorSettings(parent fyne.Window, prefs fyne.Preferences) fyne.C
 				swatch.Refresh()
 			}
 		}
-		refreshOpenMacroActionColors()
+		refreshOpenMacroActionColors(u)
 	})
 
 	rows = append(rows, resetAllBtn)

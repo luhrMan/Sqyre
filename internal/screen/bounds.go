@@ -9,7 +9,7 @@ import (
 
 // NumDisplays returns the number of active displays.
 func NumDisplays() int {
-	n := numDisplaysImpl()
+	n := getDesktopBackend().NumDisplays()
 	if n > 0 {
 		return n
 	}
@@ -45,7 +45,7 @@ func VirtualBounds() image.Rectangle {
 func MonitorIndexAt(absX, absY int) int {
 	p := image.Pt(absX, absY)
 	n := NumDisplays()
-	for i := 0; i < n; i++ {
+	for i := range n {
 		b := DisplayBoundsAbs(i)
 		if !b.Empty() && p.In(b) {
 			return i

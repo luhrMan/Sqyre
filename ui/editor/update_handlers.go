@@ -8,6 +8,7 @@ import (
 	"Sqyre/ui/completionentry"
 	"Sqyre/ui/custom_widgets"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -105,7 +106,7 @@ func setItemUpdateHandler() {
 			oldName:    v.Name,
 			newName:    n,
 			exists: func(name string) bool {
-				_, err := program.ItemRepo().Get(name)
+				_, err := ProgramItemRepo(program).Get(name)
 				return err == nil
 			},
 			deleteOld: func(oldName string) error {
@@ -124,13 +125,13 @@ func setItemUpdateHandler() {
 						}
 					}
 				}
-				return program.ItemRepo().Delete(oldName)
+				return ProgramItemRepo(program).Delete(oldName)
 			},
 			save: func() error {
 				v.Name = n
 				v.GridSize = [2]int{x, y}
 				v.StackMax = sm
-				return program.ItemRepo().Set(v.Name, v)
+				return ProgramItemRepo(program).Set(v.Name, v)
 			},
 			onSuccess: func() {
 				propagateEntityRename(models.ProgramEntityItem, p, oldItemName, n)
@@ -161,7 +162,7 @@ func setPointUpdateHandler() {
 		if !ok {
 			return
 		}
-		repo := program.PointRepo(config.MainMonitorSizeString)
+		repo := ProgramPointRepo(program, config.MainMonitorSizeString)
 		oldPointName := v.Name
 		saveRenamableEntity(renamableSaveConfig{
 			entityType: "point",
@@ -204,7 +205,7 @@ func setSearchAreaUpdateHandler() {
 		if !ok {
 			return
 		}
-		repo := program.SearchAreaRepo(config.MainMonitorSizeString)
+		repo := ProgramSearchAreaRepo(program, config.MainMonitorSizeString)
 		oldAreaName := v.Name
 		saveRenamableEntity(renamableSaveConfig{
 			entityType: "search area",
@@ -249,7 +250,7 @@ func setMaskUpdateHandler() {
 		if !ok {
 			return
 		}
-		repo := program.MaskRepo()
+		repo := ProgramMaskRepo(program)
 		oldMaskName := v.Name
 		saveRenamableEntity(renamableSaveConfig{
 			entityType: "mask",
@@ -298,10 +299,8 @@ func setItemTagHandlers(tab *EditorTab) {
 		if !ok {
 			return
 		}
-		for _, existingTag := range v.Tags {
-			if existingTag == tagText {
-				return
-			}
+		if slices.Contains(v.Tags, tagText) {
+			return
 		}
 		v.Tags = append(v.Tags, tagText)
 		p := tab.ProgramSelector.Selected
@@ -309,7 +308,7 @@ func setItemTagHandlers(tab *EditorTab) {
 		if !ok {
 			return
 		}
-		if err := program.ItemRepo().Set(v.Name, v); err != nil {
+		if err := ProgramItemRepo(program).Set(v.Name, v); err != nil {
 			editorRepoErr("save", "item", v.Name, err)
 			return
 		}
