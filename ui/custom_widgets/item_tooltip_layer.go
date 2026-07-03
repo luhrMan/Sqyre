@@ -41,6 +41,16 @@ func AddPopUpItemTooltipLayer(pop *widget.PopUp) {
 	pop.Content = container.NewStack(pop.Content, &layer.Container)
 }
 
+// FindItemTooltipLayer returns the tooltip layer for canvas, optionally scoped to overlay.
+func FindItemTooltipLayer(canvas fyne.Canvas, overlay fyne.CanvasObject) *ItemTooltipLayer {
+	return findItemTooltipLayer(canvas, overlay)
+}
+
+// ItemTooltipLayerOrigin returns the layer origin for positioning tooltips relative to overlay.
+func ItemTooltipLayerOrigin(layer *ItemTooltipLayer, overlay fyne.CanvasObject) fyne.Position {
+	return itemTooltipLayerOrigin(layer, overlay)
+}
+
 func findItemTooltipLayer(canvas fyne.Canvas, overlay fyne.CanvasObject) *ItemTooltipLayer {
 	root := itemTooltipLayers[canvas]
 	if root == nil {

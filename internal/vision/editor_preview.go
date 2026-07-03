@@ -1,6 +1,7 @@
 package vision
 
 import (
+	"Sqyre/internal/config"
 	"Sqyre/internal/macro"
 	"Sqyre/internal/screen"
 	"fmt"
@@ -36,7 +37,7 @@ func drawPreviewDottedVLine(mat *gocv.Mat, x, y0, y1 int, c color.RGBA, thick in
 	step := editorPreviewMonitorDash + editorPreviewMonitorGap
 	for y := y0; y <= y1; y += step {
 		ye := min(y+editorPreviewMonitorDash-1, y1)
-		gocv.Line(mat, image.Pt(x, y), image.Pt(x, ye), c, thick)
+		gocv.Line(mat, image.Point{X: x, Y: y}, image.Point{X: x, Y: ye}, c, thick)
 	}
 }
 
@@ -56,7 +57,7 @@ func drawPreviewDottedRectOutline(mat *gocv.Mat, r image.Rectangle, c color.RGBA
 }
 
 // DrawEditorPreviewMonitorOutlines draws a dotted rectangle for each enabled monitor (clip to capture).
-func DrawEditorPreviewMonitorOutlines(mat *gocv.Mat, vb image.Rectangle) {
+func DrawEditorPreviewMonitorOutlines(mat *gocv.Mat, captureBounds image.Rectangle) {
 	const thick = 1
 	n := screen.NumDisplays()
 	for i := range n {
@@ -64,11 +65,11 @@ func DrawEditorPreviewMonitorOutlines(mat *gocv.Mat, vb image.Rectangle) {
 			continue
 		}
 		b := screen.DisplayBoundsAbs(i)
-		inter := b.Intersect(vb)
+		inter := b.Intersect(captureBounds)
 		if inter.Empty() {
 			continue
 		}
-		rel := image.Rect(inter.Min.X-vb.Min.X, inter.Min.Y-vb.Min.Y, inter.Max.X-vb.Min.X, inter.Max.Y-vb.Min.Y)
+		rel := image.Rect(inter.Min.X-captureBounds.Min.X, inter.Min.Y-captureBounds.Min.Y, inter.Max.X-captureBounds.Min.X, inter.Max.Y-captureBounds.Min.Y)
 		drawPreviewDottedRectOutline(mat, rel, EditorPreviewMonitorOutline, thick)
 	}
 }
@@ -85,9 +86,82 @@ func DrawPreviewPointMarker(mat *gocv.Mat, center image.Point, c color.RGBA, thi
 	gocv.Line(mat, image.Point{X: center.X, Y: center.Y - 15}, image.Point{X: center.X, Y: center.Y + 15}, c, thick)
 }
 
-// CaptureVirtualDesktopWithOverlay captures the virtual desktop and optionally draws overlays.
-func CaptureVirtualDesktopWithOverlay(drawOverlay func(*gocv.Mat, image.Rectangle)) (image.Image, error) {
-	captureImg, vb, err := macro.CaptureVirtualDesktop()
+func previewCaptureBoundsForPoint(px, py int) image.Rectangle {
+	vb := screen.VirtualBounds()
+	half := config.EditorPreviewMinCaptureSize / 2
+	desired := image.Rect(px-half, py-half, px+half, py+half)
+	return shiftRectIntoVirtualBounds(desired, vb)
+}
+
+func previewCaptureBoundsForSearchArea(lx, ty, rx, by int) image.Rectangle {
+	vb := screen.VirtualBounds()
+	if lx > rx {
+		lx, rx = rx, lx
+	}
+	if ty > by {
+		ty, by = by, ty
+	}
+	area := image.Rect(lx, ty, rx, by)
+	padX := max(config.EditorPreviewPadding, area.Dx()/4)
+	padY := max(config.EditorPreviewPadding, area.Dy()/4)
+	desired := image.Rect(lx-padX, ty-padY, rx+padX, by+padY)
+	desired = expandRectToMinSize(desired, config.EditorPreviewMinCaptureSize, config.EditorPreviewMinCaptureSize)
+	return shiftRectIntoVirtualBounds(desired, vb)
+}
+
+func expandRectToMinSize(r image.Rectangle, minW, minH int) image.Rectangle {
+	if r.Empty() {
+		return r
+	}
+	w := max(r.Dx(), minW)
+	h := max(r.Dy(), minH)
+	cx := (r.Min.X + r.Max.X) / 2
+	cy := (r.Min.Y + r.Max.Y) / 2
+	return image.Rect(cx-w/2, cy-h/2, cx-w/2+w, cy-h/2+h)
+}
+
+func shiftRectIntoVirtualBounds(desired, vb image.Rectangle) image.Rectangle {
+	if desired.Empty() || vb.Empty() {
+		return desired.Intersect(vb)
+	}
+	w, h := desired.Dx(), desired.Dy()
+	if w <= 0 || h <= 0 {
+		return image.Rectangle{}
+	}
+	if w >= vb.Dx() && h >= vb.Dy() {
+		return vb
+	}
+	x0, y0 := desired.Min.X, desired.Min.Y
+	if w > vb.Dx() {
+		x0 = vb.Min.X
+		w = vb.Dx()
+	} else {
+		if x0 < vb.Min.X {
+			x0 = vb.Min.X
+		}
+		if x0+w > vb.Max.X {
+			x0 = vb.Max.X - w
+		}
+	}
+	if h > vb.Dy() {
+		y0 = vb.Min.Y
+		h = vb.Dy()
+	} else {
+		if y0 < vb.Min.Y {
+			y0 = vb.Min.Y
+		}
+		if y0+h > vb.Max.Y {
+			y0 = vb.Max.Y - h
+		}
+	}
+	return image.Rect(x0, y0, x0+w, y0+h)
+}
+
+func captureRegionWithOverlay(captureBounds image.Rectangle, drawOverlay func(*gocv.Mat, image.Rectangle)) (image.Image, error) {
+	if captureBounds.Empty() || captureBounds.Dx() <= 0 || captureBounds.Dy() <= 0 {
+		return nil, fmt.Errorf("invalid capture bounds %v", captureBounds)
+	}
+	captureImg, err := macro.CaptureRect(captureBounds.Min.X, captureBounds.Min.Y, captureBounds.Dx(), captureBounds.Dy())
 	if err != nil {
 		return nil, fmt.Errorf("error capturing image: %w", err)
 	}
@@ -102,9 +176,9 @@ func CaptureVirtualDesktopWithOverlay(drawOverlay func(*gocv.Mat, image.Rectangl
 		}
 		defer mat.Close()
 
-		DrawEditorPreviewMonitorOutlines(&mat, vb)
+		DrawEditorPreviewMonitorOutlines(&mat, captureBounds)
 		if drawOverlay != nil {
-			drawOverlay(&mat, vb)
+			drawOverlay(&mat, captureBounds)
 		}
 
 		out, matErr = mat.ToImage()
@@ -115,17 +189,19 @@ func CaptureVirtualDesktopWithOverlay(drawOverlay func(*gocv.Mat, image.Rectangl
 	return out, nil
 }
 
-// CaptureSearchAreaPreview captures the virtual desktop with a search-area rectangle overlay.
+// CaptureSearchAreaPreview captures a cropped region around the search area with a rectangle overlay.
 func CaptureSearchAreaPreview(lx, ty, rx, by int) (image.Image, error) {
-	return CaptureVirtualDesktopWithOverlay(func(mat *gocv.Mat, bounds image.Rectangle) {
+	captureBounds := previewCaptureBoundsForSearchArea(lx, ty, rx, by)
+	return captureRegionWithOverlay(captureBounds, func(mat *gocv.Mat, bounds image.Rectangle) {
 		rect := image.Rect(lx-bounds.Min.X, ty-bounds.Min.Y, rx-bounds.Min.X, by-bounds.Min.Y)
 		DrawPreviewRectangle(mat, rect, color.RGBA{R: 255, A: 255}, 2)
 	})
 }
 
-// CapturePointPreview captures the virtual desktop with a point marker overlay.
+// CapturePointPreview captures a cropped region around the point with a crosshair overlay.
 func CapturePointPreview(px, py int) (image.Image, error) {
-	return CaptureVirtualDesktopWithOverlay(func(mat *gocv.Mat, bounds image.Rectangle) {
+	captureBounds := previewCaptureBoundsForPoint(px, py)
+	return captureRegionWithOverlay(captureBounds, func(mat *gocv.Mat, bounds image.Rectangle) {
 		center := image.Point{X: px - bounds.Min.X, Y: py - bounds.Min.Y}
 		DrawPreviewPointMarker(mat, center, color.RGBA{R: 255, A: 255}, 2)
 	})

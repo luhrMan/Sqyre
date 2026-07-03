@@ -3,6 +3,7 @@ package editor
 import (
 	"Sqyre/internal/models"
 	"Sqyre/internal/models/repositories"
+	"Sqyre/ui/custom_widgets"
 	"fmt"
 	"strings"
 
@@ -16,6 +17,7 @@ type entityAccordionConfig struct {
 	getKeys          func(*models.Program) []string
 	sortKeys         func(*models.Program, []string)
 	getEntity        func(*models.Program, string) (string, error)
+	getPreviewImage  func(*models.Program, string) (custom_widgets.PreviewTooltipResult, error)
 	onSelected       func(*models.Program, string)
 	extraOnSelected  func() // optional hook after onSelected (e.g. macro sync)
 }
@@ -61,16 +63,29 @@ func buildProgramEntityAccordionRow(cfg entityAccordionConfig, program *models.P
 
 	state.list = widget.NewList(
 		func() int { return len(state.filtered) },
-		func() fyne.CanvasObject { return widget.NewLabel("template") },
+		func() fyne.CanvasObject {
+			if cfg.getPreviewImage == nil {
+				return widget.NewLabel("template")
+			}
+			return custom_widgets.PreviewListRowTemplate()
+		},
 		func(id widget.ListItemID, co fyne.CanvasObject) {
 			if id >= len(state.filtered) {
 				return
 			}
-			name, err := cfg.getEntity(program, state.filtered[id])
+			key := state.filtered[id]
+			name, err := cfg.getEntity(program, key)
 			if err != nil {
 				return
 			}
-			co.(*widget.Label).SetText(name)
+			if cfg.getPreviewImage == nil {
+				co.(*widget.Label).SetText(name)
+				return
+			}
+			prog := program
+			custom_widgets.BindPreviewListRow(co, name, func() (custom_widgets.PreviewTooltipResult, error) {
+				return cfg.getPreviewImage(prog, key)
+			})
 		},
 	)
 

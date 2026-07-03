@@ -1,15 +1,30 @@
 package editor
 
 import (
-	"Sqyre/internal/models"
 	"testing"
+
+	"Sqyre/internal/models"
+	"Sqyre/internal/vision"
 )
 
-func TestResolveSearchAreaBoundsRejectsNonPositiveDimensions(t *testing.T) {
-	sa := &models.SearchArea{Name: "test"}
-	b := searchAreaBounds{lx: 10, ty: 20, rx: 10, by: 50}
-	_, err := resolveSearchAreaBounds("SearchArea", sa, b)
+func TestPointPreviewImageRejectsNil(t *testing.T) {
+	t.Helper()
+	if _, err := vision.PointPreview(nil); err == nil {
+		t.Fatal("expected error for nil point")
+	}
+}
+
+func TestSearchAreaPreviewImageRejectsNil(t *testing.T) {
+	t.Helper()
+	if _, err := vision.SearchAreaPreview(nil); err == nil {
+		t.Fatal("expected error for nil search area")
+	}
+}
+
+func TestPointPreviewImageRejectsOutOfBounds(t *testing.T) {
+	t.Helper()
+	_, err := vision.PointPreview(&models.Point{Name: "far", X: -99999, Y: -99999})
 	if err == nil {
-		t.Fatal("expected dimension error")
+		t.Fatal("expected error for point outside virtual desktop")
 	}
 }

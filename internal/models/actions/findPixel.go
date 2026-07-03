@@ -123,9 +123,9 @@ func (a *FindPixel) Params() []Param {
 		newParam("Type", a.GetType()),
 		newParam("Name", a.Name),
 		newParam("Color", a.TargetColor),
-		newParam("Tolerance", fmt.Sprintf("%d%%", a.ColorTolerance)),
-		newParam("Search Area", a.SearchArea.DisplayLabel()),
-		newParam("Wait", mode),
+		newExtraParam("Tolerance", fmt.Sprintf("%d%%", a.ColorTolerance)),
+		newExtraParam("Search Area", a.SearchArea.DisplayLabel()),
+		newExtraParam("Wait", mode),
 	}
 }
 
