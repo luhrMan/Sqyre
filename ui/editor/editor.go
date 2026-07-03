@@ -117,7 +117,7 @@ func (eu *EditorUi) ActiveTab() *EditorTab {
 // wrapEditorPreviewImage adds a themed border around editor preview imagery (same treatment as the Items tab icon editor).
 func wrapEditorPreviewImage(inner fyne.CanvasObject) fyne.CanvasObject {
 	border := canvas.NewRectangle(color.NRGBA{})
-	border.StrokeColor = theme.ButtonColor()
+	border.StrokeColor = theme.Color(theme.ColorNameButton)
 	border.StrokeWidth = 2
 	border.CornerRadius = 4
 	return container.NewStack(border, inner)
