@@ -51,7 +51,7 @@ func TestPointRepository_ThreadSafety_ConcurrentReads(t *testing.T) {
 		SearchAreas: make(map[string]*models.SearchArea),
 	}
 
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		key := fmt.Sprintf("point%d", i)
 		program.Coordinates["2560x1440"].Points[key] = &models.Point{
 			Name: fmt.Sprintf("Point %d", i),
@@ -66,7 +66,7 @@ func TestPointRepository_ThreadSafety_ConcurrentReads(t *testing.T) {
 	errors := make(chan error, 100)
 
 	// Concurrent reads
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
@@ -110,7 +110,7 @@ func TestPointRepository_ThreadSafety_ConcurrentWrites(t *testing.T) {
 	errors := make(chan error, 100)
 
 	// Concurrent writes (direct map access to avoid excessive file I/O)
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
@@ -156,7 +156,7 @@ func TestPointRepository_ThreadSafety_MixedOperations(t *testing.T) {
 		SearchAreas: make(map[string]*models.SearchArea),
 	}
 
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		key := fmt.Sprintf("point%d", i)
 		program.Coordinates["2560x1440"].Points[key] = &models.Point{
 			Name: fmt.Sprintf("Point %d", i),
@@ -177,7 +177,7 @@ func TestPointRepository_ThreadSafety_MixedOperations(t *testing.T) {
 	errors := make(chan error, 200)
 
 	// Concurrent reads
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
@@ -207,27 +207,23 @@ func TestPointRepository_ThreadSafety_MixedOperations(t *testing.T) {
 	}
 
 	// Concurrent GetAll
-	for i := 0; i < 50; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 50 {
+		wg.Go(func() {
 			all := repo.GetAll()
 			if len(all) < 50 {
 				errors <- fmt.Errorf("GetAll returned too few points: %d", len(all))
 			}
-		}()
+		})
 	}
 
 	// Concurrent GetAllKeys
-	for i := 0; i < 50; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 50 {
+		wg.Go(func() {
 			keys := repo.GetAllKeys()
 			if len(keys) < 50 {
 				errors <- fmt.Errorf("GetAllKeys returned too few keys: %d", len(keys))
 			}
-		}()
+		})
 	}
 
 	wg.Wait()
@@ -302,7 +298,7 @@ func TestSearchAreaRepository_ThreadSafety_ConcurrentReads(t *testing.T) {
 		SearchAreas: make(map[string]*models.SearchArea),
 	}
 
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		key := fmt.Sprintf("area%d", i)
 		program.Coordinates["2560x1440"].SearchAreas[key] = &models.SearchArea{
 			Name:    fmt.Sprintf("Area %d", i),
@@ -319,7 +315,7 @@ func TestSearchAreaRepository_ThreadSafety_ConcurrentReads(t *testing.T) {
 	errors := make(chan error, 100)
 
 	// Concurrent reads
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
@@ -363,7 +359,7 @@ func TestSearchAreaRepository_ThreadSafety_ConcurrentWrites(t *testing.T) {
 	errors := make(chan error, 100)
 
 	// Concurrent writes (direct map access to avoid excessive file I/O)
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
@@ -411,7 +407,7 @@ func TestSearchAreaRepository_ThreadSafety_MixedOperations(t *testing.T) {
 		SearchAreas: make(map[string]*models.SearchArea),
 	}
 
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		key := fmt.Sprintf("area%d", i)
 		program.Coordinates["2560x1440"].SearchAreas[key] = &models.SearchArea{
 			Name:    fmt.Sprintf("Area %d", i),
@@ -434,7 +430,7 @@ func TestSearchAreaRepository_ThreadSafety_MixedOperations(t *testing.T) {
 	errors := make(chan error, 200)
 
 	// Concurrent reads
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
@@ -466,27 +462,23 @@ func TestSearchAreaRepository_ThreadSafety_MixedOperations(t *testing.T) {
 	}
 
 	// Concurrent GetAll
-	for i := 0; i < 50; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 50 {
+		wg.Go(func() {
 			all := repo.GetAll()
 			if len(all) < 50 {
 				errors <- fmt.Errorf("GetAll returned too few search areas: %d", len(all))
 			}
-		}()
+		})
 	}
 
 	// Concurrent GetAllKeys
-	for i := 0; i < 50; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 50 {
+		wg.Go(func() {
 			keys := repo.GetAllKeys()
 			if len(keys) < 50 {
 				errors <- fmt.Errorf("GetAllKeys returned too few keys: %d", len(keys))
 			}
-		}()
+		})
 	}
 
 	wg.Wait()

@@ -2,11 +2,17 @@ package models
 
 import (
 	"Sqyre/internal/config"
+	"errors"
+	"fmt"
 	"strconv"
 	"sync"
 
 	"gocv.io/x/gocv"
 )
+
+// ErrRepositoryFactoryUninitialized is returned when Program repository factories
+// were not registered (repositories package not imported).
+var ErrRepositoryFactoryUninitialized = errors.New("repository factory not initialized")
 
 // ItemRepositoryInterface defines the interface for item data access operations.
 // This interface is defined in the models package to avoid circular dependencies.
@@ -143,24 +149,24 @@ func (p *Program) GetMasks() map[string]func(f ...any) *gocv.Mat {
 // thread-safe CRUD operations for items within this program.
 // Note: This method is named ItemRepo() instead of Items() to avoid
 // conflict with the Items field used for serialization.
-func (p *Program) ItemRepo() ItemRepositoryInterface {
+func (p *Program) ItemRepo() (ItemRepositoryInterface, error) {
 	p.repoMu.Lock()
 	defer p.repoMu.Unlock()
 
 	if p.itemRepo == nil {
 		if ItemRepositoryFactory == nil {
-			panic("ItemRepositoryFactory not initialized - repositories package not imported")
+			return nil, fmt.Errorf("item repository: %w", ErrRepositoryFactoryUninitialized)
 		}
 		p.itemRepo = ItemRepositoryFactory(p)
 	}
 
-	return p.itemRepo
+	return p.itemRepo, nil
 }
 
 // PointRepo returns a PointRepository for managing this program's points at the given resolution.
 // The repository is lazily initialized on first access and provides
 // thread-safe CRUD operations for points within this program at the specified resolution.
-func (p *Program) PointRepo(resolutionKey string) PointRepositoryInterface {
+func (p *Program) PointRepo(resolutionKey string) (PointRepositoryInterface, error) {
 	p.repoMu.Lock()
 	defer p.repoMu.Unlock()
 
@@ -170,24 +176,24 @@ func (p *Program) PointRepo(resolutionKey string) PointRepositoryInterface {
 
 	if p.pointRepos[resolutionKey] == nil {
 		if PointRepositoryFactory == nil {
-			panic("PointRepositoryFactory not initialized - repositories package not imported")
+			return nil, fmt.Errorf("point repository: %w", ErrRepositoryFactoryUninitialized)
 		}
 		p.pointRepos[resolutionKey] = PointRepositoryFactory(p, resolutionKey)
 	}
 
-	return p.pointRepos[resolutionKey]
+	return p.pointRepos[resolutionKey], nil
 }
 
 // MaskRepo returns a MaskRepository for managing this program's masks.
 // The repository is lazily initialized on first access and provides
 // thread-safe CRUD operations for masks within this program.
-func (p *Program) MaskRepo() MaskRepositoryInterface {
+func (p *Program) MaskRepo() (MaskRepositoryInterface, error) {
 	p.repoMu.Lock()
 	defer p.repoMu.Unlock()
 
 	if p.maskRepo == nil {
 		if MaskRepositoryFactory == nil {
-			panic("MaskRepositoryFactory not initialized - repositories package not imported")
+			return nil, fmt.Errorf("mask repository: %w", ErrRepositoryFactoryUninitialized)
 		}
 		if p.Masks == nil {
 			p.Masks = make(map[string]*Mask)
@@ -195,13 +201,13 @@ func (p *Program) MaskRepo() MaskRepositoryInterface {
 		p.maskRepo = MaskRepositoryFactory(p)
 	}
 
-	return p.maskRepo
+	return p.maskRepo, nil
 }
 
 // SearchAreaRepo returns a SearchAreaRepository for managing this program's search areas at the given resolution.
 // The repository is lazily initialized on first access and provides
 // thread-safe CRUD operations for search areas within this program at the specified resolution.
-func (p *Program) SearchAreaRepo(resolutionKey string) SearchAreaRepositoryInterface {
+func (p *Program) SearchAreaRepo(resolutionKey string) (SearchAreaRepositoryInterface, error) {
 	p.repoMu.Lock()
 	defer p.repoMu.Unlock()
 
@@ -211,10 +217,10 @@ func (p *Program) SearchAreaRepo(resolutionKey string) SearchAreaRepositoryInter
 
 	if p.searchAreaRepos[resolutionKey] == nil {
 		if SearchAreaRepositoryFactory == nil {
-			panic("SearchAreaRepositoryFactory not initialized - repositories package not imported")
+			return nil, fmt.Errorf("search area repository: %w", ErrRepositoryFactoryUninitialized)
 		}
 		p.searchAreaRepos[resolutionKey] = SearchAreaRepositoryFactory(p, resolutionKey)
 	}
 
-	return p.searchAreaRepos[resolutionKey]
+	return p.searchAreaRepos[resolutionKey], nil
 }

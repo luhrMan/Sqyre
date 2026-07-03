@@ -100,10 +100,7 @@ func executeType(a actions.ActionInterface, macro *models.Macro) error {
 			text = resolved
 		}
 	}
-	delayMs := node.DelayMs
-	if delayMs < 0 {
-		delayMs = 0
-	}
+	delayMs := max(node.DelayMs, 0)
 	backend := getAutomationBackend()
 	for _, r := range text {
 		if err := checkMacroStop(); err != nil {

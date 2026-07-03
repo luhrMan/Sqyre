@@ -88,7 +88,7 @@ type programItemData struct {
 // over its item keys and one repo read per representative item.
 func collectProgramItemData(program *models.Program) *programItemData {
 	iconService := services.IconVariantServiceInstance()
-	keys := program.ItemRepo().GetAllKeys()
+	keys := ProgramItemRepo(program).GetAllKeys()
 
 	data := &programItemData{
 		baseNameToItemName: make(map[string]string, len(keys)),
@@ -100,7 +100,7 @@ func collectProgramItemData(program *models.Program) *programItemData {
 		baseNameSet[baseName] = struct{}{}
 		if _, exists := data.baseNameToItemName[baseName]; !exists {
 			data.baseNameToItemName[baseName] = itemName
-			if item, err := program.ItemRepo().Get(itemName); err == nil {
+			if item, err := ProgramItemRepo(program).Get(itemName); err == nil {
 				data.tagsByBaseName[baseName] = item.Tags
 			}
 		}

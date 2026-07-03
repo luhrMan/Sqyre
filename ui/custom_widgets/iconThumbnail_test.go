@@ -10,22 +10,12 @@ import (
 	"fyne.io/fyne/v2/test"
 )
 
-func TestMain(m *testing.M) {
-	tempHome, err := os.MkdirTemp("", "sqyre-ui-tests-home-*")
-	if err != nil {
-		panic(err)
-	}
-	defer os.RemoveAll(tempHome)
-
-	_ = os.Setenv("HOME", tempHome)
-	_ = os.Setenv("APPDATA", tempHome)
-
-	os.Exit(m.Run())
-}
-
 // setupTestIconFile creates a temporary test icon file and returns its path
 func setupTestIconFile(t *testing.T, programName, filename string) string {
 	t.Helper()
+	tempHome := t.TempDir()
+	t.Setenv("HOME", tempHome)
+	t.Setenv("APPDATA", tempHome)
 
 	// Create temporary directory structure
 	iconsPath := config.GetIconsPath()

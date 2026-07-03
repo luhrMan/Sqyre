@@ -12,6 +12,14 @@ import (
 //go:embed test-db.yaml
 var fixture []byte
 
+var resetRepositories func()
+
+// RegisterRepositoryReset wires repository singleton reset before config rebind.
+// Called from repositories package init to avoid an import cycle.
+func RegisterRepositoryReset(fn func()) {
+	resetRepositories = fn
+}
+
 // Fixture returns the canonical test-db.yaml bytes (read-only template).
 func Fixture() []byte {
 	return fixture
@@ -28,6 +36,10 @@ func SetupYAMLConfig(t *testing.T) string {
 	dbPath := filepath.Join(dir, "db.yaml")
 	if err := os.WriteFile(dbPath, fixture, 0644); err != nil {
 		t.Fatalf("testdb: write db: %v", err)
+	}
+
+	if resetRepositories != nil {
+		resetRepositories()
 	}
 
 	yamlConfig := serialize.GetYAMLConfig()

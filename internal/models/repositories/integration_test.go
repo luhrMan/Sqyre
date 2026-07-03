@@ -122,28 +122,24 @@ func TestIntegration_ConcurrentRepositoryAccess(t *testing.T) {
 	errors := make(chan error, 200)
 
 	// Concurrent reads
-	for i := 0; i < 50; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 50 {
+		wg.Go(func() {
 			_, err := macroRepo.Get("Integration Test Macro")
 			if err != nil {
 				errors <- err
 			}
-		}()
+		})
 
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			_, err := programRepo.Get("integration test program")
 			if err != nil {
 				errors <- err
 			}
-		}()
+		})
 	}
 
 	// Concurrent writes
-	for i := 0; i < 25; i++ {
+	for i := range 25 {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
@@ -165,13 +161,11 @@ func TestIntegration_ConcurrentRepositoryAccess(t *testing.T) {
 	}
 
 	// Concurrent GetAll operations
-	for i := 0; i < 50; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 50 {
+		wg.Go(func() {
 			_ = macroRepo.GetAll()
 			_ = programRepo.GetAll()
-		}()
+		})
 	}
 
 	wg.Wait()
@@ -333,7 +327,7 @@ func TestIntegration_SequentialSaveOperations(t *testing.T) {
 	programRepo := ProgramRepo()
 
 	// Add some test data
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		macro := models.NewMacro("Save Test Macro", 100, []string{"ctrl"})
 		macroRepo.mu.Lock()
 		macroRepo.models[string(rune('m'+i))] = macro
@@ -388,7 +382,7 @@ func TestIntegration_StressTest_RapidOperations(t *testing.T) {
 	errors := make(chan error, 1000)
 
 	// Rapid concurrent operations
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
@@ -533,7 +527,7 @@ func TestIntegration_CoordinateRepositories_LazyInitialization(t *testing.T) {
 		}
 
 		// Access PointRepo for the first time (should initialize lazily)
-		pointRepo := retrieved.PointRepo("1920x1080")
+		pointRepo, _ := retrieved.PointRepo("1920x1080")
 		if pointRepo == nil {
 			t.Fatal("PointRepo should not be nil after lazy initialization")
 		}
@@ -550,7 +544,7 @@ func TestIntegration_CoordinateRepositories_LazyInitialization(t *testing.T) {
 		}
 
 		// Access the same repository again (should return the same instance)
-		pointRepo2 := retrieved.PointRepo("1920x1080")
+		pointRepo2, _ := retrieved.PointRepo("1920x1080")
 		if pointRepo2.Count() != 1 {
 			t.Errorf("Expected count 1 from cached repository, got %d", pointRepo2.Count())
 		}
@@ -583,7 +577,7 @@ func TestIntegration_CoordinateRepositories_LazyInitialization(t *testing.T) {
 		}
 
 		// Access SearchAreaRepo for the first time (should initialize lazily)
-		searchAreaRepo := retrieved.SearchAreaRepo("2560x1440")
+		searchAreaRepo, _ := retrieved.SearchAreaRepo("2560x1440")
 		if searchAreaRepo == nil {
 			t.Fatal("SearchAreaRepo should not be nil after lazy initialization")
 		}
@@ -606,7 +600,7 @@ func TestIntegration_CoordinateRepositories_LazyInitialization(t *testing.T) {
 		}
 
 		// Access the same repository again (should return the same instance)
-		searchAreaRepo2 := retrieved.SearchAreaRepo("2560x1440")
+		searchAreaRepo2, _ := retrieved.SearchAreaRepo("2560x1440")
 		if searchAreaRepo2.Count() != 1 {
 			t.Errorf("Expected count 1 from cached repository, got %d", searchAreaRepo2.Count())
 		}
@@ -647,9 +641,9 @@ func TestIntegration_CoordinateRepositories_MultipleResolutions(t *testing.T) {
 		}
 
 		// Create repositories for different resolutions
-		repo1080 := retrieved.PointRepo("1920x1080")
-		repo1440 := retrieved.PointRepo("2560x1440")
-		repo4k := retrieved.PointRepo("3840x2160")
+		repo1080, _ := retrieved.PointRepo("1920x1080")
+		repo1440, _ := retrieved.PointRepo("2560x1440")
+		repo4k, _ := retrieved.PointRepo("3840x2160")
 
 		// Add points to each resolution
 		err = repo1080.Set("point1", &models.Point{Name: "Point 1080", X: 100, Y: 100})
@@ -722,8 +716,8 @@ func TestIntegration_CoordinateRepositories_MultipleResolutions(t *testing.T) {
 		}
 
 		// Create repositories for different resolutions
-		repo1080 := retrieved.SearchAreaRepo("1920x1080")
-		repo1440 := retrieved.SearchAreaRepo("2560x1440")
+		repo1080, _ := retrieved.SearchAreaRepo("1920x1080")
+		repo1440, _ := retrieved.SearchAreaRepo("2560x1440")
 
 		// Add search areas to each resolution
 		err = repo1080.Set("area1", &models.SearchArea{
@@ -798,7 +792,7 @@ func TestIntegration_CoordinateRepositories_SavePersistence(t *testing.T) {
 			t.Fatalf("Failed to get program: %v", err)
 		}
 
-		pointRepo := retrieved.PointRepo("1920x1080")
+		pointRepo, _ := retrieved.PointRepo("1920x1080")
 		err = pointRepo.Set("persist-point", &models.Point{Name: "Persist Point", X: 500, Y: 600})
 		if err != nil {
 			t.Fatalf("Failed to set point: %v", err)
@@ -817,7 +811,7 @@ func TestIntegration_CoordinateRepositories_SavePersistence(t *testing.T) {
 		}
 
 		// Verify the point persisted
-		reloadedPointRepo := reloaded.PointRepo("1920x1080")
+		reloadedPointRepo, _ := reloaded.PointRepo("1920x1080")
 		point, err := reloadedPointRepo.Get("persist-point")
 		if err != nil {
 			t.Fatalf("Point should exist after reload: %v", err)
@@ -851,7 +845,7 @@ func TestIntegration_CoordinateRepositories_SavePersistence(t *testing.T) {
 			t.Fatalf("Failed to get program: %v", err)
 		}
 
-		searchAreaRepo := retrieved.SearchAreaRepo("2560x1440")
+		searchAreaRepo, _ := retrieved.SearchAreaRepo("2560x1440")
 		err = searchAreaRepo.Set("persist-area", &models.SearchArea{
 			Name:    "Persist Area",
 			LeftX:   100,
@@ -876,7 +870,7 @@ func TestIntegration_CoordinateRepositories_SavePersistence(t *testing.T) {
 		}
 
 		// Verify the search area persisted
-		reloadedSearchAreaRepo := reloaded.SearchAreaRepo("2560x1440")
+		reloadedSearchAreaRepo, _ := reloaded.SearchAreaRepo("2560x1440")
 		area, err := reloadedSearchAreaRepo.Get("persist-area")
 		if err != nil {
 			t.Fatalf("Search area should exist after reload: %v", err)
@@ -911,7 +905,7 @@ func TestIntegration_CoordinateRepositories_SavePersistence(t *testing.T) {
 		}
 
 		// Add multiple points and search areas
-		pointRepo := retrieved.PointRepo("1920x1080")
+		pointRepo, _ := retrieved.PointRepo("1920x1080")
 		err = pointRepo.Set("point1", &models.Point{Name: "Point 1", X: 10, Y: 20})
 		if err != nil {
 			t.Fatalf("Failed to set point1: %v", err)
@@ -921,7 +915,7 @@ func TestIntegration_CoordinateRepositories_SavePersistence(t *testing.T) {
 			t.Fatalf("Failed to set point2: %v", err)
 		}
 
-		searchAreaRepo := retrieved.SearchAreaRepo("1920x1080")
+		searchAreaRepo, _ := retrieved.SearchAreaRepo("1920x1080")
 		err = searchAreaRepo.Set("area1", &models.SearchArea{
 			Name:    "Area 1",
 			LeftX:   50,
@@ -945,12 +939,12 @@ func TestIntegration_CoordinateRepositories_SavePersistence(t *testing.T) {
 			t.Fatalf("Failed to get reloaded program: %v", err)
 		}
 
-		reloadedPointRepo := reloaded.PointRepo("1920x1080")
+		reloadedPointRepo, _ := reloaded.PointRepo("1920x1080")
 		if reloadedPointRepo.Count() != 2 {
 			t.Errorf("Expected 2 points after reload, got %d", reloadedPointRepo.Count())
 		}
 
-		reloadedSearchAreaRepo := reloaded.SearchAreaRepo("1920x1080")
+		reloadedSearchAreaRepo, _ := reloaded.SearchAreaRepo("1920x1080")
 		if reloadedSearchAreaRepo.Count() != 1 {
 			t.Errorf("Expected 1 search area after reload, got %d", reloadedSearchAreaRepo.Count())
 		}
@@ -1008,7 +1002,7 @@ func TestIntegration_CoordinateRepositories_BackwardCompatibility(t *testing.T) 
 		}
 
 		// Verify repository can access directly-added coordinates
-		pointRepo := retrieved.PointRepo("1920x1080")
+		pointRepo, _ := retrieved.PointRepo("1920x1080")
 		point, err := pointRepo.Get("direct-point")
 		if err != nil {
 			t.Fatalf("Repository should be able to access directly-added point: %v", err)
@@ -1017,7 +1011,7 @@ func TestIntegration_CoordinateRepositories_BackwardCompatibility(t *testing.T) 
 			t.Errorf("Expected X 100, got %d", point.X)
 		}
 
-		searchAreaRepo := retrieved.SearchAreaRepo("1920x1080")
+		searchAreaRepo, _ := retrieved.SearchAreaRepo("1920x1080")
 		area, err := searchAreaRepo.Get("direct-area")
 		if err != nil {
 			t.Fatalf("Repository should be able to access directly-added search area: %v", err)
@@ -1044,7 +1038,7 @@ func TestIntegration_CoordinateRepositories_BackwardCompatibility(t *testing.T) 
 		}
 
 		// Add coordinates via repository
-		pointRepo := retrieved.PointRepo("2560x1440")
+		pointRepo, _ := retrieved.PointRepo("2560x1440")
 		err = pointRepo.Set("repo-point", &models.Point{Name: "Repo Point", X: 300, Y: 400})
 		if err != nil {
 			t.Fatalf("Failed to set point via repository: %v", err)
@@ -1090,7 +1084,7 @@ func TestIntegration_CoordinateRepositories_BackwardCompatibility(t *testing.T) 
 		}
 
 		// Add more coordinates via repository
-		pointRepo := retrieved.PointRepo("1920x1080")
+		pointRepo, _ := retrieved.PointRepo("1920x1080")
 		err = pointRepo.Set("repo1", &models.Point{Name: "Repo 1", X: 30, Y: 40})
 		if err != nil {
 			t.Fatalf("Failed to set point via repository: %v", err)
@@ -1143,13 +1137,13 @@ func TestIntegration_CoordinateRepositories_ConfigFileVerification(t *testing.T)
 			t.Fatalf("Failed to get program: %v", err)
 		}
 
-		pointRepo := retrieved.PointRepo("1920x1080")
+		pointRepo, _ := retrieved.PointRepo("1920x1080")
 		err = pointRepo.Set("file-point", &models.Point{Name: "File Point", X: 777, Y: 888})
 		if err != nil {
 			t.Fatalf("Failed to set point: %v", err)
 		}
 
-		searchAreaRepo := retrieved.SearchAreaRepo("1920x1080")
+		searchAreaRepo, _ := retrieved.SearchAreaRepo("1920x1080")
 		err = searchAreaRepo.Set("file-area", &models.SearchArea{
 			Name:    "File Area",
 			LeftX:   111,
@@ -1209,13 +1203,13 @@ func TestIntegration_CoordinateRepositories_ConfigFileVerification(t *testing.T)
 		}
 
 		// Add coordinates for multiple resolutions
-		repo1080 := retrieved.PointRepo("1920x1080")
+		repo1080, _ := retrieved.PointRepo("1920x1080")
 		err = repo1080.Set("point-1080", &models.Point{Name: "Point 1080", X: 1920, Y: 1080})
 		if err != nil {
 			t.Fatalf("Failed to set 1080 point: %v", err)
 		}
 
-		repo1440 := retrieved.PointRepo("2560x1440")
+		repo1440, _ := retrieved.PointRepo("2560x1440")
 		err = repo1440.Set("point-1440", &models.Point{Name: "Point 1440", X: 2560, Y: 1440})
 		if err != nil {
 			t.Fatalf("Failed to set 1440 point: %v", err)

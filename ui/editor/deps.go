@@ -24,6 +24,7 @@ type WireDeps struct {
 	NavigationVisible     func() bool
 	ShowErrorWithEscape   func(err error, parent fyne.Window)
 	ShowConfirmWithEscape func(title, message string, callback func(bool), parent fyne.Window)
+	ShowInformationWithEscape func(title, message string, parent fyne.Window)
 	AddDialogEscapeClose  func(d dialog.Dialog, parent fyne.Window)
 	AddPopupEscapeClose   func(pop *widget.PopUp, parent fyne.Window) dialog.Dialog
 	ShowRecordingOverlay    func(onClosed func(), onMouseDown func(*desktop.MouseEvent)) func()
@@ -56,6 +57,7 @@ func SetEditorUi(d WireDeps) {
 	setMaskSelectionButtons()
 	setEditorRecordHandlers()
 	setEditorPreviewRefreshHandlers()
+	wireIconVariantEditorDialogs(d)
 	updateProgramSelectorOptions()
 	setupAllDirtyTracking()
 	selectFirstProgramInEditorIfAny()

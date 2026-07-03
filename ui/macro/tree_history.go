@@ -1,9 +1,8 @@
 package macro
 
 import (
+	macrologic "Sqyre/internal/macro"
 	"Sqyre/internal/models/actions"
-	"Sqyre/internal/models/serialize"
-	"fmt"
 	"log"
 )
 
@@ -24,39 +23,11 @@ func newTreeHistory() *treeHistory {
 }
 
 func snapshotTree(root *actions.Loop, selectedUID string) (treeSnapshot, error) {
-	if root == nil {
-		return treeSnapshot{}, nil
-	}
-	rootMap, err := serialize.ActionToMap(root)
+	rootMap, selected, err := macrologic.SnapshotRoot(root, selectedUID)
 	if err != nil {
 		return treeSnapshot{}, err
 	}
-	injectActionUID(rootMap, root)
-	return treeSnapshot{rootMap: rootMap, selectedUID: selectedUID}, nil
-}
-
-// injectActionUID stores action UIDs in snapshot maps so undo/redo restores
-// stable identities without affecting copy/paste (which omits uid).
-func injectActionUID(m map[string]any, action actions.ActionInterface) {
-	if uid := action.GetUID(); uid != "" {
-		m["uid"] = uid
-	}
-	adv, ok := action.(actions.AdvancedActionInterface)
-	if !ok {
-		return
-	}
-	subsRaw, ok := m["subactions"].([]any)
-	if !ok {
-		return
-	}
-	subs := adv.GetSubActions()
-	for i := 0; i < len(subs) && i < len(subsRaw); i++ {
-		subMap, ok := subsRaw[i].(map[string]any)
-		if !ok {
-			continue
-		}
-		injectActionUID(subMap, subs[i])
-	}
+	return treeSnapshot{rootMap: rootMap, selectedUID: selected}, nil
 }
 
 func (h *treeHistory) pushSnapshot(snap treeSnapshot) {
@@ -119,13 +90,5 @@ func (h *treeHistory) pushUndo(snap treeSnapshot) {
 }
 
 func restoreTreeRoot(rootMap map[string]any) (*actions.Loop, error) {
-	rootAction, err := serialize.ViperSerializer.CreateActionFromMap(rootMap, nil)
-	if err != nil {
-		return nil, err
-	}
-	root, ok := rootAction.(*actions.Loop)
-	if !ok {
-		return nil, fmt.Errorf("macro root is not a loop")
-	}
-	return root, nil
+	return macrologic.RestoreRoot(rootMap)
 }

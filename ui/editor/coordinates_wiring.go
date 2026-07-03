@@ -33,18 +33,18 @@ func searchAreasAccordionConfig() entityAccordionConfig {
 	return entityAccordionConfig{
 		tab: tab,
 		getKeys: func(p *models.Program) []string {
-			return p.SearchAreaRepo(config.MainMonitorSizeString).GetAllKeys()
+			return ProgramSearchAreaRepo(p, config.MainMonitorSizeString).GetAllKeys()
 		},
 		sortKeys: sortSearchAreaKeysByDisplayName,
 		getEntity: func(p *models.Program, key string) (string, error) {
-			sa, err := p.SearchAreaRepo(config.MainMonitorSizeString).Get(key)
+			sa, err := ProgramSearchAreaRepo(p, config.MainMonitorSizeString).Get(key)
 			if err != nil {
 				return "", err
 			}
 			return sa.Name, nil
 		},
 		onSelected: func(p *models.Program, key string) {
-			sa, err := p.SearchAreaRepo(config.MainMonitorSizeString).Get(key)
+			sa, err := ProgramSearchAreaRepo(p, config.MainMonitorSizeString).Get(key)
 			if err != nil {
 				return
 			}
@@ -73,18 +73,18 @@ func pointsAccordionConfig() entityAccordionConfig {
 	return entityAccordionConfig{
 		tab: tab,
 		getKeys: func(p *models.Program) []string {
-			return p.PointRepo(config.MainMonitorSizeString).GetAllKeys()
+			return ProgramPointRepo(p, config.MainMonitorSizeString).GetAllKeys()
 		},
 		sortKeys: sortPointKeysByDisplayName,
 		getEntity: func(p *models.Program, key string) (string, error) {
-			point, err := p.PointRepo(config.MainMonitorSizeString).Get(key)
+			point, err := ProgramPointRepo(p, config.MainMonitorSizeString).Get(key)
 			if err != nil {
 				return "", err
 			}
 			return point.Name, nil
 		},
 		onSelected: func(p *models.Program, key string) {
-			point, err := p.PointRepo(config.MainMonitorSizeString).Get(key)
+			point, err := ProgramPointRepo(p, config.MainMonitorSizeString).Get(key)
 			if err != nil {
 				return
 			}
@@ -112,18 +112,18 @@ func setAccordionAutoPicSearchAreasLists(acc *widget.Accordion) {
 	populateProgramEntityAccordion(acc, entityAccordionConfig{
 		tab: tab,
 		getKeys: func(p *models.Program) []string {
-			return p.SearchAreaRepo(config.MainMonitorSizeString).GetAllKeys()
+			return ProgramSearchAreaRepo(p, config.MainMonitorSizeString).GetAllKeys()
 		},
 		sortKeys: sortSearchAreaKeysByDisplayName,
 		getEntity: func(p *models.Program, key string) (string, error) {
-			sa, err := p.SearchAreaRepo(config.MainMonitorSizeString).Get(key)
+			sa, err := ProgramSearchAreaRepo(p, config.MainMonitorSizeString).Get(key)
 			if err != nil {
 				return "", err
 			}
 			return sa.Name, nil
 		},
 		onSelected: func(p *models.Program, key string) {
-			sa, err := p.SearchAreaRepo(config.MainMonitorSizeString).Get(key)
+			sa, err := ProgramSearchAreaRepo(p, config.MainMonitorSizeString).Get(key)
 			if err != nil {
 				editorRepoLog("load", "search area", key, err)
 				return

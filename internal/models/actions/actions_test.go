@@ -92,13 +92,10 @@ func TestAdvancedAction_SetSubActions(t *testing.T) {
 	}
 }
 
-func TestBaseAction_String_Icon(t *testing.T) {
+func TestBaseAction_String(t *testing.T) {
 	b := newBaseAction("custom")
 	if got := b.String(); got != "Type: custom" {
 		t.Errorf("BaseAction.String() = %q", got)
-	}
-	if b.Icon() == nil {
-		t.Error("BaseAction.Icon() should not be nil")
 	}
 }
 
@@ -160,16 +157,6 @@ func TestClickButtonLabel(t *testing.T) {
 		t.Error("ClickButtonLabel center/scroll mismatch")
 	}
 }
-
-func TestClick_Icon(t *testing.T) {
-	if NewClick(ClickButtonLeft, false).Icon() == nil {
-		t.Error("Icon() left click should not be nil")
-	}
-	if NewClick(ClickButtonLeft, true).Icon() == nil {
-		t.Error("Icon() hold should not be nil")
-	}
-}
-
 // --- Pause ---
 
 func TestNewPause(t *testing.T) {
@@ -569,39 +556,6 @@ func TestForEachRow_SourcesAndSubActions(t *testing.T) {
 		t.Errorf("GetSubActions() = %+v", subs)
 	}
 }
-
-// TestActionTypes_Icon ensures Icon() is called on every action type for coverage.
-func TestActionTypes_Icon(t *testing.T) {
-	actions := []struct {
-		name string
-		a    ActionInterface
-	}{
-		{"Calculate", NewCalculate("1", "x")},
-		{"ForEachRow", NewForEachRow("r", nil, nil)},
-		{"FocusWindow", NewFocusWindow("/app", "Window")},
-		{"ImageSearch", NewImageSearch("s", nil, nil, "", 0, 0, 0, 0)},
-		{"Key", NewKey("k", false)},
-		{"KeyDown", NewKey("k", true)},
-		{"Loop", NewLoop(1, "l", nil)},
-		{"Move", NewMove("", false)},
-		{"Ocr", NewOcr("o", "", "")},
-		{"SaveVariable", NewSaveVariable("v", "d", false, false)},
-		{"SetVariable", NewSetVariable("v", 0)},
-		{"Wait", NewWait(0)},
-		{"Pause", NewPause("", []string{"f9"}, false)},
-		{"FindPixel", NewFindPixel("w", "", "000000", 0)},
-		{"Break", NewBreak()},
-		{"Continue", NewContinue()},
-	}
-	for _, tt := range actions {
-		t.Run(tt.name, func(t *testing.T) {
-			if tt.a.Icon() == nil {
-				t.Error("Icon() should not be nil")
-			}
-		})
-	}
-}
-
 func TestSaveVariable_SaveToFile_openError(t *testing.T) {
 	dir := t.TempDir()
 	badPath := filepath.Join(dir, "missing", "sub", "file.txt") // parent does not exist

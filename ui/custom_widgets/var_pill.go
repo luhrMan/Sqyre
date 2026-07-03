@@ -4,7 +4,7 @@ import (
 	"image/color"
 	"strings"
 
-	"Sqyre/internal/models/actions"
+	"Sqyre/ui/actiondisplay"
 	"Sqyre/internal/services"
 
 	"fyne.io/fyne/v2"
@@ -22,7 +22,7 @@ func NewVariableRefPill(name string, unknown bool) fyne.CanvasObject {
 	if unknown {
 		actionType = "warning"
 	}
-	return actions.NewDisplayPill(name, actionType)
+	return actiondisplay.NewDisplayPill(name, actionType)
 }
 
 func varRefLineHeight(textStyle fyne.TextStyle) float32 {

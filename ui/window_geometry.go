@@ -2,9 +2,9 @@ package ui
 
 import (
 	"Sqyre/internal/config"
+	"Sqyre/internal/screen"
 
 	"fyne.io/fyne/v2"
-	"github.com/go-vgo/robotgo"
 )
 
 const windowScreenMargin = 32
@@ -14,7 +14,7 @@ func availableScreenSize() fyne.Size {
 	if config.IsUITestMode() {
 		return fyne.NewSize(1920, 1080)
 	}
-	w, h := robotgo.GetScreenSize()
+	w, h := screen.GetScreenSize()
 	return fyne.NewSize(float32(w), float32(h))
 }
 

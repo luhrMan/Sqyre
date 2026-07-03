@@ -1,10 +1,5 @@
 package actions
 
-import (
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/theme"
-)
-
 type Loop struct {
 	// Count is the number of iterations: int (literal) or string (variable reference e.g. "${count}").
 	Count           any
@@ -31,21 +26,14 @@ func NewLoop(count any, name string, subActions []ActionInterface) *Loop {
 }
 
 func (a *Loop) String() string {
-	return stringifyParams(a.parameters())
+	return stringifyParams(a.Params())
 }
 
-func (a *Loop) Display() fyne.CanvasObject {
-	return displayFromParams(a.parameters())
-}
-
-func (a *Loop) parameters() []actionParam {
-	return []actionParam{
+func (a *Loop) Params() []Param {
+	return []Param{
 		newParam("Type", a.GetType()),
 		newParam("Name", a.Name),
 		newParam("Iterations", a.Count),
 	}
 }
 
-func (a *Loop) Icon() fyne.Resource {
-	return theme.ViewRefreshIcon()
-}

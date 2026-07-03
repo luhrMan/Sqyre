@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -150,12 +151,10 @@ func (s *IconVariantService) AddVariant(programName, itemName, variantName, sour
 	variantName = filepath.Base(variantName)
 
 	// Check if variant already exists - return special error for UI to handle
-	for _, existing := range existingVariants {
-		if existing == variantName {
-			return &VariantExistsError{
-				VariantName: variantName,
-				ItemName:    itemName,
-			}
+	if slices.Contains(existingVariants, variantName) {
+		return &VariantExistsError{
+			VariantName: variantName,
+			ItemName:    itemName,
 		}
 	}
 
@@ -336,7 +335,7 @@ func (s *IconVariantService) ValidateVariantFile(path string) error {
 
 	// PNG signature: \x89PNG\r\n\x1a\n
 	pngSignature := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		if header[i] != pngSignature[i] {
 			return fmt.Errorf("file is not a valid PNG (invalid header signature)")
 		}

@@ -87,7 +87,7 @@ func SetLevel(l Level) {
 	minLevel = l
 }
 
-func output(level Level, prefix, format string, a ...interface{}) {
+func output(level Level, prefix, format string, a ...any) {
 	mu.Lock()
 	if level < minLevel {
 		mu.Unlock()
@@ -107,16 +107,16 @@ func output(level Level, prefix, format string, a ...interface{}) {
 }
 
 // Debugf logs at Debug level.
-func Debugf(format string, a ...interface{}) { output(Debug, prefixDebug, format, a...) }
+func Debugf(format string, a ...any) { output(Debug, prefixDebug, format, a...) }
 
 // Infof logs at Info level.
-func Infof(format string, a ...interface{}) { output(Info, prefixInfo, format, a...) }
+func Infof(format string, a ...any) { output(Info, prefixInfo, format, a...) }
 
 // Warnf logs at Warn level.
-func Warnf(format string, a ...interface{}) { output(Warn, prefixWarn, format, a...) }
+func Warnf(format string, a ...any) { output(Warn, prefixWarn, format, a...) }
 
 // Errorf logs at Error level.
-func Errorf(format string, a ...interface{}) { output(Error, prefixError, format, a...) }
+func Errorf(format string, a ...any) { output(Error, prefixError, format, a...) }
 
 // Writer returns an io.Writer that writes log lines at Info level.
 // Useful for redirecting standard log or other libraries.

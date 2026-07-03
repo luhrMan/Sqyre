@@ -3,8 +3,6 @@ package actions
 import (
 	"fmt"
 
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/theme"
 )
 
 type Wait struct {
@@ -24,11 +22,7 @@ func NewWait(time any) *Wait {
 }
 
 func (a *Wait) String() string {
-	return stringifyParams(a.parameters())
-}
-
-func (a *Wait) Display() fyne.CanvasObject {
-	return displayFromParams(a.parameters())
+	return stringifyParams(a.Params())
 }
 
 func formatWaitTime(t any) string {
@@ -47,13 +41,10 @@ func formatWaitTime(t any) string {
 	}
 }
 
-func (a *Wait) parameters() []actionParam {
-	return []actionParam{
+func (a *Wait) Params() []Param {
+	return []Param{
 		newParam("Type", a.GetType()),
 		newParam("Time", formatWaitTime(a.Time)),
 	}
 }
 
-func (a *Wait) Icon() fyne.Resource {
-	return theme.HistoryIcon()
-}

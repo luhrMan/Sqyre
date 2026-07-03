@@ -35,10 +35,7 @@ func ShowHotkeyRecordDialog(
 		return
 	}
 
-	sec := int(stableDuration.Round(time.Second) / time.Second)
-	if sec < 1 {
-		sec = 1
-	}
+	sec := max(int(stableDuration.Round(time.Second)/time.Second), 1)
 	hint := widget.NewLabel(fmt.Sprintf("Hold your hotkey. When it stays unchanged for %d seconds, it will be saved.\nPress Esc to cancel.", sec))
 	hint.Wrapping = fyne.TextWrapWord
 
@@ -146,10 +143,7 @@ func ShowHotkeyRecordDialog(
 					if prog > progress.Max {
 						prog = progress.Max
 					}
-					remain := stableDuration - elapsed
-					if remain < 0 {
-						remain = 0
-					}
+					remain := max(stableDuration-elapsed, 0)
 					status = fmt.Sprintf("Stable for %.1f s — %.1f s until save", elapsed.Seconds(), remain.Seconds())
 				} else {
 					status = "Press and hold your hotkey combination."

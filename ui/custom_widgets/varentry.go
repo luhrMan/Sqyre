@@ -38,10 +38,10 @@ type VarEntry struct {
 	overlay          *variableRefOverlay
 	suppressChanged  bool
 
-	cachedDefFP   string
-	cachedDefs    []models.VariableDef
-	cachedNames   []string
-	cachedKnown   map[string]bool
+	cachedDefFP string
+	cachedDefs  []models.VariableDef
+	cachedNames []string
+	cachedKnown map[string]bool
 }
 
 // NewVarEntry creates a single-line entry with variable insertion support.
@@ -283,10 +283,7 @@ func (e *VarEntry) completeVarRef(name string) {
 		row = 0
 	}
 	line := []rune(lines[row])
-	col := e.CursorColumn
-	if col > len(line) {
-		col = len(line)
-	}
+	col := min(e.CursorColumn, len(line))
 	start, ok := varRefReplaceStart(line, col)
 	if !ok {
 		return
@@ -337,10 +334,7 @@ func (e *VarEntry) cursorLine() ([]rune, int) {
 		return nil, 0
 	}
 	line := []rune(lines[row])
-	col := e.CursorColumn
-	if col > len(line) {
-		col = len(line)
-	}
+	col := min(e.CursorColumn, len(line))
 	return line, col
 }
 
@@ -453,15 +447,9 @@ func (e *VarEntry) InsertAtCursor(text string) {
 func (e *VarEntry) replaceSelection(replacement string) {
 	off := e.CursorTextOffset()
 	selRunes := len([]rune(e.SelectedText()))
-	start := off - selRunes
-	if start < 0 {
-		start = 0
-	}
+	start := max(off-selRunes, 0)
 	runes := []rune(e.Text)
-	end := off
-	if end > len(runes) {
-		end = len(runes)
-	}
+	end := min(off, len(runes))
 	newRunes := append(append(append([]rune{}, runes[:start]...), []rune(replacement)...), runes[end:]...)
 	newText := string(newRunes)
 	e.setTextFromEdit(newText)
