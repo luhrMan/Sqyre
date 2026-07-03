@@ -15,7 +15,7 @@ func editorErr(err error) {
 	activeWire.ShowErrorWithEscape(err, activeWire.Window)
 }
 
-func editorRepoErr(op, entity, name string, err error) {
+func editorRepoErr(op, name string, err error) {
 	if err == nil {
 		return
 	}
@@ -35,7 +35,7 @@ func requireProgram(programName string) (*models.Program, bool) {
 	}
 	program, err := repositories.ProgramRepo().Get(programName)
 	if err != nil {
-		editorRepoErr("load", "program", programName, err)
+		editorRepoErr("load", programName, err)
 		return nil, false
 	}
 	return program, true

@@ -25,7 +25,6 @@ import (
 
 type createDialogContext struct {
 	draftItem *models.Item
-	draftMask *models.Mask
 }
 
 func copyTabWidgetsToDialog(src, dst map[string]fyne.CanvasObject, keys ...string) {
@@ -196,7 +195,7 @@ func wireItemMaskHandlers(w map[string]fyne.CanvasObject, programSelector *widge
 
 	if btn, ok := w["maskSelectButton"].(*widget.Button); ok {
 		btn.OnTapped = func() {
-			showMaskSelectionPopupForItem(programSelector.Selected, func(maskName string) {
+			showMaskSelectionPopupForItem(func(maskName string) {
 				item.Mask = maskName
 				updateMaskUI(maskName)
 			})
@@ -210,7 +209,7 @@ func wireItemMaskHandlers(w map[string]fyne.CanvasObject, programSelector *widge
 	}
 }
 
-func showMaskSelectionPopupForItem(programName string, onSelect func(maskName string)) {
+func showMaskSelectionPopupForItem(onSelect func(maskName string)) {
 	var popup *widget.PopUp
 	var hide func()
 	acc := widget.NewAccordion()
@@ -273,8 +272,6 @@ func showMaskSelectionPopupForItem(programName string, onSelect func(maskName st
 }
 
 func wireCreateMaskDialog(w map[string]fyne.CanvasObject, programSelector *widget.Select, previewPanel *editorPreviewPanel, refreshBtn *widget.Button) {
-	ctx := &createDialogContext{draftMask: &models.Mask{}}
-
 	if refreshBtn != nil {
 		refreshBtn.OnTapped = func() {
 			p := programSelector.Selected
@@ -355,8 +352,6 @@ func wireCreateMaskDialog(w map[string]fyne.CanvasObject, programSelector *widge
 			}
 		}
 	}
-
-	_ = ctx
 }
 
 func readMaskShapeFromWidgets(w map[string]fyne.CanvasObject) string {
