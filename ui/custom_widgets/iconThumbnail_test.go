@@ -444,7 +444,7 @@ func TestSetOnDelete(t *testing.T) {
 func TestCreatePlaceholder(t *testing.T) {
 	thumbnail := &IconThumbnail{}
 
-	placeholder := thumbnail.createPlaceholder(true)
+	placeholder := thumbnail.createPlaceholder()
 
 	// Verify placeholder is not nil
 	if placeholder == nil {
