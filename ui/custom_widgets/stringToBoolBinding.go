@@ -33,15 +33,17 @@ func CustomStringToBool(str binding.String, koc string, dl binding.DataListener)
 		}
 		switch val {
 		case "true":
-			if koc == "click" {
+			switch koc {
+			case "click":
 				str.Set("right")
-			} else if koc == "key" {
+			case "key":
 				str.Set("down")
 			}
 		case "false":
-			if koc == "click" {
+			switch koc {
+			case "click":
 				str.Set("left")
-			} else if koc == "key" {
+			case "key":
 				str.Set("up")
 			}
 		default:

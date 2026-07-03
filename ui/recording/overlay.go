@@ -203,9 +203,9 @@ func newOverlayWindow(
 	}
 	var stack fyne.CanvasObject
 	if onMouseDown != nil {
-		stack = container.NewMax(bgImage, selectionLayer, newRecordingMouseLayer(onMouseDown))
+		stack = container.NewStack(bgImage, selectionLayer, newRecordingMouseLayer(onMouseDown))
 	} else {
-		stack = container.NewMax(bgImage, selectionLayer)
+		stack = container.NewStack(bgImage, selectionLayer)
 	}
 	win.SetContent(stack)
 	return &fyneDesktopOverlay{
