@@ -51,8 +51,8 @@ func (a *Ocr) Params() []Param {
 		newParam("Type", a.GetType()),
 		newParam("Name", a.Name),
 		newParam("Target Text", a.Target),
-		newParam("Search Area", a.SearchArea.DisplayLabel()),
-		newParam("Wait", mode),
+		newExtraParam("Search Area", a.SearchArea.DisplayLabel()),
+		newExtraParam("Wait", mode),
 	}
 }
 

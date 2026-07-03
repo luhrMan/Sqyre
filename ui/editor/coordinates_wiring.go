@@ -43,6 +43,7 @@ func searchAreasAccordionConfig() entityAccordionConfig {
 			}
 			return sa.Name, nil
 		},
+		getPreviewImage: LoadSearchAreaPreviewImage,
 		onSelected: func(p *models.Program, key string) {
 			sa, err := ProgramSearchAreaRepo(p, config.MainMonitorSizeString).Get(key)
 			if err != nil {
@@ -83,6 +84,7 @@ func pointsAccordionConfig() entityAccordionConfig {
 			}
 			return point.Name, nil
 		},
+		getPreviewImage: LoadPointPreviewImage,
 		onSelected: func(p *models.Program, key string) {
 			point, err := ProgramPointRepo(p, config.MainMonitorSizeString).Get(key)
 			if err != nil {
@@ -134,5 +136,6 @@ func setAccordionAutoPicSearchAreasLists(acc *widget.Accordion) {
 			}
 			safeUpdateAutoPicPreview(sa)
 		},
+		getPreviewImage: LoadSearchAreaPreviewImage,
 	})
 }
