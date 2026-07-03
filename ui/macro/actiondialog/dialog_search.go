@@ -165,7 +165,6 @@ func createImageSearchDialogContent(action *actions.ImageSearch) (fyne.CanvasObj
 			refreshPreview()
 			refreshItemsAccordion()
 		},
-		refreshPreview,
 	)
 
 	rightPanel := container.NewBorder(

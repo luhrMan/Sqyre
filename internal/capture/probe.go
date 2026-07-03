@@ -140,7 +140,7 @@ func probeBackend(kind BackendKind, specs []monitorSpec, opts probeOptions) (Bac
 		var capturedBounds image.Rectangle
 		geomMismatch := false
 		for i := 0; i < opts.Frames; i++ {
-			captured, reference, source, ok := captureAndReference(kind, spec, specs, screenshotMapping)
+			captured, reference, source, ok := captureAndReference(kind, spec, screenshotMapping)
 			if !ok {
 				mp.Passed = false
 				mp.Reason = "capture failed"
@@ -209,14 +209,14 @@ func probeBackend(kind BackendKind, specs []monitorSpec, opts probeOptions) (Bac
 	return result, plan, true
 }
 
-func captureAndReference(kind BackendKind, spec monitorSpec, specs []monitorSpec, screenshotMapping map[int]int) (captured image.Image, reference image.Image, source BackendKind, ok bool) {
+func captureAndReference(kind BackendKind, spec monitorSpec, screenshotMapping map[int]int) (captured image.Image, reference image.Image, source BackendKind, ok bool) {
 	captured, ok = captureMonitorWithBackend(kind, spec, screenshotMapping)
 	if !ok {
 		return nil, nil, kind, false
 	}
 	reference, ok = crossReference(kind, spec, screenshotMapping)
 	if !ok {
-		reference, ok = independentReference(spec, specs, screenshotMapping)
+		reference, ok = independentReference(spec, screenshotMapping)
 	}
 	if !ok || reference == nil {
 		return nil, nil, kind, false
@@ -239,7 +239,7 @@ func crossReference(kind BackendKind, spec monitorSpec, screenshotMapping map[in
 	}
 }
 
-func independentReference(spec monitorSpec, specs []monitorSpec, screenshotMapping map[int]int) (image.Image, bool) {
+func independentReference(spec monitorSpec, screenshotMapping map[int]int) (image.Image, bool) {
 	if img, ok := captureIndependentReference(spec, screenshotMapping, nil); ok && img != nil {
 		return img, true
 	}

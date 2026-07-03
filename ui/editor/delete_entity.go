@@ -23,7 +23,7 @@ type deleteEntityConfig struct {
 
 func deleteEntityForTab(cfg deleteEntityConfig, program *models.Program) {
 	if err := cfg.delete(program); err != nil {
-		editorRepoErr("delete", cfg.entityType, cfg.name, err)
+		editorRepoErr("delete", cfg.name, err)
 		return
 	}
 	if cfg.cleanup != nil {

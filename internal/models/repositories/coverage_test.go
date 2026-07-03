@@ -14,7 +14,7 @@ import (
 func TestBaseRepository_Save_WriteConfigFailure(t *testing.T) {
 	setupTestConfig(t)
 	// Use a fresh repo so we don't rely on singleton
-	repo := NewBaseRepository[models.Macro]("macros", decodeMacro, func() *models.Macro { return models.NewMacro("", 0, nil) })
+	repo := NewBaseRepository("macros", decodeMacro, func() *models.Macro { return models.NewMacro("", 0, nil) })
 	// Load existing data so Save has something to write
 	if err := repo.Reload(); err != nil {
 		t.Skipf("Reload failed (no test mode?): %v", err)
@@ -39,7 +39,7 @@ func TestBaseRepository_Save_WriteConfigFailure(t *testing.T) {
 
 func TestBaseRepository_Set_PersistFailure(t *testing.T) {
 	setupTestConfig(t)
-	repo := NewBaseRepository[models.Macro]("macros", decodeMacro, func() *models.Macro { return models.NewMacro("", 0, nil) })
+	repo := NewBaseRepository("macros", decodeMacro, func() *models.Macro { return models.NewMacro("", 0, nil) })
 
 	yamlConfig := serialize.GetYAMLConfig()
 	prevPath := yamlConfig.GetConfigFile()
@@ -61,7 +61,7 @@ func TestBaseRepository_Set_PersistFailure(t *testing.T) {
 
 func TestBaseRepository_Delete_PersistFailure(t *testing.T) {
 	setupTestConfig(t)
-	repo := NewBaseRepository[models.Macro]("macros", decodeMacro, func() *models.Macro { return models.NewMacro("", 0, nil) })
+	repo := NewBaseRepository("macros", decodeMacro, func() *models.Macro { return models.NewMacro("", 0, nil) })
 	repo.mu.Lock()
 	repo.models["x"] = models.NewMacro("x", 0, nil)
 	repo.mu.Unlock()
@@ -86,7 +86,7 @@ func TestBaseRepository_Delete_PersistFailure(t *testing.T) {
 
 func TestBaseRepository_Reload_ReadConfigFailureInTestMode(t *testing.T) {
 	setupTestConfig(t)
-	repo := NewBaseRepository[models.Macro]("macros", decodeMacro, func() *models.Macro { return models.NewMacro("", 0, nil) })
+	repo := NewBaseRepository("macros", decodeMacro, func() *models.Macro { return models.NewMacro("", 0, nil) })
 
 	prevMode := os.Getenv("SQYRE_TEST_MODE")
 	os.Setenv("SQYRE_TEST_MODE", "1")
@@ -129,7 +129,7 @@ func TestBaseRepository_Reload_ErrLoadFailedWhenAllDecodeFail(t *testing.T) {
 	failingDecode := func(key string) (*models.Macro, error) {
 		return nil, ErrDecodeFailed
 	}
-	repo := NewBaseRepository[models.Macro]("macros", failingDecode, func() *models.Macro { return models.NewMacro("", 0, nil) })
+	repo := NewBaseRepository("macros", failingDecode, func() *models.Macro { return models.NewMacro("", 0, nil) })
 
 	err := repo.Reload()
 	if err == nil {
