@@ -40,10 +40,10 @@ func (a *Pause) Params() []Param {
 	params := []Param{
 		newParam("Type", a.GetType()),
 		newParam("Continue", keyLabel),
-		newParam("Key", pass),
+		newExtraParam("Key", pass),
 	}
 	if strings.TrimSpace(a.Message) != "" {
-		params = append(params, newParam("Message", a.Message))
+		params = append(params, newExtraParam("Message", a.Message))
 	}
 	return params
 }

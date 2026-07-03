@@ -2,7 +2,6 @@ package actiondisplay
 
 import (
 	"image/color"
-	"strings"
 
 	"Sqyre/internal/models/actions"
 
@@ -13,21 +12,21 @@ import (
 )
 
 func Display(action actions.ActionInterface) fyne.CanvasObject {
-	return DisplayFromParams(action.Params())
+	line, _, _ := DisplayFromParams(action.Params())
+	return line
 }
 
-func DisplayFromParams(params []actions.Param) fyne.CanvasObject {
-	line := container.NewHBox()
-	actionType := actions.ActionTypeFromParams(params)
-	for _, p := range params {
-		if strings.EqualFold(p.Label, "Type") {
-			continue
-		}
-		if entry := actions.FormatParamEntry(p); entry != "" {
-			line.Add(NewDisplayPill(entry, actionType))
+// DisplayFromParams builds inline summary pills and returns extra params for tooltips.
+func DisplayFromParams(params []actions.Param) (line fyne.CanvasObject, extra []actions.Param, actionType string) {
+	summary, extra := actions.DisplayParams(params)
+	actionType = actions.ActionTypeFromParams(params)
+	box := container.NewHBox()
+	for _, p := range summary {
+		if text := actions.FormatParamMinimal(p); text != "" {
+			box.Add(NewDisplayPill(text, actionType))
 		}
 	}
-	return line
+	return box, extra, actionType
 }
 
 // NewDisplayPill renders a rounded label chip using the pastel color for actionType.

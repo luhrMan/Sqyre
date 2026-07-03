@@ -41,8 +41,8 @@ func (a *SaveVariable) Params() []Param {
 		newParam("Type", a.GetType()),
 		newParam("Variable", a.VariableName),
 		newParam("Destination", a.Destination),
-		newParam("Mode", mode),
-		newParam("Append Newline", newline),
+		newExtraParam("Mode", mode),
+		newExtraParam("Append Newline", newline),
 	}
 }
 
