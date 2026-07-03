@@ -38,7 +38,7 @@ func testDecodeFunc(key string) (*testModel, error) {
 }
 
 func TestNewBaseRepository(t *testing.T) {
-	repo := NewBaseRepository[testModel]("test", testDecodeFunc, newTestModel)
+	repo := NewBaseRepository("test", testDecodeFunc, newTestModel)
 
 	if repo == nil {
 		t.Fatal("NewBaseRepository returned nil")
@@ -58,7 +58,7 @@ func TestNewBaseRepository(t *testing.T) {
 }
 
 func TestBaseRepository_Get(t *testing.T) {
-	repo := NewBaseRepository[testModel]("test", testDecodeFunc, newTestModel)
+	repo := NewBaseRepository("test", testDecodeFunc, newTestModel)
 
 	// Test getting non-existent key
 	_, err := repo.Get("nonexistent")
@@ -88,7 +88,7 @@ func TestBaseRepository_Get(t *testing.T) {
 }
 
 func TestBaseRepository_ExactKeyMatching(t *testing.T) {
-	repo := NewBaseRepository[testModel]("test", testDecodeFunc, newTestModel)
+	repo := NewBaseRepository("test", testDecodeFunc, newTestModel)
 
 	// Add model with specific key
 	model := &testModel{Name: "Test", Value: 100}
@@ -117,7 +117,7 @@ func TestBaseRepository_ExactKeyMatching(t *testing.T) {
 }
 
 func TestBaseRepository_GetAll(t *testing.T) {
-	repo := NewBaseRepository[testModel]("test", testDecodeFunc, newTestModel)
+	repo := NewBaseRepository("test", testDecodeFunc, newTestModel)
 
 	// Test empty repository
 	all := repo.GetAll()
@@ -143,7 +143,7 @@ func TestBaseRepository_GetAll(t *testing.T) {
 }
 
 func TestBaseRepository_GetAllKeys(t *testing.T) {
-	repo := NewBaseRepository[testModel]("test", testDecodeFunc, newTestModel)
+	repo := NewBaseRepository("test", testDecodeFunc, newTestModel)
 
 	// Test empty repository
 	keys := repo.GetAllKeys()
@@ -172,7 +172,7 @@ func TestBaseRepository_GetAllKeys(t *testing.T) {
 }
 
 func TestBaseRepository_Count(t *testing.T) {
-	repo := NewBaseRepository[testModel]("test", testDecodeFunc, newTestModel)
+	repo := NewBaseRepository("test", testDecodeFunc, newTestModel)
 
 	if repo.Count() != 0 {
 		t.Errorf("Expected count 0, got %d", repo.Count())
@@ -195,7 +195,7 @@ func TestBaseRepository_Count(t *testing.T) {
 }
 
 func TestBaseRepository_New(t *testing.T) {
-	repo := NewBaseRepository[testModel]("test", testDecodeFunc, newTestModel)
+	repo := NewBaseRepository("test", testDecodeFunc, newTestModel)
 
 	model := repo.New()
 	if model == nil {
@@ -209,7 +209,7 @@ func TestBaseRepository_New(t *testing.T) {
 }
 
 func TestBaseRepository_ThreadSafety_ConcurrentReads(t *testing.T) {
-	repo := NewBaseRepository[testModel]("test", testDecodeFunc, newTestModel)
+	repo := NewBaseRepository("test", testDecodeFunc, newTestModel)
 
 	// Populate repository
 	for i := range 100 {
@@ -246,7 +246,7 @@ func TestBaseRepository_ThreadSafety_ConcurrentReads(t *testing.T) {
 }
 
 func TestBaseRepository_ThreadSafety_ConcurrentWrites(t *testing.T) {
-	repo := NewBaseRepository[testModel]("test", testDecodeFunc, newTestModel)
+	repo := NewBaseRepository("test", testDecodeFunc, newTestModel)
 
 	// Concurrent writes (without Save to avoid file I/O)
 	var wg sync.WaitGroup
@@ -277,7 +277,7 @@ func TestBaseRepository_ThreadSafety_ConcurrentWrites(t *testing.T) {
 }
 
 func TestBaseRepository_ThreadSafety_MixedOperations(t *testing.T) {
-	repo := NewBaseRepository[testModel]("test", testDecodeFunc, newTestModel)
+	repo := NewBaseRepository("test", testDecodeFunc, newTestModel)
 
 	// Populate with initial data
 	for i := range 50 {
@@ -339,7 +339,7 @@ func TestBaseRepository_ThreadSafety_MixedOperations(t *testing.T) {
 // TestBaseRepository_KeySynchronization_BasicSet verifies that model.GetKey()
 // equals the provided key after Set() operation (exact match)
 func TestBaseRepository_KeySynchronization_BasicSet(t *testing.T) {
-	repo := NewBaseRepository[testModel]("test", testDecodeFunc, newTestModel)
+	repo := NewBaseRepository("test", testDecodeFunc, newTestModel)
 
 	// Create a model with a different name than the key we'll use
 	model := &testModel{Name: "OldName", Value: 100}
@@ -386,7 +386,7 @@ func TestBaseRepository_KeySynchronization_BasicSet(t *testing.T) {
 // TestBaseRepository_KeySynchronization_ExactMatch verifies that keys
 // must match exactly (case-sensitive) and model.GetKey() returns the exact key
 func TestBaseRepository_KeySynchronization_ExactMatch(t *testing.T) {
-	repo := NewBaseRepository[testModel]("test", testDecodeFunc, newTestModel)
+	repo := NewBaseRepository("test", testDecodeFunc, newTestModel)
 
 	// Create a model with original name
 	model := &testModel{Name: "Original", Value: 100}
@@ -444,7 +444,7 @@ func TestBaseRepository_KeySynchronization_ExactMatch(t *testing.T) {
 // by calling Set() with a different key properly updates the model and removes
 // the old key from the repository
 func TestBaseRepository_KeySynchronization_Rename(t *testing.T) {
-	repo := NewBaseRepository[testModel]("test", testDecodeFunc, newTestModel)
+	repo := NewBaseRepository("test", testDecodeFunc, newTestModel)
 
 	// Create and store a model with original key
 	model := &testModel{Name: "Original", Value: 100}

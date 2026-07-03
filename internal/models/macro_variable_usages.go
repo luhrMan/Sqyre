@@ -172,7 +172,7 @@ func textReferencesVariable(text, varName string) bool {
 
 func collectVariableRefsInAction(a actions.ActionInterface, varName string, onField func(field string)) {
 	v := reflect.ValueOf(a)
-	if v.Kind() != reflect.Ptr || v.IsNil() {
+	if v.Kind() != reflect.Pointer || v.IsNil() {
 		return
 	}
 	collectRefsInValue(v.Elem(), varName, "", onField)
@@ -200,7 +200,7 @@ func collectRefsInValue(v reflect.Value, varName, fieldPath string, onField func
 				continue
 			}
 			ft := f.Type
-			if ft.Kind() == reflect.Ptr {
+			if ft.Kind() == reflect.Pointer {
 				continue
 			}
 			if ft.Kind() == reflect.Interface && (ft == actionIfaceType || ft == advIfaceType) {

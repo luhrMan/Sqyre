@@ -147,7 +147,7 @@ var (
 // or the parent pointer; the caller walks the tree separately.
 func rewriteVariableRefsInAction(a actions.ActionInterface, oldName, newName string) {
 	v := reflect.ValueOf(a)
-	if v.Kind() != reflect.Ptr || v.IsNil() {
+	if v.Kind() != reflect.Pointer || v.IsNil() {
 		return
 	}
 	rewriteRefsInValue(v.Elem(), oldName, newName)
@@ -175,7 +175,7 @@ func rewriteRefsInValue(v reflect.Value, oldName, newName string) {
 				continue
 			}
 			ft := f.Type
-			if ft.Kind() == reflect.Ptr {
+			if ft.Kind() == reflect.Pointer {
 				continue // skip embedded base actions and the parent pointer
 			}
 			if ft.Kind() == reflect.Interface && (ft == actionIfaceType || ft == advIfaceType) {
