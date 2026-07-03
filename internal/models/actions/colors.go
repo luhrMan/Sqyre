@@ -4,9 +4,6 @@ import (
 	"image/color"
 	"strings"
 	"sync"
-
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/theme"
 )
 
 const (
@@ -74,13 +71,9 @@ func actionColorKey(actionType string) string {
 }
 
 // DefaultActionPastelColor returns the built-in pastel color for an action type.
-func DefaultActionPastelColor(actionType string) color.NRGBA {
+func DefaultActionPastelColor(actionType string, isDark bool) color.NRGBA {
 	t := strings.ToLower(strings.TrimSpace(actionType))
 	if t == "warning" {
-		isDark := false
-		if app := fyne.CurrentApp(); app != nil {
-			isDark = app.Settings().ThemeVariant() == theme.VariantDark
-		}
 		if isDark {
 			return color.NRGBA{R: 0x8A, G: 0x5A, B: 0x2A, A: 0xFF}
 		}
@@ -89,10 +82,6 @@ func DefaultActionPastelColor(actionType string) color.NRGBA {
 	category := ActionCategoryForType(t)
 	isWait := t == "wait" || t == "pause"
 
-	isDark := false
-	if app := fyne.CurrentApp(); app != nil {
-		isDark = app.Settings().ThemeVariant() == theme.VariantDark
-	}
 	if isDark {
 		if isWait {
 			return color.NRGBA{R: 0x7B, G: 0x4E, B: 0x3E, A: 0xFF}
@@ -129,7 +118,7 @@ func DefaultActionPastelColor(actionType string) color.NRGBA {
 
 // ActionPastelColor returns the display color for an action type, using a user
 // override when one is set.
-func ActionPastelColor(actionType string) color.NRGBA {
+func ActionPastelColor(actionType string, isDark bool) color.NRGBA {
 	key := actionColorKey(actionType)
 	customColorsMu.RLock()
 	c, ok := customColors[key]
@@ -137,7 +126,7 @@ func ActionPastelColor(actionType string) color.NRGBA {
 	if ok {
 		return c
 	}
-	return DefaultActionPastelColor(actionType)
+	return DefaultActionPastelColor(actionType, isDark)
 }
 
 // SetCustomActionColor stores a user-chosen color for a category key.

@@ -113,13 +113,13 @@ func removeTag(item *models.Item, tagToRemove string) {
 		return
 	}
 
-	if err := program.ItemRepo().Set(item.Name, item); err != nil {
+	if err := ProgramItemRepo(program).Set(item.Name, item); err != nil {
 		log.Printf("Error saving item %s: %v", item.Name, err)
 		return
 	}
 
 	// Reload the item from the repository to ensure SelectedItem is in sync
-	updatedItem, err := program.ItemRepo().Get(item.Name)
+	updatedItem, err := ProgramItemRepo(program).Get(item.Name)
 	if err != nil {
 		log.Printf("Error reloading item %s: %v", item.Name, err)
 		// Still update display with the modified item
@@ -166,9 +166,6 @@ func RefreshItemsAccordionItems() {
 
 // RefreshProgramAccordionItem refreshes only the accordion item for a specific program
 func RefreshProgramAccordionItem(programName string) {
-	// Refresh both the main action tabs accordion and the editor tabs accordion
-	// refreshAccordionForProgram(GetUi().ActionTabs.ImageSearchItemsAccordion, programName)
-
 	if accordion, ok := shell().EditorTabs.ItemsTab.Widgets["Accordion"].(*custom_widgets.AccordionWithHeaderWidgets); ok {
 		refreshAccordionForProgram(accordion, programName)
 	}
@@ -196,12 +193,6 @@ func refreshAccordionForProgram(accordion *custom_widgets.AccordionWithHeaderWid
 
 // RebuildItemsAccordion completely rebuilds the items accordion to refresh icon cache
 func RebuildItemsAccordion() {
-	// Rebuild the main action tabs accordion
-	// if GetUi().ActionTabs.ImageSearchItemsAccordion != nil {
-	// 	setAccordionItemsLists(GetUi().ActionTabs.ImageSearchItemsAccordion)
-	// }
-
-	// Rebuild the editor tabs accordion
 	if accordion, ok := shell().EditorTabs.ItemsTab.Widgets["Accordion"].(*custom_widgets.AccordionWithHeaderWidgets); ok {
 		setAccordionItemsLists(accordion)
 	}
@@ -290,7 +281,7 @@ func editorItemsAccordionOptions(program *models.Program, filterText string) Ite
 	programName := program.Name
 	iconService := services.IconVariantServiceInstance()
 	baseNameToItemName := make(map[string]string)
-	for _, itemName := range program.ItemRepo().GetAllKeys() {
+	for _, itemName := range ProgramItemRepo(program).GetAllKeys() {
 		baseName := iconService.GetBaseItemName(itemName)
 		if _, exists := baseNameToItemName[baseName]; !exists {
 			baseNameToItemName[baseName] = itemName
@@ -324,7 +315,7 @@ func editorItemsAccordionOptions(program *models.Program, filterText string) Ite
 			if !exists {
 				itemName = baseItemName
 			}
-			item, err := program.ItemRepo().Get(itemName)
+			item, err := ProgramItemRepo(program).Get(itemName)
 			if err != nil {
 				log.Printf("Error getting item %s: %v", baseItemName, err)
 				return
@@ -384,7 +375,7 @@ func updateMaskDisplay(maskName string) {
 		return
 	}
 
-	mask, err := program.MaskRepo().Get(maskName)
+	mask, err := ProgramMaskRepo(program).Get(maskName)
 	if err != nil {
 		maskDetailsLabel.SetText("")
 		return
@@ -414,7 +405,7 @@ func showMaskSelectionPopup() {
 	acc := widget.NewAccordion()
 	for _, p := range repositories.ProgramRepo().GetAllSortedByName() {
 		programName := p.Name
-		allKeys := p.MaskRepo().GetAllKeys()
+		allKeys := ProgramMaskRepo(p).GetAllKeys()
 		filtered := make([]string, len(allKeys))
 		copy(filtered, allKeys)
 		sortMaskKeysByDisplayName(p, filtered)
@@ -448,7 +439,7 @@ func showMaskSelectionPopup() {
 					log.Printf("Error getting program %s: %v", prog, err)
 					return
 				}
-				if err := program.ItemRepo().Set(v.Name, v); err != nil {
+				if err := ProgramItemRepo(program).Set(v.Name, v); err != nil {
 					log.Printf("Error saving item %s: %v", v.Name, err)
 					return
 				}
@@ -460,7 +451,7 @@ func showMaskSelectionPopup() {
 
 		searchbar.OnChanged = func(s string) {
 			searchDebounce.Call(func() {
-				defaultList := p.MaskRepo().GetAllKeys()
+				defaultList := ProgramMaskRepo(p).GetAllKeys()
 				if s == "" {
 					filtered = defaultList
 				} else {
@@ -523,7 +514,7 @@ func setMaskSelectionButtons() {
 					log.Printf("Error getting program %s: %v", prog, err)
 					return
 				}
-				if err := program.ItemRepo().Set(v.Name, v); err != nil {
+				if err := ProgramItemRepo(program).Set(v.Name, v); err != nil {
 					log.Printf("Error saving item %s: %v", v.Name, err)
 					return
 				}
@@ -545,8 +536,8 @@ func getProgramTags(programName string) []string {
 	}
 
 	tagMap := make(map[string]bool)
-	for _, itemName := range program.ItemRepo().GetAllKeys() {
-		item, err := program.ItemRepo().Get(itemName)
+	for _, itemName := range ProgramItemRepo(program).GetAllKeys() {
+		item, err := ProgramItemRepo(program).Get(itemName)
 		if err != nil {
 			continue
 		}

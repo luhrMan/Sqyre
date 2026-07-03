@@ -4,6 +4,7 @@ import (
 	"Sqyre/internal/config"
 	_ "embed"
 	"log"
+	"maps"
 	"os"
 	"path/filepath"
 	"sync"
@@ -204,9 +205,7 @@ func BytesToFyneIcons() map[string]*fyne.StaticResource {
 
 	// Return a copy of the cache to prevent external modification
 	result := make(map[string]*fyne.StaticResource, len(fyneResourceCache))
-	for k, v := range fyneResourceCache {
-		result[k] = v
-	}
+	maps.Copy(result, fyneResourceCache)
 	return result
 }
 

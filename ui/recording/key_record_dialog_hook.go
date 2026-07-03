@@ -144,10 +144,7 @@ func ShowKeyRecordDialog(
 					if prog > progress.Max {
 						prog = progress.Max
 					}
-					remain := keyRecordStableDuration - elapsed
-					if remain < 0 {
-						remain = 0
-					}
+					remain := max(keyRecordStableDuration-elapsed, 0)
 					status = fmt.Sprintf("Stable for %.1f s — %.1f s until save", elapsed.Seconds(), remain.Seconds())
 				default:
 					status = "Press the key you want to record."

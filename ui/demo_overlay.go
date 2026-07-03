@@ -148,7 +148,7 @@ func drawPolygon(img *image.RGBA, pts []image.Point, c color.Color) {
 	}
 	for y := minY; y <= maxY; y++ {
 		var crossings []float64
-		for i := 0; i < len(pts); i++ {
+		for i := range pts {
 			j := (i + 1) % len(pts)
 			yi, yj := float64(pts[i].Y), float64(pts[j].Y)
 			if yi == yj {

@@ -10,7 +10,6 @@ import (
 	"time"
 	"unicode"
 
-	"fyne.io/fyne/v2"
 	"gocv.io/x/gocv"
 )
 
@@ -30,8 +29,7 @@ func SaveMetaImageLocked(purpose string, img gocv.Mat) {
 }
 
 func saveMetaImage(purpose string, img gocv.Mat, openCVLocked bool) {
-	app := fyne.CurrentApp()
-	if app == nil || !app.Preferences().BoolWithFallback(config.PrefSaveMetaImages, false) {
+	if !config.PrefBool(config.PrefSaveMetaImages, false) {
 		return
 	}
 	if img.Empty() {

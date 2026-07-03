@@ -25,14 +25,14 @@ import (
 
 // CRUDHarness abstracts any repository so the same contract tests can run against all repo types.
 type CRUDHarness struct {
-	Get        func(key string) (interface{}, error)
-	GetAll     func() map[string]interface{}
+	Get        func(key string) (any, error)
+	GetAll     func() map[string]any
 	GetAllKeys func() []string
-	Set        func(key string, model interface{}) error
+	Set        func(key string, model any) error
 	Delete     func(key string) error
 	Count      func() int
 	Save       func() error
-	NewModel   func(key string) interface{} // returns a model with GetKey() == key after Set
+	NewModel   func(key string) any // returns a model with GetKey() == key after Set
 }
 
 func testGetContract(t *testing.T, h CRUDHarness) {
@@ -287,23 +287,23 @@ func TestMacroRepository_CRUDContract(t *testing.T) {
 			),
 		}
 		return CRUDHarness{
-			Get: func(key string) (interface{}, error) {
+			Get: func(key string) (any, error) {
 				m, err := repo.Get(key)
 				if err != nil {
 					return nil, err
 				}
 				return m, nil
 			},
-			GetAll: func() map[string]interface{} {
+			GetAll: func() map[string]any {
 				all := repo.GetAll()
-				out := make(map[string]interface{}, len(all))
+				out := make(map[string]any, len(all))
 				for k, v := range all {
 					out[k] = v
 				}
 				return out
 			},
 			GetAllKeys: repo.GetAllKeys,
-			Set: func(key string, model interface{}) error {
+			Set: func(key string, model any) error {
 				var m *models.Macro
 				if model != nil {
 					m = model.(*models.Macro)
@@ -313,7 +313,7 @@ func TestMacroRepository_CRUDContract(t *testing.T) {
 			Delete: repo.Delete,
 			Count:  repo.Count,
 			Save:   repo.Save,
-			NewModel: func(key string) interface{} {
+			NewModel: func(key string) any {
 				m := models.NewMacro(key, 0, nil)
 				m.SetKey(key)
 				return m
@@ -336,23 +336,23 @@ func TestProgramRepository_CRUDContract(t *testing.T) {
 			),
 		}
 		return CRUDHarness{
-			Get: func(key string) (interface{}, error) {
+			Get: func(key string) (any, error) {
 				p, err := repo.Get(key)
 				if err != nil {
 					return nil, err
 				}
 				return p, nil
 			},
-			GetAll: func() map[string]interface{} {
+			GetAll: func() map[string]any {
 				all := repo.GetAll()
-				out := make(map[string]interface{}, len(all))
+				out := make(map[string]any, len(all))
 				for k, v := range all {
 					out[k] = v
 				}
 				return out
 			},
 			GetAllKeys: repo.GetAllKeys,
-			Set: func(key string, model interface{}) error {
+			Set: func(key string, model any) error {
 				var p *models.Program
 				if model != nil {
 					p = model.(*models.Program)
@@ -362,7 +362,7 @@ func TestProgramRepository_CRUDContract(t *testing.T) {
 			Delete: repo.Delete,
 			Count:  repo.Count,
 			Save:   repo.Save,
-			NewModel: func(key string) interface{} {
+			NewModel: func(key string) any {
 				p := models.NewProgram()
 				p.SetKey(key)
 				return p
@@ -385,23 +385,23 @@ func TestItemRepository_CRUDContract(t *testing.T) {
 		}
 		repo := NewItemRepository(program)
 		return CRUDHarness{
-			Get: func(key string) (interface{}, error) {
+			Get: func(key string) (any, error) {
 				item, err := repo.Get(key)
 				if err != nil {
 					return nil, err
 				}
 				return item, nil
 			},
-			GetAll: func() map[string]interface{} {
+			GetAll: func() map[string]any {
 				all := repo.GetAll()
-				out := make(map[string]interface{}, len(all))
+				out := make(map[string]any, len(all))
 				for k, v := range all {
 					out[k] = v
 				}
 				return out
 			},
 			GetAllKeys: repo.GetAllKeys,
-			Set: func(key string, model interface{}) error {
+			Set: func(key string, model any) error {
 				if model == nil {
 					return repo.Set(key, nil)
 				}
@@ -410,7 +410,7 @@ func TestItemRepository_CRUDContract(t *testing.T) {
 			Delete: repo.Delete,
 			Count:  repo.Count,
 			Save:   repo.Save,
-			NewModel: func(key string) interface{} {
+			NewModel: func(key string) any {
 				item := repo.New()
 				item.SetKey(key)
 				return item
@@ -438,23 +438,23 @@ func TestPointRepository_CRUDContract(t *testing.T) {
 		}
 		repo := NewPointRepository(program, resKey)
 		return CRUDHarness{
-			Get: func(key string) (interface{}, error) {
+			Get: func(key string) (any, error) {
 				p, err := repo.Get(key)
 				if err != nil {
 					return nil, err
 				}
 				return p, nil
 			},
-			GetAll: func() map[string]interface{} {
+			GetAll: func() map[string]any {
 				all := repo.GetAll()
-				out := make(map[string]interface{}, len(all))
+				out := make(map[string]any, len(all))
 				for k, v := range all {
 					out[k] = v
 				}
 				return out
 			},
 			GetAllKeys: repo.GetAllKeys,
-			Set: func(key string, model interface{}) error {
+			Set: func(key string, model any) error {
 				if model == nil {
 					return repo.Set(key, nil)
 				}
@@ -463,7 +463,7 @@ func TestPointRepository_CRUDContract(t *testing.T) {
 			Delete: repo.Delete,
 			Count:  repo.Count,
 			Save:   repo.Save,
-			NewModel: func(key string) interface{} {
+			NewModel: func(key string) any {
 				pt := repo.New()
 				pt.SetKey(key)
 				return pt
@@ -491,23 +491,23 @@ func TestSearchAreaRepository_CRUDContract(t *testing.T) {
 		}
 		repo := NewSearchAreaRepository(program, resKey)
 		return CRUDHarness{
-			Get: func(key string) (interface{}, error) {
+			Get: func(key string) (any, error) {
 				sa, err := repo.Get(key)
 				if err != nil {
 					return nil, err
 				}
 				return sa, nil
 			},
-			GetAll: func() map[string]interface{} {
+			GetAll: func() map[string]any {
 				all := repo.GetAll()
-				out := make(map[string]interface{}, len(all))
+				out := make(map[string]any, len(all))
 				for k, v := range all {
 					out[k] = v
 				}
 				return out
 			},
 			GetAllKeys: repo.GetAllKeys,
-			Set: func(key string, model interface{}) error {
+			Set: func(key string, model any) error {
 				if model == nil {
 					return repo.Set(key, nil)
 				}
@@ -516,7 +516,7 @@ func TestSearchAreaRepository_CRUDContract(t *testing.T) {
 			Delete: repo.Delete,
 			Count:  repo.Count,
 			Save:   repo.Save,
-			NewModel: func(key string) interface{} {
+			NewModel: func(key string) any {
 				sa := repo.New()
 				sa.SetKey(key)
 				return sa

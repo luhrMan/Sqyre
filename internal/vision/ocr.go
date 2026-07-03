@@ -16,7 +16,6 @@ import (
 	"sync"
 	"time"
 
-	"fyne.io/fyne/v2"
 	"github.com/otiai10/gosseract/v2"
 	"gocv.io/x/gocv"
 )
@@ -301,7 +300,7 @@ func ocrCapture(a *actions.Ocr, macro *models.Macro) (foundText string, outX, ou
 	if checkErr != nil {
 		return "", 0, 0, checkErr
 	}
-	if fyne.CurrentApp().Preferences().BoolWithFallback(config.PrefSaveMetaImages, false) {
+	if config.PrefBool(config.PrefSaveMetaImages, false) {
 		SaveMetaImage("ocr", mat)
 	}
 

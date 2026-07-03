@@ -3,9 +3,11 @@ package ui
 import (
 	"path/filepath"
 	"sync"
+	"time"
 
 	"Sqyre/internal/config"
 	"Sqyre/internal/logger"
+	"Sqyre/internal/screen"
 	"Sqyre/internal/services"
 	"Sqyre/ui/custom_widgets"
 	"Sqyre/ui/editor"
@@ -18,11 +20,11 @@ import (
 	"fyne.io/fyne/v2/driver/desktop"
 	widget "fyne.io/fyne/v2/widget"
 	fynetooltip "github.com/dweymouth/fyne-tooltip"
-	"github.com/go-vgo/robotgo"
 )
 
 var (
 	ui             *Ui
+	uiInitMu       sync.Mutex
 	boundLocXLabel *widget.Label
 	boundLocYLabel *widget.Label
 	mousePosStop   chan struct{}
@@ -45,7 +47,20 @@ type MainUi struct {
 
 func GetUi() *Ui { return ui }
 func InitializeUi(w fyne.Window) *Ui {
+	uiInitMu.Lock()
+	defer uiInitMu.Unlock()
 	ApplyAppearanceFromPrefs()
+	services.SetRunOnUIThread(fyne.Do)
+	services.SetRunOnUIThreadAndWait(fyne.DoAndWait)
+	config.BoolPreference = func(key string, fallback bool) bool {
+		return fyne.CurrentApp().Preferences().BoolWithFallback(key, fallback)
+	}
+	config.StringPreference = func(key string) string {
+		return fyne.CurrentApp().Preferences().String(key)
+	}
+	screen.EnabledMonitorsString = func() string {
+		return config.PrefString(config.PrefEnabledMonitors)
+	}
 	logger.SetLogFile(filepath.Join(config.GetSqyreDir(), "sqyre.log"))
 	restoreWindowGeometry(w)
 	w.SetCloseIntercept(func() {
@@ -141,8 +156,7 @@ func saveWindowGeometry(w fyne.Window) {
 	}
 
 	// Persist desktop window bounds (x, y, w, h) from current process window.
-	pid := robotgo.GetPid()
-	x, y, width, height := robotgo.GetBounds(pid)
+	x, y, width, height := screen.ProcessWindowBounds()
 	if width > 0 && height > 0 {
 		prefs.SetInt(config.PrefWindowX, x)
 		prefs.SetInt(config.PrefWindowY, y)
@@ -151,16 +165,27 @@ func saveWindowGeometry(w fyne.Window) {
 	}
 }
 
+var editorUiWired *editor.EditorUi
+
 // EnsureDataEditor builds the data editor UI on first open and wires its handlers.
 func EnsureDataEditor() {
 	u := GetUi()
 	editor.EnsureBuilt(u.EditorUi, u.Window)
-	editorUiOnce.Do(func() {
+	if editorUiWired != u.EditorUi {
 		SetEditorUi()
-	})
+		editorUiWired = u.EditorUi
+	}
 }
 
-var editorUiOnce sync.Once
+// ResetGlobalsForTesting clears package-level UI singletons between tests.
+func ResetGlobalsForTesting() {
+	uiInitMu.Lock()
+	defer uiInitMu.Unlock()
+	stopMousePosPolling()
+	ui = nil
+	editorUiWired = nil
+	editor.ResetBuiltForTesting()
+}
 
 func (u *Ui) ConstructUi() {
 	u.constructUiShell()
@@ -201,7 +226,7 @@ func (u *Ui) constructUiFinish() {
 }
 
 func toggleMousePos() {
-	locX, locY := robotgo.Location()
+	locX, locY := screen.Location()
 	blocX, blocY := binding.BindInt(&locX), binding.BindInt(&locY)
 	boundLocXLabel.Bind(binding.IntToString(blocX))
 	boundLocYLabel.Bind(binding.IntToString(blocY))
@@ -214,12 +239,12 @@ func toggleMousePos() {
 				return
 			default:
 			}
-			robotgo.MilliSleep(100)
-			newLocX, newLocY := robotgo.Location()
+			time.Sleep(100 * time.Millisecond)
+			newLocX, newLocY := screen.Location()
 			if locX == newLocX && locY == newLocY {
 				continue
 			}
-			locX, locY = robotgo.Location()
+			locX, locY = screen.Location()
 			blocX.Reload()
 			blocY.Reload()
 		}

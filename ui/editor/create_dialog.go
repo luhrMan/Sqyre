@@ -157,14 +157,14 @@ func itemCreateConfig() createDialogConfig {
 				return errors.New("failed to get or create program")
 			}
 			if err := ensureNameAvailable(n, "item", func(name string) (any, error) {
-				return pro.ItemRepo().Get(name)
+				return ProgramItemRepo(pro).Get(name)
 			}); err != nil {
 				return err
 			}
 			x, _ := strconv.Atoi(w["Cols"].(*widget.Entry).Text)
 			y, _ := strconv.Atoi(w["Rows"].(*widget.Entry).Text)
 			sm, _ := strconv.Atoi(w["StackMax"].(*widget.Entry).Text)
-			i := pro.ItemRepo().New()
+			i := ProgramItemRepo(pro).New()
 			i.Name = n
 			i.GridSize = [2]int{x, y}
 			i.StackMax = sm
@@ -172,7 +172,7 @@ func itemCreateConfig() createDialogConfig {
 				i.Tags = append([]string(nil), draftCtx.draftItem.Tags...)
 				i.Mask = draftCtx.draftItem.Mask
 			}
-			if err := pro.ItemRepo().Set(i.Name, i); err != nil {
+			if err := ProgramItemRepo(pro).Set(i.Name, i); err != nil {
 				return err
 			}
 			shell().EditorTabs.ItemsTab.SelectedItem = i
@@ -233,15 +233,15 @@ func pointCreateConfig() createDialogConfig {
 				return errors.New("failed to get or create program")
 			}
 			if err := ensureNameAvailable(p.Name, "point", func(name string) (any, error) {
-				return pro.PointRepo(config.MainMonitorSizeString).Get(name)
+				return ProgramPointRepo(pro, config.MainMonitorSizeString).Get(name)
 			}); err != nil {
 				return err
 			}
-			newPoint := pro.PointRepo(config.MainMonitorSizeString).New()
+			newPoint := ProgramPointRepo(pro, config.MainMonitorSizeString).New()
 			newPoint.Name = p.Name
 			newPoint.X = p.X
 			newPoint.Y = p.Y
-			if err := pro.PointRepo(config.MainMonitorSizeString).Set(newPoint.Name, newPoint); err != nil {
+			if err := ProgramPointRepo(pro, config.MainMonitorSizeString).Set(newPoint.Name, newPoint); err != nil {
 				return err
 			}
 			shell().EditorTabs.PointsTab.SelectedItem = newPoint
@@ -302,17 +302,17 @@ func searchAreaCreateConfig() createDialogConfig {
 				return errors.New("failed to get or create program")
 			}
 			if err := ensureNameAvailable(sa.Name, "search area", func(name string) (any, error) {
-				return pro.SearchAreaRepo(config.MainMonitorSizeString).Get(name)
+				return ProgramSearchAreaRepo(pro, config.MainMonitorSizeString).Get(name)
 			}); err != nil {
 				return err
 			}
-			newSA := pro.SearchAreaRepo(config.MainMonitorSizeString).New()
+			newSA := ProgramSearchAreaRepo(pro, config.MainMonitorSizeString).New()
 			newSA.Name = sa.Name
 			newSA.LeftX = sa.LeftX
 			newSA.TopY = sa.TopY
 			newSA.RightX = sa.RightX
 			newSA.BottomY = sa.BottomY
-			if err := pro.SearchAreaRepo(config.MainMonitorSizeString).Set(newSA.Name, newSA); err != nil {
+			if err := ProgramSearchAreaRepo(pro, config.MainMonitorSizeString).Set(newSA.Name, newSA); err != nil {
 				return err
 			}
 			shell().EditorTabs.SearchAreasTab.SelectedItem = newSA
@@ -366,11 +366,11 @@ func maskCreateConfig() createDialogConfig {
 				return errors.New("failed to get or create program")
 			}
 			if err := ensureNameAvailable(m.Name, "mask", func(name string) (any, error) {
-				return pro.MaskRepo().Get(name)
+				return ProgramMaskRepo(pro).Get(name)
 			}); err != nil {
 				return err
 			}
-			if err := pro.MaskRepo().Set(m.Name, m); err != nil {
+			if err := ProgramMaskRepo(pro).Set(m.Name, m); err != nil {
 				return err
 			}
 			shell().EditorTabs.MasksTab.SelectedItem = m

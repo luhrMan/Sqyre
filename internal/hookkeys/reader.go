@@ -1,5 +1,7 @@
 package hookkeys
 
+import "slices"
+
 // Reader reports physical keys currently held using platform-native input state.
 type Reader interface {
 	PressedKeyNames() []string
@@ -13,10 +15,8 @@ func ChordFullyReleased(r Reader, names []string) bool {
 	}
 	pressed := r.PressedKeyNames()
 	for _, want := range names {
-		for _, have := range pressed {
-			if have == want {
-				return false
-			}
+		if slices.Contains(pressed, want) {
+			return false
 		}
 	}
 	return true
@@ -29,13 +29,7 @@ func ChordAllPressed(r Reader, names []string) bool {
 	}
 	pressed := r.PressedKeyNames()
 	for _, want := range names {
-		found := false
-		for _, have := range pressed {
-			if have == want {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(pressed, want)
 		if !found {
 			return false
 		}

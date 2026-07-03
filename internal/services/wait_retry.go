@@ -15,13 +15,7 @@ func retryWhileNotFound(cfg actions.WaitTilFoundConfig, defaultIntervalMs int, r
 	}
 	deadline := time.Now().Add(time.Duration(cfg.WaitTilFoundSeconds) * time.Second)
 	intervalMs := cfg.EffectiveIntervalMs(defaultIntervalMs)
-	maxIntervalMs := intervalMs * 5
-	if maxIntervalMs > 2000 {
-		maxIntervalMs = 2000
-	}
-	if maxIntervalMs < intervalMs {
-		maxIntervalMs = intervalMs
-	}
+	maxIntervalMs := max(min(intervalMs*5, 2000), intervalMs)
 
 	for time.Now().Before(deadline) {
 		if err := checkMacroStop(); err != nil {
@@ -38,10 +32,7 @@ func retryWhileNotFound(cfg actions.WaitTilFoundConfig, defaultIntervalMs int, r
 			return nil
 		}
 		if intervalMs < maxIntervalMs {
-			next := intervalMs * 2
-			if next > maxIntervalMs {
-				next = maxIntervalMs
-			}
+			next := min(intervalMs*2, maxIntervalMs)
 			intervalMs = next
 		}
 	}

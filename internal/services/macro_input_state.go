@@ -1,5 +1,7 @@
 package services
 
+import "slices"
+
 import "strings"
 
 var modifierKeyNames = []string{
@@ -62,12 +64,7 @@ func releaseHeldMacroKeys() {
 }
 
 func isModifierKey(key string) bool {
-	for _, mod := range modifierKeyNames {
-		if key == mod {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(modifierKeyNames, key)
 }
 
 // ReleaseAllMacroInputs sends key-up for held keys and common modifiers, and

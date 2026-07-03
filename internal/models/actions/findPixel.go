@@ -5,8 +5,6 @@ import (
 	"strconv"
 	"strings"
 
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/theme"
 )
 
 // FindPixel is a leaf (basic) action: it scans a search area for a pixel
@@ -116,16 +114,12 @@ func NewFindPixel(name string, searchArea CoordinateRef, targetColor string, col
 }
 
 func (a *FindPixel) String() string {
-	return stringifyParams(a.parameters())
+	return stringifyParams(a.Params())
 }
 
-func (a *FindPixel) Display() fyne.CanvasObject {
-	return displayFromParams(a.parameters())
-}
-
-func (a *FindPixel) parameters() []actionParam {
+func (a *FindPixel) Params() []Param {
 	mode := a.WaitTilFoundConfig.DisplayWaitMode("instant")
-	return []actionParam{
+	return []Param{
 		newParam("Type", a.GetType()),
 		newParam("Name", a.Name),
 		newParam("Color", a.TargetColor),
@@ -133,10 +127,6 @@ func (a *FindPixel) parameters() []actionParam {
 		newParam("Search Area", a.SearchArea.DisplayLabel()),
 		newParam("Wait", mode),
 	}
-}
-
-func (a *FindPixel) Icon() fyne.Resource {
-	return theme.ColorChromaticIcon()
 }
 
 func (a *FindPixel) VariableBindings() []VariableBinding {

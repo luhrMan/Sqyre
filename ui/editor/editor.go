@@ -4,10 +4,10 @@ import (
 	"Sqyre/internal/config"
 	"Sqyre/internal/models"
 	"Sqyre/internal/screen"
+	"Sqyre/internal/vision"
 	"Sqyre/ui/custom_widgets"
 	"errors"
 	"fmt"
-	"image"
 	"image/color"
 	"log"
 	"os"
@@ -21,8 +21,6 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
-	"github.com/go-vgo/robotgo"
-	"gocv.io/x/gocv"
 )
 
 type EditorUi struct {
@@ -123,75 +121,6 @@ func wrapEditorPreviewImage(inner fyne.CanvasObject) fyne.CanvasObject {
 	border.StrokeWidth = 2
 	border.CornerRadius = 4
 	return container.NewStack(border, inner)
-}
-
-const (
-	editorPreviewMonitorDash = 10
-	editorPreviewMonitorGap  = 6
-)
-
-// editorPreviewMonitorOutline is the dotted monitor bezel color (matches search-area / point accent).
-var editorPreviewMonitorOutline = color.RGBA{R: 255, A: 255}
-
-func drawPreviewDottedHLine(mat *gocv.Mat, y, x0, x1 int, c color.RGBA, thick int) {
-	if x0 > x1 {
-		return
-	}
-	step := editorPreviewMonitorDash + editorPreviewMonitorGap
-	for x := x0; x <= x1; x += step {
-		xe := x + editorPreviewMonitorDash - 1
-		if xe > x1 {
-			xe = x1
-		}
-		gocv.Line(mat, image.Pt(x, y), image.Pt(xe, y), c, thick)
-	}
-}
-
-func drawPreviewDottedVLine(mat *gocv.Mat, x, y0, y1 int, c color.RGBA, thick int) {
-	if y0 > y1 {
-		return
-	}
-	step := editorPreviewMonitorDash + editorPreviewMonitorGap
-	for y := y0; y <= y1; y += step {
-		ye := y + editorPreviewMonitorDash - 1
-		if ye > y1 {
-			ye = y1
-		}
-		gocv.Line(mat, image.Pt(x, y), image.Pt(x, ye), c, thick)
-	}
-}
-
-func drawPreviewDottedRectOutline(mat *gocv.Mat, r image.Rectangle, c color.RGBA, thick int) {
-	if r.Empty() || r.Dx() <= 0 || r.Dy() <= 0 {
-		return
-	}
-	x0, y0 := r.Min.X, r.Min.Y
-	x1, y1 := r.Max.X-1, r.Max.Y-1
-	if x1 < x0 || y1 < y0 {
-		return
-	}
-	drawPreviewDottedHLine(mat, y0, x0, x1, c, thick)
-	drawPreviewDottedHLine(mat, y1, x0, x1, c, thick)
-	drawPreviewDottedVLine(mat, x0, y0, y1, c, thick)
-	drawPreviewDottedVLine(mat, x1, y0, y1, c, thick)
-}
-
-// drawEditorPreviewMonitorOutlines draws a dotted rectangle for each enabled monitor (clip to capture).
-func drawEditorPreviewMonitorOutlines(mat *gocv.Mat, vb image.Rectangle) {
-	const thick = 1
-	n := screen.NumDisplays()
-	for i := 0; i < n; i++ {
-		if !screen.IsMonitorEnabled(i) {
-			continue
-		}
-		b := screen.DisplayBoundsAbs(i)
-		inter := b.Intersect(vb)
-		if inter.Empty() {
-			continue
-		}
-		rel := image.Rect(inter.Min.X-vb.Min.X, inter.Min.Y-vb.Min.Y, inter.Max.X-vb.Min.X, inter.Max.Y-vb.Min.Y)
-		drawPreviewDottedRectOutline(mat, rel, editorPreviewMonitorOutline, thick)
-	}
 }
 
 // ConstructEditorTabs builds all editor tab widgets. Call before SetEditorUi.
@@ -449,7 +378,7 @@ func (eu *EditorUi) onAutoPicSave() {
 	}
 
 	fullPath := filepath.Join(autoPicPath, filename)
-	if err := robotgo.SavePng(captureImg, fullPath); err != nil {
+	if err := screen.SavePNG(captureImg, fullPath); err != nil {
 		editorErr(fmt.Errorf("AutoPic: Error saving image to %s: %w", fullPath, err))
 		return
 	}
@@ -498,10 +427,7 @@ func (eu *EditorUi) UpdateSearchAreaPreview(searchArea *models.SearchArea) {
 		return
 	}
 
-	previewImg, err := captureVirtualDesktop(func(mat *gocv.Mat, bounds image.Rectangle) {
-		rect := image.Rect(b.lx-bounds.Min.X, b.ty-bounds.Min.Y, b.rx-bounds.Min.X, b.by-bounds.Min.Y)
-		gocv.Rectangle(mat, rect, color.RGBA{R: 255, A: 255}, 2)
-	})
+	previewImg, err := captureSearchAreaPreview(b.lx, b.ty, b.rx, b.by)
 	if err != nil {
 		panel.setError(fmt.Errorf("SearchArea: %w (area: %s)", err, searchArea.Name))
 		return
@@ -531,13 +457,7 @@ func (eu *EditorUi) UpdatePointPreview(point *models.Point) {
 		return
 	}
 
-	previewImg, err := captureVirtualDesktop(func(mat *gocv.Mat, bounds image.Rectangle) {
-		center := image.Point{X: px - bounds.Min.X, Y: py - bounds.Min.Y}
-		red := color.RGBA{R: 255, A: 255}
-		gocv.Circle(mat, center, 8, red, 2)
-		gocv.Line(mat, image.Point{X: center.X - 15, Y: center.Y}, image.Point{X: center.X + 15, Y: center.Y}, red, 2)
-		gocv.Line(mat, image.Point{X: center.X, Y: center.Y - 15}, image.Point{X: center.X, Y: center.Y + 15}, red, 2)
-	})
+	previewImg, err := capturePointPreview(px, py)
 	if err != nil {
 		panel.setError(fmt.Errorf("Point: %w (point: %s)", err, point.Name))
 		return
@@ -562,14 +482,7 @@ func (eu *EditorUi) UpdateMaskPreview(programName, maskName string) {
 		return
 	}
 
-	mat := gocv.IMRead(imgPath, gocv.IMReadColor)
-	if mat.Empty() {
-		eu.ClearMaskPreviewImage()
-		return
-	}
-	defer mat.Close()
-
-	img, err := mat.ToImage()
+	img, err := vision.ReadColorImage(imgPath)
 	if err != nil {
 		eu.ClearMaskPreviewImage()
 		return

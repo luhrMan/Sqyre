@@ -4,8 +4,8 @@ import (
 	"testing"
 
 	"Sqyre/internal/models"
+	macrologic "Sqyre/internal/macro"
 	"Sqyre/internal/models/actions"
-	"Sqyre/internal/models/serialize"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -100,9 +100,9 @@ func TestInsertActionBelowSelection(t *testing.T) {
 
 func TestPasteNode_insertsBelowSelection(t *testing.T) {
 	mt, waitA, _, _, loop := buildInsertTestTree(t)
-	clipboard, err := serialize.ActionToMap(actions.NewWait(77))
+	clipboard, err := macrologic.CloneActionMap(actions.NewWait(77))
 	if err != nil {
-		t.Fatalf("ActionToMap: %v", err)
+		t.Fatalf("CloneActionMap: %v", err)
 	}
 
 	mt.SelectedNode = waitA.GetUID()

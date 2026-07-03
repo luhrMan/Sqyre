@@ -12,7 +12,7 @@ func ApplyMonitorBuiltinVariables(m *models.Macro) {
 		return
 	}
 	n := screen.NumDisplays()
-	for i := 0; i < n; i++ {
+	for i := range n {
 		b := screen.DisplayBoundsAbs(i)
 		monitorNum := i + 1
 		setMacroVariable(m, fmt.Sprintf("monitor%dWidth", monitorNum), b.Dx())
