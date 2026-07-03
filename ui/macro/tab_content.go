@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"Sqyre/internal/models"
+	"Sqyre/internal/screen"
 	"Sqyre/internal/services"
 
 	"fyne.io/fyne/v2"
@@ -11,7 +12,6 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
-	"github.com/go-vgo/robotgo"
 )
 
 // maxLogLines bounds how many recent log lines are kept in the on-screen Entry.
@@ -57,7 +57,7 @@ func NewMacroTabContent(m *models.Macro) *MacroTabContent {
 		if full == "" {
 			full = logEntry.Text
 		}
-		robotgo.WriteAll(full)
+		_ = screen.WriteClipboard(full)
 	})
 	clearBtn := widget.NewButtonWithIcon("Clear", theme.DeleteIcon(), func() {
 		logEntry.SetText("")

@@ -59,10 +59,10 @@ func TestFindTemplateMatchesConcurrentSharedSearchImage(t *testing.T) {
 
 	var wg sync.WaitGroup
 	wg.Add(workers)
-	for w := 0; w < workers; w++ {
+	for range workers {
 		go func() {
 			defer wg.Done()
-			for i := 0; i < iterations; i++ {
+			for range iterations {
 				_ = FindTemplateMatches(search, template, imask, tmask, cmask, 0.5, 5)
 			}
 		}()

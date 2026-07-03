@@ -45,7 +45,11 @@ func TestExecute_Move(t *testing.T) {
 	initTestConfig(t)
 	program := repositories.ProgramRepo().New()
 	program.Name = "test-program"
-	if err := program.PointRepo(DefaultResolutionKey()).Set("p", &models.Point{Name: "p", X: 10, Y: 20}); err != nil {
+	pointRepo, err := program.PointRepo(DefaultResolutionKey())
+	if err != nil {
+		t.Fatalf("point repo: %v", err)
+	}
+	if err := pointRepo.Set("p", &models.Point{Name: "p", X: 10, Y: 20}); err != nil {
 		t.Fatalf("set point: %v", err)
 	}
 	if err := repositories.ProgramRepo().Set("test-program", program); err != nil {

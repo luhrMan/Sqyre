@@ -3,8 +3,6 @@ package actions
 import (
 	"strings"
 
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/theme"
 )
 
 // Pause blocks macro execution until the user presses a configured continue key chord.
@@ -27,14 +25,10 @@ func NewPause(message string, continueKey []string, passThrough bool) *Pause {
 }
 
 func (a *Pause) String() string {
-	return stringifyParams(a.parameters())
+	return stringifyParams(a.Params())
 }
 
-func (a *Pause) Display() fyne.CanvasObject {
-	return displayFromParams(a.parameters())
-}
-
-func (a *Pause) parameters() []actionParam {
+func (a *Pause) Params() []Param {
 	keyLabel := formatContinueKey(a.ContinueKey)
 	if keyLabel == "" {
 		keyLabel = "not set"
@@ -43,7 +37,7 @@ func (a *Pause) parameters() []actionParam {
 	if a.PassThrough {
 		pass = "pass through"
 	}
-	params := []actionParam{
+	params := []Param{
 		newParam("Type", a.GetType()),
 		newParam("Continue", keyLabel),
 		newParam("Key", pass),
@@ -52,10 +46,6 @@ func (a *Pause) parameters() []actionParam {
 		params = append(params, newParam("Message", a.Message))
 	}
 	return params
-}
-
-func (a *Pause) Icon() fyne.Resource {
-	return theme.MediaPauseIcon()
 }
 
 // FormatContinueKey returns a human-readable continue chord label.

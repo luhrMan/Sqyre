@@ -136,7 +136,7 @@ func (u *Ui) constructSettings() fyne.CanvasObject {
 		uiScaleHint,
 		container.NewHBox(widget.NewLabel("UI scale:"), uiScaleInc),
 		widget.NewLabel("Macro tree action colors"),
-		buildActionColorSettings(u.Window, prefs),
+		buildActionColorSettings(u, prefs),
 	))
 
 	u.SettingsUi.Content.Content = container.NewVBox(

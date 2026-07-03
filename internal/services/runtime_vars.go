@@ -2,6 +2,7 @@ package services
 
 import (
 	"fmt"
+	"maps"
 	"sort"
 	"sync"
 
@@ -51,9 +52,7 @@ func GetRuntimeVariables() map[string]string {
 		return map[string]string{}
 	}
 	out := make(map[string]string, len(runtimeVars))
-	for k, v := range runtimeVars {
-		out[k] = v
-	}
+	maps.Copy(out, runtimeVars)
 	return out
 }
 

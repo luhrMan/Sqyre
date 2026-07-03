@@ -6,8 +6,8 @@ type AdvancedAction struct {
 	SubActions  []ActionInterface `yaml:",omitempty" mapstructure:",omitempty"`
 }
 
-func (a *AdvancedAction) parameters() []actionParam {
-	return []actionParam{
+func (a *AdvancedAction) Params() []Param {
+	return []Param{
 		newParam("Name", a.Name),
 		newParam("Type", a.Type),
 	}

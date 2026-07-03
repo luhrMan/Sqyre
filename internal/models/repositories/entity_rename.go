@@ -50,13 +50,17 @@ func PropagateMaskRenameInProgram(programName, oldName, newName string) (int, er
 	}
 
 	updated := 0
+	itemRepo, err := program.ItemRepo()
+	if err != nil {
+		return 0, err
+	}
 	err = BatchSave(func() error {
-		for _, item := range program.ItemRepo().GetAll() {
+		for _, item := range itemRepo.GetAll() {
 			if item.Mask != oldName {
 				continue
 			}
 			item.Mask = newName
-			if serr := program.ItemRepo().Set(item.Name, item); serr != nil {
+			if serr := itemRepo.Set(item.Name, item); serr != nil {
 				return serr
 			}
 			updated++

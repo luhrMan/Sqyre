@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"fyne.io/fyne/v2"
@@ -109,10 +110,8 @@ func wireItemTagHandlers(w map[string]fyne.CanvasObject, programSelector *widget
 		if tagText == "" {
 			return
 		}
-		for _, existing := range item.Tags {
-			if existing == tagText {
-				return
-			}
+		if slices.Contains(item.Tags, tagText) {
+			return
 		}
 		item.Tags = append(item.Tags, tagText)
 		tagEntry.SetText("")
@@ -175,7 +174,7 @@ func wireItemMaskHandlers(w map[string]fyne.CanvasObject, programSelector *widge
 			maskDetailsLabel.SetText("")
 			return
 		}
-		mask, err := program.MaskRepo().Get(maskName)
+		mask, err := ProgramMaskRepo(program).Get(maskName)
 		if err != nil {
 			maskDetailsLabel.SetText("")
 			return
@@ -217,7 +216,7 @@ func showMaskSelectionPopupForItem(programName string, onSelect func(maskName st
 	acc := widget.NewAccordion()
 	for _, p := range repositories.ProgramRepo().GetAllSortedByName() {
 		pName := p.Name
-		allKeys := p.MaskRepo().GetAllKeys()
+		allKeys := ProgramMaskRepo(p).GetAllKeys()
 		filtered := append([]string(nil), allKeys...)
 		sortMaskKeysByDisplayName(p, filtered)
 
@@ -242,7 +241,7 @@ func showMaskSelectionPopupForItem(programName string, onSelect func(maskName st
 		}
 		searchbar.OnChanged = func(s string) {
 			searchDebounce.Call(func() {
-				defaultList := p.MaskRepo().GetAllKeys()
+				defaultList := ProgramMaskRepo(p).GetAllKeys()
 				if s == "" {
 					filtered = defaultList
 				} else {

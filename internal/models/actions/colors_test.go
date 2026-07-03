@@ -11,13 +11,13 @@ func TestActionPastelColorCustomOverride(t *testing.T) {
 	custom := color.NRGBA{R: 0x11, G: 0x22, B: 0x33, A: 0xFF}
 	SetCustomActionColor(ActionColorKeyMouseKeyboard, custom)
 
-	got := ActionPastelColor("click")
+	got := ActionPastelColor("click", false)
 	if got != custom {
 		t.Fatalf("ActionPastelColor(click) = %+v, want custom %+v", got, custom)
 	}
 
 	ClearCustomActionColor(ActionColorKeyMouseKeyboard)
-	got = ActionPastelColor("click")
+	got = ActionPastelColor("click", false)
 	if got == custom {
 		t.Fatal("expected default color after clearing override")
 	}
@@ -29,7 +29,7 @@ func TestActionPastelColorWaitOverride(t *testing.T) {
 	custom := color.NRGBA{R: 0xAA, G: 0xBB, B: 0xCC, A: 0xFF}
 	SetCustomActionColor(ActionColorKeyWait, custom)
 
-	got := ActionPastelColor("wait")
+	got := ActionPastelColor("wait", false)
 	if got != custom {
 		t.Fatalf("ActionPastelColor(wait) = %+v, want custom %+v", got, custom)
 	}

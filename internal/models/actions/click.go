@@ -1,11 +1,5 @@
 package actions
 
-import (
-	"Sqyre/internal/assets"
-
-	"fyne.io/fyne/v2"
-)
-
 const (
 	ClickButtonLeft   = "left"
 	ClickButtonRight  = "right"
@@ -30,15 +24,11 @@ func NewClick(button string, state bool) *Click {
 }
 
 func (a *Click) String() string {
-	return stringifyParams(a.parameters())
+	return stringifyParams(a.Params())
 }
 
-func (a *Click) Display() fyne.CanvasObject {
-	return displayFromParams(a.parameters())
-}
-
-func (a *Click) parameters() []actionParam {
-	return []actionParam{
+func (a *Click) Params() []Param {
+	return []Param{
 		newParam("Type", a.GetType()),
 		newParam("Button", ClickButtonLabel(a.Button)),
 		newParam("State", UpOrDown(a.State)),
@@ -56,11 +46,4 @@ func ClickButtonLabel(button string) string {
 	default:
 		return "left"
 	}
-}
-
-func (a *Click) Icon() fyne.Resource {
-	if a.State {
-		return assets.MouseClickFilledIcon
-	}
-	return assets.MouseClickIcon
 }

@@ -3,8 +3,6 @@ package actions
 import (
 	"strings"
 
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/theme"
 )
 
 const (
@@ -55,15 +53,11 @@ func (a *ForEachRow) Reset() {
 }
 
 func (a *ForEachRow) String() string {
-	return stringifyParams(a.parameters())
+	return stringifyParams(a.Params())
 }
 
-func (a *ForEachRow) Display() fyne.CanvasObject {
-	return displayFromParams(a.parameters())
-}
-
-func (a *ForEachRow) parameters() []actionParam {
-	params := []actionParam{
+func (a *ForEachRow) Params() []Param {
+	params := []Param{
 		newParam("Type", a.GetType()),
 		newParam("Name", a.Name),
 		newParam("Sources", len(a.Sources)),
@@ -75,10 +69,6 @@ func (a *ForEachRow) parameters() []actionParam {
 		params = append(params, newParam("End Row", a.EndRow))
 	}
 	return params
-}
-
-func (a *ForEachRow) Icon() fyne.Resource {
-	return theme.ListIcon()
 }
 
 func (a *ForEachRow) VariableBindings() []VariableBinding {

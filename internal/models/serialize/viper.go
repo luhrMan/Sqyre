@@ -26,13 +26,6 @@ func GetViper() *viper.Viper {
 	return Viperizer
 }
 
-// func (s *sViper) Encode(d any) error {
-// 	// s.encodePrograms(d.(map[string]program.Program))
-// 	// s.encodeMacros()
-// 	log.Println("Successfully encoded:", "yaml")
-// 	return nil
-// }
-
 // LoadConfig ensures ~/.sqyre/db.yaml exists and loads it into YAMLConfig (single parse).
 func LoadConfig() error {
 	configPath := config.GetDbPath()
@@ -72,7 +65,7 @@ func MacroDecodeHookFunc() mapstructure.DecodeHookFuncType {
 		t reflect.Type,
 		data any,
 	) (any, error) {
-		if t == reflect.TypeOf(actions.Loop{}) {
+		if t == reflect.TypeFor[actions.Loop]() {
 			rawMap, ok := data.(map[string]any)
 			if !ok {
 				return data, fmt.Errorf("expected map[string]any, got %T", data)
@@ -93,7 +86,7 @@ func MacroDecodeHookFunc() mapstructure.DecodeHookFuncType {
 			}
 			return data, nil
 		}
-		if t == reflect.TypeOf((*actions.ActionInterface)(nil)).Elem() {
+		if t == reflect.TypeFor[actions.ActionInterface]() {
 			return nil, nil
 		}
 
@@ -266,27 +259,3 @@ func floatFromMap(v any) float64 {
 		return 0
 	}
 }
-
-// func calibrationTargetsFromMap(v any) []actions.CalibrationTarget {
-// 	if v == nil {
-// 		return nil
-// 	}
-// 	slice, ok := v.([]any)
-// 	if !ok {
-// 		return nil
-// 	}
-// 	out := make([]actions.CalibrationTarget, 0, len(slice))
-// 	for _, e := range slice {
-// 		m, ok := e.(map[string]any)
-// 		if !ok {
-// 			continue
-// 		}
-// 		out = append(out, actions.CalibrationTarget{
-// 			OutputName: stringFromMap(m, "outputname"),
-// 			OutputType: stringFromMap(m, "outputtype"),
-// 			Target:     stringFromMap(m, "target"),
-// 		})
-// 	}
-// 	return out
-// }
-

@@ -138,8 +138,8 @@ func renameActionBinding(a actions.ActionInterface, oldName, newName string) {
 }
 
 var (
-	actionIfaceType = reflect.TypeOf((*actions.ActionInterface)(nil)).Elem()
-	advIfaceType    = reflect.TypeOf((*actions.AdvancedActionInterface)(nil)).Elem()
+	actionIfaceType = reflect.TypeFor[actions.ActionInterface]()
+	advIfaceType    = reflect.TypeFor[actions.AdvancedActionInterface]()
 )
 
 // rewriteVariableRefsInAction rewrites ${old}/{old} references in the action's

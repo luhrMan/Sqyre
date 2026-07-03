@@ -2,6 +2,7 @@ package editor
 
 import (
 	"Sqyre/internal/models"
+	"Sqyre/internal/screen"
 	"Sqyre/internal/services"
 	"Sqyre/ui/custom_widgets"
 	"strconv"
@@ -11,7 +12,6 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/widget"
-	"github.com/go-vgo/robotgo"
 )
 
 func wirePointRecordButton(w map[string]fyne.CanvasObject, onRecorded func(x, y int)) {
@@ -26,7 +26,7 @@ func wirePointRecordButton(w map[string]fyne.CanvasObject, onRecorded func(x, y 
 			func(ev *desktop.MouseEvent) {
 				switch ev.Button {
 				case desktop.MouseButtonPrimary:
-					x, y := robotgo.Location()
+					x, y := screen.Location()
 					custom_widgets.SetEntryText(w["X"], strconv.Itoa(x))
 					custom_widgets.SetEntryText(w["Y"], strconv.Itoa(y))
 					dismissOverlay()
@@ -64,7 +64,7 @@ func wireSearchAreaRecordButton(w map[string]fyne.CanvasObject, onRecorded func(
 					dismissOverlay()
 					return
 				}
-				adjX, adjY := robotgo.Location()
+				adjX, adjY := screen.Location()
 				mu.Lock()
 				if !firstClickDone {
 					leftX, topY = adjX, adjY
@@ -107,7 +107,7 @@ func wireSearchAreaRecordButton(w map[string]fyne.CanvasObject, onRecorded func(
 					if !done {
 						setSelectionRect(0, 0, 0, 0)
 					} else {
-						x, y := robotgo.Location()
+						x, y := screen.Location()
 						rx, by := x, y
 						if lx > rx {
 							lx, rx = rx, lx

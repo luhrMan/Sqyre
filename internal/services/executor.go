@@ -5,8 +5,6 @@ import (
 	"Sqyre/internal/models/actions"
 	"fmt"
 	"log"
-
-	"fyne.io/fyne/v2"
 )
 
 // Execute executes an action with optional macro context for variable resolution
@@ -39,9 +37,9 @@ func ExecuteMacroWithLogging(m *models.Macro) {
 		ReleaseAllMacroInputs()
 		ClearHighlights()
 		NotifyMacroPause(false, "", "")
-		fyne.Do(func() {
-			MacroActiveIndicator().Stop()
-			MacroActiveIndicator().Hide()
+		onUIThread(func() {
+			stopMacroIndicator()
+			hideMacroIndicator()
 			if macroRunningCallback != nil {
 				macroRunningCallback(false)
 			}
@@ -52,7 +50,7 @@ func ExecuteMacroWithLogging(m *models.Macro) {
 		scheduleMemoryReclaim(m.Name)
 	}()
 	if showMacroLogPopupFunc != nil {
-		fyne.DoAndWait(func() {
+		onUIThreadAndWait(func() {
 			showMacroLogPopupFunc(m.Name)
 			if macroRunningCallback != nil {
 				macroRunningCallback(true)
@@ -60,7 +58,7 @@ func ExecuteMacroWithLogging(m *models.Macro) {
 		})
 		defer StopMacroLogCapture()
 	} else {
-		fyne.DoAndWait(func() {
+		onUIThreadAndWait(func() {
 			if macroRunningCallback != nil {
 				macroRunningCallback(true)
 			}
