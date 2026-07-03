@@ -1,0 +1,33 @@
+---
+description: General Go code quality — clarity, errors, and minimal diffs
+alwaysApply: true
+---
+
+# Code Quality
+
+## Scope and diffs
+
+- Solve the task at hand; do not refactor unrelated code or add features not requested.
+- Match surrounding naming, error style, and file layout — new code should read like the file it joins.
+
+## Errors and control flow
+
+- Return errors; reserve `panic` for programmer bugs and `main`.
+- Wrap errors with context: `fmt.Errorf("load macro %q: %w", name, err)`.
+- Early returns over deep nesting; extract a helper when indentation exceeds two levels.
+
+## Types and APIs
+
+- Accept interfaces, return concrete types when the concrete type is part of the contract.
+- Prefer explicit struct fields over `map[string]any` for domain data.
+- Name packages by what they provide (`services`, `serialize`), not by layer suffixes (`utils`, `helpers`).
+
+## Comments
+
+- Comment why, not what — especially for build tags, hook lifecycles, and coordinate-system quirks.
+- No commented-out code; delete dead paths (see no-backwards-compatibility rule).
+
+## Tests with behavior changes
+
+- Bug fixes and behavior changes should include or extend a test that would have failed before the fix.
+- Do not add tests that only restate obvious compiler guarantees.
