@@ -50,7 +50,7 @@ func populateProgramsFormWidgets(w map[string]fyne.CanvasObject) {
 }
 
 func buildProgramsRightPanel(w map[string]fyne.CanvasObject) fyne.CanvasObject {
-	return w["Form"].(fyne.CanvasObject)
+	return w["Form"]
 }
 
 // populateItemsFormWidgets creates Items tab right-side widgets (form fields, tags, mask, icon editor).
@@ -94,7 +94,7 @@ func populateItemsFormWidgets(w map[string]fyne.CanvasObject, win fyne.Window) {
 
 func buildItemsRightPanel(programSelector *widget.Select, w map[string]fyne.CanvasObject) fyne.CanvasObject {
 	iveBorder := canvas.NewRectangle(color.NRGBA{})
-	iveBorder.StrokeColor = theme.ButtonColor()
+	iveBorder.StrokeColor = theme.Color(theme.ColorNameButton)
 	iveBorder.StrokeWidth = 2
 	iveBorder.CornerRadius = 4
 	return container.NewBorder(

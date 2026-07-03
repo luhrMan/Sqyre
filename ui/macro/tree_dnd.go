@@ -810,7 +810,7 @@ func (mt *MacroTree) rebuildDropGhostRow(node actions.ActionInterface) {
 	}
 	iconBg := canvas.NewRectangle(macroTreeActionColor(node))
 	iconBg.CornerRadius = 6
-	iconBg.StrokeColor = theme.ShadowColor()
+	iconBg.StrokeColor = theme.Color(theme.ColorNameShadow)
 	iconBg.StrokeWidth = 1
 	iconBg.SetMinSize(fyne.NewSize(treeItemIconSize, treeItemIconSize))
 	iconBtn := widget.NewIcon(actiondisplay.Icon(node))

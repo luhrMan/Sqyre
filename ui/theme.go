@@ -85,7 +85,7 @@ func (t *sqyreTheme) Size(name fyne.ThemeSizeName) float32 {
 func WrapTagChip(inner fyne.CanvasObject) fyne.CanvasObject {
 	fill := color.NRGBA{R: sqyrePrimary.R, G: sqyrePrimary.G, B: sqyrePrimary.B, A: 28}
 	border := canvas.NewRectangle(fill)
-	border.StrokeColor = theme.ButtonColor()
+	border.StrokeColor = theme.Color(theme.ColorNameButton)
 	border.StrokeWidth = 1
 	border.CornerRadius = 6
 	return container.NewStack(border, inner)
