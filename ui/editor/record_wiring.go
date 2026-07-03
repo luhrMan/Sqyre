@@ -150,36 +150,20 @@ func searchAreaFromWidgets(w map[string]fyne.CanvasObject) *models.SearchArea {
 	}
 }
 
-func wirePointPreviewRefresh(refreshBtn *widget.Button, w map[string]fyne.CanvasObject) {
+func wirePointPreviewRefresh(panel *editorPreviewPanel, refreshBtn *widget.Button, w map[string]fyne.CanvasObject) {
 	if refreshBtn == nil {
 		return
 	}
 	refreshBtn.OnTapped = func() {
-		p := pointFromWidgets(w)
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					services.LogPanicToFile(r, "Point: Preview refresh (point: "+p.Name+")")
-				}
-			}()
-			shell().UpdatePointPreview(p)
-		}()
+		safeUpdatePointPreviewPanel(panel, pointFromWidgets(w))
 	}
 }
 
-func wireSearchAreaPreviewRefresh(refreshBtn *widget.Button, w map[string]fyne.CanvasObject) {
+func wireSearchAreaPreviewRefresh(panel *editorPreviewPanel, refreshBtn *widget.Button, w map[string]fyne.CanvasObject) {
 	if refreshBtn == nil {
 		return
 	}
 	refreshBtn.OnTapped = func() {
-		sa := searchAreaFromWidgets(w)
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					services.LogPanicToFile(r, "SearchArea: Preview refresh (area: "+sa.Name+")")
-				}
-			}()
-			shell().UpdateSearchAreaPreview(sa)
-		}()
+		safeUpdateSearchAreaPreviewPanel(panel, searchAreaFromWidgets(w))
 	}
 }
