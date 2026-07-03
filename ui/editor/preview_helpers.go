@@ -5,10 +5,14 @@ import (
 	"Sqyre/internal/macro"
 	"Sqyre/internal/models"
 	"Sqyre/internal/screen"
+	"Sqyre/internal/services"
 	"Sqyre/internal/vision"
+	"Sqyre/ui/custom_widgets"
 	"Sqyre/ui/desktopview"
 	"fmt"
 	"image"
+	"os"
+	"path/filepath"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -41,7 +45,7 @@ func newEditorPreviewPanel() *editorPreviewPanel {
 		image:        img,
 		errorLabel:   errLbl,
 		errorOverlay: errOverlay,
-		container:    wrapEditorPreviewImage(inner),
+		container:    wrapEditorPreviewImage(container.NewMax(inner)),
 	}
 }
 
@@ -119,4 +123,101 @@ func captureSearchAreaPreview(lx, ty, rx, by int) (image.Image, error) {
 
 func capturePointPreview(px, py int) (image.Image, error) {
 	return vision.CapturePointPreview(px, py)
+}
+
+func updatePointPreviewPanel(panel *editorPreviewPanel, point *models.Point) {
+	if panel == nil {
+		return
+	}
+	previewImg, err := vision.PointPreview(point)
+	if err != nil {
+		panel.setError(err)
+		return
+	}
+	panel.setImage(previewImg)
+}
+
+func updateSearchAreaPreviewPanel(panel *editorPreviewPanel, searchArea *models.SearchArea) {
+	if panel == nil {
+		return
+	}
+	previewImg, err := vision.SearchAreaPreview(searchArea)
+	if err != nil {
+		panel.setError(err)
+		return
+	}
+	panel.setImage(previewImg)
+}
+
+func updateMaskPreviewPanel(panel *editorPreviewPanel, programName, maskName string) {
+	if panel == nil {
+		return
+	}
+	if programName == "" || maskName == "" {
+		panel.clear()
+		return
+	}
+	imgPath := filepath.Join(config.GetMasksPath(), programName, maskName+config.PNG)
+	if _, err := os.Stat(imgPath); err != nil {
+		panel.clear()
+		return
+	}
+	img, err := vision.ReadColorImage(imgPath)
+	if err != nil {
+		panel.clear()
+		return
+	}
+	panel.setImage(img)
+}
+
+func safeUpdatePointPreviewPanel(panel *editorPreviewPanel, p *models.Point) {
+	defer func() {
+		if r := recover(); r != nil {
+			name := ""
+			if p != nil {
+				name = p.Name
+			}
+			services.LogPanicToFile(r, "Point: Preview update (point: "+name+")")
+		}
+	}()
+	updatePointPreviewPanel(panel, p)
+}
+
+// LoadPointPreviewImage captures the editor preview for a point list entry.
+func LoadPointPreviewImage(program *models.Program, key string) (custom_widgets.PreviewTooltipResult, error) {
+	point, err := ProgramPointRepo(program, config.MainMonitorSizeString).Get(key)
+	if err != nil {
+		return custom_widgets.PreviewTooltipResult{}, err
+	}
+	img, err := vision.PointPreview(point)
+	if err != nil {
+		return custom_widgets.PreviewTooltipResult{}, err
+	}
+	return custom_widgets.PreviewTooltipResult{Image: img, Caption: vision.PointPreviewCaption(point)}, nil
+}
+
+// LoadSearchAreaPreviewImage captures the editor preview for a search area list entry.
+func LoadSearchAreaPreviewImage(program *models.Program, key string) (custom_widgets.PreviewTooltipResult, error) {
+	sa, err := ProgramSearchAreaRepo(program, config.MainMonitorSizeString).Get(key)
+	if err != nil {
+		return custom_widgets.PreviewTooltipResult{}, err
+	}
+	img, err := vision.SearchAreaPreview(sa)
+	if err != nil {
+		return custom_widgets.PreviewTooltipResult{}, err
+	}
+	return custom_widgets.PreviewTooltipResult{Image: img, Caption: vision.SearchAreaPreviewCaption(sa)}, nil
+}
+
+func safeUpdateSearchAreaPreviewPanel(panel *editorPreviewPanel, sa *models.SearchArea) {
+	defer func() {
+		if r := recover(); r != nil {
+			name := ""
+			if sa != nil {
+				name = sa.Name
+			}
+			services.LogPanicToFile(r, "SearchArea: Preview update (area: "+name+")")
+		}
+	}()
+	updateSearchAreaPreviewPanel(panel, sa)
 }
