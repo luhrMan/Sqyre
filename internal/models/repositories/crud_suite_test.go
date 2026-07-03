@@ -262,7 +262,7 @@ func testSaveContract(t *testing.T, h CRUDHarness) {
 	})
 }
 
-func runCRUDContract(t *testing.T, name string, newHarness harnessFactory) {
+func runCRUDContract(t *testing.T, newHarness harnessFactory) {
 	t.Helper()
 	// Each group gets a fresh harness so "empty" contract assertions see a clean repo
 	t.Run("GetAll", func(t *testing.T) { testGetAllContract(t, newHarness()) })
@@ -320,7 +320,7 @@ func TestMacroRepository_CRUDContract(t *testing.T) {
 			},
 		}
 	}
-	runCRUDContract(t, "Macro", newHarness)
+	runCRUDContract(t, newHarness)
 }
 
 // --- Program
@@ -369,7 +369,7 @@ func TestProgramRepository_CRUDContract(t *testing.T) {
 			},
 		}
 	}
-	runCRUDContract(t, "Program", newHarness)
+	runCRUDContract(t, newHarness)
 }
 
 // --- Item
@@ -417,7 +417,7 @@ func TestItemRepository_CRUDContract(t *testing.T) {
 			},
 		}
 	}
-	runCRUDContract(t, "Item", newHarness)
+	runCRUDContract(t, newHarness)
 }
 
 // --- Point
@@ -470,7 +470,7 @@ func TestPointRepository_CRUDContract(t *testing.T) {
 			},
 		}
 	}
-	runCRUDContract(t, "Point", newHarness)
+	runCRUDContract(t, newHarness)
 }
 
 // --- SearchArea
@@ -523,5 +523,5 @@ func TestSearchAreaRepository_CRUDContract(t *testing.T) {
 			},
 		}
 	}
-	runCRUDContract(t, "SearchArea", newHarness)
+	runCRUDContract(t, newHarness)
 }
