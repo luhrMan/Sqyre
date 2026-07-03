@@ -34,6 +34,6 @@ func (a *FocusWindow) Params() []Param {
 	return []Param{
 		newParam("Type", a.GetType()),
 		newParam("Title", title),
-		newParam("App", path),
+		newExtraParam("App", path),
 	}
 }

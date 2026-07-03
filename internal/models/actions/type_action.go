@@ -31,7 +31,7 @@ func (a *Type) Params() []Param {
 		newParam("Text", fmt.Sprintf("%q", a.Text)),
 	}
 	if a.DelayMs > 0 {
-		params = append(params, newParam("Delay", fmt.Sprintf("%d ms", a.DelayMs)))
+		params = append(params, newExtraParam("Delay", fmt.Sprintf("%d ms", a.DelayMs)))
 	}
 	return params
 }

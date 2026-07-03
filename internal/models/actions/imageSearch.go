@@ -45,12 +45,12 @@ func (a *ImageSearch) Params() []Param {
 		newParam("Name", a.Name),
 		newParam("Items", len(a.Targets)),
 		newParam("Search Area", a.SearchArea.DisplayLabel()),
-		newParam("Wait", mode),
-		newParam("Tolerance", a.Tolerance),
-		newParam("Blur", a.Blur),
+		newExtraParam("Wait", mode),
+		newExtraParam("Tolerance", a.Tolerance),
+		newExtraParam("Blur", a.Blur),
 	}
 	if a.RunBranchOnNoFind {
-		params = append(params, newParam("Run on no find", "yes"))
+		params = append(params, newExtraParam("Run on no find", "yes"))
 	}
 	return params
 }

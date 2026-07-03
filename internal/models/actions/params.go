@@ -10,10 +10,16 @@ import (
 type Param struct {
 	Label string
 	Value any
+	// Extra marks detail params shown only in a hover tooltip, not inline.
+	Extra bool
 }
 
 func newParam(label string, value any) Param {
 	return Param{Label: label, Value: value}
+}
+
+func newExtraParam(label string, value any) Param {
+	return Param{Label: label, Value: value, Extra: true}
 }
 
 // FormatParamValue renders a param value for display (e.g. floats trimmed to 2 decimals).
@@ -35,13 +41,36 @@ func formatFloatUpTo2Decimals(f float64) string {
 	return s
 }
 
+// FormatParamMinimal returns the value alone for compact inline pills.
+func FormatParamMinimal(p Param) string {
+	return strings.TrimSpace(FormatParamValue(p.Value))
+}
+
 // FormatParamEntry returns "Label: value" for one param, or "" when the value is empty.
 func FormatParamEntry(p Param) string {
-	value := strings.TrimSpace(FormatParamValue(p.Value))
+	value := FormatParamMinimal(p)
 	if value == "" {
 		return ""
 	}
 	return fmt.Sprintf("%s: %s", p.Label, value)
+}
+
+// DisplayParams splits params into inline summary pills and tooltip-only extras.
+func DisplayParams(params []Param) (summary, extra []Param) {
+	for _, p := range params {
+		if strings.EqualFold(p.Label, "Type") {
+			continue
+		}
+		if FormatParamMinimal(p) == "" {
+			continue
+		}
+		if p.Extra {
+			extra = append(extra, p)
+		} else {
+			summary = append(summary, p)
+		}
+	}
+	return summary, extra
 }
 
 func stringifyParams(params []Param) string {

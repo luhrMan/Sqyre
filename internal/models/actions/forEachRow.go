@@ -63,10 +63,10 @@ func (a *ForEachRow) Params() []Param {
 		newParam("Sources", len(a.Sources)),
 	}
 	if RowBoundIsSet(a.StartRow) {
-		params = append(params, newParam("Start Row", a.StartRow))
+		params = append(params, newExtraParam("Start Row", a.StartRow))
 	}
 	if RowBoundIsSet(a.EndRow) {
-		params = append(params, newParam("End Row", a.EndRow))
+		params = append(params, newExtraParam("End Row", a.EndRow))
 	}
 	return params
 }
