@@ -97,7 +97,7 @@ func (mt *MacroTree) setTree() {
 		actionIconBtn.Importance = widget.LowImportance
 		iconBg := canvas.NewRectangle(actiondisplay.ActionPastelColorForApp(""))
 		iconBg.CornerRadius = 6
-		iconBg.StrokeColor = theme.ShadowColor()
+		iconBg.StrokeColor = theme.Color(theme.ColorNameShadow)
 		iconBg.StrokeWidth = 1
 		iconStack := container.NewStack(iconBg, actionIconBtn)
 		dh := newDragHandle()

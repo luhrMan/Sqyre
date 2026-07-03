@@ -19,7 +19,7 @@ import (
 // borderedIncrementButton draws a light gray rounded border around one increment/decrement control.
 func borderedIncrementButton(btn fyne.CanvasObject) fyne.CanvasObject {
 	border := canvas.NewRectangle(color.Transparent)
-	border.StrokeColor = theme.DisabledColor()
+	border.StrokeColor = theme.Color(theme.ColorNameDisabled)
 	border.StrokeWidth = 1
 	border.CornerRadius = theme.InputRadiusSize()
 	return container.NewStack(border, btn)

@@ -91,7 +91,7 @@ func buildAddActionPickerContent(templates []actionTemplate, onPick func(actionT
 		t := tmpl
 		bg := canvas.NewRectangle(actiondisplay.ActionPastelColorForApp(t.actionType))
 		bg.CornerRadius = 8
-		bg.StrokeColor = theme.ShadowColor()
+		bg.StrokeColor = theme.Color(theme.ColorNameShadow)
 		bg.StrokeWidth = 1
 
 		btn := widget.NewButtonWithIcon(t.label, t.icon, func() {
