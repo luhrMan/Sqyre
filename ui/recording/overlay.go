@@ -70,15 +70,61 @@ func (s *selectionRectLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
 }
 
 type fyneDesktopOverlay struct {
-	win           fyne.Window
-	displayIndex  int
-	desktopBounds image.Rectangle
-	bgImage       *canvas.Image
-	widthPx       int
-	heightPx      int
-	selLayout     *selectionRectLayout
-	selRefresher  interface{ Refresh() }
-	stopPosition  chan struct{}
+	win              fyne.Window
+	displayIndex     int
+	desktopBounds    image.Rectangle
+	bgImage          *canvas.Image
+	widthPx          int
+	heightPx         int
+	selLayout        *selectionRectLayout
+	selRefresher     interface{ Refresh() }
+	stopPosition     chan struct{}
+	stopPositionOnce sync.Once
+}
+
+// dropSnapshot clears the captured desktop image so large RGBA buffers can be
+// reclaimed. Do not Refresh or SetContent here — that races Fyne window teardown.
+func (o *fyneDesktopOverlay) dropSnapshot() {
+	if o == nil || o.bgImage == nil {
+		return
+	}
+	o.bgImage.Image = nil
+	o.bgImage = nil
+}
+
+func (o *fyneDesktopOverlay) stopPositionLoop() {
+	o.stopPositionOnce.Do(func() { close(o.stopPosition) })
+}
+
+func closeOverlays(ovs []*fyneDesktopOverlay, afterClose func()) {
+	for _, o := range ovs {
+		if o == nil {
+			continue
+		}
+		o.stopPositionLoop()
+	}
+	// Queue close after the current input/close callback returns. Never mutate
+	// overlay content synchronously from MouseDown or from SetOnClosed inside Close.
+	fyne.Do(func() {
+		for _, o := range ovs {
+			if o == nil {
+				continue
+			}
+			o.dropSnapshot()
+			o.selLayout = nil
+			o.selRefresher = nil
+			if o.win == nil {
+				continue
+			}
+			win := o.win
+			o.win = nil
+			win.SetOnClosed(nil)
+			win.Close()
+		}
+		if afterClose != nil {
+			afterClose()
+		}
+	})
 }
 
 func logOverlayWindowDiagnostics(overlays []*fyneDesktopOverlay) {
@@ -202,6 +248,9 @@ func (o *fyneDesktopOverlay) resizeBackground() {
 }
 
 func (o *fyneDesktopOverlay) reposition() {
+	if o == nil || o.win == nil {
+		return
+	}
 	positionFyneOverlayWindow(o.win, o.desktopBounds)
 	o.resizeBackground()
 }
@@ -250,7 +299,6 @@ func showFullScreenOverlay(withSelectionRect bool, onClosed func(), onMouseDown 
 		pendingTimer     *time.Timer
 		pendingCancelled bool
 		dismissOnce      sync.Once
-		closedOnce       sync.Once
 		restoreOnce      sync.Once
 		setSelectionFn   func(leftX, topY, rightX, bottomY int)
 	)
@@ -281,18 +329,24 @@ func showFullScreenOverlay(withSelectionRect bool, onClosed func(), onMouseDown 
 			cancelPending()
 			lifecycleMu.Lock()
 			ovs := overlays
+			overlays = nil
+			setSelectionFn = nil
 			lifecycleMu.Unlock()
-			for _, o := range ovs {
-				close(o.stopPosition)
-				o.win.Close()
-			}
-			restoreHidden()
+			closeOverlays(ovs, func() {
+				restoreHidden()
+				if onClosed != nil {
+					onClosed()
+				}
+			})
 		})
 	}
 
 	setSelectionRect = func(leftX, topY, rightX, bottomY int) {
-		if setSelectionFn != nil {
-			setSelectionFn(leftX, topY, rightX, bottomY)
+		lifecycleMu.Lock()
+		fn := setSelectionFn
+		lifecycleMu.Unlock()
+		if fn != nil {
+			fn(leftX, topY, rightX, bottomY)
 		}
 	}
 
@@ -346,12 +400,18 @@ func showFullScreenOverlay(withSelectionRect bool, onClosed func(), onMouseDown 
 			}
 		}
 
-		if !pendingStillActive() {
-			for _, o := range built {
-				close(o.stopPosition)
-				o.win.Close()
-			}
-			restoreHidden()
+		lifecycleMu.Lock()
+		overlays = built
+		stillActive := !pendingCancelled
+		lifecycleMu.Unlock()
+
+		if !stillActive {
+			closeOverlays(built, func() {
+				restoreHidden()
+			})
+			lifecycleMu.Lock()
+			overlays = nil
+			lifecycleMu.Unlock()
 			return
 		}
 
@@ -364,24 +424,17 @@ func showFullScreenOverlay(withSelectionRect bool, onClosed func(), onMouseDown 
 			overlay.startPositionLoop()
 		}
 
-		lifecycleMu.Lock()
-		overlays = built
-		lifecycleMu.Unlock()
-
-		for i, overlay := range built {
-			if onClosed != nil {
-				overlay.win.SetOnClosed(func() {
-					restoreHidden()
-					closedOnce.Do(onClosed)
-				})
-			} else {
-				overlay.win.SetOnClosed(restoreHidden)
-			}
+		for _, overlay := range built {
+			overlay.win.SetOnClosed(func() {
+				dismiss()
+			})
 			overlay.win.Canvas().SetOnTypedKey(func(e *fyne.KeyEvent) {
 				if e.Name == fyne.KeyEscape {
 					dismiss()
 				}
 			})
+		}
+		for i, overlay := range built {
 			if i == 0 {
 				overlay.win.RequestFocus()
 			}
@@ -391,14 +444,22 @@ func showFullScreenOverlay(withSelectionRect bool, onClosed func(), onMouseDown 
 		if capture.OverlayDiagnosticsEnabled() {
 			services.GoSafe(func() {
 				time.Sleep(250 * time.Millisecond)
-				fyne.Do(func() { logOverlayWindowDiagnostics(built) })
+				fyne.Do(func() {
+					lifecycleMu.Lock()
+					ovs := overlays
+					lifecycleMu.Unlock()
+					logOverlayWindowDiagnostics(ovs)
+				})
 			})
 		}
 
 		if withSelectionRect {
-			setSelectionFn = func(leftX, topY, rightX, bottomY int) {
+			fn := func(leftX, topY, rightX, bottomY int) {
 				fyne.Do(func() {
-					for _, o := range built {
+					lifecycleMu.Lock()
+					ovs := overlays
+					lifecycleMu.Unlock()
+					for _, o := range ovs {
 						if o.selLayout == nil || o.selRefresher == nil {
 							continue
 						}
@@ -413,6 +474,9 @@ func showFullScreenOverlay(withSelectionRect bool, onClosed func(), onMouseDown 
 					}
 				})
 			}
+			lifecycleMu.Lock()
+			setSelectionFn = fn
+			lifecycleMu.Unlock()
 		}
 	}
 

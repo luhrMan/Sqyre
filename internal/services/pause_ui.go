@@ -1,7 +1,5 @@
 package services
 
-import "fyne.io/fyne/v2"
-
 // MacroPauseStatus describes the in-run pause banner shown while a Pause action waits.
 type MacroPauseStatus struct {
 	Active      bool
@@ -22,11 +20,16 @@ func NotifyMacroPause(active bool, message, continueKey string) {
 	if macroPauseStatusCallback == nil {
 		return
 	}
-	fyne.Do(func() {
+	onUIThread(func() {
 		macroPauseStatusCallback(MacroPauseStatus{
 			Active:      active,
 			Message:     message,
 			ContinueKey: continueKey,
 		})
 	})
+}
+
+// ResetMacroPauseStatusForTesting clears the pause banner callback registered for tests.
+func ResetMacroPauseStatusForTesting() {
+	macroPauseStatusCallback = nil
 }

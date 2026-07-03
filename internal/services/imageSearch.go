@@ -154,7 +154,12 @@ func buildTargetMatchJob(t string) targetMatchJob {
 		return job
 	}
 	job.program = program
-	item, err := program.ItemRepo().Get(job.itemName)
+	itemRepo, err := program.ItemRepo()
+	if err != nil {
+		log.Printf("Error getting item repo for program %s: %v", job.programName, err)
+		return job
+	}
+	item, err := itemRepo.Get(job.itemName)
 	if err != nil {
 		log.Printf("Error getting item %s from program %s: %v", job.itemName, job.programName, err)
 		return job
@@ -247,7 +252,12 @@ func buildMaskLocked(item *models.Item, program *models.Program, templateRows, t
 		return gocv.NewMat()
 	}
 
-	mask, err := program.MaskRepo().Get(item.Mask)
+	maskRepo, err := program.MaskRepo()
+	if err != nil {
+		log.Printf("mask repo for program %s: %v", program.Name, err)
+		return gocv.NewMat()
+	}
+	mask, err := maskRepo.Get(item.Mask)
 	if err != nil {
 		log.Printf("mask %q not found for item %s: %v", item.Mask, item.Name, err)
 		return gocv.NewMat()
@@ -464,9 +474,9 @@ func GetMatchesFromTemplateMatchResult(result gocv.Mat, threshold float32, close
 	}
 
 	var matches []robotgo.Point
-	for y := 0; y < resultRows; y++ {
+	for y := range resultRows {
 		row := y * resultCols
-		for x := 0; x < resultCols; x++ {
+		for x := range resultCols {
 			confidence := data[row+x]
 			if confidence < threshold || math.IsInf(float64(confidence), 0) || math.IsNaN(float64(confidence)) {
 				continue
@@ -482,8 +492,8 @@ func GetMatchesFromTemplateMatchResult(result gocv.Mat, threshold float32, close
 
 func getMatchesFromTemplateMatchResultSlow(result gocv.Mat, threshold float32, dedup *matchPointDedup, resultRows, resultCols int) []robotgo.Point {
 	var matches []robotgo.Point
-	for y := 0; y < resultRows; y++ {
-		for x := 0; x < resultCols; x++ {
+	for y := range resultRows {
+		for x := range resultCols {
 			confidence := result.GetFloatAt(y, x)
 			if confidence < threshold || math.IsInf(float64(confidence), 0) || math.IsNaN(float64(confidence)) {
 				continue

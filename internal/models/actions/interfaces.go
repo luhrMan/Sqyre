@@ -2,9 +2,6 @@ package actions
 
 import (
 	"log"
-
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/theme"
 )
 
 type ActionInterface interface {
@@ -15,8 +12,7 @@ type ActionInterface interface {
 	SetParent(AdvancedActionInterface)
 
 	String() string
-	Display() fyne.CanvasObject
-	Icon() fyne.Resource
+	Params() []Param
 }
 
 type AdvancedActionInterface interface {
@@ -33,9 +29,7 @@ func (a *BaseAction) GetUID() string                           { return a.uid }
 func (a *BaseAction) GetType() string                          { return a.Type }
 func (a *BaseAction) GetParent() AdvancedActionInterface       { return a.Parent }
 func (a *BaseAction) SetParent(action AdvancedActionInterface) { a.Parent = action }
-func (a *BaseAction) String() string                           { return stringifyParams(a.parameters()) }
-func (a *BaseAction) Display() fyne.CanvasObject               { return displayFromParams(a.parameters()) }
-func (a *BaseAction) Icon() fyne.Resource                      { return theme.ErrorIcon() }
+func (a *BaseAction) String() string                           { return stringifyParams(a.Params()) }
 
 func (a *AdvancedAction) GetSubActions() []ActionInterface   { return a.SubActions }
 func (a *AdvancedAction) SetSubActions(sa []ActionInterface) { a.SubActions = sa }
@@ -74,5 +68,4 @@ func (a *AdvancedAction) RemoveSubAction(action ActionInterface) {
 	}
 }
 
-func (a *AdvancedAction) String() string             { return stringifyParams(a.parameters()) }
-func (a *AdvancedAction) Display() fyne.CanvasObject { return displayFromParams(a.parameters()) }
+func (a *AdvancedAction) String() string { return stringifyParams(a.Params()) }

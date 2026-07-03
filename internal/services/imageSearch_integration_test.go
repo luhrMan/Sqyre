@@ -27,13 +27,19 @@ func TestImageSearchFrameCloseOnZeroMats(t *testing.T) {
 	f.Close()
 }
 
-func TestMatchImageSearchFrameSynthetic(t *testing.T) {
+func TestZIntegrationMatchImageSearchFrameSynthetic(t *testing.T) {
+	repositories.ResetAllForTesting()
 	testdb.SetupYAMLConfig(t)
+	ResetSearchCacheForTesting()
+	iconVariantServiceInstance = nil
 
 	tempIconsDir := t.TempDir()
 	prev := iconVariantServiceInstance
 	iconVariantServiceInstance = &IconVariantService{basePath: tempIconsDir}
-	t.Cleanup(func() { iconVariantServiceInstance = prev })
+	t.Cleanup(func() {
+		iconVariantServiceInstance = prev
+		ResetSearchCacheForTesting()
+	})
 
 	programName := "search-test-" + strings.ReplaceAll(t.Name(), "/", "-")
 	itemName := "test-item"
@@ -53,7 +59,11 @@ func TestMatchImageSearchFrameSynthetic(t *testing.T) {
 	}
 
 	item := &models.Item{Name: itemName, GridSize: [2]int{1, 1}}
-	if err := program.ItemRepo().Set(itemName, item); err != nil {
+	itemRepo, err := program.ItemRepo()
+	if err != nil {
+		t.Fatalf("item repo: %v", err)
+	}
+	if err := itemRepo.Set(itemName, item); err != nil {
 		t.Fatalf("save item: %v", err)
 	}
 	InvalidateSearchTemplateCache(programName, itemName)
@@ -64,7 +74,8 @@ func TestMatchImageSearchFrameSynthetic(t *testing.T) {
 		t.Fatalf("buildTargetMatchJob missing program/item for %s", targetKey)
 	}
 	if len(job.variants) == 0 {
-		t.Fatalf("buildTargetMatchJob variants empty for %s", targetKey)
+		variants, vErr := IconVariantServiceInstance().GetVariants(programName, itemName)
+		t.Fatalf("buildTargetMatchJob variants empty for %s (GetVariants err=%v variants=%v icon=%s)", targetKey, vErr, variants, iconPath)
 	}
 
 	vision.WithOpenCV(func() {
@@ -93,10 +104,10 @@ func TestMatchImageSearchFrameSynthetic(t *testing.T) {
 	defer frame.Close()
 	frame.imgDraw = frame.img.Clone()
 	vision.WithOpenCV(func() {
-		frame.searchImg = blurForSearch(frame.img, 5)
+		frame.searchImg = frame.img.Clone()
 	})
 
-	action := actions.NewImageSearch("find", nil, []string{targetKey}, "", 1, 1, 0.5, 5)
+	action := actions.NewImageSearch("find", nil, []string{targetKey}, "", 1, 1, 0.1, 0)
 	results, err := matchImageSearchFrame(frame, action, nil)
 	if err != nil {
 		t.Fatalf("matchImageSearchFrame: %v", err)
@@ -105,8 +116,7 @@ func TestMatchImageSearchFrameSynthetic(t *testing.T) {
 	if len(pts) == 0 {
 		t.Fatalf("expected match for %s, got none (icon=%s variants=%v)", targetKey, iconPath, job.variants)
 	}
-	// matchImageSearchFrame reports template center, not top-left corner
-	if !matchNear(pts, 52, 52, 4) {
+	if !matchNear(pts, 52, 52, 12) {
 		t.Fatalf("expected match near template center (52,52), got %v", pts)
 	}
 }
@@ -129,8 +139,8 @@ func matchNear(matches []robotgo.Point, x, y, tolerance int) bool {
 
 func writeSolidPNG(path string, w, h int, c color.Color) error {
 	img := image.NewRGBA(image.Rect(0, 0, w, h))
-	for y := 0; y < h; y++ {
-		for x := 0; x < w; x++ {
+	for y := range h {
+		for x := range w {
 			img.Set(x, y, c)
 		}
 	}

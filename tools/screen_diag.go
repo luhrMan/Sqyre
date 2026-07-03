@@ -18,14 +18,8 @@ func blackRatio(img image.Image) float64 {
 	if b.Empty() {
 		return 1
 	}
-	stepX := b.Dx() / 32
-	if stepX < 1 {
-		stepX = 1
-	}
-	stepY := b.Dy() / 32
-	if stepY < 1 {
-		stepY = 1
-	}
+	stepX := max(b.Dx()/32, 1)
+	stepY := max(b.Dy()/32, 1)
 	var samples int
 	var black int
 	for y := 0; y < b.Dy(); y += stepY {
@@ -51,7 +45,7 @@ func main() {
 	fmt.Println("screen.NumDisplays =", screen.NumDisplays())
 
 	n := screen.NumDisplays()
-	for i := 0; i < n; i++ {
+	for i := range n {
 		abs := screen.DisplayBoundsAbs(i)
 		shot := screenshot.GetDisplayBounds(i)
 		fmt.Printf("display[%d] abs=%v screenshot=%v\n", i, abs, shot)

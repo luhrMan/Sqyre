@@ -212,7 +212,7 @@ func TestBaseRepository_ThreadSafety_ConcurrentReads(t *testing.T) {
 	repo := NewBaseRepository[testModel]("test", testDecodeFunc, newTestModel)
 
 	// Populate repository
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		key := fmt.Sprintf("model%d", i)
 		repo.models[key] = &testModel{Name: key, Value: i}
 	}
@@ -221,7 +221,7 @@ func TestBaseRepository_ThreadSafety_ConcurrentReads(t *testing.T) {
 	var wg sync.WaitGroup
 	errors := make(chan error, 100)
 
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
@@ -252,7 +252,7 @@ func TestBaseRepository_ThreadSafety_ConcurrentWrites(t *testing.T) {
 	var wg sync.WaitGroup
 	errors := make(chan error, 100)
 
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
@@ -280,7 +280,7 @@ func TestBaseRepository_ThreadSafety_MixedOperations(t *testing.T) {
 	repo := NewBaseRepository[testModel]("test", testDecodeFunc, newTestModel)
 
 	// Populate with initial data
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		key := fmt.Sprintf("model%d", i)
 		repo.models[key] = &testModel{Name: key, Value: i}
 	}
@@ -289,7 +289,7 @@ func TestBaseRepository_ThreadSafety_MixedOperations(t *testing.T) {
 	errors := make(chan error, 200)
 
 	// Concurrent reads
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
@@ -314,15 +314,13 @@ func TestBaseRepository_ThreadSafety_MixedOperations(t *testing.T) {
 	}
 
 	// Concurrent GetAll
-	for i := 0; i < 50; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 50 {
+		wg.Go(func() {
 			all := repo.GetAll()
 			if len(all) < 50 {
 				errors <- fmt.Errorf("GetAll returned too few items: %d", len(all))
 			}
-		}()
+		})
 	}
 
 	wg.Wait()
@@ -350,13 +348,13 @@ func TestBaseRepository_KeySynchronization_BasicSet(t *testing.T) {
 	// We test the synchronization without the persistence layer
 	repo.mu.Lock()
 	providedKey := "NewName"
-	
+
 	// This is the key synchronization logic we're testing
 	// The model's key should match the provided key exactly
 	if baseModel, ok := any(model).(models.BaseModel); ok {
 		baseModel.SetKey(providedKey)
 	}
-	
+
 	repo.models[providedKey] = model
 	repo.mu.Unlock()
 
@@ -396,13 +394,13 @@ func TestBaseRepository_KeySynchronization_ExactMatch(t *testing.T) {
 	// Manually call the key synchronization logic with mixed case key
 	repo.mu.Lock()
 	providedKey := "MixedCase"
-	
+
 	// This is the key synchronization logic we're testing
 	// The model's key should match the provided key exactly
 	if baseModel, ok := any(model).(models.BaseModel); ok {
 		baseModel.SetKey(providedKey)
 	}
-	
+
 	repo.models[providedKey] = model
 	repo.mu.Unlock()
 
@@ -450,7 +448,7 @@ func TestBaseRepository_KeySynchronization_Rename(t *testing.T) {
 
 	// Create and store a model with original key
 	model := &testModel{Name: "Original", Value: 100}
-	
+
 	// Store with original key
 	repo.mu.Lock()
 	originalKey := "Original"

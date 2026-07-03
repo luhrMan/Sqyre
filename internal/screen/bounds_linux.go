@@ -51,7 +51,7 @@ func virtualBoundsImpl() image.Rectangle {
 		return image.Rect(0, 0, w, h)
 	}
 	var u image.Rectangle
-	for i := 0; i < n; i++ {
+	for i := range n {
 		u = u.Union(displayBoundsAbsImpl(i))
 	}
 	if u.Empty() {

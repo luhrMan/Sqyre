@@ -31,7 +31,6 @@ func TestFilterRunMacroCompletionOptions(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			got := filterRunMacroCompletionOptions(tc.query, macros)
 			if !reflect.DeepEqual(got, tc.want) {

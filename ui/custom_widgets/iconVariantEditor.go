@@ -22,6 +22,10 @@ type IconVariantEditor struct {
 	service         *services.IconVariantService
 	onVariantChange func()
 
+	showError   func(err error, parent fyne.Window)
+	showConfirm func(title, message string, callback func(bool), parent fyne.Window)
+	showInfo    func(title, message string, parent fyne.Window)
+
 	// UI components
 	variantList      *fyne.Container
 	addButton        *widget.Button
@@ -46,6 +50,17 @@ func NewIconVariantEditor(programName, itemName string, service *services.IconVa
 	editor.createUI()
 
 	return editor
+}
+
+// SetDialogDeps wires escape-aware dialog helpers from the parent UI package.
+func (e *IconVariantEditor) SetDialogDeps(
+	showError func(err error, parent fyne.Window),
+	showConfirm func(title, message string, callback func(bool), parent fyne.Window),
+	showInfo func(title, message string, parent fyne.Window),
+) {
+	e.showError = showError
+	e.showConfirm = showConfirm
+	e.showInfo = showInfo
 }
 
 // loadVariants loads the list of variants from the filesystem
@@ -240,7 +255,7 @@ func (e *IconVariantEditor) showDeleteConfirmation(variantName string) {
 		displayName = "(default)"
 	}
 
-	confirmDialog := dialog.NewConfirm(
+	e.showConfirm(
 		"Delete Icon Variant",
 		fmt.Sprintf("Are you sure you want to delete the variant '%s'?", displayName),
 		func(confirmed bool) {
@@ -248,25 +263,18 @@ func (e *IconVariantEditor) showDeleteConfirmation(variantName string) {
 				return
 			}
 
-			// Delete the variant
 			if err := e.service.DeleteVariant(e.programName, e.itemName, variantName); err != nil {
 				e.showErrorDismissible(fmt.Errorf("Failed to delete variant: %v", err))
 				return
 			}
 
-			// Refresh the display and notify that variants changed
 			e.refreshDisplay(true)
 		},
 		e.window,
 	)
-
-	kxdialog.AddDialogKeyHandler(confirmDialog, e.window)
-	confirmDialog.Show()
 }
-
-// showOverwriteConfirmation shows a confirmation dialog for overwriting an existing variant
 func (e *IconVariantEditor) showOverwriteConfirmation(variantName, sourcePath string) {
-	confirmDialog := dialog.NewConfirm(
+	e.showConfirm(
 		"Variant Already Exists",
 		fmt.Sprintf("The variant '%s' already exists. Do you want to overwrite it?", variantName),
 		func(confirmed bool) {
@@ -274,32 +282,23 @@ func (e *IconVariantEditor) showOverwriteConfirmation(variantName, sourcePath st
 				return
 			}
 
-			// Overwrite the variant
 			if err := e.service.OverwriteVariant(e.programName, e.itemName, variantName, sourcePath); err != nil {
 				e.showErrorDismissible(fmt.Errorf("Failed to overwrite variant: %v", err))
 				return
 			}
 
-			// Refresh the display and notify that variants changed
 			e.refreshDisplay(true)
 		},
 		e.window,
 	)
-
-	kxdialog.AddDialogKeyHandler(confirmDialog, e.window)
-	confirmDialog.Show()
 }
 
 func (e *IconVariantEditor) showErrorDismissible(err error) {
-	d := dialog.NewError(err, e.window)
-	kxdialog.AddDialogKeyHandler(d, e.window)
-	d.Show()
+	e.showError(err, e.window)
 }
 
 func (e *IconVariantEditor) showInformationDismissible(title, message string) {
-	d := dialog.NewInformation(title, message, e.window)
-	kxdialog.AddDialogKeyHandler(d, e.window)
-	d.Show()
+	e.showInfo(title, message, e.window)
 }
 
 // refreshDisplay reloads variants and updates the UI

@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/theme"
 )
 
 // Comparison operators supported by the Conditional action.
@@ -124,15 +122,11 @@ func (a *Conditional) conditionSummary() string {
 }
 
 func (a *Conditional) String() string {
-	return stringifyParams(a.parameters())
+	return stringifyParams(a.Params())
 }
 
-func (a *Conditional) Display() fyne.CanvasObject {
-	return displayFromParams(a.parameters())
-}
-
-func (a *Conditional) parameters() []actionParam {
-	return []actionParam{
+func (a *Conditional) Params() []Param {
+	return []Param{
 		newParam("Type", a.GetType()),
 		newParam("Name", a.Name),
 		newParam("Match", a.MatchLabel()),
@@ -140,6 +134,3 @@ func (a *Conditional) parameters() []actionParam {
 	}
 }
 
-func (a *Conditional) Icon() fyne.Resource {
-	return theme.QuestionIcon()
-}

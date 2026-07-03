@@ -49,6 +49,7 @@ func setupDocsUi(t *testing.T) (*ui.Ui, fyne.Window) {
 	testsupport.InitDocUIEnv(t)
 	a := test.NewApp()
 	w := a.NewWindow("Sqyre")
+	ui.ResetGlobalsForTesting()
 	u := ui.InitializeUi(w)
 	u.ConstructUi()
 	return u, w
@@ -144,7 +145,6 @@ func TestDocsScreenshots(t *testing.T) {
 	writeOrComparePNG(t, filepath.Join(dir, "main-window.png"), mainPNG, 5000)
 
 	for _, shot := range docActionScreenshots() {
-		shot := shot
 		t.Run(shot.file, func(t *testing.T) {
 			pngData := captureActionDialogPNG(t, mainPNG, shot.action)
 			writeOrComparePNG(t, filepath.Join(dir, shot.file), pngData, shot.minBytes)

@@ -94,7 +94,7 @@ type varRefMatch struct {
 }
 
 func sortMatches(matches []varRefMatch) {
-	for i := 0; i < len(matches); i++ {
+	for i := range matches {
 		for j := i + 1; j < len(matches); j++ {
 			if matches[j].start < matches[i].start {
 				matches[i], matches[j] = matches[j], matches[i]

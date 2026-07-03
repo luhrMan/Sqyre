@@ -1,0 +1,35 @@
+---
+description: Design for testability — interfaces, injection, and fakes
+alwaysApply: true
+---
+
+# Testable Design
+
+## Abstract external dependencies
+
+Wrap OS, hardware, CGO, and network behind small interfaces so logic tests run without real input or displays.
+
+```go
+// ✅ GOOD — executor tests swap in RecordingBackend
+type AutomationBackend interface {
+    MilliSleep(ms int)
+    Move(x, y int, opts MoveOptions)
+    // ...
+}
+```
+
+## Prefer injection over hidden globals
+
+- Pass dependencies as struct fields or function parameters when adding new code paths.
+- If a package-level setter is unavoidable (existing pattern), pair it with `Reset…ForTesting()` and `t.Cleanup`.
+- UI callbacks (dialogs, overlays, navigation) belong in `WireDeps` fields, not direct cross-package calls.
+
+## Keep pure logic pure
+
+- Parsing, serialization, tree transforms, coordinate math, and condition evaluation should be plain functions with no Fyne or robotgo imports.
+- Return errors with context (`fmt.Errorf("…: %w", err)`); avoid silent failures.
+
+## Platform and native code
+
+- Real implementations behind `//go:build` tags; stubs (`nohook`, `!linux`) for headless CI.
+- Never call robotgo, gohook, or gocv from code that unit tests need to exercise — route through an interface or build-tagged file.

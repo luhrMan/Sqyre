@@ -50,7 +50,7 @@ func sortKeysByRepoDisplayName(keys []string, get func(string) string) {
 }
 
 func sortPointKeysByDisplayName(p *models.Program, keys []string) {
-	repo := p.PointRepo(config.MainMonitorSizeString)
+	repo := ProgramPointRepo(p, config.MainMonitorSizeString)
 	sortKeysByRepoDisplayName(keys, func(k string) string {
 		if pt, _ := repo.Get(k); pt != nil {
 			return pt.Name
@@ -60,7 +60,7 @@ func sortPointKeysByDisplayName(p *models.Program, keys []string) {
 }
 
 func sortSearchAreaKeysByDisplayName(p *models.Program, keys []string) {
-	repo := p.SearchAreaRepo(config.MainMonitorSizeString)
+	repo := ProgramSearchAreaRepo(p, config.MainMonitorSizeString)
 	sortKeysByRepoDisplayName(keys, func(k string) string {
 		if sa, _ := repo.Get(k); sa != nil {
 			return sa.Name
@@ -70,7 +70,7 @@ func sortSearchAreaKeysByDisplayName(p *models.Program, keys []string) {
 }
 
 func sortMaskKeysByDisplayName(p *models.Program, keys []string) {
-	repo := p.MaskRepo()
+	repo := ProgramMaskRepo(p)
 	sortKeysByRepoDisplayName(keys, func(k string) string {
 		if m, _ := repo.Get(k); m != nil {
 			return m.Name

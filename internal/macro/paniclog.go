@@ -19,7 +19,7 @@ var OnPanicNotifyUser func(message string)
 // Use this from recover() in any goroutine so that crashes are always recorded.
 // It also invokes OnPanicNotifyUser so the user sees a notification.
 // Optional context is prepended to the user message (e.g. "Macro \"foo\"").
-func LogPanicToFile(r interface{}, context ...string) {
+func LogPanicToFile(r any, context ...string) {
 	userMsg := fmt.Sprintf("Recovered from crash: %v", r)
 	if len(context) > 0 && context[0] != "" {
 		userMsg = context[0] + " — " + userMsg

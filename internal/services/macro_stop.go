@@ -21,10 +21,7 @@ func interruptibleSleep(ms int) error {
 		if err := checkMacroStop(); err != nil {
 			return err
 		}
-		step := chunkMs
-		if step > remaining {
-			step = remaining
-		}
+		step := min(chunkMs, remaining)
 		getAutomationBackend().MilliSleep(step)
 		remaining -= step
 	}

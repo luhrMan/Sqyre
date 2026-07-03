@@ -1,11 +1,5 @@
 package actions
 
-import (
-	"Sqyre/internal/assets"
-
-	"fyne.io/fyne/v2"
-)
-
 const (
 	DefaultSmoothLow     = 0.05
 	DefaultSmoothHigh    = 0.20
@@ -57,15 +51,11 @@ func (a *Move) EffectiveSmoothDelayMs() int {
 }
 
 func (a *Move) String() string {
-	return stringifyParams(a.parameters())
+	return stringifyParams(a.Params())
 }
 
-func (a *Move) Display() fyne.CanvasObject {
-	return displayFromParams(a.parameters())
-}
-
-func (a *Move) parameters() []actionParam {
-	params := []actionParam{
+func (a *Move) Params() []Param {
+	params := []Param{
 		newParam("Type", a.GetType()),
 		newParam("Point", a.Point.DisplayLabel()),
 	}
@@ -78,8 +68,4 @@ func (a *Move) parameters() []actionParam {
 		)
 	}
 	return params
-}
-
-func (a *Move) Icon() fyne.Resource {
-	return assets.MouseIcon
 }

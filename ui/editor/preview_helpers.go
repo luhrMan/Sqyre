@@ -14,7 +14,6 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
-	"gocv.io/x/gocv"
 )
 
 // editorPreviewPanel shows a screen capture preview or an inline error message (no popup).
@@ -110,36 +109,14 @@ func resolveSearchAreaBounds(prefix string, sa *models.SearchArea, b searchAreaB
 	return searchAreaBounds{lx: lx, ty: ty, rx: rx, by: by, w: w, h: h}, nil
 }
 
-func captureVirtualDesktop(drawOverlay func(*gocv.Mat, image.Rectangle)) (image.Image, error) {
-	captureImg, vb, err := macro.CaptureVirtualDesktop()
-	if err != nil {
-		return nil, fmt.Errorf("error capturing image: %w", err)
-	}
-
-	var out image.Image
-	var matErr error
-	vision.WithOpenCV(func() {
-		mat, err := gocv.ImageToMatRGB(captureImg)
-		if err != nil {
-			matErr = fmt.Errorf("error converting image to Mat: %w", err)
-			return
-		}
-		defer mat.Close()
-
-		drawEditorPreviewMonitorOutlines(&mat, vb)
-		if drawOverlay != nil {
-			drawOverlay(&mat, vb)
-		}
-
-		out, matErr = mat.ToImage()
-	})
-	if matErr != nil {
-		return nil, matErr
-	}
-	return out, nil
-}
-
-
 func captureCroppedArea(lx, ty, w, h int) (image.Image, error) {
 	return macro.CaptureRect(lx, ty, w, h)
+}
+
+func captureSearchAreaPreview(lx, ty, rx, by int) (image.Image, error) {
+	return vision.CaptureSearchAreaPreview(lx, ty, rx, by)
+}
+
+func capturePointPreview(px, py int) (image.Image, error) {
+	return vision.CapturePointPreview(px, py)
 }

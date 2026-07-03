@@ -67,13 +67,19 @@ func waitUntil(t *testing.T, timeout time.Duration, cond func() bool, msg string
 	t.Fatal(msg)
 }
 
+func newTestUi(t *testing.T, w fyne.Window) *ui.Ui {
+	t.Helper()
+	ui.ResetGlobalsForTesting()
+	return ui.InitializeUi(w)
+}
+
 // TestGUIBuild verifies the main UI builds and window has content and main menu.
 func TestGUIBuild(t *testing.T) {
 	a := test.NewApp()
 	w := a.NewWindow("")
 	defer w.Close()
 
-	u := ui.InitializeUi(w)
+	u := newTestUi(t, w)
 	if u == nil {
 		t.Fatal("InitializeUi returned nil")
 	}
@@ -96,7 +102,7 @@ func TestGUIMainMenuStructure(t *testing.T) {
 	w := a.NewWindow("")
 	defer w.Close()
 
-	u := ui.InitializeUi(w)
+	u := newTestUi(t, w)
 	u.ConstructUi()
 
 	menuLabels := make(map[string]bool)
@@ -138,7 +144,7 @@ func TestGUIDataEditorNavigation(t *testing.T) {
 	w := a.NewWindow("")
 	defer w.Close()
 
-	u := ui.InitializeUi(w)
+	u := newTestUi(t, w)
 	u.ConstructUi()
 
 	var dataEditorAction func()
@@ -181,7 +187,7 @@ func TestGUIUserSettingsNavigation(t *testing.T) {
 	w := a.NewWindow("")
 	defer w.Close()
 
-	u := ui.InitializeUi(w)
+	u := newTestUi(t, w)
 	u.ConstructUi()
 
 	var userSettingsAction func()
@@ -225,7 +231,7 @@ func TestGUIMacroMenuHasAddAction(t *testing.T) {
 	w := a.NewWindow("")
 	defer w.Close()
 
-	u := ui.InitializeUi(w)
+	u := newTestUi(t, w)
 	u.ConstructUi()
 
 	var macroMenu *fyne.Menu

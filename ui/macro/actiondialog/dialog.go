@@ -370,17 +370,29 @@ func buildProgramFlatListWithSearchbar(cfg programListAccordionConfig, initialRe
 func buildPointsListWithSearchbar(onPointSelected func(actions.CoordinateRef), initialRef actions.CoordinateRef) (*widget.Entry, *widget.List) {
 	return buildProgramFlatListWithSearchbar(programListAccordionConfig{
 		GetKeys: func(p *models.Program) []string {
-			return p.PointRepo(config.MainMonitorSizeString).GetAllKeys()
+			repo := editor.ProgramPointRepo(p, config.MainMonitorSizeString)
+			if repo == nil {
+				return nil
+			}
+			return repo.GetAllKeys()
 		},
 		GetDisplayName: func(p *models.Program, key string) string {
-			pt, _ := p.PointRepo(config.MainMonitorSizeString).Get(key)
+			repo := editor.ProgramPointRepo(p, config.MainMonitorSizeString)
+			if repo == nil {
+				return key
+			}
+			pt, _ := repo.Get(key)
 			if pt != nil {
 				return pt.Name
 			}
 			return key
 		},
 		GetTooltip: func(p *models.Program, key string) string {
-			pt, _ := p.PointRepo(config.MainMonitorSizeString).Get(key)
+			repo := editor.ProgramPointRepo(p, config.MainMonitorSizeString)
+			if repo == nil {
+				return ""
+			}
+			pt, _ := repo.Get(key)
 			if pt == nil {
 				return ""
 			}
@@ -397,17 +409,29 @@ func buildPointsListWithSearchbar(onPointSelected func(actions.CoordinateRef), i
 func buildSearchAreasAccordionWithSearchbar(onSelected func(actions.CoordinateRef), initialRef actions.CoordinateRef) (*widget.Entry, *widget.Accordion) {
 	return buildProgramListAccordionWithSearchbar(programListAccordionConfig{
 		GetKeys: func(p *models.Program) []string {
-			return p.SearchAreaRepo(config.MainMonitorSizeString).GetAllKeys()
+			repo := editor.ProgramSearchAreaRepo(p, config.MainMonitorSizeString)
+			if repo == nil {
+				return nil
+			}
+			return repo.GetAllKeys()
 		},
 		GetDisplayName: func(p *models.Program, key string) string {
-			sa, _ := p.SearchAreaRepo(config.MainMonitorSizeString).Get(key)
+			repo := editor.ProgramSearchAreaRepo(p, config.MainMonitorSizeString)
+			if repo == nil {
+				return key
+			}
+			sa, _ := repo.Get(key)
 			if sa != nil {
 				return sa.Name
 			}
 			return key
 		},
 		GetTooltip: func(p *models.Program, key string) string {
-			sa, _ := p.SearchAreaRepo(config.MainMonitorSizeString).Get(key)
+			repo := editor.ProgramSearchAreaRepo(p, config.MainMonitorSizeString)
+			if repo == nil {
+				return ""
+			}
+			sa, _ := repo.Get(key)
 			if sa == nil {
 				return ""
 			}

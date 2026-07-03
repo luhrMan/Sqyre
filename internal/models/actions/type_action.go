@@ -3,8 +3,6 @@ package actions
 import (
 	"fmt"
 
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/theme"
 )
 
 // Type automates keyboard input by typing a string with a configurable
@@ -24,15 +22,11 @@ func NewType(text string, delayMs int) *Type {
 }
 
 func (a *Type) String() string {
-	return stringifyParams(a.parameters())
+	return stringifyParams(a.Params())
 }
 
-func (a *Type) Display() fyne.CanvasObject {
-	return displayFromParams(a.parameters())
-}
-
-func (a *Type) parameters() []actionParam {
-	params := []actionParam{
+func (a *Type) Params() []Param {
+	params := []Param{
 		newParam("Type", a.GetType()),
 		newParam("Text", fmt.Sprintf("%q", a.Text)),
 	}
@@ -40,9 +34,5 @@ func (a *Type) parameters() []actionParam {
 		params = append(params, newParam("Delay", fmt.Sprintf("%d ms", a.DelayMs)))
 	}
 	return params
-}
-
-func (a *Type) Icon() fyne.Resource {
-	return theme.DocumentIcon()
 }
 

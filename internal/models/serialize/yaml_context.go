@@ -61,14 +61,8 @@ func formatYAMLLineSnippets(content []byte, centerLines []int, context int) stri
 		if center < 1 || center > len(lines) {
 			continue
 		}
-		lo := center - context
-		if lo < 1 {
-			lo = 1
-		}
-		hi := center + context
-		if hi > len(lines) {
-			hi = len(lines)
-		}
+		lo := max(center-context, 1)
+		hi := min(center+context, len(lines))
 		for i := lo; i <= hi; i++ {
 			if printed[i] {
 				continue
