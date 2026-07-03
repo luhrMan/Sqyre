@@ -60,11 +60,11 @@ func (a *Move) Params() []Param {
 		newParam("Point", a.Point.DisplayLabel()),
 	}
 	if a.Smooth {
-		params = append(params, newParam("Smooth", true))
+		params = append(params, newExtraParam("Smooth", true))
 		params = append(params,
-			newParam("Smooth low", a.EffectiveSmoothLow()),
-			newParam("Smooth high", a.EffectiveSmoothHigh()),
-			newParam("Smooth delay (ms)", a.EffectiveSmoothDelayMs()),
+			newExtraParam("Smooth low", a.EffectiveSmoothLow()),
+			newExtraParam("Smooth high", a.EffectiveSmoothHigh()),
+			newExtraParam("Smooth delay (ms)", a.EffectiveSmoothDelayMs()),
 		)
 	}
 	return params

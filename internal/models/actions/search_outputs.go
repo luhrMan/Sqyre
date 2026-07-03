@@ -28,7 +28,7 @@ func (w WaitTilFoundConfig) DisplayWaitMode(instantLabel string) string {
 		return instantLabel
 	}
 	if w.WaitTilFoundSeconds > 0 {
-		return fmt.Sprintf("wait %d seconds or until found", w.WaitTilFoundSeconds)
+		return fmt.Sprintf("%d seconds or until found", w.WaitTilFoundSeconds)
 	}
 	return fmt.Sprintf("wait %ds", w.WaitTilFoundSeconds)
 }
