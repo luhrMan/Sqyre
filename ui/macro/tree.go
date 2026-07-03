@@ -430,7 +430,11 @@ func (mt *MacroTree) cachedRowContent(node actions.ActionInterface) cachedRowCon
 			return cached
 		}
 	}
-	entry := cachedRowContent{display: actionDisplay(node)}
+	entry := cachedRowContent{display: actionDisplay(node, func() {
+		if mt.OnOpenActionDialog != nil {
+			mt.OnOpenActionDialog(node)
+		}
+	})}
 	if is, ok := node.(*actions.ImageSearch); ok && len(is.Targets) > 0 {
 		previewSize := fyne.NewSize(treeItemIconSize, treeItemIconSize)
 		box := container.NewHBox()

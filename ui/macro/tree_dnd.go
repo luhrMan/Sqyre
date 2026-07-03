@@ -815,7 +815,7 @@ func (mt *MacroTree) rebuildDropGhostRow(node actions.ActionInterface) {
 	iconBg.SetMinSize(fyne.NewSize(treeItemIconSize, treeItemIconSize))
 	iconBtn := widget.NewIcon(actiondisplay.Icon(node))
 	iconStack := container.NewStack(iconBg, iconBtn)
-	display := actionDisplay(node)
+	display := actionDisplay(node, nil)
 	mt.dropGhostRow.Objects = []fyne.CanvasObject{iconStack, display}
 	mt.dropGhostRow.Refresh()
 }

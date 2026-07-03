@@ -23,13 +23,13 @@ import (
 
 const actionDisplayTooltipShowDelay = 500 * time.Millisecond
 
-func actionDisplay(node actions.ActionInterface) fyne.CanvasObject {
+func actionDisplay(node actions.ActionInterface, onEdit func()) fyne.CanvasObject {
 	line, extra, actionType := actiondisplay.DisplayFromParams(node.Params())
 	loader := actionPreviewLoader(node)
 	if loader == nil && len(extra) == 0 {
 		return line
 	}
-	return newActionDisplayTooltipHover(line, extra, actionType, loader)
+	return newActionDisplayTooltipHover(line, extra, actionType, loader, onEdit)
 }
 
 type actionDisplayTooltipHover struct {
@@ -39,6 +39,7 @@ type actionDisplayTooltipHover struct {
 	extra         []actions.Param
 	actionType    string
 	previewLoader custom_widgets.PreviewTooltipLoad
+	onEdit        func()
 
 	tooltipPanel     *actionDisplayTooltipPanel
 	pendingCancel    context.CancelFunc
@@ -47,15 +48,17 @@ type actionDisplayTooltipHover struct {
 	captureCtx       context.Context
 	absoluteMousePos fyne.Position
 	hovering         bool
+	panelHovering    bool
 }
 
 var _ desktop.Hoverable = (*actionDisplayTooltipHover)(nil)
 
-func newActionDisplayTooltipHover(content fyne.CanvasObject, extra []actions.Param, actionType string, loader custom_widgets.PreviewTooltipLoad) *actionDisplayTooltipHover {
+func newActionDisplayTooltipHover(content fyne.CanvasObject, extra []actions.Param, actionType string, loader custom_widgets.PreviewTooltipLoad, onEdit func()) *actionDisplayTooltipHover {
 	h := &actionDisplayTooltipHover{
 		content:       content,
 		actionType:    actionType,
 		previewLoader: loader,
+		onEdit:        onEdit,
 	}
 	if len(extra) > 0 {
 		h.extra = append([]actions.Param(nil), extra...)
@@ -101,6 +104,9 @@ func (h *actionDisplayTooltipHover) MouseIn(e *desktop.MouseEvent) {
 
 func (h *actionDisplayTooltipHover) MouseOut() {
 	h.hovering = false
+	if h.tooltipPanel != nil && h.panelHovering {
+		return
+	}
 	h.cancelPending()
 	h.cancelCapture()
 	h.hideTooltip()
@@ -109,6 +115,15 @@ func (h *actionDisplayTooltipHover) MouseOut() {
 func (h *actionDisplayTooltipHover) MouseMoved(e *desktop.MouseEvent) {
 	h.absoluteMousePos = e.AbsolutePosition
 }
+
+func (h *actionDisplayTooltipHover) TappedSecondary(*fyne.PointEvent) {
+	if h.tooltipPanel != nil && h.onEdit != nil {
+		h.onEdit()
+		h.hideTooltip()
+	}
+}
+
+var _ fyne.SecondaryTappable = (*actionDisplayTooltipHover)(nil)
 
 func (h *actionDisplayTooltipHover) cancelPending() {
 	if h.pendingCancel != nil {
@@ -130,6 +145,7 @@ func (h *actionDisplayTooltipHover) hideTooltip() {
 	if h.tooltipPanel == nil {
 		return
 	}
+	h.panelHovering = false
 	c := fyne.CurrentApp().Driver().CanvasForObject(h)
 	if c == nil {
 		h.tooltipPanel = nil
@@ -153,7 +169,7 @@ func (h *actionDisplayTooltipHover) showTooltipPanel() {
 	if layer == nil {
 		return
 	}
-	panel := newActionDisplayTooltipPanel(h.extra, h.actionType, h.previewLoader != nil)
+	panel := newActionDisplayTooltipPanel(h, h.extra, h.actionType, h.previewLoader != nil, h.wrapEditCallback())
 	if h.previewLoader != nil {
 		panel.setPreviewLoading()
 	}
@@ -223,6 +239,16 @@ func (h *actionDisplayTooltipHover) beginPreviewCapture() {
 	}()
 }
 
+func (h *actionDisplayTooltipHover) wrapEditCallback() func() {
+	if h.onEdit == nil {
+		return nil
+	}
+	return func() {
+		h.onEdit()
+		h.hideTooltip()
+	}
+}
+
 func (h *actionDisplayTooltipHover) CreateRenderer() fyne.WidgetRenderer {
 	return &actionDisplayTooltipHoverRenderer{hover: h, hit: canvas.NewRectangle(color.Transparent)}
 }
@@ -254,6 +280,9 @@ func (r *actionDisplayTooltipHoverRenderer) Destroy() {}
 type actionDisplayTooltipPanel struct {
 	fynewidget.BaseWidget
 
+	owner  *actionDisplayTooltipHover
+	onEdit func()
+
 	withPreview bool
 	pills       *fyne.Container
 
@@ -264,8 +293,8 @@ type actionDisplayTooltipPanel struct {
 	showImage bool
 }
 
-func newActionDisplayTooltipPanel(extra []actions.Param, actionType string, withPreview bool) *actionDisplayTooltipPanel {
-	p := &actionDisplayTooltipPanel{withPreview: withPreview}
+func newActionDisplayTooltipPanel(owner *actionDisplayTooltipHover, extra []actions.Param, actionType string, withPreview bool, onEdit func()) *actionDisplayTooltipPanel {
+	p := &actionDisplayTooltipPanel{owner: owner, withPreview: withPreview, onEdit: onEdit}
 	if len(extra) > 0 {
 		pills := container.New(kxlayout.NewRowWrapLayout())
 		for _, param := range extra {
@@ -280,6 +309,36 @@ func newActionDisplayTooltipPanel(extra []actions.Param, actionType string, with
 	p.ExtendBaseWidget(p)
 	return p
 }
+
+func (p *actionDisplayTooltipPanel) MouseIn(*desktop.MouseEvent) {
+	if p.owner != nil {
+		p.owner.panelHovering = true
+	}
+}
+
+func (p *actionDisplayTooltipPanel) MouseOut() {
+	if p.owner == nil {
+		return
+	}
+	p.owner.panelHovering = false
+	if !p.owner.hovering {
+		p.owner.cancelPending()
+		p.owner.cancelCapture()
+		p.owner.hideTooltip()
+	}
+}
+
+func (p *actionDisplayTooltipPanel) MouseMoved(*desktop.MouseEvent) {}
+
+var _ desktop.Hoverable = (*actionDisplayTooltipPanel)(nil)
+
+func (p *actionDisplayTooltipPanel) TappedSecondary(*fyne.PointEvent) {
+	if p.onEdit != nil {
+		p.onEdit()
+	}
+}
+
+var _ fyne.SecondaryTappable = (*actionDisplayTooltipPanel)(nil)
 
 func (p *actionDisplayTooltipPanel) previewSize() fyne.Size {
 	return fyne.NewSize(config.ImagePreviewMinWidth, config.ImagePreviewMinHeight)
