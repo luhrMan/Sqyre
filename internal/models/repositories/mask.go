@@ -27,7 +27,7 @@ func NewMaskRepository(program *models.Program) *MaskRepository {
 	}
 
 	return &MaskRepository{
-		NestedRepository: NewNestedRepository[models.Mask](
+		NestedRepository: NewNestedRepository(
 			program.Masks,
 			program.GetKey(),
 			func() error {

@@ -25,7 +25,7 @@ type ItemRepository struct {
 // not a copy, ensuring single source of truth.
 func NewItemRepository(program *models.Program) *ItemRepository {
 	return &ItemRepository{
-		NestedRepository: NewNestedRepository[models.Item](
+		NestedRepository: NewNestedRepository(
 			program.Items,
 			program.GetKey(),
 			func() error {
