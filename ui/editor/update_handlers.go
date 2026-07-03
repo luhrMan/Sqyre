@@ -309,7 +309,7 @@ func setItemTagHandlers(tab *EditorTab) {
 			return
 		}
 		if err := ProgramItemRepo(program).Set(v.Name, v); err != nil {
-			editorRepoErr("save", "item", v.Name, err)
+			editorRepoErr("save", v.Name, err)
 			return
 		}
 		appendTagChip(v, tagText)

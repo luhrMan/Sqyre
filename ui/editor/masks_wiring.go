@@ -144,7 +144,7 @@ func setMasksButtons() {
 					return
 				}
 				if err := ProgramMaskRepo(program).Set(mask.Name, mask); err != nil {
-					editorRepoErr("save", "mask", mask.Name, err)
+					editorRepoErr("save", mask.Name, err)
 					return
 				}
 				services.InvalidateSearchTemplateCacheProgram(programName)
