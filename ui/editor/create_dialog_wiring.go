@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
 	"fyne.io/fyne/v2"
@@ -32,25 +33,40 @@ func copyTabWidgetsToDialog(src, dst map[string]fyne.CanvasObject, keys ...strin
 		if src[k] == nil || dst[k] == nil {
 			continue
 		}
-		switch s := src[k].(type) {
+		text := custom_widgets.EntryText(src[k])
+		switch d := dst[k].(type) {
 		case *widget.Entry:
-			dst[k].(*widget.Entry).SetText(s.Text)
+			d.SetText(text)
 		case *custom_widgets.VarEntry:
-			custom_widgets.SetEntryText(dst[k], custom_widgets.EntryText(s))
-		case *widget.RadioGroup:
-			sel := s.Selected
-			if sel == "" {
-				sel = "Rectangle"
+			custom_widgets.SetEntryText(d, text)
+		case *custom_widgets.VarEntryField:
+			custom_widgets.SetEntryText(d, text)
+		case *custom_widgets.Incrementer:
+			v, err := strconv.Atoi(strings.TrimSpace(text))
+			if err != nil {
+				v = 0
 			}
-			dst[k].(*widget.RadioGroup).SetSelected(sel)
+			d.SetValue(v)
+		case *widget.RadioGroup:
+			if rg, ok := src[k].(*widget.RadioGroup); ok {
+				sel := rg.Selected
+				if sel == "" {
+					sel = "Rectangle"
+				}
+				d.SetSelected(sel)
+			}
 		case *widget.Check:
-			dst[k].(*widget.Check).SetChecked(s.Checked)
+			if c, ok := src[k].(*widget.Check); ok {
+				d.SetChecked(c.Checked)
+			}
 		}
 	}
 }
 
 func wireCreateItemDialog(w map[string]fyne.CanvasObject, programSelector *widget.Select, ctx *createDialogContext) {
-	ctx.draftItem = &models.Item{}
+	if ctx.draftItem == nil {
+		ctx.draftItem = &models.Item{}
+	}
 
 	wireItemTagHandlers(w, programSelector, ctx.draftItem)
 	wireItemMaskHandlers(w, programSelector, ctx.draftItem)
@@ -68,6 +84,7 @@ func wireCreateItemDialog(w map[string]fyne.CanvasObject, programSelector *widge
 		}
 		w["Name"].(*widget.Entry).OnChanged = func(string) { syncIconEditor() }
 		programSelector.OnChanged = func(string) { syncIconEditor() }
+		syncIconEditor()
 	}
 }
 
@@ -146,6 +163,7 @@ func wireItemTagHandlers(w map[string]fyne.CanvasObject, programSelector *widget
 			tagEntry.ShowCompletion()
 		}
 	}
+	updateTags()
 }
 
 func wireItemMaskHandlers(w map[string]fyne.CanvasObject, programSelector *widget.Select, item *models.Item) {
@@ -207,6 +225,7 @@ func wireItemMaskHandlers(w map[string]fyne.CanvasObject, programSelector *widge
 			updateMaskUI("")
 		}
 	}
+	updateMaskUI(item.Mask)
 }
 
 func showMaskSelectionPopupForItem(onSelect func(maskName string)) {
@@ -280,7 +299,7 @@ func wireCreateMaskDialog(w map[string]fyne.CanvasObject, programSelector *widge
 				return
 			}
 			if HasMaskImage(p, n) {
-				shell().UpdateMaskPreview(p, n)
+				updateMaskPreviewPanel(previewPanel, p, n)
 			} else if previewPanel != nil {
 				previewPanel.clear()
 			}
@@ -326,7 +345,7 @@ func wireCreateMaskDialog(w map[string]fyne.CanvasObject, programSelector *widge
 					return
 				}
 				setMaskImageModeOnWidgets(w, true)
-				shell().UpdateMaskPreview(programName, maskName)
+				updateMaskPreviewPanel(previewPanel, programName, maskName)
 			}, activeWire.Window)
 			fd.SetFilter(storage.NewExtensionFileFilter([]string{".png", ".jpg", ".jpeg", ".bmp"}))
 			activeWire.AddDialogEscapeClose(fd, activeWire.Window)
