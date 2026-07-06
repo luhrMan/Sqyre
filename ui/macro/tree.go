@@ -1,7 +1,6 @@
 package macro
 
 import (
-	"Sqyre/internal/assets"
 	"Sqyre/internal/models"
 	"Sqyre/internal/models/actions"
 	"Sqyre/ui/actiondisplay"
@@ -430,27 +429,18 @@ func (mt *MacroTree) cachedRowContent(node actions.ActionInterface) cachedRowCon
 			return cached
 		}
 	}
-	entry := cachedRowContent{display: actionDisplay(node, func() {
-		if mt.OnOpenActionDialog != nil {
-			mt.OnOpenActionDialog(node)
-		}
+	entry := cachedRowContent{display: actionDisplayForTree(node, actionDisplayHandlers{
+		onActionSaved: func() {
+			mt.RecordMutation()
+			mt.invalidateRowCache(uid)
+			mt.RefreshItem(uid)
+			if mt.OnTreeChanged != nil {
+				mt.OnTreeChanged()
+			}
+		},
 	})}
 	if is, ok := node.(*actions.ImageSearch); ok && len(is.Targets) > 0 {
-		previewSize := fyne.NewSize(treeItemIconSize, treeItemIconSize)
-		box := container.NewHBox()
-		for _, target := range is.Targets {
-			if path := uiutil.IconPathForTarget(target); path != "" {
-				if res := assets.GetFyneResource(path); res != nil {
-					img := canvas.NewImageFromResource(res)
-					img.SetMinSize(previewSize)
-					img.FillMode = canvas.ImageFillContain
-					box.Add(img)
-				}
-			}
-		}
-		if len(box.Objects) > 0 {
-			entry.itemIcons = box
-		}
+		entry.itemIcons = imageSearchRowTargetIcons(is.Targets)
 	} else if wfp, ok := node.(*actions.FindPixel); ok {
 		if col, ok := uiutil.HexToColor(wfp.TargetColor); ok {
 			swatch := canvas.NewRectangle(col)

@@ -54,7 +54,7 @@ func showMacroListPopup(d WireDeps) {
 		return names
 	}
 
-	searchEntry := widget.NewEntry()
+	searchEntry := custom_widgets.NewFormEntry()
 	searchEntry.SetPlaceHolder("Search macros or tags…")
 
 	openAllBtn := widget.NewButton("Open all", nil)
