@@ -4,6 +4,7 @@ import (
 	"Sqyre/internal/assets"
 	"Sqyre/internal/models"
 	"Sqyre/internal/models/actions"
+	"Sqyre/internal/validation"
 	"Sqyre/ui/actiondisplay"
 	"Sqyre/internal/models/repositories"
 	"Sqyre/ui/custom_widgets"
@@ -443,10 +444,10 @@ func (p *VariablesPanel) showEditDetailsDialog(d models.VariableDef) {
 	}
 	typeSelect := widget.NewSelect(variableTypeOptions(), nil)
 	typeSelect.SetSelected(string(typ))
-	initialEntry := widget.NewEntry()
+	initialEntry := custom_widgets.NewFormEntry()
 	initialEntry.SetPlaceHolder("Initial value (optional)")
 	initialEntry.SetText(d.InitialValue)
-	descEntry := widget.NewEntry()
+	descEntry := custom_widgets.NewFormEntry()
 	descEntry.SetPlaceHolder("Description (optional)")
 	descEntry.SetText(d.Description)
 	form := widget.NewForm(
@@ -477,7 +478,7 @@ func (p *VariablesPanel) showRenameDialog(oldName string) {
 	if p.macro == nil {
 		return
 	}
-	entry := widget.NewEntry()
+	entry := custom_widgets.NewFormEntry()
 	entry.SetText(oldName)
 	form := widget.NewForm(widget.NewFormItem("New name", entry))
 	w := activeWire.Window
@@ -490,7 +491,7 @@ func (p *VariablesPanel) showRenameDialog(oldName string) {
 			return
 		}
 		if err := p.macro.RenameVariable(oldName, newName); err != nil {
-			dialog.ShowError(err, w)
+			activeWire.ShowErrorWithEscape(err, w)
 			return
 		}
 		p.saveMacro()
@@ -543,13 +544,13 @@ func variablesPanelChrome(panel *VariablesPanel, m *models.Macro) fyne.CanvasObj
 		if m == nil {
 			return
 		}
-		nameEntry := widget.NewEntry()
+		nameEntry := custom_widgets.NewFormEntry()
 		nameEntry.SetPlaceHolder("Variable name")
 		typeSelect := widget.NewSelect(variableTypeOptions(), nil)
 		typeSelect.SetSelected(string(models.VariableTypeAuto))
-		valueEntry := widget.NewEntry()
+		valueEntry := custom_widgets.NewFormEntry()
 		valueEntry.SetPlaceHolder("Initial value (optional)")
-		descEntry := widget.NewEntry()
+		descEntry := custom_widgets.NewFormEntry()
 		descEntry.SetPlaceHolder("Description (optional)")
 		form := widget.NewForm(
 			widget.NewFormItem("Name", nameEntry),
@@ -563,7 +564,8 @@ func variablesPanelChrome(panel *VariablesPanel, m *models.Macro) fyne.CanvasObj
 				return
 			}
 			name := strings.TrimSpace(nameEntry.Text)
-			if name == "" {
+			if err := validation.ValidateVariableName(name); err != nil {
+				activeWire.ShowErrorWithEscape(err, w)
 				return
 			}
 			m.UpsertVariable(models.VariableDecl{
@@ -587,9 +589,9 @@ func variablesPanelChrome(panel *VariablesPanel, m *models.Macro) fyne.CanvasObj
 		if m == nil || m.Root == nil {
 			return
 		}
-		nameEntry := widget.NewEntry()
+		nameEntry := custom_widgets.NewFormEntry()
 		nameEntry.SetPlaceHolder("Variable name")
-		valueEntry := widget.NewEntry()
+		valueEntry := custom_widgets.NewFormEntry()
 		valueEntry.SetPlaceHolder("Value")
 		form := widget.NewForm(
 			widget.NewFormItem("Name", nameEntry),
@@ -601,7 +603,8 @@ func variablesPanelChrome(panel *VariablesPanel, m *models.Macro) fyne.CanvasObj
 				return
 			}
 			name := strings.TrimSpace(nameEntry.Text)
-			if name == "" {
+			if err := validation.ValidateVariableName(name); err != nil {
+				activeWire.ShowErrorWithEscape(err, w)
 				return
 			}
 			sv := actions.NewSetVariable(name, valueEntry.Text)
