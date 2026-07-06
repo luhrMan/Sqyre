@@ -92,7 +92,7 @@ func DefaultActionPastelColor(actionType string, isDark bool) color.NRGBA {
 		case "Detection":
 			return color.NRGBA{R: 0x5A, G: 0x4A, B: 0x44, A: 0xFF}
 		case "Variables":
-			return color.NRGBA{R: 0x7A, G: 0x63, B: 0x45, A: 0xFF}
+			return color.NRGBA{R: 0x2A, G: 0x42, B: 0x54, A: 0xFF}
 		case "Miscellaneous":
 			return color.NRGBA{R: 0x6A, G: 0x5A, B: 0x3F, A: 0xFF}
 		default:
@@ -108,12 +108,22 @@ func DefaultActionPastelColor(actionType string, isDark bool) color.NRGBA {
 	case "Detection":
 		return color.NRGBA{R: 0xB4, G: 0x9A, B: 0x84, A: 0xFF}
 	case "Variables":
-		return color.NRGBA{R: 0xC7, G: 0xAE, B: 0x7B, A: 0xFF}
+		return color.NRGBA{R: 0x5E, G: 0x8F, B: 0xB0, A: 0xFF}
 	case "Miscellaneous":
 		return color.NRGBA{R: 0xB8, G: 0x9A, B: 0x6A, A: 0xFF}
 	default:
 		return color.NRGBA{R: 0xB2, G: 0xA4, B: 0x8E, A: 0xFF}
 	}
+}
+
+// DefaultNestedVarRefColor returns the lighter blue used for compact variable
+// reference chips nested inside action pills so they stand out from variable
+// action backgrounds.
+func DefaultNestedVarRefColor(isDark bool) color.NRGBA {
+	if isDark {
+		return color.NRGBA{R: 0x46, G: 0x62, B: 0x78, A: 0xFF}
+	}
+	return color.NRGBA{R: 0x9E, G: 0xC4, B: 0xE3, A: 0xFF}
 }
 
 // ActionPastelColor returns the display color for an action type, using a user

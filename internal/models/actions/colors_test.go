@@ -35,6 +35,16 @@ func TestActionPastelColorWaitOverride(t *testing.T) {
 	}
 }
 
+func TestDefaultNestedVarRefColorLighterThanVariableAction(t *testing.T) {
+	for _, isDark := range []bool{false, true} {
+		action := DefaultActionPastelColor("setvariable", isDark)
+		nested := DefaultNestedVarRefColor(isDark)
+		if nested.R <= action.R || nested.G <= action.G || nested.B <= action.B {
+			t.Fatalf("isDark=%v nested %+v should be lighter than action %+v", isDark, nested, action)
+		}
+	}
+}
+
 func TestActionColorKey(t *testing.T) {
 	tests := []struct {
 		actionType string
