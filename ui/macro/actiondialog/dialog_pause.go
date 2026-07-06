@@ -3,6 +3,7 @@ package actiondialog
 import (
 	"Sqyre/internal/macrohotkey"
 	"Sqyre/internal/models/actions"
+	"Sqyre/ui/custom_widgets"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -13,7 +14,7 @@ import (
 )
 
 func createPauseDialogContent(action *actions.Pause) (fyne.CanvasObject, func()) {
-	messageEntry := widget.NewEntry()
+	messageEntry := custom_widgets.NewFormEntry()
 	messageEntry.SetPlaceHolder("Optional note shown while paused")
 	messageEntry.SetText(action.Message)
 
@@ -34,11 +35,16 @@ func createPauseDialogContent(action *actions.Pause) (fyne.CanvasObject, func())
 			if keyLabel.Text == "" {
 				keyLabel.SetText("(not set)")
 			}
+			notifyDialogValidationChanged()
 		})
 	})
 
 	passThroughCheck := ttwidget.NewCheck("Pass continue key to focused app", nil)
 	passThroughCheck.SetChecked(action.PassThrough)
+
+	trackDialogValidityCheck(func() bool {
+		return macrohotkey.ValidateContinueKey(action.ContinueKey) == nil
+	})
 
 	content := widget.NewForm(
 		formHint("Message:", messageEntry, "Optional text shown in the log and pause banner while waiting."),
@@ -55,8 +61,4 @@ func createPauseDialogContent(action *actions.Pause) (fyne.CanvasObject, func())
 	}
 
 	return content, saveFunc
-}
-
-func validatePauseAction(action *actions.Pause) error {
-	return macrohotkey.ValidateContinueKeyForUI(action.ContinueKey)
 }
