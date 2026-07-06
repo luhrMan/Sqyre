@@ -12,14 +12,14 @@ import (
 )
 
 type entityAccordionConfig struct {
-	tab              *EditorTab
-	filterText       *string
-	getKeys          func(*models.Program) []string
-	sortKeys         func(*models.Program, []string)
-	getEntity        func(*models.Program, string) (string, error)
-	getPreviewImage  func(*models.Program, string) (custom_widgets.PreviewTooltipResult, error)
-	onSelected       func(*models.Program, string)
-	extraOnSelected  func() // optional hook after onSelected (e.g. macro sync)
+	tab             *EditorTab
+	filterText      *string
+	getKeys         func(*models.Program) []string
+	sortKeys        func(*models.Program, []string)
+	getEntity       func(*models.Program, string) (string, error)
+	getPreviewImage func(*models.Program, string) (custom_widgets.PreviewTooltipResult, error)
+	onSelected      func(*models.Program, string)
+	extraOnSelected func() // optional hook after onSelected (e.g. macro sync)
 }
 
 func populateProgramEntityAccordion(acc *widget.Accordion, cfg entityAccordionConfig) {
@@ -83,23 +83,8 @@ func buildProgramEntityAccordionRow(cfg entityAccordionConfig, program *models.P
 				return
 			}
 			prog := program
-			listID := id
 			custom_widgets.BindPreviewListRow(co, name, func() (custom_widgets.PreviewTooltipResult, error) {
 				return cfg.getPreviewImage(prog, key)
-			}, func() {
-				pro, err := repositories.ProgramRepo().Get(program.Name)
-				if err != nil {
-					editorRepoLog("load", "program", program.Name, err)
-					return
-				}
-				if cfg.tab.ProgramSelector != nil {
-					cfg.tab.ProgramSelector.SetSelected(pro.Name)
-				}
-				cfg.onSelected(pro, key)
-				if cfg.extraOnSelected != nil {
-					cfg.extraOnSelected()
-				}
-				state.list.Select(listID)
 			})
 		},
 	)

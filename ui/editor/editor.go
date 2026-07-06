@@ -148,7 +148,7 @@ func ConstructEditorTabs(eu *EditorUi, win fyne.Window) {
 
 	//===========================================================================================================ITEMS
 	itw[acc] = custom_widgets.NewAccordionWithHeaderWidgets()
-	itw["searchbar"] = widget.NewEntry()
+	itw["searchbar"] = custom_widgets.NewFormEntry()
 	itw["searchbar"].(*widget.Entry).PlaceHolder = "Search here"
 	populateItemsFormWidgets(itw, win)
 	et.ItemsTab.UpdateButton = newEditorUpdateButton()
@@ -161,7 +161,7 @@ func ConstructEditorTabs(eu *EditorUi, win fyne.Window) {
 
 	//===========================================================================================================POINTS
 	ptw[acc] = widget.NewAccordion()
-	ptw["searchbar"] = widget.NewEntry()
+	ptw["searchbar"] = custom_widgets.NewFormEntry()
 	ptw["searchbar"].(*widget.Entry).PlaceHolder = "Search here"
 	populatePointsFormWidgets(ptw)
 	et.PointsTab.UpdateButton = newEditorUpdateButton()
@@ -177,7 +177,7 @@ func ConstructEditorTabs(eu *EditorUi, win fyne.Window) {
 
 	//===========================================================================================================SEARCHAREAS
 	satw[acc] = widget.NewAccordion()
-	satw["searchbar"] = widget.NewEntry()
+	satw["searchbar"] = custom_widgets.NewFormEntry()
 	satw["searchbar"].(*widget.Entry).PlaceHolder = "Search here"
 	populateSearchAreasFormWidgets(satw)
 	et.SearchAreasTab.UpdateButton = newEditorUpdateButton()
@@ -194,7 +194,7 @@ func ConstructEditorTabs(eu *EditorUi, win fyne.Window) {
 	//===========================================================================================================MASKS
 	mtw := et.MasksTab.Widgets
 	mtw["Accordion"] = widget.NewAccordion()
-	mtw["searchbar"] = widget.NewEntry()
+	mtw["searchbar"] = custom_widgets.NewFormEntry()
 	mtw["searchbar"].(*widget.Entry).PlaceHolder = "Search here"
 	populateMasksFormWidgets(mtw)
 	maskPreviewPanel := newEditorPreviewPanel()
@@ -211,7 +211,7 @@ func ConstructEditorTabs(eu *EditorUi, win fyne.Window) {
 	//===========================================================================================================AUTOPIC
 	atw := et.AutoPicTab.Widgets
 	atw["Accordion"] = widget.NewAccordion()
-	atw["searchbar"] = widget.NewEntry()
+	atw["searchbar"] = custom_widgets.NewFormEntry()
 	atw["searchbar"].(*widget.Entry).PlaceHolder = "Search here"
 	atw["saveButton"] = widget.NewButton("Save", eu.onAutoPicSave)
 
