@@ -14,6 +14,7 @@ import (
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 )
 
 // borderedIncrementButton draws a light gray rounded border around one increment/decrement control.
@@ -49,8 +50,8 @@ type Incrementer struct {
 
 	OnChanged func(int)
 
-	label      *widget.Label
-	valueEntry *widget.Entry // when non-nil, replaces label as the value display (editable)
+	label      *ttwidget.Label
+	valueEntry *tooltipEntry // when non-nil, replaces label as the value display (editable)
 	// suppressValueEntry avoids valueEntry OnChanged when SetText is driven by the incrementer.
 	suppressValueEntry bool
 
@@ -70,14 +71,45 @@ type FloatIncrementer struct {
 
 	OnChanged func(float64)
 
-	label   *widget.Label
+	label   *ttwidget.Label
 	upBtn   *holdRepeatButton
 	downBtn *holdRepeatButton
+}
+
+// tooltipEntry is a single-line entry with hover tooltip support.
+type tooltipEntry struct {
+	widget.Entry
+	ttwidget.ToolTipWidgetExtend
+}
+
+func newTooltipEntry() *tooltipEntry {
+	e := &tooltipEntry{}
+	ConfigureSingleLineEntry(&e.Entry)
+	e.ExtendBaseWidget(e)
+	return e
+}
+
+func (e *tooltipEntry) ExtendBaseWidget(wid fyne.Widget) {
+	e.ExtendToolTipWidget(wid)
+	e.Entry.ExtendBaseWidget(wid)
+}
+
+func (e *tooltipEntry) MouseIn(ev *desktop.MouseEvent) {
+	e.ToolTipWidgetExtend.MouseIn(ev)
+}
+
+func (e *tooltipEntry) MouseOut() {
+	e.ToolTipWidgetExtend.MouseOut()
+}
+
+func (e *tooltipEntry) MouseMoved(ev *desktop.MouseEvent) {
+	e.ToolTipWidgetExtend.MouseMoved(ev)
 }
 
 // holdRepeatButton triggers action once on tap and repeatedly while held.
 type holdRepeatButton struct {
 	widget.Button
+	ttwidget.ToolTipWidgetExtend
 
 	action func()
 
@@ -94,6 +126,58 @@ func newHoldRepeatButton(icon fyne.Resource, action func()) *holdRepeatButton {
 	btn.OnTapped = nil // handled via Tapped override
 	btn.ExtendBaseWidget(btn)
 	return btn
+}
+
+func (b *holdRepeatButton) ExtendBaseWidget(wid fyne.Widget) {
+	b.ExtendToolTipWidget(wid)
+	b.Button.ExtendBaseWidget(wid)
+}
+
+func (b *holdRepeatButton) MouseIn(ev *desktop.MouseEvent) {
+	b.ToolTipWidgetExtend.MouseIn(ev)
+	b.Button.MouseIn(ev)
+}
+
+func (b *holdRepeatButton) MouseOut() {
+	b.ToolTipWidgetExtend.MouseOut()
+	b.Button.MouseOut()
+	b.stopHold(true)
+}
+
+func stepTooltipInt(step int) string {
+	if step <= 0 {
+		step = 1
+	}
+	return strconv.Itoa(step)
+}
+
+func boundsTooltipInt(min, max *int) string {
+	var parts []string
+	if min != nil {
+		parts = append(parts, fmt.Sprintf("Min: %d", *min))
+	}
+	if max != nil {
+		parts = append(parts, fmt.Sprintf("Max: %d", *max))
+	}
+	return strings.Join(parts, ", ")
+}
+
+func stepTooltipFloat(step float64, precision int) string {
+	if step <= 0 {
+		step = 1
+	}
+	return fmt.Sprintf("%.*f", precision, step)
+}
+
+func boundsTooltipFloat(min, max *float64, precision int) string {
+	var parts []string
+	if min != nil {
+		parts = append(parts, fmt.Sprintf("Min: %.*f", precision, *min))
+	}
+	if max != nil {
+		parts = append(parts, fmt.Sprintf("Max: %.*f", precision, *max))
+	}
+	return strings.Join(parts, ", ")
 }
 
 func (b *holdRepeatButton) MouseDown(me *desktop.MouseEvent) {
@@ -153,9 +237,9 @@ func (b *holdRepeatButton) MouseUp(me *desktop.MouseEvent) {
 	b.stopHold(true)
 }
 
-func (b *holdRepeatButton) MouseOut() {
-	b.Button.MouseOut()
-	b.stopHold(true)
+func (b *holdRepeatButton) MouseMoved(ev *desktop.MouseEvent) {
+	b.ToolTipWidgetExtend.MouseMoved(ev)
+	b.Button.MouseMoved(ev)
 }
 
 func (b *holdRepeatButton) Tapped(*fyne.PointEvent) {
@@ -200,10 +284,11 @@ func NewIncrementer(value int, step int, min, max *int) *Incrementer {
 	}
 	inc := &Incrementer{Value: value, Step: step, Min: min, Max: max}
 	inc.ExtendBaseWidget(inc)
-	inc.label = widget.NewLabel("")
+	inc.label = ttwidget.NewLabel("")
 	inc.upBtn = newHoldRepeatButton(theme.MenuDropUpIcon(), func() { inc.adjust(1) })
 	inc.downBtn = newHoldRepeatButton(theme.MenuDropDownIcon(), func() { inc.adjust(-1) })
 	inc.syncValueDisplay()
+	inc.syncTooltips()
 	return inc
 }
 
@@ -214,7 +299,7 @@ func NewIncrementerWithEntry(value int, step int, min, max *int) *Incrementer {
 	}
 	inc := &Incrementer{Value: value, Step: step, Min: min, Max: max}
 	inc.ExtendBaseWidget(inc)
-	ve := widget.NewEntry()
+	ve := newTooltipEntry()
 	ve.SetText(strconv.Itoa(value))
 	inc.valueEntry = ve
 	inc.upBtn = newHoldRepeatButton(theme.MenuDropUpIcon(), func() { inc.adjust(1) })
@@ -255,7 +340,20 @@ func NewIncrementerWithEntry(value int, step int, min, max *int) *Incrementer {
 		}
 	}
 
+	inc.syncTooltips()
 	return inc
+}
+
+func (inc *Incrementer) syncTooltips() {
+	stepTip := stepTooltipInt(inc.Step)
+	inc.upBtn.SetToolTip(stepTip)
+	inc.downBtn.SetToolTip(stepTip)
+	boundsTip := boundsTooltipInt(inc.Min, inc.Max)
+	if inc.valueEntry != nil {
+		inc.valueEntry.SetToolTip(boundsTip)
+	} else if inc.label != nil {
+		inc.label.SetToolTip(boundsTip)
+	}
 }
 
 func (inc *Incrementer) setValueEntryText(s string) {
@@ -324,14 +422,13 @@ func (inc *Incrementer) SetValue(v int) {
 func (inc *Incrementer) CreateRenderer() fyne.WidgetRenderer {
 	inc.upBtn.Importance = widget.LowImportance
 	inc.downBtn.Importance = widget.LowImportance
-	var right fyne.CanvasObject = compactSpinnerStack(inc.upBtn, inc.downBtn)
 	var center fyne.CanvasObject
 	if inc.valueEntry != nil {
 		center = inc.valueEntry
 	} else {
 		center = inc.label
 	}
-	content := container.NewBorder(nil, nil, nil, right, center)
+	content := container.NewBorder(nil, nil, nil, compactSpinnerStack(inc.upBtn, inc.downBtn), center)
 	return widget.NewSimpleRenderer(content)
 }
 
@@ -372,11 +469,21 @@ func NewFloatIncrementer(value float64, step float64, min, max *float64, precisi
 		Precision: precision,
 	}
 	inc.ExtendBaseWidget(inc)
-	inc.label = widget.NewLabel("")
+	inc.label = ttwidget.NewLabel("")
 	inc.upBtn = newHoldRepeatButton(theme.MenuDropUpIcon(), func() { inc.adjust(1) })
 	inc.downBtn = newHoldRepeatButton(theme.MenuDropDownIcon(), func() { inc.adjust(-1) })
 	inc.SetValue(value)
+	inc.syncTooltips()
 	return inc
+}
+
+func (inc *FloatIncrementer) syncTooltips() {
+	stepTip := stepTooltipFloat(inc.Step, inc.Precision)
+	inc.upBtn.SetToolTip(stepTip)
+	inc.downBtn.SetToolTip(stepTip)
+	if inc.label != nil {
+		inc.label.SetToolTip(boundsTooltipFloat(inc.Min, inc.Max, inc.Precision))
+	}
 }
 
 func (inc *FloatIncrementer) adjust(delta int) {
