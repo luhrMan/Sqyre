@@ -40,6 +40,8 @@ var (
 	calculate []byte
 	//go:embed icons/variable.svg
 	variable []byte
+	//go:embed icons/target.svg
+	target []byte
 )
 
 var (
@@ -54,6 +56,7 @@ var (
 	TextSearchIcon        = fyne.NewStaticResource("textSearch", textSearch)
 	CalculateIcon         = fyne.NewStaticResource("calculate", calculate)
 	VariableIcon          = fyne.NewStaticResource("variable", variable)
+	TargetIcon            = fyne.NewStaticResource("target", target)
 )
 
 var (
