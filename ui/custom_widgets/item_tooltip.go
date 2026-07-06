@@ -102,6 +102,7 @@ func (l *ItemTooltipLabel) hideTooltip() {
 	if l.tooltipPanel == nil {
 		return
 	}
+	DeactivateTooltipEscapeDismiss()
 	c := fyne.CurrentApp().Driver().CanvasForObject(l)
 	if c == nil {
 		l.tooltipPanel = nil
@@ -133,6 +134,7 @@ func (l *ItemTooltipLabel) showTooltip() {
 	layer.Container.Objects = []fyne.CanvasObject{panel}
 	layer.Container.Refresh()
 	l.tooltipPanel = panel
+	ActivateTooltipEscapeDismiss(func() { l.hideTooltip() })
 }
 
 // itemTooltipPanel renders item name + tags; sizing follows fyne-tooltip's approach.

@@ -20,7 +20,7 @@ func ShowVariablePicker(anchor fyne.CanvasObject, defs []models.VariableDef, onS
 		return
 	}
 
-	filter := widget.NewEntry()
+	filter := NewFormEntry()
 	filter.SetPlaceHolder("Filter variables…")
 
 	labels := make([]string, len(defs))

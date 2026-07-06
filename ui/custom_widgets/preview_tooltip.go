@@ -30,16 +30,12 @@ type PreviewTooltipResult struct {
 // PreviewTooltipLoad produces preview image and caption text for a hover tooltip.
 type PreviewTooltipLoad func() (PreviewTooltipResult, error)
 
-// PreviewTooltipEditFunc is invoked when the user right-clicks the visible preview tooltip.
-type PreviewTooltipEditFunc func()
-
 // PreviewTooltipHover is an invisible overlay for list rows. On hover it shows a
 // popup preview image loaded by loadPreview (typically a screen capture).
 type PreviewTooltipHover struct {
 	fynewidget.BaseWidget
 
 	loadPreview PreviewTooltipLoad
-	onEdit      PreviewTooltipEditFunc
 
 	tooltipPanel     *previewTooltipPanel
 	pendingCancel    context.CancelFunc
@@ -61,14 +57,8 @@ func NewPreviewTooltipHover() *PreviewTooltipHover {
 }
 
 // SetPreviewLoader sets the function that produces the preview when the tooltip opens.
-// Pass nil to disable preview tooltips for this row.
 func (h *PreviewTooltipHover) SetPreviewLoader(load PreviewTooltipLoad) {
 	h.loadPreview = load
-}
-
-// SetOnEdit sets a callback for right-click on the visible tooltip (e.g. open the entity editor).
-func (h *PreviewTooltipHover) SetOnEdit(fn PreviewTooltipEditFunc) {
-	h.onEdit = fn
 }
 
 func (h *PreviewTooltipHover) MouseIn(e *desktop.MouseEvent) {
@@ -116,15 +106,6 @@ func (h *PreviewTooltipHover) MouseMoved(e *desktop.MouseEvent) {
 	h.absoluteMousePos = e.AbsolutePosition
 }
 
-func (h *PreviewTooltipHover) TappedSecondary(*fyne.PointEvent) {
-	if h.tooltipPanel != nil && h.onEdit != nil {
-		h.onEdit()
-		h.hideTooltip()
-	}
-}
-
-var _ fyne.SecondaryTappable = (*PreviewTooltipHover)(nil)
-
 func (h *PreviewTooltipHover) cancelPending() {
 	if h.pendingCancel != nil {
 		h.pendingCancel()
@@ -145,6 +126,7 @@ func (h *PreviewTooltipHover) hideTooltip() {
 	if h.tooltipPanel == nil {
 		return
 	}
+	DeactivateTooltipEscapeDismiss()
 	h.panelHovering = false
 	c := fyne.CurrentApp().Driver().CanvasForObject(h)
 	if c == nil {
@@ -173,7 +155,7 @@ func (h *PreviewTooltipHover) beginCapture() {
 	if layer == nil {
 		return
 	}
-	panel := newPreviewTooltipPanel(h, h.wrapEditCallback())
+	panel := newPreviewTooltipPanel(h)
 	origin := itemTooltipLayerOrigin(layer, c.Overlays().Top())
 	size, relPos := previewTooltipSizeAndPosition(panel, c, h.absoluteMousePos.Subtract(origin))
 	panel.Resize(size)
@@ -182,6 +164,7 @@ func (h *PreviewTooltipHover) beginCapture() {
 	layer.Container.Objects = []fyne.CanvasObject{panel}
 	layer.Container.Refresh()
 	h.tooltipPanel = panel
+	ActivateTooltipEscapeDismiss(func() { h.hideTooltip() })
 
 	ctx, cancel := context.WithCancel(context.Background())
 	h.captureCtx = ctx
@@ -216,21 +199,10 @@ func (h *PreviewTooltipHover) beginCapture() {
 	}()
 }
 
-func (h *PreviewTooltipHover) wrapEditCallback() PreviewTooltipEditFunc {
-	if h.onEdit == nil {
-		return nil
-	}
-	return func() {
-		h.onEdit()
-		h.hideTooltip()
-	}
-}
-
 type previewTooltipPanel struct {
 	fynewidget.BaseWidget
 
-	owner  *PreviewTooltipHover
-	onEdit PreviewTooltipEditFunc
+	owner *PreviewTooltipHover
 
 	img       *canvas.Image
 	message   *fynewidget.Label
@@ -239,8 +211,8 @@ type previewTooltipPanel struct {
 	showImage bool
 }
 
-func newPreviewTooltipPanel(owner *PreviewTooltipHover, onEdit PreviewTooltipEditFunc) *previewTooltipPanel {
-	p := &previewTooltipPanel{owner: owner, onEdit: onEdit}
+func newPreviewTooltipPanel(owner *PreviewTooltipHover) *previewTooltipPanel {
+	p := &previewTooltipPanel{owner: owner}
 	p.ExtendBaseWidget(p)
 	return p
 }
@@ -266,14 +238,6 @@ func (p *previewTooltipPanel) MouseOut() {
 func (p *previewTooltipPanel) MouseMoved(*desktop.MouseEvent) {}
 
 var _ desktop.Hoverable = (*previewTooltipPanel)(nil)
-
-func (p *previewTooltipPanel) TappedSecondary(*fyne.PointEvent) {
-	if p.onEdit != nil {
-		p.onEdit()
-	}
-}
-
-var _ fyne.SecondaryTappable = (*previewTooltipPanel)(nil)
 
 func (p *previewTooltipPanel) previewSize() fyne.Size {
 	return fyne.NewSize(config.ImagePreviewMinWidth, config.ImagePreviewMinHeight)
