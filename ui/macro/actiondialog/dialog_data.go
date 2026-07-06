@@ -180,7 +180,7 @@ func parseRowBound(text string) any {
 }
 
 func createForEachRowDialogContent(action *actions.ForEachRow) (fyne.CanvasObject, func()) {
-	nameEntry := widget.NewEntry()
+	nameEntry := custom_widgets.NewFormEntry()
 	nameEntry.SetText(action.Name)
 
 	startEntry := newValidatedVarEntry(validateNumericExpression)
@@ -245,18 +245,20 @@ func createForEachRowDialogContent(action *actions.ForEachRow) (fyne.CanvasObjec
 	})
 
 	sourceScroll := container.NewVScroll(rowsBox)
-	sourceScroll.SetMinSize(fyne.NewSize(wideFormMinW-160, forEachRowSourcesScrollMinHeight))
+	sourceScroll.SetMinSize(fyne.NewSize(wideFormMinW-160, 0))
 
-	content := widget.NewForm(
+	headerForm := widget.NewForm(
 		formHint("Name:", nameEntry, "Label for this iterator in the tree."),
 		formHint("Start row:", startEntry, "First 1-based row to process. Number or ${variable}. Empty = 1."),
 		formHint("End row:", endEntry, "Last 1-based row to process (inclusive). Number or ${variable}. Empty = last row."),
 	)
-	content.Append("Sources", container.NewBorder(
-		addBtn,
+	sourcesLabel := widget.NewLabelWithStyle("Sources", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	sourcesPanel := container.NewBorder(
+		container.NewVBox(sourcesLabel, addBtn),
 		nil, nil, nil,
 		sourceScroll,
-	))
+	)
+	content := container.NewBorder(headerForm, nil, nil, nil, sourcesPanel)
 
 	saveFunc := func() {
 		action.Name = nameEntry.Text
