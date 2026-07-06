@@ -8,6 +8,7 @@ import (
 	"Sqyre/internal/models/actions"
 	"Sqyre/internal/models/repositories"
 	"Sqyre/ui/custom_widgets"
+	"Sqyre/ui/macrocxt"
 	"encoding/json"
 	"errors"
 	"log"
@@ -27,15 +28,21 @@ import (
 type WireDeps struct {
 	Window                 fyne.Window
 	Mui                    *MacroUi
+	MacroContext           macrocxt.Provider
+	MacroVariableDefs      func() []models.VariableDef
 	RefreshItemsAccordion  func()
 	ShowHotkeyRecordDialog func(parent fyne.Window, stableDuration time.Duration, onRecorded func(keys []string))
+	ShowKeyRecordDialog    func(parent fyne.Window, onRecorded func(key string))
 	ShowErrorWithEscape    func(err error, parent fyne.Window)
 	AddDialogEscapeClose   func(d dialog.Dialog, parent fyne.Window)
 	AddPopupEscapeClose    func(pop *widget.PopUp, parent fyne.Window) dialog.Dialog
 	ShowConfirmWithEscape  func(title, message string, callback func(bool), parent fyne.Window)
 	ShowActionDialog       func(action actions.ActionInterface, onSave func(actions.ActionInterface), onCancel func())
 	ShowAddActionPicker    func()
+	NavigateToCoordinateEntity func(ref actions.CoordinateRef, isPoint bool)
+	RegisterTooltipEnterSave func(onSave func()) (unregister func())
 	WrapTagChip            func(inner fyne.CanvasObject) fyne.CanvasObject
+	WrapSqyreFrame         func(inner fyne.CanvasObject) fyne.CanvasObject
 }
 
 var activeWire WireDeps
