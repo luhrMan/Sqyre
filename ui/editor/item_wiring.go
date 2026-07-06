@@ -411,7 +411,7 @@ func showMaskSelectionPopup() {
 		sortMaskKeysByDisplayName(p, filtered)
 
 		searchDebounce := custom_widgets.NewDebouncer(custom_widgets.DefaultSearchDebounce)
-		searchbar := widget.NewEntry()
+		searchbar := custom_widgets.NewFormEntry()
 		searchbar.PlaceHolder = "Search masks"
 
 		maskList := widget.NewList(
