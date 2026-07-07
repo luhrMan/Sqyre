@@ -168,6 +168,9 @@ func (mt *MacroTree) setTree() {
 
 		rowContent := mt.cachedRowContent(node)
 		displayContainer.Objects = []fyne.CanvasObject{rowContent.display}
+		if hover, ok := rowContent.display.(*actionDisplayTooltipHover); ok {
+			hover.bindRowBody(rowBody)
+		}
 		if mt.executing {
 			itemIconsBox.Objects = nil
 		} else if rowContent.itemIcons != nil {

@@ -57,7 +57,7 @@ func NewMacroTabs() *MacroTabs {
 
 	t := &MacroTabs{
 		BoundMacroListWidget: &widget.List{},
-		MacroNameEntry:       widget.NewEntry(),
+		MacroNameEntry:       custom_widgets.NewFormEntry(),
 		delayMin:             0,
 		delayMax:             1000,
 		MacroDelayBtn:        delayBtn,

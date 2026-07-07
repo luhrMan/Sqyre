@@ -18,14 +18,14 @@ func TestConditional_conditionSummary(t *testing.T) {
 		{Left: "a", Operator: OpEquals, Right: "1"},
 		{Left: "b", Operator: OpEquals, Right: "2"},
 	}, MatchAll, "x", nil)
-	if got := and.conditionSummary(); got != "a == 1 AND b == 2" {
+	if got := and.conditionSummary(); got != "a == 1 & b == 2" {
 		t.Fatalf("AND summary = %q", got)
 	}
 	or := NewConditional([]ConditionClause{
 		{Left: "a", Operator: OpEquals, Right: "1"},
 		{Left: "b", Operator: OpEquals, Right: "2"},
 	}, MatchAny, "x", nil)
-	if got := or.conditionSummary(); got != "a == 1 OR b == 2" {
+	if got := or.conditionSummary(); got != "a == 1 | b == 2" {
 		t.Fatalf("OR summary = %q", got)
 	}
 }

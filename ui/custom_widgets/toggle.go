@@ -23,6 +23,7 @@ type Toggle struct {
 
 	focused bool
 	hovered bool
+	compact bool
 
 	binder binder
 
@@ -34,6 +35,13 @@ func NewToggle(changed func(bool)) *Toggle {
 		OnChanged: changed,
 	}
 	t.ExtendBaseWidget(t)
+	return t
+}
+
+// NewCompactToggle creates a toggle sized to fit caption-height pills.
+func NewCompactToggle(changed func(bool)) *Toggle {
+	t := NewToggle(changed)
+	t.compact = true
 	return t
 }
 
@@ -259,25 +267,37 @@ func (r *toggleRenderer) Objects() []fyne.CanvasObject {
 	}
 }
 
-func (t *toggleRenderer) MinSize() fyne.Size {
+func (t *toggleRenderer) toggleSizes() (iconInline, innerPadding, borderSize float32) {
+	if t.toggle.compact {
+		return compactToggleSizes()
+	}
 	th := t.toggle.Theme()
+	return th.Size(theme.SizeNameInlineIcon), th.Size(theme.SizeNameInnerPadding), th.Size(theme.SizeNameInputBorder)
+}
 
-	pad4 := th.Size(theme.SizeNameInnerPadding)
-	iconInline := th.Size(theme.SizeNameInlineIcon)
-	borderSize := th.Size(theme.SizeNameInputBorder)
+// compactToggleSizes fits the toggle track within PillLineHeight().
+func compactToggleSizes() (iconInline, innerPadding, borderSize float32) {
+	borderSize = 1
+	innerPadding = 2
+	iconInline = PillLineHeight() - innerPadding - borderSize
+	if iconInline < 7 {
+		iconInline = 7
+	}
+	return iconInline, innerPadding, borderSize
+}
+
+func (t *toggleRenderer) MinSize() fyne.Size {
+	iconInline, innerPadding, borderSize := t.toggleSizes()
 	min := fyne.NewSize(
-		(iconInline*2)+pad4*2+borderSize,
-		iconInline+pad4+borderSize,
+		(iconInline*2)+innerPadding*2+borderSize,
+		iconInline+innerPadding+borderSize,
 	)
 
 	return min
 }
 
 func (t *toggleRenderer) Layout(size fyne.Size) {
-	th := t.toggle.Theme()
-	innerPadding := th.Size(theme.SizeNameInnerPadding)
-	borderSize := th.Size(theme.SizeNameInputBorder)
-	iconInlineSize := th.Size(theme.SizeNameInlineIcon)
+	iconInlineSize, innerPadding, borderSize := t.toggleSizes()
 
 	t.indicatorOffPos = fyne.NewPos(
 		innerPadding/2+borderSize,
@@ -323,10 +343,11 @@ func (t *toggleRenderer) applyTheme(th fyne.Theme, v fyne.ThemeVariant) {
 	}
 
 	t.indicator.StrokeColor = th.Color(theme.ColorNameInputBorder, v)
-	t.indicator.StrokeWidth = th.Size(theme.SizeNameInputBorder)
+	iconInline, _, borderSize := t.toggleSizes()
+	t.indicator.StrokeWidth = borderSize
 
-	t.bg.CornerRadius = th.Size(theme.SizeNameInlineIcon) / 2
-	t.bg.StrokeWidth = th.Size(theme.SizeNameInputBorder)
+	t.bg.CornerRadius = iconInline / 2
+	t.bg.StrokeWidth = borderSize
 }
 
 func (t *toggleRenderer) Refresh() {

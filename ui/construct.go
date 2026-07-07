@@ -102,6 +102,7 @@ func SetActionDialogDeps() {
 		PreviewExpression:    previewExpression,
 		AddDialogEscapeClose:     AddDialogEscapeClose,
 		AddActionDialogEnterSave: AddActionDialogEnterSave,
+		ShowErrorWithEscape:        ShowErrorWithEscape,
 		ShowRecordingOverlay:     recording.ShowRecordingOverlay,
 		ShowHotkeyRecordDialog: func(parent fyne.Window, stableDuration time.Duration, onRecorded func(keys []string)) {
 			recording.ShowHotkeyRecordDialog(parent, stableDuration, AddDialogEscapeClose, onRecorded)
@@ -125,12 +126,18 @@ func previewExpression(expr string) (string, error) {
 // SetMacroUi wires macro tab behavior and restores open macros (implementation in ui/macro).
 func SetMacroUi() {
 	u := GetUi()
+	ctx := macroContext()
 	macro.SetMacroUi(macro.WireDeps{
 		Window:                u.Window,
 		Mui:                   u.Mui,
+		MacroContext:          ctx,
+		MacroVariableDefs:     ctx.VariableDefs,
 		RefreshItemsAccordion: editor.RefreshItemsAccordionItems,
 		ShowHotkeyRecordDialog: func(parent fyne.Window, stableDuration time.Duration, onRecorded func(keys []string)) {
 			recording.ShowHotkeyRecordDialog(parent, stableDuration, AddDialogEscapeClose, onRecorded)
+		},
+		ShowKeyRecordDialog: func(parent fyne.Window, onRecorded func(key string)) {
+			recording.ShowKeyRecordDialog(parent, AddDialogEscapeClose, onRecorded)
 		},
 		ShowErrorWithEscape:   ShowErrorWithEscape,
 		AddDialogEscapeClose:  AddDialogEscapeClose,
@@ -142,6 +149,21 @@ func SetMacroUi() {
 		ShowAddActionPicker: func() {
 			u.ShowAddActionPicker()
 		},
-		WrapTagChip: WrapTagChip,
+		NavigateToCoordinateEntity: func(ref actions.CoordinateRef, isPoint bool) {
+			EnsureDataEditor()
+			u.showOverlay(u.EditorUi.CanvasObject, "Editor", overlayEditor)
+			if mt := u.Mui.MTabs.SelectedTab(); mt != nil {
+				mt.UnselectAll()
+				mt.SelectedNode = ""
+			}
+			if err := editor.NavigateToCoordinateEntity(ref, isPoint); err != nil {
+				ShowErrorWithEscape(err, u.Window)
+			}
+		},
+		RegisterTooltipEnterSave: func(onSave func()) func() {
+			return RegisterActionTooltipEnterSave(u.Window, onSave)
+		},
+		WrapTagChip:    WrapTagChip,
+		WrapSqyreFrame: WrapSqyreFrame,
 	})
 }

@@ -4,7 +4,6 @@ import (
 	"image/color"
 	"strings"
 
-	"Sqyre/ui/actiondisplay"
 	"Sqyre/internal/services"
 
 	"fyne.io/fyne/v2"
@@ -22,7 +21,12 @@ func NewVariableRefPill(name string, unknown bool) fyne.CanvasObject {
 	if unknown {
 		actionType = "warning"
 	}
-	return actiondisplay.NewDisplayPill(name, actionType)
+	return newDisplayPillChip(name, actionType)
+}
+
+// BuildVarRefPillContent renders a single-line value with compact nested variable pills.
+func BuildVarRefPillContent(text string, known map[string]bool) fyne.CanvasObject {
+	return buildVarRefLineDisplay(text, fyne.TextStyle{}, known, true)
 }
 
 func varRefLineHeight(textStyle fyne.TextStyle) float32 {
@@ -32,44 +36,53 @@ func varRefLineHeight(textStyle fyne.TextStyle) float32 {
 	return fyne.MeasureText("Mg", textSize, textStyle).Height + lineSpace
 }
 
-func buildVarRefLineDisplay(line string, textStyle fyne.TextStyle, known map[string]bool) fyne.CanvasObject {
+func buildVarRefLineDisplay(line string, textStyle fyne.TextStyle, known map[string]bool, borderless bool) fyne.CanvasObject {
 	segs := services.ParseVarRefSegments(line)
 	row := container.NewHBox()
+	textSize := theme.TextSize()
+	lineH := varRefLineHeight(textStyle)
+	if borderless {
+		textSize = PillTextSize()
+		lineH = PillLineHeight()
+	}
 	for _, seg := range segs {
 		if seg.IsRef {
 			unknown := !known[strings.ToLower(strings.TrimSpace(seg.Name))]
-			row.Add(NewVariableRefPill(seg.Name, unknown))
+			if borderless {
+				row.Add(NewNestedVariableRefPill(seg.Name, unknown))
+			} else {
+				row.Add(NewVariableRefPill(seg.Name, unknown))
+			}
 			continue
 		}
 		if seg.Text == "" {
 			continue
 		}
 		txt := canvas.NewText(seg.Text, theme.Color(theme.ColorNameForeground))
-		txt.TextSize = theme.TextSize()
+		txt.TextSize = textSize
 		txt.TextStyle = textStyle
 		txt.Alignment = fyne.TextAlignLeading
 		row.Add(txt)
 	}
-	minH := varRefLineHeight(textStyle)
 	spacer := canvas.NewRectangle(color.Transparent)
-	spacer.SetMinSize(fyne.NewSize(0, minH))
+	spacer.SetMinSize(fyne.NewSize(0, lineH))
 	return container.NewStack(spacer, row)
 }
 
-func buildVarRefDisplay(text string, multiLine bool, textStyle fyne.TextStyle, known map[string]bool) fyne.CanvasObject {
+func buildVarRefDisplay(text string, multiLine bool, textStyle fyne.TextStyle, known map[string]bool, borderless bool) fyne.CanvasObject {
 	if !multiLine {
-		return buildVarRefLineDisplay(text, textStyle, known)
+		return buildVarRefLineDisplay(text, textStyle, known, borderless)
 	}
 	lines := splitLines(text)
 	if len(lines) == 0 {
 		return container.NewHBox()
 	}
 	if len(lines) == 1 {
-		return buildVarRefLineDisplay(lines[0], textStyle, known)
+		return buildVarRefLineDisplay(lines[0], textStyle, known, borderless)
 	}
 	box := container.NewVBox()
 	for _, line := range lines {
-		box.Add(buildVarRefLineDisplay(line, textStyle, known))
+		box.Add(buildVarRefLineDisplay(line, textStyle, known, borderless))
 	}
 	return box
 }
@@ -81,11 +94,12 @@ type variableRefOverlay struct {
 	host    *pillOverlayHost
 	visible bool
 
-	lastText   string
-	lastKnown  string
-	lastShow   bool
-	lastMulti  bool
-	cachedDisp fyne.CanvasObject
+	lastText       string
+	lastKnown      string
+	lastShow       bool
+	lastMulti      bool
+	lastBorderless bool
+	cachedDisp     fyne.CanvasObject
 }
 
 func newVariableRefOverlay() *variableRefOverlay {
@@ -109,7 +123,7 @@ func knownSetFingerprint(known map[string]bool) string {
 	return b.String()
 }
 
-func (o *variableRefOverlay) sync(text string, multiLine bool, textStyle fyne.TextStyle, show bool, known map[string]bool) {
+func (o *variableRefOverlay) sync(text string, multiLine bool, textStyle fyne.TextStyle, show bool, known map[string]bool, borderless bool) {
 	show = show && text != "" && textContainsVarRef(text)
 	if !show {
 		o.visible = false
@@ -121,7 +135,7 @@ func (o *variableRefOverlay) sync(text string, multiLine bool, textStyle fyne.Te
 	}
 
 	fp := knownSetFingerprint(known)
-	if o.cachedDisp != nil && o.lastText == text && o.lastMulti == multiLine && o.lastKnown == fp && o.lastShow == show {
+	if o.cachedDisp != nil && o.lastText == text && o.lastMulti == multiLine && o.lastKnown == fp && o.lastShow == show && o.lastBorderless == borderless {
 		o.visible = true
 		o.root.Show()
 		if o.host != nil {
@@ -134,17 +148,30 @@ func (o *variableRefOverlay) sync(text string, multiLine bool, textStyle fyne.Te
 	o.lastMulti = multiLine
 	o.lastKnown = fp
 	o.lastShow = show
+	o.lastBorderless = borderless
 
-	th := theme.Current()
-	inputBorder := th.Size(theme.SizeNameInputBorder)
-	o.bg.FillColor = theme.Color(theme.ColorNameInputBackground)
+	if borderless {
+		o.bg.FillColor = color.Transparent
+	} else {
+		o.bg.FillColor = theme.Color(theme.ColorNameInputBackground)
+	}
 	o.bg.Refresh()
 
-	display := buildVarRefDisplay(text, multiLine, textStyle, known)
+	display := buildVarRefDisplay(text, multiLine, textStyle, known, borderless)
 	o.cachedDisp = display
-	topPad := canvas.NewRectangle(color.Transparent)
-	topPad.SetMinSize(fyne.NewSize(0, inputBorder))
-	o.scroll.Content = container.NewBorder(topPad, nil, nil, nil, display)
+	if borderless && !multiLine {
+		o.scroll.Direction = container.ScrollNone
+		o.scroll.Content = display
+	} else {
+		topBorder := float32(0)
+		if !borderless {
+			topBorder = theme.Current().Size(theme.SizeNameInputBorder)
+		}
+		o.scroll.Direction = container.ScrollBoth
+		topPad := canvas.NewRectangle(color.Transparent)
+		topPad.SetMinSize(fyne.NewSize(0, topBorder))
+		o.scroll.Content = container.NewBorder(topPad, nil, nil, nil, display)
+	}
 	o.scroll.Offset = fyne.NewPos(0, 0)
 	o.scroll.Refresh()
 	o.visible = true

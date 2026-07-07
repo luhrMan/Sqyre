@@ -12,6 +12,14 @@ func TestParseVarRefSegments_ui(t *testing.T) {
 	}
 }
 
+func TestBuildVarRefPillContent_usesNestedPills(t *testing.T) {
+	known := map[string]bool{"count": true}
+	content := BuildVarRefPillContent("x=${count}", known)
+	if content.MinSize().Height > PillLineHeight()+2 {
+		t.Fatalf("nested content height %v exceeds pill line %v", content.MinSize().Height, PillLineHeight())
+	}
+}
+
 func TestVarEntry_shouldShowPills(t *testing.T) {
 	e := NewVarEntry(nil)
 	e.SetText("${x}")

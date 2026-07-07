@@ -234,7 +234,7 @@ func resolveCoordinateRefKey(ref actions.CoordinateRef, p *models.Program, getKe
 // One searchbar above filters by program name or item key (fuzzy). Config provides key source, label text, and selection callback.
 // When initialRef is set, the matching program accordion row is opened and the item is selected.
 func buildProgramListAccordionWithSearchbar(cfg programListAccordionConfig, initialRef actions.CoordinateRef) (*widget.Entry, *widget.Accordion) {
-	searchbar := widget.NewEntry()
+	searchbar := custom_widgets.NewFormEntry()
 	searchbar.SetPlaceHolder("Filter programs and entries (fuzzy match)")
 	searchDebounce := custom_widgets.NewDebouncer(custom_widgets.DefaultSearchDebounce)
 	acc := widget.NewAccordion()
@@ -307,7 +307,7 @@ type programListEntry struct {
 // buildProgramFlatListWithSearchbar builds a single scrollable list of items across all programs.
 // Filter matches program name or item key/display name (fuzzy). When initialRef is set, the matching row is selected.
 func buildProgramFlatListWithSearchbar(cfg programListAccordionConfig, initialRef actions.CoordinateRef) (*widget.Entry, *widget.List) {
-	searchbar := widget.NewEntry()
+	searchbar := custom_widgets.NewFormEntry()
 	searchbar.SetPlaceHolder("Filter programs and entries (fuzzy match)")
 	searchDebounce := custom_widgets.NewDebouncer(custom_widgets.DefaultSearchDebounce)
 
@@ -447,7 +447,7 @@ func buildItemsAccordionWithSearchbar(
 	onItemSelected func(programName, baseItemName string),
 	onSelectionChanged func(newTargets []string),
 ) (*widget.Entry, fyne.CanvasObject, func()) {
-	searchbar := widget.NewEntry()
+	searchbar := custom_widgets.NewFormEntry()
 	searchbar.SetPlaceHolder("Filter programs and items (fuzzy match)")
 	searchDebounce := custom_widgets.NewDebouncer(custom_widgets.DefaultSearchDebounce)
 	acc := custom_widgets.NewAccordionWithHeaderWidgets()
@@ -591,17 +591,9 @@ func showCustomActionDialog(action actions.ActionInterface, content fyne.CanvasO
 			return
 		}
 		saveFunc()
-		if p, ok := action.(*actions.Pause); ok {
-			if err := validatePauseAction(p); err != nil {
-				dialog.ShowError(err, active.Window)
-				return
-			}
-		}
-		if k, ok := action.(*actions.Key); ok {
-			if err := validateKeyAction(k); err != nil {
-				dialog.ShowError(err, active.Window)
-				return
-			}
+		if err := validateActionBeforeSave(action); err != nil {
+			showActionDialogError(err)
+			return
 		}
 		if onSave != nil {
 			onSave(action)

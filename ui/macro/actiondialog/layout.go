@@ -12,22 +12,20 @@ import (
 )
 
 const (
-	dialogEdgeGapFraction = float32(0.15)
+	// Smaller edge gap so complex dialogs use more of the parent window.
+	dialogEdgeGapFraction = float32(0.08)
 	dialogMinW            = float32(200)
 	dialogMinH            = float32(200)
 
 	standardFormMinW = float32(560)
 	wideFormMinW     = float32(720)
 
-	scrollAreaMinH     = float32(400)
 	listAreaMinH       = float32(240)
 	splitPanelMinW     = float32(400)
 	wideSplitPanelMinW = float32(520)
-	accordionPanelMinH = float32(400)
 
-	forEachRowSourceEntryMinHeight   = float32(120)
-	forEachRowSourcesScrollMinHeight = float32(320)
-	forEachRowSourceFieldMinW        = float32(520)
+	forEachRowSourceEntryMinHeight = float32(120)
+	forEachRowSourceFieldMinW      = float32(520)
 )
 
 func dialogMaxSize(parent fyne.Size) fyne.Size {
@@ -58,7 +56,7 @@ func enforceDialogMin(size fyne.Size) fyne.Size {
 }
 
 // actionDialogSize picks the popup size for an action dialog on the given parent window.
-// Complex actions fill the parent minus a 15% gap on each edge; simple actions shrink to content.
+// Complex actions fill the parent minus a small edge gap; simple actions shrink to content.
 func actionDialogSize(parent fyne.Size, action actions.ActionInterface, want fyne.Size) fyne.Size {
 	maxSize := dialogMaxSize(parent)
 	if isComplexAction(action) {
@@ -80,6 +78,15 @@ func scrollWithMin(obj fyne.CanvasObject, min fyne.Size) *container.Scroll {
 	return s
 }
 
+// scrollWithMinW sets a minimum width only so the scroll area expands vertically with the dialog.
+func scrollWithMinW(obj fyne.CanvasObject, minW float32) *container.Scroll {
+	s := container.NewScroll(obj)
+	if minW > 0 {
+		s.SetMinSize(fyne.NewSize(minW, 0))
+	}
+	return s
+}
+
 // withMinSize ensures content reports at least min as its MinSize so entries and splits expand.
 func withMinSize(content fyne.CanvasObject, min fyne.Size) fyne.CanvasObject {
 	if min.Width <= 0 && min.Height <= 0 {
@@ -95,21 +102,21 @@ func withMinSize(content fyne.CanvasObject, min fyne.Size) fyne.CanvasObject {
 func minContentSizeFor(action actions.ActionInterface) fyne.Size {
 	switch action.(type) {
 	case *actions.ImageSearch:
-		return fyne.NewSize(960, 720)
+		return fyne.NewSize(1040, 820)
 	case *actions.Move:
-		return fyne.NewSize(640, 480)
+		return fyne.NewSize(640, 560)
 	case *actions.Conditional:
-		return fyne.NewSize(wideFormMinW, 520)
+		return fyne.NewSize(wideFormMinW, 640)
 	case *actions.Ocr:
-		return fyne.NewSize(680, 560)
+		return fyne.NewSize(760, 680)
 	case *actions.ForEachRow:
-		return fyne.NewSize(wideFormMinW, 620)
+		return fyne.NewSize(wideFormMinW, 680)
 	case *actions.FindPixel:
-		return fyne.NewSize(760, 500)
+		return fyne.NewSize(760, 580)
 	case *actions.FocusWindow:
-		return fyne.NewSize(520, 480)
+		return fyne.NewSize(520, 560)
 	case *actions.Calculate:
-		return fyne.NewSize(640, 360)
+		return fyne.NewSize(640, 420)
 	case *actions.Wait:
 		return fyne.NewSize(500, 0)
 	case *actions.Loop, *actions.SetVariable, *actions.SaveVariable:

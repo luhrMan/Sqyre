@@ -26,10 +26,13 @@ func (h *pillOverlayHost) Tapped(*fyne.PointEvent) {
 	if h.entry == nil || h.entry.Disabled() {
 		return
 	}
-	fyne.CurrentApp().Driver().CanvasForObject(h.entry).Focus(h.entry)
+	h.entry.focusOnCanvas()
 }
 
 func (h *pillOverlayHost) TappedSecondary(ev *fyne.PointEvent) {
+	if h.entry == nil {
+		return
+	}
 	h.entry.TappedSecondary(ev)
 }
 

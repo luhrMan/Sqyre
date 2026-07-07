@@ -7,7 +7,6 @@ import (
 	"Sqyre/ui/custom_widgets"
 
 	"fyne.io/fyne/v2/test"
-	"fyne.io/fyne/v2/widget"
 )
 
 func TestShouldSaveActionDialogOnEnter(t *testing.T) {
@@ -41,7 +40,7 @@ func TestShouldSaveActionDialogOnEnter(t *testing.T) {
 		t.Fatal("expected no save when multi-line VarEntry is focused")
 	}
 
-	single := widget.NewEntry()
+	single := custom_widgets.NewFormEntry()
 	c.SetContent(single)
 	c.Focus(single)
 	if !shouldSaveActionDialogOnEnter(w) {

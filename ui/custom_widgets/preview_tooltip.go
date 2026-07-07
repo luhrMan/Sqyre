@@ -44,6 +44,7 @@ type PreviewTooltipHover struct {
 	captureCtx       context.Context
 	absoluteMousePos fyne.Position
 	hovering         bool
+	panelHovering    bool
 }
 
 var _ desktop.Hoverable = (*PreviewTooltipHover)(nil)
@@ -56,7 +57,6 @@ func NewPreviewTooltipHover() *PreviewTooltipHover {
 }
 
 // SetPreviewLoader sets the function that produces the preview when the tooltip opens.
-// Pass nil to disable preview tooltips for this row.
 func (h *PreviewTooltipHover) SetPreviewLoader(load PreviewTooltipLoad) {
 	h.loadPreview = load
 }
@@ -94,6 +94,9 @@ func (h *PreviewTooltipHover) MouseIn(e *desktop.MouseEvent) {
 
 func (h *PreviewTooltipHover) MouseOut() {
 	h.hovering = false
+	if h.tooltipPanel != nil && h.panelHovering {
+		return
+	}
 	h.cancelPending()
 	h.cancelCapture()
 	h.hideTooltip()
@@ -123,6 +126,8 @@ func (h *PreviewTooltipHover) hideTooltip() {
 	if h.tooltipPanel == nil {
 		return
 	}
+	DeactivateTooltipEscapeDismiss()
+	h.panelHovering = false
 	c := fyne.CurrentApp().Driver().CanvasForObject(h)
 	if c == nil {
 		h.tooltipPanel = nil
@@ -150,7 +155,7 @@ func (h *PreviewTooltipHover) beginCapture() {
 	if layer == nil {
 		return
 	}
-	panel := newPreviewTooltipPanel()
+	panel := newPreviewTooltipPanel(h)
 	origin := itemTooltipLayerOrigin(layer, c.Overlays().Top())
 	size, relPos := previewTooltipSizeAndPosition(panel, c, h.absoluteMousePos.Subtract(origin))
 	panel.Resize(size)
@@ -159,6 +164,7 @@ func (h *PreviewTooltipHover) beginCapture() {
 	layer.Container.Objects = []fyne.CanvasObject{panel}
 	layer.Container.Refresh()
 	h.tooltipPanel = panel
+	ActivateTooltipEscapeDismiss(func() { h.hideTooltip() })
 
 	ctx, cancel := context.WithCancel(context.Background())
 	h.captureCtx = ctx
@@ -196,6 +202,8 @@ func (h *PreviewTooltipHover) beginCapture() {
 type previewTooltipPanel struct {
 	fynewidget.BaseWidget
 
+	owner *PreviewTooltipHover
+
 	img       *canvas.Image
 	message   *fynewidget.Label
 	caption   *fynewidget.Label
@@ -203,11 +211,33 @@ type previewTooltipPanel struct {
 	showImage bool
 }
 
-func newPreviewTooltipPanel() *previewTooltipPanel {
-	p := &previewTooltipPanel{}
+func newPreviewTooltipPanel(owner *PreviewTooltipHover) *previewTooltipPanel {
+	p := &previewTooltipPanel{owner: owner}
 	p.ExtendBaseWidget(p)
 	return p
 }
+
+func (p *previewTooltipPanel) MouseIn(*desktop.MouseEvent) {
+	if p.owner != nil {
+		p.owner.panelHovering = true
+	}
+}
+
+func (p *previewTooltipPanel) MouseOut() {
+	if p.owner == nil {
+		return
+	}
+	p.owner.panelHovering = false
+	if !p.owner.hovering {
+		p.owner.cancelPending()
+		p.owner.cancelCapture()
+		p.owner.hideTooltip()
+	}
+}
+
+func (p *previewTooltipPanel) MouseMoved(*desktop.MouseEvent) {}
+
+var _ desktop.Hoverable = (*previewTooltipPanel)(nil)
 
 func (p *previewTooltipPanel) previewSize() fyne.Size {
 	return fyne.NewSize(config.ImagePreviewMinWidth, config.ImagePreviewMinHeight)
