@@ -32,6 +32,14 @@ type VarEntry struct {
 	// FocusChangedFn is called when the entry gains or loses focus.
 	FocusChangedFn func(focused bool)
 
+	// CanvasHost is the widget used for popup positioning and canvas lookup.
+	// Set this when VarEntry is embedded in another widget (e.g. BorderlessEntry).
+	CanvasHost fyne.CanvasObject
+
+	// pillOverlayBorderless renders the unfocused pill overlay without input chrome
+	// (transparent background, caption-sized text). Used by BorderlessEntry in tooltips.
+	pillOverlayBorderless bool
+
 	completer        *completionentry.PopupCompleter
 	feedbackIcon     *ttwidget.Icon
 	hasFocus         bool
@@ -48,6 +56,7 @@ type VarEntry struct {
 // NewVarEntry creates a single-line entry with variable insertion support.
 func NewVarEntry(getVars func() []string) *VarEntry {
 	e := &VarEntry{GetVariables: getVars}
+	ConfigureSingleLineEntry(&e.Entry)
 	e.ExtendBaseWidget(e)
 	e.initCompletion()
 	return e
@@ -56,6 +65,7 @@ func NewVarEntry(getVars func() []string) *VarEntry {
 // NewVarEntryWithDefs creates a VarEntry backed by variable definitions.
 func NewVarEntryWithDefs(getDefs func() []models.VariableDef) *VarEntry {
 	e := &VarEntry{GetVariableDefs: getDefs}
+	ConfigureSingleLineEntry(&e.Entry)
 	e.ExtendBaseWidget(e)
 	e.initCompletion()
 	return e
@@ -83,11 +93,31 @@ func NewMultiLineVarEntryWithDefs(getDefs func() []models.VariableDef) *VarEntry
 
 func (e *VarEntry) initCompletion() {
 	e.completer = &completionentry.PopupCompleter{
-		Host:       e,
+		Host:       e.canvasObject(),
 		Entry:      &e.Entry,
 		OnSelected: e.completeVarRef,
 	}
 	e.OnChanged = e.handleChanged
+}
+
+func (e *VarEntry) canvasObject() fyne.CanvasObject {
+	if e.CanvasHost != nil {
+		return e.CanvasHost
+	}
+	return e
+}
+
+func (e *VarEntry) focusOnCanvas() {
+	host := e.canvasObject()
+	c := fyne.CurrentApp().Driver().CanvasForObject(host)
+	if c == nil {
+		return
+	}
+	if focus, ok := host.(fyne.Focusable); ok {
+		c.Focus(focus)
+		return
+	}
+	c.Focus(e)
 }
 
 func (e *VarEntry) InvalidateVariableCache() {
@@ -149,7 +179,7 @@ func (e *VarEntry) openVariablePicker() {
 	if len(defs) == 0 {
 		return
 	}
-	ShowVariablePicker(e, defs, e.insertVariable)
+	ShowVariablePicker(e.canvasObject(), defs, e.insertVariable)
 }
 
 func (e *VarEntry) CreateRenderer() fyne.WidgetRenderer {
@@ -393,10 +423,14 @@ func (e *VarEntry) TappedSecondary(pe *fyne.PointEvent) {
 		}))
 	}
 
+	host := e.canvasObject()
 	driver := fyne.CurrentApp().Driver()
-	entryPos := driver.AbsolutePositionForObject(e)
+	entryPos := driver.AbsolutePositionForObject(host)
 	popUpPos := entryPos.Add(pe.Position)
-	c := driver.CanvasForObject(e)
+	c := driver.CanvasForObject(host)
+	if c == nil {
+		return
+	}
 	widget.ShowPopUpMenuAtPosition(fyne.NewMenu("", menuItems...), c, popUpPos)
 }
 

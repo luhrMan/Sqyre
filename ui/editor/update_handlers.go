@@ -5,11 +5,12 @@ import (
 	"Sqyre/internal/models"
 	"Sqyre/internal/models/repositories"
 	"Sqyre/internal/services"
+	"Sqyre/internal/validation"
 	"Sqyre/ui/completionentry"
 	"Sqyre/ui/custom_widgets"
+	"fmt"
 	"os"
 	"slices"
-	"strconv"
 	"strings"
 
 	"fyne.io/fyne/v2/widget"
@@ -54,7 +55,14 @@ func setEditorUpdateHandlers() {
 func setProgramUpdateHandler() {
 	tab := shell().EditorTabs.ProgramsTab
 	tab.UpdateButton.OnTapped = func() {
+		if !allTabFieldsValid(tab) {
+			return
+		}
 		n := tab.Widgets["Name"].(*widget.Entry).Text
+		if err := validateEntityNameForSave(n); err != nil {
+			editorErr(err)
+			return
+		}
 		si, ok := tab.SelectedItem.(*models.Program)
 		if !ok {
 			return
@@ -86,11 +94,34 @@ func setProgramUpdateHandler() {
 func setItemUpdateHandler() {
 	tab := shell().EditorTabs.ItemsTab
 	tab.UpdateButton.OnTapped = func() {
+		if !allTabFieldsValid(tab) {
+			return
+		}
 		w := tab.Widgets
 		n := w["Name"].(*widget.Entry).Text
-		x, _ := strconv.Atoi(w["Cols"].(*widget.Entry).Text)
-		y, _ := strconv.Atoi(w["Rows"].(*widget.Entry).Text)
-		sm, _ := strconv.Atoi(w["StackMax"].(*widget.Entry).Text)
+		if err := validateEntityNameForSave(n); err != nil {
+			editorErr(err)
+			return
+		}
+		if err := validateItemGridForSave(w); err != nil {
+			editorErr(err)
+			return
+		}
+		x, err := validation.ParsePositiveInt(custom_widgets.EntryText(w["Cols"]))
+		if err != nil {
+			editorErr(fmt.Errorf("cols: %w", err))
+			return
+		}
+		y, err := validation.ParsePositiveInt(custom_widgets.EntryText(w["Rows"]))
+		if err != nil {
+			editorErr(fmt.Errorf("rows: %w", err))
+			return
+		}
+		sm, err := validation.ParseNonNegativeInt(custom_widgets.EntryText(w["StackMax"]))
+		if err != nil {
+			editorErr(fmt.Errorf("stack max: %w", err))
+			return
+		}
 		v, ok := tab.SelectedItem.(*models.Item)
 		if !ok {
 			return
@@ -153,6 +184,10 @@ func setPointUpdateHandler() {
 			return
 		}
 		p := pointFromWidgets(tab.Widgets)
+		if err := validateEntityNameForSave(p.Name); err != nil {
+			editorErr(err)
+			return
+		}
 		v, ok := tab.SelectedItem.(*models.Point)
 		if !ok {
 			return
@@ -196,6 +231,10 @@ func setSearchAreaUpdateHandler() {
 			return
 		}
 		sa := searchAreaFromWidgets(tab.Widgets)
+		if err := validateSearchAreaForSave(tab.Widgets); err != nil {
+			editorErr(err)
+			return
+		}
 		v, ok := tab.SelectedItem.(*models.SearchArea)
 		if !ok {
 			return
@@ -241,6 +280,10 @@ func setMaskUpdateHandler() {
 			return
 		}
 		m := maskFromWidgets(tab.Widgets)
+		if err := validateEntityNameForSave(m.Name); err != nil {
+			editorErr(err)
+			return
+		}
 		v, ok := tab.SelectedItem.(*models.Mask)
 		if !ok {
 			return

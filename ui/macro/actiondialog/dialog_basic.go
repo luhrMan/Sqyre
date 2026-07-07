@@ -114,7 +114,7 @@ func createMoveDialogContent(action *actions.Move) (fyne.CanvasObject, func()) {
 
 	smoothSettings := widget.NewForm(smoothForm.formItems()...)
 
-	pointsScroll := scrollWithMin(pointsList, fyne.NewSize(splitPanelMinW, accordionPanelMinH))
+	pointsScroll := scrollWithMinW(pointsList, splitPanelMinW)
 
 	content := container.NewBorder(
 		container.NewVBox(
@@ -197,6 +197,7 @@ func createKeyDialogContent(action *actions.Key) (fyne.CanvasObject, func()) {
 			if keyLabel.Text == "" {
 				keyLabel.SetText("(not set)")
 			}
+			notifyDialogValidationChanged()
 		})
 	})
 
@@ -206,6 +207,10 @@ func createKeyDialogContent(action *actions.Key) (fyne.CanvasObject, func()) {
 	upKLbl.SetToolTip("Release the key (key-up).")
 	downKLbl := ttwidget.NewLabel("down")
 	downKLbl.SetToolTip("Press the key (key-down).")
+
+	trackDialogValidityCheck(func() bool {
+		return strings.TrimSpace(action.Key) != ""
+	})
 
 	content := container.NewVBox(
 		widget.NewForm(
@@ -228,19 +233,12 @@ func createKeyDialogContent(action *actions.Key) (fyne.CanvasObject, func()) {
 	return content, saveFunc
 }
 
-func validateKeyAction(action *actions.Key) error {
-	if strings.TrimSpace(action.Key) == "" {
-		return fmt.Errorf("key: record a key before saving")
-	}
-	return nil
-}
-
 func createTypeDialogContent(action *actions.Type) (fyne.CanvasObject, func()) {
 	textEntry := newReferenceVarEntry()
 	textEntry.Entry.SetText(action.Text)
 	textEntry.Entry.SetPlaceHolder("Text to type (supports ${variable})")
 
-	delayEntry := widget.NewEntry()
+	delayEntry := custom_widgets.NewFormEntry()
 	delayEntry.SetText(fmt.Sprintf("%d", action.DelayMs))
 	delayEntry.SetPlaceHolder("Delay between key presses (ms)")
 
@@ -260,7 +258,7 @@ func createTypeDialogContent(action *actions.Type) (fyne.CanvasObject, func()) {
 }
 
 func createConditionalDialogContent(action *actions.Conditional) (fyne.CanvasObject, func()) {
-	nameEntry := widget.NewEntry()
+	nameEntry := custom_widgets.NewFormEntry()
 	nameEntry.SetText(action.Name)
 
 	matchSelect := widget.NewSelect(actions.ConditionalMatchModes, nil)
@@ -313,17 +311,19 @@ func createConditionalDialogContent(action *actions.Conditional) (fyne.CanvasObj
 	})
 
 	clausesScroll := container.NewVScroll(rowsBox)
-	clausesScroll.SetMinSize(fyne.NewSize(wideFormMinW-160, scrollAreaMinH))
+	clausesScroll.SetMinSize(fyne.NewSize(wideFormMinW-160, 0))
 
-	content := widget.NewForm(
+	headerForm := widget.NewForm(
 		formHint("Name:", nameEntry, "Label for this conditional in the tree. Used for readability and logging."),
 		formHint("Match:", matchSelect, "How to combine clauses: all (AND) requires every clause to be true; any (OR) requires at least one."),
 	)
-	content.Append("Clauses", container.NewBorder(
-		addBtn,
+	clausesLabel := widget.NewLabelWithStyle("Clauses", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	clausesPanel := container.NewBorder(
+		container.NewVBox(clausesLabel, addBtn),
 		nil, nil, nil,
 		clausesScroll,
-	))
+	)
+	content := container.NewBorder(headerForm, nil, nil, nil, clausesPanel)
 
 	saveFunc := func() {
 		action.Name = nameEntry.Text
@@ -416,7 +416,7 @@ func parseOperand(text string) any {
 }
 
 func createLoopDialogContent(action *actions.Loop) (fyne.CanvasObject, func()) {
-	nameEntry := widget.NewEntry()
+	nameEntry := custom_widgets.NewFormEntry()
 	nameEntry.SetText(action.Name)
 	countEntry := newValidatedVarEntry(validateNumericExpression)
 	countEntry.Entry.SetPlaceHolder("e.g. 5 or ${countVar}")

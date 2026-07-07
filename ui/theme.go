@@ -67,6 +67,8 @@ func (t *sqyreTheme) Size(name fyne.ThemeSizeName) float32 {
 		fontSize = config.DefaultUIFontSize
 	}
 
+	fontRatio := fontSize / config.DefaultUIFontSize
+
 	switch name {
 	case theme.SizeNameText:
 		return fontSize
@@ -76,6 +78,10 @@ func (t *sqyreTheme) Size(name fyne.ThemeSizeName) float32 {
 		return fontSize * 24 / config.DefaultUIFontSize
 	case theme.SizeNameSubHeadingText:
 		return fontSize * 18 / config.DefaultUIFontSize
+	case theme.SizeNameInnerPadding, theme.SizeNameLineSpacing:
+		// Entry fields size their chrome from inner padding; scale it with font
+		// size so large text settings do not leave a clipped scroll viewport.
+		return base * scale * fontRatio
 	default:
 		return base * scale
 	}

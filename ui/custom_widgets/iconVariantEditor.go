@@ -192,7 +192,7 @@ func (e *IconVariantEditor) showAddVariantDialog() {
 
 // showVariantNameDialog prompts the user to enter a variant name
 func (e *IconVariantEditor) showVariantNameDialog(sourcePath string) {
-	variantNameEntry := widget.NewEntry()
+	variantNameEntry := NewFormEntry()
 
 	// Set different placeholder based on whether this is the first variant
 	if len(e.variants) == 0 {

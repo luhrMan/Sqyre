@@ -377,3 +377,23 @@ func TestTreeRowBody_doubleClickSkippedWhileExecuting(t *testing.T) {
 		t.Fatal("double tap should not open dialog while executing")
 	}
 }
+
+func TestActionDisplayTooltipHover_primaryTapSelectsRow(t *testing.T) {
+	wait := actions.NewWait(100)
+	root := actions.NewLoop(1, "root", nil)
+	root.AddSubAction(wait)
+	mt := &MacroTree{Macro: &models.Macro{Root: root}}
+
+	scroll := container.NewHScroll(widget.NewLabel("wait"))
+	rowBody := newTreeRowBody(scroll)
+	rowBody.tree = mt
+	rowBody.uid = wait.GetUID()
+
+	hover := actionDisplay(wait, actionDisplayHandlers{}).(*actionDisplayTooltipHover)
+	hover.bindRowBody(rowBody)
+
+	hover.Tapped(nil)
+	if mt.SelectedNode != wait.GetUID() {
+		t.Fatalf("primary tap on pills selected %q, want %q", mt.SelectedNode, wait.GetUID())
+	}
+}

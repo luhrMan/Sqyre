@@ -69,7 +69,7 @@ func (r *varEntryRendererWrap) Refresh() {
 	r.inner.Refresh()
 	show := r.entry.hideTextForPills
 	r.setTextContentVisible(!show)
-	r.overlay.sync(r.entry.Text, r.entry.MultiLine, r.entry.TextStyle, show, r.entry.knownVariables())
+	r.overlay.sync(r.entry.Text, r.entry.MultiLine, r.entry.TextStyle, show, r.entry.knownVariables(), r.entry.pillOverlayBorderless)
 	r.layoutOverlay()
 }
 

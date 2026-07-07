@@ -56,3 +56,8 @@ func knownVariableSet(defs []models.VariableDef) map[string]bool {
 	}
 	return known
 }
+
+// KnownVariableSet returns a lookup map for variable names from definitions.
+func KnownVariableSet(defs []models.VariableDef) map[string]bool {
+	return knownVariableSet(defs)
+}

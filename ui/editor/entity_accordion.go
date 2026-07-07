@@ -12,14 +12,14 @@ import (
 )
 
 type entityAccordionConfig struct {
-	tab              *EditorTab
-	filterText       *string
-	getKeys          func(*models.Program) []string
-	sortKeys         func(*models.Program, []string)
-	getEntity        func(*models.Program, string) (string, error)
-	getPreviewImage  func(*models.Program, string) (custom_widgets.PreviewTooltipResult, error)
-	onSelected       func(*models.Program, string)
-	extraOnSelected  func() // optional hook after onSelected (e.g. macro sync)
+	tab             *EditorTab
+	filterText      *string
+	getKeys         func(*models.Program) []string
+	sortKeys        func(*models.Program, []string)
+	getEntity       func(*models.Program, string) (string, error)
+	getPreviewImage func(*models.Program, string) (custom_widgets.PreviewTooltipResult, error)
+	onSelected      func(*models.Program, string)
+	extraOnSelected func() // optional hook after onSelected (e.g. macro sync)
 }
 
 func populateProgramEntityAccordion(acc *widget.Accordion, cfg entityAccordionConfig) {
