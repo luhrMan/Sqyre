@@ -110,9 +110,9 @@ func NewConditional(clauses []ConditionClause, match string, name string, subAct
 }
 
 func (a *Conditional) conditionSummary() string {
-	sep := " AND "
+	sep := " & "
 	if a.EffectiveMatch() == MatchAny {
-		sep = " OR "
+		sep = " | "
 	}
 	parts := make([]string, len(a.Clauses))
 	for i, c := range a.Clauses {

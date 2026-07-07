@@ -26,13 +26,13 @@ import (
 )
 
 func createImageSearchDialogContent(action *actions.ImageSearch) (fyne.CanvasObject, func()) {
-	nameEntry := widget.NewEntry()
+	nameEntry := custom_widgets.NewFormEntry()
 	nameEntry.SetPlaceHolder("Display name for this action")
 	nameEntry.SetText(action.Name)
-	rowSplitEntry := widget.NewEntry()
+	rowSplitEntry := custom_widgets.NewFormEntry()
 	rowSplitEntry.SetPlaceHolder("e.g. 1")
 	rowSplitEntry.SetText(fmt.Sprintf("%d", action.RowSplit))
-	colSplitEntry := widget.NewEntry()
+	colSplitEntry := custom_widgets.NewFormEntry()
 	colSplitEntry.SetPlaceHolder("e.g. 1")
 	colSplitEntry.SetText(fmt.Sprintf("%d", action.ColSplit))
 	toleranceMin, toleranceMax := 0.0, 1.0
@@ -168,28 +168,25 @@ func createImageSearchDialogContent(action *actions.ImageSearch) (fyne.CanvasObj
 	)
 
 	rightPanel := container.NewBorder(
+		nil, previewBox,
 		nil, nil,
-		nil, nil,
-		container.NewVSplit(
-			scrollWithMin(
-				container.NewVBox(
-					widget.NewForm(
-						formHint("Name:", nameEntry, "Display name for this action in the macro tree."),
-						formHint("Row Split:", rowSplitEntry, "Persisted with the action for compatibility; the current matcher does not use this field."),
-						formHint("Col Split:", colSplitEntry, "Persisted with the action for compatibility; the current matcher does not use this field."),
-						formHint("Tolerance:", toleranceIncrementer, "Template match confidence threshold (0–1). Higher = stricter match; lower finds more candidates but may add false positives."),
-						formHint("Blur:", container.NewVBox(blurIncrementer, layout.NewSpacer()), "Gaussian blur kernel size applied before matching. Odd values; larger smooths noise but reduces sharp detail."),
-						formHint("Output X Variable:", outputXVarEntry, "Macro variable to store the matched X coordinate (screen pixels). Sub-actions can use ${StackMax}, ${Cols}, ${Rows}, ${ItemName}, ${ImagePixelWidth}, ${ImagePixelHeight} from the matched item."),
-						formHint("Output Y Variable:", outputYVarEntry, "Macro variable to store the matched Y coordinate (screen pixels)."),
-						formHint("", runBranchOnNoFindCheck, ""),
-						formHint("", waitTil.Check, ""),
-						formHint("Timeout (seconds):", waitTil.SecondsIncrementer, "With wait-until-found: maximum time to keep retrying before giving up."),
-						formHint("Search interval (ms):", waitTil.IntervalIncrementer, "Delay between attempts when wait-until-found is enabled (minimum 100 ms in this dialog)."),
-					),
+		scrollWithMinW(
+			container.NewVBox(
+				widget.NewForm(
+					formHint("Name:", nameEntry, "Display name for this action in the macro tree."),
+					formHint("Row Split:", rowSplitEntry, "Persisted with the action for compatibility; the current matcher does not use this field."),
+					formHint("Col Split:", colSplitEntry, "Persisted with the action for compatibility; the current matcher does not use this field."),
+					formHint("Tolerance:", toleranceIncrementer, "Template match confidence threshold (0–1). Higher = stricter match; lower finds more candidates but may add false positives."),
+					formHint("Blur:", container.NewVBox(blurIncrementer, layout.NewSpacer()), "Gaussian blur kernel size applied before matching. Odd values; larger smooths noise but reduces sharp detail."),
+					formHint("Output X Variable:", outputXVarEntry, "Macro variable to store the matched X coordinate (screen pixels). Sub-actions can use ${StackMax}, ${Cols}, ${Rows}, ${ItemName}, ${ImagePixelWidth}, ${ImagePixelHeight} from the matched item."),
+					formHint("Output Y Variable:", outputYVarEntry, "Macro variable to store the matched Y coordinate (screen pixels)."),
+					formHint("", runBranchOnNoFindCheck, ""),
+					formHint("", waitTil.Check, ""),
+					formHint("Timeout (seconds):", waitTil.SecondsIncrementer, "With wait-until-found: maximum time to keep retrying before giving up."),
+					formHint("Search interval (ms):", waitTil.IntervalIncrementer, "Delay between attempts when wait-until-found is enabled (minimum 100 ms in this dialog)."),
 				),
-				fyne.NewSize(wideSplitPanelMinW, accordionPanelMinH),
 			),
-			previewBox,
+			wideSplitPanelMinW,
 		),
 	)
 
@@ -210,7 +207,7 @@ func createImageSearchDialogContent(action *actions.ImageSearch) (fyne.CanvasObj
 	leftAccordion.Open(0)
 
 	content := container.NewHSplit(
-		scrollWithMin(leftAccordion, fyne.NewSize(wideSplitPanelMinW, accordionPanelMinH)),
+		scrollWithMinW(leftAccordion, wideSplitPanelMinW),
 		rightPanel,
 	)
 
@@ -238,7 +235,7 @@ func createImageSearchDialogContent(action *actions.ImageSearch) (fyne.CanvasObj
 }
 
 func createOcrDialogContent(action *actions.Ocr) (fyne.CanvasObject, func()) {
-	nameEntry := widget.NewEntry()
+	nameEntry := custom_widgets.NewFormEntry()
 	nameEntry.SetPlaceHolder("Display name for this action")
 	nameEntry.SetText(action.Name)
 	targetEntry := newReferenceVarEntry()
@@ -319,8 +316,8 @@ func createOcrDialogContent(action *actions.Ocr) (fyne.CanvasObject, func()) {
 	)
 
 	content := container.NewHSplit(
-		scrollWithMin(ocrLeftAccordion, fyne.NewSize(splitPanelMinW, scrollAreaMinH)),
-		scrollWithMin(form, fyne.NewSize(wideSplitPanelMinW, scrollAreaMinH)),
+		scrollWithMinW(ocrLeftAccordion, splitPanelMinW),
+		scrollWithMinW(form, wideSplitPanelMinW),
 	)
 
 	saveFunc := func() {
@@ -343,7 +340,7 @@ func createOcrDialogContent(action *actions.Ocr) (fyne.CanvasObject, func()) {
 }
 
 func createFindPixelDialogContent(action *actions.FindPixel) (fyne.CanvasObject, func()) {
-	nameEntry := widget.NewEntry()
+	nameEntry := custom_widgets.NewFormEntry()
 	nameEntry.SetText(action.Name)
 	nameEntry.SetPlaceHolder("Optional name for this action")
 
@@ -354,7 +351,7 @@ func createFindPixelDialogContent(action *actions.FindPixel) (fyne.CanvasObject,
 		tempSearchArea = ref
 	}, tempSearchArea)
 
-	colorEntry := widget.NewEntry()
+	colorEntry := custom_widgets.NewFormEntry()
 	colorEntry.SetText(action.TargetColor)
 	colorEntry.SetPlaceHolder("Hex e.g. ffffff or #ffffff")
 
@@ -405,7 +402,7 @@ func createFindPixelDialogContent(action *actions.FindPixel) (fyne.CanvasObject,
 		colorEntry,
 	)
 
-	toleranceEntry := widget.NewEntry()
+	toleranceEntry := custom_widgets.NewFormEntry()
 	toleranceEntry.SetText(fmt.Sprintf("%d", action.ColorTolerance))
 	toleranceEntry.SetPlaceHolder("0 = exact match")
 	toleranceSlider := ttwidget.NewSlider(0, 100)
@@ -457,7 +454,7 @@ func createFindPixelDialogContent(action *actions.FindPixel) (fyne.CanvasObject,
 	)
 
 	content := container.NewHSplit(
-		scrollWithMin(leftAccordion, fyne.NewSize(splitPanelMinW, scrollAreaMinH)),
+		scrollWithMinW(leftAccordion, splitPanelMinW),
 		form,
 	)
 
@@ -483,11 +480,11 @@ func createFindPixelDialogContent(action *actions.FindPixel) (fyne.CanvasObject,
 }
 
 func createFocusWindowDialogContent(action *actions.FocusWindow) (fyne.CanvasObject, func()) {
-	titleEntry := widget.NewEntry()
+	titleEntry := custom_widgets.NewFormEntry()
 	titleEntry.SetText(action.WindowTitle)
 	titleEntry.SetPlaceHolder("Window title (e.g. project - Cursor)")
 
-	pathEntry := widget.NewEntry()
+	pathEntry := custom_widgets.NewFormEntry()
 	pathEntry.SetText(action.ProcessPath)
 	pathEntry.SetPlaceHolder("Executable path (e.g. /usr/bin/firefox)")
 
@@ -564,7 +561,7 @@ func createFocusWindowDialogContent(action *actions.FocusWindow) (fyne.CanvasObj
 	listHdr := ttwidget.NewLabel("Open windows (title + executable path):")
 	listHdr.SetToolTip("Pick a row to fill both fields. Executable path and title together identify a window across restarts.")
 
-	windowListScroll := scrollWithMin(windowList, fyne.NewSize(wideFormMinW-160, listAreaMinH))
+	windowListScroll := scrollWithMinW(windowList, wideFormMinW-160)
 
 	listCard := container.NewBorder(
 		listHdr,

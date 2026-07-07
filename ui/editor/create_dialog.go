@@ -3,10 +3,10 @@ package editor
 import (
 	"Sqyre/internal/config"
 	"Sqyre/internal/models/repositories"
+	"Sqyre/internal/validation"
 	"Sqyre/ui/custom_widgets"
 	"errors"
 	"fmt"
-	"strconv"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -26,10 +26,7 @@ type createDialogConfig struct {
 }
 
 func validateCreateName(name string) error {
-	if name == "" {
-		return errors.New("name cannot be empty")
-	}
-	return nil
+	return validation.ValidateEntityName(name)
 }
 
 func validateCreateProgramName(programName string) error {
@@ -155,9 +152,18 @@ func itemCreateConfig() createDialogConfig {
 			}); err != nil {
 				return err
 			}
-			x, _ := strconv.Atoi(w["Cols"].(*widget.Entry).Text)
-			y, _ := strconv.Atoi(w["Rows"].(*widget.Entry).Text)
-			sm, _ := strconv.Atoi(w["StackMax"].(*widget.Entry).Text)
+			x, err := validation.ParsePositiveInt(w["Cols"].(*widget.Entry).Text)
+			if err != nil {
+				return fmt.Errorf("cols: %w", err)
+			}
+			y, err := validation.ParsePositiveInt(w["Rows"].(*widget.Entry).Text)
+			if err != nil {
+				return fmt.Errorf("rows: %w", err)
+			}
+			sm, err := validation.ParseNonNegativeInt(w["StackMax"].(*widget.Entry).Text)
+			if err != nil {
+				return fmt.Errorf("stack max: %w", err)
+			}
 			i := ProgramItemRepo(pro).New()
 			i.Name = n
 			i.GridSize = [2]int{x, y}
@@ -296,6 +302,9 @@ func searchAreaCreateConfig() createDialogConfig {
 			if err := ensureNameAvailable(sa.Name, "search area", func(name string) (any, error) {
 				return ProgramSearchAreaRepo(pro, config.MainMonitorSizeString).Get(name)
 			}); err != nil {
+				return err
+			}
+			if err := validation.ValidateSearchAreaSave(sa); err != nil {
 				return err
 			}
 			newSA := ProgramSearchAreaRepo(pro, config.MainMonitorSizeString).New()

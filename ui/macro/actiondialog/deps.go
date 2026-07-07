@@ -2,8 +2,11 @@ package actiondialog
 
 import (
 	"Sqyre/internal/models"
+	"Sqyre/internal/models/actions"
 	"Sqyre/internal/services"
+	"Sqyre/internal/validation"
 	"Sqyre/ui/custom_widgets"
+	"Sqyre/ui/fieldvalidation"
 	"Sqyre/ui/macrocxt"
 	"time"
 
@@ -20,23 +23,32 @@ type Deps struct {
 	SetActionDialog            func(dialog.Dialog)
 	ClearActionDialogIfCurrent func(d dialog.Dialog)
 
-	MacroContext       macrocxt.Provider
-	MacroVariables     func() []string
-	MacroVariableDefs  func() []models.VariableDef
-	CurrentMacroName   func() string
+	MacroContext      macrocxt.Provider
+	MacroVariables    func() []string
+	MacroVariableDefs func() []models.VariableDef
+	CurrentMacroName  func() string
 
 	PreviewExpression func(expr string) (string, error)
 
 	AddDialogEscapeClose     func(d dialog.Dialog, parent fyne.Window)
 	AddActionDialogEnterSave func(d dialog.Dialog, parent fyne.Window, onSave func())
-	ShowRecordingOverlay func(onClosed func(), onMouseDown func(*desktop.MouseEvent)) func()
-	ShowHotkeyRecordDialog func(parent fyne.Window, stableDuration time.Duration, onRecorded func(keys []string))
-	ShowKeyRecordDialog    func(parent fyne.Window, onRecorded func(key string))
+	ShowErrorWithEscape        func(err error, parent fyne.Window)
+	ShowRecordingOverlay       func(onClosed func(), onMouseDown func(*desktop.MouseEvent)) func()
+	ShowHotkeyRecordDialog     func(parent fyne.Window, stableDuration time.Duration, onRecorded func(keys []string))
+	ShowKeyRecordDialog        func(parent fyne.Window, onRecorded func(key string))
 }
 
 var active Deps
 
-func SetDeps(d Deps) { active = d }
+var macroValidators fieldvalidation.MacroContext
+
+func SetDeps(d Deps) {
+	active = d
+	macroValidators = fieldvalidation.MacroContext{
+		CurrentMacro: currentMacro,
+		VariableDefs: macroVariableDefs,
+	}
+}
 
 func macroVarNames() []string {
 	return macrocxt.VariableNames(active.MacroContext, active.MacroVariables)
@@ -68,38 +80,50 @@ func currentMacro() *models.Macro {
 }
 
 func validateNumericExpression(text string) services.EntryValidation {
-	return services.ValidateNumericExpression(text, currentMacro())
+	return macroValidators.ValidateNumericExpression(text)
 }
 
 func validateCalculateExpression(text string) services.EntryValidation {
-	return services.ValidateCalculateExpression(text, currentMacro())
+	return macroValidators.ValidateCalculateExpression(text)
 }
 
 func validateSetVariableValue(text string) services.EntryValidation {
-	return services.ValidateSetVariableValue(text, currentMacro())
+	return macroValidators.ValidateSetVariableValue(text)
 }
 
 func validateVariableReferences(text string) services.EntryValidation {
-	return services.ValidateVariableReferences(text, currentMacro())
+	return macroValidators.ValidateVariableReferences(text)
 }
 
 func resolveVariablePreview(text string) string {
-	resolved, err := services.ResolveVariables(text, currentMacro())
-	if err != nil || resolved == text {
-		return ""
-	}
-	return "→ " + resolved
+	return macroValidators.ResolveVariablePreview(text)
 }
 
-var dialogValidatedFields []*custom_widgets.VarEntryField
+var (
+	dialogValidatedFields  []*custom_widgets.VarEntryField
+	dialogValidityChecks   []func() bool
+	dialogValidationNotify func()
+)
 
 func resetDialogValidation() {
 	dialogValidatedFields = nil
+	dialogValidityChecks = nil
+	dialogValidationNotify = nil
 }
 
 func trackValidatedField(field *custom_widgets.VarEntryField) *custom_widgets.VarEntryField {
 	dialogValidatedFields = append(dialogValidatedFields, field)
 	return field
+}
+
+func trackDialogValidityCheck(fn func() bool) {
+	dialogValidityChecks = append(dialogValidityChecks, fn)
+}
+
+func notifyDialogValidationChanged() {
+	if dialogValidationNotify != nil {
+		dialogValidationNotify()
+	}
 }
 
 func newValidatedVarEntry(validate func(text string) services.EntryValidation) *custom_widgets.VarEntryField {
@@ -128,11 +152,32 @@ func allDialogFieldsValid() bool {
 			return false
 		}
 	}
+	for _, check := range dialogValidityChecks {
+		if !check() {
+			return false
+		}
+	}
 	return true
 }
 
 func wireDialogValidation(onChange func()) {
+	dialogValidationNotify = onChange
 	for _, f := range dialogValidatedFields {
 		f.SetOnValidationChanged(onChange)
 	}
+}
+
+func showActionDialogError(err error) {
+	if err == nil {
+		return
+	}
+	if active.ShowErrorWithEscape != nil && active.Window != nil {
+		active.ShowErrorWithEscape(err, active.Window)
+		return
+	}
+	dialog.ShowError(err, active.Window)
+}
+
+func validateActionBeforeSave(action actions.ActionInterface) error {
+	return validation.ValidateAction(action, currentMacro())
 }

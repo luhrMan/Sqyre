@@ -110,8 +110,13 @@ func (p *PopupCompleter) Visible() bool {
 
 func (p *PopupCompleter) popupGeometry() popupGeometry {
 	count := 0
+	var labels []string
 	if p.navigableList != nil {
 		count = len(p.navigableList.items)
+		labels = p.navigableList.items
+		if len(p.navigableList.labels) > 0 {
+			labels = p.navigableList.labels
+		}
 	}
 	measureItemHeight := func() float32 {
 		if p.navigableList == nil {
@@ -120,5 +125,5 @@ func (p *PopupCompleter) popupGeometry() popupGeometry {
 		p.itemHeight = p.navigableList.CreateItem().MinSize().Height
 		return p.itemHeight
 	}
-	return popupGeometryFor(p.Host, count, p.itemHeight, measureItemHeight)
+	return popupGeometryFor(p.Host, count, p.itemHeight, measureItemHeight, labels)
 }
