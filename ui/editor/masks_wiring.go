@@ -79,14 +79,14 @@ func masksAccordionConfig() entityAccordionConfig {
 	}
 }
 
-func setAccordionMasksLists(acc *widget.Accordion) {
+func setAccordionMasksLists(acc *custom_widgets.AccordionWithHeaderWidgets) {
 	populateProgramEntityAccordion(acc, masksAccordionConfig())
 }
 
 // refreshMasksAccordionForProgram rebuilds only the given program's row in the
 // Masks accordion (instead of every program's row).
 func refreshMasksAccordionForProgram(programName string) {
-	if acc, ok := shell().EditorTabs.MasksTab.Widgets["Accordion"].(*widget.Accordion); ok {
+	if acc, ok := shell().EditorTabs.MasksTab.Widgets["Accordion"].(*custom_widgets.AccordionWithHeaderWidgets); ok {
 		refreshProgramEntityAccordionRow(acc, masksAccordionConfig(), programName)
 	}
 }
