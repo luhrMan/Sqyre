@@ -241,10 +241,7 @@ func ConstructEditorTabs(eu *EditorUi, win fyne.Window) {
 			atw["saveButton"],
 			nil,
 			nil,
-			container.NewVBox(
-				autoPicPreviewPanel.container,
-				container.NewHBox(layout.NewSpacer(), et.AutoPicTab.PreviewRefreshButton),
-			),
+			buildPreviewColumn(autoPicPreviewPanel, et.AutoPicTab.PreviewRefreshButton),
 		),
 	)
 
