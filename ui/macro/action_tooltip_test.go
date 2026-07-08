@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"Sqyre/internal/models/actions"
+	"Sqyre/ui/actiondisplay"
 	"Sqyre/ui/custom_widgets"
 
 	"fyne.io/fyne/v2"
@@ -483,7 +484,7 @@ func TestCapturePreview_usesCacheWithoutRecapture(t *testing.T) {
 	hover.previewCacheReady = true
 	hover.previewCache = custom_widgets.PreviewTooltipResult{Caption: "cached"}
 
-	hover.capturePreview(false)
+	hover.capturePreview(false, false)
 	if calls != 0 {
 		t.Fatalf("expected cached preview, loader called %d times", calls)
 	}
@@ -764,6 +765,200 @@ func TestViewTooltipHandoffBetweenRows(t *testing.T) {
 	}
 	if hoverB.tooltipPanel == panelA {
 		t.Fatal("row B must mount its own panel, not reuse row A's")
+	}
+}
+
+func TestEnterEditMode_preservesTooltipVerticalPosition(t *testing.T) {
+	t.Helper()
+	t.Cleanup(ResetActionTooltipOwnershipForTesting)
+	test.NewApp()
+	w := test.NewWindow(canvas.NewRectangle(color.White))
+	w.Resize(fyne.NewSize(800, 600))
+	t.Cleanup(w.Close)
+
+	is := actions.NewImageSearch("find", nil, []string{"Demo~Item"}, actions.NewCoordinateRef("Demo", "Main"), 1, 1, 0.9, 0)
+	hover := newActionDisplayTooltipHover(is, canvas.NewRectangle(color.Transparent), nil, is.GetType(), nil, nil)
+	w.SetContent(custom_widgets.AddWindowItemTooltipLayer(hover, w.Canvas()))
+
+	hover.absoluteMousePos = fyne.NewPos(200, 450)
+	hover.showTooltipPanel()
+	if hover.tooltipPanel == nil {
+		t.Fatal("expected view tooltip panel")
+	}
+	initialY := hover.tooltipPanel.Position().Y
+	initialH := hover.tooltipPanel.Size().Height
+
+	hover.tooltipPanel.enterEditMode()
+	newY := hover.tooltipPanel.Position().Y
+	newH := hover.tooltipPanel.Size().Height
+	if newH <= initialH {
+		t.Fatalf("edit mode should grow tooltip: height %v -> %v", initialH, newH)
+	}
+
+	mouseBasedY := actionDisplayTooltipPosition(w.Canvas(), hover.absoluteMousePos, hover.tooltipPanel.Size()).Y
+	if abs32(newY-mouseBasedY) < 1 {
+		t.Fatalf("edit relayout re-anchored to mouse (y=%v); would jump from view y=%v", mouseBasedY, initialY)
+	}
+	if abs32(newY-initialY) > 80 {
+		t.Fatalf("edit relayout moved tooltip too far vertically: %v -> %v", initialY, newY)
+	}
+}
+
+func findBorderlessEntry(obj fyne.CanvasObject) *custom_widgets.BorderlessEntry {
+	switch o := obj.(type) {
+	case *custom_widgets.BorderlessEntry:
+		return o
+	case *fyne.Container:
+		for _, c := range o.Objects {
+			if e := findBorderlessEntry(c); e != nil {
+				return e
+			}
+		}
+	case fyne.Widget:
+		for _, c := range test.WidgetRenderer(o).Objects() {
+			if e := findBorderlessEntry(c); e != nil {
+				return e
+			}
+		}
+	}
+	return nil
+}
+
+// TestRunMacroEdit_growsBackgroundOnSelection guards against tooltip background
+// drift: selecting a macro widens the row (and can wrap it), so the picker must
+// grow the tooltip to match instead of leaving a stale, undersized background.
+func TestRunMacroEdit_growsBackgroundOnSelection(t *testing.T) {
+	t.Helper()
+	t.Cleanup(ResetActionTooltipOwnershipForTesting)
+	test.NewApp()
+	w := test.NewWindow(canvas.NewRectangle(color.White))
+	w.Resize(fyne.NewSize(800, 600))
+	t.Cleanup(w.Close)
+
+	run := actions.NewRunMacro("")
+	hover := newActionDisplayTooltipHover(run, canvas.NewRectangle(color.Transparent), nil, run.GetType(), nil, nil)
+	w.SetContent(custom_widgets.AddWindowItemTooltipLayer(container.NewStack(hover), w.Canvas()))
+
+	hover.absoluteMousePos = fyne.NewPos(200, 200)
+	hover.showTooltipPanel()
+	hover.tooltipPanel.enterEditMode()
+
+	before := hover.tooltipPanel.Size()
+
+	entry := findBorderlessEntry(hover.tooltipPanel.body)
+	if entry == nil {
+		t.Fatal("expected a macro name entry in the run-macro edit form")
+	}
+	// Mirror what macroPickerButton's onSelect now does on selection.
+	entry.SetText("A Very Long Macro Name That Forces The Row To Grow")
+	hover.refreshTooltipLayout()
+
+	after := hover.tooltipPanel.Size()
+	if after.Width <= before.Width && after.Height <= before.Height {
+		t.Fatalf("selecting a macro should grow the tooltip: %v -> %v", before, after)
+	}
+
+	// Background must track content, i.e. no drift between panel size and freshly
+	// measured layout (invalidate first since measureLayoutSize is cached).
+	hover.tooltipPanel.invalidateLayoutSize()
+	want := hover.tooltipPanel.measureLayoutSize(w.Canvas())
+	if !fyneSizesClose(after, want) {
+		t.Fatalf("tooltip background drifted from content: panel=%v measured=%v", after, want)
+	}
+}
+
+func findPillSelect(obj fyne.CanvasObject) *actiondisplay.PillSelect {
+	switch o := obj.(type) {
+	case *actiondisplay.PillSelect:
+		return o
+	case *fyne.Container:
+		for _, c := range o.Objects {
+			if s := findPillSelect(c); s != nil {
+				return s
+			}
+		}
+	case fyne.Widget:
+		for _, c := range test.WidgetRenderer(o).Objects() {
+			if s := findPillSelect(c); s != nil {
+				return s
+			}
+		}
+	}
+	return nil
+}
+
+func tapPillSelectNext(t *testing.T, sel *actiondisplay.PillSelect) {
+	t.Helper()
+	for _, obj := range test.WidgetRenderer(sel).Objects() {
+		btn, ok := obj.(fyne.Tappable)
+		if !ok {
+			continue
+		}
+		// Objects() lists the next button before the previous button.
+		btn.Tapped(&fyne.PointEvent{})
+		return
+	}
+	t.Fatal("no cycle button found on pill select")
+}
+
+// TestClickEdit_growsBackgroundOnButtonChange guards against tooltip background
+// drift: cycling the click button select to a wider option ("left" -> "center")
+// widens the pill, so the select must relayout the tooltip. Before the fix the
+// panel kept its old size and the background no longer covered the content.
+func TestClickEdit_growsBackgroundOnButtonChange(t *testing.T) {
+	t.Helper()
+	t.Cleanup(ResetActionTooltipOwnershipForTesting)
+	test.NewApp()
+	w := test.NewWindow(canvas.NewRectangle(color.White))
+	w.Resize(fyne.NewSize(800, 600))
+	t.Cleanup(w.Close)
+
+	click := actions.NewClick(actions.ClickButtonLeft, false)
+	hover := newActionDisplayTooltipHover(click, canvas.NewRectangle(color.Transparent), nil, click.GetType(), nil, nil)
+	w.SetContent(custom_widgets.AddWindowItemTooltipLayer(container.NewStack(hover), w.Canvas()))
+
+	hover.absoluteMousePos = fyne.NewPos(200, 200)
+	hover.showTooltipPanel()
+	hover.tooltipPanel.enterEditMode()
+
+	sel := findPillSelect(hover.tooltipPanel.body)
+	if sel == nil {
+		t.Fatal("expected a button select in the click edit form")
+	}
+	if sel.Value != actions.ClickButtonLeft {
+		t.Fatalf("expected initial button %q, got %q", actions.ClickButtonLeft, sel.Value)
+	}
+
+	initialW := hover.tooltipPanel.Size().Width
+
+	// Cycle to a wider label; the panel must grow to keep the background covering it.
+	for sel.Value != actions.ClickButtonCenter {
+		tapPillSelectNext(t, sel)
+	}
+
+	if grownW := hover.tooltipPanel.Size().Width; grownW <= initialW {
+		t.Fatalf("wider button should grow tooltip: width %v -> %v", initialW, grownW)
+	}
+}
+
+func TestActionDisplayTooltipPositionClamped_preservesTopWhenGrowing(t *testing.T) {
+	t.Helper()
+	test.NewApp()
+	w := test.NewWindow(nil)
+	w.Resize(fyne.NewSize(800, 600))
+	t.Cleanup(w.Close)
+	c := w.Canvas()
+
+	anchor := fyne.NewPos(100, 100)
+	large := fyne.NewSize(200, 350)
+
+	clamped := actionDisplayTooltipPositionClamped(c, anchor, large)
+	mouseBased := actionDisplayTooltipPosition(c, fyne.NewPos(150, 380), large)
+	if abs32(clamped.Y-mouseBased.Y) < 1 {
+		t.Fatalf("clamped position should differ from mouse re-anchor: clamped=%v mouse=%v", clamped.Y, mouseBased.Y)
+	}
+	if abs32(clamped.Y-anchor.Y) > 1 {
+		t.Fatalf("clamped position should preserve anchor when size fits: %v -> %v", anchor.Y, clamped.Y)
 	}
 }
 

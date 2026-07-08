@@ -36,13 +36,18 @@ func appendClickTooltipView(a *actions.Click, actionType string) []fyne.CanvasOb
 	return []fyne.CanvasObject{wrapTooltipSection(row.box)}
 }
 
-func appendClickTooltipEdit(a *actions.Click, actionType string) ([]fyne.CanvasObject, func() error) {
+func appendClickTooltipEdit(a *actions.Click, actionType string, owner *actionDisplayTooltipHover) ([]fyne.CanvasObject, func() error) {
 	row := newPillRow()
 	button := a.Button
 	if button == "" {
 		button = actions.ClickButtonLeft
 	}
 	buttonSelect := actiondisplay.NewPillSelect("Button", actions.ClickButtons, button, actions.ClickButtonLabel)
+	buttonSelect.OnChanged = func(string) {
+		if owner != nil {
+			owner.refreshTooltipLayout()
+		}
+	}
 	stateToggle := actiondisplay.NewPillToggle("State down", a.State)
 	row.add(actiondisplay.WrapPillSelect(buttonSelect, actionType))
 	row.add(actiondisplay.WrapPillToggle(stateToggle, actionType))
@@ -66,7 +71,7 @@ func appendKeyTooltipEdit(a *actions.Key, actionType string) ([]fyne.CanvasObjec
 	stateToggle := actiondisplay.NewPillToggle("State down", a.State)
 	row.add(actiondisplay.NewEditablePill("Key", keyEntry, actionType))
 	if activeWire.ShowKeyRecordDialog != nil && activeWire.Window != nil {
-		recordBtn := actiondisplay.NewPillIconButton(theme.MediaRecordIcon(), func() {
+		recordBtn := actiondisplay.NewPillIconButton(theme.NewErrorThemedResource(theme.MediaRecordIcon()), func() {
 			activeWire.ShowKeyRecordDialog(activeWire.Window, func(key string) {
 				keyEntry.SetText(key)
 			})
@@ -187,7 +192,7 @@ type conditionalClauseEditors struct {
 	right    *custom_widgets.BorderlessEntry
 }
 
-func wireConditionalClauseRight(entry *custom_widgets.BorderlessEntry, opSelect *actiondisplay.PillDropdown) {
+func wireConditionalClauseRight(entry *custom_widgets.BorderlessEntry, opSelect *actiondisplay.PillDropdown, owner *actionDisplayTooltipHover) {
 	setRightEnabled := func(op string) {
 		if actions.OperatorIsUnary(op) {
 			entry.Disable()
@@ -195,7 +200,12 @@ func wireConditionalClauseRight(entry *custom_widgets.BorderlessEntry, opSelect 
 		}
 		entry.Enable()
 	}
-	opSelect.OnChanged = setRightEnabled
+	opSelect.OnChanged = func(op string) {
+		setRightEnabled(op)
+		if owner != nil {
+			owner.refreshTooltipLayout()
+		}
+	}
 	setRightEnabled(opSelect.Value)
 }
 
@@ -211,12 +221,12 @@ func appendConditionalTooltipEdit(a *actions.Conditional, actionType string, own
 			operator: actiondisplay.NewPillDropdown("op", actions.ConditionalOperators, op, nil),
 			right:    coordEntry(formatAnyValue(c.Right)),
 		}
-		wireConditionalClauseRight(clauseEditors[i].right, clauseEditors[i].operator)
+		wireConditionalClauseRight(clauseEditors[i].right, clauseEditors[i].operator, owner)
 	}
 	if len(clauseEditors) == 0 {
 		opSelect := actiondisplay.NewPillDropdown("op", actions.ConditionalOperators, actions.OpEquals, nil)
 		rightEntry := coordEntry("")
-		wireConditionalClauseRight(rightEntry, opSelect)
+		wireConditionalClauseRight(rightEntry, opSelect, owner)
 		clauseEditors = append(clauseEditors, conditionalClauseEditors{
 			left:     coordEntry(""),
 			operator: opSelect,
@@ -231,6 +241,9 @@ func appendConditionalTooltipEdit(a *actions.Conditional, actionType string, own
 	matchToggle := actiondisplay.NewPillToggle(conditionalMatchToggleLabel(isMatchAny), isMatchAny)
 	matchToggle.OnChanged = func(matchAny bool) {
 		matchToggle.SetLabel(conditionalMatchToggleLabel(matchAny))
+		if owner != nil {
+			owner.refreshTooltipLayout()
+		}
 	}
 	general.add(actiondisplay.NewEditablePill("Name", nameEntry, actionType))
 	general.add(actiondisplay.WrapPillToggle(matchToggle, actionType))
@@ -262,7 +275,7 @@ func appendConditionalTooltipEdit(a *actions.Conditional, actionType string, own
 		addBtn := widget.NewButton("Add clause", func() {
 			opSelect := actiondisplay.NewPillDropdown("op", actions.ConditionalOperators, actions.OpEquals, nil)
 			rightEntry := coordEntry("")
-			wireConditionalClauseRight(rightEntry, opSelect)
+			wireConditionalClauseRight(rightEntry, opSelect, owner)
 			clauseEditors = append(clauseEditors, conditionalClauseEditors{
 				left:     coordEntry(""),
 				operator: opSelect,
@@ -301,14 +314,14 @@ func appendConditionalTooltipEdit(a *actions.Conditional, actionType string, own
 
 func appendSetVariableTooltipView(a *actions.SetVariable, actionType string) []fyne.CanvasObject {
 	row := newPillRow()
-	addDisplayPill(row, "Variable", a.VariableName, actionType)
+	addDisplayVariablePill(row, "Variable", a.VariableName, actionType)
 	addDisplayPill(row, "Value", formatAnyValue(a.Value), actionType)
 	return []fyne.CanvasObject{wrapTooltipSection(row.box)}
 }
 
 func appendSetVariableTooltipEdit(a *actions.SetVariable, actionType string) ([]fyne.CanvasObject, func() error) {
 	row := newPillRow()
-	nameEntry := coordEntry(a.VariableName)
+	nameEntry := varNameEntry(a.VariableName)
 	valueEntry := coordEntry(formatAnyValue(a.Value))
 	row.add(actiondisplay.NewEditablePill("Variable", nameEntry, actionType))
 	row.add(actiondisplay.NewEditablePill("Value", valueEntry, actionType))
@@ -322,11 +335,11 @@ func appendSetVariableTooltipEdit(a *actions.SetVariable, actionType string) ([]
 func appendCalculateTooltipView(a *actions.Calculate, actionType string) []fyne.CanvasObject {
 	row := newPillRow()
 	addDisplayPill(row, "Expression", a.Expression, actionType)
-	addDisplayPill(row, "Output", a.OutputVar, actionType)
+	addDisplayVariablePill(row, "Output", a.OutputVar, actionType)
 	return []fyne.CanvasObject{wrapTooltipSection(row.box)}
 }
 
-func appendCalculateTooltipEdit(a *actions.Calculate, actionType string) ([]fyne.CanvasObject, func() error) {
+func appendCalculateTooltipEdit(a *actions.Calculate, actionType string, owner *actionDisplayTooltipHover) ([]fyne.CanvasObject, func() error) {
 	var sections []fyne.CanvasObject
 	exprEntry := coordEntry(a.Expression)
 	toolbar := calculateBuilderToolbar(exprEntry)
@@ -336,13 +349,13 @@ func appendCalculateTooltipEdit(a *actions.Calculate, actionType string) ([]fyne
 	exprRow.add(actiondisplay.NewEditablePill("Expression", exprEntry, actionType))
 	sections = append(sections, wrapTooltipSection(exprRow.box))
 
-	previewSection, _ := appendCalculatePreviewRow(exprEntry, actionType)
+	previewSection, _ := appendCalculatePreviewRow(exprEntry, actionType, owner)
 	if previewSection != nil {
 		sections = append(sections, previewSection)
 	}
 
 	outputRow := newPillRow()
-	outputEntry := coordEntry(a.OutputVar)
+	outputEntry := varNameEntry(a.OutputVar)
 	outputRow.add(actiondisplay.NewEditablePill("Output", outputEntry, actionType))
 	sections = append(sections, wrapTooltipSection(outputRow.box))
 
@@ -359,12 +372,15 @@ func appendRunMacroTooltipView(a *actions.RunMacro, actionType string) []fyne.Ca
 	return []fyne.CanvasObject{wrapTooltipSection(row.box)}
 }
 
-func appendRunMacroTooltipEdit(a *actions.RunMacro, actionType string) ([]fyne.CanvasObject, func() error) {
+func appendRunMacroTooltipEdit(a *actions.RunMacro, actionType string, owner *actionDisplayTooltipHover) ([]fyne.CanvasObject, func() error) {
 	row := newPillRow()
 	macroEntry := coordEntry(a.MacroName)
 	row.add(actiondisplay.NewEditablePill("Macro", macroEntry, actionType))
-	row.add(macroPickerButton(a.MacroName, actionType, func(name string) {
+	row.add(macroPickerButton(actionType, func(name string) {
 		macroEntry.SetText(name)
+		if owner != nil {
+			owner.refreshTooltipLayout()
+		}
 	}))
 	return []fyne.CanvasObject{wrapTooltipSection(row.box)}, func() error {
 		a.MacroName = strings.TrimSpace(macroEntry.Text)
