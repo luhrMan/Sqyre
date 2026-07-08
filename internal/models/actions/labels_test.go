@@ -7,6 +7,7 @@ func TestActionTypeLabel(t *testing.T) {
 	cases := map[string]string{
 		"click":        "Click",
 		"imagesearch":  "Image Search",
+		"semanticsearch": "Semantic Search",
 		"setvariable":  "Set",
 		"conditional":  "If",
 		"focuswindow":  "Focus window",

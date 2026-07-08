@@ -35,6 +35,8 @@ func ActionTypeLabel(actionType string) string {
 		return "OCR"
 	case "findpixel":
 		return "Find pixel"
+	case "semanticsearch":
+		return "Semantic Search"
 	case "setvariable":
 		return "Set"
 	case "calculate":

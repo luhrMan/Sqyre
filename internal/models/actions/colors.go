@@ -40,7 +40,7 @@ func ActionCategoryForType(actionType string) string {
 	switch strings.ToLower(strings.TrimSpace(actionType)) {
 	case "move", "click", "key", "type":
 		return "Mouse & Keyboard"
-	case "imagesearch", "ocr", "findpixel":
+	case "imagesearch", "ocr", "findpixel", "semanticsearch":
 		return "Detection"
 	case "setvariable", "calculate", "foreachrow", "savevariable":
 		return "Variables"

@@ -16,6 +16,7 @@ func init() {
 	registerActionCodec("type", decodeType, encodeType)
 	registerActionCodec("imagesearch", decodeImageSearch, encodeImageSearch)
 	registerActionCodec("ocr", decodeOcr, encodeOcr)
+	registerActionCodec("semanticsearch", decodeSemanticSearch, encodeSemanticSearch)
 	registerActionCodec("setvariable", decodeSetVariable, encodeSetVariable)
 	registerActionCodec("calculate", decodeCalculate, encodeCalculate)
 	registerActionCodec("conditional", decodeConditional, encodeConditional)
@@ -336,6 +337,70 @@ func encodeOcr(action actions.ActionInterface) (map[string]any, error) {
 	if a.ThresholdInvert {
 		m["thresholdinvert"] = a.ThresholdInvert
 	}
+	return m, nil
+}
+
+func decodeSemanticSearch(rawMap map[string]any) (actions.ActionInterface, error) {
+	name, err := expectString(rawMap, "name")
+	if err != nil {
+		return nil, fmt.Errorf("action type semanticsearch: %w", err)
+	}
+	prompt, err := expectString(rawMap, "prompt")
+	if err != nil {
+		return nil, fmt.Errorf("action type semanticsearch: %w", err)
+	}
+	sa := parseCoordinateRef(rawMap["searcharea"])
+	ss := actions.NewSemanticSearch(name, []actions.ActionInterface{}, prompt, sa)
+	decodeCoordinateOutputs(rawMap, &ss.CoordinateOutputs)
+	decodeWaitTilFound(rawMap, &ss.WaitTilFoundConfig)
+	if v, ok := rawMap["runbranchonnofind"].(bool); ok {
+		ss.RunBranchOnNoFind = v
+	}
+	if v, ok := rawMap["outputlabelvariable"].(string); ok {
+		ss.OutputLabelVariable = v
+	}
+	if v := rawMap["confidencethreshold"]; v != nil {
+		ss.ConfidenceThreshold = float32(floatFromMap(v))
+	}
+	if v := rawMap["iouthreshold"]; v != nil {
+		ss.IoUThreshold = float32(floatFromMap(v))
+	}
+	if v := rawMap["maxmatches"]; v != nil {
+		ss.MaxMatches = intFromMap(v)
+	}
+	return ss, nil
+}
+
+func encodeSemanticSearch(action actions.ActionInterface) (map[string]any, error) {
+	a := action.(*actions.SemanticSearch)
+	m := map[string]any{
+		"type":       "semanticsearch",
+		"name":       a.Name,
+		"prompt":     a.Prompt,
+		"searcharea": coordinateRefToMap(a.SearchArea),
+	}
+	writeCoordinateOutputs(m, a.CoordinateOutputs)
+	writeWaitTilFound(m, a.WaitTilFoundConfig)
+	if a.ConfidenceThreshold != 0 && a.ConfidenceThreshold != 0.25 {
+		m["confidencethreshold"] = a.ConfidenceThreshold
+	}
+	if a.IoUThreshold != 0 && a.IoUThreshold != 0.45 {
+		m["iouthreshold"] = a.IoUThreshold
+	}
+	if a.MaxMatches > 0 {
+		m["maxmatches"] = a.MaxMatches
+	}
+	if a.OutputLabelVariable != "" {
+		m["outputlabelvariable"] = a.OutputLabelVariable
+	}
+	if a.RunBranchOnNoFind {
+		m["runbranchonnofind"] = true
+	}
+	subs, err := subActionsToMaps(a.GetSubActions())
+	if err != nil {
+		return nil, err
+	}
+	m["subactions"] = subs
 	return m, nil
 }
 
