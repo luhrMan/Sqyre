@@ -355,7 +355,16 @@ func buildParamEditPills(node actions.ActionInterface, actionType string, owner 
 		tolInc := actiondisplay.NewPillIntStepper("Tolerance", a.ColorTolerance, 1, &tolMin, &tolMax, actionType)
 		colorEntry := coordEntry(a.TargetColor)
 		search.add(actiondisplay.NewEditablePill("Color", colorEntry, actionType))
+		swatchPill, updateSwatch := editableColorSwatchPill(a.TargetColor, actionType)
+		search.add(swatchPill)
+		colorEntry.ChangedFn = func(text string) {
+			updateSwatch(text)
+			if owner != nil {
+				owner.refreshTooltipLayout()
+			}
+		}
 		if dropper := findPixelColorDropperButton(colorEntry, func() {
+			updateSwatch(colorEntry.Text)
 			if owner != nil {
 				owner.refreshTooltipLayout()
 			}

@@ -74,6 +74,92 @@ func TestColorSwatchPill(t *testing.T) {
 	}
 }
 
+func TestEditableColorSwatchPill_LiveUpdate(t *testing.T) {
+	t.Helper()
+	pill, update := editableColorSwatchPill("ff0000", "findpixel")
+	if !pill.Visible() {
+		t.Fatal("swatch should be visible for a valid initial hex")
+	}
+	update("${var}")
+	if pill.Visible() {
+		t.Fatal("swatch should hide when value becomes a variable reference")
+	}
+	update("00ff00")
+	if !pill.Visible() {
+		t.Fatal("swatch should reappear for a valid hex")
+	}
+}
+
+func TestFindPixelEdit_SwatchTracksHexEntry(t *testing.T) {
+	t.Helper()
+	test.NewApp()
+	fp := actions.NewFindPixel("f", actions.CoordinateRef(""), "ff0000", 0)
+	pills, _ := buildParamEditPills(fp, fp.GetType(), nil, nil)
+	if pills == nil {
+		t.Fatal("expected FindPixel edit pills")
+	}
+	if !containsSwatchColor(pills, color.NRGBA{R: 0xff, A: 0xff}) {
+		t.Fatal("expected initial red swatch in edit pills")
+	}
+
+	entry := findBorderlessEntryWithText(pills, "ff0000")
+	if entry == nil {
+		t.Fatal("expected a color entry in the FindPixel edit form")
+	}
+	entry.SetText("")
+	test.Type(entry, "00ff00")
+
+	if !containsSwatchColor(pills, color.NRGBA{G: 0xff, A: 0xff}) {
+		t.Fatal("swatch should recolor to green when the hex entry changes")
+	}
+	if containsSwatchColor(pills, color.NRGBA{R: 0xff, A: 0xff}) {
+		t.Fatal("stale red swatch should be gone after edit")
+	}
+}
+
+func findBorderlessEntryWithText(obj fyne.CanvasObject, text string) *custom_widgets.BorderlessEntry {
+	switch o := obj.(type) {
+	case *custom_widgets.BorderlessEntry:
+		if o.Text == text {
+			return o
+		}
+	case *fyne.Container:
+		for _, c := range o.Objects {
+			if e := findBorderlessEntryWithText(c, text); e != nil {
+				return e
+			}
+		}
+	case fyne.Widget:
+		for _, c := range test.WidgetRenderer(o).Objects() {
+			if e := findBorderlessEntryWithText(c, text); e != nil {
+				return e
+			}
+		}
+	}
+	return nil
+}
+
+func containsSwatchColor(obj fyne.CanvasObject, want color.NRGBA) bool {
+	switch o := obj.(type) {
+	case *canvas.Rectangle:
+		c, ok := o.FillColor.(color.NRGBA)
+		return ok && c == want
+	case *fyne.Container:
+		for _, child := range o.Objects {
+			if containsSwatchColor(child, want) {
+				return true
+			}
+		}
+	case fyne.Widget:
+		for _, child := range test.WidgetRenderer(o).Objects() {
+			if containsSwatchColor(child, want) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func TestActionTooltipPanel_viewModeTypeHeaderCentered(t *testing.T) {
 	t.Helper()
 	wait := actions.NewWait(100)
