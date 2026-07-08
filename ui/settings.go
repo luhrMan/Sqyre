@@ -4,6 +4,7 @@ import (
 	"Sqyre/internal/config"
 	"Sqyre/internal/services"
 	"Sqyre/ui/custom_widgets"
+	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -16,6 +17,7 @@ type SettingsUi struct {
 	CanvasObject      fyne.CanvasObject
 	GeneralSection    *widget.Card
 	DataSection       *widget.Card
+	VisionSection     *widget.Card
 	AppearanceSection *widget.Card
 	Content           *container.Scroll
 }
@@ -104,6 +106,53 @@ func (u *Ui) constructSettings() fyne.CanvasObject {
 		openSqyreBtn,
 	))
 
+	workerPathEntry := widget.NewEntry()
+	workerPathEntry.SetPlaceHolder("Auto-detect sqyre-vision next to Sqyre")
+	workerPathEntry.SetText(prefs.StringWithFallback(config.PrefVisionWorkerPath, ""))
+	modelsDirEntry := widget.NewEntry()
+	modelsDirEntry.SetPlaceHolder(config.GetModelsPath())
+	modelsDirEntry.SetText(prefs.StringWithFallback(config.PrefVisionModelsDir, ""))
+	visionStatus := widget.NewLabel("")
+	visionStatus.Wrapping = fyne.TextWrapWord
+	refreshVisionStatus := func() {
+		services.ApplyVisionDetectorConfig(strings.TrimSpace(workerPathEntry.Text), strings.TrimSpace(modelsDirEntry.Text))
+		_, _, ok, detail := services.VisionWorkerStatus()
+		if ok {
+			visionStatus.SetText("Semantic vision: " + detail)
+			go services.WarmUpDetector()
+		} else {
+			visionStatus.SetText("Semantic vision unavailable: " + detail)
+		}
+	}
+	workerPathEntry.OnChanged = func(string) {
+		prefs.SetString(config.PrefVisionWorkerPath, strings.TrimSpace(workerPathEntry.Text))
+		refreshVisionStatus()
+	}
+	modelsDirEntry.OnChanged = func(string) {
+		prefs.SetString(config.PrefVisionModelsDir, strings.TrimSpace(modelsDirEntry.Text))
+		refreshVisionStatus()
+	}
+	openModelsBtn := widget.NewButtonWithIcon("Open models folder", theme.FolderOpenIcon(), func() {
+		if config.IsUITestMode() {
+			return
+		}
+		if err := services.OpenModelsDir(); err != nil {
+			ShowErrorWithEscape(err, u.Window)
+		}
+	})
+	visionHint := widget.NewLabel("Semantic Search uses the optional sqyre-vision worker. Leave worker path empty to auto-detect a sibling binary. Set models directory when using a lean worker with your own ONNX files (~/.sqyre/models).")
+	visionHint.Wrapping = fyne.TextWrapWord
+	u.SettingsUi.VisionSection = widget.NewCard("Semantic vision", "Open-vocabulary detection (optional sqyre-vision sidecar).", container.NewVBox(
+		visionHint,
+		widget.NewLabel("Worker binary path:"),
+		workerPathEntry,
+		widget.NewLabel("Models directory:"),
+		modelsDirEntry,
+		openModelsBtn,
+		visionStatus,
+	))
+	refreshVisionStatus()
+
 	fontSizeMin := 10
 	fontSizeMax := 28
 	uiScaleMin := 0.5
@@ -142,6 +191,7 @@ func (u *Ui) constructSettings() fyne.CanvasObject {
 	u.SettingsUi.Content.Content = container.NewVBox(
 		u.SettingsUi.GeneralSection,
 		u.SettingsUi.DataSection,
+		u.SettingsUi.VisionSection,
 		u.SettingsUi.AppearanceSection,
 	)
 

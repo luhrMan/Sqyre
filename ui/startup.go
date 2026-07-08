@@ -166,6 +166,7 @@ func Bootstrap(mainWindow, splashWindow fyne.Window, report BootstrapReporter) {
 	if err := serialize.LoadConfig(); err != nil {
 		log.Printf("Warning: Failed to read config file: %v", err)
 	}
+	loadVisionDetectorPrefs()
 	startupprof.Mark("config loaded")
 
 	report.setStatus("Loading macros and programs…")
@@ -173,7 +174,6 @@ func Bootstrap(mainWindow, splashWindow fyne.Window, report BootstrapReporter) {
 	repositories.LoadAll()
 	log.Printf("Initialized MacroRepository with %d macros", repositories.MacroRepo().Count())
 	startupprof.Mark("macros loaded")
-	go services.WarmUpOCR()
 
 	report.setProgress(progressPrograms)
 	log.Printf("Initialized ProgramRepository with %d programs", repositories.ProgramRepo().Count())
@@ -210,4 +210,6 @@ func Bootstrap(mainWindow, splashWindow fyne.Window, report BootstrapReporter) {
 			fyne.CurrentApp().Quit()
 		}
 	})
+	go services.WarmUpOCR()
+	go services.WarmUpDetector()
 }

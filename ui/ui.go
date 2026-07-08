@@ -199,6 +199,7 @@ func (u *Ui) constructUiShell() {
 }
 
 func (u *Ui) constructUiFinish() {
+	loadVisionDetectorPrefs()
 	u.constructSettings()
 	u.wireNavigation()
 
