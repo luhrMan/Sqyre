@@ -6,7 +6,6 @@ import (
 	"Sqyre/ui/actiondisplay"
 	"Sqyre/internal/models/repositories"
 	"Sqyre/internal/screen"
-	"Sqyre/ui/macro/actiondialog"
 	"log"
 	"strconv"
 
@@ -154,25 +153,10 @@ func (u *Ui) newAddActionAndRefresh() func(actions.ActionInterface) {
 		mt.Select(a.GetUID())
 		mt.SelectedNode = a.GetUID()
 		uid := a.GetUID()
-		actiondialog.ShowActionDialog(a, func(updatedAction actions.ActionInterface) {
-			if err := repositories.MacroRepo().Set(mt.Macro.Name, mt.Macro); err != nil {
-				log.Printf("failed to save macro after new action edit: %v", err)
-			}
-			mt.RefreshItem(uid)
-			mt.Refresh()
-		}, func() {
-			mt.RecordMutation()
-			if parent := a.GetParent(); parent != nil {
-				parent.RemoveSubAction(a)
-			}
-			if mt.SelectedNode == uid {
-				mt.SelectedNode = ""
-			}
-			mt.Refresh()
-			if mt.OnTreeChanged != nil {
-				mt.OnTreeChanged()
-			}
-		})
+		mt.EditAction(uid)
+		if err := repositories.MacroRepo().Set(mt.Macro.Name, mt.Macro); err != nil {
+			log.Printf("failed to save macro after new action: %v", err)
+		}
 	}
 }
 

@@ -2,7 +2,9 @@ package macro
 
 import (
 	"image/color"
-	"reflect"
+
+	"Sqyre/internal/models/actions"
+	"Sqyre/ui/actiondisplay"
 
 	kxlayout "github.com/ErikKalkoken/fyne-kx/layout"
 	"fyne.io/fyne/v2"
@@ -11,6 +13,43 @@ import (
 	"fyne.io/fyne/v2/theme"
 )
 
+// rowWrapLayout wraps fyne-kx row wrap so tooltip sizing can detect it without
+// fragile reflect.TypeOf string checks on an unexported layout type.
+type rowWrapLayout struct {
+	inner fyne.Layout
+}
+
+func newRowWrapLayout() fyne.Layout {
+	return &rowWrapLayout{inner: kxlayout.NewRowWrapLayout()}
+}
+
+func (l *rowWrapLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	l.inner.Layout(objects, size)
+}
+
+func (l *rowWrapLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
+	return l.inner.MinSize(objects)
+}
+
+func newRowWrapContainer() *fyne.Container {
+	return container.New(newRowWrapLayout())
+}
+
+func actionTooltipTypePill(actionType string) fyne.CanvasObject {
+	if actionType == "" {
+		return nil
+	}
+	return actiondisplay.NewDisplayPill(actions.ActionTypeLabel(actionType), actionType)
+}
+
+func actionTooltipTypeHeader(actionType string) fyne.CanvasObject {
+	pill := actionTooltipTypePill(actionType)
+	if pill == nil {
+		return nil
+	}
+	return container.NewCenter(pill)
+}
+
 var sqyrePrimary = color.NRGBA{R: 0xdc, G: 0x9d, B: 0x2e, A: 0xff}
 
 type pillRow struct {
@@ -18,7 +57,7 @@ type pillRow struct {
 }
 
 func newPillRow() *pillRow {
-	return &pillRow{box: container.New(kxlayout.NewRowWrapLayout())}
+	return &pillRow{box: newRowWrapContainer()}
 }
 
 func (r *pillRow) add(obj fyne.CanvasObject) {
@@ -56,7 +95,8 @@ func joinTooltipSections(sections ...fyne.CanvasObject) fyne.CanvasObject {
 }
 
 func isRowWrapLayout(l fyne.Layout) bool {
-	return l != nil && reflect.TypeOf(l).String() == "*layout.rowWrapLayout"
+	_, ok := l.(*rowWrapLayout)
+	return ok
 }
 
 func rowWrapSingleLineWidth(objects []fyne.CanvasObject) float32 {
@@ -158,6 +198,11 @@ func tooltipSubtreeHeight(obj fyne.CanvasObject, width float32) float32 {
 	if !ok {
 		return obj.MinSize().Height
 	}
+	// Pass through single-child wrappers (centered header, viewParamPillsHolder, etc.)
+	// so width-dependent descendants like row-wrapped pill sections size correctly.
+	if len(box.Objects) == 1 {
+		return tooltipSubtreeHeight(box.Objects[0], width)
+	}
 	if isVBoxLike(box) {
 		return tooltipBodyHeightAtWidth(box, width)
 	}
@@ -172,9 +217,13 @@ func tooltipBodyHeightAtWidth(body *fyne.Container, width float32) float32 {
 	if body == nil || len(body.Objects) == 0 {
 		return 0
 	}
+	return measureVBoxContentHeight(body.Objects, width)
+}
+
+func measureVBoxContentHeight(objects []fyne.CanvasObject, width float32) float32 {
 	padding := theme.Padding()
 	var total float32
-	for i, obj := range body.Objects {
+	for i, obj := range objects {
 		if i > 0 {
 			total += padding
 		}

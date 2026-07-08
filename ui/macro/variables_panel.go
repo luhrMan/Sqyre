@@ -59,20 +59,28 @@ func variablePillActionType(d models.VariableDef) string {
 
 func variableDisplayPills(d models.VariableDef) fyne.CanvasObject {
 	line := container.NewHBox()
-	actionType := variablePillActionType(d)
-	line.Add(actiondisplay.NewDisplayPill("Name: "+d.Name, actionType))
+	actionType, texts := variablePillTexts(d)
+	for _, text := range texts {
+		line.Add(actiondisplay.NewDisplayPill(text, actionType))
+	}
+	return line
+}
+
+func variablePillTexts(d models.VariableDef) (actionType string, texts []string) {
+	actionType = variablePillActionType(d)
+	texts = append(texts, "Name: "+d.Name)
 
 	typ := d.Type
 	if typ == "" {
 		typ = models.VariableTypeAuto
 	}
-	line.Add(actiondisplay.NewDisplayPill("Type: "+string(typ), actionType))
+	texts = append(texts, "Type: "+string(typ))
 
 	if v := strings.TrimSpace(d.InitialValue); v != "" {
-		line.Add(actiondisplay.NewDisplayPill("Initial: "+v, actionType))
+		texts = append(texts, "Initial: "+v)
 	}
 	if desc := strings.TrimSpace(d.Description); desc != "" {
-		line.Add(actiondisplay.NewDisplayPill("Description: "+desc, actionType))
+		texts = append(texts, "Description: "+desc)
 	}
 
 	role := string(d.Role)
@@ -80,8 +88,30 @@ func variableDisplayPills(d models.VariableDef) fyne.CanvasObject {
 		role += " (conditional)"
 	}
 	source := fmt.Sprintf("%s · %s · %s", d.Source.ActionType, d.Source.ActionName, role)
-	line.Add(actiondisplay.NewDisplayPill("Source: "+source, actionType))
-	return line
+	texts = append(texts, "Source: "+source)
+	return actionType, texts
+}
+
+func bindVariableDisplayPills(line *fyne.Container, d models.VariableDef) {
+	actionType, texts := variablePillTexts(d)
+	if len(line.Objects) != len(texts) {
+		line.Objects = line.Objects[:0]
+		for _, text := range texts {
+			line.Add(actiondisplay.NewDisplayPill(text, actionType))
+		}
+		line.Refresh()
+		return
+	}
+	rebuilt := false
+	for i, text := range texts {
+		if !actiondisplay.UpdateDisplayPill(line.Objects[i], text, actionType) {
+			line.Objects[i] = actiondisplay.NewDisplayPill(text, actionType)
+			rebuilt = true
+		}
+	}
+	if rebuilt {
+		line.Refresh()
+	}
 }
 
 func newVariableListRow() (fyne.CanvasObject, *variableListRow) {
@@ -272,8 +302,7 @@ func (p *VariablesPanel) updateListRow(id widget.ListItemID, row *variableListRo
 	row.iconBtn.SetToolTip("View all usages in this macro")
 	row.iconBtn.OnTapped = func() { p.showUsagesDialog(d) }
 
-	row.pillsBox.Objects = []fyne.CanvasObject{variableDisplayPills(d)}
-	row.pillsBox.Refresh()
+	bindVariableDisplayPills(row.pillsBox, d)
 
 	editable := variableIsEditable(d)
 	uid := d.Source.ActionUID
@@ -298,7 +327,7 @@ func (p *VariablesPanel) updateListRow(id widget.ListItemID, row *variableListRo
 		}
 		if st := activeWire.Mui.MTabs.SelectedTab(); st != nil {
 			st.Select(uid)
-			st.OnOpenActionDialog(action)
+			st.EditAction(uid)
 		}
 	}
 	if uid == "" {

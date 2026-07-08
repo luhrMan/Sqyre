@@ -16,7 +16,6 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/data/binding"
-	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/driver/desktop"
 	widget "fyne.io/fyne/v2/widget"
 	fynetooltip "github.com/dweymouth/fyne-tooltip"
@@ -39,10 +38,9 @@ type Ui struct {
 }
 
 type MainUi struct {
-	Navigation   *container.Navigation
-	Mui          *macro.MacroUi
-	ActionDialog dialog.Dialog
-	overlayKind  overlayKind
+	Navigation  *container.Navigation
+	Mui         *macro.MacroUi
+	overlayKind overlayKind
 }
 
 func GetUi() *Ui { return ui }
@@ -125,7 +123,6 @@ func InitializeUi(w fyne.Window) *Ui {
 					BottomToolbar: new(fyne.Container),
 				},
 			},
-			ActionDialog: nil, // set when a dialog is shown; Esc handler checks for nil before Hide()
 		},
 	}
 	return ui
@@ -207,7 +204,6 @@ func (u *Ui) constructUiFinish() {
 
 	u.Window.SetMainMenu(u.constructMainMenu())
 
-	SetActionDialogDeps()
 	SetMacroUi()
 
 	macro.InitMacroLogPopup(

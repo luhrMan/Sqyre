@@ -98,41 +98,6 @@ func writeFrameFile(t *testing.T, dir, name string, data []byte, minBytes int) {
 	}
 }
 
-type docScreenshot struct {
-	file     string
-	action   actions.ActionInterface
-	minBytes int
-}
-
-func docActionScreenshots() []docScreenshot {
-	return []docScreenshot{
-		{"action-dialog-move.png", actions.NewMove(actions.NewCoordinateRef("Demo Program", "center"), false), 5000},
-		{"action-dialog-click.png", actions.NewClick(actions.ClickButtonLeft, true), 5000},
-		{"action-dialog-key.png", actions.NewKey("ctrl", true), 5000},
-		{"action-dialog-type.png", actions.NewType("hello", 50), 5000},
-		{"action-dialog-wait.png", actions.NewWait(500), 5000},
-		{"action-dialog-focuswindow.png", actions.NewFocusWindow("/usr/bin/notepad", "Untitled - Notepad"), 5000},
-		{"action-dialog-runmacro.png", actions.NewRunMacro("Demo Macro"), 5000},
-		{"action-dialog-loop.png", actions.NewLoop(5, "repeat", []actions.ActionInterface{}), 5000},
-		{"action-dialog-imagesearch.png", actions.NewImageSearch("find item", []actions.ActionInterface{}, []string{}, actions.NewCoordinateRef("Demo Program", "Main area"), 1, 1, 0.95, 5), 5000},
-		{"action-dialog-ocr.png", actions.NewOcr("read text", "template", actions.NewCoordinateRef("Demo Program", "Main area")), 5000},
-		{"action-dialog-findpixel.png", actions.NewFindPixel("find color", actions.NewCoordinateRef("Demo Program", "Main area"), "ffffff", 0), 5000},
-		{"action-dialog-setvariable.png", actions.NewSetVariable("counter", "0"), 5000},
-		{"action-dialog-calculate.png", actions.NewCalculate("1 + 1", "result"), 5000},
-		{"action-dialog-foreachrow.png", actions.NewForEachRow("items", []actions.ListColumn{{Source: "mylist", OutputVar: "value"}}, nil), 5000},
-		{"action-dialog-savevariable.png", actions.NewSaveVariable("value", "output.txt", false, false), 5000},
-	}
-}
-
-func captureActionDialogPNG(t *testing.T, mainPNG []byte, action actions.ActionInterface) []byte {
-	t.Helper()
-	pngData, err := ui.OverlayActionDialogOnMainPNG(mainPNG, action)
-	if err != nil {
-		t.Fatalf("render %s dialog on main window: %v", action.GetType(), err)
-	}
-	return pngData
-}
-
 func TestDocsScreenshots(t *testing.T) {
 	dir := docsImagesDir(t)
 	u, w := setupDocsUi(t)
@@ -143,13 +108,6 @@ func TestDocsScreenshots(t *testing.T) {
 		t.Fatalf("render main window: %v", err)
 	}
 	writeOrComparePNG(t, filepath.Join(dir, "main-window.png"), mainPNG, 5000)
-
-	for _, shot := range docActionScreenshots() {
-		t.Run(shot.file, func(t *testing.T) {
-			pngData := captureActionDialogPNG(t, mainPNG, shot.action)
-			writeOrComparePNG(t, filepath.Join(dir, shot.file), pngData, shot.minBytes)
-		})
-	}
 
 	pickerPNG, err := ui.RenderObjectPNG(ui.AddActionPickerForScreenshot(), ui.AddActionPickerSize)
 	if err != nil {
@@ -178,11 +136,7 @@ func writeDemoFrames(t *testing.T, u *ui.Ui, mainPNG []byte) {
 	}
 	writeFrameFile(t, framesDir, "demo-macro-001.png", frame1, 5000)
 
-	dialogFrame, err := ui.OverlayActionDialogOnMainPNG(mainPNG, actions.NewWait(500))
-	if err != nil {
-		t.Fatalf("capture frame 2: %v", err)
-	}
-	frame2, err := ui.OverlayClickGuide(dialogFrame, ui.DemoClickDialogSave)
+	frame2, err := ui.OverlayClickGuide(mainPNG, ui.DemoClickTooltipSave)
 	if err != nil {
 		t.Fatalf("frame 2 click guide: %v", err)
 	}

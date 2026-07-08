@@ -1,9 +1,13 @@
 package macro
 
 import (
+	"encoding/json"
+	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
+	"Sqyre/internal/macrohotkey"
 	"Sqyre/internal/models/actions"
 	"Sqyre/ui/actiondisplay"
 	"Sqyre/ui/custom_widgets"
@@ -22,6 +26,9 @@ type tooltipEditForm struct {
 	targetItems      fyne.CanvasObject
 	baseline         map[string]any
 
+	stagedCoordRef actions.CoordinateRef
+	coordApply       func(actions.CoordinateRef)
+
 	applyAction func() error
 }
 
@@ -31,18 +38,22 @@ func buildTooltipEditForm(node actions.ActionInterface, actionType string, owner
 	}
 	var applyParts []func() error
 
-	if is, ok := node.(*actions.ImageSearch); ok && len(is.Targets) > 0 {
+	if is, ok := node.(*actions.ImageSearch); ok {
 		targetBox, applyTargets := buildImageSearchTargetEdit(is, owner)
 		form.targetItems = targetBox
 		applyParts = append(applyParts, applyTargets)
 	}
 
-	form.paramPills, applyParts = buildParamEditPills(node, actionType, applyParts)
+	form.paramPills, applyParts = buildParamEditPills(node, actionType, owner, applyParts)
 	if len(applyParts) > 0 {
 		form.applyAction = chainApply(applyParts...)
 	}
 
 	form.baseline, _ = snapshotActionMap(node)
+	if binding, ok := actionCoordinateBinding(node); ok {
+		form.stagedCoordRef = binding.ref
+		form.coordApply = binding.set
+	}
 	form.coordEditActions = buildCoordEditActions(node, owner, form)
 	form.toolbar = editToolbar(owner, form)
 	return form
@@ -68,6 +79,12 @@ func (form *tooltipEditForm) saveAction(owner *actionDisplayTooltipHover) error 
 			return err
 		}
 	}
+	if form.coordApply != nil {
+		form.coordApply(form.stagedCoordRef)
+	}
+	if err := validateTooltipAction(owner.node); err != nil {
+		return err
+	}
 	if owner.onActionSaved != nil {
 		owner.onActionSaved()
 	}
@@ -86,50 +103,59 @@ func editToolbar(owner *actionDisplayTooltipHover, form *tooltipEditForm) fyne.C
 		owner.hideTooltip()
 	})
 
-	return container.NewHBox(
+	objects := []fyne.CanvasObject{}
+	if pill := actionTooltipTypePill(actionType); pill != nil {
+		objects = append(objects, pill)
+	}
+	objects = append(objects,
 		layout.NewSpacer(),
 		actiondisplay.PillChrome(actionSave, actionType),
 		actiondisplay.PillChrome(cancelBtn, actionType),
 	)
+	return container.NewHBox(objects...)
 }
 
 func buildCoordEditActions(node actions.ActionInterface, owner *actionDisplayTooltipHover, form *tooltipEditForm) fyne.CanvasObject {
-	binding, ok := actionCoordinateBinding(node)
-	if !ok || binding.ref.IsEmpty() || activeWire.NavigateToCoordinateEntity == nil {
+	if _, ok := actionCoordinateBinding(node); !ok || form.coordApply == nil {
 		return nil
 	}
 	isPoint := actionUsesPointPicker(node)
-	ref := binding.ref
-	navigate := func() {
-		activeWire.NavigateToCoordinateEntity(ref, isPoint)
-		owner.hideTooltip()
-	}
-	navBtn := widget.NewButton("Edit in Data Editor", func() {
-		if form.hasPendingChanges(node) {
-			if activeWire.ShowConfirmWithEscape != nil && activeWire.Window != nil {
-				activeWire.ShowConfirmWithEscape(
-					"Unsaved Changes",
-					"Save changes before opening the Data Editor?",
-					func(save bool) {
-						if save {
-							if err := form.saveAction(owner); err != nil {
-								if activeWire.ShowErrorWithEscape != nil {
-									activeWire.ShowErrorWithEscape(err, activeWire.Window)
-								}
-								return
-							}
-						}
-						navigate()
-					},
-					activeWire.Window,
-				)
+	label := coordPickerButtonLabel(form.stagedCoordRef, isPoint)
+	btn := widget.NewButton(label, nil)
+	btn.Importance = widget.LowImportance
+	btn.OnTapped = func() {
+		var pick func(actions.CoordinateRef, func(actions.CoordinateRef), func())
+		if isPoint {
+			pick = activeWire.ShowPointPicker
+		} else {
+			pick = activeWire.ShowSearchAreaPicker
+		}
+		if pick == nil || activeWire.Window == nil {
+			return
+		}
+		resumeBackdrop := owner.suspendBackdropDismissForPicker(nil)
+		pick(form.stagedCoordRef, func(ref actions.CoordinateRef) {
+			if ref == form.stagedCoordRef {
 				return
 			}
+			form.stagedCoordRef = ref
+			btn.SetText(coordPickerButtonLabel(ref, isPoint))
+			owner.previewLoader = previewLoaderForRef(node, ref)
+			owner.reloadPreview()
+			owner.relayoutTooltip()
+		}, resumeBackdrop)
+	}
+	return container.NewCenter(btn)
+}
+
+func coordPickerButtonLabel(ref actions.CoordinateRef, isPoint bool) string {
+	if ref.IsEmpty() {
+		if isPoint {
+			return "Select point…"
 		}
-		navigate()
-	})
-	navBtn.Importance = widget.LowImportance
-	return container.NewCenter(navBtn)
+		return "Select search area…"
+	}
+	return ref.DisplayLabel()
 }
 
 func coordEntry(text string) *custom_widgets.BorderlessEntry {
@@ -199,7 +225,7 @@ func wirePillToggleSection(toggle *actiondisplay.PillToggle, setEnabled func(boo
 	setEnabled(toggle.Value)
 }
 
-func buildParamEditPills(node actions.ActionInterface, actionType string, applyParts []func() error) (fyne.CanvasObject, []func() error) {
+func buildParamEditPills(node actions.ActionInterface, actionType string, owner *actionDisplayTooltipHover, applyParts []func() error) (fyne.CanvasObject, []func() error) {
 	var sections []fyne.CanvasObject
 	added := false
 
@@ -235,7 +261,7 @@ func buildParamEditPills(node actions.ActionInterface, actionType string, applyP
 		added = true
 
 	case *actions.Conditional:
-		condSections, apply := appendConditionalTooltipEdit(a, actionType)
+		condSections, apply := appendConditionalTooltipEdit(a, actionType, owner)
 		sections = append(sections, condSections...)
 		applyParts = append(applyParts, apply)
 		added = true
@@ -263,6 +289,13 @@ func buildParamEditPills(node actions.ActionInterface, actionType string, applyP
 		nameEntry := addNamePill(general, a.Name, actionType)
 		sections = append(sections, wrapTooltipSection(general.box))
 
+		splits := newPillRow()
+		rowSplitEntry := coordEntry(fmt.Sprintf("%d", a.RowSplit))
+		colSplitEntry := coordEntry(fmt.Sprintf("%d", a.ColSplit))
+		splits.add(actiondisplay.NewEditablePill("Row split", rowSplitEntry, actionType))
+		splits.add(actiondisplay.NewEditablePill("Col split", colSplitEntry, actionType))
+		sections = append(sections, wrapTooltipSection(splits.box))
+
 		match := newPillRow()
 		tolMin, tolMax := 0.0, 1.0
 		blurMin, blurMax := 1, 30
@@ -281,13 +314,28 @@ func buildParamEditPills(node actions.ActionInterface, actionType string, applyP
 		behavior.add(actiondisplay.WrapPillToggle(runOnNoFind, actionType))
 		sections = append(sections, wrapTooltipSection(behavior.box))
 
+		outputs := newPillRow()
+		outXEntry := coordEntry(a.OutputXVariable)
+		outYEntry := coordEntry(a.OutputYVariable)
+		outputs.add(actiondisplay.NewEditablePill("Output X", outXEntry, actionType))
+		outputs.add(actiondisplay.NewEditablePill("Output Y", outYEntry, actionType))
+		sections = append(sections, wrapTooltipSection(outputs.box))
+
 		added = true
 		applyParts = append(applyParts, func() error {
 			a.Name = strings.TrimSpace(nameEntry.Text)
+			if rs, err := strconv.Atoi(strings.TrimSpace(rowSplitEntry.Text)); err == nil {
+				a.RowSplit = rs
+			}
+			if cs, err := strconv.Atoi(strings.TrimSpace(colSplitEntry.Text)); err == nil {
+				a.ColSplit = cs
+			}
 			a.Tolerance = float32(tolInc.Value)
 			a.Blur = blurInc.Value
 			applyWait()
 			a.RunBranchOnNoFind = runOnNoFind.Value
+			a.OutputXVariable = strings.TrimSpace(outXEntry.Text)
+			a.OutputYVariable = strings.TrimSpace(outYEntry.Text)
 			return nil
 		})
 
@@ -301,6 +349,9 @@ func buildParamEditPills(node actions.ActionInterface, actionType string, applyP
 		tolInc := actiondisplay.NewPillIntStepper("Tolerance", a.ColorTolerance, 1, &tolMin, &tolMax, actionType)
 		colorEntry := coordEntry(a.TargetColor)
 		search.add(actiondisplay.NewEditablePill("Color", colorEntry, actionType))
+		if dropper := findPixelColorDropperButton(colorEntry, nil); dropper != nil {
+			search.add(dropper)
+		}
 		search.add(actiondisplay.WrapPillStepper(tolInc, actionType))
 		sections = append(sections, wrapTooltipSection(search.box))
 
@@ -308,12 +359,21 @@ func buildParamEditPills(node actions.ActionInterface, actionType string, applyP
 		applyWait := appendWaitTilFoundPills(wait, &a.WaitTilFoundConfig, 100, actionType)
 		sections = append(sections, wrapTooltipSection(wait.box))
 
+		outputs := newPillRow()
+		outXEntry := coordEntry(a.OutputXVariable)
+		outYEntry := coordEntry(a.OutputYVariable)
+		outputs.add(actiondisplay.NewEditablePill("Output X", outXEntry, actionType))
+		outputs.add(actiondisplay.NewEditablePill("Output Y", outYEntry, actionType))
+		sections = append(sections, wrapTooltipSection(outputs.box))
+
 		added = true
 		applyParts = append(applyParts, func() error {
 			a.Name = strings.TrimSpace(nameEntry.Text)
 			a.TargetColor = strings.ToLower(strings.TrimPrefix(strings.TrimSpace(colorEntry.Text), "#"))
 			a.ColorTolerance = tolInc.Value
 			applyWait()
+			a.OutputXVariable = strings.TrimSpace(outXEntry.Text)
+			a.OutputYVariable = strings.TrimSpace(outYEntry.Text)
 			return nil
 		})
 
@@ -324,6 +384,42 @@ func buildParamEditPills(node actions.ActionInterface, actionType string, applyP
 		general.add(actiondisplay.NewEditablePill("Target", targetEntry, actionType))
 		sections = append(sections, wrapTooltipSection(general.box))
 
+		outputs := newPillRow()
+		outVarEntry := coordEntry(a.OutputVariable)
+		outXEntry := coordEntry(a.OutputXVariable)
+		outYEntry := coordEntry(a.OutputYVariable)
+		outputs.add(actiondisplay.NewEditablePill("Output", outVarEntry, actionType))
+		outputs.add(actiondisplay.NewEditablePill("Output X", outXEntry, actionType))
+		outputs.add(actiondisplay.NewEditablePill("Output Y", outYEntry, actionType))
+		sections = append(sections, wrapTooltipSection(outputs.box))
+
+		preprocess := newPillRow()
+		grayToggle := actiondisplay.NewPillToggle("Grayscale", a.Grayscale)
+		blurMin, blurMax := 1, 30
+		blurInc := actiondisplay.NewPillIntStepper("Blur", a.Blur, 2, &blurMin, &blurMax, actionType)
+		thMin, thMax := 0, 255
+		thInc := actiondisplay.NewPillIntStepper("Threshold", a.MinThreshold, 5, &thMin, &thMax, actionType)
+		otsuToggle := actiondisplay.NewPillToggle("Auto threshold", a.ThresholdOtsu)
+		invertToggle := actiondisplay.NewPillToggle("Invert threshold", a.ThresholdInvert)
+		resizeMin, resizeMax := 1.0, 10.0
+		resizeInc := actiondisplay.NewPillFloatStepper("Resize", a.Resize, 0.5, &resizeMin, &resizeMax, 1, actionType)
+		preprocess.add(actiondisplay.WrapPillToggle(grayToggle, actionType))
+		preprocess.add(actiondisplay.WrapPillStepper(blurInc, actionType))
+		preprocess.add(actiondisplay.WrapPillStepper(thInc, actionType))
+		preprocess.add(actiondisplay.WrapPillToggle(otsuToggle, actionType))
+		preprocess.add(actiondisplay.WrapPillToggle(invertToggle, actionType))
+		preprocess.add(actiondisplay.WrapPillStepper(resizeInc, actionType))
+		setThresholdEnabled := func(auto bool) {
+			if auto {
+				thInc.Disable()
+				return
+			}
+			thInc.Enable()
+		}
+		otsuToggle.OnChanged = setThresholdEnabled
+		setThresholdEnabled(otsuToggle.Value)
+		sections = append(sections, wrapTooltipSection(preprocess.box))
+
 		wait := newPillRow()
 		applyWait := appendWaitTilFoundPills(wait, &a.WaitTilFoundConfig, 0, actionType)
 		sections = append(sections, wrapTooltipSection(wait.box))
@@ -332,6 +428,15 @@ func buildParamEditPills(node actions.ActionInterface, actionType string, applyP
 		applyParts = append(applyParts, func() error {
 			a.Name = strings.TrimSpace(nameEntry.Text)
 			a.Target = strings.TrimSpace(targetEntry.Text)
+			a.OutputVariable = strings.TrimSpace(outVarEntry.Text)
+			a.OutputXVariable = strings.TrimSpace(outXEntry.Text)
+			a.OutputYVariable = strings.TrimSpace(outYEntry.Text)
+			a.Grayscale = grayToggle.Value
+			a.Blur = blurInc.Value
+			a.MinThreshold = thInc.Value
+			a.ThresholdOtsu = otsuToggle.Value
+			a.ThresholdInvert = invertToggle.Value
+			a.Resize = resizeInc.Value
 			applyWait()
 			return nil
 		})
@@ -389,6 +494,25 @@ func buildParamEditPills(node actions.ActionInterface, actionType string, applyP
 		sections = append(sections, wrapTooltipSection(message.box))
 
 		key := newPillRow()
+		tempKeys := append([]string(nil), a.ContinueKey...)
+		keyLabel := widget.NewLabel(macrohotkey.FormatContinueKey(tempKeys))
+		if keyLabel.Text == "" {
+			keyLabel.SetText("(not set)")
+		}
+		if activeWire.ShowHotkeyRecordDialog != nil && activeWire.Window != nil {
+			recordBtn := actiondisplay.NewPillIconButton(theme.MediaRecordIcon(), func() {
+				activeWire.ShowHotkeyRecordDialog(activeWire.Window, time.Second, func(recorded []string) {
+					tempKeys = append([]string(nil), recorded...)
+					keyLabel.SetText(macrohotkey.FormatContinueKey(tempKeys))
+					if keyLabel.Text == "" {
+						keyLabel.SetText("(not set)")
+					}
+				})
+			})
+			key.add(actiondisplay.PillChrome(container.NewVBox(keyLabel, recordBtn), actionType))
+		} else {
+			key.add(actiondisplay.PillChrome(keyLabel, actionType))
+		}
 		passToggle := actiondisplay.NewPillToggle("Pass through", a.PassThrough)
 		key.add(actiondisplay.WrapPillToggle(passToggle, actionType))
 		sections = append(sections, wrapTooltipSection(key.box))
@@ -396,23 +520,13 @@ func buildParamEditPills(node actions.ActionInterface, actionType string, applyP
 		added = true
 		applyParts = append(applyParts, func() error {
 			a.Message = messageEntry.Text
+			a.ContinueKey = append([]string(nil), tempKeys...)
 			a.PassThrough = passToggle.Value
 			return nil
 		})
 
 	case *actions.ForEachRow:
-		row := newPillRow()
-		startEntry := coordEntry(formatCoordValue(a.StartRow))
-		endEntry := coordEntry(formatCoordValue(a.EndRow))
-		row.add(actiondisplay.NewEditablePill("Start row", startEntry, actionType))
-		row.add(actiondisplay.NewEditablePill("End row", endEntry, actionType))
-		sections = append(sections, wrapTooltipSection(row.box))
-		added = true
-		applyParts = append(applyParts, func() error {
-			a.StartRow = parseRowBoundValue(startEntry.Text)
-			a.EndRow = parseRowBoundValue(endEntry.Text)
-			return nil
-		})
+		return appendForEachRowTooltipEdit(a, actionType, applyParts)
 
 	case *actions.FocusWindow:
 		row := newPillRow()
@@ -420,6 +534,10 @@ func buildParamEditPills(node actions.ActionInterface, actionType string, applyP
 		pathEntry := coordEntry(a.ProcessPath)
 		row.add(actiondisplay.NewEditablePill("Title", titleEntry, actionType))
 		row.add(actiondisplay.NewEditablePill("App", pathEntry, actionType))
+		row.add(windowPickerButton(actionType, func(title, path string) {
+			titleEntry.SetText(title)
+			pathEntry.SetText(path)
+		}))
 		sections = append(sections, wrapTooltipSection(row.box))
 		added = true
 		applyParts = append(applyParts, func() error {
@@ -439,6 +557,21 @@ func addNamePill(row *pillRow, name, actionType string) *custom_widgets.Borderle
 	entry := coordEntry(name)
 	row.add(actiondisplay.NewEditablePill("Name", entry, actionType))
 	return entry
+}
+
+func viewParamPillsContentKey(node actions.ActionInterface) string {
+	if node == nil {
+		return ""
+	}
+	m, err := snapshotActionMap(node)
+	if err != nil || m == nil {
+		return node.GetType()
+	}
+	b, err := json.Marshal(m)
+	if err != nil {
+		return node.GetType()
+	}
+	return string(b)
 }
 
 func viewParamPills(node actions.ActionInterface, actionType string) fyne.CanvasObject {
@@ -566,8 +699,8 @@ func viewParamPills(node actions.ActionInterface, actionType string) fyne.Canvas
 
 	case *actions.ForEachRow:
 		row := newPillRow()
-		addDisplayPill(row, "Start row", formatCoordValue(a.StartRow), actionType)
-		addDisplayPill(row, "End row", formatCoordValue(a.EndRow), actionType)
+		addDisplayPill(row, "Start row", formatAnyValue(a.StartRow), actionType)
+		addDisplayPill(row, "End row", formatAnyValue(a.EndRow), actionType)
 		sections = append(sections, wrapTooltipSection(row.box))
 		added = true
 
