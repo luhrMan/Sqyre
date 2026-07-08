@@ -156,6 +156,9 @@ func Bootstrap(mainWindow, splashWindow fyne.Window, report BootstrapReporter) {
 
 	report.setStatus("Setting up directories…")
 	report.setProgress(progressDirs)
+	if custom := fyne.CurrentApp().Preferences().String(config.PrefSqyreDir); custom != "" {
+		config.SetSqyreDirOverride(custom)
+	}
 	if err := config.InitializeDirectories(); err != nil {
 		log.Printf("Warning: Failed to initialize directories: %v", err)
 	}
