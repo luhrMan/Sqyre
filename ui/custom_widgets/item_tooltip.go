@@ -17,7 +17,7 @@ const (
 	itemTooltipShowDelay = 750 * time.Millisecond
 	itemTooltipMaxWidth  = 600
 	// TooltipEdgeMarginFraction is the minimum fraction of canvas width/height kept clear of window edges.
-	TooltipEdgeMarginFraction float32 = 0.05
+	TooltipEdgeMarginFraction float32 = 0.025
 )
 
 // ItemTooltipLabel is an invisible hover target for item grid cells. It shows a rich tooltip
