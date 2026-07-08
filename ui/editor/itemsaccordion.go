@@ -167,20 +167,86 @@ func PopulateItemsSearchAccordion(
 	}
 	applyAccordionOpenByProgram(acc.Items, openState)
 	acc.Refresh()
-	refreshAccordionItemGrids(acc.Items)
-	// GridWrap may compute column count before width is known; defer refresh until after layout.
-	fyne.Do(func() { refreshAccordionItemGrids(acc.Items) })
+	// GridWrap may compute column count before width is known; defer one refresh until after layout.
+	fyne.Do(func() { refreshOpenAccordionItemGrids(acc.Items) })
 }
 
-// refreshAccordionItemGrids refreshes item grids inside open accordion rows so column count
-// matches the available width. Without this, GridWrap initially lays out one column and leaves
-// a tall blank area until something else triggers a refresh (e.g. selecting an item).
-func refreshAccordionItemGrids(items []*widget.AccordionItem) {
+// resyncItemsAccordion updates every program row in the items accordion incrementally
+// and removes rows for deleted programs (no RemoveAll / grid recreation).
+func resyncItemsAccordion() {
+	if !IsBuilt() {
+		return
+	}
+	acc, ok := shell().EditorTabs.ItemsTab.Widgets["Accordion"].(*custom_widgets.AccordionWithHeaderWidgets)
+	if !ok {
+		return
+	}
+	for _, p := range repositories.ProgramRepo().GetAllSortedByName() {
+		syncItemsAccordionProgramRow(acc, p.Name)
+	}
+	pruneItemsAccordionRows(acc)
+}
+
+// syncItemsAccordionProgramRow appends or refreshes a single program row in the items accordion.
+func syncItemsAccordionProgramRow(acc *custom_widgets.AccordionWithHeaderWidgets, programName string) {
+	program, err := repositories.ProgramRepo().Get(programName)
+	if err != nil {
+		return
+	}
+	filterText := ""
+	if et := shell().EditorTabs.ItemsTab; et.Widgets["searchbar"] != nil {
+		if sb, ok := et.Widgets["searchbar"].(*widget.Entry); ok {
+			filterText = sb.Text
+		}
+	}
+	data := collectProgramItemData(program)
+	visible := programRowVisible(program.Name, data, filterText)
+	idx := itemsAccordionRowIndexForProgram(acc, programName)
+
+	if !visible {
+		if idx >= 0 {
+			removeItemsAccordionRowAt(acc, idx)
+		}
+		return
+	}
+	if idx >= 0 {
+		rebuildProgramAccordionItem(acc, program, idx)
+		return
+	}
+	opts := editorItemsAccordionOptions(program, filterText)
+	opts.itemData = data
+	item, header := CreateProgramAccordionItem(opts)
+	acc.AppendItem(item, header)
+	shell().EditorTabs.ItemsTab.Widgets[programName+"-list"] = custom_widgets.FindGridWrap(item.Detail)
+}
+
+func removeItemsAccordionRowAt(acc *custom_widgets.AccordionWithHeaderWidgets, idx int) {
+	acc.RemoveItemAt(idx)
+}
+
+func pruneItemsAccordionRows(acc *custom_widgets.AccordionWithHeaderWidgets) {
+	alive := make(map[string]struct{})
+	for _, p := range repositories.ProgramRepo().GetAllSortedByName() {
+		alive[p.Name] = struct{}{}
+	}
+	for i := len(acc.Items) - 1; i >= 0; i-- {
+		name := accordionProgramNameFromTitle(acc.Items[i].Title)
+		if _, ok := alive[name]; !ok {
+			removeItemsAccordionRowAt(acc, i)
+		}
+	}
+}
+
+// refreshOpenAccordionItemGrids refreshes item grids inside open accordion rows so column count
+// matches the available width, without resetting scroll position.
+func refreshOpenAccordionItemGrids(items []*widget.AccordionItem) {
 	for _, item := range items {
 		if item == nil || !item.Open {
 			continue
 		}
-		custom_widgets.RefreshGridWraps(item.Detail)
+		if gw := custom_widgets.FindGridWrap(item.Detail); gw != nil {
+			custom_widgets.RefreshGridWrapPreservingScroll(gw)
+		}
 	}
 }
 
@@ -257,9 +323,26 @@ func CreateProgramAccordionItem(opts ItemsAccordionOptions) (*widget.AccordionIt
 	lists := struct {
 		items    *widget.GridWrap
 		filtered []string
+		selected map[string]struct{}
 	}{
 		filtered: filtered,
 	}
+
+	syncSelected := func() {
+		lists.selected = nil
+		if opts.GetSelectedTargets == nil {
+			return
+		}
+		targets := opts.GetSelectedTargets()
+		if len(targets) == 0 {
+			return
+		}
+		lists.selected = make(map[string]struct{}, len(targets))
+		for _, t := range targets {
+			lists.selected[t] = struct{}{}
+		}
+	}
+	syncSelected()
 
 	lists.items = widget.NewGridWrap(
 		func() int { return len(lists.filtered) },
@@ -284,15 +367,23 @@ func CreateProgramAccordionItem(opts ItemsAccordionOptions) (*widget.AccordionIt
 			tooltip := stack.Objects[2].(*custom_widgets.ItemTooltipLabel)
 			tooltip.SetItem(baseItemName, data.tagsByBaseName[baseItemName])
 
-			var t []string
-			if opts.GetSelectedTargets != nil {
-				t = opts.GetSelectedTargets()
-			}
 			fullItemName := programName + config.ProgramDelimiter + baseItemName
-			if slices.Contains(t, fullItemName) {
-				rect.FillColor = color.RGBA{R: 0, G: 128, B: 0, A: 128}
+			if lists.selected != nil {
+				if _, ok := lists.selected[fullItemName]; ok {
+					rect.FillColor = color.RGBA{R: 0, G: 128, B: 0, A: 128}
+				} else {
+					rect.FillColor = color.RGBA{}
+				}
 			} else {
-				rect.FillColor = color.RGBA{}
+				var t []string
+				if opts.GetSelectedTargets != nil {
+					t = opts.GetSelectedTargets()
+				}
+				if slices.Contains(t, fullItemName) {
+					rect.FillColor = color.RGBA{R: 0, G: 128, B: 0, A: 128}
+				} else {
+					rect.FillColor = color.RGBA{}
+				}
 			}
 
 			// Reuse the existing image widget (swap resource) rather than creating
@@ -324,6 +415,7 @@ func CreateProgramAccordionItem(opts ItemsAccordionOptions) (*widget.AccordionIt
 			opts.OnItemSelected(baseItemName)
 		}
 		lists.items.UnselectAll()
+		syncSelected()
 		if opts.OnSelectionMaybeChanged != nil {
 			opts.OnSelectionMaybeChanged()
 		}
@@ -372,6 +464,7 @@ func CreateProgramAccordionItem(opts ItemsAccordionOptions) (*widget.AccordionIt
 			}
 			slices.Sort(newTargets)
 			opts.OnSelectionChanged(newTargets)
+			syncSelected()
 			custom_widgets.RefreshGridWrapPreservingScroll(lists.items)
 		}
 		getState := func() int {

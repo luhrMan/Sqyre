@@ -59,12 +59,15 @@ func unselectMacroTreeAction(mt *MacroTree) {
 	if mt == nil {
 		return
 	}
+	prev := mt.SelectedNode
 	mt.SelectedNode = ""
 	mt.UnselectAll()
 	if c := fyne.CurrentApp().Driver().CanvasForObject(mt); c != nil && c.Focused() == mt {
 		c.Unfocus()
 	}
-	mt.Refresh()
+	if prev != "" {
+		mt.RefreshItem(prev)
+	}
 }
 
 // selectPreservingScroll updates selection without ScrollTo jumping the viewport.

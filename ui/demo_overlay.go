@@ -20,7 +20,7 @@ type ClickGuide struct {
 // Demo frame click targets for a 1000×500 macro editor capture.
 var (
 	DemoClickActionIcon   = ClickGuide{X: 26, Y: 150}
-	DemoClickDialogSave   = ClickGuide{X: 602, Y: 318}
+	DemoClickTooltipSave  = ClickGuide{X: 602, Y: 318}
 	DemoClickPickerWait   = ClickGuide{X: 868, Y: 128}
 	DemoClickNewActionRow = ClickGuide{X: 26, Y: 158}
 )

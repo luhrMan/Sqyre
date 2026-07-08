@@ -189,11 +189,11 @@ func LoadPointPreviewImage(program *models.Program, key string) (custom_widgets.
 	if err != nil {
 		return custom_widgets.PreviewTooltipResult{}, err
 	}
-	img, err := vision.PointPreview(point)
+	img, caption, err := vision.PointPreviewTooltipCached(point)
 	if err != nil {
 		return custom_widgets.PreviewTooltipResult{}, err
 	}
-	return custom_widgets.PreviewTooltipResult{Image: img, Caption: vision.PointPreviewCaption(point)}, nil
+	return custom_widgets.PreviewTooltipResult{Image: img, Caption: caption}, nil
 }
 
 // LoadSearchAreaPreviewImage captures the editor preview for a search area list entry.
@@ -202,11 +202,11 @@ func LoadSearchAreaPreviewImage(program *models.Program, key string) (custom_wid
 	if err != nil {
 		return custom_widgets.PreviewTooltipResult{}, err
 	}
-	img, err := vision.SearchAreaPreview(sa)
+	img, caption, err := vision.SearchAreaPreviewTooltipCached(sa)
 	if err != nil {
 		return custom_widgets.PreviewTooltipResult{}, err
 	}
-	return custom_widgets.PreviewTooltipResult{Image: img, Caption: vision.SearchAreaPreviewCaption(sa)}, nil
+	return custom_widgets.PreviewTooltipResult{Image: img, Caption: caption}, nil
 }
 
 func safeUpdateSearchAreaPreviewPanel(panel *editorPreviewPanel, sa *models.SearchArea) {

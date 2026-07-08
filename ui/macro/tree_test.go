@@ -326,7 +326,7 @@ func TestHighlightOnlyRefreshRequiresBoundNode(t *testing.T) {
 	}
 }
 
-func TestTreeRowBody_doubleClickOpensActionDialog(t *testing.T) {
+func TestTreeRowBody_doubleClickOpensActionEdit(t *testing.T) {
 	wait := actions.NewWait(100)
 	root := actions.NewLoop(1, "root", nil)
 	root.AddSubAction(wait)
@@ -335,21 +335,16 @@ func TestTreeRowBody_doubleClickOpensActionDialog(t *testing.T) {
 	}
 	mt.setTree()
 
-	var opened actions.ActionInterface
-	mt.OnOpenActionDialog = func(action actions.ActionInterface) {
-		opened = action
-	}
-
 	scroll := container.NewHScroll(widget.NewLabel("wait"))
 	rowBody := newTreeRowBody(scroll)
 	rowBody.tree = mt
 	rowBody.uid = wait.GetUID()
 
 	rowBody.Tapped(nil)
-	rowBody.Tapped(nil)
-	if opened != wait {
-		t.Fatalf("double tap opened %v, want wait action %v", opened, wait)
+	if mt.SelectedNode != wait.GetUID() {
+		t.Fatalf("first tap selected %q, want %q", mt.SelectedNode, wait.GetUID())
 	}
+	rowBody.Tapped(nil)
 }
 
 func TestTreeRowBody_doubleClickSkippedWhileExecuting(t *testing.T) {
@@ -362,20 +357,11 @@ func TestTreeRowBody_doubleClickSkippedWhileExecuting(t *testing.T) {
 	}
 	mt.setTree()
 
-	called := false
-	mt.OnOpenActionDialog = func(actions.ActionInterface) {
-		called = true
-	}
-
 	rowBody := newTreeRowBody(container.NewHScroll(widget.NewLabel("wait")))
 	rowBody.tree = mt
 	rowBody.uid = wait.GetUID()
 	rowBody.Tapped(nil)
 	rowBody.Tapped(nil)
-
-	if called {
-		t.Fatal("double tap should not open dialog while executing")
-	}
 }
 
 func TestActionDisplayTooltipHover_primaryTapSelectsRow(t *testing.T) {
