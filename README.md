@@ -39,7 +39,7 @@ Sqyre lets you build and run macros without writing code. Each macro is a tree o
 1. **Build or install** for your OS — `make linux` or `make windows` (see [Developing](docs/DEVELOPING.md)).
 2. **Launch** `./bin/sqyre` (Linux) or the Windows binary from `bin/windows-amd64/`.
 3. **Create a macro** — the root is always a **loop**; add child actions from the picker.
-4. **Configure** each node in its dialog (coordinates, keys, templates, OCR regions, variables, etc.).
+4. **Configure** each node in its pinned in-tree tooltip editor (coordinates, keys, templates, OCR regions, variables, etc.), picking reusable points, search areas, and images from entity pickers.
 5. **Run** from the toolbar, or assign a **hotkey** to the macro.
 
 Branching actions (**image search**, **OCR**, **find pixel**, **if**) run child steps only when their condition matches. **Loop** / **for each row** repeat children; **break** and **continue** control those loops.
