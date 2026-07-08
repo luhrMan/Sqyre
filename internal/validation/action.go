@@ -14,6 +14,16 @@ func ValidateAction(a actions.ActionInterface, macroModel *models.Macro) error {
 	if a == nil {
 		return fmt.Errorf("action cannot be nil")
 	}
+	if producer, ok := a.(actions.VariableProducer); ok {
+		for _, b := range producer.VariableBindings() {
+			if strings.TrimSpace(b.Name) == "" {
+				continue
+			}
+			if err := ValidateVariableAssignmentName(b.Name); err != nil {
+				return fmt.Errorf("%s: %w", variableBindingLabel(b), err)
+			}
+		}
+	}
 	switch n := a.(type) {
 	case *actions.Pause:
 		return macrohotkey.ValidateContinueKeyForUI(n.ContinueKey)
@@ -29,7 +39,7 @@ func ValidateAction(a actions.ActionInterface, macroModel *models.Macro) error {
 			return fmt.Errorf("calculate: %s", v.Error)
 		}
 	case *actions.SetVariable:
-		if err := ValidateVariableName(n.VariableName); err != nil {
+		if err := ValidateVariableAssignmentName(n.VariableName); err != nil {
 			return fmt.Errorf("set variable: %w", err)
 		}
 		if val, ok := n.Value.(string); ok {
@@ -39,4 +49,20 @@ func ValidateAction(a actions.ActionInterface, macroModel *models.Macro) error {
 		}
 	}
 	return nil
+}
+
+func variableBindingLabel(b actions.VariableBinding) string {
+	name := strings.TrimSpace(b.Name)
+	switch b.Role {
+	case "value":
+		return fmt.Sprintf("variable %q", name)
+	case "output":
+		return fmt.Sprintf("output variable %q", name)
+	case "output_x":
+		return fmt.Sprintf("output X variable %q", name)
+	case "output_y":
+		return fmt.Sprintf("output Y variable %q", name)
+	default:
+		return fmt.Sprintf("variable %q", name)
+	}
 }
