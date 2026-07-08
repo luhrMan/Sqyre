@@ -18,6 +18,7 @@ import (
 	"Sqyre/internal/testsupport"
 	"Sqyre/ui"
 	"Sqyre/ui/macro"
+	"Sqyre/ui/screenshot"
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/test"
 )
@@ -113,19 +114,19 @@ func TestDocsScreenshots(t *testing.T) {
 	mt.OpenAllBranches()
 	mt.Refresh()
 
-	mainPNG, err := ui.RenderObjectPNG(u.MainUi.Navigation.Root, docsMainSize)
+	mainPNG, err := screenshot.RenderObjectPNG(u.MainUi.Navigation.Root, docsMainSize)
 	if err != nil {
 		t.Fatalf("render main window: %v", err)
 	}
 	writeOrComparePNG(t, filepath.Join(dir, "main-window.png"), mainPNG, 5000)
 
-	pickerPNG, err := ui.RenderObjectPNG(ui.AddActionPickerForScreenshot(), ui.AddActionPickerSize)
+	pickerPNG, err := screenshot.RenderObjectPNG(ui.AddActionPickerForScreenshot(), ui.AddActionPickerSize)
 	if err != nil {
 		t.Fatalf("render add action picker: %v", err)
 	}
 	writeOrComparePNG(t, filepath.Join(dir, "add-action-picker.png"), pickerPNG, 5000)
 
-	editorPNG, err := ui.RenderObjectPNG(ui.EditorScreenForScreenshot(u), docsMainSize)
+	editorPNG, err := screenshot.RenderObjectPNG(ui.EditorScreenForScreenshot(u), docsMainSize)
 	if err != nil {
 		t.Fatalf("render data editor: %v", err)
 	}
@@ -141,7 +142,7 @@ func TestDocsScreenshots(t *testing.T) {
 func rowClickGuideOnMain(t *testing.T, u *ui.Ui, mt *macro.MacroTree, uid string) []byte {
 	t.Helper()
 	var center fyne.Position
-	pngData, _, err := ui.RenderObjectPNGWithAnchors(u.MainUi.Navigation.Root, docsMainSize, func() []fyne.Position {
+	pngData, _, err := screenshot.RenderObjectPNGWithAnchors(u.MainUi.Navigation.Root, docsMainSize, func() []fyne.Position {
 		pos, ok := mt.RowCenterForScreenshot(uid)
 		if !ok {
 			t.Fatalf("row %s not visible for click guide", uid)
@@ -152,7 +153,7 @@ func rowClickGuideOnMain(t *testing.T, u *ui.Ui, mt *macro.MacroTree, uid string
 	if err != nil {
 		t.Fatalf("render main window with row anchor: %v", err)
 	}
-	frame, err := ui.OverlayClickGuide(pngData, ui.ClickGuideAt(center))
+	frame, err := screenshot.OverlayClickGuide(pngData, screenshot.ClickGuideAt(center))
 	if err != nil {
 		t.Fatalf("row click guide: %v", err)
 	}
@@ -181,22 +182,22 @@ func writeDemoFrames(t *testing.T, u *ui.Ui, mt *macro.MacroTree) {
 		t.Fatal("Click tile not found in picker")
 	}
 	var tileCenter fyne.Position
-	pickerPNG, _, err := ui.RenderObjectPNGWithAnchors(pickerContent, docsMainSize, func() []fyne.Position {
-		tileCenter = ui.AnchorCenter(clickTile)
+	pickerPNG, _, err := screenshot.RenderObjectPNGWithAnchors(pickerContent, docsMainSize, func() []fyne.Position {
+		tileCenter = screenshot.AnchorCenter(clickTile)
 		return []fyne.Position{tileCenter}
 	})
 	if err != nil {
 		t.Fatalf("render picker for frame 2: %v", err)
 	}
-	mainPNG, err := ui.RenderObjectPNG(u.MainUi.Navigation.Root, docsMainSize)
+	mainPNG, err := screenshot.RenderObjectPNG(u.MainUi.Navigation.Root, docsMainSize)
 	if err != nil {
 		t.Fatalf("render main for frame 2: %v", err)
 	}
-	composite, offset, err := ui.CompositePickerOverDimmedMain(mainPNG, pickerPNG)
+	composite, offset, err := screenshot.CompositePickerOverDimmedMain(mainPNG, pickerPNG)
 	if err != nil {
 		t.Fatalf("composite picker for frame 2: %v", err)
 	}
-	frame2, err := ui.OverlayClickGuide(composite, ui.ClickGuide{
+	frame2, err := screenshot.OverlayClickGuide(composite, screenshot.ClickGuide{
 		X: offset.X + int(tileCenter.X),
 		Y: offset.Y + int(tileCenter.Y),
 	})
