@@ -119,6 +119,7 @@ func (h *PreviewTooltipHover) cancelCapture() {
 		h.captureCancel()
 		h.captureCancel = nil
 		h.captureCtx = nil
+		RevokeActivePreviewCapture()
 	}
 }
 
@@ -128,9 +129,13 @@ func (h *PreviewTooltipHover) hideTooltip() {
 	}
 	DeactivateTooltipEscapeDismiss()
 	h.panelHovering = false
+	h.tooltipPanel.clearPreview()
+	h.removeTooltipFromLayer()
+}
+
+func (h *PreviewTooltipHover) removeTooltipFromLayer() {
 	c := fyne.CurrentApp().Driver().CanvasForObject(h)
 	if c == nil {
-		h.tooltipPanel = nil
 		return
 	}
 	layer := findItemTooltipLayer(c, c.Overlays().Top())
@@ -138,11 +143,11 @@ func (h *PreviewTooltipHover) hideTooltip() {
 		layer.Container.Objects = nil
 		layer.Container.Refresh()
 	}
-	h.tooltipPanel = nil
 }
 
 func (h *PreviewTooltipHover) beginCapture() {
-	h.hideTooltip()
+	h.cancelPending()
+	h.cancelCapture()
 	load := h.loadPreview
 	if load == nil || !h.hovering {
 		return
@@ -155,47 +160,61 @@ func (h *PreviewTooltipHover) beginCapture() {
 	if layer == nil {
 		return
 	}
-	panel := newPreviewTooltipPanel(h)
+	if h.tooltipPanel == nil {
+		h.tooltipPanel = newPreviewTooltipPanel(h)
+	} else {
+		h.tooltipPanel.clearPreview()
+	}
 	origin := itemTooltipLayerOrigin(layer, c.Overlays().Top())
-	size, relPos := previewTooltipSizeAndPosition(panel, c, h.absoluteMousePos.Subtract(origin))
-	panel.Resize(size)
-	panel.Move(relPos)
-	panel.setLoading()
-	layer.Container.Objects = []fyne.CanvasObject{panel}
+	size, relPos := previewTooltipSizeAndPosition(h.tooltipPanel, c, h.absoluteMousePos.Subtract(origin))
+	h.tooltipPanel.Resize(size)
+	h.tooltipPanel.Move(relPos)
+	h.tooltipPanel.setLoading()
+	layer.Container.Objects = []fyne.CanvasObject{h.tooltipPanel}
 	layer.Container.Refresh()
-	h.tooltipPanel = panel
 	ActivateTooltipEscapeDismiss(func() { h.hideTooltip() })
 
 	ctx, cancel := context.WithCancel(context.Background())
 	h.captureCtx = ctx
 	h.captureCancel = cancel
+	panel := h.tooltipPanel
 	go func() {
-		result, err := load()
-		select {
-		case <-ctx.Done():
-			return
-		default:
+		if !AcquirePreviewCaptureSlot(ctx) {
 			fyne.Do(func() {
-				if h.captureCtx != ctx || !h.hovering {
-					return
+				if ctx.Err() != nil || h.captureCtx != ctx || !h.hovering {
+					h.hideTooltip()
 				}
-				h.captureCancel = nil
-				h.captureCtx = nil
-				if h.tooltipPanel != panel {
-					return
-				}
-				if err != nil {
-					panel.setError(err.Error())
-				} else {
-					panel.setImage(result.Image, result.Caption)
-				}
-				panel.Refresh()
-				size, relPos := previewTooltipSizeAndPosition(panel, c, h.absoluteMousePos.Subtract(origin))
-				panel.Resize(size)
-				panel.Move(relPos)
-				layer.Container.Refresh()
 			})
+			return
 		}
+		defer ReleasePreviewCaptureSlot()
+		if ctx.Err() != nil {
+			return
+		}
+		result, err := load()
+		if ctx.Err() != nil {
+			return
+		}
+		fyne.Do(func() {
+			if ctx.Err() != nil || h.captureCtx != ctx || !h.hovering {
+				return
+			}
+			h.captureCancel = nil
+			h.captureCtx = nil
+			if h.tooltipPanel != panel {
+				return
+			}
+			if err != nil {
+				panel.setError(err.Error())
+			} else {
+				panel.setImage(result.Image, result.Caption)
+			}
+			panel.Refresh()
+			size, relPos := previewTooltipSizeAndPosition(panel, c, h.absoluteMousePos.Subtract(origin))
+			panel.Resize(size)
+			panel.Move(relPos)
+			layer.Container.Refresh()
+		})
 	}()
 }
 
@@ -252,9 +271,27 @@ func (p *previewTooltipPanel) MinSize() fyne.Size {
 	return size.Add(fyne.NewSquareSize(innerPad * 2))
 }
 
+func (p *previewTooltipPanel) clearPreview() {
+	p.loading = false
+	p.showImage = false
+	if p.img != nil {
+		p.img.Image = nil
+	}
+	if p.message != nil {
+		p.message.SetText("")
+	}
+	if p.caption != nil {
+		p.caption.SetText("")
+		p.caption.Hide()
+	}
+}
+
 func (p *previewTooltipPanel) setLoading() {
 	p.loading = true
 	p.showImage = false
+	if p.img != nil {
+		p.img.Image = nil
+	}
 	if p.message != nil {
 		p.message.SetText("Loading preview…")
 	}
@@ -386,25 +423,26 @@ func (r *previewTooltipPanelRenderer) Destroy() {}
 
 func previewTooltipSizeAndPosition(panel *previewTooltipPanel, c fyne.Canvas, mousePos fyne.Position) (fyne.Size, fyne.Position) {
 	canvasSize := c.Size()
-	canvasPad := theme.Padding()
+	edgeMarginX := canvasSize.Width * TooltipEdgeMarginFraction
+	edgeMarginY := canvasSize.Height * TooltipEdgeMarginFraction
 	size := panel.MinSize()
 
 	pos := mousePos
-	if rightEdge := pos.X + size.Width; rightEdge > canvasSize.Width-canvasPad {
-		pos.X -= rightEdge - canvasSize.Width + canvasPad
+	if rightEdge := pos.X + size.Width; rightEdge > canvasSize.Width-edgeMarginX {
+		pos.X -= rightEdge - canvasSize.Width + edgeMarginX
 	}
-	if pos.X < canvasPad {
-		pos.X = canvasPad
+	if pos.X < edgeMarginX {
+		pos.X = edgeMarginX
 	}
 	const belowMouseDist = 16
 	const aboveMouseDist = 8
-	if bottomEdge := pos.Y + size.Height + belowMouseDist; bottomEdge > canvasSize.Height-canvasPad {
+	if bottomEdge := pos.Y + size.Height + belowMouseDist; bottomEdge > canvasSize.Height-edgeMarginY {
 		pos.Y -= size.Height + aboveMouseDist
 	} else {
 		pos.Y += belowMouseDist
 	}
-	if pos.Y < canvasPad {
-		pos.Y = canvasPad
+	if pos.Y < edgeMarginY {
+		pos.Y = edgeMarginY
 	}
 	return size, pos
 }

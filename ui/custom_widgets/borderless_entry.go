@@ -79,7 +79,8 @@ func (t borderlessEntryTheme) Size(name fyne.ThemeSizeName) float32 {
 	case theme.SizeNameLineSpacing:
 		return 0
 	case theme.SizeNameInputBorder:
-		return 0
+		// Fyne sizes the caret from inputBorder; 0 hides it. Visual border is stripped in hideChrome().
+		return 1
 	default:
 		return t.Theme.Size(name)
 	}
