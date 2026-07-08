@@ -260,6 +260,15 @@ func (h *actionDisplayTooltipHover) bindRowBody(body *treeRowBody) {
 	h.rowBody = body
 }
 
+// selectRow selects this action's tree row, keeping tree selection in sync when
+// the action enters edit mode (e.g. via right-click, which does not tap the row).
+func (h *actionDisplayTooltipHover) selectRow() {
+	if h.rowBody == nil || h.rowBody.tree == nil || h.rowBody.uid == "" {
+		return
+	}
+	h.rowBody.tree.Select(h.rowBody.uid)
+}
+
 func (h *actionDisplayTooltipHover) setTooltipKeepAliveArea(obj fyne.CanvasObject) {
 	h.keepAliveArea = obj
 }
@@ -1115,7 +1124,10 @@ type actionDisplayTooltipPanel struct {
 	targetIconsKey     string
 }
 
-var _ fyne.SecondaryTappable = (*actionDisplayTooltipPanel)(nil)
+var (
+	_ fyne.SecondaryTappable = (*actionDisplayTooltipPanel)(nil)
+	_ fyne.DoubleTappable    = (*actionDisplayTooltipPanel)(nil)
+)
 
 func newActionDisplayTooltipPanel(owner *actionDisplayTooltipHover) *actionDisplayTooltipPanel {
 	p := &actionDisplayTooltipPanel{
@@ -1218,6 +1230,7 @@ func (p *actionDisplayTooltipPanel) enterEditMode() {
 	p.owner.cancelPending()
 	p.editing = true
 	claimActionEditTooltip(p.owner)
+	p.owner.selectRow()
 	p.editForm = buildTooltipEditForm(p.owner.node, p.actionType, p.owner)
 	if actionHasCoordinatePicker(p.owner.node) {
 		p.withPreview = true
@@ -1382,6 +1395,15 @@ func (p *actionDisplayTooltipPanel) rebuildBody() {
 }
 
 func (p *actionDisplayTooltipPanel) TappedSecondary(*fyne.PointEvent) {
+	if !p.editing {
+		p.enterEditMode()
+	}
+}
+
+// DoubleTapped lets a double-click land the edit view even when a large view
+// tooltip covers the row: the panel is on top of the tooltip layer, so the row
+// overlay never sees the tap.
+func (p *actionDisplayTooltipPanel) DoubleTapped(*fyne.PointEvent) {
 	if !p.editing {
 		p.enterEditMode()
 	}
@@ -1656,6 +1678,7 @@ type actionRowTooltipHover struct {
 
 var (
 	_ desktop.Hoverable      = (*actionRowTooltipHover)(nil)
+	_ fyne.Tappable          = (*actionRowTooltipHover)(nil)
 	_ fyne.SecondaryTappable = (*actionRowTooltipHover)(nil)
 )
 
@@ -1684,6 +1707,15 @@ func (h *actionRowTooltipHover) MouseOut() {
 func (h *actionRowTooltipHover) MouseMoved(e *desktop.MouseEvent) {
 	if h.target != nil {
 		h.target.rowMouseMoved(e)
+	}
+}
+
+// Tapped forwards primary taps to the action display. This overlay sits on top
+// of the whole row, so without it Fyne routes clicks here (SecondaryTappable
+// wins the hit test) and drops them, breaking row selection and double-click edit.
+func (h *actionRowTooltipHover) Tapped(pe *fyne.PointEvent) {
+	if h.target != nil {
+		h.target.Tapped(pe)
 	}
 }
 

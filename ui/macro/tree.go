@@ -41,14 +41,18 @@ func (b *treeRowBody) MinSize() fyne.Size {
 	return b.scroll.MinSize()
 }
 
-func (b *treeRowBody) Tapped(*fyne.PointEvent) {
+func (b *treeRowBody) Tapped(pe *fyne.PointEvent) {
 	if b.tree == nil || b.uid == "" {
 		return
 	}
 	now := time.Now()
 	if b.uid == b.tree.lastRowTapUID && now.Sub(b.tree.lastRowTapTime) < treeRowDoubleClickInterval {
 		b.tree.lastRowTapUID = ""
-		b.openActionEdit()
+		var cursor fyne.Position
+		if pe != nil {
+			cursor = pe.AbsolutePosition
+		}
+		b.openActionEdit(cursor)
 		return
 	}
 	b.tree.lastRowTapUID = b.uid
@@ -63,11 +67,11 @@ func (b *treeRowBody) Tapped(*fyne.PointEvent) {
 	}
 }
 
-func (b *treeRowBody) openActionEdit() {
+func (b *treeRowBody) openActionEdit(cursor fyne.Position) {
 	if b.tree == nil || b.tree.executing || b.uid == "" {
 		return
 	}
-	b.tree.EditAction(b.uid)
+	b.tree.editActionAt(b.uid, cursor)
 }
 
 func (b *treeRowBody) TappedSecondary(pe *fyne.PointEvent) {
@@ -464,8 +468,15 @@ func (mt *MacroTree) cachedRowContent(node actions.ActionInterface) cachedRowCon
 	return entry
 }
 
-// EditAction scrolls to the action row and opens its tooltip in edit mode.
+// EditAction scrolls to the action row and opens its tooltip in edit mode
+// anchored to the row (used by the icon button and keyboard, which have no cursor).
 func (mt *MacroTree) EditAction(uid string) {
+	mt.editActionAt(uid, fyne.Position{})
+}
+
+// editActionAt opens the action's tooltip in edit mode. A non-zero cursor anchors
+// the tooltip to the pointer (double-click); a zero cursor anchors it to the row.
+func (mt *MacroTree) editActionAt(uid string, cursor fyne.Position) {
 	if mt == nil || mt.executing || uid == "" || mt.Macro == nil || mt.Macro.Root == nil {
 		return
 	}
@@ -484,7 +495,11 @@ func (mt *MacroTree) EditAction(uid string) {
 		if !ok || hover == nil {
 			return
 		}
-		hover.absoluteMousePos = fyne.CurrentApp().Driver().AbsolutePositionForObject(hover)
+		if cursor != (fyne.Position{}) {
+			hover.absoluteMousePos = cursor
+		} else {
+			hover.absoluteMousePos = fyne.CurrentApp().Driver().AbsolutePositionForObject(hover)
+		}
 		hover.openTooltipEdit()
 	})
 }
