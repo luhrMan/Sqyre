@@ -6,6 +6,7 @@ import (
 	"Sqyre/internal/models/actions"
 	"Sqyre/internal/models/repositories"
 	"Sqyre/ui/custom_widgets"
+	"Sqyre/ui/dialogs"
 	"Sqyre/ui/editor"
 	"fmt"
 	"slices"
@@ -408,7 +409,7 @@ func showEntityPickerModal(parent fyne.Window, title string, body fyne.CanvasObj
 	pop := widget.NewModalPopUp(wrapEntityPickerPopupContent(content), parent.Canvas())
 	fynetooltip.AddPopUpToolTipLayer(pop)
 	custom_widgets.AddPopUpItemTooltipLayer(pop)
-	dlg := AddPopupEscapeClose(pop, parent)
+	dlg := dialogs.AddPopupEscapeClose(pop, parent)
 	if onClosed != nil {
 		dlg.SetOnClosed(onClosed)
 	}

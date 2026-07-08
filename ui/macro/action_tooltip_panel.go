@@ -8,6 +8,7 @@ import (
 	"Sqyre/ui/actiondisplay"
 	"Sqyre/ui/custom_widgets"
 	"Sqyre/ui/desktopview"
+	"Sqyre/ui/dialogs"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -221,8 +222,8 @@ func (p *actionDisplayTooltipPanel) submitEdit() {
 		return
 	}
 	if err := p.editForm.saveAction(p.owner); err != nil {
-		if activeWire.ShowErrorWithEscape != nil && activeWire.Window != nil {
-			activeWire.ShowErrorWithEscape(err, activeWire.Window)
+		if activeWire.Window != nil {
+			dialogs.ShowErrorWithEscape(err, activeWire.Window)
 		}
 		return
 	}
