@@ -20,9 +20,11 @@ type escHandler struct {
 	fn func()
 }
 
-// RegisterEscapeHandler adds a callback for lone Escape key presses. The returned
-// function removes only this handler. gohook Unregister matches by key chord and
-// removes an arbitrary first match, so esc handlers must not use hook.Unregister.
+// RegisterEscapeHandler adds a callback for lone Escape key presses. When multiple
+// handlers are registered (e.g. stacked popups), only the most recently registered
+// handler runs. The returned function removes only this handler. gohook Unregister
+// matches by key chord and removes an arbitrary first match, so esc handlers must
+// not use hook.Unregister.
 func RegisterEscapeHandler(fn func()) (unregister func()) {
 	if fn == nil {
 		return func() {}
@@ -56,8 +58,8 @@ func ensureGlobalEscHookLocked() {
 		escDispatchMu.Lock()
 		handlers := append([]escHandler(nil), escHandlers...)
 		escDispatchMu.Unlock()
-		for _, h := range handlers {
-			h.fn()
+		if len(handlers) > 0 {
+			handlers[len(handlers)-1].fn()
 		}
 	})
 }
