@@ -3,6 +3,7 @@ package macro
 import (
 	"testing"
 
+	"Sqyre/internal/models"
 	"Sqyre/internal/models/actions"
 	"Sqyre/ui/actiondisplay"
 	"Sqyre/ui/custom_widgets"
@@ -14,6 +15,7 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/theme"
+	"fyne.io/fyne/v2/widget"
 	"image/color"
 )
 
@@ -174,6 +176,31 @@ func TestActionRowTooltipHover_forwardsHoverToTarget(t *testing.T) {
 	rowHover.MouseOut()
 	if target.rowHovering || target.displayHovering {
 		t.Fatal("expected hover flags cleared after mouse out")
+	}
+}
+
+// The row overlay sits on top of the whole row, so primary taps must be
+// forwarded to the display; otherwise Fyne drops them and selection/double-click
+// edit never fire.
+func TestActionRowTooltipHover_primaryTapSelectsRow(t *testing.T) {
+	t.Helper()
+	wait := actions.NewWait(100)
+	root := actions.NewLoop(1, "root", nil)
+	root.AddSubAction(wait)
+	mt := &MacroTree{Macro: &models.Macro{Root: root}}
+
+	rowBody := newTreeRowBody(container.NewHScroll(widget.NewLabel("wait")))
+	rowBody.tree = mt
+	rowBody.uid = wait.GetUID()
+
+	target := newActionDisplayTooltipHover(wait, nil, nil, wait.GetType(), nil, nil)
+	target.bindRowBody(rowBody)
+	rowHover := newActionRowTooltipHover()
+	rowHover.bindActionTooltip(target)
+
+	rowHover.Tapped(nil)
+	if mt.SelectedNode != wait.GetUID() {
+		t.Fatalf("row overlay tap selected %q, want %q", mt.SelectedNode, wait.GetUID())
 	}
 }
 
