@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"Sqyre/internal/config"
+	"Sqyre/internal/vision"
 	"Sqyre/ui/desktopview"
 
 	"fyne.io/fyne/v2"
@@ -145,11 +146,14 @@ func (h *PreviewTooltipHover) removeTooltipFromLayer() {
 	}
 }
 
+func (h *PreviewTooltipHover) previewTooltipActive() bool {
+	return h.hovering || h.panelHovering
+}
+
 func (h *PreviewTooltipHover) beginCapture() {
 	h.cancelPending()
 	h.cancelCapture()
-	load := h.loadPreview
-	if load == nil || !h.hovering {
+	if h.loadPreview == nil || !h.hovering {
 		return
 	}
 	c := fyne.CurrentApp().Driver().CanvasForObject(h)
@@ -173,7 +177,34 @@ func (h *PreviewTooltipHover) beginCapture() {
 	layer.Container.Objects = []fyne.CanvasObject{h.tooltipPanel}
 	layer.Container.Refresh()
 	ActivateTooltipEscapeDismiss(func() { h.hideTooltip() })
+	h.startPreviewCapture(c, layer, origin)
+}
 
+func (h *PreviewTooltipHover) reloadPreview() {
+	if h.loadPreview == nil || h.tooltipPanel == nil || !h.previewTooltipActive() {
+		return
+	}
+	vision.InvalidatePreviewTooltipCache()
+	h.cancelCapture()
+	h.tooltipPanel.setLoading()
+	h.tooltipPanel.Refresh()
+	c := fyne.CurrentApp().Driver().CanvasForObject(h)
+	if c == nil {
+		return
+	}
+	layer := findItemTooltipLayer(c, c.Overlays().Top())
+	if layer == nil {
+		return
+	}
+	origin := itemTooltipLayerOrigin(layer, c.Overlays().Top())
+	h.startPreviewCapture(c, layer, origin)
+}
+
+func (h *PreviewTooltipHover) startPreviewCapture(c fyne.Canvas, layer *ItemTooltipLayer, origin fyne.Position) {
+	load := h.loadPreview
+	if load == nil || h.tooltipPanel == nil {
+		return
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	h.captureCtx = ctx
 	h.captureCancel = cancel
@@ -181,7 +212,7 @@ func (h *PreviewTooltipHover) beginCapture() {
 	go func() {
 		if !AcquirePreviewCaptureSlot(ctx) {
 			fyne.Do(func() {
-				if ctx.Err() != nil || h.captureCtx != ctx || !h.hovering {
+				if ctx.Err() != nil || h.captureCtx != ctx || !h.previewTooltipActive() {
 					h.hideTooltip()
 				}
 			})
@@ -196,7 +227,7 @@ func (h *PreviewTooltipHover) beginCapture() {
 			return
 		}
 		fyne.Do(func() {
-			if ctx.Err() != nil || h.captureCtx != ctx || !h.hovering {
+			if ctx.Err() != nil || h.captureCtx != ctx || !h.previewTooltipActive() {
 				return
 			}
 			h.captureCancel = nil
@@ -226,6 +257,7 @@ type previewTooltipPanel struct {
 	img       *canvas.Image
 	message   *fynewidget.Label
 	caption   *fynewidget.Label
+	refreshBtn *fynewidget.Button
 	loading   bool
 	showImage bool
 }
@@ -345,6 +377,14 @@ func (p *previewTooltipPanel) CreateRenderer() fyne.WidgetRenderer {
 		p.caption.Alignment = fyne.TextAlignCenter
 		p.caption.Hide()
 	}
+	if p.refreshBtn == nil {
+		p.refreshBtn = fynewidget.NewButtonWithIcon("", theme.ViewRefreshIcon(), func() {
+			if p.owner != nil {
+				p.owner.reloadPreview()
+			}
+		})
+		p.refreshBtn.Importance = fynewidget.LowImportance
+	}
 	v := fyne.CurrentApp().Settings().ThemeVariant()
 	th := p.Theme()
 	bg := canvas.NewRectangle(th.Color(theme.ColorNameOverlayBackground, v))
@@ -354,6 +394,7 @@ func (p *previewTooltipPanel) CreateRenderer() fyne.WidgetRenderer {
 	imageStack := container.NewStack(
 		container.NewMax(p.img),
 		container.NewPadded(p.message),
+		StackTopRight(p.refreshBtn),
 	)
 	content := container.NewVBox(imageStack, p.caption)
 	return &previewTooltipPanelRenderer{
