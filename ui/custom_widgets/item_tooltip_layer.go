@@ -70,3 +70,21 @@ func itemTooltipLayerOrigin(layer *ItemTooltipLayer, overlay fyne.CanvasObject) 
 	}
 	return fyne.CurrentApp().Driver().AbsolutePositionForObject(&layer.Container)
 }
+
+func removeLayerObject(layer *ItemTooltipLayer, obj fyne.CanvasObject) []fyne.CanvasObject {
+	objs := layer.Container.Objects
+	remaining := objs[:0]
+	for _, o := range objs {
+		if o != obj {
+			remaining = append(remaining, o)
+		}
+	}
+	layer.Container.Objects = remaining
+	layer.Container.Refresh()
+	return remaining
+}
+
+// RemoveLayerObject removes obj from layer without clearing other tooltips.
+func RemoveLayerObject(layer *ItemTooltipLayer, obj fyne.CanvasObject) []fyne.CanvasObject {
+	return removeLayerObject(layer, obj)
+}

@@ -13,6 +13,14 @@ import (
 type AccordionWithHeaderWidgets struct {
 	widget.Accordion
 	headerWidgets []fyne.CanvasObject
+
+	// openStateRefreshIndices, when non-empty, tells Refresh to update only those rows'
+	// open/closed visuals instead of rebuilding every header (expand/collapse path).
+	openStateRefreshIndices []int
+
+	// renderFullSyncs and renderIncrementalToggles count renderer work for diagnostics/tests.
+	renderFullSyncs          int
+	renderIncrementalToggles int
 }
 
 // NewAccordionWithHeaderWidgets creates an accordion that supports an optional widget at the
@@ -51,22 +59,90 @@ func (a *AccordionWithHeaderWidgets) RemoveAll() {
 	a.Refresh()
 }
 
-// Open expands the item at the given index and refreshes any GridWrap in its detail.
-// GridWrap caches layout before it has a known width; refreshing after open removes excess blank space.
-func (a *AccordionWithHeaderWidgets) Open(index int) {
-	a.Accordion.Open(index)
-	a.Refresh()
+// Close collapses the item at the given index.
+func (a *AccordionWithHeaderWidgets) Close(index int) {
 	if index < 0 || index >= len(a.Items) {
 		return
 	}
-	detail := a.Items[index].Detail
-	if gw := FindGridWrap(detail); gw != nil {
-		gw.Refresh()
-		fyne.Do(func() { gw.Refresh() })
+	if !a.Items[index].Open {
+		return
+	}
+	a.Items[index].Open = false
+	a.refreshOpenState([]int{index})
+}
+
+// Open expands the item at the given index. GridWrap detail is refreshed once after layout so
+// column count matches the available width.
+func (a *AccordionWithHeaderWidgets) Open(index int) {
+	if index < 0 || index >= len(a.Items) {
+		return
+	}
+	affected := []int{index}
+	for i, ai := range a.Items {
+		if i == index {
+			ai.Open = true
+		} else if !a.MultiOpen && ai.Open {
+			ai.Open = false
+			affected = append(affected, i)
+		}
+	}
+	a.refreshOpenState(affected)
+	a.scheduleGridWrapRefreshAfterOpen(index)
+}
+
+// SetItems replaces all accordion items and optional header widgets in one refresh.
+// headers may be nil when no row has a header widget.
+func (a *AccordionWithHeaderWidgets) SetItems(items []*widget.AccordionItem, headers []fyne.CanvasObject) {
+	a.Items = items
+	if headers == nil {
+		headers = make([]fyne.CanvasObject, len(items))
+	}
+	a.headerWidgets = headers
+	a.Refresh()
+}
+
+// AppendItem appends an accordion item and optional header widget in one refresh.
+func (a *AccordionWithHeaderWidgets) AppendItem(item *widget.AccordionItem, header fyne.CanvasObject) {
+	a.Items = append(a.Items, item)
+	a.headerWidgets = append(a.headerWidgets, header)
+	a.Refresh()
+}
+
+// RemoveItemAt removes the accordion item at index.
+func (a *AccordionWithHeaderWidgets) RemoveItemAt(index int) {
+	if index < 0 || index >= len(a.Items) {
+		return
+	}
+	a.Items = append(a.Items[:index], a.Items[index+1:]...)
+	if index < len(a.headerWidgets) {
+		a.headerWidgets = append(a.headerWidgets[:index], a.headerWidgets[index+1:]...)
+	} else if len(a.headerWidgets) > len(a.Items) {
+		a.headerWidgets = a.headerWidgets[:len(a.Items)]
+	}
+	a.Refresh()
+}
+
+// RefreshHeaderWidgets redraws optional right-side header controls without rebuilding accordion rows.
+func (a *AccordionWithHeaderWidgets) RefreshHeaderWidgets() {
+	for _, hw := range a.headerWidgets {
+		if hw != nil {
+			hw.Refresh()
+		}
 	}
 }
 
-// UpdateHeaderAt sets the optional right-side header widget for an existing item (e.g. after rebuilding one row).
+// RenderStats returns how often the accordion renderer ran a full header rebuild
+// (updateObjects) vs an incremental open/close update (syncRowOpenState only).
+func (a *AccordionWithHeaderWidgets) RenderStats() (fullSyncs, incrementalToggles int) {
+	return a.renderFullSyncs, a.renderIncrementalToggles
+}
+
+// ResetRenderStats clears RenderStats counters.
+func (a *AccordionWithHeaderWidgets) ResetRenderStats() {
+	a.renderFullSyncs = 0
+	a.renderIncrementalToggles = 0
+}
+
 func (a *AccordionWithHeaderWidgets) UpdateHeaderAt(index int, header fyne.CanvasObject) {
 	for len(a.headerWidgets) < len(a.Items) {
 		a.headerWidgets = append(a.headerWidgets, nil)
@@ -76,6 +152,27 @@ func (a *AccordionWithHeaderWidgets) UpdateHeaderAt(index int, header fyne.Canva
 	}
 	a.headerWidgets[index] = header
 	a.Refresh()
+}
+
+func (a *AccordionWithHeaderWidgets) refreshOpenState(indices []int) {
+	a.openStateRefreshIndices = indices
+	a.Refresh()
+	a.openStateRefreshIndices = nil
+}
+
+func (a *AccordionWithHeaderWidgets) scheduleGridWrapRefreshAfterOpen(index int) {
+	if index < 0 || index >= len(a.Items) || !a.Items[index].Open {
+		return
+	}
+	// Defer until after accordion layout so GridWrap has a real width for column count.
+	fyne.Do(func() {
+		if index >= len(a.Items) || !a.Items[index].Open {
+			return
+		}
+		if gw := FindGridWrap(a.Items[index].Detail); gw != nil {
+			RefreshGridWrapPreservingScroll(gw)
+		}
+	})
 }
 
 // CreateRenderer returns a renderer that lays out headers (title + optional right widget) and details like the standard accordion.
@@ -89,6 +186,7 @@ type accordionWithHeaderRenderer struct {
 	acc          *AccordionWithHeaderWidgets
 	headers      []*widget.Button
 	headerRows   []fyne.CanvasObject
+	headerRowHW  []fyne.CanvasObject // cached right-side widget per row; avoids rebuilding border rows
 	dividers     []fyne.CanvasObject
 	objects      []fyne.CanvasObject
 	minSizeCache fyne.Size
@@ -101,7 +199,6 @@ func (r *accordionWithHeaderRenderer) Objects() []fyne.CanvasObject {
 func (r *accordionWithHeaderRenderer) Destroy() {}
 
 func (r *accordionWithHeaderRenderer) Layout(size fyne.Size) {
-	r.updateObjects()
 	th := r.acc.Theme()
 	pad := th.Size(theme.SizeNamePadding)
 	sep := th.Size(theme.SizeNameSeparatorThickness)
@@ -162,7 +259,9 @@ func (r *accordionWithHeaderRenderer) MinSize() fyne.Size {
 	if !r.minSizeCache.IsZero() {
 		return r.minSizeCache
 	}
-	r.updateObjects()
+	if len(r.headerRows) < len(r.acc.Items) {
+		r.updateObjects()
+	}
 	th := r.acc.Theme()
 	pad := th.Size(theme.SizeNamePadding)
 	size := fyne.Size{}
@@ -185,9 +284,39 @@ func (r *accordionWithHeaderRenderer) MinSize() fyne.Size {
 
 func (r *accordionWithHeaderRenderer) Refresh() {
 	r.minSizeCache = fyne.Size{}
-	r.updateObjects()
+	if indices := r.acc.openStateRefreshIndices; len(indices) > 0 {
+		r.acc.renderIncrementalToggles++
+		for _, i := range indices {
+			r.syncRowOpenState(i)
+		}
+	} else {
+		r.acc.renderFullSyncs++
+		r.updateObjects()
+	}
 	r.Layout(r.acc.Size())
 	canvas.Refresh(r.acc)
+}
+
+func (r *accordionWithHeaderRenderer) syncRowOpenState(i int) {
+	if i < 0 || i >= len(r.acc.Items) {
+		return
+	}
+	if i >= len(r.headers) {
+		r.acc.renderFullSyncs++
+		r.updateObjects()
+		return
+	}
+	ai := r.acc.Items[i]
+	h := r.headers[i]
+	th := r.acc.Theme()
+	if ai.Open {
+		h.Icon = th.Icon(theme.IconNameArrowDropUp)
+		ai.Detail.Show()
+	} else {
+		h.Icon = th.Icon(theme.IconNameArrowDropDown)
+		ai.Detail.Hide()
+	}
+	h.Refresh()
 }
 
 func (r *accordionWithHeaderRenderer) updateObjects() {
@@ -199,9 +328,11 @@ func (r *accordionWithHeaderRenderer) updateObjects() {
 	for len(r.headers) < n {
 		r.headers = append(r.headers, &widget.Button{})
 		r.headerRows = append(r.headerRows, nil)
+		r.headerRowHW = append(r.headerRowHW, nil)
 	}
 	r.headers = r.headers[:n]
 	r.headerRows = r.headerRows[:n]
+	r.headerRowHW = r.headerRowHW[:n]
 
 	for i, ai := range items {
 		h := r.headers[i]
@@ -232,10 +363,12 @@ func (r *accordionWithHeaderRenderer) updateObjects() {
 			hw = r.acc.headerWidgets[i]
 		}
 		if hw != nil {
-			// Ensure the right-side header widget (e.g. tri-state check) updates its display.
-			hw.Refresh()
-			r.headerRows[i] = container.NewBorder(nil, nil, nil, hw, h)
+			if r.headerRowHW[i] != hw {
+				r.headerRowHW[i] = hw
+				r.headerRows[i] = container.NewBorder(nil, nil, nil, hw, h)
+			}
 		} else {
+			r.headerRowHW[i] = nil
 			r.headerRows[i] = h
 		}
 	}
