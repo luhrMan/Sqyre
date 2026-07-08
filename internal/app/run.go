@@ -4,6 +4,7 @@ import (
 	"Sqyre/internal/config"
 	"Sqyre/internal/macrohotkey"
 	"Sqyre/internal/models/repositories"
+	"Sqyre/internal/panicsafe"
 	"Sqyre/internal/services"
 	"Sqyre/internal/startupprof"
 	"Sqyre/ui"
@@ -45,7 +46,7 @@ func setupLogFile() {
 	if err != nil {
 		return
 	}
-	log.SetOutput(&services.SyncWriter{F: f})
+	log.SetOutput(&panicsafe.SyncWriter{F: f})
 	log.SetFlags(log.Ldate | log.Ltime)
 }
 
@@ -104,7 +105,7 @@ func acquireSingleInstance() bool {
 func Run() {
 	defer func() {
 		if r := recover(); r != nil {
-			services.LogPanicToFile(r)
+			panicsafe.LogPanicToFile(r)
 		}
 	}()
 
@@ -140,7 +141,7 @@ func Run() {
 		startupprof.Mark("event loop started (splash visible)")
 		report.PaintInitial()
 		if os.Getenv("SQYRE_NO_HOOK") != "1" {
-			services.GoSafe(macrohotkey.StartHook)
+			panicsafe.GoSafe(macrohotkey.StartHook)
 		}
 		go func() {
 			setupLogFile()

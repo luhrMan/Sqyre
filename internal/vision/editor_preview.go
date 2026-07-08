@@ -1,8 +1,8 @@
 package vision
 
 import (
+	"Sqyre/internal/capture"
 	"Sqyre/internal/config"
-	"Sqyre/internal/macro"
 	"Sqyre/internal/screen"
 	"fmt"
 	"image"
@@ -192,7 +192,7 @@ func captureRegionWithOverlayMaxDim(captureBounds image.Rectangle, maxDim int, d
 	if captureBounds.Empty() || captureBounds.Dx() <= 0 || captureBounds.Dy() <= 0 {
 		return nil, fmt.Errorf("invalid capture bounds %v", captureBounds)
 	}
-	captureImg, err := macro.CaptureRect(captureBounds.Min.X, captureBounds.Min.Y, captureBounds.Dx(), captureBounds.Dy())
+	captureImg, err := capture.CaptureRect(captureBounds.Min.X, captureBounds.Min.Y, captureBounds.Dx(), captureBounds.Dy())
 	if err != nil {
 		return nil, fmt.Errorf("error capturing image: %w", err)
 	}

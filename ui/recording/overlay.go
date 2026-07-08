@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"Sqyre/internal/capture"
-	"Sqyre/internal/services"
+	"Sqyre/internal/panicsafe"
 	"Sqyre/ui/desktopview"
 
 	"fyne.io/fyne/v2"
@@ -240,7 +240,7 @@ func (o *fyneDesktopOverlay) reposition() {
 // reset window geometry after Show(); RunNative positioning is also queued
 // asynchronously, so we retry until the overlay is dismissed.
 func (o *fyneDesktopOverlay) startPositionLoop() {
-	services.GoSafe(func() {
+	panicsafe.GoSafe(func() {
 		delays := []time.Duration{0, 50, 100, 200, 400, 800, 1200}
 		for _, d := range delays {
 			select {
@@ -423,7 +423,7 @@ func showFullScreenOverlay(withSelectionRect bool, onClosed func(), onMouseDown 
 
 		logOverlayWindowDiagnostics(built)
 		if capture.OverlayDiagnosticsEnabled() {
-			services.GoSafe(func() {
+			panicsafe.GoSafe(func() {
 				time.Sleep(250 * time.Millisecond)
 				fyne.Do(func() {
 					lifecycleMu.Lock()
