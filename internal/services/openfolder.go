@@ -41,3 +41,12 @@ func OpenSqyreDir() error {
 	}
 	return OpenPathInFileManager(dir)
 }
+
+// OpenModelsDir ensures ~/.sqyre/models exists and opens it in the file manager.
+func OpenModelsDir() error {
+	dir := config.GetModelsPath()
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("create models directory: %w", err)
+	}
+	return OpenPathInFileManager(dir)
+}

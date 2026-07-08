@@ -29,6 +29,7 @@ const (
 	UserIconsDir     = "icons"
 	UserMasksDir     = "masks"
 	UserMetaDir      = "meta"
+	UserModelsDir    = "models"
 	UserVariablesDir = "variables"
 
 	PNG  = ".png"
@@ -77,6 +78,8 @@ const (
 	PrefWindowY                         = "window_y"
 	PrefWindowWidth                     = "window_width"
 	PrefWindowHeight                    = "window_height"
+	PrefVisionWorkerPath                = "vision_worker_path"
+	PrefVisionModelsDir                 = "vision_models_dir"
 
 	// Action display colors in the macro tree (hex #rrggbb; empty = built-in default).
 	PrefActionColorMouseKeyboard = "action_color_mouse_keyboard"
@@ -114,6 +117,11 @@ func GetAutoPicPath() string {
 	return filepath.Join(getSqyreDir(), UserImagesDir, UserAutoPicDir)
 }
 
+// GetModelsPath returns ~/.sqyre/models/ for vision ONNX weights.
+func GetModelsPath() string {
+	return filepath.Join(getSqyreDir(), UserModelsDir)
+}
+
 // GetVariablesPath returns the path to the variables directory.
 // Returns ~/.sqyre/variables/ or fallback if home is unavailable.
 func GetVariablesPath() string {
@@ -139,6 +147,7 @@ func InitializeDirectories() error {
 	variablesPath := GetVariablesPath()
 
 	metaPath := GetMetaPath()
+	modelsPath := GetModelsPath()
 
 	// Create all parent directories as needed
 	if err := os.MkdirAll(iconsPath, 0755); err != nil {
@@ -158,6 +167,11 @@ func InitializeDirectories() error {
 
 	if err := os.MkdirAll(metaPath, 0755); err != nil {
 		logger.Errorf("Failed to create meta directory at %s: %v", metaPath, err)
+		return err
+	}
+
+	if err := os.MkdirAll(modelsPath, 0755); err != nil {
+		logger.Errorf("Failed to create models directory at %s: %v", modelsPath, err)
 		return err
 	}
 
