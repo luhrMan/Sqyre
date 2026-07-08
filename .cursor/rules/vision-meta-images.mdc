@@ -1,0 +1,38 @@
+---
+description: Save debug meta images from vision and detection execution paths
+globs: internal/vision/**/*.go,internal/services/imageSearch.go,internal/services/executor_semantic.go
+alwaysApply: false
+---
+
+# Vision Meta Images
+
+When a detection action captures or processes screen regions during macro execution, save debug frames via `SaveMetaImage` or `SaveMetaImageLocked`. The helpers already gate on `PrefSaveMetaImages` — do not duplicate that check.
+
+## Required saves by action
+
+| Action | When | Purpose prefix |
+|--------|------|----------------|
+| Image Search | After capture | `searcharea` |
+| Image Search | Per color mask | `cmask-{item}-{variant}` |
+| Image Search | After matching | `founditems` (annotated) |
+| OCR | After preprocessing | `ocr` |
+| Semantic Search | After capture | `semantic-searcharea` |
+| Semantic Search | After detection | `semantic-detections` (boxes + labels) |
+
+## Conventions
+
+- Call `SaveMetaImageLocked` inside an existing `WithOpenCV` block; otherwise use `SaveMetaImage`.
+- Save the raw capture before inference; save an annotated clone after matching/detection.
+- Purpose strings are sanitized (`sanitizeMetaPurpose`); use lowercase letters, digits, `-`, `_`.
+- New detection actions must follow the same two-phase pattern (raw + annotated).
+
+```go
+// ✅ GOOD — semantic search meta saves
+saveSemanticSearchAreaMeta(captureImg)
+dets, err := detector.GetDetector().Detect(ctx, captureImg, opts)
+// ...
+saveSemanticDetectionsMeta(captureImg, dets)
+
+// ❌ BAD — capture with no meta save when adding a new detection path
+dets, err := detector.GetDetector().Detect(ctx, captureImg, opts)
+```
