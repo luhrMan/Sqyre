@@ -4,7 +4,7 @@ import (
 	"image/color"
 	"strings"
 
-	"Sqyre/internal/services"
+	"Sqyre/internal/varref"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -13,7 +13,7 @@ import (
 )
 
 func textContainsVarRef(text string) bool {
-	return services.TextContainsVarRef(text)
+	return varref.Contains(text)
 }
 
 func NewVariableRefPill(name string, unknown bool) fyne.CanvasObject {
@@ -37,7 +37,7 @@ func varRefLineHeight(textStyle fyne.TextStyle) float32 {
 }
 
 func buildVarRefLineDisplay(line string, textStyle fyne.TextStyle, known map[string]bool, borderless bool) fyne.CanvasObject {
-	segs := services.ParseVarRefSegments(line)
+	segs := varref.Segments(line)
 	row := container.NewHBox()
 	textSize := theme.TextSize()
 	lineH := varRefLineHeight(textStyle)

@@ -75,6 +75,7 @@ func (t *EditorTab) SearchDebouncer() *custom_widgets.Debouncer {
 
 func NewEditorTab(name string, left, right fyne.CanvasObject) *container.TabItem {
 	split := container.NewHSplit(left, right)
+	split.SetOffset(0.25)
 	return container.NewTabItem(name, split)
 }
 
@@ -241,10 +242,7 @@ func ConstructEditorTabs(eu *EditorUi, win fyne.Window) {
 			atw["saveButton"],
 			nil,
 			nil,
-			container.NewVBox(
-				autoPicPreviewPanel.container,
-				container.NewHBox(layout.NewSpacer(), et.AutoPicTab.PreviewRefreshButton),
-			),
+			custom_widgets.OverlayTopRight(autoPicPreviewPanel.container, et.AutoPicTab.PreviewRefreshButton),
 		),
 	)
 

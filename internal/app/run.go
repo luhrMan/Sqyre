@@ -4,6 +4,7 @@ import (
 	"Sqyre/internal/config"
 	"Sqyre/internal/macrohotkey"
 	"Sqyre/internal/models/repositories"
+	"Sqyre/internal/panicsafe"
 	"Sqyre/internal/services"
 	"Sqyre/internal/startupprof"
 	"Sqyre/ui"
@@ -45,7 +46,7 @@ func setupLogFile() {
 	if err != nil {
 		return
 	}
-	log.SetOutput(&services.SyncWriter{F: f})
+	log.SetOutput(&panicsafe.SyncWriter{F: f})
 	log.SetFlags(log.Ldate | log.Ltime)
 }
 
@@ -104,7 +105,7 @@ func acquireSingleInstance() bool {
 func Run() {
 	defer func() {
 		if r := recover(); r != nil {
-			services.LogPanicToFile(r)
+			panicsafe.LogPanicToFile(r)
 		}
 	}()
 
@@ -116,15 +117,22 @@ func Run() {
 	// the OS instead of being retained across per-thread arenas.
 	services.ConfigureNativeAllocator()
 
-	if !acquireSingleInstance() {
-		os.Exit(0)
-	}
-
 	debugLog("creating Fyne app")
 	a := app.NewWithID("Sqyre")
 	os.Setenv("FYNE_SCALE", "1")
 	a.Settings().SetTheme(ui.NewSqyreTheme())
 	startupprof.Mark("fyne app created")
+
+	// Apply the user's custom data directory before anything touches ~/.sqyre
+	// (single-instance lock, directory init) so the default folder is not
+	// recreated when a custom location is configured.
+	if custom := a.Preferences().String(config.PrefSqyreDir); custom != "" {
+		config.SetSqyreDirOverride(custom)
+	}
+
+	if !acquireSingleInstance() {
+		os.Exit(0)
+	}
 
 	splash, report := ui.NewSplashWindow(a)
 	splash.Show()
@@ -140,7 +148,7 @@ func Run() {
 		startupprof.Mark("event loop started (splash visible)")
 		report.PaintInitial()
 		if os.Getenv("SQYRE_NO_HOOK") != "1" {
-			services.GoSafe(macrohotkey.StartHook)
+			panicsafe.GoSafe(macrohotkey.StartHook)
 		}
 		go func() {
 			setupLogFile()
@@ -159,6 +167,15 @@ func Run() {
 		}
 		if err := repositories.MacroRepo().Save(); err != nil {
 			log.Printf("Error saving macros: %v", err)
+		}
+	}
+
+	if services.RestartRequested() {
+		if instanceLock != nil {
+			_ = instanceLock.Unlock() // release before relaunch so the new process can acquire it
+		}
+		if err := services.RelaunchExecutable(); err != nil {
+			log.Printf("Error relaunching Sqyre: %v", err)
 		}
 	}
 }

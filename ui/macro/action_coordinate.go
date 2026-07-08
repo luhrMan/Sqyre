@@ -28,3 +28,8 @@ func actionUsesPointPicker(node actions.ActionInterface) bool {
 	_, ok := node.(*actions.Move)
 	return ok
 }
+
+func actionHasCoordinatePicker(node actions.ActionInterface) bool {
+	_, ok := actionCoordinateBinding(node)
+	return ok
+}

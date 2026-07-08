@@ -5,6 +5,7 @@ import (
 	"Sqyre/internal/models/repositories"
 	"Sqyre/internal/validation"
 	"Sqyre/ui/custom_widgets"
+	"Sqyre/ui/dialogs"
 	"errors"
 	"fmt"
 
@@ -53,7 +54,7 @@ func showCreateDialog(cfg createDialogConfig, parent fyne.Window) {
 	var d dialog.Dialog
 	saveButton := widget.NewButton("Create", func() {
 		if err := cfg.onSave(widgets); err != nil {
-			activeWire.ShowErrorWithEscape(err, parent)
+			dialogs.ShowErrorWithEscape(err, parent)
 			return
 		}
 		if cfg.afterSave != nil {
@@ -73,7 +74,7 @@ func showCreateDialog(cfg createDialogConfig, parent fyne.Window) {
 	}
 	scroll.SetMinSize(size)
 	d = dialog.NewCustomWithoutButtons(cfg.title, container.NewBorder(nil, buttonBar, nil, nil, scroll), parent)
-	activeWire.AddDialogEscapeClose(d, parent)
+	dialogs.AddDialogEscapeClose(d, parent)
 	d.Resize(fyne.NewSize(size.Width+40, size.Height+80))
 	d.Show()
 }

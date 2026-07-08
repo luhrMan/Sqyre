@@ -2,12 +2,12 @@ package models
 
 import (
 	"reflect"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 
 	"Sqyre/internal/models/actions"
+	"Sqyre/internal/varref"
 )
 
 // VariableUsageKind describes how a variable appears at a location in the macro.
@@ -157,19 +157,6 @@ func variableNameMatches(have, want string) bool {
 	return strings.EqualFold(strings.TrimSpace(have), strings.TrimSpace(want))
 }
 
-func textReferencesVariable(text, varName string) bool {
-	if text == "" || varName == "" {
-		return false
-	}
-	quoted := regexp.QuoteMeta(strings.TrimSpace(varName))
-	dollar := regexp.MustCompile(`(?i)\$\{\s*` + quoted + `\s*\}`)
-	if dollar.MatchString(text) {
-		return true
-	}
-	brace := regexp.MustCompile(`(?i)(^|[^$])\{\s*` + quoted + `\s*\}`)
-	return brace.MatchString(text)
-}
-
 func collectVariableRefsInAction(a actions.ActionInterface, varName string, onField func(field string)) {
 	v := reflect.ValueOf(a)
 	if v.Kind() != reflect.Pointer || v.IsNil() {
@@ -181,7 +168,7 @@ func collectVariableRefsInAction(a actions.ActionInterface, varName string, onFi
 func collectRefsInValue(v reflect.Value, varName, fieldPath string, onField func(field string)) {
 	switch v.Kind() {
 	case reflect.String:
-		if textReferencesVariable(v.String(), varName) {
+		if varref.References(v.String(), varName) {
 			onField(fieldPath)
 		}
 	case reflect.Interface:
@@ -189,7 +176,7 @@ func collectRefsInValue(v reflect.Value, varName, fieldPath string, onField func
 			return
 		}
 		el := v.Elem()
-		if el.Kind() == reflect.String && textReferencesVariable(el.String(), varName) {
+		if el.Kind() == reflect.String && varref.References(el.String(), varName) {
 			onField(fieldPath)
 		}
 	case reflect.Struct:

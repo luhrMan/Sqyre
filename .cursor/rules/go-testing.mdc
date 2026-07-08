@@ -8,7 +8,7 @@ alwaysApply: false
 
 ## Running tests
 
-- Headless suite: `./scripts/test.sh` (sets `nohook`, `gocv_specific_modules`, `SQUIRE_UI_TEST`).
+- Headless suite: `./scripts/test.sh` (sets `nohook`, `gocv_specific_modules`, `SQYRE_UI_TEST`).
 - Hook / display tests: `./scripts/test-ui.sh`.
 - Do not rely on bare `go test ./...` without these wrappers — native hooks can segfault without a display.
 

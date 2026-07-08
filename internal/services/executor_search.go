@@ -1,6 +1,7 @@
 package services
 
 import (
+	"Sqyre/internal/capture"
 	macropkg "Sqyre/internal/macro"
 	"Sqyre/internal/config"
 	"Sqyre/internal/models"
@@ -210,7 +211,7 @@ func executeFindPixel(a actions.ActionInterface, macro *models.Macro) error {
 
 	var foundX, foundY int
 	scanOnce := func() bool {
-		captureImg, capLeftX, capTopY, _, _, capErr := macropkg.CaptureSearchArea(leftX, topY, rightX, bottomY)
+		captureImg, capLeftX, capTopY, _, _, capErr := capture.CaptureSearchArea(leftX, topY, rightX, bottomY)
 		if capErr != nil || captureImg == nil {
 			log.Printf("FindPixel: screen capture failed: %v", capErr)
 			return false

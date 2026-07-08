@@ -2,7 +2,7 @@
 //
 // Headless runs (no X11 display) should use ./scripts/test.sh or:
 //
-//	GOFLAGS="-tags=gocv_specific_modules,nohook" SQUIRE_UI_TEST=1 go test ./...
+//	GOFLAGS="-tags=gocv_specific_modules,nohook" SQYRE_UI_TEST=1 go test ./...
 //
 // Full hook/display tests (Esc via gohook, screenshot golden files) need xvfb:
 //
@@ -25,8 +25,8 @@ import (
 )
 
 func init() {
-	if os.Getenv("SQUIRE_UI_TEST") == "" {
-		_ = os.Setenv("SQUIRE_UI_TEST", "1")
+	if os.Getenv("SQYRE_UI_TEST") == "" {
+		_ = os.Setenv("SQYRE_UI_TEST", "1")
 	}
 }
 

@@ -172,6 +172,54 @@ func (mt *MacroTree) openTreeContentHeight() float32 {
 	return height
 }
 
+// RowCenterForScreenshot returns the canvas-absolute center of the visible row
+// for uid so docs frames can anchor a click guide on real tree geometry instead
+// of hardcoded coordinates. ok is false when uid is not currently visible.
+// It assumes the tree is laid out with scroll offset 0 (fresh docs capture).
+func (mt *MacroTree) RowCenterForScreenshot(uid string) (fyne.Position, bool) {
+	if mt.Macro == nil || mt.Macro.Root == nil || uid == "" {
+		return fyne.Position{}, false
+	}
+	pad := mt.Theme().Size(theme.SizeNamePadding)
+	branchH, leafH := treeRowHeights(&mt.Tree)
+
+	top := fyne.CurrentApp().Driver().AbsolutePositionForObject(mt)
+	var y float32
+	var rowH float32
+	first := true
+	found := false
+	var walk func(id string) bool
+	walk = func(id string) bool {
+		for _, child := range mt.ChildUIDs(id) {
+			h := leafH
+			if mt.IsBranch(child) {
+				h = branchH
+			}
+			if !first {
+				y += pad
+			}
+			first = false
+			if child == uid {
+				rowH = h
+				found = true
+				return true
+			}
+			y += h
+			if mt.IsBranch(child) && mt.IsBranchOpen(child) {
+				if walk(child) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	walk(mt.Macro.Root.GetUID())
+	if !found {
+		return fyne.Position{}, false
+	}
+	return fyne.NewPos(top.X+treeItemIconSize*2, top.Y+y+rowH/2), true
+}
+
 func treeRowHeights(t *widget.Tree) (branchH, leafH float32) {
 	branchH = macroTreeRowHeight
 	leafH = macroTreeRowHeight

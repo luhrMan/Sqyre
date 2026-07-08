@@ -104,7 +104,7 @@ func editToolbar(owner *actionDisplayTooltipHover, form *tooltipEditForm) fyne.C
 	})
 
 	objects := []fyne.CanvasObject{}
-	if pill := actionTooltipTypePill(actionType); pill != nil {
+	if pill := actionTooltipEditTypePill(actionType); pill != nil {
 		objects = append(objects, pill)
 	}
 	objects = append(objects,
@@ -160,6 +160,12 @@ func coordPickerButtonLabel(ref actions.CoordinateRef, isPoint bool) string {
 
 func coordEntry(text string) *custom_widgets.BorderlessEntry {
 	e := custom_widgets.NewBorderlessEntry(macroVariableDefs)
+	e.SetText(text)
+	return e
+}
+
+func varNameEntry(text string) *custom_widgets.BorderlessVarNameEntry {
+	e := custom_widgets.NewBorderlessVarNameEntry(macroVariableDefs)
 	e.SetText(text)
 	return e
 }
@@ -237,7 +243,7 @@ func buildParamEditPills(node actions.ActionInterface, actionType string, owner 
 		added = true
 
 	case *actions.Click:
-		clickSections, apply := appendClickTooltipEdit(a, actionType)
+		clickSections, apply := appendClickTooltipEdit(a, actionType, owner)
 		sections = append(sections, clickSections...)
 		applyParts = append(applyParts, apply)
 		added = true
@@ -273,13 +279,13 @@ func buildParamEditPills(node actions.ActionInterface, actionType string, owner 
 		added = true
 
 	case *actions.Calculate:
-		calcSections, apply := appendCalculateTooltipEdit(a, actionType)
+		calcSections, apply := appendCalculateTooltipEdit(a, actionType, owner)
 		sections = append(sections, calcSections...)
 		applyParts = append(applyParts, apply)
 		added = true
 
 	case *actions.RunMacro:
-		runSections, apply := appendRunMacroTooltipEdit(a, actionType)
+		runSections, apply := appendRunMacroTooltipEdit(a, actionType, owner)
 		sections = append(sections, runSections...)
 		applyParts = append(applyParts, apply)
 		added = true
@@ -315,8 +321,8 @@ func buildParamEditPills(node actions.ActionInterface, actionType string, owner 
 		sections = append(sections, wrapTooltipSection(behavior.box))
 
 		outputs := newPillRow()
-		outXEntry := coordEntry(a.OutputXVariable)
-		outYEntry := coordEntry(a.OutputYVariable)
+		outXEntry := varNameEntry(a.OutputXVariable)
+		outYEntry := varNameEntry(a.OutputYVariable)
 		outputs.add(actiondisplay.NewEditablePill("Output X", outXEntry, actionType))
 		outputs.add(actiondisplay.NewEditablePill("Output Y", outYEntry, actionType))
 		sections = append(sections, wrapTooltipSection(outputs.box))
@@ -349,7 +355,20 @@ func buildParamEditPills(node actions.ActionInterface, actionType string, owner 
 		tolInc := actiondisplay.NewPillIntStepper("Tolerance", a.ColorTolerance, 1, &tolMin, &tolMax, actionType)
 		colorEntry := coordEntry(a.TargetColor)
 		search.add(actiondisplay.NewEditablePill("Color", colorEntry, actionType))
-		if dropper := findPixelColorDropperButton(colorEntry, nil); dropper != nil {
+		swatchPill, updateSwatch := editableColorSwatchPill(a.TargetColor, actionType)
+		search.add(swatchPill)
+		colorEntry.ChangedFn = func(text string) {
+			updateSwatch(text)
+			if owner != nil {
+				owner.refreshTooltipLayout()
+			}
+		}
+		if dropper := findPixelColorDropperButton(colorEntry, func() {
+			updateSwatch(colorEntry.Text)
+			if owner != nil {
+				owner.refreshTooltipLayout()
+			}
+		}); dropper != nil {
 			search.add(dropper)
 		}
 		search.add(actiondisplay.WrapPillStepper(tolInc, actionType))
@@ -360,8 +379,8 @@ func buildParamEditPills(node actions.ActionInterface, actionType string, owner 
 		sections = append(sections, wrapTooltipSection(wait.box))
 
 		outputs := newPillRow()
-		outXEntry := coordEntry(a.OutputXVariable)
-		outYEntry := coordEntry(a.OutputYVariable)
+		outXEntry := varNameEntry(a.OutputXVariable)
+		outYEntry := varNameEntry(a.OutputYVariable)
 		outputs.add(actiondisplay.NewEditablePill("Output X", outXEntry, actionType))
 		outputs.add(actiondisplay.NewEditablePill("Output Y", outYEntry, actionType))
 		sections = append(sections, wrapTooltipSection(outputs.box))
@@ -385,9 +404,9 @@ func buildParamEditPills(node actions.ActionInterface, actionType string, owner 
 		sections = append(sections, wrapTooltipSection(general.box))
 
 		outputs := newPillRow()
-		outVarEntry := coordEntry(a.OutputVariable)
-		outXEntry := coordEntry(a.OutputXVariable)
-		outYEntry := coordEntry(a.OutputYVariable)
+		outVarEntry := varNameEntry(a.OutputVariable)
+		outXEntry := varNameEntry(a.OutputXVariable)
+		outYEntry := varNameEntry(a.OutputYVariable)
 		outputs.add(actiondisplay.NewEditablePill("Output", outVarEntry, actionType))
 		outputs.add(actiondisplay.NewEditablePill("Output X", outXEntry, actionType))
 		outputs.add(actiondisplay.NewEditablePill("Output Y", outYEntry, actionType))
@@ -458,7 +477,7 @@ func buildParamEditPills(node actions.ActionInterface, actionType string, owner 
 
 	case *actions.SaveVariable:
 		output := newPillRow()
-		varEntry := coordEntry(a.VariableName)
+		varEntry := varNameEntry(a.VariableName)
 		destEntry := coordEntry(a.Destination)
 		output.add(actiondisplay.NewEditablePill("Variable", varEntry, actionType))
 		output.add(actiondisplay.NewEditablePill("Destination", destEntry, actionType))
@@ -500,12 +519,15 @@ func buildParamEditPills(node actions.ActionInterface, actionType string, owner 
 			keyLabel.SetText("(not set)")
 		}
 		if activeWire.ShowHotkeyRecordDialog != nil && activeWire.Window != nil {
-			recordBtn := actiondisplay.NewPillIconButton(theme.MediaRecordIcon(), func() {
+			recordBtn := actiondisplay.NewPillIconButton(theme.NewErrorThemedResource(theme.MediaRecordIcon()), func() {
 				activeWire.ShowHotkeyRecordDialog(activeWire.Window, time.Second, func(recorded []string) {
 					tempKeys = append([]string(nil), recorded...)
 					keyLabel.SetText(macrohotkey.FormatContinueKey(tempKeys))
 					if keyLabel.Text == "" {
 						keyLabel.SetText("(not set)")
+					}
+					if owner != nil {
+						owner.refreshTooltipLayout()
 					}
 				})
 			})
@@ -526,7 +548,7 @@ func buildParamEditPills(node actions.ActionInterface, actionType string, owner 
 		})
 
 	case *actions.ForEachRow:
-		return appendForEachRowTooltipEdit(a, actionType, applyParts)
+		return appendForEachRowTooltipEdit(a, actionType, owner, applyParts)
 
 	case *actions.FocusWindow:
 		row := newPillRow()
@@ -537,6 +559,9 @@ func buildParamEditPills(node actions.ActionInterface, actionType string, owner 
 		row.add(windowPickerButton(actionType, func(title, path string) {
 			titleEntry.SetText(title)
 			pathEntry.SetText(path)
+			if owner != nil {
+				owner.refreshTooltipLayout()
+			}
 		}))
 		sections = append(sections, wrapTooltipSection(row.box))
 		added = true
@@ -640,6 +665,11 @@ func viewParamPills(node actions.ActionInterface, actionType string) fyne.Canvas
 		behavior := newPillRow()
 		behavior.add(actiondisplay.NewDisplayTogglePill("Run on no find", a.RunBranchOnNoFind, actionType))
 		sections = append(sections, wrapTooltipSection(behavior.box))
+
+		outputs := newPillRow()
+		addDisplayVariablePill(outputs, "Output X", a.OutputXVariable, actionType)
+		addDisplayVariablePill(outputs, "Output Y", a.OutputYVariable, actionType)
+		sections = append(sections, wrapTooltipSection(outputs.box))
 		added = true
 
 	case *actions.FindPixel:
@@ -649,12 +679,20 @@ func viewParamPills(node actions.ActionInterface, actionType string) fyne.Canvas
 
 		search := newPillRow()
 		addDisplayPill(search, "Color", a.TargetColor, actionType)
+		if swatch := colorSwatchPill(a.TargetColor, actionType); swatch != nil {
+			search.add(swatch)
+		}
 		search.add(actiondisplay.NewDisplayPill("Tolerance: "+actions.FormatParamValue(a.ColorTolerance), actionType))
 		sections = append(sections, wrapTooltipSection(search.box))
 
 		wait := newPillRow()
 		appendWaitTilFoundViewPills(wait, &a.WaitTilFoundConfig, actionType)
 		sections = append(sections, wrapTooltipSection(wait.box))
+
+		outputs := newPillRow()
+		addDisplayVariablePill(outputs, "Output X", a.OutputXVariable, actionType)
+		addDisplayVariablePill(outputs, "Output Y", a.OutputYVariable, actionType)
+		sections = append(sections, wrapTooltipSection(outputs.box))
 		added = true
 
 	case *actions.Ocr:
@@ -662,6 +700,12 @@ func viewParamPills(node actions.ActionInterface, actionType string) fyne.Canvas
 		addDisplayPill(general, "Name", a.Name, actionType)
 		addDisplayPill(general, "Target", a.Target, actionType)
 		sections = append(sections, wrapTooltipSection(general.box))
+
+		outputs := newPillRow()
+		addDisplayVariablePill(outputs, "Output", a.OutputVariable, actionType)
+		addDisplayVariablePill(outputs, "Output X", a.OutputXVariable, actionType)
+		addDisplayVariablePill(outputs, "Output Y", a.OutputYVariable, actionType)
+		sections = append(sections, wrapTooltipSection(outputs.box))
 
 		wait := newPillRow()
 		appendWaitTilFoundViewPills(wait, &a.WaitTilFoundConfig, actionType)
@@ -677,7 +721,7 @@ func viewParamPills(node actions.ActionInterface, actionType string) fyne.Canvas
 
 	case *actions.SaveVariable:
 		output := newPillRow()
-		addDisplayPill(output, "Variable", a.VariableName, actionType)
+		addDisplayVariablePill(output, "Variable", a.VariableName, actionType)
 		addDisplayPill(output, "Destination", a.Destination, actionType)
 		sections = append(sections, wrapTooltipSection(output.box))
 
@@ -698,10 +742,20 @@ func viewParamPills(node actions.ActionInterface, actionType string) fyne.Canvas
 		added = true
 
 	case *actions.ForEachRow:
-		row := newPillRow()
-		addDisplayPill(row, "Start row", formatAnyValue(a.StartRow), actionType)
-		addDisplayPill(row, "End row", formatAnyValue(a.EndRow), actionType)
-		sections = append(sections, wrapTooltipSection(row.box))
+		general := newPillRow()
+		addDisplayPill(general, "Name", a.Name, actionType)
+		addDisplayPill(general, "Start row", formatAnyValue(a.StartRow), actionType)
+		addDisplayPill(general, "End row", formatAnyValue(a.EndRow), actionType)
+		sections = append(sections, wrapTooltipSection(general.box))
+
+		for i, s := range a.Sources {
+			srcRow := newPillRow()
+			addDisplayPill(srcRow, fmt.Sprintf("Source %d", i+1), s.Source, actionType)
+			addDisplayVariablePill(srcRow, "Output", s.OutputVar, actionType)
+			srcRow.add(actiondisplay.NewDisplayTogglePill("Is file", s.IsFile, actionType))
+			srcRow.add(actiondisplay.NewDisplayTogglePill("Skip blank", s.SkipBlankLines, actionType))
+			sections = append(sections, wrapTooltipSection(srcRow.box))
+		}
 		added = true
 
 	case *actions.FocusWindow:

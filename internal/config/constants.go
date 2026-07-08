@@ -9,7 +9,21 @@ import (
 // sqyreDirFallback is used when user home cannot be determined (no panic).
 var sqyreDirFallback string
 
+// sqyreDirOverride, when non-empty, replaces the default ~/.sqyre location.
+// The UI layer reads the persisted PrefSqyreDir preference and applies it at
+// startup (and when the user changes it) so this package stays free of Fyne.
+var sqyreDirOverride string
+
+// SetSqyreDirOverride sets a custom absolute path for the Sqyre data directory.
+// An empty string restores the default (~/.sqyre).
+func SetSqyreDirOverride(path string) {
+	sqyreDirOverride = path
+}
+
 func getSqyreDir() string {
+	if sqyreDirOverride != "" {
+		return sqyreDirOverride
+	}
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		if sqyreDirFallback == "" {
@@ -77,6 +91,7 @@ const (
 	PrefWindowY                         = "window_y"
 	PrefWindowWidth                     = "window_width"
 	PrefWindowHeight                    = "window_height"
+	PrefSqyreDir                        = "sqyre_dir" // absolute path override for the .sqyre data directory (empty = ~/.sqyre)
 
 	// Action display colors in the macro tree (hex #rrggbb; empty = built-in default).
 	PrefActionColorMouseKeyboard = "action_color_mouse_keyboard"

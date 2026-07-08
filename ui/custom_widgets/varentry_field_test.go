@@ -1,7 +1,7 @@
 package custom_widgets
 
 import (
-	"Sqyre/internal/services"
+	macrologic "Sqyre/internal/macro"
 	"testing"
 	"time"
 
@@ -10,11 +10,11 @@ import (
 
 func TestVarEntryField_expressionErrorBlocksSubmit(t *testing.T) {
 	test.NewApp()
-	field := NewVarEntryField(nil, func(text string) services.EntryValidation {
+	field := NewVarEntryField(nil, func(text string) macrologic.EntryValidation {
 		if text == "bad" {
-			return services.EntryValidation{Error: "invalid expression"}
+			return macrologic.EntryValidation{Error: "invalid expression"}
 		}
-		return services.EntryValidation{}
+		return macrologic.EntryValidation{}
 	})
 	field.Entry.SetText("bad")
 	field.Revalidate()
@@ -35,8 +35,8 @@ func TestVarEntryField_expressionErrorBlocksSubmit(t *testing.T) {
 
 func TestVarEntryField_unknownVariableWarnsOnly(t *testing.T) {
 	test.NewApp()
-	field := NewVarEntryField(nil, func(text string) services.EntryValidation {
-		return services.EntryValidation{Warning: "unknown variable \"missing\""}
+	field := NewVarEntryField(nil, func(text string) macrologic.EntryValidation {
+		return macrologic.EntryValidation{Warning: "unknown variable \"missing\""}
 	})
 	field.Entry.SetText("${missing}")
 	field.Revalidate()
