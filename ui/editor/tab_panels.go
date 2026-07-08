@@ -35,14 +35,7 @@ func newEditorPreviewRefreshButton() *widget.Button {
 }
 
 func buildPreviewColumn(panel *editorPreviewPanel, refreshBtn *widget.Button) fyne.CanvasObject {
-	if refreshBtn == nil {
-		return panel.container
-	}
-	return container.NewBorder(
-		container.NewHBox(layout.NewSpacer(), refreshBtn),
-		nil, nil, nil,
-		panel.container,
-	)
+	return custom_widgets.OverlayTopRight(panel.container, refreshBtn)
 }
 
 // populateProgramsFormWidgets creates the Programs tab right-side form widgets.

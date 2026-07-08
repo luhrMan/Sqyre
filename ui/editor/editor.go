@@ -241,7 +241,7 @@ func ConstructEditorTabs(eu *EditorUi, win fyne.Window) {
 			atw["saveButton"],
 			nil,
 			nil,
-			buildPreviewColumn(autoPicPreviewPanel, et.AutoPicTab.PreviewRefreshButton),
+			custom_widgets.OverlayTopRight(autoPicPreviewPanel.container, et.AutoPicTab.PreviewRefreshButton),
 		),
 	)
 
