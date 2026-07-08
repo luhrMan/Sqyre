@@ -3,7 +3,6 @@
 package recording
 
 import (
-	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -20,20 +19,17 @@ import (
 	hook "github.com/luhrMan/gohook"
 )
 
-const keyRecordStableDuration = 300 * time.Millisecond
-
-// ShowKeyRecordDialog captures a single keyboard key. When exactly one key stays
-// held for keyRecordStableDuration, onRecorded runs and the dialog closes.
+// ShowKeyRecordDialog captures a single keyboard key. The first time a key other
+// than Escape is pressed, onRecorded runs and the dialog closes. Escape cancels.
 func ShowKeyRecordDialog(
 	parent fyne.Window,
-	_ func(d dialog.Dialog, parent fyne.Window),
 	onRecorded func(key string),
 ) {
 	if parent == nil || onRecorded == nil {
 		return
 	}
 
-	hint := widget.NewLabel("Press the key you want to use.\nWhen one key stays held briefly, it will be saved.\nUse Cancel to dismiss without saving.")
+	hint := widget.NewLabel("Press the key you want to use.\nThe first key you press is saved.\nUse Cancel to dismiss without saving.")
 	hint.Wrapping = fyne.TextWrapWord
 
 	keyLabel := widget.NewLabel("(no key)")
@@ -42,9 +38,6 @@ func ShowKeyRecordDialog(
 
 	statusLabel := widget.NewLabel("")
 
-	progress := widget.NewProgressBar()
-	progress.Max = keyRecordStableDuration.Seconds()
-
 	cancelBtn := widget.NewButtonWithIcon("Cancel", theme.CancelIcon(), nil)
 	cancelBtn.Importance = widget.MediumImportance
 
@@ -52,7 +45,6 @@ func ShowKeyRecordDialog(
 		hint,
 		widget.NewSeparator(),
 		keyLabel,
-		progress,
 		statusLabel,
 		container.NewHBox(layout.NewSpacer(), cancelBtn),
 	)
@@ -77,7 +69,32 @@ func ShowKeyRecordDialog(
 	stop := func() { stopOnce.Do(func() { close(done) }) }
 
 	var pendingReleaseKey string
+	var finished atomic.Bool
+	recordKey := func(key string) {
+		if key == "" || !finished.CompareAndSwap(false, true) {
+			return
+		}
+		fyne.Do(func() {
+			keyLabel.SetText(key)
+			statusLabel.SetText("")
+			pendingReleaseKey = key
+			onRecorded(key)
+			d.Hide()
+		})
+	}
+
+	// Escape is a recordable key like any other, but the OS-level hook dispatches it
+	// only to the most recently registered handler. Register a topmost one so Esc is
+	// captured here as the recorded key and never falls through to the action
+	// tooltip's edit-mode Esc handler beneath it (which would close the editor too).
+	var escOnce sync.Once
+	var unregisterEsc func() = func() {}
+	unregisterEsc = macrohotkey.RegisterEscapeHandler(func() {
+		recordKey("esc")
+	})
+
 	d.SetOnClosed(func() {
+		escOnce.Do(unregisterEsc)
 		setKeyRecordSessionActive(false)
 		stop()
 		k := pendingReleaseKey
@@ -101,10 +118,6 @@ func ShowKeyRecordDialog(
 		d.Hide()
 	}
 
-	var lastName string
-	stableStart := time.Now()
-	var finished atomic.Bool
-
 	go func() {
 		tick := time.NewTicker(50 * time.Millisecond)
 		defer tick.Stop()
@@ -121,53 +134,23 @@ func ShowKeyRecordDialog(
 					names = hook.PressedKeyNames()
 				}
 				var name string
-				if len(names) == 1 {
+				if len(names) >= 1 {
 					name = names[0]
 				}
-				if name != lastName {
-					lastName = name
-					stableStart = time.Now()
-				}
-				elapsed := time.Since(stableStart)
-				display := name
-				if display == "" {
-					display = "(no key)"
-				}
-				var prog float64
-				var status string
-				switch {
-				case len(names) > 1:
-					prog = 0
-					status = "Release extra keys — only one key is recorded."
-				case name != "":
-					prog = elapsed.Seconds()
-					if prog > progress.Max {
-						prog = progress.Max
-					}
-					remain := max(keyRecordStableDuration-elapsed, 0)
-					status = fmt.Sprintf("Stable for %.1f s — %.1f s until save", elapsed.Seconds(), remain.Seconds())
-				default:
-					status = "Press the key you want to record."
+				// Esc is captured by the dedicated topmost handler above; the poller
+				// owns every other key.
+				if name != "" && name != "esc" {
+					recordKey(name)
+					return
 				}
 
 				fyne.Do(func() {
 					if finished.Load() {
 						return
 					}
-					keyLabel.SetText(display)
-					progress.SetValue(prog)
-					statusLabel.SetText(status)
+					keyLabel.SetText("(no key)")
+					statusLabel.SetText("Press the key you want to record.")
 				})
-
-				if name != "" && len(names) == 1 && elapsed >= keyRecordStableDuration && finished.CompareAndSwap(false, true) {
-					keyCopy := name
-					fyne.Do(func() {
-						pendingReleaseKey = keyCopy
-						onRecorded(keyCopy)
-						d.Hide()
-					})
-					return
-				}
 			}
 		}
 	}()

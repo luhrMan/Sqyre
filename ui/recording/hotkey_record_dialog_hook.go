@@ -113,7 +113,7 @@ func ShowHotkeyRecordDialog(
 	var finished atomic.Bool
 
 	go func() {
-		tick := time.NewTicker(50 * time.Millisecond)
+		tick := time.NewTicker(16 * time.Millisecond)
 		defer tick.Stop()
 		for {
 			select {
