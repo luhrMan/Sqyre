@@ -6,6 +6,7 @@ import (
 	"Sqyre/internal/models/repositories"
 	"Sqyre/internal/services"
 	"Sqyre/internal/validation"
+	"Sqyre/internal/vision"
 	"Sqyre/ui/completionentry"
 	"Sqyre/ui/custom_widgets"
 	"fmt"
@@ -19,7 +20,7 @@ import (
 func refreshOpenMacroTreesAfterRename() {
 	if mtabs := activeWire.MacroMTabs(); mtabs != nil {
 		for _, tree := range mtabs.AllTrees() {
-			tree.Refresh()
+			tree.RefreshVisibleRowDisplays()
 		}
 	}
 }
@@ -215,6 +216,7 @@ func setPointUpdateHandler() {
 				return repo.Set(v.Name, v)
 			},
 			onSuccess: func() {
+				vision.InvalidatePreviewTooltipCacheEntity(oldPointName)
 				propagateEntityRename(models.ProgramEntityPoint, programName, oldPointName, p.Name)
 				safeUpdatePointPreview(v)
 				refreshPointsAccordionForProgram(programName)
@@ -264,6 +266,7 @@ func setSearchAreaUpdateHandler() {
 				return repo.Set(v.Name, v)
 			},
 			onSuccess: func() {
+				vision.InvalidatePreviewTooltipCacheEntity(oldAreaName)
 				propagateEntityRename(models.ProgramEntitySearchArea, programName, oldAreaName, sa.Name)
 				safeUpdateSearchAreaPreview(v)
 				refreshSearchAreasAccordionForProgram(programName)
@@ -355,6 +358,7 @@ func setItemTagHandlers(tab *EditorTab) {
 			editorRepoErr("save", v.Name, err)
 			return
 		}
+		InvalidateProgramTagsCache(p)
 		appendTagChip(v, tagText)
 		tagEntry.SetText("")
 	}
@@ -449,6 +453,9 @@ func safeUpdatePointPreview(p *models.Point) {
 			services.LogPanicToFile(r, "Point: Preview update (point: "+p.Name+")")
 		}
 	}()
+	if p != nil {
+		vision.InvalidatePreviewTooltipCacheEntity(p.Name)
+	}
 	shell().UpdatePointPreview(p)
 }
 
@@ -458,6 +465,9 @@ func safeUpdateSearchAreaPreview(sa *models.SearchArea) {
 			services.LogPanicToFile(r, "SearchArea: Preview update (area: "+sa.Name+")")
 		}
 	}()
+	if sa != nil {
+		vision.InvalidatePreviewTooltipCacheEntity(sa.Name)
+	}
 	shell().UpdateSearchAreaPreview(sa)
 }
 

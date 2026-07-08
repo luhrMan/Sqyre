@@ -7,39 +7,39 @@ import (
 )
 
 func actionPreviewLoader(node actions.ActionInterface) custom_widgets.PreviewTooltipLoad {
+	ref, ok := coordinateRefForPreview(node)
+	if !ok || ref.IsEmpty() {
+		return nil
+	}
+	return previewLoaderForRef(node, ref)
+}
+
+func coordinateRefForPreview(node actions.ActionInterface) (actions.CoordinateRef, bool) {
 	switch a := node.(type) {
 	case *actions.Move:
-		if a.Point.IsEmpty() {
-			return nil
-		}
-		ref := a.Point
+		return a.Point, true
+	case *actions.ImageSearch:
+		return a.SearchArea, true
+	case *actions.Ocr:
+		return a.SearchArea, true
+	case *actions.FindPixel:
+		return a.SearchArea, true
+	default:
+		return "", false
+	}
+}
+
+func previewLoaderForRef(node actions.ActionInterface, ref actions.CoordinateRef) custom_widgets.PreviewTooltipLoad {
+	if ref.IsEmpty() {
+		return nil
+	}
+	switch node.(type) {
+	case *actions.Move:
 		return func() (custom_widgets.PreviewTooltipResult, error) {
 			img, caption, err := vision.PointPreviewTooltipForRef(ref)
 			return custom_widgets.PreviewTooltipResult{Image: img, Caption: caption}, err
 		}
-	case *actions.ImageSearch:
-		if a.SearchArea.IsEmpty() {
-			return nil
-		}
-		ref := a.SearchArea
-		return func() (custom_widgets.PreviewTooltipResult, error) {
-			img, caption, err := vision.SearchAreaPreviewTooltipForRef(ref)
-			return custom_widgets.PreviewTooltipResult{Image: img, Caption: caption}, err
-		}
-	case *actions.Ocr:
-		if a.SearchArea.IsEmpty() {
-			return nil
-		}
-		ref := a.SearchArea
-		return func() (custom_widgets.PreviewTooltipResult, error) {
-			img, caption, err := vision.SearchAreaPreviewTooltipForRef(ref)
-			return custom_widgets.PreviewTooltipResult{Image: img, Caption: caption}, err
-		}
-	case *actions.FindPixel:
-		if a.SearchArea.IsEmpty() {
-			return nil
-		}
-		ref := a.SearchArea
+	case *actions.ImageSearch, *actions.Ocr, *actions.FindPixel:
 		return func() (custom_widgets.PreviewTooltipResult, error) {
 			img, caption, err := vision.SearchAreaPreviewTooltipForRef(ref)
 			return custom_widgets.PreviewTooltipResult{Image: img, Caption: caption}, err

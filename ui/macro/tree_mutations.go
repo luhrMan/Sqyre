@@ -30,19 +30,28 @@ func (mt *MacroTree) moveNode(selectedUID string, up bool) {
 	}
 
 	moved := false
+	var refreshUIDs []string
 	if up && index > 0 {
 		mt.recordMutation()
 		psa[index-1], psa[index] = psa[index], psa[index-1]
 		mt.Select(psa[index-1].GetUID())
+		refreshUIDs = []string{psa[index-1].GetUID(), psa[index].GetUID()}
 		moved = true
 	} else if !up && index < len(psa)-1 {
 		mt.recordMutation()
 		psa[index], psa[index+1] = psa[index+1], psa[index]
 		mt.Select(psa[index+1].GetUID())
+		refreshUIDs = []string{psa[index].GetUID(), psa[index+1].GetUID()}
 		moved = true
 	}
-	mt.Refresh()
-	if moved && mt.OnTreeChanged != nil {
+	if !moved {
+		return
+	}
+	for _, uid := range refreshUIDs {
+		mt.invalidateRowCache(uid)
+		mt.RefreshItem(uid)
+	}
+	if mt.OnTreeChanged != nil {
 		mt.OnTreeChanged()
 	}
 }
@@ -99,7 +108,9 @@ func (mt *MacroTree) setTree() {
 		iconBg.CornerRadius = 6
 		iconBg.StrokeColor = theme.Color(theme.ColorNameShadow)
 		iconBg.StrokeWidth = 1
-		iconStack := container.NewStack(iconBg, actionIconBtn)
+		iconBg.SetMinSize(fyne.NewSquareSize(treeItemIconSize))
+		iconTip := newActionIconTooltipHover()
+		iconStack := container.NewStack(iconBg, actionIconBtn, iconTip)
 		dh := newDragHandle()
 		dh.tree = mt
 		leftSide := container.NewHBox(
@@ -108,8 +119,10 @@ func (mt *MacroTree) setTree() {
 		)
 		displayContainer := container.New(kxlayout.NewRowWrapLayout())
 		itemIconsBox := container.NewHBox()
+		itemIconsTip := newActionIconTooltipHover()
+		itemIconsStack := container.NewStack(itemIconsBox, itemIconsTip)
 		displayHolder := container.NewCenter(displayContainer)
-		itemIconsHolder := container.NewCenter(itemIconsBox)
+		itemIconsHolder := container.NewCenter(itemIconsStack)
 		scrollContent := container.NewHBox(displayHolder, itemIconsHolder)
 		contentScroll := container.NewHScroll(scrollContent)
 		contentScroll.SetMinSize(fyne.NewSize(0, treeItemIconSize))
@@ -128,12 +141,14 @@ func (mt *MacroTree) setTree() {
 
 		// Highlight overlay is drawn on top of the row. canvas.Rectangle is not
 		// tappable, so taps still reach the icon/remove buttons beneath it.
-		return container.NewStack(border, hlBg)
+		rowTip := newActionRowTooltipHover()
+		return container.NewStack(border, hlBg, rowTip)
 	}
 	mt.UpdateNode = func(uid string, branch bool, obj fyne.CanvasObject) {
 		stack := obj.(*fyne.Container)
 		c := stack.Objects[0].(*fyne.Container)
 		hlBg := stack.Objects[1].(*fyne.Container)
+		rowTip := stack.Objects[2].(*actionRowTooltipHover)
 		if mt.consumeHighlightRefresh(uid) && mt.nodeObjectShowsUID(obj, uid) {
 			mt.registerHighlightOverlay(uid, stack, hlBg)
 			mt.applyHighlightOverlay(uid, hlBg)
@@ -152,6 +167,7 @@ func (mt *MacroTree) setTree() {
 		iconStack := leftSide.Objects[1].(*fyne.Container)
 		iconBg := iconStack.Objects[0].(*canvas.Rectangle)
 		actionIconBtn := iconStack.Objects[1].(*ttwidget.Button)
+		iconTip := iconStack.Objects[2].(*actionIconTooltipHover)
 		removeButton := c.Objects[2].(*widget.Button)
 		rowBody := c.Objects[0].(*treeRowBody)
 		rowBody.tree = mt
@@ -164,12 +180,22 @@ func (mt *MacroTree) setTree() {
 		displayHolder := scrollContent.Objects[0].(*fyne.Container)
 		itemIconsHolder := scrollContent.Objects[1].(*fyne.Container)
 		displayContainer := displayHolder.Objects[0].(*fyne.Container)
-		itemIconsBox := itemIconsHolder.Objects[0].(*fyne.Container)
+		itemIconsStack := itemIconsHolder.Objects[0].(*fyne.Container)
+		itemIconsBox := itemIconsStack.Objects[0].(*fyne.Container)
+		itemIconsTip := itemIconsStack.Objects[1].(*actionIconTooltipHover)
 
 		rowContent := mt.cachedRowContent(node)
 		displayContainer.Objects = []fyne.CanvasObject{rowContent.display}
 		if hover, ok := rowContent.display.(*actionDisplayTooltipHover); ok {
 			hover.bindRowBody(rowBody)
+			hover.setTooltipKeepAliveArea(c)
+			rowTip.bindActionTooltip(hover)
+			iconTip.bindActionTooltip(hover)
+			itemIconsTip.bindActionTooltip(hover)
+		} else {
+			rowTip.bindActionTooltip(nil)
+			iconTip.bindActionTooltip(nil)
+			itemIconsTip.bindActionTooltip(nil)
 		}
 		if mt.executing {
 			itemIconsBox.Objects = nil
@@ -182,13 +208,8 @@ func (mt *MacroTree) setTree() {
 		iconBg.FillColor = macroTreeActionColor(node)
 		iconBg.Refresh()
 		actionIconBtn.SetIcon(actiondisplay.Icon(node))
-		actionIconBtn.SetToolTip(node.GetType())
 		actionIconBtn.Importance = widget.LowImportance
-		actionIconBtn.OnTapped = nil
-		if mt.OnOpenActionDialog != nil {
-			action := node
-			actionIconBtn.OnTapped = func() { mt.OnOpenActionDialog(action) }
-		}
+		actionIconBtn.OnTapped = func() { mt.EditAction(uid) }
 		itemIconsBox.Refresh()
 
 		removeButton.OnTapped = func() {

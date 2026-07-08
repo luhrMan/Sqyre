@@ -56,10 +56,10 @@ func (c *CompletionEntry) Move(pos fyne.Position) {
 
 // Refresh the list to update the options to display.
 func (c *CompletionEntry) Refresh() {
-	c.Entry.Refresh()
 	if c.navigableList != nil {
 		c.navigableList.SetOptions(c.Options)
 	}
+	c.BaseWidget.Refresh()
 }
 
 // Resize sets a new size for a widget.
@@ -246,7 +246,7 @@ func (n *navigableList) TypedKey(event *fyne.KeyEvent) {
 		n.navigating = true
 		n.Select(n.selected)
 	case fyne.KeyReturn, fyne.KeyEnter:
-		suppressActionDialogEnter()
+		suppressTooltipEnter()
 		if n.selected == -1 { // so the user want to submit the entry
 			n.hide()
 			n.entry.TypedKey(event)

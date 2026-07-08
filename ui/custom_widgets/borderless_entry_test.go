@@ -7,6 +7,7 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/test"
+	"fyne.io/fyne/v2/theme"
 )
 
 func TestBorderlessEntryMinSizeGrowsWithText(t *testing.T) {
@@ -34,6 +35,19 @@ func TestBorderlessEntryMinSizeHeightMatchesPillLine(t *testing.T) {
 	e.SetText("100")
 	if got, want := e.MinSize().Height, PillLineHeight(); got != want {
 		t.Fatalf("MinSize height = %v, want PillLineHeight %v", got, want)
+	}
+}
+
+func TestBorderlessEntryThemeKeepsCaretWidth(t *testing.T) {
+	t.Helper()
+	test.NewApp()
+
+	th := newBorderlessEntryTheme()
+	if got := th.Size(theme.SizeNameInputBorder); got == 0 {
+		t.Fatalf("inputBorder size = %v, want non-zero caret width", got)
+	}
+	if got := th.Size(theme.SizeNameInnerPadding); got != 0 {
+		t.Fatalf("innerPadding = %v, want 0 for pill-inline layout", got)
 	}
 }
 

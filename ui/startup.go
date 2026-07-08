@@ -135,6 +135,7 @@ func setupSystemTray(w fyne.Window) {
 // PrepareMainWindow creates the hidden main window and registers the system tray.
 // Must be called before app.Run(); Fyne requires tray setup before the event loop starts.
 func PrepareMainWindow(a fyne.App) fyne.Window {
+	InitAppForegroundTracking(a)
 	w := a.NewWindow("Sqyre")
 	w.Resize(fyne.NewSize(1000, 500))
 	w.SetIcon(assets.AppIcon)

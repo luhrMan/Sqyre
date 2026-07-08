@@ -8,7 +8,7 @@ import (
 var activeCompletions atomic.Int32
 
 // suppressEnterUntilUnixNano is set when completion consumes Enter so a global
-// Enter hook (e.g. action dialog save) does not fire after the popup hides.
+// Enter hook (e.g. tooltip save) does not fire after the popup hides.
 var suppressEnterUntilUnixNano atomic.Int64
 
 const enterSuppressDuration = 100 * time.Millisecond
@@ -34,7 +34,7 @@ func IsCompletionActive() bool {
 	return activeCompletions.Load() > 0
 }
 
-func suppressActionDialogEnter() {
+func suppressTooltipEnter() {
 	until := time.Now().Add(enterSuppressDuration).UnixNano()
 	for {
 		cur := suppressEnterUntilUnixNano.Load()
@@ -47,8 +47,8 @@ func suppressActionDialogEnter() {
 	}
 }
 
-// IsActionDialogEnterSuppressed reports whether a recent completion Enter
-// should block a global action-dialog save handler.
-func IsActionDialogEnterSuppressed() bool {
+// IsTooltipEnterSuppressed reports whether a recent completion Enter should
+// block a global tooltip save handler.
+func IsTooltipEnterSuppressed() bool {
 	return time.Now().UnixNano() < suppressEnterUntilUnixNano.Load()
 }
