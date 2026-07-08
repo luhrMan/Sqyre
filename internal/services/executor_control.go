@@ -1,6 +1,7 @@
 package services
 
 import (
+	macropkg "Sqyre/internal/macro"
 	"Sqyre/internal/models"
 	"Sqyre/internal/models/actions"
 	"fmt"
@@ -18,7 +19,7 @@ func init() {
 func executeLoop(a actions.ActionInterface, macro *models.Macro) error {
 	node := a.(*actions.Loop)
 	log.Println("Loop:", node.String())
-	count, err := ResolveInt(node.Count, macro)
+	count, err := macropkg.ResolveInt(node.Count, macro)
 	if err != nil {
 		return fmt.Errorf("loop count: %w", err)
 	}
@@ -67,7 +68,7 @@ func executeLoop(a actions.ActionInterface, macro *models.Macro) error {
 func executeConditional(a actions.ActionInterface, macro *models.Macro) error {
 	node := a.(*actions.Conditional)
 	log.Println("Conditional:", node.String())
-	result, err := EvaluateCondition(node, macro)
+	result, err := macropkg.EvaluateCondition(node, macro)
 	if err != nil {
 		log.Printf("Conditional: %v; treating as false (skipping branch)", err)
 		return nil
@@ -95,7 +96,7 @@ func executePause(a actions.ActionInterface, macro *models.Macro) error {
 	log.Println("Pause:", node.String())
 	msg := node.Message
 	if macro != nil {
-		if resolved, err := ResolveString(msg, macro); err == nil {
+		if resolved, err := macropkg.ResolveString(msg, macro); err == nil {
 			msg = resolved
 		}
 	}

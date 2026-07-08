@@ -1,8 +1,8 @@
 package fieldvalidation
 
 import (
+	macrologic "Sqyre/internal/macro"
 	"Sqyre/internal/models"
-	"Sqyre/internal/services"
 )
 
 // MacroContext supplies macro-scoped validation inputs from UI wiring.
@@ -18,24 +18,24 @@ func (c MacroContext) currentMacro() *models.Macro {
 	return nil
 }
 
-func (c MacroContext) ValidateNumericExpression(text string) services.EntryValidation {
-	return services.ValidateNumericExpression(text, c.currentMacro())
+func (c MacroContext) ValidateNumericExpression(text string) macrologic.EntryValidation {
+	return macrologic.ValidateNumericExpression(text, c.currentMacro())
 }
 
-func (c MacroContext) ValidateCalculateExpression(text string) services.EntryValidation {
-	return services.ValidateCalculateExpression(text, c.currentMacro())
+func (c MacroContext) ValidateCalculateExpression(text string) macrologic.EntryValidation {
+	return macrologic.ValidateCalculateExpression(text, c.currentMacro())
 }
 
-func (c MacroContext) ValidateSetVariableValue(text string) services.EntryValidation {
-	return services.ValidateSetVariableValue(text, c.currentMacro())
+func (c MacroContext) ValidateSetVariableValue(text string) macrologic.EntryValidation {
+	return macrologic.ValidateSetVariableValue(text, c.currentMacro())
 }
 
-func (c MacroContext) ValidateVariableReferences(text string) services.EntryValidation {
-	return services.ValidateVariableReferences(text, c.currentMacro())
+func (c MacroContext) ValidateVariableReferences(text string) macrologic.EntryValidation {
+	return macrologic.ValidateVariableReferences(text, c.currentMacro())
 }
 
 func (c MacroContext) ResolveVariablePreview(text string) string {
-	resolved, err := services.ResolveVariables(text, c.currentMacro())
+	resolved, err := macrologic.ResolveVariables(text, c.currentMacro())
 	if err != nil || resolved == text {
 		return ""
 	}

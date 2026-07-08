@@ -3,10 +3,12 @@ package macro
 import (
 	"Sqyre/internal/models/actions"
 	"Sqyre/internal/models/repositories"
+	"Sqyre/internal/panicsafe"
 	"Sqyre/internal/screen"
 	"Sqyre/internal/services"
 	"Sqyre/ui/actiondisplay"
 	"Sqyre/ui/custom_widgets"
+	"Sqyre/ui/dialogs"
 	"fmt"
 	"slices"
 	"strings"
@@ -77,7 +79,7 @@ func showMacroNamePicker(onSelect func(string)) {
 	// it dismisses the picker. Leave a macroPickerMarginFrac margin on every window
 	// edge and center the picker in the remainder.
 	popup = widget.NewPopUp(content, activeWire.Window.Canvas())
-	activeWire.AddPopupEscapeClose(popup, activeWire.Window)
+	dialogs.AddPopupEscapeClose(popup, activeWire.Window)
 	canvasSize := activeWire.Window.Canvas().Size()
 	w := canvasSize.Width * (1 - 2*macroPickerMarginFrac)
 	h := canvasSize.Height * (1 - 2*macroPickerMarginFrac)
@@ -141,7 +143,7 @@ func showWindowPicker(onSelect func(title, path string)) {
 		}
 		applyFilter()
 	})
-	services.GoSafe(func() {
+	panicsafe.GoSafe(func() {
 		windows, err := services.ActiveWindows()
 		if err != nil {
 			fyne.Do(func() {
