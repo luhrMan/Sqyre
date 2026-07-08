@@ -6,13 +6,14 @@ import (
 
 	"Sqyre/internal/models"
 	"Sqyre/internal/models/repositories"
+	"Sqyre/ui/dialogs"
 )
 
 func editorErr(err error) {
 	if err == nil {
 		return
 	}
-	activeWire.ShowErrorWithEscape(err, activeWire.Window)
+	dialogs.ShowErrorWithEscape(err, activeWire.Window)
 }
 
 func editorRepoErr(op, name string, err error) {

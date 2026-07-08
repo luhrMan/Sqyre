@@ -7,6 +7,7 @@ import (
 
 	"Sqyre/internal/config"
 	"Sqyre/internal/logger"
+	"Sqyre/internal/panicsafe"
 	"Sqyre/internal/screen"
 	"Sqyre/internal/services"
 	"Sqyre/ui/custom_widgets"
@@ -208,8 +209,6 @@ func (u *Ui) constructUiFinish() {
 
 	macro.InitMacroLogPopup(
 		func() fyne.Window { return GetUi().Window },
-		AddDialogEscapeClose,
-		ShowErrorWithEscape,
 	)
 
 	if config.IsUITestMode() {
@@ -228,7 +227,7 @@ func toggleMousePos() {
 	boundLocYLabel.Bind(binding.IntToString(blocY))
 	stop := make(chan struct{})
 	mousePosStop = stop
-	services.GoSafe(func() {
+	panicsafe.GoSafe(func() {
 		for {
 			select {
 			case <-stop:

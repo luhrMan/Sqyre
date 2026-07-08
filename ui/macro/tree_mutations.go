@@ -1,6 +1,8 @@
 package macro
 
 import (
+	"image/color"
+
 	"Sqyre/internal/models/actions"
 	"Sqyre/ui/actiondisplay"
 
@@ -142,13 +144,19 @@ func (mt *MacroTree) setTree() {
 		// Highlight overlay is drawn on top of the row. canvas.Rectangle is not
 		// tappable, so taps still reach the icon/remove buttons beneath it.
 		rowTip := newActionRowTooltipHover()
-		return container.NewStack(border, hlBg, rowTip)
+		// Reserve the remove button's column so the row hover overlay never sits
+		// over the delete "x"; hovering/tapping the button must reach it directly.
+		removeSpacer := canvas.NewRectangle(color.Transparent)
+		removeSpacer.SetMinSize(removeBtn.MinSize())
+		rowTipLayer := container.NewBorder(nil, nil, nil, removeSpacer, rowTip)
+		return container.NewStack(border, hlBg, rowTipLayer)
 	}
 	mt.UpdateNode = func(uid string, branch bool, obj fyne.CanvasObject) {
 		stack := obj.(*fyne.Container)
 		c := stack.Objects[0].(*fyne.Container)
 		hlBg := stack.Objects[1].(*fyne.Container)
-		rowTip := stack.Objects[2].(*actionRowTooltipHover)
+		rowTipLayer := stack.Objects[2].(*fyne.Container)
+		rowTip := rowTipLayer.Objects[0].(*actionRowTooltipHover)
 		if mt.consumeHighlightRefresh(uid) && mt.nodeObjectShowsUID(obj, uid) {
 			mt.registerHighlightOverlay(uid, stack, hlBg)
 			mt.applyHighlightOverlay(uid, hlBg)
@@ -189,6 +197,7 @@ func (mt *MacroTree) setTree() {
 		if hover, ok := rowContent.display.(*actionDisplayTooltipHover); ok {
 			hover.bindRowBody(rowBody)
 			hover.setTooltipKeepAliveArea(c)
+			hover.setTooltipKeepAliveExclude(removeButton)
 			rowTip.bindActionTooltip(hover)
 			iconTip.bindActionTooltip(hover)
 			itemIconsTip.bindActionTooltip(hover)

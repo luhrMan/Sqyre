@@ -1,6 +1,7 @@
 package validation
 
 import (
+	"Sqyre/internal/macro"
 	"fmt"
 	"strings"
 	"unicode"
@@ -27,6 +28,18 @@ func ValidateVariableName(name string) error {
 		if unicode.IsControl(r) {
 			return fmt.Errorf("%w: must not contain control characters", ErrInvalidVariable)
 		}
+	}
+	return nil
+}
+
+// ValidateVariableAssignmentName checks a variable name used when setting/defining a macro variable.
+// Expressions and reference syntax are rejected.
+func ValidateVariableAssignmentName(name string) error {
+	if err := ValidateVariableName(name); err != nil {
+		return err
+	}
+	if macro.LooksLikeExpression(name) {
+		return fmt.Errorf("%w: must be a simple variable name, not an expression", ErrInvalidVariable)
 	}
 	return nil
 }

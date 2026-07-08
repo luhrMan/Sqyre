@@ -42,6 +42,20 @@ func actionTooltipTypePill(actionType string) fyne.CanvasObject {
 	return actiondisplay.NewDisplayPill(actions.ActionTypeLabel(actionType), actionType)
 }
 
+// actionTooltipEditTypePill builds the title pill for the edit toolbar with a
+// hover tooltip explaining what the action does. The tip surfaces through the
+// panel's TooltipSink once BindPillStepperTooltips wires it in rebuildBody.
+func actionTooltipEditTypePill(actionType string) fyne.CanvasObject {
+	if actionType == "" {
+		return nil
+	}
+	return actiondisplay.NewHoverTipPill(
+		actions.ActionTypeLabel(actionType),
+		actionType,
+		actions.ActionTypeDescription(actionType),
+	)
+}
+
 func actionTooltipTypeHeader(actionType string) fyne.CanvasObject {
 	pill := actionTooltipTypePill(actionType)
 	if pill == nil {

@@ -11,17 +11,29 @@ import (
 )
 
 // VarNameEntry is for fields that define a variable name (not ${references}).
-// It offers prefix completion and a context-menu variable picker.
+// It offers prefix completion, a context-menu variable picker, and pill rendering when unfocused.
 type VarNameEntry struct {
 	completionentry.CompletionEntry
 
 	getNames        func() []string
 	GetVariableDefs func() []models.VariableDef
 
+	// CanvasHost is the widget used for popup positioning and canvas lookup.
+	CanvasHost fyne.CanvasObject
+
+	// pillOverlayBorderless renders the unfocused pill overlay without input chrome.
+	pillOverlayBorderless bool
+
 	cachedDefFP string
 	cachedDefs  []models.VariableDef
 	cachedNames []string
+	cachedKnown map[string]bool
 	shownDefs   []models.VariableDef
+
+	hasFocus         bool
+	hideTextForPills bool
+	overlay          *variableNameOverlay
+	suppressChanged  bool
 }
 
 // NewVarNameEntry creates an entry for naming macro variables.
@@ -40,10 +52,60 @@ func NewVarNameEntryWithDefs(getDefs func() []models.VariableDef) *VarNameEntry 
 
 func (e *VarNameEntry) init() {
 	e.ExtendBaseWidget(e)
-	e.OnChanged = func(_ string) {
-		e.refreshOptions()
-	}
+	e.OnChanged = e.handleChanged
 	e.initRichCompletion()
+}
+
+func (e *VarNameEntry) canvasObject() fyne.CanvasObject {
+	if e.CanvasHost != nil {
+		return e.CanvasHost
+	}
+	return e
+}
+
+func (e *VarNameEntry) focusOnCanvas() {
+	host := e.canvasObject()
+	c := fyne.CurrentApp().Driver().CanvasForObject(host)
+	if c == nil {
+		return
+	}
+	if focus, ok := host.(fyne.Focusable); ok {
+		c.Focus(focus)
+		return
+	}
+	c.Focus(e)
+}
+
+func (e *VarNameEntry) knownVariables() map[string]bool {
+	e.variableDefs()
+	return e.cachedKnown
+}
+
+func (e *VarNameEntry) shouldShowPills() bool {
+	if strings.TrimSpace(e.Text) == "" {
+		return false
+	}
+	return !e.hasFocus
+}
+
+func (e *VarNameEntry) syncPillDisplay() {
+	e.hideTextForPills = e.shouldShowPills()
+}
+
+func (e *VarNameEntry) handleChanged(s string) {
+	if e.suppressChanged {
+		return
+	}
+	e.refreshOptions()
+	e.syncPillDisplay()
+	_ = s
+}
+
+func (e *VarNameEntry) SetText(text string) {
+	e.suppressChanged = true
+	e.Entry.SetText(text)
+	e.suppressChanged = false
+	e.syncPillDisplay()
 }
 
 func (e *VarNameEntry) initRichCompletion() {
@@ -83,6 +145,7 @@ func (e *VarNameEntry) variableDefs() []models.VariableDef {
 		e.cachedDefFP = fp
 		e.cachedDefs = defs
 		e.cachedNames = namesFromDefs(defs)
+		e.cachedKnown = knownVariableSet(defs)
 		return defs
 	}
 	if e.getNames != nil {
@@ -98,6 +161,7 @@ func (e *VarNameEntry) variableDefs() []models.VariableDef {
 			defs[i] = models.VariableDef{Name: n}
 		}
 		e.cachedDefs = defs
+		e.cachedKnown = knownVariableSet(defs)
 		return defs
 	}
 	return nil
@@ -107,6 +171,7 @@ func (e *VarNameEntry) InvalidateVariableCache() {
 	e.cachedDefFP = ""
 	e.cachedDefs = nil
 	e.cachedNames = nil
+	e.cachedKnown = nil
 }
 
 func (e *VarNameEntry) openVariablePicker() {
@@ -114,7 +179,7 @@ func (e *VarNameEntry) openVariablePicker() {
 	if len(defs) == 0 {
 		return
 	}
-	ShowVariablePicker(e, defs, e.pickVariable)
+	ShowVariablePicker(e.canvasObject(), defs, e.pickVariable)
 }
 
 func (e *VarNameEntry) pickVariable(name string) {
@@ -147,11 +212,21 @@ func (e *VarNameEntry) TypedRune(r rune) {
 }
 
 func (e *VarNameEntry) FocusGained() {
+	e.hasFocus = true
 	e.CompletionEntry.FocusGained()
+	e.syncPillDisplay()
 	e.refreshOptions()
 	if strings.TrimSpace(e.Text) != "" && len(e.Options) > 0 {
 		e.ShowCompletion()
 	}
+	e.Refresh()
+}
+
+func (e *VarNameEntry) FocusLost() {
+	e.hasFocus = false
+	e.CompletionEntry.FocusLost()
+	e.syncPillDisplay()
+	e.Refresh()
 }
 
 func (e *VarNameEntry) TappedSecondary(pe *fyne.PointEvent) {
@@ -189,23 +264,32 @@ func (e *VarNameEntry) TappedSecondary(pe *fyne.PointEvent) {
 		}))
 	}
 
+	host := e.canvasObject()
 	driver := fyne.CurrentApp().Driver()
-	entryPos := driver.AbsolutePositionForObject(e)
+	c := driver.CanvasForObject(host)
+	if c == nil {
+		return
+	}
+	entryPos := driver.AbsolutePositionForObject(host)
 	popUpPos := entryPos.Add(pe.Position)
-	c := driver.CanvasForObject(e)
 	widget.ShowPopUpMenuAtPosition(fyne.NewMenu("", menuItems...), c, popUpPos)
 }
 
 func (e *VarNameEntry) CreateRenderer() fyne.WidgetRenderer {
+	if e.overlay == nil {
+		e.overlay = newVariableNameOverlay()
+	}
 	base := e.Entry.CreateRenderer()
 	e.ExtendBaseWidget(e)
-	return &varNameEntryRendererWrap{inner: base, entry: e}
+	return &varNameEntryRendererWrap{inner: base, overlay: e.overlay, entry: e}
 }
 
 // EntryText returns text from VarNameEntry or related entry types.
 func EntryTextFromName(w fyne.CanvasObject) string {
 	switch e := w.(type) {
 	case *VarNameEntry:
+		return e.Text
+	case *BorderlessVarNameEntry:
 		return e.Text
 	default:
 		return EntryText(w)
@@ -216,6 +300,8 @@ func EntryTextFromName(w fyne.CanvasObject) string {
 func SetEntryTextOnName(w fyne.CanvasObject, text string) {
 	switch e := w.(type) {
 	case *VarNameEntry:
+		e.SetText(text)
+	case *BorderlessVarNameEntry:
 		e.SetText(text)
 	default:
 		SetEntryText(w, text)

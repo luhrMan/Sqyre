@@ -2,11 +2,13 @@ package vision
 
 import (
 	"Sqyre/internal/assets"
+	"Sqyre/internal/capture"
 	"Sqyre/internal/config"
 	macropkg "Sqyre/internal/macro"
 	"Sqyre/internal/models"
 	"Sqyre/internal/models/actions"
 	"Sqyre/internal/models/repositories"
+	"Sqyre/internal/panicsafe"
 	"bytes"
 	"fmt"
 	"image"
@@ -255,7 +257,7 @@ func findTargetInBoxes(boxes []gosseract.BoundingBox, target string) (centerX, c
 func OCR(a *actions.Ocr, macro *models.Macro) (foundText string, outX, outY int, err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			macropkg.LogPanicToFile(r, "OCR")
+			panicsafe.LogPanicToFile(r, "OCR")
 			foundText, outX, outY = "", 0, 0
 			err = fmt.Errorf("OCR panic: %v", r)
 			log.Printf("OCR: %v (macro continues)", err)
@@ -271,7 +273,7 @@ func ocrCapture(a *actions.Ocr, macro *models.Macro) (foundText string, outX, ou
 		log.Printf("OCR: failed to resolve search area %q: %v", a.SearchArea, err)
 		return "", 0, 0, err
 	}
-	img, leftX, topY, rightX, bottomY, err := macropkg.CaptureSearchArea(resolvedLeftX, resolvedTopY, resolvedRightX, resolvedBottomY)
+	img, leftX, topY, rightX, bottomY, err := capture.CaptureSearchArea(resolvedLeftX, resolvedTopY, resolvedRightX, resolvedBottomY)
 	if err != nil {
 		log.Printf("OCR: %v (macro continues)", err)
 		return "", 0, 0, err

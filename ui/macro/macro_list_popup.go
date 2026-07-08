@@ -6,6 +6,7 @@ import (
 	"Sqyre/internal/models"
 	"Sqyre/internal/models/repositories"
 	"Sqyre/ui/custom_widgets"
+	"Sqyre/ui/dialogs"
 	"fmt"
 	"log"
 	"slices"
@@ -180,12 +181,12 @@ func showMacroListPopup(d WireDeps) {
 				dup, err := duplicateMacro(name)
 				if err != nil {
 					log.Printf("duplicate macro %s: %v", name, err)
-					d.ShowErrorWithEscape(err, d.Window)
+					dialogs.ShowErrorWithEscape(err, d.Window)
 					return
 				}
 				if err := repositories.MacroRepo().Set(dup.Name, dup); err != nil {
 					log.Printf("save duplicated macro %s: %v", dup.Name, err)
-					d.ShowErrorWithEscape(err, d.Window)
+					dialogs.ShowErrorWithEscape(err, d.Window)
 					return
 				}
 				applyFilter()
@@ -200,7 +201,7 @@ func showMacroListPopup(d WireDeps) {
 					log.Printf("Error getting macro %s: %v", name, err)
 					return
 				}
-				d.ShowConfirmWithEscape("Delete Macro", "Are you sure you want to delete this macro?", func(ok bool) {
+				dialogs.ShowConfirmWithEscape("Delete Macro", "Are you sure you want to delete this macro?", func(ok bool) {
 					if !ok {
 						return
 					}
@@ -274,7 +275,7 @@ func showMacroListPopup(d WireDeps) {
 		list,
 	)
 	popup = widget.NewModalPopUp(popUpContent, d.Window.Canvas())
-	dlg := d.AddPopupEscapeClose(popup, d.Window)
+	dlg := dialogs.AddPopupEscapeClose(popup, d.Window)
 	closeBtn.OnTapped = func() {
 		hideMacroTagsEditorPopup()
 		dlg.Hide()

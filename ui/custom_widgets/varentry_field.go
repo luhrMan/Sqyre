@@ -1,8 +1,8 @@
 package custom_widgets
 
 import (
+	macrologic "Sqyre/internal/macro"
 	"Sqyre/internal/models"
-	"Sqyre/internal/services"
 	"sync"
 	"time"
 
@@ -25,8 +25,8 @@ type VarEntryField struct {
 	feedbackIcon *ttwidget.Icon
 	previewLabel *widget.Label
 
-	Validate func(text string) services.EntryValidation
-	last     services.EntryValidation
+	Validate func(text string) macrologic.EntryValidation
+	last     macrologic.EntryValidation
 	lastMsg  string
 
 	// ResolvePreview, when set, formats a resolved-value hint shown below the field when unfocused.
@@ -41,26 +41,26 @@ type VarEntryField struct {
 }
 
 // NewVarEntryField creates a single-line variable entry with validation.
-func NewVarEntryField(getVars func() []string, validate func(text string) services.EntryValidation) *VarEntryField {
+func NewVarEntryField(getVars func() []string, validate func(text string) macrologic.EntryValidation) *VarEntryField {
 	return newVarEntryFieldWithEntry(NewVarEntry(getVars), validate)
 }
 
 // NewVarEntryFieldWithDefs creates a validated field backed by variable definitions.
-func NewVarEntryFieldWithDefs(getDefs func() []models.VariableDef, validate func(text string) services.EntryValidation) *VarEntryField {
+func NewVarEntryFieldWithDefs(getDefs func() []models.VariableDef, validate func(text string) macrologic.EntryValidation) *VarEntryField {
 	return newVarEntryFieldWithEntry(NewVarEntryWithDefs(getDefs), validate)
 }
 
 // NewMultiLineVarEntryField creates a multi-line variable entry with validation.
-func NewMultiLineVarEntryField(getVars func() []string, validate func(text string) services.EntryValidation) *VarEntryField {
+func NewMultiLineVarEntryField(getVars func() []string, validate func(text string) macrologic.EntryValidation) *VarEntryField {
 	return newVarEntryFieldWithEntry(NewMultiLineVarEntry(getVars), validate)
 }
 
 // NewMultiLineVarEntryFieldWithDefs creates a validated multi-line field backed by definitions.
-func NewMultiLineVarEntryFieldWithDefs(getDefs func() []models.VariableDef, validate func(text string) services.EntryValidation) *VarEntryField {
+func NewMultiLineVarEntryFieldWithDefs(getDefs func() []models.VariableDef, validate func(text string) macrologic.EntryValidation) *VarEntryField {
 	return newVarEntryFieldWithEntry(NewMultiLineVarEntryWithDefs(getDefs), validate)
 }
 
-func newVarEntryFieldWithEntry(entry *VarEntry, validate func(text string) services.EntryValidation) *VarEntryField {
+func newVarEntryFieldWithEntry(entry *VarEntry, validate func(text string) macrologic.EntryValidation) *VarEntryField {
 	f := &VarEntryField{
 		Entry:        entry,
 		feedbackIcon: newValidationFeedbackIcon(),
@@ -110,7 +110,7 @@ func (f *VarEntryField) applyValidation(text string) {
 	prevBlocks := f.last.BlocksSubmit()
 	prevMsg := f.lastMsg
 	if f.Validate == nil {
-		f.last = services.EntryValidation{}
+		f.last = macrologic.EntryValidation{}
 	} else {
 		f.last = f.Validate(text)
 	}

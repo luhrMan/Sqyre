@@ -1,8 +1,10 @@
 package services
 
 import (
+	macropkg "Sqyre/internal/macro"
 	"Sqyre/internal/models"
 	"Sqyre/internal/models/actions"
+	"Sqyre/internal/panicsafe"
 	"fmt"
 	"log"
 )
@@ -45,7 +47,7 @@ func ExecuteMacroWithLogging(m *models.Macro) {
 			}
 		})
 		if r := recover(); r != nil {
-			LogPanicToFile(r, fmt.Sprintf("Macro %q", m.Name))
+			panicsafe.LogPanicToFile(r, fmt.Sprintf("Macro %q", m.Name))
 		}
 		scheduleMemoryReclaim(m.Name)
 	}()
@@ -109,7 +111,7 @@ func resolveRowBound(v any, def int, macro *models.Macro) (int, error) {
 	if !actions.RowBoundIsSet(v) {
 		return def, nil
 	}
-	return ResolveInt(v, macro)
+	return macropkg.ResolveInt(v, macro)
 }
 
 func executeForEachRow(node *actions.ForEachRow, macro *models.Macro) error {

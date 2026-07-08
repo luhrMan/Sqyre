@@ -151,6 +151,7 @@ func copyActionFromSnapshot(dst, src actions.ActionInterface) {
 		d.Name = s.Name
 		d.StartRow = s.StartRow
 		d.EndRow = s.EndRow
+		d.Sources = slices.Clone(s.Sources)
 	case *actions.FocusWindow:
 		s := src.(*actions.FocusWindow)
 		d.WindowTitle = s.WindowTitle

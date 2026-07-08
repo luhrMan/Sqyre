@@ -70,6 +70,7 @@ func NewMacroTabs() *MacroTabs {
 		MacroTagsBtn:         tagsBtn,
 		MacroTagsContainer:   newMacroTagsContainer(),
 	}
+	t.MacroHotkeyRecordBtn.Importance = widget.DangerImportance
 	t.MacroHotkeyClearBtn.Importance = widget.LowImportance
 	t.HotkeyTriggerRadio.Horizontal = true
 	t.HotkeyTriggerRadio.Required = true
