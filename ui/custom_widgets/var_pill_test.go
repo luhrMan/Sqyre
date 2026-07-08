@@ -1,12 +1,12 @@
 package custom_widgets
 
 import (
-	"Sqyre/internal/services"
+	"Sqyre/internal/varref"
 	"testing"
 )
 
 func TestParseVarRefSegments_ui(t *testing.T) {
-	got := services.ParseVarRefSegments("x={a}+${b}")
+	got := varref.Segments("x={a}+${b}")
 	if len(got) != 4 {
 		t.Fatalf("len=%d want 4", len(got))
 	}

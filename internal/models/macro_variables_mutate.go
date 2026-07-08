@@ -3,10 +3,10 @@ package models
 import (
 	"fmt"
 	"reflect"
-	"regexp"
 	"strings"
 
 	"Sqyre/internal/models/actions"
+	"Sqyre/internal/varref"
 )
 
 // UpsertVariable adds or updates a declared variable by name (case-insensitive).
@@ -157,7 +157,7 @@ func rewriteRefsInValue(v reflect.Value, oldName, newName string) {
 	switch v.Kind() {
 	case reflect.String:
 		if v.CanSet() {
-			v.SetString(renameRefInString(v.String(), oldName, newName))
+			v.SetString(varref.Rename(v.String(), oldName, newName))
 		}
 	case reflect.Interface:
 		if v.IsNil() || !v.CanSet() {
@@ -165,7 +165,7 @@ func rewriteRefsInValue(v reflect.Value, oldName, newName string) {
 		}
 		el := v.Elem()
 		if el.Kind() == reflect.String {
-			v.Set(reflect.ValueOf(renameRefInString(el.String(), oldName, newName)))
+			v.Set(reflect.ValueOf(varref.Rename(el.String(), oldName, newName)))
 		}
 	case reflect.Struct:
 		t := v.Type()
@@ -194,19 +194,4 @@ func rewriteRefsInValue(v reflect.Value, oldName, newName string) {
 			rewriteRefsInValue(v.Index(i), oldName, newName)
 		}
 	}
-}
-
-// renameRefInString replaces ${old} and {old} references (case-insensitive,
-// tolerating surrounding spaces) with the new name, preserving the brace style.
-func renameRefInString(s, oldName, newName string) string {
-	if s == "" {
-		return s
-	}
-	quoted := regexp.QuoteMeta(oldName)
-	// "$$" emits a literal "$" in regexp replacement strings.
-	dollar := regexp.MustCompile(`(?i)\$\{\s*` + quoted + `\s*\}`)
-	s = dollar.ReplaceAllString(s, "$${"+newName+"}")
-	brace := regexp.MustCompile(`(?i)(^|[^$])\{\s*` + quoted + `\s*\}`)
-	s = brace.ReplaceAllString(s, "${1}{"+newName+"}")
-	return s
 }
