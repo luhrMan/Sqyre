@@ -4,35 +4,25 @@ import (
 	"errors"
 
 	"Sqyre/internal/models/repositories"
+	"Sqyre/internal/panicsafe"
 	"Sqyre/internal/services"
+	"Sqyre/ui/dialogs"
 
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/dialog"
 )
 
-var (
-	macroLogGetWindow            func() fyne.Window
-	macroLogAddDialogEscapeClose func(d dialog.Dialog, parent fyne.Window)
-	macroLogShowErrorWithEscape  func(err error, parent fyne.Window)
-)
+var macroLogGetWindow func() fyne.Window
 
 // InitMacroLogPopup wires the execution-log view and panic UI with services.
 // Call once from package ui after the main window exists (avoids ui↔macro import cycle).
-func InitMacroLogPopup(
-	getWindow func() fyne.Window,
-	addDialogEscapeClose func(d dialog.Dialog, parent fyne.Window),
-	showErrorWithEscape func(err error, parent fyne.Window),
-) {
+func InitMacroLogPopup(getWindow func() fyne.Window) {
 	macroLogGetWindow = getWindow
-	macroLogAddDialogEscapeClose = addDialogEscapeClose
-	macroLogShowErrorWithEscape = showErrorWithEscape
 
 	services.SetShowMacroLogPopupFunc(ActivateMacroLog)
-	services.OnPanicNotifyUser = func(message string) {
+	panicsafe.OnPanicNotifyUser = func(message string) {
 		fyne.Do(func() {
-			w := macroLogGetWindow()
-			if w != nil && macroLogShowErrorWithEscape != nil {
-				macroLogShowErrorWithEscape(errors.New(message), w)
+			if w := macroLogGetWindow(); w != nil {
+				dialogs.ShowErrorWithEscape(errors.New(message), w)
 			}
 		})
 	}

@@ -4,6 +4,7 @@ import (
 	"Sqyre/internal/config"
 	"Sqyre/internal/models"
 	"Sqyre/internal/models/repositories"
+	"Sqyre/internal/panicsafe"
 	"Sqyre/internal/services"
 	"Sqyre/internal/validation"
 	"Sqyre/internal/vision"
@@ -450,7 +451,7 @@ func setEditorPreviewRefreshHandlers() {
 func safeUpdatePointPreview(p *models.Point) {
 	defer func() {
 		if r := recover(); r != nil {
-			services.LogPanicToFile(r, "Point: Preview update (point: "+p.Name+")")
+			panicsafe.LogPanicToFile(r, "Point: Preview update (point: "+p.Name+")")
 		}
 	}()
 	if p != nil {
@@ -462,7 +463,7 @@ func safeUpdatePointPreview(p *models.Point) {
 func safeUpdateSearchAreaPreview(sa *models.SearchArea) {
 	defer func() {
 		if r := recover(); r != nil {
-			services.LogPanicToFile(r, "SearchArea: Preview update (area: "+sa.Name+")")
+			panicsafe.LogPanicToFile(r, "SearchArea: Preview update (area: "+sa.Name+")")
 		}
 	}()
 	if sa != nil {
@@ -474,7 +475,7 @@ func safeUpdateSearchAreaPreview(sa *models.SearchArea) {
 func safeUpdateAutoPicPreview(sa *models.SearchArea) {
 	defer func() {
 		if r := recover(); r != nil {
-			services.LogPanicToFile(r, "AutoPic: Preview update (area: "+sa.Name+")")
+			panicsafe.LogPanicToFile(r, "AutoPic: Preview update (area: "+sa.Name+")")
 		}
 	}()
 	shell().UpdateAutoPicPreview(sa)

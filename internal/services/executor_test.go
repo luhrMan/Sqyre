@@ -6,6 +6,7 @@ import (
 	"slices"
 	"testing"
 
+	macropkg "Sqyre/internal/macro"
 	"Sqyre/internal/models"
 	"Sqyre/internal/models/actions"
 	"Sqyre/internal/models/repositories"
@@ -45,7 +46,7 @@ func TestExecute_Move(t *testing.T) {
 	initTestConfig(t)
 	program := repositories.ProgramRepo().New()
 	program.Name = "test-program"
-	pointRepo, err := program.PointRepo(DefaultResolutionKey())
+	pointRepo, err := program.PointRepo(macropkg.DefaultResolutionKey())
 	if err != nil {
 		t.Fatalf("point repo: %v", err)
 	}

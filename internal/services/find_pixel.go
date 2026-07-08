@@ -1,7 +1,7 @@
 package services
 
 import (
-	macropkg "Sqyre/internal/macro"
+	"Sqyre/internal/capture"
 	"Sqyre/internal/vision"
 	"image"
 	"strconv"
@@ -91,7 +91,7 @@ func clampU8(channel, delta uint8, upper bool) uint8 {
 
 // findPixelInCapture scans a captured image for a matching pixel and returns screen coords.
 func findPixelInCapture(captureImg image.Image, capLeftX, capTopY int, tr, tg, tb uint8, tolerance int) (screenX, screenY int, ok bool) {
-	rgba := macropkg.CaptureToRGBA(captureImg)
+	rgba := capture.CaptureToRGBA(captureImg)
 	px, py, found := findPixelInRGBA(rgba, tr, tg, tb, tolerance)
 	if !found {
 		return 0, 0, false

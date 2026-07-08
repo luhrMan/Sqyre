@@ -1,7 +1,6 @@
 package capture
 
 import (
-	"Sqyre/internal/macro"
 	"Sqyre/internal/screen"
 	"fmt"
 	"image"
@@ -227,11 +226,11 @@ func captureAndReference(kind BackendKind, spec monitorSpec, screenshotMapping m
 func crossReference(kind BackendKind, spec monitorSpec, screenshotMapping map[int]int) (image.Image, bool) {
 	switch kind {
 	case BackendScreenshotDisplay, BackendScreenshotRect:
-		img, err := macro.CaptureRect(spec.bounds.Min.X, spec.bounds.Min.Y, spec.bounds.Dx(), spec.bounds.Dy())
+		img, err := CaptureRect(spec.bounds.Min.X, spec.bounds.Min.Y, spec.bounds.Dx(), spec.bounds.Dy())
 		if err != nil || img == nil {
 			return nil, false
 		}
-		return macro.CaptureToRGBA(img), true
+		return CaptureToRGBA(img), true
 	case BackendRobotgoMonitorRect, BackendRobotgoVirtual:
 		return captureIndependentReference(spec, screenshotMapping, nil)
 	default:
@@ -243,7 +242,7 @@ func independentReference(spec monitorSpec, screenshotMapping map[int]int) (imag
 	if img, ok := captureIndependentReference(spec, screenshotMapping, nil); ok && img != nil {
 		return img, true
 	}
-	full, vb, err := macro.CaptureVirtualDesktop()
+	full, vb, err := CaptureVirtualDesktop()
 	if err != nil || full == nil {
 		return nil, false
 	}
@@ -254,13 +253,13 @@ func independentReference(spec monitorSpec, screenshotMapping map[int]int) (imag
 func captureMonitorWithBackend(kind BackendKind, spec monitorSpec, screenshotMapping map[int]int) (image.Image, bool) {
 	switch kind {
 	case BackendRobotgoMonitorRect:
-		img, err := macro.CaptureRect(spec.bounds.Min.X, spec.bounds.Min.Y, spec.bounds.Dx(), spec.bounds.Dy())
+		img, err := CaptureRect(spec.bounds.Min.X, spec.bounds.Min.Y, spec.bounds.Dx(), spec.bounds.Dy())
 		if err != nil || img == nil {
 			return nil, false
 		}
-		return macro.CaptureToRGBA(img), true
+		return CaptureToRGBA(img), true
 	case BackendRobotgoVirtual:
-		full, vb, err := macro.CaptureVirtualDesktop()
+		full, vb, err := CaptureVirtualDesktop()
 		if err != nil || full == nil {
 			return nil, false
 		}
@@ -275,7 +274,7 @@ func captureMonitorWithBackend(kind BackendKind, spec monitorSpec, screenshotMap
 		if err != nil || img == nil {
 			return nil, false
 		}
-		return macro.CaptureToRGBA(img), true
+		return CaptureToRGBA(img), true
 	case BackendScreenshotRect:
 		ssIndex := spec.displayIndex
 		if screenshotMapping != nil {
@@ -286,7 +285,7 @@ func captureMonitorWithBackend(kind BackendKind, spec monitorSpec, screenshotMap
 		if err != nil || img == nil {
 			return nil, false
 		}
-		return macro.CaptureToRGBA(img), true
+		return CaptureToRGBA(img), true
 	default:
 		return nil, false
 	}
@@ -333,11 +332,11 @@ func captureIndependentReference(spec monitorSpec, screenshotMapping map[int]int
 		ssIndex = screenshotMapping[spec.displayIndex]
 	}
 	if img, err := screenshot.CaptureDisplay(ssIndex); err == nil && img != nil {
-		return macro.CaptureToRGBA(img), true
+		return CaptureToRGBA(img), true
 	}
 	if rect := screenshot.GetDisplayBounds(ssIndex); !rect.Empty() {
 		if img, err := screenshot.CaptureRect(rect); err == nil && img != nil {
-			return macro.CaptureToRGBA(img), true
+			return CaptureToRGBA(img), true
 		}
 	}
 	if fallback != nil {
@@ -399,8 +398,8 @@ func imageSimilarity(a, b image.Image) float64 {
 	if ab.Empty() || bb.Empty() {
 		return 0
 	}
-	ar := macro.CaptureToRGBA(a)
-	br := macro.CaptureToRGBA(b)
+	ar := CaptureToRGBA(a)
+	br := CaptureToRGBA(b)
 	const sx = 24
 	const sy = 24
 	var total float64

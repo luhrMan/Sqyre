@@ -1,11 +1,11 @@
 package editor
 
 import (
+	"Sqyre/internal/capture"
 	"Sqyre/internal/config"
-	"Sqyre/internal/macro"
 	"Sqyre/internal/models"
+	"Sqyre/internal/panicsafe"
 	"Sqyre/internal/screen"
-	"Sqyre/internal/services"
 	"Sqyre/internal/vision"
 	"Sqyre/ui/custom_widgets"
 	"Sqyre/ui/desktopview"
@@ -114,7 +114,7 @@ func resolveSearchAreaBounds(prefix string, sa *models.SearchArea, b searchAreaB
 }
 
 func captureCroppedArea(lx, ty, w, h int) (image.Image, error) {
-	return macro.CaptureRect(lx, ty, w, h)
+	return capture.CaptureRect(lx, ty, w, h)
 }
 
 func captureSearchAreaPreview(lx, ty, rx, by int) (image.Image, error) {
@@ -177,7 +177,7 @@ func safeUpdatePointPreviewPanel(panel *editorPreviewPanel, p *models.Point) {
 			if p != nil {
 				name = p.Name
 			}
-			services.LogPanicToFile(r, "Point: Preview update (point: "+name+")")
+			panicsafe.LogPanicToFile(r, "Point: Preview update (point: "+name+")")
 		}
 	}()
 	updatePointPreviewPanel(panel, p)
@@ -216,7 +216,7 @@ func safeUpdateSearchAreaPreviewPanel(panel *editorPreviewPanel, sa *models.Sear
 			if sa != nil {
 				name = sa.Name
 			}
-			services.LogPanicToFile(r, "SearchArea: Preview update (area: "+name+")")
+			panicsafe.LogPanicToFile(r, "SearchArea: Preview update (area: "+name+")")
 		}
 	}()
 	updateSearchAreaPreviewPanel(panel, sa)

@@ -1,7 +1,6 @@
 package capture
 
 import (
-	"Sqyre/internal/macro"
 	"image"
 	"fmt"
 
@@ -10,7 +9,7 @@ import (
 
 // OverlayMonitorImage captures one monitor for the recording overlay. Robotgo is
 // preferred because search areas and mouse positions use the same absolute
-// virtual-desktop space as macro.CaptureSearchArea / OCR capture. Screenshot is
+// virtual-desktop space as CaptureSearchArea / OCR capture. Screenshot is
 // only a fallback when robotgo capture fails.
 func OverlayMonitorImage(plan SessionPlan, session Session, displayIndex int) (image.Image, string, error) {
 	mon, ok := monitorByIndex(plan.Monitors, displayIndex)
@@ -29,11 +28,11 @@ func OverlayMonitorImage(plan SessionPlan, session Session, displayIndex int) (i
 
 func overlayRobotgoCapture(mon MonitorPlan) (image.Image, error) {
 	b := mon.DesktopBounds
-	img, err := macro.CaptureRect(b.Min.X, b.Min.Y, b.Dx(), b.Dy())
+	img, err := CaptureRect(b.Min.X, b.Min.Y, b.Dx(), b.Dy())
 	if err != nil || img == nil {
 		return nil, err
 	}
-	return macro.CaptureToRGBA(img), nil
+	return CaptureToRGBA(img), nil
 }
 
 func overlayScreenshotCapture(mon MonitorPlan) (image.Image, error) {
@@ -45,7 +44,7 @@ func overlayScreenshotCapture(mon MonitorPlan) (image.Image, error) {
 	if err != nil || img == nil {
 		return nil, err
 	}
-	return ensureMonitorSize(macro.CaptureToRGBA(img), mon.DesktopBounds)
+	return ensureMonitorSize(CaptureToRGBA(img), mon.DesktopBounds)
 }
 
 func applyScreenshotMappingToPlan(plan *SessionPlan, specs []monitorSpec) {

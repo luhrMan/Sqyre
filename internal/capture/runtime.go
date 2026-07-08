@@ -1,7 +1,6 @@
 package capture
 
 import (
-	"Sqyre/internal/macro"
 	"fmt"
 	"image"
 
@@ -24,11 +23,11 @@ func NewSession(plan SessionPlan) (Session, error) {
 }
 
 func (s *session) CaptureVirtual() (image.Image, image.Rectangle, error) {
-	img, vb, err := macro.CaptureVirtualDesktop()
+	img, vb, err := CaptureVirtualDesktop()
 	if err != nil {
 		return nil, image.Rectangle{}, err
 	}
-	return macro.CaptureToRGBA(img), vb, nil
+	return CaptureToRGBA(img), vb, nil
 }
 
 func (s *session) CaptureMonitor(displayIndex int) (image.Image, error) {
@@ -38,11 +37,11 @@ func (s *session) CaptureMonitor(displayIndex int) (image.Image, error) {
 	}
 	switch s.plan.Backend {
 	case BackendRobotgoMonitorRect:
-		img, err := macro.CaptureRect(mon.DesktopBounds.Min.X, mon.DesktopBounds.Min.Y, mon.DesktopBounds.Dx(), mon.DesktopBounds.Dy())
+		img, err := CaptureRect(mon.DesktopBounds.Min.X, mon.DesktopBounds.Min.Y, mon.DesktopBounds.Dx(), mon.DesktopBounds.Dy())
 		if err != nil {
 			return nil, err
 		}
-		return macro.CaptureToRGBA(img), nil
+		return CaptureToRGBA(img), nil
 	case BackendRobotgoVirtual:
 		full, vb, err := s.CaptureVirtual()
 		if err != nil {
@@ -62,13 +61,13 @@ func (s *session) CaptureMonitor(displayIndex int) (image.Image, error) {
 		if err != nil {
 			return nil, err
 		}
-		return ensureMonitorSize(macro.CaptureToRGBA(img), mon.DesktopBounds)
+		return ensureMonitorSize(CaptureToRGBA(img), mon.DesktopBounds)
 	case BackendScreenshotRect:
 		img, err := screenshot.CaptureRect(mon.BackendBounds)
 		if err != nil {
 			return nil, err
 		}
-		return ensureMonitorSize(macro.CaptureToRGBA(img), mon.DesktopBounds)
+		return ensureMonitorSize(CaptureToRGBA(img), mon.DesktopBounds)
 	default:
 		return nil, fmt.Errorf("capture session: unsupported backend %s", s.plan.Backend)
 	}

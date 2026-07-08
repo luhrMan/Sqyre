@@ -2,6 +2,7 @@ package services
 
 import (
 	"Sqyre/internal/config"
+	macropkg "Sqyre/internal/macro"
 	"Sqyre/internal/models"
 	"Sqyre/internal/models/actions"
 	"Sqyre/internal/models/repositories"
@@ -23,7 +24,7 @@ func executeSetVariable(a actions.ActionInterface, macro *models.Macro) error {
 	node := a.(*actions.SetVariable)
 	log.Println("Set Variable:", node.String())
 	if macro != nil {
-		val, err := ResolveSetVariableValue(node.Value, macro)
+		val, err := macropkg.ResolveSetVariableValue(node.Value, macro)
 		if err != nil {
 			return fmt.Errorf("set variable %s: %w", node.VariableName, err)
 		}
@@ -37,7 +38,7 @@ func executeCalculate(a actions.ActionInterface, macro *models.Macro) error {
 	log.Println("Calculate:", node.String())
 	if macro != nil {
 		log.Println("evaluating expression", node.Expression)
-		result, err := EvaluateExpression(node.Expression, macro)
+		result, err := macropkg.EvaluateExpression(node.Expression, macro)
 		if err != nil {
 			return fmt.Errorf("calculation failed: %w", err)
 		}

@@ -1,9 +1,11 @@
 package services
 
 import (
+	"Sqyre/internal/capture"
 	"Sqyre/internal/config"
 	macropkg "Sqyre/internal/macro"
 	"Sqyre/internal/models"
+	"Sqyre/internal/panicsafe"
 	"Sqyre/internal/models/actions"
 	"Sqyre/internal/models/repositories"
 	"Sqyre/internal/vision"
@@ -64,7 +66,7 @@ func (f *imageSearchFrame) Close() {
 func imageSearch(a *actions.ImageSearch, macro *models.Macro) (results map[string][]robotgo.Point, originX, originY int, err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			macropkg.LogPanicToFile(r, "Image Search")
+			panicsafe.LogPanicToFile(r, "Image Search")
 			if results == nil {
 				results = make(map[string][]robotgo.Point)
 			}
@@ -88,7 +90,7 @@ func captureImageSearchFrame(a *actions.ImageSearch, macro *models.Macro) (*imag
 		log.Printf("Image search: failed to resolve search area %q: %v", a.SearchArea, err)
 		return nil, 0, 0, err
 	}
-	captureImg, leftX, topY, rightX, bottomY, err := macropkg.CaptureSearchArea(leftX, topY, rightX, bottomY)
+	captureImg, leftX, topY, rightX, bottomY, err := capture.CaptureSearchArea(leftX, topY, rightX, bottomY)
 	if err != nil {
 		log.Printf("Image Search: %v (macro continues)", err)
 		return nil, leftX, topY, err
@@ -177,7 +179,7 @@ func buildTargetMatchJob(t string) targetMatchJob {
 func matchImageSearchFrame(frame *imageSearchFrame, a *actions.ImageSearch, macro *models.Macro) (results map[string][]robotgo.Point, err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			macropkg.LogPanicToFile(r, "Image Search match")
+			panicsafe.LogPanicToFile(r, "Image Search match")
 			if results == nil {
 				results = make(map[string][]robotgo.Point)
 			}
@@ -274,11 +276,11 @@ func buildMaskLocked(item *models.Item, program *models.Program, templateRows, t
 
 	maskVars := maskItemVariableOverrides(item, templateCols, templateRows)
 
-	centerXPct, err := ResolveIntWithOverrides(mask.CenterX, macro, maskVars)
+	centerXPct, err := macropkg.ResolveIntWithOverrides(mask.CenterX, macro, maskVars)
 	if err != nil {
 		centerXPct = 50
 	}
-	centerYPct, err := ResolveIntWithOverrides(mask.CenterY, macro, maskVars)
+	centerYPct, err := macropkg.ResolveIntWithOverrides(mask.CenterY, macro, maskVars)
 	if err != nil {
 		centerYPct = 50
 	}
@@ -289,7 +291,7 @@ func buildMaskLocked(item *models.Item, program *models.Program, templateRows, t
 	var m gocv.Mat
 	switch mask.Shape {
 	case "circle":
-		radius, err := ResolveIntWithOverrides(mask.Radius, macro, maskVars)
+		radius, err := macropkg.ResolveIntWithOverrides(mask.Radius, macro, maskVars)
 		if err != nil || radius <= 0 {
 			log.Printf("mask %q: invalid radius %v: %v", mask.Name, mask.Radius, err)
 			return gocv.NewMat()
@@ -299,12 +301,12 @@ func buildMaskLocked(item *models.Item, program *models.Program, templateRows, t
 		gocv.Circle(&m, image.Point{X: cx, Y: cy}, radius, color.RGBA{0, 0, 0, 0}, -1)
 
 	case "rectangle":
-		base, err := ResolveIntWithOverrides(mask.Base, macro, maskVars)
+		base, err := macropkg.ResolveIntWithOverrides(mask.Base, macro, maskVars)
 		if err != nil || base <= 0 {
 			log.Printf("mask %q: invalid base %v: %v", mask.Name, mask.Base, err)
 			return gocv.NewMat()
 		}
-		height, err := ResolveIntWithOverrides(mask.Height, macro, maskVars)
+		height, err := macropkg.ResolveIntWithOverrides(mask.Height, macro, maskVars)
 		if err != nil || height <= 0 {
 			log.Printf("mask %q: invalid height %v: %v", mask.Name, mask.Height, err)
 			return gocv.NewMat()
@@ -397,7 +399,7 @@ func FindTemplateMatches(searchImg, template, imask, tmask, cmask gocv.Mat, thre
 func findTemplateMatches(searchImg, template, cmask gocv.Mat, threshold float32, blur int, templatePreBlurred bool) (matches []robotgo.Point) {
 	defer func() {
 		if r := recover(); r != nil {
-			macropkg.LogPanicToFile(r, "FindTemplateMatches")
+			panicsafe.LogPanicToFile(r, "FindTemplateMatches")
 		}
 	}()
 	if err := validateMatchInputs(searchImg, template, cmask, blur); err != nil {
@@ -536,7 +538,7 @@ func clamp(v, lo, hi int) int {
 func DrawFoundMatches(matches []robotgo.Point, rectSizeX, rectSizeY int, draw gocv.Mat, text string) {
 	defer func() {
 		if r := recover(); r != nil {
-			macropkg.LogPanicToFile(r, "DrawFoundMatches")
+			panicsafe.LogPanicToFile(r, "DrawFoundMatches")
 		}
 	}()
 	for _, match := range matches {

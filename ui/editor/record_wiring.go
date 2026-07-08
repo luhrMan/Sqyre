@@ -2,8 +2,8 @@ package editor
 
 import (
 	"Sqyre/internal/models"
+	"Sqyre/internal/panicsafe"
 	"Sqyre/internal/screen"
-	"Sqyre/internal/services"
 	"Sqyre/ui/custom_widgets"
 	"strconv"
 	"sync"
@@ -94,7 +94,7 @@ func wireSearchAreaRecordButton(w map[string]fyne.CanvasObject, onRecorded func(
 			},
 		)
 
-		services.GoSafe(func() {
+		panicsafe.GoSafe(func() {
 			for {
 				select {
 				case <-stopPoll:
