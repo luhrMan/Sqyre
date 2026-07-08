@@ -27,3 +27,14 @@ func TestValidateVariableName(t *testing.T) {
 		t.Fatalf("valid: %v", err)
 	}
 }
+
+func TestValidateVariableAssignmentName(t *testing.T) {
+	if err := ValidateVariableAssignmentName("count"); err != nil {
+		t.Fatalf("valid name: %v", err)
+	}
+	for _, bad := range []string{"${x}", "1+2", "sqrt(4)", "${count}+1"} {
+		if err := ValidateVariableAssignmentName(bad); err == nil {
+			t.Fatalf("expected invalid for %q", bad)
+		}
+	}
+}
