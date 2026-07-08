@@ -57,14 +57,14 @@ func searchAreasAccordionConfig() entityAccordionConfig {
 	}
 }
 
-func setAccordionSearchAreasLists(acc *widget.Accordion) {
+func setAccordionSearchAreasLists(acc *custom_widgets.AccordionWithHeaderWidgets) {
 	populateProgramEntityAccordion(acc, searchAreasAccordionConfig())
 }
 
 // refreshSearchAreasAccordionForProgram rebuilds only the given program's row in
 // the Search Areas accordion (instead of every program's row).
 func refreshSearchAreasAccordionForProgram(programName string) {
-	if acc, ok := shell().EditorTabs.SearchAreasTab.Widgets["Accordion"].(*widget.Accordion); ok {
+	if acc, ok := shell().EditorTabs.SearchAreasTab.Widgets["Accordion"].(*custom_widgets.AccordionWithHeaderWidgets); ok {
 		refreshProgramEntityAccordionRow(acc, searchAreasAccordionConfig(), programName)
 	}
 }
@@ -97,19 +97,19 @@ func pointsAccordionConfig() entityAccordionConfig {
 	}
 }
 
-func setAccordionPointsLists(acc *widget.Accordion) {
+func setAccordionPointsLists(acc *custom_widgets.AccordionWithHeaderWidgets) {
 	populateProgramEntityAccordion(acc, pointsAccordionConfig())
 }
 
 // refreshPointsAccordionForProgram rebuilds only the given program's row in the
 // Points accordion (instead of every program's row).
 func refreshPointsAccordionForProgram(programName string) {
-	if acc, ok := shell().EditorTabs.PointsTab.Widgets["Accordion"].(*widget.Accordion); ok {
+	if acc, ok := shell().EditorTabs.PointsTab.Widgets["Accordion"].(*custom_widgets.AccordionWithHeaderWidgets); ok {
 		refreshProgramEntityAccordionRow(acc, pointsAccordionConfig(), programName)
 	}
 }
 
-func setAccordionAutoPicSearchAreasLists(acc *widget.Accordion) {
+func setAccordionAutoPicSearchAreasLists(acc *custom_widgets.AccordionWithHeaderWidgets) {
 	tab := shell().EditorTabs.AutoPicTab
 	populateProgramEntityAccordion(acc, entityAccordionConfig{
 		tab: tab,

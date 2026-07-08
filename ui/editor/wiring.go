@@ -176,33 +176,6 @@ func updateProgramSelectorOptions() {
 	}
 }
 
-// refreshAllProgramRelatedUI refreshes all accordions and program list when programs are modified
-func refreshAllProgramRelatedUI() {
-	// Refresh program list
-	et := shell().EditorTabs
-	if programList, ok := et.ProgramsTab.Widgets["list"].(*widget.List); ok {
-		setProgramList(programList)
-		custom_widgets.RefreshListPreservingScroll(programList)
-	}
-
-	// Refresh editor tab accordions
-	if accordion, ok := et.ItemsTab.Widgets["Accordion"].(*custom_widgets.AccordionWithHeaderWidgets); ok {
-		setAccordionItemsLists(accordion)
-	}
-	if accordion, ok := et.PointsTab.Widgets["Accordion"].(*widget.Accordion); ok {
-		setAccordionPointsLists(accordion)
-	}
-	if accordion, ok := et.SearchAreasTab.Widgets["Accordion"].(*widget.Accordion); ok {
-		setAccordionSearchAreasLists(accordion)
-	}
-	if accordion, ok := et.AutoPicTab.Widgets["Accordion"].(*widget.Accordion); ok {
-		setAccordionAutoPicSearchAreasLists(accordion)
-	}
-	if accordion, ok := et.MasksTab.Widgets["Accordion"].(*widget.Accordion); ok {
-		setAccordionMasksLists(accordion)
-	}
-}
-
 func setEditorLists() {
 	et := shell().EditorTabs
 	setProgramList(
@@ -212,16 +185,16 @@ func setEditorLists() {
 		et.ItemsTab.Widgets["Accordion"].(*custom_widgets.AccordionWithHeaderWidgets),
 	)
 	setAccordionPointsLists(
-		et.PointsTab.Widgets["Accordion"].(*widget.Accordion),
+		et.PointsTab.Widgets["Accordion"].(*custom_widgets.AccordionWithHeaderWidgets),
 	)
 	setAccordionSearchAreasLists(
-		et.SearchAreasTab.Widgets["Accordion"].(*widget.Accordion),
+		et.SearchAreasTab.Widgets["Accordion"].(*custom_widgets.AccordionWithHeaderWidgets),
 	)
 	setAccordionAutoPicSearchAreasLists(
-		et.AutoPicTab.Widgets["Accordion"].(*widget.Accordion),
+		et.AutoPicTab.Widgets["Accordion"].(*custom_widgets.AccordionWithHeaderWidgets),
 	)
 	setAccordionMasksLists(
-		et.MasksTab.Widgets["Accordion"].(*widget.Accordion),
+		et.MasksTab.Widgets["Accordion"].(*custom_widgets.AccordionWithHeaderWidgets),
 	)
 	et.ProgramsTab.SelectedItem = repositories.ProgramRepo().New()
 	// Note: For nested models, we need a program context to get repositories

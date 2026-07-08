@@ -4,6 +4,7 @@ import (
 	"Sqyre/internal/config"
 	"Sqyre/internal/models"
 	"Sqyre/internal/models/repositories"
+	"Sqyre/internal/vision"
 	"os"
 	"path/filepath"
 
@@ -83,8 +84,9 @@ func performDeleteForTab() {
 				},
 				refresh: func() {
 					if acc, ok := et.ItemsTab.Widgets["Accordion"].(*custom_widgets.AccordionWithHeaderWidgets); ok {
-						setAccordionItemsLists(acc)
+						syncItemsAccordionProgramRow(acc, programName)
 					}
+					InvalidateProgramTagsCache(programName)
 				},
 			}, program)
 		}
@@ -107,6 +109,7 @@ func performDeleteForTab() {
 					}
 				},
 				refresh: func() {
+					vision.InvalidatePreviewTooltipCacheEntity(v.Name)
 					refreshPointsAccordionForProgram(programName)
 				},
 			}, program)
@@ -161,6 +164,7 @@ func performDeleteForTab() {
 					}
 				},
 				refresh: func() {
+					vision.InvalidatePreviewTooltipCacheEntity(v.Name)
 					refreshSearchAreasAccordionForProgram(programName)
 				},
 			}, program)
