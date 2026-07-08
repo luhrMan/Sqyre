@@ -44,6 +44,9 @@ const (
 	EditorPreviewMinCaptureSize = 320 // minimum width and height of the capture rect (px)
 	EditorPreviewPadding        = 48  // extra margin around search-area rectangles (px)
 
+	// Tooltip hover previews downscale captures to this max width/height (px).
+	TooltipPreviewMaxCaptureSize = 640
+
 	// Icon variant constants
 	IconThumbnailSize = 64  // pixels for thumbnail display
 	MaxIconVariants   = 100 // maximum variants per item
