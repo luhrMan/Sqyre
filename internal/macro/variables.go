@@ -3,17 +3,18 @@ package macro
 import (
 	"Sqyre/internal/models"
 	"Sqyre/internal/models/actions"
+	"Sqyre/internal/varref"
 	"fmt"
 	"math"
-	"regexp"
 	"strconv"
 	"strings"
 )
 
+// Variable reference grammar (${VarName} / {VarName}) lives in internal/varref.
+// The substitution engine below sources the patterns from there.
 var (
-	// Variable reference patterns: ${VarName} or {VarName}
-	varPattern    = regexp.MustCompile(`\$\{([^}]+)\}`)
-	varPatternAlt = regexp.MustCompile(`\{([^}]+)\}`)
+	varPattern    = varref.DollarPattern
+	varPatternAlt = varref.BracePattern
 )
 
 // ResolveVariables resolves variable references in a string.
@@ -52,33 +53,6 @@ func ResolveVariables(text string, macro *models.Macro) (string, error) {
 	})
 
 	return result, nil
-}
-
-// ParseVariableReference extracts variable names from text
-func ParseVariableReference(text string) []string {
-	varNames := make(map[string]bool)
-
-	// Find ${VarName} patterns
-	matches := varPattern.FindAllStringSubmatch(text, -1)
-	for _, match := range matches {
-		if len(match) > 1 {
-			varNames[match[1]] = true
-		}
-	}
-
-	// Find {VarName} patterns
-	matches = varPatternAlt.FindAllStringSubmatch(text, -1)
-	for _, match := range matches {
-		if len(match) > 1 {
-			varNames[match[1]] = true
-		}
-	}
-
-	result := make([]string, 0, len(varNames))
-	for name := range varNames {
-		result = append(result, name)
-	}
-	return result
 }
 
 // EvaluateCondition evaluates a Conditional action's clauses using its match
@@ -228,7 +202,7 @@ func UnknownVariableWarning(text string, macro *models.Macro) string {
 	}
 
 	var unknown []string
-	for _, r := range ParseVariableReference(text) {
+	for _, r := range varref.Names(text) {
 		name := strings.TrimSpace(r)
 		if name == "" {
 			continue
@@ -254,7 +228,7 @@ func validateExpressionStructure(expr string, macro *models.Macro) error {
 	}
 
 	macro.InitRuntimeVariables()
-	for _, r := range ParseVariableReference(expr) {
+	for _, r := range varref.Names(expr) {
 		name := strings.TrimSpace(r)
 		if name == "" {
 			continue
@@ -363,7 +337,7 @@ func PreviewCalculate(expr string, macro *models.Macro) (string, error) {
 
 	macro.InitRuntimeVariables()
 
-	refs := ParseVariableReference(expr)
+	refs := varref.Names(expr)
 
 	// Seed every referenced variable with a numeric placeholder so structurally valid
 	// expressions evaluate even when names are not declared yet.
