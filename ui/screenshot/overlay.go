@@ -1,4 +1,4 @@
-package ui
+package screenshot
 
 import (
 	"bytes"

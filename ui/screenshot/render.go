@@ -1,4 +1,7 @@
-package ui
+// Package screenshot renders Fyne widget trees to PNG and annotates them with
+// click guides for README/demo docs. It has no dependency on package ui so the
+// docs tests and tooling can drive it without an import cycle.
+package screenshot
 
 import (
 	"bytes"
@@ -12,17 +15,6 @@ import (
 )
 
 const screenshotWindowW, screenshotWindowH = 1000, 500
-
-// MacroScreenForScreenshot returns the macro editor layout for docs/tests.
-func MacroScreenForScreenshot(u *Ui) fyne.CanvasObject {
-	return u.constructMacroUi()
-}
-
-// EditorScreenForScreenshot returns the data editor layout for docs/tests.
-func EditorScreenForScreenshot(u *Ui) fyne.CanvasObject {
-	EnsureDataEditor()
-	return u.EditorUi.CanvasObject
-}
 
 // PrepareWindowForCapture sizes the window and refreshes the live canvas tree.
 func PrepareWindowForCapture(w fyne.Window) {
