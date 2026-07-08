@@ -16,7 +16,7 @@ func RegisterActionTooltipEnterSave(parent fyne.Window, onSave func()) func() {
 		return func() {}
 	}
 	return macrohotkey.RegisterEnterHandler(func() {
-		if !shouldSaveActionDialogOnEnter(parent) {
+		if !shouldSaveTooltipOnEnter(parent) {
 			return
 		}
 		fyne.Do(onSave)

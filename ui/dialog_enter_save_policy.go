@@ -7,17 +7,20 @@ import (
 	"fyne.io/fyne/v2"
 )
 
-// shouldSaveActionDialogOnEnter reports whether a global Enter handler should save
-// the action dialog. Enter is ignored while completion is active, recently consumed
+// shouldSaveTooltipOnEnter reports whether a global Enter handler should save
+// the pinned action tooltip. Enter is ignored while completion is active, recently consumed
 // by completion, or while a multi-line text field has focus.
-func shouldSaveActionDialogOnEnter(parent fyne.Window) bool {
+func shouldSaveTooltipOnEnter(parent fyne.Window) bool {
 	if parent == nil {
+		return false
+	}
+	if !AppInForeground() {
 		return false
 	}
 	if completionentry.IsCompletionActive() {
 		return false
 	}
-	if completionentry.IsActionDialogEnterSuppressed() {
+	if completionentry.IsTooltipEnterSuppressed() {
 		return false
 	}
 	focused := parent.Canvas().Focused()
