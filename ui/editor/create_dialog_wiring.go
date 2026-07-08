@@ -7,6 +7,7 @@ import (
 	"Sqyre/internal/services"
 	"Sqyre/ui/completionentry"
 	"Sqyre/ui/custom_widgets"
+	"Sqyre/ui/dialogs"
 	"errors"
 	"fmt"
 	"io"
@@ -284,7 +285,7 @@ func showMaskSelectionPopupForItem(onSelect func(maskName string)) {
 	closeButton := widget.NewButton("Close", func() { hide() })
 	popUpContent := container.NewBorder(closeButton, nil, nil, nil, acc)
 	popup = widget.NewModalPopUp(popUpContent, activeWire.Window.Canvas())
-	dlg := activeWire.AddPopupEscapeClose(popup, activeWire.Window)
+	dlg := dialogs.AddPopupEscapeClose(popup, activeWire.Window)
 	hide = dlg.Hide
 	dlg.Resize(fyne.NewSize(400, 500))
 	dlg.Show()
@@ -310,17 +311,17 @@ func wireCreateMaskDialog(w map[string]fyne.CanvasObject, programSelector *widge
 		uploadBtn.OnTapped = func() {
 			maskName := w["Name"].(*widget.Entry).Text
 			if maskName == "" {
-				activeWire.ShowErrorWithEscape(errors.New("enter a mask name first"), activeWire.Window)
+				dialogs.ShowErrorWithEscape(errors.New("enter a mask name first"), activeWire.Window)
 				return
 			}
 			programName := programSelector.Selected
 			if programName == "" {
-				activeWire.ShowErrorWithEscape(errors.New("select a program first"), activeWire.Window)
+				dialogs.ShowErrorWithEscape(errors.New("select a program first"), activeWire.Window)
 				return
 			}
 			fd := dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
 				if err != nil {
-					activeWire.ShowErrorWithEscape(err, activeWire.Window)
+					dialogs.ShowErrorWithEscape(err, activeWire.Window)
 					return
 				}
 				if reader == nil {
@@ -330,25 +331,25 @@ func wireCreateMaskDialog(w map[string]fyne.CanvasObject, programSelector *widge
 				masksPath := config.GetMasksPath()
 				programMaskDir := filepath.Join(masksPath, programName)
 				if err := os.MkdirAll(programMaskDir, 0755); err != nil {
-					activeWire.ShowErrorWithEscape(fmt.Errorf("failed to create mask directory: %v", err), activeWire.Window)
+					dialogs.ShowErrorWithEscape(fmt.Errorf("failed to create mask directory: %v", err), activeWire.Window)
 					return
 				}
 				destPath := filepath.Join(programMaskDir, maskName+config.PNG)
 				destFile, err := os.Create(destPath)
 				if err != nil {
-					activeWire.ShowErrorWithEscape(fmt.Errorf("failed to create mask file: %v", err), activeWire.Window)
+					dialogs.ShowErrorWithEscape(fmt.Errorf("failed to create mask file: %v", err), activeWire.Window)
 					return
 				}
 				defer destFile.Close()
 				if _, err := io.Copy(destFile, reader); err != nil {
-					activeWire.ShowErrorWithEscape(fmt.Errorf("failed to write mask image: %v", err), activeWire.Window)
+					dialogs.ShowErrorWithEscape(fmt.Errorf("failed to write mask image: %v", err), activeWire.Window)
 					return
 				}
 				setMaskImageModeOnWidgets(w, true)
 				updateMaskPreviewPanel(previewPanel, programName, maskName)
 			}, activeWire.Window)
 			fd.SetFilter(storage.NewExtensionFileFilter([]string{".png", ".jpg", ".jpeg", ".bmp"}))
-			activeWire.AddDialogEscapeClose(fd, activeWire.Window)
+			dialogs.AddDialogEscapeClose(fd, activeWire.Window)
 			fd.Show()
 		}
 	}
@@ -362,7 +363,7 @@ func wireCreateMaskDialog(w map[string]fyne.CanvasObject, programSelector *widge
 			}
 			imgPath := filepath.Join(config.GetMasksPath(), programName, maskName+config.PNG)
 			if err := os.Remove(imgPath); err != nil && !os.IsNotExist(err) {
-				activeWire.ShowErrorWithEscape(fmt.Errorf("failed to remove mask image: %v", err), activeWire.Window)
+				dialogs.ShowErrorWithEscape(fmt.Errorf("failed to remove mask image: %v", err), activeWire.Window)
 				return
 			}
 			setMaskImageModeOnWidgets(w, false)

@@ -4,6 +4,7 @@ import (
 	"Sqyre/internal/config"
 	"Sqyre/internal/services"
 	"Sqyre/ui/custom_widgets"
+	"Sqyre/ui/dialogs"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -149,7 +150,7 @@ func (u *Ui) buildDataSection() fyne.CanvasObject {
 			return
 		}
 		if err := services.OpenSqyreDir(); err != nil {
-			ShowErrorWithEscape(err, u.Window)
+			dialogs.ShowErrorWithEscape(err, u.Window)
 		}
 	})
 

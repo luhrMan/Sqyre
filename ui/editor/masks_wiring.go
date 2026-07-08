@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 
 	"Sqyre/ui/custom_widgets"
+	"Sqyre/ui/dialogs"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/dialog"
@@ -152,7 +153,7 @@ func setMasksButtons() {
 				shell().UpdateMaskPreview(programName, mask.Name)
 			}, activeWire.Window)
 			fd.SetFilter(storage.NewExtensionFileFilter([]string{".png", ".jpg", ".jpeg", ".bmp"}))
-			activeWire.AddDialogEscapeClose(fd, activeWire.Window)
+			dialogs.AddDialogEscapeClose(fd, activeWire.Window)
 			fd.Show()
 		}
 	}
