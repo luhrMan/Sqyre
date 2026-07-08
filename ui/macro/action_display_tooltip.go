@@ -1169,10 +1169,20 @@ func (p *actionDisplayTooltipPanel) ensureViewParamPills(owner *actionDisplayToo
 }
 
 func (p *actionDisplayTooltipPanel) refreshViewContent(owner *actionDisplayTooltipHover) {
+	prev := p.viewParamPills
 	p.ensureViewParamPills(owner)
 	if !p.editing && p.viewBodyBuilt && p.viewParamPillsBodyIndex >= 0 {
 		if p.viewParamPillsBodyIndex < len(p.body.Objects) {
 			p.body.Objects[p.viewParamPillsBodyIndex] = p.viewParamPills
+		}
+		// New pills can differ in size (e.g. adding/removing For-Each source rows);
+		// recompute the panel geometry so the background tracks the content.
+		if p.viewParamPills != prev {
+			p.invalidateLayoutSize()
+			p.body.Refresh()
+			if owner != nil {
+				owner.relayoutTooltip()
+			}
 		}
 		return
 	}
