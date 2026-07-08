@@ -47,3 +47,50 @@ func ActionTypeLabel(actionType string) string {
 		return actionType
 	}
 }
+
+// ActionTypeDescription returns a concise, one-line explanation of what an
+// action type does, suitable for a tooltip. Returns "" for unknown types.
+func ActionTypeDescription(actionType string) string {
+	switch strings.ToLower(strings.TrimSpace(actionType)) {
+	case "move":
+		return "Moves the mouse cursor to a target position."
+	case "click":
+		return "Clicks a mouse button at the current cursor position."
+	case "key":
+		return "Presses or releases a single keyboard key."
+	case "type":
+		return "Types out a string of text, one character at a time."
+	case "wait":
+		return "Pauses for a fixed number of milliseconds, then continues."
+	case "pause":
+		return "Halts the macro until you press the continue key."
+	case "focuswindow":
+		return "Brings a window to the front, matched by program and title."
+	case "runmacro":
+		return "Runs another macro inline as a sub-routine."
+	case "conditional":
+		return "Runs its sub-actions only when the conditions are true."
+	case "loop":
+		return "Repeats its sub-actions a set number of times."
+	case "break":
+		return "Exits the innermost enclosing loop immediately."
+	case "continue":
+		return "Skips to the next iteration of the enclosing loop."
+	case "imagesearch":
+		return "Searches a screen region for images and saves match coordinates."
+	case "ocr":
+		return "Reads text from a screen region and saves it to variables."
+	case "findpixel":
+		return "Scans a region for a pixel color and saves its coordinates."
+	case "setvariable":
+		return "Assigns a value to a variable in memory."
+	case "calculate":
+		return "Evaluates a math expression and stores the result in a variable."
+	case "foreachrow":
+		return "Runs its sub-actions once per row of a list source."
+	case "savevariable":
+		return "Writes a variable's value out to a file or the clipboard."
+	default:
+		return ""
+	}
+}

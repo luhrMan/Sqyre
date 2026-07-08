@@ -101,6 +101,45 @@ func (b *pillTipButton) MouseMoved(e *desktop.MouseEvent) {
 	b.Button.MouseMoved(e)
 }
 
+// HoverTipPill is a display pill that surfaces a hover tooltip through a
+// TooltipSink (used for the action title pill in the edit toolbar).
+type HoverTipPill struct {
+	fynewidget.BaseWidget
+
+	label   string
+	content fyne.CanvasObject
+	hover   *pillTipHover
+	tips    pillStepperTooltipState
+}
+
+// NewHoverTipPill renders the action title pill with tipText shown on hover.
+func NewHoverTipPill(text, actionType, tipText string) *HoverTipPill {
+	p := &HoverTipPill{label: text, content: NewDisplayPill(text, actionType)}
+	p.hover = newPillTipHover(p)
+	p.hover.SetToolTip(tipText)
+	p.ExtendBaseWidget(p)
+	return p
+}
+
+// Label returns the pill's displayed text.
+func (p *HoverTipPill) Label() string { return p.label }
+
+// ToolTip returns the hover tip text.
+func (p *HoverTipPill) ToolTip() string { return p.hover.tipText }
+
+// BindTooltipSink connects the hover tip to the action-tooltip panel layer.
+func (p *HoverTipPill) BindTooltipSink(sink TooltipSink) { p.tips.bindSink(sink) }
+
+func (p *HoverTipPill) scheduleTooltip(text string, absPos fyne.Position) {
+	p.tips.scheduleTooltip(text, absPos)
+}
+
+func (p *HoverTipPill) cancelTooltip() { p.tips.cancelTooltip() }
+
+func (p *HoverTipPill) CreateRenderer() fyne.WidgetRenderer {
+	return fynewidget.NewSimpleRenderer(container.NewStack(p.content, p.hover))
+}
+
 type pillStepperTooltipState struct {
 	sink          TooltipSink
 	pendingCancel context.CancelFunc
@@ -156,6 +195,8 @@ func BindPillStepperTooltips(root fyne.CanvasObject, sink TooltipSink) {
 	case *PillIntStepper:
 		w.BindTooltipSink(sink)
 	case *PillFloatStepper:
+		w.BindTooltipSink(sink)
+	case *HoverTipPill:
 		w.BindTooltipSink(sink)
 	}
 	if cont, ok := root.(*fyne.Container); ok {

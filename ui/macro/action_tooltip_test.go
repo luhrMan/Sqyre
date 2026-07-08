@@ -88,7 +88,16 @@ func TestActionTooltipPanel_editModeHeaderRow(t *testing.T) {
 	if !ok || len(row.Objects) < 4 {
 		t.Fatal("expected edit header row with type pill and save/cancel buttons")
 	}
-	assertTypePillText(t, row.Objects[0], actions.ActionTypeLabel("wait"))
+	pill, ok := row.Objects[0].(*actiondisplay.HoverTipPill)
+	if !ok {
+		t.Fatal("expected edit type pill to be a HoverTipPill")
+	}
+	if got := pill.Label(); got != actions.ActionTypeLabel("wait") {
+		t.Fatalf("edit type pill label = %q, want %q", got, actions.ActionTypeLabel("wait"))
+	}
+	if got := pill.ToolTip(); got != actions.ActionTypeDescription("wait") {
+		t.Fatalf("edit type pill tooltip = %q, want %q", got, actions.ActionTypeDescription("wait"))
+	}
 }
 
 func TestActionDisplayTooltipHover_showTooltipPanel_preservesEditMode(t *testing.T) {
