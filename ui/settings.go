@@ -264,11 +264,17 @@ func (u *Ui) applySqyreLocation(oldDir, newDir string, move bool, pathLabel *wid
 	config.SetSqyreDirOverride(newDir)
 	pathLabel.SetText(newDir)
 
-	dialogs.ShowInformationWithEscape(
+	info := dialog.NewInformation(
 		"Data location changed",
-		"Sqyre will use "+newDir+". Restart the app for the change to fully take effect.",
+		"Sqyre will now restart to use "+newDir+".",
 		u.Window,
 	)
+	info.SetOnClosed(func() {
+		services.RequestRestart()
+		fyne.CurrentApp().Quit()
+	})
+	dialogs.AddDialogEscapeClose(info, u.Window)
+	info.Show()
 }
 
 // buildAppearanceSection builds the theme and display options.
