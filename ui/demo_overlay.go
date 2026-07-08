@@ -17,13 +17,10 @@ type ClickGuide struct {
 	X, Y int
 }
 
-// Demo frame click targets for a 1000×500 macro editor capture.
-var (
-	DemoClickActionIcon   = ClickGuide{X: 26, Y: 150}
-	DemoClickTooltipSave  = ClickGuide{X: 602, Y: 318}
-	DemoClickPickerWait   = ClickGuide{X: 868, Y: 128}
-	DemoClickNewActionRow = ClickGuide{X: 26, Y: 158}
-)
+// ClickGuideAt builds a ClickGuide from a canvas-space position.
+func ClickGuideAt(pos fyne.Position) ClickGuide {
+	return ClickGuide{X: int(pos.X), Y: int(pos.Y)}
+}
 
 // OverlayClickGuide draws a pointer cursor and highlight ring on a PNG screenshot.
 func OverlayClickGuide(pngData []byte, guide ClickGuide) ([]byte, error) {
@@ -43,20 +40,17 @@ func OverlayClickGuide(pngData []byte, guide ClickGuide) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// OverlayAddActionPickerOnMainPNG composites the add-action picker over a dimmed main window.
-func OverlayAddActionPickerOnMainPNG(mainPNG []byte) ([]byte, error) {
+// CompositePickerOverDimmedMain composites pickerPNG centered over a dimmed copy
+// of mainPNG and returns the composite plus the top-left offset where the picker
+// was placed (so callers can translate picker-space anchors into the composite).
+func CompositePickerOverDimmedMain(mainPNG, pickerPNG []byte) ([]byte, image.Point, error) {
 	base, err := png.Decode(bytes.NewReader(mainPNG))
 	if err != nil {
-		return nil, fmt.Errorf("decode main window png: %w", err)
-	}
-	parent := fyne.NewSize(screenshotWindowW, screenshotWindowH)
-	pickerPNG, err := RenderObjectPNG(AddActionPickerForScreenshot(), parent)
-	if err != nil {
-		return nil, err
+		return nil, image.Point{}, fmt.Errorf("decode main window png: %w", err)
 	}
 	pickerImg, err := png.Decode(bytes.NewReader(pickerPNG))
 	if err != nil {
-		return nil, fmt.Errorf("decode picker png: %w", err)
+		return nil, image.Point{}, fmt.Errorf("decode picker png: %w", err)
 	}
 
 	bounds := base.Bounds()
@@ -67,14 +61,15 @@ func OverlayAddActionPickerOnMainPNG(mainPNG []byte) ([]byte, error) {
 
 	dx := (bounds.Dx() - pickerImg.Bounds().Dx()) / 2
 	dy := (bounds.Dy() - pickerImg.Bounds().Dy()) / 2
-	pickerRect := pickerImg.Bounds().Add(image.Pt(dx, dy))
-	draw.Draw(out, pickerRect, pickerImg, image.Point{}, draw.Over)
+	offset := image.Pt(dx, dy)
+	pickerRect := pickerImg.Bounds().Add(offset)
+	draw.Draw(out, pickerRect, pickerImg, pickerImg.Bounds().Min, draw.Over)
 
 	var buf bytes.Buffer
 	if err := png.Encode(&buf, out); err != nil {
-		return nil, err
+		return nil, image.Point{}, err
 	}
-	return buf.Bytes(), nil
+	return buf.Bytes(), offset, nil
 }
 
 func drawClickRing(img *image.RGBA, cx, cy int) {

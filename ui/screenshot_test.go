@@ -15,9 +15,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"Sqyre/internal/models/actions"
 	"Sqyre/internal/testsupport"
 	"Sqyre/ui"
+	"Sqyre/ui/macro"
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/test"
 )
@@ -98,12 +98,22 @@ func writeFrameFile(t *testing.T, dir, name string, data []byte, minBytes int) {
 	}
 }
 
+var docsMainSize = fyne.NewSize(1000, 500)
+
 func TestDocsScreenshots(t *testing.T) {
 	dir := docsImagesDir(t)
 	u, w := setupDocsUi(t)
 	defer w.Close()
 
-	mainPNG, err := ui.RenderObjectPNG(u.MainUi.Navigation.Root, fyne.NewSize(1000, 500))
+	mt := u.Mui.MTabs.SelectedTab()
+	if mt == nil {
+		t.Fatal("no macro tab selected")
+	}
+	// Show nested steps (image-search / loop children) in the tree summary.
+	mt.OpenAllBranches()
+	mt.Refresh()
+
+	mainPNG, err := ui.RenderObjectPNG(u.MainUi.Navigation.Root, docsMainSize)
 	if err != nil {
 		t.Fatalf("render main window: %v", err)
 	}
@@ -115,60 +125,90 @@ func TestDocsScreenshots(t *testing.T) {
 	}
 	writeOrComparePNG(t, filepath.Join(dir, "add-action-picker.png"), pickerPNG, 5000)
 
-	editorPNG, err := ui.RenderObjectPNG(ui.EditorScreenForScreenshot(u), fyne.NewSize(1000, 500))
+	editorPNG, err := ui.RenderObjectPNG(ui.EditorScreenForScreenshot(u), docsMainSize)
 	if err != nil {
 		t.Fatalf("render data editor: %v", err)
 	}
 	writeOrComparePNG(t, filepath.Join(dir, "data-editor.png"), editorPNG, 5000)
 
 	if updateScreenshots() {
-		writeDemoFrames(t, u, mainPNG)
+		writeDemoFrames(t, u, mt)
 	}
 }
 
-func writeDemoFrames(t *testing.T, u *ui.Ui, mainPNG []byte) {
+// rowClickGuideOnMain renders the populated main window and draws a click guide
+// centered on the tree row for uid, using real tree geometry.
+func rowClickGuideOnMain(t *testing.T, u *ui.Ui, mt *macro.MacroTree, uid string) []byte {
+	t.Helper()
+	var center fyne.Position
+	pngData, _, err := ui.RenderObjectPNGWithAnchors(u.MainUi.Navigation.Root, docsMainSize, func() []fyne.Position {
+		pos, ok := mt.RowCenterForScreenshot(uid)
+		if !ok {
+			t.Fatalf("row %s not visible for click guide", uid)
+		}
+		center = pos
+		return []fyne.Position{pos}
+	})
+	if err != nil {
+		t.Fatalf("render main window with row anchor: %v", err)
+	}
+	frame, err := ui.OverlayClickGuide(pngData, ui.ClickGuideAt(center))
+	if err != nil {
+		t.Fatalf("row click guide: %v", err)
+	}
+	return frame
+}
+
+func writeDemoFrames(t *testing.T, u *ui.Ui, mt *macro.MacroTree) {
 	t.Helper()
 	framesDir := demoFramesDir(t)
 
-	frame1, err := ui.OverlayClickGuide(mainPNG, ui.DemoClickActionIcon)
-	if err != nil {
-		t.Fatalf("frame 1 click guide: %v", err)
+	subs := mt.Macro.Root.GetSubActions()
+	if len(subs) < 3 {
+		t.Fatalf("demo macro has too few actions (%d)", len(subs))
 	}
+	firstUID := subs[0].GetUID()
+	// The image-search branch is the third action (see buildDemoMacroActions).
+	branchUID := subs[2].GetUID()
+
+	// Frame 1: introduce the macro by pointing at its first action row.
+	frame1 := rowClickGuideOnMain(t, u, mt, firstUID)
 	writeFrameFile(t, framesDir, "demo-macro-001.png", frame1, 5000)
 
-	frame2, err := ui.OverlayClickGuide(mainPNG, ui.DemoClickTooltipSave)
+	// Frame 2: the add-action picker, click guide anchored on the Click tile.
+	pickerContent, clickTile := ui.AddActionPickerWithTargetForScreenshot("Click")
+	if clickTile == nil {
+		t.Fatal("Click tile not found in picker")
+	}
+	var tileCenter fyne.Position
+	pickerPNG, _, err := ui.RenderObjectPNGWithAnchors(pickerContent, docsMainSize, func() []fyne.Position {
+		tileCenter = ui.AnchorCenter(clickTile)
+		return []fyne.Position{tileCenter}
+	})
+	if err != nil {
+		t.Fatalf("render picker for frame 2: %v", err)
+	}
+	mainPNG, err := ui.RenderObjectPNG(u.MainUi.Navigation.Root, docsMainSize)
+	if err != nil {
+		t.Fatalf("render main for frame 2: %v", err)
+	}
+	composite, offset, err := ui.CompositePickerOverDimmedMain(mainPNG, pickerPNG)
+	if err != nil {
+		t.Fatalf("composite picker for frame 2: %v", err)
+	}
+	frame2, err := ui.OverlayClickGuide(composite, ui.ClickGuide{
+		X: offset.X + int(tileCenter.X),
+		Y: offset.Y + int(tileCenter.Y),
+	})
 	if err != nil {
 		t.Fatalf("frame 2 click guide: %v", err)
 	}
 	writeFrameFile(t, framesDir, "demo-macro-002.png", frame2, 5000)
 
-	pickerFrame, err := ui.OverlayAddActionPickerOnMainPNG(mainPNG)
-	if err != nil {
-		t.Fatalf("capture frame 3: %v", err)
-	}
-	frame3, err := ui.OverlayClickGuide(pickerFrame, ui.DemoClickPickerWait)
-	if err != nil {
-		t.Fatalf("frame 3 click guide: %v", err)
-	}
+	// Frame 3: point at the image-search branch to show nested detection steps.
+	mt.Select(branchUID)
+	frame3 := rowClickGuideOnMain(t, u, mt, branchUID)
 	writeFrameFile(t, framesDir, "demo-macro-003.png", frame3, 5000)
-
-	mt := u.Mui.MTabs.SelectedTab()
-	if mt == nil {
-		t.Fatal("no macro tab selected")
-	}
-	wait := actions.NewWait(0)
-	mt.Macro.Root.AddSubAction(wait)
-	mt.Refresh()
-	mt.Select(wait.GetUID())
-	treeFrame, err := ui.RenderObjectPNG(u.MainUi.Navigation.Root, fyne.NewSize(1000, 500))
-	if err != nil {
-		t.Fatalf("capture frame 4: %v", err)
-	}
-	frame4, err := ui.OverlayClickGuide(treeFrame, ui.DemoClickNewActionRow)
-	if err != nil {
-		t.Fatalf("frame 4 click guide: %v", err)
-	}
-	writeFrameFile(t, framesDir, "demo-macro-004.png", frame4, 5000)
 }
 
 func TestDemoWorkflowFrames(t *testing.T) {
@@ -180,7 +220,6 @@ func TestDemoWorkflowFrames(t *testing.T) {
 		"demo-macro-001.png",
 		"demo-macro-002.png",
 		"demo-macro-003.png",
-		"demo-macro-004.png",
 	} {
 		info, err := os.Stat(filepath.Join(framesDir, name))
 		if err != nil {
