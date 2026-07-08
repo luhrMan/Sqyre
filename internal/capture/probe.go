@@ -113,7 +113,7 @@ func probeBackend(kind BackendKind, specs []monitorSpec, opts probeOptions) (Bac
 	screenshotMapping = mapping
 
 	if kind == BackendScreenshotDisplay || kind == BackendScreenshotRect {
-		if err := validateScreenshotAlignment(specs, screenshotMapping); err != nil {
+		if err := validateScreenshotAlignment(specs, screenshotMapping, screen.ScreenshotDisplayBoundsAbs); err != nil {
 			result.Passed = false
 			result.Reason = err.Error()
 			return result, plan, false

@@ -46,13 +46,13 @@ func applyScreenshotMapping(plan *SessionPlan, mapping map[int]int) {
 	}
 }
 
-func validateScreenshotAlignment(specs []monitorSpec, mapping map[int]int) error {
+func validateScreenshotAlignment(specs []monitorSpec, mapping map[int]int, boundsFor func(int) image.Rectangle) error {
 	for _, spec := range specs {
 		ssIndex, ok := mapping[spec.displayIndex]
 		if !ok {
 			return fmt.Errorf("desktop display %d missing screenshot mapping", spec.displayIndex)
 		}
-		ssAbs := screen.ScreenshotDisplayBoundsAbs(ssIndex)
+		ssAbs := boundsFor(ssIndex)
 		if ssAbs != spec.bounds {
 			return fmt.Errorf(
 				"desktop display %d bounds=%v screenshot index %d abs=%v",
