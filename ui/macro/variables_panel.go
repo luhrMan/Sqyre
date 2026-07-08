@@ -8,6 +8,7 @@ import (
 	"Sqyre/ui/actiondisplay"
 	"Sqyre/internal/models/repositories"
 	"Sqyre/ui/custom_widgets"
+	"Sqyre/ui/dialogs"
 	"fmt"
 	"strings"
 
@@ -423,9 +424,7 @@ func (p *VariablesPanel) showUsagesDialog(d models.VariableDef) {
 	dlg := dialog.NewCustomWithoutButtons(title, content, w)
 	hideUsages = dlg.Hide
 	closeBtn.OnTapped = hideUsages
-	if activeWire.AddDialogEscapeClose != nil {
-		activeWire.AddDialogEscapeClose(dlg, w)
-	}
+	dialogs.AddDialogEscapeClose(dlg, w)
 	dlg.Resize(fyne.NewSize(560, 360))
 	dlg.Show()
 }
@@ -497,9 +496,7 @@ func (p *VariablesPanel) showEditDetailsDialog(d models.VariableDef) {
 		)
 		p.RefreshDefs()
 	}, w)
-	if activeWire.AddDialogEscapeClose != nil {
-		activeWire.AddDialogEscapeClose(dlg, w)
-	}
+	dialogs.AddDialogEscapeClose(dlg, w)
 	dlg.Show()
 }
 
@@ -520,7 +517,7 @@ func (p *VariablesPanel) showRenameDialog(oldName string) {
 			return
 		}
 		if err := p.macro.RenameVariable(oldName, newName); err != nil {
-			activeWire.ShowErrorWithEscape(err, w)
+			dialogs.ShowErrorWithEscape(err, w)
 			return
 		}
 		p.saveMacro()
@@ -530,9 +527,7 @@ func (p *VariablesPanel) showRenameDialog(oldName string) {
 			p.onChange()
 		}
 	}, w)
-	if activeWire.AddDialogEscapeClose != nil {
-		activeWire.AddDialogEscapeClose(d, w)
-	}
+	dialogs.AddDialogEscapeClose(d, w)
 	d.Show()
 }
 
@@ -542,7 +537,7 @@ func (p *VariablesPanel) confirmRemove(name string) {
 	}
 	w := activeWire.Window
 	msg := fmt.Sprintf("Remove variable %q?", name)
-	activeWire.ShowConfirmWithEscape("Remove variable", msg, func(ok bool) {
+	dialogs.ShowConfirmWithEscape("Remove variable", msg, func(ok bool) {
 		if !ok {
 			return
 		}
@@ -594,7 +589,7 @@ func variablesPanelChrome(panel *VariablesPanel, m *models.Macro) fyne.CanvasObj
 			}
 			name := strings.TrimSpace(nameEntry.Text)
 			if err := validation.ValidateVariableName(name); err != nil {
-				activeWire.ShowErrorWithEscape(err, w)
+				dialogs.ShowErrorWithEscape(err, w)
 				return
 			}
 			m.UpsertVariable(models.VariableDecl{
@@ -609,9 +604,7 @@ func variablesPanelChrome(panel *VariablesPanel, m *models.Macro) fyne.CanvasObj
 				panel.onChange()
 			}
 		}, w)
-		if activeWire.AddDialogEscapeClose != nil {
-			activeWire.AddDialogEscapeClose(d, w)
-		}
+		dialogs.AddDialogEscapeClose(d, w)
 		d.Show()
 	})
 	addSetBtn := widget.NewButtonWithIcon("Add Set action", theme.DocumentCreateIcon(), func() {
@@ -633,7 +626,7 @@ func variablesPanelChrome(panel *VariablesPanel, m *models.Macro) fyne.CanvasObj
 			}
 			name := strings.TrimSpace(nameEntry.Text)
 			if err := validation.ValidateVariableName(name); err != nil {
-				activeWire.ShowErrorWithEscape(err, w)
+				dialogs.ShowErrorWithEscape(err, w)
 				return
 			}
 			sv := actions.NewSetVariable(name, valueEntry.Text)
@@ -654,9 +647,7 @@ func variablesPanelChrome(panel *VariablesPanel, m *models.Macro) fyne.CanvasObj
 				panel.onChange()
 			}
 		}, w)
-		if activeWire.AddDialogEscapeClose != nil {
-			activeWire.AddDialogEscapeClose(d, w)
-		}
+		dialogs.AddDialogEscapeClose(d, w)
 		d.Show()
 	})
 	help := widget.NewLabel("Variables are set by actions at runtime. Initial values load when the macro runs. Run macro uses an isolated variable store per macro.")

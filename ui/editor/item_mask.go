@@ -8,6 +8,7 @@ import (
 	"Sqyre/internal/models"
 	"Sqyre/internal/models/repositories"
 	"Sqyre/ui/custom_widgets"
+	"Sqyre/ui/dialogs"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -152,7 +153,7 @@ func showMaskSelectionPopup() {
 		acc,
 	)
 	popup = widget.NewModalPopUp(popUpContent, activeWire.Window.Canvas())
-	dlg := activeWire.AddPopupEscapeClose(popup, activeWire.Window)
+	dlg := dialogs.AddPopupEscapeClose(popup, activeWire.Window)
 	hide = dlg.Hide
 	dlg.Resize(fyne.NewSize(400, 500))
 	dlg.Show()

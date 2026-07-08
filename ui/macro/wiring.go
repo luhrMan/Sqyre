@@ -8,6 +8,7 @@ import (
 	"Sqyre/internal/models/actions"
 	"Sqyre/internal/models/repositories"
 	"Sqyre/ui/custom_widgets"
+	"Sqyre/ui/dialogs"
 	"Sqyre/ui/macrocxt"
 	"encoding/json"
 	"errors"
@@ -17,7 +18,6 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
@@ -33,10 +33,6 @@ type WireDeps struct {
 	RefreshItemsAccordion  func()
 	ShowHotkeyRecordDialog func(parent fyne.Window, stableDuration time.Duration, onRecorded func(keys []string))
 	ShowKeyRecordDialog    func(parent fyne.Window, onRecorded func(key string))
-	ShowErrorWithEscape    func(err error, parent fyne.Window)
-	AddDialogEscapeClose   func(d dialog.Dialog, parent fyne.Window)
-	AddPopupEscapeClose    func(pop *widget.PopUp, parent fyne.Window) dialog.Dialog
-	ShowConfirmWithEscape  func(title, message string, callback func(bool), parent fyne.Window)
 	ShowAddActionPicker    func()
 	ShowPointPicker        func(initial actions.CoordinateRef, onSelect func(actions.CoordinateRef), onClosed func())
 	ShowSearchAreaPicker   func(initial actions.CoordinateRef, onSelect func(actions.CoordinateRef), onClosed func())
@@ -353,12 +349,12 @@ func setMtabSettingsAndWidgets(d WireDeps) {
 
 	mtabs.MacroNameEntry.OnSubmitted = func(sub string) {
 		if sub == "" {
-			d.ShowErrorWithEscape(errors.New("macro name cannot be empty"), d.Window)
+			dialogs.ShowErrorWithEscape(errors.New("macro name cannot be empty"), d.Window)
 			return
 		}
 		for _, m := range repositories.MacroRepo().GetAll() {
 			if m.Name == sub {
-				d.ShowErrorWithEscape(errors.New("macro name already exists"), d.Window)
+				dialogs.ShowErrorWithEscape(errors.New("macro name already exists"), d.Window)
 				return
 			}
 		}

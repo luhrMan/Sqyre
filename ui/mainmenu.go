@@ -6,6 +6,7 @@ import (
 	"Sqyre/ui/actiondisplay"
 	"Sqyre/internal/models/repositories"
 	"Sqyre/internal/screen"
+	"Sqyre/ui/dialogs"
 	"log"
 	"strconv"
 
@@ -153,7 +154,7 @@ func showAddActionDialog(u *Ui, addActionAndRefresh func(actions.ActionInterface
 	})
 
 	d = dialog.NewCustom("Add Action", "Close", content, u.Window)
-	AddDialogEscapeClose(d, u.Window)
+	dialogs.AddDialogEscapeClose(d, u.Window)
 	d.Resize(AddActionPickerSize)
 	d.Show()
 }
@@ -253,7 +254,7 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 				str = str + "Monitor " + strconv.Itoa(d+1) + " Size: " + strconv.Itoa(mh) + "x" + strconv.Itoa(mw) + "\n"
 			}
 		}
-		ShowInformationWithEscape("Computer Information", str, u.Window)
+		dialogs.ShowInformationWithEscape("Computer Information", str, u.Window)
 	})
 
 	editor := fyne.NewMenuItem("Data Editor", func() {

@@ -1,9 +1,10 @@
 package ui
 
 import (
+	macrologic "Sqyre/internal/macro"
 	"Sqyre/internal/models"
 	"Sqyre/internal/models/actions"
-	"Sqyre/internal/services"
+	"Sqyre/ui/dialogs"
 	"Sqyre/ui/editor"
 	"Sqyre/ui/macro"
 	"Sqyre/ui/macrocxt"
@@ -56,11 +57,6 @@ func SetEditorUi() {
 		MacroVariables:    ctx.VariableNames,
 		MacroVariableDefs: ctx.VariableDefs,
 		NavigationVisible:              func() bool { return u.MainUi.Navigation.Visible() },
-		ShowErrorWithEscape:            ShowErrorWithEscape,
-		ShowConfirmWithEscape:          ShowConfirmWithEscape,
-		ShowInformationWithEscape:      ShowInformationWithEscape,
-		AddDialogEscapeClose:           AddDialogEscapeClose,
-		AddPopupEscapeClose:            AddPopupEscapeClose,
 		ShowRecordingOverlay:           recording.ShowRecordingOverlay,
 		ShowSearchAreaRecordingOverlay: recording.ShowSearchAreaRecordingOverlay,
 		WrapTagChip:                    WrapTagChip,
@@ -74,7 +70,7 @@ func previewExpression(expr string) (string, error) {
 	if m == nil {
 		return "", nil
 	}
-	return services.PreviewCalculate(expr, m)
+	return macrologic.PreviewCalculate(expr, m)
 }
 
 // SetMacroUi wires macro tab behavior and restores open macros (implementation in ui/macro).
@@ -88,13 +84,9 @@ func SetMacroUi() {
 		MacroVariableDefs:     ctx.VariableDefs,
 		RefreshItemsAccordion: editor.RefreshItemsAccordionItems,
 		ShowHotkeyRecordDialog: func(parent fyne.Window, stableDuration time.Duration, onRecorded func(keys []string)) {
-			recording.ShowHotkeyRecordDialog(parent, stableDuration, AddDialogEscapeClose, onRecorded)
+			recording.ShowHotkeyRecordDialog(parent, stableDuration, dialogs.AddDialogEscapeClose, onRecorded)
 		},
 		ShowKeyRecordDialog: recording.ShowKeyRecordDialog,
-		ShowErrorWithEscape:   ShowErrorWithEscape,
-		AddDialogEscapeClose:  AddDialogEscapeClose,
-		AddPopupEscapeClose:   AddPopupEscapeClose,
-		ShowConfirmWithEscape: ShowConfirmWithEscape,
 		ShowAddActionPicker: func() {
 			u.ShowAddActionPicker()
 		},
