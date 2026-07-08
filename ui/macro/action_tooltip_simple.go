@@ -29,10 +29,17 @@ func parseNumericOrVar(text string) any {
 	return text
 }
 
+// clickStateToggleLabel labels the click state toggle with the actual button
+// state ("up" or "down") instead of a fixed caption, matching the action's
+// serialized String() form.
+func clickStateToggleLabel(down bool) string {
+	return "State: " + actions.UpOrDown(down)
+}
+
 func appendClickTooltipView(a *actions.Click, actionType string) []fyne.CanvasObject {
 	row := newPillRow()
 	row.add(actiondisplay.NewDisplaySelectPill("Button", a.Button, actions.ClickButtonLabel, actionType))
-	row.add(actiondisplay.NewDisplayTogglePill("State down", a.State, actionType))
+	row.add(actiondisplay.NewDisplayTogglePill(clickStateToggleLabel(a.State), a.State, actionType))
 	return []fyne.CanvasObject{wrapTooltipSection(row.box)}
 }
 
@@ -48,7 +55,13 @@ func appendClickTooltipEdit(a *actions.Click, actionType string, owner *actionDi
 			owner.refreshTooltipLayout()
 		}
 	}
-	stateToggle := actiondisplay.NewPillToggle("State down", a.State)
+	stateToggle := actiondisplay.NewPillToggle(clickStateToggleLabel(a.State), a.State)
+	stateToggle.OnChanged = func(down bool) {
+		stateToggle.SetLabel(clickStateToggleLabel(down))
+		if owner != nil {
+			owner.refreshTooltipLayout()
+		}
+	}
 	row.add(actiondisplay.WrapPillSelect(buttonSelect, actionType))
 	row.add(actiondisplay.WrapPillToggle(stateToggle, actionType))
 	return []fyne.CanvasObject{wrapTooltipSection(row.box)}, func() error {
