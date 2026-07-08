@@ -3,6 +3,7 @@ package macro
 import (
 	"testing"
 
+	"Sqyre/internal/models"
 	"Sqyre/internal/models/actions"
 	"Sqyre/ui/custom_widgets"
 
@@ -13,6 +14,7 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/theme"
+	"fyne.io/fyne/v2/widget"
 	"image/color"
 )
 
@@ -88,6 +90,29 @@ func TestActionTooltipPanel_editModeHeaderRow(t *testing.T) {
 		t.Fatal("expected edit header row with type pill and save/cancel buttons")
 	}
 	assertTypePillText(t, row.Objects[0], actions.ActionTypeLabel("wait"))
+}
+
+func TestActionTooltipPanel_enterEditMode_selectsOwningRow(t *testing.T) {
+	t.Helper()
+	t.Cleanup(ResetActionTooltipOwnershipForTesting)
+	wait := actions.NewWait(100)
+	root := actions.NewLoop(1, "root", nil)
+	root.AddSubAction(wait)
+	mt := &MacroTree{Macro: &models.Macro{Root: root}}
+	mt.setTree()
+
+	rowBody := newTreeRowBody(container.NewHScroll(widget.NewLabel("wait")))
+	rowBody.tree = mt
+	rowBody.uid = wait.GetUID()
+
+	hover := newActionDisplayTooltipHover(wait, nil, nil, wait.GetType(), nil, nil)
+	hover.bindRowBody(rowBody)
+	panel := newActionDisplayTooltipPanel(hover)
+	panel.enterEditMode()
+
+	if mt.SelectedNode != wait.GetUID() {
+		t.Fatalf("SelectedNode = %q, want %q", mt.SelectedNode, wait.GetUID())
+	}
 }
 
 func TestActionDisplayTooltipHover_showTooltipPanel_preservesEditMode(t *testing.T) {
@@ -298,6 +323,37 @@ func TestTrackMouseForTooltip_dismissesOutsideActionLimit(t *testing.T) {
 	}
 }
 
+func TestPointerInRowKeepAlive_excludesRemoveButton(t *testing.T) {
+	t.Helper()
+	test.NewApp()
+	w := test.NewWindow(nil)
+	t.Cleanup(w.Close)
+
+	wait := actions.NewWait(100)
+	hover := newActionDisplayTooltipHover(wait, nil, nil, wait.GetType(), nil, nil)
+	row := canvas.NewRectangle(theme.Color(theme.ColorNameBackground))
+	row.Resize(fyne.NewSize(200, 24))
+	removeBtn := widget.NewButton("x", nil)
+	border := container.NewBorder(nil, nil, nil, removeBtn, row)
+	border.Resize(fyne.NewSize(200, 24))
+	w.SetContent(border)
+	w.Resize(fyne.NewSize(220, 40))
+
+	hover.setTooltipKeepAliveArea(border)
+	hover.setTooltipKeepAliveExclude(removeBtn)
+
+	rowOrigin := fyne.CurrentApp().Driver().AbsolutePositionForObject(row)
+	if !hover.pointerInRowKeepAlive(rowOrigin.Add(fyne.NewPos(10, 10))) {
+		t.Fatal("pointer over action body should be inside keep-alive area")
+	}
+
+	removeOrigin := fyne.CurrentApp().Driver().AbsolutePositionForObject(removeBtn)
+	removeSize := removeBtn.Size()
+	if hover.pointerInRowKeepAlive(removeOrigin.Add(fyne.NewPos(removeSize.Width/2, removeSize.Height/2))) {
+		t.Fatal("pointer over remove button should be outside keep-alive area")
+	}
+}
+
 func TestShouldFollowMouse_viewModeFollowsWithinRow(t *testing.T) {
 	t.Helper()
 	t.Cleanup(ResetActionTooltipOwnershipForTesting)
@@ -470,6 +526,23 @@ func TestBuildParamEditPills_AllEditableActionTypes(t *testing.T) {
 	}
 }
 
+func TestCapturePreview_forceRefreshBypassesCache(t *testing.T) {
+	t.Helper()
+	move := actions.NewMove(actions.NewCoordinateRef("prog", "home"), false)
+	loader := func() (custom_widgets.PreviewTooltipResult, error) {
+		return custom_widgets.PreviewTooltipResult{Caption: "fresh"}, nil
+	}
+	hover := newActionDisplayTooltipHover(move, nil, nil, move.GetType(), loader, nil)
+	hover.tooltipPanel = newActionDisplayTooltipPanel(hover)
+	hover.previewCacheReady = true
+	hover.previewCache = custom_widgets.PreviewTooltipResult{Caption: "cached"}
+
+	hover.capturePreview(true, false)
+	if hover.previewCacheReady {
+		t.Fatal("force refresh should clear hover preview cache")
+	}
+}
+
 func TestCapturePreview_usesCacheWithoutRecapture(t *testing.T) {
 	t.Helper()
 	move := actions.NewMove(actions.NewCoordinateRef("prog", "home"), false)
@@ -483,7 +556,7 @@ func TestCapturePreview_usesCacheWithoutRecapture(t *testing.T) {
 	hover.previewCacheReady = true
 	hover.previewCache = custom_widgets.PreviewTooltipResult{Caption: "cached"}
 
-	hover.capturePreview(false)
+	hover.capturePreview(false, true)
 	if calls != 0 {
 		t.Fatalf("expected cached preview, loader called %d times", calls)
 	}
@@ -810,4 +883,88 @@ func TestDismissActiveActionTooltips_clearsViewTooltip(t *testing.T) {
 	if hover.isTooltipMounted() {
 		t.Fatal("expected view tooltip unmounted")
 	}
+}
+
+func TestActionTooltipPanel_editModeShowsCoordPickerForEmptyRef(t *testing.T) {
+	t.Helper()
+	t.Cleanup(ResetActionTooltipOwnershipForTesting)
+
+	cases := []struct {
+		name      string
+		node      actions.ActionInterface
+		wantLabel string
+	}{
+		{
+			name:      "semanticsearch",
+			node:      actions.NewSemanticSearch("s", nil, "button", actions.CoordinateRef("")),
+			wantLabel: "Select search area…",
+		},
+		{
+			name:      "move",
+			node:      actions.NewMove(actions.CoordinateRef(""), false),
+			wantLabel: "Select point…",
+		},
+		{
+			name:      "imagesearch",
+			node:      actions.NewImageSearch("s", nil, nil, actions.CoordinateRef(""), 1, 1, 0.95, 0),
+			wantLabel: "Select search area…",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			hover := newActionDisplayTooltipHover(tc.node, nil, nil, tc.node.GetType(), nil, nil)
+			panel := newActionDisplayTooltipPanel(hover)
+			if panel.withPreview {
+				t.Fatal("expected no preview section before edit mode")
+			}
+			panel.enterEditMode()
+			if !panel.withPreview {
+				t.Fatal("expected preview section in edit mode for coordinate actions")
+			}
+			if panel.editForm == nil || panel.editForm.coordEditActions == nil {
+				t.Fatal("expected coordinate picker controls")
+			}
+			if got := coordPickerButtonText(panel.editForm.coordEditActions); got != tc.wantLabel {
+				t.Fatalf("picker label = %q, want %q", got, tc.wantLabel)
+			}
+			panel.exitEditMode()
+			if panel.withPreview {
+				t.Fatal("expected preview section hidden after edit when ref still empty")
+			}
+		})
+	}
+}
+
+func TestBuildPreviewRefreshRow(t *testing.T) {
+	t.Helper()
+	move := actions.NewMove(actions.NewCoordinateRef("prog", "home"), false)
+	loader := func() (custom_widgets.PreviewTooltipResult, error) {
+		return custom_widgets.PreviewTooltipResult{}, nil
+	}
+	hover := newActionDisplayTooltipHover(move, nil, nil, move.GetType(), loader, nil)
+	if buildPreviewRefreshRow(nil) != nil {
+		t.Fatal("expected nil refresh row without owner")
+	}
+	hover.previewLoader = nil
+	if buildPreviewRefreshRow(hover) != nil {
+		t.Fatal("expected nil refresh row without loader")
+	}
+	hover.previewLoader = loader
+	if buildPreviewRefreshRow(hover) == nil {
+		t.Fatal("expected refresh row when loader is set")
+	}
+}
+
+func coordPickerButtonText(obj fyne.CanvasObject) string {
+	switch v := obj.(type) {
+	case *widget.Button:
+		return v.Text
+	case *fyne.Container:
+		for _, child := range v.Objects {
+			if label := coordPickerButtonText(child); label != "" {
+				return label
+			}
+		}
+	}
+	return ""
 }

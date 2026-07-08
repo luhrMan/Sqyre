@@ -52,6 +52,8 @@ func Icon(action actions.ActionInterface) fyne.Resource {
 		return assets.TextSearchIcon
 	case *actions.ImageSearch:
 		return assets.ImageSearchIcon
+	case *actions.SemanticSearch:
+		return assets.TextSearchIcon
 	case *actions.FindPixel:
 		return theme.ColorChromaticIcon()
 	default:

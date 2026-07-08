@@ -8,6 +8,7 @@ import (
 
 	"Sqyre/internal/config"
 	"Sqyre/internal/models/actions"
+	"Sqyre/internal/vision"
 	"Sqyre/ui/actiondisplay"
 	"Sqyre/ui/custom_widgets"
 	"Sqyre/ui/desktopview"
@@ -130,7 +131,8 @@ type actionDisplayTooltipHover struct {
 	actionType    string
 	previewLoader custom_widgets.PreviewTooltipLoad
 	rowBody       *treeRowBody
-	keepAliveArea fyne.CanvasObject
+	keepAliveArea    fyne.CanvasObject
+	keepAliveExclude fyne.CanvasObject
 
 	tooltipPanel     *actionDisplayTooltipPanel
 	dismissBackdrop  *custom_widgets.TooltipDismissBackdrop
@@ -195,8 +197,19 @@ func (h *actionDisplayTooltipHover) bindRowBody(body *treeRowBody) {
 	h.rowBody = body
 }
 
+func (h *actionDisplayTooltipHover) selectOwningRow() {
+	if h == nil || h.rowBody == nil || h.rowBody.tree == nil || h.rowBody.uid == "" {
+		return
+	}
+	h.rowBody.tree.Select(h.rowBody.uid)
+}
+
 func (h *actionDisplayTooltipHover) setTooltipKeepAliveArea(obj fyne.CanvasObject) {
 	h.keepAliveArea = obj
+}
+
+func (h *actionDisplayTooltipHover) setTooltipKeepAliveExclude(obj fyne.CanvasObject) {
+	h.keepAliveExclude = obj
 }
 
 func (h *actionDisplayTooltipHover) Tapped(pe *fyne.PointEvent) {
@@ -316,6 +329,9 @@ func (h *actionDisplayTooltipHover) pointerInTooltipPanel(pos fyne.Position) boo
 }
 
 func (h *actionDisplayTooltipHover) pointerInRowKeepAlive(pos fyne.Position) bool {
+	if h.pointerInKeepAliveExclude(pos) {
+		return false
+	}
 	if !h.keepAliveGeometryOK {
 		h.refreshKeepAliveGeometry()
 	}
@@ -325,6 +341,16 @@ func (h *actionDisplayTooltipHover) pointerInRowKeepAlive(pos fyne.Position) boo
 		}
 	}
 	return pointInCachedRect(pos, h.cachedSelfOrigin, h.cachedSelfSize)
+}
+
+func (h *actionDisplayTooltipHover) pointerInKeepAliveExclude(pos fyne.Position) bool {
+	if h.keepAliveExclude == nil || !h.keepAliveExclude.Visible() {
+		return false
+	}
+	driver := fyne.CurrentApp().Driver()
+	origin := driver.AbsolutePositionForObject(h.keepAliveExclude)
+	size := h.keepAliveExclude.Size()
+	return pointInCachedRect(pos, origin, size)
 }
 
 func (h *actionDisplayTooltipHover) hoverCanvas() fyne.Canvas {
@@ -814,10 +840,10 @@ func (h *actionDisplayTooltipHover) beginPreviewCapture() {
 }
 
 func (h *actionDisplayTooltipHover) startPreviewCapture() {
-	h.capturePreview(false)
+	h.capturePreview(false, true)
 }
 
-func (h *actionDisplayTooltipHover) capturePreview(force bool) {
+func (h *actionDisplayTooltipHover) capturePreview(force, reposition bool) {
 	if h.previewLoader == nil || h.tooltipPanel == nil {
 		return
 	}
@@ -827,11 +853,14 @@ func (h *actionDisplayTooltipHover) capturePreview(force bool) {
 		}
 		if h.previewCacheReady {
 			h.applyPreviewCache(h.tooltipPanel)
-			h.repositionTooltip()
+			if reposition {
+				h.repositionTooltip()
+			}
 			return
 		}
 	} else {
 		h.clearPreviewCache()
+		h.invalidatePreviewVisionCache()
 	}
 
 	panel := h.tooltipPanel
@@ -843,7 +872,9 @@ func (h *actionDisplayTooltipHover) capturePreview(force bool) {
 	h.cancelCapture()
 	panel.setPreviewLoading()
 	panel.Refresh()
-	h.repositionTooltip()
+	if reposition {
+		h.repositionTooltip()
+	}
 
 	load := h.previewLoader
 	ctx, cancel := context.WithCancel(context.Background())
@@ -879,7 +910,9 @@ func (h *actionDisplayTooltipHover) capturePreview(force bool) {
 				panel.setPreviewImage(result.Image, result.Caption)
 			}
 			panel.Refresh()
-			h.repositionTooltip()
+			if reposition {
+				h.repositionTooltip()
+			}
 		})
 	}()
 }
@@ -888,7 +921,29 @@ func (h *actionDisplayTooltipHover) reloadPreview() {
 	if h.previewLoader == nil || h.tooltipPanel == nil {
 		return
 	}
-	h.capturePreview(true)
+	h.capturePreview(true, false)
+}
+
+func (h *actionDisplayTooltipHover) invalidatePreviewVisionCache() {
+	if h.tooltipPanel != nil && h.tooltipPanel.editing && h.tooltipPanel.editForm != nil {
+		if ref := h.tooltipPanel.editForm.stagedCoordRef; !ref.IsEmpty() {
+			vision.InvalidatePreviewTooltipCacheEntity(ref.Name())
+			return
+		}
+	}
+	if ref, ok := coordinateRefForPreview(h.node); ok && !ref.IsEmpty() {
+		vision.InvalidatePreviewTooltipCacheEntity(ref.Name())
+	}
+}
+
+func buildPreviewRefreshRow(owner *actionDisplayTooltipHover) fyne.CanvasObject {
+	if owner == nil || owner.previewLoader == nil {
+		return nil
+	}
+	refreshBtn := actiondisplay.NewPillIconButton(theme.ViewRefreshIcon(), func() {
+		owner.reloadPreview()
+	})
+	return container.NewHBox(layout.NewSpacer(), actiondisplay.PillChrome(refreshBtn, owner.actionType))
 }
 
 func (h *actionDisplayTooltipHover) exitEditMode() {
@@ -1070,11 +1125,18 @@ func (p *actionDisplayTooltipPanel) enterEditMode() {
 		return
 	}
 	p.owner.cancelPending()
+	p.owner.selectOwningRow()
 	p.editing = true
 	claimActionEditTooltip(p.owner)
 	p.editForm = buildTooltipEditForm(p.owner.node, p.actionType, p.owner)
+	if actionHasCoordinatePicker(p.owner.node) {
+		p.withPreview = true
+	}
 	p.activateEnterSave()
 	p.rebuildBody()
+	if p.withPreview && p.owner.previewLoader == nil {
+		p.setPreviewEmpty()
+	}
 	p.Refresh()
 	p.owner.relayoutTooltip()
 }
@@ -1088,6 +1150,11 @@ func (p *actionDisplayTooltipPanel) exitEditMode() {
 	p.editing = false
 	if p.owner != nil {
 		releaseActionEditTooltip(p.owner)
+		if p.owner.previewLoader != nil {
+			p.withPreview = true
+		} else {
+			p.withPreview = false
+		}
 	}
 	p.editForm = nil
 	p.refreshViewContent(p.owner)
@@ -1185,6 +1252,9 @@ func (p *actionDisplayTooltipPanel) rebuildBody() {
 			container.NewMax(p.img),
 			container.NewPadded(p.message),
 		)
+		if refreshRow := buildPreviewRefreshRow(p.owner); refreshRow != nil {
+			imageStack = container.NewBorder(refreshRow, nil, nil, nil, imageStack)
+		}
 		previewSection := container.NewVBox(imageStack)
 		if p.caption != nil {
 			previewSection.Add(p.caption)
@@ -1304,6 +1374,21 @@ func (p *actionDisplayTooltipPanel) setPreviewLoading() {
 	}
 	if p.message != nil {
 		p.message.SetText("Loading preview…")
+	}
+	if p.caption != nil {
+		p.caption.SetText("")
+		p.caption.Hide()
+	}
+}
+
+func (p *actionDisplayTooltipPanel) setPreviewEmpty() {
+	p.loading = false
+	p.showImage = false
+	if p.img != nil {
+		p.img.Image = nil
+	}
+	if p.message != nil {
+		p.message.SetText("")
 	}
 	if p.caption != nil {
 		p.caption.SetText("")
@@ -1470,7 +1555,8 @@ func (h *actionIconTooltipHover) TappedSecondary(*fyne.PointEvent) {
 	}
 }
 
-// actionRowTooltipHover is an invisible overlay across the full macro tree action row.
+// actionRowTooltipHover is an invisible overlay on the macro tree action body.
+// It deliberately does not cover the row remove button so delete taps stay reachable.
 type actionRowTooltipHover struct {
 	fynewidget.BaseWidget
 

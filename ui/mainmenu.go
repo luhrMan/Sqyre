@@ -62,6 +62,9 @@ func buildActionTemplates() []actionTemplate {
 		{label: "Find pixel", actionType: "findpixel", category: "Detection", icon: actiondisplay.Icon(actions.NewFindPixel("", "", "ffffff", 0)), create: func() actions.ActionInterface {
 			return actions.NewFindPixel("", "", "ffffff", 0)
 		}},
+		{label: "Semantic Search", actionType: "semanticsearch", category: "Detection", icon: actiondisplay.Icon(actions.NewSemanticSearch("", nil, "healing potions", "")), create: func() actions.ActionInterface {
+			return actions.NewSemanticSearch("", []actions.ActionInterface{}, "healing potions", "")
+		}},
 
 		{label: "Set", actionType: "setvariable", category: "Variables", icon: actiondisplay.Icon(actions.NewSetVariable("", "")), create: func() actions.ActionInterface { return actions.NewSetVariable("", "") }},
 		{label: "Calculate", actionType: "calculate", category: "Variables", icon: actiondisplay.Icon(actions.NewCalculate("", "")), create: func() actions.ActionInterface { return actions.NewCalculate("", "") }},

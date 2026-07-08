@@ -132,6 +132,18 @@ func copyActionFromSnapshot(dst, src actions.ActionInterface) {
 		d.SearchArea = s.SearchArea
 		d.WaitTilFoundConfig = s.WaitTilFoundConfig
 		d.CoordinateOutputs = s.CoordinateOutputs
+	case *actions.SemanticSearch:
+		s := src.(*actions.SemanticSearch)
+		d.Name = s.Name
+		d.Prompt = s.Prompt
+		d.SearchArea = s.SearchArea
+		d.ConfidenceThreshold = s.ConfidenceThreshold
+		d.IoUThreshold = s.IoUThreshold
+		d.MaxMatches = s.MaxMatches
+		d.OutputLabelVariable = s.OutputLabelVariable
+		d.WaitTilFoundConfig = s.WaitTilFoundConfig
+		d.CoordinateOutputs = s.CoordinateOutputs
+		d.RunBranchOnNoFind = s.RunBranchOnNoFind
 	case *actions.Type:
 		s := src.(*actions.Type)
 		d.Text = s.Text

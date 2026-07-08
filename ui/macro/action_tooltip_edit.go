@@ -135,14 +135,19 @@ func buildCoordEditActions(node actions.ActionInterface, owner *actionDisplayToo
 		}
 		resumeBackdrop := owner.suspendBackdropDismissForPicker(nil)
 		pick(form.stagedCoordRef, func(ref actions.CoordinateRef) {
-			if ref == form.stagedCoordRef {
-				return
+			changed := ref != form.stagedCoordRef
+			if changed {
+				form.stagedCoordRef = ref
+				btn.SetText(coordPickerButtonLabel(ref, isPoint))
+				owner.previewLoader = previewLoaderForRef(node, ref)
 			}
-			form.stagedCoordRef = ref
-			btn.SetText(coordPickerButtonLabel(ref, isPoint))
-			owner.previewLoader = previewLoaderForRef(node, ref)
+			if owner.tooltipPanel != nil {
+				owner.tooltipPanel.rebuildBody()
+			}
 			owner.reloadPreview()
-			owner.relayoutTooltip()
+			if changed {
+				owner.relayoutTooltip()
+			}
 		}, resumeBackdrop)
 	}
 	return container.NewCenter(btn)
@@ -441,6 +446,57 @@ func buildParamEditPills(node actions.ActionInterface, actionType string, owner 
 			return nil
 		})
 
+	case *actions.SemanticSearch:
+		general := newPillRow()
+		nameEntry := addNamePill(general, a.Name, actionType)
+		promptEntry := coordEntry(a.Prompt)
+		general.add(actiondisplay.NewEditablePill("Prompt", promptEntry, actionType))
+		sections = append(sections, wrapTooltipSection(general.box))
+
+		match := newPillRow()
+		confMin, confMax := 0.0, 1.0
+		confInc := actiondisplay.NewPillFloatStepper("Confidence", float64(a.ConfidenceThreshold), 0.05, &confMin, &confMax, 2, actionType)
+		if a.ConfidenceThreshold <= 0 {
+			confInc.Value = 0.25
+		}
+		maxMin, maxMax := 0, 100
+		maxInc := actiondisplay.NewPillIntStepper("Max matches", a.MaxMatches, 1, &maxMin, &maxMax, actionType)
+		match.add(actiondisplay.WrapPillStepper(confInc, actionType))
+		match.add(actiondisplay.WrapPillStepper(maxInc, actionType))
+		sections = append(sections, wrapTooltipSection(match.box))
+
+		wait := newPillRow()
+		applyWait := appendWaitTilFoundPills(wait, &a.WaitTilFoundConfig, 500, actionType)
+		sections = append(sections, wrapTooltipSection(wait.box))
+
+		behavior := newPillRow()
+		runOnNoFind := actiondisplay.NewPillToggle("Run on no find", a.RunBranchOnNoFind)
+		behavior.add(actiondisplay.WrapPillToggle(runOnNoFind, actionType))
+		sections = append(sections, wrapTooltipSection(behavior.box))
+
+		outputs := newPillRow()
+		outLabelEntry := coordEntry(a.OutputLabelVariable)
+		outXEntry := coordEntry(a.OutputXVariable)
+		outYEntry := coordEntry(a.OutputYVariable)
+		outputs.add(actiondisplay.NewEditablePill("Label out", outLabelEntry, actionType))
+		outputs.add(actiondisplay.NewEditablePill("Output X", outXEntry, actionType))
+		outputs.add(actiondisplay.NewEditablePill("Output Y", outYEntry, actionType))
+		sections = append(sections, wrapTooltipSection(outputs.box))
+
+		added = true
+		applyParts = append(applyParts, func() error {
+			a.Name = strings.TrimSpace(nameEntry.Text)
+			a.Prompt = strings.TrimSpace(promptEntry.Text)
+			a.ConfidenceThreshold = float32(confInc.Value)
+			a.MaxMatches = maxInc.Value
+			applyWait()
+			a.RunBranchOnNoFind = runOnNoFind.Value
+			a.OutputLabelVariable = strings.TrimSpace(outLabelEntry.Text)
+			a.OutputXVariable = strings.TrimSpace(outXEntry.Text)
+			a.OutputYVariable = strings.TrimSpace(outYEntry.Text)
+			return nil
+		})
+
 	case *actions.Type:
 		row := newPillRow()
 		textEntry := coordEntry(a.Text)
@@ -666,6 +722,28 @@ func viewParamPills(node actions.ActionInterface, actionType string) fyne.Canvas
 		wait := newPillRow()
 		appendWaitTilFoundViewPills(wait, &a.WaitTilFoundConfig, actionType)
 		sections = append(sections, wrapTooltipSection(wait.box))
+		added = true
+
+	case *actions.SemanticSearch:
+		general := newPillRow()
+		addDisplayPill(general, "Name", a.Name, actionType)
+		addDisplayPill(general, "Prompt", a.Prompt, actionType)
+		sections = append(sections, wrapTooltipSection(general.box))
+
+		match := newPillRow()
+		match.add(actiondisplay.NewDisplayPill("Confidence: "+actions.FormatParamValue(a.ConfidenceThreshold), actionType))
+		if a.MaxMatches > 0 {
+			match.add(actiondisplay.NewDisplayPill("Max matches: "+actions.FormatParamValue(a.MaxMatches), actionType))
+		}
+		sections = append(sections, wrapTooltipSection(match.box))
+
+		wait := newPillRow()
+		appendWaitTilFoundViewPills(wait, &a.WaitTilFoundConfig, actionType)
+		sections = append(sections, wrapTooltipSection(wait.box))
+
+		behavior := newPillRow()
+		behavior.add(actiondisplay.NewDisplayTogglePill("Run on no find", a.RunBranchOnNoFind, actionType))
+		sections = append(sections, wrapTooltipSection(behavior.box))
 		added = true
 
 	case *actions.Type:

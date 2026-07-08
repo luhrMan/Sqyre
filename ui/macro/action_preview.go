@@ -24,6 +24,8 @@ func coordinateRefForPreview(node actions.ActionInterface) (actions.CoordinateRe
 		return a.SearchArea, true
 	case *actions.FindPixel:
 		return a.SearchArea, true
+	case *actions.SemanticSearch:
+		return a.SearchArea, true
 	default:
 		return "", false
 	}
@@ -39,7 +41,7 @@ func previewLoaderForRef(node actions.ActionInterface, ref actions.CoordinateRef
 			img, caption, err := vision.PointPreviewTooltipForRef(ref)
 			return custom_widgets.PreviewTooltipResult{Image: img, Caption: caption}, err
 		}
-	case *actions.ImageSearch, *actions.Ocr, *actions.FindPixel:
+	case *actions.ImageSearch, *actions.Ocr, *actions.FindPixel, *actions.SemanticSearch:
 		return func() (custom_widgets.PreviewTooltipResult, error) {
 			img, caption, err := vision.SearchAreaPreviewTooltipForRef(ref)
 			return custom_widgets.PreviewTooltipResult{Image: img, Caption: caption}, err

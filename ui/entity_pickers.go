@@ -433,9 +433,7 @@ func ShowPointPicker(parent fyne.Window, initial actions.CoordinateRef, onSelect
 	searchbar, list := buildPointsListWithSearchbar(func(ref actions.CoordinateRef) { staged = ref }, initial)
 	body := container.NewBorder(searchbar, nil, nil, nil, list)
 	showEntityPickerModal(parent, "Select Point", body, func() {
-		if staged != initial {
-			onSelect(staged)
-		}
+		onSelect(staged)
 	}, onClosed)
 }
 
@@ -448,9 +446,7 @@ func ShowSearchAreaPicker(parent fyne.Window, initial actions.CoordinateRef, onS
 	searchbar, acc := buildSearchAreasAccordionWithSearchbar(func(ref actions.CoordinateRef) { staged = ref }, initial)
 	body := container.NewBorder(searchbar, nil, nil, nil, acc)
 	showEntityPickerModal(parent, "Select Search Area", body, func() {
-		if staged != initial {
-			onSelect(staged)
-		}
+		onSelect(staged)
 	}, onClosed)
 }
 

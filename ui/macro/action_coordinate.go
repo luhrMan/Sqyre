@@ -17,6 +17,8 @@ func actionCoordinateBinding(node actions.ActionInterface) (coordinateRefBinding
 		return coordinateRefBinding{ref: a.SearchArea, set: func(r actions.CoordinateRef) { a.SearchArea = r }}, true
 	case *actions.Ocr:
 		return coordinateRefBinding{ref: a.SearchArea, set: func(r actions.CoordinateRef) { a.SearchArea = r }}, true
+	case *actions.SemanticSearch:
+		return coordinateRefBinding{ref: a.SearchArea, set: func(r actions.CoordinateRef) { a.SearchArea = r }}, true
 	case *actions.FindPixel:
 		return coordinateRefBinding{ref: a.SearchArea, set: func(r actions.CoordinateRef) { a.SearchArea = r }}, true
 	default:
@@ -26,5 +28,10 @@ func actionCoordinateBinding(node actions.ActionInterface) (coordinateRefBinding
 
 func actionUsesPointPicker(node actions.ActionInterface) bool {
 	_, ok := node.(*actions.Move)
+	return ok
+}
+
+func actionHasCoordinatePicker(node actions.ActionInterface) bool {
+	_, ok := actionCoordinateBinding(node)
 	return ok
 }

@@ -129,7 +129,9 @@ func (mt *MacroTree) setTree() {
 		rowBody := newTreeRowBody(contentScroll)
 		rowBody.tree = mt
 		removeBtn := &widget.Button{Icon: theme.CancelIcon(), Importance: widget.LowImportance}
-		border := container.NewBorder(nil, nil, leftSide, removeBtn, rowBody)
+		rowTip := newActionRowTooltipHover()
+		rowBodyStack := container.NewStack(rowBody, rowTip)
+		border := container.NewBorder(nil, nil, leftSide, removeBtn, rowBodyStack)
 
 		hlSimple := canvas.NewRectangle(highlightSimpleColor)
 		hlSimple.CornerRadius = 6
@@ -141,14 +143,12 @@ func (mt *MacroTree) setTree() {
 
 		// Highlight overlay is drawn on top of the row. canvas.Rectangle is not
 		// tappable, so taps still reach the icon/remove buttons beneath it.
-		rowTip := newActionRowTooltipHover()
-		return container.NewStack(border, hlBg, rowTip)
+		return container.NewStack(border, hlBg)
 	}
 	mt.UpdateNode = func(uid string, branch bool, obj fyne.CanvasObject) {
 		stack := obj.(*fyne.Container)
 		c := stack.Objects[0].(*fyne.Container)
 		hlBg := stack.Objects[1].(*fyne.Container)
-		rowTip := stack.Objects[2].(*actionRowTooltipHover)
 		if mt.consumeHighlightRefresh(uid) && mt.nodeObjectShowsUID(obj, uid) {
 			mt.registerHighlightOverlay(uid, stack, hlBg)
 			mt.applyHighlightOverlay(uid, hlBg)
@@ -169,7 +169,9 @@ func (mt *MacroTree) setTree() {
 		actionIconBtn := iconStack.Objects[1].(*ttwidget.Button)
 		iconTip := iconStack.Objects[2].(*actionIconTooltipHover)
 		removeButton := c.Objects[2].(*widget.Button)
-		rowBody := c.Objects[0].(*treeRowBody)
+		rowBodyStack := c.Objects[0].(*fyne.Container)
+		rowBody := rowBodyStack.Objects[0].(*treeRowBody)
+		rowTip := rowBodyStack.Objects[1].(*actionRowTooltipHover)
 		rowBody.tree = mt
 		rowBody.uid = uid
 		contentScroll := rowBody.scroll
@@ -189,6 +191,7 @@ func (mt *MacroTree) setTree() {
 		if hover, ok := rowContent.display.(*actionDisplayTooltipHover); ok {
 			hover.bindRowBody(rowBody)
 			hover.setTooltipKeepAliveArea(c)
+			hover.setTooltipKeepAliveExclude(removeButton)
 			rowTip.bindActionTooltip(hover)
 			iconTip.bindActionTooltip(hover)
 			itemIconsTip.bindActionTooltip(hover)

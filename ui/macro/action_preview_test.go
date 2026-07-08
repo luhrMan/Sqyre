@@ -26,6 +26,9 @@ func TestActionPreviewLoader(t *testing.T) {
 	if actionPreviewLoader(actions.NewFindPixel("f", actions.NewCoordinateRef("prog", "box"), "ffffff", 0)) == nil {
 		t.Fatal("find pixel with search area should have preview loader")
 	}
+	if actionPreviewLoader(actions.NewSemanticSearch("s", nil, "button", actions.NewCoordinateRef("prog", "box"))) == nil {
+		t.Fatal("semantic search with search area should have preview loader")
+	}
 }
 
 func TestActionDisplayUsesCombinedTooltipWhenPreviewAndExtraParams(t *testing.T) {
