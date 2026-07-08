@@ -54,6 +54,26 @@ func TestViewParamPills_AllActionTypes(t *testing.T) {
 	}
 }
 
+func TestColorSwatchPill(t *testing.T) {
+	t.Helper()
+	if colorSwatchPill("ff8800", "findpixel") == nil {
+		t.Fatal("expected swatch pill for valid hex")
+	}
+	if colorSwatchPill("aaff8800", "findpixel") == nil {
+		t.Fatal("expected swatch pill for 8-char hex")
+	}
+	if colorSwatchPill("${color}", "findpixel") != nil {
+		t.Fatal("variable reference should not render a swatch")
+	}
+	if colorSwatchPill("nothex", "findpixel") != nil {
+		t.Fatal("malformed hex should not render a swatch")
+	}
+	c, ok := parseHexColor("#ff8800")
+	if !ok || c.R != 0xff || c.G != 0x88 || c.B != 0x00 || c.A != 0xff {
+		t.Fatalf("parseHexColor = %+v ok=%v, want ff8800 opaque", c, ok)
+	}
+}
+
 func TestActionTooltipPanel_viewModeTypeHeaderCentered(t *testing.T) {
 	t.Helper()
 	wait := actions.NewWait(100)

@@ -183,7 +183,7 @@ func conditionalClauseViewPill(clauseNum int, shortIfLabel bool, c actions.Condi
 	}
 	row := newPillRow()
 	addDisplayPill(row, clauseLabel, formatAnyValue(c.Left), actionType)
-	row.add(actiondisplay.NewDisplayDropdownPill("op", op, nil, actionType))
+	row.add(actiondisplay.NewDisplayPill(op, actionType))
 	if !actions.OperatorIsUnary(op) {
 		if right := strings.TrimSpace(formatAnyValue(c.Right)); right != "" {
 			row.add(actiondisplay.NewDisplayValuePill(right, actionType, macroKnownVariables()))
@@ -276,14 +276,16 @@ func appendConditionalTooltipEdit(a *actions.Conditional, actionType string, own
 			clause.add(actiondisplay.NewEditablePill(label, clauseEditors[idx].left, actionType))
 			clause.add(actiondisplay.WrapPillDropdown(clauseEditors[idx].operator, actionType))
 			clause.add(actiondisplay.PillChrome(clauseEditors[idx].right, actionType))
+			var clauseContent fyne.CanvasObject = clause.box
 			if len(clauseEditors) > 1 {
 				removeIdx := idx
-				clause.add(actiondisplay.PillChrome(actiondisplay.NewPillIconButton(theme.CancelIcon(), func() {
+				removeBtn := actiondisplay.PillChrome(actiondisplay.NewPillIconButton(theme.CancelIcon(), func() {
 					clauseEditors = append(clauseEditors[:removeIdx], clauseEditors[removeIdx+1:]...)
 					rebuildClauses()
-				}), actionType))
+				}), actionType)
+				clauseContent = container.NewBorder(nil, nil, nil, removeBtn, clause.box)
 			}
-			clausesBox.Add(wrapTooltipSection(clause.box))
+			clausesBox.Add(wrapTooltipSection(clauseContent))
 		}
 		addBtn := widget.NewButton("Add clause", func() {
 			opSelect := actiondisplay.NewPillDropdown("op", actions.ConditionalOperators, actions.OpEquals, nil)

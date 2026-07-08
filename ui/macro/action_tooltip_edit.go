@@ -670,6 +670,9 @@ func viewParamPills(node actions.ActionInterface, actionType string) fyne.Canvas
 
 		search := newPillRow()
 		addDisplayPill(search, "Color", a.TargetColor, actionType)
+		if swatch := colorSwatchPill(a.TargetColor, actionType); swatch != nil {
+			search.add(swatch)
+		}
 		search.add(actiondisplay.NewDisplayPill("Tolerance: "+actions.FormatParamValue(a.ColorTolerance), actionType))
 		sections = append(sections, wrapTooltipSection(search.box))
 
