@@ -37,6 +37,21 @@ func parseHexColor(hex string) (color.NRGBA, bool) {
 	return color.NRGBA{R: uint8(r), G: uint8(g), B: uint8(b), A: 0xff}, true
 }
 
+func newColorSwatchRect() *canvas.Rectangle {
+	swatch := canvas.NewRectangle(color.Transparent)
+	swatch.StrokeColor = theme.Color(theme.ColorNameSeparator)
+	swatch.StrokeWidth = 1
+	swatch.CornerRadius = 2
+	size := actiondisplay.PillLineHeight()
+	swatch.SetMinSize(fyne.NewSize(size, size))
+	return swatch
+}
+
+func wrapSwatch(swatch *canvas.Rectangle, actionType string) fyne.CanvasObject {
+	size := actiondisplay.PillLineHeight()
+	return actiondisplay.PillChrome(container.NewGridWrap(fyne.NewSize(size, size), swatch), actionType)
+}
+
 // colorSwatchPill renders a small filled square showing the given hex color,
 // wrapped in the standard pill chrome. Returns nil when hex is not a valid
 // color (e.g. a variable reference), so callers can skip it.
@@ -45,13 +60,31 @@ func colorSwatchPill(hex, actionType string) fyne.CanvasObject {
 	if !ok {
 		return nil
 	}
-	swatch := canvas.NewRectangle(c)
-	swatch.StrokeColor = theme.Color(theme.ColorNameSeparator)
-	swatch.StrokeWidth = 1
-	swatch.CornerRadius = 2
-	size := actiondisplay.PillLineHeight()
-	swatch.SetMinSize(fyne.NewSize(size, size))
-	return actiondisplay.PillChrome(container.NewGridWrap(fyne.NewSize(size, size), swatch), actionType)
+	swatch := newColorSwatchRect()
+	swatch.FillColor = c
+	return wrapSwatch(swatch, actionType)
+}
+
+// editableColorSwatchPill returns a swatch pill plus an update func that recolors
+// it from a hex string live while editing. The pill hides itself when the value
+// is not a valid color (e.g. a variable reference).
+func editableColorSwatchPill(hex, actionType string) (fyne.CanvasObject, func(hex string)) {
+	swatch := newColorSwatchRect()
+	pill := wrapSwatch(swatch, actionType)
+	update := func(h string) {
+		c, ok := parseHexColor(h)
+		if !ok {
+			pill.Hide()
+			return
+		}
+		pill.Show()
+		if swatch.FillColor != c {
+			swatch.FillColor = c
+			swatch.Refresh()
+		}
+	}
+	update(hex)
+	return pill, update
 }
 
 func addDisplayPill(row *pillRow, label, value, actionType string) {
