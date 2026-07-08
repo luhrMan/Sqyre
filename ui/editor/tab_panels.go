@@ -29,15 +29,19 @@ func newEditorPreviewImage() *canvas.Image {
 }
 
 func newEditorPreviewRefreshButton() *widget.Button {
-	btn := widget.NewButtonWithIcon("Refresh preview", theme.ViewRefreshIcon(), nil)
+	btn := widget.NewButtonWithIcon("", theme.ViewRefreshIcon(), nil)
 	btn.Importance = widget.LowImportance
 	return btn
 }
 
 func buildPreviewColumn(panel *editorPreviewPanel, refreshBtn *widget.Button) fyne.CanvasObject {
-	return container.NewVBox(
-		panel.container,
+	if refreshBtn == nil {
+		return panel.container
+	}
+	return container.NewBorder(
 		container.NewHBox(layout.NewSpacer(), refreshBtn),
+		nil, nil, nil,
+		panel.container,
 	)
 }
 
