@@ -21,6 +21,7 @@ func init() {
 	registerActionRunner("imagesearch", executeImageSearch)
 	registerActionRunner("ocr", executeOcr)
 	registerActionRunner("findpixel", executeFindPixel)
+	registerActionRunner("semanticsearch", executeSemanticSearch)
 }
 
 func executeImageSearch(a actions.ActionInterface, macro *models.Macro) error {

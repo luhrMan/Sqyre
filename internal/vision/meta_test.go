@@ -10,6 +10,8 @@ func TestSanitizeMetaPurpose(t *testing.T) {
 		{"searcharea", "searcharea"},
 		{"cmask-Health Potion-v1", "cmask-Health-Potion-v1"},
 		{"program~item~variant", "program-item-variant"},
+		{"semantic-searcharea", "semantic-searcharea"},
+		{"semantic-detections", "semantic-detections"},
 		{"///", ""},
 	}
 	for _, tt := range tests {

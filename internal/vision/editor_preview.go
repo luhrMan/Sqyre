@@ -223,6 +223,12 @@ func captureRegionWithOverlayMaxDim(captureBounds image.Rectangle, maxDim int, d
 	return out, nil
 }
 
+// CaptureSearchAreaPreviewWithOverlay captures a tooltip-sized search-area preview with a custom overlay.
+func CaptureSearchAreaPreviewWithOverlay(lx, ty, rx, by int, drawOverlay func(*gocv.Mat, image.Rectangle)) (image.Image, error) {
+	captureBounds := previewCaptureBoundsForSearchArea(lx, ty, rx, by)
+	return captureRegionWithOverlayForTooltip(captureBounds, drawOverlay)
+}
+
 // CaptureSearchAreaPreviewTooltip captures a downscaled search-area preview for hover tooltips.
 func CaptureSearchAreaPreviewTooltip(lx, ty, rx, by int) (image.Image, error) {
 	captureBounds := previewCaptureBoundsForSearchArea(lx, ty, rx, by)

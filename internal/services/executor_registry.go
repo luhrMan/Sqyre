@@ -3,6 +3,7 @@ package services
 import (
 	"Sqyre/internal/models"
 	"Sqyre/internal/models/actions"
+	"log"
 )
 
 type actionRunner func(a actions.ActionInterface, macro *models.Macro) error
@@ -25,5 +26,6 @@ func executeAction(a actions.ActionInterface, macro *models.Macro) error {
 	if fn, ok := actionRunners[a.GetType()]; ok {
 		return fn(a, macro)
 	}
+	log.Printf("Unknown action type %q (skipped)", a.GetType())
 	return nil
 }

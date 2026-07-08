@@ -7,6 +7,7 @@ import (
 
 var (
 	WarmUpOCR                   = vision.WarmUpOCR
+	WarmUpDetector              = vision.WarmUpDetector
 	LogMatProfile               = vision.LogMatProfile
 	GetTessClient               = vision.GetTessClient
 	CloseTessClient             = vision.CloseTessClient
@@ -20,4 +21,8 @@ type PreprocessOptions = vision.PreprocessOptions
 
 func macroUsesOCR(m *models.Macro) bool {
 	return vision.MacroUsesOCR(m)
+}
+
+func macroUsesSemantic(m *models.Macro) bool {
+	return vision.MacroUsesSemantic(m)
 }

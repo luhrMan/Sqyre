@@ -72,6 +72,9 @@ func ExecuteMacroWithLogging(m *models.Macro) {
 	if macroUsesOCR(m) {
 		WarmUpOCR()
 	}
+	if macroUsesSemantic(m) {
+		WarmUpDetector()
+	}
 	if err := Execute(m.Root, m); err != nil {
 		if actions.IsStopped(err) {
 			log.Printf("Macro %q: stopped by user", m.Name)
