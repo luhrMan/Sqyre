@@ -153,6 +153,8 @@ github.com/vcaesar/screenshot v0.11.1 h1:GgPuN89XC4Yh38dLx4quPlSo3YiWWhwIria/j3L
 github.com/vcaesar/screenshot v0.11.1/go.mod h1:gJNwHBiP1v1v7i8TQ4yV1XJtcyn2I/OJL7OziVQkwjs=
 github.com/vcaesar/tt v0.30.0 h1:rjhUUL6q0+dWBNw6Qi9dTfY4vxQVgPGRLdH7jeKW1A4=
 github.com/vcaesar/tt v0.30.0/go.mod h1:cH2+AwGAJm19Wa6xvEa+0r+sXDJBT0QgNQey6mwqLeU=
+github.com/yalue/onnxruntime_go v1.31.0 h1:1ln4YW1SFOFfGJZXe3jNOb2JUSt+l2pEneZfV8HdtFA=
+github.com/yalue/onnxruntime_go v1.31.0/go.mod h1:b4X26A8pekNb1ACJ58wAXgNKeUCGEAQ9dmACut9Sm/4=
 github.com/yuin/goldmark v1.4.13/go.mod h1:6yULJ656Px+3vBD8DxQVa3kxgyrAnzto9xy5taEt/CY=
 github.com/yuin/goldmark v1.8.2 h1:kEGpgqJXdgbkhcOgBxkC0X0PmoPG1ZyoZ117rDVp4zE=
 github.com/yuin/goldmark v1.8.2/go.mod h1:ip/1k0VRfGynBgxOz0yCqHrbZXhcjxyuS66Brc7iBKg=

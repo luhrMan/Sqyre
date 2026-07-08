@@ -18,6 +18,7 @@ require (
 	github.com/robotn/xgbutil v0.10.0
 	github.com/spf13/viper v1.21.0
 	github.com/vcaesar/screenshot v0.11.1
+	github.com/yalue/onnxruntime_go v1.31.0
 	gocv.io/x/gocv v0.43.0
 	gopkg.in/yaml.v3 v3.0.1
 )
