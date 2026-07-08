@@ -75,6 +75,7 @@ func (t *EditorTab) SearchDebouncer() *custom_widgets.Debouncer {
 
 func NewEditorTab(name string, left, right fyne.CanvasObject) *container.TabItem {
 	split := container.NewHSplit(left, right)
+	split.SetOffset(0.25)
 	return container.NewTabItem(name, split)
 }
 
