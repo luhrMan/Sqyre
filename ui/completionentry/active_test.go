@@ -19,13 +19,13 @@ func TestIsCompletionActive_tracksShowHide(t *testing.T) {
 	}
 }
 
-func TestIsActionDialogEnterSuppressed(t *testing.T) {
-	suppressActionDialogEnter()
-	if !IsActionDialogEnterSuppressed() {
+func TestIsTooltipEnterSuppressed(t *testing.T) {
+	suppressTooltipEnter()
+	if !IsTooltipEnterSuppressed() {
 		t.Fatal("expected Enter to be suppressed immediately after completion handled it")
 	}
 	time.Sleep(enterSuppressDuration + 10*time.Millisecond)
-	if IsActionDialogEnterSuppressed() {
+	if IsTooltipEnterSuppressed() {
 		t.Fatal("expected Enter suppression to expire")
 	}
 }
