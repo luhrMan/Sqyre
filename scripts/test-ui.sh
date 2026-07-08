@@ -30,7 +30,7 @@ has_run_filter() {
 }
 
 run_tests() {
-  export SQUIRE_UI_TEST=1
+  export SQYRE_UI_TEST=1
   unset SQYRE_NO_HOOK
 
   echo "test-ui: running ./ui/ (timeout ${TEST_TIMEOUT})..."
