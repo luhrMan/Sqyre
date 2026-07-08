@@ -730,10 +730,20 @@ func viewParamPills(node actions.ActionInterface, actionType string) fyne.Canvas
 		added = true
 
 	case *actions.ForEachRow:
-		row := newPillRow()
-		addDisplayPill(row, "Start row", formatAnyValue(a.StartRow), actionType)
-		addDisplayPill(row, "End row", formatAnyValue(a.EndRow), actionType)
-		sections = append(sections, wrapTooltipSection(row.box))
+		general := newPillRow()
+		addDisplayPill(general, "Name", a.Name, actionType)
+		addDisplayPill(general, "Start row", formatAnyValue(a.StartRow), actionType)
+		addDisplayPill(general, "End row", formatAnyValue(a.EndRow), actionType)
+		sections = append(sections, wrapTooltipSection(general.box))
+
+		for i, s := range a.Sources {
+			srcRow := newPillRow()
+			addDisplayPill(srcRow, fmt.Sprintf("Source %d", i+1), s.Source, actionType)
+			addDisplayVariablePill(srcRow, "Output", s.OutputVar, actionType)
+			srcRow.add(actiondisplay.NewDisplayTogglePill("Is file", s.IsFile, actionType))
+			srcRow.add(actiondisplay.NewDisplayTogglePill("Skip blank", s.SkipBlankLines, actionType))
+			sections = append(sections, wrapTooltipSection(srcRow.box))
+		}
 		added = true
 
 	case *actions.FocusWindow:
