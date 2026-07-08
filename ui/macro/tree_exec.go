@@ -18,7 +18,14 @@ func (mt *MacroTree) beginExecutionExpand() {
 	mt.Tree.OpenAllBranches()
 	mt.suppressBranchOpenScroll--
 	mt.execFullyExpanded = true
-	mt.Refresh()
+	scrollY, ok := treeScrollOffsetY(&mt.Tree)
+	mt.Tree.Refresh()
+	if ok {
+		mt.ScrollToOffset(scrollY)
+		if !mt.dragActive {
+			mt.scheduleClampScroll()
+		}
+	}
 }
 
 // endExecutionExpand restores branches that were collapsed before execution.

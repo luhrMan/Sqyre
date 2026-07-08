@@ -20,7 +20,7 @@ import (
 func refreshOpenMacroTreesAfterRename() {
 	if mtabs := activeWire.MacroMTabs(); mtabs != nil {
 		for _, tree := range mtabs.AllTrees() {
-			tree.Refresh()
+			tree.RefreshVisibleRowDisplays()
 		}
 	}
 }
