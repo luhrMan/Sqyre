@@ -104,7 +104,7 @@ func editToolbar(owner *actionDisplayTooltipHover, form *tooltipEditForm) fyne.C
 	})
 
 	objects := []fyne.CanvasObject{}
-	if pill := actionTooltipTypePill(actionType); pill != nil {
+	if pill := actionTooltipEditTypePill(actionType); pill != nil {
 		objects = append(objects, pill)
 	}
 	objects = append(objects,
