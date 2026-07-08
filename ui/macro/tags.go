@@ -7,6 +7,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -25,6 +26,39 @@ const (
 	macroTagsPopupMinScrollHeight float32 = 160
 )
 
+var macroTagsCache struct {
+	mu    sync.Mutex
+	tags  []string
+	valid bool
+}
+
+// InvalidateMacroTagsCache clears the cached union of all macro tags.
+func InvalidateMacroTagsCache() {
+	macroTagsCache.mu.Lock()
+	macroTagsCache.valid = false
+	macroTagsCache.mu.Unlock()
+}
+
+// ResetMacroTagsCacheForTesting clears the macro tag cache (tests only).
+func ResetMacroTagsCacheForTesting() {
+	InvalidateMacroTagsCache()
+}
+
+func collectMacroTagsFromRepo() []string {
+	tagMap := make(map[string]bool)
+	for _, m := range repositories.MacroRepo().GetAll() {
+		for _, tag := range m.Tags {
+			tagMap[tag] = true
+		}
+	}
+	tags := make([]string, 0, len(tagMap))
+	for tag := range tagMap {
+		tags = append(tags, tag)
+	}
+	sort.Strings(tags)
+	return tags
+}
+
 func newMacroTagsContainer() *fyne.Container {
 	return container.New(kxlayout.NewRowWrapLayout())
 }
@@ -37,17 +71,19 @@ func wrapMacroTagChip(inner fyne.CanvasObject) fyne.CanvasObject {
 }
 
 func getAllMacroTags() []string {
-	tagMap := make(map[string]bool)
-	for _, m := range repositories.MacroRepo().GetAll() {
-		for _, tag := range m.Tags {
-			tagMap[tag] = true
-		}
+	macroTagsCache.mu.Lock()
+	if macroTagsCache.valid {
+		tags := macroTagsCache.tags
+		macroTagsCache.mu.Unlock()
+		return tags
 	}
-	tags := make([]string, 0, len(tagMap))
-	for tag := range tagMap {
-		tags = append(tags, tag)
-	}
-	sort.Strings(tags)
+	macroTagsCache.mu.Unlock()
+
+	tags := collectMacroTagsFromRepo()
+	macroTagsCache.mu.Lock()
+	macroTagsCache.tags = tags
+	macroTagsCache.valid = true
+	macroTagsCache.mu.Unlock()
 	return tags
 }
 
@@ -88,25 +124,92 @@ func excludeMacroTagsOnMacro(tags []string, onMacro []string) []string {
 	return filtered
 }
 
-func rebuildMacroTagsContainer(tagsContainer *fyne.Container, m *models.Macro, onRemove func(tag string)) {
+func macroTagsMatchContainer(tagsContainer *fyne.Container, tags []string) bool {
+	if tagsContainer == nil || len(tagsContainer.Objects) != len(tags) {
+		return false
+	}
+	for i, tag := range tags {
+		if macroTagChipLabelText(tagsContainer.Objects[i]) != tag {
+			return false
+		}
+	}
+	return true
+}
+
+func syncMacroTagsContainer(tagsContainer *fyne.Container, m *models.Macro, onRemove func(tag string)) {
 	if tagsContainer == nil {
 		return
 	}
-	tagsContainer.Objects = nil
+	var tags []string
 	if m != nil {
-		for _, tag := range m.Tags {
-			tagToRemove := tag
-			tagsContainer.Add(newMacroTagChip(tagToRemove, func() { onRemove(tagToRemove) }))
+		tags = m.Tags
+	}
+	if macroTagsMatchContainer(tagsContainer, tags) {
+		return
+	}
+	existing := make(map[string]fyne.CanvasObject, len(tagsContainer.Objects))
+	for _, obj := range tagsContainer.Objects {
+		if label := macroTagChipLabelText(obj); label != "" {
+			existing[label] = obj
 		}
 	}
+	newObjects := make([]fyne.CanvasObject, 0, len(tags))
+	for _, tag := range tags {
+		if obj, ok := existing[tag]; ok {
+			newObjects = append(newObjects, obj)
+			delete(existing, tag)
+			continue
+		}
+		tagToRemove := tag
+		newObjects = append(newObjects, newMacroTagChip(tag, func() { onRemove(tagToRemove) }))
+	}
+	tagsContainer.Objects = newObjects
 	tagsContainer.Refresh()
+}
+
+func appendMacroTagChip(tagsContainer *fyne.Container, tag string, onRemove func()) {
+	if tagsContainer == nil {
+		return
+	}
+	tagsContainer.Add(newMacroTagChip(tag, onRemove))
+	tagsContainer.Refresh()
+}
+
+func removeMacroTagChip(tagsContainer *fyne.Container, tagToRemove string) bool {
+	if tagsContainer == nil {
+		return false
+	}
+	for i, obj := range tagsContainer.Objects {
+		if macroTagChipLabelText(obj) == tagToRemove {
+			tagsContainer.Objects = append(tagsContainer.Objects[:i], tagsContainer.Objects[i+1:]...)
+			tagsContainer.Refresh()
+			return true
+		}
+	}
+	return false
+}
+
+func macroTagChipLabelText(chip fyne.CanvasObject) string {
+	outer := chip
+	if box, ok := outer.(*fyne.Container); ok && len(box.Objects) == 1 {
+		outer = box.Objects[0]
+	}
+	row, ok := outer.(*fyne.Container)
+	if !ok || len(row.Objects) == 0 {
+		return ""
+	}
+	lbl, ok := row.Objects[0].(*widget.Label)
+	if !ok {
+		return ""
+	}
+	return lbl.Text
 }
 
 func updateMacroTagsDisplay(mtabs *MacroTabs, m *models.Macro) {
 	if mtabs == nil || mtabs.MacroTagsContainer == nil {
 		return
 	}
-	rebuildMacroTagsContainer(mtabs.MacroTagsContainer, m, func(tag string) {
+	syncMacroTagsContainer(mtabs.MacroTagsContainer, m, func(tag string) {
 		removeMacroTag(mtabs, m, tag)
 	})
 	updateMacroTagsButton(mtabs, m)
@@ -234,7 +337,11 @@ func addMacroTag(m *models.Macro, tagText string) bool {
 		return false
 	}
 	m.Tags = append(m.Tags, tagText)
-	return repositories.MacroRepo().Set(m.Name, m) == nil
+	if repositories.MacroRepo().Set(m.Name, m) != nil {
+		return false
+	}
+	InvalidateMacroTagsCache()
+	return true
 }
 
 func removeMacroTagFromMacro(m *models.Macro, tagToRemove string) bool {
@@ -248,7 +355,11 @@ func removeMacroTagFromMacro(m *models.Macro, tagToRemove string) bool {
 		}
 	}
 	m.Tags = newTags
-	return repositories.MacroRepo().Set(m.Name, m) == nil
+	if repositories.MacroRepo().Set(m.Name, m) != nil {
+		return false
+	}
+	InvalidateMacroTagsCache()
+	return true
 }
 
 func notifyMacroTagsChanged(m *models.Macro) {
@@ -271,7 +382,10 @@ func removeMacroTag(mtabs *MacroTabs, m *models.Macro, tagToRemove string) {
 	if !removeMacroTagFromMacro(m, tagToRemove) {
 		return
 	}
-	updateMacroTagsDisplay(mtabs, m)
+	if mtabs != nil && mtabs.MacroTagsContainer != nil {
+		removeMacroTagChip(mtabs.MacroTagsContainer, tagToRemove)
+	}
+	updateMacroTagsButton(mtabs, m)
 	refreshMacroTagEntryCompletion(mtabs, m)
 }
 
@@ -413,9 +527,9 @@ func showMacroTagsEditorPopup(anchor fyne.CanvasObject, m *models.Macro, onChang
 
 	var refreshTags func()
 	refreshTags = func() {
-		rebuildMacroTagsContainer(tagsContainer, m, func(tag string) {
+		syncMacroTagsContainer(tagsContainer, m, func(tag string) {
 			if removeMacroTagFromMacro(m, tag) {
-				refreshTags()
+				removeMacroTagChip(tagsContainer, tag)
 				refreshTagEntryCompletion()
 				notifyMacroTagsChanged(m)
 				if onChanged != nil {
@@ -430,7 +544,16 @@ func showMacroTagsEditorPopup(anchor fyne.CanvasObject, m *models.Macro, onChang
 		tagEntry.HideCompletion()
 		if addMacroTag(m, tagText) {
 			tagEntry.SetText("")
-			refreshTags()
+			appendMacroTagChip(tagsContainer, tagText, func() {
+				if removeMacroTagFromMacro(m, tagText) {
+					removeMacroTagChip(tagsContainer, tagText)
+					refreshTagEntryCompletion()
+					notifyMacroTagsChanged(m)
+					if onChanged != nil {
+						onChanged(m)
+					}
+				}
+			})
 			notifyMacroTagsChanged(m)
 			if onChanged != nil {
 				onChanged(m)

@@ -15,12 +15,8 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-// OnOpenActionDialog is called when the user taps an action's icon or double-clicks
-// its row to edit it. If non-nil, the tree will open the action dialog from this callback.
-type OnOpenActionDialogFunc func(action actions.ActionInterface)
-
 // treeRowBody is the tappable center of each action row. Single click selects the
-// row; double click opens the action editor dialog.
+// row; double click opens the action tooltip editor.
 type treeRowBody struct {
 	widget.BaseWidget
 	tree   *MacroTree
@@ -52,7 +48,7 @@ func (b *treeRowBody) Tapped(*fyne.PointEvent) {
 	now := time.Now()
 	if b.uid == b.tree.lastRowTapUID && now.Sub(b.tree.lastRowTapTime) < treeRowDoubleClickInterval {
 		b.tree.lastRowTapUID = ""
-		b.openActionDialog()
+		b.openActionEdit()
 		return
 	}
 	b.tree.lastRowTapUID = b.uid
@@ -67,17 +63,11 @@ func (b *treeRowBody) Tapped(*fyne.PointEvent) {
 	}
 }
 
-func (b *treeRowBody) openActionDialog() {
-	if b.tree == nil || b.tree.executing || b.tree.OnOpenActionDialog == nil || b.uid == "" {
+func (b *treeRowBody) openActionEdit() {
+	if b.tree == nil || b.tree.executing || b.uid == "" {
 		return
 	}
-	if b.tree.Macro == nil || b.tree.Macro.Root == nil {
-		return
-	}
-	node := b.tree.Macro.Root.GetAction(b.uid)
-	if node != nil {
-		b.tree.OnOpenActionDialog(node)
-	}
+	b.tree.EditAction(b.uid)
 }
 
 func (b *treeRowBody) TappedSecondary(pe *fyne.PointEvent) {
@@ -93,7 +83,6 @@ type MacroTree struct {
 	widget.Tree
 	Macro              *models.Macro
 	SelectedNode       string
-	OnOpenActionDialog OnOpenActionDialogFunc
 	// onShowAddActionPicker opens the new-action picker (Ctrl+A when tree focused).
 	onShowAddActionPicker func()
 
@@ -182,7 +171,7 @@ type MacroTree struct {
 	dragAutoOpenedBranches map[string]struct{}
 
 	// rowContentCache stores display widgets keyed by action UID.
-	rowContentCache map[string]cachedRowContent
+	rowContentCache *rowContentLRUCache
 	// highlightOverlays maps action UIDs to row overlay widgets so execution
 	// highlights can update without RefreshItem / tree relayout.
 	highlightOverlays map[string]highlightRow
@@ -410,6 +399,26 @@ func (mt *MacroTree) Refresh() {
 	}
 }
 
+// RefreshVisibleRowDisplays clears cached row widgets and re-binds visible rows
+// without a full tree rebuild. Use when display colors or labels changed but
+// structure did not.
+func (mt *MacroTree) RefreshVisibleRowDisplays() {
+	if mt.Macro == nil {
+		return
+	}
+	scrollY, ok := treeScrollOffsetY(&mt.Tree)
+	mt.clearRowCache()
+	for _, uid := range mt.visibleRowUIDs() {
+		mt.RefreshItem(uid)
+	}
+	if ok {
+		mt.ScrollToOffset(scrollY)
+		if !mt.dragActive {
+			mt.scheduleClampScroll()
+		}
+	}
+}
+
 func (mt *MacroTree) clearRowCache() {
 	mt.rowContentCache = nil
 	mt.highlightOverlays = nil
@@ -418,14 +427,14 @@ func (mt *MacroTree) clearRowCache() {
 
 func (mt *MacroTree) invalidateRowCache(uid string) {
 	if mt.rowContentCache != nil && uid != "" {
-		delete(mt.rowContentCache, uid)
+		mt.rowContentCache.delete(uid)
 	}
 }
 
 func (mt *MacroTree) cachedRowContent(node actions.ActionInterface) cachedRowContent {
 	uid := node.GetUID()
 	if mt.rowContentCache != nil {
-		if cached, ok := mt.rowContentCache[uid]; ok {
+		if cached, ok := mt.rowContentCache.get(uid); ok {
 			return cached
 		}
 	}
@@ -449,10 +458,35 @@ func (mt *MacroTree) cachedRowContent(node actions.ActionInterface) cachedRowCon
 		}
 	}
 	if mt.rowContentCache == nil {
-		mt.rowContentCache = map[string]cachedRowContent{}
+		mt.rowContentCache = newRowContentLRUCache()
 	}
-	mt.rowContentCache[uid] = entry
+	mt.rowContentCache.put(uid, entry)
 	return entry
+}
+
+// EditAction scrolls to the action row and opens its tooltip in edit mode.
+func (mt *MacroTree) EditAction(uid string) {
+	if mt == nil || mt.executing || uid == "" || mt.Macro == nil || mt.Macro.Root == nil {
+		return
+	}
+	node := mt.Macro.Root.GetAction(uid)
+	if node == nil {
+		return
+	}
+	mt.ScrollTo(uid)
+	mt.Select(uid)
+	fyne.Do(func() {
+		if mt.Macro.Root.GetAction(uid) == nil {
+			return
+		}
+		mt.RefreshItem(uid)
+		hover, ok := mt.cachedRowContent(node).display.(*actionDisplayTooltipHover)
+		if !ok || hover == nil {
+			return
+		}
+		hover.absoluteMousePos = fyne.CurrentApp().Driver().AbsolutePositionForObject(hover)
+		hover.openTooltipEdit()
+	})
 }
 
 // SetCursor moves the single "currently executing" highlight to uid (or clears

@@ -145,7 +145,7 @@ func (mtabs *MacroTabs) RefreshActionDisplayColors() {
 	for _, item := range mtabs.Items {
 		if c := macroTabContentFrom(item.Content); c != nil {
 			if c.Tree != nil {
-				c.Tree.Refresh()
+				c.Tree.RefreshVisibleRowDisplays()
 			}
 			if c.VariablesPanel != nil {
 				c.VariablesPanel.RefreshDefs()
@@ -153,7 +153,7 @@ func (mtabs *MacroTabs) RefreshActionDisplayColors() {
 			continue
 		}
 		if tree, ok := item.Content.(*MacroTree); ok && tree != nil {
-			tree.Refresh()
+			tree.RefreshVisibleRowDisplays()
 		}
 	}
 }

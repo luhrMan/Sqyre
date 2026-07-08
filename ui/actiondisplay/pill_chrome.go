@@ -16,6 +16,47 @@ func PillLineHeight() float32 {
 	return custom_widgets.PillLineHeight()
 }
 
+// UpdateDisplayPill updates a pill from NewDisplayPill in place (text and fill color).
+func UpdateDisplayPill(pill fyne.CanvasObject, text, actionType string) bool {
+	stack, ok := pill.(*fyne.Container)
+	if !ok || len(stack.Objects) < 2 {
+		return false
+	}
+	bg, ok := stack.Objects[0].(*canvas.Rectangle)
+	if !ok {
+		return false
+	}
+	fill := actionPillColor(actionType)
+	if bg.FillColor != fill {
+		bg.FillColor = fill
+		bg.Refresh()
+	}
+	padded, ok := stack.Objects[1].(*fyne.Container)
+	if !ok {
+		return false
+	}
+	textObj := pillChromeText(padded)
+	if textObj == nil {
+		return false
+	}
+	if textObj.Text != text {
+		textObj.Text = text
+		textObj.Refresh()
+	}
+	return true
+}
+
+func pillChromeText(padded *fyne.Container) *canvas.Text {
+	if len(padded.Objects) < 5 {
+		return nil
+	}
+	t, ok := padded.Objects[4].(*canvas.Text)
+	if !ok {
+		return nil
+	}
+	return t
+}
+
 // PillChrome wraps content in the same rounded chip background as display pills.
 func PillChrome(content fyne.CanvasObject, actionType string) fyne.CanvasObject {
 	fill := actionPillColor(actionType)

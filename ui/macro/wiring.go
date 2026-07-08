@@ -37,9 +37,12 @@ type WireDeps struct {
 	AddDialogEscapeClose   func(d dialog.Dialog, parent fyne.Window)
 	AddPopupEscapeClose    func(pop *widget.PopUp, parent fyne.Window) dialog.Dialog
 	ShowConfirmWithEscape  func(title, message string, callback func(bool), parent fyne.Window)
-	ShowActionDialog       func(action actions.ActionInterface, onSave func(actions.ActionInterface), onCancel func())
 	ShowAddActionPicker    func()
-	NavigateToCoordinateEntity func(ref actions.CoordinateRef, isPoint bool)
+	ShowPointPicker        func(initial actions.CoordinateRef, onSelect func(actions.CoordinateRef), onClosed func())
+	ShowSearchAreaPicker   func(initial actions.CoordinateRef, onSelect func(actions.CoordinateRef), onClosed func())
+	ShowItemsPicker        func(getTargets func() []string, onChanged func(newTargets []string), onClosed func())
+	PreviewExpression      func(expr string) (string, error)
+	ShowRecordingOverlay   func(onClosed func(), onMouseDown func(*desktop.MouseEvent)) func()
 	RegisterTooltipEnterSave func(onSave func()) (unregister func())
 	WrapTagChip            func(inner fyne.CanvasObject) fyne.CanvasObject
 	WrapSqyreFrame         func(inner fyne.CanvasObject) fyne.CanvasObject
@@ -419,23 +422,6 @@ func setMacroTree(mt *MacroTree) {
 		if d.Mui.MTabs.OnHistoryButtonsSync != nil {
 			d.Mui.MTabs.OnHistoryButtonsSync()
 		}
-	}
-	mt.OnOpenActionDialog = func(action actions.ActionInterface) {
-		if action == nil {
-			return
-		}
-		uid := action.GetUID()
-		mt.RecordMutation()
-		d.ShowActionDialog(action, func(updatedAction actions.ActionInterface) {
-			if err := repositories.MacroRepo().Set(mt.Macro.Name, mt.Macro); err != nil {
-				log.Printf("failed to save macro after action edit: %v", err)
-			}
-			mt.RefreshItem(uid)
-			mt.Refresh()
-			if c := d.Mui.MTabs.SelectedMacroContent(); c != nil {
-				c.RefreshVariablesPanel()
-			}
-		}, nil)
 	}
 	mt.onShowAddActionPicker = func() {
 		if d.ShowAddActionPicker != nil {
