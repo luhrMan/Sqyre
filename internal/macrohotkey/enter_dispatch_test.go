@@ -7,12 +7,12 @@ import (
 	"testing"
 )
 
-func TestRegisterEscapeHandler_OnlyTopmostDispatched(t *testing.T) {
+func TestRegisterEnterHandler_OnlyTopmostDispatched(t *testing.T) {
 	var first, second atomic.Int32
-	RegisterEscapeHandler(func() { first.Add(1) })
-	RegisterEscapeHandler(func() { second.Add(1) })
+	RegisterEnterHandler(func() { first.Add(1) })
+	RegisterEnterHandler(func() { second.Add(1) })
 
-	dispatchEscapeHandlersForTest()
+	dispatchEnterHandlersForTest()
 
 	if first.Load() != 0 {
 		t.Fatalf("first handler calls = %d, want 0", first.Load())
@@ -22,13 +22,13 @@ func TestRegisterEscapeHandler_OnlyTopmostDispatched(t *testing.T) {
 	}
 }
 
-func TestRegisterEscapeHandler_UnregisterOnlySelf(t *testing.T) {
+func TestRegisterEnterHandler_UnregisterOnlySelf(t *testing.T) {
 	var permanent, temporary atomic.Int32
-	unregPermanent := RegisterEscapeHandler(func() { permanent.Add(1) })
-	unregTemporary := RegisterEscapeHandler(func() { temporary.Add(1) })
+	unregPermanent := RegisterEnterHandler(func() { permanent.Add(1) })
+	unregTemporary := RegisterEnterHandler(func() { temporary.Add(1) })
 
 	unregTemporary()
-	dispatchEscapeHandlersForTest()
+	dispatchEnterHandlersForTest()
 
 	if permanent.Load() != 1 {
 		t.Fatalf("permanent handler calls = %d, want 1", permanent.Load())
@@ -40,10 +40,10 @@ func TestRegisterEscapeHandler_UnregisterOnlySelf(t *testing.T) {
 	unregPermanent()
 }
 
-func dispatchEscapeHandlersForTest() {
-	escDispatchMu.Lock()
-	handlers := append([]escHandler(nil), escHandlers...)
-	escDispatchMu.Unlock()
+func dispatchEnterHandlersForTest() {
+	enterDispatchMu.Lock()
+	handlers := append([]enterHandler(nil), enterHandlers...)
+	enterDispatchMu.Unlock()
 	if len(handlers) > 0 {
 		handlers[len(handlers)-1].fn()
 	}
