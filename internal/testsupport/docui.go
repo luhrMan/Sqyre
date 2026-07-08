@@ -15,7 +15,7 @@ import (
 func InitDocUIEnv(t *testing.T) {
 	t.Helper()
 	os.Setenv("SQYRE_TEST_MODE", "1")
-	os.Setenv("SQUIRE_UI_TEST", "1")
+	os.Setenv("SQYRE_UI_TEST", "1")
 	os.Setenv("SQYRE_NO_HOOK", "1")
 
 	dir := t.TempDir()
