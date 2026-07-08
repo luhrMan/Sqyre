@@ -9,7 +9,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 export GOFLAGS="-tags=gocv_specific_modules,nohook -buildvcs=false"
-export SQUIRE_UI_TEST=1
+export SQYRE_UI_TEST=1
 export SQYRE_NO_HOOK=1
 
 # Global-hook Esc tests need xvfb; run via ./scripts/test-ui.sh.

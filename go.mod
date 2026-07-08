@@ -22,7 +22,7 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 )
 
-replace github.com/otiai10/gosseract/v2 => ./internal/gosseract
+replace github.com/otiai10/gosseract/v2 => ./third_party/gosseract
 
 require (
 	fyne.io/systray v1.12.2 // indirect

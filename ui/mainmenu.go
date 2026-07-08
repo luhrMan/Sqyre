@@ -6,6 +6,7 @@ import (
 	"Sqyre/ui/actiondisplay"
 	"Sqyre/internal/models/repositories"
 	"Sqyre/internal/screen"
+	"Sqyre/ui/dialogs"
 	"log"
 	"strconv"
 
@@ -78,6 +79,14 @@ func buildActionTemplates() []actionTemplate {
 var AddActionPickerSize = fyne.NewSize(1500, 600)
 
 func buildAddActionPickerContent(templates []actionTemplate, onPick func(actionTemplate)) fyne.CanvasObject {
+	content, _ := buildAddActionPickerContentWithTiles(templates, onPick)
+	return content
+}
+
+// buildAddActionPickerContentWithTiles builds the picker grid and returns each
+// action's tile button keyed by label so docs frames can anchor a click guide
+// on the real widget geometry instead of hardcoded coordinates.
+func buildAddActionPickerContentWithTiles(templates []actionTemplate, onPick func(actionTemplate)) (fyne.CanvasObject, map[string]fyne.CanvasObject) {
 	categoryColumns := []string{"Mouse & Keyboard", "Detection", "Variables", "Loop flow", "Miscellaneous"}
 	categoryTiles := map[string][]fyne.CanvasObject{
 		"Mouse & Keyboard": {},
@@ -86,6 +95,7 @@ func buildAddActionPickerContent(templates []actionTemplate, onPick func(actionT
 		"Loop flow":        {},
 		"Miscellaneous":    {},
 	}
+	tiles := make(map[string]fyne.CanvasObject, len(templates))
 	for _, tmpl := range templates {
 		t := tmpl
 		bg := canvas.NewRectangle(actiondisplay.ActionPastelColorForApp(t.actionType))
@@ -99,6 +109,7 @@ func buildAddActionPickerContent(templates []actionTemplate, onPick func(actionT
 			}
 		})
 		btn.Importance = widget.LowImportance
+		tiles[t.label] = btn
 
 		tile := container.NewStack(bg, container.NewPadded(btn))
 		categoryTiles[t.category] = append(categoryTiles[t.category], container.NewPadded(tile))
@@ -117,12 +128,20 @@ func buildAddActionPickerContent(templates []actionTemplate, onPick func(actionT
 		widget.NewLabel("Pick an action type"),
 		nil, nil, nil,
 		container.NewVScroll(grid),
-	)
+	), tiles
 }
 
 // AddActionPickerForScreenshot returns the Add Action picker grid for docs/tests.
 func AddActionPickerForScreenshot() fyne.CanvasObject {
 	return buildAddActionPickerContent(buildActionTemplates(), nil)
+}
+
+// AddActionPickerWithTargetForScreenshot builds the picker and returns the tile
+// button for the given action label so a demo frame can center its click guide
+// on it.
+func AddActionPickerWithTargetForScreenshot(label string) (fyne.CanvasObject, fyne.CanvasObject) {
+	content, tiles := buildAddActionPickerContentWithTiles(buildActionTemplates(), nil)
+	return content, tiles[label]
 }
 
 func showAddActionDialog(u *Ui, addActionAndRefresh func(actions.ActionInterface), templates []actionTemplate) {
@@ -135,7 +154,7 @@ func showAddActionDialog(u *Ui, addActionAndRefresh func(actions.ActionInterface
 	})
 
 	d = dialog.NewCustom("Add Action", "Close", content, u.Window)
-	AddDialogEscapeClose(d, u.Window)
+	dialogs.AddDialogEscapeClose(d, u.Window)
 	d.Resize(AddActionPickerSize)
 	d.Show()
 }
@@ -235,7 +254,7 @@ func (u *Ui) constructMainMenu() *fyne.MainMenu {
 				str = str + "Monitor " + strconv.Itoa(d+1) + " Size: " + strconv.Itoa(mh) + "x" + strconv.Itoa(mw) + "\n"
 			}
 		}
-		ShowInformationWithEscape("Computer Information", str, u.Window)
+		dialogs.ShowInformationWithEscape("Computer Information", str, u.Window)
 	})
 
 	editor := fyne.NewMenuItem("Data Editor", func() {

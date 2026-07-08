@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"Sqyre/internal/capture"
-	"Sqyre/internal/services"
+	"Sqyre/internal/panicsafe"
 	"Sqyre/ui/desktopview"
 
 	"fyne.io/fyne/v2"
@@ -221,25 +221,6 @@ func newOverlayWindow(
 	}
 }
 
-func absoluteRectToOverlayLocal(leftX, topY, rightX, bottomY int, bounds image.Rectangle) (left, top, right, bottom float32, ok bool) {
-	local, ok := desktopview.ClipAbsoluteRectToVirtualLocal(leftX, topY, rightX, bottomY, bounds)
-	if !ok {
-		return 0, 0, 0, 0, false
-	}
-	return float32(local.Min.X), float32(local.Min.Y), float32(local.Max.X), float32(local.Max.Y), true
-}
-
-func mapOverlayPxToCanvas(o *fyneDesktopOverlay, pxX, pxY float32) (float32, float32) {
-	if o == nil || o.win == nil || o.widthPx <= 0 || o.heightPx <= 0 {
-		return pxX, pxY
-	}
-	sz := o.win.Canvas().Size()
-	if sz.Width <= 0 || sz.Height <= 0 {
-		return pxX, pxY
-	}
-	return pxX * (sz.Width / float32(o.widthPx)), pxY * (sz.Height / float32(o.heightPx))
-}
-
 func (o *fyneDesktopOverlay) resizeBackground() {
 	if o.bgImage == nil {
 		return
@@ -259,7 +240,7 @@ func (o *fyneDesktopOverlay) reposition() {
 // reset window geometry after Show(); RunNative positioning is also queued
 // asynchronously, so we retry until the overlay is dismissed.
 func (o *fyneDesktopOverlay) startPositionLoop() {
-	services.GoSafe(func() {
+	panicsafe.GoSafe(func() {
 		delays := []time.Duration{0, 50, 100, 200, 400, 800, 1200}
 		for _, d := range delays {
 			select {
@@ -442,7 +423,7 @@ func showFullScreenOverlay(withSelectionRect bool, onClosed func(), onMouseDown 
 
 		logOverlayWindowDiagnostics(built)
 		if capture.OverlayDiagnosticsEnabled() {
-			services.GoSafe(func() {
+			panicsafe.GoSafe(func() {
 				time.Sleep(250 * time.Millisecond)
 				fyne.Do(func() {
 					lifecycleMu.Lock()
@@ -463,10 +444,10 @@ func showFullScreenOverlay(withSelectionRect bool, onClosed func(), onMouseDown 
 						if o.selLayout == nil || o.selRefresher == nil {
 							continue
 						}
-						l, t, r, b, ok := absoluteRectToOverlayLocal(leftX, topY, rightX, bottomY, o.desktopBounds)
+						l, t, r, b, ok := desktopview.AbsoluteRectToCanvas(o.win, leftX, topY, rightX, bottomY, o.desktopBounds)
 						if ok {
-							o.selLayout.leftX, o.selLayout.topY = mapOverlayPxToCanvas(o, l, t)
-							o.selLayout.rightX, o.selLayout.bottomY = mapOverlayPxToCanvas(o, r, b)
+							o.selLayout.leftX, o.selLayout.topY = l, t
+							o.selLayout.rightX, o.selLayout.bottomY = r, b
 						} else {
 							o.selLayout.leftX, o.selLayout.topY, o.selLayout.rightX, o.selLayout.bottomY = 0, 0, 0, 0
 						}

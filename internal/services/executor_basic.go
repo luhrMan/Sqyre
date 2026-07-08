@@ -1,6 +1,7 @@
 package services
 
 import (
+	macropkg "Sqyre/internal/macro"
 	"Sqyre/internal/models"
 	"Sqyre/internal/models/actions"
 	"fmt"
@@ -18,7 +19,7 @@ func init() {
 func executeWait(a actions.ActionInterface, macro *models.Macro) error {
 	node := a.(*actions.Wait)
 	log.Println("Wait:", node.String())
-	time, err := ResolveInt(node.Time, macro)
+	time, err := macropkg.ResolveInt(node.Time, macro)
 	if err != nil {
 		return fmt.Errorf("wait time: %w", err)
 	}
@@ -28,18 +29,18 @@ func executeWait(a actions.ActionInterface, macro *models.Macro) error {
 func executeMove(a actions.ActionInterface, macro *models.Macro) error {
 	node := a.(*actions.Move)
 	log.Println("Move:", node.String())
-	pt, err := LookupPoint(node.Point, DefaultResolutionKey())
+	pt, err := macropkg.LookupPoint(node.Point, macropkg.DefaultResolutionKey())
 	if err != nil {
 		log.Printf("Move: failed to lookup point %q: %v, using (0,0)", node.Point, err)
 		getAutomationBackend().Move(0, 0, moveOpts(node))
 		return nil
 	}
-	x, err := ResolveInt(pt.X, macro)
+	x, err := macropkg.ResolveInt(pt.X, macro)
 	if err != nil {
 		log.Printf("Move: failed to resolve X %v: %v, using 0 (ensure variable is set by an earlier action, e.g. Image Search output)", pt.X, err)
 		x = 0
 	}
-	y, err := ResolveInt(pt.Y, macro)
+	y, err := macropkg.ResolveInt(pt.Y, macro)
 	if err != nil {
 		log.Printf("Move: failed to resolve Y %v: %v, using 0 (ensure variable is set by an earlier action, e.g. Image Search output)", pt.Y, err)
 		y = 0
@@ -96,7 +97,7 @@ func executeType(a actions.ActionInterface, macro *models.Macro) error {
 	log.Println("Type:", node.String())
 	text := node.Text
 	if macro != nil {
-		if resolved, err := ResolveString(text, macro); err == nil {
+		if resolved, err := macropkg.ResolveString(text, macro); err == nil {
 			text = resolved
 		}
 	}

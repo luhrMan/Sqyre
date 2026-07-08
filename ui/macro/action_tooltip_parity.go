@@ -3,10 +3,12 @@ package macro
 import (
 	"Sqyre/internal/models/actions"
 	"Sqyre/internal/models/repositories"
+	"Sqyre/internal/panicsafe"
 	"Sqyre/internal/screen"
 	"Sqyre/internal/services"
 	"Sqyre/ui/actiondisplay"
 	"Sqyre/ui/custom_widgets"
+	"Sqyre/ui/dialogs"
 	"fmt"
 	"slices"
 	"strings"
@@ -73,10 +75,22 @@ func showMacroNamePicker(onSelect func(string)) {
 	filter.OnChanged = applyFilter
 
 	content := container.NewBorder(filter, nil, nil, nil, list)
+	// Non-modal so the margin stays transparent (no solid overlay) and tapping in
+	// it dismisses the picker. Leave a macroPickerMarginFrac margin on every window
+	// edge and center the picker in the remainder.
 	popup = widget.NewPopUp(content, activeWire.Window.Canvas())
-	popup.Resize(fyne.NewSize(420, 360))
-	popup.ShowAtPosition(fyne.CurrentApp().Driver().AbsolutePositionForObject(activeWire.Window.Canvas().Content()))
+	dialogs.AddPopupEscapeClose(popup, activeWire.Window)
+	canvasSize := activeWire.Window.Canvas().Size()
+	w := canvasSize.Width * (1 - 2*macroPickerMarginFrac)
+	h := canvasSize.Height * (1 - 2*macroPickerMarginFrac)
+	popup.Resize(fyne.NewSize(w, h))
+	popup.ShowAtPosition(fyne.NewPos((canvasSize.Width-w)/2, (canvasSize.Height-h)/2))
 }
+
+// macroPickerMarginFrac is the margin left between the run-macro picker and each
+// window edge, as a fraction of the window size. 0.2 per edge leaves the picker
+// at 60% of the window (a 40% total margin); tapping the margin closes it.
+const macroPickerMarginFrac float32 = 0.2
 
 func showWindowPicker(onSelect func(title, path string)) {
 	if activeWire.Window == nil || onSelect == nil {
@@ -129,7 +143,7 @@ func showWindowPicker(onSelect func(title, path string)) {
 		}
 		applyFilter()
 	})
-	services.GoSafe(func() {
+	panicsafe.GoSafe(func() {
 		windows, err := services.ActiveWindows()
 		if err != nil {
 			fyne.Do(func() {
@@ -178,10 +192,16 @@ func calculateBuilderToolbar(entry *custom_widgets.BorderlessEntry) fyne.CanvasO
 	return container.NewBorder(nil, nil, fxBtn, nil, container.NewHBox(opButtons...))
 }
 
-func appendCalculatePreviewRow(exprEntry *custom_widgets.BorderlessEntry, actionType string) (fyne.CanvasObject, func()) {
+func appendCalculatePreviewRow(exprEntry *custom_widgets.BorderlessEntry, actionType string, owner *actionDisplayTooltipHover) (fyne.CanvasObject, func()) {
 	preview := widget.NewLabel("")
 	preview.Wrapping = fyne.TextWrapWord
 	update := func() {
+		prev := preview.Text
+		defer func() {
+			if preview.Text != prev && owner != nil {
+				owner.refreshTooltipLayout()
+			}
+		}()
 		text := strings.TrimSpace(exprEntry.Text)
 		if text == "" || activeWire.PreviewExpression == nil {
 			preview.SetText("")
@@ -208,7 +228,7 @@ func findPixelColorDropperButton(colorEntry *custom_widgets.BorderlessEntry, onC
 	if activeWire.ShowRecordingOverlay == nil {
 		return nil
 	}
-	btn := actiondisplay.NewPillIconButton(theme.MediaRecordIcon(), func() {
+	btn := actiondisplay.NewPillIconButton(theme.NewErrorThemedResource(theme.MediaRecordIcon()), func() {
 		var dismiss func()
 		dismiss = activeWire.ShowRecordingOverlay(nil, func(ev *desktop.MouseEvent) {
 			switch ev.Button {
@@ -238,16 +258,13 @@ func pickerButtonPill(label string, onTap func(), actionType string) fyne.Canvas
 	return actiondisplay.PillChrome(btn, actionType)
 }
 
-func macroPickerButton(current, actionType string, onSelect func(string)) fyne.CanvasObject {
-	label := strings.TrimSpace(current)
-	if label == "" {
-		label = "Select macro…"
-	}
-	return pickerButtonPill(label, func() {
+func macroPickerButton(actionType string, onSelect func(string)) fyne.CanvasObject {
+	btn := actiondisplay.NewPillIconButton(theme.ListIcon(), func() {
 		showMacroNamePicker(func(name string) {
 			onSelect(name)
 		})
-	}, actionType)
+	})
+	return actiondisplay.PillChrome(btn, actionType)
 }
 
 func windowPickerButton(actionType string, onSelect func(title, path string)) fyne.CanvasObject {
@@ -256,14 +273,16 @@ func windowPickerButton(actionType string, onSelect func(title, path string)) fy
 	}, actionType)
 }
 
+const forEachRemoveBtnSize float32 = 28
+
 type forEachSourceEdit struct {
 	source    *custom_widgets.BorderlessEntry
-	outputVar *custom_widgets.BorderlessEntry
+	outputVar *custom_widgets.BorderlessVarNameEntry
 	isFile    *actiondisplay.PillToggle
 	skipBlank *actiondisplay.PillToggle
 }
 
-func appendForEachRowTooltipEdit(a *actions.ForEachRow, actionType string, applyParts []func() error) (fyne.CanvasObject, []func() error) {
+func appendForEachRowTooltipEdit(a *actions.ForEachRow, actionType string, owner *actionDisplayTooltipHover, applyParts []func() error) (fyne.CanvasObject, []func() error) {
 	var sections []fyne.CanvasObject
 
 	general := newPillRow()
@@ -278,7 +297,7 @@ func appendForEachRowTooltipEdit(a *actions.ForEachRow, actionType string, apply
 	for i, s := range a.Sources {
 		edits[i] = forEachSourceEdit{
 			source:    coordEntry(s.Source),
-			outputVar: coordEntry(s.OutputVar),
+			outputVar: varNameEntry(s.OutputVar),
 			isFile:    actiondisplay.NewPillToggle("Source is file", s.IsFile),
 			skipBlank: actiondisplay.NewPillToggle("Skip blank lines", s.SkipBlankLines),
 		}
@@ -286,7 +305,7 @@ func appendForEachRowTooltipEdit(a *actions.ForEachRow, actionType string, apply
 	if len(edits) == 0 {
 		edits = append(edits, forEachSourceEdit{
 			source:    coordEntry(""),
-			outputVar: coordEntry(""),
+			outputVar: varNameEntry(""),
 			isFile:    actiondisplay.NewPillToggle("Source is file", false),
 			skipBlank: actiondisplay.NewPillToggle("Skip blank lines", false),
 		})
@@ -305,18 +324,20 @@ func appendForEachRowTooltipEdit(a *actions.ForEachRow, actionType string, apply
 			row.add(actiondisplay.WrapPillToggle(edits[idx].skipBlank, actionType))
 			if len(edits) > 1 {
 				removeIdx := idx
-				removeBtn := widget.NewButton("Remove", func() {
+				removeBtn := widget.NewButtonWithIcon("", theme.DeleteIcon(), func() {
 					edits = append(edits[:removeIdx], edits[removeIdx+1:]...)
 					rebuildSources()
 				})
-				row.add(actiondisplay.PillChrome(removeBtn, actionType))
+				removeBtn.Importance = widget.LowImportance
+				sized := container.NewGridWrap(fyne.NewSize(forEachRemoveBtnSize, forEachRemoveBtnSize), removeBtn)
+				row.add(actiondisplay.PillChrome(sized, actionType))
 			}
 			sourcesBox.Add(wrapTooltipSection(row.box))
 		}
 		addBtn := widget.NewButton("Add source column", func() {
 			edits = append(edits, forEachSourceEdit{
 				source:    coordEntry(""),
-				outputVar: coordEntry(""),
+				outputVar: varNameEntry(""),
 				isFile:    actiondisplay.NewPillToggle("Source is file", false),
 				skipBlank: actiondisplay.NewPillToggle("Skip blank lines", false),
 			})
@@ -324,6 +345,9 @@ func appendForEachRowTooltipEdit(a *actions.ForEachRow, actionType string, apply
 		})
 		sourcesBox.Add(wrapTooltipSection(container.NewCenter(addBtn)))
 		sourcesBox.Refresh()
+		if owner != nil {
+			owner.relayoutTooltip()
+		}
 	}
 	rebuildSources()
 	sections = append(sections, sourcesBox)

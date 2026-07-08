@@ -162,6 +162,6 @@ func buildActionColorSettings(u *Ui, prefs fyne.Preferences) fyne.CanvasObject {
 		refreshOpenMacroActionColors(u)
 	})
 
-	rows = append(rows, resetAllBtn)
+	rows = append(rows, container.NewHBox(resetAllBtn))
 	return container.NewVBox(rows...)
 }

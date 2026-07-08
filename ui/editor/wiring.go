@@ -4,6 +4,7 @@ import (
 	"Sqyre/internal/models"
 	"Sqyre/internal/models/repositories"
 	"Sqyre/ui/custom_widgets"
+	"Sqyre/ui/dialogs"
 	"fmt"
 	"log"
 	"strconv"
@@ -216,7 +217,7 @@ func shouldConfirmOverwrite(entityType, targetName string, existsFn func(name st
 	if !existsFn(targetName) {
 		return false
 	}
-	activeWire.ShowConfirmWithEscape(
+	dialogs.ShowConfirmWithEscape(
 		"Confirm Overwrite",
 		fmt.Sprintf("A %s named \"%s\" already exists. Overwrite it?", entityType, targetName),
 		func(confirmed bool) {
@@ -308,7 +309,7 @@ func setEditorButtons() {
 			return
 		}
 
-		activeWire.ShowConfirmWithEscape(
+		dialogs.ShowConfirmWithEscape(
 			"Confirm Delete",
 			fmt.Sprintf("Are you sure you want to delete %s \"%s\"?",
 				strings.ToLower(tabName), entityName),

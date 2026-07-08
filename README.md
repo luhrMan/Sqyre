@@ -39,7 +39,7 @@ Sqyre lets you build and run macros without writing code. Each macro is a tree o
 1. **Build or install** for your OS — `make linux` or `make windows` (see [Developing](docs/DEVELOPING.md)).
 2. **Launch** `./bin/sqyre` (Linux) or the Windows binary from `bin/windows-amd64/`.
 3. **Create a macro** — the root is always a **loop**; add child actions from the picker.
-4. **Configure** each node in its dialog (coordinates, keys, templates, OCR regions, variables, etc.).
+4. **Configure** each node in its pinned in-tree tooltip editor (coordinates, keys, templates, OCR regions, variables, etc.), picking reusable points, search areas, and images from entity pickers.
 5. **Run** from the toolbar, or assign a **hotkey** to the macro.
 
 Branching actions (**image search**, **OCR**, **find pixel**, **if**) run child steps only when their condition matches. **Loop** / **for each row** repeat children; **break** and **continue** control those loops.
@@ -56,18 +56,6 @@ Assets under `docs/images/` are generated from UI tests (`./scripts/generate-doc
 | Add action picker | ![Add action picker](docs/images/add-action-picker.png) |
 | Data editor | ![Data editor](docs/images/data-editor.png) |
 | Building a macro | ![Demo](docs/images/demo-macro.gif) |
-
-<details>
-<summary>Action dialog screenshots</summary>
-
-| Category | |
-|----------|---|
-| Mouse & keyboard | [Move](docs/images/action-dialog-move.png) · [Click](docs/images/action-dialog-click.png) · [Key](docs/images/action-dialog-key.png) · [Type](docs/images/action-dialog-type.png) |
-| Detection | [Image search](docs/images/action-dialog-imagesearch.png) · [OCR](docs/images/action-dialog-ocr.png) · [Find pixel](docs/images/action-dialog-findpixel.png) |
-| Variables | [Set](docs/images/action-dialog-setvariable.png) · [Calculate](docs/images/action-dialog-calculate.png) · [For each row](docs/images/action-dialog-foreachrow.png) · [Save to](docs/images/action-dialog-savevariable.png) |
-| Miscellaneous | [Wait](docs/images/action-dialog-wait.png) · [Focus window](docs/images/action-dialog-focuswindow.png) · [Run macro](docs/images/action-dialog-runmacro.png) · [Loop](docs/images/action-dialog-loop.png) |
-
-</details>
 
 ---
 
