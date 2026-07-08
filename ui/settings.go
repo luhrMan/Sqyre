@@ -1,13 +1,20 @@
 package ui
 
 import (
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+
 	"Sqyre/internal/config"
+	"Sqyre/internal/panicsafe"
 	"Sqyre/internal/services"
 	"Sqyre/ui/custom_widgets"
 	"Sqyre/ui/dialogs"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
@@ -154,11 +161,113 @@ func (u *Ui) buildDataSection() fyne.CanvasObject {
 		}
 	})
 
+	chooseLocationBtn := widget.NewButtonWithIcon("Choose location…", theme.FolderNewIcon(), func() {
+		if config.IsUITestMode() {
+			return
+		}
+		u.chooseSqyreLocation(sqyrePathLabel)
+	})
+
 	return settingsSection(
 		"Data",
 		"User data and configuration files.",
 		sqyrePathLabel,
-		container.NewHBox(openSqyreBtn),
+		container.NewHBox(openSqyreBtn, chooseLocationBtn),
+	)
+}
+
+// chooseSqyreLocation asks the OS for a parent directory (Fyne's own folder
+// dialog crashes with our theme), then continues the switch/move flow. The
+// native chooser blocks, so it runs off the UI thread and marshals the result
+// back with fyne.Do. When no native chooser exists it falls back to manual
+// path entry.
+func (u *Ui) chooseSqyreLocation(pathLabel *widget.Label) {
+	startDir := filepath.Dir(config.GetSqyreDir())
+	panicsafe.GoSafe(func() {
+		parent, ok, err := services.PickDirectory("Choose .sqyre location", startDir)
+		fyne.Do(func() {
+			if err != nil {
+				if errors.Is(err, services.ErrNoDirectoryChooser) {
+					u.promptSqyreLocationEntry(startDir, pathLabel)
+					return
+				}
+				dialogs.ShowErrorWithEscape(err, u.Window)
+				return
+			}
+			if !ok {
+				return
+			}
+			u.confirmSqyreLocation(parent, pathLabel)
+		})
+	})
+}
+
+// promptSqyreLocationEntry lets the user type a parent directory when no native
+// chooser is available.
+func (u *Ui) promptSqyreLocationEntry(startDir string, pathLabel *widget.Label) {
+	entry := widget.NewEntry()
+	entry.SetText(startDir)
+	entry.Validator = func(s string) error {
+		if strings.TrimSpace(s) == "" {
+			return errors.New("path is required")
+		}
+		return nil
+	}
+
+	form := dialog.NewForm("Choose .sqyre location", "OK", "Cancel",
+		[]*widget.FormItem{widget.NewFormItem("Parent folder", entry)},
+		func(ok bool) {
+			if !ok {
+				return
+			}
+			u.confirmSqyreLocation(strings.TrimSpace(entry.Text), pathLabel)
+		}, u.Window)
+	dialogs.AddDialogEscapeClose(form, u.Window)
+	form.Show()
+}
+
+// confirmSqyreLocation validates the chosen parent directory and, when it differs
+// from the current location, asks whether to move existing data before switching.
+func (u *Ui) confirmSqyreLocation(parent string, pathLabel *widget.Label) {
+	if parent == "" {
+		return
+	}
+
+	oldDir := config.GetSqyreDir()
+	newDir := filepath.Join(parent, config.SqyreDir)
+	if newDir == oldDir {
+		return
+	}
+
+	dialogs.ShowConfirmWithEscape(
+		"Move existing data?",
+		"Move your current data from\n"+oldDir+"\nto\n"+newDir+"?\n\nChoose No to start fresh at the new location (existing data is left in place).",
+		func(move bool) {
+			u.applySqyreLocation(oldDir, newDir, move, pathLabel)
+		},
+		u.Window,
+	)
+}
+
+// applySqyreLocation optionally moves the data, then switches Sqyre to newDir.
+func (u *Ui) applySqyreLocation(oldDir, newDir string, move bool, pathLabel *widget.Label) {
+	if move {
+		if _, err := os.Stat(oldDir); err == nil {
+			if err := services.MoveDir(oldDir, newDir); err != nil {
+				dialogs.ShowErrorWithEscape(err, u.Window)
+				return
+			}
+		}
+	}
+
+	fyne.CurrentApp().Preferences().SetString(config.PrefSqyreDir, newDir)
+	config.SetSqyreDirOverride(newDir)
+	pathLabel.SetText(newDir)
+
+	dialogs.ShowInformationWithEscape(
+		"Data location changed",
+		"Sqyre will use "+newDir+". Restart the app for the change to fully take effect.",
+		u.Window,
 	)
 }
 

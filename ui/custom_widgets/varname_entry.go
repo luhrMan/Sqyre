@@ -264,10 +264,14 @@ func (e *VarNameEntry) TappedSecondary(pe *fyne.PointEvent) {
 		}))
 	}
 
+	host := e.canvasObject()
 	driver := fyne.CurrentApp().Driver()
-	entryPos := driver.AbsolutePositionForObject(e)
+	c := driver.CanvasForObject(host)
+	if c == nil {
+		return
+	}
+	entryPos := driver.AbsolutePositionForObject(host)
 	popUpPos := entryPos.Add(pe.Position)
-	c := driver.CanvasForObject(e)
 	widget.ShowPopUpMenuAtPosition(fyne.NewMenu("", menuItems...), c, popUpPos)
 }
 
