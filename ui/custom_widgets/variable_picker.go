@@ -96,6 +96,12 @@ func ShowVariablePicker(anchor fyne.CanvasObject, defs []models.VariableDef, onS
 	if width < 220 {
 		width = 220
 	}
+	if contentW := variablePickerContentWidth(names, labels); contentW > width {
+		width = contentW
+	}
+	if maxW := holder.Size().Width - theme.Padding()*2; maxW > 0 && width > maxW {
+		width = maxW
+	}
 	itemH := float32(44)
 	maxH := holder.Size().Height * 0.45
 	listH := float32(len(filtered))*itemH + theme.Padding()*2
@@ -107,4 +113,29 @@ func ShowVariablePicker(anchor fyne.CanvasObject, defs []models.VariableDef, onS
 	pos := fyne.CurrentApp().Driver().AbsolutePositionForObject(anchor)
 	popup.ShowAtPosition(pos.Add(fyne.NewPos(0, anchor.Size().Height)))
 	holder.Focus(filter)
+}
+
+// variablePickerContentWidth returns the width needed to display the widest
+// list item (name or meta line) without horizontal truncation, including room
+// for label insets and the list's scrollbar.
+func variablePickerContentWidth(names, labels []string) float32 {
+	textSize := theme.TextSize()
+	var maxText float32
+	measure := func(s string, style fyne.TextStyle) {
+		if s == "" {
+			return
+		}
+		if w := fyne.MeasureText(s, textSize, style).Width; w > maxText {
+			maxText = w
+		}
+	}
+	for i := range names {
+		measure(names[i], fyne.TextStyle{})
+		meta := strings.TrimPrefix(labels[i], names[i]+" · ")
+		if meta != labels[i] {
+			measure(meta, fyne.TextStyle{Italic: true})
+		}
+	}
+	// Label inner padding (both sides) + list item inset + scrollbar clearance.
+	return maxText + theme.Padding()*4 + theme.ScrollBarSize()
 }

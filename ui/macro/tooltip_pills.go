@@ -15,6 +15,10 @@ func addDisplayPill(row *pillRow, label, value, actionType string) {
 	row.add(actiondisplay.NewDisplayLabeledPill(label, value, actionType, macroKnownVariables()))
 }
 
+func addDisplayVariablePill(row *pillRow, label, varName, actionType string) {
+	row.add(actiondisplay.NewDisplayVariablePill(label, varName, actionType, macroKnownVariables()))
+}
+
 func addInlineDisplayPill(row *pillRow, label, value, actionType string) {
 	row.add(actiondisplay.NewDisplayLabeledPill(label, strings.TrimSpace(value), actionType, macroKnownVariables()))
 }
