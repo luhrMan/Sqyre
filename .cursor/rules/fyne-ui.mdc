@@ -10,7 +10,7 @@ alwaysApply: false
 
 1. `Construct*` builds widgets and stores them on the UI shell struct.
 2. `Set*Ui` / `SetDeps` injects `WireDeps` from `ui/construct.go` — the only place that should reach into `GetUi()`.
-3. Subpackages (`editor`, `macro`, `actiondialog`) read `activeWire` / deps; they do not import `package ui`.
+3. Subpackages (`editor`, `macro`) read `activeWire` / deps; they do not import `package ui`.
 
 Add new cross-package callbacks to the relevant `WireDeps` struct instead of importing `ui`.
 

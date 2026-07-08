@@ -186,6 +186,7 @@ func (mt *MacroTree) beginDrag(h *dragHandle, e *fyne.DragEvent) bool {
 	mt.dragSrcUID = h.uid
 	mt.dragVisible = vis
 	mt.dragActive = true
+	dismissActiveActionTooltips()
 	mt.dragLastPointerY = e.AbsolutePosition.Y
 	mt.dropIndicatorKey = ""
 	mt.dropGhostContentKey = ""
@@ -1227,6 +1228,10 @@ func (mt *MacroTree) relocateDraggedNode(record bool) bool {
 
 const flushNodeCacheSentinel = "\x00sqyre-flush-node-cache\x00"
 
+// flushNodeCache forces Fyne's tree to drop its internal node widget cache by
+// briefly swapping Root to a sentinel. Two Refresh passes are required: the
+// first binds rows against the sentinel (invalidating stale nodes), the second
+// restores the real root and re-binds visible rows.
 func (mt *MacroTree) flushNodeCache() {
 	mt.suppressBranchOpenScroll++
 	defer func() { mt.suppressBranchOpenScroll-- }()

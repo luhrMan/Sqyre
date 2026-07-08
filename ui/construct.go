@@ -6,14 +6,13 @@ import (
 	"Sqyre/internal/services"
 	"Sqyre/ui/editor"
 	"Sqyre/ui/macro"
-	"Sqyre/ui/macro/actiondialog"
 	"Sqyre/ui/macrocxt"
 	"Sqyre/ui/recording"
 	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/data/binding"
-	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -68,51 +67,6 @@ func SetEditorUi() {
 	})
 }
 
-// SetActionDialogDeps wires the macro action editor dialog (implementation in ui/macro/actiondialog).
-func SetActionDialogDeps() {
-	u := GetUi()
-	ctx := macroContext()
-	actiondialog.SetDeps(actiondialog.Deps{
-		Window: u.Window,
-		ClearOpenActionDialog: func() {
-			if u.MainUi != nil {
-				u.MainUi.ActionDialog = nil
-			}
-		},
-		SetActionDialog: func(d dialog.Dialog) {
-			if u.MainUi != nil {
-				u.MainUi.ActionDialog = d
-			}
-		},
-		ClearActionDialogIfCurrent: func(d dialog.Dialog) {
-			if u.MainUi != nil && u.MainUi.ActionDialog == d {
-				u.MainUi.ActionDialog = nil
-			}
-		},
-		MacroContext:        ctx,
-		MacroVariables:      ctx.VariableNames,
-		MacroVariableDefs:   ctx.VariableDefs,
-		CurrentMacroName: func() string {
-			st := u.Mui.MTabs.SelectedTab()
-			if st == nil || st.Macro == nil {
-				return ""
-			}
-			return st.Macro.Name
-		},
-		PreviewExpression:    previewExpression,
-		AddDialogEscapeClose:     AddDialogEscapeClose,
-		AddActionDialogEnterSave: AddActionDialogEnterSave,
-		ShowErrorWithEscape:        ShowErrorWithEscape,
-		ShowRecordingOverlay:     recording.ShowRecordingOverlay,
-		ShowHotkeyRecordDialog: func(parent fyne.Window, stableDuration time.Duration, onRecorded func(keys []string)) {
-			recording.ShowHotkeyRecordDialog(parent, stableDuration, AddDialogEscapeClose, onRecorded)
-		},
-		ShowKeyRecordDialog: func(parent fyne.Window, onRecorded func(key string)) {
-			recording.ShowKeyRecordDialog(parent, AddDialogEscapeClose, onRecorded)
-		},
-	})
-}
-
 // previewExpression validates and evaluates a Calculate expression against the
 // currently selected macro's declared and action-produced variables.
 func previewExpression(expr string) (string, error) {
@@ -143,22 +97,21 @@ func SetMacroUi() {
 		AddDialogEscapeClose:  AddDialogEscapeClose,
 		AddPopupEscapeClose:   AddPopupEscapeClose,
 		ShowConfirmWithEscape: ShowConfirmWithEscape,
-		ShowActionDialog: func(action actions.ActionInterface, onSave func(actions.ActionInterface), onCancel func()) {
-			actiondialog.ShowActionDialog(action, onSave, onCancel)
-		},
 		ShowAddActionPicker: func() {
 			u.ShowAddActionPicker()
 		},
-		NavigateToCoordinateEntity: func(ref actions.CoordinateRef, isPoint bool) {
-			EnsureDataEditor()
-			u.showOverlay(u.EditorUi.CanvasObject, "Editor", overlayEditor)
-			if mt := u.Mui.MTabs.SelectedTab(); mt != nil {
-				mt.UnselectAll()
-				mt.SelectedNode = ""
-			}
-			if err := editor.NavigateToCoordinateEntity(ref, isPoint); err != nil {
-				ShowErrorWithEscape(err, u.Window)
-			}
+		ShowPointPicker: func(initial actions.CoordinateRef, onSelect func(actions.CoordinateRef), onClosed func()) {
+			ShowPointPicker(u.Window, initial, onSelect, onClosed)
+		},
+		ShowSearchAreaPicker: func(initial actions.CoordinateRef, onSelect func(actions.CoordinateRef), onClosed func()) {
+			ShowSearchAreaPicker(u.Window, initial, onSelect, onClosed)
+		},
+		ShowItemsPicker: func(getTargets func() []string, onChanged func(newTargets []string), onClosed func()) {
+			ShowItemsPicker(u.Window, getTargets, onChanged, onClosed)
+		},
+		PreviewExpression: previewExpression,
+		ShowRecordingOverlay: func(onClosed func(), onMouseDown func(*desktop.MouseEvent)) func() {
+			return recording.ShowRecordingOverlay(onClosed, onMouseDown)
 		},
 		RegisterTooltipEnterSave: func(onSave func()) func() {
 			return RegisterActionTooltipEnterSave(u.Window, onSave)

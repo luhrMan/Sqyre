@@ -5,7 +5,6 @@ import (
 	"image"
 	"image/color"
 	"strings"
-	"time"
 
 	"Sqyre/internal/config"
 	"Sqyre/internal/models/actions"
@@ -22,10 +21,71 @@ import (
 	fynewidget "fyne.io/fyne/v2/widget"
 )
 
-const (
-	actionDisplayTooltipShowDelay        = 500 * time.Millisecond
-	actionDisplayTooltipEdgeMarginFraction float32 = 0.10
+const tooltipGeometryEpsilon float32 = 0.5
+
+var (
+	activeActionViewTooltip *actionDisplayTooltipHover
+	activeActionEditTooltip *actionDisplayTooltipHover
 )
+
+// ResetActionTooltipOwnershipForTesting clears global action tooltip ownership (tests only).
+func ResetActionTooltipOwnershipForTesting() {
+	activeActionViewTooltip = nil
+	activeActionEditTooltip = nil
+}
+
+func actionTooltipEditPinnedByOther(h *actionDisplayTooltipHover) bool {
+	return activeActionEditTooltip != nil && activeActionEditTooltip != h
+}
+
+func dismissOtherActionViewTooltip(h *actionDisplayTooltipHover) {
+	if activeActionViewTooltip == nil || activeActionViewTooltip == h {
+		return
+	}
+	prev := activeActionViewTooltip
+	activeActionViewTooltip = nil
+	prev.hideViewTooltip()
+}
+
+func claimActionViewTooltip(h *actionDisplayTooltipHover) {
+	dismissOtherActionViewTooltip(h)
+	activeActionViewTooltip = h
+}
+
+func releaseActionViewTooltip(h *actionDisplayTooltipHover) {
+	if activeActionViewTooltip == h {
+		activeActionViewTooltip = nil
+	}
+}
+
+func claimActionEditTooltip(h *actionDisplayTooltipHover) {
+	dismissOtherActionViewTooltip(h)
+	activeActionEditTooltip = h
+	releaseActionViewTooltip(h)
+}
+
+func releaseActionEditTooltip(h *actionDisplayTooltipHover) {
+	if activeActionEditTooltip == h {
+		activeActionEditTooltip = nil
+	}
+}
+
+func dismissActiveActionTooltips() {
+	if activeActionViewTooltip != nil {
+		h := activeActionViewTooltip
+		activeActionViewTooltip = nil
+		h.hideViewTooltip()
+	}
+	if activeActionEditTooltip != nil {
+		h := activeActionEditTooltip
+		activeActionEditTooltip = nil
+		h.hideTooltip()
+	}
+}
+
+func (h *actionDisplayTooltipHover) actionTooltipsSuppressed() bool {
+	return h.rowBody != nil && h.rowBody.tree != nil && h.rowBody.tree.dragActive
+}
 
 type actionDisplayHandlers struct {
 	onActionSaved func()
@@ -70,6 +130,7 @@ type actionDisplayTooltipHover struct {
 	actionType    string
 	previewLoader custom_widgets.PreviewTooltipLoad
 	rowBody       *treeRowBody
+	keepAliveArea fyne.CanvasObject
 
 	tooltipPanel     *actionDisplayTooltipPanel
 	dismissBackdrop  *custom_widgets.TooltipDismissBackdrop
@@ -78,8 +139,29 @@ type actionDisplayTooltipHover struct {
 	captureCancel    context.CancelFunc
 	captureCtx       context.Context
 	absoluteMousePos fyne.Position
-	hovering         bool
-	panelHovering    bool
+	displayHovering  bool
+	iconHovering     bool
+	rowHovering      bool
+	backdropDismissEnabled bool
+	previewCache           custom_widgets.PreviewTooltipResult
+	previewCacheErr        error
+	previewCacheReady      bool
+
+	tooltipMounted    bool
+	cachedCanvas      fyne.Canvas
+	cachedLayer       *custom_widgets.ItemTooltipLayer
+	cachedLayerOrigin fyne.Position
+	layerCacheOK      bool
+
+	keepAliveGeometryOK   bool
+	cachedSelfOrigin      fyne.Position
+	cachedSelfSize        fyne.Size
+	cachedKeepAliveOrigin fyne.Position
+	cachedKeepAliveSize   fyne.Size
+
+	tooltipPanelGeometryOK bool
+	cachedPanelOrigin      fyne.Position
+	cachedPanelSize        fyne.Size
 }
 
 var _ desktop.Hoverable = (*actionDisplayTooltipHover)(nil)
@@ -95,11 +177,12 @@ func newActionDisplayTooltipHover(
 	onActionSaved func(),
 ) *actionDisplayTooltipHover {
 	h := &actionDisplayTooltipHover{
-		node:          node,
-		onActionSaved: onActionSaved,
-		content:       content,
-		actionType:    actionType,
-		previewLoader: loader,
+		node:                   node,
+		onActionSaved:          onActionSaved,
+		content:                content,
+		actionType:             actionType,
+		previewLoader:          loader,
+		backdropDismissEnabled: true,
 	}
 	if len(extra) > 0 {
 		h.extra = append([]actions.Param(nil), extra...)
@@ -112,68 +195,348 @@ func (h *actionDisplayTooltipHover) bindRowBody(body *treeRowBody) {
 	h.rowBody = body
 }
 
+func (h *actionDisplayTooltipHover) setTooltipKeepAliveArea(obj fyne.CanvasObject) {
+	h.keepAliveArea = obj
+}
+
 func (h *actionDisplayTooltipHover) Tapped(pe *fyne.PointEvent) {
 	if h.tooltipPanel != nil && !h.tooltipPanel.editing {
-		h.hideTooltip()
+		h.hideViewTooltip()
 	}
 	if h.rowBody != nil {
 		h.rowBody.Tapped(pe)
 	}
 }
 
+func (h *actionDisplayTooltipHover) anyHovering() bool {
+	return h.displayHovering || h.iconHovering || h.rowHovering
+}
+
 func (h *actionDisplayTooltipHover) MouseIn(e *desktop.MouseEvent) {
-	h.hovering = true
-	h.absoluteMousePos = e.AbsolutePosition
-	ctx, cancel := context.WithCancel(context.Background())
-	h.pendingCtx = ctx
-	h.pendingCancel = cancel
-	go func() {
-		select {
-		case <-time.After(actionDisplayTooltipShowDelay):
-		case <-ctx.Done():
-			return
-		}
-		select {
-		case <-ctx.Done():
-			return
-		default:
-			fyne.Do(func() {
-				if h.pendingCtx != ctx || !h.hovering {
-					return
-				}
-				h.pendingCtx = nil
-				h.pendingCancel = nil
-				if h.previewLoader != nil {
-					h.beginPreviewCapture()
-				} else {
-					h.showTooltipPanel()
-				}
-			})
-		}
-	}()
+	h.displayHovering = true
+	h.noteHoverIn(e)
 }
 
 func (h *actionDisplayTooltipHover) MouseOut() {
-	h.hovering = false
-	if h.tooltipPinned() || h.panelHovering {
+	h.displayHovering = false
+	h.noteHoverOut()
+}
+
+func (h *actionDisplayTooltipHover) iconMouseIn(e *desktop.MouseEvent) {
+	h.iconHovering = true
+	h.noteHoverIn(e)
+}
+
+func (h *actionDisplayTooltipHover) iconMouseOut() {
+	h.iconHovering = false
+	h.noteHoverOut()
+}
+
+func (h *actionDisplayTooltipHover) iconMouseMoved(e *desktop.MouseEvent) {
+	h.trackMouseForTooltip(e)
+}
+
+func (h *actionDisplayTooltipHover) rowMouseIn(e *desktop.MouseEvent) {
+	h.rowHovering = true
+	h.noteHoverIn(e)
+}
+
+func (h *actionDisplayTooltipHover) rowMouseOut() {
+	h.rowHovering = false
+	h.noteHoverOut()
+}
+
+func (h *actionDisplayTooltipHover) rowMouseMoved(e *desktop.MouseEvent) {
+	h.trackMouseForTooltip(e)
+}
+
+func (h *actionDisplayTooltipHover) trackMouseForTooltip(e *desktop.MouseEvent) {
+	pos := e.AbsolutePosition
+	if h.absoluteMousePos == pos {
+		return
+	}
+	h.absoluteMousePos = pos
+	if h.viewTooltipOpen() && !h.pointerInTreeActionSpace(pos) {
+		h.cancelCapture()
+		h.hideViewTooltip()
+		return
+	}
+	if !h.shouldFollowMouse() {
+		return
+	}
+	h.repositionTooltip()
+}
+
+func (h *actionDisplayTooltipHover) pointerInTreeActionSpace(pos fyne.Position) bool {
+	return h.pointerInRowKeepAlive(pos)
+}
+
+func (h *actionDisplayTooltipHover) shouldFollowMouse() bool {
+	if h.tooltipPanel == nil || h.tooltipPinned() {
+		return false
+	}
+	return h.pointerInTreeActionSpace(h.absoluteMousePos)
+}
+
+func pointInCachedRect(abs, origin fyne.Position, size fyne.Size) bool {
+	return abs.X >= origin.X && abs.Y >= origin.Y &&
+		abs.X < origin.X+size.Width && abs.Y < origin.Y+size.Height
+}
+
+func (h *actionDisplayTooltipHover) refreshKeepAliveGeometry() {
+	driver := fyne.CurrentApp().Driver()
+	h.cachedSelfOrigin = driver.AbsolutePositionForObject(h)
+	h.cachedSelfSize = h.Size()
+	if h.keepAliveArea != nil && h.keepAliveArea.Visible() {
+		h.cachedKeepAliveOrigin = driver.AbsolutePositionForObject(h.keepAliveArea)
+		h.cachedKeepAliveSize = h.keepAliveArea.Size()
+	}
+	h.keepAliveGeometryOK = true
+}
+
+func (h *actionDisplayTooltipHover) clearKeepAliveGeometryCache() {
+	h.keepAliveGeometryOK = false
+}
+
+func (h *actionDisplayTooltipHover) refreshTooltipPanelGeometry(origin, relPos fyne.Position, size fyne.Size) {
+	h.cachedPanelOrigin = origin.Add(relPos)
+	h.cachedPanelSize = size
+	h.tooltipPanelGeometryOK = true
+}
+
+func (h *actionDisplayTooltipHover) clearTooltipPanelGeometryCache() {
+	h.tooltipPanelGeometryOK = false
+}
+
+func (h *actionDisplayTooltipHover) pointerInTooltipPanel(pos fyne.Position) bool {
+	if h.tooltipPanel == nil || !h.tooltipPanelGeometryOK {
+		return false
+	}
+	return pointInCachedRect(pos, h.cachedPanelOrigin, h.cachedPanelSize)
+}
+
+func (h *actionDisplayTooltipHover) pointerInRowKeepAlive(pos fyne.Position) bool {
+	if !h.keepAliveGeometryOK {
+		h.refreshKeepAliveGeometry()
+	}
+	if h.keepAliveArea != nil && h.keepAliveArea.Visible() {
+		if pointInCachedRect(pos, h.cachedKeepAliveOrigin, h.cachedKeepAliveSize) {
+			return true
+		}
+	}
+	return pointInCachedRect(pos, h.cachedSelfOrigin, h.cachedSelfSize)
+}
+
+func (h *actionDisplayTooltipHover) hoverCanvas() fyne.Canvas {
+	if h.cachedCanvas != nil {
+		return h.cachedCanvas
+	}
+	c := fyne.CurrentApp().Driver().CanvasForObject(h)
+	h.cachedCanvas = c
+	return c
+}
+
+func (h *actionDisplayTooltipHover) isTooltipMounted() bool {
+	if h.tooltipPanel == nil {
+		return false
+	}
+	if h.tooltipMounted {
+		return true
+	}
+	c := h.hoverCanvas()
+	if c == nil {
+		return false
+	}
+	layer := h.windowTooltipLayer(c)
+	if layer == nil {
+		return false
+	}
+	for _, obj := range layer.Container.Objects {
+		if obj == h.tooltipPanel {
+			h.tooltipMounted = true
+			return true
+		}
+	}
+	return false
+}
+
+func (h *actionDisplayTooltipHover) clearTooltipLayerCache() {
+	h.layerCacheOK = false
+	h.cachedCanvas = nil
+	h.cachedLayer = nil
+	h.clearKeepAliveGeometryCache()
+	h.clearTooltipPanelGeometryCache()
+}
+
+func (h *actionDisplayTooltipHover) tooltipLayerOn(c fyne.Canvas) (*custom_widgets.ItemTooltipLayer, fyne.Position) {
+	if h.layerCacheOK && h.cachedCanvas == c && h.cachedLayer != nil {
+		return h.cachedLayer, h.cachedLayerOrigin
+	}
+	layer := h.windowTooltipLayer(c)
+	if layer == nil {
+		return nil, fyne.Position{}
+	}
+	origin := h.windowTooltipOrigin(layer)
+	h.cachedCanvas = c
+	h.cachedLayer = layer
+	h.cachedLayerOrigin = origin
+	h.layerCacheOK = true
+	return layer, origin
+}
+
+func (h *actionDisplayTooltipHover) viewTooltipOpen() bool {
+	return h.tooltipPanel != nil && !h.tooltipPanel.editing && h.isTooltipMounted()
+}
+
+func (h *actionDisplayTooltipHover) shouldKeepViewTooltip() bool {
+	if h.tooltipPinned() || !h.viewTooltipOpen() {
+		return true
+	}
+	return h.pointerInTreeActionSpace(h.absoluteMousePos)
+}
+
+func (h *actionDisplayTooltipHover) scheduleViewTooltipDismissCheck() {
+	if !h.viewTooltipOpen() {
+		return
+	}
+	fyne.Do(func() {
+		if !h.shouldKeepViewTooltip() {
+			h.cancelCapture()
+			h.hideViewTooltip()
+		}
+	})
+}
+
+func (h *actionDisplayTooltipHover) clearPreviewCache() {
+	h.previewCacheReady = false
+	h.previewCache = custom_widgets.PreviewTooltipResult{}
+	h.previewCacheErr = nil
+}
+
+func (h *actionDisplayTooltipHover) applyPreviewCache(panel *actionDisplayTooltipPanel) {
+	if !h.previewCacheReady || panel == nil {
+		return
+	}
+	if h.previewCacheErr != nil {
+		panel.setPreviewError(h.previewCacheErr.Error())
+		return
+	}
+	panel.setPreviewImage(h.previewCache.Image, h.previewCache.Caption)
+}
+
+func (h *actionDisplayTooltipHover) previewCaptureInFlight() bool {
+	return h.captureCtx != nil
+}
+
+func (h *actionDisplayTooltipHover) noteHoverIn(e *desktop.MouseEvent) {
+	h.absoluteMousePos = e.AbsolutePosition
+	h.refreshKeepAliveGeometry()
+	if h.actionTooltipsSuppressed() {
+		h.cancelPending()
+		h.hideViewTooltip()
+		return
+	}
+	if actionTooltipEditPinnedByOther(h) {
+		h.cancelPending()
+		return
+	}
+	if h.tooltipPinned() {
+		return
+	}
+	if h.tooltipPanel != nil && !h.tooltipPanel.editing {
+		if !h.isTooltipMounted() {
+			h.openViewTooltip()
+			return
+		}
+		h.repositionTooltip()
+		custom_widgets.ActivateTooltipEscapeDismiss(func() { h.hideViewTooltip() })
+		return
+	}
+	h.openViewTooltip()
+}
+
+func (h *actionDisplayTooltipHover) openViewTooltip() {
+	if h.actionTooltipsSuppressed() || actionTooltipEditPinnedByOther(h) {
+		return
+	}
+	h.cancelPending()
+	h.refreshKeepAliveGeometry()
+	if h.previewLoader != nil {
+		h.beginPreviewCapture()
+		return
+	}
+	h.showTooltipPanel()
+}
+
+func (h *actionDisplayTooltipHover) noteHoverOut() {
+	h.clearKeepAliveGeometryCache()
+	if h.tooltipPinned() {
+		return
+	}
+	if h.anyHovering() && h.pointerInRowKeepAlive(h.absoluteMousePos) {
 		return
 	}
 	h.cancelPending()
 	h.cancelCapture()
-	h.hideTooltip()
+	h.hideViewTooltip()
+}
+
+// hideViewTooltip unmounts a view-mode tooltip but keeps the preview cache so
+// re-hovering the same row does not recapture the screen.
+func (h *actionDisplayTooltipHover) hideViewTooltip() {
+	if h.tooltipPanel == nil || h.tooltipPanel.editing {
+		return
+	}
+	h.cancelPending()
+	h.cancelCapture()
+	h.clearTooltipPanelGeometryCache()
+	h.removeTooltipFromLayer()
+	releaseActionViewTooltip(h)
 }
 
 func (h *actionDisplayTooltipHover) tooltipPinned() bool {
 	return h.tooltipPanel != nil && h.tooltipPanel.editing
 }
 
+func (h *actionDisplayTooltipHover) setBackdropDismissEnabled(enabled bool) {
+	h.backdropDismissEnabled = enabled
+}
+
+func (h *actionDisplayTooltipHover) suspendBackdropDismissForPicker(onClosed func()) func() {
+	h.setBackdropDismissEnabled(false)
+	if onClosed == nil {
+		return func() { h.setBackdropDismissEnabled(true) }
+	}
+	return func() {
+		h.setBackdropDismissEnabled(true)
+		onClosed()
+	}
+}
+
 func (h *actionDisplayTooltipHover) MouseMoved(e *desktop.MouseEvent) {
-	h.absoluteMousePos = e.AbsolutePosition
+	h.trackMouseForTooltip(e)
 }
 
 func (h *actionDisplayTooltipHover) TappedSecondary(*fyne.PointEvent) {
-	if h.tooltipPanel != nil && !h.tooltipPanel.editing {
+	h.openTooltipEdit()
+}
+
+func (h *actionDisplayTooltipHover) openTooltipEdit() {
+	if h.actionTooltipsSuppressed() {
+		return
+	}
+	if h.absoluteMousePos == (fyne.Position{}) {
+		h.absoluteMousePos = fyne.CurrentApp().Driver().AbsolutePositionForObject(h)
+	}
+	h.showTooltipPanel()
+	if h.tooltipPanel == nil {
+		return
+	}
+	if !h.tooltipPanel.editing {
 		h.tooltipPanel.enterEditMode()
+	}
+	if h.previewLoader != nil {
+		h.startPreviewCapture()
 	}
 }
 
@@ -190,85 +553,219 @@ func (h *actionDisplayTooltipHover) cancelCapture() {
 		h.captureCancel()
 		h.captureCancel = nil
 		h.captureCtx = nil
+		custom_widgets.RevokeActivePreviewCapture()
 	}
+}
+
+func (h *actionDisplayTooltipHover) windowTooltipLayer(c fyne.Canvas) *custom_widgets.ItemTooltipLayer {
+	return custom_widgets.FindItemTooltipLayer(c, nil)
+}
+
+func (h *actionDisplayTooltipHover) windowTooltipOrigin(layer *custom_widgets.ItemTooltipLayer) fyne.Position {
+	return custom_widgets.ItemTooltipLayerOrigin(layer, nil)
 }
 
 func (h *actionDisplayTooltipHover) hideTooltip() {
 	if h.tooltipPanel == nil {
 		return
 	}
-	custom_widgets.DeactivateTooltipEscapeDismiss()
+	panel := h.tooltipPanel
 	h.cancelPending()
 	h.cancelCapture()
-	h.panelHovering = false
-	h.tooltipPanel.deactivateEnterSave()
-	c := fyne.CurrentApp().Driver().CanvasForObject(h)
-	if c == nil {
-		h.tooltipPanel = nil
-		return
+	h.clearPreviewCache()
+	if panel.editing {
+		panel.exitEditMode()
 	}
-	layer := custom_widgets.FindItemTooltipLayer(c, c.Overlays().Top())
-	if layer != nil {
-		layer.Container.Objects = nil
-		layer.Container.Refresh()
-	}
+	panel.clearPreview()
+	panel.deactivateEnterSave()
+	h.removeTooltipFromLayer()
 	h.tooltipPanel = nil
+	releaseActionViewTooltip(h)
 }
 
-func (h *actionDisplayTooltipHover) showTooltipPanel() {
-	h.hideTooltip()
-	c := fyne.CurrentApp().Driver().CanvasForObject(h)
+func (h *actionDisplayTooltipHover) removeTooltipFromLayer() {
+	panel := h.tooltipPanel
+	if panel == nil {
+		return
+	}
+	c := h.hoverCanvas()
 	if c == nil {
 		return
 	}
-	layer := custom_widgets.FindItemTooltipLayer(c, c.Overlays().Top())
+	layer := h.windowTooltipLayer(c)
 	if layer == nil {
 		return
 	}
-	panel := newActionDisplayTooltipPanel(h)
-	if h.previewLoader != nil {
-		panel.setPreviewLoading()
+	var remaining []fyne.CanvasObject
+	if h.dismissBackdrop != nil {
+		remaining = custom_widgets.RemoveLayerObject(layer, h.dismissBackdrop)
 	}
-	h.placeTooltipPanel(c, layer, panel)
-	h.tooltipPanel = panel
-	custom_widgets.ActivateTooltipEscapeDismiss(func() { h.hideTooltip() })
+	remaining = custom_widgets.RemoveLayerObject(layer, panel)
+	if len(remaining) == 0 {
+		custom_widgets.DeactivateTooltipEscapeDismiss()
+	}
+	h.tooltipMounted = false
+	h.clearTooltipLayerCache()
+}
+
+func (h *actionDisplayTooltipHover) showTooltipPanel() {
+	if h.actionTooltipsSuppressed() || actionTooltipEditPinnedByOther(h) {
+		return
+	}
+	h.cancelPending()
+	if h.tooltipPanel != nil {
+		if h.tooltipPanel.editing {
+			h.syncTooltipLayer()
+			return
+		}
+		h.tooltipPanel.refreshViewContent(h)
+	} else {
+		h.tooltipPanel = newActionDisplayTooltipPanel(h)
+	}
+	if h.previewLoader != nil {
+		switch {
+		case h.previewCacheReady:
+			h.applyPreviewCache(h.tooltipPanel)
+		case !h.previewCaptureInFlight():
+			h.tooltipPanel.setPreviewLoading()
+		}
+	}
+	c := h.hoverCanvas()
+	if c == nil {
+		return
+	}
+	layer, _ := h.tooltipLayerOn(c)
+	if layer == nil {
+		return
+	}
+	if h.tooltipPinned() {
+		claimActionEditTooltip(h)
+	} else {
+		claimActionViewTooltip(h)
+	}
+	h.placeTooltipPanel(c, layer, h.tooltipPanel)
+	custom_widgets.ActivateTooltipEscapeDismiss(func() { h.hideViewTooltip() })
 }
 
 func (h *actionDisplayTooltipHover) placeTooltipPanel(c fyne.Canvas, layer *custom_widgets.ItemTooltipLayer, panel *actionDisplayTooltipPanel) {
 	h.tooltipPanel = panel
-	h.updateTooltipLayer(c, layer)
+	h.syncTooltipLayer()
 }
 
 func (h *actionDisplayTooltipHover) relayoutTooltip() {
+	if h.tooltipPanel != nil {
+		h.tooltipPanel.invalidateLayoutSize()
+	}
+	h.syncTooltipLayer()
+}
+
+// refreshTooltipLayout recomputes tooltip size/position without rebuilding the overlay layer.
+func (h *actionDisplayTooltipHover) refreshTooltipLayout() {
+	if h.tooltipPanel != nil {
+		h.tooltipPanel.invalidateLayoutSize()
+	}
+	h.repositionTooltip()
+}
+
+func (h *actionDisplayTooltipHover) repositionTooltip() {
 	if h.tooltipPanel == nil {
 		return
 	}
-	c := fyne.CurrentApp().Driver().CanvasForObject(h)
+	c := h.hoverCanvas()
 	if c == nil {
 		return
 	}
-	layer := custom_widgets.FindItemTooltipLayer(c, c.Overlays().Top())
+	_, origin := h.tooltipLayerOn(c)
+	h.refreshTooltipPanelGeometry(origin, h.tooltipPanel.Position(), h.tooltipPanel.Size())
+	size, relPos := h.tooltipPosition(c, origin)
+	curSize := h.tooltipPanel.Size()
+	curPos := h.tooltipPanel.Position()
+	if fyneSizesClose(curSize, size) && fynePositionsClose(curPos, relPos) {
+		return
+	}
+	if !fyneSizesClose(curSize, size) {
+		h.tooltipPanel.Resize(size)
+	}
+	if !fynePositionsClose(curPos, relPos) {
+		h.tooltipPanel.Move(relPos)
+	}
+	h.refreshTooltipPanelGeometry(origin, relPos, size)
+}
+
+func (h *actionDisplayTooltipHover) tooltipPosition(c fyne.Canvas, origin fyne.Position) (fyne.Size, fyne.Position) {
+	size := h.tooltipPanel.measureLayoutSize(c)
+	mousePos := h.absoluteMousePos.Subtract(origin)
+	return size, actionDisplayTooltipPosition(c, mousePos, size)
+}
+
+func fyneSizesClose(a, b fyne.Size) bool {
+	return abs32(a.Width-b.Width) <= tooltipGeometryEpsilon &&
+		abs32(a.Height-b.Height) <= tooltipGeometryEpsilon
+}
+
+func fynePositionsClose(a, b fyne.Position) bool {
+	return abs32(a.X-b.X) <= tooltipGeometryEpsilon &&
+		abs32(a.Y-b.Y) <= tooltipGeometryEpsilon
+}
+
+func abs32(v float32) float32 {
+	if v < 0 {
+		return -v
+	}
+	return v
+}
+
+func actionDisplayTooltipSizeAndPosition(panel *actionDisplayTooltipPanel, c fyne.Canvas, mousePos fyne.Position) (fyne.Size, fyne.Position) {
+	size := panel.measureLayoutSize(c)
+	return size, actionDisplayTooltipPosition(c, mousePos, size)
+}
+
+func actionDisplayTooltipPosition(c fyne.Canvas, mousePos fyne.Position, size fyne.Size) fyne.Position {
+	canvasSize := c.Size()
+	edgeMarginX := canvasSize.Width * custom_widgets.TooltipEdgeMarginFraction
+	edgeMarginY := canvasSize.Height * custom_widgets.TooltipEdgeMarginFraction
+
+	pos := mousePos
+	if rightEdge := pos.X + size.Width; rightEdge > canvasSize.Width-edgeMarginX {
+		pos.X -= rightEdge - canvasSize.Width + edgeMarginX
+	}
+	if pos.X < edgeMarginX {
+		pos.X = edgeMarginX
+	}
+	const belowMouseDist = 16
+	const aboveMouseDist = 8
+	if bottomEdge := pos.Y + size.Height + belowMouseDist; bottomEdge > canvasSize.Height-edgeMarginY {
+		pos.Y -= size.Height + aboveMouseDist
+	} else {
+		pos.Y += belowMouseDist
+	}
+	if pos.Y < edgeMarginY {
+		pos.Y = edgeMarginY
+	}
+	return pos
+}
+
+func (h *actionDisplayTooltipHover) syncTooltipLayer() {
+	if h.tooltipPanel == nil {
+		return
+	}
+	c := h.hoverCanvas()
+	if c == nil {
+		return
+	}
+	layer, _ := h.tooltipLayerOn(c)
 	if layer == nil {
 		return
 	}
-	h.updateTooltipLayer(c, layer)
-}
-
-func (h *actionDisplayTooltipHover) updateTooltipLayer(c fyne.Canvas, layer *custom_widgets.ItemTooltipLayer) {
-	if h.tooltipPanel == nil {
-		layer.Container.Objects = nil
-		layer.Container.Refresh()
-		return
-	}
-	origin := custom_widgets.ItemTooltipLayerOrigin(layer, c.Overlays().Top())
-	size, relPos := actionDisplayTooltipSizeAndPosition(h.tooltipPanel, c, h.absoluteMousePos.Subtract(origin))
-	h.tooltipPanel.Resize(size)
-	h.tooltipPanel.Move(relPos)
+	h.repositionTooltip()
 
 	var objects []fyne.CanvasObject
 	if h.tooltipPinned() {
 		if h.dismissBackdrop == nil {
 			h.dismissBackdrop = custom_widgets.NewTooltipDismissBackdrop(func() {
+				if !h.backdropDismissEnabled {
+					return
+				}
 				h.hideTooltip()
 			})
 		}
@@ -281,60 +778,109 @@ func (h *actionDisplayTooltipHover) updateTooltipLayer(c fyne.Canvas, layer *cus
 		objects = append(objects, h.dismissBackdrop)
 	}
 	objects = append(objects, h.tooltipPanel)
-	layer.Container.Objects = objects
-	layer.Container.Refresh()
+	if layerObjectsChanged(layer.Container.Objects, objects) {
+		layer.Container.Objects = objects
+		layer.Container.Refresh()
+	}
+	h.tooltipMounted = true
+	if h.tooltipPinned() {
+		custom_widgets.ActivateTooltipEscapeDismiss(func() { h.hideTooltip() })
+	}
+}
+
+func layerObjectsChanged(current, next []fyne.CanvasObject) bool {
+	if len(current) != len(next) {
+		return true
+	}
+	for i := range current {
+		if current[i] != next[i] {
+			return true
+		}
+	}
+	return false
 }
 
 func (h *actionDisplayTooltipHover) beginPreviewCapture() {
-	h.showTooltipPanel()
-	load := h.previewLoader
-	if load == nil || !h.hovering {
+	if actionTooltipEditPinnedByOther(h) {
 		return
 	}
+	if h.tooltipPanel == nil || !h.isTooltipMounted() {
+		h.showTooltipPanel()
+	}
+	if h.tooltipPanel == nil {
+		return
+	}
+	h.startPreviewCapture()
+}
+
+func (h *actionDisplayTooltipHover) startPreviewCapture() {
+	h.capturePreview(false)
+}
+
+func (h *actionDisplayTooltipHover) capturePreview(force bool) {
+	if h.previewLoader == nil || h.tooltipPanel == nil {
+		return
+	}
+	if !force {
+		if h.previewCaptureInFlight() {
+			return
+		}
+		if h.previewCacheReady {
+			h.applyPreviewCache(h.tooltipPanel)
+			h.repositionTooltip()
+			return
+		}
+	} else {
+		h.clearPreviewCache()
+	}
+
 	panel := h.tooltipPanel
-	if panel == nil {
-		return
-	}
-	c := fyne.CurrentApp().Driver().CanvasForObject(h)
+	c := h.hoverCanvas()
 	if c == nil {
 		return
 	}
-	layer := custom_widgets.FindItemTooltipLayer(c, c.Overlays().Top())
-	if layer == nil {
-		return
-	}
-	origin := custom_widgets.ItemTooltipLayerOrigin(layer, c.Overlays().Top())
 
+	h.cancelCapture()
+	panel.setPreviewLoading()
+	panel.Refresh()
+	h.repositionTooltip()
+
+	load := h.previewLoader
 	ctx, cancel := context.WithCancel(context.Background())
 	h.captureCtx = ctx
 	h.captureCancel = cancel
 	go func() {
-		result, err := load()
-		select {
-		case <-ctx.Done():
+		if !custom_widgets.AcquirePreviewCaptureSlot(ctx) {
 			return
-		default:
-			fyne.Do(func() {
-				if h.captureCtx != ctx || (!h.hovering && !h.tooltipPinned()) {
-					return
-				}
-				h.captureCancel = nil
-				h.captureCtx = nil
-				if h.tooltipPanel != panel {
-					return
-				}
-				if err != nil {
-					panel.setPreviewError(err.Error())
-				} else {
-					panel.setPreviewImage(result.Image, result.Caption)
-				}
-				panel.Refresh()
-				size, relPos := actionDisplayTooltipSizeAndPosition(panel, c, h.absoluteMousePos.Subtract(origin))
-				panel.Resize(size)
-				panel.Move(relPos)
-				layer.Container.Refresh()
-			})
 		}
+		defer custom_widgets.ReleasePreviewCaptureSlot()
+		if ctx.Err() != nil {
+			return
+		}
+		result, err := load()
+		if ctx.Err() != nil {
+			return
+		}
+		fyne.Do(func() {
+			if ctx.Err() != nil || h.captureCtx != ctx || h.tooltipPanel != panel {
+				return
+			}
+			h.previewCache = result
+			h.previewCacheErr = err
+			h.previewCacheReady = true
+			if !h.shouldKeepViewTooltip() {
+				return
+			}
+			h.captureCancel = nil
+			h.captureCtx = nil
+			if err != nil {
+				panel.setPreviewError(err.Error())
+			} else {
+				panel.setPreviewImage(result.Image, result.Caption)
+			}
+			panel.Refresh()
+			h.repositionTooltip()
+		})
 	}()
 }
 
@@ -342,57 +888,7 @@ func (h *actionDisplayTooltipHover) reloadPreview() {
 	if h.previewLoader == nil || h.tooltipPanel == nil {
 		return
 	}
-	panel := h.tooltipPanel
-	c := fyne.CurrentApp().Driver().CanvasForObject(h)
-	if c == nil {
-		return
-	}
-	layer := custom_widgets.FindItemTooltipLayer(c, c.Overlays().Top())
-	if layer == nil {
-		return
-	}
-	origin := custom_widgets.ItemTooltipLayerOrigin(layer, c.Overlays().Top())
-
-	h.cancelCapture()
-	panel.setPreviewLoading()
-	panel.Refresh()
-	size, relPos := actionDisplayTooltipSizeAndPosition(panel, c, h.absoluteMousePos.Subtract(origin))
-	panel.Resize(size)
-	panel.Move(relPos)
-	layer.Container.Refresh()
-
-	load := h.previewLoader
-	ctx, cancel := context.WithCancel(context.Background())
-	h.captureCtx = ctx
-	h.captureCancel = cancel
-	go func() {
-		result, err := load()
-		select {
-		case <-ctx.Done():
-			return
-		default:
-			fyne.Do(func() {
-				if h.captureCtx != ctx || h.tooltipPanel != panel {
-					return
-				}
-				if !h.hovering && !h.tooltipPinned() {
-					return
-				}
-				h.captureCancel = nil
-				h.captureCtx = nil
-				if err != nil {
-					panel.setPreviewError(err.Error())
-				} else {
-					panel.setPreviewImage(result.Image, result.Caption)
-				}
-				panel.Refresh()
-				size, relPos := actionDisplayTooltipSizeAndPosition(panel, c, h.absoluteMousePos.Subtract(origin))
-				panel.Resize(size)
-				panel.Move(relPos)
-				layer.Container.Refresh()
-			})
-		}
-	}()
+	h.capturePreview(true)
 }
 
 func (h *actionDisplayTooltipHover) exitEditMode() {
@@ -457,6 +953,10 @@ type actionDisplayTooltipPanel struct {
 	enterSaveUnregister func()
 
 	viewParamPills fyne.CanvasObject
+	viewParamPillsKey string
+
+	viewParamPillsBodyIndex int
+	viewBodyBuilt           bool
 
 	img       *canvas.Image
 	message   *fynewidget.Label
@@ -468,9 +968,17 @@ type actionDisplayTooltipPanel struct {
 
 	hoverTipLayer  *fyne.Container
 	activeHoverTip fyne.CanvasObject
+
+	// layoutSize caches tooltip dimensions; row-wrapped target icons make
+	// preferredContentWidth/contentSize O(n) and run on every mouse move without this.
+	layoutSize          fyne.Size
+	layoutCanvasWidth   float32
+	layoutSizeOK        bool
+
+	targetIconsSection fyne.CanvasObject
+	targetIconsKey     string
 }
 
-var _ desktop.Hoverable = (*actionDisplayTooltipPanel)(nil)
 var _ fyne.SecondaryTappable = (*actionDisplayTooltipPanel)(nil)
 
 func newActionDisplayTooltipPanel(owner *actionDisplayTooltipHover) *actionDisplayTooltipPanel {
@@ -482,7 +990,7 @@ func newActionDisplayTooltipPanel(owner *actionDisplayTooltipHover) *actionDispl
 	if len(owner.extra) > 0 {
 		p.extra = append([]actions.Param(nil), owner.extra...)
 	}
-	p.viewParamPills = viewParamPills(owner.node, owner.actionType)
+	p.ensureViewParamPills(owner)
 	p.body = container.NewVBox()
 	p.hoverTipLayer = container.NewWithoutLayout()
 	p.rebuildBody()
@@ -511,19 +1019,59 @@ func (p *actionDisplayTooltipPanel) HideTooltip() {
 	p.activeHoverTip = nil
 }
 
-func (p *actionDisplayTooltipPanel) refreshViewContent(owner *actionDisplayTooltipHover) {
+func (p *actionDisplayTooltipPanel) ensureViewParamPills(owner *actionDisplayTooltipHover) fyne.CanvasObject {
+	if owner == nil {
+		return nil
+	}
+	key := viewParamPillsContentKey(owner.node)
+	if p.viewParamPills != nil && p.viewParamPillsKey == key {
+		return p.viewParamPills
+	}
+	p.viewParamPillsKey = key
 	p.viewParamPills = viewParamPills(owner.node, owner.actionType)
+	return p.viewParamPills
+}
+
+func (p *actionDisplayTooltipPanel) refreshViewContent(owner *actionDisplayTooltipHover) {
+	p.ensureViewParamPills(owner)
+	if !p.editing && p.viewBodyBuilt && p.viewParamPillsBodyIndex >= 0 {
+		if p.viewParamPillsBodyIndex < len(p.body.Objects) {
+			p.body.Objects[p.viewParamPillsBodyIndex] = p.viewParamPills
+		}
+		return
+	}
 	if !p.editing {
 		p.rebuildBody()
 		p.Refresh()
 	}
 }
 
+func (p *actionDisplayTooltipPanel) ensureTargetIconsSection(owner *actionDisplayTooltipHover) fyne.CanvasObject {
+	if owner == nil {
+		return nil
+	}
+	targets := imageSearchTargetsFromNode(owner.node)
+	if len(targets) == 0 {
+		p.targetIconsSection = nil
+		p.targetIconsKey = ""
+		return nil
+	}
+	key := imageSearchTargetIconsViewKey(targets)
+	if p.targetIconsSection != nil && p.targetIconsKey == key {
+		return p.targetIconsSection
+	}
+	p.targetIconsKey = key
+	p.targetIconsSection = imageSearchTargetIconsView(targets)
+	return p.targetIconsSection
+}
+
 func (p *actionDisplayTooltipPanel) enterEditMode() {
 	if p.editing || p.owner == nil {
 		return
 	}
+	p.owner.cancelPending()
 	p.editing = true
+	claimActionEditTooltip(p.owner)
 	p.editForm = buildTooltipEditForm(p.owner.node, p.actionType, p.owner)
 	p.activateEnterSave()
 	p.rebuildBody()
@@ -538,6 +1086,9 @@ func (p *actionDisplayTooltipPanel) exitEditMode() {
 	p.HideTooltip()
 	p.deactivateEnterSave()
 	p.editing = false
+	if p.owner != nil {
+		releaseActionEditTooltip(p.owner)
+	}
 	p.editForm = nil
 	p.refreshViewContent(p.owner)
 	p.rebuildBody()
@@ -575,12 +1126,44 @@ func (p *actionDisplayTooltipPanel) submitEdit() {
 	p.owner.exitEditMode()
 }
 
+func (p *actionDisplayTooltipPanel) invalidateLayoutSize() {
+	p.layoutSizeOK = false
+}
+
+func (p *actionDisplayTooltipPanel) measureLayoutSize(c fyne.Canvas) fyne.Size {
+	canvasWidth := c.Size().Width
+	if p.layoutSizeOK && p.layoutCanvasWidth == canvasWidth {
+		return p.layoutSize
+	}
+	canvasSize := c.Size()
+	edgeMarginX := canvasSize.Width * custom_widgets.TooltipEdgeMarginFraction
+	maxW := canvasSize.Width - edgeMarginX*2
+
+	natural := p.MinSize()
+	width := natural.Width
+	if preferred := p.preferredContentWidth(); preferred > width {
+		width = preferred
+	}
+	if width > maxW {
+		width = maxW
+	}
+	p.layoutSize = p.contentSize(width)
+	p.layoutCanvasWidth = canvasWidth
+	p.layoutSizeOK = true
+	return p.layoutSize
+}
+
 func (p *actionDisplayTooltipPanel) rebuildBody() {
+	p.invalidateLayoutSize()
+	p.viewBodyBuilt = false
+	p.viewParamPillsBodyIndex = -1
 	p.body.Objects = nil
 	if p.editing && p.editForm != nil {
 		if p.editForm.toolbar != nil {
 			p.body.Add(p.editForm.toolbar)
 		}
+	} else if header := actionTooltipTypeHeader(p.actionType); header != nil {
+		p.body.Add(header)
 	}
 	if p.withPreview {
 		if p.img == nil {
@@ -612,12 +1195,10 @@ func (p *actionDisplayTooltipPanel) rebuildBody() {
 		p.body.Add(wrapTooltipSection(previewSection))
 	}
 	if p.owner != nil {
-		if targets := imageSearchTargetsFromNode(p.owner.node); len(targets) > 0 {
-			if p.editing && p.editForm != nil && p.editForm.targetItems != nil {
-				p.body.Add(p.editForm.targetItems)
-			} else if view := imageSearchTargetIconsView(targets); view != nil {
-				p.body.Add(view)
-			}
+		if p.editing && p.editForm != nil && p.editForm.targetItems != nil {
+			p.body.Add(p.editForm.targetItems)
+		} else if section := p.ensureTargetIconsSection(p.owner); section != nil {
+			p.body.Add(section)
 		}
 	}
 	if p.editing && p.editForm != nil {
@@ -626,6 +1207,7 @@ func (p *actionDisplayTooltipPanel) rebuildBody() {
 		}
 	} else {
 		if p.viewParamPills != nil {
+			p.viewParamPillsBodyIndex = len(p.body.Objects)
 			p.body.Add(p.viewParamPills)
 		}
 	}
@@ -633,29 +1215,10 @@ func (p *actionDisplayTooltipPanel) rebuildBody() {
 		actiondisplay.BindPillStepperTooltips(p.body, p)
 	} else {
 		p.HideTooltip()
+		p.viewBodyBuilt = true
 	}
 	p.body.Refresh()
 }
-
-func (p *actionDisplayTooltipPanel) MouseIn(*desktop.MouseEvent) {
-	if p.owner != nil {
-		p.owner.panelHovering = true
-	}
-}
-
-func (p *actionDisplayTooltipPanel) MouseOut() {
-	if p.owner == nil {
-		return
-	}
-	p.owner.panelHovering = false
-	if !p.owner.hovering && !p.editing {
-		p.owner.cancelPending()
-		p.owner.cancelCapture()
-		p.owner.hideTooltip()
-	}
-}
-
-func (p *actionDisplayTooltipPanel) MouseMoved(*desktop.MouseEvent) {}
 
 func (p *actionDisplayTooltipPanel) TappedSecondary(*fyne.PointEvent) {
 	if !p.editing {
@@ -718,9 +1281,27 @@ func (p *actionDisplayTooltipPanel) contentSize(width float32) fyne.Size {
 	return fyne.NewSize(width, contentH+innerPad*2)
 }
 
+func (p *actionDisplayTooltipPanel) clearPreview() {
+	p.loading = false
+	p.showImage = false
+	if p.img != nil {
+		p.img.Image = nil
+	}
+	if p.message != nil {
+		p.message.SetText("")
+	}
+	if p.caption != nil {
+		p.caption.SetText("")
+		p.caption.Hide()
+	}
+}
+
 func (p *actionDisplayTooltipPanel) setPreviewLoading() {
 	p.loading = true
 	p.showImage = false
+	if p.img != nil {
+		p.img.Image = nil
+	}
 	if p.message != nil {
 		p.message.SetText("Loading preview…")
 	}
@@ -743,6 +1324,7 @@ func (p *actionDisplayTooltipPanel) setPreviewError(msg string) {
 }
 
 func (p *actionDisplayTooltipPanel) setPreviewImage(img image.Image, caption string) {
+	hadCaption := p.caption != nil && p.caption.Text != ""
 	p.loading = false
 	p.showImage = true
 	if p.img != nil {
@@ -755,6 +1337,9 @@ func (p *actionDisplayTooltipPanel) setPreviewImage(img image.Image, caption str
 		} else {
 			p.caption.Show()
 		}
+	}
+	if (hadCaption && caption == "") || (!hadCaption && caption != "") {
+		p.invalidateLayoutSize()
 	}
 }
 
@@ -838,38 +1423,145 @@ func (r *actionDisplayTooltipPanelRenderer) Objects() []fyne.CanvasObject {
 
 func (r *actionDisplayTooltipPanelRenderer) Destroy() {}
 
-func actionDisplayTooltipSizeAndPosition(panel *actionDisplayTooltipPanel, c fyne.Canvas, mousePos fyne.Position) (fyne.Size, fyne.Position) {
-	canvasSize := c.Size()
-	edgeMarginX := canvasSize.Width * actionDisplayTooltipEdgeMarginFraction
-	edgeMarginY := canvasSize.Height * actionDisplayTooltipEdgeMarginFraction
-	maxW := canvasSize.Width - edgeMarginX*2
+// actionIconTooltipHover is an invisible overlay on the tree row action icon.
+// It shows the same rich action tooltip as hovering the action display.
+type actionIconTooltipHover struct {
+	fynewidget.BaseWidget
 
-	natural := panel.MinSize()
-	width := natural.Width
-	if preferred := panel.preferredContentWidth(); preferred > width {
-		width = preferred
-	}
-	if width > maxW {
-		width = maxW
-	}
-	size := panel.contentSize(width)
-
-	pos := mousePos
-	if rightEdge := pos.X + size.Width; rightEdge > canvasSize.Width-edgeMarginX {
-		pos.X -= rightEdge - canvasSize.Width + edgeMarginX
-	}
-	if pos.X < edgeMarginX {
-		pos.X = edgeMarginX
-	}
-	const belowMouseDist = 16
-	const aboveMouseDist = 8
-	if bottomEdge := pos.Y + size.Height + belowMouseDist; bottomEdge > canvasSize.Height-edgeMarginY {
-		pos.Y -= size.Height + aboveMouseDist
-	} else {
-		pos.Y += belowMouseDist
-	}
-	if pos.Y < edgeMarginY {
-		pos.Y = edgeMarginY
-	}
-	return size, pos
+	target *actionDisplayTooltipHover
 }
+
+var (
+	_ desktop.Hoverable      = (*actionIconTooltipHover)(nil)
+	_ fyne.SecondaryTappable = (*actionIconTooltipHover)(nil)
+)
+
+func newActionIconTooltipHover() *actionIconTooltipHover {
+	h := &actionIconTooltipHover{}
+	h.ExtendBaseWidget(h)
+	return h
+}
+
+func (h *actionIconTooltipHover) bindActionTooltip(target *actionDisplayTooltipHover) {
+	h.target = target
+}
+
+func (h *actionIconTooltipHover) MouseIn(e *desktop.MouseEvent) {
+	if h.target != nil {
+		h.target.iconMouseIn(e)
+	}
+}
+
+func (h *actionIconTooltipHover) MouseOut() {
+	if h.target != nil {
+		h.target.iconMouseOut()
+	}
+}
+
+func (h *actionIconTooltipHover) MouseMoved(e *desktop.MouseEvent) {
+	if h.target != nil {
+		h.target.iconMouseMoved(e)
+	}
+}
+
+func (h *actionIconTooltipHover) TappedSecondary(*fyne.PointEvent) {
+	if h.target != nil {
+		h.target.openTooltipEdit()
+	}
+}
+
+// actionRowTooltipHover is an invisible overlay across the full macro tree action row.
+type actionRowTooltipHover struct {
+	fynewidget.BaseWidget
+
+	target *actionDisplayTooltipHover
+}
+
+var (
+	_ desktop.Hoverable      = (*actionRowTooltipHover)(nil)
+	_ fyne.SecondaryTappable = (*actionRowTooltipHover)(nil)
+)
+
+func newActionRowTooltipHover() *actionRowTooltipHover {
+	h := &actionRowTooltipHover{}
+	h.ExtendBaseWidget(h)
+	return h
+}
+
+func (h *actionRowTooltipHover) bindActionTooltip(target *actionDisplayTooltipHover) {
+	h.target = target
+}
+
+func (h *actionRowTooltipHover) MouseIn(e *desktop.MouseEvent) {
+	if h.target != nil {
+		h.target.rowMouseIn(e)
+	}
+}
+
+func (h *actionRowTooltipHover) MouseOut() {
+	if h.target != nil {
+		h.target.rowMouseOut()
+	}
+}
+
+func (h *actionRowTooltipHover) MouseMoved(e *desktop.MouseEvent) {
+	if h.target != nil {
+		h.target.rowMouseMoved(e)
+	}
+}
+
+func (h *actionRowTooltipHover) TappedSecondary(*fyne.PointEvent) {
+	if h.target != nil {
+		h.target.openTooltipEdit()
+	}
+}
+
+func (h *actionRowTooltipHover) CreateRenderer() fyne.WidgetRenderer {
+	return &actionRowTooltipHoverRenderer{hover: h, hit: canvas.NewRectangle(color.Transparent)}
+}
+
+type actionRowTooltipHoverRenderer struct {
+	hover *actionRowTooltipHover
+	hit   *canvas.Rectangle
+}
+
+func (r *actionRowTooltipHoverRenderer) Layout(size fyne.Size) {
+	r.hit.Resize(size)
+}
+
+func (r *actionRowTooltipHoverRenderer) MinSize() fyne.Size {
+	return fyne.NewSize(0, 0)
+}
+
+func (r *actionRowTooltipHoverRenderer) Refresh() {}
+
+func (r *actionRowTooltipHoverRenderer) Objects() []fyne.CanvasObject {
+	return []fyne.CanvasObject{r.hit}
+}
+
+func (r *actionRowTooltipHoverRenderer) Destroy() {}
+
+func (h *actionIconTooltipHover) CreateRenderer() fyne.WidgetRenderer {
+	return &actionIconTooltipHoverRenderer{hover: h, hit: canvas.NewRectangle(color.Transparent)}
+}
+
+type actionIconTooltipHoverRenderer struct {
+	hover *actionIconTooltipHover
+	hit   *canvas.Rectangle
+}
+
+func (r *actionIconTooltipHoverRenderer) Layout(size fyne.Size) {
+	r.hit.Resize(size)
+}
+
+func (r *actionIconTooltipHoverRenderer) MinSize() fyne.Size {
+	return fyne.NewSize(0, 0)
+}
+
+func (r *actionIconTooltipHoverRenderer) Refresh() {}
+
+func (r *actionIconTooltipHoverRenderer) Objects() []fyne.CanvasObject {
+	return []fyne.CanvasObject{r.hit}
+}
+
+func (r *actionIconTooltipHoverRenderer) Destroy() {}

@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"log"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -94,6 +93,35 @@ func appendTagChip(item *models.Item, tag string) {
 	tagsContainer.Refresh()
 }
 
+// removeTagChip removes one tag chip from the Items tab without rebuilding the others.
+func removeTagChip(tagsContainer *fyne.Container, tagToRemove string) bool {
+	for i, obj := range tagsContainer.Objects {
+		if tagChipLabelText(obj) == tagToRemove {
+			tagsContainer.Objects = append(tagsContainer.Objects[:i], tagsContainer.Objects[i+1:]...)
+			tagsContainer.Refresh()
+			return true
+		}
+	}
+	return false
+}
+
+// tagChipLabelText reads the tag label from a chip built by newTagChip / wrapTagChip.
+func tagChipLabelText(chip fyne.CanvasObject) string {
+	outer := chip
+	if box, ok := outer.(*fyne.Container); ok && len(box.Objects) == 1 {
+		outer = box.Objects[0]
+	}
+	row, ok := outer.(*fyne.Container)
+	if !ok || len(row.Objects) == 0 {
+		return ""
+	}
+	lbl, ok := row.Objects[0].(*widget.Label)
+	if !ok {
+		return ""
+	}
+	return lbl.Text
+}
+
 // removeTag removes a tag from the current item and saves it
 func removeTag(item *models.Item, tagToRemove string) {
 	// Remove the tag from the slice
@@ -122,8 +150,11 @@ func removeTag(item *models.Item, tagToRemove string) {
 	updatedItem, err := ProgramItemRepo(program).Get(item.Name)
 	if err != nil {
 		log.Printf("Error reloading item %s: %v", item.Name, err)
-		// Still update display with the modified item
-		updateTagsDisplay(item)
+		if it := shell().EditorTabs.ItemsTab.Widgets; it != nil {
+			if tagsContainer, ok := it["Tags"].(*fyne.Container); ok {
+				removeTagChip(tagsContainer, tagToRemove)
+			}
+		}
 		return
 	}
 
@@ -131,8 +162,12 @@ func removeTag(item *models.Item, tagToRemove string) {
 	shell().EditorTabs.ItemsTab.SelectedItem = updatedItem
 	shell().RefreshEditorActionBar()
 
-	// Update the tags display
-	updateTagsDisplay(updatedItem)
+	InvalidateProgramTagsCache(p)
+	if it := shell().EditorTabs.ItemsTab.Widgets; it != nil {
+		if tagsContainer, ok := it["Tags"].(*fyne.Container); ok {
+			removeTagChip(tagsContainer, tagToRemove)
+		}
+	}
 
 	// Refresh the tag entry's completion options to ensure deleted tags are removed from suggestions
 	it := shell().EditorTabs.ItemsTab.Widgets
@@ -160,8 +195,18 @@ func RefreshItemsAccordionItems() {
 	if !IsBuilt() {
 		return
 	}
-	// Use the complete rebuild function to ensure icon cache is updated
-	RebuildItemsAccordion()
+	RefreshItemsAccordionSelectionHighlights()
+}
+
+// RefreshItemsAccordionSelectionHighlights updates selection highlights on open item
+// grids without rebuilding the entire accordion (e.g. when macro tab context changes).
+func RefreshItemsAccordionSelectionHighlights() {
+	if !IsBuilt() {
+		return
+	}
+	if accordion, ok := shell().EditorTabs.ItemsTab.Widgets["Accordion"].(*custom_widgets.AccordionWithHeaderWidgets); ok {
+		refreshOpenAccordionItemGrids(accordion.Items)
+	}
 }
 
 // RefreshProgramAccordionItem refreshes only the accordion item for a specific program
@@ -248,15 +293,22 @@ func rebuildProgramAccordionItem(accordion *custom_widgets.AccordionWithHeaderWi
 			filterText = sb.Text
 		}
 	}
-	newItem, header := CreateProgramAccordionItem(editorItemsAccordionOptions(program, filterText))
 	it := accordion.Items[itemIndex]
+	scrollOffset := float32(0)
+	if oldGW := custom_widgets.FindGridWrap(it.Detail); oldGW != nil {
+		scrollOffset = oldGW.GetScrollOffset()
+	}
+	newItem, header := CreateProgramAccordionItem(editorItemsAccordionOptions(program, filterText))
 	wasOpen := it.Open
 	it.Title = newItem.Title
 	it.Detail = newItem.Detail
 	it.Open = wasOpen
 	accordion.UpdateHeaderAt(itemIndex, header)
-	if gw := custom_widgets.FindGridWrap(newItem.Detail); gw != nil {
-		gw.Refresh()
+	if gw := custom_widgets.FindGridWrap(it.Detail); gw != nil {
+		custom_widgets.RefreshGridWrapPreservingScroll(gw)
+		if scrollOffset > 0 {
+			gw.ScrollToOffset(scrollOffset)
+		}
 	}
 }
 
@@ -525,32 +577,22 @@ func setMaskSelectionButtons() {
 	}
 }
 
-// getProgramTags collects all unique tags from items in the given program.
+// getProgramTags collects all unique tags from items in the given program (cached).
 func getProgramTags(programName string) []string {
-	if programName == "" {
-		return nil
+	programTagsCache.mu.Lock()
+	if programTagsCache.byProgram == nil {
+		programTagsCache.byProgram = make(map[string][]string)
 	}
-	program, err := repositories.ProgramRepo().Get(programName)
-	if err != nil {
-		return nil
+	if tags, ok := programTagsCache.byProgram[programName]; ok {
+		programTagsCache.mu.Unlock()
+		return tags
 	}
+	programTagsCache.mu.Unlock()
 
-	tagMap := make(map[string]bool)
-	for _, itemName := range ProgramItemRepo(program).GetAllKeys() {
-		item, err := ProgramItemRepo(program).Get(itemName)
-		if err != nil {
-			continue
-		}
-		for _, tag := range item.Tags {
-			tagMap[tag] = true
-		}
-	}
-
-	tags := make([]string, 0, len(tagMap))
-	for tag := range tagMap {
-		tags = append(tags, tag)
-	}
-	sort.Strings(tags)
+	tags := collectProgramTagsFromRepo(programName)
+	programTagsCache.mu.Lock()
+	programTagsCache.byProgram[programName] = tags
+	programTagsCache.mu.Unlock()
 	return tags
 }
 

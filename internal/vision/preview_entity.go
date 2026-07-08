@@ -79,8 +79,7 @@ func PointPreviewTooltipForRef(ref actions.CoordinateRef) (image.Image, string, 
 	if err != nil {
 		return nil, "", err
 	}
-	img, err := PointPreview(pt)
-	return img, PointPreviewCaption(pt), err
+	return PointPreviewTooltipCached(pt)
 }
 
 // SearchAreaPreviewTooltipForRef captures a search area preview and caption from a macro CoordinateRef.
@@ -89,8 +88,7 @@ func SearchAreaPreviewTooltipForRef(ref actions.CoordinateRef) (image.Image, str
 	if err != nil {
 		return nil, "", err
 	}
-	img, err := SearchAreaPreview(sa)
-	return img, SearchAreaPreviewCaption(sa), err
+	return SearchAreaPreviewTooltipCached(sa)
 }
 
 // PointPreviewForRef captures a point preview from a macro CoordinateRef.

@@ -3,13 +3,14 @@ package macro
 import (
 	"fmt"
 	"slices"
+	"strings"
+	"sync"
 
 	"Sqyre/internal/assets"
 	"Sqyre/internal/models/actions"
 	"Sqyre/internal/uiutil"
 	"Sqyre/ui/actiondisplay"
 
-	kxlayout "github.com/ErikKalkoken/fyne-kx/layout"
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
@@ -18,9 +19,9 @@ import (
 )
 
 const (
-	targetRemoveIconSize                   float32 = 10
-	imageSearchTargetGlyphSize                     = 20
-	imageSearchTargetIconRenderSize                = 32
+	targetRemoveIconSize            float32 = 10
+	imageSearchTargetGlyphSize              = 20
+	imageSearchTargetIconRenderSize         = 32
 )
 
 func imageSearchTargetIconSize() fyne.Size {
@@ -35,16 +36,22 @@ func imageSearchTargetsFromNode(node actions.ActionInterface) []string {
 	return is.Targets
 }
 
+var targetIconResourceCache sync.Map // icon path -> fyne.Resource
+
 func imageSearchTargetIcon(target string, size fyne.Size) *canvas.Image {
 	path := uiutil.IconPathForTarget(target)
 	if path == "" {
 		return nil
 	}
-	res := assets.GetFyneResource(path)
+	res, _ := targetIconResourceCache.Load(path)
 	if res == nil {
-		return nil
+		res = assets.GetFyneResource(path)
+		if res == nil {
+			return nil
+		}
+		targetIconResourceCache.Store(path, res)
 	}
-	img := canvas.NewImageFromResource(res)
+	img := canvas.NewImageFromResource(res.(fyne.Resource))
 	img.SetMinSize(size)
 	img.FillMode = canvas.ImageFillContain
 	return img
@@ -131,7 +138,7 @@ func imageSearchTargetIconsSection(count int, icons fyne.CanvasObject) fyne.Canv
 	if count <= 0 && icons == nil {
 		return nil
 	}
-	box := container.New(kxlayout.NewRowWrapLayout())
+	box := newRowWrapContainer()
 	box.Add(imageSearchItemCountBadge(count))
 	if icons != nil {
 		if c, ok := icons.(*fyne.Container); ok {
@@ -148,13 +155,22 @@ func imageSearchTargetIconsView(targets []string) fyne.CanvasObject {
 		return nil
 	}
 	size := imageSearchTargetIconSize()
-	icons := container.New(kxlayout.NewRowWrapLayout())
+	icons := newRowWrapContainer()
 	for _, target := range targets {
-		if cell := newImageSearchTargetIconCell(target, size); cell != nil {
-			icons.Add(cell)
+		if img := imageSearchTargetIcon(target, size); img != nil {
+			icons.Add(img)
+			continue
 		}
+		fallback := canvas.NewImageFromResource(assets.AppIcon)
+		fallback.SetMinSize(size)
+		fallback.FillMode = canvas.ImageFillContain
+		icons.Add(fallback)
 	}
 	return imageSearchTargetIconsSection(len(targets), icons)
+}
+
+func imageSearchTargetIconsViewKey(targets []string) string {
+	return strings.Join(targets, "\x00")
 }
 
 type imageSearchTargetRemove struct {
@@ -188,6 +204,38 @@ func (r *imageSearchTargetRemove) CreateRenderer() fyne.WidgetRenderer {
 }
 
 var _ fyne.Tappable = (*imageSearchTargetRemove)(nil)
+
+type imageSearchTargetAdd struct {
+	widget.BaseWidget
+
+	icon  *canvas.Image
+	onAdd func()
+}
+
+func newImageSearchTargetAdd(onAdd func()) *imageSearchTargetAdd {
+	a := &imageSearchTargetAdd{onAdd: onAdd}
+	a.icon = canvas.NewImageFromResource(theme.ContentAddIcon())
+	a.icon.SetMinSize(fyne.NewSquareSize(imageSearchTargetGlyphSize))
+	a.icon.FillMode = canvas.ImageFillContain
+	a.ExtendBaseWidget(a)
+	return a
+}
+
+func (a *imageSearchTargetAdd) MinSize() fyne.Size {
+	return imageSearchTargetIconSize()
+}
+
+func (a *imageSearchTargetAdd) Tapped(*fyne.PointEvent) {
+	if a.onAdd != nil {
+		a.onAdd()
+	}
+}
+
+func (a *imageSearchTargetAdd) CreateRenderer() fyne.WidgetRenderer {
+	return widget.NewSimpleRenderer(a.icon)
+}
+
+var _ fyne.Tappable = (*imageSearchTargetAdd)(nil)
 
 // imageSearchTargetEditCell shows target icons at imageSearchTargetIconRenderSize; a small tappable X is overlaid.
 type imageSearchTargetEditCell struct {
@@ -251,13 +299,29 @@ func (r *imageSearchTargetEditCellRenderer) Destroy() {}
 
 func buildImageSearchTargetEdit(a *actions.ImageSearch, owner *actionDisplayTooltipHover) (fyne.CanvasObject, func() error) {
 	temp := slices.Clone(a.Targets)
-	section := container.New(kxlayout.NewRowWrapLayout())
+	section := newRowWrapContainer()
 	size := imageSearchTargetIconSize()
 
 	var rebuild func()
 	rebuild = func() {
 		section.Objects = nil
 		section.Add(imageSearchItemCountBadge(len(temp)))
+		if activeWire.ShowItemsPicker != nil && activeWire.Window != nil {
+			section.Add(newImageSearchTargetAdd(func() {
+				resumeBackdrop := owner.suspendBackdropDismissForPicker(nil)
+				activeWire.ShowItemsPicker(
+					func() []string { return slices.Clone(temp) },
+					func(newTargets []string) {
+						temp = slices.Clone(newTargets)
+						rebuild()
+						if owner != nil {
+							owner.refreshTooltipLayout()
+						}
+					},
+					resumeBackdrop,
+				)
+			}))
+		}
 		for _, target := range temp {
 			img := imageSearchTargetIcon(target, size)
 			if img == nil {
@@ -271,7 +335,7 @@ func buildImageSearchTargetEdit(a *actions.ImageSearch, owner *actionDisplayTool
 					temp = slices.Delete(temp, i, i+1)
 					rebuild()
 					if owner != nil {
-						owner.relayoutTooltip()
+						owner.refreshTooltipLayout()
 					}
 				}
 			}))

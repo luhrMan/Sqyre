@@ -20,9 +20,11 @@ type enterHandler struct {
 	fn func()
 }
 
-// RegisterEnterHandler adds a callback for lone Enter key presses. The returned
-// function removes only this handler. gohook Unregister matches by key chord and
-// removes an arbitrary first match, so enter handlers must not use hook.Unregister.
+// RegisterEnterHandler adds a callback for lone Enter key presses. When multiple
+// handlers are registered (e.g. stacked popups), only the most recently registered
+// handler runs. The returned function removes only this handler. gohook Unregister
+// matches by key chord and removes an arbitrary first match, so enter handlers must
+// not use hook.Unregister.
 func RegisterEnterHandler(fn func()) (unregister func()) {
 	if fn == nil {
 		return func() {}
@@ -56,8 +58,8 @@ func ensureGlobalEnterHookLocked() {
 		enterDispatchMu.Lock()
 		handlers := append([]enterHandler(nil), enterHandlers...)
 		enterDispatchMu.Unlock()
-		for _, h := range handlers {
-			h.fn()
+		if len(handlers) > 0 {
+			handlers[len(handlers)-1].fn()
 		}
 	})
 }

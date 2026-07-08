@@ -25,9 +25,14 @@ func NewTooltipDismissBackdrop(onDismiss func()) *TooltipDismissBackdrop {
 }
 
 func (b *TooltipDismissBackdrop) Tapped(*fyne.PointEvent) {
-	if b.onDismiss != nil {
-		b.onDismiss()
+	if b.onDismiss == nil {
+		return
 	}
+	c := fyne.CurrentApp().Driver().CanvasForObject(b)
+	if c != nil && c.Overlays().Top() != nil {
+		return
+	}
+	b.onDismiss()
 }
 
 func (b *TooltipDismissBackdrop) CreateRenderer() fyne.WidgetRenderer {

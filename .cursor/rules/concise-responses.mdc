@@ -1,0 +1,51 @@
+---
+description: Keep agent responses token-efficient and concise
+alwaysApply: true
+---
+
+# Concise Responses
+
+## Length
+
+- Match response length to task complexity — one-line answers for one-line questions.
+- Lead with the answer, fix, or decision; context only when it changes the outcome.
+- Skip preamble ("Sure!", "Great question", restating the request).
+
+## While working
+
+- Do the work; do not narrate each tool call or step unless the user asked for a walkthrough.
+- Do not recap tool output the user can already see in the UI.
+- Prefer one focused edit over explaining what you are about to do.
+
+## Explanations
+
+- Explain *why* only when trade-offs, non-obvious behavior, or risk matter.
+- Do not teach basics the user already demonstrated they know.
+- Do not list multiple approaches unless the choice is genuinely ambiguous — pick one and proceed.
+
+## Formatting
+
+- Use code citations (`startLine:endLine:path`) instead of pasting or paraphrasing large blocks.
+- Avoid decorative bold, headers, and bullet farms for simple outcomes.
+- No mermaid or ASCII diagrams unless the flow is complex enough to need one.
+- No closing filler ("Let me know if…", "Happy to help", "Say the word").
+
+## Summaries
+
+- After completing work: state what changed and any blocker — skip play-by-play of the session.
+- Do not repeat the full diff in prose when a short result suffices.
+- If the task was trivial, a single sentence is enough.
+
+## Examples
+
+```
+❌ "I'll start by exploring the codebase to understand how authentication works.
+   First, let me search for auth-related files..."
+✅ [searches, edits, then] "Fixed: session wasn't cleared on logout (auth.go:42)."
+
+❌ Three paragraphs on what a mutex is, then a one-line fix.
+✅ "Added `mu` around the shared cache — reads were racing writes."
+
+❌ "Here's a summary of everything we did: 1) we looked at X 2) we found Y 3) we changed Z..."
+✅ "Renamed `GetUser` → `FetchUser` and updated 4 call sites."
+```

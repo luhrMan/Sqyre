@@ -16,6 +16,8 @@ import (
 const (
 	itemTooltipShowDelay = 750 * time.Millisecond
 	itemTooltipMaxWidth  = 600
+	// TooltipEdgeMarginFraction is the minimum fraction of canvas width/height kept clear of window edges.
+	TooltipEdgeMarginFraction float32 = 0.05
 )
 
 // ItemTooltipLabel is an invisible hover target for item grid cells. It shows a rich tooltip
@@ -102,18 +104,20 @@ func (l *ItemTooltipLabel) hideTooltip() {
 	if l.tooltipPanel == nil {
 		return
 	}
-	DeactivateTooltipEscapeDismiss()
+	panel := l.tooltipPanel
+	l.tooltipPanel = nil
 	c := fyne.CurrentApp().Driver().CanvasForObject(l)
 	if c == nil {
-		l.tooltipPanel = nil
 		return
 	}
 	layer := findItemTooltipLayer(c, c.Overlays().Top())
-	if layer != nil {
-		layer.Container.Objects = nil
-		layer.Container.Refresh()
+	if layer == nil {
+		return
 	}
-	l.tooltipPanel = nil
+	remaining := removeLayerObject(layer, panel)
+	if len(remaining) == 0 {
+		DeactivateTooltipEscapeDismiss()
+	}
 }
 
 func (l *ItemTooltipLabel) showTooltip() {
@@ -124,6 +128,10 @@ func (l *ItemTooltipLabel) showTooltip() {
 	}
 	layer := findItemTooltipLayer(c, c.Overlays().Top())
 	if layer == nil {
+		return
+	}
+	// Pinned action editor and other tooltips share this layer.
+	if len(layer.Container.Objects) > 0 {
 		return
 	}
 	panel := newItemTooltipPanel(l.itemName, l.tags)
@@ -263,23 +271,30 @@ func (r *itemTooltipPanelRenderer) Destroy() {}
 
 func itemTooltipSizeAndPosition(panel *itemTooltipPanel, c fyne.Canvas, mousePos fyne.Position) (fyne.Size, fyne.Position) {
 	canvasSize := c.Size()
-	canvasPad := theme.Padding()
+	edgeMarginX := canvasSize.Width * TooltipEdgeMarginFraction
+	edgeMarginY := canvasSize.Height * TooltipEdgeMarginFraction
 
-	w := fyne.Min(panel.nonWrappingTextWidth(), fyne.Min(canvasSize.Width-canvasPad*2, itemTooltipMaxWidth))
+	w := fyne.Min(panel.nonWrappingTextWidth(), fyne.Min(canvasSize.Width-edgeMarginX*2, itemTooltipMaxWidth))
 	panel.Resize(fyne.NewSize(w, 1))
 	h := panel.textMinSize().Height
 	size := fyne.NewSize(w, h)
 
 	pos := mousePos
-	if rightEdge := pos.X + w; rightEdge > canvasSize.Width-canvasPad {
-		pos.X -= rightEdge - canvasSize.Width + canvasPad
+	if rightEdge := pos.X + w; rightEdge > canvasSize.Width-edgeMarginX {
+		pos.X -= rightEdge - canvasSize.Width + edgeMarginX
+	}
+	if pos.X < edgeMarginX {
+		pos.X = edgeMarginX
 	}
 	const belowMouseDist = 16
 	const aboveMouseDist = 8
-	if bottomEdge := pos.Y + h + belowMouseDist; bottomEdge > canvasSize.Height-canvasPad {
+	if bottomEdge := pos.Y + h + belowMouseDist; bottomEdge > canvasSize.Height-edgeMarginY {
 		pos.Y -= h + aboveMouseDist
 	} else {
 		pos.Y += belowMouseDist
+	}
+	if pos.Y < edgeMarginY {
+		pos.Y = edgeMarginY
 	}
 	return size, pos
 }
