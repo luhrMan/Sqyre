@@ -51,6 +51,16 @@ func CaptureWindowPNG(w fyne.Window) ([]byte, error) {
 
 // RenderObjectPNG renders a widget tree on a headless test window with Fyne's layout engine.
 func RenderObjectPNG(obj fyne.CanvasObject, size fyne.Size) ([]byte, error) {
+	png, _, err := RenderObjectPNGWithAnchors(obj, size, nil)
+	return png, err
+}
+
+// RenderObjectPNGWithAnchors renders obj like RenderObjectPNG, but runs resolve
+// after the tree is laid out (so callers can read widget geometry via the
+// driver) and returns whatever canvas-space positions it produces. The returned
+// positions share the PNG's coordinate space, so they can be passed straight to
+// click-guide overlays.
+func RenderObjectPNGWithAnchors(obj fyne.CanvasObject, size fyne.Size, resolve func() []fyne.Position) ([]byte, []fyne.Position, error) {
 	w := test.NewWindow(obj)
 	defer w.Close()
 
@@ -73,15 +83,31 @@ func RenderObjectPNG(obj fyne.CanvasObject, size fyne.Size) ([]byte, error) {
 	obj.Refresh()
 	w.Canvas().Refresh(obj)
 
+	var anchors []fyne.Position
+	if resolve != nil {
+		anchors = resolve()
+	}
+
 	img := w.Canvas().Capture()
 	if img == nil {
-		return nil, nil
+		return nil, anchors, nil
 	}
 	var buf bytes.Buffer
 	if err := png.Encode(&buf, img); err != nil {
-		return nil, err
+		return nil, anchors, err
 	}
-	return buf.Bytes(), nil
+	return buf.Bytes(), anchors, nil
+}
+
+// AnchorCenter returns the canvas-absolute center of a laid-out widget, for use
+// inside a RenderObjectPNGWithAnchors resolve callback.
+func AnchorCenter(obj fyne.CanvasObject) fyne.Position {
+	if obj == nil {
+		return fyne.Position{}
+	}
+	pos := fyne.CurrentApp().Driver().AbsolutePositionForObject(obj)
+	sz := obj.Size()
+	return pos.Add(fyne.NewPos(sz.Width/2, sz.Height/2))
 }
 
 // DecodePNG decodes PNG bytes for tests.

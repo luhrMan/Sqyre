@@ -43,7 +43,7 @@ func InitDocUIEnv(t *testing.T) {
 	programRepo := repositories.ProgramRepo()
 
 	demoMacro := models.NewMacro("Demo Macro", 0, nil)
-	demoMacro.Root.AddSubAction(actions.NewWait(500))
+	buildDemoMacroActions(demoMacro)
 	if err := macroRepo.Set("Demo Macro", demoMacro); err != nil {
 		t.Fatalf("set demo macro: %v", err)
 	}
@@ -68,4 +68,34 @@ func InitDocUIEnv(t *testing.T) {
 	if err := programRepo.Set("Demo Program", demoProgram); err != nil {
 		t.Fatalf("set demo program: %v", err)
 	}
+}
+
+// buildDemoMacroActions fills the demo macro with a small but representative
+// automation (window focus, mouse, detection with a nested step, typing, a
+// timed pause, and a loop) so docs screenshots show a realistic action tree
+// instead of a single lonely step.
+func buildDemoMacroActions(m *models.Macro) {
+	const (
+		programName = "Demo Program"
+		pointName   = "center"
+		itemName    = "demo-item"
+	)
+	itemTarget := programName + config.ProgramDelimiter + itemName
+
+	root := m.Root
+	root.AddSubAction(actions.NewFocusWindow("", "Notepad"))
+	root.AddSubAction(actions.NewMove(actions.NewCoordinateRef(programName, pointName), true))
+
+	imageSearch := actions.NewImageSearch(
+		"Find button",
+		[]actions.ActionInterface{actions.NewClick(actions.ClickButtonLeft, true)},
+		[]string{itemTarget},
+		actions.NewCoordinateRef(programName, "Main area"),
+		1, 1, 0.95, 5,
+	)
+	root.AddSubAction(imageSearch)
+
+	root.AddSubAction(actions.NewType("Hello, Sqyre!", 40))
+	root.AddSubAction(actions.NewWait(500))
+	root.AddSubAction(actions.NewLoop(3, "", []actions.ActionInterface{actions.NewKey("enter", true)}))
 }
