@@ -73,11 +73,22 @@ func showMacroNamePicker(onSelect func(string)) {
 	filter.OnChanged = applyFilter
 
 	content := container.NewBorder(filter, nil, nil, nil, list)
-	popup = widget.NewModalPopUp(content, activeWire.Window.Canvas())
-	dlg := activeWire.AddPopupEscapeClose(popup, activeWire.Window)
-	dlg.Resize(fyne.NewSize(420, 360))
-	dlg.Show()
+	// Non-modal so the margin stays transparent (no solid overlay) and tapping in
+	// it dismisses the picker. Leave a macroPickerMarginFrac margin on every window
+	// edge and center the picker in the remainder.
+	popup = widget.NewPopUp(content, activeWire.Window.Canvas())
+	activeWire.AddPopupEscapeClose(popup, activeWire.Window)
+	canvasSize := activeWire.Window.Canvas().Size()
+	w := canvasSize.Width * (1 - 2*macroPickerMarginFrac)
+	h := canvasSize.Height * (1 - 2*macroPickerMarginFrac)
+	popup.Resize(fyne.NewSize(w, h))
+	popup.ShowAtPosition(fyne.NewPos((canvasSize.Width-w)/2, (canvasSize.Height-h)/2))
 }
+
+// macroPickerMarginFrac is the margin left between the run-macro picker and each
+// window edge, as a fraction of the window size. 0.2 per edge leaves the picker
+// at 60% of the window (a 40% total margin); tapping the margin closes it.
+const macroPickerMarginFrac float32 = 0.2
 
 func showWindowPicker(onSelect func(title, path string)) {
 	if activeWire.Window == nil || onSelect == nil {
