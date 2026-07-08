@@ -157,7 +157,38 @@ func shiftRectIntoVirtualBounds(desired, vb image.Rectangle) image.Rectangle {
 	return image.Rect(x0, y0, x0+w, y0+h)
 }
 
+func downscaleMatMaxDim(mat *gocv.Mat, maxDim int) {
+	if mat == nil || maxDim <= 0 || mat.Empty() {
+		return
+	}
+	rows, cols := mat.Rows(), mat.Cols()
+	if rows <= maxDim && cols <= maxDim {
+		return
+	}
+	longest := max(rows, cols)
+	newW := cols * maxDim / longest
+	newH := rows * maxDim / longest
+	if newW < 1 {
+		newW = 1
+	}
+	if newH < 1 {
+		newH = 1
+	}
+	resized := gocv.NewMat()
+	gocv.Resize(*mat, &resized, image.Pt(newW, newH), 0, 0, gocv.InterpolationArea)
+	mat.Close()
+	*mat = resized
+}
+
 func captureRegionWithOverlay(captureBounds image.Rectangle, drawOverlay func(*gocv.Mat, image.Rectangle)) (image.Image, error) {
+	return captureRegionWithOverlayMaxDim(captureBounds, 0, drawOverlay)
+}
+
+func captureRegionWithOverlayForTooltip(captureBounds image.Rectangle, drawOverlay func(*gocv.Mat, image.Rectangle)) (image.Image, error) {
+	return captureRegionWithOverlayMaxDim(captureBounds, config.TooltipPreviewMaxCaptureSize, drawOverlay)
+}
+
+func captureRegionWithOverlayMaxDim(captureBounds image.Rectangle, maxDim int, drawOverlay func(*gocv.Mat, image.Rectangle)) (image.Image, error) {
 	if captureBounds.Empty() || captureBounds.Dx() <= 0 || captureBounds.Dy() <= 0 {
 		return nil, fmt.Errorf("invalid capture bounds %v", captureBounds)
 	}
@@ -180,6 +211,9 @@ func captureRegionWithOverlay(captureBounds image.Rectangle, drawOverlay func(*g
 		if drawOverlay != nil {
 			drawOverlay(&mat, captureBounds)
 		}
+		if maxDim > 0 {
+			downscaleMatMaxDim(&mat, maxDim)
+		}
 
 		out, matErr = mat.ToImage()
 	})
@@ -187,6 +221,24 @@ func captureRegionWithOverlay(captureBounds image.Rectangle, drawOverlay func(*g
 		return nil, matErr
 	}
 	return out, nil
+}
+
+// CaptureSearchAreaPreviewTooltip captures a downscaled search-area preview for hover tooltips.
+func CaptureSearchAreaPreviewTooltip(lx, ty, rx, by int) (image.Image, error) {
+	captureBounds := previewCaptureBoundsForSearchArea(lx, ty, rx, by)
+	return captureRegionWithOverlayForTooltip(captureBounds, func(mat *gocv.Mat, bounds image.Rectangle) {
+		rect := image.Rect(lx-bounds.Min.X, ty-bounds.Min.Y, rx-bounds.Min.X, by-bounds.Min.Y)
+		DrawPreviewRectangle(mat, rect, color.RGBA{R: 255, A: 255}, 2)
+	})
+}
+
+// CapturePointPreviewTooltip captures a downscaled point preview for hover tooltips.
+func CapturePointPreviewTooltip(px, py int) (image.Image, error) {
+	captureBounds := previewCaptureBoundsForPoint(px, py)
+	return captureRegionWithOverlayForTooltip(captureBounds, func(mat *gocv.Mat, bounds image.Rectangle) {
+		center := image.Point{X: px - bounds.Min.X, Y: py - bounds.Min.Y}
+		DrawPreviewPointMarker(mat, center, color.RGBA{R: 255, A: 255}, 2)
+	})
 }
 
 // CaptureSearchAreaPreview captures a cropped region around the search area with a rectangle overlay.
