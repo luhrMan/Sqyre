@@ -40,10 +40,11 @@ const (
 	SqyreDir         = ".sqyre"
 	UserImagesDir    = "images"
 	UserAutoPicDir   = "AutoPic"
-	UserIconsDir     = "icons"
-	UserMasksDir     = "masks"
-	UserMetaDir      = "meta"
-	UserVariablesDir = "variables"
+	UserIconsDir       = "icons"
+	UserMasksDir       = "masks"
+	UserCollectionsDir = "Collections"
+	UserMetaDir        = "meta"
+	UserVariablesDir   = "variables"
 
 	PNG  = ".png"
 	JPG  = ".jpg"
@@ -121,6 +122,16 @@ func GetMasksPath() string {
 	return filepath.Join(getSqyreDir(), UserImagesDir, UserMasksDir)
 }
 
+// GetCollectionsPath returns ~/.sqyre/images/Collections/.
+func GetCollectionsPath() string {
+	return filepath.Join(getSqyreDir(), UserImagesDir, UserCollectionsDir)
+}
+
+// CollectionImagePath returns the PNG path for a program collection.
+func CollectionImagePath(programName, collectionName string) string {
+	return filepath.Join(GetCollectionsPath(), programName, collectionName+PNG)
+}
+
 func GetMetaPath() string {
 	return filepath.Join(getSqyreDir(), UserImagesDir, UserMetaDir)
 }
@@ -152,7 +163,7 @@ func InitializeDirectories() error {
 	iconsPath := GetIconsPath()
 	autoPicPath := GetAutoPicPath()
 	variablesPath := GetVariablesPath()
-
+	collectionsPath := GetCollectionsPath()
 	metaPath := GetMetaPath()
 
 	// Create all parent directories as needed
@@ -171,6 +182,11 @@ func InitializeDirectories() error {
 		return err
 	}
 
+	if err := os.MkdirAll(collectionsPath, 0755); err != nil {
+		logger.Errorf("Failed to create Collections directory at %s: %v", collectionsPath, err)
+		return err
+	}
+
 	if err := os.MkdirAll(metaPath, 0755); err != nil {
 		logger.Errorf("Failed to create meta directory at %s: %v", metaPath, err)
 		return err
@@ -178,6 +194,7 @@ func InitializeDirectories() error {
 
 	logger.Infof("Initialized directory structure at: %s", iconsPath)
 	logger.Infof("Initialized AutoPic directory at: %s", autoPicPath)
+	logger.Infof("Initialized Collections directory at: %s", collectionsPath)
 	logger.Infof("Initialized meta directory at: %s", metaPath)
 	return nil
 }
