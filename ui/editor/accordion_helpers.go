@@ -79,6 +79,16 @@ func sortMaskKeysByDisplayName(p *models.Program, keys []string) {
 	})
 }
 
+func sortCollectionKeysByDisplayName(p *models.Program, keys []string) {
+	repo := ProgramCollectionRepo(p)
+	sortKeysByRepoDisplayName(keys, func(k string) string {
+		if c, _ := repo.Get(k); c != nil {
+			return c.Name
+		}
+		return k
+	})
+}
+
 // filterKeysByFuzzy returns keys matching filterText (fold match), or the full list when filter is empty.
 func filterKeysByFuzzy(filterText string, defaultList []string) []string {
 	if filterText == "" {

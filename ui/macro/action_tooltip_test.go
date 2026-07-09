@@ -1,6 +1,8 @@
 package macro
 
 import (
+	"image"
+	"image/color"
 	"testing"
 
 	"Sqyre/internal/models"
@@ -16,7 +18,6 @@ import (
 	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
-	"image/color"
 )
 
 func TestViewParamPills_AllActionTypes(t *testing.T) {
@@ -307,6 +308,24 @@ func TestActionRowTooltipHover_primaryTapSelectsRow(t *testing.T) {
 	rowHover.Tapped(nil)
 	if mt.SelectedNode != wait.GetUID() {
 		t.Fatalf("row overlay tap selected %q, want %q", mt.SelectedNode, wait.GetUID())
+	}
+}
+
+// View-mode tooltips sit above the tree in the item-tooltip layer. They must not
+// implement tap interfaces or Fyne captures clicks on the panel instead of the row.
+func TestActionDisplayTooltipPanel_viewModeIsClickthrough(t *testing.T) {
+	t.Helper()
+	wait := actions.NewWait(100)
+	hover := newActionDisplayTooltipHover(wait, nil, nil, wait.GetType(), nil, nil)
+	panel := newActionDisplayTooltipPanel(hover)
+	if _, ok := fyne.CanvasObject(panel).(fyne.SecondaryTappable); ok {
+		t.Fatal("view tooltip panel must not implement SecondaryTappable")
+	}
+	if _, ok := fyne.CanvasObject(panel).(fyne.DoubleTappable); ok {
+		t.Fatal("view tooltip panel must not implement DoubleTappable")
+	}
+	if _, ok := fyne.CanvasObject(panel).(fyne.Tappable); ok {
+		t.Fatal("view tooltip panel must not implement Tappable")
 	}
 }
 
@@ -966,9 +985,47 @@ func findBorderlessEntry(obj fyne.CanvasObject) *custom_widgets.BorderlessEntry 
 	return nil
 }
 
-// TestRunMacroEdit_growsBackgroundOnSelection guards against tooltip background
-// drift: selecting a macro widens the row (and can wrap it), so the picker must
-// grow the tooltip to match instead of leaving a stale, undersized background.
+// TestMoveEdit_syncsBackgroundOnPreviewUpdate guards against tooltip background
+// drift when the coordinate preview reloads (e.g. selecting a new point): the
+// loading → image transition changes layout height, so the panel must relayout.
+func TestMoveEdit_syncsBackgroundOnPreviewUpdate(t *testing.T) {
+	t.Helper()
+	t.Cleanup(ResetActionTooltipOwnershipForTesting)
+	test.NewApp()
+	w := test.NewWindow(canvas.NewRectangle(color.White))
+	w.Resize(fyne.NewSize(800, 600))
+	t.Cleanup(w.Close)
+
+	move := actions.NewMove(actions.NewCoordinateRef("Demo", "Home"), false)
+	previewImg := image.NewRGBA(image.Rect(0, 0, 64, 48))
+	loader := func() (custom_widgets.PreviewTooltipResult, error) {
+		return custom_widgets.PreviewTooltipResult{Image: previewImg, Caption: "100, 200"}, nil
+	}
+	hover := newActionDisplayTooltipHover(move, canvas.NewRectangle(color.Transparent), nil, move.GetType(), loader, nil)
+	w.SetContent(custom_widgets.AddWindowItemTooltipLayer(container.NewStack(hover), w.Canvas()))
+
+	hover.absoluteMousePos = fyne.NewPos(200, 200)
+	hover.showTooltipPanel()
+	hover.tooltipPanel.enterEditMode()
+
+	hover.tooltipPanel.setPreviewLoading()
+	// Simulate stale geometry from a prior layout pass that did not track preview state.
+	stale := fyne.NewSize(200, 150)
+	hover.tooltipPanel.Resize(stale)
+
+	hover.tooltipPanel.setPreviewImage(previewImg, "100, 200")
+
+	after := hover.tooltipPanel.Size()
+	if fyneSizesClose(after, stale) {
+		t.Fatalf("preview image update should relayout tooltip, still at stale size %v", stale)
+	}
+	hover.tooltipPanel.invalidateLayoutSize()
+	want := hover.tooltipPanel.measureLayoutSize(w.Canvas())
+	if !fyneSizesClose(after, want) {
+		t.Fatalf("tooltip background drifted from content after preview reload: panel=%v measured=%v", after, want)
+	}
+}
+
 func TestRunMacroEdit_growsBackgroundOnSelection(t *testing.T) {
 	t.Helper()
 	t.Cleanup(ResetActionTooltipOwnershipForTesting)

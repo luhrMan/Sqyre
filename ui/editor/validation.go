@@ -65,7 +65,7 @@ func tabExtraValid(tab *EditorTab) bool {
 	w := tab.Widgets
 
 	hasName := tab == et.ProgramsTab || tab == et.ItemsTab || tab == et.PointsTab ||
-		tab == et.SearchAreasTab || tab == et.MasksTab
+		tab == et.SearchAreasTab || tab == et.MasksTab || tab == et.CollectionsTab
 	if hasName {
 		nameEntry, ok := w["Name"].(*widget.Entry)
 		if !ok || validation.ValidateEntityName(nameEntry.Text) != nil {
@@ -82,6 +82,8 @@ func tabExtraValid(tab *EditorTab) bool {
 		) == nil
 	case et.SearchAreasTab:
 		return validation.ValidateSearchAreaSave(searchAreaFromWidgets(w)) == nil
+	case et.CollectionsTab:
+		return validateCollectionForSave(w) == nil
 	}
 	return true
 }

@@ -382,3 +382,70 @@ func maskCreateConfig() createDialogConfig {
 	}
 }
 
+func collectionCreateConfig() createDialogConfig {
+	return createDialogConfig{
+		title:      "New Collection",
+		dialogSize: fyne.NewSize(700, 550),
+		buildForm: func() (fyne.CanvasObject, map[string]fyne.CanvasObject) {
+			w := make(map[string]fyne.CanvasObject)
+			ps := widget.NewSelect(repositories.ProgramRepo().GetAllKeys(), nil)
+			w["ProgramSelector"] = ps
+			populateCollectionsFormWidgets(w)
+			// Create dialog does not need Replace until after save; hide it.
+			if btn, ok := w["replaceButton"].(*widget.Button); ok {
+				btn.Hide()
+			}
+			return buildCollectionsRightPanel(ps, w), w
+		},
+		prefill: prefillCollectionCreateDialog,
+		wire: func(w map[string]fyne.CanvasObject) {
+			ps := w["ProgramSelector"].(*widget.Select)
+			refreshSearchAreaSelectOptions(w, ps.Selected)
+			prev := ps.OnChanged
+			ps.OnChanged = func(s string) {
+				if prev != nil {
+					prev(s)
+				}
+				refreshSearchAreaSelectOptions(w, s)
+			}
+		},
+		onSave: func(w map[string]fyne.CanvasObject) error {
+			c := collectionFromWidgets(w)
+			if err := validateCreateName(c.Name); err != nil {
+				return err
+			}
+			if err := validateCollectionForSave(w); err != nil {
+				return err
+			}
+			programName := w["ProgramSelector"].(*widget.Select).Selected
+			if err := validateCreateProgramName(programName); err != nil {
+				return err
+			}
+			pro := getOrCreateProgram(programName)
+			if pro == nil {
+				return errors.New("failed to get or create program")
+			}
+			if err := ensureNameAvailable(c.Name, "collection", func(name string) (any, error) {
+				return ProgramCollectionRepo(pro).Get(name)
+			}); err != nil {
+				return err
+			}
+			if err := ProgramCollectionRepo(pro).Set(c.Name, c); err != nil {
+				return err
+			}
+			if err := captureAndSaveCollectionImage(programName, c); err != nil {
+				_ = ProgramCollectionRepo(pro).Delete(c.Name)
+				return err
+			}
+			shell().EditorTabs.CollectionsTab.SelectedItem = c
+			shell().EditorTabs.CollectionsTab.ProgramSelector.SetSelected(programName)
+			setCollectionWidgets(*c, programName)
+			return nil
+		},
+		afterSave: func() {
+			refreshCollectionsAccordionForProgram(shell().EditorTabs.CollectionsTab.ProgramSelector.Selected)
+			markCollectionsClean()
+		},
+	}
+}
+

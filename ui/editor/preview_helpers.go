@@ -8,30 +8,27 @@ import (
 	"Sqyre/internal/screen"
 	"Sqyre/internal/vision"
 	"Sqyre/ui/custom_widgets"
-	"Sqyre/ui/desktopview"
 	"fmt"
 	"image"
 	"os"
 	"path/filepath"
 
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
 )
 
 // editorPreviewPanel shows a screen capture preview or an inline error message (no popup).
 type editorPreviewPanel struct {
-	image      *canvas.Image
-	errorLabel *widget.Label
+	viewer       *custom_widgets.ZoomableImageView
+	errorLabel   *widget.Label
 	errorOverlay *fyne.Container
-	container  fyne.CanvasObject
+	container    fyne.CanvasObject
 }
 
 func newEditorPreviewPanel() *editorPreviewPanel {
-	img := canvas.NewImageFromImage(nil)
-	img.FillMode = desktopview.PreviewSnapshotFill
-	img.SetMinSize(fyne.NewSize(config.ImagePreviewMinWidth, config.ImagePreviewMinHeight))
+	viewer := custom_widgets.NewZoomableImageView()
+	viewer.SetMinSize(fyne.NewSize(config.ImagePreviewMinWidth, config.ImagePreviewMinHeight))
 
 	errLbl := widget.NewLabel("")
 	errLbl.Wrapping = fyne.TextWrapWord
@@ -40,9 +37,9 @@ func newEditorPreviewPanel() *editorPreviewPanel {
 	// Padded overlay fills the preview bounds so wrapped text flows as a paragraph.
 	errOverlay := container.NewPadded(errLbl)
 	errOverlay.Hide()
-	inner := container.NewStack(img, errOverlay)
+	inner := container.NewStack(viewer, errOverlay)
 	return &editorPreviewPanel{
-		image:        img,
+		viewer:       viewer,
 		errorLabel:   errLbl,
 		errorOverlay: errOverlay,
 		container:    wrapEditorPreviewImage(container.NewMax(inner)),
@@ -54,17 +51,16 @@ func (p *editorPreviewPanel) setImage(preview image.Image) {
 		return
 	}
 	p.errorOverlay.Hide()
-	p.image.Show()
-	p.image.Image = preview
-	p.image.Refresh()
+	p.viewer.Show()
+	p.viewer.SetImage(preview)
 }
 
 func (p *editorPreviewPanel) setError(err error) {
 	if p == nil || err == nil {
 		return
 	}
-	p.image.Image = nil
-	p.image.Hide()
+	p.viewer.SetImage(nil)
+	p.viewer.Hide()
 	p.errorLabel.SetText(err.Error())
 	p.errorOverlay.Show()
 	p.errorLabel.Refresh()
@@ -74,11 +70,10 @@ func (p *editorPreviewPanel) clear() {
 	if p == nil {
 		return
 	}
-	p.image.Image = nil
-	p.image.Show()
+	p.viewer.SetImage(nil)
+	p.viewer.Show()
 	p.errorOverlay.Hide()
 	p.errorLabel.SetText("")
-	p.image.Refresh()
 }
 
 // coordToIntForPreview returns an int for preview/validation; literal ints are used, variable refs yield 0.

@@ -37,8 +37,10 @@ type actionDisplayTooltipPanel struct {
 	viewParamPillsBodyIndex int
 	viewBodyBuilt           bool
 
-	img       *canvas.Image
-	message   *fynewidget.Label
+	img            *canvas.Image
+	previewViewer  *custom_widgets.ZoomableImageView
+	previewImage   image.Image
+	message        *fynewidget.Label
 	caption   *fynewidget.Label
 	loading   bool
 	showImage bool
@@ -57,11 +59,6 @@ type actionDisplayTooltipPanel struct {
 	targetIconsSection fyne.CanvasObject
 	targetIconsKey     string
 }
-
-var (
-	_ fyne.SecondaryTappable = (*actionDisplayTooltipPanel)(nil)
-	_ fyne.DoubleTappable    = (*actionDisplayTooltipPanel)(nil)
-)
 
 func newActionDisplayTooltipPanel(owner *actionDisplayTooltipHover) *actionDisplayTooltipPanel {
 	p := &actionDisplayTooltipPanel{
@@ -234,6 +231,23 @@ func (p *actionDisplayTooltipPanel) invalidateLayoutSize() {
 	p.layoutSizeOK = false
 }
 
+// syncBackgroundLayout recomputes tooltip size/position so the background rectangle
+// tracks preview and content changes (e.g. loading → image, caption updates).
+func (p *actionDisplayTooltipPanel) syncBackgroundLayout() {
+	p.invalidateLayoutSize()
+	if p.owner == nil {
+		p.Refresh()
+		return
+	}
+	p.owner.relayoutTooltip()
+	p.Refresh()
+	// Preview/caption visibility changes can alter descendant MinSize only after
+	// the first layout pass; reposition once more so the background tracks.
+	p.invalidateLayoutSize()
+	p.owner.repositionTooltip()
+	p.Refresh()
+}
+
 func (p *actionDisplayTooltipPanel) measureLayoutSize(c fyne.Canvas) fyne.Size {
 	canvasWidth := c.Size().Width
 	if p.layoutSizeOK && p.layoutCanvasWidth == canvasWidth {
@@ -270,11 +284,6 @@ func (p *actionDisplayTooltipPanel) rebuildBody() {
 		p.body.Add(header)
 	}
 	if p.withPreview {
-		if p.img == nil {
-			p.img = canvas.NewImageFromImage(nil)
-			p.img.FillMode = desktopview.PreviewSnapshotFill
-			p.img.SetMinSize(p.previewSize())
-		}
 		if p.message == nil {
 			p.message = fynewidget.NewLabel("Loading preview…")
 			p.message.Wrapping = fyne.TextWrapWord
@@ -286,7 +295,7 @@ func (p *actionDisplayTooltipPanel) rebuildBody() {
 			p.caption.Hide()
 		}
 		imageStackLayers := []fyne.CanvasObject{
-			container.NewMax(p.img),
+			container.NewMax(p.previewDisplay()),
 			container.NewPadded(p.message),
 		}
 		if refreshOverlay := buildPreviewRefreshOverlay(p.owner); refreshOverlay != nil {
@@ -328,23 +337,48 @@ func (p *actionDisplayTooltipPanel) rebuildBody() {
 	p.body.Refresh()
 }
 
-func (p *actionDisplayTooltipPanel) TappedSecondary(*fyne.PointEvent) {
-	if !p.editing {
-		p.enterEditMode()
-	}
-}
-
-// DoubleTapped lets a double-click land the edit view even when a large view
-// tooltip covers the row: the panel is on top of the tooltip layer, so the row
-// overlay never sees the tap.
-func (p *actionDisplayTooltipPanel) DoubleTapped(*fyne.PointEvent) {
-	if !p.editing {
-		p.enterEditMode()
-	}
-}
-
 func (p *actionDisplayTooltipPanel) previewSize() fyne.Size {
 	return fyne.NewSize(config.ImagePreviewMinWidth, config.ImagePreviewMinHeight)
+}
+
+func (p *actionDisplayTooltipPanel) ensureViewPreview() *canvas.Image {
+	if p.img == nil {
+		p.img = canvas.NewImageFromImage(nil)
+		p.img.FillMode = desktopview.PreviewSnapshotFill
+		p.img.SetMinSize(p.previewSize())
+		if p.previewImage != nil {
+			p.img.Image = p.previewImage
+		}
+	}
+	return p.img
+}
+
+func (p *actionDisplayTooltipPanel) ensureEditPreview() *custom_widgets.ZoomableImageView {
+	if p.previewViewer == nil {
+		p.previewViewer = custom_widgets.NewZoomableImageView()
+		p.previewViewer.SetMinSize(p.previewSize())
+		if p.previewImage != nil {
+			p.previewViewer.SetImage(p.previewImage)
+		}
+	}
+	return p.previewViewer
+}
+
+// previewDisplay returns the image widget for the current mode (static in view, zoomable in edit).
+func (p *actionDisplayTooltipPanel) previewDisplay() fyne.CanvasObject {
+	if p.editing {
+		return p.ensureEditPreview()
+	}
+	return p.ensureViewPreview()
+}
+
+func (p *actionDisplayTooltipPanel) applyPreviewImage() {
+	if p.img != nil {
+		p.img.Image = p.previewImage
+	}
+	if p.previewViewer != nil {
+		p.previewViewer.SetImage(p.previewImage)
+	}
 }
 
 func (p *actionDisplayTooltipPanel) MinSize() fyne.Size {
@@ -401,9 +435,8 @@ func (p *actionDisplayTooltipPanel) contentSize(width float32) fyne.Size {
 func (p *actionDisplayTooltipPanel) clearPreview() {
 	p.loading = false
 	p.showImage = false
-	if p.img != nil {
-		p.img.Image = nil
-	}
+	p.previewImage = nil
+	p.applyPreviewImage()
 	if p.message != nil {
 		p.message.SetText("")
 	}
@@ -416,9 +449,8 @@ func (p *actionDisplayTooltipPanel) clearPreview() {
 func (p *actionDisplayTooltipPanel) setPreviewLoading() {
 	p.loading = true
 	p.showImage = false
-	if p.img != nil {
-		p.img.Image = nil
-	}
+	p.previewImage = nil
+	p.applyPreviewImage()
 	if p.message != nil {
 		p.message.SetText("Loading preview…")
 	}
@@ -426,14 +458,14 @@ func (p *actionDisplayTooltipPanel) setPreviewLoading() {
 		p.caption.SetText("")
 		p.caption.Hide()
 	}
+	p.syncBackgroundLayout()
 }
 
 func (p *actionDisplayTooltipPanel) setPreviewEmpty() {
 	p.loading = false
 	p.showImage = false
-	if p.img != nil {
-		p.img.Image = nil
-	}
+	p.previewImage = nil
+	p.applyPreviewImage()
 	if p.message != nil {
 		p.message.SetText("")
 	}
@@ -453,15 +485,14 @@ func (p *actionDisplayTooltipPanel) setPreviewError(msg string) {
 		p.caption.SetText("")
 		p.caption.Hide()
 	}
+	p.syncBackgroundLayout()
 }
 
 func (p *actionDisplayTooltipPanel) setPreviewImage(img image.Image, caption string) {
-	hadCaption := p.caption != nil && p.caption.Text != ""
 	p.loading = false
 	p.showImage = true
-	if p.img != nil {
-		p.img.Image = img
-	}
+	p.previewImage = img
+	p.applyPreviewImage()
 	if p.caption != nil {
 		p.caption.SetText(caption)
 		if caption == "" {
@@ -470,9 +501,7 @@ func (p *actionDisplayTooltipPanel) setPreviewImage(img image.Image, caption str
 			p.caption.Show()
 		}
 	}
-	if (hadCaption && caption == "") || (!hadCaption && caption != "") {
-		p.invalidateLayoutSize()
-	}
+	p.syncBackgroundLayout()
 }
 
 func (p *actionDisplayTooltipPanel) CreateRenderer() fyne.WidgetRenderer {
@@ -507,11 +536,12 @@ func (r *actionDisplayTooltipPanelRenderer) Layout(size fyne.Size) {
 	layout.NewVBoxLayout().Layout(r.panel.body.Objects, innerSize)
 	r.panel.hoverTipLayer.Resize(innerSize)
 	if r.panel.withPreview {
+		preview := r.panel.previewDisplay()
 		if r.panel.showImage {
-			r.panel.img.Show()
+			preview.Show()
 			r.panel.message.Hide()
 		} else {
-			r.panel.img.Hide()
+			preview.Hide()
 			r.panel.message.Show()
 		}
 	}
@@ -528,8 +558,9 @@ func (r *actionDisplayTooltipPanelRenderer) Refresh() {
 	r.bg.StrokeColor = th.Color(theme.ColorNameInputBorder, v)
 	r.bg.StrokeWidth = th.Size(theme.SizeNameInputBorder)
 	if r.panel.withPreview {
+		preview := r.panel.previewDisplay()
 		if r.panel.showImage {
-			r.panel.img.Show()
+			preview.Show()
 			r.panel.message.Hide()
 			if r.panel.caption.Text != "" {
 				r.panel.caption.Show()
@@ -537,11 +568,11 @@ func (r *actionDisplayTooltipPanelRenderer) Refresh() {
 				r.panel.caption.Hide()
 			}
 		} else {
-			r.panel.img.Hide()
+			preview.Hide()
 			r.panel.message.Show()
 			r.panel.caption.Hide()
 		}
-		r.panel.img.Refresh()
+		preview.Refresh()
 		r.panel.message.Refresh()
 		r.panel.caption.Refresh()
 	}
