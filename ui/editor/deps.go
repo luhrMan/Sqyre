@@ -48,6 +48,7 @@ func SetEditorUi(d WireDeps) {
 	setEditorButtons()
 	setMasksButtons()
 	setMaskSelectionButtons()
+	setCollectionsButtons()
 	setEditorRecordHandlers()
 	setEditorPreviewRefreshHandlers()
 	wireIconVariantEditorDialogs(d)

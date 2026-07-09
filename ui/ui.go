@@ -82,12 +82,13 @@ func InitializeUi(w fyne.Window) *Ui {
 			RemoveButton: new(widget.Button),
 			EditorTabs: struct {
 				*container.AppTabs
-				ProgramsTab    *editor.EditorTab
-				ItemsTab       *editor.EditorTab
-				PointsTab      *editor.EditorTab
-				SearchAreasTab *editor.EditorTab
-				MasksTab       *editor.EditorTab
-				AutoPicTab     *editor.EditorTab
+				ProgramsTab     *editor.EditorTab
+				ItemsTab        *editor.EditorTab
+				PointsTab       *editor.EditorTab
+				SearchAreasTab  *editor.EditorTab
+				MasksTab        *editor.EditorTab
+				CollectionsTab  *editor.EditorTab
+				AutoPicTab      *editor.EditorTab
 			}{
 				AppTabs: new(container.AppTabs),
 				ProgramsTab: &editor.EditorTab{
@@ -103,6 +104,9 @@ func InitializeUi(w fyne.Window) *Ui {
 					Widgets: make(map[string]fyne.CanvasObject),
 				},
 				MasksTab: &editor.EditorTab{
+					Widgets: make(map[string]fyne.CanvasObject),
+				},
+				CollectionsTab: &editor.EditorTab{
 					Widgets: make(map[string]fyne.CanvasObject),
 				},
 				AutoPicTab: &editor.EditorTab{

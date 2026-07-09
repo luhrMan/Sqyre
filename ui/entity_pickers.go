@@ -64,6 +64,16 @@ func resolveCoordinateRefKey(ref actions.CoordinateRef, p *models.Program, getKe
 		return "", false
 	}
 	name := ref.Name()
+	if ref.IsCollection() {
+		ckey := collectionPickerKey(name)
+		if programName := ref.Program(); programName != "" && programName != p.Name {
+			return "", false
+		}
+		if slices.Contains(getKeys(p), ckey) {
+			return ckey, true
+		}
+		return "", false
+	}
 	if programName := ref.Program(); programName != "" {
 		if programName != p.Name {
 			return "", false
@@ -260,7 +270,7 @@ func buildProgramFlatListWithSearchbar(cfg programListAccordionConfig, initialRe
 				return
 			}
 			e := entries[id]
-			bindProgramListRow(co, cfg, e.program, e.key, fmt.Sprintf("%s · %s", cfg.GetDisplayName(e.program, e.key), e.program.Name))
+			bindProgramListRow(co, cfg, e.program, e.key, fmt.Sprintf("%s · %s", e.program.Name, cfg.GetDisplayName(e.program, e.key)))
 		},
 	)
 	list.OnSelected = func(id widget.ListItemID) {
@@ -275,16 +285,20 @@ func buildProgramFlatListWithSearchbar(cfg programListAccordionConfig, initialRe
 	return searchbar, list
 }
 
-func buildPointsListWithSearchbar(onStage func(actions.CoordinateRef), initialRef actions.CoordinateRef) (*widget.Entry, *widget.List) {
+func buildPointsListWithSearchbar(parent fyne.Window, onStage func(actions.CoordinateRef), initialRef actions.CoordinateRef) (*widget.Entry, *widget.List) {
 	return buildProgramFlatListWithSearchbar(programListAccordionConfig{
 		GetKeys: func(p *models.Program) []string {
 			repo := editor.ProgramPointRepo(p, config.MainMonitorSizeString)
-			if repo == nil {
-				return nil
+			var keys []string
+			if repo != nil {
+				keys = repo.GetAllKeys()
 			}
-			return repo.GetAllKeys()
+			return appendCollectionPickerKeys(p, keys)
 		},
 		GetDisplayName: func(p *models.Program, key string) string {
+			if _, ok := parseCollectionPickerKey(key); ok {
+				return collectionDisplayName(p, key)
+			}
 			repo := editor.ProgramPointRepo(p, config.MainMonitorSizeString)
 			if repo == nil {
 				return key
@@ -295,23 +309,36 @@ func buildPointsListWithSearchbar(onStage func(actions.CoordinateRef), initialRe
 			}
 			return key
 		},
-		GetPreviewImage: editor.LoadPointPreviewImage,
+		GetPreviewImage: func(p *models.Program, key string) (custom_widgets.PreviewTooltipResult, error) {
+			if _, ok := parseCollectionPickerKey(key); ok {
+				return LoadCollectionPreviewImage(p, key)
+			}
+			return editor.LoadPointPreviewImage(p, key)
+		},
 		OnSelect: func(p *models.Program, key string) {
+			if name, ok := parseCollectionPickerKey(key); ok {
+				ShowCollectionCellPicker(parent, p.Name, name, initialRef, onStage, nil)
+				return
+			}
 			onStage(actions.NewCoordinateRef(p.Name, key))
 		},
 	}, initialRef)
 }
 
-func buildSearchAreasAccordionWithSearchbar(onStage func(actions.CoordinateRef), initialRef actions.CoordinateRef) (*widget.Entry, *custom_widgets.AccordionWithHeaderWidgets) {
+func buildSearchAreasAccordionWithSearchbar(parent fyne.Window, onStage func(actions.CoordinateRef), initialRef actions.CoordinateRef) (*widget.Entry, *custom_widgets.AccordionWithHeaderWidgets) {
 	return buildProgramListAccordionWithSearchbar(programListAccordionConfig{
 		GetKeys: func(p *models.Program) []string {
 			repo := editor.ProgramSearchAreaRepo(p, config.MainMonitorSizeString)
-			if repo == nil {
-				return nil
+			var keys []string
+			if repo != nil {
+				keys = repo.GetAllKeys()
 			}
-			return repo.GetAllKeys()
+			return appendCollectionPickerKeys(p, keys)
 		},
 		GetDisplayName: func(p *models.Program, key string) string {
+			if _, ok := parseCollectionPickerKey(key); ok {
+				return collectionDisplayName(p, key)
+			}
 			repo := editor.ProgramSearchAreaRepo(p, config.MainMonitorSizeString)
 			if repo == nil {
 				return key
@@ -322,8 +349,17 @@ func buildSearchAreasAccordionWithSearchbar(onStage func(actions.CoordinateRef),
 			}
 			return key
 		},
-		GetPreviewImage: editor.LoadSearchAreaPreviewImage,
+		GetPreviewImage: func(p *models.Program, key string) (custom_widgets.PreviewTooltipResult, error) {
+			if _, ok := parseCollectionPickerKey(key); ok {
+				return LoadCollectionPreviewImage(p, key)
+			}
+			return editor.LoadSearchAreaPreviewImage(p, key)
+		},
 		OnSelect: func(p *models.Program, key string) {
+			if name, ok := parseCollectionPickerKey(key); ok {
+				ShowCollectionCellPicker(parent, p.Name, name, initialRef, onStage, nil)
+				return
+			}
 			onStage(actions.NewCoordinateRef(p.Name, key))
 		},
 	}, initialRef)
@@ -425,30 +461,46 @@ func showEntityPickerModal(parent fyne.Window, title string, body fyne.CanvasObj
 	return dlg
 }
 
-// ShowPointPicker opens a searchable modal to pick a point.
+// ShowPointPicker opens a searchable modal to pick a point or collection cell selection.
 func ShowPointPicker(parent fyne.Window, initial actions.CoordinateRef, onSelect func(actions.CoordinateRef), onClosed func()) {
 	if parent == nil || onSelect == nil {
 		return
 	}
+	var dlg dialog.Dialog
 	staged := initial
-	searchbar, list := buildPointsListWithSearchbar(func(ref actions.CoordinateRef) { staged = ref }, initial)
+	searchbar, list := buildPointsListWithSearchbar(parent, func(ref actions.CoordinateRef) {
+		if ref.IsCollection() {
+			onSelect(ref)
+			deferHidePickerDialog(dlg)
+			return
+		}
+		staged = ref
+	}, initial)
 	body := container.NewBorder(searchbar, nil, nil, nil, list)
-	showEntityPickerModal(parent, "Select Point", body, func() {
+	dlg = showEntityPickerModal(parent, "Select Point", body, func() {
 		if staged != initial {
 			onSelect(staged)
 		}
 	}, onClosed)
 }
 
-// ShowSearchAreaPicker opens a searchable modal to pick a search area.
+// ShowSearchAreaPicker opens a searchable modal to pick a search area or collection cell selection.
 func ShowSearchAreaPicker(parent fyne.Window, initial actions.CoordinateRef, onSelect func(actions.CoordinateRef), onClosed func()) {
 	if parent == nil || onSelect == nil {
 		return
 	}
+	var dlg dialog.Dialog
 	staged := initial
-	searchbar, acc := buildSearchAreasAccordionWithSearchbar(func(ref actions.CoordinateRef) { staged = ref }, initial)
+	searchbar, acc := buildSearchAreasAccordionWithSearchbar(parent, func(ref actions.CoordinateRef) {
+		if ref.IsCollection() {
+			onSelect(ref)
+			deferHidePickerDialog(dlg)
+			return
+		}
+		staged = ref
+	}, initial)
 	body := container.NewBorder(searchbar, nil, nil, nil, acc)
-	showEntityPickerModal(parent, "Select Search Area", body, func() {
+	dlg = showEntityPickerModal(parent, "Select Search Area", body, func() {
 		if staged != initial {
 			onSelect(staged)
 		}

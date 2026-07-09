@@ -15,11 +15,12 @@ import (
 )
 
 var (
-	programFields    = []string{"Name"}
-	itemFields       = []string{"Name", "Cols", "Rows", "StackMax"}
-	pointFields      = []string{"Name", "X", "Y"}
-	searchAreaFields = []string{"Name", "LeftX", "TopY", "RightX", "BottomY"}
-	maskFields       = []string{"Name", "shapeSelect", "CenterX", "CenterY", "Base", "Height", "Radius", "Inverse"}
+	programFields     = []string{"Name"}
+	itemFields        = []string{"Name", "Cols", "Rows", "StackMax"}
+	pointFields       = []string{"Name", "X", "Y"}
+	searchAreaFields  = []string{"Name", "LeftX", "TopY", "RightX", "BottomY"}
+	maskFields        = []string{"Name", "shapeSelect", "CenterX", "CenterY", "Base", "Height", "Radius", "Inverse"}
+	collectionFields  = []string{"Name", "searchAreaSelect", "Rows", "Cols"}
 )
 
 func getWidgetText(w fyne.CanvasObject) string {
@@ -32,6 +33,10 @@ func getWidgetText(w fyne.CanvasObject) string {
 		return e.Entry.Text
 	case *widget.RadioGroup:
 		return e.Selected
+	case *widget.Select:
+		return e.Selected
+	case *custom_widgets.Incrementer:
+		return strconv.Itoa(e.Value)
 	case *widget.Check:
 		if e.Checked {
 			return "true"
@@ -116,6 +121,22 @@ func setupDirtyTracking(tab *EditorTab, fields []string) {
 				}
 				checkTabDirty(tab, fields)
 			}
+		case *widget.Select:
+			prev := e.OnChanged
+			e.OnChanged = func(s string) {
+				if prev != nil {
+					prev(s)
+				}
+				checkTabDirty(tab, fields)
+			}
+		case *custom_widgets.Incrementer:
+			prev := e.OnChanged
+			e.OnChanged = func(v int) {
+				if prev != nil {
+					prev(v)
+				}
+				checkTabDirty(tab, fields)
+			}
 		}
 	}
 }
@@ -127,6 +148,7 @@ func setupAllDirtyTracking() {
 	setupDirtyTracking(et.PointsTab, pointFields)
 	setupDirtyTracking(et.SearchAreasTab, searchAreaFields)
 	setupDirtyTracking(et.MasksTab, maskFields)
+	setupDirtyTracking(et.CollectionsTab, collectionFields)
 }
 
 func markProgramsClean() {
@@ -149,6 +171,10 @@ func markMasksClean() {
 	markTabClean(shell().EditorTabs.MasksTab, maskFields)
 }
 
+func markCollectionsClean() {
+	markTabClean(shell().EditorTabs.CollectionsTab, collectionFields)
+}
+
 
 // selectFirstProgramInEditorIfAny selects the first program (sorted keys) in the list and
 // program selector when the editor UI is first wired up.
@@ -168,7 +194,7 @@ func updateProgramSelectorOptions() {
 	et := shell().EditorTabs
 	for _, tab := range []*EditorTab{
 		et.ItemsTab, et.PointsTab,
-		et.SearchAreasTab, et.MasksTab,
+		et.SearchAreasTab, et.MasksTab, et.CollectionsTab,
 	} {
 		if tab.ProgramSelector != nil {
 			tab.ProgramSelector.Options = opts
@@ -197,6 +223,9 @@ func setEditorLists() {
 	setAccordionMasksLists(
 		et.MasksTab.Widgets["Accordion"].(*custom_widgets.AccordionWithHeaderWidgets),
 	)
+	setAccordionCollectionsLists(
+		et.CollectionsTab.Widgets["Accordion"].(*custom_widgets.AccordionWithHeaderWidgets),
+	)
 	et.ProgramsTab.SelectedItem = repositories.ProgramRepo().New()
 	// Note: For nested models, we need a program context to get repositories
 	// These will be set to proper instances when a program is selected
@@ -204,6 +233,7 @@ func setEditorLists() {
 	et.PointsTab.SelectedItem = &models.Point{}
 	et.SearchAreasTab.SelectedItem = &models.SearchArea{}
 	et.MasksTab.SelectedItem = &models.Mask{}
+	et.CollectionsTab.SelectedItem = &models.Collection{}
 	et.AutoPicTab.SelectedItem = &models.SearchArea{}
 	shell().RefreshEditorActionBar()
 }
@@ -271,6 +301,10 @@ func getSelectedEntityName() string {
 		if v, ok := et.MasksTab.SelectedItem.(*models.Mask); ok {
 			return v.Name
 		}
+	case "Collections":
+		if v, ok := et.CollectionsTab.SelectedItem.(*models.Collection); ok {
+			return v.Name
+		}
 	}
 	return ""
 }
@@ -295,6 +329,8 @@ func setEditorButtons() {
 			cfg = pointCreateConfig()
 		case "Masks":
 			cfg = maskCreateConfig()
+		case "Collections":
+			cfg = collectionCreateConfig()
 		case "Search Areas":
 			cfg = searchAreaCreateConfig()
 		default:

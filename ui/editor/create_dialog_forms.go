@@ -142,6 +142,22 @@ func prefillMaskCreateDialog(w map[string]fyne.CanvasObject) {
 	setMaskImageModeOnWidgets(w, false)
 }
 
+func prefillCollectionCreateDialog(w map[string]fyne.CanvasObject) {
+	tab := shell().EditorTabs.CollectionsTab
+	programName := ""
+	if tab.ProgramSelector != nil {
+		programName = tab.ProgramSelector.Selected
+		w["ProgramSelector"].(*widget.Select).SetSelected(programName)
+	}
+	copyTabWidgetsToDialog(tab.Widgets, w, "Name", "Rows", "Cols")
+	refreshSearchAreaSelectOptions(w, programName)
+	if src, ok := tab.Widgets["searchAreaSelect"].(*widget.Select); ok {
+		if dst, ok := w["searchAreaSelect"].(*widget.Select); ok && src.Selected != "" {
+			dst.SetSelected(src.Selected)
+		}
+	}
+}
+
 func prefillItemCreateDialog(w map[string]fyne.CanvasObject, ctx *createDialogContext) {
 	tab := shell().EditorTabs.ItemsTab
 	w["ProgramSelector"].(*widget.Select).SetSelected(tab.ProgramSelector.Selected)
