@@ -2,20 +2,38 @@ package actions
 
 import "testing"
 
-func TestCoordinateRef(t *testing.T) {
-	ref := NewCoordinateRef("My Program", "Main area")
-	if ref.Program() != "My Program" || ref.Name() != "Main area" {
-		t.Fatalf("ref parts: program=%q name=%q", ref.Program(), ref.Name())
+func TestNewCollectionRef_andParse(t *testing.T) {
+	ref := NewCollectionRef("prog", "grid", 2, 3, 1, 1)
+	want := "prog~grid@1,1-2,3"
+	if ref.String() != want {
+		t.Fatalf("ref = %q want %q", ref, want)
 	}
-	if ref.DisplayLabel() != "My Program~Main area" {
-		t.Fatalf("DisplayLabel() = %q", ref.DisplayLabel())
+	if !ref.IsCollection() {
+		t.Fatal("expected IsCollection")
 	}
+	if ref.Program() != "prog" || ref.Name() != "grid" {
+		t.Fatalf("program/name = %q/%q", ref.Program(), ref.Name())
+	}
+	r1, c1, r2, c2, ok := ref.CellRange()
+	if !ok || r1 != 1 || c1 != 1 || r2 != 2 || c2 != 3 {
+		t.Fatalf("CellRange = %d,%d-%d,%d ok=%v", r1, c1, r2, c2, ok)
+	}
+}
 
-	legacy := CoordinateRef("legacy-only")
-	if legacy.Program() != "" || legacy.Name() != "legacy-only" {
-		t.Fatalf("legacy ref: program=%q name=%q", legacy.Program(), legacy.Name())
+func TestCoordinateRef_plainNotCollection(t *testing.T) {
+	ref := NewCoordinateRef("prog", "pt")
+	if ref.IsCollection() {
+		t.Fatal("plain ref should not be collection")
 	}
-	if legacy.DisplayLabel() != "legacy-only" {
-		t.Fatalf("legacy DisplayLabel() = %q", legacy.DisplayLabel())
+	if _, _, _, _, ok := ref.CellRange(); ok {
+		t.Fatal("unexpected cell range")
+	}
+}
+
+func TestWithEntityName_preservesRange(t *testing.T) {
+	ref := NewCollectionRef("prog", "old", 1, 1, 2, 2)
+	got := ref.WithEntityName("prog", "new")
+	if got.String() != "prog~new@1,1-2,2" {
+		t.Fatalf("got %q", got)
 	}
 }

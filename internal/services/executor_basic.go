@@ -29,21 +29,11 @@ func executeWait(a actions.ActionInterface, macro *models.Macro) error {
 func executeMove(a actions.ActionInterface, macro *models.Macro) error {
 	node := a.(*actions.Move)
 	log.Println("Move:", node.String())
-	pt, err := macropkg.LookupPoint(node.Point, macropkg.DefaultResolutionKey())
+	x, y, err := macropkg.ResolvePointCoordsFromRef(node.Point, macro, macropkg.DefaultResolutionKey())
 	if err != nil {
-		log.Printf("Move: failed to lookup point %q: %v, using (0,0)", node.Point, err)
+		log.Printf("Move: failed to resolve point %q: %v, using (0,0)", node.Point, err)
 		getAutomationBackend().Move(0, 0, moveOpts(node))
 		return nil
-	}
-	x, err := macropkg.ResolveInt(pt.X, macro)
-	if err != nil {
-		log.Printf("Move: failed to resolve X %v: %v, using 0 (ensure variable is set by an earlier action, e.g. Image Search output)", pt.X, err)
-		x = 0
-	}
-	y, err := macropkg.ResolveInt(pt.Y, macro)
-	if err != nil {
-		log.Printf("Move: failed to resolve Y %v: %v, using 0 (ensure variable is set by an earlier action, e.g. Image Search output)", pt.Y, err)
-		y = 0
 	}
 	getAutomationBackend().Move(x, y, moveOpts(node))
 	return nil
