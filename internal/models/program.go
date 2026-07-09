@@ -68,6 +68,18 @@ type MaskRepositoryInterface interface {
 	New() *Mask
 }
 
+// CollectionRepositoryInterface defines the interface for Collection data access operations.
+type CollectionRepositoryInterface interface {
+	Get(name string) (*Collection, error)
+	GetAll() map[string]*Collection
+	GetAllKeys() []string
+	Set(name string, collection *Collection) error
+	Delete(name string) error
+	Save() error
+	Count() int
+	New() *Collection
+}
+
 // ItemRepositoryFactory is a function type that creates ItemRepository instances.
 // This is set by the repositories package to avoid circular dependencies.
 var ItemRepositoryFactory func(*Program) ItemRepositoryInterface
@@ -84,17 +96,22 @@ var SearchAreaRepositoryFactory func(*Program, string) SearchAreaRepositoryInter
 // This is set by the repositories package to avoid circular dependencies.
 var MaskRepositoryFactory func(*Program) MaskRepositoryInterface
 
+// CollectionRepositoryFactory is a function type that creates CollectionRepository instances.
+var CollectionRepositoryFactory func(*Program) CollectionRepositoryInterface
+
 type Program struct {
 	Name        string
 	Items       map[string]*Item
 	Coordinates map[string]*Coordinates
 	Masks       map[string]*Mask
+	Collections map[string]*Collection
 	masks       map[string]func(f ...any) *gocv.Mat
 
 	itemRepo        ItemRepositoryInterface                  // Lazy-initialized ItemRepository
 	pointRepos      map[string]PointRepositoryInterface      // Lazy-initialized PointRepositories keyed by resolution
 	searchAreaRepos map[string]SearchAreaRepositoryInterface // Lazy-initialized SearchAreaRepositories keyed by resolution
 	maskRepo        MaskRepositoryInterface                  // Lazy-initialized MaskRepository
+	collectionRepo  CollectionRepositoryInterface            // Lazy-initialized CollectionRepository
 	repoMu          sync.Mutex                               // Protects all repository initialization
 }
 
@@ -135,8 +152,9 @@ func NewProgram() *Program {
 				SearchAreas: make(map[string]*SearchArea),
 			},
 		},
-		Masks: make(map[string]*Mask),
-		masks: make(map[string]func(f ...any) *gocv.Mat),
+		Masks:       make(map[string]*Mask),
+		Collections: make(map[string]*Collection),
+		masks:       make(map[string]func(f ...any) *gocv.Mat),
 	}
 }
 
@@ -223,4 +241,22 @@ func (p *Program) SearchAreaRepo(resolutionKey string) (SearchAreaRepositoryInte
 	}
 
 	return p.searchAreaRepos[resolutionKey], nil
+}
+
+// CollectionRepo returns a CollectionRepository for managing this program's collections.
+func (p *Program) CollectionRepo() (CollectionRepositoryInterface, error) {
+	p.repoMu.Lock()
+	defer p.repoMu.Unlock()
+
+	if p.collectionRepo == nil {
+		if CollectionRepositoryFactory == nil {
+			return nil, fmt.Errorf("collection repository: %w", ErrRepositoryFactoryUninitialized)
+		}
+		if p.Collections == nil {
+			p.Collections = make(map[string]*Collection)
+		}
+		p.collectionRepo = CollectionRepositoryFactory(p)
+	}
+
+	return p.collectionRepo, nil
 }

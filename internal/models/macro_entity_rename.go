@@ -13,6 +13,7 @@ const (
 	ProgramEntityPoint ProgramEntityKind = iota
 	ProgramEntitySearchArea
 	ProgramEntityItem
+	ProgramEntityCollection
 )
 
 // RenameProgramEntity updates macro actions that reference the renamed entity within program.
@@ -36,6 +37,9 @@ func (m *Macro) RenameProgramEntity(kind ProgramEntityKind, program, oldName, ne
 			if !ok {
 				return
 			}
+			if mv.Point.IsCollection() {
+				return
+			}
 			if ref := renameCoordinateEntity(mv.Point, program, oldName, newName); ref != mv.Point {
 				mv.Point = ref
 				changed = true
@@ -43,16 +47,60 @@ func (m *Macro) RenameProgramEntity(kind ProgramEntityKind, program, oldName, ne
 		case ProgramEntitySearchArea:
 			switch n := a.(type) {
 			case *actions.ImageSearch:
+				if n.SearchArea.IsCollection() {
+					return
+				}
 				if ref := renameCoordinateEntity(n.SearchArea, program, oldName, newName); ref != n.SearchArea {
 					n.SearchArea = ref
 					changed = true
 				}
 			case *actions.Ocr:
+				if n.SearchArea.IsCollection() {
+					return
+				}
 				if ref := renameCoordinateEntity(n.SearchArea, program, oldName, newName); ref != n.SearchArea {
 					n.SearchArea = ref
 					changed = true
 				}
 			case *actions.FindPixel:
+				if n.SearchArea.IsCollection() {
+					return
+				}
+				if ref := renameCoordinateEntity(n.SearchArea, program, oldName, newName); ref != n.SearchArea {
+					n.SearchArea = ref
+					changed = true
+				}
+			}
+		case ProgramEntityCollection:
+			switch n := a.(type) {
+			case *actions.Move:
+				if !n.Point.IsCollection() {
+					return
+				}
+				if ref := renameCoordinateEntity(n.Point, program, oldName, newName); ref != n.Point {
+					n.Point = ref
+					changed = true
+				}
+			case *actions.ImageSearch:
+				if !n.SearchArea.IsCollection() {
+					return
+				}
+				if ref := renameCoordinateEntity(n.SearchArea, program, oldName, newName); ref != n.SearchArea {
+					n.SearchArea = ref
+					changed = true
+				}
+			case *actions.Ocr:
+				if !n.SearchArea.IsCollection() {
+					return
+				}
+				if ref := renameCoordinateEntity(n.SearchArea, program, oldName, newName); ref != n.SearchArea {
+					n.SearchArea = ref
+					changed = true
+				}
+			case *actions.FindPixel:
+				if !n.SearchArea.IsCollection() {
+					return
+				}
 				if ref := renameCoordinateEntity(n.SearchArea, program, oldName, newName); ref != n.SearchArea {
 					n.SearchArea = ref
 					changed = true
@@ -152,19 +200,19 @@ func renameCoordinateEntity(ref actions.CoordinateRef, program, oldName, newName
 		if prog != program || ref.Name() != oldName {
 			return ref
 		}
-		return actions.NewCoordinateRef(prog, newName)
+		return ref.WithEntityName(prog, newName)
 	}
 	if ref.Name() != oldName {
 		return ref
 	}
-	return actions.NewCoordinateRef("", newName)
+	return ref.WithEntityName("", newName)
 }
 
 func renameCoordinateProgram(ref actions.CoordinateRef, oldProgram, newProgram string) actions.CoordinateRef {
 	if ref.IsEmpty() || ref.Program() != oldProgram {
 		return ref
 	}
-	return actions.NewCoordinateRef(newProgram, ref.Name())
+	return ref.WithEntityName(newProgram, ref.Name())
 }
 
 func renameItemTargetEntity(target, program, oldItem, newItem string) string {
