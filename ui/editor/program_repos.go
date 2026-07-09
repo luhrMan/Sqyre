@@ -40,3 +40,12 @@ func ProgramMaskRepo(p *models.Program) models.MaskRepositoryInterface {
 	}
 	return repo
 }
+
+func ProgramCollectionRepo(p *models.Program) models.CollectionRepositoryInterface {
+	repo, err := p.CollectionRepo()
+	if err != nil {
+		log.Printf("collection repo: %v", err)
+		return nil
+	}
+	return repo
+}

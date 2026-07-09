@@ -52,6 +52,7 @@ func setEditorUpdateHandlers() {
 	setPointUpdateHandler()
 	setSearchAreaUpdateHandler()
 	setMaskUpdateHandler()
+	setCollectionUpdateHandler()
 }
 
 func setProgramUpdateHandler() {
@@ -326,6 +327,60 @@ func setMaskUpdateHandler() {
 				}
 				refreshMasksAccordionForProgram(programName)
 				markMasksClean()
+			},
+		})
+	}
+}
+
+func setCollectionUpdateHandler() {
+	tab := shell().EditorTabs.CollectionsTab
+	tab.UpdateButton.OnTapped = func() {
+		if !allTabFieldsValid(tab) {
+			return
+		}
+		c := collectionFromWidgets(tab.Widgets)
+		if err := validateEntityNameForSave(c.Name); err != nil {
+			editorErr(err)
+			return
+		}
+		if err := validateCollectionForSave(tab.Widgets); err != nil {
+			editorErr(err)
+			return
+		}
+		v, ok := tab.SelectedItem.(*models.Collection)
+		if !ok {
+			return
+		}
+		programName := tab.ProgramSelector.Selected
+		program, ok := getProgramForEditor(programName)
+		if !ok {
+			return
+		}
+		repo := ProgramCollectionRepo(program)
+		oldName := v.Name
+		saveRenamableEntity(renamableSaveConfig{
+			entityType: "collection",
+			oldName:    oldName,
+			newName:    c.Name,
+			exists: func(name string) bool {
+				_, err := repo.Get(name)
+				return err == nil
+			},
+			deleteOld: func(name string) error {
+				if name != c.Name {
+					renameCollectionImage(programName, name, c.Name)
+				}
+				return repo.Delete(name)
+			},
+			save: func() error {
+				*v = *c
+				return repo.Set(v.Name, v)
+			},
+			onSuccess: func() {
+				propagateEntityRename(models.ProgramEntityCollection, programName, oldName, c.Name)
+				updateCollectionGridPreview(programName, v.Name, v.Rows, v.Cols)
+				refreshCollectionsAccordionForProgram(programName)
+				markCollectionsClean()
 			},
 		})
 	}

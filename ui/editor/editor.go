@@ -30,12 +30,13 @@ type EditorUi struct {
 	ActionBar    *fyne.Container
 	EditorTabs   struct {
 		*container.AppTabs
-		ProgramsTab    *EditorTab
-		ItemsTab       *EditorTab
-		PointsTab      *EditorTab
-		SearchAreasTab *EditorTab
-		MasksTab       *EditorTab
-		AutoPicTab     *EditorTab
+		ProgramsTab     *EditorTab
+		ItemsTab        *EditorTab
+		PointsTab       *EditorTab
+		SearchAreasTab  *EditorTab
+		MasksTab        *EditorTab
+		CollectionsTab  *EditorTab
+		AutoPicTab      *EditorTab
 	}
 }
 type EditorTab struct {
@@ -112,6 +113,8 @@ func (eu *EditorUi) ActiveTab() *EditorTab {
 		return eu.EditorTabs.SearchAreasTab
 	case "Masks":
 		return eu.EditorTabs.MasksTab
+	case "Collections":
+		return eu.EditorTabs.CollectionsTab
 	case "AutoPic":
 		return eu.EditorTabs.AutoPicTab
 	}
@@ -213,6 +216,20 @@ func ConstructEditorTabs(eu *EditorUi, win fyne.Window) {
 		buildMasksRightPanel(et.MasksTab.ProgramSelector, mtw, maskPreviewPanel, et.MasksTab.PreviewRefreshButton),
 	)
 
+	//===========================================================================================================COLLECTIONS
+	ctw := et.CollectionsTab.Widgets
+	ctw["Accordion"] = custom_widgets.NewAccordionWithHeaderWidgets()
+	ctw["searchbar"] = custom_widgets.NewFormEntry()
+	ctw["searchbar"].(*widget.Entry).PlaceHolder = "Search here"
+	populateCollectionsFormWidgets(ctw)
+	et.CollectionsTab.UpdateButton = newEditorUpdateButton()
+	et.CollectionsTab.ProgramSelector = widget.NewSelect(nil, nil)
+	et.CollectionsTab.TabItem = NewEditorTab(
+		"Collections",
+		container.NewBorder(ctw["searchbar"], nil, nil, nil, ctw["Accordion"]),
+		buildCollectionsRightPanel(et.CollectionsTab.ProgramSelector, ctw),
+	)
+
 	//===========================================================================================================AUTOPIC
 	atw := et.AutoPicTab.Widgets
 	atw["Accordion"] = custom_widgets.NewAccordionWithHeaderWidgets()
@@ -251,6 +268,7 @@ func ConstructEditorTabs(eu *EditorUi, win fyne.Window) {
 	et.Append(et.PointsTab.TabItem)
 	et.Append(et.SearchAreasTab.TabItem)
 	et.Append(et.MasksTab.TabItem)
+	et.Append(et.CollectionsTab.TabItem)
 	et.Append(et.AutoPicTab.TabItem)
 }
 
@@ -312,6 +330,10 @@ func (eu *EditorUi) canDeleteActiveEditorSelection() bool {
 		}
 	case "Masks":
 		if v, ok := et.MasksTab.SelectedItem.(*models.Mask); ok {
+			return v != nil && v.Name != ""
+		}
+	case "Collections":
+		if v, ok := et.CollectionsTab.SelectedItem.(*models.Collection); ok {
 			return v != nil && v.Name != ""
 		}
 	}

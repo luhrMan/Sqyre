@@ -145,6 +145,38 @@ func performDeleteForTab() {
 				},
 			}, program)
 		}
+	case "Collections":
+		if v, ok := et.CollectionsTab.SelectedItem.(*models.Collection); ok && v.Name != "" {
+			program, ok := getProgramForEditor(programName)
+			if !ok {
+				return
+			}
+			deleteEntityForTab(deleteEntityConfig{
+				entityType: "collection",
+				name:       v.Name,
+				delete: func(p *models.Program) error {
+					return ProgramCollectionRepo(p).Delete(v.Name)
+				},
+				cleanup: func() {
+					imgPath := config.CollectionImagePath(programName, v.Name)
+					if err := os.Remove(imgPath); err != nil && !os.IsNotExist(err) {
+						editorRepoLog("remove file", "collection image", imgPath, err)
+					}
+					if grid := collectionGridFromWidgets(et.CollectionsTab.Widgets); grid != nil {
+						grid.SetImage(nil)
+					}
+				},
+				reset: func(*models.Program) {
+					et.CollectionsTab.SelectedItem = &models.Collection{}
+					if list, ok := et.CollectionsTab.Widgets[programName+"-list"].(*widget.List); ok {
+						list.UnselectAll()
+					}
+				},
+				refresh: func() {
+					refreshCollectionsAccordionForProgram(programName)
+				},
+			}, program)
+		}
 	case "Search Areas":
 		if v, ok := et.SearchAreasTab.SelectedItem.(*models.SearchArea); ok && v.Name != "" {
 			program, ok := getProgramForEditor(programName)

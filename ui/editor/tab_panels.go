@@ -24,10 +24,6 @@ func newEditorUpdateButton() *widget.Button {
 	return btn
 }
 
-func newEditorPreviewImage() *canvas.Image {
-	return newEditorPreviewPanel().image
-}
-
 func newEditorPreviewRefreshButton() *widget.Button {
 	btn := widget.NewButtonWithIcon("", theme.ViewRefreshIcon(), nil)
 	btn.Importance = widget.LowImportance
@@ -231,6 +227,33 @@ func buildMasksRightPanel(programSelector *widget.Select, w map[string]fyne.Canv
 		),
 		nil, nil, nil,
 		buildPreviewColumn(previewPanel, refreshBtn),
+	)
+}
+
+// populateCollectionsFormWidgets creates Collections tab right-side form widgets.
+func populateCollectionsFormWidgets(w map[string]fyne.CanvasObject) {
+	w["Name"] = new(widget.Entry)
+	w["searchAreaSelect"] = widget.NewSelect(nil, nil)
+	minOne := 1
+	w["Rows"] = custom_widgets.NewIncrementer(1, 1, &minOne, nil)
+	w["Cols"] = custom_widgets.NewIncrementer(1, 1, &minOne, nil)
+	w["replaceButton"] = widget.NewButtonWithIcon("Replace Image", theme.ViewRefreshIcon(), nil)
+	w["collectionGrid"] = custom_widgets.NewCollectionGridView()
+	w["Form"] = widget.NewForm(
+		widget.NewFormItem("Name", w["Name"]),
+		widget.NewFormItem("Search Area", w["searchAreaSelect"]),
+		widget.NewFormItem("Rows", w["Rows"]),
+		widget.NewFormItem("Cols", w["Cols"]),
+		widget.NewFormItem("", w["replaceButton"]),
+	)
+}
+
+func buildCollectionsRightPanel(programSelector *widget.Select, w map[string]fyne.CanvasObject) fyne.CanvasObject {
+	grid := w["collectionGrid"]
+	return container.NewBorder(
+		container.NewVBox(LabeledProgramSelector(programSelector), w["Form"]),
+		nil, nil, nil,
+		wrapEditorPreviewImage(grid),
 	)
 }
 

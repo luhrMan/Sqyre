@@ -28,6 +28,9 @@ func resyncEntityAccordions() {
 	if acc, ok := et.MasksTab.Widgets["Accordion"].(*custom_widgets.AccordionWithHeaderWidgets); ok {
 		syncProgramEntityAccordion(acc, masksAccordionConfig())
 	}
+	if acc, ok := et.CollectionsTab.Widgets["Accordion"].(*custom_widgets.AccordionWithHeaderWidgets); ok {
+		syncProgramEntityAccordion(acc, collectionsAccordionConfig())
+	}
 	if acc, ok := et.AutoPicTab.Widgets["Accordion"].(*custom_widgets.AccordionWithHeaderWidgets); ok {
 		setAccordionAutoPicSearchAreasLists(acc)
 	}
