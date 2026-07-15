@@ -15,13 +15,28 @@ pub fn action_to_map(action: &Action) -> Result<Mapping> {
     Ok(m)
 }
 
-/// Encode including `uid` (for undo/clipboard snapshots).
+/// Encode including `uid` on every node (for undo/clipboard snapshots).
+///
+/// Normal [`action_to_map`] omits UIDs so copy/paste gets fresh identities;
+/// undo must restore stable IDs, so this walks the live tree and injects them.
 pub fn action_to_map_with_uid(action: &Action) -> Result<Mapping> {
-    let mut m = encode_kind(&action.kind)?;
-    if !action.id.is_root() {
-        insert_str(&mut m, "uid", action.id.as_str());
-    }
+    let mut m = action_to_map(action)?;
+    inject_action_uid(&mut m, action);
     Ok(m)
+}
+
+fn inject_action_uid(m: &mut Mapping, action: &Action) {
+    if !action.id.is_root() {
+        insert_str(m, "uid", action.id.as_str());
+    }
+    let Some(Value::Sequence(seq)) = m.get_mut(Value::String("subactions".into())) else {
+        return;
+    };
+    for (i, child) in action.children().iter().enumerate() {
+        if let Some(Value::Mapping(sub)) = seq.get_mut(i) {
+            inject_action_uid(sub, child);
+        }
+    }
 }
 
 /// Decode an action from a YAML mapping. Assigns a new UID unless `uid` is set.
@@ -884,5 +899,36 @@ fn decode_kind(raw: &Mapping, type_name: &str) -> Result<ActionKind> {
         "break" => Ok(ActionKind::Break),
         "continue" => Ok(ActionKind::Continue),
         other => Err(SerializeError::msg(format!("unknown action type {other}"))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sqyre_domain::{root_loop, ScalarValue};
+
+    #[test]
+    fn action_to_map_with_uid_preserves_nested_uids() {
+        let child = Action {
+            id: ActionId::new(),
+            kind: ActionKind::Wait {
+                time: ScalarValue::Int(1),
+            },
+        };
+        let child_id = child.id;
+        let nested = Action {
+            id: ActionId::new(),
+            kind: ActionKind::Loop {
+                name: "inner".into(),
+                count: ScalarValue::Int(1),
+                subactions: vec![child],
+            },
+        };
+        let nested_id = nested.id;
+        let root = root_loop(vec![nested]);
+        let m = action_to_map_with_uid(&root).unwrap();
+        let restored = action_from_map(&m).unwrap();
+        assert_eq!(restored.children()[0].id, nested_id);
+        assert_eq!(restored.children()[0].children()[0].id, child_id);
     }
 }
