@@ -242,46 +242,6 @@ fn should_show_var_name_overlay(text: &str, focused: bool) -> bool {
     !focused && !text.trim().is_empty()
 }
 
-/// Text field that shows nested `${}` chips when unfocused (Go BorderlessEntry / VarEntry).
-pub fn var_ref_text_edit(
-    ui: &mut egui::Ui,
-    label: &str,
-    value: &mut String,
-    known: &HashSet<String>,
-    is_dark: bool,
-    desired_width: f32,
-) {
-    ui.horizontal(|ui| {
-        ui.label(label);
-        let id = ui.id().with(("var_ref_edit", label));
-        let focused = ui.memory(|m| m.has_focus(id));
-        if should_show_var_ref_overlay(value, focused) {
-            let plain_fg = ui.visuals().text_color();
-            let resp = outer_frame(ui, Color32::TRANSPARENT, |ui| {
-                paint_var_ref_content(ui, value, known, is_dark, plain_fg);
-            });
-            // Expand hit target for short values.
-            let resp = ui.interact(
-                resp.rect.expand2(Vec2::new(
-                    (desired_width - resp.rect.width()).max(0.0),
-                    2.0,
-                )),
-                id.with("overlay_hit"),
-                Sense::click(),
-            );
-            if resp.clicked() {
-                ui.memory_mut(|m| m.request_focus(id));
-            }
-        } else {
-            ui.add(
-                egui::TextEdit::singleline(value)
-                    .id(id)
-                    .desired_width(desired_width),
-            );
-        }
-    });
-}
-
 /// Variable-name field that becomes a nested chip when unfocused (Go BorderlessVarNameEntry).
 pub fn var_name_text_edit(
     ui: &mut egui::Ui,
