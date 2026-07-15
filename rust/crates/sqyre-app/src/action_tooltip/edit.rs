@@ -2,12 +2,14 @@
 
 use crate::icon_cache::IconCache;
 use crate::pickers::{self, options, ActivePicker};
+use crate::var_pills;
 use eframe::egui;
 use sqyre_domain::{
     Action, ActionKind, ConditionClause, CoordinateOutputs, CoordinateRef, ListColumn, MatchOrder,
     ScalarValue, WaitTilFoundConfig,
 };
 use sqyre_persist::ProgramCatalog;
+use std::collections::HashSet;
 
 /// Copy draft fields onto `live`, keeping `live`'s children.
 pub fn apply_draft_preserving_children(live: &mut Action, draft: Action) -> Result<(), String> {
@@ -35,25 +37,27 @@ pub fn paint_edit_fields(
     catalog: &ProgramCatalog,
     icons: &mut IconCache,
     picker: &mut ActivePicker,
-    _macro_names: &[String],
+    _macros: &[(String, Vec<String>)],
+    known_vars: &HashSet<String>,
+    is_dark: bool,
 ) {
     match &mut draft.kind {
         ActionKind::Break | ActionKind::Continue => {
             ui.label("Nothing to edit.");
         }
         ActionKind::Wait { time } => {
-            scalar_field(ui, "Time (ms)", time);
+            scalar_field(ui, "Time (ms)", time, known_vars, is_dark);
         }
         ActionKind::Click { button, state } => {
             combo_str(ui, "Button", button, options::CLICK_BUTTONS);
             ui.checkbox(state, "Down");
         }
         ActionKind::Key { key, state } => {
-            text_field(ui, "Key", key);
+            var_pills::var_ref_text_edit(ui, "Key", key, known_vars, is_dark, 220.0);
             ui.checkbox(state, "Down");
         }
         ActionKind::Type { text, delay_ms } => {
-            text_field(ui, "Text", text);
+            var_pills::var_ref_text_edit(ui, "Text", text, known_vars, is_dark, 220.0);
             ui.add(egui::DragValue::new(delay_ms).prefix("Delay ms: ").speed(1));
         }
         ActionKind::Move {
@@ -88,7 +92,7 @@ pub fn paint_edit_fields(
             continue_key,
             pass_through,
         } => {
-            text_field(ui, "Message", message);
+            var_pills::var_ref_text_edit(ui, "Message", message, known_vars, is_dark, 220.0);
             string_list_field(ui, "Continue keys (one per line)", continue_key);
             ui.checkbox(pass_through, "Pass through");
         }
@@ -96,8 +100,18 @@ pub fn paint_edit_fields(
             process_path,
             window_title,
         } => {
-            text_field(ui, "Process path", process_path);
             text_field(ui, "Window title", window_title);
+            ui.horizontal(|ui| {
+                ui.label("Process path");
+                ui.add(
+                    egui::TextEdit::singleline(process_path)
+                        .desired_width(220.0)
+                        .hint_text("/path/to/app"),
+                );
+                if ui.button("Pick…").clicked() {
+                    *picker = pickers::open_window_picker(process_path, window_title);
+                }
+            });
         }
         ActionKind::RunMacro { macro_name } => {
             ui.horizontal(|ui| {
@@ -119,15 +133,15 @@ pub fn paint_edit_fields(
             variable_name,
             value,
         } => {
-            text_field(ui, "Variable", variable_name);
-            yaml_value_field(ui, "Value (YAML)", value);
+            var_pills::var_name_text_edit(ui, "Variable", variable_name, known_vars, is_dark, 220.0);
+            yaml_value_field(ui, "Value (YAML)", value, known_vars, is_dark);
         }
         ActionKind::Calculate {
             expression,
             output_var,
         } => {
-            text_field(ui, "Expression", expression);
-            text_field(ui, "Output variable", output_var);
+            var_pills::var_ref_text_edit(ui, "Expression", expression, known_vars, is_dark, 220.0);
+            var_pills::var_name_text_edit(ui, "Output variable", output_var, known_vars, is_dark, 220.0);
         }
         ActionKind::SaveVariable {
             variable_name,
@@ -135,14 +149,14 @@ pub fn paint_edit_fields(
             append,
             append_newline,
         } => {
-            text_field(ui, "Variable", variable_name);
-            text_field(ui, "Destination", destination);
+            var_pills::var_name_text_edit(ui, "Variable", variable_name, known_vars, is_dark, 220.0);
+            var_pills::var_ref_text_edit(ui, "Destination", destination, known_vars, is_dark, 220.0);
             ui.checkbox(append, "Append");
             ui.checkbox(append_newline, "Append newline");
         }
         ActionKind::Loop { name, count, .. } => {
             text_field(ui, "Name", name);
-            scalar_field(ui, "Count", count);
+            scalar_field(ui, "Count", count, known_vars, is_dark);
         }
         ActionKind::While {
             name,
@@ -158,7 +172,7 @@ pub fn paint_edit_fields(
                 *match_mode = if all { "all".into() } else { "any".into() };
             }
             ui.add(egui::DragValue::new(max_iterations).prefix("Max iterations: "));
-            clauses_editor(ui, clauses);
+            clauses_editor(ui, clauses, known_vars, is_dark);
         }
         ActionKind::Conditional {
             name,
@@ -171,7 +185,7 @@ pub fn paint_edit_fields(
             if ui.checkbox(&mut all, "Match all (uncheck = any)").changed() {
                 *match_mode = if all { "all".into() } else { "any".into() };
             }
-            clauses_editor(ui, clauses);
+            clauses_editor(ui, clauses, known_vars, is_dark);
         }
         ActionKind::ForEachRow {
             name,
@@ -181,9 +195,9 @@ pub fn paint_edit_fields(
             ..
         } => {
             text_field(ui, "Name", name);
-            scalar_field(ui, "Start row", start_row);
-            scalar_field(ui, "End row", end_row);
-            list_columns_editor(ui, sources);
+            scalar_field(ui, "Start row", start_row, known_vars, is_dark);
+            scalar_field(ui, "End row", end_row, known_vars, is_dark);
+            list_columns_editor(ui, sources, known_vars, is_dark);
         }
         ActionKind::ImageSearch {
             name,
@@ -212,7 +226,7 @@ pub fn paint_edit_fields(
             );
             ui.add(egui::DragValue::new(blur).prefix("Blur: "));
             wait_editor(ui, wait);
-            coords_editor(ui, coords);
+            coords_editor(ui, coords, known_vars, is_dark);
             order_editor(ui, order);
             ui.checkbox(run_branch_on_no_find, "Run branch on no find");
         }
@@ -234,11 +248,18 @@ pub fn paint_edit_fields(
             ..
         } => {
             text_field(ui, "Name", name);
-            text_field(ui, "Target", target);
+            var_pills::var_ref_text_edit(ui, "Target", target, known_vars, is_dark, 220.0);
             search_area_picker_row(ui, search_area, picker);
-            text_field(ui, "Output variable", output_variable);
+            var_pills::var_name_text_edit(
+                ui,
+                "Output variable",
+                output_variable,
+                known_vars,
+                is_dark,
+                220.0,
+            );
             wait_editor(ui, wait);
-            coords_editor(ui, coords);
+            coords_editor(ui, coords, known_vars, is_dark);
             order_editor(ui, order);
             ui.add(egui::DragValue::new(blur).prefix("Blur: "));
             ui.add(egui::DragValue::new(min_threshold).prefix("Min threshold: "));
@@ -261,10 +282,10 @@ pub fn paint_edit_fields(
         } => {
             text_field(ui, "Name", name);
             search_area_picker_row(ui, search_area, picker);
-            text_field(ui, "Target color", target_color);
+            var_pills::var_ref_text_edit(ui, "Target color", target_color, known_vars, is_dark, 220.0);
             ui.add(egui::DragValue::new(color_tolerance).prefix("Color tolerance: "));
             wait_editor(ui, wait);
-            coords_editor(ui, coords);
+            coords_editor(ui, coords, known_vars, is_dark);
             order_editor(ui, order);
             ui.checkbox(run_branch_on_no_find, "Run branch on no find");
         }
@@ -445,17 +466,19 @@ fn text_field(ui: &mut egui::Ui, label: &str, value: &mut String) {
     });
 }
 
-fn scalar_field(ui: &mut egui::Ui, label: &str, value: &mut ScalarValue) {
+fn scalar_field(
+    ui: &mut egui::Ui,
+    label: &str,
+    value: &mut ScalarValue,
+    known_vars: &HashSet<String>,
+    is_dark: bool,
+) {
     let mut text = value.as_display();
-    ui.horizontal(|ui| {
-        ui.label(label);
-        if ui
-            .add(egui::TextEdit::singleline(&mut text).desired_width(160.0))
-            .changed()
-        {
-            *value = parse_scalar(&text);
-        }
-    });
+    let before = text.clone();
+    var_pills::var_ref_text_edit(ui, label, &mut text, known_vars, is_dark, 160.0);
+    if text != before {
+        *value = parse_scalar(&text);
+    }
 }
 
 fn parse_scalar(text: &str) -> ScalarValue {
@@ -497,20 +520,20 @@ fn string_list_field(ui: &mut egui::Ui, label: &str, values: &mut Vec<String>) {
     }
 }
 
-fn yaml_value_field(ui: &mut egui::Ui, label: &str, value: &mut serde_yaml::Value) {
+fn yaml_value_field(
+    ui: &mut egui::Ui,
+    label: &str,
+    value: &mut serde_yaml::Value,
+    known_vars: &HashSet<String>,
+    is_dark: bool,
+) {
     let mut text = match serde_yaml::to_string(value) {
         Ok(s) => s.trim().to_string(),
         Err(_) => String::new(),
     };
-    ui.label(label);
-    if ui
-        .add(
-            egui::TextEdit::multiline(&mut text)
-                .desired_width(280.0)
-                .desired_rows(2),
-        )
-        .changed()
-    {
+    let before = text.clone();
+    var_pills::var_ref_multiline_edit(ui, label, &mut text, known_vars, is_dark, 280.0, 2);
+    if text != before {
         match serde_yaml::from_str::<serde_yaml::Value>(&text) {
             Ok(v) => *value = v,
             Err(_) => *value = serde_yaml::Value::String(text),
@@ -531,11 +554,30 @@ fn wait_editor(ui: &mut egui::Ui, wait: &mut WaitTilFoundConfig) {
     });
 }
 
-fn coords_editor(ui: &mut egui::Ui, coords: &mut CoordinateOutputs) {
+fn coords_editor(
+    ui: &mut egui::Ui,
+    coords: &mut CoordinateOutputs,
+    known_vars: &HashSet<String>,
+    is_dark: bool,
+) {
     ui.group(|ui| {
         ui.label("Coordinate outputs");
-        text_field(ui, "Output X", &mut coords.output_x_variable);
-        text_field(ui, "Output Y", &mut coords.output_y_variable);
+        var_pills::var_name_text_edit(
+            ui,
+            "Output X",
+            &mut coords.output_x_variable,
+            known_vars,
+            is_dark,
+            160.0,
+        );
+        var_pills::var_name_text_edit(
+            ui,
+            "Output Y",
+            &mut coords.output_y_variable,
+            known_vars,
+            is_dark,
+            160.0,
+        );
     });
 }
 
@@ -553,7 +595,12 @@ fn order_editor(ui: &mut egui::Ui, order: &mut MatchOrder) {
     });
 }
 
-fn clauses_editor(ui: &mut egui::Ui, clauses: &mut Vec<ConditionClause>) {
+fn clauses_editor(
+    ui: &mut egui::Ui,
+    clauses: &mut Vec<ConditionClause>,
+    known_vars: &HashSet<String>,
+    is_dark: bool,
+) {
     ui.group(|ui| {
         ui.horizontal(|ui| {
             ui.label("Clauses");
@@ -563,13 +610,16 @@ fn clauses_editor(ui: &mut egui::Ui, clauses: &mut Vec<ConditionClause>) {
         });
         let mut remove: Option<usize> = None;
         for (i, clause) in clauses.iter_mut().enumerate() {
-            ui.horizontal(|ui| {
-                scalar_field(ui, "L", &mut clause.left);
-                combo_str(ui, "op", &mut clause.operator, options::CONDITIONAL_OPERATORS);
-                scalar_field(ui, "R", &mut clause.right);
-                if ui.small_button("−").clicked() {
-                    remove = Some(i);
-                }
+            // Unique id so each clause's "op" ComboBox is distinct (same label salt).
+            ui.push_id(i, |ui| {
+                ui.horizontal(|ui| {
+                    scalar_field(ui, "L", &mut clause.left, known_vars, is_dark);
+                    combo_str(ui, "op", &mut clause.operator, options::CONDITIONAL_OPERATORS);
+                    scalar_field(ui, "R", &mut clause.right, known_vars, is_dark);
+                    if ui.small_button("−").clicked() {
+                        remove = Some(i);
+                    }
+                });
             });
         }
         if let Some(i) = remove {
@@ -578,7 +628,12 @@ fn clauses_editor(ui: &mut egui::Ui, clauses: &mut Vec<ConditionClause>) {
     });
 }
 
-fn list_columns_editor(ui: &mut egui::Ui, sources: &mut Vec<ListColumn>) {
+fn list_columns_editor(
+    ui: &mut egui::Ui,
+    sources: &mut Vec<ListColumn>,
+    known_vars: &HashSet<String>,
+    is_dark: bool,
+) {
     ui.group(|ui| {
         ui.horizontal(|ui| {
             ui.label("Sources");
@@ -588,14 +643,30 @@ fn list_columns_editor(ui: &mut egui::Ui, sources: &mut Vec<ListColumn>) {
         });
         let mut remove: Option<usize> = None;
         for (i, col) in sources.iter_mut().enumerate() {
-            ui.group(|ui| {
-                text_field(ui, "Source", &mut col.source);
-                text_field(ui, "Output var", &mut col.output_var);
-                ui.checkbox(&mut col.is_file, "Is file");
-                ui.checkbox(&mut col.skip_blank_lines, "Skip blank lines");
-                if ui.small_button("Remove").clicked() {
-                    remove = Some(i);
-                }
+            ui.push_id(i, |ui| {
+                ui.group(|ui| {
+                    var_pills::var_ref_text_edit(
+                        ui,
+                        "Source",
+                        &mut col.source,
+                        known_vars,
+                        is_dark,
+                        200.0,
+                    );
+                    var_pills::var_name_text_edit(
+                        ui,
+                        "Output var",
+                        &mut col.output_var,
+                        known_vars,
+                        is_dark,
+                        160.0,
+                    );
+                    ui.checkbox(&mut col.is_file, "Is file");
+                    ui.checkbox(&mut col.skip_blank_lines, "Skip blank lines");
+                    if ui.small_button("Remove").clicked() {
+                        remove = Some(i);
+                    }
+                });
             });
         }
         if let Some(i) = remove {

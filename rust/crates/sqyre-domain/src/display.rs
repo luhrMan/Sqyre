@@ -533,8 +533,100 @@ fn format_float(f: f64) -> String {
     s.trim_end_matches('0').trim_end_matches('.').to_string()
 }
 
-/// Category pastel color (Go `DefaultActionPastelColor`), light theme.
+/// Category keys for customizable macro-tree action colors (Go `ActionColorKey*`).
+pub const ACTION_COLOR_KEY_MOUSE_KEYBOARD: &str = "mouse_keyboard";
+pub const ACTION_COLOR_KEY_DETECTION: &str = "detection";
+pub const ACTION_COLOR_KEY_VARIABLES: &str = "variables";
+pub const ACTION_COLOR_KEY_MISCELLANEOUS: &str = "miscellaneous";
+pub const ACTION_COLOR_KEY_WAIT: &str = "wait";
+pub const ACTION_COLOR_KEY_DEFAULT: &str = "default";
+
+/// `(key, label)` for every customizable action color group.
+pub const ACTION_COLOR_CATEGORIES: &[(&str, &str)] = &[
+    (ACTION_COLOR_KEY_MOUSE_KEYBOARD, "Mouse & Keyboard"),
+    (ACTION_COLOR_KEY_DETECTION, "Detection"),
+    (ACTION_COLOR_KEY_VARIABLES, "Variables"),
+    (ACTION_COLOR_KEY_MISCELLANEOUS, "Miscellaneous"),
+    (ACTION_COLOR_KEY_WAIT, "Wait"),
+    (ACTION_COLOR_KEY_DEFAULT, "Default"),
+];
+
+use std::collections::HashMap;
+use std::sync::RwLock;
+
+static CUSTOM_ACTION_COLORS: RwLock<Option<HashMap<String, [u8; 4]>>> = RwLock::new(None);
+
+fn action_color_key(action_type: &str) -> &'static str {
+    let t = action_type.trim().to_ascii_lowercase();
+    if t == "wait" || t == "pause" {
+        return ACTION_COLOR_KEY_WAIT;
+    }
+    match action_color_category(&t) {
+        "Mouse & Keyboard" => ACTION_COLOR_KEY_MOUSE_KEYBOARD,
+        "Detection" => ACTION_COLOR_KEY_DETECTION,
+        "Variables" => ACTION_COLOR_KEY_VARIABLES,
+        "Miscellaneous" => ACTION_COLOR_KEY_MISCELLANEOUS,
+        _ => ACTION_COLOR_KEY_DEFAULT,
+    }
+}
+
+/// Sample action type used when previewing a category swatch.
+pub fn sample_action_type_for_color_key(category_key: &str) -> &'static str {
+    match category_key {
+        ACTION_COLOR_KEY_MOUSE_KEYBOARD => "click",
+        ACTION_COLOR_KEY_DETECTION => "imagesearch",
+        ACTION_COLOR_KEY_VARIABLES => "setvariable",
+        ACTION_COLOR_KEY_MISCELLANEOUS => "loop",
+        ACTION_COLOR_KEY_WAIT => "wait",
+        _ => "",
+    }
+}
+
+/// Format RGBA as `#rrggbb` (alpha ignored).
+pub fn format_hex_color(rgba: [u8; 4]) -> String {
+    format!("#{:02x}{:02x}{:02x}", rgba[0], rgba[1], rgba[2])
+}
+
+/// Store a user-chosen color for a category key.
+pub fn set_custom_action_color(category_key: &str, rgba: [u8; 4]) {
+    let mut guard = CUSTOM_ACTION_COLORS.write().unwrap();
+    let map = guard.get_or_insert_with(HashMap::new);
+    map.insert(category_key.to_string(), rgba);
+}
+
+/// Remove a user override for a category key.
+pub fn clear_custom_action_color(category_key: &str) {
+    let mut guard = CUSTOM_ACTION_COLORS.write().unwrap();
+    if let Some(map) = guard.as_mut() {
+        map.remove(category_key);
+    }
+}
+
+/// Remove every user override.
+pub fn clear_all_custom_action_colors() {
+    *CUSTOM_ACTION_COLORS.write().unwrap() = None;
+}
+
+/// Category pastel color (Go `ActionPastelColor`), light/dark theme.
+/// Uses a user override when one is set; otherwise the built-in pastel.
 pub fn action_pastel_color(action_type: &str, is_dark: bool) -> [u8; 4] {
+    let t = action_type.trim().to_ascii_lowercase();
+    if t != "warning" {
+        let key = action_color_key(&t);
+        if let Some(c) = CUSTOM_ACTION_COLORS
+            .read()
+            .unwrap()
+            .as_ref()
+            .and_then(|m| m.get(key).copied())
+        {
+            return c;
+        }
+    }
+    default_action_pastel_color(action_type, is_dark)
+}
+
+/// Built-in pastel (Go `DefaultActionPastelColor`), ignoring user overrides.
+pub fn default_action_pastel_color(action_type: &str, is_dark: bool) -> [u8; 4] {
     let t = action_type.trim().to_ascii_lowercase();
     if t == "warning" {
         return if is_dark {
@@ -591,6 +683,10 @@ fn action_color_category(action_type: &str) -> &'static str {
 }
 
 /// Compact glyph for the type icon badge (egui stand-in for Fyne theme icons).
+///
+/// Glyphs must exist in egui's default proportional fonts (Ubuntu-Light, Hack,
+/// NotoEmoji, emoji-icon-font). Mathematical alphanumeric / obscure symbols
+/// render as empty boxes (tofu).
 pub fn action_icon_glyph(action: &Action) -> &'static str {
     match &action.kind {
         ActionKind::Click { state, .. } => {
@@ -608,21 +704,21 @@ pub fn action_icon_glyph(action: &Action) -> &'static str {
                 "⬆"
             }
         }
-        ActionKind::Type { .. } => "⌫",
+        ActionKind::Type { .. } => "⌨",
         ActionKind::Wait { .. } => "⏱",
         ActionKind::Pause { .. } => "⏸",
-        ActionKind::FocusWindow { .. } => "◫",
+        ActionKind::FocusWindow { .. } => "👁",
         ActionKind::RunMacro { .. } => "▶",
         ActionKind::Conditional { .. } => "?",
         ActionKind::Loop { .. } | ActionKind::While { .. } => "↻",
         ActionKind::Break => "⏹",
         ActionKind::Continue => "⏭",
-        ActionKind::SetVariable { .. } => "𝑥",
-        ActionKind::Calculate { .. } => "𝛴",
+        ActionKind::SetVariable { .. } => "x",
+        ActionKind::Calculate { .. } => "Σ",
         ActionKind::SaveVariable { .. } => "💾",
-        ActionKind::ForEachRow { .. } => "≣",
-        ActionKind::Ocr { .. } => "𝕋",
-        ActionKind::ImageSearch { .. } => "⌕",
+        ActionKind::ForEachRow { .. } => "☰",
+        ActionKind::Ocr { .. } => "🔤",
+        ActionKind::ImageSearch { .. } => "🔍",
         ActionKind::FindPixel { .. } => "🎨",
         ActionKind::NavigateSelect { .. } => "⌖",
     }
@@ -701,9 +797,28 @@ mod tests {
 
     #[test]
     fn pastel_wait_differs_from_mouse() {
+        clear_all_custom_action_colors();
         let wait = action_pastel_color("wait", false);
         let click = action_pastel_color("click", false);
         assert_ne!(wait, click);
+    }
+
+    #[test]
+    fn custom_action_color_overrides_builtin() {
+        clear_all_custom_action_colors();
+        let custom = [0x11, 0x22, 0x33, 0xFF];
+        set_custom_action_color(ACTION_COLOR_KEY_MOUSE_KEYBOARD, custom);
+        assert_eq!(action_pastel_color("click", false), custom);
+        assert_ne!(
+            action_pastel_color("click", false),
+            default_action_pastel_color("click", false)
+        );
+        clear_custom_action_color(ACTION_COLOR_KEY_MOUSE_KEYBOARD);
+        assert_eq!(
+            action_pastel_color("click", false),
+            default_action_pastel_color("click", false)
+        );
+        clear_all_custom_action_colors();
     }
 
     #[test]
@@ -872,6 +987,96 @@ mod tests {
         };
         assert_eq!(action_icon_glyph(&down), "⬇");
         assert_eq!(action_icon_glyph(&up), "⬆");
+    }
+
+    #[test]
+    fn action_icon_glyphs_avoid_tofu_codepoints() {
+        // These previously used Mathematical Alphanumeric / obscure symbols
+        // missing from egui's proportional fonts (empty boxes).
+        let cases = [
+            (
+                ActionKind::Type {
+                    text: String::new(),
+                    delay_ms: 0,
+                },
+                "⌨",
+            ),
+            (
+                ActionKind::FocusWindow {
+                    process_path: String::new(),
+                    window_title: String::new(),
+                },
+                "👁",
+            ),
+            (
+                ActionKind::SetVariable {
+                    variable_name: "a".into(),
+                    value: serde_yaml::Value::Null,
+                },
+                "x",
+            ),
+            (
+                ActionKind::Calculate {
+                    expression: String::new(),
+                    output_var: String::new(),
+                },
+                "Σ",
+            ),
+            (
+                ActionKind::ForEachRow {
+                    name: String::new(),
+                    sources: vec![],
+                    start_row: ScalarValue::Null,
+                    end_row: ScalarValue::Null,
+                    subactions: vec![],
+                },
+                "☰",
+            ),
+            (
+                ActionKind::Ocr {
+                    name: String::new(),
+                    target: String::new(),
+                    search_area: CoordinateRef(String::new()),
+                    output_variable: String::new(),
+                    coords: CoordinateOutputs::default(),
+                    wait: WaitTilFoundConfig::default(),
+                    run_branch_on_no_find: false,
+                    blur: 0,
+                    min_threshold: 0,
+                    resize: 1.0,
+                    grayscale: false,
+                    threshold_otsu: false,
+                    threshold_invert: false,
+                    order: Default::default(),
+                    subactions: vec![],
+                },
+                "🔤",
+            ),
+            (
+                ActionKind::ImageSearch {
+                    name: String::new(),
+                    targets: vec![],
+                    search_area: CoordinateRef(String::new()),
+                    row_split: 0,
+                    col_split: 0,
+                    tolerance: 0.0,
+                    blur: 0,
+                    wait: WaitTilFoundConfig::default(),
+                    coords: CoordinateOutputs::defaults(),
+                    run_branch_on_no_find: false,
+                    order: Default::default(),
+                    subactions: vec![],
+                },
+                "🔍",
+            ),
+        ];
+        for (kind, want) in cases {
+            let a = Action {
+                id: ActionId::new(),
+                kind,
+            };
+            assert_eq!(action_icon_glyph(&a), want, "{}", a.type_key());
+        }
     }
 
     #[test]

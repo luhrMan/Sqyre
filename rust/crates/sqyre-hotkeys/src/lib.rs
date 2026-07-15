@@ -1,8 +1,15 @@
 //! Global hotkey service with injectable no-op stub (Go `nohook` pattern).
 
 mod continue_wait;
+mod macro_hotkeys;
+mod screen_click;
 
 pub use continue_wait::{normalize_key_name, ContinueWaitBridge};
+pub use macro_hotkeys::{
+    chord_all_pressed, chord_fully_released, format_hotkey, parse_hotkey, HotkeyTrigger,
+    MacroHotkeyBinding, MacroHotkeyBridge,
+};
+pub use screen_click::ScreenClickBridge;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -12,6 +19,8 @@ use std::sync::Arc;
 pub struct HotkeyCallbacks {
     pub on_escape_stop: Arc<dyn Fn() + Send + Sync>,
     pub on_failsafe: Arc<dyn Fn() + Send + Sync>,
+    /// Fired with the macro name when a registered chord matches.
+    pub on_macro_hotkey: Arc<dyn Fn(String) + Send + Sync>,
 }
 
 impl Default for HotkeyCallbacks {
@@ -19,6 +28,7 @@ impl Default for HotkeyCallbacks {
         Self {
             on_escape_stop: Arc::new(|| {}),
             on_failsafe: Arc::new(|| {}),
+            on_macro_hotkey: Arc::new(|_| {}),
         }
     }
 }
@@ -72,14 +82,27 @@ mod hooks;
 #[cfg(feature = "hooks")]
 pub use hooks::RdevHotkeys;
 
-/// Default hotkeys + continue-wait bridge (Pause).
-pub fn default_hotkeys() -> (Box<dyn HotkeyService>, ContinueWaitBridge) {
+/// Default hotkeys + bridges (continue-wait, screen-click, macro chords).
+pub fn default_hotkeys() -> (
+    Box<dyn HotkeyService>,
+    ContinueWaitBridge,
+    ScreenClickBridge,
+    MacroHotkeyBridge,
+) {
+    let screen_click = ScreenClickBridge::new();
+    let macro_hotkeys = MacroHotkeyBridge::new();
     #[cfg(feature = "hooks")]
     {
         let bridge = ContinueWaitBridge::new(true);
         (
-            Box::new(RdevHotkeys::new(bridge.clone())),
+            Box::new(RdevHotkeys::new(
+                bridge.clone(),
+                screen_click.clone(),
+                macro_hotkeys.clone(),
+            )),
             bridge,
+            screen_click,
+            macro_hotkeys,
         )
     }
     #[cfg(not(feature = "hooks"))]
@@ -87,6 +110,8 @@ pub fn default_hotkeys() -> (Box<dyn HotkeyService>, ContinueWaitBridge) {
         (
             Box::new(NullHotkeys::default()),
             ContinueWaitBridge::new(false),
+            screen_click,
+            macro_hotkeys,
         )
     }
 }
@@ -94,6 +119,7 @@ pub fn default_hotkeys() -> (Box<dyn HotkeyService>, ContinueWaitBridge) {
 /// Press-latch helpers (Go `hotkeytrigger`) for macro chord logic.
 pub mod latch {
     use parking_lot::Mutex;
+    use std::time::Duration;
 
     pub fn try_acquire(mu: &Mutex<bool>) -> bool {
         let mut g = mu.lock();
@@ -106,6 +132,29 @@ pub mod latch {
 
     pub fn clear(mu: &Mutex<bool>) {
         *mu.lock() = false;
+    }
+
+    /// Poll until `all_pressed` is false (Go `WaitWhileAllPressed`).
+    pub fn wait_while_all_pressed(mut all_pressed: impl FnMut() -> bool, poll: Duration) {
+        while all_pressed() {
+            std::thread::sleep(poll);
+        }
+    }
+
+    /// Fire after leaving the chord, then full release (Go `RunAfterChordThenFullRelease`).
+    pub fn run_after_chord_then_full_release(
+        mut all_pressed: impl FnMut() -> bool,
+        mut fully_released: impl FnMut() -> bool,
+        poll: Duration,
+        on_fire: impl FnOnce(),
+    ) {
+        while all_pressed() {
+            std::thread::sleep(poll);
+        }
+        while !fully_released() {
+            std::thread::sleep(poll);
+        }
+        on_fire();
     }
 }
 

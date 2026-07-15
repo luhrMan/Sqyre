@@ -1,15 +1,20 @@
-//! Floating Data Editor: Programs / Items / Points / Search Areas / Masks / Collections.
+//! Floating Data Editor: Programs / Items / Points / Search Areas / Masks / Collections / AutoPic.
 
 use crate::collection_capture::capture_and_save_collection_image;
 use crate::icon_cache::IconCache;
+use crate::icon_variants::{self, AddVariantError};
 use crate::preview_tooltip::{PreviewKind, PreviewTooltipCache};
 use eframe::egui;
 use sqyre_domain::{Macro, ProgramEntityKind, ScalarValue, PROGRAM_DELIMITER};
+use sqyre_hotkeys::ScreenClickBridge;
 use sqyre_persist::{
-    Database, ProgramCatalog, ProgramCollection, ProgramItem, ProgramMask, ProgramPoint,
-    ProgramSearchArea,
+    auto_pic_path, Database, ProgramCatalog, ProgramCollection, ProgramItem, ProgramMask,
+    ProgramPoint, ProgramSearchArea,
 };
-use sqyre_validate::validate_entity_name;
+use sqyre_validate::{
+    validate_entity_name, validate_item_grid_fields, validate_search_area_literal_bounds,
+};
+use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum EditorTab {
@@ -19,6 +24,7 @@ enum EditorTab {
     SearchAreas,
     Masks,
     Collections,
+    AutoPic,
 }
 
 #[derive(Debug, Clone)]
@@ -30,6 +36,19 @@ enum PendingConfirm {
         kind: &'static str,
         name: String,
     },
+    DeleteVariant {
+        variant: String,
+    },
+    OverwriteVariant {
+        variant: String,
+        source: PathBuf,
+    },
+}
+
+#[derive(Debug, Clone)]
+enum VariantPrompt {
+    /// Ask for a name before adding a non-first variant.
+    Name { source: PathBuf },
 }
 
 pub struct DataEditor {
@@ -56,7 +75,6 @@ pub struct DataEditor {
     form_mask: String,
     form_tags: Vec<String>,
     tag_draft: String,
-    form_icon_path: String,
     form_shape: String,
     form_center_x: String,
     form_center_y: String,
@@ -65,6 +83,8 @@ pub struct DataEditor {
     form_radius: String,
     form_inverse: bool,
     form_search_area: String,
+    variant_name_draft: String,
+    variant_prompt: Option<VariantPrompt>,
     status: Option<String>,
     status_error: bool,
     confirm: Option<PendingConfirm>,
@@ -92,7 +112,6 @@ impl Default for DataEditor {
             form_mask: String::new(),
             form_tags: Vec::new(),
             tag_draft: String::new(),
-            form_icon_path: String::new(),
             form_shape: "rectangle".into(),
             form_center_x: "50".into(),
             form_center_y: "50".into(),
@@ -101,6 +120,8 @@ impl Default for DataEditor {
             form_radius: String::new(),
             form_inverse: false,
             form_search_area: String::new(),
+            variant_name_draft: String::new(),
+            variant_prompt: None,
             status: None,
             status_error: false,
             confirm: None,
@@ -117,10 +138,12 @@ impl DataEditor {
         catalog: &mut ProgramCatalog,
         icons: &mut IconCache,
         previews: &mut PreviewTooltipCache,
+        screen_click: &ScreenClickBridge,
     ) {
         if !self.open {
             return;
         }
+        self.poll_screen_click(screen_click, previews);
         let mut open = self.open;
         egui::Window::new("Data Editor")
             .open(&mut open)
@@ -130,9 +153,33 @@ impl DataEditor {
             .resizable(true)
             .constrain(true)
             .show(ctx, |ui| {
-                self.ui(ui, db, macros, catalog, icons, previews);
+                self.ui(ui, db, macros, catalog, icons, previews, screen_click);
             });
         self.open = open;
+    }
+
+    fn poll_screen_click(
+        &mut self,
+        screen_click: &ScreenClickBridge,
+        previews: &mut PreviewTooltipCache,
+    ) {
+        if let Some((x, y)) = screen_click.take_point() {
+            self.form_x = x.to_string();
+            self.form_y = y.to_string();
+            previews.invalidate_entity(self.form_name.trim());
+            self.set_ok(format!("Recorded point ({x}, {y})."));
+        }
+        if let Some((lx, ty, rx, by)) = screen_click.take_search_area() {
+            self.form_left = lx.to_string();
+            self.form_top = ty.to_string();
+            self.form_right = rx.to_string();
+            self.form_bottom = by.to_string();
+            previews.invalidate_entity(self.form_name.trim());
+            self.set_ok(format!("Recorded search area ({lx},{ty})–({rx},{by})."));
+        }
+        if screen_click.take_cancelled() {
+            self.set_ok("Recording cancelled.");
+        }
     }
 
     fn ui(
@@ -143,6 +190,7 @@ impl DataEditor {
         catalog: &mut ProgramCatalog,
         icons: &mut IconCache,
         previews: &mut PreviewTooltipCache,
+        screen_click: &ScreenClickBridge,
     ) {
         ui.horizontal(|ui| {
             let prev = self.tab;
@@ -152,12 +200,19 @@ impl DataEditor {
             ui.selectable_value(&mut self.tab, EditorTab::SearchAreas, "Search Areas");
             ui.selectable_value(&mut self.tab, EditorTab::Masks, "Masks");
             ui.selectable_value(&mut self.tab, EditorTab::Collections, "Collections");
+            ui.selectable_value(&mut self.tab, EditorTab::AutoPic, "AutoPic");
             if self.tab != prev {
                 self.selected_entity = None;
+                self.variant_prompt = None;
                 self.load_form(catalog);
             }
         });
         ui.separator();
+
+        if let Some(msg) = screen_click.status_label() {
+            ui.colored_label(egui::Color32::from_rgb(220, 160, 40), msg);
+            ui.ctx().request_repaint();
+        }
 
         if let Some(msg) = &self.status {
             let color = if self.status_error {
@@ -168,8 +223,13 @@ impl DataEditor {
             ui.colored_label(color, msg);
         }
 
+        if let Some(VariantPrompt::Name { source }) = self.variant_prompt.clone() {
+            self.draw_variant_name_prompt(ui, catalog, icons, source);
+            return;
+        }
+
         if let Some(confirm) = self.confirm.clone() {
-            self.draw_confirm(ui, confirm, db, macros, catalog, previews);
+            self.draw_confirm(ui, confirm, db, macros, catalog, icons, previews);
             return;
         }
 
@@ -242,7 +302,7 @@ impl DataEditor {
                             .max_height(body_h)
                             .show(ui, |ui| {
                                 ui.set_max_width(ui.available_width());
-                                self.draw_form(ui, catalog, icons, previews);
+                                self.draw_form(ui, catalog, icons, previews, screen_click);
                             });
                     },
                 );
@@ -254,19 +314,25 @@ impl DataEditor {
             ui.vertical(|ui| {
                 ui.separator();
                 ui.horizontal(|ui| {
-                    if ui.button("New").clicked() {
+                    let can_new = !matches!(self.tab, EditorTab::AutoPic);
+                    if ui
+                        .add_enabled(can_new, egui::Button::new("New"))
+                        .clicked()
+                    {
                         self.on_new(db, macros, catalog, icons);
                     }
                     let dirty = self.is_dirty(catalog);
                     let valid = self.form_valid();
+                    let can_update = !matches!(self.tab, EditorTab::AutoPic);
                     if ui
-                        .add_enabled(dirty && valid, egui::Button::new("Update"))
+                        .add_enabled(can_update && dirty && valid, egui::Button::new("Update"))
                         .clicked()
                     {
                         self.on_update(db, macros, catalog, previews);
                     }
                     let can_delete = match self.tab {
                         EditorTab::Programs => self.selected_program.is_some(),
+                        EditorTab::AutoPic => false,
                         _ => self.selected_program.is_some() && self.selected_entity.is_some(),
                     };
                     if ui
@@ -298,8 +364,11 @@ impl DataEditor {
                                 "collection “{}”",
                                 self.selected_entity.as_deref().unwrap_or("")
                             ),
+                            EditorTab::AutoPic => String::new(),
                         };
-                        self.confirm = Some(PendingConfirm::Delete { label });
+                        if !label.is_empty() {
+                            self.confirm = Some(PendingConfirm::Delete { label });
+                        }
                     }
                 });
             });
@@ -313,6 +382,7 @@ impl DataEditor {
         db: &mut Database,
         macros: &mut Vec<Macro>,
         catalog: &mut ProgramCatalog,
+        icons: &mut IconCache,
         previews: &mut PreviewTooltipCache,
     ) {
         match &confirm {
@@ -322,6 +392,18 @@ impl DataEditor {
             PendingConfirm::Overwrite { kind, name } => {
                 ui.label(format!(
                     "{kind} “{name}” already exists. Overwrite / rename onto it?"
+                ));
+            }
+            PendingConfirm::DeleteVariant { variant } => {
+                ui.label(format!(
+                    "Delete icon variant “{}”? This cannot be undone.",
+                    variant_display_label(variant)
+                ));
+            }
+            PendingConfirm::OverwriteVariant { variant, .. } => {
+                ui.label(format!(
+                    "Variant “{}” already exists. Overwrite it?",
+                    variant_display_label(variant)
                 ));
             }
         }
@@ -339,7 +421,41 @@ impl DataEditor {
                         self.confirm = None;
                         self.apply_update(db, macros, catalog, true, previews);
                     }
+                    PendingConfirm::DeleteVariant { variant } => {
+                        self.confirm = None;
+                        self.delete_icon_variant(catalog, icons, &variant);
+                    }
+                    PendingConfirm::OverwriteVariant { variant, source } => {
+                        self.confirm = None;
+                        self.overwrite_icon_variant(catalog, icons, &variant, &source);
+                    }
                 }
+            }
+        });
+    }
+
+    fn draw_variant_name_prompt(
+        &mut self,
+        ui: &mut egui::Ui,
+        catalog: &ProgramCatalog,
+        icons: &mut IconCache,
+        source: PathBuf,
+    ) {
+        ui.heading("Add Icon Variant");
+        ui.label("Variant name");
+        ui.add(
+            egui::TextEdit::singleline(&mut self.variant_name_draft).desired_width(f32::INFINITY),
+        );
+        ui.horizontal(|ui| {
+            if ui.button("Cancel").clicked() {
+                self.variant_prompt = None;
+                self.variant_name_draft.clear();
+            }
+            if ui.button("Add").clicked() {
+                let name = self.variant_name_draft.trim().to_string();
+                self.variant_prompt = None;
+                self.variant_name_draft.clear();
+                self.add_icon_variant(catalog, icons, &name, &source);
             }
         });
     }
@@ -415,10 +531,11 @@ impl DataEditor {
                     }
                 }
             }
-            EditorTab::Points | EditorTab::SearchAreas | EditorTab::Masks | EditorTab::Collections => {
+            EditorTab::Points | EditorTab::SearchAreas | EditorTab::Masks | EditorTab::Collections
+            | EditorTab::AutoPic => {
                 let kind = match self.tab {
                     EditorTab::Points => Some(PreviewKind::Point),
-                    EditorTab::SearchAreas => Some(PreviewKind::SearchArea),
+                    EditorTab::SearchAreas | EditorTab::AutoPic => Some(PreviewKind::SearchArea),
                     _ => None,
                 };
                 egui::ScrollArea::vertical()
@@ -491,7 +608,7 @@ impl DataEditor {
                 .or_else(|| p.points.values().next())
                 .map(|m| m.keys().cloned().collect())
                 .unwrap_or_default(),
-            EditorTab::SearchAreas => p
+            EditorTab::SearchAreas | EditorTab::AutoPic => p
                 .search_areas
                 .get(res)
                 .or_else(|| p.search_areas.values().next())
@@ -542,7 +659,6 @@ impl DataEditor {
                 self.form_stack_max = item.stack_max.to_string();
                 self.form_mask = item.mask.clone();
                 self.form_tags = item.tags.clone();
-                self.form_icon_path.clear();
             }
             EditorTab::Points => {
                 let (prog, name) = match (
@@ -571,6 +687,35 @@ impl DataEditor {
                 ) {
                     (Some(p), Some(n)) => (p, n),
                     _ => return,
+                };
+                let res = catalog.resolution_key();
+                let Some(sa) = catalog
+                    .get(prog)
+                    .and_then(|p| {
+                        p.search_areas
+                            .get(res)
+                            .or_else(|| p.search_areas.values().next())
+                    })
+                    .and_then(|m| m.get(name))
+                else {
+                    return;
+                };
+                self.form_name = sa.name.clone();
+                self.form_left = scalar_to_edit(&sa.left_x);
+                self.form_top = scalar_to_edit(&sa.top_y);
+                self.form_right = scalar_to_edit(&sa.right_x);
+                self.form_bottom = scalar_to_edit(&sa.bottom_y);
+            }
+            EditorTab::AutoPic => {
+                let (prog, name) = match (
+                    self.selected_program.as_deref(),
+                    self.selected_entity.as_deref(),
+                ) {
+                    (Some(p), Some(n)) => (p, n),
+                    _ => {
+                        self.form_name.clear();
+                        return;
+                    }
                 };
                 let res = catalog.resolution_key();
                 let Some(sa) = catalog
@@ -644,7 +789,6 @@ impl DataEditor {
         self.form_stack_max = "0".into();
         self.form_mask.clear();
         self.form_tags.clear();
-        self.form_icon_path.clear();
     }
 
     fn reset_mask_form(&mut self) {
@@ -671,6 +815,7 @@ impl DataEditor {
         catalog: &ProgramCatalog,
         icons: &mut IconCache,
         previews: &mut PreviewTooltipCache,
+        screen_click: &ScreenClickBridge,
     ) {
         match self.tab {
             EditorTab::Programs => {
@@ -727,6 +872,29 @@ impl DataEditor {
                     if current != self.form_mask {
                         self.form_mask = current;
                     }
+                    if let (Some(prog), mask) = (
+                        self.selected_program.as_deref(),
+                        self.form_mask.as_str(),
+                    ) {
+                        if !mask.is_empty() {
+                            if let Some(m) = catalog.get(prog).and_then(|p| p.masks.get(mask)) {
+                                let detail = if catalog.mask_image_path(prog, mask).is_file() {
+                                    "Image mask on disk".to_string()
+                                } else if m.shape == "circle" {
+                                    format!(
+                                        "Circle @ ({}, {}) r={}",
+                                        m.center_x, m.center_y, m.radius
+                                    )
+                                } else {
+                                    format!(
+                                        "Rectangle @ ({}, {}) {}×{}",
+                                        m.center_x, m.center_y, m.base, m.height
+                                    )
+                                };
+                                ui.weak(detail);
+                            }
+                        }
+                    }
                 }
                 ui.add_space(4.0);
                 ui.label("Tags");
@@ -751,29 +919,12 @@ impl DataEditor {
                         self.tag_draft.clear();
                     }
                 });
-                ui.add_space(4.0);
-                ui.label("Copy PNG to icons");
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.form_icon_path)
-                        .desired_width(f32::INFINITY),
-                );
-                ui.weak("On Update, if path is set, copies into images/icons/<program>/.");
                 if let (Some(prog), Some(item)) = (
-                    self.selected_program.as_deref(),
-                    self.selected_entity.as_deref(),
+                    self.selected_program.clone(),
+                    self.selected_entity.clone(),
                 ) {
                     let target = format!("{prog}{PROGRAM_DELIMITER}{item}");
-                    let path = catalog.variant_paths(&target).into_iter().next();
-                    let fallback = icons.for_target_or_fallback(ui.ctx(), catalog, &target);
-                    paint_disk_preview(
-                        ui,
-                        icons,
-                        path.as_deref(),
-                        Some(fallback),
-                        "Icon preview",
-                        None,
-                        None,
-                    );
+                    self.paint_item_variants_ui(ui, icons, catalog, &target, &item);
                 }
             }
             EditorTab::Points => {
@@ -792,6 +943,20 @@ impl DataEditor {
                 ui.add(
                     egui::TextEdit::singleline(&mut self.form_y).desired_width(f32::INFINITY),
                 );
+                ui.horizontal(|ui| {
+                    let armed = screen_click.is_armed();
+                    if ui
+                        .add_enabled(!armed, egui::Button::new("Record"))
+                        .on_hover_text("Click on screen to capture X/Y")
+                        .clicked()
+                    {
+                        screen_click.arm_point();
+                        self.set_ok("Recording… left-click to capture.");
+                    }
+                    if armed && ui.button("Cancel record").clicked() {
+                        screen_click.disarm();
+                    }
+                });
                 ui.weak("Coords accept integers or ${var} references.");
                 let x = form_coord_i32(&self.form_x);
                 let y = form_coord_i32(&self.form_y);
@@ -822,6 +987,20 @@ impl DataEditor {
                 ui.add(
                     egui::TextEdit::singleline(&mut self.form_bottom).desired_width(f32::INFINITY),
                 );
+                ui.horizontal(|ui| {
+                    let armed = screen_click.is_armed();
+                    if ui
+                        .add_enabled(!armed, egui::Button::new("Record"))
+                        .on_hover_text("Two clicks: opposite corners of the area")
+                        .clicked()
+                    {
+                        screen_click.arm_search_area();
+                        self.set_ok("Recording… click two corners.");
+                    }
+                    if armed && ui.button("Cancel record").clicked() {
+                        screen_click.disarm();
+                    }
+                });
                 let lx = form_coord_i32(&self.form_left);
                 let ty = form_coord_i32(&self.form_top);
                 let rx = form_coord_i32(&self.form_right);
@@ -837,49 +1016,87 @@ impl DataEditor {
                 ui.add(
                     egui::TextEdit::singleline(&mut self.form_name).desired_width(f32::INFINITY),
                 );
-                ui.add_space(4.0);
-                ui.label("Shape");
+                let has_image = self
+                    .selected_program
+                    .as_deref()
+                    .zip(self.selected_entity.as_deref())
+                    .map(|(p, m)| catalog.mask_image_path(p, m).is_file())
+                    .unwrap_or(false);
                 ui.horizontal(|ui| {
-                    ui.selectable_value(&mut self.form_shape, "rectangle".into(), "Rectangle");
-                    ui.selectable_value(&mut self.form_shape, "circle".into(), "Circle");
+                    if ui
+                        .add_enabled(
+                            self.selected_program.is_some() && self.selected_entity.is_some(),
+                            egui::Button::new("Upload Image"),
+                        )
+                        .clicked()
+                    {
+                        self.upload_mask_image(catalog, icons);
+                    }
+                    if ui
+                        .add_enabled(has_image, egui::Button::new("Remove Image"))
+                        .clicked()
+                    {
+                        self.remove_mask_image(catalog, icons);
+                    }
                 });
-                ui.checkbox(&mut self.form_inverse, "Inverse");
-                ui.add_space(4.0);
-                ui.label("Center X %");
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.form_center_x)
-                        .desired_width(f32::INFINITY),
-                );
-                ui.label("Center Y %");
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.form_center_y)
-                        .desired_width(f32::INFINITY),
-                );
-                if self.form_shape == "circle" {
-                    ui.label("Radius");
-                    ui.add(
-                        egui::TextEdit::singleline(&mut self.form_radius)
-                            .desired_width(f32::INFINITY),
-                    );
+                if has_image {
+                    ui.weak("Image mask mode — shape fields hidden while a PNG is on disk.");
                 } else {
-                    ui.label("Base");
+                    ui.add_space(4.0);
+                    ui.label("Shape");
+                    ui.horizontal(|ui| {
+                        ui.selectable_value(&mut self.form_shape, "rectangle".into(), "Rectangle");
+                        ui.selectable_value(&mut self.form_shape, "circle".into(), "Circle");
+                    });
+                    ui.checkbox(
+                        &mut self.form_inverse,
+                        "Inverse (shape included, rest excluded)",
+                    );
+                    ui.add_space(4.0);
+                    ui.label("Center X %");
                     ui.add(
-                        egui::TextEdit::singleline(&mut self.form_base)
+                        egui::TextEdit::singleline(&mut self.form_center_x)
                             .desired_width(f32::INFINITY),
                     );
-                    ui.label("Height");
+                    ui.label("Center Y %");
                     ui.add(
-                        egui::TextEdit::singleline(&mut self.form_height)
+                        egui::TextEdit::singleline(&mut self.form_center_y)
                             .desired_width(f32::INFINITY),
                     );
+                    if self.form_shape == "circle" {
+                        ui.label("Radius");
+                        ui.add(
+                            egui::TextEdit::singleline(&mut self.form_radius)
+                                .desired_width(f32::INFINITY),
+                        );
+                    } else {
+                        ui.label("Base");
+                        ui.add(
+                            egui::TextEdit::singleline(&mut self.form_base)
+                                .desired_width(f32::INFINITY),
+                        );
+                        ui.label("Height");
+                        ui.add(
+                            egui::TextEdit::singleline(&mut self.form_height)
+                                .desired_width(f32::INFINITY),
+                        );
+                    }
+                    ui.weak("Numeric fields accept literals or ${var} expressions.");
                 }
-                ui.weak("Numeric fields accept literals or ${var} expressions.");
                 if let (Some(prog), Some(mask)) = (
                     self.selected_program.as_deref(),
                     self.selected_entity.as_deref(),
                 ) {
                     let path = catalog.mask_image_path(prog, mask);
-                    paint_disk_preview(ui, icons, Some(path.as_path()), None, "Mask image", None, None);
+                    paint_disk_preview(
+                        ui,
+                        icons,
+                        Some(path.as_path()),
+                        None,
+                        "Mask image",
+                        None,
+                        None,
+                    );
                 }
             }
             EditorTab::Collections => {
@@ -965,6 +1182,25 @@ impl DataEditor {
                     }
                 }
             }
+            EditorTab::AutoPic => {
+                ui.heading("AutoPic");
+                ui.weak("Select a search area, preview, then save a PNG into images/AutoPic.");
+                if self.selected_program.is_some() && self.selected_entity.is_some() {
+                    let lx = form_coord_i32(&self.form_left);
+                    let ty = form_coord_i32(&self.form_top);
+                    let rx = form_coord_i32(&self.form_right);
+                    let by = form_coord_i32(&self.form_bottom);
+                    let force = paint_preview_toolbar(ui);
+                    previews.paint_search_area_panel(ui, lx, ty, rx, by, force);
+                    ui.add_space(8.0);
+                    if ui.button("Save").clicked() {
+                        self.save_autopix();
+                    }
+                    ui.weak(format!("Saves to {}", auto_pic_path().display()));
+                } else {
+                    ui.weak("Select a search area from the list.");
+                }
+            }
         }
     }
 
@@ -1016,7 +1252,6 @@ impl DataEditor {
                     || parse_i32(&self.form_stack_max) != Some(item.stack_max)
                     || self.form_mask != item.mask
                     || self.form_tags != item.tags
-                    || !self.form_icon_path.trim().is_empty()
             }
             EditorTab::Points => {
                 let (Some(prog), Some(ent)) = (
@@ -1096,6 +1331,7 @@ impl DataEditor {
                     || parse_i32(&self.form_rows) != Some(col.rows)
                     || parse_i32(&self.form_cols) != Some(col.cols)
             }
+            EditorTab::AutoPic => false,
         }
     }
 
@@ -1107,9 +1343,12 @@ impl DataEditor {
             EditorTab::Programs => true,
             EditorTab::Items => {
                 self.selected_program.is_some()
-                    && parse_i32(&self.form_cols).is_some()
-                    && parse_i32(&self.form_rows).is_some()
-                    && parse_i32(&self.form_stack_max).is_some()
+                    && validate_item_grid_fields(
+                        &self.form_cols,
+                        &self.form_rows,
+                        &self.form_stack_max,
+                    )
+                    .is_ok()
             }
             EditorTab::Points => {
                 self.selected_program.is_some()
@@ -1122,6 +1361,13 @@ impl DataEditor {
                     && !self.form_top.trim().is_empty()
                     && !self.form_right.trim().is_empty()
                     && !self.form_bottom.trim().is_empty()
+                    && validate_search_area_literal_bounds(
+                        &self.form_left,
+                        &self.form_top,
+                        &self.form_right,
+                        &self.form_bottom,
+                    )
+                    .is_ok()
             }
             EditorTab::Masks => {
                 self.selected_program.is_some()
@@ -1135,6 +1381,7 @@ impl DataEditor {
                     && parse_i32(&self.form_rows).map(|n| n >= 1).unwrap_or(false)
                     && parse_i32(&self.form_cols).map(|n| n >= 1).unwrap_or(false)
             }
+            EditorTab::AutoPic => false,
         }
     }
 
@@ -1345,6 +1592,10 @@ impl DataEditor {
                     Err(e) => Err(e.to_string()),
                 }
             }
+            EditorTab::AutoPic => {
+                self.set_err("Use Save on the AutoPic tab to capture a search area.");
+                return;
+            }
         };
         match created {
             Ok(msg) => {
@@ -1436,6 +1687,7 @@ impl DataEditor {
                     return Some(("Collection", new.to_string()));
                 }
             }
+            EditorTab::AutoPic => {}
         }
         None
     }
@@ -1485,6 +1737,7 @@ impl DataEditor {
             EditorTab::Collections => {
                 self.update_collection(catalog, macros, &new_name, overwrite)
             }
+            EditorTab::AutoPic => Ok(()),
         };
 
         match result {
@@ -1543,19 +1796,6 @@ impl DataEditor {
         } else {
             catalog.upsert_item(&prog, item)?;
             self.selected_entity = Some(new_name.to_string());
-        }
-        // Optional icon copy
-        let src = self.form_icon_path.trim();
-        if !src.is_empty() {
-            let dest_dir = catalog.icons_dir(&prog);
-            let _ = std::fs::create_dir_all(&dest_dir);
-            let dest = dest_dir.join(format!("{new_name}.png"));
-            if let Err(e) = std::fs::copy(src, &dest) {
-                return Err(sqyre_persist::PersistError::Message(format!(
-                    "copy icon: {e}"
-                )));
-            }
-            self.form_icon_path.clear();
         }
         Ok(())
     }
@@ -1790,6 +2030,7 @@ impl DataEditor {
                     self.reset_collection_form();
                 })
             }
+            EditorTab::AutoPic => return,
         };
         match result {
             Ok(()) => {
@@ -1829,6 +2070,303 @@ impl DataEditor {
     fn set_err(&mut self, msg: impl Into<String>) {
         self.status = Some(msg.into());
         self.status_error = true;
+    }
+
+
+    fn paint_item_variants_ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        icons: &mut IconCache,
+        catalog: &ProgramCatalog,
+        target: &str,
+        item: &str,
+    ) {
+        let paths = catalog.variant_paths(target);
+        let names = icon_variants::variant_names(catalog, self.selected_program.as_deref().unwrap_or(""), item);
+        ui.add_space(8.0);
+        ui.separator();
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new("Icon variants").strong());
+            if ui.button("Refresh").clicked() {
+                for path in &paths {
+                    icons.invalidate_path(path);
+                }
+            }
+            if ui.button("Add Icon Variant").clicked() {
+                self.pick_and_add_variant(catalog, icons);
+            }
+        });
+        if paths.is_empty() {
+            let fallback = icons.for_target_or_fallback(ui.ctx(), catalog, target);
+            let [tw, th] = fallback.size();
+            let size = fit_panel(tw as f32, th as f32);
+            ui.add(egui::Image::new((fallback.id(), size)));
+            ui.weak("No icon variants on disk.");
+            return;
+        }
+        let can_delete = names.len() > 1;
+        ui.horizontal_wrapped(|ui| {
+            for path in &paths {
+                let variant = variant_name_from_path(path, item);
+                ui.vertical(|ui| {
+                    ui.set_max_width(112.0);
+                    match icons.for_path(ui.ctx(), path) {
+                        Some(tex) => {
+                            let [tw, th] = tex.size();
+                            let size = fit_thumbnail(tw as f32, th as f32);
+                            ui.add(egui::Image::new((tex.id(), size)));
+                        }
+                        None => {
+                            ui.weak("Missing");
+                        }
+                    }
+                    ui.small(variant_display_label(&variant));
+                    let deny = !can_delete || variant == "Original";
+                    if ui
+                        .add_enabled(!deny, egui::Button::new("Delete").small())
+                        .clicked()
+                    {
+                        self.confirm = Some(PendingConfirm::DeleteVariant {
+                            variant: variant.clone(),
+                        });
+                    }
+                });
+                ui.add_space(8.0);
+            }
+        });
+    }
+
+    fn pick_and_add_variant(&mut self, catalog: &ProgramCatalog, icons: &mut IconCache) {
+        let Some(path) = rfd::FileDialog::new()
+            .add_filter("PNG", &["png"])
+            .pick_file()
+        else {
+            return;
+        };
+        let (Some(prog), Some(item)) = (
+            self.selected_program.clone(),
+            self.selected_entity.clone(),
+        ) else {
+            self.set_err("Select an item first.");
+            return;
+        };
+        let existing = icon_variants::variant_names(catalog, &prog, &item);
+        if existing.is_empty() {
+            self.add_icon_variant(catalog, icons, "Original", &path);
+        } else {
+            self.variant_name_draft.clear();
+            self.variant_prompt = Some(VariantPrompt::Name { source: path });
+        }
+    }
+
+    fn add_icon_variant(
+        &mut self,
+        catalog: &ProgramCatalog,
+        icons: &mut IconCache,
+        name: &str,
+        source: &std::path::Path,
+    ) {
+        let (Some(prog), Some(item)) = (
+            self.selected_program.clone(),
+            self.selected_entity.clone(),
+        ) else {
+            self.set_err("Select an item first.");
+            return;
+        };
+        match icon_variants::add_variant(catalog, &prog, &item, name, source) {
+            Ok(added) => {
+                let path = icon_variants::variant_path(catalog, &prog, &item, &added);
+                icons.invalidate_path(&path);
+                self.set_ok(format!("Added variant “{added}”."));
+            }
+            Err(AddVariantError::Exists(e)) => {
+                self.confirm = Some(PendingConfirm::OverwriteVariant {
+                    variant: e.variant_name,
+                    source: source.to_path_buf(),
+                });
+            }
+            Err(AddVariantError::Other(err)) => self.set_err(err),
+        }
+    }
+
+    fn overwrite_icon_variant(
+        &mut self,
+        catalog: &ProgramCatalog,
+        icons: &mut IconCache,
+        variant: &str,
+        source: &std::path::Path,
+    ) {
+        let (Some(prog), Some(item)) = (
+            self.selected_program.clone(),
+            self.selected_entity.clone(),
+        ) else {
+            return;
+        };
+        match icon_variants::overwrite_variant(catalog, &prog, &item, variant, source) {
+            Ok(()) => {
+                let path = icon_variants::variant_path(catalog, &prog, &item, variant);
+                icons.invalidate_path(&path);
+                self.set_ok(format!("Overwrote variant “{variant}”."));
+            }
+            Err(e) => self.set_err(e),
+        }
+    }
+
+    fn delete_icon_variant(
+        &mut self,
+        catalog: &ProgramCatalog,
+        icons: &mut IconCache,
+        variant: &str,
+    ) {
+        let (Some(prog), Some(item)) = (
+            self.selected_program.clone(),
+            self.selected_entity.clone(),
+        ) else {
+            return;
+        };
+        let names = icon_variants::variant_names(catalog, &prog, &item);
+        if names.len() <= 1 {
+            self.set_err("Cannot delete the last icon variant.");
+            return;
+        }
+        if variant == "Original" {
+            self.set_err("The 'Original' variant cannot be deleted.");
+            return;
+        }
+        match icon_variants::delete_variant(catalog, &prog, &item, variant) {
+            Ok(()) => {
+                let path = icon_variants::variant_path(catalog, &prog, &item, variant);
+                icons.invalidate_path(&path);
+                self.set_ok(format!("Deleted variant “{variant}”."));
+            }
+            Err(e) => self.set_err(e),
+        }
+    }
+
+    fn upload_mask_image(&mut self, catalog: &ProgramCatalog, icons: &mut IconCache) {
+        let (Some(prog), Some(mask)) = (
+            self.selected_program.clone(),
+            self.selected_entity.clone(),
+        ) else {
+            self.set_err("Select a mask first.");
+            return;
+        };
+        let Some(src) = rfd::FileDialog::new()
+            .add_filter("Images", &["png", "jpg", "jpeg", "bmp"])
+            .pick_file()
+        else {
+            return;
+        };
+        let dest = catalog.mask_image_path(&prog, &mask);
+        if let Some(parent) = dest.parent() {
+            if let Err(e) = std::fs::create_dir_all(parent) {
+                self.set_err(format!("create mask dir: {e}"));
+                return;
+            }
+        }
+        match copy_image_as_png(&src, &dest) {
+            Ok(()) => {
+                icons.invalidate_path(&dest);
+                self.set_ok("Uploaded mask image.");
+            }
+            Err(e) => self.set_err(e),
+        }
+    }
+
+    fn remove_mask_image(&mut self, catalog: &ProgramCatalog, icons: &mut IconCache) {
+        let (Some(prog), Some(mask)) = (
+            self.selected_program.clone(),
+            self.selected_entity.clone(),
+        ) else {
+            return;
+        };
+        let path = catalog.mask_image_path(&prog, &mask);
+        match std::fs::remove_file(&path) {
+            Ok(()) => {
+                icons.invalidate_path(&path);
+                self.set_ok("Removed mask image.");
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                icons.invalidate_path(&path);
+                self.set_ok("Removed mask image.");
+            }
+            Err(e) => self.set_err(format!("remove mask image: {e}")),
+        }
+    }
+
+    fn save_autopix(&mut self) {
+        let name = self.form_name.trim();
+        if name.is_empty() {
+            self.set_err("AutoPic: select a search area first.");
+            return;
+        }
+        let lx = form_coord_i32(&self.form_left);
+        let ty = form_coord_i32(&self.form_top);
+        let rx = form_coord_i32(&self.form_right);
+        let by = form_coord_i32(&self.form_bottom);
+        let (lx, rx) = if lx <= rx { (lx, rx) } else { (rx, lx) };
+        let (ty, by) = if ty <= by { (ty, by) } else { (by, ty) };
+        if rx - lx <= 0 || by - ty <= 0 {
+            self.set_err("AutoPic: invalid search area dimensions.");
+            return;
+        }
+        use sqyre_executor::{DesktopRect, ScreenCapturer};
+        let mut capturer = match sqyre_capture::X11Capturer::open() {
+            Ok(c) => c,
+            Err(e) => {
+                self.set_err(format!("AutoPic: {e}"));
+                return;
+            }
+        };
+        let img = match capturer.capture_rect(DesktopRect {
+            x: lx,
+            y: ty,
+            w: rx - lx,
+            h: by - ty,
+        }) {
+            Ok(i) => i,
+            Err(e) => {
+                self.set_err(format!("AutoPic: {e} (area: {name})"));
+                return;
+            }
+        };
+        let dir = auto_pic_path();
+        if let Err(e) = std::fs::create_dir_all(&dir) {
+            self.set_err(format!("AutoPic: create dir: {e}"));
+            return;
+        }
+        let stamp = {
+            use std::time::{SystemTime, UNIX_EPOCH};
+            let dur = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default();
+            // Approximate Go `20060102_150405` without chrono: YYYYMMDD_HHMMSS UTC.
+            let secs = dur.as_secs() as i64;
+            let days = secs.div_euclid(86_400);
+            let day_secs = secs.rem_euclid(86_400) as u32;
+            let hh = day_secs / 3600;
+            let mm = (day_secs % 3600) / 60;
+            let ss = day_secs % 60;
+            // Civil date from Unix days (algorithm from civil_from_days / Howard Hinnant).
+            let z = days + 719_468;
+            let era = z.div_euclid(146_097);
+            let doe = (z - era * 146_097) as u32;
+            let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
+            let y = yoe as i64 + era * 400;
+            let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+            let mp = (5 * doy + 2) / 153;
+            let d = doy - (153 * mp + 2) / 5 + 1;
+            let m = if mp < 10 { mp + 3 } else { mp - 9 };
+            let y = if m <= 2 { y + 1 } else { y };
+            format!("{y:04}{m:02}{d:02}_{hh:02}{mm:02}{ss:02}")
+        };
+        let filename = format!("{stamp}_{name}.png");
+        let full = dir.join(&filename);
+        if let Err(e) = img.save(&full) {
+            self.set_err(format!("AutoPic: save {}: {e}", full.display()));
+            return;
+        }
+        self.set_ok(format!("AutoPic: saved {}", full.display()));
     }
 
     fn clear_status(&mut self) {
@@ -1892,6 +2430,16 @@ fn form_coord_i32(s: &str) -> i32 {
     0
 }
 
+fn copy_image_as_png(src: &std::path::Path, dest: &std::path::Path) -> Result<(), String> {
+    let bytes = std::fs::read(src).map_err(|e| format!("read: {e}"))?;
+    if bytes.starts_with(&[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]) {
+        std::fs::write(dest, &bytes).map_err(|e| format!("write: {e}"))?;
+        return Ok(());
+    }
+    let img = image::load_from_memory(&bytes).map_err(|e| format!("decode: {e}"))?;
+    img.save(dest).map_err(|e| format!("save png: {e}"))
+}
+
 fn paint_preview_toolbar(ui: &mut egui::Ui) -> bool {
     ui.add_space(8.0);
     ui.separator();
@@ -1903,6 +2451,35 @@ fn paint_preview_toolbar(ui: &mut egui::Ui) -> bool {
         }
     });
     force
+}
+
+fn variant_name_from_path(path: &std::path::Path, item: &str) -> String {
+    let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+        return String::new();
+    };
+    if stem == item {
+        return String::new();
+    }
+    let prefix = format!("{item}{PROGRAM_DELIMITER}");
+    stem.strip_prefix(&prefix)
+        .unwrap_or(stem)
+        .to_string()
+}
+
+fn variant_display_label(name: &str) -> &str {
+    if name.is_empty() {
+        "(default)"
+    } else {
+        name
+    }
+}
+
+fn fit_thumbnail(w: f32, h: f32) -> egui::Vec2 {
+    const MAX: f32 = 96.0;
+    let w = w.max(1.0);
+    let h = h.max(1.0);
+    let scale = (MAX / w).min(MAX / h).min(1.0);
+    egui::vec2(w * scale, h * scale)
 }
 
 fn paint_disk_preview(

@@ -1,10 +1,19 @@
 //! Persistence for `~/.sqyre` (Go `internal/config` + repositories).
 
 mod programs;
+mod settings;
 
 pub use programs::{
     resolve_scalar_int, ProgramCatalog, ProgramCollection, ProgramData, ProgramItem, ProgramMask,
     ProgramPoint, ProgramSearchArea,
+};
+pub use settings::{
+    move_dir, open_path_in_file_manager, open_sqyre_dir, settings_path, ActionColorPrefs,
+    UserSettings, ACTION_COLOR_DEFAULT, ACTION_COLOR_DETECTION, ACTION_COLOR_MISCELLANEOUS,
+    ACTION_COLOR_MOUSE_KEYBOARD, ACTION_COLOR_VARIABLES, ACTION_COLOR_WAIT,
+    DEFAULT_DRAG_PREVIEW_DEBOUNCE_MS, DEFAULT_HIDE_APP_DURING_RECORDING,
+    DEFAULT_IMAGE_SEARCH_CLOSE_MATCHES_DISTANCE, DEFAULT_UI_FONT_SIZE, DEFAULT_UI_SCALE,
+    MIN_DRAG_PREVIEW_DEBOUNCE_MS,
 };
 
 use serde_yaml::{Mapping, Value};
@@ -59,6 +68,10 @@ pub fn variables_path() -> PathBuf {
 
 pub fn images_path() -> PathBuf {
     sqyre_dir().join("images")
+}
+
+pub fn auto_pic_path() -> PathBuf {
+    images_path().join("AutoPic")
 }
 
 pub fn initialize_directories() -> Result<()> {

@@ -3,7 +3,7 @@
 use eframe::egui::{self, ColorImage, TextureHandle, TextureOptions, Vec2};
 use image::{Rgba, RgbaImage};
 use sqyre_capture::X11Capturer;
-use sqyre_domain::ScalarValue;
+use sqyre_domain::{Action, ActionKind, CoordinateRef, Macro, ScalarValue};
 use sqyre_executor::{DesktopRect, ScreenCapturer};
 use sqyre_persist::{ProgramCatalog, ProgramPoint, ProgramSearchArea};
 use std::collections::HashMap;
@@ -20,7 +20,7 @@ const CACHE_MAX: usize = 24;
 const CACHE_TTL: Duration = Duration::from_secs(30);
 const OVERLAY: Rgba<u8> = Rgba([255, 0, 0, 255]);
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PreviewKind {
     Point,
     SearchArea,
@@ -90,6 +90,29 @@ impl PreviewTooltipCache {
                 ui.colored_label(egui::Color32::from_rgb(220, 80, 80), err);
             }
         });
+    }
+
+    /// Screen capture preview for a macro coordinate ref (action tooltips).
+    pub fn paint_for_coordinate_ref(
+        &mut self,
+        ui: &mut egui::Ui,
+        catalog: &ProgramCatalog,
+        coord_ref: &CoordinateRef,
+        kind: PreviewKind,
+        force: bool,
+    ) {
+        let preview = match ref_preview_spec(catalog, coord_ref, kind) {
+            Ok((key, caption, coords)) => {
+                self.texture_for(ui.ctx(), &key, &caption, coords, force)
+            }
+            Err(err) => Err(err),
+        };
+        match preview {
+            Ok((tex, cap)) => paint_preview(ui, &tex, &cap, true),
+            Err(err) => {
+                ui.colored_label(egui::Color32::from_rgb(220, 80, 80), err);
+            }
+        }
     }
 
     /// Embedded form-panel preview for a point (uses form field coords).
@@ -277,6 +300,69 @@ enum PreviewCoords {
         right: i32,
         bottom: i32,
     },
+}
+
+/// Coordinate ref + preview kind for actions that show point/search-area captures.
+pub fn coordinate_ref_for_preview(action: &Action) -> Option<(CoordinateRef, PreviewKind)> {
+    match &action.kind {
+        ActionKind::Move { point, .. } if !point.is_empty() => {
+            Some((point.clone(), PreviewKind::Point))
+        }
+        ActionKind::ImageSearch { search_area, .. }
+        | ActionKind::Ocr { search_area, .. }
+        | ActionKind::FindPixel { search_area, .. } if !search_area.is_empty() => {
+            Some((search_area.clone(), PreviewKind::SearchArea))
+        }
+        _ => None,
+    }
+}
+
+fn ref_preview_spec(
+    catalog: &ProgramCatalog,
+    coord_ref: &CoordinateRef,
+    kind: PreviewKind,
+) -> Result<(String, String, PreviewCoords), String> {
+    let macro_ = Macro::new("", 0, vec![]);
+    match kind {
+        PreviewKind::Point => {
+            let (x, y) = catalog.resolve_point(coord_ref, &macro_)?;
+            let coords = PreviewCoords::Point { x, y };
+            Ok((
+                cache_key_ref(coord_ref, coords),
+                format!("X: {x}, Y: {y}"),
+                coords,
+            ))
+        }
+        PreviewKind::SearchArea => {
+            let (left, top, right, bottom) = catalog.resolve_search_area(coord_ref, &macro_)?;
+            let coords = PreviewCoords::SearchArea {
+                left,
+                top,
+                right,
+                bottom,
+            };
+            Ok((
+                cache_key_ref(coord_ref, coords),
+                format!("Left: {left}, Top: {top}, Right: {right}, Bottom: {bottom}"),
+                coords,
+            ))
+        }
+    }
+}
+
+fn cache_key_ref(coord_ref: &CoordinateRef, coords: PreviewCoords) -> String {
+    match coords {
+        PreviewCoords::Point { x, y } => format!("ref:pt:{}:{x}:{y}", coord_ref.as_str()),
+        PreviewCoords::SearchArea {
+            left,
+            top,
+            right,
+            bottom,
+        } => format!(
+            "ref:sa:{}:{left}:{top}:{right}:{bottom}",
+            coord_ref.as_str()
+        ),
+    }
 }
 
 fn entity_preview_spec(
@@ -617,6 +703,56 @@ mod tests {
         assert!(b.y <= 100);
         assert!(b.x + b.w >= 200);
         assert!(b.y + b.h >= 180);
+    }
+
+    #[test]
+    fn coordinate_ref_for_preview_matches_action_kinds() {
+        use sqyre_domain::{ActionId, ActionKind, CoordinateRef};
+
+        assert!(coordinate_ref_for_preview(&Action {
+            id: ActionId::new(),
+            kind: ActionKind::Wait {
+                time: ScalarValue::Int(1),
+            },
+        })
+        .is_none());
+
+        let mv = Action {
+            id: ActionId::new(),
+            kind: ActionKind::Move {
+                point: CoordinateRef("P~Spot".into()),
+                smooth: false,
+                smooth_low: 0.05,
+                smooth_high: 0.2,
+                smooth_delay_ms: 1,
+            },
+        };
+        assert_eq!(
+            coordinate_ref_for_preview(&mv),
+            Some((CoordinateRef("P~Spot".into()), PreviewKind::Point))
+        );
+
+        let search = Action {
+            id: ActionId::new(),
+            kind: ActionKind::ImageSearch {
+                name: "find".into(),
+                targets: vec![],
+                search_area: CoordinateRef("P~Box".into()),
+                row_split: 0,
+                col_split: 0,
+                tolerance: 0.9,
+                blur: 0,
+                wait: Default::default(),
+                coords: Default::default(),
+                run_branch_on_no_find: false,
+                order: Default::default(),
+                subactions: vec![],
+            },
+        };
+        assert_eq!(
+            coordinate_ref_for_preview(&search),
+            Some((CoordinateRef("P~Box".into()), PreviewKind::SearchArea))
+        );
     }
 
     #[test]

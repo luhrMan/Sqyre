@@ -2,6 +2,8 @@
 
 In-repo rewrite of Sqyre (egui + PureCV). Go under the repo root remains the daily driver until parity.
 
+**Migration tracker:** [MIGRATION.md](./MIGRATION.md) (shared checklist — update status when landing work).
+
 ## Crates
 
 | Crate | Role |

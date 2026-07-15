@@ -455,7 +455,33 @@ impl ProgramCatalog {
             .ok_or_else(|| PersistError::Message(format!("item {old:?} not found")))?;
         item.name = new.to_string();
         p.items.insert(new.to_string(), item);
+        if old != new {
+            self.rename_item_icon_files(program, old, new);
+        }
         Ok(())
+    }
+
+    /// Move `{old}.png` and `{old}~*.png` icon files to the new item name.
+    fn rename_item_icon_files(&self, program: &str, old: &str, new: &str) {
+        let dir = self.icons_dir(program);
+        let Ok(rd) = std::fs::read_dir(&dir) else {
+            return;
+        };
+        let prefix = format!("{old}{PROGRAM_DELIMITER}");
+        let legacy = format!("{old}.png");
+        for entry in rd.flatten() {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            let dest_name = if name.as_ref() == legacy {
+                format!("{new}.png")
+            } else if name.starts_with(&prefix) && name.ends_with(".png") {
+                format!("{new}{PROGRAM_DELIMITER}{}", &name[prefix.len()..])
+            } else {
+                continue;
+            };
+            let dest = dir.join(dest_name);
+            let _ = std::fs::rename(entry.path(), dest);
+        }
     }
 
     pub fn delete_item(&mut self, program: &str, name: &str) -> Result<()> {

@@ -6,7 +6,7 @@ use std::ptr;
 use std::sync::Mutex;
 use x11::xlib::{
     XCloseDisplay, XDefaultRootWindow, XDestroyImage, XDisplayHeight, XDisplayWidth, XGetImage,
-    XOpenDisplay, ZPixmap, _XDisplay,
+    XOpenDisplay, XQueryPointer, ZPixmap, _XDisplay,
 };
 
 const ALLPLANES: u64 = !0;
@@ -45,6 +45,35 @@ impl X11Capturer {
                     height,
                 }),
             })
+        }
+    }
+
+    /// Absolute pointer position on the virtual desktop (root coords).
+    pub fn pointer_position(&self) -> Result<(i32, i32), String> {
+        let st = self.inner.lock().map_err(|e| e.to_string())?;
+        unsafe {
+            let mut root_ret = 0u64;
+            let mut child_ret = 0u64;
+            let mut root_x = 0i32;
+            let mut root_y = 0i32;
+            let mut win_x = 0i32;
+            let mut win_y = 0i32;
+            let mut mask = 0u32;
+            let ok = XQueryPointer(
+                st.display,
+                st.root,
+                &mut root_ret,
+                &mut child_ret,
+                &mut root_x,
+                &mut root_y,
+                &mut win_x,
+                &mut win_y,
+                &mut mask,
+            );
+            if ok == 0 {
+                return Err("XQueryPointer failed".into());
+            }
+            Ok((root_x, root_y))
         }
     }
 }
