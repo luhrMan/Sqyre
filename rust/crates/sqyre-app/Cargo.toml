@@ -19,6 +19,7 @@ egui = { workspace = true }
 egui_ltreeview = { workspace = true }
 fs2 = "0.4"
 image = { workspace = true }
+resvg = { workspace = true }
 sqyre-match = { path = "../sqyre-match" }
 sqyre-domain = { path = "../sqyre-domain" }
 sqyre-persist = { path = "../sqyre-persist" }

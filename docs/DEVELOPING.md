@@ -7,13 +7,14 @@ Open the repository in the dev container (`.devcontainer/`). It is **Rust-migrat
 From the repo root:
 
 ```bash
-make linux          # ./bin/sqyre
+make linux          # ./bin/sqyre (Go)
+make rust           # ./bin/sqyre-rust (egui rewrite)
 make windows        # bin/windows-amd64/sqyre.exe (fyne-cross in Docker)
 make appimage       # bin/*.AppImage
 make tessdata       # download eng.traineddata for OCR
 ```
 
-Run `make help` for matprofile variants (`windows-matprofile`, `appimage-matprofile`).
+Run `make help` for matprofile variants (`windows-matprofile`, `appimage-matprofile`) and Rust helpers (`rust-release`, `rust-test`, `rust-run`).
 
 ---
 
@@ -21,13 +22,19 @@ Run `make help` for matprofile variants (`windows-matprofile`, `appimage-matprof
 
 | Target | Output |
 |--------|--------|
-| `linux` | `bin/sqyre` |
+| `linux` | `bin/sqyre` (Go) |
+| `rust` | `bin/sqyre-rust` (Rust debug) |
+| `rust-release` | `bin/sqyre-rust` (Rust release) |
+| `rust-test` | `cargo test` in `rust/` |
+| `rust-run` | `cargo run -p sqyre-app` |
 | `windows` | `bin/windows-amd64/sqyre.exe` |
 | `appimage` | `bin/Sqyre-*.AppImage` |
 | `tessdata` | Tesseract trained data via `scripts/download-tessdata.sh` |
 | `*-matprofile` | Same as above with `matprofile` build tag |
 
-Set `BUILD_TAGS` to override tags (default: `gocv_specific_modules`).
+Set `BUILD_TAGS` to override Go tags (default: `gocv_specific_modules`). Set `CARGO_FLAGS` for extra cargo args on Rust targets.
+
+Go remains the default `make` / `make linux` binary until cutover; see [rust/MIGRATION.md](../rust/MIGRATION.md).
 
 ---
 

@@ -13,6 +13,7 @@ mod icon_variants;
 mod macro_meta;
 mod pickers;
 mod preview_tooltip;
+mod recording_overlay;
 mod settings;
 mod single_instance;
 mod theme;
@@ -35,6 +36,7 @@ use hotkey_record::HotkeyRecordUi;
 use icon_cache::IconCache;
 use macro_meta::{collect_all_macro_tags, MacroMetaUi};
 use preview_tooltip::PreviewTooltipCache;
+use recording_overlay::RecordingOverlay;
 use settings::SettingsUi;
 use sqyre_capture::{X11Capturer, X11WindowFocuser};
 use sqyre_domain::{
@@ -126,6 +128,7 @@ fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([960.0, 640.0])
+            .with_min_inner_size([100.0, 100.0])
             .with_title("Sqyre (Rust)")
             .with_icon(assets::app_icon()),
         ..Default::default()
@@ -197,6 +200,8 @@ struct SqyreApp {
     settings_ui: SettingsUi,
     /// Window was hidden because a point/search-area recording is armed.
     hidden_for_recording: bool,
+    /// X11 outline windows for live search-area selection rect.
+    recording_overlay: RecordingOverlay,
     /// Left macro-list side panel visibility.
     macro_list_open: bool,
     tray: tray::SystemTray,
@@ -268,6 +273,7 @@ impl SqyreApp {
                     data_editor: DataEditor::default(),
                     settings_ui,
                     hidden_for_recording: false,
+                    recording_overlay: RecordingOverlay::new(),
                     macro_list_open: true,
                     tray: tray::SystemTray::default(),
                 };
@@ -304,6 +310,7 @@ impl SqyreApp {
                 data_editor: DataEditor::default(),
                 settings_ui,
                 hidden_for_recording: false,
+                recording_overlay: RecordingOverlay::new(),
                 macro_list_open: true,
                 tray: tray::SystemTray::default(),
             },
@@ -680,29 +687,9 @@ impl SqyreApp {
         }
     }
 
-    /// Always-on-top HUD so live coordinates stay visible when the main window is hidden.
-    fn show_recording_hud(&self, ctx: &egui::Context) {
-        let Some(msg) = self.screen_click.status_label() else {
-            return;
-        };
-        ctx.show_viewport_immediate(
-            egui::ViewportId::from_hash_of("sqyre_recording_hud"),
-            egui::ViewportBuilder::default()
-                .with_title("Recording")
-                .with_inner_size([520.0, 56.0])
-                .with_resizable(false)
-                .with_always_on_top()
-                .with_decorations(true),
-            |ctx, _class| {
-                // Root panel for an immediate viewport (no parent `Ui`).
-                #[allow(deprecated)]
-                egui::CentralPanel::default().show(ctx, |ui| {
-                    ui.colored_label(theme::PRIMARY, msg.as_str());
-                });
-                ctx.request_repaint();
-            },
-        );
-        ctx.request_repaint();
+    /// Live X11 selection outline while search-area recording is armed.
+    fn sync_recording_overlay(&mut self) {
+        self.recording_overlay.sync(&self.screen_click);
     }
 
     fn action_display_name(&self, action_id: ActionId) -> String {
@@ -844,7 +831,7 @@ impl eframe::App for SqyreApp {
             self.refresh_macro_hotkey_bindings();
         }
         self.update_recording_visibility(ui.ctx());
-        self.show_recording_hud(ui.ctx());
+        self.sync_recording_overlay();
         self.drain_pending_hotkey_macros(ui.ctx());
 
         if let Some(chord) = self.hotkey_record.show(ui.ctx(), &self.macro_hotkeys) {
@@ -919,7 +906,16 @@ impl eframe::App for SqyreApp {
             });
 
         egui::CentralPanel::default().show_inside(ui, |ui| {
-            ui.heading("Sqyre");
+            ui.horizontal(|ui| {
+                let tex = self.icon_cache.sqyre_fallback(ui.ctx());
+                let size = egui::vec2(28.0, 28.0);
+                ui.add(
+                    egui::Image::new((tex.id(), size))
+                        .fit_to_exact_size(size)
+                        .maintain_aspect_ratio(true),
+                );
+                ui.heading("Sqyre");
+            });
             let mut force_openness: Option<bool> = None;
             let running = self.run.running.load(Ordering::SeqCst);
             ui.horizontal(|ui| {
@@ -1091,8 +1087,10 @@ impl eframe::App for SqyreApp {
                     let root = &self.macros[idx].root;
                     let root_children = root.children();
                     let known_vars = collect_known_variable_names(&self.macros[idx]);
+                    let interact_y = ui.spacing().interact_size.y;
                     let (_, tree_actions) = TreeView::new(id)
                         .allow_drag_and_drop(!running)
+                        .default_node_height(Some(tree_chrome::default_row_height(interact_y)))
                         .show_state(ui, &mut state, |builder: &mut TreeViewBuilder<'_, ActionId>| {
                             // Invisible flattened root so top-level rows have a parent for DnD
                             // (matches Go: root loop not painted).
@@ -1117,6 +1115,7 @@ impl eframe::App for SqyreApp {
                                     &hl_snap,
                                     scroll_to,
                                     &mut scrolled_follow,
+                                    interact_y,
                                 );
                             }
                             builder.close_dir();
@@ -1125,7 +1124,7 @@ impl eframe::App for SqyreApp {
                     if let Some(target) = scroll_to {
                         if !scrolled_follow {
                             if let Some(row_i) = flattened_visible_index(root, target) {
-                                let row_h = ui.spacing().interact_size.y
+                                let row_h = tree_chrome::default_row_height(ui.spacing().interact_size.y)
                                     + ui.spacing().item_spacing.y;
                                 let y = ui.min_rect().top() + row_i as f32 * row_h;
                                 let rect = egui::Rect::from_min_size(
@@ -1142,6 +1141,15 @@ impl eframe::App for SqyreApp {
                 .inner;
             if scrolled_follow {
                 self.last_exec_follow = follow;
+            }
+
+            // Row overlay is clickthrough (Sense::hover + geometric clicks). When a
+            // view tip covers the row, TreeView never sees the click — select here.
+            for (aid, interaction) in &row_events {
+                if interaction.primary_clicked {
+                    state.set_one_selected(*aid);
+                    self.selected_action = Some(*aid);
+                }
             }
             state.store(ui, id);
 
@@ -1168,15 +1176,9 @@ impl eframe::App for SqyreApp {
 
             let pointer = ui.ctx().pointer_interact_pos();
             let mut any_view_hover = false;
-            let tip_aid = self.tooltip.action_id();
             // Prefer edit-open from any row; otherwise last hovered wins for view.
             for (aid, interaction) in &row_events {
-                if interaction.hovered {
-                    any_view_hover = true;
-                }
-                // Keep open while pointer remains over the tipped row even if a
-                // constrained tooltip covers it and clears `.hovered()`.
-                if tip_aid == Some(*aid) && interaction.pointer_in_row {
+                if interaction.hovered || interaction.pointer_in_row {
                     any_view_hover = true;
                 }
                 if let Some(action) = self.macros[idx].root.find_by_id(*aid) {
@@ -1206,11 +1208,11 @@ impl eframe::App for SqyreApp {
                 let mut pending_record: Option<tree_history::TreeSnapshot> = None;
                 let known_vars = collect_known_variable_names(&self.macros[idx]);
                 {
-                    let root = &mut self.macros[idx].root;
+                    let macro_ = &mut self.macros[idx];
                     action_tooltip::show(
                         &mut self.tooltip,
                         ui.ctx(),
-                        root,
+                        macro_,
                         catalog,
                         icons,
                         previews,
@@ -1484,10 +1486,12 @@ fn build_tree(
     hl_snap: &sqyre_executor::HighlightSnapshot,
     scroll_to: Option<ActionId>,
     scrolled_follow: &mut bool,
+    interact_y: f32,
 ) {
     let action_id = action.id;
     let highlight = row_highlight(macro_name, action_id, hl_snap);
     let should_scroll = scroll_to == Some(action_id);
+    let row_h = tree_chrome::action_row_height(action, interact_y);
 
     let mut handle_row = |ui: &mut egui::Ui,
                           open_logs: &mut Option<ActionId>,
@@ -1516,9 +1520,14 @@ fn build_tree(
     };
 
     if action.is_branch() {
-        let is_open = builder.node(NodeBuilder::dir(action_id).drop_allowed(true).label_ui(|ui| {
-            handle_row(ui, open_logs, delete_action, row_events, scrolled_follow);
-        }));
+        let is_open = builder.node(
+            NodeBuilder::dir(action_id)
+                .drop_allowed(true)
+                .height(row_h)
+                .label_ui(|ui| {
+                    handle_row(ui, open_logs, delete_action, row_events, scrolled_follow);
+                }),
+        );
         if is_open {
             for child in action.children() {
                 build_tree(
@@ -1535,14 +1544,19 @@ fn build_tree(
                     hl_snap,
                     scroll_to,
                     scrolled_follow,
+                    interact_y,
                 );
             }
         }
         builder.close_dir();
     } else {
-        builder.node(NodeBuilder::leaf(action_id).label_ui(|ui| {
-            handle_row(ui, open_logs, delete_action, row_events, scrolled_follow);
-        }));
+        builder.node(
+            NodeBuilder::leaf(action_id)
+                .height(row_h)
+                .label_ui(|ui| {
+                    handle_row(ui, open_logs, delete_action, row_events, scrolled_follow);
+                }),
+        );
     }
 }
 

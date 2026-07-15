@@ -3,7 +3,6 @@
 mod action_log;
 mod backends;
 mod error;
-mod expr;
 mod highlight;
 mod misc;
 mod navigate;

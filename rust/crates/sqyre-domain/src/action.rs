@@ -411,10 +411,6 @@ pub enum ActionKind {
         variable_name: String,
         value: serde_yaml::Value,
     },
-    Calculate {
-        expression: String,
-        output_var: String,
-    },
     SaveVariable {
         variable_name: String,
         destination: String,
@@ -489,7 +485,6 @@ impl ActionKind {
             Self::Key { .. } => "key",
             Self::Type { .. } => "type",
             Self::SetVariable { .. } => "setvariable",
-            Self::Calculate { .. } => "calculate",
             Self::SaveVariable { .. } => "savevariable",
             Self::FocusWindow { .. } => "focuswindow",
             Self::RunMacro { .. } => "runmacro",
@@ -584,7 +579,6 @@ impl ActionKind {
             }
             Self::Type { text, .. } => format!("Type {text}"),
             Self::SetVariable { variable_name, .. } => format!("Set {variable_name}"),
-            Self::Calculate { output_var, .. } => format!("Calculate → {output_var}"),
             Self::SaveVariable {
                 variable_name,
                 destination,
