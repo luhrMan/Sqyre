@@ -100,7 +100,8 @@ Update boxes/status when you land or delete work. Keep notes short.
 - [x] Interruptible stop/delay (+ gated post-action delay) — ✅ `interruptible_sleep`; Wait/Type/retry/RWF; skip delay after Stopped/errors
 - [x] ImageSearch `repeatwhilefound` honors `max_iterations` — ✅ (optional timeout still caps)
 - [x] Live runtime-var publish sink — ✅ cutover pending — `executor/runtime_vars.rs` (`SharedRuntimeVars` / `RuntimeVarSink`) ↔ Go `runtime_vars`
-- [ ] Cross-check remaining delay/retry/highlight/log edge cases vs Go — 🟡 mostly aligned; OCR empty-target wait still differs (Rust: any non-empty text)
+- [x] OCR empty-target wait — ✅ cutover pending — `ocr_target_matched` matches Go `strings.Contains` (blank target always matches)
+- [ ] Cross-check remaining delay/retry/highlight/log edge cases vs Go — 🟡 mostly aligned
 
 ### Input
 
@@ -111,6 +112,7 @@ Update boxes/status when you land or delete work. Keep notes short.
 
 - [x] Linux X11 capture + focus — ✅ cutover pending — `sqyre-capture` ↔ `internal/capture` + `screen` + window_*
 - [x] X11 selection outline (recording HUD rects) — ✅ cutover pending — `SelectionOutline` + app `recording_overlay` ↔ `ui/recording`
+- [x] Recording coords HUD when app is hidden — ✅ cutover pending — always-on-top deferred viewport + poller `request_repaint` while armed
 - [ ] Non-Linux capturer / focuser / outline — ❌ (`NullCapturer` / stub outline / focus error) needs work
 - [ ] Wayland capture/overlays — ❌ / 🟡 (Go already limited) needs work
 
@@ -141,9 +143,9 @@ Rust boots via `make` / `make run` → `./bin/sqyre` (or `cargo run -p sqyre-app
 | Theme (dark + Sqyre gold)                                        | `ui/theme.go`                   | `theme.rs`                                                               | 🟡     | needs work      |
 | Native file/folder dialogs                                       | Fyne / OS pickers               | `file_dialogs.rs` (rfd + Tokio enter)                                    | 🟡     | needs work      |
 | Var pills / VarEntry                                             | `ui/custom_widgets`             | `var_pills.rs` (+ validate helpers)                                      | 🟡     | needs work      |
-| Entity pickers / recording overlays                              | `ui` pickers, `ui/recording`    | `pickers`, X11 `SelectionOutline` + `recording_overlay`, `hotkey_record`, `key_record` (Pause continue chord), `pixel_color` (FindPixel screen sample) | 🟡     | needs work      |
+| Entity pickers / recording overlays                              | `ui` pickers, `ui/recording`    | `pickers`, X11 `SelectionOutline` + `recording_overlay` (coords HUD when hidden), `hotkey_record`, `key_record` (Pause continue chord), `pixel_color` (FindPixel screen sample) | 🟡     | needs work      |
 | Preview tooltips                                                 | custom_widgets / action_preview | `preview_tooltip.rs`                                                     | 🟡     | needs work      |
-| Data editor (programs/items/masks/collections/coords + variants) | `ui/editor`                     | `data_editor.rs` + `icon_variants.rs`                                    | 🟡     | needs work      |
+| Data editor (programs/items/masks/collections/coords + variants) | `ui/editor`                     | `data_editor.rs` + `icon_variants.rs` (New point/SA auto-arms record + save) | 🟡     | needs work      |
 | Settings panel (prefs, paths, fonts, colors)                     | `ui/settings.go`                | `settings.rs` + `persist/settings.rs` + theme                            | 🟡     | needs work      |
 | Action logs UI                                                   | macro log popup                 | `action_logs_ui.rs` (incl. clear)                                        | 🟡     | needs work      |
 | Variables panel + runtime vars                                   | `macro_variables`, runtime_vars | `variables_panel.rs` + `SharedRuntimeVars` (decls CRUD + live/last snapshot) | 🟡     | needs work      |
@@ -170,7 +172,7 @@ Rust boots via `make` / `make run` → `./bin/sqyre` (or `cargo run -p sqyre-app
 - [x] Macro hotkey launch works
 - [ ] Data editor + settings + recording pickers usable for daily macros
 - [x] Variables panel: decls CRUD + live runtime snapshot
-- [ ] Recording coords HUD when app is hidden during point/search-area pick
+- [x] Recording coords HUD when app is hidden during point/search-area pick
 - [x] NavigateSelect implemented (with NavigateKey subaction branches)
 - [x] ValidateAction parity (or Go checks explicitly dropped)
 - [ ] Real-user smoke: load existing `db.yaml`, run macros, Esc/failsafe
@@ -180,11 +182,10 @@ Rust boots via `make` / `make run` → `./bin/sqyre` (or `cargo run -p sqyre-app
 
 ## Top remaining priorities
 
-1. **UI daily-driver polish** — recording coords HUD when window hidden; settings/data-editor edge cases
+1. **UI daily-driver polish** — VarEntry live validation in data editor; collection-cell zoom/pan; remaining picker polish
 2. **Real-user smoke** — load `~/.sqyre/db.yaml`, run macros, Esc/failsafe
 3. **Release cutover** — CI / AppImage / Windows → Rust (still Go today)
 4. **Then 🔪** — delete `internal/`, `ui/`, `cmd/sqyre` once gate clears
-5. **OCR empty-target wait** — optional align with Go `Contains` (always match on empty target)
 
 ---
 
