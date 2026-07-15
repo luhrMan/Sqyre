@@ -2,6 +2,7 @@
 //! macros, and Focus Window live-window lists.
 
 use crate::icon_cache::IconCache;
+use crate::image_view::{self, ImageViewTransform};
 use crate::preview_tooltip::{PreviewKind, PreviewTooltipCache};
 use eframe::egui::{self, Color32, Pos2, Sense, Vec2};
 use sqyre_capture::WindowInfo;
@@ -25,11 +26,7 @@ pub struct CollectionCellPick {
     pub sel: Option<(i32, i32, i32, i32)>,
     /// Drag start cell while pointer is down (selection mode).
     drag_anchor: Option<(i32, i32)>,
-    /// Fit-relative zoom (1.0 = fit in viewport). Go `ImageViewTransform`.
-    zoom: f32,
-    pan: Vec2,
-    /// Pointer start + pan at drag start while panning (zoomed).
-    pan_drag: Option<(Pos2, Vec2)>,
+    view: ImageViewTransform,
 }
 
 impl CollectionCellPick {
@@ -41,9 +38,7 @@ impl CollectionCellPick {
             cols: cols.max(1),
             sel: None,
             drag_anchor: None,
-            zoom: 1.0,
-            pan: Vec2::ZERO,
-            pan_drag: None,
+            view: ImageViewTransform::default(),
         }
     }
 
@@ -53,13 +48,7 @@ impl CollectionCellPick {
     }
 
     pub fn reset_view(&mut self) {
-        self.zoom = 1.0;
-        self.pan = Vec2::ZERO;
-        self.pan_drag = None;
-    }
-
-    fn is_zoomed(&self) -> bool {
-        self.zoom > 1.01
+        self.view.reset();
     }
 
     pub fn to_ref(&self) -> Option<CoordinateRef> {
@@ -590,101 +579,6 @@ fn fit_panel(w: f32, h: f32) -> Vec2 {
     Vec2::new(w * scale, h * scale)
 }
 
-const IMAGE_ZOOM_MIN: f32 = 0.5;
-const IMAGE_ZOOM_MAX: f32 = 16.0;
-const IMAGE_ZOOM_WHEEL_STEP: f32 = 0.07;
-const IMAGE_PAN_EDGE_PAD: f32 = 32.0;
-
-fn clamp_image_zoom(z: f32) -> f32 {
-    z.clamp(IMAGE_ZOOM_MIN, IMAGE_ZOOM_MAX)
-}
-
-fn scroll_zoom_factor(delta_y: f32) -> f32 {
-    if delta_y == 0.0 {
-        1.0
-    } else if delta_y > 0.0 {
-        1.0 + IMAGE_ZOOM_WHEEL_STEP
-    } else {
-        1.0 / (1.0 + IMAGE_ZOOM_WHEEL_STEP)
-    }
-}
-
-/// Displayed image rect inside the viewport (Go `ImageContentRect`).
-fn image_content_rect(viewport: egui::Rect, image_size: Vec2, zoom: f32, pan: Vec2) -> egui::Rect {
-    if viewport.width() <= 0.0 || viewport.height() <= 0.0 {
-        return egui::Rect::NOTHING;
-    }
-    if image_size.x <= 0.0 || image_size.y <= 0.0 {
-        return viewport;
-    }
-    let fit = (viewport.width() / image_size.x).min(viewport.height() / image_size.y);
-    let scale = fit * zoom;
-    let w = image_size.x * scale;
-    let h = image_size.y * scale;
-    let x = viewport.left() + (viewport.width() - w) * 0.5 + pan.x;
-    let y = viewport.top() + (viewport.height() - h) * 0.5 + pan.y;
-    egui::Rect::from_min_size(egui::pos2(x, y), Vec2::new(w, h))
-}
-
-fn clamp_image_pan(viewport: egui::Rect, image_size: Vec2, zoom: f32, mut pan: Vec2) -> Vec2 {
-    let content = image_content_rect(viewport, image_size, zoom, pan);
-    let pad = IMAGE_PAN_EDGE_PAD;
-    if content.width() <= viewport.width() {
-        pan.x = 0.0;
-    } else {
-        let min_x = viewport.right() - content.width() - pad;
-        let max_x = viewport.left() + pad;
-        if content.left() < min_x {
-            pan.x += min_x - content.left();
-        }
-        if content.left() > max_x {
-            pan.x += max_x - content.left();
-        }
-    }
-    if content.height() <= viewport.height() {
-        pan.y = 0.0;
-    } else {
-        let min_y = viewport.bottom() - content.height() - pad;
-        let max_y = viewport.top() + pad;
-        if content.top() < min_y {
-            pan.y += min_y - content.top();
-        }
-        if content.top() > max_y {
-            pan.y += max_y - content.top();
-        }
-    }
-    pan
-}
-
-fn zoom_image_at_cursor(
-    viewport: egui::Rect,
-    image_size: Vec2,
-    zoom: f32,
-    pan: Vec2,
-    cursor: Pos2,
-    factor: f32,
-) -> (f32, Vec2) {
-    if factor <= 0.0 || image_size.x <= 0.0 || image_size.y <= 0.0 {
-        return (zoom, pan);
-    }
-    let content = image_content_rect(viewport, image_size, zoom, pan);
-    if content.width() <= 0.0 || content.height() <= 0.0 {
-        return (zoom, pan);
-    }
-    let u = (cursor.x - content.left()) / content.width();
-    let v = (cursor.y - content.top()) / content.height();
-    let new_zoom = clamp_image_zoom(zoom * factor);
-    if (new_zoom - zoom).abs() < f32::EPSILON {
-        return (zoom, pan);
-    }
-    let mut pan = pan;
-    let after = image_content_rect(viewport, image_size, new_zoom, pan);
-    pan.x += (cursor.x - u * after.width()) - after.left();
-    pan.y += (cursor.y - v * after.height()) - after.top();
-    let pan = clamp_image_pan(viewport, image_size, new_zoom, pan);
-    (new_zoom, pan)
-}
-
 /// Interactive collection image + rows×cols overlay; click/drag selects cells.
 /// Wheel zooms at cursor; when zoomed, drag pans (Go `CollectionGridView`).
 fn paint_collection_cell_picker(
@@ -703,14 +597,17 @@ fn paint_collection_cell_picker(
         );
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if ui
-                .add_enabled(pick.zoom != 1.0 || pick.pan != Vec2::ZERO, egui::Button::new("Reset view"))
+                .add_enabled(
+                    pick.view.needs_reset_button(),
+                    egui::Button::new("Reset view"),
+                )
                 .on_hover_text("Fit image in viewport")
                 .clicked()
             {
                 pick.reset_view();
             }
-            if pick.zoom != 1.0 {
-                ui.weak(format!("{:.0}%", pick.zoom * 100.0));
+            if pick.view.zoom != 1.0 {
+                ui.weak(format!("{:.0}%", pick.view.zoom * 100.0));
             }
         });
     });
@@ -731,26 +628,14 @@ fn paint_collection_cell_picker(
     let desired = Vec2::new((fit.x * scale).max(160.0), (fit.y * scale).max(120.0));
     let (viewport, resp) = ui.allocate_exact_size(desired, Sense::click_and_drag());
 
-    // Scroll-zoom while hovering the viewport.
-    if resp.hovered() {
-        let scroll = ui.input(|i| i.smooth_scroll_delta.y);
-        if scroll != 0.0 {
-            let cursor = ui.input(|i| i.pointer.hover_pos()).unwrap_or(viewport.center());
-            let factor = scroll_zoom_factor(scroll);
-            let (z, p) = zoom_image_at_cursor(
-                viewport,
-                image_size,
-                pick.zoom,
-                pick.pan,
-                cursor,
-                factor,
-            );
-            pick.zoom = z;
-            pick.pan = p;
-        }
-    }
+    image_view::handle_scroll_zoom(ui, viewport, image_size, &mut pick.view, resp.hovered());
 
-    let content = image_content_rect(viewport, image_size, pick.zoom, pick.pan);
+    let content = image_view::image_content_rect(
+        viewport,
+        image_size,
+        pick.view.zoom,
+        pick.view.pan,
+    );
 
     {
         let painter = ui.painter_at(viewport);
@@ -777,28 +662,9 @@ fn paint_collection_cell_picker(
         }
     }
 
-    if pick.is_zoomed() {
+    if image_view::handle_pan_drag(&resp, viewport, image_size, &mut pick.view) {
         if resp.drag_started() {
-            if let Some(pos) = resp.interact_pointer_pos() {
-                pick.pan_drag = Some((pos, pick.pan));
-                pick.drag_anchor = None;
-            }
-        }
-        if resp.dragged() {
-            if let (Some((start, base)), Some(pos)) = (pick.pan_drag, resp.interact_pointer_pos()) {
-                pick.pan = clamp_image_pan(
-                    viewport,
-                    image_size,
-                    pick.zoom,
-                    base + (pos - start),
-                );
-            }
-        }
-        if resp.drag_stopped() {
-            pick.pan_drag = None;
-        }
-        if resp.hovered() {
-            ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+            pick.drag_anchor = None;
         }
     } else if let Some(pos) = resp.interact_pointer_pos() {
         if let Some((r, c)) = cell_at(content, pick.rows, pick.cols, pos) {

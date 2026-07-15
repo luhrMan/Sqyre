@@ -16,7 +16,9 @@ use sqyre_domain::{
 };
 use sqyre_hotkeys::{MacroHotkeyBridge, ScreenClickBridge};
 use sqyre_persist::ProgramCatalog;
-use sqyre_validate::validate_set_variable_value;
+use sqyre_validate::{
+    validate_numeric_expression, validate_set_variable_value, validate_variable_references,
+};
 use std::collections::HashSet;
 
 /// Copy draft fields onto `live`, keeping `live`'s children.
@@ -63,7 +65,7 @@ pub fn paint_edit_fields(
         }
         ActionKind::Wait { time } => {
             tip_wrapped_section(ui, |ui| {
-                scalar_field(ui, "Time (ms)", time, known_vars, is_dark);
+                scalar_field(ui, "Time (ms)", time, known_vars, is_dark, active_macro);
             });
         }
         ActionKind::Click { button, state } => {
@@ -79,7 +81,7 @@ pub fn paint_edit_fields(
         ActionKind::Key { key, state } => {
             tip_wrapped_section(ui, |ui| {
                 ui.horizontal(|ui| {
-                    var_pills::var_ref_text_edit(ui, "Key", key, known_vars, is_dark, 160.0);
+                    var_ref_field(ui, "Key", key, known_vars, is_dark, 160.0, active_macro);
                     if theme::record_icon_button(ui, "Record a key", !key_record.is_open())
                         .clicked()
                     {
@@ -95,7 +97,7 @@ pub fn paint_edit_fields(
         }
         ActionKind::Type { text, delay_ms } => {
             tip_wrapped_section(ui, |ui| {
-                var_pills::var_ref_text_edit(ui, "Text", text, known_vars, is_dark, 160.0);
+                var_ref_field(ui, "Text", text, known_vars, is_dark, 160.0, active_macro);
                 ui.add(egui::DragValue::new(delay_ms).prefix("Delay ms: ").speed(1));
             });
         }
@@ -137,7 +139,7 @@ pub fn paint_edit_fields(
             pass_through,
         } => {
             tip_section(ui, |ui| {
-                var_pills::var_ref_text_edit(ui, "Message", message, known_vars, is_dark, 220.0);
+                var_ref_field(ui, "Message", message, known_vars, is_dark, 220.0, active_macro);
             });
             tip_section(ui, |ui| {
                 ui.horizontal(|ui| {
@@ -221,7 +223,15 @@ pub fn paint_edit_fields(
         } => {
             tip_wrapped_section(ui, |ui| {
                 var_pills::var_name_text_edit(ui, "Variable", variable_name, known_vars, is_dark, 160.0);
-                var_pills::var_ref_text_edit(ui, "Destination", destination, known_vars, is_dark, 160.0);
+                var_ref_field(
+                    ui,
+                    "Destination",
+                    destination,
+                    known_vars,
+                    is_dark,
+                    160.0,
+                    active_macro,
+                );
             });
             tip_wrapped_section(ui, |ui| {
                 ui.checkbox(append, "Append");
@@ -231,7 +241,7 @@ pub fn paint_edit_fields(
         ActionKind::Loop { name, count, .. } => {
             tip_wrapped_section(ui, |ui| {
                 text_field(ui, "Name", name);
-                scalar_field(ui, "Count", count, known_vars, is_dark);
+                scalar_field(ui, "Count", count, known_vars, is_dark, active_macro);
             });
         }
         ActionKind::While {
@@ -250,7 +260,7 @@ pub fn paint_edit_fields(
                 ui.add(egui::DragValue::new(max_iterations).prefix("Max iterations: "));
             });
             tip_section(ui, |ui| {
-                clauses_editor(ui, clauses, known_vars, is_dark);
+                clauses_editor(ui, clauses, known_vars, is_dark, active_macro);
             });
         }
         ActionKind::Conditional {
@@ -267,7 +277,7 @@ pub fn paint_edit_fields(
                 }
             });
             tip_section(ui, |ui| {
-                clauses_editor(ui, clauses, known_vars, is_dark);
+                clauses_editor(ui, clauses, known_vars, is_dark, active_macro);
             });
         }
         ActionKind::ForEachRow {
@@ -279,11 +289,11 @@ pub fn paint_edit_fields(
         } => {
             tip_wrapped_section(ui, |ui| {
                 text_field(ui, "Name", name);
-                scalar_field(ui, "Start row", start_row, known_vars, is_dark);
-                scalar_field(ui, "End row", end_row, known_vars, is_dark);
+                scalar_field(ui, "Start row", start_row, known_vars, is_dark, active_macro);
+                scalar_field(ui, "End row", end_row, known_vars, is_dark, active_macro);
             });
             tip_section(ui, |ui| {
-                list_columns_editor(ui, sources, known_vars, is_dark);
+                list_columns_editor(ui, sources, known_vars, is_dark, active_macro);
             });
         }
         ActionKind::ImageSearch {
@@ -349,7 +359,7 @@ pub fn paint_edit_fields(
         } => {
             tip_wrapped_section(ui, |ui| {
                 text_field(ui, "Name", name);
-                var_pills::var_ref_text_edit(ui, "Target", target, known_vars, is_dark, 160.0);
+                var_ref_field(ui, "Target", target, known_vars, is_dark, 160.0, active_macro);
             });
             tip_section(ui, |ui| {
                 search_area_picker_row(ui, search_area, picker);
@@ -404,13 +414,14 @@ pub fn paint_edit_fields(
             });
             tip_wrapped_section(ui, |ui| {
                 ui.horizontal(|ui| {
-                    var_pills::var_ref_text_edit(
+                    var_ref_field(
                         ui,
                         "Target color",
                         target_color,
                         known_vars,
                         is_dark,
                         160.0,
+                        active_macro,
                     );
                     if let Some(rgba) = parse_hex_color(target_color) {
                         let size = egui::vec2(16.0, 16.0);
@@ -694,13 +705,44 @@ fn scalar_field(
     value: &mut ScalarValue,
     known_vars: &HashSet<String>,
     is_dark: bool,
+    active_macro: Option<&Macro>,
 ) {
     let mut text = value.as_display();
     let before = text.clone();
-    var_pills::var_ref_text_edit(ui, label, &mut text, known_vars, is_dark, 160.0);
+    let validation = validate_numeric_expression(&text, active_macro);
+    var_pills::validated_var_ref_edit(
+        ui,
+        label,
+        &mut text,
+        known_vars,
+        is_dark,
+        160.0,
+        &validation,
+    );
     if text != before {
         *value = parse_scalar(&text);
     }
+}
+
+fn var_ref_field(
+    ui: &mut egui::Ui,
+    label: &str,
+    value: &mut String,
+    known_vars: &HashSet<String>,
+    is_dark: bool,
+    desired_width: f32,
+    active_macro: Option<&Macro>,
+) {
+    let validation = validate_variable_references(value, active_macro);
+    var_pills::validated_var_ref_edit(
+        ui,
+        label,
+        value,
+        known_vars,
+        is_dark,
+        desired_width,
+        &validation,
+    );
 }
 
 fn parse_scalar(text: &str) -> ScalarValue {
@@ -859,6 +901,7 @@ fn clauses_editor(
     clauses: &mut Vec<ConditionClause>,
     known_vars: &HashSet<String>,
     is_dark: bool,
+    active_macro: Option<&Macro>,
 ) {
     ui.group(|ui| {
         ui.horizontal(|ui| {
@@ -872,9 +915,9 @@ fn clauses_editor(
             // Unique id so each clause's "op" ComboBox is distinct (same label salt).
             ui.push_id(i, |ui| {
                 ui.horizontal(|ui| {
-                    scalar_field(ui, "L", &mut clause.left, known_vars, is_dark);
+                    scalar_field(ui, "L", &mut clause.left, known_vars, is_dark, active_macro);
                     combo_str(ui, "op", &mut clause.operator, options::CONDITIONAL_OPERATORS);
-                    scalar_field(ui, "R", &mut clause.right, known_vars, is_dark);
+                    scalar_field(ui, "R", &mut clause.right, known_vars, is_dark, active_macro);
                     if ui.small_button("−").clicked() {
                         remove = Some(i);
                     }
@@ -892,6 +935,7 @@ fn list_columns_editor(
     sources: &mut Vec<ListColumn>,
     known_vars: &HashSet<String>,
     is_dark: bool,
+    active_macro: Option<&Macro>,
 ) {
     ui.group(|ui| {
         ui.horizontal(|ui| {
@@ -904,13 +948,14 @@ fn list_columns_editor(
         for (i, col) in sources.iter_mut().enumerate() {
             ui.push_id(i, |ui| {
                 ui.group(|ui| {
-                    var_pills::var_ref_text_edit(
+                    var_ref_field(
                         ui,
                         "Source",
                         &mut col.source,
                         known_vars,
                         is_dark,
                         200.0,
+                        active_macro,
                     );
                     var_pills::var_name_text_edit(
                         ui,
