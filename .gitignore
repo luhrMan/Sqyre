@@ -30,3 +30,10 @@ fyne-cross/
 .cache/
 internal/models/repositories/testdata/
 .devcontainer/builds/
+
+# Local Rust toolchain / cargo caches (workspace installs; not for commit)
+.cargo-home/
+.rustup-home/
+rust/.cargo-home/
+rust/.rustup-home/
+rust/.cargo-cache/

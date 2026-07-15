@@ -1,0 +1,13 @@
+[package]
+name = "sqyre-domain"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Sqyre macro / action domain model"
+
+[dependencies]
+serde = { workspace = true }
+serde_yaml = { workspace = true }
+uuid = { workspace = true }
+thiserror = { workspace = true }
+sqyre-varref = { path = "../sqyre-varref" }
