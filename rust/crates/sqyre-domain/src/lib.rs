@@ -5,13 +5,17 @@
 //! injected for undo/clipboard snapshots.
 
 mod action;
+mod display;
 mod labels;
 mod macro_model;
+mod rename;
 mod scalar;
 mod variables;
 
 pub use action::*;
+pub use display::*;
 pub use labels::{action_type_description, action_type_label};
 pub use macro_model::*;
+pub use rename::*;
 pub use scalar::*;
 pub use variables::*;

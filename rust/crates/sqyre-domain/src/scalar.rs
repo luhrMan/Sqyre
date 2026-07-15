@@ -117,6 +117,18 @@ impl CoordinateRef {
         self.cell_range().is_some()
     }
 
+    /// Build `program~name@r1,c1-r2,c2` (1-based inclusive; corners normalized).
+    pub fn collection(program: &str, name: &str, r1: i32, c1: i32, r2: i32, c2: i32) -> Self {
+        let (r1, r2) = if r1 <= r2 { (r1, r2) } else { (r2, r1) };
+        let (c1, c2) = if c1 <= c2 { (c1, c2) } else { (c2, c1) };
+        let base = if program.is_empty() {
+            name.to_string()
+        } else {
+            format!("{program}{PROGRAM_DELIMITER}{name}")
+        };
+        Self(format!("{base}@{r1},{c1}-{r2},{c2}"))
+    }
+
     /// Parses `@r1,c1-r2,c2` (1-based inclusive). Returns `(r1,c1,r2,c2)`.
     pub fn cell_range(&self) -> Option<(i32, i32, i32, i32)> {
         let s = self.0.as_str();
@@ -129,6 +141,21 @@ impl CoordinateRef {
         Some((r1, c1, r2, c2))
     }
 
+    /// Replace program/entity portions, preserving any `@cell` suffix.
+    pub fn with_entity_name(&self, program: &str, new_name: &str) -> Self {
+        let range = self.cell_range();
+        let base = if program.is_empty() {
+            new_name.to_string()
+        } else {
+            format!("{program}{PROGRAM_DELIMITER}{new_name}")
+        };
+        if let Some((r1, c1, r2, c2)) = range {
+            Self(format!("{base}@{r1},{c1}-{r2},{c2}"))
+        } else {
+            Self(base)
+        }
+    }
+
     fn split_program_name(&self) -> Option<(&str, &str)> {
         self.0.split_once(PROGRAM_DELIMITER)
     }
@@ -138,3 +165,19 @@ fn parse_cell_pair(s: &str) -> Option<(i32, i32)> {
     let (a, b) = s.split_once(',')?;
     Some((a.trim().parse().ok()?, b.trim().parse().ok()?))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn collection_ref_normalizes_corners() {
+        let r = CoordinateRef::collection("Demo", "bag", 2, 3, 1, 1);
+        assert_eq!(r.as_str(), "Demo~bag@1,1-2,3");
+        assert!(r.is_collection());
+        assert_eq!(r.program(), Some("Demo"));
+        assert_eq!(r.name(), "bag");
+        assert_eq!(r.cell_range(), Some((1, 1, 2, 3)));
+    }
+}
+
