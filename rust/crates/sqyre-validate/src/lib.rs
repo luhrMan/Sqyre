@@ -24,6 +24,92 @@ pub fn validate_entity_name(name: &str) -> Result<()> {
     }
 }
 
+pub fn parse_positive_i32(s: &str) -> Result<i32> {
+    let s = s.trim();
+    if s.is_empty() {
+        return Err(ValidateError::Message("must be a positive integer".into()));
+    }
+    let v: i32 = s
+        .parse()
+        .map_err(|_| ValidateError::Message(format!("must be a positive integer: {s:?}")))?;
+    if v <= 0 {
+        return Err(ValidateError::Message(format!(
+            "must be a positive integer: {s:?}"
+        )));
+    }
+    Ok(v)
+}
+
+pub fn parse_non_negative_i32(s: &str) -> Result<i32> {
+    let s = s.trim();
+    if s.is_empty() {
+        return Err(ValidateError::Message(
+            "must be a non-negative integer".into(),
+        ));
+    }
+    let v: i32 = s.parse().map_err(|_| {
+        ValidateError::Message(format!("must be a non-negative integer: {s:?}"))
+    })?;
+    if v < 0 {
+        return Err(ValidateError::Message(format!(
+            "must be a non-negative integer: {s:?}"
+        )));
+    }
+    Ok(v)
+}
+
+/// Item grid cols/rows > 0 and stack_max ≥ 0.
+pub fn validate_item_grid_fields(cols: &str, rows: &str, stack_max: &str) -> Result<()> {
+    parse_positive_i32(cols).map_err(|e| ValidateError::Message(format!("cols: {e}")))?;
+    parse_positive_i32(rows).map_err(|e| ValidateError::Message(format!("rows: {e}")))?;
+    parse_non_negative_i32(stack_max)
+        .map_err(|e| ValidateError::Message(format!("stack max: {e}")))?;
+    Ok(())
+}
+
+/// When all four coords are numeric literals, require positive width/height.
+/// Variable refs (`${…}`) skip the bounds check.
+pub fn validate_search_area_literal_bounds(left: &str, top: &str, right: &str, bottom: &str) -> Result<()> {
+    let Some(lx) = parse_coord_literal(left) else {
+        return Ok(());
+    };
+    let Some(ty) = parse_coord_literal(top) else {
+        return Ok(());
+    };
+    let Some(rx) = parse_coord_literal(right) else {
+        return Ok(());
+    };
+    let Some(by) = parse_coord_literal(bottom) else {
+        return Ok(());
+    };
+    let (lx, rx) = if lx <= rx { (lx, rx) } else { (rx, lx) };
+    let (ty, by) = if ty <= by { (ty, by) } else { (by, ty) };
+    let w = rx - lx;
+    let h = by - ty;
+    if w <= 0 || h <= 0 {
+        return Err(ValidateError::Message(format!(
+            "invalid search area (width={w} height={h}); need positive dimensions"
+        )));
+    }
+    if w > 1 << 16 || h > 1 << 16 {
+        return Err(ValidateError::Message(format!(
+            "search area dimensions too large ({w}x{h})"
+        )));
+    }
+    Ok(())
+}
+
+fn parse_coord_literal(s: &str) -> Option<i32> {
+    let s = s.trim();
+    if s.is_empty() || sqyre_varref::contains(s) {
+        return None;
+    }
+    if let Ok(i) = s.parse::<i32>() {
+        return Some(i);
+    }
+    s.parse::<f64>().ok().map(|f| f as i32)
+}
+
 pub fn validate_variable_name(name: &str) -> Result<()> {
     let name = name.trim();
     if name.is_empty() {
@@ -126,5 +212,15 @@ mod tests {
     #[test]
     fn assignment_rejects_expression() {
         assert!(validate_variable_assignment_name("a+1").is_err());
+    }
+
+    #[test]
+    fn item_grid_and_search_area_bounds() {
+        assert!(validate_item_grid_fields("2", "3", "0").is_ok());
+        assert!(validate_item_grid_fields("0", "3", "0").is_err());
+        assert!(validate_item_grid_fields("2", "3", "-1").is_err());
+        assert!(validate_search_area_literal_bounds("0", "0", "10", "10").is_ok());
+        assert!(validate_search_area_literal_bounds("10", "10", "10", "10").is_err());
+        assert!(validate_search_area_literal_bounds("${a}", "0", "10", "10").is_ok());
     }
 }

@@ -1,6 +1,8 @@
-//! Linux X11 window activate (Go `activateWindow` / EWMH `_NET_ACTIVE_WINDOW`).
+//! Linux X11 window list + activate (Go `ActiveWindows` / `activateWindow`).
 
+use crate::WindowInfo;
 use sqyre_executor::WindowFocuser;
+use std::collections::HashSet;
 use std::ffi::{CStr, CString};
 use std::path::{Path, PathBuf};
 use std::ptr;
@@ -20,6 +22,19 @@ impl WindowFocuser for X11WindowFocuser {
     }
 }
 
+/// List open top-level windows with title + executable path (Go `listOpenWindows`).
+pub fn list_open_windows() -> Result<Vec<WindowInfo>, String> {
+    unsafe {
+        let display = XOpenDisplay(ptr::null());
+        if display.is_null() {
+            return Err("XOpenDisplay failed".into());
+        }
+        let result = list_on_display(display);
+        XCloseDisplay(display);
+        result
+    }
+}
+
 fn activate_window(process_path: &str, window_title: &str) -> Result<(), String> {
     let path = process_path.trim();
     let title = window_title.trim();
@@ -36,6 +51,41 @@ fn activate_window(process_path: &str, window_title: &str) -> Result<(), String>
         XCloseDisplay(display);
         result
     }
+}
+
+unsafe fn list_on_display(display: *mut _XDisplay) -> Result<Vec<WindowInfo>, String> {
+    let root = XDefaultRootWindow(display);
+    let clients = client_list(display, root)?;
+    let mut out = Vec::with_capacity(clients.len());
+    let mut seen = HashSet::new();
+    for win in clients {
+        let Some(title) = window_title_of(display, win) else {
+            continue;
+        };
+        if title.trim().is_empty() {
+            continue;
+        }
+        let Some(pid) = window_pid(display, win) else {
+            continue;
+        };
+        let path = process_exe_path(pid).unwrap_or_default();
+        let name = process_comm(pid).unwrap_or_else(|| {
+            Path::new(&path)
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default()
+        });
+        let key = format!("{pid}:{path}:{title}");
+        if !seen.insert(key) {
+            continue;
+        }
+        out.push(WindowInfo {
+            title,
+            process_name: name,
+            process_path: path,
+        });
+    }
+    Ok(out)
 }
 
 unsafe fn activate_on_display(
@@ -195,6 +245,16 @@ fn process_exe_path(pid: u32) -> Option<String> {
     std::fs::read_link(link)
         .ok()
         .map(|p| p.to_string_lossy().into_owned())
+}
+
+fn process_comm(pid: u32) -> Option<String> {
+    let raw = std::fs::read_to_string(format!("/proc/{pid}/comm")).ok()?;
+    let name = raw.trim().to_string();
+    if name.is_empty() {
+        None
+    } else {
+        Some(name)
+    }
 }
 
 unsafe fn set_active_window(

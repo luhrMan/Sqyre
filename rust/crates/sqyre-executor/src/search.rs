@@ -492,6 +492,32 @@ fn set_coord_outputs(macro_: &mut Macro, coords: &sqyre_domain::CoordinateOutput
     }
 }
 
+fn clear_coord_outputs(macro_: &mut Macro, coords: &sqyre_domain::CoordinateOutputs) {
+    macro_.variables.delete(&coords.output_x_variable);
+    macro_.variables.delete(&coords.output_y_variable);
+}
+
+/// Swallow Break/Continue from nested detection children (Go `handleLoopFlow` discard).
+fn run_detection_children(
+    exec: &mut Executor<'_>,
+    children: &[Action],
+    macro_: &mut Macro,
+) -> Result<()> {
+    match run_children_flow(exec, children, macro_) {
+        Err(ExecError::Flow(FlowSignal::Break | FlowSignal::Continue)) => Ok(()),
+        other => other,
+    }
+}
+
+/// Go `Ocr.TargetMatched`: empty target matches any nonempty text; else substring contains.
+fn ocr_target_matched(target: &str, found_text: &str) -> bool {
+    if target.is_empty() {
+        !found_text.is_empty()
+    } else {
+        found_text.contains(target)
+    }
+}
+
 fn retry_while_not_found(
     exec: &mut Executor<'_>,
     wait: &sqyre_domain::WaitTilFoundConfig,
@@ -525,12 +551,15 @@ pub(crate) fn execute_find_pixel(
         color_tolerance,
         wait,
         coords,
+        run_branch_on_no_find,
+        subactions,
         ..
     } = &action.kind
     else {
         return Err(ExecError::Message("not find pixel".into()));
     };
 
+    let action_id = action.id;
     let mut found = try_find_pixel(exec, search_area, target_color, *color_tolerance, macro_);
     if wait.wait_until_found_active() && found.is_none() {
         let _ = retry_while_not_found(exec, wait, 100, |exec| {
@@ -538,20 +567,54 @@ pub(crate) fn execute_find_pixel(
             Ok(found.is_some())
         })?;
     }
+
+    if wait.is_repeat_while_found() {
+        let max_iter = wait.effective_max_iterations();
+        let interval = wait.effective_interval_ms(200).max(1);
+        for i in 0..max_iter {
+            exec.check_stopped()?;
+            if i > 0 {
+                exec.automation.milli_sleep(interval);
+                found = try_find_pixel(exec, search_area, target_color, *color_tolerance, macro_);
+            }
+            if let Some((x, y)) = found {
+                exec.log(
+                    action_id,
+                    format!("FindPixel: found matching pixel at screen ({x}, {y})"),
+                );
+                set_coord_outputs(macro_, coords, x, y);
+                run_detection_children(exec, subactions, macro_)?;
+            } else {
+                exec.log(action_id, "FindPixel: pixel not found");
+                clear_coord_outputs(macro_, coords);
+                if *run_branch_on_no_find {
+                    run_detection_children(exec, subactions, macro_)?;
+                }
+                return Ok(());
+            }
+        }
+        return Ok(());
+    }
+
     if let Some((x, y)) = found {
         exec.log(
-            action.id,
+            action_id,
             format!("FindPixel: found matching pixel at screen ({x}, {y})"),
         );
         set_coord_outputs(macro_, coords, x, y);
-    } else {
-        exec.log(action.id, "FindPixel: pixel not found");
+        return run_detection_children(exec, subactions, macro_);
+    }
+
+    exec.log(action_id, "FindPixel: pixel not found");
+    clear_coord_outputs(macro_, coords);
+    if *run_branch_on_no_find {
+        return run_detection_children(exec, subactions, macro_);
     }
     Ok(())
 }
 
-/// OCR leaf action (Go `executeOcr`): capture → preprocess → recognize → write vars.
-/// Errors are logged and the macro continues (Go behavior).
+/// OCR branch action: capture → preprocess → recognize → write vars → run children on match
+/// (or on miss when `run_branch_on_no_find`). Capture/OCR errors are logged and treated as miss.
 pub(crate) fn execute_ocr(
     exec: &mut Executor<'_>,
     action: &Action,
@@ -563,12 +626,14 @@ pub(crate) fn execute_ocr(
         output_variable,
         coords,
         wait,
+        run_branch_on_no_find,
         blur,
         min_threshold,
         resize,
         grayscale,
         threshold_otsu,
         threshold_invert,
+        subactions,
         ..
     } = &action.kind
     else {
@@ -576,58 +641,135 @@ pub(crate) fn execute_ocr(
     };
 
     let action_id = action.id;
-    let mut shot = run_ocr_once(
-        exec,
-        action_id,
+    let ocr_params = OcrRunParams {
         search_area,
         target,
-        *blur,
-        *min_threshold,
-        *resize,
-        *grayscale,
-        *threshold_otsu,
-        *threshold_invert,
-        macro_,
-    );
-
-    if wait.wait_until_found_active() {
-        let target_ok = shot
-            .as_ref()
-            .is_some_and(|s| s.text.contains(target.as_str()));
-        if !target_ok {
-            exec.log(
-                action_id,
-                format!(
-                    "OCR: waiting up to {}s until text contains {target:?}",
-                    wait.wait_til_found_seconds
-                ),
-            );
-            let _ = retry_while_not_found(exec, wait, 500, |exec| {
-                shot = run_ocr_once(
-                    exec,
-                    action_id,
-                    search_area,
-                    target,
-                    *blur,
-                    *min_threshold,
-                    *resize,
-                    *grayscale,
-                    *threshold_otsu,
-                    *threshold_invert,
-                    macro_,
-                );
-                Ok(shot
-                    .as_ref()
-                    .is_some_and(|s| s.text.contains(target.as_str())))
-            })?;
-        }
-    }
-
-    let Some(result) = shot else {
-        // Capture/OCR failed — Go continues the macro without writing outputs.
-        return Ok(());
+        blur: *blur,
+        min_threshold: *min_threshold,
+        resize: *resize,
+        grayscale: *grayscale,
+        threshold_otsu: *threshold_otsu,
+        threshold_invert: *threshold_invert,
     };
 
+    let (mut shot, mut matched) = ocr_shot_and_match(exec, action_id, &ocr_params, macro_);
+
+    if wait.wait_until_found_active() && !matched {
+        exec.log(
+            action_id,
+            format!(
+                "OCR: waiting up to {}s until text contains {target:?}",
+                wait.wait_til_found_seconds
+            ),
+        );
+        let _ = retry_while_not_found(exec, wait, 500, |exec| {
+            let (s, m) = ocr_shot_and_match(exec, action_id, &ocr_params, macro_);
+            shot = s;
+            matched = m;
+            Ok(matched)
+        })?;
+    }
+
+    if wait.is_repeat_while_found() {
+        let max_iter = wait.effective_max_iterations();
+        let interval = wait.effective_interval_ms(200).max(1);
+        for i in 0..max_iter {
+            exec.check_stopped()?;
+            if i > 0 {
+                exec.automation.milli_sleep(interval);
+                let (s, m) = ocr_shot_and_match(exec, action_id, &ocr_params, macro_);
+                shot = s;
+                matched = m;
+            }
+            apply_ocr_outputs(
+                exec,
+                action_id,
+                macro_,
+                output_variable,
+                coords,
+                &shot,
+                matched,
+            );
+            if matched {
+                run_detection_children(exec, subactions, macro_)?;
+            } else {
+                if *run_branch_on_no_find {
+                    run_detection_children(exec, subactions, macro_)?;
+                }
+                return Ok(());
+            }
+        }
+        return Ok(());
+    }
+
+    apply_ocr_outputs(
+        exec,
+        action_id,
+        macro_,
+        output_variable,
+        coords,
+        &shot,
+        matched,
+    );
+    if matched || *run_branch_on_no_find {
+        return run_detection_children(exec, subactions, macro_);
+    }
+    Ok(())
+}
+
+struct OcrRunParams<'a> {
+    search_area: &'a sqyre_domain::CoordinateRef,
+    target: &'a str,
+    blur: i32,
+    min_threshold: i32,
+    resize: f64,
+    grayscale: bool,
+    threshold_otsu: bool,
+    threshold_invert: bool,
+}
+
+fn ocr_shot_and_match(
+    exec: &mut Executor<'_>,
+    action_id: sqyre_domain::ActionId,
+    params: &OcrRunParams<'_>,
+    macro_: &Macro,
+) -> (Option<OcrShot>, bool) {
+    let shot = run_ocr_once(
+        exec,
+        action_id,
+        params.search_area,
+        params.target,
+        params.blur,
+        params.min_threshold,
+        params.resize,
+        params.grayscale,
+        params.threshold_otsu,
+        params.threshold_invert,
+        macro_,
+    );
+    let matched = shot
+        .as_ref()
+        .is_some_and(|s| ocr_target_matched(params.target, &s.text));
+    (shot, matched)
+}
+
+fn apply_ocr_outputs(
+    exec: &mut Executor<'_>,
+    action_id: sqyre_domain::ActionId,
+    macro_: &mut Macro,
+    output_variable: &str,
+    coords: &sqyre_domain::CoordinateOutputs,
+    shot: &Option<OcrShot>,
+    matched: bool,
+) {
+    if !matched {
+        macro_.variables.delete(output_variable);
+        clear_coord_outputs(macro_, coords);
+        return;
+    }
+    let Some(result) = shot else {
+        return;
+    };
     if !output_variable.is_empty() {
         macro_
             .variables
@@ -644,7 +786,6 @@ pub(crate) fn execute_ocr(
             result.y
         ),
     );
-    Ok(())
 }
 
 struct OcrShot {
@@ -1220,6 +1361,213 @@ mod tests {
     }
 
     #[test]
+    fn find_pixel_runs_branch_when_found() {
+        let mut img = RgbaImage::new(10, 10);
+        for p in img.pixels_mut() {
+            *p = Rgba([0, 0, 0, 255]);
+        }
+        img.put_pixel(3, 5, Rgba([255, 0, 0, 255]));
+
+        let mut backend = RecordingBackend::default();
+        let mut capturer = RecordingCapturer {
+            next: Some(img),
+            bounds: DesktopRect {
+                x: 0,
+                y: 0,
+                w: 2000,
+                h: 2000,
+            },
+            ..Default::default()
+        };
+        let resolver = FixedArea;
+        let mut macro_ = Macro::new("t", 0, vec![]);
+        macro_.keyboard_delay = 0;
+        macro_.mouse_delay = 0;
+        macro_.root = root_loop(vec![Action {
+            id: ActionId::new(),
+            kind: ActionKind::FindPixel {
+                name: "red".into(),
+                search_area: CoordinateRef("Prog~Box".into()),
+                target_color: "#ff0000".into(),
+                color_tolerance: 0,
+                wait: WaitTilFoundConfig::default(),
+                coords: CoordinateOutputs::defaults(),
+                run_branch_on_no_find: false,
+                order: Default::default(),
+                subactions: vec![Action {
+                    id: ActionId::new(),
+                    kind: ActionKind::Wait {
+                        time: ScalarValue::Int(21),
+                    },
+                }],
+            },
+        }]);
+
+        execute_macro_with(
+            &mut macro_,
+            ExecDeps {
+                automation: &mut backend,
+                capturer: Some(&mut capturer),
+                matcher: None,
+                resolver: Some(&resolver),
+                icons: None,
+                macros: None,
+                continue_waiter: None,
+                window_focuser: None,
+                ocr: None,
+                stop_flag: None,
+                logger: None,
+                highlighter: None,
+                variables_dir: None,
+            },
+        )
+        .unwrap();
+
+        assert!(
+            backend.log.iter().any(|e| e == "sleep:21"),
+            "expected child wait on FindPixel match: {:?}",
+            backend.log
+        );
+    }
+
+    #[test]
+    fn find_pixel_no_find_runs_branch_when_flag_set() {
+        let img = RgbaImage::from_pixel(4, 4, Rgba([0, 0, 255, 255]));
+        let mut backend = RecordingBackend::default();
+        let mut capturer = RecordingCapturer {
+            next: Some(img),
+            bounds: DesktopRect {
+                x: 0,
+                y: 0,
+                w: 2000,
+                h: 2000,
+            },
+            ..Default::default()
+        };
+        let resolver = FixedArea;
+        let mut macro_ = Macro::new("t", 0, vec![]);
+        macro_.keyboard_delay = 0;
+        macro_.mouse_delay = 0;
+        macro_.variables.set("foundX", ScalarValue::Int(1));
+        macro_.variables.set("foundY", ScalarValue::Int(2));
+        macro_.root = root_loop(vec![Action {
+            id: ActionId::new(),
+            kind: ActionKind::FindPixel {
+                name: "red".into(),
+                search_area: CoordinateRef("Prog~Box".into()),
+                target_color: "#ff0000".into(),
+                color_tolerance: 0,
+                wait: WaitTilFoundConfig::default(),
+                coords: CoordinateOutputs {
+                    output_x_variable: "foundX".into(),
+                    output_y_variable: "foundY".into(),
+                },
+                run_branch_on_no_find: true,
+                order: Default::default(),
+                subactions: vec![Action {
+                    id: ActionId::new(),
+                    kind: ActionKind::Wait {
+                        time: ScalarValue::Int(15),
+                    },
+                }],
+            },
+        }]);
+
+        execute_macro_with(
+            &mut macro_,
+            ExecDeps {
+                automation: &mut backend,
+                capturer: Some(&mut capturer),
+                matcher: None,
+                resolver: Some(&resolver),
+                icons: None,
+                macros: None,
+                continue_waiter: None,
+                window_focuser: None,
+                ocr: None,
+                stop_flag: None,
+                logger: None,
+                highlighter: None,
+                variables_dir: None,
+            },
+        )
+        .unwrap();
+
+        assert!(
+            backend.log.iter().any(|e| e == "sleep:15"),
+            "expected child wait on FindPixel no-find: {:?}",
+            backend.log
+        );
+        assert!(macro_.variables.get("foundX").is_none());
+        assert!(macro_.variables.get("foundY").is_none());
+    }
+
+    #[test]
+    fn find_pixel_skips_branch_when_missing() {
+        let img = RgbaImage::from_pixel(4, 4, Rgba([0, 0, 255, 255]));
+        let mut backend = RecordingBackend::default();
+        let mut capturer = RecordingCapturer {
+            next: Some(img),
+            bounds: DesktopRect {
+                x: 0,
+                y: 0,
+                w: 2000,
+                h: 2000,
+            },
+            ..Default::default()
+        };
+        let resolver = FixedArea;
+        let mut macro_ = Macro::new("t", 0, vec![]);
+        macro_.keyboard_delay = 0;
+        macro_.mouse_delay = 0;
+        macro_.root = root_loop(vec![Action {
+            id: ActionId::new(),
+            kind: ActionKind::FindPixel {
+                name: "red".into(),
+                search_area: CoordinateRef("Prog~Box".into()),
+                target_color: "#ff0000".into(),
+                color_tolerance: 0,
+                wait: WaitTilFoundConfig::default(),
+                coords: CoordinateOutputs::defaults(),
+                run_branch_on_no_find: false,
+                order: Default::default(),
+                subactions: vec![Action {
+                    id: ActionId::new(),
+                    kind: ActionKind::Wait {
+                        time: ScalarValue::Int(21),
+                    },
+                }],
+            },
+        }]);
+
+        execute_macro_with(
+            &mut macro_,
+            ExecDeps {
+                automation: &mut backend,
+                capturer: Some(&mut capturer),
+                matcher: None,
+                resolver: Some(&resolver),
+                icons: None,
+                macros: None,
+                continue_waiter: None,
+                window_focuser: None,
+                ocr: None,
+                stop_flag: None,
+                logger: None,
+                highlighter: None,
+                variables_dir: None,
+            },
+        )
+        .unwrap();
+
+        assert!(
+            !backend.log.iter().any(|e| e == "sleep:21"),
+            "child should not run on FindPixel miss: {:?}",
+            backend.log
+        );
+    }
+
+    #[test]
     fn image_search_no_find_runs_branch() {
         let img = RgbaImage::from_pixel(8, 8, Rgba([10, 20, 30, 255]));
         let dir = tempfile::tempdir().unwrap();
@@ -1560,5 +1908,272 @@ mod tests {
             lines.iter().any(|l| l.contains("word[") && l.contains("Submit")),
             "expected Submit word in OCR detail: {lines:?}"
         );
+    }
+
+    #[test]
+    fn ocr_runs_branch_when_target_found() {
+        use crate::backends::{FixedOcrEngine, OcrResult};
+        use sqyre_domain::MatchOrder;
+        use sqyre_vision::OcrWordBox;
+
+        let img = RgbaImage::from_pixel(20, 10, Rgba([255, 255, 255, 255]));
+        let mut backend = RecordingBackend::default();
+        let mut capturer = RecordingCapturer {
+            next: Some(img),
+            bounds: DesktopRect {
+                x: 0,
+                y: 0,
+                w: 2000,
+                h: 2000,
+            },
+            ..Default::default()
+        };
+        let resolver = FixedArea;
+        let ocr = FixedOcrEngine {
+            result: OcrResult {
+                text: "Hello Submit Button".into(),
+                words: vec![OcrWordBox {
+                    word: "Submit".into(),
+                    left: 50,
+                    top: 0,
+                    right: 110,
+                    bottom: 20,
+                }],
+            },
+            ..Default::default()
+        };
+
+        let mut macro_ = Macro::new("t", 0, vec![]);
+        macro_.keyboard_delay = 0;
+        macro_.mouse_delay = 0;
+        macro_.root = root_loop(vec![Action {
+            id: ActionId::new(),
+            kind: ActionKind::Ocr {
+                name: "read".into(),
+                target: "Submit".into(),
+                search_area: CoordinateRef("prog~box".into()),
+                output_variable: "ocrText".into(),
+                coords: CoordinateOutputs::defaults(),
+                wait: WaitTilFoundConfig::default(),
+                run_branch_on_no_find: false,
+                blur: 1,
+                min_threshold: 0,
+                resize: 1.0,
+                grayscale: true,
+                threshold_otsu: false,
+                threshold_invert: false,
+                order: MatchOrder::default(),
+                subactions: vec![Action {
+                    id: ActionId::new(),
+                    kind: ActionKind::Wait {
+                        time: ScalarValue::Int(19),
+                    },
+                }],
+            },
+        }]);
+
+        execute_macro_with(
+            &mut macro_,
+            ExecDeps {
+                automation: &mut backend,
+                capturer: Some(&mut capturer),
+                matcher: None,
+                resolver: Some(&resolver),
+                icons: None,
+                macros: None,
+                continue_waiter: None,
+                window_focuser: None,
+                ocr: Some(&ocr),
+                stop_flag: None,
+                logger: None,
+                highlighter: None,
+                variables_dir: None,
+            },
+        )
+        .unwrap();
+
+        assert!(
+            backend.log.iter().any(|e| e == "sleep:19"),
+            "expected child wait on OCR match: {:?}",
+            backend.log
+        );
+        assert_eq!(
+            macro_.variables.get("ocrText").map(|v| v.as_display()),
+            Some("Hello Submit Button".into())
+        );
+    }
+
+    #[test]
+    fn ocr_no_find_runs_branch_when_flag_set() {
+        use crate::backends::{FixedOcrEngine, OcrResult};
+        use sqyre_domain::MatchOrder;
+
+        let img = RgbaImage::from_pixel(20, 10, Rgba([255, 255, 255, 255]));
+        let mut backend = RecordingBackend::default();
+        let mut capturer = RecordingCapturer {
+            next: Some(img),
+            bounds: DesktopRect {
+                x: 0,
+                y: 0,
+                w: 2000,
+                h: 2000,
+            },
+            ..Default::default()
+        };
+        let resolver = FixedArea;
+        let ocr = FixedOcrEngine {
+            result: OcrResult {
+                text: "Hello World".into(),
+                words: vec![],
+            },
+            ..Default::default()
+        };
+
+        let mut macro_ = Macro::new("t", 0, vec![]);
+        macro_.keyboard_delay = 0;
+        macro_.mouse_delay = 0;
+        macro_.variables.set("foundX", ScalarValue::Int(1));
+        macro_.variables.set("foundY", ScalarValue::Int(2));
+        macro_.variables.set("ocrText", ScalarValue::String("stale".into()));
+        macro_.root = root_loop(vec![Action {
+            id: ActionId::new(),
+            kind: ActionKind::Ocr {
+                name: "read".into(),
+                target: "will-not-match-zzz".into(),
+                search_area: CoordinateRef("prog~box".into()),
+                output_variable: "ocrText".into(),
+                coords: CoordinateOutputs {
+                    output_x_variable: "foundX".into(),
+                    output_y_variable: "foundY".into(),
+                },
+                wait: WaitTilFoundConfig::default(),
+                run_branch_on_no_find: true,
+                blur: 1,
+                min_threshold: 0,
+                resize: 1.0,
+                grayscale: true,
+                threshold_otsu: false,
+                threshold_invert: false,
+                order: MatchOrder::default(),
+                subactions: vec![Action {
+                    id: ActionId::new(),
+                    kind: ActionKind::Wait {
+                        time: ScalarValue::Int(17),
+                    },
+                }],
+            },
+        }]);
+
+        execute_macro_with(
+            &mut macro_,
+            ExecDeps {
+                automation: &mut backend,
+                capturer: Some(&mut capturer),
+                matcher: None,
+                resolver: Some(&resolver),
+                icons: None,
+                macros: None,
+                continue_waiter: None,
+                window_focuser: None,
+                ocr: Some(&ocr),
+                stop_flag: None,
+                logger: None,
+                highlighter: None,
+                variables_dir: None,
+            },
+        )
+        .unwrap();
+
+        assert!(
+            backend.log.iter().any(|e| e == "sleep:17"),
+            "expected child wait on OCR no-find: {:?}",
+            backend.log
+        );
+        assert!(macro_.variables.get("ocrText").is_none());
+        assert!(macro_.variables.get("foundX").is_none());
+        assert!(macro_.variables.get("foundY").is_none());
+    }
+
+    #[test]
+    fn ocr_skips_branch_when_target_missing() {
+        use crate::backends::{FixedOcrEngine, OcrResult};
+        use sqyre_domain::MatchOrder;
+
+        let img = RgbaImage::from_pixel(20, 10, Rgba([255, 255, 255, 255]));
+        let mut backend = RecordingBackend::default();
+        let mut capturer = RecordingCapturer {
+            next: Some(img),
+            bounds: DesktopRect {
+                x: 0,
+                y: 0,
+                w: 2000,
+                h: 2000,
+            },
+            ..Default::default()
+        };
+        let resolver = FixedArea;
+        let ocr = FixedOcrEngine {
+            result: OcrResult {
+                text: "Hello World".into(),
+                words: vec![],
+            },
+            ..Default::default()
+        };
+
+        let mut macro_ = Macro::new("t", 0, vec![]);
+        macro_.keyboard_delay = 0;
+        macro_.mouse_delay = 0;
+        macro_.root = root_loop(vec![Action {
+            id: ActionId::new(),
+            kind: ActionKind::Ocr {
+                name: "read".into(),
+                target: "Submit".into(),
+                search_area: CoordinateRef("prog~box".into()),
+                output_variable: "ocrText".into(),
+                coords: CoordinateOutputs::defaults(),
+                wait: WaitTilFoundConfig::default(),
+                run_branch_on_no_find: false,
+                blur: 1,
+                min_threshold: 0,
+                resize: 1.0,
+                grayscale: true,
+                threshold_otsu: false,
+                threshold_invert: false,
+                order: MatchOrder::default(),
+                subactions: vec![Action {
+                    id: ActionId::new(),
+                    kind: ActionKind::Wait {
+                        time: ScalarValue::Int(19),
+                    },
+                }],
+            },
+        }]);
+
+        execute_macro_with(
+            &mut macro_,
+            ExecDeps {
+                automation: &mut backend,
+                capturer: Some(&mut capturer),
+                matcher: None,
+                resolver: Some(&resolver),
+                icons: None,
+                macros: None,
+                continue_waiter: None,
+                window_focuser: None,
+                ocr: Some(&ocr),
+                stop_flag: None,
+                logger: None,
+                highlighter: None,
+                variables_dir: None,
+            },
+        )
+        .unwrap();
+
+        assert!(
+            !backend.log.iter().any(|e| e == "sleep:19"),
+            "child should not run on OCR miss: {:?}",
+            backend.log
+        );
+        assert!(macro_.variables.get("ocrText").is_none());
     }
 }

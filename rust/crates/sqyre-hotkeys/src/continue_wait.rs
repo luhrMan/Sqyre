@@ -126,8 +126,15 @@ fn normalize_keys(keys: &[String]) -> Vec<String> {
 pub fn normalize_key_name(key: &str) -> String {
     match key.trim().to_ascii_lowercase().as_str() {
         "escape" => "esc".into(),
-        "control" => "ctrl".into(),
+        "control" | "rcontrol" | "controlleft" | "controlright" => "ctrl".into(),
         "return" => "enter".into(),
+        "super" | "meta" | "win" | "windows" | "meta_left" | "metaleft" => "cmd".into(),
+        "meta_right" | "metaright" => "rcmd".into(),
+        "backspace" | "back_space" => "delete".into(),
+        "shiftleft" | "shift_left" => "shift".into(),
+        "shiftright" | "shift_right" => "rshift".into(),
+        "altleft" | "alt_left" => "alt".into(),
+        "altright" | "alt_right" | "altgr" => "ralt".into(),
         other => other.to_string(),
     }
 }
@@ -145,20 +152,25 @@ fn validate_not_failsafe(keys: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-/// Map an rdev key to a Sqyre continue-key name (lowercase).
+/// Map an rdev key to a Sqyre / gohook hotkey name (lowercase).
+/// Names match Go `hookkeys.keysymToHookName` so `db.yaml` chords load correctly.
 #[cfg(feature = "hooks")]
 pub fn rdev_key_name(key: rdev::Key) -> Option<String> {
     use rdev::Key;
     let name = match key {
         Key::Escape => "esc",
         Key::ControlLeft | Key::ControlRight => "ctrl",
-        Key::ShiftLeft | Key::ShiftRight => "shift",
-        Key::Alt | Key::AltGr => "alt",
-        Key::MetaLeft | Key::MetaRight => "super",
+        Key::ShiftLeft => "shift",
+        Key::ShiftRight => "rshift",
+        Key::Alt => "alt",
+        Key::AltGr => "ralt",
+        Key::MetaLeft => "cmd",
+        Key::MetaRight => "rcmd",
         Key::Space => "space",
         Key::Return => "enter",
         Key::Tab => "tab",
-        Key::Backspace => "backspace",
+        // Go maps XK_BackSpace → "delete".
+        Key::Backspace => "delete",
         Key::Delete => "delete",
         Key::UpArrow => "up",
         Key::DownArrow => "down",
@@ -206,16 +218,32 @@ pub fn rdev_key_name(key: rdev::Key) -> Option<String> {
         Key::KeyX => "x",
         Key::KeyY => "y",
         Key::KeyZ => "z",
-        Key::Num0 | Key::Kp0 => "0",
-        Key::Num1 | Key::Kp1 => "1",
-        Key::Num2 | Key::Kp2 => "2",
-        Key::Num3 | Key::Kp3 => "3",
-        Key::Num4 | Key::Kp4 => "4",
-        Key::Num5 | Key::Kp5 => "5",
-        Key::Num6 | Key::Kp6 => "6",
-        Key::Num7 | Key::Kp7 => "7",
-        Key::Num8 | Key::Kp8 => "8",
-        Key::Num9 | Key::Kp9 => "9",
+        Key::Num0 => "0",
+        Key::Num1 => "1",
+        Key::Num2 => "2",
+        Key::Num3 => "3",
+        Key::Num4 => "4",
+        Key::Num5 => "5",
+        Key::Num6 => "6",
+        Key::Num7 => "7",
+        Key::Num8 => "8",
+        Key::Num9 => "9",
+        Key::Kp0 => "num0",
+        Key::Kp1 => "num1",
+        Key::Kp2 => "num2",
+        Key::Kp3 => "num3",
+        Key::Kp4 => "num4",
+        Key::Kp5 => "num5",
+        Key::Kp6 => "num6",
+        Key::Kp7 => "num7",
+        Key::Kp8 => "num8",
+        Key::Kp9 => "num9",
+        Key::KpReturn => "num_enter",
+        Key::KpPlus => "num_plus",
+        Key::KpMinus => "num_minus",
+        Key::KpMultiply => "num_asterisk",
+        Key::KpDivide => "num_slash",
+        Key::KpDelete => "num_period",
         _ => return None,
     };
     Some(name.into())

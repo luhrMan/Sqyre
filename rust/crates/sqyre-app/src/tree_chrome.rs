@@ -1,12 +1,13 @@
 //! Macro tree row chrome: icon badge, pastel pills, swatches.
 
 use crate::icon_cache::IconCache;
+use crate::var_pills;
 use eframe::egui::{self, Color32, FontId, Sense, Stroke, Vec2};
 use sqyre_domain::{
-    action_icon_glyph, action_pastel_color, looks_like_var_ref, nested_var_ref_color,
-    parse_hex_color, Action, ActionKind, SummaryPill,
+    action_icon_glyph, action_pastel_color, parse_hex_color, Action, ActionKind, SummaryPill,
 };
 use sqyre_persist::ProgramCatalog;
+use std::collections::HashSet;
 
 /// Icon badge edge length.
 const ICON_SIZE: f32 = 20.0;
@@ -43,13 +44,32 @@ pub enum RowHighlight {
 }
 
 /// Row hover / click signals for the action tooltip state machine.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RowInteraction {
     pub action: RowAction,
     pub hovered: bool,
+    /// Pointer geometrically over the row (ignores tooltip layers covering it).
+    /// Used to keep the view tooltip open when edge-constrain flips the tip over the row.
+    pub pointer_in_row: bool,
     pub secondary_clicked: bool,
     pub double_clicked: bool,
     pub primary_clicked: bool,
+    /// Label content rect (for execution highlight follow / scroll).
+    pub row_rect: egui::Rect,
+}
+
+impl Default for RowInteraction {
+    fn default() -> Self {
+        Self {
+            action: RowAction::None,
+            hovered: false,
+            pointer_in_row: false,
+            secondary_clicked: false,
+            double_clicked: false,
+            primary_clicked: false,
+            row_rect: egui::Rect::NOTHING,
+        }
+    }
 }
 
 pub(crate) fn rgba_pub(c: [u8; 4]) -> Color32 {
@@ -136,23 +156,14 @@ fn paint_pill(ui: &mut egui::Ui, text: &str, fill: Color32) -> egui::Response {
     )
 }
 
-fn pill_fill(action: &Action, text: &str, is_dark: bool) -> Color32 {
-    if looks_like_var_ref(text) {
-        rgba(nested_var_ref_color(is_dark))
-    } else {
-        rgba(action_pastel_color(action.type_key(), is_dark))
-    }
-}
-
 fn paint_summary_pill(
     ui: &mut egui::Ui,
     action: &Action,
     pill: &SummaryPill,
+    known: &HashSet<String>,
     is_dark: bool,
 ) -> egui::Response {
-    let display = pill.display_text();
-    let fill = pill_fill(action, &pill.text, is_dark);
-    paint_pill(ui, &display, fill)
+    var_pills::paint_summary_pill(ui, action.type_key(), pill, known, is_dark)
 }
 
 /// Fit texture into a max height/width box while keeping the source aspect ratio.
@@ -228,7 +239,7 @@ fn paint_image_search_extras(
     };
     let mut tip_hovered = false;
     let pastel = rgba(action_pastel_color(action.type_key(), is_dark));
-    if paint_pill(ui, &format!("⌕ {}", targets.len()), pastel).hovered() {
+    if paint_pill(ui, &format!("🔍 {}", targets.len()), pastel).hovered() {
         tip_hovered = true;
     }
     for target in targets.iter().take(MAX_TARGET_THUMBS) {
@@ -278,6 +289,7 @@ pub fn paint_action_row(
     action: &Action,
     catalog: &ProgramCatalog,
     icons: &mut IconCache,
+    known_vars: &HashSet<String>,
     is_dark: bool,
     highlight: RowHighlight,
 ) -> RowInteraction {
@@ -289,7 +301,7 @@ pub fn paint_action_row(
         paint_action_icon(ui, action, is_dark);
 
         for pill in action.tree_summary_pills() {
-            if paint_summary_pill(ui, action, &pill, is_dark).hovered() {
+            if paint_summary_pill(ui, action, &pill, known_vars, is_dark).hovered() {
                 tip_hovered = true;
             }
         }
@@ -340,13 +352,21 @@ pub fn paint_action_row(
         Sense::click(),
     );
 
+    // Geometric hit: tooltip Order layers steal `.hovered()` when edge-constrain
+    // slides the tip over the row (classic right-edge flicker).
+    let pointer_in_row = ui
+        .input(|i| i.pointer.hover_pos())
+        .is_some_and(|p| sense_rect.contains(p) && !chrome_rect.contains(p));
+
     let hovered = (row.response.hovered() || tip_hovered || sense.hovered()) && !chrome_hovered;
     RowInteraction {
         action: action_click,
         hovered: hovered && action_click == RowAction::None,
+        pointer_in_row: pointer_in_row && action_click == RowAction::None,
         secondary_clicked: sense.secondary_clicked() && action_click == RowAction::None,
         double_clicked: sense.double_clicked() && action_click == RowAction::None,
         primary_clicked: sense.clicked() && action_click == RowAction::None,
+        row_rect: row.response.rect,
     }
 }
 
@@ -426,7 +446,15 @@ mod tests {
             };
             let catalog = ProgramCatalog::default();
             let mut icons = IconCache::new();
-            let result = paint_action_row(ui, &action, &catalog, &mut icons, false, RowHighlight::None);
+            let result = paint_action_row(
+                ui,
+                &action,
+                &catalog,
+                &mut icons,
+                &HashSet::new(),
+                false,
+                RowHighlight::None,
+            );
             assert_eq!(result.action, RowAction::None);
         });
     }
@@ -451,7 +479,16 @@ mod tests {
                 },
             };
             assert_eq!(
-                paint_action_row(ui, &find, &catalog, &mut icons, true, RowHighlight::None).action,
+                paint_action_row(
+                    ui,
+                    &find,
+                    &catalog,
+                    &mut icons,
+                    &HashSet::new(),
+                    true,
+                    RowHighlight::None
+                )
+                .action,
                 RowAction::None
             );
 
@@ -477,8 +514,16 @@ mod tests {
                 },
             };
             assert_eq!(
-                paint_action_row(ui, &search, &catalog, &mut icons, false, RowHighlight::None)
-                    .action,
+                paint_action_row(
+                    ui,
+                    &search,
+                    &catalog,
+                    &mut icons,
+                    &HashSet::new(),
+                    false,
+                    RowHighlight::None
+                )
+                .action,
                 RowAction::None
             );
         });
