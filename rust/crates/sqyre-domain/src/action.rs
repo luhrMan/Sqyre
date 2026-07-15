@@ -127,6 +127,11 @@ pub struct ListColumn {
     pub skip_blank_lines: bool,
 }
 
+/// Runtime builtins set inside ForEachRow sub-actions (1-based row index).
+pub const FOREACH_ROW_BUILTIN_ROW: &str = "Row";
+/// Total line count of the driving (first) ForEachRow source.
+pub const FOREACH_ROW_BUILTIN_ROW_COUNT: &str = "RowCount";
+
 /// One node in a macro action tree.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Action {
@@ -167,12 +172,131 @@ impl Action {
         None
     }
 
+    pub fn find_by_id_mut(&mut self, id: ActionId) -> Option<&mut Action> {
+        if self.id == id {
+            return Some(self);
+        }
+        Self::find_descendant_mut(self, id)
+    }
+
+    fn find_descendant_mut(node: &mut Action, id: ActionId) -> Option<&mut Action> {
+        let children = node.children_mut()?;
+        for child in children.iter_mut() {
+            if child.id == id {
+                return Some(child);
+            }
+            if let Some(found) = Self::find_descendant_mut(child, id) {
+                return Some(found);
+            }
+        }
+        None
+    }
+
+    /// Remove a descendant by id (not self). Returns the detached node.
+    pub fn remove_by_id(&mut self, id: ActionId) -> Option<Action> {
+        let children = self.children_mut()?;
+        if let Some(i) = children.iter().position(|c| c.id == id) {
+            return Some(children.remove(i));
+        }
+        for child in children.iter_mut() {
+            if let Some(found) = child.remove_by_id(id) {
+                return Some(found);
+            }
+        }
+        None
+    }
+
+    /// True if `id` is this node or any descendant.
+    pub fn contains_id(&self, id: ActionId) -> bool {
+        self.find_by_id(id).is_some()
+    }
+
+    /// Insert `child` into the children of `parent_id` at `slot`.
+    pub fn insert_at(
+        &mut self,
+        parent_id: ActionId,
+        slot: InsertSlot,
+        child: Action,
+    ) -> Result<(), String> {
+        let parent = self
+            .find_by_id_mut(parent_id)
+            .ok_or_else(|| format!("parent action {} not found", parent_id.as_str()))?;
+        let children = parent
+            .children_mut()
+            .ok_or_else(|| "drop target is not a branch".to_string())?;
+        match slot {
+            InsertSlot::First => children.insert(0, child),
+            InsertSlot::Last => children.push(child),
+            InsertSlot::Before(sib) => {
+                let i = children
+                    .iter()
+                    .position(|c| c.id == sib)
+                    .ok_or_else(|| "before-sibling not found".to_string())?;
+                children.insert(i, child);
+            }
+            InsertSlot::After(sib) => {
+                let i = children
+                    .iter()
+                    .position(|c| c.id == sib)
+                    .ok_or_else(|| "after-sibling not found".to_string())?;
+                children.insert(i + 1, child);
+            }
+        }
+        Ok(())
+    }
+
+    /// Move `source_id` under `parent_id` at `slot`. Rejects self-drops and
+    /// dropping a node into its own descendant.
+    pub fn move_action(
+        &mut self,
+        source_id: ActionId,
+        parent_id: ActionId,
+        slot: InsertSlot,
+    ) -> Result<(), String> {
+        if source_id == parent_id {
+            return Err("cannot drop onto self".into());
+        }
+        if let Some(src) = self.find_by_id(source_id) {
+            if src.contains_id(parent_id) {
+                return Err("cannot drop into own descendant".into());
+            }
+        }
+        match slot {
+            InsertSlot::Before(id) | InsertSlot::After(id) if id == source_id => {
+                return Ok(());
+            }
+            _ => {}
+        }
+        let node = self
+            .remove_by_id(source_id)
+            .ok_or_else(|| format!("source action {} not found", source_id.as_str()))?;
+        self.insert_at(parent_id, slot, node)
+    }
+
     pub fn walk<F: FnMut(&Action)>(&self, f: &mut F) {
         f(self);
         for child in self.children() {
             child.walk(f);
         }
     }
+
+    pub fn walk_mut<F: FnMut(&mut Action)>(&mut self, f: &mut F) {
+        f(self);
+        if let Some(children) = self.children_mut() {
+            for child in children.iter_mut() {
+                child.walk_mut(f);
+            }
+        }
+    }
+}
+
+/// Insertion slot relative to a parent directory (mirrors egui_ltreeview DirPosition).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InsertSlot {
+    First,
+    Last,
+    Before(ActionId),
+    After(ActionId),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -463,5 +587,48 @@ pub fn root_loop(subactions: Vec<Action>) -> Action {
             count: ScalarValue::Int(1),
             subactions,
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn wait(id: ActionId) -> Action {
+        Action {
+            id,
+            kind: ActionKind::Wait {
+                time: ScalarValue::Int(1),
+            },
+        }
+    }
+
+    #[test]
+    fn move_action_reorders_siblings() {
+        let a = ActionId::new();
+        let b = ActionId::new();
+        let c = ActionId::new();
+        let mut root = root_loop(vec![wait(a), wait(b), wait(c)]);
+        root.move_action(c, ActionId::root(), InsertSlot::Before(a))
+            .unwrap();
+        let ids: Vec<_> = root.children().iter().map(|x| x.id).collect();
+        assert_eq!(ids, vec![c, a, b]);
+    }
+
+    #[test]
+    fn move_action_rejects_into_self_descendant() {
+        let branch_id = ActionId::new();
+        let child_id = ActionId::new();
+        let mut root = root_loop(vec![Action {
+            id: branch_id,
+            kind: ActionKind::Loop {
+                name: "inner".into(),
+                count: ScalarValue::Int(1),
+                subactions: vec![wait(child_id)],
+            },
+        }]);
+        assert!(root
+            .move_action(branch_id, branch_id, InsertSlot::Last)
+            .is_err());
     }
 }
