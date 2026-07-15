@@ -78,7 +78,7 @@ impl SettingsUi {
         ctx.set_fonts(fonts);
     }
 
-    /// Apply appearance prefs to the egui context (font sizes + pixels_per_point).
+    /// Apply appearance prefs to the egui context (Sqyre theme, fonts, scale).
     pub fn apply_appearance(ctx: &egui::Context, settings: &UserSettings) {
         let scale = if settings.ui_scale > 0.0 {
             settings.ui_scale
@@ -86,6 +86,8 @@ impl SettingsUi {
             DEFAULT_UI_SCALE
         };
         ctx.set_pixels_per_point(scale);
+
+        crate::theme::apply(ctx);
 
         let mut style = (*ctx.global_style()).clone();
         let base = settings.ui_font_size.max(10) as f32;
@@ -190,11 +192,17 @@ impl SettingsUi {
         }
 
         egui::ScrollArea::vertical().show(ui, |ui| {
-            self.draw_general(ui);
+            crate::theme::section_frame(ui.style()).show(ui, |ui| {
+                self.draw_general(ui);
+            });
             ui.add_space(12.0);
-            self.draw_data(ui, db, macros, catalog);
+            crate::theme::section_frame(ui.style()).show(ui, |ui| {
+                self.draw_data(ui, db, macros, catalog);
+            });
             ui.add_space(12.0);
-            self.draw_appearance(ui, ctx);
+            crate::theme::section_frame(ui.style()).show(ui, |ui| {
+                self.draw_appearance(ui, ctx);
+            });
         });
 
         if let Some(status) = &self.status {
@@ -221,13 +229,20 @@ impl SettingsUi {
         if ui
             .checkbox(
                 &mut self.settings.save_meta_images,
-                "Save meta images during execution",
+                "Log Meta Images",
             )
-            .on_hover_text("When enabled, image search / OCR write debug PNGs under images/meta/.")
+            .on_hover_text(
+                "When enabled, image search / OCR write debug PNGs under images/meta/. Warning: can be very memory intensive.",
+            )
             .changed()
         {
             self.mark_dirty();
         }
+        ui.label(
+            egui::RichText::new("Warning: can be very memory intensive.")
+                .weak()
+                .small(),
+        );
 
         if ui
             .checkbox(
@@ -324,10 +339,8 @@ impl SettingsUi {
             .parent()
             .map(PathBuf::from)
             .unwrap_or_else(sqyre_dir);
-        let Some(parent) = rfd::FileDialog::new()
-            .set_title("Choose .sqyre location")
-            .set_directory(&start)
-            .pick_folder()
+        let Some(parent) =
+            crate::file_dialogs::pick_folder("Choose .sqyre location", &start)
         else {
             return;
         };

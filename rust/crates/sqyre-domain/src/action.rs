@@ -337,8 +337,6 @@ pub enum ActionKind {
         name: String,
         targets: Vec<String>,
         search_area: CoordinateRef,
-        row_split: i32,
-        col_split: i32,
         tolerance: f64,
         blur: i32,
         wait: WaitTilFoundConfig,
@@ -430,6 +428,8 @@ pub enum ActionKind {
     RunMacro {
         macro_name: String,
     },
+    /// Interactive grid navigator. Built-in chords move / select / back; each
+    /// [`NavigateKey`] child is a user-defined chord that runs its branch.
     NavigateSelect {
         program: String,
         graph_name: String,
@@ -457,6 +457,16 @@ pub enum ActionKind {
         output_row: String,
         output_col: String,
         output_collection: String,
+        /// Direct children should be [`ActionKind::NavigateKey`] branches.
+        subactions: Vec<Action>,
+    },
+    /// User-defined key branch under [`ActionKind::NavigateSelect`].
+    NavigateKey {
+        name: String,
+        chord: Vec<String>,
+        /// When true, leave the parent Navigate Select after children finish.
+        exit: bool,
+        subactions: Vec<Action>,
     },
     Break,
     Continue,
@@ -484,6 +494,7 @@ impl ActionKind {
             Self::FocusWindow { .. } => "focuswindow",
             Self::RunMacro { .. } => "runmacro",
             Self::NavigateSelect { .. } => "navigateselect",
+            Self::NavigateKey { .. } => "navigatekey",
             Self::Break => "break",
             Self::Continue => "continue",
         }
@@ -499,6 +510,8 @@ impl ActionKind {
                 | Self::Ocr { .. }
                 | Self::FindPixel { .. }
                 | Self::ForEachRow { .. }
+                | Self::NavigateSelect { .. }
+                | Self::NavigateKey { .. }
         )
     }
 
@@ -510,7 +523,9 @@ impl ActionKind {
             | Self::ImageSearch { subactions, .. }
             | Self::Ocr { subactions, .. }
             | Self::FindPixel { subactions, .. }
-            | Self::ForEachRow { subactions, .. } => subactions,
+            | Self::ForEachRow { subactions, .. }
+            | Self::NavigateSelect { subactions, .. }
+            | Self::NavigateKey { subactions, .. } => subactions,
             _ => &[],
         }
     }
@@ -523,7 +538,9 @@ impl ActionKind {
             | Self::ImageSearch { subactions, .. }
             | Self::Ocr { subactions, .. }
             | Self::FindPixel { subactions, .. }
-            | Self::ForEachRow { subactions, .. } => Some(subactions),
+            | Self::ForEachRow { subactions, .. }
+            | Self::NavigateSelect { subactions, .. }
+            | Self::NavigateKey { subactions, .. } => Some(subactions),
             _ => None,
         }
     }
@@ -543,6 +560,18 @@ impl ActionKind {
                     label.to_string()
                 } else {
                     format!("{label}: {name}")
+                }
+            }
+            Self::NavigateKey { name, chord, .. } => {
+                let chord_s = if chord.is_empty() {
+                    "…".to_string()
+                } else {
+                    chord.join("+")
+                };
+                if name.trim().is_empty() {
+                    format!("{label} [{chord_s}]")
+                } else {
+                    format!("{label}: {name} [{chord_s}]")
                 }
             }
             Self::Wait { time } => format!("Wait {}", time.as_display()),

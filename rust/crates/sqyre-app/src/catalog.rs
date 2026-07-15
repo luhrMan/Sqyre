@@ -19,6 +19,16 @@ impl CoordinateResolver for CatalogResolver<'_> {
     ) -> Result<(i32, i32, i32, i32), String> {
         self.0.resolve_search_area(r, macro_)
     }
+
+    fn collection_grid(&self, program: &str, collection: &str) -> Result<(i32, i32), String> {
+        let r = if program.is_empty() {
+            CoordinateRef(collection.to_string())
+        } else {
+            CoordinateRef(format!("{program}~{collection}"))
+        };
+        let col = self.0.lookup_collection(&r)?;
+        Ok((col.rows, col.cols))
+    }
 }
 
 pub struct CatalogIcons<'a>(pub &'a ProgramCatalog);

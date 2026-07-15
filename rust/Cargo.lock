@@ -3542,6 +3542,7 @@ dependencies = [
  "sqyre-varref",
  "sqyre-vision",
  "tempfile",
+ "tokio",
  "tray-icon",
 ]
 

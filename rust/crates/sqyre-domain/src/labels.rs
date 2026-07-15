@@ -23,6 +23,7 @@ pub fn action_type_label(action_type: &str) -> &'static str {
         "foreachrow" => "For each row",
         "savevariable" => "Save to",
         "navigateselect" => "Navigate Select",
+        "navigatekey" => "Nav Key",
         _ => "Unknown",
     }
 }
@@ -49,7 +50,12 @@ pub fn action_type_description(action_type: &str) -> &'static str {
         "calculate" => "Evaluates a math expression and stores the result in a variable.",
         "foreachrow" => "Runs its sub-actions once per row of a list source.",
         "savevariable" => "Writes a variable's value out to a file or the clipboard.",
-        "navigateselect" => "Navigates a collection grid with chords and confirms a cell.",
+        "navigateselect" => {
+            "Navigates a collection grid with chords; Nav Key children branch on custom keys."
+        }
+        "navigatekey" => {
+            "Under Navigate Select: when this chord is pressed, runs nested actions."
+        }
         _ => "",
     }
 }

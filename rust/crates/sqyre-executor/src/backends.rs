@@ -105,6 +105,12 @@ pub trait CoordinateResolver {
         r: &CoordinateRef,
         macro_: &Macro,
     ) -> Result<(i32, i32, i32, i32), String>;
+
+    /// Collection grid size `(rows, cols)` for `program` + collection name.
+    fn collection_grid(&self, program: &str, collection: &str) -> Result<(i32, i32), String> {
+        let _ = (program, collection);
+        Err("collection grid lookup not configured".into())
+    }
 }
 
 /// Resolve image-search targets to on-disk icon / mask paths.
@@ -137,6 +143,24 @@ pub trait ContinueKeyWaiter: Send + Sync {
         pass_through: bool,
         stop: &AtomicBool,
     ) -> Result<(), String>;
+
+    /// Wait until one of `chords` is pressed. Returns the matched index.
+    /// `hold_repeat` is parallel to `chords` (missing = false).
+    fn wait_for_any_chord(
+        &self,
+        chords: &[Vec<String>],
+        hold_repeat: &[bool],
+        pass_through: bool,
+        stop: &AtomicBool,
+    ) -> Result<usize, String> {
+        let _ = hold_repeat;
+        if chords.is_empty() {
+            return Err("key wait: no chords configured".into());
+        }
+        // Default: only the first chord (used by tests / simple waiters).
+        self.wait_for_continue(&chords[0], pass_through, stop)?;
+        Ok(0)
+    }
 }
 
 /// Bring a window to the front by executable path + title (Go `RunFocusWindow`).
@@ -258,6 +282,8 @@ impl MacroLookup for MapMacroLookup {
 #[derive(Debug, Default)]
 pub struct ImmediateContinueWaiter {
     pub log: std::sync::Mutex<Vec<String>>,
+    /// Indices returned by successive `wait_for_any_chord` calls (defaults to 0).
+    pub any_queue: std::sync::Mutex<Vec<usize>>,
 }
 
 impl ContinueKeyWaiter for ImmediateContinueWaiter {
@@ -277,6 +303,49 @@ impl ContinueKeyWaiter for ImmediateContinueWaiter {
             ));
         }
         Ok(())
+    }
+
+    fn wait_for_any_chord(
+        &self,
+        chords: &[Vec<String>],
+        hold_repeat: &[bool],
+        pass_through: bool,
+        _stop: &AtomicBool,
+    ) -> Result<usize, String> {
+        if chords.is_empty() || chords.iter().all(|c| c.is_empty()) {
+            return Err("key wait: no chords configured".into());
+        }
+        let idx = self
+            .any_queue
+            .lock()
+            .ok()
+            .and_then(|mut q| {
+                if q.is_empty() {
+                    None
+                } else {
+                    Some(q.remove(0))
+                }
+            })
+            .unwrap_or(0);
+        if let Ok(mut g) = self.log.lock() {
+            let labels: Vec<String> = chords
+                .iter()
+                .enumerate()
+                .map(|(i, c)| {
+                    let hold = if hold_repeat.get(i).copied().unwrap_or(false) {
+                        "*"
+                    } else {
+                        ""
+                    };
+                    format!("{hold}{}", c.join("+"))
+                })
+                .collect();
+            g.push(format!(
+                "any:{}:pick={idx}:passthrough={pass_through}",
+                labels.join("|")
+            ));
+        }
+        Ok(idx.min(chords.len().saturating_sub(1)))
     }
 }
 

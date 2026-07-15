@@ -6,6 +6,7 @@ mod assets;
 mod catalog;
 mod collection_capture;
 mod data_editor;
+mod file_dialogs;
 mod hotkey_record;
 mod icon_cache;
 mod icon_variants;
@@ -14,6 +15,7 @@ mod pickers;
 mod preview_tooltip;
 mod settings;
 mod single_instance;
+mod theme;
 mod tray;
 mod tree_chrome;
 mod tree_clipboard;
@@ -85,6 +87,24 @@ impl ContinueKeyWaiter for BridgeContinueWait {
         let result = self
             .continue_wait
             .wait_for_continue(keys, pass_through, stop);
+        self.macro_hotkeys.resume();
+        result
+    }
+
+    fn wait_for_any_chord(
+        &self,
+        chords: &[Vec<String>],
+        hold_repeat: &[bool],
+        pass_through: bool,
+        stop: &AtomicBool,
+    ) -> Result<usize, String> {
+        self.macro_hotkeys.suspend();
+        let result = self.continue_wait.wait_for_any_chord(
+            chords,
+            hold_repeat,
+            pass_through,
+            stop,
+        );
         self.macro_hotkeys.resume();
         result
     }
@@ -660,6 +680,31 @@ impl SqyreApp {
         }
     }
 
+    /// Always-on-top HUD so live coordinates stay visible when the main window is hidden.
+    fn show_recording_hud(&self, ctx: &egui::Context) {
+        let Some(msg) = self.screen_click.status_label() else {
+            return;
+        };
+        ctx.show_viewport_immediate(
+            egui::ViewportId::from_hash_of("sqyre_recording_hud"),
+            egui::ViewportBuilder::default()
+                .with_title("Recording")
+                .with_inner_size([520.0, 56.0])
+                .with_resizable(false)
+                .with_always_on_top()
+                .with_decorations(true),
+            |ctx, _class| {
+                // Root panel for an immediate viewport (no parent `Ui`).
+                #[allow(deprecated)]
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    ui.colored_label(theme::PRIMARY, msg.as_str());
+                });
+                ctx.request_repaint();
+            },
+        );
+        ctx.request_repaint();
+    }
+
     fn action_display_name(&self, action_id: ActionId) -> String {
         if self.macros.is_empty() {
             return action_id.as_str();
@@ -799,6 +844,7 @@ impl eframe::App for SqyreApp {
             self.refresh_macro_hotkey_bindings();
         }
         self.update_recording_visibility(ui.ctx());
+        self.show_recording_hud(ui.ctx());
         self.drain_pending_hotkey_macros(ui.ctx());
 
         if let Some(chord) = self.hotkey_record.show(ui.ctx(), &self.macro_hotkeys) {
@@ -806,7 +852,7 @@ impl eframe::App for SqyreApp {
         }
 
         let running = self.run.running.load(Ordering::SeqCst);
-        if running || self.hotkey_record.is_open() {
+        if running || self.hotkey_record.is_open() || self.screen_click.is_armed() {
             ui.ctx().request_repaint();
         }
 
@@ -852,12 +898,14 @@ impl eframe::App for SqyreApp {
                 ui.separator();
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     let width = ui.available_width();
+                    let text_width =
+                        (width - ui.spacing().button_padding.x * 2.0).max(0.0);
                     for (i, m) in self.macros.iter().enumerate() {
-                        let label = macro_list_item_text(ui, m);
+                        let label = macro_list_item_text(ui, m, text_width);
                         if ui
                             .add(
                                 egui::Button::selectable(self.selected_macro == i, label)
-                                    .truncate()
+                                    .wrap_mode(egui::TextWrapMode::Extend)
                                     .min_size(egui::vec2(width, 0.0)),
                             )
                             .clicked()
@@ -873,6 +921,7 @@ impl eframe::App for SqyreApp {
         egui::CentralPanel::default().show_inside(ui, |ui| {
             ui.heading("Sqyre");
             let mut force_openness: Option<bool> = None;
+            let running = self.run.running.load(Ordering::SeqCst);
             ui.horizontal(|ui| {
                 let (list_glyph, list_tip) = if self.macro_list_open {
                     ("◁", "Hide macro list")
@@ -883,38 +932,11 @@ impl eframe::App for SqyreApp {
                     self.macro_list_open = !self.macro_list_open;
                 }
                 ui.separator();
-                let running = self.run.running.load(Ordering::SeqCst);
                 if toolbar_icon(ui, "▶", "Run", !running && !self.macros.is_empty()).clicked() {
                     self.start_macro(ui.ctx());
                 }
                 if toolbar_icon(ui, "⏹", "Stop", running).clicked() {
                     self.request_stop();
-                }
-                let can_copy = self.can_copy_selection();
-                let can_paste = self.can_paste_clipboard();
-                let can_undo = self.can_undo();
-                let can_redo = self.can_redo();
-                if toolbar_icon(ui, "📄", "Copy (Ctrl+C)", can_copy && !running).clicked() {
-                    self.copy_selection();
-                }
-                if toolbar_icon(ui, "✂", "Cut (Ctrl+X)", can_copy && !running).clicked() {
-                    self.cut_selection();
-                }
-                if toolbar_icon(ui, "📋", "Paste (Ctrl+V)", can_paste && !running).clicked() {
-                    self.paste_clipboard();
-                }
-                if toolbar_icon(ui, "↺", "Undo (Ctrl+Z)", can_undo && !running).clicked() {
-                    self.undo_tree();
-                }
-                if toolbar_icon(ui, "↻", "Redo (Ctrl+Y)", can_redo && !running).clicked() {
-                    self.redo_tree();
-                }
-                let has_macros = !self.macros.is_empty();
-                if toolbar_icon(ui, "⬇⬇", "Expand all branches", has_macros).clicked() {
-                    force_openness = Some(true);
-                }
-                if toolbar_icon(ui, "⬆⬆", "Collapse all branches", has_macros).clicked() {
-                    force_openness = Some(false);
                 }
                 if toolbar_icon(ui, "📁", "Data Editor", true).clicked() {
                     self.data_editor.open = true;
@@ -992,9 +1014,7 @@ impl eframe::App for SqyreApp {
                     self.apply_hotkey_to_selected(chord, Some(trigger));
                 }
 
-                if ui
-                    .add_enabled(!running, egui::Button::new("Record"))
-                    .on_hover_text("Record a global hotkey chord")
+                if theme::record_icon_button(ui, "Record a global hotkey chord", !running)
                     .clicked()
                 {
                     self.hotkey_record.open(&self.macro_hotkeys);
@@ -1011,6 +1031,34 @@ impl eframe::App for SqyreApp {
             });
             ui.separator();
 
+            ui.horizontal(|ui| {
+                let can_copy = self.can_copy_selection();
+                let can_paste = self.can_paste_clipboard();
+                let can_undo = self.can_undo();
+                let can_redo = self.can_redo();
+                if toolbar_icon(ui, "📄", "Copy (Ctrl+C)", can_copy && !running).clicked() {
+                    self.copy_selection();
+                }
+                if toolbar_icon(ui, "✂", "Cut (Ctrl+X)", can_copy && !running).clicked() {
+                    self.cut_selection();
+                }
+                if toolbar_icon(ui, "📋", "Paste (Ctrl+V)", can_paste && !running).clicked() {
+                    self.paste_clipboard();
+                }
+                if toolbar_icon(ui, "↺", "Undo (Ctrl+Z)", can_undo && !running).clicked() {
+                    self.undo_tree();
+                }
+                if toolbar_icon(ui, "↻", "Redo (Ctrl+Y)", can_redo && !running).clicked() {
+                    self.redo_tree();
+                }
+                if toolbar_icon(ui, "⬇⬇", "Expand all branches", true).clicked() {
+                    force_openness = Some(true);
+                }
+                if toolbar_icon(ui, "⬆⬆", "Collapse all branches", true).clicked() {
+                    force_openness = Some(false);
+                }
+            });
+
             let mut open_logs: Option<ActionId> = None;
             let mut delete_action: Option<ActionId> = None;
             let mut row_events: Vec<(ActionId, RowInteraction)> = Vec::new();
@@ -1019,7 +1067,6 @@ impl eframe::App for SqyreApp {
             let macro_name = self.macros[idx].name.clone();
             let hl_snap = self.highlighter.snapshot();
             let id = ui.make_persistent_id(("macro_tree", idx));
-            let running = self.run.running.load(Ordering::SeqCst);
             let mut state = TreeViewState::<ActionId>::load(ui, id).unwrap_or_default();
             if let Some(open) = force_openness {
                 set_all_branches_openness(&self.macros[idx].root, &mut state, open);
@@ -1257,14 +1304,74 @@ impl Drop for SqyreApp {
     }
 }
 
-/// Macro name on the first line; hotkey as a weak small hint below when set.
-fn macro_list_item_text(ui: &egui::Ui, m: &Macro) -> egui::WidgetText {
-    if m.hotkey.is_empty() {
-        return m.name.clone().into();
+/// Elide `text` to a single line that fits `max_width`, appending `…` only when needed.
+fn elide_to_width(ui: &egui::Ui, text: &str, max_width: f32, font_id: egui::FontId) -> String {
+    if text.is_empty() {
+        return String::new();
     }
+    let full = ui.painter().layout_no_wrap(
+        text.to_owned(),
+        font_id.clone(),
+        egui::Color32::WHITE,
+    );
+    if full.size().x <= max_width {
+        return text.to_owned();
+    }
+
+    const ELLIPSIS: char = '…';
+    let ellipsis_w = ui
+        .painter()
+        .layout_no_wrap(ELLIPSIS.to_string(), font_id.clone(), egui::Color32::WHITE)
+        .size()
+        .x;
+    let budget = (max_width - ellipsis_w).max(0.0);
+    if budget <= 0.0 {
+        return ELLIPSIS.to_string();
+    }
+
+    let char_count = text.chars().count();
+    let mut lo = 0usize;
+    let mut hi = char_count;
+    while lo < hi {
+        let mid = (lo + hi + 1) / 2;
+        let candidate: String = text.chars().take(mid).collect();
+        let w = ui
+            .painter()
+            .layout_no_wrap(candidate, font_id.clone(), egui::Color32::WHITE)
+            .size()
+            .x;
+        if w <= budget {
+            lo = mid;
+        } else {
+            hi = mid - 1;
+        }
+    }
+    let mut out: String = text.chars().take(lo).collect();
+    out.push(ELLIPSIS);
+    out
+}
+
+/// Macro name on the first line; hotkey as a weak small hint below when set.
+/// Each line is shown in full when it fits `max_text_width`, otherwise elided with `…`.
+fn macro_list_item_text(ui: &egui::Ui, m: &Macro, max_text_width: f32) -> egui::WidgetText {
     let style = ui.style();
+    let name_font = egui::FontSelection::Default.resolve(style);
+    let name = elide_to_width(ui, &m.name, max_text_width, name_font);
+
+    if m.hotkey.is_empty() {
+        return name.into();
+    }
+
+    let hotkey_font = egui::TextStyle::Small.resolve(style);
+    let hotkey = elide_to_width(
+        ui,
+        &format_hotkey(&m.hotkey),
+        max_text_width,
+        hotkey_font,
+    );
+
     let mut job = egui::text::LayoutJob::default();
-    egui::RichText::new(&m.name)
+    egui::RichText::new(name)
         .color(style.visuals.text_color())
         .append_to(
             &mut job,
@@ -1272,7 +1379,7 @@ fn macro_list_item_text(ui: &egui::Ui, m: &Macro) -> egui::WidgetText {
             egui::FontSelection::Default,
             egui::Align::LEFT,
         );
-    egui::RichText::new(format!("\n{}", format_hotkey(&m.hotkey)))
+    egui::RichText::new(format!("\n{hotkey}"))
         .small()
         .color(style.visuals.weak_text_color())
         .append_to(

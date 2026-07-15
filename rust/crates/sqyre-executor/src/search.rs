@@ -1614,8 +1614,6 @@ mod tests {
                 name: "find".into(),
                 targets: vec!["Prog~Item".into()],
                 search_area: CoordinateRef("Prog~Box".into()),
-                row_split: 0,
-                col_split: 0,
                 tolerance: 0.99,
                 blur: 0,
                 wait: WaitTilFoundConfig::default(),

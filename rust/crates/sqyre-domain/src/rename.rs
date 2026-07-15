@@ -83,6 +83,16 @@ impl Macro {
                             changed = true;
                         }
                     }
+                    ActionKind::NavigateSelect {
+                        program: prog,
+                        graph_name,
+                        ..
+                    } => {
+                        if prog == program && graph_name == old_name {
+                            *graph_name = new_name.to_string();
+                            changed = true;
+                        }
+                    }
                     _ => {}
                 },
                 ProgramEntityKind::Item => {
@@ -141,6 +151,12 @@ impl Macro {
                 let next = rename_coordinate_program(search_area, old_program, new_program);
                 if next != *search_area {
                     *search_area = next;
+                    changed = true;
+                }
+            }
+            ActionKind::NavigateSelect { program, .. } => {
+                if program == old_program {
+                    *program = new_program.to_string();
                     changed = true;
                 }
             }
@@ -254,8 +270,6 @@ mod tests {
                 name: String::new(),
                 targets: targets.into_iter().map(str::to_string).collect(),
                 search_area: CoordinateRef(area.into()),
-                row_split: 0,
-                col_split: 0,
                 tolerance: 0.9,
                 blur: 0,
                 wait: WaitTilFoundConfig::default(),

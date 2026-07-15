@@ -100,6 +100,10 @@ pub fn show_logs_window(
                 if ui.button("Copy text").clicked() {
                     ui.ctx().copy_text(copy_text.clone());
                 }
+                if ui.button("Clear logs").clicked() {
+                    action_log.clear();
+                    image_cache.clear();
+                }
                 ui.label(format!(
                     "{text_count} line(s) · {image_count} image(s) · {item_count} item(s)"
                 ));
@@ -221,40 +225,46 @@ fn show_item_card(
     summary: &str,
     thumbnail: &LogImage,
 ) {
+    const CARD_W: f32 = 140.0;
     let selected = image_cache.selected_item == Some(entry_index);
     let frame = egui::Frame::group(ui.style()).stroke(if selected {
         egui::Stroke::new(2.0, egui::Color32::from_rgb(70, 140, 220))
     } else {
         ui.visuals().widgets.noninteractive.bg_stroke
     });
-    frame.show(ui, |ui| {
-        ui.set_max_width(140.0);
-        ui.label(egui::RichText::new(title).strong().size(12.0));
-        ui.label(egui::RichText::new(summary).weak().size(11.0));
-        if let Some(tex) =
-            image_cache.texture(ui.ctx(), action_id, TexKey::Thumb(entry_index), thumbnail)
-        {
-            let [tw, th] = tex.size();
-            let size = fit_thumb(tw as f32, th as f32, 112.0);
-            let resp = ui.add(
-                egui::Image::new((tex.id(), size))
-                    .sense(egui::Sense::click())
-                    .corner_radius(4.0),
-            );
-            if resp.hovered() {
-                ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    // Nested vertical: horizontal_wrapped uses LTR layout, which would otherwise
+    // lay out title/image/button side-by-side and produce a diagonal staircase.
+    ui.vertical(|ui| {
+        ui.set_width(CARD_W);
+        frame.show(ui, |ui| {
+            ui.set_max_width(CARD_W);
+            ui.label(egui::RichText::new(title).strong().size(12.0));
+            ui.label(egui::RichText::new(summary).weak().size(11.0));
+            if let Some(tex) =
+                image_cache.texture(ui.ctx(), action_id, TexKey::Thumb(entry_index), thumbnail)
+            {
+                let [tw, th] = tex.size();
+                let size = fit_thumb(tw as f32, th as f32, 112.0);
+                let resp = ui.add(
+                    egui::Image::new((tex.id(), size))
+                        .sense(egui::Sense::click())
+                        .corner_radius(4.0),
+                );
+                if resp.hovered() {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                }
+                if resp.clicked() {
+                    image_cache.selected_item = Some(entry_index);
+                }
+                resp.on_hover_text("Click to view processing steps and where it was found");
             }
-            if resp.clicked() {
+            if ui
+                .small_button(if selected { "Open ▸" } else { "Inspect ▸" })
+                .clicked()
+            {
                 image_cache.selected_item = Some(entry_index);
             }
-            resp.on_hover_text("Click to view processing steps and where it was found");
-        }
-        if ui
-            .small_button(if selected { "Open ▸" } else { "Inspect ▸" })
-            .clicked()
-        {
-            image_cache.selected_item = Some(entry_index);
-        }
+        });
     });
 }
 

@@ -4,6 +4,7 @@ use crate::collection_capture::capture_and_save_collection_image;
 use crate::icon_cache::IconCache;
 use crate::icon_variants::{self, AddVariantError};
 use crate::preview_tooltip::{PreviewKind, PreviewTooltipCache};
+use crate::theme;
 use eframe::egui;
 use sqyre_domain::{Macro, ProgramEntityKind, ScalarValue, PROGRAM_DELIMITER};
 use sqyre_hotkeys::ScreenClickBridge;
@@ -210,7 +211,7 @@ impl DataEditor {
         ui.separator();
 
         if let Some(msg) = screen_click.status_label() {
-            ui.colored_label(egui::Color32::from_rgb(220, 160, 40), msg);
+            ui.colored_label(crate::theme::PRIMARY, msg);
             ui.ctx().request_repaint();
         }
 
@@ -931,82 +932,85 @@ impl DataEditor {
                 ui.heading("Point");
                 self.program_selector(ui, catalog);
                 ui.add_space(4.0);
-                ui.label("Name");
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.form_name).desired_width(f32::INFINITY),
-                );
-                ui.label("X");
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.form_x).desired_width(f32::INFINITY),
-                );
-                ui.label("Y");
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.form_y).desired_width(f32::INFINITY),
-                );
                 ui.horizontal(|ui| {
+                    ui.label("Name");
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.form_name)
+                            .desired_width(ui.available_width() - 48.0),
+                    );
                     let armed = screen_click.is_armed();
-                    if ui
-                        .add_enabled(!armed, egui::Button::new("Record"))
-                        .on_hover_text("Click on screen to capture X/Y")
+                    if theme::record_icon_button(ui, "Click on screen to capture X/Y", !armed)
                         .clicked()
                     {
                         screen_click.arm_point();
                         self.set_ok("Recording… left-click to capture.");
                     }
-                    if armed && ui.button("Cancel record").clicked() {
+                    if armed && ui.button("Cancel").clicked() {
                         screen_click.disarm();
                     }
                 });
-                ui.weak("Coords accept integers or ${var} references.");
+                ui.weak("X/Y overlay the preview; integers or ${var}.");
                 let x = form_coord_i32(&self.form_x);
                 let y = form_coord_i32(&self.form_y);
                 let force = paint_preview_toolbar(ui);
-                previews.paint_point_panel(ui, x, y, force);
+                let rect = previews.paint_point_panel(ui, x, y, force);
+                paint_preview_coord_chip(ui, rect, CardinalEdge::Left, "X", &mut self.form_x);
+                paint_preview_coord_chip(ui, rect, CardinalEdge::Bottom, "Y", &mut self.form_y);
             }
             EditorTab::SearchAreas => {
                 ui.heading("Search Area");
                 self.program_selector(ui, catalog);
                 ui.add_space(4.0);
-                ui.label("Name");
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.form_name).desired_width(f32::INFINITY),
-                );
-                ui.label("Left");
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.form_left).desired_width(f32::INFINITY),
-                );
-                ui.label("Top");
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.form_top).desired_width(f32::INFINITY),
-                );
-                ui.label("Right");
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.form_right).desired_width(f32::INFINITY),
-                );
-                ui.label("Bottom");
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.form_bottom).desired_width(f32::INFINITY),
-                );
                 ui.horizontal(|ui| {
+                    ui.label("Name");
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.form_name)
+                            .desired_width(ui.available_width() - 48.0),
+                    );
                     let armed = screen_click.is_armed();
-                    if ui
-                        .add_enabled(!armed, egui::Button::new("Record"))
-                        .on_hover_text("Two clicks: opposite corners of the area")
-                        .clicked()
+                    if theme::record_icon_button(
+                        ui,
+                        "Two clicks: opposite corners of the area",
+                        !armed,
+                    )
+                    .clicked()
                     {
                         screen_click.arm_search_area();
                         self.set_ok("Recording… click two corners.");
                     }
-                    if armed && ui.button("Cancel record").clicked() {
+                    if armed && ui.button("Cancel").clicked() {
                         screen_click.disarm();
                     }
                 });
+                ui.weak("Bounds overlay the preview edges; integers or ${var}.");
                 let lx = form_coord_i32(&self.form_left);
                 let ty = form_coord_i32(&self.form_top);
                 let rx = form_coord_i32(&self.form_right);
                 let by = form_coord_i32(&self.form_bottom);
                 let force = paint_preview_toolbar(ui);
-                previews.paint_search_area_panel(ui, lx, ty, rx, by, force);
+                let rect = previews.paint_search_area_panel(ui, lx, ty, rx, by, force);
+                paint_preview_coord_chip(ui, rect, CardinalEdge::Top, "TopY", &mut self.form_top);
+                paint_preview_coord_chip(
+                    ui,
+                    rect,
+                    CardinalEdge::Bottom,
+                    "BottomY",
+                    &mut self.form_bottom,
+                );
+                paint_preview_coord_chip(
+                    ui,
+                    rect,
+                    CardinalEdge::Left,
+                    "LeftX",
+                    &mut self.form_left,
+                );
+                paint_preview_coord_chip(
+                    ui,
+                    rect,
+                    CardinalEdge::Right,
+                    "RightX",
+                    &mut self.form_right,
+                );
             }
             EditorTab::Masks => {
                 ui.heading("Mask");
@@ -2137,10 +2141,7 @@ impl DataEditor {
     }
 
     fn pick_and_add_variant(&mut self, catalog: &ProgramCatalog, icons: &mut IconCache) {
-        let Some(path) = rfd::FileDialog::new()
-            .add_filter("PNG", &["png"])
-            .pick_file()
-        else {
+        let Some(path) = crate::file_dialogs::pick_png() else {
             return;
         };
         let (Some(prog), Some(item)) = (
@@ -2251,10 +2252,7 @@ impl DataEditor {
             self.set_err("Select a mask first.");
             return;
         };
-        let Some(src) = rfd::FileDialog::new()
-            .add_filter("Images", &["png", "jpg", "jpeg", "bmp"])
-            .pick_file()
-        else {
+        let Some(src) = crate::file_dialogs::pick_image() else {
             return;
         };
         let dest = catalog.mask_image_path(&prog, &mask);
@@ -2453,6 +2451,53 @@ fn paint_preview_toolbar(ui: &mut egui::Ui) -> bool {
     force
 }
 
+#[derive(Clone, Copy)]
+enum CardinalEdge {
+    Top,
+    Bottom,
+    Left,
+    Right,
+}
+
+/// Borderless coord chip overlaid on a preview edge (Go `OverlayInsideEdges` + `previewCoordChip`).
+fn paint_preview_coord_chip(
+    ui: &mut egui::Ui,
+    preview: egui::Rect,
+    edge: CardinalEdge,
+    placeholder: &str,
+    value: &mut String,
+) {
+    const CHIP_W: f32 = 76.0;
+    const CHIP_H: f32 = 24.0;
+    const PAD: f32 = 6.0;
+    let size = egui::vec2(CHIP_W, CHIP_H);
+    let center = match edge {
+        CardinalEdge::Top => egui::pos2(preview.center().x, preview.top() + PAD + CHIP_H * 0.5),
+        CardinalEdge::Bottom => {
+            egui::pos2(preview.center().x, preview.bottom() - PAD - CHIP_H * 0.5)
+        }
+        CardinalEdge::Left => egui::pos2(preview.left() + PAD + CHIP_W * 0.5, preview.center().y),
+        CardinalEdge::Right => {
+            egui::pos2(preview.right() - PAD - CHIP_W * 0.5, preview.center().y)
+        }
+    };
+    let chip = egui::Rect::from_center_size(center, size);
+    ui.painter().rect_filled(
+        chip,
+        4.0,
+        egui::Color32::from_rgba_unmultiplied(16, 16, 16, 170),
+    );
+    let edit_rect = chip.shrink(3.0);
+    ui.put(
+        edit_rect,
+        egui::TextEdit::singleline(value)
+            .id_salt(format!("preview_coord_{placeholder}"))
+            .frame(egui::Frame::NONE)
+            .hint_text(placeholder)
+            .desired_width(edit_rect.width()),
+    );
+}
+
 fn variant_name_from_path(path: &std::path::Path, item: &str) -> String {
     let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
         return String::new();
@@ -2555,8 +2600,8 @@ fn show_file_hover(
 }
 
 fn fit_panel(w: f32, h: f32) -> egui::Vec2 {
-    const MAX_W: f32 = 520.0;
-    const MAX_H: f32 = 360.0;
+    const MAX_W: f32 = 340.0;
+    const MAX_H: f32 = 240.0;
     let w = w.max(1.0);
     let h = h.max(1.0);
     let scale = (MAX_W / w).min(MAX_H / h).min(1.0);

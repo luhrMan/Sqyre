@@ -32,6 +32,7 @@ sqyre-hotkeys = { path = "../sqyre-hotkeys" }
 sqyre-vision = { path = "../sqyre-vision" }
 serde_yaml = { workspace = true }
 rfd = { workspace = true }
+tokio = { workspace = true }
 parking_lot = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]

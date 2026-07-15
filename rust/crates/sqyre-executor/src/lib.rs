@@ -6,6 +6,7 @@ mod error;
 mod expr;
 mod highlight;
 mod misc;
+mod navigate;
 mod run;
 mod search;
 
