@@ -12,10 +12,10 @@ use std::time::{Duration, Instant};
 const MIN_CAPTURE_SIZE: i32 = 320;
 const CAPTURE_PADDING: i32 = 48;
 const TOOLTIP_MAX_DIM: u32 = 640;
-const DISPLAY_MAX_W: f32 = 400.0;
-const DISPLAY_MAX_H: f32 = 300.0;
-const PANEL_MAX_W: f32 = 520.0;
-const PANEL_MAX_H: f32 = 360.0;
+const DISPLAY_MAX_W: f32 = 260.0;
+const DISPLAY_MAX_H: f32 = 195.0;
+const PANEL_MAX_W: f32 = 340.0;
+const PANEL_MAX_H: f32 = 240.0;
 const CACHE_MAX: usize = 24;
 const CACHE_TTL: Duration = Duration::from_secs(30);
 const OVERLAY: Rgba<u8> = Rgba([255, 0, 0, 255]);
@@ -108,7 +108,9 @@ impl PreviewTooltipCache {
             Err(err) => Err(err),
         };
         match preview {
-            Ok((tex, cap)) => paint_preview(ui, &tex, &cap, true),
+            // Tip/edit surface is capped around tip_max_width (~280); use the smaller
+            // display fit so preview doesn't force the tooltip wider than view mode.
+            Ok((tex, cap)) => paint_preview(ui, &tex, &cap, false),
             Err(err) => {
                 ui.colored_label(egui::Color32::from_rgb(220, 80, 80), err);
             }
@@ -116,7 +118,14 @@ impl PreviewTooltipCache {
     }
 
     /// Embedded form-panel preview for a point (uses form field coords).
-    pub fn paint_point_panel(&mut self, ui: &mut egui::Ui, x: i32, y: i32, force: bool) {
+    /// Returns the image/placeholder rect for cardinal coord overlays.
+    pub fn paint_point_panel(
+        &mut self,
+        ui: &mut egui::Ui,
+        x: i32,
+        y: i32,
+        force: bool,
+    ) -> egui::Rect {
         let key = format!("panel:pt:{x}:{y}");
         let caption = format!("X: {x}, Y: {y}");
         let preview = self.texture_for(
@@ -127,14 +136,13 @@ impl PreviewTooltipCache {
             force,
         );
         match preview {
-            Ok((tex, cap)) => paint_preview(ui, &tex, &cap, true),
-            Err(err) => {
-                ui.colored_label(egui::Color32::from_rgb(220, 80, 80), err);
-            }
+            Ok((tex, _)) => paint_preview_panel_image(ui, &tex),
+            Err(err) => paint_preview_panel_placeholder(ui, &err),
         }
     }
 
     /// Embedded form-panel preview for a search area (uses form field coords).
+    /// Returns the image/placeholder rect for cardinal coord overlays.
     pub fn paint_search_area_panel(
         &mut self,
         ui: &mut egui::Ui,
@@ -143,7 +151,7 @@ impl PreviewTooltipCache {
         right: i32,
         bottom: i32,
         force: bool,
-    ) {
+    ) -> egui::Rect {
         let key = format!("panel:sa:{left}:{top}:{right}:{bottom}");
         let caption = format!("Left: {left}, Top: {top}, Right: {right}, Bottom: {bottom}");
         let preview = self.texture_for(
@@ -159,10 +167,8 @@ impl PreviewTooltipCache {
             force,
         );
         match preview {
-            Ok((tex, cap)) => paint_preview(ui, &tex, &cap, true),
-            Err(err) => {
-                ui.colored_label(egui::Color32::from_rgb(220, 80, 80), err);
-            }
+            Ok((tex, _)) => paint_preview_panel_image(ui, &tex),
+            Err(err) => paint_preview_panel_placeholder(ui, &err),
         }
     }
 
@@ -470,6 +476,27 @@ fn paint_preview(ui: &mut egui::Ui, tex: &TextureHandle, caption: &str, panel: b
     ui.label(caption);
 }
 
+fn paint_preview_panel_image(ui: &mut egui::Ui, tex: &TextureHandle) -> egui::Rect {
+    let [tw, th] = tex.size();
+    let size = fit_display_panel(tw as f32, th as f32);
+    ui.add(egui::Image::new((tex.id(), size))).rect
+}
+
+fn paint_preview_panel_placeholder(ui: &mut egui::Ui, err: &str) -> egui::Rect {
+    let size = Vec2::new(PANEL_MAX_W, PANEL_MAX_H * 0.65);
+    let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+    ui.painter()
+        .rect_filled(rect, 4.0, egui::Color32::from_gray(28));
+    ui.painter().text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        err,
+        egui::FontId::proportional(13.0),
+        egui::Color32::from_rgb(220, 80, 80),
+    );
+    rect
+}
+
 fn fit_display(w: f32, h: f32) -> Vec2 {
     let w = w.max(1.0);
     let h = h.max(1.0);
@@ -738,8 +765,6 @@ mod tests {
                 name: "find".into(),
                 targets: vec![],
                 search_area: CoordinateRef("P~Box".into()),
-                row_split: 0,
-                col_split: 0,
                 tolerance: 0.9,
                 blur: 0,
                 wait: Default::default(),

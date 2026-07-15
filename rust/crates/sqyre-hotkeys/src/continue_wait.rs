@@ -1,12 +1,12 @@
-//! Shared continue-chord wait used by Pause actions (Go `WaitForContinueKey`).
+//! Shared continue-chord wait used by Pause and NavigateSelect.
 
 use parking_lot::{Condvar, Mutex};
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-/// Bridge between the hotkey listener thread and Pause waiters.
+/// Bridge between the hotkey listener thread and key waiters.
 #[derive(Clone)]
 pub struct ContinueWaitBridge {
     inner: Arc<Inner>,
@@ -21,11 +21,22 @@ struct Inner {
 #[derive(Default)]
 struct WaitState {
     waiting: bool,
-    keys: Vec<String>,
+    /// When non-empty, waiting for any of these chords (longest match wins).
+    chords: Vec<Vec<String>>,
+    /// Parallel to `chords`: which indices re-fire while held.
+    hold_repeat: Vec<bool>,
+    hold_repeat_ms: u64,
     /// Continue chord is a lone Escape — Esc should resume, not stop.
     continue_is_esc: bool,
+    /// Matched chord index when `signaled`.
+    matched: Option<usize>,
     signaled: bool,
-    chord_was_pressed: bool,
+    /// Indices currently considered “held since last edge”.
+    latched: HashSet<usize>,
+    /// For hold-repeat: last fire time per index.
+    last_fire: Vec<Option<Instant>>,
+    /// Latest pressed-key snapshot from the hook thread.
+    last_pressed: HashSet<String>,
 }
 
 impl ContinueWaitBridge {
@@ -48,42 +59,141 @@ impl ContinueWaitBridge {
     /// Called from the hotkey thread when the set of pressed keys changes.
     pub fn on_pressed_keys(&self, pressed: &HashSet<String>) {
         let mut g = self.inner.state.lock();
+        g.last_pressed = pressed.clone();
         if !g.waiting || g.signaled {
             return;
         }
-        let all = !g.keys.is_empty() && g.keys.iter().all(|k| pressed.contains(k));
-        if all && !g.chord_was_pressed {
-            g.signaled = true;
-            g.chord_was_pressed = true;
+        Self::try_match_locked(&mut g);
+        if g.signaled {
             self.inner.cv.notify_all();
-        } else if !all {
-            g.chord_was_pressed = false;
         }
+    }
+
+    fn try_match_locked(g: &mut WaitState) {
+        if g.chords.is_empty() || g.signaled {
+            return;
+        }
+        let pressed = g.last_pressed.clone();
+
+        let mut best: Option<(usize, usize)> = None; // (len, index)
+        for (i, chord) in g.chords.iter().enumerate() {
+            if chord.is_empty() {
+                continue;
+            }
+            let all = chord.iter().all(|k| pressed.contains(k));
+            if all {
+                let len = chord.len();
+                match best {
+                    Some((best_len, _)) if len <= best_len => {}
+                    _ => best = Some((len, i)),
+                }
+            } else {
+                g.latched.remove(&i);
+            }
+        }
+
+        let Some((_, idx)) = best else {
+            return;
+        };
+
+        let hold = g.hold_repeat.get(idx).copied().unwrap_or(false);
+        if g.latched.contains(&idx) {
+            if !hold {
+                return;
+            }
+            let ms = g.hold_repeat_ms.max(1);
+            let due = g
+                .last_fire
+                .get(idx)
+                .and_then(|t| *t)
+                .map(|t| t.elapsed() >= Duration::from_millis(ms))
+                .unwrap_or(true);
+            if !due {
+                return;
+            }
+        }
+
+        g.latched.insert(idx);
+        if let Some(slot) = g.last_fire.get_mut(idx) {
+            *slot = Some(Instant::now());
+        }
+        g.matched = Some(idx);
+        g.signaled = true;
     }
 
     /// Block until the continue chord is pressed or `stop` is set.
     pub fn wait_for_continue(
         &self,
         keys: &[String],
-        _pass_through: bool,
+        pass_through: bool,
         stop: &AtomicBool,
     ) -> Result<(), String> {
+        self.wait_for_any_chord(&[keys.to_vec()], &[], pass_through, stop)
+            .map(|_| ())
+    }
+
+    /// Block until one of `chords` is pressed. Returns the matched chord index.
+    ///
+    /// `hold_repeat` is parallel to `chords` (missing entries = false). While a
+    /// hold-repeat chord stays pressed, it re-fires every ~180ms after the first edge.
+    pub fn wait_for_any_chord(
+        &self,
+        chords: &[Vec<String>],
+        hold_repeat: &[bool],
+        _pass_through: bool,
+        stop: &AtomicBool,
+    ) -> Result<usize, String> {
         if !self.hooks_enabled {
-            return Err("pause: continue key wait is not available in this build".into());
+            return Err("key wait is not available in this build".into());
         }
-        let normalized = normalize_keys(keys);
-        if normalized.is_empty() {
-            return Err("pause: continue key not set".into());
+        let normalized: Vec<Vec<String>> = chords
+            .iter()
+            .map(|c| normalize_keys(c))
+            .collect();
+        if normalized.iter().all(|c| c.is_empty()) {
+            return Err("key wait: no chords configured".into());
         }
-        validate_not_failsafe(&normalized)?;
+        for c in &normalized {
+            if !c.is_empty() {
+                validate_not_failsafe(c)?;
+            }
+        }
+
+        let hold: Vec<bool> = (0..normalized.len())
+            .map(|i| hold_repeat.get(i).copied().unwrap_or(false))
+            .collect();
 
         {
             let mut g = self.inner.state.lock();
             g.waiting = true;
-            g.keys = normalized.clone();
-            g.continue_is_esc = normalized == ["esc".to_string()];
+            g.chords = normalized.clone();
+            g.hold_repeat = hold;
+            g.hold_repeat_ms = 180;
+            g.continue_is_esc = normalized.len() == 1 && normalized[0] == ["esc".to_string()];
+            g.matched = None;
             g.signaled = false;
-            g.chord_was_pressed = false;
+            // Re-latch from current physical keys so hold-repeat can continue
+            // across wait calls without needing a new key event.
+            g.latched.clear();
+            g.last_fire = vec![None; normalized.len()];
+            let already: Vec<usize> = g
+                .chords
+                .iter()
+                .enumerate()
+                .filter(|(_, chord)| {
+                    !chord.is_empty() && chord.iter().all(|k| g.last_pressed.contains(k))
+                })
+                .map(|(i, _)| i)
+                .collect();
+            for i in already {
+                g.latched.insert(i);
+                if g.hold_repeat.get(i).copied().unwrap_or(false) {
+                    if let Some(slot) = g.last_fire.get_mut(i) {
+                        *slot = Some(Instant::now());
+                    }
+                }
+            }
+            Self::try_match_locked(&mut g);
         }
 
         let result = loop {
@@ -92,14 +202,21 @@ impl ContinueWaitBridge {
             }
             {
                 let mut g = self.inner.state.lock();
+                if !g.signaled {
+                    // Hold-repeat can become due without a new key event.
+                    Self::try_match_locked(&mut g);
+                }
                 if g.signaled {
-                    break Ok(());
+                    break Ok(g.matched.unwrap_or(0));
                 }
                 self.inner
                     .cv
                     .wait_for(&mut g, Duration::from_millis(50));
+                if !g.signaled {
+                    Self::try_match_locked(&mut g);
+                }
                 if g.signaled {
-                    break Ok(());
+                    break Ok(g.matched.unwrap_or(0));
                 }
             }
         };
@@ -107,10 +224,13 @@ impl ContinueWaitBridge {
         {
             let mut g = self.inner.state.lock();
             g.waiting = false;
-            g.keys.clear();
+            g.chords.clear();
+            g.hold_repeat.clear();
             g.continue_is_esc = false;
+            g.matched = None;
             g.signaled = false;
-            g.chord_was_pressed = false;
+            g.latched.clear();
+            g.last_fire.clear();
         }
         result
     }
@@ -146,7 +266,7 @@ fn validate_not_failsafe(keys: &[String]) -> Result<(), String> {
     failsafe.sort();
     if sorted == failsafe {
         return Err(
-            "pause: continue key cannot match the failsafe hotkey (esc + ctrl + shift)".into(),
+            "key wait: chord cannot match the failsafe hotkey (esc + ctrl + shift)".into(),
         );
     }
     Ok(())
@@ -276,6 +396,30 @@ mod tests {
             bridge.on_pressed_keys(&pressed);
         });
         b.wait_for_continue(&["f9".into()], false, &stop).unwrap();
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn wait_any_picks_longest_chord() {
+        let b = ContinueWaitBridge::new(true);
+        let stop = AtomicBool::new(false);
+        let bridge = b.clone();
+        let handle = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(30));
+            let mut pressed = HashSet::new();
+            pressed.insert("ctrl".into());
+            pressed.insert("a".into());
+            bridge.on_pressed_keys(&pressed);
+        });
+        let idx = b
+            .wait_for_any_chord(
+                &[vec!["a".into()], vec!["ctrl".into(), "a".into()]],
+                &[],
+                false,
+                &stop,
+            )
+            .unwrap();
+        assert_eq!(idx, 1);
         handle.join().unwrap();
     }
 

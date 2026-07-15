@@ -1,8 +1,8 @@
-//! Domain model for macros and the 21 action kinds.
+//! Domain model for macros and the 22 action kinds.
 //!
 //! Action `type` strings and field names follow Go serialize codecs (newer
-//! tip including `while` and `navigateselect`). UIDs are runtime-only unless
-//! injected for undo/clipboard snapshots.
+//! tip including `while`, `navigateselect`, and `navigatekey`). UIDs are
+//! runtime-only unless injected for undo/clipboard snapshots.
 
 mod action;
 mod display;
