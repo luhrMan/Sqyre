@@ -23,7 +23,7 @@ func TestRetryWhileNotFound_inactive(t *testing.T) {
 
 func TestRetryWhileNotFound_findsOnRetry(t *testing.T) {
 	cfg := actions.WaitTilFoundConfig{
-		WaitTilFound:           true,
+		RepeatMode:             actions.RepeatWaitUntilFound,
 		WaitTilFoundSeconds:    1,
 		WaitTilFoundIntervalMs: 5,
 	}
@@ -42,7 +42,7 @@ func TestRetryWhileNotFound_findsOnRetry(t *testing.T) {
 
 func TestRetryWhileNotFound_propagatesRetryError(t *testing.T) {
 	cfg := actions.WaitTilFoundConfig{
-		WaitTilFound:           true,
+		RepeatMode:             actions.RepeatWaitUntilFound,
 		WaitTilFoundSeconds:    1,
 		WaitTilFoundIntervalMs: 5,
 	}

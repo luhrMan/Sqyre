@@ -21,7 +21,7 @@ Update boxes/status when you land or delete work. Keep notes short.
 | `cutover pending` | Rust parity OK; Go still daily-driver / still imported |
 | `needs work` | Gaps before parity or cutover |
 
-**Deleted this pass:** nothing safe to delete yet.
+**Deleted this pass:** nothing safe to delete yet. Dropped from cutover checklist (not required): doc screenshot/golden pipeline, settings restart-after-change.
 
 ---
 
@@ -49,39 +49,47 @@ Update boxes/status when you land or delete work. Keep notes short.
 ## Libraries
 
 ### Variable grammar
+
 - [x] `sqyre-varref` ↔ `internal/varref` — ✅ cutover pending
   - Notes: grammar/`${}`/`{}` parity; Go still used by serialize/macro/UI.
 
 ### Domain models
+
 - [x] Programs, macros, variables, coords, collections — ✅ cutover pending — `sqyre-domain` ↔ `internal/models` (+ `internal/macro` resolve helpers)
 - [x] 19 Go action kinds in Rust (+ `Calculate` merged into `Set`) — ✅ cutover pending — 21 kinds total (`While` / `NavigateSelect` / `NavigateKey` Rust-ahead)
 - [x] Expression eval + Set value resolve — ✅ cutover pending — `domain/expr.rs` + `domain/set_value.rs` (moved out of executor)
+- [x] Blank action factories + picker categories — ✅ cutover pending — `domain/blank.rs` ↔ Go `buildActionTemplates`
+- [x] Search repeat modes (`once` / `waituntilfound` / `repeatwhilefound` + `maxiterations`) — ✅ cutover pending — `WaitTilFoundConfig.repeat_mode` (dropped legacy `waittilfound` bool)
 - [x] Rust-ahead: `While`, `NavigateSelect` (+ `NavigateKey` branches) — ✅ in Rust; **absent from Go** (intentional; no Go to delete)
 - [x] Known-variable set / collect (decls, bindings, ImageSearch + ForEachRow builtins) — ✅ cutover pending — `domain/variables.rs`
 - [ ] Builtin/runtime variable resolve parity vs `internal/macro` (monitor builtins, edge cases) — 🟡 needs work
 
 ### Serialize
+
 - [x] Action + macro YAML codecs — ✅ cutover pending — `sqyre-serialize` ↔ `internal/models/serialize`
-  - Notes: loads same `~/.sqyre/db.yaml`; includes `while` / `navigateselect` / `navigatekey`. Legacy `calculate` YAML decodes as `setvariable`. ImageSearch dropped unused `rowsplit`/`colsplit`.
+  - Notes: loads same `~/.sqyre/db.yaml`; includes `while` / `navigateselect` / `navigatekey`. Legacy `calculate` YAML decodes as `setvariable`. ImageSearch dropped unused `rowsplit`/`colsplit`. Search wait uses `repeatmode` (no `waittilfound` bool).
 
 ### Validate
+
 - [x] Entity / variable names, search-area bounds, item grid — ✅ cutover pending — `sqyre-validate` ↔ `internal/validation`
 - [x] `ValidateAction` parity (bindings + Key / Set / Pause + expression structure) — ✅ cutover pending — `validate_action` + entry validators ↔ `ValidateAction` / `macro.Validate*`
   - Notes: `EntryValidation` / unknown-var warnings in crate; UI VarEntry live warnings still partial.
 
 ### Persist / config
+
 - [x] `db.yaml` Database load/save — ✅ cutover pending — `sqyre-persist` ↔ `internal/models/repositories` + serialize
 - [x] Program catalog CRUD (+ item rename moves icon/variant files) — ✅ cutover pending — `persist/programs.rs` ↔ program repos
 - [x] Paths / `sqyre_dir` / `AutoPic` — ✅ cutover pending — `sqyre-persist` ↔ `internal/config`
-- [x] User settings file load/save + color prefs — ✅ cutover pending — `persist/settings.rs` ↔ settings prefs
-- [ ] Settings restart-after-change parity — ❌ / 🟡 — `services/restart_*` not ported
+- [x] User settings file load/save + color prefs + action defaults — ✅ cutover pending — `persist/settings.rs` (`action_colors`, `action_defaults`) ↔ settings prefs
 
 ### Match / vision
+
 - [x] Template match (CCOEFF_NORMED, mask, peaks/dedup) — ✅ cutover pending — `sqyre-match` ↔ gocv/`services` image search path
 - [x] Find-pixel, match façade, OCR preprocess + Tesseract — ✅ cutover pending — `sqyre-vision` ↔ `internal/vision` + OCR
   - Notes: PureCV vs GoCV — behavioral re-prove on real macros; tessdata via `SQYRE_TESSDATA`.
 
 ### Executor / automation
+
 - [x] Injected backends (`AutomationBackend`, capturer, matcher, focuser, OCR) — ✅ cutover pending — `sqyre-executor` ↔ `internal/services`
 - [x] Flow: loop / while / break / continue / conditional / runmacro / foreach — ✅ cutover pending
 - [x] Mouse/keyboard/type/wait/pause/set/save var / focus / image / pixel / OCR — ✅ cutover pending (Linux); Set evaluates `${refs}` and arithmetic expressions
@@ -89,16 +97,19 @@ Update boxes/status when you land or delete work. Keep notes short.
 - [ ] Cross-check delay/retry/highlight/log parity vs Go executor_* — 🟡 needs work
 
 ### Input
+
 - [x] Linux automation (rustautogui + clipboard) — ✅ cutover pending — `sqyre-input` ↔ `services/automation.go` / robotgo
 - [ ] Windows / mac automation — ❌ needs work
 
 ### Capture / focus
+
 - [x] Linux X11 capture + focus — ✅ cutover pending — `sqyre-capture` ↔ `internal/capture` + `screen` + window_*
 - [x] X11 selection outline (recording HUD rects) — ✅ cutover pending — `SelectionOutline` + app `recording_overlay` ↔ `ui/recording`
 - [ ] Non-Linux capturer / focuser / outline — ❌ (`NullCapturer` / stub outline / focus error) needs work
 - [ ] Wayland capture/overlays — ❌ / 🟡 (Go already limited) needs work
 
 ### Hotkeys
+
 - [x] Esc stop + Esc+Ctrl+Shift failsafe — ✅ cutover pending — `sqyre-hotkeys` (`hooks`) ↔ `internal/macrohotkey`
 - [x] Continue-wait bridge (single chord + `wait_for_any_chord` / hold-repeat) — ✅ cutover pending — Pause + NavigateSelect ↔ `continue_wait`
 - [x] Press-latch helpers (+ chord release wait) — ✅ cutover pending ↔ `internal/hotkeytrigger`
@@ -120,19 +131,17 @@ Rust boots via `cargo run -p sqyre-app` → `./rust/target/debug/sqyre`. Go boot
 | Tree DnD | `ui/macro` tree_dnd* | `tree_dnd.rs` | 🟡 | needs work |
 | Tree undo/history | macro undo | `tree_history.rs` | 🟡 | needs work |
 | Tree clipboard | `tree_clipboard.go` | `tree_clipboard.rs` cut/copy/paste | 🟡 | needs work |
-| Action tooltips view/edit | `ui/macro/action_tooltip_*` | `action_tooltip/` (+ `sections`, NavigateSelect/Key editors) | 🟡 | needs work |
+| Action tooltips view/edit | `ui/macro/action_tooltip_*` | `action_tooltip/` (+ provisional insert discard) | 🟡 | needs work |
 | Theme (dark + Sqyre gold) | `ui/theme.go` | `theme.rs` | 🟡 | needs work |
 | Native file/folder dialogs | Fyne / OS pickers | `file_dialogs.rs` (rfd + Tokio enter) | 🟡 | needs work |
 | Var pills / VarEntry | `ui/custom_widgets` | `var_pills.rs` (+ validate helpers) | 🟡 | needs work |
 | Entity pickers / recording overlays | `ui` pickers, `ui/recording` | `pickers`, X11 `SelectionOutline` + `recording_overlay`, `hotkey_record` | 🟡 | needs work |
 | Preview tooltips | custom_widgets / action_preview | `preview_tooltip.rs` | 🟡 | needs work |
 | Data editor (programs/items/masks/collections/coords + variants) | `ui/editor` | `data_editor.rs` + `icon_variants.rs` | 🟡 | needs work |
-| Settings panel (prefs, paths, fonts, colors) | `ui/settings.go` | `settings.rs` + `persist/settings.rs` + theme | 🟡 | needs work |
+| Settings panel (prefs, paths, fonts, colors, action defaults) | `ui/settings.go` | `settings.rs` + `persist/settings.rs` + theme | 🟡 | needs work |
 | Action logs UI | macro log popup | `action_logs_ui.rs` (incl. clear) | 🟡 | needs work |
 | Variables panel + runtime vars | `macro_variables`, runtime_vars | domain/app (partial) | 🟡 | needs work |
-| Add-action picker / colors / icons | `ui` + assets | assets + labels (partial) | 🟡 | needs work |
-| Doc screenshot / golden pipeline | `ui/screenshot`, `testsupport` | — | ❌ | needs work (or drop) |
-| Restart after settings | `services/restart_*` | — | ❌ | needs work |
+| Add-action picker / colors / icons | `ui/mainmenu.go` | `add_action.rs` + `domain/blank.rs` (21 kinds, Ctrl+A; hover/edit defaults persisted) | 🟡 | needs work |
 | Default binary = Rust | `Makefile` / `cmd/sqyre` | `sqyre-app` | ❌ | cutover pending |
 
 ---
@@ -154,6 +163,7 @@ Rust boots via `cargo run -p sqyre-app` → `./rust/target/debug/sqyre`. Go boot
 - [ ] Data editor + settings + recording pickers usable for daily macros
 - [x] NavigateSelect implemented (with NavigateKey subaction branches)
 - [x] ValidateAction parity (or Go checks explicitly dropped)
+- [x] Add-action picker (insert + editable persisted defaults)
 - [ ] Real-user smoke: load existing `db.yaml`, run macros, Esc/failsafe
 - [ ] Then delete Go packages/files that Rust owns; mark 🔪 here
 
@@ -161,7 +171,7 @@ Rust boots via `cargo run -p sqyre-app` → `./rust/target/debug/sqyre`. Go boot
 
 ## Top remaining priorities
 
-1. **UI daily-driver polish** — data editor, settings restart, variables panel, add-action UX
+1. **UI daily-driver polish** — data editor, variables panel
 2. **Cutover** — switch default binary; only then 🔪 Go
 
 ---

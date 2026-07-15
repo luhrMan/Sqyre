@@ -9,10 +9,10 @@ import (
 
 // FindPixel is a leaf (basic) action: it scans a search area for a pixel
 // matching the target color and writes the match coordinates to variables.
-// When WaitTilFound is true it retries at WaitTilFoundIntervalMs intervals
-// up to WaitTilFoundSeconds. It no longer branches on whether the pixel was
-// found — use a Conditional action on the output variable for true/false
-// branching.
+// When RepeatMode is wait-until-found it retries at WaitTilFoundIntervalMs
+// intervals up to WaitTilFoundSeconds. It no longer branches on whether the
+// pixel was found — use a Conditional action on the output variable for
+// true/false branching.
 type FindPixel struct {
 	Name           string
 	SearchArea     CoordinateRef `mapstructure:"searcharea"`

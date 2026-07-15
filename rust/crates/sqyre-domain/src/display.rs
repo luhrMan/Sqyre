@@ -2,7 +2,7 @@
 
 use crate::{
     Action, ActionKind, ConditionClause, CoordinateOutputs, ScalarValue, WaitTilFoundConfig,
-    MATCH_ANY,
+    MATCH_ANY, REPEAT_WAIT_UNTIL_FOUND, REPEAT_WHILE_FOUND,
 };
 
 /// One display parameter (Go `actions.Param`).
@@ -96,13 +96,22 @@ impl CoordinateOutputs {
 impl WaitTilFoundConfig {
     /// Go `DisplayWaitMode`.
     pub fn display_wait_mode(&self, instant_label: &str) -> String {
-        if !self.wait_til_found {
-            return instant_label.to_string();
-        }
-        if self.wait_til_found_seconds > 0 {
-            format!("{} seconds or until found", self.wait_til_found_seconds)
-        } else {
-            format!("wait {}s", self.wait_til_found_seconds)
+        match self.effective_repeat_mode() {
+            REPEAT_WAIT_UNTIL_FOUND => {
+                if self.wait_til_found_seconds > 0 {
+                    format!("{} seconds or until found", self.wait_til_found_seconds)
+                } else {
+                    format!("wait {}s", self.wait_til_found_seconds)
+                }
+            }
+            REPEAT_WHILE_FOUND => {
+                if self.wait_til_found_seconds > 0 {
+                    format!("repeat while found ({}s)", self.wait_til_found_seconds)
+                } else {
+                    "repeat while found".to_string()
+                }
+            }
+            _ => instant_label.to_string(),
         }
     }
 }
@@ -1106,7 +1115,7 @@ mod tests {
     fn wait_display_mode_and_clause_summary() {
         let mut wait = WaitTilFoundConfig::default();
         assert_eq!(wait.display_wait_mode("instant"), "instant");
-        wait.wait_til_found = true;
+        wait.repeat_mode = REPEAT_WAIT_UNTIL_FOUND.to_string();
         wait.wait_til_found_seconds = 5;
         assert_eq!(
             wait.display_wait_mode("instant"),

@@ -318,6 +318,16 @@ pub(crate) fn paint_image_search_tooltip_thumbs_pub(
     });
 }
 
+/// Right-edge space covered by a floating vertical scrollbar (egui default allocates 0).
+fn floating_scrollbar_overlay_width(ui: &egui::Ui) -> f32 {
+    let scroll = &ui.spacing().scroll;
+    if scroll.floating {
+        (scroll.bar_width - scroll.floating_allocated_width).max(0.0)
+    } else {
+        0.0
+    }
+}
+
 /// Full tree-row label content. Tooltip show/hide is handled by `action_tooltip`.
 pub fn paint_action_row(
     ui: &mut egui::Ui,
@@ -336,9 +346,10 @@ pub fn paint_action_row(
 
     // egui_ltreeview remembers a content-based min width, so `available_width` can stay
     // wider than the visible panel after the user shrinks the window. Cap the row to the
-    // clip rect and anchor logs/delete on the visible right edge.
+    // clip rect and anchor logs/delete on the visible right edge — inset further so a
+    // floating scrollbar cannot cover the buttons.
     let spacing = ui.spacing().item_spacing.x;
-    let visible_end = ui.clip_rect().right();
+    let visible_end = ui.clip_rect().right() - floating_scrollbar_overlay_width(ui);
     let row_start = ui.cursor().min.x;
     let max_visible_w = (visible_end - row_start).max(0.0);
     let row_w = ui.available_width().min(max_visible_w);
@@ -693,6 +704,27 @@ mod tests {
                     "logs/delete anchored off-screen: row right {} > clip right {}",
                     result.row_rect.right(),
                     clip.right()
+                );
+            });
+        });
+    }
+
+    #[test]
+    fn row_chrome_clears_floating_scrollbar_overlay() {
+        with_ui(|ui| {
+            // Default egui scroll style is floating with zero allocated width.
+            assert!(ui.spacing().scroll.floating);
+            assert_eq!(ui.spacing().scroll.floating_allocated_width, 0.0);
+            let bar = ui.spacing().scroll.bar_width;
+            let area = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(220.0, 40.0));
+            ui.scope_builder(egui::UiBuilder::new().max_rect(area), |ui| {
+                ui.set_clip_rect(area);
+                let result = paint_image_search_row(ui);
+                assert!(
+                    result.row_rect.right() <= area.right() - bar + 1.0,
+                    "logs/delete under scrollbar: row right {} > clear edge {}",
+                    result.row_rect.right(),
+                    area.right() - bar
                 );
             });
         });

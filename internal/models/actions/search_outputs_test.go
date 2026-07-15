@@ -15,7 +15,7 @@ func TestWaitTilFoundConfig_DisplayWaitMode(t *testing.T) {
 	})
 
 	t.Run("wait until found", func(t *testing.T) {
-		w := actions.WaitTilFoundConfig{WaitTilFound: true, WaitTilFoundSeconds: 3}
+		w := actions.WaitTilFoundConfig{RepeatMode: actions.RepeatWaitUntilFound, WaitTilFoundSeconds: 3}
 		if got := w.DisplayWaitMode("instant"); got != "3 seconds or until found" {
 			t.Fatalf("got %q, want %q", got, "3 seconds or until found")
 		}
