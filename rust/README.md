@@ -35,4 +35,4 @@ Do not expect X11 inside the container — build there, run the binary on the ho
 
 Host binary: `./rust/target/debug/sqyre` (or `./rust/target-phase2/debug/sqyre` after an alternate build). Esc stops a running macro; Esc+Ctrl+Shift exits (failsafe).
 
-`FocusWindow` is currently a no-op so real macros can smoke-test move/click/image-search. Collection cell refs are not resolved yet.
+Still stubbed: `Ocr`, `NavigateSelect`.
