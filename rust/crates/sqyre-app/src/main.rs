@@ -32,7 +32,7 @@ mod variables_panel;
 use action_logs_ui::LogsImageCache;
 use action_tooltip::TooltipState;
 use add_action::AddActionPicker;
-use catalog::{CatalogIcons, CatalogResolver, SnapshotMacros};
+use catalog::{apply_main_monitor_resolution, CatalogIcons, CatalogResolver, SnapshotMacros};
 use data_editor::DataEditor;
 use eframe::egui;
 use egui_ltreeview::{
@@ -135,8 +135,8 @@ impl ContinueKeyWaiter for BridgeContinueWait {
 }
 
 fn main() -> eframe::Result<()> {
-    let _instance_lock = match single_instance::try_acquire() {
-        Ok(Some(lock)) => lock,
+    let instance_lock = match single_instance::try_acquire() {
+        Ok(Some(lock)) => Some(lock),
         Ok(None) => {
             eprintln!("Sqyre is already running");
             std::process::exit(0);
@@ -158,8 +158,9 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "Sqyre",
         options,
-        Box::new(|cc| {
+        Box::new(move |cc| {
             let mut app = SqyreApp::load();
+            app.instance_lock = instance_lock;
             SettingsUi::install_fonts(&cc.egui_ctx);
             SettingsUi::apply_appearance(&cc.egui_ctx, app.settings_ui.settings());
             app.tray = tray::SystemTray::install(cc.egui_ctx.clone());
@@ -237,6 +238,10 @@ struct SqyreApp {
     /// Left macro-list side panel visibility.
     macro_list_open: bool,
     tray: tray::SystemTray,
+    /// Process-wide data-dir lock (re-acquired after relocate).
+    instance_lock: Option<single_instance::InstanceLock>,
+    /// Confirm dialog for deleting the selected macro.
+    pending_delete_macro: Option<String>,
 }
 
 impl SqyreApp {
@@ -269,12 +274,15 @@ impl SqyreApp {
         let highlighter = SharedHighlighter::new();
         highlighter.set_enabled(settings.highlight_active_action);
         let settings_ui = SettingsUi::from_settings(settings);
+        let action_log = SharedActionLog::new();
+        action_log.set_log_images(settings_ui.settings().save_meta_images);
         let mut add_action_picker = AddActionPicker::default();
         add_action_picker.load_from_settings(settings_ui.settings());
 
         match Database::load_default() {
             Ok(db) => {
-                let catalog = db.program_catalog().unwrap_or_default();
+                let mut catalog = db.program_catalog().unwrap_or_default();
+                apply_main_monitor_resolution(&mut catalog);
                 let mut macros: Vec<_> = db.macros.values().cloned().collect();
                 macros.sort_by(|a, b| a.name.cmp(&b.name));
                 let app = Self {
@@ -293,7 +301,7 @@ impl SqyreApp {
                     hotkey_record: HotkeyRecordUi::default(),
                     key_record: KeyRecordUi::default(),
                     macro_meta: MacroMetaUi::default(),
-                    action_log: SharedActionLog::new(),
+                    action_log,
                     runtime_vars: SharedRuntimeVars::new(),
                     highlighter,
                     pre_exec_closed: HashSet::new(),
@@ -317,50 +325,58 @@ impl SqyreApp {
                     recording_overlay: RecordingOverlay::new(),
                     macro_list_open: true,
                     tray: tray::SystemTray::default(),
+                    instance_lock: None,
+                    pending_delete_macro: None,
                 };
                 app.refresh_macro_hotkey_bindings();
                 app
             }
-            Err(e) => Self {
-                db: Database::default(),
-                macros: Vec::new(),
-                catalog: ProgramCatalog::default(),
-                load_error: Some(e.to_string()),
-                selected_macro: 0,
-                selected_action: None,
-                run,
-                hotkeys,
-                continue_wait,
-                screen_click,
-                macro_hotkeys,
-                pending_hotkey_macros,
-                hotkey_record: HotkeyRecordUi::default(),
-                key_record: KeyRecordUi::default(),
-                macro_meta: MacroMetaUi::default(),
-                action_log: SharedActionLog::new(),
-                runtime_vars: SharedRuntimeVars::new(),
-                highlighter,
-                pre_exec_closed: HashSet::new(),
-                exec_fully_expanded: false,
-                last_exec_follow: None,
-                tree_drag_handles: Vec::new(),
-                tree_drag_mode: TreeDragMode::Idle,
-                tree_scroll_vel: 0.0,
-                tree_histories: HashMap::new(),
-                action_clipboard: None,
-                logs_window: None,
-                logs_image_cache: LogsImageCache::default(),
-                icon_cache: IconCache::new(),
-                preview_tooltips: PreviewTooltipCache::new(),
-                tooltip: TooltipState::Hidden,
-                add_action_picker,
-                data_editor: DataEditor::default(),
-                settings_ui,
-                variables_panel: variables_panel::VariablesPanelUi::default(),
-                hidden_for_recording: false,
-                recording_overlay: RecordingOverlay::new(),
-                macro_list_open: true,
-                tray: tray::SystemTray::default(),
+            Err(e) => {
+                let mut catalog = ProgramCatalog::default();
+                apply_main_monitor_resolution(&mut catalog);
+                Self {
+                    db: Database::default(),
+                    macros: Vec::new(),
+                    catalog,
+                    load_error: Some(e.to_string()),
+                    selected_macro: 0,
+                    selected_action: None,
+                    run,
+                    hotkeys,
+                    continue_wait,
+                    screen_click,
+                    macro_hotkeys,
+                    pending_hotkey_macros,
+                    hotkey_record: HotkeyRecordUi::default(),
+                    key_record: KeyRecordUi::default(),
+                    macro_meta: MacroMetaUi::default(),
+                    action_log,
+                    runtime_vars: SharedRuntimeVars::new(),
+                    highlighter,
+                    pre_exec_closed: HashSet::new(),
+                    exec_fully_expanded: false,
+                    last_exec_follow: None,
+                    tree_drag_handles: Vec::new(),
+                    tree_drag_mode: TreeDragMode::Idle,
+                    tree_scroll_vel: 0.0,
+                    tree_histories: HashMap::new(),
+                    action_clipboard: None,
+                    logs_window: None,
+                    logs_image_cache: LogsImageCache::default(),
+                    icon_cache: IconCache::new(),
+                    preview_tooltips: PreviewTooltipCache::new(),
+                    tooltip: TooltipState::Hidden,
+                    add_action_picker,
+                    data_editor: DataEditor::default(),
+                    settings_ui,
+                    variables_panel: variables_panel::VariablesPanelUi::default(),
+                    hidden_for_recording: false,
+                    recording_overlay: RecordingOverlay::new(),
+                    macro_list_open: true,
+                    tray: tray::SystemTray::default(),
+                    instance_lock: None,
+                    pending_delete_macro: None,
+                }
             },
         }
     }
@@ -395,6 +411,85 @@ impl SqyreApp {
             eprintln!("sqyre: save macro: {e}");
         }
         self.refresh_macro_hotkey_bindings();
+    }
+
+    fn unique_macro_name(&self, base: &str) -> String {
+        if !self.macros.iter().any(|m| m.name == base) {
+            return base.to_string();
+        }
+        for i in 2.. {
+            let candidate = format!("{base} {i}");
+            if !self.macros.iter().any(|m| m.name == candidate) {
+                return candidate;
+            }
+        }
+        unreachable!()
+    }
+
+    fn select_macro_by_name(&mut self, name: &str) {
+        if let Some(i) = self.macros.iter().position(|m| m.name == name) {
+            self.selected_macro = i;
+            self.selected_action = None;
+            self.tooltip.cancel();
+            self.macro_meta.sync_selection(i, &self.macros[i]);
+        }
+    }
+
+    fn create_macro(&mut self) {
+        let name = self.unique_macro_name("new macro");
+        let m = Macro::new(name.clone(), 0, vec![]);
+        self.db.macros.insert(m.name.clone(), m.clone());
+        if let Err(e) = self.db.save_default() {
+            eprintln!("sqyre: create macro: {e}");
+            return;
+        }
+        self.macros.push(m);
+        self.macros.sort_by(|a, b| a.name.cmp(&b.name));
+        self.refresh_macro_hotkey_bindings();
+        self.select_macro_by_name(&name);
+    }
+
+    fn duplicate_selected_macro(&mut self) {
+        if self.macros.is_empty() {
+            return;
+        }
+        let idx = self.selected_macro.min(self.macros.len() - 1);
+        let src_name = self.macros[idx].name.clone();
+        let mut dup = self.macros[idx].clone();
+        dup.name = self.unique_macro_name(&format!("{src_name} copy"));
+        // Clear hotkey so duplicate doesn't steal the source chord.
+        dup.hotkey.clear();
+        let name = dup.name.clone();
+        self.db.macros.insert(name.clone(), dup.clone());
+        if let Err(e) = self.db.save_default() {
+            eprintln!("sqyre: duplicate macro: {e}");
+            return;
+        }
+        self.macros.push(dup);
+        self.macros.sort_by(|a, b| a.name.cmp(&b.name));
+        self.refresh_macro_hotkey_bindings();
+        self.select_macro_by_name(&name);
+    }
+
+    fn delete_macro_named(&mut self, name: &str) {
+        self.db.macros.remove(name);
+        self.tree_histories.remove(name);
+        self.macros.retain(|m| m.name != name);
+        if let Err(e) = self.db.save_default() {
+            eprintln!("sqyre: delete macro: {e}");
+        }
+        self.refresh_macro_hotkey_bindings();
+        if self.macros.is_empty() {
+            self.selected_macro = 0;
+            self.selected_action = None;
+            self.tooltip.cancel();
+            return;
+        }
+        self.selected_macro = self.selected_macro.min(self.macros.len() - 1);
+        self.selected_action = None;
+        self.tooltip.cancel();
+        self.macro_meta
+            .sync_selection(self.selected_macro, &self.macros[self.selected_macro]);
     }
 
     /// Rename the selected macro, drop the old db key, and rewrite Run Macro refs.
@@ -982,12 +1077,35 @@ impl eframe::App for SqyreApp {
         if self.highlighter.is_enabled() != highlight_on {
             self.highlighter.set_enabled(highlight_on);
         }
+        self.action_log
+            .set_log_images(self.settings_ui.settings().save_meta_images);
         if self.settings_ui.reload_requested {
             self.settings_ui.reload_requested = false;
+            apply_main_monitor_resolution(&mut self.catalog);
+            match single_instance::reacquire(self.instance_lock.take()) {
+                Ok(lock) => self.instance_lock = lock,
+                Err(e) => eprintln!("sqyre: re-acquire instance lock: {e}"),
+            }
+            if self.instance_lock.is_none() {
+                eprintln!(
+                    "sqyre: warning: could not lock {} (another instance may be using this data dir)",
+                    sqyre_persist::sqyre_dir().join("sqyre.lock").display()
+                );
+            }
             self.selected_macro = 0;
             self.selected_action = None;
             self.tree_histories.clear();
             self.tooltip.cancel();
+            self.add_action_picker = AddActionPicker::default();
+            self.add_action_picker
+                .load_from_settings(self.settings_ui.settings());
+            let editor_open = self.data_editor.open;
+            self.data_editor = DataEditor::default();
+            self.data_editor.open = editor_open;
+            let vars_open = self.variables_panel.open;
+            self.variables_panel = variables_panel::VariablesPanelUi::default();
+            self.variables_panel.open = vars_open;
+            self.pending_delete_macro = None;
             self.icon_cache = IconCache::new();
             self.preview_tooltips = PreviewTooltipCache::new();
             self.refresh_macro_hotkey_bindings();
@@ -1074,6 +1192,33 @@ impl eframe::App for SqyreApp {
                         sqyre_persist::db_path().display()
                     ));
                 }
+                ui.horizontal(|ui| {
+                    // Use ASCII / NotoEmoji glyphs only — fullwidth/math symbols
+                    // (＋, ⧉) render as tofu in egui's default font stack.
+                    if ui
+                        .button("+")
+                        .on_hover_text("New macro")
+                        .clicked()
+                    {
+                        self.create_macro();
+                    }
+                    let has_sel = !self.macros.is_empty();
+                    if ui
+                        .add_enabled(has_sel, egui::Button::new("📄"))
+                        .on_hover_text("Duplicate selected macro")
+                        .clicked()
+                    {
+                        self.duplicate_selected_macro();
+                    }
+                    if ui
+                        .add_enabled(has_sel, egui::Button::new("🗑"))
+                        .on_hover_text("Delete selected macro")
+                        .clicked()
+                    {
+                        let idx = self.selected_macro.min(self.macros.len() - 1);
+                        self.pending_delete_macro = Some(self.macros[idx].name.clone());
+                    }
+                });
                 ui.separator();
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     let width = ui.available_width();
@@ -1097,6 +1242,30 @@ impl eframe::App for SqyreApp {
                 });
             });
 
+        if let Some(name) = self.pending_delete_macro.clone() {
+            let mut open = true;
+            egui::Window::new("Delete Macro")
+                .collapsible(false)
+                .resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .order(egui::Order::Foreground)
+                .open(&mut open)
+                .show(ui.ctx(), |ui| {
+                    ui.label(format!("Delete macro \"{name}\"?"));
+                    ui.horizontal(|ui| {
+                        if ui.button("Cancel").clicked() {
+                            self.pending_delete_macro = None;
+                        }
+                        if ui.button("Delete").clicked() {
+                            self.pending_delete_macro = None;
+                            self.delete_macro_named(&name);
+                        }
+                    });
+                });
+            if !open {
+                self.pending_delete_macro = None;
+            }
+        }
         egui::CentralPanel::default().show_inside(ui, |ui| {
             ui.horizontal(|ui| {
                 let tex = self.icon_cache.sqyre_fallback(ui.ctx());
@@ -1126,21 +1295,8 @@ impl eframe::App for SqyreApp {
                 if toolbar_icon(ui, "⏹", "Stop", running).clicked() {
                     self.request_stop();
                 }
-                if toolbar_icon(
-                    ui,
-                    "＋",
-                    "Add Action (Ctrl+A)",
-                    !running && !self.macros.is_empty(),
-                )
-                .clicked()
-                {
-                    self.add_action_picker.open();
-                }
                 if toolbar_icon(ui, "📁", "Data Editor", true).clicked() {
                     self.data_editor.open = true;
-                }
-                if toolbar_icon(ui, "𝑥", "Variables", !self.macros.is_empty()).clicked() {
-                    self.variables_panel.open = true;
                 }
                 if toolbar_icon(ui, "⚙", "Settings", true).clicked() {
                     self.settings_ui.open = true;
@@ -1237,6 +1393,13 @@ impl eframe::App for SqyreApp {
                 let can_paste = self.can_paste_clipboard();
                 let can_undo = self.can_undo();
                 let can_redo = self.can_redo();
+                if toolbar_icon(ui, "+", "Add Action (Ctrl+A)", !running).clicked() {
+                    self.add_action_picker.open();
+                }
+                if toolbar_icon(ui, "x", "Variables", true).clicked() {
+                    self.variables_panel.open = true;
+                }
+                ui.separator();
                 if toolbar_icon(ui, "📄", "Copy (Ctrl+C)", can_copy && !running).clicked() {
                     self.copy_selection();
                 }

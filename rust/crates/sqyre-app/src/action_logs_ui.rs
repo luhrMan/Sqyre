@@ -115,8 +115,10 @@ pub fn show_logs_window(
             });
             ui.separator();
 
+            let list_h = crate::pickers::popup_scroll_max_height(ui, 0.0);
             egui::ScrollArea::vertical()
                 .auto_shrink([false, false])
+                .max_height(list_h)
                 .show(ui, |ui| {
                     if entries.is_empty() {
                         ui.label("No logs yet — run the macro.");

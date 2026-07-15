@@ -192,6 +192,7 @@ pub fn paint_edit_fields(
                         *picker = ActivePicker::Macro {
                             search: String::new(),
                             value: macro_name.clone(),
+                            scroll_to_selection: true,
                         };
                     }
                 });
@@ -639,6 +640,7 @@ fn point_picker_row(ui: &mut egui::Ui, point: &mut CoordinateRef, picker: &mut A
                 search: String::new(),
                 value: point.0.clone(),
                 cell_pick: None,
+                scroll_to_selection: true,
             };
         }
     });
@@ -661,6 +663,7 @@ fn search_area_picker_row(
                 search: String::new(),
                 value: area.0.clone(),
                 cell_pick: None,
+                scroll_to_selection: true,
             };
         }
     });

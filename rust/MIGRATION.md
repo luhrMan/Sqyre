@@ -81,8 +81,9 @@ Update boxes/status when you land or delete work. Keep notes short.
 - [x] `db.yaml` Database load/save — ✅ cutover pending — `sqyre-persist` ↔ `internal/models/repositories` + serialize
 - [x] Program catalog CRUD (+ item rename moves icon/variant files) — ✅ cutover pending — `persist/programs.rs` ↔ program repos
 - [x] Paths / `sqyre_dir` / `AutoPic` — ✅ cutover pending — `sqyre-persist` ↔ `internal/config`
+  - Notes: `initialize_directories` no longer creates `images/meta` (debug frames stay in-memory via action log).
 - [x] User settings file load/save + color prefs — ✅ cutover pending — `persist/settings.rs` ↔ settings prefs
-  - Notes: library ✅; settings **UI** polish still 🟡 (see App table). Glance disposition matches library, not panel polish.
+  - Notes: library ✅; settings UI includes Log Meta Images (in-memory action-log frames; `images/meta` obsolete). Drag-preview debounce pref still persists but UI hidden until wired.
 
 ### Match / vision
 
@@ -101,6 +102,7 @@ Update boxes/status when you land or delete work. Keep notes short.
 - [x] ImageSearch `repeatwhilefound` honors `max_iterations` — ✅ (optional timeout still caps)
 - [x] Live runtime-var publish sink — ✅ cutover pending — `executor/runtime_vars.rs` (`SharedRuntimeVars` / `RuntimeVarSink`) ↔ Go `runtime_vars`
 - [x] OCR empty-target wait — ✅ cutover pending — `ocr_target_matched` matches Go `strings.Contains` (blank target always matches)
+- [x] Action-log meta images gated — ✅ cutover pending — `SharedActionLog::set_log_images` / `log_images_enabled`; search/OCR skip frame build when off
 - [ ] Cross-check remaining delay/retry/highlight/log edge cases vs Go — 🟡 mostly aligned
 
 ### Input
@@ -111,6 +113,7 @@ Update boxes/status when you land or delete work. Keep notes short.
 ### Capture / focus
 
 - [x] Linux X11 capture + focus — ✅ cutover pending — `sqyre-capture` ↔ `internal/capture` + `screen` + window_*
+- [x] Main-monitor resolution key for catalog — ✅ cutover pending — `main_monitor_resolution_key` → `ProgramCatalog::set_resolution_key` (boot + data-dir reload) ↔ Go `MainMonitorSizeString`
 - [x] X11 selection outline (recording HUD rects) — ✅ cutover pending — `SelectionOutline` + app `recording_overlay` ↔ `ui/recording`
 - [x] Recording coords HUD when app is hidden — ✅ cutover pending — always-on-top deferred viewport + poller `request_repaint` while armed
 - [ ] Non-Linux capturer / focuser / outline — ❌ (`NullCapturer` / stub outline / focus error) needs work
@@ -133,8 +136,8 @@ Rust boots via `make` / `make run` → `./bin/sqyre` (or `cargo run -p sqyre-app
 
 | Feature                                                          | Go                              | Rust                                                                     | Status | Disposition     |
 | ---------------------------------------------------------------- | ------------------------------- | ------------------------------------------------------------------------ | ------ | --------------- |
-| Shell / single-instance / tray                                   | `internal/app`, `ui` tray       | `main`, `single_instance`, `tray`                                        | 🟡     | needs work      |
-| Macro list + tree + run/stop                                     | `ui/macro`                      | `main`, tree_*                                                           | 🟡     | needs work      |
+| Shell / single-instance / tray                                   | `internal/app`, `ui` tray       | `main`, `single_instance` (`reacquire` on data-dir change), `tray`      | 🟡     | needs work      |
+| Macro list + tree + run/stop                                     | `ui/macro`                      | `main`, tree_* (list New/Duplicate/Delete)                               | 🟡     | needs work      |
 | Macro name / delay / tags                                        | `ui/macro` meta                 | `macro_meta.rs`                                                          | 🟡     | needs work      |
 | Tree DnD                                                         | `ui/macro` tree_dnd*            | `tree_dnd.rs`                                                            | 🟡     | needs work      |
 | Tree undo/history                                                | macro undo                      | `tree_history.rs`                                                        | 🟡     | needs work      |
@@ -143,11 +146,11 @@ Rust boots via `make` / `make run` → `./bin/sqyre` (or `cargo run -p sqyre-app
 | Theme (dark + Sqyre gold)                                        | `ui/theme.go`                   | `theme.rs`                                                               | 🟡     | needs work      |
 | Native file/folder dialogs                                       | Fyne / OS pickers               | `file_dialogs.rs` (rfd + Tokio enter)                                    | 🟡     | needs work      |
 | Var pills / VarEntry                                             | `ui/custom_widgets`             | `var_pills.rs` (`validated_var_ref_edit` + name chips; unvalidated ref edit removed) | 🟡     | needs work      |
-| Entity pickers / recording overlays                              | `ui` pickers, `ui/recording`    | `pickers` + `image_view` (collection zoom/pan + fuzzy search), X11 `SelectionOutline` + `recording_overlay` (coords HUD when hidden), `hotkey_record`, `key_record` (Pause continue chord), `pixel_color` (FindPixel screen sample) | 🟡     | needs work      |
+| Entity pickers / recording overlays                              | `ui` pickers, `ui/recording`    | `pickers` + `image_view` (zoom/pan, fuzzy search, items All, one-shot cell commit, display-name sort, scroll-to-initial), X11 `SelectionOutline` + `recording_overlay`, `hotkey_record`, `key_record`, `pixel_color`; catalog main-monitor `resolution_key` | 🟡     | needs work      |
 | Preview tooltips                                                 | custom_widgets / action_preview | `preview_tooltip.rs`                                                     | 🟡     | needs work      |
-| Data editor (programs/items/masks/collections/coords + variants) | `ui/editor`                     | `data_editor.rs` + `icon_variants.rs` (New point/SA auto-arms record + save; coord/mask VarEntry live validation; collection preview zoom/pan) | 🟡     | needs work      |
-| Settings panel (prefs, paths, fonts, colors)                     | `ui/settings.go`                | `settings.rs` + `persist/settings.rs` + theme                            | 🟡     | needs work      |
-| Action logs UI                                                   | macro log popup                 | `action_logs_ui.rs` (incl. clear)                                        | 🟡     | needs work      |
+| Data editor (programs/items/masks/collections/coords + variants) | `ui/editor`                     | `data_editor.rs` + `icon_variants.rs` (New point/SA auto-arms record + save; coord/mask VarEntry live validation; collection preview zoom/pan; main-monitor resolution key; display-name sort) | 🟡     | needs work      |
+| Settings panel (prefs, paths, fonts, colors)                     | `ui/settings.go`                | `settings.rs` + `persist/settings.rs` + theme (Log Meta Images → in-memory action logs; drag-preview UI deferred; data-dir relocate re-acquires lock + resets editor/pickers/vars) | 🟡     | needs work      |
+| Action logs UI                                                   | macro log popup                 | `action_logs_ui.rs` (incl. clear; meta images gated by setting)          | 🟡     | needs work      |
 | Variables panel + runtime vars                                   | `macro_variables`, runtime_vars | `variables_panel.rs` + `SharedRuntimeVars` (decls CRUD + live/last snapshot) | 🟡     | needs work      |
 | Add-action picker / colors / icons                               | `ui/mainmenu.go`                | `add_action.rs` + `domain/blank.rs` (21 kinds, Ctrl+A; hover edits persisted defaults) | 🟡     | needs work      |
 |                                                                  |                                 |                                                                          |        |                 |
@@ -182,10 +185,11 @@ Rust boots via `make` / `make run` → `./bin/sqyre` (or `cargo run -p sqyre-app
 
 ## Top remaining priorities
 
-1. **UI daily-driver polish** — remaining picker polish; settings edge cases
-2. **Real-user smoke** — load `~/.sqyre/db.yaml`, run macros, Esc/failsafe
-3. **Release cutover** — CI / AppImage / Windows → Rust (still Go today)
-4. **Then 🔪** — delete `internal/`, `ui/`, `cmd/sqyre` once gate clears
+1. **Real-user smoke** — load `~/.sqyre/db.yaml`, run macros, Esc/failsafe
+2. **Release cutover** — CI / AppImage / Windows → Rust (still Go today)
+3. **Then 🔪** — delete `internal/`, `ui/`, `cmd/sqyre` once gate clears
+
+UI daily-driver polish for pickers/settings/macro CRUD is largely landed; gate item “Data editor + settings + recording pickers usable for daily macros” still needs a real smoke pass before checking off.
 
 ---
 

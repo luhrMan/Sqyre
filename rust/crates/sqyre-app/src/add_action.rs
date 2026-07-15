@@ -206,8 +206,10 @@ impl AddActionPicker {
                 ui.add_space(6.0);
 
                 let templates = action_templates();
+                let list_h = pickers::popup_scroll_max_height(ui, 0.0);
                 egui::ScrollArea::vertical()
                     .auto_shrink([false, false])
+                    .max_height(list_h)
                     .show(ui, |ui| {
                         ui.columns(ACTION_PICKER_CATEGORIES.len(), |cols| {
                             for (col_i, category) in ACTION_PICKER_CATEGORIES.iter().enumerate() {
@@ -445,8 +447,10 @@ impl AddActionPicker {
                     ui.colored_label(Color32::RED, err.as_str());
                 }
                 ui.separator();
+                let list_h = pickers::popup_scroll_max_height(ui, 0.0);
                 egui::ScrollArea::vertical()
                     .auto_shrink([false, false])
+                    .max_height(list_h)
                     .show(ui, |ui| {
                         if let Some(DefaultsTip::Edit {
                             draft, picker, ..

@@ -80,15 +80,19 @@ pub enum ActivePicker {
         value: String,
         /// When set, list is replaced by the collection cell grid.
         cell_pick: Option<CollectionCellPick>,
+        /// Scroll selected row into view once (Go `ScrollTo` on open).
+        scroll_to_selection: bool,
     },
     SearchArea {
         search: String,
         value: String,
         cell_pick: Option<CollectionCellPick>,
+        scroll_to_selection: bool,
     },
     Macro {
         search: String,
         value: String,
+        scroll_to_selection: bool,
     },
     /// Live OS windows for Focus Window (`process_path` + `window_title`).
     Window {
@@ -97,6 +101,7 @@ pub enum ActivePicker {
         window_title: String,
         windows: Vec<WindowInfo>,
         load_error: Option<String>,
+        scroll_to_selection: bool,
     },
 }
 
@@ -130,6 +135,7 @@ pub fn open_window_picker(process_path: &str, window_title: &str) -> ActivePicke
         window_title: window_title.to_string(),
         windows: Vec::new(),
         load_error: None,
+        scroll_to_selection: true,
     };
     refresh_window_picker(&mut picker);
     picker
@@ -388,6 +394,8 @@ pub fn paint_even_icon_grid(
 
 /// Program accordion of item icon grids. Click toggles membership in `selected` when
 /// `multi` is true; otherwise replaces selection with the clicked target.
+/// When `multi`, each program header includes an All control over filtered targets
+/// (Go items picker tri-state / All button).
 pub fn paint_items_icon_grid(
     ui: &mut egui::Ui,
     catalog: &ProgramCatalog,
@@ -418,15 +426,61 @@ pub fn paint_items_icon_grid(
         if items.is_empty() {
             continue;
         }
-        let targets: Vec<String> = items
+        let mut targets: Vec<(String, String)> = items
             .iter()
-            .map(|item| format!("{prog}{PROGRAM_DELIMITER}{item}"))
+            .map(|item_key| {
+                let display = pdata
+                    .items
+                    .get(item_key)
+                    .map(|it| {
+                        if it.name.trim().is_empty() {
+                            item_key.clone()
+                        } else {
+                            it.name.clone()
+                        }
+                    })
+                    .unwrap_or_else(|| item_key.clone());
+                (
+                    format!("{prog}{PROGRAM_DELIMITER}{item_key}"),
+                    display,
+                )
+            })
             .collect();
+        sort_by_display_name(&mut targets);
+        let targets: Vec<String> = targets.into_iter().map(|(t, _)| t).collect();
+
+        let selected_in_group = targets
+            .iter()
+            .filter(|t| selected.iter().any(|s| s == *t))
+            .count();
+        let all_label = if selected_in_group == 0 {
+            "All"
+        } else if selected_in_group == targets.len() {
+            "None"
+        } else {
+            "All"
+        };
 
         egui::CollapsingHeader::new(header_text(prog))
             .default_open(true)
             .show(ui, |ui| {
                 ui.set_max_width(pane_w);
+                if multi {
+                    ui.horizontal(|ui| {
+                        if ui
+                            .small_button(all_label)
+                            .on_hover_text(
+                                "Select all visible items, or deselect all if all visible are selected",
+                            )
+                            .clicked()
+                        {
+                            toggle_select_all_filtered(selected, &targets);
+                        }
+                        if selected_in_group > 0 && selected_in_group < targets.len() {
+                            ui.weak(format!("{selected_in_group}/{}", targets.len()));
+                        }
+                    });
+                }
                 let mut clicked: Option<String> = None;
                 paint_even_icon_grid(
                     ui,
@@ -456,8 +510,65 @@ pub fn paint_items_icon_grid(
     }
 }
 
+/// Toggle: if every `filtered` target is selected, remove them; otherwise add missing ones.
+fn toggle_select_all_filtered(selected: &mut Vec<String>, filtered: &[String]) {
+    if filtered.is_empty() {
+        return;
+    }
+    let all_selected = filtered
+        .iter()
+        .all(|t| selected.iter().any(|s| s == t));
+    if all_selected {
+        selected.retain(|s| !filtered.iter().any(|t| t == s));
+    } else {
+        for t in filtered {
+            if !selected.iter().any(|s| s == t) {
+                selected.push(t.clone());
+            }
+        }
+    }
+}
+
+/// Sort `(key, display_name)` rows by display name (case-insensitive), then key.
+fn sort_by_display_name(rows: &mut [(String, String)]) {
+    rows.sort_by(|a, b| {
+        a.1.to_ascii_lowercase()
+            .cmp(&b.1.to_ascii_lowercase())
+            .then_with(|| a.0.cmp(&b.0))
+    });
+}
+
+fn maybe_scroll_to(ui: &mut egui::Ui, resp: &egui::Response, scroll: &mut bool) {
+    if *scroll {
+        ui.scroll_to_rect(resp.rect, Some(egui::Align::Center));
+        *scroll = false;
+    }
+}
+
+/// Finite height for scroll panes inside content-sized popup windows.
+/// Without this, `ScrollArea` + `auto_shrink([false, false])` grows the window forever.
+///
+/// `footer_reserve` is space still to be laid out below the scroll (buttons, status).
+pub fn popup_scroll_max_height(ui: &egui::Ui, footer_reserve: f32) -> f32 {
+    const FALLBACK: f32 = 360.0;
+    let screen_cap = (ui.ctx().content_rect().height() * 0.65).max(100.0);
+    let h = ui.available_height() - footer_reserve;
+    let capped = if h.is_finite() {
+        h.max(100.0)
+    } else {
+        FALLBACK
+    };
+    capped.min(screen_cap)
+}
+
+fn picker_list_max_height(ui: &egui::Ui) -> f32 {
+    // Separator + Cancel/Save row still laid out below the list.
+    popup_scroll_max_height(ui, 52.0)
+}
+
 /// Flat searchable list of `program~name` refs from points or search areas,
 /// plus program collections (opens cell picker on click).
+/// Rows are sorted by display name within each program (Go entity picker sort).
 pub fn paint_coord_ref_list(
     ui: &mut egui::Ui,
     catalog: &ProgramCatalog,
@@ -467,6 +578,7 @@ pub fn paint_coord_ref_list(
     kind: CoordKind,
     previews: &mut PreviewTooltipCache,
     cell_pick: &mut Option<CollectionCellPick>,
+    scroll_to_selection: &mut bool,
 ) {
     let q = search.trim().to_ascii_lowercase();
     let res = catalog.resolution_key().to_string();
@@ -475,99 +587,182 @@ pub fn paint_coord_ref_list(
         CoordKind::SearchArea => PreviewKind::SearchArea,
     };
     let current_ref = CoordinateRef(current.clone());
+    let mut did_scroll = false;
+    let list_h = picker_list_max_height(ui);
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
+        .max_height(list_h)
         .show(ui, |ui| {
             for prog in catalog.program_names() {
                 let Some(pdata) = catalog.get(prog) else {
                     continue;
                 };
-                let names: Vec<String> = match kind {
-                    CoordKind::Point => pdata
-                        .points
-                        .get(&res)
-                        .or_else(|| pdata.points.values().next())
-                        .map(|m| m.keys().cloned().collect())
-                        .unwrap_or_default(),
-                    CoordKind::SearchArea => pdata
-                        .search_areas
-                        .get(&res)
-                        .or_else(|| pdata.search_areas.values().next())
-                        .map(|m| m.keys().cloned().collect())
-                        .unwrap_or_default(),
-                };
-                let filtered: Vec<_> = names
-                    .into_iter()
-                    .filter(|n| {
-                        q.is_empty()
-                            || fuzzy_match_fold(&q, n)
-                            || fuzzy_match_fold(&q, prog)
-                    })
-                    .collect();
-                let collections: Vec<_> = pdata
-                    .collections
-                    .values()
-                    .filter(|c| {
-                        q.is_empty()
-                            || fuzzy_match_fold(&q, &c.name)
-                            || fuzzy_match_fold(&q, prog)
-                    })
-                    .cloned()
-                    .collect();
-                if filtered.is_empty() && collections.is_empty() {
-                    continue;
+                #[derive(Clone)]
+                enum Row {
+                    Coord { key: String, display: String },
+                    Collection(sqyre_persist::ProgramCollection),
                 }
-                ui.label(header_text(prog));
-                for name in filtered {
-                    let target = format!("{prog}{PROGRAM_DELIMITER}{name}");
-                    let selected = current == &target;
-                    let resp = ui.selectable_label(
-                        selected,
-                        egui::RichText::new(format!("  {name}")).size(13.0),
-                    );
-                    previews.show_for_entity(ui, &resp, catalog, prog, &name, preview_kind);
-                    if resp.clicked() {
-                        *current = target;
-                    }
-                }
-                for col in collections {
-                    let selected = current_ref.is_collection()
-                        && current_ref.program() == Some(prog.as_str())
-                        && current_ref.name() == col.name;
-                    let label = format!("  {} (collection)", col.name);
-                    let resp = ui.selectable_label(
-                        selected,
-                        egui::RichText::new(label).size(13.0),
-                    );
-                    let path = catalog.collection_image_path(prog, &col.name);
-                    if resp.hovered() {
-                        if let Some(tex) = icons.for_path(ui.ctx(), &path) {
-                            resp.clone().on_hover_ui(|ui| {
-                                let [tw, th] = tex.size();
-                                let size = fit_panel(tw as f32, th as f32);
-                                ui.add(egui::Image::new((tex.id(), size)));
-                                ui.label(format!("{prog}~{}", col.name));
-                            });
-                        } else {
-                            resp.clone()
-                                .on_hover_text(format!("{prog}~{} (no image)", col.name));
+                let mut rows: Vec<(String, Row)> = Vec::new();
+                match kind {
+                    CoordKind::Point => {
+                        if let Some(m) = pdata
+                            .points
+                            .get(&res)
+                            .or_else(|| pdata.points.values().next())
+                        {
+                            for (key, pt) in m {
+                                let display = if pt.name.trim().is_empty() {
+                                    key.clone()
+                                } else {
+                                    pt.name.clone()
+                                };
+                                if q.is_empty()
+                                    || fuzzy_match_fold(&q, key)
+                                    || fuzzy_match_fold(&q, &display)
+                                    || fuzzy_match_fold(&q, prog)
+                                {
+                                    rows.push((
+                                        display.clone(),
+                                        Row::Coord {
+                                            key: key.clone(),
+                                            display,
+                                        },
+                                    ));
+                                }
+                            }
                         }
                     }
-                    if resp.clicked() {
-                        let initial = if selected {
-                            current_ref.cell_range()
-                        } else {
-                            None
-                        };
-                        *cell_pick = Some(
-                            CollectionCellPick::new(prog, &col.name, col.rows, col.cols)
-                                .with_initial_sel(initial),
-                        );
+                    CoordKind::SearchArea => {
+                        if let Some(m) = pdata
+                            .search_areas
+                            .get(&res)
+                            .or_else(|| pdata.search_areas.values().next())
+                        {
+                            for (key, sa) in m {
+                                let display = if sa.name.trim().is_empty() {
+                                    key.clone()
+                                } else {
+                                    sa.name.clone()
+                                };
+                                if q.is_empty()
+                                    || fuzzy_match_fold(&q, key)
+                                    || fuzzy_match_fold(&q, &display)
+                                    || fuzzy_match_fold(&q, prog)
+                                {
+                                    rows.push((
+                                        display.clone(),
+                                        Row::Coord {
+                                            key: key.clone(),
+                                            display,
+                                        },
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                }
+                for col in pdata.collections.values() {
+                    if q.is_empty()
+                        || fuzzy_match_fold(&q, &col.name)
+                        || fuzzy_match_fold(&q, prog)
+                    {
+                        rows.push((col.name.clone(), Row::Collection(col.clone())));
+                    }
+                }
+                if rows.is_empty() {
+                    continue;
+                }
+                rows.sort_by(|a, b| {
+                    a.0.to_ascii_lowercase()
+                        .cmp(&b.0.to_ascii_lowercase())
+                        .then_with(|| match (&a.1, &b.1) {
+                            (Row::Coord { key: ka, .. }, Row::Coord { key: kb, .. }) => {
+                                ka.cmp(kb)
+                            }
+                            (Row::Collection(ca), Row::Collection(cb)) => {
+                                ca.name.cmp(&cb.name)
+                            }
+                            (Row::Coord { .. }, Row::Collection(_)) => std::cmp::Ordering::Less,
+                            (Row::Collection(_), Row::Coord { .. }) => {
+                                std::cmp::Ordering::Greater
+                            }
+                        })
+                });
+
+                ui.label(header_text(prog));
+                for (_, row) in rows {
+                    match row {
+                        Row::Coord { key, display } => {
+                            let target = format!("{prog}{PROGRAM_DELIMITER}{key}");
+                            let selected = current == &target;
+                            let label = if display == key {
+                                format!("  {key}")
+                            } else {
+                                format!("  {display}")
+                            };
+                            let resp = ui.selectable_label(
+                                selected,
+                                egui::RichText::new(label).size(13.0),
+                            );
+                            previews.show_for_entity(ui, &resp, catalog, prog, &key, preview_kind);
+                            if selected && *scroll_to_selection && !did_scroll {
+                                maybe_scroll_to(ui, &resp, scroll_to_selection);
+                                did_scroll = true;
+                            }
+                            if resp.clicked() {
+                                *current = target;
+                            }
+                        }
+                        Row::Collection(col) => {
+                            let selected = current_ref.is_collection()
+                                && current_ref.program() == Some(prog.as_str())
+                                && current_ref.name() == col.name;
+                            let label = format!("  {} (collection)", col.name);
+                            let resp = ui.selectable_label(
+                                selected,
+                                egui::RichText::new(label).size(13.0),
+                            );
+                            let path = catalog.collection_image_path(prog, &col.name);
+                            if resp.hovered() {
+                                if let Some(tex) = icons.for_path(ui.ctx(), &path) {
+                                    resp.clone().on_hover_ui(|ui| {
+                                        let [tw, th] = tex.size();
+                                        let size = fit_panel(tw as f32, th as f32);
+                                        ui.add(egui::Image::new((tex.id(), size)));
+                                        ui.label(format!("{prog}~{}", col.name));
+                                    });
+                                } else {
+                                    resp.clone().on_hover_text(format!(
+                                        "{prog}~{} (no image)",
+                                        col.name
+                                    ));
+                                }
+                            }
+                            if selected && *scroll_to_selection && !did_scroll {
+                                maybe_scroll_to(ui, &resp, scroll_to_selection);
+                                did_scroll = true;
+                            }
+                            if resp.clicked() {
+                                let initial = if selected {
+                                    current_ref.cell_range()
+                                } else {
+                                    None
+                                };
+                                *cell_pick = Some(
+                                    CollectionCellPick::new(prog, &col.name, col.rows, col.cols)
+                                        .with_initial_sel(initial),
+                                );
+                            }
+                        }
                     }
                 }
                 ui.add_space(6.0);
             }
         });
+    if *scroll_to_selection && !did_scroll {
+        // Selection not visible under current filter — don't keep retrying every frame.
+        *scroll_to_selection = false;
+    }
 }
 
 fn fit_panel(w: f32, h: f32) -> Vec2 {
@@ -816,6 +1011,7 @@ pub fn show_active_picker(
         .collapsible(false)
         .resizable(true)
         .default_size([560.0, 460.0])
+        .min_size([400.0, 280.0])
         .order(egui::Order::Foreground)
         .open(&mut open)
         .show(ctx, |ui| {
@@ -826,8 +1022,10 @@ pub fn show_active_picker(
                         ui.text_edit_singleline(search);
                     });
                     ui.separator();
+                    let list_h = picker_list_max_height(ui);
                     egui::ScrollArea::vertical()
                         .auto_shrink([false, false])
+                        .max_height(list_h)
                         .show(ui, |ui| {
                             paint_items_icon_grid(ui, catalog, icons, search, staged, true);
                         });
@@ -838,13 +1036,16 @@ pub fn show_active_picker(
                     search,
                     value,
                     cell_pick,
+                    scroll_to_selection,
                 } => {
                     if let Some(pick) = cell_pick.as_mut() {
                         paint_collection_cell_picker(ui, catalog, icons, pick);
                     } else {
                         ui.horizontal(|ui| {
                             ui.label(egui::RichText::new("Search").size(HEADER_SIZE));
-                            ui.text_edit_singleline(search);
+                            if ui.text_edit_singleline(search).changed() {
+                                *scroll_to_selection = true;
+                            }
                         });
                         ui.separator();
                         paint_coord_ref_list(
@@ -856,6 +1057,7 @@ pub fn show_active_picker(
                             CoordKind::Point,
                             previews,
                             cell_pick,
+                            scroll_to_selection,
                         );
                     }
                 }
@@ -863,13 +1065,16 @@ pub fn show_active_picker(
                     search,
                     value,
                     cell_pick,
+                    scroll_to_selection,
                 } => {
                     if let Some(pick) = cell_pick.as_mut() {
                         paint_collection_cell_picker(ui, catalog, icons, pick);
                     } else {
                         ui.horizontal(|ui| {
                             ui.label(egui::RichText::new("Search").size(HEADER_SIZE));
-                            ui.text_edit_singleline(search);
+                            if ui.text_edit_singleline(search).changed() {
+                                *scroll_to_selection = true;
+                            }
                         });
                         ui.separator();
                         paint_coord_ref_list(
@@ -881,33 +1086,50 @@ pub fn show_active_picker(
                             CoordKind::SearchArea,
                             previews,
                             cell_pick,
+                            scroll_to_selection,
                         );
                     }
                 }
-                ActivePicker::Macro { search, value } => {
+                ActivePicker::Macro {
+                    search,
+                    value,
+                    scroll_to_selection,
+                } => {
                     ui.horizontal(|ui| {
                         ui.label(egui::RichText::new("Search").size(HEADER_SIZE));
-                        ui.text_edit_singleline(search);
+                        if ui.text_edit_singleline(search).changed() {
+                            *scroll_to_selection = true;
+                        }
                     });
                     ui.separator();
                     let q = search.trim().to_ascii_lowercase();
-                    egui::ScrollArea::vertical().show(ui, |ui| {
-                        for (name, tags) in macros {
-                            if !query_matches_name_or_tags(&q, name, tags) {
-                                continue;
-                            }
-                            let selected = value == name;
-                            if ui
-                                .selectable_label(
+                    let mut did_scroll = false;
+                    let list_h = picker_list_max_height(ui);
+                    egui::ScrollArea::vertical()
+                        .auto_shrink([false, false])
+                        .max_height(list_h)
+                        .show(ui, |ui| {
+                            for (name, tags) in macros {
+                                if !query_matches_name_or_tags(&q, name, tags) {
+                                    continue;
+                                }
+                                let selected = value == name;
+                                let resp = ui.selectable_label(
                                     selected,
                                     egui::RichText::new(name.as_str()).size(13.0),
-                                )
-                                .clicked()
-                            {
-                                *value = name.clone();
+                                );
+                                if selected && *scroll_to_selection && !did_scroll {
+                                    maybe_scroll_to(ui, &resp, scroll_to_selection);
+                                    did_scroll = true;
+                                }
+                                if resp.clicked() {
+                                    *value = name.clone();
+                                }
                             }
-                        }
-                    });
+                        });
+                    if *scroll_to_selection && !did_scroll {
+                        *scroll_to_selection = false;
+                    }
                 }
                 ActivePicker::Window {
                     search,
@@ -915,10 +1137,13 @@ pub fn show_active_picker(
                     window_title,
                     windows,
                     load_error,
+                    scroll_to_selection,
                 } => {
                     ui.horizontal(|ui| {
                         ui.label(egui::RichText::new("Search").size(HEADER_SIZE));
-                        ui.text_edit_singleline(search);
+                        if ui.text_edit_singleline(search).changed() {
+                            *scroll_to_selection = true;
+                        }
                         if ui
                             .add(egui::Button::new(egui::RichText::new("↻").size(14.0)).small())
                             .on_hover_text("Refresh")
@@ -934,6 +1159,7 @@ pub fn show_active_picker(
                                     *load_error = Some(e);
                                 }
                             }
+                            *scroll_to_selection = true;
                         }
                     });
                     ui.separator();
@@ -941,8 +1167,11 @@ pub fn show_active_picker(
                         ui.colored_label(Color32::RED, err.as_str());
                     }
                     let q = search.trim().to_ascii_lowercase();
+                    let mut did_scroll = false;
+                    let list_h = picker_list_max_height(ui);
                     egui::ScrollArea::vertical()
                         .auto_shrink([false, false])
+                        .max_height(list_h)
                         .show(ui, |ui| {
                             for w in windows.iter() {
                                 if !query_matches_window(&q, w) {
@@ -950,18 +1179,23 @@ pub fn show_active_picker(
                                 }
                                 let selected = window_title == &w.title
                                     && process_path == &w.process_path;
-                                if ui
-                                    .selectable_label(
-                                        selected,
-                                        egui::RichText::new(w.label()).size(13.0),
-                                    )
-                                    .clicked()
-                                {
+                                let resp = ui.selectable_label(
+                                    selected,
+                                    egui::RichText::new(w.label()).size(13.0),
+                                );
+                                if selected && *scroll_to_selection && !did_scroll {
+                                    maybe_scroll_to(ui, &resp, scroll_to_selection);
+                                    did_scroll = true;
+                                }
+                                if resp.clicked() {
                                     *window_title = w.title.clone();
                                     *process_path = w.process_path.clone();
                                 }
                             }
                         });
+                    if *scroll_to_selection && !did_scroll {
+                        *scroll_to_selection = false;
+                    }
                 }
                 ActivePicker::None => {}
             }
@@ -1003,22 +1237,20 @@ pub fn show_active_picker(
     }
     if save {
         if in_cell_pick {
-            // Stage collection ref into the parent picker value, then return to list.
+            // Collection cell Save commits immediately (Go ShowPointPicker / ShowSearchAreaPicker).
             let staged = picker
                 .cell_pick_mut()
                 .and_then(|c| c.as_ref())
                 .and_then(|p| p.to_ref());
             if let Some(coord) = staged {
-                match picker {
-                    ActivePicker::Point { value, cell_pick, .. }
-                    | ActivePicker::SearchArea { value, cell_pick, .. } => {
-                        *value = coord.0;
-                        *cell_pick = None;
-                    }
-                    _ => {}
-                }
+                result = match picker {
+                    ActivePicker::Point { .. } => PickerResult::Point(coord),
+                    ActivePicker::SearchArea { .. } => PickerResult::SearchArea(coord),
+                    _ => PickerResult::None,
+                };
+                *picker = ActivePicker::None;
             }
-            return PickerResult::None;
+            return result;
         }
         result = match picker {
             ActivePicker::Items { staged, .. } => PickerResult::Items(staged.clone()),
@@ -1093,10 +1325,39 @@ pub mod options {
 
 #[cfg(test)]
 mod tests {
-    use super::{item_tooltip_parts, query_matches_name_or_tags, query_matches_window};
+    use super::{
+        item_tooltip_parts, query_matches_name_or_tags, query_matches_window,
+        sort_by_display_name, toggle_select_all_filtered,
+    };
     use sqyre_capture::WindowInfo;
     use sqyre_persist::{ProgramCatalog, ProgramData, ProgramItem};
     use std::collections::BTreeMap;
+
+    #[test]
+    fn sort_by_display_name_orders_case_insensitive() {
+        let mut rows = vec![
+            ("b".into(), "Zebra".into()),
+            ("a".into(), "apple".into()),
+            ("c".into(), "Banana".into()),
+        ];
+        sort_by_display_name(&mut rows);
+        assert_eq!(
+            rows.iter().map(|(_, d)| d.as_str()).collect::<Vec<_>>(),
+            vec!["apple", "Banana", "Zebra"]
+        );
+    }
+
+    #[test]
+    fn toggle_select_all_adds_then_clears_filtered() {
+        let filtered = vec!["A~1".into(), "A~2".into()];
+        let mut selected = vec!["B~9".into()];
+        toggle_select_all_filtered(&mut selected, &filtered);
+        assert!(selected.contains(&"A~1".into()));
+        assert!(selected.contains(&"A~2".into()));
+        assert!(selected.contains(&"B~9".into()));
+        toggle_select_all_filtered(&mut selected, &filtered);
+        assert_eq!(selected, vec!["B~9".to_string()]);
+    }
 
     #[test]
     fn empty_query_matches_anything() {

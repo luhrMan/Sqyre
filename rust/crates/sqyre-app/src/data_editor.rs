@@ -649,24 +649,85 @@ impl DataEditor {
             return Vec::new();
         };
         let res = catalog.resolution_key();
-        match self.tab {
-            EditorTab::Items => p.items.keys().cloned().collect(),
+        let mut keys: Vec<(String, String)> = match self.tab {
+            EditorTab::Items => p
+                .items
+                .iter()
+                .map(|(k, it)| {
+                    let display = if it.name.trim().is_empty() {
+                        k.clone()
+                    } else {
+                        it.name.clone()
+                    };
+                    (k.clone(), display)
+                })
+                .collect(),
             EditorTab::Points => p
                 .points
                 .get(res)
                 .or_else(|| p.points.values().next())
-                .map(|m| m.keys().cloned().collect())
+                .map(|m| {
+                    m.iter()
+                        .map(|(k, pt)| {
+                            let display = if pt.name.trim().is_empty() {
+                                k.clone()
+                            } else {
+                                pt.name.clone()
+                            };
+                            (k.clone(), display)
+                        })
+                        .collect()
+                })
                 .unwrap_or_default(),
             EditorTab::SearchAreas | EditorTab::AutoPic => p
                 .search_areas
                 .get(res)
                 .or_else(|| p.search_areas.values().next())
-                .map(|m| m.keys().cloned().collect())
+                .map(|m| {
+                    m.iter()
+                        .map(|(k, sa)| {
+                            let display = if sa.name.trim().is_empty() {
+                                k.clone()
+                            } else {
+                                sa.name.clone()
+                            };
+                            (k.clone(), display)
+                        })
+                        .collect()
+                })
                 .unwrap_or_default(),
-            EditorTab::Masks => p.masks.keys().cloned().collect(),
-            EditorTab::Collections => p.collections.keys().cloned().collect(),
+            EditorTab::Masks => p
+                .masks
+                .iter()
+                .map(|(k, m)| {
+                    let display = if m.name.trim().is_empty() {
+                        k.clone()
+                    } else {
+                        m.name.clone()
+                    };
+                    (k.clone(), display)
+                })
+                .collect(),
+            EditorTab::Collections => p
+                .collections
+                .iter()
+                .map(|(k, c)| {
+                    let display = if c.name.trim().is_empty() {
+                        k.clone()
+                    } else {
+                        c.name.clone()
+                    };
+                    (k.clone(), display)
+                })
+                .collect(),
             EditorTab::Programs => Vec::new(),
-        }
+        };
+        keys.sort_by(|a, b| {
+            a.1.to_ascii_lowercase()
+                .cmp(&b.1.to_ascii_lowercase())
+                .then_with(|| a.0.cmp(&b.0))
+        });
+        keys.into_iter().map(|(k, _)| k).collect()
     }
 
     fn select_program(&mut self, name: &str, catalog: &ProgramCatalog) {
