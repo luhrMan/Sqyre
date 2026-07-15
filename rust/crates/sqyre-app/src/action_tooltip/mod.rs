@@ -12,6 +12,9 @@ use sqyre_domain::{
 };
 use sqyre_persist::ProgramCatalog;
 use sqyre_validate::validate_action;
+use std::collections::HashSet;
+
+use crate::var_pills;
 
 pub use edit::apply_draft_preserving_children;
 
@@ -158,7 +161,8 @@ impl TooltipState {
                 picker: p @ ActivePicker::Items { .. }
                 | p @ ActivePicker::Point { .. }
                 | p @ ActivePicker::SearchArea { .. }
-                | p @ ActivePicker::Macro { .. },
+                | p @ ActivePicker::Macro { .. }
+                | p @ ActivePicker::Window { .. },
                 ..
             } => {
                 *p = ActivePicker::None;
@@ -218,7 +222,8 @@ pub fn show(
     catalog: &ProgramCatalog,
     icons: &mut IconCache,
     previews: &mut crate::preview_tooltip::PreviewTooltipCache,
-    macro_names: &[String],
+    macros: &[(String, Vec<String>)],
+    known_vars: &HashSet<String>,
     is_dark: bool,
     mut before_mutate: impl FnMut(&Action),
 ) {
@@ -233,7 +238,7 @@ pub fn show(
                 *state = TooltipState::Hidden;
                 return;
             };
-            show_view_tip(ctx, &action, catalog, icons, is_dark);
+            show_view_tip(ctx, &action, catalog, icons, previews, known_vars, is_dark);
         }
         TooltipState::Edit { .. } => {
             show_edit_window(
@@ -243,7 +248,8 @@ pub fn show(
                 catalog,
                 icons,
                 previews,
-                macro_names,
+                macros,
+                known_vars,
                 is_dark,
                 &mut before_mutate,
             );
@@ -264,6 +270,8 @@ fn show_view_tip(
     action: &Action,
     catalog: &ProgramCatalog,
     icons: &mut IconCache,
+    previews: &mut crate::preview_tooltip::PreviewTooltipCache,
+    known_vars: &HashSet<String>,
     is_dark: bool,
 ) {
     let Some(pointer) = ctx.pointer_interact_pos() else {
@@ -273,31 +281,55 @@ fn show_view_tip(
     let label = action_type_label(type_key);
     let description = action_type_description(type_key);
     let params = action.display_params_for_tree();
-    let (summary, extra) = split_display_params(&params);
+    let (_, extra) = split_display_params(&params);
     let pastel = tree_chrome::rgba_pub(action_pastel_color(type_key, is_dark));
+    let coord_preview = crate::preview_tooltip::coordinate_ref_for_preview(action);
+    let summary_pills = action.tree_summary_pills();
 
     let tip_id = egui::Id::new(("action_hover_tip", action.id.as_str()));
+    // Prefer growing left when near the right edge so constrain() is less likely
+    // to slide the tip over the hovered row (which would steal hover).
+    let screen = ctx.content_rect();
+    let max_w = if coord_preview.is_some() { 420.0 } else { 340.0 };
+    let near_right = pointer.x + 14.0 + max_w > screen.right();
+    let (pivot, pos) = if near_right {
+        (egui::Align2::RIGHT_TOP, pointer + Vec2::new(-8.0, 14.0))
+    } else {
+        (egui::Align2::LEFT_TOP, pointer + Vec2::new(14.0, 14.0))
+    };
     egui::Area::new(tip_id)
         .order(Order::Tooltip)
-        .fixed_pos(pointer + Vec2::new(14.0, 14.0))
+        .pivot(pivot)
+        .fixed_pos(pos)
         .interactable(false)
         .constrain(true)
         .show(ctx, |ui| {
             egui::Frame::popup(ui.style())
                 .inner_margin(egui::Margin::symmetric(10, 8))
                 .show(ui, |ui| {
-                    ui.set_max_width(340.0);
+                    ui.set_max_width(max_w);
                     tree_chrome::paint_pill_pub(ui, label, pastel);
                     ui.add_space(4.0);
                     ui.label(egui::RichText::new(description).size(12.0).weak());
-                    if !summary.is_empty() {
+                    if !summary_pills.is_empty() {
                         ui.add_space(6.0);
                         ui.horizontal_wrapped(|ui| {
                             ui.spacing_mut().item_spacing = Vec2::splat(3.0);
-                            for p in &summary {
-                                tree_chrome::paint_pill_pub(ui, p.minimal(), pastel);
+                            for pill in &summary_pills {
+                                let _ = var_pills::paint_summary_pill(
+                                    ui,
+                                    type_key,
+                                    pill,
+                                    known_vars,
+                                    is_dark,
+                                );
                             }
                         });
+                    }
+                    if let Some((coord_ref, kind)) = coord_preview {
+                        ui.add_space(6.0);
+                        ui.separator();
+                        previews.paint_for_coordinate_ref(ui, catalog, &coord_ref, kind, false);
                     }
                     tree_chrome::paint_image_search_tooltip_thumbs_pub(ui, action, catalog, icons);
                     if !extra.is_empty() {
@@ -310,7 +342,13 @@ fn show_view_tip(
                                         .size(12.0)
                                         .strong(),
                                 );
-                                ui.label(egui::RichText::new(p.minimal()).size(12.0));
+                                var_pills::paint_var_ref_content(
+                                    ui,
+                                    p.minimal(),
+                                    known_vars,
+                                    is_dark,
+                                    ui.visuals().text_color(),
+                                );
                             });
                         }
                     }
@@ -325,7 +363,8 @@ fn show_edit_window(
     catalog: &ProgramCatalog,
     icons: &mut IconCache,
     previews: &mut crate::preview_tooltip::PreviewTooltipCache,
-    macro_names: &[String],
+    macros: &[(String, Vec<String>)],
+    known_vars: &HashSet<String>,
     is_dark: bool,
     before_mutate: &mut dyn FnMut(&Action),
 ) {
@@ -345,7 +384,7 @@ fn show_edit_window(
     // Picker modal first (foreground); apply result onto draft.
     if let TooltipState::Edit { draft, picker, .. } = state {
         let result =
-            pickers::show_active_picker(ctx, picker, catalog, icons, previews, macro_names);
+            pickers::show_active_picker(ctx, picker, catalog, icons, previews, macros);
         apply_picker_result(draft, result);
     }
 
@@ -384,6 +423,23 @@ fn show_edit_window(
             egui::ScrollArea::vertical()
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
+                    let coord_preview = match state {
+                        TooltipState::Edit { draft, .. } => {
+                            crate::preview_tooltip::coordinate_ref_for_preview(draft)
+                        }
+                        _ => None,
+                    };
+                    if let Some((coord_ref, kind)) = coord_preview {
+                        let mut force = false;
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new("Preview").strong());
+                            if ui.button("Refresh").clicked() {
+                                force = true;
+                            }
+                        });
+                        previews.paint_for_coordinate_ref(ui, catalog, &coord_ref, kind, force);
+                        ui.separator();
+                    }
                     if let TooltipState::Edit {
                         draft, picker, ..
                     } = state
@@ -394,7 +450,9 @@ fn show_edit_window(
                             catalog,
                             icons,
                             picker,
-                            macro_names,
+                            macros,
+                            known_vars,
+                            is_dark,
                         );
                     }
                 });
@@ -449,6 +507,19 @@ fn apply_picker_result(draft: &mut Action, result: PickerResult) {
         PickerResult::MacroName(name) => {
             if let ActionKind::RunMacro { macro_name } = &mut draft.kind {
                 *macro_name = name;
+            }
+        }
+        PickerResult::Window {
+            process_path,
+            window_title,
+        } => {
+            if let ActionKind::FocusWindow {
+                process_path: path,
+                window_title: title,
+            } = &mut draft.kind
+            {
+                *path = process_path;
+                *title = window_title;
             }
         }
     }

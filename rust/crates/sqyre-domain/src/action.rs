@@ -87,11 +87,25 @@ impl WaitTilFoundConfig {
         self.effective_repeat_mode() == REPEAT_WAIT_UNTIL_FOUND && self.wait_til_found_seconds > 0
     }
 
+    /// Go `WaitTilFoundConfig.IsRepeatWhileFound`.
+    pub fn is_repeat_while_found(&self) -> bool {
+        self.effective_repeat_mode() == REPEAT_WHILE_FOUND
+    }
+
     pub fn effective_interval_ms(&self, default_ms: i32) -> i32 {
         if self.wait_til_found_interval_ms > 0 {
             self.wait_til_found_interval_ms
         } else {
             default_ms
+        }
+    }
+
+    /// Go `WaitTilFoundConfig.EffectiveMaxIterations` (default 100 when unset).
+    pub fn effective_max_iterations(&self) -> i32 {
+        if self.max_iterations > 0 {
+            self.max_iterations
+        } else {
+            100
         }
     }
 }

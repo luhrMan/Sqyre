@@ -1,8 +1,10 @@
-//! Shared entity pickers: item icon grids, point / search-area lists, collection cells.
+//! Shared entity pickers: item icon grids, point / search-area lists, collection cells,
+//! macros, and Focus Window live-window lists.
 
 use crate::icon_cache::IconCache;
 use crate::preview_tooltip::{PreviewKind, PreviewTooltipCache};
 use eframe::egui::{self, Color32, Pos2, Sense, Vec2};
+use sqyre_capture::WindowInfo;
 use sqyre_domain::{CoordinateRef, PROGRAM_DELIMITER};
 use sqyre_persist::ProgramCatalog;
 
@@ -81,6 +83,49 @@ pub enum ActivePicker {
         search: String,
         value: String,
     },
+    /// Live OS windows for Focus Window (`process_path` + `window_title`).
+    Window {
+        search: String,
+        process_path: String,
+        window_title: String,
+        windows: Vec<WindowInfo>,
+        load_error: Option<String>,
+    },
+}
+
+/// Reload the live window list into an open `ActivePicker::Window`.
+pub fn refresh_window_picker(picker: &mut ActivePicker) {
+    let ActivePicker::Window {
+        windows,
+        load_error,
+        ..
+    } = picker
+    else {
+        return;
+    };
+    match sqyre_capture::list_open_windows() {
+        Ok(list) => {
+            *windows = list;
+            *load_error = None;
+        }
+        Err(e) => {
+            windows.clear();
+            *load_error = Some(e);
+        }
+    }
+}
+
+/// Open a Focus Window picker preloaded with current fields + live windows.
+pub fn open_window_picker(process_path: &str, window_title: &str) -> ActivePicker {
+    let mut picker = ActivePicker::Window {
+        search: String::new(),
+        process_path: process_path.to_string(),
+        window_title: window_title.to_string(),
+        windows: Vec::new(),
+        load_error: None,
+    };
+    refresh_window_picker(&mut picker);
+    picker
 }
 
 impl ActivePicker {
@@ -98,6 +143,27 @@ impl ActivePicker {
 
 fn header_text(label: &str) -> egui::RichText {
     egui::RichText::new(label).size(HEADER_SIZE).strong()
+}
+
+/// Substring match (case-insensitive) on `name` or any tag. Empty `q` matches everything.
+fn query_matches_name_or_tags(q: &str, name: &str, tags: &[String]) -> bool {
+    if q.is_empty() {
+        return true;
+    }
+    name.to_ascii_lowercase().contains(q)
+        || tags
+            .iter()
+            .any(|t| t.to_ascii_lowercase().contains(q))
+}
+
+/// Substring match on window title, process name, or path.
+fn query_matches_window(q: &str, w: &WindowInfo) -> bool {
+    if q.is_empty() {
+        return true;
+    }
+    w.title.to_ascii_lowercase().contains(q)
+        || w.process_name.to_ascii_lowercase().contains(q)
+        || w.process_path.to_ascii_lowercase().contains(q)
 }
 
 /// How many fixed-size columns fit in `avail_w`.
@@ -264,15 +330,15 @@ pub fn paint_items_icon_grid(
         };
         let items: Vec<_> = pdata
             .items
-            .keys()
-            .filter(|name| {
+            .iter()
+            .filter(|(name, item)| {
                 if q.is_empty() {
                     return true;
                 }
-                name.to_ascii_lowercase().contains(&q)
-                    || prog.to_ascii_lowercase().contains(&q)
+                prog.to_ascii_lowercase().contains(&q)
+                    || query_matches_name_or_tags(&q, name, &item.tags)
             })
-            .cloned()
+            .map(|(name, _)| name.clone())
             .collect();
         if items.is_empty() {
             continue;
@@ -599,7 +665,8 @@ pub fn show_active_picker(
     catalog: &ProgramCatalog,
     icons: &mut IconCache,
     previews: &mut PreviewTooltipCache,
-    macro_names: &[String],
+    // `(name, tags)` — tags are used by the macro search bar.
+    macros: &[(String, Vec<String>)],
 ) -> PickerResult {
     let mut result = PickerResult::None;
     let mut open = picker.is_open();
@@ -629,6 +696,7 @@ pub fn show_active_picker(
         } => "Select collection cells",
         ActivePicker::SearchArea { .. } => "Pick search area",
         ActivePicker::Macro { .. } => "Pick macro",
+        ActivePicker::Window { .. } => "Pick window",
         ActivePicker::None => return result,
     };
 
@@ -716,8 +784,8 @@ pub fn show_active_picker(
                     ui.separator();
                     let q = search.trim().to_ascii_lowercase();
                     egui::ScrollArea::vertical().show(ui, |ui| {
-                        for name in macro_names {
-                            if !q.is_empty() && !name.to_ascii_lowercase().contains(&q) {
+                        for (name, tags) in macros {
+                            if !query_matches_name_or_tags(&q, name, tags) {
                                 continue;
                             }
                             let selected = value == name;
@@ -732,6 +800,56 @@ pub fn show_active_picker(
                             }
                         }
                     });
+                }
+                ActivePicker::Window {
+                    search,
+                    process_path,
+                    window_title,
+                    windows,
+                    load_error,
+                } => {
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new("Search").size(HEADER_SIZE));
+                        ui.text_edit_singleline(search);
+                        if ui.button("Refresh").clicked() {
+                            match sqyre_capture::list_open_windows() {
+                                Ok(list) => {
+                                    *windows = list;
+                                    *load_error = None;
+                                }
+                                Err(e) => {
+                                    windows.clear();
+                                    *load_error = Some(e);
+                                }
+                            }
+                        }
+                    });
+                    ui.separator();
+                    if let Some(err) = load_error.as_ref() {
+                        ui.colored_label(Color32::RED, err.as_str());
+                    }
+                    let q = search.trim().to_ascii_lowercase();
+                    egui::ScrollArea::vertical()
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            for w in windows.iter() {
+                                if !query_matches_window(&q, w) {
+                                    continue;
+                                }
+                                let selected = window_title == &w.title
+                                    && process_path == &w.process_path;
+                                if ui
+                                    .selectable_label(
+                                        selected,
+                                        egui::RichText::new(w.label()).size(13.0),
+                                    )
+                                    .clicked()
+                                {
+                                    *window_title = w.title.clone();
+                                    *process_path = w.process_path.clone();
+                                }
+                            }
+                        });
                 }
                 ActivePicker::None => {}
             }
@@ -797,6 +915,14 @@ pub fn show_active_picker(
                 PickerResult::SearchArea(CoordinateRef(value.clone()))
             }
             ActivePicker::Macro { value, .. } => PickerResult::MacroName(value.clone()),
+            ActivePicker::Window {
+                process_path,
+                window_title,
+                ..
+            } => PickerResult::Window {
+                process_path: process_path.clone(),
+                window_title: window_title.clone(),
+            },
             ActivePicker::None => PickerResult::None,
         };
         *picker = ActivePicker::None;
@@ -811,6 +937,10 @@ pub enum PickerResult {
     Point(CoordinateRef),
     SearchArea(CoordinateRef),
     MacroName(String),
+    Window {
+        process_path: String,
+        window_title: String,
+    },
 }
 
 /// Static option lists for ComboBox fields (>2 options).
@@ -847,4 +977,48 @@ pub mod options {
     pub const SELECT_DEVICES: &[&str] = &["", "mouse", "keyboard"];
     pub const SELECT_PRESS_MODES: &[&str] = &["", "click", "down", "up", "hold"];
     pub const MOUSE_BUTTONS: &[&str] = &["", "left", "right", "center"];
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{query_matches_name_or_tags, query_matches_window};
+    use sqyre_capture::WindowInfo;
+
+    #[test]
+    fn empty_query_matches_anything() {
+        assert!(query_matches_name_or_tags("", "Potion", &[]));
+        assert!(query_matches_name_or_tags(
+            "",
+            "x",
+            &["healing".into()]
+        ));
+    }
+
+    #[test]
+    fn matches_name_substring() {
+        assert!(query_matches_name_or_tags("pot", "HealthPotion", &[]));
+        assert!(!query_matches_name_or_tags("sword", "HealthPotion", &[]));
+    }
+
+    #[test]
+    fn matches_tag_substring() {
+        let tags = vec!["consumable".into(), "healing".into()];
+        assert!(query_matches_name_or_tags("heal", "Minor Flask", &tags));
+        assert!(query_matches_name_or_tags("CONSUM", "Minor Flask", &tags));
+        assert!(!query_matches_name_or_tags("weapon", "Minor Flask", &tags));
+    }
+
+    #[test]
+    fn window_query_matches_title_name_or_path() {
+        let w = WindowInfo {
+            title: "Inbox — Mail".into(),
+            process_name: "thunderbird".into(),
+            process_path: "/usr/lib/thunderbird/thunderbird".into(),
+        };
+        assert!(query_matches_window("", &w));
+        assert!(query_matches_window("inbox", &w));
+        assert!(query_matches_window("THUNDER", &w));
+        assert!(query_matches_window("/usr/lib/thunder", &w));
+        assert!(!query_matches_window("firefox", &w));
+    }
 }

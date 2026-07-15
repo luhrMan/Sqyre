@@ -2,18 +2,17 @@
 
 use egui_ltreeview::DirPosition;
 use sqyre_domain::{Action, ActionId, InsertSlot};
-use std::collections::HashMap;
 
-/// Map an `egui_ltreeview` drop position to an [`InsertSlot`] using the node→action map.
+/// Map an `egui_ltreeview` drop position to an [`InsertSlot`].
+/// Tree node ids are stable [`ActionId`] values, so no separate lookup map is needed.
 pub(crate) fn insert_slot_from_dir_position(
-    position: DirPosition<u64>,
-    node_actions: &HashMap<u64, ActionId>,
+    position: DirPosition<ActionId>,
 ) -> Option<InsertSlot> {
     match position {
         DirPosition::First => Some(InsertSlot::First),
         DirPosition::Last => Some(InsertSlot::Last),
-        DirPosition::Before(nid) => node_actions.get(&nid).copied().map(InsertSlot::Before),
-        DirPosition::After(nid) => node_actions.get(&nid).copied().map(InsertSlot::After),
+        DirPosition::Before(aid) => Some(InsertSlot::Before(aid)),
+        DirPosition::After(aid) => Some(InsertSlot::After(aid)),
     }
 }
 
@@ -31,26 +30,21 @@ mod tests {
     fn maps_dir_positions() {
         let a = ActionId::new();
         let b = ActionId::new();
-        let map = HashMap::from([(1u64, a), (2u64, b)]);
         assert_eq!(
-            insert_slot_from_dir_position(DirPosition::First, &map),
+            insert_slot_from_dir_position(DirPosition::First),
             Some(InsertSlot::First)
         );
         assert_eq!(
-            insert_slot_from_dir_position(DirPosition::Last, &map),
+            insert_slot_from_dir_position(DirPosition::Last),
             Some(InsertSlot::Last)
         );
         assert_eq!(
-            insert_slot_from_dir_position(DirPosition::Before(2), &map),
+            insert_slot_from_dir_position(DirPosition::Before(b)),
             Some(InsertSlot::Before(b))
         );
         assert_eq!(
-            insert_slot_from_dir_position(DirPosition::After(1), &map),
+            insert_slot_from_dir_position(DirPosition::After(a)),
             Some(InsertSlot::After(a))
-        );
-        assert_eq!(
-            insert_slot_from_dir_position(DirPosition::Before(99), &map),
-            None
         );
     }
 

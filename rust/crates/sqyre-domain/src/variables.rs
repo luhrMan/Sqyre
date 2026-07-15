@@ -1,6 +1,76 @@
 //! Declared macro variables and runtime store.
 
-use crate::ScalarValue;
+use crate::{
+    Action, ActionKind, Macro, ScalarValue, FOREACH_ROW_BUILTIN_ROW, FOREACH_ROW_BUILTIN_ROW_COUNT,
+};
+use std::collections::HashSet;
+
+/// Image Search builtins set inside sub-actions (Go `ImageSearchBuiltinVars`).
+pub const IMAGE_SEARCH_BUILTIN_VARS: &[&str] = &[
+    "StackMax",
+    "Cols",
+    "Rows",
+    "ItemName",
+    "ImagePixelWidth",
+    "ImagePixelHeight",
+];
+
+/// Lowercase name set for known/unknown nested variable chips (Go `KnownVariableSet`).
+pub fn known_variable_set(names: impl IntoIterator<Item = impl AsRef<str>>) -> HashSet<String> {
+    names
+        .into_iter()
+        .map(|n| n.as_ref().trim().to_ascii_lowercase())
+        .filter(|n| !n.is_empty())
+        .collect()
+}
+
+/// Collect defined variable names from decls, action bindings, and relevant builtins.
+///
+/// Monitor builtins are omitted (display count is a platform concern); UI can
+/// union those in later if needed for unknown coloring.
+pub fn collect_known_variable_names(macro_: &Macro) -> HashSet<String> {
+    let mut names = HashSet::new();
+    let mut has_image_search = false;
+    let mut has_for_each_row = false;
+
+    for d in &macro_.variable_decls {
+        let n = d.name.trim();
+        if !n.is_empty() {
+            names.insert(n.to_ascii_lowercase());
+        }
+    }
+
+    macro_.root.walk(&mut |action: &Action| {
+        match &action.kind {
+            ActionKind::ImageSearch { .. } => has_image_search = true,
+            ActionKind::ForEachRow { .. } => has_for_each_row = true,
+            _ => {}
+        }
+        for b in action.variable_bindings() {
+            let n = b.name.trim();
+            if !n.is_empty() {
+                names.insert(n.to_ascii_lowercase());
+            }
+        }
+    });
+
+    if has_image_search {
+        for n in IMAGE_SEARCH_BUILTIN_VARS {
+            names.insert((*n).to_ascii_lowercase());
+        }
+    }
+    if has_for_each_row {
+        names.insert(FOREACH_ROW_BUILTIN_ROW.to_ascii_lowercase());
+        names.insert(FOREACH_ROW_BUILTIN_ROW_COUNT.to_ascii_lowercase());
+    }
+
+    names
+}
+
+/// True when `name` is in the known set (case-insensitive).
+pub fn is_known_variable(known: &HashSet<String>, name: &str) -> bool {
+    known.contains(&name.trim().to_ascii_lowercase())
+}
 
 /// Declared value type of a user-defined macro variable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -88,7 +158,56 @@ impl VariableStore {
         }
     }
 
+    /// Remove a variable by name (case-insensitive). No-op when name is empty or missing.
+    pub fn delete(&mut self, name: &str) {
+        let key = name.trim();
+        if key.is_empty() {
+            return;
+        }
+        self.entries
+            .retain(|(n, _)| !n.eq_ignore_ascii_case(key));
+    }
+
     pub fn clear(&mut self) {
         self.entries.clear();
+    }
+}
+
+#[cfg(test)]
+mod known_tests {
+    use super::*;
+    use crate::{root_loop, Action, ActionId, ActionKind};
+
+    #[test]
+    fn collect_includes_decls_bindings_and_builtins() {
+        let mut m = Macro::new("m", 0, vec![]);
+        m.variable_decls.push(VariableDecl {
+            name: "Seed".into(),
+            ..Default::default()
+        });
+        m.root = root_loop(vec![
+            Action {
+                id: ActionId::new(),
+                kind: ActionKind::SetVariable {
+                    variable_name: "Count".into(),
+                    value: serde_yaml::Value::Null,
+                },
+            },
+            Action {
+                id: ActionId::new(),
+                kind: ActionKind::ForEachRow {
+                    name: "rows".into(),
+                    sources: vec![],
+                    start_row: ScalarValue::Null,
+                    end_row: ScalarValue::Null,
+                    subactions: vec![],
+                },
+            },
+        ]);
+        let known = collect_known_variable_names(&m);
+        assert!(is_known_variable(&known, "seed"));
+        assert!(is_known_variable(&known, "COUNT"));
+        assert!(is_known_variable(&known, "Row"));
+        assert!(is_known_variable(&known, "RowCount"));
     }
 }

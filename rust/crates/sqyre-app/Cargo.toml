@@ -23,6 +23,7 @@ sqyre-match = { path = "../sqyre-match" }
 sqyre-domain = { path = "../sqyre-domain" }
 sqyre-persist = { path = "../sqyre-persist" }
 sqyre-validate = { path = "../sqyre-validate" }
+sqyre-varref = { path = "../sqyre-varref" }
 sqyre-executor = { path = "../sqyre-executor" }
 sqyre-serialize = { path = "../sqyre-serialize" }
 sqyre-input = { path = "../sqyre-input" }
@@ -30,6 +31,8 @@ sqyre-capture = { path = "../sqyre-capture" }
 sqyre-hotkeys = { path = "../sqyre-hotkeys" }
 sqyre-vision = { path = "../sqyre-vision" }
 serde_yaml = { workspace = true }
+rfd = { workspace = true }
+parking_lot = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 ksni = { workspace = true }
