@@ -1,7 +1,9 @@
 use sqyre_domain::{CoordinateRef, Macro};
-use sqyre_executor::{CoordinateResolver, IconStore, ItemMeta};
+use sqyre_executor::{CoordinateResolver, IconStore, ItemMeta, MacroLookup};
 use sqyre_persist::ProgramCatalog;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 pub struct CatalogResolver<'a>(pub &'a ProgramCatalog);
 
@@ -39,5 +41,14 @@ impl IconStore for CatalogIcons<'_> {
                 cols,
                 rows,
             })
+    }
+}
+
+/// Snapshot of macros available to RunMacro during a run.
+pub struct SnapshotMacros(pub Arc<BTreeMap<String, Macro>>);
+
+impl MacroLookup for SnapshotMacros {
+    fn get(&self, name: &str) -> Option<Macro> {
+        self.0.get(name).cloned()
     }
 }
