@@ -40,6 +40,8 @@ tempfile = "3"
 image = { version = "0.25", default-features = false, features = ["png"] }
 rustautogui = { version = "2.5", default-features = false, features = ["lite"] }
 arboard = { version = "3", default-features = false }
-x11 = "2"
+x11 = { version = "2", features = ["xlib"] }
 rdev = "0.5"
 parking_lot = "0.12"
+ksni = { version = "0.3", features = ["blocking"] }
+tray-icon = { version = "0.24", default-features = false }

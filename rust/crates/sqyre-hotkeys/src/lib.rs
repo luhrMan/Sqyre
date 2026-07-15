@@ -1,5 +1,9 @@
 //! Global hotkey service with injectable no-op stub (Go `nohook` pattern).
 
+mod continue_wait;
+
+pub use continue_wait::{normalize_key_name, ContinueWaitBridge};
+
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -68,15 +72,22 @@ mod hooks;
 #[cfg(feature = "hooks")]
 pub use hooks::RdevHotkeys;
 
-/// Pick hooks when feature enabled, otherwise null.
-pub fn default_hotkeys() -> Box<dyn HotkeyService> {
+/// Default hotkeys + continue-wait bridge (Pause).
+pub fn default_hotkeys() -> (Box<dyn HotkeyService>, ContinueWaitBridge) {
     #[cfg(feature = "hooks")]
     {
-        Box::new(RdevHotkeys::default())
+        let bridge = ContinueWaitBridge::new(true);
+        (
+            Box::new(RdevHotkeys::new(bridge.clone())),
+            bridge,
+        )
     }
     #[cfg(not(feature = "hooks"))]
     {
-        Box::new(NullHotkeys::default())
+        (
+            Box::new(NullHotkeys::default()),
+            ContinueWaitBridge::new(false),
+        )
     }
 }
 
