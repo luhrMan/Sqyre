@@ -92,10 +92,6 @@ func (m *Macro) RenameVariable(oldName, newName string) error {
 // variable-producing actions when they match oldName (case-insensitive).
 func renameActionBinding(a actions.ActionInterface, oldName, newName string) {
 	switch n := a.(type) {
-	case *actions.Calculate:
-		if strings.EqualFold(n.OutputVar, oldName) {
-			n.OutputVar = newName
-		}
 	case *actions.SetVariable:
 		if strings.EqualFold(n.VariableName, oldName) {
 			n.VariableName = newName

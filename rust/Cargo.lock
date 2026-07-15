@@ -3644,6 +3644,7 @@ name = "sqyre-executor"
 version = "0.1.0"
 dependencies = [
  "image",
+ "rayon",
  "serde_yaml",
  "sqyre-domain",
  "sqyre-match",

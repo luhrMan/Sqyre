@@ -11,8 +11,10 @@ mod file_dialogs;
 mod hotkey_record;
 mod icon_cache;
 mod icon_variants;
+mod key_record;
 mod macro_meta;
 mod pickers;
+mod pixel_color;
 mod preview_tooltip;
 mod recording_overlay;
 mod settings;
@@ -24,6 +26,7 @@ mod tree_clipboard;
 mod tree_dnd;
 mod tree_history;
 mod var_pills;
+mod variables_panel;
 
 use action_logs_ui::LogsImageCache;
 use action_tooltip::TooltipState;
@@ -36,6 +39,7 @@ use egui_ltreeview::{
 };
 use hotkey_record::HotkeyRecordUi;
 use icon_cache::IconCache;
+use key_record::KeyRecordUi;
 use macro_meta::{collect_all_macro_tags, MacroMetaUi};
 use preview_tooltip::PreviewTooltipCache;
 use recording_overlay::RecordingOverlay;
@@ -46,7 +50,7 @@ use sqyre_domain::{
 };
 use sqyre_executor::{
     execute_macro_with, ContinueKeyWaiter, ExecDeps, MatchFacade, OcrEngine, OcrResult,
-    SharedActionLog, SharedHighlighter,
+    SharedActionLog, SharedHighlighter, SharedRuntimeVars,
 };
 use sqyre_hotkeys::{
     default_hotkeys, format_hotkey, ContinueWaitBridge, HotkeyCallbacks, HotkeyService,
@@ -62,6 +66,21 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use tree_chrome::{RowAction, RowHighlight, RowInteraction};
 use tree_history::TreeHistory;
+
+/// Pointer gesture over the macro tree: reorder only from icon/pill handles;
+/// dragging elsewhere scrolls the tree.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum TreeDragMode {
+    #[default]
+    Idle,
+    Reorder,
+    Scroll,
+}
+
+/// Match egui `ScrollArea` kinetic scrolling (points / second).
+const TREE_SCROLL_STOP_SPEED: f32 = 20.0;
+/// Match egui `ScrollArea` friction (points / second²).
+const TREE_SCROLL_FRICTION: f32 = 1000.0;
 
 struct BridgeContinueWait {
     continue_wait: ContinueWaitBridge,
@@ -180,8 +199,10 @@ struct SqyreApp {
     /// Macro names requested by the hotkey thread (drained each frame).
     pending_hotkey_macros: Arc<Mutex<Vec<String>>>,
     hotkey_record: HotkeyRecordUi,
+    key_record: KeyRecordUi,
     macro_meta: MacroMetaUi,
     action_log: SharedActionLog,
+    runtime_vars: SharedRuntimeVars,
     highlighter: SharedHighlighter,
     /// Branches that were collapsed before execution expand (Go `preExecClosedBranches`).
     pre_exec_closed: HashSet<ActionId>,
@@ -189,6 +210,12 @@ struct SqyreApp {
     exec_fully_expanded: bool,
     /// Last action scrolled into view for execution highlight follow.
     last_exec_follow: Option<ActionId>,
+    /// Prior-frame icon/pill rects; used to decide reorder vs drag-scroll.
+    tree_drag_handles: Vec<egui::Rect>,
+    /// Active pointer gesture on the macro tree (idle / reorder / drag-scroll).
+    tree_drag_mode: TreeDragMode,
+    /// Vertical coast velocity after a drag-scroll release (points/sec).
+    tree_scroll_vel: f32,
     /// Per-macro undo/redo stacks keyed by macro name.
     tree_histories: HashMap<String, TreeHistory>,
     /// Process-local action clipboard (YAML map without UIDs).
@@ -201,6 +228,7 @@ struct SqyreApp {
     add_action_picker: AddActionPicker,
     data_editor: DataEditor,
     settings_ui: SettingsUi,
+    variables_panel: variables_panel::VariablesPanelUi,
     /// Window was hidden because a point/search-area recording is armed.
     hidden_for_recording: bool,
     /// X11 outline windows for live search-area selection rect.
@@ -262,12 +290,17 @@ impl SqyreApp {
                     macro_hotkeys,
                     pending_hotkey_macros,
                     hotkey_record: HotkeyRecordUi::default(),
+                    key_record: KeyRecordUi::default(),
                     macro_meta: MacroMetaUi::default(),
                     action_log: SharedActionLog::new(),
+                    runtime_vars: SharedRuntimeVars::new(),
                     highlighter,
                     pre_exec_closed: HashSet::new(),
                     exec_fully_expanded: false,
                     last_exec_follow: None,
+                    tree_drag_handles: Vec::new(),
+                    tree_drag_mode: TreeDragMode::Idle,
+                    tree_scroll_vel: 0.0,
                     tree_histories: HashMap::new(),
                     action_clipboard: None,
                     logs_window: None,
@@ -278,6 +311,7 @@ impl SqyreApp {
                     add_action_picker,
                     data_editor: DataEditor::default(),
                     settings_ui,
+                    variables_panel: variables_panel::VariablesPanelUi::default(),
                     hidden_for_recording: false,
                     recording_overlay: RecordingOverlay::new(),
                     macro_list_open: true,
@@ -300,12 +334,17 @@ impl SqyreApp {
                 macro_hotkeys,
                 pending_hotkey_macros,
                 hotkey_record: HotkeyRecordUi::default(),
+                key_record: KeyRecordUi::default(),
                 macro_meta: MacroMetaUi::default(),
                 action_log: SharedActionLog::new(),
+                runtime_vars: SharedRuntimeVars::new(),
                 highlighter,
                 pre_exec_closed: HashSet::new(),
                 exec_fully_expanded: false,
                 last_exec_follow: None,
+                tree_drag_handles: Vec::new(),
+                tree_drag_mode: TreeDragMode::Idle,
+                tree_scroll_vel: 0.0,
                 tree_histories: HashMap::new(),
                 action_clipboard: None,
                 logs_window: None,
@@ -316,6 +355,7 @@ impl SqyreApp {
                 add_action_picker,
                 data_editor: DataEditor::default(),
                 settings_ui,
+                variables_panel: variables_panel::VariablesPanelUi::default(),
                 hidden_for_recording: false,
                 recording_overlay: RecordingOverlay::new(),
                 macro_list_open: true,
@@ -633,11 +673,13 @@ impl SqyreApp {
         let running = Arc::clone(&self.run.running);
         let status = Arc::clone(&self.run.status);
         self.action_log.clear();
+        self.runtime_vars.clear();
         self.logs_image_cache.clear();
         self.highlighter.clear_all();
         self.last_exec_follow = None;
         // Expand happens on the next UI frame via `sync_execution_expand`.
         let action_log = self.action_log.clone();
+        let runtime_vars = self.runtime_vars.clone();
         let highlighter = self.highlighter.clone();
         let continue_wait = BridgeContinueWait {
             continue_wait: self.continue_wait.clone(),
@@ -695,6 +737,7 @@ impl SqyreApp {
                         stop_flag: Some(stop_raw.as_ref()),
                         logger: Some(&action_log),
                         highlighter: Some(&highlighter),
+                        runtime_vars: Some(&runtime_vars),
                         variables_dir: Some(vars_dir.as_path()),
                     },
                 )
@@ -742,9 +785,9 @@ impl SqyreApp {
         }
     }
 
-    /// Live X11 selection outline while search-area recording is armed.
-    fn sync_recording_overlay(&mut self) {
-        self.recording_overlay.sync(&self.screen_click);
+    /// Live X11 selection outline + coords HUD while screen-click recording is armed.
+    fn sync_recording_overlay(&mut self, ctx: &egui::Context) {
+        self.recording_overlay.sync(ctx, &self.screen_click);
     }
 
     fn action_display_name(&self, action_id: ActionId) -> String {
@@ -859,6 +902,7 @@ impl eframe::App for SqyreApp {
             ui.ctx(),
             &mut self.db,
             &mut self.macros,
+            self.selected_macro,
             &mut self.catalog,
             &mut self.icon_cache,
             &mut self.preview_tooltips,
@@ -870,6 +914,22 @@ impl eframe::App for SqyreApp {
             &mut self.macros,
             &mut self.catalog,
         );
+        if !self.macros.is_empty() {
+            let idx = self.selected_macro.min(self.macros.len() - 1);
+            let running = self.run.running.load(Ordering::SeqCst);
+            if self
+                .variables_panel
+                .show(
+                    ui.ctx(),
+                    &mut self.macros[idx],
+                    !running,
+                    &self.runtime_vars,
+                    running,
+                )
+            {
+                self.persist_macro_at(idx);
+            }
+        }
         if let Some(action) = {
             let catalog = &self.catalog;
             let icons = &mut self.icon_cache;
@@ -893,6 +953,10 @@ impl eframe::App for SqyreApp {
                 previews,
                 &macros,
                 &known_vars,
+                &mut self.key_record,
+                &mut self.hotkey_record,
+                &self.macro_hotkeys,
+                &self.screen_click,
                 |_| {
                     defaults_to_persist = true;
                 },
@@ -927,16 +991,38 @@ impl eframe::App for SqyreApp {
             self.preview_tooltips = PreviewTooltipCache::new();
             self.refresh_macro_hotkey_bindings();
         }
+        // Sample color before restoring visibility so the app isn't under the cursor.
+        if let Some((x, y)) = self.screen_click.take_color_point() {
+            match pixel_color::sample_pixel_hex(x, y) {
+                Ok(hex) => {
+                    self.tooltip.apply_recorded_color(hex.clone());
+                    self.add_action_picker.apply_recorded_color(hex);
+                }
+                Err(e) => eprintln!("sqyre: sample pixel color: {e}"),
+            }
+        }
         self.update_recording_visibility(ui.ctx());
-        self.sync_recording_overlay();
+        self.sync_recording_overlay(ui.ctx());
         self.drain_pending_hotkey_macros(ui.ctx());
 
         if let Some(chord) = self.hotkey_record.show(ui.ctx(), &self.macro_hotkeys) {
-            self.apply_hotkey_to_selected(chord, None);
+            if !self.tooltip.apply_recorded_chord(chord.clone())
+                && !self.add_action_picker.apply_recorded_chord(chord.clone())
+            {
+                self.apply_hotkey_to_selected(chord, None);
+            }
+        }
+        if let Some(key) = self.key_record.show(ui.ctx(), &self.macro_hotkeys) {
+            self.tooltip.apply_recorded_key(key.clone());
+            self.add_action_picker.apply_recorded_key(key);
         }
 
         let running = self.run.running.load(Ordering::SeqCst);
-        if running || self.hotkey_record.is_open() || self.screen_click.is_armed() {
+        if running
+            || self.hotkey_record.is_open()
+            || self.key_record.is_open()
+            || self.screen_click.is_armed()
+        {
             ui.ctx().request_repaint();
         }
 
@@ -944,6 +1030,7 @@ impl eframe::App for SqyreApp {
         // or when a text field has keyboard focus (so Ctrl+A still selects-all in editors).
         if !self.tooltip.is_editing()
             && !self.hotkey_record.is_open()
+            && !self.key_record.is_open()
             && !ui.ctx().egui_wants_keyboard_input()
         {
             let (copy, cut, paste, undo, redo, add_action) = ui.ctx().input(|i| {
@@ -1050,6 +1137,9 @@ impl eframe::App for SqyreApp {
                 }
                 if toolbar_icon(ui, "📁", "Data Editor", true).clicked() {
                     self.data_editor.open = true;
+                }
+                if toolbar_icon(ui, "𝑥", "Variables", !self.macros.is_empty()).clicked() {
+                    self.variables_panel.open = true;
                 }
                 if toolbar_icon(ui, "⚙", "Settings", true).clicked() {
                     self.settings_ui.open = true;
@@ -1202,6 +1292,83 @@ impl eframe::App for SqyreApp {
                         .id_salt("macro_tree_scroll")
                         .auto_shrink([false, false])
                         .show(ui, |ui| {
+                            // Decide reorder vs drag-scroll before TreeView so
+                            // allow_drag_and_drop can suppress a non-handle drag.
+                            let (primary_down, primary_released, pointer_delta, pointer_vel_y, dt) =
+                                ui.input(|i| {
+                                    (
+                                        i.pointer.primary_down(),
+                                        i.pointer.primary_released(),
+                                        i.pointer.delta(),
+                                        i.pointer.velocity().y,
+                                        i.stable_dt.min(0.1),
+                                    )
+                                });
+                            if primary_released && self.tree_drag_mode == TreeDragMode::Scroll {
+                                // Hand off to kinetic coast (same as egui ScrollArea).
+                                self.tree_scroll_vel = pointer_vel_y;
+                            }
+                            if !primary_down {
+                                self.tree_drag_mode = TreeDragMode::Idle;
+                            } else if self.tree_drag_mode == TreeDragMode::Idle {
+                                let become_drag =
+                                    ui.input(|i| !i.pointer.could_any_button_be_click());
+                                if become_drag {
+                                    self.tree_scroll_vel = 0.0;
+                                    // Only claim the gesture when press started on this
+                                    // scroll surface — edit tooltips / other Windows sit
+                                    // above and must keep drag-move and resize without
+                                    // scrolling the tree underneath. View tips use
+                                    // interactable(false) so layer_id_at still hits us.
+                                    let tree_layer = ui.layer_id();
+                                    let scroll_clip = ui.clip_rect();
+                                    let press_on_tree = ui
+                                        .ctx()
+                                        .input(|i| i.pointer.press_origin())
+                                        .is_some_and(|p| {
+                                            scroll_clip.contains(p)
+                                                && ui.ctx().layer_id_at(p) == Some(tree_layer)
+                                        });
+                                    if press_on_tree {
+                                        let on_handle = ui.input(|i| {
+                                            i.pointer.press_origin().is_some_and(|p| {
+                                                self.tree_drag_handles
+                                                    .iter()
+                                                    .any(|r| r.contains(p))
+                                            })
+                                        });
+                                        self.tree_drag_mode = if on_handle {
+                                            TreeDragMode::Reorder
+                                        } else {
+                                            TreeDragMode::Scroll
+                                        };
+                                    }
+                                }
+                            }
+                            if self.tree_drag_mode == TreeDragMode::Scroll {
+                                ui.scroll_with_delta_animation(
+                                    pointer_delta,
+                                    egui::style::ScrollAnimation::none(),
+                                );
+                            } else if self.tree_scroll_vel.abs() >= TREE_SCROLL_STOP_SPEED {
+                                ui.scroll_with_delta_animation(
+                                    egui::vec2(0.0, self.tree_scroll_vel * dt),
+                                    egui::style::ScrollAnimation::none(),
+                                );
+                                let friction = TREE_SCROLL_FRICTION * dt;
+                                if friction > self.tree_scroll_vel.abs() {
+                                    self.tree_scroll_vel = 0.0;
+                                } else {
+                                    self.tree_scroll_vel -=
+                                        friction * self.tree_scroll_vel.signum();
+                                    ui.ctx().request_repaint();
+                                }
+                            } else {
+                                self.tree_scroll_vel = 0.0;
+                            }
+                            let allow_dnd =
+                                !running && self.tree_drag_mode != TreeDragMode::Scroll;
+
                             let catalog = &self.catalog;
                             let icons = &mut self.icon_cache;
                             let root = &self.macros[idx].root;
@@ -1209,7 +1376,7 @@ impl eframe::App for SqyreApp {
                             let known_vars = collect_known_variable_names(&self.macros[idx]);
                             let interact_y = ui.spacing().interact_size.y;
                             let (_, tree_actions) = TreeView::new(id)
-                                .allow_drag_and_drop(!running)
+                                .allow_drag_and_drop(allow_dnd)
                                 .default_node_height(Some(tree_chrome::default_row_height(interact_y)))
                                 .show_state(ui, &mut state, |builder: &mut TreeViewBuilder<'_, ActionId>| {
                                     // Invisible flattened root so top-level rows have a parent for DnD
@@ -1264,6 +1431,14 @@ impl eframe::App for SqyreApp {
                 .inner;
             if scrolled_follow {
                 self.last_exec_follow = follow;
+            }
+
+            self.tree_drag_handles.clear();
+            for (_, interaction) in &row_events {
+                let r = interaction.drag_handle_rect;
+                if r.width() > 0.0 && r.height() > 0.0 {
+                    self.tree_drag_handles.push(r);
+                }
             }
 
             // Row overlay is clickthrough (Sense::hover + geometric clicks). When a
@@ -1342,6 +1517,10 @@ impl eframe::App for SqyreApp {
                         &macros,
                         &known_vars,
                         is_dark,
+                        &mut self.key_record,
+                        &mut self.hotkey_record,
+                        &self.macro_hotkeys,
+                        &self.screen_click,
                         |root_before| {
                             if pending_record.is_none() {
                                 if let Ok(snap) =
@@ -1373,7 +1552,7 @@ impl eframe::App for SqyreApp {
                         self.selected_action = sel.into_iter().next();
                     }
                     TreeAction::Move(dnd) => {
-                        if running {
+                        if running || self.tree_drag_mode == TreeDragMode::Scroll {
                             continue;
                         }
                         let target_aid = dnd.target;
@@ -1386,6 +1565,10 @@ impl eframe::App for SqyreApp {
                         }
                     }
                     TreeAction::Drag(dnd) => {
+                        if self.tree_drag_mode == TreeDragMode::Scroll {
+                            dnd.remove_drop_marker(ui);
+                            continue;
+                        }
                         // Disallow dropping a node into itself / a descendant while dragging.
                         let target_aid = dnd.target;
                         if let Some(src_aid) = dnd.source.first() {

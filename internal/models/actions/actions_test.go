@@ -335,21 +335,6 @@ func TestSaveVariable_SaveToFile(t *testing.T) {
 	}
 }
 
-// --- Calculate ---
-
-func TestNewCalculate(t *testing.T) {
-	c := NewCalculate("1+1", "result")
-	if c.GetType() != "calculate" || c.Expression != "1+1" || c.OutputVar != "result" {
-		t.Errorf("Calculate: %+v", c)
-	}
-}
-
-func TestCalculate_String(t *testing.T) {
-	if got := NewCalculate("x+y", "z").String(); got != "Type: calculate  /  Expression: x+y  /  Output: z" {
-		t.Errorf("String() = %q", got)
-	}
-}
-
 // --- FocusWindow ---
 
 func TestNewFocusWindow(t *testing.T) {
@@ -440,8 +425,8 @@ func TestOcr_String(t *testing.T) {
 func TestNewImageSearch(t *testing.T) {
 	area := NewCoordinateRef("prog", "region")
 	targets := []string{"b.png", "a.png"}
-	is := NewImageSearch("im", nil, targets, area, 2, 3, 0.9, 1)
-	if is.GetType() != "imagesearch" || is.Name != "im" || is.RowSplit != 2 || is.ColSplit != 3 || is.Tolerance != 0.9 || is.Blur != 1 {
+	is := NewImageSearch("im", nil, targets, area, 0.9, 1)
+	if is.GetType() != "imagesearch" || is.Name != "im" || is.Tolerance != 0.9 || is.Blur != 1 {
 		t.Errorf("ImageSearch: %+v", is)
 	}
 	// targets should be sorted
@@ -452,7 +437,7 @@ func TestNewImageSearch(t *testing.T) {
 
 func TestImageSearch_String(t *testing.T) {
 	area := NewCoordinateRef("prog", "R")
-	is := NewImageSearch("S", nil, []string{"a"}, area, 1, 1, 0, 0)
+	is := NewImageSearch("S", nil, []string{"a"}, area, 0, 0)
 	got := is.String()
 	if !strings.Contains(got, "Items: 1") || !strings.Contains(got, "Search Area: prog~R") {
 		t.Errorf("String() = %q", got)

@@ -42,8 +42,6 @@ func Icon(action actions.ActionInterface) fyne.Resource {
 		return theme.MediaSkipNextIcon()
 	case *actions.SetVariable:
 		return assets.VariableIcon
-	case *actions.Calculate:
-		return assets.CalculateIcon
 	case *actions.SaveVariable:
 		return theme.DocumentSaveIcon()
 	case *actions.ForEachRow:

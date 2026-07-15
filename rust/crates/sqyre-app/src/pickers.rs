@@ -23,8 +23,13 @@ pub struct CollectionCellPick {
     pub cols: i32,
     /// Current selection; `None` until the user clicks.
     pub sel: Option<(i32, i32, i32, i32)>,
-    /// Drag start cell while pointer is down.
+    /// Drag start cell while pointer is down (selection mode).
     drag_anchor: Option<(i32, i32)>,
+    /// Fit-relative zoom (1.0 = fit in viewport). Go `ImageViewTransform`.
+    zoom: f32,
+    pan: Vec2,
+    /// Pointer start + pan at drag start while panning (zoomed).
+    pan_drag: Option<(Pos2, Vec2)>,
 }
 
 impl CollectionCellPick {
@@ -36,12 +41,25 @@ impl CollectionCellPick {
             cols: cols.max(1),
             sel: None,
             drag_anchor: None,
+            zoom: 1.0,
+            pan: Vec2::ZERO,
+            pan_drag: None,
         }
     }
 
     pub fn with_initial_sel(mut self, sel: Option<(i32, i32, i32, i32)>) -> Self {
         self.sel = sel;
         self
+    }
+
+    pub fn reset_view(&mut self) {
+        self.zoom = 1.0;
+        self.pan = Vec2::ZERO;
+        self.pan_drag = None;
+    }
+
+    fn is_zoomed(&self) -> bool {
+        self.zoom > 1.01
     }
 
     pub fn to_ref(&self) -> Option<CoordinateRef> {
@@ -145,15 +163,41 @@ fn header_text(label: &str) -> egui::RichText {
     egui::RichText::new(label).size(HEADER_SIZE).strong()
 }
 
-/// Substring match (case-insensitive) on `name` or any tag. Empty `q` matches everything.
+/// Fuzzy match (Go `fuzzy.MatchFold`) on `name` or any tag. Empty `q` matches everything.
 fn query_matches_name_or_tags(q: &str, name: &str, tags: &[String]) -> bool {
     if q.is_empty() {
         return true;
     }
-    name.to_ascii_lowercase().contains(q)
+    fuzzy_match_fold(q, name)
         || tags
             .iter()
-            .any(|t| t.to_ascii_lowercase().contains(q))
+            .any(|t| fuzzy_match_fold(q, t))
+}
+
+/// Subsequence fuzzy match (Go `fuzzy.MatchFold`): each needle char appears in order in haystack.
+pub fn fuzzy_match_fold(needle: &str, haystack: &str) -> bool {
+    if needle.is_empty() {
+        return true;
+    }
+    let mut hay = haystack.chars().flat_map(|c| c.to_lowercase());
+    'outer: for nc in needle.chars().flat_map(|c| c.to_lowercase()) {
+        for hc in hay.by_ref() {
+            if hc == nc {
+                continue 'outer;
+            }
+        }
+        return false;
+    }
+    true
+}
+
+fn query_matches_window(q: &str, w: &WindowInfo) -> bool {
+    if q.is_empty() {
+        return true;
+    }
+    fuzzy_match_fold(q, &w.title)
+        || fuzzy_match_fold(q, &w.process_name)
+        || fuzzy_match_fold(q, &w.process_path)
 }
 
 /// Display name + tags for an item target (`program~item` or `program~item~variant`).
@@ -207,16 +251,6 @@ fn paint_item_icon_tooltip(ui: &mut egui::Ui, name: &str, tags: &[String]) {
                 .color(color),
         );
     }
-}
-
-/// Substring match on window title, process name, or path.
-fn query_matches_window(q: &str, w: &WindowInfo) -> bool {
-    if q.is_empty() {
-        return true;
-    }
-    w.title.to_ascii_lowercase().contains(q)
-        || w.process_name.to_ascii_lowercase().contains(q)
-        || w.process_path.to_ascii_lowercase().contains(q)
 }
 
 /// How many fixed-size columns fit in `avail_w`.
@@ -387,7 +421,7 @@ pub fn paint_items_icon_grid(
                 if q.is_empty() {
                     return true;
                 }
-                prog.to_ascii_lowercase().contains(&q)
+                fuzzy_match_fold(&q, prog)
                     || query_matches_name_or_tags(&q, name, &item.tags)
             })
             .map(|(name, _)| name.clone())
@@ -477,8 +511,8 @@ pub fn paint_coord_ref_list(
                     .into_iter()
                     .filter(|n| {
                         q.is_empty()
-                            || n.to_ascii_lowercase().contains(&q)
-                            || prog.to_ascii_lowercase().contains(&q)
+                            || fuzzy_match_fold(&q, n)
+                            || fuzzy_match_fold(&q, prog)
                     })
                     .collect();
                 let collections: Vec<_> = pdata
@@ -486,8 +520,8 @@ pub fn paint_coord_ref_list(
                     .values()
                     .filter(|c| {
                         q.is_empty()
-                            || c.name.to_ascii_lowercase().contains(&q)
-                            || prog.to_ascii_lowercase().contains(&q)
+                            || fuzzy_match_fold(&q, &c.name)
+                            || fuzzy_match_fold(&q, prog)
                     })
                     .cloned()
                     .collect();
@@ -556,61 +590,218 @@ fn fit_panel(w: f32, h: f32) -> Vec2 {
     Vec2::new(w * scale, h * scale)
 }
 
+const IMAGE_ZOOM_MIN: f32 = 0.5;
+const IMAGE_ZOOM_MAX: f32 = 16.0;
+const IMAGE_ZOOM_WHEEL_STEP: f32 = 0.07;
+const IMAGE_PAN_EDGE_PAD: f32 = 32.0;
+
+fn clamp_image_zoom(z: f32) -> f32 {
+    z.clamp(IMAGE_ZOOM_MIN, IMAGE_ZOOM_MAX)
+}
+
+fn scroll_zoom_factor(delta_y: f32) -> f32 {
+    if delta_y == 0.0 {
+        1.0
+    } else if delta_y > 0.0 {
+        1.0 + IMAGE_ZOOM_WHEEL_STEP
+    } else {
+        1.0 / (1.0 + IMAGE_ZOOM_WHEEL_STEP)
+    }
+}
+
+/// Displayed image rect inside the viewport (Go `ImageContentRect`).
+fn image_content_rect(viewport: egui::Rect, image_size: Vec2, zoom: f32, pan: Vec2) -> egui::Rect {
+    if viewport.width() <= 0.0 || viewport.height() <= 0.0 {
+        return egui::Rect::NOTHING;
+    }
+    if image_size.x <= 0.0 || image_size.y <= 0.0 {
+        return viewport;
+    }
+    let fit = (viewport.width() / image_size.x).min(viewport.height() / image_size.y);
+    let scale = fit * zoom;
+    let w = image_size.x * scale;
+    let h = image_size.y * scale;
+    let x = viewport.left() + (viewport.width() - w) * 0.5 + pan.x;
+    let y = viewport.top() + (viewport.height() - h) * 0.5 + pan.y;
+    egui::Rect::from_min_size(egui::pos2(x, y), Vec2::new(w, h))
+}
+
+fn clamp_image_pan(viewport: egui::Rect, image_size: Vec2, zoom: f32, mut pan: Vec2) -> Vec2 {
+    let content = image_content_rect(viewport, image_size, zoom, pan);
+    let pad = IMAGE_PAN_EDGE_PAD;
+    if content.width() <= viewport.width() {
+        pan.x = 0.0;
+    } else {
+        let min_x = viewport.right() - content.width() - pad;
+        let max_x = viewport.left() + pad;
+        if content.left() < min_x {
+            pan.x += min_x - content.left();
+        }
+        if content.left() > max_x {
+            pan.x += max_x - content.left();
+        }
+    }
+    if content.height() <= viewport.height() {
+        pan.y = 0.0;
+    } else {
+        let min_y = viewport.bottom() - content.height() - pad;
+        let max_y = viewport.top() + pad;
+        if content.top() < min_y {
+            pan.y += min_y - content.top();
+        }
+        if content.top() > max_y {
+            pan.y += max_y - content.top();
+        }
+    }
+    pan
+}
+
+fn zoom_image_at_cursor(
+    viewport: egui::Rect,
+    image_size: Vec2,
+    zoom: f32,
+    pan: Vec2,
+    cursor: Pos2,
+    factor: f32,
+) -> (f32, Vec2) {
+    if factor <= 0.0 || image_size.x <= 0.0 || image_size.y <= 0.0 {
+        return (zoom, pan);
+    }
+    let content = image_content_rect(viewport, image_size, zoom, pan);
+    if content.width() <= 0.0 || content.height() <= 0.0 {
+        return (zoom, pan);
+    }
+    let u = (cursor.x - content.left()) / content.width();
+    let v = (cursor.y - content.top()) / content.height();
+    let new_zoom = clamp_image_zoom(zoom * factor);
+    if (new_zoom - zoom).abs() < f32::EPSILON {
+        return (zoom, pan);
+    }
+    let mut pan = pan;
+    let after = image_content_rect(viewport, image_size, new_zoom, pan);
+    pan.x += (cursor.x - u * after.width()) - after.left();
+    pan.y += (cursor.y - v * after.height()) - after.top();
+    let pan = clamp_image_pan(viewport, image_size, new_zoom, pan);
+    (new_zoom, pan)
+}
+
 /// Interactive collection image + rows×cols overlay; click/drag selects cells.
+/// Wheel zooms at cursor; when zoomed, drag pans (Go `CollectionGridView`).
 fn paint_collection_cell_picker(
     ui: &mut egui::Ui,
     catalog: &ProgramCatalog,
     icons: &mut IconCache,
     pick: &mut CollectionCellPick,
 ) {
-    ui.label(
-        egui::RichText::new(format!(
-            "Select cells — {}~{}",
-            pick.program, pick.collection
-        ))
-        .strong(),
-    );
+    ui.horizontal(|ui| {
+        ui.label(
+            egui::RichText::new(format!(
+                "Select cells — {}~{}",
+                pick.program, pick.collection
+            ))
+            .strong(),
+        );
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if ui
+                .add_enabled(pick.zoom != 1.0 || pick.pan != Vec2::ZERO, egui::Button::new("Reset view"))
+                .on_hover_text("Fit image in viewport")
+                .clicked()
+            {
+                pick.reset_view();
+            }
+            if pick.zoom != 1.0 {
+                ui.weak(format!("{:.0}%", pick.zoom * 100.0));
+            }
+        });
+    });
+    ui.weak("Scroll to zoom; drag to pan when zoomed; click/drag selects cells at 100%.");
+
     let path = catalog.collection_image_path(&pick.program, &pick.collection);
     let tex = icons.for_path(ui.ctx(), &path);
     let avail = ui.available_width().min(520.0);
-    let (img_w, img_h) = match &tex {
+    let image_size = match &tex {
         Some(t) => {
             let [tw, th] = t.size();
-            let size = fit_panel(tw as f32, th as f32);
-            let scale = (avail / size.x).min(1.0);
-            (size.x * scale, size.y * scale)
+            Vec2::new(tw as f32, th as f32)
         }
-        None => (avail, avail * 0.75),
+        None => Vec2::new(avail, avail * 0.75),
     };
-    let desired = Vec2::new(img_w.max(160.0), img_h.max(120.0));
-    let (rect, resp) = ui.allocate_exact_size(desired, Sense::click_and_drag());
+    let fit = fit_panel(image_size.x, image_size.y);
+    let scale = (avail / fit.x).min(1.0);
+    let desired = Vec2::new((fit.x * scale).max(160.0), (fit.y * scale).max(120.0));
+    let (viewport, resp) = ui.allocate_exact_size(desired, Sense::click_and_drag());
 
-    if let Some(tex) = &tex {
-        ui.painter().image(
-            tex.id(),
-            rect,
-            egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-            Color32::WHITE,
-        );
-    } else {
-        ui.painter()
-            .rect_filled(rect, 0.0, Color32::from_gray(40));
-        ui.painter().text(
-            rect.center(),
-            egui::Align2::CENTER_CENTER,
-            "No collection image",
-            egui::FontId::proportional(14.0),
-            Color32::LIGHT_GRAY,
-        );
+    // Scroll-zoom while hovering the viewport.
+    if resp.hovered() {
+        let scroll = ui.input(|i| i.smooth_scroll_delta.y);
+        if scroll != 0.0 {
+            let cursor = ui.input(|i| i.pointer.hover_pos()).unwrap_or(viewport.center());
+            let factor = scroll_zoom_factor(scroll);
+            let (z, p) = zoom_image_at_cursor(
+                viewport,
+                image_size,
+                pick.zoom,
+                pick.pan,
+                cursor,
+                factor,
+            );
+            pick.zoom = z;
+            pick.pan = p;
+        }
     }
 
-    paint_cell_grid_lines(ui, rect, pick.rows, pick.cols);
-    if let Some(sel) = pick.sel {
-        paint_cell_selection(ui, rect, pick.rows, pick.cols, sel);
+    let content = image_content_rect(viewport, image_size, pick.zoom, pick.pan);
+
+    {
+        let painter = ui.painter_at(viewport);
+        if let Some(tex) = &tex {
+            painter.image(
+                tex.id(),
+                content,
+                egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                Color32::WHITE,
+            );
+        } else {
+            painter.rect_filled(viewport, 0.0, Color32::from_gray(40));
+            painter.text(
+                viewport.center(),
+                egui::Align2::CENTER_CENTER,
+                "No collection image",
+                egui::FontId::proportional(14.0),
+                Color32::LIGHT_GRAY,
+            );
+        }
+        paint_cell_grid_lines_painter(&painter, content, pick.rows, pick.cols);
+        if let Some(sel) = pick.sel {
+            paint_cell_selection_painter(&painter, content, pick.rows, pick.cols, sel);
+        }
     }
 
-    if let Some(pos) = resp.interact_pointer_pos() {
-        if let Some((r, c)) = cell_at(rect, pick.rows, pick.cols, pos) {
+    if pick.is_zoomed() {
+        if resp.drag_started() {
+            if let Some(pos) = resp.interact_pointer_pos() {
+                pick.pan_drag = Some((pos, pick.pan));
+                pick.drag_anchor = None;
+            }
+        }
+        if resp.dragged() {
+            if let (Some((start, base)), Some(pos)) = (pick.pan_drag, resp.interact_pointer_pos()) {
+                pick.pan = clamp_image_pan(
+                    viewport,
+                    image_size,
+                    pick.zoom,
+                    base + (pos - start),
+                );
+            }
+        }
+        if resp.drag_stopped() {
+            pick.pan_drag = None;
+        }
+        if resp.hovered() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+        }
+    } else if let Some(pos) = resp.interact_pointer_pos() {
+        if let Some((r, c)) = cell_at(content, pick.rows, pick.cols, pos) {
             if resp.drag_started() || (resp.clicked() && !resp.dragged()) {
                 pick.drag_anchor = Some((r, c));
                 pick.sel = Some((r, c, r, c));
@@ -620,13 +811,13 @@ fn paint_collection_cell_picker(
                 }
             }
         }
-    }
-    if resp.drag_stopped() {
-        pick.drag_anchor = None;
-        if let Some((r1, c1, r2, c2)) = pick.sel {
-            let (r1, r2) = if r1 <= r2 { (r1, r2) } else { (r2, r1) };
-            let (c1, c2) = if c1 <= c2 { (c1, c2) } else { (c2, c1) };
-            pick.sel = Some((r1, c1, r2, c2));
+        if resp.drag_stopped() {
+            pick.drag_anchor = None;
+            if let Some((r1, c1, r2, c2)) = pick.sel {
+                let (r1, r2) = if r1 <= r2 { (r1, r2) } else { (r2, r1) };
+                let (c1, c2) = if c1 <= c2 { (c1, c2) } else { (c2, c1) };
+                pick.sel = Some((r1, c1, r2, c2));
+            }
         }
     }
 
@@ -640,11 +831,10 @@ fn paint_collection_cell_picker(
     ui.weak(status);
 }
 
-fn paint_cell_grid_lines(ui: &mut egui::Ui, rect: egui::Rect, rows: i32, cols: i32) {
+fn paint_cell_grid_lines_painter(painter: &egui::Painter, rect: egui::Rect, rows: i32, cols: i32) {
     let rows = rows.max(1) as f32;
     let cols = cols.max(1) as f32;
     let stroke = egui::Stroke::new(1.0, Color32::from_rgb(255, 80, 80));
-    let painter = ui.painter();
     for i in 1..rows as i32 {
         let y = rect.top() + rect.height() * (i as f32) / rows;
         painter.hline(rect.x_range(), y, stroke);
@@ -656,8 +846,8 @@ fn paint_cell_grid_lines(ui: &mut egui::Ui, rect: egui::Rect, rows: i32, cols: i
     painter.rect_stroke(rect, 0.0, stroke, egui::StrokeKind::Outside);
 }
 
-fn paint_cell_selection(
-    ui: &mut egui::Ui,
+fn paint_cell_selection_painter(
+    painter: &egui::Painter,
     rect: egui::Rect,
     rows: i32,
     cols: i32,
@@ -680,12 +870,12 @@ fn paint_cell_selection(
             rect.top() + r2 as f32 * ch,
         ),
     );
-    ui.painter().rect_filled(
+    painter.rect_filled(
         sel_rect,
         0.0,
         Color32::from_rgba_unmultiplied(60, 160, 255, 70),
     );
-    ui.painter().rect_stroke(
+    painter.rect_stroke(
         sel_rect,
         0.0,
         egui::Stroke::new(2.0, Color32::from_rgb(40, 140, 255)),
@@ -1056,6 +1246,13 @@ mod tests {
     fn matches_name_substring() {
         assert!(query_matches_name_or_tags("pot", "HealthPotion", &[]));
         assert!(!query_matches_name_or_tags("sword", "HealthPotion", &[]));
+    }
+
+    #[test]
+    fn matches_name_fuzzy_subsequence() {
+        assert!(query_matches_name_or_tags("hlt", "HealthPotion", &[]));
+        assert!(query_matches_name_or_tags("HPT", "HealthPotion", &[]));
+        assert!(!query_matches_name_or_tags("thl", "HealthPotion", &[])); // wrong order
     }
 
     #[test]

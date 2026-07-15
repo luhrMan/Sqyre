@@ -289,14 +289,8 @@ func buildParamEditPills(node actions.ActionInterface, actionType string, owner 
 		added = true
 
 	case *actions.SetVariable:
-		setSections, apply := appendSetVariableTooltipEdit(a, actionType)
+		setSections, apply := appendSetVariableTooltipEdit(a, actionType, owner)
 		sections = append(sections, setSections...)
-		applyParts = append(applyParts, apply)
-		added = true
-
-	case *actions.Calculate:
-		calcSections, apply := appendCalculateTooltipEdit(a, actionType, owner)
-		sections = append(sections, calcSections...)
 		applyParts = append(applyParts, apply)
 		added = true
 
@@ -310,13 +304,6 @@ func buildParamEditPills(node actions.ActionInterface, actionType string, owner 
 		general := newPillRow()
 		nameEntry := addNamePill(general, a.Name, actionType)
 		sections = append(sections, wrapTooltipSection(general.box))
-
-		splits := newPillRow()
-		rowSplitEntry := coordEntry(fmt.Sprintf("%d", a.RowSplit))
-		colSplitEntry := coordEntry(fmt.Sprintf("%d", a.ColSplit))
-		splits.add(actiondisplay.NewEditablePill("Row split", rowSplitEntry, actionType))
-		splits.add(actiondisplay.NewEditablePill("Col split", colSplitEntry, actionType))
-		sections = append(sections, wrapTooltipSection(splits.box))
 
 		match := newPillRow()
 		tolMin, tolMax := 0.0, 1.0
@@ -346,12 +333,6 @@ func buildParamEditPills(node actions.ActionInterface, actionType string, owner 
 		added = true
 		applyParts = append(applyParts, func() error {
 			a.Name = strings.TrimSpace(nameEntry.Text)
-			if rs, err := strconv.Atoi(strings.TrimSpace(rowSplitEntry.Text)); err == nil {
-				a.RowSplit = rs
-			}
-			if cs, err := strconv.Atoi(strings.TrimSpace(colSplitEntry.Text)); err == nil {
-				a.ColSplit = cs
-			}
 			a.Tolerance = float32(tolInc.Value)
 			a.Blur = blurInc.Value
 			applyWait()
@@ -646,10 +627,6 @@ func viewParamPills(node actions.ActionInterface, actionType string) fyne.Canvas
 
 	case *actions.SetVariable:
 		sections = append(sections, appendSetVariableTooltipView(a, actionType)...)
-		added = true
-
-	case *actions.Calculate:
-		sections = append(sections, appendCalculateTooltipView(a, actionType)...)
 		added = true
 
 	case *actions.RunMacro:

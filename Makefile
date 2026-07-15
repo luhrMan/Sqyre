@@ -1,6 +1,7 @@
 # Sqyre build helpers. Default output: ./bin (workspace /workspace/bin in devcontainer).
-.PHONY: all linux sqyre tessdata windows windows-matprofile appimage appimage-matprofile \
-	rust rust-release rust-test rust-run help
+# Default binary is Rust (sqyre-app). Go/Fyne remains under `make go` until full deletion.
+.PHONY: all sqyre rust rust-release rust-test rust-run run \
+	go fyne tessdata windows windows-matprofile appimage appimage-matprofile help
 
 ROOT := $(abspath .)
 BIN := $(abspath bin)
@@ -25,27 +26,41 @@ ifneq ($(wildcard $(CARGO_HOME)/bin/cargo),)
   export PATH := $(CARGO_HOME)/bin:$(PATH)
 endif
 
-all: linux
+all: sqyre
 
 help:
 	@echo "Targets:"
-	@echo "  linux               - go build -> $(BIN)/sqyre (override BUILD_TAGS=...)"
-	@echo "  tessdata            - scripts/download-tessdata.sh"
-	@echo "  windows             - cross-compile exe -> $(BIN)/windows-amd64/ (Docker + fyne-cross)"
-	@echo "  windows-matprofile  - same with matprofile tag"
-	@echo "  appimage            - AppImage -> $(BIN)/ (AppDir still under scripts/linux/packaging/appimage/)"
-	@echo "  appimage-matprofile - same with matprofile tag -> $(BIN)/Sqyre-*-matprofile-x86_64.AppImage"
-	@echo "  rust                - cargo build (debug) -> $(BIN)/sqyre-rust"
-	@echo "  rust-release        - cargo build --release -> $(BIN)/sqyre-rust"
+	@echo "  all / sqyre / rust  - cargo build (debug) -> $(BIN)/sqyre  [default]"
+	@echo "  rust-release        - cargo build --release -> $(BIN)/sqyre"
 	@echo "  rust-test           - cargo test (rust/ workspace)"
-	@echo "  rust-run            - cargo run -p sqyre-app"
-	@echo "                        (override with CARGO_FLAGS=...)"
+	@echo "  run / rust-run      - cargo run -p sqyre-app"
+	@echo "  go / fyne           - go build -> $(BIN)/sqyre-go (legacy Fyne app)"
+	@echo "  tessdata            - scripts/download-tessdata.sh"
+	@echo "  windows             - cross-compile Go exe -> $(BIN)/windows-amd64/ (Docker + fyne-cross)"
+	@echo "  windows-matprofile  - same with matprofile tag"
+	@echo "  appimage            - Go AppImage -> $(BIN)/ (AppDir under scripts/linux/packaging/appimage/)"
+	@echo "  appimage-matprofile - same with matprofile tag -> $(BIN)/Sqyre-*-matprofile-x86_64.AppImage"
+	@echo "                        (override Rust with CARGO_FLAGS=...; Go with BUILD_TAGS=...)"
 
 $(BIN):
 	mkdir -p $(BIN)
 
-linux: $(BIN)
-	go build -trimpath -tags "$(BUILD_TAGS)" -o $(BIN)/sqyre ./cmd/sqyre
+sqyre rust: $(BIN)
+	cd $(RUST_DIR) && $(CARGO) build -p sqyre-app $(CARGO_FLAGS)
+	cp -f $(RUST_DIR)/target/debug/sqyre $(BIN)/sqyre
+
+rust-release: $(BIN)
+	cd $(RUST_DIR) && $(CARGO) build -p sqyre-app --release $(CARGO_FLAGS)
+	cp -f $(RUST_DIR)/target/release/sqyre $(BIN)/sqyre
+
+rust-test:
+	cd $(RUST_DIR) && $(CARGO) test $(CARGO_FLAGS)
+
+run rust-run:
+	cd $(RUST_DIR) && $(CARGO) run -p sqyre-app $(CARGO_FLAGS)
+
+go fyne: $(BIN)
+	go build -trimpath -tags "$(BUILD_TAGS)" -o $(BIN)/sqyre-go ./cmd/sqyre
 
 tessdata:
 	./scripts/download-tessdata.sh
@@ -61,17 +76,3 @@ appimage:
 
 appimage-matprofile: $(BIN)
 	./scripts/linux/packaging/appimage/build-appimage-matprofile.sh
-
-rust: $(BIN)
-	cd $(RUST_DIR) && $(CARGO) build -p sqyre-app $(CARGO_FLAGS)
-	cp -f $(RUST_DIR)/target/debug/sqyre $(BIN)/sqyre-rust
-
-rust-release: $(BIN)
-	cd $(RUST_DIR) && $(CARGO) build -p sqyre-app --release $(CARGO_FLAGS)
-	cp -f $(RUST_DIR)/target/release/sqyre $(BIN)/sqyre-rust
-
-rust-test:
-	cd $(RUST_DIR) && $(CARGO) test $(CARGO_FLAGS)
-
-rust-run:
-	cd $(RUST_DIR) && $(CARGO) run -p sqyre-app $(CARGO_FLAGS)

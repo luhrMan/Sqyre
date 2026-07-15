@@ -8,7 +8,7 @@ import (
 func TestRenameProgramEntity_collection(t *testing.T) {
 	m := NewMacro("t", 0, nil)
 	move := actions.NewMove(actions.NewCollectionRef("prog", "old", 1, 1, 2, 2), false)
-	is := actions.NewImageSearch("s", nil, nil, actions.NewCollectionRef("prog", "old", 1, 2, 1, 3), 1, 1, 0.95, 0)
+	is := actions.NewImageSearch("s", nil, nil, actions.NewCollectionRef("prog", "old", 1, 2, 1, 3), 0.95, 0)
 	m.Root = actions.NewLoop(1, "root", []actions.ActionInterface{move, is})
 
 	if !m.RenameProgramEntity(ProgramEntityCollection, "prog", "old", "new") {

@@ -296,18 +296,6 @@ func ValidateNumericExpression(text string, macro *models.Macro) EntryValidation
 	return v
 }
 
-// ValidateCalculateExpression checks a Calculate action expression.
-func ValidateCalculateExpression(text string, macro *models.Macro) EntryValidation {
-	if strings.TrimSpace(text) == "" {
-		return EntryValidation{}
-	}
-	v := EntryValidation{Warning: UnknownVariableWarning(text, macro)}
-	if err := validateExpressionStructure(text, macro); err != nil {
-		v.Error = err.Error()
-	}
-	return v
-}
-
 // ValidateSetVariableValue checks set-variable values: plain text is allowed.
 // Unknown variables warn; invalid arithmetic blocks.
 func ValidateSetVariableValue(text string, macro *models.Macro) EntryValidation {
@@ -323,8 +311,8 @@ func ValidateSetVariableValue(text string, macro *models.Macro) EntryValidation 
 	return v
 }
 
-// PreviewCalculate validates and evaluates a Calculate expression for the editor
-// preview. It distinguishes these cases:
+// PreviewCalculate validates and evaluates an arithmetic expression for the editor
+// preview (Set values that look like expressions). It distinguishes these cases:
 //   - undefined ${variable} references -> preview still runs (warning shown in the entry field)
 //   - all referenced variables are defined and have current values -> "= <result>"
 //   - referenced variables without current values yet -> "valid (result depends on runtime values)"

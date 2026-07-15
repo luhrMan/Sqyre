@@ -650,6 +650,7 @@ mod tests {
                 stop_flag: None,
                 logger: None,
                 highlighter: None,
+                runtime_vars: None,
                 variables_dir: None,
             },
         )
@@ -744,6 +745,7 @@ mod tests {
                 stop_flag: None,
                 logger: None,
                 highlighter: None,
+                runtime_vars: None,
                 variables_dir: None,
             },
         )

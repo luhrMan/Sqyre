@@ -8,6 +8,7 @@ description = "Macro executor with injected automation / capture / match backend
 [dependencies]
 thiserror = { workspace = true }
 image = { workspace = true }
+rayon = { workspace = true }
 serde_yaml = { workspace = true }
 sqyre-domain = { path = "../sqyre-domain" }
 sqyre-match = { path = "../sqyre-match" }

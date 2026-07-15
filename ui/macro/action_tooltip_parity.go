@@ -21,8 +21,8 @@ import (
 	"github.com/lithammer/fuzzysearch/fuzzy"
 )
 
-var calculateFunctions = []string{"sqrt", "abs", "round", "floor", "ceil", "trunc", "sin", "cos", "tan", "ln"}
-var calculateConstants = []string{"~pi", "~e"}
+var expressionFunctions = []string{"sqrt", "abs", "round", "floor", "ceil", "trunc", "sin", "cos", "tan", "ln"}
+var expressionConstants = []string{"~pi", "~e"}
 
 func showMacroNamePicker(onSelect func(string)) {
 	if activeWire.Window == nil || onSelect == nil {
@@ -164,7 +164,7 @@ func showWindowPicker(onSelect func(title, path string)) {
 	popup.ShowAtPosition(fyne.CurrentApp().Driver().AbsolutePositionForObject(activeWire.Window.Canvas().Content()))
 }
 
-func calculateBuilderToolbar(entry *custom_widgets.BorderlessEntry) fyne.CanvasObject {
+func expressionBuilderToolbar(entry *custom_widgets.BorderlessEntry) fyne.CanvasObject {
 	operators := []string{"+", "-", "*", "/", "^", "(", ")"}
 	opButtons := make([]fyne.CanvasObject, 0, len(operators))
 	for _, op := range operators {
@@ -175,13 +175,13 @@ func calculateBuilderToolbar(entry *custom_widgets.BorderlessEntry) fyne.CanvasO
 	}
 	var fxBtn *widget.Button
 	fxBtn = widget.NewButton("f(x)", func() {
-		items := make([]*fyne.MenuItem, 0, len(calculateFunctions)+len(calculateConstants)+1)
-		for _, f := range calculateFunctions {
+		items := make([]*fyne.MenuItem, 0, len(expressionFunctions)+len(expressionConstants)+1)
+		for _, f := range expressionFunctions {
 			fn := f
 			items = append(items, fyne.NewMenuItem(fn+"( )", func() { entry.InsertAtCursor(fn + "()") }))
 		}
 		items = append(items, fyne.NewMenuItemSeparator())
-		for _, c := range calculateConstants {
+		for _, c := range expressionConstants {
 			cst := c
 			items = append(items, fyne.NewMenuItem(cst, func() { entry.InsertAtCursor(cst) }))
 		}
@@ -192,7 +192,7 @@ func calculateBuilderToolbar(entry *custom_widgets.BorderlessEntry) fyne.CanvasO
 	return container.NewBorder(nil, nil, fxBtn, nil, container.NewHBox(opButtons...))
 }
 
-func appendCalculatePreviewRow(exprEntry *custom_widgets.BorderlessEntry, actionType string, owner *actionDisplayTooltipHover) (fyne.CanvasObject, func()) {
+func appendExpressionPreviewRow(exprEntry *custom_widgets.BorderlessEntry, actionType string, owner *actionDisplayTooltipHover) (fyne.CanvasObject, func()) {
 	preview := widget.NewLabel("")
 	preview.Wrapping = fyne.TextWrapWord
 	update := func() {

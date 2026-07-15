@@ -31,7 +31,7 @@ func TestCollectVariableDefs_noCaseInsensitiveDuplicates(t *testing.T) {
 	// Declared with different casing than the ImageSearch builtin "StackMax".
 	m.UpsertVariable(VariableDecl{Name: "stackmax", InitialValue: "1"})
 	m.Root = actions.NewLoop(1, "root", []actions.ActionInterface{
-		actions.NewImageSearch("search", nil, nil, "", 1, 1, 0.95, 5),
+		actions.NewImageSearch("search", nil, nil, "", 0.95, 5),
 	})
 
 	defs := CollectVariableDefs(m)

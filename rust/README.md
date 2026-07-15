@@ -1,6 +1,6 @@
 # Sqyre Rust workspace
 
-In-repo rewrite of Sqyre (egui + PureCV). Go under the repo root remains the daily driver until parity.
+In-repo rewrite of Sqyre (egui + PureCV). **Rust is the default daily driver** (`make` / `./bin/sqyre`). Legacy Go/Fyne: `make go` → `./bin/sqyre-go` until packages are deleted (🔪).
 
 **Migration tracker:** [MIGRATION.md](./MIGRATION.md) (shared checklist — update status when landing work).
 
@@ -30,10 +30,10 @@ Linux automation/capture need X11 (`libx11-dev`, `libxtst-dev`).
 From the repo root:
 
 ```bash
-make rust            # ./bin/sqyre-rust (debug)
-make rust-release    # ./bin/sqyre-rust (release)
+make                 # ./bin/sqyre (debug)
+make rust-release    # ./bin/sqyre (release)
 make rust-test
-make rust-run        # cargo run -p sqyre-app; loads ~/.sqyre/db.yaml
+make run             # cargo run -p sqyre-app; loads ~/.sqyre/db.yaml
 ```
 
 Or from `rust/`:
@@ -45,8 +45,10 @@ cargo run -p sqyre-app
 
 Do not expect X11 inside the container — build there, run the binary on the host.
 
-Host binary: `./bin/sqyre-rust` after `make rust`, or `./rust/target/debug/sqyre` from cargo. Esc stops a running macro; Esc+Ctrl+Shift exits (failsafe).
+Host binary: `./bin/sqyre` after `make`, or `./rust/target/debug/sqyre` from cargo. Esc stops a running macro; Esc+Ctrl+Shift exits (failsafe).
 
-Still improving: variables panel, data-editor polish, non-Linux platforms.
+**Shared DB:** Rust can write action kinds Go cannot load (`while`, `navigateselect`, `navigatekey`). Prefer one binary against `~/.sqyre/`.
+
+Still improving: variables panel, data-editor polish, non-Linux platforms. Release AppImage/Windows still ship Go.
 
 OCR uses Tesseract (`leptess`). Override tessdata with `SQYRE_TESSDATA` if needed.

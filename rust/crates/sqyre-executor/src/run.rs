@@ -12,6 +12,7 @@ use crate::misc::{
     execute_save_variable, execute_set_variable, execute_while,
 };
 use crate::navigate::{execute_navigate_key, execute_navigate_select};
+use crate::runtime_vars::RuntimeVarSink;
 use crate::search::{execute_find_pixel, execute_image_search, execute_ocr};
 use sqyre_domain::{action_type_label, Action, ActionId, ActionKind, Macro, ScalarValue};
 use std::path::Path;
@@ -35,6 +36,8 @@ pub struct Executor<'a> {
     pub logger: Option<&'a dyn ActionLogger>,
     /// Optional active-action highlight sink.
     pub highlighter: Option<&'a dyn ActionHighlighter>,
+    /// Optional live runtime-variable publisher for the UI.
+    pub runtime_vars: Option<&'a dyn RuntimeVarSink>,
     /// `~/.sqyre/variables` (or override) for SaveVariable / ForEachRow file sources.
     pub variables_dir: Option<&'a Path>,
 }
@@ -55,6 +58,7 @@ impl<'a> Executor<'a> {
             stop_flag: None,
             logger: None,
             highlighter: None,
+            runtime_vars: None,
             variables_dir: None,
         }
     }
@@ -69,6 +73,18 @@ impl<'a> Executor<'a> {
         } else {
             Ok(())
         }
+    }
+
+    /// Sleep in ≤50ms chunks, aborting with [`FlowSignal::Stopped`] (Go `interruptibleSleep`).
+    pub fn interruptible_sleep(&mut self, ms: i32) -> Result<()> {
+        let mut left = ms.max(0);
+        while left > 0 {
+            self.check_stopped()?;
+            let chunk = left.min(50);
+            self.automation.milli_sleep(chunk);
+            left -= chunk;
+        }
+        self.check_stopped()
     }
 
     pub fn log(&self, action_id: ActionId, message: impl Into<String>) {
@@ -124,6 +140,7 @@ pub struct ExecDeps<'a> {
     pub stop_flag: Option<&'a AtomicBool>,
     pub logger: Option<&'a dyn ActionLogger>,
     pub highlighter: Option<&'a dyn ActionHighlighter>,
+    pub runtime_vars: Option<&'a dyn RuntimeVarSink>,
     pub variables_dir: Option<&'a Path>,
 }
 
@@ -144,13 +161,20 @@ pub fn execute_macro(macro_: &mut Macro, automation: &mut dyn AutomationBackend)
             stop_flag: None,
             logger: None,
             highlighter: None,
+            runtime_vars: None,
             variables_dir: None,
         },
     )
 }
 
-pub fn execute_macro_with(macro_: &mut Macro, deps: ExecDeps<'_>) -> Result<()> {
+pub fn execute_macro_with(macro_: &mut Macro, mut deps: ExecDeps<'_>) -> Result<()> {
     macro_.init_runtime_variables();
+    let monitor_sizes = match deps.capturer.as_mut() {
+        Some(c) => c.monitor_sizes().unwrap_or_else(|_| vec![(0, 0)]),
+        None => vec![(0, 0)],
+    };
+    apply_monitor_sizes(macro_, &monitor_sizes);
+    publish_runtime_vars(deps.runtime_vars, macro_);
     let mut exec = Executor {
         automation: deps.automation,
         capturer: deps.capturer,
@@ -165,6 +189,7 @@ pub fn execute_macro_with(macro_: &mut Macro, deps: ExecDeps<'_>) -> Result<()> 
         stop_flag: deps.stop_flag,
         logger: deps.logger,
         highlighter: deps.highlighter,
+        runtime_vars: deps.runtime_vars,
         variables_dir: deps.variables_dir,
     };
     let root = macro_.root.clone();
@@ -174,6 +199,28 @@ pub fn execute_macro_with(macro_: &mut Macro, deps: ExecDeps<'_>) -> Result<()> 
     };
     clear_highlights(exec.highlighter);
     result
+}
+
+/// Set `monitorNWidth` / `monitorNHeight` (Go `ApplyMonitorBuiltinVariables`).
+pub(crate) fn apply_monitor_sizes(macro_: &mut Macro, sizes: &[(i32, i32)]) {
+    if sizes.is_empty() {
+        macro_
+            .variables
+            .set("monitor1Width", ScalarValue::Int(0));
+        macro_
+            .variables
+            .set("monitor1Height", ScalarValue::Int(0));
+        return;
+    }
+    for (i, (w, h)) in sizes.iter().enumerate() {
+        let n = i + 1;
+        macro_
+            .variables
+            .set(format!("monitor{n}Width"), ScalarValue::Int(i64::from(*w)));
+        macro_
+            .variables
+            .set(format!("monitor{n}Height"), ScalarValue::Int(i64::from(*h)));
+    }
 }
 
 fn action_headline(action: &Action) -> String {
@@ -192,23 +239,45 @@ pub fn execute_action(exec: &mut Executor<'_>, action: &Action, macro_: &mut Mac
     }
     exec.log(action.id, action_headline(action));
     let result = dispatch(exec, action, macro_);
-    apply_delay(exec, action, macro_);
+    // Go `executeWithContext`: delay only on success or Break/Continue (not Stopped/errors).
+    match &result {
+        Ok(())
+        | Err(ExecError::Flow(FlowSignal::Break))
+        | Err(ExecError::Flow(FlowSignal::Continue)) => {
+            publish_runtime_vars(exec.runtime_vars, macro_);
+            apply_delay(exec, action, macro_)?;
+        }
+        Err(_) => {}
+    }
     result
 }
 
-fn apply_delay(exec: &mut Executor<'_>, action: &Action, macro_: &Macro) {
+fn publish_runtime_vars(sink: Option<&dyn RuntimeVarSink>, macro_: &Macro) {
+    let Some(sink) = sink else {
+        return;
+    };
+    let pairs: Vec<(String, String)> = macro_
+        .variables
+        .iter()
+        .map(|(n, v)| (n.to_string(), v.as_display()))
+        .collect();
+    sink.publish(&pairs);
+}
+
+fn apply_delay(exec: &mut Executor<'_>, action: &Action, macro_: &Macro) -> Result<()> {
     if macro_.global_delay > 0 {
-        exec.automation.milli_sleep(macro_.global_delay);
+        exec.interruptible_sleep(macro_.global_delay)?;
     }
     match action.type_key() {
         "key" | "type" if macro_.keyboard_delay > 0 => {
-            exec.automation.milli_sleep(macro_.keyboard_delay);
+            exec.interruptible_sleep(macro_.keyboard_delay)?;
         }
         "move" | "click" if macro_.mouse_delay > 0 => {
-            exec.automation.milli_sleep(macro_.mouse_delay);
+            exec.interruptible_sleep(macro_.mouse_delay)?;
         }
         _ => {}
     }
+    Ok(())
 }
 
 fn dispatch(exec: &mut Executor<'_>, action: &Action, macro_: &mut Macro) -> Result<()> {
@@ -216,7 +285,7 @@ fn dispatch(exec: &mut Executor<'_>, action: &Action, macro_: &mut Macro) -> Res
         ActionKind::Wait { time } => {
             let ms = resolve_int(time, macro_)?;
             if ms > 0 {
-                exec.automation.milli_sleep(ms);
+                exec.interruptible_sleep(ms)?;
             }
             Ok(())
         }
@@ -273,9 +342,10 @@ fn dispatch(exec: &mut Executor<'_>, action: &Action, macro_: &mut Macro) -> Res
         ActionKind::Type { text, delay_ms } => {
             let resolved = resolve_text(text, macro_)?;
             for ch in resolved.chars() {
+                exec.check_stopped()?;
                 exec.automation.type_char(&ch.to_string());
                 if *delay_ms > 0 {
-                    exec.automation.milli_sleep(*delay_ms);
+                    exec.interruptible_sleep(*delay_ms)?;
                 }
             }
             Ok(())
@@ -500,7 +570,7 @@ pub(crate) fn resolve_text(text: &str, macro_: &Macro) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::backends::{CoordinateResolver, RecordingBackend};
+    use crate::backends::{CoordinateResolver, DesktopRect, RecordingBackend, RecordingCapturer};
     use sqyre_domain::{root_loop, Action, ActionId, ActionKind, CoordinateRef, ScalarValue};
 
     struct FixedResolver;
@@ -562,6 +632,161 @@ mod tests {
     }
 
     #[test]
+    fn apply_monitor_builtins_from_capturer() {
+        let mut backend = RecordingBackend::default();
+        let mut capturer = RecordingCapturer {
+            bounds: DesktopRect {
+                x: 0,
+                y: 0,
+                w: 1920,
+                h: 1080,
+            },
+            ..Default::default()
+        };
+        let mut macro_ = Macro::new("t", 0, vec![]);
+        macro_.root = root_loop(vec![]);
+        execute_macro_with(
+            &mut macro_,
+            ExecDeps {
+                automation: &mut backend,
+                capturer: Some(&mut capturer),
+                matcher: None,
+                resolver: None,
+                icons: None,
+                macros: None,
+                continue_waiter: None,
+                window_focuser: None,
+                ocr: None,
+                stop_flag: None,
+                logger: None,
+                highlighter: None,
+                runtime_vars: None,
+                variables_dir: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            macro_.variables.get("monitor1Width"),
+            Some(&ScalarValue::Int(1920))
+        );
+        assert_eq!(
+            macro_.variables.get("monitor1Height"),
+            Some(&ScalarValue::Int(1080))
+        );
+    }
+
+    #[test]
+    fn wait_aborts_on_stop_flag() {
+        use std::sync::atomic::AtomicBool;
+        let mut backend = RecordingBackend::default();
+        let stop = AtomicBool::new(true);
+        let mut macro_ = Macro::new("t", 0, vec![]);
+        let wait_id = ActionId::new();
+        macro_.root = root_loop(vec![Action {
+            id: wait_id,
+            kind: ActionKind::Wait {
+                time: ScalarValue::Int(5000),
+            },
+        }]);
+        // Top-level execute_macro maps Stopped → Ok; assert we did not sleep 5s.
+        execute_macro_with(
+            &mut macro_,
+            ExecDeps {
+                automation: &mut backend,
+                capturer: None,
+                matcher: None,
+                resolver: None,
+                icons: None,
+                macros: None,
+                continue_waiter: None,
+                window_focuser: None,
+                ocr: None,
+                stop_flag: Some(&stop),
+                logger: None,
+                highlighter: None,
+                runtime_vars: None,
+                variables_dir: None,
+            },
+        )
+        .unwrap();
+        let slept: i32 = backend
+            .log
+            .iter()
+            .filter_map(|e| e.strip_prefix("sleep:")?.parse::<i32>().ok())
+            .sum();
+        assert!(
+            slept < 5000,
+            "interruptible wait must abort early, slept {slept}ms: {:?}",
+            backend.log
+        );
+    }
+
+    #[test]
+    fn stopped_action_skips_global_delay() {
+        use std::sync::atomic::AtomicBool;
+        let mut backend = RecordingBackend::default();
+        let stop = AtomicBool::new(true);
+        let mut macro_ = Macro::new("t", 250, vec![]);
+        macro_.root = root_loop(vec![Action {
+            id: ActionId::new(),
+            kind: ActionKind::Wait {
+                time: ScalarValue::Int(10),
+            },
+        }]);
+        execute_macro_with(
+            &mut macro_,
+            ExecDeps {
+                automation: &mut backend,
+                capturer: None,
+                matcher: None,
+                resolver: None,
+                icons: None,
+                macros: None,
+                continue_waiter: None,
+                window_focuser: None,
+                ocr: None,
+                stop_flag: Some(&stop),
+                logger: None,
+                highlighter: None,
+                runtime_vars: None,
+                variables_dir: None,
+            },
+        )
+        .unwrap();
+        assert!(
+            !backend.log.iter().any(|e| e == "sleep:250"),
+            "global delay must not run after stop: {:?}",
+            backend.log
+        );
+    }
+
+    #[test]
+    fn interruptible_sleep_returns_stopped() {
+        use std::sync::atomic::AtomicBool;
+        let mut backend = RecordingBackend::default();
+        let stop = AtomicBool::new(true);
+        let mut exec = Executor {
+            automation: &mut backend,
+            capturer: None,
+            matcher: None,
+            resolver: None,
+            icons: None,
+            macros: None,
+            continue_waiter: None,
+            window_focuser: None,
+            ocr: None,
+            stop_requested: false,
+            stop_flag: Some(&stop),
+            logger: None,
+            highlighter: None,
+            runtime_vars: None,
+            variables_dir: None,
+        };
+        let err = exec.interruptible_sleep(1000).unwrap_err();
+        assert!(matches!(err, ExecError::Flow(FlowSignal::Stopped)));
+    }
+
+    #[test]
     fn move_uses_coordinate_resolver() {
         let mut backend = RecordingBackend::default();
         let resolver = FixedResolver;
@@ -607,6 +832,7 @@ mod tests {
                 stop_flag: None,
                 logger: None,
                 highlighter: None,
+                runtime_vars: None,
                 variables_dir: None,
             },
         )
@@ -655,6 +881,7 @@ mod tests {
                 stop_flag: None,
                 logger: Some(&logger),
                 highlighter: None,
+                runtime_vars: None,
                 variables_dir: None,
             },
         )
@@ -853,6 +1080,7 @@ mod tests {
                 stop_flag: Some(&stop),
                 logger: None,
                 highlighter: None,
+                runtime_vars: None,
                 variables_dir: None,
             },
         )

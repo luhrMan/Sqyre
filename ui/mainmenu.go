@@ -54,8 +54,8 @@ func buildActionTemplates() []actionTemplate {
 		{label: "Continue", actionType: "continue", category: "Loop flow", icon: actiondisplay.Icon(actions.NewContinue()), create: func() actions.ActionInterface {
 			return actions.NewContinue()
 		}},
-		{label: "Image Search", actionType: "imagesearch", category: "Detection", icon: actiondisplay.Icon(actions.NewImageSearch("", []actions.ActionInterface{}, []string{}, "", 1, 1, 0.95, 5)), create: func() actions.ActionInterface {
-			return actions.NewImageSearch("", []actions.ActionInterface{}, []string{}, "", 1, 1, 0.95, 5)
+		{label: "Image Search", actionType: "imagesearch", category: "Detection", icon: actiondisplay.Icon(actions.NewImageSearch("", []actions.ActionInterface{}, []string{}, "", 0.95, 5)), create: func() actions.ActionInterface {
+			return actions.NewImageSearch("", []actions.ActionInterface{}, []string{}, "", 0.95, 5)
 		}},
 		{label: "OCR", actionType: "ocr", category: "Detection", icon: actiondisplay.Icon(actions.NewOcr("", "template", "template search area")), create: func() actions.ActionInterface {
 			return actions.NewOcr("", "template", "template search area")
@@ -65,7 +65,6 @@ func buildActionTemplates() []actionTemplate {
 		}},
 
 		{label: "Set", actionType: "setvariable", category: "Variables", icon: actiondisplay.Icon(actions.NewSetVariable("", "")), create: func() actions.ActionInterface { return actions.NewSetVariable("", "") }},
-		{label: "Calculate", actionType: "calculate", category: "Variables", icon: actiondisplay.Icon(actions.NewCalculate("", "")), create: func() actions.ActionInterface { return actions.NewCalculate("", "") }},
 		{label: "For each row", actionType: "foreachrow", category: "Variables", icon: actiondisplay.Icon(actions.NewForEachRow("", []actions.ListColumn{{}}, nil)), create: func() actions.ActionInterface {
 			return actions.NewForEachRow("", []actions.ListColumn{{}}, nil)
 		}},

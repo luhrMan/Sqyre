@@ -7,7 +7,7 @@ import (
 
 func TestActionToMap_CollectionRef(t *testing.T) {
 	ref := actions.NewCollectionRef("Demo", "grid", 1, 2, 3, 4)
-	is := actions.NewImageSearch("s", nil, nil, ref, 1, 1, 0.95, 5)
+	is := actions.NewImageSearch("s", nil, nil, ref, 0.95, 5)
 	m, err := ActionToMap(is)
 	if err != nil {
 		t.Fatal(err)
