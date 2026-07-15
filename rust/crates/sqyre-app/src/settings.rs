@@ -60,6 +60,16 @@ impl SettingsUi {
         &self.settings
     }
 
+    pub fn settings_mut(&mut self) -> &mut UserSettings {
+        &mut self.settings
+    }
+
+    pub fn save_settings(&mut self) -> Result<(), String> {
+        self.settings
+            .save_default()
+            .map_err(|e| e.to_string())
+    }
+
     /// Ensure Hack is in the proportional fallback chain so geometric/arrow
     /// symbols (e.g. ➔ ◫) are available — egui's default omits Hack there.
     pub fn install_fonts(ctx: &egui::Context) {

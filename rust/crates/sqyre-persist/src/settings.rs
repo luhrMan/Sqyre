@@ -104,6 +104,9 @@ pub struct UserSettings {
     pub ui_scale: f32,
     #[serde(default)]
     pub action_colors: ActionColorPrefs,
+    /// Per-action-type blank templates for the Add Action picker (YAML action maps).
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub action_defaults: std::collections::BTreeMap<String, serde_yaml::Mapping>,
 }
 
 fn default_hide_recording() -> bool {
@@ -134,6 +137,7 @@ impl Default for UserSettings {
             ui_font_size: DEFAULT_UI_FONT_SIZE,
             ui_scale: DEFAULT_UI_SCALE,
             action_colors: ActionColorPrefs::default(),
+            action_defaults: std::collections::BTreeMap::new(),
         }
     }
 }

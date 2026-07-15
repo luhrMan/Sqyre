@@ -476,13 +476,9 @@ fn write_wait(m: &mut Mapping, w: &WaitTilFoundConfig) {
     let mode = w.effective_repeat_mode().to_string();
     insert_str(m, "repeatmode", &mode);
     if mode == REPEAT_WAIT_UNTIL_FOUND {
-        insert_bool(m, "waittilfound", true);
         insert_i32(m, "waittilfoundseconds", w.wait_til_found_seconds);
-    } else if w.wait_til_found {
-        // Preserve legacy bool when mode is once but flag was set oddly.
-        insert_bool(m, "waittilfound", w.wait_til_found);
-    } else {
-        insert_bool(m, "waittilfound", false);
+    } else if w.wait_til_found_seconds > 0 {
+        insert_i32(m, "waittilfoundseconds", w.wait_til_found_seconds);
     }
     if w.wait_til_found_interval_ms > 0 {
         insert_i32(m, "waittilfoundintervalms", w.wait_til_found_interval_ms);
@@ -494,30 +490,18 @@ fn write_wait(m: &mut Mapping, w: &WaitTilFoundConfig) {
             100
         };
         insert_i32(m, "maxiterations", max);
-        if w.wait_til_found_seconds > 0 {
-            insert_i32(m, "waittilfoundseconds", w.wait_til_found_seconds);
-        }
-    } else if mode == REPEAT_ONCE && w.wait_til_found_seconds > 0 {
-        insert_i32(m, "waittilfoundseconds", w.wait_til_found_seconds);
-    } else if w.wait_til_found_seconds > 0 && mode != REPEAT_WAIT_UNTIL_FOUND {
-        insert_i32(m, "waittilfoundseconds", w.wait_til_found_seconds);
     }
 }
 
 fn decode_wait(raw: &Mapping) -> WaitTilFoundConfig {
     let mut out = WaitTilFoundConfig {
         repeat_mode: string_from_map(raw, "repeatmode"),
-        wait_til_found: bool_from_map(raw, "waittilfound"),
         wait_til_found_seconds: optional_int(raw, "waittilfoundseconds").unwrap_or(0),
         wait_til_found_interval_ms: optional_int(raw, "waittilfoundintervalms").unwrap_or(0),
         max_iterations: optional_int(raw, "maxiterations").unwrap_or(0),
     };
     if out.repeat_mode.is_empty() {
-        out.repeat_mode = if out.wait_til_found {
-            REPEAT_WAIT_UNTIL_FOUND.to_string()
-        } else {
-            REPEAT_ONCE.to_string()
-        };
+        out.repeat_mode = REPEAT_ONCE.to_string();
     }
     out
 }
