@@ -3,7 +3,8 @@
 mod programs;
 
 pub use programs::{
-    resolve_scalar_int, ProgramCatalog, ProgramData, ProgramItem, ProgramPoint, ProgramSearchArea,
+    resolve_scalar_int, ProgramCatalog, ProgramCollection, ProgramData, ProgramItem, ProgramMask,
+    ProgramPoint, ProgramSearchArea,
 };
 
 use serde_yaml::{Mapping, Value};
@@ -85,6 +86,16 @@ pub struct Database {
 impl Database {
     pub fn program_catalog(&self) -> Result<ProgramCatalog> {
         ProgramCatalog::from_yaml_value(&self.programs)
+    }
+
+    /// Replace `programs` from a typed catalog, preserving masks/collections via merge.
+    pub fn set_programs_from_catalog(&mut self, catalog: &ProgramCatalog) {
+        self.programs = catalog.to_yaml_value(&self.programs);
+    }
+
+    /// Replace the macros map from an ordered list (keyed by macro name).
+    pub fn replace_macros(&mut self, macros: impl IntoIterator<Item = Macro>) {
+        self.macros = macros.into_iter().map(|m| (m.name.clone(), m)).collect();
     }
 
     pub fn load_from_path(path: impl AsRef<Path>) -> Result<Self> {
