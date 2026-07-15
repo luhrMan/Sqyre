@@ -1,16 +1,34 @@
 //! rdev-based Esc stop + Esc+Ctrl+Shift failsafe (Linux X11 / non-root).
 
+use crate::continue_wait::{rdev_key_name, ContinueWaitBridge};
 use crate::{HotkeyCallbacks, HotkeyService};
 use parking_lot::Mutex;
 use rdev::{listen, Event, EventType, Key};
+use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
-#[derive(Default)]
 pub struct RdevHotkeys {
     stop: Arc<AtomicBool>,
     join: Mutex<Option<JoinHandle<()>>>,
+    continue_wait: ContinueWaitBridge,
+}
+
+impl RdevHotkeys {
+    pub fn new(continue_wait: ContinueWaitBridge) -> Self {
+        Self {
+            stop: Arc::new(AtomicBool::new(false)),
+            join: Mutex::new(None),
+            continue_wait,
+        }
+    }
+}
+
+impl Default for RdevHotkeys {
+    fn default() -> Self {
+        Self::new(ContinueWaitBridge::new(true))
+    }
 }
 
 impl HotkeyService for RdevHotkeys {
@@ -18,37 +36,42 @@ impl HotkeyService for RdevHotkeys {
         self.stop();
         let stop = Arc::clone(&self.stop);
         stop.store(false, Ordering::SeqCst);
+        let continue_wait = self.continue_wait.clone();
         let handle = thread::Builder::new()
             .name("sqyre-hotkeys".into())
             .spawn(move || {
-                let mut ctrl = false;
-                let mut shift = false;
-                let mut esc = false;
+                let mut pressed: HashSet<String> = HashSet::new();
                 let _ = listen(move |event: Event| {
                     if stop.load(Ordering::SeqCst) {
                         return;
                     }
                     match event.event_type {
-                        EventType::KeyPress(Key::ControlLeft)
-                        | EventType::KeyPress(Key::ControlRight) => ctrl = true,
-                        EventType::KeyRelease(Key::ControlLeft)
-                        | EventType::KeyRelease(Key::ControlRight) => ctrl = false,
-                        EventType::KeyPress(Key::ShiftLeft)
-                        | EventType::KeyPress(Key::ShiftRight) => shift = true,
-                        EventType::KeyRelease(Key::ShiftLeft)
-                        | EventType::KeyRelease(Key::ShiftRight) => shift = false,
-                        EventType::KeyPress(Key::Escape) => {
-                            esc = true;
-                            if ctrl && shift {
-                                (callbacks.on_failsafe)();
-                            } else if !ctrl && !shift {
-                                (callbacks.on_escape_stop)();
+                        EventType::KeyPress(key) => {
+                            if let Some(name) = rdev_key_name(key) {
+                                pressed.insert(name);
+                            }
+                            continue_wait.on_pressed_keys(&pressed);
+
+                            let ctrl = pressed.contains("ctrl");
+                            let shift = pressed.contains("shift");
+                            if matches!(key, Key::Escape) {
+                                if ctrl && shift {
+                                    (callbacks.on_failsafe)();
+                                } else if !ctrl && !shift {
+                                    if !continue_wait.continue_is_escape() {
+                                        (callbacks.on_escape_stop)();
+                                    }
+                                }
                             }
                         }
-                        EventType::KeyRelease(Key::Escape) => esc = false,
+                        EventType::KeyRelease(key) => {
+                            if let Some(name) = rdev_key_name(key) {
+                                pressed.remove(&name);
+                            }
+                            continue_wait.on_pressed_keys(&pressed);
+                        }
                         _ => {}
                     }
-                    let _ = esc;
                 });
             })
             .map_err(|e| format!("hotkey thread: {e}"))?;
@@ -59,7 +82,6 @@ impl HotkeyService for RdevHotkeys {
     fn stop(&mut self) {
         self.stop.store(true, Ordering::SeqCst);
         // rdev::listen blocks forever; we cannot join cleanly without process exit.
-        // Drop the join handle so the OS reaps on process end.
         let _ = self.join.lock().take();
     }
 }
