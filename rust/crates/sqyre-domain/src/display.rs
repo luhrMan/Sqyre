@@ -479,6 +479,17 @@ impl ActionKind {
                     params.push(DisplayParam::new("Graph", graph_name.as_str()));
                 }
             }
+            Self::NavigateKey { chord, exit, .. } => {
+                let key = if chord.is_empty() {
+                    "not set".into()
+                } else {
+                    chord.join("+")
+                };
+                params.push(DisplayParam::new("Chord", key));
+                if *exit {
+                    params.push(DisplayParam::new("After", "exit"));
+                }
+            }
             Self::Break | Self::Continue => {}
         }
         params
@@ -523,6 +534,31 @@ impl ActionKind {
                     role: "output".into(),
                 })
                 .collect(),
+            Self::NavigateSelect {
+                output_ref,
+                output_graph,
+                output_row,
+                output_col,
+                output_collection,
+                ..
+            } => {
+                let mut out = Vec::new();
+                for (name, role) in [
+                    (output_ref, "ref"),
+                    (output_graph, "graph"),
+                    (output_row, "row"),
+                    (output_col, "col"),
+                    (output_collection, "collection"),
+                ] {
+                    if !name.is_empty() {
+                        out.push(VariableBinding {
+                            name: name.clone(),
+                            role: role.into(),
+                        });
+                    }
+                }
+                out
+            }
             _ => Vec::new(),
         }
     }
@@ -677,7 +713,7 @@ fn action_color_category(action_type: &str) -> &'static str {
         "imagesearch" | "ocr" | "findpixel" => "Detection",
         "setvariable" | "calculate" | "foreachrow" | "savevariable" => "Variables",
         "wait" | "pause" | "focuswindow" | "runmacro" | "loop" | "while" | "conditional"
-        | "break" | "continue" | "navigateselect" => "Miscellaneous",
+        | "break" | "continue" | "navigateselect" | "navigatekey" => "Miscellaneous",
         _ => "",
     }
 }
@@ -721,6 +757,7 @@ pub fn action_icon_glyph(action: &Action) -> &'static str {
         ActionKind::ImageSearch { .. } => "🔍",
         ActionKind::FindPixel { .. } => "🎨",
         ActionKind::NavigateSelect { .. } => "⌖",
+        ActionKind::NavigateKey { .. } => "⎇",
     }
 }
 
@@ -778,8 +815,6 @@ mod tests {
                 name: "find".into(),
                 targets: vec!["a".into(), "b".into()],
                 search_area: CoordinateRef("Prog~Box".into()),
-                row_split: 0,
-                col_split: 0,
                 tolerance: 0.9,
                 blur: 0,
                 wait: WaitTilFoundConfig::default(),
@@ -1057,8 +1092,6 @@ mod tests {
                     name: String::new(),
                     targets: vec![],
                     search_area: CoordinateRef(String::new()),
-                    row_split: 0,
-                    col_split: 0,
                     tolerance: 0.0,
                     blur: 0,
                     wait: WaitTilFoundConfig::default(),

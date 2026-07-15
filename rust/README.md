@@ -9,7 +9,7 @@ In-repo rewrite of Sqyre (egui + PureCV). Go under the repo root remains the dai
 | Crate | Role |
 |-------|------|
 | `sqyre-varref` | `${name}` / `{name}` grammar |
-| `sqyre-domain` | Macro + 21 action kinds |
+| `sqyre-domain` | Macro + 22 action kinds |
 | `sqyre-serialize` | YAML codecs (Go `ActionToMap` / `DecodeMacroFromMap`) |
 | `sqyre-validate` | Names / action save checks |
 | `sqyre-persist` | `~/.sqyre/db.yaml` + program catalog |
@@ -37,6 +37,6 @@ Do not expect X11 inside the container — build there, run the binary on the ho
 
 Host binary: `./rust/target/debug/sqyre` (or `./rust/target-phase2/debug/sqyre` after an alternate build). Esc stops a running macro; Esc+Ctrl+Shift exits (failsafe).
 
-Still stubbed: `NavigateSelect`.
+Still improving: ValidateAction parity, UI add-action picker, non-Linux platforms.
 
 OCR uses Tesseract (`leptess`). Override tessdata with `SQYRE_TESSDATA` if needed.

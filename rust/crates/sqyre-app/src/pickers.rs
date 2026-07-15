@@ -156,6 +156,59 @@ fn query_matches_name_or_tags(q: &str, name: &str, tags: &[String]) -> bool {
             .any(|t| t.to_ascii_lowercase().contains(q))
 }
 
+/// Display name + tags for an item target (`program~item` or `program~item~variant`).
+fn item_tooltip_parts(catalog: &ProgramCatalog, target: &str) -> (String, Vec<String>) {
+    let Some((program, rest)) = target.split_once(PROGRAM_DELIMITER) else {
+        return (target.to_string(), Vec::new());
+    };
+    let item_key = rest
+        .split_once(PROGRAM_DELIMITER)
+        .map(|(base, _)| base)
+        .unwrap_or(rest);
+    if let Some(item) = catalog.get(program).and_then(|p| p.items.get(item_key)) {
+        let name = if item.name.is_empty() {
+            item_key.to_string()
+        } else {
+            item.name.clone()
+        };
+        return (name, item.tags.clone());
+    }
+    (item_key.to_string(), Vec::new())
+}
+
+/// Rich hover tooltip: bold name, then italic primary-colored tags (Go `ItemTooltipLabel`).
+pub fn attach_item_icon_tooltip(
+    response: &egui::Response,
+    catalog: &ProgramCatalog,
+    target: &str,
+) {
+    if !response.hovered() {
+        return;
+    }
+    let (name, tags) = item_tooltip_parts(catalog, target);
+    response.clone().on_hover_ui(|ui| {
+        paint_item_icon_tooltip(ui, &name, &tags);
+    });
+}
+
+fn paint_item_icon_tooltip(ui: &mut egui::Ui, name: &str, tags: &[String]) {
+    ui.set_max_width(280.0);
+    ui.label(egui::RichText::new(name).strong().size(13.0));
+    if tags.is_empty() {
+        return;
+    }
+    ui.add_space(4.0);
+    let color = ui.visuals().hyperlink_color;
+    for tag in tags {
+        ui.label(
+            egui::RichText::new(tag)
+                .size(11.0)
+                .italics()
+                .color(color),
+        );
+    }
+}
+
 /// Substring match on window title, process name, or path.
 fn query_matches_window(q: &str, w: &WindowInfo) -> bool {
     if q.is_empty() {
@@ -244,10 +297,9 @@ pub fn icon_grid_cell_ex(
         remove_clicked = btn_resp.clicked();
     }
 
-    (
-        resp.on_hover_text(target).clicked() && !remove_clicked,
-        remove_clicked,
-    )
+    attach_item_icon_tooltip(&resp, catalog, target);
+
+    (resp.clicked() && !remove_clicked, remove_clicked)
 }
 
 fn fit_thumb(w: f32, h: f32, max: f32) -> Vec2 {
@@ -981,8 +1033,10 @@ pub mod options {
 
 #[cfg(test)]
 mod tests {
-    use super::{query_matches_name_or_tags, query_matches_window};
+    use super::{item_tooltip_parts, query_matches_name_or_tags, query_matches_window};
     use sqyre_capture::WindowInfo;
+    use sqyre_persist::{ProgramCatalog, ProgramData, ProgramItem};
+    use std::collections::BTreeMap;
 
     #[test]
     fn empty_query_matches_anything() {
@@ -1006,6 +1060,38 @@ mod tests {
         assert!(query_matches_name_or_tags("heal", "Minor Flask", &tags));
         assert!(query_matches_name_or_tags("CONSUM", "Minor Flask", &tags));
         assert!(!query_matches_name_or_tags("weapon", "Minor Flask", &tags));
+    }
+
+    #[test]
+    fn item_tooltip_parts_resolves_name_and_tags() {
+        let mut cat = ProgramCatalog::default();
+        cat.programs_mut().insert(
+            "Game".into(),
+            ProgramData {
+                name: "Game".into(),
+                items: BTreeMap::from([(
+                    "Flask".into(),
+                    ProgramItem {
+                        name: "Health Flask".into(),
+                        tags: vec!["healing".into(), "consumable".into()],
+                        ..Default::default()
+                    },
+                )]),
+                ..Default::default()
+            },
+        );
+
+        let (name, tags) = item_tooltip_parts(&cat, "Game~Flask");
+        assert_eq!(name, "Health Flask");
+        assert_eq!(tags, vec!["healing", "consumable"]);
+
+        let (name, tags) = item_tooltip_parts(&cat, "Game~Flask~v2");
+        assert_eq!(name, "Health Flask");
+        assert_eq!(tags, vec!["healing", "consumable"]);
+
+        let (name, tags) = item_tooltip_parts(&cat, "Missing~Item");
+        assert_eq!(name, "Item");
+        assert!(tags.is_empty());
     }
 
     #[test]

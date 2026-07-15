@@ -1,7 +1,9 @@
 //! Staged field editors and draft apply (preserve `subactions`).
 
+use super::sections::{tip_section, tip_wrapped_section};
 use crate::icon_cache::IconCache;
 use crate::pickers::{self, options, ActivePicker};
+use crate::preview_tooltip::{PreviewKind, PreviewTooltipCache};
 use crate::var_pills;
 use eframe::egui;
 use sqyre_domain::{
@@ -36,6 +38,7 @@ pub fn paint_edit_fields(
     draft: &mut Action,
     catalog: &ProgramCatalog,
     icons: &mut IconCache,
+    previews: &mut PreviewTooltipCache,
     picker: &mut ActivePicker,
     _macros: &[(String, Vec<String>)],
     known_vars: &HashSet<String>,
@@ -43,22 +46,32 @@ pub fn paint_edit_fields(
 ) {
     match &mut draft.kind {
         ActionKind::Break | ActionKind::Continue => {
-            ui.label("Nothing to edit.");
+            tip_section(ui, |ui| {
+                ui.label("Nothing to edit.");
+            });
         }
         ActionKind::Wait { time } => {
-            scalar_field(ui, "Time (ms)", time, known_vars, is_dark);
+            tip_wrapped_section(ui, |ui| {
+                scalar_field(ui, "Time (ms)", time, known_vars, is_dark);
+            });
         }
         ActionKind::Click { button, state } => {
-            combo_str(ui, "Button", button, options::CLICK_BUTTONS);
-            ui.checkbox(state, "Down");
+            tip_wrapped_section(ui, |ui| {
+                combo_str(ui, "Button", button, options::CLICK_BUTTONS);
+                ui.checkbox(state, "Down");
+            });
         }
         ActionKind::Key { key, state } => {
-            var_pills::var_ref_text_edit(ui, "Key", key, known_vars, is_dark, 220.0);
-            ui.checkbox(state, "Down");
+            tip_wrapped_section(ui, |ui| {
+                var_pills::var_ref_text_edit(ui, "Key", key, known_vars, is_dark, 160.0);
+                ui.checkbox(state, "Down");
+            });
         }
         ActionKind::Type { text, delay_ms } => {
-            var_pills::var_ref_text_edit(ui, "Text", text, known_vars, is_dark, 220.0);
-            ui.add(egui::DragValue::new(delay_ms).prefix("Delay ms: ").speed(1));
+            tip_wrapped_section(ui, |ui| {
+                var_pills::var_ref_text_edit(ui, "Text", text, known_vars, is_dark, 160.0);
+                ui.add(egui::DragValue::new(delay_ms).prefix("Delay ms: ").speed(1));
+            });
         }
         ActionKind::Move {
             point,
@@ -67,81 +80,104 @@ pub fn paint_edit_fields(
             smooth_high,
             smooth_delay_ms,
         } => {
-            point_picker_row(ui, point, picker);
-            ui.checkbox(smooth, "Smooth");
-            ui.add(
-                egui::DragValue::new(smooth_low)
-                    .prefix("Smooth low: ")
-                    .speed(0.01)
-                    .range(0.0..=1.0),
-            );
-            ui.add(
-                egui::DragValue::new(smooth_high)
-                    .prefix("Smooth high: ")
-                    .speed(0.01)
-                    .range(0.0..=1.0),
-            );
-            ui.add(
-                egui::DragValue::new(smooth_delay_ms)
-                    .prefix("Smooth delay ms: ")
-                    .speed(1),
-            );
+            tip_section(ui, |ui| {
+                point_picker_row(ui, point, picker);
+                paint_coord_preview(ui, catalog, previews, point, PreviewKind::Point);
+            });
+            tip_wrapped_section(ui, |ui| {
+                ui.checkbox(smooth, "Smooth");
+                ui.add(
+                    egui::DragValue::new(smooth_low)
+                        .prefix("Smooth low: ")
+                        .speed(0.01)
+                        .range(0.0..=1.0),
+                );
+                ui.add(
+                    egui::DragValue::new(smooth_high)
+                        .prefix("Smooth high: ")
+                        .speed(0.01)
+                        .range(0.0..=1.0),
+                );
+                ui.add(
+                    egui::DragValue::new(smooth_delay_ms)
+                        .prefix("Smooth delay ms: ")
+                        .speed(1),
+                );
+            });
         }
         ActionKind::Pause {
             message,
             continue_key,
             pass_through,
         } => {
-            var_pills::var_ref_text_edit(ui, "Message", message, known_vars, is_dark, 220.0);
-            string_list_field(ui, "Continue keys (one per line)", continue_key);
-            ui.checkbox(pass_through, "Pass through");
+            tip_section(ui, |ui| {
+                var_pills::var_ref_text_edit(ui, "Message", message, known_vars, is_dark, 220.0);
+            });
+            tip_section(ui, |ui| {
+                string_list_field(ui, "Continue keys (one per line)", continue_key);
+            });
+            tip_wrapped_section(ui, |ui| {
+                ui.checkbox(pass_through, "Pass through");
+            });
         }
         ActionKind::FocusWindow {
             process_path,
             window_title,
         } => {
-            text_field(ui, "Window title", window_title);
-            ui.horizontal(|ui| {
-                ui.label("Process path");
-                ui.add(
-                    egui::TextEdit::singleline(process_path)
-                        .desired_width(220.0)
-                        .hint_text("/path/to/app"),
-                );
-                if ui.button("Pick…").clicked() {
-                    *picker = pickers::open_window_picker(process_path, window_title);
-                }
+            tip_wrapped_section(ui, |ui| {
+                text_field(ui, "Window title", window_title);
+                ui.horizontal(|ui| {
+                    ui.label("Process path");
+                    ui.add(
+                        egui::TextEdit::singleline(process_path)
+                            .desired_width(180.0)
+                            .hint_text("/path/to/app"),
+                    );
+                    if pick_icon_btn(ui).clicked() {
+                        *picker = pickers::open_window_picker(process_path, window_title);
+                    }
+                });
             });
         }
         ActionKind::RunMacro { macro_name } => {
-            ui.horizontal(|ui| {
-                ui.label("Macro");
-                ui.label(if macro_name.is_empty() {
-                    "(unset)"
-                } else {
-                    macro_name.as_str()
+            tip_wrapped_section(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Macro");
+                    ui.label(if macro_name.is_empty() {
+                        "(unset)"
+                    } else {
+                        macro_name.as_str()
+                    });
+                    if pick_icon_btn(ui).clicked() {
+                        *picker = ActivePicker::Macro {
+                            search: String::new(),
+                            value: macro_name.clone(),
+                        };
+                    }
                 });
-                if ui.button("Pick…").clicked() {
-                    *picker = ActivePicker::Macro {
-                        search: String::new(),
-                        value: macro_name.clone(),
-                    };
-                }
             });
         }
         ActionKind::SetVariable {
             variable_name,
             value,
         } => {
-            var_pills::var_name_text_edit(ui, "Variable", variable_name, known_vars, is_dark, 220.0);
-            yaml_value_field(ui, "Value (YAML)", value, known_vars, is_dark);
+            tip_wrapped_section(ui, |ui| {
+                var_pills::var_name_text_edit(ui, "Variable", variable_name, known_vars, is_dark, 160.0);
+            });
+            tip_section(ui, |ui| {
+                yaml_value_field(ui, "Value (YAML)", value, known_vars, is_dark);
+            });
         }
         ActionKind::Calculate {
             expression,
             output_var,
         } => {
-            var_pills::var_ref_text_edit(ui, "Expression", expression, known_vars, is_dark, 220.0);
-            var_pills::var_name_text_edit(ui, "Output variable", output_var, known_vars, is_dark, 220.0);
+            tip_section(ui, |ui| {
+                var_pills::var_ref_text_edit(ui, "Expression", expression, known_vars, is_dark, 220.0);
+            });
+            tip_wrapped_section(ui, |ui| {
+                var_pills::var_name_text_edit(ui, "Output variable", output_var, known_vars, is_dark, 160.0);
+            });
         }
         ActionKind::SaveVariable {
             variable_name,
@@ -149,14 +185,20 @@ pub fn paint_edit_fields(
             append,
             append_newline,
         } => {
-            var_pills::var_name_text_edit(ui, "Variable", variable_name, known_vars, is_dark, 220.0);
-            var_pills::var_ref_text_edit(ui, "Destination", destination, known_vars, is_dark, 220.0);
-            ui.checkbox(append, "Append");
-            ui.checkbox(append_newline, "Append newline");
+            tip_wrapped_section(ui, |ui| {
+                var_pills::var_name_text_edit(ui, "Variable", variable_name, known_vars, is_dark, 160.0);
+                var_pills::var_ref_text_edit(ui, "Destination", destination, known_vars, is_dark, 160.0);
+            });
+            tip_wrapped_section(ui, |ui| {
+                ui.checkbox(append, "Append");
+                ui.checkbox(append_newline, "Append newline");
+            });
         }
         ActionKind::Loop { name, count, .. } => {
-            text_field(ui, "Name", name);
-            scalar_field(ui, "Count", count, known_vars, is_dark);
+            tip_wrapped_section(ui, |ui| {
+                text_field(ui, "Name", name);
+                scalar_field(ui, "Count", count, known_vars, is_dark);
+            });
         }
         ActionKind::While {
             name,
@@ -165,14 +207,17 @@ pub fn paint_edit_fields(
             max_iterations,
             ..
         } => {
-            text_field(ui, "Name", name);
-            // only 2 modes — toggle is fine
-            let mut all = match_mode != "any";
-            if ui.checkbox(&mut all, "Match all (uncheck = any)").changed() {
-                *match_mode = if all { "all".into() } else { "any".into() };
-            }
-            ui.add(egui::DragValue::new(max_iterations).prefix("Max iterations: "));
-            clauses_editor(ui, clauses, known_vars, is_dark);
+            tip_wrapped_section(ui, |ui| {
+                text_field(ui, "Name", name);
+                let mut all = match_mode != "any";
+                if ui.checkbox(&mut all, "Match all (uncheck = any)").changed() {
+                    *match_mode = if all { "all".into() } else { "any".into() };
+                }
+                ui.add(egui::DragValue::new(max_iterations).prefix("Max iterations: "));
+            });
+            tip_section(ui, |ui| {
+                clauses_editor(ui, clauses, known_vars, is_dark);
+            });
         }
         ActionKind::Conditional {
             name,
@@ -180,12 +225,16 @@ pub fn paint_edit_fields(
             clauses,
             ..
         } => {
-            text_field(ui, "Name", name);
-            let mut all = match_mode != "any";
-            if ui.checkbox(&mut all, "Match all (uncheck = any)").changed() {
-                *match_mode = if all { "all".into() } else { "any".into() };
-            }
-            clauses_editor(ui, clauses, known_vars, is_dark);
+            tip_wrapped_section(ui, |ui| {
+                text_field(ui, "Name", name);
+                let mut all = match_mode != "any";
+                if ui.checkbox(&mut all, "Match all (uncheck = any)").changed() {
+                    *match_mode = if all { "all".into() } else { "any".into() };
+                }
+            });
+            tip_section(ui, |ui| {
+                clauses_editor(ui, clauses, known_vars, is_dark);
+            });
         }
         ActionKind::ForEachRow {
             name,
@@ -194,17 +243,19 @@ pub fn paint_edit_fields(
             end_row,
             ..
         } => {
-            text_field(ui, "Name", name);
-            scalar_field(ui, "Start row", start_row, known_vars, is_dark);
-            scalar_field(ui, "End row", end_row, known_vars, is_dark);
-            list_columns_editor(ui, sources, known_vars, is_dark);
+            tip_wrapped_section(ui, |ui| {
+                text_field(ui, "Name", name);
+                scalar_field(ui, "Start row", start_row, known_vars, is_dark);
+                scalar_field(ui, "End row", end_row, known_vars, is_dark);
+            });
+            tip_section(ui, |ui| {
+                list_columns_editor(ui, sources, known_vars, is_dark);
+            });
         }
         ActionKind::ImageSearch {
             name,
             targets,
             search_area,
-            row_split,
-            col_split,
             tolerance,
             blur,
             wait,
@@ -213,22 +264,37 @@ pub fn paint_edit_fields(
             order,
             ..
         } => {
-            text_field(ui, "Name", name);
-            targets_editor(ui, catalog, icons, targets, picker);
-            search_area_picker_row(ui, search_area, picker);
-            ui.add(egui::DragValue::new(row_split).prefix("Row split: "));
-            ui.add(egui::DragValue::new(col_split).prefix("Col split: "));
-            ui.add(
-                egui::DragValue::new(tolerance)
-                    .prefix("Tolerance: ")
-                    .speed(0.01)
-                    .range(0.0..=1.0),
-            );
-            ui.add(egui::DragValue::new(blur).prefix("Blur: "));
-            wait_editor(ui, wait);
-            coords_editor(ui, coords, known_vars, is_dark);
-            order_editor(ui, order);
-            ui.checkbox(run_branch_on_no_find, "Run branch on no find");
+            tip_wrapped_section(ui, |ui| {
+                text_field(ui, "Name", name);
+            });
+            tip_section(ui, |ui| {
+                targets_editor(ui, catalog, icons, targets, picker);
+            });
+            tip_section(ui, |ui| {
+                search_area_picker_row(ui, search_area, picker);
+                paint_coord_preview(ui, catalog, previews, search_area, PreviewKind::SearchArea);
+            });
+            tip_wrapped_section(ui, |ui| {
+                ui.add(
+                    egui::DragValue::new(tolerance)
+                        .prefix("Tolerance: ")
+                        .speed(0.01)
+                        .range(0.0..=1.0),
+                );
+                ui.add(egui::DragValue::new(blur).prefix("Blur: "));
+            });
+            tip_section(ui, |ui| {
+                wait_editor(ui, wait);
+            });
+            tip_section(ui, |ui| {
+                coords_editor(ui, coords, known_vars, is_dark);
+            });
+            tip_section(ui, |ui| {
+                order_editor(ui, order);
+            });
+            tip_wrapped_section(ui, |ui| {
+                ui.checkbox(run_branch_on_no_find, "Run branch on no find");
+            });
         }
         ActionKind::Ocr {
             name,
@@ -247,27 +313,42 @@ pub fn paint_edit_fields(
             order,
             ..
         } => {
-            text_field(ui, "Name", name);
-            var_pills::var_ref_text_edit(ui, "Target", target, known_vars, is_dark, 220.0);
-            search_area_picker_row(ui, search_area, picker);
-            var_pills::var_name_text_edit(
-                ui,
-                "Output variable",
-                output_variable,
-                known_vars,
-                is_dark,
-                220.0,
-            );
-            wait_editor(ui, wait);
-            coords_editor(ui, coords, known_vars, is_dark);
-            order_editor(ui, order);
-            ui.add(egui::DragValue::new(blur).prefix("Blur: "));
-            ui.add(egui::DragValue::new(min_threshold).prefix("Min threshold: "));
-            ui.add(egui::DragValue::new(resize).prefix("Resize: ").speed(0.01));
-            ui.checkbox(grayscale, "Grayscale");
-            ui.checkbox(threshold_otsu, "Threshold Otsu");
-            ui.checkbox(threshold_invert, "Threshold invert");
-            ui.checkbox(run_branch_on_no_find, "Run branch on no find");
+            tip_wrapped_section(ui, |ui| {
+                text_field(ui, "Name", name);
+                var_pills::var_ref_text_edit(ui, "Target", target, known_vars, is_dark, 160.0);
+            });
+            tip_section(ui, |ui| {
+                search_area_picker_row(ui, search_area, picker);
+                paint_coord_preview(ui, catalog, previews, search_area, PreviewKind::SearchArea);
+            });
+            tip_wrapped_section(ui, |ui| {
+                var_pills::var_name_text_edit(
+                    ui,
+                    "Output variable",
+                    output_variable,
+                    known_vars,
+                    is_dark,
+                    160.0,
+                );
+            });
+            tip_section(ui, |ui| {
+                wait_editor(ui, wait);
+            });
+            tip_section(ui, |ui| {
+                coords_editor(ui, coords, known_vars, is_dark);
+            });
+            tip_section(ui, |ui| {
+                order_editor(ui, order);
+            });
+            tip_wrapped_section(ui, |ui| {
+                ui.add(egui::DragValue::new(blur).prefix("Blur: "));
+                ui.add(egui::DragValue::new(min_threshold).prefix("Min threshold: "));
+                ui.add(egui::DragValue::new(resize).prefix("Resize: ").speed(0.01));
+                ui.checkbox(grayscale, "Grayscale");
+                ui.checkbox(threshold_otsu, "Threshold Otsu");
+                ui.checkbox(threshold_invert, "Threshold invert");
+                ui.checkbox(run_branch_on_no_find, "Run branch on no find");
+            });
         }
         ActionKind::FindPixel {
             name,
@@ -280,14 +361,29 @@ pub fn paint_edit_fields(
             order,
             ..
         } => {
-            text_field(ui, "Name", name);
-            search_area_picker_row(ui, search_area, picker);
-            var_pills::var_ref_text_edit(ui, "Target color", target_color, known_vars, is_dark, 220.0);
-            ui.add(egui::DragValue::new(color_tolerance).prefix("Color tolerance: "));
-            wait_editor(ui, wait);
-            coords_editor(ui, coords, known_vars, is_dark);
-            order_editor(ui, order);
-            ui.checkbox(run_branch_on_no_find, "Run branch on no find");
+            tip_wrapped_section(ui, |ui| {
+                text_field(ui, "Name", name);
+            });
+            tip_section(ui, |ui| {
+                search_area_picker_row(ui, search_area, picker);
+                paint_coord_preview(ui, catalog, previews, search_area, PreviewKind::SearchArea);
+            });
+            tip_wrapped_section(ui, |ui| {
+                var_pills::var_ref_text_edit(ui, "Target color", target_color, known_vars, is_dark, 160.0);
+                ui.add(egui::DragValue::new(color_tolerance).prefix("Color tolerance: "));
+            });
+            tip_section(ui, |ui| {
+                wait_editor(ui, wait);
+            });
+            tip_section(ui, |ui| {
+                coords_editor(ui, coords, known_vars, is_dark);
+            });
+            tip_section(ui, |ui| {
+                order_editor(ui, order);
+            });
+            tip_wrapped_section(ui, |ui| {
+                ui.checkbox(run_branch_on_no_find, "Run branch on no find");
+            });
         }
         ActionKind::NavigateSelect {
             program,
@@ -316,38 +412,74 @@ pub fn paint_edit_fields(
             output_row,
             output_col,
             output_collection,
+            subactions: _,
         } => {
-            text_field(ui, "Program", program);
-            text_field(ui, "Graph", graph_name);
-            string_list_field(ui, "Chord up", chord_up);
-            string_list_field(ui, "Chord down", chord_down);
-            string_list_field(ui, "Chord left", chord_left);
-            string_list_field(ui, "Chord right", chord_right);
-            string_list_field(ui, "Chord select", chord_select);
-            string_list_field(ui, "Chord back", chord_back);
-            ui.checkbox(wrap_edges, "Wrap edges");
-            ui.checkbox(move_cursor_with_nav, "Move cursor with nav");
-            ui.checkbox(smooth, "Smooth");
-            ui.checkbox(pass_through, "Pass through");
-            ui.checkbox(hold_repeat, "Hold repeat");
-            combo_str(ui, "Select device", select_device, options::SELECT_DEVICES);
-            combo_str(ui, "Select button", select_button, options::MOUSE_BUTTONS);
-            text_field(ui, "Select key", select_key);
-            combo_str(
-                ui,
-                "Select press mode",
-                select_press_mode,
-                options::SELECT_PRESS_MODES,
-            );
-            text_field(ui, "In graph", in_graph);
-            text_field(ui, "In row", in_row);
-            text_field(ui, "In col", in_col);
-            text_field(ui, "In collection", in_collection);
-            text_field(ui, "Output ref", output_ref);
-            text_field(ui, "Output graph", output_graph);
-            text_field(ui, "Output row", output_row);
-            text_field(ui, "Output col", output_col);
-            text_field(ui, "Output collection", output_collection);
+            tip_wrapped_section(ui, |ui| {
+                text_field(ui, "Program", program);
+                text_field(ui, "Graph", graph_name);
+            });
+            tip_section(ui, |ui| {
+                string_list_field(ui, "Chord up", chord_up);
+                string_list_field(ui, "Chord down", chord_down);
+                string_list_field(ui, "Chord left", chord_left);
+                string_list_field(ui, "Chord right", chord_right);
+                string_list_field(ui, "Chord select", chord_select);
+                string_list_field(ui, "Chord back", chord_back);
+            });
+            tip_wrapped_section(ui, |ui| {
+                ui.checkbox(wrap_edges, "Wrap edges");
+                ui.checkbox(move_cursor_with_nav, "Move cursor with nav");
+                ui.checkbox(smooth, "Smooth");
+                ui.checkbox(pass_through, "Pass through");
+                ui.checkbox(hold_repeat, "Hold repeat");
+            });
+            tip_wrapped_section(ui, |ui| {
+                combo_str(ui, "Select device", select_device, options::SELECT_DEVICES);
+                combo_str(ui, "Select button", select_button, options::MOUSE_BUTTONS);
+                text_field(ui, "Select key", select_key);
+                combo_str(
+                    ui,
+                    "Select press mode",
+                    select_press_mode,
+                    options::SELECT_PRESS_MODES,
+                );
+            });
+            tip_wrapped_section(ui, |ui| {
+                text_field(ui, "In graph", in_graph);
+                text_field(ui, "In row", in_row);
+                text_field(ui, "In col", in_col);
+                text_field(ui, "In collection", in_collection);
+            });
+            tip_wrapped_section(ui, |ui| {
+                text_field(ui, "Output ref", output_ref);
+                text_field(ui, "Output graph", output_graph);
+                text_field(ui, "Output row", output_row);
+                text_field(ui, "Output col", output_col);
+                text_field(ui, "Output collection", output_collection);
+            });
+            tip_section(ui, |ui| {
+                ui.label(
+                    egui::RichText::new(
+                        "Nav Key children: nest Navigate Key actions under this node in the tree.",
+                    )
+                    .small()
+                    .weak(),
+                );
+            });
+        }
+        ActionKind::NavigateKey {
+            name,
+            chord,
+            exit,
+            subactions: _,
+        } => {
+            tip_wrapped_section(ui, |ui| {
+                text_field(ui, "Name", name);
+                ui.checkbox(exit, "Exit Navigate Select after branch");
+            });
+            tip_section(ui, |ui| {
+                string_list_field(ui, "Chord", chord);
+            });
         }
     }
 }
@@ -359,38 +491,65 @@ fn targets_editor(
     targets: &mut Vec<String>,
     picker: &mut ActivePicker,
 ) {
-    ui.group(|ui| {
-        ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("Items").size(16.0).strong());
-            if ui.button("Add / edit…").clicked() {
-                *picker = ActivePicker::Items {
-                    search: String::new(),
-                    staged: targets.clone(),
-                };
-            }
-        });
-        if targets.is_empty() {
-            ui.label("(none)");
-            return;
-        }
-        let mut remove: Option<usize> = None;
-        let snapshot = targets.clone();
-        pickers::paint_even_icon_grid(
-            ui,
-            catalog,
-            icons,
-            &snapshot,
-            |_| true,
-            true,
-            |_, _| {},
-            |i| {
-                remove = Some(i);
-            },
-        );
-        if let Some(i) = remove {
-            targets.remove(i);
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new("Items").strong());
+        if ui.button("Add / edit…").clicked() {
+            *picker = ActivePicker::Items {
+                search: String::new(),
+                staged: targets.clone(),
+            };
         }
     });
+    if targets.is_empty() {
+        ui.label("(none)");
+        return;
+    }
+    let mut remove: Option<usize> = None;
+    let snapshot = targets.clone();
+    pickers::paint_even_icon_grid(
+        ui,
+        catalog,
+        icons,
+        &snapshot,
+        |_| true,
+        true,
+        |_, _| {},
+        |i| {
+            remove = Some(i);
+        },
+    );
+    if let Some(i) = remove {
+        targets.remove(i);
+    }
+}
+
+fn pick_icon_btn(ui: &mut egui::Ui) -> egui::Response {
+    ui.add(egui::Button::new(egui::RichText::new("☰").size(14.0)).small())
+        .on_hover_text("Pick…")
+}
+
+fn paint_coord_preview(
+    ui: &mut egui::Ui,
+    catalog: &ProgramCatalog,
+    previews: &mut PreviewTooltipCache,
+    coord: &CoordinateRef,
+    kind: PreviewKind,
+) {
+    if coord.is_empty() {
+        return;
+    }
+    let mut force = false;
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new("Preview").strong());
+        if ui
+            .add(egui::Button::new(egui::RichText::new("↻").size(14.0)).small())
+            .on_hover_text("Refresh")
+            .clicked()
+        {
+            force = true;
+        }
+    });
+    previews.paint_for_coordinate_ref(ui, catalog, coord, kind, force);
 }
 
 fn point_picker_row(ui: &mut egui::Ui, point: &mut CoordinateRef, picker: &mut ActivePicker) {
@@ -401,7 +560,7 @@ fn point_picker_row(ui: &mut egui::Ui, point: &mut CoordinateRef, picker: &mut A
         } else {
             point.as_str()
         });
-        if ui.button("Pick…").clicked() {
+        if pick_icon_btn(ui).clicked() {
             *picker = ActivePicker::Point {
                 search: String::new(),
                 value: point.0.clone(),
@@ -423,7 +582,7 @@ fn search_area_picker_row(
         } else {
             area.as_str()
         });
-        if ui.button("Pick…").clicked() {
+        if pick_icon_btn(ui).clicked() {
             *picker = ActivePicker::SearchArea {
                 search: String::new(),
                 value: area.0.clone(),
@@ -542,8 +701,9 @@ fn yaml_value_field(
 }
 
 fn wait_editor(ui: &mut egui::Ui, wait: &mut WaitTilFoundConfig) {
-    ui.group(|ui| {
-        ui.label("Wait / repeat");
+    ui.label(egui::RichText::new("Wait / repeat").strong());
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing = egui::Vec2::splat(6.0);
         combo_str(ui, "Repeat mode", &mut wait.repeat_mode, options::REPEAT_MODES);
         ui.checkbox(&mut wait.wait_til_found, "Wait til found (legacy)");
         ui.add(egui::DragValue::new(&mut wait.wait_til_found_seconds).prefix("Wait seconds: "));
@@ -560,8 +720,9 @@ fn coords_editor(
     known_vars: &HashSet<String>,
     is_dark: bool,
 ) {
-    ui.group(|ui| {
-        ui.label("Coordinate outputs");
+    ui.label(egui::RichText::new("Coordinate outputs").strong());
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing = egui::Vec2::splat(6.0);
         var_pills::var_name_text_edit(
             ui,
             "Output X",
@@ -582,8 +743,9 @@ fn coords_editor(
 }
 
 fn order_editor(ui: &mut egui::Ui, order: &mut MatchOrder) {
-    ui.group(|ui| {
-        ui.label("Match order");
+    ui.label(egui::RichText::new("Match order").strong());
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing = egui::Vec2::splat(6.0);
         combo_str(ui, "Grouping", &mut order.grouping, options::ORDER_GROUPING);
         combo_str(
             ui,

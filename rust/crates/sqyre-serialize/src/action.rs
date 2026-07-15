@@ -118,8 +118,6 @@ fn encode_kind(kind: &ActionKind) -> Result<Mapping> {
             name,
             targets,
             search_area,
-            row_split,
-            col_split,
             tolerance,
             blur,
             wait,
@@ -135,10 +133,6 @@ fn encode_kind(kind: &ActionKind) -> Result<Mapping> {
                 Value::Sequence(targets.iter().cloned().map(Value::String).collect()),
             );
             insert(&mut m, "searcharea", coordinate_ref_to_value(search_area));
-            if *row_split != 0 || *col_split != 0 {
-                insert_i32(&mut m, "rowsplit", *row_split);
-                insert_i32(&mut m, "colsplit", *col_split);
-            }
             insert_f64(&mut m, "tolerance", *tolerance);
             insert_i32(&mut m, "blur", *blur);
             write_wait(&mut m, wait);
@@ -364,6 +358,7 @@ fn encode_kind(kind: &ActionKind) -> Result<Mapping> {
             output_row,
             output_col,
             output_collection,
+            subactions,
         } => {
             if !program.is_empty() {
                 insert_str(&mut m, "program", program);
@@ -431,6 +426,22 @@ fn encode_kind(kind: &ActionKind) -> Result<Mapping> {
             if !output_collection.is_empty() {
                 insert_str(&mut m, "outputcollection", output_collection);
             }
+            insert(&mut m, "subactions", subactions_to_seq(subactions)?);
+        }
+        ActionKind::NavigateKey {
+            name,
+            chord,
+            exit,
+            subactions,
+        } => {
+            if !name.is_empty() {
+                insert_str(&mut m, "name", name);
+            }
+            write_chord(&mut m, "chord", chord);
+            if *exit {
+                insert_bool(&mut m, "exit", true);
+            }
+            insert(&mut m, "subactions", subactions_to_seq(subactions)?);
         }
         ActionKind::Break | ActionKind::Continue => {}
     }
@@ -684,8 +695,6 @@ fn decode_kind(raw: &Mapping, type_name: &str) -> Result<ActionKind> {
                 name,
                 targets,
                 search_area: parse_coordinate_ref(raw.get(Value::String("searcharea".into()))),
-                row_split: optional_int(raw, "rowsplit").unwrap_or(0),
-                col_split: optional_int(raw, "colsplit").unwrap_or(0),
                 tolerance,
                 blur,
                 wait: decode_wait(raw),
@@ -895,6 +904,16 @@ fn decode_kind(raw: &Mapping, type_name: &str) -> Result<ActionKind> {
             output_row: string_from_map(raw, "outputrow"),
             output_col: string_from_map(raw, "outputcol"),
             output_collection: string_from_map(raw, "outputcollection"),
+            subactions: decode_subactions(raw)?,
+        }),
+        "navigatekey" => Ok(ActionKind::NavigateKey {
+            name: string_from_map(raw, "name"),
+            chord: raw
+                .get(Value::String("chord".into()))
+                .map(string_slice_from_value)
+                .unwrap_or_default(),
+            exit: bool_from_map(raw, "exit"),
+            subactions: decode_subactions(raw)?,
         }),
         "break" => Ok(ActionKind::Break),
         "continue" => Ok(ActionKind::Continue),
@@ -930,5 +949,92 @@ mod tests {
         let restored = action_from_map(&m).unwrap();
         assert_eq!(restored.children()[0].id, nested_id);
         assert_eq!(restored.children()[0].children()[0].id, child_id);
+    }
+
+    #[test]
+    fn navigate_select_with_key_branch_roundtrips() {
+        let kid = Action {
+            id: ActionId::new(),
+            kind: ActionKind::Wait {
+                time: ScalarValue::Int(1),
+            },
+        };
+        let branch = Action {
+            id: ActionId::new(),
+            kind: ActionKind::NavigateKey {
+                name: "Inspect".into(),
+                chord: vec!["i".into()],
+                exit: true,
+                subactions: vec![kid],
+            },
+        };
+        let branch_id = branch.id;
+        let nav = Action {
+            id: ActionId::new(),
+            kind: ActionKind::NavigateSelect {
+                program: "P".into(),
+                graph_name: "bag".into(),
+                chord_up: vec!["up".into()],
+                chord_down: vec!["down".into()],
+                chord_left: vec![],
+                chord_right: vec![],
+                chord_select: vec!["enter".into()],
+                chord_back: vec!["esc".into()],
+                wrap_edges: true,
+                move_cursor_with_nav: true,
+                smooth: false,
+                pass_through: false,
+                hold_repeat: true,
+                select_device: "mouse".into(),
+                select_button: "left".into(),
+                select_key: String::new(),
+                select_press_mode: "click".into(),
+                in_graph: String::new(),
+                in_row: String::new(),
+                in_col: String::new(),
+                in_collection: String::new(),
+                output_ref: "ref".into(),
+                output_graph: String::new(),
+                output_row: "r".into(),
+                output_col: "c".into(),
+                output_collection: String::new(),
+                subactions: vec![branch],
+            },
+        };
+        let nav_id = nav.id;
+        let m = action_to_map_with_uid(&nav).unwrap();
+        let restored = action_from_map(&m).unwrap();
+        assert_eq!(restored.id, nav_id);
+        assert!(restored.is_branch());
+        match &restored.kind {
+            ActionKind::NavigateSelect {
+                program,
+                wrap_edges,
+                hold_repeat,
+                subactions,
+                ..
+            } => {
+                assert_eq!(program, "P");
+                assert!(*wrap_edges);
+                assert!(*hold_repeat);
+                assert_eq!(subactions.len(), 1);
+                assert_eq!(subactions[0].id, branch_id);
+                match &subactions[0].kind {
+                    ActionKind::NavigateKey {
+                        name,
+                        chord,
+                        exit,
+                        subactions: kids,
+                    } => {
+                        assert_eq!(name, "Inspect");
+                        assert_eq!(chord, &vec!["i".to_string()]);
+                        assert!(*exit);
+                        assert_eq!(kids.len(), 1);
+                    }
+                    other => panic!("expected NavigateKey, got {other:?}"),
+                }
+            }
+            other => panic!("expected NavigateSelect, got {other:?}"),
+        }
     }
 }

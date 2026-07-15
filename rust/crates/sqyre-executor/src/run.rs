@@ -11,6 +11,7 @@ use crate::misc::{
     execute_calculate, execute_focus_window, execute_for_each_row, execute_pause,
     execute_run_macro, execute_save_variable, execute_while,
 };
+use crate::navigate::{execute_navigate_key, execute_navigate_select};
 use crate::search::{execute_find_pixel, execute_image_search, execute_ocr};
 use sqyre_domain::{action_type_label, Action, ActionId, ActionKind, Macro, ScalarValue};
 use std::path::Path;
@@ -390,12 +391,8 @@ fn dispatch(exec: &mut Executor<'_>, action: &Action, macro_: &mut Macro) -> Res
             execute_run_macro(exec, action.id, macro_name, macro_)
         }
         ActionKind::Ocr { .. } => execute_ocr(exec, action, macro_),
-        ActionKind::NavigateSelect { .. } => Err(ExecError::Message(
-            format!(
-                "executor: action '{}' not implemented yet",
-                action.type_key()
-            ),
-        )),
+        ActionKind::NavigateSelect { .. } => execute_navigate_select(exec, action, macro_),
+        ActionKind::NavigateKey { .. } => execute_navigate_key(exec, action, macro_),
     }
 }
 

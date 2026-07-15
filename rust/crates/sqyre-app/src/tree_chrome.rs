@@ -1,6 +1,7 @@
 //! Macro tree row chrome: icon badge, pastel pills, swatches.
 
 use crate::icon_cache::IconCache;
+use crate::pickers::attach_item_icon_tooltip;
 use crate::var_pills;
 use eframe::egui::{self, Color32, FontId, Sense, Stroke, Vec2};
 use sqyre_domain::{
@@ -20,9 +21,9 @@ const PILL_MARGIN_X: i8 = 3;
 const PILL_MARGIN_Y: i8 = 0;
 const PILL_RADIUS: f32 = 5.0;
 /// Image Search target thumbnail: max height (width follows original aspect).
-const TARGET_THUMB_MAX_H: f32 = 36.0;
+const TARGET_THUMB_MAX_H: f32 = 24.0;
 /// Cap very wide icons so a row cannot grow unboundedly.
-const TARGET_THUMB_MAX_W: f32 = 64.0;
+const TARGET_THUMB_MAX_W: f32 = 40.0;
 const MAX_TARGET_THUMBS: usize = 8;
 
 /// Clickable chrome on a tree row.
@@ -201,7 +202,7 @@ fn paint_target_thumb(
     icons: &mut IconCache,
     target: &str,
 ) -> egui::Response {
-    if let Some(tex) = icons.for_target(ui.ctx(), catalog, target) {
+    let resp = if let Some(tex) = icons.for_target(ui.ctx(), catalog, target) {
         let [tw, th] = tex.size();
         let size = thumb_display_size(tw as f32, th as f32);
         ui.add(
@@ -211,7 +212,6 @@ fn paint_target_thumb(
                 .corner_radius(3.0)
                 .bg_fill(Color32::from_black_alpha(20)),
         )
-        .on_hover_text(target_short_name(target))
     } else {
         // Placeholder when the PNG is missing (still aspect-neutral square).
         let size = Vec2::splat(TARGET_THUMB_MAX_H);
@@ -223,8 +223,10 @@ fn paint_target_thumb(
             Stroke::new(1.0, Color32::from_gray(120)),
             egui::StrokeKind::Outside,
         );
-        resp.on_hover_text(target_short_name(target))
-    }
+        resp
+    };
+    attach_item_icon_tooltip(&resp, catalog, target);
+    resp
 }
 
 fn paint_image_search_extras(
@@ -273,7 +275,6 @@ pub(crate) fn paint_image_search_tooltip_thumbs_pub(
     if targets.is_empty() {
         return;
     }
-    ui.add_space(6.0);
     ui.label(egui::RichText::new("Items").size(PILL_FONT_SIZE).strong());
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing = Vec2::splat(4.0);
@@ -296,26 +297,53 @@ pub fn paint_action_row(
     let mut action_click = RowAction::None;
     let mut chrome_hovered = false;
     let mut tip_hovered = false;
-    let row = ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 4.0;
-        paint_action_icon(ui, action, is_dark);
+    // Tall enough for image-search thumbs; chrome buttons stay vertically centered.
+    let row_h = ui
+        .spacing()
+        .interact_size
+        .y
+        .max(TARGET_THUMB_MAX_H + 4.0);
 
-        for pill in action.tree_summary_pills() {
-            if paint_summary_pill(ui, action, &pill, known_vars, is_dark).hovered() {
+    let row = ui.horizontal(|ui| {
+        ui.set_min_height(row_h);
+        ui.spacing_mut().item_spacing.x = 4.0;
+
+        // Reserve logs/delete width up-front so wide pill/thumb rows clip instead of
+        // pushing the buttons off-screen. Buttons are painted after content so they
+        // win hit-testing if anything spills past the clip.
+        let spacing = ui.spacing().item_spacing.x;
+        let btn_w = ui.spacing().interact_size.y;
+        let chrome_w = btn_w * 2.0 + spacing;
+        let content_w = (ui.available_width() - chrome_w - spacing).max(0.0);
+        let (content_rect, _) =
+            ui.allocate_exact_size(Vec2::new(content_w, row_h), Sense::hover());
+        // new_child (not scope_builder): clipped overflow must not expand the row width.
+        {
+            let mut content = ui.new_child(
+                egui::UiBuilder::new()
+                    .max_rect(content_rect)
+                    .layout(egui::Layout::left_to_right(egui::Align::Center)),
+            );
+            content.set_clip_rect(content_rect.intersect(ui.clip_rect()));
+            content.spacing_mut().item_spacing.x = 4.0;
+            paint_action_icon(&mut content, action, is_dark);
+
+            for pill in action.tree_summary_pills() {
+                if paint_summary_pill(&mut content, action, &pill, known_vars, is_dark).hovered()
+                {
+                    tip_hovered = true;
+                }
+            }
+
+            if let ActionKind::FindPixel { target_color, .. } = &action.kind {
+                paint_color_swatch(&mut content, target_color);
+            }
+            if matches!(action.kind, ActionKind::ImageSearch { .. })
+                && paint_image_search_extras(&mut content, action, catalog, icons, is_dark)
+            {
                 tip_hovered = true;
             }
         }
-
-        if let ActionKind::FindPixel { target_color, .. } = &action.kind {
-            paint_color_swatch(ui, target_color);
-        }
-        if matches!(action.kind, ActionKind::ImageSearch { .. })
-            && paint_image_search_extras(ui, action, catalog, icons, is_dark)
-        {
-            tip_hovered = true;
-        }
-
-        ui.add_space(4.0);
 
         let logs = icon_btn(ui, "📋", "Logs");
         // contains_pointer: the full-row sense below steals `.hovered()` over these buttons.
@@ -502,8 +530,6 @@ mod tests {
                     name: "find".into(),
                     targets,
                     search_area: CoordinateRef("P~Box".into()),
-                    row_split: 0,
-                    col_split: 0,
                     tolerance: 0.9,
                     blur: 0,
                     wait: WaitTilFoundConfig::default(),
@@ -526,6 +552,52 @@ mod tests {
                 .action,
                 RowAction::None
             );
+        });
+    }
+
+    #[test]
+    fn image_search_row_keeps_chrome_within_narrow_width() {
+        with_ui(|ui| {
+            let narrow = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(180.0, 40.0));
+            ui.scope_builder(egui::UiBuilder::new().max_rect(narrow), |ui| {
+                ui.set_clip_rect(narrow);
+                let mut targets = Vec::new();
+                for i in 0..MAX_TARGET_THUMBS {
+                    targets.push(format!("Prog~WideItem{i}"));
+                }
+                let search = Action {
+                    id: ActionId::new(),
+                    kind: ActionKind::ImageSearch {
+                        name: "find".into(),
+                        targets,
+                        search_area: CoordinateRef("P~Box".into()),
+                        tolerance: 0.9,
+                        blur: 0,
+                        wait: WaitTilFoundConfig::default(),
+                        coords: CoordinateOutputs::defaults(),
+                        run_branch_on_no_find: false,
+                        order: Default::default(),
+                        subactions: vec![],
+                    },
+                };
+                let catalog = ProgramCatalog::default();
+                let mut icons = IconCache::new();
+                let result = paint_action_row(
+                    ui,
+                    &search,
+                    &catalog,
+                    &mut icons,
+                    &HashSet::new(),
+                    true,
+                    RowHighlight::None,
+                );
+                assert!(
+                    result.row_rect.width() <= narrow.width() + 1.0,
+                    "row expanded past available width: {} > {}",
+                    result.row_rect.width(),
+                    narrow.width()
+                );
+            });
         });
     }
 

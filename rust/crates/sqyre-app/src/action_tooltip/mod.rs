@@ -1,6 +1,7 @@
 //! In-tree action tooltip: view on hover, pinned edit with Save/Cancel.
 
 mod edit;
+mod sections;
 
 use crate::icon_cache::IconCache;
 use crate::pickers::{self, ActivePicker, PickerResult};
@@ -265,6 +266,15 @@ fn find_action(root: &Action, id: ActionId) -> Option<&Action> {
     }
 }
 
+/// Shared width budget for view and edit tips so mode switches don't jump size.
+fn tip_max_width(has_coord_preview: bool) -> f32 {
+    if has_coord_preview {
+        280.0
+    } else {
+        340.0
+    }
+}
+
 fn show_view_tip(
     ctx: &egui::Context,
     action: &Action,
@@ -290,7 +300,7 @@ fn show_view_tip(
     // Prefer growing left when near the right edge so constrain() is less likely
     // to slide the tip over the hovered row (which would steal hover).
     let screen = ctx.content_rect();
-    let max_w = if coord_preview.is_some() { 420.0 } else { 340.0 };
+    let max_w = tip_max_width(coord_preview.is_some());
     let near_right = pointer.x + 14.0 + max_w > screen.right();
     let (pivot, pos) = if near_right {
         (egui::Align2::RIGHT_TOP, pointer + Vec2::new(-8.0, 14.0))
@@ -312,8 +322,8 @@ fn show_view_tip(
                     ui.add_space(4.0);
                     ui.label(egui::RichText::new(description).size(12.0).weak());
                     if !summary_pills.is_empty() {
-                        ui.add_space(6.0);
-                        ui.horizontal_wrapped(|ui| {
+                        ui.add_space(4.0);
+                        sections::tip_wrapped_section(ui, |ui| {
                             ui.spacing_mut().item_spacing = Vec2::splat(3.0);
                             for pill in &summary_pills {
                                 let _ = var_pills::paint_summary_pill(
@@ -327,30 +337,38 @@ fn show_view_tip(
                         });
                     }
                     if let Some((coord_ref, kind)) = coord_preview {
-                        ui.add_space(6.0);
-                        ui.separator();
-                        previews.paint_for_coordinate_ref(ui, catalog, &coord_ref, kind, false);
+                        sections::tip_section(ui, |ui| {
+                            previews.paint_for_coordinate_ref(ui, catalog, &coord_ref, kind, false);
+                        });
                     }
-                    tree_chrome::paint_image_search_tooltip_thumbs_pub(ui, action, catalog, icons);
-                    if !extra.is_empty() {
-                        ui.add_space(6.0);
-                        ui.separator();
-                        for p in &extra {
-                            ui.horizontal(|ui| {
-                                ui.label(
-                                    egui::RichText::new(format!("{}:", p.label))
-                                        .size(12.0)
-                                        .strong(),
-                                );
-                                var_pills::paint_var_ref_content(
-                                    ui,
-                                    p.minimal(),
-                                    known_vars,
-                                    is_dark,
-                                    ui.visuals().text_color(),
+                    if let ActionKind::ImageSearch { targets, .. } = &action.kind {
+                        if !targets.is_empty() {
+                            sections::tip_section(ui, |ui| {
+                                tree_chrome::paint_image_search_tooltip_thumbs_pub(
+                                    ui, action, catalog, icons,
                                 );
                             });
                         }
+                    }
+                    if !extra.is_empty() {
+                        sections::tip_section(ui, |ui| {
+                            for p in &extra {
+                                ui.horizontal(|ui| {
+                                    ui.label(
+                                        egui::RichText::new(format!("{}:", p.label))
+                                            .size(12.0)
+                                            .strong(),
+                                    );
+                                    var_pills::paint_var_ref_content(
+                                        ui,
+                                        p.minimal(),
+                                        known_vars,
+                                        is_dark,
+                                        ui.visuals().text_color(),
+                                    );
+                                });
+                            }
+                        });
                     }
                 });
         });
@@ -368,18 +386,25 @@ fn show_edit_window(
     is_dark: bool,
     before_mutate: &mut dyn FnMut(&Action),
 ) {
-    let (action_id, anchor, type_key) = match state {
+    let (action_id, anchor, type_key, has_coord_preview) = match state {
         TooltipState::Edit {
             action_id,
             draft,
             anchor,
             ..
-        } => (*action_id, *anchor, draft.type_key()),
+        } => (
+            *action_id,
+            *anchor,
+            draft.type_key(),
+            crate::preview_tooltip::coordinate_ref_for_preview(draft).is_some(),
+        ),
         _ => return,
     };
 
     let label = action_type_label(type_key);
     let pastel = tree_chrome::rgba_pub(action_pastel_color(type_key, is_dark));
+    let max_w = tip_max_width(has_coord_preview);
+    let max_body_h = (ctx.content_rect().height() * 0.65).clamp(160.0, 520.0);
 
     // Picker modal first (foreground); apply result onto draft.
     if let TooltipState::Edit { draft, picker, .. } = state {
@@ -392,13 +417,23 @@ fn show_edit_window(
     let mut cancel = false;
     let mut open = true;
 
-    egui::Window::new(format!("Edit — {label}"))
-        .id(egui::Id::new(("action_edit_tip", action_id.as_str())))
+    // Popup chrome (no title bar) + default width matching view tip, but
+    // resizable so users can grow the form when sections need more room.
+    // Id bumped past "compact" Area/Window state that locked size.
+    egui::Window::new(label)
+        .id(egui::Id::new(("action_edit_tip", "resize", action_id.as_str())))
         .open(&mut open)
+        .title_bar(false)
         .collapsible(false)
-        .default_pos(anchor + Vec2::new(12.0, 12.0))
-        .default_width(400.0)
         .resizable(true)
+        .constrain(true)
+        .default_pos(anchor + Vec2::new(12.0, 12.0))
+        .default_size([max_w, max_body_h.min(360.0)])
+        .min_size([220.0, 120.0])
+        .frame(
+            egui::Frame::popup(ctx.global_style().as_ref())
+                .inner_margin(egui::Margin::symmetric(10, 8)),
+        )
         .show(ctx, |ui| {
             ui.horizontal(|ui| {
                 tree_chrome::paint_pill_pub(ui, label, pastel);
@@ -420,26 +455,10 @@ fn show_edit_window(
             }
 
             ui.separator();
+            // Fill the window so drag-resize widens/wraps section contents.
             egui::ScrollArea::vertical()
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
-                    let coord_preview = match state {
-                        TooltipState::Edit { draft, .. } => {
-                            crate::preview_tooltip::coordinate_ref_for_preview(draft)
-                        }
-                        _ => None,
-                    };
-                    if let Some((coord_ref, kind)) = coord_preview {
-                        let mut force = false;
-                        ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new("Preview").strong());
-                            if ui.button("Refresh").clicked() {
-                                force = true;
-                            }
-                        });
-                        previews.paint_for_coordinate_ref(ui, catalog, &coord_ref, kind, force);
-                        ui.separator();
-                    }
                     if let TooltipState::Edit {
                         draft, picker, ..
                     } = state
@@ -449,6 +468,7 @@ fn show_edit_window(
                             draft,
                             catalog,
                             icons,
+                            previews,
                             picker,
                             macros,
                             known_vars,
@@ -457,17 +477,18 @@ fn show_edit_window(
                     }
                 });
 
-            if ui.input(|i| i.key_pressed(Key::Enter)) && !ui.input(|i| i.modifiers.shift) {
+            if ui.input(|i| i.key_pressed(Key::Enter))
+                && !ui.input(|i| i.modifiers.shift)
+            {
                 // Don't steal Enter while a picker is open.
-                if !matches!(
+                if matches!(
                     state,
                     TooltipState::Edit {
                         picker: ActivePicker::None,
                         ..
                     }
-                ) {
-                    // picker open — ignore
-                } else if !ui.ctx().egui_wants_keyboard_input() {
+                ) && !ui.ctx().egui_wants_keyboard_input()
+                {
                     save = true;
                 }
             }
@@ -666,8 +687,6 @@ mod tests {
                 name: "find".into(),
                 targets: vec!["P~A".into()],
                 search_area: CoordinateRef("P~Box".into()),
-                row_split: 0,
-                col_split: 0,
                 tolerance: 0.9,
                 blur: 0,
                 wait: Default::default(),
