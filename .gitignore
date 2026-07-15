@@ -35,5 +35,8 @@ internal/models/repositories/testdata/
 .cargo-home/
 .rustup-home/
 rust/.cargo-home/
+rust/.cargo-home-agent/
 rust/.rustup-home/
 rust/.cargo-cache/
+rust/target/
+rust/target-phase2/
