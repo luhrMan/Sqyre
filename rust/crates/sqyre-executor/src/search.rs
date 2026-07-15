@@ -265,7 +265,7 @@ fn capture_and_match(
 
     let threshold = tolerance as f32;
     let close_dist = close_matches_distance(exec);
-    let want_pipeline = exec.logger.is_some();
+    let want_pipeline = exec.log_images_enabled();
     let match_started = Instant::now();
     let stop_flag: Option<&AtomicBool> = exec.stop_flag;
 
@@ -1035,7 +1035,7 @@ fn run_ocr_once(
         threshold_otsu,
         threshold_invert,
     );
-    let collect = exec.logger.is_some();
+    let collect = exec.log_images_enabled();
     let (processed, scale, steps) =
         match sqyre_vision::preprocess_for_ocr_with_steps(&rgb, opts, collect) {
             Ok(v) => v,
@@ -1080,7 +1080,7 @@ fn run_ocr_once(
     }
 
     // Overlay word boxes on an RGB copy of the OCR input for the logs UI.
-    if !recognized.words.is_empty() {
+    if collect && !recognized.words.is_empty() {
         let mut overlay = if processed.channels == 1 {
             gray_to_rgb(&processed)
         } else {

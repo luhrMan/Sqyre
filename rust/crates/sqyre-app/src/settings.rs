@@ -9,8 +9,7 @@ use sqyre_domain::{
 use sqyre_domain::Macro;
 use sqyre_persist::{
     move_dir, open_sqyre_dir, set_sqyre_dir_override, sqyre_dir, Database, ProgramCatalog,
-    UserSettings, DEFAULT_DRAG_PREVIEW_DEBOUNCE_MS, DEFAULT_UI_FONT_SIZE, DEFAULT_UI_SCALE,
-    MIN_DRAG_PREVIEW_DEBOUNCE_MS,
+    UserSettings, DEFAULT_UI_FONT_SIZE, DEFAULT_UI_SCALE,
 };
 use std::path::PathBuf;
 
@@ -201,19 +200,23 @@ impl SettingsUi {
             return;
         }
 
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            crate::theme::section_frame(ui.style()).show(ui, |ui| {
-                self.draw_general(ui);
+        // Status line may appear below; leave room so the window doesn't grow unboundedly.
+        let list_h = crate::pickers::popup_scroll_max_height(ui, 40.0);
+        egui::ScrollArea::vertical()
+            .max_height(list_h)
+            .show(ui, |ui| {
+                crate::theme::section_frame(ui.style()).show(ui, |ui| {
+                    self.draw_general(ui);
+                });
+                ui.add_space(12.0);
+                crate::theme::section_frame(ui.style()).show(ui, |ui| {
+                    self.draw_data(ui, db, macros, catalog);
+                });
+                ui.add_space(12.0);
+                crate::theme::section_frame(ui.style()).show(ui, |ui| {
+                    self.draw_appearance(ui, ctx);
+                });
             });
-            ui.add_space(12.0);
-            crate::theme::section_frame(ui.style()).show(ui, |ui| {
-                self.draw_data(ui, db, macros, catalog);
-            });
-            ui.add_space(12.0);
-            crate::theme::section_frame(ui.style()).show(ui, |ui| {
-                self.draw_appearance(ui, ctx);
-            });
-        });
 
         if let Some(status) = &self.status {
             ui.separator();
@@ -242,7 +245,7 @@ impl SettingsUi {
                 "Log Meta Images",
             )
             .on_hover_text(
-                "When enabled, image search / OCR write debug PNGs under images/meta/. Warning: can be very memory intensive.",
+                "When enabled, image search / OCR keep debug frames in action logs (in memory). Can be very memory intensive.",
             )
             .changed()
         {
@@ -288,28 +291,6 @@ impl SettingsUi {
                 .changed()
             {
                 self.settings.image_search_close_matches_distance = v;
-                self.mark_dirty();
-            }
-        });
-
-        ui.horizontal(|ui| {
-            ui.label("Drag preview delay (ms):");
-            let mut v = self.settings.drag_preview_debounce_ms;
-            if ui
-                .add(
-                    egui::DragValue::new(&mut v)
-                        .range(MIN_DRAG_PREVIEW_DEBOUNCE_MS..=1000)
-                        .speed(25),
-                )
-                .on_hover_text(
-                    "Macro tree drag preview delay. How long the pointer must rest before rows shift.",
-                )
-                .changed()
-            {
-                if v < MIN_DRAG_PREVIEW_DEBOUNCE_MS {
-                    v = DEFAULT_DRAG_PREVIEW_DEBOUNCE_MS;
-                }
-                self.settings.drag_preview_debounce_ms = v;
                 self.mark_dirty();
             }
         });
@@ -421,7 +402,8 @@ impl SettingsUi {
 
         match Database::load_default() {
             Ok(loaded) => {
-                let cat = loaded.program_catalog().unwrap_or_default();
+                let mut cat = loaded.program_catalog().unwrap_or_default();
+                crate::catalog::apply_main_monitor_resolution(&mut cat);
                 let mut list: Vec<_> = loaded.macros.values().cloned().collect();
                 list.sort_by(|a, b| a.name.cmp(&b.name));
                 *db = loaded;
@@ -435,6 +417,7 @@ impl SettingsUi {
                 *db = Database::default();
                 macros.clear();
                 *catalog = ProgramCatalog::default();
+                crate::catalog::apply_main_monitor_resolution(catalog);
                 self.reload_requested = true;
                 self.set_err(format!(
                     "Switched to {} but failed to load db.yaml: {e}",

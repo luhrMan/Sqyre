@@ -567,8 +567,10 @@ fn show_edit_window(
 
             ui.separator();
             // Fill the window so drag-resize widens/wraps section contents.
+            let list_h = pickers::popup_scroll_max_height(ui, 0.0);
             egui::ScrollArea::vertical()
                 .auto_shrink([false, false])
+                .max_height(list_h)
                 .show(ui, |ui| {
                     if let TooltipState::Edit {
                         draft, picker, ..
