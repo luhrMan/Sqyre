@@ -9,7 +9,10 @@ mod misc;
 mod run;
 mod search;
 
-pub use action_log::{ActionLogger, SharedActionLog, MAX_LINES_PER_ACTION};
+pub use action_log::{
+    crop_match_preview, draw_rect_rgb, ActionLogEntry, ActionLogger, LogImage, SharedActionLog,
+    MAX_ENTRIES_PER_ACTION,
+};
 pub use backends::*;
 pub use error::{ExecError, FlowSignal};
 pub use highlight::{

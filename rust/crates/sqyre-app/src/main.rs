@@ -1,6 +1,7 @@
 //! egui shell: load macros from `~/.sqyre`, Run/Stop with live backends.
 
 mod action_tooltip;
+mod action_logs_ui;
 mod assets;
 mod catalog;
 mod collection_capture;
@@ -14,6 +15,7 @@ mod tree_chrome;
 mod tree_dnd;
 mod tree_history;
 
+use action_logs_ui::LogsImageCache;
 use action_tooltip::TooltipState;
 use catalog::{CatalogIcons, CatalogResolver, SnapshotMacros};
 use data_editor::DataEditor;
@@ -24,12 +26,14 @@ use preview_tooltip::PreviewTooltipCache;
 use sqyre_capture::{X11Capturer, X11WindowFocuser};
 use sqyre_domain::{Action, ActionId, InsertSlot, Macro};
 use sqyre_executor::{
-    execute_macro_with, ContinueKeyWaiter, ExecDeps, MatchFacade, SharedActionLog,
-    SharedHighlighter,
+    execute_macro_with, ContinueKeyWaiter, ExecDeps, MatchFacade, OcrEngine, OcrResult,
+    SharedActionLog, SharedHighlighter,
 };
 use sqyre_hotkeys::{default_hotkeys, ContinueWaitBridge, HotkeyCallbacks, HotkeyService, StopFlag};
 use sqyre_input::OsAutomation;
+use sqyre_match::ImageBuf;
 use sqyre_persist::{variables_path, Database, ProgramCatalog};
+use sqyre_vision::LeptessOcr;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -38,6 +42,18 @@ use tree_chrome::{RowAction, RowHighlight, RowInteraction};
 use tree_history::TreeHistory;
 
 struct BridgeContinueWait(ContinueWaitBridge);
+
+struct AppOcr(LeptessOcr);
+
+impl OcrEngine for AppOcr {
+    fn recognize(&self, image: &ImageBuf) -> Result<OcrResult, String> {
+        let r = self.0.recognize(image)?;
+        Ok(OcrResult {
+            text: r.text,
+            words: r.words,
+        })
+    }
+}
 
 impl ContinueKeyWaiter for BridgeContinueWait {
     fn wait_for_continue(
@@ -115,6 +131,7 @@ struct SqyreApp {
     /// Per-macro undo/redo stacks keyed by macro name.
     tree_histories: HashMap<String, TreeHistory>,
     logs_window: Option<ActionId>,
+    logs_image_cache: LogsImageCache,
     icon_cache: IconCache,
     preview_tooltips: PreviewTooltipCache,
     tooltip: TooltipState,
@@ -156,6 +173,7 @@ impl SqyreApp {
                     highlighter: SharedHighlighter::new(),
                     tree_histories: HashMap::new(),
                     logs_window: None,
+                    logs_image_cache: LogsImageCache::default(),
                     icon_cache: IconCache::new(),
                     preview_tooltips: PreviewTooltipCache::new(),
                     tooltip: TooltipState::Hidden,
@@ -179,6 +197,7 @@ impl SqyreApp {
                 highlighter: SharedHighlighter::new(),
                 tree_histories: HashMap::new(),
                 logs_window: None,
+                logs_image_cache: LogsImageCache::default(),
                 icon_cache: IconCache::new(),
                 preview_tooltips: PreviewTooltipCache::new(),
                 tooltip: TooltipState::Hidden,
@@ -277,6 +296,7 @@ impl SqyreApp {
         let running = Arc::clone(&self.run.running);
         let status = Arc::clone(&self.run.status);
         self.action_log.clear();
+        self.logs_image_cache.clear();
         self.highlighter.clear_all();
         let action_log = self.action_log.clone();
         let highlighter = self.highlighter.clone();
@@ -299,6 +319,13 @@ impl SqyreApp {
                 let resolver = CatalogResolver(&catalog);
                 let icons = CatalogIcons(&catalog);
                 let focuser = X11WindowFocuser;
+                let ocr_engine = LeptessOcr::from_env_or_system()
+                    .map_err(|e| {
+                        eprintln!("sqyre: {e}");
+                        e
+                    })
+                    .ok()
+                    .map(AppOcr);
                 let stop_raw = stop_flag.raw();
                 let mut watched = StopWatchAutomation {
                     inner: &mut automation,
@@ -316,6 +343,7 @@ impl SqyreApp {
                         macros: Some(&macro_lookup),
                         continue_waiter: Some(&continue_wait),
                         window_focuser: Some(&focuser),
+                        ocr: ocr_engine.as_ref().map(|e| e as &dyn OcrEngine),
                         stop_flag: Some(stop_raw.as_ref()),
                         logger: Some(&action_log),
                         highlighter: Some(&highlighter),
@@ -362,33 +390,13 @@ impl SqyreApp {
             return;
         };
         let title = format!("Logs — {}", self.action_display_name(action_id));
-        let lines = self.action_log.lines_for(action_id);
-        let mut open = true;
-        let mut close_clicked = false;
-        egui::Window::new(title)
-            .open(&mut open)
-            .default_size([420.0, 280.0])
-            .show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    if ui.button("Copy").clicked() {
-                        ui.ctx().copy_text(lines.join("\n"));
-                    }
-                    if ui.button("Close").clicked() {
-                        close_clicked = true;
-                    }
-                });
-                ui.separator();
-                egui::ScrollArea::vertical()
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
-                        if lines.is_empty() {
-                            ui.label("No logs yet — run the macro.");
-                        } else {
-                            ui.monospace(lines.join("\n"));
-                        }
-                    });
-            });
-        if !open || close_clicked {
+        if action_logs_ui::show_logs_window(
+            ctx,
+            action_id,
+            &title,
+            &self.action_log,
+            &mut self.logs_image_cache,
+        ) {
             self.logs_window = None;
         }
     }
@@ -664,6 +672,7 @@ impl eframe::App for SqyreApp {
                     }
                     if self.logs_window == Some(aid) {
                         self.logs_window = None;
+                        self.logs_image_cache.clear();
                     }
                     if self.tooltip.action_id() == Some(aid) {
                         self.tooltip.cancel();

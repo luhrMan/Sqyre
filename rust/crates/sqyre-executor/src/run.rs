@@ -1,7 +1,7 @@
 use crate::action_log::ActionLogger;
 use crate::backends::{
     AutomationBackend, ContinueKeyWaiter, CoordinateResolver, IconStore, MacroLookup, MoveOptions,
-    ScreenCapturer, TemplateMatcher, WindowFocuser,
+    OcrEngine, ScreenCapturer, TemplateMatcher, WindowFocuser,
 };
 use crate::error::{ExecError, FlowSignal, Result};
 use crate::highlight::{
@@ -11,7 +11,7 @@ use crate::misc::{
     execute_calculate, execute_focus_window, execute_for_each_row, execute_pause,
     execute_run_macro, execute_save_variable, execute_while,
 };
-use crate::search::{execute_find_pixel, execute_image_search};
+use crate::search::{execute_find_pixel, execute_image_search, execute_ocr};
 use sqyre_domain::{action_type_label, Action, ActionId, ActionKind, Macro, ScalarValue};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -26,6 +26,7 @@ pub struct Executor<'a> {
     pub macros: Option<&'a dyn MacroLookup>,
     pub continue_waiter: Option<&'a dyn ContinueKeyWaiter>,
     pub window_focuser: Option<&'a dyn WindowFocuser>,
+    pub ocr: Option<&'a dyn OcrEngine>,
     pub stop_requested: bool,
     /// Shared stop flag (Esc / UI Stop).
     pub stop_flag: Option<&'a AtomicBool>,
@@ -48,6 +49,7 @@ impl<'a> Executor<'a> {
             macros: None,
             continue_waiter: None,
             window_focuser: None,
+                ocr: None,
             stop_requested: false,
             stop_flag: None,
             logger: None,
@@ -73,6 +75,38 @@ impl<'a> Executor<'a> {
             logger.log(action_id, message.into());
         }
     }
+
+    pub fn log_image(
+        &self,
+        action_id: ActionId,
+        label: impl Into<String>,
+        image: &sqyre_match::ImageBuf,
+    ) {
+        if let Some(logger) = self.logger {
+            logger.log_image(action_id, label.into(), image);
+        }
+    }
+
+    pub fn log_item_pipeline(
+        &self,
+        action_id: ActionId,
+        title: impl Into<String>,
+        summary: impl Into<String>,
+        thumbnail: &sqyre_match::ImageBuf,
+        steps: &[(String, sqyre_match::ImageBuf)],
+        details: Vec<String>,
+    ) {
+        if let Some(logger) = self.logger {
+            logger.log_item_pipeline(
+                action_id,
+                title.into(),
+                summary.into(),
+                thumbnail,
+                steps,
+                details,
+            );
+        }
+    }
 }
 
 /// Dependencies for a full macro run.
@@ -85,6 +119,7 @@ pub struct ExecDeps<'a> {
     pub macros: Option<&'a dyn MacroLookup>,
     pub continue_waiter: Option<&'a dyn ContinueKeyWaiter>,
     pub window_focuser: Option<&'a dyn WindowFocuser>,
+    pub ocr: Option<&'a dyn OcrEngine>,
     pub stop_flag: Option<&'a AtomicBool>,
     pub logger: Option<&'a dyn ActionLogger>,
     pub highlighter: Option<&'a dyn ActionHighlighter>,
@@ -104,6 +139,7 @@ pub fn execute_macro(macro_: &mut Macro, automation: &mut dyn AutomationBackend)
             macros: None,
             continue_waiter: None,
             window_focuser: None,
+                ocr: None,
             stop_flag: None,
             logger: None,
             highlighter: None,
@@ -123,6 +159,7 @@ pub fn execute_macro_with(macro_: &mut Macro, deps: ExecDeps<'_>) -> Result<()> 
         macros: deps.macros,
         continue_waiter: deps.continue_waiter,
         window_focuser: deps.window_focuser,
+        ocr: deps.ocr,
         stop_requested: false,
         stop_flag: deps.stop_flag,
         logger: deps.logger,
@@ -352,7 +389,8 @@ fn dispatch(exec: &mut Executor<'_>, action: &Action, macro_: &mut Macro) -> Res
         ActionKind::RunMacro { macro_name } => {
             execute_run_macro(exec, action.id, macro_name, macro_)
         }
-        ActionKind::Ocr { .. } | ActionKind::NavigateSelect { .. } => Err(ExecError::Message(
+        ActionKind::Ocr { .. } => execute_ocr(exec, action, macro_),
+        ActionKind::NavigateSelect { .. } => Err(ExecError::Message(
             format!(
                 "executor: action '{}' not implemented yet",
                 action.type_key()
@@ -579,6 +617,7 @@ mod tests {
                 macros: None,
                 continue_waiter: None,
                 window_focuser: None,
+                ocr: None,
                 stop_flag: None,
                 logger: None,
                 highlighter: None,
@@ -626,6 +665,7 @@ mod tests {
                 macros: None,
                 continue_waiter: None,
                 window_focuser: None,
+                ocr: None,
                 stop_flag: None,
                 logger: Some(&logger),
                 highlighter: None,
@@ -823,6 +863,7 @@ mod tests {
                 macros: None,
                 continue_waiter: None,
                 window_focuser: None,
+                ocr: None,
                 stop_flag: Some(&stop),
                 logger: None,
                 highlighter: None,

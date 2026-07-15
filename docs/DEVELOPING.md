@@ -2,7 +2,7 @@
 
 ## Dev container (recommended)
 
-Open the repository in the dev container (`.devcontainer/`). It provides Go, OpenCV (cached under `/opt/opencv/linux`), Tesseract, Flatpak tooling, and aligned library versions. `GOFLAGS` defaults to `-tags=gocv_specific_modules`.
+Open the repository in the dev container (`.devcontainer/`). It is **Rust-migration focused**: Rust 1.92, clang, Tesseract/Leptonica, and Linux GUI link deps (no OpenCV source build, Go, or packaging tooling). For the Go/Fyne app, use a host toolchain or the scripts under `scripts/` / `docs/DEVELOPING.md` native-deps section.
 
 From the repo root:
 
@@ -37,8 +37,8 @@ Sqyre uses **CGO** for OpenCV (gocv) and Tesseract (gosseract). OpenCV **≥ 4.6
 
 | Resource | Purpose |
 |----------|---------|
-| [.devcontainer/Dockerfile](../.devcontainer/Dockerfile) | Reference Linux dependency versions |
-| [scripts/linux/build-opencv-linux.sh](../scripts/linux/build-opencv-linux.sh) | Build OpenCV on Linux |
+| [.devcontainer/Dockerfile](../.devcontainer/Dockerfile) | Rust migration image (clang, Tesseract; not OpenCV) |
+| [scripts/linux/build-opencv-linux.sh](../scripts/linux/build-opencv-linux.sh) | Build OpenCV for Go/gocv on Linux |
 | [scripts/windows/build-opencv-windows.sh](../scripts/windows/build-opencv-windows.sh) | Build OpenCV for Windows cross-compile |
 | [scripts/android/README-opencv.md](../scripts/android/README-opencv.md) | OpenCV for Android ABIs |
 
