@@ -2,6 +2,7 @@
 
 mod action_tooltip;
 mod action_logs_ui;
+mod add_action;
 mod assets;
 mod catalog;
 mod collection_capture;
@@ -26,6 +27,7 @@ mod var_pills;
 
 use action_logs_ui::LogsImageCache;
 use action_tooltip::TooltipState;
+use add_action::AddActionPicker;
 use catalog::{CatalogIcons, CatalogResolver, SnapshotMacros};
 use data_editor::DataEditor;
 use eframe::egui;
@@ -196,6 +198,7 @@ struct SqyreApp {
     icon_cache: IconCache,
     preview_tooltips: PreviewTooltipCache,
     tooltip: TooltipState,
+    add_action_picker: AddActionPicker,
     data_editor: DataEditor,
     settings_ui: SettingsUi,
     /// Window was hidden because a point/search-area recording is armed.
@@ -237,6 +240,8 @@ impl SqyreApp {
         let highlighter = SharedHighlighter::new();
         highlighter.set_enabled(settings.highlight_active_action);
         let settings_ui = SettingsUi::from_settings(settings);
+        let mut add_action_picker = AddActionPicker::default();
+        add_action_picker.load_from_settings(settings_ui.settings());
 
         match Database::load_default() {
             Ok(db) => {
@@ -270,6 +275,7 @@ impl SqyreApp {
                     icon_cache: IconCache::new(),
                     preview_tooltips: PreviewTooltipCache::new(),
                     tooltip: TooltipState::Hidden,
+                    add_action_picker,
                     data_editor: DataEditor::default(),
                     settings_ui,
                     hidden_for_recording: false,
@@ -307,6 +313,7 @@ impl SqyreApp {
                 icon_cache: IconCache::new(),
                 preview_tooltips: PreviewTooltipCache::new(),
                 tooltip: TooltipState::Hidden,
+                add_action_picker,
                 data_editor: DataEditor::default(),
                 settings_ui,
                 hidden_for_recording: false,
@@ -529,6 +536,54 @@ impl SqyreApp {
         self.selected_action = Some(new_id);
         self.tooltip.cancel();
         true
+    }
+
+    /// Insert a blank action below the current selection (Go `newAddActionAndRefresh`).
+    /// Opens a provisional edit tip — Cancel removes the action without keeping it.
+    fn insert_blank_action(&mut self, action: Action, edit_anchor: egui::Pos2) -> bool {
+        if self.macros.is_empty() {
+            return false;
+        }
+        let new_id = action.id;
+        let idx = self.selected_macro.min(self.macros.len() - 1);
+        let selected = self.selected_action_id();
+        let Some((parent, slot)) =
+            tree_clipboard::insert_location_below_selection(&self.macros[idx].root, selected)
+        else {
+            return false;
+        };
+        self.record_tree_mutation();
+        if self.macros[idx]
+            .root
+            .insert_at(parent, slot, action.clone())
+            .is_err()
+        {
+            return false;
+        }
+        self.selected_action = Some(new_id);
+        // Not persisted until Save; Cancel removes the provisional node.
+        self.tooltip.open_edit_new(&action, edit_anchor);
+        true
+    }
+
+    fn discard_provisional_action(&mut self, action_id: ActionId) {
+        if self.macros.is_empty() {
+            return;
+        }
+        let idx = self.selected_macro.min(self.macros.len() - 1);
+        let _ = self.macros[idx].root.remove_by_id(action_id);
+        if self.selected_action == Some(action_id) {
+            self.selected_action = None;
+        }
+        if self.logs_window == Some(action_id) {
+            self.logs_window = None;
+            self.logs_image_cache.clear();
+        }
+        // Drop the undo entry recorded for the provisional insert so Undo is a no-op.
+        let name = self.macros[idx].name.clone();
+        if let Some(hist) = self.tree_histories.get_mut(&name) {
+            hist.pop_last_undo();
+        }
     }
 
     fn cut_selection(&mut self) -> bool {
@@ -815,6 +870,48 @@ impl eframe::App for SqyreApp {
             &mut self.macros,
             &mut self.catalog,
         );
+        if let Some(action) = {
+            let catalog = &self.catalog;
+            let icons = &mut self.icon_cache;
+            let previews = &mut self.preview_tooltips;
+            let macros: Vec<(String, Vec<String>)> = self
+                .macros
+                .iter()
+                .map(|m| (m.name.clone(), m.tags.clone()))
+                .collect();
+            let known_vars = if self.macros.is_empty() {
+                HashSet::new()
+            } else {
+                let idx = self.selected_macro.min(self.macros.len() - 1);
+                collect_known_variable_names(&self.macros[idx])
+            };
+            let mut defaults_to_persist = false;
+            let picked = self.add_action_picker.show(
+                ui.ctx(),
+                catalog,
+                icons,
+                previews,
+                &macros,
+                &known_vars,
+                |_| {
+                    defaults_to_persist = true;
+                },
+            );
+            if defaults_to_persist {
+                self.add_action_picker
+                    .store_into_settings(self.settings_ui.settings_mut());
+                if let Err(e) = self.settings_ui.save_settings() {
+                    eprintln!("sqyre: save action defaults: {e}");
+                }
+            }
+            picked
+        } {
+            let anchor = ui
+                .ctx()
+                .pointer_interact_pos()
+                .unwrap_or_else(|| ui.ctx().content_rect().center());
+            self.insert_blank_action(action, anchor);
+        }
         // Keep highlighter enable flag in sync with the preference.
         let highlight_on = self.settings_ui.settings().highlight_active_action;
         if self.highlighter.is_enabled() != highlight_on {
@@ -843,9 +940,13 @@ impl eframe::App for SqyreApp {
             ui.ctx().request_repaint();
         }
 
-        // Ctrl+C / Ctrl+X / Ctrl+V / Ctrl+Z / Ctrl+Y — skip while editing an action.
-        if !self.tooltip.is_editing() && !self.hotkey_record.is_open() {
-            let (copy, cut, paste, undo, redo) = ui.ctx().input(|i| {
+        // Ctrl+C / Ctrl+X / Ctrl+V / Ctrl+Z / Ctrl+Y / Ctrl+A — skip while editing an action
+        // or when a text field has keyboard focus (so Ctrl+A still selects-all in editors).
+        if !self.tooltip.is_editing()
+            && !self.hotkey_record.is_open()
+            && !ui.ctx().egui_wants_keyboard_input()
+        {
+            let (copy, cut, paste, undo, redo, add_action) = ui.ctx().input(|i| {
                 let mod_key = i.modifiers.command;
                 let copy = mod_key && i.key_pressed(egui::Key::C);
                 let cut = mod_key && i.key_pressed(egui::Key::X);
@@ -854,7 +955,8 @@ impl eframe::App for SqyreApp {
                 let redo = mod_key
                     && (i.key_pressed(egui::Key::Y)
                         || (i.modifiers.shift && i.key_pressed(egui::Key::Z)));
-                (copy, cut, paste, undo, redo)
+                let add_action = mod_key && i.key_pressed(egui::Key::A);
+                (copy, cut, paste, undo, redo, add_action)
             });
             if cut {
                 self.cut_selection();
@@ -866,6 +968,8 @@ impl eframe::App for SqyreApp {
                 self.undo_tree();
             } else if redo {
                 self.redo_tree();
+            } else if add_action && !running && !self.macros.is_empty() {
+                self.add_action_picker.open();
             }
         }
 
@@ -933,6 +1037,16 @@ impl eframe::App for SqyreApp {
                 }
                 if toolbar_icon(ui, "⏹", "Stop", running).clicked() {
                     self.request_stop();
+                }
+                if toolbar_icon(
+                    ui,
+                    "＋",
+                    "Add Action (Ctrl+A)",
+                    !running && !self.macros.is_empty(),
+                )
+                .clicked()
+                {
+                    self.add_action_picker.open();
                 }
                 if toolbar_icon(ui, "📁", "Data Editor", true).clicked() {
                     self.data_editor.open = true;
@@ -1078,65 +1192,74 @@ impl eframe::App for SqyreApp {
             let follow = highlight_follow_target(&hl_snap);
             let scroll_to = follow.filter(|id| self.last_exec_follow != Some(*id));
             let mut scrolled_follow = false;
-            let actions = egui::ScrollArea::vertical()
-                .id_salt("macro_tree_scroll")
-                .auto_shrink([false, false])
-                .show(ui, |ui| {
-                    let catalog = &self.catalog;
-                    let icons = &mut self.icon_cache;
-                    let root = &self.macros[idx].root;
-                    let root_children = root.children();
-                    let known_vars = collect_known_variable_names(&self.macros[idx]);
-                    let interact_y = ui.spacing().interact_size.y;
-                    let (_, tree_actions) = TreeView::new(id)
-                        .allow_drag_and_drop(!running)
-                        .default_node_height(Some(tree_chrome::default_row_height(interact_y)))
-                        .show_state(ui, &mut state, |builder: &mut TreeViewBuilder<'_, ActionId>| {
-                            // Invisible flattened root so top-level rows have a parent for DnD
-                            // (matches Go: root loop not painted).
-                            builder.node(
-                                NodeBuilder::dir(root_aid)
-                                    .flatten(true)
-                                    .drop_allowed(true)
-                                    .default_open(true),
-                            );
-                            for child in root_children {
-                                build_tree(
-                                    builder,
-                                    child,
-                                    &mut open_logs,
-                                    &mut delete_action,
-                                    &mut row_events,
-                                    catalog,
-                                    icons,
-                                    &known_vars,
-                                    is_dark,
-                                    &macro_name,
-                                    &hl_snap,
-                                    scroll_to,
-                                    &mut scrolled_follow,
-                                    interact_y,
-                                );
+            // Floating bars allocate 0 by default and cover the row chrome; reserve
+            // bar_width so logs/delete stay clear when the scrollbar appears.
+            let actions = ui
+                .scope(|ui| {
+                    ui.spacing_mut().scroll.floating_allocated_width =
+                        ui.spacing().scroll.bar_width;
+                    egui::ScrollArea::vertical()
+                        .id_salt("macro_tree_scroll")
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            let catalog = &self.catalog;
+                            let icons = &mut self.icon_cache;
+                            let root = &self.macros[idx].root;
+                            let root_children = root.children();
+                            let known_vars = collect_known_variable_names(&self.macros[idx]);
+                            let interact_y = ui.spacing().interact_size.y;
+                            let (_, tree_actions) = TreeView::new(id)
+                                .allow_drag_and_drop(!running)
+                                .default_node_height(Some(tree_chrome::default_row_height(interact_y)))
+                                .show_state(ui, &mut state, |builder: &mut TreeViewBuilder<'_, ActionId>| {
+                                    // Invisible flattened root so top-level rows have a parent for DnD
+                                    // (matches Go: root loop not painted).
+                                    builder.node(
+                                        NodeBuilder::dir(root_aid)
+                                            .flatten(true)
+                                            .drop_allowed(true)
+                                            .default_open(true),
+                                    );
+                                    for child in root_children {
+                                        build_tree(
+                                            builder,
+                                            child,
+                                            &mut open_logs,
+                                            &mut delete_action,
+                                            &mut row_events,
+                                            catalog,
+                                            icons,
+                                            &known_vars,
+                                            is_dark,
+                                            &macro_name,
+                                            &hl_snap,
+                                            scroll_to,
+                                            &mut scrolled_follow,
+                                            interact_y,
+                                        );
+                                    }
+                                    builder.close_dir();
+                                });
+                            // Off-clip rows skip label_ui — estimate Y so ScrollArea can still follow.
+                            if let Some(target) = scroll_to {
+                                if !scrolled_follow {
+                                    if let Some(row_i) = flattened_visible_index(root, target) {
+                                        let row_h = tree_chrome::default_row_height(
+                                            ui.spacing().interact_size.y,
+                                        ) + ui.spacing().item_spacing.y;
+                                        let y = ui.min_rect().top() + row_i as f32 * row_h;
+                                        let rect = egui::Rect::from_min_size(
+                                            egui::pos2(ui.min_rect().left(), y),
+                                            egui::vec2(ui.available_width().max(1.0), row_h),
+                                        );
+                                        ui.scroll_to_rect(rect, Some(egui::Align::Center));
+                                        scrolled_follow = true;
+                                    }
+                                }
                             }
-                            builder.close_dir();
-                        });
-                    // Off-clip rows skip label_ui — estimate Y so ScrollArea can still follow.
-                    if let Some(target) = scroll_to {
-                        if !scrolled_follow {
-                            if let Some(row_i) = flattened_visible_index(root, target) {
-                                let row_h = tree_chrome::default_row_height(ui.spacing().interact_size.y)
-                                    + ui.spacing().item_spacing.y;
-                                let y = ui.min_rect().top() + row_i as f32 * row_h;
-                                let rect = egui::Rect::from_min_size(
-                                    egui::pos2(ui.min_rect().left(), y),
-                                    egui::vec2(ui.available_width().max(1.0), row_h),
-                                );
-                                ui.scroll_to_rect(rect, Some(egui::Align::Center));
-                                scrolled_follow = true;
-                            }
-                        }
-                    }
-                    tree_actions
+                            tree_actions
+                        })
+                        .inner
                 })
                 .inner;
             if scrolled_follow {
@@ -1207,7 +1330,7 @@ impl eframe::App for SqyreApp {
                 // Snapshot before tooltip may mutate; record via borrow-split.
                 let mut pending_record: Option<tree_history::TreeSnapshot> = None;
                 let known_vars = collect_known_variable_names(&self.macros[idx]);
-                {
+                let discarded = {
                     let macro_ = &mut self.macros[idx];
                     action_tooltip::show(
                         &mut self.tooltip,
@@ -1228,13 +1351,18 @@ impl eframe::App for SqyreApp {
                                 }
                             }
                         },
-                    );
-                }
+                    )
+                };
                 if let Some(snap) = pending_record {
                     self.tree_histories
-                        .entry(name)
+                        .entry(name.clone())
                         .or_default()
                         .push_snapshot(snap);
+                    // Saved an edit (including first save of a provisional insert).
+                    self.persist_macro_at(idx);
+                }
+                if let Some(aid) = discarded {
+                    self.discard_provisional_action(aid);
                 }
             }
 

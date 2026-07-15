@@ -45,6 +45,11 @@ impl TreeHistory {
         self.push_undo_clearing_redo(snap);
     }
 
+    /// Drop the most recent undo entry (used when discarding a provisional insert).
+    pub fn pop_last_undo(&mut self) {
+        let _ = self.undo.pop();
+    }
+
     pub fn undo(
         &mut self,
         root: &mut Action,

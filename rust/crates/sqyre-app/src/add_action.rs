@@ -1,0 +1,544 @@
+//! Add Action picker dialog (Go `ui/mainmenu.go` Add Action grid).
+//!
+//! Hover a tile ~1s for a **view** tip of that type’s defaults; right-click opens
+//! **edit** (persisted in user settings). Left-click inserts a clone into the tree.
+
+use crate::action_tooltip::{
+    apply_picker_result, paint_edit_fields, show_action_view_tip,
+};
+use crate::icon_cache::IconCache;
+use crate::pickers::{self, ActivePicker};
+use crate::preview_tooltip::PreviewTooltipCache;
+use crate::tree_chrome;
+use eframe::egui::{self, Color32, CornerRadius, Key, Sense, Vec2};
+use sqyre_domain::{
+    action_icon_glyph, action_pastel_color, action_templates, action_type_description,
+    action_type_label, blank_action, Action, ActionId, ActionTemplate, ACTION_PICKER_CATEGORIES,
+};
+use sqyre_persist::ProgramCatalog;
+use sqyre_persist::UserSettings;
+use sqyre_serialize::{action_from_map, action_to_map};
+use sqyre_validate::validate_action;
+use std::collections::{HashMap, HashSet};
+
+/// How long a tile must be hovered before the defaults **view** tip opens.
+const DEFAULTS_HOVER_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// Modal state for the categorized blank-action picker.
+#[derive(Debug, Default)]
+pub struct AddActionPicker {
+    pub open: bool,
+    /// Overrides for blank templates keyed by action type.
+    defaults: HashMap<String, Action>,
+    /// View / edit tip for a type’s default prototype.
+    tip: Option<DefaultsTip>,
+    /// Tile currently under the pointer, waiting for [`DEFAULTS_HOVER_DELAY`].
+    hover_pending: Option<HoverPending>,
+}
+
+#[derive(Debug, Clone)]
+struct HoverPending {
+    action_type: String,
+    anchor: egui::Pos2,
+    since: std::time::Instant,
+}
+
+#[derive(Debug, Clone)]
+enum DefaultsTip {
+    View {
+        action_type: String,
+        action: Action,
+    },
+    Edit {
+        action_type: String,
+        draft: Action,
+        error: Option<String>,
+        anchor: egui::Pos2,
+        picker: ActivePicker,
+    },
+}
+
+impl DefaultsTip {
+    fn is_editing(&self) -> bool {
+        matches!(self, Self::Edit { .. })
+    }
+}
+
+impl AddActionPicker {
+    pub fn open(&mut self) {
+        self.open = true;
+    }
+
+    pub fn load_from_settings(&mut self, settings: &UserSettings) {
+        self.defaults.clear();
+        for (ty, map) in &settings.action_defaults {
+            if let Ok(action) = action_from_map(map) {
+                self.defaults.insert(ty.clone(), action);
+            }
+        }
+    }
+
+    pub fn store_into_settings(&self, settings: &mut UserSettings) {
+        settings.action_defaults.clear();
+        for (ty, action) in &self.defaults {
+            if let Ok(map) = action_to_map(action) {
+                settings.action_defaults.insert(ty.clone(), map);
+            }
+        }
+    }
+
+    /// Fresh action for insert: cloned default (new UID) or built-in blank.
+    pub fn create_action(&self, action_type: &str) -> Option<Action> {
+        if let Some(proto) = self.defaults.get(action_type) {
+            let mut a = proto.clone();
+            reassign_uids(&mut a);
+            return Some(a);
+        }
+        blank_action(action_type)
+    }
+
+    fn prototype_for(&self, action_type: &str) -> Option<Action> {
+        if let Some(proto) = self.defaults.get(action_type) {
+            return Some(proto.clone());
+        }
+        blank_action(action_type)
+    }
+
+    fn open_view(&mut self, action_type: String) {
+        let Some(action) = self.prototype_for(&action_type) else {
+            return;
+        };
+        self.tip = Some(DefaultsTip::View {
+            action_type,
+            action,
+        });
+        self.hover_pending = None;
+    }
+
+    fn open_edit(&mut self, action_type: String, anchor: egui::Pos2) {
+        let Some(draft) = self.prototype_for(&action_type) else {
+            return;
+        };
+        self.tip = Some(DefaultsTip::Edit {
+            action_type,
+            draft,
+            error: None,
+            anchor,
+            picker: ActivePicker::None,
+        });
+        self.hover_pending = None;
+    }
+
+    /// Draw the picker when open. Returns a freshly constructed blank [`Action`] when
+    /// the user picks a tile (caller inserts it into the tree).
+    pub fn show(
+        &mut self,
+        ctx: &egui::Context,
+        catalog: &ProgramCatalog,
+        icons: &mut IconCache,
+        previews: &mut PreviewTooltipCache,
+        macros: &[(String, Vec<String>)],
+        known_vars: &HashSet<String>,
+        mut on_defaults_saved: impl FnMut(&AddActionPicker),
+    ) -> Option<Action> {
+        if !self.open {
+            return None;
+        }
+
+        let mut open = self.open;
+        let mut picked: Option<Action> = None;
+        let mut hover_type: Option<(String, egui::Pos2)> = None;
+        let mut edit_request: Option<(String, egui::Pos2)> = None;
+        let editing = self.tip.as_ref().is_some_and(|t| t.is_editing());
+
+        egui::Window::new("Add Action")
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(true)
+            .default_size([900.0, 420.0])
+            .min_width(640.0)
+            .min_height(280.0)
+            .show(ctx, |ui| {
+                let is_dark = ui.visuals().dark_mode;
+                ui.label(
+                    "Pick an action type — hover ~1s to preview defaults, right-click to edit",
+                );
+                ui.add_space(6.0);
+
+                let templates = action_templates();
+                egui::ScrollArea::vertical()
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        ui.columns(ACTION_PICKER_CATEGORIES.len(), |cols| {
+                            for (col_i, category) in ACTION_PICKER_CATEGORIES.iter().enumerate() {
+                                let col = &mut cols[col_i];
+                                col.strong(*category);
+                                col.add_space(4.0);
+                                for tmpl in templates.iter().filter(|t| t.category == *category) {
+                                    let sample = self
+                                        .prototype_for(tmpl.action_type)
+                                        .unwrap_or_else(|| tmpl.create());
+                                    let resp = picker_tile(col, tmpl, &sample, is_dark);
+                                    if resp.secondary_clicked() {
+                                        edit_request = Some((
+                                            tmpl.action_type.to_string(),
+                                            resp.rect.right_top(),
+                                        ));
+                                    } else if resp.clicked() {
+                                        picked = self.create_action(tmpl.action_type);
+                                    } else if resp.hovered() {
+                                        hover_type = Some((
+                                            tmpl.action_type.to_string(),
+                                            resp.rect.right_top(),
+                                        ));
+                                    }
+                                }
+                            }
+                        });
+                    });
+            });
+
+        if let Some((ty, anchor)) = edit_request {
+            self.open_edit(ty, anchor);
+        } else if editing {
+            // Keep edit tip open; ignore hover-driven view changes.
+            self.hover_pending = None;
+        } else if let Some((ty, anchor)) = hover_type {
+            let viewing_same = matches!(
+                &self.tip,
+                Some(DefaultsTip::View { action_type, .. }) if action_type == &ty
+            );
+            if viewing_same {
+                self.hover_pending = None;
+            } else {
+                let restart = match &self.hover_pending {
+                    Some(p) => p.action_type != ty,
+                    None => true,
+                };
+                if restart {
+                    self.hover_pending = Some(HoverPending {
+                        action_type: ty,
+                        anchor,
+                        since: std::time::Instant::now(),
+                    });
+                } else if let Some(p) = &mut self.hover_pending {
+                    p.anchor = anchor;
+                }
+            }
+        } else {
+            // Left the tile: dismiss view tip (edit stays until Cancel).
+            self.hover_pending = None;
+            if matches!(&self.tip, Some(DefaultsTip::View { .. })) {
+                self.tip = None;
+            }
+        }
+
+        if !editing {
+            if let Some(pending) = &self.hover_pending {
+                let elapsed = pending.since.elapsed();
+                if elapsed >= DEFAULTS_HOVER_DELAY {
+                    let ty = pending.action_type.clone();
+                    self.open_view(ty);
+                } else {
+                    ctx.request_repaint_after(DEFAULTS_HOVER_DELAY.saturating_sub(elapsed));
+                }
+            }
+        }
+
+        let is_dark = ctx.global_style().visuals.dark_mode;
+        let defaults_saved = match &self.tip {
+            Some(DefaultsTip::View { .. }) => {
+                self.show_defaults_view(ctx, catalog, icons, previews, known_vars, is_dark);
+                false
+            }
+            Some(DefaultsTip::Edit { .. }) => self.show_defaults_edit(
+                ctx,
+                catalog,
+                icons,
+                previews,
+                macros,
+                known_vars,
+            ),
+            None => false,
+        };
+        if defaults_saved {
+            on_defaults_saved(self);
+        }
+
+        if picked.is_some() {
+            open = false;
+            self.tip = None;
+            self.hover_pending = None;
+        }
+        self.open = open;
+        if !self.open {
+            self.tip = None;
+            self.hover_pending = None;
+        }
+        picked
+    }
+
+    fn show_defaults_view(
+        &self,
+        ctx: &egui::Context,
+        catalog: &ProgramCatalog,
+        icons: &mut IconCache,
+        previews: &mut PreviewTooltipCache,
+        known_vars: &HashSet<String>,
+        is_dark: bool,
+    ) {
+        let Some(DefaultsTip::View {
+            action_type,
+            action,
+        }) = &self.tip
+        else {
+            return;
+        };
+        show_action_view_tip(
+            ctx,
+            egui::Id::new(("action_default_view", action_type.as_str())),
+            action,
+            catalog,
+            icons,
+            previews,
+            known_vars,
+            is_dark,
+        );
+    }
+
+    /// Returns true when defaults were saved this frame.
+    fn show_defaults_edit(
+        &mut self,
+        ctx: &egui::Context,
+        catalog: &ProgramCatalog,
+        icons: &mut IconCache,
+        previews: &mut PreviewTooltipCache,
+        macros: &[(String, Vec<String>)],
+        known_vars: &HashSet<String>,
+    ) -> bool {
+        if !matches!(&self.tip, Some(DefaultsTip::Edit { .. })) {
+            return false;
+        }
+
+        // Escape: close nested pickers first, then the edit tip.
+        if ctx.input(|i| i.key_pressed(Key::Escape)) {
+            if let Some(DefaultsTip::Edit { picker, .. }) = self.tip.as_mut() {
+                match picker {
+                    p @ ActivePicker::Items { .. }
+                    | p @ ActivePicker::Point { .. }
+                    | p @ ActivePicker::SearchArea { .. }
+                    | p @ ActivePicker::Macro { .. }
+                    | p @ ActivePicker::Window { .. } => {
+                        *p = ActivePicker::None;
+                        return false;
+                    }
+                    ActivePicker::None => {}
+                }
+            }
+            self.tip = None;
+            return false;
+        }
+
+        let (type_key, anchor) = match &self.tip {
+            Some(DefaultsTip::Edit {
+                action_type, anchor, ..
+            }) => (action_type.clone(), *anchor),
+            _ => return false,
+        };
+        let label = action_type_label(&type_key);
+        let is_dark = ctx.global_style().visuals.dark_mode;
+        let pastel = tree_chrome::rgba_pub(action_pastel_color(&type_key, is_dark));
+
+        if let Some(DefaultsTip::Edit { draft, picker, .. }) = self.tip.as_mut() {
+            let result =
+                pickers::show_active_picker(ctx, picker, catalog, icons, previews, macros);
+            apply_picker_result(draft, result);
+        }
+
+        let mut save = false;
+        let mut cancel = false;
+        let mut open = true;
+        let err_msg = match &self.tip {
+            Some(DefaultsTip::Edit {
+                error: Some(e), ..
+            }) => Some(e.clone()),
+            _ => None,
+        };
+
+        egui::Window::new(format!("Default: {label}"))
+            .id(egui::Id::new(("action_default_edit", type_key.as_str())))
+            .open(&mut open)
+            .title_bar(true)
+            .collapsible(false)
+            .resizable(true)
+            .constrain(true)
+            .default_pos(anchor + Vec2::new(8.0, 0.0))
+            .default_size([340.0, 360.0])
+            .min_size([220.0, 120.0])
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    tree_chrome::paint_pill_pub(ui, label, pastel);
+                    ui.label("New actions of this type start with these values");
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.button("Cancel").clicked() {
+                            cancel = true;
+                        }
+                        if ui.button("Save").clicked() {
+                            save = true;
+                        }
+                    });
+                });
+                if let Some(err) = &err_msg {
+                    ui.colored_label(Color32::RED, err.as_str());
+                }
+                ui.separator();
+                egui::ScrollArea::vertical()
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        if let Some(DefaultsTip::Edit {
+                            draft, picker, ..
+                        }) = self.tip.as_mut()
+                        {
+                            paint_edit_fields(
+                                ui,
+                                draft,
+                                catalog,
+                                icons,
+                                previews,
+                                picker,
+                                macros,
+                                known_vars,
+                                is_dark,
+                            );
+                        }
+                    });
+            });
+
+        if !open || cancel {
+            self.tip = None;
+            return false;
+        }
+
+        if save {
+            let (ty, draft) = match &self.tip {
+                Some(DefaultsTip::Edit {
+                    action_type, draft, ..
+                }) => (action_type.clone(), draft.clone()),
+                _ => return false,
+            };
+            if let Err(e) = validate_action(&draft, None) {
+                if let Some(DefaultsTip::Edit { error, .. }) = self.tip.as_mut() {
+                    *error = Some(e.to_string());
+                }
+                return false;
+            }
+            self.defaults.insert(ty, draft);
+            self.tip = None;
+            return true;
+        }
+        false
+    }
+}
+
+fn reassign_uids(action: &mut Action) {
+    action.id = ActionId::new();
+    if let Some(kids) = action.children_mut() {
+        for kid in kids.iter_mut() {
+            reassign_uids(kid);
+        }
+    }
+}
+
+fn picker_tile(
+    ui: &mut egui::Ui,
+    tmpl: &ActionTemplate,
+    sample: &Action,
+    is_dark: bool,
+) -> egui::Response {
+    let glyph = action_icon_glyph(sample);
+    let pastel = action_pastel_color(tmpl.action_type, is_dark);
+    let fill = Color32::from_rgba_unmultiplied(pastel[0], pastel[1], pastel[2], pastel[3]);
+    let tip = action_type_description(tmpl.action_type);
+
+    let desired = Vec2::new(ui.available_width().max(120.0), 36.0);
+    let (rect, response) = ui.allocate_exact_size(desired, Sense::click());
+
+    let visuals = ui.style().interact(&response);
+    let bg = if response.hovered() {
+        fill.gamma_multiply(1.15)
+    } else {
+        fill
+    };
+    ui.painter().rect_filled(rect, CornerRadius::same(8), bg);
+    ui.painter().rect_stroke(
+        rect,
+        CornerRadius::same(8),
+        egui::Stroke::new(1.0, visuals.bg_stroke.color),
+        egui::StrokeKind::Inside,
+    );
+
+    let text = format!("{glyph}  {}", tmpl.label);
+    let fg = tile_contrast_fg(fill);
+    let galley = ui
+        .painter()
+        .layout_no_wrap(text, egui::FontId::proportional(14.0), fg);
+    let text_pos = egui::pos2(
+        rect.left() + 10.0,
+        rect.center().y - galley.size().y * 0.5,
+    );
+    ui.painter().galley(text_pos, galley, Color32::PLACEHOLDER);
+
+    let hint = "Hover ~1s to preview defaults · right-click to edit";
+    if tip.is_empty() {
+        response.on_hover_text(hint)
+    } else {
+        response.on_hover_text(format!("{tip}\n\n{hint}"))
+    }
+}
+
+fn tile_contrast_fg(fill: Color32) -> Color32 {
+    let r = fill.r() as f32 / 255.0;
+    let g = fill.g() as f32 / 255.0;
+    let b = fill.b() as f32 / 255.0;
+    let lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    if lum > 0.55 {
+        Color32::from_rgb(0x1a, 0x1a, 0x1a)
+    } else {
+        Color32::from_rgb(0xf5, 0xf5, 0xf5)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sqyre_domain::action_templates;
+
+    #[test]
+    fn every_template_has_a_description_or_label() {
+        for t in action_templates() {
+            assert!(!t.label.is_empty());
+            let a = t.create();
+            assert_eq!(a.type_key(), t.action_type);
+        }
+    }
+
+    #[test]
+    fn create_action_uses_override_defaults() {
+        let mut picker = AddActionPicker::default();
+        let mut wait = blank_action("wait").unwrap();
+        if let sqyre_domain::ActionKind::Wait { time } = &mut wait.kind {
+            *time = sqyre_domain::ScalarValue::Int(777);
+        }
+        picker.defaults.insert("wait".into(), wait);
+        let created = picker.create_action("wait").unwrap();
+        match created.kind {
+            sqyre_domain::ActionKind::Wait { time } => {
+                assert_eq!(time, sqyre_domain::ScalarValue::Int(777));
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+        // Fresh UID each create.
+        let again = picker.create_action("wait").unwrap();
+        assert_ne!(created.id, again.id);
+    }
+}

@@ -18,6 +18,7 @@ use std::collections::HashSet;
 use crate::var_pills;
 
 pub use edit::apply_draft_preserving_children;
+pub(crate) use edit::paint_edit_fields;
 
 /// Tooltip lifecycle (Go `editing` flag + hover ownership).
 #[derive(Debug, Clone)]
@@ -33,6 +34,9 @@ pub enum TooltipState {
         /// Screen position when edit opened (pinned, not mouse-follow).
         anchor: egui::Pos2,
         picker: ActivePicker,
+        /// When true, Cancel / Escape / close removes this action from the tree
+        /// (used for freshly inserted blank actions that were never saved).
+        discard_on_cancel: bool,
     },
 }
 
@@ -68,11 +72,35 @@ impl TooltipState {
             error: None,
             anchor,
             picker: ActivePicker::None,
+            discard_on_cancel: false,
         };
     }
 
-    pub fn cancel(&mut self) {
+    /// Edit a freshly inserted blank action; Cancel removes it from the tree.
+    pub fn open_edit_new(&mut self, action: &Action, anchor: egui::Pos2) {
+        *self = Self::Edit {
+            action_id: action.id,
+            draft: action.clone(),
+            error: None,
+            anchor,
+            picker: ActivePicker::None,
+            discard_on_cancel: true,
+        };
+    }
+
+    /// Close the tooltip. Returns an action id that should be removed from the tree
+    /// when a provisional new-action edit was cancelled.
+    pub fn cancel(&mut self) -> Option<ActionId> {
+        let discard = match self {
+            Self::Edit {
+                action_id,
+                discard_on_cancel: true,
+                ..
+            } => Some(*action_id),
+            _ => None,
+        };
         *self = Self::Hidden;
+        discard
     }
 
     pub fn dismiss_view(&mut self) {
@@ -137,9 +165,11 @@ impl TooltipState {
         true
     }
 
-    pub fn handle_escape(&mut self) -> bool {
+    /// Escape handling. Returns `(consumed, discard_id)` — discard_id is set when a
+    /// provisional new-action edit is fully cancelled.
+    pub fn handle_escape(&mut self) -> (bool, Option<ActionId>) {
         match self {
-            Self::Hidden => false,
+            Self::Hidden => (false, None),
             Self::Edit {
                 picker:
                     p @ ActivePicker::Point {
@@ -157,7 +187,7 @@ impl TooltipState {
                     }
                     _ => {}
                 }
-                true
+                (true, None)
             }
             Self::Edit {
                 picker: p @ ActivePicker::Items { .. }
@@ -168,12 +198,9 @@ impl TooltipState {
                 ..
             } => {
                 *p = ActivePicker::None;
-                true
+                (true, None)
             }
-            Self::View { .. } | Self::Edit { .. } => {
-                *self = Self::Hidden;
-                true
-            }
+            Self::View { .. } | Self::Edit { .. } => (true, self.cancel()),
         }
     }
 }
@@ -217,6 +244,9 @@ pub fn end_hover_pass(state: &mut TooltipState, any_view_hover: bool) {
 }
 
 /// Paint view or edit tooltip for the current frame.
+///
+/// Returns an action id that should be removed when a provisional new-action
+/// edit was cancelled without saving.
 pub fn show(
     state: &mut TooltipState,
     ctx: &egui::Context,
@@ -228,34 +258,36 @@ pub fn show(
     known_vars: &HashSet<String>,
     is_dark: bool,
     mut before_mutate: impl FnMut(&Action),
-) {
-    if ctx.input(|i| i.key_pressed(Key::Escape)) && state.handle_escape() {
-        return;
+) -> Option<ActionId> {
+    if ctx.input(|i| i.key_pressed(Key::Escape)) {
+        let (consumed, discard) = state.handle_escape();
+        if consumed {
+            return discard;
+        }
     }
 
     match state.clone() {
-        TooltipState::Hidden => {}
+        TooltipState::Hidden => None,
         TooltipState::View { action_id } => {
             let Some(action) = find_action(&macro_.root, action_id).cloned() else {
                 *state = TooltipState::Hidden;
-                return;
+                return None;
             };
             show_view_tip(ctx, &action, catalog, icons, previews, known_vars, is_dark);
+            None
         }
-        TooltipState::Edit { .. } => {
-            show_edit_window(
-                state,
-                ctx,
-                macro_,
-                catalog,
-                icons,
-                previews,
-                macros,
-                known_vars,
-                is_dark,
-                &mut before_mutate,
-            );
-        }
+        TooltipState::Edit { .. } => show_edit_window(
+            state,
+            ctx,
+            macro_,
+            catalog,
+            icons,
+            previews,
+            macros,
+            known_vars,
+            is_dark,
+            &mut before_mutate,
+        ),
     }
 }
 
@@ -276,8 +308,10 @@ fn tip_max_width(has_coord_preview: bool) -> f32 {
     }
 }
 
-fn show_view_tip(
+/// Paint a read-only hover tip for an action (tree rows + Add Action defaults preview).
+pub(crate) fn show_action_view_tip(
     ctx: &egui::Context,
+    tip_id: egui::Id,
     action: &Action,
     catalog: &ProgramCatalog,
     icons: &mut IconCache,
@@ -297,7 +331,6 @@ fn show_view_tip(
     let coord_preview = crate::preview_tooltip::coordinate_ref_for_preview(action);
     let summary_pills = action.tree_summary_pills();
 
-    let tip_id = egui::Id::new(("action_hover_tip", action.id.as_str()));
     // Prefer growing left when near the right edge so constrain() is less likely
     // to slide the tip over the hovered row (which would steal hover).
     let screen = ctx.content_rect();
@@ -308,9 +341,7 @@ fn show_view_tip(
     } else {
         (egui::Align2::LEFT_TOP, pointer + Vec2::new(14.0, 14.0))
     };
-    // interactable(false): clicks pass through to the tree row underneath
-    // (Go view tooltip panel is non-tappable). Row chrome uses geometric
-    // pointer hits so selection still works when this layer covers the row.
+    // interactable(false): clicks pass through to the control underneath.
     egui::Area::new(tip_id)
         .order(Order::Tooltip)
         .pivot(pivot)
@@ -379,6 +410,27 @@ fn show_view_tip(
         });
 }
 
+fn show_view_tip(
+    ctx: &egui::Context,
+    action: &Action,
+    catalog: &ProgramCatalog,
+    icons: &mut IconCache,
+    previews: &mut crate::preview_tooltip::PreviewTooltipCache,
+    known_vars: &HashSet<String>,
+    is_dark: bool,
+) {
+    show_action_view_tip(
+        ctx,
+        egui::Id::new(("action_hover_tip", action.id.as_str())),
+        action,
+        catalog,
+        icons,
+        previews,
+        known_vars,
+        is_dark,
+    );
+}
+
 fn show_edit_window(
     state: &mut TooltipState,
     ctx: &egui::Context,
@@ -390,7 +442,7 @@ fn show_edit_window(
     known_vars: &HashSet<String>,
     is_dark: bool,
     before_mutate: &mut dyn FnMut(&Action),
-) {
+) -> Option<ActionId> {
     let (action_id, anchor, type_key, has_coord_preview) = match state {
         TooltipState::Edit {
             action_id,
@@ -403,7 +455,7 @@ fn show_edit_window(
             draft.type_key(),
             crate::preview_tooltip::coordinate_ref_for_preview(draft).is_some(),
         ),
-        _ => return,
+        _ => return None,
     };
 
     let label = action_type_label(type_key);
@@ -500,8 +552,7 @@ fn show_edit_window(
         });
 
     if !open || cancel {
-        state.cancel();
-        return;
+        return state.cancel();
     }
     if save {
         // Snapshot for expression checks without conflicting with `&mut root`.
@@ -519,9 +570,10 @@ fn show_edit_window(
         };
         let _ = state.try_save_validated(&mut macro_.root, Some(&snap), before_mutate);
     }
+    None
 }
 
-fn apply_picker_result(draft: &mut Action, result: PickerResult) {
+pub(crate) fn apply_picker_result(draft: &mut Action, result: PickerResult) {
     match result {
         PickerResult::None => {}
         PickerResult::Items(targets) => {
@@ -616,12 +668,22 @@ mod tests {
                 time: ScalarValue::Int(999),
             };
         }
-        state.cancel();
+        assert_eq!(state.cancel(), None);
         assert!(matches!(state, TooltipState::Hidden));
         match &root.find_by_id(id).unwrap().kind {
             ActionKind::Wait { time } => assert_eq!(*time, ScalarValue::Int(100)),
             other => panic!("unexpected {other:?}"),
         }
+    }
+
+    #[test]
+    fn cancel_provisional_new_returns_discard_id() {
+        let child = wait_action(100);
+        let id = child.id;
+        let mut state = TooltipState::Hidden;
+        state.open_edit_new(&child, egui::pos2(0.0, 0.0));
+        assert_eq!(state.cancel(), Some(id));
+        assert!(matches!(state, TooltipState::Hidden));
     }
 
     #[test]
@@ -735,12 +797,18 @@ mod tests {
         let mut state = TooltipState::View {
             action_id: ActionId::new(),
         };
-        assert!(state.handle_escape());
+        assert_eq!(state.handle_escape(), (true, None));
         assert!(matches!(state, TooltipState::Hidden));
 
         let draft = wait_action(1);
         state.open_edit(&draft, egui::pos2(0.0, 0.0));
-        assert!(state.handle_escape());
+        assert_eq!(state.handle_escape(), (true, None));
+        assert!(matches!(state, TooltipState::Hidden));
+
+        let draft = wait_action(2);
+        let id = draft.id;
+        state.open_edit_new(&draft, egui::pos2(0.0, 0.0));
+        assert_eq!(state.handle_escape(), (true, Some(id)));
         assert!(matches!(state, TooltipState::Hidden));
     }
 

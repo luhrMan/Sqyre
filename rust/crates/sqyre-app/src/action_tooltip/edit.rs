@@ -694,7 +694,6 @@ fn wait_editor(ui: &mut egui::Ui, wait: &mut WaitTilFoundConfig) {
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing = egui::Vec2::splat(6.0);
         combo_str(ui, "Repeat mode", &mut wait.repeat_mode, options::REPEAT_MODES);
-        ui.checkbox(&mut wait.wait_til_found, "Wait til found (legacy)");
         ui.add(egui::DragValue::new(&mut wait.wait_til_found_seconds).prefix("Wait seconds: "));
         ui.add(
             egui::DragValue::new(&mut wait.wait_til_found_interval_ms).prefix("Interval ms: "),

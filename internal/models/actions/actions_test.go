@@ -428,7 +428,7 @@ func TestOcr_String(t *testing.T) {
 	if strings.Contains(got, "TopY") || strings.Contains(got, "LeftX") {
 		t.Errorf("String() should not show search area coordinates, got %q", got)
 	}
-	o.WaitTilFound = true
+	o.RepeatMode = RepeatWaitUntilFound
 	o.WaitTilFoundSeconds = 10
 	if got := o.String(); !strings.Contains(got, "10 seconds") {
 		t.Errorf("String() = %q", got)
@@ -460,7 +460,7 @@ func TestImageSearch_String(t *testing.T) {
 	if strings.Contains(got, "TopY") || strings.Contains(got, "LeftX") {
 		t.Errorf("String() should not show search area coordinates, got %q", got)
 	}
-	is.WaitTilFound = true
+	is.RepeatMode = RepeatWaitUntilFound
 	is.WaitTilFoundSeconds = 5
 	if got := is.String(); !strings.Contains(got, "5 seconds") {
 		t.Errorf("String() = %q", got)
@@ -535,7 +535,7 @@ func TestFindPixel_String(t *testing.T) {
 	if strings.Contains(got, "TopY") || strings.Contains(got, "LeftX") {
 		t.Errorf("String() should not show search area coordinates, got %q", got)
 	}
-	w.WaitTilFound = true
+	w.RepeatMode = RepeatWaitUntilFound
 	w.WaitTilFoundSeconds = 5
 	if got := w.String(); !strings.Contains(got, "5") {
 		t.Errorf("String() = %q", got)

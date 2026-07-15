@@ -64,20 +64,29 @@ impl Default for ConditionClause {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct WaitTilFoundConfig {
     pub repeat_mode: String,
-    pub wait_til_found: bool,
     pub wait_til_found_seconds: i32,
     pub wait_til_found_interval_ms: i32,
     pub max_iterations: i32,
+}
+
+impl Default for WaitTilFoundConfig {
+    fn default() -> Self {
+        Self {
+            repeat_mode: REPEAT_ONCE.to_string(),
+            wait_til_found_seconds: 0,
+            wait_til_found_interval_ms: 0,
+            max_iterations: 0,
+        }
+    }
 }
 
 impl WaitTilFoundConfig {
     pub fn effective_repeat_mode(&self) -> &str {
         match self.repeat_mode.as_str() {
             REPEAT_ONCE | REPEAT_WAIT_UNTIL_FOUND | REPEAT_WHILE_FOUND => &self.repeat_mode,
-            _ if self.wait_til_found => REPEAT_WAIT_UNTIL_FOUND,
             _ => REPEAT_ONCE,
         }
     }

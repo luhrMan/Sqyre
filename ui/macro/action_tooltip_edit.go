@@ -185,8 +185,9 @@ func parseRowBoundValue(text string) any {
 }
 
 func appendWaitTilFoundPills(row *pillRow, cfg *actions.WaitTilFoundConfig, intervalUIMin int, actionType string) func() {
-	waitToggle := actiondisplay.NewPillToggle("Wait until found", cfg.WaitTilFound)
-	row.add(actiondisplay.WrapPillToggle(waitToggle, actionType))
+	modeVal := cfg.EffectiveRepeatMode()
+	modeSelect := actiondisplay.NewPillSelect("Repeat mode", actions.RepeatModes, modeVal, actions.RepeatModeLabel)
+	row.add(actiondisplay.WrapPillSelect(modeSelect, actionType))
 
 	secondsMin := 0
 	secondsVal := cfg.WaitTilFoundSeconds
@@ -207,22 +208,37 @@ func appendWaitTilFoundPills(row *pillRow, cfg *actions.WaitTilFoundConfig, inte
 	intervalInc := actiondisplay.NewPillIntStepper("Interval (ms)", intervalVal, 100, &intervalMin, nil, actionType)
 	row.add(actiondisplay.WrapPillStepper(intervalInc, actionType))
 
-	setWaitEnabled := func(enabled bool) {
-		if enabled {
-			secondsInc.Enable()
-			intervalInc.Enable()
+	maxMin := 1
+	maxVal := cfg.MaxIterations
+	if maxVal <= 0 {
+		maxVal = 100
+	}
+	maxInc := actiondisplay.NewPillIntStepper("Max iterations", maxVal, 1, &maxMin, nil, actionType)
+	row.add(actiondisplay.WrapPillStepper(maxInc, actionType))
+
+	setModeEnabled := func(mode string) {
+		if mode == actions.RepeatOnce {
+			secondsInc.Disable()
+			intervalInc.Disable()
+			maxInc.Disable()
 			return
 		}
-		secondsInc.Disable()
-		intervalInc.Disable()
+		secondsInc.Enable()
+		intervalInc.Enable()
+		if mode == actions.RepeatWhileFound {
+			maxInc.Enable()
+		} else {
+			maxInc.Disable()
+		}
 	}
-	waitToggle.OnChanged = setWaitEnabled
-	setWaitEnabled(waitToggle.Value)
+	modeSelect.OnChanged = setModeEnabled
+	setModeEnabled(modeSelect.Value)
 
 	return func() {
-		cfg.WaitTilFound = waitToggle.Value
+		cfg.RepeatMode = modeSelect.Value
 		cfg.WaitTilFoundSeconds = secondsInc.Value
 		cfg.WaitTilFoundIntervalMs = intervalInc.Value
+		cfg.MaxIterations = maxInc.Value
 	}
 }
 
@@ -773,7 +789,10 @@ func viewParamPills(node actions.ActionInterface, actionType string) fyne.Canvas
 }
 
 func appendWaitTilFoundViewPills(row *pillRow, cfg *actions.WaitTilFoundConfig, actionType string) {
-	row.add(actiondisplay.NewDisplayTogglePill("Wait until found", cfg.WaitTilFound, actionType))
+	addInlineDisplayPill(row, "Repeat mode", actions.RepeatModeLabel(cfg.EffectiveRepeatMode()), actionType)
 	addInlineDisplayPill(row, "Timeout (s)", actions.FormatParamValue(cfg.WaitTilFoundSeconds), actionType)
 	addInlineDisplayPill(row, "Interval (ms)", actions.FormatParamValue(cfg.WaitTilFoundIntervalMs), actionType)
+	if cfg.IsRepeatWhileFound() {
+		addInlineDisplayPill(row, "Max iterations", actions.FormatParamValue(cfg.EffectiveMaxIterations()), actionType)
+	}
 }
