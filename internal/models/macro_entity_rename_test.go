@@ -22,7 +22,7 @@ func TestRenameProgramEntity_point(t *testing.T) {
 
 func TestRenameProgramEntity_searchArea(t *testing.T) {
 	m := NewMacro("t", 0, nil)
-	is := actions.NewImageSearch("s", nil, nil, actions.NewCoordinateRef("prog", "box"), 1, 1, 0.95, 0)
+	is := actions.NewImageSearch("s", nil, nil, actions.NewCoordinateRef("prog", "box"), 0.95, 0)
 	ocr := actions.NewOcr("o", "t", actions.NewCoordinateRef("prog", "box"))
 	fp := actions.NewFindPixel("f", actions.NewCoordinateRef("prog", "box"), "ffffff", 0)
 	m.Root = actions.NewLoop(1, "root", []actions.ActionInterface{is, ocr, fp})
@@ -40,7 +40,7 @@ func TestRenameProgramEntity_searchArea(t *testing.T) {
 func TestRenameProgramEntity_itemWithVariant(t *testing.T) {
 	m := NewMacro("t", 0, nil)
 	target := "prog" + config.ProgramDelimiter + "potion" + config.ProgramDelimiter + "glow"
-	is := actions.NewImageSearch("s", nil, []string{target}, actions.CoordinateRef(""), 1, 1, 0.95, 0)
+	is := actions.NewImageSearch("s", nil, []string{target}, actions.CoordinateRef(""), 0.95, 0)
 	m.Root = actions.NewLoop(1, "root", []actions.ActionInterface{is})
 
 	if !m.RenameProgramEntity(ProgramEntityItem, "prog", "potion", "health") {
@@ -68,7 +68,7 @@ func TestRenameProgramEntity_otherProgramUntouched(t *testing.T) {
 func TestRenameProgram(t *testing.T) {
 	m := NewMacro("t", 0, nil)
 	target := "old" + config.ProgramDelimiter + "item"
-	is := actions.NewImageSearch("s", nil, []string{target}, actions.NewCoordinateRef("old", "area"), 1, 1, 0.95, 0)
+	is := actions.NewImageSearch("s", nil, []string{target}, actions.NewCoordinateRef("old", "area"), 0.95, 0)
 	move := actions.NewMove(actions.NewCoordinateRef("old", "pt"), false)
 	m.Root = actions.NewLoop(1, "root", []actions.ActionInterface{is, move})
 

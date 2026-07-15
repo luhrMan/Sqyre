@@ -2,6 +2,7 @@
 
 use sqyre_domain::PROGRAM_DELIMITER;
 use sqyre_persist::ProgramCatalog;
+use sqyre_vision::invalidate_search_templates_under;
 use std::path::{Path, PathBuf};
 
 const MAX_VARIANTS: usize = 100;
@@ -153,6 +154,7 @@ pub fn add_variant(
         .map_err(|e| AddVariantError::Other(format!("create icons dir: {e}")))?;
     let dest = variant_path(catalog, program, item, &name);
     std::fs::copy(source, &dest).map_err(|e| AddVariantError::Other(format!("copy file: {e}")))?;
+    invalidate_item_templates(catalog, program, item);
     Ok(name)
 }
 
@@ -172,6 +174,7 @@ pub fn overwrite_variant(
     std::fs::create_dir_all(&dest_dir).map_err(|e| format!("create icons dir: {e}"))?;
     let dest = variant_path(catalog, program, item, &name);
     std::fs::copy(source, &dest).map_err(|e| format!("copy file: {e}"))?;
+    invalidate_item_templates(catalog, program, item);
     Ok(())
 }
 
@@ -189,10 +192,21 @@ pub fn delete_variant(
     }
     let path = variant_path(catalog, program, item, variant_name);
     match std::fs::remove_file(&path) {
-        Ok(()) => Ok(()),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Ok(()) => {
+            invalidate_item_templates(catalog, program, item);
+            Ok(())
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            invalidate_item_templates(catalog, program, item);
+            Ok(())
+        }
         Err(e) => Err(format!("failed to delete variant file: {e}")),
     }
+}
+
+fn invalidate_item_templates(catalog: &ProgramCatalog, program: &str, item: &str) {
+    let prefix = catalog.icons_dir(program).join(item);
+    invalidate_search_templates_under(&prefix);
 }
 
 #[cfg(test)]

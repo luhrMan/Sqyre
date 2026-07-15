@@ -336,12 +336,6 @@ func (r *BaseRepository[T]) Count() int {
 	return len(r.models)
 }
 
-// GetAllAsStringSlice returns a sorted slice of all keys in the repository.
-// This is a convenience method for UI components that need string slices.
-// func (r *BaseRepository[T]) GetAllAsStringSlice() []string {
-// 	return r.GetAllKeys()
-// }
-
 // New creates a new instance of the model using the newFunc.
 // This is a convenience method for creating new models.
 func (r *BaseRepository[T]) New() *T {

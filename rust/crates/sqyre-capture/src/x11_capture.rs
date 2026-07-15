@@ -2,11 +2,13 @@
 
 use image::{Rgba, RgbaImage};
 use sqyre_executor::{DesktopRect, ScreenCapturer};
+use std::os::raw::c_void;
 use std::ptr;
 use std::sync::Mutex;
+use x11::xinerama::{XineramaIsActive, XineramaQueryScreens, XineramaScreenInfo};
 use x11::xlib::{
-    XCloseDisplay, XDefaultRootWindow, XDestroyImage, XDisplayHeight, XDisplayWidth, XGetImage,
-    XOpenDisplay, XQueryPointer, ZPixmap, _XDisplay,
+    XCloseDisplay, XDefaultRootWindow, XDestroyImage, XDisplayHeight, XDisplayWidth, XFree,
+    XGetImage, XOpenDisplay, XQueryPointer, ZPixmap, _XDisplay,
 };
 
 const ALLPLANES: u64 = !0;
@@ -156,6 +158,32 @@ impl ScreenCapturer for X11Capturer {
             w: st.width,
             h: st.height,
         })
+    }
+
+    fn monitor_sizes(&mut self) -> Result<Vec<(i32, i32)>, String> {
+        let st = self.inner.lock().map_err(|e| e.to_string())?;
+        unsafe {
+            if XineramaIsActive(st.display) == 0 {
+                return Ok(vec![(st.width, st.height)]);
+            }
+            let mut count = 0;
+            let screens = XineramaQueryScreens(st.display, &mut count);
+            if screens.is_null() || count <= 0 {
+                return Ok(vec![(st.width, st.height)]);
+            }
+            let slice = std::slice::from_raw_parts(screens as *const XineramaScreenInfo, count as usize);
+            let sizes: Vec<(i32, i32)> = slice
+                .iter()
+                .map(|s| (s.width as i32, s.height as i32))
+                .filter(|(w, h)| *w > 0 && *h > 0)
+                .collect();
+            XFree(screens as *mut c_void);
+            if sizes.is_empty() {
+                Ok(vec![(st.width, st.height)])
+            } else {
+                Ok(sizes)
+            }
+        }
     }
 }
 

@@ -342,6 +342,11 @@ pub(crate) fn execute_run_macro(
     }
 
     target.init_runtime_variables();
+    let monitor_sizes = match exec.capturer.as_mut() {
+        Some(c) => c.monitor_sizes().unwrap_or_else(|_| vec![(0, 0)]),
+        None => vec![(0, 0)],
+    };
+    crate::run::apply_monitor_sizes(&mut target, &monitor_sizes);
     exec.log(action_id, format!("Run Macro: {macro_name}"));
 
     let caller_name = caller.name.clone();
@@ -527,6 +532,7 @@ mod tests {
                 stop_flag: None,
                 logger: None,
                 highlighter: None,
+                runtime_vars: None,
                 variables_dir: Some(dir.path()),
             },
         )
@@ -720,6 +726,7 @@ mod tests {
                 stop_flag: Some(&stop),
                 logger: None,
                 highlighter: None,
+                runtime_vars: None,
                 variables_dir: None,
             },
         )
@@ -772,6 +779,7 @@ mod tests {
                 stop_flag: None,
                 logger: None,
                 highlighter: None,
+                runtime_vars: None,
                 variables_dir: None,
             },
         )
@@ -809,6 +817,7 @@ mod tests {
                 stop_flag: None,
                 logger: None,
                 highlighter: None,
+                runtime_vars: None,
                 variables_dir: None,
             },
         )
@@ -846,6 +855,7 @@ mod tests {
                 stop_flag: None,
                 logger: None,
                 highlighter: None,
+                runtime_vars: None,
                 variables_dir: None,
             },
         )

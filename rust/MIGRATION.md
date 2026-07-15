@@ -74,7 +74,7 @@ Update boxes/status when you land or delete work. Keep notes short.
 
 - [x] Entity / variable names, search-area bounds, item grid — ✅ cutover pending — `sqyre-validate` ↔ `internal/validation`
 - [x] `ValidateAction` parity (bindings + Key / Set / Pause + expression structure) — ✅ cutover pending — `validate_action` + entry validators ↔ `ValidateAction` / `macro.Validate*`
-  - Notes: `EntryValidation` / unknown-var warnings in crate; UI VarEntry live warnings still partial.
+  - Notes: `EntryValidation` / unknown-var warnings in crate; data-editor coord/mask fields show live ⚠/✕ (`validated_var_ref_edit` + preview chips). Set-value tooltip uses live validation; other action-tooltip fields still partial.
 
 ### Persist / config
 
@@ -142,10 +142,10 @@ Rust boots via `make` / `make run` → `./bin/sqyre` (or `cargo run -p sqyre-app
 | Action tooltips view/edit                                        | `ui/macro/action_tooltip_*`     | `action_tooltip/` (+ `sections`, NavigateSelect/Key editors)             | 🟡     | needs work      |
 | Theme (dark + Sqyre gold)                                        | `ui/theme.go`                   | `theme.rs`                                                               | 🟡     | needs work      |
 | Native file/folder dialogs                                       | Fyne / OS pickers               | `file_dialogs.rs` (rfd + Tokio enter)                                    | 🟡     | needs work      |
-| Var pills / VarEntry                                             | `ui/custom_widgets`             | `var_pills.rs` (+ validate helpers)                                      | 🟡     | needs work      |
-| Entity pickers / recording overlays                              | `ui` pickers, `ui/recording`    | `pickers`, X11 `SelectionOutline` + `recording_overlay` (coords HUD when hidden), `hotkey_record`, `key_record` (Pause continue chord), `pixel_color` (FindPixel screen sample) | 🟡     | needs work      |
+| Var pills / VarEntry                                             | `ui/custom_widgets`             | `var_pills.rs` (+ `validated_var_ref_edit` / live EntryValidation icons) | 🟡     | needs work      |
+| Entity pickers / recording overlays                              | `ui` pickers, `ui/recording`    | `pickers` (collection zoom/pan + fuzzy search), X11 `SelectionOutline` + `recording_overlay` (coords HUD when hidden), `hotkey_record`, `key_record` (Pause continue chord), `pixel_color` (FindPixel screen sample) | 🟡     | needs work      |
 | Preview tooltips                                                 | custom_widgets / action_preview | `preview_tooltip.rs`                                                     | 🟡     | needs work      |
-| Data editor (programs/items/masks/collections/coords + variants) | `ui/editor`                     | `data_editor.rs` + `icon_variants.rs` (New point/SA auto-arms record + save) | 🟡     | needs work      |
+| Data editor (programs/items/masks/collections/coords + variants) | `ui/editor`                     | `data_editor.rs` + `icon_variants.rs` (New point/SA auto-arms record + save; coord/mask VarEntry live validation) | 🟡     | needs work      |
 | Settings panel (prefs, paths, fonts, colors)                     | `ui/settings.go`                | `settings.rs` + `persist/settings.rs` + theme                            | 🟡     | needs work      |
 | Action logs UI                                                   | macro log popup                 | `action_logs_ui.rs` (incl. clear)                                        | 🟡     | needs work      |
 | Variables panel + runtime vars                                   | `macro_variables`, runtime_vars | `variables_panel.rs` + `SharedRuntimeVars` (decls CRUD + live/last snapshot) | 🟡     | needs work      |
@@ -182,7 +182,7 @@ Rust boots via `make` / `make run` → `./bin/sqyre` (or `cargo run -p sqyre-app
 
 ## Top remaining priorities
 
-1. **UI daily-driver polish** — VarEntry live validation in data editor; collection-cell zoom/pan; remaining picker polish
+1. **UI daily-driver polish** — remaining picker polish; VarEntry live validation on more action-tooltip fields (Wait/Type/scalars); collection preview zoom in data editor
 2. **Real-user smoke** — load `~/.sqyre/db.yaml`, run macros, Esc/failsafe
 3. **Release cutover** — CI / AppImage / Windows → Rust (still Go today)
 4. **Then 🔪** — delete `internal/`, `ui/`, `cmd/sqyre` once gate clears

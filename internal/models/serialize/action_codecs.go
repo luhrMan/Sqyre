@@ -17,7 +17,8 @@ func init() {
 	registerActionCodec("imagesearch", decodeImageSearch, encodeImageSearch)
 	registerActionCodec("ocr", decodeOcr, encodeOcr)
 	registerActionCodec("setvariable", decodeSetVariable, encodeSetVariable)
-	registerActionCodec("calculate", decodeCalculate, encodeCalculate)
+	// Legacy calculate YAML loads as Set (expression → value, outputvar → variablename).
+	registerActionCodec("calculate", decodeLegacyCalculate, nil)
 	registerActionCodec("conditional", decodeConditional, encodeConditional)
 	registerActionCodec("foreachrow", decodeForEachRow, encodeForEachRow)
 	registerActionCodec("savevariable", decodeSaveVariable, encodeSaveVariable)
@@ -219,19 +220,12 @@ func decodeImageSearch(rawMap map[string]any) (actions.ActionInterface, error) {
 		return nil, fmt.Errorf("action type imagesearch: %w", err)
 	}
 	sa := parseCoordinateRef(rawMap["searcharea"])
-	row, err := expectInt(rawMap, "rowsplit")
-	if err != nil {
-		return nil, fmt.Errorf("action type imagesearch: %w", err)
-	}
-	col, err := expectInt(rawMap, "colsplit")
-	if err != nil {
-		return nil, fmt.Errorf("action type imagesearch: %w", err)
-	}
+	// Legacy rowsplit/colsplit keys are ignored (unused by the executor).
 	tol, err := expectFloat64(rawMap, "tolerance")
 	if err != nil {
 		return nil, fmt.Errorf("action type imagesearch: %w", err)
 	}
-	is := actions.NewImageSearch(name, []actions.ActionInterface{}, targets, sa, row, col, float32(tol), blur)
+	is := actions.NewImageSearch(name, []actions.ActionInterface{}, targets, sa, float32(tol), blur)
 	decodeCoordinateOutputs(rawMap, &is.CoordinateOutputs)
 	decodeWaitTilFound(rawMap, &is.WaitTilFoundConfig)
 	if v, ok := rawMap["runbranchonnofind"].(bool); ok {
@@ -247,8 +241,6 @@ func encodeImageSearch(action actions.ActionInterface) (map[string]any, error) {
 		"name":       a.Name,
 		"targets":    a.Targets,
 		"searcharea": coordinateRefToMap(a.SearchArea),
-		"rowsplit":   a.RowSplit,
-		"colsplit":   a.ColSplit,
 		"tolerance":  float64(a.Tolerance),
 		"blur":       a.Blur,
 	}
@@ -356,7 +348,7 @@ func encodeSetVariable(action actions.ActionInterface) (map[string]any, error) {
 	}, nil
 }
 
-func decodeCalculate(rawMap map[string]any) (actions.ActionInterface, error) {
+func decodeLegacyCalculate(rawMap map[string]any) (actions.ActionInterface, error) {
 	expr, err := expectString(rawMap, "expression")
 	if err != nil {
 		return nil, fmt.Errorf("action type calculate: %w", err)
@@ -365,16 +357,7 @@ func decodeCalculate(rawMap map[string]any) (actions.ActionInterface, error) {
 	if err != nil {
 		return nil, fmt.Errorf("action type calculate: %w", err)
 	}
-	return actions.NewCalculate(expr, outv), nil
-}
-
-func encodeCalculate(action actions.ActionInterface) (map[string]any, error) {
-	a := action.(*actions.Calculate)
-	return map[string]any{
-		"type":       "calculate",
-		"expression": a.Expression,
-		"outputvar":  a.OutputVar,
-	}, nil
+	return actions.NewSetVariable(outv, expr), nil
 }
 
 func decodeConditional(rawMap map[string]any) (actions.ActionInterface, error) {

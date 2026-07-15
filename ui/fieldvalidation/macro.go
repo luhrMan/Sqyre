@@ -22,10 +22,6 @@ func (c MacroContext) ValidateNumericExpression(text string) macrologic.EntryVal
 	return macrologic.ValidateNumericExpression(text, c.currentMacro())
 }
 
-func (c MacroContext) ValidateCalculateExpression(text string) macrologic.EntryValidation {
-	return macrologic.ValidateCalculateExpression(text, c.currentMacro())
-}
-
 func (c MacroContext) ValidateSetVariableValue(text string) macrologic.EntryValidation {
 	return macrologic.ValidateSetVariableValue(text, c.currentMacro())
 }

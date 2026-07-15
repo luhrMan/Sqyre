@@ -1,6 +1,8 @@
 # Packaging Sqyre for Linux
 
-Sqyre is a Fyne app with **CGO** (OpenCV via gocv, Tesseract via gosseract). Packaging needs a build environment where those libraries and dev headers are available.
+**Note:** Local daily driver is Rust (`make` → `./bin/sqyre`). Release packaging below still builds the **legacy Go/Fyne** binary until CI/AppImage/Flatpak cut over — see [rust/MIGRATION.md](../../../rust/MIGRATION.md).
+
+Sqyre packaging here is a Fyne app with **CGO** (OpenCV via gocv, Tesseract via gosseract). Needs a build environment where those libraries and dev headers are available.
 
 | Path | Contents |
 |------|----------|

@@ -6,15 +6,18 @@
 use crate::action_tooltip::{
     apply_picker_result, paint_edit_fields, show_action_view_tip,
 };
+use crate::hotkey_record::HotkeyRecordUi;
 use crate::icon_cache::IconCache;
+use crate::key_record::KeyRecordUi;
 use crate::pickers::{self, ActivePicker};
 use crate::preview_tooltip::PreviewTooltipCache;
 use crate::tree_chrome;
 use eframe::egui::{self, Color32, CornerRadius, Key, Sense, Vec2};
 use sqyre_domain::{
-    action_icon_glyph, action_pastel_color, action_templates, action_type_description,
-    action_type_label, blank_action, Action, ActionId, ActionTemplate, ACTION_PICKER_CATEGORIES,
+    action_icon_glyph, action_pastel_color, action_templates, action_type_label, blank_action,
+    Action, ActionId, ActionKind, ActionTemplate, ACTION_PICKER_CATEGORIES,
 };
+use sqyre_hotkeys::{MacroHotkeyBridge, ScreenClickBridge};
 use sqyre_persist::ProgramCatalog;
 use sqyre_persist::UserSettings;
 use sqyre_serialize::{action_from_map, action_to_map};
@@ -129,6 +132,39 @@ impl AddActionPicker {
         self.hover_pending = None;
     }
 
+    /// Apply a key captured by [`KeyRecordUi`] onto a Key-action defaults draft.
+    pub fn apply_recorded_key(&mut self, recorded: String) {
+        let Some(DefaultsTip::Edit { draft, .. }) = self.tip.as_mut() else {
+            return;
+        };
+        if let ActionKind::Key { key, .. } = &mut draft.kind {
+            *key = recorded;
+        }
+    }
+
+    /// Apply a chord onto a Pause continue-key defaults draft. Returns true when applied.
+    pub fn apply_recorded_chord(&mut self, recorded: Vec<String>) -> bool {
+        let Some(DefaultsTip::Edit { draft, .. }) = self.tip.as_mut() else {
+            return false;
+        };
+        if let ActionKind::Pause { continue_key, .. } = &mut draft.kind {
+            *continue_key = recorded;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Apply a hex color from the Find Pixel screen dropper onto a defaults draft.
+    pub fn apply_recorded_color(&mut self, recorded: String) {
+        let Some(DefaultsTip::Edit { draft, .. }) = self.tip.as_mut() else {
+            return;
+        };
+        if let ActionKind::FindPixel { target_color, .. } = &mut draft.kind {
+            *target_color = crate::pixel_color::normalize_target_color(&recorded);
+        }
+    }
+
     /// Draw the picker when open. Returns a freshly constructed blank [`Action`] when
     /// the user picks a tile (caller inserts it into the tree).
     pub fn show(
@@ -139,6 +175,10 @@ impl AddActionPicker {
         previews: &mut PreviewTooltipCache,
         macros: &[(String, Vec<String>)],
         known_vars: &HashSet<String>,
+        key_record: &mut KeyRecordUi,
+        hotkey_record: &mut HotkeyRecordUi,
+        macro_hotkeys: &MacroHotkeyBridge,
+        screen_click: &ScreenClickBridge,
         mut on_defaults_saved: impl FnMut(&AddActionPicker),
     ) -> Option<Action> {
         if !self.open {
@@ -258,6 +298,10 @@ impl AddActionPicker {
                 previews,
                 macros,
                 known_vars,
+                key_record,
+                hotkey_record,
+                macro_hotkeys,
+                screen_click,
             ),
             None => false,
         };
@@ -315,13 +359,22 @@ impl AddActionPicker {
         previews: &mut PreviewTooltipCache,
         macros: &[(String, Vec<String>)],
         known_vars: &HashSet<String>,
+        key_record: &mut KeyRecordUi,
+        hotkey_record: &mut HotkeyRecordUi,
+        macro_hotkeys: &MacroHotkeyBridge,
+        screen_click: &ScreenClickBridge,
     ) -> bool {
         if !matches!(&self.tip, Some(DefaultsTip::Edit { .. })) {
             return false;
         }
 
         // Escape: close nested pickers first, then the edit tip.
-        if ctx.input(|i| i.key_pressed(Key::Escape)) {
+        // Skip while key / chord / screen recording.
+        if !key_record.is_open()
+            && !hotkey_record.is_open()
+            && !screen_click.is_armed()
+            && ctx.input(|i| i.key_pressed(Key::Escape))
+        {
             if let Some(DefaultsTip::Edit { picker, .. }) = self.tip.as_mut() {
                 match picker {
                     p @ ActivePicker::Items { .. }
@@ -406,7 +459,12 @@ impl AddActionPicker {
                                 icons,
                                 previews,
                                 picker,
+                                key_record,
+                                hotkey_record,
+                                macro_hotkeys,
+                                screen_click,
                                 macros,
+                                None,
                                 known_vars,
                                 is_dark,
                             );
@@ -458,7 +516,6 @@ fn picker_tile(
     let glyph = action_icon_glyph(sample);
     let pastel = action_pastel_color(tmpl.action_type, is_dark);
     let fill = Color32::from_rgba_unmultiplied(pastel[0], pastel[1], pastel[2], pastel[3]);
-    let tip = action_type_description(tmpl.action_type);
 
     let desired = Vec2::new(ui.available_width().max(120.0), 36.0);
     let (rect, response) = ui.allocate_exact_size(desired, Sense::click());
@@ -488,12 +545,8 @@ fn picker_tile(
     );
     ui.painter().galley(text_pos, galley, Color32::PLACEHOLDER);
 
-    let hint = "Hover ~1s to preview defaults · right-click to edit";
-    if tip.is_empty() {
-        response.on_hover_text(hint)
-    } else {
-        response.on_hover_text(format!("{tip}\n\n{hint}"))
-    }
+    // No egui `on_hover_text` — the delayed action view tip is the hover UI.
+    response
 }
 
 fn tile_contrast_fg(fill: Color32) -> Color32 {

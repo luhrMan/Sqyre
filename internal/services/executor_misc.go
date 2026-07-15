@@ -13,7 +13,6 @@ import (
 
 func init() {
 	registerActionRunner("setvariable", executeSetVariable)
-	registerActionRunner("calculate", executeCalculate)
 	registerActionRunner("savevariable", executeSaveVariable)
 	registerActionRunner("foreachrow", executeForEachRowAction)
 	registerActionRunner("focuswindow", executeFocusWindow)
@@ -30,22 +29,6 @@ func executeSetVariable(a actions.ActionInterface, macro *models.Macro) error {
 		}
 		setMacroVariable(macro, node.VariableName, val)
 	}
-	return nil
-}
-
-func executeCalculate(a actions.ActionInterface, macro *models.Macro) error {
-	node := a.(*actions.Calculate)
-	log.Println("Calculate:", node.String())
-	if macro != nil {
-		log.Println("evaluating expression", node.Expression)
-		result, err := macropkg.EvaluateExpression(node.Expression, macro)
-		if err != nil {
-			return fmt.Errorf("calculation failed: %w", err)
-		}
-		setMacroVariable(macro, node.OutputVar, result)
-		log.Println("successfully set variable", node.OutputVar, result)
-	}
-	log.Println("successfully calculated")
 	return nil
 }
 

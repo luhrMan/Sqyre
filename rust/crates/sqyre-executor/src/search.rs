@@ -5,12 +5,19 @@ use crate::error::{ExecError, FlowSignal, Result};
 use crate::highlight::{highlight_clear, highlight_fill};
 use crate::run::{execute_action, Executor};
 use crate::action_log::{crop_match_preview, draw_rect_rgb};
-use sqyre_domain::{Action, ActionKind, Macro, ScalarValue, REPEAT_WHILE_FOUND};
+use rayon::prelude::*;
+use sqyre_domain::{Action, ActionKind, Macro, ScalarValue};
 use sqyre_match::{
-    blur_image, find_template_matches, search_blur_kernel, ImageBuf, Point,
-    DEFAULT_CLOSE_MATCHES_DISTANCE,
+    blur_image, find_template_matches, find_template_matches_preblurred, search_blur_kernel,
+    ImageBuf, Point, DEFAULT_CLOSE_MATCHES_DISTANCE,
 };
-use sqyre_vision::{find_pixel, load_rgb_image, mask_as_u8, resize_mask, rgba_to_rgb_buf};
+use sqyre_vision::{
+    find_pixel, get_cached_blurred_template, get_cached_image_mask, load_rgb_image, mask_as_u8,
+    rgba_to_rgb_buf,
+};
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 pub(crate) fn execute_image_search(
@@ -62,11 +69,34 @@ pub(crate) fn execute_image_search(
             })?;
         }
 
-        if wait.effective_repeat_mode() == REPEAT_WHILE_FOUND {
-            let deadline =
-                Instant::now() + Duration::from_secs(wait.wait_til_found_seconds.max(0) as u64);
-            while Instant::now() < deadline {
+        if wait.is_repeat_while_found() {
+            let max_iter = wait.effective_max_iterations();
+            let interval = wait.effective_interval_ms(100).max(1);
+            let deadline = if wait.wait_til_found_seconds > 0 {
+                Some(
+                    Instant::now()
+                        + Duration::from_secs(wait.wait_til_found_seconds.max(0) as u64),
+                )
+            } else {
+                None
+            };
+            for i in 0..max_iter {
                 exec.check_stopped()?;
+                if i > 0 {
+                    exec.interruptible_sleep(interval)?;
+                    if deadline.is_some_and(|d| Instant::now() >= d) {
+                        break;
+                    }
+                    results = capture_and_match(
+                        exec,
+                        action_id,
+                        targets,
+                        search_area,
+                        *tolerance,
+                        *blur,
+                        macro_,
+                    );
+                }
                 if results.is_empty() {
                     break;
                 }
@@ -80,17 +110,6 @@ pub(crate) fn execute_image_search(
                     subactions,
                     macro_,
                 )?;
-                results = capture_and_match(
-                    exec,
-                    action_id,
-                    targets,
-                    search_area,
-                    *tolerance,
-                    *blur,
-                    macro_,
-                );
-                let interval = wait.effective_interval_ms(100).max(1);
-                exec.automation.milli_sleep(interval);
             }
             return Ok(());
         }
@@ -117,6 +136,34 @@ struct NamedPoint {
     tmpl_w: i32,
     tmpl_h: i32,
     name: String,
+}
+
+struct VariantJob {
+    target: String,
+    variant_i: usize,
+    path: PathBuf,
+    meta: Option<ItemMeta>,
+    mask_path: Option<PathBuf>,
+}
+
+struct VariantMatchOutcome {
+    job: VariantJob,
+    tmpl_w: usize,
+    tmpl_h: usize,
+    /// Unblurred template — only populated when pipeline logging is enabled.
+    template_raw: Option<ImageBuf>,
+    /// Blurred template used for matching (for pipeline steps).
+    template_blurred: Arc<ImageBuf>,
+    mask_preview: Option<ImageBuf>,
+    matches: std::result::Result<Vec<Point>, String>,
+    match_ms: f64,
+}
+
+fn close_matches_distance(exec: &Executor<'_>) -> i32 {
+    exec.matcher
+        .map(|m| m.close_matches_distance())
+        .filter(|&d| d > 0)
+        .unwrap_or(DEFAULT_CLOSE_MATCHES_DISTANCE)
 }
 
 fn capture_and_match(
@@ -193,9 +240,7 @@ fn capture_and_match(
         );
     }
 
-    let threshold = tolerance as f32;
-    let mut out = Vec::new();
-    let match_started = Instant::now();
+    let mut jobs = Vec::new();
     for target in targets {
         let paths = icons.variant_paths(target);
         if paths.is_empty() {
@@ -208,94 +253,205 @@ fn capture_and_match(
         let meta = icons.item_meta(target);
         let mask_path = icons.mask_path(target);
         for (variant_i, path) in paths.into_iter().enumerate() {
-            let template = match load_rgb_image(&path) {
+            jobs.push(VariantJob {
+                target: target.clone(),
+                variant_i,
+                path,
+                meta: meta.clone(),
+                mask_path: mask_path.clone(),
+            });
+        }
+    }
+
+    let threshold = tolerance as f32;
+    let close_dist = close_matches_distance(exec);
+    let want_pipeline = exec.logger.is_some();
+    let match_started = Instant::now();
+    let stop_flag: Option<&AtomicBool> = exec.stop_flag;
+
+    let outcomes: Vec<VariantMatchOutcome> = jobs
+        .into_par_iter()
+        .map(|job| {
+            if stop_flag.is_some_and(|f| f.load(Ordering::SeqCst)) {
+                return VariantMatchOutcome {
+                    tmpl_w: 0,
+                    tmpl_h: 0,
+                    template_raw: None,
+                    template_blurred: Arc::new(ImageBuf::new(1, 1, 3, 0)),
+                    mask_preview: None,
+                    matches: Ok(Vec::new()),
+                    match_ms: 0.0,
+                    job,
+                };
+            }
+
+            let template_blurred = match get_cached_blurred_template(&job.path, kernel) {
                 Ok(t) => t,
                 Err(e) => {
-                    exec.log(action_id, format!("Image Search: load {path:?}: {e}"));
-                    continue;
+                    return VariantMatchOutcome {
+                        tmpl_w: 0,
+                        tmpl_h: 0,
+                        template_raw: None,
+                        template_blurred: Arc::new(ImageBuf::new(1, 1, 3, 0)),
+                        mask_preview: None,
+                        matches: Err(format!("load {:?}: {e}", job.path)),
+                        match_ms: 0.0,
+                        job,
+                    };
                 }
             };
-            let variant_label = if variant_i == 0 {
-                target.to_string()
+            let tmpl_w = template_blurred.width;
+            let tmpl_h = template_blurred.height;
+
+            let mask_bytes = job
+                .mask_path
+                .as_ref()
+                .and_then(|p| get_cached_image_mask(p, tmpl_h, tmpl_w));
+            let mask_preview = if want_pipeline {
+                mask_bytes.as_ref().map(|m| {
+                    ImageBuf::from_raw(tmpl_w, tmpl_h, 1, m.as_ref().clone())
+                })
             } else {
-                format!("{target} variant {}", variant_i + 1)
+                None
             };
 
+            let template_raw = if want_pipeline {
+                load_rgb_image(&job.path).ok()
+            } else {
+                None
+            };
+
+            let t0 = Instant::now();
+            let matches = find_template_matches_preblurred(
+                &search_blurred,
+                template_blurred.as_ref(),
+                mask_bytes.as_deref().map(|m| m.as_slice()),
+                threshold,
+                close_dist,
+            )
+            .map_err(|e| e.to_string());
+            let match_ms = t0.elapsed().as_secs_f64() * 1000.0;
+
+            VariantMatchOutcome {
+                job,
+                tmpl_w,
+                tmpl_h,
+                template_raw,
+                template_blurred,
+                mask_preview,
+                matches,
+                match_ms,
+            }
+        })
+        .collect();
+
+    let mut out = Vec::new();
+    for outcome in outcomes {
+        let variant_label = if outcome.job.variant_i == 0 {
+            outcome.job.target.clone()
+        } else {
+            format!(
+                "{} variant {}",
+                outcome.job.target,
+                outcome.job.variant_i + 1
+            )
+        };
+
+        if outcome.tmpl_w == 0 {
+            if let Err(e) = &outcome.matches {
+                exec.log(action_id, format!("Image Search: {e}"));
+            }
+            continue;
+        }
+
+        exec.log(
+            action_id,
+            format!(
+                "Image Search: matching {variant_label} ({}x{}) against {}x{}",
+                outcome.tmpl_w, outcome.tmpl_h, search_blurred.width, search_blurred.height
+            ),
+        );
+
+        let thumbnail = outcome
+            .template_raw
+            .as_ref()
+            .unwrap_or(outcome.template_blurred.as_ref());
+
+        let matches = match outcome.matches {
+            Ok(m) => m,
+            Err(e) => {
+                exec.log(action_id, format!("Image Search match: {e}"));
+                if want_pipeline {
+                    let mut steps = vec![
+                        (
+                            "0. Search area (match input)".into(),
+                            search_blurred.clone(),
+                        ),
+                        ("1. Item template".into(), thumbnail.clone()),
+                    ];
+                    if blur > 0 {
+                        steps.push((
+                            format!("2. Preprocess — blur item (amount={blur})"),
+                            outcome.template_blurred.as_ref().clone(),
+                        ));
+                    }
+                    if let Some(mask) = &outcome.mask_preview {
+                        steps.push(("3. Mask".into(), mask.clone()));
+                    }
+                    exec.log_item_pipeline(
+                        action_id,
+                        variant_label,
+                        format!("match error: {e}"),
+                        thumbnail,
+                        &steps,
+                        vec![format!("Error: {e}")],
+                    );
+                }
+                continue;
+            }
+        };
+
+        exec.log(
+            action_id,
+            format!(
+                "Image Search: {variant_label} → {} match(es) in {:.0}ms",
+                matches.len(),
+                outcome.match_ms
+            ),
+        );
+
+        let half_w = (outcome.tmpl_w / 2) as i32;
+        let half_h = (outcome.tmpl_h / 2) as i32;
+        let tw = outcome.tmpl_w as i32;
+        let th = outcome.tmpl_h as i32;
+
+        if want_pipeline {
             let mut steps: Vec<(String, ImageBuf)> = Vec::new();
             steps.push((
                 "0. Search area (match input)".into(),
                 search_blurred.clone(),
             ));
-            steps.push(("1. Item template".into(), template.clone()));
-            let tmpl_kernel = search_blur_kernel(blur);
+            steps.push(("1. Item template".into(), thumbnail.clone()));
             if blur > 0 {
-                if let Ok(tmpl_blurred) = blur_image(&template, tmpl_kernel) {
-                    steps.push((
-                        format!("2. Preprocess — blur item (amount={blur})"),
-                        tmpl_blurred,
-                    ));
-                }
+                steps.push((
+                    format!("2. Preprocess — blur item (amount={blur})"),
+                    outcome.template_blurred.as_ref().clone(),
+                ));
+            }
+            if let Some(mask) = &outcome.mask_preview {
+                steps.push(("3. Mask".into(), mask.clone()));
             }
 
-            let mask_bytes = mask_path
-                .as_ref()
-                .and_then(|p| load_rgb_image(p).ok())
-                .map(|m| {
-                    let resized = resize_mask(&m, template.width, template.height);
-                    steps.push(("3. Mask".into(), resized.clone()));
-                    mask_as_u8(&resized)
-                });
-
-            exec.log(
-                action_id,
-                format!(
-                    "Image Search: matching {variant_label} ({}x{}) against {}x{}",
-                    template.width, template.height, search_blurred.width, search_blurred.height
-                ),
-            );
-            let t0 = Instant::now();
-            let matches = match find_template_matches(
-                &search_blurred,
-                &template,
-                mask_bytes.as_deref(),
-                threshold,
-                blur,
-                DEFAULT_CLOSE_MATCHES_DISTANCE,
-            ) {
-                Ok(m) => m,
-                Err(e) => {
-                    exec.log(action_id, format!("Image Search match: {e}"));
-                    exec.log_item_pipeline(
-                        action_id,
-                        variant_label,
-                        format!("match error: {e}"),
-                        &template,
-                        &steps,
-                        vec![format!("Error: {e}")],
-                    );
-                    continue;
-                }
-            };
-            let match_ms = t0.elapsed().as_secs_f64() * 1000.0;
-            exec.log(
-                action_id,
-                format!(
-                    "Image Search: {variant_label} → {} match(es) in {:.0}ms",
-                    matches.len(),
-                    match_ms
-                ),
-            );
-
-            let half_w = (template.width / 2) as i32;
-            let half_h = (template.height / 2) as i32;
-            let tw = template.width as i32;
-            let th = template.height as i32;
             let mut details = vec![
                 format!(
                     "Template {}×{} · search {}×{} · threshold={threshold:.3} · blur={blur}",
-                    template.width, template.height, search_blurred.width, search_blurred.height
+                    outcome.tmpl_w, outcome.tmpl_h, search_blurred.width, search_blurred.height
                 ),
-                format!("Match time: {match_ms:.0}ms · {} hit(s)", matches.len()),
+                format!(
+                    "Match time: {:.0}ms · {} hit(s)",
+                    outcome.match_ms,
+                    matches.len()
+                ),
             ];
             let mut item_overlay = search.clone();
             const MAX_MATCH_PREVIEWS: usize = 8;
@@ -334,12 +490,12 @@ fn capture_and_match(
                     p.y,
                 ));
                 out.push(NamedPoint {
-                    name: target.clone(),
+                    name: outcome.job.target.clone(),
                     point: p,
                     origin,
-                    meta: meta.clone(),
-                    tmpl_w: template.width as i32,
-                    tmpl_h: template.height as i32,
+                    meta: outcome.job.meta.clone(),
+                    tmpl_w: tw,
+                    tmpl_h: th,
                 });
             }
             let find_count = details.iter().filter(|d| d.starts_with("Find #")).count();
@@ -349,21 +505,35 @@ fn capture_and_match(
                 steps.push(("Where found (all matches)".into(), item_overlay));
             }
             let summary = if find_count == 0 {
-                format!("0 matches · {match_ms:.0}ms")
+                format!("0 matches · {:.0}ms", outcome.match_ms)
             } else {
-                format!("{find_count} match(es) · {match_ms:.0}ms")
+                format!("{find_count} match(es) · {:.0}ms", outcome.match_ms)
             };
 
             exec.log_item_pipeline(
                 action_id,
                 variant_label,
                 summary,
-                &template,
+                thumbnail,
                 &steps,
                 details,
             );
+        } else {
+            for mut p in matches {
+                p.x += half_w;
+                p.y += half_h;
+                out.push(NamedPoint {
+                    name: outcome.job.target.clone(),
+                    point: p,
+                    origin,
+                    meta: outcome.job.meta.clone(),
+                    tmpl_w: tw,
+                    tmpl_h: th,
+                });
+            }
         }
     }
+
     exec.log(
         action_id,
         format!(
@@ -373,7 +543,6 @@ fn capture_and_match(
         ),
     );
     sort_points(&mut out);
-    let _ = exec.matcher; // optional override reserved for tests injecting TemplateMatcher
     out
 }
 
@@ -509,10 +678,11 @@ fn run_detection_children(
     }
 }
 
-/// Go `Ocr.TargetMatched`: empty target matches any nonempty text; else substring contains.
+/// Go `strings.Contains(foundText, target)`: empty target always matches
+/// (including empty OCR text), so wait-until-found never arms on blank target.
 fn ocr_target_matched(target: &str, found_text: &str) -> bool {
     if target.is_empty() {
-        !found_text.is_empty()
+        true
     } else {
         found_text.contains(target)
     }
@@ -529,7 +699,7 @@ fn retry_while_not_found(
     let max_interval = (interval * 5).min(2000).max(interval);
     while Instant::now() < deadline {
         exec.check_stopped()?;
-        exec.automation.milli_sleep(interval);
+        exec.interruptible_sleep(interval)?;
         if retry(exec)? {
             return Ok(());
         }
@@ -574,7 +744,7 @@ pub(crate) fn execute_find_pixel(
         for i in 0..max_iter {
             exec.check_stopped()?;
             if i > 0 {
-                exec.automation.milli_sleep(interval);
+                exec.interruptible_sleep(interval)?;
                 found = try_find_pixel(exec, search_area, target_color, *color_tolerance, macro_);
             }
             if let Some((x, y)) = found {
@@ -676,7 +846,7 @@ pub(crate) fn execute_ocr(
         for i in 0..max_iter {
             exec.check_stopped()?;
             if i > 0 {
-                exec.automation.milli_sleep(interval);
+                exec.interruptible_sleep(interval)?;
                 let (s, m) = ocr_shot_and_match(exec, action_id, &ocr_params, macro_);
                 shot = s;
                 matched = m;
@@ -1018,12 +1188,16 @@ impl TemplateMatcher for MatchFacade {
             mask_bytes.as_deref(),
             threshold,
             blur,
-            if self.close_matches_distance > 0 {
-                self.close_matches_distance
-            } else {
-                DEFAULT_CLOSE_MATCHES_DISTANCE
-            },
+            self.close_matches_distance(),
         )
+    }
+
+    fn close_matches_distance(&self) -> i32 {
+        if self.close_matches_distance > 0 {
+            self.close_matches_distance
+        } else {
+            DEFAULT_CLOSE_MATCHES_DISTANCE
+        }
     }
 }
 
@@ -1107,6 +1281,104 @@ mod tests {
             pts.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(),
             vec!["a", "b", "c"]
         );
+    }
+
+    #[test]
+    fn ocr_empty_target_always_matches_like_go_contains() {
+        assert!(ocr_target_matched("", ""));
+        assert!(ocr_target_matched("", "anything"));
+        assert!(ocr_target_matched("Hi", "say Hi there"));
+        assert!(!ocr_target_matched("Hi", "hello"));
+    }
+
+    #[test]
+    fn match_facade_exposes_close_matches_distance() {
+        let facade = MatchFacade {
+            close_matches_distance: 42,
+        };
+        assert_eq!(TemplateMatcher::close_matches_distance(&facade), 42);
+        let zeroed = MatchFacade {
+            close_matches_distance: 0,
+        };
+        assert_eq!(
+            TemplateMatcher::close_matches_distance(&zeroed),
+            DEFAULT_CLOSE_MATCHES_DISTANCE
+        );
+    }
+
+    #[test]
+    fn image_search_caches_blurred_templates() {
+        sqyre_vision::reset_search_cache_for_testing();
+        let dir = tempfile::tempdir().unwrap();
+        let tmpl_path = dir.path().join("tmpl.png");
+        let tmpl = RgbaImage::from_pixel(8, 8, Rgba([255, 0, 0, 255]));
+        tmpl.save(&tmpl_path).unwrap();
+
+        let icons = MapIcons {
+            paths: HashMap::from([("Prog~Item".into(), tmpl_path.clone())]),
+            meta: HashMap::new(),
+        };
+        let search = RgbaImage::from_pixel(16, 16, Rgba([0, 255, 0, 255]));
+        let mut backend = RecordingBackend::default();
+        let mut capturer = RecordingCapturer {
+            next: Some(search),
+            bounds: DesktopRect {
+                x: 0,
+                y: 0,
+                w: 2000,
+                h: 2000,
+            },
+            ..Default::default()
+        };
+        let resolver = FixedArea;
+        let matcher = MatchFacade {
+            close_matches_distance: 17,
+        };
+        let search_id = ActionId::new();
+        let mut macro_ = Macro::new("t", 0, vec![]);
+        macro_.keyboard_delay = 0;
+        macro_.mouse_delay = 0;
+        macro_.root = root_loop(vec![Action {
+            id: search_id,
+            kind: ActionKind::ImageSearch {
+                name: "find".into(),
+                targets: vec!["Prog~Item".into()],
+                search_area: CoordinateRef("Prog~Box".into()),
+                tolerance: 0.99,
+                blur: 5,
+                wait: WaitTilFoundConfig::default(),
+                coords: CoordinateOutputs::defaults(),
+                run_branch_on_no_find: false,
+                order: Default::default(),
+                subactions: vec![],
+            },
+        }]);
+
+        execute_macro_with(
+            &mut macro_,
+            ExecDeps {
+                automation: &mut backend,
+                capturer: Some(&mut capturer),
+                matcher: Some(&matcher),
+                resolver: Some(&resolver),
+                icons: Some(&icons),
+                macros: None,
+                continue_waiter: None,
+                window_focuser: None,
+                ocr: None,
+                stop_flag: None,
+                logger: None,
+                highlighter: None,
+                runtime_vars: None,
+                variables_dir: None,
+            },
+        )
+        .unwrap();
+
+        let kernel = search_blur_kernel(5);
+        let first = get_cached_blurred_template(&tmpl_path, kernel).unwrap();
+        let second = get_cached_blurred_template(&tmpl_path, kernel).unwrap();
+        assert!(std::sync::Arc::ptr_eq(&first, &second));
     }
 
     #[test]
@@ -1205,6 +1477,7 @@ mod tests {
                 stop_flag: None,
                 logger: Some(&logger),
                 highlighter: None,
+                runtime_vars: None,
                 variables_dir: None,
             },
         )
@@ -1279,6 +1552,7 @@ mod tests {
                 stop_flag: None,
                 logger: Some(&logger),
                 highlighter: None,
+                runtime_vars: None,
                 variables_dir: None,
             },
         )
@@ -1349,6 +1623,7 @@ mod tests {
                 stop_flag: None,
                 logger: Some(&logger),
                 highlighter: None,
+                runtime_vars: None,
                 variables_dir: None,
             },
         )
@@ -1418,6 +1693,7 @@ mod tests {
                 stop_flag: None,
                 logger: None,
                 highlighter: None,
+                runtime_vars: None,
                 variables_dir: None,
             },
         )
@@ -1488,6 +1764,7 @@ mod tests {
                 stop_flag: None,
                 logger: None,
                 highlighter: None,
+                runtime_vars: None,
                 variables_dir: None,
             },
         )
@@ -1555,6 +1832,7 @@ mod tests {
                 stop_flag: None,
                 logger: None,
                 highlighter: None,
+                runtime_vars: None,
                 variables_dir: None,
             },
         )
@@ -1644,6 +1922,7 @@ mod tests {
                 stop_flag: None,
                 logger: Some(&logger),
                 highlighter: None,
+                runtime_vars: None,
                 variables_dir: None,
             },
         )
@@ -1855,6 +2134,7 @@ mod tests {
                 stop_flag: None,
                 logger: Some(&log),
                 highlighter: None,
+                runtime_vars: None,
                 variables_dir: None,
             },
         )
@@ -1985,6 +2265,7 @@ mod tests {
                 stop_flag: None,
                 logger: None,
                 highlighter: None,
+                runtime_vars: None,
                 variables_dir: None,
             },
         )
@@ -2077,6 +2358,7 @@ mod tests {
                 stop_flag: None,
                 logger: None,
                 highlighter: None,
+                runtime_vars: None,
                 variables_dir: None,
             },
         )
@@ -2162,6 +2444,7 @@ mod tests {
                 stop_flag: None,
                 logger: None,
                 highlighter: None,
+                runtime_vars: None,
                 variables_dir: None,
             },
         )

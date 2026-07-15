@@ -22,10 +22,9 @@ func TestActionCodec_roundTrip(t *testing.T) {
 		{"move", actions.NewMove(pointRef, true)},
 		{"key", actions.NewKey("enter", true)},
 		{"type", actions.NewType("hello", 50)},
-		{"imagesearch", actions.NewImageSearch("img", nil, []string{"item1"}, searchRef, 2, 2, 0.9, 1)},
+		{"imagesearch", actions.NewImageSearch("img", nil, []string{"item1"}, searchRef, 0.9, 1)},
 		{"ocr", actions.NewOcr("ocr1", "gold", searchRef)},
 		{"setvariable", actions.NewSetVariable("count", 1)},
-		{"calculate", actions.NewCalculate("${a}+1", "result")},
 		{"conditional", actions.NewConditional([]actions.ConditionClause{
 			{Left: "${x}", Operator: actions.OpEquals, Right: 1},
 		}, actions.MatchAll, "if", []actions.ActionInterface{actions.NewBreak()})},
@@ -56,5 +55,56 @@ func TestActionCodec_roundTrip(t *testing.T) {
 				t.Fatalf("round-trip type = %s, want %s", back.GetType(), tc.action.GetType())
 			}
 		})
+	}
+}
+
+func TestCreateActionFromMap_legacyCalculateDecodesAsSet(t *testing.T) {
+	back, err := ViperSerializer.CreateActionFromMap(map[string]any{
+		"type":       "calculate",
+		"expression": "${a}+1",
+		"outputvar":  "result",
+	}, nil)
+	if err != nil {
+		t.Fatalf("CreateActionFromMap: %v", err)
+	}
+	sv, ok := back.(*actions.SetVariable)
+	if !ok {
+		t.Fatalf("got %T, want *SetVariable", back)
+	}
+	if sv.VariableName != "result" {
+		t.Fatalf("VariableName = %q, want result", sv.VariableName)
+	}
+	if v, _ := sv.Value.(string); v != "${a}+1" {
+		t.Fatalf("Value = %v, want ${a}+1", sv.Value)
+	}
+}
+
+func TestCreateActionFromMap_legacyImageSearchSplitsIgnored(t *testing.T) {
+	back, err := ViperSerializer.CreateActionFromMap(map[string]any{
+		"type":      "imagesearch",
+		"name":      "img",
+		"targets":   []any{"item1"},
+		"searcharea": "prog:search",
+		"rowsplit":  2,
+		"colsplit":  3,
+		"tolerance": 0.9,
+		"blur":      1,
+	}, nil)
+	if err != nil {
+		t.Fatalf("CreateActionFromMap: %v", err)
+	}
+	is, ok := back.(*actions.ImageSearch)
+	if !ok {
+		t.Fatalf("got %T, want *ImageSearch", back)
+	}
+	m, err := ActionToMap(is)
+	if err != nil {
+		t.Fatalf("ActionToMap: %v", err)
+	}
+	if _, ok := m["rowsplit"]; ok {
+		t.Fatal("rowsplit should not be encoded")
+	}
+	if _, ok := m["colsplit"]; ok {
+		t.Fatal("colsplit should not be encoded")
 	}
 }

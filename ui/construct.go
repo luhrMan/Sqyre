@@ -63,7 +63,7 @@ func SetEditorUi() {
 	})
 }
 
-// previewExpression validates and evaluates a Calculate expression against the
+// previewExpression validates and evaluates a Set value expression against the
 // currently selected macro's declared and action-produced variables.
 func previewExpression(expr string) (string, error) {
 	m := macroContext().CurrentMacro()

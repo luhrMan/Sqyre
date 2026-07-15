@@ -8,8 +8,6 @@ import (
 type ImageSearch struct {
 	Targets            []string      `mapstructure:"targets"`
 	SearchArea         CoordinateRef `mapstructure:"searcharea"`
-	RowSplit           int           `mapstructure:"rowsplit"`
-	ColSplit           int           `mapstructure:"colsplit"`
 	Tolerance          float32       `mapstructure:"tolerance"`
 	Blur               int           `mapstructure:"blur"`
 	WaitTilFoundConfig `yaml:",inline" mapstructure:",squash"`
@@ -18,16 +16,14 @@ type ImageSearch struct {
 	*AdvancedAction    `yaml:",inline" mapstructure:",squash"`
 }
 
-func NewImageSearch(name string, subActions []ActionInterface, targets []string, searchbox CoordinateRef, rs, cs int, tol float32, blur int) *ImageSearch {
+func NewImageSearch(name string, subActions []ActionInterface, targets []string, searchbox CoordinateRef, tol float32, blur int) *ImageSearch {
 	slices.Sort(targets)
 	return &ImageSearch{
-		AdvancedAction:  newAdvancedAction(name, "imagesearch", subActions),
-		Targets:         targets,
-		SearchArea:      searchbox,
-		RowSplit:        rs,
-		ColSplit:        cs,
-		Tolerance:       tol,
-		Blur:            blur,
+		AdvancedAction: newAdvancedAction(name, "imagesearch", subActions),
+		Targets:        targets,
+		SearchArea:     searchbox,
+		Tolerance:      tol,
+		Blur:           blur,
 		CoordinateOutputs: CoordinateOutputs{
 			OutputXVariable: "foundX",
 			OutputYVariable: "foundY",

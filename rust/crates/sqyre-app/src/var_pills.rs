@@ -2,6 +2,7 @@
 
 use eframe::egui::{self, Color32, FontId, Sense, Stroke, Vec2};
 use sqyre_domain::{action_pastel_color, is_known_variable, nested_var_ref_color, SummaryPill};
+use sqyre_validate::EntryValidation;
 use sqyre_varref;
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -317,8 +318,87 @@ pub fn var_name_text_edit(
     });
 }
 
-/// Multiline / YAML value with unfocused `${}` overlay when applicable.
-pub fn var_ref_multiline_edit(
+/// Trailing error/warning icon (Go `VarEntryField` feedback). Errors take priority.
+pub fn paint_entry_validation_icon(ui: &mut egui::Ui, v: &EntryValidation) {
+    let (glyph, color, tip) = if !v.error.is_empty() {
+        ("✕", Color32::from_rgb(220, 70, 70), v.error.as_str())
+    } else if !v.warning.is_empty() {
+        ("⚠", Color32::from_rgb(220, 170, 40), v.warning.as_str())
+    } else {
+        return;
+    };
+    ui.add(
+        egui::Label::new(egui::RichText::new(glyph).color(color).size(14.0))
+            .sense(Sense::hover()),
+    )
+    .on_hover_text(tip);
+}
+
+/// Stroke color for compact validated chips (error > warning > none).
+pub fn entry_validation_stroke(v: &EntryValidation) -> Option<Stroke> {
+    if !v.error.is_empty() {
+        Some(Stroke::new(1.5, Color32::from_rgb(220, 70, 70)))
+    } else if !v.warning.is_empty() {
+        Some(Stroke::new(1.5, Color32::from_rgb(220, 170, 40)))
+    } else {
+        None
+    }
+}
+
+/// Hover tip for a validated entry (error preferred).
+pub fn entry_validation_tip(v: &EntryValidation) -> Option<&str> {
+    if !v.error.is_empty() {
+        Some(v.error.as_str())
+    } else if !v.warning.is_empty() {
+        Some(v.warning.as_str())
+    } else {
+        None
+    }
+}
+
+/// Labeled var-ref field with live validation icon (Go `VarEntryField`).
+pub fn validated_var_ref_edit(
+    ui: &mut egui::Ui,
+    label: &str,
+    value: &mut String,
+    known: &HashSet<String>,
+    is_dark: bool,
+    desired_width: f32,
+    validation: &EntryValidation,
+) {
+    ui.horizontal(|ui| {
+        ui.label(label);
+        let id = ui.id().with(("validated_var_ref", label));
+        let focused = ui.memory(|m| m.has_focus(id));
+        if should_show_var_ref_overlay(value, focused) {
+            let plain_fg = ui.visuals().text_color();
+            let resp = outer_frame(ui, Color32::TRANSPARENT, |ui| {
+                paint_var_ref_content(ui, value, known, is_dark, plain_fg);
+            });
+            let resp = ui.interact(
+                resp.rect.expand2(Vec2::new(
+                    (desired_width - resp.rect.width()).max(0.0),
+                    2.0,
+                )),
+                id.with("overlay_hit"),
+                Sense::click(),
+            );
+            if resp.clicked() {
+                ui.memory_mut(|m| m.request_focus(id));
+            }
+        } else {
+            ui.add(
+                egui::TextEdit::singleline(value)
+                    .id(id)
+                    .desired_width(desired_width),
+            );
+        }
+        paint_entry_validation_icon(ui, validation);
+    });
+}
+
+/// Multiline var-ref field with live validation icon.
+pub fn validated_var_ref_multiline_edit(
     ui: &mut egui::Ui,
     label: &str,
     value: &mut String,
@@ -326,15 +406,18 @@ pub fn var_ref_multiline_edit(
     is_dark: bool,
     desired_width: f32,
     rows: usize,
+    validation: &EntryValidation,
 ) {
-    ui.label(label);
-    let id = ui.id().with(("var_ref_multi", label));
+    ui.horizontal(|ui| {
+        ui.label(label);
+        paint_entry_validation_icon(ui, validation);
+    });
+    let id = ui.id().with(("validated_var_ref_multi", label));
     let focused = ui.memory(|m| m.has_focus(id));
     if should_show_var_ref_overlay(value, focused) {
         let plain_fg = ui.visuals().text_color();
         let resp = outer_frame(ui, Color32::TRANSPARENT, |ui| {
             ui.set_max_width(desired_width);
-            // One line of chips per text line (Go multiLine overlay).
             for line in value.split('\n') {
                 paint_var_ref_content(ui, line, known, is_dark, plain_fg);
             }

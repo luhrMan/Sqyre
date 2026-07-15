@@ -7,6 +7,8 @@ use std::sync::Arc;
 #[derive(Debug, Clone)]
 enum Armed {
     Point,
+    /// Single click → screen coords for Find Pixel color sampling.
+    Color,
     SearchArea { first: Option<(i32, i32)> },
 }
 
@@ -16,6 +18,8 @@ struct Inner {
     last_pos: (i32, i32),
     /// Completed capture: Point (x,y) or SearchArea (lx,ty,rx,by).
     point: Option<(i32, i32)>,
+    /// Completed color-sample click (sampled by UI via 1×1 capture).
+    color_point: Option<(i32, i32)>,
     search_area: Option<(i32, i32, i32, i32)>,
     cancelled: bool,
 }
@@ -46,6 +50,15 @@ impl ScreenClickBridge {
         };
     }
 
+    pub fn arm_color(&self) {
+        let mut g = self.inner.lock();
+        *g = Inner {
+            armed: Some(Armed::Color),
+            last_pos: g.last_pos,
+            ..Inner::default()
+        };
+    }
+
     pub fn arm_search_area(&self) {
         let mut g = self.inner.lock();
         *g = Inner {
@@ -70,6 +83,9 @@ impl ScreenClickBridge {
         match &g.armed {
             Some(Armed::Point) => Some(format!(
                 "Recording point — ({x}, {y}) — left-click to capture, Esc to cancel"
+            )),
+            Some(Armed::Color) => Some(format!(
+                "Recording color — ({x}, {y}) — left-click to sample, Esc to cancel"
             )),
             Some(Armed::SearchArea { first: None }) => Some(format!(
                 "Recording search area — click first corner ({x}, {y}), Esc to cancel"
@@ -140,6 +156,10 @@ impl ScreenClickBridge {
                 g.point = Some(pos);
                 g.armed = None;
             }
+            Some(Armed::Color) => {
+                g.color_point = Some(pos);
+                g.armed = None;
+            }
             Some(Armed::SearchArea { first: None }) => {
                 g.armed = Some(Armed::SearchArea { first: Some(pos) });
             }
@@ -168,6 +188,10 @@ impl ScreenClickBridge {
 
     pub fn take_point(&self) -> Option<(i32, i32)> {
         self.inner.lock().point.take()
+    }
+
+    pub fn take_color_point(&self) -> Option<(i32, i32)> {
+        self.inner.lock().color_point.take()
     }
 
     pub fn take_search_area(&self) -> Option<(i32, i32, i32, i32)> {
@@ -241,6 +265,20 @@ mod tests {
         b.on_left_click();
         assert_eq!(b.take_search_area(), Some((0, 0, 30, 40)));
         assert!(b.peek_search_area_draft().is_none());
+        assert!(b.status_label().is_none());
+    }
+
+    #[test]
+    fn color_click_does_not_fill_point() {
+        let b = ScreenClickBridge::new();
+        b.arm_color();
+        b.on_mouse_move(7, 9);
+        let msg = b.status_label().expect("armed");
+        assert!(msg.contains("Recording color"), "{msg}");
+        assert!(msg.contains("(7, 9)"), "{msg}");
+        b.on_left_click();
+        assert_eq!(b.take_color_point(), Some((7, 9)));
+        assert!(b.take_point().is_none());
         assert!(b.status_label().is_none());
     }
 }

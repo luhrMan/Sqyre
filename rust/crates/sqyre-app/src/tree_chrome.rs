@@ -75,6 +75,10 @@ pub struct RowInteraction {
     pub primary_clicked: bool,
     /// Label content rect (for execution highlight follow / scroll).
     pub row_rect: egui::Rect,
+    /// Union of the type icon + summary pills (and image-search thumbs). Tree DnD
+    /// should only start when the press origin is inside this rect; the rest of
+    /// the row is reserved for drag-to-scroll.
+    pub drag_handle_rect: egui::Rect,
 }
 
 impl Default for RowInteraction {
@@ -87,8 +91,20 @@ impl Default for RowInteraction {
             double_clicked: false,
             primary_clicked: false,
             row_rect: egui::Rect::NOTHING,
+            drag_handle_rect: egui::Rect::NOTHING,
         }
     }
+}
+
+fn extend_drag_handle(acc: &mut egui::Rect, part: egui::Rect) {
+    if part.width() <= 0.0 || part.height() <= 0.0 {
+        return;
+    }
+    *acc = if *acc == egui::Rect::NOTHING {
+        part
+    } else {
+        acc.union(part)
+    };
 }
 
 pub(crate) fn rgba_pub(c: [u8; 4]) -> Color32 {
@@ -124,10 +140,10 @@ fn icon_btn(ui: &mut egui::Ui, glyph: &str, tip: &str) -> egui::Response {
 }
 
 /// Paint the pastel type badge with a glyph.
-pub fn paint_action_icon(ui: &mut egui::Ui, action: &Action, is_dark: bool) {
+pub fn paint_action_icon(ui: &mut egui::Ui, action: &Action, is_dark: bool) -> egui::Response {
     let pastel = rgba(action_pastel_color(action.type_key(), is_dark));
     let size = Vec2::splat(ICON_SIZE);
-    let (rect, _resp) = ui.allocate_exact_size(size, Sense::hover());
+    let (rect, resp) = ui.allocate_exact_size(size, Sense::hover());
     ui.painter().rect(
         rect,
         5.0,
@@ -143,6 +159,7 @@ pub fn paint_action_icon(ui: &mut egui::Ui, action: &Action, is_dark: bool) {
         FontId::proportional(ICON_GLYPH_SIZE),
         contrast_fg(pastel),
     );
+    resp
 }
 
 pub(crate) fn paint_pill_pub(ui: &mut egui::Ui, text: &str, fill: Color32) -> egui::Response {
@@ -214,13 +231,11 @@ fn thumb_display_size(tex_w: f32, tex_h: f32) -> Vec2 {
     Vec2::new(out_w, out_h)
 }
 
-fn paint_color_swatch(ui: &mut egui::Ui, hex: &str) {
-    let Some(c) = parse_hex_color(hex) else {
-        return;
-    };
+fn paint_color_swatch(ui: &mut egui::Ui, hex: &str) -> Option<egui::Response> {
+    let c = parse_hex_color(hex)?;
     let fill = rgba(c);
     let size = Vec2::splat(16.0);
-    let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
+    let (rect, resp) = ui.allocate_exact_size(size, Sense::hover());
     ui.painter().rect(
         rect,
         3.0,
@@ -228,6 +243,7 @@ fn paint_color_swatch(ui: &mut egui::Ui, hex: &str) {
         Stroke::new(1.0, Color32::from_gray(80)),
         egui::StrokeKind::Outside,
     );
+    Some(resp)
 }
 
 fn paint_target_thumb(
@@ -269,28 +285,33 @@ fn paint_image_search_extras(
     catalog: &ProgramCatalog,
     icons: &mut IconCache,
     is_dark: bool,
+    drag_handle: &mut egui::Rect,
 ) -> bool {
     let ActionKind::ImageSearch { targets, .. } = &action.kind else {
         return false;
     };
     let mut tip_hovered = false;
     let pastel = rgba(action_pastel_color(action.type_key(), is_dark));
-    if paint_pill(ui, &format!("🔍 {}", targets.len()), pastel).hovered() {
+    let count_pill = paint_pill(ui, &format!("🔍 {}", targets.len()), pastel);
+    extend_drag_handle(drag_handle, count_pill.rect);
+    if count_pill.hovered() {
         tip_hovered = true;
     }
     for target in targets.iter().take(MAX_TARGET_THUMBS) {
-        if paint_target_thumb(ui, catalog, icons, target).hovered() {
+        let thumb = paint_target_thumb(ui, catalog, icons, target);
+        extend_drag_handle(drag_handle, thumb.rect);
+        if thumb.hovered() {
             tip_hovered = true;
         }
     }
     if targets.len() > MAX_TARGET_THUMBS {
-        if paint_pill(
+        let overflow = paint_pill(
             ui,
             &format!("+{}", image_search_overflow_count(targets.len())),
             pastel,
-        )
-        .hovered()
-        {
+        );
+        extend_drag_handle(drag_handle, overflow.rect);
+        if overflow.hovered() {
             tip_hovered = true;
         }
     }
@@ -355,6 +376,7 @@ pub fn paint_action_row(
     let row_w = ui.available_width().min(max_visible_w);
 
     let mut chrome_rect = egui::Rect::NOTHING;
+    let mut drag_handle_rect = egui::Rect::NOTHING;
     let row = ui.allocate_ui_with_layout(
         Vec2::new(row_w, row_h),
         egui::Layout::right_to_left(egui::Align::Center),
@@ -391,20 +413,34 @@ pub fn paint_action_row(
                 );
                 content.set_clip_rect(content_rect.intersect(ui.clip_rect()));
                 content.spacing_mut().item_spacing.x = spacing;
-                paint_action_icon(&mut content, action, is_dark);
+                extend_drag_handle(
+                    &mut drag_handle_rect,
+                    paint_action_icon(&mut content, action, is_dark).rect,
+                );
 
                 for pill in action.tree_summary_pills() {
-                    if paint_summary_pill(&mut content, action, &pill, known_vars, is_dark).hovered()
-                    {
+                    let resp =
+                        paint_summary_pill(&mut content, action, &pill, known_vars, is_dark);
+                    extend_drag_handle(&mut drag_handle_rect, resp.rect);
+                    if resp.hovered() {
                         tip_hovered = true;
                     }
                 }
 
                 if let ActionKind::FindPixel { target_color, .. } = &action.kind {
-                    paint_color_swatch(&mut content, target_color);
+                    if let Some(swatch) = paint_color_swatch(&mut content, target_color) {
+                        extend_drag_handle(&mut drag_handle_rect, swatch.rect);
+                    }
                 }
                 if matches!(action.kind, ActionKind::ImageSearch { .. })
-                    && paint_image_search_extras(&mut content, action, catalog, icons, is_dark)
+                    && paint_image_search_extras(
+                        &mut content,
+                        action,
+                        catalog,
+                        icons,
+                        is_dark,
+                        &mut drag_handle_rect,
+                    )
                 {
                     tip_hovered = true;
                 }
@@ -458,6 +494,7 @@ pub fn paint_action_row(
         double_clicked,
         primary_clicked,
         row_rect: row.response.rect,
+        drag_handle_rect,
     }
 }
 
@@ -596,6 +633,45 @@ mod tests {
                 RowHighlight::None,
             );
             assert_eq!(result.action, RowAction::None);
+        });
+    }
+
+    #[test]
+    fn paint_action_row_drag_handle_is_icon_and_pills_only() {
+        with_ui(|ui| {
+            let action = Action {
+                id: ActionId::new(),
+                kind: ActionKind::Wait {
+                    time: ScalarValue::Int(100),
+                },
+            };
+            let catalog = ProgramCatalog::default();
+            let mut icons = IconCache::new();
+            // Wide row so empty space exists past the pills.
+            let wide = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(400.0, 40.0));
+            ui.scope_builder(egui::UiBuilder::new().max_rect(wide), |ui| {
+                ui.set_clip_rect(wide);
+                let result = paint_action_row(
+                    ui,
+                    &action,
+                    &catalog,
+                    &mut icons,
+                    &HashSet::new(),
+                    false,
+                    RowHighlight::None,
+                );
+                assert!(
+                    result.drag_handle_rect.width() > 0.0 && result.drag_handle_rect.height() > 0.0,
+                    "expected icon/pill drag handle, got {:?}",
+                    result.drag_handle_rect
+                );
+                assert!(
+                    result.drag_handle_rect.width() < result.row_rect.width() - 40.0,
+                    "drag handle should leave empty row space for scroll (handle {} vs row {})",
+                    result.drag_handle_rect.width(),
+                    result.row_rect.width()
+                );
+            });
         });
     }
 

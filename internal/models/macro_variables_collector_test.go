@@ -10,8 +10,8 @@ func TestCollectDefinedVariableNames_fromActions(t *testing.T) {
 	m := NewMacro("t", 0, nil)
 	m.Root = actions.NewLoop(1, "root", []actions.ActionInterface{
 		actions.NewSetVariable("counter", 0),
-		actions.NewCalculate("counter + 1", "result"),
-		actions.NewImageSearch("search", nil, nil, "", 1, 1, 0.95, 5),
+		actions.NewSetVariable("result", "counter + 1"),
+		actions.NewImageSearch("search", nil, nil, "", 0.95, 5),
 	})
 
 	names := CollectDefinedVariableNames(m)

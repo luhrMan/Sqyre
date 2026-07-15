@@ -1,6 +1,6 @@
 //! Sqyre brand theme — mirrors Go `ui/theme.go` (dark + Sqyre yellow accents).
 
-use eframe::egui::{self, Color32, CornerRadius, Stroke, Visuals};
+use eframe::egui::{self, Color32, CornerRadius, Pos2, Sense, Stroke, Vec2, Visuals};
 
 /// Sqyre gold/yellow primary (`#dc9d2e`), same as Go `sqyrePrimary`.
 pub const PRIMARY: Color32 = Color32::from_rgb(0xdc, 0x9d, 0x2e);
@@ -74,6 +74,58 @@ pub fn record_icon_button(ui: &mut egui::Ui, tip: &str, enabled: bool) -> egui::
         egui::Button::new(egui::RichText::new("●").size(16.0).color(Color32::RED)),
     )
     .on_hover_text(tip)
+}
+
+/// Vertical up↔down switch for Click/Key button state (`true` = down).
+///
+/// Top of the track is up; bottom is down. Click toggles; click a half to set.
+pub fn up_down_toggle(ui: &mut egui::Ui, down: &mut bool) -> egui::Response {
+    const TRACK_W: f32 = 18.0;
+    const TRACK_H: f32 = 36.0;
+    const PAD: f32 = 2.0;
+
+    let desired = Vec2::new(TRACK_W, TRACK_H);
+    let (rect, mut response) = ui.allocate_exact_size(desired, Sense::click());
+
+    if response.clicked() {
+        if let Some(pos) = response.interact_pointer_pos() {
+            *down = pos.y > rect.center().y;
+        } else {
+            *down = !*down;
+        }
+        response.mark_changed();
+    }
+
+    let visuals = ui.style().interact(&response);
+    let track_fill = if *down {
+        PRIMARY
+    } else {
+        visuals.bg_fill
+    };
+    let painter = ui.painter();
+    let rounding = CornerRadius::same((TRACK_W / 2.0) as u8);
+    painter.rect_filled(rect, rounding, track_fill);
+    painter.rect_stroke(
+        rect,
+        rounding,
+        Stroke::new(1.0, visuals.bg_stroke.color),
+        egui::StrokeKind::Inside,
+    );
+
+    let knob_d = TRACK_W - PAD * 2.0;
+    let knob_x = rect.center().x;
+    let knob_y = if *down {
+        rect.bottom() - PAD - knob_d / 2.0
+    } else {
+        rect.top() + PAD + knob_d / 2.0
+    };
+    painter.circle_filled(
+        Pos2::new(knob_x, knob_y),
+        knob_d / 2.0,
+        visuals.fg_stroke.color,
+    );
+
+    response.on_hover_text(if *down { "Down" } else { "Up" })
 }
 
 #[cfg(test)]
