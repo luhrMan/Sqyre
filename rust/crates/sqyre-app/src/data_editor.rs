@@ -3,6 +3,7 @@
 use crate::collection_capture::capture_and_save_collection_image;
 use crate::icon_cache::IconCache;
 use crate::icon_variants::{self, AddVariantError};
+use crate::image_view::{self, ImageViewTransform};
 use crate::preview_tooltip::{PreviewKind, PreviewTooltipCache};
 use crate::theme;
 use crate::var_pills;
@@ -97,6 +98,10 @@ pub struct DataEditor {
     confirm: Option<PendingConfirm>,
     /// After New Point/Search Area: auto-arm record and persist on capture.
     save_after_record: bool,
+    /// Zoom/pan for the collections-tab image preview.
+    collection_preview: ImageViewTransform,
+    /// `(program, collection)` last shown; reset transform when this changes.
+    collection_preview_key: Option<(String, String)>,
 }
 
 impl Default for DataEditor {
@@ -135,6 +140,8 @@ impl Default for DataEditor {
             status_error: false,
             confirm: None,
             save_after_record: false,
+            collection_preview: ImageViewTransform::default(),
+            collection_preview_key: None,
         }
     }
 }
@@ -1276,15 +1283,20 @@ impl DataEditor {
                     let path = catalog.collection_image_path(&prog, &col_name);
                     let rows = parse_i32(&self.form_rows).unwrap_or(1).max(1);
                     let cols = parse_i32(&self.form_cols).unwrap_or(1).max(1);
+                    let key = (prog.clone(), col_name.clone());
+                    if self.collection_preview_key.as_ref() != Some(&key) {
+                        self.collection_preview.reset();
+                        self.collection_preview_key = Some(key);
+                    }
                     let mut replace = false;
-                    paint_disk_preview(
+                    paint_zoomable_collection_preview(
                         ui,
                         icons,
-                        Some(path.as_path()),
-                        None,
-                        "Collection image",
-                        Some((rows, cols)),
-                        Some(&mut replace),
+                        path.as_path(),
+                        rows,
+                        cols,
+                        &mut self.collection_preview,
+                        &mut replace,
                     );
                     if replace {
                         let col = ProgramCollection {
@@ -1296,6 +1308,7 @@ impl DataEditor {
                         match capture_and_save_collection_image(catalog, &prog, &col) {
                             Ok(()) => {
                                 icons.invalidate_path(&path);
+                                self.collection_preview.reset();
                                 self.set_ok("Replaced collection image.");
                             }
                             Err(e) => self.set_err(e),
@@ -2774,6 +2787,92 @@ fn paint_disk_preview(
     }
 }
 
+/// Collection-tab preview with wheel zoom / drag pan (Go `CollectionGridView` in editor).
+fn paint_zoomable_collection_preview(
+    ui: &mut egui::Ui,
+    icons: &mut IconCache,
+    path: &std::path::Path,
+    rows: i32,
+    cols: i32,
+    view: &mut ImageViewTransform,
+    replace_clicked: &mut bool,
+) {
+    ui.add_space(8.0);
+    ui.separator();
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new("Collection image").strong());
+        if ui
+            .add(egui::Button::new(egui::RichText::new("↻").size(14.0)).small())
+            .on_hover_text("Refresh")
+            .clicked()
+        {
+            icons.invalidate_path(path);
+        }
+        if ui.button("Replace Image").clicked() {
+            *replace_clicked = true;
+        }
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if ui
+                .add_enabled(view.needs_reset_button(), egui::Button::new("Reset view"))
+                .on_hover_text("Fit image in viewport")
+                .clicked()
+            {
+                view.reset();
+            }
+            if view.zoom != 1.0 {
+                ui.weak(format!("{:.0}%", view.zoom * 100.0));
+            }
+        });
+    });
+    ui.weak("Scroll to zoom; drag to pan when zoomed.");
+
+    let tex = icons.for_path(ui.ctx(), path);
+    let avail = ui.available_width().min(520.0);
+    let image_size = match &tex {
+        Some(t) => {
+            let [tw, th] = t.size();
+            egui::vec2(tw as f32, th as f32)
+        }
+        None => egui::vec2(avail, avail * 0.75),
+    };
+    let fit = fit_panel(image_size.x, image_size.y);
+    let scale = (avail / fit.x).min(1.0);
+    let desired = egui::vec2((fit.x * scale).max(160.0), (fit.y * scale).max(120.0));
+    let (viewport, resp) =
+        ui.allocate_exact_size(desired, egui::Sense::click_and_drag());
+
+    image_view::handle_scroll_zoom(ui, viewport, image_size, view, resp.hovered());
+    let content =
+        image_view::image_content_rect(viewport, image_size, view.zoom, view.pan);
+
+    {
+        let painter = ui.painter_at(viewport);
+        if let Some(tex) = &tex {
+            painter.image(
+                tex.id(),
+                content,
+                egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                egui::Color32::WHITE,
+            );
+        } else {
+            painter.rect_filled(viewport, 0.0, egui::Color32::from_gray(40));
+            painter.text(
+                viewport.center(),
+                egui::Align2::CENTER_CENTER,
+                "No image on disk",
+                egui::FontId::proportional(14.0),
+                egui::Color32::LIGHT_GRAY,
+            );
+        }
+        paint_grid_overlay_painter(&painter, content, rows, cols);
+    }
+    let _ = image_view::handle_pan_drag(&resp, viewport, image_size, view);
+
+    if path.is_file() {
+        ui.weak(path.display().to_string());
+    }
+}
+
 fn show_file_hover(
     ui: &mut egui::Ui,
     response: &egui::Response,
@@ -2809,10 +2908,13 @@ fn fit_panel(w: f32, h: f32) -> egui::Vec2 {
 }
 
 fn paint_grid_overlay(ui: &mut egui::Ui, rect: egui::Rect, rows: i32, cols: i32) {
+    paint_grid_overlay_painter(ui.painter(), rect, rows, cols);
+}
+
+fn paint_grid_overlay_painter(painter: &egui::Painter, rect: egui::Rect, rows: i32, cols: i32) {
     let rows = rows.max(1) as f32;
     let cols = cols.max(1) as f32;
     let stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(255, 80, 80));
-    let painter = ui.painter();
     for i in 1..rows as i32 {
         let y = rect.top() + rect.height() * (i as f32) / rows;
         painter.hline(rect.x_range(), y, stroke);

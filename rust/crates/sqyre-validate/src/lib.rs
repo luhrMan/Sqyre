@@ -258,6 +258,14 @@ pub fn validate_set_variable_value(text: &str, macro_: Option<&Macro>) -> EntryV
     v
 }
 
+/// Warning-only check for `${variable}` references (Go `ValidateVariableReferences`).
+pub fn validate_variable_references(text: &str, macro_: Option<&Macro>) -> EntryValidation {
+    EntryValidation {
+        warning: unknown_variable_warning(text, macro_),
+        error: String::new(),
+    }
+}
+
 /// Numeric field: empty, literal number, or valid arithmetic
 /// (Go `ValidateNumericExpression`).
 pub fn validate_numeric_expression(text: &str, macro_: Option<&Macro>) -> EntryValidation {
@@ -517,5 +525,23 @@ mod tests {
         assert!(!validate_numeric_expression("1+2", None).blocks_submit());
         assert!(validate_numeric_expression("1 + ", None).blocks_submit());
         assert!(!validate_numeric_expression("${x}", None).blocks_submit());
+    }
+
+    #[test]
+    fn validate_variable_references_warns_only() {
+        let mut m = Macro::new("t", 0, vec![]);
+        m.variable_decls.push(VariableDecl {
+            name: "x".into(),
+            type_: VariableType::Number,
+            initial_value: "5".into(),
+            description: String::new(),
+        });
+        m.init_runtime_variables();
+        let ok = validate_variable_references("${x}", Some(&m));
+        assert!(!ok.blocks_submit());
+        assert!(ok.warning.is_empty());
+        let warn = validate_variable_references("${missing}", Some(&m));
+        assert!(!warn.blocks_submit());
+        assert!(!warn.warning.is_empty());
     }
 }

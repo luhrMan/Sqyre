@@ -11,6 +11,7 @@ mod file_dialogs;
 mod hotkey_record;
 mod icon_cache;
 mod icon_variants;
+mod image_view;
 mod key_record;
 mod macro_meta;
 mod pickers;
