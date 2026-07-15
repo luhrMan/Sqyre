@@ -32,7 +32,7 @@ Update boxes/status when you land or delete work. Keep notes short.
 | varref | ✅ | cutover pending |
 | domain models (+ While, NavigateSelect, NavigateKey) | ✅ (+Rust-ahead) | cutover pending |
 | serialize (YAML codecs) | ✅ | cutover pending |
-| validate | 🟡 | needs work |
+| validate | ✅ | cutover pending |
 | persist / config / settings | 🟡 | needs work |
 | match (PureCV) | ✅ | cutover pending |
 | vision / OCR | ✅ | cutover pending |
@@ -54,18 +54,20 @@ Update boxes/status when you land or delete work. Keep notes short.
 
 ### Domain models
 - [x] Programs, macros, variables, coords, collections — ✅ cutover pending — `sqyre-domain` ↔ `internal/models` (+ `internal/macro` resolve helpers)
-- [x] 19 Go action kinds in Rust — ✅ cutover pending
+- [x] 19 Go action kinds in Rust (+ `Calculate` merged into `Set`) — ✅ cutover pending — 21 kinds total (`While` / `NavigateSelect` / `NavigateKey` Rust-ahead)
+- [x] Expression eval + Set value resolve — ✅ cutover pending — `domain/expr.rs` + `domain/set_value.rs` (moved out of executor)
 - [x] Rust-ahead: `While`, `NavigateSelect` (+ `NavigateKey` branches) — ✅ in Rust; **absent from Go** (intentional; no Go to delete)
 - [x] Known-variable set / collect (decls, bindings, ImageSearch + ForEachRow builtins) — ✅ cutover pending — `domain/variables.rs`
 - [ ] Builtin/runtime variable resolve parity vs `internal/macro` (monitor builtins, edge cases) — 🟡 needs work
 
 ### Serialize
 - [x] Action + macro YAML codecs — ✅ cutover pending — `sqyre-serialize` ↔ `internal/models/serialize`
-  - Notes: loads same `~/.sqyre/db.yaml`; includes `while` / `navigateselect` / `navigatekey`. ImageSearch dropped unused `rowsplit`/`colsplit`.
+  - Notes: loads same `~/.sqyre/db.yaml`; includes `while` / `navigateselect` / `navigatekey`. Legacy `calculate` YAML decodes as `setvariable`. ImageSearch dropped unused `rowsplit`/`colsplit`.
 
 ### Validate
 - [x] Entity / variable names, search-area bounds, item grid — ✅ cutover pending — `sqyre-validate` ↔ `internal/validation`
-- [ ] Full `ValidateAction` parity (only Key / Calculate / SetVariable / Pause today + any Go extras) — 🟡 needs work — file notes “subset of Go”
+- [x] `ValidateAction` parity (bindings + Key / Set / Pause + expression structure) — ✅ cutover pending — `validate_action` + entry validators ↔ `ValidateAction` / `macro.Validate*`
+  - Notes: `EntryValidation` / unknown-var warnings in crate; UI VarEntry live warnings still partial.
 
 ### Persist / config
 - [x] `db.yaml` Database load/save — ✅ cutover pending — `sqyre-persist` ↔ `internal/models/repositories` + serialize
@@ -82,7 +84,7 @@ Update boxes/status when you land or delete work. Keep notes short.
 ### Executor / automation
 - [x] Injected backends (`AutomationBackend`, capturer, matcher, focuser, OCR) — ✅ cutover pending — `sqyre-executor` ↔ `internal/services`
 - [x] Flow: loop / while / break / continue / conditional / runmacro / foreach — ✅ cutover pending
-- [x] Mouse/keyboard/type/wait/pause/set/calc/save var / focus / image / pixel / OCR — ✅ cutover pending (Linux)
+- [x] Mouse/keyboard/type/wait/pause/set/save var / focus / image / pixel / OCR — ✅ cutover pending (Linux); Set evaluates `${refs}` and arithmetic expressions
 - [x] `NavigateSelect` execute (+ `NavigateKey` chord branches) — ✅ `executor/navigate.rs` (grid via `CoordinateResolver::collection_grid`)
 - [ ] Cross-check delay/retry/highlight/log parity vs Go executor_* — 🟡 needs work
 
@@ -92,7 +94,8 @@ Update boxes/status when you land or delete work. Keep notes short.
 
 ### Capture / focus
 - [x] Linux X11 capture + focus — ✅ cutover pending — `sqyre-capture` ↔ `internal/capture` + `screen` + window_*
-- [ ] Non-Linux capturer / focuser — ❌ (`NullCapturer` / focus error) needs work
+- [x] X11 selection outline (recording HUD rects) — ✅ cutover pending — `SelectionOutline` + app `recording_overlay` ↔ `ui/recording`
+- [ ] Non-Linux capturer / focuser / outline — ❌ (`NullCapturer` / stub outline / focus error) needs work
 - [ ] Wayland capture/overlays — ❌ / 🟡 (Go already limited) needs work
 
 ### Hotkeys
@@ -120,8 +123,8 @@ Rust boots via `cargo run -p sqyre-app` → `./rust/target/debug/sqyre`. Go boot
 | Action tooltips view/edit | `ui/macro/action_tooltip_*` | `action_tooltip/` (+ `sections`, NavigateSelect/Key editors) | 🟡 | needs work |
 | Theme (dark + Sqyre gold) | `ui/theme.go` | `theme.rs` | 🟡 | needs work |
 | Native file/folder dialogs | Fyne / OS pickers | `file_dialogs.rs` (rfd + Tokio enter) | 🟡 | needs work |
-| Var pills / VarEntry | `ui/custom_widgets` | `var_pills.rs` | 🟡 | needs work |
-| Entity pickers / recording overlays | `ui` pickers, `ui/recording` | `pickers`, capture overlays, screen-click HUD, `hotkey_record` | 🟡 | needs work |
+| Var pills / VarEntry | `ui/custom_widgets` | `var_pills.rs` (+ validate helpers) | 🟡 | needs work |
+| Entity pickers / recording overlays | `ui` pickers, `ui/recording` | `pickers`, X11 `SelectionOutline` + `recording_overlay`, `hotkey_record` | 🟡 | needs work |
 | Preview tooltips | custom_widgets / action_preview | `preview_tooltip.rs` | 🟡 | needs work |
 | Data editor (programs/items/masks/collections/coords + variants) | `ui/editor` | `data_editor.rs` + `icon_variants.rs` | 🟡 | needs work |
 | Settings panel (prefs, paths, fonts, colors) | `ui/settings.go` | `settings.rs` + `persist/settings.rs` + theme | 🟡 | needs work |
@@ -150,7 +153,7 @@ Rust boots via `cargo run -p sqyre-app` → `./rust/target/debug/sqyre`. Go boot
 - [x] Macro hotkey launch works
 - [ ] Data editor + settings + recording pickers usable for daily macros
 - [x] NavigateSelect implemented (with NavigateKey subaction branches)
-- [ ] ValidateAction parity (or Go checks explicitly dropped)
+- [x] ValidateAction parity (or Go checks explicitly dropped)
 - [ ] Real-user smoke: load existing `db.yaml`, run macros, Esc/failsafe
 - [ ] Then delete Go packages/files that Rust owns; mark 🔪 here
 
@@ -159,8 +162,7 @@ Rust boots via `cargo run -p sqyre-app` → `./rust/target/debug/sqyre`. Go boot
 ## Top remaining priorities
 
 1. **UI daily-driver polish** — data editor, settings restart, variables panel, add-action UX
-2. **ValidateAction full parity**
-3. **Cutover** — switch default binary; only then 🔪 Go
+2. **Cutover** — switch default binary; only then 🔪 Go
 
 ---
 

@@ -409,13 +409,6 @@ impl ActionKind {
                 params.push(DisplayParam::new("Variable", variable_name.as_str()));
                 params.push(DisplayParam::new("Value", yaml_display(value)));
             }
-            Self::Calculate {
-                expression,
-                output_var,
-            } => {
-                params.push(DisplayParam::new("Expression", expression.as_str()));
-                params.push(DisplayParam::new("Output", output_var.as_str()));
-            }
             Self::SaveVariable {
                 variable_name,
                 destination,
@@ -501,12 +494,6 @@ impl ActionKind {
                 vec![VariableBinding {
                     name: variable_name.clone(),
                     role: "value".into(),
-                }]
-            }
-            Self::Calculate { output_var, .. } if !output_var.is_empty() => {
-                vec![VariableBinding {
-                    name: output_var.clone(),
-                    role: "output".into(),
                 }]
             }
             Self::ImageSearch { coords, .. } | Self::FindPixel { coords, .. } => {
@@ -711,7 +698,7 @@ fn action_color_category(action_type: &str) -> &'static str {
     match action_type {
         "move" | "click" | "key" | "type" => "Mouse & Keyboard",
         "imagesearch" | "ocr" | "findpixel" => "Detection",
-        "setvariable" | "calculate" | "foreachrow" | "savevariable" => "Variables",
+        "setvariable" | "foreachrow" | "savevariable" => "Variables",
         "wait" | "pause" | "focuswindow" | "runmacro" | "loop" | "while" | "conditional"
         | "break" | "continue" | "navigateselect" | "navigatekey" => "Miscellaneous",
         _ => "",
@@ -750,7 +737,6 @@ pub fn action_icon_glyph(action: &Action) -> &'static str {
         ActionKind::Break => "⏹",
         ActionKind::Continue => "⏭",
         ActionKind::SetVariable { .. } => "x",
-        ActionKind::Calculate { .. } => "Σ",
         ActionKind::SaveVariable { .. } => "💾",
         ActionKind::ForEachRow { .. } => "☰",
         ActionKind::Ocr { .. } => "🔤",
@@ -985,17 +971,17 @@ mod tests {
     }
 
     #[test]
-    fn calculate_binding_uses_output_role() {
+    fn set_binding_uses_value_role() {
         let a = Action {
             id: ActionId::new(),
-            kind: ActionKind::Calculate {
-                expression: "1+2".into(),
-                output_var: "sum".into(),
+            kind: ActionKind::SetVariable {
+                variable_name: "sum".into(),
+                value: serde_yaml::Value::String("1+2".into()),
             },
         };
         let pills = a.tree_summary_pills();
         assert!(pills.iter().any(|p| {
-            p.prefix.as_deref() == Some("Output") && p.text == "sum"
+            p.prefix.as_deref() == Some("Variable") && p.text == "sum"
         }));
     }
 
@@ -1046,16 +1032,9 @@ mod tests {
             (
                 ActionKind::SetVariable {
                     variable_name: "a".into(),
-                    value: serde_yaml::Value::Null,
+                    value: serde_yaml::Value::String("1+2".into()),
                 },
                 "x",
-            ),
-            (
-                ActionKind::Calculate {
-                    expression: String::new(),
-                    output_var: String::new(),
-                },
-                "Σ",
             ),
             (
                 ActionKind::ForEachRow {

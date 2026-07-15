@@ -165,18 +165,7 @@ pub fn paint_edit_fields(
                 var_pills::var_name_text_edit(ui, "Variable", variable_name, known_vars, is_dark, 160.0);
             });
             tip_section(ui, |ui| {
-                yaml_value_field(ui, "Value (YAML)", value, known_vars, is_dark);
-            });
-        }
-        ActionKind::Calculate {
-            expression,
-            output_var,
-        } => {
-            tip_section(ui, |ui| {
-                var_pills::var_ref_text_edit(ui, "Expression", expression, known_vars, is_dark, 220.0);
-            });
-            tip_wrapped_section(ui, |ui| {
-                var_pills::var_name_text_edit(ui, "Output variable", output_var, known_vars, is_dark, 160.0);
+                yaml_value_field(ui, "Value (text, ${ref}, or expression)", value, known_vars, is_dark);
             });
         }
         ActionKind::SaveVariable {

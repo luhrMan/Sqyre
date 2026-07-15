@@ -111,6 +111,21 @@ impl ScreenClickBridge {
         }
     }
 
+    /// Selection rectangle for the recording overlay (Go `setSelectionRect`).
+    ///
+    /// Only after the first corner click — before that Go clears the rect so nothing
+    /// is drawn while waiting for the first corner.
+    pub fn peek_search_area_selection(&self) -> Option<(i32, i32, i32, i32)> {
+        let g = self.inner.lock();
+        let (x, y) = g.last_pos;
+        match &g.armed {
+            Some(Armed::SearchArea {
+                first: Some((lx, ty)),
+            }) => Some(normalize_rect(*lx, *ty, x, y)),
+            _ => None,
+        }
+    }
+
     /// Hotkey thread: track pointer.
     pub fn on_mouse_move(&self, x: i32, y: i32) {
         self.inner.lock().last_pos = (x, y);
@@ -208,10 +223,12 @@ mod tests {
         b.arm_search_area();
         b.on_mouse_move(100, 200);
         assert_eq!(b.peek_search_area_draft(), Some((100, 200, 100, 200)));
+        assert!(b.peek_search_area_selection().is_none());
 
         b.on_left_click();
         b.on_mouse_move(50, 250);
         assert_eq!(b.peek_search_area_draft(), Some((50, 200, 100, 250)));
+        assert_eq!(b.peek_search_area_selection(), Some((50, 200, 100, 250)));
     }
 
     #[test]

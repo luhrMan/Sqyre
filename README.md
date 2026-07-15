@@ -65,7 +65,8 @@ Assets under `docs/images/` are generated from UI tests (`./scripts/generate-doc
 
 | Goal | Command |
 |------|---------|
-| Linux dev binary | `make linux` → `./bin/sqyre` |
+| Linux dev binary (Go) | `make linux` → `./bin/sqyre` |
+| Linux Rust rewrite | `make rust` → `./bin/sqyre-rust` |
 | Windows exe | `make windows` → `bin/windows-amd64/` |
 | AppImage | `make appimage` |
 | Tesseract data | `make tessdata` |

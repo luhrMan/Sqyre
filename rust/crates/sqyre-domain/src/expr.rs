@@ -2,9 +2,10 @@
 //!
 //! Hand-rolled recursive-descent parser — avoids `meval` → ancient `nom`.
 
-use crate::error::{ExecError, Result};
-use sqyre_domain::{Macro, ScalarValue};
+use crate::{Macro, ScalarValue};
 use std::f64::consts::{E, PI};
+
+type Result<T> = std::result::Result<T, String>;
 
 /// Evaluate a math expression after `${var}` substitution.
 /// Supports `+ - * / ^`, unary `+/-`, parentheses, functions (`sqrt`, `abs`,
@@ -26,7 +27,7 @@ fn resolve_text_for_expr(text: &str, macro_: &Macro) -> Result<String> {
             continue;
         }
         let val = macro_.variables.get(&seg.name).ok_or_else(|| {
-            ExecError::Message(format!("unresolved variable ${{{}}}", seg.name))
+            format!("unresolved variable ${{{}}}", seg.name)
         })?;
         out.push_str(&val.as_display());
     }
@@ -36,7 +37,7 @@ fn resolve_text_for_expr(text: &str, macro_: &Macro) -> Result<String> {
 fn evaluate_numeric(expr: &str) -> Result<f64> {
     let mut expr = expr.trim().to_string();
     if expr.is_empty() {
-        return Err(ExecError::Message("empty expression".into()));
+        return Err("empty expression".into());
     }
     expr = expr.replace("~pi", &format!("{PI}"));
     expr = expr.replace("~e", &format!("{E}"));
@@ -45,10 +46,10 @@ fn evaluate_numeric(expr: &str) -> Result<f64> {
     let val = p.parse_expr()?;
     p.skip_ws();
     if p.pos < p.bytes.len() {
-        return Err(ExecError::Message(format!(
+        return Err(format!(
             "failed to evaluate expression: unexpected input at {:?}",
             &expr[p.pos..]
-        )));
+        ));
     }
     Ok(val)
 }
@@ -96,10 +97,11 @@ impl<'a> Parser<'a> {
     fn expect(&mut self, want: u8) -> Result<()> {
         match self.bump() {
             Some(c) if c == want => Ok(()),
-            other => Err(ExecError::Message(format!(
+            other => Err(format!(
                 "failed to evaluate expression: expected '{}', got {:?}",
-                want as char, other.map(|c| c as char)
-            ))),
+                want as char,
+                other.map(|c| c as char)
+            )),
         }
     }
 
@@ -180,10 +182,10 @@ impl<'a> Parser<'a> {
             }
             Some(b'0'..=b'9') | Some(b'.') => self.parse_number(),
             Some(b'a'..=b'z') | Some(b'A'..=b'Z') | Some(b'_') => self.parse_call_or_ident(),
-            other => Err(ExecError::Message(format!(
+            other => Err(format!(
                 "failed to evaluate expression: unexpected {:?}",
                 other.map(|c| c as char)
-            ))),
+            )),
         }
     }
 
@@ -209,13 +211,10 @@ impl<'a> Parser<'a> {
                 self.pos += 1;
             }
         }
-        let s = std::str::from_utf8(&self.bytes[start..self.pos]).map_err(|_| {
-            ExecError::Message("failed to evaluate expression: invalid number".into())
-        })?;
+        let s = std::str::from_utf8(&self.bytes[start..self.pos])
+            .map_err(|_| "failed to evaluate expression: invalid number".to_string())?;
         s.parse::<f64>().map_err(|_| {
-            ExecError::Message(format!(
-                "failed to evaluate expression: invalid number {s:?}"
-            ))
+            format!("failed to evaluate expression: invalid number {s:?}")
         })
     }
 
@@ -228,13 +227,13 @@ impl<'a> Parser<'a> {
             self.pos += 1;
         }
         let name = std::str::from_utf8(&self.bytes[start..self.pos])
-            .map_err(|_| ExecError::Message("failed to evaluate expression: bad ident".into()))?
+            .map_err(|_| "failed to evaluate expression: bad ident".to_string())?
             .to_ascii_lowercase();
 
         if self.peek() != Some(b'(') {
-            return Err(ExecError::Message(format!(
+            return Err(format!(
                 "failed to evaluate expression: unknown identifier {name:?}"
-            )));
+            ));
         }
         self.bump(); // '('
         let arg = self.parse_expr()?;
@@ -256,9 +255,9 @@ fn apply_fn(name: &str, x: f64) -> Result<f64> {
         "tan" => x.tan(),
         "ln" => x.ln(),
         _ => {
-            return Err(ExecError::Message(format!(
+            return Err(format!(
                 "failed to evaluate expression: unknown function {name:?}"
-            )));
+            ));
         }
     };
     Ok(v)
@@ -267,7 +266,6 @@ fn apply_fn(name: &str, x: f64) -> Result<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqyre_domain::Macro;
 
     #[test]
     fn evaluates_basic_and_functions() {

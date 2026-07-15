@@ -9,7 +9,7 @@ use crate::tree_chrome::{self, RowInteraction};
 use eframe::egui::{self, Key, Order, Vec2};
 use sqyre_domain::{
     action_pastel_color, action_type_description, action_type_label, split_display_params, Action,
-    ActionId, ActionKind,
+    ActionId, ActionKind, Macro,
 };
 use sqyre_persist::ProgramCatalog;
 use sqyre_validate::validate_action;
@@ -87,6 +87,7 @@ impl TooltipState {
     pub fn try_save_validated(
         &mut self,
         root: &mut Action,
+        macro_: Option<&Macro>,
         mut before_mutate: impl FnMut(&Action),
     ) -> bool {
         let (action_id, draft) = match self {
@@ -110,7 +111,7 @@ impl TooltipState {
         }
         candidate.id = live.id;
 
-        if let Err(e) = validate_action(&candidate) {
+        if let Err(e) = validate_action(&candidate, macro_) {
             if let Self::Edit { error, .. } = self {
                 *error = Some(e.to_string());
             }
@@ -219,7 +220,7 @@ pub fn end_hover_pass(state: &mut TooltipState, any_view_hover: bool) {
 pub fn show(
     state: &mut TooltipState,
     ctx: &egui::Context,
-    root: &mut Action,
+    macro_: &mut Macro,
     catalog: &ProgramCatalog,
     icons: &mut IconCache,
     previews: &mut crate::preview_tooltip::PreviewTooltipCache,
@@ -235,7 +236,7 @@ pub fn show(
     match state.clone() {
         TooltipState::Hidden => {}
         TooltipState::View { action_id } => {
-            let Some(action) = find_action(root, action_id).cloned() else {
+            let Some(action) = find_action(&macro_.root, action_id).cloned() else {
                 *state = TooltipState::Hidden;
                 return;
             };
@@ -245,7 +246,7 @@ pub fn show(
             show_edit_window(
                 state,
                 ctx,
-                root,
+                macro_,
                 catalog,
                 icons,
                 previews,
@@ -307,11 +308,15 @@ fn show_view_tip(
     } else {
         (egui::Align2::LEFT_TOP, pointer + Vec2::new(14.0, 14.0))
     };
+    // interactable(false): clicks pass through to the tree row underneath
+    // (Go view tooltip panel is non-tappable). Row chrome uses geometric
+    // pointer hits so selection still works when this layer covers the row.
     egui::Area::new(tip_id)
         .order(Order::Tooltip)
         .pivot(pivot)
         .fixed_pos(pos)
         .interactable(false)
+        .sense(egui::Sense::hover())
         .constrain(true)
         .show(ctx, |ui| {
             egui::Frame::popup(ui.style())
@@ -377,7 +382,7 @@ fn show_view_tip(
 fn show_edit_window(
     state: &mut TooltipState,
     ctx: &egui::Context,
-    root: &mut Action,
+    macro_: &mut Macro,
     catalog: &ProgramCatalog,
     icons: &mut IconCache,
     previews: &mut crate::preview_tooltip::PreviewTooltipCache,
@@ -499,7 +504,20 @@ fn show_edit_window(
         return;
     }
     if save {
-        let _ = state.try_save_validated(root, before_mutate);
+        // Snapshot for expression checks without conflicting with `&mut root`.
+        let snap = Macro {
+            name: macro_.name.clone(),
+            root: macro_.root.clone(),
+            global_delay: macro_.global_delay,
+            keyboard_delay: macro_.keyboard_delay,
+            mouse_delay: macro_.mouse_delay,
+            hotkey: macro_.hotkey.clone(),
+            hotkey_trigger: macro_.hotkey_trigger.clone(),
+            tags: macro_.tags.clone(),
+            variable_decls: macro_.variable_decls.clone(),
+            variables: macro_.variables.clone(),
+        };
+        let _ = state.try_save_validated(&mut macro_.root, Some(&snap), before_mutate);
     }
 }
 
@@ -577,7 +595,7 @@ mod tests {
                 time: ScalarValue::Int(250),
             };
         }
-        assert!(state.try_save_validated(&mut root, |_| {}));
+        assert!(state.try_save_validated(&mut root, None, |_| {}));
         assert!(matches!(state, TooltipState::View { action_id } if action_id == id));
         match &root.find_by_id(id).unwrap().kind {
             ActionKind::Wait { time } => assert_eq!(*time, ScalarValue::Int(250)),
@@ -626,7 +644,7 @@ mod tests {
                 state: true,
             };
         }
-        assert!(!state.try_save_validated(&mut root, |_| {}));
+        assert!(!state.try_save_validated(&mut root, None, |_| {}));
         assert!(matches!(
             state,
             TooltipState::Edit {

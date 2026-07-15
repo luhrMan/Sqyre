@@ -9,7 +9,7 @@ In-repo rewrite of Sqyre (egui + PureCV). Go under the repo root remains the dai
 | Crate | Role |
 |-------|------|
 | `sqyre-varref` | `${name}` / `{name}` grammar |
-| `sqyre-domain` | Macro + 22 action kinds |
+| `sqyre-domain` | Macro + 21 action kinds |
 | `sqyre-serialize` | YAML codecs (Go `ActionToMap` / `DecodeMacroFromMap`) |
 | `sqyre-validate` | Names / action save checks |
 | `sqyre-persist` | `~/.sqyre/db.yaml` + program catalog |
@@ -27,16 +27,26 @@ Requires **Rust ≥ 1.92** (egui 0.34 / PureCV). The slim `.devcontainer` pins `
 
 Linux automation/capture need X11 (`libx11-dev`, `libxtst-dev`).
 
+From the repo root:
+
 ```bash
-cd rust
+make rust            # ./bin/sqyre-rust (debug)
+make rust-release    # ./bin/sqyre-rust (release)
+make rust-test
+make rust-run        # cargo run -p sqyre-app; loads ~/.sqyre/db.yaml
+```
+
+Or from `rust/`:
+
+```bash
 cargo test
-cargo run -p sqyre-app   # host OS GUI; loads ~/.sqyre/db.yaml
+cargo run -p sqyre-app
 ```
 
 Do not expect X11 inside the container — build there, run the binary on the host.
 
-Host binary: `./rust/target/debug/sqyre` (or `./rust/target-phase2/debug/sqyre` after an alternate build). Esc stops a running macro; Esc+Ctrl+Shift exits (failsafe).
+Host binary: `./bin/sqyre-rust` after `make rust`, or `./rust/target/debug/sqyre` from cargo. Esc stops a running macro; Esc+Ctrl+Shift exits (failsafe).
 
-Still improving: ValidateAction parity, UI add-action picker, non-Linux platforms.
+Still improving: UI add-action picker, non-Linux platforms.
 
 OCR uses Tesseract (`leptess`). Override tessdata with `SQYRE_TESSDATA` if needed.

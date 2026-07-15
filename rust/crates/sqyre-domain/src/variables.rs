@@ -171,6 +171,10 @@ impl VariableStore {
     pub fn clear(&mut self) {
         self.entries.clear();
     }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&str, &ScalarValue)> {
+        self.entries.iter().map(|(n, v)| (n.as_str(), v))
+    }
 }
 
 #[cfg(test)]

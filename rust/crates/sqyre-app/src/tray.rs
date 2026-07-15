@@ -67,12 +67,7 @@ fn quit_app(ctx: &Context, quit_requested: &AtomicBool) {
 }
 
 fn load_tray_rgba(size: u32) -> Result<(Vec<u8>, u32, u32), String> {
-    let img = image::load_from_memory(crate::assets::APP_ICON_PNG)
-        .map_err(|e| format!("decode tray icon: {e}"))?
-        .resize(size, size, image::imageops::FilterType::Lanczos3)
-        .into_rgba8();
-    let (w, h) = img.dimensions();
-    Ok((img.into_raw(), w, h))
+    crate::assets::app_icon_rgba(size).ok_or_else(|| "rasterize tray icon from SVG".into())
 }
 
 #[cfg(target_os = "linux")]
@@ -226,7 +221,7 @@ fn install_inner(_ctx: Context) -> Result<SystemTray, String> {
 mod tests {
     #[test]
     fn tray_icon_rgba_loads() {
-        let (rgba, w, h) = super::load_tray_rgba(32).expect("tray png");
+        let (rgba, w, h) = super::load_tray_rgba(32).expect("tray svg");
         assert_eq!(w, 32);
         assert_eq!(h, 32);
         assert_eq!(rgba.len(), 32 * 32 * 4);

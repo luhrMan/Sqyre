@@ -1,18 +1,20 @@
 //! Nested variable-reference chips and unfocused entry overlays (Go VarEntry / VarNameEntry).
 
-use eframe::egui::{self, Color32, Sense, Vec2};
+use eframe::egui::{self, Color32, FontId, Sense, Stroke, Vec2};
 use sqyre_domain::{action_pastel_color, is_known_variable, nested_var_ref_color, SummaryPill};
 use sqyre_varref;
 use std::collections::HashSet;
+use std::sync::Arc;
 
 use crate::tree_chrome::{contrast_fg, rgba_pub};
 
 const PILL_FONT_SIZE: f32 = 12.0;
 const NESTED_MARGIN_X: i8 = 3;
-const NESTED_MARGIN_Y: i8 = 0;
+const NESTED_MARGIN_Y: i8 = 1;
 const NESTED_RADIUS: f32 = 4.0;
-const OUTER_MARGIN_X: i8 = 3;
-const OUTER_MARGIN_Y: i8 = 0;
+/// Outer display padding (matches Go `PillChrome` 4×2).
+const OUTER_MARGIN_X: i8 = 4;
+const OUTER_MARGIN_Y: i8 = 2;
 const OUTER_RADIUS: f32 = 5.0;
 
 fn nested_fill(unknown: bool, is_dark: bool) -> Color32 {
@@ -21,6 +23,54 @@ fn nested_fill(unknown: bool, is_dark: bool) -> Color32 {
     } else {
         rgba_pub(nested_var_ref_color(is_dark))
     }
+}
+
+/// Place galley so its ink (mesh bounds) is centered in `rect`.
+fn paint_galley_centered(
+    ui: &mut egui::Ui,
+    rect: egui::Rect,
+    galley: Arc<egui::Galley>,
+    fallback: Color32,
+) {
+    let pos = if galley.mesh_bounds.is_positive() {
+        rect.center() - galley.mesh_bounds.center().to_vec2()
+    } else {
+        egui::Align2::CENTER_CENTER
+            .anchor_size(rect.center(), galley.size())
+            .min
+    };
+    ui.painter().galley(pos, galley, fallback);
+}
+
+fn paint_text_chip(
+    ui: &mut egui::Ui,
+    text: &str,
+    fill: Color32,
+    radius: f32,
+    margin_x: i8,
+    margin_y: i8,
+    id_salt: impl std::hash::Hash,
+) -> egui::Response {
+    // allocate_exact_size (not Frame::show / Label) so text can be centered in the chrome.
+    let fg = contrast_fg(fill);
+    let font = FontId::proportional(PILL_FONT_SIZE);
+    let galley = ui.painter().layout_no_wrap(text.to_owned(), font, fg);
+    let pad = Vec2::new(margin_x as f32 * 2.0, margin_y as f32 * 2.0);
+    let size = galley.size() + pad;
+    let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
+    ui.painter()
+        .rect(rect, radius, fill, Stroke::NONE, egui::StrokeKind::Inside);
+    paint_galley_centered(ui, rect, galley, fg);
+    ui.interact(rect, ui.id().with(id_salt), Sense::hover())
+}
+
+/// Plain text segment (no chrome): sized to the galley and ink-centered so it
+/// aligns with nested chips under parent `Align::Center`.
+fn paint_plain_segment(ui: &mut egui::Ui, text: &str, color: Color32) {
+    let font = FontId::proportional(PILL_FONT_SIZE);
+    let galley = ui.painter().layout_no_wrap(text.to_owned(), font, color);
+    let (rect, _) = ui.allocate_exact_size(galley.size(), Sense::hover());
+    paint_galley_centered(ui, rect, galley, color);
 }
 
 /// Compact nested chip for a variable name (Go `NewNestedVariableRefPill`).
@@ -32,22 +82,14 @@ pub fn paint_nested_var_chip(
 ) -> egui::Response {
     let unknown = !is_known_variable(known, name);
     let fill = nested_fill(unknown, is_dark);
-    let fg = contrast_fg(fill);
-    let inner = egui::Frame::new()
-        .fill(fill)
-        .corner_radius(NESTED_RADIUS)
-        .inner_margin(egui::Margin::symmetric(NESTED_MARGIN_X, NESTED_MARGIN_Y))
-        .show(ui, |ui| {
-            ui.label(
-                egui::RichText::new(name.trim())
-                    .size(PILL_FONT_SIZE)
-                    .color(fg),
-            );
-        });
-    ui.interact(
-        inner.response.rect,
-        ui.id().with(("nested_var_chip", name)),
-        Sense::hover(),
+    paint_text_chip(
+        ui,
+        name.trim(),
+        fill,
+        NESTED_RADIUS,
+        NESTED_MARGIN_X,
+        NESTED_MARGIN_Y,
+        ("nested_var_chip", name),
     )
 }
 
@@ -68,27 +110,61 @@ pub fn paint_var_ref_content(
             if seg.is_ref {
                 paint_nested_var_chip(ui, &seg.name, known, is_dark);
             } else if !seg.text.is_empty() {
-                ui.label(
-                    egui::RichText::new(seg.text)
-                        .size(PILL_FONT_SIZE)
-                        .color(plain_fg),
-                );
+                paint_plain_segment(ui, &seg.text, plain_fg);
             }
         }
     });
 }
 
-fn outer_frame(ui: &mut egui::Ui, fill: Color32, add_contents: impl FnOnce(&mut egui::Ui)) -> egui::Response {
-    let inner = egui::Frame::new()
-        .fill(fill)
-        .corner_radius(OUTER_RADIUS)
-        .inner_margin(egui::Margin::symmetric(OUTER_MARGIN_X, OUTER_MARGIN_Y))
-        .show(ui, add_contents);
-    ui.interact(
-        inner.response.rect,
-        ui.id().with("outer_var_pill"),
-        Sense::hover(),
-    )
+fn measure_content_size(
+    ui: &mut egui::Ui,
+    mut add_contents: impl FnMut(&mut egui::Ui),
+) -> Vec2 {
+    let mut measure = ui.new_child(
+        egui::UiBuilder::new()
+            .id_salt("var_pill_measure")
+            .sizing_pass()
+            .invisible()
+            .max_rect(egui::Rect::from_min_size(
+                ui.next_widget_position(),
+                Vec2::new(ui.available_width().max(64.0), 1000.0),
+            ))
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+    );
+    add_contents(&mut measure);
+    measure.min_size()
+}
+
+fn outer_frame(
+    ui: &mut egui::Ui,
+    fill: Color32,
+    mut add_contents: impl FnMut(&mut egui::Ui),
+) -> egui::Response {
+    // Measure content, then allocate chrome via allocate_exact_size (Frame::show
+    // top-aligns and ignores parent Align::Center).
+    let content_size = measure_content_size(ui, &mut add_contents);
+    let margin = Vec2::new(OUTER_MARGIN_X as f32, OUTER_MARGIN_Y as f32);
+    let size = content_size + margin * 2.0;
+    let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
+    if fill.a() > 0 {
+        ui.painter().rect(
+            rect,
+            OUTER_RADIUS,
+            fill,
+            Stroke::NONE,
+            egui::StrokeKind::Inside,
+        );
+    }
+    // Center the content band in the chrome (symmetric padding).
+    let inner = egui::Rect::from_center_size(rect.center(), content_size);
+    let mut content = ui.new_child(
+        egui::UiBuilder::new()
+            .id_salt("var_pill_content")
+            .max_rect(inner)
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+    );
+    add_contents(&mut content);
+    ui.interact(rect, ui.id().with("outer_var_pill"), Sense::hover())
 }
 
 /// Outer action pastel pill wrapping segmented var-ref content (Go `NewDisplayValuePill`).
@@ -100,6 +176,18 @@ pub fn paint_value_pill(
     is_dark: bool,
 ) -> egui::Response {
     let fill = rgba_pub(action_pastel_color(action_type, is_dark));
+    // Plain text: single centered chip (avoids Label top-bias inside a composite frame).
+    if !sqyre_varref::contains(text) {
+        return paint_text_chip(
+            ui,
+            text,
+            fill,
+            OUTER_RADIUS,
+            OUTER_MARGIN_X,
+            OUTER_MARGIN_Y,
+            ("value_pill", text),
+        );
+    }
     let plain_fg = contrast_fg(fill);
     outer_frame(ui, fill, |ui| {
         paint_var_ref_content(ui, text, known, is_dark, plain_fg);
@@ -117,15 +205,12 @@ pub fn paint_variable_name_pill(
 ) -> egui::Response {
     let fill = rgba_pub(action_pastel_color(action_type, is_dark));
     let name = var_name.trim();
+    let fg = contrast_fg(fill);
     outer_frame(ui, fill, |ui| {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing = Vec2::new(2.0, 0.0);
             if !label.is_empty() {
-                ui.label(
-                    egui::RichText::new(format!("{label}: "))
-                        .size(PILL_FONT_SIZE)
-                        .color(contrast_fg(fill)),
-                );
+                paint_plain_segment(ui, &format!("{label}: "), fg);
             }
             if !name.is_empty() {
                 paint_nested_var_chip(ui, name, known, is_dark);
@@ -268,16 +353,6 @@ pub fn var_ref_multiline_edit(
     }
 }
 
-/// Whether the overlay would show for a value field (tests / helpers).
-pub fn shows_var_ref_overlay(text: &str, focused: bool) -> bool {
-    should_show_var_ref_overlay(text, focused)
-}
-
-/// Whether the overlay would show for a name field.
-pub fn shows_var_name_overlay(text: &str, focused: bool) -> bool {
-    should_show_var_name_overlay(text, focused)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -285,19 +360,19 @@ mod tests {
 
     #[test]
     fn var_ref_overlay_only_when_unfocused_with_ref() {
-        assert!(shows_var_ref_overlay("${x}", false));
-        assert!(!shows_var_ref_overlay("${x}", true));
-        assert!(!shows_var_ref_overlay("plain", false));
-        assert!(!shows_var_ref_overlay("", false));
-        assert!(shows_var_ref_overlay("1+${count}", false));
+        assert!(should_show_var_ref_overlay("${x}", false));
+        assert!(!should_show_var_ref_overlay("${x}", true));
+        assert!(!should_show_var_ref_overlay("plain", false));
+        assert!(!should_show_var_ref_overlay("", false));
+        assert!(should_show_var_ref_overlay("1+${count}", false));
     }
 
     #[test]
     fn var_name_overlay_when_nonempty_unfocused() {
-        assert!(shows_var_name_overlay("count", false));
-        assert!(!shows_var_name_overlay("count", true));
-        assert!(!shows_var_name_overlay("  ", false));
-        assert!(!shows_var_name_overlay("", false));
+        assert!(should_show_var_name_overlay("count", false));
+        assert!(!should_show_var_name_overlay("count", true));
+        assert!(!should_show_var_name_overlay("  ", false));
+        assert!(!should_show_var_name_overlay("", false));
     }
 
     #[test]
@@ -305,7 +380,7 @@ mod tests {
         let ctx = egui::Context::default();
         let known = known_variable_set(["count"]);
         let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
-            paint_value_pill(ui, "1+${count}", "calculate", &known, false);
+            paint_value_pill(ui, "1+${count}", "setvariable", &known, false);
             paint_variable_name_pill(ui, "Variable", "count", "setvariable", &known, false);
             paint_nested_var_chip(ui, "missing", &known, false);
             let pill = SummaryPill {

@@ -303,13 +303,6 @@ fn encode_kind(kind: &ActionKind) -> Result<Mapping> {
             insert_str(&mut m, "variablename", variable_name);
             insert(&mut m, "value", value.clone());
         }
-        ActionKind::Calculate {
-            expression,
-            output_var,
-        } => {
-            insert_str(&mut m, "expression", expression);
-            insert_str(&mut m, "outputvar", output_var);
-        }
         ActionKind::SaveVariable {
             variable_name,
             destination,
@@ -838,11 +831,14 @@ fn decode_kind(raw: &Mapping, type_name: &str) -> Result<ActionKind> {
                 .cloned()
                 .unwrap_or(Value::Null),
         }),
-        "calculate" => Ok(ActionKind::Calculate {
-            expression: expect_string(raw, "expression")
+        // Legacy calculate actions load as Set (expression → value, outputvar → variablename).
+        "calculate" => Ok(ActionKind::SetVariable {
+            variable_name: expect_string(raw, "outputvar")
                 .map_err(|e| SerializeError::msg(format!("action type calculate: {e}")))?,
-            output_var: expect_string(raw, "outputvar")
-                .map_err(|e| SerializeError::msg(format!("action type calculate: {e}")))?,
+            value: Value::String(
+                expect_string(raw, "expression")
+                    .map_err(|e| SerializeError::msg(format!("action type calculate: {e}")))?,
+            ),
         }),
         "savevariable" => Ok(ActionKind::SaveVariable {
             variable_name: expect_string(raw, "variablename")
@@ -1035,6 +1031,36 @@ mod tests {
                 }
             }
             other => panic!("expected NavigateSelect, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn legacy_calculate_decodes_as_set() {
+        use serde_yaml::{Mapping, Value};
+
+        let mut m = Mapping::new();
+        m.insert(
+            Value::String("type".into()),
+            Value::String("calculate".into()),
+        );
+        m.insert(
+            Value::String("expression".into()),
+            Value::String("1+2".into()),
+        );
+        m.insert(
+            Value::String("outputvar".into()),
+            Value::String("sum".into()),
+        );
+        let action = action_from_map(&m).unwrap();
+        match action.kind {
+            ActionKind::SetVariable {
+                variable_name,
+                value,
+            } => {
+                assert_eq!(variable_name, "sum");
+                assert_eq!(value, Value::String("1+2".into()));
+            }
+            other => panic!("expected SetVariable, got {other:?}"),
         }
     }
 }
