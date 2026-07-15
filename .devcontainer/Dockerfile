@@ -59,14 +59,32 @@ ENV LD_LIBRARY_PATH="/opt/opencv/linux/install/lib:${LD_LIBRARY_PATH}"
 
 # -----------------------------------------------------------------------------
 # Stage: AppImage / extras. ADD NEW APT PACKAGES HERE so OpenCV is not rebuilt.
+# Also: egui/eframe (Wayland/EGL/fontconfig/ALSA), InputBot (libinput/udev).
 # -----------------------------------------------------------------------------
 RUN apt-get update && apt-get install -y --no-install-recommends \
     binutils coreutils desktop-file-utils fakeroot fuse gtk-update-icon-cache \
     libarchive13 libgcc-s1 libgdk-pixbuf2.0-dev libstdc++6 libxcb-xkb1 \
     patchelf zlib1g python3-pip python3-setuptools squashfs-tools strace util-linux xdotool xvfb zsync \
+    libwayland-dev libegl1-mesa-dev libdbus-1-dev libfontconfig1-dev libasound2-dev \
+    libudev-dev libinput-dev \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip3 install --no-cache-dir appimage-builder
+
+# -----------------------------------------------------------------------------
+# Stage: Rust (egui / PureCV migration). After OpenCV so the OpenCV layer stays cached.
+# Toolchain is system-wide; crate caches live under the vscode user's CARGO_HOME.
+# -----------------------------------------------------------------------------
+ARG RUST_VERSION=1.92.0
+ENV RUSTUP_HOME=/usr/local/rustup \
+    CARGO_HOME=/usr/local/cargo \
+    PATH="/usr/local/cargo/bin:${PATH}"
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
+        --default-toolchain "${RUST_VERSION}" \
+        --profile default \
+        --component rustfmt,clippy,rust-analyzer,rust-src \
+    && chmod -R a+rX /usr/local/rustup /usr/local/cargo \
+    && rustc --version && cargo --version
 
 # -----------------------------------------------------------------------------
 # Stage: Flatpak — flatpak CLI + flatpak-builder 1.4.x from source.
@@ -113,6 +131,10 @@ RUN groupadd --gid "${USER_GID}" "${USERNAME}" \
 
 USER ${USERNAME}
 WORKDIR /workspace
+# Keep the rustup install in /usr/local; put registries/target caches in the home volume.
+ENV CARGO_HOME=/home/${USERNAME}/.cargo \
+    RUSTUP_HOME=/usr/local/rustup \
+    PATH="/usr/local/cargo/bin:${PATH}"
 
 # Pre-install Flathub runtimes for flatpak-builder (keep runtime-version in sync with
 # scripts/linux/packaging/flatpak/com.sqyre.app.yml). User install avoids
