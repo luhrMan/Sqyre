@@ -1,37 +1,35 @@
-//! Calculate, SaveVariable, While, ForEachRow, Pause, RunMacro, FocusWindow.
+//! SaveVariable, While, ForEachRow, Pause, RunMacro, FocusWindow.
 
 use crate::error::{ExecError, FlowSignal, Result};
-use crate::expr::{evaluate_expression, numeric_to_scalar};
 use crate::highlight::{highlight_clear, highlight_cursor, highlight_fill};
 use crate::run::{
     eval_clauses, execute_action, resolve_int, resolve_text, run_children, Executor,
 };
 use sqyre_domain::{
-    Action, ActionId, ActionKind, ConditionClause, ListColumn, Macro, ScalarValue,
-    FOREACH_ROW_BUILTIN_ROW, FOREACH_ROW_BUILTIN_ROW_COUNT,
+    resolve_set_variable_value, Action, ActionId, ActionKind, ConditionClause, ListColumn, Macro,
+    ScalarValue, FOREACH_ROW_BUILTIN_ROW, FOREACH_ROW_BUILTIN_ROW_COUNT,
 };
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
-pub(crate) fn execute_calculate(
+pub(crate) fn execute_set_variable(
     exec: &mut Executor<'_>,
     action_id: ActionId,
-    expression: &str,
-    output_var: &str,
+    variable_name: &str,
+    value: &serde_yaml::Value,
     macro_: &mut Macro,
 ) -> Result<()> {
-    let result = evaluate_expression(expression, macro_)?;
-    let scalar = numeric_to_scalar(result);
+    let scalar = resolve_set_variable_value(value, macro_).map_err(ExecError::Message)?;
     exec.log(
         action_id,
         format!(
-            "Calculate: {expression} → {output_var} = {}",
+            "Set: {variable_name} = {}",
             scalar.as_display()
         ),
     );
-    macro_.variables.set(output_var, scalar);
+    macro_.variables.set(variable_name, scalar);
     Ok(())
 }
 
@@ -460,7 +458,7 @@ mod tests {
     use std::sync::atomic::AtomicBool;
 
     #[test]
-    fn calculate_sets_output_var() {
+    fn set_evaluates_arithmetic_expressions() {
         let mut backend = RecordingBackend::default();
         let mut macro_ = Macro::new("t", 0, vec![]);
         macro_.variable_decls.push(sqyre_domain::VariableDecl {
@@ -471,9 +469,9 @@ mod tests {
         });
         macro_.root = root_loop(vec![Action {
             id: ActionId::new(),
-            kind: ActionKind::Calculate {
-                expression: "${n}*2+1".into(),
-                output_var: "out".into(),
+            kind: ActionKind::SetVariable {
+                variable_name: "out".into(),
+                value: serde_yaml::Value::String("${n}*2+1".into()),
             },
         }]);
         execute_macro(&mut macro_, &mut backend).unwrap();
@@ -570,9 +568,9 @@ mod tests {
                     },
                     Action {
                         id: ActionId::new(),
-                        kind: ActionKind::Calculate {
-                            expression: "${i}+1".into(),
-                            output_var: "i".into(),
+                        kind: ActionKind::SetVariable {
+                            variable_name: "i".into(),
+                            value: serde_yaml::Value::String("${i}+1".into()),
                         },
                     },
                 ],

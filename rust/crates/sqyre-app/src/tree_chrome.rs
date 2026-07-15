@@ -16,15 +16,33 @@ const ICON_SIZE: f32 = 20.0;
 const ICON_GLYPH_SIZE: f32 = 14.0;
 /// Pill label font (1px smaller than prior 13).
 const PILL_FONT_SIZE: f32 = 12.0;
-/// Pill inner padding (1px tighter on X).
-const PILL_MARGIN_X: i8 = 3;
-const PILL_MARGIN_Y: i8 = 0;
+/// Pill inner padding (matches Go `PillChrome` 4×2).
+const PILL_MARGIN_X: i8 = 4;
+const PILL_MARGIN_Y: i8 = 2;
 const PILL_RADIUS: f32 = 5.0;
 /// Image Search target thumbnail: max height (width follows original aspect).
 const TARGET_THUMB_MAX_H: f32 = 24.0;
 /// Cap very wide icons so a row cannot grow unboundedly.
 const TARGET_THUMB_MAX_W: f32 = 40.0;
 const MAX_TARGET_THUMBS: usize = 8;
+
+/// Default tree-row height (icon column + chrome), excluding image-search thumbs.
+pub fn default_row_height(interact_y: f32) -> f32 {
+    interact_y.max(ICON_SIZE)
+}
+
+/// Row height for a painted tree label (taller when image-search thumbs are shown).
+pub fn action_row_height(action: &Action, interact_y: f32) -> f32 {
+    let base = default_row_height(interact_y);
+    if matches!(
+        &action.kind,
+        ActionKind::ImageSearch { targets, .. } if !targets.is_empty()
+    ) {
+        base.max(TARGET_THUMB_MAX_H + 4.0)
+    } else {
+        base
+    }
+}
 
 /// Clickable chrome on a tree row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -49,8 +67,8 @@ pub enum RowHighlight {
 pub struct RowInteraction {
     pub action: RowAction,
     pub hovered: bool,
-    /// Pointer geometrically over the row (ignores tooltip layers covering it).
-    /// Used to keep the view tooltip open when edge-constrain flips the tip over the row.
+    /// Pointer over the row, treating non-interactable tooltip layers as transparent
+    /// (view tip clickthrough) but not other windows covering the tree.
     pub pointer_in_row: bool,
     pub secondary_clicked: bool,
     pub double_clicked: bool,
@@ -96,11 +114,6 @@ pub(crate) fn image_search_overflow_count(total: usize) -> usize {
     total.saturating_sub(MAX_TARGET_THUMBS)
 }
 
-/// Short label for `program~item` targets (item segment only).
-pub(crate) fn target_short_name(target: &str) -> &str {
-    target.rsplit('~').next().unwrap_or(target)
-}
-
 fn icon_btn(ui: &mut egui::Ui, glyph: &str, tip: &str) -> egui::Response {
     ui.add(
         egui::Button::new(egui::RichText::new(glyph).size(14.0))
@@ -137,24 +150,45 @@ pub(crate) fn paint_pill_pub(ui: &mut egui::Ui, text: &str, fill: Color32) -> eg
 }
 
 fn paint_pill(ui: &mut egui::Ui, text: &str, fill: Color32) -> egui::Response {
+    // Allocate through the parent layout (unlike Frame::show, which top-aligns in
+    // available_rect and ignores Align::Center — that drifted pills below the tree icon).
     let fg = contrast_fg(fill);
-    let inner = egui::Frame::new()
-        .fill(fill)
-        .corner_radius(PILL_RADIUS)
-        .inner_margin(egui::Margin::symmetric(PILL_MARGIN_X, PILL_MARGIN_Y))
-        .show(ui, |ui| {
-            ui.label(
-                egui::RichText::new(text)
-                    .size(PILL_FONT_SIZE)
-                    .color(fg),
-            );
-        });
-    // Frame responses are not always hover-active; interact so tip tracks pills.
+    let font = FontId::proportional(PILL_FONT_SIZE);
+    let galley = ui.painter().layout_no_wrap(text.to_owned(), font, fg);
+    let pad = Vec2::new(PILL_MARGIN_X as f32 * 2.0, PILL_MARGIN_Y as f32 * 2.0);
+    let size = galley.size() + pad;
+    let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
+    ui.painter().rect(
+        rect,
+        PILL_RADIUS,
+        fill,
+        Stroke::NONE,
+        egui::StrokeKind::Inside,
+    );
+    paint_galley_centered(ui, rect, galley, fg);
     ui.interact(
-        inner.response.rect,
+        rect,
         ui.id().with(("action_pill", text)),
         Sense::hover(),
     )
+}
+
+/// Place galley so its ink (mesh bounds) is centered in `rect`.
+fn paint_galley_centered(
+    ui: &mut egui::Ui,
+    rect: egui::Rect,
+    galley: std::sync::Arc<egui::Galley>,
+    fallback: Color32,
+) {
+    let pos = if galley.mesh_bounds.is_positive() {
+        // Optical center: baseline metrics make the layout box look top-heavy.
+        rect.center() - galley.mesh_bounds.center().to_vec2()
+    } else {
+        egui::Align2::CENTER_CENTER
+            .anchor_size(rect.center(), galley.size())
+            .min
+    };
+    ui.painter().galley(pos, galley, fallback);
 }
 
 fn paint_summary_pill(
@@ -297,103 +331,121 @@ pub fn paint_action_row(
     let mut action_click = RowAction::None;
     let mut chrome_hovered = false;
     let mut tip_hovered = false;
-    // Tall enough for image-search thumbs; chrome buttons stay vertically centered.
-    let row_h = ui
-        .spacing()
-        .interact_size
-        .y
-        .max(TARGET_THUMB_MAX_H + 4.0);
+    // Match TreeView node height; only image-search rows grow for thumbs.
+    let row_h = action_row_height(action, ui.spacing().interact_size.y);
 
-    let row = ui.horizontal(|ui| {
-        ui.set_min_height(row_h);
-        ui.spacing_mut().item_spacing.x = 4.0;
+    // egui_ltreeview remembers a content-based min width, so `available_width` can stay
+    // wider than the visible panel after the user shrinks the window. Cap the row to the
+    // clip rect and anchor logs/delete on the visible right edge.
+    let spacing = ui.spacing().item_spacing.x;
+    let visible_end = ui.clip_rect().right();
+    let row_start = ui.cursor().min.x;
+    let max_visible_w = (visible_end - row_start).max(0.0);
+    let row_w = ui.available_width().min(max_visible_w);
 
-        // Reserve logs/delete width up-front so wide pill/thumb rows clip instead of
-        // pushing the buttons off-screen. Buttons are painted after content so they
-        // win hit-testing if anything spills past the clip.
-        let spacing = ui.spacing().item_spacing.x;
-        let btn_w = ui.spacing().interact_size.y;
-        let chrome_w = btn_w * 2.0 + spacing;
-        let content_w = (ui.available_width() - chrome_w - spacing).max(0.0);
-        let (content_rect, _) =
-            ui.allocate_exact_size(Vec2::new(content_w, row_h), Sense::hover());
-        // new_child (not scope_builder): clipped overflow must not expand the row width.
-        {
-            let mut content = ui.new_child(
-                egui::UiBuilder::new()
-                    .max_rect(content_rect)
-                    .layout(egui::Layout::left_to_right(egui::Align::Center)),
-            );
-            content.set_clip_rect(content_rect.intersect(ui.clip_rect()));
-            content.spacing_mut().item_spacing.x = 4.0;
-            paint_action_icon(&mut content, action, is_dark);
+    let mut chrome_rect = egui::Rect::NOTHING;
+    let row = ui.allocate_ui_with_layout(
+        Vec2::new(row_w, row_h),
+        egui::Layout::right_to_left(egui::Align::Center),
+        |ui| {
+            ui.spacing_mut().item_spacing.x = spacing;
 
-            for pill in action.tree_summary_pills() {
-                if paint_summary_pill(&mut content, action, &pill, known_vars, is_dark).hovered()
+            let del = icon_btn(ui, "🗑", "Delete");
+            if del.contains_pointer() {
+                chrome_hovered = true;
+            }
+            if del.clicked() {
+                action_click = RowAction::Delete;
+            }
+
+            let logs = icon_btn(ui, "📋", "Logs");
+            // contains_pointer: the full-row sense below steals `.hovered()` over these buttons.
+            if logs.contains_pointer() {
+                chrome_hovered = true;
+            }
+            if logs.clicked() {
+                action_click = RowAction::Logs;
+            }
+            chrome_rect = logs.rect.union(del.rect);
+
+            let content_w = ui.available_width().max(0.0);
+            let (content_rect, _) =
+                ui.allocate_exact_size(Vec2::new(content_w, row_h), Sense::hover());
+            // new_child (not scope_builder): clipped overflow must not expand the row width.
+            {
+                let mut content = ui.new_child(
+                    egui::UiBuilder::new()
+                        .max_rect(content_rect)
+                        .layout(egui::Layout::left_to_right(egui::Align::Center)),
+                );
+                content.set_clip_rect(content_rect.intersect(ui.clip_rect()));
+                content.spacing_mut().item_spacing.x = spacing;
+                paint_action_icon(&mut content, action, is_dark);
+
+                for pill in action.tree_summary_pills() {
+                    if paint_summary_pill(&mut content, action, &pill, known_vars, is_dark).hovered()
+                    {
+                        tip_hovered = true;
+                    }
+                }
+
+                if let ActionKind::FindPixel { target_color, .. } = &action.kind {
+                    paint_color_swatch(&mut content, target_color);
+                }
+                if matches!(action.kind, ActionKind::ImageSearch { .. })
+                    && paint_image_search_extras(&mut content, action, catalog, icons, is_dark)
                 {
                     tip_hovered = true;
                 }
             }
-
-            if let ActionKind::FindPixel { target_color, .. } = &action.kind {
-                paint_color_swatch(&mut content, target_color);
-            }
-            if matches!(action.kind, ActionKind::ImageSearch { .. })
-                && paint_image_search_extras(&mut content, action, catalog, icons, is_dark)
-            {
-                tip_hovered = true;
-            }
-        }
-
-        let logs = icon_btn(ui, "📋", "Logs");
-        // contains_pointer: the full-row sense below steals `.hovered()` over these buttons.
-        if logs.contains_pointer() {
-            chrome_hovered = true;
-        }
-        if logs.clicked() {
-            action_click = RowAction::Logs;
-        }
-
-        let del = icon_btn(ui, "🗑", "Delete");
-        if del.contains_pointer() {
-            chrome_hovered = true;
-        }
-        if del.clicked() {
-            action_click = RowAction::Delete;
-        }
-
-        logs.rect.union(del.rect)
-    });
+        },
+    );
 
     paint_row_highlight(ui, row.response.rect, highlight);
 
     // Keep row click/hover sense off the logs/delete chrome so they win interaction.
     let mut sense_rect = row.response.rect;
-    let chrome_rect = row.inner;
     if chrome_rect.width() > 0.0 {
         sense_rect.max.x = sense_rect.max.x.min(chrome_rect.min.x);
     }
 
+    // Hover-only: a Sense::click overlay would steal TreeView selection clicks.
+    // Primary/secondary/double are read geometrically (with layer_id_at) so they
+    // still fire when a view tip covers the row — same clickthrough as Go overlays.
     let sense = ui.interact(
         sense_rect,
         ui.id().with(("action_row_sense", action.id.as_str())),
-        Sense::click(),
+        Sense::hover(),
     );
 
-    // Geometric hit: tooltip Order layers steal `.hovered()` when edge-constrain
-    // slides the tip over the row (classic right-edge flicker).
-    let pointer_in_row = ui
-        .input(|i| i.pointer.hover_pos())
-        .is_some_and(|p| sense_rect.contains(p) && !chrome_rect.contains(p));
+    // Geometric hit through non-interactable tooltip layers (view tip is
+    // interactable(false), so layer_id_at skips it) — keeps hover/clicks alive
+    // when edge-constrain slides the tip over the row. Still blocked when
+    // another Window/Area covers the tree (Settings, Data Editor, etc.).
+    let our_layer = ui.layer_id();
+    let pointer_in_row = ui.input(|i| i.pointer.hover_pos()).is_some_and(|p| {
+        sense_rect.contains(p)
+            && !chrome_rect.contains(p)
+            && ui.ctx().layer_id_at(p) == Some(our_layer)
+    });
 
-    let hovered = (row.response.hovered() || tip_hovered || sense.hovered()) && !chrome_hovered;
+    let over_row = pointer_in_row && action_click == RowAction::None;
+    let primary_clicked =
+        over_row && ui.input(|i| i.pointer.primary_clicked());
+    let secondary_clicked = over_row
+        && ui.input(|i| i.pointer.button_clicked(egui::PointerButton::Secondary));
+    let double_clicked = over_row
+        && ui.input(|i| i.pointer.button_double_clicked(egui::PointerButton::Primary));
+
+    let hovered = (row.response.hovered() || tip_hovered || sense.hovered() || pointer_in_row)
+        && !chrome_hovered;
     RowInteraction {
         action: action_click,
         hovered: hovered && action_click == RowAction::None,
-        pointer_in_row: pointer_in_row && action_click == RowAction::None,
-        secondary_clicked: sense.secondary_clicked() && action_click == RowAction::None,
-        double_clicked: sense.double_clicked() && action_click == RowAction::None,
-        primary_clicked: sense.clicked() && action_click == RowAction::None,
+        pointer_in_row: over_row,
+        secondary_clicked,
+        double_clicked,
+        primary_clicked,
         row_rect: row.response.rect,
     }
 }
@@ -444,12 +496,61 @@ mod tests {
     }
 
     #[test]
-    fn overflow_and_short_name() {
+    fn overflow_count() {
         assert_eq!(image_search_overflow_count(3), 0);
         assert_eq!(image_search_overflow_count(MAX_TARGET_THUMBS), 0);
         assert_eq!(image_search_overflow_count(MAX_TARGET_THUMBS + 3), 3);
-        assert_eq!(target_short_name("Prog~Sword"), "Sword");
-        assert_eq!(target_short_name("noscale"), "noscale");
+    }
+
+    #[test]
+    fn row_height_only_grows_for_image_search_targets() {
+        let interact = 18.0;
+        assert_eq!(default_row_height(interact), ICON_SIZE);
+
+        let wait = Action {
+            id: ActionId::new(),
+            kind: ActionKind::Wait {
+                time: ScalarValue::Int(100),
+            },
+        };
+        assert_eq!(action_row_height(&wait, interact), ICON_SIZE);
+
+        let empty_search = Action {
+            id: ActionId::new(),
+            kind: ActionKind::ImageSearch {
+                name: String::new(),
+                targets: vec![],
+                search_area: CoordinateRef(String::new()),
+                tolerance: 0.9,
+                blur: 0,
+                wait: WaitTilFoundConfig::default(),
+                coords: CoordinateOutputs::defaults(),
+                run_branch_on_no_find: false,
+                order: Default::default(),
+                subactions: vec![],
+            },
+        };
+        assert_eq!(action_row_height(&empty_search, interact), ICON_SIZE);
+
+        let with_target = Action {
+            id: ActionId::new(),
+            kind: ActionKind::ImageSearch {
+                name: String::new(),
+                targets: vec!["a~b".into()],
+                search_area: CoordinateRef(String::new()),
+                tolerance: 0.9,
+                blur: 0,
+                wait: WaitTilFoundConfig::default(),
+                coords: CoordinateOutputs::defaults(),
+                run_branch_on_no_find: false,
+                order: Default::default(),
+                subactions: vec![],
+            },
+        };
+        assert_eq!(
+            action_row_height(&with_target, interact),
+            TARGET_THUMB_MAX_H + 4.0
+        );
     }
 
     #[test]
@@ -561,44 +662,71 @@ mod tests {
             let narrow = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(180.0, 40.0));
             ui.scope_builder(egui::UiBuilder::new().max_rect(narrow), |ui| {
                 ui.set_clip_rect(narrow);
-                let mut targets = Vec::new();
-                for i in 0..MAX_TARGET_THUMBS {
-                    targets.push(format!("Prog~WideItem{i}"));
-                }
-                let search = Action {
-                    id: ActionId::new(),
-                    kind: ActionKind::ImageSearch {
-                        name: "find".into(),
-                        targets,
-                        search_area: CoordinateRef("P~Box".into()),
-                        tolerance: 0.9,
-                        blur: 0,
-                        wait: WaitTilFoundConfig::default(),
-                        coords: CoordinateOutputs::defaults(),
-                        run_branch_on_no_find: false,
-                        order: Default::default(),
-                        subactions: vec![],
-                    },
-                };
-                let catalog = ProgramCatalog::default();
-                let mut icons = IconCache::new();
-                let result = paint_action_row(
-                    ui,
-                    &search,
-                    &catalog,
-                    &mut icons,
-                    &HashSet::new(),
-                    true,
-                    RowHighlight::None,
-                );
+                let result = paint_image_search_row(ui);
                 assert!(
                     result.row_rect.width() <= narrow.width() + 1.0,
                     "row expanded past available width: {} > {}",
                     result.row_rect.width(),
                     narrow.width()
                 );
+                assert!(
+                    result.row_rect.right() <= narrow.right() + 1.0,
+                    "row chrome pushed past clip: {} > {}",
+                    result.row_rect.right(),
+                    narrow.right()
+                );
             });
         });
+    }
+
+    #[test]
+    fn image_search_row_chrome_visible_when_clip_narrower_than_available() {
+        with_ui(|ui| {
+            // Simulates egui_ltreeview keeping a wide row while the panel clip shrinks.
+            let wide = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(520.0, 40.0));
+            let clip = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(180.0, 40.0));
+            ui.scope_builder(egui::UiBuilder::new().max_rect(wide), |ui| {
+                ui.set_clip_rect(clip);
+                let result = paint_image_search_row(ui);
+                assert!(
+                    result.row_rect.right() <= clip.right() + 1.0,
+                    "logs/delete anchored off-screen: row right {} > clip right {}",
+                    result.row_rect.right(),
+                    clip.right()
+                );
+            });
+        });
+    }
+
+    fn paint_image_search_row(ui: &mut egui::Ui) -> RowInteraction {
+        let mut targets = Vec::new();
+        for i in 0..MAX_TARGET_THUMBS {
+            targets.push(format!("Prog~WideItem{i}"));
+        }
+        let search = Action {
+            id: ActionId::new(),
+            kind: ActionKind::ImageSearch {
+                name: "find".into(),
+                targets,
+                search_area: CoordinateRef("P~Box".into()),
+                tolerance: 0.9,
+                blur: 0,
+                wait: WaitTilFoundConfig::default(),
+                coords: CoordinateOutputs::defaults(),
+                run_branch_on_no_find: false,
+                order: Default::default(),
+                subactions: vec![],
+            },
+        };
+        paint_action_row(
+            ui,
+            &search,
+            &ProgramCatalog::default(),
+            &mut IconCache::new(),
+            &HashSet::new(),
+            true,
+            RowHighlight::None,
+        )
     }
 
     #[test]

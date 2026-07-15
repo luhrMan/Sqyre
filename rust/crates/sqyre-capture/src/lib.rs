@@ -5,6 +5,10 @@ mod stub;
 mod x11_capture;
 #[cfg(target_os = "linux")]
 mod x11_focus;
+#[cfg(target_os = "linux")]
+mod x11_outline;
+#[cfg(not(target_os = "linux"))]
+mod outline_stub;
 
 pub use stub::{NullCapturer, SolidCapturer};
 
@@ -13,6 +17,12 @@ pub use x11_capture::X11Capturer;
 
 #[cfg(target_os = "linux")]
 pub use x11_focus::X11WindowFocuser;
+
+#[cfg(target_os = "linux")]
+pub use x11_outline::{OutlineRect, SelectionOutline};
+
+#[cfg(not(target_os = "linux"))]
+pub use outline_stub::{OutlineRect, SelectionOutline};
 
 #[cfg(not(target_os = "linux"))]
 pub type X11Capturer = NullCapturer;

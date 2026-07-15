@@ -2091,7 +2091,11 @@ impl DataEditor {
         ui.separator();
         ui.horizontal(|ui| {
             ui.label(egui::RichText::new("Icon variants").strong());
-            if ui.button("Refresh").clicked() {
+            if ui
+                .add(egui::Button::new(egui::RichText::new("↻").size(14.0)).small())
+                .on_hover_text("Refresh")
+                .clicked()
+            {
                 for path in &paths {
                     icons.invalidate_path(path);
                 }
@@ -2444,7 +2448,11 @@ fn paint_preview_toolbar(ui: &mut egui::Ui) -> bool {
     let mut force = false;
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new("Preview").strong());
-        if ui.button("Refresh").clicked() {
+        if ui
+            .add(egui::Button::new(egui::RichText::new("↻").size(14.0)).small())
+            .on_hover_text("Refresh")
+            .clicked()
+        {
             force = true;
         }
     });
@@ -2541,7 +2549,11 @@ fn paint_disk_preview(
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new(title).strong());
         if let Some(path) = path {
-            if ui.button("Refresh").clicked() {
+            if ui
+                .add(egui::Button::new(egui::RichText::new("↻").size(14.0)).small())
+                .on_hover_text("Refresh")
+                .clicked()
+            {
                 icons.invalidate_path(path);
             }
         }

@@ -8,8 +8,8 @@ use crate::highlight::{
     clear_highlights, highlight_cursor, ActionHighlighter,
 };
 use crate::misc::{
-    execute_calculate, execute_focus_window, execute_for_each_row, execute_pause,
-    execute_run_macro, execute_save_variable, execute_while,
+    execute_focus_window, execute_for_each_row, execute_pause, execute_run_macro,
+    execute_save_variable, execute_set_variable, execute_while,
 };
 use crate::navigate::{execute_navigate_key, execute_navigate_select};
 use crate::search::{execute_find_pixel, execute_image_search, execute_ocr};
@@ -318,24 +318,13 @@ fn dispatch(exec: &mut Executor<'_>, action: &Action, macro_: &mut Macro) -> Res
         ActionKind::SetVariable {
             variable_name,
             value,
-        } => {
-            let v = match value {
-                serde_yaml::Value::String(s) => ScalarValue::String(resolve_text(s, macro_)?),
-                other => ScalarValue::from_yaml(other),
-            };
-            macro_.variables.set(variable_name, v);
-            Ok(())
-        }
+        } => execute_set_variable(exec, action.id, variable_name, value, macro_),
         ActionKind::ImageSearch { .. } => execute_image_search(exec, action, macro_),
         ActionKind::FindPixel { .. } => execute_find_pixel(exec, action, macro_),
         ActionKind::FocusWindow {
             process_path,
             window_title,
         } => execute_focus_window(exec, action.id, process_path, window_title),
-        ActionKind::Calculate {
-            expression,
-            output_var,
-        } => execute_calculate(exec, action.id, expression, output_var, macro_),
         ActionKind::SaveVariable {
             variable_name,
             destination,

@@ -19,7 +19,6 @@ pub fn action_type_label(action_type: &str) -> &'static str {
         "ocr" => "OCR",
         "findpixel" => "Find pixel",
         "setvariable" => "Set",
-        "calculate" => "Calculate",
         "foreachrow" => "For each row",
         "savevariable" => "Save to",
         "navigateselect" => "Navigate Select",
@@ -46,8 +45,9 @@ pub fn action_type_description(action_type: &str) -> &'static str {
         "imagesearch" => "Searches a screen region for images and saves match coordinates.",
         "ocr" => "Reads text from a screen region; runs nested actions when the target is found.",
         "findpixel" => "Scans a region for a pixel color; runs nested actions when found.",
-        "setvariable" => "Assigns a value to a variable in memory.",
-        "calculate" => "Evaluates a math expression and stores the result in a variable.",
+        "setvariable" => {
+            "Assigns a value to a variable; arithmetic expressions and ${refs} are evaluated."
+        }
         "foreachrow" => "Runs its sub-actions once per row of a list source.",
         "savevariable" => "Writes a variable's value out to a file or the clipboard.",
         "navigateselect" => {

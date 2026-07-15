@@ -863,7 +863,11 @@ pub fn show_active_picker(
                     ui.horizontal(|ui| {
                         ui.label(egui::RichText::new("Search").size(HEADER_SIZE));
                         ui.text_edit_singleline(search);
-                        if ui.button("Refresh").clicked() {
+                        if ui
+                            .add(egui::Button::new(egui::RichText::new("↻").size(14.0)).small())
+                            .on_hover_text("Refresh")
+                            .clicked()
+                        {
                             match sqyre_capture::list_open_windows() {
                                 Ok(list) => {
                                     *windows = list;

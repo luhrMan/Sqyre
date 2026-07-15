@@ -1,12 +1,14 @@
 //! Cached egui textures for program-catalog item PNGs.
 
-use crate::assets::APP_ICON_PNG;
+use crate::assets;
 use eframe::egui::{self, ColorImage, TextureHandle, TextureOptions};
 use sqyre_persist::ProgramCatalog;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 const FALLBACK_KEY: &str = "__sqyre_fallback__";
+/// Raster size for the brand fallback texture (displayed smaller in UI).
+const FALLBACK_PX: u32 = 128;
 
 #[derive(Default)]
 pub struct IconCache {
@@ -41,7 +43,7 @@ impl IconCache {
         }
     }
 
-    /// Item icon, or the embedded Sqyre brand PNG when no variant exists.
+    /// Item icon, or the embedded Sqyre brand SVG (rasterized) when no variant exists.
     pub fn for_target_or_fallback(
         &mut self,
         ctx: &egui::Context,
@@ -56,8 +58,10 @@ impl IconCache {
         if let Some(t) = &self.fallback {
             return t.clone();
         }
-        let tex = load_png_bytes(ctx, FALLBACK_KEY, APP_ICON_PNG)
-            .expect("embedded Sqyre PNG must decode");
+        let (rgba, w, h) =
+            assets::app_icon_rgba(FALLBACK_PX).expect("embedded Sqyre SVG must rasterize");
+        let color = ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &rgba);
+        let tex = ctx.load_texture(FALLBACK_KEY, color, TextureOptions::LINEAR);
         self.fallback = Some(tex.clone());
         tex
     }
