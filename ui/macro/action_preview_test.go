@@ -17,7 +17,7 @@ func TestActionPreviewLoader(t *testing.T) {
 	if actionPreviewLoader(actions.NewMove(actions.NewCoordinateRef("prog", "home"), false)) == nil {
 		t.Fatal("move with point should have preview loader")
 	}
-	if actionPreviewLoader(actions.NewImageSearch("s", nil, nil, actions.NewCoordinateRef("prog", "box"), 1, 1, 0.95, 0)) == nil {
+	if actionPreviewLoader(actions.NewImageSearch("s", nil, nil, actions.NewCoordinateRef("prog", "box"), 0.95, 0)) == nil {
 		t.Fatal("image search with search area should have preview loader")
 	}
 	if actionPreviewLoader(actions.NewOcr("o", "t", actions.CoordinateRef(""))) != nil {

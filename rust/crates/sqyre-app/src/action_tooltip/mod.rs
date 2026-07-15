@@ -3,7 +3,9 @@
 mod edit;
 mod sections;
 
+use crate::hotkey_record::HotkeyRecordUi;
 use crate::icon_cache::IconCache;
+use crate::key_record::KeyRecordUi;
 use crate::pickers::{self, ActivePicker, PickerResult};
 use crate::tree_chrome::{self, RowInteraction};
 use eframe::egui::{self, Key, Order, Vec2};
@@ -11,6 +13,7 @@ use sqyre_domain::{
     action_pastel_color, action_type_description, action_type_label, split_display_params, Action,
     ActionId, ActionKind, Macro,
 };
+use sqyre_hotkeys::{MacroHotkeyBridge, ScreenClickBridge};
 use sqyre_persist::ProgramCatalog;
 use sqyre_validate::validate_action;
 use std::collections::HashSet;
@@ -165,6 +168,40 @@ impl TooltipState {
         true
     }
 
+    /// Apply a key captured by [`KeyRecordUi`] onto a Key-action draft.
+    pub fn apply_recorded_key(&mut self, recorded: String) {
+        let TooltipState::Edit { draft, .. } = self else {
+            return;
+        };
+        if let ActionKind::Key { key, .. } = &mut draft.kind {
+            *key = recorded;
+        }
+    }
+
+    /// Apply a chord from [`HotkeyRecordUi`] onto a Pause continue-key draft.
+    /// Returns true when the draft was a Pause action.
+    pub fn apply_recorded_chord(&mut self, recorded: Vec<String>) -> bool {
+        let TooltipState::Edit { draft, .. } = self else {
+            return false;
+        };
+        if let ActionKind::Pause { continue_key, .. } = &mut draft.kind {
+            *continue_key = recorded;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Apply a hex color from the Find Pixel screen dropper onto the draft.
+    pub fn apply_recorded_color(&mut self, recorded: String) {
+        let TooltipState::Edit { draft, .. } = self else {
+            return;
+        };
+        if let ActionKind::FindPixel { target_color, .. } = &mut draft.kind {
+            *target_color = crate::pixel_color::normalize_target_color(&recorded);
+        }
+    }
+
     /// Escape handling. Returns `(consumed, discard_id)` — discard_id is set when a
     /// provisional new-action edit is fully cancelled.
     pub fn handle_escape(&mut self) -> (bool, Option<ActionId>) {
@@ -257,9 +294,18 @@ pub fn show(
     macros: &[(String, Vec<String>)],
     known_vars: &HashSet<String>,
     is_dark: bool,
+    key_record: &mut KeyRecordUi,
+    hotkey_record: &mut HotkeyRecordUi,
+    macro_hotkeys: &MacroHotkeyBridge,
+    screen_click: &ScreenClickBridge,
     mut before_mutate: impl FnMut(&Action),
 ) -> Option<ActionId> {
-    if ctx.input(|i| i.key_pressed(Key::Escape)) {
+    // Esc while recording a key / chord / screen sample is captured by the recorder.
+    if !key_record.is_open()
+        && !hotkey_record.is_open()
+        && !screen_click.is_armed()
+        && ctx.input(|i| i.key_pressed(Key::Escape))
+    {
         let (consumed, discard) = state.handle_escape();
         if consumed {
             return discard;
@@ -286,6 +332,10 @@ pub fn show(
             macros,
             known_vars,
             is_dark,
+            key_record,
+            hotkey_record,
+            macro_hotkeys,
+            screen_click,
             &mut before_mutate,
         ),
     }
@@ -441,6 +491,10 @@ fn show_edit_window(
     macros: &[(String, Vec<String>)],
     known_vars: &HashSet<String>,
     is_dark: bool,
+    key_record: &mut KeyRecordUi,
+    hotkey_record: &mut HotkeyRecordUi,
+    macro_hotkeys: &MacroHotkeyBridge,
+    screen_click: &ScreenClickBridge,
     before_mutate: &mut dyn FnMut(&Action),
 ) -> Option<ActionId> {
     let (action_id, anchor, type_key, has_coord_preview) = match state {
@@ -527,7 +581,12 @@ fn show_edit_window(
                             icons,
                             previews,
                             picker,
+                            key_record,
+                            hotkey_record,
+                            macro_hotkeys,
+                            screen_click,
                             macros,
+                            Some(&*macro_),
                             known_vars,
                             is_dark,
                         );
@@ -619,7 +678,10 @@ pub(crate) fn apply_picker_result(draft: &mut Action, result: PickerResult) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqyre_domain::{root_loop, ActionKind, CoordinateRef, ScalarValue};
+    use sqyre_domain::{
+        root_loop, ActionKind, CoordinateOutputs, CoordinateRef, MatchOrder, ScalarValue,
+        WaitTilFoundConfig,
+    };
 
     fn wait_action(time: i64) -> Action {
         Action {
@@ -717,6 +779,57 @@ mod tests {
         match &root.find_by_id(id).unwrap().kind {
             ActionKind::Key { key, .. } => assert_eq!(key, "a"),
             other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
+    fn apply_recorded_key_updates_key_draft() {
+        let child = Action {
+            id: ActionId::new(),
+            kind: ActionKind::Key {
+                key: String::new(),
+                state: true,
+            },
+        };
+        let mut state = TooltipState::Hidden;
+        state.open_edit(&child, egui::pos2(0.0, 0.0));
+        state.apply_recorded_key("f5".into());
+        match &state {
+            TooltipState::Edit { draft, .. } => match &draft.kind {
+                ActionKind::Key { key, .. } => assert_eq!(key, "f5"),
+                other => panic!("unexpected {other:?}"),
+            },
+            other => panic!("expected Edit, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn apply_recorded_color_updates_find_pixel_draft() {
+        let child = Action {
+            id: ActionId::new(),
+            kind: ActionKind::FindPixel {
+                name: String::new(),
+                search_area: CoordinateRef::default(),
+                target_color: "ffffff".into(),
+                color_tolerance: 0,
+                wait: WaitTilFoundConfig::default(),
+                coords: CoordinateOutputs::defaults(),
+                run_branch_on_no_find: false,
+                order: MatchOrder::default(),
+                subactions: vec![],
+            },
+        };
+        let mut state = TooltipState::Hidden;
+        state.open_edit(&child, egui::pos2(0.0, 0.0));
+        state.apply_recorded_color("ab12cd".into());
+        match &state {
+            TooltipState::Edit { draft, .. } => match &draft.kind {
+                ActionKind::FindPixel { target_color, .. } => {
+                    assert_eq!(target_color, "ab12cd")
+                }
+                other => panic!("unexpected {other:?}"),
+            },
+            other => panic!("expected Edit, got {other:?}"),
         }
     }
 

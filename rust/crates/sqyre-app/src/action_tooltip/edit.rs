@@ -2,15 +2,21 @@
 
 use super::sections::{tip_section, tip_wrapped_section};
 use crate::icon_cache::IconCache;
+use crate::hotkey_record::HotkeyRecordUi;
+use crate::key_record::KeyRecordUi;
 use crate::pickers::{self, options, ActivePicker};
 use crate::preview_tooltip::{PreviewKind, PreviewTooltipCache};
+use crate::theme;
+use crate::tree_chrome;
 use crate::var_pills;
 use eframe::egui;
 use sqyre_domain::{
-    Action, ActionKind, ConditionClause, CoordinateOutputs, CoordinateRef, ListColumn, MatchOrder,
-    ScalarValue, WaitTilFoundConfig,
+    parse_hex_color, Action, ActionKind, ConditionClause, CoordinateOutputs, CoordinateRef,
+    ListColumn, Macro, MatchOrder, ScalarValue, WaitTilFoundConfig, REPEAT_ONCE,
 };
+use sqyre_hotkeys::{MacroHotkeyBridge, ScreenClickBridge};
 use sqyre_persist::ProgramCatalog;
+use sqyre_validate::validate_set_variable_value;
 use std::collections::HashSet;
 
 /// Copy draft fields onto `live`, keeping `live`'s children.
@@ -40,7 +46,12 @@ pub fn paint_edit_fields(
     icons: &mut IconCache,
     previews: &mut PreviewTooltipCache,
     picker: &mut ActivePicker,
+    key_record: &mut KeyRecordUi,
+    hotkey_record: &mut HotkeyRecordUi,
+    macro_hotkeys: &MacroHotkeyBridge,
+    screen_click: &ScreenClickBridge,
     _macros: &[(String, Vec<String>)],
+    active_macro: Option<&Macro>,
     known_vars: &HashSet<String>,
     is_dark: bool,
 ) {
@@ -58,13 +69,28 @@ pub fn paint_edit_fields(
         ActionKind::Click { button, state } => {
             tip_wrapped_section(ui, |ui| {
                 combo_str(ui, "Button", button, options::CLICK_BUTTONS);
-                ui.checkbox(state, "Down");
+                ui.vertical(|ui| {
+                    ui.small("Up");
+                    theme::up_down_toggle(ui, state);
+                    ui.small("Down");
+                });
             });
         }
         ActionKind::Key { key, state } => {
             tip_wrapped_section(ui, |ui| {
-                var_pills::var_ref_text_edit(ui, "Key", key, known_vars, is_dark, 160.0);
-                ui.checkbox(state, "Down");
+                ui.horizontal(|ui| {
+                    var_pills::var_ref_text_edit(ui, "Key", key, known_vars, is_dark, 160.0);
+                    if theme::record_icon_button(ui, "Record a key", !key_record.is_open())
+                        .clicked()
+                    {
+                        key_record.open(macro_hotkeys);
+                    }
+                });
+                ui.vertical(|ui| {
+                    ui.small("Up");
+                    theme::up_down_toggle(ui, state);
+                    ui.small("Down");
+                });
             });
         }
         ActionKind::Type { text, delay_ms } => {
@@ -114,7 +140,19 @@ pub fn paint_edit_fields(
                 var_pills::var_ref_text_edit(ui, "Message", message, known_vars, is_dark, 220.0);
             });
             tip_section(ui, |ui| {
-                string_list_field(ui, "Continue keys (one per line)", continue_key);
+                ui.horizontal(|ui| {
+                    ui.label("Continue keys (one per line)");
+                    if theme::record_icon_button(
+                        ui,
+                        "Record continue chord",
+                        !hotkey_record.is_open() && !key_record.is_open(),
+                    )
+                    .clicked()
+                    {
+                        hotkey_record.open(macro_hotkeys);
+                    }
+                });
+                string_list_field(ui, "", continue_key);
             });
             tip_wrapped_section(ui, |ui| {
                 ui.checkbox(pass_through, "Pass through");
@@ -165,7 +203,14 @@ pub fn paint_edit_fields(
                 var_pills::var_name_text_edit(ui, "Variable", variable_name, known_vars, is_dark, 160.0);
             });
             tip_section(ui, |ui| {
-                yaml_value_field(ui, "Value (text, ${ref}, or expression)", value, known_vars, is_dark);
+                yaml_value_field(
+                    ui,
+                    "Value (text, ${ref}, or expression)",
+                    value,
+                    known_vars,
+                    is_dark,
+                    active_macro,
+                );
             });
         }
         ActionKind::SaveVariable {
@@ -358,7 +403,36 @@ pub fn paint_edit_fields(
                 paint_coord_preview(ui, catalog, previews, search_area, PreviewKind::SearchArea);
             });
             tip_wrapped_section(ui, |ui| {
-                var_pills::var_ref_text_edit(ui, "Target color", target_color, known_vars, is_dark, 160.0);
+                ui.horizontal(|ui| {
+                    var_pills::var_ref_text_edit(
+                        ui,
+                        "Target color",
+                        target_color,
+                        known_vars,
+                        is_dark,
+                        160.0,
+                    );
+                    if let Some(rgba) = parse_hex_color(target_color) {
+                        let size = egui::vec2(16.0, 16.0);
+                        let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+                        ui.painter().rect(
+                            rect,
+                            3.0,
+                            tree_chrome::rgba_pub(rgba),
+                            egui::Stroke::new(1.0, egui::Color32::from_gray(80)),
+                            egui::StrokeKind::Outside,
+                        );
+                    }
+                    if theme::record_icon_button(
+                        ui,
+                        "Click on screen to sample pixel color",
+                        !screen_click.is_armed(),
+                    )
+                    .clicked()
+                    {
+                        screen_click.arm_color();
+                    }
+                });
                 ui.add(egui::DragValue::new(color_tolerance).prefix("Color tolerance: "));
             });
             tip_section(ui, |ui| {
@@ -651,7 +725,9 @@ fn parse_scalar(text: &str) -> ScalarValue {
 
 fn string_list_field(ui: &mut egui::Ui, label: &str, values: &mut Vec<String>) {
     let mut text = values.join("\n");
-    ui.label(label);
+    if !label.is_empty() {
+        ui.label(label);
+    }
     if ui
         .add(
             egui::TextEdit::multiline(&mut text)
@@ -668,24 +744,46 @@ fn string_list_field(ui: &mut egui::Ui, label: &str, values: &mut Vec<String>) {
     }
 }
 
+/// Plain text for the Set value editor (Go `formatAnyValue`).
+/// Do not use `serde_yaml::to_string` here — it injects quotes for empty/`true`/`42`
+/// and re-quoting on each keystroke makes quotation marks appear to duplicate when deleted.
+fn set_value_edit_text(value: &serde_yaml::Value) -> String {
+    match value {
+        serde_yaml::Value::Null => String::new(),
+        serde_yaml::Value::Bool(b) => b.to_string(),
+        serde_yaml::Value::Number(n) => n.to_string(),
+        serde_yaml::Value::String(s) => s.clone(),
+        other => match serde_yaml::to_string(other) {
+            Ok(s) => s.trim().to_string(),
+            Err(_) => String::new(),
+        },
+    }
+}
+
 fn yaml_value_field(
     ui: &mut egui::Ui,
     label: &str,
     value: &mut serde_yaml::Value,
     known_vars: &HashSet<String>,
     is_dark: bool,
+    active_macro: Option<&Macro>,
 ) {
-    let mut text = match serde_yaml::to_string(value) {
-        Ok(s) => s.trim().to_string(),
-        Err(_) => String::new(),
-    };
+    let mut text = set_value_edit_text(value);
     let before = text.clone();
-    var_pills::var_ref_multiline_edit(ui, label, &mut text, known_vars, is_dark, 280.0, 2);
+    let validation = validate_set_variable_value(&text, active_macro);
+    var_pills::validated_var_ref_multiline_edit(
+        ui,
+        label,
+        &mut text,
+        known_vars,
+        is_dark,
+        280.0,
+        2,
+        &validation,
+    );
     if text != before {
-        match serde_yaml::from_str::<serde_yaml::Value>(&text) {
-            Ok(v) => *value = v,
-            Err(_) => *value = serde_yaml::Value::String(text),
-        }
+        // Store as plain string (Go tooltip apply). Runtime resolve parses numbers/expressions.
+        *value = serde_yaml::Value::String(text);
     }
 }
 
@@ -694,11 +792,22 @@ fn wait_editor(ui: &mut egui::Ui, wait: &mut WaitTilFoundConfig) {
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing = egui::Vec2::splat(6.0);
         combo_str(ui, "Repeat mode", &mut wait.repeat_mode, options::REPEAT_MODES);
-        ui.add(egui::DragValue::new(&mut wait.wait_til_found_seconds).prefix("Wait seconds: "));
-        ui.add(
+        // Mirror Go `setModeEnabled`: Once → all off; waituntilfound → timing only;
+        // repeatwhilefound → timing + max iterations.
+        let timing_enabled = wait.effective_repeat_mode() != REPEAT_ONCE;
+        let max_enabled = wait.is_repeat_while_found();
+        ui.add_enabled(
+            timing_enabled,
+            egui::DragValue::new(&mut wait.wait_til_found_seconds).prefix("Wait seconds: "),
+        );
+        ui.add_enabled(
+            timing_enabled,
             egui::DragValue::new(&mut wait.wait_til_found_interval_ms).prefix("Interval ms: "),
         );
-        ui.add(egui::DragValue::new(&mut wait.max_iterations).prefix("Max iterations: "));
+        ui.add_enabled(
+            max_enabled,
+            egui::DragValue::new(&mut wait.max_iterations).prefix("Max iterations: "),
+        );
     });
 }
 
@@ -838,6 +947,63 @@ mod tests {
             ScalarValue::String("${x}".into())
         );
         assert_eq!(parse_scalar(""), ScalarValue::Null);
+    }
+
+    #[test]
+    fn set_value_edit_text_has_no_yaml_quotes() {
+        assert_eq!(set_value_edit_text(&serde_yaml::Value::Null), "");
+        assert_eq!(
+            set_value_edit_text(&serde_yaml::Value::String(String::new())),
+            ""
+        );
+        assert_eq!(
+            set_value_edit_text(&serde_yaml::Value::String("true".into())),
+            "true"
+        );
+        assert_eq!(
+            set_value_edit_text(&serde_yaml::Value::String("42".into())),
+            "42"
+        );
+        assert_eq!(
+            set_value_edit_text(&serde_yaml::Value::String("'hello'".into())),
+            "'hello'"
+        );
+        assert_eq!(
+            set_value_edit_text(&serde_yaml::Value::Bool(true)),
+            "true"
+        );
+        assert_eq!(
+            set_value_edit_text(&serde_yaml::Value::Number(42.into())),
+            "42"
+        );
+    }
+
+    #[test]
+    fn set_value_edit_survives_deleting_quotes() {
+        // Simulate the old bug: YAML-serialized empty/true re-inject quotes on each edit.
+        let mut value = serde_yaml::Value::String(String::new());
+        let mut text = set_value_edit_text(&value);
+        assert_eq!(text, "");
+        text.push('\'');
+        value = serde_yaml::Value::String(text.clone());
+        assert_eq!(set_value_edit_text(&value), "'");
+        text.pop();
+        value = serde_yaml::Value::String(text);
+        assert_eq!(set_value_edit_text(&value), "");
+
+        value = serde_yaml::Value::String("true".into());
+        text = set_value_edit_text(&value);
+        assert_eq!(text, "true");
+        // User wraps in quotes then deletes them — display must stay identity.
+        text = format!("'{text}'");
+        value = serde_yaml::Value::String(text.clone());
+        assert_eq!(set_value_edit_text(&value), "'true'");
+        text.pop();
+        value = serde_yaml::Value::String(text.clone());
+        assert_eq!(set_value_edit_text(&value), "'true");
+        text.remove(0);
+        value = serde_yaml::Value::String(text);
+        assert_eq!(set_value_edit_text(&value), "true");
     }
 
     #[test]

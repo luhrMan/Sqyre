@@ -98,10 +98,6 @@ func copyActionFromSnapshot(dst, src actions.ActionInterface) {
 		s := src.(*actions.SetVariable)
 		d.VariableName = s.VariableName
 		d.Value = s.Value
-	case *actions.Calculate:
-		s := src.(*actions.Calculate)
-		d.Expression = s.Expression
-		d.OutputVar = s.OutputVar
 	case *actions.RunMacro:
 		s := src.(*actions.RunMacro)
 		d.MacroName = s.MacroName
@@ -110,8 +106,6 @@ func copyActionFromSnapshot(dst, src actions.ActionInterface) {
 		d.Name = s.Name
 		d.Targets = slices.Clone(s.Targets)
 		d.SearchArea = s.SearchArea
-		d.RowSplit = s.RowSplit
-		d.ColSplit = s.ColSplit
 		d.Tolerance = s.Tolerance
 		d.Blur = s.Blur
 		d.WaitTilFoundConfig = s.WaitTilFoundConfig

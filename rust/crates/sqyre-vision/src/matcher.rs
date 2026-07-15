@@ -1,5 +1,5 @@
 use sqyre_match::{
-    find_template_matches, blur_image, search_blur_kernel, ImageBuf, MatchError, Point,
+    blur_image, find_template_matches, search_blur_kernel, ImageBuf, MatchError, Point,
     DEFAULT_CLOSE_MATCHES_DISTANCE,
 };
 

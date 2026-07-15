@@ -55,6 +55,13 @@ pub trait ScreenCapturer {
     fn capture_rect(&mut self, rect: DesktopRect) -> Result<RgbaImage, String>;
     fn virtual_bounds(&mut self) -> Result<DesktopRect, String>;
 
+    /// Per-monitor (width, height) in display order (Go `DisplayBoundsAbs` sizes).
+    /// Default: one entry from [`Self::virtual_bounds`].
+    fn monitor_sizes(&mut self) -> Result<Vec<(i32, i32)>, String> {
+        let vb = self.virtual_bounds()?;
+        Ok(vec![(vb.w, vb.h)])
+    }
+
     /// Capture a search-area rectangle after basic size checks.
     fn capture_search_area(
         &mut self,
@@ -95,6 +102,11 @@ pub trait TemplateMatcher {
         threshold: f32,
         blur: i32,
     ) -> Result<Vec<Point>, MatchError>;
+
+    /// Spatial dedup distance for nearby peaks (Go settings `image_search_close_matches_distance`).
+    fn close_matches_distance(&self) -> i32 {
+        sqyre_match::DEFAULT_CLOSE_MATCHES_DISTANCE
+    }
 }
 
 /// Resolve `program~point` / search-area refs using the loaded program catalog.

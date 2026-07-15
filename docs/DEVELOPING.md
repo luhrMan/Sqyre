@@ -2,19 +2,24 @@
 
 ## Dev container (recommended)
 
-Open the repository in the dev container (`.devcontainer/`). It is **Rust-migration focused**: Rust 1.92, clang, Tesseract/Leptonica, and Linux GUI link deps (no OpenCV source build, Go, or packaging tooling). For the Go/Fyne app, use a host toolchain or the scripts under `scripts/` / `docs/DEVELOPING.md` native-deps section.
+Open the repository in the dev container (`.devcontainer/`). It is **Rust-focused**: Rust 1.92, clang, Tesseract/Leptonica, and Linux GUI link deps (no OpenCV source build, Go, or packaging tooling). For the legacy Go/Fyne app (`make go`), use a host toolchain or the scripts under `scripts/`.
 
 From the repo root:
 
 ```bash
-make linux          # ./bin/sqyre (Go)
-make rust           # ./bin/sqyre-rust (egui rewrite)
-make windows        # bin/windows-amd64/sqyre.exe (fyne-cross in Docker)
-make appimage       # bin/*.AppImage
+make                # ./bin/sqyre (Rust, default)
+make run            # cargo run -p sqyre-app
+make go             # ./bin/sqyre-go (legacy Fyne)
+make windows        # bin/windows-amd64/sqyre.exe (fyne-cross in Docker; Go)
+make appimage       # bin/*.AppImage (Go)
 make tessdata       # download eng.traineddata for OCR
 ```
 
-Run `make help` for matprofile variants (`windows-matprofile`, `appimage-matprofile`) and Rust helpers (`rust-release`, `rust-test`, `rust-run`).
+Run `make help` for matprofile variants (`windows-matprofile`, `appimage-matprofile`) and Rust helpers (`rust-release`, `rust-test`).
+
+**Shared DB hazard:** Rust and Go both read/write `~/.sqyre/db.yaml`. Rust can persist `while` / `navigateselect` / `navigatekey` (and other Rust-ahead kinds) that the Go app cannot load — avoid opening the same DB in Go after editing in Rust.
+
+Migration tracker: [rust/MIGRATION.md](../rust/MIGRATION.md).
 
 ---
 
@@ -22,19 +27,19 @@ Run `make help` for matprofile variants (`windows-matprofile`, `appimage-matprof
 
 | Target | Output |
 |--------|--------|
-| `linux` | `bin/sqyre` (Go) |
-| `rust` | `bin/sqyre-rust` (Rust debug) |
-| `rust-release` | `bin/sqyre-rust` (Rust release) |
+| `all` / `sqyre` / `rust` | `bin/sqyre` (Rust debug) — **default** |
+| `rust-release` | `bin/sqyre` (Rust release) |
 | `rust-test` | `cargo test` in `rust/` |
-| `rust-run` | `cargo run -p sqyre-app` |
-| `windows` | `bin/windows-amd64/sqyre.exe` |
-| `appimage` | `bin/Sqyre-*.AppImage` |
+| `run` / `rust-run` | `cargo run -p sqyre-app` |
+| `go` / `fyne` | `bin/sqyre-go` (legacy Go/Fyne) |
+| `windows` | `bin/windows-amd64/sqyre.exe` (Go) |
+| `appimage` | `bin/Sqyre-*.AppImage` (Go) |
 | `tessdata` | Tesseract trained data via `scripts/download-tessdata.sh` |
-| `*-matprofile` | Same as above with `matprofile` build tag |
+| `*-matprofile` | Go builds with `matprofile` tag |
 
-Set `BUILD_TAGS` to override Go tags (default: `gocv_specific_modules`). Set `CARGO_FLAGS` for extra cargo args on Rust targets.
+Set `CARGO_FLAGS` for extra cargo args. Set `BUILD_TAGS` to override Go tags (default: `gocv_specific_modules`).
 
-Go remains the default `make` / `make linux` binary until cutover; see [rust/MIGRATION.md](../rust/MIGRATION.md).
+Release packaging (AppImage / Windows / CI) still builds the Go binary until those pipelines are switched; local daily driver is Rust.
 
 ---
 
@@ -53,9 +58,14 @@ Sqyre uses **CGO** for OpenCV (gocv) and Tesseract (gosseract). OpenCV **≥ 4.6
 
 ## Manual setup (without dev container)
 
-These paths are maintained less actively than the dev container. Prefer the container when possible.
+Prefer the container when possible. Rust daily driver needs Rust ≥ 1.92, clang, Tesseract/Leptonica, and X11 libs (`libx11-dev`, `libxtst-dev`, …). See [rust/README.md](../rust/README.md).
 
-### Linux
+```bash
+make            # or: cd rust && cargo build -p sqyre-app
+./bin/sqyre
+```
+
+### Linux (legacy Go/Fyne)
 
 ```bash
 sudo apt install -y \
@@ -72,7 +82,8 @@ sudo apt install -y \
 Build or install OpenCV to match gocv (see Dockerfile and `build-opencv-linux.sh`), then:
 
 ```bash
-go build -tags gocv_specific_modules -o sqyre ./cmd/sqyre
+make go         # ./bin/sqyre-go
+# or: go build -tags gocv_specific_modules -o bin/sqyre-go ./cmd/sqyre
 ```
 
 ### Windows (MSYS2 mingw64)

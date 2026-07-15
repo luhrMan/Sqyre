@@ -207,21 +207,26 @@ pub fn validate_calculate_expression(text: &str, macro_: Option<&Macro>) -> Entr
 
 /// Parse/evaluate with placeholders for missing vars (Go `validateExpressionStructure`).
 /// Does not mutate the caller's runtime store — works on a scratch clone.
+/// When `macro_` is `None`, still validates literal/arithmetic structure on an empty scratch
+/// (so `"1 + "` blocks even with no active macro).
 fn validate_expression_structure(expr: &str, macro_: Option<&Macro>) -> Result<()> {
-    let Some(macro_) = macro_ else {
-        return Ok(());
-    };
     if expr.trim().is_empty() {
         return Ok(());
     }
 
-    let mut scratch = Macro::new(macro_.name.clone(), macro_.global_delay, vec![]);
-    scratch.variable_decls = macro_.variable_decls.clone();
-    scratch.init_runtime_variables();
-    // Keep any live runtime values, then seed missing refs as 0.
-    for (name, val) in macro_.variables.iter() {
-        scratch.variables.set(name, val.clone());
-    }
+    let mut scratch = match macro_ {
+        Some(m) => {
+            let mut scratch = Macro::new(m.name.clone(), m.global_delay, vec![]);
+            scratch.variable_decls = m.variable_decls.clone();
+            scratch.init_runtime_variables();
+            for (name, val) in m.variables.iter() {
+                scratch.variables.set(name, val.clone());
+            }
+            scratch
+        }
+        None => Macro::new(String::new(), 0, vec![]),
+    };
+    // Seed missing refs as 0 so structure (not unknown-var) is what we check.
     for name in sqyre_varref::names(expr) {
         let name = name.trim();
         if name.is_empty() {
@@ -504,5 +509,13 @@ mod tests {
         assert!(looks_like_arithmetic("1+2"));
         assert!(!looks_like_arithmetic("hello"));
         assert!(looks_like_arithmetic("sqrt(4)"));
+    }
+
+    #[test]
+    fn validate_numeric_without_macro_still_checks_structure() {
+        assert!(!validate_numeric_expression("100", None).blocks_submit());
+        assert!(!validate_numeric_expression("1+2", None).blocks_submit());
+        assert!(validate_numeric_expression("1 + ", None).blocks_submit());
+        assert!(!validate_numeric_expression("${x}", None).blocks_submit());
     }
 }

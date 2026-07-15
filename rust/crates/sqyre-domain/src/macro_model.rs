@@ -52,10 +52,66 @@ impl Macro {
         self.variables = vs;
     }
 
+    /// Insert or replace a declaration by name (case-insensitive). Go `UpsertVariable`.
+    pub fn upsert_variable(&mut self, decl: VariableDecl) {
+        let name = decl.name.trim();
+        if name.is_empty() {
+            return;
+        }
+        if let Some(existing) = self
+            .variable_decls
+            .iter_mut()
+            .find(|d| d.name.eq_ignore_ascii_case(name))
+        {
+            *existing = decl;
+        } else {
+            self.variable_decls.push(decl);
+        }
+    }
+
+    /// Remove a declaration by name (case-insensitive). Returns true if removed.
+    pub fn remove_variable_decl(&mut self, name: &str) -> bool {
+        let key = name.trim();
+        if key.is_empty() {
+            return false;
+        }
+        let before = self.variable_decls.len();
+        self.variable_decls
+            .retain(|d| !d.name.eq_ignore_ascii_case(key));
+        self.variable_decls.len() != before
+    }
+
     pub fn parse_hotkey_trigger(s: &str) -> String {
         match s.trim().to_ascii_lowercase().as_str() {
             HOTKEY_TRIGGER_RELEASE => HOTKEY_TRIGGER_RELEASE.to_string(),
             _ => HOTKEY_TRIGGER_PRESS.to_string(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{VariableDecl, VariableType};
+
+    #[test]
+    fn upsert_and_remove_variable_decl() {
+        let mut m = Macro::new("m", 0, vec![]);
+        m.upsert_variable(VariableDecl {
+            name: "Count".into(),
+            type_: VariableType::Number,
+            initial_value: "1".into(),
+            description: String::new(),
+        });
+        m.upsert_variable(VariableDecl {
+            name: "count".into(),
+            type_: VariableType::Number,
+            initial_value: "2".into(),
+            description: "n".into(),
+        });
+        assert_eq!(m.variable_decls.len(), 1);
+        assert_eq!(m.variable_decls[0].initial_value, "2");
+        assert!(m.remove_variable_decl("COUNT"));
+        assert!(m.variable_decls.is_empty());
     }
 }

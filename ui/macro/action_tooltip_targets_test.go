@@ -9,7 +9,7 @@ import (
 )
 
 func TestActionDisplayParamsForTree_imageSearchOmitsItems(t *testing.T) {
-	is := actions.NewImageSearch("find", nil, []string{"prog|item"}, actions.CoordinateRef("area"), 1, 1, 0.95, 0)
+	is := actions.NewImageSearch("find", nil, []string{"prog|item"}, actions.CoordinateRef("area"), 0.95, 0)
 	params := actionDisplayParamsForTree(is)
 	for _, p := range params {
 		if p.Label == "Items" {

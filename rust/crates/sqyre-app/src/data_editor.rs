@@ -5,16 +5,22 @@ use crate::icon_cache::IconCache;
 use crate::icon_variants::{self, AddVariantError};
 use crate::preview_tooltip::{PreviewKind, PreviewTooltipCache};
 use crate::theme;
+use crate::var_pills;
 use eframe::egui;
-use sqyre_domain::{Macro, ProgramEntityKind, ScalarValue, PROGRAM_DELIMITER};
+use sqyre_domain::{
+    collect_known_variable_names, Macro, ProgramEntityKind, ScalarValue, PROGRAM_DELIMITER,
+};
 use sqyre_hotkeys::ScreenClickBridge;
 use sqyre_persist::{
     auto_pic_path, Database, ProgramCatalog, ProgramCollection, ProgramItem, ProgramMask,
     ProgramPoint, ProgramSearchArea,
 };
 use sqyre_validate::{
-    validate_entity_name, validate_item_grid_fields, validate_search_area_literal_bounds,
+    validate_entity_name, validate_item_grid_fields, validate_numeric_expression,
+    validate_search_area_literal_bounds, EntryValidation,
 };
+use sqyre_vision::invalidate_search_masks_under;
+use std::collections::HashSet;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -89,6 +95,8 @@ pub struct DataEditor {
     status: Option<String>,
     status_error: bool,
     confirm: Option<PendingConfirm>,
+    /// After New Point/Search Area: auto-arm record and persist on capture.
+    save_after_record: bool,
 }
 
 impl Default for DataEditor {
@@ -126,6 +134,7 @@ impl Default for DataEditor {
             status: None,
             status_error: false,
             confirm: None,
+            save_after_record: false,
         }
     }
 }
@@ -136,6 +145,7 @@ impl DataEditor {
         ctx: &egui::Context,
         db: &mut Database,
         macros: &mut Vec<Macro>,
+        selected_macro: usize,
         catalog: &mut ProgramCatalog,
         icons: &mut IconCache,
         previews: &mut PreviewTooltipCache,
@@ -144,7 +154,7 @@ impl DataEditor {
         if !self.open {
             return;
         }
-        self.poll_screen_click(screen_click, previews);
+        self.poll_screen_click(screen_click, previews, db, macros, catalog);
         let mut open = self.open;
         egui::Window::new("Data Editor")
             .open(&mut open)
@@ -154,7 +164,16 @@ impl DataEditor {
             .resizable(true)
             .constrain(true)
             .show(ctx, |ui| {
-                self.ui(ui, db, macros, catalog, icons, previews, screen_click);
+                self.ui(
+                    ui,
+                    db,
+                    macros,
+                    selected_macro,
+                    catalog,
+                    icons,
+                    previews,
+                    screen_click,
+                );
             });
         self.open = open;
     }
@@ -163,12 +182,17 @@ impl DataEditor {
         &mut self,
         screen_click: &ScreenClickBridge,
         previews: &mut PreviewTooltipCache,
+        db: &mut Database,
+        macros: &mut Vec<Macro>,
+        catalog: &mut ProgramCatalog,
     ) {
+        let mut captured = false;
         if let Some((x, y)) = screen_click.take_point() {
             self.form_x = x.to_string();
             self.form_y = y.to_string();
             previews.invalidate_entity(self.form_name.trim());
             self.set_ok(format!("Recorded point ({x}, {y})."));
+            captured = true;
         }
         if let Some((lx, ty, rx, by)) = screen_click.take_search_area() {
             self.form_left = lx.to_string();
@@ -177,9 +201,18 @@ impl DataEditor {
             self.form_bottom = by.to_string();
             previews.invalidate_entity(self.form_name.trim());
             self.set_ok(format!("Recorded search area ({lx},{ty})–({rx},{by})."));
+            captured = true;
         }
         if screen_click.take_cancelled() {
+            self.save_after_record = false;
             self.set_ok("Recording cancelled.");
+        }
+        if captured && self.save_after_record {
+            self.save_after_record = false;
+            self.on_update(db, macros, catalog, previews);
+            if !self.status_error {
+                self.set_ok("Recorded and saved.");
+            }
         }
     }
 
@@ -188,6 +221,7 @@ impl DataEditor {
         ui: &mut egui::Ui,
         db: &mut Database,
         macros: &mut Vec<Macro>,
+        selected_macro: usize,
         catalog: &mut ProgramCatalog,
         icons: &mut IconCache,
         previews: &mut PreviewTooltipCache,
@@ -303,7 +337,14 @@ impl DataEditor {
                             .max_height(body_h)
                             .show(ui, |ui| {
                                 ui.set_max_width(ui.available_width());
-                                self.draw_form(ui, catalog, icons, previews, screen_click);
+                                self.draw_form(
+                                    ui,
+                                    catalog,
+                                    icons,
+                                    previews,
+                                    screen_click,
+                                    macros.get(selected_macro),
+                                );
                             });
                     },
                 );
@@ -320,10 +361,10 @@ impl DataEditor {
                         .add_enabled(can_new, egui::Button::new("New"))
                         .clicked()
                     {
-                        self.on_new(db, macros, catalog, icons);
+                        self.on_new(db, macros, catalog, icons, screen_click);
                     }
                     let dirty = self.is_dirty(catalog);
-                    let valid = self.form_valid();
+                    let valid = self.form_valid(macros.get(selected_macro));
                     let can_update = !matches!(self.tab, EditorTab::AutoPic);
                     if ui
                         .add_enabled(can_update && dirty && valid, egui::Button::new("Update"))
@@ -475,7 +516,7 @@ impl DataEditor {
             );
         });
         ui.separator();
-        let q = self.search.to_ascii_lowercase();
+        let q = self.search.trim().to_string();
         // Remaining height in the fixed left pane — scroll lists must not grow the window.
         let list_h = ui.available_height().max(40.0);
         match self.tab {
@@ -486,7 +527,7 @@ impl DataEditor {
                     .max_height(list_h)
                     .show(ui, |ui| {
                         for name in catalog.program_names() {
-                            if !q.is_empty() && !name.to_ascii_lowercase().contains(&q) {
+                            if !q.is_empty() && !crate::pickers::fuzzy_match_fold(&q, name) {
                                 continue;
                             }
                             let selected = self.selected_program.as_deref() == Some(name.as_str());
@@ -546,10 +587,10 @@ impl DataEditor {
                     .show(ui, |ui| {
                         for prog in catalog.program_names() {
                             let entities = self.entity_names(catalog, prog);
-                            let prog_match = q.is_empty() || prog.to_ascii_lowercase().contains(&q);
+                            let prog_match = q.is_empty() || crate::pickers::fuzzy_match_fold(&q, prog);
                             let any_entity = entities
                                 .iter()
-                                .any(|e| q.is_empty() || e.to_ascii_lowercase().contains(&q));
+                                .any(|e| q.is_empty() || crate::pickers::fuzzy_match_fold(&q, e));
                             if !prog_match && !any_entity {
                                 continue;
                             }
@@ -558,7 +599,7 @@ impl DataEditor {
                             );
                             for ent in entities {
                                 if !q.is_empty()
-                                    && !ent.to_ascii_lowercase().contains(&q)
+                                    && !crate::pickers::fuzzy_match_fold(&q, &ent)
                                     && !prog_match
                                 {
                                     continue;
@@ -817,7 +858,12 @@ impl DataEditor {
         icons: &mut IconCache,
         previews: &mut PreviewTooltipCache,
         screen_click: &ScreenClickBridge,
+        active_macro: Option<&Macro>,
     ) {
+        let known = active_macro
+            .map(collect_known_variable_names)
+            .unwrap_or_default();
+        let is_dark = ui.visuals().dark_mode;
         match self.tab {
             EditorTab::Programs => {
                 ui.heading("Program");
@@ -942,10 +988,12 @@ impl DataEditor {
                     if theme::record_icon_button(ui, "Click on screen to capture X/Y", !armed)
                         .clicked()
                     {
+                        self.save_after_record = false;
                         screen_click.arm_point();
                         self.set_ok("Recording… left-click to capture.");
                     }
                     if armed && ui.button("Cancel").clicked() {
+                        self.save_after_record = false;
                         screen_click.disarm();
                     }
                 });
@@ -954,8 +1002,28 @@ impl DataEditor {
                 let y = form_coord_i32(&self.form_y);
                 let force = paint_preview_toolbar(ui);
                 let rect = previews.paint_point_panel(ui, x, y, force);
-                paint_preview_coord_chip(ui, rect, CardinalEdge::Left, "X", &mut self.form_x);
-                paint_preview_coord_chip(ui, rect, CardinalEdge::Bottom, "Y", &mut self.form_y);
+                let vx = validate_numeric_expression(&self.form_x, active_macro);
+                let vy = validate_numeric_expression(&self.form_y, active_macro);
+                paint_preview_coord_chip(
+                    ui,
+                    rect,
+                    CardinalEdge::Left,
+                    "X",
+                    &mut self.form_x,
+                    &known,
+                    is_dark,
+                    &vx,
+                );
+                paint_preview_coord_chip(
+                    ui,
+                    rect,
+                    CardinalEdge::Bottom,
+                    "Y",
+                    &mut self.form_y,
+                    &known,
+                    is_dark,
+                    &vy,
+                );
             }
             EditorTab::SearchAreas => {
                 ui.heading("Search Area");
@@ -975,10 +1043,12 @@ impl DataEditor {
                     )
                     .clicked()
                     {
+                        self.save_after_record = false;
                         screen_click.arm_search_area();
                         self.set_ok("Recording… click two corners.");
                     }
                     if armed && ui.button("Cancel").clicked() {
+                        self.save_after_record = false;
                         screen_click.disarm();
                     }
                 });
@@ -989,13 +1059,29 @@ impl DataEditor {
                 let by = form_coord_i32(&self.form_bottom);
                 let force = paint_preview_toolbar(ui);
                 let rect = previews.paint_search_area_panel(ui, lx, ty, rx, by, force);
-                paint_preview_coord_chip(ui, rect, CardinalEdge::Top, "TopY", &mut self.form_top);
+                let v_top = validate_numeric_expression(&self.form_top, active_macro);
+                let v_bottom = validate_numeric_expression(&self.form_bottom, active_macro);
+                let v_left = validate_numeric_expression(&self.form_left, active_macro);
+                let v_right = validate_numeric_expression(&self.form_right, active_macro);
+                paint_preview_coord_chip(
+                    ui,
+                    rect,
+                    CardinalEdge::Top,
+                    "TopY",
+                    &mut self.form_top,
+                    &known,
+                    is_dark,
+                    &v_top,
+                );
                 paint_preview_coord_chip(
                     ui,
                     rect,
                     CardinalEdge::Bottom,
                     "BottomY",
                     &mut self.form_bottom,
+                    &known,
+                    is_dark,
+                    &v_bottom,
                 );
                 paint_preview_coord_chip(
                     ui,
@@ -1003,6 +1089,9 @@ impl DataEditor {
                     CardinalEdge::Left,
                     "LeftX",
                     &mut self.form_left,
+                    &known,
+                    is_dark,
+                    &v_left,
                 );
                 paint_preview_coord_chip(
                     ui,
@@ -1010,6 +1099,9 @@ impl DataEditor {
                     CardinalEdge::Right,
                     "RightX",
                     &mut self.form_right,
+                    &known,
+                    is_dark,
+                    &v_right,
                 );
             }
             EditorTab::Masks => {
@@ -1057,32 +1149,57 @@ impl DataEditor {
                         "Inverse (shape included, rest excluded)",
                     );
                     ui.add_space(4.0);
-                    ui.label("Center X %");
-                    ui.add(
-                        egui::TextEdit::singleline(&mut self.form_center_x)
-                            .desired_width(f32::INFINITY),
+                    let cx = validate_numeric_expression(&self.form_center_x, active_macro);
+                    var_pills::validated_var_ref_edit(
+                        ui,
+                        "Center X %",
+                        &mut self.form_center_x,
+                        &known,
+                        is_dark,
+                        f32::INFINITY,
+                        &cx,
                     );
-                    ui.label("Center Y %");
-                    ui.add(
-                        egui::TextEdit::singleline(&mut self.form_center_y)
-                            .desired_width(f32::INFINITY),
+                    let cy = validate_numeric_expression(&self.form_center_y, active_macro);
+                    var_pills::validated_var_ref_edit(
+                        ui,
+                        "Center Y %",
+                        &mut self.form_center_y,
+                        &known,
+                        is_dark,
+                        f32::INFINITY,
+                        &cy,
                     );
                     if self.form_shape == "circle" {
-                        ui.label("Radius");
-                        ui.add(
-                            egui::TextEdit::singleline(&mut self.form_radius)
-                                .desired_width(f32::INFINITY),
+                        let radius = validate_numeric_expression(&self.form_radius, active_macro);
+                        var_pills::validated_var_ref_edit(
+                            ui,
+                            "Radius",
+                            &mut self.form_radius,
+                            &known,
+                            is_dark,
+                            f32::INFINITY,
+                            &radius,
                         );
                     } else {
-                        ui.label("Base");
-                        ui.add(
-                            egui::TextEdit::singleline(&mut self.form_base)
-                                .desired_width(f32::INFINITY),
+                        let base = validate_numeric_expression(&self.form_base, active_macro);
+                        var_pills::validated_var_ref_edit(
+                            ui,
+                            "Base",
+                            &mut self.form_base,
+                            &known,
+                            is_dark,
+                            f32::INFINITY,
+                            &base,
                         );
-                        ui.label("Height");
-                        ui.add(
-                            egui::TextEdit::singleline(&mut self.form_height)
-                                .desired_width(f32::INFINITY),
+                        let height = validate_numeric_expression(&self.form_height, active_macro);
+                        var_pills::validated_var_ref_edit(
+                            ui,
+                            "Height",
+                            &mut self.form_height,
+                            &known,
+                            is_dark,
+                            f32::INFINITY,
+                            &height,
                         );
                     }
                     ui.weak("Numeric fields accept literals or ${var} expressions.");
@@ -1339,7 +1456,7 @@ impl DataEditor {
         }
     }
 
-    fn form_valid(&self) -> bool {
+    fn form_valid(&self, active_macro: Option<&Macro>) -> bool {
         if validate_entity_name(self.form_name.trim()).is_err() {
             return false;
         }
@@ -1358,6 +1475,8 @@ impl DataEditor {
                 self.selected_program.is_some()
                     && !self.form_x.trim().is_empty()
                     && !self.form_y.trim().is_empty()
+                    && !validate_numeric_expression(&self.form_x, active_macro).blocks_submit()
+                    && !validate_numeric_expression(&self.form_y, active_macro).blocks_submit()
             }
             EditorTab::SearchAreas => {
                 self.selected_program.is_some()
@@ -1372,12 +1491,31 @@ impl DataEditor {
                         &self.form_bottom,
                     )
                     .is_ok()
+                    && !validate_numeric_expression(&self.form_left, active_macro).blocks_submit()
+                    && !validate_numeric_expression(&self.form_top, active_macro).blocks_submit()
+                    && !validate_numeric_expression(&self.form_right, active_macro).blocks_submit()
+                    && !validate_numeric_expression(&self.form_bottom, active_macro).blocks_submit()
             }
             EditorTab::Masks => {
-                self.selected_program.is_some()
-                    && (self.form_shape == "rectangle" || self.form_shape == "circle")
-                    && !self.form_center_x.trim().is_empty()
-                    && !self.form_center_y.trim().is_empty()
+                if self.selected_program.is_none()
+                    || (self.form_shape != "rectangle" && self.form_shape != "circle")
+                    || self.form_center_x.trim().is_empty()
+                    || self.form_center_y.trim().is_empty()
+                {
+                    return false;
+                }
+                if validate_numeric_expression(&self.form_center_x, active_macro).blocks_submit()
+                    || validate_numeric_expression(&self.form_center_y, active_macro).blocks_submit()
+                {
+                    return false;
+                }
+                if self.form_shape == "circle" {
+                    !validate_numeric_expression(&self.form_radius, active_macro).blocks_submit()
+                } else {
+                    !validate_numeric_expression(&self.form_base, active_macro).blocks_submit()
+                        && !validate_numeric_expression(&self.form_height, active_macro)
+                            .blocks_submit()
+                }
             }
             EditorTab::Collections => {
                 self.selected_program.is_some()
@@ -1395,8 +1533,10 @@ impl DataEditor {
         macros: &mut Vec<Macro>,
         catalog: &mut ProgramCatalog,
         icons: &mut IconCache,
+        screen_click: &ScreenClickBridge,
     ) {
         self.clear_status();
+        self.save_after_record = false;
         let created = match self.tab {
             EditorTab::Programs => {
                 let base = if self.form_name.trim().is_empty() {
@@ -1606,7 +1746,23 @@ impl DataEditor {
                 if let Err(e) = self.persist(db, macros, catalog) {
                     self.set_err(e);
                 } else {
-                    self.set_ok(msg);
+                    match self.tab {
+                        EditorTab::Points if !screen_click.is_armed() => {
+                            self.save_after_record = true;
+                            screen_click.arm_point();
+                            self.set_ok(format!(
+                                "{msg} Recording… left-click to capture X/Y."
+                            ));
+                        }
+                        EditorTab::SearchAreas if !screen_click.is_armed() => {
+                            self.save_after_record = true;
+                            screen_click.arm_search_area();
+                            self.set_ok(format!(
+                                "{msg} Recording… click two corners."
+                            ));
+                        }
+                        _ => self.set_ok(msg),
+                    }
                 }
             }
             Err(e) => self.set_err(e),
@@ -2269,6 +2425,7 @@ impl DataEditor {
         match copy_image_as_png(&src, &dest) {
             Ok(()) => {
                 icons.invalidate_path(&dest);
+                invalidate_search_masks_under(&dest);
                 self.set_ok("Uploaded mask image.");
             }
             Err(e) => self.set_err(e),
@@ -2286,10 +2443,12 @@ impl DataEditor {
         match std::fs::remove_file(&path) {
             Ok(()) => {
                 icons.invalidate_path(&path);
+                invalidate_search_masks_under(&path);
                 self.set_ok("Removed mask image.");
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 icons.invalidate_path(&path);
+                invalidate_search_masks_under(&path);
                 self.set_ok("Removed mask image.");
             }
             Err(e) => self.set_err(format!("remove mask image: {e}")),
@@ -2474,6 +2633,9 @@ fn paint_preview_coord_chip(
     edge: CardinalEdge,
     placeholder: &str,
     value: &mut String,
+    known: &HashSet<String>,
+    is_dark: bool,
+    validation: &EntryValidation,
 ) {
     const CHIP_W: f32 = 76.0;
     const CHIP_H: f32 = 24.0;
@@ -2495,15 +2657,41 @@ fn paint_preview_coord_chip(
         4.0,
         egui::Color32::from_rgba_unmultiplied(16, 16, 16, 170),
     );
+    if let Some(stroke) = var_pills::entry_validation_stroke(validation) {
+        ui.painter()
+            .rect_stroke(chip, 4.0, stroke, egui::StrokeKind::Outside);
+    }
     let edit_rect = chip.shrink(3.0);
-    ui.put(
-        edit_rect,
-        egui::TextEdit::singleline(value)
-            .id_salt(format!("preview_coord_{placeholder}"))
-            .frame(egui::Frame::NONE)
-            .hint_text(placeholder)
-            .desired_width(edit_rect.width()),
-    );
+    let id = ui.id().with(("preview_coord", placeholder));
+    let focused = ui.memory(|m| m.has_focus(id));
+    let show_overlay =
+        !focused && !value.is_empty() && sqyre_varref::contains(value.as_str());
+    let resp = if show_overlay {
+        let plain_fg = egui::Color32::from_gray(230);
+        ui.scope_builder(egui::UiBuilder::new().max_rect(edit_rect), |ui| {
+            ui.set_min_size(edit_rect.size());
+            ui.centered_and_justified(|ui| {
+                var_pills::paint_var_ref_content(ui, value, known, is_dark, plain_fg);
+            });
+        })
+        .response
+        .interact(egui::Sense::click())
+    } else {
+        ui.put(
+            edit_rect,
+            egui::TextEdit::singleline(value)
+                .id(id)
+                .frame(egui::Frame::NONE)
+                .hint_text(placeholder)
+                .desired_width(edit_rect.width()),
+        )
+    };
+    if show_overlay && resp.clicked() {
+        ui.memory_mut(|m| m.request_focus(id));
+    }
+    if let Some(tip) = var_pills::entry_validation_tip(validation) {
+        resp.on_hover_text(tip);
+    }
 }
 
 fn variant_name_from_path(path: &std::path::Path, item: &str) -> String {

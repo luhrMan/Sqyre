@@ -91,7 +91,7 @@ func buildDemoMacroActions(m *models.Macro) {
 		[]actions.ActionInterface{actions.NewClick(actions.ClickButtonLeft, true)},
 		[]string{itemTarget},
 		actions.NewCoordinateRef(programName, "Main area"),
-		1, 1, 0.95, 5,
+		0.95, 5,
 	)
 	root.AddSubAction(imageSearch)
 

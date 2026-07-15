@@ -47,7 +47,7 @@ func actionDisplayFromParams(node actions.ActionInterface, params []actions.Para
 
 // buildActionSummaryLine renders the inline summary pills for a tree row.
 // Output variables render as variable-name chips (matching the tooltip popup):
-// in place when the name already appears as a summary param (e.g. Set/Calculate),
+// in place when the name already appears as a summary param (e.g. Set),
 // otherwise appended after the other pills (e.g. search coordinate outputs).
 func buildActionSummaryLine(node actions.ActionInterface, params []actions.Param, known map[string]bool) (fyne.CanvasObject, []actions.Param) {
 	summary, extra := actions.DisplayParams(params)

@@ -334,49 +334,26 @@ func appendSetVariableTooltipView(a *actions.SetVariable, actionType string) []f
 	return []fyne.CanvasObject{wrapTooltipSection(row.box)}
 }
 
-func appendSetVariableTooltipEdit(a *actions.SetVariable, actionType string) ([]fyne.CanvasObject, func() error) {
-	row := newPillRow()
-	nameEntry := varNameEntry(a.VariableName)
-	valueEntry := coordEntry(formatAnyValue(a.Value))
-	row.add(actiondisplay.NewEditablePill("Variable", nameEntry, actionType))
-	row.add(actiondisplay.NewEditablePill("Value", valueEntry, actionType))
-	return []fyne.CanvasObject{wrapTooltipSection(row.box)}, func() error {
-		a.VariableName = strings.TrimSpace(nameEntry.Text)
-		a.Value = valueEntry.Text
-		return nil
-	}
-}
-
-func appendCalculateTooltipView(a *actions.Calculate, actionType string) []fyne.CanvasObject {
-	row := newPillRow()
-	addDisplayPill(row, "Expression", a.Expression, actionType)
-	addDisplayVariablePill(row, "Output", a.OutputVar, actionType)
-	return []fyne.CanvasObject{wrapTooltipSection(row.box)}
-}
-
-func appendCalculateTooltipEdit(a *actions.Calculate, actionType string, owner *actionDisplayTooltipHover) ([]fyne.CanvasObject, func() error) {
+func appendSetVariableTooltipEdit(a *actions.SetVariable, actionType string, owner *actionDisplayTooltipHover) ([]fyne.CanvasObject, func() error) {
 	var sections []fyne.CanvasObject
-	exprEntry := coordEntry(a.Expression)
-	toolbar := calculateBuilderToolbar(exprEntry)
+	valueEntry := coordEntry(formatAnyValue(a.Value))
+	toolbar := expressionBuilderToolbar(valueEntry)
 	sections = append(sections, wrapTooltipSection(toolbar))
 
-	exprRow := newPillRow()
-	exprRow.add(actiondisplay.NewEditablePill("Expression", exprEntry, actionType))
-	sections = append(sections, wrapTooltipSection(exprRow.box))
+	row := newPillRow()
+	nameEntry := varNameEntry(a.VariableName)
+	row.add(actiondisplay.NewEditablePill("Variable", nameEntry, actionType))
+	row.add(actiondisplay.NewEditablePill("Value", valueEntry, actionType))
+	sections = append(sections, wrapTooltipSection(row.box))
 
-	previewSection, _ := appendCalculatePreviewRow(exprEntry, actionType, owner)
+	previewSection, _ := appendExpressionPreviewRow(valueEntry, actionType, owner)
 	if previewSection != nil {
 		sections = append(sections, previewSection)
 	}
 
-	outputRow := newPillRow()
-	outputEntry := varNameEntry(a.OutputVar)
-	outputRow.add(actiondisplay.NewEditablePill("Output", outputEntry, actionType))
-	sections = append(sections, wrapTooltipSection(outputRow.box))
-
 	return sections, func() error {
-		a.Expression = exprEntry.Text
-		a.OutputVar = strings.TrimSpace(outputEntry.Text)
+		a.VariableName = strings.TrimSpace(nameEntry.Text)
+		a.Value = valueEntry.Text
 		return nil
 	}
 }

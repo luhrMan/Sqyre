@@ -31,13 +31,6 @@ func ValidateAction(a actions.ActionInterface, macroModel *models.Macro) error {
 		if strings.TrimSpace(n.Key) == "" {
 			return fmt.Errorf("key: record a key before saving")
 		}
-	case *actions.Calculate:
-		if strings.TrimSpace(n.Expression) == "" {
-			return fmt.Errorf("calculate: expression cannot be empty")
-		}
-		if v := macro.ValidateCalculateExpression(n.Expression, macroModel); v.BlocksSubmit() {
-			return fmt.Errorf("calculate: %s", v.Error)
-		}
 	case *actions.SetVariable:
 		if err := ValidateVariableAssignmentName(n.VariableName); err != nil {
 			return fmt.Errorf("set variable: %w", err)

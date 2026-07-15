@@ -33,7 +33,6 @@ func TestViewParamPills_AllActionTypes(t *testing.T) {
 		{"loop", actions.NewLoop(3, "inner", nil)},
 		{"conditional", actions.NewConditional(nil, actions.MatchAll, "c", nil)},
 		{"setvariable", actions.NewSetVariable("x", 1)},
-		{"calculate", actions.NewCalculate("1+1", "out")},
 		{"runmacro", actions.NewRunMacro("other")},
 		{"break", actions.NewBreak()},
 		{"continue", actions.NewContinue()},
@@ -42,7 +41,7 @@ func TestViewParamPills_AllActionTypes(t *testing.T) {
 		{"savevariable", actions.NewSaveVariable("v", "dest", false, false)},
 		{"focuswindow", actions.NewFocusWindow("title", "path")},
 		{"foreachrow", actions.NewForEachRow("rows", nil, nil)},
-		{"imagesearch", actions.NewImageSearch("s", nil, nil, actions.CoordinateRef(""), 1, 1, 0.95, 0)},
+		{"imagesearch", actions.NewImageSearch("s", nil, nil, actions.CoordinateRef(""), 0.95, 0)},
 		{"findpixel", actions.NewFindPixel("f", actions.CoordinateRef(""), "ffffff", 0)},
 		{"ocr", actions.NewOcr("o", "target", actions.CoordinateRef(""))},
 	}
@@ -236,7 +235,7 @@ func TestActionDisplayTooltipHover_TappedSecondary_opensEditMode(t *testing.T) {
 	w := test.NewWindow(nil)
 	t.Cleanup(w.Close)
 
-	is := actions.NewImageSearch("find", nil, []string{"Demo~Item"}, actions.NewCoordinateRef("Demo", "Main"), 1, 1, 0.9, 0)
+	is := actions.NewImageSearch("find", nil, []string{"Demo~Item"}, actions.NewCoordinateRef("Demo", "Main"), 0.9, 0)
 	hover := newActionDisplayTooltipHover(is, canvas.NewRectangle(color.Transparent), nil, is.GetType(), nil, nil)
 	w.SetContent(custom_widgets.AddWindowItemTooltipLayer(hover, w.Canvas()))
 
@@ -248,7 +247,7 @@ func TestActionDisplayTooltipHover_TappedSecondary_opensEditMode(t *testing.T) {
 
 func TestActionIconTooltipHover_forwardsHoverToTarget(t *testing.T) {
 	t.Helper()
-	is := actions.NewImageSearch("find", nil, []string{"Demo~Item"}, actions.CoordinateRef(""), 1, 1, 0.9, 0)
+	is := actions.NewImageSearch("find", nil, []string{"Demo~Item"}, actions.CoordinateRef(""), 0.9, 0)
 	target := newActionDisplayTooltipHover(is, nil, nil, is.GetType(), nil, nil)
 	iconHover := newActionIconTooltipHover()
 	iconHover.bindActionTooltip(target)
@@ -563,7 +562,7 @@ func TestMeasureVBoxContentHeight_multiSectionViewPills(t *testing.T) {
 		nil,
 		[]string{"Demo~Item"},
 		actions.NewCoordinateRef("Demo", "Main"),
-		2, 2, 0.9, 1,
+		0.9, 1,
 	)
 	hover := newActionDisplayTooltipHover(is, nil, nil, is.GetType(), nil, nil)
 	panel := newActionDisplayTooltipPanel(hover)
@@ -586,7 +585,7 @@ func TestActionTooltipPanel_contentSizeFitsViewBody(t *testing.T) {
 		node actions.ActionInterface
 	}{
 		{"wait", actions.NewWait(100)},
-		{"imagesearch", actions.NewImageSearch("s", nil, []string{"Demo~Item"}, actions.NewCoordinateRef("Demo", "Main"), 1, 1, 0.9, 0)},
+		{"imagesearch", actions.NewImageSearch("s", nil, []string{"Demo~Item"}, actions.NewCoordinateRef("Demo", "Main"), 0.9, 0)},
 		{"conditional", actions.NewConditional(nil, actions.MatchAll, "c", nil)},
 	}
 	for _, tc := range cases {
@@ -619,7 +618,6 @@ func TestBuildParamEditPills_AllEditableActionTypes(t *testing.T) {
 		{"loop", actions.NewLoop(3, "inner", nil)},
 		{"conditional", actions.NewConditional(nil, actions.MatchAll, "c", nil)},
 		{"setvariable", actions.NewSetVariable("x", 1)},
-		{"calculate", actions.NewCalculate("1+1", "out")},
 		{"runmacro", actions.NewRunMacro("other")},
 	}
 	for _, tc := range cases {
@@ -937,7 +935,7 @@ func TestEnterEditMode_preservesTooltipVerticalPosition(t *testing.T) {
 	w.Resize(fyne.NewSize(800, 600))
 	t.Cleanup(w.Close)
 
-	is := actions.NewImageSearch("find", nil, []string{"Demo~Item"}, actions.NewCoordinateRef("Demo", "Main"), 1, 1, 0.9, 0)
+	is := actions.NewImageSearch("find", nil, []string{"Demo~Item"}, actions.NewCoordinateRef("Demo", "Main"), 0.9, 0)
 	hover := newActionDisplayTooltipHover(is, canvas.NewRectangle(color.Transparent), nil, is.GetType(), nil, nil)
 	w.SetContent(custom_widgets.AddWindowItemTooltipLayer(hover, w.Canvas()))
 

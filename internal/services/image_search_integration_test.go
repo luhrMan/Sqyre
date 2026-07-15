@@ -107,7 +107,7 @@ func TestZIntegrationMatchImageSearchFrameSynthetic(t *testing.T) {
 		frame.searchImg = frame.img.Clone()
 	})
 
-	action := actions.NewImageSearch("find", nil, []string{targetKey}, "", 1, 1, 0.1, 0)
+	action := actions.NewImageSearch("find", nil, []string{targetKey}, "", 0.1, 0)
 	results, err := matchImageSearchFrame(frame, action, nil)
 	if err != nil {
 		t.Fatalf("matchImageSearchFrame: %v", err)

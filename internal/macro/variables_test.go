@@ -70,8 +70,8 @@ func TestPreviewCalculate(t *testing.T) {
 	m.UpsertVariable(models.VariableDecl{Name: "count", Type: models.VariableTypeNumber, InitialValue: "5"})
 	m.UpsertVariable(models.VariableDecl{Name: "label", Type: models.VariableTypeText}) // no initial value
 	// An action-produced variable (set at runtime, no initial value).
-	calc := actions.NewCalculate("0", "result")
-	m.Root = actions.NewLoop(1, "root", []actions.ActionInterface{calc})
+	setResult := actions.NewSetVariable("result", "0")
+	m.Root = actions.NewLoop(1, "root", []actions.ActionInterface{setResult})
 
 	cases := []struct {
 		name    string

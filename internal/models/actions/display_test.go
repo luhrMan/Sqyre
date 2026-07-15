@@ -24,7 +24,7 @@ func TestFormatFloatUpTo2Decimals(t *testing.T) {
 }
 
 func TestImageSearch_String_toleranceFormatting(t *testing.T) {
-	is := NewImageSearch("S", nil, []string{"a"}, NewCoordinateRef("prog", "R"), 1, 1, 0.95, 0)
+	is := NewImageSearch("S", nil, []string{"a"}, NewCoordinateRef("prog", "R"), 0.95, 0)
 	if got := is.String(); !strings.Contains(got, "Tolerance: 0.95") {
 		t.Errorf("String() = %q, want tolerance formatted to 2 decimals", got)
 	}

@@ -15,7 +15,7 @@ func TestNewDisplayVariablePill(t *testing.T) {
 	if pill.MinSize().Width <= 0 || pill.MinSize().Height <= 0 {
 		t.Fatalf("expected non-zero pill size, got %v", pill.MinSize())
 	}
-	unknown := NewDisplayVariablePill("Output", "newVar", "calculate", known)
+	unknown := NewDisplayVariablePill("Output", "newVar", "setvariable", known)
 	if unknown.MinSize().Width <= 0 {
 		t.Fatal("expected non-zero width for unknown variable pill")
 	}

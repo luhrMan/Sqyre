@@ -37,8 +37,6 @@ func ActionTypeLabel(actionType string) string {
 		return "Find pixel"
 	case "setvariable":
 		return "Set"
-	case "calculate":
-		return "Calculate"
 	case "foreachrow":
 		return "For each row"
 	case "savevariable":
@@ -83,9 +81,7 @@ func ActionTypeDescription(actionType string) string {
 	case "findpixel":
 		return "Scans a region for a pixel color and saves its coordinates."
 	case "setvariable":
-		return "Assigns a value to a variable in memory."
-	case "calculate":
-		return "Evaluates a math expression and stores the result in a variable."
+		return "Assigns a value or expression result to a variable."
 	case "foreachrow":
 		return "Runs its sub-actions once per row of a list source."
 	case "savevariable":

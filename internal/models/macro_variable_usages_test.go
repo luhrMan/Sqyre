@@ -10,10 +10,10 @@ func TestCollectVariableUsages_declReferencesAndOutputs(t *testing.T) {
 	m := NewMacro("t", 0, nil)
 	m.UpsertVariable(VariableDecl{Name: "count", Type: VariableTypeNumber, InitialValue: "1"})
 
-	calc := actions.NewCalculate("${count} + 1", "count")
+	setCount := actions.NewSetVariable("count", "${count} + 1")
 	setv := actions.NewSetVariable("other", "${count}")
 	save := actions.NewSaveVariable("count", "/tmp/out.txt", false, false)
-	m.Root = actions.NewLoop(1, "root", []actions.ActionInterface{calc, setv, save})
+	m.Root = actions.NewLoop(1, "root", []actions.ActionInterface{setCount, setv, save})
 
 	usages := CollectVariableUsages(m, "count")
 	if len(usages) < 5 {
@@ -28,7 +28,7 @@ func TestCollectVariableUsages_declReferencesAndOutputs(t *testing.T) {
 		t.Fatalf("initial usages = %d, want 1", kinds[VariableUsageInitial])
 	}
 	if kinds[VariableUsageDefined] != 1 {
-		t.Fatalf("defined usages = %d, want 1 (calculate output)", kinds[VariableUsageDefined])
+		t.Fatalf("defined usages = %d, want 1 (set output)", kinds[VariableUsageDefined])
 	}
 	if kinds[VariableUsageReferenced] < 2 {
 		t.Fatalf("referenced usages = %d, want at least 2", kinds[VariableUsageReferenced])

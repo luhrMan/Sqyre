@@ -15,6 +15,18 @@ pub const IMAGE_SEARCH_BUILTIN_VARS: &[&str] = &[
     "ImagePixelHeight",
 ];
 
+/// Monitor builtin names for `num_monitors` displays (1-based; Go `MonitorBuiltinVarNames`).
+/// When `num_monitors < 1`, returns names for one monitor.
+pub fn monitor_builtin_var_names(num_monitors: usize) -> Vec<String> {
+    let n = num_monitors.max(1);
+    let mut names = Vec::with_capacity(n * 2);
+    for i in 1..=n {
+        names.push(format!("monitor{i}Width"));
+        names.push(format!("monitor{i}Height"));
+    }
+    names
+}
+
 /// Lowercase name set for known/unknown nested variable chips (Go `KnownVariableSet`).
 pub fn known_variable_set(names: impl IntoIterator<Item = impl AsRef<str>>) -> HashSet<String> {
     names
@@ -26,9 +38,17 @@ pub fn known_variable_set(names: impl IntoIterator<Item = impl AsRef<str>>) -> H
 
 /// Collect defined variable names from decls, action bindings, and relevant builtins.
 ///
-/// Monitor builtins are omitted (display count is a platform concern); UI can
-/// union those in later if needed for unknown coloring.
+/// Includes `monitor1Width` / `monitor1Height` (one display). Prefer
+/// [`collect_known_variable_names_with_monitors`] when the live display count is known.
 pub fn collect_known_variable_names(macro_: &Macro) -> HashSet<String> {
+    collect_known_variable_names_with_monitors(macro_, 1)
+}
+
+/// Like [`collect_known_variable_names`], plus monitor builtins for `num_monitors`.
+pub fn collect_known_variable_names_with_monitors(
+    macro_: &Macro,
+    num_monitors: usize,
+) -> HashSet<String> {
     let mut names = HashSet::new();
     let mut has_image_search = false;
     let mut has_for_each_row = false;
@@ -62,6 +82,10 @@ pub fn collect_known_variable_names(macro_: &Macro) -> HashSet<String> {
     if has_for_each_row {
         names.insert(FOREACH_ROW_BUILTIN_ROW.to_ascii_lowercase());
         names.insert(FOREACH_ROW_BUILTIN_ROW_COUNT.to_ascii_lowercase());
+    }
+
+    for name in monitor_builtin_var_names(num_monitors) {
+        names.insert(name.to_ascii_lowercase());
     }
 
     names
@@ -213,5 +237,26 @@ mod known_tests {
         assert!(is_known_variable(&known, "COUNT"));
         assert!(is_known_variable(&known, "Row"));
         assert!(is_known_variable(&known, "RowCount"));
+        assert!(is_known_variable(&known, "monitor1Width"));
+        assert!(is_known_variable(&known, "monitor1Height"));
+    }
+
+    #[test]
+    fn monitor_builtin_names_scale_with_count() {
+        assert_eq!(
+            monitor_builtin_var_names(2),
+            vec![
+                "monitor1Width",
+                "monitor1Height",
+                "monitor2Width",
+                "monitor2Height",
+            ]
+        );
+        assert_eq!(
+            monitor_builtin_var_names(0),
+            vec!["monitor1Width", "monitor1Height"]
+        );
+        let known = collect_known_variable_names_with_monitors(&Macro::new("m", 0, vec![]), 2);
+        assert!(is_known_variable(&known, "monitor2Width"));
     }
 }

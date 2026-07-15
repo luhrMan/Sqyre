@@ -20,13 +20,6 @@ func TestValidateAction_keyRequiresKey(t *testing.T) {
 	}
 }
 
-func TestValidateAction_calculateRequiresExpression(t *testing.T) {
-	err := ValidateAction(actions.NewCalculate("", "out"), nil)
-	if err == nil {
-		t.Fatal("expected error for empty expression")
-	}
-}
-
 func TestValidateAction_setVariableRequiresName(t *testing.T) {
 	err := ValidateAction(actions.NewSetVariable("", "1"), nil)
 	if err == nil {
@@ -34,11 +27,15 @@ func TestValidateAction_setVariableRequiresName(t *testing.T) {
 	}
 }
 
-func TestValidateAction_calculateValidExpression(t *testing.T) {
+func TestValidateAction_setVariableExpression(t *testing.T) {
 	m := &models.Macro{Name: "test"}
 	m.InitRuntimeVariables()
-	err := ValidateAction(actions.NewCalculate("1 + 2", "sum"), m)
+	err := ValidateAction(actions.NewSetVariable("sum", "1 + 2"), m)
 	if err != nil {
 		t.Fatalf("expected valid expression: %v", err)
+	}
+	err = ValidateAction(actions.NewSetVariable("sum", "1 +"), m)
+	if err == nil {
+		t.Fatal("expected error for invalid expression")
 	}
 }
