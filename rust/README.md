@@ -13,7 +13,7 @@ In-repo rewrite of Sqyre (egui + PureCV). Go under the repo root remains the dai
 | `sqyre-persist` | `~/.sqyre/db.yaml` + program catalog |
 | `sqyre-executor` | Injected automation / capture / match / coords |
 | `sqyre-match` | `TM_CCOEFF_NORMED` + mask + peak/dedup |
-| `sqyre-vision` | RGB load, match façade, find-pixel |
+| `sqyre-vision` | RGB load, match façade, find-pixel, OCR preprocess / Tesseract |
 | `sqyre-input` | `AutomationBackend` (rustautogui lite + arboard) |
 | `sqyre-capture` | `ScreenCapturer` (Linux X11 absolute rects) |
 | `sqyre-hotkeys` | Esc stop / failsafe (`hooks` feature; stub default) |
@@ -21,7 +21,7 @@ In-repo rewrite of Sqyre (egui + PureCV). Go under the repo root remains the dai
 
 ## Develop
 
-Requires **Rust ≥ 1.92** (egui 0.34 / PureCV). The devcontainer pins `1.92.0`.
+Requires **Rust ≥ 1.92** (egui 0.34 / PureCV). The slim `.devcontainer` pins `1.92.0` plus clang/Tesseract for OCR (no OpenCV/Go).
 
 Linux automation/capture need X11 (`libx11-dev`, `libxtst-dev`).
 
@@ -35,4 +35,6 @@ Do not expect X11 inside the container — build there, run the binary on the ho
 
 Host binary: `./rust/target/debug/sqyre` (or `./rust/target-phase2/debug/sqyre` after an alternate build). Esc stops a running macro; Esc+Ctrl+Shift exits (failsafe).
 
-Still stubbed: `Ocr`, `NavigateSelect`.
+Still stubbed: `NavigateSelect`.
+
+OCR uses Tesseract (`leptess`). Override tessdata with `SQYRE_TESSDATA` if needed.

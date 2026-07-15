@@ -4,6 +4,7 @@ use crate::backends::{DesktopRect, ItemMeta, TemplateMatcher};
 use crate::error::{ExecError, FlowSignal, Result};
 use crate::highlight::{highlight_clear, highlight_fill};
 use crate::run::{execute_action, Executor};
+use crate::action_log::{crop_match_preview, draw_rect_rgb};
 use sqyre_domain::{Action, ActionKind, Macro, ScalarValue, REPEAT_WHILE_FOUND};
 use sqyre_match::{
     blur_image, find_template_matches, search_blur_kernel, ImageBuf, Point,
@@ -175,6 +176,7 @@ fn capture_and_match(
         }
     };
     let search = rgba_to_rgb_buf(&img);
+    exec.log_image(action_id, "1. Capture (search area)", &search);
     let kernel = search_blur_kernel(blur);
     let search_blurred = match blur_image(&search, kernel) {
         Ok(b) => b,
@@ -183,6 +185,13 @@ fn capture_and_match(
             return Vec::new();
         }
     };
+    if blur > 0 {
+        exec.log_image(
+            action_id,
+            &format!("2. Preprocess — blur search (amount={blur})"),
+            &search_blurred,
+        );
+    }
 
     let threshold = tolerance as f32;
     let mut out = Vec::new();
@@ -198,7 +207,7 @@ fn capture_and_match(
         }
         let meta = icons.item_meta(target);
         let mask_path = icons.mask_path(target);
-        for path in paths {
+        for (variant_i, path) in paths.into_iter().enumerate() {
             let template = match load_rgb_image(&path) {
                 Ok(t) => t,
                 Err(e) => {
@@ -206,20 +215,44 @@ fn capture_and_match(
                     continue;
                 }
             };
-            exec.log(
-                action_id,
-                format!(
-                    "Image Search: matching {target} ({}x{}) against {}x{}",
-                    template.width, template.height, search_blurred.width, search_blurred.height
-                ),
-            );
+            let variant_label = if variant_i == 0 {
+                target.to_string()
+            } else {
+                format!("{target} variant {}", variant_i + 1)
+            };
+
+            let mut steps: Vec<(String, ImageBuf)> = Vec::new();
+            steps.push((
+                "0. Search area (match input)".into(),
+                search_blurred.clone(),
+            ));
+            steps.push(("1. Item template".into(), template.clone()));
+            let tmpl_kernel = search_blur_kernel(blur);
+            if blur > 0 {
+                if let Ok(tmpl_blurred) = blur_image(&template, tmpl_kernel) {
+                    steps.push((
+                        format!("2. Preprocess — blur item (amount={blur})"),
+                        tmpl_blurred,
+                    ));
+                }
+            }
+
             let mask_bytes = mask_path
                 .as_ref()
                 .and_then(|p| load_rgb_image(p).ok())
                 .map(|m| {
                     let resized = resize_mask(&m, template.width, template.height);
+                    steps.push(("3. Mask".into(), resized.clone()));
                     mask_as_u8(&resized)
                 });
+
+            exec.log(
+                action_id,
+                format!(
+                    "Image Search: matching {variant_label} ({}x{}) against {}x{}",
+                    template.width, template.height, search_blurred.width, search_blurred.height
+                ),
+            );
             let t0 = Instant::now();
             let matches = match find_template_matches(
                 &search_blurred,
@@ -232,22 +265,74 @@ fn capture_and_match(
                 Ok(m) => m,
                 Err(e) => {
                     exec.log(action_id, format!("Image Search match: {e}"));
+                    exec.log_item_pipeline(
+                        action_id,
+                        variant_label,
+                        format!("match error: {e}"),
+                        &template,
+                        &steps,
+                        vec![format!("Error: {e}")],
+                    );
                     continue;
                 }
             };
+            let match_ms = t0.elapsed().as_secs_f64() * 1000.0;
             exec.log(
                 action_id,
                 format!(
-                    "Image Search: {target} → {} match(es) in {:.0}ms",
+                    "Image Search: {variant_label} → {} match(es) in {:.0}ms",
                     matches.len(),
-                    t0.elapsed().as_secs_f64() * 1000.0
+                    match_ms
                 ),
             );
+
             let half_w = (template.width / 2) as i32;
             let half_h = (template.height / 2) as i32;
-            for mut p in matches {
+            let tw = template.width as i32;
+            let th = template.height as i32;
+            let mut details = vec![
+                format!(
+                    "Template {}×{} · search {}×{} · threshold={threshold:.3} · blur={blur}",
+                    template.width, template.height, search_blurred.width, search_blurred.height
+                ),
+                format!("Match time: {match_ms:.0}ms · {} hit(s)", matches.len()),
+            ];
+            let mut item_overlay = search.clone();
+            const MAX_MATCH_PREVIEWS: usize = 8;
+            for (mi, mut p) in matches.into_iter().enumerate() {
+                let local_tl_x = p.x;
+                let local_tl_y = p.y;
+                draw_rect_rgb(
+                    &mut item_overlay,
+                    local_tl_x,
+                    local_tl_y,
+                    local_tl_x + tw - 1,
+                    local_tl_y + th - 1,
+                    [255, 40, 40],
+                );
+                if mi < MAX_MATCH_PREVIEWS {
+                    if let Some(crop) =
+                        crop_match_preview(&search, local_tl_x, local_tl_y, tw, th, 12)
+                    {
+                        steps.push((
+                            format!(
+                                "Find #{} — crop around ({local_tl_x},{local_tl_y})",
+                                mi + 1
+                            ),
+                            crop,
+                        ));
+                    }
+                }
                 p.x += half_w;
                 p.y += half_h;
+                let screen_x = origin.x + p.x;
+                let screen_y = origin.y + p.y;
+                details.push(format!(
+                    "Find #{}: center local ({}, {}) → screen ({screen_x}, {screen_y}) · box TL ({local_tl_x}, {local_tl_y}) size {tw}×{th}",
+                    mi + 1,
+                    p.x,
+                    p.y,
+                ));
                 out.push(NamedPoint {
                     name: target.clone(),
                     point: p,
@@ -257,6 +342,26 @@ fn capture_and_match(
                     tmpl_h: template.height as i32,
                 });
             }
+            let find_count = details.iter().filter(|d| d.starts_with("Find #")).count();
+            if find_count == 0 {
+                details.push("No matches found for this item.".into());
+            } else {
+                steps.push(("Where found (all matches)".into(), item_overlay));
+            }
+            let summary = if find_count == 0 {
+                format!("0 matches · {match_ms:.0}ms")
+            } else {
+                format!("{find_count} match(es) · {match_ms:.0}ms")
+            };
+
+            exec.log_item_pipeline(
+                action_id,
+                variant_label,
+                summary,
+                &template,
+                &steps,
+                details,
+            );
         }
     }
     exec.log(
@@ -443,6 +548,279 @@ pub(crate) fn execute_find_pixel(
         exec.log(action.id, "FindPixel: pixel not found");
     }
     Ok(())
+}
+
+/// OCR leaf action (Go `executeOcr`): capture → preprocess → recognize → write vars.
+/// Errors are logged and the macro continues (Go behavior).
+pub(crate) fn execute_ocr(
+    exec: &mut Executor<'_>,
+    action: &Action,
+    macro_: &mut Macro,
+) -> Result<()> {
+    let ActionKind::Ocr {
+        target,
+        search_area,
+        output_variable,
+        coords,
+        wait,
+        blur,
+        min_threshold,
+        resize,
+        grayscale,
+        threshold_otsu,
+        threshold_invert,
+        ..
+    } = &action.kind
+    else {
+        return Err(ExecError::Message("not ocr".into()));
+    };
+
+    let action_id = action.id;
+    let mut shot = run_ocr_once(
+        exec,
+        action_id,
+        search_area,
+        target,
+        *blur,
+        *min_threshold,
+        *resize,
+        *grayscale,
+        *threshold_otsu,
+        *threshold_invert,
+        macro_,
+    );
+
+    if wait.wait_until_found_active() {
+        let target_ok = shot
+            .as_ref()
+            .is_some_and(|s| s.text.contains(target.as_str()));
+        if !target_ok {
+            exec.log(
+                action_id,
+                format!(
+                    "OCR: waiting up to {}s until text contains {target:?}",
+                    wait.wait_til_found_seconds
+                ),
+            );
+            let _ = retry_while_not_found(exec, wait, 500, |exec| {
+                shot = run_ocr_once(
+                    exec,
+                    action_id,
+                    search_area,
+                    target,
+                    *blur,
+                    *min_threshold,
+                    *resize,
+                    *grayscale,
+                    *threshold_otsu,
+                    *threshold_invert,
+                    macro_,
+                );
+                Ok(shot
+                    .as_ref()
+                    .is_some_and(|s| s.text.contains(target.as_str())))
+            })?;
+        }
+    }
+
+    let Some(result) = shot else {
+        // Capture/OCR failed — Go continues the macro without writing outputs.
+        return Ok(());
+    };
+
+    if !output_variable.is_empty() {
+        macro_
+            .variables
+            .set(output_variable, ScalarValue::String(result.text.clone()));
+    }
+    set_coord_outputs(macro_, coords, result.x, result.y);
+    exec.log(
+        action_id,
+        format!(
+            "OCR: {} chars → {:?} at ({}, {})",
+            result.text.len(),
+            output_variable,
+            result.x,
+            result.y
+        ),
+    );
+    Ok(())
+}
+
+struct OcrShot {
+    text: String,
+    x: i32,
+    y: i32,
+}
+
+fn run_ocr_once(
+    exec: &mut Executor<'_>,
+    action_id: sqyre_domain::ActionId,
+    search_area: &sqyre_domain::CoordinateRef,
+    target: &str,
+    blur: i32,
+    min_threshold: i32,
+    resize: f64,
+    grayscale: bool,
+    threshold_otsu: bool,
+    threshold_invert: bool,
+    macro_: &Macro,
+) -> Option<OcrShot> {
+    let Some(resolver) = exec.resolver else {
+        exec.log(action_id, "OCR: missing CoordinateResolver");
+        return None;
+    };
+    if exec.capturer.is_none() {
+        exec.log(action_id, "OCR: missing ScreenCapturer");
+        return None;
+    }
+    let Some(ocr) = exec.ocr else {
+        exec.log(action_id, "OCR: missing OcrEngine");
+        return None;
+    };
+
+    let (lx, ty, rx, by) = match resolver.resolve_search_area(search_area, macro_) {
+        Ok(v) => v,
+        Err(e) => {
+            exec.log(
+                action_id,
+                format!(
+                    "OCR: resolve search area {}: {e}",
+                    search_area.display_label()
+                ),
+            );
+            return None;
+        }
+    };
+    exec.log(
+        action_id,
+        format!(
+            "{target} OCR search | {} in X1:{lx} Y1:{ty} X2:{rx} Y2:{by}",
+            search_area.display_label()
+        ),
+    );
+
+    let (img, origin) = match exec
+        .capturer
+        .as_mut()
+        .unwrap()
+        .capture_search_area(lx, ty, rx, by)
+    {
+        Ok(v) => v,
+        Err(e) => {
+            exec.log(action_id, format!("OCR: capture: {e}"));
+            return None;
+        }
+    };
+    let search_center_x = origin.x + origin.w / 2;
+    let search_center_y = origin.y + origin.h / 2;
+    let rgb = rgba_to_rgb_buf(&img);
+    exec.log_image(action_id, "Capture (raw)", &rgb);
+    let opts = sqyre_vision::OcrPreprocessOptions::from_action_fields(
+        grayscale,
+        blur,
+        min_threshold,
+        resize,
+        threshold_otsu,
+        threshold_invert,
+    );
+    let collect = exec.logger.is_some();
+    let (processed, scale, steps) =
+        match sqyre_vision::preprocess_for_ocr_with_steps(&rgb, opts, collect) {
+            Ok(v) => v,
+            Err(e) => {
+                exec.log(action_id, format!("OCR: preprocess: {e}"));
+                return None;
+            }
+        };
+    for step in &steps {
+        exec.log_image(action_id, &step.label, &step.image);
+    }
+    let recognized = match ocr.recognize(&processed) {
+        Ok(v) => v,
+        Err(e) => {
+            exec.log(action_id, format!("OCR: {e}"));
+            return None;
+        }
+    };
+
+    exec.log(
+        action_id,
+        format!(
+            "OCR full text ({} chars): {}",
+            recognized.text.len(),
+            recognized.text
+        ),
+    );
+    exec.log(
+        action_id,
+        format!("OCR words found: {}", recognized.words.len()),
+    );
+    for (i, w) in recognized.words.iter().enumerate() {
+        let ww = (w.right - w.left).max(0);
+        let wh = (w.bottom - w.top).max(0);
+        exec.log(
+            action_id,
+            format!(
+                "  word[{i}] {:?} box=({},{})-({},{}) size={ww}×{wh}",
+                w.word, w.left, w.top, w.right, w.bottom
+            ),
+        );
+    }
+
+    // Overlay word boxes on an RGB copy of the OCR input for the logs UI.
+    if !recognized.words.is_empty() {
+        let mut overlay = if processed.channels == 1 {
+            gray_to_rgb(&processed)
+        } else {
+            processed.clone()
+        };
+        for w in &recognized.words {
+            draw_rect_rgb(
+                &mut overlay,
+                w.left,
+                w.top,
+                w.right.saturating_sub(1),
+                w.bottom.saturating_sub(1),
+                [40, 220, 80],
+            );
+        }
+        exec.log_image(action_id, "OCR word boxes", &overlay);
+    }
+
+    let mut out_x = search_center_x;
+    let mut out_y = search_center_y;
+    let resize_scale = if scale > 0.0 { scale } else { 1.0 };
+    if let Some((bx, by)) = sqyre_vision::find_target_in_boxes(&recognized.words, target) {
+        out_x = origin.x + (bx as f64 / resize_scale) as i32;
+        out_y = origin.y + (by as f64 / resize_scale) as i32;
+        exec.log(
+            action_id,
+            format!(
+                "OCR target {target:?} matched at image ({bx}, {by}) → screen ({out_x}, {out_y}) (scale={resize_scale:.3})"
+            ),
+        );
+    } else {
+        exec.log(
+            action_id,
+            format!("OCR target {target:?} not found among word boxes"),
+        );
+    }
+
+    Some(OcrShot {
+        text: recognized.text,
+        x: out_x,
+        y: out_y,
+    })
+}
+
+fn gray_to_rgb(img: &ImageBuf) -> ImageBuf {
+    debug_assert_eq!(img.channels, 1);
+    let mut data = Vec::with_capacity(img.width * img.height * 3);
+    for &v in &img.data {
+        data.extend_from_slice(&[v, v, v]);
+    }
+    ImageBuf::from_raw(img.width, img.height, 3, data)
 }
 
 fn try_find_pixel(
@@ -682,6 +1060,7 @@ mod tests {
                 macros: None,
                 continue_waiter: None,
                 window_focuser: None,
+                ocr: None,
                 stop_flag: None,
                 logger: Some(&logger),
                 highlighter: None,
@@ -755,6 +1134,7 @@ mod tests {
                 macros: None,
                 continue_waiter: None,
                 window_focuser: None,
+                ocr: None,
                 stop_flag: None,
                 logger: Some(&logger),
                 highlighter: None,
@@ -824,6 +1204,7 @@ mod tests {
                 macros: None,
                 continue_waiter: None,
                 window_focuser: None,
+                ocr: None,
                 stop_flag: None,
                 logger: Some(&logger),
                 highlighter: None,
@@ -913,6 +1294,7 @@ mod tests {
                 macros: None,
                 continue_waiter: None,
                 window_focuser: None,
+                ocr: None,
                 stop_flag: None,
                 logger: Some(&logger),
                 highlighter: None,
@@ -936,6 +1318,29 @@ mod tests {
                 .iter()
                 .any(|l| l.contains("Total # found: 0")),
             "{lines:?}"
+        );
+        let entries = logger.entries_for(search_id);
+        let image_labels: Vec<_> = entries
+            .iter()
+            .filter_map(|e| match e {
+                crate::ActionLogEntry::Image(img) => Some(img.label.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            image_labels.iter().any(|l| l.contains("Capture")),
+            "expected capture image in logs: {image_labels:?}"
+        );
+        let item_titles: Vec<_> = entries
+            .iter()
+            .filter_map(|e| match e {
+                crate::ActionLogEntry::ItemPipeline { title, .. } => Some(title.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            item_titles.iter().any(|t| t.contains("Prog~Item") || t.contains("Item")),
+            "expected item pipeline card in logs: {item_titles:?}"
         );
     }
 
@@ -1008,6 +1413,152 @@ mod tests {
             hits.iter()
                 .any(|p| (p.x - 15).abs() <= 2 && (p.y - 18).abs() <= 2),
             "expected peak near (15,18), got {hits:?}"
+        );
+    }
+
+    #[test]
+    fn ocr_writes_text_and_target_coords() {
+        use crate::backends::{FixedOcrEngine, OcrResult};
+        use sqyre_domain::MatchOrder;
+        use sqyre_vision::OcrWordBox;
+
+        let img = RgbaImage::from_pixel(20, 10, Rgba([255, 255, 255, 255]));
+        let mut backend = RecordingBackend::default();
+        let mut capturer = RecordingCapturer {
+            next: Some(img),
+            bounds: DesktopRect {
+                x: 0,
+                y: 0,
+                w: 2000,
+                h: 2000,
+            },
+            ..Default::default()
+        };
+        let resolver = FixedArea;
+        let ocr = FixedOcrEngine {
+            result: OcrResult {
+                text: "Hello Submit Button".into(),
+                words: vec![
+                    OcrWordBox {
+                        word: "Hello".into(),
+                        left: 0,
+                        top: 0,
+                        right: 40,
+                        bottom: 20,
+                    },
+                    OcrWordBox {
+                        word: "Submit".into(),
+                        left: 50,
+                        top: 0,
+                        right: 110,
+                        bottom: 20,
+                    },
+                    OcrWordBox {
+                        word: "Button".into(),
+                        left: 120,
+                        top: 0,
+                        right: 180,
+                        bottom: 20,
+                    },
+                ],
+            },
+            ..Default::default()
+        };
+        let log = SharedActionLog::new();
+        let ocr_id = ActionId::new();
+
+        let mut macro_ = Macro::new("t", 0, vec![]);
+        macro_.keyboard_delay = 0;
+        macro_.mouse_delay = 0;
+        macro_.root = root_loop(vec![Action {
+            id: ocr_id,
+            kind: ActionKind::Ocr {
+                name: "read".into(),
+                target: "Submit".into(),
+                search_area: CoordinateRef("prog~box".into()),
+                output_variable: "ocrText".into(),
+                coords: CoordinateOutputs {
+                    output_x_variable: "foundX".into(),
+                    output_y_variable: "foundY".into(),
+                },
+                wait: WaitTilFoundConfig::default(),
+                run_branch_on_no_find: false,
+                blur: 1,
+                min_threshold: 0,
+                resize: 1.0,
+                grayscale: true,
+                threshold_otsu: false,
+                threshold_invert: false,
+                order: MatchOrder::default(),
+                subactions: vec![],
+            },
+        }]);
+
+        execute_macro_with(
+            &mut macro_,
+            ExecDeps {
+                automation: &mut backend,
+                capturer: Some(&mut capturer),
+                matcher: None,
+                resolver: Some(&resolver),
+                icons: None,
+                macros: None,
+                continue_waiter: None,
+                window_focuser: None,
+                ocr: Some(&ocr),
+                stop_flag: None,
+                logger: Some(&log),
+                highlighter: None,
+                variables_dir: None,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            macro_.variables.get("ocrText").map(|v| v.as_display()),
+            Some("Hello Submit Button".into())
+        );
+        // FixedArea resolves to (100,200)-(110,210); box center (80,10) + origin
+        assert_eq!(
+            macro_.variables.get("foundX").map(|v| v.as_display()),
+            Some("180".into())
+        );
+        assert_eq!(
+            macro_.variables.get("foundY").map(|v| v.as_display()),
+            Some("210".into())
+        );
+        let entries = log.entries_for(ocr_id);
+        let image_labels: Vec<_> = entries
+            .iter()
+            .filter_map(|e| match e {
+                crate::ActionLogEntry::Image(img) => Some(img.label.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            image_labels.iter().any(|l| l.contains("Capture")),
+            "expected capture image: {image_labels:?}"
+        );
+        assert!(
+            image_labels.iter().any(|l| l.contains("Ready for OCR") || l.contains("Grayscale")),
+            "expected preprocess step images: {image_labels:?}"
+        );
+        assert!(
+            image_labels.iter().any(|l| l.contains("word boxes")),
+            "expected OCR word-box overlay: {image_labels:?}"
+        );
+        let lines = log.lines_for(ocr_id);
+        assert!(
+            lines.iter().any(|l| l.contains("OCR full text")),
+            "expected full OCR text log: {lines:?}"
+        );
+        assert!(
+            lines.iter().any(|l| l.contains("word[") && l.contains("Hello")),
+            "expected per-word OCR detail: {lines:?}"
+        );
+        assert!(
+            lines.iter().any(|l| l.contains("word[") && l.contains("Submit")),
+            "expected Submit word in OCR detail: {lines:?}"
         );
     }
 }

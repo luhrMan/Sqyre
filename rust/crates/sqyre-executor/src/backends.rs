@@ -144,6 +144,34 @@ pub trait WindowFocuser: Send + Sync {
     fn focus(&self, process_path: &str, window_title: &str) -> Result<(), String>;
 }
 
+/// OCR recognition result (Go gosseract word boxes + joined text).
+#[derive(Debug, Clone, Default)]
+pub struct OcrResult {
+    pub text: String,
+    pub words: Vec<sqyre_vision::OcrWordBox>,
+}
+
+/// Run OCR on a preprocessed image buffer (Go `ocrMatWithBoxes`).
+pub trait OcrEngine: Send + Sync {
+    fn recognize(&self, image: &sqyre_match::ImageBuf) -> Result<OcrResult, String>;
+}
+
+/// Test OCR engine that returns a fixed result.
+#[derive(Debug, Default)]
+pub struct FixedOcrEngine {
+    pub result: OcrResult,
+    pub log: std::sync::Mutex<Vec<String>>,
+}
+
+impl OcrEngine for FixedOcrEngine {
+    fn recognize(&self, image: &sqyre_match::ImageBuf) -> Result<OcrResult, String> {
+        if let Ok(mut g) = self.log.lock() {
+            g.push(format!("ocr:{}x{}c{}", image.width, image.height, image.channels));
+        }
+        Ok(self.result.clone())
+    }
+}
+
 /// Recording backend for unit tests.
 #[derive(Debug, Default)]
 pub struct RecordingBackend {
