@@ -1,6 +1,7 @@
 use image::RgbaImage;
 use sqyre_domain::{CoordinateRef, Macro};
 use sqyre_match::{ImageBuf, MatchError, Point};
+use std::sync::atomic::AtomicBool;
 
 /// Mouse move options (Go `MoveOptions`).
 #[derive(Debug, Clone, Copy, Default)]
@@ -123,6 +124,26 @@ pub struct ItemMeta {
     pub rows: i32,
 }
 
+/// Look up another macro by name (Go `repositories.MacroRepo().Get`).
+pub trait MacroLookup: Send + Sync {
+    fn get(&self, name: &str) -> Option<Macro>;
+}
+
+/// Block until the user presses a continue chord (Go `WaitForContinueKey`).
+pub trait ContinueKeyWaiter: Send + Sync {
+    fn wait_for_continue(
+        &self,
+        keys: &[String],
+        pass_through: bool,
+        stop: &AtomicBool,
+    ) -> Result<(), String>;
+}
+
+/// Bring a window to the front by executable path + title (Go `RunFocusWindow`).
+pub trait WindowFocuser: Send + Sync {
+    fn focus(&self, process_path: &str, window_title: &str) -> Result<(), String>;
+}
+
 /// Recording backend for unit tests.
 #[derive(Debug, Default)]
 pub struct RecordingBackend {
@@ -190,5 +211,58 @@ impl ScreenCapturer for RecordingCapturer {
     }
     fn virtual_bounds(&mut self) -> Result<DesktopRect, String> {
         Ok(self.bounds)
+    }
+}
+
+/// In-memory macro catalog for tests.
+#[derive(Debug, Default)]
+pub struct MapMacroLookup {
+    pub macros: std::collections::BTreeMap<String, Macro>,
+}
+
+impl MacroLookup for MapMacroLookup {
+    fn get(&self, name: &str) -> Option<Macro> {
+        self.macros.get(name).cloned()
+    }
+}
+
+/// Test waiter that returns immediately (does not block).
+#[derive(Debug, Default)]
+pub struct ImmediateContinueWaiter {
+    pub log: std::sync::Mutex<Vec<String>>,
+}
+
+impl ContinueKeyWaiter for ImmediateContinueWaiter {
+    fn wait_for_continue(
+        &self,
+        keys: &[String],
+        pass_through: bool,
+        _stop: &AtomicBool,
+    ) -> Result<(), String> {
+        if keys.is_empty() {
+            return Err("pause: continue key not set".into());
+        }
+        if let Ok(mut g) = self.log.lock() {
+            g.push(format!(
+                "continue:{}:passthrough={pass_through}",
+                keys.join("+")
+            ));
+        }
+        Ok(())
+    }
+}
+
+/// Test focuser that records calls.
+#[derive(Debug, Default)]
+pub struct RecordingWindowFocuser {
+    pub log: std::sync::Mutex<Vec<String>>,
+}
+
+impl WindowFocuser for RecordingWindowFocuser {
+    fn focus(&self, process_path: &str, window_title: &str) -> Result<(), String> {
+        if let Ok(mut g) = self.log.lock() {
+            g.push(format!("focus:{process_path}:{window_title}"));
+        }
+        Ok(())
     }
 }
