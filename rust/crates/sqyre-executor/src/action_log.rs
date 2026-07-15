@@ -6,6 +6,7 @@
 use sqyre_domain::ActionId;
 use sqyre_match::ImageBuf;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 /// Max entries retained per action (oldest dropped).
@@ -60,6 +61,12 @@ impl ActionLogEntry {
 pub trait ActionLogger: Send + Sync {
     fn log(&self, action_id: ActionId, message: String);
 
+    /// When false, [`Self::log_image`] / [`Self::log_item_pipeline`] are no-ops
+    /// and callers may skip building debug overlays.
+    fn log_images_enabled(&self) -> bool {
+        false
+    }
+
     fn log_image(&self, action_id: ActionId, label: String, image: &ImageBuf) {
         let _ = (action_id, label, image);
     }
@@ -78,14 +85,37 @@ pub trait ActionLogger: Send + Sync {
 }
 
 /// Thread-safe per-action entry buffer for the UI.
-#[derive(Clone, Default)]
+///
+/// Images are in-memory only (no `images/meta` dump). Enable via
+/// [`Self::set_log_images`] — matches the user "Log Meta Images" preference.
+#[derive(Clone)]
 pub struct SharedActionLog {
     inner: Arc<Mutex<HashMap<ActionId, Vec<ActionLogEntry>>>>,
+    log_images: Arc<AtomicBool>,
+}
+
+impl Default for SharedActionLog {
+    fn default() -> Self {
+        // Enabled by default so unit tests that assert images need no setup;
+        // the app sets this from `UserSettings::save_meta_images` (default off).
+        Self {
+            inner: Arc::new(Mutex::new(HashMap::new())),
+            log_images: Arc::new(AtomicBool::new(true)),
+        }
+    }
 }
 
 impl SharedActionLog {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn set_log_images(&self, enabled: bool) {
+        self.log_images.store(enabled, Ordering::SeqCst);
+    }
+
+    pub fn log_images_enabled(&self) -> bool {
+        self.log_images.load(Ordering::SeqCst)
     }
 
     pub fn clear(&self) {
@@ -133,7 +163,14 @@ impl ActionLogger for SharedActionLog {
         );
     }
 
+    fn log_images_enabled(&self) -> bool {
+        SharedActionLog::log_images_enabled(self)
+    }
+
     fn log_image(&self, action_id: ActionId, label: String, image: &ImageBuf) {
+        if !self.log_images_enabled() {
+            return;
+        }
         let Some(img) = image_buf_to_log_image(label, image) else {
             return;
         };
@@ -149,6 +186,9 @@ impl ActionLogger for SharedActionLog {
         steps: &[(String, ImageBuf)],
         details: Vec<String>,
     ) {
+        if !self.log_images_enabled() {
+            return;
+        }
         let Some(thumbnail) = image_buf_to_log_image(format!("Item — {title}"), thumbnail) else {
             return;
         };
@@ -371,6 +411,29 @@ mod tests {
             ActionLogEntry::Image(LogImage { label, .. }) if label == "capture"
         ));
         assert!(matches!(&entries[2], ActionLogEntry::Text(s) if s == "done"));
+    }
+
+    #[test]
+    fn log_images_disabled_skips_image_entries() {
+        let log = SharedActionLog::new();
+        log.set_log_images(false);
+        let id = ActionId::new();
+        log.log(id, "start".into());
+        let img = ImageBuf::new(4, 4, 3, 128);
+        log.log_image(id, "capture".into(), &img);
+        log.log_item_pipeline(
+            id,
+            "Sword".into(),
+            "1 match".into(),
+            &img,
+            &[("step".into(), img.clone())],
+            vec!["detail".into()],
+        );
+        log.log(id, "done".into());
+        let entries = log.entries_for(id);
+        assert_eq!(entries.len(), 2);
+        assert!(entries.iter().all(|e| e.as_text().is_some()));
+        assert!(!log.log_images_enabled());
     }
 
     #[test]

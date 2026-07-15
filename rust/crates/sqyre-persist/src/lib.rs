@@ -79,7 +79,6 @@ pub fn initialize_directories() -> Result<()> {
         sqyre_dir().join("images/icons"),
         sqyre_dir().join("images/AutoPic"),
         sqyre_dir().join("images/Collections"),
-        sqyre_dir().join("images/meta"),
         sqyre_dir().join("images/masks"),
         variables_path(),
     ] {

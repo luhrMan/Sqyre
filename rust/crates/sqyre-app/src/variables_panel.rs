@@ -104,7 +104,7 @@ impl VariablesPanelUi {
         ui.horizontal(|ui| {
             ui.heading("Declared variables");
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button("＋ Add").clicked() {
+                if ui.button("+ Add").clicked() {
                     self.editing = Some(EditState {
                         index: None,
                         name: String::new(),

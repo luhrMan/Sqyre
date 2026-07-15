@@ -51,6 +51,21 @@ impl WindowInfo {
     }
 }
 
+/// Primary monitor resolution key (`"{w}x{h}"`), matching Go `MainMonitorSizeString`.
+/// Uses the first entry from [`ScreenCapturer::monitor_sizes`] (display 0 / primary).
+/// Returns `None` when no display is available (headless / CI).
+pub fn main_monitor_resolution_key() -> Option<String> {
+    use sqyre_executor::ScreenCapturer;
+    let mut capturer = X11Capturer::open().ok()?;
+    let sizes = capturer.monitor_sizes().ok()?;
+    let &(w, h) = sizes.first()?;
+    if w > 0 && h > 0 {
+        Some(format!("{w}x{h}"))
+    } else {
+        None
+    }
+}
+
 /// Open top-level windows with stable executable path and title (Go `ActiveWindows`).
 #[cfg(target_os = "linux")]
 pub fn list_open_windows() -> Result<Vec<WindowInfo>, String> {

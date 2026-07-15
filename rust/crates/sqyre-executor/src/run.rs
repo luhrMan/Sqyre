@@ -93,6 +93,12 @@ impl<'a> Executor<'a> {
         }
     }
 
+    pub fn log_images_enabled(&self) -> bool {
+        self.logger
+            .map(|l| l.log_images_enabled())
+            .unwrap_or(false)
+    }
+
     pub fn log_image(
         &self,
         action_id: ActionId,

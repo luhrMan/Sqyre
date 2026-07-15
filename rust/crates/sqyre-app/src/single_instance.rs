@@ -37,3 +37,10 @@ pub fn try_acquire() -> io::Result<Option<InstanceLock>> {
         Err(e) => Err(e),
     }
 }
+
+/// Drop `previous` then lock under the current [`sqyre_persist::sqyre_dir`].
+/// Used after a settings data-location change so the lock follows the active tree.
+pub fn reacquire(previous: Option<InstanceLock>) -> io::Result<Option<InstanceLock>> {
+    drop(previous);
+    try_acquire()
+}
