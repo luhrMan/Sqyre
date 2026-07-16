@@ -1,8 +1,18 @@
-# Smaller/faster docker build context (images only COPY under scripts/ and similar).
+# Smaller/faster docker build context (image installs toolchain; sources bind-mounted at run).
 .git
 .github
 .cache
+.cargo-home
+.rustup-home
+target
 bin
+out
+AppDir
+appimage-build
 *.AppImage
 *.zip
 *.exe
+assets/tessdata/*.traineddata
+docs/images
+**/tests/snapshots
+.devcontainer/builds
