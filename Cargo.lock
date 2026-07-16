@@ -3798,7 +3798,6 @@ dependencies = [
  "serde_yaml",
  "sqyre-domain",
  "sqyre-serialize",
- "sqyre-varref",
  "tempfile",
  "thiserror 2.0.18",
 ]
