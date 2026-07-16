@@ -19,6 +19,7 @@ pub use ocr_preprocess::{
     preprocess_for_ocr, preprocess_for_ocr_with_steps, OcrPreprocessOptions, OcrPreprocessStep,
 };
 pub use search_cache::{
-    get_cached_blurred_template, get_cached_image_mask, invalidate_search_masks_under,
-    invalidate_search_templates_under, reset_search_cache_for_testing,
+    clear_search_cache, get_cached_blurred_template, get_cached_image_mask,
+    invalidate_search_masks_under, invalidate_search_templates_under,
+    reset_search_cache_for_testing, with_search_cache_test_lock,
 };
