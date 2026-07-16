@@ -9,6 +9,19 @@ impl NullCapturer {
     pub fn open() -> Result<Self, String> {
         Err("NullCapturer: no display".into())
     }
+
+    pub fn capture_rect_ref(&self, _rect: DesktopRect) -> Result<RgbaImage, String> {
+        Err("NullCapturer: no display".into())
+    }
+
+    pub fn virtual_bounds_ref(&self) -> Result<DesktopRect, String> {
+        Ok(DesktopRect {
+            x: 0,
+            y: 0,
+            w: 1,
+            h: 1,
+        })
+    }
 }
 
 impl ScreenCapturer for NullCapturer {

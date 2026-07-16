@@ -38,12 +38,6 @@ impl OsAutomation {
     }
 }
 
-impl Default for OsAutomation {
-    fn default() -> Self {
-        Self::new().expect("OsAutomation::new")
-    }
-}
-
 impl AutomationBackend for OsAutomation {
     fn milli_sleep(&mut self, ms: i32) {
         if ms > 0 {

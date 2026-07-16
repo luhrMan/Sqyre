@@ -9,8 +9,8 @@ use crate::action_log::{crop_match_preview, draw_rect_rgb};
 use rayon::prelude::*;
 use sqyre_domain::{Action, ActionKind, Macro, ScalarValue};
 use sqyre_match::{
-    blur_image_owned, find_template_matches_preblurred, search_blur_kernel, ImageBuf, Point,
-    DEFAULT_CLOSE_MATCHES_DISTANCE,
+    blur_image_owned, find_template_matches_preblurred_with_integrals, prepare_search_integrals,
+    search_blur_kernel, ImageBuf, Point, DEFAULT_CLOSE_MATCHES_DISTANCE,
 };
 use sqyre_vision::{
     get_cached_blurred_template, get_cached_image_mask, load_rgb_image, rgba_to_rgb_buf,
@@ -210,15 +210,16 @@ fn capture_and_match(
         ),
     );
 
-    let (img, origin) = match exec
-        .capturer
-        .as_mut()
-        .unwrap()
-        .capture_search_area(lx, ty, rx, by)
-    {
-        Ok(v) => v,
-        Err(e) => {
-            exec.log(action_id, format!("Image Search: capture: {e}"));
+    let (img, origin) = match exec.capturer.as_mut() {
+        Some(c) => match c.capture_search_area(lx, ty, rx, by) {
+            Ok(v) => v,
+            Err(e) => {
+                exec.log(action_id, format!("Image Search: capture: {e}"));
+                return Vec::new();
+            }
+        },
+        None => {
+            exec.log(action_id, "Image Search: missing ScreenCapturer");
             return Vec::new();
         }
     };
@@ -270,6 +271,7 @@ fn capture_and_match(
     let close_dist = close_matches_distance(exec);
     let match_started = Instant::now();
     let stop_flag: Option<&AtomicBool> = exec.stop_flag;
+    let search_integrals = std::sync::Arc::new(prepare_search_integrals(&search_blurred));
 
     let outcomes: Vec<VariantMatchOutcome> = jobs
         .into_par_iter()
@@ -324,12 +326,13 @@ fn capture_and_match(
             };
 
             let t0 = Instant::now();
-            let matches = find_template_matches_preblurred(
+            let matches = find_template_matches_preblurred_with_integrals(
                 &search_blurred,
                 template_blurred.as_ref(),
                 mask_bytes.as_deref().map(|m| m.as_slice()),
                 threshold,
                 close_dist,
+                Some(search_integrals.as_ref()),
             )
             .map_err(|e| e.to_string());
             let match_ms = t0.elapsed().as_secs_f64() * 1000.0;

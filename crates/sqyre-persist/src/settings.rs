@@ -455,9 +455,9 @@ mod tests {
     #[test]
     fn settings_path_is_under_sqyre_dir() {
         let dir = tempdir().unwrap();
-        crate::set_sqyre_dir_override(Some(dir.path().to_path_buf()));
-        assert_eq!(settings_path(), dir.path().join("settings.yaml"));
-        crate::set_sqyre_dir_override(None);
+        crate::with_sqyre_dir_override(dir.path().to_path_buf(), || {
+            assert_eq!(settings_path(), dir.path().join("settings.yaml"));
+        });
     }
 
     #[test]

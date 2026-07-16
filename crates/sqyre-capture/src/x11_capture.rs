@@ -3,10 +3,11 @@
 use crate::error::CaptureError;
 use crate::pixel_convert::zpixmap_to_rgba;
 use image::RgbaImage;
+use parking_lot::Mutex;
 use sqyre_executor::{DesktopRect, ScreenCapturer};
 use std::os::raw::c_void;
 use std::ptr;
-use std::sync::Mutex;
+use std::sync::{Arc, OnceLock};
 use x11::xinerama::{XineramaIsActive, XineramaQueryScreens, XineramaScreenInfo};
 use x11::xlib::{
     XCloseDisplay, XDefaultRootWindow, XDestroyImage, XDisplayHeight, XDisplayWidth, XFree,
@@ -29,6 +30,18 @@ struct X11State {
 
 // X11 display pointer: we serialize all access via Mutex.
 unsafe impl Send for X11State {}
+
+/// Process-wide capturer for UI offload (cloned via [`Arc`]; access serialized by inner Mutex).
+static SHARED_UI_CAPTURER: OnceLock<Result<Arc<X11Capturer>, String>> = OnceLock::new();
+
+/// Shared capturer for UI-thread offload (preview tooltips, AutoPic, etc.).
+pub fn shared_capturer() -> Result<Arc<X11Capturer>, String> {
+    match SHARED_UI_CAPTURER.get_or_init(|| X11Capturer::open().map(Arc::new).map_err(|e| e.to_string()))
+    {
+        Ok(c) => Ok(Arc::clone(c)),
+        Err(e) => Err(e.clone()),
+    }
+}
 
 impl X11Capturer {
     pub fn open() -> Result<Self, CaptureError> {
@@ -54,10 +67,7 @@ impl X11Capturer {
 
     /// Absolute pointer position on the virtual desktop (root coords).
     pub fn pointer_position(&self) -> Result<(i32, i32), CaptureError> {
-        let st = self
-            .inner
-            .lock()
-            .map_err(|e| CaptureError::Mutex(e.to_string()))?;
+        let st = self.inner.lock();
         unsafe {
             let mut root_ret = 0u64;
             let mut child_ret = 0u64;
@@ -83,36 +93,13 @@ impl X11Capturer {
             Ok((root_x, root_y))
         }
     }
-}
 
-impl Drop for X11State {
-    fn drop(&mut self) {
-        unsafe {
-            if !self.display.is_null() {
-                XCloseDisplay(self.display);
-                self.display = ptr::null_mut();
-            }
-        }
-    }
-}
-
-impl ScreenCapturer for X11Capturer {
-    fn capture_monitor(&mut self, display_index: i32) -> Result<RgbaImage, String> {
-        if display_index != 0 {
-            return Err(CaptureError::UnsupportedDisplay(display_index).into());
-        }
-        let vb = self.virtual_bounds()?;
-        self.capture_rect(vb)
-    }
-
-    fn capture_rect(&mut self, rect: DesktopRect) -> Result<RgbaImage, String> {
+    /// Capture a desktop rect (`&self` — safe to call via [`Arc`] from worker threads).
+    pub fn capture_rect_ref(&self, rect: DesktopRect) -> Result<RgbaImage, String> {
         if rect.is_empty() {
             return Err(CaptureError::EmptyRect.into());
         }
-        let st = self
-            .inner
-            .lock()
-            .map_err(|e| CaptureError::Mutex(e.to_string()).to_string())?;
+        let st = self.inner.lock();
         unsafe {
             let ximage = XGetImage(
                 st.display,
@@ -142,8 +129,10 @@ impl ScreenCapturer for X11Capturer {
                 XDestroyImage(ximage);
                 return Err(CaptureError::BitsPerPixel(bits).into());
             }
-            let data = std::slice::from_raw_parts(img.data as *const u8, (w * h) as usize * bpp);
-            let out = zpixmap_to_rgba(data, w, h, bpp).map_err(|e| {
+            let stride = img.bytes_per_line as usize;
+            let data_len = stride.saturating_mul(h as usize);
+            let data = std::slice::from_raw_parts(img.data as *const u8, data_len);
+            let out = zpixmap_to_rgba(data, w, h, bpp, stride).map_err(|e| {
                 XDestroyImage(ximage);
                 e
             })?;
@@ -152,11 +141,9 @@ impl ScreenCapturer for X11Capturer {
         }
     }
 
-    fn virtual_bounds(&mut self) -> Result<DesktopRect, String> {
-        let st = self
-            .inner
-            .lock()
-            .map_err(|e| CaptureError::Mutex(e.to_string()).to_string())?;
+    /// Virtual desktop bounds (`&self`).
+    pub fn virtual_bounds_ref(&self) -> Result<DesktopRect, String> {
+        let st = self.inner.lock();
         Ok(DesktopRect {
             x: 0,
             y: 0,
@@ -165,11 +152,9 @@ impl ScreenCapturer for X11Capturer {
         })
     }
 
-    fn monitor_sizes(&mut self) -> Result<Vec<(i32, i32)>, String> {
-        let st = self
-            .inner
-            .lock()
-            .map_err(|e| CaptureError::Mutex(e.to_string()).to_string())?;
+    /// Monitor sizes (`&self`).
+    pub fn monitor_sizes_ref(&self) -> Result<Vec<(i32, i32)>, String> {
+        let st = self.inner.lock();
         unsafe {
             if XineramaIsActive(st.display) == 0 {
                 return Ok(vec![(st.width, st.height)]);
@@ -193,6 +178,39 @@ impl ScreenCapturer for X11Capturer {
                 Ok(sizes)
             }
         }
+    }
+}
+
+impl Drop for X11State {
+    fn drop(&mut self) {
+        unsafe {
+            if !self.display.is_null() {
+                XCloseDisplay(self.display);
+                self.display = ptr::null_mut();
+            }
+        }
+    }
+}
+
+impl ScreenCapturer for X11Capturer {
+    fn capture_monitor(&mut self, display_index: i32) -> Result<RgbaImage, String> {
+        if display_index != 0 {
+            return Err(CaptureError::UnsupportedDisplay(display_index).into());
+        }
+        let vb = self.virtual_bounds_ref()?;
+        self.capture_rect_ref(vb)
+    }
+
+    fn capture_rect(&mut self, rect: DesktopRect) -> Result<RgbaImage, String> {
+        self.capture_rect_ref(rect)
+    }
+
+    fn virtual_bounds(&mut self) -> Result<DesktopRect, String> {
+        self.virtual_bounds_ref()
+    }
+
+    fn monitor_sizes(&mut self) -> Result<Vec<(i32, i32)>, String> {
+        self.monitor_sizes_ref()
     }
 }
 

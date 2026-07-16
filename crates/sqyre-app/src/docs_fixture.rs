@@ -82,7 +82,7 @@ pub fn demo_macro() -> Macro {
 
     let mut click = blank_action("click").expect("click");
     if let ActionKind::Click { button, state } = &mut click.kind {
-        *button = "left".into();
+        *button = sqyre_domain::MouseButton::Left;
         *state = true;
     }
 

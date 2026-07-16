@@ -12,13 +12,14 @@ use crate::overlay_icons::{self, OverlayIcon};
 use eframe::egui::{self, Color32, Pos2, ViewportBuilder, ViewportClass, ViewportId};
 use sqyre_capture::{
     get_active_window, mark_site, note, skip_taskbar_for_overlay_windows, window_is_our_process,
-    window_matches_process, window_matches_program, WindowInfo, OVERLAY_WM_TITLE,
+    window_matches_binding, window_matches_program, WindowInfo, OVERLAY_WM_TITLE,
 };
 use sqyre_persist::{
     OverlayButtonConfig, ProgramCatalog, DEFAULT_OVERLAY_BUTTON_SIZE, MAX_OVERLAY_BUTTON_SIZE,
     MIN_OVERLAY_BUTTON_SIZE,
 };
-use std::sync::{Arc, Mutex};
+use parking_lot::Mutex;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 const VIEWPORT_PAD: f32 = 2.0;
@@ -33,7 +34,7 @@ pub struct MacroOverlay {
     last_foreign: Option<WindowInfo>,
     last_skip_taskbar: Option<Instant>,
     last_focus_err_log: Option<Instant>,
-    /// Last logged (shown, gated, preview) tuple — avoid flooding diag.log.
+    /// Last logged (shown, gated, preview) tuple — avoid flooding stderr notes.
     last_sync_sig: Option<(usize, bool, bool)>,
 }
 
@@ -214,7 +215,8 @@ fn program_owns_focus(
     if let Some(data) = catalog.get(program) {
         let path = data.process_path.trim();
         if !path.is_empty() {
-            return window_matches_process(win, path);
+            // Path + title when title is bound — shared exes (e.g. GameThread) need both.
+            return window_matches_binding(win, path, &data.window_title);
         }
     }
     window_matches_program(win, program)
@@ -415,17 +417,8 @@ fn paint_button(
 
 fn enqueue(pending: &Arc<Mutex<Vec<String>>>, btn_id: &str, macro_name: &str) {
     mark_site(&format!("overlay:click:{btn_id}"));
-    match pending.lock() {
-        Ok(mut q) => {
-            q.push(macro_name.to_string());
-            note(&format!(
-                "overlay: click id={btn_id} enqueue macro={macro_name}"
-            ));
-        }
-        Err(e) => {
-            note(&format!(
-                "overlay: click id={btn_id} enqueue FAILED (mutex poisoned): {e}"
-            ));
-        }
-    }
+    pending.lock().push(macro_name.to_string());
+    note(&format!(
+        "overlay: click id={btn_id} enqueue macro={macro_name}"
+    ));
 }

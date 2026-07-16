@@ -1,31 +1,10 @@
 //! Blank action factories for the Add Action picker.
 
 use crate::{
-    action_type_label, Action, ActionId, ActionKind, CoordinateOutputs, CoordinateRef, ListColumn,
+    action_type_table, Action, ActionId, ActionKind, CoordinateOutputs, CoordinateRef, ListColumn,
     MatchOrder, ScalarValue, WaitTilFoundConfig, DEFAULT_SMOOTH_DELAY_MS, DEFAULT_SMOOTH_HIGH,
     DEFAULT_SMOOTH_LOW, MATCH_ALL,
 };
-
-/// Picker column order.
-pub const ACTION_PICKER_CATEGORIES: &[&str] = &[
-    "Mouse & Keyboard",
-    "Detection",
-    "Variables",
-    "Loop flow",
-    "Miscellaneous",
-];
-
-/// Category for the Add Action picker grid (not the color-bucket grouping).
-pub fn action_picker_category(action_type: &str) -> &'static str {
-    match action_type.trim().to_ascii_lowercase().as_str() {
-        "move" | "click" | "key" | "type" => "Mouse & Keyboard",
-        "imagesearch" | "ocr" | "findpixel" => "Detection",
-        "setvariable" | "foreachrow" | "savevariable" => "Variables",
-        "loop" | "while" | "break" | "continue" | "navigateselect" | "navigatekey" => "Loop flow",
-        "wait" | "pause" | "focuswindow" | "runmacro" | "conditional" => "Miscellaneous",
-        _ => "Miscellaneous",
-    }
-}
 
 /// One picker entry: label, type key, category, and a fresh blank [`Action`].
 #[derive(Debug, Clone)]
@@ -43,35 +22,12 @@ impl ActionTemplate {
 
 /// All addable action kinds for the picker (21 kinds; Calculate folded into Set).
 pub fn action_templates() -> Vec<ActionTemplate> {
-    const ENTRIES: &[(&str, &str)] = &[
-        ("move", "Mouse & Keyboard"),
-        ("click", "Mouse & Keyboard"),
-        ("key", "Mouse & Keyboard"),
-        ("type", "Mouse & Keyboard"),
-        ("imagesearch", "Detection"),
-        ("ocr", "Detection"),
-        ("findpixel", "Detection"),
-        ("setvariable", "Variables"),
-        ("foreachrow", "Variables"),
-        ("savevariable", "Variables"),
-        ("loop", "Loop flow"),
-        ("while", "Loop flow"),
-        ("break", "Loop flow"),
-        ("continue", "Loop flow"),
-        ("navigateselect", "Loop flow"),
-        ("navigatekey", "Loop flow"),
-        ("wait", "Miscellaneous"),
-        ("pause", "Miscellaneous"),
-        ("focuswindow", "Miscellaneous"),
-        ("runmacro", "Miscellaneous"),
-        ("conditional", "Miscellaneous"),
-    ];
-    ENTRIES
+    action_type_table()
         .iter()
-        .map(|(ty, cat)| ActionTemplate {
-            label: action_type_label(ty),
-            action_type: ty,
-            category: cat,
+        .map(|m| ActionTemplate {
+            label: m.label,
+            action_type: m.type_key,
+            category: m.picker_category,
         })
         .collect()
 }
@@ -240,6 +196,7 @@ fn blank_kind(action_type: &str) -> Option<ActionKind> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::action_picker_category;
 
     #[test]
     fn templates_cover_twenty_one_kinds() {

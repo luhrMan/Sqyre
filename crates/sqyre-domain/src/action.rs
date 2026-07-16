@@ -47,6 +47,186 @@ pub const DEFAULT_SMOOTH_LOW: f64 = 0.05;
 pub const DEFAULT_SMOOTH_HIGH: f64 = 0.20;
 pub const DEFAULT_SMOOTH_DELAY_MS: i32 = 1;
 
+/// How condition clauses are combined.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MatchMode {
+    #[default]
+    All,
+    Any,
+}
+
+impl MatchMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::All => MATCH_ALL,
+            Self::Any => MATCH_ANY,
+        }
+    }
+
+    pub fn parse(s: &str) -> Self {
+        if s.eq_ignore_ascii_case(MATCH_ANY) {
+            Self::Any
+        } else {
+            Self::All
+        }
+    }
+}
+
+impl std::fmt::Display for MatchMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl From<&str> for MatchMode {
+    fn from(s: &str) -> Self {
+        Self::parse(s)
+    }
+}
+
+impl From<String> for MatchMode {
+    fn from(s: String) -> Self {
+        Self::parse(&s)
+    }
+}
+
+/// Image-search / OCR wait-until / repeat-while modes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RepeatMode {
+    #[default]
+    Once,
+    WaitUntilFound,
+    WhileFound,
+}
+
+impl RepeatMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Once => REPEAT_ONCE,
+            Self::WaitUntilFound => REPEAT_WAIT_UNTIL_FOUND,
+            Self::WhileFound => REPEAT_WHILE_FOUND,
+        }
+    }
+
+    pub fn parse(s: &str) -> Self {
+        match s {
+            REPEAT_WAIT_UNTIL_FOUND => Self::WaitUntilFound,
+            REPEAT_WHILE_FOUND => Self::WhileFound,
+            _ => Self::Once,
+        }
+    }
+}
+
+impl std::fmt::Display for RepeatMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl From<&str> for RepeatMode {
+    fn from(s: &str) -> Self {
+        Self::parse(s)
+    }
+}
+
+impl From<String> for RepeatMode {
+    fn from(s: String) -> Self {
+        Self::parse(&s)
+    }
+}
+
+/// Mouse button for click / navigate-select.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MouseButton {
+    #[default]
+    Left,
+    Right,
+    Middle,
+    /// Scroll-wheel click / scroll action.
+    Scroll,
+}
+
+impl MouseButton {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Left => "left",
+            Self::Right => "right",
+            Self::Middle => "middle",
+            Self::Scroll => "scroll",
+        }
+    }
+
+    pub fn parse(s: &str) -> Self {
+        match s.to_ascii_lowercase().as_str() {
+            "right" => Self::Right,
+            "center" | "middle" => Self::Middle,
+            "scroll" => Self::Scroll,
+            _ => Self::Left,
+        }
+    }
+}
+
+impl std::fmt::Display for MouseButton {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl From<&str> for MouseButton {
+    fn from(s: &str) -> Self {
+        Self::parse(s)
+    }
+}
+
+impl From<String> for MouseButton {
+    fn from(s: String) -> Self {
+        Self::parse(&s)
+    }
+}
+
+/// Overlay / mask geometry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MaskShape {
+    #[default]
+    Rectangle,
+    Circle,
+}
+
+impl MaskShape {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Rectangle => "rectangle",
+            Self::Circle => "circle",
+        }
+    }
+
+    pub fn parse(s: &str) -> Self {
+        if s.eq_ignore_ascii_case("circle") {
+            Self::Circle
+        } else {
+            Self::Rectangle
+        }
+    }
+}
+
+impl std::fmt::Display for MaskShape {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl From<&str> for MaskShape {
+    fn from(s: &str) -> Self {
+        Self::parse(s)
+    }
+}
+
+impl From<String> for MaskShape {
+    fn from(s: String) -> Self {
+        Self::parse(&s)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConditionClause {
     pub left: ScalarValue,
@@ -66,7 +246,7 @@ impl Default for ConditionClause {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct WaitTilFoundConfig {
-    pub repeat_mode: String,
+    pub repeat_mode: RepeatMode,
     pub wait_til_found_seconds: i32,
     pub wait_til_found_interval_ms: i32,
     pub max_iterations: i32,
@@ -75,7 +255,7 @@ pub struct WaitTilFoundConfig {
 impl Default for WaitTilFoundConfig {
     fn default() -> Self {
         Self {
-            repeat_mode: REPEAT_ONCE.to_string(),
+            repeat_mode: RepeatMode::Once,
             wait_til_found_seconds: 0,
             wait_til_found_interval_ms: 0,
             max_iterations: 0,
@@ -84,21 +264,18 @@ impl Default for WaitTilFoundConfig {
 }
 
 impl WaitTilFoundConfig {
-    pub fn effective_repeat_mode(&self) -> &str {
-        match self.repeat_mode.as_str() {
-            REPEAT_ONCE | REPEAT_WAIT_UNTIL_FOUND | REPEAT_WHILE_FOUND => &self.repeat_mode,
-            _ => REPEAT_ONCE,
-        }
+    pub fn effective_repeat_mode(&self) -> RepeatMode {
+        self.repeat_mode
     }
 
     /// Retry until found (or timeout).
     pub fn wait_until_found_active(&self) -> bool {
-        self.effective_repeat_mode() == REPEAT_WAIT_UNTIL_FOUND && self.wait_til_found_seconds > 0
+        self.repeat_mode == RepeatMode::WaitUntilFound && self.wait_til_found_seconds > 0
     }
 
     /// When true, repeat while the target remains found.
     pub fn is_repeat_while_found(&self) -> bool {
-        self.effective_repeat_mode() == REPEAT_WHILE_FOUND
+        self.repeat_mode == RepeatMode::WhileFound
     }
 
     pub fn effective_interval_ms(&self, default_ms: i32) -> i32 {
@@ -331,14 +508,14 @@ pub enum ActionKind {
     },
     While {
         name: String,
-        match_mode: String,
+        match_mode: MatchMode,
         clauses: Vec<ConditionClause>,
         max_iterations: i32,
         subactions: Vec<Action>,
     },
     Conditional {
         name: String,
-        match_mode: String,
+        match_mode: MatchMode,
         clauses: Vec<ConditionClause>,
         subactions: Vec<Action>,
     },
@@ -405,7 +582,7 @@ pub enum ActionKind {
         smooth_delay_ms: i32,
     },
     Click {
-        button: String,
+        button: MouseButton,
         state: bool,
     },
     Key {

@@ -107,15 +107,10 @@ pub fn references(text: &str, name: &str) -> bool {
     if text.is_empty() || name.is_empty() {
         return false;
     }
-    let quoted = regex::escape(name.trim());
-    let dollar =
-        Regex::new(&format!(r"(?i)\$\{{\s*{quoted}\s*\}}")).expect("dollar ref");
-    if dollar.is_match(text) {
-        return true;
-    }
-    let brace =
-        Regex::new(&format!(r"(?i)(^|[^$])\{{\s*{quoted}\s*\}}")).expect("brace ref");
-    brace.is_match(text)
+    let want = name.trim();
+    names(text)
+        .iter()
+        .any(|n| n.trim().eq_ignore_ascii_case(want))
 }
 
 /// Replaces `${old}` / `{old}` with `new_name`, preserving brace style.
@@ -123,17 +118,26 @@ pub fn rename(s: &str, old_name: &str, new_name: &str) -> String {
     if s.is_empty() {
         return s.to_string();
     }
-    let quoted = regex::escape(old_name);
-    let dollar =
-        Regex::new(&format!(r"(?i)\$\{{\s*{quoted}\s*\}}")).expect("dollar rename");
-    // regex replacement: `$$` → literal `$`
-    let s = dollar.replace_all(s, format!("$${{{new_name}}}"));
-    let brace =
-        Regex::new(&format!(r"(?i)(^|[^$])\{{\s*{quoted}\s*\}}")).expect("brace rename");
-    // Capture group 1 is the prefix (^|[^$]); `${1}` is group 1 in the replacement.
-    brace
-        .replace_all(&s, format!("${{1}}{{{new_name}}}"))
-        .into_owned()
+    let want = old_name.trim();
+    let segs = segments(s);
+    let mut out = String::with_capacity(s.len());
+    for seg in segs {
+        if !seg.is_ref || !seg.name.trim().eq_ignore_ascii_case(want) {
+            out.push_str(&seg.text);
+            continue;
+        }
+        // Preserve `$` vs bare-brace style from the original segment text.
+        if seg.text.starts_with("${") {
+            out.push_str("${");
+            out.push_str(new_name);
+            out.push('}');
+        } else {
+            out.push('{');
+            out.push_str(new_name);
+            out.push('}');
+        }
+    }
+    out
 }
 
 #[derive(Clone)]

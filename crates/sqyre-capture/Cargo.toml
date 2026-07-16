@@ -9,6 +9,7 @@ description = "ScreenCapturer for absolute virtual-desktop rects (Linux X11 firs
 sqyre-executor = { path = "../sqyre-executor" }
 image = { workspace = true }
 thiserror = { workspace = true }
+parking_lot = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 x11 = { workspace = true }

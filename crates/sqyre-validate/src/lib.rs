@@ -416,10 +416,19 @@ pub fn validate_action(action: &Action, macro_: Option<&Macro>) -> Result<()> {
     Ok(())
 }
 
+/// Recursively validate `action` and every descendant via [`Action::children`].
+pub fn validate_action_tree(action: &Action, macro_: Option<&Macro>) -> Result<()> {
+    validate_action(action, macro_)?;
+    for child in action.children() {
+        validate_action_tree(child, macro_)?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqyre_domain::{ActionId, VariableDecl, VariableType};
+    use sqyre_domain::{ActionId, ScalarValue, VariableDecl, VariableType};
 
     #[test]
     fn variable_name_rejects_braces() {
@@ -476,6 +485,21 @@ mod tests {
     #[test]
     fn validate_action_pause_requires_continue_key() {
         assert!(validate_action(&pause(&[]), None).is_err());
+    }
+
+    #[test]
+    fn validate_action_tree_walks_children() {
+        let root = Action {
+            id: ActionId::new(),
+            kind: ActionKind::Loop {
+                name: "root".into(),
+                count: ScalarValue::Int(1),
+                subactions: vec![key("a"), key("")],
+            },
+        };
+        assert!(validate_action(&root, None).is_ok());
+        let err = validate_action_tree(&root, None).unwrap_err();
+        assert!(err.to_string().contains("key:"), "{err}");
     }
 
     #[test]

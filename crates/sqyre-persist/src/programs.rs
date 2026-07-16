@@ -2,7 +2,9 @@
 
 use crate::{images_path, PersistError, Result};
 use serde_yaml::{Mapping, Value};
-use sqyre_domain::{CoordinateRef, Macro, PROGRAM_DELIMITER, ScalarValue, resolve_scalar_int};
+use sqyre_domain::{
+    resolve_scalar_int, CoordinateRef, Macro, MaskShape, ScalarValue, PROGRAM_DELIMITER,
+};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
@@ -35,8 +37,8 @@ pub struct ProgramItem {
 #[derive(Debug, Clone)]
 pub struct ProgramMask {
     pub name: String,
-    /// `"rectangle"` or `"circle"`.
-    pub shape: String,
+    /// Rectangle or circle overlay geometry.
+    pub shape: MaskShape,
     /// Percent of template width (literal or `${var}` expression).
     pub center_x: String,
     pub center_y: String,
@@ -50,7 +52,7 @@ impl Default for ProgramMask {
     fn default() -> Self {
         Self {
             name: String::new(),
-            shape: "rectangle".into(),
+            shape: MaskShape::Rectangle,
             center_x: "50".into(),
             center_y: "50".into(),
             base: String::new(),
@@ -76,7 +78,8 @@ pub struct ProgramData {
     /// Absolute executable path of the bound OS process (from a running-window pick).
     /// Empty = no binding; overlay falls back to fuzzy name match.
     pub process_path: String,
-    /// Window title captured with the process pick (display / Focus Window parity).
+    /// Window title captured with the process pick.
+    /// With `process_path`, overlay + Focus Window require both (disambiguates shared exes).
     pub window_title: String,
     /// resolution key → points
     pub points: BTreeMap<String, BTreeMap<String, ProgramPoint>>,
@@ -93,6 +96,8 @@ pub struct ProgramCatalog {
     images_root: Option<PathBuf>,
     /// Main monitor resolution key. Empty → first key found.
     resolution_key: String,
+    /// Bumped on structural mutations; UI caches key off this.
+    generation: u64,
 }
 
 impl ProgramCatalog {
@@ -123,6 +128,7 @@ impl ProgramCatalog {
 
     pub fn set_resolution_key(&mut self, key: impl Into<String>) {
         self.resolution_key = key.into();
+        self.bump_generation();
     }
 
     pub fn resolution_key(&self) -> &str {
@@ -138,6 +144,15 @@ impl ProgramCatalog {
             }
         }
         ""
+    }
+
+    /// Monotonic counter bumped when programs/entities change (or resolution key).
+    pub fn generation(&self) -> u64 {
+        self.generation
+    }
+
+    fn bump_generation(&mut self) {
+        self.generation = self.generation.wrapping_add(1);
     }
 
     pub fn get(&self, name: &str) -> Option<&ProgramData> {
@@ -352,6 +367,7 @@ impl ProgramCatalog {
     }
 
     pub fn programs_mut(&mut self) -> &mut BTreeMap<String, ProgramData> {
+        self.bump_generation();
         &mut self.programs
     }
 
@@ -397,6 +413,7 @@ impl ProgramCatalog {
             data.search_areas.insert(res, BTreeMap::new());
         }
         self.programs.insert(name, data);
+        self.bump_generation();
         Ok(())
     }
 
@@ -419,6 +436,7 @@ impl ProgramCatalog {
             .ok_or_else(|| PersistError::Message(format!("program {old:?} not found")))?;
         data.name = new.to_string();
         self.programs.insert(new.to_string(), data);
+        self.bump_generation();
         Ok(())
     }
 
@@ -434,6 +452,7 @@ impl ProgramCatalog {
         let _ = std::fs::remove_dir_all(icons);
         let _ = std::fs::remove_dir_all(masks);
         let _ = std::fs::remove_dir_all(collections);
+        self.bump_generation();
         Ok(())
     }
 
@@ -459,19 +478,10 @@ impl ProgramCatalog {
 
     pub fn rename_item(&mut self, program: &str, old: &str, new: &str) -> Result<()> {
         let new = new.trim();
-        if new.is_empty() {
-            return Err(PersistError::Message("item name cannot be empty".into()));
+        {
+            let p = self.program_mut(program)?;
+            rename_keyed_map(&mut p.items, old, new, "item", |item, n| item.name = n)?;
         }
-        let p = self.program_mut(program)?;
-        if old != new && p.items.contains_key(new) {
-            return Err(PersistError::Message(format!("item {new:?} already exists")));
-        }
-        let mut item = p
-            .items
-            .remove(old)
-            .ok_or_else(|| PersistError::Message(format!("item {old:?} not found")))?;
-        item.name = new.to_string();
-        p.items.insert(new.to_string(), item);
         if old != new {
             self.rename_item_icon_files(program, old, new);
         }
@@ -520,24 +530,11 @@ impl ProgramCatalog {
 
     pub fn rename_point(&mut self, program: &str, old: &str, new: &str) -> Result<()> {
         let new = new.trim();
-        if new.is_empty() {
-            return Err(PersistError::Message("point name cannot be empty".into()));
-        }
         let res = self.default_resolution_key();
         let p = self.program_mut(program)?;
         ensure_resolution(p, &res);
         let pts = p.points.get_mut(&res).unwrap();
-        if old != new && pts.contains_key(new) {
-            return Err(PersistError::Message(format!(
-                "point {new:?} already exists"
-            )));
-        }
-        let mut pt = pts
-            .remove(old)
-            .ok_or_else(|| PersistError::Message(format!("point {old:?} not found")))?;
-        pt.name = new.to_string();
-        pts.insert(new.to_string(), pt);
-        Ok(())
+        rename_keyed_map(pts, old, new, "point", |pt, n| pt.name = n)
     }
 
     pub fn delete_point(&mut self, program: &str, name: &str) -> Result<()> {
@@ -563,26 +560,11 @@ impl ProgramCatalog {
 
     pub fn rename_search_area(&mut self, program: &str, old: &str, new: &str) -> Result<()> {
         let new = new.trim();
-        if new.is_empty() {
-            return Err(PersistError::Message(
-                "search area name cannot be empty".into(),
-            ));
-        }
         let res = self.default_resolution_key();
         let p = self.program_mut(program)?;
         ensure_resolution(p, &res);
         let areas = p.search_areas.get_mut(&res).unwrap();
-        if old != new && areas.contains_key(new) {
-            return Err(PersistError::Message(format!(
-                "search area {new:?} already exists"
-            )));
-        }
-        let mut sa = areas.remove(old).ok_or_else(|| {
-            PersistError::Message(format!("search area {old:?} not found"))
-        })?;
-        sa.name = new.to_string();
-        areas.insert(new.to_string(), sa);
-        Ok(())
+        rename_keyed_map(areas, old, new, "search area", |sa, n| sa.name = n)
     }
 
     pub fn delete_search_area(&mut self, program: &str, name: &str) -> Result<()> {
@@ -608,21 +590,10 @@ impl ProgramCatalog {
 
     pub fn rename_mask(&mut self, program: &str, old: &str, new: &str) -> Result<()> {
         let new = new.trim();
-        if new.is_empty() {
-            return Err(PersistError::Message("mask name cannot be empty".into()));
-        }
         let old_path = self.mask_image_path(program, old);
         let new_path = self.mask_image_path(program, new);
         let p = self.program_mut(program)?;
-        if old != new && p.masks.contains_key(new) {
-            return Err(PersistError::Message(format!("mask {new:?} already exists")));
-        }
-        let mut mask = p
-            .masks
-            .remove(old)
-            .ok_or_else(|| PersistError::Message(format!("mask {old:?} not found")))?;
-        mask.name = new.to_string();
-        p.masks.insert(new.to_string(), mask);
+        rename_keyed_map(&mut p.masks, old, new, "mask", |mask, n| mask.name = n)?;
         // Propagate to item.mask references within this program.
         for item in p.items.values_mut() {
             if item.mask == old {
@@ -666,24 +637,14 @@ impl ProgramCatalog {
 
     pub fn rename_collection(&mut self, program: &str, old: &str, new: &str) -> Result<()> {
         let new = new.trim();
-        if new.is_empty() {
-            return Err(PersistError::Message(
-                "collection name cannot be empty".into(),
-            ));
-        }
         let old_path = self.collection_image_path(program, old);
         let new_path = self.collection_image_path(program, new);
-        let p = self.program_mut(program)?;
-        if old != new && p.collections.contains_key(new) {
-            return Err(PersistError::Message(format!(
-                "collection {new:?} already exists"
-            )));
+        {
+            let p = self.program_mut(program)?;
+            rename_keyed_map(&mut p.collections, old, new, "collection", |col, n| {
+                col.name = n
+            })?;
         }
-        let mut col = p.collections.remove(old).ok_or_else(|| {
-            PersistError::Message(format!("collection {old:?} not found"))
-        })?;
-        col.name = new.to_string();
-        p.collections.insert(new.to_string(), col);
         if old != new && old_path.is_file() {
             if let Some(parent) = new_path.parent() {
                 let _ = std::fs::create_dir_all(parent);
@@ -706,9 +667,11 @@ impl ProgramCatalog {
     }
 
     fn program_mut(&mut self, name: &str) -> Result<&mut ProgramData> {
-        self.programs
-            .get_mut(name)
-            .ok_or_else(|| PersistError::Message(format!("program {name:?} not found")))
+        if !self.programs.contains_key(name) {
+            return Err(PersistError::Message(format!("program {name:?} not found")));
+        }
+        self.bump_generation();
+        Ok(self.programs.get_mut(name).expect("program exists"))
     }
 
     fn default_resolution_key(&self) -> String {
@@ -724,6 +687,33 @@ impl ProgramCatalog {
 fn ensure_resolution(p: &mut ProgramData, res: &str) {
     p.points.entry(res.to_string()).or_default();
     p.search_areas.entry(res.to_string()).or_default();
+}
+
+/// Shared BTreeMap rename: empty-name / conflict / remove / set-name / reinsert.
+/// Callers trim `new` and handle side effects (file renames, ref updates) outside.
+fn rename_keyed_map<T>(
+    map: &mut BTreeMap<String, T>,
+    old: &str,
+    new: &str,
+    kind: &str,
+    set_name: impl FnOnce(&mut T, String),
+) -> Result<()> {
+    if new.is_empty() {
+        return Err(PersistError::Message(format!(
+            "{kind} name cannot be empty"
+        )));
+    }
+    if old != new && map.contains_key(new) {
+        return Err(PersistError::Message(format!(
+            "{kind} {new:?} already exists"
+        )));
+    }
+    let mut entry = map.remove(old).ok_or_else(|| {
+        PersistError::Message(format!("{kind} {old:?} not found"))
+    })?;
+    set_name(&mut entry, new.to_string());
+    map.insert(new.to_string(), entry);
+    Ok(())
 }
 
 fn encode_program(data: &ProgramData, previous: &Mapping) -> Value {
@@ -874,7 +864,7 @@ fn encode_mask(mask: &ProgramMask) -> Value {
     );
     map.insert(
         Value::String("shape".into()),
-        Value::String(mask.shape.clone()),
+        Value::String(mask.shape.as_str().into()),
     );
     map.insert(
         Value::String("centerx".into()),
@@ -1196,7 +1186,7 @@ fn parse_mask(name: &str, v: &Value) -> ProgramMask {
         mask.name = n.to_string();
     }
     if let Some(s) = map.get(Value::String("shape".into())).and_then(|x| x.as_str()) {
-        mask.shape = s.to_ascii_lowercase();
+        mask.shape = MaskShape::parse(s);
     }
     mask.center_x = yaml_string_field(map.get(Value::String("centerx".into())), "50");
     mask.center_y = yaml_string_field(map.get(Value::String("centery".into())), "50");
@@ -1408,7 +1398,7 @@ Game:
         assert_eq!(pt.x, ScalarValue::Int(10));
         assert_eq!(pt.y, ScalarValue::Int(20));
         let mask = &reparsed.get("Game").unwrap().masks["circle"];
-        assert_eq!(mask.shape, "circle");
+        assert_eq!(mask.shape, sqyre_domain::MaskShape::Circle);
         assert!(mask.inverse);
         assert_eq!(mask.radius, "10");
         let col = &reparsed.get("Game").unwrap().collections["Bag"];
@@ -1494,58 +1484,57 @@ Demo:
     #[test]
     fn database_set_programs_from_catalog_roundtrip() {
         let dir = tempfile::tempdir().unwrap();
-        crate::set_sqyre_dir_override(Some(dir.path().to_path_buf()));
-        crate::initialize_directories().unwrap();
+        crate::with_sqyre_dir_override(dir.path().to_path_buf(), || {
+            crate::initialize_directories().unwrap();
 
-        let mut cat = ProgramCatalog::default();
-        cat.set_resolution_key("1920x1080");
-        cat.create_program("Demo").unwrap();
-        cat.upsert_item(
-            "Demo",
-            ProgramItem {
-                name: "Gem".into(),
-                mask: String::new(),
-                stack_max: 3,
-                grid_cols: 2,
-                grid_rows: 2,
-                tags: vec!["loot".into()],
-            },
-        )
-        .unwrap();
-        cat.upsert_point(
-            "Demo",
-            ProgramPoint {
-                name: "A".into(),
-                x: ScalarValue::Int(5),
-                y: ScalarValue::Int(6),
-            },
-        )
-        .unwrap();
-        cat.upsert_search_area(
-            "Demo",
-            ProgramSearchArea {
-                name: "Zone".into(),
-                left_x: ScalarValue::Int(0),
-                top_y: ScalarValue::Int(0),
-                right_x: ScalarValue::Int(50),
-                bottom_y: ScalarValue::Int(50),
-            },
-        )
-        .unwrap();
+            let mut cat = ProgramCatalog::default();
+            cat.set_resolution_key("1920x1080");
+            cat.create_program("Demo").unwrap();
+            cat.upsert_item(
+                "Demo",
+                ProgramItem {
+                    name: "Gem".into(),
+                    mask: String::new(),
+                    stack_max: 3,
+                    grid_cols: 2,
+                    grid_rows: 2,
+                    tags: vec!["loot".into()],
+                },
+            )
+            .unwrap();
+            cat.upsert_point(
+                "Demo",
+                ProgramPoint {
+                    name: "A".into(),
+                    x: ScalarValue::Int(5),
+                    y: ScalarValue::Int(6),
+                },
+            )
+            .unwrap();
+            cat.upsert_search_area(
+                "Demo",
+                ProgramSearchArea {
+                    name: "Zone".into(),
+                    left_x: ScalarValue::Int(0),
+                    top_y: ScalarValue::Int(0),
+                    right_x: ScalarValue::Int(50),
+                    bottom_y: ScalarValue::Int(50),
+                },
+            )
+            .unwrap();
 
-        let mut db = crate::Database::default();
-        db.set_programs_from_catalog(&cat);
-        db.save_default().unwrap();
+            let mut db = crate::Database::default();
+            db.set_programs_from_catalog(&cat);
+            db.save_default().unwrap();
 
-        let loaded = crate::Database::load_default().unwrap();
-        let cat2 = loaded.program_catalog().unwrap();
-        assert!(cat2.get("Demo").is_some());
-        assert_eq!(cat2.get("Demo").unwrap().items["Gem"].tags, vec!["loot"]);
-        assert_eq!(
-            cat2.get("Demo").unwrap().points["1920x1080"]["A"].x,
-            ScalarValue::Int(5)
-        );
-
-        crate::set_sqyre_dir_override(None);
+            let loaded = crate::Database::load_default().unwrap();
+            let cat2 = loaded.program_catalog().unwrap();
+            assert!(cat2.get("Demo").is_some());
+            assert_eq!(cat2.get("Demo").unwrap().items["Gem"].tags, vec!["loot"]);
+            assert_eq!(
+                cat2.get("Demo").unwrap().points["1920x1080"]["A"].x,
+                ScalarValue::Int(5)
+            );
+        });
     }
 }
