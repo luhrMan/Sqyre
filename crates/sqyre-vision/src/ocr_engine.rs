@@ -22,7 +22,7 @@ fn recognize_with(api: &mut leptess::tesseract::TessApi, img: &ImageBuf) -> Resu
             &img.data,
             img.width as i32,
             img.height as i32,
-            bytes_per_pixel as i32,
+            bytes_per_pixel,
             bytes_per_line as i32,
         )
         .map_err(|e| format!("OCR set image: {e:?}"))?;

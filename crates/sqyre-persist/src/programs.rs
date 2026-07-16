@@ -974,6 +974,7 @@ fn collection_from<'a>(
 }
 
 /// Axis-aligned union of selected cells within search-area bounds (1-based inclusive).
+#[allow(clippy::too_many_arguments)]
 fn cell_rect(
     left_x: i32,
     top_y: i32,

@@ -2,7 +2,7 @@
 
 use crate::{
     action_color_category, Action, ActionKind, ConditionClause, CoordinateOutputs, MatchMode,
-    RepeatMode, ScalarValue, WaitTilFoundConfig,
+    NavOutputs, RepeatMode, ScalarValue, WaitTilFoundConfig,
 };
 
 /// One display parameter.
@@ -88,6 +88,27 @@ impl CoordinateOutputs {
                 name: self.output_y_variable.clone(),
                 role: "output_y".into(),
             });
+        }
+        out
+    }
+}
+
+impl NavOutputs {
+    pub fn variable_bindings(&self) -> Vec<VariableBinding> {
+        let mut out = Vec::new();
+        for (name, role) in [
+            (&self.output_ref, "ref"),
+            (&self.output_graph, "graph"),
+            (&self.output_row, "row"),
+            (&self.output_col, "col"),
+            (&self.output_collection, "collection"),
+        ] {
+            if !name.is_empty() {
+                out.push(VariableBinding {
+                    name: name.clone(),
+                    role: role.into(),
+                });
+            }
         }
         out
     }
@@ -467,16 +488,12 @@ impl ActionKind {
                 }
                 params.push(DisplayParam::new("Continue", key));
             }
-            Self::NavigateSelect {
-                program,
-                graph_name,
-                ..
-            } => {
-                if !program.is_empty() {
-                    params.push(DisplayParam::new("Program", program.as_str()));
+            Self::NavigateSelect(data) => {
+                if !data.program.is_empty() {
+                    params.push(DisplayParam::new("Program", data.program.as_str()));
                 }
-                if !graph_name.is_empty() {
-                    params.push(DisplayParam::new("Graph", graph_name.as_str()));
+                if !data.graph_name.is_empty() {
+                    params.push(DisplayParam::new("Graph", data.graph_name.as_str()));
                 }
             }
             Self::NavigateKey { chord, exit, .. } => {
@@ -528,31 +545,7 @@ impl ActionKind {
                     role: "output".into(),
                 })
                 .collect(),
-            Self::NavigateSelect {
-                output_ref,
-                output_graph,
-                output_row,
-                output_col,
-                output_collection,
-                ..
-            } => {
-                let mut out = Vec::new();
-                for (name, role) in [
-                    (output_ref, "ref"),
-                    (output_graph, "graph"),
-                    (output_row, "row"),
-                    (output_col, "col"),
-                    (output_collection, "collection"),
-                ] {
-                    if !name.is_empty() {
-                        out.push(VariableBinding {
-                            name: name.clone(),
-                            role: role.into(),
-                        });
-                    }
-                }
-                out
-            }
+            Self::NavigateSelect(data) => data.outputs.variable_bindings(),
             _ => Vec::new(),
         }
     }
@@ -738,7 +731,7 @@ pub fn action_icon_glyph(action: &Action) -> &'static str {
         ActionKind::Ocr { .. } => "🔤",
         ActionKind::ImageSearch { .. } => "🔍",
         ActionKind::FindPixel { .. } => "🎨",
-        ActionKind::NavigateSelect { .. } => "⌖",
+        ActionKind::NavigateSelect(_) => "⌖",
         ActionKind::NavigateKey { .. } => "⎇",
     }
 }

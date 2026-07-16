@@ -132,9 +132,8 @@ impl X11Capturer {
             let stride = img.bytes_per_line as usize;
             let data_len = stride.saturating_mul(h as usize);
             let data = std::slice::from_raw_parts(img.data as *const u8, data_len);
-            let out = zpixmap_to_rgba(data, w, h, bpp, stride).map_err(|e| {
+            let out = zpixmap_to_rgba(data, w, h, bpp, stride).inspect_err(|_e| {
                 XDestroyImage(ximage);
-                e
             })?;
             XDestroyImage(ximage);
             Ok(out)

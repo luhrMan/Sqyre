@@ -5,6 +5,9 @@ edition.workspace = true
 license.workspace = true
 description = "Image search / find-pixel / OCR helpers over sqyre-match"
 
+[lints]
+workspace = true
+
 [dependencies]
 image = { workspace = true }
 thiserror = { workspace = true }

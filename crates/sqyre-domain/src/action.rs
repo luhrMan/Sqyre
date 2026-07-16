@@ -327,6 +327,120 @@ pub struct ListColumn {
     pub skip_blank_lines: bool,
 }
 
+/// Built-in navigation chords for [`ActionKind::NavigateSelect`].
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct NavChords {
+    pub up: Vec<String>,
+    pub down: Vec<String>,
+    pub left: Vec<String>,
+    pub right: Vec<String>,
+    pub select: Vec<String>,
+    pub back: Vec<String>,
+}
+
+impl NavChords {
+    pub fn blank_defaults() -> Self {
+        Self {
+            up: vec!["up".into()],
+            down: vec!["down".into()],
+            left: vec!["left".into()],
+            right: vec!["right".into()],
+            select: vec!["enter".into()],
+            back: vec!["esc".into()],
+        }
+    }
+}
+
+/// Behavior flags for Navigate Select.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NavOptions {
+    pub wrap_edges: bool,
+    pub move_cursor_with_nav: bool,
+    pub smooth: bool,
+    pub pass_through: bool,
+    pub hold_repeat: bool,
+}
+
+impl Default for NavOptions {
+    fn default() -> Self {
+        Self {
+            wrap_edges: true,
+            move_cursor_with_nav: true,
+            smooth: false,
+            pass_through: false,
+            hold_repeat: false,
+        }
+    }
+}
+
+/// Press performed when the Select chord fires.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NavSelectAction {
+    pub device: String,
+    pub button: String,
+    pub key: String,
+    pub press_mode: String,
+}
+
+impl Default for NavSelectAction {
+    fn default() -> Self {
+        Self {
+            device: "mouse".into(),
+            button: "left".into(),
+            key: String::new(),
+            press_mode: "click".into(),
+        }
+    }
+}
+
+/// Optional start / override sources for Navigate Select.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct NavInputs {
+    pub graph: String,
+    pub row: String,
+    pub col: String,
+    pub collection: String,
+}
+
+/// Output variables written by Navigate Select.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct NavOutputs {
+    pub output_ref: String,
+    pub output_graph: String,
+    pub output_row: String,
+    pub output_col: String,
+    pub output_collection: String,
+}
+
+/// Boxed payload for [`ActionKind::NavigateSelect`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct NavigateSelectData {
+    pub program: String,
+    pub graph_name: String,
+    pub chords: NavChords,
+    pub options: NavOptions,
+    pub select: NavSelectAction,
+    pub inputs: NavInputs,
+    pub outputs: NavOutputs,
+    /// Direct children should be [`ActionKind::NavigateKey`] branches.
+    pub subactions: Vec<Action>,
+}
+
+impl Default for NavigateSelectData {
+    fn default() -> Self {
+        Self {
+            program: String::new(),
+            graph_name: String::new(),
+            chords: NavChords::blank_defaults(),
+            options: NavOptions::default(),
+            select: NavSelectAction::default(),
+            inputs: NavInputs::default(),
+            outputs: NavOutputs::default(),
+            subactions: Vec::new(),
+        }
+    }
+}
+
 /// Runtime builtins set inside ForEachRow sub-actions (1-based row index).
 pub const FOREACH_ROW_BUILTIN_ROW: &str = "Row";
 /// Total line count of the driving (first) ForEachRow source.
@@ -612,36 +726,7 @@ pub enum ActionKind {
     },
     /// Interactive grid navigator. Built-in chords move / select / back; each
     /// [`NavigateKey`] child is a user-defined chord that runs its branch.
-    NavigateSelect {
-        program: String,
-        graph_name: String,
-        chord_up: Vec<String>,
-        chord_down: Vec<String>,
-        chord_left: Vec<String>,
-        chord_right: Vec<String>,
-        chord_select: Vec<String>,
-        chord_back: Vec<String>,
-        wrap_edges: bool,
-        move_cursor_with_nav: bool,
-        smooth: bool,
-        pass_through: bool,
-        hold_repeat: bool,
-        select_device: String,
-        select_button: String,
-        select_key: String,
-        select_press_mode: String,
-        in_graph: String,
-        in_row: String,
-        in_col: String,
-        in_collection: String,
-        output_ref: String,
-        output_graph: String,
-        output_row: String,
-        output_col: String,
-        output_collection: String,
-        /// Direct children should be [`ActionKind::NavigateKey`] branches.
-        subactions: Vec<Action>,
-    },
+    NavigateSelect(Box<NavigateSelectData>),
     /// User-defined key branch under [`ActionKind::NavigateSelect`].
     NavigateKey {
         name: String,
@@ -674,7 +759,7 @@ impl ActionKind {
             Self::SaveVariable { .. } => "savevariable",
             Self::FocusWindow { .. } => "focuswindow",
             Self::RunMacro { .. } => "runmacro",
-            Self::NavigateSelect { .. } => "navigateselect",
+            Self::NavigateSelect(_) => "navigateselect",
             Self::NavigateKey { .. } => "navigatekey",
             Self::Break => "break",
             Self::Continue => "continue",
@@ -691,7 +776,7 @@ impl ActionKind {
                 | Self::Ocr { .. }
                 | Self::FindPixel { .. }
                 | Self::ForEachRow { .. }
-                | Self::NavigateSelect { .. }
+                | Self::NavigateSelect(_)
                 | Self::NavigateKey { .. }
         )
     }
@@ -705,8 +790,8 @@ impl ActionKind {
             | Self::Ocr { subactions, .. }
             | Self::FindPixel { subactions, .. }
             | Self::ForEachRow { subactions, .. }
-            | Self::NavigateSelect { subactions, .. }
             | Self::NavigateKey { subactions, .. } => subactions,
+            Self::NavigateSelect(data) => &data.subactions,
             _ => &[],
         }
     }
@@ -720,8 +805,8 @@ impl ActionKind {
             | Self::Ocr { subactions, .. }
             | Self::FindPixel { subactions, .. }
             | Self::ForEachRow { subactions, .. }
-            | Self::NavigateSelect { subactions, .. }
             | Self::NavigateKey { subactions, .. } => Some(subactions),
+            Self::NavigateSelect(data) => Some(&mut data.subactions),
             _ => None,
         }
     }
@@ -778,15 +863,11 @@ impl ActionKind {
                 }
             }
             Self::RunMacro { macro_name } => format!("Run {macro_name}"),
-            Self::NavigateSelect {
-                program,
-                graph_name,
-                ..
-            } => {
-                if program.is_empty() && graph_name.is_empty() {
+            Self::NavigateSelect(data) => {
+                if data.program.is_empty() && data.graph_name.is_empty() {
                     label.to_string()
                 } else {
-                    format!("{label}: {program} · {graph_name}")
+                    format!("{label}: {} · {}", data.program, data.graph_name)
                 }
             }
             Self::Pause { message, .. } => {

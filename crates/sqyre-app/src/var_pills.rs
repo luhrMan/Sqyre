@@ -7,7 +7,6 @@ use eframe::egui::{
 use egui::text_selection::CCursorRange;
 use sqyre_domain::{action_pastel_color, is_known_variable, nested_var_ref_color, SummaryPill};
 use sqyre_validate::EntryValidation;
-use sqyre_varref;
 use std::collections::HashSet;
 use std::sync::Arc;
 
@@ -287,7 +286,7 @@ fn byte_index_from_char_index(s: &str, char_index: usize) -> usize {
 fn var_completion_options(prefix: &str, known: &HashSet<String>, limit: usize) -> Vec<String> {
     let p = prefix.to_ascii_lowercase();
     let mut names: Vec<String> = known.iter().cloned().collect();
-    names.sort_by(|a, b| a.to_ascii_lowercase().cmp(&b.to_ascii_lowercase()));
+    names.sort_by_key(|a| a.to_ascii_lowercase());
     names
         .into_iter()
         .filter(|n| p.is_empty() || n.to_ascii_lowercase().starts_with(&p))
@@ -401,6 +400,7 @@ fn var_ref_text_edit(
     );
 }
 
+#[allow(clippy::too_many_arguments)]
 fn show_var_ref_autocomplete(
     ui: &mut egui::Ui,
     edit_id: egui::Id,
@@ -632,6 +632,7 @@ pub fn validated_var_ref_edit(
 /// Multiline var-ref field with live validation icon.
 ///
 /// Pass a finite width, or [`f32::INFINITY`] to fill available width.
+#[allow(clippy::too_many_arguments)]
 pub fn validated_var_ref_multiline_edit(
     ui: &mut egui::Ui,
     label: &str,

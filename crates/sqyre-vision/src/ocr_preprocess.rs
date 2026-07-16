@@ -190,8 +190,8 @@ fn otsu_threshold(hist_src: &[u8]) -> u8 {
     let mut w_b = 0.0_f64;
     let mut max_var = -1.0_f64;
     let mut threshold = 0u8;
-    for t in 0..256 {
-        w_b += hist[t] as f64;
+    for (t, &h) in hist.iter().enumerate() {
+        w_b += h as f64;
         if w_b == 0.0 {
             continue;
         }
@@ -199,7 +199,7 @@ fn otsu_threshold(hist_src: &[u8]) -> u8 {
         if w_f == 0.0 {
             break;
         }
-        sum_b += t as f64 * hist[t] as f64;
+        sum_b += t as f64 * h as f64;
         let m_b = sum_b / w_b;
         let m_f = (sum_all - sum_b) / w_f;
         let var = w_b * w_f * (m_b - m_f) * (m_b - m_f);
@@ -317,7 +317,7 @@ mod tests {
         let (out, scale) = preprocess_for_ocr(&img, opts).unwrap();
         assert_eq!(scale, 1.0);
         assert_eq!(out.channels, 1);
-        assert!(out.data.iter().any(|&p| p == 0) || out.data.iter().any(|&p| p == 255));
+        assert!(out.data.contains(&0) || out.data.contains(&255));
     }
 
     #[test]

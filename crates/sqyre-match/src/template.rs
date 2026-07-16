@@ -162,8 +162,8 @@ fn build_t_prime(template: &ImageBuf, mask_bits: &[bool], ch: usize) -> (TPrime,
             }
             sum_w += 1.0;
             let ti = template.pixel_offset(x, y);
-            for c in 0..ch {
-                t_mean[c] += template.data[ti + c] as f64;
+            for (c, m) in t_mean.iter_mut().enumerate() {
+                *m += template.data[ti + c] as f64;
             }
         }
     }
@@ -179,8 +179,8 @@ fn build_t_prime(template: &ImageBuf, mask_bits: &[bool], ch: usize) -> (TPrime,
             0.0,
         );
     }
-    for c in 0..ch {
-        t_mean[c] /= sum_w;
+    for m in &mut t_mean {
+        *m /= sum_w;
     }
 
     let n = sum_w as usize;
@@ -197,8 +197,8 @@ fn build_t_prime(template: &ImageBuf, mask_bits: &[bool], ch: usize) -> (TPrime,
             let ti = template.pixel_offset(x, y);
             xs.push(x as u16);
             ys.push(y as u16);
-            for c in 0..ch {
-                let tp = template.data[ti + c] as f64 - t_mean[c];
+            for (c, &mean) in t_mean.iter().enumerate() {
+                let tp = template.data[ti + c] as f64 - mean;
                 primed.push(tp);
                 t_prime_sq += tp * tp;
             }
@@ -216,6 +216,7 @@ fn build_t_prime(template: &ImageBuf, mask_bits: &[bool], ch: usize) -> (TPrime,
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn match_direct(
     search: &ImageBuf,
     t_prime: &TPrime,
@@ -248,14 +249,14 @@ fn match_direct(
         .par_chunks_mut(out_w)
         .enumerate()
         .for_each(|(oy, row)| {
-            for ox in 0..out_w {
+            for (ox, cell) in row.iter_mut().enumerate() {
                 let (numer, i_prime_sq) = if let Some(integ) = integrals.as_ref() {
                     score_unmasked(integ, search_data, search_w, ch, ox, oy, tw, th, n, t_prime)
                 } else {
                     score_masked(search_data, search_w, ch, ox, oy, t_prime, n)
                 };
                 let denom = (t_prime_sq * i_prime_sq).sqrt();
-                row[ox] = if denom > f64::EPSILON {
+                *cell = if denom > f64::EPSILON {
                     (numer / denom) as f32
                 } else {
                     0.0
@@ -301,6 +302,7 @@ fn optimal_dft_size(n: usize) -> usize {
 }
 
 /// DFT cross-correlation of mean-subtracted template vs search (OpenCV `crossCorr` + CCOEFF).
+#[allow(clippy::too_many_arguments)]
 fn match_fft(
     search: &ImageBuf,
     t_prime: &TPrime,
@@ -345,7 +347,7 @@ fn match_fft(
                 fft2d_forward(&mut tmpl, dft_w, dft_h, &mut planner);
 
                 for i in 0..area {
-                    img[i] = img[i] * tmpl[i].conj();
+                    img[i] *= tmpl[i].conj();
                 }
                 fft2d_inverse(&mut img, dft_w, dft_h, &mut planner);
             });
@@ -486,6 +488,7 @@ fn rect_sum(integ: &[f64], stride: usize, x: usize, y: usize, tw: usize, th: usi
     integ[y2 * stride + x2] - integ[y * stride + x2] - integ[y2 * stride + x] + integ[y * stride + x]
 }
 
+#[allow(clippy::too_many_arguments)]
 fn score_unmasked(
     integ: &SearchIntegrals,
     search_data: &[u8],
@@ -543,8 +546,8 @@ fn score_masked(
             i_sum[c] += search_data[si + c] as f64;
         }
     }
-    for c in 0..ch {
-        i_sum[c] /= n;
+    for s in i_sum.iter_mut() {
+        *s /= n;
     }
 
     let mut numer = 0.0_f64;
@@ -581,8 +584,8 @@ fn score_masked_heap(
             i_sum[c] += search_data[si + c] as f64;
         }
     }
-    for c in 0..ch {
-        i_sum[c] /= n;
+    for s in i_sum.iter_mut() {
+        *s /= n;
     }
     let mut numer = 0.0_f64;
     let mut i_prime_sq = 0.0_f64;
@@ -604,7 +607,7 @@ fn prep_mask(tw: usize, th: usize, mask: Option<&[u8]>) -> Result<Vec<bool>, Mat
     let area = tw * th;
     match mask {
         None => Ok(vec![true; area]),
-        Some(m) if m.is_empty() => Ok(vec![true; area]),
+        Some([]) => Ok(vec![true; area]),
         Some(m) if m.len() != area => Err(MatchError::MaskSize {
             got: m.len(),
             want: area,

@@ -11,6 +11,7 @@ mod variants;
 use crate::icon_cache::IconCache;
 use crate::image_view::ImageViewTransform;
 use crate::overlay_icons;
+use crate::paint_ctx::CatalogPaint;
 use crate::pickers::{self, ActivePicker, PickerResult};
 use crate::data_editor_preview::variant_display_label;
 use crate::preview_tooltip::PreviewTooltipCache;
@@ -214,11 +215,12 @@ impl DataEditor {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn show(
         &mut self,
         ctx: &egui::Context,
         db: &mut Database,
-        macros: &mut Vec<Macro>,
+        macros: &mut [Macro],
         selected_macro: usize,
         catalog: &mut ProgramCatalog,
         icons: &mut IconCache,
@@ -272,22 +274,21 @@ impl DataEditor {
             .iter()
             .map(|m| (m.name.clone(), m.tags.clone()))
             .collect();
-        match pickers::show_active_picker(
-            ctx,
-            &mut self.window_picker,
-            catalog,
-            icons,
-            previews,
-            &macro_opts,
-        ) {
-            PickerResult::Window {
+        if let PickerResult::Window {
                 process_path,
                 window_title,
-            } => {
-                self.form_process_path = process_path;
-                self.form_window_title = window_title;
-            }
-            _ => {}
+            } = pickers::show_active_picker(
+            ctx,
+            &mut self.window_picker,
+            &mut CatalogPaint {
+                catalog,
+                icons,
+                previews,
+            },
+            &macro_opts,
+        ) {
+            self.form_process_path = process_path;
+            self.form_window_title = window_title;
         }
     }
 
@@ -296,7 +297,7 @@ impl DataEditor {
         screen_click: &ScreenClickBridge,
         previews: &mut PreviewTooltipCache,
         db: &mut Database,
-        macros: &mut Vec<Macro>,
+        macros: &mut [Macro],
         catalog: &mut ProgramCatalog,
         settings: &mut UserSettings,
     ) {
@@ -330,11 +331,12 @@ impl DataEditor {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn ui(
         &mut self,
         ui: &mut egui::Ui,
         db: &mut Database,
-        macros: &mut Vec<Macro>,
+        macros: &mut [Macro],
         selected_macro: usize,
         catalog: &mut ProgramCatalog,
         icons: &mut IconCache,
@@ -456,9 +458,11 @@ impl DataEditor {
                                 ui.set_max_width(ui.available_width());
                                 self.draw_form(
                                     ui,
-                                    catalog,
-                                    icons,
-                                    previews,
+                                    &mut CatalogPaint {
+                                        catalog,
+                                        icons,
+                                        previews,
+                                    },
                                     screen_click,
                                     macros,
                                     macros.get(selected_macro),
@@ -540,12 +544,13 @@ impl DataEditor {
         });
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn draw_confirm(
         &mut self,
         ui: &mut egui::Ui,
         confirm: PendingConfirm,
         db: &mut Database,
-        macros: &mut Vec<Macro>,
+        macros: &mut [Macro],
         catalog: &mut ProgramCatalog,
         icons: &mut IconCache,
         previews: &mut PreviewTooltipCache,

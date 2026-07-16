@@ -2,8 +2,8 @@
 
 use crate::{
     action_type_table, Action, ActionId, ActionKind, CoordinateOutputs, CoordinateRef, ListColumn,
-    MatchOrder, ScalarValue, WaitTilFoundConfig, DEFAULT_SMOOTH_DELAY_MS, DEFAULT_SMOOTH_HIGH,
-    DEFAULT_SMOOTH_LOW, MATCH_ALL,
+    MatchOrder, ScalarValue, WaitTilFoundConfig, DEFAULT_SMOOTH_DELAY_MS,
+    DEFAULT_SMOOTH_HIGH, DEFAULT_SMOOTH_LOW, MATCH_ALL,
 };
 
 /// One picker entry: label, type key, category, and a fresh blank [`Action`].
@@ -154,35 +154,7 @@ fn blank_kind(action_type: &str) -> Option<ActionKind> {
             append: false,
             append_newline: false,
         },
-        "navigateselect" => ActionKind::NavigateSelect {
-            program: String::new(),
-            graph_name: String::new(),
-            chord_up: vec!["up".into()],
-            chord_down: vec!["down".into()],
-            chord_left: vec!["left".into()],
-            chord_right: vec!["right".into()],
-            chord_select: vec!["enter".into()],
-            chord_back: vec!["esc".into()],
-            wrap_edges: true,
-            move_cursor_with_nav: true,
-            smooth: false,
-            pass_through: false,
-            hold_repeat: false,
-            select_device: "mouse".into(),
-            select_button: "left".into(),
-            select_key: String::new(),
-            select_press_mode: "click".into(),
-            in_graph: String::new(),
-            in_row: String::new(),
-            in_col: String::new(),
-            in_collection: String::new(),
-            output_ref: String::new(),
-            output_graph: String::new(),
-            output_row: String::new(),
-            output_col: String::new(),
-            output_collection: String::new(),
-            subactions: Vec::new(),
-        },
+        "navigateselect" => ActionKind::NavigateSelect(Box::default()),
         "navigatekey" => ActionKind::NavigateKey {
             name: String::new(),
             chord: Vec::new(),

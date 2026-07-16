@@ -316,102 +316,19 @@ fn encode_kind(kind: &ActionKind) -> Result<Mapping> {
         ActionKind::RunMacro { macro_name } => {
             insert_str(&mut m, "macroname", macro_name);
         }
-        ActionKind::NavigateSelect {
-            program,
-            graph_name,
-            chord_up,
-            chord_down,
-            chord_left,
-            chord_right,
-            chord_select,
-            chord_back,
-            wrap_edges,
-            move_cursor_with_nav,
-            smooth,
-            pass_through,
-            hold_repeat,
-            select_device,
-            select_button,
-            select_key,
-            select_press_mode,
-            in_graph,
-            in_row,
-            in_col,
-            in_collection,
-            output_ref,
-            output_graph,
-            output_row,
-            output_col,
-            output_collection,
-            subactions,
-        } => {
-            if !program.is_empty() {
-                insert_str(&mut m, "program", program);
+        ActionKind::NavigateSelect(data) => {
+            if !data.program.is_empty() {
+                insert_str(&mut m, "program", &data.program);
             }
-            if !graph_name.is_empty() {
-                insert_str(&mut m, "graphname", graph_name);
+            if !data.graph_name.is_empty() {
+                insert_str(&mut m, "graphname", &data.graph_name);
             }
-            write_chord(&mut m, "chordup", chord_up);
-            write_chord(&mut m, "chorddown", chord_down);
-            write_chord(&mut m, "chordleft", chord_left);
-            write_chord(&mut m, "chordright", chord_right);
-            write_chord(&mut m, "chordselect", chord_select);
-            write_chord(&mut m, "chordback", chord_back);
-            if *wrap_edges {
-                insert_bool(&mut m, "wrapedges", true);
-            }
-            if *move_cursor_with_nav {
-                insert_bool(&mut m, "movecursorwithnav", true);
-            }
-            if *smooth {
-                insert_bool(&mut m, "smooth", true);
-            }
-            if *pass_through {
-                insert_bool(&mut m, "passthrough", true);
-            }
-            if *hold_repeat {
-                insert_bool(&mut m, "holdrepeat", true);
-            }
-            if !select_device.is_empty() {
-                insert_str(&mut m, "selectdevice", select_device);
-            }
-            if !select_button.is_empty() {
-                insert_str(&mut m, "selectbutton", select_button);
-            }
-            if !select_key.is_empty() {
-                insert_str(&mut m, "selectkey", select_key);
-            }
-            if !select_press_mode.is_empty() {
-                insert_str(&mut m, "selectpressmode", select_press_mode);
-            }
-            if !in_graph.is_empty() {
-                insert_str(&mut m, "ingraph", in_graph);
-            }
-            if !in_row.is_empty() {
-                insert_str(&mut m, "inrow", in_row);
-            }
-            if !in_col.is_empty() {
-                insert_str(&mut m, "incol", in_col);
-            }
-            if !in_collection.is_empty() {
-                insert_str(&mut m, "incollection", in_collection);
-            }
-            if !output_ref.is_empty() {
-                insert_str(&mut m, "outputref", output_ref);
-            }
-            if !output_graph.is_empty() {
-                insert_str(&mut m, "outputgraph", output_graph);
-            }
-            if !output_row.is_empty() {
-                insert_str(&mut m, "outputrow", output_row);
-            }
-            if !output_col.is_empty() {
-                insert_str(&mut m, "outputcol", output_col);
-            }
-            if !output_collection.is_empty() {
-                insert_str(&mut m, "outputcollection", output_collection);
-            }
-            insert(&mut m, "subactions", subactions_to_seq(subactions)?);
+            write_nav_chords(&mut m, &data.chords);
+            write_nav_options(&mut m, &data.options);
+            write_nav_select(&mut m, &data.select);
+            write_nav_inputs(&mut m, &data.inputs);
+            write_nav_outputs(&mut m, &data.outputs);
+            insert(&mut m, "subactions", subactions_to_seq(&data.subactions)?);
         }
         ActionKind::NavigateKey {
             name,
@@ -443,6 +360,81 @@ fn write_chord(m: &mut Mapping, key: &str, keys: &[String]) {
     }
 }
 
+fn write_nav_chords(m: &mut Mapping, c: &sqyre_domain::NavChords) {
+    write_chord(m, "chordup", &c.up);
+    write_chord(m, "chorddown", &c.down);
+    write_chord(m, "chordleft", &c.left);
+    write_chord(m, "chordright", &c.right);
+    write_chord(m, "chordselect", &c.select);
+    write_chord(m, "chordback", &c.back);
+}
+
+fn write_nav_options(m: &mut Mapping, o: &sqyre_domain::NavOptions) {
+    if o.wrap_edges {
+        insert_bool(m, "wrapedges", true);
+    }
+    if o.move_cursor_with_nav {
+        insert_bool(m, "movecursorwithnav", true);
+    }
+    if o.smooth {
+        insert_bool(m, "smooth", true);
+    }
+    if o.pass_through {
+        insert_bool(m, "passthrough", true);
+    }
+    if o.hold_repeat {
+        insert_bool(m, "holdrepeat", true);
+    }
+}
+
+fn write_nav_select(m: &mut Mapping, s: &sqyre_domain::NavSelectAction) {
+    if !s.device.is_empty() {
+        insert_str(m, "selectdevice", &s.device);
+    }
+    if !s.button.is_empty() {
+        insert_str(m, "selectbutton", &s.button);
+    }
+    if !s.key.is_empty() {
+        insert_str(m, "selectkey", &s.key);
+    }
+    if !s.press_mode.is_empty() {
+        insert_str(m, "selectpressmode", &s.press_mode);
+    }
+}
+
+fn write_nav_inputs(m: &mut Mapping, i: &sqyre_domain::NavInputs) {
+    if !i.graph.is_empty() {
+        insert_str(m, "ingraph", &i.graph);
+    }
+    if !i.row.is_empty() {
+        insert_str(m, "inrow", &i.row);
+    }
+    if !i.col.is_empty() {
+        insert_str(m, "incol", &i.col);
+    }
+    if !i.collection.is_empty() {
+        insert_str(m, "incollection", &i.collection);
+    }
+}
+
+fn write_nav_outputs(m: &mut Mapping, o: &sqyre_domain::NavOutputs) {
+    if !o.output_ref.is_empty() {
+        insert_str(m, "outputref", &o.output_ref);
+    }
+    if !o.output_graph.is_empty() {
+        insert_str(m, "outputgraph", &o.output_graph);
+    }
+    if !o.output_row.is_empty() {
+        insert_str(m, "outputrow", &o.output_row);
+    }
+    if !o.output_col.is_empty() {
+        insert_str(m, "outputcol", &o.output_col);
+    }
+    if !o.output_collection.is_empty() {
+        insert_str(m, "outputcollection", &o.output_collection);
+    }
+}
+
 fn write_coords(m: &mut Mapping, c: &CoordinateOutputs) {
     if !c.output_x_variable.is_empty() {
         insert_str(m, "outputxvariable", &c.output_x_variable);
@@ -467,9 +459,7 @@ fn write_order(m: &mut Mapping, o: &MatchOrder) {
 fn write_wait(m: &mut Mapping, w: &WaitTilFoundConfig) {
     let mode = w.effective_repeat_mode();
     insert_str(m, "repeatmode", mode.as_str());
-    if mode == RepeatMode::WaitUntilFound {
-        insert_i32(m, "waittilfoundseconds", w.wait_til_found_seconds);
-    } else if w.wait_til_found_seconds > 0 {
+    if mode == RepeatMode::WaitUntilFound || w.wait_til_found_seconds > 0 {
         insert_i32(m, "waittilfoundseconds", w.wait_til_found_seconds);
     }
     if w.wait_til_found_interval_ms > 0 {
@@ -505,6 +495,61 @@ fn decode_coords(raw: &Mapping) -> CoordinateOutputs {
         c.output_y_variable = y;
     }
     c
+}
+
+fn decode_chord(raw: &Mapping, key: &str) -> Vec<String> {
+    raw.get(Value::String(key.into()))
+        .map(string_slice_from_value)
+        .unwrap_or_default()
+}
+
+fn decode_nav_chords(raw: &Mapping) -> sqyre_domain::NavChords {
+    sqyre_domain::NavChords {
+        up: decode_chord(raw, "chordup"),
+        down: decode_chord(raw, "chorddown"),
+        left: decode_chord(raw, "chordleft"),
+        right: decode_chord(raw, "chordright"),
+        select: decode_chord(raw, "chordselect"),
+        back: decode_chord(raw, "chordback"),
+    }
+}
+
+fn decode_nav_options(raw: &Mapping) -> sqyre_domain::NavOptions {
+    sqyre_domain::NavOptions {
+        wrap_edges: bool_from_map(raw, "wrapedges"),
+        move_cursor_with_nav: bool_from_map(raw, "movecursorwithnav"),
+        smooth: bool_from_map(raw, "smooth"),
+        pass_through: bool_from_map(raw, "passthrough"),
+        hold_repeat: bool_from_map(raw, "holdrepeat"),
+    }
+}
+
+fn decode_nav_select(raw: &Mapping) -> sqyre_domain::NavSelectAction {
+    sqyre_domain::NavSelectAction {
+        device: string_from_map(raw, "selectdevice"),
+        button: string_from_map(raw, "selectbutton"),
+        key: string_from_map(raw, "selectkey"),
+        press_mode: string_from_map(raw, "selectpressmode"),
+    }
+}
+
+fn decode_nav_inputs(raw: &Mapping) -> sqyre_domain::NavInputs {
+    sqyre_domain::NavInputs {
+        graph: string_from_map(raw, "ingraph"),
+        row: string_from_map(raw, "inrow"),
+        col: string_from_map(raw, "incol"),
+        collection: string_from_map(raw, "incollection"),
+    }
+}
+
+fn decode_nav_outputs(raw: &Mapping) -> sqyre_domain::NavOutputs {
+    sqyre_domain::NavOutputs {
+        output_ref: string_from_map(raw, "outputref"),
+        output_graph: string_from_map(raw, "outputgraph"),
+        output_row: string_from_map(raw, "outputrow"),
+        output_col: string_from_map(raw, "outputcol"),
+        output_collection: string_from_map(raw, "outputcollection"),
+    }
 }
 
 fn decode_order(raw: &Mapping) -> MatchOrder {
@@ -818,53 +863,18 @@ fn decode_kind(raw: &Mapping, type_name: &str) -> Result<ActionKind> {
         "runmacro" => Ok(ActionKind::RunMacro {
             macro_name: string_from_map(raw, "macroname"),
         }),
-        "navigateselect" => Ok(ActionKind::NavigateSelect {
-            program: string_from_map(raw, "program"),
-            graph_name: string_from_map(raw, "graphname"),
-            chord_up: raw
-                .get(Value::String("chordup".into()))
-                .map(string_slice_from_value)
-                .unwrap_or_default(),
-            chord_down: raw
-                .get(Value::String("chorddown".into()))
-                .map(string_slice_from_value)
-                .unwrap_or_default(),
-            chord_left: raw
-                .get(Value::String("chordleft".into()))
-                .map(string_slice_from_value)
-                .unwrap_or_default(),
-            chord_right: raw
-                .get(Value::String("chordright".into()))
-                .map(string_slice_from_value)
-                .unwrap_or_default(),
-            chord_select: raw
-                .get(Value::String("chordselect".into()))
-                .map(string_slice_from_value)
-                .unwrap_or_default(),
-            chord_back: raw
-                .get(Value::String("chordback".into()))
-                .map(string_slice_from_value)
-                .unwrap_or_default(),
-            wrap_edges: bool_from_map(raw, "wrapedges"),
-            move_cursor_with_nav: bool_from_map(raw, "movecursorwithnav"),
-            smooth: bool_from_map(raw, "smooth"),
-            pass_through: bool_from_map(raw, "passthrough"),
-            hold_repeat: bool_from_map(raw, "holdrepeat"),
-            select_device: string_from_map(raw, "selectdevice"),
-            select_button: string_from_map(raw, "selectbutton"),
-            select_key: string_from_map(raw, "selectkey"),
-            select_press_mode: string_from_map(raw, "selectpressmode"),
-            in_graph: string_from_map(raw, "ingraph"),
-            in_row: string_from_map(raw, "inrow"),
-            in_col: string_from_map(raw, "incol"),
-            in_collection: string_from_map(raw, "incollection"),
-            output_ref: string_from_map(raw, "outputref"),
-            output_graph: string_from_map(raw, "outputgraph"),
-            output_row: string_from_map(raw, "outputrow"),
-            output_col: string_from_map(raw, "outputcol"),
-            output_collection: string_from_map(raw, "outputcollection"),
-            subactions: decode_subactions(raw)?,
-        }),
+        "navigateselect" => Ok(ActionKind::NavigateSelect(Box::new(
+            sqyre_domain::NavigateSelectData {
+                program: string_from_map(raw, "program"),
+                graph_name: string_from_map(raw, "graphname"),
+                chords: decode_nav_chords(raw),
+                options: decode_nav_options(raw),
+                select: decode_nav_select(raw),
+                inputs: decode_nav_inputs(raw),
+                outputs: decode_nav_outputs(raw),
+                subactions: decode_subactions(raw)?,
+            },
+        ))),
         "navigatekey" => Ok(ActionKind::NavigateKey {
             name: string_from_map(raw, "name"),
             chord: raw
@@ -883,7 +893,7 @@ fn decode_kind(raw: &Mapping, type_name: &str) -> Result<ActionKind> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqyre_domain::{root_loop, ScalarValue};
+    use sqyre_domain::{root_loop, NavigateSelectData, ScalarValue};
 
     #[test]
     fn action_to_map_with_uid_preserves_nested_uids() {
@@ -930,35 +940,40 @@ mod tests {
         let branch_id = branch.id;
         let nav = Action {
             id: ActionId::new(),
-            kind: ActionKind::NavigateSelect {
+            kind: ActionKind::NavigateSelect(Box::new(NavigateSelectData {
                 program: "P".into(),
                 graph_name: "bag".into(),
-                chord_up: vec!["up".into()],
-                chord_down: vec!["down".into()],
-                chord_left: vec![],
-                chord_right: vec![],
-                chord_select: vec!["enter".into()],
-                chord_back: vec!["esc".into()],
-                wrap_edges: true,
-                move_cursor_with_nav: true,
-                smooth: false,
-                pass_through: false,
-                hold_repeat: true,
-                select_device: "mouse".into(),
-                select_button: "left".into(),
-                select_key: String::new(),
-                select_press_mode: "click".into(),
-                in_graph: String::new(),
-                in_row: String::new(),
-                in_col: String::new(),
-                in_collection: String::new(),
-                output_ref: "ref".into(),
-                output_graph: String::new(),
-                output_row: "r".into(),
-                output_col: "c".into(),
-                output_collection: String::new(),
+                chords: sqyre_domain::NavChords {
+                    up: vec!["up".into()],
+                    down: vec!["down".into()],
+                    left: vec![],
+                    right: vec![],
+                    select: vec!["enter".into()],
+                    back: vec!["esc".into()],
+                },
+                options: sqyre_domain::NavOptions {
+                    wrap_edges: true,
+                    move_cursor_with_nav: true,
+                    smooth: false,
+                    pass_through: false,
+                    hold_repeat: true,
+                },
+                select: sqyre_domain::NavSelectAction {
+                    device: "mouse".into(),
+                    button: "left".into(),
+                    key: String::new(),
+                    press_mode: "click".into(),
+                },
+                inputs: sqyre_domain::NavInputs::default(),
+                outputs: sqyre_domain::NavOutputs {
+                    output_ref: "ref".into(),
+                    output_graph: String::new(),
+                    output_row: "r".into(),
+                    output_col: "c".into(),
+                    output_collection: String::new(),
+                },
                 subactions: vec![branch],
-            },
+            })),
         };
         let nav_id = nav.id;
         let m = action_to_map_with_uid(&nav).unwrap();
@@ -966,19 +981,13 @@ mod tests {
         assert_eq!(restored.id, nav_id);
         assert!(restored.is_branch());
         match &restored.kind {
-            ActionKind::NavigateSelect {
-                program,
-                wrap_edges,
-                hold_repeat,
-                subactions,
-                ..
-            } => {
-                assert_eq!(program, "P");
-                assert!(*wrap_edges);
-                assert!(*hold_repeat);
-                assert_eq!(subactions.len(), 1);
-                assert_eq!(subactions[0].id, branch_id);
-                match &subactions[0].kind {
+            ActionKind::NavigateSelect(data) => {
+                assert_eq!(data.program, "P");
+                assert!(data.options.wrap_edges);
+                assert!(data.options.hold_repeat);
+                assert_eq!(data.subactions.len(), 1);
+                assert_eq!(data.subactions[0].id, branch_id);
+                match &data.subactions[0].kind {
                     ActionKind::NavigateKey {
                         name,
                         chord,

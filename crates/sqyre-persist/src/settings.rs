@@ -419,13 +419,15 @@ mod tests {
     fn roundtrip_settings() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("settings.yaml");
-        let mut s = UserSettings::default();
-        s.save_meta_images = true;
-        s.highlight_active_action = true;
-        s.image_search_close_matches_distance = 25;
-        s.ui_scale = 1.2;
+        let mut s = UserSettings {
+            save_meta_images: true,
+            highlight_active_action: true,
+            image_search_close_matches_distance: 25,
+            ui_scale: 1.2,
+            overlay_enabled: true,
+            ..Default::default()
+        };
         s.action_colors.detection = "#aabbcc".into();
-        s.overlay_enabled = true;
         s.overlay_buttons.push(OverlayButtonConfig {
             id: "btn-1".into(),
             program: "Demo Game".into(),

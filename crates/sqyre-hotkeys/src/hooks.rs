@@ -76,11 +76,10 @@ impl HotkeyService for RdevHotkeys {
                                     // Recording takes Esc; don't also stop macros.
                                 } else if ctrl && shift {
                                     (callbacks.on_failsafe)();
-                                } else if !ctrl && !shift {
-                                    if !continue_wait.continue_is_escape() {
+                                } else if !ctrl && !shift
+                                    && !continue_wait.continue_is_escape() {
                                         (callbacks.on_escape_stop)();
                                     }
-                                }
                             }
                         }
                         EventType::KeyRelease(key) => {

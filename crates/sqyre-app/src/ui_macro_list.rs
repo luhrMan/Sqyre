@@ -35,7 +35,7 @@ fn elide_to_width(ui: &egui::Ui, text: &str, max_width: f32, font_id: egui::Font
     let mut lo = 0usize;
     let mut hi = char_count;
     while lo < hi {
-        let mid = (lo + hi + 1) / 2;
+        let mid = (lo + hi).div_ceil(2);
         let candidate: String = text.chars().take(mid).collect();
         let w = ui
             .painter()
