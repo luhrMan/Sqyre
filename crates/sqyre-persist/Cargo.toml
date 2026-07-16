@@ -12,7 +12,6 @@ thiserror = { workspace = true }
 dirs = { workspace = true }
 sqyre-domain = { path = "../sqyre-domain" }
 sqyre-serialize = { path = "../sqyre-serialize" }
-sqyre-varref = { path = "../sqyre-varref" }
 
 [dev-dependencies]
 tempfile = { workspace = true }

@@ -11,7 +11,8 @@
   ],
   "containerEnv": {
     "CARGO_HOME": "/home/vscode/.cargo",
-    "RUSTUP_HOME": "/usr/local/rustup"
+    "RUSTUP_HOME": "/usr/local/rustup",
+    "CARGO_TARGET_DIR": "/workspace/target"
   },
   "customizations": {
     "vscode": {

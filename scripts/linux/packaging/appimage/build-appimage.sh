@@ -110,14 +110,24 @@ run_docker() {
     "$REPO_ROOT/scripts/download-tessdata.sh"
   fi
 
-  mkdir -p "$REPO_ROOT/.cache/cargo" "$REPO_ROOT/target" "$REPO_ROOT/bin"
+  # Share crates with host/CI: prefer caller CARGO_HOME when it lives in-repo
+  # (Makefile sets .cargo-home), else the CI/docker registry cache (.cache/cargo).
+  CARGO_HOME_REL=".cache/cargo"
+  if [ -n "${CARGO_HOME:-}" ]; then
+    case "$CARGO_HOME" in
+      "$REPO_ROOT"/*) CARGO_HOME_REL="${CARGO_HOME#"$REPO_ROOT"/}" ;;
+    esac
+  elif [ -x "$REPO_ROOT/.cargo-home/bin/cargo" ]; then
+    CARGO_HOME_REL=".cargo-home"
+  fi
+  mkdir -p "$REPO_ROOT/$CARGO_HOME_REL" "$REPO_ROOT/target" "$REPO_ROOT/bin"
 
-  echo "Building AppImage v${APP_VERSION} (docker: $IMAGE)…"
+  echo "Building AppImage v${APP_VERSION} (docker: $IMAGE, CARGO_HOME=$CARGO_HOME_REL)…"
   docker run --rm \
     -u "$(id -u):$(id -g)" \
     -v "$REPO_ROOT:/workspace" -w /workspace \
     -e HOME=/tmp \
-    -e CARGO_HOME=/workspace/.cache/cargo \
+    -e "CARGO_HOME=/workspace/$CARGO_HOME_REL" \
     -e CARGO_TARGET_DIR=/workspace/target \
     -e RUSTUP_HOME=/usr/local/rustup \
     -e PATH=/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin \

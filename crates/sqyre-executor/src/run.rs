@@ -14,7 +14,9 @@ use crate::misc::{
 use crate::navigate::{execute_navigate_key, execute_navigate_select};
 use crate::runtime_vars::RuntimeVarSink;
 use crate::search::{execute_find_pixel, execute_image_search, execute_ocr};
-use sqyre_domain::{action_type_label, Action, ActionId, ActionKind, Macro, ScalarValue};
+use sqyre_domain::{
+    action_type_label, resolve_scalar_int, Action, ActionId, ActionKind, Macro, ScalarValue,
+};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -538,19 +540,7 @@ fn strip_ref(s: &str) -> String {
 }
 
 pub(crate) fn resolve_int(v: &ScalarValue, macro_: &Macro) -> Result<i32> {
-    match v {
-        ScalarValue::Int(i) => Ok(*i as i32),
-        ScalarValue::Float(f) => Ok(*f as i32),
-        ScalarValue::String(s) => {
-            let resolved = resolve_text(s, macro_)?;
-            resolved
-                .trim()
-                .parse()
-                .map_err(|_| ExecError::Message(format!("cannot parse int from {resolved:?}")))
-        }
-        ScalarValue::Bool(b) => Ok(if *b { 1 } else { 0 }),
-        ScalarValue::Null => Ok(0),
-    }
+    resolve_scalar_int(v, macro_).map_err(ExecError::Message)
 }
 
 pub(crate) fn resolve_text(text: &str, macro_: &Macro) -> Result<String> {

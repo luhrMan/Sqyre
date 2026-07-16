@@ -2,8 +2,7 @@
 
 use crate::{images_path, PersistError, Result};
 use serde_yaml::{Mapping, Value};
-use sqyre_domain::{CoordinateRef, Macro, PROGRAM_DELIMITER, ScalarValue};
-use sqyre_varref;
+use sqyre_domain::{CoordinateRef, Macro, PROGRAM_DELIMITER, ScalarValue, resolve_scalar_int};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
@@ -1213,42 +1212,6 @@ fn yaml_i64(v: Option<&Value>) -> Option<i64> {
     }
 }
 
-pub fn resolve_scalar_int(v: &ScalarValue, macro_: &Macro) -> std::result::Result<i32, String> {
-    match v {
-        ScalarValue::Int(i) => Ok(*i as i32),
-        ScalarValue::Float(f) => Ok(*f as i32),
-        ScalarValue::Bool(b) => Ok(if *b { 1 } else { 0 }),
-        ScalarValue::Null => Ok(0),
-        ScalarValue::String(s) => {
-            let resolved = expand_vars(s, macro_)?;
-            resolved
-                .trim()
-                .parse()
-                .map_err(|_| format!("cannot parse int from {resolved:?}"))
-        }
-    }
-}
-
-fn expand_vars(text: &str, macro_: &Macro) -> std::result::Result<String, String> {
-    let segs = sqyre_varref::segments(text);
-    if segs.is_empty() {
-        return Ok(text.to_string());
-    }
-    let mut out = String::new();
-    for seg in segs {
-        if !seg.is_ref {
-            out.push_str(&seg.text);
-            continue;
-        }
-        let val = macro_
-            .variables
-            .get(&seg.name)
-            .ok_or_else(|| format!("unresolved variable ${{{}}}", seg.name))?;
-        out.push_str(&val.as_display());
-    }
-    Ok(out)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1290,6 +1253,31 @@ Schedule 1:
             .resolve_search_area(&CoordinateRef("Schedule 1~Box".into()), &m)
             .unwrap();
         assert_eq!(sa, (10, 20, 30, 40));
+    }
+
+    #[test]
+    fn resolves_point_arithmetic_expressions() {
+        let yaml = r#"
+general:
+  name: general
+  coordinates:
+    2560x1440:
+      points:
+        Main Monitor Screen Top Middle:
+          name: Main Monitor Screen Top Middle
+          x: "2560+(1920/2)"
+          y: "0+(10)"
+"#;
+        let v: Value = serde_yaml::from_str(yaml).unwrap();
+        let cat = ProgramCatalog::from_yaml_value(&v).unwrap();
+        let m = Macro::new("t", 0, vec![]);
+        let (x, y) = cat
+            .resolve_point(
+                &CoordinateRef("general~Main Monitor Screen Top Middle".into()),
+                &m,
+            )
+            .unwrap();
+        assert_eq!((x, y), (3520, 10));
     }
 
     #[test]
