@@ -7,6 +7,7 @@ mod assets;
 mod catalog;
 mod collection_capture;
 mod data_editor;
+mod diag;
 pub mod docs_fixture;
 mod file_dialogs;
 mod hotkey_record;
@@ -15,6 +16,8 @@ mod icon_variants;
 mod image_view;
 mod key_record;
 mod macro_meta;
+mod macro_overlay;
+mod overlay_icons;
 mod pickers;
 mod pixel_color;
 mod preview_tooltip;
@@ -45,6 +48,7 @@ use hotkey_record::HotkeyRecordUi;
 use icon_cache::IconCache;
 use key_record::KeyRecordUi;
 use macro_meta::{collect_all_macro_tags, MacroMetaUi};
+use macro_overlay::MacroOverlay;
 use preview_tooltip::PreviewTooltipCache;
 use recording_overlay::RecordingOverlay;
 use sqyre_capture::{X11Capturer, X11WindowFocuser};
@@ -139,6 +143,9 @@ impl ContinueKeyWaiter for BridgeContinueWait {
 
 /// Launch the desktop shell (single-instance lock, tray, fonts).
 pub fn run() -> eframe::Result<()> {
+    let _ = sqyre_persist::initialize_directories();
+    diag::install(sqyre_persist::sqyre_dir());
+
     let instance_lock = match single_instance::try_acquire() {
         Ok(Some(lock)) => Some(lock),
         Ok(None) => {
@@ -167,6 +174,7 @@ pub fn run() -> eframe::Result<()> {
             app.instance_lock = instance_lock;
             SettingsUi::install_fonts(&cc.egui_ctx);
             SettingsUi::apply_appearance(&cc.egui_ctx, app.settings_ui.settings());
+            app.bind_hotkey_repaint(cc.egui_ctx.clone());
             app.tray = tray::SystemTray::install(cc.egui_ctx.clone());
             Ok(Box::new(app))
         }),
@@ -204,6 +212,8 @@ pub struct SqyreApp {
     macro_hotkeys: MacroHotkeyBridge,
     /// Macro names requested by the hotkey thread (drained each frame).
     pending_hotkey_macros: Arc<Mutex<Vec<String>>>,
+    /// egui context for waking the UI when a hotkey queues a macro while idle/unfocused.
+    hotkey_repaint: Arc<Mutex<Option<egui::Context>>>,
     hotkey_record: HotkeyRecordUi,
     key_record: KeyRecordUi,
     macro_meta: MacroMetaUi,
@@ -239,6 +249,8 @@ pub struct SqyreApp {
     hidden_for_recording: bool,
     /// X11 outline windows for live search-area selection rect.
     recording_overlay: RecordingOverlay,
+    /// Always-on-top floating buttons that start macros.
+    macro_overlay: MacroOverlay,
     /// Left macro-list side panel visibility.
     macro_list_open: bool,
     /// Filter text for the macro list (name / tags fuzzy match).
@@ -262,6 +274,7 @@ impl SqyreApp {
         let macro_hotkeys = MacroHotkeyBridge::new();
         let run = RunState::default();
         let pending_hotkey_macros = Arc::new(Mutex::new(Vec::new()));
+        let hotkey_repaint = Arc::new(Mutex::new(None::<egui::Context>));
 
         let highlighter = SharedHighlighter::new();
         highlighter.set_enabled(settings.highlight_active_action);
@@ -289,6 +302,7 @@ impl SqyreApp {
             screen_click,
             macro_hotkeys,
             pending_hotkey_macros,
+            hotkey_repaint,
             hotkey_record: HotkeyRecordUi::default(),
             key_record: KeyRecordUi::default(),
             macro_meta: MacroMetaUi::default(),
@@ -314,6 +328,7 @@ impl SqyreApp {
             variables_panel: variables_panel::VariablesPanelUi::default(),
             hidden_for_recording: false,
             recording_overlay: RecordingOverlay::new(),
+            macro_overlay: MacroOverlay::new(),
             macro_list_open: false,
             macro_list_filter: String::new(),
             tray: tray::SystemTray::default(),
@@ -385,6 +400,8 @@ impl SqyreApp {
         let stop = run.stop.clone();
         let pending_hotkey_macros = Arc::new(Mutex::new(Vec::new()));
         let pending_for_cb = Arc::clone(&pending_hotkey_macros);
+        let hotkey_repaint = Arc::new(Mutex::new(None::<egui::Context>));
+        let repaint_for_cb = Arc::clone(&hotkey_repaint);
         let _ = hotkeys.start(HotkeyCallbacks {
             on_escape_stop: Arc::new(move || stop.request_stop()),
             on_failsafe: Arc::new(|| {
@@ -394,6 +411,13 @@ impl SqyreApp {
             on_macro_hotkey: Arc::new(move |name| {
                 if let Ok(mut q) = pending_for_cb.lock() {
                     q.push(name);
+                }
+                // Idle/unfocused eframe may not paint until woken — without this,
+                // queued macros only start when Sqyre regains focus.
+                if let Ok(guard) = repaint_for_cb.lock() {
+                    if let Some(ctx) = guard.as_ref() {
+                        ctx.request_repaint();
+                    }
                 }
             }),
         });
@@ -425,6 +449,7 @@ impl SqyreApp {
                     screen_click,
                     macro_hotkeys,
                     pending_hotkey_macros,
+                    hotkey_repaint,
                     hotkey_record: HotkeyRecordUi::default(),
                     key_record: KeyRecordUi::default(),
                     macro_meta: MacroMetaUi::default(),
@@ -450,6 +475,7 @@ impl SqyreApp {
                     variables_panel: variables_panel::VariablesPanelUi::default(),
                     hidden_for_recording: false,
                     recording_overlay: RecordingOverlay::new(),
+                    macro_overlay: MacroOverlay::new(),
                     macro_list_open: true,
                     macro_list_filter: String::new(),
                     tray: tray::SystemTray::default(),
@@ -475,6 +501,7 @@ impl SqyreApp {
                     screen_click,
                     macro_hotkeys,
                     pending_hotkey_macros,
+                    hotkey_repaint,
                     hotkey_record: HotkeyRecordUi::default(),
                     key_record: KeyRecordUi::default(),
                     macro_meta: MacroMetaUi::default(),
@@ -500,6 +527,7 @@ impl SqyreApp {
                     variables_panel: variables_panel::VariablesPanelUi::default(),
                     hidden_for_recording: false,
                     recording_overlay: RecordingOverlay::new(),
+                    macro_overlay: MacroOverlay::new(),
                     macro_list_open: true,
                     macro_list_filter: String::new(),
                     tray: tray::SystemTray::default(),
@@ -507,6 +535,13 @@ impl SqyreApp {
                     pending_delete_macro: None,
                 }
             },
+        }
+    }
+
+    /// Provide egui context so background hotkey fires can wake an idle UI frame.
+    fn bind_hotkey_repaint(&self, ctx: egui::Context) {
+        if let Ok(mut slot) = self.hotkey_repaint.lock() {
+            *slot = Some(ctx);
         }
     }
 
@@ -1015,6 +1050,25 @@ impl SqyreApp {
         self.recording_overlay.sync(ctx, &self.screen_click);
     }
 
+    /// Always-on-top macro buttons (settings-backed); hidden while recording is armed.
+    /// While the Data Editor Overlay tab is editing a button, that button is previewed
+    /// live (even if overlays are globally disabled / focus-gated).
+    fn sync_macro_overlay(&mut self, ctx: &egui::Context) {
+        let enabled = self.settings_ui.settings().overlay_enabled;
+        let buttons = self.settings_ui.settings().overlay_buttons.clone();
+        let preview = self.data_editor.overlay_edit_preview();
+        let hide = self.screen_click.is_armed();
+        self.macro_overlay.sync(
+            ctx,
+            enabled,
+            &buttons,
+            preview.as_ref(),
+            &self.catalog,
+            &self.pending_hotkey_macros,
+            hide,
+        );
+    }
+
     fn action_display_name(&self, action_id: ActionId) -> String {
         if self.macros.is_empty() {
             return action_id.as_str();
@@ -1132,6 +1186,7 @@ impl eframe::App for SqyreApp {
             &mut self.icon_cache,
             &mut self.preview_tooltips,
             &self.screen_click,
+            self.settings_ui.settings_mut(),
         );
         self.settings_ui.show(
             ui.ctx(),
@@ -1251,6 +1306,7 @@ impl eframe::App for SqyreApp {
         }
         self.update_recording_visibility(ui.ctx());
         self.sync_recording_overlay(ui.ctx());
+        self.sync_macro_overlay(ui.ctx());
         self.drain_pending_hotkey_macros(ui.ctx());
 
         if let Some(chord) = self.hotkey_record.show(ui.ctx(), &self.macro_hotkeys) {
@@ -1272,6 +1328,11 @@ impl eframe::App for SqyreApp {
             || self.screen_click.is_armed()
         {
             ui.ctx().request_repaint();
+        } else if self.settings_ui.settings().overlay_enabled {
+            // Overlay focus-gating polls on its own schedule; avoid per-frame
+            // transparent window clears (flicker) while still draining click queue promptly.
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(250));
         }
 
         // Ctrl+C / Ctrl+X / Ctrl+V / Ctrl+Z / Ctrl+Y / Ctrl+A — skip while editing an action
@@ -1910,6 +1971,13 @@ impl eframe::App for SqyreApp {
                 }
             }
         });
+    }
+
+    /// Fully transparent clear so deferred overlay viewports (`with_transparent(true)`)
+    /// don't paint eframe's default dark plate behind the gold chrome.
+    /// Opaque root window still fills solid via its framebuffer; UI panels supply their own fill.
+    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
+        [0.0, 0.0, 0.0, 0.0]
     }
 }
 

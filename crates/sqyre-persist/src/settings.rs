@@ -1,7 +1,8 @@
-//! User settings persisted outside the data directory.
+//! User settings persisted inside the Sqyre data directory.
 //!
-//! Lives under the XDG config dir (`~/.config/sqyre/settings.yaml`) so the
-//! `sqyre_dir` override can relocate `~/.sqyre` without losing preferences.
+//! Lives at `~/.sqyre/settings.yaml` (or under a relocated data dir). A small
+//! pointer file at `~/.config/sqyre/data_dir` records a non-default data location
+//! so the next launch can find settings after a relocate.
 
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -23,8 +24,13 @@ pub const ACTION_COLOR_MISCELLANEOUS: &str = "miscellaneous";
 pub const ACTION_COLOR_WAIT: &str = "wait";
 pub const ACTION_COLOR_DEFAULT: &str = "default";
 
-/// Absolute path to the settings file (`~/.config/sqyre/settings.yaml`).
+/// Absolute path to the settings file (`{sqyre_dir}/settings.yaml`).
 pub fn settings_path() -> PathBuf {
+    crate::sqyre_dir().join("settings.yaml")
+}
+
+/// XDG pointer that records a relocated data directory (one path per line).
+fn data_dir_pointer_path() -> PathBuf {
     dirs::config_dir()
         .unwrap_or_else(|| {
             dirs::home_dir()
@@ -32,7 +38,38 @@ pub fn settings_path() -> PathBuf {
                 .join(".config")
         })
         .join("sqyre")
-        .join("settings.yaml")
+        .join("data_dir")
+}
+
+/// Apply a relocated data-dir pointer before loading settings from `.sqyre`.
+fn apply_data_dir_pointer() {
+    let path = data_dir_pointer_path();
+    let Ok(text) = fs::read_to_string(&path) else {
+        return;
+    };
+    let dir = text.lines().next().unwrap_or("").trim();
+    if dir.is_empty() {
+        let _ = fs::remove_file(&path);
+        crate::set_sqyre_dir_override(None);
+        return;
+    }
+    crate::set_sqyre_dir_override(Some(PathBuf::from(dir)));
+}
+
+fn write_data_dir_pointer(sqyre_dir: &str) -> Result<()> {
+    let path = data_dir_pointer_path();
+    let dir = sqyre_dir.trim();
+    if dir.is_empty() {
+        if path.exists() {
+            fs::remove_file(&path)?;
+        }
+        return Ok(());
+    }
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(&path, format!("{dir}\n"))?;
+    Ok(())
 }
 
 /// Action-color hex overrides (`#rrggbb`). Empty string = built-in pastel.
@@ -82,6 +119,69 @@ impl ActionColorPrefs {
     }
 }
 
+/// Always-on-top screen button that starts a named macro.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct OverlayButtonConfig {
+    /// Stable id used for the deferred viewport hash.
+    pub id: String,
+    /// Catalog program this button belongs to (shown when that program is focused).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub program: String,
+    /// Tooltip / optional caption under the icon.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub label: String,
+    /// Macro name to start (must match an entry in `db.yaml`).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub macro_name: String,
+    /// Icon catalog id (Phosphor kebab-case, e.g. `play`, `lightning`). Empty = default play.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub icon: String,
+    /// Desktop position of the button viewport (top-left, points).
+    #[serde(default)]
+    pub x: f32,
+    #[serde(default)]
+    pub y: f32,
+    /// Button glyph/image size in points (viewport is slightly larger for padding).
+    #[serde(default = "default_overlay_button_size")]
+    pub size: f32,
+}
+
+pub const DEFAULT_OVERLAY_BUTTON_SIZE: f32 = 52.0;
+pub const MIN_OVERLAY_BUTTON_SIZE: f32 = 12.0;
+pub const MAX_OVERLAY_BUTTON_SIZE: f32 = 128.0;
+
+fn default_overlay_button_size() -> f32 {
+    DEFAULT_OVERLAY_BUTTON_SIZE
+}
+
+impl OverlayButtonConfig {
+    pub fn new(id: impl Into<String>, program: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            program: program.into(),
+            label: String::new(),
+            macro_name: String::new(),
+            icon: String::new(),
+            x: 48.0,
+            y: 48.0,
+            size: DEFAULT_OVERLAY_BUTTON_SIZE,
+        }
+    }
+
+    /// Display name for lists (label, else macro, else id).
+    pub fn display_name(&self) -> &str {
+        let label = self.label.trim();
+        if !label.is_empty() {
+            return label;
+        }
+        let macro_name = self.macro_name.trim();
+        if !macro_name.is_empty() {
+            return macro_name;
+        }
+        self.id.as_str()
+    }
+}
+
 /// User-tunable Sqyre preferences.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct UserSettings {
@@ -107,6 +207,12 @@ pub struct UserSettings {
     /// Per-action-type blank templates for the Add Action picker (YAML action maps).
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub action_defaults: std::collections::BTreeMap<String, serde_yaml::Mapping>,
+    /// Show floating always-on-top buttons that start macros.
+    #[serde(default)]
+    pub overlay_enabled: bool,
+    /// User-configured overlay buttons (per-program; shown when that program is focused).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub overlay_buttons: Vec<OverlayButtonConfig>,
 }
 
 fn default_hide_recording() -> bool {
@@ -138,12 +244,15 @@ impl Default for UserSettings {
             ui_scale: DEFAULT_UI_SCALE,
             action_colors: ActionColorPrefs::default(),
             action_defaults: std::collections::BTreeMap::new(),
+            overlay_enabled: false,
+            overlay_buttons: Vec::new(),
         }
     }
 }
 
 impl UserSettings {
     pub fn load_default() -> Result<Self> {
+        apply_data_dir_pointer();
         Self::load_from_path(settings_path())
     }
 
@@ -159,6 +268,9 @@ impl UserSettings {
     }
 
     pub fn save_default(&self) -> Result<()> {
+        // Keep runtime override + XDG pointer in sync before resolving settings_path().
+        self.apply_sqyre_dir_override();
+        write_data_dir_pointer(&self.sqyre_dir)?;
         self.save_to_path(settings_path())
     }
 
@@ -186,6 +298,12 @@ impl UserSettings {
             self.ui_scale = DEFAULT_UI_SCALE;
         }
         self.ui_scale = ((self.ui_scale * 10.0).round() / 10.0).clamp(0.5, 2.5);
+        for btn in &mut self.overlay_buttons {
+            if btn.size <= 0.0 {
+                btn.size = DEFAULT_OVERLAY_BUTTON_SIZE;
+            }
+            btn.size = btn.size.clamp(MIN_OVERLAY_BUTTON_SIZE, MAX_OVERLAY_BUTTON_SIZE);
+        }
     }
 
     /// Apply `sqyre_dir` override to the process-wide data directory.
@@ -307,6 +425,17 @@ mod tests {
         s.image_search_close_matches_distance = 25;
         s.ui_scale = 1.2;
         s.action_colors.detection = "#aabbcc".into();
+        s.overlay_enabled = true;
+        s.overlay_buttons.push(OverlayButtonConfig {
+            id: "btn-1".into(),
+            program: "Demo Game".into(),
+            label: "Go".into(),
+            macro_name: "demo".into(),
+            icon: "bolt".into(),
+            x: 100.0,
+            y: 200.0,
+            size: 64.0,
+        });
         s.save_to_path(&path).unwrap();
 
         let loaded = UserSettings::load_from_path(&path).unwrap();
@@ -315,6 +444,20 @@ mod tests {
         assert_eq!(loaded.image_search_close_matches_distance, 25);
         assert!((loaded.ui_scale - 1.2).abs() < f32::EPSILON);
         assert_eq!(loaded.action_colors.detection, "#aabbcc");
+        assert!(loaded.overlay_enabled);
+        assert_eq!(loaded.overlay_buttons.len(), 1);
+        assert_eq!(loaded.overlay_buttons[0].program, "Demo Game");
+        assert_eq!(loaded.overlay_buttons[0].macro_name, "demo");
+        assert_eq!(loaded.overlay_buttons[0].icon, "bolt");
+        assert!((loaded.overlay_buttons[0].size - 64.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn settings_path_is_under_sqyre_dir() {
+        let dir = tempdir().unwrap();
+        crate::set_sqyre_dir_override(Some(dir.path().to_path_buf()));
+        assert_eq!(settings_path(), dir.path().join("settings.yaml"));
+        crate::set_sqyre_dir_override(None);
     }
 
     #[test]
