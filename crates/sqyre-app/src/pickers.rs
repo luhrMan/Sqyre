@@ -8,6 +8,8 @@ use eframe::egui::{self, Color32, Pos2, Sense, Vec2};
 use sqyre_capture::WindowInfo;
 use sqyre_domain::{CoordinateRef, PROGRAM_DELIMITER};
 use sqyre_persist::ProgramCatalog;
+use std::sync::mpsc::{self, Receiver, TryRecvError};
+use std::thread;
 
 /// Fixed cell size (thumb + padding; no under-icon label).
 const GRID_CELL: f32 = 64.0;
@@ -65,7 +67,7 @@ impl CollectionCellPick {
 }
 
 /// Which modal picker is open from an action edit tip (or similar).
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Default)]
 pub enum ActivePicker {
     #[default]
     None,
@@ -102,32 +104,130 @@ pub enum ActivePicker {
         windows: Vec<WindowInfo>,
         load_error: Option<String>,
         scroll_to_selection: bool,
+        /// Background `list_open_windows` result; polled each frame while open.
+        pending: Option<Receiver<Result<Vec<WindowInfo>, String>>>,
     },
 }
 
-/// Reload the live window list into an open `ActivePicker::Window`.
+impl Clone for ActivePicker {
+    fn clone(&self) -> Self {
+        match self {
+            ActivePicker::None => ActivePicker::None,
+            ActivePicker::Items { search, staged } => ActivePicker::Items {
+                search: search.clone(),
+                staged: staged.clone(),
+            },
+            ActivePicker::Point {
+                search,
+                value,
+                cell_pick,
+                scroll_to_selection,
+            } => ActivePicker::Point {
+                search: search.clone(),
+                value: value.clone(),
+                cell_pick: cell_pick.clone(),
+                scroll_to_selection: *scroll_to_selection,
+            },
+            ActivePicker::SearchArea {
+                search,
+                value,
+                cell_pick,
+                scroll_to_selection,
+            } => ActivePicker::SearchArea {
+                search: search.clone(),
+                value: value.clone(),
+                cell_pick: cell_pick.clone(),
+                scroll_to_selection: *scroll_to_selection,
+            },
+            ActivePicker::Macro {
+                search,
+                value,
+                scroll_to_selection,
+            } => ActivePicker::Macro {
+                search: search.clone(),
+                value: value.clone(),
+                scroll_to_selection: *scroll_to_selection,
+            },
+            ActivePicker::Window {
+                search,
+                process_path,
+                window_title,
+                windows,
+                load_error,
+                scroll_to_selection,
+                pending: _,
+            } => ActivePicker::Window {
+                search: search.clone(),
+                process_path: process_path.clone(),
+                window_title: window_title.clone(),
+                windows: windows.clone(),
+                load_error: load_error.clone(),
+                scroll_to_selection: *scroll_to_selection,
+                // In-flight loads are not cloned.
+                pending: None,
+            },
+        }
+    }
+}
+
+/// Start a background reload of the live window list (no-op if already loading).
 pub fn refresh_window_picker(picker: &mut ActivePicker) {
     let ActivePicker::Window {
-        windows,
         load_error,
+        pending,
         ..
     } = picker
     else {
         return;
     };
-    match sqyre_capture::list_open_windows() {
-        Ok(list) => {
+    if pending.is_some() {
+        return;
+    }
+    *load_error = None;
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        let _ = tx.send(sqyre_capture::list_open_windows());
+    });
+    *pending = Some(rx);
+}
+
+/// Apply a finished background window-list fetch; request repaint while still loading.
+pub fn poll_window_picker_load(picker: &mut ActivePicker, ctx: &egui::Context) {
+    let ActivePicker::Window {
+        windows,
+        load_error,
+        pending,
+        ..
+    } = picker
+    else {
+        return;
+    };
+    let Some(rx) = pending.as_ref() else {
+        return;
+    };
+    match rx.try_recv() {
+        Ok(Ok(list)) => {
             *windows = list;
             *load_error = None;
+            *pending = None;
         }
-        Err(e) => {
+        Ok(Err(e)) => {
             windows.clear();
             *load_error = Some(e);
+            *pending = None;
+        }
+        Err(TryRecvError::Empty) => {
+            ctx.request_repaint();
+        }
+        Err(TryRecvError::Disconnected) => {
+            windows.clear();
+            *load_error = Some("window list fetch failed".into());
+            *pending = None;
         }
     }
 }
 
-/// Open a Focus Window picker preloaded with current fields + live windows.
+/// Open a Focus Window picker and kick off a background window-list fetch.
 pub fn open_window_picker(process_path: &str, window_title: &str) -> ActivePicker {
     let mut picker = ActivePicker::Window {
         search: String::new(),
@@ -136,6 +236,7 @@ pub fn open_window_picker(process_path: &str, window_title: &str) -> ActivePicke
         windows: Vec::new(),
         load_error: None,
         scroll_to_selection: true,
+        pending: None,
     };
     refresh_window_picker(&mut picker);
     picker
@@ -977,6 +1078,8 @@ pub fn show_active_picker(
         return result;
     }
 
+    poll_window_picker_load(picker, ctx);
+
     let in_cell_pick = matches!(
         picker,
         ActivePicker::Point {
@@ -1138,31 +1241,40 @@ pub fn show_active_picker(
                     windows,
                     load_error,
                     scroll_to_selection,
+                    pending,
                 } => {
+                    let loading = pending.is_some();
                     ui.horizontal(|ui| {
                         ui.label(egui::RichText::new("Search").size(HEADER_SIZE));
                         if ui.text_edit_singleline(search).changed() {
                             *scroll_to_selection = true;
                         }
-                        if ui
-                            .add(egui::Button::new(egui::RichText::new("↻").size(14.0)).small())
-                            .on_hover_text("Refresh")
-                            .clicked()
-                        {
-                            match sqyre_capture::list_open_windows() {
-                                Ok(list) => {
-                                    *windows = list;
-                                    *load_error = None;
-                                }
-                                Err(e) => {
-                                    windows.clear();
-                                    *load_error = Some(e);
-                                }
-                            }
+                        let refresh = ui
+                            .add_enabled(
+                                !loading,
+                                egui::Button::new(egui::RichText::new("↻").size(14.0)).small(),
+                            )
+                            .on_hover_text(if loading {
+                                "Refreshing…"
+                            } else {
+                                "Refresh"
+                            })
+                            .clicked();
+                        if refresh && pending.is_none() {
+                            *load_error = None;
+                            let (tx, rx) = mpsc::channel();
+                            thread::spawn(move || {
+                                let _ = tx.send(sqyre_capture::list_open_windows());
+                            });
+                            *pending = Some(rx);
                             *scroll_to_selection = true;
+                            ui.ctx().request_repaint();
                         }
                     });
                     ui.separator();
+                    if loading {
+                        ui.label("Loading windows…");
+                    }
                     if let Some(err) = load_error.as_ref() {
                         ui.colored_label(Color32::RED, err.as_str());
                     }

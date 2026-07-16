@@ -4,7 +4,7 @@ mod action_log;
 mod backends;
 mod error;
 mod highlight;
-mod misc;
+mod actions;
 mod navigate;
 mod run;
 mod runtime_vars;

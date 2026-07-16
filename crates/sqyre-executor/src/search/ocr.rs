@@ -351,12 +351,7 @@ fn run_ocr_once(
 }
 
 fn gray_to_rgb(img: &ImageBuf) -> ImageBuf {
-    debug_assert_eq!(img.channels, 1);
-    let mut data = Vec::with_capacity(img.width * img.height * 3);
-    for &v in &img.data {
-        data.extend_from_slice(&[v, v, v]);
-    }
-    ImageBuf::from_raw(img.width, img.height, 3, data)
+    sqyre_vision::gray_to_rgb(img)
 }
 
 /// Substring match: empty target always matches

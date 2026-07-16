@@ -170,19 +170,7 @@ pub fn preprocess_for_ocr_with_steps(
 }
 
 fn to_grayscale(img: &ImageBuf) -> ImageBuf {
-    if img.channels == 1 {
-        return ImageBuf::from_raw(img.width, img.height, 1, img.data.clone());
-    }
-    let mut data = Vec::with_capacity(img.width * img.height);
-    for i in 0..img.width * img.height {
-        let o = i * img.channels;
-        let r = img.data[o] as u32;
-        let g = img.data[o + 1] as u32;
-        let b = img.data[o + 2] as u32;
-        // OpenCV BGR→Gray on RGB buffer: approximate Rec.601
-        data.push(((299 * r + 587 * g + 114 * b) / 1000) as u8);
-    }
-    ImageBuf::from_raw(img.width, img.height, 1, data)
+    crate::image_util::rgb_to_grayscale(img)
 }
 
 fn otsu_threshold(hist_src: &[u8]) -> u8 {

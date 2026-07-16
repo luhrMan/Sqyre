@@ -63,10 +63,10 @@ impl IconStore for CatalogIcons<'_> {
 }
 
 /// Snapshot of macros available to RunMacro during a run.
-pub struct SnapshotMacros(pub Arc<BTreeMap<String, Macro>>);
+pub struct SnapshotMacros(pub Arc<BTreeMap<String, Arc<Macro>>>);
 
 impl MacroLookup for SnapshotMacros {
-    fn get(&self, name: &str) -> Option<Macro> {
+    fn get(&self, name: &str) -> Option<Arc<Macro>> {
         self.0.get(name).cloned()
     }
 }

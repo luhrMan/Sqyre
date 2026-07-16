@@ -1,19 +1,48 @@
 //! Linux X11 window list + activate.
 
 use crate::WindowInfo;
+use parking_lot::Mutex;
 use sqyre_executor::WindowFocuser;
 use std::collections::HashSet;
 use std::ffi::{CStr, CString};
 use std::path::{Path, PathBuf};
 use std::ptr;
 use x11::xlib::{
-    Atom, ClientMessage, Display, False, Success, Window, XCloseDisplay, XDefaultRootWindow,
-    XEvent, XFlush, XFree, XGetWindowProperty, XGetWMName, XInternAtom, XOpenDisplay, XSendEvent,
-    XA_CARDINAL, XA_WINDOW, _XDisplay,
+    Atom, ClientMessage, Display, False, Success, Window, XDefaultRootWindow, XEvent, XFlush,
+    XFree, XGetWindowProperty, XGetWMName, XInternAtom, XOpenDisplay, XSendEvent, XA_CARDINAL,
+    XA_WINDOW, _XDisplay,
 };
 
 /// Title used by floating macro-overlay viewports (`macro_overlay`).
 pub const OVERLAY_WM_TITLE: &str = "sqyre-overlay";
+
+/// Process-lifetime X11 display for focus / window-list APIs (serialized via Mutex).
+struct SharedFocusDisplay {
+    display: *mut _XDisplay,
+}
+
+// X11 display pointer: all access goes through SHARED_FOCUS Mutex.
+unsafe impl Send for SharedFocusDisplay {}
+
+static SHARED_FOCUS: Mutex<Option<SharedFocusDisplay>> = Mutex::new(None);
+
+fn with_display<F, R>(f: F) -> Result<R, String>
+where
+    F: FnOnce(*mut _XDisplay) -> Result<R, String>,
+{
+    let mut guard = SHARED_FOCUS.lock();
+    if guard.is_none() {
+        unsafe {
+            let display = XOpenDisplay(ptr::null());
+            if display.is_null() {
+                return Err("XOpenDisplay failed".into());
+            }
+            *guard = Some(SharedFocusDisplay { display });
+        }
+    }
+    let display = guard.as_ref().expect("just inserted").display;
+    f(display)
+}
 
 /// Focus a top-level window by executable path + window title.
 #[derive(Debug, Default, Clone, Copy)]
@@ -27,32 +56,16 @@ impl WindowFocuser for X11WindowFocuser {
 
 /// List open top-level windows with title + executable path.
 pub fn list_open_windows() -> Result<Vec<WindowInfo>, String> {
-    unsafe {
-        let display = XOpenDisplay(ptr::null());
-        if display.is_null() {
-            return Err("XOpenDisplay failed".into());
-        }
-        let result = list_on_display(display);
-        XCloseDisplay(display);
-        result
-    }
+    with_display(|display| unsafe { list_on_display(display) })
 }
 
 /// Currently focused top-level window (`_NET_ACTIVE_WINDOW`), if any.
 pub fn get_active_window() -> Result<Option<WindowInfo>, String> {
     crate::diag::mark_site("x11:get_active_window:before_open");
-    let result = unsafe {
-        let display = XOpenDisplay(ptr::null());
-        if display.is_null() {
-            Err("XOpenDisplay failed".into())
-        } else {
-            crate::diag::mark_site("x11:get_active_window:on_display");
-            let result = active_on_display(display);
-            crate::diag::mark_site("x11:get_active_window:before_close");
-            XCloseDisplay(display);
-            result
-        }
-    };
+    let result = with_display(|display| {
+        crate::diag::mark_site("x11:get_active_window:on_display");
+        unsafe { active_on_display(display) }
+    });
     crate::diag::mark_site("x11:get_active_window:done");
     if let Err(ref e) = result {
         crate::diag::note(&format!("x11:get_active_window err: {e}"));
@@ -68,18 +81,10 @@ pub fn get_active_window() -> Result<Option<WindowInfo>, String> {
 /// [`OVERLAY_WM_TITLE`].
 pub fn skip_taskbar_for_overlay_windows() -> Result<(), String> {
     crate::diag::mark_site("x11:skip_taskbar:before_open");
-    let result = unsafe {
-        let display = XOpenDisplay(ptr::null());
-        if display.is_null() {
-            Err("XOpenDisplay failed".into())
-        } else {
-            crate::diag::mark_site("x11:skip_taskbar:on_display");
-            let result = skip_taskbar_on_display(display);
-            crate::diag::mark_site("x11:skip_taskbar:before_close");
-            XCloseDisplay(display);
-            result
-        }
-    };
+    let result = with_display(|display| {
+        crate::diag::mark_site("x11:skip_taskbar:on_display");
+        unsafe { skip_taskbar_on_display(display) }
+    });
     crate::diag::mark_site("x11:skip_taskbar:done");
     if let Err(ref e) = result {
         crate::diag::note(&format!("x11:skip_taskbar err: {e}"));
@@ -94,15 +99,7 @@ fn activate_window(process_path: &str, window_title: &str) -> Result<(), String>
         return Err("path and title required".into());
     }
 
-    unsafe {
-        let display = XOpenDisplay(ptr::null());
-        if display.is_null() {
-            return Err("XOpenDisplay failed".into());
-        }
-        let result = activate_on_display(display, path, title);
-        XCloseDisplay(display);
-        result
-    }
+    with_display(|display| unsafe { activate_on_display(display, path, title) })
 }
 
 unsafe fn list_on_display(display: *mut _XDisplay) -> Result<Vec<WindowInfo>, String> {

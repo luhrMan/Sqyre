@@ -1,8 +1,8 @@
 //! Tree/UI display helpers: summary params, pastel colors, icon glyphs.
 
 use crate::{
-    Action, ActionKind, ConditionClause, CoordinateOutputs, ScalarValue, WaitTilFoundConfig,
-    MATCH_ANY, REPEAT_WAIT_UNTIL_FOUND, REPEAT_WHILE_FOUND,
+    action_color_category, Action, ActionKind, ConditionClause, CoordinateOutputs, MatchMode,
+    RepeatMode, ScalarValue, WaitTilFoundConfig,
 };
 
 /// One display parameter.
@@ -97,21 +97,21 @@ impl WaitTilFoundConfig {
     /// Wait / repeat mode shown in the tree and tooltips.
     pub fn display_wait_mode(&self, instant_label: &str) -> String {
         match self.effective_repeat_mode() {
-            REPEAT_WAIT_UNTIL_FOUND => {
+            RepeatMode::WaitUntilFound => {
                 if self.wait_til_found_seconds > 0 {
                     format!("{} seconds or until found", self.wait_til_found_seconds)
                 } else {
                     format!("wait {}s", self.wait_til_found_seconds)
                 }
             }
-            REPEAT_WHILE_FOUND => {
+            RepeatMode::WhileFound => {
                 if self.wait_til_found_seconds > 0 {
                     format!("repeat while found ({}s)", self.wait_til_found_seconds)
                 } else {
                     "repeat while found".to_string()
                 }
             }
-            _ => instant_label.to_string(),
+            RepeatMode::Once => instant_label.to_string(),
         }
     }
 }
@@ -155,19 +155,17 @@ fn yaml_display(v: &serde_yaml::Value) -> String {
     }
 }
 
-fn match_label(mode: &str) -> &'static str {
-    if mode == MATCH_ANY {
-        "any (OR)"
-    } else {
-        "all (AND)"
+fn match_label(mode: MatchMode) -> &'static str {
+    match mode {
+        MatchMode::Any => "any (OR)",
+        MatchMode::All => "all (AND)",
     }
 }
 
-fn condition_summary(match_mode: &str, clauses: &[ConditionClause]) -> String {
-    let sep = if match_mode == MATCH_ANY {
-        " | "
-    } else {
-        " & "
+fn condition_summary(match_mode: MatchMode, clauses: &[ConditionClause]) -> String {
+    let sep = match match_mode {
+        MatchMode::Any => " | ",
+        MatchMode::All => " & ",
     };
     clauses
         .iter()
@@ -306,10 +304,10 @@ impl ActionKind {
                 ..
             } => {
                 params.push(DisplayParam::new("Name", name.as_str()));
-                params.push(DisplayParam::new("Match", match_label(match_mode)));
+                params.push(DisplayParam::new("Match", match_label(*match_mode)));
                 params.push(DisplayParam::new(
                     "While",
-                    condition_summary(match_mode, clauses),
+                    condition_summary(*match_mode, clauses),
                 ));
                 if *max_iterations > 0 {
                     params.push(DisplayParam::extra(
@@ -325,10 +323,10 @@ impl ActionKind {
                 ..
             } => {
                 params.push(DisplayParam::new("Name", name.as_str()));
-                params.push(DisplayParam::new("Match", match_label(match_mode)));
+                params.push(DisplayParam::new("Match", match_label(*match_mode)));
                 params.push(DisplayParam::new(
                     "If",
-                    condition_summary(match_mode, clauses),
+                    condition_summary(*match_mode, clauses),
                 ));
             }
             Self::ImageSearch {
@@ -703,17 +701,6 @@ pub fn nested_var_ref_color(is_dark: bool) -> [u8; 4] {
     }
 }
 
-fn action_color_category(action_type: &str) -> &'static str {
-    match action_type {
-        "move" | "click" | "key" | "type" => "Mouse & Keyboard",
-        "imagesearch" | "ocr" | "findpixel" => "Detection",
-        "setvariable" | "foreachrow" | "savevariable" => "Variables",
-        "wait" | "pause" | "focuswindow" | "runmacro" | "loop" | "while" | "conditional"
-        | "break" | "continue" | "navigateselect" | "navigatekey" => "Miscellaneous",
-        _ => "",
-    }
-}
-
 /// Compact glyph for the type icon badge.
 ///
 /// Glyphs must exist in egui's default proportional fonts (Ubuntu-Light, Hack,
@@ -787,7 +774,7 @@ pub fn looks_like_var_ref(text: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{root_loop, ActionId, CoordinateRef};
+    use crate::{root_loop, ActionId, CoordinateRef, MouseButton};
 
     #[test]
     fn wait_summary_includes_time_ms() {
@@ -930,7 +917,7 @@ mod tests {
             id: ActionId::new(),
             kind: ActionKind::Conditional {
                 name: "gate".into(),
-                match_mode: MATCH_ANY.into(),
+                match_mode: MatchMode::Any,
                 clauses: vec![
                     ConditionClause {
                         left: ScalarValue::String("${a}".into()),
@@ -1004,14 +991,14 @@ mod tests {
         let down = Action {
             id: ActionId::new(),
             kind: ActionKind::Click {
-                button: "left".into(),
+                button: MouseButton::Left,
                 state: true,
             },
         };
         let up = Action {
             id: ActionId::new(),
             kind: ActionKind::Click {
-                button: "left".into(),
+                button: MouseButton::Left,
                 state: false,
             },
         };
@@ -1115,7 +1102,7 @@ mod tests {
     fn wait_display_mode_and_clause_summary() {
         let mut wait = WaitTilFoundConfig::default();
         assert_eq!(wait.display_wait_mode("instant"), "instant");
-        wait.repeat_mode = REPEAT_WAIT_UNTIL_FOUND.to_string();
+        wait.repeat_mode = RepeatMode::WaitUntilFound;
         wait.wait_til_found_seconds = 5;
         assert_eq!(
             wait.display_wait_mode("instant"),

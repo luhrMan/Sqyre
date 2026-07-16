@@ -27,13 +27,7 @@ fn decode_macro_from_map_inner(raw: &Mapping, name_hint: &str) -> Result<Macro> 
         .map(string_slice_from_value)
         .unwrap_or_default();
 
-    let trigger = string_from_map(raw, "hotkey_trigger");
-    let trigger = if trigger.is_empty() {
-        string_from_map(raw, "hotkeytrigger")
-    } else {
-        trigger
-    };
-    macro_.hotkey_trigger = Macro::parse_hotkey_trigger(&trigger);
+    macro_.hotkey_trigger = Macro::parse_hotkey_trigger(&string_from_map(raw, "hotkey_trigger"));
 
     macro_.tags = raw
         .get(Value::String("tags".into()))
@@ -191,23 +185,5 @@ root:
         assert_eq!(m.global_delay, 50);
         assert_eq!(m.variable_decls.len(), 1);
         assert_eq!(m.root.children().len(), 2);
-    }
-
-    #[test]
-    fn decode_legacy_move_point_map() {
-        let yaml = r#"
-type: move
-point:
-  name: p1
-  x: 10
-  y: 20
-smooth: false
-"#;
-        let v: Value = serde_yaml::from_str(yaml).unwrap();
-        let a = action_from_map(v.as_mapping().unwrap()).unwrap();
-        match a.kind {
-            ActionKind::Move { point, .. } => assert_eq!(point.0, "p1"),
-            _ => panic!("expected move"),
-        }
     }
 }
