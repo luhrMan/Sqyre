@@ -1,6 +1,10 @@
 //! Nested variable-reference chips and unfocused entry overlays.
 
-use eframe::egui::{self, Color32, FontId, Sense, Stroke, Vec2};
+use eframe::egui::{
+    self, text::CCursor, text_edit::TextEditState, Color32, FontId, Key, Modifiers,
+    PopupCloseBehavior, RectAlign, Sense, Stroke, Vec2,
+};
+use egui::text_selection::CCursorRange;
 use sqyre_domain::{action_pastel_color, is_known_variable, nested_var_ref_color, SummaryPill};
 use sqyre_validate::EntryValidation;
 use sqyre_varref;
@@ -8,6 +12,8 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use crate::tree_chrome::{contrast_fg, rgba_pub};
+
+const VAR_AC_LIMIT: usize = 12;
 
 const PILL_FONT_SIZE: f32 = 12.0;
 const NESTED_MARGIN_X: i8 = 3;
@@ -242,6 +248,250 @@ fn should_show_var_name_overlay(text: &str, focused: bool) -> bool {
     !focused && !text.trim().is_empty()
 }
 
+/// Incomplete `${prefix` at the caret (no closing `}` yet).
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct IncompleteDollarRef {
+    /// Character index of `$` in `${`.
+    start_char: usize,
+    /// Text after `${` up to the caret.
+    prefix: String,
+}
+
+/// Find an open `${…` span ending at `cursor_char` (character index).
+fn find_incomplete_dollar_ref(text: &str, cursor_char: usize) -> Option<IncompleteDollarRef> {
+    let before: String = text.chars().take(cursor_char).collect();
+    let start_byte = before.rfind("${")?;
+    let after = &before[start_byte + 2..];
+    if after.contains('}') {
+        return None;
+    }
+    // Abort if the prefix looks like it left the name (whitespace / newline).
+    if after.chars().any(|c| c.is_whitespace()) {
+        return None;
+    }
+    let start_char = before[..start_byte].chars().count();
+    Some(IncompleteDollarRef {
+        start_char,
+        prefix: after.to_string(),
+    })
+}
+
+fn byte_index_from_char_index(s: &str, char_index: usize) -> usize {
+    s.char_indices()
+        .nth(char_index)
+        .map(|(i, _)| i)
+        .unwrap_or(s.len())
+}
+
+/// Filter known names by prefix (case-insensitive); empty prefix → all (up to limit).
+fn var_completion_options(prefix: &str, known: &HashSet<String>, limit: usize) -> Vec<String> {
+    let p = prefix.to_ascii_lowercase();
+    let mut names: Vec<String> = known.iter().cloned().collect();
+    names.sort_by(|a, b| a.to_ascii_lowercase().cmp(&b.to_ascii_lowercase()));
+    names
+        .into_iter()
+        .filter(|n| p.is_empty() || n.to_ascii_lowercase().starts_with(&p))
+        .take(limit)
+        .collect()
+}
+
+fn apply_var_completion(
+    value: &mut String,
+    start_char: usize,
+    cursor_char: usize,
+    name: &str,
+) -> usize {
+    let start_byte = byte_index_from_char_index(value, start_char);
+    let end_byte = byte_index_from_char_index(value, cursor_char);
+    let insertion = format!("${{{name}}}");
+    value.replace_range(start_byte..end_byte, &insertion);
+    start_char + insertion.chars().count()
+}
+
+#[derive(Clone, Default)]
+struct VarAutocompleteNav {
+    selected: usize,
+    prefix: String,
+}
+
+/// Capture nav keys (and consume them) when autocomplete was open last frame.
+fn take_var_ac_keys(ui: &mut egui::Ui, was_open: bool) -> (bool, bool, bool, bool) {
+    if !was_open {
+        return (false, false, false, false);
+    }
+    let down = ui.input(|i| i.key_pressed(Key::ArrowDown));
+    let up = ui.input(|i| i.key_pressed(Key::ArrowUp));
+    let accept = ui.input(|i| i.key_pressed(Key::Enter) || i.key_pressed(Key::Tab));
+    let dismiss = ui.input(|i| i.key_pressed(Key::Escape));
+    for key in [
+        Key::ArrowDown,
+        Key::ArrowUp,
+        Key::Enter,
+        Key::Tab,
+        Key::Escape,
+    ] {
+        let _ = ui.input_mut(|i| i.consume_key(Modifiers::NONE, key));
+        let _ = ui.input_mut(|i| i.consume_key(Modifiers::SHIFT, key));
+    }
+    (down, up, accept, dismiss)
+}
+
+/// TextEdit + `${` autocomplete popup.
+fn var_ref_text_edit(
+    ui: &mut egui::Ui,
+    id: egui::Id,
+    value: &mut String,
+    known: &HashSet<String>,
+    desired_width: f32,
+    multiline: Option<usize>,
+) {
+    let ac_id = id.with("var_ac");
+    let was_open = ui
+        .ctx()
+        .data(|d| d.get_temp::<bool>(ac_id.with("open")))
+        .unwrap_or(false);
+    let (down, up, accept, dismiss) = take_var_ac_keys(ui, was_open);
+
+    let output = if let Some(rows) = multiline {
+        egui::TextEdit::multiline(value)
+            .id(id)
+            .desired_width(desired_width)
+            .desired_rows(rows)
+            .show(ui)
+    } else {
+        egui::TextEdit::singleline(value)
+            .id(id)
+            .desired_width(desired_width)
+            .show(ui)
+    };
+
+    let cursor_char = output.cursor_range.map(|r| r.primary.index);
+    show_var_ref_autocomplete(
+        ui,
+        id,
+        &output.response,
+        value,
+        cursor_char,
+        known,
+        down,
+        up,
+        accept,
+        dismiss,
+    );
+}
+
+fn show_var_ref_autocomplete(
+    ui: &mut egui::Ui,
+    edit_id: egui::Id,
+    response: &egui::Response,
+    value: &mut String,
+    cursor_char: Option<usize>,
+    known: &HashSet<String>,
+    down: bool,
+    up: bool,
+    accept: bool,
+    dismiss: bool,
+) {
+    let ac_id = edit_id.with("var_ac");
+    let Some(cursor_char) = cursor_char else {
+        ui.ctx()
+            .data_mut(|d| d.insert_temp(ac_id.with("open"), false));
+        return;
+    };
+    let Some(incomplete) = find_incomplete_dollar_ref(value, cursor_char) else {
+        ui.ctx()
+            .data_mut(|d| d.insert_temp(ac_id.with("open"), false));
+        return;
+    };
+    let suggestions = var_completion_options(&incomplete.prefix, known, VAR_AC_LIMIT);
+    if suggestions.is_empty() {
+        ui.ctx()
+            .data_mut(|d| d.insert_temp(ac_id.with("open"), false));
+        return;
+    }
+
+    let mut nav = ui
+        .ctx()
+        .data(|d| d.get_temp::<VarAutocompleteNav>(ac_id))
+        .unwrap_or_default();
+    if nav.prefix != incomplete.prefix {
+        nav.prefix = incomplete.prefix.clone();
+        nav.selected = 0;
+    }
+    if nav.selected >= suggestions.len() {
+        nav.selected = suggestions.len().saturating_sub(1);
+    }
+
+    if down {
+        nav.selected = (nav.selected + 1) % suggestions.len();
+    }
+    if up {
+        nav.selected = if nav.selected == 0 {
+            suggestions.len() - 1
+        } else {
+            nav.selected - 1
+        };
+    }
+
+    let mut chosen: Option<String> = None;
+    if accept {
+        chosen = suggestions.get(nav.selected).cloned();
+    }
+    if dismiss {
+        ui.ctx().data_mut(|d| {
+            d.insert_temp(ac_id.with("open"), false);
+            d.insert_temp(ac_id, VarAutocompleteNav::default());
+        });
+        return;
+    }
+
+    ui.ctx()
+        .data_mut(|d| d.insert_temp(ac_id.with("open"), true));
+
+    let popup_width = response.rect.width().max(160.0);
+    egui::Popup::from_response(response)
+        .id(ac_id.with("popup"))
+        .open(true)
+        .align(RectAlign::BOTTOM_START)
+        .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
+        .width(popup_width)
+        .show(|ui| {
+            ui.set_min_width(popup_width);
+            ui.set_max_height(180.0);
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                for (i, name) in suggestions.iter().enumerate() {
+                    let selected = i == nav.selected;
+                    let label = format!("${{{name}}}");
+                    let resp =
+                        ui.selectable_label(selected, egui::RichText::new(label).monospace());
+                    if resp.clicked() {
+                        chosen = Some(name.clone());
+                    }
+                    if selected {
+                        resp.scroll_to_me(None);
+                    }
+                }
+            });
+        });
+
+    if let Some(name) = chosen {
+        let new_cursor = apply_var_completion(value, incomplete.start_char, cursor_char, &name);
+        if let Some(mut state) = TextEditState::load(ui.ctx(), edit_id) {
+            state
+                .cursor
+                .set_char_range(Some(CCursorRange::one(CCursor::new(new_cursor))));
+            state.store(ui.ctx(), edit_id);
+        }
+        ui.memory_mut(|m| m.request_focus(edit_id));
+        ui.ctx().data_mut(|d| {
+            d.insert_temp(ac_id.with("open"), false);
+            d.insert_temp(ac_id, VarAutocompleteNav::default());
+        });
+    } else {
+        ui.ctx().data_mut(|d| d.insert_temp(ac_id, nav));
+    }
+}
+
 /// Variable-name field that becomes a nested chip when unfocused.
 pub fn var_name_text_edit(
     ui: &mut egui::Ui,
@@ -347,11 +597,7 @@ pub fn validated_var_ref_edit(
                 ui.memory_mut(|m| m.request_focus(id));
             }
         } else {
-            ui.add(
-                egui::TextEdit::singleline(value)
-                    .id(id)
-                    .desired_width(desired_width),
-            );
+            var_ref_text_edit(ui, id, value, known, desired_width, None);
         }
         paint_entry_validation_icon(ui, validation);
     });
@@ -387,12 +633,7 @@ pub fn validated_var_ref_multiline_edit(
             ui.memory_mut(|m| m.request_focus(id));
         }
     } else {
-        ui.add(
-            egui::TextEdit::multiline(value)
-                .id(id)
-                .desired_width(desired_width)
-                .desired_rows(rows),
-        );
+        var_ref_text_edit(ui, id, value, known, desired_width, Some(rows));
     }
 }
 
@@ -416,6 +657,36 @@ mod tests {
         assert!(!should_show_var_name_overlay("count", true));
         assert!(!should_show_var_name_overlay("  ", false));
         assert!(!should_show_var_name_overlay("", false));
+    }
+
+    #[test]
+    fn incomplete_dollar_ref_at_caret() {
+        let r = find_incomplete_dollar_ref("${", 2).unwrap();
+        assert_eq!(r.start_char, 0);
+        assert_eq!(r.prefix, "");
+
+        let r = find_incomplete_dollar_ref("x=${co", 6).unwrap();
+        assert_eq!(r.start_char, 2);
+        assert_eq!(r.prefix, "co");
+
+        assert!(find_incomplete_dollar_ref("${count}", 8).is_none());
+        assert!(find_incomplete_dollar_ref("plain", 5).is_none());
+        assert!(find_incomplete_dollar_ref("${a b", 5).is_none());
+    }
+
+    #[test]
+    fn completion_filters_and_applies() {
+        let known: HashSet<String> = ["Count", "Cols", "other"]
+            .into_iter()
+            .map(str::to_string)
+            .collect();
+        let opts = var_completion_options("c", &known, 10);
+        assert_eq!(opts, vec!["Cols".to_string(), "Count".to_string()]);
+
+        let mut text = "1+${co".to_string();
+        let cursor = apply_var_completion(&mut text, 2, 6, "Count");
+        assert_eq!(text, "1+${Count}");
+        assert_eq!(cursor, 10);
     }
 
     #[test]

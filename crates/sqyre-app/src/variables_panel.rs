@@ -1,9 +1,16 @@
 //! Macro variable declarations panel.
 
 use eframe::egui;
-use sqyre_domain::{Macro, VariableDecl, VariableType};
+use sqyre_domain::{builtin_variable_catalog, Macro, VariableDecl, VariableType};
 use sqyre_executor::SharedRuntimeVars;
 use sqyre_validate::validate_variable_assignment_name;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum BottomTab {
+    #[default]
+    Runtime,
+    Builtins,
+}
 
 #[derive(Debug, Default)]
 pub struct VariablesPanelUi {
@@ -13,6 +20,9 @@ pub struct VariablesPanelUi {
     status: Option<String>,
     status_error: bool,
     synced_macro: String,
+    bottom_tab: BottomTab,
+    /// Cached display count for the Built-ins tab (avoids opening X11 every frame).
+    cached_monitor_count: Option<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -37,6 +47,13 @@ impl VariablesPanelUi {
         self.status_error = false;
     }
 
+    /// Cached display count for the Built-ins tab (queries capture once).
+    fn resolve_monitor_count(&mut self) -> usize {
+        *self
+            .cached_monitor_count
+            .get_or_insert_with(sqyre_capture::monitor_count)
+    }
+
     /// Returns true when the caller should persist the macro.
     pub fn show(
         &mut self,
@@ -50,6 +67,7 @@ impl VariablesPanelUi {
             return false;
         }
         self.sync_macro(&macro_.name);
+        let num_monitors = self.resolve_monitor_count();
         let mut persist = false;
         let mut open = self.open;
         egui::Window::new(format!("Variables — {}", macro_.name))
@@ -61,7 +79,15 @@ impl VariablesPanelUi {
                     persist |= self.body(ui, macro_);
                 });
                 ui.separator();
-                self.show_runtime(ui, runtime_vars, running);
+                ui.horizontal(|ui| {
+                    ui.selectable_value(&mut self.bottom_tab, BottomTab::Runtime, "Runtime");
+                    ui.selectable_value(&mut self.bottom_tab, BottomTab::Builtins, "Built-ins");
+                });
+                ui.separator();
+                match self.bottom_tab {
+                    BottomTab::Runtime => self.show_runtime(ui, runtime_vars, running),
+                    BottomTab::Builtins => self.show_builtins(ui, num_monitors),
+                }
             });
         self.open = open;
         if running {
@@ -93,6 +119,27 @@ impl VariablesPanelUi {
                         ui.monospace(name);
                         ui.label("=");
                         ui.weak(value);
+                    });
+                }
+            });
+    }
+
+    fn show_builtins(&self, ui: &mut egui::Ui, num_monitors: usize) {
+        ui.label(
+            egui::RichText::new(
+                "Set automatically by the runtime or certain actions. Names are fixed.",
+            )
+            .weak(),
+        );
+        ui.add_space(4.0);
+        let catalog = builtin_variable_catalog(num_monitors);
+        egui::ScrollArea::vertical()
+            .max_height(220.0)
+            .show(ui, |ui| {
+                for info in &catalog {
+                    ui.horizontal(|ui| {
+                        ui.monospace(&info.name);
+                        ui.weak(info.description);
                     });
                 }
             });
