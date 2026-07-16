@@ -240,6 +240,52 @@ fn validate_expression_structure(expr: &str, macro_: Option<&Macro>) -> Result<(
     Ok(())
 }
 
+/// Live expression preview for Set-value editing (Go `PreviewCalculate`).
+///
+/// Returns `Ok("")` for empty input; `Ok("= …")` when all refs have values;
+/// `Ok("valid (result depends on runtime values)")` when refs are missing/unknown;
+/// `Err` when the expression is structurally invalid.
+pub fn preview_calculate(expr: &str, macro_: &Macro) -> std::result::Result<String, String> {
+    if expr.trim().is_empty() {
+        return Ok(String::new());
+    }
+
+    let mut scratch = Macro::new(macro_.name.clone(), macro_.global_delay, vec![]);
+    scratch.variable_decls = macro_.variable_decls.clone();
+    scratch.root = macro_.root.clone();
+    scratch.init_runtime_variables();
+    for (name, val) in macro_.variables.iter() {
+        scratch.variables.set(name, val.clone());
+    }
+
+    let mut runtime_dependent = false;
+    for name in sqyre_varref::names(expr) {
+        let name = name.trim();
+        if name.is_empty() {
+            continue;
+        }
+        if scratch.variables.get(name).is_none() {
+            scratch.variables.set(name, ScalarValue::Int(0));
+            runtime_dependent = true;
+        }
+    }
+
+    let res = evaluate_expression(expr, &scratch)?;
+    if runtime_dependent || !unknown_variable_warning(expr, Some(macro_)).is_empty() {
+        return Ok("valid (result depends on runtime values)".into());
+    }
+    Ok(format!("= {}", format_preview_number(res)))
+}
+
+fn format_preview_number(f: f64) -> String {
+    // Match Go `strconv.FormatFloat(f, 'g', -1, 64)`.
+    if f.fract() == 0.0 && f.is_finite() && f.abs() <= i64::MAX as f64 {
+        format!("{}", f as i64)
+    } else {
+        format!("{f}")
+    }
+}
+
 /// Set-variable value: plain text allowed; invalid arithmetic blocks
 /// (Go `ValidateSetVariableValue`).
 pub fn validate_set_variable_value(text: &str, macro_: Option<&Macro>) -> EntryValidation {
@@ -497,6 +543,49 @@ mod tests {
         assert!(!missing.blocks_submit());
         assert!(!missing.warning.is_empty());
         assert!(validate_set_variable_value("1 + ", Some(&m)).blocks_submit());
+    }
+
+    #[test]
+    fn preview_calculate_parity() {
+        use sqyre_domain::{root_loop, Action, ActionId, ActionKind};
+
+        let mut m = Macro::new("t", 0, vec![]);
+        m.variable_decls.push(VariableDecl {
+            name: "count".into(),
+            type_: VariableType::Number,
+            initial_value: "5".into(),
+            description: String::new(),
+        });
+        m.variable_decls.push(VariableDecl {
+            name: "label".into(),
+            type_: VariableType::Text,
+            initial_value: String::new(),
+            description: String::new(),
+        });
+        m.root = root_loop(vec![Action {
+            id: ActionId::new(),
+            kind: ActionKind::SetVariable {
+                variable_name: "result".into(),
+                value: serde_yaml::Value::String("0".into()),
+            },
+        }]);
+        m.init_runtime_variables();
+
+        assert_eq!(preview_calculate("", &m).unwrap(), "");
+        assert_eq!(preview_calculate("2 + 3", &m).unwrap(), "= 5");
+        assert_eq!(preview_calculate("${count} * 2", &m).unwrap(), "= 10");
+        assert_eq!(
+            preview_calculate("${label} + 1", &m).unwrap(),
+            "valid (result depends on runtime values)"
+        );
+        assert_eq!(
+            preview_calculate("${result} + 1", &m).unwrap(),
+            "valid (result depends on runtime values)"
+        );
+        assert_eq!(
+            preview_calculate("${missing} + 1", &m).unwrap(),
+            "valid (result depends on runtime values)"
+        );
     }
 
     #[test]

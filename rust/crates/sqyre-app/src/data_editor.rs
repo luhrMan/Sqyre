@@ -1025,8 +1025,14 @@ impl DataEditor {
                     }
                 });
                 ui.horizontal(|ui| {
-                    ui.text_edit_singleline(&mut self.tag_draft);
-                    if ui.button("Add tag").clicked() {
+                    let tag_te = egui::TextEdit::singleline(&mut self.tag_draft)
+                        .desired_width(140.0)
+                        .hint_text("Add tag…");
+                    let tag_resp = ui.add(tag_te);
+                    let add_clicked = ui.button("Add tag").clicked();
+                    let add_enter =
+                        tag_resp.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                    if add_clicked || add_enter {
                         let t = self.tag_draft.trim().to_string();
                         if !t.is_empty() && !self.form_tags.iter().any(|x| x == &t) {
                             self.form_tags.push(t);
@@ -1034,6 +1040,30 @@ impl DataEditor {
                         self.tag_draft.clear();
                     }
                 });
+                // Completion from other item tags in this program (Go `tagCompletionOptions`).
+                if !self.tag_draft.trim().is_empty() {
+                    if let Some(prog) = self.selected_program.as_deref() {
+                        let program_tags = collect_program_item_tags(catalog, prog);
+                        let suggestions = item_tag_completion_options(
+                            &self.tag_draft,
+                            &self.form_tags,
+                            &program_tags,
+                            8,
+                        );
+                        if !suggestions.is_empty() {
+                            ui.horizontal_wrapped(|ui| {
+                                for sug in suggestions {
+                                    if ui.small_button(&sug).clicked() {
+                                        if !self.form_tags.iter().any(|x| x == &sug) {
+                                            self.form_tags.push(sug);
+                                        }
+                                        self.tag_draft.clear();
+                                    }
+                                }
+                            });
+                        }
+                    }
+                }
                 if let (Some(prog), Some(item)) = (
                     self.selected_program.clone(),
                     self.selected_entity.clone(),
@@ -2643,6 +2673,41 @@ fn unique_name(base: &str, exists: impl Fn(&str) -> bool) -> String {
         }
     }
     format!("{base} {}", uuid_simple())
+}
+
+/// Sorted unique tags across items in a program (Go `getProgramTags`).
+fn collect_program_item_tags(catalog: &ProgramCatalog, program: &str) -> Vec<String> {
+    let mut tags: Vec<String> = catalog
+        .get(program)
+        .map(|p| {
+            p.items
+                .values()
+                .flat_map(|it| it.tags.iter().cloned())
+                .collect()
+        })
+        .unwrap_or_default();
+    tags.sort();
+    tags.dedup();
+    tags
+}
+
+fn item_tag_completion_options(
+    search: &str,
+    on_item: &[String],
+    program_tags: &[String],
+    limit: usize,
+) -> Vec<String> {
+    let search_l = search.trim().to_lowercase();
+    if search_l.is_empty() {
+        return Vec::new();
+    }
+    program_tags
+        .iter()
+        .filter(|t| !on_item.iter().any(|c| c == *t))
+        .filter(|t| t.to_lowercase().contains(&search_l))
+        .take(limit)
+        .cloned()
+        .collect()
 }
 
 fn uuid_simple() -> String {

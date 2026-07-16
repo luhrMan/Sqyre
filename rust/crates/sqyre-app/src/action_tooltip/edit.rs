@@ -17,7 +17,8 @@ use sqyre_domain::{
 use sqyre_hotkeys::{MacroHotkeyBridge, ScreenClickBridge};
 use sqyre_persist::ProgramCatalog;
 use sqyre_validate::{
-    validate_numeric_expression, validate_set_variable_value, validate_variable_references,
+    preview_calculate, validate_numeric_expression, validate_set_variable_value,
+    validate_variable_references,
 };
 use std::collections::HashSet;
 
@@ -815,6 +816,39 @@ fn yaml_value_field(
 ) {
     let mut text = set_value_edit_text(value);
     let before = text.clone();
+
+    // Expression builder toolbar (Go `expressionBuilderToolbar`).
+    let mut insert: Option<String> = None;
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 4.0;
+        ui.menu_button("f(x)", |ui| {
+            for f in EXPRESSION_FUNCTIONS {
+                if ui.button(format!("{f}( )")).clicked() {
+                    insert = Some(format!("{f}()"));
+                    ui.close();
+                }
+            }
+            ui.separator();
+            for c in EXPRESSION_CONSTANTS {
+                if ui.button(*c).clicked() {
+                    insert = Some((*c).to_string());
+                    ui.close();
+                }
+            }
+        })
+        .response
+        .on_hover_text("Insert function or constant");
+        for op in EXPRESSION_OPERATORS {
+            if ui.small_button(*op).clicked() {
+                insert = Some((*op).to_string());
+            }
+        }
+    });
+
+    if let Some(token) = insert {
+        text.push_str(&token);
+    }
+
     let validation = validate_set_variable_value(&text, active_macro);
     var_pills::validated_var_ref_multiline_edit(
         ui,
@@ -826,11 +860,27 @@ fn yaml_value_field(
         2,
         &validation,
     );
+
+    // Live preview (Go `appendExpressionPreviewRow` / `PreviewCalculate`).
+    if let Some(m) = active_macro {
+        if let Ok(preview) = preview_calculate(&text, m) {
+            if !preview.is_empty() {
+                ui.weak(format!("Preview: {preview}"));
+            }
+        }
+    }
+
     if text != before {
         // Store as plain string (Go tooltip apply). Runtime resolve parses numbers/expressions.
         *value = serde_yaml::Value::String(text);
     }
 }
+
+const EXPRESSION_OPERATORS: &[&str] = &["+", "-", "*", "/", "^", "(", ")"];
+const EXPRESSION_FUNCTIONS: &[&str] = &[
+    "sqrt", "abs", "round", "floor", "ceil", "trunc", "sin", "cos", "tan", "ln",
+];
+const EXPRESSION_CONSTANTS: &[&str] = &["~pi", "~e"];
 
 fn wait_editor(ui: &mut egui::Ui, wait: &mut WaitTilFoundConfig) {
     ui.label(egui::RichText::new("Wait / repeat").strong());

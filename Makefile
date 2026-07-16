@@ -1,11 +1,10 @@
-# Sqyre build helpers. Default output: ./bin (workspace /workspace/bin in devcontainer).
-# Default binary is Rust (sqyre-app). Go/Fyne remains under `make go` until full deletion.
+# Sqyre build helpers. Default output: ./bin
+# Binary is Rust (sqyre-app). Linux AppImage packaging uses the same stack.
 .PHONY: all sqyre rust rust-release rust-test rust-run run \
-	go fyne tessdata windows windows-matprofile appimage appimage-matprofile help
+	tessdata appimage help
 
 ROOT := $(abspath .)
 BIN := $(abspath bin)
-BUILD_TAGS ?= gocv_specific_modules
 
 RUST_DIR := $(ROOT)/rust
 CARGO ?= cargo
@@ -34,13 +33,9 @@ help:
 	@echo "  rust-release        - cargo build --release -> $(BIN)/sqyre"
 	@echo "  rust-test           - cargo test (rust/ workspace)"
 	@echo "  run / rust-run      - cargo run -p sqyre-app"
-	@echo "  go / fyne           - go build -> $(BIN)/sqyre-go (legacy Fyne app)"
 	@echo "  tessdata            - scripts/download-tessdata.sh"
-	@echo "  windows             - cross-compile Go exe -> $(BIN)/windows-amd64/ (Docker + fyne-cross)"
-	@echo "  windows-matprofile  - same with matprofile tag"
-	@echo "  appimage            - Go AppImage -> $(BIN)/ (AppDir under scripts/linux/packaging/appimage/)"
-	@echo "  appimage-matprofile - same with matprofile tag -> $(BIN)/Sqyre-*-matprofile-x86_64.AppImage"
-	@echo "                        (override Rust with CARGO_FLAGS=...; Go with BUILD_TAGS=...)"
+	@echo "  appimage            - Rust AppImage -> $(BIN)/ (Docker fallback if tools missing)"
+	@echo "                        (RELEASE_VERSION=…; SQYRE_APPIMAGE_FORCE_NATIVE=1)"
 
 $(BIN):
 	mkdir -p $(BIN)
@@ -59,20 +54,8 @@ rust-test:
 run rust-run:
 	cd $(RUST_DIR) && $(CARGO) run -p sqyre-app $(CARGO_FLAGS)
 
-go fyne: $(BIN)
-	go build -trimpath -tags "$(BUILD_TAGS)" -o $(BIN)/sqyre-go ./cmd/sqyre
-
 tessdata:
 	./scripts/download-tessdata.sh
 
-windows: $(BIN)
-	env BIN_DIR="$(BIN)" ./scripts/windows/build.sh
-
-windows-matprofile: $(BIN)
-	env BIN_DIR="$(BIN)" ./scripts/windows/build-matprofile.sh
-
 appimage:
 	./scripts/linux/packaging/appimage/build-appimage.sh
-
-appimage-matprofile: $(BIN)
-	./scripts/linux/packaging/appimage/build-appimage-matprofile.sh

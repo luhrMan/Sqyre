@@ -1,8 +1,8 @@
 # Sqyre Rust workspace
 
-In-repo rewrite of Sqyre (egui + PureCV). **Rust is the default daily driver** (`make` / `./bin/sqyre`). Legacy Go/Fyne: `make go` → `./bin/sqyre-go` until packages are deleted (🔪).
+In-repo Sqyre implementation (egui + PureCV). **`make` / `./bin/sqyre` is the only shipped binary** (Linux).
 
-**Migration tracker:** [MIGRATION.md](./MIGRATION.md) (shared checklist — update status when landing work).
+**Migration tracker:** [MIGRATION.md](./MIGRATION.md) (historical checklist — Go runtime removed).
 
 ## Crates
 
@@ -10,7 +10,7 @@ In-repo rewrite of Sqyre (egui + PureCV). **Rust is the default daily driver** (
 |-------|------|
 | `sqyre-varref` | `${name}` / `{name}` grammar |
 | `sqyre-domain` | Macro + 21 action kinds |
-| `sqyre-serialize` | YAML codecs (Go `ActionToMap` / `DecodeMacroFromMap`) |
+| `sqyre-serialize` | YAML codecs |
 | `sqyre-validate` | Names / action save checks |
 | `sqyre-persist` | `~/.sqyre/db.yaml` + program catalog |
 | `sqyre-executor` | Injected automation / capture / match / coords |
@@ -23,7 +23,7 @@ In-repo rewrite of Sqyre (egui + PureCV). **Rust is the default daily driver** (
 
 ## Develop
 
-Requires **Rust ≥ 1.92** (egui 0.34 / PureCV). The slim `.devcontainer` pins `1.92.0` plus clang/Tesseract for OCR (no OpenCV/Go).
+Requires **Rust ≥ 1.92** (egui 0.34 / PureCV). The `.devcontainer` pins `1.92.0` plus clang/Tesseract for OCR.
 
 Linux automation/capture need X11 (`libx11-dev`, `libxtst-dev`).
 
@@ -34,6 +34,7 @@ make                 # ./bin/sqyre (debug)
 make rust-release    # ./bin/sqyre (release)
 make rust-test
 make run             # cargo run -p sqyre-app; loads ~/.sqyre/db.yaml
+make appimage        # Linux AppImage
 ```
 
 Or from `rust/`:
@@ -47,8 +48,6 @@ Do not expect X11 inside the container — build there, run the binary on the ho
 
 Host binary: `./bin/sqyre` after `make`, or `./rust/target/debug/sqyre` from cargo. Esc stops a running macro; Esc+Ctrl+Shift exits (failsafe).
 
-**Shared DB:** Rust can write action kinds Go cannot load (`while`, `navigateselect`, `navigatekey`). Prefer one binary against `~/.sqyre/`.
+Still improving: Wayland, Windows/macOS automation + capture. CI releases Linux only.
 
-Still improving: variables panel, data-editor polish, non-Linux platforms. Release AppImage/Windows still ship Go.
-
-OCR uses Tesseract (`leptess`). Override tessdata with `SQYRE_TESSDATA` if needed.
+OCR uses Tesseract (`leptess`). Override tessdata with `SQYRE_TESSDATA` if needed (dev fallback: `assets/tessdata`).
