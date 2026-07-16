@@ -20,6 +20,7 @@ hooks = ["sqyre-hotkeys/hooks"]
 [dependencies]
 eframe = { workspace = true }
 egui = { workspace = true }
+egui-phosphor = { workspace = true }
 egui_ltreeview = { workspace = true }
 fs2 = "0.4"
 image = { workspace = true }
