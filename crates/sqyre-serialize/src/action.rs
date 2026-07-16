@@ -2,9 +2,9 @@ use crate::helpers::*;
 use crate::{Result, SerializeError};
 use serde_yaml::{Mapping, Sequence, Value};
 use sqyre_domain::{
-    Action, ActionId, ActionKind, ConditionClause, CoordinateOutputs, ListColumn, MatchOrder,
-    ScalarValue, WaitTilFoundConfig, DEFAULT_SMOOTH_DELAY_MS, DEFAULT_SMOOTH_HIGH,
-    DEFAULT_SMOOTH_LOW, MATCH_ALL, REPEAT_ONCE, REPEAT_WAIT_UNTIL_FOUND, REPEAT_WHILE_FOUND,
+    Action, ActionId, ActionKind, ConditionClause, CoordinateOutputs, ListColumn, MatchMode,
+    MatchOrder, MouseButton, RepeatMode, ScalarValue, WaitTilFoundConfig, DEFAULT_SMOOTH_DELAY_MS,
+    DEFAULT_SMOOTH_HIGH, DEFAULT_SMOOTH_LOW,
 };
 use uuid::Uuid;
 
@@ -88,11 +88,7 @@ fn encode_kind(kind: &ActionKind) -> Result<Mapping> {
             subactions,
         } => {
             insert_str(&mut m, "name", name);
-            insert_str(
-                &mut m,
-                "match",
-                if match_mode == "any" { "any" } else { MATCH_ALL },
-            );
+            insert_str(&mut m, "match", match_mode.as_str());
             if *max_iterations > 0 {
                 insert_i32(&mut m, "maxiterations", *max_iterations);
             }
@@ -106,11 +102,7 @@ fn encode_kind(kind: &ActionKind) -> Result<Mapping> {
             subactions,
         } => {
             insert_str(&mut m, "name", name);
-            insert_str(
-                &mut m,
-                "match",
-                if match_mode == "any" { "any" } else { MATCH_ALL },
-            );
+            insert_str(&mut m, "match", match_mode.as_str());
             insert(&mut m, "clauses", clauses_to_seq(clauses));
             insert(&mut m, "subactions", subactions_to_seq(subactions)?);
         }
@@ -285,7 +277,7 @@ fn encode_kind(kind: &ActionKind) -> Result<Mapping> {
             }
         }
         ActionKind::Click { button, state } => {
-            insert_str(&mut m, "button", button);
+            insert_str(&mut m, "button", button.as_str());
             insert_bool(&mut m, "state", *state);
         }
         ActionKind::Key { key, state } => {
@@ -473,9 +465,9 @@ fn write_order(m: &mut Mapping, o: &MatchOrder) {
 }
 
 fn write_wait(m: &mut Mapping, w: &WaitTilFoundConfig) {
-    let mode = w.effective_repeat_mode().to_string();
-    insert_str(m, "repeatmode", &mode);
-    if mode == REPEAT_WAIT_UNTIL_FOUND {
+    let mode = w.effective_repeat_mode();
+    insert_str(m, "repeatmode", mode.as_str());
+    if mode == RepeatMode::WaitUntilFound {
         insert_i32(m, "waittilfoundseconds", w.wait_til_found_seconds);
     } else if w.wait_til_found_seconds > 0 {
         insert_i32(m, "waittilfoundseconds", w.wait_til_found_seconds);
@@ -483,7 +475,7 @@ fn write_wait(m: &mut Mapping, w: &WaitTilFoundConfig) {
     if w.wait_til_found_interval_ms > 0 {
         insert_i32(m, "waittilfoundintervalms", w.wait_til_found_interval_ms);
     }
-    if mode == REPEAT_WHILE_FOUND {
+    if mode == RepeatMode::WhileFound {
         let max = if w.max_iterations > 0 {
             w.max_iterations
         } else {
@@ -494,16 +486,12 @@ fn write_wait(m: &mut Mapping, w: &WaitTilFoundConfig) {
 }
 
 fn decode_wait(raw: &Mapping) -> WaitTilFoundConfig {
-    let mut out = WaitTilFoundConfig {
-        repeat_mode: string_from_map(raw, "repeatmode"),
+    WaitTilFoundConfig {
+        repeat_mode: RepeatMode::parse(&string_from_map(raw, "repeatmode")),
         wait_til_found_seconds: optional_int(raw, "waittilfoundseconds").unwrap_or(0),
         wait_til_found_interval_ms: optional_int(raw, "waittilfoundintervalms").unwrap_or(0),
         max_iterations: optional_int(raw, "maxiterations").unwrap_or(0),
-    };
-    if out.repeat_mode.is_empty() {
-        out.repeat_mode = REPEAT_ONCE.to_string();
     }
-    out
 }
 
 fn decode_coords(raw: &Mapping) -> CoordinateOutputs {
@@ -645,14 +633,14 @@ fn decode_kind(raw: &Mapping, type_name: &str) -> Result<ActionKind> {
         }
         "while" => Ok(ActionKind::While {
             name: string_from_map(raw, "name"),
-            match_mode: string_from_map(raw, "match"),
+            match_mode: MatchMode::parse(&string_from_map(raw, "match")),
             clauses: decode_clauses(raw),
             max_iterations: optional_int(raw, "maxiterations").unwrap_or(0),
             subactions: decode_subactions(raw)?,
         }),
         "conditional" => Ok(ActionKind::Conditional {
             name: string_from_map(raw, "name"),
-            match_mode: string_from_map(raw, "match"),
+            match_mode: MatchMode::parse(&string_from_map(raw, "match")),
             clauses: decode_clauses(raw),
             subactions: decode_subactions(raw)?,
         }),
@@ -785,7 +773,7 @@ fn decode_kind(raw: &Mapping, type_name: &str) -> Result<ActionKind> {
             let button = expect_string(raw, "button")
                 .map_err(|e| SerializeError::msg(format!("action type click: {e}")))?;
             match button.as_str() {
-                "left" | "right" | "center" | "scroll" => {}
+                "left" | "right" | "center" | "middle" | "scroll" => {}
                 other => {
                     return Err(SerializeError::msg(format!(
                         "action type click: field \"button\": unknown button \"{other}\""
@@ -793,7 +781,7 @@ fn decode_kind(raw: &Mapping, type_name: &str) -> Result<ActionKind> {
                 }
             }
             Ok(ActionKind::Click {
-                button,
+                button: MouseButton::parse(&button),
                 state: bool_from_map(raw, "state"),
             })
         }
@@ -814,15 +802,6 @@ fn decode_kind(raw: &Mapping, type_name: &str) -> Result<ActionKind> {
                 .get(Value::String("value".into()))
                 .cloned()
                 .unwrap_or(Value::Null),
-        }),
-        // Legacy calculate actions load as Set (expression → value, outputvar → variablename).
-        "calculate" => Ok(ActionKind::SetVariable {
-            variable_name: expect_string(raw, "outputvar")
-                .map_err(|e| SerializeError::msg(format!("action type calculate: {e}")))?,
-            value: Value::String(
-                expect_string(raw, "expression")
-                    .map_err(|e| SerializeError::msg(format!("action type calculate: {e}")))?,
-            ),
         }),
         "savevariable" => Ok(ActionKind::SaveVariable {
             variable_name: expect_string(raw, "variablename")
@@ -1015,36 +994,6 @@ mod tests {
                 }
             }
             other => panic!("expected NavigateSelect, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn legacy_calculate_decodes_as_set() {
-        use serde_yaml::{Mapping, Value};
-
-        let mut m = Mapping::new();
-        m.insert(
-            Value::String("type".into()),
-            Value::String("calculate".into()),
-        );
-        m.insert(
-            Value::String("expression".into()),
-            Value::String("1+2".into()),
-        );
-        m.insert(
-            Value::String("outputvar".into()),
-            Value::String("sum".into()),
-        );
-        let action = action_from_map(&m).unwrap();
-        match action.kind {
-            ActionKind::SetVariable {
-                variable_name,
-                value,
-            } => {
-                assert_eq!(variable_name, "sum");
-                assert_eq!(value, Value::String("1+2".into()));
-            }
-            other => panic!("expected SetVariable, got {other:?}"),
         }
     }
 }

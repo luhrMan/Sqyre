@@ -12,7 +12,8 @@ use crate::var_pills;
 use eframe::egui;
 use sqyre_domain::{
     parse_hex_color, Action, ActionKind, ConditionClause, CoordinateOutputs, CoordinateRef,
-    ListColumn, Macro, MatchOrder, ScalarValue, WaitTilFoundConfig, REPEAT_ONCE,
+    ListColumn, Macro, MatchMode, MatchOrder, MouseButton, RepeatMode, ScalarValue,
+    WaitTilFoundConfig,
 };
 use sqyre_hotkeys::{MacroHotkeyBridge, ScreenClickBridge};
 use sqyre_persist::ProgramCatalog;
@@ -71,7 +72,9 @@ pub fn paint_edit_fields(
         }
         ActionKind::Click { button, state } => {
             tip_wrapped_section(ui, |ui| {
-                combo_str(ui, "Button", button, options::CLICK_BUTTONS);
+                let mut btn = button.as_str().to_string();
+                combo_str(ui, "Button", &mut btn, options::CLICK_BUTTONS);
+                *button = MouseButton::parse(&btn);
                 ui.vertical(|ui| {
                     ui.small("Up");
                     theme::up_down_toggle(ui, state);
@@ -255,9 +258,9 @@ pub fn paint_edit_fields(
         } => {
             tip_wrapped_section(ui, |ui| {
                 text_field(ui, "Name", name);
-                let mut all = match_mode != "any";
+                let mut all = *match_mode != MatchMode::Any;
                 if ui.checkbox(&mut all, "Match all (uncheck = any)").changed() {
-                    *match_mode = if all { "all".into() } else { "any".into() };
+                    *match_mode = if all { MatchMode::All } else { MatchMode::Any };
                 }
                 ui.add(egui::DragValue::new(max_iterations).prefix("Max iterations: "));
             });
@@ -273,9 +276,9 @@ pub fn paint_edit_fields(
         } => {
             tip_wrapped_section(ui, |ui| {
                 text_field(ui, "Name", name);
-                let mut all = match_mode != "any";
+                let mut all = *match_mode != MatchMode::Any;
                 if ui.checkbox(&mut all, "Match all (uncheck = any)").changed() {
-                    *match_mode = if all { "all".into() } else { "any".into() };
+                    *match_mode = if all { MatchMode::All } else { MatchMode::Any };
                 }
             });
             tip_section(ui, |ui| {
@@ -886,10 +889,12 @@ fn wait_editor(ui: &mut egui::Ui, wait: &mut WaitTilFoundConfig) {
     ui.label(egui::RichText::new("Wait / repeat").strong());
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing = egui::Vec2::splat(6.0);
-        combo_str(ui, "Repeat mode", &mut wait.repeat_mode, options::REPEAT_MODES);
+        let mut mode = wait.repeat_mode.as_str().to_string();
+        combo_str(ui, "Repeat mode", &mut mode, options::REPEAT_MODES);
+        wait.repeat_mode = RepeatMode::parse(&mode);
         // Once → all off; waituntilfound → timing only;
         // repeatwhilefound → timing + max iterations.
-        let timing_enabled = wait.effective_repeat_mode() != REPEAT_ONCE;
+        let timing_enabled = wait.effective_repeat_mode() != RepeatMode::Once;
         let max_enabled = wait.is_repeat_while_found();
         ui.add_enabled(
             timing_enabled,

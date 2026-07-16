@@ -8,6 +8,7 @@ description = "Image search / find-pixel / OCR helpers over sqyre-match"
 [dependencies]
 image = { workspace = true }
 thiserror = { workspace = true }
+parking_lot = { workspace = true }
 sqyre-match = { path = "../sqyre-match" }
 sqyre-domain = { path = "../sqyre-domain" }
 leptess = "0.14"

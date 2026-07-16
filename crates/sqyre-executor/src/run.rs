@@ -7,7 +7,7 @@ use crate::error::{ExecError, FlowSignal, Result};
 use crate::highlight::{
     clear_highlights, highlight_cursor, ActionHighlighter,
 };
-use crate::misc::{
+use crate::actions::{
     execute_focus_window, execute_for_each_row, execute_pause, execute_run_macro,
     execute_save_variable, execute_set_variable, execute_while,
 };
@@ -15,7 +15,8 @@ use crate::navigate::{execute_navigate_key, execute_navigate_select};
 use crate::runtime_vars::RuntimeVarSink;
 use crate::search::{execute_find_pixel, execute_image_search, execute_ocr};
 use sqyre_domain::{
-    action_type_label, resolve_scalar_int, Action, ActionId, ActionKind, Macro, ScalarValue,
+    action_type_label, resolve_scalar_int, Action, ActionId, ActionKind, Macro, MatchMode,
+    MouseButton, ScalarValue,
 };
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -323,7 +324,7 @@ fn dispatch(exec: &mut Executor<'_>, action: &Action, macro_: &mut Macro) -> Res
             clauses,
             subactions,
         } => {
-            let ok = eval_clauses(match_mode, clauses, macro_);
+            let ok = eval_clauses(*match_mode, clauses, macro_)?;
             if ok {
                 exec.log(
                     action.id,
@@ -339,11 +340,11 @@ fn dispatch(exec: &mut Executor<'_>, action: &Action, macro_: &mut Macro) -> Res
             }
         }
         ActionKind::Click { button, state } => {
-            if button == "scroll" {
+            if *button == MouseButton::Scroll {
                 exec.automation.scroll(*state).map_err(ExecError::Message)
             } else {
                 exec.automation
-                    .click(button, *state)
+                    .click(button.as_str(), *state)
                     .map_err(ExecError::Message)
             }
         }
@@ -373,20 +374,16 @@ fn dispatch(exec: &mut Executor<'_>, action: &Action, macro_: &mut Macro) -> Res
             smooth_delay_ms,
         } => {
             let (x, y) = if let Some(resolver) = exec.resolver {
-                match resolver.resolve_point(point, macro_) {
-                    Ok(xy) => xy,
-                    Err(e) => {
-                        let msg = format!(
-                            "Move: failed to resolve point {}: {e}, using (0,0)",
-                            point.as_str()
-                        );
-                        eprintln!("{msg}");
-                        exec.log(action.id, msg);
-                        (0, 0)
-                    }
-                }
+                resolver.resolve_point(point, macro_).map_err(|e| {
+                    ExecError::Message(format!(
+                        "Move: failed to resolve point {}: {e}",
+                        point.as_str()
+                    ))
+                })?
             } else {
-                (0, 0)
+                return Err(ExecError::Message(
+                    "Move: coordinate resolver not configured".into(),
+                ));
             };
             exec.automation.move_to(
                 x,
@@ -434,7 +431,7 @@ fn dispatch(exec: &mut Executor<'_>, action: &Action, macro_: &mut Macro) -> Res
             exec,
             action.id,
             name,
-            match_mode,
+            *match_mode,
             clauses,
             *max_iterations,
             subactions,
@@ -504,23 +501,23 @@ pub(crate) fn run_children(
 }
 
 pub(crate) fn eval_clauses(
-    match_mode: &str,
+    match_mode: MatchMode,
     clauses: &[sqyre_domain::ConditionClause],
     macro_: &Macro,
-) -> bool {
+) -> Result<bool> {
     if clauses.is_empty() {
-        return true;
+        return Ok(true);
     }
-    let want_any = match_mode == "any";
+    let want_any = match_mode == MatchMode::Any;
     for c in clauses {
         let left = c.left.as_display();
         let right = c.right.as_display();
-        let left = resolve_text(&left, macro_).unwrap_or(left);
-        let right = resolve_text(&right, macro_).unwrap_or(right);
+        let left = resolve_text(&left, macro_)?;
+        let right = resolve_text(&right, macro_)?;
         let ok = match c.operator.as_str() {
             "==" => left == right,
             "!=" => left != right,
-            "is set" => macro_.variables.get(&strip_ref(&left)).is_some(),
+            "is set" => macro_.variables.get(strip_ref(&left)).is_some(),
             "is empty" => left.trim().is_empty(),
             "contains" => left.contains(&right),
             "starts with" => left.starts_with(&right),
@@ -529,22 +526,20 @@ pub(crate) fn eval_clauses(
         };
         if want_any {
             if ok {
-                return true;
+                return Ok(true);
             }
         } else if !ok {
-            return false;
+            return Ok(false);
         }
     }
-    !want_any
+    Ok(!want_any)
 }
 
-fn strip_ref(s: &str) -> String {
+fn strip_ref(s: &str) -> &str {
     let t = s.trim();
-    if let Some(inner) = t.strip_prefix("${").and_then(|x| x.strip_suffix('}')) {
-        inner.to_string()
-    } else {
-        t.to_string()
-    }
+    t.strip_prefix("${")
+        .and_then(|x| x.strip_suffix('}'))
+        .unwrap_or(t)
 }
 
 pub(crate) fn resolve_int(v: &ScalarValue, macro_: &Macro) -> Result<i32> {
@@ -966,7 +961,7 @@ mod tests {
         macro_.variables.set("name", ScalarValue::String("hello".into()));
         macro_.variables.set("empty", ScalarValue::String("".into()));
         assert!(eval_clauses(
-            "any",
+            MatchMode::Any,
             &[
                 sqyre_domain::ConditionClause {
                     left: ScalarValue::String("x".into()),
@@ -980,9 +975,10 @@ mod tests {
                 },
             ],
             &macro_
-        ));
+        )
+        .unwrap());
         assert!(eval_clauses(
-            "all",
+            MatchMode::All,
             &[
                 sqyre_domain::ConditionClause {
                     left: ScalarValue::String("${name}".into()),
@@ -1006,16 +1002,18 @@ mod tests {
                 },
             ],
             &macro_
-        ));
+        )
+        .unwrap());
         assert!(!eval_clauses(
-            "all",
+            MatchMode::All,
             &[sqyre_domain::ConditionClause {
                 left: ScalarValue::String("a".into()),
                 operator: "!=".into(),
                 right: ScalarValue::String("a".into()),
             }],
             &macro_
-        ));
+        )
+        .unwrap());
     }
 
     #[test]

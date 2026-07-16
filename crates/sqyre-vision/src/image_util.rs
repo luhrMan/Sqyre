@@ -6,12 +6,41 @@ pub fn rgba_to_rgb_buf(img: &RgbaImage) -> ImageBuf {
     let w = img.width() as usize;
     let h = img.height() as usize;
     let mut data = Vec::with_capacity(w * h * 3);
-    for p in img.pixels() {
-        data.push(p.0[0]);
-        data.push(p.0[1]);
-        data.push(p.0[2]);
+    for chunk in img.as_raw().chunks_exact(4) {
+        data.push(chunk[0]);
+        data.push(chunk[1]);
+        data.push(chunk[2]);
     }
     ImageBuf::from_raw(w, h, 3, data)
+}
+
+/// Convert RGB `ImageBuf` to grayscale (Rec.601 luma).
+pub fn rgb_to_grayscale(img: &ImageBuf) -> ImageBuf {
+    if img.channels == 1 {
+        return ImageBuf::from_raw(img.width, img.height, 1, img.data.clone());
+    }
+    let mut data = Vec::with_capacity(img.width * img.height);
+    for chunk in img.data.chunks_exact(img.channels) {
+        let r = chunk[0] as f32;
+        let g = chunk.get(1).copied().unwrap_or(0) as f32;
+        let b = chunk.get(2).copied().unwrap_or(0) as f32;
+        data.push((0.299 * r + 0.587 * g + 0.114 * b).round() as u8);
+    }
+    ImageBuf::from_raw(img.width, img.height, 1, data)
+}
+
+/// Expand grayscale to RGB by duplicating the channel.
+pub fn gray_to_rgb(img: &ImageBuf) -> ImageBuf {
+    if img.channels == 3 {
+        return img.clone();
+    }
+    let mut data = Vec::with_capacity(img.width * img.height * 3);
+    for &v in &img.data {
+        data.push(v);
+        data.push(v);
+        data.push(v);
+    }
+    ImageBuf::from_raw(img.width, img.height, 3, data)
 }
 
 pub fn load_rgb_image(path: &std::path::Path) -> Result<ImageBuf, String> {
@@ -42,6 +71,25 @@ pub fn mask_as_u8(mask: &ImageBuf) -> Vec<u8> {
     out
 }
 
+/// Nearest-neighbor resize of any channel count to `tw` × `th`.
+pub fn resize_nearest(img: &ImageBuf, tw: usize, th: usize) -> ImageBuf {
+    if img.width == tw && img.height == th {
+        return img.clone();
+    }
+    let ch = img.channels;
+    let mut data = vec![0u8; tw * th * ch];
+    for y in 0..th {
+        let sy = y * img.height / th;
+        for x in 0..tw {
+            let sx = x * img.width / tw;
+            let src = img.pixel_offset(sx, sy);
+            let dst = (y * tw + x) * ch;
+            data[dst..dst + ch].copy_from_slice(&img.data[src..src + ch]);
+        }
+    }
+    ImageBuf::from_raw(tw, th, ch, data)
+}
+
 /// Nearest-neighbor resize of a 1-channel mask to template size.
 pub fn resize_mask(mask: &ImageBuf, tw: usize, th: usize) -> ImageBuf {
     let src = if mask.channels == 1 {
@@ -49,18 +97,7 @@ pub fn resize_mask(mask: &ImageBuf, tw: usize, th: usize) -> ImageBuf {
     } else {
         ImageBuf::from_raw(mask.width, mask.height, 1, mask_as_u8(mask))
     };
-    if src.width == tw && src.height == th {
-        return src;
-    }
-    let mut data = vec![0u8; tw * th];
-    for y in 0..th {
-        let sy = y * src.height / th;
-        for x in 0..tw {
-            let sx = x * src.width / tw;
-            data[y * tw + x] = src.data[sy * src.width + sx];
-        }
-    }
-    ImageBuf::from_raw(tw, th, 1, data)
+    resize_nearest(&src, tw, th)
 }
 
 #[cfg(test)]
@@ -73,5 +110,12 @@ mod tests {
         let buf = rgba_to_rgb_buf(&img);
         assert_eq!((buf.width, buf.height, buf.channels), (2, 2, 3));
         assert_eq!(&buf.data[..3], &[1, 2, 3]);
+    }
+
+    #[test]
+    fn gray_rgb_round_trip() {
+        let gray = ImageBuf::from_raw(2, 1, 1, vec![10, 20]);
+        let rgb = gray_to_rgb(&gray);
+        assert_eq!(rgb.data, vec![10, 10, 10, 20, 20, 20]);
     }
 }

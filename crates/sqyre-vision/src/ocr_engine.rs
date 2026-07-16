@@ -1,10 +1,8 @@
 //! Leptess-backed OCR engine (optional `ocr` feature).
 
 use crate::ocr_boxes::{parse_tsv_word_boxes, text_from_ocr_boxes, OcrWordBox};
-use image::{ImageBuffer, Luma, Rgb};
+use parking_lot::Mutex;
 use sqyre_match::ImageBuf;
-use std::io::Cursor;
-use std::sync::Mutex;
 
 /// Recognized page text plus word boxes in image coordinates.
 #[derive(Debug, Clone, Default)]
@@ -13,12 +11,29 @@ pub struct OcrRecognition {
     pub words: Vec<OcrWordBox>,
 }
 
-fn recognize_with(lt: &mut leptess::LepTess, img: &ImageBuf) -> Result<OcrRecognition, String> {
-    let png = encode_png(img)?;
-    lt.set_image_from_mem(&png)
-        .map_err(|e| format!("OCR set image: {e}"))?;
-    lt.set_fallback_source_resolution(70);
-    let tsv = lt
+fn recognize_with(api: &mut leptess::tesseract::TessApi, img: &ImageBuf) -> Result<OcrRecognition, String> {
+    let (bytes_per_pixel, bytes_per_line) = match img.channels {
+        1 => (1, img.width),
+        3 => (3, img.width * 3),
+        other => return Err(format!("OCR: unsupported channels {other}")),
+    };
+    api.raw
+        .set_image(
+            &img.data,
+            img.width as i32,
+            img.height as i32,
+            bytes_per_pixel as i32,
+            bytes_per_line as i32,
+        )
+        .map_err(|e| format!("OCR set image: {e:?}"))?;
+    // Tesseract warns on 0 dpi; force a credible fallback.
+    let res = api.get_source_y_resolution();
+    if !(leptess::tesseract::MIN_CREDIBLE_RESOLUTION..=leptess::tesseract::MAX_CREDIBLE_RESOLUTION)
+        .contains(&res)
+    {
+        api.set_source_resolution(70);
+    }
+    let tsv = api
         .get_tsv_text(0)
         .map_err(|e| format!("OCR tsv: {e}"))?;
     let words = parse_tsv_word_boxes(&tsv);
@@ -27,7 +42,7 @@ fn recognize_with(lt: &mut leptess::LepTess, img: &ImageBuf) -> Result<OcrRecogn
         if !joined.is_empty() {
             joined
         } else {
-            lt.get_utf8_text()
+            api.get_utf8_text()
                 .map_err(|e| format!("OCR text: {e}"))?
                 .trim()
                 .trim_matches('\n')
@@ -41,38 +56,15 @@ fn recognize_with(lt: &mut leptess::LepTess, img: &ImageBuf) -> Result<OcrRecogn
 ///
 /// Prefer [`LeptessOcr::recognize`] — this constructs a fresh engine each call.
 pub fn recognize_image(img: &ImageBuf, tessdata_path: &str) -> Result<OcrRecognition, String> {
-    let mut lt = leptess::LepTess::new(Some(tessdata_path), "eng")
+    let mut api = leptess::tesseract::TessApi::new(Some(tessdata_path), "eng")
         .map_err(|e| format!("OCR init: {e}"))?;
-    recognize_with(&mut lt, img)
-}
-
-fn encode_png(img: &ImageBuf) -> Result<Vec<u8>, String> {
-    let mut buf = Vec::new();
-    let mut cursor = Cursor::new(&mut buf);
-    match img.channels {
-        1 => {
-            let gray: ImageBuffer<Luma<u8>, _> =
-                ImageBuffer::from_raw(img.width as u32, img.height as u32, img.data.clone())
-                    .ok_or_else(|| "OCR encode: invalid gray buffer".to_string())?;
-            gray.write_to(&mut cursor, image::ImageFormat::Png)
-                .map_err(|e| format!("OCR encode png: {e}"))?;
-        }
-        3 => {
-            let rgb: ImageBuffer<Rgb<u8>, _> =
-                ImageBuffer::from_raw(img.width as u32, img.height as u32, img.data.clone())
-                    .ok_or_else(|| "OCR encode: invalid rgb buffer".to_string())?;
-            rgb.write_to(&mut cursor, image::ImageFormat::Png)
-                .map_err(|e| format!("OCR encode png: {e}"))?;
-        }
-        other => return Err(format!("OCR encode: unsupported channels {other}")),
-    }
-    Ok(buf)
+    recognize_with(&mut api, img)
 }
 
 /// Thread-safe OCR engine that reuses one Tesseract instance across calls.
 pub struct LeptessOcr {
     /// Serialize Tesseract use (API is not thread-safe) and keep the engine alive.
-    engine: Mutex<leptess::LepTess>,
+    engine: Mutex<leptess::tesseract::TessApi>,
 }
 
 impl std::fmt::Debug for LeptessOcr {
@@ -84,10 +76,10 @@ impl std::fmt::Debug for LeptessOcr {
 impl LeptessOcr {
     pub fn new(tessdata_path: impl AsRef<str>) -> Result<Self, String> {
         let path = tessdata_path.as_ref();
-        let lt = leptess::LepTess::new(Some(path), "eng")
+        let api = leptess::tesseract::TessApi::new(Some(path), "eng")
             .map_err(|e| format!("OCR init: {e}"))?;
         Ok(Self {
-            engine: Mutex::new(lt),
+            engine: Mutex::new(api),
         })
     }
 
@@ -122,10 +114,7 @@ impl LeptessOcr {
     }
 
     pub fn recognize(&self, img: &ImageBuf) -> Result<OcrRecognition, String> {
-        let mut lt = self
-            .engine
-            .lock()
-            .map_err(|_| "OCR engine lock poisoned".to_string())?;
-        recognize_with(&mut lt, img)
+        let mut api = self.engine.lock();
+        recognize_with(&mut api, img)
     }
 }

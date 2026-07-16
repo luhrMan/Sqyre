@@ -1,0 +1,643 @@
+//! Floating Data Editor: Programs / Items / Points / Search Areas / Masks / Collections / AutoPic.
+
+mod form_state;
+mod forms;
+mod helpers;
+mod lists;
+mod overlay;
+mod persist;
+mod variants;
+
+use crate::icon_cache::IconCache;
+use crate::image_view::ImageViewTransform;
+use crate::overlay_icons;
+use crate::pickers::{self, ActivePicker, PickerResult};
+use crate::data_editor_preview::variant_display_label;
+use crate::preview_tooltip::PreviewTooltipCache;
+use eframe::egui;
+use sqyre_domain::Macro;
+use sqyre_hotkeys::ScreenClickBridge;
+use sqyre_persist::{
+    Database, OverlayButtonConfig, ProgramCatalog, UserSettings, DEFAULT_OVERLAY_BUTTON_SIZE,
+};
+use std::collections::HashMap;
+use std::path::PathBuf;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum EditorTab {
+    #[default]
+    Programs,
+    Items,
+    Points,
+    SearchAreas,
+    Masks,
+    Collections,
+    AutoPic,
+    Overlay,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum PendingConfirm {
+    Delete {
+        label: String,
+    },
+    Overwrite {
+        kind: &'static str,
+        name: String,
+    },
+    DeleteVariant {
+        variant: String,
+    },
+    OverwriteVariant {
+        variant: String,
+        source: PathBuf,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum VariantPrompt {
+    /// Ask for a name before adding a non-first variant.
+    Name { source: PathBuf },
+}
+
+/// Cached left-list / program-selector data; invalidated via [`ProgramCatalog::generation`].
+#[derive(Debug, Clone, Default)]
+struct ListCache {
+    catalog_generation: u64,
+    resolution_key: String,
+    tab: EditorTab,
+    program_names: Vec<String>,
+    entities_by_program: HashMap<String, Vec<String>>,
+}
+
+pub struct DataEditor {
+    pub open: bool,
+    tab: EditorTab,
+    search: String,
+    /// Width of the left list pane (drag-adjustable).
+    left_width: f32,
+    /// Selected program name (all tabs).
+    selected_program: Option<String>,
+    /// Selected entity within program (items / points / search areas).
+    selected_entity: Option<String>,
+    // Form buffers
+    form_name: String,
+    form_x: String,
+    form_y: String,
+    form_left: String,
+    form_top: String,
+    form_right: String,
+    form_bottom: String,
+    form_cols: String,
+    form_rows: String,
+    form_stack_max: String,
+    form_mask: String,
+    form_tags: Vec<String>,
+    tag_draft: String,
+    form_shape: String,
+    form_center_x: String,
+    form_center_y: String,
+    form_base: String,
+    form_height: String,
+    form_radius: String,
+    form_inverse: bool,
+    form_search_area: String,
+    /// Overlay button form: target macro name.
+    form_overlay_macro: String,
+    /// Overlay button form: built-in icon id.
+    form_overlay_icon: String,
+    /// Overlay button form: desktop X position.
+    form_overlay_x: f32,
+    /// Overlay button form: desktop Y position.
+    form_overlay_y: f32,
+    /// Overlay button form: size in points.
+    form_overlay_size: f32,
+    /// Bound OS process path for the selected Program.
+    form_process_path: String,
+    /// Bound window title for the selected Program.
+    form_window_title: String,
+    variant_name_draft: String,
+    variant_prompt: Option<VariantPrompt>,
+    status: Option<String>,
+    status_error: bool,
+    confirm: Option<PendingConfirm>,
+    /// After New Point/Search Area: auto-arm record and persist on capture.
+    save_after_record: bool,
+    /// Zoom/pan for the collections-tab image preview.
+    collection_preview: ImageViewTransform,
+    /// `(program, collection)` last shown; reset transform when this changes.
+    collection_preview_key: Option<(String, String)>,
+    /// Overlay button id whose icon picker popup is open.
+    overlay_icon_picker_for: Option<String>,
+    /// Filter text for the overlay icon picker.
+    overlay_icon_search: String,
+    /// Running-window picker for Program process binding.
+    window_picker: ActivePicker,
+    /// Background AutoPic capture+save; polled each frame.
+    autopix_pending: Option<std::sync::mpsc::Receiver<Result<String, String>>>,
+    /// Cached program/entity name lists keyed by catalog generation.
+    list_cache: ListCache,
+}
+
+impl Default for DataEditor {
+    fn default() -> Self {
+        Self {
+            open: false,
+            tab: EditorTab::Programs,
+            search: String::new(),
+            left_width: 280.0,
+            selected_program: None,
+            selected_entity: None,
+            form_name: String::new(),
+            form_x: String::new(),
+            form_y: String::new(),
+            form_left: String::new(),
+            form_top: String::new(),
+            form_right: String::new(),
+            form_bottom: String::new(),
+            form_cols: "1".into(),
+            form_rows: "1".into(),
+            form_stack_max: "0".into(),
+            form_mask: String::new(),
+            form_tags: Vec::new(),
+            tag_draft: String::new(),
+            form_shape: "rectangle".into(),
+            form_center_x: "50".into(),
+            form_center_y: "50".into(),
+            form_base: String::new(),
+            form_height: String::new(),
+            form_radius: String::new(),
+            form_inverse: false,
+            form_search_area: String::new(),
+            form_overlay_macro: String::new(),
+            form_overlay_icon: overlay_icons::DEFAULT_ICON_ID.into(),
+            form_overlay_x: 48.0,
+            form_overlay_y: 48.0,
+            form_overlay_size: DEFAULT_OVERLAY_BUTTON_SIZE,
+            form_process_path: String::new(),
+            form_window_title: String::new(),
+            variant_name_draft: String::new(),
+            variant_prompt: None,
+            status: None,
+            status_error: false,
+            confirm: None,
+            save_after_record: false,
+            collection_preview: ImageViewTransform::default(),
+            collection_preview_key: None,
+            overlay_icon_picker_for: None,
+            overlay_icon_search: String::new(),
+            window_picker: ActivePicker::None,
+            autopix_pending: None,
+            list_cache: ListCache::default(),
+        }
+    }
+}
+
+impl DataEditor {
+    /// Live Overlay-tab form as an on-screen button preview (position, size, icon, label).
+    ///
+    /// Shown while a button is selected for editing, even before Update is clicked.
+    pub fn overlay_edit_preview(&self) -> Option<OverlayButtonConfig> {
+        if !self.open || !matches!(self.tab, EditorTab::Overlay) {
+            return None;
+        }
+        let id = self.selected_entity.as_ref()?;
+        Some(OverlayButtonConfig {
+            id: id.clone(),
+            program: self.selected_program.clone().unwrap_or_default(),
+            label: self.form_name.clone(),
+            macro_name: self.form_overlay_macro.clone(),
+            icon: self.form_overlay_icon.clone(),
+            x: self.form_overlay_x,
+            y: self.form_overlay_y,
+            size: self.form_overlay_size,
+        })
+    }
+
+    pub fn show(
+        &mut self,
+        ctx: &egui::Context,
+        db: &mut Database,
+        macros: &mut Vec<Macro>,
+        selected_macro: usize,
+        catalog: &mut ProgramCatalog,
+        icons: &mut IconCache,
+        previews: &mut PreviewTooltipCache,
+        screen_click: &ScreenClickBridge,
+        settings: &mut UserSettings,
+    ) {
+        if !self.open {
+            return;
+        }
+        self.poll_screen_click(screen_click, previews, db, macros, catalog, settings);
+        let mut open = self.open;
+        egui::Window::new("Data Editor")
+            .open(&mut open)
+            .default_size([880.0, 560.0])
+            .min_size([520.0, 280.0])
+            // No huge max_size — egui auto-expands toward max when content min_size ratchets.
+            .resizable(true)
+            .constrain(true)
+            .show(ctx, |ui| {
+                self.ui(
+                    ui,
+                    db,
+                    macros,
+                    selected_macro,
+                    catalog,
+                    icons,
+                    previews,
+                    screen_click,
+                    settings,
+                );
+            });
+        self.open = open;
+        self.draw_overlay_icon_picker(ctx, settings);
+        self.poll_window_picker(ctx, catalog, icons, previews, macros);
+        self.poll_autopix(ctx);
+    }
+
+    fn poll_window_picker(
+        &mut self,
+        ctx: &egui::Context,
+        catalog: &ProgramCatalog,
+        icons: &mut IconCache,
+        previews: &mut PreviewTooltipCache,
+        macros: &[Macro],
+    ) {
+        if !self.window_picker.is_open() {
+            return;
+        }
+        let macro_opts: Vec<(String, Vec<String>)> = macros
+            .iter()
+            .map(|m| (m.name.clone(), m.tags.clone()))
+            .collect();
+        match pickers::show_active_picker(
+            ctx,
+            &mut self.window_picker,
+            catalog,
+            icons,
+            previews,
+            &macro_opts,
+        ) {
+            PickerResult::Window {
+                process_path,
+                window_title,
+            } => {
+                self.form_process_path = process_path;
+                self.form_window_title = window_title;
+            }
+            _ => {}
+        }
+    }
+
+    fn poll_screen_click(
+        &mut self,
+        screen_click: &ScreenClickBridge,
+        previews: &mut PreviewTooltipCache,
+        db: &mut Database,
+        macros: &mut Vec<Macro>,
+        catalog: &mut ProgramCatalog,
+        settings: &mut UserSettings,
+    ) {
+        let mut captured = false;
+        if let Some((x, y)) = screen_click.take_point() {
+            self.form_x = x.to_string();
+            self.form_y = y.to_string();
+            previews.invalidate_entity(self.form_name.trim());
+            self.set_ok(format!("Recorded point ({x}, {y})."));
+            captured = true;
+        }
+        if let Some((lx, ty, rx, by)) = screen_click.take_search_area() {
+            self.form_left = lx.to_string();
+            self.form_top = ty.to_string();
+            self.form_right = rx.to_string();
+            self.form_bottom = by.to_string();
+            previews.invalidate_entity(self.form_name.trim());
+            self.set_ok(format!("Recorded search area ({lx},{ty})–({rx},{by})."));
+            captured = true;
+        }
+        if screen_click.take_cancelled() {
+            self.save_after_record = false;
+            self.set_ok("Recording cancelled.");
+        }
+        if captured && self.save_after_record {
+            self.save_after_record = false;
+            self.on_update(db, macros, catalog, previews, settings);
+            if !self.status_error {
+                self.set_ok("Recorded and saved.");
+            }
+        }
+    }
+
+    fn ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        db: &mut Database,
+        macros: &mut Vec<Macro>,
+        selected_macro: usize,
+        catalog: &mut ProgramCatalog,
+        icons: &mut IconCache,
+        previews: &mut PreviewTooltipCache,
+        screen_click: &ScreenClickBridge,
+        settings: &mut UserSettings,
+    ) {
+        ui.horizontal(|ui| {
+            let prev = self.tab;
+            ui.selectable_value(&mut self.tab, EditorTab::Programs, "Programs");
+            ui.selectable_value(&mut self.tab, EditorTab::Items, "Items");
+            ui.selectable_value(&mut self.tab, EditorTab::Points, "Points");
+            ui.selectable_value(&mut self.tab, EditorTab::SearchAreas, "Search Areas");
+            ui.selectable_value(&mut self.tab, EditorTab::Masks, "Masks");
+            ui.selectable_value(&mut self.tab, EditorTab::Collections, "Collections");
+            ui.selectable_value(&mut self.tab, EditorTab::AutoPic, "AutoPic");
+            ui.selectable_value(&mut self.tab, EditorTab::Overlay, "Overlay");
+            if self.tab != prev {
+                self.selected_entity = None;
+                self.variant_prompt = None;
+                self.overlay_icon_picker_for = None;
+                self.load_form(catalog, settings);
+            }
+        });
+        ui.separator();
+
+        if let Some(msg) = screen_click.status_label() {
+            ui.colored_label(crate::theme::PRIMARY, msg);
+            ui.ctx().request_repaint();
+        }
+
+        if let Some(msg) = &self.status {
+            let color = if self.status_error {
+                egui::Color32::from_rgb(220, 80, 80)
+            } else {
+                egui::Color32::from_rgb(80, 160, 80)
+            };
+            ui.colored_label(color, msg);
+        }
+
+        if let Some(VariantPrompt::Name { source }) = self.variant_prompt.clone() {
+            self.draw_variant_name_prompt(ui, catalog, icons, source);
+            return;
+        }
+
+        if let Some(confirm) = self.confirm.clone() {
+            self.draw_confirm(ui, confirm, db, macros, catalog, icons, previews, settings);
+            return;
+        }
+
+        // Claim exactly the remaining window area once (body + footer).
+        // Allocating body then drawing footer separately made min_size > window size,
+        // so egui's Resize auto-expand ratcheted toward max every frame.
+        let rem = ui.available_size();
+        let (outer, _) = ui.allocate_exact_size(rem, egui::Sense::hover());
+        let footer_h =
+            (ui.spacing().interact_size.y + ui.spacing().item_spacing.y * 3.0 + 8.0).min(rem.y * 0.4);
+        let body_h = (rem.y - footer_h).max(40.0);
+        let body_rect = egui::Rect::from_min_size(outer.min, egui::vec2(rem.x, body_h));
+        let footer_rect = egui::Rect::from_min_max(
+            egui::pos2(outer.min.x, outer.min.y + body_h),
+            outer.max,
+        );
+
+        let item_gap = ui.spacing().item_spacing.x;
+        const SPLITTER_W: f32 = 6.0;
+        const MIN_LEFT: f32 = 140.0;
+        const MIN_RIGHT: f32 = 200.0;
+        let avail_w = body_rect.width();
+        let max_left = (avail_w - SPLITTER_W - MIN_RIGHT - item_gap * 2.0).max(MIN_LEFT);
+        self.left_width = self.left_width.clamp(MIN_LEFT, max_left);
+        let body_left = body_rect.left();
+
+        ui.scope_builder(egui::UiBuilder::new().max_rect(body_rect), |ui| {
+            ui.set_clip_rect(body_rect);
+            ui.with_layout(egui::Layout::left_to_right(egui::Align::Min), |ui| {
+                ui.allocate_ui_with_layout(
+                    egui::vec2(self.left_width, body_h),
+                    egui::Layout::top_down(egui::Align::Min),
+                    |ui| {
+                        ui.set_max_size(egui::vec2(self.left_width, body_h));
+                        self.draw_left_list(ui, catalog, icons, previews, settings);
+                    },
+                );
+
+                let (split_rect, split_resp) = ui.allocate_exact_size(
+                    egui::vec2(SPLITTER_W, body_h),
+                    egui::Sense::click_and_drag(),
+                );
+                let stroke = if split_resp.hovered() || split_resp.dragged() {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
+                    ui.visuals().widgets.active.fg_stroke
+                } else {
+                    ui.visuals().widgets.noninteractive.bg_stroke
+                };
+                ui.painter().vline(
+                    split_rect.center().x,
+                    split_rect.y_range(),
+                    egui::Stroke::new(1.0, stroke.color),
+                );
+                if split_resp.dragged() {
+                    if let Some(pos) = split_resp.interact_pointer_pos() {
+                        self.left_width =
+                            (pos.x - body_left - item_gap).clamp(MIN_LEFT, max_left);
+                    }
+                }
+
+                let right_w = ui.available_width().max(MIN_RIGHT);
+                ui.allocate_ui_with_layout(
+                    egui::vec2(right_w, body_h),
+                    egui::Layout::top_down(egui::Align::Min),
+                    |ui| {
+                        ui.set_max_size(egui::vec2(right_w, body_h));
+                        egui::ScrollArea::vertical()
+                            .id_salt("data_editor_form")
+                            .auto_shrink([false, false])
+                            .max_height(body_h)
+                            .show(ui, |ui| {
+                                ui.set_max_width(ui.available_width());
+                                self.draw_form(
+                                    ui,
+                                    catalog,
+                                    icons,
+                                    previews,
+                                    screen_click,
+                                    macros,
+                                    macros.get(selected_macro),
+                                    settings,
+                                );
+                            });
+                    },
+                );
+            });
+        });
+
+        ui.scope_builder(egui::UiBuilder::new().max_rect(footer_rect), |ui| {
+            ui.set_clip_rect(footer_rect);
+            ui.vertical(|ui| {
+                ui.separator();
+                ui.horizontal(|ui| {
+                    let can_new = !matches!(self.tab, EditorTab::AutoPic);
+                    if ui
+                        .add_enabled(can_new, egui::Button::new("New"))
+                        .clicked()
+                    {
+                        self.on_new(db, macros, catalog, icons, screen_click, settings);
+                    }
+                    let dirty = self.is_dirty(catalog, settings);
+                    let valid = self.form_valid(macros.get(selected_macro));
+                    let can_update = !matches!(self.tab, EditorTab::AutoPic);
+                    if ui
+                        .add_enabled(can_update && dirty && valid, egui::Button::new("Update"))
+                        .clicked()
+                    {
+                        self.on_update(db, macros, catalog, previews, settings);
+                    }
+                    let can_delete = match self.tab {
+                        EditorTab::Programs => self.selected_program.is_some(),
+                        EditorTab::AutoPic => false,
+                        _ => self.selected_program.is_some() && self.selected_entity.is_some(),
+                    };
+                    if ui
+                        .add_enabled(can_delete, egui::Button::new("Delete"))
+                        .clicked()
+                    {
+                        let label = match self.tab {
+                            EditorTab::Programs => format!(
+                                "program “{}”",
+                                self.selected_program.as_deref().unwrap_or("")
+                            ),
+                            EditorTab::Items => format!(
+                                "item “{}”",
+                                self.selected_entity.as_deref().unwrap_or("")
+                            ),
+                            EditorTab::Points => format!(
+                                "point “{}”",
+                                self.selected_entity.as_deref().unwrap_or("")
+                            ),
+                            EditorTab::SearchAreas => format!(
+                                "search area “{}”",
+                                self.selected_entity.as_deref().unwrap_or("")
+                            ),
+                            EditorTab::Masks => format!(
+                                "mask “{}”",
+                                self.selected_entity.as_deref().unwrap_or("")
+                            ),
+                            EditorTab::Collections => format!(
+                                "collection “{}”",
+                                self.selected_entity.as_deref().unwrap_or("")
+                            ),
+                            EditorTab::Overlay => format!(
+                                "overlay button “{}”",
+                                self.selected_entity.as_deref().unwrap_or("")
+                            ),
+                            EditorTab::AutoPic => String::new(),
+                        };
+                        if !label.is_empty() {
+                            self.confirm = Some(PendingConfirm::Delete { label });
+                        }
+                    }
+                });
+            });
+        });
+    }
+
+    fn draw_confirm(
+        &mut self,
+        ui: &mut egui::Ui,
+        confirm: PendingConfirm,
+        db: &mut Database,
+        macros: &mut Vec<Macro>,
+        catalog: &mut ProgramCatalog,
+        icons: &mut IconCache,
+        previews: &mut PreviewTooltipCache,
+        settings: &mut UserSettings,
+    ) {
+        match &confirm {
+            PendingConfirm::Delete { label } => {
+                ui.label(format!("Delete {label}? This cannot be undone."));
+            }
+            PendingConfirm::Overwrite { kind, name } => {
+                ui.label(format!(
+                    "{kind} “{name}” already exists. Overwrite / rename onto it?"
+                ));
+            }
+            PendingConfirm::DeleteVariant { variant } => {
+                ui.label(format!(
+                    "Delete icon variant “{}”? This cannot be undone.",
+                    variant_display_label(variant)
+                ));
+            }
+            PendingConfirm::OverwriteVariant { variant, .. } => {
+                ui.label(format!(
+                    "Variant “{}” already exists. Overwrite it?",
+                    variant_display_label(variant)
+                ));
+            }
+        }
+        ui.horizontal(|ui| {
+            if ui.button("Cancel").clicked() {
+                self.confirm = None;
+            }
+            if ui.button("Confirm").clicked() {
+                match confirm {
+                    PendingConfirm::Delete { .. } => {
+                        self.confirm = None;
+                        self.on_delete(db, macros, catalog, previews, settings);
+                    }
+                    PendingConfirm::Overwrite { .. } => {
+                        self.confirm = None;
+                        self.apply_update(db, macros, catalog, true, previews, settings);
+                    }
+                    PendingConfirm::DeleteVariant { variant } => {
+                        self.confirm = None;
+                        self.delete_icon_variant(catalog, icons, &variant);
+                    }
+                    PendingConfirm::OverwriteVariant { variant, source } => {
+                        self.confirm = None;
+                        self.overwrite_icon_variant(catalog, icons, &variant, &source);
+                    }
+                }
+            }
+        });
+    }
+
+    fn draw_variant_name_prompt(
+        &mut self,
+        ui: &mut egui::Ui,
+        catalog: &ProgramCatalog,
+        icons: &mut IconCache,
+        source: PathBuf,
+    ) {
+        ui.heading("Add Icon Variant");
+        ui.label("Variant name");
+        ui.add(
+            egui::TextEdit::singleline(&mut self.variant_name_draft).desired_width(f32::INFINITY),
+        );
+        ui.horizontal(|ui| {
+            if ui.button("Cancel").clicked() {
+                self.variant_prompt = None;
+                self.variant_name_draft.clear();
+            }
+            if ui.button("Add").clicked() {
+                let name = self.variant_name_draft.trim().to_string();
+                self.variant_prompt = None;
+                self.variant_name_draft.clear();
+                self.add_icon_variant(catalog, icons, &name, &source);
+            }
+        });
+    }
+
+    pub(crate) fn set_ok(&mut self, msg: impl Into<String>) {
+        self.status = Some(msg.into());
+        self.status_error = false;
+    }
+
+    pub(crate) fn set_err(&mut self, msg: impl Into<String>) {
+        self.status = Some(msg.into());
+        self.status_error = true;
+    }
+
+    pub(crate) fn clear_status(&mut self) {
+        self.status = None;
+        self.status_error = false;
+    }
+}

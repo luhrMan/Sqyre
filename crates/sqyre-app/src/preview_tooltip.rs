@@ -2,11 +2,14 @@
 
 use eframe::egui::{self, ColorImage, TextureHandle, TextureOptions, Vec2};
 use image::{Rgba, RgbaImage};
-use sqyre_capture::X11Capturer;
+use sqyre_capture::{shared_capturer, X11Capturer};
 use sqyre_domain::{Action, ActionKind, CoordinateRef, Macro, ScalarValue};
-use sqyre_executor::{DesktopRect, ScreenCapturer};
+use sqyre_executor::DesktopRect;
 use sqyre_persist::{ProgramCatalog, ProgramPoint, ProgramSearchArea};
 use std::collections::HashMap;
+use std::sync::mpsc::{self, Receiver, TryRecvError};
+use std::sync::Arc;
+use std::thread;
 use std::time::{Duration, Instant};
 
 const MIN_CAPTURE_SIZE: i32 = 320;
@@ -32,13 +35,20 @@ struct CacheEntry {
     expires: Instant,
 }
 
+struct PendingCapture {
+    caption: String,
+    rx: Receiver<Result<RgbaImage, String>>,
+}
+
 /// Lazy capturer + LRU texture cache for coordinate preview tooltips.
 #[derive(Default)]
 pub struct PreviewTooltipCache {
-    capturer: Option<X11Capturer>,
+    capturer: Option<Arc<X11Capturer>>,
     capturer_failed: bool,
     entries: HashMap<String, CacheEntry>,
     order: Vec<String>,
+    /// In-flight captures keyed like cache entries; polled on the UI frame.
+    pending: HashMap<String, PendingCapture>,
 }
 
 impl PreviewTooltipCache {
@@ -58,11 +68,15 @@ impl PreviewTooltipCache {
         });
         self.order
             .retain(|k| !(k.starts_with(&prefix_pt) || k.starts_with(&prefix_sa)));
+        self.pending.retain(|k, _| {
+            !(k.starts_with(&prefix_pt) || k.starts_with(&prefix_sa))
+        });
     }
 
     pub fn clear(&mut self) {
         self.entries.clear();
         self.order.clear();
+        self.pending.clear();
     }
 
     /// Paint an egui hover tooltip for a program entity list row.
@@ -183,6 +197,7 @@ impl PreviewTooltipCache {
         if force {
             self.entries.remove(key);
             self.order.retain(|k| k != key);
+            self.pending.remove(key);
         }
         let now = Instant::now();
         if let Some(entry) = self.entries.get(key) {
@@ -196,7 +211,57 @@ impl PreviewTooltipCache {
         self.entries.remove(key);
         self.order.retain(|k| k != key);
 
-        let img = self.capture(coords)?;
+        if self.pending.contains_key(key) {
+            let recv = self.pending[key].rx.try_recv();
+            match recv {
+                Ok(Ok(img)) => {
+                    let caption = self
+                        .pending
+                        .remove(key)
+                        .map(|p| p.caption)
+                        .unwrap_or_else(|| caption.to_string());
+                    return self.finish_texture(ctx, key, &caption, img, now);
+                }
+                Ok(Err(e)) => {
+                    self.pending.remove(key);
+                    return Err(e);
+                }
+                Err(TryRecvError::Empty) => {
+                    ctx.request_repaint();
+                    return Err("Capturing…".into());
+                }
+                Err(TryRecvError::Disconnected) => {
+                    self.pending.remove(key);
+                    return Err("capture failed".into());
+                }
+            }
+        }
+
+        self.ensure_capturer()?;
+        let capturer = Arc::clone(self.capturer.as_ref().unwrap());
+        let (tx, rx) = mpsc::channel();
+        thread::spawn(move || {
+            let _ = tx.send(capture_preview(capturer.as_ref(), coords));
+        });
+        self.pending.insert(
+            key.to_string(),
+            PendingCapture {
+                caption: caption.to_string(),
+                rx,
+            },
+        );
+        ctx.request_repaint();
+        Err("Capturing…".into())
+    }
+
+    fn finish_texture(
+        &mut self,
+        ctx: &egui::Context,
+        key: &str,
+        caption: &str,
+        img: RgbaImage,
+        now: Instant,
+    ) -> Result<(TextureHandle, String), String> {
         let size = [img.width() as usize, img.height() as usize];
         let color = ColorImage::from_rgba_unmultiplied(size, img.as_raw());
         let tex = ctx.load_texture(key.to_string(), color, TextureOptions::LINEAR);
@@ -211,65 +276,21 @@ impl PreviewTooltipCache {
         Ok((tex, caption.to_string()))
     }
 
-    fn capture(&mut self, coords: PreviewCoords) -> Result<RgbaImage, String> {
+    fn ensure_capturer(&mut self) -> Result<(), String> {
         if self.capturer_failed && self.capturer.is_none() {
             return Err("screen capture unavailable".into());
         }
-        if self.capturer.is_none() {
-            match X11Capturer::open() {
-                Ok(c) => self.capturer = Some(c),
-                Err(e) => {
-                    self.capturer_failed = true;
-                    return Err(e.to_string());
-                }
-            }
+        if self.capturer.is_some() {
+            return Ok(());
         }
-        let capturer = self.capturer.as_mut().unwrap();
-        let vb = capturer.virtual_bounds()?;
-        match coords {
-            PreviewCoords::Point { x, y } => {
-                if x < vb.x || y < vb.y || x > vb.x + vb.w || y > vb.y + vb.h {
-                    return Err(format!(
-                        "point outside desktop ({},{})..({},{}), got ({x},{y})",
-                        vb.x,
-                        vb.y,
-                        vb.x + vb.w,
-                        vb.y + vb.h
-                    ));
-                }
-                let bounds = preview_bounds_for_point(x, y, vb);
-                let mut img = capturer.capture_rect(bounds)?;
-                draw_point_marker(
-                    &mut img,
-                    x - bounds.x,
-                    y - bounds.y,
-                    OVERLAY,
-                    2,
-                );
-                Ok(downscale_max_dim(img, TOOLTIP_MAX_DIM))
+        match shared_capturer() {
+            Ok(c) => {
+                self.capturer = Some(c);
+                Ok(())
             }
-            PreviewCoords::SearchArea {
-                left,
-                top,
-                right,
-                bottom,
-            } => {
-                let (lx, ty, rx, by) = normalize_rect(left, top, right, bottom);
-                if rx <= lx || by <= ty {
-                    return Err("empty search area".into());
-                }
-                let bounds = preview_bounds_for_search_area(lx, ty, rx, by, vb);
-                let mut img = capturer.capture_rect(bounds)?;
-                draw_rect_outline(
-                    &mut img,
-                    lx - bounds.x,
-                    ty - bounds.y,
-                    rx - bounds.x,
-                    by - bounds.y,
-                    OVERLAY,
-                    2,
-                );
-                Ok(downscale_max_dim(img, TOOLTIP_MAX_DIM))
+            Err(e) => {
+                self.capturer_failed = true;
+                Err(e)
             }
         }
     }
@@ -306,6 +327,56 @@ enum PreviewCoords {
         right: i32,
         bottom: i32,
     },
+}
+
+fn capture_preview(capturer: &X11Capturer, coords: PreviewCoords) -> Result<RgbaImage, String> {
+    let vb = capturer.virtual_bounds_ref()?;
+    match coords {
+        PreviewCoords::Point { x, y } => {
+            if x < vb.x || y < vb.y || x > vb.x + vb.w || y > vb.y + vb.h {
+                return Err(format!(
+                    "point outside desktop ({},{})..({},{}), got ({x},{y})",
+                    vb.x,
+                    vb.y,
+                    vb.x + vb.w,
+                    vb.y + vb.h
+                ));
+            }
+            let bounds = preview_bounds_for_point(x, y, vb);
+            let mut img = capturer.capture_rect_ref(bounds)?;
+            draw_point_marker(
+                &mut img,
+                x - bounds.x,
+                y - bounds.y,
+                OVERLAY,
+                2,
+            );
+            Ok(downscale_max_dim(img, TOOLTIP_MAX_DIM))
+        }
+        PreviewCoords::SearchArea {
+            left,
+            top,
+            right,
+            bottom,
+        } => {
+            let (lx, ty, rx, by) = normalize_rect(left, top, right, bottom);
+            if rx <= lx || by <= ty {
+                return Err("empty search area".into());
+            }
+            let bounds = preview_bounds_for_search_area(lx, ty, rx, by, vb);
+            let mut img = capturer.capture_rect_ref(bounds)?;
+            draw_rect_outline(
+                &mut img,
+                lx - bounds.x,
+                ty - bounds.y,
+                rx - bounds.x,
+                by - bounds.y,
+                OVERLAY,
+                2,
+            );
+            Ok(downscale_max_dim(img, TOOLTIP_MAX_DIM))
+        }
+    }
 }
 
 /// Coordinate ref + preview kind for actions that show point/search-area captures.

@@ -3740,6 +3740,7 @@ name = "sqyre-capture"
 version = "0.1.0"
 dependencies = [
  "image",
+ "parking_lot",
  "sqyre-executor",
  "thiserror 2.0.18",
  "x11",
@@ -3846,6 +3847,7 @@ version = "0.1.0"
 dependencies = [
  "image",
  "leptess",
+ "parking_lot",
  "sqyre-domain",
  "sqyre-match",
  "tempfile",

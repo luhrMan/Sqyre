@@ -20,16 +20,23 @@ pub use settings::{
 use serde_yaml::{Mapping, Value};
 use sqyre_domain::Macro;
 use sqyre_serialize::{decode_macro_from_map, encode_macro_to_map};
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::RwLock;
+use std::sync::{Mutex, OnceLock, RwLock};
 use thiserror::Error;
 
 const SQYRE_DIR: &str = ".sqyre";
 const DB_FILE: &str = "db.yaml";
 
 static DIR_OVERRIDE: RwLock<Option<PathBuf>> = RwLock::new(None);
+
+/// Serializes tests that mutate [`set_sqyre_dir_override`].
+fn dir_override_test_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
 
 #[derive(Debug, Error)]
 pub enum PersistError {
@@ -48,6 +55,17 @@ pub type Result<T> = std::result::Result<T, PersistError>;
 /// Override the Sqyre data directory (empty clears → `~/.sqyre`).
 pub fn set_sqyre_dir_override(path: Option<PathBuf>) {
     *DIR_OVERRIDE.write().unwrap() = path;
+}
+
+/// Run `f` with a temporary Sqyre dir override, serialized against other override users.
+pub fn with_sqyre_dir_override<R>(path: PathBuf, f: impl FnOnce() -> R) -> R {
+    let _guard = dir_override_test_lock()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    set_sqyre_dir_override(Some(path));
+    let result = f();
+    set_sqyre_dir_override(None);
+    result
 }
 
 pub fn sqyre_dir() -> PathBuf {
@@ -94,16 +112,28 @@ pub struct Database {
     pub macros: BTreeMap<String, Macro>,
     /// Programs remain as raw YAML; use [`Self::program_catalog`] for lookups.
     pub programs: Value,
+    /// Parsed catalog cache; invalidated when `programs` is replaced via known mutators.
+    catalog_cache: RefCell<Option<ProgramCatalog>>,
 }
 
 impl Database {
     pub fn program_catalog(&self) -> Result<ProgramCatalog> {
-        ProgramCatalog::from_yaml_value(&self.programs)
+        if let Some(cached) = self.catalog_cache.borrow().as_ref() {
+            return Ok(cached.clone());
+        }
+        let catalog = ProgramCatalog::from_yaml_value(&self.programs)?;
+        *self.catalog_cache.borrow_mut() = Some(catalog.clone());
+        Ok(catalog)
+    }
+
+    fn invalidate_catalog_cache(&mut self) {
+        *self.catalog_cache.get_mut() = None;
     }
 
     /// Replace `programs` from a typed catalog, preserving masks/collections via merge.
     pub fn set_programs_from_catalog(&mut self, catalog: &ProgramCatalog) {
         self.programs = catalog.to_yaml_value(&self.programs);
+        self.invalidate_catalog_cache();
     }
 
     /// Replace the macros map from an ordered list (keyed by macro name).
@@ -114,10 +144,7 @@ impl Database {
     pub fn load_from_path(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
         if !path.exists() {
-            return Ok(Self {
-                macros: BTreeMap::new(),
-                programs: Value::Mapping(Mapping::new()),
-            });
+            return Ok(Self::default());
         }
         let text = fs::read_to_string(path)?;
         Self::from_yaml(&text)
@@ -155,7 +182,11 @@ impl Database {
             .cloned()
             .unwrap_or(Value::Mapping(Mapping::new()));
 
-        Ok(Self { macros, programs })
+        Ok(Self {
+            macros,
+            programs,
+            catalog_cache: RefCell::new(None),
+        })
     }
 
     pub fn to_yaml(&self) -> Result<String> {
@@ -207,25 +238,24 @@ mod tests {
     #[test]
     fn roundtrip_temp_db() {
         let dir = tempfile::tempdir().unwrap();
-        set_sqyre_dir_override(Some(dir.path().to_path_buf()));
-        initialize_directories().unwrap();
+        with_sqyre_dir_override(dir.path().to_path_buf(), || {
+            initialize_directories().unwrap();
 
-        let mut db = Database::default();
-        let mut m = Macro::new("Test", 10, vec!["ctrl".into()]);
-        m.root = root_loop(vec![Action {
-            id: sqyre_domain::ActionId::new(),
-            kind: ActionKind::Wait {
-                time: ScalarValue::Int(50),
-            },
-        }]);
-        db.macros.insert("Test".into(), m);
-        db.save_default().unwrap();
+            let mut db = Database::default();
+            let mut m = Macro::new("Test", 10, vec!["ctrl".into()]);
+            m.root = root_loop(vec![Action {
+                id: sqyre_domain::ActionId::new(),
+                kind: ActionKind::Wait {
+                    time: ScalarValue::Int(50),
+                },
+            }]);
+            db.macros.insert("Test".into(), m);
+            db.save_default().unwrap();
 
-        let loaded = Database::load_default().unwrap();
-        assert!(loaded.macros.contains_key("Test"));
-        assert_eq!(loaded.macros["Test"].root.children().len(), 1);
-
-        set_sqyre_dir_override(None);
+            let loaded = Database::load_default().unwrap();
+            assert!(loaded.macros.contains_key("Test"));
+            assert_eq!(loaded.macros["Test"].root.children().len(), 1);
+        });
     }
 
     #[test]

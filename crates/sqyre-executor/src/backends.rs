@@ -2,6 +2,7 @@ use image::RgbaImage;
 use sqyre_domain::{CoordinateRef, Macro};
 use sqyre_match::{ImageBuf, MatchError, Point};
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
 /// Mouse move options.
 #[derive(Debug, Clone, Copy, Default)]
@@ -144,7 +145,7 @@ pub struct ItemMeta {
 
 /// Look up another macro by name.
 pub trait MacroLookup: Send + Sync {
-    fn get(&self, name: &str) -> Option<Macro>;
+    fn get(&self, name: &str) -> Option<Arc<Macro>>;
 }
 
 /// Block until the user presses a continue chord.
@@ -281,11 +282,11 @@ impl ScreenCapturer for RecordingCapturer {
 /// In-memory macro catalog for tests.
 #[derive(Debug, Default)]
 pub struct MapMacroLookup {
-    pub macros: std::collections::BTreeMap<String, Macro>,
+    pub macros: std::collections::BTreeMap<String, Arc<Macro>>,
 }
 
 impl MacroLookup for MapMacroLookup {
-    fn get(&self, name: &str) -> Option<Macro> {
+    fn get(&self, name: &str) -> Option<Arc<Macro>> {
         self.macros.get(name).cloned()
     }
 }

@@ -14,14 +14,15 @@ mod x11_outline;
 mod outline_stub;
 
 pub use diag::{
-    mark_site, note, read_last_site, set_log_dir, CRASH_LOG_FILE, DIAG_LOG_FILE, LAST_SITE_FILE,
+    disk_logging_enabled, mark_site, note, read_last_site, set_disk_logging, set_log_dir,
+    CRASH_LOG_FILE, DIAG_LOG_FILE, LAST_SITE_FILE,
 };
 pub use error::CaptureError;
-pub use pixel_convert::zpixmap_to_rgba;
+pub use pixel_convert::{zpixmap_to_rgb, zpixmap_to_rgba};
 pub use stub::{NullCapturer, SolidCapturer};
 
 #[cfg(target_os = "linux")]
-pub use x11_capture::X11Capturer;
+pub use x11_capture::{shared_capturer, X11Capturer};
 
 #[cfg(target_os = "linux")]
 pub use x11_focus::X11WindowFocuser;
@@ -34,6 +35,11 @@ pub use outline_stub::{OutlineRect, SelectionOutline};
 
 #[cfg(not(target_os = "linux"))]
 pub type X11Capturer = NullCapturer;
+
+#[cfg(not(target_os = "linux"))]
+pub fn shared_capturer() -> Result<std::sync::Arc<X11Capturer>, String> {
+    Err("screen capture: not supported on this platform".into())
+}
 
 /// One top-level application window for Focus Window picker UI.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -213,6 +219,26 @@ pub fn window_matches_process(win: &WindowInfo, process_path: &str) -> bool {
     !want_base.is_empty() && want_base == got_base
 }
 
+/// Exact trim match of window title (Focus Window / overlay binding parity).
+/// Empty `window_title` always matches (process-only binding).
+pub fn window_matches_title(win: &WindowInfo, window_title: &str) -> bool {
+    let want = window_title.trim();
+    if want.is_empty() {
+        return true;
+    }
+    win.title.trim() == want
+}
+
+/// Match a program binding: process path required; title required when non-empty.
+/// Disambiguates shared executables (e.g. multiple games under one `GameThread` binary).
+pub fn window_matches_binding(
+    win: &WindowInfo,
+    process_path: &str,
+    window_title: &str,
+) -> bool {
+    window_matches_process(win, process_path) && window_matches_title(win, window_title)
+}
+
 /// No-op focuser for non-Linux (or tests without a display).
 #[cfg(not(target_os = "linux"))]
 #[derive(Debug, Default, Clone, Copy)]
@@ -280,5 +306,32 @@ mod tests {
         ));
         assert!(!super::window_matches_process(&w, "/opt/other/OtherApp"));
         assert!(super::window_matches_process(&w, ""));
+    }
+
+    #[test]
+    fn window_matches_binding_shared_exe() {
+        let w = WindowInfo {
+            title: "Game A".into(),
+            process_name: "GameThread".into(),
+            process_path: "/opt/launcher/GameThread".into(),
+        };
+        assert!(super::window_matches_binding(
+            &w,
+            "/opt/launcher/GameThread",
+            "Game A"
+        ));
+        assert!(!super::window_matches_binding(
+            &w,
+            "/opt/launcher/GameThread",
+            "Game B"
+        ));
+        // Empty title → process-only (single-exe programs).
+        assert!(super::window_matches_binding(
+            &w,
+            "/opt/launcher/GameThread",
+            ""
+        ));
+        assert!(super::window_matches_title(&w, " Game A "));
+        assert!(!super::window_matches_title(&w, "Game B"));
     }
 }
