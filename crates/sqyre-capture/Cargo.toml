@@ -5,6 +5,9 @@ edition.workspace = true
 license.workspace = true
 description = "ScreenCapturer for absolute virtual-desktop rects (Linux X11 first)"
 
+[lints]
+workspace = true
+
 [dependencies]
 sqyre-executor = { path = "../sqyre-executor" }
 image = { workspace = true }

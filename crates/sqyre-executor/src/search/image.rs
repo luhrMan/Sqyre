@@ -40,7 +40,7 @@ pub(crate) fn execute_image_search(
         return Err(ExecError::Message("not image search".into()));
     };
 
-    highlight_fill(exec.highlighter, &macro_.name, action.id, 0.0);
+    highlight_fill(exec.deps.highlighter, &macro_.name, action.id, 0.0);
     let action_id = action.id;
     let macro_name = macro_.name.clone();
     let result = (|| {
@@ -55,7 +55,7 @@ pub(crate) fn execute_image_search(
                     wait.wait_til_found_seconds
                 ),
             );
-            let _ = retry_while_not_found(exec, wait, 100, |exec| {
+            retry_while_not_found(exec, wait, 100, |exec| {
                 results = capture_and_match(
                     exec,
                     action_id,
@@ -125,7 +125,7 @@ pub(crate) fn execute_image_search(
             macro_,
         )
     })();
-    highlight_clear(exec.highlighter, &macro_name, action_id);
+    highlight_clear(exec.deps.highlighter, &macro_name, action_id);
     result
 }
 
@@ -160,7 +160,7 @@ struct VariantMatchOutcome {
 }
 
 fn close_matches_distance(exec: &Executor<'_>) -> i32 {
-    exec.matcher
+    exec.deps.matcher
         .map(|m| m.close_matches_distance())
         .filter(|&d| d > 0)
         .unwrap_or(DEFAULT_CLOSE_MATCHES_DISTANCE)
@@ -175,15 +175,15 @@ fn capture_and_match(
     blur: i32,
     macro_: &Macro,
 ) -> Vec<NamedPoint> {
-    let Some(resolver) = exec.resolver else {
+    let Some(resolver) = exec.deps.resolver else {
         exec.log(action_id, "Image Search: missing CoordinateResolver");
         return Vec::new();
     };
-    if exec.capturer.is_none() {
+    if exec.deps.capturer.is_none() {
         exec.log(action_id, "Image Search: missing ScreenCapturer");
         return Vec::new();
     }
-    let Some(icons) = exec.icons else {
+    let Some(icons) = exec.deps.icons else {
         exec.log(action_id, "Image Search: missing IconStore");
         return Vec::new();
     };
@@ -210,7 +210,7 @@ fn capture_and_match(
         ),
     );
 
-    let (img, origin) = match exec.capturer.as_mut() {
+    let (img, origin) = match exec.deps.capturer.as_mut() {
         Some(c) => match c.capture_search_area(lx, ty, rx, by) {
             Ok(v) => v,
             Err(e) => {
@@ -239,7 +239,7 @@ fn capture_and_match(
     if blur > 0 {
         exec.log_image(
             action_id,
-            &format!("2. Preprocess — blur search (amount={blur})"),
+            format!("2. Preprocess — blur search (amount={blur})"),
             &search_blurred,
         );
     }
@@ -270,7 +270,7 @@ fn capture_and_match(
     let threshold = tolerance as f32;
     let close_dist = close_matches_distance(exec);
     let match_started = Instant::now();
-    let stop_flag: Option<&AtomicBool> = exec.stop_flag;
+    let stop_flag: Option<&AtomicBool> = exec.deps.stop_flag;
     let search_integrals = std::sync::Arc::new(prepare_search_integrals(&search_blurred));
 
     let outcomes: Vec<VariantMatchOutcome> = jobs
@@ -570,6 +570,7 @@ pub(super) fn sort_points(pts: &mut [NamedPoint]) {
     });
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn run_matches(
     exec: &mut Executor<'_>,
     action_id: sqyre_domain::ActionId,
@@ -603,7 +604,7 @@ pub(super) fn run_matches(
     for (count, np) in results.iter().enumerate() {
         if total > 0 {
             highlight_fill(
-                exec.highlighter,
+                exec.deps.highlighter,
                 &macro_.name,
                 action_id,
                 count as f64 / total as f64,

@@ -2,8 +2,6 @@
 
 use super::sections::{tip_section, tip_wrapped_section};
 use crate::icon_cache::IconCache;
-use crate::hotkey_record::HotkeyRecordUi;
-use crate::key_record::KeyRecordUi;
 use crate::pickers::{self, options, ActivePicker};
 use crate::preview_tooltip::{PreviewKind, PreviewTooltipCache};
 use crate::theme;
@@ -15,7 +13,7 @@ use sqyre_domain::{
     ListColumn, Macro, MatchMode, MatchOrder, MouseButton, RepeatMode, ScalarValue,
     WaitTilFoundConfig,
 };
-use sqyre_hotkeys::{MacroHotkeyBridge, ScreenClickBridge};
+use crate::paint_ctx::{CatalogPaint, EditFieldsCtx, RecordBridges, VarTheme};
 use sqyre_persist::ProgramCatalog;
 use sqyre_validate::{
     preview_calculate, validate_numeric_expression, validate_set_variable_value,
@@ -46,19 +44,32 @@ pub fn apply_draft_preserving_children(live: &mut Action, draft: Action) -> Resu
 pub fn paint_edit_fields(
     ui: &mut egui::Ui,
     draft: &mut Action,
-    catalog: &ProgramCatalog,
-    icons: &mut IconCache,
-    previews: &mut PreviewTooltipCache,
     picker: &mut ActivePicker,
-    key_record: &mut KeyRecordUi,
-    hotkey_record: &mut HotkeyRecordUi,
-    macro_hotkeys: &MacroHotkeyBridge,
-    screen_click: &ScreenClickBridge,
-    _macros: &[(String, Vec<String>)],
-    active_macro: Option<&Macro>,
-    known_vars: &HashSet<String>,
-    is_dark: bool,
+    ctx: &mut EditFieldsCtx<'_>,
 ) {
+    let EditFieldsCtx {
+        paint,
+        bridges,
+        theme,
+        macros: _macros,
+        active_macro,
+    } = ctx;
+    let CatalogPaint {
+        catalog,
+        icons,
+        previews,
+    } = paint;
+    let VarTheme {
+        known_vars,
+        is_dark,
+    } = *theme;
+    let RecordBridges {
+        key_record,
+        hotkey_record,
+        macro_hotkeys,
+        screen_click,
+    } = bridges;
+    let active_macro = *active_macro;
     match &mut draft.kind {
         ActionKind::Break | ActionKind::Continue => {
             tip_section(ui, |ui| {
@@ -464,77 +475,59 @@ pub fn paint_edit_fields(
                 ui.checkbox(run_branch_on_no_find, "Run branch on no find");
             });
         }
-        ActionKind::NavigateSelect {
-            program,
-            graph_name,
-            chord_up,
-            chord_down,
-            chord_left,
-            chord_right,
-            chord_select,
-            chord_back,
-            wrap_edges,
-            move_cursor_with_nav,
-            smooth,
-            pass_through,
-            hold_repeat,
-            select_device,
-            select_button,
-            select_key,
-            select_press_mode,
-            in_graph,
-            in_row,
-            in_col,
-            in_collection,
-            output_ref,
-            output_graph,
-            output_row,
-            output_col,
-            output_collection,
-            subactions: _,
-        } => {
+        ActionKind::NavigateSelect(data) => {
             tip_wrapped_section(ui, |ui| {
-                text_field(ui, "Program", program);
-                text_field(ui, "Graph", graph_name);
+                text_field(ui, "Program", &mut data.program);
+                text_field(ui, "Graph", &mut data.graph_name);
             });
             tip_section(ui, |ui| {
-                string_list_field(ui, "Chord up", chord_up);
-                string_list_field(ui, "Chord down", chord_down);
-                string_list_field(ui, "Chord left", chord_left);
-                string_list_field(ui, "Chord right", chord_right);
-                string_list_field(ui, "Chord select", chord_select);
-                string_list_field(ui, "Chord back", chord_back);
+                string_list_field(ui, "Chord up", &mut data.chords.up);
+                string_list_field(ui, "Chord down", &mut data.chords.down);
+                string_list_field(ui, "Chord left", &mut data.chords.left);
+                string_list_field(ui, "Chord right", &mut data.chords.right);
+                string_list_field(ui, "Chord select", &mut data.chords.select);
+                string_list_field(ui, "Chord back", &mut data.chords.back);
             });
             tip_wrapped_section(ui, |ui| {
-                ui.checkbox(wrap_edges, "Wrap edges");
-                ui.checkbox(move_cursor_with_nav, "Move cursor with nav");
-                ui.checkbox(smooth, "Smooth");
-                ui.checkbox(pass_through, "Pass through");
-                ui.checkbox(hold_repeat, "Hold repeat");
+                ui.checkbox(&mut data.options.wrap_edges, "Wrap edges");
+                ui.checkbox(&mut data.options.move_cursor_with_nav, "Move cursor with nav");
+                ui.checkbox(&mut data.options.smooth, "Smooth");
+                ui.checkbox(&mut data.options.pass_through, "Pass through");
+                ui.checkbox(&mut data.options.hold_repeat, "Hold repeat");
             });
             tip_wrapped_section(ui, |ui| {
-                combo_str(ui, "Select device", select_device, options::SELECT_DEVICES);
-                combo_str(ui, "Select button", select_button, options::MOUSE_BUTTONS);
-                text_field(ui, "Select key", select_key);
+                combo_str(
+                    ui,
+                    "Select device",
+                    &mut data.select.device,
+                    options::SELECT_DEVICES,
+                );
+                combo_str(
+                    ui,
+                    "Select button",
+                    &mut data.select.button,
+                    options::MOUSE_BUTTONS,
+                );
+                text_field(ui, "Select key", &mut data.select.key);
                 combo_str(
                     ui,
                     "Select press mode",
-                    select_press_mode,
+                    &mut data.select.press_mode,
                     options::SELECT_PRESS_MODES,
                 );
             });
             tip_wrapped_section(ui, |ui| {
-                text_field(ui, "In graph", in_graph);
-                text_field(ui, "In row", in_row);
-                text_field(ui, "In col", in_col);
-                text_field(ui, "In collection", in_collection);
+                text_field(ui, "In graph", &mut data.inputs.graph);
+                text_field(ui, "In row", &mut data.inputs.row);
+                text_field(ui, "In col", &mut data.inputs.col);
+                text_field(ui, "In collection", &mut data.inputs.collection);
             });
             tip_wrapped_section(ui, |ui| {
-                text_field(ui, "Output ref", output_ref);
-                text_field(ui, "Output graph", output_graph);
-                text_field(ui, "Output row", output_row);
-                text_field(ui, "Output col", output_col);
-                text_field(ui, "Output collection", output_collection);
+                text_field(ui, "Output ref", &mut data.outputs.output_ref);
+                text_field(ui, "Output graph", &mut data.outputs.output_graph);
+                text_field(ui, "Output row", &mut data.outputs.output_row);
+                text_field(ui, "Output col", &mut data.outputs.output_col);
+                text_field(ui, "Output collection", &mut data.outputs.output_collection);
             });
             tip_section(ui, |ui| {
                 ui.label(
@@ -682,7 +675,7 @@ fn combo_str(ui: &mut egui::Ui, label: &str, value: &mut String, options: &[&str
             value.clone()
         };
         let mut custom = None;
-        if !options.iter().any(|o| *o == value.as_str()) && !value.is_empty() {
+        if !options.contains(&value.as_str()) && !value.is_empty() {
             custom = Some(value.clone());
         }
         egui::ComboBox::from_id_salt(label)

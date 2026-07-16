@@ -3,7 +3,10 @@
 use crate::backends::MoveOptions;
 use crate::error::{ExecError, FlowSignal, Result};
 use crate::run::{resolve_int, resolve_text, run_children, Executor};
-use sqyre_domain::{Action, ActionId, ActionKind, CoordinateRef, Macro, ScalarValue};
+use sqyre_domain::{
+    Action, ActionId, ActionKind, CoordinateRef, Macro, NavInputs, NavOptions, NavOutputs,
+    NavSelectAction, NavigateSelectData, ScalarValue,
+};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 #[derive(Clone, Copy)]
@@ -21,53 +24,28 @@ pub(crate) fn execute_navigate_select(
     action: &Action,
     macro_: &mut Macro,
 ) -> Result<()> {
-    let ActionKind::NavigateSelect {
-        program,
-        graph_name,
-        chord_up,
-        chord_down,
-        chord_left,
-        chord_right,
-        chord_select,
-        chord_back,
-        wrap_edges,
-        move_cursor_with_nav,
-        smooth,
-        pass_through,
-        hold_repeat,
-        select_device,
-        select_button,
-        select_key,
-        select_press_mode,
-        in_graph,
-        in_row,
-        in_col,
-        in_collection,
-        output_ref,
-        output_graph,
-        output_row,
-        output_col,
-        output_collection,
-        subactions,
-    } = &action.kind
-    else {
+    let ActionKind::NavigateSelect(data) = &action.kind else {
         return Err(ExecError::Message(
             "navigate select: internal kind mismatch".into(),
         ));
     };
+    let data: &NavigateSelectData = data;
 
-    let graph = resolve_graph_name(macro_, graph_name, in_graph, in_collection)?;
+    let graph = resolve_graph_name(macro_, &data.graph_name, &data.inputs)?;
     if graph.is_empty() {
         return Err(ExecError::Message(
             "navigate select: graph/collection not set".into(),
         ));
     }
 
-    let resolver = exec.resolver.ok_or_else(|| {
+    let resolver = exec.deps.resolver.ok_or_else(|| {
         ExecError::Message("navigate select: coordinate resolver not configured".into())
     })?;
-    let (rows, cols) = resolver.collection_grid(program, &graph).map_err(|e| {
-        ExecError::Message(format!("navigate select: collection {program}/{graph}: {e}"))
+    let (rows, cols) = resolver.collection_grid(&data.program, &graph).map_err(|e| {
+        ExecError::Message(format!(
+            "navigate select: collection {}/{}: {e}",
+            data.program, graph
+        ))
     })?;
     if rows < 1 || cols < 1 {
         return Err(ExecError::Message(format!(
@@ -75,29 +53,29 @@ pub(crate) fn execute_navigate_select(
         )));
     }
 
-    let mut row = resolve_cell_start(macro_, in_row, 1)?.clamp(1, rows);
-    let mut col = resolve_cell_start(macro_, in_col, 1)?.clamp(1, cols);
+    let mut row = resolve_cell_start(macro_, &data.inputs.row, 1)?.clamp(1, rows);
+    let mut col = resolve_cell_start(macro_, &data.inputs.col, 1)?.clamp(1, cols);
 
-    write_outputs(
-        macro_,
-        program,
-        &graph,
-        row,
-        col,
-        output_ref,
-        output_graph,
-        output_row,
-        output_col,
-        output_collection,
-    );
+    write_outputs(macro_, &data.program, &graph, row, col, &data.outputs);
 
-    if *move_cursor_with_nav {
-        move_to_cell(exec, macro_, program, &graph, row, col, *smooth)?;
+    if data.options.move_cursor_with_nav {
+        move_to_cell(
+            exec,
+            macro_,
+            &data.program,
+            &graph,
+            row,
+            col,
+            data.options.smooth,
+        )?;
     }
 
     exec.log(
         action.id,
-        format!("Navigate Select: {program} · {graph} @ {row},{col} ({rows}x{cols})"),
+        format!(
+            "Navigate Select: {} · {graph} @ {row},{col} ({rows}x{cols})",
+            data.program
+        ),
     );
 
     let mut chords: Vec<Vec<String>> = Vec::new();
@@ -115,14 +93,14 @@ pub(crate) fn execute_navigate_select(
             }
         };
 
-    push_builtin(chord_up, BuiltinChord::Up, *hold_repeat);
-    push_builtin(chord_down, BuiltinChord::Down, *hold_repeat);
-    push_builtin(chord_left, BuiltinChord::Left, *hold_repeat);
-    push_builtin(chord_right, BuiltinChord::Right, *hold_repeat);
-    push_builtin(chord_select, BuiltinChord::Select, false);
-    push_builtin(chord_back, BuiltinChord::Back, false);
+    push_builtin(&data.chords.up, BuiltinChord::Up, data.options.hold_repeat);
+    push_builtin(&data.chords.down, BuiltinChord::Down, data.options.hold_repeat);
+    push_builtin(&data.chords.left, BuiltinChord::Left, data.options.hold_repeat);
+    push_builtin(&data.chords.right, BuiltinChord::Right, data.options.hold_repeat);
+    push_builtin(&data.chords.select, BuiltinChord::Select, false);
+    push_builtin(&data.chords.back, BuiltinChord::Back, false);
 
-    for (i, child) in subactions.iter().enumerate() {
+    for (i, child) in data.subactions.iter().enumerate() {
         if let ActionKind::NavigateKey { chord, .. } = &child.kind {
             if chord.iter().any(|k| !k.trim().is_empty()) {
                 chords.push(chord.clone());
@@ -141,17 +119,22 @@ pub(crate) fn execute_navigate_select(
     }
 
     let dummy = AtomicBool::new(false);
-    let stop = exec.stop_flag.unwrap_or(&dummy);
+    let stop = exec.deps.stop_flag.unwrap_or(&dummy);
 
     loop {
         exec.check_stopped()?;
         let idx = {
-            let waiter = exec.continue_waiter.ok_or_else(|| {
+            let waiter = exec.deps.continue_waiter.ok_or_else(|| {
                 ExecError::Message(
                     "navigate select: key wait is not available in this build".into(),
                 )
             })?;
-            match waiter.wait_for_any_chord(&chords, &hold_mask, *pass_through, stop) {
+            match waiter.wait_for_any_chord(
+                &chords,
+                &hold_mask,
+                data.options.pass_through,
+                stop,
+            ) {
                 Ok(i) => i,
                 Err(e) if e.contains("stopped") => return Err(FlowSignal::Stopped.into()),
                 Err(e) => return Err(ExecError::Message(e)),
@@ -164,101 +147,64 @@ pub(crate) fn execute_navigate_select(
         if let Some(b) = builtins.get(idx).copied().flatten() {
             match b {
                 BuiltinChord::Up => {
-                    row = step(row, -1, rows, *wrap_edges);
+                    row = step(row, -1, rows, data.options.wrap_edges);
                     on_nav(
                         exec,
                         action.id,
                         macro_,
-                        program,
+                        &data.program,
                         &graph,
                         &mut row,
                         &mut col,
-                        *move_cursor_with_nav,
-                        *smooth,
-                        output_ref,
-                        output_graph,
-                        output_row,
-                        output_col,
-                        output_collection,
+                        &data.options,
+                        &data.outputs,
                     )?;
                 }
                 BuiltinChord::Down => {
-                    row = step(row, 1, rows, *wrap_edges);
+                    row = step(row, 1, rows, data.options.wrap_edges);
                     on_nav(
                         exec,
                         action.id,
                         macro_,
-                        program,
+                        &data.program,
                         &graph,
                         &mut row,
                         &mut col,
-                        *move_cursor_with_nav,
-                        *smooth,
-                        output_ref,
-                        output_graph,
-                        output_row,
-                        output_col,
-                        output_collection,
+                        &data.options,
+                        &data.outputs,
                     )?;
                 }
                 BuiltinChord::Left => {
-                    col = step(col, -1, cols, *wrap_edges);
+                    col = step(col, -1, cols, data.options.wrap_edges);
                     on_nav(
                         exec,
                         action.id,
                         macro_,
-                        program,
+                        &data.program,
                         &graph,
                         &mut row,
                         &mut col,
-                        *move_cursor_with_nav,
-                        *smooth,
-                        output_ref,
-                        output_graph,
-                        output_row,
-                        output_col,
-                        output_collection,
+                        &data.options,
+                        &data.outputs,
                     )?;
                 }
                 BuiltinChord::Right => {
-                    col = step(col, 1, cols, *wrap_edges);
+                    col = step(col, 1, cols, data.options.wrap_edges);
                     on_nav(
                         exec,
                         action.id,
                         macro_,
-                        program,
+                        &data.program,
                         &graph,
                         &mut row,
                         &mut col,
-                        *move_cursor_with_nav,
-                        *smooth,
-                        output_ref,
-                        output_graph,
-                        output_row,
-                        output_col,
-                        output_collection,
+                        &data.options,
+                        &data.outputs,
                     )?;
                 }
                 BuiltinChord::Select => {
-                    write_outputs(
-                        macro_,
-                        program,
-                        &graph,
-                        row,
-                        col,
-                        output_ref,
-                        output_graph,
-                        output_row,
-                        output_col,
-                        output_collection,
-                    );
-                    perform_select(
-                        exec,
-                        select_device,
-                        select_button,
-                        select_key,
-                        select_press_mode,
-                    )?;
+                    write_outputs(macro_, &data.program, &graph, row, col, &data.outputs);
+                    perform_select(exec, &data.select)?;
                     exec.log(
                         action.id,
                         format!("Navigate Select: select @ {row},{col}"),
@@ -266,18 +212,7 @@ pub(crate) fn execute_navigate_select(
                     return Ok(());
                 }
                 BuiltinChord::Back => {
-                    write_outputs(
-                        macro_,
-                        program,
-                        &graph,
-                        row,
-                        col,
-                        output_ref,
-                        output_graph,
-                        output_row,
-                        output_col,
-                        output_collection,
-                    );
+                    write_outputs(macro_, &data.program, &graph, row, col, &data.outputs);
                     exec.log(action.id, format!("Navigate Select: back @ {row},{col}"));
                     return Ok(());
                 }
@@ -286,7 +221,7 @@ pub(crate) fn execute_navigate_select(
         }
 
         if let Some(Some(branch_i)) = key_branch_idxs.get(idx) {
-            let Some(branch) = subactions.get(*branch_i) else {
+            let Some(branch) = data.subactions.get(*branch_i) else {
                 continue;
             };
             let ActionKind::NavigateKey {
@@ -298,18 +233,7 @@ pub(crate) fn execute_navigate_select(
             else {
                 continue;
             };
-            write_outputs(
-                macro_,
-                program,
-                &graph,
-                row,
-                col,
-                output_ref,
-                output_graph,
-                output_row,
-                output_col,
-                output_collection,
-            );
+            write_outputs(macro_, &data.program, &graph, row, col, &data.outputs);
             let label = if name.trim().is_empty() {
                 "Nav Key".to_string()
             } else {
@@ -343,6 +267,7 @@ pub(crate) fn execute_navigate_key(
     ))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn on_nav(
     exec: &mut Executor<'_>,
     action_id: ActionId,
@@ -351,28 +276,12 @@ fn on_nav(
     graph: &str,
     row: &mut i32,
     col: &mut i32,
-    move_cursor: bool,
-    smooth: bool,
-    output_ref: &str,
-    output_graph: &str,
-    output_row: &str,
-    output_col: &str,
-    output_collection: &str,
+    options: &NavOptions,
+    outputs: &NavOutputs,
 ) -> Result<()> {
-    write_outputs(
-        macro_,
-        program,
-        graph,
-        *row,
-        *col,
-        output_ref,
-        output_graph,
-        output_row,
-        output_col,
-        output_collection,
-    );
-    if move_cursor {
-        move_to_cell(exec, macro_, program, graph, *row, *col, smooth)?;
+    write_outputs(macro_, program, graph, *row, *col, outputs);
+    if options.move_cursor_with_nav {
+        move_to_cell(exec, macro_, program, graph, *row, *col, options.smooth)?;
     }
     exec.log(action_id, format!("Navigate Select: cell {row},{col}"));
     Ok(())
@@ -393,13 +302,8 @@ fn step(cur: i32, delta: i32, max: i32, wrap: bool) -> i32 {
     }
 }
 
-fn resolve_graph_name(
-    macro_: &Macro,
-    graph_name: &str,
-    in_graph: &str,
-    in_collection: &str,
-) -> Result<String> {
-    for src in [in_graph, in_collection] {
+fn resolve_graph_name(macro_: &Macro, graph_name: &str, inputs: &NavInputs) -> Result<String> {
+    for src in [&inputs.graph, &inputs.collection] {
         if src.trim().is_empty() {
             continue;
         }
@@ -410,7 +314,7 @@ fn resolve_graph_name(
             }
         }
         let resolved = resolve_text(src, macro_).unwrap_or_else(|_| src.to_string());
-        if !resolved.trim().is_empty() && resolved != src {
+        if !resolved.trim().is_empty() && resolved != *src {
             return Ok(resolved);
         }
     }
@@ -441,38 +345,36 @@ fn write_outputs(
     graph: &str,
     row: i32,
     col: i32,
-    output_ref: &str,
-    output_graph: &str,
-    output_row: &str,
-    output_col: &str,
-    output_collection: &str,
+    outputs: &NavOutputs,
 ) {
     let cell = CoordinateRef::collection(program, graph, row, col, row, col);
-    if !output_ref.trim().is_empty() {
-        macro_
-            .variables
-            .set(output_ref.trim(), ScalarValue::String(cell.0.clone()));
-    }
-    if !output_graph.trim().is_empty() {
-        macro_
-            .variables
-            .set(output_graph.trim(), ScalarValue::String(graph.to_string()));
-    }
-    if !output_collection.trim().is_empty() {
+    if !outputs.output_ref.trim().is_empty() {
         macro_.variables.set(
-            output_collection.trim(),
+            outputs.output_ref.trim(),
+            ScalarValue::String(cell.0.clone()),
+        );
+    }
+    if !outputs.output_graph.trim().is_empty() {
+        macro_.variables.set(
+            outputs.output_graph.trim(),
             ScalarValue::String(graph.to_string()),
         );
     }
-    if !output_row.trim().is_empty() {
-        macro_
-            .variables
-            .set(output_row.trim(), ScalarValue::Int(row as i64));
+    if !outputs.output_collection.trim().is_empty() {
+        macro_.variables.set(
+            outputs.output_collection.trim(),
+            ScalarValue::String(graph.to_string()),
+        );
     }
-    if !output_col.trim().is_empty() {
+    if !outputs.output_row.trim().is_empty() {
         macro_
             .variables
-            .set(output_col.trim(), ScalarValue::Int(col as i64));
+            .set(outputs.output_row.trim(), ScalarValue::Int(row as i64));
+    }
+    if !outputs.output_col.trim().is_empty() {
+        macro_
+            .variables
+            .set(outputs.output_col.trim(), ScalarValue::Int(col as i64));
     }
 }
 
@@ -485,14 +387,14 @@ fn move_to_cell(
     col: i32,
     smooth: bool,
 ) -> Result<()> {
-    let resolver = exec.resolver.ok_or_else(|| {
+    let resolver = exec.deps.resolver.ok_or_else(|| {
         ExecError::Message("navigate select: coordinate resolver not configured".into())
     })?;
     let cell = CoordinateRef::collection(program, graph, row, col, row, col);
     let (x, y) = resolver.resolve_point(&cell, macro_).map_err(|e| {
         ExecError::Message(format!("navigate select: resolve cell {row},{col}: {e}"))
     })?;
-    exec.automation.move_to(
+    exec.deps.automation.move_to(
         x,
         y,
         MoveOptions {
@@ -505,44 +407,38 @@ fn move_to_cell(
     Ok(())
 }
 
-fn perform_select(
-    exec: &mut Executor<'_>,
-    device: &str,
-    button: &str,
-    key: &str,
-    mode: &str,
-) -> Result<()> {
-    let mode = mode.trim().to_ascii_lowercase();
-    let device = device.trim().to_ascii_lowercase();
+fn perform_select(exec: &mut Executor<'_>, select: &NavSelectAction) -> Result<()> {
+    let mode = select.press_mode.trim().to_ascii_lowercase();
+    let device = select.device.trim().to_ascii_lowercase();
     match device.as_str() {
         "" | "mouse" => {
-            let btn = if button.trim().is_empty() {
+            let btn = if select.button.trim().is_empty() {
                 "left"
             } else {
-                button.trim()
+                select.button.trim()
             };
             match mode.as_str() {
-                "down" | "hold" => exec.automation.click(btn, true).map_err(ExecError::Message)?,
-                "up" => exec.automation.click(btn, false).map_err(ExecError::Message)?,
+                "down" | "hold" => exec.deps.automation.click(btn, true).map_err(ExecError::Message)?,
+                "up" => exec.deps.automation.click(btn, false).map_err(ExecError::Message)?,
                 _ => {
-                    exec.automation.click(btn, true).map_err(ExecError::Message)?;
-                    exec.automation.click(btn, false).map_err(ExecError::Message)?;
+                    exec.deps.automation.click(btn, true).map_err(ExecError::Message)?;
+                    exec.deps.automation.click(btn, false).map_err(ExecError::Message)?;
                 }
             }
         }
         "keyboard" => {
-            let k = key.trim();
+            let k = select.key.trim();
             if k.is_empty() {
                 return Err(ExecError::Message(
                     "navigate select: select key not set".into(),
                 ));
             }
             match mode.as_str() {
-                "down" | "hold" => exec.automation.key_down(k).map_err(ExecError::Message)?,
-                "up" => exec.automation.key_up(k).map_err(ExecError::Message)?,
+                "down" | "hold" => exec.deps.automation.key_down(k).map_err(ExecError::Message)?,
+                "up" => exec.deps.automation.key_up(k).map_err(ExecError::Message)?,
                 _ => {
-                    exec.automation.key_down(k).map_err(ExecError::Message)?;
-                    exec.automation.key_up(k).map_err(ExecError::Message)?;
+                    exec.deps.automation.key_down(k).map_err(ExecError::Message)?;
+                    exec.deps.automation.key_up(k).map_err(ExecError::Message)?;
                 }
             }
         }
@@ -560,7 +456,10 @@ mod tests {
     use super::*;
     use crate::backends::{ImmediateContinueWaiter, RecordingBackend};
     use crate::run::{execute_macro_with, ExecDeps};
-    use sqyre_domain::{root_loop, ActionId, CoordinateRef};
+    use sqyre_domain::{
+        root_loop, ActionId, CoordinateRef, NavigateSelectData, NavChords, NavInputs, NavOptions,
+        NavOutputs, NavSelectAction,
+    };
     use std::sync::Mutex;
 
     struct GridResolver {
@@ -604,35 +503,32 @@ mod tests {
         let mut macro_ = Macro::new("t", 0, vec![]);
         macro_.root = root_loop(vec![Action {
             id: ActionId::new(),
-            kind: ActionKind::NavigateSelect {
+            kind: ActionKind::NavigateSelect(Box::new(NavigateSelectData {
                 program: "P".into(),
                 graph_name: "bag".into(),
-                chord_up: vec![],
-                chord_down: vec![],
-                chord_left: vec![],
-                chord_right: vec![],
-                chord_select: vec!["enter".into()],
-                chord_back: vec![],
-                wrap_edges: false,
-                move_cursor_with_nav: true,
-                smooth: false,
-                pass_through: false,
-                hold_repeat: false,
-                select_device: "mouse".into(),
-                select_button: "left".into(),
-                select_key: String::new(),
-                select_press_mode: "click".into(),
-                in_graph: String::new(),
-                in_row: "2".into(),
-                in_col: "3".into(),
-                in_collection: String::new(),
-                output_ref: "ref".into(),
-                output_graph: "g".into(),
-                output_row: "r".into(),
-                output_col: "c".into(),
-                output_collection: "col".into(),
-                subactions: vec![],
-            },
+                chords: NavChords {
+                    select: vec!["enter".into()],
+                    ..Default::default()
+                },
+                options: NavOptions {
+                    move_cursor_with_nav: true,
+                    ..Default::default()
+                },
+                select: NavSelectAction::default(),
+                inputs: NavInputs {
+                    row: "2".into(),
+                    col: "3".into(),
+                    ..Default::default()
+                },
+                outputs: NavOutputs {
+                    output_ref: "ref".into(),
+                    output_graph: "g".into(),
+                    output_row: "r".into(),
+                    output_col: "c".into(),
+                    output_collection: "col".into(),
+                },
+                ..Default::default()
+            })),
         }]);
 
         execute_macro_with(
@@ -685,33 +581,15 @@ mod tests {
         let mut macro_ = Macro::new("t", 0, vec![]);
         macro_.root = root_loop(vec![Action {
             id: ActionId::new(),
-            kind: ActionKind::NavigateSelect {
+            kind: ActionKind::NavigateSelect(Box::new(NavigateSelectData {
                 program: "P".into(),
                 graph_name: "bag".into(),
-                chord_up: vec![],
-                chord_down: vec![],
-                chord_left: vec![],
-                chord_right: vec![],
-                chord_select: vec![],
-                chord_back: vec![],
-                wrap_edges: false,
-                move_cursor_with_nav: false,
-                smooth: false,
-                pass_through: false,
-                hold_repeat: false,
-                select_device: String::new(),
-                select_button: String::new(),
-                select_key: String::new(),
-                select_press_mode: String::new(),
-                in_graph: String::new(),
-                in_row: String::new(),
-                in_col: String::new(),
-                in_collection: String::new(),
-                output_ref: String::new(),
-                output_graph: String::new(),
-                output_row: "r".into(),
-                output_col: "c".into(),
-                output_collection: String::new(),
+                chords: NavChords::default(),
+                outputs: NavOutputs {
+                    output_row: "r".into(),
+                    output_col: "c".into(),
+                    ..Default::default()
+                },
                 subactions: vec![Action {
                     id: ActionId::new(),
                     kind: ActionKind::NavigateKey {
@@ -721,13 +599,14 @@ mod tests {
                         subactions: vec![Action {
                             id: ActionId::new(),
                             kind: ActionKind::Click {
-                                button: "right".into(),
+                                button: sqyre_domain::MouseButton::Right,
                                 state: true,
                             },
                         }],
                     },
                 }],
-            },
+                ..Default::default()
+            })),
         }]);
 
         execute_macro_with(

@@ -3,9 +3,6 @@
 mod edit;
 mod sections;
 
-use crate::hotkey_record::HotkeyRecordUi;
-use crate::icon_cache::IconCache;
-use crate::key_record::KeyRecordUi;
 use crate::pickers::{self, ActivePicker, PickerResult};
 use crate::tree_chrome::{self, RowInteraction};
 use eframe::egui::{self, Key, Order, Vec2};
@@ -13,41 +10,39 @@ use sqyre_domain::{
     action_pastel_color, action_type_description, action_type_label, split_display_params, Action,
     ActionId, ActionKind, Macro,
 };
-use sqyre_hotkeys::{MacroHotkeyBridge, ScreenClickBridge};
-use sqyre_persist::ProgramCatalog;
 use sqyre_validate::validate_action;
-use std::collections::HashSet;
 
+use crate::paint_ctx::{CatalogPaint, EditFieldsCtx, RecordBridges, TipUiCtx, VarTheme};
 use crate::var_pills;
 
 pub use edit::apply_draft_preserving_children;
 pub(crate) use edit::paint_edit_fields;
 
-/// Tooltip lifecycle (editing flag + hover ownership).
+/// Pinned edit payload (boxed so [`TooltipState`] stays small).
 #[derive(Debug, Clone)]
+pub struct TooltipEdit {
+    pub action_id: ActionId,
+    pub draft: Action,
+    pub error: Option<String>,
+    /// Screen position when edit opened (pinned, not mouse-follow).
+    pub anchor: egui::Pos2,
+    pub picker: ActivePicker,
+    /// When true, Cancel / Escape / close removes this action from the tree
+    /// (used for freshly inserted blank actions that were never saved).
+    pub discard_on_cancel: bool,
+}
+
+/// Tooltip lifecycle (editing flag + hover ownership).
+#[derive(Debug, Clone, Default)]
 pub enum TooltipState {
+    #[default]
     Hidden,
     View {
         action_id: ActionId,
     },
-    Edit {
-        action_id: ActionId,
-        draft: Action,
-        error: Option<String>,
-        /// Screen position when edit opened (pinned, not mouse-follow).
-        anchor: egui::Pos2,
-        picker: ActivePicker,
-        /// When true, Cancel / Escape / close removes this action from the tree
-        /// (used for freshly inserted blank actions that were never saved).
-        discard_on_cancel: bool,
-    },
+    Edit(Box<TooltipEdit>),
 }
 
-impl Default for TooltipState {
-    fn default() -> Self {
-        Self::Hidden
-    }
-}
 
 impl TooltipState {
     pub fn is_editing(&self) -> bool {
@@ -57,7 +52,8 @@ impl TooltipState {
     pub fn action_id(&self) -> Option<ActionId> {
         match self {
             Self::Hidden => None,
-            Self::View { action_id } | Self::Edit { action_id, .. } => Some(*action_id),
+            Self::View { action_id } => Some(*action_id),
+            Self::Edit(edit) => Some(edit.action_id),
         }
     }
 
@@ -69,37 +65,33 @@ impl TooltipState {
     }
 
     pub fn open_edit(&mut self, action: &Action, anchor: egui::Pos2) {
-        *self = Self::Edit {
+        *self = Self::Edit(Box::new(TooltipEdit {
             action_id: action.id,
             draft: action.clone(),
             error: None,
             anchor,
             picker: ActivePicker::None,
             discard_on_cancel: false,
-        };
+        }));
     }
 
     /// Edit a freshly inserted blank action; Cancel removes it from the tree.
     pub fn open_edit_new(&mut self, action: &Action, anchor: egui::Pos2) {
-        *self = Self::Edit {
+        *self = Self::Edit(Box::new(TooltipEdit {
             action_id: action.id,
             draft: action.clone(),
             error: None,
             anchor,
             picker: ActivePicker::None,
             discard_on_cancel: true,
-        };
+        }));
     }
 
     /// Close the tooltip. Returns an action id that should be removed from the tree
     /// when a provisional new-action edit was cancelled.
     pub fn cancel(&mut self) -> Option<ActionId> {
         let discard = match self {
-            Self::Edit {
-                action_id,
-                discard_on_cancel: true,
-                ..
-            } => Some(*action_id),
+            Self::Edit(edit) if edit.discard_on_cancel => Some(edit.action_id),
             _ => None,
         };
         *self = Self::Hidden;
@@ -121,17 +113,14 @@ impl TooltipState {
         macro_: Option<&Macro>,
         mut before_mutate: impl FnMut(&Action),
     ) -> bool {
-        let (action_id, draft) = match self {
-            Self::Edit {
-                action_id, draft, ..
-            } => (*action_id, draft.clone()),
-            _ => return false,
+        let Self::Edit(edit) = self else {
+            return false;
         };
+        let action_id = edit.action_id;
+        let draft = edit.draft.clone();
 
         let Some(live) = root.find_by_id(action_id) else {
-            if let Self::Edit { error, .. } = self {
-                *error = Some(format!("action {} not found", action_id.as_str()));
-            }
+            edit.error = Some(format!("action {} not found", action_id.as_str()));
             return false;
         };
 
@@ -143,24 +132,18 @@ impl TooltipState {
         candidate.id = live.id;
 
         if let Err(e) = validate_action(&candidate, macro_) {
-            if let Self::Edit { error, .. } = self {
-                *error = Some(e.to_string());
-            }
+            edit.error = Some(e.to_string());
             return false;
         }
 
         before_mutate(root);
 
         let Some(live) = root.find_by_id_mut(action_id) else {
-            if let Self::Edit { error, .. } = self {
-                *error = Some(format!("action {} not found", action_id.as_str()));
-            }
+            edit.error = Some(format!("action {} not found", action_id.as_str()));
             return false;
         };
         if let Err(e) = apply_draft_preserving_children(live, candidate) {
-            if let Self::Edit { error, .. } = self {
-                *error = Some(e);
-            }
+            edit.error = Some(e);
             return false;
         }
 
@@ -170,10 +153,10 @@ impl TooltipState {
 
     /// Apply a key captured by [`KeyRecordUi`] onto a Key-action draft.
     pub fn apply_recorded_key(&mut self, recorded: String) {
-        let TooltipState::Edit { draft, .. } = self else {
+        let Self::Edit(edit) = self else {
             return;
         };
-        if let ActionKind::Key { key, .. } = &mut draft.kind {
+        if let ActionKind::Key { key, .. } = &mut edit.draft.kind {
             *key = recorded;
         }
     }
@@ -181,10 +164,10 @@ impl TooltipState {
     /// Apply a chord from [`HotkeyRecordUi`] onto a Pause continue-key draft.
     /// Returns true when the draft was a Pause action.
     pub fn apply_recorded_chord(&mut self, recorded: Vec<String>) -> bool {
-        let TooltipState::Edit { draft, .. } = self else {
+        let Self::Edit(edit) = self else {
             return false;
         };
-        if let ActionKind::Pause { continue_key, .. } = &mut draft.kind {
+        if let ActionKind::Pause { continue_key, .. } = &mut edit.draft.kind {
             *continue_key = recorded;
             true
         } else {
@@ -194,10 +177,10 @@ impl TooltipState {
 
     /// Apply a hex color from the Find Pixel screen dropper onto the draft.
     pub fn apply_recorded_color(&mut self, recorded: String) {
-        let TooltipState::Edit { draft, .. } = self else {
+        let Self::Edit(edit) = self else {
             return;
         };
-        if let ActionKind::FindPixel { target_color, .. } = &mut draft.kind {
+        if let ActionKind::FindPixel { target_color, .. } = &mut edit.draft.kind {
             *target_color = crate::pixel_color::normalize_target_color(&recorded);
         }
     }
@@ -207,17 +190,16 @@ impl TooltipState {
     pub fn handle_escape(&mut self) -> (bool, Option<ActionId>) {
         match self {
             Self::Hidden => (false, None),
-            Self::Edit {
-                picker:
-                    p @ ActivePicker::Point {
-                        cell_pick: Some(_), ..
-                    }
-                    | p @ ActivePicker::SearchArea {
-                        cell_pick: Some(_), ..
-                    },
-                ..
-            } => {
-                match p {
+            Self::Edit(edit) if matches!(
+                edit.picker,
+                ActivePicker::Point {
+                    cell_pick: Some(_), ..
+                }
+                | ActivePicker::SearchArea {
+                    cell_pick: Some(_), ..
+                }
+            ) => {
+                match &mut edit.picker {
                     ActivePicker::Point { cell_pick, .. }
                     | ActivePicker::SearchArea { cell_pick, .. } => {
                         *cell_pick = None;
@@ -226,15 +208,15 @@ impl TooltipState {
                 }
                 (true, None)
             }
-            Self::Edit {
-                picker: p @ ActivePicker::Items { .. }
-                | p @ ActivePicker::Point { .. }
-                | p @ ActivePicker::SearchArea { .. }
-                | p @ ActivePicker::Macro { .. }
-                | p @ ActivePicker::Window { .. },
-                ..
-            } => {
-                *p = ActivePicker::None;
+            Self::Edit(edit) if matches!(
+                edit.picker,
+                ActivePicker::Items { .. }
+                    | ActivePicker::Point { .. }
+                    | ActivePicker::SearchArea { .. }
+                    | ActivePicker::Macro { .. }
+                    | ActivePicker::Window { .. }
+            ) => {
+                edit.picker = ActivePicker::None;
                 (true, None)
             }
             Self::View { .. } | Self::Edit { .. } => (true, self.cancel()),
@@ -288,22 +270,19 @@ pub fn show(
     state: &mut TooltipState,
     ctx: &egui::Context,
     macro_: &mut Macro,
-    catalog: &ProgramCatalog,
-    icons: &mut IconCache,
-    previews: &mut crate::preview_tooltip::PreviewTooltipCache,
     macros: &[(String, Vec<String>)],
-    known_vars: &HashSet<String>,
-    is_dark: bool,
-    key_record: &mut KeyRecordUi,
-    hotkey_record: &mut HotkeyRecordUi,
-    macro_hotkeys: &MacroHotkeyBridge,
-    screen_click: &ScreenClickBridge,
+    ui: &mut TipUiCtx<'_>,
     mut before_mutate: impl FnMut(&Action),
 ) -> Option<ActionId> {
+    let TipUiCtx {
+        paint,
+        theme,
+        bridges,
+    } = ui;
     // Esc while recording a key / chord / screen sample is captured by the recorder.
-    if !key_record.is_open()
-        && !hotkey_record.is_open()
-        && !screen_click.is_armed()
+    if !bridges.key_record.is_open()
+        && !bridges.hotkey_record.is_open()
+        && !bridges.screen_click.is_armed()
         && ctx.input(|i| i.key_pressed(Key::Escape))
     {
         let (consumed, discard) = state.handle_escape();
@@ -319,25 +298,12 @@ pub fn show(
                 *state = TooltipState::Hidden;
                 return None;
             };
-            show_view_tip(ctx, &action, catalog, icons, previews, known_vars, is_dark);
+            show_view_tip(ctx, &action, paint, *theme);
             None
         }
-        TooltipState::Edit { .. } => show_edit_window(
-            state,
-            ctx,
-            macro_,
-            catalog,
-            icons,
-            previews,
-            macros,
-            known_vars,
-            is_dark,
-            key_record,
-            hotkey_record,
-            macro_hotkeys,
-            screen_click,
-            &mut before_mutate,
-        ),
+        TooltipState::Edit { .. } => {
+            show_edit_window(state, ctx, macro_, macros, ui, &mut before_mutate)
+        }
     }
 }
 
@@ -363,12 +329,18 @@ pub(crate) fn show_action_view_tip(
     ctx: &egui::Context,
     tip_id: egui::Id,
     action: &Action,
-    catalog: &ProgramCatalog,
-    icons: &mut IconCache,
-    previews: &mut crate::preview_tooltip::PreviewTooltipCache,
-    known_vars: &HashSet<String>,
-    is_dark: bool,
+    paint: &mut CatalogPaint<'_>,
+    theme: VarTheme<'_>,
 ) {
+    let CatalogPaint {
+        catalog,
+        icons,
+        previews,
+    } = paint;
+    let VarTheme {
+        known_vars,
+        is_dark,
+    } = theme;
     let Some(pointer) = ctx.pointer_interact_pos() else {
         return;
     };
@@ -463,21 +435,15 @@ pub(crate) fn show_action_view_tip(
 fn show_view_tip(
     ctx: &egui::Context,
     action: &Action,
-    catalog: &ProgramCatalog,
-    icons: &mut IconCache,
-    previews: &mut crate::preview_tooltip::PreviewTooltipCache,
-    known_vars: &HashSet<String>,
-    is_dark: bool,
+    paint: &mut CatalogPaint<'_>,
+    theme: VarTheme<'_>,
 ) {
     show_action_view_tip(
         ctx,
         egui::Id::new(("action_hover_tip", action.id.as_str())),
         action,
-        catalog,
-        icons,
-        previews,
-        known_vars,
-        is_dark,
+        paint,
+        theme,
     );
 }
 
@@ -485,29 +451,22 @@ fn show_edit_window(
     state: &mut TooltipState,
     ctx: &egui::Context,
     macro_: &mut Macro,
-    catalog: &ProgramCatalog,
-    icons: &mut IconCache,
-    previews: &mut crate::preview_tooltip::PreviewTooltipCache,
     macros: &[(String, Vec<String>)],
-    known_vars: &HashSet<String>,
-    is_dark: bool,
-    key_record: &mut KeyRecordUi,
-    hotkey_record: &mut HotkeyRecordUi,
-    macro_hotkeys: &MacroHotkeyBridge,
-    screen_click: &ScreenClickBridge,
+    ui: &mut TipUiCtx<'_>,
     before_mutate: &mut dyn FnMut(&Action),
 ) -> Option<ActionId> {
+    let TipUiCtx {
+        paint,
+        theme,
+        bridges,
+    } = ui;
+    let VarTheme { is_dark, .. } = *theme;
     let (action_id, anchor, type_key, has_coord_preview) = match state {
-        TooltipState::Edit {
-            action_id,
-            draft,
-            anchor,
-            ..
-        } => (
-            *action_id,
-            *anchor,
-            draft.type_key(),
-            crate::preview_tooltip::coordinate_ref_for_preview(draft).is_some(),
+        TooltipState::Edit(edit) => (
+            edit.action_id,
+            edit.anchor,
+            edit.draft.type_key(),
+            crate::preview_tooltip::coordinate_ref_for_preview(&edit.draft).is_some(),
         ),
         _ => return None,
     };
@@ -518,11 +477,21 @@ fn show_edit_window(
     let max_body_h = (ctx.content_rect().height() * 0.65).clamp(160.0, 520.0);
 
     // Picker modal first (foreground); apply result onto draft.
-    if let TooltipState::Edit { draft, picker, .. } = state {
-        let result =
-            pickers::show_active_picker(ctx, picker, catalog, icons, previews, macros);
-        apply_picker_result(draft, result);
+    if let TooltipState::Edit(edit) = state {
+        let result = pickers::show_active_picker(
+            ctx,
+            &mut edit.picker,
+            paint,
+            macros,
+        );
+        apply_picker_result(&mut edit.draft, result);
     }
+
+    let CatalogPaint {
+        catalog,
+        icons,
+        previews,
+    } = paint;
 
     let mut save = false;
     let mut cancel = false;
@@ -558,11 +527,10 @@ fn show_edit_window(
                 });
             });
 
-            if let TooltipState::Edit {
-                error: Some(err), ..
-            } = state
-            {
-                ui.colored_label(egui::Color32::RED, err.as_str());
+            if let TooltipState::Edit(edit) = state {
+                if let Some(err) = &edit.error {
+                    ui.colored_label(egui::Color32::RED, err.as_str());
+                }
             }
 
             ui.separator();
@@ -572,25 +540,28 @@ fn show_edit_window(
                 .auto_shrink([false, false])
                 .max_height(list_h)
                 .show(ui, |ui| {
-                    if let TooltipState::Edit {
-                        draft, picker, ..
-                    } = state
-                    {
+                    if let TooltipState::Edit(edit) = state {
+                        let mut fields = EditFieldsCtx {
+                            paint: CatalogPaint {
+                                catalog,
+                                icons,
+                                previews,
+                            },
+                            bridges: RecordBridges {
+                                key_record: bridges.key_record,
+                                hotkey_record: bridges.hotkey_record,
+                                macro_hotkeys: bridges.macro_hotkeys,
+                                screen_click: bridges.screen_click,
+                            },
+                            theme: *theme,
+                            macros,
+                            active_macro: Some(&*macro_),
+                        };
                         edit::paint_edit_fields(
                             ui,
-                            draft,
-                            catalog,
-                            icons,
-                            previews,
-                            picker,
-                            key_record,
-                            hotkey_record,
-                            macro_hotkeys,
-                            screen_click,
-                            macros,
-                            Some(&*macro_),
-                            known_vars,
-                            is_dark,
+                            &mut edit.draft,
+                            &mut edit.picker,
+                            &mut fields,
                         );
                     }
                 });
@@ -599,13 +570,8 @@ fn show_edit_window(
                 && !ui.input(|i| i.modifiers.shift)
             {
                 // Don't steal Enter while a picker is open.
-                if matches!(
-                    state,
-                    TooltipState::Edit {
-                        picker: ActivePicker::None,
-                        ..
-                    }
-                ) && !ui.ctx().egui_wants_keyboard_input()
+                if matches!(state, TooltipState::Edit(edit) if matches!(edit.picker, ActivePicker::None))
+                    && !ui.ctx().egui_wants_keyboard_input()
                 {
                     save = true;
                 }
@@ -706,8 +672,8 @@ mod tests {
 
         let live = root.find_by_id(id).unwrap().clone();
         state.open_edit(&live, egui::pos2(0.0, 0.0));
-        if let TooltipState::Edit { draft, .. } = &mut state {
-            draft.kind = ActionKind::Wait {
+        if let TooltipState::Edit(edit) = &mut state {
+            edit.draft.kind = ActionKind::Wait {
                 time: ScalarValue::Int(250),
             };
         }
@@ -727,8 +693,8 @@ mod tests {
         let live = root.find_by_id(id).unwrap().clone();
         let mut state = TooltipState::Hidden;
         state.open_edit(&live, egui::pos2(0.0, 0.0));
-        if let TooltipState::Edit { draft, .. } = &mut state {
-            draft.kind = ActionKind::Wait {
+        if let TooltipState::Edit(edit) = &mut state {
+            edit.draft.kind = ActionKind::Wait {
                 time: ScalarValue::Int(999),
             };
         }
@@ -764,8 +730,8 @@ mod tests {
         let live = root.find_by_id(id).unwrap().clone();
         let mut state = TooltipState::Hidden;
         state.open_edit(&live, egui::pos2(0.0, 0.0));
-        if let TooltipState::Edit { draft, .. } = &mut state {
-            draft.kind = ActionKind::Key {
+        if let TooltipState::Edit(edit) = &mut state {
+            edit.draft.kind = ActionKind::Key {
                 key: String::new(),
                 state: true,
             };
@@ -773,10 +739,7 @@ mod tests {
         assert!(!state.try_save_validated(&mut root, None, |_| {}));
         assert!(matches!(
             state,
-            TooltipState::Edit {
-                error: Some(_),
-                ..
-            }
+            TooltipState::Edit(edit) if edit.error.is_some()
         ));
         match &root.find_by_id(id).unwrap().kind {
             ActionKind::Key { key, .. } => assert_eq!(key, "a"),
@@ -797,7 +760,7 @@ mod tests {
         state.open_edit(&child, egui::pos2(0.0, 0.0));
         state.apply_recorded_key("f5".into());
         match &state {
-            TooltipState::Edit { draft, .. } => match &draft.kind {
+            TooltipState::Edit(edit) => match &edit.draft.kind {
                 ActionKind::Key { key, .. } => assert_eq!(key, "f5"),
                 other => panic!("unexpected {other:?}"),
             },
@@ -825,7 +788,7 @@ mod tests {
         state.open_edit(&child, egui::pos2(0.0, 0.0));
         state.apply_recorded_color("ab12cd".into());
         match &state {
-            TooltipState::Edit { draft, .. } => match &draft.kind {
+            TooltipState::Edit(edit) => match &edit.draft.kind {
                 ActionKind::FindPixel { target_color, .. } => {
                     assert_eq!(target_color, "ab12cd")
                 }

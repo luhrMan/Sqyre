@@ -6,7 +6,7 @@ pub fn find_pixel(img: &ImageBuf, hex: &str, tolerance: i32) -> Option<Point> {
         return None;
     }
     let (tr, tg, tb) = parse_hex(hex).unwrap_or((0, 0, 0));
-    let tol = tolerance.clamp(0, 255) as i32;
+    let tol = tolerance.clamp(0, 255);
     for y in 0..img.height {
         for x in 0..img.width {
             let o = img.pixel_offset(x, y);

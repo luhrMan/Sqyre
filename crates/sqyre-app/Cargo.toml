@@ -17,6 +17,9 @@ path = "src/main.rs"
 default = ["hooks"]
 hooks = ["sqyre-hotkeys/hooks"]
 
+[lints]
+workspace = true
+
 [dependencies]
 eframe = { workspace = true }
 egui = { workspace = true }

@@ -5,6 +5,9 @@ edition.workspace = true
 license.workspace = true
 description = "Sqyre macro / action domain model"
 
+[lints]
+workspace = true
+
 [dependencies]
 serde = { workspace = true }
 serde_yaml = { workspace = true }

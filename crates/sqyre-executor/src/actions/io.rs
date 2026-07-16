@@ -42,7 +42,7 @@ pub(crate) fn execute_save_variable(
     let val_str = val.as_display();
 
     if destination == "clipboard" {
-        exec.automation
+        exec.deps.automation
             .write_clipboard(&val_str)
             .map_err(ExecError::Message)?;
         exec.log(
@@ -52,7 +52,7 @@ pub(crate) fn execute_save_variable(
         return Ok(());
     }
 
-    let base = exec.variables_dir.as_deref().ok_or_else(|| {
+    let base = exec.deps.variables_dir.ok_or_else(|| {
         ExecError::Message("save variable: variables directory not configured".into())
     })?;
     let file_path = if Path::new(destination).is_absolute() {

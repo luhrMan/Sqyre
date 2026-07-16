@@ -5,6 +5,9 @@ edition.workspace = true
 license.workspace = true
 description = "YAML encode/decode for macros and actions"
 
+[lints]
+workspace = true
+
 [dependencies]
 serde = { workspace = true }
 serde_yaml = { workspace = true }

@@ -21,54 +21,25 @@ use sqyre_domain::{
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-/// Executor holding injected backends.
+/// Executor: injected backends ([`ExecDeps`]) plus per-run mutable state.
 pub struct Executor<'a> {
-    pub automation: &'a mut dyn AutomationBackend,
-    pub capturer: Option<&'a mut dyn ScreenCapturer>,
-    pub matcher: Option<&'a dyn TemplateMatcher>,
-    pub resolver: Option<&'a dyn CoordinateResolver>,
-    pub icons: Option<&'a dyn IconStore>,
-    pub macros: Option<&'a dyn MacroLookup>,
-    pub continue_waiter: Option<&'a dyn ContinueKeyWaiter>,
-    pub window_focuser: Option<&'a dyn WindowFocuser>,
-    pub ocr: Option<&'a dyn OcrEngine>,
+    pub deps: ExecDeps<'a>,
+    /// Set when a `Stop` action or `Break`/`Continue`-style flow requests halt.
     pub stop_requested: bool,
-    /// Shared stop flag (Esc / UI Stop).
-    pub stop_flag: Option<&'a AtomicBool>,
-    /// Optional per-action run log.
-    pub logger: Option<&'a dyn ActionLogger>,
-    /// Optional active-action highlight sink.
-    pub highlighter: Option<&'a dyn ActionHighlighter>,
-    /// Optional live runtime-variable publisher for the UI.
-    pub runtime_vars: Option<&'a dyn RuntimeVarSink>,
-    /// `~/.sqyre/variables` (or override) for SaveVariable / ForEachRow file sources.
-    pub variables_dir: Option<&'a Path>,
 }
 
 impl<'a> Executor<'a> {
     pub fn new(automation: &'a mut dyn AutomationBackend) -> Self {
         Self {
-            automation,
-            capturer: None,
-            matcher: None,
-            resolver: None,
-            icons: None,
-            macros: None,
-            continue_waiter: None,
-            window_focuser: None,
-                ocr: None,
+            deps: ExecDeps::new(automation),
             stop_requested: false,
-            stop_flag: None,
-            logger: None,
-            highlighter: None,
-            runtime_vars: None,
-            variables_dir: None,
         }
     }
 
     pub fn check_stopped(&self) -> Result<()> {
         if self.stop_requested
             || self
+                .deps
                 .stop_flag
                 .is_some_and(|f| f.load(Ordering::SeqCst))
         {
@@ -84,27 +55,28 @@ impl<'a> Executor<'a> {
         while left > 0 {
             self.check_stopped()?;
             let chunk = left.min(50);
-            self.automation.milli_sleep(chunk);
+            self.deps.automation.milli_sleep(chunk);
             left -= chunk;
         }
         self.check_stopped()
     }
 
     pub fn log(&self, action_id: ActionId, message: impl Into<String>) {
-        if let Some(logger) = self.logger {
+        if let Some(logger) = self.deps.logger {
             logger.log(action_id, message.into());
         }
     }
 
     /// Build a log line only when a logger is attached.
     pub fn log_with(&self, action_id: ActionId, f: impl FnOnce() -> String) {
-        if let Some(logger) = self.logger {
+        if let Some(logger) = self.deps.logger {
             logger.log(action_id, f());
         }
     }
 
     pub fn log_images_enabled(&self) -> bool {
-        self.logger
+        self.deps
+            .logger
             .map(|l| l.log_images_enabled())
             .unwrap_or(false)
     }
@@ -115,7 +87,7 @@ impl<'a> Executor<'a> {
         label: impl Into<String>,
         image: &sqyre_match::ImageBuf,
     ) {
-        if let Some(logger) = self.logger {
+        if let Some(logger) = self.deps.logger {
             logger.log_image(action_id, label.into(), image);
         }
     }
@@ -129,7 +101,7 @@ impl<'a> Executor<'a> {
         steps: &[(String, sqyre_match::ImageBuf)],
         details: Vec<String>,
     ) {
-        if let Some(logger) = self.logger {
+        if let Some(logger) = self.deps.logger {
             logger.log_item_pipeline(
                 action_id,
                 title.into(),
@@ -160,11 +132,10 @@ pub struct ExecDeps<'a> {
     pub variables_dir: Option<&'a Path>,
 }
 
-/// Run a macro from a clean runtime variable store.
-pub fn execute_macro(macro_: &mut Macro, automation: &mut dyn AutomationBackend) -> Result<()> {
-    execute_macro_with(
-        macro_,
-        ExecDeps {
+impl<'a> ExecDeps<'a> {
+    /// Backends with only automation wired; everything else absent.
+    pub fn new(automation: &'a mut dyn AutomationBackend) -> Self {
+        Self {
             automation,
             capturer: None,
             matcher: None,
@@ -173,47 +144,39 @@ pub fn execute_macro(macro_: &mut Macro, automation: &mut dyn AutomationBackend)
             macros: None,
             continue_waiter: None,
             window_focuser: None,
-                ocr: None,
+            ocr: None,
             stop_flag: None,
             logger: None,
             highlighter: None,
             runtime_vars: None,
             variables_dir: None,
-        },
-    )
+        }
+    }
 }
 
-pub fn execute_macro_with(macro_: &mut Macro, mut deps: ExecDeps<'_>) -> Result<()> {
+/// Run a macro from a clean runtime variable store.
+pub fn execute_macro(macro_: &mut Macro, automation: &mut dyn AutomationBackend) -> Result<()> {
+    execute_macro_with(macro_, ExecDeps::new(automation))
+}
+
+pub fn execute_macro_with(macro_: &mut Macro, deps: ExecDeps<'_>) -> Result<()> {
+    let mut exec = Executor {
+        deps,
+        stop_requested: false,
+    };
     macro_.init_runtime_variables();
-    let monitor_sizes = match deps.capturer.as_mut() {
+    let monitor_sizes = match exec.deps.capturer.as_mut() {
         Some(c) => c.monitor_sizes().unwrap_or_else(|_| vec![(0, 0)]),
         None => vec![(0, 0)],
     };
     apply_monitor_sizes(macro_, &monitor_sizes);
-    publish_runtime_vars(deps.runtime_vars, macro_);
-    let mut exec = Executor {
-        automation: deps.automation,
-        capturer: deps.capturer,
-        matcher: deps.matcher,
-        resolver: deps.resolver,
-        icons: deps.icons,
-        macros: deps.macros,
-        continue_waiter: deps.continue_waiter,
-        window_focuser: deps.window_focuser,
-        ocr: deps.ocr,
-        stop_requested: false,
-        stop_flag: deps.stop_flag,
-        logger: deps.logger,
-        highlighter: deps.highlighter,
-        runtime_vars: deps.runtime_vars,
-        variables_dir: deps.variables_dir,
-    };
+    publish_runtime_vars(exec.deps.runtime_vars, macro_);
     let root = macro_.root.clone();
     let result = match execute_action(&mut exec, &root, macro_) {
         Err(ExecError::Flow(FlowSignal::Stopped)) => Ok(()),
         other => other,
     };
-    clear_highlights(exec.highlighter);
+    clear_highlights(exec.deps.highlighter);
     result
 }
 
@@ -251,7 +214,7 @@ pub fn execute_action(exec: &mut Executor<'_>, action: &Action, macro_: &mut Mac
     exec.check_stopped()?;
     // Skip root loop — no cursor on macro root.
     if !action.id.is_root() {
-        highlight_cursor(exec.highlighter, &macro_.name, Some(action.id));
+        highlight_cursor(exec.deps.highlighter, &macro_.name, Some(action.id));
     }
     exec.log_with(action.id, || action_headline(action));
     let result = dispatch(exec, action, macro_);
@@ -260,7 +223,7 @@ pub fn execute_action(exec: &mut Executor<'_>, action: &Action, macro_: &mut Mac
         Ok(())
         | Err(ExecError::Flow(FlowSignal::Break))
         | Err(ExecError::Flow(FlowSignal::Continue)) => {
-            publish_runtime_vars(exec.runtime_vars, macro_);
+            publish_runtime_vars(exec.deps.runtime_vars, macro_);
             apply_delay(exec, action, macro_)?;
         }
         Err(_) => {}
@@ -341,25 +304,25 @@ fn dispatch(exec: &mut Executor<'_>, action: &Action, macro_: &mut Macro) -> Res
         }
         ActionKind::Click { button, state } => {
             if *button == MouseButton::Scroll {
-                exec.automation.scroll(*state).map_err(ExecError::Message)
+                exec.deps.automation.scroll(*state).map_err(ExecError::Message)
             } else {
-                exec.automation
+                exec.deps.automation
                     .click(button.as_str(), *state)
                     .map_err(ExecError::Message)
             }
         }
         ActionKind::Key { key, state } => {
             if *state {
-                exec.automation.key_down(key).map_err(ExecError::Message)
+                exec.deps.automation.key_down(key).map_err(ExecError::Message)
             } else {
-                exec.automation.key_up(key).map_err(ExecError::Message)
+                exec.deps.automation.key_up(key).map_err(ExecError::Message)
             }
         }
         ActionKind::Type { text, delay_ms } => {
             let resolved = resolve_text(text, macro_)?;
             for ch in resolved.chars() {
                 exec.check_stopped()?;
-                exec.automation.type_char(ch);
+                exec.deps.automation.type_char(ch);
                 if *delay_ms > 0 {
                     exec.interruptible_sleep(*delay_ms)?;
                 }
@@ -373,7 +336,7 @@ fn dispatch(exec: &mut Executor<'_>, action: &Action, macro_: &mut Macro) -> Res
             smooth_high,
             smooth_delay_ms,
         } => {
-            let (x, y) = if let Some(resolver) = exec.resolver {
+            let (x, y) = if let Some(resolver) = exec.deps.resolver {
                 resolver.resolve_point(point, macro_).map_err(|e| {
                     ExecError::Message(format!(
                         "Move: failed to resolve point {}: {e}",
@@ -385,7 +348,7 @@ fn dispatch(exec: &mut Executor<'_>, action: &Action, macro_: &mut Macro) -> Res
                     "Move: coordinate resolver not configured".into(),
                 ));
             };
-            exec.automation.move_to(
+            exec.deps.automation.move_to(
                 x,
                 y,
                 MoveOptions {
@@ -462,7 +425,7 @@ fn dispatch(exec: &mut Executor<'_>, action: &Action, macro_: &mut Macro) -> Res
             execute_run_macro(exec, action.id, macro_name, macro_)
         }
         ActionKind::Ocr { .. } => execute_ocr(exec, action, macro_),
-        ActionKind::NavigateSelect { .. } => execute_navigate_select(exec, action, macro_),
+        ActionKind::NavigateSelect(_) => execute_navigate_select(exec, action, macro_),
         ActionKind::NavigateKey { .. } => execute_navigate_key(exec, action, macro_),
     }
 }
@@ -768,21 +731,11 @@ mod tests {
         let mut backend = RecordingBackend::default();
         let stop = AtomicBool::new(true);
         let mut exec = Executor {
-            automation: &mut backend,
-            capturer: None,
-            matcher: None,
-            resolver: None,
-            icons: None,
-            macros: None,
-            continue_waiter: None,
-            window_focuser: None,
-            ocr: None,
+            deps: ExecDeps {
+                stop_flag: Some(&stop),
+                ..ExecDeps::new(&mut backend)
+            },
             stop_requested: false,
-            stop_flag: Some(&stop),
-            logger: None,
-            highlighter: None,
-            runtime_vars: None,
-            variables_dir: None,
         };
         let err = exec.interruptible_sleep(1000).unwrap_err();
         assert!(matches!(err, ExecError::Flow(FlowSignal::Stopped)));

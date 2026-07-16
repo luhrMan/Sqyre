@@ -18,7 +18,7 @@ impl DataEditor {
     pub(crate) fn on_new(
         &mut self,
         db: &mut Database,
-        macros: &mut Vec<Macro>,
+        macros: &mut [Macro],
         catalog: &mut ProgramCatalog,
         icons: &mut IconCache,
         screen_click: &ScreenClickBridge,
@@ -292,7 +292,7 @@ impl DataEditor {
     pub(crate) fn on_update(
         &mut self,
         db: &mut Database,
-        macros: &mut Vec<Macro>,
+        macros: &mut [Macro],
         catalog: &mut ProgramCatalog,
         previews: &mut PreviewTooltipCache,
         settings: &mut UserSettings,
@@ -377,7 +377,7 @@ impl DataEditor {
     pub(crate) fn apply_update(
         &mut self,
         db: &mut Database,
-        macros: &mut Vec<Macro>,
+        macros: &mut [Macro],
         catalog: &mut ProgramCatalog,
         overwrite: bool,
         previews: &mut PreviewTooltipCache,
@@ -475,7 +475,7 @@ impl DataEditor {
     pub(crate) fn update_item(
         &mut self,
         catalog: &mut ProgramCatalog,
-        macros: &mut Vec<Macro>,
+        macros: &mut [Macro],
         new_name: &str,
         overwrite: bool,
     ) -> Result<(), sqyre_persist::PersistError> {
@@ -516,7 +516,7 @@ impl DataEditor {
     pub(crate) fn update_point(
         &mut self,
         catalog: &mut ProgramCatalog,
-        macros: &mut Vec<Macro>,
+        macros: &mut [Macro],
         new_name: &str,
         overwrite: bool,
     ) -> Result<(), sqyre_persist::PersistError> {
@@ -551,7 +551,7 @@ impl DataEditor {
     pub(crate) fn update_search_area(
         &mut self,
         catalog: &mut ProgramCatalog,
-        macros: &mut Vec<Macro>,
+        macros: &mut [Macro],
         new_name: &str,
         overwrite: bool,
     ) -> Result<(), sqyre_persist::PersistError> {
@@ -629,7 +629,7 @@ impl DataEditor {
     pub(crate) fn update_collection(
         &mut self,
         catalog: &mut ProgramCatalog,
-        macros: &mut Vec<Macro>,
+        macros: &mut [Macro],
         new_name: &str,
         overwrite: bool,
     ) -> Result<(), sqyre_persist::PersistError> {
@@ -667,7 +667,7 @@ impl DataEditor {
     pub(crate) fn on_delete(
         &mut self,
         db: &mut Database,
-        macros: &mut Vec<Macro>,
+        macros: &mut [Macro],
         catalog: &mut ProgramCatalog,
         previews: &mut PreviewTooltipCache,
         settings: &mut UserSettings,
