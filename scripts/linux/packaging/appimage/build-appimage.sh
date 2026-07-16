@@ -21,7 +21,7 @@ if [ -z "$APP_VERSION" ] && [ -f "$REPO_ROOT/VERSION" ]; then
 fi
 if [ -z "$APP_VERSION" ]; then
   APP_VERSION="$(sed -n 's/^version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' \
-    "$REPO_ROOT/rust/crates/sqyre-app/Cargo.toml" | head -1)"
+    "$REPO_ROOT/crates/sqyre-app/Cargo.toml" | head -1)"
 fi
 if [ -z "$APP_VERSION" ]; then
   echo "Could not determine app version (set RELEASE_VERSION or write VERSION)" >&2
@@ -63,7 +63,7 @@ run_native() {
     export RUSTUP_HOME="$REPO_ROOT/.rustup-home"
   fi
   if [ -z "${CARGO_TARGET_DIR:-}" ]; then
-    export CARGO_TARGET_DIR="$REPO_ROOT/rust/target"
+    export CARGO_TARGET_DIR="$REPO_ROOT/target"
   fi
 
   rm -rf "$SCRIPT_DIR/sqyre.AppDir" \
@@ -110,7 +110,7 @@ run_docker() {
     "$REPO_ROOT/scripts/download-tessdata.sh"
   fi
 
-  mkdir -p "$REPO_ROOT/.cache/cargo" "$REPO_ROOT/rust/target" "$REPO_ROOT/bin"
+  mkdir -p "$REPO_ROOT/.cache/cargo" "$REPO_ROOT/target" "$REPO_ROOT/bin"
 
   echo "Building AppImage v${APP_VERSION} (docker: $IMAGE)…"
   docker run --rm \
@@ -118,7 +118,7 @@ run_docker() {
     -v "$REPO_ROOT:/workspace" -w /workspace \
     -e HOME=/tmp \
     -e CARGO_HOME=/workspace/.cache/cargo \
-    -e CARGO_TARGET_DIR=/workspace/rust/target \
+    -e CARGO_TARGET_DIR=/workspace/target \
     -e RUSTUP_HOME=/usr/local/rustup \
     -e PATH=/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin \
     -e RELEASE_VERSION="$APP_VERSION" \

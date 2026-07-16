@@ -1,7 +1,0 @@
-/target/
-/target-phase2/
-/.cargo-cache/
-/.cargo-home/
-/.cargo-home-agent/
-/.rustup-home/
-**/*.rs.bk

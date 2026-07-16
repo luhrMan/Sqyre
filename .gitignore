@@ -1,29 +1,28 @@
+# Editor / local notes
 notes.md
 .vs
 .vscode
-
-# Local History for Visual Studio Code
-.history/
-
-# Built Visual Studio Code Extensions
-*.vsix
-
-*.prof
-*.test
-/assets/tessdata/eng.traineddata
-
 /.vscode
 /.kiro
-sqyre
+.history/
+*.vsix
+
+# OCR trained data (downloaded; not committed)
+/assets/tessdata/eng.traineddata
+
+# Build outputs
+/bin/
 /out/
 /AppDir/
-/appimage-build/# Linux packaging build artifacts
-/bin/
 /VERSION
+/target/
+**/*.rs.bk
+
+# Linux packaging build artifacts
+/appimage-build/
 scripts/linux/packaging/appimage/sqyre.AppDir/
 scripts/linux/packaging/appimage/appimage-build/
-scripts/linux/packaging/flatpak/build-dir/
-.flatpak-builder/
+
 # CI / local caches when using workspace paths
 .cache/
 .devcontainer/builds/
@@ -31,9 +30,9 @@ scripts/linux/packaging/flatpak/build-dir/
 # Local Rust toolchain / cargo caches (workspace installs; not for commit)
 .cargo-home/
 .rustup-home/
-rust/.cargo-home/
-rust/.cargo-home-agent/
-rust/.rustup-home/
-rust/.cargo-cache/
-rust/target/
-rust/target-phase2/
+
+# egui_kittest transient snapshot diffs (if written under docs/images)
+docs/images/**/*.diff.png
+docs/images/**/*.new.png
+**/tests/snapshots/**/*.diff.png
+**/tests/snapshots/**/*.new.png

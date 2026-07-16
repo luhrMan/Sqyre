@@ -7,17 +7,16 @@ Open the repository in the dev container (`.devcontainer/`). It includes Rust 1.
 From the repo root:
 
 ```bash
-make                # ./bin/sqyre (debug)
-make rust-release   # ./bin/sqyre (release)
-make run            # cargo run -p sqyre-app
-make rust-test
-make appimage       # bin/*.AppImage (Linux)
-make tessdata       # download eng.traineddata into assets/tessdata/
+make            # ./bin/sqyre (debug)
+make release    # ./bin/sqyre (release)
+make run        # cargo run -p sqyre-app
+make test
+make docs-media # regenerate docs/images screenshots
+make appimage   # bin/*.AppImage (Linux)
+make tessdata   # download eng.traineddata into assets/tessdata/
 ```
 
-Run `make help` for the full target list.
-
-Migration notes (historical Go → Rust cutover): [rust/MIGRATION.md](../rust/MIGRATION.md).
+Run `make help` for the full target list. Workspace layout: [RUST.md](./RUST.md).
 
 ---
 
@@ -25,10 +24,11 @@ Migration notes (historical Go → Rust cutover): [rust/MIGRATION.md](../rust/MI
 
 | Target | Output |
 |--------|--------|
-| `all` / `sqyre` / `rust` | `bin/sqyre` (debug) — **default** |
-| `rust-release` | `bin/sqyre` (release) |
-| `rust-test` | `cargo test` in `rust/` |
-| `run` / `rust-run` | `cargo run -p sqyre-app` |
+| `all` / `sqyre` | `bin/sqyre` (debug) — **default** |
+| `release` | `bin/sqyre` (release) |
+| `test` | `cargo test` (workspace root) |
+| `run` | `cargo run -p sqyre-app` |
+| `docs-media` | Regenerate `docs/images/` screenshots |
 | `appimage` | `bin/Sqyre-*.AppImage` |
 | `tessdata` | Tesseract trained data via `scripts/download-tessdata.sh` |
 
@@ -43,7 +43,7 @@ CI builds and releases **Linux** binaries and AppImages only. Windows/macOS auto
 | Resource | Purpose |
 |----------|---------|
 | [.devcontainer/Dockerfile](../.devcontainer/Dockerfile) | Rust + Tesseract + AppImage tools |
-| [assets/icons/](../assets/icons/) | Brand icons (embedded SVG) |
+| [crates/sqyre-app/assets/icons/](../crates/sqyre-app/assets/icons/) | Brand icons (embedded SVG) |
 | [assets/tessdata/](../assets/tessdata/) | Optional local `eng.traineddata` fallback |
 
 OCR uses system tessdata when available, or `SQYRE_TESSDATA` / `assets/tessdata` when developing.
@@ -52,10 +52,10 @@ OCR uses system tessdata when available, or `SQYRE_TESSDATA` / `assets/tessdata`
 
 ## Manual setup (without dev container)
 
-Prefer the container when possible. Needs **Rust ≥ 1.92**, clang, Tesseract/Leptonica, and X11 libs (`libx11-dev`, `libxtst-dev`, …). See [rust/README.md](../rust/README.md).
+Prefer the container when possible. Needs **Rust ≥ 1.92**, clang, Tesseract/Leptonica, and X11 libs (`libx11-dev`, `libxtst-dev`, …). See [RUST.md](./RUST.md).
 
 ```bash
-make            # or: cd rust && cargo build -p sqyre-app
+make            # or: cargo build -p sqyre-app
 ./bin/sqyre
 ```
 
@@ -66,14 +66,25 @@ For AppImage on the host, also install `appimage-builder`, `patchelf`, and `squa
 ## Tests
 
 ```bash
-make rust-test
-# or: cd rust && cargo test
+make test
+# or: cargo test
 ```
 
 Headless CI uses Null* backends / stub hotkeys where hooks are unavailable.
+
+### README screenshots
+
+In-memory egui goldens live under `docs/images/` (test: `cargo test -p sqyre-app --test docs_screenshots`).
+
+```bash
+make docs-media
+# or: SQYRE_UPDATE_SCREENSHOTS=1 ./scripts/generate-docs-media.sh
+```
+
+Needs wgpu (lavapipe in the dev container / CI image).
 
 ---
 
 ## Packaging
 
-See [scripts/linux/packaging/PACKAGING.md](../scripts/linux/packaging/PACKAGING.md) for AppImage builds. Flatpak is not currently maintained (desktop/appdata stubs remain under `scripts/linux/packaging/flatpak/` for a future rewrite).
+See [scripts/linux/packaging/PACKAGING.md](../scripts/linux/packaging/PACKAGING.md) for AppImage builds.

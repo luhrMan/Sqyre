@@ -1,0 +1,41 @@
+---
+description: Rust workspace conventions for Sqyre
+alwaysApply: true
+---
+
+# Rust Development
+
+This repo is a Rust Cargo workspace (Linux/X11 + egui). Do not add a second implementation language or dual-build stacks.
+
+## Layout
+
+- Workspace root: `Cargo.toml` + `crates/sqyre-*` (not a nested `rust/` directory)
+- GUI binary: `crates/sqyre-app` → `./bin/sqyre`
+- Shared libs: `sqyre-domain`, `sqyre-serialize`, `sqyre-persist`, `sqyre-validate`, `sqyre-varref`, `sqyre-match`, `sqyre-vision`, `sqyre-capture`, `sqyre-executor`, `sqyre-hotkeys`, `sqyre-input`
+- Brand icons: `crates/sqyre-app/assets/`; tessdata: `assets/tessdata/`
+- Product name is **Sqyre**; repo may still be named Squire
+
+## Build / test
+
+Prefer Makefile targets when they exist:
+
+- `make` / `make sqyre` — debug build → `./bin/sqyre`
+- `make release` — release build
+- `make test` — workspace tests
+- `make run` — `cargo run -p sqyre-app`
+- `make tessdata` — download OCR data
+- `make appimage` — Linux AppImage
+- `make docs-media` — regenerate README screenshots under `docs/images/`
+
+Direct cargo is fine: `cargo build -p sqyre-app`, `cargo test -p <crate>`.
+
+## Code style
+
+- Prefer idiomatic Rust
+- Do not add compatibility shims or dual codecs unless the user asks
+- Keep breaking changes clean (see no-backwards-compatibility rule)
+- Linux/X11 + egui is the supported desktop path; don’t invent Windows/macOS support unprompted
+
+## Out of scope unless asked
+
+- Flatpak or Nix packaging (removed; AppImage only)

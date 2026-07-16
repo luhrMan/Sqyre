@@ -6,7 +6,7 @@
 #   _here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 #   . "$_here/../lib/repo-root.sh"
 #
-# Resolution: walk upward until rust/Cargo.toml (or Makefile) is found; if that
+# Resolution: walk upward until workspace Cargo.toml (or Makefile) is found; if that
 # fails, try git rev-parse --show-toplevel.
 
 _repo_root_lib="${BASH_SOURCE[0]:-$0}"
@@ -14,7 +14,14 @@ _lib_dir="$(cd "$(dirname "$_repo_root_lib")" && pwd)"
 d="$_lib_dir"
 
 _is_repo_root() {
-  [[ -f "$1/rust/Cargo.toml" || -f "$1/Makefile" ]]
+  # Prefer Makefile (repo root), else Cargo.toml that declares [workspace].
+  if [[ -f "$1/Makefile" ]]; then
+    return 0
+  fi
+  if [[ -f "$1/Cargo.toml" ]] && grep -q '^\[workspace\]' "$1/Cargo.toml" 2>/dev/null; then
+    return 0
+  fi
+  return 1
 }
 
 while [[ "$d" != "/" ]] && ! _is_repo_root "$d"; do
@@ -29,7 +36,7 @@ if ! _is_repo_root "$d"; then
     unset _repo_root_lib _lib_dir d _git_root
     return 0 2>/dev/null || exit 0
   fi
-  echo "repo-root.sh: could not find repo root (no rust/Cargo.toml above ${_lib_dir}; git fallback failed)" >&2
+  echo "repo-root.sh: could not find repo root (no workspace Cargo.toml / Makefile above ${_lib_dir}; git fallback failed)" >&2
   unset _repo_root_lib _lib_dir d _git_root
   return 1 2>/dev/null || exit 1
 fi
