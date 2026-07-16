@@ -15,7 +15,24 @@ pub const IMAGE_SEARCH_BUILTIN_VARS: &[&str] = &[
     "ImagePixelHeight",
 ];
 
-/// Monitor builtin names for `num_monitors` displays (1-based; ).
+/// Fixed descriptions for Image Search builtins (same order as [`IMAGE_SEARCH_BUILTIN_VARS`]).
+const IMAGE_SEARCH_BUILTIN_DESCS: &[&str] = &[
+    "Max stack depth for the matched image (Image Search)",
+    "Column count of the matched grid (Image Search)",
+    "Row count of the matched grid (Image Search)",
+    "Name of the matched item (Image Search)",
+    "Template image width in pixels (Image Search)",
+    "Template image height in pixels (Image Search)",
+];
+
+/// Name + description for a system-provided runtime variable.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BuiltinVariableInfo {
+    pub name: String,
+    pub description: &'static str,
+}
+
+/// Monitor builtin names for `num_monitors` displays (1-based).
 /// When `num_monitors < 1`, returns names for one monitor.
 pub fn monitor_builtin_var_names(num_monitors: usize) -> Vec<String> {
     let n = num_monitors.max(1);
@@ -25,6 +42,40 @@ pub fn monitor_builtin_var_names(num_monitors: usize) -> Vec<String> {
         names.push(format!("monitor{i}Height"));
     }
     names
+}
+
+/// Full reference catalog of builtins for the Variables panel (not filtered by macro content).
+pub fn builtin_variable_catalog(num_monitors: usize) -> Vec<BuiltinVariableInfo> {
+    let n = num_monitors.max(1);
+    let mut out = Vec::with_capacity(n * 2 + IMAGE_SEARCH_BUILTIN_VARS.len() + 2);
+    for i in 1..=n {
+        out.push(BuiltinVariableInfo {
+            name: format!("monitor{i}Width"),
+            description: "Display width in pixels (set at macro start)",
+        });
+        out.push(BuiltinVariableInfo {
+            name: format!("monitor{i}Height"),
+            description: "Display height in pixels (set at macro start)",
+        });
+    }
+    for (name, description) in IMAGE_SEARCH_BUILTIN_VARS
+        .iter()
+        .zip(IMAGE_SEARCH_BUILTIN_DESCS.iter())
+    {
+        out.push(BuiltinVariableInfo {
+            name: (*name).to_string(),
+            description,
+        });
+    }
+    out.push(BuiltinVariableInfo {
+        name: FOREACH_ROW_BUILTIN_ROW.to_string(),
+        description: "Current 1-based row index (ForEachRow)",
+    });
+    out.push(BuiltinVariableInfo {
+        name: FOREACH_ROW_BUILTIN_ROW_COUNT.to_string(),
+        description: "Total row count of the driving source (ForEachRow)",
+    });
+    out
 }
 
 /// Lowercase name set for known/unknown nested variable chips.
@@ -45,19 +96,30 @@ pub fn collect_known_variable_names(macro_: &Macro) -> HashSet<String> {
 }
 
 /// Like [`collect_known_variable_names`], plus monitor builtins for `num_monitors`.
+///
+/// Names keep their declared/canonical casing for display (autocomplete, chips).
+/// Lookup remains case-insensitive via [`is_known_variable`].
 pub fn collect_known_variable_names_with_monitors(
     macro_: &Macro,
     num_monitors: usize,
 ) -> HashSet<String> {
-    let mut names = HashSet::new();
+    // lowercase key → first-seen display casing (decls, then bindings, then builtins)
+    let mut by_lower = std::collections::HashMap::<String, String>::new();
     let mut has_image_search = false;
     let mut has_for_each_row = false;
 
-    for d in &macro_.variable_decls {
-        let n = d.name.trim();
-        if !n.is_empty() {
-            names.insert(n.to_ascii_lowercase());
+    let mut insert = |name: &str| {
+        let n = name.trim();
+        if n.is_empty() {
+            return;
         }
+        by_lower
+            .entry(n.to_ascii_lowercase())
+            .or_insert_with(|| n.to_string());
+    };
+
+    for d in &macro_.variable_decls {
+        insert(&d.name);
     }
 
     macro_.root.walk(&mut |action: &Action| {
@@ -67,33 +129,34 @@ pub fn collect_known_variable_names_with_monitors(
             _ => {}
         }
         for b in action.variable_bindings() {
-            let n = b.name.trim();
-            if !n.is_empty() {
-                names.insert(n.to_ascii_lowercase());
-            }
+            insert(&b.name);
         }
     });
 
     if has_image_search {
         for n in IMAGE_SEARCH_BUILTIN_VARS {
-            names.insert((*n).to_ascii_lowercase());
+            insert(n);
         }
     }
     if has_for_each_row {
-        names.insert(FOREACH_ROW_BUILTIN_ROW.to_ascii_lowercase());
-        names.insert(FOREACH_ROW_BUILTIN_ROW_COUNT.to_ascii_lowercase());
+        insert(FOREACH_ROW_BUILTIN_ROW);
+        insert(FOREACH_ROW_BUILTIN_ROW_COUNT);
     }
 
     for name in monitor_builtin_var_names(num_monitors) {
-        names.insert(name.to_ascii_lowercase());
+        insert(&name);
     }
 
-    names
+    by_lower.into_values().collect()
 }
 
 /// True when `name` is in the known set (case-insensitive).
 pub fn is_known_variable(known: &HashSet<String>, name: &str) -> bool {
-    known.contains(&name.trim().to_ascii_lowercase())
+    let needle = name.trim().to_ascii_lowercase();
+    !needle.is_empty()
+        && known
+            .iter()
+            .any(|n| n.trim().eq_ignore_ascii_case(&needle))
 }
 
 /// Declared value type of a user-defined macro variable.
@@ -239,6 +302,8 @@ mod known_tests {
         assert!(is_known_variable(&known, "RowCount"));
         assert!(is_known_variable(&known, "monitor1Width"));
         assert!(is_known_variable(&known, "monitor1Height"));
+        assert!(known.iter().any(|n| n == "Seed"));
+        assert!(known.iter().any(|n| n == "Count"));
     }
 
     #[test]
@@ -258,5 +323,17 @@ mod known_tests {
         );
         let known = collect_known_variable_names_with_monitors(&Macro::new("m", 0, vec![]), 2);
         assert!(is_known_variable(&known, "monitor2Width"));
+    }
+
+    #[test]
+    fn builtin_catalog_includes_monitors_image_search_and_foreach() {
+        let cat = builtin_variable_catalog(2);
+        let names: Vec<&str> = cat.iter().map(|b| b.name.as_str()).collect();
+        assert!(names.contains(&"monitor1Width"));
+        assert!(names.contains(&"monitor2Height"));
+        assert!(names.contains(&"StackMax"));
+        assert!(names.contains(&"Row"));
+        assert!(names.contains(&"RowCount"));
+        assert_eq!(cat.len(), 2 * 2 + IMAGE_SEARCH_BUILTIN_VARS.len() + 2);
     }
 }

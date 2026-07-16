@@ -66,6 +66,18 @@ pub fn main_monitor_resolution_key() -> Option<String> {
     }
 }
 
+/// Number of displays from the live capturer, or `1` when capture is unavailable.
+pub fn monitor_count() -> usize {
+    use sqyre_executor::ScreenCapturer;
+    let Ok(mut capturer) = X11Capturer::open() else {
+        return 1;
+    };
+    capturer
+        .monitor_sizes()
+        .map(|s| s.len().max(1))
+        .unwrap_or(1)
+}
+
 /// Open top-level windows with stable executable path and title.
 #[cfg(target_os = "linux")]
 pub fn list_open_windows() -> Result<Vec<WindowInfo>, String> {

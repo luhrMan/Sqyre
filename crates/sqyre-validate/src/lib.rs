@@ -184,7 +184,7 @@ pub fn unknown_variable_warning(text: &str, macro_: Option<&Macro>) -> String {
         if name.is_empty() {
             continue;
         }
-        if !known.contains(&name.to_ascii_lowercase()) {
+        if !sqyre_domain::is_known_variable(&known, name) {
             unknown.push(name.to_string());
         }
     }
