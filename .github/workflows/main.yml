@@ -1,8 +1,6 @@
-# Build and release Sqyre on merge to main.
-# Produces: Linux binary, AppImage, Windows .exe
+# Build and release Sqyre on merge to main (Linux Rust only).
+# Produces: Linux binary, AppImage.
 # Release tag / artifact names: vYYYY.MM.DD.HHMM (e.g. v2026.03.03.1643).
-# Fyne -appVersion allows only x.y.z (digits and dots); Windows fyne-cross uses
-# YYYY.MM.DD in FyneApp.toml while binaries keep the full timestamp in filenames.
 
 name: Build and Release
 
@@ -28,13 +26,10 @@ jobs:
     runs-on: ubuntu-22.04
     outputs:
       version: ${{ steps.version.outputs.VERSION }}
-      fyne_app_version: ${{ steps.version.outputs.FYNE_APP_VERSION }}
     steps:
       - name: Set version
         id: version
-        run: |
-          echo "VERSION=$(date +%Y.%m.%d.%H%M)" >> "$GITHUB_OUTPUT"
-          echo "FYNE_APP_VERSION=$(date +%Y.%m.%d)" >> "$GITHUB_OUTPUT"
+        run: echo "VERSION=$(date +%Y.%m.%d.%H%M)" >> "$GITHUB_OUTPUT"
 
   test:
     runs-on: ubuntu-22.04
@@ -61,7 +56,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # GHA cache can evict large layers; GHCR registry cache keeps OpenCV build layers across runs.
       - name: Build Linux image
         uses: docker/build-push-action@v7
         with:
@@ -80,38 +74,40 @@ jobs:
         id: tessdata-test
         uses: actions/cache@v6
         with:
-          path: internal/assets/tessdata
-          key: tessdata-eng
+          path: assets/tessdata
+          key: tessdata-eng-v2
 
-      - name: Download tessdata for embedding
+      - name: Download tessdata
         if: steps.tessdata-test.outputs.cache-hit != 'true'
         run: ./scripts/download-tessdata.sh
 
-      - name: Cache Go modules and build cache
+      - name: Cache Cargo registry and target
         uses: actions/cache@v6
         with:
           path: |
-            .cache/go-mod
-            .cache/go-build
-          key: go-${{ hashFiles('go.mod', 'go.sum') }}
+            .cache/cargo
+            target
+          key: cargo-ws-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
-            go-
+            cargo-ws-
 
-      - name: Prepare shared Go caches
-        run: mkdir -p .cache/go-build .cache/go-mod
+      - name: Prepare Cargo cache dirs
+        run: mkdir -p .cache/cargo
 
-      - name: Run tests
+      - name: Run Rust tests
         run: |
           docker run --rm -u "$(id -u):$(id -g)" \
             -v ${{ github.workspace }}:/workspace -w /workspace \
             -e HOME=/tmp \
-            -e GOCACHE=/workspace/.cache/go-build \
-            -e GOMODCACHE=/workspace/.cache/go-mod \
+            -e CARGO_HOME=/workspace/.cache/cargo \
+            -e CARGO_TARGET_DIR=/workspace/target \
+            -e RUSTUP_HOME=/usr/local/rustup \
+            -e PATH=/usr/local/cargo/bin:/usr/bin:/bin \
+            -e WGPU_BACKEND=vulkan \
+            -e VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json \
             sqyre-linux-build \
-            bash -c 'set -x
-              ./scripts/test.sh
-              echo "=== Global hook Esc tests (xvfb) ==="
-              ./scripts/test-ui.sh -run TestGUIEscape'
+            bash -c 'set -euo pipefail
+              make test'
 
   build-linux:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -125,10 +121,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Sync FyneApp.toml with release version
-        run: |
-          VERSION="${{ needs.version.outputs.version }}"
-          sed -i 's/^Version = .*/Version = "'"$VERSION"'"/' FyneApp.toml
+      - name: Write VERSION
+        run: echo "${{ needs.version.outputs.version }}" > VERSION
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -165,37 +159,38 @@ jobs:
         id: tessdata-linux
         uses: actions/cache@v6
         with:
-          path: internal/assets/tessdata
-          key: tessdata-eng
+          path: assets/tessdata
+          key: tessdata-eng-v2
 
-      - name: Download tessdata for embedding
+      - name: Download tessdata
         if: steps.tessdata-linux.outputs.cache-hit != 'true'
         run: ./scripts/download-tessdata.sh
 
-      - name: Cache Go modules and build cache
+      - name: Cache Cargo registry and target
         uses: actions/cache@v6
         with:
           path: |
-            .cache/go-mod
-            .cache/go-build
-          key: go-${{ hashFiles('go.mod', 'go.sum') }}
+            .cache/cargo
+            target
+          key: cargo-ws-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
-            go-
+            cargo-ws-
 
-      - name: Prepare shared Go caches
-        run: mkdir -p .cache/go-build .cache/go-mod
+      - name: Prepare Cargo cache dirs
+        run: mkdir -p .cache/cargo
 
-      # AppImage recipe runs go build once; reuse that binary for the standalone zip.
       - name: Build Linux binary and AppImage
         run: |
           VERSION="${{ needs.version.outputs.version }}"
           docker run --rm -u "$(id -u):$(id -g)" \
             -v ${{ github.workspace }}:/workspace -w /workspace \
             -e HOME=/tmp \
-            -e GOCACHE=/workspace/.cache/go-build \
-            -e GOMODCACHE=/workspace/.cache/go-mod \
-            -e GOFLAGS="-tags=gocv_specific_modules -buildvcs=false" \
+            -e CARGO_HOME=/workspace/.cache/cargo \
+            -e CARGO_TARGET_DIR=/workspace/target \
+            -e RUSTUP_HOME=/usr/local/rustup \
+            -e PATH=/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin \
             -e RELEASE_VERSION="$VERSION" \
+            -e SQYRE_APPIMAGE_FORCE_NATIVE=1 \
             sqyre-linux-build \
             bash -c 'set -euo pipefail
               scripts/linux/packaging/appimage/build-appimage.sh
@@ -231,140 +226,13 @@ jobs:
           name: linux-appimage-zip
           path: Sqyre-v${{ needs.version.outputs.version }}-x86_64.AppImage.zip
 
-  build-windows:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: version
-    runs-on: ubuntu-22.04
-    permissions:
-      contents: read
-      packages: write
-    outputs:
-      version: ${{ needs.version.outputs.version }}
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Sync FyneApp.toml for Fyne packaging (x.y.z only)
-        run: |
-          FYNE_VER="${{ needs.version.outputs.fyne_app_version }}"
-          sed -i 's/^Version = .*/Version = "'"$FYNE_VER"'"/' FyneApp.toml
-
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Cache fyne-cross binary
-        id: fyne-cross-bin
-        uses: actions/cache@v6
-        with:
-          path: .cache/go-bin
-          key: fyne-cross-v1.6.2-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
-          restore-keys: |
-            fyne-cross-v1.6.2-${{ runner.os }}-
-
-      - name: Install fyne-cross
-        run: |
-          mkdir -p .cache/go-bin
-          if [ ! -x .cache/go-bin/fyne-cross ]; then
-            GOBIN="${{ github.workspace }}/.cache/go-bin" \
-              go install github.com/fyne-io/fyne-cross@v1.6.2
-          fi
-          echo "${{ github.workspace }}/.cache/go-bin" >> "$GITHUB_PATH"
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: GHCR image ref for Buildx cache
-        id: ghcr
-        run: |
-          o=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          n=$(echo "${{ github.event.repository.name }}" | tr '[:upper:]' '[:lower:]')
-          echo "buildcache=ghcr.io/${o}/${n}-buildcache:windows" >> "$GITHUB_OUTPUT"
-
-      - name: Log in to GitHub Container Registry (Buildx cache)
-        uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build Windows image
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: scripts/windows/docker/Dockerfile.windows-amd64
-          load: true
-          tags: fyne-cross-windows:local
-          cache-from: |
-            type=registry,ref=${{ steps.ghcr.outputs.buildcache }}
-            type=gha,scope=sqyre-windows
-          cache-to: |
-            type=gha,mode=max,scope=sqyre-windows
-            type=registry,ref=${{ steps.ghcr.outputs.buildcache }},mode=max
-
-      - name: Cache tessdata
-        id: tessdata-windows
-        uses: actions/cache@v6
-        with:
-          path: internal/assets/tessdata
-          key: tessdata-eng
-
-      - name: Download tessdata for embedding
-        if: steps.tessdata-windows.outputs.cache-hit != 'true'
-        run: ./scripts/download-tessdata.sh
-
-      - name: Cache fyne-cross dependencies
-        uses: actions/cache@v6
-        with:
-          path: .cache/fyne-cross
-          key: windows-fyne-cross-${{ hashFiles('go.mod', 'go.sum') }}
-          restore-keys: |
-            windows-fyne-cross-
-
-      - name: Cross-compile for Windows
-        run: |
-          mkdir -p .cache/fyne-cross
-          fyne-cross windows \
-            -cache "${{ github.workspace }}/.cache/fyne-cross" \
-            -image fyne-cross-windows:local \
-            --app-id com.sqyre.app \
-            ./cmd/sqyre
-
-      - name: Locate and rename Windows exe
-        run: |
-          EXE=$(find fyne-cross -name "Sqyre.exe" -type f 2>/dev/null | head -1)
-          if [ -z "$EXE" ]; then
-            echo "Sqyre.exe not found in fyne-cross output"
-            find . -name "*.exe" 2>/dev/null
-            exit 1
-          fi
-          cp "$EXE" "Sqyre-v${{ needs.version.outputs.version }}-windows-amd64.exe"
-
-      - name: Install zip
-        run: sudo apt-get update && sudo apt-get install -y zip
-
-      - name: Zip Windows artifact
-        run: |
-          VERSION="${{ needs.version.outputs.version }}"
-          zip -9 "Sqyre-v${VERSION}-windows-amd64.zip" \
-            "Sqyre-v${VERSION}-windows-amd64.exe"
-
-      - name: Upload Windows artifact (zipped)
-        uses: actions/upload-artifact@v7
-        with:
-          name: windows-artifact-zip
-          path: Sqyre-v${{ needs.version.outputs.version }}-windows-amd64.zip
-
   release:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [build-linux, build-windows]
+    needs: [build-linux]
     runs-on: ubuntu-22.04
     permissions:
       contents: write
     steps:
-      # Only release zips — do not use "download all": Buildx GHA cache uploads
-      # *.dockerbuild artifacts on the same run; those are not valid release inputs and can fail to extract.
       - name: Download release zip artifacts
         uses: actions/download-artifact@v8
         with:
@@ -379,7 +247,6 @@ jobs:
           files: |
             artifacts/linux-binary-zip/*.zip
             artifacts/linux-appimage-zip/*.zip
-            artifacts/windows-artifact-zip/*.zip
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

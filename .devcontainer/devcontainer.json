@@ -1,5 +1,5 @@
 {
-  "name": "Sqyre",
+  "name": "Sqyre (Rust)",
   "build": {
     "dockerfile": "Dockerfile",
     "context": ".."
@@ -7,25 +7,20 @@
   "workspaceFolder": "/workspace",
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind",
   "mounts": [
-    "source=sqyre-go-mod-cache,target=/go/pkg/mod,type=volume",
-    "source=sqyre-go-build-cache,target=/home/vscode/.cache/go-build,type=volume",
-    "source=sqyre-opencv-linux,target=/opt/opencv/linux,type=volume"
+    "source=sqyre-cargo-home,target=/home/vscode/.cargo,type=volume"
   ],
-  "features": {
-    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
-  },
   "containerEnv": {
-    "GOFLAGS": "-tags=gocv_specific_modules",
-    "GOTOOLCHAIN": "auto"
+    "CARGO_HOME": "/home/vscode/.cargo",
+    "RUSTUP_HOME": "/usr/local/rustup"
   },
   "customizations": {
     "vscode": {
       "extensions": [
-        "golang.go"
+        "rust-lang.rust-analyzer"
       ]
     }
   },
-  "postCreateCommand": "sudo chown -R vscode:vscode /go/pkg/mod /home/vscode/.cache/go-build && go mod download",
+  "postCreateCommand": "sudo chown -R vscode:vscode /home/vscode/.cargo 2>/dev/null || true && rustup component add rust-src 2>/dev/null || true && rustc --version && cargo --version && cargo fetch",
   "remoteUser": "vscode",
   "updateRemoteUserUID": true
 }

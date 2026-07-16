@@ -1,0 +1,17 @@
+[package]
+name = "sqyre-hotkeys"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Global hotkeys (Esc stop / failsafe); stubs for CI"
+
+[features]
+default = []
+# Enable OS-level hooks (needs display / input permissions).
+hooks = ["dep:rdev"]
+
+[dependencies]
+parking_lot = { workspace = true }
+rdev = { workspace = true, optional = true }
+
+[dev-dependencies]
