@@ -1,0 +1,52 @@
+[package]
+name = "sqyre-app"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Sqyre desktop shell (egui / eframe)"
+
+[lib]
+name = "sqyre_app"
+path = "src/lib.rs"
+
+[[bin]]
+name = "sqyre"
+path = "src/main.rs"
+
+[features]
+default = ["hooks"]
+hooks = ["sqyre-hotkeys/hooks"]
+
+[dependencies]
+eframe = { workspace = true }
+egui = { workspace = true }
+egui_ltreeview = { workspace = true }
+fs2 = "0.4"
+image = { workspace = true }
+resvg = { workspace = true }
+sqyre-match = { path = "../sqyre-match" }
+sqyre-domain = { path = "../sqyre-domain" }
+sqyre-persist = { path = "../sqyre-persist" }
+sqyre-validate = { path = "../sqyre-validate" }
+sqyre-varref = { path = "../sqyre-varref" }
+sqyre-executor = { path = "../sqyre-executor" }
+sqyre-serialize = { path = "../sqyre-serialize" }
+sqyre-input = { path = "../sqyre-input" }
+sqyre-capture = { path = "../sqyre-capture" }
+sqyre-hotkeys = { path = "../sqyre-hotkeys" }
+sqyre-vision = { path = "../sqyre-vision" }
+serde_yaml = { workspace = true }
+rfd = { workspace = true }
+tokio = { workspace = true }
+parking_lot = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+ksni = { workspace = true }
+
+[target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
+tray-icon = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+egui_kittest = { version = "0.34", features = ["wgpu", "snapshot", "eframe"] }
+image = { workspace = true }

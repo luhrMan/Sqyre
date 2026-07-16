@@ -41,11 +41,11 @@ alwaysApply: true
 ```
 ❌ "I'll start by exploring the codebase to understand how authentication works.
    First, let me search for auth-related files..."
-✅ [searches, edits, then] "Fixed: session wasn't cleared on logout (auth.go:42)."
+✅ [searches, edits, then] "Fixed: session wasn't cleared on logout (auth.rs:42)."
 
 ❌ Three paragraphs on what a mutex is, then a one-line fix.
-✅ "Added `mu` around the shared cache — reads were racing writes."
+✅ "Wrapped the shared cache in `Mutex` — reads were racing writes."
 
 ❌ "Here's a summary of everything we did: 1) we looked at X 2) we found Y 3) we changed Z..."
-✅ "Renamed `GetUser` → `FetchUser` and updated 4 call sites."
+✅ "Renamed `get_user` → `fetch_user` and updated 4 call sites."
 ```

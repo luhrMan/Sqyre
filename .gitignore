@@ -1,32 +1,41 @@
+# Editor / local notes
 notes.md
 .vs
 .vscode
-
-# Local History for Visual Studio Code
-.history/
-
-# Built Visual Studio Code Extensions
-*.vsix
-
-*.prof
-*.test
-/internal/assets/images/meta/
-/internal/assets/tessdata/eng.traineddata
-
 /.vscode
 /.kiro
-sqyre
+.history/
+*.vsix
+
+# OCR trained data (downloaded; not committed)
+/assets/tessdata/eng.traineddata
+
+# Build outputs
+/bin/
 /out/
 /AppDir/
-/appimage-build/# Linux packaging build artifacts
-/bin/
+/VERSION
+/target/
+**/*.rs.bk
+
+# Linux packaging build artifacts
+/appimage-build/
+*.AppImage
 scripts/linux/packaging/appimage/sqyre.AppDir/
 scripts/linux/packaging/appimage/appimage-build/
-scripts/linux/packaging/flatpak/build-dir/
-scripts/android/output/
-.flatpak-builder/
-fyne-cross/
-# CI / local Go caches when using workspace paths (e.g. GOMODCACHE=./.cache/go-mod)
+# mktemp recipe from build-appimage.sh (e.g. .AppImageBuilder.XXXXXX.yml)
+scripts/linux/packaging/appimage/.AppImageBuilder.*.yml
+
+# CI / local caches when using workspace paths
 .cache/
-internal/models/repositories/testdata/
 .devcontainer/builds/
+
+# Local Rust toolchain / cargo caches (workspace installs; not for commit)
+.cargo-home/
+.rustup-home/
+
+# egui_kittest transient snapshot diffs (if written under docs/images)
+docs/images/**/*.diff.png
+docs/images/**/*.new.png
+**/tests/snapshots/**/*.diff.png
+**/tests/snapshots/**/*.new.png
