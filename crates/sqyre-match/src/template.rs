@@ -503,6 +503,15 @@ mod tests {
         ImageBuf::new(w, h, 3, v)
     }
 
+    /// Wall-clock budgets assume `--release`. Default `cargo test` / CI is debug and much slower.
+    fn perf_budget_secs(release_secs: f64) -> f64 {
+        if cfg!(debug_assertions) {
+            release_secs * 10.0
+        } else {
+            release_secs
+        }
+    }
+
     #[test]
     fn finds_stamped_template_top_left() {
         let tmpl = patterned(8, 8);
@@ -599,9 +608,10 @@ mod tests {
         let t0 = Instant::now();
         let map = match_ccoeff_normed(&search, &tmpl, None).unwrap();
         let elapsed = t0.elapsed();
+        let budget = perf_budget_secs(2.0);
         assert!(
-            elapsed.as_secs_f64() < 2.0,
-            "640x480 match took {elapsed:?}"
+            elapsed.as_secs_f64() < budget,
+            "640x480 match took {elapsed:?} (budget {budget}s)"
         );
         let matches = find_peaks(&map, 0.95, DEFAULT_CLOSE_MATCHES_DISTANCE);
         assert!(
@@ -620,9 +630,10 @@ mod tests {
         let t0 = Instant::now();
         let map = match_ccoeff_normed(&search, &tmpl, None).unwrap();
         let elapsed = t0.elapsed();
+        let budget = perf_budget_secs(5.0);
         assert!(
-            elapsed.as_secs_f64() < 5.0,
-            "1100x700 / 120x150 took {elapsed:?} — FFT path broken?"
+            elapsed.as_secs_f64() < budget,
+            "1100x700 / 120x150 took {elapsed:?} (budget {budget}s) — FFT path broken?"
         );
         let matches = find_peaks(&map, 0.95, DEFAULT_CLOSE_MATCHES_DISTANCE);
         assert!(

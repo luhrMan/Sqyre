@@ -18,6 +18,17 @@ make tessdata   # download eng.traineddata into assets/tessdata/
 
 Run `make help` for the full target list. Workspace layout: [RUST.md](./RUST.md).
 
+Build caches (all gitignored):
+
+| Path | Role |
+|------|------|
+| `target/` | Incremental compile artifacts (host + docker bind-mount) |
+| `.cargo-home/` | Optional workspace-local cargo/rustup install |
+| `.cache/cargo/` | Cargo registry/git cache used by CI and docker AppImage builds |
+| Dev container volume `sqyre-cargo-home` | Persistent `/home/vscode/.cargo` in the container |
+
+`make appimage` via Docker reuses `CARGO_HOME` when Make exports `.cargo-home`, otherwise `.cache/cargo`.
+
 ---
 
 ## Make targets
