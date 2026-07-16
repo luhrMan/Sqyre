@@ -20,6 +20,11 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # Shared with docker run mounts (see jobs below).
+  CARGO_HOME_DIR: .cache/cargo
+  CARGO_TARGET_DIR_HOST: target
+
 jobs:
   version:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -81,26 +86,34 @@ jobs:
         if: steps.tessdata-test.outputs.cache-hit != 'true'
         run: ./scripts/download-tessdata.sh
 
-      - name: Cache Cargo registry and target
+      # Registry/git downloads change with the lockfile + toolchain image.
+      - name: Cache Cargo registry
         uses: actions/cache@v6
         with:
-          path: |
-            .cache/cargo
-            target
-          key: cargo-ws-${{ hashFiles('Cargo.lock') }}
+          path: ${{ env.CARGO_HOME_DIR }}
+          key: ${{ runner.os }}-cargo-reg-${{ hashFiles('Cargo.lock', '.devcontainer/Dockerfile') }}
           restore-keys: |
-            cargo-ws-
+            ${{ runner.os }}-cargo-reg-
+
+      # Incremental artifacts; keyed separately so registry hits still help when target misses.
+      - name: Cache Cargo target
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.CARGO_TARGET_DIR_HOST }}
+          key: ${{ runner.os }}-cargo-target-${{ hashFiles('Cargo.lock', '.devcontainer/Dockerfile') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-target-
 
       - name: Prepare Cargo cache dirs
-        run: mkdir -p .cache/cargo
+        run: mkdir -p "${{ env.CARGO_HOME_DIR }}" "${{ env.CARGO_TARGET_DIR_HOST }}"
 
       - name: Run Rust tests
         run: |
           docker run --rm -u "$(id -u):$(id -g)" \
             -v ${{ github.workspace }}:/workspace -w /workspace \
             -e HOME=/tmp \
-            -e CARGO_HOME=/workspace/.cache/cargo \
-            -e CARGO_TARGET_DIR=/workspace/target \
+            -e CARGO_HOME=/workspace/${{ env.CARGO_HOME_DIR }} \
+            -e CARGO_TARGET_DIR=/workspace/${{ env.CARGO_TARGET_DIR_HOST }} \
             -e RUSTUP_HOME=/usr/local/rustup \
             -e PATH=/usr/local/cargo/bin:/usr/bin:/bin \
             -e WGPU_BACKEND=vulkan \
@@ -166,18 +179,24 @@ jobs:
         if: steps.tessdata-linux.outputs.cache-hit != 'true'
         run: ./scripts/download-tessdata.sh
 
-      - name: Cache Cargo registry and target
+      - name: Cache Cargo registry
         uses: actions/cache@v6
         with:
-          path: |
-            .cache/cargo
-            target
-          key: cargo-ws-${{ hashFiles('Cargo.lock') }}
+          path: ${{ env.CARGO_HOME_DIR }}
+          key: ${{ runner.os }}-cargo-reg-${{ hashFiles('Cargo.lock', '.devcontainer/Dockerfile') }}
           restore-keys: |
-            cargo-ws-
+            ${{ runner.os }}-cargo-reg-
+
+      - name: Cache Cargo target
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.CARGO_TARGET_DIR_HOST }}
+          key: ${{ runner.os }}-cargo-target-${{ hashFiles('Cargo.lock', '.devcontainer/Dockerfile') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-target-
 
       - name: Prepare Cargo cache dirs
-        run: mkdir -p .cache/cargo
+        run: mkdir -p "${{ env.CARGO_HOME_DIR }}" "${{ env.CARGO_TARGET_DIR_HOST }}"
 
       - name: Build Linux binary and AppImage
         run: |
@@ -185,8 +204,8 @@ jobs:
           docker run --rm -u "$(id -u):$(id -g)" \
             -v ${{ github.workspace }}:/workspace -w /workspace \
             -e HOME=/tmp \
-            -e CARGO_HOME=/workspace/.cache/cargo \
-            -e CARGO_TARGET_DIR=/workspace/target \
+            -e CARGO_HOME=/workspace/${{ env.CARGO_HOME_DIR }} \
+            -e CARGO_TARGET_DIR=/workspace/${{ env.CARGO_TARGET_DIR_HOST }} \
             -e RUSTUP_HOME=/usr/local/rustup \
             -e PATH=/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin \
             -e RELEASE_VERSION="$VERSION" \
