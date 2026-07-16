@@ -1,0 +1,11 @@
+[package]
+name = "sqyre-varref"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Macro variable-reference grammar: ${name} and {name}"
+
+[dependencies]
+regex = { workspace = true }
+
+[dev-dependencies]

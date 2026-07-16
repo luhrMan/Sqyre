@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="internal/assets/icons/sqyre.svg" width="120" height="120" alt="Sqyre logo" />
+  <img src="crates/sqyre-app/assets/icons/sqyre.svg" width="120" height="120" alt="Sqyre logo" />
 </p>
 
 <h1 align="center">Sqyre</h1>
@@ -14,7 +14,7 @@
 
 Sqyre lets you build and run macros without writing code. Each macro is a tree of actions: loops and branches for flow control, detection steps when the screen matters, and leaf actions for concrete input. Macros, images, masks, and data tables live under **`~/.sqyre/`** (config in `db.yaml`).
 
-**Platforms:** Linux and Windows (see [Developing](docs/DEVELOPING.md)).
+**Platforms:** Linux X11 (primary). Windows/macOS automation is not shipped yet.
 
 ---
 
@@ -23,56 +23,58 @@ Sqyre lets you build and run macros without writing code. Each macro is a tree o
 | Category | Actions |
 |----------|---------|
 | **Mouse & keyboard** | Move, click, key, type |
-| **Detection** | Image search (OpenCV), OCR (Tesseract), find pixel |
-| **Variables** | Set, calculate, for each row, save to file or clipboard |
-| **Loop flow** | Loop, break, continue |
+| **Detection** | Image search (PureCV), OCR (Tesseract), find pixel |
+| **Variables** | Set (values + expressions), for each row, save to file or clipboard |
+| **Loop flow** | Loop, while, break, continue, navigate select/key |
 | **Miscellaneous** | Wait, pause, focus window, run macro, if (conditional) |
 
 **Also in the app:** data editor for reusable images, masks, and tabular sources; macro hotkeys (on press or release); global delay per macro; runtime variable panel while a macro runs.
 
-**Stack:** [Fyne](https://fyne.io/) · [robotgo](https://github.com/go-vgo/robotgo) · [gocv](https://gocv.io/) / OpenCV · [gosseract](https://github.com/otiai10/gosseract) / Tesseract
+**Stack:** [egui](https://github.com/emilk/egui) · PureCV · Tesseract (`leptess`).
 
 ---
 
 ## Usage
 
-1. **Build or install** for your OS — `make linux` or `make windows` (see [Developing](docs/DEVELOPING.md)).
-2. **Launch** `./bin/sqyre` (Linux) or the Windows binary from `bin/windows-amd64/`.
+1. **Build** — `make` (see [Developing](docs/DEVELOPING.md)).
+2. **Launch** `./bin/sqyre` — or `make run`.
 3. **Create a macro** — the root is always a **loop**; add child actions from the picker.
 4. **Configure** each node in its pinned in-tree tooltip editor (coordinates, keys, templates, OCR regions, variables, etc.), picking reusable points, search areas, and images from entity pickers.
 5. **Run** from the toolbar, or assign a **hotkey** to the macro.
 
-Branching actions (**image search**, **OCR**, **find pixel**, **if**) run child steps only when their condition matches. **Loop** / **for each row** repeat children; **break** and **continue** control those loops.
+Branching actions (**image search**, **OCR**, **find pixel**, **if**) run child steps only when their condition matches. **Loop** / **while** / **for each row** repeat children; **break** and **continue** control those loops.
 
 ---
 
 ## Screenshots
 
-Assets under `docs/images/` are generated from UI tests (`./scripts/generate-docs-media.sh`). CI checks they stay in sync.
+Assets under `docs/images/` are generated from in-memory egui tests (`make docs-media`).
 
 | | |
 |---|---|
 | Main window | ![Main window](docs/images/main-window.png) |
 | Add action picker | ![Add action picker](docs/images/add-action-picker.png) |
 | Data editor | ![Data editor](docs/images/data-editor.png) |
-| Building a macro | ![Demo](docs/images/demo-macro.gif) |
 
 ---
 
 ## Build (quick start)
 
-**Recommended:** open the repo in the **dev container** — dependencies and OpenCV match what the app expects.
+**Recommended:** open the repo in the **dev container** — Rust, Tesseract/Leptonica, and X11 link deps are preinstalled.
 
 | Goal | Command |
 |------|---------|
-| Linux dev binary | `make linux` → `./bin/sqyre` |
-| Windows exe | `make windows` → `bin/windows-amd64/` |
+| Linux binary (default) | `make` / `make sqyre` → `./bin/sqyre` |
+| Run without installing | `make run` |
+| Release binary | `make release` |
 | AppImage | `make appimage` |
-| Tesseract data | `make tessdata` |
+| Tests | `make test` |
+| README screenshots | `make docs-media` |
+| Tesseract data (dev fallback) | `make tessdata` |
 
-Override Go build tags with `BUILD_TAGS=...` (default: `gocv_specific_modules`).
+Override with `CARGO_FLAGS=...`.
 
-More detail — manual host setup, tests, profiling, packaging — is in **[docs/DEVELOPING.md](docs/DEVELOPING.md)** and **[docs/README.md](docs/README.md)**.
+More detail — workspace layout, host setup, packaging — is in **[docs/DEVELOPING.md](docs/DEVELOPING.md)**, **[docs/RUST.md](docs/RUST.md)**, and **[docs/README.md](docs/README.md)**.
 
 ---
 

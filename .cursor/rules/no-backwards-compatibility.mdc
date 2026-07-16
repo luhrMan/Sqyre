@@ -27,21 +27,22 @@ Only preserve backwards compatibility when the user explicitly requests it in th
 
 ## Examples
 
-```typescript
+```rust
 // ❌ BAD — compatibility shim
-export const getUser = fetchUser;
-export function fetchUserLegacy(id: string) { /* old shape */ }
+pub use fetch_user as get_user;
+pub fn fetch_user_legacy(id: &str) -> User { /* old shape */ }
 
 // ✅ GOOD — one API, breaking change applied everywhere
-export function fetchUser(id: string): User { /* new shape */ }
+pub fn fetch_user(id: &str) -> User { /* new shape */ }
 ```
 
-```python
-# ❌ BAD — dual behavior
-if use_legacy_parser:
-    return parse_v1(data)
-return parse_v2(data)
+```rust
+// ❌ BAD — dual behavior
+if use_legacy_parser {
+    return parse_v1(data);
+}
+parse_v2(data)
 
-# ✅ GOOD — remove v1 and migrate callers
-return parse_v2(data)
+// ✅ GOOD — remove v1 and migrate callers
+parse_v2(data)
 ```

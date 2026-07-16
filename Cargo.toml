@@ -1,0 +1,50 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/sqyre-varref",
+    "crates/sqyre-domain",
+    "crates/sqyre-serialize",
+    "crates/sqyre-validate",
+    "crates/sqyre-persist",
+    "crates/sqyre-executor",
+    "crates/sqyre-match",
+    "crates/sqyre-vision",
+    "crates/sqyre-input",
+    "crates/sqyre-capture",
+    "crates/sqyre-hotkeys",
+    "crates/sqyre-app",
+]
+default-members = [
+    "crates/sqyre-match",
+    "crates/sqyre-app",
+]
+
+[workspace.package]
+edition = "2021"
+license = "GPL-3.0-only"
+repository = "https://github.com/luhrMan/Squire"
+
+[workspace.dependencies]
+purecv = { version = "0.6.1", default-features = false, features = ["std", "parallel"] }
+eframe = "0.34"
+egui = "0.34"
+egui_ltreeview = "0.7"
+rayon = "1.10"
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
+uuid = { version = "1", features = ["v4"] }
+regex = "1"
+dirs = "6"
+tempfile = "3"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "bmp"] }
+resvg = { version = "0.47", default-features = false }
+rustautogui = { version = "2.5", default-features = false, features = ["lite"] }
+arboard = { version = "3", default-features = false }
+x11 = { version = "2", features = ["xlib", "xinerama"] }
+rdev = "0.5"
+parking_lot = "0.12"
+ksni = { version = "0.3", features = ["blocking"] }
+tray-icon = { version = "0.24", default-features = false }
+rfd = "0.15"
+tokio = { version = "1", features = ["rt-multi-thread"] }

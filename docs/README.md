@@ -2,8 +2,8 @@
 
 | Topic | Guide |
 |-------|--------|
-| Build, test, native deps, profiling | [DEVELOPING.md](DEVELOPING.md) |
-| Linux Flatpak & AppImage | [PACKAGING.md](../scripts/linux/packaging/PACKAGING.md) |
-| OpenCV for Android | [README-opencv.md](../scripts/android/README-opencv.md) |
+| Build, test, native deps | [DEVELOPING.md](DEVELOPING.md) |
+| Cargo workspace / crates | [RUST.md](RUST.md) |
+| Linux AppImage packaging | [PACKAGING.md](../scripts/linux/packaging/PACKAGING.md) |
 
 User-facing overview, screenshots, and quick start: [README](../README.md).
