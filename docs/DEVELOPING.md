@@ -2,24 +2,22 @@
 
 ## Dev container (recommended)
 
-Open the repository in the dev container (`.devcontainer/`). It is **Rust-focused**: Rust 1.92, clang, Tesseract/Leptonica, and Linux GUI link deps (no OpenCV source build, Go, or packaging tooling). For the legacy Go/Fyne app (`make go`), use a host toolchain or the scripts under `scripts/`.
+Open the repository in the dev container (`.devcontainer/`). It includes Rust 1.92, clang, Tesseract/Leptonica, X11 link deps, and AppImage packaging tools (`appimage-builder`, squashfs-tools).
 
 From the repo root:
 
 ```bash
-make                # ./bin/sqyre (Rust, default)
+make                # ./bin/sqyre (debug)
+make rust-release   # ./bin/sqyre (release)
 make run            # cargo run -p sqyre-app
-make go             # ./bin/sqyre-go (legacy Fyne)
-make windows        # bin/windows-amd64/sqyre.exe (fyne-cross in Docker; Go)
-make appimage       # bin/*.AppImage (Go)
-make tessdata       # download eng.traineddata for OCR
+make rust-test
+make appimage       # bin/*.AppImage (Linux)
+make tessdata       # download eng.traineddata into assets/tessdata/
 ```
 
-Run `make help` for matprofile variants (`windows-matprofile`, `appimage-matprofile`) and Rust helpers (`rust-release`, `rust-test`).
+Run `make help` for the full target list.
 
-**Shared DB hazard:** Rust and Go both read/write `~/.sqyre/db.yaml`. Rust can persist `while` / `navigateselect` / `navigatekey` (and other Rust-ahead kinds) that the Go app cannot load — avoid opening the same DB in Go after editing in Rust.
-
-Migration tracker: [rust/MIGRATION.md](../rust/MIGRATION.md).
+Migration notes (historical Go → Rust cutover): [rust/MIGRATION.md](../rust/MIGRATION.md).
 
 ---
 
@@ -27,132 +25,55 @@ Migration tracker: [rust/MIGRATION.md](../rust/MIGRATION.md).
 
 | Target | Output |
 |--------|--------|
-| `all` / `sqyre` / `rust` | `bin/sqyre` (Rust debug) — **default** |
-| `rust-release` | `bin/sqyre` (Rust release) |
+| `all` / `sqyre` / `rust` | `bin/sqyre` (debug) — **default** |
+| `rust-release` | `bin/sqyre` (release) |
 | `rust-test` | `cargo test` in `rust/` |
 | `run` / `rust-run` | `cargo run -p sqyre-app` |
-| `go` / `fyne` | `bin/sqyre-go` (legacy Go/Fyne) |
-| `windows` | `bin/windows-amd64/sqyre.exe` (Go) |
-| `appimage` | `bin/Sqyre-*.AppImage` (Go) |
+| `appimage` | `bin/Sqyre-*.AppImage` |
 | `tessdata` | Tesseract trained data via `scripts/download-tessdata.sh` |
-| `*-matprofile` | Go builds with `matprofile` tag |
 
-Set `CARGO_FLAGS` for extra cargo args. Set `BUILD_TAGS` to override Go tags (default: `gocv_specific_modules`).
+Set `CARGO_FLAGS` for extra cargo args. Set `RELEASE_VERSION` (or write a `VERSION` file) before `make appimage` to stamp the AppImage name.
 
-Release packaging (AppImage / Windows / CI) still builds the Go binary until those pipelines are switched; local daily driver is Rust.
+CI builds and releases **Linux** binaries and AppImages only. Windows/macOS automation is not shipped yet.
 
 ---
 
 ## Native dependencies
 
-Sqyre uses **CGO** for OpenCV (gocv) and Tesseract (gosseract). OpenCV **≥ 4.6** is required.
-
 | Resource | Purpose |
 |----------|---------|
-| [.devcontainer/Dockerfile](../.devcontainer/Dockerfile) | Rust migration image (clang, Tesseract; not OpenCV) |
-| [scripts/linux/build-opencv-linux.sh](../scripts/linux/build-opencv-linux.sh) | Build OpenCV for Go/gocv on Linux |
-| [scripts/windows/build-opencv-windows.sh](../scripts/windows/build-opencv-windows.sh) | Build OpenCV for Windows cross-compile |
-| [scripts/android/README-opencv.md](../scripts/android/README-opencv.md) | OpenCV for Android ABIs |
+| [.devcontainer/Dockerfile](../.devcontainer/Dockerfile) | Rust + Tesseract + AppImage tools |
+| [assets/icons/](../assets/icons/) | Brand icons (embedded SVG) |
+| [assets/tessdata/](../assets/tessdata/) | Optional local `eng.traineddata` fallback |
+
+OCR uses system tessdata when available, or `SQYRE_TESSDATA` / `assets/tessdata` when developing.
 
 ---
 
 ## Manual setup (without dev container)
 
-Prefer the container when possible. Rust daily driver needs Rust ≥ 1.92, clang, Tesseract/Leptonica, and X11 libs (`libx11-dev`, `libxtst-dev`, …). See [rust/README.md](../rust/README.md).
+Prefer the container when possible. Needs **Rust ≥ 1.92**, clang, Tesseract/Leptonica, and X11 libs (`libx11-dev`, `libxtst-dev`, …). See [rust/README.md](../rust/README.md).
 
 ```bash
 make            # or: cd rust && cargo build -p sqyre-app
 ./bin/sqyre
 ```
 
-### Linux (legacy Go/Fyne)
-
-```bash
-sudo apt install -y \
-  build-essential pkg-config cmake golang-go \
-  tesseract-ocr libtesseract-dev libleptonica-dev \
-  libgl1-mesa-dev libglvnd-dev libglfw3-dev \
-  libxkbcommon-dev libxkbcommon-x11-dev \
-  libx11-dev libx11-xcb-dev libxext-dev libxtst-dev \
-  libxcursor-dev libxrandr-dev libxinerama-dev \
-  libxxf86vm-dev libxt-dev \
-  libjpeg-dev libpng-dev libtiff-dev libwebp-dev libopenjp2-7-dev
-```
-
-Build or install OpenCV to match gocv (see Dockerfile and `build-opencv-linux.sh`), then:
-
-```bash
-make go         # ./bin/sqyre-go
-# or: go build -tags gocv_specific_modules -o bin/sqyre-go ./cmd/sqyre
-```
-
-### Windows (MSYS2 mingw64)
-
-In the [MSYS2](https://www.msys2.org/) mingw64 shell, install toolchain, OpenCV, Tesseract, and Leptonica from MSYS2 packages (e.g. `mingw-w64-x86_64-opencv`, `mingw-w64-x86_64-tesseract-ocr`).
-
-1. Place [eng.traineddata](https://github.com/tesseract-ocr/tessdata/blob/main/eng.traineddata) in `C:\msys64\mingw64\share\tessdata`.
-2. Set `TESSDATA_PREFIX=C:/msys64/mingw64/share/tessdata`.
-3. Build: `go build -o sqyre.exe ./cmd/sqyre`
-
-Or cross-compile from Linux with `make windows`.
+For AppImage on the host, also install `appimage-builder`, `patchelf`, and `squashfs-tools`.
 
 ---
 
 ## Tests
 
-**Headless** (no display; uses `-tags=nohook` so the keyboard hook is not linked). Includes README screenshot golden checks (`TestDocsScreenshots`, `TestDemoWorkflowFrames`):
-
 ```bash
-./scripts/test.sh
-./scripts/test.sh -v ./internal/services/ -run TestExecute
+make rust-test
+# or: cd rust && cargo test
 ```
 
-**Global hook / Esc** (virtual framebuffer via `Xvfb`; links gohook):
-
-```bash
-./scripts/test-ui.sh
-./scripts/test-ui.sh -run TestGUIEscape
-```
-
-Plain `go test` without these wrappers can segfault when `DISPLAY` is unset because of the native hook.
-
----
-
-## README screenshots & demo GIF
-
-Regenerate assets in `docs/images/`:
-
-```bash
-./scripts/generate-docs-media.sh
-```
-
-Requires `ffmpeg` for the demo GIF. Uses the same headless Fyne driver as `./scripts/test.sh` (no xvfb).
-
-Verify committed PNGs match the current UI:
-
-```bash
-./scripts/test.sh -v ./ui/ -run 'TestDocsScreenshots|TestDemoWorkflowFrames'
-```
-
-Set `SQYRE_UPDATE_SCREENSHOTS=1` when intentionally updating golden images (the generate script sets this).
-
----
-
-## GoCV `Mat` profiling
-
-Build with the **`matprofile`** tag to track `gocv.Mat` allocations and detect leaks.
-
-| Platform | Command |
-|----------|---------|
-| Linux | `go build -tags "gocv_specific_modules,matprofile" -o sqyre ./cmd/sqyre` |
-| Windows (from dev container) | `make windows-matprofile` |
-
-- Logs: `~/.sqyre/sqyre.log` (Windows: `%USERPROFILE%\.sqyre\sqyre.log`)
-- pprof HTTP server on `127.0.0.1:6060` (or next free port 6061–6065); open **gocv.io/x/gocv.Mat** in the browser for stack traces
-- `SQYRE_PPROF=0` disables pprof; `SQYRE_PPROF=127.0.0.1:9090` sets a fixed port
+Headless CI uses Null* backends / stub hotkeys where hooks are unavailable.
 
 ---
 
 ## Packaging
 
-See [scripts/linux/packaging/PACKAGING.md](../scripts/linux/packaging/PACKAGING.md) for Flatpak and AppImage builds.
+See [scripts/linux/packaging/PACKAGING.md](../scripts/linux/packaging/PACKAGING.md) for AppImage builds. Flatpak is not currently maintained (desktop/appdata stubs remain under `scripts/linux/packaging/flatpak/` for a future rewrite).

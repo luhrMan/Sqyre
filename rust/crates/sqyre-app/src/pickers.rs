@@ -159,7 +159,7 @@ fn header_text(label: &str) -> egui::RichText {
 }
 
 /// Fuzzy match (Go `fuzzy.MatchFold`) on `name` or any tag. Empty `q` matches everything.
-fn query_matches_name_or_tags(q: &str, name: &str, tags: &[String]) -> bool {
+pub fn query_matches_name_or_tags(q: &str, name: &str, tags: &[String]) -> bool {
     if q.is_empty() {
         return true;
     }

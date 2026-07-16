@@ -98,9 +98,9 @@ impl LeptessOcr {
                 return Ok(Self::new(candidate));
             }
         }
-        // Repo-relative embed path when developing from the workspace.
+        // Repo-relative path when developing from the workspace.
         let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../../internal/assets/tessdata");
+            .join("../../../assets/tessdata");
         if repo.join("eng.traineddata").is_file() {
             return Ok(Self::new(repo.to_string_lossy()));
         }

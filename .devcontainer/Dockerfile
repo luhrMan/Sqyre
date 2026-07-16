@@ -1,4 +1,4 @@
-# Rust migration workspace (egui / PureCV / Tesseract).
+# Rust Sqyre workspace (egui / PureCV / Tesseract) + AppImage packaging tools.
 # Build and test in-container; run the GUI binary on the host (needs X11).
 FROM ubuntu:22.04
 
@@ -18,7 +18,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libfontconfig1-dev libasound2-dev \
     # rustautogui / X11 capture & input
     libxtst-dev libxrandr-dev libxinerama-dev libxi-dev \
+    # AppImage packaging
+    python3 python3-pip python3-setuptools \
+    squashfs-tools patchelf zsync file desktop-file-utils \
+    libgtk-3-bin \
     sudo \
+    && pip3 install --no-cache-dir 'appimage-builder==1.1.0' \
     && rm -rf /var/lib/apt/lists/*
 
 ENV RUSTUP_HOME=/usr/local/rustup \
