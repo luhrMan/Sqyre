@@ -28,7 +28,7 @@ pub(crate) fn execute_find_pixel(
     let action_id = action.id;
     let mut found = try_find_pixel(exec, search_area, target_color, *color_tolerance, macro_);
     if wait.wait_until_found_active() && found.is_none() {
-        let _ = retry_while_not_found(exec, wait, 100, |exec| {
+        retry_while_not_found(exec, wait, 100, |exec| {
             found = try_find_pixel(exec, search_area, target_color, *color_tolerance, macro_);
             Ok(found.is_some())
         })?;
@@ -86,8 +86,8 @@ fn try_find_pixel(
     color_tolerance: i32,
     macro_: &Macro,
 ) -> Option<(i32, i32)> {
-    let resolver = exec.resolver?;
-    let capturer = exec.capturer.as_mut()?;
+    let resolver = exec.deps.resolver?;
+    let capturer = exec.deps.capturer.as_mut()?;
     let (lx, ty, rx, by) = resolver.resolve_search_area(search_area, macro_).ok()?;
     let (img, origin) = capturer.capture_search_area(lx, ty, rx, by).ok()?;
     let buf = rgba_to_rgb_buf(&img);

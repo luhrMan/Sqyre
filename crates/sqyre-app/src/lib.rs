@@ -19,6 +19,7 @@ mod key_record;
 mod macro_meta;
 mod macro_overlay;
 mod overlay_icons;
+mod paint_ctx;
 mod pickers;
 mod pixel_color;
 mod preview_tooltip;

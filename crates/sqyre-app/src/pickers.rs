@@ -2,8 +2,9 @@
 //! macros, and Focus Window live-window lists.
 
 use crate::icon_cache::IconCache;
+use crate::paint_ctx::CatalogPaint;
 use crate::image_view::{self, ImageViewTransform};
-use crate::preview_tooltip::{PreviewKind, PreviewTooltipCache};
+use crate::preview_tooltip::PreviewKind;
 use eframe::egui::{self, Color32, Pos2, Sense, Vec2};
 use sqyre_capture::WindowInfo;
 use sqyre_domain::{CoordinateRef, PROGRAM_DELIMITER};
@@ -440,6 +441,7 @@ fn fit_thumb(w: f32, h: f32, max: f32) -> Vec2 {
 }
 
 /// Lay out `targets` in fixed-size rows (no column stretch, no staircase wrap).
+#[allow(clippy::too_many_arguments)]
 pub fn paint_even_icon_grid(
     ui: &mut egui::Ui,
     catalog: &ProgramCatalog,
@@ -473,8 +475,7 @@ pub fn paint_even_icon_grid(
                 ui.set_max_width(avail);
                 ui.spacing_mut().item_spacing = Vec2::splat(GRID_GAP);
                 let end = (i + cols).min(targets.len());
-                for k in i..end {
-                    let target = &targets[k];
+                for (k, target) in targets.iter().enumerate().take(end).skip(i) {
                     let sel = is_selected(target);
                     let (clicked, remove) =
                         icon_grid_cell_ex(ui, catalog, icons, target, sel, show_remove);
@@ -672,15 +673,18 @@ fn picker_list_max_height(ui: &egui::Ui) -> f32 {
 /// Rows are sorted by display name within each program.
 pub fn paint_coord_ref_list(
     ui: &mut egui::Ui,
-    catalog: &ProgramCatalog,
-    icons: &mut IconCache,
+    paint: &mut CatalogPaint<'_>,
     search: &str,
     current: &mut String,
     kind: CoordKind,
-    previews: &mut PreviewTooltipCache,
     cell_pick: &mut Option<CollectionCellPick>,
     scroll_to_selection: &mut bool,
 ) {
+    let CatalogPaint {
+        catalog,
+        icons,
+        previews,
+    } = paint;
     let q = search.trim().to_ascii_lowercase();
     let res = catalog.resolution_key().to_string();
     let preview_kind = match kind {
@@ -1066,9 +1070,7 @@ pub enum CoordKind {
 pub fn show_active_picker(
     ctx: &egui::Context,
     picker: &mut ActivePicker,
-    catalog: &ProgramCatalog,
-    icons: &mut IconCache,
-    previews: &mut PreviewTooltipCache,
+    paint: &mut CatalogPaint<'_>,
     // `(name, tags)` — tags are used by the macro search bar.
     macros: &[(String, Vec<String>)],
 ) -> PickerResult {
@@ -1130,7 +1132,7 @@ pub fn show_active_picker(
                         .auto_shrink([false, false])
                         .max_height(list_h)
                         .show(ui, |ui| {
-                            paint_items_icon_grid(ui, catalog, icons, search, staged, true);
+                            paint_items_icon_grid(ui, paint.catalog, paint.icons, search, staged, true);
                         });
                     ui.separator();
                     ui.label(format!("{} selected", staged.len()));
@@ -1142,7 +1144,7 @@ pub fn show_active_picker(
                     scroll_to_selection,
                 } => {
                     if let Some(pick) = cell_pick.as_mut() {
-                        paint_collection_cell_picker(ui, catalog, icons, pick);
+                        paint_collection_cell_picker(ui, paint.catalog, paint.icons, pick);
                     } else {
                         ui.horizontal(|ui| {
                             ui.label(egui::RichText::new("Search").size(HEADER_SIZE));
@@ -1153,12 +1155,10 @@ pub fn show_active_picker(
                         ui.separator();
                         paint_coord_ref_list(
                             ui,
-                            catalog,
-                            icons,
+                            paint,
                             search,
                             value,
                             CoordKind::Point,
-                            previews,
                             cell_pick,
                             scroll_to_selection,
                         );
@@ -1171,7 +1171,7 @@ pub fn show_active_picker(
                     scroll_to_selection,
                 } => {
                     if let Some(pick) = cell_pick.as_mut() {
-                        paint_collection_cell_picker(ui, catalog, icons, pick);
+                        paint_collection_cell_picker(ui, paint.catalog, paint.icons, pick);
                     } else {
                         ui.horizontal(|ui| {
                             ui.label(egui::RichText::new("Search").size(HEADER_SIZE));
@@ -1182,12 +1182,10 @@ pub fn show_active_picker(
                         ui.separator();
                         paint_coord_ref_list(
                             ui,
-                            catalog,
-                            icons,
+                            paint,
                             search,
                             value,
                             CoordKind::SearchArea,
-                            previews,
                             cell_pick,
                             scroll_to_selection,
                         );
@@ -1319,11 +1317,10 @@ pub fn show_active_picker(
                 .and_then(|p| p.sel)
                 .is_some();
             ui.horizontal(|ui| {
-                if in_cell_pick {
-                    if ui.button("Back").clicked() {
+                if in_cell_pick
+                    && ui.button("Back").clicked() {
                         back = true;
                     }
-                }
                 if ui.button("Cancel").clicked() {
                     cancel = true;
                 }

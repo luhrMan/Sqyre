@@ -4,11 +4,13 @@ use serde_yaml::Value;
 
 /// Operand / count / time value: literal number or string (often `${var}`).
 #[derive(Debug, Clone, PartialEq)]
+#[derive(Default)]
 pub enum ScalarValue {
     Int(i64),
     Float(f64),
     String(String),
     Bool(bool),
+    #[default]
     Null,
 }
 
@@ -64,11 +66,6 @@ impl ScalarValue {
     }
 }
 
-impl Default for ScalarValue {
-    fn default() -> Self {
-        Self::Null
-    }
-}
 
 /// Delimiter between program and entity in coordinate / target refs.
 pub const PROGRAM_DELIMITER: &str = "~";

@@ -83,13 +83,9 @@ impl Macro {
                             changed = true;
                         }
                     }
-                    ActionKind::NavigateSelect {
-                        program: prog,
-                        graph_name,
-                        ..
-                    } => {
-                        if prog == program && graph_name == old_name {
-                            *graph_name = new_name.to_string();
+                    ActionKind::NavigateSelect(data) => {
+                        if data.program == program && data.graph_name == old_name {
+                            data.graph_name = new_name.to_string();
                             changed = true;
                         }
                     }
@@ -154,9 +150,9 @@ impl Macro {
                     changed = true;
                 }
             }
-            ActionKind::NavigateSelect { program, .. } => {
-                if program == old_program {
-                    *program = new_program.to_string();
+            ActionKind::NavigateSelect(data) => {
+                if data.program == old_program {
+                    data.program = new_program.to_string();
                     changed = true;
                 }
             }

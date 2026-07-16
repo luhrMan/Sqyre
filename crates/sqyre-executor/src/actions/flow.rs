@@ -11,6 +11,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn execute_while(
     exec: &mut Executor<'_>,
     action_id: ActionId,
@@ -54,6 +55,7 @@ pub(crate) fn execute_while(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn execute_for_each_row(
     exec: &mut Executor<'_>,
     action_id: ActionId,
@@ -72,7 +74,7 @@ pub(crate) fn execute_for_each_row(
 
     let loaded: Vec<Vec<String>> = sources
         .iter()
-        .map(|col| load_lines(col, exec.variables_dir.as_deref()))
+        .map(|col| load_lines(col, exec.deps.variables_dir))
         .collect::<Result<Vec<_>>>()?;
 
     let row_count = loaded[0].len();
@@ -103,7 +105,7 @@ pub(crate) fn execute_for_each_row(
         exec.check_stopped()?;
         if row_count > 0 {
             highlight_fill(
-                exec.highlighter,
+                exec.deps.highlighter,
                 &macro_.name,
                 action_id,
                 i as f64 / row_count as f64,
@@ -132,13 +134,13 @@ pub(crate) fn execute_for_each_row(
             Err(ExecError::Flow(FlowSignal::Break)) => break,
             Err(ExecError::Flow(FlowSignal::Continue)) => continue,
             Err(e) => {
-                highlight_clear(exec.highlighter, &macro_.name, action_id);
+                highlight_clear(exec.deps.highlighter, &macro_.name, action_id);
                 return Err(e);
             }
             Ok(()) => {}
         }
     }
-    highlight_clear(exec.highlighter, &macro_.name, action_id);
+    highlight_clear(exec.deps.highlighter, &macro_.name, action_id);
     Ok(())
 }
 
@@ -167,12 +169,12 @@ pub(crate) fn execute_pause(
         );
     }
 
-    let waiter = exec.continue_waiter.ok_or_else(|| {
+    let waiter = exec.deps.continue_waiter.ok_or_else(|| {
         ExecError::Message("pause: continue key wait is not available in this build".into())
     })?;
 
     let dummy = AtomicBool::new(false);
-    let stop = exec.stop_flag.unwrap_or(&dummy);
+    let stop = exec.deps.stop_flag.unwrap_or(&dummy);
     match waiter.wait_for_continue(&keys, pass_through, stop) {
         Ok(()) => {
             if stop.load(Ordering::SeqCst) {

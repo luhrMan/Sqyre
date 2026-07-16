@@ -312,8 +312,9 @@ mod tests {
                 time: ScalarValue::Int(7),
             },
         }]);
-        let mut lookup = MapMacroLookup::default();
-        lookup.macros = BTreeMap::from([("helper".into(), Arc::new(helper))]);
+        let lookup = MapMacroLookup {
+            macros: BTreeMap::from([("helper".into(), Arc::new(helper))]),
+        };
 
         let mut backend = RecordingBackend::default();
         let mut macro_ = Macro::new("caller", 0, vec![]);

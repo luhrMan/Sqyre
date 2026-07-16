@@ -67,6 +67,7 @@ impl MacroOverlay {
     ///
     /// `running_macro` is the name of the macro currently executing (if any); buttons
     /// bound to that name show a spinner over their icon.
+    #[allow(clippy::too_many_arguments)]
     pub fn sync(
         &mut self,
         ctx: &egui::Context,
@@ -360,6 +361,7 @@ fn show_overlay_tip_viewport(
     });
 }
 
+#[allow(clippy::too_many_arguments)]
 fn paint_button(
     ui: &mut egui::Ui,
     class: ViewportClass,

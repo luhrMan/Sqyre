@@ -22,7 +22,7 @@ pub(crate) fn execute_focus_window(
             "focus window: no window title set".into(),
         ));
     }
-    let focuser = exec.window_focuser.ok_or_else(|| {
+    let focuser = exec.deps.window_focuser.ok_or_else(|| {
         ExecError::Message("focus window: window focuser not configured".into())
     })?;
     focuser.focus(path, title).map_err(|e| {

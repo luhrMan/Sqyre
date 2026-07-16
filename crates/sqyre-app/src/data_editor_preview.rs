@@ -32,6 +32,7 @@ pub(crate) enum CardinalEdge {
 }
 
 /// Borderless coord chip overlaid on a preview edge.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn paint_preview_coord_chip(
     ui: &mut egui::Ui,
     preview: egui::Rect,

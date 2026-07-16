@@ -15,6 +15,7 @@ pub(crate) fn execute_run_macro(
         return Err(ExecError::Message("run macro: macro name not set".into()));
     }
     let lookup = exec
+        .deps
         .macros
         .ok_or_else(|| ExecError::Message("run macro: macro catalog not configured".into()))?;
     let mut target = (*lookup.get(macro_name).ok_or_else(|| {
@@ -28,7 +29,7 @@ pub(crate) fn execute_run_macro(
     }
 
     target.init_runtime_variables();
-    let monitor_sizes = match exec.capturer.as_mut() {
+    let monitor_sizes = match exec.deps.capturer.as_mut() {
         Some(c) => c.monitor_sizes().unwrap_or_else(|_| vec![(0, 0)]),
         None => vec![(0, 0)],
     };
@@ -36,7 +37,7 @@ pub(crate) fn execute_run_macro(
     exec.log(action_id, format!("Run Macro: {macro_name}"));
 
     let caller_name = caller.name.clone();
-    highlight_fill(exec.highlighter, &caller_name, action_id, 0.0);
+    highlight_fill(exec.deps.highlighter, &caller_name, action_id, 0.0);
 
     let children: Vec<Action> = target.root.children().to_vec();
     let total = children.len();
@@ -51,7 +52,7 @@ pub(crate) fn execute_run_macro(
             }
             if total > 0 {
                 highlight_fill(
-                    exec.highlighter,
+                    exec.deps.highlighter,
                     &caller_name,
                     action_id,
                     (i + 1) as f64 / total as f64,
@@ -61,7 +62,7 @@ pub(crate) fn execute_run_macro(
         Ok(())
     })();
 
-    highlight_clear(exec.highlighter, &caller_name, action_id);
-    highlight_cursor(exec.highlighter, &target.name, None);
+    highlight_clear(exec.deps.highlighter, &caller_name, action_id);
+    highlight_cursor(exec.deps.highlighter, &target.name, None);
     result
 }

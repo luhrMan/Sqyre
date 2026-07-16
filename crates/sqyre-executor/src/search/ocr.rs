@@ -57,7 +57,7 @@ pub(crate) fn execute_ocr(
                 wait.wait_til_found_seconds
             ),
         );
-        let _ = retry_while_not_found(exec, wait, 500, |exec| {
+        retry_while_not_found(exec, wait, 500, |exec| {
             let (s, m) = ocr_shot_and_match(exec, action_id, &ocr_params, macro_);
             shot = s;
             matched = m;
@@ -189,6 +189,7 @@ struct OcrShot {
     y: i32,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_ocr_once(
     exec: &mut Executor<'_>,
     action_id: sqyre_domain::ActionId,
@@ -202,15 +203,15 @@ fn run_ocr_once(
     threshold_invert: bool,
     macro_: &Macro,
 ) -> Option<OcrShot> {
-    let Some(resolver) = exec.resolver else {
+    let Some(resolver) = exec.deps.resolver else {
         exec.log(action_id, "OCR: missing CoordinateResolver");
         return None;
     };
-    if exec.capturer.is_none() {
+    if exec.deps.capturer.is_none() {
         exec.log(action_id, "OCR: missing ScreenCapturer");
         return None;
     }
-    let Some(ocr) = exec.ocr else {
+    let Some(ocr) = exec.deps.ocr else {
         exec.log(action_id, "OCR: missing OcrEngine");
         return None;
     };
@@ -237,6 +238,7 @@ fn run_ocr_once(
     );
 
     let (img, origin) = match exec
+        .deps
         .capturer
         .as_mut()
         .unwrap()

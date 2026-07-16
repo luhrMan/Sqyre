@@ -10,10 +10,9 @@ use crate::data_editor_preview::{
     paint_disk_preview, paint_preview_coord_chip, paint_preview_toolbar,
     paint_zoomable_collection_preview, CardinalEdge,
 };
-use crate::icon_cache::IconCache;
+use crate::paint_ctx::CatalogPaint;
 use crate::overlay_icons;
 use crate::pickers;
-use crate::preview_tooltip::PreviewTooltipCache;
 use crate::theme;
 use crate::var_pills;
 use eframe::egui;
@@ -95,14 +94,17 @@ impl DataEditor {
     pub(crate) fn draw_form(
         &mut self,
         ui: &mut egui::Ui,
-        catalog: &ProgramCatalog,
-        icons: &mut IconCache,
-        previews: &mut PreviewTooltipCache,
+        paint: &mut CatalogPaint<'_>,
         screen_click: &ScreenClickBridge,
         macros: &[Macro],
         active_macro: Option<&Macro>,
         settings: &mut UserSettings,
     ) {
+        let CatalogPaint {
+            catalog,
+            icons,
+            previews,
+        } = paint;
         let known = active_macro
             .map(collect_known_variable_names)
             .unwrap_or_default();

@@ -160,14 +160,8 @@ fn find_brace_refs(text: &str) -> Vec<Match> {
             i += 1;
             continue;
         }
-        let mut end = None;
-        for j in (i + 1)..bytes.len() {
-            if bytes[j] == b'}' {
-                end = Some(j);
-                break;
-            }
-        }
-        let Some(end) = end else {
+        let Some(end) = bytes[i + 1..].iter().position(|&b| b == b'}').map(|p| i + 1 + p)
+        else {
             i += 1;
             continue;
         };

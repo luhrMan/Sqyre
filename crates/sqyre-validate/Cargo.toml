@@ -5,6 +5,9 @@ edition.workspace = true
 license.workspace = true
 description = "Validation helpers for names and actions"
 
+[lints]
+workspace = true
+
 [dependencies]
 thiserror = { workspace = true }
 serde_yaml = { workspace = true }

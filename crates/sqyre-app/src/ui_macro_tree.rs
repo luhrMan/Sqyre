@@ -1,7 +1,6 @@
 //! Macro action tree: TreeView, DnD/scroll gestures, row chrome wiring, highlights.
 
 use crate::action_tooltip;
-use crate::icon_cache::IconCache;
 use crate::tree_chrome::{self, RowAction, RowHighlight, RowInteraction};
 use crate::tree_dnd;
 use crate::tree_history::{TreeHistory, TreeSnapshot};
@@ -11,7 +10,7 @@ use egui_ltreeview::{
     Action as TreeAction, NodeBuilder, TreeView, TreeViewBuilder, TreeViewState,
 };
 use sqyre_domain::{collect_known_variable_names, Action, ActionId, InsertSlot};
-use sqyre_persist::ProgramCatalog;
+use crate::paint_ctx::{CatalogPaint, RecordBridges, TipUiCtx, TreePaint, VarTheme};
 use std::collections::HashSet;
 use std::sync::atomic::Ordering;
 
@@ -151,6 +150,16 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                     let root_children = root.children();
                     let known_vars = collect_known_variable_names(&app.macros[idx]);
                     let interact_y = ui.spacing().interact_size.y;
+                    let mut tree_paint = TreePaint {
+                        catalog,
+                        icons,
+                        theme: VarTheme {
+                            known_vars: &known_vars,
+                            is_dark,
+                        },
+                        macro_name: &macro_name,
+                        hl_snap: &hl_snap,
+                    };
                     let (_, tree_actions) = TreeView::new(id)
                         .allow_drag_and_drop(allow_dnd)
                         .default_node_height(Some(tree_chrome::default_row_height(interact_y)))
@@ -170,12 +179,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                                     &mut open_logs,
                                     &mut delete_action,
                                     &mut row_events,
-                                    catalog,
-                                    icons,
-                                    &known_vars,
-                                    is_dark,
-                                    &macro_name,
-                                    &hl_snap,
+                                    &mut tree_paint,
                                     scroll_to,
                                     &mut scrolled_follow,
                                     interact_y,
@@ -283,20 +287,29 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
         let known_vars = collect_known_variable_names(&app.macros[idx]);
         let discarded = {
             let macro_ = &mut app.macros[idx];
+            let mut tip_ui = TipUiCtx {
+                paint: CatalogPaint {
+                    catalog,
+                    icons,
+                    previews,
+                },
+                theme: VarTheme {
+                    known_vars: &known_vars,
+                    is_dark,
+                },
+                bridges: RecordBridges {
+                    key_record: &mut app.key_record,
+                    hotkey_record: &mut app.hotkey_record,
+                    macro_hotkeys: &app.macro_hotkeys,
+                    screen_click: &app.screen_click,
+                },
+            };
             action_tooltip::show(
                 &mut app.tooltip,
                 ui.ctx(),
                 macro_,
-                catalog,
-                icons,
-                previews,
                 &macros,
-                &known_vars,
-                is_dark,
-                &mut app.key_record,
-                &mut app.hotkey_record,
-                &app.macro_hotkeys,
-                &app.screen_click,
+                &mut tip_ui,
                 |root_before| {
                     if pending_record.is_none() {
                         if let Ok(snap) =
@@ -464,24 +477,20 @@ fn flattened_visible_index(root: &Action, target: ActionId) -> Option<usize> {
     found
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_tree(
     builder: &mut TreeViewBuilder<'_, ActionId>,
     action: &Action,
     open_logs: &mut Option<ActionId>,
     delete_action: &mut Option<ActionId>,
     row_events: &mut Vec<(ActionId, RowInteraction)>,
-    catalog: &ProgramCatalog,
-    icons: &mut IconCache,
-    known_vars: &HashSet<String>,
-    is_dark: bool,
-    macro_name: &str,
-    hl_snap: &sqyre_executor::HighlightSnapshot,
+    tree: &mut TreePaint<'_>,
     scroll_to: Option<ActionId>,
     scrolled_follow: &mut bool,
     interact_y: f32,
 ) {
     let action_id = action.id;
-    let highlight = row_highlight(macro_name, action_id, hl_snap);
+    let highlight = row_highlight(tree.macro_name, action_id, tree.hl_snap);
     let should_scroll = scroll_to == Some(action_id);
     let row_h = tree_chrome::action_row_height(action, interact_y);
 
@@ -493,10 +502,10 @@ fn build_tree(
         let interaction = tree_chrome::paint_action_row(
             ui,
             action,
-            catalog,
-            icons,
-            known_vars,
-            is_dark,
+            tree.catalog,
+            tree.icons,
+            tree.theme.known_vars,
+            tree.theme.is_dark,
             highlight,
         );
         if should_scroll {
@@ -528,12 +537,7 @@ fn build_tree(
                     open_logs,
                     delete_action,
                     row_events,
-                    catalog,
-                    icons,
-                    known_vars,
-                    is_dark,
-                    macro_name,
-                    hl_snap,
+                    tree,
                     scroll_to,
                     scrolled_follow,
                     interact_y,

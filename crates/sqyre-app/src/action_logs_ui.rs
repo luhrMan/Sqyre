@@ -270,6 +270,7 @@ fn show_item_card(
     });
 }
 
+#[allow(clippy::too_many_arguments)]
 fn show_item_detail(
     ui: &mut egui::Ui,
     action_id: ActionId,
@@ -352,7 +353,7 @@ fn fit_width(w: f32, h: f32, max_w: f32) -> egui::Vec2 {
     if w <= 0.0 || h <= 0.0 {
         return egui::vec2(64.0, 64.0);
     }
-    let scale = (max_w / w).min(1.0).max(0.05);
+    let scale = (max_w / w).clamp(0.05, 1.0);
     let scale = if w < 96.0 { (96.0 / w).min(4.0) } else { scale };
     egui::vec2(w * scale, h * scale)
 }
@@ -361,6 +362,6 @@ fn fit_thumb(w: f32, h: f32, max_edge: f32) -> egui::Vec2 {
     if w <= 0.0 || h <= 0.0 {
         return egui::vec2(64.0, 64.0);
     }
-    let scale = (max_edge / w.max(h)).min(4.0).max(0.05);
+    let scale = (max_edge / w.max(h)).clamp(0.05, 4.0);
     egui::vec2(w * scale, h * scale)
 }

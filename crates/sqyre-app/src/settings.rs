@@ -22,6 +22,7 @@ enum PendingConfirm {
     },
 }
 
+#[derive(Default)]
 pub struct SettingsUi {
     pub open: bool,
     settings: UserSettings,
@@ -33,19 +34,6 @@ pub struct SettingsUi {
     pub reload_requested: bool,
 }
 
-impl Default for SettingsUi {
-    fn default() -> Self {
-        Self {
-            open: false,
-            settings: UserSettings::default(),
-            dirty: false,
-            status: None,
-            status_error: false,
-            confirm: None,
-            reload_requested: false,
-        }
-    }
-}
 
 impl SettingsUi {
     pub fn from_settings(settings: UserSettings) -> Self {
