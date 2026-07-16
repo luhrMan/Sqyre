@@ -63,6 +63,9 @@ impl MacroOverlay {
     /// When `preview` is set (Data Editor Overlay tab), that button is always drawn
     /// with live form values so the user can see placement and look while editing.
     /// It replaces any saved button with the same id.
+    ///
+    /// `running_macro` is the name of the macro currently executing (if any); buttons
+    /// bound to that name show a spinner over their icon.
     pub fn sync(
         &mut self,
         ctx: &egui::Context,
@@ -72,6 +75,7 @@ impl MacroOverlay {
         catalog: &ProgramCatalog,
         pending_macros: &Arc<Mutex<Vec<String>>>,
         hide: bool,
+        running_macro: Option<&str>,
     ) {
         if hide {
             return;
@@ -84,6 +88,7 @@ impl MacroOverlay {
         let preview_id = preview.map(|b| b.id.as_str());
         let mut any_gated = false;
         let mut any_shown = false;
+        let mut any_busy = false;
         let mut shown = 0usize;
 
         if enabled {
@@ -100,17 +105,27 @@ impl MacroOverlay {
                         continue;
                     }
                 }
-                show_button_viewport(ctx, btn, Arc::clone(pending_macros));
+                let busy = button_is_busy(btn, running_macro);
+                any_busy |= busy;
+                show_button_viewport(ctx, btn, Arc::clone(pending_macros), busy);
                 any_shown = true;
                 shown += 1;
             }
         }
 
         if let Some(btn) = preview {
-            show_button_viewport(ctx, btn, Arc::clone(pending_macros));
+            let busy = button_is_busy(btn, running_macro);
+            any_busy |= busy;
+            show_button_viewport(ctx, btn, Arc::clone(pending_macros), busy);
             any_shown = true;
             shown += 1;
             // Keep the preview viewport updating while the form is edited.
+            ctx.request_repaint();
+        }
+
+        if any_busy {
+            // Spinner animation; root already repaints while running, but keep
+            // overlay viewports waking if the main window is tray-hidden.
             ctx.request_repaint();
         }
 
@@ -205,10 +220,18 @@ fn program_owns_focus(
     window_matches_program(win, program)
 }
 
+fn button_is_busy(btn: &OverlayButtonConfig, running_macro: Option<&str>) -> bool {
+    let Some(running) = running_macro.map(str::trim).filter(|s| !s.is_empty()) else {
+        return false;
+    };
+    btn.macro_name.trim() == running
+}
+
 fn show_button_viewport(
     ctx: &egui::Context,
     btn: &OverlayButtonConfig,
     pending: Arc<Mutex<Vec<String>>>,
+    busy: bool,
 ) {
     // Stable id from settings — must not change per frame or OS windows pile up in Alt-Tab.
     let id = ViewportId::from_hash_of(format!("sqyre_macro_overlay_{}", btn.id));
@@ -249,6 +272,7 @@ fn show_button_viewport(
             &label,
             &btn_id,
             &pending,
+            busy,
         );
     });
 }
@@ -344,11 +368,17 @@ fn paint_button(
     label: &str,
     btn_id: &str,
     pending: &Arc<Mutex<Vec<String>>>,
+    busy: bool,
 ) {
-    let tip = overlay_tip_text(macro_name, label);
+    let tip = if busy {
+        let base = overlay_tip_text(macro_name, label);
+        format!("{base}\n(running…)")
+    } else {
+        overlay_tip_text(macro_name, label)
+    };
 
     let paint = |ui: &mut egui::Ui| {
-        let resp = overlay_icons::paint_glyph_bare(ui, icon, size);
+        let resp = overlay_icons::paint_glyph_bare(ui, icon, size, busy);
         let clicked = resp.clicked();
         // Wake the root viewport so pending macros are drained (child request_repaint
         // alone does not run App::update).
@@ -358,7 +388,7 @@ fn paint_button(
         } else if resp.hovered() {
             show_overlay_tip_viewport(ui.ctx(), btn_id, &tip, button_pos, size);
         }
-        if clicked && !macro_name.trim().is_empty() {
+        if clicked && !busy && !macro_name.trim().is_empty() {
             enqueue(pending, btn_id, macro_name);
             ui.ctx().request_repaint_of(ViewportId::ROOT);
         }

@@ -12,7 +12,6 @@ pub struct MacroMetaUi {
     name_error: Option<String>,
     tag_draft: String,
     delay_open: bool,
-    tags_open: bool,
     /// Selection identity used to refresh drafts when the user switches macros.
     synced_name: String,
     synced_idx: Option<usize>,
@@ -38,7 +37,6 @@ impl MacroMetaUi {
         self.name_error = None;
         self.tag_draft.clear();
         self.delay_open = false;
-        self.tags_open = false;
     }
 
     /// Name row + delay/tags controls. Hotkey stays in `main` beside this block.
@@ -94,43 +92,36 @@ impl MacroMetaUi {
                 .clicked()
             {
                 self.delay_open = !self.delay_open;
-                if self.delay_open {
-                    self.tags_open = false;
-                }
             }
 
             ui.label("Tags:");
-            let tags_tip = if m.tags.is_empty() {
-                "No tags".to_string()
-            } else {
-                m.tags.join("\n")
-            };
-            let tags_enabled = enabled && !m.tags.is_empty();
-            if ui
-                .add_enabled(tags_enabled, egui::Button::new("ℹ"))
-                .on_hover_text(tags_tip)
-                .clicked()
-            {
-                self.tags_open = !self.tags_open;
-                if self.tags_open {
-                    self.delay_open = false;
-                }
-            }
-
             let tag_te = egui::TextEdit::singleline(&mut self.tag_draft)
                 .desired_width(140.0)
                 .hint_text("Add tag…");
             let tag_resp = ui.add_enabled(enabled, tag_te);
-            let add_clicked = ui
-                .add_enabled(enabled, egui::Button::new("+"))
-                .on_hover_text("Add tag")
-                .clicked();
             let add_enter = tag_resp.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-            if enabled && (add_clicked || add_enter) {
+            if enabled && add_enter {
                 if try_add_tag(m, &self.tag_draft) {
                     out.persist = true;
                 }
                 self.tag_draft.clear();
+            }
+
+            // Existing tags as removable chips to the right of the entry.
+            let mut remove: Option<String> = None;
+            for tag in &m.tags {
+                if ui
+                    .add_enabled(enabled, egui::Button::new(format!("{tag} ×")))
+                    .on_hover_text("Remove tag")
+                    .clicked()
+                {
+                    remove = Some(tag.clone());
+                }
+            }
+            if let Some(tag) = remove {
+                if remove_tag(m, &tag) {
+                    out.persist = true;
+                }
             }
 
             // Inline completion suggestions from the union of all macro tags.
@@ -176,45 +167,6 @@ impl MacroMetaUi {
                 });
             if close {
                 self.delay_open = false;
-            }
-        }
-
-        if self.tags_open {
-            if m.tags.is_empty() {
-                self.tags_open = false;
-            } else {
-                let mut close = false;
-                let mut remove: Option<String> = None;
-                egui::Window::new("Macro tags")
-                    .collapsible(false)
-                    .resizable(true)
-                    .default_width(280.0)
-                    .open(&mut self.tags_open)
-                    .show(ui.ctx(), |ui| {
-                        ui.add_enabled_ui(enabled, |ui| {
-                            ui.horizontal_wrapped(|ui| {
-                                for tag in &m.tags {
-                                    if ui.button(format!("{tag} ×")).clicked() {
-                                        remove = Some(tag.clone());
-                                    }
-                                }
-                            });
-                            if ui.button("Close").clicked() {
-                                close = true;
-                            }
-                        });
-                    });
-                if let Some(tag) = remove {
-                    if remove_tag(m, &tag) {
-                        out.persist = true;
-                    }
-                    if m.tags.is_empty() {
-                        self.tags_open = false;
-                    }
-                }
-                if close {
-                    self.tags_open = false;
-                }
             }
         }
 

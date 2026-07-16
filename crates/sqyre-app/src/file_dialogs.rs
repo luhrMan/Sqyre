@@ -11,8 +11,8 @@ use std::sync::OnceLock;
 fn enter_tokio() -> tokio::runtime::EnterGuard<'static> {
     static RT: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
     let rt = RT.get_or_init(|| {
-        tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(1)
+        // Current-thread runtime is enough for rfd/ashpd; avoid a worker pool.
+        tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .expect("tokio runtime for native file dialogs")

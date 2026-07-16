@@ -231,7 +231,8 @@ impl MacroHotkeyBridge {
         pressed: &HashSet<String>,
         on_fire: &dyn Fn(String),
     ) {
-        *self.inner.pressed.lock() = pressed.clone();
+        // Reuse the existing HashSet allocation; match against the caller's set.
+        self.inner.pressed.lock().clone_from(pressed);
         if *self.inner.suspend_count.lock() > 0 {
             return;
         }

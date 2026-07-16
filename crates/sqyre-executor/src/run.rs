@@ -95,6 +95,13 @@ impl<'a> Executor<'a> {
         }
     }
 
+    /// Build a log line only when a logger is attached.
+    pub fn log_with(&self, action_id: ActionId, f: impl FnOnce() -> String) {
+        if let Some(logger) = self.logger {
+            logger.log(action_id, f());
+        }
+    }
+
     pub fn log_images_enabled(&self) -> bool {
         self.logger
             .map(|l| l.log_images_enabled())
@@ -245,7 +252,7 @@ pub fn execute_action(exec: &mut Executor<'_>, action: &Action, macro_: &mut Mac
     if !action.id.is_root() {
         highlight_cursor(exec.highlighter, &macro_.name, Some(action.id));
     }
-    exec.log(action.id, action_headline(action));
+    exec.log_with(action.id, || action_headline(action));
     let result = dispatch(exec, action, macro_);
     // Delay only on success or Break/Continue (not Stopped/errors).
     match &result {
@@ -351,7 +358,7 @@ fn dispatch(exec: &mut Executor<'_>, action: &Action, macro_: &mut Macro) -> Res
             let resolved = resolve_text(text, macro_)?;
             for ch in resolved.chars() {
                 exec.check_stopped()?;
-                exec.automation.type_char(&ch.to_string());
+                exec.automation.type_char(ch);
                 if *delay_ms > 0 {
                     exec.interruptible_sleep(*delay_ms)?;
                 }
@@ -504,30 +511,31 @@ pub(crate) fn eval_clauses(
     if clauses.is_empty() {
         return true;
     }
-    let results: Vec<bool> = clauses
-        .iter()
-        .map(|c| {
-            let left = c.left.as_display();
-            let right = c.right.as_display();
-            let left = resolve_text(&left, macro_).unwrap_or(left);
-            let right = resolve_text(&right, macro_).unwrap_or(right);
-            match c.operator.as_str() {
-                "==" => left == right,
-                "!=" => left != right,
-                "is set" => macro_.variables.get(&strip_ref(&left)).is_some(),
-                "is empty" => left.trim().is_empty(),
-                "contains" => left.contains(&right),
-                "starts with" => left.starts_with(&right),
-                "ends with" => left.ends_with(&right),
-                _ => false,
+    let want_any = match_mode == "any";
+    for c in clauses {
+        let left = c.left.as_display();
+        let right = c.right.as_display();
+        let left = resolve_text(&left, macro_).unwrap_or(left);
+        let right = resolve_text(&right, macro_).unwrap_or(right);
+        let ok = match c.operator.as_str() {
+            "==" => left == right,
+            "!=" => left != right,
+            "is set" => macro_.variables.get(&strip_ref(&left)).is_some(),
+            "is empty" => left.trim().is_empty(),
+            "contains" => left.contains(&right),
+            "starts with" => left.starts_with(&right),
+            "ends with" => left.ends_with(&right),
+            _ => false,
+        };
+        if want_any {
+            if ok {
+                return true;
             }
-        })
-        .collect();
-    if match_mode == "any" {
-        results.into_iter().any(|b| b)
-    } else {
-        results.into_iter().all(|b| b)
+        } else if !ok {
+            return false;
+        }
     }
+    !want_any
 }
 
 fn strip_ref(s: &str) -> String {
@@ -544,6 +552,9 @@ pub(crate) fn resolve_int(v: &ScalarValue, macro_: &Macro) -> Result<i32> {
 }
 
 pub(crate) fn resolve_text(text: &str, macro_: &Macro) -> Result<String> {
+    if !sqyre_varref::contains(text) {
+        return Ok(text.to_string());
+    }
     let segs = sqyre_varref::segments(text);
     if segs.is_empty() {
         return Ok(text.to_string());

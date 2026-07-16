@@ -8,7 +8,7 @@ mod image;
 mod peaks;
 mod template;
 
-pub use blur::{blur_image, search_blur_kernel};
+pub use blur::{blur_image, blur_image_owned, search_blur_kernel};
 pub use image::{ImageBuf, Point};
 pub use peaks::{find_peaks, DEFAULT_CLOSE_MATCHES_DISTANCE};
 pub use template::{match_ccoeff_normed, MatchError, MatchMap};
@@ -24,7 +24,7 @@ pub fn find_template_matches(
     close_matches_distance: i32,
 ) -> Result<Vec<Point>, MatchError> {
     let kernel = search_blur_kernel(blur);
-    let template_blurred = blur_image(template, kernel)?;
+    let template_blurred = blur_image_owned(template.clone(), kernel)?;
     find_template_matches_preblurred(
         search_blurred,
         &template_blurred,

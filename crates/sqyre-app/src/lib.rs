@@ -7,6 +7,7 @@ mod assets;
 mod catalog;
 mod collection_capture;
 mod data_editor;
+mod data_editor_preview;
 mod diag;
 pub mod docs_fixture;
 mod file_dialogs;
@@ -1004,6 +1005,10 @@ impl SqyreApp {
                 .map_err(|e| e.to_string())
             })();
 
+            // Drop blurred templates / masks retained during image search so RSS can fall.
+            sqyre_vision::clear_search_cache();
+            trim_process_heap();
+
             let msg = match result {
                 Ok(()) if stop_flag.is_stopped() => "Stopped.".into(),
                 Ok(()) => "Finished.".into(),
@@ -1058,6 +1063,12 @@ impl SqyreApp {
         let buttons = self.settings_ui.settings().overlay_buttons.clone();
         let preview = self.data_editor.overlay_edit_preview();
         let hide = self.screen_click.is_armed();
+        let running_macro = if self.run.running.load(Ordering::SeqCst) && !self.macros.is_empty() {
+            let idx = self.selected_macro.min(self.macros.len() - 1);
+            Some(self.macros[idx].name.as_str())
+        } else {
+            None
+        };
         self.macro_overlay.sync(
             ctx,
             enabled,
@@ -1066,6 +1077,7 @@ impl SqyreApp {
             &self.catalog,
             &self.pending_hotkey_macros,
             hide,
+            running_macro,
         );
     }
 
@@ -1150,9 +1162,9 @@ impl sqyre_executor::AutomationBackend for StopWatchAutomation<'_> {
         }
         self.inner.key_up(key)
     }
-    fn type_char(&mut self, s: &str) {
+    fn type_char(&mut self, ch: char) {
         if !self.stop.is_stopped() {
-            self.inner.type_char(s);
+            self.inner.type_char(ch);
         }
     }
     fn write_clipboard(&mut self, s: &str) -> Result<(), String> {
@@ -2242,6 +2254,19 @@ fn build_tree(
 }
 
 /// Compact toolbar control: icon glyph + hover label.
+/// Ask glibc to return freed pages after large image/OCR allocations.
+fn trim_process_heap() {
+    #[cfg(target_os = "linux")]
+    {
+        unsafe {
+            extern "C" {
+                fn malloc_trim(pad: usize) -> i32;
+            }
+            let _ = malloc_trim(0);
+        }
+    }
+}
+
 fn toolbar_icon(ui: &mut egui::Ui, glyph: &str, tip: &str, enabled: bool) -> egui::Response {
     ui.add_enabled(
         enabled,

@@ -89,10 +89,25 @@ pub fn register_phosphor_family(fonts: &mut egui::FontDefinitions) {
 }
 
 /// Paint a Phosphor glyph with Sqyre yellow chrome (floating overlay buttons).
-pub fn paint_glyph_bare(ui: &mut egui::Ui, icon: &OverlayIcon, size: f32) -> egui::Response {
-    let (rect, response) = ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::click());
-    paint_overlay_chrome(ui, rect, response.hovered());
-    let color = if response.hovered() {
+///
+/// When `busy`, the glyph is dimmed and an indeterminate spinner is drawn over it
+/// so the user sees that the bound macro is currently running.
+pub fn paint_glyph_bare(
+    ui: &mut egui::Ui,
+    icon: &OverlayIcon,
+    size: f32,
+    busy: bool,
+) -> egui::Response {
+    let sense = if busy {
+        egui::Sense::hover()
+    } else {
+        egui::Sense::click()
+    };
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(size, size), sense);
+    paint_overlay_chrome(ui, rect, response.hovered() && !busy);
+    let color = if busy {
+        Color32::from_rgba_unmultiplied(0xf5, 0xe6, 0xc0, 90)
+    } else if response.hovered() {
         crate::theme::PRIMARY
     } else {
         Color32::from_rgb(0xf5, 0xe6, 0xc0)
@@ -104,6 +119,12 @@ pub fn paint_glyph_bare(ui: &mut egui::Ui, icon: &OverlayIcon, size: f32) -> egu
         phosphor_font_id((size * 0.55).round()),
         color,
     );
+    if busy {
+        egui::Spinner::new()
+            .size(size * 0.55)
+            .color(crate::theme::PRIMARY)
+            .paint_at(ui, rect);
+    }
     response
 }
 

@@ -1,6 +1,6 @@
 //! OCR capture preprocessing.
 
-use sqyre_match::{blur_image, search_blur_kernel, ImageBuf};
+use sqyre_match::{blur_image_owned, search_blur_kernel, ImageBuf};
 
 /// One intermediate image from OCR preprocessing (chronological).
 #[derive(Debug, Clone)]
@@ -103,7 +103,7 @@ pub fn preprocess_for_ocr_with_steps(
 
     if opts.blur && opts.blur_amount > 0 {
         let k = search_blur_kernel(opts.blur_amount);
-        cur = blur_image(&cur, k).map_err(|e| format!("OCR blur: {e}"))?;
+        cur = blur_image_owned(cur, k).map_err(|e| format!("OCR blur: {e}"))?;
         if collect_steps {
             step_n += 1;
             steps.push(OcrPreprocessStep {
@@ -171,7 +171,7 @@ pub fn preprocess_for_ocr_with_steps(
 
 fn to_grayscale(img: &ImageBuf) -> ImageBuf {
     if img.channels == 1 {
-        return img.clone();
+        return ImageBuf::from_raw(img.width, img.height, 1, img.data.clone());
     }
     let mut data = Vec::with_capacity(img.width * img.height);
     for i in 0..img.width * img.height {
