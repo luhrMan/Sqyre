@@ -1,0 +1,18 @@
+[package]
+name = "sqyre-persist"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Load/save ~/.sqyre (db.yaml) macros, settings, and program catalog"
+
+[dependencies]
+serde = { workspace = true }
+serde_yaml = { workspace = true }
+thiserror = { workspace = true }
+dirs = { workspace = true }
+sqyre-domain = { path = "../sqyre-domain" }
+sqyre-serialize = { path = "../sqyre-serialize" }
+sqyre-varref = { path = "../sqyre-varref" }
+
+[dev-dependencies]
+tempfile = { workspace = true }

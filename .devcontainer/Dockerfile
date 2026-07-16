@@ -16,6 +16,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
     libwayland-dev libegl1-mesa-dev libdbus-1-dev \
     libfontconfig1-dev libasound2-dev \
+    # Headless wgpu (egui_kittest docs screenshots)
+    mesa-vulkan-drivers libvulkan1 \
     # rustautogui / X11 capture & input
     libxtst-dev libxrandr-dev libxinerama-dev libxi-dev \
     # AppImage packaging

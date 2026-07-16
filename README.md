@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/icons/sqyre.svg" width="120" height="120" alt="Sqyre logo" />
+  <img src="crates/sqyre-app/assets/icons/sqyre.svg" width="120" height="120" alt="Sqyre logo" />
 </p>
 
 <h1 align="center">Sqyre</h1>
@@ -25,12 +25,12 @@ Sqyre lets you build and run macros without writing code. Each macro is a tree o
 | **Mouse & keyboard** | Move, click, key, type |
 | **Detection** | Image search (PureCV), OCR (Tesseract), find pixel |
 | **Variables** | Set (values + expressions), for each row, save to file or clipboard |
-| **Loop flow** | Loop, while, break, continue |
-| **Miscellaneous** | Wait, pause, focus window, run macro, if (conditional), navigate select/key |
+| **Loop flow** | Loop, while, break, continue, navigate select/key |
+| **Miscellaneous** | Wait, pause, focus window, run macro, if (conditional) |
 
 **Also in the app:** data editor for reusable images, masks, and tabular sources; macro hotkeys (on press or release); global delay per macro; runtime variable panel while a macro runs.
 
-**Stack:** [egui](https://github.com/emilk/egui) · PureCV · Tesseract (`leptess`). See [migration notes](rust/MIGRATION.md).
+**Stack:** [egui](https://github.com/emilk/egui) · PureCV · Tesseract (`leptess`).
 
 ---
 
@@ -48,14 +48,13 @@ Branching actions (**image search**, **OCR**, **find pixel**, **if**) run child 
 
 ## Screenshots
 
-Assets under `docs/images/` show the UI.
+Assets under `docs/images/` are generated from in-memory egui tests (`make docs-media`).
 
 | | |
 |---|---|
 | Main window | ![Main window](docs/images/main-window.png) |
 | Add action picker | ![Add action picker](docs/images/add-action-picker.png) |
 | Data editor | ![Data editor](docs/images/data-editor.png) |
-| Building a macro | ![Demo](docs/images/demo-macro.gif) |
 
 ---
 
@@ -67,14 +66,15 @@ Assets under `docs/images/` show the UI.
 |------|---------|
 | Linux binary (default) | `make` / `make sqyre` → `./bin/sqyre` |
 | Run without installing | `make run` |
-| Release binary | `make rust-release` |
+| Release binary | `make release` |
 | AppImage | `make appimage` |
-| Tests | `make rust-test` |
+| Tests | `make test` |
+| README screenshots | `make docs-media` |
 | Tesseract data (dev fallback) | `make tessdata` |
 
 Override with `CARGO_FLAGS=...`.
 
-More detail — workspace layout, host setup, packaging — is in **[docs/DEVELOPING.md](docs/DEVELOPING.md)**, **[rust/README.md](rust/README.md)**, and **[docs/README.md](docs/README.md)**.
+More detail — workspace layout, host setup, packaging — is in **[docs/DEVELOPING.md](docs/DEVELOPING.md)**, **[docs/RUST.md](docs/RUST.md)**, and **[docs/README.md](docs/README.md)**.
 
 ---
 
