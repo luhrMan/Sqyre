@@ -220,7 +220,7 @@ impl PreviewTooltipCache {
                 Ok(c) => self.capturer = Some(c),
                 Err(e) => {
                     self.capturer_failed = true;
-                    return Err(e);
+                    return Err(e.to_string());
                 }
             }
         }

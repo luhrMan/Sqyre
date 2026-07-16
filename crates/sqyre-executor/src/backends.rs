@@ -45,7 +45,7 @@ pub trait AutomationBackend {
     fn scroll(&mut self, up: bool) -> Result<(), String>;
     fn key_down(&mut self, key: &str) -> Result<(), String>;
     fn key_up(&mut self, key: &str) -> Result<(), String>;
-    fn type_char(&mut self, s: &str);
+    fn type_char(&mut self, ch: char);
     fn write_clipboard(&mut self, s: &str) -> Result<(), String>;
 }
 
@@ -242,8 +242,8 @@ impl AutomationBackend for RecordingBackend {
         self.log.push(format!("keyup:{key}"));
         Ok(())
     }
-    fn type_char(&mut self, s: &str) {
-        self.log.push(format!("type:{s}"));
+    fn type_char(&mut self, ch: char) {
+        self.log.push(format!("type:{ch}"));
     }
     fn write_clipboard(&mut self, s: &str) -> Result<(), String> {
         self.log.push(format!("clipboard:{s}"));

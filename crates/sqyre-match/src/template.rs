@@ -68,7 +68,7 @@ pub fn match_ccoeff_normed(
     let out_w = search.width - tw + 1;
     let out_h = search.height - th + 1;
 
-    let (masked, t_prime_sq, sum_w) = build_t_prime(template, &mask_bits, ch);
+    let (t_prime, t_prime_sq, sum_w) = build_t_prime(template, &mask_bits, ch);
     if sum_w <= 0.0 {
         return Ok(MatchMap {
             width: out_w,
@@ -85,11 +85,11 @@ pub fn match_ccoeff_normed(
         .saturating_mul(ch as u64);
 
     if full_mask && direct_cost > FFT_DIRECT_COST_THRESHOLD {
-        match_fft(search, &masked, tw, th, sum_w, t_prime_sq, out_w, out_h, ch)
+        match_fft(search, &t_prime, tw, th, sum_w, t_prime_sq, out_w, out_h, ch)
     } else {
         match_direct(
             search,
-            &masked,
+            &t_prime,
             tw,
             th,
             sum_w,
@@ -102,11 +102,31 @@ pub fn match_ccoeff_normed(
     }
 }
 
-fn build_t_prime(
-    template: &ImageBuf,
-    mask_bits: &[bool],
+/// Mean-subtracted template pixels packed for correlation.
+///
+/// `xs`/`ys` are template-local coordinates; `primed` is length `xs.len() * ch`
+/// (interleaved per pixel).
+struct TPrime {
+    xs: Vec<u16>,
+    ys: Vec<u16>,
+    primed: Vec<f64>,
     ch: usize,
-) -> (Vec<(usize, Vec<f64>)>, f64, f64) {
+}
+
+impl TPrime {
+    #[inline]
+    fn len(&self) -> usize {
+        self.xs.len()
+    }
+
+    #[inline]
+    fn primed_at(&self, i: usize) -> &[f64] {
+        let base = i * self.ch;
+        &self.primed[base..base + self.ch]
+    }
+}
+
+fn build_t_prime(template: &ImageBuf, mask_bits: &[bool], ch: usize) -> (TPrime, f64, f64) {
     let tw = template.width;
     let th = template.height;
     let mut t_mean = vec![0.0_f64; ch];
@@ -125,13 +145,25 @@ fn build_t_prime(
         }
     }
     if sum_w <= 0.0 {
-        return (Vec::new(), 0.0, 0.0);
+        return (
+            TPrime {
+                xs: Vec::new(),
+                ys: Vec::new(),
+                primed: Vec::new(),
+                ch,
+            },
+            0.0,
+            0.0,
+        );
     }
     for c in 0..ch {
         t_mean[c] /= sum_w;
     }
 
-    let mut masked = Vec::with_capacity((sum_w as usize).max(1));
+    let n = sum_w as usize;
+    let mut xs = Vec::with_capacity(n);
+    let mut ys = Vec::with_capacity(n);
+    let mut primed = Vec::with_capacity(n * ch);
     let mut t_prime_sq = 0.0_f64;
     for y in 0..th {
         for x in 0..tw {
@@ -140,21 +172,30 @@ fn build_t_prime(
                 continue;
             }
             let ti = template.pixel_offset(x, y);
-            let mut primed = vec![0.0_f64; ch];
+            xs.push(x as u16);
+            ys.push(y as u16);
             for c in 0..ch {
                 let tp = template.data[ti + c] as f64 - t_mean[c];
-                primed[c] = tp;
+                primed.push(tp);
                 t_prime_sq += tp * tp;
             }
-            masked.push((li, primed));
         }
     }
-    (masked, t_prime_sq, sum_w)
+    (
+        TPrime {
+            xs,
+            ys,
+            primed,
+            ch,
+        },
+        t_prime_sq,
+        sum_w,
+    )
 }
 
 fn match_direct(
     search: &ImageBuf,
-    masked: &[(usize, Vec<f64>)],
+    t_prime: &TPrime,
     tw: usize,
     th: usize,
     n: f64,
@@ -179,9 +220,9 @@ fn match_direct(
         .for_each(|(oy, row)| {
             for ox in 0..out_w {
                 let (numer, i_prime_sq) = if let Some(integ) = integrals.as_ref() {
-                    score_unmasked(integ, search_data, search_w, ch, ox, oy, tw, th, n, masked)
+                    score_unmasked(integ, search_data, search_w, ch, ox, oy, tw, th, n, t_prime)
                 } else {
-                    score_masked(search_data, search_w, ch, ox, oy, tw, masked, n)
+                    score_masked(search_data, search_w, ch, ox, oy, t_prime, n)
                 };
                 let denom = (t_prime_sq * i_prime_sq).sqrt();
                 row[ox] = if denom > f64::EPSILON {
@@ -232,7 +273,7 @@ fn optimal_dft_size(n: usize) -> usize {
 /// DFT cross-correlation of mean-subtracted template vs search (OpenCV `crossCorr` + CCOEFF).
 fn match_fft(
     search: &ImageBuf,
-    masked: &[(usize, Vec<f64>)],
+    t_prime: &TPrime,
     tw: usize,
     th: usize,
     n: f64,
@@ -257,10 +298,10 @@ fn match_fft(
                 }
             }
             let mut tmpl = vec![Complex::new(0.0, 0.0); area];
-            for &(li, ref primed) in masked {
-                let x = li % tw;
-                let y = li / tw;
-                tmpl[y * dft_w + x] = Complex::new(primed[c] as f32, 0.0);
+            for i in 0..t_prime.len() {
+                let x = t_prime.xs[i] as usize;
+                let y = t_prime.ys[i] as usize;
+                tmpl[y * dft_w + x] = Complex::new(t_prime.primed_at(i)[c] as f32, 0.0);
             }
 
             let mut planner = FftPlanner::<f32>::new();
@@ -406,7 +447,7 @@ fn score_unmasked(
     tw: usize,
     th: usize,
     n: f64,
-    masked: &[(usize, Vec<f64>)],
+    t_prime: &TPrime,
 ) -> (f64, f64) {
     let stride = integ.width + 1;
     let mut i_prime_sq = 0.0_f64;
@@ -416,10 +457,11 @@ fn score_unmasked(
         i_prime_sq += sq - (s * s) / n;
     }
     let mut numer = 0.0_f64;
-    for &(li, ref primed) in masked {
-        let x = li % tw;
-        let y = li / tw;
+    for i in 0..t_prime.len() {
+        let x = t_prime.xs[i] as usize;
+        let y = t_prime.ys[i] as usize;
         let si = ((oy + y) * search_w + (ox + x)) * ch;
+        let primed = t_prime.primed_at(i);
         for c in 0..ch {
             numer += primed[c] * search_data[si + c] as f64;
         }
@@ -433,14 +475,13 @@ fn score_masked(
     ch: usize,
     ox: usize,
     oy: usize,
-    tw: usize,
-    masked: &[(usize, Vec<f64>)],
+    t_prime: &TPrime,
     n: f64,
 ) -> (f64, f64) {
     let mut i_sum = vec![0.0_f64; ch];
-    for &(li, _) in masked {
-        let x = li % tw;
-        let y = li / tw;
+    for i in 0..t_prime.len() {
+        let x = t_prime.xs[i] as usize;
+        let y = t_prime.ys[i] as usize;
         let si = ((oy + y) * search_w + (ox + x)) * ch;
         for c in 0..ch {
             i_sum[c] += search_data[si + c] as f64;
@@ -453,10 +494,11 @@ fn score_masked(
 
     let mut numer = 0.0_f64;
     let mut i_prime_sq = 0.0_f64;
-    for &(li, ref primed) in masked {
-        let x = li % tw;
-        let y = li / tw;
+    for i in 0..t_prime.len() {
+        let x = t_prime.xs[i] as usize;
+        let y = t_prime.ys[i] as usize;
         let si = ((oy + y) * search_w + (ox + x)) * ch;
+        let primed = t_prime.primed_at(i);
         for c in 0..ch {
             let ip = search_data[si + c] as f64 - i_mean[c];
             numer += primed[c] * ip;

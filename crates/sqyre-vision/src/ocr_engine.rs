@@ -13,11 +13,8 @@ pub struct OcrRecognition {
     pub words: Vec<OcrWordBox>,
 }
 
-/// Run Tesseract on a preprocessed `ImageBuf` (1 or 3 channel).
-pub fn recognize_image(img: &ImageBuf, tessdata_path: &str) -> Result<OcrRecognition, String> {
+fn recognize_with(lt: &mut leptess::LepTess, img: &ImageBuf) -> Result<OcrRecognition, String> {
     let png = encode_png(img)?;
-    let mut lt = leptess::LepTess::new(Some(tessdata_path), "eng")
-        .map_err(|e| format!("OCR init: {e}"))?;
     lt.set_image_from_mem(&png)
         .map_err(|e| format!("OCR set image: {e}"))?;
     lt.set_fallback_source_resolution(70);
@@ -38,6 +35,15 @@ pub fn recognize_image(img: &ImageBuf, tessdata_path: &str) -> Result<OcrRecogni
         }
     };
     Ok(OcrRecognition { text, words })
+}
+
+/// Run Tesseract on a preprocessed `ImageBuf` (1 or 3 channel).
+///
+/// Prefer [`LeptessOcr::recognize`] — this constructs a fresh engine each call.
+pub fn recognize_image(img: &ImageBuf, tessdata_path: &str) -> Result<OcrRecognition, String> {
+    let mut lt = leptess::LepTess::new(Some(tessdata_path), "eng")
+        .map_err(|e| format!("OCR init: {e}"))?;
+    recognize_with(&mut lt, img)
 }
 
 fn encode_png(img: &ImageBuf) -> Result<Vec<u8>, String> {
@@ -63,20 +69,26 @@ fn encode_png(img: &ImageBuf) -> Result<Vec<u8>, String> {
     Ok(buf)
 }
 
-/// Thread-safe OCR engine holding a tessdata directory path.
-#[derive(Debug)]
+/// Thread-safe OCR engine that reuses one Tesseract instance across calls.
 pub struct LeptessOcr {
-    tessdata_path: String,
-    /// Serialize Tesseract use (API is not thread-safe).
-    lock: Mutex<()>,
+    /// Serialize Tesseract use (API is not thread-safe) and keep the engine alive.
+    engine: Mutex<leptess::LepTess>,
+}
+
+impl std::fmt::Debug for LeptessOcr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LeptessOcr").finish_non_exhaustive()
+    }
 }
 
 impl LeptessOcr {
-    pub fn new(tessdata_path: impl Into<String>) -> Self {
-        Self {
-            tessdata_path: tessdata_path.into(),
-            lock: Mutex::new(()),
-        }
+    pub fn new(tessdata_path: impl AsRef<str>) -> Result<Self, String> {
+        let path = tessdata_path.as_ref();
+        let lt = leptess::LepTess::new(Some(path), "eng")
+            .map_err(|e| format!("OCR init: {e}"))?;
+        Ok(Self {
+            engine: Mutex::new(lt),
+        })
     }
 
     /// Resolve tessdata: `SQYRE_TESSDATA`, then common system paths, then error.
@@ -84,7 +96,7 @@ impl LeptessOcr {
         if let Ok(p) = std::env::var("SQYRE_TESSDATA") {
             let eng = std::path::Path::new(&p).join("eng.traineddata");
             if eng.is_file() {
-                return Ok(Self::new(p));
+                return Self::new(p);
             }
         }
         for candidate in [
@@ -95,13 +107,13 @@ impl LeptessOcr {
         ] {
             let eng = std::path::Path::new(candidate).join("eng.traineddata");
             if eng.is_file() {
-                return Ok(Self::new(candidate));
+                return Self::new(candidate);
             }
         }
         // Workspace `assets/tessdata` when developing (path from build.rs).
         let repo = std::path::Path::new(env!("SQYRE_WORKSPACE_ROOT")).join("assets/tessdata");
         if repo.join("eng.traineddata").is_file() {
-            return Ok(Self::new(repo.to_string_lossy()));
+            return Self::new(repo.to_string_lossy());
         }
         Err(
             "OCR: eng.traineddata not found (set SQYRE_TESSDATA or install tesseract-ocr-eng)"
@@ -110,10 +122,10 @@ impl LeptessOcr {
     }
 
     pub fn recognize(&self, img: &ImageBuf) -> Result<OcrRecognition, String> {
-        let _g = self
-            .lock
+        let mut lt = self
+            .engine
             .lock()
             .map_err(|_| "OCR engine lock poisoned".to_string())?;
-        recognize_image(img, &self.tessdata_path)
+        recognize_with(&mut lt, img)
     }
 }

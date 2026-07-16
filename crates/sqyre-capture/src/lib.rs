@@ -1,6 +1,8 @@
 //! Screen capture in absolute virtual-desktop coordinates.
 
 mod diag;
+mod error;
+mod pixel_convert;
 mod stub;
 #[cfg(target_os = "linux")]
 mod x11_capture;
@@ -14,6 +16,8 @@ mod outline_stub;
 pub use diag::{
     mark_site, note, read_last_site, set_log_dir, CRASH_LOG_FILE, DIAG_LOG_FILE, LAST_SITE_FILE,
 };
+pub use error::CaptureError;
+pub use pixel_convert::zpixmap_to_rgba;
 pub use stub::{NullCapturer, SolidCapturer};
 
 #[cfg(target_os = "linux")]

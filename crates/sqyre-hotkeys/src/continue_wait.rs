@@ -59,7 +59,8 @@ impl ContinueWaitBridge {
     /// Called from the hotkey thread when the set of pressed keys changes.
     pub fn on_pressed_keys(&self, pressed: &HashSet<String>) {
         let mut g = self.inner.state.lock();
-        g.last_pressed = pressed.clone();
+        // Always refresh — wait arming reads last_pressed for already-held chords.
+        g.last_pressed.clone_from(pressed);
         if !g.waiting || g.signaled {
             return;
         }
@@ -73,7 +74,7 @@ impl ContinueWaitBridge {
         if g.chords.is_empty() || g.signaled {
             return;
         }
-        let pressed = g.last_pressed.clone();
+        let pressed = &g.last_pressed;
 
         let mut best: Option<(usize, usize)> = None; // (len, index)
         for (i, chord) in g.chords.iter().enumerate() {

@@ -336,6 +336,27 @@ fn take_var_ac_keys(ui: &mut egui::Ui, was_open: bool) -> (bool, bool, bool, boo
     (down, up, accept, dismiss)
 }
 
+/// Finite field width for TextEdit / overlay hit targets.
+///
+/// Callers may pass [`f32::INFINITY`] to mean "fill remaining row space".
+/// Non-finite widths must never reach `Rect::expand2` — that reports an
+/// infinite min size and ratchets parent windows forever.
+fn resolve_edit_width(ui: &egui::Ui, desired_width: f32, reserve_trailing: f32) -> f32 {
+    if desired_width.is_finite() {
+        desired_width.max(0.0)
+    } else {
+        (ui.available_width() - reserve_trailing).max(40.0)
+    }
+}
+
+fn validation_icon_reserve(ui: &egui::Ui, validation: &EntryValidation) -> f32 {
+    if validation.error.is_empty() && validation.warning.is_empty() {
+        0.0
+    } else {
+        18.0 + ui.spacing().item_spacing.x
+    }
+}
+
 /// TextEdit + `${` autocomplete popup.
 fn var_ref_text_edit(
     ui: &mut egui::Ui,
@@ -503,13 +524,14 @@ pub fn var_name_text_edit(
 ) {
     ui.horizontal(|ui| {
         ui.label(label);
+        let width = resolve_edit_width(ui, desired_width, 0.0);
         let id = ui.id().with(("var_name_edit", label));
         let focused = ui.memory(|m| m.has_focus(id));
         if should_show_var_name_overlay(value, focused) {
             let resp = paint_nested_var_chip(ui, value, known, is_dark);
             let resp = ui.interact(
                 resp.rect.expand2(Vec2::new(
-                    (desired_width - resp.rect.width()).max(0.0),
+                    (width - resp.rect.width()).max(0.0),
                     2.0,
                 )),
                 id.with("overlay_hit"),
@@ -522,7 +544,7 @@ pub fn var_name_text_edit(
             ui.add(
                 egui::TextEdit::singleline(value)
                     .id(id)
-                    .desired_width(desired_width),
+                    .desired_width(width),
             );
         }
     });
@@ -567,6 +589,9 @@ pub fn entry_validation_tip(v: &EntryValidation) -> Option<&str> {
 }
 
 /// Labeled var-ref field with live validation icon.
+///
+/// Pass a finite width, or [`f32::INFINITY`] to fill the remaining row
+/// (after the label, leaving room for a validation icon when present).
 pub fn validated_var_ref_edit(
     ui: &mut egui::Ui,
     label: &str,
@@ -578,6 +603,7 @@ pub fn validated_var_ref_edit(
 ) {
     ui.horizontal(|ui| {
         ui.label(label);
+        let width = resolve_edit_width(ui, desired_width, validation_icon_reserve(ui, validation));
         let id = ui.id().with(("validated_var_ref", label));
         let focused = ui.memory(|m| m.has_focus(id));
         if should_show_var_ref_overlay(value, focused) {
@@ -587,7 +613,7 @@ pub fn validated_var_ref_edit(
             });
             let resp = ui.interact(
                 resp.rect.expand2(Vec2::new(
-                    (desired_width - resp.rect.width()).max(0.0),
+                    (width - resp.rect.width()).max(0.0),
                     2.0,
                 )),
                 id.with("overlay_hit"),
@@ -597,13 +623,15 @@ pub fn validated_var_ref_edit(
                 ui.memory_mut(|m| m.request_focus(id));
             }
         } else {
-            var_ref_text_edit(ui, id, value, known, desired_width, None);
+            var_ref_text_edit(ui, id, value, known, width, None);
         }
         paint_entry_validation_icon(ui, validation);
     });
 }
 
 /// Multiline var-ref field with live validation icon.
+///
+/// Pass a finite width, or [`f32::INFINITY`] to fill available width.
 pub fn validated_var_ref_multiline_edit(
     ui: &mut egui::Ui,
     label: &str,
@@ -618,12 +646,13 @@ pub fn validated_var_ref_multiline_edit(
         ui.label(label);
         paint_entry_validation_icon(ui, validation);
     });
+    let width = resolve_edit_width(ui, desired_width, 0.0);
     let id = ui.id().with(("validated_var_ref_multi", label));
     let focused = ui.memory(|m| m.has_focus(id));
     if should_show_var_ref_overlay(value, focused) {
         let plain_fg = ui.visuals().text_color();
         let resp = outer_frame(ui, Color32::TRANSPARENT, |ui| {
-            ui.set_max_width(desired_width);
+            ui.set_max_width(width);
             for line in value.split('\n') {
                 paint_var_ref_content(ui, line, known, is_dark, plain_fg);
             }
@@ -633,7 +662,7 @@ pub fn validated_var_ref_multiline_edit(
             ui.memory_mut(|m| m.request_focus(id));
         }
     } else {
-        var_ref_text_edit(ui, id, value, known, desired_width, Some(rows));
+        var_ref_text_edit(ui, id, value, known, width, Some(rows));
     }
 }
 
@@ -641,6 +670,20 @@ pub fn validated_var_ref_multiline_edit(
 mod tests {
     use super::*;
     use sqyre_domain::known_variable_set;
+
+    #[test]
+    fn resolve_edit_width_clamps_infinity_to_available() {
+        let ctx = egui::Context::default();
+        let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+            ui.set_max_width(200.0);
+            let finite = resolve_edit_width(ui, 160.0, 0.0);
+            assert_eq!(finite, 160.0);
+            let fill = resolve_edit_width(ui, f32::INFINITY, 20.0);
+            assert!(fill.is_finite(), "fill width must be finite");
+            assert!(fill <= ui.available_width());
+            assert!(fill >= 40.0);
+        });
+    }
 
     #[test]
     fn var_ref_overlay_only_when_unfocused_with_ref() {
