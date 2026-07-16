@@ -10,8 +10,7 @@ notes.md
 
 *.prof
 *.test
-/internal/assets/images/meta/
-/internal/assets/tessdata/eng.traineddata
+/assets/tessdata/eng.traineddata
 
 /.vscode
 /.kiro
@@ -20,15 +19,13 @@ sqyre
 /AppDir/
 /appimage-build/# Linux packaging build artifacts
 /bin/
+/VERSION
 scripts/linux/packaging/appimage/sqyre.AppDir/
 scripts/linux/packaging/appimage/appimage-build/
 scripts/linux/packaging/flatpak/build-dir/
-scripts/android/output/
 .flatpak-builder/
-fyne-cross/
-# CI / local Go caches when using workspace paths (e.g. GOMODCACHE=./.cache/go-mod)
+# CI / local caches when using workspace paths
 .cache/
-internal/models/repositories/testdata/
 .devcontainer/builds/
 
 # Local Rust toolchain / cargo caches (workspace installs; not for commit)

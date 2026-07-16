@@ -1,8 +1,8 @@
-//! Embedded brand assets (mirrors Go `internal/assets` embeds).
+//! Embedded brand assets.
 
-/// Sqyre app icon SVG (same bytes as Go `assets.AppIcon`).
+/// Sqyre app icon SVG.
 pub const APP_ICON_SVG: &[u8] =
-    include_bytes!("../../../../internal/assets/icons/sqyre.svg");
+    include_bytes!("../../../../assets/icons/sqyre.svg");
 
 /// Rasterize the brand SVG to unpremultiplied RGBA at `size`×`size`.
 pub fn app_icon_rgba(size: u32) -> Option<(Vec<u8>, u32, u32)> {

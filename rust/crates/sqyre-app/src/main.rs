@@ -237,6 +237,8 @@ struct SqyreApp {
     recording_overlay: RecordingOverlay,
     /// Left macro-list side panel visibility.
     macro_list_open: bool,
+    /// Filter text for the macro list (name / tags fuzzy match).
+    macro_list_filter: String,
     tray: tray::SystemTray,
     /// Process-wide data-dir lock (re-acquired after relocate).
     instance_lock: Option<single_instance::InstanceLock>,
@@ -324,6 +326,7 @@ impl SqyreApp {
                     hidden_for_recording: false,
                     recording_overlay: RecordingOverlay::new(),
                     macro_list_open: true,
+                    macro_list_filter: String::new(),
                     tray: tray::SystemTray::default(),
                     instance_lock: None,
                     pending_delete_macro: None,
@@ -373,6 +376,7 @@ impl SqyreApp {
                     hidden_for_recording: false,
                     recording_overlay: RecordingOverlay::new(),
                     macro_list_open: true,
+                    macro_list_filter: String::new(),
                     tray: tray::SystemTray::default(),
                     instance_lock: None,
                     pending_delete_macro: None,
@@ -1219,12 +1223,21 @@ impl eframe::App for SqyreApp {
                         self.pending_delete_macro = Some(self.macros[idx].name.clone());
                     }
                 });
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.macro_list_filter)
+                        .desired_width(f32::INFINITY)
+                        .hint_text("Search macros or tags…"),
+                );
                 ui.separator();
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     let width = ui.available_width();
                     let text_width =
                         (width - ui.spacing().button_padding.x * 2.0).max(0.0);
+                    let filter = self.macro_list_filter.trim().to_string();
                     for (i, m) in self.macros.iter().enumerate() {
+                        if !pickers::query_matches_name_or_tags(&filter, &m.name, &m.tags) {
+                            continue;
+                        }
                         let label = macro_list_item_text(ui, m, text_width);
                         if ui
                             .add(

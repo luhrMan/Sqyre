@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Download eng.traineddata for embedding (see internal/assets/tessdata.go).
+# Download eng.traineddata for local OCR fallback (see assets/tessdata/).
 # The file is gitignored; run this after clone or when missing.
 set -e
 _here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib/repo-root.sh
 . "$_here/lib/repo-root.sh"
-TESSDATA_DIR="$REPO_ROOT/internal/assets/tessdata"
+TESSDATA_DIR="$REPO_ROOT/assets/tessdata"
 URL="https://github.com/tesseract-ocr/tessdata/raw/main/eng.traineddata"
 mkdir -p "$TESSDATA_DIR"
 echo "Downloading eng.traineddata into $TESSDATA_DIR ..."
