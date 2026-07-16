@@ -25,5 +25,7 @@ pub use labels::{action_type_description, action_type_label};
 pub use macro_model::*;
 pub use rename::*;
 pub use scalar::*;
-pub use set_value::{looks_like_arithmetic, resolve_set_variable_value, resolve_variables_in_text};
+pub use set_value::{
+    looks_like_arithmetic, resolve_scalar_int, resolve_set_variable_value, resolve_variables_in_text,
+};
 pub use variables::*;
