@@ -71,8 +71,11 @@ impl SettingsUi {
 
     /// Ensure Hack is in the proportional fallback chain so geometric/arrow
     /// symbols (e.g. ➔ ◫) are available — egui's default omits Hack there.
+    /// Also registers Phosphor for overlay button icons.
     pub fn install_fonts(ctx: &egui::Context) {
         let mut fonts = egui::FontDefinitions::default();
+        egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
+        crate::overlay_icons::register_phosphor_family(&mut fonts);
         if let Some(prop) = fonts.families.get_mut(&egui::FontFamily::Proportional) {
             if !prop.iter().any(|n| n == "Hack") {
                 // After Ubuntu (UI text), before emoji fallbacks.

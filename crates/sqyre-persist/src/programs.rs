@@ -73,6 +73,11 @@ pub struct ProgramCollection {
 #[derive(Debug, Clone, Default)]
 pub struct ProgramData {
     pub name: String,
+    /// Absolute executable path of the bound OS process (from a running-window pick).
+    /// Empty = no binding; overlay falls back to fuzzy name match.
+    pub process_path: String,
+    /// Window title captured with the process pick (display / Focus Window parity).
+    pub window_title: String,
     /// resolution key → points
     pub points: BTreeMap<String, BTreeMap<String, ProgramPoint>>,
     pub search_areas: BTreeMap<String, BTreeMap<String, ProgramSearchArea>>,
@@ -432,6 +437,19 @@ impl ProgramCatalog {
         Ok(())
     }
 
+    /// Bind a catalog program to a running OS window (`process_path` + `window_title`).
+    pub fn set_process_binding(
+        &mut self,
+        program: &str,
+        process_path: impl Into<String>,
+        window_title: impl Into<String>,
+    ) -> Result<()> {
+        let p = self.program_mut(program)?;
+        p.process_path = process_path.into();
+        p.window_title = window_title.into();
+        Ok(())
+    }
+
     pub fn upsert_item(&mut self, program: &str, item: ProgramItem) -> Result<()> {
         let p = self.program_mut(program)?;
         let key = item.name.clone();
@@ -714,6 +732,18 @@ fn encode_program(data: &ProgramData, previous: &Mapping) -> Value {
         Value::String("name".into()),
         Value::String(data.name.clone()),
     );
+    if !data.process_path.is_empty() {
+        map.insert(
+            Value::String("processpath".into()),
+            Value::String(data.process_path.clone()),
+        );
+    }
+    if !data.window_title.is_empty() {
+        map.insert(
+            Value::String("windowtitle".into()),
+            Value::String(data.window_title.clone()),
+        );
+    }
 
     let mut items = Mapping::new();
     for (k, item) in &data.items {
@@ -771,7 +801,8 @@ fn encode_program(data: &ProgramData, previous: &Mapping) -> Value {
             continue;
         };
         match key {
-            "name" | "items" | "coordinates" | "masks" | "collections" => {}
+            "name" | "processpath" | "windowtitle" | "items" | "coordinates" | "masks"
+            | "collections" => {}
             _ => {
                 map.insert(k.clone(), v.clone());
             }
@@ -999,6 +1030,25 @@ fn parse_program(name: &str, v: &Value) -> Result<ProgramData> {
     let Some(map) = v.as_mapping() else {
         return Ok(data);
     };
+
+    if let Some(n) = map
+        .get(Value::String("name".into()))
+        .and_then(|x| x.as_str())
+    {
+        data.name = n.to_string();
+    }
+    if let Some(p) = map
+        .get(Value::String("processpath".into()))
+        .and_then(|x| x.as_str())
+    {
+        data.process_path = p.to_string();
+    }
+    if let Some(t) = map
+        .get(Value::String("windowtitle".into()))
+        .and_then(|x| x.as_str())
+    {
+        data.window_title = t.to_string();
+    }
 
     if let Some(Value::Mapping(items)) = map.get(Value::String("items".into())) {
         for (ik, iv) in items {
@@ -1414,6 +1464,31 @@ Demo:
         assert_eq!(cat.get("Beta").unwrap().name, "Beta");
         cat.delete_program("Beta").unwrap();
         assert!(cat.get("Beta").is_none());
+    }
+
+    #[test]
+    fn process_binding_roundtrip() {
+        let yaml = r#"
+Demo:
+  name: Demo
+  processpath: /opt/demo/bin/DemoGame
+  windowtitle: Demo Game
+  items: {}
+  coordinates: {}
+  masks: {}
+  collections: {}
+"#;
+        let v: Value = serde_yaml::from_str(yaml).unwrap();
+        let mut cat = ProgramCatalog::from_yaml_value(&v).unwrap();
+        let p = cat.get("Demo").unwrap();
+        assert_eq!(p.process_path, "/opt/demo/bin/DemoGame");
+        assert_eq!(p.window_title, "Demo Game");
+        cat.set_process_binding("Demo", "/usr/bin/other", "Other").unwrap();
+        let encoded = cat.to_yaml_value(&Value::Null);
+        let cat2 = ProgramCatalog::from_yaml_value(&encoded).unwrap();
+        let p2 = cat2.get("Demo").unwrap();
+        assert_eq!(p2.process_path, "/usr/bin/other");
+        assert_eq!(p2.window_title, "Other");
     }
 
     #[test]

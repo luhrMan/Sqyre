@@ -13,8 +13,9 @@ use sqyre_domain::{
 };
 use sqyre_hotkeys::ScreenClickBridge;
 use sqyre_persist::{
-    auto_pic_path, Database, ProgramCatalog, ProgramCollection, ProgramItem, ProgramMask,
-    ProgramPoint, ProgramSearchArea,
+    auto_pic_path, Database, OverlayButtonConfig, ProgramCatalog, ProgramCollection, ProgramItem,
+    ProgramMask, ProgramPoint, ProgramSearchArea, UserSettings, DEFAULT_OVERLAY_BUTTON_SIZE,
+    MAX_OVERLAY_BUTTON_SIZE, MIN_OVERLAY_BUTTON_SIZE,
 };
 use sqyre_validate::{
     validate_entity_name, validate_item_grid_fields, validate_numeric_expression,
@@ -23,6 +24,10 @@ use sqyre_validate::{
 use sqyre_vision::invalidate_search_masks_under;
 use std::collections::HashSet;
 use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use crate::overlay_icons;
+use crate::pickers::{self, ActivePicker, PickerResult};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum EditorTab {
@@ -33,6 +38,7 @@ enum EditorTab {
     Masks,
     Collections,
     AutoPic,
+    Overlay,
 }
 
 #[derive(Debug, Clone)]
@@ -91,6 +97,20 @@ pub struct DataEditor {
     form_radius: String,
     form_inverse: bool,
     form_search_area: String,
+    /// Overlay button form: target macro name.
+    form_overlay_macro: String,
+    /// Overlay button form: built-in icon id.
+    form_overlay_icon: String,
+    /// Overlay button form: desktop X position.
+    form_overlay_x: f32,
+    /// Overlay button form: desktop Y position.
+    form_overlay_y: f32,
+    /// Overlay button form: size in points.
+    form_overlay_size: f32,
+    /// Bound OS process path for the selected Program.
+    form_process_path: String,
+    /// Bound window title for the selected Program.
+    form_window_title: String,
     variant_name_draft: String,
     variant_prompt: Option<VariantPrompt>,
     status: Option<String>,
@@ -102,6 +122,12 @@ pub struct DataEditor {
     collection_preview: ImageViewTransform,
     /// `(program, collection)` last shown; reset transform when this changes.
     collection_preview_key: Option<(String, String)>,
+    /// Overlay button id whose icon picker popup is open.
+    overlay_icon_picker_for: Option<String>,
+    /// Filter text for the overlay icon picker.
+    overlay_icon_search: String,
+    /// Running-window picker for Program process binding.
+    window_picker: ActivePicker,
 }
 
 impl Default for DataEditor {
@@ -134,6 +160,13 @@ impl Default for DataEditor {
             form_radius: String::new(),
             form_inverse: false,
             form_search_area: String::new(),
+            form_overlay_macro: String::new(),
+            form_overlay_icon: overlay_icons::DEFAULT_ICON_ID.into(),
+            form_overlay_x: 48.0,
+            form_overlay_y: 48.0,
+            form_overlay_size: DEFAULT_OVERLAY_BUTTON_SIZE,
+            form_process_path: String::new(),
+            form_window_title: String::new(),
             variant_name_draft: String::new(),
             variant_prompt: None,
             status: None,
@@ -142,11 +175,34 @@ impl Default for DataEditor {
             save_after_record: false,
             collection_preview: ImageViewTransform::default(),
             collection_preview_key: None,
+            overlay_icon_picker_for: None,
+            overlay_icon_search: String::new(),
+            window_picker: ActivePicker::None,
         }
     }
 }
 
 impl DataEditor {
+    /// Live Overlay-tab form as an on-screen button preview (position, size, icon, label).
+    ///
+    /// Shown while a button is selected for editing, even before Update is clicked.
+    pub fn overlay_edit_preview(&self) -> Option<OverlayButtonConfig> {
+        if !self.open || !matches!(self.tab, EditorTab::Overlay) {
+            return None;
+        }
+        let id = self.selected_entity.as_ref()?;
+        Some(OverlayButtonConfig {
+            id: id.clone(),
+            program: self.selected_program.clone().unwrap_or_default(),
+            label: self.form_name.clone(),
+            macro_name: self.form_overlay_macro.clone(),
+            icon: self.form_overlay_icon.clone(),
+            x: self.form_overlay_x,
+            y: self.form_overlay_y,
+            size: self.form_overlay_size,
+        })
+    }
+
     pub fn show(
         &mut self,
         ctx: &egui::Context,
@@ -157,11 +213,12 @@ impl DataEditor {
         icons: &mut IconCache,
         previews: &mut PreviewTooltipCache,
         screen_click: &ScreenClickBridge,
+        settings: &mut UserSettings,
     ) {
         if !self.open {
             return;
         }
-        self.poll_screen_click(screen_click, previews, db, macros, catalog);
+        self.poll_screen_click(screen_click, previews, db, macros, catalog, settings);
         let mut open = self.open;
         egui::Window::new("Data Editor")
             .open(&mut open)
@@ -180,9 +237,46 @@ impl DataEditor {
                     icons,
                     previews,
                     screen_click,
+                    settings,
                 );
             });
         self.open = open;
+        self.draw_overlay_icon_picker(ctx, settings);
+        self.poll_window_picker(ctx, catalog, icons, previews, macros);
+    }
+
+    fn poll_window_picker(
+        &mut self,
+        ctx: &egui::Context,
+        catalog: &ProgramCatalog,
+        icons: &mut IconCache,
+        previews: &mut PreviewTooltipCache,
+        macros: &[Macro],
+    ) {
+        if !self.window_picker.is_open() {
+            return;
+        }
+        let macro_opts: Vec<(String, Vec<String>)> = macros
+            .iter()
+            .map(|m| (m.name.clone(), m.tags.clone()))
+            .collect();
+        match pickers::show_active_picker(
+            ctx,
+            &mut self.window_picker,
+            catalog,
+            icons,
+            previews,
+            &macro_opts,
+        ) {
+            PickerResult::Window {
+                process_path,
+                window_title,
+            } => {
+                self.form_process_path = process_path;
+                self.form_window_title = window_title;
+            }
+            _ => {}
+        }
     }
 
     fn poll_screen_click(
@@ -192,6 +286,7 @@ impl DataEditor {
         db: &mut Database,
         macros: &mut Vec<Macro>,
         catalog: &mut ProgramCatalog,
+        settings: &mut UserSettings,
     ) {
         let mut captured = false;
         if let Some((x, y)) = screen_click.take_point() {
@@ -216,7 +311,7 @@ impl DataEditor {
         }
         if captured && self.save_after_record {
             self.save_after_record = false;
-            self.on_update(db, macros, catalog, previews);
+            self.on_update(db, macros, catalog, previews, settings);
             if !self.status_error {
                 self.set_ok("Recorded and saved.");
             }
@@ -233,6 +328,7 @@ impl DataEditor {
         icons: &mut IconCache,
         previews: &mut PreviewTooltipCache,
         screen_click: &ScreenClickBridge,
+        settings: &mut UserSettings,
     ) {
         ui.horizontal(|ui| {
             let prev = self.tab;
@@ -243,10 +339,12 @@ impl DataEditor {
             ui.selectable_value(&mut self.tab, EditorTab::Masks, "Masks");
             ui.selectable_value(&mut self.tab, EditorTab::Collections, "Collections");
             ui.selectable_value(&mut self.tab, EditorTab::AutoPic, "AutoPic");
+            ui.selectable_value(&mut self.tab, EditorTab::Overlay, "Overlay");
             if self.tab != prev {
                 self.selected_entity = None;
                 self.variant_prompt = None;
-                self.load_form(catalog);
+                self.overlay_icon_picker_for = None;
+                self.load_form(catalog, settings);
             }
         });
         ui.separator();
@@ -271,7 +369,7 @@ impl DataEditor {
         }
 
         if let Some(confirm) = self.confirm.clone() {
-            self.draw_confirm(ui, confirm, db, macros, catalog, icons, previews);
+            self.draw_confirm(ui, confirm, db, macros, catalog, icons, previews, settings);
             return;
         }
 
@@ -306,7 +404,7 @@ impl DataEditor {
                     egui::Layout::top_down(egui::Align::Min),
                     |ui| {
                         ui.set_max_size(egui::vec2(self.left_width, body_h));
-                        self.draw_left_list(ui, catalog, icons, previews);
+                        self.draw_left_list(ui, catalog, icons, previews, settings);
                     },
                 );
 
@@ -350,7 +448,9 @@ impl DataEditor {
                                     icons,
                                     previews,
                                     screen_click,
+                                    macros,
                                     macros.get(selected_macro),
+                                    settings,
                                 );
                             });
                     },
@@ -368,16 +468,16 @@ impl DataEditor {
                         .add_enabled(can_new, egui::Button::new("New"))
                         .clicked()
                     {
-                        self.on_new(db, macros, catalog, icons, screen_click);
+                        self.on_new(db, macros, catalog, icons, screen_click, settings);
                     }
-                    let dirty = self.is_dirty(catalog);
+                    let dirty = self.is_dirty(catalog, settings);
                     let valid = self.form_valid(macros.get(selected_macro));
                     let can_update = !matches!(self.tab, EditorTab::AutoPic);
                     if ui
                         .add_enabled(can_update && dirty && valid, egui::Button::new("Update"))
                         .clicked()
                     {
-                        self.on_update(db, macros, catalog, previews);
+                        self.on_update(db, macros, catalog, previews, settings);
                     }
                     let can_delete = match self.tab {
                         EditorTab::Programs => self.selected_program.is_some(),
@@ -413,6 +513,10 @@ impl DataEditor {
                                 "collection “{}”",
                                 self.selected_entity.as_deref().unwrap_or("")
                             ),
+                            EditorTab::Overlay => format!(
+                                "overlay button “{}”",
+                                self.selected_entity.as_deref().unwrap_or("")
+                            ),
                             EditorTab::AutoPic => String::new(),
                         };
                         if !label.is_empty() {
@@ -433,6 +537,7 @@ impl DataEditor {
         catalog: &mut ProgramCatalog,
         icons: &mut IconCache,
         previews: &mut PreviewTooltipCache,
+        settings: &mut UserSettings,
     ) {
         match &confirm {
             PendingConfirm::Delete { label } => {
@@ -464,11 +569,11 @@ impl DataEditor {
                 match confirm {
                     PendingConfirm::Delete { .. } => {
                         self.confirm = None;
-                        self.on_delete(db, macros, catalog, previews);
+                        self.on_delete(db, macros, catalog, previews, settings);
                     }
                     PendingConfirm::Overwrite { .. } => {
                         self.confirm = None;
-                        self.apply_update(db, macros, catalog, true, previews);
+                        self.apply_update(db, macros, catalog, true, previews, settings);
                     }
                     PendingConfirm::DeleteVariant { variant } => {
                         self.confirm = None;
@@ -515,6 +620,7 @@ impl DataEditor {
         catalog: &ProgramCatalog,
         icons: &mut IconCache,
         previews: &mut PreviewTooltipCache,
+        settings: &UserSettings,
     ) {
         ui.horizontal(|ui| {
             ui.label("Search");
@@ -539,7 +645,7 @@ impl DataEditor {
                             }
                             let selected = self.selected_program.as_deref() == Some(name.as_str());
                             if ui.selectable_label(selected, name).clicked() {
-                                self.select_program(name, catalog);
+                                self.select_program(name, catalog, settings);
                             }
                         }
                     });
@@ -575,7 +681,7 @@ impl DataEditor {
                         let changed = self.selected_program.as_deref() != Some(prog)
                             || self.selected_entity.as_deref() != Some(item);
                         if changed {
-                            self.select_entity(prog, item, catalog);
+                            self.select_entity(prog, item, catalog, settings);
                         }
                     }
                 }
@@ -635,7 +741,51 @@ impl DataEditor {
                                     );
                                 }
                                 if resp.clicked() {
-                                    self.select_entity(prog, &ent, catalog);
+                                    self.select_entity(prog, &ent, catalog, settings);
+                                }
+                            }
+                        }
+                    });
+            }
+            EditorTab::Overlay => {
+                egui::ScrollArea::vertical()
+                    .id_salt("data_editor_overlay_list")
+                    .auto_shrink([false, false])
+                    .max_height(list_h)
+                    .show(ui, |ui| {
+                        for prog in catalog.program_names() {
+                            let buttons: Vec<&OverlayButtonConfig> = settings
+                                .overlay_buttons
+                                .iter()
+                                .filter(|b| b.program == *prog)
+                                .collect();
+                            let prog_match =
+                                q.is_empty() || crate::pickers::fuzzy_match_fold(&q, prog);
+                            let any_btn = buttons.iter().any(|b| {
+                                q.is_empty()
+                                    || crate::pickers::fuzzy_match_fold(&q, b.display_name())
+                                    || crate::pickers::fuzzy_match_fold(&q, &b.id)
+                            });
+                            if !prog_match && !any_btn {
+                                continue;
+                            }
+                            ui.label(egui::RichText::new(prog.as_str()).size(16.0).strong());
+                            for btn in buttons {
+                                if !q.is_empty()
+                                    && !crate::pickers::fuzzy_match_fold(&q, btn.display_name())
+                                    && !crate::pickers::fuzzy_match_fold(&q, &btn.id)
+                                    && !prog_match
+                                {
+                                    continue;
+                                }
+                                let selected = self.selected_program.as_deref()
+                                    == Some(prog.as_str())
+                                    && self.selected_entity.as_deref() == Some(btn.id.as_str());
+                                if ui
+                                    .selectable_label(selected, format!("  {}", btn.display_name()))
+                                    .clicked()
+                                {
+                                    self.select_entity(prog, &btn.id, catalog, settings);
                                 }
                             }
                         }
@@ -720,7 +870,7 @@ impl DataEditor {
                     (k.clone(), display)
                 })
                 .collect(),
-            EditorTab::Programs => Vec::new(),
+            EditorTab::Programs | EditorTab::Overlay => Vec::new(),
         };
         keys.sort_by(|a, b| {
             a.1.to_ascii_lowercase()
@@ -730,28 +880,45 @@ impl DataEditor {
         keys.into_iter().map(|(k, _)| k).collect()
     }
 
-    fn select_program(&mut self, name: &str, catalog: &ProgramCatalog) {
+    fn select_program(&mut self, name: &str, catalog: &ProgramCatalog, settings: &UserSettings) {
         self.selected_program = Some(name.to_string());
         self.selected_entity = None;
-        self.load_form(catalog);
+        self.load_form(catalog, settings);
     }
 
     /// Select a program for docs screenshots (Programs tab form populated).
     pub fn select_program_for_docs(&mut self, name: &str, catalog: &ProgramCatalog) {
-        self.select_program(name, catalog);
+        self.select_program(name, catalog, &UserSettings::default());
     }
 
-    fn select_entity(&mut self, program: &str, entity: &str, catalog: &ProgramCatalog) {
+    fn select_entity(
+        &mut self,
+        program: &str,
+        entity: &str,
+        catalog: &ProgramCatalog,
+        settings: &UserSettings,
+    ) {
         self.selected_program = Some(program.to_string());
         self.selected_entity = Some(entity.to_string());
-        self.load_form(catalog);
+        self.load_form(catalog, settings);
     }
 
-    fn load_form(&mut self, catalog: &ProgramCatalog) {
+    fn load_form(&mut self, catalog: &ProgramCatalog, settings: &UserSettings) {
         self.clear_status();
         match self.tab {
             EditorTab::Programs => {
                 self.form_name = self.selected_program.clone().unwrap_or_default();
+                if let Some(p) = self
+                    .selected_program
+                    .as_deref()
+                    .and_then(|n| catalog.get(n))
+                {
+                    self.form_process_path = p.process_path.clone();
+                    self.form_window_title = p.window_title.clone();
+                } else {
+                    self.form_process_path.clear();
+                    self.form_window_title.clear();
+                }
             }
             EditorTab::Items => {
                 let (prog, name) = match (
@@ -821,35 +988,6 @@ impl DataEditor {
                 self.form_right = scalar_to_edit(&sa.right_x);
                 self.form_bottom = scalar_to_edit(&sa.bottom_y);
             }
-            EditorTab::AutoPic => {
-                let (prog, name) = match (
-                    self.selected_program.as_deref(),
-                    self.selected_entity.as_deref(),
-                ) {
-                    (Some(p), Some(n)) => (p, n),
-                    _ => {
-                        self.form_name.clear();
-                        return;
-                    }
-                };
-                let res = catalog.resolution_key();
-                let Some(sa) = catalog
-                    .get(prog)
-                    .and_then(|p| {
-                        p.search_areas
-                            .get(res)
-                            .or_else(|| p.search_areas.values().next())
-                    })
-                    .and_then(|m| m.get(name))
-                else {
-                    return;
-                };
-                self.form_name = sa.name.clone();
-                self.form_left = scalar_to_edit(&sa.left_x);
-                self.form_top = scalar_to_edit(&sa.top_y);
-                self.form_right = scalar_to_edit(&sa.right_x);
-                self.form_bottom = scalar_to_edit(&sa.bottom_y);
-            }
             EditorTab::Masks => {
                 let (prog, name) = match (
                     self.selected_program.as_deref(),
@@ -893,8 +1031,72 @@ impl DataEditor {
                 self.form_search_area = col.search_area.clone();
                 self.form_rows = col.rows.to_string();
                 self.form_cols = col.cols.to_string();
+                self.collection_preview_key = Some((prog.to_string(), name.to_string()));
+            }
+            EditorTab::AutoPic => {
+                let (prog, name) = match (
+                    self.selected_program.as_deref(),
+                    self.selected_entity.as_deref(),
+                ) {
+                    (Some(p), Some(n)) => (p, n),
+                    _ => return,
+                };
+                let res = catalog.resolution_key();
+                let Some(sa) = catalog
+                    .get(prog)
+                    .and_then(|p| {
+                        p.search_areas
+                            .get(res)
+                            .or_else(|| p.search_areas.values().next())
+                    })
+                    .and_then(|m| m.get(name))
+                else {
+                    return;
+                };
+                self.form_name = sa.name.clone();
+                self.form_left = scalar_to_edit(&sa.left_x);
+                self.form_top = scalar_to_edit(&sa.top_y);
+                self.form_right = scalar_to_edit(&sa.right_x);
+                self.form_bottom = scalar_to_edit(&sa.bottom_y);
+            }
+            EditorTab::Overlay => {
+                self.load_overlay_form(settings);
             }
         }
+    }
+
+    fn load_overlay_form(&mut self, settings: &UserSettings) {
+        let Some(id) = self.selected_entity.as_deref() else {
+            self.reset_overlay_form();
+            return;
+        };
+        let Some(btn) = settings.overlay_buttons.iter().find(|b| b.id == id) else {
+            self.reset_overlay_form();
+            return;
+        };
+        self.form_name = btn.label.clone();
+        self.form_overlay_x = btn.x;
+        self.form_overlay_y = btn.y;
+        self.form_overlay_macro = btn.macro_name.clone();
+        self.form_overlay_icon = if btn.icon.trim().is_empty() {
+            overlay_icons::DEFAULT_ICON_ID.into()
+        } else {
+            btn.icon.clone()
+        };
+        self.form_overlay_size = if btn.size > 0.0 {
+            btn.size
+        } else {
+            DEFAULT_OVERLAY_BUTTON_SIZE
+        };
+    }
+
+    fn reset_overlay_form(&mut self) {
+        self.form_name.clear();
+        self.form_overlay_x = 48.0;
+        self.form_overlay_y = 48.0;
+        self.form_overlay_macro.clear();
+        self.form_overlay_icon = overlay_icons::DEFAULT_ICON_ID.into();
+        self.form_overlay_size = DEFAULT_OVERLAY_BUTTON_SIZE;
     }
 
     fn reset_item_form(&mut self) {
@@ -931,7 +1133,9 @@ impl DataEditor {
         icons: &mut IconCache,
         previews: &mut PreviewTooltipCache,
         screen_click: &ScreenClickBridge,
+        macros: &[Macro],
         active_macro: Option<&Macro>,
+        settings: &mut UserSettings,
     ) {
         let known = active_macro
             .map(collect_known_variable_names)
@@ -944,6 +1148,42 @@ impl DataEditor {
                 ui.add(
                     egui::TextEdit::singleline(&mut self.form_name).desired_width(f32::INFINITY),
                 );
+                ui.add_space(8.0);
+                ui.label("Running program");
+                ui.weak(
+                    "Overlay buttons for this program show when this process owns the focused window.",
+                );
+                ui.add_space(4.0);
+                let bound = if self.form_process_path.trim().is_empty() {
+                    "(none)".to_string()
+                } else if self.form_window_title.trim().is_empty() {
+                    self.form_process_path.clone()
+                } else {
+                    format!(
+                        "{}  —  {}",
+                        self.form_window_title.trim(),
+                        self.form_process_path.trim()
+                    )
+                };
+                ui.label(egui::RichText::new(bound).monospace());
+                ui.horizontal(|ui| {
+                    if ui.button("Select…").clicked() {
+                        self.window_picker = pickers::open_window_picker(
+                            &self.form_process_path,
+                            &self.form_window_title,
+                        );
+                    }
+                    if ui
+                        .add_enabled(
+                            !self.form_process_path.is_empty() || !self.form_window_title.is_empty(),
+                            egui::Button::new("Clear"),
+                        )
+                        .clicked()
+                    {
+                        self.form_process_path.clear();
+                        self.form_window_title.clear();
+                    }
+                });
             }
             EditorTab::Items => {
                 ui.heading("Item");
@@ -1431,6 +1671,97 @@ impl DataEditor {
                     ui.weak("Select a search area from the list.");
                 }
             }
+            EditorTab::Overlay => {
+                ui.heading("Overlay Button");
+                ui.weak(
+                    "Buttons appear when this program's bound process owns the focused OS window. Bind a process on the Programs tab.",
+                );
+                ui.weak("The selected button is previewed on screen while you edit.");
+                ui.add_space(4.0);
+                if ui
+                    .checkbox(
+                        &mut settings.overlay_enabled,
+                        "Show overlay buttons on screen",
+                    )
+                    .changed()
+                {
+                    self.persist_overlay_settings(settings);
+                }
+                ui.add_space(6.0);
+                self.program_selector(ui, catalog);
+                if self.selected_program.is_none() {
+                    ui.weak("Select a program, then New to add a button.");
+                    return;
+                }
+                if self.selected_entity.is_none() {
+                    ui.weak("Select a button from the list, or click New.");
+                    return;
+                }
+                ui.add_space(6.0);
+                ui.horizontal(|ui| {
+                    let icon = overlay_icons::resolve(&self.form_overlay_icon);
+                    let preview = overlay_icons::icon_glyph_button(ui, icon, false, 48.0);
+                    if preview.clicked() {
+                        if let Some(id) = self.selected_entity.clone() {
+                            self.overlay_icon_search.clear();
+                            self.overlay_icon_picker_for = Some(id);
+                        }
+                    }
+                    ui.vertical(|ui| {
+                        ui.label(icon.label);
+                        ui.weak("Click icon to choose from Phosphor library");
+                    });
+                });
+                ui.add_space(6.0);
+                ui.label("Label");
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.form_name)
+                        .desired_width(f32::INFINITY)
+                        .hint_text("optional"),
+                );
+                ui.add_space(4.0);
+                ui.label("Macro");
+                let mut selected = self.form_overlay_macro.clone();
+                let before = selected.clone();
+                let macro_names: Vec<String> = macros.iter().map(|m| m.name.clone()).collect();
+                egui::ComboBox::from_id_salt("overlay_form_macro")
+                    .selected_text(if selected.is_empty() {
+                        "(pick macro)".to_string()
+                    } else {
+                        selected.clone()
+                    })
+                    .width(220.0)
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut selected, String::new(), "(none)");
+                        for name in &macro_names {
+                            ui.selectable_value(&mut selected, name.clone(), name);
+                        }
+                    });
+                if selected != before {
+                    self.form_overlay_macro = selected;
+                }
+                ui.add_space(4.0);
+                ui.horizontal(|ui| {
+                    ui.label("X");
+                    ui.add(
+                        egui::DragValue::new(&mut self.form_overlay_x)
+                            .speed(1.0)
+                            .suffix(" px"),
+                    );
+                    ui.label("Y");
+                    ui.add(
+                        egui::DragValue::new(&mut self.form_overlay_y)
+                            .speed(1.0)
+                            .suffix(" px"),
+                    );
+                    ui.label("Size");
+                    ui.add(
+                        egui::DragValue::new(&mut self.form_overlay_size)
+                            .speed(1)
+                            .range(MIN_OVERLAY_BUTTON_SIZE..=MAX_OVERLAY_BUTTON_SIZE),
+                    );
+                });
+            }
         }
     }
 
@@ -1458,13 +1789,20 @@ impl DataEditor {
         }
     }
 
-    fn is_dirty(&self, catalog: &ProgramCatalog) -> bool {
+    fn is_dirty(&self, catalog: &ProgramCatalog, settings: &UserSettings) -> bool {
         match self.tab {
             EditorTab::Programs => {
                 let Some(sel) = self.selected_program.as_deref() else {
-                    return !self.form_name.trim().is_empty();
+                    return !self.form_name.trim().is_empty()
+                        || !self.form_process_path.is_empty()
+                        || !self.form_window_title.is_empty();
                 };
+                let bound = catalog.get(sel);
+                let path = bound.map(|p| p.process_path.as_str()).unwrap_or("");
+                let title = bound.map(|p| p.window_title.as_str()).unwrap_or("");
                 self.form_name.trim() != sel
+                    || self.form_process_path != path
+                    || self.form_window_title != title
             }
             EditorTab::Items => {
                 let (Some(prog), Some(ent)) = (
@@ -1562,11 +1900,28 @@ impl DataEditor {
                     || parse_i32(&self.form_cols) != Some(col.cols)
             }
             EditorTab::AutoPic => false,
+            EditorTab::Overlay => {
+                let Some(id) = self.selected_entity.as_deref() else {
+                    return false;
+                };
+                let Some(btn) = settings.overlay_buttons.iter().find(|b| b.id == id) else {
+                    return true;
+                };
+                self.form_name.trim() != btn.label.trim()
+                    || self.form_overlay_macro.trim() != btn.macro_name.trim()
+                    || self.form_overlay_icon != btn.icon
+                    || (self.form_overlay_x - btn.x).abs() > f32::EPSILON
+                    || (self.form_overlay_y - btn.y).abs() > f32::EPSILON
+                    || (self.form_overlay_size - btn.size).abs() > f32::EPSILON
+                    || self.selected_program.as_deref() != Some(btn.program.as_str())
+            }
         }
     }
 
     fn form_valid(&self, active_macro: Option<&Macro>) -> bool {
-        if validate_entity_name(self.form_name.trim()).is_err() {
+        if !matches!(self.tab, EditorTab::Overlay)
+            && validate_entity_name(self.form_name.trim()).is_err()
+        {
             return false;
         }
         match self.tab {
@@ -1633,6 +1988,11 @@ impl DataEditor {
                     && parse_i32(&self.form_cols).map(|n| n >= 1).unwrap_or(false)
             }
             EditorTab::AutoPic => false,
+            EditorTab::Overlay => {
+                self.selected_program.is_some()
+                    && self.selected_entity.is_some()
+                    && !self.form_overlay_macro.trim().is_empty()
+            }
         }
     }
 
@@ -1643,6 +2003,7 @@ impl DataEditor {
         catalog: &mut ProgramCatalog,
         icons: &mut IconCache,
         screen_click: &ScreenClickBridge,
+        settings: &mut UserSettings,
     ) {
         self.clear_status();
         self.save_after_record = false;
@@ -1658,6 +2019,8 @@ impl DataEditor {
                     Ok(()) => {
                         self.selected_program = Some(name.clone());
                         self.form_name = name;
+                        self.form_process_path.clear();
+                        self.form_window_title.clear();
                         Ok("Created program.")
                     }
                     Err(e) => Err(e.to_string()),
@@ -1687,7 +2050,7 @@ impl DataEditor {
                 match catalog.upsert_item(&prog, item) {
                     Ok(()) => {
                         self.selected_entity = Some(name.clone());
-                        self.load_form(catalog);
+                        self.load_form(catalog, settings);
                         Ok("Created item.")
                     }
                     Err(e) => Err(e.to_string()),
@@ -1719,7 +2082,7 @@ impl DataEditor {
                 match catalog.upsert_point(&prog, pt) {
                     Ok(()) => {
                         self.selected_entity = Some(name);
-                        self.load_form(catalog);
+                        self.load_form(catalog, settings);
                         Ok("Created point.")
                     }
                     Err(e) => Err(e.to_string()),
@@ -1753,7 +2116,7 @@ impl DataEditor {
                 match catalog.upsert_search_area(&prog, sa) {
                     Ok(()) => {
                         self.selected_entity = Some(name);
-                        self.load_form(catalog);
+                        self.load_form(catalog, settings);
                         Ok("Created search area.")
                     }
                     Err(e) => Err(e.to_string()),
@@ -1779,7 +2142,7 @@ impl DataEditor {
                 match catalog.upsert_mask(&prog, mask) {
                     Ok(()) => {
                         self.selected_entity = Some(name);
-                        self.load_form(catalog);
+                        self.load_form(catalog, settings);
                         Ok("Created mask.")
                     }
                     Err(e) => Err(e.to_string()),
@@ -1834,7 +2197,7 @@ impl DataEditor {
                             let path = catalog.collection_image_path(&prog, &name);
                             icons.invalidate_path(&path);
                             self.selected_entity = Some(name);
-                            self.load_form(catalog);
+                            self.load_form(catalog, settings);
                             Ok("Created collection.")
                         }
                         Err(e) => {
@@ -1847,6 +2210,35 @@ impl DataEditor {
             }
             EditorTab::AutoPic => {
                 self.set_err("Use Save on the AutoPic tab to capture a search area.");
+                return;
+            }
+            EditorTab::Overlay => {
+                let Some(prog) = self.selected_program.clone() else {
+                    self.set_err("Select a program first.");
+                    return;
+                };
+                let n = settings
+                    .overlay_buttons
+                    .iter()
+                    .filter(|b| b.program == prog)
+                    .count();
+                let mut btn = OverlayButtonConfig::new(new_overlay_button_id(), &prog);
+                btn.icon = overlay_icons::DEFAULT_ICON_ID.into();
+                btn.x = 48.0 + (n as f32) * 60.0;
+                btn.y = 48.0;
+                btn.size = DEFAULT_OVERLAY_BUTTON_SIZE;
+                if let Some(first) = macros.first() {
+                    btn.macro_name = first.name.clone();
+                    btn.label = first.name.clone();
+                } else {
+                    btn.label = format!("Button {}", n + 1);
+                }
+                let id = btn.id.clone();
+                settings.overlay_buttons.push(btn);
+                self.selected_entity = Some(id);
+                self.load_form(catalog, settings);
+                self.persist_overlay_settings(settings);
+                self.set_ok("Created overlay button.");
                 return;
             }
         };
@@ -1884,13 +2276,14 @@ impl DataEditor {
         macros: &mut Vec<Macro>,
         catalog: &mut ProgramCatalog,
         previews: &mut PreviewTooltipCache,
+        settings: &mut UserSettings,
     ) {
         // Check overwrite for renames onto existing keys
         if let Some((kind, name)) = self.would_overwrite(catalog) {
             self.confirm = Some(PendingConfirm::Overwrite { kind, name });
             return;
         }
-        self.apply_update(db, macros, catalog, false, previews);
+        self.apply_update(db, macros, catalog, false, previews, settings);
     }
 
     fn would_overwrite(&self, catalog: &ProgramCatalog) -> Option<(&'static str, String)> {
@@ -1957,6 +2350,7 @@ impl DataEditor {
                 }
             }
             EditorTab::AutoPic => {}
+            EditorTab::Overlay => {}
         }
         None
     }
@@ -1968,8 +2362,13 @@ impl DataEditor {
         catalog: &mut ProgramCatalog,
         overwrite: bool,
         previews: &mut PreviewTooltipCache,
+        settings: &mut UserSettings,
     ) {
         self.clear_status();
+        if matches!(self.tab, EditorTab::Overlay) {
+            self.apply_overlay_update(settings);
+            return;
+        }
         let new_name = self.form_name.trim().to_string();
         if validate_entity_name(&new_name).is_err() {
             self.set_err("Invalid name.");
@@ -1977,24 +2376,47 @@ impl DataEditor {
         }
 
         let old_entity = self.selected_entity.clone();
+        let mut overlay_program_renamed = false;
         let result = match self.tab {
             EditorTab::Programs => {
                 if let Some(old) = self.selected_program.clone() {
                     if old == new_name {
-                        Ok(())
+                        catalog
+                            .set_process_binding(
+                                &old,
+                                self.form_process_path.clone(),
+                                self.form_window_title.clone(),
+                            )
+                            .map(|_| ())
                     } else {
                         if overwrite {
                             let _ = catalog.delete_program(&new_name);
                         }
                         catalog.rename_program(&old, &new_name).map(|_| {
+                            let _ = catalog.set_process_binding(
+                                &new_name,
+                                self.form_process_path.clone(),
+                                self.form_window_title.clone(),
+                            );
                             for m in macros.iter_mut() {
                                 m.rename_program(&old, &new_name);
                             }
+                            for btn in settings.overlay_buttons.iter_mut() {
+                                if btn.program == old {
+                                    btn.program = new_name.clone();
+                                }
+                            }
+                            overlay_program_renamed = true;
                             self.selected_program = Some(new_name.clone());
                         })
                     }
                 } else {
                     catalog.create_program(&new_name).map(|_| {
+                        let _ = catalog.set_process_binding(
+                            &new_name,
+                            self.form_process_path.clone(),
+                            self.form_window_title.clone(),
+                        );
                         self.selected_program = Some(new_name.clone());
                     })
                 }
@@ -2006,7 +2428,7 @@ impl DataEditor {
             EditorTab::Collections => {
                 self.update_collection(catalog, macros, &new_name, overwrite)
             }
-            EditorTab::AutoPic => Ok(()),
+            EditorTab::AutoPic | EditorTab::Overlay => Ok(()),
         };
 
         match result {
@@ -2020,7 +2442,10 @@ impl DataEditor {
                 if let Err(e) = self.persist(db, macros, catalog) {
                     self.set_err(e);
                 } else {
-                    self.load_form(catalog);
+                    if overlay_program_renamed {
+                        self.persist_overlay_settings(settings);
+                    }
+                    self.load_form(catalog, settings);
                     self.set_ok("Saved.");
                 }
             }
@@ -2226,8 +2651,23 @@ impl DataEditor {
         macros: &mut Vec<Macro>,
         catalog: &mut ProgramCatalog,
         previews: &mut PreviewTooltipCache,
+        settings: &mut UserSettings,
     ) {
         self.clear_status();
+        if matches!(self.tab, EditorTab::Overlay) {
+            let Some(id) = self.selected_entity.clone() else {
+                return;
+            };
+            settings.overlay_buttons.retain(|b| b.id != id);
+            if self.overlay_icon_picker_for.as_deref() == Some(id.as_str()) {
+                self.overlay_icon_picker_for = None;
+            }
+            self.selected_entity = None;
+            self.reset_overlay_form();
+            self.persist_overlay_settings(settings);
+            self.set_ok("Deleted overlay button.");
+            return;
+        }
         let deleted_name = self.selected_entity.clone();
         let result = match self.tab {
             EditorTab::Programs => {
@@ -2299,7 +2739,7 @@ impl DataEditor {
                     self.reset_collection_form();
                 })
             }
-            EditorTab::AutoPic => return,
+            EditorTab::AutoPic | EditorTab::Overlay => return,
         };
         match result {
             Ok(()) => {
@@ -2643,6 +3083,84 @@ impl DataEditor {
         self.status = None;
         self.status_error = false;
     }
+
+    fn persist_overlay_settings(&mut self, settings: &mut UserSettings) {
+        settings.clamp();
+        if let Err(e) = settings.save_default() {
+            self.set_err(format!("Failed to save overlay settings: {e}"));
+        } else {
+            self.clear_status();
+        }
+    }
+
+    fn apply_overlay_update(&mut self, settings: &mut UserSettings) {
+        let Some(id) = self.selected_entity.clone() else {
+            self.set_err("Select an overlay button first.");
+            return;
+        };
+        let Some(prog) = self.selected_program.clone() else {
+            self.set_err("Select a program first.");
+            return;
+        };
+        if self.form_overlay_macro.trim().is_empty() {
+            self.set_err("Pick a macro.");
+            return;
+        }
+        let Some(btn) = settings.overlay_buttons.iter_mut().find(|b| b.id == id) else {
+            self.set_err("Overlay button not found.");
+            return;
+        };
+        btn.program = prog;
+        btn.label = self.form_name.trim().to_string();
+        btn.macro_name = self.form_overlay_macro.trim().to_string();
+        btn.icon = self.form_overlay_icon.clone();
+        btn.x = self.form_overlay_x;
+        btn.y = self.form_overlay_y;
+        btn.size = self.form_overlay_size;
+        self.persist_overlay_settings(settings);
+        self.set_ok("Saved overlay button.");
+    }
+
+    fn draw_overlay_icon_picker(&mut self, ctx: &egui::Context, settings: &mut UserSettings) {
+        let Some(button_id) = self.overlay_icon_picker_for.clone() else {
+            return;
+        };
+        if self.selected_entity.as_deref() != Some(button_id.as_str()) {
+            self.overlay_icon_picker_for = None;
+            return;
+        }
+        let current = self.form_overlay_icon.clone();
+        let mut open = true;
+        let mut close = false;
+        egui::Window::new("Choose overlay icon")
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(true)
+            .default_size([420.0, 480.0])
+            .default_pos(egui::pos2(120.0, 80.0))
+            .show(ctx, |ui| {
+                ui.weak("Phosphor Icons — search by name, then click to select.");
+                ui.add_space(4.0);
+                if let Some(id) =
+                    overlay_icons::show_icon_picker_grid(ui, &current, &mut self.overlay_icon_search)
+                {
+                    self.form_overlay_icon = id.to_string();
+                    close = true;
+                }
+            });
+        if !open || close {
+            self.overlay_icon_picker_for = None;
+        }
+        let _ = settings; // form-edited; persist via Update
+    }
+}
+
+fn new_overlay_button_id() -> String {
+    let ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    format!("btn-{ms}")
 }
 
 fn scalar_to_edit(v: &ScalarValue) -> String {
