@@ -99,6 +99,38 @@ fn resolve_set_variable_string(text: &str, macro_: &Macro) -> Result<ScalarValue
     Ok(ScalarValue::String(resolved))
 }
 
+/// Resolve a scalar to `i32`: literals, `${refs}`, and arithmetic expressions.
+///
+/// Used for point/search-area coordinates, wait times, loop counts, etc.
+pub fn resolve_scalar_int(v: &ScalarValue, macro_: &Macro) -> Result<i32> {
+    match v {
+        ScalarValue::Int(i) => Ok(*i as i32),
+        ScalarValue::Float(f) => Ok(*f as i32),
+        ScalarValue::Bool(b) => Ok(if *b { 1 } else { 0 }),
+        ScalarValue::Null => Ok(0),
+        ScalarValue::String(s) => resolve_int_string(s, macro_),
+    }
+}
+
+fn resolve_int_string(text: &str, macro_: &Macro) -> Result<i32> {
+    let trimmed = text.trim();
+    // Source may already be an expression with `${refs}` (evaluate_expression expands them).
+    if looks_like_arithmetic(trimmed) {
+        let f = evaluate_expression(trimmed, macro_)?;
+        return Ok(f as i32);
+    }
+    let resolved = resolve_variables_in_text(trimmed, macro_)?;
+    let resolved = resolved.trim();
+    // A lone `${ref}` can expand to an expression (e.g. builtin-built formulas).
+    if looks_like_arithmetic(resolved) {
+        let f = evaluate_expression(resolved, macro_)?;
+        return Ok(f as i32);
+    }
+    resolved
+        .parse()
+        .map_err(|_| format!("cannot parse int from {resolved:?}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -144,5 +176,29 @@ mod tests {
         assert!(looks_like_arithmetic("1+2"));
         assert!(!looks_like_arithmetic("hello"));
         assert!(looks_like_arithmetic("sqrt(4)"));
+    }
+
+    #[test]
+    fn resolve_scalar_int_evaluates_arithmetic_after_refs() {
+        let mut m = Macro::new("t", 0, vec![]);
+        m.variables.set("ox", ScalarValue::Int(2560));
+        m.variables.set("w", ScalarValue::Int(1920));
+        // Expression with refs (typical point formula).
+        assert_eq!(
+            resolve_scalar_int(&ScalarValue::String("${ox}+(${w}/2)".into()), &m).unwrap(),
+            3520
+        );
+        // Already-expanded expression (builtin resolution left a formula string).
+        assert_eq!(
+            resolve_scalar_int(&ScalarValue::String("2560+(1920/2)".into()), &m).unwrap(),
+            3520
+        );
+        // Ref whose value is itself an expression.
+        m.variables
+            .set("formula", ScalarValue::String("2560+(1920/2)".into()));
+        assert_eq!(
+            resolve_scalar_int(&ScalarValue::String("${formula}".into()), &m).unwrap(),
+            3520
+        );
     }
 }

@@ -11,6 +11,7 @@ CARGO_FLAGS ?=
 TARGET_DIR := $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),$(ROOT)/target)
 
 # Prefer env/devcontainer cargo; fall back to workspace-local toolchain on the host.
+# Docker/CI use .cache/cargo (or inherit CARGO_HOME when Make exports .cargo-home).
 ifeq ($(origin CARGO_HOME),undefined)
   ifneq ($(wildcard $(ROOT)/.cargo-home/bin/cargo),)
     export CARGO_HOME := $(ROOT)/.cargo-home
