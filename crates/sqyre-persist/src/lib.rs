@@ -4,9 +4,10 @@ mod programs;
 mod settings;
 
 pub use programs::{
-    resolve_scalar_int, ProgramCatalog, ProgramCollection, ProgramData, ProgramItem, ProgramMask,
-    ProgramPoint, ProgramSearchArea,
+    ProgramCatalog, ProgramCollection, ProgramData, ProgramItem, ProgramMask, ProgramPoint,
+    ProgramSearchArea,
 };
+pub use sqyre_domain::resolve_scalar_int;
 pub use settings::{
     move_dir, open_path_in_file_manager, open_sqyre_dir, settings_path, ActionColorPrefs,
     UserSettings, ACTION_COLOR_DEFAULT, ACTION_COLOR_DETECTION, ACTION_COLOR_MISCELLANEOUS,
