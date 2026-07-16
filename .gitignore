@@ -20,8 +20,11 @@ notes.md
 
 # Linux packaging build artifacts
 /appimage-build/
+*.AppImage
 scripts/linux/packaging/appimage/sqyre.AppDir/
 scripts/linux/packaging/appimage/appimage-build/
+# mktemp recipe from build-appimage.sh (e.g. .AppImageBuilder.XXXXXX.yml)
+scripts/linux/packaging/appimage/.AppImageBuilder.*.yml
 
 # CI / local caches when using workspace paths
 .cache/
