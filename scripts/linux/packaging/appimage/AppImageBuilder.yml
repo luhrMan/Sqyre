@@ -24,18 +24,19 @@ script:
       echo "ERROR: cargo not found on PATH=$PATH" >&2
       exit 1
     fi
-    TARGET_DIR="${CARGO_TARGET_DIR:-$ROOT/rust/target}"
+    TARGET_DIR="${CARGO_TARGET_DIR:-$ROOT/target}"
     export CARGO_TARGET_DIR="$TARGET_DIR"
     echo "cargo=$(command -v cargo) target=$TARGET_DIR"
-    (cd "$ROOT/rust" && cargo build -p sqyre-app --release)
+    (cd "$ROOT" && cargo build -p sqyre-app --release)
     if [ ! -x "$TARGET_DIR/release/sqyre" ]; then
       echo "ERROR: missing $TARGET_DIR/release/sqyre after cargo build" >&2
       exit 1
     fi
+    ICON="$ROOT/crates/sqyre-app/assets/icons/sqyre.png"
     install -Dm00755 "$TARGET_DIR/release/sqyre" "$TARGET_APPDIR/usr/bin/sqyre"
-    install -Dm00644 "$ROOT/assets/icons/sqyre.png" "$TARGET_APPDIR/usr/share/icons/hicolor/256x256/apps/com.sqyre.app.png"
+    install -Dm00644 "$ICON" "$TARGET_APPDIR/usr/share/icons/hicolor/256x256/apps/com.sqyre.app.png"
     # Also place icon at AppDir root name expected by app_info.icon
-    install -Dm00644 "$ROOT/assets/icons/sqyre.png" "$TARGET_APPDIR/com.sqyre.app.png"
+    install -Dm00644 "$ICON" "$TARGET_APPDIR/com.sqyre.app.png"
     install -Dm00644 "$SOURCE_DIR/com.sqyre.app.desktop" "$TARGET_APPDIR/usr/share/applications/com.sqyre.app.desktop"
     install -Dm00644 "$SOURCE_DIR/com.sqyre.app.desktop" "$TARGET_APPDIR/com.sqyre.app.desktop"
     # Bundle Tesseract English data so OCR works without system tessdata.

@@ -5,7 +5,6 @@ Local and CI builds use **Rust** (`make` → `./bin/sqyre`; `make appimage` for 
 | Path | Contents |
 |------|----------|
 | `scripts/linux/packaging/appimage/` | AppImage recipe, build script, desktop file |
-| `scripts/linux/packaging/flatpak/` | Desktop/appdata stubs (Flatpak manifest not maintained) |
 
 App entrypoint: `sqyre-app` → binary name `sqyre`.
 
@@ -31,7 +30,7 @@ make appimage
 
 If `appimage-builder` / `mksquashfs` / `patchelf` are not on the host, the script **falls back to Docker** using [`.devcontainer/Dockerfile`](../../../.devcontainer/Dockerfile) (same image CI uses). Force a native-only attempt with `SQYRE_APPIMAGE_FORCE_NATIVE=1`.
 
-Version resolution order: `RELEASE_VERSION` env → `VERSION` file → `rust/crates/sqyre-app/Cargo.toml`.
+Version resolution order: `RELEASE_VERSION` env → `VERSION` file → `crates/sqyre-app/Cargo.toml`.
 
 Output: **`bin/*.AppImage`**. `sqyre.AppDir` and build artifacts stay under `scripts/linux/packaging/appimage/`.
 
@@ -41,15 +40,8 @@ The recipe copies `eng.traineddata` from `assets/tessdata/` or host `/usr/share/
 
 ---
 
-## Flatpak
-
-Flatpak packaging is **not currently maintained** after the Go → Rust cutover. Desktop and appdata files remain under `scripts/linux/packaging/flatpak/` for a future Rust-based rewrite.
-
----
-
 ## Summary
 
 | Format | Command | Main requirement |
 |--------|---------|------------------|
 | **AppImage** | `make appimage` | Rust + Tesseract on host + appimage-builder |
-| **Flatpak** | — | Not maintained |

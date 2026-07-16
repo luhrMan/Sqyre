@@ -2,7 +2,6 @@
 .git
 .github
 .cache
-*.test
 bin
 *.AppImage
 *.zip

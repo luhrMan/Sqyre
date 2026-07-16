@@ -86,10 +86,10 @@ jobs:
         with:
           path: |
             .cache/cargo
-            rust/target
-          key: cargo-${{ hashFiles('rust/Cargo.lock') }}
+            target
+          key: cargo-ws-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
-            cargo-
+            cargo-ws-
 
       - name: Prepare Cargo cache dirs
         run: mkdir -p .cache/cargo
@@ -100,12 +100,14 @@ jobs:
             -v ${{ github.workspace }}:/workspace -w /workspace \
             -e HOME=/tmp \
             -e CARGO_HOME=/workspace/.cache/cargo \
-            -e CARGO_TARGET_DIR=/workspace/rust/target \
+            -e CARGO_TARGET_DIR=/workspace/target \
             -e RUSTUP_HOME=/usr/local/rustup \
             -e PATH=/usr/local/cargo/bin:/usr/bin:/bin \
+            -e WGPU_BACKEND=vulkan \
+            -e VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json \
             sqyre-linux-build \
             bash -c 'set -euo pipefail
-              make rust-test'
+              make test'
 
   build-linux:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -169,10 +171,10 @@ jobs:
         with:
           path: |
             .cache/cargo
-            rust/target
-          key: cargo-${{ hashFiles('rust/Cargo.lock') }}
+            target
+          key: cargo-ws-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
-            cargo-
+            cargo-ws-
 
       - name: Prepare Cargo cache dirs
         run: mkdir -p .cache/cargo
@@ -184,10 +186,11 @@ jobs:
             -v ${{ github.workspace }}:/workspace -w /workspace \
             -e HOME=/tmp \
             -e CARGO_HOME=/workspace/.cache/cargo \
-            -e CARGO_TARGET_DIR=/workspace/rust/target \
+            -e CARGO_TARGET_DIR=/workspace/target \
             -e RUSTUP_HOME=/usr/local/rustup \
             -e PATH=/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin \
             -e RELEASE_VERSION="$VERSION" \
+            -e SQYRE_APPIMAGE_FORCE_NATIVE=1 \
             sqyre-linux-build \
             bash -c 'set -euo pipefail
               scripts/linux/packaging/appimage/build-appimage.sh

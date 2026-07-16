@@ -20,7 +20,7 @@
       ]
     }
   },
-  "postCreateCommand": "sudo chown -R vscode:vscode /home/vscode/.cargo /workspace/rust 2>/dev/null || true && rustup component add rust-src 2>/dev/null || true && rustc --version && cargo --version && cd rust && cargo fetch",
+  "postCreateCommand": "sudo chown -R vscode:vscode /home/vscode/.cargo 2>/dev/null || true && rustup component add rust-src 2>/dev/null || true && rustc --version && cargo --version && cargo fetch",
   "remoteUser": "vscode",
   "updateRemoteUserUID": true
 }
