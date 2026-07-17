@@ -183,21 +183,14 @@ impl TooltipState {
             Self::Edit(edit)
                 if matches!(
                     edit.picker,
-                    ActivePicker::Point {
-                        cell_pick: Some(_),
-                        ..
-                    } | ActivePicker::SearchArea {
+                    ActivePicker::Coord {
                         cell_pick: Some(_),
                         ..
                     }
                 ) =>
             {
-                match &mut edit.picker {
-                    ActivePicker::Point { cell_pick, .. }
-                    | ActivePicker::SearchArea { cell_pick, .. } => {
-                        *cell_pick = None;
-                    }
-                    _ => {}
+                if let ActivePicker::Coord { cell_pick, .. } = &mut edit.picker {
+                    *cell_pick = None;
                 }
                 (true, None)
             }
@@ -205,8 +198,7 @@ impl TooltipState {
                 if matches!(
                     edit.picker,
                     ActivePicker::Items { .. }
-                        | ActivePicker::Point { .. }
-                        | ActivePicker::SearchArea { .. }
+                        | ActivePicker::Coord { .. }
                         | ActivePicker::Macro { .. }
                         | ActivePicker::Window { .. }
                 ) =>

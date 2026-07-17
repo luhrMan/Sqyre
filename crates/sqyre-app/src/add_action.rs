@@ -379,8 +379,7 @@ impl AddActionPicker {
             if let Some(DefaultsTip::Edit(edit)) = self.tip.as_mut() {
                 match &mut edit.picker {
                     p @ ActivePicker::Items { .. }
-                    | p @ ActivePicker::Point { .. }
-                    | p @ ActivePicker::SearchArea { .. }
+                    | p @ ActivePicker::Coord { .. }
                     | p @ ActivePicker::Macro { .. }
                     | p @ ActivePicker::Window { .. } => {
                         *p = ActivePicker::None;
