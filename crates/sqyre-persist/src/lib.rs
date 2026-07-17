@@ -9,14 +9,13 @@ pub use programs::{
 };
 pub use settings::{
     move_dir, open_path_in_file_manager, open_sqyre_dir, settings_path, ActionColorPrefs,
-    OverlayButtonConfig, UserSettings, ACTION_COLOR_DEFAULT, ACTION_COLOR_DETECTION,
-    ACTION_COLOR_MISCELLANEOUS, ACTION_COLOR_MOUSE_KEYBOARD, ACTION_COLOR_VARIABLES,
-    ACTION_COLOR_WAIT, DEFAULT_DRAG_PREVIEW_DEBOUNCE_MS, DEFAULT_HIDE_APP_DURING_RECORDING,
-    DEFAULT_IMAGE_SEARCH_CLOSE_MATCHES_DISTANCE, DEFAULT_OVERLAY_ACCENT_HEX,
-    DEFAULT_OVERLAY_BORDER_WIDTH, DEFAULT_OVERLAY_BUTTON_SIZE, DEFAULT_OVERLAY_CORNER_RADIUS,
-    DEFAULT_OVERLAY_ICON_HEX, DEFAULT_UI_FONT_SIZE, DEFAULT_UI_SCALE, MAX_OVERLAY_BORDER_WIDTH,
-    MAX_OVERLAY_BUTTON_SIZE, MAX_OVERLAY_CORNER_RADIUS, MIN_DRAG_PREVIEW_DEBOUNCE_MS,
-    MIN_OVERLAY_BORDER_WIDTH, MIN_OVERLAY_BUTTON_SIZE, MIN_OVERLAY_CORNER_RADIUS,
+    OverlayButtonConfig, UserSettings, DEFAULT_DRAG_PREVIEW_DEBOUNCE_MS,
+    DEFAULT_HIDE_APP_DURING_RECORDING, DEFAULT_IMAGE_SEARCH_CLOSE_MATCHES_DISTANCE,
+    DEFAULT_OVERLAY_ACCENT_HEX, DEFAULT_OVERLAY_BORDER_WIDTH, DEFAULT_OVERLAY_BUTTON_SIZE,
+    DEFAULT_OVERLAY_CORNER_RADIUS, DEFAULT_OVERLAY_ICON_HEX, DEFAULT_UI_FONT_SIZE,
+    DEFAULT_UI_SCALE, MAX_OVERLAY_BORDER_WIDTH, MAX_OVERLAY_BUTTON_SIZE, MAX_OVERLAY_CORNER_RADIUS,
+    MIN_DRAG_PREVIEW_DEBOUNCE_MS, MIN_OVERLAY_BORDER_WIDTH, MIN_OVERLAY_BUTTON_SIZE,
+    MIN_OVERLAY_CORNER_RADIUS,
 };
 pub use sqyre_domain::resolve_scalar_int;
 
@@ -310,5 +309,43 @@ programs: {}
         assert!(db.macros.contains_key("Integration Test Macro"));
         let m = &db.macros["Integration Test Macro"];
         assert_eq!(m.root.children().len(), 3);
+    }
+
+    #[test]
+    fn corrupt_yaml_errors_cleanly() {
+        let err = Database::from_yaml("macros: [unterminated").unwrap_err();
+        assert!(
+            matches!(err, PersistError::Yaml(_)),
+            "expected yaml error, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn atomic_write_replaces_and_leaves_no_tmp() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("db.yaml");
+        std::fs::write(&path, b"old").unwrap();
+        atomic_write(&path, b"new-content").unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "new-content");
+        let tmp = dir.path().join("db.yaml.tmp");
+        assert!(!tmp.exists(), "tmp sibling should be cleaned up");
+    }
+
+    #[test]
+    fn save_overwrites_corrupt_file() {
+        let dir = tempfile::tempdir().unwrap();
+        with_sqyre_dir_override(dir.path().to_path_buf(), || {
+            initialize_directories().unwrap();
+            let path = db_path();
+            std::fs::write(&path, b"not: valid: yaml: [[[").unwrap();
+            assert!(Database::load_from_path(&path).is_err());
+
+            let mut db = Database::default();
+            db.macros
+                .insert("Recovered".into(), Macro::new("Recovered", 0, vec![]));
+            db.save_to_path(&path).unwrap();
+            let loaded = Database::load_from_path(&path).unwrap();
+            assert!(loaded.macros.contains_key("Recovered"));
+        });
     }
 }

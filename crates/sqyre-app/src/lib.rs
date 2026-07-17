@@ -57,11 +57,11 @@ use macro_overlay::MacroOverlay;
 use parking_lot::Mutex;
 use preview_tooltip::PreviewTooltipCache;
 use recording_overlay::RecordingOverlay;
-use sqyre_capture::{X11Capturer, X11WindowFocuser};
+use sqyre_capture::{shared_capturer, SharedRunCapturer, X11WindowFocuser};
 use sqyre_domain::{Action, ActionId, Macro};
 use sqyre_executor::{
-    execute_macro_with, ContinueKeyWaiter, ExecDeps, MatchFacade, OcrEngine, OcrResult,
-    SharedActionLog, SharedHighlighter, SharedRuntimeVars,
+    execute_macro_with, ContinueKeyWaiter, ExecDeps, OcrEngine, OcrResult, SharedActionLog,
+    SharedHighlighter, SharedRuntimeVars,
 };
 use sqyre_hotkeys::{
     default_hotkeys, ContinueWaitBridge, HotkeyCallbacks, HotkeyService, HotkeyTrigger,
@@ -971,10 +971,8 @@ impl SqyreApp {
         thread::spawn(move || {
             let result = (|| -> Result<(), String> {
                 let mut automation = OsAutomation::new().map_err(|e| format!("automation: {e}"))?;
-                let mut capturer = X11Capturer::open().map_err(|e| format!("capture: {e}"))?;
-                let matcher = MatchFacade {
-                    close_matches_distance: close_matches,
-                };
+                let capturer_arc = shared_capturer().map_err(|e| format!("capture: {e}"))?;
+                let mut capturer = SharedRunCapturer(capturer_arc);
                 let resolver = CatalogResolver(&catalog);
                 let icons = CatalogIcons(&catalog);
                 let focuser = X11WindowFocuser;
@@ -996,7 +994,7 @@ impl SqyreApp {
                     ExecDeps {
                         automation: &mut watched,
                         capturer: Some(&mut capturer),
-                        matcher: Some(&matcher),
+                        close_matches_distance: close_matches,
                         resolver: Some(&resolver),
                         icons: Some(&icons),
                         macros: Some(&macro_lookup),

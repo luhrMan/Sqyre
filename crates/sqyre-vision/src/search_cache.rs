@@ -42,22 +42,16 @@ struct SearchCache {
     image_masks: HashMap<String, MaskEntry>,
     /// Oldest at front; newest / most recently used at back.
     lru: VecDeque<(EntryKind, String)>,
-    /// Index into `lru` for O(1) touch.
-    lru_index: HashMap<(EntryKind, String), usize>,
     bytes: usize,
 }
 
 impl SearchCache {
-    fn rebuild_lru_index(&mut self) {
-        self.lru_index.clear();
-        for (i, (kind, key)) in self.lru.iter().enumerate() {
-            self.lru_index.insert((*kind, key.clone()), i);
-        }
-    }
-
     fn touch(&mut self, kind: EntryKind, key: &str) {
-        let map_key = (kind, key.to_string());
-        let Some(&i) = self.lru_index.get(&map_key) else {
+        let Some(i) = self
+            .lru
+            .iter()
+            .position(|(k, s)| *k == kind && s == key)
+        else {
             return;
         };
         if i + 1 == self.lru.len() {
@@ -65,7 +59,6 @@ impl SearchCache {
         }
         if let Some(item) = self.lru.remove(i) {
             self.lru.push_back(item);
-            self.rebuild_lru_index();
         }
     }
 
@@ -83,7 +76,6 @@ impl SearchCache {
             }
         }
         self.lru.retain(|(k, s)| !(*k == kind && s == key));
-        self.rebuild_lru_index();
     }
 
     fn evict_until_fits(&mut self, extra: usize) {
@@ -104,7 +96,6 @@ impl SearchCache {
                 }
             }
         }
-        self.rebuild_lru_index();
     }
 
     fn insert_template(&mut self, key: String, entry: TemplateEntry) {
@@ -112,9 +103,7 @@ impl SearchCache {
         self.evict_until_fits(entry.bytes);
         self.bytes += entry.bytes;
         self.templates.insert(key.clone(), entry);
-        self.lru.push_back((EntryKind::Template, key.clone()));
-        self.lru_index
-            .insert((EntryKind::Template, key), self.lru.len() - 1);
+        self.lru.push_back((EntryKind::Template, key));
     }
 
     fn insert_mask(&mut self, key: String, entry: MaskEntry) {
@@ -122,16 +111,13 @@ impl SearchCache {
         self.evict_until_fits(entry.bytes);
         self.bytes += entry.bytes;
         self.image_masks.insert(key.clone(), entry);
-        self.lru.push_back((EntryKind::Mask, key.clone()));
-        self.lru_index
-            .insert((EntryKind::Mask, key), self.lru.len() - 1);
+        self.lru.push_back((EntryKind::Mask, key));
     }
 
     fn clear(&mut self) {
         self.templates.clear();
         self.image_masks.clear();
         self.lru.clear();
-        self.lru_index.clear();
         self.bytes = 0;
     }
 }

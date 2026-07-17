@@ -119,7 +119,7 @@ impl TooltipState {
         let draft = edit.draft.clone();
 
         let Some(live) = root.find_by_id(action_id) else {
-            edit.error = Some(format!("action {} not found", action_id.as_str()));
+            edit.error = Some(format!("action {action_id} not found"));
             return false;
         };
 
@@ -138,7 +138,7 @@ impl TooltipState {
         before_mutate(root);
 
         let Some(live) = root.find_by_id_mut(action_id) else {
-            edit.error = Some(format!("action {} not found", action_id.as_str()));
+            edit.error = Some(format!("action {action_id} not found"));
             return false;
         };
         if let Err(e) = apply_draft_preserving_children(live, candidate) {
@@ -431,7 +431,7 @@ fn show_view_tip(
 ) {
     show_action_view_tip(
         ctx,
-        egui::Id::new(("action_hover_tip", action.id.as_str())),
+        egui::Id::new(("action_hover_tip", action.id)),
         action,
         paint,
         theme,
@@ -487,7 +487,7 @@ fn show_edit_window(
     // resizable so users can grow the form when sections need more room.
     // Id bumped past "compact" Area/Window state that locked size.
     egui::Window::new(label)
-        .id(egui::Id::new(("action_edit_tip", "resize", action_id.as_str())))
+        .id(egui::Id::new(("action_edit_tip", "resize", action_id)))
         .open(&mut open)
         .title_bar(false)
         .collapsible(false)

@@ -456,7 +456,7 @@ pub fn paint_action_row(
     // still fire when a view tip covers the row — clickthrough for overlays.
     let sense = ui.interact(
         sense_rect,
-        ui.id().with(("action_row_sense", action.id.as_str())),
+        ui.id().with(("action_row_sense", action.id)),
         Sense::hover(),
     );
 

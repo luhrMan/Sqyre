@@ -9,6 +9,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::{PersistError, Result};
+use sqyre_domain::{
+    ACTION_COLOR_KEY_DEFAULT, ACTION_COLOR_KEY_DETECTION, ACTION_COLOR_KEY_MISCELLANEOUS,
+    ACTION_COLOR_KEY_MOUSE_KEYBOARD, ACTION_COLOR_KEY_VARIABLES, ACTION_COLOR_KEY_WAIT,
+};
 
 pub const DEFAULT_IMAGE_SEARCH_CLOSE_MATCHES_DISTANCE: i32 = 10;
 pub const DEFAULT_DRAG_PREVIEW_DEBOUNCE_MS: i32 = 150;
@@ -16,13 +20,6 @@ pub const MIN_DRAG_PREVIEW_DEBOUNCE_MS: i32 = 25;
 pub const DEFAULT_HIDE_APP_DURING_RECORDING: bool = true;
 pub const DEFAULT_UI_FONT_SIZE: i32 = 14;
 pub const DEFAULT_UI_SCALE: f32 = 1.0;
-
-pub const ACTION_COLOR_MOUSE_KEYBOARD: &str = "mouse_keyboard";
-pub const ACTION_COLOR_DETECTION: &str = "detection";
-pub const ACTION_COLOR_VARIABLES: &str = "variables";
-pub const ACTION_COLOR_MISCELLANEOUS: &str = "miscellaneous";
-pub const ACTION_COLOR_WAIT: &str = "wait";
-pub const ACTION_COLOR_DEFAULT: &str = "default";
 
 /// Absolute path to the settings file (`{sqyre_dir}/settings.yaml`).
 pub fn settings_path() -> PathBuf {
@@ -92,24 +89,24 @@ pub struct ActionColorPrefs {
 impl ActionColorPrefs {
     pub fn get(&self, key: &str) -> &str {
         match key {
-            ACTION_COLOR_MOUSE_KEYBOARD => &self.mouse_keyboard,
-            ACTION_COLOR_DETECTION => &self.detection,
-            ACTION_COLOR_VARIABLES => &self.variables,
-            ACTION_COLOR_MISCELLANEOUS => &self.miscellaneous,
-            ACTION_COLOR_WAIT => &self.wait,
-            ACTION_COLOR_DEFAULT => &self.default,
+            ACTION_COLOR_KEY_MOUSE_KEYBOARD => &self.mouse_keyboard,
+            ACTION_COLOR_KEY_DETECTION => &self.detection,
+            ACTION_COLOR_KEY_VARIABLES => &self.variables,
+            ACTION_COLOR_KEY_MISCELLANEOUS => &self.miscellaneous,
+            ACTION_COLOR_KEY_WAIT => &self.wait,
+            ACTION_COLOR_KEY_DEFAULT => &self.default,
             _ => "",
         }
     }
 
     pub fn set(&mut self, key: &str, hex: String) {
         match key {
-            ACTION_COLOR_MOUSE_KEYBOARD => self.mouse_keyboard = hex,
-            ACTION_COLOR_DETECTION => self.detection = hex,
-            ACTION_COLOR_VARIABLES => self.variables = hex,
-            ACTION_COLOR_MISCELLANEOUS => self.miscellaneous = hex,
-            ACTION_COLOR_WAIT => self.wait = hex,
-            ACTION_COLOR_DEFAULT => self.default = hex,
+            ACTION_COLOR_KEY_MOUSE_KEYBOARD => self.mouse_keyboard = hex,
+            ACTION_COLOR_KEY_DETECTION => self.detection = hex,
+            ACTION_COLOR_KEY_VARIABLES => self.variables = hex,
+            ACTION_COLOR_KEY_MISCELLANEOUS => self.miscellaneous = hex,
+            ACTION_COLOR_KEY_WAIT => self.wait = hex,
+            ACTION_COLOR_KEY_DEFAULT => self.default = hex,
             _ => {}
         }
     }

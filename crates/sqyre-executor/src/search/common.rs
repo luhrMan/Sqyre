@@ -2,7 +2,7 @@
 
 use crate::error::{ExecError, FlowSignal, Result};
 use crate::run::{execute_action, Executor};
-use sqyre_domain::{Action, Macro, ScalarValue};
+use sqyre_domain::{Action, Macro, ScalarValue, WaitTilFoundConfig};
 use std::time::{Duration, Instant};
 
 pub(super) fn run_children_flow(
@@ -51,9 +51,24 @@ pub(super) fn run_detection_children(
     }
 }
 
+/// Run children when the attempt hit, or when `run_branch_on_no_find` on a miss.
+/// Returns `hit` unchanged.
+pub(super) fn run_detection_outcome(
+    exec: &mut Executor<'_>,
+    hit: bool,
+    run_branch_on_no_find: bool,
+    children: &[Action],
+    macro_: &mut Macro,
+) -> Result<bool> {
+    if hit || run_branch_on_no_find {
+        run_detection_children(exec, children, macro_)?;
+    }
+    Ok(hit)
+}
+
 pub(super) fn retry_while_not_found(
     exec: &mut Executor<'_>,
-    wait: &sqyre_domain::WaitTilFoundConfig,
+    wait: &WaitTilFoundConfig,
     default_interval_ms: i32,
     mut retry: impl FnMut(&mut Executor<'_>) -> Result<bool>,
 ) -> Result<()> {
@@ -75,7 +90,7 @@ pub(super) fn retry_while_not_found(
 
 pub(super) fn maybe_wait_until_found(
     exec: &mut Executor<'_>,
-    wait: &sqyre_domain::WaitTilFoundConfig,
+    wait: &WaitTilFoundConfig,
     hit: bool,
     default_interval_ms: i32,
     retry: impl FnMut(&mut Executor<'_>) -> Result<bool>,
@@ -86,9 +101,16 @@ pub(super) fn maybe_wait_until_found(
     Ok(())
 }
 
+/// When `wait` is repeat-while-found, run `iteration` until it returns false or limits hit.
+///
+/// `iteration(exec, refresh)` — `refresh` is false on the first pass (caller already captured)
+/// and true after each sleep. If `wait_til_found_seconds > 0`, that value is also used as a
+/// wall-clock deadline (image-search behaviour).
+///
+/// Returns `Ok(true)` when the repeat loop ran, `Ok(false)` when repeat mode is inactive.
 pub(super) fn maybe_repeat_while_found(
     exec: &mut Executor<'_>,
-    wait: &sqyre_domain::WaitTilFoundConfig,
+    wait: &WaitTilFoundConfig,
     default_interval_ms: i32,
     mut iteration: impl FnMut(&mut Executor<'_>, bool) -> Result<bool>,
 ) -> Result<bool> {
@@ -98,11 +120,19 @@ pub(super) fn maybe_repeat_while_found(
 
     let max_iter = wait.effective_max_iterations();
     let interval = wait.effective_interval_ms(default_interval_ms).max(1);
+    let deadline = if wait.wait_til_found_seconds > 0 {
+        Some(Instant::now() + Duration::from_secs(wait.wait_til_found_seconds.max(0) as u64))
+    } else {
+        None
+    };
     for i in 0..max_iter {
         exec.check_stopped()?;
         let refresh = i > 0;
         if refresh {
             exec.interruptible_sleep(interval)?;
+            if deadline.is_some_and(|d| Instant::now() >= d) {
+                break;
+            }
         }
         if !iteration(exec, refresh)? {
             break;
