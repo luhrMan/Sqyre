@@ -326,15 +326,8 @@ pub fn validate_numeric_expression(text: &str, macro_: Option<&Macro>) -> EntryV
     v
 }
 
-fn variable_binding_label(name: &str, role: &str) -> String {
-    let name = name.trim();
-    match role {
-        "value" => format!("variable {name:?}"),
-        "output" => format!("output variable {name:?}"),
-        "output_x" => format!("output X variable {name:?}"),
-        "output_y" => format!("output Y variable {name:?}"),
-        _ => format!("variable {name:?}"),
-    }
+fn variable_binding_label(name: &str, role: sqyre_domain::BindingRole) -> String {
+    role.validate_label(name)
 }
 
 fn yaml_string_value(v: &serde_yaml::Value) -> Option<&str> {
@@ -376,7 +369,7 @@ pub fn validate_action(action: &Action, macro_: Option<&Macro>) -> Result<()> {
             continue;
         }
         validate_variable_assignment_name(&b.name).map_err(|e| {
-            ValidateError::Message(format!("{}: {e}", variable_binding_label(&b.name, &b.role)))
+            ValidateError::Message(format!("{}: {e}", variable_binding_label(&b.name, b.role)))
         })?;
     }
 

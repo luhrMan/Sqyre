@@ -119,17 +119,7 @@ fn encode_kind(kind: &ActionKind) -> Result<Mapping> {
             insert(&mut m, "searcharea", coordinate_ref_to_value(search_area));
             insert_f64(&mut m, "tolerance", *tolerance);
             insert_i32(&mut m, "blur", *blur);
-            write_wait(&mut m, &detection.wait);
-            write_coords(&mut m, &detection.coords);
-            write_order(&mut m, &detection.order);
-            if detection.run_branch_on_no_find {
-                insert_bool(&mut m, "runbranchonnofind", true);
-            }
-            insert(
-                &mut m,
-                "subactions",
-                subactions_to_seq(&detection.subactions)?,
-            );
+            write_detection(&mut m, detection)?;
         }
         ActionKind::Ocr {
             name,
@@ -150,9 +140,6 @@ fn encode_kind(kind: &ActionKind) -> Result<Mapping> {
             if !output_variable.is_empty() {
                 insert_str(&mut m, "outputvariable", output_variable);
             }
-            write_wait(&mut m, &detection.wait);
-            write_coords(&mut m, &detection.coords);
-            write_order(&mut m, &detection.order);
             if !*grayscale {
                 insert_bool(&mut m, "grayscale", false);
             }
@@ -171,14 +158,7 @@ fn encode_kind(kind: &ActionKind) -> Result<Mapping> {
             if *threshold_invert {
                 insert_bool(&mut m, "thresholdinvert", true);
             }
-            if detection.run_branch_on_no_find {
-                insert_bool(&mut m, "runbranchonnofind", true);
-            }
-            insert(
-                &mut m,
-                "subactions",
-                subactions_to_seq(&detection.subactions)?,
-            );
+            write_detection(&mut m, detection)?;
         }
         ActionKind::FindPixel {
             name,
@@ -191,17 +171,7 @@ fn encode_kind(kind: &ActionKind) -> Result<Mapping> {
             insert(&mut m, "searcharea", coordinate_ref_to_value(search_area));
             insert_str(&mut m, "targetcolor", target_color);
             insert_i32(&mut m, "colortolerance", *color_tolerance);
-            write_wait(&mut m, &detection.wait);
-            write_coords(&mut m, &detection.coords);
-            write_order(&mut m, &detection.order);
-            if detection.run_branch_on_no_find {
-                insert_bool(&mut m, "runbranchonnofind", true);
-            }
-            insert(
-                &mut m,
-                "subactions",
-                subactions_to_seq(&detection.subactions)?,
-            );
+            write_detection(&mut m, detection)?;
         }
         ActionKind::ForEachRow {
             name,
@@ -452,8 +422,29 @@ fn write_order(m: &mut Mapping, o: &MatchOrder) {
     }
 }
 
+fn write_detection(m: &mut Mapping, d: &DetectionBranch) -> Result<()> {
+    write_wait(m, &d.wait);
+    write_coords(m, &d.coords);
+    write_order(m, &d.order);
+    if d.run_branch_on_no_find {
+        insert_bool(m, "runbranchonnofind", true);
+    }
+    insert(m, "subactions", subactions_to_seq(&d.subactions)?);
+    Ok(())
+}
+
+fn decode_detection(raw: &Mapping) -> Result<DetectionBranch> {
+    Ok(DetectionBranch {
+        wait: decode_wait(raw),
+        coords: decode_coords(raw),
+        run_branch_on_no_find: bool_from_map(raw, "runbranchonnofind"),
+        order: decode_order(raw),
+        subactions: decode_subactions(raw)?,
+    })
+}
+
 fn write_wait(m: &mut Mapping, w: &WaitTilFoundConfig) {
-    let mode = w.effective_repeat_mode();
+    let mode = w.repeat_mode;
     insert_str(m, "repeatmode", mode.as_str());
     if mode == RepeatMode::WaitUntilFound || w.wait_til_found_seconds > 0 {
         insert_i32(m, "waittilfoundseconds", w.wait_til_found_seconds);
@@ -494,7 +485,7 @@ fn decode_coords(raw: &Mapping) -> CoordinateOutputs {
 }
 
 fn decode_chord(raw: &Mapping, key: &str) -> Vec<String> {
-    raw.get(Value::String(key.into()))
+    map_get(raw, key)
         .map(string_slice_from_value)
         .unwrap_or_default()
 }
@@ -565,7 +556,7 @@ fn subactions_to_seq(subs: &[Action]) -> Result<Value> {
 }
 
 fn decode_subactions(raw: &Mapping) -> Result<Vec<Action>> {
-    let Some(Value::Sequence(seq)) = raw.get(Value::String("subactions".into())) else {
+    let Some(Value::Sequence(seq)) = map_get(raw, "subactions") else {
         return Ok(Vec::new());
     };
     let mut out = Vec::with_capacity(seq.len());
@@ -593,7 +584,7 @@ fn clauses_to_seq(clauses: &[ConditionClause]) -> Value {
 }
 
 fn decode_clauses(raw: &Mapping) -> Vec<ConditionClause> {
-    let Some(Value::Sequence(seq)) = raw.get(Value::String("clauses".into())) else {
+    let Some(Value::Sequence(seq)) = map_get(raw, "clauses") else {
         return vec![ConditionClause::default()];
     };
     let mut out = Vec::new();
@@ -606,9 +597,9 @@ fn decode_clauses(raw: &Mapping) -> Vec<ConditionClause> {
             op = "==".into();
         }
         out.push(ConditionClause {
-            left: scalar_from_value(m.get(Value::String("left".into()))),
+            left: scalar_from_value(map_get(m, "left")),
             operator: op,
-            right: scalar_from_value(m.get(Value::String("right".into()))),
+            right: scalar_from_value(map_get(m, "right")),
         });
     }
     if out.is_empty() {
@@ -635,7 +626,7 @@ fn list_columns_to_seq(cols: &[ListColumn]) -> Value {
 }
 
 fn decode_sources(raw: &Mapping) -> Vec<ListColumn> {
-    let Some(Value::Sequence(seq)) = raw.get(Value::String("sources".into())) else {
+    let Some(Value::Sequence(seq)) = map_get(raw, "sources") else {
         return Vec::new();
     };
     let mut out = Vec::new();
@@ -658,7 +649,7 @@ fn decode_kind(raw: &Mapping, type_name: &str) -> Result<ActionKind> {
         "loop" => {
             let name = expect_string(raw, "name")
                 .map_err(|e| SerializeError::msg(format!("action type loop: {e}")))?;
-            let count = match raw.get(Value::String("count".into())) {
+            let count = match map_get(raw, "count") {
                 None | Some(Value::Null) => ScalarValue::Int(1),
                 Some(v) => ScalarValue::from_yaml(v),
             };
@@ -692,28 +683,33 @@ fn decode_kind(raw: &Mapping, type_name: &str) -> Result<ActionKind> {
         "imagesearch" => {
             let name = expect_string(raw, "name")
                 .map_err(|e| SerializeError::msg(format!("action type imagesearch: {e}")))?;
-            let targets = raw
-                .get(Value::String("targets".into()))
-                .map(string_slice_from_value)
-                .unwrap_or_default();
+            let targets = {
+                let from_seq = map_get(raw, "targets")
+                    .map(string_slice_from_value)
+                    .unwrap_or_default();
+                if !from_seq.is_empty() {
+                    from_seq
+                } else {
+                    // Legacy singular `target` string.
+                    let one = string_from_map(raw, "target");
+                    if one.is_empty() {
+                        Vec::new()
+                    } else {
+                        vec![one]
+                    }
+                }
+            };
             let blur = optional_int(raw, "blur").unwrap_or(5);
-            let tolerance = raw
-                .get(Value::String("tolerance".into()))
+            let tolerance = map_get(raw, "tolerance")
                 .map(float_from_value)
                 .unwrap_or(0.0);
             Ok(ActionKind::ImageSearch {
                 name,
                 targets,
-                search_area: parse_coordinate_ref(raw.get(Value::String("searcharea".into()))),
+                search_area: parse_coordinate_ref(map_get(raw, "searcharea")),
                 tolerance,
                 blur,
-                detection: DetectionBranch {
-                    wait: decode_wait(raw),
-                    coords: decode_coords(raw),
-                    run_branch_on_no_find: bool_from_map(raw, "runbranchonnofind"),
-                    order: decode_order(raw),
-                    subactions: decode_subactions(raw)?,
-                },
+                detection: decode_detection(raw)?,
             })
         }
         "ocr" => {
@@ -726,7 +722,7 @@ fn decode_kind(raw: &Mapping, type_name: &str) -> Result<ActionKind> {
             Ok(ActionKind::Ocr {
                 name,
                 target,
-                search_area: parse_coordinate_ref(raw.get(Value::String("searcharea".into()))),
+                search_area: parse_coordinate_ref(map_get(raw, "searcharea")),
                 output_variable: {
                     let v = string_from_map(raw, "outputvariable");
                     if v.is_empty() {
@@ -737,23 +733,15 @@ fn decode_kind(raw: &Mapping, type_name: &str) -> Result<ActionKind> {
                 },
                 blur,
                 min_threshold: optional_int(raw, "minthreshold").unwrap_or(0),
-                resize: raw
-                    .get(Value::String("resize".into()))
+                resize: map_get(raw, "resize")
                     .map(float_from_value)
                     .unwrap_or(1.0),
-                grayscale: raw
-                    .get(Value::String("grayscale".into()))
+                grayscale: map_get(raw, "grayscale")
                     .and_then(|v| v.as_bool())
                     .unwrap_or(true),
                 threshold_otsu: bool_from_map(raw, "thresholdotsu"),
                 threshold_invert: bool_from_map(raw, "thresholdinvert"),
-                detection: DetectionBranch {
-                    wait: decode_wait(raw),
-                    coords: decode_coords(raw),
-                    run_branch_on_no_find: bool_from_map(raw, "runbranchonnofind"),
-                    order: decode_order(raw),
-                    subactions: decode_subactions(raw)?,
-                },
+                detection: decode_detection(raw)?,
             })
         }
         "findpixel" => {
@@ -767,35 +755,28 @@ fn decode_kind(raw: &Mapping, type_name: &str) -> Result<ActionKind> {
             }
             Ok(ActionKind::FindPixel {
                 name: string_from_map(raw, "name"),
-                search_area: parse_coordinate_ref(raw.get(Value::String("searcharea".into()))),
+                search_area: parse_coordinate_ref(map_get(raw, "searcharea")),
                 target_color: color,
                 color_tolerance: tol,
-                detection: DetectionBranch {
-                    wait: decode_wait(raw),
-                    coords: decode_coords(raw),
-                    run_branch_on_no_find: bool_from_map(raw, "runbranchonnofind"),
-                    order: decode_order(raw),
-                    subactions: decode_subactions(raw)?,
-                },
+                detection: decode_detection(raw)?,
             })
         }
         "foreachrow" => Ok(ActionKind::ForEachRow {
             name: string_from_map(raw, "name"),
             sources: decode_sources(raw),
-            start_row: scalar_from_value(raw.get(Value::String("startrow".into()))),
-            end_row: scalar_from_value(raw.get(Value::String("endrow".into()))),
+            start_row: scalar_from_value(map_get(raw, "startrow")),
+            end_row: scalar_from_value(map_get(raw, "endrow")),
             subactions: decode_subactions(raw)?,
         }),
         "wait" => Ok(ActionKind::Wait {
-            time: match raw.get(Value::String("time".into())) {
+            time: match map_get(raw, "time") {
                 None | Some(Value::Null) => ScalarValue::Int(0),
                 Some(v) => ScalarValue::from_yaml(v),
             },
         }),
         "pause" => Ok(ActionKind::Pause {
             message: string_from_map(raw, "message"),
-            continue_key: raw
-                .get(Value::String("continuekey".into()))
+            continue_key: map_get(raw, "continuekey")
                 .map(string_slice_from_value)
                 .unwrap_or_default(),
             pass_through: bool_from_map(raw, "passthrough"),
@@ -803,14 +784,12 @@ fn decode_kind(raw: &Mapping, type_name: &str) -> Result<ActionKind> {
         "move" => {
             let smooth = bool_from_map(raw, "smooth");
             Ok(ActionKind::Move {
-                point: parse_coordinate_ref(raw.get(Value::String("point".into()))),
+                point: parse_coordinate_ref(map_get(raw, "point")),
                 smooth,
-                smooth_low: raw
-                    .get(Value::String("smoothlow".into()))
+                smooth_low: map_get(raw, "smoothlow")
                     .map(float_from_value)
                     .unwrap_or(if smooth { DEFAULT_SMOOTH_LOW } else { 0.0 }),
-                smooth_high: raw
-                    .get(Value::String("smoothhigh".into()))
+                smooth_high: map_get(raw, "smoothhigh")
                     .map(float_from_value)
                     .unwrap_or(if smooth { DEFAULT_SMOOTH_HIGH } else { 0.0 }),
                 smooth_delay_ms: optional_int(raw, "smoothdelayms").unwrap_or(if smooth {
@@ -849,8 +828,7 @@ fn decode_kind(raw: &Mapping, type_name: &str) -> Result<ActionKind> {
         "setvariable" => Ok(ActionKind::SetVariable {
             variable_name: expect_string(raw, "variablename")
                 .map_err(|e| SerializeError::msg(format!("action type setvariable: {e}")))?,
-            value: raw
-                .get(Value::String("value".into()))
+            value: map_get(raw, "value")
                 .cloned()
                 .unwrap_or(Value::Null),
         }),
@@ -883,8 +861,7 @@ fn decode_kind(raw: &Mapping, type_name: &str) -> Result<ActionKind> {
         ))),
         "navigatekey" => Ok(ActionKind::NavigateKey {
             name: string_from_map(raw, "name"),
-            chord: raw
-                .get(Value::String("chord".into()))
+            chord: map_get(raw, "chord")
                 .map(string_slice_from_value)
                 .unwrap_or_default(),
             exit: bool_from_map(raw, "exit"),
@@ -899,6 +876,7 @@ fn decode_kind(raw: &Mapping, type_name: &str) -> Result<ActionKind> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_yaml::Value;
     use sqyre_domain::{root_loop, CoordinateRef, NavigateSelectData, ScalarValue};
 
     #[test]
@@ -1092,13 +1070,13 @@ mod tests {
             },
         };
         let map = action_to_map_with_uid(&action).unwrap();
-        assert!(!map.contains_key(Value::String("detection".into())));
+        assert!(!map_get(&map, "detection").is_some());
         assert_eq!(
             string_from_map(&map, "repeatmode"),
             RepeatMode::WaitUntilFound.as_str()
         );
         assert_eq!(string_from_map(&map, "outputxvariable"), "sx");
-        assert!(map.contains_key(Value::String("subactions".into())));
+        assert!(map_get(&map, "subactions").is_some());
         let back = action_from_map(&map).unwrap();
         assert_eq!(back.id, action.id);
         assert_eq!(back.kind, action.kind);
@@ -1136,6 +1114,62 @@ mod tests {
                 assert_eq!(detection.wait.wait_til_found_interval_ms, 100);
             }
             other => panic!("expected FindPixel, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn image_search_accepts_legacy_singular_target() {
+        let yaml = r#"
+type: imagesearch
+name: find
+target: Game~Sword
+searcharea: Game~Arena
+tolerance: 0.9
+blur: 3
+repeatmode: once
+"#;
+        let value: Value = serde_yaml::from_str(yaml).unwrap();
+        let m = value.as_mapping().unwrap();
+        let action = action_from_map(m).unwrap();
+        match action.kind {
+            ActionKind::ImageSearch {
+                targets,
+                search_area,
+                tolerance,
+                blur,
+                ..
+            } => {
+                assert_eq!(targets, vec!["Game~Sword".to_string()]);
+                assert_eq!(search_area.as_str(), "Game~Arena");
+                assert!((tolerance - 0.9).abs() < 1e-9);
+                assert_eq!(blur, 3);
+            }
+            other => panic!("expected ImageSearch, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn image_search_accepts_nested_searcharea_mapping() {
+        let yaml = r#"
+type: imagesearch
+name: find
+targets: [Game~A, Game~B]
+searcharea:
+  name: Game~Box
+tolerance: 0.95
+"#;
+        let value: Value = serde_yaml::from_str(yaml).unwrap();
+        let action = action_from_map(value.as_mapping().unwrap()).unwrap();
+        match action.kind {
+            ActionKind::ImageSearch {
+                targets,
+                search_area,
+                ..
+            } => {
+                assert_eq!(targets.len(), 2);
+                assert_eq!(search_area.as_str(), "Game~Box");
+            }
+            other => panic!("expected ImageSearch, got {other:?}"),
         }
     }
 }

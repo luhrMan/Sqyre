@@ -1,9 +1,8 @@
 use super::common::set_coord_outputs;
-use super::facade::MatchFacade;
 use super::image::{run_matches, sort_points, NamedPoint};
 use super::ocr::ocr_target_matched;
 use crate::backends::{
-    DesktopRect, IconStore, ItemMeta, RecordingBackend, RecordingCapturer, TemplateMatcher,
+    DesktopRect, IconStore, ItemMeta, RecordingBackend, RecordingCapturer,
 };
 use crate::run::{execute_macro_with, ExecDeps};
 use crate::SharedActionLog;
@@ -37,16 +36,17 @@ impl crate::backends::CoordinateResolver for FixedArea {
 }
 
 struct MapIcons {
-    paths: HashMap<String, PathBuf>,
+    paths: HashMap<String, Vec<PathBuf>>,
+    masks: HashMap<String, PathBuf>,
     meta: HashMap<String, ItemMeta>,
 }
 
 impl IconStore for MapIcons {
     fn variant_paths(&self, target: &str) -> Vec<PathBuf> {
-        self.paths.get(target).cloned().into_iter().collect()
+        self.paths.get(target).cloned().unwrap_or_default()
     }
-    fn mask_path(&self, _target: &str) -> Option<PathBuf> {
-        None
+    fn mask_path(&self, target: &str) -> Option<PathBuf> {
+        self.masks.get(target).cloned()
     }
     fn item_meta(&self, target: &str) -> Option<ItemMeta> {
         self.meta.get(target).cloned()
@@ -91,20 +91,6 @@ fn ocr_empty_target_always_matches() {
     assert!(!ocr_target_matched("Hi", "hello"));
 }
 
-#[test]
-fn match_facade_exposes_close_matches_distance() {
-    let facade = MatchFacade {
-        close_matches_distance: 42,
-    };
-    assert_eq!(TemplateMatcher::close_matches_distance(&facade), 42);
-    let zeroed = MatchFacade {
-        close_matches_distance: 0,
-    };
-    assert_eq!(
-        TemplateMatcher::close_matches_distance(&zeroed),
-        DEFAULT_CLOSE_MATCHES_DISTANCE
-    );
-}
 
 #[test]
 fn image_search_caches_blurred_templates() {
@@ -116,7 +102,8 @@ fn image_search_caches_blurred_templates() {
         tmpl.save(&tmpl_path).unwrap();
 
         let icons = MapIcons {
-            paths: HashMap::from([("Prog~Item".into(), tmpl_path.clone())]),
+            paths: HashMap::from([("Prog~Item".into(), vec![tmpl_path.clone()])]),
+            masks: HashMap::new(),
             meta: HashMap::new(),
         };
         let search = RgbaImage::from_pixel(16, 16, Rgba([0, 255, 0, 255]));
@@ -132,9 +119,7 @@ fn image_search_caches_blurred_templates() {
             ..Default::default()
         };
         let resolver = FixedArea;
-        let matcher = MatchFacade {
-            close_matches_distance: 17,
-        };
+        let close_matches = 17;
         let search_id = ActionId::new();
         let mut macro_ = Macro::new("t", 0, vec![]);
         macro_.keyboard_delay = 0;
@@ -156,7 +141,7 @@ fn image_search_caches_blurred_templates() {
             ExecDeps {
                 automation: &mut backend,
                 capturer: Some(&mut capturer),
-                matcher: Some(&matcher),
+                close_matches_distance: close_matches,
                 resolver: Some(&resolver),
                 icons: Some(&icons),
                 macros: None,
@@ -264,7 +249,7 @@ fn find_pixel_uses_collection_cell_search_area() {
         ExecDeps {
             automation: &mut backend,
             capturer: Some(&mut capturer),
-            matcher: None,
+            close_matches_distance: 0,
             resolver: Some(&resolver),
             icons: None,
             macros: None,
@@ -342,7 +327,7 @@ fn find_pixel_sets_coords_and_logs() {
         ExecDeps {
             automation: &mut backend,
             capturer: Some(&mut capturer),
-            matcher: None,
+            close_matches_distance: 0,
             resolver: Some(&resolver),
             icons: None,
             macros: None,
@@ -409,7 +394,7 @@ fn find_pixel_not_found_logs() {
         ExecDeps {
             automation: &mut backend,
             capturer: Some(&mut capturer),
-            matcher: None,
+            close_matches_distance: 0,
             resolver: Some(&resolver),
             icons: None,
             macros: None,
@@ -475,7 +460,7 @@ fn find_pixel_runs_branch_when_found() {
         ExecDeps {
             automation: &mut backend,
             capturer: Some(&mut capturer),
-            matcher: None,
+            close_matches_distance: 0,
             resolver: Some(&resolver),
             icons: None,
             macros: None,
@@ -544,7 +529,7 @@ fn find_pixel_no_find_runs_branch_when_flag_set() {
         ExecDeps {
             automation: &mut backend,
             capturer: Some(&mut capturer),
-            matcher: None,
+            close_matches_distance: 0,
             resolver: Some(&resolver),
             icons: None,
             macros: None,
@@ -608,7 +593,7 @@ fn find_pixel_skips_branch_when_missing() {
         ExecDeps {
             automation: &mut backend,
             capturer: Some(&mut capturer),
-            matcher: None,
+            close_matches_distance: 0,
             resolver: Some(&resolver),
             icons: None,
             macros: None,
@@ -644,7 +629,8 @@ fn image_search_no_find_runs_branch() {
     tmpl.save(&tmpl_path).unwrap();
 
     let icons = MapIcons {
-        paths: HashMap::from([("Prog~Item".into(), tmpl_path)]),
+        paths: HashMap::from([("Prog~Item".into(), vec![tmpl_path])]),
+        masks: HashMap::new(),
         meta: HashMap::from([(
             "Prog~Item".into(),
             ItemMeta {
@@ -695,7 +681,7 @@ fn image_search_no_find_runs_branch() {
         ExecDeps {
             automation: &mut backend,
             capturer: Some(&mut capturer),
-            matcher: None,
+            close_matches_distance: 0,
             resolver: Some(&resolver),
             icons: Some(&icons),
             macros: None,
@@ -797,7 +783,7 @@ fn image_search_break_stops_match_loop() {
 }
 
 #[test]
-fn match_facade_finds_exact_template() {
+fn find_template_matches_exact_peak() {
     // blur=0 still maps to kernel 5; pattern must survive that.
     let mut tmpl = ImageBuf::new(10, 10, 3, 40);
     for y in 0..10 {
@@ -810,8 +796,17 @@ fn match_facade_finds_exact_template() {
     }
     let mut search = ImageBuf::new(50, 50, 3, 30);
     search.stamp(&tmpl, 15, 18);
-    let facade = MatchFacade::new();
-    let hits = facade.find_matches(&search, &tmpl, None, 0.7, 0).unwrap();
+    let kernel = search_blur_kernel(0);
+    let search_blurred = sqyre_match::blur_image_owned(search, kernel).unwrap();
+    let hits = sqyre_match::find_template_matches(
+        &search_blurred,
+        &tmpl,
+        None,
+        0.7,
+        0,
+        DEFAULT_CLOSE_MATCHES_DISTANCE,
+    )
+    .unwrap();
     assert!(
         hits.iter()
             .any(|p| (p.x - 15).abs() <= 2 && (p.y - 18).abs() <= 2),
@@ -900,7 +895,7 @@ fn ocr_writes_text_and_target_coords() {
         ExecDeps {
             automation: &mut backend,
             capturer: Some(&mut capturer),
-            matcher: None,
+            close_matches_distance: 0,
             resolver: Some(&resolver),
             icons: None,
             macros: None,
@@ -1032,7 +1027,7 @@ fn ocr_runs_branch_when_target_found() {
         ExecDeps {
             automation: &mut backend,
             capturer: Some(&mut capturer),
-            matcher: None,
+            close_matches_distance: 0,
             resolver: Some(&resolver),
             icons: None,
             macros: None,
@@ -1124,7 +1119,7 @@ fn ocr_no_find_runs_branch_when_flag_set() {
         ExecDeps {
             automation: &mut backend,
             capturer: Some(&mut capturer),
-            matcher: None,
+            close_matches_distance: 0,
             resolver: Some(&resolver),
             icons: None,
             macros: None,
@@ -1205,7 +1200,7 @@ fn ocr_skips_branch_when_target_missing() {
         ExecDeps {
             automation: &mut backend,
             capturer: Some(&mut capturer),
-            matcher: None,
+            close_matches_distance: 0,
             resolver: Some(&resolver),
             icons: None,
             macros: None,
@@ -1289,7 +1284,7 @@ fn find_pixel_wait_until_found_retries_then_succeeds() {
         ExecDeps {
             automation: &mut backend,
             capturer: Some(&mut capturer),
-            matcher: None,
+            close_matches_distance: 0,
             resolver: Some(&resolver),
             icons: None,
             macros: None,
@@ -1416,7 +1411,7 @@ fn find_pixel_wait_until_found_stops_when_flag_set() {
         ExecDeps {
             automation: &mut backend,
             capturer: Some(&mut capturer),
-            matcher: None,
+            close_matches_distance: 0,
             resolver: Some(&resolver),
             icons: None,
             macros: None,
@@ -1490,7 +1485,7 @@ fn find_pixel_repeat_while_found_runs_then_stops_on_miss() {
         ExecDeps {
             automation: &mut backend,
             capturer: Some(&mut capturer),
-            matcher: None,
+            close_matches_distance: 0,
             resolver: Some(&resolver),
             icons: None,
             macros: None,
@@ -1517,4 +1512,616 @@ fn find_pixel_repeat_while_found_runs_then_stops_on_miss() {
         backend.log
     );
     assert_eq!(capturer.log.len(), 2, "{:?}", capturer.log);
+}
+
+fn stamp_rgba(dst: &mut RgbaImage, src: &RgbaImage, x: u32, y: u32) {
+    for (sx, sy, p) in src.enumerate_pixels() {
+        let dx = x + sx;
+        let dy = y + sy;
+        if dx < dst.width() && dy < dst.height() {
+            dst.put_pixel(dx, dy, *p);
+        }
+    }
+}
+
+/// Non-uniform template so CCOEFF_NORMED has variance to score (survives blur=5).
+fn patterned_rgba(w: u32, h: u32, seed: u8) -> RgbaImage {
+    let mut img = RgbaImage::new(w, h);
+    for (x, y, p) in img.enumerate_pixels_mut() {
+        *p = Rgba([
+            (x * 17 + y * 9 + seed as u32) as u8,
+            (x * 3 + y * 29 + 40) as u8,
+            (255u32.wrapping_sub(x * 11).wrapping_add(seed as u32)) as u8,
+            255,
+        ]);
+    }
+    img
+}
+
+#[test]
+fn image_search_wait_until_found_retries_then_succeeds() {
+    use sqyre_domain::RepeatMode;
+    sqyre_vision::with_search_cache_test_lock(|| {
+        sqyre_vision::reset_search_cache_for_testing();
+        let dir = tempfile::tempdir().unwrap();
+        let tmpl_path = dir.path().join("tmpl.png");
+        let tmpl = patterned_rgba(10, 10, 11);
+        tmpl.save(&tmpl_path).unwrap();
+
+        let miss = RgbaImage::from_pixel(50, 50, Rgba([0, 255, 0, 255]));
+        let mut hit = RgbaImage::from_pixel(50, 50, Rgba([30, 30, 30, 255]));
+        stamp_rgba(&mut hit, &tmpl, 15, 18);
+
+        let icons = MapIcons {
+            paths: HashMap::from([("Prog~Item".into(), vec![tmpl_path])]),
+            masks: HashMap::new(),
+            meta: HashMap::new(),
+        };
+        let mut backend = RecordingBackend::default();
+        let mut capturer = RecordingCapturer {
+            queue: vec![miss],
+            next: Some(hit),
+            bounds: DesktopRect {
+                x: 0,
+                y: 0,
+                w: 2000,
+                h: 2000,
+            },
+            ..Default::default()
+        };
+        let resolver = FixedArea;
+        let close_matches = 8;
+        let search_id = ActionId::new();
+        let mut macro_ = Macro::new("t", 0, vec![]);
+        macro_.keyboard_delay = 0;
+        macro_.mouse_delay = 0;
+        macro_.root = root_loop(vec![Action {
+            id: search_id,
+            kind: ActionKind::ImageSearch {
+                name: "find".into(),
+                targets: vec!["Prog~Item".into()],
+                search_area: CoordinateRef("Prog~Box".into()),
+                tolerance: 0.7,
+                blur: 0,
+                detection: sqyre_domain::DetectionBranch {
+                    wait: WaitTilFoundConfig {
+                        repeat_mode: RepeatMode::WaitUntilFound,
+                        wait_til_found_seconds: 5,
+                        wait_til_found_interval_ms: 1,
+                        max_iterations: 0,
+                    },
+                    coords: CoordinateOutputs {
+                        output_x_variable: "foundX".into(),
+                        output_y_variable: "foundY".into(),
+                    },
+                    subactions: vec![sqyre_domain::test_action(ActionKind::Wait {
+                        time: ScalarValue::Int(3),
+                    })],
+                    ..Default::default()
+                },
+            },
+        }]);
+
+        execute_macro_with(
+            &mut macro_,
+            ExecDeps {
+                automation: &mut backend,
+                capturer: Some(&mut capturer),
+                close_matches_distance: close_matches,
+                resolver: Some(&resolver),
+                icons: Some(&icons),
+                macros: None,
+                continue_waiter: None,
+                window_focuser: None,
+                ocr: None,
+                stop_flag: None,
+                logger: None,
+                highlighter: None,
+                runtime_vars: None,
+                variables_dir: None,
+            },
+        )
+        .unwrap();
+
+        assert!(
+            capturer.log.len() >= 2,
+            "expected miss then hit capture: {:?}",
+            capturer.log
+        );
+        assert!(
+            backend.log.iter().any(|e| e == "sleep:3"),
+            "expected child on find: {:?}",
+            backend.log
+        );
+        assert!(macro_.variables.get("foundX").is_some());
+    });
+}
+
+#[test]
+fn image_search_repeat_while_found_then_stops() {
+    use sqyre_domain::RepeatMode;
+    sqyre_vision::with_search_cache_test_lock(|| {
+        sqyre_vision::reset_search_cache_for_testing();
+        let dir = tempfile::tempdir().unwrap();
+        let tmpl_path = dir.path().join("tmpl.png");
+        let tmpl = patterned_rgba(10, 10, 22);
+        tmpl.save(&tmpl_path).unwrap();
+
+        let mut hit = RgbaImage::from_pixel(50, 50, Rgba([10, 10, 10, 255]));
+        stamp_rgba(&mut hit, &tmpl, 12, 14);
+        let miss = RgbaImage::from_pixel(50, 50, Rgba([10, 10, 10, 255]));
+
+        let icons = MapIcons {
+            paths: HashMap::from([("Prog~Item".into(), vec![tmpl_path])]),
+            masks: HashMap::new(),
+            meta: HashMap::new(),
+        };
+        let mut backend = RecordingBackend::default();
+        let mut capturer = RecordingCapturer {
+            queue: vec![hit],
+            next: Some(miss),
+            bounds: DesktopRect {
+                x: 0,
+                y: 0,
+                w: 2000,
+                h: 2000,
+            },
+            ..Default::default()
+        };
+        let resolver = FixedArea;
+        let close_matches = 8;
+        let mut macro_ = Macro::new("t", 0, vec![]);
+        macro_.keyboard_delay = 0;
+        macro_.mouse_delay = 0;
+        macro_.root = root_loop(vec![Action {
+            id: ActionId::new(),
+            kind: ActionKind::ImageSearch {
+                name: "loop".into(),
+                targets: vec!["Prog~Item".into()],
+                search_area: CoordinateRef("Prog~Box".into()),
+                tolerance: 0.7,
+                blur: 0,
+                detection: sqyre_domain::DetectionBranch {
+                    wait: WaitTilFoundConfig {
+                        repeat_mode: RepeatMode::WhileFound,
+                        wait_til_found_seconds: 0,
+                        wait_til_found_interval_ms: 1,
+                        max_iterations: 5,
+                    },
+                    subactions: vec![sqyre_domain::test_action(ActionKind::Wait {
+                        time: ScalarValue::Int(9),
+                    })],
+                    ..Default::default()
+                },
+            },
+        }]);
+
+        execute_macro_with(
+            &mut macro_,
+            ExecDeps {
+                automation: &mut backend,
+                capturer: Some(&mut capturer),
+                close_matches_distance: close_matches,
+                resolver: Some(&resolver),
+                icons: Some(&icons),
+                macros: None,
+                continue_waiter: None,
+                window_focuser: None,
+                ocr: None,
+                stop_flag: None,
+                logger: None,
+                highlighter: None,
+                runtime_vars: None,
+                variables_dir: None,
+            },
+        )
+        .unwrap();
+
+        let child_waits = backend
+            .log
+            .iter()
+            .filter(|e| e.as_str() == "sleep:9")
+            .count();
+        assert_eq!(
+            child_waits, 1,
+            "expected one child run then stop: {:?}",
+            backend.log
+        );
+    });
+}
+
+#[test]
+fn image_search_multi_variant_matches_either_template() {
+    sqyre_vision::with_search_cache_test_lock(|| {
+        sqyre_vision::reset_search_cache_for_testing();
+        let dir = tempfile::tempdir().unwrap();
+        let v1 = dir.path().join("v1.png");
+        let v2 = dir.path().join("v2.png");
+        let first = patterned_rgba(10, 10, 1);
+        let second = patterned_rgba(10, 10, 90);
+        first.save(&v1).unwrap();
+        second.save(&v2).unwrap();
+
+        // Screen contains only the second variant.
+        let mut search = RgbaImage::from_pixel(50, 50, Rgba([40, 40, 40, 255]));
+        stamp_rgba(&mut search, &second, 15, 18);
+
+        let icons = MapIcons {
+            paths: HashMap::from([("Prog~Item".into(), vec![v1, v2])]),
+            masks: HashMap::new(),
+            meta: HashMap::from([(
+                "Prog~Item".into(),
+                ItemMeta {
+                    name: "Item".into(),
+                    stack_max: 3,
+                    cols: 1,
+                    rows: 1,
+                },
+            )]),
+        };
+        let mut backend = RecordingBackend::default();
+        let mut capturer = RecordingCapturer {
+            next: Some(search),
+            bounds: DesktopRect {
+                x: 0,
+                y: 0,
+                w: 2000,
+                h: 2000,
+            },
+            ..Default::default()
+        };
+        let resolver = FixedArea;
+        let close_matches = 8;
+        let logger = SharedActionLog::new();
+        let search_id = ActionId::new();
+        let mut macro_ = Macro::new("t", 0, vec![]);
+        macro_.keyboard_delay = 0;
+        macro_.mouse_delay = 0;
+        macro_.root = root_loop(vec![Action {
+            id: search_id,
+            kind: ActionKind::ImageSearch {
+                name: "multi".into(),
+                targets: vec!["Prog~Item".into()],
+                search_area: CoordinateRef("Prog~Box".into()),
+                tolerance: 0.7,
+                blur: 0,
+                detection: sqyre_domain::DetectionBranch {
+                    coords: CoordinateOutputs {
+                        output_x_variable: "foundX".into(),
+                        output_y_variable: "foundY".into(),
+                    },
+                    subactions: vec![sqyre_domain::test_action(ActionKind::Wait {
+                        time: ScalarValue::Int(2),
+                    })],
+                    ..Default::default()
+                },
+            },
+        }]);
+
+        execute_macro_with(
+            &mut macro_,
+            ExecDeps {
+                automation: &mut backend,
+                capturer: Some(&mut capturer),
+                close_matches_distance: close_matches,
+                resolver: Some(&resolver),
+                icons: Some(&icons),
+                macros: None,
+                continue_waiter: None,
+                window_focuser: None,
+                ocr: None,
+                stop_flag: None,
+                logger: Some(&logger),
+                highlighter: None,
+                runtime_vars: None,
+                variables_dir: None,
+            },
+        )
+        .unwrap();
+
+        assert!(
+            backend.log.iter().any(|e| e == "sleep:2"),
+            "expected match via second variant: {:?}",
+            backend.log
+        );
+        assert_eq!(
+            macro_.variables.get("StackMax").map(|v| v.as_display()),
+            Some("3".into())
+        );
+        let lines = logger.lines_for(search_id);
+        assert!(
+            lines.iter().any(|l| l.contains("Total # found:")),
+            "{lines:?}"
+        );
+    });
+}
+
+#[test]
+fn image_search_uses_mask_path_when_present() {
+    sqyre_vision::with_search_cache_test_lock(|| {
+        sqyre_vision::reset_search_cache_for_testing();
+        let dir = tempfile::tempdir().unwrap();
+        let tmpl_path = dir.path().join("tmpl.png");
+        let mask_path = dir.path().join("mask.png");
+
+        let tmpl = patterned_rgba(10, 10, 7);
+        tmpl.save(&tmpl_path).unwrap();
+
+        // Full-white mask (all pixels active) — exercises mask load/cache path.
+        let mask = RgbaImage::from_pixel(10, 10, Rgba([255, 255, 255, 255]));
+        mask.save(&mask_path).unwrap();
+
+        let mut search = RgbaImage::from_pixel(50, 50, Rgba([20, 20, 20, 255]));
+        stamp_rgba(&mut search, &tmpl, 15, 18);
+
+        let icons = MapIcons {
+            paths: HashMap::from([("Prog~Item".into(), vec![tmpl_path])]),
+            masks: HashMap::from([("Prog~Item".into(), mask_path)]),
+            meta: HashMap::new(),
+        };
+        let mut backend = RecordingBackend::default();
+        let mut capturer = RecordingCapturer {
+            next: Some(search),
+            bounds: DesktopRect {
+                x: 0,
+                y: 0,
+                w: 2000,
+                h: 2000,
+            },
+            ..Default::default()
+        };
+        let resolver = FixedArea;
+        let close_matches = 8;
+        let mut macro_ = Macro::new("t", 0, vec![]);
+        macro_.keyboard_delay = 0;
+        macro_.mouse_delay = 0;
+        macro_.root = root_loop(vec![Action {
+            id: ActionId::new(),
+            kind: ActionKind::ImageSearch {
+                name: "masked".into(),
+                targets: vec!["Prog~Item".into()],
+                search_area: CoordinateRef("Prog~Box".into()),
+                tolerance: 0.7,
+                blur: 0,
+                detection: sqyre_domain::DetectionBranch {
+                    coords: CoordinateOutputs {
+                        output_x_variable: "foundX".into(),
+                        output_y_variable: "foundY".into(),
+                    },
+                    subactions: vec![sqyre_domain::test_action(ActionKind::Wait {
+                        time: ScalarValue::Int(5),
+                    })],
+                    ..Default::default()
+                },
+            },
+        }]);
+
+        execute_macro_with(
+            &mut macro_,
+            ExecDeps {
+                automation: &mut backend,
+                capturer: Some(&mut capturer),
+                close_matches_distance: close_matches,
+                resolver: Some(&resolver),
+                icons: Some(&icons),
+                macros: None,
+                continue_waiter: None,
+                window_focuser: None,
+                ocr: None,
+                stop_flag: None,
+                logger: None,
+                highlighter: None,
+                runtime_vars: None,
+                variables_dir: None,
+            },
+        )
+        .unwrap();
+
+        assert!(
+            backend.log.iter().any(|e| e == "sleep:5"),
+            "match with mask path should succeed: {:?}",
+            backend.log
+        );
+        assert!(macro_.variables.get("foundX").is_some());
+    });
+}
+
+#[test]
+fn ocr_wait_until_found_retries_then_succeeds() {
+    use crate::backends::{OcrResult, QueuedOcrEngine};
+    use sqyre_domain::RepeatMode;
+
+    let img = RgbaImage::from_pixel(20, 10, Rgba([255, 255, 255, 255]));
+    let mut backend = RecordingBackend::default();
+    let mut capturer = RecordingCapturer {
+        next: Some(img),
+        bounds: DesktopRect {
+            x: 0,
+            y: 0,
+            w: 2000,
+            h: 2000,
+        },
+        ..Default::default()
+    };
+    let resolver = FixedArea;
+    let ocr = QueuedOcrEngine {
+        queue: std::sync::Mutex::new(vec![
+            OcrResult {
+                text: "noise".into(),
+                words: vec![],
+            },
+            OcrResult {
+                text: "Submit now".into(),
+                words: vec![],
+            },
+        ]),
+        ..Default::default()
+    };
+
+    let mut macro_ = Macro::new("t", 0, vec![]);
+    macro_.keyboard_delay = 0;
+    macro_.mouse_delay = 0;
+    macro_.root = root_loop(vec![Action {
+        id: ActionId::new(),
+        kind: ActionKind::Ocr {
+            name: "read".into(),
+            target: "Submit".into(),
+            search_area: CoordinateRef("prog~box".into()),
+            output_variable: "ocrText".into(),
+            blur: 1,
+            min_threshold: 0,
+            resize: 1.0,
+            grayscale: true,
+            threshold_otsu: false,
+            threshold_invert: false,
+            detection: sqyre_domain::DetectionBranch {
+                wait: WaitTilFoundConfig {
+                    repeat_mode: RepeatMode::WaitUntilFound,
+                    wait_til_found_seconds: 5,
+                    wait_til_found_interval_ms: 1,
+                    max_iterations: 0,
+                },
+                coords: CoordinateOutputs {
+                    output_x_variable: "foundX".into(),
+                    output_y_variable: "foundY".into(),
+                },
+                subactions: vec![sqyre_domain::test_action(ActionKind::Wait {
+                    time: ScalarValue::Int(11),
+                })],
+                ..Default::default()
+            },
+        },
+    }]);
+
+    execute_macro_with(
+        &mut macro_,
+        ExecDeps {
+            automation: &mut backend,
+            capturer: Some(&mut capturer),
+            close_matches_distance: 0,
+            resolver: Some(&resolver),
+            icons: None,
+            macros: None,
+            continue_waiter: None,
+            window_focuser: None,
+            ocr: Some(&ocr),
+            stop_flag: None,
+            logger: None,
+            highlighter: None,
+            runtime_vars: None,
+            variables_dir: None,
+        },
+    )
+    .unwrap();
+
+    assert!(
+        ocr.log.lock().unwrap().len() >= 2,
+        "expected OCR retries: {:?}",
+        ocr.log.lock().unwrap()
+    );
+    assert_eq!(
+        macro_.variables.get("ocrText").map(|v| v.as_display()),
+        Some("Submit now".into())
+    );
+    assert!(
+        backend.log.iter().any(|e| e == "sleep:11"),
+        "{:?}",
+        backend.log
+    );
+}
+
+#[test]
+fn ocr_repeat_while_found_then_stops_on_miss() {
+    use crate::backends::{OcrResult, QueuedOcrEngine};
+    use sqyre_domain::RepeatMode;
+
+    let img = RgbaImage::from_pixel(20, 10, Rgba([255, 255, 255, 255]));
+    let mut backend = RecordingBackend::default();
+    let mut capturer = RecordingCapturer {
+        next: Some(img),
+        bounds: DesktopRect {
+            x: 0,
+            y: 0,
+            w: 2000,
+            h: 2000,
+        },
+        ..Default::default()
+    };
+    let resolver = FixedArea;
+    let ocr = QueuedOcrEngine {
+        queue: std::sync::Mutex::new(vec![
+            OcrResult {
+                text: "Keep going".into(),
+                words: vec![],
+            },
+            OcrResult {
+                text: "gone".into(),
+                words: vec![],
+            },
+        ]),
+        ..Default::default()
+    };
+
+    let mut macro_ = Macro::new("t", 0, vec![]);
+    macro_.keyboard_delay = 0;
+    macro_.mouse_delay = 0;
+    macro_.root = root_loop(vec![Action {
+        id: ActionId::new(),
+        kind: ActionKind::Ocr {
+            name: "loop".into(),
+            target: "Keep".into(),
+            search_area: CoordinateRef("prog~box".into()),
+            output_variable: "ocrText".into(),
+            blur: 1,
+            min_threshold: 0,
+            resize: 1.0,
+            grayscale: true,
+            threshold_otsu: false,
+            threshold_invert: false,
+            detection: sqyre_domain::DetectionBranch {
+                wait: WaitTilFoundConfig {
+                    repeat_mode: RepeatMode::WhileFound,
+                    wait_til_found_seconds: 0,
+                    wait_til_found_interval_ms: 1,
+                    max_iterations: 5,
+                },
+                subactions: vec![sqyre_domain::test_action(ActionKind::Wait {
+                    time: ScalarValue::Int(8),
+                })],
+                ..Default::default()
+            },
+        },
+    }]);
+
+    execute_macro_with(
+        &mut macro_,
+        ExecDeps {
+            automation: &mut backend,
+            capturer: Some(&mut capturer),
+            close_matches_distance: 0,
+            resolver: Some(&resolver),
+            icons: None,
+            macros: None,
+            continue_waiter: None,
+            window_focuser: None,
+            ocr: Some(&ocr),
+            stop_flag: None,
+            logger: None,
+            highlighter: None,
+            runtime_vars: None,
+            variables_dir: None,
+        },
+    )
+    .unwrap();
+
+    let child_waits = backend
+        .log
+        .iter()
+        .filter(|e| e.as_str() == "sleep:8")
+        .count();
+    assert_eq!(
+        child_waits, 1,
+        "expected one OCR while-found iteration: {:?}",
+        backend.log
+    );
 }

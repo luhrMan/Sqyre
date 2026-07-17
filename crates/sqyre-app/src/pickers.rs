@@ -1363,7 +1363,7 @@ pub enum PickerResult {
 
 /// Static option lists for ComboBox fields (>2 options).
 pub mod options {
-    use sqyre_domain::{OP_EQUALS, REPEAT_ONCE, REPEAT_WAIT_UNTIL_FOUND, REPEAT_WHILE_FOUND};
+    use sqyre_domain::{OP_EQUALS, RepeatMode};
 
     pub const CLICK_BUTTONS: &[&str] = &["left", "right", "center", "scroll"];
 
@@ -1381,7 +1381,11 @@ pub mod options {
         "is empty",
     ];
 
-    pub const REPEAT_MODES: &[&str] = &[REPEAT_ONCE, REPEAT_WAIT_UNTIL_FOUND, REPEAT_WHILE_FOUND];
+    pub const REPEAT_MODES: &[&str] = &[
+        RepeatMode::Once.as_str(),
+        RepeatMode::WaitUntilFound.as_str(),
+        RepeatMode::WhileFound.as_str(),
+    ];
 
     /// Match-order grouping (empty allowed as unset).
     pub const ORDER_GROUPING: &[&str] = &["", "row", "column", "none"];

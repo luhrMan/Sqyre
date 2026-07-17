@@ -1,7 +1,7 @@
 //! OCR action: capture → preprocess → recognize → write vars → run children on match.
 
 use super::common::{
-    clear_coord_outputs, maybe_repeat_while_found, maybe_wait_until_found, run_detection_children,
+    clear_coord_outputs, maybe_repeat_while_found, maybe_wait_until_found, run_detection_outcome,
     set_coord_outputs,
 };
 use crate::action_log::draw_rect_rgb;
@@ -9,7 +9,6 @@ use crate::error::{ExecError, Result};
 use crate::run::Executor;
 use sqyre_domain::{Action, ActionKind, Macro, ScalarValue};
 use sqyre_match::ImageBuf;
-use sqyre_vision::rgba_to_rgb_buf;
 use std::time::Instant;
 
 /// OCR branch action: capture → preprocess → recognize → write vars → run children on match
@@ -88,15 +87,7 @@ pub(crate) fn execute_ocr(
             &shot,
             matched,
         );
-        if matched {
-            run_detection_children(exec, subactions, macro_)?;
-            Ok(true)
-        } else {
-            if *run_branch_on_no_find {
-                run_detection_children(exec, subactions, macro_)?;
-            }
-            Ok(false)
-        }
+        run_detection_outcome(exec, matched, *run_branch_on_no_find, subactions, macro_)
     })? {
         return Ok(());
     }
@@ -110,10 +101,7 @@ pub(crate) fn execute_ocr(
         &shot,
         matched,
     );
-    if matched || *run_branch_on_no_find {
-        return run_detection_children(exec, subactions, macro_);
-    }
-    Ok(())
+    run_detection_outcome(exec, matched, *run_branch_on_no_find, subactions, macro_).map(|_| ())
 }
 
 struct OcrRunParams<'a> {
@@ -247,7 +235,7 @@ fn run_ocr_once(
         .capturer
         .as_mut()
         .unwrap()
-        .capture_search_area(lx, ty, rx, by)
+        .capture_search_area_rgb(lx, ty, rx, by)
     {
         Ok(v) => v,
         Err(e) => {
@@ -258,7 +246,7 @@ fn run_ocr_once(
     exec.log_timing(action_id, "capture", capture_started.elapsed());
     let search_center_x = origin.x + origin.w / 2;
     let search_center_y = origin.y + origin.h / 2;
-    let rgb = rgba_to_rgb_buf(&img);
+    let rgb = img.into_image_buf();
     exec.log_image(action_id, "Capture (raw)", &rgb);
     let opts = sqyre_vision::OcrPreprocessOptions::from_action_fields(
         grayscale,

@@ -2,15 +2,23 @@ use crate::{Result, SerializeError};
 use serde_yaml::{Mapping, Value};
 use sqyre_domain::{CoordinateRef, ScalarValue};
 
+/// Look up a map entry by string key without allocating a temporary [`Value`].
+pub fn map_get<'a>(m: &'a Mapping, key: &str) -> Option<&'a Value> {
+    m.iter().find_map(|(k, v)| match k {
+        Value::String(s) if s == key => Some(v),
+        _ => None,
+    })
+}
+
 pub fn string_from_map(m: &Mapping, key: &str) -> String {
-    m.get(Value::String(key.into()))
+    map_get(m, key)
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string()
 }
 
 pub fn expect_string(m: &Mapping, key: &str) -> Result<String> {
-    match m.get(Value::String(key.into())) {
+    match map_get(m, key) {
         None | Some(Value::Null) => Err(SerializeError::msg(format!("missing field \"{key}\""))),
         Some(Value::String(s)) => Ok(s.clone()),
         Some(other) => Err(SerializeError::msg(format!(
@@ -20,7 +28,7 @@ pub fn expect_string(m: &Mapping, key: &str) -> Result<String> {
 }
 
 pub fn expect_bool(m: &Mapping, key: &str) -> Result<bool> {
-    match m.get(Value::String(key.into())) {
+    match map_get(m, key) {
         None | Some(Value::Null) => Err(SerializeError::msg(format!("missing field \"{key}\""))),
         Some(Value::Bool(b)) => Ok(*b),
         Some(other) => Err(SerializeError::msg(format!(
@@ -30,7 +38,7 @@ pub fn expect_bool(m: &Mapping, key: &str) -> Result<bool> {
 }
 
 pub fn bool_from_map(m: &Mapping, key: &str) -> bool {
-    matches!(m.get(Value::String(key.into())), Some(Value::Bool(true)))
+    matches!(map_get(m, key), Some(Value::Bool(true)))
 }
 
 pub fn int_from_value(v: &Value) -> i32 {
@@ -51,7 +59,7 @@ pub fn float_from_value(v: &Value) -> f64 {
 }
 
 pub fn optional_int(m: &Mapping, key: &str) -> Option<i32> {
-    m.get(Value::String(key.into()))
+    map_get(m, key)
         .filter(|v| !v.is_null())
         .map(int_from_value)
 }
@@ -154,5 +162,16 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("string"));
+    }
+
+    #[test]
+    fn map_get_finds_string_keys() {
+        let mut m = Mapping::new();
+        insert_str(&mut m, "name", "sword");
+        assert_eq!(
+            map_get(&m, "name").and_then(|v| v.as_str()),
+            Some("sword")
+        );
+        assert!(map_get(&m, "missing").is_none());
     }
 }

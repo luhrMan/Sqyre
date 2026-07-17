@@ -29,7 +29,7 @@ macro_rules! string_enum {
         }
 
         impl $Name {
-            pub fn as_str(self) -> &'static str {
+            pub const fn as_str(self) -> &'static str {
                 match self {
                     $(Self::$Variant => $first,)+
                 }
@@ -81,10 +81,16 @@ impl ActionId {
     }
 
     pub fn as_str(self) -> String {
+        self.to_string()
+    }
+}
+
+impl std::fmt::Display for ActionId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.is_root() {
-            String::new()
+            Ok(())
         } else {
-            self.0.to_string()
+            write!(f, "{}", self.0)
         }
     }
 }
@@ -96,12 +102,6 @@ impl Default for ActionId {
 }
 
 pub const OP_EQUALS: &str = "==";
-pub const MATCH_ALL: &str = "all";
-pub const MATCH_ANY: &str = "any";
-
-pub const REPEAT_ONCE: &str = "once";
-pub const REPEAT_WAIT_UNTIL_FOUND: &str = "waituntilfound";
-pub const REPEAT_WHILE_FOUND: &str = "repeatwhilefound";
 
 pub const DEFAULT_SMOOTH_LOW: f64 = 0.05;
 pub const DEFAULT_SMOOTH_HIGH: f64 = 0.20;
@@ -184,10 +184,6 @@ impl Default for WaitTilFoundConfig {
 }
 
 impl WaitTilFoundConfig {
-    pub fn effective_repeat_mode(&self) -> RepeatMode {
-        self.repeat_mode
-    }
-
     /// Retry until found (or timeout).
     pub fn wait_until_found_active(&self) -> bool {
         self.repeat_mode == RepeatMode::WaitUntilFound && self.wait_til_found_seconds > 0
@@ -484,7 +480,7 @@ impl Action {
     ) -> Result<(), String> {
         let parent = self
             .find_by_id_mut(parent_id)
-            .ok_or_else(|| format!("parent action {} not found", parent_id.as_str()))?;
+            .ok_or_else(|| format!("parent action {parent_id} not found"))?;
         let children = parent
             .children_mut()
             .ok_or_else(|| "drop target is not a branch".to_string())?;
@@ -533,7 +529,7 @@ impl Action {
         }
         let node = self
             .remove_by_id(source_id)
-            .ok_or_else(|| format!("source action {} not found", source_id.as_str()))?;
+            .ok_or_else(|| format!("source action {source_id} not found"))?;
         self.insert_at(parent_id, slot, node)
     }
 

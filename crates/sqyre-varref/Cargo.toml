@@ -9,6 +9,5 @@ description = "Macro variable-reference grammar: ${name} and {name}"
 workspace = true
 
 [dependencies]
-regex = { workspace = true }
 
 [dev-dependencies]

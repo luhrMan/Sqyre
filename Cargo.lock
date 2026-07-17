@@ -3844,9 +3844,6 @@ dependencies = [
 [[package]]
 name = "sqyre-varref"
 version = "0.1.0"
-dependencies = [
- "regex",
-]
 
 [[package]]
 name = "sqyre-vision"

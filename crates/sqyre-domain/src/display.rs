@@ -36,21 +36,53 @@ impl DisplayParam {
 }
 
 /// Produced variable binding for tree/output chips.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BindingRole {
+    OutputX,
+    OutputY,
+    Value,
+    Output,
+    Ref,
+    Graph,
+    Row,
+    Col,
+    Collection,
+    Length,
+}
+
+impl BindingRole {
+    pub fn pill_label(self) -> &'static str {
+        match self {
+            Self::OutputX => "X",
+            Self::OutputY => "Y",
+            Self::Length => "Length",
+            Self::Value => "Variable",
+            _ => "Output",
+        }
+    }
+
+    pub fn validate_label(self, name: &str) -> String {
+        let name = name.trim();
+        match self {
+            Self::Value => format!("variable {name:?}"),
+            Self::Output => format!("output variable {name:?}"),
+            Self::OutputX => format!("output X variable {name:?}"),
+            Self::OutputY => format!("output Y variable {name:?}"),
+            _ => format!("variable {name:?}"),
+        }
+    }
+}
+
+/// Produced variable binding for tree/output chips.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VariableBinding {
     pub name: String,
-    pub role: String,
+    pub role: BindingRole,
 }
 
 impl VariableBinding {
     pub fn pill_label(&self) -> &'static str {
-        match self.role.as_str() {
-            "output_x" => "X",
-            "output_y" => "Y",
-            "length" => "Length",
-            "value" => "Variable",
-            _ => "Output",
-        }
+        self.role.pill_label()
     }
 }
 
@@ -80,13 +112,13 @@ impl CoordinateOutputs {
         if !self.output_x_variable.is_empty() {
             out.push(VariableBinding {
                 name: self.output_x_variable.clone(),
-                role: "output_x".into(),
+                role: BindingRole::OutputX,
             });
         }
         if !self.output_y_variable.is_empty() {
             out.push(VariableBinding {
                 name: self.output_y_variable.clone(),
-                role: "output_y".into(),
+                role: BindingRole::OutputY,
             });
         }
         out
@@ -97,16 +129,16 @@ impl NavOutputs {
     pub fn variable_bindings(&self) -> Vec<VariableBinding> {
         let mut out = Vec::new();
         for (name, role) in [
-            (&self.output_ref, "ref"),
-            (&self.output_graph, "graph"),
-            (&self.output_row, "row"),
-            (&self.output_col, "col"),
-            (&self.output_collection, "collection"),
+            (&self.output_ref, BindingRole::Ref),
+            (&self.output_graph, BindingRole::Graph),
+            (&self.output_row, BindingRole::Row),
+            (&self.output_col, BindingRole::Col),
+            (&self.output_collection, BindingRole::Collection),
         ] {
             if !name.is_empty() {
                 out.push(VariableBinding {
                     name: name.clone(),
-                    role: role.into(),
+                    role,
                 });
             }
         }
@@ -117,7 +149,7 @@ impl NavOutputs {
 impl WaitTilFoundConfig {
     /// Wait / repeat mode shown in the tree and tooltips.
     pub fn display_wait_mode(&self, instant_label: &str) -> String {
-        match self.effective_repeat_mode() {
+        match self.repeat_mode {
             RepeatMode::WaitUntilFound => {
                 if self.wait_til_found_seconds > 0 {
                     format!("{} seconds or until found", self.wait_til_found_seconds)
@@ -516,7 +548,7 @@ impl ActionKind {
             Self::SetVariable { variable_name, .. } if !variable_name.is_empty() => {
                 vec![VariableBinding {
                     name: variable_name.clone(),
-                    role: "value".into(),
+                    role: BindingRole::Value,
                 }]
             }
             Self::ImageSearch { detection, .. } | Self::FindPixel { detection, .. } => {
@@ -531,7 +563,7 @@ impl ActionKind {
                 if !output_variable.is_empty() {
                     out.push(VariableBinding {
                         name: output_variable.clone(),
-                        role: "output".into(),
+                        role: BindingRole::Output,
                     });
                 }
                 out
@@ -541,7 +573,7 @@ impl ActionKind {
                 .filter(|s| !s.output_var.is_empty())
                 .map(|s| VariableBinding {
                     name: s.output_var.clone(),
-                    role: "output".into(),
+                    role: BindingRole::Output,
                 })
                 .collect(),
             Self::NavigateSelect(data) => data.outputs.variable_bindings(),

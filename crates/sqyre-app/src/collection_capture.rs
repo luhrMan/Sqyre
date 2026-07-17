@@ -1,6 +1,6 @@
 //! Capture a collection's linked search area and write the static preview PNG.
 
-use sqyre_capture::X11Capturer;
+use sqyre_capture::shared_capturer;
 use sqyre_domain::{CoordinateRef, Macro, PROGRAM_DELIMITER};
 use sqyre_executor::ScreenCapturer;
 use sqyre_persist::{ProgramCatalog, ProgramCollection};
@@ -12,8 +12,9 @@ pub fn capture_and_save_collection_image(
     program: &str,
     collection: &ProgramCollection,
 ) -> Result<(), String> {
-    let mut capturer = X11Capturer::open().map_err(|e| format!("collection capture: {e}"))?;
-    capture_and_save_collection_image_with(&mut capturer, catalog, program, collection)
+    let capturer = shared_capturer().map_err(|e| format!("collection capture: {e}"))?;
+    let mut wrap = sqyre_capture::SharedRunCapturer(capturer);
+    capture_and_save_collection_image_with(&mut wrap, catalog, program, collection)
 }
 
 /// Capture using an injected [`ScreenCapturer`] (tests use `SolidCapturer`).

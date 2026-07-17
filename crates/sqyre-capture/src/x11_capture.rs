@@ -1,10 +1,10 @@
 //! Linux X11 absolute virtual-desktop capture.
 
 use crate::error::CaptureError;
-use crate::pixel_convert::zpixmap_to_rgba;
+use crate::pixel_convert::{zpixmap_to_rgb, zpixmap_to_rgba};
 use image::RgbaImage;
 use parking_lot::Mutex;
-use sqyre_executor::{DesktopRect, ScreenCapturer};
+use sqyre_executor::{DesktopRect, RgbCapture, ScreenCapturer};
 use std::os::raw::c_void;
 use std::ptr;
 use std::sync::{Arc, OnceLock};
@@ -98,6 +98,28 @@ impl X11Capturer {
 
     /// Capture a desktop rect (`&self` — safe to call via [`Arc`] from worker threads).
     pub fn capture_rect_ref(&self, rect: DesktopRect) -> Result<RgbaImage, String> {
+        self.with_zpixmap(rect, |data, w, h, bpp, stride| {
+            zpixmap_to_rgba(data, w, h, bpp, stride)
+        })
+    }
+
+    /// Capture RGB directly (no alpha channel / no second conversion pass).
+    pub fn capture_rect_rgb_ref(&self, rect: DesktopRect) -> Result<RgbCapture, String> {
+        self.with_zpixmap(rect, |data, w, h, bpp, stride| {
+            let data = zpixmap_to_rgb(data, w, h, bpp, stride)?;
+            Ok(RgbCapture {
+                width: w,
+                height: h,
+                data,
+            })
+        })
+    }
+
+    fn with_zpixmap<T>(
+        &self,
+        rect: DesktopRect,
+        convert: impl FnOnce(&[u8], u32, u32, usize, usize) -> Result<T, String>,
+    ) -> Result<T, String> {
         if rect.is_empty() {
             return Err(CaptureError::EmptyRect.into());
         }
@@ -134,7 +156,7 @@ impl X11Capturer {
             let stride = img.bytes_per_line as usize;
             let data_len = stride.saturating_mul(h as usize);
             let data = std::slice::from_raw_parts(img.data as *const u8, data_len);
-            let out = zpixmap_to_rgba(data, w, h, bpp, stride).inspect_err(|_e| {
+            let out = convert(data, w, h, bpp, stride).inspect_err(|_e| {
                 XDestroyImage(ximage);
             })?;
             XDestroyImage(ximage);
@@ -206,12 +228,45 @@ impl ScreenCapturer for X11Capturer {
         self.capture_rect_ref(rect)
     }
 
+    fn capture_rect_rgb(&mut self, rect: DesktopRect) -> Result<RgbCapture, String> {
+        self.capture_rect_rgb_ref(rect)
+    }
+
     fn virtual_bounds(&mut self) -> Result<DesktopRect, String> {
         self.virtual_bounds_ref()
     }
 
     fn monitor_sizes(&mut self) -> Result<Vec<(i32, i32)>, String> {
         self.monitor_sizes_ref()
+    }
+}
+
+/// [`ScreenCapturer`] over a shared [`Arc`] capturer (macro run thread).
+pub struct SharedRunCapturer(pub Arc<X11Capturer>);
+
+impl ScreenCapturer for SharedRunCapturer {
+    fn capture_monitor(&mut self, display_index: i32) -> Result<RgbaImage, String> {
+        if display_index != 0 {
+            return Err(CaptureError::UnsupportedDisplay(display_index).into());
+        }
+        let vb = self.0.virtual_bounds_ref()?;
+        self.0.capture_rect_ref(vb)
+    }
+
+    fn capture_rect(&mut self, rect: DesktopRect) -> Result<RgbaImage, String> {
+        self.0.capture_rect_ref(rect)
+    }
+
+    fn capture_rect_rgb(&mut self, rect: DesktopRect) -> Result<RgbCapture, String> {
+        self.0.capture_rect_rgb_ref(rect)
+    }
+
+    fn virtual_bounds(&mut self) -> Result<DesktopRect, String> {
+        self.0.virtual_bounds_ref()
+    }
+
+    fn monitor_sizes(&mut self) -> Result<Vec<(i32, i32)>, String> {
+        self.0.monitor_sizes_ref()
     }
 }
 

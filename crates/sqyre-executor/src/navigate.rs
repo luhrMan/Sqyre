@@ -561,7 +561,7 @@ mod tests {
             ExecDeps {
                 automation: &mut backend,
                 capturer: None,
-                matcher: None,
+                close_matches_distance: 0,
                 resolver: Some(&resolver),
                 icons: None,
                 macros: None,
@@ -639,7 +639,7 @@ mod tests {
             ExecDeps {
                 automation: &mut backend,
                 capturer: None,
-                matcher: None,
+                close_matches_distance: 0,
                 resolver: Some(&resolver),
                 icons: None,
                 macros: None,

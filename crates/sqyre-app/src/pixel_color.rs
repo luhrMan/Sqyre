@@ -1,14 +1,15 @@
 //! Sample a screen pixel as `rrggbb` (Find Pixel dropper).
 
-use sqyre_capture::X11Capturer;
+use sqyre_capture::shared_capturer;
 use sqyre_executor::{DesktopRect, ScreenCapturer};
 
 /// Capture the 1×1 pixel at `(x, y)` and return lowercase hex without `#`.
 ///
 /// Dropper normalization: strip `#`, drop leading alpha when 8 chars.
 pub fn sample_pixel_hex(x: i32, y: i32) -> Result<String, String> {
-    let mut capturer = X11Capturer::open()?;
-    sample_pixel_hex_with(&mut capturer, x, y)
+    let capturer = shared_capturer()?;
+    let mut wrap = sqyre_capture::SharedRunCapturer(capturer);
+    sample_pixel_hex_with(&mut wrap, x, y)
 }
 
 pub fn sample_pixel_hex_with(
