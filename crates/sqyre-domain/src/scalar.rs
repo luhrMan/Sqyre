@@ -3,8 +3,7 @@
 use serde_yaml::Value;
 
 /// Operand / count / time value: literal number or string (often `${var}`).
-#[derive(Debug, Clone, PartialEq)]
-#[derive(Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum ScalarValue {
     Int(i64),
     Float(f64),
@@ -65,7 +64,6 @@ impl ScalarValue {
         !matches!(self, Self::Null)
     }
 }
-
 
 /// Delimiter between program and entity in coordinate / target refs.
 pub const PROGRAM_DELIMITER: &str = "~";
@@ -177,4 +175,3 @@ mod tests {
         assert_eq!(r.cell_range(), Some((1, 1, 2, 3)));
     }
 }
-

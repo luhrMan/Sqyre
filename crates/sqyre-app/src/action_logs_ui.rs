@@ -341,10 +341,7 @@ fn show_labeled_image(
             let size = fit_width(tw as f32, th as f32, avail_w - 16.0);
             ui.add(egui::Image::new((tex.id(), size)));
         } else {
-            ui.colored_label(
-                egui::Color32::from_rgb(200, 80, 80),
-                "(image unavailable)",
-            );
+            ui.colored_label(egui::Color32::from_rgb(200, 80, 80), "(image unavailable)");
         }
     });
 }

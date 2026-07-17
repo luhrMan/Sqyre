@@ -48,9 +48,9 @@ pub fn parse_non_negative_i32(s: &str) -> Result<i32> {
             "must be a non-negative integer".into(),
         ));
     }
-    let v: i32 = s.parse().map_err(|_| {
-        ValidateError::Message(format!("must be a non-negative integer: {s:?}"))
-    })?;
+    let v: i32 = s
+        .parse()
+        .map_err(|_| ValidateError::Message(format!("must be a non-negative integer: {s:?}")))?;
     if v < 0 {
         return Err(ValidateError::Message(format!(
             "must be a non-negative integer: {s:?}"
@@ -351,17 +351,11 @@ fn validate_continue_key(keys: &[String]) -> Result<()> {
         .filter(|k| !k.is_empty())
         .collect();
     if normalized.is_empty() {
-        return Err(ValidateError::Message(
-            "pause: continue key not set".into(),
-        ));
+        return Err(ValidateError::Message("pause: continue key not set".into()));
     }
     let mut sorted = normalized;
     sorted.sort();
-    let mut failsafe = vec![
-        "esc".to_string(),
-        "ctrl".to_string(),
-        "shift".to_string(),
-    ];
+    let mut failsafe = vec!["esc".to_string(), "ctrl".to_string(), "shift".to_string()];
     failsafe.sort();
     if sorted == failsafe {
         return Err(ValidateError::Message(
@@ -398,9 +392,8 @@ pub fn validate_action(action: &Action, macro_: Option<&Macro>) -> Result<()> {
             variable_name,
             value,
         } => {
-            validate_variable_assignment_name(variable_name).map_err(|e| {
-                ValidateError::Message(format!("set variable: {e}"))
-            })?;
+            validate_variable_assignment_name(variable_name)
+                .map_err(|e| ValidateError::Message(format!("set variable: {e}")))?;
             if let Some(text) = yaml_string_value(value) {
                 let v = validate_set_variable_value(text, macro_);
                 if v.blocks_submit() {
@@ -411,7 +404,54 @@ pub fn validate_action(action: &Action, macro_: Option<&Macro>) -> Result<()> {
         ActionKind::Pause { continue_key, .. } => {
             validate_continue_key(continue_key)?;
         }
+        ActionKind::ImageSearch {
+            targets, detection, ..
+        } => {
+            if targets.is_empty() || targets.iter().all(|t| t.trim().is_empty()) {
+                return Err(ValidateError::Message(
+                    "image search: add at least one target item".into(),
+                ));
+            }
+            validate_wait_config("image search", &detection.wait)?;
+        }
+        ActionKind::Ocr { detection, .. } => {
+            validate_wait_config("ocr", &detection.wait)?;
+        }
+        ActionKind::FindPixel {
+            target_color,
+            detection,
+            ..
+        } => {
+            if target_color.trim().is_empty() {
+                return Err(ValidateError::Message(
+                    "find pixel: set a target color".into(),
+                ));
+            }
+            validate_wait_config("find pixel", &detection.wait)?;
+        }
+        ActionKind::NavigateKey { chord, .. } => {
+            if chord.is_empty() || chord.iter().all(|k| k.trim().is_empty()) {
+                return Err(ValidateError::Message(
+                    "navigate key: record a chord before saving".into(),
+                ));
+            }
+        }
         _ => {}
+    }
+    Ok(())
+}
+
+fn validate_wait_config(label: &str, wait: &sqyre_domain::WaitTilFoundConfig) -> Result<()> {
+    use sqyre_domain::RepeatMode;
+    if wait.repeat_mode == RepeatMode::WaitUntilFound && wait.wait_til_found_seconds <= 0 {
+        return Err(ValidateError::Message(format!(
+            "{label}: wait-until-found requires a positive timeout (seconds)"
+        )));
+    }
+    if wait.wait_til_found_interval_ms < 0 {
+        return Err(ValidateError::Message(format!(
+            "{label}: wait interval cannot be negative"
+        )));
     }
     Ok(())
 }
@@ -518,11 +558,9 @@ mod tests {
 
     #[test]
     fn validate_action_set_variable_requires_name() {
-        assert!(validate_action(
-            &set_var("", serde_yaml::Value::String("1".into())),
-            None
-        )
-        .is_err());
+        assert!(
+            validate_action(&set_var("", serde_yaml::Value::String("1".into())), None).is_err()
+        );
     }
 
     #[test]
@@ -654,5 +692,84 @@ mod tests {
         let warn = validate_variable_references("${missing}", Some(&m));
         assert!(!warn.blocks_submit());
         assert!(!warn.warning.is_empty());
+    }
+
+    #[test]
+    fn validate_image_search_requires_target_and_wait_timeout() {
+        use sqyre_domain::{RepeatMode, WaitTilFoundConfig};
+        let empty = Action {
+            id: ActionId::new(),
+            kind: ActionKind::ImageSearch {
+                name: String::new(),
+                targets: vec![],
+                search_area: Default::default(),
+                tolerance: 0.95,
+                blur: 5,
+                detection: Default::default(),
+            },
+        };
+        assert!(validate_action(&empty, None)
+            .unwrap_err()
+            .to_string()
+            .contains("target"));
+
+        let bad_wait = Action {
+            id: ActionId::new(),
+            kind: ActionKind::ImageSearch {
+                name: String::new(),
+                targets: vec!["Game~Item".into()],
+                search_area: Default::default(),
+                tolerance: 0.95,
+                blur: 5,
+                detection: sqyre_domain::DetectionBranch {
+                    wait: WaitTilFoundConfig {
+                        repeat_mode: RepeatMode::WaitUntilFound,
+                        wait_til_found_seconds: 0,
+                        wait_til_found_interval_ms: 0,
+                        max_iterations: 0,
+                    },
+                    ..Default::default()
+                },
+            },
+        };
+        assert!(validate_action(&bad_wait, None)
+            .unwrap_err()
+            .to_string()
+            .contains("timeout"));
+    }
+
+    #[test]
+    fn validate_find_pixel_requires_color() {
+        let a = Action {
+            id: ActionId::new(),
+            kind: ActionKind::FindPixel {
+                name: String::new(),
+                search_area: Default::default(),
+                target_color: String::new(),
+                color_tolerance: 0,
+                detection: Default::default(),
+            },
+        };
+        assert!(validate_action(&a, None)
+            .unwrap_err()
+            .to_string()
+            .contains("color"));
+    }
+
+    #[test]
+    fn validate_navigate_key_requires_chord() {
+        let a = Action {
+            id: ActionId::new(),
+            kind: ActionKind::NavigateKey {
+                name: String::new(),
+                chord: vec![],
+                exit: false,
+                subactions: vec![],
+            },
+        };
+        assert!(validate_action(&a, None)
+            .unwrap_err()
+            .to_string()
+            .contains("chord"));
     }
 }

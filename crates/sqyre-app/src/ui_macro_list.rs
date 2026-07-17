@@ -11,11 +11,9 @@ fn elide_to_width(ui: &egui::Ui, text: &str, max_width: f32, font_id: egui::Font
     if text.is_empty() {
         return String::new();
     }
-    let full = ui.painter().layout_no_wrap(
-        text.to_owned(),
-        font_id.clone(),
-        egui::Color32::WHITE,
-    );
+    let full = ui
+        .painter()
+        .layout_no_wrap(text.to_owned(), font_id.clone(), egui::Color32::WHITE);
     if full.size().x <= max_width {
         return text.to_owned();
     }
@@ -65,12 +63,7 @@ fn macro_list_item_text(ui: &egui::Ui, m: &Macro, max_text_width: f32) -> egui::
     }
 
     let hotkey_font = egui::TextStyle::Small.resolve(style);
-    let hotkey = elide_to_width(
-        ui,
-        &format_hotkey(&m.hotkey),
-        max_text_width,
-        hotkey_font,
-    );
+    let hotkey = elide_to_width(ui, &format_hotkey(&m.hotkey), max_text_width, hotkey_font);
 
     let mut job = egui::text::LayoutJob::default();
     egui::RichText::new(name)
@@ -107,14 +100,13 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                     sqyre_persist::db_path().display()
                 ));
             }
+            if let Some(err) = &app.save_error {
+                ui.colored_label(egui::Color32::RED, format!("Save error: {err}"));
+            }
             ui.horizontal(|ui| {
                 // Use ASCII / NotoEmoji glyphs only — fullwidth/math symbols
                 // (＋, ⧉) render as tofu in egui's default font stack.
-                if ui
-                    .button("+")
-                    .on_hover_text("New macro")
-                    .clicked()
-                {
+                if ui.button("+").on_hover_text("New macro").clicked() {
                     app.create_macro();
                 }
                 let has_sel = !app.macros.is_empty();
@@ -142,8 +134,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
             ui.separator();
             egui::ScrollArea::vertical().show(ui, |ui| {
                 let width = ui.available_width();
-                let text_width =
-                    (width - ui.spacing().button_padding.x * 2.0).max(0.0);
+                let text_width = (width - ui.spacing().button_padding.x * 2.0).max(0.0);
                 let filter = app.macro_list_filter.trim().to_string();
                 for (i, m) in app.macros.iter().enumerate() {
                     if !pickers::query_matches_name_or_tags(&filter, &m.name, &m.tags) {

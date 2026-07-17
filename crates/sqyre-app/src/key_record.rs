@@ -12,9 +12,7 @@ pub(crate) enum KeyRecordUi {
     /// Waiting for the first key press.
     Recording,
     /// Saved; wait for release before resuming macro hotkeys.
-    WaitingRelease {
-        key: String,
-    },
+    WaitingRelease { key: String },
 }
 
 impl KeyRecordUi {
@@ -41,8 +39,7 @@ impl KeyRecordUi {
         match self {
             Self::Closed => None,
             Self::WaitingRelease { key } => {
-                let pressed: HashSet<String> =
-                    macro_hotkeys.pressed_keys().into_iter().collect();
+                let pressed: HashSet<String> = macro_hotkeys.pressed_keys().into_iter().collect();
                 let chord = [key.clone()];
                 if chord_fully_released(&pressed, &chord) {
                     macro_hotkeys.resume();
@@ -86,9 +83,7 @@ impl KeyRecordUi {
                 }
 
                 if let Some(key) = captured {
-                    *self = Self::WaitingRelease {
-                        key: key.clone(),
-                    };
+                    *self = Self::WaitingRelease { key: key.clone() };
                     ctx.request_repaint();
                     return Some(key);
                 }

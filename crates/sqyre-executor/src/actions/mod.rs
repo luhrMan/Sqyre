@@ -115,13 +115,15 @@ mod tests {
         macro_.root = root_loop(vec![Action {
             id: ActionId::new(),
             kind: ActionKind::While {
-                name: "inc".into(),
-                match_mode: "all".into(),
-                clauses: vec![ConditionClause {
-                    left: ScalarValue::String("${i}".into()),
-                    operator: "!=".into(),
-                    right: ScalarValue::String("3".into()),
-                }],
+                condition: sqyre_domain::ConditionBlock {
+                    name: "inc".into(),
+                    match_mode: "all".into(),
+                    clauses: vec![ConditionClause {
+                        left: ScalarValue::String("${i}".into()),
+                        operator: "!=".into(),
+                        right: ScalarValue::String("3".into()),
+                    }],
+                },
                 max_iterations: 10,
                 subactions: vec![
                     Action {
@@ -257,9 +259,11 @@ mod tests {
         macro_.root = root_loop(vec![Action {
             id: ActionId::new(),
             kind: ActionKind::While {
-                name: "forever".into(),
-                match_mode: "all".into(),
-                clauses: vec![],
+                condition: sqyre_domain::ConditionBlock {
+                    name: "forever".into(),
+                    match_mode: "all".into(),
+                    clauses: vec![],
+                },
                 max_iterations: 100,
                 subactions: vec![Action {
                     id: ActionId::new(),

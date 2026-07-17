@@ -8,18 +8,21 @@ mod overlay;
 mod persist;
 mod variants;
 
+use crate::data_editor_preview::variant_display_label;
 use crate::icon_cache::IconCache;
 use crate::image_view::ImageViewTransform;
 use crate::overlay_icons;
 use crate::paint_ctx::CatalogPaint;
 use crate::pickers::{self, ActivePicker, PickerResult};
-use crate::data_editor_preview::variant_display_label;
 use crate::preview_tooltip::PreviewTooltipCache;
+use crate::status_banner::StatusBanner;
 use eframe::egui;
+use helpers::{overlay_hex_or_empty, rgba_color};
 use sqyre_domain::Macro;
 use sqyre_hotkeys::ScreenClickBridge;
 use sqyre_persist::{
-    Database, OverlayButtonConfig, ProgramCatalog, UserSettings, DEFAULT_OVERLAY_BUTTON_SIZE,
+    Database, OverlayButtonConfig, ProgramCatalog, UserSettings, DEFAULT_OVERLAY_BORDER_WIDTH,
+    DEFAULT_OVERLAY_BUTTON_SIZE, DEFAULT_OVERLAY_CORNER_RADIUS,
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -39,20 +42,10 @@ pub(crate) enum EditorTab {
 
 #[derive(Debug, Clone)]
 pub(crate) enum PendingConfirm {
-    Delete {
-        label: String,
-    },
-    Overwrite {
-        kind: &'static str,
-        name: String,
-    },
-    DeleteVariant {
-        variant: String,
-    },
-    OverwriteVariant {
-        variant: String,
-        source: PathBuf,
-    },
+    Delete { label: String },
+    Overwrite { kind: &'static str, name: String },
+    DeleteVariant { variant: String },
+    OverwriteVariant { variant: String, source: PathBuf },
 }
 
 #[derive(Debug, Clone)]
@@ -113,14 +106,25 @@ pub struct DataEditor {
     form_overlay_y: f32,
     /// Overlay button form: size in points.
     form_overlay_size: f32,
+    /// Overlay button form: corner radius.
+    form_overlay_corner_radius: f32,
+    /// Overlay button form: border stroke width.
+    form_overlay_border_width: f32,
+    /// Overlay button form: border color (includes alpha).
+    form_overlay_border: egui::Color32,
+    /// Overlay button form: background fill (includes alpha; 0 = none).
+    form_overlay_bg: egui::Color32,
+    /// Overlay button form: idle icon color (includes alpha).
+    form_overlay_icon_color: egui::Color32,
+    /// Overlay button form: hover icon color (alpha follows icon color on save).
+    form_overlay_icon_hover: egui::Color32,
     /// Bound OS process path for the selected Program.
     form_process_path: String,
     /// Bound window title for the selected Program.
     form_window_title: String,
     variant_name_draft: String,
     variant_prompt: Option<VariantPrompt>,
-    status: Option<String>,
-    status_error: bool,
+    status_banner: StatusBanner,
     confirm: Option<PendingConfirm>,
     /// After New Point/Search Area: auto-arm record and persist on capture.
     save_after_record: bool,
@@ -175,12 +179,17 @@ impl Default for DataEditor {
             form_overlay_x: 48.0,
             form_overlay_y: 48.0,
             form_overlay_size: DEFAULT_OVERLAY_BUTTON_SIZE,
+            form_overlay_corner_radius: DEFAULT_OVERLAY_CORNER_RADIUS,
+            form_overlay_border_width: DEFAULT_OVERLAY_BORDER_WIDTH,
+            form_overlay_border: rgba_color([0xdc, 0x9d, 0x2e, 255]),
+            form_overlay_bg: rgba_color([0, 0, 0, 0]),
+            form_overlay_icon_color: rgba_color([0xf5, 0xe6, 0xc0, 255]),
+            form_overlay_icon_hover: rgba_color([0xdc, 0x9d, 0x2e, 255]),
             form_process_path: String::new(),
             form_window_title: String::new(),
             variant_name_draft: String::new(),
             variant_prompt: None,
-            status: None,
-            status_error: false,
+            status_banner: StatusBanner::default(),
             confirm: None,
             save_after_record: false,
             collection_preview: ImageViewTransform::default(),
@@ -195,7 +204,7 @@ impl Default for DataEditor {
 }
 
 impl DataEditor {
-    /// Live Overlay-tab form as an on-screen button preview (position, size, icon, label).
+    /// Live Overlay-tab form as an on-screen button preview (position, size, icon, label, style).
     ///
     /// Shown while a button is selected for editing, even before Update is clicked.
     pub fn overlay_edit_preview(&self) -> Option<OverlayButtonConfig> {
@@ -203,16 +212,57 @@ impl DataEditor {
             return None;
         }
         let id = self.selected_entity.as_ref()?;
-        Some(OverlayButtonConfig {
-            id: id.clone(),
-            program: self.selected_program.clone().unwrap_or_default(),
-            label: self.form_name.clone(),
-            macro_name: self.form_overlay_macro.clone(),
-            icon: self.form_overlay_icon.clone(),
-            x: self.form_overlay_x,
-            y: self.form_overlay_y,
-            size: self.form_overlay_size,
-        })
+        let mut btn = OverlayButtonConfig::new(
+            id.clone(),
+            self.selected_program.clone().unwrap_or_default(),
+        );
+        btn.label = self.form_name.clone();
+        btn.macro_name = self.form_overlay_macro.clone();
+        btn.icon = self.form_overlay_icon.clone();
+        btn.x = self.form_overlay_x;
+        btn.y = self.form_overlay_y;
+        btn.size = self.form_overlay_size;
+        self.apply_overlay_style_to_config(&mut btn);
+        Some(btn)
+    }
+
+    pub(crate) fn apply_overlay_style_to_config(&self, btn: &mut OverlayButtonConfig) {
+        btn.corner_radius = self.form_overlay_corner_radius;
+        btn.border_width = self.form_overlay_border_width;
+        btn.border_color = overlay_hex_or_empty(
+            self.form_overlay_border,
+            sqyre_persist::DEFAULT_OVERLAY_ACCENT_HEX,
+        );
+        btn.border_alpha = self.form_overlay_border.a();
+        btn.bg_color = if self.form_overlay_bg.a() == 0 {
+            String::new()
+        } else {
+            overlay_hex_or_empty(self.form_overlay_bg, "#000000")
+        };
+        btn.bg_alpha = self.form_overlay_bg.a();
+        btn.icon_color = overlay_hex_or_empty(
+            self.form_overlay_icon_color,
+            sqyre_persist::DEFAULT_OVERLAY_ICON_HEX,
+        );
+        btn.icon_alpha = self.form_overlay_icon_color.a();
+        btn.icon_hover_color = overlay_hex_or_empty(
+            self.form_overlay_icon_hover,
+            sqyre_persist::DEFAULT_OVERLAY_ACCENT_HEX,
+        );
+    }
+
+    pub(crate) fn load_overlay_style_from_config(&mut self, btn: &OverlayButtonConfig) {
+        self.form_overlay_corner_radius = btn.corner_radius;
+        self.form_overlay_border_width = btn.border_width;
+        self.form_overlay_border = rgba_color(btn.border_rgba());
+        self.form_overlay_bg = rgba_color(btn.bg_rgba());
+        self.form_overlay_icon_color = rgba_color(btn.icon_rgba());
+        self.form_overlay_icon_hover = rgba_color(btn.icon_hover_rgba());
+    }
+
+    pub(crate) fn reset_overlay_style_form(&mut self) {
+        let defaults = OverlayButtonConfig::new("", "");
+        self.load_overlay_style_from_config(&defaults);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -275,9 +325,9 @@ impl DataEditor {
             .map(|m| (m.name.clone(), m.tags.clone()))
             .collect();
         if let PickerResult::Window {
-                process_path,
-                window_title,
-            } = pickers::show_active_picker(
+            process_path,
+            window_title,
+        } = pickers::show_active_picker(
             ctx,
             &mut self.window_picker,
             &mut CatalogPaint {
@@ -325,7 +375,7 @@ impl DataEditor {
         if captured && self.save_after_record {
             self.save_after_record = false;
             self.on_update(db, macros, catalog, previews, settings);
-            if !self.status_error {
+            if !self.status_banner.status_error {
                 self.set_ok("Recorded and saved.");
             }
         }
@@ -368,8 +418,8 @@ impl DataEditor {
             ui.ctx().request_repaint();
         }
 
-        if let Some(msg) = &self.status {
-            let color = if self.status_error {
+        if let Some(msg) = &self.status_banner.status {
+            let color = if self.status_banner.status_error {
                 egui::Color32::from_rgb(220, 80, 80)
             } else {
                 egui::Color32::from_rgb(80, 160, 80)
@@ -377,29 +427,33 @@ impl DataEditor {
             ui.colored_label(color, msg);
         }
 
+        // Claim exactly the remaining window area once (body + footer).
+        // Allocating body then drawing footer separately made min_size > window size,
+        // so egui's Resize auto-expand ratcheted toward max every frame.
+        // Confirm / variant prompts must also claim this area — otherwise the window
+        // shrinks to the small dialog content.
+        let rem = ui.available_size();
+        let (outer, _) = ui.allocate_exact_size(rem, egui::Sense::hover());
+
         if let Some(VariantPrompt::Name { source }) = self.variant_prompt.clone() {
-            self.draw_variant_name_prompt(ui, catalog, icons, source);
+            ui.scope_builder(egui::UiBuilder::new().max_rect(outer), |ui| {
+                self.draw_variant_name_prompt(ui, catalog, icons, source);
+            });
             return;
         }
 
         if let Some(confirm) = self.confirm.clone() {
-            self.draw_confirm(ui, confirm, db, macros, catalog, icons, previews, settings);
+            ui.scope_builder(egui::UiBuilder::new().max_rect(outer), |ui| {
+                self.draw_confirm(ui, confirm, db, macros, catalog, icons, previews, settings);
+            });
             return;
         }
-
-        // Claim exactly the remaining window area once (body + footer).
-        // Allocating body then drawing footer separately made min_size > window size,
-        // so egui's Resize auto-expand ratcheted toward max every frame.
-        let rem = ui.available_size();
-        let (outer, _) = ui.allocate_exact_size(rem, egui::Sense::hover());
-        let footer_h =
-            (ui.spacing().interact_size.y + ui.spacing().item_spacing.y * 3.0 + 8.0).min(rem.y * 0.4);
+        let footer_h = (ui.spacing().interact_size.y + ui.spacing().item_spacing.y * 3.0 + 8.0)
+            .min(rem.y * 0.4);
         let body_h = (rem.y - footer_h).max(40.0);
         let body_rect = egui::Rect::from_min_size(outer.min, egui::vec2(rem.x, body_h));
-        let footer_rect = egui::Rect::from_min_max(
-            egui::pos2(outer.min.x, outer.min.y + body_h),
-            outer.max,
-        );
+        let footer_rect =
+            egui::Rect::from_min_max(egui::pos2(outer.min.x, outer.min.y + body_h), outer.max);
 
         let item_gap = ui.spacing().item_spacing.x;
         const SPLITTER_W: f32 = 6.0;
@@ -439,8 +493,7 @@ impl DataEditor {
                 );
                 if split_resp.dragged() {
                     if let Some(pos) = split_resp.interact_pointer_pos() {
-                        self.left_width =
-                            (pos.x - body_left - item_gap).clamp(MIN_LEFT, max_left);
+                        self.left_width = (pos.x - body_left - item_gap).clamp(MIN_LEFT, max_left);
                     }
                 }
 
@@ -480,10 +533,7 @@ impl DataEditor {
                 ui.separator();
                 ui.horizontal(|ui| {
                     let can_new = !matches!(self.tab, EditorTab::AutoPic);
-                    if ui
-                        .add_enabled(can_new, egui::Button::new("New"))
-                        .clicked()
-                    {
+                    if ui.add_enabled(can_new, egui::Button::new("New")).clicked() {
                         self.on_new(db, macros, catalog, icons, screen_click, settings);
                     }
                     let dirty = self.is_dirty(catalog, settings);
@@ -509,22 +559,19 @@ impl DataEditor {
                                 "program “{}”",
                                 self.selected_program.as_deref().unwrap_or("")
                             ),
-                            EditorTab::Items => format!(
-                                "item “{}”",
-                                self.selected_entity.as_deref().unwrap_or("")
-                            ),
-                            EditorTab::Points => format!(
-                                "point “{}”",
-                                self.selected_entity.as_deref().unwrap_or("")
-                            ),
+                            EditorTab::Items => {
+                                format!("item “{}”", self.selected_entity.as_deref().unwrap_or(""))
+                            }
+                            EditorTab::Points => {
+                                format!("point “{}”", self.selected_entity.as_deref().unwrap_or(""))
+                            }
                             EditorTab::SearchAreas => format!(
                                 "search area “{}”",
                                 self.selected_entity.as_deref().unwrap_or("")
                             ),
-                            EditorTab::Masks => format!(
-                                "mask “{}”",
-                                self.selected_entity.as_deref().unwrap_or("")
-                            ),
+                            EditorTab::Masks => {
+                                format!("mask “{}”", self.selected_entity.as_deref().unwrap_or(""))
+                            }
                             EditorTab::Collections => format!(
                                 "collection “{}”",
                                 self.selected_entity.as_deref().unwrap_or("")
@@ -632,17 +679,14 @@ impl DataEditor {
     }
 
     pub(crate) fn set_ok(&mut self, msg: impl Into<String>) {
-        self.status = Some(msg.into());
-        self.status_error = false;
+        self.status_banner.set_ok(msg);
     }
 
     pub(crate) fn set_err(&mut self, msg: impl Into<String>) {
-        self.status = Some(msg.into());
-        self.status_error = true;
+        self.status_banner.set_err(msg);
     }
 
     pub(crate) fn clear_status(&mut self) {
-        self.status = None;
-        self.status_error = false;
+        self.status_banner.clear();
     }
 }

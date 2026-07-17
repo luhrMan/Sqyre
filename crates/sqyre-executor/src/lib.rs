@@ -1,10 +1,10 @@
 //! Macro executor with injected backends (automation + capture/match).
 
 mod action_log;
+mod actions;
 mod backends;
 mod error;
 mod highlight;
-mod actions;
 mod navigate;
 mod run;
 mod runtime_vars;

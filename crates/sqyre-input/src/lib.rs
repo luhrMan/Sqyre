@@ -74,18 +74,14 @@ impl AutomationBackend for OsAutomation {
                 .click_down(btn)
                 .map_err(|e| format!("click down: {e}"))
         } else {
-            self.gui
-                .click_up(btn)
-                .map_err(|e| format!("click up: {e}"))
+            self.gui.click_up(btn).map_err(|e| format!("click up: {e}"))
         }
     }
 
     fn scroll(&mut self, up: bool) -> Result<(), String> {
         // Scroll intensity ~3 notches.
         if up {
-            self.gui
-                .scroll_up(3)
-                .map_err(|e| format!("scroll up: {e}"))
+            self.gui.scroll_up(3).map_err(|e| format!("scroll up: {e}"))
         } else {
             self.gui
                 .scroll_down(3)
@@ -102,9 +98,7 @@ impl AutomationBackend for OsAutomation {
 
     fn key_up(&mut self, key: &str) -> Result<(), String> {
         let k = Self::map_key(key);
-        self.gui
-            .key_up(&k)
-            .map_err(|e| format!("key up {k}: {e}"))
+        self.gui.key_up(&k).map_err(|e| format!("key up {k}: {e}"))
     }
 
     fn type_char(&mut self, ch: char) {
@@ -130,7 +124,10 @@ mod tests {
     #[test]
     fn maps_buttons_and_keys() {
         assert!(matches!(OsAutomation::map_button("left"), MouseClick::LEFT));
-        assert!(matches!(OsAutomation::map_button("right"), MouseClick::RIGHT));
+        assert!(matches!(
+            OsAutomation::map_button("right"),
+            MouseClick::RIGHT
+        ));
         assert!(matches!(
             OsAutomation::map_button("middle"),
             MouseClick::MIDDLE

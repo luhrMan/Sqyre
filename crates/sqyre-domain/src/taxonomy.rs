@@ -60,7 +60,8 @@ const ACTION_TYPE_TABLE: &[ActionTypeMeta] = &[
     ActionTypeMeta {
         type_key: "ocr",
         label: "OCR",
-        description: "Reads text from a screen region; runs nested actions when the target is found.",
+        description:
+            "Reads text from a screen region; runs nested actions when the target is found.",
         picker_category: "Detection",
         color_category: "Detection",
     },
@@ -74,7 +75,8 @@ const ACTION_TYPE_TABLE: &[ActionTypeMeta] = &[
     ActionTypeMeta {
         type_key: "setvariable",
         label: "Set",
-        description: "Assigns a value to a variable; arithmetic expressions and ${refs} are evaluated.",
+        description:
+            "Assigns a value to a variable; arithmetic expressions and ${refs} are evaluated.",
         picker_category: "Variables",
         color_category: "Variables",
     },
@@ -123,7 +125,8 @@ const ACTION_TYPE_TABLE: &[ActionTypeMeta] = &[
     ActionTypeMeta {
         type_key: "navigateselect",
         label: "Navigate Select",
-        description: "Navigates a collection grid with chords; Nav Key children branch on custom keys.",
+        description:
+            "Navigates a collection grid with chords; Nav Key children branch on custom keys.",
         picker_category: "Loop flow",
         color_category: "Miscellaneous",
     },
@@ -173,9 +176,7 @@ const ACTION_TYPE_TABLE: &[ActionTypeMeta] = &[
 
 fn lookup(action_type: &str) -> Option<&'static ActionTypeMeta> {
     let key = action_type.trim().to_ascii_lowercase();
-    ACTION_TYPE_TABLE
-        .iter()
-        .find(|m| m.type_key == key)
+    ACTION_TYPE_TABLE.iter().find(|m| m.type_key == key)
 }
 
 /// All known action type metadata rows (picker order).
@@ -200,9 +201,7 @@ pub fn action_picker_category(action_type: &str) -> &'static str {
 
 /// Pastel color bucket for tree/UI badges.
 pub fn action_color_category(action_type: &str) -> &'static str {
-    lookup(action_type)
-        .map(|m| m.color_category)
-        .unwrap_or("")
+    lookup(action_type).map(|m| m.color_category).unwrap_or("")
 }
 
 #[cfg(test)]

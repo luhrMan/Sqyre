@@ -153,36 +153,16 @@ pub fn collect_known_variable_names_with_monitors(
 /// True when `name` is in the known set (case-insensitive).
 pub fn is_known_variable(known: &HashSet<String>, name: &str) -> bool {
     let needle = name.trim().to_ascii_lowercase();
-    !needle.is_empty()
-        && known
-            .iter()
-            .any(|n| n.trim().eq_ignore_ascii_case(&needle))
+    !needle.is_empty() && known.iter().any(|n| n.trim().eq_ignore_ascii_case(&needle))
 }
 
-/// Declared value type of a user-defined macro variable.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum VariableType {
-    #[default]
-    Auto,
-    Text,
-    Number,
-}
-
-impl VariableType {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Auto => "auto",
-            Self::Text => "text",
-            Self::Number => "number",
-        }
-    }
-
-    pub fn parse(s: &str) -> Self {
-        match s.trim().to_ascii_lowercase().as_str() {
-            "text" => Self::Text,
-            "number" => Self::Number,
-            _ => Self::Auto,
-        }
+crate::string_enum! {
+    /// Declared value type of a user-defined macro variable.
+    pub enum VariableType {
+        #[default]
+        Auto = "auto",
+        Text = "text",
+        Number = "number",
     }
 }
 
@@ -251,8 +231,7 @@ impl VariableStore {
         if key.is_empty() {
             return;
         }
-        self.entries
-            .retain(|(n, _)| !n.eq_ignore_ascii_case(key));
+        self.entries.retain(|(n, _)| !n.eq_ignore_ascii_case(key));
     }
 
     pub fn clear(&mut self) {

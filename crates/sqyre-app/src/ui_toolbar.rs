@@ -69,10 +69,8 @@ pub fn show_meta_and_hotkey(app: &mut SqyreApp, ui: &mut egui::Ui) -> bool {
     let idx = app.selected_macro.min(app.macros.len() - 1);
     app.selected_macro = idx;
     let meta_enabled = !running;
-    app.macro_meta
-        .sync_selection(idx, &app.macros[idx]);
-    let other_names: Vec<String> =
-        app.macros.iter().map(|m| m.name.clone()).collect();
+    app.macro_meta.sync_selection(idx, &app.macros[idx]);
+    let other_names: Vec<String> = app.macros.iter().map(|m| m.name.clone()).collect();
     let all_tags = collect_all_macro_tags(&app.macros);
     let meta = {
         let m = &mut app.macros[idx];
@@ -124,9 +122,7 @@ pub fn show_meta_and_hotkey(app: &mut SqyreApp, ui: &mut egui::Ui) -> bool {
             app.apply_hotkey_to_selected(chord, Some(trigger));
         }
 
-        if theme::record_icon_button(ui, "Record a global hotkey chord", !running)
-            .clicked()
-        {
+        if theme::record_icon_button(ui, "Record a global hotkey chord", !running).clicked() {
             app.hotkey_record.open(&app.macro_hotkeys);
         }
         if ui

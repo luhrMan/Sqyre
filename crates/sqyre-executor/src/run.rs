@@ -1,16 +1,14 @@
 use crate::action_log::ActionLogger;
+use crate::actions::{
+    execute_focus_window, execute_for_each_row, execute_pause, execute_run_macro,
+    execute_save_variable, execute_set_variable, execute_while,
+};
 use crate::backends::{
     AutomationBackend, ContinueKeyWaiter, CoordinateResolver, IconStore, MacroLookup, MoveOptions,
     OcrEngine, ScreenCapturer, TemplateMatcher, WindowFocuser,
 };
 use crate::error::{ExecError, FlowSignal, Result};
-use crate::highlight::{
-    clear_highlights, highlight_cursor, ActionHighlighter,
-};
-use crate::actions::{
-    execute_focus_window, execute_for_each_row, execute_pause, execute_run_macro,
-    execute_save_variable, execute_set_variable, execute_while,
-};
+use crate::highlight::{clear_highlights, highlight_cursor, ActionHighlighter};
 use crate::navigate::{execute_navigate_key, execute_navigate_select};
 use crate::runtime_vars::RuntimeVarSink;
 use crate::search::{execute_find_pixel, execute_image_search, execute_ocr};
@@ -20,6 +18,7 @@ use sqyre_domain::{
 };
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant};
 
 /// Executor: injected backends ([`ExecDeps`]) plus per-run mutable state.
 pub struct Executor<'a> {
@@ -112,6 +111,22 @@ impl<'a> Executor<'a> {
             );
         }
     }
+
+    /// Record how long a named step took (shown in the action logs UI).
+    pub fn log_timing(&self, action_id: ActionId, step: &str, elapsed: Duration) {
+        self.log(
+            action_id,
+            format!("timing: {step} {:.1}ms", elapsed.as_secs_f64() * 1000.0),
+        );
+    }
+
+    /// Time a fallible step and log its duration even when it errors.
+    pub fn timed_step<T>(&self, action_id: ActionId, step: &str, f: impl FnOnce() -> T) -> T {
+        let started = Instant::now();
+        let out = f();
+        self.log_timing(action_id, step, started.elapsed());
+        out
+    }
 }
 
 /// Dependencies for a full macro run.
@@ -160,6 +175,7 @@ pub fn execute_macro(macro_: &mut Macro, automation: &mut dyn AutomationBackend)
 }
 
 pub fn execute_macro_with(macro_: &mut Macro, deps: ExecDeps<'_>) -> Result<()> {
+    let macro_started = Instant::now();
     let mut exec = Executor {
         deps,
         stop_requested: false,
@@ -172,10 +188,12 @@ pub fn execute_macro_with(macro_: &mut Macro, deps: ExecDeps<'_>) -> Result<()> 
     apply_monitor_sizes(macro_, &monitor_sizes);
     publish_runtime_vars(exec.deps.runtime_vars, macro_);
     let root = macro_.root.clone();
+    let root_id = root.id;
     let result = match execute_action(&mut exec, &root, macro_) {
         Err(ExecError::Flow(FlowSignal::Stopped)) => Ok(()),
         other => other,
     };
+    exec.log_timing(root_id, "macro total", macro_started.elapsed());
     clear_highlights(exec.deps.highlighter);
     result
 }
@@ -183,12 +201,8 @@ pub fn execute_macro_with(macro_: &mut Macro, deps: ExecDeps<'_>) -> Result<()> 
 /// Set `monitorNWidth` / `monitorNHeight` builtins.
 pub(crate) fn apply_monitor_sizes(macro_: &mut Macro, sizes: &[(i32, i32)]) {
     if sizes.is_empty() {
-        macro_
-            .variables
-            .set("monitor1Width", ScalarValue::Int(0));
-        macro_
-            .variables
-            .set("monitor1Height", ScalarValue::Int(0));
+        macro_.variables.set("monitor1Width", ScalarValue::Int(0));
+        macro_.variables.set("monitor1Height", ScalarValue::Int(0));
         return;
     }
     for (i, (w, h)) in sizes.iter().enumerate() {
@@ -217,18 +231,28 @@ pub fn execute_action(exec: &mut Executor<'_>, action: &Action, macro_: &mut Mac
         highlight_cursor(exec.deps.highlighter, &macro_.name, Some(action.id));
     }
     exec.log_with(action.id, || action_headline(action));
+    let action_started = Instant::now();
+    let dispatch_started = Instant::now();
     let result = dispatch(exec, action, macro_);
+    exec.log_timing(action.id, "dispatch", dispatch_started.elapsed());
     // Delay only on success or Break/Continue (not Stopped/errors).
-    match &result {
+    let delay_result = match &result {
         Ok(())
         | Err(ExecError::Flow(FlowSignal::Break))
         | Err(ExecError::Flow(FlowSignal::Continue)) => {
             publish_runtime_vars(exec.deps.runtime_vars, macro_);
-            apply_delay(exec, action, macro_)?;
+            let delay_started = Instant::now();
+            let delay_out = apply_delay(exec, action, macro_);
+            exec.log_timing(action.id, "post-delay", delay_started.elapsed());
+            delay_out
         }
-        Err(_) => {}
+        Err(_) => Ok(()),
+    };
+    exec.log_timing(action.id, "total", action_started.elapsed());
+    match delay_result {
+        Ok(()) => result,
+        Err(e) => Err(e),
     }
-    result
 }
 
 fn publish_runtime_vars(sink: Option<&dyn RuntimeVarSink>, macro_: &Macro) {
@@ -282,38 +306,43 @@ fn dispatch(exec: &mut Executor<'_>, action: &Action, macro_: &mut Macro) -> Res
             subactions,
         } => run_loop(exec, action.id, name, count, subactions, macro_),
         ActionKind::Conditional {
-            name,
-            match_mode,
-            clauses,
+            condition,
             subactions,
         } => {
-            let ok = eval_clauses(*match_mode, clauses, macro_)?;
+            let ok = eval_clauses(condition.match_mode, &condition.clauses, macro_)?;
             if ok {
                 exec.log(
                     action.id,
-                    format!("Conditional {name:?}: true, running branch"),
+                    format!("Conditional {:?}: true, running branch", condition.name),
                 );
                 run_children(exec, subactions, macro_)
             } else {
                 exec.log(
                     action.id,
-                    format!("Conditional {name:?}: false, skipping branch"),
+                    format!("Conditional {:?}: false, skipping branch", condition.name),
                 );
                 Ok(())
             }
         }
         ActionKind::Click { button, state } => {
             if *button == MouseButton::Scroll {
-                exec.deps.automation.scroll(*state).map_err(ExecError::Message)
+                exec.deps
+                    .automation
+                    .scroll(*state)
+                    .map_err(ExecError::Message)
             } else {
-                exec.deps.automation
+                exec.deps
+                    .automation
                     .click(button.as_str(), *state)
                     .map_err(ExecError::Message)
             }
         }
         ActionKind::Key { key, state } => {
             if *state {
-                exec.deps.automation.key_down(key).map_err(ExecError::Message)
+                exec.deps
+                    .automation
+                    .key_down(key)
+                    .map_err(ExecError::Message)
             } else {
                 exec.deps.automation.key_up(key).map_err(ExecError::Message)
             }
@@ -385,17 +414,15 @@ fn dispatch(exec: &mut Executor<'_>, action: &Action, macro_: &mut Macro) -> Res
             macro_,
         ),
         ActionKind::While {
-            name,
-            match_mode,
-            clauses,
+            condition,
             max_iterations,
             subactions,
         } => execute_while(
             exec,
             action.id,
-            name,
-            *match_mode,
-            clauses,
+            &condition.name,
+            condition.match_mode,
+            &condition.clauses,
             *max_iterations,
             subactions,
             macro_,
@@ -407,20 +434,20 @@ fn dispatch(exec: &mut Executor<'_>, action: &Action, macro_: &mut Macro) -> Res
             end_row,
             subactions,
         } => execute_for_each_row(
-            exec,
-            action.id,
-            name,
-            sources,
-            start_row,
-            end_row,
-            subactions,
-            macro_,
+            exec, action.id, name, sources, start_row, end_row, subactions, macro_,
         ),
         ActionKind::Pause {
             message,
             continue_key,
             pass_through,
-        } => execute_pause(exec, action.id, message, continue_key, *pass_through, macro_),
+        } => execute_pause(
+            exec,
+            action.id,
+            message,
+            continue_key,
+            *pass_through,
+            macro_,
+        ),
         ActionKind::RunMacro { macro_name } => {
             execute_run_macro(exec, action.id, macro_name, macro_)
         }
@@ -591,7 +618,11 @@ mod tests {
         execute_macro(&mut macro_, &mut backend).unwrap();
         assert!(backend.log.iter().any(|e| e == "sleep:10"));
         assert_eq!(
-            backend.log.iter().filter(|e| e.as_str() == "sleep:1").count(),
+            backend
+                .log
+                .iter()
+                .filter(|e| e.as_str() == "sleep:1")
+                .count(),
             1
         );
     }
@@ -792,10 +823,7 @@ mod tests {
             },
         )
         .unwrap();
-        assert!(backend
-            .log
-            .iter()
-            .any(|e| e == "move:42,99,smooth=false"));
+        assert!(backend.log.iter().any(|e| e == "move:42,99,smooth=false"));
         assert!(backend.log.iter().any(|e| e == "click:left:down"));
     }
 
@@ -851,6 +879,21 @@ mod tests {
             click_lines.iter().any(|l| l.starts_with("Click:")),
             "click lines: {click_lines:?}"
         );
+        assert!(
+            wait_lines.iter().any(|l| l.starts_with("timing: total ")),
+            "wait timing: {wait_lines:?}"
+        );
+        assert!(
+            click_lines.iter().any(|l| l.starts_with("timing: total ")),
+            "click timing: {click_lines:?}"
+        );
+        let root_lines = logger.lines_for(macro_.root.id);
+        assert!(
+            root_lines
+                .iter()
+                .any(|l| l.starts_with("timing: macro total ")),
+            "macro timing: {root_lines:?}"
+        );
         assert!(!wait_lines.is_empty());
         assert!(!click_lines.is_empty());
     }
@@ -869,13 +912,15 @@ mod tests {
             Action {
                 id: ActionId::new(),
                 kind: ActionKind::Conditional {
-                    name: "ok".into(),
-                    match_mode: "all".into(),
-                    clauses: vec![sqyre_domain::ConditionClause {
-                        left: ScalarValue::String("${flag}".into()),
-                        operator: "==".into(),
-                        right: ScalarValue::String("yes".into()),
-                    }],
+                    condition: sqyre_domain::ConditionBlock {
+                        name: "ok".into(),
+                        match_mode: "all".into(),
+                        clauses: vec![sqyre_domain::ConditionClause {
+                            left: ScalarValue::String("${flag}".into()),
+                            operator: "==".into(),
+                            right: ScalarValue::String("yes".into()),
+                        }],
+                    },
                     subactions: vec![Action {
                         id: ActionId::new(),
                         kind: ActionKind::Wait {
@@ -887,13 +932,15 @@ mod tests {
             Action {
                 id: ActionId::new(),
                 kind: ActionKind::Conditional {
-                    name: "no".into(),
-                    match_mode: "all".into(),
-                    clauses: vec![sqyre_domain::ConditionClause {
-                        left: ScalarValue::String("${flag}".into()),
-                        operator: "==".into(),
-                        right: ScalarValue::String("no".into()),
-                    }],
+                    condition: sqyre_domain::ConditionBlock {
+                        name: "no".into(),
+                        match_mode: "all".into(),
+                        clauses: vec![sqyre_domain::ConditionClause {
+                            left: ScalarValue::String("${flag}".into()),
+                            operator: "==".into(),
+                            right: ScalarValue::String("no".into()),
+                        }],
+                    },
                     subactions: vec![Action {
                         id: ActionId::new(),
                         kind: ActionKind::Wait {
@@ -911,8 +958,12 @@ mod tests {
     #[test]
     fn conditional_any_mode_and_operators() {
         let mut macro_ = Macro::new("t", 0, vec![]);
-        macro_.variables.set("name", ScalarValue::String("hello".into()));
-        macro_.variables.set("empty", ScalarValue::String("".into()));
+        macro_
+            .variables
+            .set("name", ScalarValue::String("hello".into()));
+        macro_
+            .variables
+            .set("empty", ScalarValue::String("".into()));
         assert!(eval_clauses(
             MatchMode::Any,
             &[

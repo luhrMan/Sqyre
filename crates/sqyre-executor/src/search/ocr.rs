@@ -1,12 +1,16 @@
 //! OCR action: capture → preprocess → recognize → write vars → run children on match.
 
-use super::common::{clear_coord_outputs, retry_while_not_found, run_detection_children, set_coord_outputs};
+use super::common::{
+    clear_coord_outputs, maybe_repeat_while_found, maybe_wait_until_found, run_detection_children,
+    set_coord_outputs,
+};
 use crate::action_log::draw_rect_rgb;
 use crate::error::{ExecError, Result};
 use crate::run::Executor;
 use sqyre_domain::{Action, ActionKind, Macro, ScalarValue};
 use sqyre_match::ImageBuf;
 use sqyre_vision::rgba_to_rgb_buf;
+use std::time::Instant;
 
 /// OCR branch action: capture → preprocess → recognize → write vars → run children on match
 /// (or on miss when `run_branch_on_no_find`). Capture/OCR errors are logged and treated as miss.
@@ -19,21 +23,25 @@ pub(crate) fn execute_ocr(
         target,
         search_area,
         output_variable,
-        coords,
-        wait,
-        run_branch_on_no_find,
         blur,
         min_threshold,
         resize,
         grayscale,
         threshold_otsu,
         threshold_invert,
-        subactions,
+        detection,
         ..
     } = &action.kind
     else {
         return Err(ExecError::Message("not ocr".into()));
     };
+    let sqyre_domain::DetectionBranch {
+        wait,
+        coords,
+        run_branch_on_no_find,
+        subactions,
+        ..
+    } = detection;
 
     let action_id = action.id;
     let ocr_params = OcrRunParams {
@@ -57,43 +65,39 @@ pub(crate) fn execute_ocr(
                 wait.wait_til_found_seconds
             ),
         );
-        retry_while_not_found(exec, wait, 500, |exec| {
+    }
+    maybe_wait_until_found(exec, wait, matched, 500, |exec| {
+        let (s, m) = ocr_shot_and_match(exec, action_id, &ocr_params, macro_);
+        shot = s;
+        matched = m;
+        Ok(matched)
+    })?;
+
+    if maybe_repeat_while_found(exec, wait, 200, |exec, refresh| {
+        if refresh {
             let (s, m) = ocr_shot_and_match(exec, action_id, &ocr_params, macro_);
             shot = s;
             matched = m;
-            Ok(matched)
-        })?;
-    }
-
-    if wait.is_repeat_while_found() {
-        let max_iter = wait.effective_max_iterations();
-        let interval = wait.effective_interval_ms(200).max(1);
-        for i in 0..max_iter {
-            exec.check_stopped()?;
-            if i > 0 {
-                exec.interruptible_sleep(interval)?;
-                let (s, m) = ocr_shot_and_match(exec, action_id, &ocr_params, macro_);
-                shot = s;
-                matched = m;
-            }
-            apply_ocr_outputs(
-                exec,
-                action_id,
-                macro_,
-                output_variable,
-                coords,
-                &shot,
-                matched,
-            );
-            if matched {
-                run_detection_children(exec, subactions, macro_)?;
-            } else {
-                if *run_branch_on_no_find {
-                    run_detection_children(exec, subactions, macro_)?;
-                }
-                return Ok(());
-            }
         }
+        apply_ocr_outputs(
+            exec,
+            action_id,
+            macro_,
+            output_variable,
+            coords,
+            &shot,
+            matched,
+        );
+        if matched {
+            run_detection_children(exec, subactions, macro_)?;
+            Ok(true)
+        } else {
+            if *run_branch_on_no_find {
+                run_detection_children(exec, subactions, macro_)?;
+            }
+            Ok(false)
+        }
+    })? {
         return Ok(());
     }
 
@@ -237,6 +241,7 @@ fn run_ocr_once(
         ),
     );
 
+    let capture_started = Instant::now();
     let (img, origin) = match exec
         .deps
         .capturer
@@ -250,6 +255,7 @@ fn run_ocr_once(
             return None;
         }
     };
+    exec.log_timing(action_id, "capture", capture_started.elapsed());
     let search_center_x = origin.x + origin.w / 2;
     let search_center_y = origin.y + origin.h / 2;
     let rgb = rgba_to_rgb_buf(&img);
@@ -263,6 +269,7 @@ fn run_ocr_once(
         threshold_invert,
     );
     let collect = exec.log_images_enabled();
+    let preprocess_started = Instant::now();
     let (processed, scale, steps) =
         match sqyre_vision::preprocess_for_ocr_with_steps(&rgb, opts, collect) {
             Ok(v) => v,
@@ -271,9 +278,11 @@ fn run_ocr_once(
                 return None;
             }
         };
+    exec.log_timing(action_id, "preprocess", preprocess_started.elapsed());
     for step in &steps {
         exec.log_image(action_id, &step.label, &step.image);
     }
+    let recognize_started = Instant::now();
     let recognized = match ocr.recognize(&processed) {
         Ok(v) => v,
         Err(e) => {
@@ -281,6 +290,7 @@ fn run_ocr_once(
             return None;
         }
     };
+    exec.log_timing(action_id, "recognize", recognize_started.elapsed());
 
     exec.log(
         action_id,

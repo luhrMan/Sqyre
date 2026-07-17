@@ -2,7 +2,42 @@
 
 use eframe::egui::{self, Color32, FontFamily, FontId};
 use egui_phosphor::regular::ICONS as PHOSPHOR_ICONS;
+use sqyre_persist::OverlayButtonConfig;
 use std::sync::OnceLock;
+
+/// Resolved paint style for an overlay button (from [`OverlayButtonConfig`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct OverlayPaintStyle {
+    pub corner_radius: f32,
+    pub border_width: f32,
+    pub border: Color32,
+    pub bg: Color32,
+    pub icon: Color32,
+    pub icon_hover: Color32,
+}
+
+impl OverlayPaintStyle {
+    pub fn from_config(btn: &OverlayButtonConfig) -> Self {
+        Self {
+            corner_radius: btn.corner_radius.clamp(
+                sqyre_persist::MIN_OVERLAY_CORNER_RADIUS,
+                sqyre_persist::MAX_OVERLAY_CORNER_RADIUS,
+            ),
+            border_width: btn.border_width.clamp(
+                sqyre_persist::MIN_OVERLAY_BORDER_WIDTH,
+                sqyre_persist::MAX_OVERLAY_BORDER_WIDTH,
+            ),
+            border: rgba(btn.border_rgba()),
+            bg: rgba(btn.bg_rgba()),
+            icon: rgba(btn.icon_rgba()),
+            icon_hover: rgba(btn.icon_hover_rgba()),
+        }
+    }
+}
+
+fn rgba(c: [u8; 4]) -> Color32 {
+    Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3])
+}
 
 /// One entry in the built-in overlay icon catalog.
 #[derive(Debug, Clone, Copy)]
@@ -88,7 +123,7 @@ pub fn register_phosphor_family(fonts: &mut egui::FontDefinitions) {
     );
 }
 
-/// Paint a Phosphor glyph with Sqyre yellow chrome (floating overlay buttons).
+/// Paint a Phosphor glyph with configurable chrome (floating overlay buttons).
 ///
 /// When `busy`, the glyph is dimmed and an indeterminate spinner is drawn over it
 /// so the user sees that the bound macro is currently running.
@@ -97,6 +132,7 @@ pub fn paint_glyph_bare(
     icon: &OverlayIcon,
     size: f32,
     busy: bool,
+    style: &OverlayPaintStyle,
 ) -> egui::Response {
     let sense = if busy {
         egui::Sense::hover()
@@ -104,13 +140,15 @@ pub fn paint_glyph_bare(
         egui::Sense::click()
     };
     let (rect, response) = ui.allocate_exact_size(egui::vec2(size, size), sense);
-    paint_overlay_chrome(ui, rect, response.hovered() && !busy);
+    let hovered = response.hovered() && !busy;
+    paint_overlay_chrome(ui, rect, hovered, style);
     let color = if busy {
-        Color32::from_rgba_unmultiplied(0xf5, 0xe6, 0xc0, 90)
-    } else if response.hovered() {
-        crate::theme::PRIMARY
+        let c = style.icon;
+        Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), (c.a() as u16 * 90 / 255) as u8)
+    } else if hovered {
+        style.icon_hover
     } else {
-        Color32::from_rgb(0xf5, 0xe6, 0xc0)
+        style.icon
     };
     ui.painter().text(
         rect.center(),
@@ -122,7 +160,7 @@ pub fn paint_glyph_bare(
     if busy {
         egui::Spinner::new()
             .size(size * 0.55)
-            .color(crate::theme::PRIMARY)
+            .color(style.icon_hover)
             .paint_at(ui, rect);
     }
     response
@@ -147,18 +185,39 @@ pub fn icon_glyph_button(
     response.on_hover_text(icon.label)
 }
 
-fn paint_overlay_chrome(ui: &mut egui::Ui, rect: egui::Rect, hovered: bool) {
-    // No fill — transparent viewport clear + gold stroke only (avoids a dark plate).
-    let stroke = egui::Stroke::new(
-        if hovered { 2.0 } else { 1.5 },
-        crate::theme::PRIMARY,
-    );
-    ui.painter().rect_stroke(
-        rect,
-        egui::CornerRadius::same(8),
-        stroke,
-        egui::StrokeKind::Outside,
-    );
+/// Compact preview that mirrors a button's configured appearance.
+pub fn style_preview_button(
+    ui: &mut egui::Ui,
+    icon: &OverlayIcon,
+    size: f32,
+    style: &OverlayPaintStyle,
+) -> egui::Response {
+    paint_glyph_bare(ui, icon, size, false, style)
+}
+
+fn paint_overlay_chrome(
+    ui: &mut egui::Ui,
+    rect: egui::Rect,
+    hovered: bool,
+    style: &OverlayPaintStyle,
+) {
+    let radius = egui::CornerRadius::same(style.corner_radius.round().clamp(0.0, 255.0) as u8);
+    if style.bg.a() > 0 {
+        ui.painter().rect_filled(rect, radius, style.bg);
+    }
+    if style.border_width > 0.0 && style.border.a() > 0 {
+        let width = if hovered {
+            (style.border_width * (2.0 / 1.5)).max(style.border_width + 0.5)
+        } else {
+            style.border_width
+        };
+        ui.painter().rect_stroke(
+            rect,
+            radius,
+            egui::Stroke::new(width, style.border),
+            egui::StrokeKind::Outside,
+        );
+    }
 }
 
 fn paint_picker_chrome(ui: &mut egui::Ui, rect: egui::Rect, selected: bool, hovered: bool) {
@@ -270,5 +329,16 @@ mod tests {
     fn kebab_and_humanize() {
         assert_eq!(to_kebab("MAGNIFYING_GLASS"), "magnifying-glass");
         assert_eq!(humanize("magnifying-glass"), "Magnifying Glass");
+    }
+
+    #[test]
+    fn paint_style_defaults_match_brand() {
+        let s = OverlayPaintStyle::from_config(&OverlayButtonConfig::new("style", ""));
+        assert!((s.corner_radius - 8.0).abs() < f32::EPSILON);
+        assert!((s.border_width - 1.5).abs() < f32::EPSILON);
+        assert_eq!(s.border, crate::theme::PRIMARY);
+        assert_eq!(s.bg.a(), 0);
+        assert_eq!(s.icon, Color32::from_rgb(0xf5, 0xe6, 0xc0));
+        assert_eq!(s.icon_hover, crate::theme::PRIMARY);
     }
 }

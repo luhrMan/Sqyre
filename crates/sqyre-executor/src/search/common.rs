@@ -72,3 +72,41 @@ pub(super) fn retry_while_not_found(
     }
     Ok(())
 }
+
+pub(super) fn maybe_wait_until_found(
+    exec: &mut Executor<'_>,
+    wait: &sqyre_domain::WaitTilFoundConfig,
+    hit: bool,
+    default_interval_ms: i32,
+    retry: impl FnMut(&mut Executor<'_>) -> Result<bool>,
+) -> Result<()> {
+    if wait.wait_until_found_active() && !hit {
+        retry_while_not_found(exec, wait, default_interval_ms, retry)?;
+    }
+    Ok(())
+}
+
+pub(super) fn maybe_repeat_while_found(
+    exec: &mut Executor<'_>,
+    wait: &sqyre_domain::WaitTilFoundConfig,
+    default_interval_ms: i32,
+    mut iteration: impl FnMut(&mut Executor<'_>, bool) -> Result<bool>,
+) -> Result<bool> {
+    if !wait.is_repeat_while_found() {
+        return Ok(false);
+    }
+
+    let max_iter = wait.effective_max_iterations();
+    let interval = wait.effective_interval_ms(default_interval_ms).max(1);
+    for i in 0..max_iter {
+        exec.check_stopped()?;
+        let refresh = i > 0;
+        if refresh {
+            exec.interruptible_sleep(interval)?;
+        }
+        if !iteration(exec, refresh)? {
+            break;
+        }
+    }
+    Ok(true)
+}

@@ -14,6 +14,14 @@ use sqyre_persist::{
 };
 use sqyre_validate::validate_entity_name;
 
+fn new_entity_name(form_name: &str, default_base: &str, exists: impl Fn(&str) -> bool) -> String {
+    let base = match form_name.trim() {
+        "" => default_base,
+        name => name,
+    };
+    unique_name(base, exists)
+}
+
 impl DataEditor {
     pub(crate) fn on_new(
         &mut self,
@@ -28,12 +36,8 @@ impl DataEditor {
         self.save_after_record = false;
         let created = match self.tab {
             EditorTab::Programs => {
-                let base = if self.form_name.trim().is_empty() {
-                    "New Program".to_string()
-                } else {
-                    self.form_name.trim().to_string()
-                };
-                let name = unique_name(&base, |n| catalog.get(n).is_some());
+                let name =
+                    new_entity_name(&self.form_name, "New Program", |n| catalog.get(n).is_some());
                 match catalog.create_program(&name) {
                     Ok(()) => {
                         self.selected_program = Some(name.clone());
@@ -50,12 +54,7 @@ impl DataEditor {
                     self.set_err("Select a program first.");
                     return;
                 };
-                let base = if self.form_name.trim().is_empty() {
-                    "New Item".to_string()
-                } else {
-                    self.form_name.trim().to_string()
-                };
-                let name = unique_name(&base, |n| {
+                let name = new_entity_name(&self.form_name, "New Item", |n| {
                     catalog.get(&prog).and_then(|p| p.items.get(n)).is_some()
                 });
                 let item = ProgramItem {
@@ -80,12 +79,7 @@ impl DataEditor {
                     self.set_err("Select a program first.");
                     return;
                 };
-                let base = if self.form_name.trim().is_empty() {
-                    "New Point".to_string()
-                } else {
-                    self.form_name.trim().to_string()
-                };
-                let name = unique_name(&base, |n| {
+                let name = new_entity_name(&self.form_name, "New Point", |n| {
                     let res = catalog.resolution_key();
                     catalog
                         .get(&prog)
@@ -112,12 +106,7 @@ impl DataEditor {
                     self.set_err("Select a program first.");
                     return;
                 };
-                let base = if self.form_name.trim().is_empty() {
-                    "New Search Area".to_string()
-                } else {
-                    self.form_name.trim().to_string()
-                };
-                let name = unique_name(&base, |n| {
+                let name = new_entity_name(&self.form_name, "New Search Area", |n| {
                     let res = catalog.resolution_key();
                     catalog
                         .get(&prog)
@@ -146,12 +135,7 @@ impl DataEditor {
                     self.set_err("Select a program first.");
                     return;
                 };
-                let base = if self.form_name.trim().is_empty() {
-                    "New Mask".to_string()
-                } else {
-                    self.form_name.trim().to_string()
-                };
-                let name = unique_name(&base, |n| {
+                let name = new_entity_name(&self.form_name, "New Mask", |n| {
                     catalog.get(&prog).and_then(|p| p.masks.get(n)).is_some()
                 });
                 let mask = ProgramMask {
@@ -172,12 +156,7 @@ impl DataEditor {
                     self.set_err("Select a program first.");
                     return;
                 };
-                let base = if self.form_name.trim().is_empty() {
-                    "New Collection".to_string()
-                } else {
-                    self.form_name.trim().to_string()
-                };
-                let name = unique_name(&base, |n| {
+                let name = new_entity_name(&self.form_name, "New Collection", |n| {
                     catalog
                         .get(&prog)
                         .and_then(|p| p.collections.get(n))
@@ -256,8 +235,9 @@ impl DataEditor {
                 settings.overlay_buttons.push(btn);
                 self.selected_entity = Some(id);
                 self.load_form(catalog, settings);
-                self.persist_overlay_settings(settings);
-                self.set_ok("Created overlay button.");
+                if self.persist_overlay_settings(settings) {
+                    self.set_ok("Created overlay button.");
+                }
                 return;
             }
         };
@@ -270,16 +250,12 @@ impl DataEditor {
                         EditorTab::Points if !screen_click.is_armed() => {
                             self.save_after_record = true;
                             screen_click.arm_point();
-                            self.set_ok(format!(
-                                "{msg} Recording… left-click to capture X/Y."
-                            ));
+                            self.set_ok(format!("{msg} Recording… left-click to capture X/Y."));
                         }
                         EditorTab::SearchAreas if !screen_click.is_armed() => {
                             self.save_after_record = true;
                             screen_click.arm_search_area();
-                            self.set_ok(format!(
-                                "{msg} Recording… click two corners."
-                            ));
+                            self.set_ok(format!("{msg} Recording… click two corners."));
                         }
                         _ => self.set_ok(msg),
                     }
@@ -305,7 +281,10 @@ impl DataEditor {
         self.apply_update(db, macros, catalog, false, previews, settings);
     }
 
-    pub(crate) fn would_overwrite(&self, catalog: &ProgramCatalog) -> Option<(&'static str, String)> {
+    pub(crate) fn would_overwrite(
+        &self,
+        catalog: &ProgramCatalog,
+    ) -> Option<(&'static str, String)> {
         let new = self.form_name.trim();
         match self.tab {
             EditorTab::Programs => {
@@ -442,11 +421,11 @@ impl DataEditor {
             }
             EditorTab::Items => self.update_item(catalog, macros, &new_name, overwrite),
             EditorTab::Points => self.update_point(catalog, macros, &new_name, overwrite),
-            EditorTab::SearchAreas => self.update_search_area(catalog, macros, &new_name, overwrite),
-            EditorTab::Masks => self.update_mask(catalog, &new_name, overwrite),
-            EditorTab::Collections => {
-                self.update_collection(catalog, macros, &new_name, overwrite)
+            EditorTab::SearchAreas => {
+                self.update_search_area(catalog, macros, &new_name, overwrite)
             }
+            EditorTab::Masks => self.update_mask(catalog, &new_name, overwrite),
+            EditorTab::Collections => self.update_collection(catalog, macros, &new_name, overwrite),
             EditorTab::AutoPic | EditorTab::Overlay => Ok(()),
         };
 
@@ -461,11 +440,12 @@ impl DataEditor {
                 if let Err(e) = self.persist(db, macros, catalog) {
                     self.set_err(e);
                 } else {
-                    if overlay_program_renamed {
-                        self.persist_overlay_settings(settings);
-                    }
+                    let overlay_ok =
+                        !overlay_program_renamed || self.persist_overlay_settings(settings);
                     self.load_form(catalog, settings);
-                    self.set_ok("Saved.");
+                    if overlay_ok {
+                        self.set_ok("Saved.");
+                    }
                 }
             }
             Err(e) => self.set_err(e.to_string()),
@@ -683,8 +663,9 @@ impl DataEditor {
             }
             self.selected_entity = None;
             self.reset_overlay_form();
-            self.persist_overlay_settings(settings);
-            self.set_ok("Deleted overlay button.");
+            if self.persist_overlay_settings(settings) {
+                self.set_ok("Deleted overlay button.");
+            }
             return;
         }
         let deleted_name = self.selected_entity.clone();
@@ -699,10 +680,9 @@ impl DataEditor {
                 })
             }
             EditorTab::Items => {
-                let (Some(prog), Some(name)) = (
-                    self.selected_program.clone(),
-                    self.selected_entity.clone(),
-                ) else {
+                let (Some(prog), Some(name)) =
+                    (self.selected_program.clone(), self.selected_entity.clone())
+                else {
                     return;
                 };
                 catalog.delete_item(&prog, &name).map(|_| {
@@ -711,10 +691,9 @@ impl DataEditor {
                 })
             }
             EditorTab::Points => {
-                let (Some(prog), Some(name)) = (
-                    self.selected_program.clone(),
-                    self.selected_entity.clone(),
-                ) else {
+                let (Some(prog), Some(name)) =
+                    (self.selected_program.clone(), self.selected_entity.clone())
+                else {
                     return;
                 };
                 catalog.delete_point(&prog, &name).map(|_| {
@@ -723,10 +702,9 @@ impl DataEditor {
                 })
             }
             EditorTab::SearchAreas => {
-                let (Some(prog), Some(name)) = (
-                    self.selected_program.clone(),
-                    self.selected_entity.clone(),
-                ) else {
+                let (Some(prog), Some(name)) =
+                    (self.selected_program.clone(), self.selected_entity.clone())
+                else {
                     return;
                 };
                 catalog.delete_search_area(&prog, &name).map(|_| {
@@ -735,10 +713,9 @@ impl DataEditor {
                 })
             }
             EditorTab::Masks => {
-                let (Some(prog), Some(name)) = (
-                    self.selected_program.clone(),
-                    self.selected_entity.clone(),
-                ) else {
+                let (Some(prog), Some(name)) =
+                    (self.selected_program.clone(), self.selected_entity.clone())
+                else {
                     return;
                 };
                 catalog.delete_mask(&prog, &name).map(|_| {
@@ -747,10 +724,9 @@ impl DataEditor {
                 })
             }
             EditorTab::Collections => {
-                let (Some(prog), Some(name)) = (
-                    self.selected_program.clone(),
-                    self.selected_entity.clone(),
-                ) else {
+                let (Some(prog), Some(name)) =
+                    (self.selected_program.clone(), self.selected_entity.clone())
+                else {
                     return;
                 };
                 catalog.delete_collection(&prog, &name).map(|_| {

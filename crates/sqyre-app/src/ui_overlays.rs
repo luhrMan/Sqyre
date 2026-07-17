@@ -98,25 +98,18 @@ pub fn show_floating_windows(app: &mut SqyreApp, ctx: &egui::Context) {
         &app.screen_click,
         app.settings_ui.settings_mut(),
     );
-    app.settings_ui.show(
-        ctx,
-        &mut app.db,
-        &mut app.macros,
-        &mut app.catalog,
-    );
+    app.settings_ui
+        .show(ctx, &mut app.db, &mut app.macros, &mut app.catalog);
     if !app.macros.is_empty() {
         let idx = app.selected_macro.min(app.macros.len() - 1);
         let running = app.run.running.load(Ordering::SeqCst);
-        if app
-            .variables_panel
-            .show(
-                ctx,
-                &mut app.macros[idx],
-                !running,
-                &app.runtime_vars,
-                running,
-            )
-        {
+        if app.variables_panel.show(
+            ctx,
+            &mut app.macros[idx],
+            !running,
+            &app.runtime_vars,
+            running,
+        ) {
             app.persist_macro_at(idx);
         }
     }

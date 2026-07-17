@@ -208,8 +208,8 @@ pub fn get_cached_blurred_template(
     icon_path: &Path,
     blur_kernel: i32,
 ) -> Result<Arc<ImageBuf>, String> {
-    let mod_time = file_mtime(icon_path)
-        .ok_or_else(|| format!("stat {}: missing", icon_path.display()))?;
+    let mod_time =
+        file_mtime(icon_path).ok_or_else(|| format!("stat {}: missing", icon_path.display()))?;
     let key = template_cache_key(icon_path, blur_kernel);
 
     {
