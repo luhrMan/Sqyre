@@ -4,9 +4,7 @@ use sqyre_domain::{
     blank_action, root_loop, ActionKind, CoordinateOutputs, CoordinateRef, Macro, ScalarValue,
     PROGRAM_DELIMITER,
 };
-use sqyre_persist::{
-    Database, ProgramCatalog, ProgramItem, ProgramPoint, ProgramSearchArea,
-};
+use sqyre_persist::{Database, ProgramCatalog, ProgramItem, ProgramPoint, ProgramSearchArea};
 
 const DEMO_PROGRAM: &str = "Demo Program";
 
@@ -66,11 +64,7 @@ pub fn demo_catalog() -> ProgramCatalog {
 /// Demo macro with nested image-search and loop branches.
 pub fn demo_macro() -> Macro {
     let mut focus = blank_action("focuswindow").expect("focuswindow");
-    if let ActionKind::FocusWindow {
-        window_title,
-        ..
-    } = &mut focus.kind
-    {
+    if let ActionKind::FocusWindow { window_title, .. } = &mut focus.kind {
         *window_title = "Notepad".into();
     }
 
@@ -93,8 +87,7 @@ pub fn demo_macro() -> Macro {
         search_area,
         tolerance,
         blur,
-        coords,
-        subactions,
+        detection,
         ..
     } = &mut image_search.kind
     {
@@ -103,8 +96,8 @@ pub fn demo_macro() -> Macro {
         *search_area = prog_ref("Main area");
         *tolerance = 0.95;
         *blur = 5;
-        *coords = CoordinateOutputs::defaults();
-        *subactions = vec![click];
+        detection.coords = CoordinateOutputs::defaults();
+        detection.subactions = vec![click];
     }
 
     let mut type_act = blank_action("type").expect("type");

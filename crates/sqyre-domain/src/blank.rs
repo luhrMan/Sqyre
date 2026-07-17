@@ -1,9 +1,9 @@
 //! Blank action factories for the Add Action picker.
 
 use crate::{
-    action_type_table, Action, ActionId, ActionKind, CoordinateOutputs, CoordinateRef, ListColumn,
-    MatchOrder, ScalarValue, WaitTilFoundConfig, DEFAULT_SMOOTH_DELAY_MS,
-    DEFAULT_SMOOTH_HIGH, DEFAULT_SMOOTH_LOW, MATCH_ALL,
+    action_type_table, Action, ActionId, ActionKind, ConditionBlock, CoordinateRef,
+    DetectionBranch, ListColumn, ScalarValue, DEFAULT_SMOOTH_DELAY_MS, DEFAULT_SMOOTH_HIGH,
+    DEFAULT_SMOOTH_LOW,
 };
 
 /// One picker entry: label, type key, category, and a fresh blank [`Action`].
@@ -39,6 +39,22 @@ pub fn blank_action(action_type: &str) -> Option<Action> {
         id: ActionId::new(),
         kind,
     })
+}
+
+/// Convenience for tests: wrap a kind with a fresh id.
+pub fn test_action(kind: ActionKind) -> Action {
+    Action {
+        id: ActionId::new(),
+        kind,
+    }
+}
+
+/// `test_action!(ActionKind::Wait { time: ScalarValue::Int(1) })`
+#[macro_export]
+macro_rules! test_action {
+    ($kind:expr) => {
+        $crate::test_action($kind)
+    };
 }
 
 fn blank_kind(action_type: &str) -> Option<ActionKind> {
@@ -78,9 +94,7 @@ fn blank_kind(action_type: &str) -> Option<ActionKind> {
             macro_name: String::new(),
         },
         "conditional" => ActionKind::Conditional {
-            name: String::new(),
-            match_mode: MATCH_ALL.into(),
-            clauses: Vec::new(),
+            condition: ConditionBlock::default(),
             subactions: Vec::new(),
         },
         "loop" => ActionKind::Loop {
@@ -89,9 +103,7 @@ fn blank_kind(action_type: &str) -> Option<ActionKind> {
             subactions: Vec::new(),
         },
         "while" => ActionKind::While {
-            name: String::new(),
-            match_mode: MATCH_ALL.into(),
-            clauses: Vec::new(),
+            condition: ConditionBlock::default(),
             max_iterations: 0,
             subactions: Vec::new(),
         },
@@ -103,39 +115,27 @@ fn blank_kind(action_type: &str) -> Option<ActionKind> {
             search_area: CoordinateRef::default(),
             tolerance: 0.95,
             blur: 5,
-            wait: WaitTilFoundConfig::default(),
-            coords: CoordinateOutputs::defaults(),
-            run_branch_on_no_find: false,
-            order: MatchOrder::default(),
-            subactions: Vec::new(),
+            detection: DetectionBranch::default(),
         },
         "ocr" => ActionKind::Ocr {
             name: String::new(),
             target: "template".into(),
             search_area: CoordinateRef("template search area".into()),
             output_variable: String::new(),
-            coords: CoordinateOutputs::defaults(),
-            wait: WaitTilFoundConfig::default(),
-            run_branch_on_no_find: false,
             blur: 0,
             min_threshold: 0,
             resize: 1.0,
             grayscale: false,
             threshold_otsu: false,
             threshold_invert: false,
-            order: MatchOrder::default(),
-            subactions: Vec::new(),
+            detection: DetectionBranch::default(),
         },
         "findpixel" => ActionKind::FindPixel {
             name: String::new(),
             search_area: CoordinateRef::default(),
             target_color: "ffffff".into(),
             color_tolerance: 0,
-            wait: WaitTilFoundConfig::default(),
-            coords: CoordinateOutputs::defaults(),
-            run_branch_on_no_find: false,
-            order: MatchOrder::default(),
-            subactions: Vec::new(),
+            detection: DetectionBranch::default(),
         },
         "setvariable" => ActionKind::SetVariable {
             variable_name: String::new(),
@@ -193,9 +193,7 @@ mod tests {
         let a = blank_action("move").unwrap();
         match a.kind {
             ActionKind::Move {
-                smooth,
-                smooth_low,
-                ..
+                smooth, smooth_low, ..
             } => {
                 assert!(smooth);
                 assert!((smooth_low - DEFAULT_SMOOTH_LOW).abs() < f64::EPSILON);

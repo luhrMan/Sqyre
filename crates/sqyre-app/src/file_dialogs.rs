@@ -1,9 +1,10 @@
 //! Native file / folder dialogs via `rfd`.
 //!
-//! On Linux, `rfd`'s XDG portal backend uses `ashpd`/`zbus`. Accessibility
-//! (accesskit) enables `zbus`'s Tokio feature for the whole process, so sync
-//! `rfd` calls panic with "no reactor running" unless a Tokio runtime has been
-//! entered. Keep a process-global runtime and enter it for every dialog.
+//! On Linux, `rfd`'s XDG portal backend uses `ashpd`/`zbus`. If anything in the
+//! dependency graph enables `zbus`'s Tokio feature (historically `ksni`'s
+//! default), sync `rfd` calls need a Tokio runtime entered or they panic with
+//! "no reactor running". Keep a process-global runtime and enter it for every
+//! dialog as a defensive measure.
 
 use std::path::PathBuf;
 use std::sync::OnceLock;

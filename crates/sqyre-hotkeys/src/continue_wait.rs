@@ -147,10 +147,7 @@ impl ContinueWaitBridge {
         if !self.hooks_enabled {
             return Err("key wait is not available in this build".into());
         }
-        let normalized: Vec<Vec<String>> = chords
-            .iter()
-            .map(|c| normalize_keys(c))
-            .collect();
+        let normalized: Vec<Vec<String>> = chords.iter().map(|c| normalize_keys(c)).collect();
         if normalized.iter().all(|c| c.is_empty()) {
             return Err("key wait: no chords configured".into());
         }
@@ -210,9 +207,7 @@ impl ContinueWaitBridge {
                 if g.signaled {
                     break Ok(g.matched.unwrap_or(0));
                 }
-                self.inner
-                    .cv
-                    .wait_for(&mut g, Duration::from_millis(50));
+                self.inner.cv.wait_for(&mut g, Duration::from_millis(50));
                 if !g.signaled {
                     Self::try_match_locked(&mut g);
                 }
@@ -266,9 +261,7 @@ fn validate_not_failsafe(keys: &[String]) -> Result<(), String> {
     let mut failsafe: Vec<String> = vec!["ctrl".into(), "esc".into(), "shift".into()];
     failsafe.sort();
     if sorted == failsafe {
-        return Err(
-            "key wait: chord cannot match the failsafe hotkey (esc + ctrl + shift)".into(),
-        );
+        return Err("key wait: chord cannot match the failsafe hotkey (esc + ctrl + shift)".into());
     }
     Ok(())
 }

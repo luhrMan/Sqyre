@@ -19,9 +19,7 @@ impl DataEditor {
     ) {
         ui.horizontal(|ui| {
             ui.label("Search");
-            ui.add(
-                egui::TextEdit::singleline(&mut self.search).desired_width(f32::INFINITY),
-            );
+            ui.add(egui::TextEdit::singleline(&mut self.search).desired_width(f32::INFINITY));
         });
         ui.separator();
         let q = self.search.trim().to_string();
@@ -81,7 +79,10 @@ impl DataEditor {
                     }
                 }
             }
-            EditorTab::Points | EditorTab::SearchAreas | EditorTab::Masks | EditorTab::Collections
+            EditorTab::Points
+            | EditorTab::SearchAreas
+            | EditorTab::Masks
+            | EditorTab::Collections
             | EditorTab::AutoPic => {
                 let kind = match self.tab {
                     EditorTab::Points => Some(PreviewKind::Point),
@@ -97,16 +98,15 @@ impl DataEditor {
                         let program_names = self.list_cache.program_names.clone();
                         for prog in &program_names {
                             let entities = self.entity_names(catalog, prog);
-                            let prog_match = q.is_empty() || crate::pickers::fuzzy_match_fold(&q, prog);
+                            let prog_match =
+                                q.is_empty() || crate::pickers::fuzzy_match_fold(&q, prog);
                             let any_entity = entities
                                 .iter()
                                 .any(|e| q.is_empty() || crate::pickers::fuzzy_match_fold(&q, e));
                             if !prog_match && !any_entity {
                                 continue;
                             }
-                            ui.label(
-                                egui::RichText::new(prog.as_str()).size(16.0).strong(),
-                            );
+                            ui.label(egui::RichText::new(prog.as_str()).size(16.0).strong());
                             for ent in entities {
                                 if !q.is_empty()
                                     && !crate::pickers::fuzzy_match_fold(&q, &ent)
@@ -191,7 +191,6 @@ impl DataEditor {
         }
     }
 
-
     /// Cached entity keys for `program` on the current tab.
     pub(crate) fn entity_names(&mut self, catalog: &ProgramCatalog, program: &str) -> Vec<String> {
         self.ensure_list_cache(catalog);
@@ -233,7 +232,12 @@ impl DataEditor {
         };
     }
 
-    pub(crate) fn select_program(&mut self, name: &str, catalog: &ProgramCatalog, settings: &UserSettings) {
+    pub(crate) fn select_program(
+        &mut self,
+        name: &str,
+        catalog: &ProgramCatalog,
+        settings: &UserSettings,
+    ) {
         self.selected_program = Some(name.to_string());
         self.selected_entity = None;
         self.load_form(catalog, settings);
@@ -255,7 +259,6 @@ impl DataEditor {
         self.selected_entity = Some(entity.to_string());
         self.load_form(catalog, settings);
     }
-
 
     pub(crate) fn program_selector(&mut self, ui: &mut egui::Ui, catalog: &ProgramCatalog) {
         self.ensure_list_cache(catalog);

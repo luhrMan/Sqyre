@@ -122,10 +122,7 @@ pub fn paint_var_ref_content(
     });
 }
 
-fn measure_content_size(
-    ui: &mut egui::Ui,
-    mut add_contents: impl FnMut(&mut egui::Ui),
-) -> Vec2 {
+fn measure_content_size(ui: &mut egui::Ui, mut add_contents: impl FnMut(&mut egui::Ui)) -> Vec2 {
     let mut measure = ui.new_child(
         egui::UiBuilder::new()
             .id_salt("var_pill_measure")
@@ -530,10 +527,8 @@ pub fn var_name_text_edit(
         if should_show_var_name_overlay(value, focused) {
             let resp = paint_nested_var_chip(ui, value, known, is_dark);
             let resp = ui.interact(
-                resp.rect.expand2(Vec2::new(
-                    (width - resp.rect.width()).max(0.0),
-                    2.0,
-                )),
+                resp.rect
+                    .expand2(Vec2::new((width - resp.rect.width()).max(0.0), 2.0)),
                 id.with("overlay_hit"),
                 Sense::click(),
             );
@@ -560,8 +555,7 @@ pub fn paint_entry_validation_icon(ui: &mut egui::Ui, v: &EntryValidation) {
         return;
     };
     ui.add(
-        egui::Label::new(egui::RichText::new(glyph).color(color).size(14.0))
-            .sense(Sense::hover()),
+        egui::Label::new(egui::RichText::new(glyph).color(color).size(14.0)).sense(Sense::hover()),
     )
     .on_hover_text(tip);
 }
@@ -612,10 +606,8 @@ pub fn validated_var_ref_edit(
                 paint_var_ref_content(ui, value, known, is_dark, plain_fg);
             });
             let resp = ui.interact(
-                resp.rect.expand2(Vec2::new(
-                    (width - resp.rect.width()).max(0.0),
-                    2.0,
-                )),
+                resp.rect
+                    .expand2(Vec2::new((width - resp.rect.width()).max(0.0), 2.0)),
                 id.with("overlay_hit"),
                 Sense::click(),
             );
@@ -658,7 +650,10 @@ pub fn validated_var_ref_multiline_edit(
                 paint_var_ref_content(ui, line, known, is_dark, plain_fg);
             }
         });
-        if resp.clicked() || ui.interact(resp.rect, id.with("overlay_hit"), Sense::click()).clicked()
+        if resp.clicked()
+            || ui
+                .interact(resp.rect, id.with("overlay_hit"), Sense::click())
+                .clicked()
         {
             ui.memory_mut(|m| m.request_focus(id));
         }

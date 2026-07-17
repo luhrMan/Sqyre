@@ -17,9 +17,7 @@ pub(crate) enum HotkeyRecordUi {
         stable_since: Option<Instant>,
     },
     /// Saved; wait for release before resuming macro hotkeys.
-    WaitingRelease {
-        chord: Vec<String>,
-    },
+    WaitingRelease { chord: Vec<String> },
 }
 
 impl HotkeyRecordUi {
@@ -47,8 +45,7 @@ impl HotkeyRecordUi {
         match self {
             Self::Closed => None,
             Self::WaitingRelease { chord } => {
-                let pressed: HashSet<String> =
-                    macro_hotkeys.pressed_keys().into_iter().collect();
+                let pressed: HashSet<String> = macro_hotkeys.pressed_keys().into_iter().collect();
                 if chord_fully_released(&pressed, chord) {
                     macro_hotkeys.resume();
                     *self = Self::Closed;

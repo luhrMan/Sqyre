@@ -2,6 +2,7 @@
 
 use super::sections::{tip_section, tip_wrapped_section};
 use crate::icon_cache::IconCache;
+use crate::paint_ctx::{CatalogPaint, EditFieldsCtx, RecordBridges, VarTheme};
 use crate::pickers::{self, options, ActivePicker};
 use crate::preview_tooltip::{PreviewKind, PreviewTooltipCache};
 use crate::theme;
@@ -9,11 +10,10 @@ use crate::tree_chrome;
 use crate::var_pills;
 use eframe::egui;
 use sqyre_domain::{
-    parse_hex_color, Action, ActionKind, ConditionClause, CoordinateOutputs, CoordinateRef,
-    ListColumn, Macro, MatchMode, MatchOrder, MouseButton, RepeatMode, ScalarValue,
-    WaitTilFoundConfig,
+    parse_hex_color, Action, ActionKind, ConditionBlock, ConditionClause, CoordinateOutputs,
+    CoordinateRef, DetectionBranch, ListColumn, Macro, MatchMode, MatchOrder, MouseButton,
+    RepeatMode, ScalarValue, WaitTilFoundConfig,
 };
-use crate::paint_ctx::{CatalogPaint, EditFieldsCtx, RecordBridges, VarTheme};
 use sqyre_persist::ProgramCatalog;
 use sqyre_validate::{
     preview_calculate, validate_numeric_expression, validate_set_variable_value,
@@ -154,7 +154,15 @@ pub fn paint_edit_fields(
             pass_through,
         } => {
             tip_section(ui, |ui| {
-                var_ref_field(ui, "Message", message, known_vars, is_dark, 220.0, active_macro);
+                var_ref_field(
+                    ui,
+                    "Message",
+                    message,
+                    known_vars,
+                    is_dark,
+                    220.0,
+                    active_macro,
+                );
             });
             tip_section(ui, |ui| {
                 ui.horizontal(|ui| {
@@ -218,7 +226,14 @@ pub fn paint_edit_fields(
             value,
         } => {
             tip_wrapped_section(ui, |ui| {
-                var_pills::var_name_text_edit(ui, "Variable", variable_name, known_vars, is_dark, 160.0);
+                var_pills::var_name_text_edit(
+                    ui,
+                    "Variable",
+                    variable_name,
+                    known_vars,
+                    is_dark,
+                    160.0,
+                );
             });
             tip_section(ui, |ui| {
                 yaml_value_field(
@@ -238,7 +253,14 @@ pub fn paint_edit_fields(
             append_newline,
         } => {
             tip_wrapped_section(ui, |ui| {
-                var_pills::var_name_text_edit(ui, "Variable", variable_name, known_vars, is_dark, 160.0);
+                var_pills::var_name_text_edit(
+                    ui,
+                    "Variable",
+                    variable_name,
+                    known_vars,
+                    is_dark,
+                    160.0,
+                );
                 var_ref_field(
                     ui,
                     "Destination",
@@ -261,40 +283,16 @@ pub fn paint_edit_fields(
             });
         }
         ActionKind::While {
-            name,
-            match_mode,
-            clauses,
+            condition,
             max_iterations,
             ..
         } => {
-            tip_wrapped_section(ui, |ui| {
-                text_field(ui, "Name", name);
-                let mut all = *match_mode != MatchMode::Any;
-                if ui.checkbox(&mut all, "Match all (uncheck = any)").changed() {
-                    *match_mode = if all { MatchMode::All } else { MatchMode::Any };
-                }
+            condition_editor(ui, condition, known_vars, is_dark, active_macro, |ui| {
                 ui.add(egui::DragValue::new(max_iterations).prefix("Max iterations: "));
             });
-            tip_section(ui, |ui| {
-                clauses_editor(ui, clauses, known_vars, is_dark, active_macro);
-            });
         }
-        ActionKind::Conditional {
-            name,
-            match_mode,
-            clauses,
-            ..
-        } => {
-            tip_wrapped_section(ui, |ui| {
-                text_field(ui, "Name", name);
-                let mut all = *match_mode != MatchMode::Any;
-                if ui.checkbox(&mut all, "Match all (uncheck = any)").changed() {
-                    *match_mode = if all { MatchMode::All } else { MatchMode::Any };
-                }
-            });
-            tip_section(ui, |ui| {
-                clauses_editor(ui, clauses, known_vars, is_dark, active_macro);
-            });
+        ActionKind::Conditional { condition, .. } => {
+            condition_editor(ui, condition, known_vars, is_dark, active_macro, |_| {});
         }
         ActionKind::ForEachRow {
             name,
@@ -305,7 +303,14 @@ pub fn paint_edit_fields(
         } => {
             tip_wrapped_section(ui, |ui| {
                 text_field(ui, "Name", name);
-                scalar_field(ui, "Start row", start_row, known_vars, is_dark, active_macro);
+                scalar_field(
+                    ui,
+                    "Start row",
+                    start_row,
+                    known_vars,
+                    is_dark,
+                    active_macro,
+                );
                 scalar_field(ui, "End row", end_row, known_vars, is_dark, active_macro);
             });
             tip_section(ui, |ui| {
@@ -318,11 +323,7 @@ pub fn paint_edit_fields(
             search_area,
             tolerance,
             blur,
-            wait,
-            coords,
-            run_branch_on_no_find,
-            order,
-            ..
+            detection,
         } => {
             tip_wrapped_section(ui, |ui| {
                 text_field(ui, "Name", name);
@@ -343,39 +344,32 @@ pub fn paint_edit_fields(
                 );
                 ui.add(egui::DragValue::new(blur).prefix("Blur: "));
             });
-            tip_section(ui, |ui| {
-                wait_editor(ui, wait);
-            });
-            tip_section(ui, |ui| {
-                coords_editor(ui, coords, known_vars, is_dark);
-            });
-            tip_section(ui, |ui| {
-                order_editor(ui, order);
-            });
-            tip_wrapped_section(ui, |ui| {
-                ui.checkbox(run_branch_on_no_find, "Run branch on no find");
-            });
+            detection_branch_editor(ui, detection, known_vars, is_dark);
         }
         ActionKind::Ocr {
             name,
             target,
             search_area,
             output_variable,
-            coords,
-            wait,
-            run_branch_on_no_find,
             blur,
             min_threshold,
             resize,
             grayscale,
             threshold_otsu,
             threshold_invert,
-            order,
-            ..
+            detection,
         } => {
             tip_wrapped_section(ui, |ui| {
                 text_field(ui, "Name", name);
-                var_ref_field(ui, "Target", target, known_vars, is_dark, 160.0, active_macro);
+                var_ref_field(
+                    ui,
+                    "Target",
+                    target,
+                    known_vars,
+                    is_dark,
+                    160.0,
+                    active_macro,
+                );
             });
             tip_section(ui, |ui| {
                 search_area_picker_row(ui, search_area, picker);
@@ -391,15 +385,7 @@ pub fn paint_edit_fields(
                     160.0,
                 );
             });
-            tip_section(ui, |ui| {
-                wait_editor(ui, wait);
-            });
-            tip_section(ui, |ui| {
-                coords_editor(ui, coords, known_vars, is_dark);
-            });
-            tip_section(ui, |ui| {
-                order_editor(ui, order);
-            });
+            detection_branch_editor(ui, detection, known_vars, is_dark);
             tip_wrapped_section(ui, |ui| {
                 ui.add(egui::DragValue::new(blur).prefix("Blur: "));
                 ui.add(egui::DragValue::new(min_threshold).prefix("Min threshold: "));
@@ -407,7 +393,6 @@ pub fn paint_edit_fields(
                 ui.checkbox(grayscale, "Grayscale");
                 ui.checkbox(threshold_otsu, "Threshold Otsu");
                 ui.checkbox(threshold_invert, "Threshold invert");
-                ui.checkbox(run_branch_on_no_find, "Run branch on no find");
             });
         }
         ActionKind::FindPixel {
@@ -415,11 +400,7 @@ pub fn paint_edit_fields(
             search_area,
             target_color,
             color_tolerance,
-            wait,
-            coords,
-            run_branch_on_no_find,
-            order,
-            ..
+            detection,
         } => {
             tip_wrapped_section(ui, |ui| {
                 text_field(ui, "Name", name);
@@ -462,18 +443,7 @@ pub fn paint_edit_fields(
                 });
                 ui.add(egui::DragValue::new(color_tolerance).prefix("Color tolerance: "));
             });
-            tip_section(ui, |ui| {
-                wait_editor(ui, wait);
-            });
-            tip_section(ui, |ui| {
-                coords_editor(ui, coords, known_vars, is_dark);
-            });
-            tip_section(ui, |ui| {
-                order_editor(ui, order);
-            });
-            tip_wrapped_section(ui, |ui| {
-                ui.checkbox(run_branch_on_no_find, "Run branch on no find");
-            });
+            detection_branch_editor(ui, detection, known_vars, is_dark);
         }
         ActionKind::NavigateSelect(data) => {
             tip_wrapped_section(ui, |ui| {
@@ -490,7 +460,10 @@ pub fn paint_edit_fields(
             });
             tip_wrapped_section(ui, |ui| {
                 ui.checkbox(&mut data.options.wrap_edges, "Wrap edges");
-                ui.checkbox(&mut data.options.move_cursor_with_nav, "Move cursor with nav");
+                ui.checkbox(
+                    &mut data.options.move_cursor_with_nav,
+                    "Move cursor with nav",
+                );
                 ui.checkbox(&mut data.options.smooth, "Smooth");
                 ui.checkbox(&mut data.options.pass_through, "Pass through");
                 ui.checkbox(&mut data.options.hold_repeat, "Hold repeat");
@@ -643,11 +616,7 @@ fn point_picker_row(ui: &mut egui::Ui, point: &mut CoordinateRef, picker: &mut A
     });
 }
 
-fn search_area_picker_row(
-    ui: &mut egui::Ui,
-    area: &mut CoordinateRef,
-    picker: &mut ActivePicker,
-) {
+fn search_area_picker_row(ui: &mut egui::Ui, area: &mut CoordinateRef, picker: &mut ActivePicker) {
     ui.horizontal(|ui| {
         ui.label("Search area");
         ui.monospace(if area.is_empty() {
@@ -878,6 +847,52 @@ const EXPRESSION_FUNCTIONS: &[&str] = &[
 ];
 const EXPRESSION_CONSTANTS: &[&str] = &["~pi", "~e"];
 
+fn condition_editor(
+    ui: &mut egui::Ui,
+    condition: &mut ConditionBlock,
+    known_vars: &HashSet<String>,
+    is_dark: bool,
+    active_macro: Option<&Macro>,
+    extra: impl FnOnce(&mut egui::Ui),
+) {
+    tip_wrapped_section(ui, |ui| {
+        text_field(ui, "Name", &mut condition.name);
+        let mut all = condition.match_mode != MatchMode::Any;
+        if ui.checkbox(&mut all, "Match all (uncheck = any)").changed() {
+            condition.match_mode = if all { MatchMode::All } else { MatchMode::Any };
+        }
+        extra(ui);
+    });
+    tip_section(ui, |ui| {
+        clauses_editor(
+            ui,
+            &mut condition.clauses,
+            known_vars,
+            is_dark,
+            active_macro,
+        );
+    });
+}
+
+fn detection_branch_editor(
+    ui: &mut egui::Ui,
+    detection: &mut DetectionBranch,
+    known_vars: &HashSet<String>,
+    is_dark: bool,
+) {
+    tip_section(ui, |ui| wait_editor(ui, &mut detection.wait));
+    tip_section(ui, |ui| {
+        coords_editor(ui, &mut detection.coords, known_vars, is_dark);
+    });
+    tip_section(ui, |ui| order_editor(ui, &mut detection.order));
+    tip_wrapped_section(ui, |ui| {
+        ui.checkbox(
+            &mut detection.run_branch_on_no_find,
+            "Run branch on no find",
+        );
+    });
+}
+
 fn wait_editor(ui: &mut egui::Ui, wait: &mut WaitTilFoundConfig) {
     ui.label(egui::RichText::new("Wait / repeat").strong());
     ui.horizontal_wrapped(|ui| {
@@ -967,8 +982,20 @@ fn clauses_editor(
             ui.push_id(i, |ui| {
                 ui.horizontal(|ui| {
                     scalar_field(ui, "L", &mut clause.left, known_vars, is_dark, active_macro);
-                    combo_str(ui, "op", &mut clause.operator, options::CONDITIONAL_OPERATORS);
-                    scalar_field(ui, "R", &mut clause.right, known_vars, is_dark, active_macro);
+                    combo_str(
+                        ui,
+                        "op",
+                        &mut clause.operator,
+                        options::CONDITIONAL_OPERATORS,
+                    );
+                    scalar_field(
+                        ui,
+                        "R",
+                        &mut clause.right,
+                        known_vars,
+                        is_dark,
+                        active_macro,
+                    );
                     if ui.small_button("−").clicked() {
                         remove = Some(i);
                     }
@@ -1038,10 +1065,7 @@ mod tests {
     #[test]
     fn parse_scalar_int_and_string() {
         assert_eq!(parse_scalar("42"), ScalarValue::Int(42));
-        assert_eq!(
-            parse_scalar("${x}"),
-            ScalarValue::String("${x}".into())
-        );
+        assert_eq!(parse_scalar("${x}"), ScalarValue::String("${x}".into()));
         assert_eq!(parse_scalar(""), ScalarValue::Null);
     }
 
@@ -1064,10 +1088,7 @@ mod tests {
             set_value_edit_text(&serde_yaml::Value::String("'hello'".into())),
             "'hello'"
         );
-        assert_eq!(
-            set_value_edit_text(&serde_yaml::Value::Bool(true)),
-            "true"
-        );
+        assert_eq!(set_value_edit_text(&serde_yaml::Value::Bool(true)), "true");
         assert_eq!(
             set_value_edit_text(&serde_yaml::Value::Number(42.into())),
             "42"

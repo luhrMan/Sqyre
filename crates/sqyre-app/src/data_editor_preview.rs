@@ -53,9 +53,7 @@ pub(crate) fn paint_preview_coord_chip(
             egui::pos2(preview.center().x, preview.bottom() - PAD - CHIP_H * 0.5)
         }
         CardinalEdge::Left => egui::pos2(preview.left() + PAD + CHIP_W * 0.5, preview.center().y),
-        CardinalEdge::Right => {
-            egui::pos2(preview.right() - PAD - CHIP_W * 0.5, preview.center().y)
-        }
+        CardinalEdge::Right => egui::pos2(preview.right() - PAD - CHIP_W * 0.5, preview.center().y),
     };
     let chip = egui::Rect::from_center_size(center, size);
     ui.painter().rect_filled(
@@ -70,8 +68,7 @@ pub(crate) fn paint_preview_coord_chip(
     let edit_rect = chip.shrink(3.0);
     let id = ui.id().with(("preview_coord", placeholder));
     let focused = ui.memory(|m| m.has_focus(id));
-    let show_overlay =
-        !focused && !value.is_empty() && sqyre_varref::contains(value.as_str());
+    let show_overlay = !focused && !value.is_empty() && sqyre_varref::contains(value.as_str());
     let resp = if show_overlay {
         let plain_fg = egui::Color32::from_gray(230);
         ui.scope_builder(egui::UiBuilder::new().max_rect(edit_rect), |ui| {
@@ -108,9 +105,7 @@ pub(crate) fn variant_name_from_path(path: &std::path::Path, item: &str) -> Stri
         return String::new();
     }
     let prefix = format!("{item}{PROGRAM_DELIMITER}");
-    stem.strip_prefix(&prefix)
-        .unwrap_or(stem)
-        .to_string()
+    stem.strip_prefix(&prefix).unwrap_or(stem).to_string()
 }
 
 pub(crate) fn variant_display_label(name: &str) -> &str {
@@ -157,9 +152,7 @@ pub(crate) fn paint_disk_preview(
             }
         }
     });
-    let tex = path
-        .and_then(|p| icons.for_path(ui.ctx(), p))
-        .or(fallback);
+    let tex = path.and_then(|p| icons.for_path(ui.ctx(), p)).or(fallback);
     match tex {
         Some(tex) => {
             let [tw, th] = tex.size();
@@ -231,12 +224,10 @@ pub(crate) fn paint_zoomable_collection_preview(
     let fit = fit_panel(image_size.x, image_size.y);
     let scale = (avail / fit.x).min(1.0);
     let desired = egui::vec2((fit.x * scale).max(160.0), (fit.y * scale).max(120.0));
-    let (viewport, resp) =
-        ui.allocate_exact_size(desired, egui::Sense::click_and_drag());
+    let (viewport, resp) = ui.allocate_exact_size(desired, egui::Sense::click_and_drag());
 
     image_view::handle_scroll_zoom(ui, viewport, image_size, view, resp.hovered());
-    let content =
-        image_view::image_content_rect(viewport, image_size, view.zoom, view.pan);
+    let content = image_view::image_content_rect(viewport, image_size, view.zoom, view.pan);
 
     {
         let painter = ui.painter_at(viewport);

@@ -302,7 +302,12 @@ mod tests {
 
     #[test]
     fn grayscale_and_threshold() {
-        let img = ImageBuf::from_raw(2, 2, 3, vec![0, 0, 0, 255, 255, 255, 0, 0, 0, 255, 255, 255]);
+        let img = ImageBuf::from_raw(
+            2,
+            2,
+            3,
+            vec![0, 0, 0, 255, 255, 255, 0, 0, 0, 255, 255, 255],
+        );
         let opts = OcrPreprocessOptions {
             grayscale: true,
             blur: false,
@@ -341,7 +346,12 @@ mod tests {
 
     #[test]
     fn with_steps_records_enabled_stages() {
-        let img = ImageBuf::from_raw(2, 2, 3, vec![0, 0, 0, 255, 255, 255, 0, 0, 0, 255, 255, 255]);
+        let img = ImageBuf::from_raw(
+            2,
+            2,
+            3,
+            vec![0, 0, 0, 255, 255, 255, 0, 0, 0, 255, 255, 255],
+        );
         let opts = OcrPreprocessOptions {
             grayscale: true,
             blur: false,

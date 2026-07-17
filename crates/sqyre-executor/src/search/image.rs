@@ -1,11 +1,11 @@
 //! Image search action: capture → match template variants → run children per hit.
 
-use super::common::{retry_while_not_found, run_children_flow, set_coord_outputs};
+use super::common::{maybe_wait_until_found, run_children_flow, set_coord_outputs};
+use crate::action_log::{crop_match_preview, draw_rect_rgb};
 use crate::backends::{DesktopRect, ItemMeta};
 use crate::error::{ExecError, FlowSignal, Result};
 use crate::highlight::{highlight_clear, highlight_fill};
 use crate::run::Executor;
-use crate::action_log::{crop_match_preview, draw_rect_rgb};
 use rayon::prelude::*;
 use sqyre_domain::{Action, ActionKind, Macro, ScalarValue};
 use sqyre_match::{
@@ -30,22 +30,33 @@ pub(crate) fn execute_image_search(
         search_area,
         tolerance,
         blur,
-        wait,
-        coords,
-        run_branch_on_no_find,
-        subactions,
+        detection,
         ..
     } = &action.kind
     else {
         return Err(ExecError::Message("not image search".into()));
     };
+    let sqyre_domain::DetectionBranch {
+        wait,
+        coords,
+        run_branch_on_no_find,
+        subactions,
+        ..
+    } = detection;
 
     highlight_fill(exec.deps.highlighter, &macro_.name, action.id, 0.0);
     let action_id = action.id;
     let macro_name = macro_.name.clone();
     let result = (|| {
-        let mut results =
-            capture_and_match(exec, action_id, targets, search_area, *tolerance, *blur, macro_);
+        let mut results = capture_and_match(
+            exec,
+            action_id,
+            targets,
+            search_area,
+            *tolerance,
+            *blur,
+            macro_,
+        );
 
         if wait.wait_until_found_active() && results.is_empty() {
             exec.log(
@@ -55,27 +66,26 @@ pub(crate) fn execute_image_search(
                     wait.wait_til_found_seconds
                 ),
             );
-            retry_while_not_found(exec, wait, 100, |exec| {
-                results = capture_and_match(
-                    exec,
-                    action_id,
-                    targets,
-                    search_area,
-                    *tolerance,
-                    *blur,
-                    macro_,
-                );
-                Ok(!results.is_empty())
-            })?;
         }
+        maybe_wait_until_found(exec, wait, !results.is_empty(), 100, |exec| {
+            results = capture_and_match(
+                exec,
+                action_id,
+                targets,
+                search_area,
+                *tolerance,
+                *blur,
+                macro_,
+            );
+            Ok(!results.is_empty())
+        })?;
 
         if wait.is_repeat_while_found() {
             let max_iter = wait.effective_max_iterations();
             let interval = wait.effective_interval_ms(100).max(1);
             let deadline = if wait.wait_til_found_seconds > 0 {
                 Some(
-                    Instant::now()
-                        + Duration::from_secs(wait.wait_til_found_seconds.max(0) as u64),
+                    Instant::now() + Duration::from_secs(wait.wait_til_found_seconds.max(0) as u64),
                 )
             } else {
                 None
@@ -160,7 +170,8 @@ struct VariantMatchOutcome {
 }
 
 fn close_matches_distance(exec: &Executor<'_>) -> i32 {
-    exec.deps.matcher
+    exec.deps
+        .matcher
         .map(|m| m.close_matches_distance())
         .filter(|&d| d > 0)
         .unwrap_or(DEFAULT_CLOSE_MATCHES_DISTANCE)
@@ -210,6 +221,7 @@ fn capture_and_match(
         ),
     );
 
+    let capture_started = Instant::now();
     let (img, origin) = match exec.deps.capturer.as_mut() {
         Some(c) => match c.capture_search_area(lx, ty, rx, by) {
             Ok(v) => v,
@@ -243,6 +255,7 @@ fn capture_and_match(
             &search_blurred,
         );
     }
+    exec.log_timing(action_id, "capture+preprocess", capture_started.elapsed());
 
     let mut jobs = Vec::new();
     for target in targets {
@@ -312,9 +325,9 @@ fn capture_and_match(
                 .as_ref()
                 .and_then(|p| get_cached_image_mask(p, tmpl_h, tmpl_w));
             let mask_preview = if want_pipeline {
-                mask_bytes.as_ref().map(|m| {
-                    ImageBuf::from_raw(tmpl_w, tmpl_h, 1, m.as_ref().clone())
-                })
+                mask_bytes
+                    .as_ref()
+                    .map(|m| ImageBuf::from_raw(tmpl_w, tmpl_h, 1, m.as_ref().clone()))
             } else {
                 None
             };
@@ -481,10 +494,7 @@ fn capture_and_match(
                         12,
                     ) {
                         steps.push((
-                            format!(
-                                "Find #{} — crop around ({local_tl_x},{local_tl_y})",
-                                mi + 1
-                            ),
+                            format!("Find #{} — crop around ({local_tl_x},{local_tl_y})", mi + 1),
                             crop,
                         ));
                     }
@@ -552,6 +562,7 @@ fn capture_and_match(
             out.len()
         ),
     );
+    exec.log_timing(action_id, "match", match_started.elapsed());
     sort_points(&mut out);
     out
 }

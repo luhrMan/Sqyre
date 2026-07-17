@@ -50,11 +50,7 @@ impl TreeHistory {
         let _ = self.undo.pop();
     }
 
-    pub fn undo(
-        &mut self,
-        root: &mut Action,
-        selected: &mut Option<ActionId>,
-    ) -> bool {
+    pub fn undo(&mut self, root: &mut Action, selected: &mut Option<ActionId>) -> bool {
         if !self.can_undo() {
             return false;
         }
@@ -73,11 +69,7 @@ impl TreeHistory {
         true
     }
 
-    pub fn redo(
-        &mut self,
-        root: &mut Action,
-        selected: &mut Option<ActionId>,
-    ) -> bool {
+    pub fn redo(&mut self, root: &mut Action, selected: &mut Option<ActionId>) -> bool {
         if !self.can_redo() {
             return false;
         }
@@ -122,10 +114,7 @@ fn trim(stack: &mut Vec<TreeSnapshot>) {
 
 fn snapshot_tree(root: &Action, selected: Option<ActionId>) -> Result<TreeSnapshot, String> {
     let root_map = action_to_map_with_uid(root).map_err(|e| e.to_string())?;
-    Ok(TreeSnapshot {
-        root_map,
-        selected,
-    })
+    Ok(TreeSnapshot { root_map, selected })
 }
 
 fn apply_snapshot(
@@ -137,7 +126,9 @@ fn apply_snapshot(
     let restored = action_from_map(&snap.root_map).map_err(|e| e.to_string())?;
     *applying = true;
     *root = restored;
-    *selected = snap.selected.filter(|id| root.find_by_id(*id).is_some() || root.id == *id);
+    *selected = snap
+        .selected
+        .filter(|id| root.find_by_id(*id).is_some() || root.id == *id);
     *applying = false;
     Ok(())
 }

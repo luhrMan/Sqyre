@@ -2,9 +2,9 @@ use crate::helpers::*;
 use crate::{Result, SerializeError};
 use serde_yaml::{Mapping, Sequence, Value};
 use sqyre_domain::{
-    Action, ActionId, ActionKind, ConditionClause, CoordinateOutputs, ListColumn, MatchMode,
-    MatchOrder, MouseButton, RepeatMode, ScalarValue, WaitTilFoundConfig, DEFAULT_SMOOTH_DELAY_MS,
-    DEFAULT_SMOOTH_HIGH, DEFAULT_SMOOTH_LOW,
+    Action, ActionId, ActionKind, ConditionBlock, ConditionClause, CoordinateOutputs,
+    DetectionBranch, ListColumn, MatchMode, MatchOrder, MouseButton, RepeatMode, ScalarValue,
+    WaitTilFoundConfig, DEFAULT_SMOOTH_DELAY_MS, DEFAULT_SMOOTH_HIGH, DEFAULT_SMOOTH_LOW,
 };
 use uuid::Uuid;
 
@@ -81,29 +81,25 @@ fn encode_kind(kind: &ActionKind) -> Result<Mapping> {
             insert(&mut m, "subactions", subactions_to_seq(subactions)?);
         }
         ActionKind::While {
-            name,
-            match_mode,
-            clauses,
+            condition,
             max_iterations,
             subactions,
         } => {
-            insert_str(&mut m, "name", name);
-            insert_str(&mut m, "match", match_mode.as_str());
+            insert_str(&mut m, "name", &condition.name);
+            insert_str(&mut m, "match", condition.match_mode.as_str());
             if *max_iterations > 0 {
                 insert_i32(&mut m, "maxiterations", *max_iterations);
             }
-            insert(&mut m, "clauses", clauses_to_seq(clauses));
+            insert(&mut m, "clauses", clauses_to_seq(&condition.clauses));
             insert(&mut m, "subactions", subactions_to_seq(subactions)?);
         }
         ActionKind::Conditional {
-            name,
-            match_mode,
-            clauses,
+            condition,
             subactions,
         } => {
-            insert_str(&mut m, "name", name);
-            insert_str(&mut m, "match", match_mode.as_str());
-            insert(&mut m, "clauses", clauses_to_seq(clauses));
+            insert_str(&mut m, "name", &condition.name);
+            insert_str(&mut m, "match", condition.match_mode.as_str());
+            insert(&mut m, "clauses", clauses_to_seq(&condition.clauses));
             insert(&mut m, "subactions", subactions_to_seq(subactions)?);
         }
         ActionKind::ImageSearch {
@@ -112,11 +108,7 @@ fn encode_kind(kind: &ActionKind) -> Result<Mapping> {
             search_area,
             tolerance,
             blur,
-            wait,
-            coords,
-            run_branch_on_no_find,
-            order,
-            subactions,
+            detection,
         } => {
             insert_str(&mut m, "name", name);
             insert(
@@ -127,30 +119,30 @@ fn encode_kind(kind: &ActionKind) -> Result<Mapping> {
             insert(&mut m, "searcharea", coordinate_ref_to_value(search_area));
             insert_f64(&mut m, "tolerance", *tolerance);
             insert_i32(&mut m, "blur", *blur);
-            write_wait(&mut m, wait);
-            write_coords(&mut m, coords);
-            write_order(&mut m, order);
-            if *run_branch_on_no_find {
+            write_wait(&mut m, &detection.wait);
+            write_coords(&mut m, &detection.coords);
+            write_order(&mut m, &detection.order);
+            if detection.run_branch_on_no_find {
                 insert_bool(&mut m, "runbranchonnofind", true);
             }
-            insert(&mut m, "subactions", subactions_to_seq(subactions)?);
+            insert(
+                &mut m,
+                "subactions",
+                subactions_to_seq(&detection.subactions)?,
+            );
         }
         ActionKind::Ocr {
             name,
             target,
             search_area,
             output_variable,
-            coords,
-            wait,
-            run_branch_on_no_find,
             blur,
             min_threshold,
             resize,
             grayscale,
             threshold_otsu,
             threshold_invert,
-            order,
-            subactions,
+            detection,
         } => {
             insert_str(&mut m, "name", name);
             insert_str(&mut m, "target", target);
@@ -158,9 +150,9 @@ fn encode_kind(kind: &ActionKind) -> Result<Mapping> {
             if !output_variable.is_empty() {
                 insert_str(&mut m, "outputvariable", output_variable);
             }
-            write_wait(&mut m, wait);
-            write_coords(&mut m, coords);
-            write_order(&mut m, order);
+            write_wait(&mut m, &detection.wait);
+            write_coords(&mut m, &detection.coords);
+            write_order(&mut m, &detection.order);
             if !*grayscale {
                 insert_bool(&mut m, "grayscale", false);
             }
@@ -179,33 +171,37 @@ fn encode_kind(kind: &ActionKind) -> Result<Mapping> {
             if *threshold_invert {
                 insert_bool(&mut m, "thresholdinvert", true);
             }
-            if *run_branch_on_no_find {
+            if detection.run_branch_on_no_find {
                 insert_bool(&mut m, "runbranchonnofind", true);
             }
-            insert(&mut m, "subactions", subactions_to_seq(subactions)?);
+            insert(
+                &mut m,
+                "subactions",
+                subactions_to_seq(&detection.subactions)?,
+            );
         }
         ActionKind::FindPixel {
             name,
             search_area,
             target_color,
             color_tolerance,
-            wait,
-            coords,
-            run_branch_on_no_find,
-            order,
-            subactions,
+            detection,
         } => {
             insert_str(&mut m, "name", name);
             insert(&mut m, "searcharea", coordinate_ref_to_value(search_area));
             insert_str(&mut m, "targetcolor", target_color);
             insert_i32(&mut m, "colortolerance", *color_tolerance);
-            write_wait(&mut m, wait);
-            write_coords(&mut m, coords);
-            write_order(&mut m, order);
-            if *run_branch_on_no_find {
+            write_wait(&mut m, &detection.wait);
+            write_coords(&mut m, &detection.coords);
+            write_order(&mut m, &detection.order);
+            if detection.run_branch_on_no_find {
                 insert_bool(&mut m, "runbranchonnofind", true);
             }
-            insert(&mut m, "subactions", subactions_to_seq(subactions)?);
+            insert(
+                &mut m,
+                "subactions",
+                subactions_to_seq(&detection.subactions)?,
+            );
         }
         ActionKind::ForEachRow {
             name,
@@ -574,12 +570,12 @@ fn decode_subactions(raw: &Mapping) -> Result<Vec<Action>> {
     };
     let mut out = Vec::with_capacity(seq.len());
     for (i, item) in seq.iter().enumerate() {
-        let map = as_mapping(item).map_err(|e| {
-            SerializeError::msg(format!("subactions[{i}]: {e}"))
-        })?;
-        out.push(action_from_map(map).map_err(|e| {
-            SerializeError::msg(format!("subactions[{i}]: {e}"))
-        })?);
+        let map =
+            as_mapping(item).map_err(|e| SerializeError::msg(format!("subactions[{i}]: {e}")))?;
+        out.push(
+            action_from_map(map)
+                .map_err(|e| SerializeError::msg(format!("subactions[{i}]: {e}")))?,
+        );
     }
     Ok(out)
 }
@@ -677,16 +673,20 @@ fn decode_kind(raw: &Mapping, type_name: &str) -> Result<ActionKind> {
             })
         }
         "while" => Ok(ActionKind::While {
-            name: string_from_map(raw, "name"),
-            match_mode: MatchMode::parse(&string_from_map(raw, "match")),
-            clauses: decode_clauses(raw),
+            condition: ConditionBlock {
+                name: string_from_map(raw, "name"),
+                match_mode: MatchMode::parse(&string_from_map(raw, "match")),
+                clauses: decode_clauses(raw),
+            },
             max_iterations: optional_int(raw, "maxiterations").unwrap_or(0),
             subactions: decode_subactions(raw)?,
         }),
         "conditional" => Ok(ActionKind::Conditional {
-            name: string_from_map(raw, "name"),
-            match_mode: MatchMode::parse(&string_from_map(raw, "match")),
-            clauses: decode_clauses(raw),
+            condition: ConditionBlock {
+                name: string_from_map(raw, "name"),
+                match_mode: MatchMode::parse(&string_from_map(raw, "match")),
+                clauses: decode_clauses(raw),
+            },
             subactions: decode_subactions(raw)?,
         }),
         "imagesearch" => {
@@ -707,11 +707,13 @@ fn decode_kind(raw: &Mapping, type_name: &str) -> Result<ActionKind> {
                 search_area: parse_coordinate_ref(raw.get(Value::String("searcharea".into()))),
                 tolerance,
                 blur,
-                wait: decode_wait(raw),
-                coords: decode_coords(raw),
-                run_branch_on_no_find: bool_from_map(raw, "runbranchonnofind"),
-                order: decode_order(raw),
-                subactions: decode_subactions(raw)?,
+                detection: DetectionBranch {
+                    wait: decode_wait(raw),
+                    coords: decode_coords(raw),
+                    run_branch_on_no_find: bool_from_map(raw, "runbranchonnofind"),
+                    order: decode_order(raw),
+                    subactions: decode_subactions(raw)?,
+                },
             })
         }
         "ocr" => {
@@ -733,9 +735,6 @@ fn decode_kind(raw: &Mapping, type_name: &str) -> Result<ActionKind> {
                         v
                     }
                 },
-                coords: decode_coords(raw),
-                wait: decode_wait(raw),
-                run_branch_on_no_find: bool_from_map(raw, "runbranchonnofind"),
                 blur,
                 min_threshold: optional_int(raw, "minthreshold").unwrap_or(0),
                 resize: raw
@@ -748,8 +747,13 @@ fn decode_kind(raw: &Mapping, type_name: &str) -> Result<ActionKind> {
                     .unwrap_or(true),
                 threshold_otsu: bool_from_map(raw, "thresholdotsu"),
                 threshold_invert: bool_from_map(raw, "thresholdinvert"),
-                order: decode_order(raw),
-                subactions: decode_subactions(raw)?,
+                detection: DetectionBranch {
+                    wait: decode_wait(raw),
+                    coords: decode_coords(raw),
+                    run_branch_on_no_find: bool_from_map(raw, "runbranchonnofind"),
+                    order: decode_order(raw),
+                    subactions: decode_subactions(raw)?,
+                },
             })
         }
         "findpixel" => {
@@ -766,11 +770,13 @@ fn decode_kind(raw: &Mapping, type_name: &str) -> Result<ActionKind> {
                 search_area: parse_coordinate_ref(raw.get(Value::String("searcharea".into()))),
                 target_color: color,
                 color_tolerance: tol,
-                wait: decode_wait(raw),
-                coords: decode_coords(raw),
-                run_branch_on_no_find: bool_from_map(raw, "runbranchonnofind"),
-                order: decode_order(raw),
-                subactions: decode_subactions(raw)?,
+                detection: DetectionBranch {
+                    wait: decode_wait(raw),
+                    coords: decode_coords(raw),
+                    run_branch_on_no_find: bool_from_map(raw, "runbranchonnofind"),
+                    order: decode_order(raw),
+                    subactions: decode_subactions(raw)?,
+                },
             })
         }
         "foreachrow" => Ok(ActionKind::ForEachRow {
@@ -893,7 +899,7 @@ fn decode_kind(raw: &Mapping, type_name: &str) -> Result<ActionKind> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqyre_domain::{root_loop, NavigateSelectData, ScalarValue};
+    use sqyre_domain::{root_loop, CoordinateRef, NavigateSelectData, ScalarValue};
 
     #[test]
     fn action_to_map_with_uid_preserves_nested_uids() {
@@ -1003,6 +1009,133 @@ mod tests {
                 }
             }
             other => panic!("expected NavigateSelect, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn blank_action_kinds_roundtrip_encode_decode() {
+        use sqyre_domain::action_templates;
+        for tmpl in action_templates() {
+            let action = tmpl.create();
+            let encoded = action_to_map(&action).unwrap();
+            let decoded = action_from_map(&encoded).unwrap();
+            assert_eq!(
+                decoded.type_key(),
+                tmpl.action_type,
+                "type_key mismatch for {}",
+                tmpl.action_type
+            );
+            // Codec applies defaults on decode (empty optional fields). A second
+            // encode→decode must be idempotent.
+            let reencoded = action_to_map(&decoded).unwrap();
+            let redecoded = action_from_map(&reencoded).unwrap();
+            assert_eq!(
+                decoded.kind, redecoded.kind,
+                "encode/decode not idempotent for {}",
+                tmpl.action_type
+            );
+        }
+    }
+
+    #[test]
+    fn decode_rejects_missing_type() {
+        let mut m = Mapping::new();
+        insert_str(&mut m, "name", "x");
+        let err = action_from_map(&m).unwrap_err();
+        assert!(err.to_string().contains("type"), "{err}");
+    }
+
+    #[test]
+    fn decode_rejects_unknown_type() {
+        let mut m = Mapping::new();
+        insert_str(&mut m, "type", "notarealaction");
+        let err = action_from_map(&m).unwrap_err();
+        assert!(
+            err.to_string().to_ascii_lowercase().contains("unknown")
+                || err.to_string().contains("notarealaction"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn image_search_populated_fields_roundtrip() {
+        use sqyre_domain::{MatchOrder, RepeatMode, WaitTilFoundConfig};
+        let action = Action {
+            id: ActionId::new(),
+            kind: ActionKind::ImageSearch {
+                name: "find sword".into(),
+                targets: vec!["Game~Sword".into(), "Game~Shield".into()],
+                search_area: CoordinateRef("Game~Arena".into()),
+                tolerance: 0.87,
+                blur: 3,
+                detection: DetectionBranch {
+                    wait: WaitTilFoundConfig {
+                        repeat_mode: RepeatMode::WaitUntilFound,
+                        wait_til_found_seconds: 12,
+                        wait_til_found_interval_ms: 250,
+                        max_iterations: 0,
+                    },
+                    coords: CoordinateOutputs {
+                        output_x_variable: "sx".into(),
+                        output_y_variable: "sy".into(),
+                    },
+                    run_branch_on_no_find: true,
+                    order: MatchOrder::default(),
+                    subactions: vec![Action {
+                        id: ActionId::new(),
+                        kind: ActionKind::Click {
+                            button: "left".into(),
+                            state: true,
+                        },
+                    }],
+                },
+            },
+        };
+        let map = action_to_map_with_uid(&action).unwrap();
+        assert!(!map.contains_key(Value::String("detection".into())));
+        assert_eq!(
+            string_from_map(&map, "repeatmode"),
+            RepeatMode::WaitUntilFound.as_str()
+        );
+        assert_eq!(string_from_map(&map, "outputxvariable"), "sx");
+        assert!(map.contains_key(Value::String("subactions".into())));
+        let back = action_from_map(&map).unwrap();
+        assert_eq!(back.id, action.id);
+        assert_eq!(back.kind, action.kind);
+    }
+
+    #[test]
+    fn while_found_preserves_max_iterations() {
+        use sqyre_domain::{MatchOrder, RepeatMode, WaitTilFoundConfig};
+        let action = Action {
+            id: ActionId::new(),
+            kind: ActionKind::FindPixel {
+                name: "loop".into(),
+                search_area: CoordinateRef("Game~Arena".into()),
+                target_color: "#ffffff".into(),
+                color_tolerance: 2,
+                detection: DetectionBranch {
+                    wait: WaitTilFoundConfig {
+                        repeat_mode: RepeatMode::WhileFound,
+                        wait_til_found_seconds: 0,
+                        wait_til_found_interval_ms: 100,
+                        max_iterations: 40,
+                    },
+                    coords: CoordinateOutputs::defaults(),
+                    run_branch_on_no_find: false,
+                    order: MatchOrder::default(),
+                    subactions: vec![],
+                },
+            },
+        };
+        let back = action_from_map(&action_to_map(&action).unwrap()).unwrap();
+        match back.kind {
+            ActionKind::FindPixel { detection, .. } => {
+                assert_eq!(detection.wait.repeat_mode, RepeatMode::WhileFound);
+                assert_eq!(detection.wait.max_iterations, 40);
+                assert_eq!(detection.wait.wait_til_found_interval_ms, 100);
+            }
+            other => panic!("expected FindPixel, got {other:?}"),
         }
     }
 }

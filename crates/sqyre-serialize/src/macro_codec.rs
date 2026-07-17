@@ -18,8 +18,7 @@ fn decode_macro_from_map_inner(raw: &Mapping, name_hint: &str) -> Result<Macro> 
     let mut macro_ = Macro::new(&name, 0, Vec::new());
 
     macro_.global_delay = optional_int(raw, "globaldelay").unwrap_or(0);
-    macro_.keyboard_delay =
-        optional_int(raw, "keyboarddelay").unwrap_or(DEFAULT_KEYBOARD_DELAY);
+    macro_.keyboard_delay = optional_int(raw, "keyboarddelay").unwrap_or(DEFAULT_KEYBOARD_DELAY);
     macro_.mouse_delay = optional_int(raw, "mousedelay").unwrap_or(DEFAULT_MOUSE_DELAY);
 
     macro_.hotkey = raw
@@ -90,14 +89,7 @@ pub fn encode_macro_to_map(macro_: &Macro) -> Result<Mapping> {
     insert(
         &mut m,
         "hotkey",
-        Value::Sequence(
-            macro_
-                .hotkey
-                .iter()
-                .cloned()
-                .map(Value::String)
-                .collect(),
-        ),
+        Value::Sequence(macro_.hotkey.iter().cloned().map(Value::String).collect()),
     );
     if !macro_.hotkey_trigger.is_empty() {
         insert_str(&mut m, "hotkey_trigger", &macro_.hotkey_trigger);

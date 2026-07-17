@@ -240,10 +240,7 @@ impl Action {
                 }
                 continue;
             }
-            pills.push(SummaryPill {
-                text,
-                prefix: None,
-            });
+            pills.push(SummaryPill { text, prefix: None });
         }
         for (name, label) in output_labels.drain(..) {
             if consumed.insert(name.clone()) {
@@ -292,7 +289,10 @@ impl ActionKind {
                 if *smooth {
                     params.push(DisplayParam::extra("Smooth", "true"));
                     params.push(DisplayParam::extra("Smooth low", format_float(*smooth_low)));
-                    params.push(DisplayParam::extra("Smooth high", format_float(*smooth_high)));
+                    params.push(DisplayParam::extra(
+                        "Smooth high",
+                        format_float(*smooth_high),
+                    ));
                     params.push(DisplayParam::extra(
                         "Smooth delay (ms)",
                         smooth_delay_ms.to_string(),
@@ -318,17 +318,18 @@ impl ActionKind {
                 params.push(DisplayParam::new("Iterations", count.as_display()));
             }
             Self::While {
-                name,
-                match_mode,
-                clauses,
+                condition,
                 max_iterations,
                 ..
             } => {
-                params.push(DisplayParam::new("Name", name.as_str()));
-                params.push(DisplayParam::new("Match", match_label(*match_mode)));
+                params.push(DisplayParam::new("Name", condition.name.as_str()));
+                params.push(DisplayParam::new(
+                    "Match",
+                    match_label(condition.match_mode),
+                ));
                 params.push(DisplayParam::new(
                     "While",
-                    condition_summary(*match_mode, clauses),
+                    condition_summary(condition.match_mode, &condition.clauses),
                 ));
                 if *max_iterations > 0 {
                     params.push(DisplayParam::extra(
@@ -337,17 +338,15 @@ impl ActionKind {
                     ));
                 }
             }
-            Self::Conditional {
-                name,
-                match_mode,
-                clauses,
-                ..
-            } => {
-                params.push(DisplayParam::new("Name", name.as_str()));
-                params.push(DisplayParam::new("Match", match_label(*match_mode)));
+            Self::Conditional { condition, .. } => {
+                params.push(DisplayParam::new("Name", condition.name.as_str()));
+                params.push(DisplayParam::new(
+                    "Match",
+                    match_label(condition.match_mode),
+                ));
                 params.push(DisplayParam::new(
                     "If",
-                    condition_summary(*match_mode, clauses),
+                    condition_summary(condition.match_mode, &condition.clauses),
                 ));
             }
             Self::ImageSearch {
@@ -356,20 +355,21 @@ impl ActionKind {
                 search_area,
                 tolerance,
                 blur,
-                wait,
-                run_branch_on_no_find,
-                ..
+                detection,
             } => {
                 params.push(DisplayParam::new("Name", name.as_str()));
                 params.push(DisplayParam::new("Items", targets.len().to_string()));
-                params.push(DisplayParam::new("Search Area", search_area.display_label()));
+                params.push(DisplayParam::new(
+                    "Search Area",
+                    search_area.display_label(),
+                ));
                 params.push(DisplayParam::extra(
                     "Wait",
-                    wait.display_wait_mode("instant"),
+                    detection.wait.display_wait_mode("instant"),
                 ));
                 params.push(DisplayParam::extra("Tolerance", format_float(*tolerance)));
                 params.push(DisplayParam::extra("Blur", blur.to_string()));
-                if *run_branch_on_no_find {
+                if detection.run_branch_on_no_find {
                     params.push(DisplayParam::extra("Run on no find", "yes"));
                 }
             }
@@ -377,7 +377,7 @@ impl ActionKind {
                 name,
                 target,
                 search_area,
-                wait,
+                detection,
                 ..
             } => {
                 params.push(DisplayParam::new("Name", name.as_str()));
@@ -388,7 +388,7 @@ impl ActionKind {
                 ));
                 params.push(DisplayParam::extra(
                     "Wait",
-                    wait.display_wait_mode("instant"),
+                    detection.wait.display_wait_mode("instant"),
                 ));
             }
             Self::FindPixel {
@@ -396,8 +396,7 @@ impl ActionKind {
                 search_area,
                 target_color,
                 color_tolerance,
-                wait,
-                ..
+                detection,
             } => {
                 params.push(DisplayParam::new("Name", name.as_str()));
                 params.push(DisplayParam::new("Color", target_color.as_str()));
@@ -411,7 +410,7 @@ impl ActionKind {
                 ));
                 params.push(DisplayParam::extra(
                     "Wait",
-                    wait.display_wait_mode("instant"),
+                    detection.wait.display_wait_mode("instant"),
                 ));
             }
             Self::ForEachRow {
@@ -520,15 +519,15 @@ impl ActionKind {
                     role: "value".into(),
                 }]
             }
-            Self::ImageSearch { coords, .. } | Self::FindPixel { coords, .. } => {
-                coords.variable_bindings()
+            Self::ImageSearch { detection, .. } | Self::FindPixel { detection, .. } => {
+                detection.coords.variable_bindings()
             }
             Self::Ocr {
-                coords,
+                detection,
                 output_variable,
                 ..
             } => {
-                let mut out = coords.variable_bindings();
+                let mut out = detection.coords.variable_bindings();
                 if !output_variable.is_empty() {
                     out.push(VariableBinding {
                         name: output_variable.clone(),
@@ -767,7 +766,7 @@ pub fn looks_like_var_ref(text: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{root_loop, ActionId, CoordinateRef, MouseButton};
+    use crate::{root_loop, ActionId, ConditionBlock, CoordinateRef, DetectionBranch, MouseButton};
 
     #[test]
     fn wait_summary_includes_time_ms() {
@@ -792,11 +791,7 @@ mod tests {
                 search_area: CoordinateRef("Prog~Box".into()),
                 tolerance: 0.9,
                 blur: 0,
-                wait: WaitTilFoundConfig::default(),
-                coords: CoordinateOutputs::defaults(),
-                run_branch_on_no_find: false,
-                order: Default::default(),
-                subactions: vec![],
+                detection: DetectionBranch::default(),
             },
         };
         let tree = a.display_params_for_tree();
@@ -857,8 +852,9 @@ mod tests {
             },
         };
         let pills = a.tree_summary_pills();
-        assert!(pills.iter().any(|p| p.prefix.as_deref() == Some("Variable")
-            && p.text == "count"));
+        assert!(pills
+            .iter()
+            .any(|p| p.prefix.as_deref() == Some("Variable") && p.text == "count"));
     }
 
     #[test]
@@ -909,25 +905,30 @@ mod tests {
         let a = Action {
             id: ActionId::new(),
             kind: ActionKind::Conditional {
-                name: "gate".into(),
-                match_mode: MatchMode::Any,
-                clauses: vec![
-                    ConditionClause {
-                        left: ScalarValue::String("${a}".into()),
-                        operator: "==".into(),
-                        right: ScalarValue::String("1".into()),
-                    },
-                    ConditionClause {
-                        left: ScalarValue::String("${b}".into()),
-                        operator: "is set".into(),
-                        right: ScalarValue::Null,
-                    },
-                ],
+                condition: ConditionBlock {
+                    name: "gate".into(),
+                    match_mode: MatchMode::Any,
+                    clauses: vec![
+                        ConditionClause {
+                            left: ScalarValue::String("${a}".into()),
+                            operator: "==".into(),
+                            right: ScalarValue::String("1".into()),
+                        },
+                        ConditionClause {
+                            left: ScalarValue::String("${b}".into()),
+                            operator: "is set".into(),
+                            right: ScalarValue::Null,
+                        },
+                    ],
+                },
                 subactions: vec![],
             },
         };
         let pills = a.tree_summary_pills();
-        let if_pill = pills.iter().find(|p| p.text.contains('|')).expect("If pill");
+        let if_pill = pills
+            .iter()
+            .find(|p| p.text.contains('|'))
+            .expect("If pill");
         assert!(if_pill.text.contains("${a} == 1"));
         assert!(if_pill.text.contains("${b} is set"));
         assert!(pills.iter().any(|p| p.text.contains("any (OR)")));
@@ -942,20 +943,23 @@ mod tests {
                 search_area: CoordinateRef("Prog~Box".into()),
                 target_color: "#ff0000".into(),
                 color_tolerance: 10,
-                wait: WaitTilFoundConfig::default(),
-                coords: CoordinateOutputs {
-                    output_x_variable: "px".into(),
-                    output_y_variable: "py".into(),
+                detection: DetectionBranch {
+                    coords: CoordinateOutputs {
+                        output_x_variable: "px".into(),
+                        output_y_variable: "py".into(),
+                    },
+                    ..DetectionBranch::default()
                 },
-                run_branch_on_no_find: false,
-                order: Default::default(),
-                subactions: vec![],
             },
         };
         let pills = a.tree_summary_pills();
         assert!(pills.iter().any(|p| p.text == "#ff0000"));
-        assert!(pills.iter().any(|p| p.prefix.as_deref() == Some("X") && p.text == "px"));
-        assert!(pills.iter().any(|p| p.prefix.as_deref() == Some("Y") && p.text == "py"));
+        assert!(pills
+            .iter()
+            .any(|p| p.prefix.as_deref() == Some("X") && p.text == "px"));
+        assert!(pills
+            .iter()
+            .any(|p| p.prefix.as_deref() == Some("Y") && p.text == "py"));
         assert_eq!(action_icon_glyph(&a), "🎨");
     }
 
@@ -969,9 +973,9 @@ mod tests {
             },
         };
         let pills = a.tree_summary_pills();
-        assert!(pills.iter().any(|p| {
-            p.prefix.as_deref() == Some("Variable") && p.text == "sum"
-        }));
+        assert!(pills
+            .iter()
+            .any(|p| { p.prefix.as_deref() == Some("Variable") && p.text == "sum" }));
     }
 
     #[test]
@@ -1041,17 +1045,13 @@ mod tests {
                     target: String::new(),
                     search_area: CoordinateRef(String::new()),
                     output_variable: String::new(),
-                    coords: CoordinateOutputs::default(),
-                    wait: WaitTilFoundConfig::default(),
-                    run_branch_on_no_find: false,
                     blur: 0,
                     min_threshold: 0,
                     resize: 1.0,
                     grayscale: false,
                     threshold_otsu: false,
                     threshold_invert: false,
-                    order: Default::default(),
-                    subactions: vec![],
+                    detection: DetectionBranch::default(),
                 },
                 "🔤",
             ),
@@ -1062,11 +1062,7 @@ mod tests {
                     search_area: CoordinateRef(String::new()),
                     tolerance: 0.0,
                     blur: 0,
-                    wait: WaitTilFoundConfig::default(),
-                    coords: CoordinateOutputs::defaults(),
-                    run_branch_on_no_find: false,
-                    order: Default::default(),
-                    subactions: vec![],
+                    detection: DetectionBranch::default(),
                 },
                 "🔍",
             ),

@@ -41,12 +41,14 @@ pub(crate) fn execute_navigate_select(
     let resolver = exec.deps.resolver.ok_or_else(|| {
         ExecError::Message("navigate select: coordinate resolver not configured".into())
     })?;
-    let (rows, cols) = resolver.collection_grid(&data.program, &graph).map_err(|e| {
-        ExecError::Message(format!(
-            "navigate select: collection {}/{}: {e}",
-            data.program, graph
-        ))
-    })?;
+    let (rows, cols) = resolver
+        .collection_grid(&data.program, &graph)
+        .map_err(|e| {
+            ExecError::Message(format!(
+                "navigate select: collection {}/{}: {e}",
+                data.program, graph
+            ))
+        })?;
     if rows < 1 || cols < 1 {
         return Err(ExecError::Message(format!(
             "navigate select: invalid grid {rows}x{cols}"
@@ -83,20 +85,31 @@ pub(crate) fn execute_navigate_select(
     let mut builtins: Vec<Option<BuiltinChord>> = Vec::new();
     let mut key_branch_idxs: Vec<Option<usize>> = Vec::new();
 
-    let mut push_builtin =
-        |keys: &[String], kind: BuiltinChord, hold: bool| {
-            if keys.iter().any(|k| !k.trim().is_empty()) {
-                chords.push(keys.to_vec());
-                hold_mask.push(hold);
-                builtins.push(Some(kind));
-                key_branch_idxs.push(None);
-            }
-        };
+    let mut push_builtin = |keys: &[String], kind: BuiltinChord, hold: bool| {
+        if keys.iter().any(|k| !k.trim().is_empty()) {
+            chords.push(keys.to_vec());
+            hold_mask.push(hold);
+            builtins.push(Some(kind));
+            key_branch_idxs.push(None);
+        }
+    };
 
     push_builtin(&data.chords.up, BuiltinChord::Up, data.options.hold_repeat);
-    push_builtin(&data.chords.down, BuiltinChord::Down, data.options.hold_repeat);
-    push_builtin(&data.chords.left, BuiltinChord::Left, data.options.hold_repeat);
-    push_builtin(&data.chords.right, BuiltinChord::Right, data.options.hold_repeat);
+    push_builtin(
+        &data.chords.down,
+        BuiltinChord::Down,
+        data.options.hold_repeat,
+    );
+    push_builtin(
+        &data.chords.left,
+        BuiltinChord::Left,
+        data.options.hold_repeat,
+    );
+    push_builtin(
+        &data.chords.right,
+        BuiltinChord::Right,
+        data.options.hold_repeat,
+    );
     push_builtin(&data.chords.select, BuiltinChord::Select, false);
     push_builtin(&data.chords.back, BuiltinChord::Back, false);
 
@@ -113,8 +126,7 @@ pub(crate) fn execute_navigate_select(
 
     if chords.is_empty() {
         return Err(ExecError::Message(
-            "navigate select: no chords configured (nav, select, back, or Nav Key children)"
-                .into(),
+            "navigate select: no chords configured (nav, select, back, or Nav Key children)".into(),
         ));
     }
 
@@ -129,12 +141,7 @@ pub(crate) fn execute_navigate_select(
                     "navigate select: key wait is not available in this build".into(),
                 )
             })?;
-            match waiter.wait_for_any_chord(
-                &chords,
-                &hold_mask,
-                data.options.pass_through,
-                stop,
-            ) {
+            match waiter.wait_for_any_chord(&chords, &hold_mask, data.options.pass_through, stop) {
                 Ok(i) => i,
                 Err(e) if e.contains("stopped") => return Err(FlowSignal::Stopped.into()),
                 Err(e) => return Err(ExecError::Message(e)),
@@ -205,10 +212,7 @@ pub(crate) fn execute_navigate_select(
                 BuiltinChord::Select => {
                     write_outputs(macro_, &data.program, &graph, row, col, &data.outputs);
                     perform_select(exec, &data.select)?;
-                    exec.log(
-                        action.id,
-                        format!("Navigate Select: select @ {row},{col}"),
-                    );
+                    exec.log(action.id, format!("Navigate Select: select @ {row},{col}"));
                     return Ok(());
                 }
                 BuiltinChord::Back => {
@@ -418,11 +422,25 @@ fn perform_select(exec: &mut Executor<'_>, select: &NavSelectAction) -> Result<(
                 select.button.trim()
             };
             match mode.as_str() {
-                "down" | "hold" => exec.deps.automation.click(btn, true).map_err(ExecError::Message)?,
-                "up" => exec.deps.automation.click(btn, false).map_err(ExecError::Message)?,
+                "down" | "hold" => exec
+                    .deps
+                    .automation
+                    .click(btn, true)
+                    .map_err(ExecError::Message)?,
+                "up" => exec
+                    .deps
+                    .automation
+                    .click(btn, false)
+                    .map_err(ExecError::Message)?,
                 _ => {
-                    exec.deps.automation.click(btn, true).map_err(ExecError::Message)?;
-                    exec.deps.automation.click(btn, false).map_err(ExecError::Message)?;
+                    exec.deps
+                        .automation
+                        .click(btn, true)
+                        .map_err(ExecError::Message)?;
+                    exec.deps
+                        .automation
+                        .click(btn, false)
+                        .map_err(ExecError::Message)?;
                 }
             }
         }
@@ -434,10 +452,17 @@ fn perform_select(exec: &mut Executor<'_>, select: &NavSelectAction) -> Result<(
                 ));
             }
             match mode.as_str() {
-                "down" | "hold" => exec.deps.automation.key_down(k).map_err(ExecError::Message)?,
+                "down" | "hold" => exec
+                    .deps
+                    .automation
+                    .key_down(k)
+                    .map_err(ExecError::Message)?,
                 "up" => exec.deps.automation.key_up(k).map_err(ExecError::Message)?,
                 _ => {
-                    exec.deps.automation.key_down(k).map_err(ExecError::Message)?;
+                    exec.deps
+                        .automation
+                        .key_down(k)
+                        .map_err(ExecError::Message)?;
                     exec.deps.automation.key_up(k).map_err(ExecError::Message)?;
                 }
             }
@@ -457,8 +482,8 @@ mod tests {
     use crate::backends::{ImmediateContinueWaiter, RecordingBackend};
     use crate::run::{execute_macro_with, ExecDeps};
     use sqyre_domain::{
-        root_loop, ActionId, CoordinateRef, NavigateSelectData, NavChords, NavInputs, NavOptions,
-        NavOutputs, NavSelectAction,
+        root_loop, ActionId, CoordinateRef, NavChords, NavInputs, NavOptions, NavOutputs,
+        NavSelectAction, NavigateSelectData,
     };
     use std::sync::Mutex;
 
@@ -630,10 +655,7 @@ mod tests {
         )
         .unwrap();
 
-        assert!(backend
-            .log
-            .iter()
-            .any(|e| e == "click:right:down"));
+        assert!(backend.log.iter().any(|e| e == "click:right:down"));
         assert_eq!(
             macro_.variables.get("r").map(|v| v.as_display()),
             Some("1".into())

@@ -22,15 +22,13 @@ pub(crate) fn execute_focus_window(
             "focus window: no window title set".into(),
         ));
     }
-    let focuser = exec.deps.window_focuser.ok_or_else(|| {
-        ExecError::Message("focus window: window focuser not configured".into())
-    })?;
-    focuser.focus(path, title).map_err(|e| {
-        ExecError::Message(format!("focus window {title:?} ({path}): {e}"))
-    })?;
-    exec.log(
-        action_id,
-        format!("Focus Window: {title} ({path})"),
-    );
+    let focuser = exec
+        .deps
+        .window_focuser
+        .ok_or_else(|| ExecError::Message("focus window: window focuser not configured".into()))?;
+    focuser
+        .focus(path, title)
+        .map_err(|e| ExecError::Message(format!("focus window {title:?} ({path}): {e}")))?;
+    exec.log(action_id, format!("Focus Window: {title} ({path})"));
     Ok(())
 }

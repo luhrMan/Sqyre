@@ -1,16 +1,14 @@
 //! Macro action tree: TreeView, DnD/scroll gestures, row chrome wiring, highlights.
 
 use crate::action_tooltip;
+use crate::paint_ctx::{CatalogPaint, RecordBridges, TipUiCtx, TreePaint, VarTheme};
 use crate::tree_chrome::{self, RowAction, RowHighlight, RowInteraction};
 use crate::tree_dnd;
 use crate::tree_history::{TreeHistory, TreeSnapshot};
 use crate::SqyreApp;
 use eframe::egui;
-use egui_ltreeview::{
-    Action as TreeAction, NodeBuilder, TreeView, TreeViewBuilder, TreeViewState,
-};
+use egui_ltreeview::{Action as TreeAction, NodeBuilder, TreeView, TreeViewBuilder, TreeViewState};
 use sqyre_domain::{collect_known_variable_names, Action, ActionId, InsertSlot};
-use crate::paint_ctx::{CatalogPaint, RecordBridges, TipUiCtx, TreePaint, VarTheme};
 use std::collections::HashSet;
 use std::sync::atomic::Ordering;
 
@@ -61,16 +59,15 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
     // bar_width so logs/delete stay clear when the scrollbar appears.
     let actions = ui
         .scope(|ui| {
-            ui.spacing_mut().scroll.floating_allocated_width =
-                ui.spacing().scroll.bar_width;
-            egui::ScrollArea::vertical()
+            ui.spacing_mut().scroll.floating_allocated_width = ui.spacing().scroll.bar_width;
+            let scroll_out = egui::ScrollArea::vertical()
                 .id_salt("macro_tree_scroll")
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
                     // Decide reorder vs drag-scroll before TreeView so
                     // allow_drag_and_drop can suppress a non-handle drag.
-                    let (primary_down, primary_released, pointer_delta, pointer_vel_y, dt) =
-                        ui.input(|i| {
+                    let (primary_down, primary_released, pointer_delta, pointer_vel_y, dt) = ui
+                        .input(|i| {
                             (
                                 i.pointer.primary_down(),
                                 i.pointer.primary_released(),
@@ -86,8 +83,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                     if !primary_down {
                         app.tree_drag_mode = TreeDragMode::Idle;
                     } else if app.tree_drag_mode == TreeDragMode::Idle {
-                        let become_drag =
-                            ui.input(|i| !i.pointer.could_any_button_be_click());
+                        let become_drag = ui.input(|i| !i.pointer.could_any_button_be_click());
                         if become_drag {
                             app.tree_scroll_vel = 0.0;
                             // Only claim the gesture when press started on this
@@ -107,9 +103,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                             if press_on_tree {
                                 let on_handle = ui.input(|i| {
                                     i.pointer.press_origin().is_some_and(|p| {
-                                        app.tree_drag_handles
-                                            .iter()
-                                            .any(|r| r.contains(p))
+                                        app.tree_drag_handles.iter().any(|r| r.contains(p))
                                     })
                                 });
                                 app.tree_drag_mode = if on_handle {
@@ -134,15 +128,13 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                         if friction > app.tree_scroll_vel.abs() {
                             app.tree_scroll_vel = 0.0;
                         } else {
-                            app.tree_scroll_vel -=
-                                friction * app.tree_scroll_vel.signum();
+                            app.tree_scroll_vel -= friction * app.tree_scroll_vel.signum();
                             ui.ctx().request_repaint();
                         }
                     } else {
                         app.tree_scroll_vel = 0.0;
                     }
-                    let allow_dnd =
-                        !running && app.tree_drag_mode != TreeDragMode::Scroll;
+                    let allow_dnd = !running && app.tree_drag_mode != TreeDragMode::Scroll;
 
                     let catalog = &app.catalog;
                     let icons = &mut app.icon_cache;
@@ -163,37 +155,41 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                     let (_, tree_actions) = TreeView::new(id)
                         .allow_drag_and_drop(allow_dnd)
                         .default_node_height(Some(tree_chrome::default_row_height(interact_y)))
-                        .show_state(ui, &mut state, |builder: &mut TreeViewBuilder<'_, ActionId>| {
-                            // Invisible flattened root so top-level rows have a parent for DnD
-                            // Root loop is not painted.
-                            builder.node(
-                                NodeBuilder::dir(root_aid)
-                                    .flatten(true)
-                                    .drop_allowed(true)
-                                    .default_open(true),
-                            );
-                            for child in root_children {
-                                build_tree(
-                                    builder,
-                                    child,
-                                    &mut open_logs,
-                                    &mut delete_action,
-                                    &mut row_events,
-                                    &mut tree_paint,
-                                    scroll_to,
-                                    &mut scrolled_follow,
-                                    interact_y,
+                        .show_state(
+                            ui,
+                            &mut state,
+                            |builder: &mut TreeViewBuilder<'_, ActionId>| {
+                                // Invisible flattened root so top-level rows have a parent for DnD
+                                // Root loop is not painted.
+                                builder.node(
+                                    NodeBuilder::dir(root_aid)
+                                        .flatten(true)
+                                        .drop_allowed(true)
+                                        .default_open(true),
                                 );
-                            }
-                            builder.close_dir();
-                        });
+                                for child in root_children {
+                                    build_tree(
+                                        builder,
+                                        child,
+                                        &mut open_logs,
+                                        &mut delete_action,
+                                        &mut row_events,
+                                        &mut tree_paint,
+                                        scroll_to,
+                                        &mut scrolled_follow,
+                                        interact_y,
+                                    );
+                                }
+                                builder.close_dir();
+                            },
+                        );
                     // Off-clip rows skip label_ui — estimate Y so ScrollArea can still follow.
                     if let Some(target) = scroll_to {
                         if !scrolled_follow {
                             if let Some(row_i) = flattened_visible_index(root, target) {
-                                let row_h = tree_chrome::default_row_height(
-                                    ui.spacing().interact_size.y,
-                                ) + ui.spacing().item_spacing.y;
+                                let row_h =
+                                    tree_chrome::default_row_height(ui.spacing().interact_size.y)
+                                        + ui.spacing().item_spacing.y;
                                 let y = ui.min_rect().top() + row_i as f32 * row_h;
                                 let rect = egui::Rect::from_min_size(
                                     egui::pos2(ui.min_rect().left(), y),
@@ -205,8 +201,18 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                         }
                     }
                     tree_actions
-                })
-                .inner
+                });
+            // Match egui ScrollArea: kill kinetic coast when offset clamps.
+            // Positive scroll_with_delta.y decreases offset (toward top).
+            let max_offset_y =
+                (scroll_out.content_size.y - scroll_out.inner_rect.height()).max(0.0);
+            let y = scroll_out.state.offset.y;
+            if (y <= 0.0 && app.tree_scroll_vel > 0.0)
+                || (y >= max_offset_y && app.tree_scroll_vel < 0.0)
+            {
+                app.tree_scroll_vel = 0.0;
+            }
+            scroll_out.inner
         })
         .inner;
     if scrolled_follow {
@@ -249,6 +255,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
             if app.tooltip.action_id() == Some(aid) {
                 app.tooltip.cancel();
             }
+            app.persist_macro_at(idx);
         }
     }
 
@@ -261,12 +268,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
         }
         if let Some(action) = app.macros[idx].root.find_by_id(*aid) {
             let action = action.clone();
-            action_tooltip::ingest_row(
-                &mut app.tooltip,
-                &action,
-                *interaction,
-                pointer,
-            );
+            action_tooltip::ingest_row(&mut app.tooltip, &action, *interaction, pointer);
         }
     }
     action_tooltip::end_hover_pass(&mut app.tooltip, any_view_hover);
@@ -312,9 +314,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                 &mut tip_ui,
                 |root_before| {
                     if pending_record.is_none() {
-                        if let Ok(snap) =
-                            TreeHistory::take_snapshot(root_before, selected)
-                        {
+                        if let Ok(snap) = TreeHistory::take_snapshot(root_before, selected) {
                             pending_record = Some(snap);
                         }
                     }
@@ -345,8 +345,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                     continue;
                 }
                 let target_aid = dnd.target;
-                let Some(slot) = tree_dnd::insert_slot_from_dir_position(dnd.position)
-                else {
+                let Some(slot) = tree_dnd::insert_slot_from_dir_position(dnd.position) else {
                     continue;
                 };
                 for src_aid in &dnd.source {
@@ -361,11 +360,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                 // Disallow dropping a node into itself / a descendant while dragging.
                 let target_aid = dnd.target;
                 if let Some(src_aid) = dnd.source.first() {
-                    if tree_dnd::is_invalid_tree_drop(
-                        &app.macros[idx].root,
-                        *src_aid,
-                        target_aid,
-                    ) {
+                    if tree_dnd::is_invalid_tree_drop(&app.macros[idx].root, *src_aid, target_aid) {
                         dnd.remove_drop_marker(ui);
                     }
                 }
@@ -376,8 +371,12 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
     if !pending_moves.is_empty() {
         app.record_tree_mutation();
     }
+    let moved = !pending_moves.is_empty();
     for (src, parent, slot) in pending_moves {
         let _ = app.macros[idx].root.move_action(src, parent, slot);
+    }
+    if moved {
+        app.persist_macro_at(idx);
     }
 
     if let Some(aid) = app.selected_action {
@@ -398,11 +397,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
     }
 }
 
-fn set_all_branches_openness(
-    root: &Action,
-    state: &mut TreeViewState<ActionId>,
-    open: bool,
-) {
+fn set_all_branches_openness(root: &Action, state: &mut TreeViewState<ActionId>, open: bool) {
     root.walk(&mut |action| {
         if action.is_branch() && !action.id.is_root() {
             state.set_openness(action.id, open);
@@ -546,13 +541,9 @@ fn build_tree(
         }
         builder.close_dir();
     } else {
-        builder.node(
-            NodeBuilder::leaf(action_id)
-                .height(row_h)
-                .label_ui(|ui| {
-                    handle_row(ui, open_logs, delete_action, row_events, scrolled_follow);
-                }),
-        );
+        builder.node(NodeBuilder::leaf(action_id).height(row_h).label_ui(|ui| {
+            handle_row(ui, open_logs, delete_action, row_events, scrolled_follow);
+        }));
     }
 }
 
@@ -626,9 +617,6 @@ mod highlight_ui_tests {
             cursor: Some(id),
             fills: HashMap::new(),
         };
-        assert!(matches!(
-            row_highlight("m", id, &snap),
-            RowHighlight::None
-        ));
+        assert!(matches!(row_highlight("m", id, &snap), RowHighlight::None));
     }
 }

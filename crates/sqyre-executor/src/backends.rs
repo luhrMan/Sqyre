@@ -73,9 +73,7 @@ pub trait ScreenCapturer {
     ) -> Result<(RgbaImage, DesktopRect), String> {
         let mut rect = DesktopRect::from_corners(left, top, right, bottom);
         if rect.is_empty() {
-            return Err(format!(
-                "empty search area {left},{top},{right},{bottom}"
-            ));
+            return Err(format!("empty search area {left},{top},{right},{bottom}"));
         }
         // Clamp to virtual bounds when available.
         if let Ok(vb) = self.virtual_bounds() {
@@ -203,7 +201,10 @@ pub struct FixedOcrEngine {
 impl OcrEngine for FixedOcrEngine {
     fn recognize(&self, image: &sqyre_match::ImageBuf) -> Result<OcrResult, String> {
         if let Ok(mut g) = self.log.lock() {
-            g.push(format!("ocr:{}x{}c{}", image.width, image.height, image.channels));
+            g.push(format!(
+                "ocr:{}x{}c{}",
+                image.width, image.height, image.channels
+            ));
         }
         Ok(self.result.clone())
     }
@@ -256,23 +257,33 @@ impl AutomationBackend for RecordingBackend {
 #[derive(Debug, Default)]
 pub struct RecordingCapturer {
     pub log: Vec<String>,
+    /// Single image returned when [`Self::queue`] is empty.
     pub next: Option<RgbaImage>,
+    /// FIFO images consumed one per capture (then falls back to [`Self::next`]).
+    pub queue: Vec<RgbaImage>,
     pub bounds: DesktopRect,
+}
+
+impl RecordingCapturer {
+    fn take_image(&mut self) -> Result<RgbaImage, String> {
+        if !self.queue.is_empty() {
+            return Ok(self.queue.remove(0));
+        }
+        self.next
+            .clone()
+            .ok_or_else(|| "RecordingCapturer: no image".into())
+    }
 }
 
 impl ScreenCapturer for RecordingCapturer {
     fn capture_monitor(&mut self, display_index: i32) -> Result<RgbaImage, String> {
         self.log.push(format!("monitor:{display_index}"));
-        self.next
-            .clone()
-            .ok_or_else(|| "RecordingCapturer: no image".into())
+        self.take_image()
     }
     fn capture_rect(&mut self, rect: DesktopRect) -> Result<RgbaImage, String> {
         self.log
             .push(format!("rect:{},{},{},{}", rect.x, rect.y, rect.w, rect.h));
-        self.next
-            .clone()
-            .ok_or_else(|| "RecordingCapturer: no image".into())
+        self.take_image()
     }
     fn virtual_bounds(&mut self) -> Result<DesktopRect, String> {
         Ok(self.bounds)

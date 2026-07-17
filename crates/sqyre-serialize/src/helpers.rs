@@ -30,15 +30,15 @@ pub fn expect_bool(m: &Mapping, key: &str) -> Result<bool> {
 }
 
 pub fn bool_from_map(m: &Mapping, key: &str) -> bool {
-    matches!(
-        m.get(Value::String(key.into())),
-        Some(Value::Bool(true))
-    )
+    matches!(m.get(Value::String(key.into())), Some(Value::Bool(true)))
 }
 
 pub fn int_from_value(v: &Value) -> i32 {
     match v {
-        Value::Number(n) => n.as_i64().or_else(|| n.as_u64().map(|u| u as i64)).unwrap_or(0) as i32,
+        Value::Number(n) => n
+            .as_i64()
+            .or_else(|| n.as_u64().map(|u| u as i64))
+            .unwrap_or(0) as i32,
         _ => 0,
     }
 }
@@ -113,4 +113,46 @@ pub fn insert_f64(m: &mut Mapping, key: &str, value: f64) {
 pub fn as_mapping(v: &Value) -> Result<&Mapping> {
     v.as_mapping()
         .ok_or_else(|| SerializeError::msg(format!("expected mapping, got {v:?}")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn optional_int_and_coercion() {
+        let mut m = Mapping::new();
+        insert_i32(&mut m, "a", 42);
+        insert(&mut m, "b", Value::String("nope".into()));
+        assert_eq!(optional_int(&m, "a"), Some(42));
+        assert_eq!(optional_int(&m, "missing"), None);
+        assert_eq!(optional_int(&m, "b"), Some(0));
+    }
+
+    #[test]
+    fn parse_coordinate_ref_shapes() {
+        assert!(parse_coordinate_ref(None).is_empty());
+        assert_eq!(
+            parse_coordinate_ref(Some(&Value::String("Game~Spot".into()))).as_str(),
+            "Game~Spot"
+        );
+        let mut nested = Mapping::new();
+        insert_str(&mut nested, "name", "Arena");
+        assert_eq!(
+            parse_coordinate_ref(Some(&Value::Mapping(nested))).as_str(),
+            "Arena"
+        );
+    }
+
+    #[test]
+    fn expect_string_errors() {
+        let m = Mapping::new();
+        assert!(expect_string(&m, "x").is_err());
+        let mut m = Mapping::new();
+        insert(&mut m, "x", Value::Bool(true));
+        assert!(expect_string(&m, "x")
+            .unwrap_err()
+            .to_string()
+            .contains("string"));
+    }
 }

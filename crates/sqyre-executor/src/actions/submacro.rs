@@ -18,9 +18,9 @@ pub(crate) fn execute_run_macro(
         .deps
         .macros
         .ok_or_else(|| ExecError::Message("run macro: macro catalog not configured".into()))?;
-    let mut target = (*lookup.get(macro_name).ok_or_else(|| {
-        ExecError::Message(format!("run macro: macro {macro_name:?} not found"))
-    })?)
+    let mut target = (*lookup
+        .get(macro_name)
+        .ok_or_else(|| ExecError::Message(format!("run macro: macro {macro_name:?} not found")))?)
     .clone();
     if !matches!(target.root.kind, ActionKind::Loop { .. }) {
         return Err(ExecError::Message(format!(

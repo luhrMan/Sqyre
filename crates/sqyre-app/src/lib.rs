@@ -1,7 +1,7 @@
 //! egui shell: load macros from `~/.sqyre`, Run/Stop with live backends.
 
-mod action_tooltip;
 mod action_logs_ui;
+mod action_tooltip;
 mod add_action;
 mod assets;
 mod catalog;
@@ -23,9 +23,11 @@ mod paint_ctx;
 mod pickers;
 mod pixel_color;
 mod preview_tooltip;
+mod recorded_action;
 mod recording_overlay;
 mod settings;
 mod single_instance;
+mod status_banner;
 pub mod theme;
 mod tray;
 mod tree_chrome;
@@ -52,6 +54,7 @@ use icon_cache::IconCache;
 use key_record::KeyRecordUi;
 use macro_meta::MacroMetaUi;
 use macro_overlay::MacroOverlay;
+use parking_lot::Mutex;
 use preview_tooltip::PreviewTooltipCache;
 use recording_overlay::RecordingOverlay;
 use sqyre_capture::{X11Capturer, X11WindowFocuser};
@@ -72,7 +75,6 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
-use parking_lot::Mutex;
 use tree_history::TreeHistory;
 use ui_macro_tree::TreeDragMode;
 
@@ -116,12 +118,9 @@ impl ContinueKeyWaiter for BridgeContinueWait {
         stop: &AtomicBool,
     ) -> Result<usize, String> {
         self.macro_hotkeys.suspend();
-        let result = self.continue_wait.wait_for_any_chord(
-            chords,
-            hold_repeat,
-            pass_through,
-            stop,
-        );
+        let result = self
+            .continue_wait
+            .wait_for_any_chord(chords, hold_repeat, pass_through, stop);
         self.macro_hotkeys.resume();
         result
     }
@@ -131,6 +130,8 @@ impl ContinueKeyWaiter for BridgeContinueWait {
 pub fn run() -> eframe::Result<()> {
     let _ = sqyre_persist::initialize_directories();
     diag::install(sqyre_persist::sqyre_dir());
+    #[cfg(target_os = "linux")]
+    install_x11_secondary_error_hook();
 
     let instance_lock = match single_instance::try_acquire() {
         Ok(Some(lock)) => Some(lock),
@@ -167,6 +168,19 @@ pub fn run() -> eframe::Result<()> {
     )
 }
 
+/// Keep winit from storing X errors that originate on Sqyre's secondary Displays.
+///
+/// Those Displays (focus / capture / outline) race destroyed windows during
+/// overlay skip-taskbar and property reads. Without this hook, a BadWindow
+/// GetProperty lands in winit's global error slot and later panics on IME
+/// destroy (`Failed to destroy input context`).
+#[cfg(target_os = "linux")]
+fn install_x11_secondary_error_hook() {
+    winit::platform::x11::register_xlib_error_hook(Box::new(|display, _event| {
+        sqyre_capture::owns_secondary_x_display(display)
+    }));
+}
+
 struct RunState {
     stop: StopFlag,
     running: Arc<AtomicBool>,
@@ -188,6 +202,8 @@ pub struct SqyreApp {
     macros: Vec<Macro>,
     catalog: ProgramCatalog,
     load_error: Option<String>,
+    /// Last failed macro/db save; shown in the macro list until a save succeeds.
+    save_error: Option<String>,
     selected_macro: usize,
     /// Currently selected action in the macro tree (also the egui tree node id).
     selected_action: Option<ActionId>,
@@ -280,6 +296,7 @@ impl SqyreApp {
             macros,
             catalog,
             load_error: None,
+            save_error: None,
             selected_macro: 0,
             selected_action: None,
             run,
@@ -343,12 +360,7 @@ impl SqyreApp {
 
     /// First top-level action under the demo macro root (skips the root loop).
     pub fn demo_first_action_id(&self) -> Option<ActionId> {
-        self.macros
-            .first()?
-            .root
-            .children()
-            .first()
-            .map(|a| a.id)
+        self.macros.first()?.root.children().first().map(|a| a.id)
     }
 
     /// First image-search action in the selected macro tree.
@@ -423,6 +435,7 @@ impl SqyreApp {
                     macros,
                     catalog,
                     load_error: None,
+                    save_error: None,
                     selected_macro: 0,
                     selected_action: None,
                     run,
@@ -475,6 +488,7 @@ impl SqyreApp {
                     macros: Vec::new(),
                     catalog,
                     load_error: Some(e.to_string()),
+                    save_error: None,
                     selected_macro: 0,
                     selected_action: None,
                     run,
@@ -516,7 +530,7 @@ impl SqyreApp {
                     instance_lock: None,
                     pending_delete_macro: None,
                 }
-            },
+            }
         }
     }
 
@@ -553,6 +567,9 @@ impl SqyreApp {
         self.db.macros.insert(m.name.clone(), m);
         if let Err(e) = self.db.save_default() {
             eprintln!("sqyre: save macro: {e}");
+            self.save_error = Some(e.to_string());
+        } else {
+            self.save_error = None;
         }
         self.refresh_macro_hotkey_bindings();
     }
@@ -585,8 +602,10 @@ impl SqyreApp {
         self.db.macros.insert(m.name.clone(), m.clone());
         if let Err(e) = self.db.save_default() {
             eprintln!("sqyre: create macro: {e}");
+            self.save_error = Some(e.to_string());
             return;
         }
+        self.save_error = None;
         self.macros.push(m);
         self.macros.sort_by(|a, b| a.name.cmp(&b.name));
         self.refresh_macro_hotkey_bindings();
@@ -607,8 +626,10 @@ impl SqyreApp {
         self.db.macros.insert(name.clone(), dup.clone());
         if let Err(e) = self.db.save_default() {
             eprintln!("sqyre: duplicate macro: {e}");
+            self.save_error = Some(e.to_string());
             return;
         }
+        self.save_error = None;
         self.macros.push(dup);
         self.macros.sort_by(|a, b| a.name.cmp(&b.name));
         self.refresh_macro_hotkey_bindings();
@@ -621,6 +642,9 @@ impl SqyreApp {
         self.macros.retain(|m| m.name != name);
         if let Err(e) = self.db.save_default() {
             eprintln!("sqyre: delete macro: {e}");
+            self.save_error = Some(e.to_string());
+        } else {
+            self.save_error = None;
         }
         self.refresh_macro_hotkey_bindings();
         if self.macros.is_empty() {
@@ -658,6 +682,9 @@ impl SqyreApp {
         self.db.replace_macros(self.macros.iter().cloned());
         if let Err(e) = self.db.save_default() {
             eprintln!("sqyre: rename macro: {e}");
+            self.save_error = Some(e.to_string());
+        } else {
+            self.save_error = None;
         }
         self.refresh_macro_hotkey_bindings();
 
@@ -665,21 +692,17 @@ impl SqyreApp {
         if let Some(i) = self.macros.iter().position(|m| m.name == new_name) {
             self.selected_macro = i;
         }
-        self.macro_meta.sync_selection(self.selected_macro, &self.macros[self.selected_macro]);
+        self.macro_meta
+            .sync_selection(self.selected_macro, &self.macros[self.selected_macro]);
     }
 
-    fn apply_hotkey_to_selected(
-        &mut self,
-        chord: Vec<String>,
-        trigger: Option<HotkeyTrigger>,
-    ) {
+    fn apply_hotkey_to_selected(&mut self, chord: Vec<String>, trigger: Option<HotkeyTrigger>) {
         if self.macros.is_empty() {
             return;
         }
         let idx = self.selected_macro.min(self.macros.len() - 1);
-        let trigger = trigger.unwrap_or_else(|| {
-            HotkeyTrigger::parse(&self.macros[idx].hotkey_trigger)
-        });
+        let trigger =
+            trigger.unwrap_or_else(|| HotkeyTrigger::parse(&self.macros[idx].hotkey_trigger));
         let binding = MacroHotkeyBinding::new(self.macros[idx].name.clone(), chord, trigger);
         self.macros[idx].hotkey = binding.chord;
         self.macros[idx].hotkey_trigger = trigger.as_str().to_string();
@@ -715,6 +738,7 @@ impl SqyreApp {
         if ok {
             self.selected_action = selected;
             self.tooltip.cancel();
+            self.persist_macro_at(idx);
         }
     }
 
@@ -731,6 +755,7 @@ impl SqyreApp {
         if ok {
             self.selected_action = selected;
             self.tooltip.cancel();
+            self.persist_macro_at(idx);
         }
     }
 
@@ -815,6 +840,7 @@ impl SqyreApp {
         }
         self.selected_action = Some(new_id);
         self.tooltip.cancel();
+        self.persist_macro_at(idx);
         true
     }
 
@@ -885,6 +911,7 @@ impl SqyreApp {
             self.logs_image_cache.clear();
         }
         self.tooltip.cancel();
+        self.persist_macro_at(idx);
         true
     }
 
@@ -943,8 +970,7 @@ impl SqyreApp {
 
         thread::spawn(move || {
             let result = (|| -> Result<(), String> {
-                let mut automation =
-                    OsAutomation::new().map_err(|e| format!("automation: {e}"))?;
+                let mut automation = OsAutomation::new().map_err(|e| format!("automation: {e}"))?;
                 let mut capturer = X11Capturer::open().map_err(|e| format!("capture: {e}"))?;
                 let matcher = MatchFacade {
                     close_matches_distance: close_matches,
@@ -1016,8 +1042,8 @@ impl SqyreApp {
 
     /// Hide the main window while a screen-click recording is armed.
     fn update_recording_visibility(&mut self, ctx: &egui::Context) {
-        let should_hide = self.settings_ui.settings().hide_app_during_recording
-            && self.screen_click.is_armed();
+        let should_hide =
+            self.settings_ui.settings().hide_app_during_recording && self.screen_click.is_armed();
         if should_hide && !self.hidden_for_recording {
             self.hidden_for_recording = true;
             ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
@@ -1145,4 +1171,3 @@ fn trim_process_heap() {
         }
     }
 }
-

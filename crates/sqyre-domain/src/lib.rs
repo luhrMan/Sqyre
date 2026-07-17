@@ -16,14 +16,15 @@ mod taxonomy;
 mod variables;
 
 pub use action::*;
-pub use blank::{action_templates, blank_action, ActionTemplate};
+pub use blank::{action_templates, blank_action, test_action, ActionTemplate};
 pub use display::*;
 pub use expr::{evaluate_expression, numeric_to_scalar};
 pub use macro_model::*;
 pub use rename::*;
 pub use scalar::*;
 pub use set_value::{
-    looks_like_arithmetic, resolve_scalar_int, resolve_set_variable_value, resolve_variables_in_text,
+    looks_like_arithmetic, resolve_scalar_int, resolve_set_variable_value,
+    resolve_variables_in_text,
 };
 pub use taxonomy::{
     action_color_category, action_picker_category, action_type_description, action_type_label,

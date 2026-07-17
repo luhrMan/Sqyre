@@ -34,14 +34,8 @@ pub fn blur_image_owned(img: ImageBuf, blur: i32) -> Result<ImageBuf, MatchError
     use purecv::imgproc::gaussian_blur;
 
     let mat = Matrix::from_vec(img.height, img.width, img.channels, img.data);
-    let out = gaussian_blur(
-        &mat,
-        Size::new(k, k),
-        0.0,
-        0.0,
-        BorderTypes::Reflect101,
-    )
-    .map_err(|e| MatchError::Blur(e.to_string()))?;
+    let out = gaussian_blur(&mat, Size::new(k, k), 0.0, 0.0, BorderTypes::Reflect101)
+        .map_err(|e| MatchError::Blur(e.to_string()))?;
     Ok(ImageBuf {
         width: out.cols,
         height: out.rows,

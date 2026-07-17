@@ -106,11 +106,7 @@ impl ProgramCatalog {
         let mapping = match programs {
             Value::Mapping(m) => m,
             Value::Null => return Ok(out),
-            _ => {
-                return Err(PersistError::Message(
-                    "programs must be a mapping".into(),
-                ))
-            }
+            _ => return Err(PersistError::Message("programs must be a mapping".into())),
         };
         for (k, v) in mapping {
             let name = k
@@ -164,9 +160,7 @@ impl ProgramCatalog {
     }
 
     fn images_root(&self) -> PathBuf {
-        self.images_root
-            .clone()
-            .unwrap_or_else(images_path)
+        self.images_root.clone().unwrap_or_else(images_path)
     }
 
     pub fn icons_dir(&self, program: &str) -> PathBuf {
@@ -309,16 +303,7 @@ impl ProgramCatalog {
         };
         let (left_x, top_y, right_x, bottom_y) = self.resolve_search_area(&sa_ref, macro_)?;
         cell_rect(
-            left_x,
-            top_y,
-            right_x,
-            bottom_y,
-            col.rows,
-            col.cols,
-            r1,
-            c1,
-            r2,
-            c2,
+            left_x, top_y, right_x, bottom_y, col.rows, col.cols, r1, c1, r2, c2,
         )
     }
 
@@ -350,9 +335,7 @@ impl ProgramCatalog {
         if item.mask.is_empty() {
             return None;
         }
-        let path = self
-            .masks_dir(program)
-            .join(format!("{}.png", item.mask));
+        let path = self.masks_dir(program).join(format!("{}.png", item.mask));
         if path.is_file() {
             Some(path)
         } else {
@@ -363,7 +346,12 @@ impl ProgramCatalog {
     pub fn item_meta(&self, target: &str) -> Option<(String, i32, i32, i32)> {
         let (program, item) = split_target(target)?;
         let item = self.programs.get(program)?.items.get(item)?;
-        Some((item.name.clone(), item.stack_max, item.grid_cols, item.grid_rows))
+        Some((
+            item.name.clone(),
+            item.stack_max,
+            item.grid_cols,
+            item.grid_rows,
+        ))
     }
 
     pub fn programs_mut(&mut self) -> &mut BTreeMap<String, ProgramData> {
@@ -385,10 +373,7 @@ impl ProgramCatalog {
                 .get(Value::String(name.clone()))
                 .and_then(|v| v.as_mapping())
                 .unwrap_or(&empty_prog);
-            out.insert(
-                Value::String(name.clone()),
-                encode_program(data, prev_prog),
-            );
+            out.insert(Value::String(name.clone()), encode_program(data, prev_prog));
         }
         Value::Mapping(out)
     }
@@ -442,9 +427,7 @@ impl ProgramCatalog {
 
     pub fn delete_program(&mut self, name: &str) -> Result<()> {
         if self.programs.remove(name).is_none() {
-            return Err(PersistError::Message(format!(
-                "program {name:?} not found"
-            )));
+            return Err(PersistError::Message(format!("program {name:?} not found")));
         }
         let icons = self.icons_dir(name);
         let masks = self.masks_dir(name);
@@ -540,9 +523,10 @@ impl ProgramCatalog {
     pub fn delete_point(&mut self, program: &str, name: &str) -> Result<()> {
         let res = self.default_resolution_key();
         let p = self.program_mut(program)?;
-        let pts = p.points.get_mut(&res).ok_or_else(|| {
-            PersistError::Message(format!("no points for program {program}"))
-        })?;
+        let pts = p
+            .points
+            .get_mut(&res)
+            .ok_or_else(|| PersistError::Message(format!("no points for program {program}")))?;
         if pts.remove(name).is_none() {
             return Err(PersistError::Message(format!("point {name:?} not found")));
         }
@@ -708,9 +692,9 @@ fn rename_keyed_map<T>(
             "{kind} {new:?} already exists"
         )));
     }
-    let mut entry = map.remove(old).ok_or_else(|| {
-        PersistError::Message(format!("{kind} {old:?} not found"))
-    })?;
+    let mut entry = map
+        .remove(old)
+        .ok_or_else(|| PersistError::Message(format!("{kind} {old:?} not found")))?;
     set_name(&mut entry, new.to_string());
     map.insert(new.to_string(), entry);
     Ok(())
@@ -823,21 +807,14 @@ fn encode_item(item: &ProgramItem) -> Value {
             Value::Number(item.grid_rows.into()),
         ]),
     );
-    let tags: Vec<Value> = item
-        .tags
-        .iter()
-        .map(|t| Value::String(t.clone()))
-        .collect();
+    let tags: Vec<Value> = item.tags.iter().map(|t| Value::String(t.clone())).collect();
     map.insert(Value::String("tags".into()), Value::Sequence(tags));
     Value::Mapping(map)
 }
 
 fn encode_point(pt: &ProgramPoint) -> Value {
     let mut map = Mapping::new();
-    map.insert(
-        Value::String("name".into()),
-        Value::String(pt.name.clone()),
-    );
+    map.insert(Value::String("name".into()), Value::String(pt.name.clone()));
     map.insert(Value::String("x".into()), pt.x.to_yaml());
     map.insert(Value::String("y".into()), pt.y.to_yaml());
     Value::Mapping(map)
@@ -845,10 +822,7 @@ fn encode_point(pt: &ProgramPoint) -> Value {
 
 fn encode_search_area(sa: &ProgramSearchArea) -> Value {
     let mut map = Mapping::new();
-    map.insert(
-        Value::String("name".into()),
-        Value::String(sa.name.clone()),
-    );
+    map.insert(Value::String("name".into()), Value::String(sa.name.clone()));
     map.insert(Value::String("leftx".into()), sa.left_x.to_yaml());
     map.insert(Value::String("topy".into()), sa.top_y.to_yaml());
     map.insert(Value::String("rightx".into()), sa.right_x.to_yaml());
@@ -900,14 +874,8 @@ fn encode_collection(col: &ProgramCollection) -> Value {
         Value::String("searcharea".into()),
         Value::String(col.search_area.clone()),
     );
-    map.insert(
-        Value::String("rows".into()),
-        Value::Number(col.rows.into()),
-    );
-    map.insert(
-        Value::String("cols".into()),
-        Value::Number(col.cols.into()),
-    );
+    map.insert(Value::String("rows".into()), Value::Number(col.rows.into()));
+    map.insert(Value::String("cols".into()), Value::Number(col.cols.into()));
     Value::Mapping(map)
 }
 
@@ -1117,10 +1085,16 @@ fn parse_item(name: &str, v: &Value) -> ProgramItem {
     let Some(map) = v.as_mapping() else {
         return item;
     };
-    if let Some(n) = map.get(Value::String("name".into())).and_then(|x| x.as_str()) {
+    if let Some(n) = map
+        .get(Value::String("name".into()))
+        .and_then(|x| x.as_str())
+    {
         item.name = n.to_string();
     }
-    if let Some(m) = map.get(Value::String("mask".into())).and_then(|x| x.as_str()) {
+    if let Some(m) = map
+        .get(Value::String("mask".into()))
+        .and_then(|x| x.as_str())
+    {
         item.mask = m.to_string();
     }
     if let Some(n) = yaml_i64(map.get(Value::String("stackmax".into()))) {
@@ -1149,7 +1123,10 @@ fn parse_point(name: &str, v: &Value) -> ProgramPoint {
     let Some(map) = v.as_mapping() else {
         return pt;
     };
-    if let Some(n) = map.get(Value::String("name".into())).and_then(|x| x.as_str()) {
+    if let Some(n) = map
+        .get(Value::String("name".into()))
+        .and_then(|x| x.as_str())
+    {
         pt.name = n.to_string();
     }
     pt.x = scalar_field(map.get(Value::String("x".into())));
@@ -1165,7 +1142,10 @@ fn parse_search_area(name: &str, v: &Value) -> ProgramSearchArea {
     let Some(map) = v.as_mapping() else {
         return sa;
     };
-    if let Some(n) = map.get(Value::String("name".into())).and_then(|x| x.as_str()) {
+    if let Some(n) = map
+        .get(Value::String("name".into()))
+        .and_then(|x| x.as_str())
+    {
         sa.name = n.to_string();
     }
     sa.left_x = scalar_field(map.get(Value::String("leftx".into())));
@@ -1183,10 +1163,16 @@ fn parse_mask(name: &str, v: &Value) -> ProgramMask {
     let Some(map) = v.as_mapping() else {
         return mask;
     };
-    if let Some(n) = map.get(Value::String("name".into())).and_then(|x| x.as_str()) {
+    if let Some(n) = map
+        .get(Value::String("name".into()))
+        .and_then(|x| x.as_str())
+    {
         mask.name = n.to_string();
     }
-    if let Some(s) = map.get(Value::String("shape".into())).and_then(|x| x.as_str()) {
+    if let Some(s) = map
+        .get(Value::String("shape".into()))
+        .and_then(|x| x.as_str())
+    {
         mask.shape = MaskShape::parse(s);
     }
     mask.center_x = yaml_string_field(map.get(Value::String("centerx".into())), "50");
@@ -1210,7 +1196,10 @@ fn parse_collection(name: &str, v: &Value) -> ProgramCollection {
     let Some(map) = v.as_mapping() else {
         return col;
     };
-    if let Some(n) = map.get(Value::String("name".into())).and_then(|x| x.as_str()) {
+    if let Some(n) = map
+        .get(Value::String("name".into()))
+        .and_then(|x| x.as_str())
+    {
         col.name = n.to_string();
     }
     if let Some(s) = map
@@ -1474,7 +1463,8 @@ Demo:
         let p = cat.get("Demo").unwrap();
         assert_eq!(p.process_path, "/opt/demo/bin/DemoGame");
         assert_eq!(p.window_title, "Demo Game");
-        cat.set_process_binding("Demo", "/usr/bin/other", "Other").unwrap();
+        cat.set_process_binding("Demo", "/usr/bin/other", "Other")
+            .unwrap();
         let encoded = cat.to_yaml_value(&Value::Null);
         let cat2 = ProgramCatalog::from_yaml_value(&encoded).unwrap();
         let p2 = cat2.get("Demo").unwrap();

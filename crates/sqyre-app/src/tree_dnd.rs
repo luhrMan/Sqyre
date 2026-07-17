@@ -5,9 +5,7 @@ use sqyre_domain::{Action, ActionId, InsertSlot};
 
 /// Map an `egui_ltreeview` drop position to an [`InsertSlot`].
 /// Tree node ids are stable [`ActionId`] values, so no separate lookup map is needed.
-pub(crate) fn insert_slot_from_dir_position(
-    position: DirPosition<ActionId>,
-) -> Option<InsertSlot> {
+pub(crate) fn insert_slot_from_dir_position(position: DirPosition<ActionId>) -> Option<InsertSlot> {
     match position {
         DirPosition::First => Some(InsertSlot::First),
         DirPosition::Last => Some(InsertSlot::Last),

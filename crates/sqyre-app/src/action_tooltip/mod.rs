@@ -43,7 +43,6 @@ pub enum TooltipState {
     Edit(Box<TooltipEdit>),
 }
 
-
 impl TooltipState {
     pub fn is_editing(&self) -> bool {
         matches!(self, Self::Edit { .. })
@@ -156,9 +155,7 @@ impl TooltipState {
         let Self::Edit(edit) = self else {
             return;
         };
-        if let ActionKind::Key { key, .. } = &mut edit.draft.kind {
-            *key = recorded;
-        }
+        crate::recorded_action::apply_recorded_key(&mut edit.draft.kind, recorded);
     }
 
     /// Apply a chord from [`HotkeyRecordUi`] onto a Pause continue-key draft.
@@ -167,12 +164,7 @@ impl TooltipState {
         let Self::Edit(edit) = self else {
             return false;
         };
-        if let ActionKind::Pause { continue_key, .. } = &mut edit.draft.kind {
-            *continue_key = recorded;
-            true
-        } else {
-            false
-        }
+        crate::recorded_action::apply_recorded_chord(&mut edit.draft.kind, recorded)
     }
 
     /// Apply a hex color from the Find Pixel screen dropper onto the draft.
@@ -180,9 +172,7 @@ impl TooltipState {
         let Self::Edit(edit) = self else {
             return;
         };
-        if let ActionKind::FindPixel { target_color, .. } = &mut edit.draft.kind {
-            *target_color = crate::pixel_color::normalize_target_color(&recorded);
-        }
+        crate::recorded_action::apply_recorded_color(&mut edit.draft.kind, recorded);
     }
 
     /// Escape handling. Returns `(consumed, discard_id)` — discard_id is set when a
@@ -190,15 +180,18 @@ impl TooltipState {
     pub fn handle_escape(&mut self) -> (bool, Option<ActionId>) {
         match self {
             Self::Hidden => (false, None),
-            Self::Edit(edit) if matches!(
-                edit.picker,
-                ActivePicker::Point {
-                    cell_pick: Some(_), ..
-                }
-                | ActivePicker::SearchArea {
-                    cell_pick: Some(_), ..
-                }
-            ) => {
+            Self::Edit(edit)
+                if matches!(
+                    edit.picker,
+                    ActivePicker::Point {
+                        cell_pick: Some(_),
+                        ..
+                    } | ActivePicker::SearchArea {
+                        cell_pick: Some(_),
+                        ..
+                    }
+                ) =>
+            {
                 match &mut edit.picker {
                     ActivePicker::Point { cell_pick, .. }
                     | ActivePicker::SearchArea { cell_pick, .. } => {
@@ -208,14 +201,16 @@ impl TooltipState {
                 }
                 (true, None)
             }
-            Self::Edit(edit) if matches!(
-                edit.picker,
-                ActivePicker::Items { .. }
-                    | ActivePicker::Point { .. }
-                    | ActivePicker::SearchArea { .. }
-                    | ActivePicker::Macro { .. }
-                    | ActivePicker::Window { .. }
-            ) => {
+            Self::Edit(edit)
+                if matches!(
+                    edit.picker,
+                    ActivePicker::Items { .. }
+                        | ActivePicker::Point { .. }
+                        | ActivePicker::SearchArea { .. }
+                        | ActivePicker::Macro { .. }
+                        | ActivePicker::Window { .. }
+                ) =>
+            {
                 edit.picker = ActivePicker::None;
                 (true, None)
             }
@@ -385,11 +380,7 @@ pub(crate) fn show_action_view_tip(
                             ui.spacing_mut().item_spacing = Vec2::splat(3.0);
                             for pill in &summary_pills {
                                 let _ = var_pills::paint_summary_pill(
-                                    ui,
-                                    type_key,
-                                    pill,
-                                    known_vars,
-                                    is_dark,
+                                    ui, type_key, pill, known_vars, is_dark,
                                 );
                             }
                         });
@@ -478,12 +469,7 @@ fn show_edit_window(
 
     // Picker modal first (foreground); apply result onto draft.
     if let TooltipState::Edit(edit) = state {
-        let result = pickers::show_active_picker(
-            ctx,
-            &mut edit.picker,
-            paint,
-            macros,
-        );
+        let result = pickers::show_active_picker(ctx, &mut edit.picker, paint, macros);
         apply_picker_result(&mut edit.draft, result);
     }
 
@@ -604,10 +590,7 @@ pub(crate) fn apply_picker_result(draft: &mut Action, result: PickerResult) {
     match result {
         PickerResult::None => {}
         PickerResult::Items(targets) => {
-            if let ActionKind::ImageSearch {
-                targets: t, ..
-            } = &mut draft.kind
-            {
+            if let ActionKind::ImageSearch { targets: t, .. } = &mut draft.kind {
                 *t = targets;
             }
         }
@@ -646,10 +629,7 @@ pub(crate) fn apply_picker_result(draft: &mut Action, result: PickerResult) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqyre_domain::{
-        root_loop, ActionKind, CoordinateOutputs, CoordinateRef, MatchOrder, ScalarValue,
-        WaitTilFoundConfig,
-    };
+    use sqyre_domain::{root_loop, ActionKind, CoordinateRef, DetectionBranch, ScalarValue};
 
     fn wait_action(time: i64) -> Action {
         Action {
@@ -777,11 +757,7 @@ mod tests {
                 search_area: CoordinateRef::default(),
                 target_color: "ffffff".into(),
                 color_tolerance: 0,
-                wait: WaitTilFoundConfig::default(),
-                coords: CoordinateOutputs::defaults(),
-                run_branch_on_no_find: false,
-                order: MatchOrder::default(),
-                subactions: vec![],
+                detection: DetectionBranch::default(),
             },
         };
         let mut state = TooltipState::Hidden;
@@ -847,11 +823,7 @@ mod tests {
                 search_area: CoordinateRef("P~Box".into()),
                 tolerance: 0.9,
                 blur: 0,
-                wait: Default::default(),
-                coords: Default::default(),
-                run_branch_on_no_find: false,
-                order: Default::default(),
-                subactions: vec![],
+                detection: DetectionBranch::default(),
             },
         }]);
         let mut draft = root.find_by_id(id).unwrap().clone();

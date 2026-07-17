@@ -49,7 +49,8 @@ arboard = { version = "3", default-features = false }
 x11 = { version = "2", features = ["xlib", "xinerama"] }
 rdev = "0.5"
 parking_lot = "0.12"
-ksni = { version = "0.3", features = ["blocking"] }
+# async-io (not default tokio): avoid forcing zbus/tokio, which panics accesskit's async-io thread.
+ksni = { version = "0.3", default-features = false, features = ["blocking", "async-io"] }
 tray-icon = { version = "0.24", default-features = false }
 rfd = "0.15"
 tokio = { version = "1", features = ["rt", "time", "net", "io-util"] }

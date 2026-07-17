@@ -17,10 +17,7 @@ pub(crate) fn execute_set_variable(
     let scalar = resolve_set_variable_value(value, macro_).map_err(ExecError::Message)?;
     exec.log(
         action_id,
-        format!(
-            "Set: {variable_name} = {}",
-            scalar.as_display()
-        ),
+        format!("Set: {variable_name} = {}", scalar.as_display()),
     );
     macro_.variables.set(variable_name, scalar);
     Ok(())
@@ -36,13 +33,15 @@ pub(crate) fn execute_save_variable(
     append_newline: bool,
     macro_: &Macro,
 ) -> Result<()> {
-    let val = macro_.variables.get(variable_name).ok_or_else(|| {
-        ExecError::Message(format!("variable {variable_name} not found"))
-    })?;
+    let val = macro_
+        .variables
+        .get(variable_name)
+        .ok_or_else(|| ExecError::Message(format!("variable {variable_name} not found")))?;
     let val_str = val.as_display();
 
     if destination == "clipboard" {
-        exec.deps.automation
+        exec.deps
+            .automation
             .write_clipboard(&val_str)
             .map_err(ExecError::Message)?;
         exec.log(
@@ -93,15 +92,11 @@ fn save_to_file(value: &str, path: &Path, append: bool, append_newline: bool) ->
                 path.display()
             ))
         })?;
-    file.write_all(value.as_bytes()).map_err(|e| {
-        ExecError::Message(format!("failed to write {}: {e}", path.display()))
-    })?;
+    file.write_all(value.as_bytes())
+        .map_err(|e| ExecError::Message(format!("failed to write {}: {e}", path.display())))?;
     if append_newline {
         file.write_all(b"\n").map_err(|e| {
-            ExecError::Message(format!(
-                "failed to write newline {}: {e}",
-                path.display()
-            ))
+            ExecError::Message(format!("failed to write newline {}: {e}", path.display()))
         })?;
     }
     Ok(())

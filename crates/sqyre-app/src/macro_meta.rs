@@ -126,8 +126,7 @@ impl MacroMetaUi {
 
             // Inline completion suggestions from the union of all macro tags.
             if enabled && !self.tag_draft.trim().is_empty() {
-                let suggestions =
-                    tag_completion_options(&self.tag_draft, &m.tags, all_tags, 8);
+                let suggestions = tag_completion_options(&self.tag_draft, &m.tags, all_tags, 8);
                 if !suggestions.is_empty() {
                     ui.separator();
                     for sug in suggestions {
@@ -225,10 +224,7 @@ fn validate_rename(
 
 /// Sorted unique tags across macros (for completion).
 pub fn collect_all_macro_tags(macros: &[Macro]) -> Vec<String> {
-    let mut tags: Vec<String> = macros
-        .iter()
-        .flat_map(|m| m.tags.iter().cloned())
-        .collect();
+    let mut tags: Vec<String> = macros.iter().flat_map(|m| m.tags.iter().cloned()).collect();
     tags.sort();
     tags.dedup();
     tags
@@ -298,10 +294,8 @@ mod tests {
         assert!(remove_tag(&mut macro_, "alpha"));
         assert_eq!(macro_.tags, vec!["beta"]);
 
-        let all_tags = collect_all_macro_tags(&[
-            m("x", &["beta"]),
-            m("y", &["beta", "gamma", "gator"]),
-        ]);
+        let all_tags =
+            collect_all_macro_tags(&[m("x", &["beta"]), m("y", &["beta", "gamma", "gator"])]);
         let opts = tag_completion_options("ga", &["beta".into()], &all_tags, 10);
         assert_eq!(opts, vec!["gamma", "gator"]);
     }
@@ -315,9 +309,6 @@ mod tests {
         assert_eq!(format_delay_tooltip(&macro_), "Action delays (ms)");
         macro_.global_delay = 10;
         macro_.mouse_delay = 5;
-        assert_eq!(
-            format_delay_tooltip(&macro_),
-            "Global: 10 ms\nMouse: 5 ms"
-        );
+        assert_eq!(format_delay_tooltip(&macro_), "Global: 10 ms\nMouse: 5 ms");
     }
 }

@@ -68,7 +68,7 @@ fn write_data_dir_pointer(sqyre_dir: &str) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    fs::write(&path, format!("{dir}\n"))?;
+    crate::atomic_write(&path, format!("{dir}\n"))?;
     Ok(())
 }
 
@@ -144,14 +144,63 @@ pub struct OverlayButtonConfig {
     /// Button glyph/image size in points (viewport is slightly larger for padding).
     #[serde(default = "default_overlay_button_size")]
     pub size: f32,
+    /// Corner rounding in points (0 = square).
+    #[serde(default = "default_overlay_corner_radius")]
+    pub corner_radius: f32,
+    /// Border stroke width in points (0 = no border).
+    #[serde(default = "default_overlay_border_width")]
+    pub border_width: f32,
+    /// Border color as `#rrggbb` (empty = Sqyre gold).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub border_color: String,
+    /// Border opacity 0–255.
+    #[serde(default = "default_overlay_full_alpha")]
+    pub border_alpha: u8,
+    /// Background fill color as `#rrggbb` (empty = black when alpha > 0).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub bg_color: String,
+    /// Background opacity 0–255 (0 = no fill).
+    #[serde(default)]
+    pub bg_alpha: u8,
+    /// Icon/glyph color as `#rrggbb` (empty = cream).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub icon_color: String,
+    /// Icon opacity 0–255.
+    #[serde(default = "default_overlay_full_alpha")]
+    pub icon_alpha: u8,
+    /// Hover icon color as `#rrggbb` (empty = Sqyre gold).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub icon_hover_color: String,
 }
 
 pub const DEFAULT_OVERLAY_BUTTON_SIZE: f32 = 52.0;
 pub const MIN_OVERLAY_BUTTON_SIZE: f32 = 12.0;
 pub const MAX_OVERLAY_BUTTON_SIZE: f32 = 128.0;
+pub const DEFAULT_OVERLAY_CORNER_RADIUS: f32 = 8.0;
+pub const MIN_OVERLAY_CORNER_RADIUS: f32 = 0.0;
+pub const MAX_OVERLAY_CORNER_RADIUS: f32 = 64.0;
+pub const DEFAULT_OVERLAY_BORDER_WIDTH: f32 = 1.5;
+pub const MIN_OVERLAY_BORDER_WIDTH: f32 = 0.0;
+pub const MAX_OVERLAY_BORDER_WIDTH: f32 = 8.0;
+/// Default border / hover icon when `border_color` / `icon_hover_color` is empty (`#dc9d2e`).
+pub const DEFAULT_OVERLAY_ACCENT_HEX: &str = "#dc9d2e";
+/// Default idle icon when `icon_color` is empty (`#f5e6c0`).
+pub const DEFAULT_OVERLAY_ICON_HEX: &str = "#f5e6c0";
 
 fn default_overlay_button_size() -> f32 {
     DEFAULT_OVERLAY_BUTTON_SIZE
+}
+
+fn default_overlay_corner_radius() -> f32 {
+    DEFAULT_OVERLAY_CORNER_RADIUS
+}
+
+fn default_overlay_border_width() -> f32 {
+    DEFAULT_OVERLAY_BORDER_WIDTH
+}
+
+fn default_overlay_full_alpha() -> u8 {
+    255
 }
 
 impl OverlayButtonConfig {
@@ -165,6 +214,15 @@ impl OverlayButtonConfig {
             x: 48.0,
             y: 48.0,
             size: DEFAULT_OVERLAY_BUTTON_SIZE,
+            corner_radius: DEFAULT_OVERLAY_CORNER_RADIUS,
+            border_width: DEFAULT_OVERLAY_BORDER_WIDTH,
+            border_color: String::new(),
+            border_alpha: 255,
+            bg_color: String::new(),
+            bg_alpha: 0,
+            icon_color: String::new(),
+            icon_alpha: 255,
+            icon_hover_color: String::new(),
         }
     }
 
@@ -179,6 +237,56 @@ impl OverlayButtonConfig {
             return macro_name;
         }
         self.id.as_str()
+    }
+
+    /// Resolve `#rrggbb` (or empty → `fallback`) plus alpha → RGBA.
+    pub fn resolve_rgba(hex: &str, alpha: u8, fallback: &str) -> [u8; 4] {
+        let src = if hex.trim().is_empty() {
+            fallback
+        } else {
+            hex.trim()
+        };
+        let rgb = sqyre_domain::parse_hex_color(src).unwrap_or_else(|| {
+            sqyre_domain::parse_hex_color(fallback).unwrap_or([0xdc, 0x9d, 0x2e, 255])
+        });
+        [rgb[0], rgb[1], rgb[2], alpha]
+    }
+
+    pub fn border_rgba(&self) -> [u8; 4] {
+        Self::resolve_rgba(
+            &self.border_color,
+            self.border_alpha,
+            DEFAULT_OVERLAY_ACCENT_HEX,
+        )
+    }
+
+    pub fn bg_rgba(&self) -> [u8; 4] {
+        Self::resolve_rgba(&self.bg_color, self.bg_alpha, "#000000")
+    }
+
+    pub fn icon_rgba(&self) -> [u8; 4] {
+        Self::resolve_rgba(&self.icon_color, self.icon_alpha, DEFAULT_OVERLAY_ICON_HEX)
+    }
+
+    pub fn icon_hover_rgba(&self) -> [u8; 4] {
+        Self::resolve_rgba(
+            &self.icon_hover_color,
+            self.icon_alpha,
+            DEFAULT_OVERLAY_ACCENT_HEX,
+        )
+    }
+
+    /// Reset appearance fields to built-in defaults (keeps size/position/binding).
+    pub fn reset_appearance(&mut self) {
+        self.corner_radius = DEFAULT_OVERLAY_CORNER_RADIUS;
+        self.border_width = DEFAULT_OVERLAY_BORDER_WIDTH;
+        self.border_color.clear();
+        self.border_alpha = 255;
+        self.bg_color.clear();
+        self.bg_alpha = 0;
+        self.icon_color.clear();
+        self.icon_alpha = 255;
+        self.icon_hover_color.clear();
     }
 }
 
@@ -281,7 +389,7 @@ impl UserSettings {
         }
         let mut clamped = self.clone();
         clamped.clamp();
-        fs::write(path, serde_yaml::to_string(&clamped)?)?;
+        crate::atomic_write(path, serde_yaml::to_string(&clamped)?)?;
         Ok(())
     }
 
@@ -292,7 +400,9 @@ impl UserSettings {
         if self.drag_preview_debounce_ms < MIN_DRAG_PREVIEW_DEBOUNCE_MS {
             self.drag_preview_debounce_ms = DEFAULT_DRAG_PREVIEW_DEBOUNCE_MS;
         }
-        self.drag_preview_debounce_ms = self.drag_preview_debounce_ms.clamp(MIN_DRAG_PREVIEW_DEBOUNCE_MS, 1000);
+        self.drag_preview_debounce_ms = self
+            .drag_preview_debounce_ms
+            .clamp(MIN_DRAG_PREVIEW_DEBOUNCE_MS, 1000);
         self.ui_font_size = self.ui_font_size.clamp(10, 28);
         if self.ui_scale <= 0.0 {
             self.ui_scale = DEFAULT_UI_SCALE;
@@ -302,7 +412,21 @@ impl UserSettings {
             if btn.size <= 0.0 {
                 btn.size = DEFAULT_OVERLAY_BUTTON_SIZE;
             }
-            btn.size = btn.size.clamp(MIN_OVERLAY_BUTTON_SIZE, MAX_OVERLAY_BUTTON_SIZE);
+            btn.size = btn
+                .size
+                .clamp(MIN_OVERLAY_BUTTON_SIZE, MAX_OVERLAY_BUTTON_SIZE);
+            if btn.corner_radius < 0.0 {
+                btn.corner_radius = DEFAULT_OVERLAY_CORNER_RADIUS;
+            }
+            btn.corner_radius = btn
+                .corner_radius
+                .clamp(MIN_OVERLAY_CORNER_RADIUS, MAX_OVERLAY_CORNER_RADIUS);
+            if btn.border_width < 0.0 {
+                btn.border_width = DEFAULT_OVERLAY_BORDER_WIDTH;
+            }
+            btn.border_width = btn
+                .border_width
+                .clamp(MIN_OVERLAY_BORDER_WIDTH, MAX_OVERLAY_BORDER_WIDTH);
         }
     }
 
@@ -437,6 +561,15 @@ mod tests {
             x: 100.0,
             y: 200.0,
             size: 64.0,
+            corner_radius: 12.0,
+            border_width: 2.0,
+            border_color: "#ff0000".into(),
+            border_alpha: 200,
+            bg_color: "#112233".into(),
+            bg_alpha: 128,
+            icon_color: "#abcdef".into(),
+            icon_alpha: 240,
+            icon_hover_color: "#fedcba".into(),
         });
         s.save_to_path(&path).unwrap();
 
@@ -452,6 +585,45 @@ mod tests {
         assert_eq!(loaded.overlay_buttons[0].macro_name, "demo");
         assert_eq!(loaded.overlay_buttons[0].icon, "bolt");
         assert!((loaded.overlay_buttons[0].size - 64.0).abs() < f32::EPSILON);
+        assert!((loaded.overlay_buttons[0].corner_radius - 12.0).abs() < f32::EPSILON);
+        assert_eq!(loaded.overlay_buttons[0].border_color, "#ff0000");
+        assert_eq!(loaded.overlay_buttons[0].border_alpha, 200);
+        assert_eq!(loaded.overlay_buttons[0].bg_color, "#112233");
+        assert_eq!(loaded.overlay_buttons[0].bg_alpha, 128);
+        assert_eq!(loaded.overlay_buttons[0].icon_color, "#abcdef");
+        assert_eq!(loaded.overlay_buttons[0].icon_hover_color, "#fedcba");
+    }
+
+    #[test]
+    fn overlay_style_defaults_when_omitted() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("settings.yaml");
+        std::fs::write(
+            &path,
+            r#"
+overlay_enabled: true
+overlay_buttons:
+  - id: btn-legacy
+    program: P
+    macro_name: m
+    x: 1.0
+    y: 2.0
+    size: 40.0
+"#,
+        )
+        .unwrap();
+        let loaded = UserSettings::load_from_path(&path).unwrap();
+        let btn = &loaded.overlay_buttons[0];
+        assert!((btn.corner_radius - DEFAULT_OVERLAY_CORNER_RADIUS).abs() < f32::EPSILON);
+        assert!((btn.border_width - DEFAULT_OVERLAY_BORDER_WIDTH).abs() < f32::EPSILON);
+        assert!(btn.border_color.is_empty());
+        assert_eq!(btn.border_alpha, 255);
+        assert_eq!(btn.bg_alpha, 0);
+        assert_eq!(btn.icon_alpha, 255);
+        assert_eq!(
+            btn.border_rgba(),
+            OverlayButtonConfig::resolve_rgba("", 255, DEFAULT_OVERLAY_ACCENT_HEX)
+        );
     }
 
     #[test]
