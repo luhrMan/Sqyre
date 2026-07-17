@@ -49,7 +49,9 @@ pub fn install(dir: PathBuf) {
         );
 
         eprintln!("{body}");
-        note(&format!("panic at {location}: {payload} (last_site={last_site})"));
+        note(&format!(
+            "panic at {location}: {payload} (last_site={last_site})"
+        ));
 
         if let Ok(mut f) = OpenOptions::new()
             .create(true)

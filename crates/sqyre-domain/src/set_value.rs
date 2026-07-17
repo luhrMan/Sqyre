@@ -24,11 +24,7 @@ pub fn looks_like_arithmetic(text: &str) -> bool {
         }
         let prev = bytes[i - 1];
         let next = bytes.get(i + 1).copied().unwrap_or(0);
-        if is_expr_number_char(prev)
-            || is_expr_number_char(next)
-            || prev == b')'
-            || next == b'('
-        {
+        if is_expr_number_char(prev) || is_expr_number_char(next) || prev == b')' || next == b'(' {
             return true;
         }
     }
@@ -59,9 +55,10 @@ pub fn resolve_variables_in_text(text: &str, macro_: &Macro) -> Result<String> {
             out.push_str(&seg.text);
             continue;
         }
-        let val = macro_.variables.get(&seg.name).ok_or_else(|| {
-            format!("unresolved variable ${{{}}}", seg.name)
-        })?;
+        let val = macro_
+            .variables
+            .get(&seg.name)
+            .ok_or_else(|| format!("unresolved variable ${{{}}}", seg.name))?;
         out.push_str(&val.as_display());
     }
     if sqyre_varref::contains(&out) {
@@ -146,11 +143,7 @@ mod tests {
             description: String::new(),
         });
         m.init_runtime_variables();
-        let v = resolve_set_variable_value(
-            &Value::String("${x}".into()),
-            &m,
-        )
-        .unwrap();
+        let v = resolve_set_variable_value(&Value::String("${x}".into()), &m).unwrap();
         assert_eq!(v, ScalarValue::Int(5));
 
         let v = resolve_set_variable_value(&Value::String("plain".into()), &m).unwrap();

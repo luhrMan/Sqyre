@@ -29,77 +29,73 @@ impl Macro {
         }
 
         let mut changed = false;
-        self.root.walk_mut(&mut |a| {
-            match kind {
-                ProgramEntityKind::Point => {
-                    if let ActionKind::Move { point, .. } = &mut a.kind {
-                        if point.is_collection() {
-                            return;
-                        }
-                        let next = rename_coordinate_entity(point, program, old_name, new_name);
-                        if next != *point {
-                            *point = next;
-                            changed = true;
-                        }
+        self.root.walk_mut(&mut |a| match kind {
+            ProgramEntityKind::Point => {
+                if let ActionKind::Move { point, .. } = &mut a.kind {
+                    if point.is_collection() {
+                        return;
+                    }
+                    let next = rename_coordinate_entity(point, program, old_name, new_name);
+                    if next != *point {
+                        *point = next;
+                        changed = true;
                     }
                 }
-                ProgramEntityKind::SearchArea => match &mut a.kind {
-                    ActionKind::ImageSearch { search_area, .. }
-                    | ActionKind::Ocr { search_area, .. }
-                    | ActionKind::FindPixel { search_area, .. } => {
-                        if search_area.is_collection() {
-                            return;
-                        }
-                        let next =
-                            rename_coordinate_entity(search_area, program, old_name, new_name);
-                        if next != *search_area {
-                            *search_area = next;
-                            changed = true;
-                        }
+            }
+            ProgramEntityKind::SearchArea => match &mut a.kind {
+                ActionKind::ImageSearch { search_area, .. }
+                | ActionKind::Ocr { search_area, .. }
+                | ActionKind::FindPixel { search_area, .. } => {
+                    if search_area.is_collection() {
+                        return;
                     }
-                    _ => {}
-                },
-                ProgramEntityKind::Collection => match &mut a.kind {
-                    ActionKind::Move { point, .. } => {
-                        if !point.is_collection() {
-                            return;
-                        }
-                        let next = rename_coordinate_entity(point, program, old_name, new_name);
-                        if next != *point {
-                            *point = next;
-                            changed = true;
-                        }
+                    let next = rename_coordinate_entity(search_area, program, old_name, new_name);
+                    if next != *search_area {
+                        *search_area = next;
+                        changed = true;
                     }
-                    ActionKind::ImageSearch { search_area, .. }
-                    | ActionKind::Ocr { search_area, .. }
-                    | ActionKind::FindPixel { search_area, .. } => {
-                        if !search_area.is_collection() {
-                            return;
-                        }
-                        let next =
-                            rename_coordinate_entity(search_area, program, old_name, new_name);
-                        if next != *search_area {
-                            *search_area = next;
-                            changed = true;
-                        }
+                }
+                _ => {}
+            },
+            ProgramEntityKind::Collection => match &mut a.kind {
+                ActionKind::Move { point, .. } => {
+                    if !point.is_collection() {
+                        return;
                     }
-                    ActionKind::NavigateSelect(data) => {
-                        if data.program == program && data.graph_name == old_name {
-                            data.graph_name = new_name.to_string();
-                            changed = true;
-                        }
+                    let next = rename_coordinate_entity(point, program, old_name, new_name);
+                    if next != *point {
+                        *point = next;
+                        changed = true;
                     }
-                    _ => {}
-                },
-                ProgramEntityKind::Item => {
-                    if let ActionKind::ImageSearch { targets, .. } = &mut a.kind {
-                        for target in targets.iter_mut() {
-                            let renamed =
-                                rename_item_target_entity(target, program, old_name, new_name);
-                            if renamed != *target {
-                                *target = renamed;
-                                changed = true;
-                            }
+                }
+                ActionKind::ImageSearch { search_area, .. }
+                | ActionKind::Ocr { search_area, .. }
+                | ActionKind::FindPixel { search_area, .. } => {
+                    if !search_area.is_collection() {
+                        return;
+                    }
+                    let next = rename_coordinate_entity(search_area, program, old_name, new_name);
+                    if next != *search_area {
+                        *search_area = next;
+                        changed = true;
+                    }
+                }
+                ActionKind::NavigateSelect(data) => {
+                    if data.program == program && data.graph_name == old_name {
+                        data.graph_name = new_name.to_string();
+                        changed = true;
+                    }
+                }
+                _ => {}
+            },
+            ProgramEntityKind::Item => {
+                if let ActionKind::ImageSearch { targets, .. } = &mut a.kind {
+                    for target in targets.iter_mut() {
+                        let renamed =
+                            rename_item_target_entity(target, program, old_name, new_name);
+                        if renamed != *target {
+                            *target = renamed;
+                            changed = true;
                         }
                     }
                 }
@@ -213,7 +209,12 @@ fn rename_coordinate_program(
     ref_.with_entity_name(new_program, ref_.name())
 }
 
-fn rename_item_target_entity(target: &str, program: &str, old_item: &str, new_item: &str) -> String {
+fn rename_item_target_entity(
+    target: &str,
+    program: &str,
+    old_item: &str,
+    new_item: &str,
+) -> String {
     let Some((prog, rest)) = target.split_once(PROGRAM_DELIMITER) else {
         return target.to_string();
     };
@@ -244,7 +245,7 @@ fn rename_item_target_program(target: &str, old_program: &str, new_program: &str
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{root_loop, Action, ActionId, ActionKind, MatchOrder, WaitTilFoundConfig};
+    use crate::{root_loop, Action, ActionId, ActionKind, DetectionBranch};
 
     fn move_action(point: &str) -> Action {
         Action {
@@ -268,11 +269,7 @@ mod tests {
                 search_area: CoordinateRef(area.into()),
                 tolerance: 0.9,
                 blur: 0,
-                wait: WaitTilFoundConfig::default(),
-                coords: Default::default(),
-                run_branch_on_no_find: false,
-                order: MatchOrder::default(),
-                subactions: Vec::new(),
+                detection: DetectionBranch::default(),
             },
         }
     }

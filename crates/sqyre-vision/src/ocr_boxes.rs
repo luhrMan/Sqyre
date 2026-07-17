@@ -38,8 +38,7 @@ pub fn find_target_in_boxes(boxes: &[OcrWordBox], target: &str) -> Option<(i32, 
             continue;
         }
         let word_lower = word.to_lowercase();
-        let mut matched =
-            target_lower.contains(&word_lower) || word_lower.contains(&target_lower);
+        let mut matched = target_lower.contains(&word_lower) || word_lower.contains(&target_lower);
         if !matched && !target_words.is_empty() {
             for tw in &target_words {
                 if word_lower.contains(tw) || tw.contains(&word_lower) {

@@ -69,17 +69,15 @@ impl HotkeyService for RdevHotkeys {
                             macro_hotkeys.on_pressed_keys(&pressed, on_fire);
 
                             let ctrl = pressed.contains("ctrl");
-                            let shift =
-                                pressed.contains("shift") || pressed.contains("rshift");
+                            let shift = pressed.contains("shift") || pressed.contains("rshift");
                             if matches!(key, Key::Escape) {
                                 if screen_click.on_escape() {
                                     // Recording takes Esc; don't also stop macros.
                                 } else if ctrl && shift {
                                     (callbacks.on_failsafe)();
-                                } else if !ctrl && !shift
-                                    && !continue_wait.continue_is_escape() {
-                                        (callbacks.on_escape_stop)();
-                                    }
+                                } else if !ctrl && !shift && !continue_wait.continue_is_escape() {
+                                    (callbacks.on_escape_stop)();
+                                }
                             }
                         }
                         EventType::KeyRelease(key) => {

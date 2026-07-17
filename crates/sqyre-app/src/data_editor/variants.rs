@@ -24,7 +24,11 @@ impl DataEditor {
         item: &str,
     ) {
         let paths = catalog.variant_paths(target);
-        let names = icon_variants::variant_names(catalog, self.selected_program.as_deref().unwrap_or(""), item);
+        let names = icon_variants::variant_names(
+            catalog,
+            self.selected_program.as_deref().unwrap_or(""),
+            item,
+        );
         ui.add_space(8.0);
         ui.separator();
         ui.horizontal(|ui| {
@@ -86,10 +90,9 @@ impl DataEditor {
         let Some(path) = crate::file_dialogs::pick_png() else {
             return;
         };
-        let (Some(prog), Some(item)) = (
-            self.selected_program.clone(),
-            self.selected_entity.clone(),
-        ) else {
+        let (Some(prog), Some(item)) =
+            (self.selected_program.clone(), self.selected_entity.clone())
+        else {
             self.set_err("Select an item first.");
             return;
         };
@@ -109,10 +112,9 @@ impl DataEditor {
         name: &str,
         source: &std::path::Path,
     ) {
-        let (Some(prog), Some(item)) = (
-            self.selected_program.clone(),
-            self.selected_entity.clone(),
-        ) else {
+        let (Some(prog), Some(item)) =
+            (self.selected_program.clone(), self.selected_entity.clone())
+        else {
             self.set_err("Select an item first.");
             return;
         };
@@ -139,10 +141,9 @@ impl DataEditor {
         variant: &str,
         source: &std::path::Path,
     ) {
-        let (Some(prog), Some(item)) = (
-            self.selected_program.clone(),
-            self.selected_entity.clone(),
-        ) else {
+        let (Some(prog), Some(item)) =
+            (self.selected_program.clone(), self.selected_entity.clone())
+        else {
             return;
         };
         match icon_variants::overwrite_variant(catalog, &prog, &item, variant, source) {
@@ -161,10 +162,9 @@ impl DataEditor {
         icons: &mut IconCache,
         variant: &str,
     ) {
-        let (Some(prog), Some(item)) = (
-            self.selected_program.clone(),
-            self.selected_entity.clone(),
-        ) else {
+        let (Some(prog), Some(item)) =
+            (self.selected_program.clone(), self.selected_entity.clone())
+        else {
             return;
         };
         let names = icon_variants::variant_names(catalog, &prog, &item);
@@ -187,10 +187,9 @@ impl DataEditor {
     }
 
     pub(crate) fn upload_mask_image(&mut self, catalog: &ProgramCatalog, icons: &mut IconCache) {
-        let (Some(prog), Some(mask)) = (
-            self.selected_program.clone(),
-            self.selected_entity.clone(),
-        ) else {
+        let (Some(prog), Some(mask)) =
+            (self.selected_program.clone(), self.selected_entity.clone())
+        else {
             self.set_err("Select a mask first.");
             return;
         };
@@ -215,10 +214,9 @@ impl DataEditor {
     }
 
     pub(crate) fn remove_mask_image(&mut self, catalog: &ProgramCatalog, icons: &mut IconCache) {
-        let (Some(prog), Some(mask)) = (
-            self.selected_program.clone(),
-            self.selected_entity.clone(),
-        ) else {
+        let (Some(prog), Some(mask)) =
+            (self.selected_program.clone(), self.selected_entity.clone())
+        else {
             return;
         };
         let path = catalog.mask_image_path(&prog, &mask);
@@ -340,5 +338,4 @@ impl DataEditor {
             }
         }
     }
-
 }

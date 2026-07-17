@@ -115,8 +115,8 @@ mod tests {
             cols: 1,
         };
         let mut capturer = SolidCapturer::default();
-        let err = capture_and_save_collection_image_with(&mut capturer, &cat, "Demo", &col)
-            .unwrap_err();
+        let err =
+            capture_and_save_collection_image_with(&mut capturer, &cat, "Demo", &col).unwrap_err();
         assert!(err.contains("no search area"));
     }
 }

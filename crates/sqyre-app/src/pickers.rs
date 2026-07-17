@@ -2,8 +2,8 @@
 //! macros, and Focus Window live-window lists.
 
 use crate::icon_cache::IconCache;
-use crate::paint_ctx::CatalogPaint;
 use crate::image_view::{self, ImageViewTransform};
+use crate::paint_ctx::CatalogPaint;
 use crate::preview_tooltip::PreviewKind;
 use eframe::egui::{self, Color32, Pos2, Sense, Vec2};
 use sqyre_capture::WindowInfo;
@@ -33,7 +33,12 @@ pub struct CollectionCellPick {
 }
 
 impl CollectionCellPick {
-    pub fn new(program: impl Into<String>, collection: impl Into<String>, rows: i32, cols: i32) -> Self {
+    pub fn new(
+        program: impl Into<String>,
+        collection: impl Into<String>,
+        rows: i32,
+        cols: i32,
+    ) -> Self {
         Self {
             program: program.into(),
             collection: collection.into(),
@@ -73,10 +78,7 @@ pub enum ActivePicker {
     #[default]
     None,
     /// Multi-select item targets (`program~item`).
-    Items {
-        search: String,
-        staged: Vec<String>,
-    },
+    Items { search: String, staged: Vec<String> },
     Point {
         search: String,
         /// Working value shown/edited in the picker.
@@ -265,10 +267,7 @@ pub fn query_matches_name_or_tags(q: &str, name: &str, tags: &[String]) -> bool 
     if q.is_empty() {
         return true;
     }
-    fuzzy_match_fold(q, name)
-        || tags
-            .iter()
-            .any(|t| fuzzy_match_fold(q, t))
+    fuzzy_match_fold(q, name) || tags.iter().any(|t| fuzzy_match_fold(q, t))
 }
 
 /// Subsequence fuzzy match: each needle char appears in order in haystack.
@@ -318,11 +317,7 @@ fn item_tooltip_parts(catalog: &ProgramCatalog, target: &str) -> (String, Vec<St
 }
 
 /// Rich hover tooltip: bold name, then italic primary-colored tags.
-pub fn attach_item_icon_tooltip(
-    response: &egui::Response,
-    catalog: &ProgramCatalog,
-    target: &str,
-) {
+pub fn attach_item_icon_tooltip(response: &egui::Response, catalog: &ProgramCatalog, target: &str) {
     if !response.hovered() {
         return;
     }
@@ -341,12 +336,7 @@ fn paint_item_icon_tooltip(ui: &mut egui::Ui, name: &str, tags: &[String]) {
     ui.add_space(4.0);
     let color = ui.visuals().hyperlink_color;
     for tag in tags {
-        ui.label(
-            egui::RichText::new(tag)
-                .size(11.0)
-                .italics()
-                .color(color),
-        );
+        ui.label(egui::RichText::new(tag).size(11.0).italics().color(color));
     }
 }
 
@@ -520,8 +510,7 @@ pub fn paint_items_icon_grid(
                 if q.is_empty() {
                     return true;
                 }
-                fuzzy_match_fold(&q, prog)
-                    || query_matches_name_or_tags(&q, name, &item.tags)
+                fuzzy_match_fold(&q, prog) || query_matches_name_or_tags(&q, name, &item.tags)
             })
             .map(|(name, _)| name.clone())
             .collect();
@@ -542,10 +531,7 @@ pub fn paint_items_icon_grid(
                         }
                     })
                     .unwrap_or_else(|| item_key.clone());
-                (
-                    format!("{prog}{PROGRAM_DELIMITER}{item_key}"),
-                    display,
-                )
+                (format!("{prog}{PROGRAM_DELIMITER}{item_key}"), display)
             })
             .collect();
         sort_by_display_name(&mut targets);
@@ -617,9 +603,7 @@ fn toggle_select_all_filtered(selected: &mut Vec<String>, filtered: &[String]) {
     if filtered.is_empty() {
         return;
     }
-    let all_selected = filtered
-        .iter()
-        .all(|t| selected.iter().any(|s| s == t));
+    let all_selected = filtered.iter().all(|t| selected.iter().any(|s| s == t));
     if all_selected {
         selected.retain(|s| !filtered.iter().any(|t| t == s));
     } else {
@@ -767,9 +751,7 @@ pub fn paint_coord_ref_list(
                     }
                 }
                 for col in pdata.collections.values() {
-                    if q.is_empty()
-                        || fuzzy_match_fold(&q, &col.name)
-                        || fuzzy_match_fold(&q, prog)
+                    if q.is_empty() || fuzzy_match_fold(&q, &col.name) || fuzzy_match_fold(&q, prog)
                     {
                         rows.push((col.name.clone(), Row::Collection(col.clone())));
                     }
@@ -781,16 +763,10 @@ pub fn paint_coord_ref_list(
                     a.0.to_ascii_lowercase()
                         .cmp(&b.0.to_ascii_lowercase())
                         .then_with(|| match (&a.1, &b.1) {
-                            (Row::Coord { key: ka, .. }, Row::Coord { key: kb, .. }) => {
-                                ka.cmp(kb)
-                            }
-                            (Row::Collection(ca), Row::Collection(cb)) => {
-                                ca.name.cmp(&cb.name)
-                            }
+                            (Row::Coord { key: ka, .. }, Row::Coord { key: kb, .. }) => ka.cmp(kb),
+                            (Row::Collection(ca), Row::Collection(cb)) => ca.name.cmp(&cb.name),
                             (Row::Coord { .. }, Row::Collection(_)) => std::cmp::Ordering::Less,
-                            (Row::Collection(_), Row::Coord { .. }) => {
-                                std::cmp::Ordering::Greater
-                            }
+                            (Row::Collection(_), Row::Coord { .. }) => std::cmp::Ordering::Greater,
                         })
                 });
 
@@ -805,10 +781,8 @@ pub fn paint_coord_ref_list(
                             } else {
                                 format!("  {display}")
                             };
-                            let resp = ui.selectable_label(
-                                selected,
-                                egui::RichText::new(label).size(13.0),
-                            );
+                            let resp = ui
+                                .selectable_label(selected, egui::RichText::new(label).size(13.0));
                             previews.show_for_entity(ui, &resp, catalog, prog, &key, preview_kind);
                             if selected && *scroll_to_selection && !did_scroll {
                                 maybe_scroll_to(ui, &resp, scroll_to_selection);
@@ -823,10 +797,8 @@ pub fn paint_coord_ref_list(
                                 && current_ref.program() == Some(prog.as_str())
                                 && current_ref.name() == col.name;
                             let label = format!("  {} (collection)", col.name);
-                            let resp = ui.selectable_label(
-                                selected,
-                                egui::RichText::new(label).size(13.0),
-                            );
+                            let resp = ui
+                                .selectable_label(selected, egui::RichText::new(label).size(13.0));
                             let path = catalog.collection_image_path(prog, &col.name);
                             if resp.hovered() {
                                 if let Some(tex) = icons.for_path(ui.ctx(), &path) {
@@ -837,10 +809,8 @@ pub fn paint_coord_ref_list(
                                         ui.label(format!("{prog}~{}", col.name));
                                     });
                                 } else {
-                                    resp.clone().on_hover_text(format!(
-                                        "{prog}~{} (no image)",
-                                        col.name
-                                    ));
+                                    resp.clone()
+                                        .on_hover_text(format!("{prog}~{} (no image)", col.name));
                                 }
                             }
                             if selected && *scroll_to_selection && !did_scroll {
@@ -930,12 +900,8 @@ fn paint_collection_cell_picker(
 
     image_view::handle_scroll_zoom(ui, viewport, image_size, &mut pick.view, resp.hovered());
 
-    let content = image_view::image_content_rect(
-        viewport,
-        image_size,
-        pick.view.zoom,
-        pick.view.pan,
-    );
+    let content =
+        image_view::image_content_rect(viewport, image_size, pick.view.zoom, pick.view.pan);
 
     {
         let painter = ui.painter_at(viewport);
@@ -1031,10 +997,7 @@ fn paint_cell_selection_painter(
             rect.left() + (c1 as f32 - 1.0) * cw,
             rect.top() + (r1 as f32 - 1.0) * ch,
         ),
-        egui::pos2(
-            rect.left() + c2 as f32 * cw,
-            rect.top() + r2 as f32 * ch,
-        ),
+        egui::pos2(rect.left() + c2 as f32 * cw, rect.top() + r2 as f32 * ch),
     );
     painter.rect_filled(
         sel_rect,
@@ -1132,7 +1095,14 @@ pub fn show_active_picker(
                         .auto_shrink([false, false])
                         .max_height(list_h)
                         .show(ui, |ui| {
-                            paint_items_icon_grid(ui, paint.catalog, paint.icons, search, staged, true);
+                            paint_items_icon_grid(
+                                ui,
+                                paint.catalog,
+                                paint.icons,
+                                search,
+                                staged,
+                                true,
+                            );
                         });
                     ui.separator();
                     ui.label(format!("{} selected", staged.len()));
@@ -1252,11 +1222,7 @@ pub fn show_active_picker(
                                 !loading,
                                 egui::Button::new(egui::RichText::new("↻").size(14.0)).small(),
                             )
-                            .on_hover_text(if loading {
-                                "Refreshing…"
-                            } else {
-                                "Refresh"
-                            })
+                            .on_hover_text(if loading { "Refreshing…" } else { "Refresh" })
                             .clicked();
                         if refresh && pending.is_none() {
                             *load_error = None;
@@ -1287,8 +1253,8 @@ pub fn show_active_picker(
                                 if !query_matches_window(&q, w) {
                                     continue;
                                 }
-                                let selected = window_title == &w.title
-                                    && process_path == &w.process_path;
+                                let selected =
+                                    window_title == &w.title && process_path == &w.process_path;
                                 let resp = ui.selectable_label(
                                     selected,
                                     egui::RichText::new(w.label()).size(13.0),
@@ -1317,10 +1283,9 @@ pub fn show_active_picker(
                 .and_then(|p| p.sel)
                 .is_some();
             ui.horizontal(|ui| {
-                if in_cell_pick
-                    && ui.button("Back").clicked() {
-                        back = true;
-                    }
+                if in_cell_pick && ui.button("Back").clicked() {
+                    back = true;
+                }
                 if ui.button("Cancel").clicked() {
                     cancel = true;
                 }
@@ -1416,11 +1381,7 @@ pub mod options {
         "is empty",
     ];
 
-    pub const REPEAT_MODES: &[&str] = &[
-        REPEAT_ONCE,
-        REPEAT_WAIT_UNTIL_FOUND,
-        REPEAT_WHILE_FOUND,
-    ];
+    pub const REPEAT_MODES: &[&str] = &[REPEAT_ONCE, REPEAT_WAIT_UNTIL_FOUND, REPEAT_WHILE_FOUND];
 
     /// Match-order grouping (empty allowed as unset).
     pub const ORDER_GROUPING: &[&str] = &["", "row", "column", "none"];
@@ -1435,8 +1396,8 @@ pub mod options {
 #[cfg(test)]
 mod tests {
     use super::{
-        item_tooltip_parts, query_matches_name_or_tags, query_matches_window,
-        sort_by_display_name, toggle_select_all_filtered,
+        item_tooltip_parts, query_matches_name_or_tags, query_matches_window, sort_by_display_name,
+        toggle_select_all_filtered,
     };
     use sqyre_capture::WindowInfo;
     use sqyre_persist::{ProgramCatalog, ProgramData, ProgramItem};
@@ -1471,11 +1432,7 @@ mod tests {
     #[test]
     fn empty_query_matches_anything() {
         assert!(query_matches_name_or_tags("", "Potion", &[]));
-        assert!(query_matches_name_or_tags(
-            "",
-            "x",
-            &["healing".into()]
-        ));
+        assert!(query_matches_name_or_tags("", "x", &["healing".into()]));
     }
 
     #[test]

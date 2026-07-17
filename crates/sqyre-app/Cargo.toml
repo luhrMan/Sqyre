@@ -43,9 +43,11 @@ serde_yaml = { workspace = true }
 rfd = { workspace = true }
 tokio = { workspace = true }
 parking_lot = { workspace = true }
+thiserror = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 ksni = { workspace = true }
+winit = "0.30"
 
 [target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
 tray-icon = { workspace = true }

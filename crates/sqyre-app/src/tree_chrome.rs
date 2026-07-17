@@ -183,11 +183,7 @@ fn paint_pill(ui: &mut egui::Ui, text: &str, fill: Color32) -> egui::Response {
         egui::StrokeKind::Inside,
     );
     paint_galley_centered(ui, rect, galley, fg);
-    ui.interact(
-        rect,
-        ui.id().with(("action_pill", text)),
-        Sense::hover(),
-    )
+    ui.interact(rect, ui.id().with(("action_pill", text)), Sense::hover())
 }
 
 /// Place galley so its ink (mesh bounds) is centered in `rect`.
@@ -419,8 +415,7 @@ pub fn paint_action_row(
                 );
 
                 for pill in action.tree_summary_pills() {
-                    let resp =
-                        paint_summary_pill(&mut content, action, &pill, known_vars, is_dark);
+                    let resp = paint_summary_pill(&mut content, action, &pill, known_vars, is_dark);
                     extend_drag_handle(&mut drag_handle_rect, resp.rect);
                     if resp.hovered() {
                         tip_hovered = true;
@@ -477,12 +472,14 @@ pub fn paint_action_row(
     });
 
     let over_row = pointer_in_row && action_click == RowAction::None;
-    let primary_clicked =
-        over_row && ui.input(|i| i.pointer.primary_clicked());
-    let secondary_clicked = over_row
-        && ui.input(|i| i.pointer.button_clicked(egui::PointerButton::Secondary));
+    let primary_clicked = over_row && ui.input(|i| i.pointer.primary_clicked());
+    let secondary_clicked =
+        over_row && ui.input(|i| i.pointer.button_clicked(egui::PointerButton::Secondary));
     let double_clicked = over_row
-        && ui.input(|i| i.pointer.button_double_clicked(egui::PointerButton::Primary));
+        && ui.input(|i| {
+            i.pointer
+                .button_double_clicked(egui::PointerButton::Primary)
+        });
 
     let hovered = (row.response.hovered() || tip_hovered || sense.hovered() || pointer_in_row)
         && !chrome_hovered;
@@ -526,9 +523,7 @@ fn paint_row_highlight(ui: &mut egui::Ui, rect: egui::Rect, highlight: RowHighli
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqyre_domain::{
-        ActionId, ActionKind, CoordinateOutputs, CoordinateRef, ScalarValue, WaitTilFoundConfig,
-    };
+    use sqyre_domain::{ActionId, ActionKind, CoordinateRef, DetectionBranch, ScalarValue};
 
     fn with_ui(mut f: impl FnMut(&mut egui::Ui)) {
         let ctx = egui::Context::default();
@@ -571,11 +566,7 @@ mod tests {
                 search_area: CoordinateRef(String::new()),
                 tolerance: 0.9,
                 blur: 0,
-                wait: WaitTilFoundConfig::default(),
-                coords: CoordinateOutputs::defaults(),
-                run_branch_on_no_find: false,
-                order: Default::default(),
-                subactions: vec![],
+                detection: DetectionBranch::default(),
             },
         };
         assert_eq!(action_row_height(&empty_search, interact), ICON_SIZE);
@@ -588,11 +579,7 @@ mod tests {
                 search_area: CoordinateRef(String::new()),
                 tolerance: 0.9,
                 blur: 0,
-                wait: WaitTilFoundConfig::default(),
-                coords: CoordinateOutputs::defaults(),
-                run_branch_on_no_find: false,
-                order: Default::default(),
-                subactions: vec![],
+                detection: DetectionBranch::default(),
             },
         };
         assert_eq!(
@@ -687,11 +674,7 @@ mod tests {
                     search_area: CoordinateRef("P~A".into()),
                     target_color: "#ff0000".into(),
                     color_tolerance: 5,
-                    wait: WaitTilFoundConfig::default(),
-                    coords: CoordinateOutputs::defaults(),
-                    run_branch_on_no_find: false,
-                    order: Default::default(),
-                    subactions: vec![],
+                    detection: DetectionBranch::default(),
                 },
             };
             assert_eq!(
@@ -720,11 +703,7 @@ mod tests {
                     search_area: CoordinateRef("P~Box".into()),
                     tolerance: 0.9,
                     blur: 0,
-                    wait: WaitTilFoundConfig::default(),
-                    coords: CoordinateOutputs::defaults(),
-                    run_branch_on_no_find: false,
-                    order: Default::default(),
-                    subactions: vec![],
+                    detection: DetectionBranch::default(),
                 },
             };
             assert_eq!(
@@ -819,11 +798,7 @@ mod tests {
                 search_area: CoordinateRef("P~Box".into()),
                 tolerance: 0.9,
                 blur: 0,
-                wait: WaitTilFoundConfig::default(),
-                coords: CoordinateOutputs::defaults(),
-                run_branch_on_no_find: false,
-                order: Default::default(),
-                subactions: vec![],
+                detection: DetectionBranch::default(),
             },
         };
         paint_action_row(

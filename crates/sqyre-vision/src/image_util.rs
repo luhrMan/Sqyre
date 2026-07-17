@@ -61,7 +61,8 @@ pub fn mask_as_u8(mask: &ImageBuf) -> Vec<u8> {
     for i in 0..mask.width * mask.height {
         let o = i * mask.channels;
         // Luma-ish: any non-zero channel counts as white.
-        let v = if mask.data[o] | mask.data[o + 1] | mask.data.get(o + 2).copied().unwrap_or(0) > 0 {
+        let v = if mask.data[o] | mask.data[o + 1] | mask.data.get(o + 2).copied().unwrap_or(0) > 0
+        {
             255
         } else {
             0

@@ -7,15 +7,18 @@ pub use programs::{
     ProgramCatalog, ProgramCollection, ProgramData, ProgramItem, ProgramMask, ProgramPoint,
     ProgramSearchArea,
 };
-pub use sqyre_domain::resolve_scalar_int;
 pub use settings::{
     move_dir, open_path_in_file_manager, open_sqyre_dir, settings_path, ActionColorPrefs,
     OverlayButtonConfig, UserSettings, ACTION_COLOR_DEFAULT, ACTION_COLOR_DETECTION,
     ACTION_COLOR_MISCELLANEOUS, ACTION_COLOR_MOUSE_KEYBOARD, ACTION_COLOR_VARIABLES,
     ACTION_COLOR_WAIT, DEFAULT_DRAG_PREVIEW_DEBOUNCE_MS, DEFAULT_HIDE_APP_DURING_RECORDING,
-    DEFAULT_IMAGE_SEARCH_CLOSE_MATCHES_DISTANCE, DEFAULT_OVERLAY_BUTTON_SIZE, DEFAULT_UI_FONT_SIZE,
-    DEFAULT_UI_SCALE, MAX_OVERLAY_BUTTON_SIZE, MIN_DRAG_PREVIEW_DEBOUNCE_MS, MIN_OVERLAY_BUTTON_SIZE,
+    DEFAULT_IMAGE_SEARCH_CLOSE_MATCHES_DISTANCE, DEFAULT_OVERLAY_ACCENT_HEX,
+    DEFAULT_OVERLAY_BORDER_WIDTH, DEFAULT_OVERLAY_BUTTON_SIZE, DEFAULT_OVERLAY_CORNER_RADIUS,
+    DEFAULT_OVERLAY_ICON_HEX, DEFAULT_UI_FONT_SIZE, DEFAULT_UI_SCALE, MAX_OVERLAY_BORDER_WIDTH,
+    MAX_OVERLAY_BUTTON_SIZE, MAX_OVERLAY_CORNER_RADIUS, MIN_DRAG_PREVIEW_DEBOUNCE_MS,
+    MIN_OVERLAY_BORDER_WIDTH, MIN_OVERLAY_BUTTON_SIZE, MIN_OVERLAY_CORNER_RADIUS,
 };
+pub use sqyre_domain::resolve_scalar_int;
 
 use serde_yaml::{Mapping, Value};
 use sqyre_domain::Macro;
@@ -51,6 +54,31 @@ pub enum PersistError {
 }
 
 pub type Result<T> = std::result::Result<T, PersistError>;
+
+/// Write `bytes` to `path` via a sibling temp file + rename (atomic on same filesystem).
+pub(crate) fn atomic_write(path: &Path, bytes: impl AsRef<[u8]>) -> std::io::Result<()> {
+    use std::io::Write;
+
+    let mut tmp = path.as_os_str().to_owned();
+    tmp.push(".tmp");
+    let tmp = PathBuf::from(tmp);
+
+    let write_tmp = || -> std::io::Result<()> {
+        let mut f = fs::File::create(&tmp)?;
+        f.write_all(bytes.as_ref())?;
+        f.sync_all()?;
+        Ok(())
+    };
+    if let Err(e) = write_tmp() {
+        let _ = fs::remove_file(&tmp);
+        return Err(e);
+    }
+    if let Err(e) = fs::rename(&tmp, path) {
+        let _ = fs::remove_file(&tmp);
+        return Err(e);
+    }
+    Ok(())
+}
 
 /// Override the Sqyre data directory (empty clears → `~/.sqyre`).
 pub fn set_sqyre_dir_override(path: Option<PathBuf>) {
@@ -167,9 +195,8 @@ impl Database {
                     .as_str()
                     .ok_or_else(|| PersistError::Message("macro key must be a string".into()))?
                     .to_string();
-                let mut macro_ = decode_macro_from_map(v).map_err(|e| {
-                    PersistError::Message(format!("macro \"{key}\": {e}"))
-                })?;
+                let mut macro_ = decode_macro_from_map(v)
+                    .map_err(|e| PersistError::Message(format!("macro \"{key}\": {e}")))?;
                 if macro_.name.is_empty() {
                     macro_.name = key.clone();
                 }
@@ -206,7 +233,7 @@ impl Database {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
-        fs::write(path, self.to_yaml()?)?;
+        atomic_write(path, self.to_yaml()?)?;
         Ok(())
     }
 

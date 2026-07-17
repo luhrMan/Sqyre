@@ -19,9 +19,7 @@ fn docs_images_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../docs/images")
         .canonicalize()
-        .unwrap_or_else(|_| {
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/images")
-        })
+        .unwrap_or_else(|_| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/images"))
 }
 
 fn update_screenshots() -> bool {
@@ -44,12 +42,13 @@ fn sync_update_env() {
 }
 
 fn snapshot_opts(dir: &Path) -> SnapshotOptions {
-    SnapshotOptions::new()
-        .output_path(dir)
-        .threshold(0.8)
+    SnapshotOptions::new().output_path(dir).threshold(0.8)
 }
 
-fn build_harness(size: [f32; 2], mut setup: impl FnMut(&mut SqyreApp)) -> Harness<'static, SqyreApp> {
+fn build_harness(
+    size: [f32; 2],
+    mut setup: impl FnMut(&mut SqyreApp),
+) -> Harness<'static, SqyreApp> {
     let mut app = SqyreApp::for_docs();
     setup(&mut app);
     let settings = app.docs_settings().clone();

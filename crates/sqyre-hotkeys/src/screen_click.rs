@@ -9,7 +9,9 @@ enum Armed {
     Point,
     /// Single click → screen coords for Find Pixel color sampling.
     Color,
-    SearchArea { first: Option<(i32, i32)> },
+    SearchArea {
+        first: Option<(i32, i32)>,
+    },
 }
 
 #[derive(Debug, Default)]

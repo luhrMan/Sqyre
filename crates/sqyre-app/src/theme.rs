@@ -97,11 +97,7 @@ pub fn up_down_toggle(ui: &mut egui::Ui, down: &mut bool) -> egui::Response {
     }
 
     let visuals = ui.style().interact(&response);
-    let track_fill = if *down {
-        PRIMARY
-    } else {
-        visuals.bg_fill
-    };
+    let track_fill = if *down { PRIMARY } else { visuals.bg_fill };
     let painter = ui.painter();
     let rounding = CornerRadius::same((TRACK_W / 2.0) as u8);
     painter.rect_filled(rect, rounding, track_fill);

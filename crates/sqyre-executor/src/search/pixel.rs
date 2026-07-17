@@ -1,10 +1,14 @@
 //! Find-pixel action.
 
-use super::common::{clear_coord_outputs, retry_while_not_found, run_detection_children, set_coord_outputs};
+use super::common::{
+    clear_coord_outputs, maybe_repeat_while_found, maybe_wait_until_found, run_detection_children,
+    set_coord_outputs,
+};
 use crate::error::{ExecError, Result};
 use crate::run::Executor;
 use sqyre_domain::{Action, ActionKind, Macro};
 use sqyre_vision::{find_pixel, rgba_to_rgb_buf};
+use std::time::Instant;
 
 pub(crate) fn execute_find_pixel(
     exec: &mut Executor<'_>,
@@ -15,50 +19,69 @@ pub(crate) fn execute_find_pixel(
         search_area,
         target_color,
         color_tolerance,
-        wait,
-        coords,
-        run_branch_on_no_find,
-        subactions,
+        detection,
         ..
     } = &action.kind
     else {
         return Err(ExecError::Message("not find pixel".into()));
     };
+    let sqyre_domain::DetectionBranch {
+        wait,
+        coords,
+        run_branch_on_no_find,
+        subactions,
+        ..
+    } = detection;
 
     let action_id = action.id;
-    let mut found = try_find_pixel(exec, search_area, target_color, *color_tolerance, macro_);
-    if wait.wait_until_found_active() && found.is_none() {
-        retry_while_not_found(exec, wait, 100, |exec| {
-            found = try_find_pixel(exec, search_area, target_color, *color_tolerance, macro_);
-            Ok(found.is_some())
-        })?;
-    }
+    let mut found = try_find_pixel(
+        exec,
+        action_id,
+        search_area,
+        target_color,
+        *color_tolerance,
+        macro_,
+    );
+    maybe_wait_until_found(exec, wait, found.is_some(), 100, |exec| {
+        found = try_find_pixel(
+            exec,
+            action_id,
+            search_area,
+            target_color,
+            *color_tolerance,
+            macro_,
+        );
+        Ok(found.is_some())
+    })?;
 
-    if wait.is_repeat_while_found() {
-        let max_iter = wait.effective_max_iterations();
-        let interval = wait.effective_interval_ms(200).max(1);
-        for i in 0..max_iter {
-            exec.check_stopped()?;
-            if i > 0 {
-                exec.interruptible_sleep(interval)?;
-                found = try_find_pixel(exec, search_area, target_color, *color_tolerance, macro_);
-            }
-            if let Some((x, y)) = found {
-                exec.log(
-                    action_id,
-                    format!("FindPixel: found matching pixel at screen ({x}, {y})"),
-                );
-                set_coord_outputs(macro_, coords, x, y);
-                run_detection_children(exec, subactions, macro_)?;
-            } else {
-                exec.log(action_id, "FindPixel: pixel not found");
-                clear_coord_outputs(macro_, coords);
-                if *run_branch_on_no_find {
-                    run_detection_children(exec, subactions, macro_)?;
-                }
-                return Ok(());
-            }
+    if maybe_repeat_while_found(exec, wait, 200, |exec, refresh| {
+        if refresh {
+            found = try_find_pixel(
+                exec,
+                action_id,
+                search_area,
+                target_color,
+                *color_tolerance,
+                macro_,
+            );
         }
+        if let Some((x, y)) = found {
+            exec.log(
+                action_id,
+                format!("FindPixel: found matching pixel at screen ({x}, {y})"),
+            );
+            set_coord_outputs(macro_, coords, x, y);
+            run_detection_children(exec, subactions, macro_)?;
+            Ok(true)
+        } else {
+            exec.log(action_id, "FindPixel: pixel not found");
+            clear_coord_outputs(macro_, coords);
+            if *run_branch_on_no_find {
+                run_detection_children(exec, subactions, macro_)?;
+            }
+            Ok(false)
+        }
+    })? {
         return Ok(());
     }
 
@@ -81,6 +104,7 @@ pub(crate) fn execute_find_pixel(
 
 fn try_find_pixel(
     exec: &mut Executor<'_>,
+    action_id: sqyre_domain::ActionId,
     search_area: &sqyre_domain::CoordinateRef,
     target_color: &str,
     color_tolerance: i32,
@@ -89,8 +113,13 @@ fn try_find_pixel(
     let resolver = exec.deps.resolver?;
     let capturer = exec.deps.capturer.as_mut()?;
     let (lx, ty, rx, by) = resolver.resolve_search_area(search_area, macro_).ok()?;
+    let capture_started = Instant::now();
     let (img, origin) = capturer.capture_search_area(lx, ty, rx, by).ok()?;
+    exec.log_timing(action_id, "capture", capture_started.elapsed());
+    let scan_started = Instant::now();
     let buf = rgba_to_rgb_buf(&img);
-    let local = find_pixel(&buf, target_color, color_tolerance)?;
+    let local = find_pixel(&buf, target_color, color_tolerance);
+    exec.log_timing(action_id, "scan", scan_started.elapsed());
+    let local = local?;
     Some((local.x + origin.x, local.y + origin.y))
 }

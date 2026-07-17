@@ -26,9 +26,10 @@ fn resolve_text_for_expr(text: &str, macro_: &Macro) -> Result<String> {
             out.push_str(&seg.text);
             continue;
         }
-        let val = macro_.variables.get(&seg.name).ok_or_else(|| {
-            format!("unresolved variable ${{{}}}", seg.name)
-        })?;
+        let val = macro_
+            .variables
+            .get(&seg.name)
+            .ok_or_else(|| format!("unresolved variable ${{{}}}", seg.name))?;
         out.push_str(&val.as_display());
     }
     Ok(out)
@@ -213,9 +214,8 @@ impl<'a> Parser<'a> {
         }
         let s = std::str::from_utf8(&self.bytes[start..self.pos])
             .map_err(|_| "failed to evaluate expression: invalid number".to_string())?;
-        s.parse::<f64>().map_err(|_| {
-            format!("failed to evaluate expression: invalid number {s:?}")
-        })
+        s.parse::<f64>()
+            .map_err(|_| format!("failed to evaluate expression: invalid number {s:?}"))
     }
 
     fn parse_call_or_ident(&mut self) -> Result<f64> {

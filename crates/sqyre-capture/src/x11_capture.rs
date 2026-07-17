@@ -36,7 +36,8 @@ static SHARED_UI_CAPTURER: OnceLock<Result<Arc<X11Capturer>, String>> = OnceLock
 
 /// Shared capturer for UI-thread offload (preview tooltips, AutoPic, etc.).
 pub fn shared_capturer() -> Result<Arc<X11Capturer>, String> {
-    match SHARED_UI_CAPTURER.get_or_init(|| X11Capturer::open().map(Arc::new).map_err(|e| e.to_string()))
+    match SHARED_UI_CAPTURER
+        .get_or_init(|| X11Capturer::open().map(Arc::new).map_err(|e| e.to_string()))
     {
         Ok(c) => Ok(Arc::clone(c)),
         Err(e) => Err(e.clone()),
@@ -50,6 +51,7 @@ impl X11Capturer {
             if display.is_null() {
                 return Err(CaptureError::OpenDisplay);
             }
+            crate::x11_secondary::register(display);
             let screen = x11::xlib::XDefaultScreen(display);
             let root = XDefaultRootWindow(display);
             let width = XDisplayWidth(display, screen);

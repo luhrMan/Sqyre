@@ -3,6 +3,66 @@
 use crate::{CoordinateRef, ScalarValue};
 use uuid::Uuid;
 
+/// Declares a C-like string enum with `as_str`, `parse`, `Display`, and `From` impls.
+///
+/// The first literal for each variant is the canonical wire/UI string. Additional
+/// `| "alias"` literals are accepted by `parse` only. Parsing is case-insensitive
+/// after trim; unknown values map to [`Default`].
+#[macro_export]
+macro_rules! string_enum {
+    (
+        $(#[$enum_meta:meta])*
+        $vis:vis enum $Name:ident {
+            $(
+                $(#[$variant_meta:meta])*
+                $Variant:ident = $first:literal $(| $rest:literal)*
+            ),+ $(,)?
+        }
+    ) => {
+        $(#[$enum_meta])*
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+        $vis enum $Name {
+            $(
+                $(#[$variant_meta])*
+                $Variant,
+            )+
+        }
+
+        impl $Name {
+            pub fn as_str(self) -> &'static str {
+                match self {
+                    $(Self::$Variant => $first,)+
+                }
+            }
+
+            pub fn parse(s: &str) -> Self {
+                match s.trim().to_ascii_lowercase().as_str() {
+                    $($first $(| $rest)* => Self::$Variant,)+
+                    _ => Self::default(),
+                }
+            }
+        }
+
+        impl std::fmt::Display for $Name {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str(self.as_str())
+            }
+        }
+
+        impl From<&str> for $Name {
+            fn from(s: &str) -> Self {
+                Self::parse(s)
+            }
+        }
+
+        impl From<String> for $Name {
+            fn from(s: String) -> Self {
+                Self::parse(&s)
+            }
+        }
+    };
+}
+
 /// Runtime action identity. Empty UUID string marks the macro root loop.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ActionId(pub Uuid);
@@ -47,183 +107,43 @@ pub const DEFAULT_SMOOTH_LOW: f64 = 0.05;
 pub const DEFAULT_SMOOTH_HIGH: f64 = 0.20;
 pub const DEFAULT_SMOOTH_DELAY_MS: i32 = 1;
 
-/// How condition clauses are combined.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum MatchMode {
-    #[default]
-    All,
-    Any,
-}
-
-impl MatchMode {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::All => MATCH_ALL,
-            Self::Any => MATCH_ANY,
-        }
-    }
-
-    pub fn parse(s: &str) -> Self {
-        if s.eq_ignore_ascii_case(MATCH_ANY) {
-            Self::Any
-        } else {
-            Self::All
-        }
+string_enum! {
+    /// How condition clauses are combined.
+    pub enum MatchMode {
+        #[default]
+        All = "all",
+        Any = "any",
     }
 }
 
-impl std::fmt::Display for MatchMode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
+string_enum! {
+    /// Image-search / OCR wait-until / repeat-while modes.
+    pub enum RepeatMode {
+        #[default]
+        Once = "once",
+        WaitUntilFound = "waituntilfound",
+        WhileFound = "repeatwhilefound",
     }
 }
 
-impl From<&str> for MatchMode {
-    fn from(s: &str) -> Self {
-        Self::parse(s)
+string_enum! {
+    /// Mouse button for click / navigate-select.
+    pub enum MouseButton {
+        #[default]
+        Left = "left",
+        Right = "right",
+        Middle = "middle" | "center",
+        /// Scroll-wheel click / scroll action.
+        Scroll = "scroll",
     }
 }
 
-impl From<String> for MatchMode {
-    fn from(s: String) -> Self {
-        Self::parse(&s)
-    }
-}
-
-/// Image-search / OCR wait-until / repeat-while modes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum RepeatMode {
-    #[default]
-    Once,
-    WaitUntilFound,
-    WhileFound,
-}
-
-impl RepeatMode {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Once => REPEAT_ONCE,
-            Self::WaitUntilFound => REPEAT_WAIT_UNTIL_FOUND,
-            Self::WhileFound => REPEAT_WHILE_FOUND,
-        }
-    }
-
-    pub fn parse(s: &str) -> Self {
-        match s {
-            REPEAT_WAIT_UNTIL_FOUND => Self::WaitUntilFound,
-            REPEAT_WHILE_FOUND => Self::WhileFound,
-            _ => Self::Once,
-        }
-    }
-}
-
-impl std::fmt::Display for RepeatMode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-impl From<&str> for RepeatMode {
-    fn from(s: &str) -> Self {
-        Self::parse(s)
-    }
-}
-
-impl From<String> for RepeatMode {
-    fn from(s: String) -> Self {
-        Self::parse(&s)
-    }
-}
-
-/// Mouse button for click / navigate-select.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum MouseButton {
-    #[default]
-    Left,
-    Right,
-    Middle,
-    /// Scroll-wheel click / scroll action.
-    Scroll,
-}
-
-impl MouseButton {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Left => "left",
-            Self::Right => "right",
-            Self::Middle => "middle",
-            Self::Scroll => "scroll",
-        }
-    }
-
-    pub fn parse(s: &str) -> Self {
-        match s.to_ascii_lowercase().as_str() {
-            "right" => Self::Right,
-            "center" | "middle" => Self::Middle,
-            "scroll" => Self::Scroll,
-            _ => Self::Left,
-        }
-    }
-}
-
-impl std::fmt::Display for MouseButton {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-impl From<&str> for MouseButton {
-    fn from(s: &str) -> Self {
-        Self::parse(s)
-    }
-}
-
-impl From<String> for MouseButton {
-    fn from(s: String) -> Self {
-        Self::parse(&s)
-    }
-}
-
-/// Overlay / mask geometry.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum MaskShape {
-    #[default]
-    Rectangle,
-    Circle,
-}
-
-impl MaskShape {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Rectangle => "rectangle",
-            Self::Circle => "circle",
-        }
-    }
-
-    pub fn parse(s: &str) -> Self {
-        if s.eq_ignore_ascii_case("circle") {
-            Self::Circle
-        } else {
-            Self::Rectangle
-        }
-    }
-}
-
-impl std::fmt::Display for MaskShape {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-impl From<&str> for MaskShape {
-    fn from(s: &str) -> Self {
-        Self::parse(s)
-    }
-}
-
-impl From<String> for MaskShape {
-    fn from(s: String) -> Self {
-        Self::parse(&s)
+string_enum! {
+    /// Overlay / mask geometry.
+    pub enum MaskShape {
+        #[default]
+        Rectangle = "rectangle",
+        Circle = "circle",
     }
 }
 
@@ -317,6 +237,36 @@ pub struct MatchOrder {
     pub grouping: String,
     pub horizontal: String,
     pub vertical: String,
+}
+
+/// Shared wait / coords / branch fields for ImageSearch, OCR, and FindPixel.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DetectionBranch {
+    pub wait: WaitTilFoundConfig,
+    pub coords: CoordinateOutputs,
+    pub run_branch_on_no_find: bool,
+    pub order: MatchOrder,
+    pub subactions: Vec<Action>,
+}
+
+impl Default for DetectionBranch {
+    fn default() -> Self {
+        Self {
+            wait: WaitTilFoundConfig::default(),
+            coords: CoordinateOutputs::defaults(),
+            run_branch_on_no_find: false,
+            order: MatchOrder::default(),
+            subactions: Vec::new(),
+        }
+    }
+}
+
+/// Shared name / match / clauses for While and Conditional.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ConditionBlock {
+    pub name: String,
+    pub match_mode: MatchMode,
+    pub clauses: Vec<ConditionClause>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -621,16 +571,12 @@ pub enum ActionKind {
         subactions: Vec<Action>,
     },
     While {
-        name: String,
-        match_mode: MatchMode,
-        clauses: Vec<ConditionClause>,
+        condition: ConditionBlock,
         max_iterations: i32,
         subactions: Vec<Action>,
     },
     Conditional {
-        name: String,
-        match_mode: MatchMode,
-        clauses: Vec<ConditionClause>,
+        condition: ConditionBlock,
         subactions: Vec<Action>,
     },
     ImageSearch {
@@ -639,39 +585,27 @@ pub enum ActionKind {
         search_area: CoordinateRef,
         tolerance: f64,
         blur: i32,
-        wait: WaitTilFoundConfig,
-        coords: CoordinateOutputs,
-        run_branch_on_no_find: bool,
-        order: MatchOrder,
-        subactions: Vec<Action>,
+        detection: DetectionBranch,
     },
     Ocr {
         name: String,
         target: String,
         search_area: CoordinateRef,
         output_variable: String,
-        coords: CoordinateOutputs,
-        wait: WaitTilFoundConfig,
-        run_branch_on_no_find: bool,
         blur: i32,
         min_threshold: i32,
         resize: f64,
         grayscale: bool,
         threshold_otsu: bool,
         threshold_invert: bool,
-        order: MatchOrder,
-        subactions: Vec<Action>,
+        detection: DetectionBranch,
     },
     FindPixel {
         name: String,
         search_area: CoordinateRef,
         target_color: String,
         color_tolerance: i32,
-        wait: WaitTilFoundConfig,
-        coords: CoordinateOutputs,
-        run_branch_on_no_find: bool,
-        order: MatchOrder,
-        subactions: Vec<Action>,
+        detection: DetectionBranch,
     },
     ForEachRow {
         name: String,
@@ -786,11 +720,11 @@ impl ActionKind {
             Self::Loop { subactions, .. }
             | Self::While { subactions, .. }
             | Self::Conditional { subactions, .. }
-            | Self::ImageSearch { subactions, .. }
-            | Self::Ocr { subactions, .. }
-            | Self::FindPixel { subactions, .. }
             | Self::ForEachRow { subactions, .. }
             | Self::NavigateKey { subactions, .. } => subactions,
+            Self::ImageSearch { detection, .. }
+            | Self::Ocr { detection, .. }
+            | Self::FindPixel { detection, .. } => &detection.subactions,
             Self::NavigateSelect(data) => &data.subactions,
             _ => &[],
         }
@@ -801,11 +735,11 @@ impl ActionKind {
             Self::Loop { subactions, .. }
             | Self::While { subactions, .. }
             | Self::Conditional { subactions, .. }
-            | Self::ImageSearch { subactions, .. }
-            | Self::Ocr { subactions, .. }
-            | Self::FindPixel { subactions, .. }
             | Self::ForEachRow { subactions, .. }
             | Self::NavigateKey { subactions, .. } => Some(subactions),
+            Self::ImageSearch { detection, .. }
+            | Self::Ocr { detection, .. }
+            | Self::FindPixel { detection, .. } => Some(&mut detection.subactions),
             Self::NavigateSelect(data) => Some(&mut data.subactions),
             _ => None,
         }
@@ -816,17 +750,12 @@ impl ActionKind {
         let label = action_type_label(self.type_key());
         match self {
             Self::Loop { name, .. }
-            | Self::While { name, .. }
-            | Self::Conditional { name, .. }
             | Self::ImageSearch { name, .. }
             | Self::Ocr { name, .. }
             | Self::FindPixel { name, .. }
-            | Self::ForEachRow { name, .. } => {
-                if name.trim().is_empty() || name == "root" {
-                    label.to_string()
-                } else {
-                    format!("{label}: {name}")
-                }
+            | Self::ForEachRow { name, .. } => named_branch_label(label, name),
+            Self::While { condition, .. } | Self::Conditional { condition, .. } => {
+                named_branch_label(label, &condition.name)
             }
             Self::NavigateKey { name, chord, .. } => {
                 let chord_s = if chord.is_empty() {
@@ -882,6 +811,14 @@ impl ActionKind {
     }
 }
 
+fn named_branch_label(label: &str, name: &str) -> String {
+    if name.trim().is_empty() || name == "root" {
+        label.to_string()
+    } else {
+        format!("{label}: {name}")
+    }
+}
+
 /// Creates the empty macro root loop (`name: root`, nil UID, count 1).
 pub fn root_loop(subactions: Vec<Action>) -> Action {
     Action {
@@ -897,6 +834,17 @@ pub fn root_loop(subactions: Vec<Action>) -> Action {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn string_enums_parse_aliases_and_defaults() {
+        assert_eq!(MouseButton::parse("center"), MouseButton::Middle);
+        assert_eq!(MouseButton::parse("CENTER"), MouseButton::Middle);
+        assert_eq!(MouseButton::parse("nope"), MouseButton::Left);
+        assert_eq!(MatchMode::parse("any"), MatchMode::Any);
+        assert_eq!(RepeatMode::parse("repeatwhilefound"), RepeatMode::WhileFound);
+        assert_eq!(MaskShape::parse("circle"), MaskShape::Circle);
+        assert_eq!(format!("{}", MouseButton::Scroll), "scroll");
+    }
 
     fn wait(id: ActionId) -> Action {
         Action {

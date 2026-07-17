@@ -2,6 +2,8 @@
 
 mod diag;
 mod error;
+#[cfg(not(target_os = "linux"))]
+mod outline_stub;
 mod pixel_convert;
 mod stub;
 #[cfg(target_os = "linux")]
@@ -10,8 +12,8 @@ mod x11_capture;
 mod x11_focus;
 #[cfg(target_os = "linux")]
 mod x11_outline;
-#[cfg(not(target_os = "linux"))]
-mod outline_stub;
+#[cfg(target_os = "linux")]
+mod x11_secondary;
 
 pub use diag::{
     disk_logging_enabled, mark_site, note, read_last_site, set_disk_logging, set_log_dir,
@@ -29,6 +31,12 @@ pub use x11_focus::X11WindowFocuser;
 
 #[cfg(target_os = "linux")]
 pub use x11_outline::{OutlineRect, SelectionOutline};
+
+/// True if `display` is a Sqyre secondary X11 connection (for winit error hooks).
+#[cfg(target_os = "linux")]
+pub fn owns_secondary_x_display(display: *mut std::ffi::c_void) -> bool {
+    x11_secondary::owns(display)
+}
 
 #[cfg(not(target_os = "linux"))]
 pub use outline_stub::{OutlineRect, SelectionOutline};
@@ -53,7 +61,11 @@ impl WindowInfo {
     /// Human-readable list line: `title  (name — path)`.
     pub fn label(&self) -> String {
         let title = self.title.trim();
-        let title = if title.is_empty() { "(untitled)" } else { title };
+        let title = if title.is_empty() {
+            "(untitled)"
+        } else {
+            title
+        };
         let name = self.process_name.trim();
         let path = self.process_path.trim();
         match (name.is_empty(), path.is_empty()) {
@@ -231,11 +243,7 @@ pub fn window_matches_title(win: &WindowInfo, window_title: &str) -> bool {
 
 /// Match a program binding: process path required; title required when non-empty.
 /// Disambiguates shared executables (e.g. multiple games under one `GameThread` binary).
-pub fn window_matches_binding(
-    win: &WindowInfo,
-    process_path: &str,
-    window_title: &str,
-) -> bool {
+pub fn window_matches_binding(win: &WindowInfo, process_path: &str, window_title: &str) -> bool {
     window_matches_process(win, process_path) && window_matches_title(win, window_title)
 }
 
@@ -300,10 +308,7 @@ mod tests {
             "/opt/demo-game/bin/DemoGame"
         ));
         assert!(super::window_matches_process(&w, "DemoGame"));
-        assert!(super::window_matches_process(
-            &w,
-            "/elsewhere/DemoGame"
-        ));
+        assert!(super::window_matches_process(&w, "/elsewhere/DemoGame"));
         assert!(!super::window_matches_process(&w, "/opt/other/OtherApp"));
         assert!(super::window_matches_process(&w, ""));
     }

@@ -78,12 +78,7 @@ pub fn image_content_rect(
     egui::Rect::from_min_size(egui::pos2(x, y), Vec2::new(w, h))
 }
 
-pub fn clamp_image_pan(
-    viewport: egui::Rect,
-    image_size: Vec2,
-    zoom: f32,
-    mut pan: Vec2,
-) -> Vec2 {
+pub fn clamp_image_pan(viewport: egui::Rect, image_size: Vec2, zoom: f32, mut pan: Vec2) -> Vec2 {
     let content = image_content_rect(viewport, image_size, zoom, pan);
     let pad = IMAGE_PAN_EDGE_PAD;
     if content.width() <= viewport.width() {
@@ -161,14 +156,7 @@ pub fn handle_scroll_zoom(
         .input(|i| i.pointer.hover_pos())
         .unwrap_or(viewport.center());
     let factor = scroll_zoom_factor(scroll);
-    let (z, p) = zoom_image_at_cursor(
-        viewport,
-        image_size,
-        view.zoom,
-        view.pan,
-        cursor,
-        factor,
-    );
+    let (z, p) = zoom_image_at_cursor(viewport, image_size, view.zoom, view.pan, cursor, factor);
     view.zoom = z;
     view.pan = p;
 }

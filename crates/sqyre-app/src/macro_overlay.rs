@@ -4,12 +4,14 @@
 //! buttons stay visible while the main window is tray-hidden. Clicks push into the
 //! shared pending-macro queue drained by `SqyreApp` each frame.
 //!
-//! On X11, `with_taskbar(false)` is Windows-only in egui-winit; we use Utility
-//! window type plus [`sqyre_capture::skip_taskbar_for_overlay_windows`] so Alt-Tab
-//! / pagers omit these tool windows.
+//! On X11, `with_taskbar(false)` is Windows-only in egui-winit. Overlay buttons use
+//! Dock window type (GNOME/Mutter skips docks from Alt-Tab) plus
+//! [`sqyre_capture::skip_taskbar_for_overlay_windows`] as a belt-and-suspenders
+//! `_NET_WM_STATE_SKIP_TASKBAR` / `SKIP_PAGER` request.
 
 use crate::overlay_icons::{self, OverlayIcon};
 use eframe::egui::{self, Color32, Pos2, ViewportBuilder, ViewportClass, ViewportId};
+use parking_lot::Mutex;
 use sqyre_capture::{
     get_active_window, mark_site, note, skip_taskbar_for_overlay_windows, window_is_our_process,
     window_matches_binding, window_matches_program, WindowInfo, OVERLAY_WM_TITLE,
@@ -18,13 +20,13 @@ use sqyre_persist::{
     OverlayButtonConfig, ProgramCatalog, DEFAULT_OVERLAY_BUTTON_SIZE, MAX_OVERLAY_BUTTON_SIZE,
     MIN_OVERLAY_BUTTON_SIZE,
 };
-use parking_lot::Mutex;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-const VIEWPORT_PAD: f32 = 2.0;
+const VIEWPORT_PAD_MIN: f32 = 2.0;
 const FOCUS_POLL: Duration = Duration::from_millis(250);
-const SKIP_TASKBAR_EVERY: Duration = Duration::from_secs(2);
+/// Re-apply EWMH skip hints often — new viewports can appear in Alt-Tab until hinted.
+const SKIP_TASKBAR_EVERY: Duration = Duration::from_millis(250);
 const FOCUS_ERR_LOG_EVERY: Duration = Duration::from_secs(5);
 
 /// Draws enabled overlay buttons each frame.
@@ -136,13 +138,7 @@ impl MacroOverlay {
             self.last_sync_sig = Some(sig);
             let focus_label = focus
                 .as_ref()
-                .map(|w| {
-                    format!(
-                        "{} ({})",
-                        w.process_name.trim(),
-                        w.process_path.trim()
-                    )
-                })
+                .map(|w| format!("{} ({})", w.process_name.trim(), w.process_path.trim()))
                 .unwrap_or_else(|| "(none)".into());
             note(&format!(
                 "overlay: sync shown={shown} gated={any_gated} preview={} focus={focus_label}",
@@ -201,11 +197,7 @@ impl MacroOverlay {
     }
 }
 
-fn program_owns_focus(
-    catalog: &ProgramCatalog,
-    program: &str,
-    focus: Option<&WindowInfo>,
-) -> bool {
+fn program_owns_focus(catalog: &ProgramCatalog, program: &str, focus: Option<&WindowInfo>) -> bool {
     let program = program.trim();
     if program.is_empty() {
         return true;
@@ -248,16 +240,20 @@ fn show_button_viewport(
         DEFAULT_OVERLAY_BUTTON_SIZE
     }
     .clamp(MIN_OVERLAY_BUTTON_SIZE, MAX_OVERLAY_BUTTON_SIZE);
-    let outer = size + VIEWPORT_PAD * 2.0;
+    let style = overlay_icons::OverlayPaintStyle::from_config(btn);
+    // Outside stroke needs room; hover thickens border by ~4/3.
+    let pad = VIEWPORT_PAD_MIN.max(style.border_width * (2.0 / 1.5) + 1.0);
+    let outer = size + pad * 2.0;
     let builder = ViewportBuilder::default()
         // Fixed title so X11 skip-taskbar can find these; avoids N distinct "Sqyre: …" Alt-Tab entries.
         .with_title(OVERLAY_WM_TITLE)
         .with_decorations(false)
         .with_resizable(false)
         .with_always_on_top()
-        // Windows: omit from taskbar. X11: see skip_taskbar_for_overlay_windows.
+        // Windows: omit from taskbar. X11: Dock is omitted from GNOME Alt-Tab;
+        // skip_taskbar_for_overlay_windows reinforces SKIP_TASKBAR/SKIP_PAGER.
         .with_taskbar(false)
-        .with_window_type(egui::X11WindowType::Utility)
+        .with_window_type(egui::X11WindowType::Dock)
         .with_transparent(true)
         .with_inner_size([outer, outer])
         .with_min_inner_size([outer, outer])
@@ -270,6 +266,8 @@ fn show_button_viewport(
             class,
             icon,
             size,
+            style,
+            pad,
             btn_pos,
             &macro_name,
             &label,
@@ -305,6 +303,8 @@ fn show_overlay_tip_viewport(
     const TIP_MAX_W: f32 = 280.0;
     const TIP_PAD: f32 = 8.0;
     const TIP_GAP: f32 = 6.0;
+    // Frame stroke is drawn outside the content; include it in the OS window size.
+    const TIP_STROKE: f32 = 1.0;
 
     mark_site(&format!("overlay:tip:{btn_id}"));
 
@@ -312,10 +312,14 @@ fn show_overlay_tip_viewport(
     let font_id = egui::TextStyle::Body.resolve(&style);
     let color = style.visuals.text_color();
     let galley = ctx.fonts_mut(|f| f.layout(tip.to_owned(), font_id, color, TIP_MAX_W));
-    let tip_w = (galley.size().x + TIP_PAD * 2.0).ceil().max(48.0);
-    let tip_h = (galley.size().y + TIP_PAD * 2.0).ceil().max(28.0);
+    let tip_w = (galley.size().x + TIP_PAD * 2.0 + TIP_STROKE * 2.0)
+        .ceil()
+        .max(48.0);
+    let tip_h = (galley.size().y + TIP_PAD * 2.0 + TIP_STROKE * 2.0)
+        .ceil()
+        .max(28.0);
     let tip_pos = Pos2::new(
-        button_pos.x + button_size + VIEWPORT_PAD * 2.0 + TIP_GAP,
+        button_pos.x + button_size + VIEWPORT_PAD_MIN * 2.0 + TIP_GAP,
         button_pos.y,
     );
 
@@ -337,7 +341,7 @@ fn show_overlay_tip_viewport(
     ctx.show_viewport_deferred(id, builder, move |ui, class| {
         let frame = egui::Frame::NONE
             .fill(Color32::from_rgba_unmultiplied(20, 18, 14, 230))
-            .stroke(egui::Stroke::new(1.0, crate::theme::PRIMARY))
+            .stroke(egui::Stroke::new(TIP_STROKE, crate::theme::PRIMARY))
             .corner_radius(egui::CornerRadius::same(4))
             .inner_margin(egui::Margin::same(TIP_PAD as i8));
 
@@ -367,6 +371,8 @@ fn paint_button(
     class: ViewportClass,
     icon: &OverlayIcon,
     size: f32,
+    style: overlay_icons::OverlayPaintStyle,
+    pad: f32,
     button_pos: Pos2,
     macro_name: &str,
     label: &str,
@@ -382,7 +388,7 @@ fn paint_button(
     };
 
     let paint = |ui: &mut egui::Ui| {
-        let resp = overlay_icons::paint_glyph_bare(ui, icon, size, busy);
+        let resp = overlay_icons::paint_glyph_bare(ui, icon, size, busy, &style);
         let clicked = resp.clicked();
         // Wake the root viewport so pending macros are drained (child request_repaint
         // alone does not run App::update).
@@ -410,7 +416,7 @@ fn paint_button(
 
     egui::Frame::NONE
         .fill(Color32::TRANSPARENT)
-        .inner_margin(egui::Margin::same(VIEWPORT_PAD as i8))
+        .inner_margin(egui::Margin::same(pad.round() as i8))
         .show(ui, |ui| {
             ui.set_min_size(egui::vec2(size, size));
             paint(ui);

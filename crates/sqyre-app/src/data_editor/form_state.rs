@@ -1,6 +1,6 @@
 //! FormState trait: per-tab load / dirty / valid lifecycle.
 
-use super::helpers::{parse_i32, parse_scalar, scalar_to_edit};
+use super::helpers::{parse_i32, parse_scalar, rgba_color, scalar_to_edit};
 use super::{DataEditor, EditorTab};
 use sqyre_domain::Macro;
 use sqyre_persist::{ProgramCatalog, UserSettings};
@@ -52,14 +52,8 @@ pub(crate) fn dirty_tab(
     }
 }
 
-pub(crate) fn valid_tab(
-    tab: EditorTab,
-    ed: &DataEditor,
-    active_macro: Option<&Macro>,
-) -> bool {
-    if !matches!(tab, EditorTab::Overlay)
-        && validate_entity_name(ed.form_name.trim()).is_err()
-    {
+pub(crate) fn valid_tab(tab: EditorTab, ed: &DataEditor, active_macro: Option<&Macro>) -> bool {
+    if !matches!(tab, EditorTab::Overlay) && validate_entity_name(ed.form_name.trim()).is_err() {
         return false;
     }
     match tab {
@@ -83,15 +77,10 @@ pub(crate) struct CollectionsForm;
 pub(crate) struct AutoPicForm;
 pub(crate) struct OverlayForm;
 
-
 impl FormState for ProgramsForm {
     fn load(ed: &mut DataEditor, catalog: &ProgramCatalog, _settings: &UserSettings) {
         ed.form_name = ed.selected_program.clone().unwrap_or_default();
-        if let Some(p) = ed
-            .selected_program
-            .as_deref()
-            .and_then(|n| catalog.get(n))
-        {
+        if let Some(p) = ed.selected_program.as_deref().and_then(|n| catalog.get(n)) {
             ed.form_process_path = p.process_path.clone();
             ed.form_window_title = p.window_title.clone();
         } else {
@@ -109,9 +98,7 @@ impl FormState for ProgramsForm {
         let bound = catalog.get(sel);
         let path = bound.map(|p| p.process_path.as_str()).unwrap_or("");
         let title = bound.map(|p| p.window_title.as_str()).unwrap_or("");
-        ed.form_name.trim() != sel
-            || ed.form_process_path != path
-            || ed.form_window_title != title
+        ed.form_name.trim() != sel || ed.form_process_path != path || ed.form_window_title != title
     }
 
     fn is_valid(_ed: &DataEditor, _active_macro: Option<&Macro>) -> bool {
@@ -163,12 +150,7 @@ impl FormState for ItemsForm {
 
     fn is_valid(ed: &DataEditor, _active_macro: Option<&Macro>) -> bool {
         ed.selected_program.is_some()
-            && validate_item_grid_fields(
-                &ed.form_cols,
-                &ed.form_rows,
-                &ed.form_stack_max,
-            )
-            .is_ok()
+            && validate_item_grid_fields(&ed.form_cols, &ed.form_rows, &ed.form_stack_max).is_ok()
     }
 }
 
@@ -467,6 +449,12 @@ impl FormState for OverlayForm {
             || (ed.form_overlay_x - btn.x).abs() > f32::EPSILON
             || (ed.form_overlay_y - btn.y).abs() > f32::EPSILON
             || (ed.form_overlay_size - btn.size).abs() > f32::EPSILON
+            || (ed.form_overlay_corner_radius - btn.corner_radius).abs() > f32::EPSILON
+            || (ed.form_overlay_border_width - btn.border_width).abs() > f32::EPSILON
+            || ed.form_overlay_border != rgba_color(btn.border_rgba())
+            || ed.form_overlay_bg != rgba_color(btn.bg_rgba())
+            || ed.form_overlay_icon_color != rgba_color(btn.icon_rgba())
+            || ed.form_overlay_icon_hover != rgba_color(btn.icon_hover_rgba())
             || ed.selected_program.as_deref() != Some(btn.program.as_str())
     }
 

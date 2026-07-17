@@ -6,12 +6,14 @@ use eframe::egui;
 use sqyre_persist::UserSettings;
 
 impl DataEditor {
-    pub(crate) fn persist_overlay_settings(&mut self, settings: &mut UserSettings) {
+    pub(crate) fn persist_overlay_settings(&mut self, settings: &mut UserSettings) -> bool {
         settings.clamp();
         if let Err(e) = settings.save_default() {
             self.set_err(format!("Failed to save overlay settings: {e}"));
+            false
         } else {
             self.clear_status();
+            true
         }
     }
 
@@ -39,11 +41,17 @@ impl DataEditor {
         btn.x = self.form_overlay_x;
         btn.y = self.form_overlay_y;
         btn.size = self.form_overlay_size;
-        self.persist_overlay_settings(settings);
-        self.set_ok("Saved overlay button.");
+        self.apply_overlay_style_to_config(btn);
+        if self.persist_overlay_settings(settings) {
+            self.set_ok("Saved overlay button.");
+        }
     }
 
-    pub(crate) fn draw_overlay_icon_picker(&mut self, ctx: &egui::Context, settings: &mut UserSettings) {
+    pub(crate) fn draw_overlay_icon_picker(
+        &mut self,
+        ctx: &egui::Context,
+        settings: &mut UserSettings,
+    ) {
         let Some(button_id) = self.overlay_icon_picker_for.clone() else {
             return;
         };
@@ -63,9 +71,11 @@ impl DataEditor {
             .show(ctx, |ui| {
                 ui.weak("Phosphor Icons — search by name, then click to select.");
                 ui.add_space(4.0);
-                if let Some(id) =
-                    overlay_icons::show_icon_picker_grid(ui, &current, &mut self.overlay_icon_search)
-                {
+                if let Some(id) = overlay_icons::show_icon_picker_grid(
+                    ui,
+                    &current,
+                    &mut self.overlay_icon_search,
+                ) {
                     self.form_overlay_icon = id.to_string();
                     close = true;
                 }
@@ -75,5 +85,4 @@ impl DataEditor {
         }
         let _ = settings; // form-edited; persist via Update
     }
-
 }

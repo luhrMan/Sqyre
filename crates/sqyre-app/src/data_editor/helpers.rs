@@ -12,6 +12,20 @@ pub(crate) fn new_overlay_button_id() -> String {
     format!("btn-{ms}")
 }
 
+pub(crate) fn rgba_color(c: [u8; 4]) -> eframe::egui::Color32 {
+    eframe::egui::Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3])
+}
+
+/// `#rrggbb` for persist, or empty when it matches the theme default.
+pub(crate) fn overlay_hex_or_empty(c: eframe::egui::Color32, default_hex: &str) -> String {
+    let hex = sqyre_domain::format_hex_color([c.r(), c.g(), c.b(), 255]);
+    if hex.eq_ignore_ascii_case(default_hex) {
+        String::new()
+    } else {
+        hex
+    }
+}
+
 pub(crate) fn scalar_to_edit(v: &ScalarValue) -> String {
     v.as_display()
 }
@@ -92,17 +106,32 @@ pub(crate) fn uuid_simple() -> String {
 }
 
 pub(crate) fn form_coord_i32(s: &str) -> i32 {
-    let s = s.trim();
-    if let Ok(i) = s.parse::<i32>() {
-        return i;
-    }
-    if let Ok(f) = s.parse::<f64>() {
-        return f as i32;
-    }
-    0
+    form_coord_literal(s).unwrap_or(0)
 }
 
-pub(crate) fn copy_image_as_png(src: &std::path::Path, dest: &std::path::Path) -> Result<(), String> {
+/// Parse a form coordinate as a literal number suitable for live preview capture.
+/// Returns `None` for `${var}` refs and other non-numeric expressions.
+pub(crate) fn form_coord_literal(s: &str) -> Option<i32> {
+    let s = s.trim();
+    if s.is_empty() {
+        return Some(0);
+    }
+    if sqyre_varref::contains(s) {
+        return None;
+    }
+    if let Ok(i) = s.parse::<i32>() {
+        return Some(i);
+    }
+    if let Ok(f) = s.parse::<f64>() {
+        return Some(f as i32);
+    }
+    None
+}
+
+pub(crate) fn copy_image_as_png(
+    src: &std::path::Path,
+    dest: &std::path::Path,
+) -> Result<(), String> {
     let bytes = std::fs::read(src).map_err(|e| format!("read: {e}"))?;
     if bytes.starts_with(&[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]) {
         std::fs::write(dest, &bytes).map_err(|e| format!("write: {e}"))?;
@@ -111,4 +140,3 @@ pub(crate) fn copy_image_as_png(src: &std::path::Path, dest: &std::path::Path) -
     let img = image::load_from_memory(&bytes).map_err(|e| format!("decode: {e}"))?;
     img.save(dest).map_err(|e| format!("save png: {e}"))
 }
-

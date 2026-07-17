@@ -97,30 +97,11 @@ pub fn match_ccoeff_normed_with_integrals(
 
     if full_mask && direct_cost > FFT_DIRECT_COST_THRESHOLD {
         match_fft(
-            search,
-            &t_prime,
-            tw,
-            th,
-            sum_w,
-            t_prime_sq,
-            out_w,
-            out_h,
-            ch,
-            integrals,
+            search, &t_prime, tw, th, sum_w, t_prime_sq, out_w, out_h, ch, integrals,
         )
     } else {
         match_direct(
-            search,
-            &t_prime,
-            tw,
-            th,
-            sum_w,
-            t_prime_sq,
-            out_w,
-            out_h,
-            ch,
-            full_mask,
-            integrals,
+            search, &t_prime, tw, th, sum_w, t_prime_sq, out_w, out_h, ch, full_mask, integrals,
         )
     }
 }
@@ -204,16 +185,7 @@ fn build_t_prime(template: &ImageBuf, mask_bits: &[bool], ch: usize) -> (TPrime,
             }
         }
     }
-    (
-        TPrime {
-            xs,
-            ys,
-            primed,
-            ch,
-        },
-        t_prime_sq,
-        sum_w,
-    )
+    (TPrime { xs, ys, primed, ch }, t_prime_sq, sum_w)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -406,7 +378,12 @@ fn match_fft(
     })
 }
 
-fn fft2d_forward(buf: &mut [Complex<f32>], width: usize, height: usize, planner: &mut FftPlanner<f32>) {
+fn fft2d_forward(
+    buf: &mut [Complex<f32>],
+    width: usize,
+    height: usize,
+    planner: &mut FftPlanner<f32>,
+) {
     let fft_row = planner.plan_fft_forward(width);
     for row in buf.chunks_exact_mut(width) {
         fft_row.process(row);
@@ -424,7 +401,12 @@ fn fft2d_forward(buf: &mut [Complex<f32>], width: usize, height: usize, planner:
     }
 }
 
-fn fft2d_inverse(buf: &mut [Complex<f32>], width: usize, height: usize, planner: &mut FftPlanner<f32>) {
+fn fft2d_inverse(
+    buf: &mut [Complex<f32>],
+    width: usize,
+    height: usize,
+    planner: &mut FftPlanner<f32>,
+) {
     let ifft_row = planner.plan_fft_inverse(width);
     for row in buf.chunks_exact_mut(width) {
         ifft_row.process(row);
@@ -478,14 +460,19 @@ fn build_integrals(img: &ImageBuf) -> SearchIntegrals {
             }
         }
     }
-    SearchIntegrals { width: w, sum, sumsq }
+    SearchIntegrals {
+        width: w,
+        sum,
+        sumsq,
+    }
 }
 
 #[inline]
 fn rect_sum(integ: &[f64], stride: usize, x: usize, y: usize, tw: usize, th: usize) -> f64 {
     let x2 = x + tw;
     let y2 = y + th;
-    integ[y2 * stride + x2] - integ[y * stride + x2] - integ[y2 * stride + x] + integ[y * stride + x]
+    integ[y2 * stride + x2] - integ[y * stride + x2] - integ[y2 * stride + x]
+        + integ[y * stride + x]
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -795,8 +782,10 @@ mod tests {
         search.stamp(&tmpl, 40, 30);
         let mask_bits = vec![true; 24 * 24];
         let (masked, t_prime_sq, sum_w) = build_t_prime(&tmpl, &mask_bits, 3);
-        let direct =
-            match_direct(&search, &masked, 24, 24, sum_w, t_prime_sq, 97, 77, 3, true, None).unwrap();
+        let direct = match_direct(
+            &search, &masked, 24, 24, sum_w, t_prime_sq, 97, 77, 3, true, None,
+        )
+        .unwrap();
         let fft = match_fft(&search, &masked, 24, 24, sum_w, t_prime_sq, 97, 77, 3, None).unwrap();
         let di = 30 * direct.width + 40;
         let fi = 30 * fft.width + 40;
@@ -807,5 +796,33 @@ mod tests {
             fft.scores[fi]
         );
         assert!(direct.scores[di] > 0.99);
+    }
+
+    #[test]
+    fn mask_size_mismatch_errors() {
+        let search = gray(20, 20, 10);
+        let tmpl = patterned(5, 5);
+        let bad_mask = vec![255u8; 3];
+        let err = match_ccoeff_normed(&search, &tmpl, Some(&bad_mask)).unwrap_err();
+        assert!(matches!(err, MatchError::MaskSize { .. }), "got {err:?}");
+    }
+
+    #[test]
+    fn empty_image_errors() {
+        let empty = ImageBuf::from_raw(0, 0, 3, vec![]);
+        let tmpl = patterned(2, 2);
+        let err = match_ccoeff_normed(&empty, &tmpl, None).unwrap_err();
+        assert!(matches!(err, MatchError::Empty), "got {err:?}");
+    }
+
+    #[test]
+    fn template_too_large_errors() {
+        let search = gray(4, 4, 10);
+        let tmpl = patterned(8, 8);
+        let err = match_ccoeff_normed(&search, &tmpl, None).unwrap_err();
+        assert!(
+            matches!(err, MatchError::TemplateTooLarge { .. }),
+            "got {err:?}"
+        );
     }
 }

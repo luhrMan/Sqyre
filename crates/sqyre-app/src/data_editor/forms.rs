@@ -2,7 +2,7 @@
 
 use super::form_state;
 use super::helpers::{
-    collect_program_item_tags, form_coord_i32, item_tag_completion_options, parse_i32,
+    collect_program_item_tags, form_coord_literal, item_tag_completion_options, parse_i32,
 };
 use super::{DataEditor, EditorTab};
 use crate::collection_capture::capture_and_save_collection_image;
@@ -10,8 +10,8 @@ use crate::data_editor_preview::{
     paint_disk_preview, paint_preview_coord_chip, paint_preview_toolbar,
     paint_zoomable_collection_preview, CardinalEdge,
 };
-use crate::paint_ctx::CatalogPaint;
 use crate::overlay_icons;
+use crate::paint_ctx::CatalogPaint;
 use crate::pickers;
 use crate::theme;
 use crate::var_pills;
@@ -19,10 +19,24 @@ use eframe::egui;
 use sqyre_domain::{collect_known_variable_names, Macro, PROGRAM_DELIMITER};
 use sqyre_hotkeys::ScreenClickBridge;
 use sqyre_persist::{
-    auto_pic_path, ProgramCatalog, ProgramCollection, UserSettings, DEFAULT_OVERLAY_BUTTON_SIZE,
-    MAX_OVERLAY_BUTTON_SIZE, MIN_OVERLAY_BUTTON_SIZE,
+    auto_pic_path, OverlayButtonConfig, ProgramCatalog, ProgramCollection, UserSettings,
+    DEFAULT_OVERLAY_BUTTON_SIZE, MAX_OVERLAY_BORDER_WIDTH, MAX_OVERLAY_BUTTON_SIZE,
+    MAX_OVERLAY_CORNER_RADIUS, MIN_OVERLAY_BORDER_WIDTH, MIN_OVERLAY_BUTTON_SIZE,
+    MIN_OVERLAY_CORNER_RADIUS,
 };
 use sqyre_validate::validate_numeric_expression;
+
+fn color_alpha_drag(ui: &mut egui::Ui, label: &str, color: &mut egui::Color32) {
+    ui.label(label);
+    ui.color_edit_button_srgba(color);
+    let mut alpha = color.a();
+    if ui
+        .add(egui::DragValue::new(&mut alpha).range(0..=255).prefix("α "))
+        .changed()
+    {
+        *color = egui::Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), alpha);
+    }
+}
 
 impl DataEditor {
     pub(crate) fn load_form(&mut self, catalog: &ProgramCatalog, settings: &UserSettings) {
@@ -53,6 +67,7 @@ impl DataEditor {
         } else {
             DEFAULT_OVERLAY_BUTTON_SIZE
         };
+        self.load_overlay_style_from_config(btn);
     }
 
     pub(crate) fn reset_overlay_form(&mut self) {
@@ -62,6 +77,7 @@ impl DataEditor {
         self.form_overlay_macro.clear();
         self.form_overlay_icon = overlay_icons::DEFAULT_ICON_ID.into();
         self.form_overlay_size = DEFAULT_OVERLAY_BUTTON_SIZE;
+        self.reset_overlay_style_form();
     }
 
     pub(crate) fn reset_item_form(&mut self) {
@@ -143,7 +159,8 @@ impl DataEditor {
                     }
                     if ui
                         .add_enabled(
-                            !self.form_process_path.is_empty() || !self.form_window_title.is_empty(),
+                            !self.form_process_path.is_empty()
+                                || !self.form_window_title.is_empty(),
                             egui::Button::new("Clear"),
                         )
                         .clicked()
@@ -200,10 +217,9 @@ impl DataEditor {
                     if current != self.form_mask {
                         self.form_mask = current;
                     }
-                    if let (Some(prog), mask) = (
-                        self.selected_program.as_deref(),
-                        self.form_mask.as_str(),
-                    ) {
+                    if let (Some(prog), mask) =
+                        (self.selected_program.as_deref(), self.form_mask.as_str())
+                    {
                         if !mask.is_empty() {
                             if let Some(m) = catalog.get(prog).and_then(|p| p.masks.get(mask)) {
                                 let detail = if catalog.mask_image_path(prog, mask).is_file() {
@@ -277,10 +293,9 @@ impl DataEditor {
                         }
                     }
                 }
-                if let (Some(prog), Some(item)) = (
-                    self.selected_program.clone(),
-                    self.selected_entity.clone(),
-                ) {
+                if let (Some(prog), Some(item)) =
+                    (self.selected_program.clone(), self.selected_entity.clone())
+                {
                     let target = format!("{prog}{PROGRAM_DELIMITER}{item}");
                     self.paint_item_variants_ui(ui, icons, catalog, &target, &item);
                 }
@@ -309,8 +324,8 @@ impl DataEditor {
                     }
                 });
                 ui.weak("X/Y overlay the preview; integers or ${var}.");
-                let x = form_coord_i32(&self.form_x);
-                let y = form_coord_i32(&self.form_y);
+                let x = form_coord_literal(&self.form_x);
+                let y = form_coord_literal(&self.form_y);
                 let force = paint_preview_toolbar(ui);
                 let rect = previews.paint_point_panel(ui, x, y, force);
                 let vx = validate_numeric_expression(&self.form_x, active_macro);
@@ -364,10 +379,10 @@ impl DataEditor {
                     }
                 });
                 ui.weak("Bounds overlay the preview edges; integers or ${var}.");
-                let lx = form_coord_i32(&self.form_left);
-                let ty = form_coord_i32(&self.form_top);
-                let rx = form_coord_i32(&self.form_right);
-                let by = form_coord_i32(&self.form_bottom);
+                let lx = form_coord_literal(&self.form_left);
+                let ty = form_coord_literal(&self.form_top);
+                let rx = form_coord_literal(&self.form_right);
+                let by = form_coord_literal(&self.form_bottom);
                 let force = paint_preview_toolbar(ui);
                 let rect = previews.paint_search_area_panel(ui, lx, ty, rx, by, force);
                 let v_top = validate_numeric_expression(&self.form_top, active_macro);
@@ -580,10 +595,9 @@ impl DataEditor {
                 ui.add(egui::TextEdit::singleline(&mut self.form_rows).desired_width(80.0));
                 ui.label("Cols");
                 ui.add(egui::TextEdit::singleline(&mut self.form_cols).desired_width(80.0));
-                if let (Some(prog), Some(col_name)) = (
-                    self.selected_program.clone(),
-                    self.selected_entity.clone(),
-                ) {
+                if let (Some(prog), Some(col_name)) =
+                    (self.selected_program.clone(), self.selected_entity.clone())
+                {
                     let path = catalog.collection_image_path(&prog, &col_name);
                     let rows = parse_i32(&self.form_rows).unwrap_or(1).max(1);
                     let cols = parse_i32(&self.form_cols).unwrap_or(1).max(1);
@@ -624,20 +638,19 @@ impl DataEditor {
                 ui.heading("AutoPic");
                 ui.weak("Select a search area, preview, then save a PNG into images/AutoPic.");
                 if self.selected_program.is_some() && self.selected_entity.is_some() {
-                    let lx = form_coord_i32(&self.form_left);
-                    let ty = form_coord_i32(&self.form_top);
-                    let rx = form_coord_i32(&self.form_right);
-                    let by = form_coord_i32(&self.form_bottom);
+                    let lx = form_coord_literal(&self.form_left);
+                    let ty = form_coord_literal(&self.form_top);
+                    let rx = form_coord_literal(&self.form_right);
+                    let by = form_coord_literal(&self.form_bottom);
                     let force = paint_preview_toolbar(ui);
                     previews.paint_search_area_panel(ui, lx, ty, rx, by, force);
                     ui.add_space(8.0);
                     let saving = self.autopix_pending.is_some();
                     if ui
-                        .add_enabled(!saving, egui::Button::new(if saving {
-                            "Saving…"
-                        } else {
-                            "Save"
-                        }))
+                        .add_enabled(
+                            !saving,
+                            egui::Button::new(if saving { "Saving…" } else { "Save" }),
+                        )
                         .clicked()
                     {
                         self.save_autopix();
@@ -677,7 +690,10 @@ impl DataEditor {
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
                     let icon = overlay_icons::resolve(&self.form_overlay_icon);
-                    let preview = overlay_icons::icon_glyph_button(ui, icon, false, 48.0);
+                    let mut preview_cfg = OverlayButtonConfig::new("preview", "");
+                    self.apply_overlay_style_to_config(&mut preview_cfg);
+                    let style = overlay_icons::OverlayPaintStyle::from_config(&preview_cfg);
+                    let preview = overlay_icons::style_preview_button(ui, icon, 48.0, &style);
                     if preview.clicked() {
                         if let Some(id) = self.selected_entity.clone() {
                             self.overlay_icon_search.clear();
@@ -731,12 +747,52 @@ impl DataEditor {
                             .speed(1.0)
                             .suffix(" px"),
                     );
-                    ui.label("Size");
-                    ui.add(
-                        egui::DragValue::new(&mut self.form_overlay_size)
-                            .speed(1)
-                            .range(MIN_OVERLAY_BUTTON_SIZE..=MAX_OVERLAY_BUTTON_SIZE),
-                    );
+                });
+                ui.add_space(8.0);
+                ui.collapsing("Appearance", |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label("Size");
+                        ui.add(
+                            egui::DragValue::new(&mut self.form_overlay_size)
+                                .speed(1)
+                                .range(MIN_OVERLAY_BUTTON_SIZE..=MAX_OVERLAY_BUTTON_SIZE),
+                        );
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Corner radius");
+                        ui.add(
+                            egui::DragValue::new(&mut self.form_overlay_corner_radius)
+                                .speed(0.5)
+                                .range(MIN_OVERLAY_CORNER_RADIUS..=MAX_OVERLAY_CORNER_RADIUS)
+                                .suffix(" px"),
+                        );
+                        ui.label("Border width");
+                        ui.add(
+                            egui::DragValue::new(&mut self.form_overlay_border_width)
+                                .speed(0.1)
+                                .range(MIN_OVERLAY_BORDER_WIDTH..=MAX_OVERLAY_BORDER_WIDTH)
+                                .suffix(" px"),
+                        );
+                    });
+                    ui.add_space(4.0);
+                    ui.horizontal(|ui| {
+                        color_alpha_drag(ui, "Border", &mut self.form_overlay_border);
+                    });
+                    ui.horizontal(|ui| {
+                        color_alpha_drag(ui, "Background", &mut self.form_overlay_bg);
+                        ui.weak("(α 0 = none)");
+                    });
+                    ui.horizontal(|ui| {
+                        color_alpha_drag(ui, "Icon", &mut self.form_overlay_icon_color);
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Icon hover");
+                        ui.color_edit_button_srgba(&mut self.form_overlay_icon_hover);
+                    });
+                    ui.add_space(4.0);
+                    if ui.button("Reset appearance to defaults").clicked() {
+                        self.reset_overlay_style_form();
+                    }
                 });
             }
         }
@@ -749,5 +805,4 @@ impl DataEditor {
     pub(crate) fn form_valid(&self, active_macro: Option<&Macro>) -> bool {
         form_state::valid_tab(self.tab, self, active_macro)
     }
-
 }
