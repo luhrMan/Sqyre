@@ -2,7 +2,7 @@
 
 use super::types::*;
 use crate::Result;
-use serde_yaml::{Mapping, Value};
+use serde_yaml::Value;
 use sqyre_domain::{MaskShape, ScalarValue};
 use std::collections::BTreeMap;
 

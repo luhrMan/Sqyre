@@ -2,7 +2,7 @@
 
 use super::types::*;
 use crate::{PersistError, Result};
-use sqyre_domain::{resolve_scalar_int, CoordinateRef, Macro, PROGRAM_DELIMITER};
+use sqyre_domain::PROGRAM_DELIMITER;
 use std::collections::BTreeMap;
 
 pub(super) fn ensure_resolution(p: &mut ProgramData, res: &str) {
