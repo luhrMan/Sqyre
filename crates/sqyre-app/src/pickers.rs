@@ -79,19 +79,15 @@ pub enum ActivePicker {
     None,
     /// Multi-select item targets (`program~item`).
     Items { search: String, staged: Vec<String> },
-    Point {
+    /// Point or search-area coordinate picker (`kind` selects catalog + result).
+    Coord {
+        kind: CoordKind,
         search: String,
         /// Working value shown/edited in the picker.
         value: String,
         /// When set, list is replaced by the collection cell grid.
         cell_pick: Option<CollectionCellPick>,
         /// Scroll selected row into view once on open.
-        scroll_to_selection: bool,
-    },
-    SearchArea {
-        search: String,
-        value: String,
-        cell_pick: Option<CollectionCellPick>,
         scroll_to_selection: bool,
     },
     Macro {
@@ -120,23 +116,14 @@ impl Clone for ActivePicker {
                 search: search.clone(),
                 staged: staged.clone(),
             },
-            ActivePicker::Point {
+            ActivePicker::Coord {
+                kind,
                 search,
                 value,
                 cell_pick,
                 scroll_to_selection,
-            } => ActivePicker::Point {
-                search: search.clone(),
-                value: value.clone(),
-                cell_pick: cell_pick.clone(),
-                scroll_to_selection: *scroll_to_selection,
-            },
-            ActivePicker::SearchArea {
-                search,
-                value,
-                cell_pick,
-                scroll_to_selection,
-            } => ActivePicker::SearchArea {
+            } => ActivePicker::Coord {
+                kind: *kind,
                 search: search.clone(),
                 value: value.clone(),
                 cell_pick: cell_pick.clone(),
@@ -252,7 +239,14 @@ impl ActivePicker {
 
     fn cell_pick_mut(&mut self) -> Option<&mut Option<CollectionCellPick>> {
         match self {
-            Self::Point { cell_pick, .. } | Self::SearchArea { cell_pick, .. } => Some(cell_pick),
+            Self::Coord { cell_pick, .. } => Some(cell_pick),
+            _ => None,
+        }
+    }
+
+    fn coord_kind(&self) -> Option<CoordKind> {
+        match self {
+            Self::Coord { kind, .. } => Some(*kind),
             _ => None,
         }
     }
@@ -1047,10 +1041,7 @@ pub fn show_active_picker(
 
     let in_cell_pick = matches!(
         picker,
-        ActivePicker::Point {
-            cell_pick: Some(_),
-            ..
-        } | ActivePicker::SearchArea {
+        ActivePicker::Coord {
             cell_pick: Some(_),
             ..
         }
@@ -1058,14 +1049,17 @@ pub fn show_active_picker(
 
     let title = match picker {
         ActivePicker::Items { .. } => "Pick items",
-        ActivePicker::Point {
+        ActivePicker::Coord {
             cell_pick: Some(_), ..
         } => "Select collection cells",
-        ActivePicker::Point { .. } => "Pick point",
-        ActivePicker::SearchArea {
-            cell_pick: Some(_), ..
-        } => "Select collection cells",
-        ActivePicker::SearchArea { .. } => "Pick search area",
+        ActivePicker::Coord {
+            kind: CoordKind::Point,
+            ..
+        } => "Pick point",
+        ActivePicker::Coord {
+            kind: CoordKind::SearchArea,
+            ..
+        } => "Pick search area",
         ActivePicker::Macro { .. } => "Pick macro",
         ActivePicker::Window { .. } => "Pick window",
         ActivePicker::None => return result,
@@ -1107,7 +1101,8 @@ pub fn show_active_picker(
                     ui.separator();
                     ui.label(format!("{} selected", staged.len()));
                 }
-                ActivePicker::Point {
+                ActivePicker::Coord {
+                    kind,
                     search,
                     value,
                     cell_pick,
@@ -1128,34 +1123,7 @@ pub fn show_active_picker(
                             paint,
                             search,
                             value,
-                            CoordKind::Point,
-                            cell_pick,
-                            scroll_to_selection,
-                        );
-                    }
-                }
-                ActivePicker::SearchArea {
-                    search,
-                    value,
-                    cell_pick,
-                    scroll_to_selection,
-                } => {
-                    if let Some(pick) = cell_pick.as_mut() {
-                        paint_collection_cell_picker(ui, paint.catalog, paint.icons, pick);
-                    } else {
-                        ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new("Search").size(HEADER_SIZE));
-                            if ui.text_edit_singleline(search).changed() {
-                                *scroll_to_selection = true;
-                            }
-                        });
-                        ui.separator();
-                        paint_coord_ref_list(
-                            ui,
-                            paint,
-                            search,
-                            value,
-                            CoordKind::SearchArea,
+                            *kind,
                             cell_pick,
                             scroll_to_selection,
                         );
@@ -1317,10 +1285,10 @@ pub fn show_active_picker(
                 .and_then(|c| c.as_ref())
                 .and_then(|p| p.to_ref());
             if let Some(coord) = staged {
-                result = match picker {
-                    ActivePicker::Point { .. } => PickerResult::Point(coord),
-                    ActivePicker::SearchArea { .. } => PickerResult::SearchArea(coord),
-                    _ => PickerResult::None,
+                result = match picker.coord_kind() {
+                    Some(CoordKind::Point) => PickerResult::Point(coord),
+                    Some(CoordKind::SearchArea) => PickerResult::SearchArea(coord),
+                    None => PickerResult::None,
                 };
                 *picker = ActivePicker::None;
             }
@@ -1328,10 +1296,16 @@ pub fn show_active_picker(
         }
         result = match picker {
             ActivePicker::Items { staged, .. } => PickerResult::Items(staged.clone()),
-            ActivePicker::Point { value, .. } => PickerResult::Point(CoordinateRef(value.clone())),
-            ActivePicker::SearchArea { value, .. } => {
-                PickerResult::SearchArea(CoordinateRef(value.clone()))
-            }
+            ActivePicker::Coord {
+                kind: CoordKind::Point,
+                value,
+                ..
+            } => PickerResult::Point(CoordinateRef(value.clone())),
+            ActivePicker::Coord {
+                kind: CoordKind::SearchArea,
+                value,
+                ..
+            } => PickerResult::SearchArea(CoordinateRef(value.clone())),
             ActivePicker::Macro { value, .. } => PickerResult::MacroName(value.clone()),
             ActivePicker::Window {
                 process_path,

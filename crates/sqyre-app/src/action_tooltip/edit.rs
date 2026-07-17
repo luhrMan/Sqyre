@@ -3,7 +3,7 @@
 use super::sections::{tip_section, tip_wrapped_section};
 use crate::icon_cache::IconCache;
 use crate::paint_ctx::{CatalogPaint, EditFieldsCtx, RecordBridges, VarTheme};
-use crate::pickers::{self, options, ActivePicker};
+use crate::pickers::{self, options, ActivePicker, CoordKind};
 use crate::preview_tooltip::{PreviewKind, PreviewTooltipCache};
 use crate::theme;
 use crate::tree_chrome;
@@ -331,10 +331,7 @@ pub fn paint_edit_fields(
             tip_section(ui, |ui| {
                 targets_editor(ui, catalog, icons, targets, picker);
             });
-            tip_section(ui, |ui| {
-                search_area_picker_row(ui, search_area, picker);
-                paint_coord_preview(ui, catalog, previews, search_area, PreviewKind::SearchArea);
-            });
+            search_area_section(ui, catalog, previews, search_area, picker);
             tip_wrapped_section(ui, |ui| {
                 ui.add(
                     egui::DragValue::new(tolerance)
@@ -371,10 +368,7 @@ pub fn paint_edit_fields(
                     active_macro,
                 );
             });
-            tip_section(ui, |ui| {
-                search_area_picker_row(ui, search_area, picker);
-                paint_coord_preview(ui, catalog, previews, search_area, PreviewKind::SearchArea);
-            });
+            search_area_section(ui, catalog, previews, search_area, picker);
             tip_wrapped_section(ui, |ui| {
                 var_pills::var_name_text_edit(
                     ui,
@@ -405,10 +399,7 @@ pub fn paint_edit_fields(
             tip_wrapped_section(ui, |ui| {
                 text_field(ui, "Name", name);
             });
-            tip_section(ui, |ui| {
-                search_area_picker_row(ui, search_area, picker);
-                paint_coord_preview(ui, catalog, previews, search_area, PreviewKind::SearchArea);
-            });
+            search_area_section(ui, catalog, previews, search_area, picker);
             tip_wrapped_section(ui, |ui| {
                 ui.horizontal(|ui| {
                     var_ref_field(
@@ -598,36 +589,32 @@ fn paint_coord_preview(
 }
 
 fn point_picker_row(ui: &mut egui::Ui, point: &mut CoordinateRef, picker: &mut ActivePicker) {
-    ui.horizontal(|ui| {
-        ui.label("Point");
-        ui.monospace(if point.is_empty() {
-            "(unset)"
-        } else {
-            point.as_str()
-        });
-        if pick_icon_btn(ui).clicked() {
-            *picker = ActivePicker::Point {
-                search: String::new(),
-                value: point.0.clone(),
-                cell_pick: None,
-                scroll_to_selection: true,
-            };
-        }
-    });
+    coord_picker_row(ui, "Point", point, CoordKind::Point, picker);
 }
 
 fn search_area_picker_row(ui: &mut egui::Ui, area: &mut CoordinateRef, picker: &mut ActivePicker) {
+    coord_picker_row(ui, "Search area", area, CoordKind::SearchArea, picker);
+}
+
+fn coord_picker_row(
+    ui: &mut egui::Ui,
+    label: &str,
+    coord: &mut CoordinateRef,
+    kind: CoordKind,
+    picker: &mut ActivePicker,
+) {
     ui.horizontal(|ui| {
-        ui.label("Search area");
-        ui.monospace(if area.is_empty() {
+        ui.label(label);
+        ui.monospace(if coord.is_empty() {
             "(unset)"
         } else {
-            area.as_str()
+            coord.as_str()
         });
         if pick_icon_btn(ui).clicked() {
-            *picker = ActivePicker::SearchArea {
+            *picker = ActivePicker::Coord {
+                kind,
                 search: String::new(),
-                value: area.0.clone(),
+                value: coord.0.clone(),
                 cell_pick: None,
                 scroll_to_selection: true,
             };
@@ -871,6 +858,19 @@ fn condition_editor(
             is_dark,
             active_macro,
         );
+    });
+}
+
+fn search_area_section(
+    ui: &mut egui::Ui,
+    catalog: &ProgramCatalog,
+    previews: &mut PreviewTooltipCache,
+    search_area: &mut CoordinateRef,
+    picker: &mut ActivePicker,
+) {
+    tip_section(ui, |ui| {
+        search_area_picker_row(ui, search_area, picker);
+        paint_coord_preview(ui, catalog, previews, search_area, PreviewKind::SearchArea);
     });
 }
 
