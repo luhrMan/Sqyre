@@ -2,7 +2,6 @@
 
 use super::types::*;
 use serde_yaml::{Mapping, Value};
-use sqyre_domain::MaskShape;
 use std::collections::BTreeMap;
 
 pub(super) fn encode_program(data: &ProgramData, previous: &Mapping) -> Value {

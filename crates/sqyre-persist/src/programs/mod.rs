@@ -14,10 +14,9 @@ use crate::{images_path, PersistError, Result};
 use encode::*;
 use parse::*;
 use serde_yaml::{Mapping, Value};
-use sqyre_domain::{resolve_scalar_int, CoordinateRef, Macro, ScalarValue, PROGRAM_DELIMITER};
+use sqyre_domain::{resolve_scalar_int, CoordinateRef, Macro, PROGRAM_DELIMITER};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
-use types::*;
 use util::*;
 
 impl ProgramCatalog {
@@ -592,6 +591,7 @@ impl ProgramCatalog {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sqyre_domain::ScalarValue;
 
     #[test]
     fn parses_points_and_resolves() {
