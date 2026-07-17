@@ -902,7 +902,7 @@ fn wait_editor(ui: &mut egui::Ui, wait: &mut WaitTilFoundConfig) {
         wait.repeat_mode = RepeatMode::parse(&mode);
         // Once → all off; waituntilfound → timing only;
         // repeatwhilefound → timing + max iterations.
-        let timing_enabled = wait.effective_repeat_mode() != RepeatMode::Once;
+        let timing_enabled = wait.repeat_mode != RepeatMode::Once;
         let max_enabled = wait.is_repeat_while_found();
         ui.add_enabled(
             timing_enabled,

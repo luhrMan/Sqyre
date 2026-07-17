@@ -24,7 +24,7 @@ pub use pixel_convert::{zpixmap_to_rgb, zpixmap_to_rgba};
 pub use stub::{NullCapturer, SolidCapturer};
 
 #[cfg(target_os = "linux")]
-pub use x11_capture::{shared_capturer, X11Capturer};
+pub use x11_capture::{shared_capturer, SharedRunCapturer, X11Capturer};
 
 #[cfg(target_os = "linux")]
 pub use x11_focus::X11WindowFocuser;
@@ -47,6 +47,33 @@ pub type X11Capturer = NullCapturer;
 #[cfg(not(target_os = "linux"))]
 pub fn shared_capturer() -> Result<std::sync::Arc<X11Capturer>, String> {
     Err("screen capture: not supported on this platform".into())
+}
+
+#[cfg(not(target_os = "linux"))]
+pub struct SharedRunCapturer(pub std::sync::Arc<X11Capturer>);
+
+#[cfg(not(target_os = "linux"))]
+impl sqyre_executor::ScreenCapturer for SharedRunCapturer {
+    fn capture_monitor(
+        &mut self,
+        _display_index: i32,
+    ) -> Result<image::RgbaImage, String> {
+        Err("screen capture: not supported on this platform".into())
+    }
+    fn capture_rect(
+        &mut self,
+        _rect: sqyre_executor::DesktopRect,
+    ) -> Result<image::RgbaImage, String> {
+        Err("screen capture: not supported on this platform".into())
+    }
+    fn virtual_bounds(&mut self) -> Result<sqyre_executor::DesktopRect, String> {
+        Ok(sqyre_executor::DesktopRect {
+            x: 0,
+            y: 0,
+            w: 1,
+            h: 1,
+        })
+    }
 }
 
 /// One top-level application window for Focus Window picker UI.
@@ -82,8 +109,9 @@ impl WindowInfo {
 /// Returns `None` when no display is available (headless / CI).
 pub fn main_monitor_resolution_key() -> Option<String> {
     use sqyre_executor::ScreenCapturer;
-    let mut capturer = X11Capturer::open().ok()?;
-    let sizes = capturer.monitor_sizes().ok()?;
+    let capturer = shared_capturer().ok()?;
+    let mut wrap = SharedRunCapturer(capturer);
+    let sizes = wrap.monitor_sizes().ok()?;
     let &(w, h) = sizes.first()?;
     if w > 0 && h > 0 {
         Some(format!("{w}x{h}"))
@@ -95,11 +123,11 @@ pub fn main_monitor_resolution_key() -> Option<String> {
 /// Number of displays from the live capturer, or `1` when capture is unavailable.
 pub fn monitor_count() -> usize {
     use sqyre_executor::ScreenCapturer;
-    let Ok(mut capturer) = X11Capturer::open() else {
+    let Ok(capturer) = shared_capturer() else {
         return 1;
     };
-    capturer
-        .monitor_sizes()
+    let mut wrap = SharedRunCapturer(capturer);
+    wrap.monitor_sizes()
         .map(|s| s.len().max(1))
         .unwrap_or(1)
 }

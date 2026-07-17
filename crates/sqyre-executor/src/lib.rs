@@ -21,4 +21,3 @@ pub use highlight::{
 };
 pub use run::{execute_action, execute_macro, execute_macro_with, ExecDeps, Executor};
 pub use runtime_vars::{RuntimeVarSink, SharedRuntimeVars};
-pub use search::MatchFacade;

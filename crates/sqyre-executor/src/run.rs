@@ -5,7 +5,7 @@ use crate::actions::{
 };
 use crate::backends::{
     AutomationBackend, ContinueKeyWaiter, CoordinateResolver, IconStore, MacroLookup, MoveOptions,
-    OcrEngine, ScreenCapturer, TemplateMatcher, WindowFocuser,
+    OcrEngine, ScreenCapturer, WindowFocuser,
 };
 use crate::error::{ExecError, FlowSignal, Result};
 use crate::highlight::{clear_highlights, highlight_cursor, ActionHighlighter};
@@ -133,7 +133,8 @@ impl<'a> Executor<'a> {
 pub struct ExecDeps<'a> {
     pub automation: &'a mut dyn AutomationBackend,
     pub capturer: Option<&'a mut dyn ScreenCapturer>,
-    pub matcher: Option<&'a dyn TemplateMatcher>,
+    /// Spatial dedup distance for image-search peaks; `0` uses the library default.
+    pub close_matches_distance: i32,
     pub resolver: Option<&'a dyn CoordinateResolver>,
     pub icons: Option<&'a dyn IconStore>,
     pub macros: Option<&'a dyn MacroLookup>,
@@ -153,7 +154,7 @@ impl<'a> ExecDeps<'a> {
         Self {
             automation,
             capturer: None,
-            matcher: None,
+            close_matches_distance: 0,
             resolver: None,
             icons: None,
             macros: None,
@@ -500,20 +501,7 @@ pub(crate) fn eval_clauses(
     }
     let want_any = match_mode == MatchMode::Any;
     for c in clauses {
-        let left = c.left.as_display();
-        let right = c.right.as_display();
-        let left = resolve_text(&left, macro_)?;
-        let right = resolve_text(&right, macro_)?;
-        let ok = match c.operator.as_str() {
-            "==" => left == right,
-            "!=" => left != right,
-            "is set" => macro_.variables.get(strip_ref(&left)).is_some(),
-            "is empty" => left.trim().is_empty(),
-            "contains" => left.contains(&right),
-            "starts with" => left.starts_with(&right),
-            "ends with" => left.ends_with(&right),
-            _ => false,
-        };
+        let ok = eval_one_clause(c, macro_)?;
         if want_any {
             if ok {
                 return Ok(true);
@@ -525,11 +513,53 @@ pub(crate) fn eval_clauses(
     Ok(!want_any)
 }
 
-fn strip_ref(s: &str) -> &str {
-    let t = s.trim();
-    t.strip_prefix("${")
-        .and_then(|x| x.strip_suffix('}'))
-        .unwrap_or(t)
+fn eval_one_clause(c: &sqyre_domain::ConditionClause, macro_: &Macro) -> Result<bool> {
+    // `is set` looks up the variable *name* without expanding its value.
+    if c.operator.as_str() == "is set" {
+        let name = variable_name_for_is_set(&c.left.as_display());
+        return Ok(macro_.variables.get(name).is_some());
+    }
+
+    let left = resolve_text(&c.left.as_display(), macro_)?;
+    let right = resolve_text(&c.right.as_display(), macro_)?;
+    Ok(match c.operator.as_str() {
+        "==" => left == right,
+        "!=" => left != right,
+        "is empty" => left.trim().is_empty(),
+        "contains" => left.contains(&right),
+        "starts with" => left.starts_with(&right),
+        "ends with" => left.ends_with(&right),
+        "<" | "<=" | ">" | ">=" => compare_ordered(&left, &right, c.operator.as_str()),
+        _ => false,
+    })
+}
+
+/// Name for `is set`: strip `${…}` / `{…}`, otherwise use the trimmed literal.
+fn variable_name_for_is_set(raw: &str) -> &str {
+    let t = raw.trim();
+    if let Some(inner) = t.strip_prefix("${").and_then(|x| x.strip_suffix('}')) {
+        return inner.trim();
+    }
+    if let Some(inner) = t.strip_prefix('{').and_then(|x| x.strip_suffix('}')) {
+        return inner.trim();
+    }
+    t
+}
+
+/// Numeric compare when both sides parse as `f64`; otherwise lexicographic.
+fn compare_ordered(left: &str, right: &str, op: &str) -> bool {
+    use std::cmp::Ordering;
+    let ord = match (left.trim().parse::<f64>(), right.trim().parse::<f64>()) {
+        (Ok(a), Ok(b)) => a.partial_cmp(&b).unwrap_or(Ordering::Equal),
+        _ => left.cmp(right),
+    };
+    match op {
+        "<" => ord == Ordering::Less,
+        "<=" => ord != Ordering::Greater,
+        ">" => ord == Ordering::Greater,
+        ">=" => ord != Ordering::Less,
+        _ => false,
+    }
 }
 
 pub(crate) fn resolve_int(v: &ScalarValue, macro_: &Macro) -> Result<i32> {
@@ -646,7 +676,7 @@ mod tests {
             ExecDeps {
                 automation: &mut backend,
                 capturer: Some(&mut capturer),
-                matcher: None,
+                close_matches_distance: 0,
                 resolver: None,
                 icons: None,
                 macros: None,
@@ -690,7 +720,7 @@ mod tests {
             ExecDeps {
                 automation: &mut backend,
                 capturer: None,
-                matcher: None,
+                close_matches_distance: 0,
                 resolver: None,
                 icons: None,
                 macros: None,
@@ -734,7 +764,7 @@ mod tests {
             ExecDeps {
                 automation: &mut backend,
                 capturer: None,
-                matcher: None,
+                close_matches_distance: 0,
                 resolver: None,
                 icons: None,
                 macros: None,
@@ -808,7 +838,7 @@ mod tests {
             ExecDeps {
                 automation: &mut backend,
                 capturer: None,
-                matcher: None,
+                close_matches_distance: 0,
                 resolver: Some(&resolver),
                 icons: None,
                 macros: None,
@@ -854,7 +884,7 @@ mod tests {
             ExecDeps {
                 automation: &mut backend,
                 capturer: None,
-                matcher: None,
+                close_matches_distance: 0,
                 resolver: None,
                 icons: None,
                 macros: None,
@@ -1079,7 +1109,7 @@ mod tests {
             ExecDeps {
                 automation: &mut backend,
                 capturer: None,
-                matcher: None,
+                close_matches_distance: 0,
                 resolver: None,
                 icons: None,
                 macros: None,
