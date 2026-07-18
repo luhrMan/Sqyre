@@ -6,7 +6,7 @@
 //! peak RSS can be released.
 
 use crate::image_util::{load_rgb_image, mask_as_u8, resize_mask};
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use sqyre_match::{blur_image_owned, ImageBuf};
 use std::collections::{HashMap, VecDeque};
 use std::path::Path;
@@ -123,6 +123,33 @@ fn cache() -> &'static RwLock<SearchCache> {
     CACHE.get_or_init(|| RwLock::new(SearchCache::default()))
 }
 
+/// Per-key gates so parallel variant jobs do not stampede the same cold load.
+fn template_inflight() -> &'static Mutex<HashMap<String, Arc<Mutex<()>>>> {
+    static GATES: OnceLock<Mutex<HashMap<String, Arc<Mutex<()>>>>> = OnceLock::new();
+    GATES.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn mask_inflight() -> &'static Mutex<HashMap<String, Arc<Mutex<()>>>> {
+    static GATES: OnceLock<Mutex<HashMap<String, Arc<Mutex<()>>>>> = OnceLock::new();
+    GATES.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn inflight_gate(
+    map: &'static Mutex<HashMap<String, Arc<Mutex<()>>>>,
+    key: &str,
+) -> Arc<Mutex<()>> {
+    let mut gates = map.lock();
+    Arc::clone(
+        gates
+            .entry(key.to_string())
+            .or_insert_with(|| Arc::new(Mutex::new(()))),
+    )
+}
+
+fn drop_inflight_gate(map: &'static Mutex<HashMap<String, Arc<Mutex<()>>>>, key: &str) {
+    map.lock().remove(key);
+}
+
 fn template_cache_key(path: &Path, blur_kernel: i32) -> String {
     format!("{}\0{blur_kernel}", path.display())
 }
@@ -138,6 +165,8 @@ fn file_mtime(path: &Path) -> Option<SystemTime> {
 /// Clears all cached templates and masks (call after a macro finishes).
 pub fn clear_search_cache() {
     cache().write().clear();
+    template_inflight().lock().clear();
+    mask_inflight().lock().clear();
 }
 
 /// Clears all cached templates and masks (tests).
@@ -185,6 +214,32 @@ pub fn invalidate_search_masks_under(mask_prefix: &Path) {
     }
 }
 
+fn template_cache_hit(key: &str, mod_time: SystemTime, blur_kernel: i32) -> Option<Arc<ImageBuf>> {
+    let guard = cache().read();
+    let entry = guard.templates.get(key)?;
+    if entry.mod_time == mod_time && entry.blur_kernel == blur_kernel {
+        let out = Arc::clone(&entry.blurred);
+        drop(guard);
+        cache().write().touch(EntryKind::Template, key);
+        Some(out)
+    } else {
+        None
+    }
+}
+
+fn mask_cache_hit(key: &str, mod_time: SystemTime) -> Option<Arc<Vec<u8>>> {
+    let guard = cache().read();
+    let entry = guard.image_masks.get(key)?;
+    if entry.mod_time == mod_time {
+        let out = Arc::clone(&entry.mask);
+        drop(guard);
+        cache().write().touch(EntryKind::Mask, key);
+        Some(out)
+    } else {
+        None
+    }
+}
+
 /// Load (or reuse) a blurred template for `icon_path` at `blur_kernel`.
 pub fn get_cached_blurred_template(
     icon_path: &Path,
@@ -194,16 +249,17 @@ pub fn get_cached_blurred_template(
         file_mtime(icon_path).ok_or_else(|| format!("stat {}: missing", icon_path.display()))?;
     let key = template_cache_key(icon_path, blur_kernel);
 
-    {
-        let guard = cache().read();
-        if let Some(entry) = guard.templates.get(&key) {
-            if entry.mod_time == mod_time && entry.blur_kernel == blur_kernel {
-                let out = Arc::clone(&entry.blurred);
-                drop(guard);
-                cache().write().touch(EntryKind::Template, &key);
-                return Ok(out);
-            }
-        }
+    if let Some(hit) = template_cache_hit(&key, mod_time, blur_kernel) {
+        return Ok(hit);
+    }
+
+    let gate = inflight_gate(template_inflight(), &key);
+    let _busy = gate.lock();
+    // Another variant may have filled the cache while we waited.
+    if let Some(hit) = template_cache_hit(&key, mod_time, blur_kernel) {
+        drop(_busy);
+        drop_inflight_gate(template_inflight(), &key);
+        return Ok(hit);
     }
 
     let raw = load_rgb_image(icon_path)?;
@@ -213,9 +269,8 @@ pub fn get_cached_blurred_template(
     );
     let bytes = blurred.data.len();
 
-    let mut guard = cache().write();
-    guard.insert_template(
-        key,
+    cache().write().insert_template(
+        key.clone(),
         TemplateEntry {
             blurred: Arc::clone(&blurred),
             mod_time,
@@ -223,6 +278,8 @@ pub fn get_cached_blurred_template(
             bytes,
         },
     );
+    drop(_busy);
+    drop_inflight_gate(template_inflight(), &key);
     Ok(blurred)
 }
 
@@ -235,16 +292,16 @@ pub fn get_cached_image_mask(
     let mod_time = file_mtime(mask_path)?;
     let key = mask_cache_key(mask_path, template_rows, template_cols);
 
-    {
-        let guard = cache().read();
-        if let Some(entry) = guard.image_masks.get(&key) {
-            if entry.mod_time == mod_time {
-                let out = Arc::clone(&entry.mask);
-                drop(guard);
-                cache().write().touch(EntryKind::Mask, &key);
-                return Some(out);
-            }
-        }
+    if let Some(hit) = mask_cache_hit(&key, mod_time) {
+        return Some(hit);
+    }
+
+    let gate = inflight_gate(mask_inflight(), &key);
+    let _busy = gate.lock();
+    if let Some(hit) = mask_cache_hit(&key, mod_time) {
+        drop(_busy);
+        drop_inflight_gate(mask_inflight(), &key);
+        return Some(hit);
     }
 
     let loaded = load_rgb_image(mask_path).ok()?;
@@ -252,15 +309,16 @@ pub fn get_cached_image_mask(
     let mask = Arc::new(mask_as_u8(&resized));
     let bytes = mask.len();
 
-    let mut guard = cache().write();
-    guard.insert_mask(
-        key,
+    cache().write().insert_mask(
+        key.clone(),
         MaskEntry {
             mask: Arc::clone(&mask),
             mod_time,
             bytes,
         },
     );
+    drop(_busy);
+    drop_inflight_gate(mask_inflight(), &key);
     Some(mask)
 }
 
@@ -268,6 +326,7 @@ pub fn get_cached_image_mask(
 mod tests {
     use super::*;
     use image::{Rgb, RgbImage};
+    use rayon::prelude::*;
     use sqyre_match::search_blur_kernel;
 
     fn write_rgb(path: &Path, w: u32, h: u32, fill: [u8; 3]) {
@@ -302,6 +361,24 @@ mod tests {
             let a = get_cached_blurred_template(&path, k).unwrap();
             let b = get_cached_blurred_template(&path, k).unwrap();
             assert!(Arc::ptr_eq(&a, &b));
+        });
+    }
+
+    #[test]
+    fn parallel_misses_single_flight() {
+        with_search_cache_test_lock(|| {
+            reset_search_cache_for_testing();
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("icon.png");
+            write_rgb(&path, 16, 16, [40, 50, 60]);
+            let k = search_blur_kernel(1);
+            let paths: Vec<_> = (0..8).map(|_| path.clone()).collect();
+            let results: Vec<_> = paths
+                .into_par_iter()
+                .map(|p| get_cached_blurred_template(&p, k).unwrap())
+                .collect();
+            let first = &results[0];
+            assert!(results.iter().all(|a| Arc::ptr_eq(a, first)));
         });
     }
 }

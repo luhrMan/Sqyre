@@ -5,9 +5,11 @@ use eframe::egui::{self, Color32};
 use sqyre_domain::Macro;
 use sqyre_domain::{format_hex_color, parse_hex_color, ACTION_COLOR_CATEGORIES};
 use sqyre_persist::{
-    move_dir, open_sqyre_dir, set_sqyre_dir_override, sqyre_dir, Database, ProgramCatalog,
-    UserSettings, DEFAULT_UI_FONT_SIZE, DEFAULT_UI_SCALE,
+    move_dir, set_sqyre_dir_override, sqyre_dir, Database, ProgramCatalog, UserSettings,
+    DEFAULT_UI_FONT_SIZE, DEFAULT_UI_SCALE,
 };
+#[cfg(not(target_arch = "wasm32"))]
+use sqyre_persist::open_sqyre_dir;
 use sqyre_ui_model::{
     action_pastel_color, clear_all_custom_action_colors, clear_custom_action_color,
     default_action_pastel_color, sample_action_type_for_color_key, set_custom_action_color,
@@ -285,24 +287,32 @@ impl SettingsUi {
         _macros: &mut Vec<Macro>,
         _catalog: &mut ProgramCatalog,
     ) {
-        let current = if self.settings.sqyre_dir.trim().is_empty() {
-            sqyre_dir()
-        } else {
-            PathBuf::from(self.settings.sqyre_dir.trim())
-        };
-        ui.label(current.display().to_string());
+        #[cfg(target_arch = "wasm32")]
+        {
+            ui.label("Browser editor: macros live in memory. Use Import / Export on the toolbar for db.yaml.");
+            return;
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let current = if self.settings.sqyre_dir.trim().is_empty() {
+                sqyre_dir()
+            } else {
+                PathBuf::from(self.settings.sqyre_dir.trim())
+            };
+            ui.label(current.display().to_string());
 
-        ui.horizontal(|ui| {
-            if ui.button("Open .sqyre folder").clicked() {
-                match open_sqyre_dir() {
-                    Ok(()) => self.set_ok("Opened data folder."),
-                    Err(e) => self.set_err(format!("Open folder failed: {e}")),
+            ui.horizontal(|ui| {
+                if ui.button("Open .sqyre folder").clicked() {
+                    match open_sqyre_dir() {
+                        Ok(()) => self.set_ok("Opened data folder."),
+                        Err(e) => self.set_err(format!("Open folder failed: {e}")),
+                    }
                 }
-            }
-            if ui.button("Choose location…").clicked() {
-                self.choose_sqyre_location();
-            }
-        });
+                if ui.button("Choose location…").clicked() {
+                    self.choose_sqyre_location();
+                }
+            });
+        }
     }
 
     fn choose_sqyre_location(&mut self) {

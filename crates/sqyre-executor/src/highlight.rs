@@ -1,9 +1,10 @@
 //! Active-action highlighting during macro execution.
 
+use parking_lot::Mutex;
 use sqyre_domain::ActionId;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 /// How an action should be highlighted during execution.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -73,7 +74,7 @@ impl SharedHighlighter {
     }
 
     pub fn snapshot(&self) -> HighlightSnapshot {
-        let g = self.inner.lock().unwrap();
+        let g = self.inner.lock();
         HighlightSnapshot {
             macro_name: g.macro_name.clone(),
             cursor: g.cursor,
@@ -82,14 +83,14 @@ impl SharedHighlighter {
     }
 
     pub fn clear_all(&self) {
-        let mut g = self.inner.lock().unwrap();
+        let mut g = self.inner.lock();
         g.macro_name.clear();
         g.cursor = None;
         g.fills.clear();
     }
 
     fn apply(&self, event: HighlightEvent) {
-        let mut g = self.inner.lock().unwrap();
+        let mut g = self.inner.lock();
         match event.kind {
             HighlightKind::None => {
                 if event.action_id.is_none() {

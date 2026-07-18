@@ -183,10 +183,19 @@ pub fn active_window_is_our_process() -> bool {
 
 /// True when `win` is owned by this process's executable.
 pub fn window_is_our_process(win: &WindowInfo) -> bool {
-    let Ok(exe) = std::env::current_exe() else {
+    // `current_exe` is unsupported / may panic on wasm32-unknown-unknown.
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = win;
         return false;
-    };
-    window_matches_process(win, &exe.to_string_lossy())
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let Ok(exe) = std::env::current_exe() else {
+            return false;
+        };
+        window_matches_process(win, &exe.to_string_lossy())
+    }
 }
 
 /// True when `program` is empty, or the focused window looks like that catalog program.

@@ -280,7 +280,7 @@ impl DataEditor {
                 let dir = auto_pic_path();
                 std::fs::create_dir_all(&dir).map_err(|e| format!("AutoPic: create dir: {e}"))?;
                 let stamp = {
-                    use std::time::{SystemTime, UNIX_EPOCH};
+                    use web_time::{SystemTime, UNIX_EPOCH};
                     let dur = SystemTime::now()
                         .duration_since(UNIX_EPOCH)
                         .unwrap_or_default();

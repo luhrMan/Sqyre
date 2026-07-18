@@ -99,9 +99,17 @@ pub fn sqyre_dir() -> PathBuf {
     if let Some(p) = DIR_OVERRIDE.read().unwrap().clone() {
         return p;
     }
-    dirs::home_dir()
-        .unwrap_or_else(std::env::temp_dir)
-        .join(SQYRE_DIR)
+    // `std::env::temp_dir()` panics on wasm32-unknown-unknown ("no filesystem").
+    #[cfg(target_arch = "wasm32")]
+    {
+        return PathBuf::from("/").join(SQYRE_DIR);
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        dirs::home_dir()
+            .unwrap_or_else(std::env::temp_dir)
+            .join(SQYRE_DIR)
+    }
 }
 
 pub fn db_path() -> PathBuf {
@@ -121,16 +129,23 @@ pub fn auto_pic_path() -> PathBuf {
 }
 
 pub fn initialize_directories() -> Result<()> {
-    for p in [
-        sqyre_dir().join("images/icons"),
-        sqyre_dir().join("images/AutoPic"),
-        sqyre_dir().join("images/Collections"),
-        sqyre_dir().join("images/masks"),
-        variables_path(),
-    ] {
-        fs::create_dir_all(&p)?;
+    #[cfg(target_arch = "wasm32")]
+    {
+        return Ok(());
     }
-    Ok(())
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        for p in [
+            sqyre_dir().join("images/icons"),
+            sqyre_dir().join("images/AutoPic"),
+            sqyre_dir().join("images/Collections"),
+            sqyre_dir().join("images/masks"),
+            variables_path(),
+        ] {
+            fs::create_dir_all(&p)?;
+        }
+        Ok(())
+    }
 }
 
 /// In-memory view of `db.yaml`.
@@ -178,7 +193,24 @@ impl Database {
     }
 
     pub fn load_default() -> Result<Self> {
+        #[cfg(target_arch = "wasm32")]
+        {
+            return Ok(Self::default());
+        }
+        #[cfg(not(target_arch = "wasm32"))]
         Self::load_from_path(db_path())
+    }
+
+    /// Parse `db.yaml` bytes (UTF-8). Used by WASM import and tests.
+    pub fn from_yaml_bytes(bytes: &[u8]) -> Result<Self> {
+        let text = std::str::from_utf8(bytes)
+            .map_err(|e| PersistError::Message(format!("db.yaml is not UTF-8: {e}")))?;
+        Self::from_yaml(text)
+    }
+
+    /// Serialize to YAML bytes (UTF-8). Used by WASM export.
+    pub fn to_yaml_bytes(&self) -> Result<Vec<u8>> {
+        Ok(self.to_yaml()?.into_bytes())
     }
 
     pub fn from_yaml(text: &str) -> Result<Self> {
@@ -237,6 +269,13 @@ impl Database {
     }
 
     pub fn save_default(&self) -> Result<()> {
+        #[cfg(target_arch = "wasm32")]
+        {
+            // In-memory only in the browser; use YAML export to download.
+            let _ = self.to_yaml()?;
+            return Ok(());
+        }
+        #[cfg(not(target_arch = "wasm32"))]
         self.save_to_path(db_path())
     }
 
