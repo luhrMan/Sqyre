@@ -55,6 +55,8 @@ cargo run -p sqyre-app
 
 Optional host tools (also installed in the `.devcontainer` image): `cargo-nextest`, `cargo-deny`, `cargo-llvm-cov`, `cargo-machete`.
 
+Optional local pre-push hooks: install [lefthook](https://lefthook.dev), then `lefthook install` (runs `make check-fmt` + `make clippy`).
+
 Do not expect X11 inside the container — build there, run the binary on the host.
 
 Host binary: `./bin/sqyre` after `make`, or `./target/debug/sqyre` from cargo. Esc stops a running macro; Esc+Ctrl+Shift exits (failsafe).

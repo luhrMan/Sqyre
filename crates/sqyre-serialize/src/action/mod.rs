@@ -86,6 +86,7 @@ fn value_as_mapping(v: Value) -> Result<Mapping> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
     use sqyre_domain::{
         root_loop, CoordinateOutputs, CoordinateRef, DetectionBranch, NavigateSelectData,
         ScalarValue,
@@ -357,6 +358,24 @@ blur: 5
                 assert_eq!(search_area.as_str(), "Game~Arena");
             }
             other => panic!("expected ImageSearch, got {other:?}"),
+        }
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(64))]
+
+        #[test]
+        fn blank_templates_encode_decode_idempotent(idx in 0usize..64) {
+            use sqyre_domain::action_templates;
+            let templates = action_templates();
+            let tmpl = &templates[idx % templates.len()];
+            let action = tmpl.create();
+            let encoded = action_to_map(&action).expect("encode");
+            let decoded = action_from_map(&encoded).expect("decode");
+            prop_assert_eq!(decoded.type_key(), tmpl.action_type);
+            let reencoded = action_to_map(&decoded).expect("re-encode");
+            let redecoded = action_from_map(&reencoded).expect("re-decode");
+            prop_assert_eq!(&decoded.kind, &redecoded.kind);
         }
     }
 }

@@ -54,6 +54,7 @@ pub fn encode_macro_to_yaml(macro_: &Macro) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
     use sqyre_domain::{Action, ActionKind, MouseButton, ScalarValue};
 
     #[test]
@@ -107,5 +108,34 @@ root:
         assert_eq!(m.name, "wait-var");
         assert_eq!(m.variable_decls.len(), 1);
         assert_eq!(m.root.children().len(), 2);
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(32))]
+
+        #[test]
+        fn yaml_roundtrip_preserves_name_and_child_count(
+            name in "[a-zA-Z][a-zA-Z0-9_ ]{0,24}",
+            wait_ms in 0i64..10_000,
+        ) {
+            let mut m = Macro::new(name.trim(), 0, vec![]);
+            prop_assume!(!m.name.is_empty());
+            m.root = sqyre_domain::root_loop(vec![Action {
+                id: ActionId::new(),
+                kind: ActionKind::Wait {
+                    time: ScalarValue::Int(wait_ms),
+                },
+            }]);
+            let yaml = encode_macro_to_yaml(&m).expect("encode yaml");
+            let restored = decode_macro_from_yaml(&yaml).expect("decode yaml");
+            prop_assert_eq!(&restored.name, &m.name);
+            prop_assert_eq!(restored.root.children().len(), m.root.children().len());
+            match &restored.root.children()[0].kind {
+                ActionKind::Wait { time } => {
+                    prop_assert_eq!(time, &ScalarValue::Int(wait_ms));
+                }
+                other => prop_assert!(false, "expected Wait, got {other:?}"),
+            }
+        }
     }
 }

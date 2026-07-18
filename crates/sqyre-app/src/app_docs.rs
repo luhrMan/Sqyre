@@ -146,4 +146,9 @@ impl SqyreApp {
     pub fn docs_settings(&self) -> &UserSettings {
         self.settings_ui.settings()
     }
+
+    /// Open the settings window (integration / screenshot harnesses).
+    pub fn open_settings_for_docs(&mut self) {
+        self.settings_ui.open = true;
+    }
 }
