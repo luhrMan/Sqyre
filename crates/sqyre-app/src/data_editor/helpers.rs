@@ -2,7 +2,7 @@
 
 use sqyre_domain::ScalarValue;
 use sqyre_persist::ProgramCatalog;
-use std::time::{SystemTime, UNIX_EPOCH};
+use web_time::{SystemTime, UNIX_EPOCH};
 
 pub(crate) fn new_overlay_button_id() -> String {
     let ms = SystemTime::now()
@@ -86,7 +86,6 @@ pub(crate) fn item_tag_completion_options(
 }
 
 pub(crate) fn uuid_simple() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
     let n = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis())

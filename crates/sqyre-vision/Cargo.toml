@@ -13,7 +13,10 @@ image = { workspace = true }
 parking_lot = { workspace = true }
 sqyre-match = { path = "../sqyre-match" }
 sqyre-domain = { path = "../sqyre-domain" }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 leptess = "0.14"
 
 [dev-dependencies]
+rayon = { workspace = true }
 tempfile = { workspace = true }

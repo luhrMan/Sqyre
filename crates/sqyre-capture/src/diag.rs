@@ -9,7 +9,7 @@ use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::time::{SystemTime, UNIX_EPOCH};
+use web_time::{SystemTime, UNIX_EPOCH};
 
 /// Overwritten single-line file: last code site before a hard abort.
 pub const LAST_SITE_FILE: &str = "last_site.txt";
@@ -57,10 +57,18 @@ pub fn log_dir() -> PathBuf {
             return p;
         }
     }
-    std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(std::env::temp_dir)
-        .join(".sqyre")
+    // `std::env::temp_dir()` panics on wasm32-unknown-unknown.
+    #[cfg(target_arch = "wasm32")]
+    {
+        return PathBuf::from("/sqyre");
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(std::env::temp_dir)
+            .join(".sqyre")
+    }
 }
 
 fn stamp() -> u64 {

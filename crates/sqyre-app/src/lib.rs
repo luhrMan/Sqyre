@@ -1,4 +1,4 @@
-//! egui shell: load macros from `~/.sqyre`, Run/Stop with live backends.
+//! egui shell: load macros from `~/.sqyre` (native) or in-memory / YAML import (WASM).
 
 mod action_logs_ui;
 mod action_tooltip;
@@ -45,6 +45,7 @@ mod ui_overlays;
 mod ui_toolbar;
 mod var_pills;
 mod variables_panel;
+mod wasm_io;
 
 pub use settings::SettingsUi;
 
@@ -74,8 +75,10 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tree_history::TreeHistory;
 use ui_macro_tree::TreeDragMode;
+use wasm_io::PendingImport;
 
 /// Launch the desktop shell (single-instance lock, tray, fonts).
+#[cfg(not(target_arch = "wasm32"))]
 pub fn run() -> eframe::Result<()> {
     let _ = sqyre_persist::initialize_directories();
     diag::install(sqyre_persist::sqyre_dir());
@@ -118,12 +121,7 @@ pub fn run() -> eframe::Result<()> {
 }
 
 /// Keep winit from storing X errors that originate on Sqyre's secondary Displays.
-///
-/// Those Displays (focus / capture / outline) race destroyed windows during
-/// overlay skip-taskbar and property reads. Without this hook, a BadWindow
-/// GetProperty lands in winit's global error slot and later panics on IME
-/// destroy (`Failed to destroy input context`).
-#[cfg(target_os = "linux")]
+#[cfg(all(not(target_arch = "wasm32"), target_os = "linux"))]
 fn install_x11_secondary_error_hook() {
     winit::platform::x11::register_xlib_error_hook(Box::new(|display, _event| {
         sqyre_capture::owns_secondary_x_display(display)
@@ -195,6 +193,9 @@ pub struct SqyreApp {
     instance_lock: Option<single_instance::InstanceLock>,
     /// Confirm dialog for deleting the selected macro.
     pending_delete_macro: Option<String>,
+    /// WASM async YAML import result (unused on native).
+    #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+    pending_import: PendingImport,
 }
 
 impl SqyreApp {
@@ -213,6 +214,8 @@ impl SqyreApp {
         let pending_for_cb = Arc::clone(&pending_hotkey_macros);
         let hotkey_repaint = Arc::new(Mutex::new(None::<egui::Context>));
         let repaint_for_cb = Arc::clone(&hotkey_repaint);
+
+        #[cfg(not(target_arch = "wasm32"))]
         let _ = hotkeys.start(HotkeyCallbacks {
             on_escape_stop: Arc::new(move || stop.request_stop()),
             on_failsafe: Arc::new(|| {
@@ -221,13 +224,21 @@ impl SqyreApp {
             }),
             on_macro_hotkey: Arc::new(move |name| {
                 pending_for_cb.lock().push(name);
-                // Idle/unfocused eframe may not paint until woken — without this,
-                // queued macros only start when Sqyre regains focus.
                 if let Some(ctx) = repaint_for_cb.lock().as_ref() {
                     ctx.request_repaint();
                 }
             }),
         });
+        #[cfg(target_arch = "wasm32")]
+        {
+            let _ = (
+                &mut hotkeys,
+                &stop,
+                pending_for_cb,
+                repaint_for_cb,
+                HotkeyCallbacks::default(),
+            );
+        }
 
         let highlighter = SharedHighlighter::new();
         highlighter.set_enabled(settings.highlight_active_action);
@@ -289,6 +300,7 @@ impl SqyreApp {
                     tray: tray::SystemTray::default(),
                     instance_lock: None,
                     pending_delete_macro: None,
+                    pending_import: wasm_io::new_pending_import(),
                 };
                 app.refresh_macro_hotkey_bindings();
                 app
@@ -342,14 +354,26 @@ impl SqyreApp {
                     tray: tray::SystemTray::default(),
                     instance_lock: None,
                     pending_delete_macro: None,
+                    pending_import: wasm_io::new_pending_import(),
                 }
             }
         }
+    }
+
+    /// Browser entry: in-memory DB, no tray / global hotkeys / FS init.
+    #[cfg(target_arch = "wasm32")]
+    pub fn load_web(cc: &eframe::CreationContext<'_>) -> Self {
+        let app = Self::load();
+        SettingsUi::install_fonts(&cc.egui_ctx);
+        SettingsUi::apply_appearance(&cc.egui_ctx, app.settings_ui.settings());
+        app.bind_hotkey_repaint(cc.egui_ctx.clone());
+        app
     }
 }
 
 impl eframe::App for SqyreApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        self.take_pending_db_import();
         ui_overlays::handle_close_to_tray(self, ui.ctx());
         ui_overlays::show_floating_windows(self, ui.ctx());
         ui_overlays::sync_frame_state(self, ui.ctx());
@@ -361,6 +385,9 @@ impl eframe::App for SqyreApp {
             ui_toolbar::brand_header(self, ui);
             ui_toolbar::main_toolbar(self, ui);
             if self.macros.is_empty() {
+                #[cfg(target_arch = "wasm32")]
+                ui.label("No macros loaded. Use Import to open a db.yaml.");
+                #[cfg(not(target_arch = "wasm32"))]
                 ui.label("No macros loaded. Place a db.yaml under ~/.sqyre.");
                 return;
             }
@@ -374,9 +401,18 @@ impl eframe::App for SqyreApp {
 
     /// Fully transparent clear so deferred overlay viewports (`with_transparent(true)`)
     /// don't paint eframe's default dark plate behind the gold chrome.
-    /// Opaque root window still fills solid via its framebuffer; UI panels supply their own fill.
+    ///
+    /// On wasm there are no transparent OS overlay windows — an opaque clear keeps a
+    /// panic/blank frame from looking like the page body color bleeding through.
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
-        [0.0, 0.0, 0.0, 0.0]
+        #[cfg(target_arch = "wasm32")]
+        {
+            egui::Rgba::from(egui::Color32::from_rgb(0x1a, 0x1a, 0x1a)).to_array()
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            [0.0, 0.0, 0.0, 0.0]
+        }
     }
 }
 
