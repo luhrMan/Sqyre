@@ -445,10 +445,9 @@ fn dispatch(exec: &mut Executor<'_>, action: &Action, macro_: &mut Macro) -> Res
             );
             Ok(())
         }
-        ActionKind::SetVariable {
-            variable_name,
-            value,
-        } => execute_set_variable(exec, action.id, variable_name, value, macro_),
+        ActionKind::SetVariable { assignments } => {
+            execute_set_variable(exec, action.id, assignments, macro_)
+        }
         ActionKind::ImageSearch { .. } => execute_image_search(exec, action, macro_),
         ActionKind::FindPixel { .. } => execute_find_pixel(exec, action, macro_),
         ActionKind::FocusWindow {
@@ -630,7 +629,9 @@ pub(crate) fn resolve_text(text: &str, macro_: &Macro) -> Result<String> {
 mod tests {
     use super::*;
     use crate::backends::{CoordinateResolver, DesktopRect, RecordingBackend, RecordingCapturer};
-    use sqyre_domain::{root_loop, Action, ActionId, ActionKind, CoordinateRef, ScalarValue};
+    use sqyre_domain::{
+        root_loop, Action, ActionId, ActionKind, CoordinateRef, ScalarValue, VariableAssignment,
+    };
 
     struct FixedResolver;
 
@@ -1182,8 +1183,10 @@ mod tests {
         macro_.root = root_loop(vec![Action {
             id: ActionId::new(),
             kind: ActionKind::SetVariable {
-                variable_name: "msg".into(),
-                value: sqyre_domain::ScalarValue::String("hello ${base}".into()),
+                assignments: vec![VariableAssignment::new(
+                    "msg",
+                    sqyre_domain::ScalarValue::String("hello ${base}".into()),
+                )],
             },
         }]);
         execute_macro(&mut macro_, &mut backend).unwrap();

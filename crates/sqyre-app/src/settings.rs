@@ -186,17 +186,27 @@ impl SettingsUi {
         egui::ScrollArea::vertical()
             .max_height(list_h)
             .show(ui, |ui| {
-                crate::theme::section_frame(ui.style()).show(ui, |ui| {
-                    self.draw_general(ui);
-                });
-                ui.add_space(12.0);
-                crate::theme::section_frame(ui.style()).show(ui, |ui| {
-                    self.draw_data(ui, db, macros, catalog);
-                });
-                ui.add_space(12.0);
-                crate::theme::section_frame(ui.style()).show(ui, |ui| {
-                    self.draw_appearance(ui, ctx);
-                });
+                crate::theme::titled_section(
+                    ui,
+                    "General",
+                    "Application and behavior options.",
+                    12.0,
+                    |ui| self.draw_general(ui),
+                );
+                crate::theme::titled_section(
+                    ui,
+                    "Data",
+                    "User data and configuration files.",
+                    12.0,
+                    |ui| self.draw_data(ui, db, macros, catalog),
+                );
+                crate::theme::titled_section(
+                    ui,
+                    "Appearance",
+                    "Theme and display options.",
+                    12.0,
+                    |ui| self.draw_appearance(ui, ctx),
+                );
             });
 
         if let Some(status) = &self.status_banner.status {
@@ -209,17 +219,7 @@ impl SettingsUi {
         }
     }
 
-    fn section_header(ui: &mut egui::Ui, title: &str, subtitle: &str) {
-        ui.label(egui::RichText::new(title).strong().size(16.0));
-        if !subtitle.is_empty() {
-            ui.label(egui::RichText::new(subtitle).weak());
-        }
-        ui.separator();
-    }
-
     fn draw_general(&mut self, ui: &mut egui::Ui) {
-        Self::section_header(ui, "General", "Application and behavior options.");
-
         if ui
             .checkbox(
                 &mut self.settings.save_meta_images,
@@ -285,8 +285,6 @@ impl SettingsUi {
         _macros: &mut Vec<Macro>,
         _catalog: &mut ProgramCatalog,
     ) {
-        Self::section_header(ui, "Data", "User data and configuration files.");
-
         let current = if self.settings.sqyre_dir.trim().is_empty() {
             sqyre_dir()
         } else {
@@ -409,8 +407,6 @@ impl SettingsUi {
     }
 
     fn draw_appearance(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
-        Self::section_header(ui, "Appearance", "Theme and display options.");
-
         ui.horizontal(|ui| {
             ui.label("Font size:");
             let mut v = self.settings.ui_font_size;

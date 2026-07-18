@@ -372,16 +372,20 @@ pub fn validate_action(action: &Action, macro_: Option<&Macro>) -> Result<()> {
                 ));
             }
         }
-        ActionKind::SetVariable {
-            variable_name,
-            value,
-        } => {
-            validate_variable_assignment_name(variable_name)
-                .map_err(|e| ValidateError::Message(format!("set variable: {e}")))?;
-            if let Some(text) = yaml_string_value(value) {
-                let v = validate_set_variable_value(text, macro_);
-                if v.blocks_submit() {
-                    return Err(ValidateError::Message(format!("set variable: {}", v.error)));
+        ActionKind::SetVariable { assignments } => {
+            if assignments.is_empty() {
+                return Err(ValidateError::Message(
+                    "set variable: add at least one assignment".into(),
+                ));
+            }
+            for a in assignments {
+                validate_variable_assignment_name(&a.variable_name)
+                    .map_err(|e| ValidateError::Message(format!("set variable: {e}")))?;
+                if let Some(text) = yaml_string_value(&a.value) {
+                    let v = validate_set_variable_value(text, macro_);
+                    if v.blocks_submit() {
+                        return Err(ValidateError::Message(format!("set variable: {}", v.error)));
+                    }
                 }
             }
         }
@@ -452,7 +456,7 @@ pub fn validate_action_tree(action: &Action, macro_: Option<&Macro>) -> Result<(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqyre_domain::{ActionId, ScalarValue, VariableDecl, VariableType};
+    use sqyre_domain::{ActionId, ScalarValue, VariableAssignment, VariableDecl, VariableType};
 
     #[test]
     fn variable_name_rejects_braces() {
@@ -500,8 +504,7 @@ mod tests {
         Action {
             id: ActionId::new(),
             kind: ActionKind::SetVariable {
-                variable_name: name.into(),
-                value,
+                assignments: vec![VariableAssignment::new(name, value)],
             },
         }
     }
@@ -593,7 +596,7 @@ mod tests {
 
     #[test]
     fn preview_calculate_examples() {
-        use sqyre_domain::{root_loop, Action, ActionId, ActionKind};
+        use sqyre_domain::{root_loop, Action, ActionId, ActionKind, VariableAssignment};
 
         let mut m = Macro::new("t", 0, vec![]);
         m.variable_decls.push(VariableDecl {
@@ -611,8 +614,10 @@ mod tests {
         m.root = root_loop(vec![Action {
             id: ActionId::new(),
             kind: ActionKind::SetVariable {
-                variable_name: "result".into(),
-                value: sqyre_domain::ScalarValue::String("0".into()),
+                assignments: vec![VariableAssignment::new(
+                    "result",
+                    sqyre_domain::ScalarValue::String("0".into()),
+                )],
             },
         }]);
         m.init_runtime_variables();
@@ -639,8 +644,10 @@ mod tests {
         let a = Action {
             id: ActionId::new(),
             kind: ActionKind::SetVariable {
-                variable_name: "a+b".into(),
-                value: sqyre_domain::ScalarValue::String("1+1".into()),
+                assignments: vec![VariableAssignment::new(
+                    "a+b",
+                    sqyre_domain::ScalarValue::String("1+1".into()),
+                )],
             },
         };
         let err = validate_action(&a, None).unwrap_err();

@@ -2,7 +2,7 @@
 
 use crate::error::{ExecError, Result};
 use crate::run::Executor;
-use sqyre_domain::{resolve_set_variable_value, ActionId, Macro, ScalarValue};
+use sqyre_domain::{resolve_set_variable_value, ActionId, Macro, VariableAssignment};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -10,16 +10,17 @@ use std::path::{Path, PathBuf};
 pub(crate) fn execute_set_variable(
     exec: &mut Executor<'_>,
     action_id: ActionId,
-    variable_name: &str,
-    value: &ScalarValue,
+    assignments: &[VariableAssignment],
     macro_: &mut Macro,
 ) -> Result<()> {
-    let scalar = resolve_set_variable_value(value, macro_).map_err(ExecError::Message)?;
-    exec.log(
-        action_id,
-        format!("Set: {variable_name} = {}", scalar.as_display()),
-    );
-    macro_.variables.set(variable_name, scalar);
+    for a in assignments {
+        let scalar = resolve_set_variable_value(&a.value, macro_).map_err(ExecError::Message)?;
+        exec.log(
+            action_id,
+            format!("Set: {} = {}", a.variable_name, scalar.as_display()),
+        );
+        macro_.variables.set(&a.variable_name, scalar);
+    }
     Ok(())
 }
 

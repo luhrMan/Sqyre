@@ -16,6 +16,7 @@ mod tests {
     use crate::run::{execute_macro, execute_macro_with, ExecDeps};
     use sqyre_domain::{
         root_loop, Action, ActionId, ActionKind, ConditionClause, ListColumn, Macro, ScalarValue,
+        VariableAssignment,
     };
     use std::fs;
     use std::sync::atomic::AtomicBool;
@@ -33,8 +34,10 @@ mod tests {
         macro_.root = root_loop(vec![Action {
             id: ActionId::new(),
             kind: ActionKind::SetVariable {
-                variable_name: "out".into(),
-                value: sqyre_domain::ScalarValue::String("${n}*2+1".into()),
+                assignments: vec![VariableAssignment::new(
+                    "out",
+                    ScalarValue::String("${n}*2+1".into()),
+                )],
             },
         }]);
         execute_macro(&mut macro_, &mut backend).unwrap();
@@ -135,8 +138,10 @@ mod tests {
                     Action {
                         id: ActionId::new(),
                         kind: ActionKind::SetVariable {
-                            variable_name: "i".into(),
-                            value: sqyre_domain::ScalarValue::String("${i}+1".into()),
+                            assignments: vec![VariableAssignment::new(
+                                "i",
+                                ScalarValue::String("${i}+1".into()),
+                            )],
                         },
                     },
                 ],
