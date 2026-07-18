@@ -1,0 +1,32 @@
+---
+description: Clippy compliance and safe unsafe usage
+globs: "**/*.rs"
+alwaysApply: false
+---
+
+# Clippy and Safety
+
+CI runs `make clippy` with `-D warnings`. Treat Clippy failures as bugs to fix, not noise to silence.
+
+## Clippy
+
+- Fix warnings at the source; prefer refactoring over `#[allow(clippy::…)]`
+- If an allow is unavoidable, put it on the smallest item and add a one-line reason
+- Do not weaken workspace lint policy in `Cargo.toml` to land a change
+
+## Unsafe
+
+- Prefer safe APIs; introduce `unsafe` only when required for FFI or proven invariants
+- Every `unsafe` block needs a `// SAFETY:` comment stating the invariant that makes it sound
+- Do not expand `unsafe` to “make the borrow checker happy” when restructuring ownership would work
+
+```rust
+// ✅
+// SAFETY: `ptr` was allocated by `alloc` in this module and is aligned for `T`.
+let val = unsafe { ptr.read() };
+```
+
+## Concurrency pitfalls
+
+- Do not hold a mutex/guard across `.await` or long work inside `if let` / `match` arms that keep the guard alive
+- Drop or scope guards explicitly when the critical section ends

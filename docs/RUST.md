@@ -1,6 +1,6 @@
 # Sqyre Rust workspace
 
-Cargo workspace at the repo root (egui + PureCV). **`make` / `./bin/sqyre` is the only shipped binary** (Linux).
+Cargo workspace at the repo root (egui + PureCV). **`make` / `./bin/sqyre` is the only shipped release binary** (Linux). Windows/macOS build in CI as compile-checks; releases stay Linux-only for now.
 
 ## Layout
 
@@ -25,7 +25,7 @@ Cargo workspace at the repo root (egui + PureCV). **`make` / `./bin/sqyre` is th
 | `sqyre-match` | `TM_CCOEFF_NORMED` + mask + peak/dedup |
 | `sqyre-vision` | RGB load, match façade, find-pixel, OCR preprocess / Tesseract |
 | `sqyre-input` | `AutomationBackend` (rustautogui lite + arboard) |
-| `sqyre-capture` | `ScreenCapturer` (Linux X11 absolute rects) |
+| `sqyre-capture` | `ScreenCapturer` (`OsCapturer`: Linux X11, Windows GDI, macOS stub) |
 | `sqyre-hotkeys` | Esc stop / failsafe (`hooks` feature; stub default) |
 | `sqyre-app` | egui shell; Run/Stop macros |
 
@@ -33,13 +33,15 @@ Cargo workspace at the repo root (egui + PureCV). **`make` / `./bin/sqyre` is th
 
 Requires **Rust ≥ 1.92** (egui 0.34 / PureCV). The repo pins `1.92.0` via [`rust-toolchain.toml`](../rust-toolchain.toml); the `.devcontainer` matches that plus clang/Tesseract for OCR.
 
-Linux automation/capture need X11 (`libx11-dev`, `libxtst-dev`).
+Linux automation/capture need X11 (`libx11-dev`, `libxtst-dev`). Windows capture uses GDI (`windows` crate); macOS capture is still stubbed.
 
 From the repo root:
 
 ```bash
 make                 # ./bin/sqyre (debug)
 make release         # ./bin/sqyre (release)
+make windows         # ./bin/sqyre.exe (Docker MinGW cross / native on Windows)
+make macos           # ./bin/sqyre (macOS host)
 make check           # fmt + clippy (-D warnings) + cargo deny
 make test            # cargo nextest (falls back to cargo test)
 make coverage        # llvm-cov HTML + lcov under target/coverage/
@@ -62,6 +64,6 @@ Do not expect X11 inside the container — build there, run the binary on the ho
 
 Host binary: `./bin/sqyre` after `make`, or `./target/debug/sqyre` from cargo. Esc stops a running macro; Esc+Ctrl+Shift exits (failsafe).
 
-Still improving: Wayland, Windows/macOS automation + capture. CI releases Linux only.
+Still improving: Wayland, macOS capture, Windows/macOS window focus + releases. CI releases Linux only; Win/macOS `cargo check` on PRs.
 
 OCR uses Tesseract (`leptess`). Override tessdata with `SQYRE_TESSDATA` if needed (dev fallback: `assets/tessdata`).

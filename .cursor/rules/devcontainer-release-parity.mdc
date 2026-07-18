@@ -1,0 +1,36 @@
+---
+description: Keep .devcontainer able to build every Linux-host release target
+alwaysApply: true
+---
+
+# Devcontainer release-build parity
+
+Whenever a **build or packaging requirement** changes (Makefile targets, Dockerfiles under `scripts/`, CI release jobs, native libs, linkers, tessdata, cargo features for release binaries), update [`.devcontainer/`](.devcontainer/) so the container can still produce every release artifact that is meant to be built from Linux.
+
+## Releases the container must support
+
+| Target | How |
+|--------|-----|
+| `make` / `make release` | Native in-container (Rust + system Tesseract/X11) |
+| `make appimage` | Native AppImage tools in the image, or Docker fallback |
+| `make windows` | Docker MinGW cross (`scripts/windows/`) via **host Docker socket** |
+
+`make macos` stays macOS-host-only — do not claim the Linux devcontainer builds it.
+
+## When you change builds
+
+1. Add any new host packages / tools to [`.devcontainer/Dockerfile`](.devcontainer/Dockerfile) (or document why they only live in a nested build image).
+2. If a target needs Docker (`make windows`, AppImage Docker fallback), keep the **docker-outside-of-docker** feature (or equivalent CLI + `/var/run/docker.sock`) in [`devcontainer.json`](.devcontainer/devcontainer.json).
+3. Keep nested images self-contained ([`scripts/windows/Dockerfile`](scripts/windows/Dockerfile), AppImage path) — the outer container only needs the Docker client + enough deps for native Linux builds.
+4. Update [`docs/DEVELOPING.md`](docs/DEVELOPING.md) if the developer workflow changes.
+5. Smoke-check from the container mindset: `make release`, `make appimage` (or its Docker path), `make windows` must remain reachable.
+
+## Examples
+
+```
+❌ Add make windows MinGW image but leave the container without Docker CLI/socket
+✅ Feature docker-outside-of-docker + scripts/windows/Dockerfile for the toolchain
+
+❌ New release link dep only in CI workflow
+✅ Same package (or documented nested image) in .devcontainer/Dockerfile
+```

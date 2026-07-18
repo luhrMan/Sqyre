@@ -1,0 +1,42 @@
+---
+description: Idiomatic Rust language ergonomics (Option/Result, ownership, enums)
+globs: "**/*.rs"
+alwaysApply: false
+---
+
+# Idiomatic Rust
+
+Write concise Rust that uses the type system and std combinators — not patterns from other languages.
+
+## Option / Result
+
+- Prefer `?`, `map`, `and_then`, `ok_or`, and iterator adapters over nested `match`/`if let` when the flow stays clear
+- Library and app logic return `Result` with `thiserror` types; do not invent parallel error crates
+- `unwrap` / `expect` only in tests or genuinely unreachable paths (document why with `expect("…")`)
+
+```rust
+// ❌
+if let Some(x) = opt {
+    match f(x) {
+        Ok(v) => Some(v),
+        Err(_) => None,
+    }
+} else {
+    None
+}
+
+// ✅
+opt.and_then(|x| f(x).ok())
+```
+
+## Ownership at boundaries
+
+- Take `&str` / `impl AsRef<str>` / `impl AsRef<Path>` when you only read
+- Return / store `String` / `PathBuf` when you need ownership
+- Do not use out-parameters — return values instead
+
+## Clarity
+
+- Prefer enums over `bool` (or pairs of bools) when states are distinct modes
+- Keep bindings immutable by default; use `mut` only where mutation is required
+- Prefer iterators over index loops when they are clearer and equally efficient
