@@ -27,16 +27,12 @@ impl OverlayPaintStyle {
                 sqyre_persist::MIN_OVERLAY_BORDER_WIDTH,
                 sqyre_persist::MAX_OVERLAY_BORDER_WIDTH,
             ),
-            border: rgba(btn.border_rgba()),
-            bg: rgba(btn.bg_rgba()),
-            icon: rgba(btn.icon_rgba()),
-            icon_hover: rgba(btn.icon_hover_rgba()),
+            border: crate::theme::rgba(btn.border_rgba()),
+            bg: crate::theme::rgba(btn.bg_rgba()),
+            icon: crate::theme::rgba(btn.icon_rgba()),
+            icon_hover: crate::theme::rgba(btn.icon_hover_rgba()),
         }
     }
-}
-
-fn rgba(c: [u8; 4]) -> Color32 {
-    Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3])
 }
 
 /// One entry in the built-in overlay icon catalog.

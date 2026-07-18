@@ -10,7 +10,7 @@
 //! HUD stays alive even when the root viewport is `Visible(false)`.
 
 use crate::theme;
-use eframe::egui::{self, Color32, ViewportBuilder, ViewportClass, ViewportId};
+use eframe::egui::{self, ViewportBuilder, ViewportClass, ViewportId};
 use sqyre_capture::SelectionOutline;
 use sqyre_hotkeys::ScreenClickBridge;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -118,7 +118,7 @@ fn show_coords_hud(ctx: &egui::Context, screen_click: &ScreenClickBridge) {
 
 fn paint_hud_label(ui: &mut egui::Ui, class: ViewportClass, text: &str) {
     let frame = egui::Frame::NONE
-        .fill(Color32::from_rgba_unmultiplied(20, 18, 14, 230))
+        .fill(crate::theme::overlay_panel_fill())
         .stroke(egui::Stroke::new(1.0, theme::PRIMARY))
         .corner_radius(egui::CornerRadius::same(6))
         .inner_margin(egui::Margin::symmetric(12, 8));

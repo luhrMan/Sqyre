@@ -340,7 +340,7 @@ fn show_overlay_tip_viewport(
 
     ctx.show_viewport_deferred(id, builder, move |ui, class| {
         let frame = egui::Frame::NONE
-            .fill(Color32::from_rgba_unmultiplied(20, 18, 14, 230))
+            .fill(crate::theme::overlay_panel_fill())
             .stroke(egui::Stroke::new(TIP_STROKE, crate::theme::PRIMARY))
             .corner_radius(egui::CornerRadius::same(4))
             .inner_margin(egui::Margin::same(TIP_PAD as i8));

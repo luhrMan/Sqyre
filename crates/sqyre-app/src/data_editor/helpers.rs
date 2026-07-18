@@ -13,7 +13,7 @@ pub(crate) fn new_overlay_button_id() -> String {
 }
 
 pub(crate) fn rgba_color(c: [u8; 4]) -> eframe::egui::Color32 {
-    eframe::egui::Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3])
+    crate::theme::rgba(c)
 }
 
 /// `#rrggbb` for persist, or empty when it matches the theme default.
@@ -53,18 +53,17 @@ pub(crate) fn unique_name(base: &str, exists: impl Fn(&str) -> bool) -> String {
 
 /// Sorted unique tags across items in a program.
 pub(crate) fn collect_program_item_tags(catalog: &ProgramCatalog, program: &str) -> Vec<String> {
-    let mut tags: Vec<String> = catalog
-        .get(program)
-        .map(|p| {
-            p.items
-                .values()
-                .flat_map(|it| it.tags.iter().cloned())
-                .collect()
-        })
-        .unwrap_or_default();
-    tags.sort();
-    tags.dedup();
-    tags
+    crate::macro_meta::unique_sorted(
+        catalog
+            .get(program)
+            .map(|p| {
+                p.items
+                    .values()
+                    .flat_map(|it| it.tags.iter().cloned())
+                    .collect()
+            })
+            .unwrap_or_default(),
+    )
 }
 
 pub(crate) fn item_tag_completion_options(
