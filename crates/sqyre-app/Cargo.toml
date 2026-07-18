@@ -30,6 +30,7 @@ image = { workspace = true }
 resvg = { workspace = true }
 sqyre-match = { path = "../sqyre-match" }
 sqyre-domain = { path = "../sqyre-domain" }
+sqyre-ui-model = { path = "../sqyre-ui-model" }
 sqyre-persist = { path = "../sqyre-persist" }
 sqyre-validate = { path = "../sqyre-validate" }
 sqyre-varref = { path = "../sqyre-varref" }

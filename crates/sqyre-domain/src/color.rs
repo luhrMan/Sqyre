@@ -1,7 +1,24 @@
-//! Hex color parsing shared by vision (find-pixel) and UI chrome.
-//!
-//! Kept outside [`crate::display`] so non-UI crates can depend on it without
-//! pulling presentation helpers.
+//! Hex color parsing and action-color category keys shared by vision
+//! (find-pixel), persist (settings), and UI chrome. Kept in domain so
+//! non-UI crates can depend on these without pulling in `sqyre-ui-model`.
+
+/// Category keys for customizable macro-tree action colors.
+pub const ACTION_COLOR_KEY_MOUSE_KEYBOARD: &str = "mouse_keyboard";
+pub const ACTION_COLOR_KEY_DETECTION: &str = "detection";
+pub const ACTION_COLOR_KEY_VARIABLES: &str = "variables";
+pub const ACTION_COLOR_KEY_MISCELLANEOUS: &str = "miscellaneous";
+pub const ACTION_COLOR_KEY_WAIT: &str = "wait";
+pub const ACTION_COLOR_KEY_DEFAULT: &str = "default";
+
+/// `(key, label)` for every customizable action color group.
+pub const ACTION_COLOR_CATEGORIES: &[(&str, &str)] = &[
+    (ACTION_COLOR_KEY_MOUSE_KEYBOARD, "Mouse & Keyboard"),
+    (ACTION_COLOR_KEY_DETECTION, "Detection"),
+    (ACTION_COLOR_KEY_VARIABLES, "Variables"),
+    (ACTION_COLOR_KEY_MISCELLANEOUS, "Miscellaneous"),
+    (ACTION_COLOR_KEY_WAIT, "Wait"),
+    (ACTION_COLOR_KEY_DEFAULT, "Default"),
+];
 
 /// Format RGBA as `#rrggbb` (alpha ignored).
 pub fn format_hex_color(rgba: [u8; 4]) -> String {

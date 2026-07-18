@@ -1,29 +1,15 @@
 //! Action tree color keys, pastels, and custom overrides.
 //!
-//! Hex parse/format helpers live in [`crate::color`] so vision can use them
-//! without depending on UI chrome.
+//! Hex parse/format helpers and category keys live in [`sqyre_domain::color`]
+//! so vision and persist can use them without depending on UI chrome.
 
-use crate::action_color_category;
+use sqyre_domain::{
+    action_color_category, ACTION_COLOR_KEY_DEFAULT, ACTION_COLOR_KEY_DETECTION,
+    ACTION_COLOR_KEY_MISCELLANEOUS, ACTION_COLOR_KEY_MOUSE_KEYBOARD, ACTION_COLOR_KEY_VARIABLES,
+    ACTION_COLOR_KEY_WAIT,
+};
 use std::collections::HashMap;
 use std::sync::RwLock;
-
-/// Category keys for customizable macro-tree action colors.
-pub const ACTION_COLOR_KEY_MOUSE_KEYBOARD: &str = "mouse_keyboard";
-pub const ACTION_COLOR_KEY_DETECTION: &str = "detection";
-pub const ACTION_COLOR_KEY_VARIABLES: &str = "variables";
-pub const ACTION_COLOR_KEY_MISCELLANEOUS: &str = "miscellaneous";
-pub const ACTION_COLOR_KEY_WAIT: &str = "wait";
-pub const ACTION_COLOR_KEY_DEFAULT: &str = "default";
-
-/// `(key, label)` for every customizable action color group.
-pub const ACTION_COLOR_CATEGORIES: &[(&str, &str)] = &[
-    (ACTION_COLOR_KEY_MOUSE_KEYBOARD, "Mouse & Keyboard"),
-    (ACTION_COLOR_KEY_DETECTION, "Detection"),
-    (ACTION_COLOR_KEY_VARIABLES, "Variables"),
-    (ACTION_COLOR_KEY_MISCELLANEOUS, "Miscellaneous"),
-    (ACTION_COLOR_KEY_WAIT, "Wait"),
-    (ACTION_COLOR_KEY_DEFAULT, "Default"),
-];
 
 static CUSTOM_ACTION_COLORS: RwLock<Option<HashMap<String, [u8; 4]>>> = RwLock::new(None);
 

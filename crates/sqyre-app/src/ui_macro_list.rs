@@ -106,7 +106,13 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
             ui.horizontal(|ui| {
                 // Use ASCII / NotoEmoji glyphs only — fullwidth/math symbols
                 // (＋, ⧉) render as tofu in egui's default font stack.
-                if ui.button("+").on_hover_text("New macro").clicked() {
+                let new_resp = ui.button("+");
+                new_resp.clone().on_hover_text("New macro");
+                // AccessKit label for interaction tests (default label is just "+").
+                new_resp.widget_info(|| {
+                    egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "New macro")
+                });
+                if new_resp.clicked() {
                     app.create_macro();
                 }
                 let has_sel = !app.macros.is_empty();

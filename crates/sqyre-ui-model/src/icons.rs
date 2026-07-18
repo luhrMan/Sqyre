@@ -1,6 +1,6 @@
 //! Action type icon glyphs for the macro tree.
 
-use crate::{Action, ActionKind};
+use sqyre_domain::{Action, ActionKind};
 
 pub fn action_icon_glyph(action: &Action) -> &'static str {
     match &action.kind {

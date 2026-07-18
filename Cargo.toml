@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/sqyre-varref",
     "crates/sqyre-domain",
+    "crates/sqyre-ui-model",
     "crates/sqyre-serialize",
     "crates/sqyre-validate",
     "crates/sqyre-persist",

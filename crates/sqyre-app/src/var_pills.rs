@@ -5,7 +5,8 @@ use eframe::egui::{
     PopupCloseBehavior, RectAlign, Sense, Stroke, Vec2,
 };
 use egui::text_selection::CCursorRange;
-use sqyre_domain::{action_pastel_color, is_known_variable, nested_var_ref_color, SummaryPill};
+use sqyre_domain::is_known_variable;
+use sqyre_ui_model::{action_pastel_color, nested_var_ref_color, SummaryPill};
 use sqyre_validate::EntryValidation;
 use std::collections::HashSet;
 use std::sync::Arc;
