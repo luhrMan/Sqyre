@@ -15,3 +15,4 @@ uuid = { workspace = true }
 sqyre-domain = { path = "../sqyre-domain" }
 
 [dev-dependencies]
+proptest = { workspace = true }

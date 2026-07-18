@@ -6,6 +6,7 @@
 
 mod action;
 mod blank;
+mod color;
 mod display;
 mod expr;
 mod macro_model;
@@ -17,6 +18,7 @@ mod variables;
 
 pub use action::*;
 pub use blank::{action_templates, blank_action, test_action, ActionTemplate};
+pub use color::{format_hex_color, normalize_hex_rgb, parse_hex_color};
 pub use display::*;
 pub use expr::{evaluate_expression, numeric_to_scalar};
 pub use macro_model::*;

@@ -184,6 +184,7 @@ pub fn rename(s: &str, old_name: &str, new_name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
     #[test]
     fn contains_dollar_and_brace() {
@@ -227,5 +228,80 @@ mod tests {
         let mut n = names("pre ${foo} end");
         n.sort();
         assert_eq!(n, vec!["foo"]);
+    }
+
+    /// Identifier-ish names: start with a letter, then alnum/underscore.
+    fn arb_var_name() -> impl Strategy<Value = String> {
+        prop::string::string_regex("[a-zA-Z][a-zA-Z0-9_]{0,16}")
+            .unwrap()
+            .prop_filter("non-empty", |s| !s.is_empty())
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(128))]
+
+        #[test]
+        fn segments_join_to_original(
+            prefix in ".*",
+            name in arb_var_name(),
+            suffix in ".*",
+            dollar in any::<bool>(),
+        ) {
+            // Avoid accidental new refs in prefix/suffix by stripping braces.
+            let prefix = prefix.replace(['{', '}'], "");
+            let suffix = suffix.replace(['{', '}'], "");
+            let text = if dollar {
+                format!("{prefix}${{{name}}}{suffix}")
+            } else {
+                format!("{prefix}{{{name}}}{suffix}")
+            };
+            let joined: String = segments(&text).into_iter().map(|s| s.text).collect();
+            prop_assert!(contains(&text));
+            prop_assert!(references(&text, &name));
+            prop_assert_eq!(joined, text);
+        }
+
+        #[test]
+        fn rename_roundtrip_preserves_style(
+            name in arb_var_name(),
+            new_name in arb_var_name(),
+            dollar in any::<bool>(),
+        ) {
+            prop_assume!(name != new_name);
+            let text = if dollar {
+                format!("x=${{{name}}} y")
+            } else {
+                format!("x={{{name}}} y")
+            };
+            let renamed = rename(&text, &name, &new_name);
+            let expect_new = if dollar {
+                format!("${{{new_name}}}")
+            } else {
+                format!("{{{new_name}}}")
+            };
+            let expect_old = if dollar {
+                format!("${{{name}}}")
+            } else {
+                format!("{{{name}}}")
+            };
+            prop_assert!(renamed.contains(&expect_new));
+            prop_assert!(!renamed.contains(&expect_old));
+            let back = rename(&renamed, &new_name, &name);
+            prop_assert_eq!(back, text);
+        }
+
+        #[test]
+        fn plain_text_has_no_refs(s in "[^{$}]{0,64}") {
+            prop_assert!(!contains(&s));
+            prop_assert!(names(&s).is_empty());
+            let segs = segments(&s);
+            if s.is_empty() {
+                prop_assert!(segs.is_empty());
+            } else {
+                prop_assert_eq!(segs.len(), 1);
+                prop_assert!(!segs[0].is_ref);
+                prop_assert_eq!(&segs[0].text, &s);
+            }
+        }
     }
 }

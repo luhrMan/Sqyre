@@ -652,8 +652,14 @@ mod tests {
 
     #[test]
     fn parse_hex_strips_alpha() {
-        assert_eq!(parse_hex_color("#ff112233"), Some([0x11, 0x22, 0x33, 255]));
-        assert_eq!(parse_hex_color("aabbcc"), Some([0xaa, 0xbb, 0xcc, 255]));
+        assert_eq!(
+            crate::parse_hex_color("#ff112233"),
+            Some([0x11, 0x22, 0x33, 255])
+        );
+        assert_eq!(
+            crate::parse_hex_color("aabbcc"),
+            Some([0xaa, 0xbb, 0xcc, 255])
+        );
     }
 
     #[test]
@@ -902,8 +908,11 @@ mod tests {
 
     #[test]
     fn parse_hex_short_form_and_display_text() {
-        assert_eq!(parse_hex_color("#abc"), Some([0xaa, 0xbb, 0xcc, 255]));
-        assert_eq!(parse_hex_color("not-hex"), None);
+        assert_eq!(
+            crate::parse_hex_color("#abc"),
+            Some([0xaa, 0xbb, 0xcc, 255])
+        );
+        assert_eq!(crate::parse_hex_color("not-hex"), None);
         let pill = SummaryPill {
             text: "x".into(),
             prefix: Some("X".into()),
