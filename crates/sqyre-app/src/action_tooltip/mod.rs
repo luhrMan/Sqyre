@@ -31,6 +31,11 @@ pub struct TooltipEdit {
     /// When true, Cancel / Escape / close removes this action from the tree
     /// (used for freshly inserted blank actions that were never saved).
     pub discard_on_cancel: bool,
+    /// Unclipped height of the fields column from the last frame.
+    fields_height: f32,
+    /// While true, raise window height toward content (capped at screen max).
+    /// Cleared after the initial fit settles, or when the user resizes.
+    auto_fit: bool,
 }
 
 /// Tooltip lifecycle (editing flag + hover ownership).
@@ -72,6 +77,8 @@ impl TooltipState {
             anchor,
             picker: ActivePicker::None,
             discard_on_cancel: false,
+            fields_height: 0.0,
+            auto_fit: true,
         }));
     }
 
@@ -84,6 +91,8 @@ impl TooltipState {
             anchor,
             picker: ActivePicker::None,
             discard_on_cancel: true,
+            fields_height: 0.0,
+            auto_fit: true,
         }));
     }
 
@@ -312,6 +321,30 @@ fn tip_max_width(has_coord_preview: bool) -> f32 {
     }
 }
 
+/// True when the user is dragging any window edge/corner resize handle.
+fn edit_window_user_resized(ctx: &egui::Context, area_id: egui::Id) -> bool {
+    let dragged = |id: egui::Id| {
+        ctx.read_response(id)
+            .is_some_and(|r| r.dragged() || r.drag_stopped())
+    };
+    for salt in [
+        "left",
+        "right",
+        "top",
+        "bottom",
+        "left_top",
+        "right_top",
+        "left_bottom",
+        "right_bottom",
+    ] {
+        if dragged(area_id.with(salt)) {
+            return true;
+        }
+    }
+    // Interior Resize corner widget used by `Window`.
+    dragged(area_id.with("resize").with("__resize_corner"))
+}
+
 /// Paint a read-only hover tip for an action (tree rows + Add Action defaults preview).
 pub(crate) fn show_action_view_tip(
     ctx: &egui::Context,
@@ -458,7 +491,10 @@ fn show_edit_window(
     let label = action_type_label(type_key);
     let pastel = tree_chrome::rgba_pub(action_pastel_color(type_key, is_dark));
     let max_w = tip_max_width(has_coord_preview);
-    let max_body_h = (ctx.content_rect().height() * 0.65).clamp(160.0, 520.0);
+    let screen = ctx.content_rect();
+    // Grow with content from a modest default; ScrollArea caps at the window height.
+    const EDIT_CHROME: f32 = 72.0; // type pill + Save/Cancel + separator + margins
+    let max_scroll_h = (screen.height() - EDIT_CHROME).max(100.0);
 
     // Picker modal first (foreground); apply result onto draft.
     if let TooltipState::Edit(edit) = state {
@@ -476,19 +512,22 @@ fn show_edit_window(
     let mut cancel = false;
     let mut open = true;
 
-    // Popup chrome (no title bar) + default width matching view tip, but
-    // resizable so users can grow the form when sections need more room.
-    // Id bumped past "compact" Area/Window state that locked size.
+    // Stable Area id (also keys egui's resize state as `area_id.with("resize")`).
+    let area_id = egui::Id::new(("action_edit_tip", "grow_v3", action_id));
+
+    // Popup chrome (no title bar). On open, auto-fit height to content up to
+    // the screen max; afterward the user may freely shrink/grow (ScrollArea).
     egui::Window::new(label)
-        .id(egui::Id::new(("action_edit_tip", "resize", action_id)))
+        .id(area_id)
         .open(&mut open)
         .title_bar(false)
         .collapsible(false)
         .resizable(true)
         .constrain(true)
         .default_pos(anchor + Vec2::new(12.0, 12.0))
-        .default_size([max_w, max_body_h.min(360.0)])
-        .min_size([220.0, 120.0])
+        .default_size([max_w, 120.0])
+        .min_size([220.0, 100.0])
+        .max_size(screen.size())
         .frame(
             egui::Frame::popup(ctx.global_style().as_ref())
                 .inner_margin(egui::Margin::symmetric(10, 8)),
@@ -513,37 +552,56 @@ fn show_edit_window(
             }
 
             ui.separator();
-            // Fill the window so drag-resize widens/wraps section contents.
-            let list_h = pickers::popup_scroll_max_height(ui, 0.0);
-            egui::ScrollArea::vertical()
-                .auto_shrink([false, false])
-                .max_height(list_h)
-                .show(ui, |ui| {
-                    if let TooltipState::Edit(edit) = state {
-                        let mut fields = EditFieldsCtx {
-                            paint: CatalogPaint {
-                                catalog,
-                                icons,
-                                previews,
-                            },
-                            bridges: RecordBridges {
-                                key_record: bridges.key_record,
-                                hotkey_record: bridges.hotkey_record,
-                                macro_hotkeys: bridges.macro_hotkeys,
-                                screen_click: bridges.screen_click,
-                            },
-                            theme: *theme,
-                            macros,
-                            active_macro: Some(&*macro_),
-                        };
+            // Always scroll so a user-shrunk window can still reach all fields.
+            // While `auto_fit`, raise min height toward measured content (capped).
+            if let TooltipState::Edit(edit) = state {
+                let mut fields = EditFieldsCtx {
+                    paint: CatalogPaint {
+                        catalog,
+                        icons,
+                        previews,
+                    },
+                    bridges: RecordBridges {
+                        key_record: bridges.key_record,
+                        hotkey_record: bridges.hotkey_record,
+                        macro_hotkeys: bridges.macro_hotkeys,
+                        screen_click: bridges.screen_click,
+                    },
+                    theme: *theme,
+                    macros,
+                    active_macro: Some(&*macro_),
+                };
+                let out = egui::ScrollArea::vertical()
+                    .id_salt("edit_fields")
+                    .auto_shrink([false, false])
+                    .max_height(max_scroll_h)
+                    .show(ui, |ui| {
                         edit::paint_edit_fields(
                             ui,
                             &mut edit.draft,
                             &mut edit.picker,
                             &mut fields,
                         );
+                    });
+                let measured = out.content_size.y;
+                if (measured - edit.fields_height).abs() > 1.0 {
+                    ui.ctx().request_repaint();
+                }
+                edit.fields_height = measured;
+
+                if edit.auto_fit {
+                    let want = measured.min(max_scroll_h);
+                    if want > 1.0 {
+                        // Expand the resizable window toward content for the
+                        // next frame; does not block later user shrink once
+                        // `auto_fit` clears.
+                        ui.set_min_height(want);
                     }
-                });
+                    if measured > 0.0 && out.inner_rect.height() >= want - 1.0 {
+                        edit.auto_fit = false;
+                    }
+                }
+            }
 
             if ui.input(|i| i.key_pressed(Key::Enter))
                 && !ui.input(|i| i.modifiers.shift)
@@ -556,6 +614,12 @@ fn show_edit_window(
                 }
             }
         });
+
+    if edit_window_user_resized(ctx, area_id) {
+        if let TooltipState::Edit(edit) = state {
+            edit.auto_fit = false;
+        }
+    }
 
     if !open || cancel {
         return state.cancel();

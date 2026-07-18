@@ -17,8 +17,48 @@ mod tests {
     use super::*;
     use sqyre_domain::{
         root_loop, Action, ActionId, ActionKind, ConditionBlock, CoordinateOutputs, CoordinateRef,
-        DetectionBranch, MatchMode, MouseButton, RepeatMode, ScalarValue, WaitTilFoundConfig,
+        DetectionBranch, MatchMode, MouseButton, RepeatMode, ScalarValue, VariableAssignment,
+        WaitTilFoundConfig,
     };
+
+    #[test]
+    fn loop_iterations_come_before_name() {
+        let a = Action {
+            id: ActionId::new(),
+            kind: ActionKind::Loop {
+                name: "batch".into(),
+                count: ScalarValue::Int(3),
+                subactions: vec![],
+            },
+        };
+        let params = a.display_params();
+        let (summary, _) = split_display_params(&params);
+        assert_eq!(summary[0].label, "Iterations");
+        assert_eq!(summary[0].value, "3");
+        assert_eq!(summary[1].label, "Name");
+    }
+
+    #[test]
+    fn set_variable_multi_assignments_in_pills() {
+        let a = Action {
+            id: ActionId::new(),
+            kind: ActionKind::SetVariable {
+                assignments: vec![
+                    VariableAssignment::new("a", ScalarValue::Int(1)),
+                    VariableAssignment::new("b", ScalarValue::String("x".into())),
+                ],
+            },
+        };
+        let pills = a.tree_summary_pills();
+        assert!(pills
+            .iter()
+            .any(|p| p.prefix.as_deref() == Some("Variable") && p.text == "a"));
+        assert!(pills
+            .iter()
+            .any(|p| p.prefix.as_deref() == Some("Variable") && p.text == "b"));
+        assert!(pills.iter().any(|p| p.text == "1"));
+        assert!(pills.iter().any(|p| p.text == "x"));
+    }
 
     #[test]
     fn wait_summary_includes_time_ms() {
@@ -83,8 +123,7 @@ mod tests {
         let a = Action {
             id: ActionId::new(),
             kind: ActionKind::SetVariable {
-                variable_name: "count".into(),
-                value: ScalarValue::Int(1),
+                assignments: vec![VariableAssignment::new("count", ScalarValue::Int(1))],
             },
         };
         let pills = a.tree_summary_pills();
@@ -137,7 +176,7 @@ mod tests {
     }
 
     #[test]
-    fn conditional_summary_joins_clauses() {
+    fn conditional_summary_omits_clauses_from_pills() {
         let a = Action {
             id: ActionId::new(),
             kind: ActionKind::Conditional {
@@ -161,17 +200,48 @@ mod tests {
             },
         };
         let pills = a.tree_summary_pills();
-        let if_pill = pills
-            .iter()
-            .find(|p| p.text.contains('|'))
-            .expect("If pill");
-        assert!(if_pill.text.contains("${a} == 1"));
-        assert!(if_pill.text.contains("${b} is set"));
+        assert!(pills.iter().any(|p| p.text == "gate"));
         assert!(pills.iter().any(|p| p.text.contains("any (OR)")));
+        assert!(!pills.iter().any(|p| p.text.contains("==") || p.text.contains("is set")));
+        let params = a.display_params();
+        let (_, extra) = split_display_params(&params);
+        assert!(extra.iter().any(|p| p.label == "If" && p.value.contains("${a} == 1")));
     }
 
     #[test]
-    fn find_pixel_shows_color_and_bindings() {
+    fn while_summary_omits_clauses_from_pills() {
+        let a = Action {
+            id: ActionId::new(),
+            kind: ActionKind::While {
+                condition: ConditionBlock {
+                    name: "spin".into(),
+                    match_mode: MatchMode::All,
+                    clauses: vec![sqyre_domain::ConditionClause {
+                        left: ScalarValue::String("${n}".into()),
+                        operator: "<".into(),
+                        right: ScalarValue::Int(10),
+                    }],
+                },
+                max_iterations: 5,
+                subactions: vec![],
+            },
+        };
+        let pills = a.tree_summary_pills();
+        assert!(pills.iter().any(|p| p.text == "spin"));
+        assert!(pills.iter().any(|p| p.text.contains("all (AND)")));
+        assert!(!pills.iter().any(|p| p.text.contains("${n}") || p.text.contains("<")));
+        let params = a.display_params();
+        let (_, extra) = split_display_params(&params);
+        assert!(extra
+            .iter()
+            .any(|p| p.label == "While" && p.value.contains("${n} < 10")));
+        assert!(extra
+            .iter()
+            .any(|p| p.label == "Max iterations" && p.value == "5"));
+    }
+
+    #[test]
+    fn find_pixel_shows_color_not_outputs_or_search_area() {
         let a = Action {
             id: ActionId::new(),
             kind: ActionKind::FindPixel {
@@ -189,14 +259,38 @@ mod tests {
             },
         };
         let pills = a.tree_summary_pills();
+        assert!(pills.iter().any(|p| p.text == "red"));
         assert!(pills.iter().any(|p| p.text == "#ff0000"));
-        assert!(pills
-            .iter()
-            .any(|p| p.prefix.as_deref() == Some("X") && p.text == "px"));
-        assert!(pills
-            .iter()
-            .any(|p| p.prefix.as_deref() == Some("Y") && p.text == "py"));
+        assert!(!pills.iter().any(|p| p.text == "px" || p.text == "py"));
+        assert!(!pills.iter().any(|p| p.text.contains("Box")));
         assert_eq!(action_icon_glyph(&a), "🎨");
+    }
+
+    #[test]
+    fn image_search_tree_omits_search_area_and_outputs() {
+        let a = Action {
+            id: ActionId::new(),
+            kind: ActionKind::ImageSearch {
+                name: "find".into(),
+                targets: vec!["a".into()],
+                search_area: CoordinateRef("Prog~Box".into()),
+                tolerance: 0.9,
+                blur: 0,
+                detection: DetectionBranch {
+                    coords: CoordinateOutputs {
+                        output_x_variable: "x".into(),
+                        output_y_variable: "y".into(),
+                    },
+                    ..DetectionBranch::default()
+                },
+            },
+        };
+        let pills = a.tree_summary_pills();
+        assert_eq!(pills.len(), 1);
+        assert_eq!(pills[0].text, "find");
+        let params = a.display_params();
+        let (_, extra) = split_display_params(&params);
+        assert!(extra.iter().any(|p| p.label == "Search Area"));
     }
 
     #[test]
@@ -204,8 +298,10 @@ mod tests {
         let a = Action {
             id: ActionId::new(),
             kind: ActionKind::SetVariable {
-                variable_name: "sum".into(),
-                value: ScalarValue::String("1+2".into()),
+                assignments: vec![VariableAssignment::new(
+                    "sum",
+                    ScalarValue::String("1+2".into()),
+                )],
             },
         };
         let pills = a.tree_summary_pills();
@@ -260,8 +356,10 @@ mod tests {
             ),
             (
                 ActionKind::SetVariable {
-                    variable_name: "a".into(),
-                    value: ScalarValue::String("1+2".into()),
+                    assignments: vec![VariableAssignment::new(
+                        "a",
+                        ScalarValue::String("1+2".into()),
+                    )],
                 },
                 "x",
             ),
