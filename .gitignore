@@ -7,6 +7,11 @@ notes.md
 .history/
 *.vsix
 
+# Local db.yaml conversion scratch (one-shot; do not commit)
+/db.yaml
+/db.yaml.bak
+/crates/sqyre-persist/examples/convert_db.rs
+
 # OCR trained data (downloaded; not committed)
 /assets/tessdata/eng.traineddata
 
