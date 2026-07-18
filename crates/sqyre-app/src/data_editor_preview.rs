@@ -42,6 +42,7 @@ pub(crate) fn paint_preview_coord_chip(
     known: &HashSet<String>,
     is_dark: bool,
     validation: &EntryValidation,
+    help: &str,
 ) {
     const CHIP_W: f32 = 76.0;
     const CHIP_H: f32 = 24.0;
@@ -94,6 +95,8 @@ pub(crate) fn paint_preview_coord_chip(
     }
     if let Some(tip) = var_pills::entry_validation_tip(validation) {
         resp.on_hover_text(tip);
+    } else if !help.is_empty() {
+        resp.on_hover_text(help);
     }
 }
 

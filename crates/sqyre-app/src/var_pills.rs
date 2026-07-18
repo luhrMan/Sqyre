@@ -519,9 +519,13 @@ pub fn var_name_text_edit(
     known: &HashSet<String>,
     is_dark: bool,
     desired_width: f32,
+    help: &str,
 ) {
     ui.horizontal(|ui| {
-        ui.label(label);
+        let lab = ui.label(label);
+        if !help.is_empty() {
+            lab.on_hover_text(help);
+        }
         let width = resolve_edit_width(ui, desired_width, 0.0);
         let id = ui.id().with(("var_name_edit", label));
         let focused = ui.memory(|m| m.has_focus(id));
@@ -587,6 +591,7 @@ pub fn entry_validation_tip(v: &EntryValidation) -> Option<&str> {
 ///
 /// Pass a finite width, or [`f32::INFINITY`] to fill the remaining row
 /// (after the label, leaving room for a validation icon when present).
+#[allow(clippy::too_many_arguments)]
 pub fn validated_var_ref_edit(
     ui: &mut egui::Ui,
     label: &str,
@@ -595,9 +600,13 @@ pub fn validated_var_ref_edit(
     is_dark: bool,
     desired_width: f32,
     validation: &EntryValidation,
+    help: &str,
 ) {
     ui.horizontal(|ui| {
-        ui.label(label);
+        let lab = ui.label(label);
+        if !help.is_empty() {
+            lab.on_hover_text(help);
+        }
         let width = resolve_edit_width(ui, desired_width, validation_icon_reserve(ui, validation));
         let id = ui.id().with(("validated_var_ref", label));
         let focused = ui.memory(|m| m.has_focus(id));
@@ -635,9 +644,13 @@ pub fn validated_var_ref_multiline_edit(
     desired_width: f32,
     rows: usize,
     validation: &EntryValidation,
+    help: &str,
 ) {
     ui.horizontal(|ui| {
-        ui.label(label);
+        let lab = ui.label(label);
+        if !help.is_empty() {
+            lab.on_hover_text(help);
+        }
         paint_entry_validation_icon(ui, validation);
     });
     let width = resolve_edit_width(ui, desired_width, 0.0);

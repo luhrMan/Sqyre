@@ -105,6 +105,7 @@ pub fn show_meta_and_hotkey(app: &mut SqyreApp, ui: &mut egui::Ui) -> bool {
         let mut trigger_changed = false;
         if ui
             .selectable_label(trigger == HotkeyTrigger::Press, "On press")
+            .on_hover_text(crate::action_tooltip::help::META_HOTKEY_PRESS)
             .clicked()
         {
             trigger = HotkeyTrigger::Press;
@@ -112,6 +113,7 @@ pub fn show_meta_and_hotkey(app: &mut SqyreApp, ui: &mut egui::Ui) -> bool {
         }
         if ui
             .selectable_label(trigger == HotkeyTrigger::Release, "On release")
+            .on_hover_text(crate::action_tooltip::help::META_HOTKEY_RELEASE)
             .clicked()
         {
             trigger = HotkeyTrigger::Release;
@@ -130,6 +132,7 @@ pub fn show_meta_and_hotkey(app: &mut SqyreApp, ui: &mut egui::Ui) -> bool {
                 !running && !app.macros[idx].hotkey.is_empty(),
                 egui::Button::new("Clear"),
             )
+            .on_hover_text(crate::action_tooltip::help::META_HOTKEY_CLEAR)
             .clicked()
         {
             app.apply_hotkey_to_selected(Vec::new(), None);

@@ -136,7 +136,8 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                 egui::TextEdit::singleline(&mut app.macro_list_filter)
                     .desired_width(f32::INFINITY)
                     .hint_text("Search macros or tags…"),
-            );
+            )
+            .on_hover_text("Filter by macro name or tag.");
             ui.separator();
             egui::ScrollArea::vertical().show(ui, |ui| {
                 let width = ui.available_width();

@@ -243,6 +243,7 @@ impl SettingsUi {
                 &mut self.settings.highlight_active_action,
                 "Highlight the currently executing action",
             )
+            .on_hover_text("Scroll and tint the tree row of the action running now.")
             .changed()
         {
             self.mark_dirty();
