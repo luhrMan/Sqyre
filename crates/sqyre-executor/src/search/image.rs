@@ -167,27 +167,34 @@ fn capture_and_match(
     order: &MatchOrder,
     macro_: &Macro,
 ) -> Result<Vec<NamedPoint>> {
-    let resolver = exec.deps.resolver.ok_or_else(|| {
-        ExecError::Message("Image Search: coordinate resolver not configured".into())
-    })?;
+    // Capture/resolve/blur failures are logged as misses so wait-until-found can retry
+    // instead of aborting the macro (same policy as OCR / Find Pixel).
+    let Some(resolver) = exec.deps.resolver else {
+        exec.log(action_id, "Image Search: missing CoordinateResolver");
+        return Ok(Vec::new());
+    };
     if exec.deps.capturer.is_none() {
-        return Err(ExecError::Message(
-            "Image Search: screen capturer not configured".into(),
-        ));
+        exec.log(action_id, "Image Search: missing ScreenCapturer");
+        return Ok(Vec::new());
     }
-    let icons = exec
-        .deps
-        .icons
-        .ok_or_else(|| ExecError::Message("Image Search: icon store not configured".into()))?;
+    let Some(icons) = exec.deps.icons else {
+        exec.log(action_id, "Image Search: missing IconStore");
+        return Ok(Vec::new());
+    };
 
-    let (lx, ty, rx, by) = resolver
-        .resolve_search_area(search_area, macro_)
-        .map_err(|e| {
-            ExecError::Message(format!(
-                "Image Search: resolve search area {}: {e}",
-                search_area.display_label()
-            ))
-        })?;
+    let (lx, ty, rx, by) = match resolver.resolve_search_area(search_area, macro_) {
+        Ok(v) => v,
+        Err(e) => {
+            exec.log(
+                action_id,
+                format!(
+                    "Image Search: resolve search area {}: {e}",
+                    search_area.display_label()
+                ),
+            );
+            return Ok(Vec::new());
+        }
+    };
     let w = (rx - lx).max(0);
     let h = (by - ty).max(0);
     exec.log(
@@ -198,12 +205,16 @@ fn capture_and_match(
     );
 
     let capture_started = Instant::now();
-    let (img, origin) = {
-        let c = exec.deps.capturer.as_mut().ok_or_else(|| {
-            ExecError::Message("Image Search: screen capturer not configured".into())
-        })?;
-        c.capture_search_area_rgb(lx, ty, rx, by)
-            .map_err(|e| ExecError::Message(format!("Image Search: capture: {e}")))?
+    let Some(capturer) = exec.deps.capturer.as_mut() else {
+        exec.log(action_id, "Image Search: missing ScreenCapturer");
+        return Ok(Vec::new());
+    };
+    let (img, origin) = match capturer.capture_search_area_rgb(lx, ty, rx, by) {
+        Ok(v) => v,
+        Err(e) => {
+            exec.log(action_id, format!("Image Search: capture: {e}"));
+            return Ok(Vec::new());
+        }
     };
     let search = img.into_image_buf();
     exec.log_image(action_id, "1. Capture (search area)", &search);
@@ -211,8 +222,13 @@ fn capture_and_match(
     let want_pipeline = exec.log_images_enabled();
     // Keep an unblurred copy only for diagnostics overlays / match crops.
     let search_raw = want_pipeline.then(|| search.clone());
-    let search_blurred = blur_image_owned(search, kernel)
-        .map_err(|e| ExecError::Message(format!("Image Search: blur: {e}")))?;
+    let search_blurred = match blur_image_owned(search, kernel) {
+        Ok(b) => b,
+        Err(e) => {
+            exec.log(action_id, format!("Image Search: blur: {e}"));
+            return Ok(Vec::new());
+        }
+    };
     if blur > 0 {
         exec.log_image(
             action_id,
