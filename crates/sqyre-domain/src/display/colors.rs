@@ -55,6 +55,18 @@ pub fn format_hex_color(rgba: [u8; 4]) -> String {
     format!("#{:02x}{:02x}{:02x}", rgba[0], rgba[1], rgba[2])
 }
 
+/// Strip `#` and leading AA when 8 hex digits; return lowercase RGB body.
+///
+/// Does not validate length — callers that need a real color should use
+/// [`parse_hex_color`].
+pub fn normalize_hex_rgb(hex: &str) -> String {
+    let mut h = hex.trim().trim_start_matches('#').to_ascii_lowercase();
+    if h.len() == 8 {
+        h = h[2..].to_string();
+    }
+    h
+}
+
 /// Store a user-chosen color for a category key.
 pub fn set_custom_action_color(category_key: &str, rgba: [u8; 4]) {
     let mut guard = CUSTOM_ACTION_COLORS.write().unwrap();
@@ -139,16 +151,9 @@ pub fn nested_var_ref_color(is_dark: bool) -> [u8; 4] {
     }
 }
 
-/// Compact glyph for the type icon badge.
-///
-/// Glyphs must exist in egui's default proportional fonts (Ubuntu-Light, Hack,
-/// NotoEmoji, emoji-icon-font). Mathematical alphanumeric / obscure symbols
-
+/// Parse `#RGB`, `#RRGGBB`, or `#AARRGGBB` into RGBA (alpha forced to 255).
 pub fn parse_hex_color(hex: &str) -> Option<[u8; 4]> {
-    let mut h = hex.trim().trim_start_matches('#').to_ascii_lowercase();
-    if h.len() == 8 {
-        h = h[2..].to_string(); // drop leading alpha when present
-    }
+    let h = normalize_hex_rgb(hex);
     if h.len() == 3 {
         let r = u8::from_str_radix(&h[0..1].repeat(2), 16).ok()?;
         let g = u8::from_str_radix(&h[1..2].repeat(2), 16).ok()?;

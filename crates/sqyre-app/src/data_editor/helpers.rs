@@ -31,17 +31,7 @@ pub(crate) fn scalar_to_edit(v: &ScalarValue) -> String {
 }
 
 pub(crate) fn parse_scalar(s: &str) -> ScalarValue {
-    let s = s.trim();
-    if s.is_empty() {
-        return ScalarValue::Null;
-    }
-    if let Ok(i) = s.parse::<i64>() {
-        return ScalarValue::Int(i);
-    }
-    if let Ok(f) = s.parse::<f64>() {
-        return ScalarValue::Float(f);
-    }
-    ScalarValue::String(s.to_string())
+    ScalarValue::parse_edit(s)
 }
 
 pub(crate) fn parse_i32(s: &str) -> Option<i32> {
@@ -139,4 +129,95 @@ pub(crate) fn copy_image_as_png(
     }
     let img = image::load_from_memory(&bytes).map_err(|e| format!("decode: {e}"))?;
     img.save(dest).map_err(|e| format!("save png: {e}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sqyre_persist::{ProgramCatalog, ProgramItem};
+
+    #[test]
+    fn unique_name_appends_suffix() {
+        assert_eq!(unique_name("Item", |_| false), "Item");
+        assert_eq!(unique_name("Item", |n| n == "Item"), "Item 2");
+        assert_eq!(
+            unique_name("Item", |n| n == "Item" || n == "Item 2"),
+            "Item 3"
+        );
+    }
+
+    #[test]
+    fn parse_scalar_kinds() {
+        assert_eq!(parse_scalar(""), ScalarValue::Null);
+        assert_eq!(parse_scalar("42"), ScalarValue::Int(42));
+        assert_eq!(parse_scalar("1.5"), ScalarValue::Float(1.5));
+        assert_eq!(parse_scalar("true"), ScalarValue::Bool(true));
+        assert_eq!(parse_scalar("FALSE"), ScalarValue::Bool(false));
+        assert_eq!(parse_scalar("hello"), ScalarValue::String("hello".into()));
+    }
+
+    #[test]
+    fn form_coord_literal_rejects_refs() {
+        assert_eq!(form_coord_literal("100"), Some(100));
+        assert_eq!(form_coord_literal(""), Some(0));
+        assert_eq!(form_coord_literal("${x}"), None);
+        assert_eq!(form_coord_literal("1+2"), None);
+    }
+
+    #[test]
+    fn item_tag_completion_filters() {
+        let opts = item_tag_completion_options(
+            "hel",
+            &["healing".into()],
+            &[
+                "healing".into(),
+                "helm".into(),
+                "herb".into(),
+                "other".into(),
+            ],
+            10,
+        );
+        assert_eq!(opts, vec!["helm".to_string()]);
+    }
+
+    #[test]
+    fn collect_program_item_tags_dedups() {
+        let mut cat = ProgramCatalog::default();
+        cat.create_program("Game").unwrap();
+        cat.upsert_item(
+            "Game",
+            ProgramItem {
+                name: "A".into(),
+                mask: String::new(),
+                stack_max: 0,
+                grid_cols: 1,
+                grid_rows: 1,
+                tags: vec!["alpha".into(), "beta".into()],
+            },
+        )
+        .unwrap();
+        cat.upsert_item(
+            "Game",
+            ProgramItem {
+                name: "B".into(),
+                mask: String::new(),
+                stack_max: 0,
+                grid_cols: 1,
+                grid_rows: 1,
+                tags: vec!["beta".into(), "gamma".into()],
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            collect_program_item_tags(&cat, "Game"),
+            vec!["alpha", "beta", "gamma"]
+        );
+    }
+
+    #[test]
+    fn overlay_hex_or_empty_uses_default() {
+        let c = eframe::egui::Color32::from_rgb(0x12, 0x34, 0x56);
+        assert!(overlay_hex_or_empty(c, "#123456").is_empty());
+        assert!(!overlay_hex_or_empty(c, "#000000").is_empty());
+    }
 }

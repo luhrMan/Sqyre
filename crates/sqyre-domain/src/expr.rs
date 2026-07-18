@@ -11,28 +11,8 @@ type Result<T> = std::result::Result<T, String>;
 /// Supports `+ - * / ^`, unary `+/-`, parentheses, functions (`sqrt`, `abs`,
 /// `round`, `floor`, `ceil`, `trunc`, `sin`, `cos`, `tan`, `ln`), and `~pi` / `~e`.
 pub fn evaluate_expression(expr: &str, macro_: &Macro) -> Result<f64> {
-    let resolved = resolve_text_for_expr(expr, macro_)?;
+    let resolved = crate::expand_variable_refs(expr, macro_)?;
     evaluate_numeric(&resolved)
-}
-
-fn resolve_text_for_expr(text: &str, macro_: &Macro) -> Result<String> {
-    let segs = sqyre_varref::segments(text);
-    if segs.is_empty() {
-        return Ok(text.to_string());
-    }
-    let mut out = String::new();
-    for seg in segs {
-        if !seg.is_ref {
-            out.push_str(&seg.text);
-            continue;
-        }
-        let val = macro_
-            .variables
-            .get(&seg.name)
-            .ok_or_else(|| format!("unresolved variable ${{{}}}", seg.name))?;
-        out.push_str(&val.as_display());
-    }
-    Ok(out)
 }
 
 fn evaluate_numeric(expr: &str) -> Result<f64> {

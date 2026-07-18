@@ -41,5 +41,5 @@ pub fn owns(display: *mut c_void) -> bool {
         return false;
     }
     let key = display as usize;
-    SECONDARY.lock().iter().any(|&d| d == key)
+    SECONDARY.lock().contains(&key)
 }

@@ -1,7 +1,7 @@
 //! Helpers shared across the image search, OCR, and find-pixel implementations.
 
-use crate::error::{ExecError, FlowSignal, Result};
-use crate::run::{execute_action, Executor};
+use crate::error::Result;
+use crate::run::{run_children, Executor};
 use sqyre_domain::{Action, Macro, ScalarValue, WaitTilFoundConfig};
 use std::time::{Duration, Instant};
 
@@ -10,10 +10,7 @@ pub(super) fn run_children_flow(
     children: &[Action],
     macro_: &mut Macro,
 ) -> Result<()> {
-    for child in children {
-        execute_action(exec, child, macro_)?;
-    }
-    Ok(())
+    run_children(exec, children, macro_)
 }
 
 pub(super) fn set_coord_outputs(
@@ -39,18 +36,6 @@ pub(super) fn clear_coord_outputs(macro_: &mut Macro, coords: &sqyre_domain::Coo
     macro_.variables.delete(&coords.output_y_variable);
 }
 
-/// Swallow Break/Continue from nested detection children.
-pub(super) fn run_detection_children(
-    exec: &mut Executor<'_>,
-    children: &[Action],
-    macro_: &mut Macro,
-) -> Result<()> {
-    match run_children_flow(exec, children, macro_) {
-        Err(ExecError::Flow(FlowSignal::Break | FlowSignal::Continue)) => Ok(()),
-        other => other,
-    }
-}
-
 /// Run children when the attempt hit, or when `run_branch_on_no_find` on a miss.
 /// Returns `hit` unchanged.
 pub(super) fn run_detection_outcome(
@@ -61,9 +46,45 @@ pub(super) fn run_detection_outcome(
     macro_: &mut Macro,
 ) -> Result<bool> {
     if hit || run_branch_on_no_find {
-        run_detection_children(exec, children, macro_)?;
+        run_children_flow(exec, children, macro_)?;
     }
     Ok(hit)
+}
+
+/// Shared wait → repeat → single-shot shell for FindPixel / OCR-style detection.
+///
+/// `try_once` produces the latest attempt state. `is_hit` decides whether wait/repeat
+/// treat it as found. `on_outcome` applies outputs and runs branch children; its
+/// returned bool is the hit flag (used by the repeat loop).
+///
+/// `macro_` is passed into callbacks so try/outcome do not both capture it.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn run_detection_shell<T>(
+    exec: &mut Executor<'_>,
+    macro_: &mut Macro,
+    wait: &WaitTilFoundConfig,
+    wait_interval_ms: i32,
+    repeat_interval_ms: i32,
+    mut try_once: impl FnMut(&mut Executor<'_>, &Macro) -> Result<T>,
+    is_hit: impl Fn(&T) -> bool,
+    mut on_outcome: impl FnMut(&mut Executor<'_>, &mut Macro, &T) -> Result<bool>,
+) -> Result<()> {
+    let mut state = try_once(exec, macro_)?;
+    maybe_wait_until_found(exec, wait, is_hit(&state), wait_interval_ms, |exec| {
+        state = try_once(exec, macro_)?;
+        Ok(is_hit(&state))
+    })?;
+
+    if maybe_repeat_while_found(exec, wait, repeat_interval_ms, |exec, refresh| {
+        if refresh {
+            state = try_once(exec, macro_)?;
+        }
+        on_outcome(exec, macro_, &state)
+    })? {
+        return Ok(());
+    }
+
+    on_outcome(exec, macro_, &state).map(|_| ())
 }
 
 pub(super) fn retry_while_not_found(

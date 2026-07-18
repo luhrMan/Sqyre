@@ -39,6 +39,34 @@ fn color_alpha_drag(ui: &mut egui::Ui, label: &str, color: &mut egui::Color32) {
 }
 
 impl DataEditor {
+    /// Name field + optional screen-record arm/cancel controls.
+    fn paint_name_record_row(
+        &mut self,
+        ui: &mut egui::Ui,
+        screen_click: &ScreenClickBridge,
+        record_tip: &str,
+        recording_msg: &str,
+        arm: impl FnOnce(&ScreenClickBridge),
+    ) {
+        ui.horizontal(|ui| {
+            ui.label("Name");
+            ui.add(
+                egui::TextEdit::singleline(&mut self.form_name)
+                    .desired_width(ui.available_width() - 48.0),
+            );
+            let armed = screen_click.is_armed();
+            if theme::record_icon_button(ui, record_tip, !armed).clicked() {
+                self.save_after_record = false;
+                arm(screen_click);
+                self.set_ok(recording_msg);
+            }
+            if armed && ui.button("Cancel").clicked() {
+                self.save_after_record = false;
+                screen_click.disarm();
+            }
+        });
+    }
+
     pub(crate) fn load_form(&mut self, catalog: &ProgramCatalog, settings: &UserSettings) {
         self.clear_status();
         form_state::load_tab(self.tab, self, catalog, settings);
@@ -304,25 +332,13 @@ impl DataEditor {
                 ui.heading("Point");
                 self.program_selector(ui, catalog);
                 ui.add_space(4.0);
-                ui.horizontal(|ui| {
-                    ui.label("Name");
-                    ui.add(
-                        egui::TextEdit::singleline(&mut self.form_name)
-                            .desired_width(ui.available_width() - 48.0),
-                    );
-                    let armed = screen_click.is_armed();
-                    if theme::record_icon_button(ui, "Click on screen to capture X/Y", !armed)
-                        .clicked()
-                    {
-                        self.save_after_record = false;
-                        screen_click.arm_point();
-                        self.set_ok("Recording… left-click to capture.");
-                    }
-                    if armed && ui.button("Cancel").clicked() {
-                        self.save_after_record = false;
-                        screen_click.disarm();
-                    }
-                });
+                self.paint_name_record_row(
+                    ui,
+                    screen_click,
+                    "Click on screen to capture X/Y",
+                    "Recording… left-click to capture.",
+                    ScreenClickBridge::arm_point,
+                );
                 ui.weak("X/Y overlay the preview; integers or ${var}.");
                 let x = form_coord_literal(&self.form_x);
                 let y = form_coord_literal(&self.form_y);
@@ -355,29 +371,13 @@ impl DataEditor {
                 ui.heading("Search Area");
                 self.program_selector(ui, catalog);
                 ui.add_space(4.0);
-                ui.horizontal(|ui| {
-                    ui.label("Name");
-                    ui.add(
-                        egui::TextEdit::singleline(&mut self.form_name)
-                            .desired_width(ui.available_width() - 48.0),
-                    );
-                    let armed = screen_click.is_armed();
-                    if theme::record_icon_button(
-                        ui,
-                        "Two clicks: opposite corners of the area",
-                        !armed,
-                    )
-                    .clicked()
-                    {
-                        self.save_after_record = false;
-                        screen_click.arm_search_area();
-                        self.set_ok("Recording… click two corners.");
-                    }
-                    if armed && ui.button("Cancel").clicked() {
-                        self.save_after_record = false;
-                        screen_click.disarm();
-                    }
-                });
+                self.paint_name_record_row(
+                    ui,
+                    screen_click,
+                    "Two clicks: opposite corners of the area",
+                    "Recording… click two corners.",
+                    ScreenClickBridge::arm_search_area,
+                );
                 ui.weak("Bounds overlay the preview edges; integers or ${var}.");
                 let lx = form_coord_literal(&self.form_left);
                 let ty = form_coord_literal(&self.form_top);

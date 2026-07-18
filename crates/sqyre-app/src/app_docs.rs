@@ -3,6 +3,7 @@
 use crate::action_logs_ui::LogsImageCache;
 use crate::action_tooltip::TooltipState;
 use crate::add_action::AddActionPicker;
+use crate::app_backends::RunState;
 use crate::data_editor::DataEditor;
 use crate::hotkey_record::HotkeyRecordUi;
 use crate::icon_cache::IconCache;
@@ -13,14 +14,15 @@ use crate::preview_tooltip::PreviewTooltipCache;
 use crate::recording_overlay::RecordingOverlay;
 use crate::settings::SettingsUi;
 use crate::ui_macro_tree::TreeDragMode;
-use crate::app_backends::RunState;
 use crate::variables_panel;
 use crate::{docs_fixture, tray, SqyreApp};
 use eframe::egui;
 use parking_lot::Mutex;
 use sqyre_domain::ActionId;
 use sqyre_executor::{SharedActionLog, SharedHighlighter, SharedRuntimeVars};
-use sqyre_hotkeys::{ContinueWaitBridge, HotkeyService, MacroHotkeyBridge, NullHotkeys, ScreenClickBridge};
+use sqyre_hotkeys::{
+    ContinueWaitBridge, HotkeyService, MacroHotkeyBridge, NullHotkeys, ScreenClickBridge,
+};
 use sqyre_persist::UserSettings;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -144,5 +146,4 @@ impl SqyreApp {
     pub fn docs_settings(&self) -> &UserSettings {
         self.settings_ui.settings()
     }
-
 }

@@ -30,7 +30,7 @@ Cargo workspace at the repo root (egui + PureCV). **`make` / `./bin/sqyre` is th
 
 ## Develop
 
-Requires **Rust ≥ 1.92** (egui 0.34 / PureCV). The `.devcontainer` pins `1.92.0` plus clang/Tesseract for OCR.
+Requires **Rust ≥ 1.92** (egui 0.34 / PureCV). The repo pins `1.92.0` via [`rust-toolchain.toml`](../rust-toolchain.toml); the `.devcontainer` matches that plus clang/Tesseract for OCR.
 
 Linux automation/capture need X11 (`libx11-dev`, `libxtst-dev`).
 
@@ -39,7 +39,9 @@ From the repo root:
 ```bash
 make                 # ./bin/sqyre (debug)
 make release         # ./bin/sqyre (release)
-make test
+make check           # fmt + clippy (-D warnings) + cargo deny
+make test            # cargo nextest (falls back to cargo test)
+make coverage        # llvm-cov HTML + lcov under target/coverage/
 make run             # cargo run -p sqyre-app; loads ~/.sqyre/db.yaml
 make appimage        # Linux AppImage
 ```
@@ -47,9 +49,11 @@ make appimage        # Linux AppImage
 Or directly:
 
 ```bash
-cargo test
+cargo nextest run --workspace
 cargo run -p sqyre-app
 ```
+
+Optional host tools (also installed in the `.devcontainer` image): `cargo-nextest`, `cargo-deny`, `cargo-llvm-cov`, `cargo-machete`.
 
 Do not expect X11 inside the container — build there, run the binary on the host.
 

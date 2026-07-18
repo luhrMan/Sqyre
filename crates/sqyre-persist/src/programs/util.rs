@@ -10,6 +10,86 @@ pub(super) fn ensure_resolution(p: &mut ProgramData, res: &str) {
     p.search_areas.entry(res.to_string()).or_default();
 }
 
+/// Upsert into a resolution-scoped map (`points` / `search_areas`).
+pub(super) fn upsert_resolution_entity<T>(
+    catalog: &mut ProgramCatalog,
+    program: &str,
+    key: String,
+    value: T,
+    maps: impl FnOnce(&mut ProgramData) -> &mut BTreeMap<String, BTreeMap<String, T>>,
+) -> Result<()> {
+    let res = catalog.default_resolution_key();
+    let p = catalog.program_mut(program)?;
+    ensure_resolution(p, &res);
+    maps(p).get_mut(&res).unwrap().insert(key, value);
+    Ok(())
+}
+
+/// Delete from a resolution-scoped map.
+pub(super) fn delete_resolution_entity<T>(
+    catalog: &mut ProgramCatalog,
+    program: &str,
+    name: &str,
+    kind: &str,
+    maps: impl FnOnce(&mut ProgramData) -> &mut BTreeMap<String, BTreeMap<String, T>>,
+) -> Result<()> {
+    let res = catalog.default_resolution_key();
+    let p = catalog.program_mut(program)?;
+    let map = maps(p)
+        .get_mut(&res)
+        .ok_or_else(|| PersistError::Message(format!("no {kind}s for program {program}")))?;
+    if map.remove(name).is_none() {
+        return Err(PersistError::Message(format!("{kind} {name:?} not found")));
+    }
+    Ok(())
+}
+
+/// Rename inside a resolution-scoped map (ensures resolution bucket exists).
+pub(super) fn rename_resolution_entity<T>(
+    catalog: &mut ProgramCatalog,
+    program: &str,
+    old: &str,
+    new: &str,
+    kind: &str,
+    maps: impl FnOnce(&mut ProgramData) -> &mut BTreeMap<String, BTreeMap<String, T>>,
+    set_name: impl FnOnce(&mut T, String),
+) -> Result<()> {
+    let new = new.trim();
+    let res = catalog.default_resolution_key();
+    let p = catalog.program_mut(program)?;
+    ensure_resolution(p, &res);
+    let map = maps(p).get_mut(&res).unwrap();
+    rename_keyed_map(map, old, new, kind, set_name)
+}
+
+/// Upsert into a flat program-level map (`items` / `masks` / `collections`).
+pub(super) fn upsert_named_entity<T>(
+    catalog: &mut ProgramCatalog,
+    program: &str,
+    key: String,
+    value: T,
+    map: impl FnOnce(&mut ProgramData) -> &mut BTreeMap<String, T>,
+) -> Result<()> {
+    let p = catalog.program_mut(program)?;
+    map(p).insert(key, value);
+    Ok(())
+}
+
+/// Delete from a flat program-level map.
+pub(super) fn delete_named_entity<T>(
+    catalog: &mut ProgramCatalog,
+    program: &str,
+    name: &str,
+    kind: &str,
+    map: impl FnOnce(&mut ProgramData) -> &mut BTreeMap<String, T>,
+) -> Result<()> {
+    let p = catalog.program_mut(program)?;
+    if map(p).remove(name).is_none() {
+        return Err(PersistError::Message(format!("{kind} {name:?} not found")));
+    }
+    Ok(())
+}
+
 /// Shared BTreeMap rename: empty-name / conflict / remove / set-name / reinsert.
 /// Callers trim `new` and handle side effects (file renames, ref updates) outside.
 pub(super) fn rename_keyed_map<T>(

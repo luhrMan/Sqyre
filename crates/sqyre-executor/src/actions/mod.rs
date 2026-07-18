@@ -34,7 +34,7 @@ mod tests {
             id: ActionId::new(),
             kind: ActionKind::SetVariable {
                 variable_name: "out".into(),
-                value: serde_yaml::Value::String("${n}*2+1".into()),
+                value: sqyre_domain::ScalarValue::String("${n}*2+1".into()),
             },
         }]);
         execute_macro(&mut macro_, &mut backend).unwrap();
@@ -136,7 +136,7 @@ mod tests {
                         id: ActionId::new(),
                         kind: ActionKind::SetVariable {
                             variable_name: "i".into(),
-                            value: serde_yaml::Value::String("${i}+1".into()),
+                            value: sqyre_domain::ScalarValue::String("${i}+1".into()),
                         },
                     },
                 ],
@@ -349,6 +349,69 @@ mod tests {
         )
         .unwrap();
         assert!(backend.log.iter().any(|e| e == "sleep:7"));
+    }
+
+    #[test]
+    fn run_macro_respects_root_loop_count() {
+        use crate::backends::MapMacroLookup;
+        use std::collections::BTreeMap;
+        use std::sync::Arc;
+
+        let mut helper = Macro::new("helper", 0, vec![]);
+        // Root count 3 — must run children three times (not unwrap once).
+        helper.root = Action {
+            id: ActionId::root(),
+            kind: ActionKind::Loop {
+                name: "root".into(),
+                count: ScalarValue::Int(3),
+                subactions: vec![Action {
+                    id: ActionId::new(),
+                    kind: ActionKind::Wait {
+                        time: ScalarValue::Int(1),
+                    },
+                }],
+            },
+        };
+        let lookup = MapMacroLookup {
+            macros: BTreeMap::from([("helper".into(), Arc::new(helper))]),
+        };
+
+        let mut backend = RecordingBackend::default();
+        let mut macro_ = Macro::new("caller", 0, vec![]);
+        macro_.root = root_loop(vec![Action {
+            id: ActionId::new(),
+            kind: ActionKind::RunMacro {
+                macro_name: "helper".into(),
+            },
+        }]);
+        execute_macro_with(
+            &mut macro_,
+            ExecDeps {
+                automation: &mut backend,
+                capturer: None,
+                close_matches_distance: 0,
+                resolver: None,
+                icons: None,
+                macros: Some(&lookup),
+                continue_waiter: None,
+                window_focuser: None,
+                ocr: None,
+                stop_flag: None,
+                logger: None,
+                highlighter: None,
+                runtime_vars: None,
+                variables_dir: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            backend
+                .log
+                .iter()
+                .filter(|e| e.as_str() == "sleep:1")
+                .count(),
+            3
+        );
     }
 
     #[test]

@@ -1,8 +1,8 @@
 //! Domain model for macros and the 21 action kinds.
 //!
-//! Action `type` strings and field names follow the serialize codecs (newer
-//! tip including `while`, `navigateselect`, and `navigatekey`). UIDs are
-//! runtime-only unless injected for undo/clipboard snapshots.
+//! Action `type` strings and field names are the YAML wire vocabulary
+//! (`while`, `navigateselect`, `searcharea`, …). UIDs are runtime-only unless
+//! injected for undo/clipboard snapshots.
 
 mod action;
 mod blank;
@@ -23,7 +23,7 @@ pub use macro_model::*;
 pub use rename::*;
 pub use scalar::*;
 pub use set_value::{
-    looks_like_arithmetic, resolve_scalar_int, resolve_set_variable_value,
+    expand_variable_refs, looks_like_arithmetic, resolve_scalar_int, resolve_set_variable_value,
     resolve_variables_in_text,
 };
 pub use taxonomy::{

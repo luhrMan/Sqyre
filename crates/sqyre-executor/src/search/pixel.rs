@@ -1,8 +1,7 @@
 //! Find-pixel action.
 
 use super::common::{
-    clear_coord_outputs, maybe_repeat_while_found, maybe_wait_until_found, run_detection_outcome,
-    set_coord_outputs,
+    clear_coord_outputs, run_detection_outcome, run_detection_shell, set_coord_outputs,
 };
 use crate::error::{ExecError, Result};
 use crate::run::Executor;
@@ -34,58 +33,34 @@ pub(crate) fn execute_find_pixel(
     } = detection;
 
     let action_id = action.id;
-    let mut found = try_find_pixel(
+    run_detection_shell(
         exec,
-        action_id,
-        search_area,
-        target_color,
-        *color_tolerance,
         macro_,
-    );
-    maybe_wait_until_found(exec, wait, found.is_some(), 100, |exec| {
-        found = try_find_pixel(
-            exec,
-            action_id,
-            search_area,
-            target_color,
-            *color_tolerance,
-            macro_,
-        );
-        Ok(found.is_some())
-    })?;
-
-    if maybe_repeat_while_found(exec, wait, 200, |exec, refresh| {
-        if refresh {
-            found = try_find_pixel(
+        wait,
+        100,
+        200,
+        |exec, macro_| {
+            Ok(try_find_pixel(
                 exec,
                 action_id,
                 search_area,
                 target_color,
                 *color_tolerance,
                 macro_,
-            );
-        }
-        apply_find_pixel_outputs(exec, action_id, macro_, coords, found);
-        run_detection_outcome(
-            exec,
-            found.is_some(),
-            *run_branch_on_no_find,
-            subactions,
-            macro_,
-        )
-    })? {
-        return Ok(());
-    }
-
-    apply_find_pixel_outputs(exec, action_id, macro_, coords, found);
-    run_detection_outcome(
-        exec,
-        found.is_some(),
-        *run_branch_on_no_find,
-        subactions,
-        macro_,
+            ))
+        },
+        |found| found.is_some(),
+        |exec, macro_, found| {
+            apply_find_pixel_outputs(exec, action_id, macro_, coords, *found);
+            run_detection_outcome(
+                exec,
+                found.is_some(),
+                *run_branch_on_no_find,
+                subactions,
+                macro_,
+            )
+        },
     )
-    .map(|_| ())
 }
 
 fn apply_find_pixel_outputs(

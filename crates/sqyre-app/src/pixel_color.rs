@@ -27,11 +27,7 @@ pub fn sample_pixel_hex_with(
 
 /// Normalize a pasted/typed Find Pixel color.
 pub fn normalize_target_color(hex: &str) -> String {
-    let mut h = hex.trim().trim_start_matches('#').to_ascii_lowercase();
-    if h.len() == 8 {
-        h = h[2..].to_string();
-    }
-    h
+    sqyre_domain::normalize_hex_rgb(hex)
 }
 
 #[cfg(test)]

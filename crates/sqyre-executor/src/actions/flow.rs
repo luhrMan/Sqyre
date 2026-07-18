@@ -190,7 +190,7 @@ pub(crate) fn execute_pause(
 
 fn normalize_continue_key(keys: &[String]) -> Vec<String> {
     keys.iter()
-        .map(|k| k.trim().to_ascii_lowercase())
+        .map(|k| sqyre_hotkeys::normalize_key_name(k))
         .filter(|k| !k.is_empty())
         .collect()
 }
@@ -199,11 +199,7 @@ fn validate_continue_key(keys: &[String]) -> Result<()> {
     if keys.is_empty() {
         return Err(ExecError::Message("pause: continue key not set".into()));
     }
-    let mut sorted = keys.to_vec();
-    sorted.sort();
-    let mut failsafe: Vec<String> = vec!["ctrl".into(), "esc".into(), "shift".into()];
-    failsafe.sort();
-    if sorted == failsafe {
+    if sqyre_hotkeys::is_failsafe_chord(keys) {
         return Err(ExecError::Message(
             "pause: continue key cannot match the failsafe hotkey (esc + ctrl + shift)".into(),
         ));

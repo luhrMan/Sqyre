@@ -1,0 +1,70 @@
+# Supply-chain policy for the Sqyre workspace.
+# Docs: https://embarkstudios.github.io/cargo-deny/
+
+[graph]
+targets = [
+    "x86_64-unknown-linux-gnu",
+]
+all-features = false
+
+[advisories]
+# Only fail unmaintained advisories for direct workspace deps (ttf-parser is
+# transitive via egui/winit until upstream migrates).
+unmaintained = "workspace"
+yanked = "warn"
+ignore = [
+    # Transitive via wayland-scanner (build-time protocol XML), not untrusted user XML.
+    { id = "RUSTSEC-2026-0194", reason = "quick-xml via wayland-scanner; no untrusted XML at runtime" },
+    { id = "RUSTSEC-2026-0195", reason = "quick-xml via wayland-scanner; no untrusted XML at runtime" },
+]
+
+[licenses]
+# GPL-3.0 app: allow common OSI licenses compatible with distributing Sqyre.
+version = 2
+confidence-threshold = 0.8
+unused-allowed-license = "allow"
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "CC0-1.0",
+    "Unlicense",
+    "0BSD",
+    "BSL-1.0",
+    "OpenSSL",
+    "NCSA",
+    "MPL-2.0",
+    "OFL-1.1",
+    "Ubuntu-font-1.0",
+    "GPL-3.0",
+    "GPL-3.0-only",
+    "GPL-3.0-or-later",
+    "LGPL-2.1",
+    "LGPL-2.1-or-later",
+    "LGPL-3.0",
+    "LGPL-3.0-or-later",
+]
+
+[licenses.private]
+# Workspace crates are unpublished; skip their license expression check.
+ignore = true
+
+[bans]
+multiple-versions = "warn"
+# Path deps without an explicit version look like wildcards to cargo-deny.
+wildcards = "allow"
+highlight = "all"
+workspace-default-features = "allow"
+external-default-features = "allow"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

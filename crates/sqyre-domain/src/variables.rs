@@ -167,11 +167,19 @@ crate::string_enum! {
 }
 
 /// User-declared macro variable (persisted).
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
 pub struct VariableDecl {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub name: String,
+    #[serde(rename = "type", default)]
     pub type_: VariableType,
+    #[serde(
+        rename = "initialvalue",
+        default,
+        skip_serializing_if = "String::is_empty"
+    )]
     pub initial_value: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub description: String,
 }
 
@@ -260,7 +268,7 @@ mod known_tests {
                 id: ActionId::new(),
                 kind: ActionKind::SetVariable {
                     variable_name: "Count".into(),
-                    value: serde_yaml::Value::Null,
+                    value: ScalarValue::Null,
                 },
             },
             Action {
