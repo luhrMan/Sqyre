@@ -202,10 +202,14 @@ mod tests {
         let pills = a.tree_summary_pills();
         assert!(pills.iter().any(|p| p.text == "gate"));
         assert!(pills.iter().any(|p| p.text.contains("any (OR)")));
-        assert!(!pills.iter().any(|p| p.text.contains("==") || p.text.contains("is set")));
+        assert!(!pills
+            .iter()
+            .any(|p| p.text.contains("==") || p.text.contains("is set")));
         let params = a.display_params();
         let (_, extra) = split_display_params(&params);
-        assert!(extra.iter().any(|p| p.label == "If" && p.value.contains("${a} == 1")));
+        assert!(extra
+            .iter()
+            .any(|p| p.label == "If" && p.value.contains("${a} == 1")));
     }
 
     #[test]
@@ -229,7 +233,9 @@ mod tests {
         let pills = a.tree_summary_pills();
         assert!(pills.iter().any(|p| p.text == "spin"));
         assert!(pills.iter().any(|p| p.text.contains("all (AND)")));
-        assert!(!pills.iter().any(|p| p.text.contains("${n}") || p.text.contains("<")));
+        assert!(!pills
+            .iter()
+            .any(|p| p.text.contains("${n}") || p.text.contains("<")));
         let params = a.display_params();
         let (_, extra) = split_display_params(&params);
         assert!(extra

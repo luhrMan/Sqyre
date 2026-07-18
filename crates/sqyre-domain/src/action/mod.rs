@@ -437,7 +437,11 @@ pub struct ListColumn {
 /// One name/value pair inside [`ActionKind::SetVariable`].
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct VariableAssignment {
-    #[serde(rename = "variablename", default, skip_serializing_if = "String::is_empty")]
+    #[serde(
+        rename = "variablename",
+        default,
+        skip_serializing_if = "String::is_empty"
+    )]
     pub variable_name: String,
     #[serde(default)]
     pub value: ScalarValue,

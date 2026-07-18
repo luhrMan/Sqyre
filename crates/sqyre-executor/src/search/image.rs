@@ -1,8 +1,6 @@
 //! Image search action: capture → match template variants → run children per hit.
 
-use super::common::{
-    run_children_flow, run_detection_shell, set_coord_outputs, DetectionPass,
-};
+use super::common::{run_children_flow, run_detection_shell, set_coord_outputs, DetectionPass};
 use crate::action_log::{crop_match_preview, draw_rect_rgb};
 use crate::backends::{DesktopRect, ItemMeta};
 use crate::error::{ExecError, FlowSignal, Result};
