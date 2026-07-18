@@ -107,11 +107,11 @@ fn extend_drag_handle(acc: &mut egui::Rect, part: egui::Rect) {
 }
 
 pub(crate) fn rgba_pub(c: [u8; 4]) -> Color32 {
-    Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3])
+    crate::theme::rgba(c)
 }
 
 fn rgba(c: [u8; 4]) -> Color32 {
-    rgba_pub(c)
+    crate::theme::rgba(c)
 }
 
 /// Foreground that contrasts with a pastel/solid fill (relative luminance).

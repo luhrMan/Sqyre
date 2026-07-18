@@ -51,11 +51,11 @@ pub(super) fn run_detection_outcome(
     Ok(hit)
 }
 
-/// Shared wait → repeat → single-shot shell for FindPixel / OCR-style detection.
+/// Shared wait → repeat → single-shot shell for detection actions.
 ///
 /// `try_once` produces the latest attempt state. `is_hit` decides whether wait/repeat
 /// treat it as found. `on_outcome` applies outputs and runs branch children; its
-/// returned bool is the hit flag (used by the repeat loop).
+/// returned bool is the continue flag for the repeat loop (typically the hit flag).
 ///
 /// `macro_` is passed into callbacks so try/outcome do not both capture it.
 #[allow(clippy::too_many_arguments)]
@@ -67,7 +67,7 @@ pub(super) fn run_detection_shell<T>(
     repeat_interval_ms: i32,
     mut try_once: impl FnMut(&mut Executor<'_>, &Macro) -> Result<T>,
     is_hit: impl Fn(&T) -> bool,
-    mut on_outcome: impl FnMut(&mut Executor<'_>, &mut Macro, &T) -> Result<bool>,
+    mut on_outcome: impl FnMut(&mut Executor<'_>, &mut Macro, &T, DetectionPass) -> Result<bool>,
 ) -> Result<()> {
     let mut state = try_once(exec, macro_)?;
     maybe_wait_until_found(exec, wait, is_hit(&state), wait_interval_ms, |exec| {
@@ -79,12 +79,25 @@ pub(super) fn run_detection_shell<T>(
         if refresh {
             state = try_once(exec, macro_)?;
         }
-        on_outcome(exec, macro_, &state)
+        on_outcome(
+            exec,
+            macro_,
+            &state,
+            DetectionPass::Repeat { refresh },
+        )
     })? {
         return Ok(());
     }
 
-    on_outcome(exec, macro_, &state).map(|_| ())
+    on_outcome(exec, macro_, &state, DetectionPass::Final).map(|_| ())
+}
+
+/// Whether `on_outcome` is running inside the repeat-while-found loop or as the
+/// single-shot after wait.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum DetectionPass {
+    Repeat { refresh: bool },
+    Final,
 }
 
 pub(super) fn retry_while_not_found(

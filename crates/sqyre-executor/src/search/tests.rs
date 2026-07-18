@@ -7,7 +7,7 @@ use crate::SharedActionLog;
 use image::{Rgba, RgbaImage};
 use sqyre_domain::{
     root_loop, Action, ActionId, ActionKind, CoordinateOutputs, CoordinateRef, Macro, MatchOrder,
-    ScalarValue, WaitTilFoundConfig,
+    RepeatMode, ScalarValue, WaitTilFoundConfig,
 };
 use sqyre_match::{search_blur_kernel, ImageBuf, Point, DEFAULT_CLOSE_MATCHES_DISTANCE};
 use sqyre_vision::get_cached_blurred_template;
@@ -31,6 +31,198 @@ impl crate::backends::CoordinateResolver for FixedArea {
     ) -> std::result::Result<(i32, i32, i32, i32), String> {
         Ok((100, 200, 110, 210))
     }
+}
+
+fn full_desktop() -> DesktopRect {
+    DesktopRect {
+        x: 0,
+        y: 0,
+        w: 2000,
+        h: 2000,
+    }
+}
+
+fn quiet_macro(actions: Vec<Action>) -> Macro {
+    let mut macro_ = Macro::new("t", 0, vec![]);
+    macro_.keyboard_delay = 0;
+    macro_.mouse_delay = 0;
+    macro_.root = root_loop(actions);
+    macro_
+}
+
+fn run_search(
+    macro_: &mut Macro,
+    backend: &mut RecordingBackend,
+    capturer: &mut RecordingCapturer,
+    resolver: &dyn crate::backends::CoordinateResolver,
+) {
+    execute_macro_with(
+        macro_,
+        ExecDeps::new(backend)
+            .capturer(capturer)
+            .resolver(resolver),
+    )
+    .unwrap();
+}
+
+fn run_search_logged(
+    macro_: &mut Macro,
+    backend: &mut RecordingBackend,
+    capturer: &mut RecordingCapturer,
+    resolver: &dyn crate::backends::CoordinateResolver,
+    logger: &SharedActionLog,
+) {
+    execute_macro_with(
+        macro_,
+        ExecDeps::new(backend)
+            .capturer(capturer)
+            .resolver(resolver)
+            .logger(logger),
+    )
+    .unwrap();
+}
+
+fn run_search_ocr(
+    macro_: &mut Macro,
+    backend: &mut RecordingBackend,
+    capturer: &mut RecordingCapturer,
+    resolver: &dyn crate::backends::CoordinateResolver,
+    ocr: &dyn crate::backends::OcrEngine,
+) {
+    execute_macro_with(
+        macro_,
+        ExecDeps::new(backend)
+            .capturer(capturer)
+            .resolver(resolver)
+            .ocr(ocr),
+    )
+    .unwrap();
+}
+
+fn capturer_next(img: RgbaImage) -> RecordingCapturer {
+    RecordingCapturer {
+        next: Some(img),
+        bounds: full_desktop(),
+        ..Default::default()
+    }
+}
+
+fn capturer_queue(queue: Vec<RgbaImage>) -> RecordingCapturer {
+    RecordingCapturer {
+        queue,
+        bounds: full_desktop(),
+        ..Default::default()
+    }
+}
+
+fn wait_child(ms: i64) -> Action {
+    sqyre_domain::test_action(ActionKind::Wait {
+        time: ScalarValue::Int(ms),
+    })
+}
+
+fn coords_xy(x: &str, y: &str) -> CoordinateOutputs {
+    CoordinateOutputs {
+        output_x_variable: x.into(),
+        output_y_variable: y.into(),
+    }
+}
+
+fn detection_branch(
+    child_ms: Option<i64>,
+    run_branch_on_no_find: bool,
+    wait: WaitTilFoundConfig,
+    coords: CoordinateOutputs,
+) -> sqyre_domain::DetectionBranch {
+    sqyre_domain::DetectionBranch {
+        wait,
+        coords,
+        run_branch_on_no_find,
+        subactions: child_ms.map(wait_child).into_iter().collect(),
+        ..Default::default()
+    }
+}
+
+fn wait_until_found(seconds: i32, interval_ms: i32) -> WaitTilFoundConfig {
+    WaitTilFoundConfig {
+        repeat_mode: RepeatMode::WaitUntilFound,
+        wait_til_found_seconds: seconds,
+        wait_til_found_interval_ms: interval_ms,
+        max_iterations: 0,
+    }
+}
+
+fn while_found(interval_ms: i32, max_iterations: i32) -> WaitTilFoundConfig {
+    WaitTilFoundConfig {
+        repeat_mode: RepeatMode::WhileFound,
+        wait_til_found_seconds: 0,
+        wait_til_found_interval_ms: interval_ms,
+        max_iterations,
+    }
+}
+
+fn find_pixel_action(
+    id: ActionId,
+    color: &str,
+    detection: sqyre_domain::DetectionBranch,
+) -> Action {
+    Action {
+        id,
+        kind: ActionKind::FindPixel {
+            name: "red".into(),
+            search_area: CoordinateRef("Prog~Box".into()),
+            target_color: color.into(),
+            color_tolerance: 0,
+            detection,
+        },
+    }
+}
+
+fn ocr_action(
+    id: ActionId,
+    target: &str,
+    output_variable: &str,
+    detection: sqyre_domain::DetectionBranch,
+) -> Action {
+    Action {
+        id,
+        kind: ActionKind::Ocr {
+            name: "read".into(),
+            target: target.into(),
+            search_area: CoordinateRef("prog~box".into()),
+            output_variable: output_variable.into(),
+            blur: 1,
+            min_threshold: 0,
+            resize: 1.0,
+            grayscale: true,
+            threshold_otsu: false,
+            threshold_invert: false,
+            detection,
+        },
+    }
+}
+
+fn assert_slept(backend: &RecordingBackend, ms: i64) {
+    let key = format!("sleep:{ms}");
+    assert!(
+        backend.log.iter().any(|e| e == &key),
+        "expected {key} in {:?}",
+        backend.log
+    );
+}
+
+fn assert_did_not_sleep(backend: &RecordingBackend, ms: i64) {
+    let key = format!("sleep:{ms}");
+    assert!(
+        !backend.log.iter().any(|e| e == &key),
+        "did not expect {key} in {:?}",
+        backend.log
+    );
+}
+
+fn count_sleeps(backend: &RecordingBackend, ms: i64) -> usize {
+    let key = format!("sleep:{ms}");
+    backend.log.iter().filter(|e| e.as_str() == key).count()
 }
 
 struct MapIcons {
@@ -146,12 +338,7 @@ fn image_search_caches_blurred_templates() {
         let mut backend = RecordingBackend::default();
         let mut capturer = RecordingCapturer {
             next: Some(search),
-            bounds: DesktopRect {
-                x: 0,
-                y: 0,
-                w: 2000,
-                h: 2000,
-            },
+            bounds: full_desktop(),
             ..Default::default()
         };
         let resolver = FixedArea;
@@ -174,22 +361,11 @@ fn image_search_caches_blurred_templates() {
 
         execute_macro_with(
             &mut macro_,
-            ExecDeps {
-                automation: &mut backend,
-                capturer: Some(&mut capturer),
-                close_matches_distance: close_matches,
-                resolver: Some(&resolver),
-                icons: Some(&icons),
-                macros: None,
-                continue_waiter: None,
-                window_focuser: None,
-                ocr: None,
-                stop_flag: None,
-                logger: None,
-                highlighter: None,
-                runtime_vars: None,
-                variables_dir: None,
-            },
+            ExecDeps::new(&mut backend)
+            .capturer(&mut capturer)
+            .resolver(&resolver)
+            .icons(&icons)
+            .close_matches_distance(close_matches),
         )
         .unwrap();
 
@@ -249,21 +425,13 @@ fn find_pixel_uses_collection_cell_search_area() {
     let mut backend = RecordingBackend::default();
     let mut capturer = RecordingCapturer {
         next: Some(img),
-        bounds: DesktopRect {
-            x: 0,
-            y: 0,
-            w: 2000,
-            h: 2000,
-        },
+        bounds: full_desktop(),
         ..Default::default()
     };
     let resolver = CollectionOnly;
     let logger = SharedActionLog::new();
     let find_id = ActionId::new();
-    let mut macro_ = Macro::new("t", 0, vec![]);
-    macro_.keyboard_delay = 0;
-    macro_.mouse_delay = 0;
-    macro_.root = root_loop(vec![Action {
+    let mut macro_ = quiet_macro(vec![Action {
         id: find_id,
         kind: ActionKind::FindPixel {
             name: "green".into(),
@@ -280,26 +448,7 @@ fn find_pixel_uses_collection_cell_search_area() {
         },
     }]);
 
-    execute_macro_with(
-        &mut macro_,
-        ExecDeps {
-            automation: &mut backend,
-            capturer: Some(&mut capturer),
-            close_matches_distance: 0,
-            resolver: Some(&resolver),
-            icons: None,
-            macros: None,
-            continue_waiter: None,
-            window_focuser: None,
-            ocr: None,
-            stop_flag: None,
-            logger: Some(&logger),
-            highlighter: None,
-            runtime_vars: None,
-            variables_dir: None,
-        },
-    )
-    .unwrap();
+    run_search_logged(&mut macro_, &mut backend, &mut capturer, &resolver, &logger);
 
     assert_eq!(
         macro_.variables.get("foundX").map(|v| v.as_display()),
@@ -327,21 +476,13 @@ fn find_pixel_sets_coords_and_logs() {
     let mut backend = RecordingBackend::default();
     let mut capturer = RecordingCapturer {
         next: Some(img),
-        bounds: DesktopRect {
-            x: 0,
-            y: 0,
-            w: 2000,
-            h: 2000,
-        },
+        bounds: full_desktop(),
         ..Default::default()
     };
     let resolver = FixedArea;
     let logger = SharedActionLog::new();
     let find_id = ActionId::new();
-    let mut macro_ = Macro::new("t", 0, vec![]);
-    macro_.keyboard_delay = 0;
-    macro_.mouse_delay = 0;
-    macro_.root = root_loop(vec![Action {
+    let mut macro_ = quiet_macro(vec![Action {
         id: find_id,
         kind: ActionKind::FindPixel {
             name: "red".into(),
@@ -358,26 +499,7 @@ fn find_pixel_sets_coords_and_logs() {
         },
     }]);
 
-    execute_macro_with(
-        &mut macro_,
-        ExecDeps {
-            automation: &mut backend,
-            capturer: Some(&mut capturer),
-            close_matches_distance: 0,
-            resolver: Some(&resolver),
-            icons: None,
-            macros: None,
-            continue_waiter: None,
-            window_focuser: None,
-            ocr: None,
-            stop_flag: None,
-            logger: Some(&logger),
-            highlighter: None,
-            runtime_vars: None,
-            variables_dir: None,
-        },
-    )
-    .unwrap();
+    run_search_logged(&mut macro_, &mut backend, &mut capturer, &resolver, &logger);
 
     assert_eq!(
         macro_.variables.get("foundX").map(|v| v.as_display()),
@@ -401,21 +523,13 @@ fn find_pixel_not_found_logs() {
     let mut backend = RecordingBackend::default();
     let mut capturer = RecordingCapturer {
         next: Some(img),
-        bounds: DesktopRect {
-            x: 0,
-            y: 0,
-            w: 2000,
-            h: 2000,
-        },
+        bounds: full_desktop(),
         ..Default::default()
     };
     let resolver = FixedArea;
     let logger = SharedActionLog::new();
     let find_id = ActionId::new();
-    let mut macro_ = Macro::new("t", 0, vec![]);
-    macro_.keyboard_delay = 0;
-    macro_.mouse_delay = 0;
-    macro_.root = root_loop(vec![Action {
+    let mut macro_ = quiet_macro(vec![Action {
         id: find_id,
         kind: ActionKind::FindPixel {
             name: "red".into(),
@@ -425,26 +539,7 @@ fn find_pixel_not_found_logs() {
             detection: Default::default(),
         },
     }]);
-    execute_macro_with(
-        &mut macro_,
-        ExecDeps {
-            automation: &mut backend,
-            capturer: Some(&mut capturer),
-            close_matches_distance: 0,
-            resolver: Some(&resolver),
-            icons: None,
-            macros: None,
-            continue_waiter: None,
-            window_focuser: None,
-            ocr: None,
-            stop_flag: None,
-            logger: Some(&logger),
-            highlighter: None,
-            runtime_vars: None,
-            variables_dir: None,
-        },
-    )
-    .unwrap();
+    run_search_logged(&mut macro_, &mut backend, &mut capturer, &resolver, &logger);
     let lines = logger.lines_for(find_id);
     assert!(
         lines.iter().any(|l| l.contains("pixel not found")),
@@ -461,195 +556,53 @@ fn find_pixel_runs_branch_when_found() {
     img.put_pixel(3, 5, Rgba([255, 0, 0, 255]));
 
     let mut backend = RecordingBackend::default();
-    let mut capturer = RecordingCapturer {
-        next: Some(img),
-        bounds: DesktopRect {
-            x: 0,
-            y: 0,
-            w: 2000,
-            h: 2000,
-        },
-        ..Default::default()
-    };
+    let mut capturer = capturer_next(img);
     let resolver = FixedArea;
-    let mut macro_ = Macro::new("t", 0, vec![]);
-    macro_.keyboard_delay = 0;
-    macro_.mouse_delay = 0;
-    macro_.root = root_loop(vec![Action {
-        id: ActionId::new(),
-        kind: ActionKind::FindPixel {
-            name: "red".into(),
-            search_area: CoordinateRef("Prog~Box".into()),
-            target_color: "#ff0000".into(),
-            color_tolerance: 0,
-            detection: sqyre_domain::DetectionBranch {
-                subactions: vec![sqyre_domain::test_action(ActionKind::Wait {
-                    time: ScalarValue::Int(21),
-                })],
-                ..Default::default()
-            },
-        },
-    }]);
+    let mut macro_ = quiet_macro(vec![find_pixel_action(
+        ActionId::new(),
+        "#ff0000",
+        detection_branch(Some(21), false, Default::default(), Default::default()),
+    )]);
 
-    execute_macro_with(
-        &mut macro_,
-        ExecDeps {
-            automation: &mut backend,
-            capturer: Some(&mut capturer),
-            close_matches_distance: 0,
-            resolver: Some(&resolver),
-            icons: None,
-            macros: None,
-            continue_waiter: None,
-            window_focuser: None,
-            ocr: None,
-            stop_flag: None,
-            logger: None,
-            highlighter: None,
-            runtime_vars: None,
-            variables_dir: None,
-        },
-    )
-    .unwrap();
-
-    assert!(
-        backend.log.iter().any(|e| e == "sleep:21"),
-        "expected child wait on FindPixel match: {:?}",
-        backend.log
-    );
+    run_search(&mut macro_, &mut backend, &mut capturer, &resolver);
+    assert_slept(&backend, 21);
 }
 
 #[test]
 fn find_pixel_no_find_runs_branch_when_flag_set() {
-    let img = RgbaImage::from_pixel(4, 4, Rgba([0, 0, 255, 255]));
     let mut backend = RecordingBackend::default();
-    let mut capturer = RecordingCapturer {
-        next: Some(img),
-        bounds: DesktopRect {
-            x: 0,
-            y: 0,
-            w: 2000,
-            h: 2000,
-        },
-        ..Default::default()
-    };
+    let mut capturer = capturer_next(RgbaImage::from_pixel(4, 4, Rgba([0, 0, 255, 255])));
     let resolver = FixedArea;
     let mut macro_ = Macro::new("t", 0, vec![]);
     macro_.keyboard_delay = 0;
     macro_.mouse_delay = 0;
     macro_.variables.set("foundX", ScalarValue::Int(1));
     macro_.variables.set("foundY", ScalarValue::Int(2));
-    macro_.root = root_loop(vec![Action {
-        id: ActionId::new(),
-        kind: ActionKind::FindPixel {
-            name: "red".into(),
-            search_area: CoordinateRef("Prog~Box".into()),
-            target_color: "#ff0000".into(),
-            color_tolerance: 0,
-            detection: sqyre_domain::DetectionBranch {
-                coords: CoordinateOutputs {
-                    output_x_variable: "foundX".into(),
-                    output_y_variable: "foundY".into(),
-                },
-                run_branch_on_no_find: true,
-                subactions: vec![sqyre_domain::test_action(ActionKind::Wait {
-                    time: ScalarValue::Int(15),
-                })],
-                ..Default::default()
-            },
-        },
-    }]);
+    macro_.root = root_loop(vec![find_pixel_action(
+        ActionId::new(),
+        "#ff0000",
+        detection_branch(Some(15), true, Default::default(), coords_xy("foundX", "foundY")),
+    )]);
 
-    execute_macro_with(
-        &mut macro_,
-        ExecDeps {
-            automation: &mut backend,
-            capturer: Some(&mut capturer),
-            close_matches_distance: 0,
-            resolver: Some(&resolver),
-            icons: None,
-            macros: None,
-            continue_waiter: None,
-            window_focuser: None,
-            ocr: None,
-            stop_flag: None,
-            logger: None,
-            highlighter: None,
-            runtime_vars: None,
-            variables_dir: None,
-        },
-    )
-    .unwrap();
-
-    assert!(
-        backend.log.iter().any(|e| e == "sleep:15"),
-        "expected child wait on FindPixel no-find: {:?}",
-        backend.log
-    );
+    run_search(&mut macro_, &mut backend, &mut capturer, &resolver);
+    assert_slept(&backend, 15);
     assert!(macro_.variables.get("foundX").is_none());
     assert!(macro_.variables.get("foundY").is_none());
 }
 
 #[test]
 fn find_pixel_skips_branch_when_missing() {
-    let img = RgbaImage::from_pixel(4, 4, Rgba([0, 0, 255, 255]));
     let mut backend = RecordingBackend::default();
-    let mut capturer = RecordingCapturer {
-        next: Some(img),
-        bounds: DesktopRect {
-            x: 0,
-            y: 0,
-            w: 2000,
-            h: 2000,
-        },
-        ..Default::default()
-    };
+    let mut capturer = capturer_next(RgbaImage::from_pixel(4, 4, Rgba([0, 0, 255, 255])));
     let resolver = FixedArea;
-    let mut macro_ = Macro::new("t", 0, vec![]);
-    macro_.keyboard_delay = 0;
-    macro_.mouse_delay = 0;
-    macro_.root = root_loop(vec![Action {
-        id: ActionId::new(),
-        kind: ActionKind::FindPixel {
-            name: "red".into(),
-            search_area: CoordinateRef("Prog~Box".into()),
-            target_color: "#ff0000".into(),
-            color_tolerance: 0,
-            detection: sqyre_domain::DetectionBranch {
-                subactions: vec![sqyre_domain::test_action(ActionKind::Wait {
-                    time: ScalarValue::Int(21),
-                })],
-                ..Default::default()
-            },
-        },
-    }]);
+    let mut macro_ = quiet_macro(vec![find_pixel_action(
+        ActionId::new(),
+        "#ff0000",
+        detection_branch(Some(21), false, Default::default(), Default::default()),
+    )]);
 
-    execute_macro_with(
-        &mut macro_,
-        ExecDeps {
-            automation: &mut backend,
-            capturer: Some(&mut capturer),
-            close_matches_distance: 0,
-            resolver: Some(&resolver),
-            icons: None,
-            macros: None,
-            continue_waiter: None,
-            window_focuser: None,
-            ocr: None,
-            stop_flag: None,
-            logger: None,
-            highlighter: None,
-            runtime_vars: None,
-            variables_dir: None,
-        },
-    )
-    .unwrap();
-
-    assert!(
-        !backend.log.iter().any(|e| e == "sleep:21"),
-        "child should not run on FindPixel miss: {:?}",
-        backend.log
-    );
+    run_search(&mut macro_, &mut backend, &mut capturer, &resolver);
+    assert_did_not_sleep(&backend, 21);
 }
 
 #[test]
@@ -680,21 +633,13 @@ fn image_search_no_find_runs_branch() {
     let mut backend = RecordingBackend::default();
     let mut capturer = RecordingCapturer {
         next: Some(img),
-        bounds: DesktopRect {
-            x: 0,
-            y: 0,
-            w: 2000,
-            h: 2000,
-        },
+        bounds: full_desktop(),
         ..Default::default()
     };
     let resolver = FixedArea;
     let logger = SharedActionLog::new();
     let search_id = ActionId::new();
-    let mut macro_ = Macro::new("t", 0, vec![]);
-    macro_.keyboard_delay = 0;
-    macro_.mouse_delay = 0;
-    macro_.root = root_loop(vec![Action {
+    let mut macro_ = quiet_macro(vec![Action {
         id: search_id,
         kind: ActionKind::ImageSearch {
             name: "find".into(),
@@ -714,22 +659,11 @@ fn image_search_no_find_runs_branch() {
 
     execute_macro_with(
         &mut macro_,
-        ExecDeps {
-            automation: &mut backend,
-            capturer: Some(&mut capturer),
-            close_matches_distance: 0,
-            resolver: Some(&resolver),
-            icons: Some(&icons),
-            macros: None,
-            continue_waiter: None,
-            window_focuser: None,
-            ocr: None,
-            stop_flag: None,
-            logger: Some(&logger),
-            highlighter: None,
-            runtime_vars: None,
-            variables_dir: None,
-        },
+        ExecDeps::new(&mut backend)
+            .capturer(&mut capturer)
+            .resolver(&resolver)
+            .icons(&icons)
+            .logger(&logger),
     )
     .unwrap();
 
@@ -859,12 +793,7 @@ fn ocr_writes_text_and_target_coords() {
     let mut backend = RecordingBackend::default();
     let mut capturer = RecordingCapturer {
         next: Some(img),
-        bounds: DesktopRect {
-            x: 0,
-            y: 0,
-            w: 2000,
-            h: 2000,
-        },
+        bounds: full_desktop(),
         ..Default::default()
     };
     let resolver = FixedArea;
@@ -900,10 +829,7 @@ fn ocr_writes_text_and_target_coords() {
     let log = SharedActionLog::new();
     let ocr_id = ActionId::new();
 
-    let mut macro_ = Macro::new("t", 0, vec![]);
-    macro_.keyboard_delay = 0;
-    macro_.mouse_delay = 0;
-    macro_.root = root_loop(vec![Action {
+    let mut macro_ = quiet_macro(vec![Action {
         id: ocr_id,
         kind: ActionKind::Ocr {
             name: "read".into(),
@@ -928,22 +854,11 @@ fn ocr_writes_text_and_target_coords() {
 
     execute_macro_with(
         &mut macro_,
-        ExecDeps {
-            automation: &mut backend,
-            capturer: Some(&mut capturer),
-            close_matches_distance: 0,
-            resolver: Some(&resolver),
-            icons: None,
-            macros: None,
-            continue_waiter: None,
-            window_focuser: None,
-            ocr: Some(&ocr),
-            stop_flag: None,
-            logger: Some(&log),
-            highlighter: None,
-            runtime_vars: None,
-            variables_dir: None,
-        },
+        ExecDeps::new(&mut backend)
+            .capturer(&mut capturer)
+            .resolver(&resolver)
+            .ocr(&ocr)
+            .logger(&log),
     )
     .unwrap();
 
@@ -1006,18 +921,8 @@ fn ocr_runs_branch_when_target_found() {
     use crate::backends::{FixedOcrEngine, OcrResult};
     use sqyre_vision::OcrWordBox;
 
-    let img = RgbaImage::from_pixel(20, 10, Rgba([255, 255, 255, 255]));
     let mut backend = RecordingBackend::default();
-    let mut capturer = RecordingCapturer {
-        next: Some(img),
-        bounds: DesktopRect {
-            x: 0,
-            y: 0,
-            w: 2000,
-            h: 2000,
-        },
-        ..Default::default()
-    };
+    let mut capturer = capturer_next(RgbaImage::from_pixel(20, 10, Rgba([255, 255, 255, 255])));
     let resolver = FixedArea;
     let ocr = FixedOcrEngine {
         result: OcrResult {
@@ -1033,57 +938,15 @@ fn ocr_runs_branch_when_target_found() {
         ..Default::default()
     };
 
-    let mut macro_ = Macro::new("t", 0, vec![]);
-    macro_.keyboard_delay = 0;
-    macro_.mouse_delay = 0;
-    macro_.root = root_loop(vec![Action {
-        id: ActionId::new(),
-        kind: ActionKind::Ocr {
-            name: "read".into(),
-            target: "Submit".into(),
-            search_area: CoordinateRef("prog~box".into()),
-            output_variable: "ocrText".into(),
-            blur: 1,
-            min_threshold: 0,
-            resize: 1.0,
-            grayscale: true,
-            threshold_otsu: false,
-            threshold_invert: false,
-            detection: sqyre_domain::DetectionBranch {
-                subactions: vec![sqyre_domain::test_action(ActionKind::Wait {
-                    time: ScalarValue::Int(19),
-                })],
-                ..Default::default()
-            },
-        },
-    }]);
+    let mut macro_ = quiet_macro(vec![ocr_action(
+        ActionId::new(),
+        "Submit",
+        "ocrText",
+        detection_branch(Some(19), false, Default::default(), Default::default()),
+    )]);
 
-    execute_macro_with(
-        &mut macro_,
-        ExecDeps {
-            automation: &mut backend,
-            capturer: Some(&mut capturer),
-            close_matches_distance: 0,
-            resolver: Some(&resolver),
-            icons: None,
-            macros: None,
-            continue_waiter: None,
-            window_focuser: None,
-            ocr: Some(&ocr),
-            stop_flag: None,
-            logger: None,
-            highlighter: None,
-            runtime_vars: None,
-            variables_dir: None,
-        },
-    )
-    .unwrap();
-
-    assert!(
-        backend.log.iter().any(|e| e == "sleep:19"),
-        "expected child wait on OCR match: {:?}",
-        backend.log
-    );
+    run_search_ocr(&mut macro_, &mut backend, &mut capturer, &resolver, &ocr);
+    assert_slept(&backend, 19);
     assert_eq!(
         macro_.variables.get("ocrText").map(|v| v.as_display()),
         Some("Hello Submit Button".into())
@@ -1094,18 +957,8 @@ fn ocr_runs_branch_when_target_found() {
 fn ocr_no_find_runs_branch_when_flag_set() {
     use crate::backends::{FixedOcrEngine, OcrResult};
 
-    let img = RgbaImage::from_pixel(20, 10, Rgba([255, 255, 255, 255]));
     let mut backend = RecordingBackend::default();
-    let mut capturer = RecordingCapturer {
-        next: Some(img),
-        bounds: DesktopRect {
-            x: 0,
-            y: 0,
-            w: 2000,
-            h: 2000,
-        },
-        ..Default::default()
-    };
+    let mut capturer = capturer_next(RgbaImage::from_pixel(20, 10, Rgba([255, 255, 255, 255])));
     let resolver = FixedArea;
     let ocr = FixedOcrEngine {
         result: OcrResult {
@@ -1123,59 +976,15 @@ fn ocr_no_find_runs_branch_when_flag_set() {
     macro_
         .variables
         .set("ocrText", ScalarValue::String("stale".into()));
-    macro_.root = root_loop(vec![Action {
-        id: ActionId::new(),
-        kind: ActionKind::Ocr {
-            name: "read".into(),
-            target: "will-not-match-zzz".into(),
-            search_area: CoordinateRef("prog~box".into()),
-            output_variable: "ocrText".into(),
-            blur: 1,
-            min_threshold: 0,
-            resize: 1.0,
-            grayscale: true,
-            threshold_otsu: false,
-            threshold_invert: false,
-            detection: sqyre_domain::DetectionBranch {
-                coords: CoordinateOutputs {
-                    output_x_variable: "foundX".into(),
-                    output_y_variable: "foundY".into(),
-                },
-                run_branch_on_no_find: true,
-                subactions: vec![sqyre_domain::test_action(ActionKind::Wait {
-                    time: ScalarValue::Int(17),
-                })],
-                ..Default::default()
-            },
-        },
-    }]);
+    macro_.root = root_loop(vec![ocr_action(
+        ActionId::new(),
+        "will-not-match-zzz",
+        "ocrText",
+        detection_branch(Some(17), true, Default::default(), coords_xy("foundX", "foundY")),
+    )]);
 
-    execute_macro_with(
-        &mut macro_,
-        ExecDeps {
-            automation: &mut backend,
-            capturer: Some(&mut capturer),
-            close_matches_distance: 0,
-            resolver: Some(&resolver),
-            icons: None,
-            macros: None,
-            continue_waiter: None,
-            window_focuser: None,
-            ocr: Some(&ocr),
-            stop_flag: None,
-            logger: None,
-            highlighter: None,
-            runtime_vars: None,
-            variables_dir: None,
-        },
-    )
-    .unwrap();
-
-    assert!(
-        backend.log.iter().any(|e| e == "sleep:17"),
-        "expected child wait on OCR no-find: {:?}",
-        backend.log
-    );
+    run_search_ocr(&mut macro_, &mut backend, &mut capturer, &resolver, &ocr);
+    assert_slept(&backend, 17);
     assert!(macro_.variables.get("ocrText").is_none());
     assert!(macro_.variables.get("foundX").is_none());
     assert!(macro_.variables.get("foundY").is_none());
@@ -1185,18 +994,8 @@ fn ocr_no_find_runs_branch_when_flag_set() {
 fn ocr_skips_branch_when_target_missing() {
     use crate::backends::{FixedOcrEngine, OcrResult};
 
-    let img = RgbaImage::from_pixel(20, 10, Rgba([255, 255, 255, 255]));
     let mut backend = RecordingBackend::default();
-    let mut capturer = RecordingCapturer {
-        next: Some(img),
-        bounds: DesktopRect {
-            x: 0,
-            y: 0,
-            w: 2000,
-            h: 2000,
-        },
-        ..Default::default()
-    };
+    let mut capturer = capturer_next(RgbaImage::from_pixel(20, 10, Rgba([255, 255, 255, 255])));
     let resolver = FixedArea;
     let ocr = FixedOcrEngine {
         result: OcrResult {
@@ -1206,57 +1005,15 @@ fn ocr_skips_branch_when_target_missing() {
         ..Default::default()
     };
 
-    let mut macro_ = Macro::new("t", 0, vec![]);
-    macro_.keyboard_delay = 0;
-    macro_.mouse_delay = 0;
-    macro_.root = root_loop(vec![Action {
-        id: ActionId::new(),
-        kind: ActionKind::Ocr {
-            name: "read".into(),
-            target: "Submit".into(),
-            search_area: CoordinateRef("prog~box".into()),
-            output_variable: "ocrText".into(),
-            blur: 1,
-            min_threshold: 0,
-            resize: 1.0,
-            grayscale: true,
-            threshold_otsu: false,
-            threshold_invert: false,
-            detection: sqyre_domain::DetectionBranch {
-                subactions: vec![sqyre_domain::test_action(ActionKind::Wait {
-                    time: ScalarValue::Int(19),
-                })],
-                ..Default::default()
-            },
-        },
-    }]);
+    let mut macro_ = quiet_macro(vec![ocr_action(
+        ActionId::new(),
+        "Submit",
+        "ocrText",
+        detection_branch(Some(19), false, Default::default(), Default::default()),
+    )]);
 
-    execute_macro_with(
-        &mut macro_,
-        ExecDeps {
-            automation: &mut backend,
-            capturer: Some(&mut capturer),
-            close_matches_distance: 0,
-            resolver: Some(&resolver),
-            icons: None,
-            macros: None,
-            continue_waiter: None,
-            window_focuser: None,
-            ocr: Some(&ocr),
-            stop_flag: None,
-            logger: None,
-            highlighter: None,
-            runtime_vars: None,
-            variables_dir: None,
-        },
-    )
-    .unwrap();
-
-    assert!(
-        !backend.log.iter().any(|e| e == "sleep:19"),
-        "child should not run on OCR miss: {:?}",
-        backend.log
-    );
+    run_search_ocr(&mut macro_, &mut backend, &mut capturer, &resolver, &ocr);
+    assert_did_not_sleep(&backend, 19);
     assert!(macro_.variables.get("ocrText").is_none());
 }
 
@@ -1270,71 +1027,27 @@ fn solid_rgba(w: u32, h: u32, rgb: [u8; 3]) -> RgbaImage {
 
 #[test]
 fn find_pixel_wait_until_found_retries_then_succeeds() {
-    use sqyre_domain::RepeatMode;
     let miss = solid_rgba(8, 8, [0, 0, 0]);
     let mut hit = solid_rgba(8, 8, [0, 0, 0]);
     hit.put_pixel(2, 3, Rgba([255, 0, 0, 255]));
 
     let mut backend = RecordingBackend::default();
-    let mut capturer = RecordingCapturer {
-        queue: vec![miss, hit],
-        bounds: DesktopRect {
-            x: 0,
-            y: 0,
-            w: 2000,
-            h: 2000,
-        },
-        ..Default::default()
-    };
+    let mut capturer = capturer_queue(vec![miss, hit]);
     let resolver = FixedArea;
     let logger = SharedActionLog::new();
     let find_id = ActionId::new();
-    let mut macro_ = Macro::new("t", 0, vec![]);
-    macro_.keyboard_delay = 0;
-    macro_.mouse_delay = 0;
-    macro_.root = root_loop(vec![Action {
-        id: find_id,
-        kind: ActionKind::FindPixel {
-            name: "red".into(),
-            search_area: CoordinateRef("area".into()),
-            target_color: "#ff0000".into(),
-            color_tolerance: 0,
-            detection: sqyre_domain::DetectionBranch {
-                wait: WaitTilFoundConfig {
-                    repeat_mode: RepeatMode::WaitUntilFound,
-                    wait_til_found_seconds: 5,
-                    wait_til_found_interval_ms: 1,
-                    max_iterations: 0,
-                },
-                coords: CoordinateOutputs {
-                    output_x_variable: "foundX".into(),
-                    output_y_variable: "foundY".into(),
-                },
-                ..Default::default()
-            },
-        },
-    }]);
+    let mut macro_ = quiet_macro(vec![find_pixel_action(
+        find_id,
+        "#ff0000",
+        detection_branch(
+            None,
+            false,
+            wait_until_found(5, 1),
+            coords_xy("foundX", "foundY"),
+        ),
+    )]);
 
-    execute_macro_with(
-        &mut macro_,
-        ExecDeps {
-            automation: &mut backend,
-            capturer: Some(&mut capturer),
-            close_matches_distance: 0,
-            resolver: Some(&resolver),
-            icons: None,
-            macros: None,
-            continue_waiter: None,
-            window_focuser: None,
-            ocr: None,
-            stop_flag: None,
-            logger: Some(&logger),
-            highlighter: None,
-            runtime_vars: None,
-            variables_dir: None,
-        },
-    )
-    .unwrap();
+    run_search_logged(&mut macro_, &mut backend, &mut capturer, &resolver, &logger);
 
     assert_eq!(
         capturer.log.len(),
@@ -1358,7 +1071,6 @@ fn find_pixel_wait_until_found_retries_then_succeeds() {
 
 #[test]
 fn find_pixel_wait_until_found_stops_when_flag_set() {
-    use sqyre_domain::RepeatMode;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
 
@@ -1410,20 +1122,12 @@ fn find_pixel_wait_until_found_stops_when_flag_set() {
     };
     let mut capturer = RecordingCapturer {
         next: Some(miss),
-        bounds: DesktopRect {
-            x: 0,
-            y: 0,
-            w: 2000,
-            h: 2000,
-        },
+        bounds: full_desktop(),
         ..Default::default()
     };
     let resolver = FixedArea;
     let find_id = ActionId::new();
-    let mut macro_ = Macro::new("t", 0, vec![]);
-    macro_.keyboard_delay = 0;
-    macro_.mouse_delay = 0;
-    macro_.root = root_loop(vec![Action {
+    let mut macro_ = quiet_macro(vec![Action {
         id: find_id,
         kind: ActionKind::FindPixel {
             name: "red".into(),
@@ -1431,12 +1135,7 @@ fn find_pixel_wait_until_found_stops_when_flag_set() {
             target_color: "#ff0000".into(),
             color_tolerance: 0,
             detection: sqyre_domain::DetectionBranch {
-                wait: WaitTilFoundConfig {
-                    repeat_mode: RepeatMode::WaitUntilFound,
-                    wait_til_found_seconds: 30,
-                    wait_til_found_interval_ms: 50,
-                    max_iterations: 0,
-                },
+                wait: wait_until_found(30, 50),
                 ..Default::default()
             },
         },
@@ -1444,22 +1143,10 @@ fn find_pixel_wait_until_found_stops_when_flag_set() {
 
     execute_macro_with(
         &mut macro_,
-        ExecDeps {
-            automation: &mut backend,
-            capturer: Some(&mut capturer),
-            close_matches_distance: 0,
-            resolver: Some(&resolver),
-            icons: None,
-            macros: None,
-            continue_waiter: None,
-            window_focuser: None,
-            ocr: None,
-            stop_flag: Some(&stop),
-            logger: None,
-            highlighter: None,
-            runtime_vars: None,
-            variables_dir: None,
-        },
+        ExecDeps::new(&mut backend)
+            .capturer(&mut capturer)
+            .resolver(&resolver)
+            .stop_flag(&stop),
     )
     .unwrap();
 
@@ -1469,81 +1156,24 @@ fn find_pixel_wait_until_found_stops_when_flag_set() {
 
 #[test]
 fn find_pixel_repeat_while_found_runs_then_stops_on_miss() {
-    use sqyre_domain::RepeatMode;
     let mut hit = solid_rgba(8, 8, [0, 0, 0]);
     hit.put_pixel(1, 1, Rgba([0, 255, 0, 255]));
     let miss = solid_rgba(8, 8, [0, 0, 0]);
 
     let mut backend = RecordingBackend::default();
-    let mut capturer = RecordingCapturer {
-        queue: vec![hit, miss],
-        bounds: DesktopRect {
-            x: 0,
-            y: 0,
-            w: 2000,
-            h: 2000,
-        },
-        ..Default::default()
-    };
+    let mut capturer = capturer_queue(vec![hit, miss]);
     let resolver = FixedArea;
-    let find_id = ActionId::new();
-    let child_id = ActionId::new();
-    let mut macro_ = Macro::new("t", 0, vec![]);
-    macro_.keyboard_delay = 0;
-    macro_.mouse_delay = 0;
-    macro_.root = root_loop(vec![Action {
-        id: find_id,
-        kind: ActionKind::FindPixel {
-            name: "green".into(),
-            search_area: CoordinateRef("area".into()),
-            target_color: "#00ff00".into(),
-            color_tolerance: 0,
-            detection: sqyre_domain::DetectionBranch {
-                wait: WaitTilFoundConfig {
-                    repeat_mode: RepeatMode::WhileFound,
-                    wait_til_found_seconds: 0,
-                    wait_til_found_interval_ms: 1,
-                    max_iterations: 5,
-                },
-                subactions: vec![Action {
-                    id: child_id,
-                    kind: ActionKind::Wait {
-                        time: ScalarValue::Int(7),
-                    },
-                }],
-                ..Default::default()
-            },
-        },
-    }]);
+    let mut macro_ = quiet_macro(vec![find_pixel_action(
+        ActionId::new(),
+        "#00ff00",
+        detection_branch(Some(7), false, while_found(1, 5), Default::default()),
+    )]);
 
-    execute_macro_with(
-        &mut macro_,
-        ExecDeps {
-            automation: &mut backend,
-            capturer: Some(&mut capturer),
-            close_matches_distance: 0,
-            resolver: Some(&resolver),
-            icons: None,
-            macros: None,
-            continue_waiter: None,
-            window_focuser: None,
-            ocr: None,
-            stop_flag: None,
-            logger: None,
-            highlighter: None,
-            runtime_vars: None,
-            variables_dir: None,
-        },
-    )
-    .unwrap();
+    run_search(&mut macro_, &mut backend, &mut capturer, &resolver);
 
-    let child_waits = backend
-        .log
-        .iter()
-        .filter(|e| e.as_str() == "sleep:7")
-        .count();
     assert_eq!(
-        child_waits, 1,
+        count_sleeps(&backend, 7),
+        1,
         "expected one child run then stop on miss: {:?}",
         backend.log
     );
@@ -1576,7 +1206,6 @@ fn patterned_rgba(w: u32, h: u32, seed: u8) -> RgbaImage {
 
 #[test]
 fn image_search_wait_until_found_retries_then_succeeds() {
-    use sqyre_domain::RepeatMode;
     sqyre_vision::with_search_cache_test_lock(|| {
         sqyre_vision::reset_search_cache_for_testing();
         let dir = tempfile::tempdir().unwrap();
@@ -1597,12 +1226,7 @@ fn image_search_wait_until_found_retries_then_succeeds() {
         let mut capturer = RecordingCapturer {
             queue: vec![miss],
             next: Some(hit),
-            bounds: DesktopRect {
-                x: 0,
-                y: 0,
-                w: 2000,
-                h: 2000,
-            },
+            bounds: full_desktop(),
             ..Default::default()
         };
         let resolver = FixedArea;
@@ -1620,12 +1244,7 @@ fn image_search_wait_until_found_retries_then_succeeds() {
                 tolerance: 0.7,
                 blur: 0,
                 detection: sqyre_domain::DetectionBranch {
-                    wait: WaitTilFoundConfig {
-                        repeat_mode: RepeatMode::WaitUntilFound,
-                        wait_til_found_seconds: 5,
-                        wait_til_found_interval_ms: 1,
-                        max_iterations: 0,
-                    },
+                    wait: wait_until_found(5, 1),
                     coords: CoordinateOutputs {
                         output_x_variable: "foundX".into(),
                         output_y_variable: "foundY".into(),
@@ -1640,22 +1259,11 @@ fn image_search_wait_until_found_retries_then_succeeds() {
 
         execute_macro_with(
             &mut macro_,
-            ExecDeps {
-                automation: &mut backend,
-                capturer: Some(&mut capturer),
-                close_matches_distance: close_matches,
-                resolver: Some(&resolver),
-                icons: Some(&icons),
-                macros: None,
-                continue_waiter: None,
-                window_focuser: None,
-                ocr: None,
-                stop_flag: None,
-                logger: None,
-                highlighter: None,
-                runtime_vars: None,
-                variables_dir: None,
-            },
+            ExecDeps::new(&mut backend)
+            .capturer(&mut capturer)
+            .resolver(&resolver)
+            .icons(&icons)
+            .close_matches_distance(close_matches),
         )
         .unwrap();
 
@@ -1675,7 +1283,6 @@ fn image_search_wait_until_found_retries_then_succeeds() {
 
 #[test]
 fn image_search_repeat_while_found_then_stops() {
-    use sqyre_domain::RepeatMode;
     sqyre_vision::with_search_cache_test_lock(|| {
         sqyre_vision::reset_search_cache_for_testing();
         let dir = tempfile::tempdir().unwrap();
@@ -1696,12 +1303,7 @@ fn image_search_repeat_while_found_then_stops() {
         let mut capturer = RecordingCapturer {
             queue: vec![hit],
             next: Some(miss),
-            bounds: DesktopRect {
-                x: 0,
-                y: 0,
-                w: 2000,
-                h: 2000,
-            },
+            bounds: full_desktop(),
             ..Default::default()
         };
         let resolver = FixedArea;
@@ -1718,12 +1320,7 @@ fn image_search_repeat_while_found_then_stops() {
                 tolerance: 0.7,
                 blur: 0,
                 detection: sqyre_domain::DetectionBranch {
-                    wait: WaitTilFoundConfig {
-                        repeat_mode: RepeatMode::WhileFound,
-                        wait_til_found_seconds: 0,
-                        wait_til_found_interval_ms: 1,
-                        max_iterations: 5,
-                    },
+                    wait: while_found(1, 5),
                     subactions: vec![sqyre_domain::test_action(ActionKind::Wait {
                         time: ScalarValue::Int(9),
                     })],
@@ -1734,22 +1331,11 @@ fn image_search_repeat_while_found_then_stops() {
 
         execute_macro_with(
             &mut macro_,
-            ExecDeps {
-                automation: &mut backend,
-                capturer: Some(&mut capturer),
-                close_matches_distance: close_matches,
-                resolver: Some(&resolver),
-                icons: Some(&icons),
-                macros: None,
-                continue_waiter: None,
-                window_focuser: None,
-                ocr: None,
-                stop_flag: None,
-                logger: None,
-                highlighter: None,
-                runtime_vars: None,
-                variables_dir: None,
-            },
+            ExecDeps::new(&mut backend)
+            .capturer(&mut capturer)
+            .resolver(&resolver)
+            .icons(&icons)
+            .close_matches_distance(close_matches),
         )
         .unwrap();
 
@@ -1798,12 +1384,7 @@ fn image_search_multi_variant_matches_either_template() {
         let mut backend = RecordingBackend::default();
         let mut capturer = RecordingCapturer {
             next: Some(search),
-            bounds: DesktopRect {
-                x: 0,
-                y: 0,
-                w: 2000,
-                h: 2000,
-            },
+            bounds: full_desktop(),
             ..Default::default()
         };
         let resolver = FixedArea;
@@ -1836,22 +1417,12 @@ fn image_search_multi_variant_matches_either_template() {
 
         execute_macro_with(
             &mut macro_,
-            ExecDeps {
-                automation: &mut backend,
-                capturer: Some(&mut capturer),
-                close_matches_distance: close_matches,
-                resolver: Some(&resolver),
-                icons: Some(&icons),
-                macros: None,
-                continue_waiter: None,
-                window_focuser: None,
-                ocr: None,
-                stop_flag: None,
-                logger: Some(&logger),
-                highlighter: None,
-                runtime_vars: None,
-                variables_dir: None,
-            },
+            ExecDeps::new(&mut backend)
+            .capturer(&mut capturer)
+            .resolver(&resolver)
+            .icons(&icons)
+            .logger(&logger)
+            .close_matches_distance(close_matches),
         )
         .unwrap();
 
@@ -1898,12 +1469,7 @@ fn image_search_uses_mask_path_when_present() {
         let mut backend = RecordingBackend::default();
         let mut capturer = RecordingCapturer {
             next: Some(search),
-            bounds: DesktopRect {
-                x: 0,
-                y: 0,
-                w: 2000,
-                h: 2000,
-            },
+            bounds: full_desktop(),
             ..Default::default()
         };
         let resolver = FixedArea;
@@ -1934,22 +1500,11 @@ fn image_search_uses_mask_path_when_present() {
 
         execute_macro_with(
             &mut macro_,
-            ExecDeps {
-                automation: &mut backend,
-                capturer: Some(&mut capturer),
-                close_matches_distance: close_matches,
-                resolver: Some(&resolver),
-                icons: Some(&icons),
-                macros: None,
-                continue_waiter: None,
-                window_focuser: None,
-                ocr: None,
-                stop_flag: None,
-                logger: None,
-                highlighter: None,
-                runtime_vars: None,
-                variables_dir: None,
-            },
+            ExecDeps::new(&mut backend)
+            .capturer(&mut capturer)
+            .resolver(&resolver)
+            .icons(&icons)
+            .close_matches_distance(close_matches),
         )
         .unwrap();
 
@@ -1965,20 +1520,9 @@ fn image_search_uses_mask_path_when_present() {
 #[test]
 fn ocr_wait_until_found_retries_then_succeeds() {
     use crate::backends::{OcrResult, QueuedOcrEngine};
-    use sqyre_domain::RepeatMode;
 
-    let img = RgbaImage::from_pixel(20, 10, Rgba([255, 255, 255, 255]));
     let mut backend = RecordingBackend::default();
-    let mut capturer = RecordingCapturer {
-        next: Some(img),
-        bounds: DesktopRect {
-            x: 0,
-            y: 0,
-            w: 2000,
-            h: 2000,
-        },
-        ..Default::default()
-    };
+    let mut capturer = capturer_next(RgbaImage::from_pixel(20, 10, Rgba([255, 255, 255, 255])));
     let resolver = FixedArea;
     let ocr = QueuedOcrEngine {
         queue: std::sync::Mutex::new(vec![
@@ -1994,61 +1538,19 @@ fn ocr_wait_until_found_retries_then_succeeds() {
         ..Default::default()
     };
 
-    let mut macro_ = Macro::new("t", 0, vec![]);
-    macro_.keyboard_delay = 0;
-    macro_.mouse_delay = 0;
-    macro_.root = root_loop(vec![Action {
-        id: ActionId::new(),
-        kind: ActionKind::Ocr {
-            name: "read".into(),
-            target: "Submit".into(),
-            search_area: CoordinateRef("prog~box".into()),
-            output_variable: "ocrText".into(),
-            blur: 1,
-            min_threshold: 0,
-            resize: 1.0,
-            grayscale: true,
-            threshold_otsu: false,
-            threshold_invert: false,
-            detection: sqyre_domain::DetectionBranch {
-                wait: WaitTilFoundConfig {
-                    repeat_mode: RepeatMode::WaitUntilFound,
-                    wait_til_found_seconds: 5,
-                    wait_til_found_interval_ms: 1,
-                    max_iterations: 0,
-                },
-                coords: CoordinateOutputs {
-                    output_x_variable: "foundX".into(),
-                    output_y_variable: "foundY".into(),
-                },
-                subactions: vec![sqyre_domain::test_action(ActionKind::Wait {
-                    time: ScalarValue::Int(11),
-                })],
-                ..Default::default()
-            },
-        },
-    }]);
+    let mut macro_ = quiet_macro(vec![ocr_action(
+        ActionId::new(),
+        "Submit",
+        "ocrText",
+        detection_branch(
+            Some(11),
+            false,
+            wait_until_found(5, 1),
+            coords_xy("foundX", "foundY"),
+        ),
+    )]);
 
-    execute_macro_with(
-        &mut macro_,
-        ExecDeps {
-            automation: &mut backend,
-            capturer: Some(&mut capturer),
-            close_matches_distance: 0,
-            resolver: Some(&resolver),
-            icons: None,
-            macros: None,
-            continue_waiter: None,
-            window_focuser: None,
-            ocr: Some(&ocr),
-            stop_flag: None,
-            logger: None,
-            highlighter: None,
-            runtime_vars: None,
-            variables_dir: None,
-        },
-    )
-    .unwrap();
+    run_search_ocr(&mut macro_, &mut backend, &mut capturer, &resolver, &ocr);
 
     assert!(
         ocr.log.lock().unwrap().len() >= 2,
@@ -2059,30 +1561,15 @@ fn ocr_wait_until_found_retries_then_succeeds() {
         macro_.variables.get("ocrText").map(|v| v.as_display()),
         Some("Submit now".into())
     );
-    assert!(
-        backend.log.iter().any(|e| e == "sleep:11"),
-        "{:?}",
-        backend.log
-    );
+    assert_slept(&backend, 11);
 }
 
 #[test]
 fn ocr_repeat_while_found_then_stops_on_miss() {
     use crate::backends::{OcrResult, QueuedOcrEngine};
-    use sqyre_domain::RepeatMode;
 
-    let img = RgbaImage::from_pixel(20, 10, Rgba([255, 255, 255, 255]));
     let mut backend = RecordingBackend::default();
-    let mut capturer = RecordingCapturer {
-        next: Some(img),
-        bounds: DesktopRect {
-            x: 0,
-            y: 0,
-            w: 2000,
-            h: 2000,
-        },
-        ..Default::default()
-    };
+    let mut capturer = capturer_next(RgbaImage::from_pixel(20, 10, Rgba([255, 255, 255, 255])));
     let resolver = FixedArea;
     let ocr = QueuedOcrEngine {
         queue: std::sync::Mutex::new(vec![
@@ -2098,65 +1585,18 @@ fn ocr_repeat_while_found_then_stops_on_miss() {
         ..Default::default()
     };
 
-    let mut macro_ = Macro::new("t", 0, vec![]);
-    macro_.keyboard_delay = 0;
-    macro_.mouse_delay = 0;
-    macro_.root = root_loop(vec![Action {
-        id: ActionId::new(),
-        kind: ActionKind::Ocr {
-            name: "loop".into(),
-            target: "Keep".into(),
-            search_area: CoordinateRef("prog~box".into()),
-            output_variable: "ocrText".into(),
-            blur: 1,
-            min_threshold: 0,
-            resize: 1.0,
-            grayscale: true,
-            threshold_otsu: false,
-            threshold_invert: false,
-            detection: sqyre_domain::DetectionBranch {
-                wait: WaitTilFoundConfig {
-                    repeat_mode: RepeatMode::WhileFound,
-                    wait_til_found_seconds: 0,
-                    wait_til_found_interval_ms: 1,
-                    max_iterations: 5,
-                },
-                subactions: vec![sqyre_domain::test_action(ActionKind::Wait {
-                    time: ScalarValue::Int(8),
-                })],
-                ..Default::default()
-            },
-        },
-    }]);
+    let mut macro_ = quiet_macro(vec![ocr_action(
+        ActionId::new(),
+        "Keep",
+        "ocrText",
+        detection_branch(Some(8), false, while_found(1, 5), Default::default()),
+    )]);
 
-    execute_macro_with(
-        &mut macro_,
-        ExecDeps {
-            automation: &mut backend,
-            capturer: Some(&mut capturer),
-            close_matches_distance: 0,
-            resolver: Some(&resolver),
-            icons: None,
-            macros: None,
-            continue_waiter: None,
-            window_focuser: None,
-            ocr: Some(&ocr),
-            stop_flag: None,
-            logger: None,
-            highlighter: None,
-            runtime_vars: None,
-            variables_dir: None,
-        },
-    )
-    .unwrap();
+    run_search_ocr(&mut macro_, &mut backend, &mut capturer, &resolver, &ocr);
 
-    let child_waits = backend
-        .log
-        .iter()
-        .filter(|e| e.as_str() == "sleep:8")
-        .count();
     assert_eq!(
-        child_waits, 1,
+        count_sleeps(&backend, 8),
+        1,
         "expected one OCR while-found iteration: {:?}",
         backend.log
     );

@@ -1,7 +1,7 @@
 //! Image search action: capture → match template variants → run children per hit.
 
 use super::common::{
-    maybe_repeat_while_found, maybe_wait_until_found, run_children_flow, set_coord_outputs,
+    run_children_flow, run_detection_shell, set_coord_outputs, DetectionPass,
 };
 use crate::action_log::{crop_match_preview, draw_rect_rgb};
 use crate::backends::{DesktopRect, ItemMeta};
@@ -49,7 +49,8 @@ pub(crate) fn execute_image_search(
     let macro_name = macro_.name.clone();
     let order = order.clone();
     let result = (|| {
-        let mut results = capture_and_match(
+        // Log wait intent once before the shared shell arms retries.
+        let results0 = capture_and_match(
             exec,
             action_id,
             targets,
@@ -59,8 +60,7 @@ pub(crate) fn execute_image_search(
             &order,
             macro_,
         )?;
-
-        if wait.wait_until_found_active() && results.is_empty() {
+        if wait.wait_until_found_active() && results0.is_empty() {
             exec.log(
                 action_id,
                 format!(
@@ -69,23 +69,19 @@ pub(crate) fn execute_image_search(
                 ),
             );
         }
-        maybe_wait_until_found(exec, wait, !results.is_empty(), 100, |exec| {
-            results = capture_and_match(
-                exec,
-                action_id,
-                targets,
-                search_area,
-                *tolerance,
-                *blur,
-                &order,
-                macro_,
-            )?;
-            Ok(!results.is_empty())
-        })?;
 
-        if maybe_repeat_while_found(exec, wait, 100, |exec, refresh| {
-            if refresh {
-                results = capture_and_match(
+        let mut initial = Some(results0);
+        run_detection_shell(
+            exec,
+            macro_,
+            wait,
+            100,
+            100,
+            |exec, macro_| {
+                if let Some(first) = initial.take() {
+                    return Ok(first);
+                }
+                capture_and_match(
                     exec,
                     action_id,
                     targets,
@@ -94,35 +90,27 @@ pub(crate) fn execute_image_search(
                     *blur,
                     &order,
                     macro_,
+                )
+            },
+            |results| !results.is_empty(),
+            |exec, macro_, results, pass| {
+                // Repeat-while-found stops on miss without running the no-find branch;
+                // the final single-shot still calls run_matches (for run_branch_on_no_find).
+                if matches!(pass, DetectionPass::Repeat { .. }) && results.is_empty() {
+                    return Ok(false);
+                }
+                run_matches(
+                    exec,
+                    action_id,
+                    targets,
+                    results,
+                    coords,
+                    *run_branch_on_no_find,
+                    subactions,
+                    macro_,
                 )?;
-            }
-            if results.is_empty() {
-                return Ok(false);
-            }
-            run_matches(
-                exec,
-                action_id,
-                targets,
-                &results,
-                coords,
-                *run_branch_on_no_find,
-                subactions,
-                macro_,
-            )?;
-            Ok(true)
-        })? {
-            return Ok(());
-        }
-
-        run_matches(
-            exec,
-            action_id,
-            targets,
-            &results,
-            coords,
-            *run_branch_on_no_find,
-            subactions,
-            macro_,
+                Ok(!results.is_empty())
+            },
         )
     })();
     highlight_clear(exec.deps.highlighter, &macro_name, action_id);
