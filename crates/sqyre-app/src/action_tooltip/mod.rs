@@ -1,6 +1,7 @@
 //! In-tree action tooltip: view on hover, pinned edit with Save/Cancel.
 
 mod edit;
+pub(crate) mod help;
 mod sections;
 
 use crate::pickers::{self, ActivePicker, PickerResult};
