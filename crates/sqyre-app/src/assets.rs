@@ -61,9 +61,7 @@ mod tests {
     #[test]
     fn app_icon_svg_embedded() {
         assert!(!APP_ICON_SVG.is_empty());
-        assert!(std::str::from_utf8(APP_ICON_SVG)
-            .unwrap()
-            .contains("<svg"));
+        assert!(std::str::from_utf8(APP_ICON_SVG).unwrap().contains("<svg"));
     }
 
     #[test]

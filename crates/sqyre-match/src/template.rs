@@ -43,6 +43,17 @@ pub fn match_ccoeff_normed(
     template: &ImageBuf,
     mask: Option<&[u8]>,
 ) -> Result<MatchMap, MatchError> {
+    match_ccoeff_normed_with_integrals(search, template, mask, None)
+}
+
+/// Like [`match_ccoeff_normed`], but reuses precomputed search-image integrals
+/// (built once per capture and shared across template variants).
+pub fn match_ccoeff_normed_with_integrals(
+    search: &ImageBuf,
+    template: &ImageBuf,
+    mask: Option<&[u8]>,
+    integrals: Option<&SearchIntegrals>,
+) -> Result<MatchMap, MatchError> {
     if search.width == 0 || search.height == 0 || template.width == 0 || template.height == 0 {
         return Err(MatchError::Empty);
     }
@@ -68,7 +79,7 @@ pub fn match_ccoeff_normed(
     let out_w = search.width - tw + 1;
     let out_h = search.height - th + 1;
 
-    let (masked, t_prime_sq, sum_w) = build_t_prime(template, &mask_bits, ch);
+    let (t_prime, t_prime_sq, sum_w) = build_t_prime(template, &mask_bits, ch);
     if sum_w <= 0.0 {
         return Ok(MatchMap {
             width: out_w,
@@ -85,28 +96,41 @@ pub fn match_ccoeff_normed(
         .saturating_mul(ch as u64);
 
     if full_mask && direct_cost > FFT_DIRECT_COST_THRESHOLD {
-        match_fft(search, &masked, tw, th, sum_w, t_prime_sq, out_w, out_h, ch)
+        match_fft(
+            search, &t_prime, tw, th, sum_w, t_prime_sq, out_w, out_h, ch, integrals,
+        )
     } else {
         match_direct(
-            search,
-            &masked,
-            tw,
-            th,
-            sum_w,
-            t_prime_sq,
-            out_w,
-            out_h,
-            ch,
-            full_mask,
+            search, &t_prime, tw, th, sum_w, t_prime_sq, out_w, out_h, ch, full_mask, integrals,
         )
     }
 }
 
-fn build_t_prime(
-    template: &ImageBuf,
-    mask_bits: &[bool],
+/// Mean-subtracted template pixels packed for correlation.
+///
+/// `xs`/`ys` are template-local coordinates; `primed` is length `xs.len() * ch`
+/// (interleaved per pixel).
+struct TPrime {
+    xs: Vec<u16>,
+    ys: Vec<u16>,
+    primed: Vec<f64>,
     ch: usize,
-) -> (Vec<(usize, Vec<f64>)>, f64, f64) {
+}
+
+impl TPrime {
+    #[inline]
+    fn len(&self) -> usize {
+        self.xs.len()
+    }
+
+    #[inline]
+    fn primed_at(&self, i: usize) -> &[f64] {
+        let base = i * self.ch;
+        &self.primed[base..base + self.ch]
+    }
+}
+
+fn build_t_prime(template: &ImageBuf, mask_bits: &[bool], ch: usize) -> (TPrime, f64, f64) {
     let tw = template.width;
     let th = template.height;
     let mut t_mean = vec![0.0_f64; ch];
@@ -119,19 +143,31 @@ fn build_t_prime(
             }
             sum_w += 1.0;
             let ti = template.pixel_offset(x, y);
-            for c in 0..ch {
-                t_mean[c] += template.data[ti + c] as f64;
+            for (c, m) in t_mean.iter_mut().enumerate() {
+                *m += template.data[ti + c] as f64;
             }
         }
     }
     if sum_w <= 0.0 {
-        return (Vec::new(), 0.0, 0.0);
+        return (
+            TPrime {
+                xs: Vec::new(),
+                ys: Vec::new(),
+                primed: Vec::new(),
+                ch,
+            },
+            0.0,
+            0.0,
+        );
     }
-    for c in 0..ch {
-        t_mean[c] /= sum_w;
+    for m in &mut t_mean {
+        *m /= sum_w;
     }
 
-    let mut masked = Vec::with_capacity((sum_w as usize).max(1));
+    let n = sum_w as usize;
+    let mut xs = Vec::with_capacity(n);
+    let mut ys = Vec::with_capacity(n);
+    let mut primed = Vec::with_capacity(n * ch);
     let mut t_prime_sq = 0.0_f64;
     for y in 0..th {
         for x in 0..tw {
@@ -140,21 +176,22 @@ fn build_t_prime(
                 continue;
             }
             let ti = template.pixel_offset(x, y);
-            let mut primed = vec![0.0_f64; ch];
-            for c in 0..ch {
-                let tp = template.data[ti + c] as f64 - t_mean[c];
-                primed[c] = tp;
+            xs.push(x as u16);
+            ys.push(y as u16);
+            for (c, &mean) in t_mean.iter().enumerate() {
+                let tp = template.data[ti + c] as f64 - mean;
+                primed.push(tp);
                 t_prime_sq += tp * tp;
             }
-            masked.push((li, primed));
         }
     }
-    (masked, t_prime_sq, sum_w)
+    (TPrime { xs, ys, primed, ch }, t_prime_sq, sum_w)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn match_direct(
     search: &ImageBuf,
-    masked: &[(usize, Vec<f64>)],
+    t_prime: &TPrime,
     tw: usize,
     th: usize,
     n: f64,
@@ -163,9 +200,16 @@ fn match_direct(
     out_h: usize,
     ch: usize,
     full_mask: bool,
+    precomputed: Option<&SearchIntegrals>,
 ) -> Result<MatchMap, MatchError> {
+    let owned;
     let integrals = if full_mask {
-        Some(build_integrals(search))
+        Some(if let Some(integ) = precomputed {
+            integ
+        } else {
+            owned = build_integrals(search);
+            &owned
+        })
     } else {
         None
     };
@@ -177,14 +221,14 @@ fn match_direct(
         .par_chunks_mut(out_w)
         .enumerate()
         .for_each(|(oy, row)| {
-            for ox in 0..out_w {
+            for (ox, cell) in row.iter_mut().enumerate() {
                 let (numer, i_prime_sq) = if let Some(integ) = integrals.as_ref() {
-                    score_unmasked(integ, search_data, search_w, ch, ox, oy, tw, th, n, masked)
+                    score_unmasked(integ, search_data, search_w, ch, ox, oy, tw, th, n, t_prime)
                 } else {
-                    score_masked(search_data, search_w, ch, ox, oy, tw, masked, n)
+                    score_masked(search_data, search_w, ch, ox, oy, t_prime, n)
                 };
                 let denom = (t_prime_sq * i_prime_sq).sqrt();
-                row[ox] = if denom > f64::EPSILON {
+                *cell = if denom > f64::EPSILON {
                     (numer / denom) as f32
                 } else {
                     0.0
@@ -230,9 +274,10 @@ fn optimal_dft_size(n: usize) -> usize {
 }
 
 /// DFT cross-correlation of mean-subtracted template vs search (OpenCV `crossCorr` + CCOEFF).
+#[allow(clippy::too_many_arguments)]
 fn match_fft(
     search: &ImageBuf,
-    masked: &[(usize, Vec<f64>)],
+    t_prime: &TPrime,
     tw: usize,
     th: usize,
     n: f64,
@@ -240,6 +285,7 @@ fn match_fft(
     out_w: usize,
     out_h: usize,
     ch: usize,
+    precomputed: Option<&SearchIntegrals>,
 ) -> Result<MatchMap, MatchError> {
     let dft_w = optimal_dft_size(search.width + tw - 1);
     let dft_h = optimal_dft_size(search.height + th - 1);
@@ -257,20 +303,26 @@ fn match_fft(
                 }
             }
             let mut tmpl = vec![Complex::new(0.0, 0.0); area];
-            for &(li, ref primed) in masked {
-                let x = li % tw;
-                let y = li / tw;
-                tmpl[y * dft_w + x] = Complex::new(primed[c] as f32, 0.0);
+            for i in 0..t_prime.len() {
+                let x = t_prime.xs[i] as usize;
+                let y = t_prime.ys[i] as usize;
+                tmpl[y * dft_w + x] = Complex::new(t_prime.primed_at(i)[c] as f32, 0.0);
             }
 
-            let mut planner = FftPlanner::<f32>::new();
-            fft2d_forward(&mut img, dft_w, dft_h, &mut planner);
-            fft2d_forward(&mut tmpl, dft_w, dft_h, &mut planner);
-
-            for i in 0..area {
-                img[i] = img[i] * tmpl[i].conj();
+            thread_local! {
+                static PLANNER: std::cell::RefCell<FftPlanner<f32>> =
+                    std::cell::RefCell::new(FftPlanner::new());
             }
-            fft2d_inverse(&mut img, dft_w, dft_h, &mut planner);
+            PLANNER.with(|p| {
+                let mut planner = p.borrow_mut();
+                fft2d_forward(&mut img, dft_w, dft_h, &mut planner);
+                fft2d_forward(&mut tmpl, dft_w, dft_h, &mut planner);
+
+                for i in 0..area {
+                    img[i] *= tmpl[i].conj();
+                }
+                fft2d_inverse(&mut img, dft_w, dft_h, &mut planner);
+            });
 
             let mut out = vec![0.0_f32; out_w * out_h];
             for y in 0..out_h {
@@ -289,7 +341,13 @@ fn match_fft(
         }
     }
 
-    let integ = build_integrals(search);
+    let owned;
+    let integ = if let Some(integ) = precomputed {
+        integ
+    } else {
+        owned = build_integrals(search);
+        &owned
+    };
     let stride = integ.width + 1;
     let mut scores = vec![0.0_f32; out_w * out_h];
     scores
@@ -320,7 +378,12 @@ fn match_fft(
     })
 }
 
-fn fft2d_forward(buf: &mut [Complex<f32>], width: usize, height: usize, planner: &mut FftPlanner<f32>) {
+fn fft2d_forward(
+    buf: &mut [Complex<f32>],
+    width: usize,
+    height: usize,
+    planner: &mut FftPlanner<f32>,
+) {
     let fft_row = planner.plan_fft_forward(width);
     for row in buf.chunks_exact_mut(width) {
         fft_row.process(row);
@@ -338,7 +401,12 @@ fn fft2d_forward(buf: &mut [Complex<f32>], width: usize, height: usize, planner:
     }
 }
 
-fn fft2d_inverse(buf: &mut [Complex<f32>], width: usize, height: usize, planner: &mut FftPlanner<f32>) {
+fn fft2d_inverse(
+    buf: &mut [Complex<f32>],
+    width: usize,
+    height: usize,
+    planner: &mut FftPlanner<f32>,
+) {
     let ifft_row = planner.plan_fft_inverse(width);
     for row in buf.chunks_exact_mut(width) {
         ifft_row.process(row);
@@ -356,13 +424,19 @@ fn fft2d_inverse(buf: &mut [Complex<f32>], width: usize, height: usize, planner:
     }
 }
 
-struct Integrals {
+/// Precomputed integral images for a search frame (shared across template variants).
+pub struct SearchIntegrals {
     width: usize,
     sum: Vec<Vec<f64>>,
     sumsq: Vec<Vec<f64>>,
 }
 
-fn build_integrals(img: &ImageBuf) -> Integrals {
+/// Build integral images once per blurred search capture.
+pub fn prepare_search_integrals(img: &ImageBuf) -> SearchIntegrals {
+    build_integrals(img)
+}
+
+fn build_integrals(img: &ImageBuf) -> SearchIntegrals {
     let w = img.width;
     let h = img.height;
     let ch = img.channels;
@@ -386,18 +460,24 @@ fn build_integrals(img: &ImageBuf) -> Integrals {
             }
         }
     }
-    Integrals { width: w, sum, sumsq }
+    SearchIntegrals {
+        width: w,
+        sum,
+        sumsq,
+    }
 }
 
 #[inline]
 fn rect_sum(integ: &[f64], stride: usize, x: usize, y: usize, tw: usize, th: usize) -> f64 {
     let x2 = x + tw;
     let y2 = y + th;
-    integ[y2 * stride + x2] - integ[y * stride + x2] - integ[y2 * stride + x] + integ[y * stride + x]
+    integ[y2 * stride + x2] - integ[y * stride + x2] - integ[y2 * stride + x]
+        + integ[y * stride + x]
 }
 
+#[allow(clippy::too_many_arguments)]
 fn score_unmasked(
-    integ: &Integrals,
+    integ: &SearchIntegrals,
     search_data: &[u8],
     search_w: usize,
     ch: usize,
@@ -406,7 +486,7 @@ fn score_unmasked(
     tw: usize,
     th: usize,
     n: f64,
-    masked: &[(usize, Vec<f64>)],
+    t_prime: &TPrime,
 ) -> (f64, f64) {
     let stride = integ.width + 1;
     let mut i_prime_sq = 0.0_f64;
@@ -416,10 +496,11 @@ fn score_unmasked(
         i_prime_sq += sq - (s * s) / n;
     }
     let mut numer = 0.0_f64;
-    for &(li, ref primed) in masked {
-        let x = li % tw;
-        let y = li / tw;
+    for i in 0..t_prime.len() {
+        let x = t_prime.xs[i] as usize;
+        let y = t_prime.ys[i] as usize;
         let si = ((oy + y) * search_w + (ox + x)) * ch;
+        let primed = t_prime.primed_at(i);
         for c in 0..ch {
             numer += primed[c] * search_data[si + c] as f64;
         }
@@ -433,32 +514,75 @@ fn score_masked(
     ch: usize,
     ox: usize,
     oy: usize,
-    tw: usize,
-    masked: &[(usize, Vec<f64>)],
+    t_prime: &TPrime,
     n: f64,
 ) -> (f64, f64) {
-    let mut i_sum = vec![0.0_f64; ch];
-    for &(li, _) in masked {
-        let x = li % tw;
-        let y = li / tw;
+    // Stack-allocate for the common RGB/gray cases; heap only for unusual channel counts.
+    let mut i_sum_buf = [0.0_f64; 4];
+    let i_sum = if ch <= 4 {
+        &mut i_sum_buf[..ch]
+    } else {
+        // Unreachable for our ImageBuf (1 or 3 channels), but keep correct.
+        return score_masked_heap(search_data, search_w, ch, ox, oy, t_prime, n);
+    };
+    for i in 0..t_prime.len() {
+        let x = t_prime.xs[i] as usize;
+        let y = t_prime.ys[i] as usize;
         let si = ((oy + y) * search_w + (ox + x)) * ch;
         for c in 0..ch {
             i_sum[c] += search_data[si + c] as f64;
         }
     }
-    for c in 0..ch {
-        i_sum[c] /= n;
+    for s in i_sum.iter_mut() {
+        *s /= n;
     }
-    let i_mean = i_sum;
 
     let mut numer = 0.0_f64;
     let mut i_prime_sq = 0.0_f64;
-    for &(li, ref primed) in masked {
-        let x = li % tw;
-        let y = li / tw;
+    for i in 0..t_prime.len() {
+        let x = t_prime.xs[i] as usize;
+        let y = t_prime.ys[i] as usize;
+        let si = ((oy + y) * search_w + (ox + x)) * ch;
+        let primed = t_prime.primed_at(i);
+        for c in 0..ch {
+            let ip = search_data[si + c] as f64 - i_sum[c];
+            numer += primed[c] * ip;
+            i_prime_sq += ip * ip;
+        }
+    }
+    (numer, i_prime_sq)
+}
+
+fn score_masked_heap(
+    search_data: &[u8],
+    search_w: usize,
+    ch: usize,
+    ox: usize,
+    oy: usize,
+    t_prime: &TPrime,
+    n: f64,
+) -> (f64, f64) {
+    let mut i_sum = vec![0.0_f64; ch];
+    for i in 0..t_prime.len() {
+        let x = t_prime.xs[i] as usize;
+        let y = t_prime.ys[i] as usize;
         let si = ((oy + y) * search_w + (ox + x)) * ch;
         for c in 0..ch {
-            let ip = search_data[si + c] as f64 - i_mean[c];
+            i_sum[c] += search_data[si + c] as f64;
+        }
+    }
+    for s in i_sum.iter_mut() {
+        *s /= n;
+    }
+    let mut numer = 0.0_f64;
+    let mut i_prime_sq = 0.0_f64;
+    for i in 0..t_prime.len() {
+        let x = t_prime.xs[i] as usize;
+        let y = t_prime.ys[i] as usize;
+        let si = ((oy + y) * search_w + (ox + x)) * ch;
+        let primed = t_prime.primed_at(i);
+        for c in 0..ch {
+            let ip = search_data[si + c] as f64 - i_sum[c];
             numer += primed[c] * ip;
             i_prime_sq += ip * ip;
         }
@@ -470,12 +594,19 @@ fn prep_mask(tw: usize, th: usize, mask: Option<&[u8]>) -> Result<Vec<bool>, Mat
     let area = tw * th;
     match mask {
         None => Ok(vec![true; area]),
-        Some(m) if m.is_empty() => Ok(vec![true; area]),
+        Some([]) => Ok(vec![true; area]),
         Some(m) if m.len() != area => Err(MatchError::MaskSize {
             got: m.len(),
             want: area,
         }),
-        Some(m) => Ok(m.iter().map(|&v| v != 0).collect()),
+        Some(m) => {
+            // Avoid map+collect when every pixel is set.
+            if m.iter().all(|&v| v != 0) {
+                Ok(vec![true; area])
+            } else {
+                Ok(m.iter().map(|&v| v != 0).collect())
+            }
+        }
     }
 }
 
@@ -651,9 +782,11 @@ mod tests {
         search.stamp(&tmpl, 40, 30);
         let mask_bits = vec![true; 24 * 24];
         let (masked, t_prime_sq, sum_w) = build_t_prime(&tmpl, &mask_bits, 3);
-        let direct =
-            match_direct(&search, &masked, 24, 24, sum_w, t_prime_sq, 97, 77, 3, true).unwrap();
-        let fft = match_fft(&search, &masked, 24, 24, sum_w, t_prime_sq, 97, 77, 3).unwrap();
+        let direct = match_direct(
+            &search, &masked, 24, 24, sum_w, t_prime_sq, 97, 77, 3, true, None,
+        )
+        .unwrap();
+        let fft = match_fft(&search, &masked, 24, 24, sum_w, t_prime_sq, 97, 77, 3, None).unwrap();
         let di = 30 * direct.width + 40;
         let fi = 30 * fft.width + 40;
         assert!(
@@ -663,5 +796,33 @@ mod tests {
             fft.scores[fi]
         );
         assert!(direct.scores[di] > 0.99);
+    }
+
+    #[test]
+    fn mask_size_mismatch_errors() {
+        let search = gray(20, 20, 10);
+        let tmpl = patterned(5, 5);
+        let bad_mask = vec![255u8; 3];
+        let err = match_ccoeff_normed(&search, &tmpl, Some(&bad_mask)).unwrap_err();
+        assert!(matches!(err, MatchError::MaskSize { .. }), "got {err:?}");
+    }
+
+    #[test]
+    fn empty_image_errors() {
+        let empty = ImageBuf::from_raw(0, 0, 3, vec![]);
+        let tmpl = patterned(2, 2);
+        let err = match_ccoeff_normed(&empty, &tmpl, None).unwrap_err();
+        assert!(matches!(err, MatchError::Empty), "got {err:?}");
+    }
+
+    #[test]
+    fn template_too_large_errors() {
+        let search = gray(4, 4, 10);
+        let tmpl = patterned(8, 8);
+        let err = match_ccoeff_normed(&search, &tmpl, None).unwrap_err();
+        assert!(
+            matches!(err, MatchError::TemplateTooLarge { .. }),
+            "got {err:?}"
+        );
     }
 }

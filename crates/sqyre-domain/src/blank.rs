@@ -1,31 +1,10 @@
 //! Blank action factories for the Add Action picker.
 
 use crate::{
-    action_type_label, Action, ActionId, ActionKind, CoordinateOutputs, CoordinateRef, ListColumn,
-    MatchOrder, ScalarValue, WaitTilFoundConfig, DEFAULT_SMOOTH_DELAY_MS, DEFAULT_SMOOTH_HIGH,
-    DEFAULT_SMOOTH_LOW, MATCH_ALL,
+    action_type_table, Action, ActionId, ActionKind, ConditionBlock, CoordinateRef,
+    DetectionBranch, ListColumn, ScalarValue, DEFAULT_SMOOTH_DELAY_MS, DEFAULT_SMOOTH_HIGH,
+    DEFAULT_SMOOTH_LOW,
 };
-
-/// Picker column order.
-pub const ACTION_PICKER_CATEGORIES: &[&str] = &[
-    "Mouse & Keyboard",
-    "Detection",
-    "Variables",
-    "Loop flow",
-    "Miscellaneous",
-];
-
-/// Category for the Add Action picker grid (not the color-bucket grouping).
-pub fn action_picker_category(action_type: &str) -> &'static str {
-    match action_type.trim().to_ascii_lowercase().as_str() {
-        "move" | "click" | "key" | "type" => "Mouse & Keyboard",
-        "imagesearch" | "ocr" | "findpixel" => "Detection",
-        "setvariable" | "foreachrow" | "savevariable" => "Variables",
-        "loop" | "while" | "break" | "continue" | "navigateselect" | "navigatekey" => "Loop flow",
-        "wait" | "pause" | "focuswindow" | "runmacro" | "conditional" => "Miscellaneous",
-        _ => "Miscellaneous",
-    }
-}
 
 /// One picker entry: label, type key, category, and a fresh blank [`Action`].
 #[derive(Debug, Clone)]
@@ -43,35 +22,12 @@ impl ActionTemplate {
 
 /// All addable action kinds for the picker (21 kinds; Calculate folded into Set).
 pub fn action_templates() -> Vec<ActionTemplate> {
-    const ENTRIES: &[(&str, &str)] = &[
-        ("move", "Mouse & Keyboard"),
-        ("click", "Mouse & Keyboard"),
-        ("key", "Mouse & Keyboard"),
-        ("type", "Mouse & Keyboard"),
-        ("imagesearch", "Detection"),
-        ("ocr", "Detection"),
-        ("findpixel", "Detection"),
-        ("setvariable", "Variables"),
-        ("foreachrow", "Variables"),
-        ("savevariable", "Variables"),
-        ("loop", "Loop flow"),
-        ("while", "Loop flow"),
-        ("break", "Loop flow"),
-        ("continue", "Loop flow"),
-        ("navigateselect", "Loop flow"),
-        ("navigatekey", "Loop flow"),
-        ("wait", "Miscellaneous"),
-        ("pause", "Miscellaneous"),
-        ("focuswindow", "Miscellaneous"),
-        ("runmacro", "Miscellaneous"),
-        ("conditional", "Miscellaneous"),
-    ];
-    ENTRIES
+    action_type_table()
         .iter()
-        .map(|(ty, cat)| ActionTemplate {
-            label: action_type_label(ty),
-            action_type: ty,
-            category: cat,
+        .map(|m| ActionTemplate {
+            label: m.label,
+            action_type: m.type_key,
+            category: m.picker_category,
         })
         .collect()
 }
@@ -83,6 +39,22 @@ pub fn blank_action(action_type: &str) -> Option<Action> {
         id: ActionId::new(),
         kind,
     })
+}
+
+/// Convenience for tests: wrap a kind with a fresh id.
+pub fn test_action(kind: ActionKind) -> Action {
+    Action {
+        id: ActionId::new(),
+        kind,
+    }
+}
+
+/// `test_action!(ActionKind::Wait { time: ScalarValue::Int(1) })`
+#[macro_export]
+macro_rules! test_action {
+    ($kind:expr) => {
+        $crate::test_action($kind)
+    };
 }
 
 fn blank_kind(action_type: &str) -> Option<ActionKind> {
@@ -122,9 +94,7 @@ fn blank_kind(action_type: &str) -> Option<ActionKind> {
             macro_name: String::new(),
         },
         "conditional" => ActionKind::Conditional {
-            name: String::new(),
-            match_mode: MATCH_ALL.into(),
-            clauses: Vec::new(),
+            condition: ConditionBlock::default(),
             subactions: Vec::new(),
         },
         "loop" => ActionKind::Loop {
@@ -133,9 +103,7 @@ fn blank_kind(action_type: &str) -> Option<ActionKind> {
             subactions: Vec::new(),
         },
         "while" => ActionKind::While {
-            name: String::new(),
-            match_mode: MATCH_ALL.into(),
-            clauses: Vec::new(),
+            condition: ConditionBlock::default(),
             max_iterations: 0,
             subactions: Vec::new(),
         },
@@ -147,43 +115,31 @@ fn blank_kind(action_type: &str) -> Option<ActionKind> {
             search_area: CoordinateRef::default(),
             tolerance: 0.95,
             blur: 5,
-            wait: WaitTilFoundConfig::default(),
-            coords: CoordinateOutputs::defaults(),
-            run_branch_on_no_find: false,
-            order: MatchOrder::default(),
-            subactions: Vec::new(),
+            detection: DetectionBranch::default(),
         },
         "ocr" => ActionKind::Ocr {
             name: String::new(),
             target: "template".into(),
             search_area: CoordinateRef("template search area".into()),
             output_variable: String::new(),
-            coords: CoordinateOutputs::defaults(),
-            wait: WaitTilFoundConfig::default(),
-            run_branch_on_no_find: false,
             blur: 0,
             min_threshold: 0,
             resize: 1.0,
             grayscale: false,
             threshold_otsu: false,
             threshold_invert: false,
-            order: MatchOrder::default(),
-            subactions: Vec::new(),
+            detection: DetectionBranch::default(),
         },
         "findpixel" => ActionKind::FindPixel {
             name: String::new(),
             search_area: CoordinateRef::default(),
             target_color: "ffffff".into(),
             color_tolerance: 0,
-            wait: WaitTilFoundConfig::default(),
-            coords: CoordinateOutputs::defaults(),
-            run_branch_on_no_find: false,
-            order: MatchOrder::default(),
-            subactions: Vec::new(),
+            detection: DetectionBranch::default(),
         },
         "setvariable" => ActionKind::SetVariable {
             variable_name: String::new(),
-            value: serde_yaml::Value::String(String::new()),
+            value: ScalarValue::String(String::new()),
         },
         "foreachrow" => ActionKind::ForEachRow {
             name: String::new(),
@@ -198,35 +154,7 @@ fn blank_kind(action_type: &str) -> Option<ActionKind> {
             append: false,
             append_newline: false,
         },
-        "navigateselect" => ActionKind::NavigateSelect {
-            program: String::new(),
-            graph_name: String::new(),
-            chord_up: vec!["up".into()],
-            chord_down: vec!["down".into()],
-            chord_left: vec!["left".into()],
-            chord_right: vec!["right".into()],
-            chord_select: vec!["enter".into()],
-            chord_back: vec!["esc".into()],
-            wrap_edges: true,
-            move_cursor_with_nav: true,
-            smooth: false,
-            pass_through: false,
-            hold_repeat: false,
-            select_device: "mouse".into(),
-            select_button: "left".into(),
-            select_key: String::new(),
-            select_press_mode: "click".into(),
-            in_graph: String::new(),
-            in_row: String::new(),
-            in_col: String::new(),
-            in_collection: String::new(),
-            output_ref: String::new(),
-            output_graph: String::new(),
-            output_row: String::new(),
-            output_col: String::new(),
-            output_collection: String::new(),
-            subactions: Vec::new(),
-        },
+        "navigateselect" => ActionKind::NavigateSelect(Box::default()),
         "navigatekey" => ActionKind::NavigateKey {
             name: String::new(),
             chord: Vec::new(),
@@ -240,6 +168,7 @@ fn blank_kind(action_type: &str) -> Option<ActionKind> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::action_picker_category;
 
     #[test]
     fn templates_cover_twenty_one_kinds() {
@@ -264,9 +193,7 @@ mod tests {
         let a = blank_action("move").unwrap();
         match a.kind {
             ActionKind::Move {
-                smooth,
-                smooth_low,
-                ..
+                smooth, smooth_low, ..
             } => {
                 assert!(smooth);
                 assert!((smooth_low - DEFAULT_SMOOTH_LOW).abs() < f64::EPSILON);

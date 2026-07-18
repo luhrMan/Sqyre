@@ -125,8 +125,7 @@ mod tests {
         let pasted_id = pasted.id;
         assert_ne!(pasted_id, wait_a_id);
 
-        let (parent, slot) =
-            insert_location_below_selection(&root, Some(wait_a_id)).expect("loc");
+        let (parent, slot) = insert_location_below_selection(&root, Some(wait_a_id)).expect("loc");
         root.insert_at(parent, slot, pasted).expect("insert");
 
         let ids: Vec<_> = root.children().iter().map(|c| c.id).collect();

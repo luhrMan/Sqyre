@@ -1,50 +1,34 @@
 //! User Settings window.
 
+use crate::status_banner::StatusBanner;
 use eframe::egui::{self, Color32};
-use sqyre_domain::{
-    action_pastel_color, clear_all_custom_action_colors, clear_custom_action_color,
-    default_action_pastel_color, format_hex_color, parse_hex_color, sample_action_type_for_color_key,
-    set_custom_action_color, ACTION_COLOR_CATEGORIES,
-};
 use sqyre_domain::Macro;
+use sqyre_domain::{format_hex_color, parse_hex_color, ACTION_COLOR_CATEGORIES};
 use sqyre_persist::{
     move_dir, open_sqyre_dir, set_sqyre_dir_override, sqyre_dir, Database, ProgramCatalog,
     UserSettings, DEFAULT_UI_FONT_SIZE, DEFAULT_UI_SCALE,
+};
+use sqyre_ui_model::{
+    action_pastel_color, clear_all_custom_action_colors, clear_custom_action_color,
+    default_action_pastel_color, sample_action_type_for_color_key, set_custom_action_color,
 };
 use std::path::PathBuf;
 
 #[derive(Debug, Clone)]
 enum PendingConfirm {
     /// Move current data to `new_dir` (Yes) or start fresh (No).
-    MoveData {
-        old_dir: PathBuf,
-        new_dir: PathBuf,
-    },
+    MoveData { old_dir: PathBuf, new_dir: PathBuf },
 }
 
+#[derive(Default)]
 pub struct SettingsUi {
     pub open: bool,
     settings: UserSettings,
     dirty: bool,
-    status: Option<String>,
-    status_error: bool,
+    status_banner: StatusBanner,
     confirm: Option<PendingConfirm>,
     /// Set when the data directory changed and the shell should reload from disk.
     pub reload_requested: bool,
-}
-
-impl Default for SettingsUi {
-    fn default() -> Self {
-        Self {
-            open: false,
-            settings: UserSettings::default(),
-            dirty: false,
-            status: None,
-            status_error: false,
-            confirm: None,
-            reload_requested: false,
-        }
-    }
 }
 
 impl SettingsUi {
@@ -64,15 +48,16 @@ impl SettingsUi {
     }
 
     pub fn save_settings(&mut self) -> Result<(), String> {
-        self.settings
-            .save_default()
-            .map_err(|e| e.to_string())
+        self.settings.save_default().map_err(|e| e.to_string())
     }
 
     /// Ensure Hack is in the proportional fallback chain so geometric/arrow
     /// symbols (e.g. ➔ ◫) are available — egui's default omits Hack there.
+    /// Also registers Phosphor for overlay button icons.
     pub fn install_fonts(ctx: &egui::Context) {
         let mut fonts = egui::FontDefinitions::default();
+        egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
+        crate::overlay_icons::register_phosphor_family(&mut fonts);
         if let Some(prop) = fonts.families.get_mut(&egui::FontFamily::Proportional) {
             if !prop.iter().any(|n| n == "Hack") {
                 // After Ubuntu (UI text), before emoji fallbacks.
@@ -108,18 +93,16 @@ impl SettingsUi {
         style
             .text_styles
             .insert(TextStyle::Body, egui::FontId::proportional(base));
-        style.text_styles.insert(
-            TextStyle::Button,
-            egui::FontId::proportional(base),
-        );
+        style
+            .text_styles
+            .insert(TextStyle::Button, egui::FontId::proportional(base));
         style.text_styles.insert(
             TextStyle::Heading,
             egui::FontId::proportional((base * 1.35).round()),
         );
-        style.text_styles.insert(
-            TextStyle::Monospace,
-            egui::FontId::monospace(base),
-        );
+        style
+            .text_styles
+            .insert(TextStyle::Monospace, egui::FontId::monospace(base));
         ctx.set_global_style(style);
     }
 
@@ -151,13 +134,11 @@ impl SettingsUi {
     }
 
     fn set_ok(&mut self, msg: impl Into<String>) {
-        self.status = Some(msg.into());
-        self.status_error = false;
+        self.status_banner.set_ok(msg);
     }
 
     fn set_err(&mut self, msg: impl Into<String>) {
-        self.status = Some(msg.into());
-        self.status_error = true;
+        self.status_banner.set_err(msg);
     }
 
     pub fn show(
@@ -218,9 +199,9 @@ impl SettingsUi {
                 });
             });
 
-        if let Some(status) = &self.status {
+        if let Some(status) = &self.status_banner.status {
             ui.separator();
-            if self.status_error {
+            if self.status_banner.status_error {
                 ui.colored_label(Color32::RED, status);
             } else {
                 ui.label(status);
@@ -262,6 +243,7 @@ impl SettingsUi {
                 &mut self.settings.highlight_active_action,
                 "Highlight the currently executing action",
             )
+            .on_hover_text("Scroll and tint the tree row of the action running now.")
             .changed()
         {
             self.mark_dirty();
@@ -330,8 +312,7 @@ impl SettingsUi {
             .parent()
             .map(PathBuf::from)
             .unwrap_or_else(sqyre_dir);
-        let Some(parent) =
-            crate::file_dialogs::pick_folder("Choose .sqyre location", &start)
+        let Some(parent) = crate::file_dialogs::pick_folder("Choose .sqyre location", &start)
         else {
             return;
         };
@@ -459,7 +440,9 @@ impl SettingsUi {
                         .speed(0.05)
                         .fixed_decimals(1),
                 )
-                .on_hover_text("Scale padding, icons, and other non-text UI elements (1.0 = default).")
+                .on_hover_text(
+                    "Scale padding, icons, and other non-text UI elements (1.0 = default).",
+                )
                 .changed()
             {
                 self.settings.ui_scale = v;
@@ -498,9 +481,7 @@ impl SettingsUi {
                     );
                     if ui.color_edit_button_srgba(&mut color).changed() {
                         let rgba = [color.r(), color.g(), color.b(), 255];
-                        self.settings
-                            .action_colors
-                            .set(key, format_hex_color(rgba));
+                        self.settings.action_colors.set(key, format_hex_color(rgba));
                         set_custom_action_color(key, rgba);
                         self.mark_dirty();
                     }

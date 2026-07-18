@@ -61,3 +61,29 @@ pub struct Point {
     pub x: i32,
     pub y: i32,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stamp_clips_at_edges() {
+        let mut dst = ImageBuf::new(4, 4, 3, 0);
+        let src = ImageBuf::new(3, 3, 3, 200);
+        dst.stamp(&src, 2, 2);
+        // Only bottom-right 2×2 of stamp lands in dst.
+        assert_eq!(dst.data[dst.pixel_offset(2, 2)], 200);
+        assert_eq!(dst.data[dst.pixel_offset(3, 3)], 200);
+        assert_eq!(dst.data[dst.pixel_offset(0, 0)], 0);
+        assert_eq!(dst.data[dst.pixel_offset(1, 1)], 0);
+    }
+
+    #[test]
+    fn from_raw_roundtrip_length() {
+        let data = vec![1u8, 2, 3, 4, 5, 6];
+        let img = ImageBuf::from_raw(2, 1, 3, data.clone());
+        assert_eq!(img.width, 2);
+        assert_eq!(img.height, 1);
+        assert_eq!(img.data, data);
+    }
+}

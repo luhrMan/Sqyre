@@ -1,6 +1,6 @@
 //! OCR capture preprocessing.
 
-use sqyre_match::{blur_image, search_blur_kernel, ImageBuf};
+use sqyre_match::{blur_image_owned, search_blur_kernel, ImageBuf};
 
 /// One intermediate image from OCR preprocessing (chronological).
 #[derive(Debug, Clone)]
@@ -103,7 +103,7 @@ pub fn preprocess_for_ocr_with_steps(
 
     if opts.blur && opts.blur_amount > 0 {
         let k = search_blur_kernel(opts.blur_amount);
-        cur = blur_image(&cur, k).map_err(|e| format!("OCR blur: {e}"))?;
+        cur = blur_image_owned(cur, k).map_err(|e| format!("OCR blur: {e}"))?;
         if collect_steps {
             step_n += 1;
             steps.push(OcrPreprocessStep {
@@ -170,19 +170,7 @@ pub fn preprocess_for_ocr_with_steps(
 }
 
 fn to_grayscale(img: &ImageBuf) -> ImageBuf {
-    if img.channels == 1 {
-        return img.clone();
-    }
-    let mut data = Vec::with_capacity(img.width * img.height);
-    for i in 0..img.width * img.height {
-        let o = i * img.channels;
-        let r = img.data[o] as u32;
-        let g = img.data[o + 1] as u32;
-        let b = img.data[o + 2] as u32;
-        // OpenCV BGR→Gray on RGB buffer: approximate Rec.601
-        data.push(((299 * r + 587 * g + 114 * b) / 1000) as u8);
-    }
-    ImageBuf::from_raw(img.width, img.height, 1, data)
+    crate::image_util::rgb_to_grayscale(img)
 }
 
 fn otsu_threshold(hist_src: &[u8]) -> u8 {
@@ -202,8 +190,8 @@ fn otsu_threshold(hist_src: &[u8]) -> u8 {
     let mut w_b = 0.0_f64;
     let mut max_var = -1.0_f64;
     let mut threshold = 0u8;
-    for t in 0..256 {
-        w_b += hist[t] as f64;
+    for (t, &h) in hist.iter().enumerate() {
+        w_b += h as f64;
         if w_b == 0.0 {
             continue;
         }
@@ -211,7 +199,7 @@ fn otsu_threshold(hist_src: &[u8]) -> u8 {
         if w_f == 0.0 {
             break;
         }
-        sum_b += t as f64 * hist[t] as f64;
+        sum_b += t as f64 * h as f64;
         let m_b = sum_b / w_b;
         let m_f = (sum_all - sum_b) / w_f;
         let var = w_b * w_f * (m_b - m_f) * (m_b - m_f);
@@ -314,7 +302,12 @@ mod tests {
 
     #[test]
     fn grayscale_and_threshold() {
-        let img = ImageBuf::from_raw(2, 2, 3, vec![0, 0, 0, 255, 255, 255, 0, 0, 0, 255, 255, 255]);
+        let img = ImageBuf::from_raw(
+            2,
+            2,
+            3,
+            vec![0, 0, 0, 255, 255, 255, 0, 0, 0, 255, 255, 255],
+        );
         let opts = OcrPreprocessOptions {
             grayscale: true,
             blur: false,
@@ -329,7 +322,7 @@ mod tests {
         let (out, scale) = preprocess_for_ocr(&img, opts).unwrap();
         assert_eq!(scale, 1.0);
         assert_eq!(out.channels, 1);
-        assert!(out.data.iter().any(|&p| p == 0) || out.data.iter().any(|&p| p == 255));
+        assert!(out.data.contains(&0) || out.data.contains(&255));
     }
 
     #[test]
@@ -353,7 +346,12 @@ mod tests {
 
     #[test]
     fn with_steps_records_enabled_stages() {
-        let img = ImageBuf::from_raw(2, 2, 3, vec![0, 0, 0, 255, 255, 255, 0, 0, 0, 255, 255, 255]);
+        let img = ImageBuf::from_raw(
+            2,
+            2,
+            3,
+            vec![0, 0, 0, 255, 255, 255, 0, 0, 0, 255, 255, 255],
+        );
         let opts = OcrPreprocessOptions {
             grayscale: true,
             blur: false,

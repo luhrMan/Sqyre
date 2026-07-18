@@ -63,10 +63,91 @@ impl IconStore for CatalogIcons<'_> {
 }
 
 /// Snapshot of macros available to RunMacro during a run.
-pub struct SnapshotMacros(pub Arc<BTreeMap<String, Macro>>);
+pub struct SnapshotMacros(pub Arc<BTreeMap<String, Arc<Macro>>>);
 
 impl MacroLookup for SnapshotMacros {
-    fn get(&self, name: &str) -> Option<Macro> {
+    fn get(&self, name: &str) -> Option<Arc<Macro>> {
         self.0.get(name).cloned()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_yaml::Value;
+
+    fn sample_catalog() -> ProgramCatalog {
+        let yaml = r#"
+Game:
+  name: Game
+  items:
+    Sword:
+      name: Sword
+      mask: ""
+      stackmax: 1
+      gridsize: [1, 1]
+  coordinates:
+    1920x1080:
+      points:
+        Spawn:
+          name: Spawn
+          x: 10
+          y: 20
+      searchareas:
+        Arena:
+          name: Arena
+          leftx: 0
+          topy: 0
+          rightx: 100
+          bottomy: 80
+  collections:
+    Bag:
+      name: Bag
+      searcharea: Arena
+      rows: 4
+      cols: 5
+"#;
+        let v: Value = serde_yaml::from_str(yaml).unwrap();
+        let mut cat = ProgramCatalog::from_yaml_value(&v).unwrap();
+        cat.set_resolution_key("1920x1080");
+        cat
+    }
+
+    #[test]
+    fn catalog_resolver_resolves_point_and_area() {
+        let cat = sample_catalog();
+        let resolver = CatalogResolver(&cat);
+        let m = Macro::new("t", 0, vec![]);
+        assert_eq!(
+            resolver
+                .resolve_point(&CoordinateRef("Game~Spawn".into()), &m)
+                .unwrap(),
+            (10, 20)
+        );
+        assert_eq!(
+            resolver
+                .resolve_search_area(&CoordinateRef("Game~Arena".into()), &m)
+                .unwrap(),
+            (0, 0, 100, 80)
+        );
+        assert_eq!(resolver.collection_grid("Game", "Bag").unwrap(), (4, 5));
+    }
+
+    #[test]
+    fn catalog_icons_expose_item_meta() {
+        let cat = sample_catalog();
+        let icons = CatalogIcons(&cat);
+        let meta = icons.item_meta("Game~Sword").expect("meta");
+        assert_eq!(meta.name, "Sword");
+        assert_eq!(meta.stack_max, 1);
+    }
+
+    #[test]
+    fn snapshot_macros_lookup() {
+        let mut map = BTreeMap::new();
+        map.insert("alpha".into(), Arc::new(Macro::new("alpha", 0, vec![])));
+        let snap = SnapshotMacros(Arc::new(map));
+        assert!(snap.get("alpha").is_some());
+        assert!(snap.get("missing").is_none());
     }
 }

@@ -8,11 +8,11 @@
 use std::os::raw::{c_int, c_uint, c_ulong};
 use std::ptr;
 use x11::xlib::{
-    Above, CWBackPixel, CWBorderPixel, CWHeight, CWOverrideRedirect, CWStackMode, CWWidth, CWX, CWY,
-    Display, InputOutput, True, Window, XAllocColor, XCloseDisplay, XColor, XConfigureWindow,
-    XCreateWindow, XDefaultColormap, XDefaultDepth, XDefaultRootWindow, XDefaultScreen,
-    XDefaultVisual, XDestroyWindow, XFlush, XMapRaised, XOpenDisplay, XSetWindowAttributes,
-    XUnmapWindow, XWindowChanges, _XDisplay,
+    Above, CWBackPixel, CWBorderPixel, CWHeight, CWOverrideRedirect, CWStackMode, CWWidth, Display,
+    InputOutput, True, Window, XAllocColor, XCloseDisplay, XColor, XConfigureWindow, XCreateWindow,
+    XDefaultColormap, XDefaultDepth, XDefaultRootWindow, XDefaultScreen, XDefaultVisual,
+    XDestroyWindow, XFlush, XMapRaised, XOpenDisplay, XSetWindowAttributes, XUnmapWindow,
+    XWindowChanges, _XDisplay, CWX, CWY,
 };
 
 const EDGE_PX: i32 = 2;
@@ -72,11 +72,13 @@ impl SelectionOutline {
             if display.is_null() {
                 return Err("XOpenDisplay failed (need X11)".into());
             }
+            crate::x11_secondary::register(display);
             let screen = XDefaultScreen(display);
             let root = XDefaultRootWindow(display);
             let pixel = match alloc_stroke_pixel(display, screen) {
                 Ok(p) => p,
                 Err(e) => {
+                    crate::x11_secondary::unregister(display);
                     XCloseDisplay(display);
                     return Err(e);
                 }
@@ -91,6 +93,7 @@ impl SelectionOutline {
                                 XDestroyWindow(display, w);
                             }
                         }
+                        crate::x11_secondary::unregister(display);
                         XCloseDisplay(display);
                         return Err(e);
                     }
@@ -150,6 +153,7 @@ impl Drop for SelectionOutline {
                 }
             }
             if !self.display.is_null() {
+                crate::x11_secondary::unregister(self.display);
                 XCloseDisplay(self.display);
                 self.display = ptr::null_mut();
             }

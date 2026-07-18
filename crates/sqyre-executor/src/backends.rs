@@ -1,7 +1,8 @@
 use image::RgbaImage;
 use sqyre_domain::{CoordinateRef, Macro};
-use sqyre_match::{ImageBuf, MatchError, Point};
+use sqyre_match::ImageBuf;
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
 /// Mouse move options.
 #[derive(Debug, Clone, Copy, Default)]
@@ -37,6 +38,59 @@ impl DesktopRect {
     }
 }
 
+/// Packed RGB capture (no alpha) for search / OCR / find-pixel hot paths.
+#[derive(Debug, Clone)]
+pub struct RgbCapture {
+    pub width: u32,
+    pub height: u32,
+    pub data: Vec<u8>,
+}
+
+impl RgbCapture {
+    pub fn from_rgba(img: &RgbaImage) -> Self {
+        let width = img.width();
+        let height = img.height();
+        let mut data = Vec::with_capacity((width as usize).saturating_mul(height as usize) * 3);
+        for chunk in img.as_raw().chunks_exact(4) {
+            data.extend_from_slice(&chunk[..3]);
+        }
+        Self {
+            width,
+            height,
+            data,
+        }
+    }
+
+    pub fn into_image_buf(self) -> ImageBuf {
+        ImageBuf::from_raw(self.width as usize, self.height as usize, 3, self.data)
+    }
+}
+
+/// Clamp a search-area box to optional virtual-desktop bounds.
+pub fn clamp_search_rect(
+    left: i32,
+    top: i32,
+    right: i32,
+    bottom: i32,
+    vb: Option<DesktopRect>,
+) -> Result<DesktopRect, String> {
+    let mut rect = DesktopRect::from_corners(left, top, right, bottom);
+    if rect.is_empty() {
+        return Err(format!("empty search area {left},{top},{right},{bottom}"));
+    }
+    if let Some(vb) = vb {
+        let lx = left.max(vb.x);
+        let ty = top.max(vb.y);
+        let rx = right.min(vb.x + vb.w);
+        let by = bottom.min(vb.y + vb.h);
+        rect = DesktopRect::from_corners(lx, ty, rx, by);
+        if rect.is_empty() {
+            return Err("search area outside virtual desktop".into());
+        }
+    }
+    Ok(rect)
+}
+
 /// Mouse / keyboard / timing / clipboard.
 pub trait AutomationBackend {
     fn milli_sleep(&mut self, ms: i32);
@@ -45,7 +99,7 @@ pub trait AutomationBackend {
     fn scroll(&mut self, up: bool) -> Result<(), String>;
     fn key_down(&mut self, key: &str) -> Result<(), String>;
     fn key_up(&mut self, key: &str) -> Result<(), String>;
-    fn type_char(&mut self, s: &str);
+    fn type_char(&mut self, ch: char);
     fn write_clipboard(&mut self, s: &str) -> Result<(), String>;
 }
 
@@ -62,6 +116,11 @@ pub trait ScreenCapturer {
         Ok(vec![(vb.w, vb.h)])
     }
 
+    /// Capture RGB (no alpha). Default: RGBA capture then strip alpha.
+    fn capture_rect_rgb(&mut self, rect: DesktopRect) -> Result<RgbCapture, String> {
+        Ok(RgbCapture::from_rgba(&self.capture_rect(rect)?))
+    }
+
     /// Capture a search-area rectangle after basic size checks.
     fn capture_search_area(
         &mut self,
@@ -70,42 +129,24 @@ pub trait ScreenCapturer {
         right: i32,
         bottom: i32,
     ) -> Result<(RgbaImage, DesktopRect), String> {
-        let mut rect = DesktopRect::from_corners(left, top, right, bottom);
-        if rect.is_empty() {
-            return Err(format!(
-                "empty search area {left},{top},{right},{bottom}"
-            ));
-        }
-        // Clamp to virtual bounds when available.
-        if let Ok(vb) = self.virtual_bounds() {
-            let lx = left.max(vb.x);
-            let ty = top.max(vb.y);
-            let rx = right.min(vb.x + vb.w);
-            let by = bottom.min(vb.y + vb.h);
-            rect = DesktopRect::from_corners(lx, ty, rx, by);
-            if rect.is_empty() {
-                return Err("search area outside virtual desktop".into());
-            }
-        }
+        let vb = self.virtual_bounds().ok();
+        let rect = clamp_search_rect(left, top, right, bottom, vb)?;
         let img = self.capture_rect(rect)?;
         Ok((img, rect))
     }
-}
 
-/// Template matching façade over `sqyre-match`.
-pub trait TemplateMatcher {
-    fn find_matches(
-        &self,
-        search: &ImageBuf,
-        template: &ImageBuf,
-        mask: Option<&ImageBuf>,
-        threshold: f32,
-        blur: i32,
-    ) -> Result<Vec<Point>, MatchError>;
-
-    /// Spatial dedup distance for nearby peaks (`image_search_close_matches_distance`).
-    fn close_matches_distance(&self) -> i32 {
-        sqyre_match::DEFAULT_CLOSE_MATCHES_DISTANCE
+    /// RGB search-area capture (preferred for image/OCR/pixel matching).
+    fn capture_search_area_rgb(
+        &mut self,
+        left: i32,
+        top: i32,
+        right: i32,
+        bottom: i32,
+    ) -> Result<(RgbCapture, DesktopRect), String> {
+        let vb = self.virtual_bounds().ok();
+        let rect = clamp_search_rect(left, top, right, bottom, vb)?;
+        let img = self.capture_rect_rgb(rect)?;
+        Ok((img, rect))
     }
 }
 
@@ -144,7 +185,7 @@ pub struct ItemMeta {
 
 /// Look up another macro by name.
 pub trait MacroLookup: Send + Sync {
-    fn get(&self, name: &str) -> Option<Macro>;
+    fn get(&self, name: &str) -> Option<Arc<Macro>>;
 }
 
 /// Block until the user presses a continue chord.
@@ -202,9 +243,41 @@ pub struct FixedOcrEngine {
 impl OcrEngine for FixedOcrEngine {
     fn recognize(&self, image: &sqyre_match::ImageBuf) -> Result<OcrResult, String> {
         if let Ok(mut g) = self.log.lock() {
-            g.push(format!("ocr:{}x{}c{}", image.width, image.height, image.channels));
+            g.push(format!(
+                "ocr:{}x{}c{}",
+                image.width, image.height, image.channels
+            ));
         }
         Ok(self.result.clone())
+    }
+}
+
+/// Test OCR engine that pops results from a FIFO queue (then repeats the last).
+#[derive(Debug, Default)]
+pub struct QueuedOcrEngine {
+    pub queue: std::sync::Mutex<Vec<OcrResult>>,
+    pub log: std::sync::Mutex<Vec<String>>,
+}
+
+impl OcrEngine for QueuedOcrEngine {
+    fn recognize(&self, image: &sqyre_match::ImageBuf) -> Result<OcrResult, String> {
+        if let Ok(mut g) = self.log.lock() {
+            g.push(format!(
+                "ocr:{}x{}c{}",
+                image.width, image.height, image.channels
+            ));
+        }
+        let mut q = self
+            .queue
+            .lock()
+            .map_err(|_| "QueuedOcrEngine: lock poisoned".to_string())?;
+        if q.is_empty() {
+            return Err("QueuedOcrEngine: empty queue".into());
+        }
+        if q.len() == 1 {
+            return Ok(q[0].clone());
+        }
+        Ok(q.remove(0))
     }
 }
 
@@ -242,8 +315,8 @@ impl AutomationBackend for RecordingBackend {
         self.log.push(format!("keyup:{key}"));
         Ok(())
     }
-    fn type_char(&mut self, s: &str) {
-        self.log.push(format!("type:{s}"));
+    fn type_char(&mut self, ch: char) {
+        self.log.push(format!("type:{ch}"));
     }
     fn write_clipboard(&mut self, s: &str) -> Result<(), String> {
         self.log.push(format!("clipboard:{s}"));
@@ -255,23 +328,33 @@ impl AutomationBackend for RecordingBackend {
 #[derive(Debug, Default)]
 pub struct RecordingCapturer {
     pub log: Vec<String>,
+    /// Single image returned when [`Self::queue`] is empty.
     pub next: Option<RgbaImage>,
+    /// FIFO images consumed one per capture (then falls back to [`Self::next`]).
+    pub queue: Vec<RgbaImage>,
     pub bounds: DesktopRect,
+}
+
+impl RecordingCapturer {
+    fn take_image(&mut self) -> Result<RgbaImage, String> {
+        if !self.queue.is_empty() {
+            return Ok(self.queue.remove(0));
+        }
+        self.next
+            .clone()
+            .ok_or_else(|| "RecordingCapturer: no image".into())
+    }
 }
 
 impl ScreenCapturer for RecordingCapturer {
     fn capture_monitor(&mut self, display_index: i32) -> Result<RgbaImage, String> {
         self.log.push(format!("monitor:{display_index}"));
-        self.next
-            .clone()
-            .ok_or_else(|| "RecordingCapturer: no image".into())
+        self.take_image()
     }
     fn capture_rect(&mut self, rect: DesktopRect) -> Result<RgbaImage, String> {
         self.log
             .push(format!("rect:{},{},{},{}", rect.x, rect.y, rect.w, rect.h));
-        self.next
-            .clone()
-            .ok_or_else(|| "RecordingCapturer: no image".into())
+        self.take_image()
     }
     fn virtual_bounds(&mut self) -> Result<DesktopRect, String> {
         Ok(self.bounds)
@@ -281,11 +364,11 @@ impl ScreenCapturer for RecordingCapturer {
 /// In-memory macro catalog for tests.
 #[derive(Debug, Default)]
 pub struct MapMacroLookup {
-    pub macros: std::collections::BTreeMap<String, Macro>,
+    pub macros: std::collections::BTreeMap<String, Arc<Macro>>,
 }
 
 impl MacroLookup for MapMacroLookup {
-    fn get(&self, name: &str) -> Option<Macro> {
+    fn get(&self, name: &str) -> Option<Arc<Macro>> {
         self.macros.get(name).cloned()
     }
 }

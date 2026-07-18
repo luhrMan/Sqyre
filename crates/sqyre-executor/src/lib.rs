@@ -1,10 +1,10 @@
 //! Macro executor with injected backends (automation + capture/match).
 
 mod action_log;
+mod actions;
 mod backends;
 mod error;
 mod highlight;
-mod misc;
 mod navigate;
 mod run;
 mod runtime_vars;
@@ -21,4 +21,3 @@ pub use highlight::{
 };
 pub use run::{execute_action, execute_macro, execute_macro_with, ExecDeps, Executor};
 pub use runtime_vars::{RuntimeVarSink, SharedRuntimeVars};
-pub use search::MatchFacade;

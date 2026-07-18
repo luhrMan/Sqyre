@@ -1,5 +1,10 @@
 //! Screen capture in absolute virtual-desktop coordinates.
 
+mod diag;
+mod error;
+#[cfg(not(target_os = "linux"))]
+mod outline_stub;
+mod pixel_convert;
 mod stub;
 #[cfg(target_os = "linux")]
 mod x11_capture;
@@ -7,13 +12,19 @@ mod x11_capture;
 mod x11_focus;
 #[cfg(target_os = "linux")]
 mod x11_outline;
-#[cfg(not(target_os = "linux"))]
-mod outline_stub;
+#[cfg(target_os = "linux")]
+mod x11_secondary;
 
+pub use diag::{
+    disk_logging_enabled, mark_site, note, read_last_site, set_disk_logging, set_log_dir,
+    CRASH_LOG_FILE, DIAG_LOG_FILE, LAST_SITE_FILE,
+};
+pub use error::CaptureError;
+pub use pixel_convert::{zpixmap_to_rgb, zpixmap_to_rgba};
 pub use stub::{NullCapturer, SolidCapturer};
 
 #[cfg(target_os = "linux")]
-pub use x11_capture::X11Capturer;
+pub use x11_capture::{shared_capturer, SharedRunCapturer, X11Capturer};
 
 #[cfg(target_os = "linux")]
 pub use x11_focus::X11WindowFocuser;
@@ -21,11 +32,46 @@ pub use x11_focus::X11WindowFocuser;
 #[cfg(target_os = "linux")]
 pub use x11_outline::{OutlineRect, SelectionOutline};
 
+/// True if `display` is a Sqyre secondary X11 connection (for winit error hooks).
+#[cfg(target_os = "linux")]
+pub fn owns_secondary_x_display(display: *mut std::ffi::c_void) -> bool {
+    x11_secondary::owns(display)
+}
+
 #[cfg(not(target_os = "linux"))]
 pub use outline_stub::{OutlineRect, SelectionOutline};
 
 #[cfg(not(target_os = "linux"))]
 pub type X11Capturer = NullCapturer;
+
+#[cfg(not(target_os = "linux"))]
+pub fn shared_capturer() -> Result<std::sync::Arc<X11Capturer>, String> {
+    Err("screen capture: not supported on this platform".into())
+}
+
+#[cfg(not(target_os = "linux"))]
+pub struct SharedRunCapturer(pub std::sync::Arc<X11Capturer>);
+
+#[cfg(not(target_os = "linux"))]
+impl sqyre_executor::ScreenCapturer for SharedRunCapturer {
+    fn capture_monitor(&mut self, _display_index: i32) -> Result<image::RgbaImage, String> {
+        Err("screen capture: not supported on this platform".into())
+    }
+    fn capture_rect(
+        &mut self,
+        _rect: sqyre_executor::DesktopRect,
+    ) -> Result<image::RgbaImage, String> {
+        Err("screen capture: not supported on this platform".into())
+    }
+    fn virtual_bounds(&mut self) -> Result<sqyre_executor::DesktopRect, String> {
+        Ok(sqyre_executor::DesktopRect {
+            x: 0,
+            y: 0,
+            w: 1,
+            h: 1,
+        })
+    }
+}
 
 /// One top-level application window for Focus Window picker UI.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -39,7 +85,11 @@ impl WindowInfo {
     /// Human-readable list line: `title  (name — path)`.
     pub fn label(&self) -> String {
         let title = self.title.trim();
-        let title = if title.is_empty() { "(untitled)" } else { title };
+        let title = if title.is_empty() {
+            "(untitled)"
+        } else {
+            title
+        };
         let name = self.process_name.trim();
         let path = self.process_path.trim();
         match (name.is_empty(), path.is_empty()) {
@@ -56,8 +106,9 @@ impl WindowInfo {
 /// Returns `None` when no display is available (headless / CI).
 pub fn main_monitor_resolution_key() -> Option<String> {
     use sqyre_executor::ScreenCapturer;
-    let mut capturer = X11Capturer::open().ok()?;
-    let sizes = capturer.monitor_sizes().ok()?;
+    let capturer = shared_capturer().ok()?;
+    let mut wrap = SharedRunCapturer(capturer);
+    let sizes = wrap.monitor_sizes().ok()?;
     let &(w, h) = sizes.first()?;
     if w > 0 && h > 0 {
         Some(format!("{w}x{h}"))
@@ -69,13 +120,11 @@ pub fn main_monitor_resolution_key() -> Option<String> {
 /// Number of displays from the live capturer, or `1` when capture is unavailable.
 pub fn monitor_count() -> usize {
     use sqyre_executor::ScreenCapturer;
-    let Ok(mut capturer) = X11Capturer::open() else {
+    let Ok(capturer) = shared_capturer() else {
         return 1;
     };
-    capturer
-        .monitor_sizes()
-        .map(|s| s.len().max(1))
-        .unwrap_or(1)
+    let mut wrap = SharedRunCapturer(capturer);
+    wrap.monitor_sizes().map(|s| s.len().max(1)).unwrap_or(1)
 }
 
 /// Open top-level windows with stable executable path and title.
@@ -87,6 +136,138 @@ pub fn list_open_windows() -> Result<Vec<WindowInfo>, String> {
 #[cfg(not(target_os = "linux"))]
 pub fn list_open_windows() -> Result<Vec<WindowInfo>, String> {
     Err("list windows: not supported on this platform".into())
+}
+
+/// Currently focused top-level window, if any.
+#[cfg(target_os = "linux")]
+pub fn get_active_window() -> Result<Option<WindowInfo>, String> {
+    x11_focus::get_active_window()
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn get_active_window() -> Result<Option<WindowInfo>, String> {
+    Err("active window: not supported on this platform".into())
+}
+
+/// X11: hide overlay tool windows from Alt-Tab / taskbar (no-op elsewhere).
+#[cfg(target_os = "linux")]
+pub fn skip_taskbar_for_overlay_windows() -> Result<(), String> {
+    x11_focus::skip_taskbar_for_overlay_windows()
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn skip_taskbar_for_overlay_windows() -> Result<(), String> {
+    Ok(())
+}
+
+/// Stable WM title used by floating macro-overlay viewports.
+#[cfg(target_os = "linux")]
+pub use x11_focus::OVERLAY_WM_TITLE;
+
+#[cfg(not(target_os = "linux"))]
+pub const OVERLAY_WM_TITLE: &str = "sqyre-overlay";
+
+/// True when the focused window belongs to this process (e.g. an overlay button).
+pub fn active_window_is_our_process() -> bool {
+    let Ok(Some(win)) = get_active_window() else {
+        return false;
+    };
+    window_is_our_process(&win)
+}
+
+/// True when `win` is owned by this process's executable.
+pub fn window_is_our_process(win: &WindowInfo) -> bool {
+    let Ok(exe) = std::env::current_exe() else {
+        return false;
+    };
+    window_matches_process(win, &exe.to_string_lossy())
+}
+
+/// True when `program` is empty, or the focused window looks like that catalog program.
+///
+/// Matching is case-insensitive against process name, executable basename, or window title
+/// (exact or contains). Catalog program names are user-defined labels, not OS process names.
+pub fn active_window_matches_program(program: &str) -> bool {
+    let program = program.trim();
+    if program.is_empty() {
+        return true;
+    }
+    let Ok(Some(win)) = get_active_window() else {
+        return false;
+    };
+    window_matches_program(&win, program)
+}
+
+/// True when `process_path` is empty, or the focused window's executable matches it.
+pub fn active_window_matches_process(process_path: &str) -> bool {
+    let process_path = process_path.trim();
+    if process_path.is_empty() {
+        return true;
+    }
+    let Ok(Some(win)) = get_active_window() else {
+        return false;
+    };
+    window_matches_process(&win, process_path)
+}
+
+/// Case-insensitive match of a window against a catalog program name.
+pub fn window_matches_program(win: &WindowInfo, program: &str) -> bool {
+    let needle = program.trim().to_lowercase();
+    if needle.is_empty() {
+        return true;
+    }
+    let name = win.process_name.trim().to_lowercase();
+    let title = win.title.trim().to_lowercase();
+    let basename = std::path::Path::new(win.process_path.trim())
+        .file_name()
+        .map(|n| n.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+    name == needle
+        || basename == needle
+        || title == needle
+        || name.contains(&needle)
+        || basename.contains(&needle)
+        || title.contains(&needle)
+}
+
+/// Match by full executable path, or by basename when either side is a bare name.
+pub fn window_matches_process(win: &WindowInfo, process_path: &str) -> bool {
+    let want = process_path.trim();
+    if want.is_empty() {
+        return true;
+    }
+    let got = win.process_path.trim();
+    if got.is_empty() {
+        return false;
+    }
+    if got.eq_ignore_ascii_case(want) {
+        return true;
+    }
+    let want_base = std::path::Path::new(want)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_lowercase())
+        .unwrap_or_else(|| want.to_lowercase());
+    let got_base = std::path::Path::new(got)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_lowercase())
+        .unwrap_or_else(|| got.to_lowercase());
+    !want_base.is_empty() && want_base == got_base
+}
+
+/// Exact trim match of window title (Focus Window / overlay binding parity).
+/// Empty `window_title` always matches (process-only binding).
+pub fn window_matches_title(win: &WindowInfo, window_title: &str) -> bool {
+    let want = window_title.trim();
+    if want.is_empty() {
+        return true;
+    }
+    win.title.trim() == want
+}
+
+/// Match a program binding: process path required; title required when non-empty.
+/// Disambiguates shared executables (e.g. multiple games under one `GameThread` binary).
+pub fn window_matches_binding(win: &WindowInfo, process_path: &str, window_title: &str) -> bool {
+    window_matches_process(win, process_path) && window_matches_title(win, window_title)
 }
 
 /// No-op focuser for non-Linux (or tests without a display).
@@ -122,5 +303,63 @@ mod tests {
             .label(),
             "(untitled)  (x)"
         );
+    }
+
+    #[test]
+    fn window_matches_program_name() {
+        let w = WindowInfo {
+            title: "Demo Game — Lobby".into(),
+            process_name: "demo-game".into(),
+            process_path: "/opt/demo-game/bin/DemoGame".into(),
+        };
+        assert!(super::window_matches_program(&w, "Demo Game"));
+        assert!(super::window_matches_program(&w, "demo-game"));
+        assert!(super::window_matches_program(&w, "DemoGame"));
+        assert!(!super::window_matches_program(&w, "OtherApp"));
+        assert!(super::window_matches_program(&w, ""));
+    }
+
+    #[test]
+    fn window_matches_process_path() {
+        let w = WindowInfo {
+            title: "Demo Game — Lobby".into(),
+            process_name: "demo-game".into(),
+            process_path: "/opt/demo-game/bin/DemoGame".into(),
+        };
+        assert!(super::window_matches_process(
+            &w,
+            "/opt/demo-game/bin/DemoGame"
+        ));
+        assert!(super::window_matches_process(&w, "DemoGame"));
+        assert!(super::window_matches_process(&w, "/elsewhere/DemoGame"));
+        assert!(!super::window_matches_process(&w, "/opt/other/OtherApp"));
+        assert!(super::window_matches_process(&w, ""));
+    }
+
+    #[test]
+    fn window_matches_binding_shared_exe() {
+        let w = WindowInfo {
+            title: "Game A".into(),
+            process_name: "GameThread".into(),
+            process_path: "/opt/launcher/GameThread".into(),
+        };
+        assert!(super::window_matches_binding(
+            &w,
+            "/opt/launcher/GameThread",
+            "Game A"
+        ));
+        assert!(!super::window_matches_binding(
+            &w,
+            "/opt/launcher/GameThread",
+            "Game B"
+        ));
+        // Empty title → process-only (single-exe programs).
+        assert!(super::window_matches_binding(
+            &w,
+            "/opt/launcher/GameThread",
+            ""
+        ));
+        assert!(super::window_matches_title(&w, " Game A "));
+        assert!(!super::window_matches_title(&w, "Game B"));
     }
 }

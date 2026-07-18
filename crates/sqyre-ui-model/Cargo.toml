@@ -1,0 +1,12 @@
+[package]
+name = "sqyre-ui-model"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Sqyre UI chrome: display params, tree summary pills, action colors/glyphs"
+
+[lints]
+workspace = true
+
+[dependencies]
+sqyre-domain = { path = "../sqyre-domain" }
