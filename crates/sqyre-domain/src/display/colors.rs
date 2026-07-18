@@ -1,4 +1,7 @@
-//! Action tree color keys, pastels, and hex helpers.
+//! Action tree color keys, pastels, and custom overrides.
+//!
+//! Hex parse/format helpers live in [`crate::color`] so vision can use them
+//! without depending on UI chrome.
 
 use crate::action_color_category;
 use std::collections::HashMap;
@@ -48,23 +51,6 @@ pub fn sample_action_type_for_color_key(category_key: &str) -> &'static str {
         ACTION_COLOR_KEY_WAIT => "wait",
         _ => "",
     }
-}
-
-/// Format RGBA as `#rrggbb` (alpha ignored).
-pub fn format_hex_color(rgba: [u8; 4]) -> String {
-    format!("#{:02x}{:02x}{:02x}", rgba[0], rgba[1], rgba[2])
-}
-
-/// Strip `#` and leading AA when 8 hex digits; return lowercase RGB body.
-///
-/// Does not validate length — callers that need a real color should use
-/// [`parse_hex_color`].
-pub fn normalize_hex_rgb(hex: &str) -> String {
-    let mut h = hex.trim().trim_start_matches('#').to_ascii_lowercase();
-    if h.len() == 8 {
-        h = h[2..].to_string();
-    }
-    h
 }
 
 /// Store a user-chosen color for a category key.
@@ -149,22 +135,4 @@ pub fn nested_var_ref_color(is_dark: bool) -> [u8; 4] {
     } else {
         [0x9E, 0xC4, 0xE3, 0xFF]
     }
-}
-
-/// Parse `#RGB`, `#RRGGBB`, or `#AARRGGBB` into RGBA (alpha forced to 255).
-pub fn parse_hex_color(hex: &str) -> Option<[u8; 4]> {
-    let h = normalize_hex_rgb(hex);
-    if h.len() == 3 {
-        let r = u8::from_str_radix(&h[0..1].repeat(2), 16).ok()?;
-        let g = u8::from_str_radix(&h[1..2].repeat(2), 16).ok()?;
-        let b = u8::from_str_radix(&h[2..3].repeat(2), 16).ok()?;
-        return Some([r, g, b, 255]);
-    }
-    if h.len() != 6 {
-        return None;
-    }
-    let r = u8::from_str_radix(&h[0..2], 16).ok()?;
-    let g = u8::from_str_radix(&h[2..4], 16).ok()?;
-    let b = u8::from_str_radix(&h[4..6], 16).ok()?;
-    Some([r, g, b, 255])
 }

@@ -1,4 +1,8 @@
 //! Single source of truth for action type metadata (label, description, categories).
+//!
+//! Labels are used by the executor (action logs) as well as the UI. Picker column
+//! order ([`ACTION_PICKER_CATEGORIES`]) is presentation-oriented and may move to
+//! an app-facing module later; keep wire `type_key` values stable.
 
 /// Picker column order (also used as color-bucket keys for most types).
 pub const ACTION_PICKER_CATEGORIES: &[&str] = &[

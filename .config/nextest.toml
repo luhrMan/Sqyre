@@ -6,9 +6,9 @@
 retries = 2
 
 [test-groups]
-# Serialise GPU-backed egui_kittest screenshots.
+# Serialise GPU-backed egui_kittest tests (screenshots + interaction).
 gpu = { max-threads = 1 }
 
 [[profile.default.overrides]]
-filter = 'test(docs_screenshots)'
+filter = 'test(docs_screenshots) | test(ui_interaction)'
 test-group = 'gpu'
