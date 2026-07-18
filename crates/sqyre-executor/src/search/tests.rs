@@ -1,15 +1,13 @@
 use super::common::set_coord_outputs;
 use super::image::{run_matches, sort_points, NamedPoint};
 use super::ocr::ocr_target_matched;
-use crate::backends::{
-    DesktopRect, IconStore, ItemMeta, RecordingBackend, RecordingCapturer,
-};
+use crate::backends::{DesktopRect, IconStore, ItemMeta, RecordingBackend, RecordingCapturer};
 use crate::run::{execute_macro_with, ExecDeps};
 use crate::SharedActionLog;
 use image::{Rgba, RgbaImage};
 use sqyre_domain::{
-    root_loop, Action, ActionId, ActionKind, CoordinateOutputs, CoordinateRef, Macro, ScalarValue,
-    WaitTilFoundConfig,
+    root_loop, Action, ActionId, ActionKind, CoordinateOutputs, CoordinateRef, Macro, MatchOrder,
+    ScalarValue, WaitTilFoundConfig,
 };
 use sqyre_match::{search_blur_kernel, ImageBuf, Point, DEFAULT_CLOSE_MATCHES_DISTANCE};
 use sqyre_vision::get_cached_blurred_template;
@@ -76,7 +74,46 @@ fn sort_points_uses_row_band_then_x() {
         named("a", 5, 12, 0, 0), // same band (abs dy <= 5), lower x → first
         named("c", 1, 30, 0, 0), // next row
     ];
-    sort_points(&mut pts);
+    sort_points(&mut pts, &MatchOrder::default());
+    assert_eq!(
+        pts.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(),
+        vec!["a", "b", "c"]
+    );
+}
+
+#[test]
+fn sort_points_respects_match_order() {
+    let mut pts = vec![
+        named("a", 5, 10, 0, 0),
+        named("b", 20, 12, 0, 0),
+        named("c", 1, 30, 0, 0),
+    ];
+    sort_points(
+        &mut pts,
+        &MatchOrder {
+            grouping: "row".into(),
+            horizontal: "right_to_left".into(),
+            vertical: "top_to_bottom".into(),
+        },
+    );
+    assert_eq!(
+        pts.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(),
+        vec!["b", "a", "c"]
+    );
+
+    let mut pts = vec![
+        named("a", 10, 5, 0, 0),
+        named("b", 12, 20, 0, 0),
+        named("c", 30, 1, 0, 0),
+    ];
+    sort_points(
+        &mut pts,
+        &MatchOrder {
+            grouping: "column".into(),
+            horizontal: "left_to_right".into(),
+            vertical: "top_to_bottom".into(),
+        },
+    );
     assert_eq!(
         pts.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(),
         vec!["a", "b", "c"]
@@ -90,7 +127,6 @@ fn ocr_empty_target_always_matches() {
     assert!(ocr_target_matched("Hi", "say Hi there"));
     assert!(!ocr_target_matched("Hi", "hello"));
 }
-
 
 #[test]
 fn image_search_caches_blurred_templates() {

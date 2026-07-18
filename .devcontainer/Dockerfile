@@ -34,9 +34,12 @@ ENV RUSTUP_HOME=/usr/local/rustup \
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
         --default-toolchain "${RUST_VERSION}" \
         --profile default \
-        --component rustfmt,clippy,rust-analyzer,rust-src \
+        --component rustfmt,clippy,rust-analyzer,rust-src,llvm-tools-preview \
     && chmod -R a+rX /usr/local/rustup /usr/local/cargo \
-    && rustc --version && cargo --version
+    && rustc --version && cargo --version \
+    && cargo install cargo-nextest cargo-deny cargo-llvm-cov cargo-machete --locked \
+    && chmod -R a+rX /usr/local/cargo \
+    && cargo nextest --version && cargo deny --version && cargo llvm-cov --version && cargo machete --version
 
 ARG USERNAME=vscode
 ARG USER_UID=1000

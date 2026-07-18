@@ -1,9 +1,12 @@
 //! Action kinds and tree helpers.
 
+mod action_serde;
+
 use crate::{CoordinateRef, ScalarValue};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-/// Declares a C-like string enum with `as_str`, `parse`, `Display`, and `From` impls.
+/// Declares a C-like string enum with `as_str`, `parse`, `Display`, `From`, and serde.
 ///
 /// The first literal for each variant is the canonical wire/UI string. Additional
 /// `| "alias"` literals are accepted by `parse` only. Parsing is case-insensitive
@@ -60,6 +63,19 @@ macro_rules! string_enum {
                 Self::parse(&s)
             }
         }
+
+        impl serde::Serialize for $Name {
+            fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+                serializer.serialize_str(self.as_str())
+            }
+        }
+
+        impl<'de> serde::Deserialize<'de> for $Name {
+            fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+                let s = <String as serde::Deserialize>::deserialize(deserializer)?;
+                Ok(Self::parse(&s))
+            }
+        }
     };
 }
 
@@ -82,6 +98,15 @@ impl ActionId {
 
     pub fn as_str(self) -> String {
         self.to_string()
+    }
+}
+
+impl<'de> Deserialize<'de> for ActionId {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(deserializer)?;
+        Ok(Uuid::parse_str(&s)
+            .map(ActionId)
+            .unwrap_or_else(|_| ActionId::new()))
     }
 }
 
@@ -147,11 +172,98 @@ string_enum! {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ConditionClause {
+    #[serde(default)]
     pub left: ScalarValue,
+    #[serde(default = "default_equals_op")]
     pub operator: String,
+    #[serde(default)]
     pub right: ScalarValue,
+}
+
+fn default_equals_op() -> String {
+    OP_EQUALS.to_string()
+}
+
+pub(crate) fn default_true() -> bool {
+    true
+}
+
+pub(crate) fn is_true(b: &bool) -> bool {
+    *b
+}
+
+pub(crate) fn is_false(b: &bool) -> bool {
+    !*b
+}
+
+pub(crate) fn is_zero_i32(v: &i32) -> bool {
+    *v == 0
+}
+
+pub(crate) fn is_default_image_blur(v: &i32) -> bool {
+    *v == 5
+}
+
+pub(crate) fn default_image_blur() -> i32 {
+    5
+}
+
+pub(crate) fn default_ocr_blur() -> i32 {
+    1
+}
+
+pub(crate) fn is_default_ocr_blur(v: &i32) -> bool {
+    *v == 1
+}
+
+pub(crate) fn default_resize() -> f64 {
+    1.0
+}
+
+pub(crate) fn is_default_resize(v: &f64) -> bool {
+    (*v - 1.0).abs() < f64::EPSILON
+}
+
+pub(crate) fn default_ocr_text() -> String {
+    "ocrText".into()
+}
+
+pub(crate) fn is_default_ocr_text(s: &str) -> bool {
+    s.is_empty() || s == "ocrText"
+}
+
+pub(crate) fn default_target_color() -> String {
+    "ffffff".into()
+}
+
+pub(crate) fn is_default_target_color(s: &str) -> bool {
+    s.is_empty() || s == "ffffff"
+}
+
+fn default_found_x() -> String {
+    "foundX".into()
+}
+
+fn default_found_y() -> String {
+    "foundY".into()
+}
+
+fn is_default_found_x(s: &str) -> bool {
+    s.is_empty() || s == "foundX"
+}
+
+fn is_default_found_y(s: &str) -> bool {
+    s.is_empty() || s == "foundY"
+}
+
+pub(crate) fn default_loop_count() -> ScalarValue {
+    ScalarValue::Int(1)
+}
+
+pub(crate) fn default_wait_time() -> ScalarValue {
+    ScalarValue::Int(0)
 }
 
 impl Default for ConditionClause {
@@ -164,11 +276,23 @@ impl Default for ConditionClause {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WaitTilFoundConfig {
+    #[serde(rename = "repeatmode", default)]
     pub repeat_mode: RepeatMode,
+    #[serde(
+        rename = "waittilfoundseconds",
+        default,
+        skip_serializing_if = "is_zero_i32"
+    )]
     pub wait_til_found_seconds: i32,
+    #[serde(
+        rename = "waittilfoundintervalms",
+        default,
+        skip_serializing_if = "is_zero_i32"
+    )]
     pub wait_til_found_interval_ms: i32,
+    #[serde(rename = "maxiterations", default, skip_serializing_if = "is_zero_i32")]
     pub max_iterations: i32,
 }
 
@@ -212,9 +336,19 @@ impl WaitTilFoundConfig {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct CoordinateOutputs {
+    #[serde(
+        rename = "outputxvariable",
+        default = "default_found_x",
+        skip_serializing_if = "is_default_found_x"
+    )]
     pub output_x_variable: String,
+    #[serde(
+        rename = "outputyvariable",
+        default = "default_found_y",
+        skip_serializing_if = "is_default_found_y"
+    )]
     pub output_y_variable: String,
 }
 
@@ -228,20 +362,32 @@ impl CoordinateOutputs {
 }
 
 /// Optional match-order fields present in newer `~/.sqyre` data.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct MatchOrder {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub grouping: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub horizontal: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub vertical: String,
 }
 
 /// Shared wait / coords / branch fields for ImageSearch, OCR, and FindPixel.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DetectionBranch {
+    #[serde(flatten)]
     pub wait: WaitTilFoundConfig,
+    #[serde(flatten)]
     pub coords: CoordinateOutputs,
+    #[serde(
+        rename = "runbranchonnofind",
+        default,
+        skip_serializing_if = "is_false"
+    )]
     pub run_branch_on_no_find: bool,
+    #[serde(flatten)]
     pub order: MatchOrder,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub subactions: Vec<Action>,
 }
 
@@ -258,29 +404,50 @@ impl Default for DetectionBranch {
 }
 
 /// Shared name / match / clauses for While and Conditional.
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct ConditionBlock {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub name: String,
+    #[serde(rename = "match", default)]
     pub match_mode: MatchMode,
+    #[serde(default = "default_clauses")]
     pub clauses: Vec<ConditionClause>,
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
+fn default_clauses() -> Vec<ConditionClause> {
+    vec![ConditionClause::default()]
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct ListColumn {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub source: String,
+    #[serde(
+        rename = "outputvar",
+        default,
+        skip_serializing_if = "String::is_empty"
+    )]
     pub output_var: String,
+    #[serde(rename = "isfile", default, skip_serializing_if = "is_false")]
     pub is_file: bool,
+    #[serde(rename = "skipblanklines", default, skip_serializing_if = "is_false")]
     pub skip_blank_lines: bool,
 }
 
 /// Built-in navigation chords for [`ActionKind::NavigateSelect`].
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct NavChords {
+    #[serde(rename = "chordup", default, skip_serializing_if = "Vec::is_empty")]
     pub up: Vec<String>,
+    #[serde(rename = "chorddown", default, skip_serializing_if = "Vec::is_empty")]
     pub down: Vec<String>,
+    #[serde(rename = "chordleft", default, skip_serializing_if = "Vec::is_empty")]
     pub left: Vec<String>,
+    #[serde(rename = "chordright", default, skip_serializing_if = "Vec::is_empty")]
     pub right: Vec<String>,
+    #[serde(rename = "chordselect", default, skip_serializing_if = "Vec::is_empty")]
     pub select: Vec<String>,
+    #[serde(rename = "chordback", default, skip_serializing_if = "Vec::is_empty")]
     pub back: Vec<String>,
 }
 
@@ -298,12 +465,25 @@ impl NavChords {
 }
 
 /// Behavior flags for Navigate Select.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NavOptions {
+    #[serde(
+        rename = "wrapedges",
+        default = "default_true",
+        skip_serializing_if = "is_true"
+    )]
     pub wrap_edges: bool,
+    #[serde(
+        rename = "movecursorwithnav",
+        default = "default_true",
+        skip_serializing_if = "is_true"
+    )]
     pub move_cursor_with_nav: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
     pub smooth: bool,
+    #[serde(rename = "passthrough", default, skip_serializing_if = "is_false")]
     pub pass_through: bool,
+    #[serde(rename = "holdrepeat", default, skip_serializing_if = "is_false")]
     pub hold_repeat: bool,
 }
 
@@ -320,11 +500,31 @@ impl Default for NavOptions {
 }
 
 /// Press performed when the Select chord fires.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NavSelectAction {
+    #[serde(
+        rename = "selectdevice",
+        default,
+        skip_serializing_if = "String::is_empty"
+    )]
     pub device: String,
+    #[serde(
+        rename = "selectbutton",
+        default,
+        skip_serializing_if = "String::is_empty"
+    )]
     pub button: String,
+    #[serde(
+        rename = "selectkey",
+        default,
+        skip_serializing_if = "String::is_empty"
+    )]
     pub key: String,
+    #[serde(
+        rename = "selectpressmode",
+        default,
+        skip_serializing_if = "String::is_empty"
+    )]
     pub press_mode: String,
 }
 
@@ -340,35 +540,80 @@ impl Default for NavSelectAction {
 }
 
 /// Optional start / override sources for Navigate Select.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct NavInputs {
+    #[serde(rename = "ingraph", default, skip_serializing_if = "String::is_empty")]
     pub graph: String,
+    #[serde(rename = "inrow", default, skip_serializing_if = "String::is_empty")]
     pub row: String,
+    #[serde(rename = "incol", default, skip_serializing_if = "String::is_empty")]
     pub col: String,
+    #[serde(
+        rename = "incollection",
+        default,
+        skip_serializing_if = "String::is_empty"
+    )]
     pub collection: String,
 }
 
 /// Output variables written by Navigate Select.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct NavOutputs {
+    #[serde(
+        rename = "outputref",
+        default,
+        skip_serializing_if = "String::is_empty"
+    )]
     pub output_ref: String,
+    #[serde(
+        rename = "outputgraph",
+        default,
+        skip_serializing_if = "String::is_empty"
+    )]
     pub output_graph: String,
+    #[serde(
+        rename = "outputrow",
+        default,
+        skip_serializing_if = "String::is_empty"
+    )]
     pub output_row: String,
+    #[serde(
+        rename = "outputcol",
+        default,
+        skip_serializing_if = "String::is_empty"
+    )]
     pub output_col: String,
+    #[serde(
+        rename = "outputcollection",
+        default,
+        skip_serializing_if = "String::is_empty"
+    )]
     pub output_collection: String,
 }
 
 /// Boxed payload for [`ActionKind::NavigateSelect`].
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NavigateSelectData {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub program: String,
+    #[serde(
+        rename = "graphname",
+        default,
+        skip_serializing_if = "String::is_empty"
+    )]
     pub graph_name: String,
+    #[serde(flatten)]
     pub chords: NavChords,
+    #[serde(flatten)]
     pub options: NavOptions,
+    #[serde(flatten)]
     pub select: NavSelectAction,
+    #[serde(flatten)]
     pub inputs: NavInputs,
+    #[serde(flatten)]
     pub outputs: NavOutputs,
     /// Direct children should be [`ActionKind::NavigateKey`] branches.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub subactions: Vec<Action>,
 }
 
@@ -393,9 +638,13 @@ pub const FOREACH_ROW_BUILTIN_ROW: &str = "Row";
 pub const FOREACH_ROW_BUILTIN_ROW_COUNT: &str = "RowCount";
 
 /// One node in a macro action tree.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Action {
+    /// Runtime identity. Written as `uid` only when present on decode; never
+    /// serialized by default (see `action_to_map_with_uid` inject path).
+    #[serde(default, rename = "uid", skip_serializing)]
     pub id: ActionId,
+    #[serde(flatten)]
     pub kind: ActionKind,
 }
 
@@ -639,7 +888,7 @@ pub enum ActionKind {
     },
     SetVariable {
         variable_name: String,
-        value: serde_yaml::Value,
+        value: ScalarValue,
     },
     SaveVariable {
         variable_name: String,
@@ -837,7 +1086,10 @@ mod tests {
         assert_eq!(MouseButton::parse("CENTER"), MouseButton::Middle);
         assert_eq!(MouseButton::parse("nope"), MouseButton::Left);
         assert_eq!(MatchMode::parse("any"), MatchMode::Any);
-        assert_eq!(RepeatMode::parse("repeatwhilefound"), RepeatMode::WhileFound);
+        assert_eq!(
+            RepeatMode::parse("repeatwhilefound"),
+            RepeatMode::WhileFound
+        );
         assert_eq!(MaskShape::parse("circle"), MaskShape::Circle);
         assert_eq!(format!("{}", MouseButton::Scroll), "scroll");
     }

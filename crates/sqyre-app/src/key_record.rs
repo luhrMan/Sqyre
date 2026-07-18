@@ -1,8 +1,8 @@
 //! Single-key record dialog.
 
+use crate::chord_record::{poll_waiting_release, record_modal};
 use eframe::egui;
-use sqyre_hotkeys::{chord_fully_released, MacroHotkeyBridge};
-use std::collections::HashSet;
+use sqyre_hotkeys::MacroHotkeyBridge;
 use std::time::Duration;
 
 #[derive(Debug, Clone, Default)]
@@ -39,20 +39,15 @@ impl KeyRecordUi {
         match self {
             Self::Closed => None,
             Self::WaitingRelease { key } => {
-                let pressed: HashSet<String> = macro_hotkeys.pressed_keys().into_iter().collect();
                 let chord = [key.clone()];
-                if chord_fully_released(&pressed, &chord) {
-                    macro_hotkeys.resume();
+                if poll_waiting_release(
+                    ctx,
+                    macro_hotkeys,
+                    &chord,
+                    "Record key",
+                    "Release the key to finish…",
+                ) {
                     *self = Self::Closed;
-                } else {
-                    egui::Window::new("Record key")
-                        .collapsible(false)
-                        .resizable(false)
-                        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-                        .show(ctx, |ui| {
-                            ui.label("Release the key to finish…");
-                        });
-                    ctx.request_repaint();
                 }
                 None
             }
@@ -61,20 +56,16 @@ impl KeyRecordUi {
                 let captured = pressed.first().cloned();
 
                 let mut cancel = false;
-                egui::Window::new("Record key")
-                    .collapsible(false)
-                    .resizable(false)
-                    .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-                    .show(ctx, |ui| {
-                        ui.label(
-                            "Press the key you want to use.\nThe first key you press is saved.\nUse Cancel to dismiss without saving.",
-                        );
-                        ui.separator();
-                        ui.monospace("(no key)");
-                        if ui.button("Cancel").clicked() {
-                            cancel = true;
-                        }
-                    });
+                record_modal(ctx, "Record key", |ui| {
+                    ui.label(
+                        "Press the key you want to use.\nThe first key you press is saved.\nUse Cancel to dismiss without saving.",
+                    );
+                    ui.separator();
+                    ui.monospace("(no key)");
+                    if ui.button("Cancel").clicked() {
+                        cancel = true;
+                    }
+                });
 
                 if cancel {
                     macro_hotkeys.resume();

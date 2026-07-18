@@ -1,8 +1,6 @@
 //! Macro run/stop and recording visibility for SqyreApp.
 
-use crate::app_backends::{
-    trim_process_heap, AppOcr, BridgeContinueWait, StopWatchAutomation,
-};
+use crate::app_backends::{trim_process_heap, AppOcr, BridgeContinueWait, StopWatchAutomation};
 use crate::catalog::{CatalogIcons, CatalogResolver, SnapshotMacros};
 use crate::SqyreApp;
 use eframe::egui;
@@ -159,5 +157,4 @@ impl SqyreApp {
     pub(crate) fn sync_recording_overlay(&mut self, ctx: &egui::Context) {
         self.recording_overlay.sync(ctx, &self.screen_click);
     }
-
 }

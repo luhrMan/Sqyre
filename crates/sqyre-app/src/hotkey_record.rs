@@ -1,8 +1,8 @@
 //! Macro hotkey record dialog.
 
+use crate::chord_record::{poll_waiting_release, record_modal};
 use eframe::egui;
-use sqyre_hotkeys::{chord_fully_released, format_hotkey, MacroHotkeyBridge};
-use std::collections::HashSet;
+use sqyre_hotkeys::{format_hotkey, MacroHotkeyBridge};
 use std::time::{Duration, Instant};
 
 const STABLE_FOR: Duration = Duration::from_secs(1);
@@ -45,19 +45,14 @@ impl HotkeyRecordUi {
         match self {
             Self::Closed => None,
             Self::WaitingRelease { chord } => {
-                let pressed: HashSet<String> = macro_hotkeys.pressed_keys().into_iter().collect();
-                if chord_fully_released(&pressed, chord) {
-                    macro_hotkeys.resume();
+                if poll_waiting_release(
+                    ctx,
+                    macro_hotkeys,
+                    chord,
+                    "Record hotkey",
+                    "Release the hotkey to finish…",
+                ) {
                     *self = Self::Closed;
-                } else {
-                    egui::Window::new("Record hotkey")
-                        .collapsible(false)
-                        .resizable(false)
-                        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-                        .show(ctx, |ui| {
-                            ui.label("Release the hotkey to finish…");
-                        });
-                    ctx.request_repaint();
                 }
                 None
             }
@@ -86,30 +81,26 @@ impl HotkeyRecordUi {
                     .unwrap_or(false);
 
                 let mut cancel = false;
-                egui::Window::new("Record hotkey")
-                    .collapsible(false)
-                    .resizable(false)
-                    .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-                    .show(ctx, |ui| {
-                        ui.label(
-                            "Hold your hotkey. When it stays unchanged for 1 second, it will be saved.\nPress Esc to cancel.",
-                        );
-                        ui.separator();
-                        let display = if last_chord.is_empty() {
-                            "(no keys)".to_string()
-                        } else {
-                            format_hotkey(last_chord)
-                        };
-                        ui.monospace(display);
-                        ui.add(
-                            egui::ProgressBar::new(progress)
-                                .desired_width(280.0)
-                                .show_percentage(),
-                        );
-                        if ui.button("Cancel").clicked() {
-                            cancel = true;
-                        }
-                    });
+                record_modal(ctx, "Record hotkey", |ui| {
+                    ui.label(
+                        "Hold your hotkey. When it stays unchanged for 1 second, it will be saved.\nPress Esc to cancel.",
+                    );
+                    ui.separator();
+                    let display = if last_chord.is_empty() {
+                        "(no keys)".to_string()
+                    } else {
+                        format_hotkey(last_chord)
+                    };
+                    ui.monospace(display);
+                    ui.add(
+                        egui::ProgressBar::new(progress)
+                            .desired_width(280.0)
+                            .show_percentage(),
+                    );
+                    if ui.button("Cancel").clicked() {
+                        cancel = true;
+                    }
+                });
 
                 if ctx.input(|i| i.key_pressed(egui::Key::Escape)) && last_chord.is_empty() {
                     cancel = true;

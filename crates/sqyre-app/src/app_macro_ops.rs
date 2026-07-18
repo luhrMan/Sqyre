@@ -170,7 +170,11 @@ impl SqyreApp {
             .sync_selection(self.selected_macro, &self.macros[self.selected_macro]);
     }
 
-    pub(crate) fn apply_hotkey_to_selected(&mut self, chord: Vec<String>, trigger: Option<HotkeyTrigger>) {
+    pub(crate) fn apply_hotkey_to_selected(
+        &mut self,
+        chord: Vec<String>,
+        trigger: Option<HotkeyTrigger>,
+    ) {
         if self.macros.is_empty() {
             return;
         }
@@ -388,5 +392,4 @@ impl SqyreApp {
         self.persist_macro_at(idx);
         true
     }
-
 }

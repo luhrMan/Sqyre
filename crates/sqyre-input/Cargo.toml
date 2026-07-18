@@ -12,4 +12,3 @@ workspace = true
 sqyre-executor = { path = "../sqyre-executor" }
 rustautogui = { workspace = true }
 arboard = { workspace = true }
-thiserror = { workspace = true }

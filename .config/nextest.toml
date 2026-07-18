@@ -1,0 +1,14 @@
+# Nextest config for the Sqyre workspace.
+# https://nexte.st/docs/configuration/
+
+[profile.default]
+# Screenshot / lavapipe tests can flake under load.
+retries = 2
+
+[test-groups]
+# Serialise GPU-backed egui_kittest screenshots.
+gpu = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = 'test(docs_screenshots)'
+test-group = 'gpu'

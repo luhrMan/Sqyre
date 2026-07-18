@@ -200,11 +200,6 @@ pub fn unknown_variable_warning(text: &str, macro_: Option<&Macro>) -> String {
 /// Whether text will be evaluated as arithmetic at runtime (re-exported from domain).
 pub use sqyre_domain::looks_like_arithmetic;
 
-/// Calculate expression check — alias for Set value validation.
-pub fn validate_calculate_expression(text: &str, macro_: Option<&Macro>) -> EntryValidation {
-    validate_set_variable_value(text, macro_)
-}
-
 /// Parse/evaluate with placeholders for missing vars.
 /// Does not mutate the caller's runtime store — works on a scratch clone.
 /// When `macro_` is `None`, still validates literal/arithmetic structure on an empty scratch
@@ -330,9 +325,9 @@ fn variable_binding_label(name: &str, role: sqyre_domain::BindingRole) -> String
     role.validate_label(name)
 }
 
-fn yaml_string_value(v: &serde_yaml::Value) -> Option<&str> {
+fn yaml_string_value(v: &sqyre_domain::ScalarValue) -> Option<&str> {
     match v {
-        serde_yaml::Value::String(s) => Some(s.as_str()),
+        sqyre_domain::ScalarValue::String(s) => Some(s.as_str()),
         _ => None,
     }
 }
@@ -340,17 +335,13 @@ fn yaml_string_value(v: &serde_yaml::Value) -> Option<&str> {
 fn validate_continue_key(keys: &[String]) -> Result<()> {
     let normalized: Vec<String> = keys
         .iter()
-        .map(|k| k.trim().to_ascii_lowercase())
+        .map(|k| sqyre_hotkeys::normalize_key_name(k))
         .filter(|k| !k.is_empty())
         .collect();
     if normalized.is_empty() {
         return Err(ValidateError::Message("pause: continue key not set".into()));
     }
-    let mut sorted = normalized;
-    sorted.sort();
-    let mut failsafe = vec!["esc".to_string(), "ctrl".to_string(), "shift".to_string()];
-    failsafe.sort();
-    if sorted == failsafe {
+    if sqyre_hotkeys::is_failsafe_chord(&normalized) {
         return Err(ValidateError::Message(
             "pause: continue key cannot match the failsafe hotkey (esc + ctrl + shift)".into(),
         ));
@@ -505,7 +496,7 @@ mod tests {
         }
     }
 
-    fn set_var(name: &str, value: serde_yaml::Value) -> Action {
+    fn set_var(name: &str, value: sqyre_domain::ScalarValue) -> Action {
         Action {
             id: ActionId::new(),
             kind: ActionKind::SetVariable {
@@ -543,7 +534,7 @@ mod tests {
     #[test]
     fn validate_action_set_allows_empty_value() {
         assert!(validate_action(
-            &set_var("out", serde_yaml::Value::String(String::new())),
+            &set_var("out", sqyre_domain::ScalarValue::String(String::new())),
             None
         )
         .is_ok());
@@ -551,9 +542,11 @@ mod tests {
 
     #[test]
     fn validate_action_set_variable_requires_name() {
-        assert!(
-            validate_action(&set_var("", serde_yaml::Value::String("1".into())), None).is_err()
-        );
+        assert!(validate_action(
+            &set_var("", sqyre_domain::ScalarValue::String("1".into())),
+            None
+        )
+        .is_err());
     }
 
     #[test]
@@ -561,7 +554,7 @@ mod tests {
         let mut m = Macro::new("test", 0, vec![]);
         m.init_runtime_variables();
         assert!(validate_action(
-            &set_var("sum", serde_yaml::Value::String("1 + 2".into())),
+            &set_var("sum", sqyre_domain::ScalarValue::String("1 + 2".into())),
             Some(&m)
         )
         .is_ok());
@@ -572,7 +565,7 @@ mod tests {
         let mut m = Macro::new("test", 0, vec![]);
         m.init_runtime_variables();
         let err = validate_action(
-            &set_var("sum", serde_yaml::Value::String("1 + ".into())),
+            &set_var("sum", sqyre_domain::ScalarValue::String("1 + ".into())),
             Some(&m),
         )
         .unwrap_err();
@@ -619,7 +612,7 @@ mod tests {
             id: ActionId::new(),
             kind: ActionKind::SetVariable {
                 variable_name: "result".into(),
-                value: serde_yaml::Value::String("0".into()),
+                value: sqyre_domain::ScalarValue::String("0".into()),
             },
         }]);
         m.init_runtime_variables();
@@ -647,18 +640,11 @@ mod tests {
             id: ActionId::new(),
             kind: ActionKind::SetVariable {
                 variable_name: "a+b".into(),
-                value: serde_yaml::Value::String("1+1".into()),
+                value: sqyre_domain::ScalarValue::String("1+1".into()),
             },
         };
         let err = validate_action(&a, None).unwrap_err();
         assert!(err.to_string().contains("variable \"a+b\""), "{err}");
-    }
-
-    #[test]
-    fn looks_like_arithmetic_detects_ops_and_fns() {
-        assert!(looks_like_arithmetic("1+2"));
-        assert!(!looks_like_arithmetic("hello"));
-        assert!(looks_like_arithmetic("sqrt(4)"));
     }
 
     #[test]

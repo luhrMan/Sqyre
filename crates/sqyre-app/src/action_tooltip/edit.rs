@@ -676,7 +676,7 @@ fn scalar_field(
         &validation,
     );
     if text != before {
-        *value = parse_scalar(&text);
+        *value = ScalarValue::parse_edit(&text);
     }
 }
 
@@ -701,26 +701,6 @@ fn var_ref_field(
     );
 }
 
-fn parse_scalar(text: &str) -> ScalarValue {
-    let t = text.trim();
-    if t.is_empty() {
-        return ScalarValue::Null;
-    }
-    if let Ok(i) = t.parse::<i64>() {
-        return ScalarValue::Int(i);
-    }
-    if let Ok(f) = t.parse::<f64>() {
-        return ScalarValue::Float(f);
-    }
-    if t.eq_ignore_ascii_case("true") {
-        return ScalarValue::Bool(true);
-    }
-    if t.eq_ignore_ascii_case("false") {
-        return ScalarValue::Bool(false);
-    }
-    ScalarValue::String(t.to_string())
-}
-
 fn string_list_field(ui: &mut egui::Ui, label: &str, values: &mut Vec<String>) {
     let mut text = values.join("\n");
     if !label.is_empty() {
@@ -743,25 +723,14 @@ fn string_list_field(ui: &mut egui::Ui, label: &str, values: &mut Vec<String>) {
 }
 
 /// Plain text for the Set value editor.
-/// Do not use `serde_yaml::to_string` here — it injects quotes for empty/`true`/`42`
-/// and re-quoting on each keystroke makes quotation marks appear to duplicate when deleted.
-fn set_value_edit_text(value: &serde_yaml::Value) -> String {
-    match value {
-        serde_yaml::Value::Null => String::new(),
-        serde_yaml::Value::Bool(b) => b.to_string(),
-        serde_yaml::Value::Number(n) => n.to_string(),
-        serde_yaml::Value::String(s) => s.clone(),
-        other => match serde_yaml::to_string(other) {
-            Ok(s) => s.trim().to_string(),
-            Err(_) => String::new(),
-        },
-    }
+fn set_value_edit_text(value: &ScalarValue) -> String {
+    value.as_display()
 }
 
 fn yaml_value_field(
     ui: &mut egui::Ui,
     label: &str,
-    value: &mut serde_yaml::Value,
+    value: &mut ScalarValue,
     known_vars: &HashSet<String>,
     is_dark: bool,
     active_macro: Option<&Macro>,
@@ -824,7 +793,7 @@ fn yaml_value_field(
 
     if text != before {
         // Store as plain string. Runtime resolve parses numbers/expressions.
-        *value = serde_yaml::Value::String(text);
+        *value = ScalarValue::String(text);
     }
 }
 
@@ -1064,62 +1033,56 @@ mod tests {
 
     #[test]
     fn parse_scalar_int_and_string() {
-        assert_eq!(parse_scalar("42"), ScalarValue::Int(42));
-        assert_eq!(parse_scalar("${x}"), ScalarValue::String("${x}".into()));
-        assert_eq!(parse_scalar(""), ScalarValue::Null);
+        assert_eq!(ScalarValue::parse_edit("42"), ScalarValue::Int(42));
+        assert_eq!(
+            ScalarValue::parse_edit("${x}"),
+            ScalarValue::String("${x}".into())
+        );
+        assert_eq!(ScalarValue::parse_edit(""), ScalarValue::Null);
+        assert_eq!(ScalarValue::parse_edit("true"), ScalarValue::Bool(true));
     }
 
     #[test]
     fn set_value_edit_text_has_no_yaml_quotes() {
-        assert_eq!(set_value_edit_text(&serde_yaml::Value::Null), "");
+        assert_eq!(set_value_edit_text(&ScalarValue::Null), "");
+        assert_eq!(set_value_edit_text(&ScalarValue::String(String::new())), "");
         assert_eq!(
-            set_value_edit_text(&serde_yaml::Value::String(String::new())),
-            ""
-        );
-        assert_eq!(
-            set_value_edit_text(&serde_yaml::Value::String("true".into())),
+            set_value_edit_text(&ScalarValue::String("true".into())),
             "true"
         );
+        assert_eq!(set_value_edit_text(&ScalarValue::String("42".into())), "42");
         assert_eq!(
-            set_value_edit_text(&serde_yaml::Value::String("42".into())),
-            "42"
-        );
-        assert_eq!(
-            set_value_edit_text(&serde_yaml::Value::String("'hello'".into())),
+            set_value_edit_text(&ScalarValue::String("'hello'".into())),
             "'hello'"
         );
-        assert_eq!(set_value_edit_text(&serde_yaml::Value::Bool(true)), "true");
-        assert_eq!(
-            set_value_edit_text(&serde_yaml::Value::Number(42.into())),
-            "42"
-        );
+        assert_eq!(set_value_edit_text(&ScalarValue::Bool(true)), "true");
+        assert_eq!(set_value_edit_text(&ScalarValue::Int(42)), "42");
     }
 
     #[test]
     fn set_value_edit_survives_deleting_quotes() {
-        // Simulate the old bug: YAML-serialized empty/true re-inject quotes on each edit.
-        let mut value = serde_yaml::Value::String(String::new());
+        let mut value = ScalarValue::String(String::new());
         let mut text = set_value_edit_text(&value);
         assert_eq!(text, "");
         text.push('\'');
-        value = serde_yaml::Value::String(text.clone());
+        value = ScalarValue::String(text.clone());
         assert_eq!(set_value_edit_text(&value), "'");
         text.pop();
-        value = serde_yaml::Value::String(text);
+        value = ScalarValue::String(text);
         assert_eq!(set_value_edit_text(&value), "");
 
-        value = serde_yaml::Value::String("true".into());
+        value = ScalarValue::String("true".into());
         text = set_value_edit_text(&value);
         assert_eq!(text, "true");
         // User wraps in quotes then deletes them — display must stay identity.
         text = format!("'{text}'");
-        value = serde_yaml::Value::String(text.clone());
+        value = ScalarValue::String(text.clone());
         assert_eq!(set_value_edit_text(&value), "'true'");
         text.pop();
-        value = serde_yaml::Value::String(text.clone());
+        value = ScalarValue::String(text.clone());
         assert_eq!(set_value_edit_text(&value), "'true");
         text.remove(0);
-        value = serde_yaml::Value::String(text);
+        value = ScalarValue::String(text);
         assert_eq!(set_value_edit_text(&value), "true");
     }
 

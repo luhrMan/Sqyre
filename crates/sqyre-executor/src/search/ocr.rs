@@ -1,14 +1,12 @@
 //! OCR action: capture → preprocess → recognize → write vars → run children on match.
 
 use super::common::{
-    clear_coord_outputs, maybe_repeat_while_found, maybe_wait_until_found, run_detection_outcome,
-    set_coord_outputs,
+    clear_coord_outputs, run_detection_outcome, run_detection_shell, set_coord_outputs,
 };
 use crate::action_log::draw_rect_rgb;
 use crate::error::{ExecError, Result};
 use crate::run::Executor;
 use sqyre_domain::{Action, ActionKind, Macro, ScalarValue};
-use sqyre_match::ImageBuf;
 use std::time::Instant;
 
 /// OCR branch action: capture → preprocess → recognize → write vars → run children on match
@@ -54,9 +52,9 @@ pub(crate) fn execute_ocr(
         threshold_invert: *threshold_invert,
     };
 
-    let (mut shot, mut matched) = ocr_shot_and_match(exec, action_id, &ocr_params, macro_);
-
-    if wait.wait_until_found_active() && !matched {
+    // Log wait intent once before the shared shell arms retries.
+    let (shot0, matched0) = ocr_shot_and_match(exec, action_id, &ocr_params, macro_);
+    if wait.wait_until_found_active() && !matched0 {
         exec.log(
             action_id,
             format!(
@@ -65,43 +63,34 @@ pub(crate) fn execute_ocr(
             ),
         );
     }
-    maybe_wait_until_found(exec, wait, matched, 500, |exec| {
-        let (s, m) = ocr_shot_and_match(exec, action_id, &ocr_params, macro_);
-        shot = s;
-        matched = m;
-        Ok(matched)
-    })?;
 
-    if maybe_repeat_while_found(exec, wait, 200, |exec, refresh| {
-        if refresh {
-            let (s, m) = ocr_shot_and_match(exec, action_id, &ocr_params, macro_);
-            shot = s;
-            matched = m;
-        }
-        apply_ocr_outputs(
-            exec,
-            action_id,
-            macro_,
-            output_variable,
-            coords,
-            &shot,
-            matched,
-        );
-        run_detection_outcome(exec, matched, *run_branch_on_no_find, subactions, macro_)
-    })? {
-        return Ok(());
-    }
-
-    apply_ocr_outputs(
+    let mut initial = Some((shot0, matched0));
+    run_detection_shell(
         exec,
-        action_id,
         macro_,
-        output_variable,
-        coords,
-        &shot,
-        matched,
-    );
-    run_detection_outcome(exec, matched, *run_branch_on_no_find, subactions, macro_).map(|_| ())
+        wait,
+        500,
+        200,
+        |exec, macro_| {
+            if let Some(first) = initial.take() {
+                return Ok(first);
+            }
+            Ok(ocr_shot_and_match(exec, action_id, &ocr_params, macro_))
+        },
+        |(_, matched)| *matched,
+        |exec, macro_, (shot, matched)| {
+            apply_ocr_outputs(
+                exec,
+                action_id,
+                macro_,
+                output_variable,
+                coords,
+                shot,
+                *matched,
+            );
+            run_detection_outcome(exec, *matched, *run_branch_on_no_find, subactions, macro_)
+        },
+    )
 }
 
 struct OcrRunParams<'a> {
@@ -307,7 +296,7 @@ fn run_ocr_once(
     // Overlay word boxes on an RGB copy of the OCR input for the logs UI.
     if collect && !recognized.words.is_empty() {
         let mut overlay = if processed.channels == 1 {
-            gray_to_rgb(&processed)
+            sqyre_vision::gray_to_rgb(&processed)
         } else {
             processed.clone()
         };
@@ -348,10 +337,6 @@ fn run_ocr_once(
         x: out_x,
         y: out_y,
     })
-}
-
-fn gray_to_rgb(img: &ImageBuf) -> ImageBuf {
-    sqyre_vision::gray_to_rgb(img)
 }
 
 /// Substring match: empty target always matches
