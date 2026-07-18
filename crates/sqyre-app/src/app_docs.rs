@@ -151,4 +151,21 @@ impl SqyreApp {
     pub fn open_settings_for_docs(&mut self) {
         self.settings_ui.open = true;
     }
+
+    /// Show the macro list panel (docs / interaction harnesses).
+    pub fn open_macro_list_for_docs(&mut self) {
+        self.macro_list_open = true;
+    }
+
+    /// Number of macros currently loaded (docs / interaction harnesses).
+    pub fn docs_macro_count(&self) -> usize {
+        self.macros.len()
+    }
+
+    /// Selected macro name (docs / interaction harnesses).
+    pub fn docs_selected_macro_name(&self) -> Option<&str> {
+        self.macros
+            .get(self.selected_macro)
+            .map(|m| m.name.as_str())
+    }
 }

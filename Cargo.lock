@@ -3799,6 +3799,7 @@ dependencies = [
  "sqyre-match",
  "sqyre-persist",
  "sqyre-serialize",
+ "sqyre-ui-model",
  "sqyre-validate",
  "sqyre-varref",
  "sqyre-vision",
@@ -3893,6 +3894,13 @@ dependencies = [
  "sqyre-domain",
  "thiserror 2.0.18",
  "uuid",
+]
+
+[[package]]
+name = "sqyre-ui-model"
+version = "0.1.0"
+dependencies = [
+ "sqyre-domain",
 ]
 
 [[package]]

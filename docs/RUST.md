@@ -17,6 +17,7 @@ Cargo workspace at the repo root (egui + PureCV). **`make` / `./bin/sqyre` is th
 |-------|------|
 | `sqyre-varref` | `${name}` / `{name}` grammar |
 | `sqyre-domain` | Macro + 21 action kinds |
+| `sqyre-ui-model` | Display params / tree pills / action colors + glyphs (app-facing UI chrome) |
 | `sqyre-serialize` | YAML codecs |
 | `sqyre-validate` | Names / action save checks |
 | `sqyre-persist` | `~/.sqyre/db.yaml` + program catalog |
