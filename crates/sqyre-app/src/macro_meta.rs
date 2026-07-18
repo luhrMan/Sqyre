@@ -1,5 +1,6 @@
 //! Macro name, delay, and tags toolbar widgets.
 
+use crate::action_tooltip::help;
 use eframe::egui;
 use sqyre_domain::Macro;
 
@@ -12,7 +13,6 @@ pub struct MacroMetaUi {
     name_error: Option<String>,
     tag_draft: String,
     delay_open: bool,
-    tags_open: bool,
     /// Selection identity used to refresh drafts when the user switches macros.
     synced_name: String,
     synced_idx: Option<usize>,
@@ -38,7 +38,6 @@ impl MacroMetaUi {
         self.name_error = None;
         self.tag_draft.clear();
         self.delay_open = false;
-        self.tags_open = false;
     }
 
     /// Name row + delay/tags controls. Hotkey stays in `main` beside this block.
@@ -56,11 +55,11 @@ impl MacroMetaUi {
         let mut out = MetaMutations::default();
 
         ui.horizontal(|ui| {
-            ui.label("Name:");
+            help::label(ui, "Name:", help::META_NAME);
             let te = egui::TextEdit::singleline(&mut self.name_draft)
                 .desired_width(220.0)
                 .hint_text("Macro name");
-            let resp = ui.add_enabled(enabled, te);
+            let resp = ui.add_enabled(enabled, te).on_hover_text(help::META_NAME);
             // Commit on Enter, or when focus leaves with a different value.
             let enter = resp.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
             let lost_dirty = resp.lost_focus() && self.name_draft.trim() != m.name;
@@ -94,49 +93,41 @@ impl MacroMetaUi {
                 .clicked()
             {
                 self.delay_open = !self.delay_open;
-                if self.delay_open {
-                    self.tags_open = false;
-                }
             }
 
-            ui.label("Tags:");
-            let tags_tip = if m.tags.is_empty() {
-                "No tags".to_string()
-            } else {
-                m.tags.join("\n")
-            };
-            let tags_enabled = enabled && !m.tags.is_empty();
-            if ui
-                .add_enabled(tags_enabled, egui::Button::new("ℹ"))
-                .on_hover_text(tags_tip)
-                .clicked()
-            {
-                self.tags_open = !self.tags_open;
-                if self.tags_open {
-                    self.delay_open = false;
-                }
-            }
-
+            ui.label("Tags:").on_hover_text(help::META_TAGS);
             let tag_te = egui::TextEdit::singleline(&mut self.tag_draft)
                 .desired_width(140.0)
                 .hint_text("Add tag…");
-            let tag_resp = ui.add_enabled(enabled, tag_te);
-            let add_clicked = ui
-                .add_enabled(enabled, egui::Button::new("+"))
-                .on_hover_text("Add tag")
-                .clicked();
+            let tag_resp = ui.add_enabled(enabled, tag_te).on_hover_text(help::META_TAGS);
             let add_enter = tag_resp.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-            if enabled && (add_clicked || add_enter) {
+            if enabled && add_enter {
                 if try_add_tag(m, &self.tag_draft) {
                     out.persist = true;
                 }
                 self.tag_draft.clear();
             }
 
+            // Existing tags as removable chips to the right of the entry.
+            let mut remove: Option<String> = None;
+            for tag in &m.tags {
+                if ui
+                    .add_enabled(enabled, egui::Button::new(format!("{tag} ×")))
+                    .on_hover_text("Remove tag")
+                    .clicked()
+                {
+                    remove = Some(tag.clone());
+                }
+            }
+            if let Some(tag) = remove {
+                if remove_tag(m, &tag) {
+                    out.persist = true;
+                }
+            }
+
             // Inline completion suggestions from the union of all macro tags.
             if enabled && !self.tag_draft.trim().is_empty() {
-                let suggestions =
-                    tag_completion_options(&self.tag_draft, &m.tags, all_tags, 8);
+                let suggestions = tag_completion_options(&self.tag_draft, &m.tags, all_tags, 8);
                 if !suggestions.is_empty() {
                     ui.separator();
                     for sug in suggestions {
@@ -176,45 +167,6 @@ impl MacroMetaUi {
                 });
             if close {
                 self.delay_open = false;
-            }
-        }
-
-        if self.tags_open {
-            if m.tags.is_empty() {
-                self.tags_open = false;
-            } else {
-                let mut close = false;
-                let mut remove: Option<String> = None;
-                egui::Window::new("Macro tags")
-                    .collapsible(false)
-                    .resizable(true)
-                    .default_width(280.0)
-                    .open(&mut self.tags_open)
-                    .show(ui.ctx(), |ui| {
-                        ui.add_enabled_ui(enabled, |ui| {
-                            ui.horizontal_wrapped(|ui| {
-                                for tag in &m.tags {
-                                    if ui.button(format!("{tag} ×")).clicked() {
-                                        remove = Some(tag.clone());
-                                    }
-                                }
-                            });
-                            if ui.button("Close").clicked() {
-                                close = true;
-                            }
-                        });
-                    });
-                if let Some(tag) = remove {
-                    if remove_tag(m, &tag) {
-                        out.persist = true;
-                    }
-                    if m.tags.is_empty() {
-                        self.tags_open = false;
-                    }
-                }
-                if close {
-                    self.tags_open = false;
-                }
             }
         }
 
@@ -273,13 +225,18 @@ fn validate_rename(
 
 /// Sorted unique tags across macros (for completion).
 pub fn collect_all_macro_tags(macros: &[Macro]) -> Vec<String> {
-    let mut tags: Vec<String> = macros
-        .iter()
-        .flat_map(|m| m.tags.iter().cloned())
-        .collect();
-    tags.sort();
-    tags.dedup();
-    tags
+    unique_sorted(
+        macros
+            .iter()
+            .flat_map(|m| m.tags.iter().cloned())
+            .collect(),
+    )
+}
+
+pub(crate) fn unique_sorted(mut items: Vec<String>) -> Vec<String> {
+    items.sort();
+    items.dedup();
+    items
 }
 
 fn try_add_tag(m: &mut Macro, raw: &str) -> bool {
@@ -346,10 +303,8 @@ mod tests {
         assert!(remove_tag(&mut macro_, "alpha"));
         assert_eq!(macro_.tags, vec!["beta"]);
 
-        let all_tags = collect_all_macro_tags(&[
-            m("x", &["beta"]),
-            m("y", &["beta", "gamma", "gator"]),
-        ]);
+        let all_tags =
+            collect_all_macro_tags(&[m("x", &["beta"]), m("y", &["beta", "gamma", "gator"])]);
         let opts = tag_completion_options("ga", &["beta".into()], &all_tags, 10);
         assert_eq!(opts, vec!["gamma", "gator"]);
     }
@@ -363,9 +318,6 @@ mod tests {
         assert_eq!(format_delay_tooltip(&macro_), "Action delays (ms)");
         macro_.global_delay = 10;
         macro_.mouse_delay = 5;
-        assert_eq!(
-            format_delay_tooltip(&macro_),
-            "Global: 10 ms\nMouse: 5 ms"
-        );
+        assert_eq!(format_delay_tooltip(&macro_), "Global: 10 ms\nMouse: 5 ms");
     }
 }

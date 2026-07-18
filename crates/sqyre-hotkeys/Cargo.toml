@@ -10,6 +10,9 @@ default = []
 # Enable OS-level hooks (needs display / input permissions).
 hooks = ["dep:rdev"]
 
+[lints]
+workspace = true
+
 [dependencies]
 parking_lot = { workspace = true }
 rdev = { workspace = true, optional = true }

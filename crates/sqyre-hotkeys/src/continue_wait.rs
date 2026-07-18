@@ -59,7 +59,8 @@ impl ContinueWaitBridge {
     /// Called from the hotkey thread when the set of pressed keys changes.
     pub fn on_pressed_keys(&self, pressed: &HashSet<String>) {
         let mut g = self.inner.state.lock();
-        g.last_pressed = pressed.clone();
+        // Always refresh — wait arming reads last_pressed for already-held chords.
+        g.last_pressed.clone_from(pressed);
         if !g.waiting || g.signaled {
             return;
         }
@@ -73,7 +74,7 @@ impl ContinueWaitBridge {
         if g.chords.is_empty() || g.signaled {
             return;
         }
-        let pressed = g.last_pressed.clone();
+        let pressed = &g.last_pressed;
 
         let mut best: Option<(usize, usize)> = None; // (len, index)
         for (i, chord) in g.chords.iter().enumerate() {
@@ -146,10 +147,7 @@ impl ContinueWaitBridge {
         if !self.hooks_enabled {
             return Err("key wait is not available in this build".into());
         }
-        let normalized: Vec<Vec<String>> = chords
-            .iter()
-            .map(|c| normalize_keys(c))
-            .collect();
+        let normalized: Vec<Vec<String>> = chords.iter().map(|c| normalize_keys(c)).collect();
         if normalized.iter().all(|c| c.is_empty()) {
             return Err("key wait: no chords configured".into());
         }
@@ -209,9 +207,7 @@ impl ContinueWaitBridge {
                 if g.signaled {
                     break Ok(g.matched.unwrap_or(0));
                 }
-                self.inner
-                    .cv
-                    .wait_for(&mut g, Duration::from_millis(50));
+                self.inner.cv.wait_for(&mut g, Duration::from_millis(50));
                 if !g.signaled {
                     Self::try_match_locked(&mut g);
                 }
@@ -259,15 +255,24 @@ pub fn normalize_key_name(key: &str) -> String {
     }
 }
 
+/// Emergency-stop chord keys (order-independent): Ctrl + Shift + Esc.
+pub const FAILSAFE_KEYS: &[&str] = &["ctrl", "esc", "shift"];
+
+/// Whether `keys` (already normalized) match the failsafe chord.
+pub fn is_failsafe_chord(keys: &[String]) -> bool {
+    if keys.len() != FAILSAFE_KEYS.len() {
+        return false;
+    }
+    let mut sorted: Vec<&str> = keys.iter().map(String::as_str).collect();
+    sorted.sort_unstable();
+    let mut failsafe = FAILSAFE_KEYS.to_vec();
+    failsafe.sort_unstable();
+    sorted == failsafe
+}
+
 fn validate_not_failsafe(keys: &[String]) -> Result<(), String> {
-    let mut sorted = keys.to_vec();
-    sorted.sort();
-    let mut failsafe: Vec<String> = vec!["ctrl".into(), "esc".into(), "shift".into()];
-    failsafe.sort();
-    if sorted == failsafe {
-        return Err(
-            "key wait: chord cannot match the failsafe hotkey (esc + ctrl + shift)".into(),
-        );
+    if is_failsafe_chord(keys) {
+        return Err("key wait: chord cannot match the failsafe hotkey (esc + ctrl + shift)".into());
     }
     Ok(())
 }

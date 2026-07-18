@@ -2,11 +2,14 @@
 
 use eframe::egui::{self, ColorImage, TextureHandle, TextureOptions, Vec2};
 use image::{Rgba, RgbaImage};
-use sqyre_capture::X11Capturer;
+use sqyre_capture::{shared_capturer, X11Capturer};
 use sqyre_domain::{Action, ActionKind, CoordinateRef, Macro, ScalarValue};
-use sqyre_executor::{DesktopRect, ScreenCapturer};
+use sqyre_executor::DesktopRect;
 use sqyre_persist::{ProgramCatalog, ProgramPoint, ProgramSearchArea};
 use std::collections::HashMap;
+use std::sync::mpsc::{self, Receiver, TryRecvError};
+use std::sync::Arc;
+use std::thread;
 use std::time::{Duration, Instant};
 
 const MIN_CAPTURE_SIZE: i32 = 320;
@@ -18,7 +21,10 @@ const PANEL_MAX_W: f32 = 340.0;
 const PANEL_MAX_H: f32 = 240.0;
 const CACHE_MAX: usize = 24;
 const CACHE_TTL: Duration = Duration::from_secs(30);
+/// How long to remember a failed capture before trying again (manual ↻ clears sooner).
+const FAIL_CACHE_TTL: Duration = Duration::from_secs(60);
 const OVERLAY: Rgba<u8> = Rgba([255, 0, 0, 255]);
+const LITERAL_COORDS_MSG: &str = "Preview needs literal coordinates";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PreviewKind {
@@ -32,13 +38,27 @@ struct CacheEntry {
     expires: Instant,
 }
 
+struct FailureEntry {
+    error: String,
+    expires: Instant,
+}
+
+struct PendingCapture {
+    caption: String,
+    rx: Receiver<Result<RgbaImage, String>>,
+}
+
 /// Lazy capturer + LRU texture cache for coordinate preview tooltips.
 #[derive(Default)]
 pub struct PreviewTooltipCache {
-    capturer: Option<X11Capturer>,
+    capturer: Option<Arc<X11Capturer>>,
     capturer_failed: bool,
     entries: HashMap<String, CacheEntry>,
     order: Vec<String>,
+    /// In-flight captures keyed like cache entries; polled on the UI frame.
+    pending: HashMap<String, PendingCapture>,
+    /// Failed captures — avoids respawning on every repaint for permanent errors.
+    failures: HashMap<String, FailureEntry>,
 }
 
 impl PreviewTooltipCache {
@@ -53,16 +73,18 @@ impl PreviewTooltipCache {
         }
         let prefix_pt = format!("pt:{name}:");
         let prefix_sa = format!("sa:{name}:");
-        self.entries.retain(|k, _| {
-            !(k.starts_with(&prefix_pt) || k.starts_with(&prefix_sa))
-        });
-        self.order
-            .retain(|k| !(k.starts_with(&prefix_pt) || k.starts_with(&prefix_sa)));
+        let drop = |k: &str| k.starts_with(&prefix_pt) || k.starts_with(&prefix_sa);
+        self.entries.retain(|k, _| !drop(k));
+        self.order.retain(|k| !drop(k));
+        self.pending.retain(|k, _| !drop(k));
+        self.failures.retain(|k, _| !drop(k));
     }
 
     pub fn clear(&mut self) {
         self.entries.clear();
         self.order.clear();
+        self.pending.clear();
+        self.failures.clear();
     }
 
     /// Paint an egui hover tooltip for a program entity list row.
@@ -78,18 +100,27 @@ impl PreviewTooltipCache {
         if !response.hovered() {
             return;
         }
-        let Some((key, caption, coords)) = entity_preview_spec(catalog, program, name, kind) else {
-            response.clone().on_hover_text(format!("{program}~{name}"));
-            return;
-        };
-        let preview = self.texture_for(ui.ctx(), &key, &caption, coords, false);
-        response.clone().on_hover_ui(|ui| match &preview {
-            Ok((tex, cap)) => paint_preview(ui, tex, cap, false),
-            Err(err) => {
-                ui.label(caption.as_str());
-                ui.colored_label(egui::Color32::from_rgb(220, 80, 80), err);
+        match entity_preview_spec(catalog, program, name, kind) {
+            Ok((key, caption, coords)) => {
+                let preview = self.texture_for(ui.ctx(), &key, &caption, coords, false);
+                response.clone().on_hover_ui(|ui| match &preview {
+                    Ok((tex, cap)) => paint_preview(ui, tex, cap, false),
+                    Err(err) => {
+                        ui.label(caption.as_str());
+                        ui.colored_label(egui::Color32::from_rgb(220, 80, 80), err);
+                    }
+                });
             }
-        });
+            Err(EntityPreviewError::NonLiteral) => {
+                response.clone().on_hover_ui(|ui| {
+                    ui.label(format!("{program}~{name}"));
+                    ui.colored_label(egui::Color32::from_rgb(220, 80, 80), LITERAL_COORDS_MSG);
+                });
+            }
+            Err(EntityPreviewError::Missing) => {
+                response.clone().on_hover_text(format!("{program}~{name}"));
+            }
+        }
     }
 
     /// Screen capture preview for a macro coordinate ref (action tooltips).
@@ -102,9 +133,7 @@ impl PreviewTooltipCache {
         force: bool,
     ) {
         let preview = match ref_preview_spec(catalog, coord_ref, kind) {
-            Ok((key, caption, coords)) => {
-                self.texture_for(ui.ctx(), &key, &caption, coords, force)
-            }
+            Ok((key, caption, coords)) => self.texture_for(ui.ctx(), &key, &caption, coords, force),
             Err(err) => Err(err),
         };
         match preview {
@@ -119,13 +148,17 @@ impl PreviewTooltipCache {
 
     /// Embedded form-panel preview for a point (uses form field coords).
     /// Returns the image/placeholder rect for cardinal coord overlays.
+    /// Pass `None` for a coordinate that is a variable or non-literal expression.
     pub fn paint_point_panel(
         &mut self,
         ui: &mut egui::Ui,
-        x: i32,
-        y: i32,
+        x: Option<i32>,
+        y: Option<i32>,
         force: bool,
     ) -> egui::Rect {
+        let (Some(x), Some(y)) = (x, y) else {
+            return paint_preview_panel_placeholder(ui, LITERAL_COORDS_MSG);
+        };
         let key = format!("panel:pt:{x}:{y}");
         let caption = format!("X: {x}, Y: {y}");
         let preview = self.texture_for(
@@ -143,15 +176,19 @@ impl PreviewTooltipCache {
 
     /// Embedded form-panel preview for a search area (uses form field coords).
     /// Returns the image/placeholder rect for cardinal coord overlays.
+    /// Pass `None` for a coordinate that is a variable or non-literal expression.
     pub fn paint_search_area_panel(
         &mut self,
         ui: &mut egui::Ui,
-        left: i32,
-        top: i32,
-        right: i32,
-        bottom: i32,
+        left: Option<i32>,
+        top: Option<i32>,
+        right: Option<i32>,
+        bottom: Option<i32>,
         force: bool,
     ) -> egui::Rect {
+        let (Some(left), Some(top), Some(right), Some(bottom)) = (left, top, right, bottom) else {
+            return paint_preview_panel_placeholder(ui, LITERAL_COORDS_MSG);
+        };
         let key = format!("panel:sa:{left}:{top}:{right}:{bottom}");
         let caption = format!("Left: {left}, Top: {top}, Right: {right}, Bottom: {bottom}");
         let preview = self.texture_for(
@@ -183,6 +220,8 @@ impl PreviewTooltipCache {
         if force {
             self.entries.remove(key);
             self.order.retain(|k| k != key);
+            self.pending.remove(key);
+            self.failures.remove(key);
         }
         let now = Instant::now();
         if let Some(entry) = self.entries.get(key) {
@@ -196,7 +235,78 @@ impl PreviewTooltipCache {
         self.entries.remove(key);
         self.order.retain(|k| k != key);
 
-        let img = self.capture(coords)?;
+        if let Some(fail) = self.failures.get(key) {
+            if now < fail.expires {
+                return Err(fail.error.clone());
+            }
+            self.failures.remove(key);
+        }
+
+        if self.pending.contains_key(key) {
+            let recv = self.pending[key].rx.try_recv();
+            match recv {
+                Ok(Ok(img)) => {
+                    let caption = self
+                        .pending
+                        .remove(key)
+                        .map(|p| p.caption)
+                        .unwrap_or_else(|| caption.to_string());
+                    self.failures.remove(key);
+                    return self.finish_texture(ctx, key, &caption, img, now);
+                }
+                Ok(Err(e)) => {
+                    self.pending.remove(key);
+                    self.remember_failure(key, e.clone(), now);
+                    return Err(e);
+                }
+                Err(TryRecvError::Empty) => {
+                    ctx.request_repaint();
+                    return Err("Capturing…".into());
+                }
+                Err(TryRecvError::Disconnected) => {
+                    self.pending.remove(key);
+                    let e = "capture failed".to_string();
+                    self.remember_failure(key, e.clone(), now);
+                    return Err(e);
+                }
+            }
+        }
+
+        self.ensure_capturer()?;
+        let capturer = Arc::clone(self.capturer.as_ref().unwrap());
+        let (tx, rx) = mpsc::channel();
+        thread::spawn(move || {
+            let _ = tx.send(capture_preview(capturer.as_ref(), coords));
+        });
+        self.pending.insert(
+            key.to_string(),
+            PendingCapture {
+                caption: caption.to_string(),
+                rx,
+            },
+        );
+        ctx.request_repaint();
+        Err("Capturing…".into())
+    }
+
+    fn remember_failure(&mut self, key: &str, error: String, now: Instant) {
+        self.failures.insert(
+            key.to_string(),
+            FailureEntry {
+                error,
+                expires: now + FAIL_CACHE_TTL,
+            },
+        );
+    }
+
+    fn finish_texture(
+        &mut self,
+        ctx: &egui::Context,
+        key: &str,
+        caption: &str,
+        img: RgbaImage,
+        now: Instant,
+    ) -> Result<(TextureHandle, String), String> {
         let size = [img.width() as usize, img.height() as usize];
         let color = ColorImage::from_rgba_unmultiplied(size, img.as_raw());
         let tex = ctx.load_texture(key.to_string(), color, TextureOptions::LINEAR);
@@ -211,65 +321,21 @@ impl PreviewTooltipCache {
         Ok((tex, caption.to_string()))
     }
 
-    fn capture(&mut self, coords: PreviewCoords) -> Result<RgbaImage, String> {
+    fn ensure_capturer(&mut self) -> Result<(), String> {
         if self.capturer_failed && self.capturer.is_none() {
             return Err("screen capture unavailable".into());
         }
-        if self.capturer.is_none() {
-            match X11Capturer::open() {
-                Ok(c) => self.capturer = Some(c),
-                Err(e) => {
-                    self.capturer_failed = true;
-                    return Err(e);
-                }
-            }
+        if self.capturer.is_some() {
+            return Ok(());
         }
-        let capturer = self.capturer.as_mut().unwrap();
-        let vb = capturer.virtual_bounds()?;
-        match coords {
-            PreviewCoords::Point { x, y } => {
-                if x < vb.x || y < vb.y || x > vb.x + vb.w || y > vb.y + vb.h {
-                    return Err(format!(
-                        "point outside desktop ({},{})..({},{}), got ({x},{y})",
-                        vb.x,
-                        vb.y,
-                        vb.x + vb.w,
-                        vb.y + vb.h
-                    ));
-                }
-                let bounds = preview_bounds_for_point(x, y, vb);
-                let mut img = capturer.capture_rect(bounds)?;
-                draw_point_marker(
-                    &mut img,
-                    x - bounds.x,
-                    y - bounds.y,
-                    OVERLAY,
-                    2,
-                );
-                Ok(downscale_max_dim(img, TOOLTIP_MAX_DIM))
+        match shared_capturer() {
+            Ok(c) => {
+                self.capturer = Some(c);
+                Ok(())
             }
-            PreviewCoords::SearchArea {
-                left,
-                top,
-                right,
-                bottom,
-            } => {
-                let (lx, ty, rx, by) = normalize_rect(left, top, right, bottom);
-                if rx <= lx || by <= ty {
-                    return Err("empty search area".into());
-                }
-                let bounds = preview_bounds_for_search_area(lx, ty, rx, by, vb);
-                let mut img = capturer.capture_rect(bounds)?;
-                draw_rect_outline(
-                    &mut img,
-                    lx - bounds.x,
-                    ty - bounds.y,
-                    rx - bounds.x,
-                    by - bounds.y,
-                    OVERLAY,
-                    2,
-                );
-                Ok(downscale_max_dim(img, TOOLTIP_MAX_DIM))
+            Err(e) => {
+                self.capturer_failed = true;
+                Err(e)
             }
         }
     }
@@ -308,6 +374,50 @@ enum PreviewCoords {
     },
 }
 
+fn capture_preview(capturer: &X11Capturer, coords: PreviewCoords) -> Result<RgbaImage, String> {
+    let vb = capturer.virtual_bounds_ref()?;
+    match coords {
+        PreviewCoords::Point { x, y } => {
+            if x < vb.x || y < vb.y || x > vb.x + vb.w || y > vb.y + vb.h {
+                return Err(format!(
+                    "point outside desktop ({},{})..({},{}), got ({x},{y})",
+                    vb.x,
+                    vb.y,
+                    vb.x + vb.w,
+                    vb.y + vb.h
+                ));
+            }
+            let bounds = preview_bounds_for_point(x, y, vb);
+            let mut img = capturer.capture_rect_ref(bounds)?;
+            draw_point_marker(&mut img, x - bounds.x, y - bounds.y, OVERLAY, 2);
+            Ok(downscale_max_dim(img, TOOLTIP_MAX_DIM))
+        }
+        PreviewCoords::SearchArea {
+            left,
+            top,
+            right,
+            bottom,
+        } => {
+            let (lx, ty, rx, by) = normalize_rect(left, top, right, bottom);
+            if rx <= lx || by <= ty {
+                return Err("empty search area".into());
+            }
+            let bounds = preview_bounds_for_search_area(lx, ty, rx, by, vb);
+            let mut img = capturer.capture_rect_ref(bounds)?;
+            draw_rect_outline(
+                &mut img,
+                lx - bounds.x,
+                ty - bounds.y,
+                rx - bounds.x,
+                by - bounds.y,
+                OVERLAY,
+                2,
+            );
+            Ok(downscale_max_dim(img, TOOLTIP_MAX_DIM))
+        }
+    }
+}
+
 /// Coordinate ref + preview kind for actions that show point/search-area captures.
 pub fn coordinate_ref_for_preview(action: &Action) -> Option<(CoordinateRef, PreviewKind)> {
     match &action.kind {
@@ -316,7 +426,9 @@ pub fn coordinate_ref_for_preview(action: &Action) -> Option<(CoordinateRef, Pre
         }
         ActionKind::ImageSearch { search_area, .. }
         | ActionKind::Ocr { search_area, .. }
-        | ActionKind::FindPixel { search_area, .. } if !search_area.is_empty() => {
+        | ActionKind::FindPixel { search_area, .. }
+            if !search_area.is_empty() =>
+        {
             Some((search_area.clone(), PreviewKind::SearchArea))
         }
         _ => None,
@@ -371,44 +483,54 @@ fn cache_key_ref(coord_ref: &CoordinateRef, coords: PreviewCoords) -> String {
     }
 }
 
+enum EntityPreviewError {
+    Missing,
+    NonLiteral,
+}
+
 fn entity_preview_spec(
     catalog: &ProgramCatalog,
     program: &str,
     name: &str,
     kind: PreviewKind,
-) -> Option<(String, String, PreviewCoords)> {
-    let pdata = catalog.get(program)?;
+) -> Result<(String, String, PreviewCoords), EntityPreviewError> {
+    let pdata = catalog.get(program).ok_or(EntityPreviewError::Missing)?;
     let res = catalog.resolution_key();
     match kind {
         PreviewKind::Point => {
             let pt = pdata
                 .points
                 .get(res)
-                .or_else(|| pdata.points.values().next())?
-                .get(name)?;
-            Some((
+                .or_else(|| pdata.points.values().next())
+                .and_then(|m| m.get(name))
+                .ok_or(EntityPreviewError::Missing)?;
+            let x = coord_to_literal(&pt.x).ok_or(EntityPreviewError::NonLiteral)?;
+            let y = coord_to_literal(&pt.y).ok_or(EntityPreviewError::NonLiteral)?;
+            Ok((
                 cache_key_point(pt),
                 point_caption(pt),
-                PreviewCoords::Point {
-                    x: coord_to_int(&pt.x),
-                    y: coord_to_int(&pt.y),
-                },
+                PreviewCoords::Point { x, y },
             ))
         }
         PreviewKind::SearchArea => {
             let sa = pdata
                 .search_areas
                 .get(res)
-                .or_else(|| pdata.search_areas.values().next())?
-                .get(name)?;
-            Some((
+                .or_else(|| pdata.search_areas.values().next())
+                .and_then(|m| m.get(name))
+                .ok_or(EntityPreviewError::Missing)?;
+            let left = coord_to_literal(&sa.left_x).ok_or(EntityPreviewError::NonLiteral)?;
+            let top = coord_to_literal(&sa.top_y).ok_or(EntityPreviewError::NonLiteral)?;
+            let right = coord_to_literal(&sa.right_x).ok_or(EntityPreviewError::NonLiteral)?;
+            let bottom = coord_to_literal(&sa.bottom_y).ok_or(EntityPreviewError::NonLiteral)?;
+            Ok((
                 cache_key_search_area(sa),
                 search_area_caption(sa),
                 PreviewCoords::SearchArea {
-                    left: coord_to_int(&sa.left_x),
-                    top: coord_to_int(&sa.top_y),
-                    right: coord_to_int(&sa.right_x),
-                    bottom: coord_to_int(&sa.bottom_y),
+                    left,
+                    top,
+                    right,
+                    bottom,
                 },
             ))
         }
@@ -416,12 +538,7 @@ fn entity_preview_spec(
 }
 
 fn cache_key_point(pt: &ProgramPoint) -> String {
-    format!(
-        "pt:{}:{}:{}",
-        pt.name,
-        pt.x.as_display(),
-        pt.y.as_display()
-    )
+    format!("pt:{}:{}:{}", pt.name, pt.x.as_display(), pt.y.as_display())
 }
 
 fn cache_key_search_area(sa: &ProgramSearchArea) -> String {
@@ -449,19 +566,23 @@ fn search_area_caption(sa: &ProgramSearchArea) -> String {
     )
 }
 
-fn coord_to_int(v: &ScalarValue) -> i32 {
+/// Literal numeric coordinate suitable for a live screen preview.
+/// Returns `None` for variable refs and other non-numeric expressions.
+fn coord_to_literal(v: &ScalarValue) -> Option<i32> {
     match v {
-        ScalarValue::Int(i) => *i as i32,
-        ScalarValue::Float(f) => *f as i32,
-        ScalarValue::Bool(b) => {
-            if *b {
-                1
-            } else {
-                0
+        ScalarValue::Int(i) => Some(*i as i32),
+        ScalarValue::Float(f) => Some(*f as i32),
+        ScalarValue::Bool(b) => Some(if *b { 1 } else { 0 }),
+        ScalarValue::String(s) => {
+            let s = s.trim();
+            if s.is_empty() || sqyre_varref::contains(s) {
+                return None;
             }
+            s.parse::<i32>()
+                .ok()
+                .or_else(|| s.parse::<f64>().ok().map(|f| f as i32))
         }
-        ScalarValue::String(s) => s.trim().parse().unwrap_or(0),
-        ScalarValue::Null => 0,
+        ScalarValue::Null => None,
     }
 }
 
@@ -613,12 +734,7 @@ fn shift_into_virtual(desired: DesktopRect, vb: DesktopRect) -> DesktopRect {
             y0 = vb.y + vb.h - h;
         }
     }
-    DesktopRect {
-        x: x0,
-        y: y0,
-        w,
-        h,
-    }
+    DesktopRect { x: x0, y: y0, w, h }
 }
 
 fn downscale_max_dim(img: RgbaImage, max_dim: u32) -> RgbaImage {
@@ -734,7 +850,7 @@ mod tests {
 
     #[test]
     fn coordinate_ref_for_preview_matches_action_kinds() {
-        use sqyre_domain::{ActionId, ActionKind, CoordinateRef};
+        use sqyre_domain::{ActionId, ActionKind, CoordinateRef, DetectionBranch};
 
         assert!(coordinate_ref_for_preview(&Action {
             id: ActionId::new(),
@@ -767,11 +883,7 @@ mod tests {
                 search_area: CoordinateRef("P~Box".into()),
                 tolerance: 0.9,
                 blur: 0,
-                wait: Default::default(),
-                coords: Default::default(),
-                run_branch_on_no_find: false,
-                order: Default::default(),
-                subactions: vec![],
+                detection: DetectionBranch::default(),
             },
         };
         assert_eq!(
@@ -799,5 +911,16 @@ mod tests {
             search_area_caption(&sa),
             "Left: 10, Top: 20, Right: 110, Bottom: 80"
         );
+    }
+
+    #[test]
+    fn coord_to_literal_rejects_variable_refs() {
+        assert_eq!(coord_to_literal(&ScalarValue::Int(12)), Some(12));
+        assert_eq!(
+            coord_to_literal(&ScalarValue::String("40".into())),
+            Some(40)
+        );
+        assert_eq!(coord_to_literal(&ScalarValue::String("${x}".into())), None);
+        assert_eq!(coord_to_literal(&ScalarValue::Null), None);
     }
 }

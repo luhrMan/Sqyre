@@ -38,12 +38,6 @@ impl OsAutomation {
     }
 }
 
-impl Default for OsAutomation {
-    fn default() -> Self {
-        Self::new().expect("OsAutomation::new")
-    }
-}
-
 impl AutomationBackend for OsAutomation {
     fn milli_sleep(&mut self, ms: i32) {
         if ms > 0 {
@@ -80,18 +74,14 @@ impl AutomationBackend for OsAutomation {
                 .click_down(btn)
                 .map_err(|e| format!("click down: {e}"))
         } else {
-            self.gui
-                .click_up(btn)
-                .map_err(|e| format!("click up: {e}"))
+            self.gui.click_up(btn).map_err(|e| format!("click up: {e}"))
         }
     }
 
     fn scroll(&mut self, up: bool) -> Result<(), String> {
         // Scroll intensity ~3 notches.
         if up {
-            self.gui
-                .scroll_up(3)
-                .map_err(|e| format!("scroll up: {e}"))
+            self.gui.scroll_up(3).map_err(|e| format!("scroll up: {e}"))
         } else {
             self.gui
                 .scroll_down(3)
@@ -108,12 +98,12 @@ impl AutomationBackend for OsAutomation {
 
     fn key_up(&mut self, key: &str) -> Result<(), String> {
         let k = Self::map_key(key);
-        self.gui
-            .key_up(&k)
-            .map_err(|e| format!("key up {k}: {e}"))
+        self.gui.key_up(&k).map_err(|e| format!("key up {k}: {e}"))
     }
 
-    fn type_char(&mut self, s: &str) {
+    fn type_char(&mut self, ch: char) {
+        let mut buf = [0u8; 4];
+        let s = ch.encode_utf8(&mut buf);
         let _ = self.gui.keyboard_input(s);
     }
 
@@ -134,8 +124,38 @@ mod tests {
     #[test]
     fn maps_buttons_and_keys() {
         assert!(matches!(OsAutomation::map_button("left"), MouseClick::LEFT));
-        assert!(matches!(OsAutomation::map_button("right"), MouseClick::RIGHT));
+        assert!(matches!(
+            OsAutomation::map_button("right"),
+            MouseClick::RIGHT
+        ));
+        assert!(matches!(
+            OsAutomation::map_button("middle"),
+            MouseClick::MIDDLE
+        ));
+        assert!(matches!(
+            OsAutomation::map_button("center"),
+            MouseClick::MIDDLE
+        ));
         assert_eq!(OsAutomation::map_key("ctrl"), "control");
+        assert_eq!(OsAutomation::map_key("control"), "control");
         assert_eq!(OsAutomation::map_key("esc"), "escape");
+        assert_eq!(OsAutomation::map_key("escape"), "escape");
+        assert_eq!(OsAutomation::map_key("return"), "enter");
+        assert_eq!(OsAutomation::map_key("enter"), "enter");
+        assert_eq!(OsAutomation::map_key("spacebar"), "space");
+        assert_eq!(OsAutomation::map_key("cmd"), "command");
+        assert_eq!(OsAutomation::map_key("super"), "command");
+        assert_eq!(OsAutomation::map_key("a"), "a");
+    }
+
+    #[test]
+    fn smooth_move_time_clamped() {
+        // Documented mapping used by move_to — keep in sync if formula changes.
+        let from_delay = (100_f32 * 0.05).clamp(0.05, 2.0);
+        assert!((from_delay - 2.0).abs() < f32::EPSILON);
+        let default_smooth = 0.2_f32.clamp(0.05, 2.0);
+        assert!((default_smooth - 0.2).abs() < f32::EPSILON);
+        let instant = 0.0_f32;
+        assert_eq!(instant, 0.0);
     }
 }

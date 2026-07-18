@@ -1,14 +1,15 @@
-//! Encode/decode macros and actions for YAML / map round-trips.
+//! Encode/decode macros and actions via typed serde on domain types.
 //!
-//! Field names follow the serialize codecs (including tip
-//! `while` / `navigateselect` and tolerant ImageSearch loading).
+//! Public map/YAML helpers wrap `serde_yaml::{to_value,from_value}` so
+//! clipboard, undo, and persist keep the same API.
 
 mod action;
-mod helpers;
 mod macro_codec;
 
 pub use action::{action_from_map, action_to_map, action_to_map_with_uid};
-pub use macro_codec::{decode_macro_from_map, decode_macro_from_yaml, encode_macro_to_map, encode_macro_to_yaml};
+pub use macro_codec::{
+    decode_macro_from_map, decode_macro_from_yaml, encode_macro_to_map, encode_macro_to_yaml,
+};
 
 use thiserror::Error;
 

@@ -5,6 +5,9 @@ edition.workspace = true
 license.workspace = true
 description = "Load/save ~/.sqyre (db.yaml) macros, settings, and program catalog"
 
+[lints]
+workspace = true
+
 [dependencies]
 serde = { workspace = true }
 serde_yaml = { workspace = true }

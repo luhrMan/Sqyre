@@ -107,7 +107,7 @@ jobs:
       - name: Prepare Cargo cache dirs
         run: mkdir -p "${{ env.CARGO_HOME_DIR }}" "${{ env.CARGO_TARGET_DIR_HOST }}"
 
-      - name: Run Rust tests
+      - name: Run Rust quality checks and tests
         run: |
           docker run --rm -u "$(id -u):$(id -g)" \
             -v ${{ github.workspace }}:/workspace -w /workspace \
@@ -120,7 +120,34 @@ jobs:
             -e VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json \
             sqyre-linux-build \
             bash -c 'set -euo pipefail
+              make check
+              make machete
               make test'
+
+      - name: Coverage report
+        run: |
+          docker run --rm -u "$(id -u):$(id -g)" \
+            -v ${{ github.workspace }}:/workspace -w /workspace \
+            -e HOME=/tmp \
+            -e CARGO_HOME=/workspace/${{ env.CARGO_HOME_DIR }} \
+            -e CARGO_TARGET_DIR=/workspace/${{ env.CARGO_TARGET_DIR_HOST }} \
+            -e RUSTUP_HOME=/usr/local/rustup \
+            -e PATH=/usr/local/cargo/bin:/usr/bin:/bin \
+            -e WGPU_BACKEND=vulkan \
+            -e VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json \
+            sqyre-linux-build \
+            bash -c 'set -euo pipefail
+              make coverage'
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-html
+          path: |
+            target/coverage/html
+            target/coverage/lcov.info
+          if-no-files-found: warn
+          retention-days: 14
 
   build-linux:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'

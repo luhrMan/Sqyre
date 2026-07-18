@@ -6,7 +6,7 @@ pub fn find_pixel(img: &ImageBuf, hex: &str, tolerance: i32) -> Option<Point> {
         return None;
     }
     let (tr, tg, tb) = parse_hex(hex).unwrap_or((0, 0, 0));
-    let tol = tolerance.clamp(0, 255) as i32;
+    let tol = tolerance.clamp(0, 255);
     for y in 0..img.height {
         for x in 0..img.width {
             let o = img.pixel_offset(x, y);
@@ -25,14 +25,8 @@ pub fn find_pixel(img: &ImageBuf, hex: &str, tolerance: i32) -> Option<Point> {
 }
 
 fn parse_hex(s: &str) -> Option<(i32, i32, i32)> {
-    let t = s.trim().trim_start_matches('#');
-    if t.len() != 6 {
-        return None;
-    }
-    let r = i32::from_str_radix(&t[0..2], 16).ok()?;
-    let g = i32::from_str_radix(&t[2..4], 16).ok()?;
-    let b = i32::from_str_radix(&t[4..6], 16).ok()?;
-    Some((r, g, b))
+    let [r, g, b, _] = sqyre_domain::parse_hex_color(s)?;
+    Some((r as i32, g as i32, b as i32))
 }
 
 #[cfg(test)]

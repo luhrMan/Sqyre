@@ -1,5 +1,6 @@
 //! Macro variable declarations panel.
 
+use crate::action_tooltip::help;
 use eframe::egui;
 use sqyre_domain::{builtin_variable_catalog, Macro, VariableDecl, VariableType};
 use sqyre_executor::SharedRuntimeVars;
@@ -80,8 +81,10 @@ impl VariablesPanelUi {
                 });
                 ui.separator();
                 ui.horizontal(|ui| {
-                    ui.selectable_value(&mut self.bottom_tab, BottomTab::Runtime, "Runtime");
-                    ui.selectable_value(&mut self.bottom_tab, BottomTab::Builtins, "Built-ins");
+                    ui.selectable_value(&mut self.bottom_tab, BottomTab::Runtime, "Runtime")
+                        .on_hover_text(help::VAR_TAB_RUNTIME);
+                    ui.selectable_value(&mut self.bottom_tab, BottomTab::Builtins, "Built-ins")
+                        .on_hover_text(help::VAR_TAB_BUILTINS);
                 });
                 ui.separator();
                 match self.bottom_tab {
@@ -252,39 +255,52 @@ impl VariablesPanelUi {
         let mut save = false;
 
         ui.horizontal(|ui| {
-            ui.label("Name");
-            ui.add(
-                egui::TextEdit::singleline(&mut edit.name)
-                    .desired_width(160.0)
-                    .hint_text("myVar"),
+            help::label(ui, "Name", help::VAR_NAME);
+            help::tip(
+                ui.add(
+                    egui::TextEdit::singleline(&mut edit.name)
+                        .desired_width(160.0)
+                        .hint_text("myVar"),
+                ),
+                help::VAR_NAME,
             );
         });
         ui.horizontal(|ui| {
-            ui.label("Type");
+            help::label(ui, "Type", help::VAR_TYPE);
             for (label, ty) in [
                 ("auto", VariableType::Auto),
                 ("text", VariableType::Text),
                 ("number", VariableType::Number),
             ] {
-                if ui.selectable_label(edit.type_ == ty, label).clicked() {
+                if ui
+                    .selectable_label(edit.type_ == ty, label)
+                    .on_hover_text(help::VAR_TYPE)
+                    .clicked()
+                {
                     edit.type_ = ty;
                 }
             }
         });
         ui.horizontal(|ui| {
-            ui.label("Initial");
-            ui.add(
-                egui::TextEdit::singleline(&mut edit.initial_value)
-                    .desired_width(220.0)
-                    .hint_text("optional"),
+            help::label(ui, "Initial", help::VAR_INITIAL);
+            help::tip(
+                ui.add(
+                    egui::TextEdit::singleline(&mut edit.initial_value)
+                        .desired_width(220.0)
+                        .hint_text("optional"),
+                ),
+                help::VAR_INITIAL,
             );
         });
         ui.horizontal(|ui| {
-            ui.label("Description");
-            ui.add(
-                egui::TextEdit::singleline(&mut edit.description)
-                    .desired_width(280.0)
-                    .hint_text("optional"),
+            help::label(ui, "Description", help::VAR_DESC);
+            help::tip(
+                ui.add(
+                    egui::TextEdit::singleline(&mut edit.description)
+                        .desired_width(280.0)
+                        .hint_text("optional"),
+                ),
+                help::VAR_DESC,
             );
         });
 

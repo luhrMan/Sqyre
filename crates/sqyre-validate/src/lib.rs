@@ -48,9 +48,9 @@ pub fn parse_non_negative_i32(s: &str) -> Result<i32> {
             "must be a non-negative integer".into(),
         ));
     }
-    let v: i32 = s.parse().map_err(|_| {
-        ValidateError::Message(format!("must be a non-negative integer: {s:?}"))
-    })?;
+    let v: i32 = s
+        .parse()
+        .map_err(|_| ValidateError::Message(format!("must be a non-negative integer: {s:?}")))?;
     if v < 0 {
         return Err(ValidateError::Message(format!(
             "must be a non-negative integer: {s:?}"
@@ -200,11 +200,6 @@ pub fn unknown_variable_warning(text: &str, macro_: Option<&Macro>) -> String {
 /// Whether text will be evaluated as arithmetic at runtime (re-exported from domain).
 pub use sqyre_domain::looks_like_arithmetic;
 
-/// Calculate expression check — alias for Set value validation.
-pub fn validate_calculate_expression(text: &str, macro_: Option<&Macro>) -> EntryValidation {
-    validate_set_variable_value(text, macro_)
-}
-
 /// Parse/evaluate with placeholders for missing vars.
 /// Does not mutate the caller's runtime store — works on a scratch clone.
 /// When `macro_` is `None`, still validates literal/arithmetic structure on an empty scratch
@@ -326,20 +321,13 @@ pub fn validate_numeric_expression(text: &str, macro_: Option<&Macro>) -> EntryV
     v
 }
 
-fn variable_binding_label(name: &str, role: &str) -> String {
-    let name = name.trim();
-    match role {
-        "value" => format!("variable {name:?}"),
-        "output" => format!("output variable {name:?}"),
-        "output_x" => format!("output X variable {name:?}"),
-        "output_y" => format!("output Y variable {name:?}"),
-        _ => format!("variable {name:?}"),
-    }
+fn variable_binding_label(name: &str, role: sqyre_domain::BindingRole) -> String {
+    role.validate_label(name)
 }
 
-fn yaml_string_value(v: &serde_yaml::Value) -> Option<&str> {
+fn yaml_string_value(v: &sqyre_domain::ScalarValue) -> Option<&str> {
     match v {
-        serde_yaml::Value::String(s) => Some(s.as_str()),
+        sqyre_domain::ScalarValue::String(s) => Some(s.as_str()),
         _ => None,
     }
 }
@@ -347,23 +335,13 @@ fn yaml_string_value(v: &serde_yaml::Value) -> Option<&str> {
 fn validate_continue_key(keys: &[String]) -> Result<()> {
     let normalized: Vec<String> = keys
         .iter()
-        .map(|k| k.trim().to_ascii_lowercase())
+        .map(|k| sqyre_hotkeys::normalize_key_name(k))
         .filter(|k| !k.is_empty())
         .collect();
     if normalized.is_empty() {
-        return Err(ValidateError::Message(
-            "pause: continue key not set".into(),
-        ));
+        return Err(ValidateError::Message("pause: continue key not set".into()));
     }
-    let mut sorted = normalized;
-    sorted.sort();
-    let mut failsafe = vec![
-        "esc".to_string(),
-        "ctrl".to_string(),
-        "shift".to_string(),
-    ];
-    failsafe.sort();
-    if sorted == failsafe {
+    if sqyre_hotkeys::is_failsafe_chord(&normalized) {
         return Err(ValidateError::Message(
             "pause: continue key cannot match the failsafe hotkey (esc + ctrl + shift)".into(),
         ));
@@ -382,7 +360,7 @@ pub fn validate_action(action: &Action, macro_: Option<&Macro>) -> Result<()> {
             continue;
         }
         validate_variable_assignment_name(&b.name).map_err(|e| {
-            ValidateError::Message(format!("{}: {e}", variable_binding_label(&b.name, &b.role)))
+            ValidateError::Message(format!("{}: {e}", variable_binding_label(&b.name, b.role)))
         })?;
     }
 
@@ -398,9 +376,8 @@ pub fn validate_action(action: &Action, macro_: Option<&Macro>) -> Result<()> {
             variable_name,
             value,
         } => {
-            validate_variable_assignment_name(variable_name).map_err(|e| {
-                ValidateError::Message(format!("set variable: {e}"))
-            })?;
+            validate_variable_assignment_name(variable_name)
+                .map_err(|e| ValidateError::Message(format!("set variable: {e}")))?;
             if let Some(text) = yaml_string_value(value) {
                 let v = validate_set_variable_value(text, macro_);
                 if v.blocks_submit() {
@@ -411,7 +388,63 @@ pub fn validate_action(action: &Action, macro_: Option<&Macro>) -> Result<()> {
         ActionKind::Pause { continue_key, .. } => {
             validate_continue_key(continue_key)?;
         }
+        ActionKind::ImageSearch {
+            targets, detection, ..
+        } => {
+            if targets.is_empty() || targets.iter().all(|t| t.trim().is_empty()) {
+                return Err(ValidateError::Message(
+                    "image search: add at least one target item".into(),
+                ));
+            }
+            validate_wait_config("image search", &detection.wait)?;
+        }
+        ActionKind::Ocr { detection, .. } => {
+            validate_wait_config("ocr", &detection.wait)?;
+        }
+        ActionKind::FindPixel {
+            target_color,
+            detection,
+            ..
+        } => {
+            if target_color.trim().is_empty() {
+                return Err(ValidateError::Message(
+                    "find pixel: set a target color".into(),
+                ));
+            }
+            validate_wait_config("find pixel", &detection.wait)?;
+        }
+        ActionKind::NavigateKey { chord, .. } => {
+            if chord.is_empty() || chord.iter().all(|k| k.trim().is_empty()) {
+                return Err(ValidateError::Message(
+                    "navigate key: record a chord before saving".into(),
+                ));
+            }
+        }
         _ => {}
+    }
+    Ok(())
+}
+
+fn validate_wait_config(label: &str, wait: &sqyre_domain::WaitTilFoundConfig) -> Result<()> {
+    use sqyre_domain::RepeatMode;
+    if wait.repeat_mode == RepeatMode::WaitUntilFound && wait.wait_til_found_seconds <= 0 {
+        return Err(ValidateError::Message(format!(
+            "{label}: wait-until-found requires a positive timeout (seconds)"
+        )));
+    }
+    if wait.wait_til_found_interval_ms < 0 {
+        return Err(ValidateError::Message(format!(
+            "{label}: wait interval cannot be negative"
+        )));
+    }
+    Ok(())
+}
+
+/// Recursively validate `action` and every descendant via [`Action::children`].
+pub fn validate_action_tree(action: &Action, macro_: Option<&Macro>) -> Result<()> {
+    validate_action(action, macro_)?;
+    for child in action.children() {
+        validate_action_tree(child, macro_)?;
     }
     Ok(())
 }
@@ -419,7 +452,7 @@ pub fn validate_action(action: &Action, macro_: Option<&Macro>) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqyre_domain::{ActionId, VariableDecl, VariableType};
+    use sqyre_domain::{ActionId, ScalarValue, VariableDecl, VariableType};
 
     #[test]
     fn variable_name_rejects_braces() {
@@ -463,7 +496,7 @@ mod tests {
         }
     }
 
-    fn set_var(name: &str, value: serde_yaml::Value) -> Action {
+    fn set_var(name: &str, value: sqyre_domain::ScalarValue) -> Action {
         Action {
             id: ActionId::new(),
             kind: ActionKind::SetVariable {
@@ -479,6 +512,21 @@ mod tests {
     }
 
     #[test]
+    fn validate_action_tree_walks_children() {
+        let root = Action {
+            id: ActionId::new(),
+            kind: ActionKind::Loop {
+                name: "root".into(),
+                count: ScalarValue::Int(1),
+                subactions: vec![key("a"), key("")],
+            },
+        };
+        assert!(validate_action(&root, None).is_ok());
+        let err = validate_action_tree(&root, None).unwrap_err();
+        assert!(err.to_string().contains("key:"), "{err}");
+    }
+
+    #[test]
     fn validate_action_key_requires_key() {
         assert!(validate_action(&key(""), None).is_err());
     }
@@ -486,7 +534,7 @@ mod tests {
     #[test]
     fn validate_action_set_allows_empty_value() {
         assert!(validate_action(
-            &set_var("out", serde_yaml::Value::String(String::new())),
+            &set_var("out", sqyre_domain::ScalarValue::String(String::new())),
             None
         )
         .is_ok());
@@ -495,7 +543,7 @@ mod tests {
     #[test]
     fn validate_action_set_variable_requires_name() {
         assert!(validate_action(
-            &set_var("", serde_yaml::Value::String("1".into())),
+            &set_var("", sqyre_domain::ScalarValue::String("1".into())),
             None
         )
         .is_err());
@@ -506,7 +554,7 @@ mod tests {
         let mut m = Macro::new("test", 0, vec![]);
         m.init_runtime_variables();
         assert!(validate_action(
-            &set_var("sum", serde_yaml::Value::String("1 + 2".into())),
+            &set_var("sum", sqyre_domain::ScalarValue::String("1 + 2".into())),
             Some(&m)
         )
         .is_ok());
@@ -517,7 +565,7 @@ mod tests {
         let mut m = Macro::new("test", 0, vec![]);
         m.init_runtime_variables();
         let err = validate_action(
-            &set_var("sum", serde_yaml::Value::String("1 + ".into())),
+            &set_var("sum", sqyre_domain::ScalarValue::String("1 + ".into())),
             Some(&m),
         )
         .unwrap_err();
@@ -564,7 +612,7 @@ mod tests {
             id: ActionId::new(),
             kind: ActionKind::SetVariable {
                 variable_name: "result".into(),
-                value: serde_yaml::Value::String("0".into()),
+                value: sqyre_domain::ScalarValue::String("0".into()),
             },
         }]);
         m.init_runtime_variables();
@@ -592,18 +640,11 @@ mod tests {
             id: ActionId::new(),
             kind: ActionKind::SetVariable {
                 variable_name: "a+b".into(),
-                value: serde_yaml::Value::String("1+1".into()),
+                value: sqyre_domain::ScalarValue::String("1+1".into()),
             },
         };
         let err = validate_action(&a, None).unwrap_err();
         assert!(err.to_string().contains("variable \"a+b\""), "{err}");
-    }
-
-    #[test]
-    fn looks_like_arithmetic_detects_ops_and_fns() {
-        assert!(looks_like_arithmetic("1+2"));
-        assert!(!looks_like_arithmetic("hello"));
-        assert!(looks_like_arithmetic("sqrt(4)"));
     }
 
     #[test]
@@ -630,5 +671,84 @@ mod tests {
         let warn = validate_variable_references("${missing}", Some(&m));
         assert!(!warn.blocks_submit());
         assert!(!warn.warning.is_empty());
+    }
+
+    #[test]
+    fn validate_image_search_requires_target_and_wait_timeout() {
+        use sqyre_domain::{RepeatMode, WaitTilFoundConfig};
+        let empty = Action {
+            id: ActionId::new(),
+            kind: ActionKind::ImageSearch {
+                name: String::new(),
+                targets: vec![],
+                search_area: Default::default(),
+                tolerance: 0.95,
+                blur: 5,
+                detection: Default::default(),
+            },
+        };
+        assert!(validate_action(&empty, None)
+            .unwrap_err()
+            .to_string()
+            .contains("target"));
+
+        let bad_wait = Action {
+            id: ActionId::new(),
+            kind: ActionKind::ImageSearch {
+                name: String::new(),
+                targets: vec!["Game~Item".into()],
+                search_area: Default::default(),
+                tolerance: 0.95,
+                blur: 5,
+                detection: sqyre_domain::DetectionBranch {
+                    wait: WaitTilFoundConfig {
+                        repeat_mode: RepeatMode::WaitUntilFound,
+                        wait_til_found_seconds: 0,
+                        wait_til_found_interval_ms: 0,
+                        max_iterations: 0,
+                    },
+                    ..Default::default()
+                },
+            },
+        };
+        assert!(validate_action(&bad_wait, None)
+            .unwrap_err()
+            .to_string()
+            .contains("timeout"));
+    }
+
+    #[test]
+    fn validate_find_pixel_requires_color() {
+        let a = Action {
+            id: ActionId::new(),
+            kind: ActionKind::FindPixel {
+                name: String::new(),
+                search_area: Default::default(),
+                target_color: String::new(),
+                color_tolerance: 0,
+                detection: Default::default(),
+            },
+        };
+        assert!(validate_action(&a, None)
+            .unwrap_err()
+            .to_string()
+            .contains("color"));
+    }
+
+    #[test]
+    fn validate_navigate_key_requires_chord() {
+        let a = Action {
+            id: ActionId::new(),
+            kind: ActionKind::NavigateKey {
+                name: String::new(),
+                chord: vec![],
+                exit: false,
+                subactions: vec![],
+            },
+        };
+        assert!(validate_action(&a, None)
+            .unwrap_err()
+            .to_string()
+            .contains("chord"));
     }
 }
