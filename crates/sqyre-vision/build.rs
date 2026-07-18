@@ -8,7 +8,10 @@ fn main() {
     let manifest = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
     let root = find_workspace_root(&manifest);
     println!("cargo:rustc-env=SQYRE_WORKSPACE_ROOT={}", root.display());
-    println!("cargo:rerun-if-changed={}", root.join("Cargo.toml").display());
+    println!(
+        "cargo:rerun-if-changed={}",
+        root.join("Cargo.toml").display()
+    );
     println!(
         "cargo:rerun-if-changed={}",
         root.join("assets/tessdata").display()

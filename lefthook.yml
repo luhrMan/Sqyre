@@ -1,0 +1,13 @@
+# Optional local hooks. Install: https://lefthook.dev
+#   go install github.com/evilmartians/lefthook@latest
+#   lefthook install
+#
+# CI still enforces `make check`; these hooks are for faster local feedback.
+
+pre-push:
+  parallel: true
+  commands:
+    check-fmt:
+      run: make check-fmt
+    clippy:
+      run: make clippy

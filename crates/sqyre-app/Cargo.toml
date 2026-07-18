@@ -17,15 +17,20 @@ path = "src/main.rs"
 default = ["hooks"]
 hooks = ["sqyre-hotkeys/hooks"]
 
+[lints]
+workspace = true
+
 [dependencies]
 eframe = { workspace = true }
 egui = { workspace = true }
+egui-phosphor = { workspace = true }
 egui_ltreeview = { workspace = true }
 fs2 = "0.4"
 image = { workspace = true }
 resvg = { workspace = true }
 sqyre-match = { path = "../sqyre-match" }
 sqyre-domain = { path = "../sqyre-domain" }
+sqyre-ui-model = { path = "../sqyre-ui-model" }
 sqyre-persist = { path = "../sqyre-persist" }
 sqyre-validate = { path = "../sqyre-validate" }
 sqyre-varref = { path = "../sqyre-varref" }
@@ -39,9 +44,11 @@ serde_yaml = { workspace = true }
 rfd = { workspace = true }
 tokio = { workspace = true }
 parking_lot = { workspace = true }
+thiserror = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 ksni = { workspace = true }
+winit = "0.30"
 
 [target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
 tray-icon = { workspace = true }

@@ -3,24 +3,24 @@
 //! Hover a tile ~1s for a **view** tip of that type’s defaults; right-click opens
 //! **edit** (persisted in user settings). Left-click inserts a clone into the tree.
 
-use crate::action_tooltip::{
-    apply_picker_result, paint_edit_fields, show_action_view_tip,
-};
+use crate::action_tooltip::{apply_picker_result, paint_edit_fields, show_action_view_tip};
 use crate::hotkey_record::HotkeyRecordUi;
 use crate::icon_cache::IconCache;
 use crate::key_record::KeyRecordUi;
+use crate::paint_ctx::{CatalogPaint, EditFieldsCtx, RecordBridges, VarTheme};
 use crate::pickers::{self, ActivePicker};
 use crate::preview_tooltip::PreviewTooltipCache;
 use crate::tree_chrome;
 use eframe::egui::{self, Color32, CornerRadius, Key, Sense, Vec2};
 use sqyre_domain::{
-    action_icon_glyph, action_pastel_color, action_templates, action_type_label, blank_action,
-    Action, ActionId, ActionKind, ActionTemplate, ACTION_PICKER_CATEGORIES,
+    action_templates, action_type_label, blank_action, Action, ActionId, ActionTemplate,
+    ACTION_PICKER_CATEGORIES,
 };
 use sqyre_hotkeys::{MacroHotkeyBridge, ScreenClickBridge};
 use sqyre_persist::ProgramCatalog;
 use sqyre_persist::UserSettings;
 use sqyre_serialize::{action_from_map, action_to_map};
+use sqyre_ui_model::{action_icon_glyph, action_pastel_color};
 use sqyre_validate::validate_action;
 use std::collections::{HashMap, HashSet};
 
@@ -47,18 +47,21 @@ struct HoverPending {
 }
 
 #[derive(Debug, Clone)]
+struct DefaultsEdit {
+    action_type: String,
+    draft: Action,
+    error: Option<String>,
+    anchor: egui::Pos2,
+    picker: ActivePicker,
+}
+
+#[derive(Debug, Clone)]
 enum DefaultsTip {
     View {
         action_type: String,
-        action: Action,
+        action: Box<Action>,
     },
-    Edit {
-        action_type: String,
-        draft: Action,
-        error: Option<String>,
-        anchor: egui::Pos2,
-        picker: ActivePicker,
-    },
+    Edit(Box<DefaultsEdit>),
 }
 
 impl DefaultsTip {
@@ -113,7 +116,7 @@ impl AddActionPicker {
         };
         self.tip = Some(DefaultsTip::View {
             action_type,
-            action,
+            action: Box::new(action),
         });
         self.hover_pending = None;
     }
@@ -122,51 +125,43 @@ impl AddActionPicker {
         let Some(draft) = self.prototype_for(&action_type) else {
             return;
         };
-        self.tip = Some(DefaultsTip::Edit {
+        self.tip = Some(DefaultsTip::Edit(Box::new(DefaultsEdit {
             action_type,
             draft,
             error: None,
             anchor,
             picker: ActivePicker::None,
-        });
+        })));
         self.hover_pending = None;
     }
 
     /// Apply a key captured by [`KeyRecordUi`] onto a Key-action defaults draft.
     pub fn apply_recorded_key(&mut self, recorded: String) {
-        let Some(DefaultsTip::Edit { draft, .. }) = self.tip.as_mut() else {
+        let Some(DefaultsTip::Edit(edit)) = self.tip.as_mut() else {
             return;
         };
-        if let ActionKind::Key { key, .. } = &mut draft.kind {
-            *key = recorded;
-        }
+        crate::recorded_action::apply_recorded_key(&mut edit.draft.kind, recorded);
     }
 
     /// Apply a chord onto a Pause continue-key defaults draft. Returns true when applied.
     pub fn apply_recorded_chord(&mut self, recorded: Vec<String>) -> bool {
-        let Some(DefaultsTip::Edit { draft, .. }) = self.tip.as_mut() else {
+        let Some(DefaultsTip::Edit(edit)) = self.tip.as_mut() else {
             return false;
         };
-        if let ActionKind::Pause { continue_key, .. } = &mut draft.kind {
-            *continue_key = recorded;
-            true
-        } else {
-            false
-        }
+        crate::recorded_action::apply_recorded_chord(&mut edit.draft.kind, recorded)
     }
 
     /// Apply a hex color from the Find Pixel screen dropper onto a defaults draft.
     pub fn apply_recorded_color(&mut self, recorded: String) {
-        let Some(DefaultsTip::Edit { draft, .. }) = self.tip.as_mut() else {
+        let Some(DefaultsTip::Edit(edit)) = self.tip.as_mut() else {
             return;
         };
-        if let ActionKind::FindPixel { target_color, .. } = &mut draft.kind {
-            *target_color = crate::pixel_color::normalize_target_color(&recorded);
-        }
+        crate::recorded_action::apply_recorded_color(&mut edit.draft.kind, recorded);
     }
 
     /// Draw the picker when open. Returns a freshly constructed blank [`Action`] when
     /// the user picks a tile (caller inserts it into the tree).
+    #[allow(clippy::too_many_arguments)]
     pub fn show(
         &mut self,
         ctx: &egui::Context,
@@ -344,15 +339,20 @@ impl AddActionPicker {
             ctx,
             egui::Id::new(("action_default_view", action_type.as_str())),
             action,
-            catalog,
-            icons,
-            previews,
-            known_vars,
-            is_dark,
+            &mut CatalogPaint {
+                catalog,
+                icons,
+                previews,
+            },
+            VarTheme {
+                known_vars,
+                is_dark,
+            },
         );
     }
 
     /// Returns true when defaults were saved this frame.
+    #[allow(clippy::too_many_arguments)]
     fn show_defaults_edit(
         &mut self,
         ctx: &egui::Context,
@@ -377,11 +377,10 @@ impl AddActionPicker {
             && !screen_click.is_armed()
             && ctx.input(|i| i.key_pressed(Key::Escape))
         {
-            if let Some(DefaultsTip::Edit { picker, .. }) = self.tip.as_mut() {
-                match picker {
+            if let Some(DefaultsTip::Edit(edit)) = self.tip.as_mut() {
+                match &mut edit.picker {
                     p @ ActivePicker::Items { .. }
-                    | p @ ActivePicker::Point { .. }
-                    | p @ ActivePicker::SearchArea { .. }
+                    | p @ ActivePicker::Coord { .. }
                     | p @ ActivePicker::Macro { .. }
                     | p @ ActivePicker::Window { .. } => {
                         *p = ActivePicker::None;
@@ -395,28 +394,32 @@ impl AddActionPicker {
         }
 
         let (type_key, anchor) = match &self.tip {
-            Some(DefaultsTip::Edit {
-                action_type, anchor, ..
-            }) => (action_type.clone(), *anchor),
+            Some(DefaultsTip::Edit(edit)) => (edit.action_type.clone(), edit.anchor),
             _ => return false,
         };
         let label = action_type_label(&type_key);
         let is_dark = ctx.global_style().visuals.dark_mode;
         let pastel = tree_chrome::rgba_pub(action_pastel_color(&type_key, is_dark));
 
-        if let Some(DefaultsTip::Edit { draft, picker, .. }) = self.tip.as_mut() {
-            let result =
-                pickers::show_active_picker(ctx, picker, catalog, icons, previews, macros);
-            apply_picker_result(draft, result);
+        if let Some(DefaultsTip::Edit(edit)) = self.tip.as_mut() {
+            let result = pickers::show_active_picker(
+                ctx,
+                &mut edit.picker,
+                &mut CatalogPaint {
+                    catalog,
+                    icons,
+                    previews,
+                },
+                macros,
+            );
+            apply_picker_result(&mut edit.draft, result);
         }
 
         let mut save = false;
         let mut cancel = false;
         let mut open = true;
         let err_msg = match &self.tip {
-            Some(DefaultsTip::Edit {
-                error: Some(e), ..
-            }) => Some(e.clone()),
+            Some(DefaultsTip::Edit(edit)) => edit.error.clone(),
             _ => None,
         };
 
@@ -452,26 +455,27 @@ impl AddActionPicker {
                     .auto_shrink([false, false])
                     .max_height(list_h)
                     .show(ui, |ui| {
-                        if let Some(DefaultsTip::Edit {
-                            draft, picker, ..
-                        }) = self.tip.as_mut()
-                        {
-                            paint_edit_fields(
-                                ui,
-                                draft,
-                                catalog,
-                                icons,
-                                previews,
-                                picker,
-                                key_record,
-                                hotkey_record,
-                                macro_hotkeys,
-                                screen_click,
+                        if let Some(DefaultsTip::Edit(edit)) = self.tip.as_mut() {
+                            let mut fields = EditFieldsCtx {
+                                paint: CatalogPaint {
+                                    catalog,
+                                    icons,
+                                    previews,
+                                },
+                                bridges: RecordBridges {
+                                    key_record,
+                                    hotkey_record,
+                                    macro_hotkeys,
+                                    screen_click,
+                                },
+                                theme: VarTheme {
+                                    known_vars,
+                                    is_dark,
+                                },
                                 macros,
-                                None,
-                                known_vars,
-                                is_dark,
-                            );
+                                active_macro: None,
+                            };
+                            paint_edit_fields(ui, &mut edit.draft, &mut edit.picker, &mut fields);
                         }
                     });
             });
@@ -483,14 +487,12 @@ impl AddActionPicker {
 
         if save {
             let (ty, draft) = match &self.tip {
-                Some(DefaultsTip::Edit {
-                    action_type, draft, ..
-                }) => (action_type.clone(), draft.clone()),
+                Some(DefaultsTip::Edit(edit)) => (edit.action_type.clone(), edit.draft.clone()),
                 _ => return false,
             };
             if let Err(e) = validate_action(&draft, None) {
-                if let Some(DefaultsTip::Edit { error, .. }) = self.tip.as_mut() {
-                    *error = Some(e.to_string());
+                if let Some(DefaultsTip::Edit(edit)) = self.tip.as_mut() {
+                    edit.error = Some(e.to_string());
                 }
                 return false;
             }
@@ -543,10 +545,7 @@ fn picker_tile(
     let galley = ui
         .painter()
         .layout_no_wrap(text, egui::FontId::proportional(14.0), fg);
-    let text_pos = egui::pos2(
-        rect.left() + 10.0,
-        rect.center().y - galley.size().y * 0.5,
-    );
+    let text_pos = egui::pos2(rect.left() + 10.0, rect.center().y - galley.size().y * 0.5);
     ui.painter().galley(text_pos, galley, Color32::PLACEHOLDER);
 
     // No egui `on_hover_text` — the delayed action view tip is the hover UI.

@@ -5,7 +5,10 @@ edition.workspace = true
 license.workspace = true
 description = "Macro variable-reference grammar: ${name} and {name}"
 
+[lints]
+workspace = true
+
 [dependencies]
-regex = { workspace = true }
 
 [dev-dependencies]
+proptest = { workspace = true }

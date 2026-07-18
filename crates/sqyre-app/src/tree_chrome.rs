@@ -4,10 +4,9 @@ use crate::icon_cache::IconCache;
 use crate::pickers::attach_item_icon_tooltip;
 use crate::var_pills;
 use eframe::egui::{self, Color32, FontId, Sense, Stroke, Vec2};
-use sqyre_domain::{
-    action_icon_glyph, action_pastel_color, parse_hex_color, Action, ActionKind, SummaryPill,
-};
+use sqyre_domain::{parse_hex_color, Action, ActionKind};
 use sqyre_persist::ProgramCatalog;
+use sqyre_ui_model::{action_icon_glyph, action_pastel_color, ActionDisplay, SummaryPill};
 use std::collections::HashSet;
 
 /// Icon badge edge length.
@@ -108,11 +107,11 @@ fn extend_drag_handle(acc: &mut egui::Rect, part: egui::Rect) {
 }
 
 pub(crate) fn rgba_pub(c: [u8; 4]) -> Color32 {
-    Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3])
+    crate::theme::rgba(c)
 }
 
 fn rgba(c: [u8; 4]) -> Color32 {
-    rgba_pub(c)
+    crate::theme::rgba(c)
 }
 
 /// Foreground that contrasts with a pastel/solid fill (relative luminance).
@@ -183,11 +182,7 @@ fn paint_pill(ui: &mut egui::Ui, text: &str, fill: Color32) -> egui::Response {
         egui::StrokeKind::Inside,
     );
     paint_galley_centered(ui, rect, galley, fg);
-    ui.interact(
-        rect,
-        ui.id().with(("action_pill", text)),
-        Sense::hover(),
-    )
+    ui.interact(rect, ui.id().with(("action_pill", text)), Sense::hover())
 }
 
 /// Place galley so its ink (mesh bounds) is centered in `rect`.
@@ -419,8 +414,7 @@ pub fn paint_action_row(
                 );
 
                 for pill in action.tree_summary_pills() {
-                    let resp =
-                        paint_summary_pill(&mut content, action, &pill, known_vars, is_dark);
+                    let resp = paint_summary_pill(&mut content, action, &pill, known_vars, is_dark);
                     extend_drag_handle(&mut drag_handle_rect, resp.rect);
                     if resp.hovered() {
                         tip_hovered = true;
@@ -461,7 +455,7 @@ pub fn paint_action_row(
     // still fire when a view tip covers the row — clickthrough for overlays.
     let sense = ui.interact(
         sense_rect,
-        ui.id().with(("action_row_sense", action.id.as_str())),
+        ui.id().with(("action_row_sense", action.id)),
         Sense::hover(),
     );
 
@@ -477,12 +471,14 @@ pub fn paint_action_row(
     });
 
     let over_row = pointer_in_row && action_click == RowAction::None;
-    let primary_clicked =
-        over_row && ui.input(|i| i.pointer.primary_clicked());
-    let secondary_clicked = over_row
-        && ui.input(|i| i.pointer.button_clicked(egui::PointerButton::Secondary));
+    let primary_clicked = over_row && ui.input(|i| i.pointer.primary_clicked());
+    let secondary_clicked =
+        over_row && ui.input(|i| i.pointer.button_clicked(egui::PointerButton::Secondary));
     let double_clicked = over_row
-        && ui.input(|i| i.pointer.button_double_clicked(egui::PointerButton::Primary));
+        && ui.input(|i| {
+            i.pointer
+                .button_double_clicked(egui::PointerButton::Primary)
+        });
 
     let hovered = (row.response.hovered() || tip_hovered || sense.hovered() || pointer_in_row)
         && !chrome_hovered;
@@ -526,9 +522,7 @@ fn paint_row_highlight(ui: &mut egui::Ui, rect: egui::Rect, highlight: RowHighli
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqyre_domain::{
-        ActionId, ActionKind, CoordinateOutputs, CoordinateRef, ScalarValue, WaitTilFoundConfig,
-    };
+    use sqyre_domain::{ActionId, ActionKind, CoordinateRef, DetectionBranch, ScalarValue};
 
     fn with_ui(mut f: impl FnMut(&mut egui::Ui)) {
         let ctx = egui::Context::default();
@@ -571,11 +565,7 @@ mod tests {
                 search_area: CoordinateRef(String::new()),
                 tolerance: 0.9,
                 blur: 0,
-                wait: WaitTilFoundConfig::default(),
-                coords: CoordinateOutputs::defaults(),
-                run_branch_on_no_find: false,
-                order: Default::default(),
-                subactions: vec![],
+                detection: DetectionBranch::default(),
             },
         };
         assert_eq!(action_row_height(&empty_search, interact), ICON_SIZE);
@@ -588,11 +578,7 @@ mod tests {
                 search_area: CoordinateRef(String::new()),
                 tolerance: 0.9,
                 blur: 0,
-                wait: WaitTilFoundConfig::default(),
-                coords: CoordinateOutputs::defaults(),
-                run_branch_on_no_find: false,
-                order: Default::default(),
-                subactions: vec![],
+                detection: DetectionBranch::default(),
             },
         };
         assert_eq!(
@@ -687,11 +673,7 @@ mod tests {
                     search_area: CoordinateRef("P~A".into()),
                     target_color: "#ff0000".into(),
                     color_tolerance: 5,
-                    wait: WaitTilFoundConfig::default(),
-                    coords: CoordinateOutputs::defaults(),
-                    run_branch_on_no_find: false,
-                    order: Default::default(),
-                    subactions: vec![],
+                    detection: DetectionBranch::default(),
                 },
             };
             assert_eq!(
@@ -720,11 +702,7 @@ mod tests {
                     search_area: CoordinateRef("P~Box".into()),
                     tolerance: 0.9,
                     blur: 0,
-                    wait: WaitTilFoundConfig::default(),
-                    coords: CoordinateOutputs::defaults(),
-                    run_branch_on_no_find: false,
-                    order: Default::default(),
-                    subactions: vec![],
+                    detection: DetectionBranch::default(),
                 },
             };
             assert_eq!(
@@ -819,11 +797,7 @@ mod tests {
                 search_area: CoordinateRef("P~Box".into()),
                 tolerance: 0.9,
                 blur: 0,
-                wait: WaitTilFoundConfig::default(),
-                coords: CoordinateOutputs::defaults(),
-                run_branch_on_no_find: false,
-                order: Default::default(),
-                subactions: vec![],
+                detection: DetectionBranch::default(),
             },
         };
         paint_action_row(

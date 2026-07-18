@@ -1,29 +1,49 @@
-//! Scalar values that YAML may store as int, float, string, or bool.
+//! Scalar values and coordinate refs (serde wire: untagged YAML scalars / strings).
 
-use serde_yaml::Value;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// Operand / count / time value: literal number or string (often `${var}`).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum ScalarValue {
     Int(i64),
     Float(f64),
     String(String),
     Bool(bool),
+    #[default]
     Null,
 }
 
+impl Serialize for ScalarValue {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Null => serializer.serialize_none(),
+            Self::Bool(b) => serializer.serialize_bool(*b),
+            Self::Int(i) => serializer.serialize_i64(*i),
+            Self::Float(f) => serializer.serialize_f64(*f),
+            Self::String(s) => serializer.serialize_str(s),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for ScalarValue {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let v = serde_yaml::Value::deserialize(deserializer)?;
+        Ok(Self::from_yaml_value(&v))
+    }
+}
+
 impl ScalarValue {
-    pub fn from_yaml(v: &Value) -> Self {
+    /// Convert from a YAML value (used by persist program codecs).
+    pub fn from_yaml_value(v: &serde_yaml::Value) -> Self {
         match v {
-            Value::Null => Self::Null,
-            Value::Bool(b) => Self::Bool(*b),
-            Value::Number(n) => {
+            serde_yaml::Value::Null => Self::Null,
+            serde_yaml::Value::Bool(b) => Self::Bool(*b),
+            serde_yaml::Value::Number(n) => {
                 if let Some(i) = n.as_i64() {
                     Self::Int(i)
                 } else if let Some(u) = n.as_u64() {
                     Self::Int(u as i64)
                 } else if let Some(f) = n.as_f64() {
-                    // Prefer int when YAML gave a whole number as float.
                     if f.fract() == 0.0 && f.abs() <= i64::MAX as f64 {
                         Self::Int(f as i64)
                     } else {
@@ -33,18 +53,19 @@ impl ScalarValue {
                     Self::Null
                 }
             }
-            Value::String(s) => Self::String(s.clone()),
+            serde_yaml::Value::String(s) => Self::String(s.clone()),
             other => Self::String(format!("{other:?}")),
         }
     }
 
-    pub fn to_yaml(&self) -> Value {
+    /// Convert to a YAML value (used by persist program codecs).
+    pub fn to_yaml_value(&self) -> serde_yaml::Value {
         match self {
-            Self::Null => Value::Null,
-            Self::Bool(b) => Value::Bool(*b),
-            Self::Int(i) => Value::Number((*i).into()),
-            Self::Float(f) => Value::Number(serde_yaml::Number::from(*f)),
-            Self::String(s) => Value::String(s.clone()),
+            Self::Null => serde_yaml::Value::Null,
+            Self::Bool(b) => serde_yaml::Value::Bool(*b),
+            Self::Int(i) => serde_yaml::Value::Number((*i).into()),
+            Self::Float(f) => serde_yaml::Value::Number(serde_yaml::Number::from(*f)),
+            Self::String(s) => serde_yaml::Value::String(s.clone()),
         }
     }
 
@@ -62,11 +83,33 @@ impl ScalarValue {
     pub fn is_set(&self) -> bool {
         !matches!(self, Self::Null)
     }
-}
 
-impl Default for ScalarValue {
-    fn default() -> Self {
-        Self::Null
+    pub fn is_null(&self) -> bool {
+        matches!(self, Self::Null)
+    }
+
+    /// Parse a free-text edit field into a scalar (coords, Set values, etc.).
+    ///
+    /// Empty → [`Null`]; integer → [`Int`]; float → [`Float`];
+    /// `true`/`false` (case-insensitive) → [`Bool`]; otherwise [`String`].
+    pub fn parse_edit(text: &str) -> Self {
+        let t = text.trim();
+        if t.is_empty() {
+            return Self::Null;
+        }
+        if let Ok(i) = t.parse::<i64>() {
+            return Self::Int(i);
+        }
+        if let Ok(f) = t.parse::<f64>() {
+            return Self::Float(f);
+        }
+        if t.eq_ignore_ascii_case("true") {
+            return Self::Bool(true);
+        }
+        if t.eq_ignore_ascii_case("false") {
+            return Self::Bool(false);
+        }
+        Self::String(t.to_string())
     }
 }
 
@@ -76,6 +119,23 @@ pub const PROGRAM_DELIMITER: &str = "~";
 /// Coordinate / search-area reference: `program~entity` or legacy name string.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct CoordinateRef(pub String);
+
+impl Serialize for CoordinateRef {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        if self.is_empty() {
+            serializer.serialize_none()
+        } else {
+            serializer.serialize_str(&self.0)
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for CoordinateRef {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let v = Option::<String>::deserialize(deserializer)?;
+        Ok(Self(v.unwrap_or_default()))
+    }
+}
 
 impl CoordinateRef {
     pub fn is_empty(&self) -> bool {
@@ -171,6 +231,15 @@ mod tests {
     use super::*;
 
     #[test]
+    fn parse_edit_bool_and_numbers() {
+        assert_eq!(ScalarValue::parse_edit("true"), ScalarValue::Bool(true));
+        assert_eq!(ScalarValue::parse_edit("False"), ScalarValue::Bool(false));
+        assert_eq!(ScalarValue::parse_edit(" 7 "), ScalarValue::Int(7));
+        assert_eq!(ScalarValue::parse_edit("1.25"), ScalarValue::Float(1.25));
+        assert_eq!(ScalarValue::parse_edit(""), ScalarValue::Null);
+    }
+
+    #[test]
     fn collection_ref_normalizes_corners() {
         let r = CoordinateRef::collection("Demo", "bag", 2, 3, 1, 1);
         assert_eq!(r.as_str(), "Demo~bag@1,1-2,3");
@@ -179,5 +248,21 @@ mod tests {
         assert_eq!(r.name(), "bag");
         assert_eq!(r.cell_range(), Some((1, 1, 2, 3)));
     }
-}
 
+    #[test]
+    fn scalar_yaml_roundtrip() {
+        for v in [
+            ScalarValue::Null,
+            ScalarValue::Bool(true),
+            ScalarValue::Int(42),
+            ScalarValue::Float(1.5),
+            ScalarValue::String("${x}".into()),
+        ] {
+            let y = v.to_yaml_value();
+            assert_eq!(ScalarValue::from_yaml_value(&y), v);
+            let ser = serde_yaml::to_value(&v).unwrap();
+            let de: ScalarValue = serde_yaml::from_value(ser).unwrap();
+            assert_eq!(de, v);
+        }
+    }
+}

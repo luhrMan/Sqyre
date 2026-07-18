@@ -5,9 +5,11 @@ edition.workspace = true
 license.workspace = true
 description = "Sqyre macro / action domain model"
 
+[lints]
+workspace = true
+
 [dependencies]
 serde = { workspace = true }
 serde_yaml = { workspace = true }
 uuid = { workspace = true }
-thiserror = { workspace = true }
 sqyre-varref = { path = "../sqyre-varref" }

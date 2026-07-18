@@ -7,8 +7,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 /// How a macro chord fires once the keys are held.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum HotkeyTrigger {
+    #[default]
     Press,
     Release,
 }
@@ -44,6 +45,24 @@ impl HotkeyTrigger {
     }
 }
 
+impl std::fmt::Display for HotkeyTrigger {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl From<&str> for HotkeyTrigger {
+    fn from(s: &str) -> Self {
+        Self::parse(s)
+    }
+}
+
+impl From<String> for HotkeyTrigger {
+    fn from(s: String) -> Self {
+        Self::parse(&s)
+    }
+}
+
 /// One registered macro chord.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MacroHotkeyBinding {
@@ -53,11 +72,7 @@ pub struct MacroHotkeyBinding {
 }
 
 impl MacroHotkeyBinding {
-    pub fn new(
-        macro_name: impl Into<String>,
-        chord: Vec<String>,
-        trigger: HotkeyTrigger,
-    ) -> Self {
+    pub fn new(macro_name: impl Into<String>, chord: Vec<String>, trigger: HotkeyTrigger) -> Self {
         Self {
             macro_name: macro_name.into(),
             chord: normalize_chord(&chord),
@@ -103,10 +118,7 @@ fn normalize_chord(keys: &[String]) -> Vec<String> {
 
 /// Whether every chord key (or a modifier alias) is currently held.
 pub fn chord_all_pressed(pressed: &HashSet<String>, chord: &[String]) -> bool {
-    !chord.is_empty()
-        && chord
-            .iter()
-            .all(|k| key_or_alias_pressed(pressed, k))
+    !chord.is_empty() && chord.iter().all(|k| key_or_alias_pressed(pressed, k))
 }
 
 /// Whether no chord key (or alias) remains held.
@@ -226,12 +238,9 @@ impl MacroHotkeyBridge {
     }
 
     /// Hotkey thread: mirror pressed set + evaluate chords.
-    pub fn on_pressed_keys(
-        &self,
-        pressed: &HashSet<String>,
-        on_fire: &dyn Fn(String),
-    ) {
-        *self.inner.pressed.lock() = pressed.clone();
+    pub fn on_pressed_keys(&self, pressed: &HashSet<String>, on_fire: &dyn Fn(String)) {
+        // Reuse the existing HashSet allocation; match against the caller's set.
+        self.inner.pressed.lock().clone_from(pressed);
         if *self.inner.suspend_count.lock() > 0 {
             return;
         }
@@ -411,9 +420,6 @@ mod tests {
         let mut pressed = HashSet::new();
         pressed.insert("rshift".into());
         pressed.insert("a".into());
-        assert!(chord_all_pressed(
-            &pressed,
-            &["shift".into(), "a".into()]
-        ));
+        assert!(chord_all_pressed(&pressed, &["shift".into(), "a".into()]));
     }
 }

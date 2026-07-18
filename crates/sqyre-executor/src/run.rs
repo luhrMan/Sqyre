@@ -1,73 +1,44 @@
 use crate::action_log::ActionLogger;
-use crate::backends::{
-    AutomationBackend, ContinueKeyWaiter, CoordinateResolver, IconStore, MacroLookup, MoveOptions,
-    OcrEngine, ScreenCapturer, TemplateMatcher, WindowFocuser,
-};
-use crate::error::{ExecError, FlowSignal, Result};
-use crate::highlight::{
-    clear_highlights, highlight_cursor, ActionHighlighter,
-};
-use crate::misc::{
+use crate::actions::{
     execute_focus_window, execute_for_each_row, execute_pause, execute_run_macro,
     execute_save_variable, execute_set_variable, execute_while,
 };
+use crate::backends::{
+    AutomationBackend, ContinueKeyWaiter, CoordinateResolver, IconStore, MacroLookup, MoveOptions,
+    OcrEngine, ScreenCapturer, WindowFocuser,
+};
+use crate::error::{ExecError, FlowSignal, Result};
+use crate::highlight::{clear_highlights, highlight_cursor, ActionHighlighter};
 use crate::navigate::{execute_navigate_key, execute_navigate_select};
 use crate::runtime_vars::RuntimeVarSink;
 use crate::search::{execute_find_pixel, execute_image_search, execute_ocr};
 use sqyre_domain::{
-    action_type_label, resolve_scalar_int, Action, ActionId, ActionKind, Macro, ScalarValue,
+    action_type_label, resolve_scalar_int, Action, ActionId, ActionKind, Macro, MatchMode,
+    MouseButton, ScalarValue,
 };
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant};
 
-/// Executor holding injected backends.
+/// Executor: injected backends ([`ExecDeps`]) plus per-run mutable state.
 pub struct Executor<'a> {
-    pub automation: &'a mut dyn AutomationBackend,
-    pub capturer: Option<&'a mut dyn ScreenCapturer>,
-    pub matcher: Option<&'a dyn TemplateMatcher>,
-    pub resolver: Option<&'a dyn CoordinateResolver>,
-    pub icons: Option<&'a dyn IconStore>,
-    pub macros: Option<&'a dyn MacroLookup>,
-    pub continue_waiter: Option<&'a dyn ContinueKeyWaiter>,
-    pub window_focuser: Option<&'a dyn WindowFocuser>,
-    pub ocr: Option<&'a dyn OcrEngine>,
+    pub deps: ExecDeps<'a>,
+    /// Set when a `Stop` action or `Break`/`Continue`-style flow requests halt.
     pub stop_requested: bool,
-    /// Shared stop flag (Esc / UI Stop).
-    pub stop_flag: Option<&'a AtomicBool>,
-    /// Optional per-action run log.
-    pub logger: Option<&'a dyn ActionLogger>,
-    /// Optional active-action highlight sink.
-    pub highlighter: Option<&'a dyn ActionHighlighter>,
-    /// Optional live runtime-variable publisher for the UI.
-    pub runtime_vars: Option<&'a dyn RuntimeVarSink>,
-    /// `~/.sqyre/variables` (or override) for SaveVariable / ForEachRow file sources.
-    pub variables_dir: Option<&'a Path>,
 }
 
 impl<'a> Executor<'a> {
     pub fn new(automation: &'a mut dyn AutomationBackend) -> Self {
         Self {
-            automation,
-            capturer: None,
-            matcher: None,
-            resolver: None,
-            icons: None,
-            macros: None,
-            continue_waiter: None,
-            window_focuser: None,
-                ocr: None,
+            deps: ExecDeps::new(automation),
             stop_requested: false,
-            stop_flag: None,
-            logger: None,
-            highlighter: None,
-            runtime_vars: None,
-            variables_dir: None,
         }
     }
 
     pub fn check_stopped(&self) -> Result<()> {
         if self.stop_requested
             || self
+                .deps
                 .stop_flag
                 .is_some_and(|f| f.load(Ordering::SeqCst))
         {
@@ -83,20 +54,28 @@ impl<'a> Executor<'a> {
         while left > 0 {
             self.check_stopped()?;
             let chunk = left.min(50);
-            self.automation.milli_sleep(chunk);
+            self.deps.automation.milli_sleep(chunk);
             left -= chunk;
         }
         self.check_stopped()
     }
 
     pub fn log(&self, action_id: ActionId, message: impl Into<String>) {
-        if let Some(logger) = self.logger {
+        if let Some(logger) = self.deps.logger {
             logger.log(action_id, message.into());
         }
     }
 
+    /// Build a log line only when a logger is attached.
+    pub fn log_with(&self, action_id: ActionId, f: impl FnOnce() -> String) {
+        if let Some(logger) = self.deps.logger {
+            logger.log(action_id, f());
+        }
+    }
+
     pub fn log_images_enabled(&self) -> bool {
-        self.logger
+        self.deps
+            .logger
             .map(|l| l.log_images_enabled())
             .unwrap_or(false)
     }
@@ -107,7 +86,7 @@ impl<'a> Executor<'a> {
         label: impl Into<String>,
         image: &sqyre_match::ImageBuf,
     ) {
-        if let Some(logger) = self.logger {
+        if let Some(logger) = self.deps.logger {
             logger.log_image(action_id, label.into(), image);
         }
     }
@@ -121,7 +100,7 @@ impl<'a> Executor<'a> {
         steps: &[(String, sqyre_match::ImageBuf)],
         details: Vec<String>,
     ) {
-        if let Some(logger) = self.logger {
+        if let Some(logger) = self.deps.logger {
             logger.log_item_pipeline(
                 action_id,
                 title.into(),
@@ -132,13 +111,30 @@ impl<'a> Executor<'a> {
             );
         }
     }
+
+    /// Record how long a named step took (shown in the action logs UI).
+    pub fn log_timing(&self, action_id: ActionId, step: &str, elapsed: Duration) {
+        self.log(
+            action_id,
+            format!("timing: {step} {:.1}ms", elapsed.as_secs_f64() * 1000.0),
+        );
+    }
+
+    /// Time a fallible step and log its duration even when it errors.
+    pub fn timed_step<T>(&self, action_id: ActionId, step: &str, f: impl FnOnce() -> T) -> T {
+        let started = Instant::now();
+        let out = f();
+        self.log_timing(action_id, step, started.elapsed());
+        out
+    }
 }
 
 /// Dependencies for a full macro run.
 pub struct ExecDeps<'a> {
     pub automation: &'a mut dyn AutomationBackend,
     pub capturer: Option<&'a mut dyn ScreenCapturer>,
-    pub matcher: Option<&'a dyn TemplateMatcher>,
+    /// Spatial dedup distance for image-search peaks; `0` uses the library default.
+    pub close_matches_distance: i32,
     pub resolver: Option<&'a dyn CoordinateResolver>,
     pub icons: Option<&'a dyn IconStore>,
     pub macros: Option<&'a dyn MacroLookup>,
@@ -152,72 +148,117 @@ pub struct ExecDeps<'a> {
     pub variables_dir: Option<&'a Path>,
 }
 
-/// Run a macro from a clean runtime variable store.
-pub fn execute_macro(macro_: &mut Macro, automation: &mut dyn AutomationBackend) -> Result<()> {
-    execute_macro_with(
-        macro_,
-        ExecDeps {
+impl<'a> ExecDeps<'a> {
+    /// Backends with only automation wired; everything else absent.
+    pub fn new(automation: &'a mut dyn AutomationBackend) -> Self {
+        Self {
             automation,
             capturer: None,
-            matcher: None,
+            close_matches_distance: 0,
             resolver: None,
             icons: None,
             macros: None,
             continue_waiter: None,
             window_focuser: None,
-                ocr: None,
+            ocr: None,
             stop_flag: None,
             logger: None,
             highlighter: None,
             runtime_vars: None,
             variables_dir: None,
-        },
-    )
+        }
+    }
+
+    pub fn capturer(mut self, c: &'a mut dyn ScreenCapturer) -> Self {
+        self.capturer = Some(c);
+        self
+    }
+
+    pub fn resolver(mut self, r: &'a dyn CoordinateResolver) -> Self {
+        self.resolver = Some(r);
+        self
+    }
+
+    pub fn icons(mut self, i: &'a dyn IconStore) -> Self {
+        self.icons = Some(i);
+        self
+    }
+
+    pub fn ocr(mut self, o: &'a dyn OcrEngine) -> Self {
+        self.ocr = Some(o);
+        self
+    }
+
+    pub fn logger(mut self, l: &'a dyn ActionLogger) -> Self {
+        self.logger = Some(l);
+        self
+    }
+
+    pub fn stop_flag(mut self, f: &'a AtomicBool) -> Self {
+        self.stop_flag = Some(f);
+        self
+    }
+
+    pub fn continue_waiter(mut self, w: &'a dyn ContinueKeyWaiter) -> Self {
+        self.continue_waiter = Some(w);
+        self
+    }
+
+    pub fn window_focuser(mut self, f: &'a dyn WindowFocuser) -> Self {
+        self.window_focuser = Some(f);
+        self
+    }
+
+    pub fn highlighter(mut self, h: &'a dyn ActionHighlighter) -> Self {
+        self.highlighter = Some(h);
+        self
+    }
+
+    pub fn macros(mut self, m: &'a dyn MacroLookup) -> Self {
+        self.macros = Some(m);
+        self
+    }
+
+    pub fn close_matches_distance(mut self, d: i32) -> Self {
+        self.close_matches_distance = d;
+        self
+    }
 }
 
-pub fn execute_macro_with(macro_: &mut Macro, mut deps: ExecDeps<'_>) -> Result<()> {
+/// Run a macro from a clean runtime variable store.
+pub fn execute_macro(macro_: &mut Macro, automation: &mut dyn AutomationBackend) -> Result<()> {
+    execute_macro_with(macro_, ExecDeps::new(automation))
+}
+
+pub fn execute_macro_with(macro_: &mut Macro, deps: ExecDeps<'_>) -> Result<()> {
+    let macro_started = Instant::now();
+    let mut exec = Executor {
+        deps,
+        stop_requested: false,
+    };
     macro_.init_runtime_variables();
-    let monitor_sizes = match deps.capturer.as_mut() {
+    let monitor_sizes = match exec.deps.capturer.as_mut() {
         Some(c) => c.monitor_sizes().unwrap_or_else(|_| vec![(0, 0)]),
         None => vec![(0, 0)],
     };
     apply_monitor_sizes(macro_, &monitor_sizes);
-    publish_runtime_vars(deps.runtime_vars, macro_);
-    let mut exec = Executor {
-        automation: deps.automation,
-        capturer: deps.capturer,
-        matcher: deps.matcher,
-        resolver: deps.resolver,
-        icons: deps.icons,
-        macros: deps.macros,
-        continue_waiter: deps.continue_waiter,
-        window_focuser: deps.window_focuser,
-        ocr: deps.ocr,
-        stop_requested: false,
-        stop_flag: deps.stop_flag,
-        logger: deps.logger,
-        highlighter: deps.highlighter,
-        runtime_vars: deps.runtime_vars,
-        variables_dir: deps.variables_dir,
-    };
+    publish_runtime_vars(exec.deps.runtime_vars, macro_);
     let root = macro_.root.clone();
+    let root_id = root.id;
     let result = match execute_action(&mut exec, &root, macro_) {
         Err(ExecError::Flow(FlowSignal::Stopped)) => Ok(()),
         other => other,
     };
-    clear_highlights(exec.highlighter);
+    exec.log_timing(root_id, "macro total", macro_started.elapsed());
+    clear_highlights(exec.deps.highlighter);
     result
 }
 
 /// Set `monitorNWidth` / `monitorNHeight` builtins.
 pub(crate) fn apply_monitor_sizes(macro_: &mut Macro, sizes: &[(i32, i32)]) {
     if sizes.is_empty() {
-        macro_
-            .variables
-            .set("monitor1Width", ScalarValue::Int(0));
-        macro_
-            .variables
-            .set("monitor1Height", ScalarValue::Int(0));
+        macro_.variables.set("monitor1Width", ScalarValue::Int(0));
+        macro_.variables.set("monitor1Height", ScalarValue::Int(0));
         return;
     }
     for (i, (w, h)) in sizes.iter().enumerate() {
@@ -243,21 +284,31 @@ pub fn execute_action(exec: &mut Executor<'_>, action: &Action, macro_: &mut Mac
     exec.check_stopped()?;
     // Skip root loop — no cursor on macro root.
     if !action.id.is_root() {
-        highlight_cursor(exec.highlighter, &macro_.name, Some(action.id));
+        highlight_cursor(exec.deps.highlighter, &macro_.name, Some(action.id));
     }
-    exec.log(action.id, action_headline(action));
+    exec.log_with(action.id, || action_headline(action));
+    let action_started = Instant::now();
+    let dispatch_started = Instant::now();
     let result = dispatch(exec, action, macro_);
+    exec.log_timing(action.id, "dispatch", dispatch_started.elapsed());
     // Delay only on success or Break/Continue (not Stopped/errors).
-    match &result {
+    let delay_result = match &result {
         Ok(())
         | Err(ExecError::Flow(FlowSignal::Break))
         | Err(ExecError::Flow(FlowSignal::Continue)) => {
-            publish_runtime_vars(exec.runtime_vars, macro_);
-            apply_delay(exec, action, macro_)?;
+            publish_runtime_vars(exec.deps.runtime_vars, macro_);
+            let delay_started = Instant::now();
+            let delay_out = apply_delay(exec, action, macro_);
+            exec.log_timing(action.id, "post-delay", delay_started.elapsed());
+            delay_out
         }
-        Err(_) => {}
+        Err(_) => Ok(()),
+    };
+    exec.log_timing(action.id, "total", action_started.elapsed());
+    match delay_result {
+        Ok(()) => result,
+        Err(e) => Err(e),
     }
-    result
 }
 
 fn publish_runtime_vars(sink: Option<&dyn RuntimeVarSink>, macro_: &Macro) {
@@ -311,47 +362,52 @@ fn dispatch(exec: &mut Executor<'_>, action: &Action, macro_: &mut Macro) -> Res
             subactions,
         } => run_loop(exec, action.id, name, count, subactions, macro_),
         ActionKind::Conditional {
-            name,
-            match_mode,
-            clauses,
+            condition,
             subactions,
         } => {
-            let ok = eval_clauses(match_mode, clauses, macro_);
+            let ok = eval_clauses(condition.match_mode, &condition.clauses, macro_)?;
             if ok {
                 exec.log(
                     action.id,
-                    format!("Conditional {name:?}: true, running branch"),
+                    format!("Conditional {:?}: true, running branch", condition.name),
                 );
                 run_children(exec, subactions, macro_)
             } else {
                 exec.log(
                     action.id,
-                    format!("Conditional {name:?}: false, skipping branch"),
+                    format!("Conditional {:?}: false, skipping branch", condition.name),
                 );
                 Ok(())
             }
         }
         ActionKind::Click { button, state } => {
-            if button == "scroll" {
-                exec.automation.scroll(*state).map_err(ExecError::Message)
+            if *button == MouseButton::Scroll {
+                exec.deps
+                    .automation
+                    .scroll(*state)
+                    .map_err(ExecError::Message)
             } else {
-                exec.automation
-                    .click(button, *state)
+                exec.deps
+                    .automation
+                    .click(button.as_str(), *state)
                     .map_err(ExecError::Message)
             }
         }
         ActionKind::Key { key, state } => {
             if *state {
-                exec.automation.key_down(key).map_err(ExecError::Message)
+                exec.deps
+                    .automation
+                    .key_down(key)
+                    .map_err(ExecError::Message)
             } else {
-                exec.automation.key_up(key).map_err(ExecError::Message)
+                exec.deps.automation.key_up(key).map_err(ExecError::Message)
             }
         }
         ActionKind::Type { text, delay_ms } => {
             let resolved = resolve_text(text, macro_)?;
             for ch in resolved.chars() {
                 exec.check_stopped()?;
-                exec.automation.type_char(&ch.to_string());
+                exec.deps.automation.type_char(ch);
                 if *delay_ms > 0 {
                     exec.interruptible_sleep(*delay_ms)?;
                 }
@@ -365,23 +421,19 @@ fn dispatch(exec: &mut Executor<'_>, action: &Action, macro_: &mut Macro) -> Res
             smooth_high,
             smooth_delay_ms,
         } => {
-            let (x, y) = if let Some(resolver) = exec.resolver {
-                match resolver.resolve_point(point, macro_) {
-                    Ok(xy) => xy,
-                    Err(e) => {
-                        let msg = format!(
-                            "Move: failed to resolve point {}: {e}, using (0,0)",
-                            point.as_str()
-                        );
-                        eprintln!("{msg}");
-                        exec.log(action.id, msg);
-                        (0, 0)
-                    }
-                }
+            let (x, y) = if let Some(resolver) = exec.deps.resolver {
+                resolver.resolve_point(point, macro_).map_err(|e| {
+                    ExecError::Message(format!(
+                        "Move: failed to resolve point {}: {e}",
+                        point.as_str()
+                    ))
+                })?
             } else {
-                (0, 0)
+                return Err(ExecError::Message(
+                    "Move: coordinate resolver not configured".into(),
+                ));
             };
-            exec.automation.move_to(
+            exec.deps.automation.move_to(
                 x,
                 y,
                 MoveOptions {
@@ -418,17 +470,15 @@ fn dispatch(exec: &mut Executor<'_>, action: &Action, macro_: &mut Macro) -> Res
             macro_,
         ),
         ActionKind::While {
-            name,
-            match_mode,
-            clauses,
+            condition,
             max_iterations,
             subactions,
         } => execute_while(
             exec,
             action.id,
-            name,
-            match_mode,
-            clauses,
+            &condition.name,
+            condition.match_mode,
+            &condition.clauses,
             *max_iterations,
             subactions,
             macro_,
@@ -440,25 +490,25 @@ fn dispatch(exec: &mut Executor<'_>, action: &Action, macro_: &mut Macro) -> Res
             end_row,
             subactions,
         } => execute_for_each_row(
-            exec,
-            action.id,
-            name,
-            sources,
-            start_row,
-            end_row,
-            subactions,
-            macro_,
+            exec, action.id, name, sources, start_row, end_row, subactions, macro_,
         ),
         ActionKind::Pause {
             message,
             continue_key,
             pass_through,
-        } => execute_pause(exec, action.id, message, continue_key, *pass_through, macro_),
+        } => execute_pause(
+            exec,
+            action.id,
+            message,
+            continue_key,
+            *pass_through,
+            macro_,
+        ),
         ActionKind::RunMacro { macro_name } => {
             execute_run_macro(exec, action.id, macro_name, macro_)
         }
         ActionKind::Ocr { .. } => execute_ocr(exec, action, macro_),
-        ActionKind::NavigateSelect { .. } => execute_navigate_select(exec, action, macro_),
+        ActionKind::NavigateSelect(_) => execute_navigate_select(exec, action, macro_),
         ActionKind::NavigateKey { .. } => execute_navigate_key(exec, action, macro_),
     }
 }
@@ -497,45 +547,74 @@ pub(crate) fn run_children(
 }
 
 pub(crate) fn eval_clauses(
-    match_mode: &str,
+    match_mode: MatchMode,
     clauses: &[sqyre_domain::ConditionClause],
     macro_: &Macro,
-) -> bool {
+) -> Result<bool> {
     if clauses.is_empty() {
-        return true;
+        return Ok(true);
     }
-    let results: Vec<bool> = clauses
-        .iter()
-        .map(|c| {
-            let left = c.left.as_display();
-            let right = c.right.as_display();
-            let left = resolve_text(&left, macro_).unwrap_or(left);
-            let right = resolve_text(&right, macro_).unwrap_or(right);
-            match c.operator.as_str() {
-                "==" => left == right,
-                "!=" => left != right,
-                "is set" => macro_.variables.get(&strip_ref(&left)).is_some(),
-                "is empty" => left.trim().is_empty(),
-                "contains" => left.contains(&right),
-                "starts with" => left.starts_with(&right),
-                "ends with" => left.ends_with(&right),
-                _ => false,
+    let want_any = match_mode == MatchMode::Any;
+    for c in clauses {
+        let ok = eval_one_clause(c, macro_)?;
+        if want_any {
+            if ok {
+                return Ok(true);
             }
-        })
-        .collect();
-    if match_mode == "any" {
-        results.into_iter().any(|b| b)
-    } else {
-        results.into_iter().all(|b| b)
+        } else if !ok {
+            return Ok(false);
+        }
     }
+    Ok(!want_any)
 }
 
-fn strip_ref(s: &str) -> String {
-    let t = s.trim();
+fn eval_one_clause(c: &sqyre_domain::ConditionClause, macro_: &Macro) -> Result<bool> {
+    // `is set` looks up the variable *name* without expanding its value.
+    if c.operator.as_str() == "is set" {
+        let raw = c.left.as_display();
+        let name = variable_name_for_is_set(&raw);
+        return Ok(macro_.variables.get(name).is_some());
+    }
+
+    let left = resolve_text(&c.left.as_display(), macro_)?;
+    let right = resolve_text(&c.right.as_display(), macro_)?;
+    Ok(match c.operator.as_str() {
+        "==" => left == right,
+        "!=" => left != right,
+        "is empty" => left.trim().is_empty(),
+        "contains" => left.contains(&right),
+        "starts with" => left.starts_with(&right),
+        "ends with" => left.ends_with(&right),
+        "<" | "<=" | ">" | ">=" => compare_ordered(&left, &right, c.operator.as_str()),
+        _ => false,
+    })
+}
+
+/// Name for `is set`: strip `${…}` / `{…}`, otherwise use the trimmed literal.
+fn variable_name_for_is_set(raw: &str) -> &str {
+    let t = raw.trim();
     if let Some(inner) = t.strip_prefix("${").and_then(|x| x.strip_suffix('}')) {
-        inner.to_string()
-    } else {
-        t.to_string()
+        return inner.trim();
+    }
+    if let Some(inner) = t.strip_prefix('{').and_then(|x| x.strip_suffix('}')) {
+        return inner.trim();
+    }
+    t
+}
+
+/// Numeric compare when both sides parse as `f64`; otherwise lexicographic.
+fn compare_ordered(left: &str, right: &str, op: &str) -> bool {
+    use std::cmp::Ordering;
+    let ord = match (left.trim().parse::<f64>(), right.trim().parse::<f64>()) {
+        (Ok(a), Ok(b)) => a.partial_cmp(&b).unwrap_or(Ordering::Equal),
+        _ => left.cmp(right),
+    };
+    match op {
+        "<" => ord == Ordering::Less,
+        "<=" => ord != Ordering::Greater,
+        ">" => ord == Ordering::Greater,
+        ">=" => ord != Ordering::Less,
+        _ => false,
     }
 }
 
@@ -544,23 +623,7 @@ pub(crate) fn resolve_int(v: &ScalarValue, macro_: &Macro) -> Result<i32> {
 }
 
 pub(crate) fn resolve_text(text: &str, macro_: &Macro) -> Result<String> {
-    let segs = sqyre_varref::segments(text);
-    if segs.is_empty() {
-        return Ok(text.to_string());
-    }
-    let mut out = String::new();
-    for seg in segs {
-        if !seg.is_ref {
-            out.push_str(&seg.text);
-            continue;
-        }
-        let val = macro_
-            .variables
-            .get(&seg.name)
-            .ok_or_else(|| ExecError::Message(format!("unresolved variable ${{{}}}", seg.name)))?;
-        out.push_str(&val.as_display());
-    }
-    Ok(out)
+    sqyre_domain::expand_variable_refs(text, macro_).map_err(ExecError::Message)
 }
 
 #[cfg(test)]
@@ -622,7 +685,11 @@ mod tests {
         execute_macro(&mut macro_, &mut backend).unwrap();
         assert!(backend.log.iter().any(|e| e == "sleep:10"));
         assert_eq!(
-            backend.log.iter().filter(|e| e.as_str() == "sleep:1").count(),
+            backend
+                .log
+                .iter()
+                .filter(|e| e.as_str() == "sleep:1")
+                .count(),
             1
         );
     }
@@ -646,7 +713,7 @@ mod tests {
             ExecDeps {
                 automation: &mut backend,
                 capturer: Some(&mut capturer),
-                matcher: None,
+                close_matches_distance: 0,
                 resolver: None,
                 icons: None,
                 macros: None,
@@ -690,7 +757,7 @@ mod tests {
             ExecDeps {
                 automation: &mut backend,
                 capturer: None,
-                matcher: None,
+                close_matches_distance: 0,
                 resolver: None,
                 icons: None,
                 macros: None,
@@ -734,7 +801,7 @@ mod tests {
             ExecDeps {
                 automation: &mut backend,
                 capturer: None,
-                matcher: None,
+                close_matches_distance: 0,
                 resolver: None,
                 icons: None,
                 macros: None,
@@ -762,21 +829,11 @@ mod tests {
         let mut backend = RecordingBackend::default();
         let stop = AtomicBool::new(true);
         let mut exec = Executor {
-            automation: &mut backend,
-            capturer: None,
-            matcher: None,
-            resolver: None,
-            icons: None,
-            macros: None,
-            continue_waiter: None,
-            window_focuser: None,
-            ocr: None,
+            deps: ExecDeps {
+                stop_flag: Some(&stop),
+                ..ExecDeps::new(&mut backend)
+            },
             stop_requested: false,
-            stop_flag: Some(&stop),
-            logger: None,
-            highlighter: None,
-            runtime_vars: None,
-            variables_dir: None,
         };
         let err = exec.interruptible_sleep(1000).unwrap_err();
         assert!(matches!(err, ExecError::Flow(FlowSignal::Stopped)));
@@ -818,7 +875,7 @@ mod tests {
             ExecDeps {
                 automation: &mut backend,
                 capturer: None,
-                matcher: None,
+                close_matches_distance: 0,
                 resolver: Some(&resolver),
                 icons: None,
                 macros: None,
@@ -833,10 +890,7 @@ mod tests {
             },
         )
         .unwrap();
-        assert!(backend
-            .log
-            .iter()
-            .any(|e| e == "move:42,99,smooth=false"));
+        assert!(backend.log.iter().any(|e| e == "move:42,99,smooth=false"));
         assert!(backend.log.iter().any(|e| e == "click:left:down"));
     }
 
@@ -867,7 +921,7 @@ mod tests {
             ExecDeps {
                 automation: &mut backend,
                 capturer: None,
-                matcher: None,
+                close_matches_distance: 0,
                 resolver: None,
                 icons: None,
                 macros: None,
@@ -892,6 +946,21 @@ mod tests {
             click_lines.iter().any(|l| l.starts_with("Click:")),
             "click lines: {click_lines:?}"
         );
+        assert!(
+            wait_lines.iter().any(|l| l.starts_with("timing: total ")),
+            "wait timing: {wait_lines:?}"
+        );
+        assert!(
+            click_lines.iter().any(|l| l.starts_with("timing: total ")),
+            "click timing: {click_lines:?}"
+        );
+        let root_lines = logger.lines_for(macro_.root.id);
+        assert!(
+            root_lines
+                .iter()
+                .any(|l| l.starts_with("timing: macro total ")),
+            "macro timing: {root_lines:?}"
+        );
         assert!(!wait_lines.is_empty());
         assert!(!click_lines.is_empty());
     }
@@ -910,13 +979,15 @@ mod tests {
             Action {
                 id: ActionId::new(),
                 kind: ActionKind::Conditional {
-                    name: "ok".into(),
-                    match_mode: "all".into(),
-                    clauses: vec![sqyre_domain::ConditionClause {
-                        left: ScalarValue::String("${flag}".into()),
-                        operator: "==".into(),
-                        right: ScalarValue::String("yes".into()),
-                    }],
+                    condition: sqyre_domain::ConditionBlock {
+                        name: "ok".into(),
+                        match_mode: "all".into(),
+                        clauses: vec![sqyre_domain::ConditionClause {
+                            left: ScalarValue::String("${flag}".into()),
+                            operator: "==".into(),
+                            right: ScalarValue::String("yes".into()),
+                        }],
+                    },
                     subactions: vec![Action {
                         id: ActionId::new(),
                         kind: ActionKind::Wait {
@@ -928,13 +999,15 @@ mod tests {
             Action {
                 id: ActionId::new(),
                 kind: ActionKind::Conditional {
-                    name: "no".into(),
-                    match_mode: "all".into(),
-                    clauses: vec![sqyre_domain::ConditionClause {
-                        left: ScalarValue::String("${flag}".into()),
-                        operator: "==".into(),
-                        right: ScalarValue::String("no".into()),
-                    }],
+                    condition: sqyre_domain::ConditionBlock {
+                        name: "no".into(),
+                        match_mode: "all".into(),
+                        clauses: vec![sqyre_domain::ConditionClause {
+                            left: ScalarValue::String("${flag}".into()),
+                            operator: "==".into(),
+                            right: ScalarValue::String("no".into()),
+                        }],
+                    },
                     subactions: vec![Action {
                         id: ActionId::new(),
                         kind: ActionKind::Wait {
@@ -952,10 +1025,14 @@ mod tests {
     #[test]
     fn conditional_any_mode_and_operators() {
         let mut macro_ = Macro::new("t", 0, vec![]);
-        macro_.variables.set("name", ScalarValue::String("hello".into()));
-        macro_.variables.set("empty", ScalarValue::String("".into()));
+        macro_
+            .variables
+            .set("name", ScalarValue::String("hello".into()));
+        macro_
+            .variables
+            .set("empty", ScalarValue::String("".into()));
         assert!(eval_clauses(
-            "any",
+            MatchMode::Any,
             &[
                 sqyre_domain::ConditionClause {
                     left: ScalarValue::String("x".into()),
@@ -969,9 +1046,10 @@ mod tests {
                 },
             ],
             &macro_
-        ));
+        )
+        .unwrap());
         assert!(eval_clauses(
-            "all",
+            MatchMode::All,
             &[
                 sqyre_domain::ConditionClause {
                     left: ScalarValue::String("${name}".into()),
@@ -995,16 +1073,100 @@ mod tests {
                 },
             ],
             &macro_
-        ));
+        )
+        .unwrap());
         assert!(!eval_clauses(
-            "all",
+            MatchMode::All,
             &[sqyre_domain::ConditionClause {
                 left: ScalarValue::String("a".into()),
                 operator: "!=".into(),
                 right: ScalarValue::String("a".into()),
             }],
             &macro_
-        ));
+        )
+        .unwrap());
+    }
+
+    #[test]
+    fn conditional_numeric_operators() {
+        let macro_ = Macro::new("t", 0, vec![]);
+        assert!(eval_clauses(
+            MatchMode::All,
+            &[
+                sqyre_domain::ConditionClause {
+                    left: ScalarValue::String("10".into()),
+                    operator: ">".into(),
+                    right: ScalarValue::String("2".into()),
+                },
+                sqyre_domain::ConditionClause {
+                    left: ScalarValue::String("3".into()),
+                    operator: "<=".into(),
+                    right: ScalarValue::String("3.0".into()),
+                },
+                sqyre_domain::ConditionClause {
+                    left: ScalarValue::String("1".into()),
+                    operator: "<".into(),
+                    right: ScalarValue::String("2".into()),
+                },
+                sqyre_domain::ConditionClause {
+                    left: ScalarValue::String("5".into()),
+                    operator: ">=".into(),
+                    right: ScalarValue::String("5".into()),
+                },
+            ],
+            &macro_
+        )
+        .unwrap());
+        assert!(!eval_clauses(
+            MatchMode::All,
+            &[sqyre_domain::ConditionClause {
+                left: ScalarValue::String("1".into()),
+                operator: ">".into(),
+                right: ScalarValue::String("2".into()),
+            }],
+            &macro_
+        )
+        .unwrap());
+    }
+
+    #[test]
+    fn is_set_uses_variable_name_not_value() {
+        let mut macro_ = Macro::new("t", 0, vec![]);
+        macro_
+            .variables
+            .set("flag", ScalarValue::String("yes".into()));
+        // `${flag}` must look up "flag", not the expanded value "yes".
+        assert!(eval_clauses(
+            MatchMode::All,
+            &[sqyre_domain::ConditionClause {
+                left: ScalarValue::String("${flag}".into()),
+                operator: "is set".into(),
+                right: ScalarValue::Null,
+            }],
+            &macro_
+        )
+        .unwrap());
+        assert!(!eval_clauses(
+            MatchMode::All,
+            &[sqyre_domain::ConditionClause {
+                left: ScalarValue::String("${missing}".into()),
+                operator: "is set".into(),
+                right: ScalarValue::Null,
+            }],
+            &macro_
+        )
+        .unwrap());
+        // Bare name still works.
+        assert!(eval_clauses(
+            MatchMode::All,
+            &[sqyre_domain::ConditionClause {
+                left: ScalarValue::String("flag".into()),
+                operator: "is set".into(),
+                right: ScalarValue::Null,
+            }],
+            &macro_
+        )
+        .unwrap());
     }
 
     #[test]
@@ -1021,7 +1183,7 @@ mod tests {
             id: ActionId::new(),
             kind: ActionKind::SetVariable {
                 variable_name: "msg".into(),
-                value: serde_yaml::Value::String("hello ${base}".into()),
+                value: sqyre_domain::ScalarValue::String("hello ${base}".into()),
             },
         }]);
         execute_macro(&mut macro_, &mut backend).unwrap();
@@ -1066,7 +1228,7 @@ mod tests {
             ExecDeps {
                 automation: &mut backend,
                 capturer: None,
-                matcher: None,
+                close_matches_distance: 0,
                 resolver: None,
                 icons: None,
                 macros: None,

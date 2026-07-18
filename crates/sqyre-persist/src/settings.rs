@@ -1,13 +1,18 @@
-//! User settings persisted outside the data directory.
+//! User settings persisted inside the Sqyre data directory.
 //!
-//! Lives under the XDG config dir (`~/.config/sqyre/settings.yaml`) so the
-//! `sqyre_dir` override can relocate `~/.sqyre` without losing preferences.
+//! Lives at `~/.sqyre/settings.yaml` (or under a relocated data dir). A small
+//! pointer file at `~/.config/sqyre/data_dir` records a non-default data location
+//! so the next launch can find settings after a relocate.
 
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::{PersistError, Result};
+use sqyre_domain::{
+    ACTION_COLOR_KEY_DEFAULT, ACTION_COLOR_KEY_DETECTION, ACTION_COLOR_KEY_MISCELLANEOUS,
+    ACTION_COLOR_KEY_MOUSE_KEYBOARD, ACTION_COLOR_KEY_VARIABLES, ACTION_COLOR_KEY_WAIT,
+};
 
 pub const DEFAULT_IMAGE_SEARCH_CLOSE_MATCHES_DISTANCE: i32 = 10;
 pub const DEFAULT_DRAG_PREVIEW_DEBOUNCE_MS: i32 = 150;
@@ -16,15 +21,13 @@ pub const DEFAULT_HIDE_APP_DURING_RECORDING: bool = true;
 pub const DEFAULT_UI_FONT_SIZE: i32 = 14;
 pub const DEFAULT_UI_SCALE: f32 = 1.0;
 
-pub const ACTION_COLOR_MOUSE_KEYBOARD: &str = "mouse_keyboard";
-pub const ACTION_COLOR_DETECTION: &str = "detection";
-pub const ACTION_COLOR_VARIABLES: &str = "variables";
-pub const ACTION_COLOR_MISCELLANEOUS: &str = "miscellaneous";
-pub const ACTION_COLOR_WAIT: &str = "wait";
-pub const ACTION_COLOR_DEFAULT: &str = "default";
-
-/// Absolute path to the settings file (`~/.config/sqyre/settings.yaml`).
+/// Absolute path to the settings file (`{sqyre_dir}/settings.yaml`).
 pub fn settings_path() -> PathBuf {
+    crate::sqyre_dir().join("settings.yaml")
+}
+
+/// XDG pointer that records a relocated data directory (one path per line).
+fn data_dir_pointer_path() -> PathBuf {
     dirs::config_dir()
         .unwrap_or_else(|| {
             dirs::home_dir()
@@ -32,7 +35,38 @@ pub fn settings_path() -> PathBuf {
                 .join(".config")
         })
         .join("sqyre")
-        .join("settings.yaml")
+        .join("data_dir")
+}
+
+/// Apply a relocated data-dir pointer before loading settings from `.sqyre`.
+fn apply_data_dir_pointer() {
+    let path = data_dir_pointer_path();
+    let Ok(text) = fs::read_to_string(&path) else {
+        return;
+    };
+    let dir = text.lines().next().unwrap_or("").trim();
+    if dir.is_empty() {
+        let _ = fs::remove_file(&path);
+        crate::set_sqyre_dir_override(None);
+        return;
+    }
+    crate::set_sqyre_dir_override(Some(PathBuf::from(dir)));
+}
+
+fn write_data_dir_pointer(sqyre_dir: &str) -> Result<()> {
+    let path = data_dir_pointer_path();
+    let dir = sqyre_dir.trim();
+    if dir.is_empty() {
+        if path.exists() {
+            fs::remove_file(&path)?;
+        }
+        return Ok(());
+    }
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    crate::atomic_write(&path, format!("{dir}\n"))?;
+    Ok(())
 }
 
 /// Action-color hex overrides (`#rrggbb`). Empty string = built-in pastel.
@@ -55,30 +89,201 @@ pub struct ActionColorPrefs {
 impl ActionColorPrefs {
     pub fn get(&self, key: &str) -> &str {
         match key {
-            ACTION_COLOR_MOUSE_KEYBOARD => &self.mouse_keyboard,
-            ACTION_COLOR_DETECTION => &self.detection,
-            ACTION_COLOR_VARIABLES => &self.variables,
-            ACTION_COLOR_MISCELLANEOUS => &self.miscellaneous,
-            ACTION_COLOR_WAIT => &self.wait,
-            ACTION_COLOR_DEFAULT => &self.default,
+            ACTION_COLOR_KEY_MOUSE_KEYBOARD => &self.mouse_keyboard,
+            ACTION_COLOR_KEY_DETECTION => &self.detection,
+            ACTION_COLOR_KEY_VARIABLES => &self.variables,
+            ACTION_COLOR_KEY_MISCELLANEOUS => &self.miscellaneous,
+            ACTION_COLOR_KEY_WAIT => &self.wait,
+            ACTION_COLOR_KEY_DEFAULT => &self.default,
             _ => "",
         }
     }
 
     pub fn set(&mut self, key: &str, hex: String) {
         match key {
-            ACTION_COLOR_MOUSE_KEYBOARD => self.mouse_keyboard = hex,
-            ACTION_COLOR_DETECTION => self.detection = hex,
-            ACTION_COLOR_VARIABLES => self.variables = hex,
-            ACTION_COLOR_MISCELLANEOUS => self.miscellaneous = hex,
-            ACTION_COLOR_WAIT => self.wait = hex,
-            ACTION_COLOR_DEFAULT => self.default = hex,
+            ACTION_COLOR_KEY_MOUSE_KEYBOARD => self.mouse_keyboard = hex,
+            ACTION_COLOR_KEY_DETECTION => self.detection = hex,
+            ACTION_COLOR_KEY_VARIABLES => self.variables = hex,
+            ACTION_COLOR_KEY_MISCELLANEOUS => self.miscellaneous = hex,
+            ACTION_COLOR_KEY_WAIT => self.wait = hex,
+            ACTION_COLOR_KEY_DEFAULT => self.default = hex,
             _ => {}
         }
     }
 
     pub fn clear_all(&mut self) {
         *self = Self::default();
+    }
+}
+
+/// Always-on-top screen button that starts a named macro.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct OverlayButtonConfig {
+    /// Stable id used for the deferred viewport hash.
+    pub id: String,
+    /// Catalog program this button belongs to (shown when that program is focused).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub program: String,
+    /// Tooltip / optional caption under the icon.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub label: String,
+    /// Macro name to start (must match an entry in `db.yaml`).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub macro_name: String,
+    /// Icon catalog id (Phosphor kebab-case, e.g. `play`, `lightning`). Empty = default play.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub icon: String,
+    /// Desktop position of the button viewport (top-left, points).
+    #[serde(default)]
+    pub x: f32,
+    #[serde(default)]
+    pub y: f32,
+    /// Button glyph/image size in points (viewport is slightly larger for padding).
+    #[serde(default = "default_overlay_button_size")]
+    pub size: f32,
+    /// Corner rounding in points (0 = square).
+    #[serde(default = "default_overlay_corner_radius")]
+    pub corner_radius: f32,
+    /// Border stroke width in points (0 = no border).
+    #[serde(default = "default_overlay_border_width")]
+    pub border_width: f32,
+    /// Border color as `#rrggbb` (empty = Sqyre gold).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub border_color: String,
+    /// Border opacity 0–255.
+    #[serde(default = "default_overlay_full_alpha")]
+    pub border_alpha: u8,
+    /// Background fill color as `#rrggbb` (empty = black when alpha > 0).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub bg_color: String,
+    /// Background opacity 0–255 (0 = no fill).
+    #[serde(default)]
+    pub bg_alpha: u8,
+    /// Icon/glyph color as `#rrggbb` (empty = cream).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub icon_color: String,
+    /// Icon opacity 0–255.
+    #[serde(default = "default_overlay_full_alpha")]
+    pub icon_alpha: u8,
+    /// Hover icon color as `#rrggbb` (empty = Sqyre gold).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub icon_hover_color: String,
+}
+
+pub const DEFAULT_OVERLAY_BUTTON_SIZE: f32 = 52.0;
+pub const MIN_OVERLAY_BUTTON_SIZE: f32 = 12.0;
+pub const MAX_OVERLAY_BUTTON_SIZE: f32 = 128.0;
+pub const DEFAULT_OVERLAY_CORNER_RADIUS: f32 = 8.0;
+pub const MIN_OVERLAY_CORNER_RADIUS: f32 = 0.0;
+pub const MAX_OVERLAY_CORNER_RADIUS: f32 = 64.0;
+pub const DEFAULT_OVERLAY_BORDER_WIDTH: f32 = 1.5;
+pub const MIN_OVERLAY_BORDER_WIDTH: f32 = 0.0;
+pub const MAX_OVERLAY_BORDER_WIDTH: f32 = 8.0;
+/// Default border / hover icon when `border_color` / `icon_hover_color` is empty (`#dc9d2e`).
+pub const DEFAULT_OVERLAY_ACCENT_HEX: &str = "#dc9d2e";
+/// Default idle icon when `icon_color` is empty (`#f5e6c0`).
+pub const DEFAULT_OVERLAY_ICON_HEX: &str = "#f5e6c0";
+
+fn default_overlay_button_size() -> f32 {
+    DEFAULT_OVERLAY_BUTTON_SIZE
+}
+
+fn default_overlay_corner_radius() -> f32 {
+    DEFAULT_OVERLAY_CORNER_RADIUS
+}
+
+fn default_overlay_border_width() -> f32 {
+    DEFAULT_OVERLAY_BORDER_WIDTH
+}
+
+fn default_overlay_full_alpha() -> u8 {
+    255
+}
+
+impl OverlayButtonConfig {
+    pub fn new(id: impl Into<String>, program: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            program: program.into(),
+            label: String::new(),
+            macro_name: String::new(),
+            icon: String::new(),
+            x: 48.0,
+            y: 48.0,
+            size: DEFAULT_OVERLAY_BUTTON_SIZE,
+            corner_radius: DEFAULT_OVERLAY_CORNER_RADIUS,
+            border_width: DEFAULT_OVERLAY_BORDER_WIDTH,
+            border_color: String::new(),
+            border_alpha: 255,
+            bg_color: String::new(),
+            bg_alpha: 0,
+            icon_color: String::new(),
+            icon_alpha: 255,
+            icon_hover_color: String::new(),
+        }
+    }
+
+    /// Display name for lists (label, else macro, else id).
+    pub fn display_name(&self) -> &str {
+        let label = self.label.trim();
+        if !label.is_empty() {
+            return label;
+        }
+        let macro_name = self.macro_name.trim();
+        if !macro_name.is_empty() {
+            return macro_name;
+        }
+        self.id.as_str()
+    }
+
+    /// Resolve `#rrggbb` (or empty → `fallback`) plus alpha → RGBA.
+    pub fn resolve_rgba(hex: &str, alpha: u8, fallback: &str) -> [u8; 4] {
+        let src = if hex.trim().is_empty() {
+            fallback
+        } else {
+            hex.trim()
+        };
+        let rgb = sqyre_domain::parse_hex_color(src).unwrap_or_else(|| {
+            sqyre_domain::parse_hex_color(fallback).unwrap_or([0xdc, 0x9d, 0x2e, 255])
+        });
+        [rgb[0], rgb[1], rgb[2], alpha]
+    }
+
+    pub fn border_rgba(&self) -> [u8; 4] {
+        Self::resolve_rgba(
+            &self.border_color,
+            self.border_alpha,
+            DEFAULT_OVERLAY_ACCENT_HEX,
+        )
+    }
+
+    pub fn bg_rgba(&self) -> [u8; 4] {
+        Self::resolve_rgba(&self.bg_color, self.bg_alpha, "#000000")
+    }
+
+    pub fn icon_rgba(&self) -> [u8; 4] {
+        Self::resolve_rgba(&self.icon_color, self.icon_alpha, DEFAULT_OVERLAY_ICON_HEX)
+    }
+
+    pub fn icon_hover_rgba(&self) -> [u8; 4] {
+        Self::resolve_rgba(
+            &self.icon_hover_color,
+            self.icon_alpha,
+            DEFAULT_OVERLAY_ACCENT_HEX,
+        )
+    }
+
+    /// Reset appearance fields to built-in defaults (keeps size/position/binding).
+    pub fn reset_appearance(&mut self) {
+        self.corner_radius = DEFAULT_OVERLAY_CORNER_RADIUS;
+        self.border_width = DEFAULT_OVERLAY_BORDER_WIDTH;
+        self.border_color.clear();
+        self.border_alpha = 255;
+        self.bg_color.clear();
+        self.bg_alpha = 0;
+        self.icon_color.clear();
+        self.icon_alpha = 255;
+        self.icon_hover_color.clear();
     }
 }
 
@@ -107,6 +312,12 @@ pub struct UserSettings {
     /// Per-action-type blank templates for the Add Action picker (YAML action maps).
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub action_defaults: std::collections::BTreeMap<String, serde_yaml::Mapping>,
+    /// Show floating always-on-top buttons that start macros.
+    #[serde(default)]
+    pub overlay_enabled: bool,
+    /// User-configured overlay buttons (per-program; shown when that program is focused).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub overlay_buttons: Vec<OverlayButtonConfig>,
 }
 
 fn default_hide_recording() -> bool {
@@ -138,12 +349,15 @@ impl Default for UserSettings {
             ui_scale: DEFAULT_UI_SCALE,
             action_colors: ActionColorPrefs::default(),
             action_defaults: std::collections::BTreeMap::new(),
+            overlay_enabled: false,
+            overlay_buttons: Vec::new(),
         }
     }
 }
 
 impl UserSettings {
     pub fn load_default() -> Result<Self> {
+        apply_data_dir_pointer();
         Self::load_from_path(settings_path())
     }
 
@@ -159,6 +373,9 @@ impl UserSettings {
     }
 
     pub fn save_default(&self) -> Result<()> {
+        // Keep runtime override + XDG pointer in sync before resolving settings_path().
+        self.apply_sqyre_dir_override();
+        write_data_dir_pointer(&self.sqyre_dir)?;
         self.save_to_path(settings_path())
     }
 
@@ -169,7 +386,7 @@ impl UserSettings {
         }
         let mut clamped = self.clone();
         clamped.clamp();
-        fs::write(path, serde_yaml::to_string(&clamped)?)?;
+        crate::atomic_write(path, serde_yaml::to_string(&clamped)?)?;
         Ok(())
     }
 
@@ -180,12 +397,34 @@ impl UserSettings {
         if self.drag_preview_debounce_ms < MIN_DRAG_PREVIEW_DEBOUNCE_MS {
             self.drag_preview_debounce_ms = DEFAULT_DRAG_PREVIEW_DEBOUNCE_MS;
         }
-        self.drag_preview_debounce_ms = self.drag_preview_debounce_ms.clamp(MIN_DRAG_PREVIEW_DEBOUNCE_MS, 1000);
+        self.drag_preview_debounce_ms = self
+            .drag_preview_debounce_ms
+            .clamp(MIN_DRAG_PREVIEW_DEBOUNCE_MS, 1000);
         self.ui_font_size = self.ui_font_size.clamp(10, 28);
         if self.ui_scale <= 0.0 {
             self.ui_scale = DEFAULT_UI_SCALE;
         }
         self.ui_scale = ((self.ui_scale * 10.0).round() / 10.0).clamp(0.5, 2.5);
+        for btn in &mut self.overlay_buttons {
+            if btn.size <= 0.0 {
+                btn.size = DEFAULT_OVERLAY_BUTTON_SIZE;
+            }
+            btn.size = btn
+                .size
+                .clamp(MIN_OVERLAY_BUTTON_SIZE, MAX_OVERLAY_BUTTON_SIZE);
+            if btn.corner_radius < 0.0 {
+                btn.corner_radius = DEFAULT_OVERLAY_CORNER_RADIUS;
+            }
+            btn.corner_radius = btn
+                .corner_radius
+                .clamp(MIN_OVERLAY_CORNER_RADIUS, MAX_OVERLAY_CORNER_RADIUS);
+            if btn.border_width < 0.0 {
+                btn.border_width = DEFAULT_OVERLAY_BORDER_WIDTH;
+            }
+            btn.border_width = btn
+                .border_width
+                .clamp(MIN_OVERLAY_BORDER_WIDTH, MAX_OVERLAY_BORDER_WIDTH);
+        }
     }
 
     /// Apply `sqyre_dir` override to the process-wide data directory.
@@ -301,12 +540,34 @@ mod tests {
     fn roundtrip_settings() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("settings.yaml");
-        let mut s = UserSettings::default();
-        s.save_meta_images = true;
-        s.highlight_active_action = true;
-        s.image_search_close_matches_distance = 25;
-        s.ui_scale = 1.2;
+        let mut s = UserSettings {
+            save_meta_images: true,
+            highlight_active_action: true,
+            image_search_close_matches_distance: 25,
+            ui_scale: 1.2,
+            overlay_enabled: true,
+            ..Default::default()
+        };
         s.action_colors.detection = "#aabbcc".into();
+        s.overlay_buttons.push(OverlayButtonConfig {
+            id: "btn-1".into(),
+            program: "Demo Game".into(),
+            label: "Go".into(),
+            macro_name: "demo".into(),
+            icon: "bolt".into(),
+            x: 100.0,
+            y: 200.0,
+            size: 64.0,
+            corner_radius: 12.0,
+            border_width: 2.0,
+            border_color: "#ff0000".into(),
+            border_alpha: 200,
+            bg_color: "#112233".into(),
+            bg_alpha: 128,
+            icon_color: "#abcdef".into(),
+            icon_alpha: 240,
+            icon_hover_color: "#fedcba".into(),
+        });
         s.save_to_path(&path).unwrap();
 
         let loaded = UserSettings::load_from_path(&path).unwrap();
@@ -315,6 +576,59 @@ mod tests {
         assert_eq!(loaded.image_search_close_matches_distance, 25);
         assert!((loaded.ui_scale - 1.2).abs() < f32::EPSILON);
         assert_eq!(loaded.action_colors.detection, "#aabbcc");
+        assert!(loaded.overlay_enabled);
+        assert_eq!(loaded.overlay_buttons.len(), 1);
+        assert_eq!(loaded.overlay_buttons[0].program, "Demo Game");
+        assert_eq!(loaded.overlay_buttons[0].macro_name, "demo");
+        assert_eq!(loaded.overlay_buttons[0].icon, "bolt");
+        assert!((loaded.overlay_buttons[0].size - 64.0).abs() < f32::EPSILON);
+        assert!((loaded.overlay_buttons[0].corner_radius - 12.0).abs() < f32::EPSILON);
+        assert_eq!(loaded.overlay_buttons[0].border_color, "#ff0000");
+        assert_eq!(loaded.overlay_buttons[0].border_alpha, 200);
+        assert_eq!(loaded.overlay_buttons[0].bg_color, "#112233");
+        assert_eq!(loaded.overlay_buttons[0].bg_alpha, 128);
+        assert_eq!(loaded.overlay_buttons[0].icon_color, "#abcdef");
+        assert_eq!(loaded.overlay_buttons[0].icon_hover_color, "#fedcba");
+    }
+
+    #[test]
+    fn overlay_style_defaults_when_omitted() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("settings.yaml");
+        std::fs::write(
+            &path,
+            r#"
+overlay_enabled: true
+overlay_buttons:
+  - id: btn-legacy
+    program: P
+    macro_name: m
+    x: 1.0
+    y: 2.0
+    size: 40.0
+"#,
+        )
+        .unwrap();
+        let loaded = UserSettings::load_from_path(&path).unwrap();
+        let btn = &loaded.overlay_buttons[0];
+        assert!((btn.corner_radius - DEFAULT_OVERLAY_CORNER_RADIUS).abs() < f32::EPSILON);
+        assert!((btn.border_width - DEFAULT_OVERLAY_BORDER_WIDTH).abs() < f32::EPSILON);
+        assert!(btn.border_color.is_empty());
+        assert_eq!(btn.border_alpha, 255);
+        assert_eq!(btn.bg_alpha, 0);
+        assert_eq!(btn.icon_alpha, 255);
+        assert_eq!(
+            btn.border_rgba(),
+            OverlayButtonConfig::resolve_rgba("", 255, DEFAULT_OVERLAY_ACCENT_HEX)
+        );
+    }
+
+    #[test]
+    fn settings_path_is_under_sqyre_dir() {
+        let dir = tempdir().unwrap();
+        crate::with_sqyre_dir_override(dir.path().to_path_buf(), || {
+            assert_eq!(settings_path(), dir.path().join("settings.yaml"));
+        });
     }
 
     #[test]

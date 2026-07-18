@@ -4,22 +4,16 @@ use sqyre_domain::PROGRAM_DELIMITER;
 use sqyre_persist::ProgramCatalog;
 use sqyre_vision::invalidate_search_templates_under;
 use std::path::{Path, PathBuf};
+use thiserror::Error;
 
 const MAX_VARIANTS: usize = 100;
 const PNG_SIGNATURE: [u8; 8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Error)]
+#[error("variant '{variant_name}' already exists")]
 pub struct VariantExistsError {
     pub variant_name: String,
 }
-
-impl std::fmt::Display for VariantExistsError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "variant '{}' already exists", self.variant_name)
-    }
-}
-
-impl std::error::Error for VariantExistsError {}
 
 pub fn variant_path(catalog: &ProgramCatalog, program: &str, item: &str, variant: &str) -> PathBuf {
     let dir = catalog.icons_dir(program);
@@ -50,9 +44,7 @@ pub fn variant_name_from_path(path: &Path, item: &str) -> String {
         return String::new();
     }
     let prefix = format!("{item}{PROGRAM_DELIMITER}");
-    stem.strip_prefix(&prefix)
-        .unwrap_or(stem)
-        .to_string()
+    stem.strip_prefix(&prefix).unwrap_or(stem).to_string()
 }
 
 pub fn validate_png_file(path: &Path) -> Result<(), String> {
@@ -99,19 +91,12 @@ fn sanitize_variant_name(name: &str) -> Result<String, String> {
     Ok(base)
 }
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum AddVariantError {
+    #[error(transparent)]
     Exists(VariantExistsError),
+    #[error("{0}")]
     Other(String),
-}
-
-impl std::fmt::Display for AddVariantError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Exists(e) => write!(f, "{e}"),
-            Self::Other(s) => write!(f, "{s}"),
-        }
-    }
 }
 
 pub fn add_variant(

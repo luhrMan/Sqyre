@@ -1,9 +1,10 @@
 //! Native file / folder dialogs via `rfd`.
 //!
-//! On Linux, `rfd`'s XDG portal backend uses `ashpd`/`zbus`. Accessibility
-//! (accesskit) enables `zbus`'s Tokio feature for the whole process, so sync
-//! `rfd` calls panic with "no reactor running" unless a Tokio runtime has been
-//! entered. Keep a process-global runtime and enter it for every dialog.
+//! On Linux, `rfd`'s XDG portal backend uses `ashpd`/`zbus`. If anything in the
+//! dependency graph enables `zbus`'s Tokio feature (historically `ksni`'s
+//! default), sync `rfd` calls need a Tokio runtime entered or they panic with
+//! "no reactor running". Keep a process-global runtime and enter it for every
+//! dialog as a defensive measure.
 
 use std::path::PathBuf;
 use std::sync::OnceLock;
@@ -11,8 +12,8 @@ use std::sync::OnceLock;
 fn enter_tokio() -> tokio::runtime::EnterGuard<'static> {
     static RT: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
     let rt = RT.get_or_init(|| {
-        tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(1)
+        // Current-thread runtime is enough for rfd/ashpd; avoid a worker pool.
+        tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .expect("tokio runtime for native file dialogs")

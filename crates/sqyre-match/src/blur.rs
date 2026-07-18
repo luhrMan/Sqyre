@@ -15,24 +15,27 @@ pub fn search_blur_kernel(blur: i32) -> i32 {
 }
 
 /// Gaussian blur via PureCV with OpenCV-compatible σ=0 and `BORDER_REFLECT_101`.
+///
+/// Clones `img.data` into a PureCV matrix. Prefer [`blur_image_owned`] when the
+/// caller can give up the buffer.
 pub fn blur_image(img: &ImageBuf, blur: i32) -> Result<ImageBuf, MatchError> {
+    blur_image_owned(img.clone(), blur)
+}
+
+/// Like [`blur_image`] but takes ownership so the pixel buffer moves into PureCV
+/// without an extra clone.
+pub fn blur_image_owned(img: ImageBuf, blur: i32) -> Result<ImageBuf, MatchError> {
     let k = search_blur_kernel(blur);
     if k as usize > img.width || k as usize > img.height {
-        return Ok(img.clone());
+        return Ok(img);
     }
 
     use purecv::core::{BorderTypes, Matrix, Size};
     use purecv::imgproc::gaussian_blur;
 
-    let mat = Matrix::from_vec(img.height, img.width, img.channels, img.data.clone());
-    let out = gaussian_blur(
-        &mat,
-        Size::new(k, k),
-        0.0,
-        0.0,
-        BorderTypes::Reflect101,
-    )
-    .map_err(|e| MatchError::Blur(e.to_string()))?;
+    let mat = Matrix::from_vec(img.height, img.width, img.channels, img.data);
+    let out = gaussian_blur(&mat, Size::new(k, k), 0.0, 0.0, BorderTypes::Reflect101)
+        .map_err(|e| MatchError::Blur(e.to_string()))?;
     Ok(ImageBuf {
         width: out.cols,
         height: out.rows,

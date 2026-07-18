@@ -156,11 +156,7 @@ impl SharedActionLog {
 
 impl ActionLogger for SharedActionLog {
     fn log(&self, action_id: ActionId, message: String) {
-        push_entry(
-            &self.inner,
-            action_id,
-            ActionLogEntry::Text(message),
-        );
+        push_entry(&self.inner, action_id, ActionLogEntry::Text(message));
     }
 
     fn log_images_enabled(&self) -> bool {

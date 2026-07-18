@@ -1,6 +1,7 @@
 //! Macro aggregate.
 
 use crate::{root_loop, Action, VariableDecl, VariableStore};
+use serde::{Deserialize, Serialize};
 
 pub const DEFAULT_KEYBOARD_DELAY: i32 = 25;
 pub const DEFAULT_MOUSE_DELAY: i32 = 25;
@@ -8,20 +9,36 @@ pub const DEFAULT_MOUSE_DELAY: i32 = 25;
 pub const HOTKEY_TRIGGER_PRESS: &str = "press";
 pub const HOTKEY_TRIGGER_RELEASE: &str = "release";
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Macro {
     pub name: String,
     pub root: Action,
+    #[serde(rename = "globaldelay", default)]
     pub global_delay: i32,
+    #[serde(rename = "keyboarddelay", default = "default_keyboard_delay")]
     pub keyboard_delay: i32,
+    #[serde(rename = "mousedelay", default = "default_mouse_delay")]
     pub mouse_delay: i32,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub hotkey: Vec<String>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub hotkey_trigger: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
+    #[serde(rename = "variables", default, skip_serializing_if = "Vec::is_empty")]
     pub variable_decls: Vec<VariableDecl>,
     /// Runtime store; never persisted.
+    #[serde(skip)]
     #[cfg_attr(test, allow(dead_code))]
     pub variables: VariableStore,
+}
+
+fn default_keyboard_delay() -> i32 {
+    DEFAULT_KEYBOARD_DELAY
+}
+
+fn default_mouse_delay() -> i32 {
+    DEFAULT_MOUSE_DELAY
 }
 
 impl Macro {

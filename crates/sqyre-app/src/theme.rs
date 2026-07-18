@@ -5,19 +5,29 @@ use eframe::egui::{self, Color32, CornerRadius, Pos2, Sense, Stroke, Vec2, Visua
 /// Sqyre gold/yellow primary (`#dc9d2e`).
 pub const PRIMARY: Color32 = Color32::from_rgb(0xdc, 0x9d, 0x2e);
 
+/// Convert `[r,g,b,a]` to egui [`Color32`] (unmultiplied).
+pub fn rgba(c: [u8; 4]) -> Color32 {
+    Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3])
+}
+
+/// Dim floating panel fill used by macro / recording overlays.
+pub fn overlay_panel_fill() -> Color32 {
+    rgba([20, 18, 14, 230])
+}
+
 /// Dimmed primary for selection / hover (alpha `0x40`).
 pub fn accent_dim() -> Color32 {
-    Color32::from_rgba_unmultiplied(0xdc, 0x9d, 0x2e, 0x40)
+    rgba([0xdc, 0x9d, 0x2e, 0x40])
 }
 
 /// Soft tag-chip fill (~11% opacity).
 pub fn chip_fill() -> Color32 {
-    Color32::from_rgba_unmultiplied(0xdc, 0x9d, 0x2e, 28)
+    rgba([0xdc, 0x9d, 0x2e, 28])
 }
 
 /// Subtle frame fill (~5% opacity).
 pub fn frame_fill() -> Color32 {
-    Color32::from_rgba_unmultiplied(0xdc, 0x9d, 0x2e, 13)
+    rgba([0xdc, 0x9d, 0x2e, 13])
 }
 
 /// Selected-text stroke — light cream readable on dim gold fill.
@@ -38,13 +48,12 @@ pub fn dark_visuals() -> Visuals {
 
     v.widgets.hovered.bg_stroke = Stroke::new(1.0, PRIMARY);
     v.widgets.hovered.weak_bg_fill = chip_fill();
-    v.widgets.hovered.bg_fill = Color32::from_rgba_unmultiplied(0xdc, 0x9d, 0x2e, 0x35);
+    v.widgets.hovered.bg_fill = rgba([0xdc, 0x9d, 0x2e, 0x35]);
 
     v.widgets.active.bg_stroke = Stroke::new(1.0, PRIMARY);
-    v.widgets.active.weak_bg_fill = Color32::from_rgba_unmultiplied(0xdc, 0x9d, 0x2e, 0x50);
+    v.widgets.active.weak_bg_fill = rgba([0xdc, 0x9d, 0x2e, 0x50]);
 
-    v.widgets.open.bg_stroke =
-        Stroke::new(1.0, Color32::from_rgba_unmultiplied(0xdc, 0x9d, 0x2e, 0x80));
+    v.widgets.open.bg_stroke = Stroke::new(1.0, rgba([0xdc, 0x9d, 0x2e, 0x80]));
 
     v.window_stroke = Stroke::new(1.0, dim);
     v.text_cursor.stroke = Stroke::new(2.0, PRIMARY);
@@ -97,11 +106,7 @@ pub fn up_down_toggle(ui: &mut egui::Ui, down: &mut bool) -> egui::Response {
     }
 
     let visuals = ui.style().interact(&response);
-    let track_fill = if *down {
-        PRIMARY
-    } else {
-        visuals.bg_fill
-    };
+    let track_fill = if *down { PRIMARY } else { visuals.bg_fill };
     let painter = ui.painter();
     let rounding = CornerRadius::same((TRACK_W / 2.0) as u8);
     painter.rect_filled(rect, rounding, track_fill);

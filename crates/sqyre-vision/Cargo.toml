@@ -5,9 +5,12 @@ edition.workspace = true
 license.workspace = true
 description = "Image search / find-pixel / OCR helpers over sqyre-match"
 
+[lints]
+workspace = true
+
 [dependencies]
 image = { workspace = true }
-thiserror = { workspace = true }
+parking_lot = { workspace = true }
 sqyre-match = { path = "../sqyre-match" }
 sqyre-domain = { path = "../sqyre-domain" }
 leptess = "0.14"
