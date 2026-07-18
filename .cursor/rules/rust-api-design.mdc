@@ -1,0 +1,38 @@
+---
+description: Rust API Guidelines for public types and conversions
+globs: "**/*.rs"
+alwaysApply: false
+---
+
+# Rust API Design
+
+Follow the [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/) for types other crates or modules call into.
+
+## Naming
+
+- Conversions: `as_` (cheap/borrowed), `to_` (expensive/owned copy), `into_` (consuming)
+- Getters: bare field name (`width()`), not `get_width()`, unless needed to avoid clashes
+- Iterators: `iter` / `iter_mut` / `into_iter`
+
+## Conversions and traits
+
+- Prefer `From` / `TryFrom` / `AsRef` / `AsMut` over one-off conversion helpers
+- Error types: meaningful `thiserror` enums with `Display` + `Error`; no `String`/`anyhow` in library crates
+- Derive or implement common traits when they make sense (`Debug`, `Clone`, `PartialEq`, …)
+
+```rust
+// ❌
+fn to_path(s: &str) -> PathBuf { PathBuf::from(s) }
+
+// ✅
+impl From<&str> for MyPath {
+    fn from(s: &str) -> Self { Self(PathBuf::from(s)) }
+}
+```
+
+## Type safety
+
+- Use newtypes for domain distinctions (IDs, units, validated strings)
+- Prefer dedicated enums/structs over `bool` / `Option` soup in public parameters
+- Constructors are inherent associated functions (`Type::new` / `Type::with_…`)
+- Return values; do not take `&mut out` parameters for results
