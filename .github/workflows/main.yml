@@ -1,5 +1,6 @@
-# Build and release Sqyre on merge to main (Linux Rust only).
-# Produces: Linux binary, AppImage.
+# Build and release Sqyre on merge to main.
+# Releases: Linux binary + AppImage only.
+# Also compile-checks Windows (GDI capture) and macOS (stub capture) on PRs/pushes.
 # Release tag / artifact names: vYYYY.MM.DD.HHMM (e.g. v2026.03.03.1643).
 
 name: Build and Release
@@ -148,6 +149,65 @@ jobs:
             target/coverage/lcov.info
           if-no-files-found: warn
           retention-days: 14
+
+  check-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.92.0
+
+      - name: Install LLVM (bindgen) and pkg-config
+        run: choco install llvm pkgconfiglite -y
+
+      - name: Install leptonica and tesseract (vcpkg)
+        run: |
+          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install leptonica:x64-windows tesseract:x64-windows
+
+      - name: Cache Cargo
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: cargo check (sqyre-app)
+        env:
+          LIBCLANG_PATH: C:\Program Files\LLVM\bin
+        run: |
+          $env:VCPKG_ROOT = $env:VCPKG_INSTALLATION_ROOT
+          $env:PKG_CONFIG_PATH = "$($env:VCPKG_INSTALLATION_ROOT)\installed\x64-windows\lib\pkgconfig"
+          cargo check -p sqyre-app
+
+  check-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.92.0
+
+      - name: Install Tesseract / Leptonica
+        run: brew install tesseract leptonica
+
+      - name: Cache Cargo
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: cargo check (sqyre-app)
+        run: cargo check -p sqyre-app
 
   build-linux:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'

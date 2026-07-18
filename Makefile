@@ -1,6 +1,7 @@
 # Sqyre build helpers. Default output: ./bin
 # Binary is Rust (sqyre-app). Linux AppImage packaging uses the same stack.
-.PHONY: all sqyre release test coverage check check-fmt fmt clippy deny machete \
+# Windows: Docker MinGW cross from Linux (scripts/windows/), or native on Windows.
+.PHONY: all sqyre release windows macos test coverage check check-fmt fmt clippy deny machete \
 	run tessdata appimage docs-media help
 
 ROOT := $(abspath .)
@@ -10,6 +11,33 @@ CARGO ?= cargo
 CARGO_FLAGS ?=
 # Honor CARGO_TARGET_DIR when set (CI / sandbox); otherwise ./target
 TARGET_DIR := $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),$(ROOT)/target)
+
+# Host OS for native binary targets (Windows_NT / Darwin / Linux / MinGW / MSYS).
+ifeq ($(OS),Windows_NT)
+  HOST_OS := windows
+  BIN_EXT := .exe
+else
+  UNAME_S := $(shell uname -s 2>/dev/null)
+  ifeq ($(UNAME_S),Darwin)
+    HOST_OS := macos
+    BIN_EXT :=
+  else ifeq ($(UNAME_S),Linux)
+    HOST_OS := linux
+    BIN_EXT :=
+  else ifneq (,$(findstring MINGW,$(UNAME_S)))
+    HOST_OS := windows
+    BIN_EXT := .exe
+  else ifneq (,$(findstring MSYS,$(UNAME_S)))
+    HOST_OS := windows
+    BIN_EXT := .exe
+  else ifneq (,$(findstring CYGWIN,$(UNAME_S)))
+    HOST_OS := windows
+    BIN_EXT := .exe
+  else
+    HOST_OS := unknown
+    BIN_EXT :=
+  endif
+endif
 
 # Prefer env/devcontainer cargo; fall back to workspace-local toolchain on the host.
 # Docker/CI use .cache/cargo (or inherit CARGO_HOME when Make exports .cargo-home).
@@ -31,8 +59,11 @@ all: sqyre
 
 help:
 	@echo "Targets:"
-	@echo "  all / sqyre  - cargo build (debug) -> $(BIN)/sqyre  [default]"
-	@echo "  release      - cargo build --release -> $(BIN)/sqyre"
+	@echo "  all / sqyre  - cargo build (debug) -> $(BIN)/sqyre$(BIN_EXT)  [default]"
+	@echo "  release      - cargo build --release -> $(BIN)/sqyre$(BIN_EXT)"
+	@echo "  windows      - Windows release -> $(BIN)/sqyre.exe"
+	@echo "                 (Docker MinGW cross on Linux; native on Windows)"
+	@echo "  macos        - native macOS release -> $(BIN)/sqyre  (macOS host)"
 	@echo "  test         - cargo nextest (fallback: cargo test)"
 	@echo "  check-fmt    - cargo fmt --check"
 	@echo "  fmt          - cargo fmt --all (write)"
@@ -52,9 +83,21 @@ $(BIN):
 
 sqyre: $(BIN)
 	$(CARGO) build -p sqyre-app $(CARGO_FLAGS)
-	cp -f $(TARGET_DIR)/debug/sqyre $(BIN)/sqyre
+	cp -f $(TARGET_DIR)/debug/sqyre$(BIN_EXT) $(BIN)/sqyre$(BIN_EXT)
 
 release: $(BIN)
+	$(CARGO) build -p sqyre-app --release $(CARGO_FLAGS)
+	cp -f $(TARGET_DIR)/release/sqyre$(BIN_EXT) $(BIN)/sqyre$(BIN_EXT)
+
+# Windows release binary (no MSI). Docker MinGW cross from Linux; native on Windows.
+windows: $(BIN)
+	./scripts/windows/build.sh
+
+macos: $(BIN)
+	@if [ "$(HOST_OS)" != "macos" ]; then \
+		echo "make macos requires a macOS host (got $(HOST_OS))"; \
+		exit 1; \
+	fi
 	$(CARGO) build -p sqyre-app --release $(CARGO_FLAGS)
 	cp -f $(TARGET_DIR)/release/sqyre $(BIN)/sqyre
 

@@ -4,7 +4,7 @@ use crate::app_backends::{trim_process_heap, AppOcr, BridgeContinueWait, StopWat
 use crate::catalog::{CatalogIcons, CatalogResolver, SnapshotMacros};
 use crate::SqyreApp;
 use eframe::egui;
-use sqyre_capture::{shared_capturer, SharedRunCapturer, X11WindowFocuser};
+use sqyre_capture::{shared_capturer, OsWindowFocuser, SharedRunCapturer};
 use sqyre_domain::Macro;
 use sqyre_executor::{execute_macro_with, ExecDeps, OcrEngine};
 use sqyre_input::OsAutomation;
@@ -76,7 +76,7 @@ impl SqyreApp {
                 let mut capturer = SharedRunCapturer(capturer_arc);
                 let resolver = CatalogResolver(&catalog);
                 let icons = CatalogIcons(&catalog);
-                let focuser = X11WindowFocuser;
+                let focuser = OsWindowFocuser;
                 let ocr_engine = LeptessOcr::from_env_or_system()
                     .map_err(|e| {
                         eprintln!("sqyre: {e}");

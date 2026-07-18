@@ -16,8 +16,8 @@ use x11::xlib::{
 
 const ALLPLANES: u64 = !0;
 
-/// Shared X11 display connection (not Send across threads freely — mutex serializes).
-pub struct X11Capturer {
+/// Shared X11 display connection (public type [`OsCapturer`]; mutex serializes access).
+pub struct OsCapturer {
     inner: Mutex<X11State>,
 }
 
@@ -32,19 +32,19 @@ struct X11State {
 unsafe impl Send for X11State {}
 
 /// Process-wide capturer for UI offload (cloned via [`Arc`]; access serialized by inner Mutex).
-static SHARED_UI_CAPTURER: OnceLock<Result<Arc<X11Capturer>, String>> = OnceLock::new();
+static SHARED_UI_CAPTURER: OnceLock<Result<Arc<OsCapturer>, String>> = OnceLock::new();
 
 /// Shared capturer for UI-thread offload (preview tooltips, AutoPic, etc.).
-pub fn shared_capturer() -> Result<Arc<X11Capturer>, String> {
+pub fn shared_capturer() -> Result<Arc<OsCapturer>, String> {
     match SHARED_UI_CAPTURER
-        .get_or_init(|| X11Capturer::open().map(Arc::new).map_err(|e| e.to_string()))
+        .get_or_init(|| OsCapturer::open().map(Arc::new).map_err(|e| e.to_string()))
     {
         Ok(c) => Ok(Arc::clone(c)),
         Err(e) => Err(e.clone()),
     }
 }
 
-impl X11Capturer {
+impl OsCapturer {
     pub fn open() -> Result<Self, CaptureError> {
         unsafe {
             let display = XOpenDisplay(ptr::null());
@@ -215,7 +215,7 @@ impl Drop for X11State {
     }
 }
 
-impl ScreenCapturer for X11Capturer {
+impl ScreenCapturer for OsCapturer {
     fn capture_monitor(&mut self, display_index: i32) -> Result<RgbaImage, String> {
         if display_index != 0 {
             return Err(CaptureError::UnsupportedDisplay(display_index).into());
@@ -242,7 +242,7 @@ impl ScreenCapturer for X11Capturer {
 }
 
 /// [`ScreenCapturer`] over a shared [`Arc`] capturer (macro run thread).
-pub struct SharedRunCapturer(pub Arc<X11Capturer>);
+pub struct SharedRunCapturer(pub Arc<OsCapturer>);
 
 impl ScreenCapturer for SharedRunCapturer {
     fn capture_monitor(&mut self, display_index: i32) -> Result<RgbaImage, String> {
@@ -277,6 +277,6 @@ mod tests {
     #[test]
     fn open_or_skip() {
         // CI / headless: open may fail — that's ok.
-        let _ = X11Capturer::open();
+        let _ = OsCapturer::open();
     }
 }

@@ -3818,6 +3818,7 @@ dependencies = [
  "parking_lot",
  "sqyre-executor",
  "thiserror 2.0.18",
+ "windows",
  "x11",
 ]
 
