@@ -4,12 +4,12 @@
 //! struct that includes `type` plus flattened detection/condition/nav fields.
 
 use super::{
-    default_assignments, default_image_blur, default_loop_count, default_ocr_blur, default_ocr_text,
-    default_resize, default_target_color, default_true, default_wait_time, is_default_image_blur,
-    is_default_ocr_blur, is_default_ocr_text, is_default_resize, is_default_target_color, is_false,
-    is_true, is_zero_i32, Action, ActionKind, ConditionBlock, CoordinateRef, DetectionBranch,
-    ListColumn, MouseButton, NavigateSelectData, ScalarValue, VariableAssignment,
-    DEFAULT_SMOOTH_DELAY_MS, DEFAULT_SMOOTH_HIGH, DEFAULT_SMOOTH_LOW,
+    default_assignments, default_image_blur, default_loop_count, default_ocr_blur,
+    default_ocr_text, default_resize, default_target_color, default_true, default_wait_time,
+    is_default_image_blur, is_default_ocr_blur, is_default_ocr_text, is_default_resize,
+    is_default_target_color, is_false, is_true, is_zero_i32, Action, ActionKind, ConditionBlock,
+    CoordinateRef, DetectionBranch, ListColumn, MouseButton, NavigateSelectData, ScalarValue,
+    VariableAssignment, DEFAULT_SMOOTH_DELAY_MS, DEFAULT_SMOOTH_HIGH, DEFAULT_SMOOTH_LOW,
 };
 use serde::{Deserialize, Serialize};
 
