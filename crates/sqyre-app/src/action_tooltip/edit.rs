@@ -100,7 +100,13 @@ pub fn paint_edit_fields(
         ActionKind::Click { button, state } => {
             tip_wrapped_section(ui, |ui| {
                 let mut btn = button.as_str().to_string();
-                combo_str(ui, "Button", h::CLICK_BUTTON, &mut btn, options::CLICK_BUTTONS);
+                combo_str(
+                    ui,
+                    "Button",
+                    h::CLICK_BUTTON,
+                    &mut btn,
+                    options::CLICK_BUTTONS,
+                );
                 *button = MouseButton::parse(&btn);
                 ui.vertical(|ui| {
                     help::tip(ui.small("Up"), h::CLICK_STATE);
@@ -112,16 +118,16 @@ pub fn paint_edit_fields(
         ActionKind::Key { key, state } => {
             tip_wrapped_section(ui, |ui| {
                 ui.horizontal(|ui| {
-                var_ref_field(
-                    ui,
-                    "Key",
-                    h::KEY,
-                    key,
-                    known_vars,
-                    is_dark,
-                    W_VAR,
-                    active_macro,
-                );
+                    var_ref_field(
+                        ui,
+                        "Key",
+                        h::KEY,
+                        key,
+                        known_vars,
+                        is_dark,
+                        W_VAR,
+                        active_macro,
+                    );
                     if theme::record_icon_button(ui, "Record a key", !key_record.is_open())
                         .clicked()
                     {
@@ -169,9 +175,13 @@ pub fn paint_edit_fields(
                 drag_field(ui, "Smooth high", h::MOVE_SMOOTH_HIGH, smooth_high, |d| {
                     d.speed(0.01).range(0.0..=1.0)
                 });
-                drag_field(ui, "Smooth delay ms", h::MOVE_SMOOTH_DELAY, smooth_delay_ms, |d| {
-                    d.speed(1)
-                });
+                drag_field(
+                    ui,
+                    "Smooth delay ms",
+                    h::MOVE_SMOOTH_DELAY,
+                    smooth_delay_ms,
+                    |d| d.speed(1),
+                );
             });
         }
         ActionKind::Pause {
@@ -207,7 +217,10 @@ pub fn paint_edit_fields(
                 string_list_field(ui, "", continue_key, h::PAUSE_CONTINUE);
             });
             tip_wrapped_section(ui, |ui| {
-                help::tip(ui.checkbox(pass_through, "Pass through"), h::PAUSE_PASS_THROUGH);
+                help::tip(
+                    ui.checkbox(pass_through, "Pass through"),
+                    h::PAUSE_PASS_THROUGH,
+                );
             });
         }
         ActionKind::FocusWindow {
@@ -272,12 +285,23 @@ pub fn paint_edit_fields(
             });
             tip_wrapped_section(ui, |ui| {
                 help::tip(ui.checkbox(append, "Append"), h::SAVE_APPEND);
-                help::tip(ui.checkbox(append_newline, "Append newline"), h::SAVE_NEWLINE);
+                help::tip(
+                    ui.checkbox(append_newline, "Append newline"),
+                    h::SAVE_NEWLINE,
+                );
             });
         }
         ActionKind::Loop { name, count, .. } => {
             tip_wrapped_section(ui, |ui| {
-                scalar_field(ui, "Count", h::LOOP_COUNT, count, known_vars, is_dark, active_macro);
+                scalar_field(
+                    ui,
+                    "Count",
+                    h::LOOP_COUNT,
+                    count,
+                    known_vars,
+                    is_dark,
+                    active_macro,
+                );
                 text_field(ui, "Name", h::NAME, name);
             });
         }
@@ -287,7 +311,13 @@ pub fn paint_edit_fields(
             ..
         } => {
             condition_editor(ui, condition, known_vars, is_dark, active_macro, |ui| {
-                drag_field(ui, "Max iterations", h::MAX_ITERATIONS, max_iterations, |d| d);
+                drag_field(
+                    ui,
+                    "Max iterations",
+                    h::MAX_ITERATIONS,
+                    max_iterations,
+                    |d| d,
+                );
             });
         }
         ActionKind::Conditional { condition, .. } => {
@@ -389,7 +419,13 @@ pub fn paint_edit_fields(
             detection_branch_editor(ui, detection, known_vars, is_dark);
             tip_wrapped_section(ui, |ui| {
                 drag_field(ui, "Blur", h::OCR_BLUR, blur, |d| d);
-                drag_field(ui, "Min threshold", h::OCR_MIN_THRESHOLD, min_threshold, |d| d);
+                drag_field(
+                    ui,
+                    "Min threshold",
+                    h::OCR_MIN_THRESHOLD,
+                    min_threshold,
+                    |d| d,
+                );
                 drag_field(ui, "Resize", h::OCR_RESIZE, resize, |d| d.speed(0.01));
                 help::tip(ui.checkbox(grayscale, "Grayscale"), h::OCR_GRAYSCALE);
                 help::tip(ui.checkbox(threshold_otsu, "Threshold Otsu"), h::OCR_OTSU);
@@ -443,7 +479,13 @@ pub fn paint_edit_fields(
                         screen_click.arm_color();
                     }
                 });
-                drag_field(ui, "Color tolerance", h::PIXEL_TOLERANCE, color_tolerance, |d| d);
+                drag_field(
+                    ui,
+                    "Color tolerance",
+                    h::PIXEL_TOLERANCE,
+                    color_tolerance,
+                    |d| d,
+                );
             });
             detection_branch_editor(ui, detection, known_vars, is_dark);
         }
@@ -456,8 +498,18 @@ pub fn paint_edit_fields(
                 string_list_field(ui, "Chord up", &mut data.chords.up, h::NAV_CHORD_UP);
                 string_list_field(ui, "Chord down", &mut data.chords.down, h::NAV_CHORD_DOWN);
                 string_list_field(ui, "Chord left", &mut data.chords.left, h::NAV_CHORD_LEFT);
-                string_list_field(ui, "Chord right", &mut data.chords.right, h::NAV_CHORD_RIGHT);
-                string_list_field(ui, "Chord select", &mut data.chords.select, h::NAV_CHORD_SELECT);
+                string_list_field(
+                    ui,
+                    "Chord right",
+                    &mut data.chords.right,
+                    h::NAV_CHORD_RIGHT,
+                );
+                string_list_field(
+                    ui,
+                    "Chord select",
+                    &mut data.chords.select,
+                    h::NAV_CHORD_SELECT,
+                );
                 string_list_field(ui, "Chord back", &mut data.chords.back, h::NAV_CHORD_BACK);
             });
             tip_wrapped_section(ui, |ui| {
@@ -472,7 +524,10 @@ pub fn paint_edit_fields(
                     ),
                     h::NAV_MOVE_CURSOR,
                 );
-                help::tip(ui.checkbox(&mut data.options.smooth, "Smooth"), h::NAV_SMOOTH);
+                help::tip(
+                    ui.checkbox(&mut data.options.smooth, "Smooth"),
+                    h::NAV_SMOOTH,
+                );
                 help::tip(
                     ui.checkbox(&mut data.options.pass_through, "Pass through"),
                     h::NAV_PASS_THROUGH,
@@ -518,15 +573,30 @@ pub fn paint_edit_fields(
                 );
             });
             tip_wrapped_section(ui, |ui| {
-                text_field(ui, "Output ref", h::NAV_OUT_REF, &mut data.outputs.output_ref);
+                text_field(
+                    ui,
+                    "Output ref",
+                    h::NAV_OUT_REF,
+                    &mut data.outputs.output_ref,
+                );
                 text_field(
                     ui,
                     "Output graph",
                     h::NAV_OUT_GRAPH,
                     &mut data.outputs.output_graph,
                 );
-                text_field(ui, "Output row", h::NAV_OUT_ROW, &mut data.outputs.output_row);
-                text_field(ui, "Output col", h::NAV_OUT_COL, &mut data.outputs.output_col);
+                text_field(
+                    ui,
+                    "Output row",
+                    h::NAV_OUT_ROW,
+                    &mut data.outputs.output_row,
+                );
+                text_field(
+                    ui,
+                    "Output col",
+                    h::NAV_OUT_COL,
+                    &mut data.outputs.output_col,
+                );
                 text_field(
                     ui,
                     "Output collection",
@@ -574,7 +644,11 @@ fn targets_editor(
 ) {
     ui.horizontal(|ui| {
         help::tip(ui.label(egui::RichText::new("Items").strong()), h::IS_ITEMS);
-        if ui.button("Add / edit…").on_hover_text(h::IS_ITEMS).clicked() {
+        if ui
+            .button("Add / edit…")
+            .on_hover_text(h::IS_ITEMS)
+            .clicked()
+        {
             *picker = ActivePicker::Items {
                 search: String::new(),
                 staged: targets.clone(),
@@ -719,7 +793,13 @@ fn coord_picker_row(
     });
 }
 
-fn combo_str(ui: &mut egui::Ui, label: &str, help_text: &str, value: &mut String, options: &[&str]) {
+fn combo_str(
+    ui: &mut egui::Ui,
+    label: &str,
+    help_text: &str,
+    value: &mut String,
+    options: &[&str],
+) {
     ui.horizontal(|ui| {
         help::label(ui, label, help_text);
         let display = if value.is_empty() {
@@ -954,7 +1034,12 @@ fn condition_editor(
     tip_wrapped_section(ui, |ui| {
         text_field(ui, "Name", h::NAME, &mut condition.name);
         let mut all = condition.match_mode != MatchMode::Any;
-        if help::tip(ui.checkbox(&mut all, "Match all (uncheck = any)"), h::MATCH_ALL).changed() {
+        if help::tip(
+            ui.checkbox(&mut all, "Match all (uncheck = any)"),
+            h::MATCH_ALL,
+        )
+        .changed()
+        {
             condition.match_mode = if all { MatchMode::All } else { MatchMode::Any };
         }
         extra(ui);
@@ -1007,7 +1092,13 @@ fn detection_branch_editor(
 
 fn wait_editor(ui: &mut egui::Ui, wait: &mut WaitTilFoundConfig) {
     let mut mode = wait.repeat_mode.as_str().to_string();
-    combo_str(ui, "Repeat mode", h::REPEAT_MODE, &mut mode, options::REPEAT_MODES);
+    combo_str(
+        ui,
+        "Repeat mode",
+        h::REPEAT_MODE,
+        &mut mode,
+        options::REPEAT_MODES,
+    );
     wait.repeat_mode = RepeatMode::parse(&mode);
     // Once → all off; waituntilfound → timing only;
     // repeatwhilefound → timing + max iterations.

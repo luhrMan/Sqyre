@@ -58,9 +58,7 @@ fn run_search(
 ) {
     execute_macro_with(
         macro_,
-        ExecDeps::new(backend)
-            .capturer(capturer)
-            .resolver(resolver),
+        ExecDeps::new(backend).capturer(capturer).resolver(resolver),
     )
     .unwrap();
 }
@@ -362,10 +360,10 @@ fn image_search_caches_blurred_templates() {
         execute_macro_with(
             &mut macro_,
             ExecDeps::new(&mut backend)
-            .capturer(&mut capturer)
-            .resolver(&resolver)
-            .icons(&icons)
-            .close_matches_distance(close_matches),
+                .capturer(&mut capturer)
+                .resolver(&resolver)
+                .icons(&icons)
+                .close_matches_distance(close_matches),
         )
         .unwrap();
 
@@ -581,7 +579,12 @@ fn find_pixel_no_find_runs_branch_when_flag_set() {
     macro_.root = root_loop(vec![find_pixel_action(
         ActionId::new(),
         "#ff0000",
-        detection_branch(Some(15), true, Default::default(), coords_xy("foundX", "foundY")),
+        detection_branch(
+            Some(15),
+            true,
+            Default::default(),
+            coords_xy("foundX", "foundY"),
+        ),
     )]);
 
     run_search(&mut macro_, &mut backend, &mut capturer, &resolver);
@@ -980,7 +983,12 @@ fn ocr_no_find_runs_branch_when_flag_set() {
         ActionId::new(),
         "will-not-match-zzz",
         "ocrText",
-        detection_branch(Some(17), true, Default::default(), coords_xy("foundX", "foundY")),
+        detection_branch(
+            Some(17),
+            true,
+            Default::default(),
+            coords_xy("foundX", "foundY"),
+        ),
     )]);
 
     run_search_ocr(&mut macro_, &mut backend, &mut capturer, &resolver, &ocr);
@@ -1260,10 +1268,10 @@ fn image_search_wait_until_found_retries_then_succeeds() {
         execute_macro_with(
             &mut macro_,
             ExecDeps::new(&mut backend)
-            .capturer(&mut capturer)
-            .resolver(&resolver)
-            .icons(&icons)
-            .close_matches_distance(close_matches),
+                .capturer(&mut capturer)
+                .resolver(&resolver)
+                .icons(&icons)
+                .close_matches_distance(close_matches),
         )
         .unwrap();
 
@@ -1332,10 +1340,10 @@ fn image_search_repeat_while_found_then_stops() {
         execute_macro_with(
             &mut macro_,
             ExecDeps::new(&mut backend)
-            .capturer(&mut capturer)
-            .resolver(&resolver)
-            .icons(&icons)
-            .close_matches_distance(close_matches),
+                .capturer(&mut capturer)
+                .resolver(&resolver)
+                .icons(&icons)
+                .close_matches_distance(close_matches),
         )
         .unwrap();
 
@@ -1418,11 +1426,11 @@ fn image_search_multi_variant_matches_either_template() {
         execute_macro_with(
             &mut macro_,
             ExecDeps::new(&mut backend)
-            .capturer(&mut capturer)
-            .resolver(&resolver)
-            .icons(&icons)
-            .logger(&logger)
-            .close_matches_distance(close_matches),
+                .capturer(&mut capturer)
+                .resolver(&resolver)
+                .icons(&icons)
+                .logger(&logger)
+                .close_matches_distance(close_matches),
         )
         .unwrap();
 
@@ -1501,10 +1509,10 @@ fn image_search_uses_mask_path_when_present() {
         execute_macro_with(
             &mut macro_,
             ExecDeps::new(&mut backend)
-            .capturer(&mut capturer)
-            .resolver(&resolver)
-            .icons(&icons)
-            .close_matches_distance(close_matches),
+                .capturer(&mut capturer)
+                .resolver(&resolver)
+                .icons(&icons)
+                .close_matches_distance(close_matches),
         )
         .unwrap();
 
