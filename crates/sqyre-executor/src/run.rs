@@ -168,6 +168,61 @@ impl<'a> ExecDeps<'a> {
             variables_dir: None,
         }
     }
+
+    pub fn capturer(mut self, c: &'a mut dyn ScreenCapturer) -> Self {
+        self.capturer = Some(c);
+        self
+    }
+
+    pub fn resolver(mut self, r: &'a dyn CoordinateResolver) -> Self {
+        self.resolver = Some(r);
+        self
+    }
+
+    pub fn icons(mut self, i: &'a dyn IconStore) -> Self {
+        self.icons = Some(i);
+        self
+    }
+
+    pub fn ocr(mut self, o: &'a dyn OcrEngine) -> Self {
+        self.ocr = Some(o);
+        self
+    }
+
+    pub fn logger(mut self, l: &'a dyn ActionLogger) -> Self {
+        self.logger = Some(l);
+        self
+    }
+
+    pub fn stop_flag(mut self, f: &'a AtomicBool) -> Self {
+        self.stop_flag = Some(f);
+        self
+    }
+
+    pub fn continue_waiter(mut self, w: &'a dyn ContinueKeyWaiter) -> Self {
+        self.continue_waiter = Some(w);
+        self
+    }
+
+    pub fn window_focuser(mut self, f: &'a dyn WindowFocuser) -> Self {
+        self.window_focuser = Some(f);
+        self
+    }
+
+    pub fn highlighter(mut self, h: &'a dyn ActionHighlighter) -> Self {
+        self.highlighter = Some(h);
+        self
+    }
+
+    pub fn macros(mut self, m: &'a dyn MacroLookup) -> Self {
+        self.macros = Some(m);
+        self
+    }
+
+    pub fn close_matches_distance(mut self, d: i32) -> Self {
+        self.close_matches_distance = d;
+        self
+    }
 }
 
 /// Run a macro from a clean runtime variable store.

@@ -50,7 +50,7 @@ pub(crate) fn execute_find_pixel(
             ))
         },
         |found| found.is_some(),
-        |exec, macro_, found| {
+        |exec, macro_, found, _pass| {
             apply_find_pixel_outputs(exec, action_id, macro_, coords, *found);
             run_detection_outcome(
                 exec,

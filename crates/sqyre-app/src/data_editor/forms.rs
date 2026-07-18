@@ -26,6 +26,7 @@ use sqyre_persist::{
     MIN_OVERLAY_CORNER_RADIUS,
 };
 use sqyre_validate::validate_numeric_expression;
+use std::collections::HashSet;
 
 fn color_alpha_drag(ui: &mut egui::Ui, label: &str, color: &mut egui::Color32) {
     ui.label(label);
@@ -36,6 +37,31 @@ fn color_alpha_drag(ui: &mut egui::Ui, label: &str, color: &mut egui::Color32) {
         .changed()
     {
         *color = egui::Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), alpha);
+    }
+}
+
+/// Overlay validated coord chips on a preview rect.
+fn paint_coord_chips(
+    ui: &mut egui::Ui,
+    rect: egui::Rect,
+    known: &HashSet<String>,
+    is_dark: bool,
+    active_macro: Option<&Macro>,
+    chips: &mut [(&mut String, CardinalEdge, &str, &str)],
+) {
+    for (value, edge, placeholder, help_text) in chips {
+        let validation = validate_numeric_expression(value, active_macro);
+        paint_preview_coord_chip(
+            ui,
+            rect,
+            *edge,
+            placeholder,
+            value,
+            known,
+            is_dark,
+            &validation,
+            help_text,
+        );
     }
 }
 
@@ -365,29 +391,21 @@ impl DataEditor {
                 let y = form_coord_literal(&self.form_y);
                 let force = paint_preview_toolbar(ui);
                 let rect = previews.paint_point_panel(ui, x, y, force);
-                let vx = validate_numeric_expression(&self.form_x, active_macro);
-                let vy = validate_numeric_expression(&self.form_y, active_macro);
-                paint_preview_coord_chip(
+                paint_coord_chips(
                     ui,
                     rect,
-                    CardinalEdge::Left,
-                    "X",
-                    &mut self.form_x,
                     &known,
                     is_dark,
-                    &vx,
-                    help::DE_POINT_X,
-                );
-                paint_preview_coord_chip(
-                    ui,
-                    rect,
-                    CardinalEdge::Bottom,
-                    "Y",
-                    &mut self.form_y,
-                    &known,
-                    is_dark,
-                    &vy,
-                    help::DE_POINT_Y,
+                    active_macro,
+                    &mut [
+                        (&mut self.form_x, CardinalEdge::Left, "X", help::DE_POINT_X),
+                        (
+                            &mut self.form_y,
+                            CardinalEdge::Bottom,
+                            "Y",
+                            help::DE_POINT_Y,
+                        ),
+                    ],
                 );
             }
             EditorTab::SearchAreas => {
@@ -408,53 +426,38 @@ impl DataEditor {
                 let by = form_coord_literal(&self.form_bottom);
                 let force = paint_preview_toolbar(ui);
                 let rect = previews.paint_search_area_panel(ui, lx, ty, rx, by, force);
-                let v_top = validate_numeric_expression(&self.form_top, active_macro);
-                let v_bottom = validate_numeric_expression(&self.form_bottom, active_macro);
-                let v_left = validate_numeric_expression(&self.form_left, active_macro);
-                let v_right = validate_numeric_expression(&self.form_right, active_macro);
-                paint_preview_coord_chip(
+                paint_coord_chips(
                     ui,
                     rect,
-                    CardinalEdge::Top,
-                    "TopY",
-                    &mut self.form_top,
                     &known,
                     is_dark,
-                    &v_top,
-                    help::DE_AREA_TOP,
-                );
-                paint_preview_coord_chip(
-                    ui,
-                    rect,
-                    CardinalEdge::Bottom,
-                    "BottomY",
-                    &mut self.form_bottom,
-                    &known,
-                    is_dark,
-                    &v_bottom,
-                    help::DE_AREA_BOTTOM,
-                );
-                paint_preview_coord_chip(
-                    ui,
-                    rect,
-                    CardinalEdge::Left,
-                    "LeftX",
-                    &mut self.form_left,
-                    &known,
-                    is_dark,
-                    &v_left,
-                    help::DE_AREA_LEFT,
-                );
-                paint_preview_coord_chip(
-                    ui,
-                    rect,
-                    CardinalEdge::Right,
-                    "RightX",
-                    &mut self.form_right,
-                    &known,
-                    is_dark,
-                    &v_right,
-                    help::DE_AREA_RIGHT,
+                    active_macro,
+                    &mut [
+                        (
+                            &mut self.form_top,
+                            CardinalEdge::Top,
+                            "TopY",
+                            help::DE_AREA_TOP,
+                        ),
+                        (
+                            &mut self.form_bottom,
+                            CardinalEdge::Bottom,
+                            "BottomY",
+                            help::DE_AREA_BOTTOM,
+                        ),
+                        (
+                            &mut self.form_left,
+                            CardinalEdge::Left,
+                            "LeftX",
+                            help::DE_AREA_LEFT,
+                        ),
+                        (
+                            &mut self.form_right,
+                            CardinalEdge::Right,
+                            "RightX",
+                            help::DE_AREA_RIGHT,
+                        ),
+                    ],
                 );
             }
             EditorTab::Masks => {

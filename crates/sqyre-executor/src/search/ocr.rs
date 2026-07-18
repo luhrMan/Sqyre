@@ -78,7 +78,7 @@ pub(crate) fn execute_ocr(
             Ok(ocr_shot_and_match(exec, action_id, &ocr_params, macro_))
         },
         |(_, matched)| *matched,
-        |exec, macro_, (shot, matched)| {
+        |exec, macro_, (shot, matched), _pass| {
             apply_ocr_outputs(
                 exec,
                 action_id,
