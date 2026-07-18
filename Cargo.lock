@@ -3760,7 +3760,6 @@ dependencies = [
  "serde",
  "serde_yaml",
  "sqyre-varref",
- "thiserror 2.0.18",
  "uuid",
 ]
 
@@ -3770,10 +3769,9 @@ version = "0.1.0"
 dependencies = [
  "image",
  "rayon",
- "serde_yaml",
  "sqyre-domain",
+ "sqyre-hotkeys",
  "sqyre-match",
- "sqyre-varref",
  "sqyre-vision",
  "tempfile",
  "thiserror 2.0.18",
@@ -3794,7 +3792,6 @@ dependencies = [
  "arboard",
  "rustautogui",
  "sqyre-executor",
- "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -3824,7 +3821,6 @@ dependencies = [
 name = "sqyre-serialize"
 version = "0.1.0"
 dependencies = [
- "serde",
  "serde_yaml",
  "sqyre-domain",
  "thiserror 2.0.18",
@@ -3835,8 +3831,8 @@ dependencies = [
 name = "sqyre-validate"
 version = "0.1.0"
 dependencies = [
- "serde_yaml",
  "sqyre-domain",
+ "sqyre-hotkeys",
  "sqyre-varref",
  "thiserror 2.0.18",
 ]
@@ -3855,7 +3851,6 @@ dependencies = [
  "sqyre-domain",
  "sqyre-match",
  "tempfile",
- "thiserror 2.0.18",
 ]
 
 [[package]]

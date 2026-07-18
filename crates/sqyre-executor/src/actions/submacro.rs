@@ -1,9 +1,9 @@
 //! Nested macro orchestration: RunMacro.
 
-use crate::error::{ExecError, FlowSignal, Result};
+use crate::error::{ExecError, Result};
 use crate::highlight::{highlight_clear, highlight_cursor, highlight_fill};
 use crate::run::{execute_action, Executor};
-use sqyre_domain::{Action, ActionId, ActionKind, Macro};
+use sqyre_domain::{ActionId, ActionKind, Macro};
 
 pub(crate) fn execute_run_macro(
     exec: &mut Executor<'_>,
@@ -39,28 +39,8 @@ pub(crate) fn execute_run_macro(
     let caller_name = caller.name.clone();
     highlight_fill(exec.deps.highlighter, &caller_name, action_id, 0.0);
 
-    let children: Vec<Action> = target.root.children().to_vec();
-    let total = children.len();
-    let result = (|| {
-        for (i, child) in children.iter().enumerate() {
-            exec.check_stopped()?;
-            match execute_action(exec, child, &mut target) {
-                Err(ExecError::Flow(FlowSignal::Break)) => break,
-                Err(ExecError::Flow(FlowSignal::Continue)) => continue,
-                Err(e) => return Err(e),
-                Ok(()) => {}
-            }
-            if total > 0 {
-                highlight_fill(
-                    exec.deps.highlighter,
-                    &caller_name,
-                    action_id,
-                    (i + 1) as f64 / total as f64,
-                );
-            }
-        }
-        Ok(())
-    })();
+    // Run the target root Loop so its count and Break/Continue semantics match a direct run.
+    let result = execute_action(exec, &target.root.clone(), &mut target);
 
     highlight_clear(exec.deps.highlighter, &caller_name, action_id);
     highlight_cursor(exec.deps.highlighter, &target.name, None);

@@ -39,7 +39,6 @@ pub fn action_icon_glyph(action: &Action) -> &'static str {
     }
 }
 
-
 /// True when the pill value looks like a `${name}` / `{name}` var ref.
 pub fn looks_like_var_ref(text: &str) -> bool {
     let t = text.trim();

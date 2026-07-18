@@ -372,10 +372,8 @@ impl ProgramCatalog {
     }
 
     pub fn upsert_item(&mut self, program: &str, item: ProgramItem) -> Result<()> {
-        let p = self.program_mut(program)?;
         let key = item.name.clone();
-        p.items.insert(key, item);
-        Ok(())
+        upsert_named_entity(self, program, key, item, |p| &mut p.items)
     }
 
     pub fn rename_item(&mut self, program: &str, old: &str, new: &str) -> Result<()> {
@@ -414,81 +412,54 @@ impl ProgramCatalog {
     }
 
     pub fn delete_item(&mut self, program: &str, name: &str) -> Result<()> {
-        let p = self.program_mut(program)?;
-        if p.items.remove(name).is_none() {
-            return Err(PersistError::Message(format!("item {name:?} not found")));
-        }
-        Ok(())
+        delete_named_entity(self, program, name, "item", |p| &mut p.items)
     }
 
     pub fn upsert_point(&mut self, program: &str, point: ProgramPoint) -> Result<()> {
-        let res = self.default_resolution_key();
-        let p = self.program_mut(program)?;
-        ensure_resolution(p, &res);
         let key = point.name.clone();
-        p.points.get_mut(&res).unwrap().insert(key, point);
-        Ok(())
+        upsert_resolution_entity(self, program, key, point, |p| &mut p.points)
     }
 
     pub fn rename_point(&mut self, program: &str, old: &str, new: &str) -> Result<()> {
-        let new = new.trim();
-        let res = self.default_resolution_key();
-        let p = self.program_mut(program)?;
-        ensure_resolution(p, &res);
-        let pts = p.points.get_mut(&res).unwrap();
-        rename_keyed_map(pts, old, new, "point", |pt, n| pt.name = n)
+        rename_resolution_entity(
+            self,
+            program,
+            old,
+            new,
+            "point",
+            |p| &mut p.points,
+            |pt, n| pt.name = n,
+        )
     }
 
     pub fn delete_point(&mut self, program: &str, name: &str) -> Result<()> {
-        let res = self.default_resolution_key();
-        let p = self.program_mut(program)?;
-        let pts = p
-            .points
-            .get_mut(&res)
-            .ok_or_else(|| PersistError::Message(format!("no points for program {program}")))?;
-        if pts.remove(name).is_none() {
-            return Err(PersistError::Message(format!("point {name:?} not found")));
-        }
-        Ok(())
+        delete_resolution_entity(self, program, name, "point", |p| &mut p.points)
     }
 
     pub fn upsert_search_area(&mut self, program: &str, area: ProgramSearchArea) -> Result<()> {
-        let res = self.default_resolution_key();
-        let p = self.program_mut(program)?;
-        ensure_resolution(p, &res);
         let key = area.name.clone();
-        p.search_areas.get_mut(&res).unwrap().insert(key, area);
-        Ok(())
+        upsert_resolution_entity(self, program, key, area, |p| &mut p.search_areas)
     }
 
     pub fn rename_search_area(&mut self, program: &str, old: &str, new: &str) -> Result<()> {
-        let new = new.trim();
-        let res = self.default_resolution_key();
-        let p = self.program_mut(program)?;
-        ensure_resolution(p, &res);
-        let areas = p.search_areas.get_mut(&res).unwrap();
-        rename_keyed_map(areas, old, new, "search area", |sa, n| sa.name = n)
+        rename_resolution_entity(
+            self,
+            program,
+            old,
+            new,
+            "search area",
+            |p| &mut p.search_areas,
+            |sa, n| sa.name = n,
+        )
     }
 
     pub fn delete_search_area(&mut self, program: &str, name: &str) -> Result<()> {
-        let res = self.default_resolution_key();
-        let p = self.program_mut(program)?;
-        let areas = p.search_areas.get_mut(&res).ok_or_else(|| {
-            PersistError::Message(format!("no search areas for program {program}"))
-        })?;
-        if areas.remove(name).is_none() {
-            return Err(PersistError::Message(format!(
-                "search area {name:?} not found"
-            )));
-        }
-        Ok(())
+        delete_resolution_entity(self, program, name, "search area", |p| &mut p.search_areas)
     }
 
     pub fn upsert_mask(&mut self, program: &str, mask: ProgramMask) -> Result<()> {
-        let p = self.program_mut(program)?;
         let key = mask.name.clone();
-        p.masks.insert(key, mask);
-        Ok(())
+        upsert_named_entity(self, program, key, mask, |p| &mut p.masks)
     }
 
     pub fn rename_mask(&mut self, program: &str, old: &str, new: &str) -> Result<()> {
@@ -514,10 +485,8 @@ impl ProgramCatalog {
 
     pub fn delete_mask(&mut self, program: &str, name: &str) -> Result<()> {
         let path = self.mask_image_path(program, name);
+        delete_named_entity(self, program, name, "mask", |p| &mut p.masks)?;
         let p = self.program_mut(program)?;
-        if p.masks.remove(name).is_none() {
-            return Err(PersistError::Message(format!("mask {name:?} not found")));
-        }
         for item in p.items.values_mut() {
             if item.mask == name {
                 item.mask.clear();
@@ -532,10 +501,8 @@ impl ProgramCatalog {
         program: &str,
         collection: ProgramCollection,
     ) -> Result<()> {
-        let p = self.program_mut(program)?;
         let key = collection.name.clone();
-        p.collections.insert(key, collection);
-        Ok(())
+        upsert_named_entity(self, program, key, collection, |p| &mut p.collections)
     }
 
     pub fn rename_collection(&mut self, program: &str, old: &str, new: &str) -> Result<()> {
@@ -559,12 +526,7 @@ impl ProgramCatalog {
 
     pub fn delete_collection(&mut self, program: &str, name: &str) -> Result<()> {
         let path = self.collection_image_path(program, name);
-        let p = self.program_mut(program)?;
-        if p.collections.remove(name).is_none() {
-            return Err(PersistError::Message(format!(
-                "collection {name:?} not found"
-            )));
-        }
+        delete_named_entity(self, program, name, "collection", |p| &mut p.collections)?;
         let _ = std::fs::remove_file(path);
         Ok(())
     }
@@ -586,7 +548,6 @@ impl ProgramCatalog {
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {

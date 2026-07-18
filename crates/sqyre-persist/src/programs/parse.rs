@@ -254,7 +254,7 @@ pub(super) fn yaml_string_field(v: Option<&Value>, default: &str) -> String {
 
 pub(super) fn scalar_field(v: Option<&Value>) -> ScalarValue {
     match v {
-        Some(val) => ScalarValue::from_yaml(val),
+        Some(val) => ScalarValue::from_yaml_value(val),
         None => ScalarValue::Null,
     }
 }

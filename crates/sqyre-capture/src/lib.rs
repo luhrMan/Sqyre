@@ -54,10 +54,7 @@ pub struct SharedRunCapturer(pub std::sync::Arc<X11Capturer>);
 
 #[cfg(not(target_os = "linux"))]
 impl sqyre_executor::ScreenCapturer for SharedRunCapturer {
-    fn capture_monitor(
-        &mut self,
-        _display_index: i32,
-    ) -> Result<image::RgbaImage, String> {
+    fn capture_monitor(&mut self, _display_index: i32) -> Result<image::RgbaImage, String> {
         Err("screen capture: not supported on this platform".into())
     }
     fn capture_rect(
@@ -127,9 +124,7 @@ pub fn monitor_count() -> usize {
         return 1;
     };
     let mut wrap = SharedRunCapturer(capturer);
-    wrap.monitor_sizes()
-        .map(|s| s.len().max(1))
-        .unwrap_or(1)
+    wrap.monitor_sizes().map(|s| s.len().max(1)).unwrap_or(1)
 }
 
 /// Open top-level windows with stable executable path and title.

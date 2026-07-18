@@ -204,14 +204,8 @@ fn format_wait_time(t: &ScalarValue) -> String {
     }
 }
 
-fn yaml_display(v: &serde_yaml::Value) -> String {
-    match v {
-        serde_yaml::Value::Null => String::new(),
-        serde_yaml::Value::Bool(b) => b.to_string(),
-        serde_yaml::Value::Number(n) => n.to_string(),
-        serde_yaml::Value::String(s) => s.clone(),
-        other => format!("{other:?}"),
-    }
+fn yaml_display(v: &ScalarValue) -> String {
+    v.as_display()
 }
 
 fn match_label(mode: MatchMode) -> &'static str {
@@ -678,7 +672,7 @@ mod tests {
             id: ActionId::new(),
             kind: ActionKind::SetVariable {
                 variable_name: "count".into(),
-                value: serde_yaml::Value::Number(1.into()),
+                value: ScalarValue::Int(1),
             },
         };
         let pills = a.tree_summary_pills();
@@ -799,7 +793,7 @@ mod tests {
             id: ActionId::new(),
             kind: ActionKind::SetVariable {
                 variable_name: "sum".into(),
-                value: serde_yaml::Value::String("1+2".into()),
+                value: ScalarValue::String("1+2".into()),
             },
         };
         let pills = a.tree_summary_pills();
@@ -855,7 +849,7 @@ mod tests {
             (
                 ActionKind::SetVariable {
                     variable_name: "a".into(),
-                    value: serde_yaml::Value::String("1+2".into()),
+                    value: ScalarValue::String("1+2".into()),
                 },
                 "x",
             ),

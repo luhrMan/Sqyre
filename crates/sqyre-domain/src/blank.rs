@@ -139,7 +139,7 @@ fn blank_kind(action_type: &str) -> Option<ActionKind> {
         },
         "setvariable" => ActionKind::SetVariable {
             variable_name: String::new(),
-            value: serde_yaml::Value::String(String::new()),
+            value: ScalarValue::String(String::new()),
         },
         "foreachrow" => ActionKind::ForEachRow {
             name: String::new(),

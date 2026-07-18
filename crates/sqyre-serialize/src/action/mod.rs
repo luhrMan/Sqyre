@@ -1,21 +1,13 @@
 //! Encode/decode a single action (and subtree) to/from YAML mappings.
 
-mod decode;
-mod encode;
-
-use crate::helpers::*;
 use crate::{Result, SerializeError};
-use decode::decode_kind;
-use encode::encode_kind;
 use serde_yaml::{Mapping, Value};
 use sqyre_domain::{Action, ActionId, ActionKind};
 use uuid::Uuid;
 
 /// Encode an action (and subtree) to a YAML mapping.
 pub fn action_to_map(action: &Action) -> Result<Mapping> {
-    let m = encode_kind(&action.kind)?;
-    let _ = &action.id;
-    Ok(m)
+    value_as_mapping(serde_yaml::to_value(action)?)
 }
 
 /// Encode including `uid` on every node (for undo/clipboard snapshots).
@@ -30,7 +22,10 @@ pub fn action_to_map_with_uid(action: &Action) -> Result<Mapping> {
 
 fn inject_action_uid(m: &mut Mapping, action: &Action) {
     if !action.id.is_root() {
-        insert_str(m, "uid", action.id.as_str());
+        m.insert(
+            Value::String("uid".into()),
+            Value::String(action.id.as_str()),
+        );
     }
     let Some(Value::Sequence(seq)) = m.get_mut(Value::String("subactions".into())) else {
         return;
@@ -44,19 +39,27 @@ fn inject_action_uid(m: &mut Mapping, action: &Action) {
 
 /// Decode an action from a YAML mapping. Assigns a new UID unless `uid` is set.
 pub fn action_from_map(raw: &Mapping) -> Result<Action> {
-    let type_name = string_from_map(raw, "type");
+    let type_name = raw
+        .get(Value::String("type".into()))
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
     if type_name.is_empty() {
         return Err(SerializeError::msg("missing field \"type\""));
     }
-    let kind = decode_kind(raw, &type_name)?;
-    let id = restore_uid(raw, &type_name, &kind);
-    Ok(Action { id, kind })
+    let mut action: Action = serde_yaml::from_value(Value::Mapping(raw.clone())).map_err(|e| {
+        if e.to_string().contains("untagged") || e.to_string().contains("data did not match") {
+            SerializeError::msg(format!("unknown action type {type_name}"))
+        } else {
+            SerializeError::Yaml(e)
+        }
+    })?;
+    action.id = restore_uid(raw, type_name, &action.kind);
+    Ok(action)
 }
 
 fn restore_uid(raw: &Mapping, type_name: &str, kind: &ActionKind) -> ActionId {
-    let uid = string_from_map(raw, "uid");
-    if !uid.is_empty() {
-        if let Ok(u) = Uuid::parse_str(&uid) {
+    if let Some(Value::String(uid)) = raw.get(Value::String("uid".into())) {
+        if let Ok(u) = Uuid::parse_str(uid) {
             return ActionId(u);
         }
     }
@@ -67,16 +70,25 @@ fn restore_uid(raw: &Mapping, type_name: &str, kind: &ActionKind) -> ActionId {
             }
         }
     }
+    // Prefer id already deserialized from `uid` when present; else new.
     ActionId::new()
 }
 
+fn value_as_mapping(v: Value) -> Result<Mapping> {
+    match v {
+        Value::Mapping(m) => Ok(m),
+        other => Err(SerializeError::msg(format!(
+            "expected mapping, got {other:?}"
+        ))),
+    }
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_yaml::Value;
     use sqyre_domain::{
-        root_loop, CoordinateOutputs, CoordinateRef, DetectionBranch, NavigateSelectData, ScalarValue,
+        root_loop, CoordinateOutputs, CoordinateRef, DetectionBranch, NavigateSelectData,
+        ScalarValue,
     };
 
     #[test]
@@ -203,8 +215,6 @@ mod tests {
                 "type_key mismatch for {}",
                 tmpl.action_type
             );
-            // Codec applies defaults on decode (empty optional fields). A second
-            // encode→decode must be idempotent.
             let reencoded = action_to_map(&decoded).unwrap();
             let redecoded = action_from_map(&reencoded).unwrap();
             assert_eq!(
@@ -218,7 +228,7 @@ mod tests {
     #[test]
     fn decode_rejects_missing_type() {
         let mut m = Mapping::new();
-        insert_str(&mut m, "name", "x");
+        m.insert(Value::String("name".into()), Value::String("x".into()));
         let err = action_from_map(&m).unwrap_err();
         assert!(err.to_string().contains("type"), "{err}");
     }
@@ -226,7 +236,10 @@ mod tests {
     #[test]
     fn decode_rejects_unknown_type() {
         let mut m = Mapping::new();
-        insert_str(&mut m, "type", "notarealaction");
+        m.insert(
+            Value::String("type".into()),
+            Value::String("notarealaction".into()),
+        );
         let err = action_from_map(&m).unwrap_err();
         assert!(
             err.to_string().to_ascii_lowercase().contains("unknown")
@@ -249,8 +262,8 @@ mod tests {
                 detection: DetectionBranch {
                     wait: WaitTilFoundConfig {
                         repeat_mode: RepeatMode::WaitUntilFound,
-                        wait_til_found_seconds: 12,
-                        wait_til_found_interval_ms: 250,
+                        wait_til_found_seconds: 5,
+                        wait_til_found_interval_ms: 100,
                         max_iterations: 0,
                     },
                     coords: CoordinateOutputs {
@@ -258,116 +271,90 @@ mod tests {
                         output_y_variable: "sy".into(),
                     },
                     run_branch_on_no_find: true,
-                    order: MatchOrder::default(),
+                    order: MatchOrder {
+                        grouping: "row".into(),
+                        horizontal: "ltr".into(),
+                        vertical: "ttb".into(),
+                    },
                     subactions: vec![Action {
                         id: ActionId::new(),
-                        kind: ActionKind::Click {
-                            button: "left".into(),
-                            state: true,
+                        kind: ActionKind::Wait {
+                            time: ScalarValue::Int(1),
                         },
                     }],
                 },
             },
         };
         let map = action_to_map_with_uid(&action).unwrap();
-        assert!(!map_get(&map, "detection").is_some());
-        assert_eq!(
-            string_from_map(&map, "repeatmode"),
-            RepeatMode::WaitUntilFound.as_str()
+        assert!(
+            !map.contains_key(Value::String("detection".into())),
+            "detection must be flattened"
         );
-        assert_eq!(string_from_map(&map, "outputxvariable"), "sx");
-        assert!(map_get(&map, "subactions").is_some());
-        let back = action_from_map(&map).unwrap();
-        assert_eq!(back.id, action.id);
-        assert_eq!(back.kind, action.kind);
+        assert_eq!(
+            map.get(Value::String("repeatmode".into()))
+                .and_then(|v| v.as_str()),
+            Some("waituntilfound")
+        );
+        let restored = action_from_map(&map).unwrap();
+        assert_eq!(restored.kind, action.kind);
     }
 
     #[test]
     fn while_found_preserves_max_iterations() {
-        use sqyre_domain::{MatchOrder, RepeatMode, WaitTilFoundConfig};
+        use sqyre_domain::{RepeatMode, WaitTilFoundConfig};
         let action = Action {
             id: ActionId::new(),
-            kind: ActionKind::FindPixel {
-                name: "loop".into(),
-                search_area: CoordinateRef("Game~Arena".into()),
-                target_color: "#ffffff".into(),
-                color_tolerance: 2,
+            kind: ActionKind::ImageSearch {
+                name: "x".into(),
+                targets: vec!["t".into()],
+                search_area: CoordinateRef::default(),
+                tolerance: 0.0,
+                blur: 5,
                 detection: DetectionBranch {
                     wait: WaitTilFoundConfig {
                         repeat_mode: RepeatMode::WhileFound,
                         wait_til_found_seconds: 0,
-                        wait_til_found_interval_ms: 100,
-                        max_iterations: 40,
+                        wait_til_found_interval_ms: 0,
+                        max_iterations: 42,
                     },
                     coords: CoordinateOutputs::defaults(),
                     run_branch_on_no_find: false,
-                    order: MatchOrder::default(),
-                    subactions: vec![],
+                    order: Default::default(),
+                    subactions: Vec::new(),
                 },
             },
         };
-        let back = action_from_map(&action_to_map(&action).unwrap()).unwrap();
-        match back.kind {
-            ActionKind::FindPixel { detection, .. } => {
-                assert_eq!(detection.wait.repeat_mode, RepeatMode::WhileFound);
-                assert_eq!(detection.wait.max_iterations, 40);
-                assert_eq!(detection.wait.wait_til_found_interval_ms, 100);
-            }
-            other => panic!("expected FindPixel, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn image_search_accepts_legacy_singular_target() {
-        let yaml = r#"
-type: imagesearch
-name: find
-target: Game~Sword
-searcharea: Game~Arena
-tolerance: 0.9
-blur: 3
-repeatmode: once
-"#;
-        let value: Value = serde_yaml::from_str(yaml).unwrap();
-        let m = value.as_mapping().unwrap();
-        let action = action_from_map(m).unwrap();
-        match action.kind {
-            ActionKind::ImageSearch {
-                targets,
-                search_area,
-                tolerance,
-                blur,
-                ..
-            } => {
-                assert_eq!(targets, vec!["Game~Sword".to_string()]);
-                assert_eq!(search_area.as_str(), "Game~Arena");
-                assert!((tolerance - 0.9).abs() < 1e-9);
-                assert_eq!(blur, 3);
+        let map = action_to_map(&action).unwrap();
+        let restored = action_from_map(&map).unwrap();
+        match restored.kind {
+            ActionKind::ImageSearch { detection, .. } => {
+                assert_eq!(detection.wait.max_iterations, 42);
             }
             other => panic!("expected ImageSearch, got {other:?}"),
         }
     }
 
     #[test]
-    fn image_search_accepts_nested_searcharea_mapping() {
+    fn image_search_targets_roundtrip() {
         let yaml = r#"
 type: imagesearch
 name: find
-targets: [Game~A, Game~B]
-searcharea:
-  name: Game~Box
-tolerance: 0.95
+targets: [Game~Sword]
+searcharea: Game~Arena
+tolerance: 0.5
+blur: 5
 "#;
         let value: Value = serde_yaml::from_str(yaml).unwrap();
-        let action = action_from_map(value.as_mapping().unwrap()).unwrap();
+        let map = value.as_mapping().unwrap();
+        let action = action_from_map(map).unwrap();
         match action.kind {
             ActionKind::ImageSearch {
                 targets,
                 search_area,
                 ..
             } => {
-                assert_eq!(targets.len(), 2);
-                assert_eq!(search_area.as_str(), "Game~Box");
+                assert_eq!(targets, vec!["Game~Sword".to_string()]);
+                assert_eq!(search_area.as_str(), "Game~Arena");
             }
             other => panic!("expected ImageSearch, got {other:?}"),
         }

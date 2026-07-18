@@ -9,6 +9,7 @@ mod app_macro_ops;
 mod app_run;
 mod assets;
 mod catalog;
+mod chord_record;
 mod collection_capture;
 mod data_editor;
 mod data_editor_preview;

@@ -25,8 +25,13 @@ license = "GPL-3.0-only"
 repository = "https://github.com/luhrMan/Squire"
 
 # Shared lint policy. Opt in per crate with `[lints] workspace = true`.
+# CI enforces these as errors via `make clippy` (`-D warnings`).
+[workspace.lints.rust]
+unused = "warn"
+
 [workspace.lints.clippy]
 all = "warn"
+
 
 [workspace.dependencies]
 purecv = { version = "0.6.1", default-features = false, features = ["std", "parallel"] }

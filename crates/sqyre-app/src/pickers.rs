@@ -1337,7 +1337,7 @@ pub enum PickerResult {
 
 /// Static option lists for ComboBox fields (>2 options).
 pub mod options {
-    use sqyre_domain::{OP_EQUALS, RepeatMode};
+    use sqyre_domain::{RepeatMode, OP_EQUALS};
 
     pub const CLICK_BUTTONS: &[&str] = &["left", "right", "center", "scroll"];
 

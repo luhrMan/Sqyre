@@ -1,20 +1,20 @@
 //! Image search action: capture → match template variants → run children per hit.
 
-use super::common::{maybe_repeat_while_found, maybe_wait_until_found, run_children_flow, set_coord_outputs};
+use super::common::{
+    maybe_repeat_while_found, maybe_wait_until_found, run_children_flow, set_coord_outputs,
+};
 use crate::action_log::{crop_match_preview, draw_rect_rgb};
 use crate::backends::{DesktopRect, ItemMeta};
 use crate::error::{ExecError, FlowSignal, Result};
 use crate::highlight::{highlight_clear, highlight_fill};
 use crate::run::Executor;
 use rayon::prelude::*;
-use sqyre_domain::{Action, ActionKind, Macro, ScalarValue};
+use sqyre_domain::{Action, ActionKind, Macro, MatchOrder, ScalarValue};
 use sqyre_match::{
     blur_image_owned, find_template_matches_preblurred_with_integrals, prepare_search_integrals,
     search_blur_kernel, ImageBuf, Point, DEFAULT_CLOSE_MATCHES_DISTANCE,
 };
-use sqyre_vision::{
-    get_cached_blurred_template, get_cached_image_mask, load_rgb_image,
-};
+use sqyre_vision::{get_cached_blurred_template, get_cached_image_mask, load_rgb_image};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -40,13 +40,14 @@ pub(crate) fn execute_image_search(
         wait,
         coords,
         run_branch_on_no_find,
+        order,
         subactions,
-        ..
     } = detection;
 
     highlight_fill(exec.deps.highlighter, &macro_.name, action.id, 0.0);
     let action_id = action.id;
     let macro_name = macro_.name.clone();
+    let order = order.clone();
     let result = (|| {
         let mut results = capture_and_match(
             exec,
@@ -55,8 +56,9 @@ pub(crate) fn execute_image_search(
             search_area,
             *tolerance,
             *blur,
+            &order,
             macro_,
-        );
+        )?;
 
         if wait.wait_until_found_active() && results.is_empty() {
             exec.log(
@@ -75,8 +77,9 @@ pub(crate) fn execute_image_search(
                 search_area,
                 *tolerance,
                 *blur,
+                &order,
                 macro_,
-            );
+            )?;
             Ok(!results.is_empty())
         })?;
 
@@ -89,8 +92,9 @@ pub(crate) fn execute_image_search(
                     search_area,
                     *tolerance,
                     *blur,
+                    &order,
                     macro_,
-                );
+                )?;
             }
             if results.is_empty() {
                 return Ok(false);
@@ -164,6 +168,7 @@ fn close_matches_distance(exec: &Executor<'_>) -> i32 {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn capture_and_match(
     exec: &mut Executor<'_>,
     action_id: sqyre_domain::ActionId,
@@ -171,34 +176,30 @@ fn capture_and_match(
     search_area: &sqyre_domain::CoordinateRef,
     tolerance: f64,
     blur: i32,
+    order: &MatchOrder,
     macro_: &Macro,
-) -> Vec<NamedPoint> {
-    let Some(resolver) = exec.deps.resolver else {
-        exec.log(action_id, "Image Search: missing CoordinateResolver");
-        return Vec::new();
-    };
+) -> Result<Vec<NamedPoint>> {
+    let resolver = exec.deps.resolver.ok_or_else(|| {
+        ExecError::Message("Image Search: coordinate resolver not configured".into())
+    })?;
     if exec.deps.capturer.is_none() {
-        exec.log(action_id, "Image Search: missing ScreenCapturer");
-        return Vec::new();
+        return Err(ExecError::Message(
+            "Image Search: screen capturer not configured".into(),
+        ));
     }
-    let Some(icons) = exec.deps.icons else {
-        exec.log(action_id, "Image Search: missing IconStore");
-        return Vec::new();
-    };
+    let icons = exec
+        .deps
+        .icons
+        .ok_or_else(|| ExecError::Message("Image Search: icon store not configured".into()))?;
 
-    let (lx, ty, rx, by) = match resolver.resolve_search_area(search_area, macro_) {
-        Ok(v) => v,
-        Err(e) => {
-            exec.log(
-                action_id,
-                format!(
-                    "Image Search: resolve search area {}: {e}",
-                    search_area.display_label()
-                ),
-            );
-            return Vec::new();
-        }
-    };
+    let (lx, ty, rx, by) = resolver
+        .resolve_search_area(search_area, macro_)
+        .map_err(|e| {
+            ExecError::Message(format!(
+                "Image Search: resolve search area {}: {e}",
+                search_area.display_label()
+            ))
+        })?;
     let w = (rx - lx).max(0);
     let h = (by - ty).max(0);
     exec.log(
@@ -209,18 +210,12 @@ fn capture_and_match(
     );
 
     let capture_started = Instant::now();
-    let (img, origin) = match exec.deps.capturer.as_mut() {
-        Some(c) => match c.capture_search_area_rgb(lx, ty, rx, by) {
-            Ok(v) => v,
-            Err(e) => {
-                exec.log(action_id, format!("Image Search: capture: {e}"));
-                return Vec::new();
-            }
-        },
-        None => {
-            exec.log(action_id, "Image Search: missing ScreenCapturer");
-            return Vec::new();
-        }
+    let (img, origin) = {
+        let c = exec.deps.capturer.as_mut().ok_or_else(|| {
+            ExecError::Message("Image Search: screen capturer not configured".into())
+        })?;
+        c.capture_search_area_rgb(lx, ty, rx, by)
+            .map_err(|e| ExecError::Message(format!("Image Search: capture: {e}")))?
     };
     let search = img.into_image_buf();
     exec.log_image(action_id, "1. Capture (search area)", &search);
@@ -228,13 +223,8 @@ fn capture_and_match(
     let want_pipeline = exec.log_images_enabled();
     // Keep an unblurred copy only for diagnostics overlays / match crops.
     let search_raw = want_pipeline.then(|| search.clone());
-    let search_blurred = match blur_image_owned(search, kernel) {
-        Ok(b) => b,
-        Err(e) => {
-            exec.log(action_id, format!("Image Search: blur: {e}"));
-            return Vec::new();
-        }
-    };
+    let search_blurred = blur_image_owned(search, kernel)
+        .map_err(|e| ExecError::Message(format!("Image Search: blur: {e}")))?;
     if blur > 0 {
         exec.log_image(
             action_id,
@@ -550,20 +540,45 @@ fn capture_and_match(
         ),
     );
     exec.log_timing(action_id, "match", match_started.elapsed());
-    sort_points(&mut out);
-    out
+    sort_points(&mut out, order);
+    Ok(out)
 }
 
-pub(super) fn sort_points(pts: &mut [NamedPoint]) {
+const ORDER_BAND_PX: i32 = 5;
+
+/// Sort matches using [`MatchOrder`]. Empty fields keep the historical default:
+/// row grouping (±5px Y band), left-to-right, top-to-bottom.
+pub(super) fn sort_points(pts: &mut [NamedPoint], order: &MatchOrder) {
+    let grouping = order.grouping.trim().to_ascii_lowercase();
+    let h_rev = order.horizontal.eq_ignore_ascii_case("right_to_left");
+    let v_rev = order.vertical.eq_ignore_ascii_case("bottom_to_top");
+
     pts.sort_by(|a, b| {
         let ay = a.point.y + a.origin.y;
         let by = b.point.y + b.origin.y;
         let ax = a.point.x + a.origin.x;
         let bx = b.point.x + b.origin.x;
-        if (ay - by).abs() <= 5 {
-            ax.cmp(&bx).then(a.name.cmp(&b.name))
-        } else {
-            ay.cmp(&by).then(ax.cmp(&bx))
+        let cmp_x = if h_rev { bx.cmp(&ax) } else { ax.cmp(&bx) };
+        let cmp_y = if v_rev { by.cmp(&ay) } else { ay.cmp(&by) };
+        let name = a.name.cmp(&b.name);
+
+        match grouping.as_str() {
+            "column" => {
+                if (ax - bx).abs() <= ORDER_BAND_PX {
+                    cmp_y.then(name)
+                } else {
+                    cmp_x.then(cmp_y).then(name)
+                }
+            }
+            "none" => cmp_y.then(cmp_x).then(name),
+            // "" | "row" | anything else → row banding (legacy default)
+            _ => {
+                if (ay - by).abs() <= ORDER_BAND_PX {
+                    cmp_x.then(name)
+                } else {
+                    cmp_y.then(cmp_x).then(name)
+                }
+            }
         }
     });
 }

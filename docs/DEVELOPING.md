@@ -10,7 +10,10 @@ From the repo root:
 make            # ./bin/sqyre (debug)
 make release    # ./bin/sqyre (release)
 make run        # cargo run -p sqyre-app
-make test
+make check      # fmt --check + clippy (-D warnings) + cargo deny
+make machete    # unused crate deps
+make test       # cargo nextest (falls back to cargo test)
+make coverage   # llvm-cov HTML + lcov under target/coverage/
 make docs-media # regenerate docs/images screenshots
 make appimage   # bin/*.AppImage (Linux)
 make tessdata   # download eng.traineddata into assets/tessdata/
@@ -37,7 +40,14 @@ Build caches (all gitignored):
 |--------|--------|
 | `all` / `sqyre` | `bin/sqyre` (debug) — **default** |
 | `release` | `bin/sqyre` (release) |
-| `test` | `cargo test` (workspace root) |
+| `check-fmt` | `cargo fmt --all -- --check` |
+| `fmt` | `cargo fmt --all` (write) |
+| `clippy` | `cargo clippy --workspace --all-targets` (`-D warnings`) |
+| `deny` | `cargo deny check` (licenses / advisories / bans / sources) |
+| `machete` | `cargo machete` (unused dependencies) |
+| `check` | `check-fmt` + `clippy` + `deny` (CI quality gates) |
+| `test` | `cargo nextest run --workspace` (falls back to `cargo test`) |
+| `coverage` | llvm-cov HTML + `lcov.info` under `target/coverage/` (no % gate) |
 | `run` | `cargo run -p sqyre-app` |
 | `docs-media` | Regenerate `docs/images/` screenshots |
 | `appimage` | `bin/Sqyre-*.AppImage` |

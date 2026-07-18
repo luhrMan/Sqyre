@@ -9,7 +9,6 @@ description = "YAML encode/decode for macros and actions"
 workspace = true
 
 [dependencies]
-serde = { workspace = true }
 serde_yaml = { workspace = true }
 thiserror = { workspace = true }
 uuid = { workspace = true }

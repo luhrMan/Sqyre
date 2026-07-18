@@ -47,11 +47,7 @@ struct SearchCache {
 
 impl SearchCache {
     fn touch(&mut self, kind: EntryKind, key: &str) {
-        let Some(i) = self
-            .lru
-            .iter()
-            .position(|(k, s)| *k == kind && s == key)
-        else {
+        let Some(i) = self.lru.iter().position(|(k, s)| *k == kind && s == key) else {
             return;
         };
         if i + 1 == self.lru.len() {

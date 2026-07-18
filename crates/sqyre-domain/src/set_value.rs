@@ -1,7 +1,6 @@
 //! Set-variable value resolution.
 
 use crate::{evaluate_expression, numeric_to_scalar, Macro, ScalarValue};
-use serde_yaml::Value;
 
 type Result<T> = std::result::Result<T, String>;
 
@@ -43,8 +42,11 @@ fn is_expr_number_char(b: u8) -> bool {
     b.is_ascii_digit() || b == b'.'
 }
 
-/// Resolve `${references}` in plain text; errors on unresolved refs.
-pub fn resolve_variables_in_text(text: &str, macro_: &Macro) -> Result<String> {
+/// Expand `${references}` once. Values that themselves contain refs are left as-is.
+pub fn expand_variable_refs(text: &str, macro_: &Macro) -> Result<String> {
+    if !sqyre_varref::contains(text) {
+        return Ok(text.to_string());
+    }
     let segs = sqyre_varref::segments(text);
     if segs.is_empty() {
         return Ok(text.to_string());
@@ -61,6 +63,12 @@ pub fn resolve_variables_in_text(text: &str, macro_: &Macro) -> Result<String> {
             .ok_or_else(|| format!("unresolved variable ${{{}}}", seg.name))?;
         out.push_str(&val.as_display());
     }
+    Ok(out)
+}
+
+/// Resolve `${references}` in plain text; errors on unresolved or nested refs.
+pub fn resolve_variables_in_text(text: &str, macro_: &Macro) -> Result<String> {
+    let out = expand_variable_refs(text, macro_)?;
     if sqyre_varref::contains(&out) {
         return Err(format!("unresolved variable reference in {text:?}"));
     }
@@ -68,12 +76,11 @@ pub fn resolve_variables_in_text(text: &str, macro_: &Macro) -> Result<String> {
 }
 
 /// Resolve a Set action value: literals, text, `${refs}`, and arithmetic expressions.
-pub fn resolve_set_variable_value(value: &Value, macro_: &Macro) -> Result<ScalarValue> {
+pub fn resolve_set_variable_value(value: &ScalarValue, macro_: &Macro) -> Result<ScalarValue> {
     match value {
-        Value::Bool(b) => Ok(ScalarValue::Bool(*b)),
-        Value::Number(_) => Ok(ScalarValue::from_yaml(value)),
-        Value::String(s) => resolve_set_variable_string(s, macro_),
-        other => Ok(ScalarValue::from_yaml(other)),
+        ScalarValue::Bool(b) => Ok(ScalarValue::Bool(*b)),
+        ScalarValue::Int(_) | ScalarValue::Float(_) | ScalarValue::Null => Ok(value.clone()),
+        ScalarValue::String(s) => resolve_set_variable_string(s, macro_),
     }
 }
 
@@ -143,10 +150,10 @@ mod tests {
             description: String::new(),
         });
         m.init_runtime_variables();
-        let v = resolve_set_variable_value(&Value::String("${x}".into()), &m).unwrap();
+        let v = resolve_set_variable_value(&ScalarValue::String("${x}".into()), &m).unwrap();
         assert_eq!(v, ScalarValue::Int(5));
 
-        let v = resolve_set_variable_value(&Value::String("plain".into()), &m).unwrap();
+        let v = resolve_set_variable_value(&ScalarValue::String("plain".into()), &m).unwrap();
         assert_eq!(v, ScalarValue::String("plain".into()));
     }
 
@@ -160,7 +167,7 @@ mod tests {
             description: String::new(),
         });
         m.init_runtime_variables();
-        let v = resolve_set_variable_value(&Value::String("1+${x}".into()), &m).unwrap();
+        let v = resolve_set_variable_value(&ScalarValue::String("1+${x}".into()), &m).unwrap();
         assert_eq!(v, ScalarValue::Int(6));
     }
 

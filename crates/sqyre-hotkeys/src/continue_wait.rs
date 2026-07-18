@@ -255,12 +255,23 @@ pub fn normalize_key_name(key: &str) -> String {
     }
 }
 
+/// Emergency-stop chord keys (order-independent): Ctrl + Shift + Esc.
+pub const FAILSAFE_KEYS: &[&str] = &["ctrl", "esc", "shift"];
+
+/// Whether `keys` (already normalized) match the failsafe chord.
+pub fn is_failsafe_chord(keys: &[String]) -> bool {
+    if keys.len() != FAILSAFE_KEYS.len() {
+        return false;
+    }
+    let mut sorted: Vec<&str> = keys.iter().map(String::as_str).collect();
+    sorted.sort_unstable();
+    let mut failsafe = FAILSAFE_KEYS.to_vec();
+    failsafe.sort_unstable();
+    sorted == failsafe
+}
+
 fn validate_not_failsafe(keys: &[String]) -> Result<(), String> {
-    let mut sorted = keys.to_vec();
-    sorted.sort();
-    let mut failsafe: Vec<String> = vec!["ctrl".into(), "esc".into(), "shift".into()];
-    failsafe.sort();
-    if sorted == failsafe {
+    if is_failsafe_chord(keys) {
         return Err("key wait: chord cannot match the failsafe hotkey (esc + ctrl + shift)".into());
     }
     Ok(())

@@ -516,7 +516,8 @@ pub(crate) fn eval_clauses(
 fn eval_one_clause(c: &sqyre_domain::ConditionClause, macro_: &Macro) -> Result<bool> {
     // `is set` looks up the variable *name* without expanding its value.
     if c.operator.as_str() == "is set" {
-        let name = variable_name_for_is_set(&c.left.as_display());
+        let raw = c.left.as_display();
+        let name = variable_name_for_is_set(&raw);
         return Ok(macro_.variables.get(name).is_some());
     }
 
@@ -567,26 +568,7 @@ pub(crate) fn resolve_int(v: &ScalarValue, macro_: &Macro) -> Result<i32> {
 }
 
 pub(crate) fn resolve_text(text: &str, macro_: &Macro) -> Result<String> {
-    if !sqyre_varref::contains(text) {
-        return Ok(text.to_string());
-    }
-    let segs = sqyre_varref::segments(text);
-    if segs.is_empty() {
-        return Ok(text.to_string());
-    }
-    let mut out = String::new();
-    for seg in segs {
-        if !seg.is_ref {
-            out.push_str(&seg.text);
-            continue;
-        }
-        let val = macro_
-            .variables
-            .get(&seg.name)
-            .ok_or_else(|| ExecError::Message(format!("unresolved variable ${{{}}}", seg.name)))?;
-        out.push_str(&val.as_display());
-    }
-    Ok(out)
+    sqyre_domain::expand_variable_refs(text, macro_).map_err(ExecError::Message)
 }
 
 #[cfg(test)]
@@ -1051,6 +1033,88 @@ mod tests {
     }
 
     #[test]
+    fn conditional_numeric_operators() {
+        let macro_ = Macro::new("t", 0, vec![]);
+        assert!(eval_clauses(
+            MatchMode::All,
+            &[
+                sqyre_domain::ConditionClause {
+                    left: ScalarValue::String("10".into()),
+                    operator: ">".into(),
+                    right: ScalarValue::String("2".into()),
+                },
+                sqyre_domain::ConditionClause {
+                    left: ScalarValue::String("3".into()),
+                    operator: "<=".into(),
+                    right: ScalarValue::String("3.0".into()),
+                },
+                sqyre_domain::ConditionClause {
+                    left: ScalarValue::String("1".into()),
+                    operator: "<".into(),
+                    right: ScalarValue::String("2".into()),
+                },
+                sqyre_domain::ConditionClause {
+                    left: ScalarValue::String("5".into()),
+                    operator: ">=".into(),
+                    right: ScalarValue::String("5".into()),
+                },
+            ],
+            &macro_
+        )
+        .unwrap());
+        assert!(!eval_clauses(
+            MatchMode::All,
+            &[sqyre_domain::ConditionClause {
+                left: ScalarValue::String("1".into()),
+                operator: ">".into(),
+                right: ScalarValue::String("2".into()),
+            }],
+            &macro_
+        )
+        .unwrap());
+    }
+
+    #[test]
+    fn is_set_uses_variable_name_not_value() {
+        let mut macro_ = Macro::new("t", 0, vec![]);
+        macro_
+            .variables
+            .set("flag", ScalarValue::String("yes".into()));
+        // `${flag}` must look up "flag", not the expanded value "yes".
+        assert!(eval_clauses(
+            MatchMode::All,
+            &[sqyre_domain::ConditionClause {
+                left: ScalarValue::String("${flag}".into()),
+                operator: "is set".into(),
+                right: ScalarValue::Null,
+            }],
+            &macro_
+        )
+        .unwrap());
+        assert!(!eval_clauses(
+            MatchMode::All,
+            &[sqyre_domain::ConditionClause {
+                left: ScalarValue::String("${missing}".into()),
+                operator: "is set".into(),
+                right: ScalarValue::Null,
+            }],
+            &macro_
+        )
+        .unwrap());
+        // Bare name still works.
+        assert!(eval_clauses(
+            MatchMode::All,
+            &[sqyre_domain::ConditionClause {
+                left: ScalarValue::String("flag".into()),
+                operator: "is set".into(),
+                right: ScalarValue::Null,
+            }],
+            &macro_
+        )
+        .unwrap());
+    }
+
+    #[test]
     fn set_variable_resolves_refs_and_unresolved_errors() {
         let mut backend = RecordingBackend::default();
         let mut macro_ = Macro::new("t", 0, vec![]);
@@ -1064,7 +1128,7 @@ mod tests {
             id: ActionId::new(),
             kind: ActionKind::SetVariable {
                 variable_name: "msg".into(),
-                value: serde_yaml::Value::String("hello ${base}".into()),
+                value: sqyre_domain::ScalarValue::String("hello ${base}".into()),
             },
         }]);
         execute_macro(&mut macro_, &mut backend).unwrap();
