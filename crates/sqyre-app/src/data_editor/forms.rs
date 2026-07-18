@@ -5,6 +5,7 @@ use super::helpers::{
     collect_program_item_tags, form_coord_literal, item_tag_completion_options, parse_i32,
 };
 use super::{DataEditor, EditorTab};
+use crate::action_tooltip::help;
 use crate::collection_capture::capture_and_save_collection_image;
 use crate::data_editor_preview::{
     paint_disk_preview, paint_preview_coord_chip, paint_preview_toolbar,
@@ -49,10 +50,13 @@ impl DataEditor {
         arm: impl FnOnce(&ScreenClickBridge),
     ) {
         ui.horizontal(|ui| {
-            ui.label("Name");
-            ui.add(
-                egui::TextEdit::singleline(&mut self.form_name)
-                    .desired_width(ui.available_width() - 48.0),
+            help::label(ui, "Name", help::DE_NAME);
+            help::tip(
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.form_name)
+                        .desired_width(ui.available_width() - 48.0),
+                ),
+                help::DE_NAME,
             );
             let armed = screen_click.is_armed();
             if theme::record_icon_button(ui, record_tip, !armed).clicked() {
@@ -156,12 +160,15 @@ impl DataEditor {
         match self.tab {
             EditorTab::Programs => {
                 ui.heading("Program");
-                ui.label("Name");
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.form_name).desired_width(f32::INFINITY),
+                help::label(ui, "Name", help::DE_NAME);
+                help::tip(
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.form_name).desired_width(f32::INFINITY),
+                    ),
+                    help::DE_NAME,
                 );
                 ui.add_space(8.0);
-                ui.label("Running program");
+                help::label(ui, "Running program", help::DE_RUNNING_PROGRAM);
                 ui.weak(
                     "Overlay buttons for this program show when this process and window title own focus.",
                 );
@@ -202,19 +209,33 @@ impl DataEditor {
                 ui.heading("Item");
                 self.program_selector(ui, catalog);
                 ui.add_space(4.0);
-                ui.label("Name");
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.form_name).desired_width(f32::INFINITY),
+                help::label(ui, "Name", help::DE_NAME);
+                help::tip(
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.form_name).desired_width(f32::INFINITY),
+                    ),
+                    help::DE_NAME,
                 );
                 ui.add_space(4.0);
-                ui.label("Cols");
-                ui.add(egui::TextEdit::singleline(&mut self.form_cols).desired_width(80.0));
-                ui.label("Rows");
-                ui.add(egui::TextEdit::singleline(&mut self.form_rows).desired_width(80.0));
-                ui.label("Stack max");
-                ui.add(egui::TextEdit::singleline(&mut self.form_stack_max).desired_width(80.0));
+                help::label(ui, "Cols", help::DE_COLS);
+                help::tip(
+                    ui.add(egui::TextEdit::singleline(&mut self.form_cols).desired_width(80.0)),
+                    help::DE_COLS,
+                );
+                help::label(ui, "Rows", help::DE_ROWS);
+                help::tip(
+                    ui.add(egui::TextEdit::singleline(&mut self.form_rows).desired_width(80.0)),
+                    help::DE_ROWS,
+                );
+                help::label(ui, "Stack max", help::DE_STACK_MAX);
+                help::tip(
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.form_stack_max).desired_width(80.0),
+                    ),
+                    help::DE_STACK_MAX,
+                );
                 ui.add_space(4.0);
-                ui.label("Mask");
+                help::label(ui, "Mask", help::DE_MASK);
                 {
                     let masks: Vec<String> = self
                         .selected_program
@@ -269,7 +290,7 @@ impl DataEditor {
                     }
                 }
                 ui.add_space(4.0);
-                ui.label("Tags");
+                help::label(ui, "Tags", help::DE_TAGS);
                 ui.horizontal_wrapped(|ui| {
                     let mut remove: Option<usize> = None;
                     for (i, tag) in self.form_tags.iter().enumerate() {
@@ -355,6 +376,7 @@ impl DataEditor {
                     &known,
                     is_dark,
                     &vx,
+                    help::DE_POINT_X,
                 );
                 paint_preview_coord_chip(
                     ui,
@@ -365,6 +387,7 @@ impl DataEditor {
                     &known,
                     is_dark,
                     &vy,
+                    help::DE_POINT_Y,
                 );
             }
             EditorTab::SearchAreas => {
@@ -398,6 +421,7 @@ impl DataEditor {
                     &known,
                     is_dark,
                     &v_top,
+                    help::DE_AREA_TOP,
                 );
                 paint_preview_coord_chip(
                     ui,
@@ -408,6 +432,7 @@ impl DataEditor {
                     &known,
                     is_dark,
                     &v_bottom,
+                    help::DE_AREA_BOTTOM,
                 );
                 paint_preview_coord_chip(
                     ui,
@@ -418,6 +443,7 @@ impl DataEditor {
                     &known,
                     is_dark,
                     &v_left,
+                    help::DE_AREA_LEFT,
                 );
                 paint_preview_coord_chip(
                     ui,
@@ -428,15 +454,19 @@ impl DataEditor {
                     &known,
                     is_dark,
                     &v_right,
+                    help::DE_AREA_RIGHT,
                 );
             }
             EditorTab::Masks => {
                 ui.heading("Mask");
                 self.program_selector(ui, catalog);
                 ui.add_space(4.0);
-                ui.label("Name");
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.form_name).desired_width(f32::INFINITY),
+                ui.label("Name").on_hover_text(help::DE_NAME);
+                help::tip(
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.form_name).desired_width(f32::INFINITY),
+                    ),
+                    help::DE_NAME,
                 );
                 let has_image = self
                     .selected_program
@@ -450,12 +480,14 @@ impl DataEditor {
                             self.selected_program.is_some() && self.selected_entity.is_some(),
                             egui::Button::new("Upload Image"),
                         )
+                        .on_hover_text("Replace this mask with a PNG from disk.")
                         .clicked()
                     {
                         self.upload_mask_image(catalog, icons);
                     }
                     if ui
                         .add_enabled(has_image, egui::Button::new("Remove Image"))
+                        .on_hover_text("Delete the PNG and use shape geometry instead.")
                         .clicked()
                     {
                         self.remove_mask_image(catalog, icons);
@@ -465,15 +497,18 @@ impl DataEditor {
                     ui.weak("Image mask mode — shape fields hidden while a PNG is on disk.");
                 } else {
                     ui.add_space(4.0);
-                    ui.label("Shape");
+                    help::label(ui, "Shape", help::DE_MASK_SHAPE);
                     ui.horizontal(|ui| {
-                        ui.selectable_value(&mut self.form_shape, "rectangle".into(), "Rectangle");
-                        ui.selectable_value(&mut self.form_shape, "circle".into(), "Circle");
+                        ui.selectable_value(&mut self.form_shape, "rectangle".into(), "Rectangle")
+                            .on_hover_text(help::DE_MASK_SHAPE);
+                        ui.selectable_value(&mut self.form_shape, "circle".into(), "Circle")
+                            .on_hover_text(help::DE_MASK_SHAPE);
                     });
                     ui.checkbox(
                         &mut self.form_inverse,
                         "Inverse (shape included, rest excluded)",
-                    );
+                    )
+                    .on_hover_text("When on, only the shape region is kept; the rest is masked out.");
                     ui.add_space(4.0);
                     let cx = validate_numeric_expression(&self.form_center_x, active_macro);
                     var_pills::validated_var_ref_edit(
@@ -484,6 +519,7 @@ impl DataEditor {
                         is_dark,
                         f32::INFINITY,
                         &cx,
+                        "Horizontal center of the shape (0–100%).",
                     );
                     let cy = validate_numeric_expression(&self.form_center_y, active_macro);
                     var_pills::validated_var_ref_edit(
@@ -494,6 +530,7 @@ impl DataEditor {
                         is_dark,
                         f32::INFINITY,
                         &cy,
+                        "Vertical center of the shape (0–100%).",
                     );
                     if self.form_shape == "circle" {
                         let radius = validate_numeric_expression(&self.form_radius, active_macro);
@@ -505,6 +542,7 @@ impl DataEditor {
                             is_dark,
                             f32::INFINITY,
                             &radius,
+                            "Circle radius as a percent of the search area.",
                         );
                     } else {
                         let base = validate_numeric_expression(&self.form_base, active_macro);
@@ -516,6 +554,7 @@ impl DataEditor {
                             is_dark,
                             f32::INFINITY,
                             &base,
+                            "Rectangle width as a percent of the search area.",
                         );
                         let height = validate_numeric_expression(&self.form_height, active_macro);
                         var_pills::validated_var_ref_edit(
@@ -526,6 +565,7 @@ impl DataEditor {
                             is_dark,
                             f32::INFINITY,
                             &height,
+                            "Rectangle height as a percent of the search area.",
                         );
                     }
                     ui.weak("Numeric fields accept literals or ${var} expressions.");
@@ -550,12 +590,15 @@ impl DataEditor {
                 ui.heading("Collection");
                 self.program_selector(ui, catalog);
                 ui.add_space(4.0);
-                ui.label("Name");
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.form_name).desired_width(f32::INFINITY),
+                ui.label("Name").on_hover_text(help::DE_NAME);
+                help::tip(
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.form_name).desired_width(f32::INFINITY),
+                    ),
+                    help::DE_NAME,
                 );
                 ui.add_space(4.0);
-                ui.label("Search area");
+                help::label(ui, "Search area", help::DE_COLLECTION_AREA);
                 {
                     let areas: Vec<String> = self
                         .selected_program
@@ -591,10 +634,16 @@ impl DataEditor {
                         self.form_search_area = current;
                     }
                 }
-                ui.label("Rows");
-                ui.add(egui::TextEdit::singleline(&mut self.form_rows).desired_width(80.0));
-                ui.label("Cols");
-                ui.add(egui::TextEdit::singleline(&mut self.form_cols).desired_width(80.0));
+                help::label(ui, "Rows", help::DE_COLLECTION_ROWS);
+                help::tip(
+                    ui.add(egui::TextEdit::singleline(&mut self.form_rows).desired_width(80.0)),
+                    help::DE_COLLECTION_ROWS,
+                );
+                help::label(ui, "Cols", help::DE_COLLECTION_COLS);
+                help::tip(
+                    ui.add(egui::TextEdit::singleline(&mut self.form_cols).desired_width(80.0)),
+                    help::DE_COLLECTION_COLS,
+                );
                 if let (Some(prog), Some(col_name)) =
                     (self.selected_program.clone(), self.selected_entity.clone())
                 {
@@ -693,7 +742,8 @@ impl DataEditor {
                     let mut preview_cfg = OverlayButtonConfig::new("preview", "");
                     self.apply_overlay_style_to_config(&mut preview_cfg);
                     let style = overlay_icons::OverlayPaintStyle::from_config(&preview_cfg);
-                    let preview = overlay_icons::style_preview_button(ui, icon, 48.0, &style);
+                    let preview = overlay_icons::style_preview_button(ui, icon, 48.0, &style)
+                        .on_hover_text(help::DE_OVERLAY_ICON);
                     if preview.clicked() {
                         if let Some(id) = self.selected_entity.clone() {
                             self.overlay_icon_search.clear();
@@ -701,19 +751,22 @@ impl DataEditor {
                         }
                     }
                     ui.vertical(|ui| {
-                        ui.label(icon.label);
+                        ui.label(icon.label).on_hover_text(help::DE_OVERLAY_ICON);
                         ui.weak("Click icon to choose from Phosphor library");
                     });
                 });
                 ui.add_space(6.0);
-                ui.label("Label");
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.form_name)
-                        .desired_width(f32::INFINITY)
-                        .hint_text("optional"),
+                help::label(ui, "Label", help::DE_OVERLAY_LABEL);
+                help::tip(
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.form_name)
+                            .desired_width(f32::INFINITY)
+                            .hint_text("optional"),
+                    ),
+                    help::DE_OVERLAY_LABEL,
                 );
                 ui.add_space(4.0);
-                ui.label("Macro");
+                help::label(ui, "Macro", help::DE_OVERLAY_MACRO);
                 let mut selected = self.form_overlay_macro.clone();
                 let before = selected.clone();
                 let macro_names: Vec<String> = macros.iter().map(|m| m.name.clone()).collect();
@@ -729,49 +782,66 @@ impl DataEditor {
                         for name in &macro_names {
                             ui.selectable_value(&mut selected, name.clone(), name);
                         }
-                    });
+                    })
+                    .response
+                    .on_hover_text(help::DE_OVERLAY_MACRO);
                 if selected != before {
                     self.form_overlay_macro = selected;
                 }
                 ui.add_space(4.0);
                 ui.horizontal(|ui| {
-                    ui.label("X");
-                    ui.add(
-                        egui::DragValue::new(&mut self.form_overlay_x)
-                            .speed(1.0)
-                            .suffix(" px"),
+                    help::label(ui, "X", help::DE_OVERLAY_X);
+                    help::tip(
+                        ui.add(
+                            egui::DragValue::new(&mut self.form_overlay_x)
+                                .speed(1.0)
+                                .suffix(" px"),
+                        ),
+                        help::DE_OVERLAY_X,
                     );
-                    ui.label("Y");
-                    ui.add(
-                        egui::DragValue::new(&mut self.form_overlay_y)
-                            .speed(1.0)
-                            .suffix(" px"),
+                    help::label(ui, "Y", help::DE_OVERLAY_Y);
+                    help::tip(
+                        ui.add(
+                            egui::DragValue::new(&mut self.form_overlay_y)
+                                .speed(1.0)
+                                .suffix(" px"),
+                        ),
+                        help::DE_OVERLAY_Y,
                     );
                 });
                 ui.add_space(8.0);
                 ui.collapsing("Appearance", |ui| {
                     ui.horizontal(|ui| {
-                        ui.label("Size");
-                        ui.add(
-                            egui::DragValue::new(&mut self.form_overlay_size)
-                                .speed(1)
-                                .range(MIN_OVERLAY_BUTTON_SIZE..=MAX_OVERLAY_BUTTON_SIZE),
+                        help::label(ui, "Size", help::DE_OVERLAY_SIZE);
+                        help::tip(
+                            ui.add(
+                                egui::DragValue::new(&mut self.form_overlay_size)
+                                    .speed(1)
+                                    .range(MIN_OVERLAY_BUTTON_SIZE..=MAX_OVERLAY_BUTTON_SIZE),
+                            ),
+                            help::DE_OVERLAY_SIZE,
                         );
                     });
                     ui.horizontal(|ui| {
-                        ui.label("Corner radius");
-                        ui.add(
-                            egui::DragValue::new(&mut self.form_overlay_corner_radius)
-                                .speed(0.5)
-                                .range(MIN_OVERLAY_CORNER_RADIUS..=MAX_OVERLAY_CORNER_RADIUS)
-                                .suffix(" px"),
+                        help::label(ui, "Corner radius", help::DE_OVERLAY_RADIUS);
+                        help::tip(
+                            ui.add(
+                                egui::DragValue::new(&mut self.form_overlay_corner_radius)
+                                    .speed(0.5)
+                                    .range(MIN_OVERLAY_CORNER_RADIUS..=MAX_OVERLAY_CORNER_RADIUS)
+                                    .suffix(" px"),
+                            ),
+                            help::DE_OVERLAY_RADIUS,
                         );
-                        ui.label("Border width");
-                        ui.add(
-                            egui::DragValue::new(&mut self.form_overlay_border_width)
-                                .speed(0.1)
-                                .range(MIN_OVERLAY_BORDER_WIDTH..=MAX_OVERLAY_BORDER_WIDTH)
-                                .suffix(" px"),
+                        help::label(ui, "Border width", help::DE_OVERLAY_BORDER);
+                        help::tip(
+                            ui.add(
+                                egui::DragValue::new(&mut self.form_overlay_border_width)
+                                    .speed(0.1)
+                                    .range(MIN_OVERLAY_BORDER_WIDTH..=MAX_OVERLAY_BORDER_WIDTH)
+                                    .suffix(" px"),
+                            ),
+                            help::DE_OVERLAY_BORDER,
                         );
                     });
                     ui.add_space(4.0);
@@ -786,7 +856,8 @@ impl DataEditor {
                         color_alpha_drag(ui, "Icon", &mut self.form_overlay_icon_color);
                     });
                     ui.horizontal(|ui| {
-                        ui.label("Icon hover");
+                        ui.label("Icon hover")
+                            .on_hover_text("Icon color when the pointer is over the button.");
                         ui.color_edit_button_srgba(&mut self.form_overlay_icon_hover);
                     });
                     ui.add_space(4.0);
