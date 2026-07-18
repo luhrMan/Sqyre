@@ -5,9 +5,9 @@
 //! injected for undo/clipboard snapshots.
 
 mod action;
+mod bindings;
 mod blank;
 mod color;
-mod display;
 mod expr;
 mod macro_model;
 mod rename;
@@ -17,9 +17,13 @@ mod taxonomy;
 mod variables;
 
 pub use action::*;
+pub use bindings::{BindingRole, VariableBinding};
 pub use blank::{action_templates, blank_action, test_action, ActionTemplate};
-pub use color::{format_hex_color, normalize_hex_rgb, parse_hex_color};
-pub use display::*;
+pub use color::{
+    format_hex_color, normalize_hex_rgb, parse_hex_color, ACTION_COLOR_CATEGORIES,
+    ACTION_COLOR_KEY_DEFAULT, ACTION_COLOR_KEY_DETECTION, ACTION_COLOR_KEY_MISCELLANEOUS,
+    ACTION_COLOR_KEY_MOUSE_KEYBOARD, ACTION_COLOR_KEY_VARIABLES, ACTION_COLOR_KEY_WAIT,
+};
 pub use expr::{evaluate_expression, numeric_to_scalar};
 pub use macro_model::*;
 pub use rename::*;

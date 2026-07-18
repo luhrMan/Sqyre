@@ -4,10 +4,9 @@ use crate::icon_cache::IconCache;
 use crate::pickers::attach_item_icon_tooltip;
 use crate::var_pills;
 use eframe::egui::{self, Color32, FontId, Sense, Stroke, Vec2};
-use sqyre_domain::{
-    action_icon_glyph, action_pastel_color, parse_hex_color, Action, ActionKind, SummaryPill,
-};
+use sqyre_domain::{parse_hex_color, Action, ActionKind};
 use sqyre_persist::ProgramCatalog;
+use sqyre_ui_model::{action_icon_glyph, action_pastel_color, ActionDisplay, SummaryPill};
 use std::collections::HashSet;
 
 /// Icon badge edge length.

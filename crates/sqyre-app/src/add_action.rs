@@ -13,13 +13,14 @@ use crate::preview_tooltip::PreviewTooltipCache;
 use crate::tree_chrome;
 use eframe::egui::{self, Color32, CornerRadius, Key, Sense, Vec2};
 use sqyre_domain::{
-    action_icon_glyph, action_pastel_color, action_templates, action_type_label, blank_action,
-    Action, ActionId, ActionTemplate, ACTION_PICKER_CATEGORIES,
+    action_templates, action_type_label, blank_action, Action, ActionId, ActionTemplate,
+    ACTION_PICKER_CATEGORIES,
 };
 use sqyre_hotkeys::{MacroHotkeyBridge, ScreenClickBridge};
 use sqyre_persist::ProgramCatalog;
 use sqyre_persist::UserSettings;
 use sqyre_serialize::{action_from_map, action_to_map};
+use sqyre_ui_model::{action_icon_glyph, action_pastel_color};
 use sqyre_validate::validate_action;
 use std::collections::{HashMap, HashSet};
 

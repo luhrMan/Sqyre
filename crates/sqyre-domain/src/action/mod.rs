@@ -1131,4 +1131,14 @@ mod tests {
             .move_action(branch_id, branch_id, InsertSlot::Last)
             .is_err());
     }
+
+    #[test]
+    fn root_loop_is_named_root() {
+        let root = root_loop(vec![]);
+        match &root.kind {
+            ActionKind::Loop { name, .. } => assert_eq!(name, "root"),
+            _ => panic!("expected loop"),
+        }
+        assert!(root.id.is_root());
+    }
 }
