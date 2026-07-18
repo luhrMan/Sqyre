@@ -2,6 +2,7 @@
 # Also used as the Linux AppImage Docker build image (make appimage fallback / CI).
 # Docker CLI comes from the docker-outside-of-docker feature (host daemon via socket)
 # so `make windows` and nested AppImage builds work inside the container.
+# Trunk + wasm32-unknown-unknown support `make wasm` (GUI-only browser editor).
 # Build and test in-container; run the GUI binary on the host (needs X11).
 FROM ubuntu:22.04
 
@@ -38,11 +39,14 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
         --default-toolchain "${RUST_VERSION}" \
         --profile default \
         --component rustfmt,clippy,rust-analyzer,rust-src,llvm-tools-preview \
+    && rustup target add wasm32-unknown-unknown \
     && chmod -R a+rX /usr/local/rustup /usr/local/cargo \
     && rustc --version && cargo --version \
-    && cargo install cargo-nextest cargo-deny cargo-llvm-cov cargo-machete --locked \
+    && cargo install cargo-nextest cargo-deny cargo-llvm-cov cargo-machete trunk --locked \
     && chmod -R a+rX /usr/local/cargo \
-    && cargo nextest --version && cargo deny --version && cargo llvm-cov --version && cargo machete --version
+    && cargo nextest --version && cargo deny --version && cargo llvm-cov --version \
+    && cargo machete --version && trunk --version \
+    && rustup target list --installed | grep -q wasm32-unknown-unknown
 
 ARG USERNAME=vscode
 ARG USER_UID=1000

@@ -4,7 +4,7 @@ use parking_lot::{Condvar, Mutex};
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use web_time::{Duration, Instant};
 
 /// Bridge between the hotkey listener thread and key waiters.
 #[derive(Clone)]

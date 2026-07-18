@@ -24,11 +24,12 @@ Prefer Makefile targets when they exist:
 - `make` / `make sqyre` — debug build → `./bin/sqyre` (`.exe` on Windows)
 - `make release` — host release build → `./bin/sqyre`
 - `make windows` / `make macos` — Windows via Docker MinGW cross (or native on Windows); macOS host-only (no MSI/DMG)
-- Devcontainer must stay able to build Linux-host releases (`release`, `appimage`, `windows`) — see `devcontainer-release-parity`
+- Devcontainer must stay able to build Linux-host releases (`release`, `appimage`, `windows`, `wasm`) — see `devcontainer-release-parity`
 - `make test` — workspace tests
 - `make run` — `cargo run -p sqyre-app`
 - `make tessdata` — download OCR data
 - `make appimage` — Linux AppImage (only packaging path until Win/mac installers exist)
+- `make wasm` — GUI-only browser editor via Trunk → `bin/wasm/`
 - `make docs-media` — regenerate README screenshots under `docs/images/`
 
 Direct cargo is fine: `cargo build -p sqyre-app`, `cargo test -p <crate>`.

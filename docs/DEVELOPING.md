@@ -2,7 +2,7 @@
 
 ## Dev container (recommended)
 
-Open the repository in the dev container (`.devcontainer/`). It includes Rust 1.92, clang, Tesseract/Leptonica, X11 link deps, AppImage packaging tools (`appimage-builder`, squashfs-tools), and the **Docker CLI** (host daemon via socket) so `make windows` and AppImage Docker fallbacks work inside the container.
+Open the repository in the dev container (`.devcontainer/`). It includes Rust 1.92, clang, Tesseract/Leptonica, X11 link deps, AppImage packaging tools (`appimage-builder`, squashfs-tools), **Trunk** + `wasm32-unknown-unknown` (for `make wasm`), and the **Docker CLI** (host daemon via socket) so `make windows` and AppImage Docker fallbacks work inside the container.
 
 Nested `docker run -v` mounts use the host path via `LOCAL_WORKSPACE_FOLDER` (`${localWorkspaceFolder}`). Rebuild the container after pulling that change so the env var is set.
 
@@ -20,6 +20,7 @@ make docs-media # regenerate docs/images screenshots
 make appimage   # bin/*.AppImage (Linux)
 make windows    # bin/sqyre.exe (Docker MinGW cross / native on Windows)
 make macos      # bin/sqyre (macOS host)
+make wasm       # bin/wasm/ GUI-only browser editor (Trunk)
 make tessdata   # download eng.traineddata into assets/tessdata/
 ```
 
@@ -57,9 +58,29 @@ Build caches (all gitignored):
 | `appimage` | `bin/Sqyre-*.AppImage` |
 | `windows` | `bin/sqyre.exe` (Docker MinGW cross on Linux; native on Windows) |
 | `macos` | `bin/sqyre` (release; macOS host only) |
+| `wasm` | GUI-only browser editor → `bin/wasm/` (Trunk; no Run/capture/OCR) |
 | `tessdata` | Tesseract trained data via `scripts/download-tessdata.sh` |
 
 Set `CARGO_FLAGS` for extra cargo args. Set `RELEASE_VERSION` (or write a `VERSION` file) before `make appimage` to stamp the AppImage name.
+
+### WASM editor (`make wasm`)
+
+Browser-only macro editor (import/export `db.yaml`). Does not run automation. The **dev container** already has Trunk and the `wasm32-unknown-unknown` target — rebuild the container after pulling those Dockerfile changes, then:
+
+```bash
+make wasm          # → bin/wasm/index.html  (deployable; use this, not trunk serve's dist)
+cd crates/sqyre-app && env -u NO_COLOR trunk serve   # local preview + reload only
+```
+
+Serve the release output with any static file server (`python3 -m http.server` from `bin/wasm/`, etc.). Do **not** copy `dist/` from a running `trunk serve` — that injects an unreplaced autoreload WebSocket stub and floods the console.
+On a bare host (no container), install once:
+
+```bash
+rustup target add wasm32-unknown-unknown
+cargo install --locked trunk
+```
+
+Uses `--no-default-features` (no global hotkey hooks). Native `make` / `make release` are unchanged.
 
 CI builds and releases **Linux** binaries and AppImages only. PRs also `cargo check` on Windows and macOS (Windows GDI capture; macOS capture still stubbed). On Linux/macOS hosts, `make windows` uses the MinGW cross image in [`scripts/windows/`](../scripts/windows/PACKAGING.md); `make macos` stays native. MSI/DMG packaging is not shipped yet.
 
@@ -69,7 +90,7 @@ CI builds and releases **Linux** binaries and AppImages only. PRs also `cargo ch
 
 | Resource | Purpose |
 |----------|---------|
-| [.devcontainer/Dockerfile](../.devcontainer/Dockerfile) | Rust + Tesseract + AppImage tools |
+| [.devcontainer/Dockerfile](../.devcontainer/Dockerfile) | Rust + Tesseract + AppImage tools + Trunk/wasm32 |
 | [.devcontainer/devcontainer.json](../.devcontainer/devcontainer.json) | Docker-outside-of-Docker (CLI + host socket) for `make windows` |
 | [scripts/windows/Dockerfile](../scripts/windows/Dockerfile) | MinGW cross image for `make windows` on Linux |
 | [crates/sqyre-app/assets/icons/](../crates/sqyre-app/assets/icons/) | Brand icons (embedded SVG) |

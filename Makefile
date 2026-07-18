@@ -2,7 +2,7 @@
 # Binary is Rust (sqyre-app). Linux AppImage packaging uses the same stack.
 # Windows: Docker MinGW cross from Linux (scripts/windows/), or native on Windows.
 .PHONY: all sqyre release windows macos test coverage check check-fmt fmt clippy deny machete \
-	run tessdata appimage docs-media help
+	run tessdata appimage docs-media wasm help
 
 ROOT := $(abspath .)
 BIN := $(abspath bin)
@@ -77,6 +77,7 @@ help:
 	@echo "  docs-media   - regenerate docs/images screenshots"
 	@echo "  appimage     - AppImage -> $(BIN)/ (Docker fallback if tools missing)"
 	@echo "                 (RELEASE_VERSION=…; SQYRE_APPIMAGE_FORCE_NATIVE=1)"
+	@echo "  wasm         - GUI-only WASM editor -> $(BIN)/wasm/ (requires Trunk)"
 
 $(BIN):
 	mkdir -p $(BIN)
@@ -165,3 +166,16 @@ docs-media:
 
 appimage:
 	./scripts/linux/packaging/appimage/build-appimage.sh
+
+# Browser GUI editor (no Run / capture / OCR). Requires: rustup target wasm32-unknown-unknown, trunk.
+wasm:
+	@command -v trunk >/dev/null 2>&1 || { \
+		echo "trunk not found. Install with:"; \
+		echo "  cargo install --locked trunk"; \
+		echo "Also: rustup target add wasm32-unknown-unknown"; \
+		exit 1; \
+	}
+	rustup target add wasm32-unknown-unknown
+	# Trunk's clap rejects NO_COLOR=1 (expects true/false).
+	cd crates/sqyre-app && env -u NO_COLOR trunk build --release
+	@echo "WASM editor: $(BIN)/wasm/index.html  (serve with: cd crates/sqyre-app && env -u NO_COLOR trunk serve)"

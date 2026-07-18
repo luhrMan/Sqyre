@@ -1,4 +1,4 @@
-//! Leptess-backed OCR engine (optional `ocr` feature).
+//! Leptess-backed OCR engine (native only; not available on wasm32).
 
 use crate::ocr_boxes::{parse_tsv_word_boxes, text_from_ocr_boxes, OcrWordBox};
 use parking_lot::Mutex;

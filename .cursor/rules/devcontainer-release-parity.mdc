@@ -14,6 +14,7 @@ Whenever a **build or packaging requirement** changes (Makefile targets, Dockerf
 | `make` / `make release` | Native in-container (Rust + system Tesseract/X11) |
 | `make appimage` | Native AppImage tools in the image, or Docker fallback |
 | `make windows` | Docker MinGW cross (`scripts/windows/`) via **host Docker socket** |
+| `make wasm` | Trunk + `wasm32-unknown-unknown` in the image (`bin/wasm/`) |
 
 `make macos` stays macOS-host-only — do not claim the Linux devcontainer builds it.
 
@@ -23,7 +24,7 @@ Whenever a **build or packaging requirement** changes (Makefile targets, Dockerf
 2. If a target needs Docker (`make windows`, AppImage Docker fallback), keep the **docker-outside-of-docker** feature (or equivalent CLI + `/var/run/docker.sock`) in [`devcontainer.json`](.devcontainer/devcontainer.json).
 3. Keep nested images self-contained ([`scripts/windows/Dockerfile`](scripts/windows/Dockerfile), AppImage path) — the outer container only needs the Docker client + enough deps for native Linux builds.
 4. Update [`docs/DEVELOPING.md`](docs/DEVELOPING.md) if the developer workflow changes.
-5. Smoke-check from the container mindset: `make release`, `make appimage` (or its Docker path), `make windows` must remain reachable.
+5. Smoke-check from the container mindset: `make release`, `make appimage` (or its Docker path), `make windows`, and `make wasm` must remain reachable.
 
 ## Examples
 
