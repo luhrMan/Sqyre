@@ -1,6 +1,7 @@
 //! Cached egui textures for program-catalog item PNGs.
 
 use crate::assets;
+use crate::demo_icons;
 use eframe::egui::{self, ColorImage, TextureHandle, TextureOptions};
 use sqyre_persist::ProgramCatalog;
 use std::collections::HashMap;
@@ -24,6 +25,9 @@ impl IconCache {
     }
 
     /// First variant PNG for `program~item`, loaded into a retained texture.
+    ///
+    /// Falls back to in-memory [`demo_icons`] placeholders when no file exists
+    /// (WASM demo seed).
     pub fn for_target(
         &mut self,
         ctx: &egui::Context,
@@ -33,7 +37,13 @@ impl IconCache {
         if self.missing.contains_key(target) {
             return None;
         }
-        let path = catalog.variant_paths(target).into_iter().next()?;
+        let path = demo_icons::merged_variant_paths(catalog, target)
+            .into_iter()
+            .next();
+        let Some(path) = path else {
+            self.missing.insert(target.to_string(), ());
+            return None;
+        };
         match self.get_or_load(ctx, &path) {
             Some(t) => Some(t),
             None => {
@@ -67,14 +77,15 @@ impl IconCache {
     }
 
     /// Load an arbitrary image path into a retained texture.
+    /// Also resolves in-memory [`demo_icons`] when the path is not on disk.
     pub fn for_path(&mut self, ctx: &egui::Context, path: &Path) -> Option<TextureHandle> {
-        if !path.is_file() {
-            return None;
+        if path.is_file() || demo_icons::contains(path) {
+            return self.get_or_load(ctx, path);
         }
-        self.get_or_load(ctx, path)
+        None
     }
 
-    /// Drop a cached texture so the next load re-reads from disk.
+    /// Drop a cached texture so the next load re-reads from disk / demo store.
     pub fn invalidate_path(&mut self, path: &Path) {
         self.textures.remove(path);
     }
@@ -83,15 +94,20 @@ impl IconCache {
         if let Some(t) = self.textures.get(path) {
             return Some(t.clone());
         }
-        let tex = load_png_file(ctx, path)?;
+        let tex = load_texture(ctx, path)?;
         self.textures.insert(path.to_path_buf(), tex.clone());
         Some(tex)
     }
 }
 
-fn load_png_file(ctx: &egui::Context, path: &Path) -> Option<TextureHandle> {
-    let bytes = std::fs::read(path).ok()?;
-    load_png_bytes(ctx, &path.to_string_lossy(), &bytes)
+fn load_texture(ctx: &egui::Context, path: &Path) -> Option<TextureHandle> {
+    if let Ok(bytes) = std::fs::read(path) {
+        return load_png_bytes(ctx, &path.to_string_lossy(), &bytes);
+    }
+    let demo = demo_icons::get(path)?;
+    let color =
+        ColorImage::from_rgba_unmultiplied([demo.width as usize, demo.height as usize], &demo.rgba);
+    Some(ctx.load_texture(path.to_string_lossy(), color, TextureOptions::LINEAR))
 }
 
 fn load_png_bytes(ctx: &egui::Context, name: &str, bytes: &[u8]) -> Option<TextureHandle> {

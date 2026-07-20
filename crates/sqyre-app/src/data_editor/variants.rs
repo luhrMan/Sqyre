@@ -23,12 +23,7 @@ impl DataEditor {
         target: &str,
         item: &str,
     ) {
-        let paths = catalog.variant_paths(target);
-        let names = icon_variants::variant_names(
-            catalog,
-            self.selected_program.as_deref().unwrap_or(""),
-            item,
-        );
+        let paths = crate::demo_icons::merged_variant_paths(catalog, target);
         ui.add_space(8.0);
         ui.separator();
         ui.horizontal(|ui| {
@@ -54,10 +49,12 @@ impl DataEditor {
             ui.weak("No icon variants on disk.");
             return;
         }
-        let can_delete = names.len() > 1;
+        let on_disk = paths.iter().filter(|p| p.is_file()).count();
+        let can_delete = on_disk > 1;
         ui.horizontal_wrapped(|ui| {
             for path in &paths {
                 let variant = variant_name_from_path(path, item);
+                let is_demo = !path.is_file() && crate::demo_icons::contains(path);
                 ui.vertical(|ui| {
                     ui.set_max_width(112.0);
                     match icons.for_path(ui.ctx(), path) {
@@ -71,7 +68,11 @@ impl DataEditor {
                         }
                     }
                     ui.small(variant_display_label(&variant));
-                    let deny = !can_delete || variant == "Original";
+                    if is_demo {
+                        ui.weak("demo");
+                    }
+                    let deny =
+                        is_demo || !can_delete || variant.is_empty() || variant == "Original";
                     if ui
                         .add_enabled(!deny, egui::Button::new("Delete").small())
                         .clicked()
