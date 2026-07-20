@@ -1,13 +1,15 @@
 //! Image search action: capture → match template variants → run children per hit.
 
-use super::common::{run_children_flow, run_detection_shell, set_coord_outputs, DetectionPass};
+use super::common::{
+    apply_detection_hits, run_detection_shell, sort_hits, DetectionExtras, DetectionHit,
+};
 use crate::action_log::{crop_match_preview, draw_rect_rgb};
 use crate::backends::{DesktopRect, ItemMeta};
-use crate::error::{ExecError, FlowSignal, Result};
+use crate::error::{ExecError, Result};
 use crate::highlight::{highlight_clear, highlight_fill};
 use crate::run::Executor;
 use rayon::prelude::*;
-use sqyre_domain::{Action, ActionKind, Macro, MatchOrder, ScalarValue};
+use sqyre_domain::{Action, ActionKind, Macro, MatchOrder};
 use sqyre_match::{
     blur_image_owned, find_template_matches_preblurred_with_integrals, prepare_search_integrals,
     search_blur_kernel, ImageBuf, Point, DEFAULT_CLOSE_MATCHES_DISTANCE,
@@ -92,12 +94,7 @@ pub(crate) fn execute_image_search(
             },
             |results| !results.is_empty(),
             |exec, macro_, results, pass| {
-                // Repeat-while-found stops on miss without running the no-find branch;
-                // the final single-shot still calls run_matches (for run_branch_on_no_find).
-                if matches!(pass, DetectionPass::Repeat { .. }) && results.is_empty() {
-                    return Ok(false);
-                }
-                run_matches(
+                apply_detection_hits(
                     exec,
                     action_id,
                     targets,
@@ -106,8 +103,8 @@ pub(crate) fn execute_image_search(
                     *run_branch_on_no_find,
                     subactions,
                     macro_,
-                )?;
-                Ok(!results.is_empty())
+                    pass,
+                )
             },
         )
     })();
@@ -115,13 +112,13 @@ pub(crate) fn execute_image_search(
     result
 }
 
-pub(super) struct NamedPoint {
-    pub(super) point: Point,
-    pub(super) origin: DesktopRect,
-    pub(super) meta: Option<ItemMeta>,
-    pub(super) tmpl_w: i32,
-    pub(super) tmpl_h: i32,
-    pub(super) name: String,
+struct NamedPoint {
+    point: Point,
+    origin: DesktopRect,
+    meta: Option<ItemMeta>,
+    tmpl_w: i32,
+    tmpl_h: i32,
+    name: String,
 }
 
 struct VariantJob {
@@ -165,7 +162,7 @@ fn capture_and_match(
     blur: i32,
     order: &MatchOrder,
     macro_: &Macro,
-) -> Result<Vec<NamedPoint>> {
+) -> Result<Vec<DetectionHit>> {
     // Capture/resolve/blur failures are logged as misses so wait-until-found can retry
     // instead of aborting the macro (same policy as OCR / Find Pixel).
     let Some(resolver) = exec.deps.resolver else {
@@ -541,127 +538,19 @@ fn capture_and_match(
         ),
     );
     exec.log_timing(action_id, "match", match_started.elapsed());
-    sort_points(&mut out, order);
-    Ok(out)
-}
-
-const ORDER_BAND_PX: i32 = 5;
-
-/// Sort matches using [`MatchOrder`]. Empty fields keep the historical default:
-/// row grouping (±5px Y band), left-to-right, top-to-bottom.
-pub(super) fn sort_points(pts: &mut [NamedPoint], order: &MatchOrder) {
-    let grouping = order.grouping.trim().to_ascii_lowercase();
-    let h_rev = order.horizontal.eq_ignore_ascii_case("right_to_left");
-    let v_rev = order.vertical.eq_ignore_ascii_case("bottom_to_top");
-
-    pts.sort_by(|a, b| {
-        let ay = a.point.y + a.origin.y;
-        let by = b.point.y + b.origin.y;
-        let ax = a.point.x + a.origin.x;
-        let bx = b.point.x + b.origin.x;
-        let cmp_x = if h_rev { bx.cmp(&ax) } else { ax.cmp(&bx) };
-        let cmp_y = if v_rev { by.cmp(&ay) } else { ay.cmp(&by) };
-        let name = a.name.cmp(&b.name);
-
-        match grouping.as_str() {
-            "column" => {
-                if (ax - bx).abs() <= ORDER_BAND_PX {
-                    cmp_y.then(name)
-                } else {
-                    cmp_x.then(cmp_y).then(name)
-                }
-            }
-            "none" => cmp_y.then(cmp_x).then(name),
-            // "" | "row" | anything else → row banding (legacy default)
-            _ => {
-                if (ay - by).abs() <= ORDER_BAND_PX {
-                    cmp_x.then(name)
-                } else {
-                    cmp_y.then(cmp_x).then(name)
-                }
-            }
-        }
-    });
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(super) fn run_matches(
-    exec: &mut Executor<'_>,
-    action_id: sqyre_domain::ActionId,
-    targets: &[String],
-    results: &[NamedPoint],
-    coords: &sqyre_domain::CoordinateOutputs,
-    run_branch_on_no_find: bool,
-    subactions: &[Action],
-    macro_: &mut Macro,
-) -> Result<()> {
-    let mut found_names: Vec<&str> = results.iter().map(|np| np.name.as_str()).collect();
-    found_names.sort_unstable();
-    found_names.dedup();
-    let not_found: Vec<&str> = targets
-        .iter()
-        .map(|t| t.as_str())
-        .filter(|t| !found_names.iter().any(|f| f == t))
+    let mut hits: Vec<DetectionHit> = out
+        .into_iter()
+        .map(|np| DetectionHit {
+            screen_x: np.point.x + np.origin.x,
+            screen_y: np.point.y + np.origin.y,
+            name: np.name,
+            extras: DetectionExtras::Image {
+                meta: np.meta,
+                tmpl_w: np.tmpl_w,
+                tmpl_h: np.tmpl_h,
+            },
+        })
         .collect();
-    exec.log(
-        action_id,
-        format!(
-            "Total # found: {} (found: {:?}; not found: {:?})",
-            results.len(),
-            found_names,
-            not_found
-        ),
-    );
-
-    let mut first: Option<(i32, i32)> = None;
-    let total = results.len();
-    for (count, np) in results.iter().enumerate() {
-        if total > 0 {
-            highlight_fill(
-                exec.deps.highlighter,
-                &macro_.name,
-                action_id,
-                count as f64 / total as f64,
-            );
-        }
-        let x = np.point.x + np.origin.x;
-        let y = np.point.y + np.origin.y;
-        if first.is_none() {
-            first = Some((x, y));
-        }
-        set_coord_outputs(macro_, coords, x, y);
-        if let Some(meta) = &np.meta {
-            macro_
-                .variables
-                .set("StackMax", ScalarValue::Int(meta.stack_max as i64));
-            macro_
-                .variables
-                .set("Cols", ScalarValue::Int(meta.cols as i64));
-            macro_
-                .variables
-                .set("Rows", ScalarValue::Int(meta.rows as i64));
-            macro_
-                .variables
-                .set("ItemName", ScalarValue::String(meta.name.clone()));
-            macro_
-                .variables
-                .set("ImagePixelWidth", ScalarValue::Int(np.tmpl_w as i64));
-            macro_
-                .variables
-                .set("ImagePixelHeight", ScalarValue::Int(np.tmpl_h as i64));
-        }
-        match run_children_flow(exec, subactions, macro_) {
-            Err(ExecError::Flow(FlowSignal::Break)) => break,
-            Err(ExecError::Flow(FlowSignal::Continue)) => continue,
-            Err(e) => return Err(e),
-            Ok(()) => {}
-        }
-    }
-    if results.is_empty() && run_branch_on_no_find {
-        run_children_flow(exec, subactions, macro_)?;
-    }
-    if let Some((x, y)) = first {
-        set_coord_outputs(macro_, coords, x, y);
-    }
-    Ok(())
+    sort_hits(&mut hits, order);
+    Ok(hits)
 }

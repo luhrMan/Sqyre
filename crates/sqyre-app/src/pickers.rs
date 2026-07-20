@@ -1,6 +1,7 @@
 //! Shared entity pickers: item icon grids, point / search-area lists, collection cells,
 //! macros, and Focus Window live-window lists.
 
+use crate::data_editor_preview::paint_grid_overlay_painter;
 use crate::icon_cache::IconCache;
 use crate::image_view::{self, ImageViewTransform};
 use crate::paint_ctx::CatalogPaint;
@@ -835,12 +836,7 @@ pub fn paint_coord_ref_list(
 }
 
 fn fit_panel(w: f32, h: f32) -> Vec2 {
-    const MAX_W: f32 = 320.0;
-    const MAX_H: f32 = 240.0;
-    let w = w.max(1.0);
-    let h = h.max(1.0);
-    let scale = (MAX_W / w).min(MAX_H / h).min(1.0);
-    Vec2::new(w * scale, h * scale)
+    crate::data_editor_preview::fit_panel(w, h)
 }
 
 /// Interactive collection image + rows×cols overlay; click/drag selects cells.
@@ -916,7 +912,7 @@ fn paint_collection_cell_picker(
                 Color32::LIGHT_GRAY,
             );
         }
-        paint_cell_grid_lines_painter(&painter, content, pick.rows, pick.cols);
+        paint_grid_overlay_painter(&painter, content, pick.rows, pick.cols);
         if let Some(sel) = pick.sel {
             paint_cell_selection_painter(&painter, content, pick.rows, pick.cols, sel);
         }
@@ -955,21 +951,6 @@ fn paint_collection_cell_picker(
         None => "Click or drag to select cell(s)".into(),
     };
     ui.weak(status);
-}
-
-fn paint_cell_grid_lines_painter(painter: &egui::Painter, rect: egui::Rect, rows: i32, cols: i32) {
-    let rows = rows.max(1) as f32;
-    let cols = cols.max(1) as f32;
-    let stroke = egui::Stroke::new(1.0, Color32::from_rgb(255, 80, 80));
-    for i in 1..rows as i32 {
-        let y = rect.top() + rect.height() * (i as f32) / rows;
-        painter.hline(rect.x_range(), y, stroke);
-    }
-    for i in 1..cols as i32 {
-        let x = rect.left() + rect.width() * (i as f32) / cols;
-        painter.vline(x, rect.y_range(), stroke);
-    }
-    painter.rect_stroke(rect, 0.0, stroke, egui::StrokeKind::Outside);
 }
 
 fn paint_cell_selection_painter(

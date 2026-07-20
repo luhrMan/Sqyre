@@ -628,29 +628,14 @@ pub(crate) fn resolve_text(text: &str, macro_: &Macro) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::backends::{CoordinateResolver, DesktopRect, RecordingBackend, RecordingCapturer};
+    use crate::backends::{DesktopRect, RecordingBackend, RecordingCapturer};
+    use crate::test_support::FixedResolver;
     use sqyre_domain::{
         root_loop, Action, ActionId, ActionKind, CoordinateRef, ScalarValue, VariableAssignment,
     };
 
-    struct FixedResolver;
-
-    impl CoordinateResolver for FixedResolver {
-        fn resolve_point(
-            &self,
-            _r: &CoordinateRef,
-            _macro_: &Macro,
-        ) -> std::result::Result<(i32, i32), String> {
-            Ok((42, 99))
-        }
-        fn resolve_search_area(
-            &self,
-            _r: &CoordinateRef,
-            _macro_: &Macro,
-        ) -> std::result::Result<(i32, i32, i32, i32), String> {
-            Ok((0, 0, 10, 10))
-        }
-    }
+    const RUN_RESOLVER: FixedResolver =
+        FixedResolver::point_area((42, 99), (0, 0, 10, 10));
 
     #[test]
     fn executes_wait_loop_break() {
@@ -843,7 +828,7 @@ mod tests {
     #[test]
     fn move_uses_coordinate_resolver() {
         let mut backend = RecordingBackend::default();
-        let resolver = FixedResolver;
+        let resolver = RUN_RESOLVER;
         let mut macro_ = Macro::new("t", 0, vec![]);
         macro_.root = root_loop(vec![
             Action {

@@ -2,11 +2,17 @@ use sqyre_match::{ImageBuf, Point};
 
 /// Find first pixel matching `#rrggbb` within `tolerance`.
 pub fn find_pixel(img: &ImageBuf, hex: &str, tolerance: i32) -> Option<Point> {
+    find_pixels(img, hex, tolerance).into_iter().next()
+}
+
+/// Find all pixels matching `#rrggbb` within `tolerance` (row-major order).
+pub fn find_pixels(img: &ImageBuf, hex: &str, tolerance: i32) -> Vec<Point> {
     if img.channels != 3 {
-        return None;
+        return Vec::new();
     }
     let (tr, tg, tb) = parse_hex(hex).unwrap_or((0, 0, 0));
     let tol = tolerance.clamp(0, 255);
+    let mut out = Vec::new();
     for y in 0..img.height {
         for x in 0..img.width {
             let o = img.pixel_offset(x, y);
@@ -14,14 +20,14 @@ pub fn find_pixel(img: &ImageBuf, hex: &str, tolerance: i32) -> Option<Point> {
             let g = img.data[o + 1] as i32;
             let b = img.data[o + 2] as i32;
             if (r - tr).abs() <= tol && (g - tg).abs() <= tol && (b - tb).abs() <= tol {
-                return Some(Point {
+                out.push(Point {
                     x: x as i32,
                     y: y as i32,
                 });
             }
         }
     }
-    None
+    out
 }
 
 fn parse_hex(s: &str) -> Option<(i32, i32, i32)> {
@@ -42,5 +48,21 @@ mod tests {
         img.data[o + 2] = 0;
         let p = find_pixel(&img, "#ff0000", 0).unwrap();
         assert_eq!((p.x, p.y), (2, 1));
+    }
+
+    #[test]
+    fn find_pixels_collects_all() {
+        let mut img = ImageBuf::new(4, 2, 3, 0);
+        for &(x, y) in &[(0, 0), (3, 0), (1, 1)] {
+            let o = img.pixel_offset(x, y);
+            img.data[o] = 255;
+            img.data[o + 1] = 0;
+            img.data[o + 2] = 0;
+        }
+        let pts = find_pixels(&img, "#ff0000", 0);
+        assert_eq!(pts.len(), 3);
+        assert_eq!((pts[0].x, pts[0].y), (0, 0));
+        assert_eq!((pts[1].x, pts[1].y), (3, 0));
+        assert_eq!((pts[2].x, pts[2].y), (1, 1));
     }
 }

@@ -27,6 +27,7 @@ struct Inner {
 }
 
 fn normalize_rect(ax: i32, ay: i32, bx: i32, by: i32) -> (i32, i32, i32, i32) {
+    // Keep local: hotkeys cannot depend on sqyre-executor (cycle).
     let (lx, rx) = if ax <= bx { (ax, bx) } else { (bx, ax) };
     let (ty, by) = if ay <= by { (ay, by) } else { (by, ay) };
     (lx, ty, rx, by)

@@ -116,7 +116,8 @@ pub const WAIT_INTERVAL: &str = "Milliseconds between detection retries.";
 pub const WAIT_MAX_ITER: &str = "Cap on repeat-while-found iterations (0 = default 100).";
 pub const OUT_X: &str = "Variable that receives the match X coordinate.";
 pub const OUT_Y: &str = "Variable that receives the match Y coordinate.";
-pub const ORDER_GROUPING: &str = "How multiple matches are grouped before ordering.";
+pub const ORDER_GROUPING: &str =
+    "How multiple matches are grouped before ordering (Image Search, OCR occurrences, clustered Find Pixel).";
 pub const ORDER_HORIZONTAL: &str = "Left-to-right or right-to-left among matches.";
 pub const ORDER_VERTICAL: &str = "Top-to-bottom or bottom-to-top among matches.";
 pub const RUN_ON_NO_FIND: &str = "Run child actions when the target is not found.";
@@ -129,7 +130,8 @@ pub const IS_BLUR: &str = "Blur radius applied before matching (reduces noise)."
 
 // --- OCR ---
 
-pub const OCR_TARGET: &str = "Text that must appear for the branch to run. Empty = always read.";
+pub const OCR_TARGET: &str =
+    "Text that must appear for the branch to run. Empty = always read once at search center. Multiple occurrences each run the branch.";
 pub const OCR_OUTPUT: &str = "Variable that receives the recognized text.";
 pub const OCR_BLUR: &str = "Blur radius before OCR.";
 pub const OCR_MIN_THRESHOLD: &str = "Minimum pixel intensity kept before OCR (0–255).";
@@ -140,7 +142,8 @@ pub const OCR_INVERT: &str = "Invert light/dark after thresholding.";
 
 // --- Find pixel ---
 
-pub const PIXEL_COLOR: &str = "Target hex color (RRGGBB). Use Record to sample the screen.";
+pub const PIXEL_COLOR: &str =
+    "Target hex color (RRGGBB). Nearby matching pixels are clustered into one hit each; Match order applies. Use Record to sample the screen.";
 pub const PIXEL_TOLERANCE: &str = "Allowed per-channel color distance from the target.";
 
 // --- Navigate Select ---

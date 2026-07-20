@@ -4,6 +4,12 @@
 //! order ([`ACTION_PICKER_CATEGORIES`]) is presentation-oriented and may move to
 //! an app-facing module later; keep wire `type_key` values stable.
 
+/// Number of addable [`crate::ActionKind`] variants / taxonomy rows.
+///
+/// Bump this when adding a kind, and update [`ACTION_TYPE_TABLE`], `blank_kind`,
+/// serde tags, and exhaustive `ActionKind` matches.
+pub const ACTION_KIND_COUNT: usize = 21;
+
 /// Picker column order (also used as color-bucket keys for most types).
 pub const ACTION_PICKER_CATEGORIES: &[&str] = &[
     "Mouse & Keyboard",
@@ -211,6 +217,16 @@ pub fn action_color_category(action_type: &str) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::blank_action;
+
+    #[test]
+    fn table_len_matches_action_kind_count() {
+        assert_eq!(
+            ACTION_TYPE_TABLE.len(),
+            ACTION_KIND_COUNT,
+            "bump ACTION_KIND_COUNT when adding a taxonomy row / ActionKind"
+        );
+    }
 
     #[test]
     fn table_covers_picker_templates() {
@@ -221,6 +237,39 @@ mod tests {
         }
         assert_eq!(action_type_label("nope"), "Unknown");
         assert_eq!(action_color_category("nope"), "");
+    }
+
+    #[test]
+    fn every_taxonomy_row_has_blank_factory() {
+        for m in ACTION_TYPE_TABLE {
+            let action = blank_action(m.type_key).unwrap_or_else(|| {
+                panic!("blank_action missing for taxonomy type_key {:?}", m.type_key)
+            });
+            assert_eq!(
+                action.type_key(),
+                m.type_key,
+                "blank type_key mismatch for {:?}",
+                m.type_key
+            );
+            assert_ne!(
+                action_type_label(m.type_key),
+                "Unknown",
+                "taxonomy label missing for {:?}",
+                m.type_key
+            );
+        }
+    }
+
+    #[test]
+    fn taxonomy_type_keys_are_unique() {
+        let mut seen = std::collections::BTreeSet::new();
+        for m in ACTION_TYPE_TABLE {
+            assert!(
+                seen.insert(m.type_key),
+                "duplicate taxonomy type_key {:?}",
+                m.type_key
+            );
+        }
     }
 
     #[test]

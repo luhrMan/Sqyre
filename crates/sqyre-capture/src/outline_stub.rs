@@ -1,29 +1,6 @@
 //! Stub selection outline when X11 is unavailable.
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct OutlineRect {
-    pub left: i32,
-    pub top: i32,
-    pub right: i32,
-    pub bottom: i32,
-}
-
-impl OutlineRect {
-    pub fn normalize(ax: i32, ay: i32, bx: i32, by: i32) -> Self {
-        let (left, right) = if ax <= bx { (ax, bx) } else { (bx, ax) };
-        let (top, bottom) = if ay <= by { (ay, by) } else { (by, ay) };
-        Self {
-            left,
-            top,
-            right,
-            bottom,
-        }
-    }
-
-    pub fn is_empty(self) -> bool {
-        self.right <= self.left || self.bottom <= self.top
-    }
-}
+pub use crate::outline_rect::OutlineRect;
 
 /// No-op outline for non-Linux builds.
 #[derive(Debug, Default)]

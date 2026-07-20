@@ -1,6 +1,5 @@
 //! Shared parsing / naming helpers for the data editor.
 
-use sqyre_domain::ScalarValue;
 use sqyre_persist::ProgramCatalog;
 use web_time::{SystemTime, UNIX_EPOCH};
 
@@ -24,14 +23,6 @@ pub(crate) fn overlay_hex_or_empty(c: eframe::egui::Color32, default_hex: &str) 
     } else {
         hex
     }
-}
-
-pub(crate) fn scalar_to_edit(v: &ScalarValue) -> String {
-    v.as_display()
-}
-
-pub(crate) fn parse_scalar(s: &str) -> ScalarValue {
-    ScalarValue::parse_edit(s)
 }
 
 pub(crate) fn parse_i32(s: &str) -> Option<i32> {
@@ -64,25 +55,6 @@ pub(crate) fn collect_program_item_tags(catalog: &ProgramCatalog, program: &str)
             })
             .unwrap_or_default(),
     )
-}
-
-pub(crate) fn item_tag_completion_options(
-    search: &str,
-    on_item: &[String],
-    program_tags: &[String],
-    limit: usize,
-) -> Vec<String> {
-    let search_l = search.trim().to_lowercase();
-    if search_l.is_empty() {
-        return Vec::new();
-    }
-    program_tags
-        .iter()
-        .filter(|t| !on_item.iter().any(|c| c == *t))
-        .filter(|t| t.to_lowercase().contains(&search_l))
-        .take(limit)
-        .cloned()
-        .collect()
 }
 
 pub(crate) fn uuid_simple() -> String {
@@ -132,6 +104,7 @@ pub(crate) fn copy_image_as_png(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sqyre_domain::ScalarValue;
     use sqyre_persist::{ProgramCatalog, ProgramItem};
 
     #[test]
@@ -146,12 +119,15 @@ mod tests {
 
     #[test]
     fn parse_scalar_kinds() {
-        assert_eq!(parse_scalar(""), ScalarValue::Null);
-        assert_eq!(parse_scalar("42"), ScalarValue::Int(42));
-        assert_eq!(parse_scalar("1.5"), ScalarValue::Float(1.5));
-        assert_eq!(parse_scalar("true"), ScalarValue::Bool(true));
-        assert_eq!(parse_scalar("FALSE"), ScalarValue::Bool(false));
-        assert_eq!(parse_scalar("hello"), ScalarValue::String("hello".into()));
+        assert_eq!(ScalarValue::parse_edit(""), ScalarValue::Null);
+        assert_eq!(ScalarValue::parse_edit("42"), ScalarValue::Int(42));
+        assert_eq!(ScalarValue::parse_edit("1.5"), ScalarValue::Float(1.5));
+        assert_eq!(ScalarValue::parse_edit("true"), ScalarValue::Bool(true));
+        assert_eq!(ScalarValue::parse_edit("FALSE"), ScalarValue::Bool(false));
+        assert_eq!(
+            ScalarValue::parse_edit("hello"),
+            ScalarValue::String("hello".into())
+        );
     }
 
     #[test]
@@ -164,7 +140,7 @@ mod tests {
 
     #[test]
     fn item_tag_completion_filters() {
-        let opts = item_tag_completion_options(
+        let opts = crate::widgets::tags::tag_completion_options(
             "hel",
             &["healing".into()],
             &[

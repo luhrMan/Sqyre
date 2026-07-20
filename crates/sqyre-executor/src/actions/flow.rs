@@ -152,8 +152,7 @@ pub(crate) fn execute_pause(
     pass_through: bool,
     macro_: &Macro,
 ) -> Result<()> {
-    let keys = normalize_continue_key(continue_key);
-    validate_continue_key(&keys)?;
+    let keys = sqyre_hotkeys::validate_continue_key(continue_key).map_err(ExecError::Message)?;
 
     let msg = match resolve_text(message, macro_) {
         Ok(s) => s,
@@ -186,25 +185,6 @@ pub(crate) fn execute_pause(
         Err(e) if e.contains("stopped") => Err(FlowSignal::Stopped.into()),
         Err(e) => Err(ExecError::Message(e)),
     }
-}
-
-fn normalize_continue_key(keys: &[String]) -> Vec<String> {
-    keys.iter()
-        .map(|k| sqyre_hotkeys::normalize_key_name(k))
-        .filter(|k| !k.is_empty())
-        .collect()
-}
-
-fn validate_continue_key(keys: &[String]) -> Result<()> {
-    if keys.is_empty() {
-        return Err(ExecError::Message("pause: continue key not set".into()));
-    }
-    if sqyre_hotkeys::is_failsafe_chord(keys) {
-        return Err(ExecError::Message(
-            "pause: continue key cannot match the failsafe hotkey (esc + ctrl + shift)".into(),
-        ));
-    }
-    Ok(())
 }
 
 fn format_continue_key(keys: &[String]) -> String {
