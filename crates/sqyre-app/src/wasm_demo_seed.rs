@@ -262,9 +262,7 @@ fn click_left(state: bool) -> Action {
 fn move_to_found(program: &str, smooth: bool) -> Action {
     let mut a = blank_action("move").expect("move");
     if let ActionKind::Move {
-        point,
-        smooth: sm,
-        ..
+        point, smooth: sm, ..
     } = &mut a.kind
     {
         *point = cref(program, "Match center");
@@ -308,15 +306,27 @@ fn coords(ox: &str, oy: &str) -> CoordinateOutputs {
     }
 }
 
+fn detection_branch(
+    wait: WaitTilFoundConfig,
+    out: CoordinateOutputs,
+    subactions: Vec<Action>,
+) -> DetectionBranch {
+    DetectionBranch {
+        wait,
+        coords: out,
+        run_branch_on_no_find: false,
+        order: Default::default(),
+        subactions,
+    }
+}
+
 fn image_search(
     name: &str,
     targets: Vec<String>,
     search_area: CoordinateRef,
     tolerance: f64,
     blur: i32,
-    wait: WaitTilFoundConfig,
-    out: CoordinateOutputs,
-    subactions: Vec<Action>,
+    detection: DetectionBranch,
 ) -> Action {
     let mut a = blank_action("imagesearch").expect("imagesearch");
     if let ActionKind::ImageSearch {
@@ -325,7 +335,7 @@ fn image_search(
         search_area: sa,
         tolerance: tol,
         blur: b,
-        detection,
+        detection: det,
     } = &mut a.kind
     {
         *n = name.into();
@@ -333,13 +343,7 @@ fn image_search(
         *sa = search_area;
         *tol = tolerance;
         *b = blur;
-        *detection = DetectionBranch {
-            wait,
-            coords: out,
-            run_branch_on_no_find: false,
-            order: Default::default(),
-            subactions,
-        };
+        *det = detection;
     }
     a
 }
@@ -420,12 +424,7 @@ fn loop_named(name: &str, count: i64, subactions: Vec<Action>) -> Action {
     a
 }
 
-fn conditional_contains(
-    name: &str,
-    left: &str,
-    right: &str,
-    subactions: Vec<Action>,
-) -> Action {
+fn conditional_contains(name: &str, left: &str, right: &str, subactions: Vec<Action>) -> Action {
     let mut a = blank_action("conditional").expect("conditional");
     if let ActionKind::Conditional {
         condition,
@@ -728,21 +727,23 @@ fn demo_macro_eldoria_open_bags() -> Vec<Action> {
         cref(prog, "Minimap frame"),
         0.15,
         3,
-        wait_until(5, 0),
-        coords("bagIconX", "bagIconY"),
-        vec![
-            wait_ms(55),
-            move_to_found(prog, true),
-            click_left(true),
-            click_left(false),
-            wait_ms(100),
-            sort_ocr,
-            wait_ms(50),
-            move_to_found(prog, false),
-            click_left(true),
-            click_left(false),
-            wait_ms(80),
-        ],
+        detection_branch(
+            wait_until(5, 0),
+            coords("bagIconX", "bagIconY"),
+            vec![
+                wait_ms(55),
+                move_to_found(prog, true),
+                click_left(true),
+                click_left(false),
+                wait_ms(100),
+                sort_ocr,
+                wait_ms(50),
+                move_to_found(prog, false),
+                click_left(true),
+                click_left(false),
+                wait_ms(80),
+            ],
+        ),
     );
 
     let quest_hud = ocr(
@@ -760,13 +761,7 @@ fn demo_macro_eldoria_open_bags() -> Vec<Action> {
         wait_ms(40),
     ];
     out.extend(key_tap("1"));
-    out.extend([
-        wait_ms(80),
-        bag_icon,
-        wait_ms(70),
-        quest_hud,
-        wait_ms(45),
-    ]);
+    out.extend([wait_ms(80), bag_icon, wait_ms(70), quest_hud, wait_ms(45)]);
     out.extend(key_tap("b"));
     out.push(wait_ms(50));
     out.extend(key_tap("i"));
@@ -790,16 +785,18 @@ fn demo_macro_hex_repeat_build() -> Vec<Action> {
         cref(prog, "Build palette dock"),
         0.14,
         2,
-        wait_until(6, 0),
-        coords("buildIconX", "buildIconY"),
-        vec![
-            wait_ms(50),
-            move_to_found(prog, false),
-            click_left(true),
-            click_left(false),
-            wait_ms(90),
-            place_loop,
-        ],
+        detection_branch(
+            wait_until(6, 0),
+            coords("buildIconX", "buildIconY"),
+            vec![
+                wait_ms(50),
+                move_to_found(prog, false),
+                click_left(true),
+                click_left(false),
+                wait_ms(90),
+                place_loop,
+            ],
+        ),
     );
 
     let minimap_threat = find_pixel(
@@ -819,7 +816,13 @@ fn demo_macro_hex_repeat_build() -> Vec<Action> {
         CoordinateOutputs::defaults(),
     );
 
-    let mut out = vec![wait_ms(90), build_hit, wait_ms(100), minimap_threat, wait_ms(35)];
+    let mut out = vec![
+        wait_ms(90),
+        build_hit,
+        wait_ms(100),
+        minimap_threat,
+        wait_ms(35),
+    ];
     out.extend(key_tap("p"));
     out.extend([wait_ms(80), briefing, wait_ms(60), wait_ms(40)]);
     out
@@ -846,16 +849,18 @@ fn demo_macro_pixelsmith_export() -> Vec<Action> {
         cref(prog, "Layers panel stack"),
         0.13,
         2,
-        wait_until(5, 0),
-        coords("layerHitX", "layerHitY"),
-        vec![
-            wait_ms(50),
-            move_to_found(prog, true),
-            click_left(true),
-            click_left(false),
-            wait_ms(120),
-            menu_ocr,
-        ],
+        detection_branch(
+            wait_until(5, 0),
+            coords("layerHitX", "layerHitY"),
+            vec![
+                wait_ms(50),
+                move_to_found(prog, true),
+                click_left(true),
+                click_left(false),
+                wait_ms(120),
+                menu_ocr,
+            ],
+        ),
     );
 
     let histogram = find_pixel(
@@ -867,7 +872,13 @@ fn demo_macro_pixelsmith_export() -> Vec<Action> {
         coords("histX", "histY"),
     );
 
-    let mut out = vec![wait_ms(120), layer_thumb, wait_ms(90), histogram, wait_ms(40)];
+    let mut out = vec![
+        wait_ms(120),
+        layer_thumb,
+        wait_ms(90),
+        histogram,
+        wait_ms(40),
+    ];
     out.extend(key_chord(&["ctrl", "shift"], "e"));
     out.extend(key_chord(&["ctrl", "shift"], "l"));
     out
@@ -901,17 +912,19 @@ fn demo_macro_nimbus_inbox() -> Vec<Action> {
         cref(prog, "Inbox message list"),
         0.14,
         2,
-        wait_until(5, 0),
-        coords("rowHitX", "rowHitY"),
-        vec![
-            wait_ms(45),
-            move_to_found(prog, true),
-            click_left(true),
-            click_left(false),
-            wait_ms(150),
-            read_header_ocr,
-            wait_ms(50),
-        ],
+        detection_branch(
+            wait_until(5, 0),
+            coords("rowHitX", "rowHitY"),
+            vec![
+                wait_ms(45),
+                move_to_found(prog, true),
+                click_left(true),
+                click_left(false),
+                wait_ms(150),
+                read_header_ocr,
+                wait_ms(50),
+            ],
+        ),
     );
 
     let promo = ocr(
@@ -975,20 +988,22 @@ fn demo_macro_gem_daily() -> Vec<Action> {
         cref(prog, "Puzzle board grid"),
         0.15,
         3,
-        wait_until(5, 0),
-        coords("chestX", "chestY"),
-        vec![
-            wait_ms(55),
-            move_to_found(prog, true),
-            click_left(true),
-            click_left(false),
-            wait_ms(120),
-            claim_ocr,
-            wait_ms(50),
-            move_to_found(prog, false),
-            click_left(true),
-            click_left(false),
-        ],
+        detection_branch(
+            wait_until(5, 0),
+            coords("chestX", "chestY"),
+            vec![
+                wait_ms(55),
+                move_to_found(prog, true),
+                click_left(true),
+                click_left(false),
+                wait_ms(120),
+                claim_ocr,
+                wait_ms(50),
+                move_to_found(prog, false),
+                click_left(true),
+                click_left(false),
+            ],
+        ),
     );
 
     let lives = find_pixel(
@@ -1037,10 +1052,7 @@ fn demo_macro_studio_undo() -> Vec<Action> {
         "Layers panel focused",
         "${layerTitleOcr}",
         "Layer",
-        vec![
-            wait_ms(55),
-            loop_named("Undo burst", 3, undo_once),
-        ],
+        vec![wait_ms(55), loop_named("Undo burst", 3, undo_once)],
     );
 
     let marquee = find_pixel(
@@ -1093,17 +1105,19 @@ fn demo_macro_mail_archive() -> Vec<Action> {
         cref(prog, "Reading pane body"),
         0.13,
         2,
-        wait_until(4, 0),
-        coords("clipX", "clipY"),
-        vec![
-            wait_ms(40),
-            move_to_found(prog, true),
-            click_left(true),
-            click_left(false),
-            wait_ms(100),
-            pdf_ocr,
-            wait_ms(40),
-        ],
+        detection_branch(
+            wait_until(4, 0),
+            coords("clipX", "clipY"),
+            vec![
+                wait_ms(40),
+                move_to_found(prog, true),
+                click_left(true),
+                click_left(false),
+                wait_ms(100),
+                pdf_ocr,
+                wait_ms(40),
+            ],
+        ),
     );
 
     let mut out = vec![
@@ -1140,7 +1154,9 @@ mod tests {
             assert_eq!(eldoria.items.len(), 6);
             assert!(eldoria.items.contains_key("Health potion stack"));
             assert!(eldoria.collections.contains_key("Bag slots"));
-            assert!(demo_icons::path_for_item_target("Eldoria Online~Health potion stack").is_some());
+            assert!(
+                demo_icons::path_for_item_target("Eldoria Online~Health potion stack").is_some()
+            );
             assert_eq!(
                 demo_icons::variant_paths_for_target("Eldoria Online~Health potion stack").len(),
                 3,
