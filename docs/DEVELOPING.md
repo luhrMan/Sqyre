@@ -82,9 +82,9 @@ cargo install --locked trunk
 
 Uses `--no-default-features` (no global hotkey hooks). Native `make` / `make release` are unchanged.
 
-CI builds and releases **Linux** binaries and AppImages only. PRs also `cargo check` on Windows and macOS (Windows GDI capture; macOS capture still stubbed). On Linux/macOS hosts, `make windows` uses the MinGW cross image in [`scripts/windows/`](../scripts/windows/PACKAGING.md); `make macos` stays native. MSI/DMG packaging is not shipped yet.
+CI releases on merge to `main`: Linux binary + AppImage, Windows `.exe` (MinGW cross via [`scripts/windows/`](../scripts/windows/PACKAGING.md)), and the WASM editor zip (`make wasm`). PRs also `cargo check` on Windows and macOS (Windows GDI capture; macOS capture still stubbed). `make macos` stays native; MSI/DMG packaging is not shipped yet.
 
-CI caches: Linux Docker Buildx (GHA + GHCR), Cargo registry/target, and tessdata; Windows LLVM install + vcpkg binaries + split Cargo caches; macOS Homebrew bottles + split Cargo caches.
+CI caches: Linux Docker Buildx (GHA + GHCR), Windows cross-image Buildx, Cargo registry/target (per job), and tessdata; Windows LLVM install + vcpkg binaries + split Cargo caches; macOS Homebrew bottles + split Cargo caches.
 
 ---
 
