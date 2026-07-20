@@ -1,9 +1,7 @@
 //! Form buffers: load, draw, dirty, valid.
 
 use super::form_state;
-use super::helpers::{
-    collect_program_item_tags, form_coord_literal, item_tag_completion_options, parse_i32,
-};
+use super::helpers::{collect_program_item_tags, form_coord_literal, parse_i32};
 use super::{DataEditor, EditorTab};
 use crate::action_tooltip::help;
 use crate::collection_capture::capture_and_save_collection_image;
@@ -319,57 +317,18 @@ impl DataEditor {
                 }
                 ui.add_space(4.0);
                 help::label(ui, "Tags", help::DE_TAGS);
-                ui.horizontal_wrapped(|ui| {
-                    let mut remove: Option<usize> = None;
-                    for (i, tag) in self.form_tags.iter().enumerate() {
-                        if ui.button(format!("{tag} ×")).clicked() {
-                            remove = Some(i);
-                        }
-                    }
-                    if let Some(i) = remove {
-                        self.form_tags.remove(i);
-                    }
-                });
-                ui.horizontal(|ui| {
-                    let tag_te = egui::TextEdit::singleline(&mut self.tag_draft)
-                        .desired_width(140.0)
-                        .hint_text("Add tag…");
-                    let tag_resp = ui.add(tag_te);
-                    let add_clicked = ui.button("Add tag").clicked();
-                    let add_enter =
-                        tag_resp.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-                    if add_clicked || add_enter {
-                        let t = self.tag_draft.trim().to_string();
-                        if !t.is_empty() && !self.form_tags.iter().any(|x| x == &t) {
-                            self.form_tags.push(t);
-                        }
-                        self.tag_draft.clear();
-                    }
-                });
-                // Completion from other item tags in this program.
-                if !self.tag_draft.trim().is_empty() {
-                    if let Some(prog) = self.selected_program.as_deref() {
-                        let program_tags = collect_program_item_tags(catalog, prog);
-                        let suggestions = item_tag_completion_options(
-                            &self.tag_draft,
-                            &self.form_tags,
-                            &program_tags,
-                            8,
-                        );
-                        if !suggestions.is_empty() {
-                            ui.horizontal_wrapped(|ui| {
-                                for sug in suggestions {
-                                    if ui.small_button(&sug).clicked() {
-                                        if !self.form_tags.iter().any(|x| x == &sug) {
-                                            self.form_tags.push(sug);
-                                        }
-                                        self.tag_draft.clear();
-                                    }
-                                }
-                            });
-                        }
-                    }
-                }
+                let program_tags = self
+                    .selected_program
+                    .as_deref()
+                    .map(|prog| collect_program_item_tags(catalog, prog))
+                    .unwrap_or_default();
+                crate::widgets::tag_chip_editor(
+                    ui,
+                    &mut self.form_tags,
+                    &mut self.tag_draft,
+                    &program_tags,
+                    crate::widgets::TagChipOptions::default(),
+                );
                 if let (Some(prog), Some(item)) =
                     (self.selected_program.clone(), self.selected_entity.clone())
                 {

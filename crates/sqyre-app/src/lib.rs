@@ -46,6 +46,7 @@ mod ui_overlays;
 mod ui_toolbar;
 mod var_pills;
 mod variables_panel;
+mod widgets;
 #[cfg(any(test, target_arch = "wasm32"))]
 mod wasm_demo_seed;
 mod wasm_io;

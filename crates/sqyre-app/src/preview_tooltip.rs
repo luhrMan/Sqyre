@@ -107,14 +107,14 @@ impl PreviewTooltipCache {
                     Ok((tex, cap)) => paint_preview(ui, tex, cap, false),
                     Err(err) => {
                         ui.label(caption.as_str());
-                        ui.colored_label(egui::Color32::from_rgb(220, 80, 80), err);
+                        ui.colored_label(crate::theme::error_fg(), err);
                     }
                 });
             }
             Err(EntityPreviewError::NonLiteral) => {
                 response.clone().on_hover_ui(|ui| {
                     ui.label(format!("{program}~{name}"));
-                    ui.colored_label(egui::Color32::from_rgb(220, 80, 80), LITERAL_COORDS_MSG);
+                    ui.colored_label(crate::theme::error_fg(), LITERAL_COORDS_MSG);
                 });
             }
             Err(EntityPreviewError::Missing) => {
@@ -141,7 +141,7 @@ impl PreviewTooltipCache {
             // display fit so preview doesn't force the tooltip wider than view mode.
             Ok((tex, cap)) => paint_preview(ui, &tex, &cap, false),
             Err(err) => {
-                ui.colored_label(egui::Color32::from_rgb(220, 80, 80), err);
+                ui.colored_label(crate::theme::error_fg(), err);
             }
         }
     }
@@ -613,7 +613,7 @@ fn paint_preview_panel_placeholder(ui: &mut egui::Ui, err: &str) -> egui::Rect {
         egui::Align2::CENTER_CENTER,
         err,
         egui::FontId::proportional(13.0),
-        egui::Color32::from_rgb(220, 80, 80),
+        crate::theme::error_fg(),
     );
     rect
 }
@@ -632,14 +632,8 @@ fn fit_display_panel(w: f32, h: f32) -> Vec2 {
     Vec2::new(w * scale, h * scale)
 }
 
-fn normalize_rect(mut lx: i32, mut ty: i32, mut rx: i32, mut by: i32) -> (i32, i32, i32, i32) {
-    if lx > rx {
-        std::mem::swap(&mut lx, &mut rx);
-    }
-    if ty > by {
-        std::mem::swap(&mut ty, &mut by);
-    }
-    (lx, ty, rx, by)
+fn normalize_rect(lx: i32, ty: i32, rx: i32, by: i32) -> (i32, i32, i32, i32) {
+    DesktopRect::normalize_corners(lx, ty, rx, by)
 }
 
 fn preview_bounds_for_point(px: i32, py: i32, vb: DesktopRect) -> DesktopRect {

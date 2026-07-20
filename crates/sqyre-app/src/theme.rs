@@ -20,6 +20,44 @@ pub fn accent_dim() -> Color32 {
     rgba([0xdc, 0x9d, 0x2e, 0x40])
 }
 
+/// Foreground that contrasts with a pastel/solid fill (Rec.601 luminance).
+pub fn contrast_fg(bg: Color32) -> Color32 {
+    let lum = 0.299 * bg.r() as f32 + 0.587 * bg.g() as f32 + 0.114 * bg.b() as f32;
+    if lum > 140.0 {
+        Color32::from_rgb(30, 30, 30)
+    } else {
+        Color32::from_rgb(240, 240, 240)
+    }
+}
+
+/// Place galley so its ink (mesh bounds) is centered in `rect`.
+pub fn paint_galley_centered(
+    ui: &mut egui::Ui,
+    rect: egui::Rect,
+    galley: std::sync::Arc<egui::Galley>,
+    fallback: Color32,
+) {
+    let pos = if galley.mesh_bounds.is_positive() {
+        // Optical center: baseline metrics make the layout box look top-heavy.
+        rect.center() - galley.mesh_bounds.center().to_vec2()
+    } else {
+        egui::Align2::CENTER_CENTER
+            .anchor_size(rect.center(), galley.size())
+            .min
+    };
+    ui.painter().galley(pos, galley, fallback);
+}
+
+/// Soft error / failure text (Find Pixel dropper, status banners).
+pub fn error_fg() -> Color32 {
+    Color32::from_rgb(220, 80, 80)
+}
+
+/// Soft success text for status banners.
+pub fn ok_fg() -> Color32 {
+    Color32::from_rgb(80, 160, 80)
+}
+
 /// Soft tag-chip fill (~11% opacity).
 pub fn chip_fill() -> Color32 {
     rgba([0xdc, 0x9d, 0x2e, 28])

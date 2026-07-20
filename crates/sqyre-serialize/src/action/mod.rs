@@ -205,9 +205,16 @@ mod tests {
 
     #[test]
     fn blank_action_kinds_roundtrip_encode_decode() {
-        use sqyre_domain::action_templates;
-        for tmpl in action_templates() {
+        use sqyre_domain::{action_templates, ACTION_KIND_COUNT};
+        let templates = action_templates();
+        assert_eq!(
+            templates.len(),
+            ACTION_KIND_COUNT,
+            "bump ACTION_KIND_COUNT when adding a kind"
+        );
+        for tmpl in templates {
             let action = tmpl.create();
+            assert_eq!(action.type_key(), tmpl.action_type);
             let encoded = action_to_map(&action).unwrap();
             let decoded = action_from_map(&encoded).unwrap();
             assert_eq!(

@@ -3,7 +3,9 @@
 //! Hover a tile ~1s for a **view** tip of that type’s defaults; right-click opens
 //! **edit** (persisted in user settings). Left-click inserts a clone into the tree.
 
-use crate::action_tooltip::{apply_picker_result, paint_edit_fields, show_action_view_tip};
+use crate::action_tooltip::{
+    apply_picker_result, paint_action_edit_header, paint_edit_fields, show_action_view_tip,
+};
 use crate::hotkey_record::HotkeyRecordUi;
 use crate::icon_cache::IconCache;
 use crate::key_record::KeyRecordUi;
@@ -11,6 +13,7 @@ use crate::paint_ctx::{CatalogPaint, EditFieldsCtx, RecordBridges, VarTheme};
 use crate::pickers::{self, ActivePicker};
 use crate::preview_tooltip::PreviewTooltipCache;
 use crate::tree_chrome;
+use crate::widgets::SaveCancel;
 use eframe::egui::{self, Color32, CornerRadius, Key, Sense, Vec2};
 use sqyre_domain::{
     action_templates, action_type_label, blank_action, Action, ActionId, ActionTemplate,
@@ -435,22 +438,17 @@ impl AddActionPicker {
             .default_size([340.0, 360.0])
             .min_size([220.0, 120.0])
             .show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    tree_chrome::paint_pill_pub(ui, label, pastel);
-                    ui.label("New actions of this type start with these values");
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button("Cancel").clicked() {
-                            cancel = true;
-                        }
-                        if ui.button("Save").clicked() {
-                            save = true;
-                        }
-                    });
-                });
-                if let Some(err) = &err_msg {
-                    ui.colored_label(Color32::RED, err.as_str());
+                match paint_action_edit_header(
+                    ui,
+                    label,
+                    pastel,
+                    Some("New actions of this type start with these values"),
+                    err_msg.as_deref(),
+                ) {
+                    SaveCancel::Cancel => cancel = true,
+                    SaveCancel::Save => save = true,
+                    SaveCancel::None => {}
                 }
-                ui.separator();
                 let list_h = pickers::popup_scroll_max_height(ui, 0.0);
                 egui::ScrollArea::vertical()
                     .auto_shrink([false, false])
@@ -542,7 +540,7 @@ fn picker_tile(
     );
 
     let text = format!("{glyph}  {}", tmpl.label);
-    let fg = tile_contrast_fg(fill);
+    let fg = crate::theme::contrast_fg(fill);
     let galley = ui
         .painter()
         .layout_no_wrap(text, egui::FontId::proportional(14.0), fg);
@@ -551,18 +549,6 @@ fn picker_tile(
 
     // No egui `on_hover_text` — the delayed action view tip is the hover UI.
     response
-}
-
-fn tile_contrast_fg(fill: Color32) -> Color32 {
-    let r = fill.r() as f32 / 255.0;
-    let g = fill.g() as f32 / 255.0;
-    let b = fill.b() as f32 / 255.0;
-    let lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-    if lum > 0.55 {
-        Color32::from_rgb(0x1a, 0x1a, 0x1a)
-    } else {
-        Color32::from_rgb(0xf5, 0xf5, 0xf5)
-    }
 }
 
 #[cfg(test)]

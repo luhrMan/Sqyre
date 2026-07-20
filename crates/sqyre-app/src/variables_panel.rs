@@ -239,11 +239,12 @@ impl VariablesPanelUi {
         }
 
         if let Some(msg) = &self.status {
-            if self.status_error {
-                ui.colored_label(ui.visuals().error_fg_color, msg);
+            let color = if self.status_error {
+                crate::theme::error_fg()
             } else {
-                ui.weak(msg);
-            }
+                crate::theme::ok_fg()
+            };
+            ui.colored_label(color, msg);
         }
 
         persist
@@ -251,20 +252,8 @@ impl VariablesPanelUi {
 
     fn edit_form(&mut self, ui: &mut egui::Ui, macro_: &mut Macro, mut edit: EditState) -> bool {
         let mut persist = false;
-        let mut cancel = false;
-        let mut save = false;
 
-        ui.horizontal(|ui| {
-            help::label(ui, "Name", help::VAR_NAME);
-            help::tip(
-                ui.add(
-                    egui::TextEdit::singleline(&mut edit.name)
-                        .desired_width(160.0)
-                        .hint_text("myVar"),
-                ),
-                help::VAR_NAME,
-            );
-        });
+        crate::widgets::text_field_width(ui, "Name", help::VAR_NAME, &mut edit.name, 160.0);
         ui.horizontal(|ui| {
             help::label(ui, "Type", help::VAR_TYPE);
             for (label, ty) in [
@@ -281,50 +270,39 @@ impl VariablesPanelUi {
                 }
             }
         });
-        ui.horizontal(|ui| {
-            help::label(ui, "Initial", help::VAR_INITIAL);
-            help::tip(
-                ui.add(
-                    egui::TextEdit::singleline(&mut edit.initial_value)
-                        .desired_width(220.0)
-                        .hint_text("optional"),
-                ),
-                help::VAR_INITIAL,
-            );
-        });
-        ui.horizontal(|ui| {
-            help::label(ui, "Description", help::VAR_DESC);
-            help::tip(
-                ui.add(
-                    egui::TextEdit::singleline(&mut edit.description)
-                        .desired_width(280.0)
-                        .hint_text("optional"),
-                ),
-                help::VAR_DESC,
-            );
-        });
+        crate::widgets::text_field_width(
+            ui,
+            "Initial",
+            help::VAR_INITIAL,
+            &mut edit.initial_value,
+            220.0,
+        );
+        crate::widgets::text_field_width(
+            ui,
+            "Description",
+            help::VAR_DESC,
+            &mut edit.description,
+            280.0,
+        );
 
         if let Some(err) = &edit.error {
-            ui.colored_label(ui.visuals().error_fg_color, err);
+            ui.colored_label(crate::theme::error_fg(), err);
         }
 
-        ui.horizontal(|ui| {
-            if ui.button("Save").clicked() {
-                save = true;
+        match crate::widgets::save_cancel_row_ltr(ui) {
+            crate::widgets::SaveCancel::Cancel => {
+                self.editing = None;
+                return false;
             }
-            if ui.button("Cancel").clicked() {
-                cancel = true;
+            crate::widgets::SaveCancel::None => {
+                self.editing = Some(edit);
+                return false;
             }
-        });
-
-        if cancel {
-            self.editing = None;
-            return false;
+            crate::widgets::SaveCancel::Save => {}
         }
 
-        if save {
-            let trimmed = edit.name.trim().to_string();
-            match validate_variable_assignment_name(&trimmed) {
+        let trimmed = edit.name.trim().to_string();
+        match validate_variable_assignment_name(&trimmed) {
                 Ok(()) => {
                     let collision = macro_.variable_decls.iter().enumerate().any(|(i, d)| {
                         d.name.eq_ignore_ascii_case(&trimmed)
@@ -357,9 +335,6 @@ impl VariablesPanelUi {
                     edit.error = Some(e.to_string());
                     self.editing = Some(edit);
                 }
-            }
-        } else {
-            self.editing = Some(edit);
         }
 
         persist

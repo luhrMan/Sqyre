@@ -94,55 +94,23 @@ impl MacroMetaUi {
             {
                 self.delay_open = !self.delay_open;
             }
-
             ui.label("Tags:").on_hover_text(help::META_TAGS);
-            let tag_te = egui::TextEdit::singleline(&mut self.tag_draft)
-                .desired_width(140.0)
-                .hint_text("Add tag…");
-            let tag_resp = ui
-                .add_enabled(enabled, tag_te)
-                .on_hover_text(help::META_TAGS);
-            let add_enter = tag_resp.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-            if enabled && add_enter {
-                if try_add_tag(m, &self.tag_draft) {
-                    out.persist = true;
-                }
-                self.tag_draft.clear();
-            }
-
-            // Existing tags as removable chips to the right of the entry.
-            let mut remove: Option<String> = None;
-            for tag in &m.tags {
-                if ui
-                    .add_enabled(enabled, egui::Button::new(format!("{tag} ×")))
-                    .on_hover_text("Remove tag")
-                    .clicked()
-                {
-                    remove = Some(tag.clone());
-                }
-            }
-            if let Some(tag) = remove {
-                if remove_tag(m, &tag) {
-                    out.persist = true;
-                }
-            }
-
-            // Inline completion suggestions from the union of all macro tags.
-            if enabled && !self.tag_draft.trim().is_empty() {
-                let suggestions = tag_completion_options(&self.tag_draft, &m.tags, all_tags, 8);
-                if !suggestions.is_empty() {
-                    ui.separator();
-                    for sug in suggestions {
-                        if ui.small_button(&sug).clicked() {
-                            if try_add_tag(m, &sug) {
-                                out.persist = true;
-                            }
-                            self.tag_draft.clear();
-                        }
-                    }
-                }
-            }
         });
+        if crate::widgets::tag_chip_editor(
+            ui,
+            &mut m.tags,
+            &mut self.tag_draft,
+            all_tags,
+            crate::widgets::TagChipOptions {
+                enabled,
+                show_add_button: false,
+                suggestion_limit: 8,
+                suggestions_with_separator: true,
+                draft_hover: Some(help::META_TAGS),
+            },
+        ) {
+            out.persist = true;
+        }
 
         if self.delay_open {
             let mut close = false;
@@ -236,43 +204,10 @@ pub(crate) fn unique_sorted(mut items: Vec<String>) -> Vec<String> {
     items
 }
 
-fn try_add_tag(m: &mut Macro, raw: &str) -> bool {
-    let tag = raw.trim();
-    if tag.is_empty() || m.tags.iter().any(|t| t == tag) {
-        return false;
-    }
-    m.tags.push(tag.to_string());
-    true
-}
-
-fn remove_tag(m: &mut Macro, tag: &str) -> bool {
-    let before = m.tags.len();
-    m.tags.retain(|t| t != tag);
-    m.tags.len() != before
-}
-
-fn tag_completion_options(
-    search: &str,
-    on_macro: &[String],
-    all_tags: &[String],
-    limit: usize,
-) -> Vec<String> {
-    let search_l = search.trim().to_lowercase();
-    if search_l.is_empty() {
-        return Vec::new();
-    }
-    all_tags
-        .iter()
-        .filter(|t| !on_macro.iter().any(|c| c == *t))
-        .filter(|t| t.to_lowercase().contains(&search_l))
-        .take(limit)
-        .cloned()
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::widgets::tags::{remove_tag, tag_completion_options, try_add_tag};
     use sqyre_domain::Macro;
 
     fn m(name: &str, tags: &[&str]) -> Macro {
@@ -292,13 +227,13 @@ mod tests {
 
     #[test]
     fn tag_add_remove_and_completion() {
-        let mut macro_ = m("x", &["alpha"]);
-        assert!(!try_add_tag(&mut macro_, "  "));
-        assert!(!try_add_tag(&mut macro_, "alpha"));
-        assert!(try_add_tag(&mut macro_, "beta"));
-        assert_eq!(macro_.tags, vec!["alpha", "beta"]);
-        assert!(remove_tag(&mut macro_, "alpha"));
-        assert_eq!(macro_.tags, vec!["beta"]);
+        let mut tags = vec!["alpha".to_string()];
+        assert!(!try_add_tag(&mut tags, "  "));
+        assert!(!try_add_tag(&mut tags, "alpha"));
+        assert!(try_add_tag(&mut tags, "beta"));
+        assert_eq!(tags, vec!["alpha", "beta"]);
+        assert!(remove_tag(&mut tags, "alpha"));
+        assert_eq!(tags, vec!["beta"]);
 
         let all_tags =
             collect_all_macro_tags(&[m("x", &["beta"]), m("y", &["beta", "gamma", "gator"])]);
