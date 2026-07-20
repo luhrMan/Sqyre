@@ -95,7 +95,10 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                 ui.colored_label(egui::Color32::RED, format!("Load error: {err}"));
             } else {
                 #[cfg(target_arch = "wasm32")]
-                ui.small(format!("{} (browser — import/export db.yaml)", app.macros.len()));
+                ui.small(format!(
+                    "{} (browser — import/export db.yaml)",
+                    app.macros.len()
+                ));
                 #[cfg(not(target_arch = "wasm32"))]
                 ui.small(format!(
                     "{} from {}",
