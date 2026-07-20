@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::sync::Arc;
 use std::thread;
-use std::time::{Duration, Instant};
+use web_time::{Duration, Instant};
 
 const MIN_CAPTURE_SIZE: i32 = 320;
 const CAPTURE_PADDING: i32 = 48;

@@ -1,0 +1,8 @@
+[build]
+target = "index.html"
+dist = "../../bin/wasm"
+no_default_features = true
+
+# Paths must exist as real dirs (no globs) — Trunk canonicalizes each entry.
+[watch]
+ignore = ["../../bin", "../../target"]

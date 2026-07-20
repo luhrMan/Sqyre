@@ -97,7 +97,7 @@ impl<'a> Executor<'a> {
         title: impl Into<String>,
         summary: impl Into<String>,
         thumbnail: &sqyre_match::ImageBuf,
-        steps: &[(String, sqyre_match::ImageBuf)],
+        steps: &[(&str, &sqyre_match::ImageBuf)],
         details: Vec<String>,
     ) {
         if let Some(logger) = self.deps.logger {

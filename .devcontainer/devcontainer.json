@@ -28,7 +28,7 @@
       ]
     }
   },
-  "postCreateCommand": "sudo chown -R vscode:vscode /home/vscode/.cargo 2>/dev/null || true && rustup component add rust-src 2>/dev/null || true && rustc --version && cargo --version && (docker version >/dev/null && echo 'docker: ok' || echo 'docker: unavailable (need host Docker + rebuild)') && cargo fetch",
+  "postCreateCommand": "sudo chown -R vscode:vscode /home/vscode/.cargo 2>/dev/null || true && rustup component add rust-src 2>/dev/null || true && rustup target add wasm32-unknown-unknown 2>/dev/null || true && rustc --version && cargo --version && trunk --version && (docker version >/dev/null && echo 'docker: ok' || echo 'docker: unavailable (need host Docker + rebuild)') && cargo fetch",
   "remoteUser": "vscode",
   "updateRemoteUserUID": true
 }
