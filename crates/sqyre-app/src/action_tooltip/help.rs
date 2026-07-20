@@ -71,6 +71,8 @@ pub const SET_VAR: &str = "Variable name to assign.";
 pub const SET_VALUE: &str =
     "Plain text, ${ref}, or a math expression. Use f(x) to insert functions.";
 pub const SET_FX: &str = "Insert a math function, constant, or operator.";
+pub const SET_ADD_ASSIGNMENT: &str = "Add another variable assignment.";
+pub const SET_REMOVE_ASSIGNMENT: &str = "Remove this assignment.";
 
 // --- Save variable ---
 

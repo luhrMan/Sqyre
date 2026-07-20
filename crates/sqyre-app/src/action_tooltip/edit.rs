@@ -13,7 +13,7 @@ use eframe::egui;
 use sqyre_domain::{
     parse_hex_color, Action, ActionKind, ConditionBlock, ConditionClause, CoordinateOutputs,
     CoordinateRef, DetectionBranch, ListColumn, Macro, MatchMode, MatchOrder, MouseButton,
-    RepeatMode, ScalarValue, WaitTilFoundConfig,
+    RepeatMode, ScalarValue, VariableAssignment, WaitTilFoundConfig,
 };
 use sqyre_persist::ProgramCatalog;
 use sqyre_validate::{
@@ -21,6 +21,13 @@ use sqyre_validate::{
     validate_variable_references,
 };
 use std::collections::HashSet;
+
+/// Standard single-line text edit width.
+const W_TEXT: f32 = 220.0;
+/// Standard variable / scalar ref edit width.
+const W_VAR: f32 = 160.0;
+/// Standard multiline edit width.
+const W_MULTILINE: f32 = 280.0;
 
 /// Copy draft fields onto `live`, keeping `live`'s children.
 pub fn apply_draft_preserving_children(live: &mut Action, draft: Action) -> Result<(), String> {
@@ -93,7 +100,13 @@ pub fn paint_edit_fields(
         ActionKind::Click { button, state } => {
             tip_wrapped_section(ui, |ui| {
                 let mut btn = button.as_str().to_string();
-                combo_str(ui, "Button", h::CLICK_BUTTON, &mut btn, options::CLICK_BUTTONS);
+                combo_str(
+                    ui,
+                    "Button",
+                    h::CLICK_BUTTON,
+                    &mut btn,
+                    options::CLICK_BUTTONS,
+                );
                 *button = MouseButton::parse(&btn);
                 ui.vertical(|ui| {
                     help::tip(ui.small("Up"), h::CLICK_STATE);
@@ -112,7 +125,7 @@ pub fn paint_edit_fields(
                         key,
                         known_vars,
                         is_dark,
-                        160.0,
+                        W_VAR,
                         active_macro,
                     );
                     if theme::record_icon_button(ui, "Record a key", !key_record.is_open())
@@ -137,13 +150,10 @@ pub fn paint_edit_fields(
                     text,
                     known_vars,
                     is_dark,
-                    160.0,
+                    W_VAR,
                     active_macro,
                 );
-                help::tip(
-                    ui.add(egui::DragValue::new(delay_ms).prefix("Delay ms: ").speed(1)),
-                    h::TYPE_DELAY,
-                );
+                drag_field(ui, "Delay ms", h::TYPE_DELAY, delay_ms, |d| d.speed(1));
             });
         }
         ActionKind::Move {
@@ -159,31 +169,18 @@ pub fn paint_edit_fields(
             });
             tip_wrapped_section(ui, |ui| {
                 help::tip(ui.checkbox(smooth, "Smooth"), h::MOVE_SMOOTH);
-                help::tip(
-                    ui.add(
-                        egui::DragValue::new(smooth_low)
-                            .prefix("Smooth low: ")
-                            .speed(0.01)
-                            .range(0.0..=1.0),
-                    ),
-                    h::MOVE_SMOOTH_LOW,
-                );
-                help::tip(
-                    ui.add(
-                        egui::DragValue::new(smooth_high)
-                            .prefix("Smooth high: ")
-                            .speed(0.01)
-                            .range(0.0..=1.0),
-                    ),
-                    h::MOVE_SMOOTH_HIGH,
-                );
-                help::tip(
-                    ui.add(
-                        egui::DragValue::new(smooth_delay_ms)
-                            .prefix("Smooth delay ms: ")
-                            .speed(1),
-                    ),
+                drag_field(ui, "Smooth low", h::MOVE_SMOOTH_LOW, smooth_low, |d| {
+                    d.speed(0.01).range(0.0..=1.0)
+                });
+                drag_field(ui, "Smooth high", h::MOVE_SMOOTH_HIGH, smooth_high, |d| {
+                    d.speed(0.01).range(0.0..=1.0)
+                });
+                drag_field(
+                    ui,
+                    "Smooth delay ms",
                     h::MOVE_SMOOTH_DELAY,
+                    smooth_delay_ms,
+                    |d| d.speed(1),
                 );
             });
         }
@@ -200,7 +197,7 @@ pub fn paint_edit_fields(
                     message,
                     known_vars,
                     is_dark,
-                    220.0,
+                    W_TEXT,
                     active_macro,
                 );
             });
@@ -220,7 +217,10 @@ pub fn paint_edit_fields(
                 string_list_field(ui, "", continue_key, h::PAUSE_CONTINUE);
             });
             tip_wrapped_section(ui, |ui| {
-                help::tip(ui.checkbox(pass_through, "Pass through"), h::PAUSE_PASS_THROUGH);
+                help::tip(
+                    ui.checkbox(pass_through, "Pass through"),
+                    h::PAUSE_PASS_THROUGH,
+                );
             });
         }
         ActionKind::FocusWindow {
@@ -229,65 +229,31 @@ pub fn paint_edit_fields(
         } => {
             tip_wrapped_section(ui, |ui| {
                 text_field(ui, "Window title", h::FOCUS_TITLE, window_title);
-                ui.horizontal(|ui| {
-                    help::label(ui, "Process path", h::FOCUS_PROCESS);
-                    help::tip(
-                        ui.add(
-                            egui::TextEdit::singleline(process_path)
-                                .desired_width(180.0)
-                                .hint_text("/path/to/app"),
-                        ),
-                        h::FOCUS_PROCESS,
-                    );
-                    if pick_icon_btn(ui).clicked() {
-                        *picker = pickers::open_window_picker(process_path, window_title);
-                    }
-                });
+                if picker_edit_row(
+                    ui,
+                    "Process path",
+                    h::FOCUS_PROCESS,
+                    process_path,
+                    "/path/to/app",
+                ) {
+                    *picker = pickers::open_window_picker(process_path, window_title);
+                }
             });
         }
         ActionKind::RunMacro { macro_name } => {
             tip_wrapped_section(ui, |ui| {
-                ui.horizontal(|ui| {
-                    help::label(ui, "Macro", h::RUN_MACRO);
-                    ui.label(if macro_name.is_empty() {
-                        "(unset)"
-                    } else {
-                        macro_name.as_str()
-                    });
-                    if pick_icon_btn(ui).clicked() {
-                        *picker = ActivePicker::Macro {
-                            search: String::new(),
-                            value: macro_name.clone(),
-                            scroll_to_selection: true,
-                        };
-                    }
-                });
+                if picker_display_row(ui, "Macro", h::RUN_MACRO, macro_name.as_str()) {
+                    *picker = ActivePicker::Macro {
+                        search: String::new(),
+                        value: macro_name.clone(),
+                        scroll_to_selection: true,
+                    };
+                }
             });
         }
-        ActionKind::SetVariable {
-            variable_name,
-            value,
-        } => {
-            tip_wrapped_section(ui, |ui| {
-                var_pills::var_name_text_edit(
-                    ui,
-                    "Variable",
-                    variable_name,
-                    known_vars,
-                    is_dark,
-                    160.0,
-                    h::SET_VAR,
-                );
-            });
+        ActionKind::SetVariable { assignments } => {
             tip_section(ui, |ui| {
-                yaml_value_field(
-                    ui,
-                    "Value (text, ${ref}, or expression)",
-                    value,
-                    known_vars,
-                    is_dark,
-                    active_macro,
-                );
+                assignments_editor(ui, assignments, known_vars, is_dark, active_macro);
             });
         }
         ActionKind::SaveVariable {
@@ -303,7 +269,7 @@ pub fn paint_edit_fields(
                     variable_name,
                     known_vars,
                     is_dark,
-                    160.0,
+                    W_VAR,
                     h::SAVE_VAR,
                 );
                 var_ref_field(
@@ -313,19 +279,30 @@ pub fn paint_edit_fields(
                     destination,
                     known_vars,
                     is_dark,
-                    160.0,
+                    W_VAR,
                     active_macro,
                 );
             });
             tip_wrapped_section(ui, |ui| {
                 help::tip(ui.checkbox(append, "Append"), h::SAVE_APPEND);
-                help::tip(ui.checkbox(append_newline, "Append newline"), h::SAVE_NEWLINE);
+                help::tip(
+                    ui.checkbox(append_newline, "Append newline"),
+                    h::SAVE_NEWLINE,
+                );
             });
         }
         ActionKind::Loop { name, count, .. } => {
             tip_wrapped_section(ui, |ui| {
+                scalar_field(
+                    ui,
+                    "Count",
+                    h::LOOP_COUNT,
+                    count,
+                    known_vars,
+                    is_dark,
+                    active_macro,
+                );
                 text_field(ui, "Name", h::NAME, name);
-                scalar_field(ui, "Count", h::LOOP_COUNT, count, known_vars, is_dark, active_macro);
             });
         }
         ActionKind::While {
@@ -334,9 +311,12 @@ pub fn paint_edit_fields(
             ..
         } => {
             condition_editor(ui, condition, known_vars, is_dark, active_macro, |ui| {
-                help::tip(
-                    ui.add(egui::DragValue::new(max_iterations).prefix("Max iterations: ")),
+                drag_field(
+                    ui,
+                    "Max iterations",
                     h::MAX_ITERATIONS,
+                    max_iterations,
+                    |d| d,
                 );
             });
         }
@@ -391,16 +371,10 @@ pub fn paint_edit_fields(
             });
             search_area_section(ui, catalog, previews, search_area, picker);
             tip_wrapped_section(ui, |ui| {
-                help::tip(
-                    ui.add(
-                        egui::DragValue::new(tolerance)
-                            .prefix("Tolerance: ")
-                            .speed(0.01)
-                            .range(0.0..=1.0),
-                    ),
-                    h::IS_TOLERANCE,
-                );
-                help::tip(ui.add(egui::DragValue::new(blur).prefix("Blur: ")), h::IS_BLUR);
+                drag_field(ui, "Tolerance", h::IS_TOLERANCE, tolerance, |d| {
+                    d.speed(0.01).range(0.0..=1.0)
+                });
+                drag_field(ui, "Blur", h::IS_BLUR, blur, |d| d);
             });
             detection_branch_editor(ui, detection, known_vars, is_dark);
         }
@@ -426,7 +400,7 @@ pub fn paint_edit_fields(
                     target,
                     known_vars,
                     is_dark,
-                    160.0,
+                    W_VAR,
                     active_macro,
                 );
             });
@@ -438,21 +412,21 @@ pub fn paint_edit_fields(
                     output_variable,
                     known_vars,
                     is_dark,
-                    160.0,
+                    W_VAR,
                     h::OCR_OUTPUT,
                 );
             });
             detection_branch_editor(ui, detection, known_vars, is_dark);
             tip_wrapped_section(ui, |ui| {
-                help::tip(ui.add(egui::DragValue::new(blur).prefix("Blur: ")), h::OCR_BLUR);
-                help::tip(
-                    ui.add(egui::DragValue::new(min_threshold).prefix("Min threshold: ")),
+                drag_field(ui, "Blur", h::OCR_BLUR, blur, |d| d);
+                drag_field(
+                    ui,
+                    "Min threshold",
                     h::OCR_MIN_THRESHOLD,
+                    min_threshold,
+                    |d| d,
                 );
-                help::tip(
-                    ui.add(egui::DragValue::new(resize).prefix("Resize: ").speed(0.01)),
-                    h::OCR_RESIZE,
-                );
+                drag_field(ui, "Resize", h::OCR_RESIZE, resize, |d| d.speed(0.01));
                 help::tip(ui.checkbox(grayscale, "Grayscale"), h::OCR_GRAYSCALE);
                 help::tip(ui.checkbox(threshold_otsu, "Threshold Otsu"), h::OCR_OTSU);
                 help::tip(
@@ -481,7 +455,7 @@ pub fn paint_edit_fields(
                         target_color,
                         known_vars,
                         is_dark,
-                        160.0,
+                        W_VAR,
                         active_macro,
                     );
                     if let Some(rgba) = parse_hex_color(target_color) {
@@ -505,9 +479,12 @@ pub fn paint_edit_fields(
                         screen_click.arm_color();
                     }
                 });
-                help::tip(
-                    ui.add(egui::DragValue::new(color_tolerance).prefix("Color tolerance: ")),
+                drag_field(
+                    ui,
+                    "Color tolerance",
                     h::PIXEL_TOLERANCE,
+                    color_tolerance,
+                    |d| d,
                 );
             });
             detection_branch_editor(ui, detection, known_vars, is_dark);
@@ -521,8 +498,18 @@ pub fn paint_edit_fields(
                 string_list_field(ui, "Chord up", &mut data.chords.up, h::NAV_CHORD_UP);
                 string_list_field(ui, "Chord down", &mut data.chords.down, h::NAV_CHORD_DOWN);
                 string_list_field(ui, "Chord left", &mut data.chords.left, h::NAV_CHORD_LEFT);
-                string_list_field(ui, "Chord right", &mut data.chords.right, h::NAV_CHORD_RIGHT);
-                string_list_field(ui, "Chord select", &mut data.chords.select, h::NAV_CHORD_SELECT);
+                string_list_field(
+                    ui,
+                    "Chord right",
+                    &mut data.chords.right,
+                    h::NAV_CHORD_RIGHT,
+                );
+                string_list_field(
+                    ui,
+                    "Chord select",
+                    &mut data.chords.select,
+                    h::NAV_CHORD_SELECT,
+                );
                 string_list_field(ui, "Chord back", &mut data.chords.back, h::NAV_CHORD_BACK);
             });
             tip_wrapped_section(ui, |ui| {
@@ -537,7 +524,10 @@ pub fn paint_edit_fields(
                     ),
                     h::NAV_MOVE_CURSOR,
                 );
-                help::tip(ui.checkbox(&mut data.options.smooth, "Smooth"), h::NAV_SMOOTH);
+                help::tip(
+                    ui.checkbox(&mut data.options.smooth, "Smooth"),
+                    h::NAV_SMOOTH,
+                );
                 help::tip(
                     ui.checkbox(&mut data.options.pass_through, "Pass through"),
                     h::NAV_PASS_THROUGH,
@@ -583,15 +573,30 @@ pub fn paint_edit_fields(
                 );
             });
             tip_wrapped_section(ui, |ui| {
-                text_field(ui, "Output ref", h::NAV_OUT_REF, &mut data.outputs.output_ref);
+                text_field(
+                    ui,
+                    "Output ref",
+                    h::NAV_OUT_REF,
+                    &mut data.outputs.output_ref,
+                );
                 text_field(
                     ui,
                     "Output graph",
                     h::NAV_OUT_GRAPH,
                     &mut data.outputs.output_graph,
                 );
-                text_field(ui, "Output row", h::NAV_OUT_ROW, &mut data.outputs.output_row);
-                text_field(ui, "Output col", h::NAV_OUT_COL, &mut data.outputs.output_col);
+                text_field(
+                    ui,
+                    "Output row",
+                    h::NAV_OUT_ROW,
+                    &mut data.outputs.output_row,
+                );
+                text_field(
+                    ui,
+                    "Output col",
+                    h::NAV_OUT_COL,
+                    &mut data.outputs.output_col,
+                );
                 text_field(
                     ui,
                     "Output collection",
@@ -639,7 +644,11 @@ fn targets_editor(
 ) {
     ui.horizontal(|ui| {
         help::tip(ui.label(egui::RichText::new("Items").strong()), h::IS_ITEMS);
-        if ui.button("Add / edit…").on_hover_text(h::IS_ITEMS).clicked() {
+        if ui
+            .button("Add / edit…")
+            .on_hover_text(h::IS_ITEMS)
+            .clicked()
+        {
             *picker = ActivePicker::Items {
                 search: String::new(),
                 staged: targets.clone(),
@@ -672,6 +681,49 @@ fn targets_editor(
 fn pick_icon_btn(ui: &mut egui::Ui) -> egui::Response {
     ui.add(egui::Button::new(egui::RichText::new("☰").size(14.0)).small())
         .on_hover_text("Pick…")
+}
+
+/// Label + read-only value + pick button. Returns true when pick was clicked.
+fn picker_display_row(ui: &mut egui::Ui, label: &str, help_text: &str, display: &str) -> bool {
+    let mut clicked = false;
+    ui.horizontal(|ui| {
+        help::label(ui, label, help_text);
+        ui.label(if display.is_empty() {
+            "(unset)"
+        } else {
+            display
+        });
+        if pick_icon_btn(ui).clicked() {
+            clicked = true;
+        }
+    });
+    clicked
+}
+
+/// Label + editable text + pick button. Returns true when pick was clicked.
+fn picker_edit_row(
+    ui: &mut egui::Ui,
+    label: &str,
+    help_text: &str,
+    value: &mut String,
+    hint: &str,
+) -> bool {
+    let mut clicked = false;
+    ui.horizontal(|ui| {
+        help::label(ui, label, help_text);
+        help::tip(
+            ui.add(
+                egui::TextEdit::singleline(value)
+                    .desired_width(W_TEXT)
+                    .hint_text(hint),
+            ),
+            help_text,
+        );
+        if pick_icon_btn(ui).clicked() {
+            clicked = true;
+        }
+    });
+    clicked
 }
 
 fn paint_coord_preview(
@@ -721,13 +773,14 @@ fn coord_picker_row(
     kind: CoordKind,
     picker: &mut ActivePicker,
 ) {
+    let display = if coord.is_empty() {
+        "(unset)"
+    } else {
+        coord.as_str()
+    };
     ui.horizontal(|ui| {
         help::label(ui, label, help_text);
-        ui.monospace(if coord.is_empty() {
-            "(unset)"
-        } else {
-            coord.as_str()
-        });
+        ui.monospace(display);
         if pick_icon_btn(ui).clicked() {
             *picker = ActivePicker::Coord {
                 kind,
@@ -740,7 +793,13 @@ fn coord_picker_row(
     });
 }
 
-fn combo_str(ui: &mut egui::Ui, label: &str, help_text: &str, value: &mut String, options: &[&str]) {
+fn combo_str(
+    ui: &mut egui::Ui,
+    label: &str,
+    help_text: &str,
+    value: &mut String,
+    options: &[&str],
+) {
     ui.horizontal(|ui| {
         help::label(ui, label, help_text);
         let display = if value.is_empty() {
@@ -774,7 +833,35 @@ fn text_field(ui: &mut egui::Ui, label: &str, help_text: &str, value: &mut Strin
     ui.horizontal(|ui| {
         help::label(ui, label, help_text);
         help::tip(
-            ui.add(egui::TextEdit::singleline(value).desired_width(220.0)),
+            ui.add(egui::TextEdit::singleline(value).desired_width(W_TEXT)),
+            help_text,
+        );
+    });
+}
+
+/// Labeled DragValue (no `.prefix`); configure speed/range via `configure`.
+fn drag_field<Num: egui::emath::Numeric>(
+    ui: &mut egui::Ui,
+    label: &str,
+    help_text: &str,
+    value: &mut Num,
+    configure: impl FnOnce(egui::DragValue<'_>) -> egui::DragValue<'_>,
+) {
+    drag_field_enabled(ui, label, help_text, value, true, configure);
+}
+
+fn drag_field_enabled<Num: egui::emath::Numeric>(
+    ui: &mut egui::Ui,
+    label: &str,
+    help_text: &str,
+    value: &mut Num,
+    enabled: bool,
+    configure: impl FnOnce(egui::DragValue<'_>) -> egui::DragValue<'_>,
+) {
+    ui.horizontal(|ui| {
+        help::label(ui, label, help_text);
+        help::tip(
+            ui.add_enabled(enabled, configure(egui::DragValue::new(value))),
             help_text,
         );
     });
@@ -798,7 +885,7 @@ fn scalar_field(
         &mut text,
         known_vars,
         is_dark,
-        160.0,
+        W_VAR,
         &validation,
         help_text,
     );
@@ -839,7 +926,7 @@ fn string_list_field(ui: &mut egui::Ui, label: &str, values: &mut Vec<String>, h
     if help::tip(
         ui.add(
             egui::TextEdit::multiline(&mut text)
-                .desired_width(280.0)
+                .desired_width(W_MULTILINE)
                 .desired_rows(3),
         ),
         help_text,
@@ -909,7 +996,7 @@ fn yaml_value_field(
         &mut text,
         known_vars,
         is_dark,
-        280.0,
+        W_MULTILINE,
         2,
         &validation,
         h::SET_VALUE,
@@ -947,7 +1034,12 @@ fn condition_editor(
     tip_wrapped_section(ui, |ui| {
         text_field(ui, "Name", h::NAME, &mut condition.name);
         let mut all = condition.match_mode != MatchMode::Any;
-        if help::tip(ui.checkbox(&mut all, "Match all (uncheck = any)"), h::MATCH_ALL).changed() {
+        if help::tip(
+            ui.checkbox(&mut all, "Match all (uncheck = any)"),
+            h::MATCH_ALL,
+        )
+        .changed()
+        {
             condition.match_mode = if all { MatchMode::All } else { MatchMode::Any };
         }
         extra(ui);
@@ -982,11 +1074,11 @@ fn detection_branch_editor(
     known_vars: &HashSet<String>,
     is_dark: bool,
 ) {
-    tip_section(ui, |ui| wait_editor(ui, &mut detection.wait));
-    tip_section(ui, |ui| {
+    tip_wrapped_section(ui, |ui| wait_editor(ui, &mut detection.wait));
+    tip_wrapped_section(ui, |ui| {
         coords_editor(ui, &mut detection.coords, known_vars, is_dark);
     });
-    tip_section(ui, |ui| order_editor(ui, &mut detection.order));
+    tip_wrapped_section(ui, |ui| order_editor(ui, &mut detection.order));
     tip_wrapped_section(ui, |ui| {
         help::tip(
             ui.checkbox(
@@ -999,38 +1091,43 @@ fn detection_branch_editor(
 }
 
 fn wait_editor(ui: &mut egui::Ui, wait: &mut WaitTilFoundConfig) {
-    ui.label(egui::RichText::new("Wait / repeat").strong());
-    ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing = egui::Vec2::splat(6.0);
-        let mut mode = wait.repeat_mode.as_str().to_string();
-        combo_str(ui, "Repeat mode", h::REPEAT_MODE, &mut mode, options::REPEAT_MODES);
-        wait.repeat_mode = RepeatMode::parse(&mode);
-        // Once → all off; waituntilfound → timing only;
-        // repeatwhilefound → timing + max iterations.
-        let timing_enabled = wait.repeat_mode != RepeatMode::Once;
-        let max_enabled = wait.is_repeat_while_found();
-        help::tip(
-            ui.add_enabled(
-                timing_enabled,
-                egui::DragValue::new(&mut wait.wait_til_found_seconds).prefix("Wait seconds: "),
-            ),
-            h::WAIT_SECONDS,
-        );
-        help::tip(
-            ui.add_enabled(
-                timing_enabled,
-                egui::DragValue::new(&mut wait.wait_til_found_interval_ms).prefix("Interval ms: "),
-            ),
-            h::WAIT_INTERVAL,
-        );
-        help::tip(
-            ui.add_enabled(
-                max_enabled,
-                egui::DragValue::new(&mut wait.max_iterations).prefix("Max iterations: "),
-            ),
-            h::WAIT_MAX_ITER,
-        );
-    });
+    let mut mode = wait.repeat_mode.as_str().to_string();
+    combo_str(
+        ui,
+        "Repeat mode",
+        h::REPEAT_MODE,
+        &mut mode,
+        options::REPEAT_MODES,
+    );
+    wait.repeat_mode = RepeatMode::parse(&mode);
+    // Once → all off; waituntilfound → timing only;
+    // repeatwhilefound → timing + max iterations.
+    let timing_enabled = wait.repeat_mode != RepeatMode::Once;
+    let max_enabled = wait.is_repeat_while_found();
+    drag_field_enabled(
+        ui,
+        "Wait seconds",
+        h::WAIT_SECONDS,
+        &mut wait.wait_til_found_seconds,
+        timing_enabled,
+        |d| d,
+    );
+    drag_field_enabled(
+        ui,
+        "Interval ms",
+        h::WAIT_INTERVAL,
+        &mut wait.wait_til_found_interval_ms,
+        timing_enabled,
+        |d| d,
+    );
+    drag_field_enabled(
+        ui,
+        "Max iterations",
+        h::WAIT_MAX_ITER,
+        &mut wait.max_iterations,
+        max_enabled,
+        |d| d,
+    );
 }
 
 fn coords_editor(
@@ -1039,56 +1136,60 @@ fn coords_editor(
     known_vars: &HashSet<String>,
     is_dark: bool,
 ) {
-    ui.label(egui::RichText::new("Coordinate outputs").strong());
-    ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing = egui::Vec2::splat(6.0);
-        var_pills::var_name_text_edit(
-            ui,
-            "Output X",
-            &mut coords.output_x_variable,
-            known_vars,
-            is_dark,
-            160.0,
-            h::OUT_X,
-        );
-        var_pills::var_name_text_edit(
-            ui,
-            "Output Y",
-            &mut coords.output_y_variable,
-            known_vars,
-            is_dark,
-            160.0,
-            h::OUT_Y,
-        );
-    });
+    var_pills::var_name_text_edit(
+        ui,
+        "Output X",
+        &mut coords.output_x_variable,
+        known_vars,
+        is_dark,
+        W_VAR,
+        h::OUT_X,
+    );
+    var_pills::var_name_text_edit(
+        ui,
+        "Output Y",
+        &mut coords.output_y_variable,
+        known_vars,
+        is_dark,
+        W_VAR,
+        h::OUT_Y,
+    );
 }
 
 fn order_editor(ui: &mut egui::Ui, order: &mut MatchOrder) {
-    ui.label(egui::RichText::new("Match order").strong());
-    ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing = egui::Vec2::splat(6.0);
-        combo_str(
-            ui,
-            "Grouping",
-            h::ORDER_GROUPING,
-            &mut order.grouping,
-            options::ORDER_GROUPING,
-        );
-        combo_str(
-            ui,
-            "Horizontal",
-            h::ORDER_HORIZONTAL,
-            &mut order.horizontal,
-            options::ORDER_HORIZONTAL,
-        );
-        combo_str(
-            ui,
-            "Vertical",
-            h::ORDER_VERTICAL,
-            &mut order.vertical,
-            options::ORDER_VERTICAL,
-        );
+    combo_str(
+        ui,
+        "Grouping",
+        h::ORDER_GROUPING,
+        &mut order.grouping,
+        options::ORDER_GROUPING,
+    );
+    combo_str(
+        ui,
+        "Horizontal",
+        h::ORDER_HORIZONTAL,
+        &mut order.horizontal,
+        options::ORDER_HORIZONTAL,
+    );
+    combo_str(
+        ui,
+        "Vertical",
+        h::ORDER_VERTICAL,
+        &mut order.vertical,
+        options::ORDER_VERTICAL,
+    );
+}
+
+/// Header row for repeatable list editors. Returns true when `+` was clicked.
+fn list_header(ui: &mut egui::Ui, title: &str, add_help: &str) -> bool {
+    let mut add = false;
+    ui.horizontal(|ui| {
+        ui.label(title);
+        if ui.small_button("+").on_hover_text(add_help).clicked() {
+            add = true;
+        }
     });
+    add
 }
 
 fn clauses_editor(
@@ -1098,57 +1199,52 @@ fn clauses_editor(
     is_dark: bool,
     active_macro: Option<&Macro>,
 ) {
-    ui.group(|ui| {
-        ui.horizontal(|ui| {
-            ui.label("Clauses");
-            if ui.small_button("+").on_hover_text(h::CLAUSE_ADD).clicked() {
-                clauses.push(ConditionClause::default());
-            }
-        });
-        let mut remove: Option<usize> = None;
-        for (i, clause) in clauses.iter_mut().enumerate() {
-            // Unique id so each clause's "op" ComboBox is distinct (same label salt).
-            ui.push_id(i, |ui| {
-                ui.horizontal(|ui| {
-                    scalar_field(
-                        ui,
-                        "L",
-                        h::CLAUSE_LEFT,
-                        &mut clause.left,
-                        known_vars,
-                        is_dark,
-                        active_macro,
-                    );
-                    combo_str(
-                        ui,
-                        "op",
-                        h::CLAUSE_OP,
-                        &mut clause.operator,
-                        options::CONDITIONAL_OPERATORS,
-                    );
-                    scalar_field(
-                        ui,
-                        "R",
-                        h::CLAUSE_RIGHT,
-                        &mut clause.right,
-                        known_vars,
-                        is_dark,
-                        active_macro,
-                    );
-                    if ui
-                        .small_button("−")
-                        .on_hover_text(h::CLAUSE_REMOVE)
-                        .clicked()
-                    {
-                        remove = Some(i);
-                    }
-                });
+    if list_header(ui, "Clauses", h::CLAUSE_ADD) {
+        clauses.push(ConditionClause::default());
+    }
+    let mut remove: Option<usize> = None;
+    for (i, clause) in clauses.iter_mut().enumerate() {
+        // Unique id so each clause's "op" ComboBox is distinct (same label salt).
+        ui.push_id(i, |ui| {
+            ui.horizontal(|ui| {
+                scalar_field(
+                    ui,
+                    "L",
+                    h::CLAUSE_LEFT,
+                    &mut clause.left,
+                    known_vars,
+                    is_dark,
+                    active_macro,
+                );
+                combo_str(
+                    ui,
+                    "op",
+                    h::CLAUSE_OP,
+                    &mut clause.operator,
+                    options::CONDITIONAL_OPERATORS,
+                );
+                scalar_field(
+                    ui,
+                    "R",
+                    h::CLAUSE_RIGHT,
+                    &mut clause.right,
+                    known_vars,
+                    is_dark,
+                    active_macro,
+                );
+                if ui
+                    .small_button("−")
+                    .on_hover_text(h::CLAUSE_REMOVE)
+                    .clicked()
+                {
+                    remove = Some(i);
+                }
             });
-        }
-        if let Some(i) = remove {
-            clauses.remove(i);
-        }
-    });
+        });
+    }
+    if let Some(i) = remove {
+        clauses.remove(i);
+    }
 }
 
 fn list_columns_editor(
@@ -1158,59 +1254,107 @@ fn list_columns_editor(
     is_dark: bool,
     active_macro: Option<&Macro>,
 ) {
-    ui.group(|ui| {
-        ui.horizontal(|ui| {
-            ui.label("Sources");
-            if ui
-                .small_button("+")
-                .on_hover_text(h::FOREACH_ADD_SOURCE)
-                .clicked()
-            {
-                sources.push(ListColumn::default());
+    if list_header(ui, "Sources", h::FOREACH_ADD_SOURCE) {
+        sources.push(ListColumn::default());
+    }
+    let mut remove: Option<usize> = None;
+    for (i, col) in sources.iter_mut().enumerate() {
+        ui.push_id(i, |ui| {
+            if i > 0 {
+                ui.separator();
             }
-        });
-        let mut remove: Option<usize> = None;
-        for (i, col) in sources.iter_mut().enumerate() {
-            ui.push_id(i, |ui| {
-                ui.group(|ui| {
-                    var_ref_field(
-                        ui,
-                        "Source",
-                        h::FOREACH_SOURCE,
-                        &mut col.source,
-                        known_vars,
-                        is_dark,
-                        200.0,
-                        active_macro,
-                    );
-                    var_pills::var_name_text_edit(
-                        ui,
-                        "Output var",
-                        &mut col.output_var,
-                        known_vars,
-                        is_dark,
-                        160.0,
-                        h::FOREACH_OUTPUT,
-                    );
-                    help::tip(ui.checkbox(&mut col.is_file, "Is file"), h::FOREACH_IS_FILE);
-                    help::tip(
-                        ui.checkbox(&mut col.skip_blank_lines, "Skip blank lines"),
-                        h::FOREACH_SKIP_BLANK,
-                    );
-                    if ui
-                        .small_button("Remove")
-                        .on_hover_text(h::FOREACH_REMOVE_SOURCE)
-                        .clicked()
-                    {
-                        remove = Some(i);
-                    }
-                });
+            theme::section_frame(ui.style()).show(ui, |ui| {
+                var_ref_field(
+                    ui,
+                    "Source",
+                    h::FOREACH_SOURCE,
+                    &mut col.source,
+                    known_vars,
+                    is_dark,
+                    W_TEXT,
+                    active_macro,
+                );
+                var_pills::var_name_text_edit(
+                    ui,
+                    "Output var",
+                    &mut col.output_var,
+                    known_vars,
+                    is_dark,
+                    W_VAR,
+                    h::FOREACH_OUTPUT,
+                );
+                help::tip(ui.checkbox(&mut col.is_file, "Is file"), h::FOREACH_IS_FILE);
+                help::tip(
+                    ui.checkbox(&mut col.skip_blank_lines, "Skip blank lines"),
+                    h::FOREACH_SKIP_BLANK,
+                );
+                if ui
+                    .small_button("Remove")
+                    .on_hover_text(h::FOREACH_REMOVE_SOURCE)
+                    .clicked()
+                {
+                    remove = Some(i);
+                }
             });
-        }
-        if let Some(i) = remove {
-            sources.remove(i);
-        }
-    });
+        });
+    }
+    if let Some(i) = remove {
+        sources.remove(i);
+    }
+}
+
+fn assignments_editor(
+    ui: &mut egui::Ui,
+    assignments: &mut Vec<VariableAssignment>,
+    known_vars: &HashSet<String>,
+    is_dark: bool,
+    active_macro: Option<&Macro>,
+) {
+    if list_header(ui, "Assignments", h::SET_ADD_ASSIGNMENT) {
+        assignments.push(VariableAssignment::default());
+    }
+    let mut remove: Option<usize> = None;
+    let can_remove = assignments.len() > 1;
+    for (i, a) in assignments.iter_mut().enumerate() {
+        ui.push_id(i, |ui| {
+            if i > 0 {
+                ui.separator();
+            }
+            theme::section_frame(ui.style()).show(ui, |ui| {
+                var_pills::var_name_text_edit(
+                    ui,
+                    "Variable",
+                    &mut a.variable_name,
+                    known_vars,
+                    is_dark,
+                    W_VAR,
+                    h::SET_VAR,
+                );
+                yaml_value_field(
+                    ui,
+                    "Value (text, ${ref}, or expression)",
+                    &mut a.value,
+                    known_vars,
+                    is_dark,
+                    active_macro,
+                );
+                if can_remove
+                    && ui
+                        .small_button("Remove")
+                        .on_hover_text(h::SET_REMOVE_ASSIGNMENT)
+                        .clicked()
+                {
+                    remove = Some(i);
+                }
+            });
+        });
+    }
+    if let Some(i) = remove {
+        assignments.remove(i);
+    }
+    if assignments.is_empty() {
+        assignments.push(VariableAssignment::default());
+    }
 }
 
 #[cfg(test)]

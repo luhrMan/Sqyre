@@ -2,8 +2,8 @@
 
 use crate::{
     action_type_table, Action, ActionId, ActionKind, ConditionBlock, CoordinateRef,
-    DetectionBranch, ListColumn, ScalarValue, DEFAULT_SMOOTH_DELAY_MS, DEFAULT_SMOOTH_HIGH,
-    DEFAULT_SMOOTH_LOW,
+    DetectionBranch, ListColumn, ScalarValue, VariableAssignment, DEFAULT_SMOOTH_DELAY_MS,
+    DEFAULT_SMOOTH_HIGH, DEFAULT_SMOOTH_LOW,
 };
 
 /// One picker entry: label, type key, category, and a fresh blank [`Action`].
@@ -138,8 +138,7 @@ fn blank_kind(action_type: &str) -> Option<ActionKind> {
             detection: DetectionBranch::default(),
         },
         "setvariable" => ActionKind::SetVariable {
-            variable_name: String::new(),
-            value: ScalarValue::String(String::new()),
+            assignments: vec![VariableAssignment::default()],
         },
         "foreachrow" => ActionKind::ForEachRow {
             name: String::new(),

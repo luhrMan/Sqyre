@@ -4,12 +4,12 @@
 //! struct that includes `type` plus flattened detection/condition/nav fields.
 
 use super::{
-    default_image_blur, default_loop_count, default_ocr_blur, default_ocr_text, default_resize,
-    default_target_color, default_true, default_wait_time, is_default_image_blur,
-    is_default_ocr_blur, is_default_ocr_text, is_default_resize, is_default_target_color, is_false,
-    is_true, is_zero_i32, Action, ActionKind, ConditionBlock, CoordinateRef, DetectionBranch,
-    ListColumn, MouseButton, NavigateSelectData, ScalarValue, DEFAULT_SMOOTH_DELAY_MS,
-    DEFAULT_SMOOTH_HIGH, DEFAULT_SMOOTH_LOW,
+    default_assignments, default_image_blur, default_loop_count, default_ocr_blur,
+    default_ocr_text, default_resize, default_target_color, default_true, default_wait_time,
+    is_default_image_blur, is_default_ocr_blur, is_default_ocr_text, is_default_resize,
+    is_default_target_color, is_false, is_true, is_zero_i32, Action, ActionKind, ConditionBlock,
+    CoordinateRef, DetectionBranch, ListColumn, MouseButton, NavigateSelectData, ScalarValue,
+    VariableAssignment, DEFAULT_SMOOTH_DELAY_MS, DEFAULT_SMOOTH_HIGH, DEFAULT_SMOOTH_LOW,
 };
 use serde::{Deserialize, Serialize};
 
@@ -247,10 +247,8 @@ enum ActionKindWire {
     SetVariable {
         #[serde(rename = "type")]
         type_: TagSetVariable,
-        #[serde(rename = "variablename")]
-        variable_name: String,
-        #[serde(default)]
-        value: ScalarValue,
+        #[serde(default = "default_assignments", skip_serializing_if = "Vec::is_empty")]
+        assignments: Vec<VariableAssignment>,
     },
     SaveVariable {
         #[serde(rename = "type")]
@@ -484,14 +482,7 @@ impl From<ActionKindWire> for ActionKind {
             ActionKindWire::Click { button, state, .. } => Self::Click { button, state },
             ActionKindWire::Key { key, state, .. } => Self::Key { key, state },
             ActionKindWire::Type { text, delay_ms, .. } => Self::Type { text, delay_ms },
-            ActionKindWire::SetVariable {
-                variable_name,
-                value,
-                ..
-            } => Self::SetVariable {
-                variable_name,
-                value,
-            },
+            ActionKindWire::SetVariable { assignments, .. } => Self::SetVariable { assignments },
             ActionKindWire::SaveVariable {
                 variable_name,
                 destination,
@@ -676,13 +667,9 @@ impl From<&ActionKind> for ActionKindWire {
                 text: text.clone(),
                 delay_ms: *delay_ms,
             },
-            ActionKind::SetVariable {
-                variable_name,
-                value,
-            } => Self::SetVariable {
+            ActionKind::SetVariable { assignments } => Self::SetVariable {
                 type_: TagSetVariable::Tag,
-                variable_name: variable_name.clone(),
-                value: value.clone(),
+                assignments: assignments.clone(),
             },
             ActionKind::SaveVariable {
                 variable_name,

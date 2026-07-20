@@ -99,7 +99,9 @@ impl MacroMetaUi {
             let tag_te = egui::TextEdit::singleline(&mut self.tag_draft)
                 .desired_width(140.0)
                 .hint_text("Add tag…");
-            let tag_resp = ui.add_enabled(enabled, tag_te).on_hover_text(help::META_TAGS);
+            let tag_resp = ui
+                .add_enabled(enabled, tag_te)
+                .on_hover_text(help::META_TAGS);
             let add_enter = tag_resp.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
             if enabled && add_enter {
                 if try_add_tag(m, &self.tag_draft) {
@@ -225,12 +227,7 @@ fn validate_rename(
 
 /// Sorted unique tags across macros (for completion).
 pub fn collect_all_macro_tags(macros: &[Macro]) -> Vec<String> {
-    unique_sorted(
-        macros
-            .iter()
-            .flat_map(|m| m.tags.iter().cloned())
-            .collect(),
-    )
+    unique_sorted(macros.iter().flat_map(|m| m.tags.iter().cloned()).collect())
 }
 
 pub(crate) fn unique_sorted(mut items: Vec<String>) -> Vec<String> {
