@@ -79,12 +79,7 @@ pub(super) fn run_detection_shell<T>(
         if refresh {
             state = try_once(exec, macro_)?;
         }
-        on_outcome(
-            exec,
-            macro_,
-            &state,
-            DetectionPass::Repeat { refresh },
-        )
+        on_outcome(exec, macro_, &state, DetectionPass::Repeat { refresh })
     })? {
         return Ok(());
     }

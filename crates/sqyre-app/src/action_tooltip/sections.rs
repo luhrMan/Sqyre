@@ -1,4 +1,12 @@
 //! Framed tooltip sections with wrapping rows.
+//!
+//! # Conventions
+//!
+//! - [`tip_wrapped_section`] — compact labeled fields, combos, checkboxes, DragValues.
+//! - [`tip_section`] — multiline editors, icon grids, previews, repeatable list editors.
+//! - Field labels use `help::label` + control (not `DragValue.prefix`).
+//! - Do not nest `ui.group` inside a tip section; list headers + rows (optional light
+//!   per-item frame only for multi-line list items).
 
 use crate::theme;
 use eframe::egui::{self, Vec2};
@@ -6,13 +14,9 @@ use eframe::egui::{self, Vec2};
 /// Vertical gap between consecutive tip sections.
 const SECTION_GAP: f32 = 4.0;
 
-/// Sqyre-framed section.
+/// Sqyre-framed section (full-width vertical content).
 pub fn tip_section(ui: &mut egui::Ui, add_contents: impl FnOnce(&mut egui::Ui)) {
-    theme::section_frame(ui.style()).show(ui, |ui| {
-        ui.set_min_width(ui.available_width());
-        add_contents(ui);
-    });
-    ui.add_space(SECTION_GAP);
+    theme::framed_section(ui, SECTION_GAP, add_contents);
 }
 
 /// Framed section whose children flow left-to-right and wrap.

@@ -267,8 +267,7 @@ mod known_tests {
             Action {
                 id: ActionId::new(),
                 kind: ActionKind::SetVariable {
-                    variable_name: "Count".into(),
-                    value: ScalarValue::Null,
+                    assignments: vec![crate::VariableAssignment::new("Count", ScalarValue::Null)],
                 },
             },
             Action {

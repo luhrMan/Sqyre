@@ -167,7 +167,7 @@ pub trait ActionDisplay {
     /// Tree-row params: Image Search omits Items (shown as thumbs/count instead).
     fn display_params_for_tree(&self) -> Vec<DisplayParam>;
 
-    /// Inline summary pill texts with output-binding labels applied.
+    /// Inline summary pill texts (primary params only; no output bindings).
     fn tree_summary_pills(&self) -> Vec<SummaryPill>;
 }
 
@@ -190,36 +190,26 @@ impl ActionDisplay for Action {
     fn tree_summary_pills(&self) -> Vec<SummaryPill> {
         let params = self.display_params_for_tree();
         let (summary, _) = split_display_params(&params);
-        let bindings = self.variable_bindings();
-        let mut output_labels: Vec<(String, String)> = bindings
-            .iter()
-            .map(|b| (b.name.clone(), b.pill_label().to_string()))
+        // Prefix when a summary value is also the action's set-variable name;
+        // do not append produced outputs (X/Y, OCR text, nav refs, etc.).
+        let binding_labels: std::collections::HashMap<String, String> = self
+            .variable_bindings()
+            .into_iter()
+            .filter(|b| matches!(b.role, sqyre_domain::BindingRole::Value))
+            .map(|b| {
+                let label = b.role.pill_label().to_string();
+                (b.name, label)
+            })
             .collect();
 
-        let mut pills = Vec::new();
-        let mut consumed = std::collections::HashSet::new();
-        for p in summary {
-            let text = p.minimal().to_string();
-            if let Some((_, label)) = output_labels.iter().find(|(n, _)| n == &text) {
-                if consumed.insert(text.clone()) {
-                    pills.push(SummaryPill {
-                        text: text.clone(),
-                        prefix: Some(label.clone()),
-                    });
-                }
-                continue;
-            }
-            pills.push(SummaryPill { text, prefix: None });
-        }
-        for (name, label) in output_labels.drain(..) {
-            if consumed.insert(name.clone()) {
-                pills.push(SummaryPill {
-                    text: name,
-                    prefix: Some(label),
-                });
-            }
-        }
-        pills
+        summary
+            .into_iter()
+            .map(|p| {
+                let text = p.minimal().to_string();
+                let prefix = binding_labels.get(&text).cloned();
+                SummaryPill { text, prefix }
+            })
+            .collect()
     }
 }
 
@@ -272,8 +262,8 @@ impl ActionKindDisplay for ActionKind {
                 }
             }
             Self::Loop { name, count, .. } => {
-                params.push(DisplayParam::new("Name", name.as_str()));
                 params.push(DisplayParam::new("Iterations", count.as_display()));
+                params.push(DisplayParam::new("Name", name.as_str()));
             }
             Self::While {
                 condition,
@@ -285,7 +275,7 @@ impl ActionKindDisplay for ActionKind {
                     "Match",
                     match_label(condition.match_mode),
                 ));
-                params.push(DisplayParam::new(
+                params.push(DisplayParam::extra(
                     "While",
                     condition_summary(condition.match_mode, &condition.clauses),
                 ));
@@ -302,7 +292,7 @@ impl ActionKindDisplay for ActionKind {
                     "Match",
                     match_label(condition.match_mode),
                 ));
-                params.push(DisplayParam::new(
+                params.push(DisplayParam::extra(
                     "If",
                     condition_summary(condition.match_mode, &condition.clauses),
                 ));
@@ -317,7 +307,7 @@ impl ActionKindDisplay for ActionKind {
             } => {
                 params.push(DisplayParam::new("Name", name.as_str()));
                 params.push(DisplayParam::new("Items", targets.len().to_string()));
-                params.push(DisplayParam::new(
+                params.push(DisplayParam::extra(
                     "Search Area",
                     search_area.display_label(),
                 ));
@@ -387,12 +377,14 @@ impl ActionKindDisplay for ActionKind {
                     params.push(DisplayParam::extra("End Row", end_row.as_display()));
                 }
             }
-            Self::SetVariable {
-                variable_name,
-                value,
-            } => {
-                params.push(DisplayParam::new("Variable", variable_name.as_str()));
-                params.push(DisplayParam::new("Value", yaml_display(value)));
+            Self::SetVariable { assignments } => {
+                for a in assignments {
+                    if a.variable_name.is_empty() {
+                        continue;
+                    }
+                    params.push(DisplayParam::new("Variable", a.variable_name.as_str()));
+                    params.push(DisplayParam::new("Value", yaml_display(&a.value)));
+                }
             }
             Self::SaveVariable {
                 variable_name,

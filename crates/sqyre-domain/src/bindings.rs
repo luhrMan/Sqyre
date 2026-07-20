@@ -103,12 +103,14 @@ impl Action {
 impl ActionKind {
     pub fn variable_bindings(&self) -> Vec<VariableBinding> {
         match self {
-            Self::SetVariable { variable_name, .. } if !variable_name.is_empty() => {
-                vec![VariableBinding {
-                    name: variable_name.clone(),
+            Self::SetVariable { assignments } => assignments
+                .iter()
+                .filter(|a| !a.variable_name.is_empty())
+                .map(|a| VariableBinding {
+                    name: a.variable_name.clone(),
                     role: BindingRole::Value,
-                }]
-            }
+                })
+                .collect(),
             Self::ImageSearch { detection, .. } | Self::FindPixel { detection, .. } => {
                 detection.coords.variable_bindings()
             }

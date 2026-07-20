@@ -76,6 +76,35 @@ pub fn section_frame(style: &egui::Style) -> egui::Frame {
         .inner_margin(egui::Margin::same(8))
 }
 
+/// Full-width framed card, then vertical `gap` after it.
+///
+/// Used by tip sections and settings panels so chrome stays consistent.
+pub fn framed_section(ui: &mut egui::Ui, gap: f32, add_contents: impl FnOnce(&mut egui::Ui)) {
+    section_frame(ui.style()).show(ui, |ui| {
+        ui.set_min_width(ui.available_width());
+        add_contents(ui);
+    });
+    ui.add_space(gap);
+}
+
+/// [`framed_section`] with a strong title, optional weak subtitle, and separator.
+pub fn titled_section(
+    ui: &mut egui::Ui,
+    title: &str,
+    subtitle: &str,
+    gap: f32,
+    add_contents: impl FnOnce(&mut egui::Ui),
+) {
+    framed_section(ui, gap, |ui| {
+        ui.label(egui::RichText::new(title).strong().size(16.0));
+        if !subtitle.is_empty() {
+            ui.label(egui::RichText::new(subtitle).weak());
+        }
+        ui.separator();
+        add_contents(ui);
+    });
+}
+
 /// Icon-only record control (danger styling).
 pub fn record_icon_button(ui: &mut egui::Ui, tip: &str, enabled: bool) -> egui::Response {
     ui.add_enabled(
