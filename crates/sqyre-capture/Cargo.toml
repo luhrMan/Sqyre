@@ -3,7 +3,7 @@ name = "sqyre-capture"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
-description = "ScreenCapturer for absolute virtual-desktop rects (Linux X11 first)"
+description = "ScreenCapturer for absolute virtual-desktop rects (Linux X11; Windows GDI; macOS stub)"
 
 [lints]
 workspace = true
@@ -16,5 +16,12 @@ parking_lot = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 x11 = { workspace = true }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_UI_WindowsAndMessaging",
+] }
 
 [dev-dependencies]

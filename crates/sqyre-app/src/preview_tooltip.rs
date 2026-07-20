@@ -2,7 +2,7 @@
 
 use eframe::egui::{self, ColorImage, TextureHandle, TextureOptions, Vec2};
 use image::{Rgba, RgbaImage};
-use sqyre_capture::{shared_capturer, X11Capturer};
+use sqyre_capture::{shared_capturer, OsCapturer};
 use sqyre_domain::{Action, ActionKind, CoordinateRef, Macro, ScalarValue};
 use sqyre_executor::DesktopRect;
 use sqyre_persist::{ProgramCatalog, ProgramPoint, ProgramSearchArea};
@@ -51,7 +51,7 @@ struct PendingCapture {
 /// Lazy capturer + LRU texture cache for coordinate preview tooltips.
 #[derive(Default)]
 pub struct PreviewTooltipCache {
-    capturer: Option<Arc<X11Capturer>>,
+    capturer: Option<Arc<OsCapturer>>,
     capturer_failed: bool,
     entries: HashMap<String, CacheEntry>,
     order: Vec<String>,
@@ -374,7 +374,7 @@ enum PreviewCoords {
     },
 }
 
-fn capture_preview(capturer: &X11Capturer, coords: PreviewCoords) -> Result<RgbaImage, String> {
+fn capture_preview(capturer: &OsCapturer, coords: PreviewCoords) -> Result<RgbaImage, String> {
     let vb = capturer.virtual_bounds_ref()?;
     match coords {
         PreviewCoords::Point { x, y } => {

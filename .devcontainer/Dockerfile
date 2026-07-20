@@ -1,4 +1,7 @@
 # Rust Sqyre workspace (egui / PureCV / Tesseract) + AppImage packaging tools.
+# Also used as the Linux AppImage Docker build image (make appimage fallback / CI).
+# Docker CLI comes from the docker-outside-of-docker feature (host daemon via socket)
+# so `make windows` and nested AppImage builds work inside the container.
 # Build and test in-container; run the GUI binary on the host (needs X11).
 FROM ubuntu:22.04
 
