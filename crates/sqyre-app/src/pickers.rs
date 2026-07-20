@@ -628,16 +628,27 @@ fn maybe_scroll_to(ui: &mut egui::Ui, resp: &egui::Response, scroll: &mut bool) 
 
 /// Options for [`picker_searchable_scroll`].
 pub struct PickerScrollOpts<'a> {
-    pub max_height: f32,
+    /// Space still laid out below the scroll (Save/Cancel). Use `0` when the list fills the pane.
+    pub footer_reserve: f32,
     /// Extra widgets after the search field (e.g. Refresh).
     pub trailing: Option<&'a mut dyn FnMut(&mut egui::Ui)>,
     pub id_salt: Option<&'static str>,
 }
 
 impl PickerScrollOpts<'_> {
-    pub fn list(ui: &egui::Ui) -> Self {
+    /// Popup list with Save/Cancel (or similar) below the scroll.
+    pub fn list(_ui: &egui::Ui) -> Self {
         Self {
-            max_height: picker_list_max_height(ui),
+            footer_reserve: 52.0,
+            trailing: None,
+            id_salt: None,
+        }
+    }
+
+    /// Fixed pane that ends at the list (e.g. data editor left column).
+    pub fn pane() -> Self {
+        Self {
+            footer_reserve: 0.0,
             trailing: None,
             id_salt: None,
         }
@@ -646,6 +657,7 @@ impl PickerScrollOpts<'_> {
 
 /// Search row → separator → capped vertical scroll. `body` receives lowercase trimmed query.
 ///
+/// Scroll height is measured after the search row so the pane fits remaining space.
 /// Returns whether search text changed this frame (callers can re-arm scroll-to-selection).
 pub fn picker_searchable_scroll(
     ui: &mut egui::Ui,
@@ -665,11 +677,17 @@ pub fn picker_searchable_scroll(
     });
     ui.separator();
     let q = search.trim().to_ascii_lowercase();
+    // Fixed panes (footer_reserve == 0) use remaining height only — no popup screen cap.
+    let max_h = if opts.footer_reserve <= 0.0 {
+        ui.available_height().max(40.0)
+    } else {
+        popup_scroll_max_height(ui, opts.footer_reserve)
+    };
     let mut scroll = egui::ScrollArea::vertical().auto_shrink([false, false]);
     if let Some(salt) = opts.id_salt {
         scroll = scroll.id_salt(salt);
     }
-    scroll.max_height(opts.max_height).show(ui, |ui| {
+    scroll.max_height(max_h).show(ui, |ui| {
         body(ui, &q);
     });
     search_changed
@@ -684,16 +702,11 @@ pub fn popup_scroll_max_height(ui: &egui::Ui, footer_reserve: f32) -> f32 {
     let screen_cap = (ui.ctx().content_rect().height() * 0.65).max(100.0);
     let h = ui.available_height() - footer_reserve;
     let capped = if h.is_finite() {
-        h.max(100.0)
+        h.max(40.0)
     } else {
         FALLBACK
     };
     capped.min(screen_cap)
-}
-
-fn picker_list_max_height(ui: &egui::Ui) -> f32 {
-    // Separator + Cancel/Save row still laid out below the list.
-    popup_scroll_max_height(ui, 52.0)
 }
 
 /// Flat searchable list of `program~name` refs from points or search areas,
@@ -721,7 +734,7 @@ pub fn paint_coord_ref_list(
     };
     let current_ref = CoordinateRef(current.clone());
     let mut did_scroll = false;
-    let list_h = picker_list_max_height(ui);
+    let list_h = popup_scroll_max_height(ui, 52.0);
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
         .max_height(list_h)
