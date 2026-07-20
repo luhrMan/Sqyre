@@ -957,6 +957,11 @@ pub enum ActionKind {
 }
 
 impl ActionKind {
+    /// Default instance for a YAML/wire type key (`"wait"`, `"imagesearch"`, …).
+    pub fn from_type_key(key: &str) -> Option<Self> {
+        crate::blank::blank_kind(key)
+    }
+
     pub fn type_key(&self) -> &'static str {
         match self {
             Self::Loop { .. } => "loop",

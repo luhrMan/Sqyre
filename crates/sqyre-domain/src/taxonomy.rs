@@ -6,9 +6,9 @@
 
 /// Number of addable [`crate::ActionKind`] variants / taxonomy rows.
 ///
-/// Bump this when adding a kind, and update [`ACTION_TYPE_TABLE`], `blank_kind`,
-/// serde tags, and exhaustive `ActionKind` matches.
-pub const ACTION_KIND_COUNT: usize = 21;
+/// Derived from [`ACTION_TYPE_TABLE`]. When adding a kind, update the table,
+/// `blank_kind` / serde tags, and exhaustive `ActionKind` matches.
+pub const ACTION_KIND_COUNT: usize = ACTION_TYPE_TABLE.len();
 
 /// Picker column order (also used as color-bucket keys for most types).
 pub const ACTION_PICKER_CATEGORIES: &[&str] = &[
