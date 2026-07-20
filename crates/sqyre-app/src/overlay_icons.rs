@@ -146,9 +146,9 @@ pub fn paint_glyph_bare(
     } else {
         style.icon
     };
-    ui.painter().text(
-        rect.center(),
-        egui::Align2::CENTER_CENTER,
+    crate::theme::paint_text_centered(
+        ui,
+        rect,
         icon.glyph,
         phosphor_font_id((size * 0.55).round()),
         color,
@@ -171,9 +171,9 @@ pub fn icon_glyph_button(
 ) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::click());
     paint_picker_chrome(ui, rect, selected, response.hovered());
-    ui.painter().text(
-        rect.center(),
-        egui::Align2::CENTER_CENTER,
+    crate::theme::paint_text_centered(
+        ui,
+        rect,
         icon.glyph,
         phosphor_font_id((size * 0.48).round()),
         crate::theme::PRIMARY,

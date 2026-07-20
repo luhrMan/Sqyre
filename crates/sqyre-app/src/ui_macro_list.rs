@@ -112,7 +112,8 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
             ui.horizontal(|ui| {
                 // Use ASCII / NotoEmoji glyphs only — fullwidth/math symbols
                 // (＋, ⧉) render as tofu in egui's default font stack.
-                let new_resp = ui.button("+");
+                let new_resp =
+                    crate::theme::icon_button_colored(ui, "+", Some(crate::theme::MACRO_START));
                 new_resp.clone().on_hover_text("New macro");
                 // AccessKit label for interaction tests (default label is just "+").
                 new_resp.widget_info(|| {
@@ -123,14 +124,18 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                 }
                 let has_sel = !app.macros.is_empty();
                 if ui
-                    .add_enabled(has_sel, egui::Button::new("📄"))
+                    .add_enabled_ui(has_sel, |ui| crate::theme::icon_button(ui, "📄"))
+                    .inner
                     .on_hover_text("Duplicate selected macro")
                     .clicked()
                 {
                     app.duplicate_selected_macro();
                 }
                 if ui
-                    .add_enabled(has_sel, egui::Button::new("🗑"))
+                    .add_enabled_ui(has_sel, |ui| {
+                        crate::theme::icon_button_colored(ui, "🗑", Some(crate::theme::MACRO_STOP))
+                    })
+                    .inner
                     .on_hover_text("Delete selected macro")
                     .clicked()
                 {
@@ -184,7 +189,10 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                     if ui.button("Cancel").clicked() {
                         app.pending_delete_macro = None;
                     }
-                    if ui.button("Delete").clicked() {
+                    if ui
+                        .button(egui::RichText::new("Delete").color(crate::theme::MACRO_STOP))
+                        .clicked()
+                    {
                         app.pending_delete_macro = None;
                         app.delete_macro_named(&name);
                     }

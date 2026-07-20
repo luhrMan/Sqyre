@@ -1,8 +1,6 @@
 //! OCR action: capture → preprocess → recognize → write vars → run children per hit.
 
-use super::common::{
-    apply_detection_hits, run_detection_shell, sort_hits, DetectionHit,
-};
+use super::common::{apply_detection_hits, run_detection_shell, sort_hits, DetectionHit};
 use crate::action_log::draw_rect_rgb;
 use crate::error::{ExecError, Result};
 use crate::run::Executor;
@@ -286,20 +284,13 @@ fn run_ocr_once(
     let resize_scale = if scale > 0.0 { scale } else { 1.0 };
     let mut hits = if params.target.is_empty() {
         // Empty target always matches once at search-area center.
-        vec![DetectionHit::plain(
-            search_center_x,
-            search_center_y,
-            "",
-        )]
+        vec![DetectionHit::plain(search_center_x, search_center_y, "")]
     } else {
         let occurrences = sqyre_vision::find_target_occurrences(&recognized.words, params.target);
         if occurrences.is_empty() {
             exec.log(
                 action_id,
-                format!(
-                    "OCR target {:?} not found among word boxes",
-                    params.target
-                ),
+                format!("OCR target {:?} not found among word boxes", params.target),
             );
             // Text-contains can still succeed when boxes miss; treat as miss for coords/hits
             // unless full text contains the target — then one synthetic center hit.

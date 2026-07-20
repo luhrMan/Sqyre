@@ -526,7 +526,15 @@ impl DataEditor {
                 ui.separator();
                 ui.horizontal(|ui| {
                     let can_new = !matches!(self.tab, EditorTab::AutoPic);
-                    if ui.add_enabled(can_new, egui::Button::new("New")).clicked() {
+                    if ui
+                        .add_enabled(
+                            can_new,
+                            egui::Button::new(
+                                egui::RichText::new("New").color(crate::theme::MACRO_START),
+                            ),
+                        )
+                        .clicked()
+                    {
                         self.on_new(db, macros, catalog, icons, screen_click, settings);
                     }
                     let dirty = self.is_dirty(catalog, settings);
@@ -544,7 +552,12 @@ impl DataEditor {
                         _ => self.selected_program.is_some() && self.selected_entity.is_some(),
                     };
                     if ui
-                        .add_enabled(can_delete, egui::Button::new("Delete"))
+                        .add_enabled(
+                            can_delete,
+                            egui::Button::new(
+                                egui::RichText::new("Delete").color(crate::theme::MACRO_STOP),
+                            ),
+                        )
                         .clicked()
                     {
                         let label = match self.tab {
@@ -661,7 +674,10 @@ impl DataEditor {
                 self.variant_prompt = None;
                 self.variant_name_draft.clear();
             }
-            if ui.button("Add").clicked() {
+            if ui
+                .button(egui::RichText::new("Add").color(crate::theme::MACRO_START))
+                .clicked()
+            {
                 let name = self.variant_name_draft.trim().to_string();
                 self.variant_prompt = None;
                 self.variant_name_draft.clear();

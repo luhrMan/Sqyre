@@ -55,7 +55,12 @@ pub fn tag_chip_editor(
         let mut remove: Option<String> = None;
         for tag in tags.iter() {
             if ui
-                .add_enabled(opts.enabled, egui::Button::new(format!("{tag} ×")))
+                .add_enabled(
+                    opts.enabled,
+                    egui::Button::new(
+                        egui::RichText::new(format!("{tag} ×")).color(crate::theme::MACRO_STOP),
+                    ),
+                )
                 .on_hover_text("Remove tag")
                 .clicked()
             {
@@ -80,7 +85,12 @@ pub fn tag_chip_editor(
         let add_enter = tag_resp.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
         let add_clicked = opts.show_add_button
             && ui
-                .add_enabled(opts.enabled, egui::Button::new("Add tag"))
+                .add_enabled(
+                    opts.enabled,
+                    egui::Button::new(
+                        egui::RichText::new("Add tag").color(crate::theme::MACRO_START),
+                    ),
+                )
                 .clicked();
         if opts.enabled && (add_enter || add_clicked) {
             if try_add_tag(tags, draft) {

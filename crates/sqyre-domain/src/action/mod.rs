@@ -1,6 +1,9 @@
 //! Action kinds and tree helpers.
 
 mod action_serde;
+mod wire_keys;
+
+pub use wire_keys::WIRE_TYPE_KEYS;
 
 use crate::{CoordinateRef, ScalarValue};
 use serde::{Deserialize, Serialize};
@@ -962,31 +965,7 @@ impl ActionKind {
         crate::blank::blank_kind(key)
     }
 
-    pub fn type_key(&self) -> &'static str {
-        match self {
-            Self::Loop { .. } => "loop",
-            Self::While { .. } => "while",
-            Self::Conditional { .. } => "conditional",
-            Self::ImageSearch { .. } => "imagesearch",
-            Self::Ocr { .. } => "ocr",
-            Self::FindPixel { .. } => "findpixel",
-            Self::ForEachRow { .. } => "foreachrow",
-            Self::Wait { .. } => "wait",
-            Self::Pause { .. } => "pause",
-            Self::Move { .. } => "move",
-            Self::Click { .. } => "click",
-            Self::Key { .. } => "key",
-            Self::Type { .. } => "type",
-            Self::SetVariable { .. } => "setvariable",
-            Self::SaveVariable { .. } => "savevariable",
-            Self::FocusWindow { .. } => "focuswindow",
-            Self::RunMacro { .. } => "runmacro",
-            Self::NavigateSelect(_) => "navigateselect",
-            Self::NavigateKey { .. } => "navigatekey",
-            Self::Break => "break",
-            Self::Continue => "continue",
-        }
-    }
+    // `type_key` is generated in `wire_keys` from the wire-key registry.
 
     pub fn is_branch(&self) -> bool {
         matches!(
