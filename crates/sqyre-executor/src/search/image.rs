@@ -140,7 +140,8 @@ struct VariantMatchOutcome {
     template_raw: Option<ImageBuf>,
     /// Blurred template used for matching (for pipeline steps).
     template_blurred: Arc<ImageBuf>,
-    mask_preview: Option<ImageBuf>,
+    /// Mask bytes (kept as Arc until logging builds a preview ImageBuf).
+    mask_bytes: Option<Arc<Vec<u8>>>,
     matches: std::result::Result<Vec<Point>, String>,
     match_ms: f64,
 }
@@ -274,7 +275,7 @@ fn capture_and_match(
                     tmpl_h: 0,
                     template_raw: None,
                     template_blurred: Arc::new(ImageBuf::new(1, 1, 3, 0)),
-                    mask_preview: None,
+                    mask_bytes: None,
                     matches: Ok(Vec::new()),
                     match_ms: 0.0,
                     job,
@@ -289,7 +290,7 @@ fn capture_and_match(
                         tmpl_h: 0,
                         template_raw: None,
                         template_blurred: Arc::new(ImageBuf::new(1, 1, 3, 0)),
-                        mask_preview: None,
+                        mask_bytes: None,
                         matches: Err(format!("load {:?}: {e}", job.path)),
                         match_ms: 0.0,
                         job,
@@ -303,13 +304,6 @@ fn capture_and_match(
                 .mask_path
                 .as_ref()
                 .and_then(|p| get_cached_image_mask(p, tmpl_h, tmpl_w));
-            let mask_preview = if want_pipeline {
-                mask_bytes
-                    .as_ref()
-                    .map(|m| ImageBuf::from_raw(tmpl_w, tmpl_h, 1, m.as_ref().clone()))
-            } else {
-                None
-            };
 
             let template_raw = if want_pipeline {
                 load_rgb_image(&job.path).ok()
@@ -335,7 +329,7 @@ fn capture_and_match(
                 tmpl_h,
                 template_raw,
                 template_blurred,
-                mask_preview,
+                mask_bytes,
                 matches,
                 match_ms,
             }
@@ -374,26 +368,30 @@ fn capture_and_match(
             .as_ref()
             .unwrap_or(outcome.template_blurred.as_ref());
 
+        let mask_preview = if want_pipeline {
+            outcome.mask_bytes.as_ref().map(|m| {
+                ImageBuf::from_raw(outcome.tmpl_w, outcome.tmpl_h, 1, m.as_ref().clone())
+            })
+        } else {
+            None
+        };
+
         let matches = match outcome.matches {
             Ok(m) => m,
             Err(e) => {
                 exec.log(action_id, format!("Image Search match: {e}"));
                 if want_pipeline {
-                    let mut steps = vec![
-                        (
-                            "0. Search area (match input)".into(),
-                            search_blurred.clone(),
-                        ),
-                        ("1. Item template".into(), thumbnail.clone()),
+                    let mut steps: Vec<(&str, &ImageBuf)> = vec![
+                        ("0. Search area (match input)", &search_blurred),
+                        ("1. Item template", thumbnail),
                     ];
+                    let blur_label;
                     if blur > 0 {
-                        steps.push((
-                            format!("2. Preprocess — blur item (amount={blur})"),
-                            outcome.template_blurred.as_ref().clone(),
-                        ));
+                        blur_label = format!("2. Preprocess — blur item (amount={blur})");
+                        steps.push((blur_label.as_str(), outcome.template_blurred.as_ref()));
                     }
-                    if let Some(mask) = &outcome.mask_preview {
-                        steps.push(("3. Mask".into(), mask.clone()));
+                    if let Some(mask) = &mask_preview {
+                        steps.push(("3. Mask", mask));
                     }
                     exec.log_item_pipeline(
                         action_id,
@@ -423,22 +421,8 @@ fn capture_and_match(
         let th = outcome.tmpl_h as i32;
 
         if want_pipeline {
-            let mut steps: Vec<(String, ImageBuf)> = Vec::new();
-            steps.push((
-                "0. Search area (match input)".into(),
-                search_blurred.clone(),
-            ));
-            steps.push(("1. Item template".into(), thumbnail.clone()));
-            if blur > 0 {
-                steps.push((
-                    format!("2. Preprocess — blur item (amount={blur})"),
-                    outcome.template_blurred.as_ref().clone(),
-                ));
-            }
-            if let Some(mask) = &outcome.mask_preview {
-                steps.push(("3. Mask".into(), mask.clone()));
-            }
-
+            let blur_label = format!("2. Preprocess — blur item (amount={blur})");
+            let mut owned_steps: Vec<(String, ImageBuf)> = Vec::new();
             let mut details = vec![
                 format!(
                     "Template {}×{} · search {}×{} · threshold={threshold:.3} · blur={blur}",
@@ -472,7 +456,7 @@ fn capture_and_match(
                         th,
                         12,
                     ) {
-                        steps.push((
+                        owned_steps.push((
                             format!("Find #{} — crop around ({local_tl_x},{local_tl_y})", mi + 1),
                             crop,
                         ));
@@ -501,13 +485,27 @@ fn capture_and_match(
             if find_count == 0 {
                 details.push("No matches found for this item.".into());
             } else {
-                steps.push(("Where found (all matches)".into(), item_overlay));
+                owned_steps.push(("Where found (all matches)".into(), item_overlay));
             }
             let summary = if find_count == 0 {
                 format!("0 matches · {:.0}ms", outcome.match_ms)
             } else {
                 format!("{find_count} match(es) · {:.0}ms", outcome.match_ms)
             };
+
+            let mut steps: Vec<(&str, &ImageBuf)> = vec![
+                ("0. Search area (match input)", &search_blurred),
+                ("1. Item template", thumbnail),
+            ];
+            if blur > 0 {
+                steps.push((blur_label.as_str(), outcome.template_blurred.as_ref()));
+            }
+            if let Some(mask) = &mask_preview {
+                steps.push(("3. Mask", mask));
+            }
+            for (label, img) in &owned_steps {
+                steps.push((label.as_str(), img));
+            }
 
             exec.log_item_pipeline(
                 action_id,

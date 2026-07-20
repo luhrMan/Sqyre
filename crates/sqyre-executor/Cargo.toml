@@ -11,6 +11,7 @@ workspace = true
 [dependencies]
 thiserror = { workspace = true }
 image = { workspace = true }
+parking_lot = { workspace = true }
 rayon = { workspace = true }
 sqyre-domain = { path = "../sqyre-domain" }
 sqyre-match = { path = "../sqyre-match" }

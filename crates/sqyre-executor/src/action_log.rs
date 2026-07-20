@@ -3,11 +3,12 @@
 //! Entries are chronological: text lines, shared pipeline images, and browseable
 //! [`ActionLogEntry::ItemPipeline`] groups (image-search items with steps + finds).
 
+use parking_lot::Mutex;
 use sqyre_domain::ActionId;
 use sqyre_match::ImageBuf;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 /// Max entries retained per action (oldest dropped).
 pub const MAX_ENTRIES_PER_ACTION: usize = 200;
@@ -77,7 +78,7 @@ pub trait ActionLogger: Send + Sync {
         title: String,
         summary: String,
         thumbnail: &ImageBuf,
-        steps: &[(String, ImageBuf)],
+        steps: &[(&str, &ImageBuf)],
         details: Vec<String>,
     ) {
         let _ = (action_id, title, summary, thumbnail, steps, details);
@@ -119,13 +120,12 @@ impl SharedActionLog {
     }
 
     pub fn clear(&self) {
-        self.inner.lock().unwrap().clear();
+        self.inner.lock().clear();
     }
 
     pub fn entries_for(&self, action_id: ActionId) -> Vec<ActionLogEntry> {
         self.inner
             .lock()
-            .unwrap()
             .get(&action_id)
             .cloned()
             .unwrap_or_default()
@@ -179,7 +179,7 @@ impl ActionLogger for SharedActionLog {
         title: String,
         summary: String,
         thumbnail: &ImageBuf,
-        steps: &[(String, ImageBuf)],
+        steps: &[(&str, &ImageBuf)],
         details: Vec<String>,
     ) {
         if !self.log_images_enabled() {
@@ -190,7 +190,7 @@ impl ActionLogger for SharedActionLog {
         };
         let steps: Vec<LogImage> = steps
             .iter()
-            .filter_map(|(label, img)| image_buf_to_log_image(label.clone(), img))
+            .filter_map(|(label, img)| image_buf_to_log_image((*label).to_string(), img))
             .collect();
         push_entry(
             &self.inner,
@@ -211,7 +211,7 @@ fn push_entry(
     action_id: ActionId,
     entry: ActionLogEntry,
 ) {
-    let mut map = inner.lock().unwrap();
+    let mut map = inner.lock();
     let entries = map.entry(action_id).or_default();
     entries.push(entry);
     if entries.len() > MAX_ENTRIES_PER_ACTION {
@@ -422,7 +422,7 @@ mod tests {
             "Sword".into(),
             "1 match".into(),
             &img,
-            &[("step".into(), img.clone())],
+            &[("step", &img)],
             vec!["detail".into()],
         );
         log.log(id, "done".into());
@@ -443,7 +443,7 @@ mod tests {
             "Sword".into(),
             "1 match".into(),
             &thumb,
-            &[("Where found".into(), step)],
+            &[("Where found", &step)],
             vec!["Found at (1, 2)".into()],
         );
         let entries = log.entries_for(id);

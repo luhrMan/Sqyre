@@ -23,9 +23,10 @@ use sqyre_serialize::{action_from_map, action_to_map};
 use sqyre_ui_model::{action_icon_glyph, action_pastel_color};
 use sqyre_validate::validate_action;
 use std::collections::{HashMap, HashSet};
+use web_time::{Duration, Instant};
 
 /// How long a tile must be hovered before the defaults **view** tip opens.
-const DEFAULTS_HOVER_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
+const DEFAULTS_HOVER_DELAY: Duration = Duration::from_secs(1);
 
 /// Modal state for the categorized blank-action picker.
 #[derive(Debug, Default)]
@@ -43,7 +44,7 @@ pub struct AddActionPicker {
 struct HoverPending {
     action_type: String,
     anchor: egui::Pos2,
-    since: std::time::Instant,
+    since: Instant,
 }
 
 #[derive(Debug, Clone)]
@@ -256,7 +257,7 @@ impl AddActionPicker {
                     self.hover_pending = Some(HoverPending {
                         action_type: ty,
                         anchor,
-                        since: std::time::Instant::now(),
+                        since: Instant::now(),
                     });
                 } else if let Some(p) = &mut self.hover_pending {
                     p.anchor = anchor;

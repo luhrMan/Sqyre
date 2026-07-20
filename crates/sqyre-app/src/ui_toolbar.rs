@@ -30,6 +30,7 @@ pub fn brand_header(app: &mut SqyreApp, ui: &mut egui::Ui) {
 }
 
 pub fn main_toolbar(app: &mut SqyreApp, ui: &mut egui::Ui) {
+    #[cfg(not(target_arch = "wasm32"))]
     let running = app.run.running.load(Ordering::SeqCst);
     ui.horizontal(|ui| {
         let (list_glyph, list_tip) = if app.macro_list_open {
@@ -41,11 +42,23 @@ pub fn main_toolbar(app: &mut SqyreApp, ui: &mut egui::Ui) {
             app.macro_list_open = !app.macro_list_open;
         }
         ui.separator();
-        if toolbar_icon(ui, "▶", "Run", !running && !app.macros.is_empty()).clicked() {
-            app.start_macro(ui.ctx());
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            if toolbar_icon(ui, "▶", "Run", !running && !app.macros.is_empty()).clicked() {
+                app.start_macro(ui.ctx());
+            }
+            if toolbar_icon(ui, "⏹", "Stop", running).clicked() {
+                app.request_stop();
+            }
         }
-        if toolbar_icon(ui, "⏹", "Stop", running).clicked() {
-            app.request_stop();
+        #[cfg(target_arch = "wasm32")]
+        {
+            if toolbar_icon(ui, "⬇", "Import db.yaml", true).clicked() {
+                app.request_db_import();
+            }
+            if toolbar_icon(ui, "⬆", "Export db.yaml", true).clicked() {
+                app.export_db_yaml();
+            }
         }
         if toolbar_icon(ui, "📁", "Data Editor", true).clicked() {
             app.data_editor.open = true;
@@ -58,7 +71,10 @@ pub fn main_toolbar(app: &mut SqyreApp, ui: &mut egui::Ui) {
             ui.label(status);
         }
     });
+    #[cfg(not(target_arch = "wasm32"))]
     ui.small("Esc stops the running macro; Esc+Ctrl+Shift exits (failsafe). Macro hotkeys launch from anywhere.");
+    #[cfg(target_arch = "wasm32")]
+    ui.small("Browser editor: import/export db.yaml. Run, capture, and global hotkeys are desktop-only.");
     ui.separator();
 }
 
