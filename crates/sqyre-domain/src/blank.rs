@@ -34,7 +34,7 @@ pub fn action_templates() -> Vec<ActionTemplate> {
 
 /// Build a blank action with a fresh UID for the given type key.
 pub fn blank_action(action_type: &str) -> Option<Action> {
-    let kind = blank_kind(action_type)?;
+    let kind = ActionKind::from_type_key(action_type)?;
     Some(Action {
         id: ActionId::new(),
         kind,
@@ -57,7 +57,8 @@ macro_rules! test_action {
     };
 }
 
-fn blank_kind(action_type: &str) -> Option<ActionKind> {
+/// Default [`ActionKind`] for a wire type key (Add Action / taxonomy blanks).
+pub(crate) fn blank_kind(action_type: &str) -> Option<ActionKind> {
     Some(match action_type.trim().to_ascii_lowercase().as_str() {
         "move" => ActionKind::Move {
             point: CoordinateRef::default(),
