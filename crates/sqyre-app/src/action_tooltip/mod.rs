@@ -291,7 +291,7 @@ pub fn show(
     match state.clone() {
         TooltipState::Hidden => None,
         TooltipState::View { action_id } => {
-            let Some(action) = find_action(&macro_.root, action_id).cloned() else {
+            let Some(action) = macro_.root.find_by_id(action_id).cloned() else {
                 *state = TooltipState::Hidden;
                 return None;
             };
@@ -301,14 +301,6 @@ pub fn show(
         TooltipState::Edit { .. } => {
             show_edit_window(state, ctx, macro_, macros, ui, &mut before_mutate)
         }
-    }
-}
-
-fn find_action(root: &Action, id: ActionId) -> Option<&Action> {
-    if root.id == id {
-        Some(root)
-    } else {
-        root.find_by_id(id)
     }
 }
 

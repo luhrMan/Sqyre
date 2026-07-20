@@ -3,8 +3,7 @@
 use crate::error::CaptureError;
 use image::RgbaImage;
 use parking_lot::Mutex;
-use sqyre_executor::{DesktopRect, RgbCapture, ScreenCapturer};
-use std::sync::{Arc, OnceLock};
+use sqyre_executor::{DesktopRect, RgbCapture};
 use windows::core::BOOL;
 use windows::Win32::Foundation::{LPARAM, RECT};
 use windows::Win32::Graphics::Gdi::{
@@ -21,18 +20,7 @@ pub struct OsCapturer {
     inner: Mutex<()>,
 }
 
-/// Process-wide capturer for UI offload (cloned via [`Arc`]; access serialized by inner Mutex).
-static SHARED_UI_CAPTURER: OnceLock<Result<Arc<OsCapturer>, String>> = OnceLock::new();
-
-/// Shared capturer for UI-thread offload (preview tooltips, AutoPic, etc.).
-pub fn shared_capturer() -> Result<Arc<OsCapturer>, String> {
-    match SHARED_UI_CAPTURER
-        .get_or_init(|| OsCapturer::open().map(Arc::new).map_err(|e| e.to_string()))
-    {
-        Ok(c) => Ok(Arc::clone(c)),
-        Err(e) => Err(e.clone()),
-    }
-}
+crate::define_shared_run_capturer!();
 
 impl OsCapturer {
     pub fn open() -> Result<Self, CaptureError> {
@@ -68,61 +56,6 @@ impl OsCapturer {
     pub fn monitor_sizes_ref(&self) -> Result<Vec<(i32, i32)>, String> {
         let _guard = self.inner.lock();
         enum_monitor_sizes().map_err(Into::into)
-    }
-}
-
-impl ScreenCapturer for OsCapturer {
-    fn capture_monitor(&mut self, display_index: i32) -> Result<RgbaImage, String> {
-        if display_index != 0 {
-            return Err(CaptureError::UnsupportedDisplay(display_index).into());
-        }
-        let vb = self.virtual_bounds_ref()?;
-        self.capture_rect_ref(vb)
-    }
-
-    fn capture_rect(&mut self, rect: DesktopRect) -> Result<RgbaImage, String> {
-        self.capture_rect_ref(rect)
-    }
-
-    fn capture_rect_rgb(&mut self, rect: DesktopRect) -> Result<RgbCapture, String> {
-        self.capture_rect_rgb_ref(rect)
-    }
-
-    fn virtual_bounds(&mut self) -> Result<DesktopRect, String> {
-        self.virtual_bounds_ref()
-    }
-
-    fn monitor_sizes(&mut self) -> Result<Vec<(i32, i32)>, String> {
-        self.monitor_sizes_ref()
-    }
-}
-
-/// [`ScreenCapturer`] over a shared [`Arc`] capturer (macro run thread).
-pub struct SharedRunCapturer(pub Arc<OsCapturer>);
-
-impl ScreenCapturer for SharedRunCapturer {
-    fn capture_monitor(&mut self, display_index: i32) -> Result<RgbaImage, String> {
-        if display_index != 0 {
-            return Err(CaptureError::UnsupportedDisplay(display_index).into());
-        }
-        let vb = self.0.virtual_bounds_ref()?;
-        self.0.capture_rect_ref(vb)
-    }
-
-    fn capture_rect(&mut self, rect: DesktopRect) -> Result<RgbaImage, String> {
-        self.0.capture_rect_ref(rect)
-    }
-
-    fn capture_rect_rgb(&mut self, rect: DesktopRect) -> Result<RgbCapture, String> {
-        self.0.capture_rect_rgb_ref(rect)
-    }
-
-    fn virtual_bounds(&mut self) -> Result<DesktopRect, String> {
-        self.0.virtual_bounds_ref()
-    }
-
-    fn monitor_sizes(&mut self) -> Result<Vec<(i32, i32)>, String> {
-        self.0.monitor_sizes_ref()
     }
 }
 

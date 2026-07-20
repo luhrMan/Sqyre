@@ -15,44 +15,13 @@ use x11::xlib::{
     XWindowChanges, _XDisplay, CWX, CWY,
 };
 
+pub use crate::outline_rect::OutlineRect;
+
 const EDGE_PX: i32 = 2;
 /// Selection stroke color (gold).
 const STROKE_R: u16 = 255;
 const STROKE_G: u16 = 200;
 const STROKE_B: u16 = 0;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct OutlineRect {
-    pub left: i32,
-    pub top: i32,
-    pub right: i32,
-    pub bottom: i32,
-}
-
-impl OutlineRect {
-    pub fn normalize(ax: i32, ay: i32, bx: i32, by: i32) -> Self {
-        let (left, right) = if ax <= bx { (ax, bx) } else { (bx, ax) };
-        let (top, bottom) = if ay <= by { (ay, by) } else { (by, ay) };
-        Self {
-            left,
-            top,
-            right,
-            bottom,
-        }
-    }
-
-    pub fn is_empty(self) -> bool {
-        self.right <= self.left || self.bottom <= self.top
-    }
-
-    pub fn width(self) -> i32 {
-        (self.right - self.left).max(0)
-    }
-
-    pub fn height(self) -> i32 {
-        (self.bottom - self.top).max(0)
-    }
-}
 
 /// Four edge windows forming a hollow rectangle on the virtual desktop.
 pub struct SelectionOutline {
@@ -235,23 +204,7 @@ unsafe fn configure(display: *mut Display, win: Window, x: i32, y: i32, w: i32, 
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
-    #[test]
-    fn normalize_and_empty() {
-        let r = OutlineRect::normalize(10, 20, 5, 40);
-        assert_eq!(
-            r,
-            OutlineRect {
-                left: 5,
-                top: 20,
-                right: 10,
-                bottom: 40
-            }
-        );
-        assert!(!r.is_empty());
-        assert!(OutlineRect::normalize(1, 1, 1, 1).is_empty());
-    }
+    use super::SelectionOutline;
 
     #[test]
     fn open_or_skip() {

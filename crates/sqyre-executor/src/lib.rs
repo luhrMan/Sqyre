@@ -9,6 +9,8 @@ mod navigate;
 mod run;
 mod runtime_vars;
 mod search;
+#[cfg(test)]
+pub(crate) mod test_support;
 
 pub use action_log::{
     crop_match_preview, draw_rect_rgb, ActionLogEntry, ActionLogger, LogImage, SharedActionLog,

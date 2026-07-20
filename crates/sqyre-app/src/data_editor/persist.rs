@@ -1,6 +1,6 @@
 //! Create / update / delete / persist catalog entities.
 
-use super::helpers::{new_overlay_button_id, parse_i32, parse_scalar, unique_name};
+use super::helpers::{new_overlay_button_id, parse_i32, unique_name};
 use super::{DataEditor, EditorTab, PendingConfirm};
 use crate::collection_capture::capture_and_save_collection_image;
 use crate::icon_cache::IconCache;
@@ -506,8 +506,8 @@ impl DataEditor {
             .ok_or_else(|| sqyre_persist::PersistError::Message("no program".into()))?;
         let pt = ProgramPoint {
             name: new_name.to_string(),
-            x: parse_scalar(&self.form_x),
-            y: parse_scalar(&self.form_y),
+            x: ScalarValue::parse_edit(&self.form_x),
+            y: ScalarValue::parse_edit(&self.form_y),
         };
         if let Some(old) = self.selected_entity.clone() {
             if old != new_name {
@@ -541,10 +541,10 @@ impl DataEditor {
             .ok_or_else(|| sqyre_persist::PersistError::Message("no program".into()))?;
         let sa = ProgramSearchArea {
             name: new_name.to_string(),
-            left_x: parse_scalar(&self.form_left),
-            top_y: parse_scalar(&self.form_top),
-            right_x: parse_scalar(&self.form_right),
-            bottom_y: parse_scalar(&self.form_bottom),
+            left_x: ScalarValue::parse_edit(&self.form_left),
+            top_y: ScalarValue::parse_edit(&self.form_top),
+            right_x: ScalarValue::parse_edit(&self.form_right),
+            bottom_y: ScalarValue::parse_edit(&self.form_bottom),
         };
         if let Some(old) = self.selected_entity.clone() {
             if old != new_name {

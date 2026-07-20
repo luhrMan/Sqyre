@@ -20,7 +20,7 @@ impl ActionTemplate {
     }
 }
 
-/// All addable action kinds for the picker (21 kinds; Calculate folded into Set).
+/// All addable action kinds for the picker ([`ACTION_KIND_COUNT`]; Calculate folded into Set).
 pub fn action_templates() -> Vec<ActionTemplate> {
     action_type_table()
         .iter()
@@ -167,17 +167,36 @@ fn blank_kind(action_type: &str) -> Option<ActionKind> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::action_picker_category;
+    use crate::{action_picker_category, action_type_label, ACTION_KIND_COUNT};
 
     #[test]
-    fn templates_cover_twenty_one_kinds() {
+    fn templates_cover_all_kinds() {
         let t = action_templates();
-        assert_eq!(t.len(), 21);
+        assert_eq!(
+            t.len(),
+            ACTION_KIND_COUNT,
+            "bump ACTION_KIND_COUNT when adding a kind"
+        );
         for tmpl in &t {
             let a = tmpl.create();
             assert_eq!(a.type_key(), tmpl.action_type);
             assert!(!a.id.is_root());
             assert_eq!(action_picker_category(tmpl.action_type), tmpl.category);
+            assert_ne!(
+                action_type_label(tmpl.action_type),
+                "Unknown",
+                "template {:?} missing from taxonomy",
+                tmpl.action_type
+            );
+        }
+    }
+
+    #[test]
+    fn every_blank_maps_back_to_taxonomy() {
+        for m in action_type_table() {
+            let a = blank_action(m.type_key).expect("taxonomy row must have blank_kind");
+            assert_eq!(a.type_key(), m.type_key);
+            assert_eq!(action_type_label(a.type_key()), m.label);
         }
     }
 
