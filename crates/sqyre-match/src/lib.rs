@@ -10,7 +10,7 @@ mod template;
 
 pub use blur::{blur_image, blur_image_owned, search_blur_kernel};
 pub use image::{ImageBuf, Point};
-pub use peaks::{find_peaks, DEFAULT_CLOSE_MATCHES_DISTANCE};
+pub use peaks::{cluster_points, find_peaks, DEFAULT_CLOSE_MATCHES_DISTANCE};
 pub use template::{
     match_ccoeff_normed, match_ccoeff_normed_with_integrals, prepare_search_integrals, MatchError,
     MatchMap, SearchIntegrals,

@@ -8,12 +8,15 @@ mod ocr_engine;
 mod ocr_preprocess;
 mod search_cache;
 
-pub use find_pixel::find_pixel;
+pub use find_pixel::{find_pixel, find_pixels};
 pub use image_util::{
     gray_to_rgb, load_rgb_image, mask_as_u8, resize_mask, resize_nearest, rgb_to_grayscale,
     rgba_to_rgb_buf,
 };
-pub use ocr_boxes::{find_target_in_boxes, parse_tsv_word_boxes, text_from_ocr_boxes, OcrWordBox};
+pub use ocr_boxes::{
+    find_target_in_boxes, find_target_occurrences, parse_tsv_word_boxes, text_from_ocr_boxes,
+    OcrWordBox,
+};
 #[cfg(not(target_arch = "wasm32"))]
 pub use ocr_engine::{recognize_image, LeptessOcr, OcrRecognition};
 pub use ocr_preprocess::{

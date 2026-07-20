@@ -270,6 +270,22 @@ pub fn is_failsafe_chord(keys: &[String]) -> bool {
     sorted == failsafe
 }
 
+/// Normalize and validate a Pause continue-key chord.
+///
+/// Returns normalized key names, or an error if empty / equals the failsafe chord.
+pub fn validate_continue_key(keys: &[String]) -> Result<Vec<String>, String> {
+    let normalized = normalize_keys(keys);
+    if normalized.is_empty() {
+        return Err("pause: continue key not set".into());
+    }
+    if is_failsafe_chord(&normalized) {
+        return Err(
+            "pause: continue key cannot match the failsafe hotkey (esc + ctrl + shift)".into(),
+        );
+    }
+    Ok(normalized)
+}
+
 fn validate_not_failsafe(keys: &[String]) -> Result<(), String> {
     if is_failsafe_chord(keys) {
         return Err("key wait: chord cannot match the failsafe hotkey (esc + ctrl + shift)".into());

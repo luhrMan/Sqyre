@@ -211,13 +211,9 @@ impl SettingsUi {
                 );
             });
 
-        if let Some(status) = &self.status_banner.status {
+        if self.status_banner.status.is_some() {
             ui.separator();
-            if self.status_banner.status_error {
-                ui.colored_label(Color32::RED, status);
-            } else {
-                ui.label(status);
-            }
+            self.status_banner.paint(ui);
         }
     }
 

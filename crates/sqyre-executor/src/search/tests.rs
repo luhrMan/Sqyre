@@ -1,37 +1,18 @@
-use super::common::set_coord_outputs;
-use super::image::{run_matches, sort_points, NamedPoint};
+use super::common::{run_matches, set_coord_outputs, sort_hits, DetectionHit};
 use super::ocr::ocr_target_matched;
 use crate::backends::{DesktopRect, IconStore, ItemMeta, RecordingBackend, RecordingCapturer};
 use crate::run::{execute_macro_with, ExecDeps};
+use crate::test_support::SEARCH_FIXED_AREA;
 use crate::SharedActionLog;
 use image::{Rgba, RgbaImage};
 use sqyre_domain::{
     root_loop, Action, ActionId, ActionKind, CoordinateOutputs, CoordinateRef, Macro, MatchOrder,
     RepeatMode, ScalarValue, WaitTilFoundConfig,
 };
-use sqyre_match::{search_blur_kernel, ImageBuf, Point, DEFAULT_CLOSE_MATCHES_DISTANCE};
+use sqyre_match::{search_blur_kernel, ImageBuf, DEFAULT_CLOSE_MATCHES_DISTANCE};
 use sqyre_vision::get_cached_blurred_template;
 use std::collections::HashMap;
 use std::path::PathBuf;
-
-struct FixedArea;
-
-impl crate::backends::CoordinateResolver for FixedArea {
-    fn resolve_point(
-        &self,
-        _r: &CoordinateRef,
-        _macro_: &Macro,
-    ) -> std::result::Result<(i32, i32), String> {
-        Ok((0, 0))
-    }
-    fn resolve_search_area(
-        &self,
-        _r: &CoordinateRef,
-        _macro_: &Macro,
-    ) -> std::result::Result<(i32, i32, i32, i32), String> {
-        Ok((100, 200, 110, 210))
-    }
-}
 
 fn full_desktop() -> DesktopRect {
     DesktopRect {
@@ -241,30 +222,18 @@ impl IconStore for MapIcons {
     }
 }
 
-fn named(name: &str, x: i32, y: i32, ox: i32, oy: i32) -> NamedPoint {
-    NamedPoint {
-        point: Point { x, y },
-        origin: DesktopRect {
-            x: ox,
-            y: oy,
-            w: 10,
-            h: 10,
-        },
-        meta: None,
-        tmpl_w: 1,
-        tmpl_h: 1,
-        name: name.into(),
-    }
+fn named(name: &str, x: i32, y: i32, ox: i32, oy: i32) -> DetectionHit {
+    DetectionHit::plain(x + ox, y + oy, name)
 }
 
 #[test]
-fn sort_points_uses_row_band_then_x() {
+fn sort_hits_uses_row_band_then_x() {
     let mut pts = vec![
         named("b", 20, 10, 0, 0),
         named("a", 5, 12, 0, 0), // same band (abs dy <= 5), lower x → first
         named("c", 1, 30, 0, 0), // next row
     ];
-    sort_points(&mut pts, &MatchOrder::default());
+    sort_hits(&mut pts, &MatchOrder::default());
     assert_eq!(
         pts.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(),
         vec!["a", "b", "c"]
@@ -272,13 +241,13 @@ fn sort_points_uses_row_band_then_x() {
 }
 
 #[test]
-fn sort_points_respects_match_order() {
+fn sort_hits_respects_match_order() {
     let mut pts = vec![
         named("a", 5, 10, 0, 0),
         named("b", 20, 12, 0, 0),
         named("c", 1, 30, 0, 0),
     ];
-    sort_points(
+    sort_hits(
         &mut pts,
         &MatchOrder {
             grouping: "row".into(),
@@ -296,7 +265,7 @@ fn sort_points_respects_match_order() {
         named("b", 12, 20, 0, 0),
         named("c", 30, 1, 0, 0),
     ];
-    sort_points(
+    sort_hits(
         &mut pts,
         &MatchOrder {
             grouping: "column".into(),
@@ -339,7 +308,7 @@ fn image_search_caches_blurred_templates() {
             bounds: full_desktop(),
             ..Default::default()
         };
-        let resolver = FixedArea;
+        let resolver = SEARCH_FIXED_AREA;
         let close_matches = 17;
         let search_id = ActionId::new();
         let mut macro_ = Macro::new("t", 0, vec![]);
@@ -477,7 +446,7 @@ fn find_pixel_sets_coords_and_logs() {
         bounds: full_desktop(),
         ..Default::default()
     };
-    let resolver = FixedArea;
+    let resolver = SEARCH_FIXED_AREA;
     let logger = SharedActionLog::new();
     let find_id = ActionId::new();
     let mut macro_ = quiet_macro(vec![Action {
@@ -524,7 +493,7 @@ fn find_pixel_not_found_logs() {
         bounds: full_desktop(),
         ..Default::default()
     };
-    let resolver = FixedArea;
+    let resolver = SEARCH_FIXED_AREA;
     let logger = SharedActionLog::new();
     let find_id = ActionId::new();
     let mut macro_ = quiet_macro(vec![Action {
@@ -555,7 +524,7 @@ fn find_pixel_runs_branch_when_found() {
 
     let mut backend = RecordingBackend::default();
     let mut capturer = capturer_next(img);
-    let resolver = FixedArea;
+    let resolver = SEARCH_FIXED_AREA;
     let mut macro_ = quiet_macro(vec![find_pixel_action(
         ActionId::new(),
         "#ff0000",
@@ -570,7 +539,7 @@ fn find_pixel_runs_branch_when_found() {
 fn find_pixel_no_find_runs_branch_when_flag_set() {
     let mut backend = RecordingBackend::default();
     let mut capturer = capturer_next(RgbaImage::from_pixel(4, 4, Rgba([0, 0, 255, 255])));
-    let resolver = FixedArea;
+    let resolver = SEARCH_FIXED_AREA;
     let mut macro_ = Macro::new("t", 0, vec![]);
     macro_.keyboard_delay = 0;
     macro_.mouse_delay = 0;
@@ -597,7 +566,7 @@ fn find_pixel_no_find_runs_branch_when_flag_set() {
 fn find_pixel_skips_branch_when_missing() {
     let mut backend = RecordingBackend::default();
     let mut capturer = capturer_next(RgbaImage::from_pixel(4, 4, Rgba([0, 0, 255, 255])));
-    let resolver = FixedArea;
+    let resolver = SEARCH_FIXED_AREA;
     let mut macro_ = quiet_macro(vec![find_pixel_action(
         ActionId::new(),
         "#ff0000",
@@ -639,7 +608,7 @@ fn image_search_no_find_runs_branch() {
         bounds: full_desktop(),
         ..Default::default()
     };
-    let resolver = FixedArea;
+    let resolver = SEARCH_FIXED_AREA;
     let logger = SharedActionLog::new();
     let search_id = ActionId::new();
     let mut macro_ = quiet_macro(vec![Action {
@@ -799,7 +768,7 @@ fn ocr_writes_text_and_target_coords() {
         bounds: full_desktop(),
         ..Default::default()
     };
-    let resolver = FixedArea;
+    let resolver = SEARCH_FIXED_AREA;
     let ocr = FixedOcrEngine {
         result: OcrResult {
             text: "Hello Submit Button".into(),
@@ -869,7 +838,7 @@ fn ocr_writes_text_and_target_coords() {
         macro_.variables.get("ocrText").map(|v| v.as_display()),
         Some("Hello Submit Button".into())
     );
-    // FixedArea resolves to (100,200)-(110,210); box center (80,10) + origin
+    // SEARCH_FIXED_AREA resolves to (100,200)-(110,210); box center (80,10) + origin
     assert_eq!(
         macro_.variables.get("foundX").map(|v| v.as_display()),
         Some("180".into())
@@ -926,7 +895,7 @@ fn ocr_runs_branch_when_target_found() {
 
     let mut backend = RecordingBackend::default();
     let mut capturer = capturer_next(RgbaImage::from_pixel(20, 10, Rgba([255, 255, 255, 255])));
-    let resolver = FixedArea;
+    let resolver = SEARCH_FIXED_AREA;
     let ocr = FixedOcrEngine {
         result: OcrResult {
             text: "Hello Submit Button".into(),
@@ -962,7 +931,7 @@ fn ocr_no_find_runs_branch_when_flag_set() {
 
     let mut backend = RecordingBackend::default();
     let mut capturer = capturer_next(RgbaImage::from_pixel(20, 10, Rgba([255, 255, 255, 255])));
-    let resolver = FixedArea;
+    let resolver = SEARCH_FIXED_AREA;
     let ocr = FixedOcrEngine {
         result: OcrResult {
             text: "Hello World".into(),
@@ -1004,7 +973,7 @@ fn ocr_skips_branch_when_target_missing() {
 
     let mut backend = RecordingBackend::default();
     let mut capturer = capturer_next(RgbaImage::from_pixel(20, 10, Rgba([255, 255, 255, 255])));
-    let resolver = FixedArea;
+    let resolver = SEARCH_FIXED_AREA;
     let ocr = FixedOcrEngine {
         result: OcrResult {
             text: "Hello World".into(),
@@ -1041,7 +1010,7 @@ fn find_pixel_wait_until_found_retries_then_succeeds() {
 
     let mut backend = RecordingBackend::default();
     let mut capturer = capturer_queue(vec![miss, hit]);
-    let resolver = FixedArea;
+    let resolver = SEARCH_FIXED_AREA;
     let logger = SharedActionLog::new();
     let find_id = ActionId::new();
     let mut macro_ = quiet_macro(vec![find_pixel_action(
@@ -1133,7 +1102,7 @@ fn find_pixel_wait_until_found_stops_when_flag_set() {
         bounds: full_desktop(),
         ..Default::default()
     };
-    let resolver = FixedArea;
+    let resolver = SEARCH_FIXED_AREA;
     let find_id = ActionId::new();
     let mut macro_ = quiet_macro(vec![Action {
         id: find_id,
@@ -1170,7 +1139,7 @@ fn find_pixel_repeat_while_found_runs_then_stops_on_miss() {
 
     let mut backend = RecordingBackend::default();
     let mut capturer = capturer_queue(vec![hit, miss]);
-    let resolver = FixedArea;
+    let resolver = SEARCH_FIXED_AREA;
     let mut macro_ = quiet_macro(vec![find_pixel_action(
         ActionId::new(),
         "#00ff00",
@@ -1237,7 +1206,7 @@ fn image_search_wait_until_found_retries_then_succeeds() {
             bounds: full_desktop(),
             ..Default::default()
         };
-        let resolver = FixedArea;
+        let resolver = SEARCH_FIXED_AREA;
         let close_matches = 8;
         let search_id = ActionId::new();
         let mut macro_ = Macro::new("t", 0, vec![]);
@@ -1314,7 +1283,7 @@ fn image_search_repeat_while_found_then_stops() {
             bounds: full_desktop(),
             ..Default::default()
         };
-        let resolver = FixedArea;
+        let resolver = SEARCH_FIXED_AREA;
         let close_matches = 8;
         let mut macro_ = Macro::new("t", 0, vec![]);
         macro_.keyboard_delay = 0;
@@ -1395,7 +1364,7 @@ fn image_search_multi_variant_matches_either_template() {
             bounds: full_desktop(),
             ..Default::default()
         };
-        let resolver = FixedArea;
+        let resolver = SEARCH_FIXED_AREA;
         let close_matches = 8;
         let logger = SharedActionLog::new();
         let search_id = ActionId::new();
@@ -1480,7 +1449,7 @@ fn image_search_uses_mask_path_when_present() {
             bounds: full_desktop(),
             ..Default::default()
         };
-        let resolver = FixedArea;
+        let resolver = SEARCH_FIXED_AREA;
         let close_matches = 8;
         let mut macro_ = Macro::new("t", 0, vec![]);
         macro_.keyboard_delay = 0;
@@ -1531,7 +1500,7 @@ fn ocr_wait_until_found_retries_then_succeeds() {
 
     let mut backend = RecordingBackend::default();
     let mut capturer = capturer_next(RgbaImage::from_pixel(20, 10, Rgba([255, 255, 255, 255])));
-    let resolver = FixedArea;
+    let resolver = SEARCH_FIXED_AREA;
     let ocr = QueuedOcrEngine {
         queue: std::sync::Mutex::new(vec![
             OcrResult {
@@ -1578,7 +1547,7 @@ fn ocr_repeat_while_found_then_stops_on_miss() {
 
     let mut backend = RecordingBackend::default();
     let mut capturer = capturer_next(RgbaImage::from_pixel(20, 10, Rgba([255, 255, 255, 255])));
-    let resolver = FixedArea;
+    let resolver = SEARCH_FIXED_AREA;
     let ocr = QueuedOcrEngine {
         queue: std::sync::Mutex::new(vec![
             OcrResult {
@@ -1608,4 +1577,107 @@ fn ocr_repeat_while_found_then_stops_on_miss() {
         "expected one OCR while-found iteration: {:?}",
         backend.log
     );
+}
+
+#[test]
+fn ocr_runs_children_per_occurrence() {
+    use crate::backends::{FixedOcrEngine, OcrResult};
+    use sqyre_vision::OcrWordBox;
+
+    let mut backend = RecordingBackend::default();
+    let mut capturer = capturer_next(RgbaImage::from_pixel(20, 10, Rgba([255, 255, 255, 255])));
+    let resolver = SEARCH_FIXED_AREA;
+    let ocr = FixedOcrEngine {
+        result: OcrResult {
+            text: "Gold Silver Gold".into(),
+            words: vec![
+                OcrWordBox {
+                    word: "Gold".into(),
+                    left: 0,
+                    top: 0,
+                    right: 10,
+                    bottom: 10,
+                },
+                OcrWordBox {
+                    word: "Silver".into(),
+                    left: 20,
+                    top: 0,
+                    right: 30,
+                    bottom: 10,
+                },
+                OcrWordBox {
+                    word: "Gold".into(),
+                    left: 0,
+                    top: 40,
+                    right: 10,
+                    bottom: 50,
+                },
+            ],
+        },
+        ..Default::default()
+    };
+
+    let mut macro_ = quiet_macro(vec![ocr_action(
+        ActionId::new(),
+        "Gold",
+        "ocrText",
+        detection_branch(Some(5), false, Default::default(), Default::default()),
+    )]);
+
+    run_search_ocr(&mut macro_, &mut backend, &mut capturer, &resolver, &ocr);
+    assert_eq!(
+        count_sleeps(&backend, 5),
+        2,
+        "expected one child run per Gold occurrence: {:?}",
+        backend.log
+    );
+}
+
+#[test]
+fn find_pixel_runs_children_per_cluster() {
+    let mut img = solid_rgba(40, 20, [0, 0, 0]);
+    // Two far-apart green blobs (beyond default close-match distance of 10).
+    img.put_pixel(2, 2, Rgba([0, 255, 0, 255]));
+    img.put_pixel(3, 2, Rgba([0, 255, 0, 255]));
+    img.put_pixel(30, 10, Rgba([0, 255, 0, 255]));
+    img.put_pixel(31, 10, Rgba([0, 255, 0, 255]));
+
+    let mut backend = RecordingBackend::default();
+    let mut capturer = capturer_next(img);
+    let resolver = SEARCH_FIXED_AREA;
+    let mut macro_ = quiet_macro(vec![find_pixel_action(
+        ActionId::new(),
+        "#00ff00",
+        detection_branch(Some(6), false, Default::default(), Default::default()),
+    )]);
+
+    run_search(&mut macro_, &mut backend, &mut capturer, &resolver);
+    assert_eq!(
+        count_sleeps(&backend, 6),
+        2,
+        "expected one child run per clustered blob: {:?}",
+        backend.log
+    );
+}
+
+#[test]
+fn run_matches_clears_coords_on_miss() {
+    let mut backend = RecordingBackend::default();
+    let mut exec = crate::run::Executor::new(&mut backend);
+    let mut macro_ = Macro::new("t", 0, vec![]);
+    macro_.variables.set("foundX", ScalarValue::Int(9));
+    macro_.variables.set("foundY", ScalarValue::Int(8));
+    run_matches(
+        &mut exec,
+        ActionId::new(),
+        &[],
+        &[],
+        &coords_xy("foundX", "foundY"),
+        false,
+        &[],
+        &mut macro_,
+    )
+    .unwrap();
+    assert!(macro_.variables.get("foundX").is_none());
+    assert!(macro_.variables.get("foundY").is_none());
 }

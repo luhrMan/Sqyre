@@ -9,9 +9,9 @@ use sqyre_domain::is_known_variable;
 use sqyre_ui_model::{action_pastel_color, nested_var_ref_color, SummaryPill};
 use sqyre_validate::EntryValidation;
 use std::collections::HashSet;
-use std::sync::Arc;
 
-use crate::tree_chrome::{contrast_fg, rgba_pub};
+use crate::theme::{contrast_fg, paint_galley_centered};
+use crate::tree_chrome::rgba_pub;
 
 const VAR_AC_LIMIT: usize = 12;
 
@@ -30,23 +30,6 @@ fn nested_fill(unknown: bool, is_dark: bool) -> Color32 {
     } else {
         rgba_pub(nested_var_ref_color(is_dark))
     }
-}
-
-/// Place galley so its ink (mesh bounds) is centered in `rect`.
-fn paint_galley_centered(
-    ui: &mut egui::Ui,
-    rect: egui::Rect,
-    galley: Arc<egui::Galley>,
-    fallback: Color32,
-) {
-    let pos = if galley.mesh_bounds.is_positive() {
-        rect.center() - galley.mesh_bounds.center().to_vec2()
-    } else {
-        egui::Align2::CENTER_CENTER
-            .anchor_size(rect.center(), galley.size())
-            .min
-    };
-    ui.painter().galley(pos, galley, fallback);
 }
 
 fn paint_text_chip(

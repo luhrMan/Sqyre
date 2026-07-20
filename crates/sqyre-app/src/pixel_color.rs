@@ -4,8 +4,6 @@ use sqyre_capture::shared_capturer;
 use sqyre_executor::{DesktopRect, ScreenCapturer};
 
 /// Capture the 1×1 pixel at `(x, y)` and return lowercase hex without `#`.
-///
-/// Dropper normalization: strip `#`, drop leading alpha when 8 chars.
 pub fn sample_pixel_hex(x: i32, y: i32) -> Result<String, String> {
     let capturer = shared_capturer()?;
     let mut wrap = sqyre_capture::SharedRunCapturer(capturer);
@@ -25,16 +23,12 @@ pub fn sample_pixel_hex_with(
     Ok(format!("{:02x}{:02x}{:02x}", px[0], px[1], px[2]))
 }
 
-/// Normalize a pasted/typed Find Pixel color.
-pub fn normalize_target_color(hex: &str) -> String {
-    sqyre_domain::normalize_hex_rgb(hex)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use image::Rgba;
     use sqyre_capture::SolidCapturer;
+    use sqyre_domain::normalize_hex_rgb;
     use sqyre_executor::DesktopRect;
 
     #[test]
@@ -53,8 +47,8 @@ mod tests {
 
     #[test]
     fn normalize_strips_hash_and_alpha() {
-        assert_eq!(normalize_target_color("#FF00AA"), "ff00aa");
-        assert_eq!(normalize_target_color("ff00aabb"), "00aabb");
-        assert_eq!(normalize_target_color("  Abc "), "abc");
+        assert_eq!(normalize_hex_rgb("#FF00AA"), "ff00aa");
+        assert_eq!(normalize_hex_rgb("ff00aabb"), "00aabb");
+        assert_eq!(normalize_hex_rgb("  Abc "), "abc");
     }
 }

@@ -1,6 +1,7 @@
 //! In-tree action tooltip: view on hover, pinned edit with Save/Cancel.
 
 mod edit;
+mod edit_header;
 pub(crate) mod help;
 mod sections;
 
@@ -15,9 +16,11 @@ use sqyre_validate::validate_action;
 
 use crate::paint_ctx::{CatalogPaint, EditFieldsCtx, RecordBridges, TipUiCtx, VarTheme};
 use crate::var_pills;
+use crate::widgets::SaveCancel;
 
 pub use edit::apply_draft_preserving_children;
 pub(crate) use edit::paint_edit_fields;
+pub(crate) use edit_header::paint_action_edit_header;
 
 /// Pinned edit payload (boxed so [`TooltipState`] stays small).
 #[derive(Debug, Clone)]
@@ -291,7 +294,7 @@ pub fn show(
     match state.clone() {
         TooltipState::Hidden => None,
         TooltipState::View { action_id } => {
-            let Some(action) = find_action(&macro_.root, action_id).cloned() else {
+            let Some(action) = macro_.root.find_by_id(action_id).cloned() else {
                 *state = TooltipState::Hidden;
                 return None;
             };
@@ -301,14 +304,6 @@ pub fn show(
         TooltipState::Edit { .. } => {
             show_edit_window(state, ctx, macro_, macros, ui, &mut before_mutate)
         }
-    }
-}
-
-fn find_action(root: &Action, id: ActionId) -> Option<&Action> {
-    if root.id == id {
-        Some(root)
-    } else {
-        root.find_by_id(id)
     }
 }
 
@@ -533,25 +528,15 @@ fn show_edit_window(
                 .inner_margin(egui::Margin::symmetric(10, 8)),
         )
         .show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                tree_chrome::paint_pill_pub(ui, label, pastel);
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button("Cancel").clicked() {
-                        cancel = true;
-                    }
-                    if ui.button("Save").clicked() {
-                        save = true;
-                    }
-                });
-            });
-
-            if let TooltipState::Edit(edit) = state {
-                if let Some(err) = &edit.error {
-                    ui.colored_label(egui::Color32::RED, err.as_str());
-                }
+            let err = match state {
+                TooltipState::Edit(edit) => edit.error.as_deref(),
+                _ => None,
+            };
+            match paint_action_edit_header(ui, label, pastel, None, err) {
+                SaveCancel::Cancel => cancel = true,
+                SaveCancel::Save => save = true,
+                SaveCancel::None => {}
             }
-
-            ui.separator();
             // Always scroll so a user-shrunk window can still reach all fields.
             // While `auto_fit`, raise min height toward measured content (capped).
             if let TooltipState::Edit(edit) = state {
