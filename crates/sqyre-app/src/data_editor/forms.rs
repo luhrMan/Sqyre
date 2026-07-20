@@ -189,7 +189,8 @@ impl DataEditor {
                 help::label(ui, "Name", help::DE_NAME);
                 help::tip(
                     ui.add(
-                        egui::TextEdit::singleline(&mut self.form_name).desired_width(f32::INFINITY),
+                        egui::TextEdit::singleline(&mut self.form_name)
+                            .desired_width(f32::INFINITY),
                     ),
                     help::DE_NAME,
                 );
@@ -238,7 +239,8 @@ impl DataEditor {
                 help::label(ui, "Name", help::DE_NAME);
                 help::tip(
                     ui.add(
-                        egui::TextEdit::singleline(&mut self.form_name).desired_width(f32::INFINITY),
+                        egui::TextEdit::singleline(&mut self.form_name)
+                            .desired_width(f32::INFINITY),
                     ),
                     help::DE_NAME,
                 );
@@ -467,7 +469,8 @@ impl DataEditor {
                 ui.label("Name").on_hover_text(help::DE_NAME);
                 help::tip(
                     ui.add(
-                        egui::TextEdit::singleline(&mut self.form_name).desired_width(f32::INFINITY),
+                        egui::TextEdit::singleline(&mut self.form_name)
+                            .desired_width(f32::INFINITY),
                     ),
                     help::DE_NAME,
                 );
@@ -511,7 +514,9 @@ impl DataEditor {
                         &mut self.form_inverse,
                         "Inverse (shape included, rest excluded)",
                     )
-                    .on_hover_text("When on, only the shape region is kept; the rest is masked out.");
+                    .on_hover_text(
+                        "When on, only the shape region is kept; the rest is masked out.",
+                    );
                     ui.add_space(4.0);
                     let cx = validate_numeric_expression(&self.form_center_x, active_macro);
                     var_pills::validated_var_ref_edit(
@@ -596,7 +601,8 @@ impl DataEditor {
                 ui.label("Name").on_hover_text(help::DE_NAME);
                 help::tip(
                     ui.add(
-                        egui::TextEdit::singleline(&mut self.form_name).desired_width(f32::INFINITY),
+                        egui::TextEdit::singleline(&mut self.form_name)
+                            .desired_width(f32::INFINITY),
                     ),
                     help::DE_NAME,
                 );

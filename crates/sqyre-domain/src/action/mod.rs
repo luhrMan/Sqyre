@@ -434,6 +434,32 @@ pub struct ListColumn {
     pub skip_blank_lines: bool,
 }
 
+/// One name/value pair inside [`ActionKind::SetVariable`].
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct VariableAssignment {
+    #[serde(
+        rename = "variablename",
+        default,
+        skip_serializing_if = "String::is_empty"
+    )]
+    pub variable_name: String,
+    #[serde(default)]
+    pub value: ScalarValue,
+}
+
+impl VariableAssignment {
+    pub fn new(name: impl Into<String>, value: ScalarValue) -> Self {
+        Self {
+            variable_name: name.into(),
+            value,
+        }
+    }
+}
+
+fn default_assignments() -> Vec<VariableAssignment> {
+    vec![VariableAssignment::default()]
+}
+
 /// Built-in navigation chords for [`ActionKind::NavigateSelect`].
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct NavChords {
@@ -887,8 +913,7 @@ pub enum ActionKind {
         delay_ms: i32,
     },
     SetVariable {
-        variable_name: String,
-        value: ScalarValue,
+        assignments: Vec<VariableAssignment>,
     },
     SaveVariable {
         variable_name: String,
@@ -1023,7 +1048,18 @@ impl ActionKind {
                 format!("Key {key} {}", if *state { "down" } else { "up" })
             }
             Self::Type { text, .. } => format!("Type {text}"),
-            Self::SetVariable { variable_name, .. } => format!("Set {variable_name}"),
+            Self::SetVariable { assignments } => {
+                let names: Vec<&str> = assignments
+                    .iter()
+                    .map(|a| a.variable_name.as_str())
+                    .filter(|n| !n.is_empty())
+                    .collect();
+                if names.is_empty() {
+                    label.to_string()
+                } else {
+                    format!("Set {}", names.join(", "))
+                }
+            }
             Self::SaveVariable {
                 variable_name,
                 destination,
