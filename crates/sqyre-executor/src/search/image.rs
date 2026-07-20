@@ -369,9 +369,10 @@ fn capture_and_match(
             .unwrap_or(outcome.template_blurred.as_ref());
 
         let mask_preview = if want_pipeline {
-            outcome.mask_bytes.as_ref().map(|m| {
-                ImageBuf::from_raw(outcome.tmpl_w, outcome.tmpl_h, 1, m.as_ref().clone())
-            })
+            outcome
+                .mask_bytes
+                .as_ref()
+                .map(|m| ImageBuf::from_raw(outcome.tmpl_w, outcome.tmpl_h, 1, m.as_ref().clone()))
         } else {
             None
         };

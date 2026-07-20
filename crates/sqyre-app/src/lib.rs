@@ -260,7 +260,8 @@ impl SqyreApp {
                 macros.sort_by(|a, b| a.name.cmp(&b.name));
                 #[cfg(target_arch = "wasm32")]
                 {
-                    let _ = wasm_demo_seed::ensure_demo_if_empty(&mut macros, &mut catalog, &mut db);
+                    let _ =
+                        wasm_demo_seed::ensure_demo_if_empty(&mut macros, &mut catalog, &mut db);
                 }
                 let app = Self {
                     db,
