@@ -84,6 +84,8 @@ Uses `--no-default-features` (no global hotkey hooks). Native `make` / `make rel
 
 CI builds and releases **Linux** binaries and AppImages only. PRs also `cargo check` on Windows and macOS (Windows GDI capture; macOS capture still stubbed). On Linux/macOS hosts, `make windows` uses the MinGW cross image in [`scripts/windows/`](../scripts/windows/PACKAGING.md); `make macos` stays native. MSI/DMG packaging is not shipped yet.
 
+CI caches: Linux Docker Buildx (GHA + GHCR), Cargo registry/target, and tessdata; Windows LLVM install + vcpkg binaries + split Cargo caches; macOS Homebrew bottles + split Cargo caches.
+
 ---
 
 ## Native dependencies
