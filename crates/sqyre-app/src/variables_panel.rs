@@ -253,17 +253,7 @@ impl VariablesPanelUi {
     fn edit_form(&mut self, ui: &mut egui::Ui, macro_: &mut Macro, mut edit: EditState) -> bool {
         let mut persist = false;
 
-        ui.horizontal(|ui| {
-            help::label(ui, "Name", help::VAR_NAME);
-            help::tip(
-                ui.add(
-                    egui::TextEdit::singleline(&mut edit.name)
-                        .desired_width(160.0)
-                        .hint_text("myVar"),
-                ),
-                help::VAR_NAME,
-            );
-        });
+        crate::widgets::text_field_width(ui, "Name", help::VAR_NAME, &mut edit.name, 160.0);
         ui.horizontal(|ui| {
             help::label(ui, "Type", help::VAR_TYPE);
             for (label, ty) in [
@@ -280,28 +270,20 @@ impl VariablesPanelUi {
                 }
             }
         });
-        ui.horizontal(|ui| {
-            help::label(ui, "Initial", help::VAR_INITIAL);
-            help::tip(
-                ui.add(
-                    egui::TextEdit::singleline(&mut edit.initial_value)
-                        .desired_width(220.0)
-                        .hint_text("optional"),
-                ),
-                help::VAR_INITIAL,
-            );
-        });
-        ui.horizontal(|ui| {
-            help::label(ui, "Description", help::VAR_DESC);
-            help::tip(
-                ui.add(
-                    egui::TextEdit::singleline(&mut edit.description)
-                        .desired_width(280.0)
-                        .hint_text("optional"),
-                ),
-                help::VAR_DESC,
-            );
-        });
+        crate::widgets::text_field_width(
+            ui,
+            "Initial",
+            help::VAR_INITIAL,
+            &mut edit.initial_value,
+            220.0,
+        );
+        crate::widgets::text_field_width(
+            ui,
+            "Description",
+            help::VAR_DESC,
+            &mut edit.description,
+            280.0,
+        );
 
         if let Some(err) = &edit.error {
             ui.colored_label(crate::theme::error_fg(), err);
