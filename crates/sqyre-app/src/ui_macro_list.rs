@@ -92,7 +92,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
         .show_animated_inside(ui, app.macro_list_open, |ui| {
             ui.heading("Macros");
             if let Some(err) = &app.load_error {
-                ui.colored_label(egui::Color32::RED, format!("Load error: {err}"));
+                ui.colored_label(crate::theme::error_fg(), format!("Load error: {err}"));
             } else {
                 #[cfg(target_arch = "wasm32")]
                 ui.small(format!(
@@ -107,7 +107,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                 ));
             }
             if let Some(err) = &app.save_error {
-                ui.colored_label(egui::Color32::RED, format!("Save error: {err}"));
+                ui.colored_label(crate::theme::error_fg(), format!("Save error: {err}"));
             }
             ui.horizontal(|ui| {
                 // Use ASCII / NotoEmoji glyphs only — fullwidth/math symbols
