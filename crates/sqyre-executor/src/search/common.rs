@@ -17,12 +17,7 @@ pub(super) fn run_children_flow(
     run_children(exec, children, macro_)
 }
 
-pub(super) fn set_coord_outputs(
-    macro_: &mut Macro,
-    coords: &CoordinateOutputs,
-    x: i32,
-    y: i32,
-) {
+pub(super) fn set_coord_outputs(macro_: &mut Macro, coords: &CoordinateOutputs, x: i32, y: i32) {
     if !coords.output_x_variable.is_empty() {
         macro_
             .variables

@@ -333,7 +333,9 @@ fn yaml_string_value(v: &sqyre_domain::ScalarValue) -> Option<&str> {
 }
 
 fn validate_continue_key(keys: &[String]) -> Result<()> {
-    sqyre_hotkeys::validate_continue_key(keys).map(|_| ()).map_err(ValidateError::Message)
+    sqyre_hotkeys::validate_continue_key(keys)
+        .map(|_| ())
+        .map_err(ValidateError::Message)
 }
 
 /// Checks minimum fields required to save/run an action.

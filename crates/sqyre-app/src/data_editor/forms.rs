@@ -451,7 +451,12 @@ impl DataEditor {
                         self.upload_mask_image(catalog, icons);
                     }
                     if ui
-                        .add_enabled(has_image, egui::Button::new("Remove Image"))
+                        .add_enabled(
+                            has_image,
+                            egui::Button::new(
+                                egui::RichText::new("Remove Image").color(crate::theme::MACRO_STOP),
+                            ),
+                        )
                         .on_hover_text("Delete the PNG and use shape geometry instead.")
                         .clicked()
                     {

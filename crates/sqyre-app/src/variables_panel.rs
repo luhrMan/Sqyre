@@ -154,7 +154,10 @@ impl VariablesPanelUi {
         ui.horizontal(|ui| {
             ui.heading("Declared variables");
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button("+ Add").clicked() {
+                if ui
+                    .button(egui::RichText::new("+ Add").color(crate::theme::MACRO_START))
+                    .clicked()
+                {
                     self.editing = Some(EditState {
                         index: None,
                         name: String::new(),
@@ -193,7 +196,16 @@ impl VariablesPanelUi {
                             ui.weak(&d.description);
                         }
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui.small_button("Remove").clicked() {
+                            if ui
+                                .add(
+                                    egui::Button::new(
+                                        egui::RichText::new("Remove")
+                                            .color(crate::theme::MACRO_STOP),
+                                    )
+                                    .small(),
+                                )
+                                .clicked()
+                            {
                                 remove_idx = Some(i);
                             }
                             if ui.small_button("Edit").clicked() {
@@ -303,38 +315,38 @@ impl VariablesPanelUi {
 
         let trimmed = edit.name.trim().to_string();
         match validate_variable_assignment_name(&trimmed) {
-                Ok(()) => {
-                    let collision = macro_.variable_decls.iter().enumerate().any(|(i, d)| {
-                        d.name.eq_ignore_ascii_case(&trimmed)
-                            && edit.index.map(|ei| ei != i).unwrap_or(true)
-                    });
-                    if collision {
-                        edit.error = Some(format!("variable {trimmed:?} already exists"));
-                        self.editing = Some(edit);
-                    } else {
-                        if let Some(i) = edit.index {
-                            if let Some(old) = macro_.variable_decls.get(i) {
-                                if !old.name.eq_ignore_ascii_case(&trimmed) {
-                                    macro_.remove_variable_decl(&old.name.clone());
-                                }
+            Ok(()) => {
+                let collision = macro_.variable_decls.iter().enumerate().any(|(i, d)| {
+                    d.name.eq_ignore_ascii_case(&trimmed)
+                        && edit.index.map(|ei| ei != i).unwrap_or(true)
+                });
+                if collision {
+                    edit.error = Some(format!("variable {trimmed:?} already exists"));
+                    self.editing = Some(edit);
+                } else {
+                    if let Some(i) = edit.index {
+                        if let Some(old) = macro_.variable_decls.get(i) {
+                            if !old.name.eq_ignore_ascii_case(&trimmed) {
+                                macro_.remove_variable_decl(&old.name.clone());
                             }
                         }
-                        macro_.upsert_variable(VariableDecl {
-                            name: trimmed.clone(),
-                            type_: edit.type_,
-                            initial_value: edit.initial_value.clone(),
-                            description: edit.description.clone(),
-                        });
-                        self.editing = None;
-                        self.status = Some(format!("Saved {trimmed}"));
-                        self.status_error = false;
-                        persist = true;
                     }
+                    macro_.upsert_variable(VariableDecl {
+                        name: trimmed.clone(),
+                        type_: edit.type_,
+                        initial_value: edit.initial_value.clone(),
+                        description: edit.description.clone(),
+                    });
+                    self.editing = None;
+                    self.status = Some(format!("Saved {trimmed}"));
+                    self.status_error = false;
+                    persist = true;
                 }
-                Err(e) => {
-                    edit.error = Some(e.to_string());
-                    self.editing = Some(edit);
-                }
+            }
+            Err(e) => {
+                edit.error = Some(e.to_string());
+                self.editing = Some(edit);
+            }
         }
 
         persist

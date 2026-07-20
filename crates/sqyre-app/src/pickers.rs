@@ -403,9 +403,9 @@ pub fn icon_grid_cell_ex(
             Color32::from_gray(100)
         };
         ui.painter().rect_filled(btn_rect, 3.0, btn_fill);
-        ui.painter().text(
-            btn_rect.center(),
-            egui::Align2::CENTER_CENTER,
+        crate::theme::paint_text_centered(
+            ui,
+            btn_rect,
             "×",
             egui::FontId::proportional(12.0),
             Color32::WHITE,
@@ -701,11 +701,7 @@ pub fn popup_scroll_max_height(ui: &egui::Ui, footer_reserve: f32) -> f32 {
     const FALLBACK: f32 = 360.0;
     let screen_cap = (ui.ctx().content_rect().height() * 0.65).max(100.0);
     let h = ui.available_height() - footer_reserve;
-    let capped = if h.is_finite() {
-        h.max(40.0)
-    } else {
-        FALLBACK
-    };
+    let capped = if h.is_finite() { h.max(40.0) } else { FALLBACK };
     capped.min(screen_cap)
 }
 
@@ -1123,14 +1119,7 @@ pub fn show_active_picker(
             match picker {
                 ActivePicker::Items { search, staged } => {
                     picker_searchable_scroll(ui, search, PickerScrollOpts::list(ui), |ui, q| {
-                        paint_items_icon_grid(
-                            ui,
-                            paint.catalog,
-                            paint.icons,
-                            q,
-                            staged,
-                            true,
-                        );
+                        paint_items_icon_grid(ui, paint.catalog, paint.icons, q, staged, true);
                     });
                     ui.separator();
                     ui.label(format!("{} selected", staged.len()));
@@ -1170,8 +1159,11 @@ pub fn show_active_picker(
                     scroll_to_selection,
                 } => {
                     let mut did_scroll = false;
-                    let search_changed =
-                        picker_searchable_scroll(ui, search, PickerScrollOpts::list(ui), |ui, q| {
+                    let search_changed = picker_searchable_scroll(
+                        ui,
+                        search,
+                        PickerScrollOpts::list(ui),
+                        |ui, q| {
                             for (name, tags) in macros {
                                 if !query_matches_name_or_tags(q, name, tags) {
                                     continue;
@@ -1189,7 +1181,8 @@ pub fn show_active_picker(
                                     *value = name.clone();
                                 }
                             }
-                        });
+                        },
+                    );
                     if search_changed {
                         *scroll_to_selection = true;
                     } else if *scroll_to_selection && !did_scroll {
@@ -1211,10 +1204,8 @@ pub fn show_active_picker(
                     let mut opts = PickerScrollOpts::list(ui);
                     let mut trailing = |ui: &mut egui::Ui| {
                         refresh_clicked = ui
-                            .add_enabled(
-                                !loading,
-                                egui::Button::new(egui::RichText::new("↻").size(14.0)).small(),
-                            )
+                            .add_enabled_ui(!loading, |ui| crate::theme::icon_button(ui, "↻"))
+                            .inner
                             .on_hover_text(if loading { "Refreshing…" } else { "Refresh" })
                             .clicked();
                     };

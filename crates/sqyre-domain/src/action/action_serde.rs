@@ -13,37 +13,11 @@ use super::{
 };
 use serde::{Deserialize, Serialize};
 
-macro_rules! type_tag {
-    ($name:ident, $rename:literal) => {
-        #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-        enum $name {
-            #[serde(rename = $rename)]
-            Tag,
-        }
-    };
-}
-
-type_tag!(TagLoop, "loop");
-type_tag!(TagWhile, "while");
-type_tag!(TagConditional, "conditional");
-type_tag!(TagImageSearch, "imagesearch");
-type_tag!(TagOcr, "ocr");
-type_tag!(TagFindPixel, "findpixel");
-type_tag!(TagForEachRow, "foreachrow");
-type_tag!(TagWait, "wait");
-type_tag!(TagPause, "pause");
-type_tag!(TagMove, "move");
-type_tag!(TagClick, "click");
-type_tag!(TagKey, "key");
-type_tag!(TagType, "type");
-type_tag!(TagSetVariable, "setvariable");
-type_tag!(TagSaveVariable, "savevariable");
-type_tag!(TagFocusWindow, "focuswindow");
-type_tag!(TagRunMacro, "runmacro");
-type_tag!(TagNavigateSelect, "navigateselect");
-type_tag!(TagNavigateKey, "navigatekey");
-type_tag!(TagBreak, "break");
-type_tag!(TagContinue, "continue");
+use super::wire_keys::{
+    TagBreak, TagClick, TagConditional, TagContinue, TagFindPixel, TagFocusWindow, TagForEachRow,
+    TagImageSearch, TagKey, TagLoop, TagMove, TagNavigateKey, TagNavigateSelect, TagOcr, TagPause,
+    TagRunMacro, TagSaveVariable, TagSetVariable, TagType, TagWait, TagWhile,
+};
 
 fn is_default_smooth_low(v: &f64) -> bool {
     (*v - DEFAULT_SMOOTH_LOW).abs() < f64::EPSILON

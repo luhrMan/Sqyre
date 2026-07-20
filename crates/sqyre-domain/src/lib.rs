@@ -16,6 +16,7 @@ mod set_value;
 mod taxonomy;
 mod variables;
 
+pub use action::WIRE_TYPE_KEYS;
 pub use action::*;
 pub use bindings::{BindingRole, VariableBinding};
 pub use blank::{action_templates, blank_action, test_action, ActionTemplate};
@@ -33,7 +34,8 @@ pub use set_value::{
     resolve_variables_in_text,
 };
 pub use taxonomy::{
-    action_color_category, action_picker_category, action_type_description, action_type_label,
-    action_type_table, ActionTypeMeta, ACTION_KIND_COUNT, ACTION_PICKER_CATEGORIES,
+    action_color_category, action_color_key, action_delay_class, action_icon,
+    action_picker_category, action_type_description, action_type_label, action_type_table,
+    ActionTypeMeta, DelayClass, ACTION_KIND_COUNT, ACTION_PICKER_CATEGORIES,
 };
 pub use variables::*;

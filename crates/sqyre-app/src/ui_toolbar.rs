@@ -3,17 +3,27 @@
 use crate::macro_meta::collect_all_macro_tags;
 use crate::theme;
 use crate::SqyreApp;
-use eframe::egui;
+use eframe::egui::{self, Color32};
 use sqyre_hotkeys::{format_hotkey, HotkeyTrigger};
+use sqyre_ui_model::action_pastel_color;
 use std::sync::atomic::Ordering;
 
 /// Compact toolbar control: icon glyph + hover label.
 pub fn toolbar_icon(ui: &mut egui::Ui, glyph: &str, tip: &str, enabled: bool) -> egui::Response {
-    ui.add_enabled(
-        enabled,
-        egui::Button::new(egui::RichText::new(glyph).size(16.0)),
-    )
-    .on_hover_text(tip)
+    toolbar_icon_colored(ui, glyph, tip, enabled, None)
+}
+
+/// Compact toolbar control with an optional fixed glyph color.
+fn toolbar_icon_colored(
+    ui: &mut egui::Ui,
+    glyph: &str,
+    tip: &str,
+    enabled: bool,
+    color: Option<Color32>,
+) -> egui::Response {
+    ui.add_enabled_ui(enabled, |ui| theme::icon_button_colored(ui, glyph, color))
+        .inner
+        .on_hover_text(tip)
 }
 
 pub fn brand_header(app: &mut SqyreApp, ui: &mut egui::Ui) {
@@ -44,10 +54,18 @@ pub fn main_toolbar(app: &mut SqyreApp, ui: &mut egui::Ui) {
         ui.separator();
         #[cfg(not(target_arch = "wasm32"))]
         {
-            if toolbar_icon(ui, "▶", "Run", !running && !app.macros.is_empty()).clicked() {
+            if toolbar_icon_colored(
+                ui,
+                "▶",
+                "Run",
+                !running && !app.macros.is_empty(),
+                Some(theme::MACRO_START),
+            )
+            .clicked()
+            {
                 app.start_macro(ui.ctx());
             }
-            if toolbar_icon(ui, "⏹", "Stop", running).clicked() {
+            if toolbar_icon_colored(ui, "⏹", "Stop", running, Some(theme::MACRO_STOP)).clicked() {
                 app.request_stop();
             }
         }
@@ -169,10 +187,19 @@ pub fn action_toolbar(app: &mut SqyreApp, ui: &mut egui::Ui) -> Option<bool> {
         let can_paste = app.can_paste_clipboard();
         let can_undo = app.can_undo();
         let can_redo = app.can_redo();
-        if toolbar_icon(ui, "+", "Add Action (Ctrl+A)", !running).clicked() {
+        if toolbar_icon_colored(
+            ui,
+            "+",
+            "Add Action (Ctrl+A)",
+            !running,
+            Some(theme::MACRO_START),
+        )
+        .clicked()
+        {
             app.add_action_picker.open();
         }
-        if toolbar_icon(ui, "x", "Variables", true).clicked() {
+        let vars_color = theme::rgba(action_pastel_color("setvariable", ui.visuals().dark_mode));
+        if toolbar_icon_colored(ui, "x", "Variables", true, Some(vars_color)).clicked() {
             app.variables_panel.open = true;
         }
         ui.separator();
@@ -191,10 +218,24 @@ pub fn action_toolbar(app: &mut SqyreApp, ui: &mut egui::Ui) -> Option<bool> {
         if toolbar_icon(ui, "↻", "Redo (Ctrl+Y)", can_redo && !running).clicked() {
             app.redo_tree();
         }
-        if toolbar_icon(ui, "⬇⬇", "Expand all branches", true).clicked() {
+        if toolbar_icon(
+            ui,
+            egui_phosphor::regular::TREE_VIEW,
+            "Expand all branches",
+            true,
+        )
+        .clicked()
+        {
             force_openness = Some(true);
         }
-        if toolbar_icon(ui, "⬆⬆", "Collapse all branches", true).clicked() {
+        if toolbar_icon(
+            ui,
+            egui_phosphor::regular::SQUARE_SPLIT_VERTICAL,
+            "Collapse all branches",
+            true,
+        )
+        .clicked()
+        {
             force_openness = Some(false);
         }
     });
