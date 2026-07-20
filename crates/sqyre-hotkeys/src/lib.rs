@@ -4,7 +4,9 @@ mod continue_wait;
 mod macro_hotkeys;
 mod screen_click;
 
-pub use continue_wait::{is_failsafe_chord, normalize_key_name, ContinueWaitBridge, FAILSAFE_KEYS};
+pub use continue_wait::{
+    is_failsafe_chord, normalize_key_name, validate_continue_key, ContinueWaitBridge, FAILSAFE_KEYS,
+};
 pub use macro_hotkeys::{
     chord_all_pressed, chord_fully_released, format_hotkey, parse_hotkey, HotkeyTrigger,
     MacroHotkeyBinding, MacroHotkeyBridge,

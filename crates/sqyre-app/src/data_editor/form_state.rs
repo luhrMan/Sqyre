@@ -1,8 +1,8 @@
 //! FormState trait: per-tab load / dirty / valid lifecycle.
 
-use super::helpers::{parse_i32, parse_scalar, rgba_color, scalar_to_edit};
+use super::helpers::{parse_i32, rgba_color};
 use super::{DataEditor, EditorTab};
-use sqyre_domain::Macro;
+use sqyre_domain::{Macro, ScalarValue};
 use sqyre_persist::{ProgramCatalog, UserSettings};
 use sqyre_validate::{
     validate_entity_name, validate_item_grid_fields, validate_numeric_expression,
@@ -172,8 +172,8 @@ impl FormState for PointsForm {
             return;
         };
         ed.form_name = pt.name.clone();
-        ed.form_x = scalar_to_edit(&pt.x);
-        ed.form_y = scalar_to_edit(&pt.y);
+        ed.form_x = pt.x.as_display();
+        ed.form_y = pt.y.as_display();
     }
 
     fn is_dirty(ed: &DataEditor, catalog: &ProgramCatalog, _settings: &UserSettings) -> bool {
@@ -192,8 +192,8 @@ impl FormState for PointsForm {
             return true;
         };
         ed.form_name.trim() != pt.name
-            || parse_scalar(&ed.form_x) != pt.x
-            || parse_scalar(&ed.form_y) != pt.y
+            || ScalarValue::parse_edit(&ed.form_x) != pt.x
+            || ScalarValue::parse_edit(&ed.form_y) != pt.y
     }
 
     fn is_valid(ed: &DataEditor, active_macro: Option<&Macro>) -> bool {
@@ -227,10 +227,10 @@ impl FormState for SearchAreasForm {
             return;
         };
         ed.form_name = sa.name.clone();
-        ed.form_left = scalar_to_edit(&sa.left_x);
-        ed.form_top = scalar_to_edit(&sa.top_y);
-        ed.form_right = scalar_to_edit(&sa.right_x);
-        ed.form_bottom = scalar_to_edit(&sa.bottom_y);
+        ed.form_left = sa.left_x.as_display();
+        ed.form_top = sa.top_y.as_display();
+        ed.form_right = sa.right_x.as_display();
+        ed.form_bottom = sa.bottom_y.as_display();
     }
 
     fn is_dirty(ed: &DataEditor, catalog: &ProgramCatalog, _settings: &UserSettings) -> bool {
@@ -253,10 +253,10 @@ impl FormState for SearchAreasForm {
             return true;
         };
         ed.form_name.trim() != sa.name
-            || parse_scalar(&ed.form_left) != sa.left_x
-            || parse_scalar(&ed.form_top) != sa.top_y
-            || parse_scalar(&ed.form_right) != sa.right_x
-            || parse_scalar(&ed.form_bottom) != sa.bottom_y
+            || ScalarValue::parse_edit(&ed.form_left) != sa.left_x
+            || ScalarValue::parse_edit(&ed.form_top) != sa.top_y
+            || ScalarValue::parse_edit(&ed.form_right) != sa.right_x
+            || ScalarValue::parse_edit(&ed.form_bottom) != sa.bottom_y
     }
 
     fn is_valid(ed: &DataEditor, active_macro: Option<&Macro>) -> bool {
@@ -416,10 +416,10 @@ impl FormState for AutoPicForm {
             return;
         };
         ed.form_name = sa.name.clone();
-        ed.form_left = scalar_to_edit(&sa.left_x);
-        ed.form_top = scalar_to_edit(&sa.top_y);
-        ed.form_right = scalar_to_edit(&sa.right_x);
-        ed.form_bottom = scalar_to_edit(&sa.bottom_y);
+        ed.form_left = sa.left_x.as_display();
+        ed.form_top = sa.top_y.as_display();
+        ed.form_right = sa.right_x.as_display();
+        ed.form_bottom = sa.bottom_y.as_display();
     }
 
     fn is_dirty(_ed: &DataEditor, _catalog: &ProgramCatalog, _settings: &UserSettings) -> bool {

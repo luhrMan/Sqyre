@@ -2,6 +2,7 @@
 
 use crate::icon_cache::IconCache;
 use crate::pickers::attach_item_icon_tooltip;
+use crate::theme::paint_galley_centered;
 use crate::var_pills;
 use eframe::egui::{self, Color32, FontId, Sense, Stroke, Vec2};
 use sqyre_domain::{parse_hex_color, Action, ActionKind};
@@ -115,14 +116,7 @@ fn rgba(c: [u8; 4]) -> Color32 {
 }
 
 /// Foreground that contrasts with a pastel/solid fill (relative luminance).
-pub(crate) fn contrast_fg(bg: Color32) -> Color32 {
-    let lum = 0.299 * bg.r() as f32 + 0.587 * bg.g() as f32 + 0.114 * bg.b() as f32;
-    if lum > 140.0 {
-        Color32::from_rgb(30, 30, 30)
-    } else {
-        Color32::from_rgb(240, 240, 240)
-    }
-}
+pub(crate) use crate::theme::contrast_fg;
 
 /// How many overflow targets to show as a `+N` pill (0 = none).
 pub(crate) fn image_search_overflow_count(total: usize) -> usize {
@@ -183,24 +177,6 @@ fn paint_pill(ui: &mut egui::Ui, text: &str, fill: Color32) -> egui::Response {
     );
     paint_galley_centered(ui, rect, galley, fg);
     ui.interact(rect, ui.id().with(("action_pill", text)), Sense::hover())
-}
-
-/// Place galley so its ink (mesh bounds) is centered in `rect`.
-fn paint_galley_centered(
-    ui: &mut egui::Ui,
-    rect: egui::Rect,
-    galley: std::sync::Arc<egui::Galley>,
-    fallback: Color32,
-) {
-    let pos = if galley.mesh_bounds.is_positive() {
-        // Optical center: baseline metrics make the layout box look top-heavy.
-        rect.center() - galley.mesh_bounds.center().to_vec2()
-    } else {
-        egui::Align2::CENTER_CENTER
-            .anchor_size(rect.center(), galley.size())
-            .min
-    };
-    ui.painter().galley(pos, galley, fallback);
 }
 
 fn paint_summary_pill(

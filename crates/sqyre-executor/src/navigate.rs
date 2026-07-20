@@ -481,41 +481,12 @@ mod tests {
     use super::*;
     use crate::backends::{ImmediateContinueWaiter, RecordingBackend};
     use crate::run::{execute_macro_with, ExecDeps};
+    use crate::test_support::FixedResolver;
     use sqyre_domain::{
-        root_loop, ActionId, CoordinateRef, NavChords, NavInputs, NavOptions, NavOutputs,
+        root_loop, ActionId, NavChords, NavInputs, NavOptions, NavOutputs,
         NavSelectAction, NavigateSelectData,
     };
     use std::sync::Mutex;
-
-    struct GridResolver {
-        rows: i32,
-        cols: i32,
-    }
-
-    impl crate::backends::CoordinateResolver for GridResolver {
-        fn resolve_point(
-            &self,
-            r: &CoordinateRef,
-            _macro_: &Macro,
-        ) -> std::result::Result<(i32, i32), String> {
-            let (r1, c1, _, _) = r.cell_range().ok_or("expected cell")?;
-            Ok((c1 * 10, r1 * 10))
-        }
-        fn resolve_search_area(
-            &self,
-            _r: &CoordinateRef,
-            _macro_: &Macro,
-        ) -> std::result::Result<(i32, i32, i32, i32), String> {
-            Ok((0, 0, 100, 100))
-        }
-        fn collection_grid(
-            &self,
-            _program: &str,
-            _collection: &str,
-        ) -> std::result::Result<(i32, i32), String> {
-            Ok((self.rows, self.cols))
-        }
-    }
 
     #[test]
     fn select_exits_and_writes_outputs() {
@@ -524,7 +495,7 @@ mod tests {
             any_queue: Mutex::new(vec![0]), // select is only chord
             ..Default::default()
         };
-        let resolver = GridResolver { rows: 3, cols: 4 };
+        let resolver = FixedResolver::with_grid(3, 4);
         let mut macro_ = Macro::new("t", 0, vec![]);
         macro_.root = root_loop(vec![Action {
             id: ActionId::new(),
@@ -602,7 +573,7 @@ mod tests {
             any_queue: Mutex::new(vec![0]),
             ..Default::default()
         };
-        let resolver = GridResolver { rows: 2, cols: 2 };
+        let resolver = FixedResolver::with_grid(2, 2);
         let mut macro_ = Macro::new("t", 0, vec![]);
         macro_.root = root_loop(vec![Action {
             id: ActionId::new(),

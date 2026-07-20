@@ -24,20 +24,8 @@ pub(crate) fn insert_location_below_selection(
     if node.is_branch() {
         return Some((sel, InsertSlot::First));
     }
-    let parent = find_parent_id(root, sel).unwrap_or(root.id);
+    let parent = root.find_parent_id(sel).unwrap_or(root.id);
     Some((parent, InsertSlot::After(sel)))
-}
-
-fn find_parent_id(root: &Action, id: ActionId) -> Option<ActionId> {
-    for child in root.children() {
-        if child.id == id {
-            return Some(root.id);
-        }
-        if let Some(p) = find_parent_id(child, id) {
-            return Some(p);
-        }
-    }
-    None
 }
 
 #[cfg(test)]

@@ -24,7 +24,15 @@ pub struct DesktopRect {
 }
 
 impl DesktopRect {
+    /// Normalize two corners so left≤right and top≤bottom.
+    pub fn normalize_corners(ax: i32, ay: i32, bx: i32, by: i32) -> (i32, i32, i32, i32) {
+        let (left, right) = if ax <= bx { (ax, bx) } else { (bx, ax) };
+        let (top, bottom) = if ay <= by { (ay, by) } else { (by, ay) };
+        (left, top, right, bottom)
+    }
+
     pub fn from_corners(left: i32, top: i32, right: i32, bottom: i32) -> Self {
+        let (left, top, right, bottom) = Self::normalize_corners(left, top, right, bottom);
         Self {
             x: left,
             y: top,
@@ -47,17 +55,13 @@ pub struct RgbCapture {
 }
 
 impl RgbCapture {
+    /// Strip alpha from an RGBA capture (delegates to [`sqyre_vision::rgba_to_rgb_buf`]).
     pub fn from_rgba(img: &RgbaImage) -> Self {
-        let width = img.width();
-        let height = img.height();
-        let mut data = Vec::with_capacity((width as usize).saturating_mul(height as usize) * 3);
-        for chunk in img.as_raw().chunks_exact(4) {
-            data.extend_from_slice(&chunk[..3]);
-        }
+        let buf = sqyre_vision::rgba_to_rgb_buf(img);
         Self {
-            width,
-            height,
-            data,
+            width: buf.width as u32,
+            height: buf.height as u32,
+            data: buf.data,
         }
     }
 

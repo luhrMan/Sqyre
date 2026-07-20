@@ -11,7 +11,6 @@ pub fn find_peaks(map: &MatchMap, threshold: f32, close_matches_distance: i32) -
     if map.width == 0 || map.height == 0 {
         return Vec::new();
     }
-    let mut dedup = MatchPointDedup::new(close_matches_distance);
     let mut matches = Vec::new();
     for y in 0..map.height {
         let row = y * map.width;
@@ -20,16 +19,26 @@ pub fn find_peaks(map: &MatchMap, threshold: f32, close_matches_distance: i32) -
             if confidence < threshold || !confidence.is_finite() {
                 continue;
             }
-            let p = Point {
+            matches.push(Point {
                 x: x as i32,
                 y: y as i32,
-            };
-            if dedup.add_if_far(p) {
-                matches.push(p);
-            }
+            });
         }
     }
-    matches
+    cluster_points(&matches, close_matches_distance)
+}
+
+/// Keep the first point of each spatial cluster (scan order), dropping neighbors
+/// within `close_matches_distance` (Chebyshev).
+pub fn cluster_points(points: &[Point], close_matches_distance: i32) -> Vec<Point> {
+    let mut dedup = MatchPointDedup::new(close_matches_distance);
+    let mut out = Vec::new();
+    for &p in points {
+        if dedup.add_if_far(p) {
+            out.push(p);
+        }
+    }
+    out
 }
 
 struct MatchPointDedup {

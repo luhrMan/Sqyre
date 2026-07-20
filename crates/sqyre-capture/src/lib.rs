@@ -2,9 +2,12 @@
 
 mod diag;
 mod error;
+mod outline_rect;
 #[cfg(not(target_os = "linux"))]
 mod outline_stub;
 mod pixel_convert;
+#[macro_use]
+mod shared_run;
 mod stub;
 #[cfg(target_os = "windows")]
 mod win_capture;
@@ -22,6 +25,7 @@ pub use diag::{
     CRASH_LOG_FILE, DIAG_LOG_FILE, LAST_SITE_FILE,
 };
 pub use error::CaptureError;
+pub use outline_rect::OutlineRect;
 pub use pixel_convert::{zpixmap_to_rgb, zpixmap_to_rgba};
 pub use stub::{NullCapturer, SolidCapturer};
 
@@ -35,7 +39,7 @@ pub use win_capture::{shared_capturer, OsCapturer, SharedRunCapturer};
 pub use x11_focus::OsWindowFocuser;
 
 #[cfg(target_os = "linux")]
-pub use x11_outline::{OutlineRect, SelectionOutline};
+pub use x11_outline::SelectionOutline;
 
 /// True if `display` is a Sqyre secondary X11 connection (for winit error hooks).
 #[cfg(target_os = "linux")]
@@ -44,7 +48,7 @@ pub fn owns_secondary_x_display(display: *mut std::ffi::c_void) -> bool {
 }
 
 #[cfg(not(target_os = "linux"))]
-pub use outline_stub::{OutlineRect, SelectionOutline};
+pub use outline_stub::SelectionOutline;
 
 /// macOS / other: capture not implemented yet.
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
