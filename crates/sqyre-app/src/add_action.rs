@@ -3,7 +3,9 @@
 //! Hover a tile ~1s for a **view** tip of that type’s defaults; right-click opens
 //! **edit** (persisted in user settings). Left-click inserts a clone into the tree.
 
-use crate::action_tooltip::{apply_picker_result, paint_edit_fields, show_action_view_tip};
+use crate::action_tooltip::{
+    apply_picker_result, paint_action_edit_header, paint_edit_fields, show_action_view_tip,
+};
 use crate::hotkey_record::HotkeyRecordUi;
 use crate::icon_cache::IconCache;
 use crate::key_record::KeyRecordUi;
@@ -11,6 +13,7 @@ use crate::paint_ctx::{CatalogPaint, EditFieldsCtx, RecordBridges, VarTheme};
 use crate::pickers::{self, ActivePicker};
 use crate::preview_tooltip::PreviewTooltipCache;
 use crate::tree_chrome;
+use crate::widgets::SaveCancel;
 use eframe::egui::{self, Color32, CornerRadius, Key, Sense, Vec2};
 use sqyre_domain::{
     action_templates, action_type_label, blank_action, Action, ActionId, ActionTemplate,
@@ -435,19 +438,17 @@ impl AddActionPicker {
             .default_size([340.0, 360.0])
             .min_size([220.0, 120.0])
             .show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    tree_chrome::paint_pill_pub(ui, label, pastel);
-                    ui.label("New actions of this type start with these values");
-                    match crate::widgets::save_cancel_row(ui) {
-                        crate::widgets::SaveCancel::Cancel => cancel = true,
-                        crate::widgets::SaveCancel::Save => save = true,
-                        crate::widgets::SaveCancel::None => {}
-                    }
-                });
-                if let Some(err) = &err_msg {
-                    ui.colored_label(crate::theme::error_fg(), err.as_str());
+                match paint_action_edit_header(
+                    ui,
+                    label,
+                    pastel,
+                    Some("New actions of this type start with these values"),
+                    err_msg.as_deref(),
+                ) {
+                    SaveCancel::Cancel => cancel = true,
+                    SaveCancel::Save => save = true,
+                    SaveCancel::None => {}
                 }
-                ui.separator();
                 let list_h = pickers::popup_scroll_max_height(ui, 0.0);
                 egui::ScrollArea::vertical()
                     .auto_shrink([false, false])
