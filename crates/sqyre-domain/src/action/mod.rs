@@ -746,6 +746,19 @@ impl Action {
         self.find_by_id(id).is_some()
     }
 
+    /// Parent id of `id` when it is a descendant of this node (not self).
+    pub fn find_parent_id(&self, id: ActionId) -> Option<ActionId> {
+        for child in self.children() {
+            if child.id == id {
+                return Some(self.id);
+            }
+            if let Some(p) = child.find_parent_id(id) {
+                return Some(p);
+            }
+        }
+        None
+    }
+
     /// Insert `child` into the children of `parent_id` at `slot`.
     pub fn insert_at(
         &mut self,
