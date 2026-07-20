@@ -71,7 +71,8 @@ impl DataEditor {
                     if is_demo {
                         ui.weak("demo");
                     }
-                    let deny = is_demo || !can_delete || variant.is_empty() || variant == "Original";
+                    let deny =
+                        is_demo || !can_delete || variant.is_empty() || variant == "Original";
                     if ui
                         .add_enabled(!deny, egui::Button::new("Delete").small())
                         .clicked()

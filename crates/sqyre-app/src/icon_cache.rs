@@ -105,10 +105,8 @@ fn load_texture(ctx: &egui::Context, path: &Path) -> Option<TextureHandle> {
         return load_png_bytes(ctx, &path.to_string_lossy(), &bytes);
     }
     let demo = demo_icons::get(path)?;
-    let color = ColorImage::from_rgba_unmultiplied(
-        [demo.width as usize, demo.height as usize],
-        &demo.rgba,
-    );
+    let color =
+        ColorImage::from_rgba_unmultiplied([demo.width as usize, demo.height as usize], &demo.rgba);
     Some(ctx.load_texture(path.to_string_lossy(), color, TextureOptions::LINEAR))
 }
 
