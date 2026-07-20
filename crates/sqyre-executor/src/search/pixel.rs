@@ -1,8 +1,6 @@
 //! Find-pixel action.
 
-use super::common::{
-    apply_detection_hits, run_detection_shell, sort_hits, DetectionHit,
-};
+use super::common::{apply_detection_hits, run_detection_shell, sort_hits, DetectionHit};
 use crate::error::{ExecError, Result};
 use crate::run::Executor;
 use sqyre_domain::{Action, ActionKind, Macro, MatchOrder};

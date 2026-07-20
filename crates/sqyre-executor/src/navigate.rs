@@ -483,8 +483,8 @@ mod tests {
     use crate::run::{execute_macro_with, ExecDeps};
     use crate::test_support::FixedResolver;
     use sqyre_domain::{
-        root_loop, ActionId, NavChords, NavInputs, NavOptions, NavOutputs,
-        NavSelectAction, NavigateSelectData,
+        root_loop, ActionId, NavChords, NavInputs, NavOptions, NavOutputs, NavSelectAction,
+        NavigateSelectData,
     };
     use std::sync::Mutex;
 

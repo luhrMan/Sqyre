@@ -327,11 +327,11 @@ fn apply_delay(exec: &mut Executor<'_>, action: &Action, macro_: &Macro) -> Resu
     if macro_.global_delay > 0 {
         exec.interruptible_sleep(macro_.global_delay)?;
     }
-    match action.type_key() {
-        "key" | "type" if macro_.keyboard_delay > 0 => {
+    match sqyre_domain::action_delay_class(action.type_key()) {
+        sqyre_domain::DelayClass::Keyboard if macro_.keyboard_delay > 0 => {
             exec.interruptible_sleep(macro_.keyboard_delay)?;
         }
-        "move" | "click" if macro_.mouse_delay > 0 => {
+        sqyre_domain::DelayClass::Mouse if macro_.mouse_delay > 0 => {
             exec.interruptible_sleep(macro_.mouse_delay)?;
         }
         _ => {}
@@ -634,8 +634,7 @@ mod tests {
         root_loop, Action, ActionId, ActionKind, CoordinateRef, ScalarValue, VariableAssignment,
     };
 
-    const RUN_RESOLVER: FixedResolver =
-        FixedResolver::point_area((42, 99), (0, 0, 10, 10));
+    const RUN_RESOLVER: FixedResolver = FixedResolver::point_area((42, 99), (0, 0, 10, 10));
 
     #[test]
     fn executes_wait_loop_break() {

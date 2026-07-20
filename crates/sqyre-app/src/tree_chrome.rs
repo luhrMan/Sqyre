@@ -124,12 +124,11 @@ pub(crate) fn image_search_overflow_count(total: usize) -> usize {
 }
 
 fn icon_btn(ui: &mut egui::Ui, glyph: &str, tip: &str) -> egui::Response {
-    ui.add(
-        egui::Button::new(egui::RichText::new(glyph).size(14.0))
-            .small()
-            .frame(false),
-    )
-    .on_hover_text(tip)
+    crate::theme::icon_button_bare(ui, glyph).on_hover_text(tip)
+}
+
+fn icon_btn_colored(ui: &mut egui::Ui, glyph: &str, tip: &str, color: Color32) -> egui::Response {
+    crate::theme::icon_button_bare_colored(ui, glyph, Some(color)).on_hover_text(tip)
 }
 
 /// Paint the pastel type badge with a glyph.
@@ -145,9 +144,9 @@ pub fn paint_action_icon(ui: &mut egui::Ui, action: &Action, is_dark: bool) -> e
         egui::StrokeKind::Outside,
     );
     let glyph = action_icon_glyph(action);
-    ui.painter().text(
-        rect.center(),
-        egui::Align2::CENTER_CENTER,
+    crate::theme::paint_text_centered(
+        ui,
+        rect,
         glyph,
         FontId::proportional(ICON_GLYPH_SIZE),
         contrast_fg(pastel),
@@ -354,7 +353,7 @@ pub fn paint_action_row(
         |ui| {
             ui.spacing_mut().item_spacing.x = spacing;
 
-            let del = icon_btn(ui, "🗑", "Delete");
+            let del = icon_btn_colored(ui, "🗑", "Delete", crate::theme::MACRO_STOP);
             if del.contains_pointer() {
                 chrome_hovered = true;
             }

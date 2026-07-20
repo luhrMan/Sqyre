@@ -641,7 +641,7 @@ fn targets_editor(
     ui.horizontal(|ui| {
         help::tip(ui.label(egui::RichText::new("Items").strong()), h::IS_ITEMS);
         if ui
-            .button("Add / edit…")
+            .button(egui::RichText::new("Add / edit…").color(theme::MACRO_START))
             .on_hover_text(h::IS_ITEMS)
             .clicked()
         {
@@ -675,8 +675,7 @@ fn targets_editor(
 }
 
 fn pick_icon_btn(ui: &mut egui::Ui) -> egui::Response {
-    ui.add(egui::Button::new(egui::RichText::new("☰").size(14.0)).small())
-        .on_hover_text("Pick…")
+    crate::theme::icon_button(ui, "☰").on_hover_text("Pick…")
 }
 
 /// Label + read-only value + pick button. Returns true when pick was clicked.
@@ -735,8 +734,7 @@ fn paint_coord_preview(
     let mut force = false;
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new("Preview").strong());
-        if ui
-            .add(egui::Button::new(egui::RichText::new("↻").size(14.0)).small())
+        if crate::theme::icon_button(ui, "↻")
             .on_hover_text("Refresh")
             .clicked()
         {
@@ -1107,7 +1105,11 @@ fn list_header(ui: &mut egui::Ui, title: &str, add_help: &str) -> bool {
     let mut add = false;
     ui.horizontal(|ui| {
         ui.label(title);
-        if ui.small_button("+").on_hover_text(add_help).clicked() {
+        if ui
+            .add(egui::Button::new(egui::RichText::new("+").color(theme::MACRO_START)).small())
+            .on_hover_text(add_help)
+            .clicked()
+        {
             add = true;
         }
     });
@@ -1155,7 +1157,10 @@ fn clauses_editor(
                     active_macro,
                 );
                 if ui
-                    .small_button("−")
+                    .add(
+                        egui::Button::new(egui::RichText::new("−").color(theme::MACRO_STOP))
+                            .small(),
+                    )
                     .on_hover_text(h::CLAUSE_REMOVE)
                     .clicked()
                 {
@@ -1211,7 +1216,10 @@ fn list_columns_editor(
                     h::FOREACH_SKIP_BLANK,
                 );
                 if ui
-                    .small_button("Remove")
+                    .add(
+                        egui::Button::new(egui::RichText::new("Remove").color(theme::MACRO_STOP))
+                            .small(),
+                    )
                     .on_hover_text(h::FOREACH_REMOVE_SOURCE)
                     .clicked()
                 {
@@ -1262,7 +1270,12 @@ fn assignments_editor(
                 );
                 if can_remove
                     && ui
-                        .small_button("Remove")
+                        .add(
+                            egui::Button::new(
+                                egui::RichText::new("Remove").color(theme::MACRO_STOP),
+                            )
+                            .small(),
+                        )
                         .on_hover_text(h::SET_REMOVE_ASSIGNMENT)
                         .clicked()
                 {

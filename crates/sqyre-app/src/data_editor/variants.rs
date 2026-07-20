@@ -28,8 +28,7 @@ impl DataEditor {
         ui.separator();
         ui.horizontal(|ui| {
             ui.label(egui::RichText::new("Icon variants").strong());
-            if ui
-                .add(egui::Button::new(egui::RichText::new("↻").size(14.0)).small())
+            if crate::theme::icon_button(ui, "↻")
                 .on_hover_text("Refresh")
                 .clicked()
             {
@@ -37,7 +36,10 @@ impl DataEditor {
                     icons.invalidate_path(path);
                 }
             }
-            if ui.button("Add Icon Variant").clicked() {
+            if ui
+                .button(egui::RichText::new("Add Icon Variant").color(crate::theme::MACRO_START))
+                .clicked()
+            {
                 self.pick_and_add_variant(catalog, icons);
             }
         });
@@ -74,7 +76,13 @@ impl DataEditor {
                     let deny =
                         is_demo || !can_delete || variant.is_empty() || variant == "Original";
                     if ui
-                        .add_enabled(!deny, egui::Button::new("Delete").small())
+                        .add_enabled(
+                            !deny,
+                            egui::Button::new(
+                                egui::RichText::new("Delete").color(crate::theme::MACRO_STOP),
+                            )
+                            .small(),
+                        )
                         .clicked()
                     {
                         self.confirm = Some(PendingConfirm::DeleteVariant {

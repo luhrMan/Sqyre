@@ -12,8 +12,7 @@ pub(crate) fn paint_preview_toolbar(ui: &mut egui::Ui) -> bool {
     let mut force = false;
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new("Preview").strong());
-        if ui
-            .add(egui::Button::new(egui::RichText::new("↻").size(14.0)).small())
+        if crate::theme::icon_button(ui, "↻")
             .on_hover_text("Refresh")
             .clicked()
         {
@@ -141,8 +140,7 @@ pub(crate) fn paint_disk_preview(
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new(title).strong());
         if let Some(path) = path {
-            if ui
-                .add(egui::Button::new(egui::RichText::new("↻").size(14.0)).small())
+            if crate::theme::icon_button(ui, "↻")
                 .on_hover_text("Refresh")
                 .clicked()
             {
@@ -190,8 +188,7 @@ pub(crate) fn paint_zoomable_collection_preview(
     ui.separator();
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new("Collection image").strong());
-        if ui
-            .add(egui::Button::new(egui::RichText::new("↻").size(14.0)).small())
+        if crate::theme::icon_button(ui, "↻")
             .on_hover_text("Refresh")
             .clicked()
         {

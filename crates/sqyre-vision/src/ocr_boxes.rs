@@ -42,10 +42,7 @@ pub fn find_target_occurrences(boxes: &[OcrWordBox], target: &str) -> Vec<(i32, 
         return Vec::new();
     }
 
-    let words: Vec<&OcrWordBox> = boxes
-        .iter()
-        .filter(|b| !b.word.trim().is_empty())
-        .collect();
+    let words: Vec<&OcrWordBox> = boxes.iter().filter(|b| !b.word.trim().is_empty()).collect();
     let mut out = Vec::new();
     let mut i = 0;
     while i < words.len() {
@@ -111,12 +108,8 @@ fn token_matches_word(token: &str, target_word: &str) -> bool {
 }
 
 fn union_center(boxes: &[&OcrWordBox]) -> (i32, i32) {
-    let (mut min_x, mut min_y, mut max_x, mut max_y) = (
-        boxes[0].left,
-        boxes[0].top,
-        boxes[0].right,
-        boxes[0].bottom,
-    );
+    let (mut min_x, mut min_y, mut max_x, mut max_y) =
+        (boxes[0].left, boxes[0].top, boxes[0].right, boxes[0].bottom);
     for b in boxes.iter().skip(1) {
         min_x = min_x.min(b.left);
         min_y = min_y.min(b.top);

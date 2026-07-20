@@ -44,120 +44,108 @@ impl DataEditor {
 
         // Take search out so the scroll body can borrow `&mut self`.
         let mut search = std::mem::take(&mut self.search);
-        pickers::picker_searchable_scroll(ui, &mut search, opts, |ui, q| {
-            match self.tab {
-                EditorTab::Programs => {
-                    for name in catalog.program_names() {
-                        if !q.is_empty() && !pickers::fuzzy_match_fold(q, name) {
+        pickers::picker_searchable_scroll(ui, &mut search, opts, |ui, q| match self.tab {
+            EditorTab::Programs => {
+                for name in catalog.program_names() {
+                    if !q.is_empty() && !pickers::fuzzy_match_fold(q, name) {
+                        continue;
+                    }
+                    let selected = self.selected_program.as_deref() == Some(name.as_str());
+                    if ui.selectable_label(selected, name).clicked() {
+                        self.select_program(name, catalog, settings);
+                    }
+                }
+            }
+            EditorTab::Items => {
+                ui.set_max_width(ui.available_width());
+                pickers::paint_items_icon_grid(ui, catalog, icons, q, &mut item_selection, false);
+            }
+            EditorTab::Points
+            | EditorTab::SearchAreas
+            | EditorTab::Masks
+            | EditorTab::Collections
+            | EditorTab::AutoPic => {
+                let kind = match self.tab {
+                    EditorTab::Points => Some(PreviewKind::Point),
+                    EditorTab::SearchAreas | EditorTab::AutoPic => Some(PreviewKind::SearchArea),
+                    _ => None,
+                };
+                self.ensure_list_cache(catalog);
+                let program_names = self.list_cache.program_names.clone();
+                for prog in &program_names {
+                    let entities = self.entity_names(catalog, prog);
+                    let prog_match = q.is_empty() || pickers::fuzzy_match_fold(q, prog);
+                    let any_entity = entities
+                        .iter()
+                        .any(|e| q.is_empty() || pickers::fuzzy_match_fold(q, e));
+                    if !prog_match && !any_entity {
+                        continue;
+                    }
+                    ui.label(egui::RichText::new(prog.as_str()).size(16.0).strong());
+                    for ent in entities {
+                        if !q.is_empty() && !pickers::fuzzy_match_fold(q, &ent) && !prog_match {
                             continue;
                         }
-                        let selected = self.selected_program.as_deref() == Some(name.as_str());
-                        if ui.selectable_label(selected, name).clicked() {
-                            self.select_program(name, catalog, settings);
+                        let selected = self.selected_program.as_deref() == Some(prog.as_str())
+                            && self.selected_entity.as_deref() == Some(ent.as_str());
+                        let resp = ui.selectable_label(selected, format!("  {ent}"));
+                        if let Some(kind) = kind {
+                            previews.show_for_entity(ui, &resp, catalog, prog, &ent, kind);
+                        } else if matches!(self.tab, EditorTab::Masks) {
+                            show_file_hover(
+                                ui,
+                                &resp,
+                                icons,
+                                &catalog.mask_image_path(prog, &ent),
+                                &format!("{prog}~{ent}"),
+                            );
+                        } else if matches!(self.tab, EditorTab::Collections) {
+                            show_file_hover(
+                                ui,
+                                &resp,
+                                icons,
+                                &catalog.collection_image_path(prog, &ent),
+                                &format!("{prog}~{ent}"),
+                            );
+                        }
+                        if resp.clicked() {
+                            self.select_entity(prog, &ent, catalog, settings);
                         }
                     }
                 }
-                EditorTab::Items => {
-                    ui.set_max_width(ui.available_width());
-                    pickers::paint_items_icon_grid(
-                        ui,
-                        catalog,
-                        icons,
-                        q,
-                        &mut item_selection,
-                        false,
-                    );
-                }
-                EditorTab::Points
-                | EditorTab::SearchAreas
-                | EditorTab::Masks
-                | EditorTab::Collections
-                | EditorTab::AutoPic => {
-                    let kind = match self.tab {
-                        EditorTab::Points => Some(PreviewKind::Point),
-                        EditorTab::SearchAreas | EditorTab::AutoPic => Some(PreviewKind::SearchArea),
-                        _ => None,
-                    };
-                    self.ensure_list_cache(catalog);
-                    let program_names = self.list_cache.program_names.clone();
-                    for prog in &program_names {
-                        let entities = self.entity_names(catalog, prog);
-                        let prog_match = q.is_empty() || pickers::fuzzy_match_fold(q, prog);
-                        let any_entity = entities
-                            .iter()
-                            .any(|e| q.is_empty() || pickers::fuzzy_match_fold(q, e));
-                        if !prog_match && !any_entity {
-                            continue;
-                        }
-                        ui.label(egui::RichText::new(prog.as_str()).size(16.0).strong());
-                        for ent in entities {
-                            if !q.is_empty()
-                                && !pickers::fuzzy_match_fold(q, &ent)
-                                && !prog_match
-                            {
-                                continue;
-                            }
-                            let selected = self.selected_program.as_deref() == Some(prog.as_str())
-                                && self.selected_entity.as_deref() == Some(ent.as_str());
-                            let resp = ui.selectable_label(selected, format!("  {ent}"));
-                            if let Some(kind) = kind {
-                                previews.show_for_entity(ui, &resp, catalog, prog, &ent, kind);
-                            } else if matches!(self.tab, EditorTab::Masks) {
-                                show_file_hover(
-                                    ui,
-                                    &resp,
-                                    icons,
-                                    &catalog.mask_image_path(prog, &ent),
-                                    &format!("{prog}~{ent}"),
-                                );
-                            } else if matches!(self.tab, EditorTab::Collections) {
-                                show_file_hover(
-                                    ui,
-                                    &resp,
-                                    icons,
-                                    &catalog.collection_image_path(prog, &ent),
-                                    &format!("{prog}~{ent}"),
-                                );
-                            }
-                            if resp.clicked() {
-                                self.select_entity(prog, &ent, catalog, settings);
-                            }
-                        }
+            }
+            EditorTab::Overlay => {
+                for prog in catalog.program_names() {
+                    let buttons: Vec<&OverlayButtonConfig> = settings
+                        .overlay_buttons
+                        .iter()
+                        .filter(|b| b.program == *prog)
+                        .collect();
+                    let prog_match = q.is_empty() || pickers::fuzzy_match_fold(q, prog);
+                    let any_btn = buttons.iter().any(|b| {
+                        q.is_empty()
+                            || pickers::fuzzy_match_fold(q, b.display_name())
+                            || pickers::fuzzy_match_fold(q, &b.id)
+                    });
+                    if !prog_match && !any_btn {
+                        continue;
                     }
-                }
-                EditorTab::Overlay => {
-                    for prog in catalog.program_names() {
-                        let buttons: Vec<&OverlayButtonConfig> = settings
-                            .overlay_buttons
-                            .iter()
-                            .filter(|b| b.program == *prog)
-                            .collect();
-                        let prog_match = q.is_empty() || pickers::fuzzy_match_fold(q, prog);
-                        let any_btn = buttons.iter().any(|b| {
-                            q.is_empty()
-                                || pickers::fuzzy_match_fold(q, b.display_name())
-                                || pickers::fuzzy_match_fold(q, &b.id)
-                        });
-                        if !prog_match && !any_btn {
+                    ui.label(egui::RichText::new(prog.as_str()).size(16.0).strong());
+                    for btn in buttons {
+                        if !q.is_empty()
+                            && !pickers::fuzzy_match_fold(q, btn.display_name())
+                            && !pickers::fuzzy_match_fold(q, &btn.id)
+                            && !prog_match
+                        {
                             continue;
                         }
-                        ui.label(egui::RichText::new(prog.as_str()).size(16.0).strong());
-                        for btn in buttons {
-                            if !q.is_empty()
-                                && !pickers::fuzzy_match_fold(q, btn.display_name())
-                                && !pickers::fuzzy_match_fold(q, &btn.id)
-                                && !prog_match
-                            {
-                                continue;
-                            }
-                            let selected = self.selected_program.as_deref() == Some(prog.as_str())
-                                && self.selected_entity.as_deref() == Some(btn.id.as_str());
-                            if ui
-                                .selectable_label(selected, format!("  {}", btn.display_name()))
-                                .clicked()
-                            {
-                                self.select_entity(prog, &btn.id, catalog, settings);
-                            }
+                        let selected = self.selected_program.as_deref() == Some(prog.as_str())
+                            && self.selected_entity.as_deref() == Some(btn.id.as_str());
+                        if ui
+                            .selectable_label(selected, format!("  {}", btn.display_name()))
+                            .clicked()
+                        {
+                            self.select_entity(prog, &btn.id, catalog, settings);
                         }
                     }
                 }
