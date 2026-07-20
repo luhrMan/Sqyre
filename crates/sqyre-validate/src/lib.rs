@@ -333,20 +333,7 @@ fn yaml_string_value(v: &sqyre_domain::ScalarValue) -> Option<&str> {
 }
 
 fn validate_continue_key(keys: &[String]) -> Result<()> {
-    let normalized: Vec<String> = keys
-        .iter()
-        .map(|k| sqyre_hotkeys::normalize_key_name(k))
-        .filter(|k| !k.is_empty())
-        .collect();
-    if normalized.is_empty() {
-        return Err(ValidateError::Message("pause: continue key not set".into()));
-    }
-    if sqyre_hotkeys::is_failsafe_chord(&normalized) {
-        return Err(ValidateError::Message(
-            "pause: continue key cannot match the failsafe hotkey (esc + ctrl + shift)".into(),
-        ));
-    }
-    Ok(())
+    sqyre_hotkeys::validate_continue_key(keys).map(|_| ()).map_err(ValidateError::Message)
 }
 
 /// Checks minimum fields required to save/run an action.

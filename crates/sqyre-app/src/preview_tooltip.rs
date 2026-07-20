@@ -632,14 +632,8 @@ fn fit_display_panel(w: f32, h: f32) -> Vec2 {
     Vec2::new(w * scale, h * scale)
 }
 
-fn normalize_rect(mut lx: i32, mut ty: i32, mut rx: i32, mut by: i32) -> (i32, i32, i32, i32) {
-    if lx > rx {
-        std::mem::swap(&mut lx, &mut rx);
-    }
-    if ty > by {
-        std::mem::swap(&mut ty, &mut by);
-    }
-    (lx, ty, rx, by)
+fn normalize_rect(lx: i32, ty: i32, rx: i32, by: i32) -> (i32, i32, i32, i32) {
+    DesktopRect::normalize_corners(lx, ty, rx, by)
 }
 
 fn preview_bounds_for_point(px: i32, py: i32, vb: DesktopRect) -> DesktopRect {

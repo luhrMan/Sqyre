@@ -1,15 +1,15 @@
-//! OCR action: capture → preprocess → recognize → write vars → run children on match.
+//! OCR action: capture → preprocess → recognize → write vars → run children per hit.
 
 use super::common::{
-    clear_coord_outputs, run_detection_outcome, run_detection_shell, set_coord_outputs,
+    apply_detection_hits, run_detection_shell, sort_hits, DetectionHit,
 };
 use crate::action_log::draw_rect_rgb;
 use crate::error::{ExecError, Result};
 use crate::run::Executor;
-use sqyre_domain::{Action, ActionKind, Macro, ScalarValue};
+use sqyre_domain::{Action, ActionKind, Macro, MatchOrder, ScalarValue};
 use std::time::Instant;
 
-/// OCR branch action: capture → preprocess → recognize → write vars → run children on match
+/// OCR branch action: capture → preprocess → recognize → write vars → run children per hit
 /// (or on miss when `run_branch_on_no_find`). Capture/OCR errors are logged and treated as miss.
 pub(crate) fn execute_ocr(
     exec: &mut Executor<'_>,
@@ -36,11 +36,12 @@ pub(crate) fn execute_ocr(
         wait,
         coords,
         run_branch_on_no_find,
+        order,
         subactions,
-        ..
     } = detection;
 
     let action_id = action.id;
+    let order = order.clone();
     let ocr_params = OcrRunParams {
         search_area,
         target,
@@ -51,10 +52,15 @@ pub(crate) fn execute_ocr(
         threshold_otsu: *threshold_otsu,
         threshold_invert: *threshold_invert,
     };
+    let targets = if target.is_empty() {
+        Vec::new()
+    } else {
+        vec![target.clone()]
+    };
 
     // Log wait intent once before the shared shell arms retries.
-    let (shot0, matched0) = ocr_shot_and_match(exec, action_id, &ocr_params, macro_);
-    if wait.wait_until_found_active() && !matched0 {
+    let attempt0 = ocr_attempt(exec, action_id, &ocr_params, &order, macro_);
+    if wait.wait_until_found_active() && attempt0.hits.is_empty() {
         exec.log(
             action_id,
             format!(
@@ -64,31 +70,33 @@ pub(crate) fn execute_ocr(
         );
     }
 
-    let mut initial = Some((shot0, matched0));
+    let mut initial = Some(attempt0);
     run_detection_shell(
         exec,
         macro_,
         wait,
-        500,
-        200,
+        100,
+        100,
         |exec, macro_| {
             if let Some(first) = initial.take() {
                 return Ok(first);
             }
-            Ok(ocr_shot_and_match(exec, action_id, &ocr_params, macro_))
+            Ok(ocr_attempt(exec, action_id, &ocr_params, &order, macro_))
         },
-        |(_, matched)| *matched,
-        |exec, macro_, (shot, matched), _pass| {
-            apply_ocr_outputs(
+        |attempt| !attempt.hits.is_empty(),
+        |exec, macro_, attempt, pass| {
+            apply_ocr_text_var(macro_, output_variable, attempt);
+            apply_detection_hits(
                 exec,
                 action_id,
-                macro_,
-                output_variable,
+                &targets,
+                &attempt.hits,
                 coords,
-                shot,
-                *matched,
-            );
-            run_detection_outcome(exec, *matched, *run_branch_on_no_find, subactions, macro_)
+                *run_branch_on_no_find,
+                subactions,
+                macro_,
+                pass,
+            )
         },
     )
 }
@@ -104,86 +112,48 @@ struct OcrRunParams<'a> {
     threshold_invert: bool,
 }
 
-fn ocr_shot_and_match(
+struct OcrAttempt {
+    text: Option<String>,
+    hits: Vec<DetectionHit>,
+}
+
+fn apply_ocr_text_var(macro_: &mut Macro, output_variable: &str, attempt: &OcrAttempt) {
+    if attempt.hits.is_empty() {
+        macro_.variables.delete(output_variable);
+        return;
+    }
+    if let Some(text) = &attempt.text {
+        if !output_variable.is_empty() {
+            macro_
+                .variables
+                .set(output_variable, ScalarValue::String(text.clone()));
+        }
+    }
+}
+
+fn ocr_attempt(
     exec: &mut Executor<'_>,
     action_id: sqyre_domain::ActionId,
     params: &OcrRunParams<'_>,
+    order: &MatchOrder,
     macro_: &Macro,
-) -> (Option<OcrShot>, bool) {
-    let shot = run_ocr_once(
-        exec,
-        action_id,
-        params.search_area,
-        params.target,
-        params.blur,
-        params.min_threshold,
-        params.resize,
-        params.grayscale,
-        params.threshold_otsu,
-        params.threshold_invert,
-        macro_,
-    );
-    let matched = shot
-        .as_ref()
-        .is_some_and(|s| ocr_target_matched(params.target, &s.text));
-    (shot, matched)
-}
-
-fn apply_ocr_outputs(
-    exec: &mut Executor<'_>,
-    action_id: sqyre_domain::ActionId,
-    macro_: &mut Macro,
-    output_variable: &str,
-    coords: &sqyre_domain::CoordinateOutputs,
-    shot: &Option<OcrShot>,
-    matched: bool,
-) {
-    if !matched {
-        macro_.variables.delete(output_variable);
-        clear_coord_outputs(macro_, coords);
-        return;
+) -> OcrAttempt {
+    match run_ocr_once(exec, action_id, params, order, macro_) {
+        Some(a) => a,
+        None => OcrAttempt {
+            text: None,
+            hits: Vec::new(),
+        },
     }
-    let Some(result) = shot else {
-        return;
-    };
-    if !output_variable.is_empty() {
-        macro_
-            .variables
-            .set(output_variable, ScalarValue::String(result.text.clone()));
-    }
-    set_coord_outputs(macro_, coords, result.x, result.y);
-    exec.log(
-        action_id,
-        format!(
-            "OCR: {} chars → {:?} at ({}, {})",
-            result.text.len(),
-            output_variable,
-            result.x,
-            result.y
-        ),
-    );
 }
 
-struct OcrShot {
-    text: String,
-    x: i32,
-    y: i32,
-}
-
-#[allow(clippy::too_many_arguments)]
 fn run_ocr_once(
     exec: &mut Executor<'_>,
     action_id: sqyre_domain::ActionId,
-    search_area: &sqyre_domain::CoordinateRef,
-    target: &str,
-    blur: i32,
-    min_threshold: i32,
-    resize: f64,
-    grayscale: bool,
-    threshold_otsu: bool,
-    threshold_invert: bool,
+    params: &OcrRunParams<'_>,
+    order: &MatchOrder,
     macro_: &Macro,
-) -> Option<OcrShot> {
+) -> Option<OcrAttempt> {
     let Some(resolver) = exec.deps.resolver else {
         exec.log(action_id, "OCR: missing CoordinateResolver");
         return None;
@@ -197,14 +167,14 @@ fn run_ocr_once(
         return None;
     };
 
-    let (lx, ty, rx, by) = match resolver.resolve_search_area(search_area, macro_) {
+    let (lx, ty, rx, by) = match resolver.resolve_search_area(params.search_area, macro_) {
         Ok(v) => v,
         Err(e) => {
             exec.log(
                 action_id,
                 format!(
                     "OCR: resolve search area {}: {e}",
-                    search_area.display_label()
+                    params.search_area.display_label()
                 ),
             );
             return None;
@@ -213,8 +183,9 @@ fn run_ocr_once(
     exec.log(
         action_id,
         format!(
-            "{target} OCR search | {} in X1:{lx} Y1:{ty} X2:{rx} Y2:{by}",
-            search_area.display_label()
+            "{} OCR search | {} in X1:{lx} Y1:{ty} X2:{rx} Y2:{by}",
+            params.target,
+            params.search_area.display_label()
         ),
     );
 
@@ -238,12 +209,12 @@ fn run_ocr_once(
     let rgb = img.into_image_buf();
     exec.log_image(action_id, "Capture (raw)", &rgb);
     let opts = sqyre_vision::OcrPreprocessOptions::from_action_fields(
-        grayscale,
-        blur,
-        min_threshold,
-        resize,
-        threshold_otsu,
-        threshold_invert,
+        params.grayscale,
+        params.blur,
+        params.min_threshold,
+        params.resize,
+        params.threshold_otsu,
+        params.threshold_invert,
     );
     let collect = exec.log_images_enabled();
     let preprocess_started = Instant::now();
@@ -293,7 +264,6 @@ fn run_ocr_once(
         );
     }
 
-    // Overlay word boxes on an RGB copy of the OCR input for the logs UI.
     if collect && !recognized.words.is_empty() {
         let mut overlay = if processed.channels == 1 {
             sqyre_vision::gray_to_rgb(&processed)
@@ -313,29 +283,71 @@ fn run_ocr_once(
         exec.log_image(action_id, "OCR word boxes", &overlay);
     }
 
-    let mut out_x = search_center_x;
-    let mut out_y = search_center_y;
     let resize_scale = if scale > 0.0 { scale } else { 1.0 };
-    if let Some((bx, by)) = sqyre_vision::find_target_in_boxes(&recognized.words, target) {
-        out_x = origin.x + (bx as f64 / resize_scale) as i32;
-        out_y = origin.y + (by as f64 / resize_scale) as i32;
-        exec.log(
-            action_id,
-            format!(
-                "OCR target {target:?} matched at image ({bx}, {by}) → screen ({out_x}, {out_y}) (scale={resize_scale:.3})"
-            ),
-        );
+    let mut hits = if params.target.is_empty() {
+        // Empty target always matches once at search-area center.
+        vec![DetectionHit::plain(
+            search_center_x,
+            search_center_y,
+            "",
+        )]
     } else {
-        exec.log(
-            action_id,
-            format!("OCR target {target:?} not found among word boxes"),
-        );
-    }
+        let occurrences = sqyre_vision::find_target_occurrences(&recognized.words, params.target);
+        if occurrences.is_empty() {
+            exec.log(
+                action_id,
+                format!(
+                    "OCR target {:?} not found among word boxes",
+                    params.target
+                ),
+            );
+            // Text-contains can still succeed when boxes miss; treat as miss for coords/hits
+            // unless full text contains the target — then one synthetic center hit.
+            if ocr_target_matched(params.target, &recognized.text) {
+                exec.log(
+                    action_id,
+                    format!(
+                        "OCR target {:?} in full text but no word-box occurrence; using search center",
+                        params.target
+                    ),
+                );
+                vec![DetectionHit::plain(
+                    search_center_x,
+                    search_center_y,
+                    params.target,
+                )]
+            } else {
+                Vec::new()
+            }
+        } else {
+            for (bx, by) in &occurrences {
+                let sx = origin.x + (*bx as f64 / resize_scale) as i32;
+                let sy = origin.y + (*by as f64 / resize_scale) as i32;
+                exec.log(
+                    action_id,
+                    format!(
+                        "OCR target {:?} matched at image ({bx}, {by}) → screen ({sx}, {sy}) (scale={resize_scale:.3})",
+                        params.target
+                    ),
+                );
+            }
+            occurrences
+                .into_iter()
+                .map(|(bx, by)| {
+                    DetectionHit::plain(
+                        origin.x + (bx as f64 / resize_scale) as i32,
+                        origin.y + (by as f64 / resize_scale) as i32,
+                        params.target,
+                    )
+                })
+                .collect()
+        }
+    };
+    sort_hits(&mut hits, order);
 
-    Some(OcrShot {
-        text: recognized.text,
-        x: out_x,
-        y: out_y,
+    Some(OcrAttempt {
+        text: Some(recognized.text),
+        hits,
     })
 }
 

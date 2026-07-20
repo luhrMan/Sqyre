@@ -1,4 +1,4 @@
-//! Domain model for macros and the 21 action kinds.
+//! Domain model for macros and the [`ACTION_KIND_COUNT`] action kinds.
 //!
 //! Action `type` strings and field names are the YAML wire vocabulary
 //! (`while`, `navigateselect`, `searcharea`, …). UIDs are runtime-only unless
@@ -34,6 +34,6 @@ pub use set_value::{
 };
 pub use taxonomy::{
     action_color_category, action_picker_category, action_type_description, action_type_label,
-    action_type_table, ActionTypeMeta, ACTION_PICKER_CATEGORIES,
+    action_type_table, ActionTypeMeta, ACTION_KIND_COUNT, ACTION_PICKER_CATEGORIES,
 };
 pub use variables::*;

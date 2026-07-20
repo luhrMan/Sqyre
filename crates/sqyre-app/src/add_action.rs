@@ -542,7 +542,7 @@ fn picker_tile(
     );
 
     let text = format!("{glyph}  {}", tmpl.label);
-    let fg = tile_contrast_fg(fill);
+    let fg = crate::theme::contrast_fg(fill);
     let galley = ui
         .painter()
         .layout_no_wrap(text, egui::FontId::proportional(14.0), fg);
@@ -551,18 +551,6 @@ fn picker_tile(
 
     // No egui `on_hover_text` — the delayed action view tip is the hover UI.
     response
-}
-
-fn tile_contrast_fg(fill: Color32) -> Color32 {
-    let r = fill.r() as f32 / 255.0;
-    let g = fill.g() as f32 / 255.0;
-    let b = fill.b() as f32 / 255.0;
-    let lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-    if lum > 0.55 {
-        Color32::from_rgb(0x1a, 0x1a, 0x1a)
-    } else {
-        Color32::from_rgb(0xf5, 0xf5, 0xf5)
-    }
 }
 
 #[cfg(test)]
