@@ -438,17 +438,14 @@ impl AddActionPicker {
                 ui.horizontal(|ui| {
                     tree_chrome::paint_pill_pub(ui, label, pastel);
                     ui.label("New actions of this type start with these values");
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button("Cancel").clicked() {
-                            cancel = true;
-                        }
-                        if ui.button("Save").clicked() {
-                            save = true;
-                        }
-                    });
+                    match crate::widgets::save_cancel_row(ui) {
+                        crate::widgets::SaveCancel::Cancel => cancel = true,
+                        crate::widgets::SaveCancel::Save => save = true,
+                        crate::widgets::SaveCancel::None => {}
+                    }
                 });
                 if let Some(err) = &err_msg {
-                    ui.colored_label(Color32::RED, err.as_str());
+                    ui.colored_label(crate::theme::error_fg(), err.as_str());
                 }
                 ui.separator();
                 let list_h = pickers::popup_scroll_max_height(ui, 0.0);

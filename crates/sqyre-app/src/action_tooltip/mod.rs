@@ -527,19 +527,16 @@ fn show_edit_window(
         .show(ctx, |ui| {
             ui.horizontal(|ui| {
                 tree_chrome::paint_pill_pub(ui, label, pastel);
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button("Cancel").clicked() {
-                        cancel = true;
-                    }
-                    if ui.button("Save").clicked() {
-                        save = true;
-                    }
-                });
+                match crate::widgets::save_cancel_row(ui) {
+                    crate::widgets::SaveCancel::Cancel => cancel = true,
+                    crate::widgets::SaveCancel::Save => save = true,
+                    crate::widgets::SaveCancel::None => {}
+                }
             });
 
             if let TooltipState::Edit(edit) = state {
                 if let Some(err) = &edit.error {
-                    ui.colored_label(egui::Color32::RED, err.as_str());
+                    ui.colored_label(crate::theme::error_fg(), err.as_str());
                 }
             }
 

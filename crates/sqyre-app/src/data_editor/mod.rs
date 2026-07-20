@@ -418,14 +418,7 @@ impl DataEditor {
             ui.ctx().request_repaint();
         }
 
-        if let Some(msg) = &self.status_banner.status {
-            let color = if self.status_banner.status_error {
-                egui::Color32::from_rgb(220, 80, 80)
-            } else {
-                egui::Color32::from_rgb(80, 160, 80)
-            };
-            ui.colored_label(color, msg);
-        }
+        self.status_banner.paint(ui);
 
         // Claim exactly the remaining window area once (body + footer).
         // Allocating body then drawing footer separately made min_size > window size,
@@ -625,31 +618,30 @@ impl DataEditor {
                 ));
             }
         }
-        ui.horizontal(|ui| {
-            if ui.button("Cancel").clicked() {
+        match crate::widgets::confirm_cancel_row(ui) {
+            crate::widgets::ConfirmCancel::Cancel => {
                 self.confirm = None;
             }
-            if ui.button("Confirm").clicked() {
-                match confirm {
-                    PendingConfirm::Delete { .. } => {
-                        self.confirm = None;
-                        self.on_delete(db, macros, catalog, previews, settings);
-                    }
-                    PendingConfirm::Overwrite { .. } => {
-                        self.confirm = None;
-                        self.apply_update(db, macros, catalog, true, previews, settings);
-                    }
-                    PendingConfirm::DeleteVariant { variant } => {
-                        self.confirm = None;
-                        self.delete_icon_variant(catalog, icons, &variant);
-                    }
-                    PendingConfirm::OverwriteVariant { variant, source } => {
-                        self.confirm = None;
-                        self.overwrite_icon_variant(catalog, icons, &variant, &source);
-                    }
+            crate::widgets::ConfirmCancel::Confirm => match confirm {
+                PendingConfirm::Delete { .. } => {
+                    self.confirm = None;
+                    self.on_delete(db, macros, catalog, previews, settings);
                 }
-            }
-        });
+                PendingConfirm::Overwrite { .. } => {
+                    self.confirm = None;
+                    self.apply_update(db, macros, catalog, true, previews, settings);
+                }
+                PendingConfirm::DeleteVariant { variant } => {
+                    self.confirm = None;
+                    self.delete_icon_variant(catalog, icons, &variant);
+                }
+                PendingConfirm::OverwriteVariant { variant, source } => {
+                    self.confirm = None;
+                    self.overwrite_icon_variant(catalog, icons, &variant, &source);
+                }
+            },
+            crate::widgets::ConfirmCancel::None => {}
+        }
     }
 
     fn draw_variant_name_prompt(
