@@ -152,29 +152,62 @@ jobs:
 
   check-windows:
     runs-on: windows-latest
+    env:
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.cache/vcpkg-binaries
+      # File-based binary cache (x-gha was removed from vcpkg); restored via actions/cache.
+      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/.cache/vcpkg-binaries,readwrite
     steps:
       - uses: actions/checkout@v6
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@1.92.0
 
+      - name: Cache LLVM install
+        id: llvm-cache
+        uses: actions/cache@v6
+        with:
+          path: C:\Program Files\LLVM
+          key: ${{ runner.os }}-llvm-choco-v1
+
       - name: Install LLVM (bindgen) and pkg-config
-        run: choco install llvm pkgconfiglite -y
+        run: |
+          if ("${{ steps.llvm-cache.outputs.cache-hit }}" -ne "true") {
+            choco install llvm -y
+          }
+          choco install pkgconfiglite -y
+
+      - name: Cache vcpkg binaries
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
+          key: ${{ runner.os }}-vcpkg-bin-leptess-x64-windows-v1
+          restore-keys: |
+            ${{ runner.os }}-vcpkg-bin-leptess-x64-windows-
+
+      - name: Prepare vcpkg binary cache dir
+        run: New-Item -ItemType Directory -Force -Path $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
 
       - name: Install leptonica and tesseract (vcpkg)
         run: |
           & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install leptonica:x64-windows tesseract:x64-windows
 
-      - name: Cache Cargo
+      - name: Cache Cargo registry
         uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-reg-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-
+            ${{ runner.os }}-cargo-reg-
+
+      - name: Cache Cargo target
+        uses: actions/cache@v6
+        with:
+          path: target
+          key: ${{ runner.os }}-cargo-target-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-target-
 
       - name: cargo check (sqyre-app)
         env:
@@ -192,19 +225,34 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@1.92.0
 
+      - name: Cache Homebrew bottles
+        uses: actions/cache@v6
+        with:
+          path: ~/Library/Caches/Homebrew
+          key: ${{ runner.os }}-brew-tesseract-leptonica-v1
+          restore-keys: |
+            ${{ runner.os }}-brew-tesseract-leptonica-
+
       - name: Install Tesseract / Leptonica
         run: brew install tesseract leptonica
 
-      - name: Cache Cargo
+      - name: Cache Cargo registry
         uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-reg-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-
+            ${{ runner.os }}-cargo-reg-
+
+      - name: Cache Cargo target
+        uses: actions/cache@v6
+        with:
+          path: target
+          key: ${{ runner.os }}-cargo-target-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-target-
 
       - name: cargo check (sqyre-app)
         run: cargo check -p sqyre-app
