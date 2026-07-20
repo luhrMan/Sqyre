@@ -13,6 +13,7 @@ mod chord_record;
 mod collection_capture;
 mod data_editor;
 mod data_editor_preview;
+mod demo_icons;
 mod diag;
 pub mod docs_fixture;
 mod file_dialogs;
@@ -45,6 +46,8 @@ mod ui_overlays;
 mod ui_toolbar;
 mod var_pills;
 mod variables_panel;
+#[cfg(any(test, target_arch = "wasm32"))]
+mod wasm_demo_seed;
 mod wasm_io;
 
 pub use settings::SettingsUi;
@@ -249,11 +252,16 @@ impl SqyreApp {
         add_action_picker.load_from_settings(settings_ui.settings());
 
         match Database::load_default() {
-            Ok(db) => {
+            #[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut))]
+            Ok(mut db) => {
                 let mut catalog = db.program_catalog().unwrap_or_default();
                 apply_main_monitor_resolution(&mut catalog);
                 let mut macros: Vec<_> = db.macros.values().cloned().collect();
                 macros.sort_by(|a, b| a.name.cmp(&b.name));
+                #[cfg(target_arch = "wasm32")]
+                {
+                    let _ = wasm_demo_seed::ensure_demo_if_empty(&mut macros, &mut catalog, &mut db);
+                }
                 let app = Self {
                     db,
                     macros,
