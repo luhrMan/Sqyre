@@ -1,6 +1,7 @@
 //! Live runtime-variable snapshot sink.
 
-use std::sync::{Arc, Mutex};
+use parking_lot::Mutex;
+use std::sync::Arc;
 
 /// Optional live runtime-variable publisher (UI “Live variables”).
 pub trait RuntimeVarSink: Send + Sync {
@@ -19,20 +20,16 @@ impl SharedRuntimeVars {
     }
 
     pub fn clear(&self) {
-        if let Ok(mut g) = self.inner.lock() {
-            g.clear();
-        }
+        self.inner.lock().clear();
     }
 
     pub fn snapshot(&self) -> Vec<(String, String)> {
-        self.inner.lock().map(|g| g.clone()).unwrap_or_default()
+        self.inner.lock().clone()
     }
 }
 
 impl RuntimeVarSink for SharedRuntimeVars {
     fn publish(&self, pairs: &[(String, String)]) {
-        if let Ok(mut g) = self.inner.lock() {
-            *g = pairs.to_vec();
-        }
+        *self.inner.lock() = pairs.to_vec();
     }
 }

@@ -3,7 +3,7 @@
 use crate::chord_record::{poll_waiting_release, record_modal};
 use eframe::egui;
 use sqyre_hotkeys::{format_hotkey, MacroHotkeyBridge};
-use std::time::{Duration, Instant};
+use web_time::{Duration, Instant};
 
 const STABLE_FOR: Duration = Duration::from_secs(1);
 

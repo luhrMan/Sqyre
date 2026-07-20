@@ -27,6 +27,7 @@ pub fn settings_path() -> PathBuf {
 }
 
 /// XDG pointer that records a relocated data directory (one path per line).
+#[cfg(not(target_arch = "wasm32"))]
 fn data_dir_pointer_path() -> PathBuf {
     dirs::config_dir()
         .unwrap_or_else(|| {
@@ -39,6 +40,7 @@ fn data_dir_pointer_path() -> PathBuf {
 }
 
 /// Apply a relocated data-dir pointer before loading settings from `.sqyre`.
+#[cfg(not(target_arch = "wasm32"))]
 fn apply_data_dir_pointer() {
     let path = data_dir_pointer_path();
     let Ok(text) = fs::read_to_string(&path) else {
@@ -53,6 +55,7 @@ fn apply_data_dir_pointer() {
     crate::set_sqyre_dir_override(Some(PathBuf::from(dir)));
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn write_data_dir_pointer(sqyre_dir: &str) -> Result<()> {
     let path = data_dir_pointer_path();
     let dir = sqyre_dir.trim();
@@ -357,8 +360,15 @@ impl Default for UserSettings {
 
 impl UserSettings {
     pub fn load_default() -> Result<Self> {
-        apply_data_dir_pointer();
-        Self::load_from_path(settings_path())
+        #[cfg(target_arch = "wasm32")]
+        {
+            return Ok(Self::default());
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            apply_data_dir_pointer();
+            Self::load_from_path(settings_path())
+        }
     }
 
     pub fn load_from_path(path: impl AsRef<Path>) -> Result<Self> {
@@ -373,10 +383,18 @@ impl UserSettings {
     }
 
     pub fn save_default(&self) -> Result<()> {
-        // Keep runtime override + XDG pointer in sync before resolving settings_path().
-        self.apply_sqyre_dir_override();
-        write_data_dir_pointer(&self.sqyre_dir)?;
-        self.save_to_path(settings_path())
+        #[cfg(target_arch = "wasm32")]
+        {
+            let _ = self;
+            return Ok(());
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            // Keep runtime override + XDG pointer in sync before resolving settings_path().
+            self.apply_sqyre_dir_override();
+            write_data_dir_pointer(&self.sqyre_dir)?;
+            self.save_to_path(settings_path())
+        }
     }
 
     pub fn save_to_path(&self, path: impl AsRef<Path>) -> Result<()> {

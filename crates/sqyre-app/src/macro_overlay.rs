@@ -21,7 +21,7 @@ use sqyre_persist::{
     MIN_OVERLAY_BUTTON_SIZE,
 };
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use web_time::{Duration, Instant};
 
 const VIEWPORT_PAD_MIN: f32 = 2.0;
 const FOCUS_POLL: Duration = Duration::from_millis(250);

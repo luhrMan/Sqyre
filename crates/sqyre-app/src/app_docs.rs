@@ -99,6 +99,7 @@ impl SqyreApp {
             tray: tray::SystemTray::default(),
             instance_lock: None,
             pending_delete_macro: None,
+            pending_import: crate::wasm_io::new_pending_import(),
         };
         if let Some(m) = app.macros.first() {
             app.macro_meta.sync_selection(0, m);
