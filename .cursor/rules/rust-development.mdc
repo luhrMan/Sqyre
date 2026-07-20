@@ -5,7 +5,9 @@ alwaysApply: true
 
 # Rust Development
 
-This repo is a Rust Cargo workspace (Linux/X11 + egui). Do not add a second implementation language or dual-build stacks.
+This repo is a Rust Cargo workspace (egui desktop). Do not add a second implementation language or dual-build stacks.
+
+**Platforms:** Linux/X11 is the shipped desktop path. Windows and macOS are in progress (capture on Windows; focus/outline/macOS capture still stubbed). Prefer extending existing `#[cfg]` modules over inventing parallel stacks.
 
 ## Layout
 
@@ -19,23 +21,28 @@ This repo is a Rust Cargo workspace (Linux/X11 + egui). Do not add a second impl
 
 Prefer Makefile targets when they exist:
 
-- `make` / `make sqyre` — debug build → `./bin/sqyre`
-- `make release` — release build
+- `make` / `make sqyre` — debug build → `./bin/sqyre` (`.exe` on Windows)
+- `make release` — host release build → `./bin/sqyre`
+- `make windows` / `make macos` — Windows via Docker MinGW cross (or native on Windows); macOS host-only (no MSI/DMG)
+- Devcontainer must stay able to build Linux-host releases (`release`, `appimage`, `windows`) — see `devcontainer-release-parity`
 - `make test` — workspace tests
 - `make run` — `cargo run -p sqyre-app`
 - `make tessdata` — download OCR data
-- `make appimage` — Linux AppImage
+- `make appimage` — Linux AppImage (only packaging path until Win/mac installers exist)
 - `make docs-media` — regenerate README screenshots under `docs/images/`
 
 Direct cargo is fine: `cargo build -p sqyre-app`, `cargo test -p <crate>`.
 
 ## Code style
 
-- Prefer idiomatic Rust
+- Follow `idiomatic-rust`, `rust-api-design`, and `rust-clippy-safety` when editing Rust
 - Do not add compatibility shims or dual codecs unless the user asks
 - Keep breaking changes clean (see no-backwards-compatibility rule)
-- Linux/X11 + egui is the supported desktop path; don’t invent Windows/macOS support unprompted
+- Use `#[cfg(target_os = "...")]` modules for OS APIs (not `cfg!()` with platform types); scope platform imports inside those blocks
+- Keep one public capture/focus surface (`OsCapturer`, `shared_capturer`, `OsWindowFocuser`) across targets
+
 
 ## Out of scope unless asked
 
 - Flatpak or Nix packaging (removed; AppImage only)
+- MSI/DMG or other Win/mac installers

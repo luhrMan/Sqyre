@@ -6,6 +6,8 @@ mod error;
 mod outline_stub;
 mod pixel_convert;
 mod stub;
+#[cfg(target_os = "windows")]
+mod win_capture;
 #[cfg(target_os = "linux")]
 mod x11_capture;
 #[cfg(target_os = "linux")]
@@ -24,10 +26,13 @@ pub use pixel_convert::{zpixmap_to_rgb, zpixmap_to_rgba};
 pub use stub::{NullCapturer, SolidCapturer};
 
 #[cfg(target_os = "linux")]
-pub use x11_capture::{shared_capturer, SharedRunCapturer, X11Capturer};
+pub use x11_capture::{shared_capturer, OsCapturer, SharedRunCapturer};
+
+#[cfg(target_os = "windows")]
+pub use win_capture::{shared_capturer, OsCapturer, SharedRunCapturer};
 
 #[cfg(target_os = "linux")]
-pub use x11_focus::X11WindowFocuser;
+pub use x11_focus::OsWindowFocuser;
 
 #[cfg(target_os = "linux")]
 pub use x11_outline::{OutlineRect, SelectionOutline};
@@ -41,18 +46,19 @@ pub fn owns_secondary_x_display(display: *mut std::ffi::c_void) -> bool {
 #[cfg(not(target_os = "linux"))]
 pub use outline_stub::{OutlineRect, SelectionOutline};
 
-#[cfg(not(target_os = "linux"))]
-pub type X11Capturer = NullCapturer;
+/// macOS / other: capture not implemented yet.
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+pub type OsCapturer = NullCapturer;
 
-#[cfg(not(target_os = "linux"))]
-pub fn shared_capturer() -> Result<std::sync::Arc<X11Capturer>, String> {
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+pub fn shared_capturer() -> Result<std::sync::Arc<OsCapturer>, String> {
     Err("screen capture: not supported on this platform".into())
 }
 
-#[cfg(not(target_os = "linux"))]
-pub struct SharedRunCapturer(pub std::sync::Arc<X11Capturer>);
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+pub struct SharedRunCapturer(pub std::sync::Arc<OsCapturer>);
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
 impl sqyre_executor::ScreenCapturer for SharedRunCapturer {
     fn capture_monitor(&mut self, _display_index: i32) -> Result<image::RgbaImage, String> {
         Err("screen capture: not supported on this platform".into())
@@ -270,13 +276,13 @@ pub fn window_matches_binding(win: &WindowInfo, process_path: &str, window_title
     window_matches_process(win, process_path) && window_matches_title(win, window_title)
 }
 
-/// No-op focuser for non-Linux (or tests without a display).
+/// Stub focuser when OS window activation is not implemented.
 #[cfg(not(target_os = "linux"))]
 #[derive(Debug, Default, Clone, Copy)]
-pub struct X11WindowFocuser;
+pub struct OsWindowFocuser;
 
 #[cfg(not(target_os = "linux"))]
-impl sqyre_executor::WindowFocuser for X11WindowFocuser {
+impl sqyre_executor::WindowFocuser for OsWindowFocuser {
     fn focus(&self, _process_path: &str, _window_title: &str) -> Result<(), String> {
         Err("focus window: not supported on this platform".into())
     }

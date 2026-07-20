@@ -9,10 +9,17 @@
   "mounts": [
     "source=sqyre-cargo-home,target=/home/vscode/.cargo,type=volume"
   ],
+  "features": {
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
+      "moby": false,
+      "installDockerBuildx": true
+    }
+  },
   "containerEnv": {
     "CARGO_HOME": "/home/vscode/.cargo",
     "RUSTUP_HOME": "/usr/local/rustup",
-    "CARGO_TARGET_DIR": "/workspace/target"
+    "CARGO_TARGET_DIR": "/workspace/target",
+    "LOCAL_WORKSPACE_FOLDER": "${localWorkspaceFolder}"
   },
   "customizations": {
     "vscode": {
@@ -21,7 +28,7 @@
       ]
     }
   },
-  "postCreateCommand": "sudo chown -R vscode:vscode /home/vscode/.cargo 2>/dev/null || true && rustup component add rust-src 2>/dev/null || true && rustc --version && cargo --version && cargo fetch",
+  "postCreateCommand": "sudo chown -R vscode:vscode /home/vscode/.cargo 2>/dev/null || true && rustup component add rust-src 2>/dev/null || true && rustc --version && cargo --version && (docker version >/dev/null && echo 'docker: ok' || echo 'docker: unavailable (need host Docker + rebuild)') && cargo fetch",
   "remoteUser": "vscode",
   "updateRemoteUserUID": true
 }

@@ -14,7 +14,7 @@
 
 Sqyre lets you build and run macros without writing code. Each macro is a tree of actions: loops and branches for flow control, detection steps when the screen matters, and leaf actions for concrete input. Macros, images, masks, and data tables live under **`~/.sqyre/`** (config in `db.yaml`).
 
-**Platforms:** Linux X11 (primary). Windows/macOS automation is not shipped yet.
+**Platforms:** Linux X11 (shipped). Windows screen capture is in progress; macOS capture/focus and Win/macOS releases are not shipped yet.
 
 ---
 
@@ -67,6 +67,7 @@ Assets under `docs/images/` are generated from in-memory egui tests (`make docs-
 | Linux binary (default) | `make` / `make sqyre` → `./bin/sqyre` |
 | Run without installing | `make run` |
 | Release binary | `make release` |
+| Windows / macOS native | `make windows` → `./bin/sqyre.exe` (Docker cross on Linux) · `make macos` → `./bin/sqyre` |
 | AppImage | `make appimage` |
 | Tests | `make test` |
 | README screenshots | `make docs-media` |
