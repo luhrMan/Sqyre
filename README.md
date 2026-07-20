@@ -14,7 +14,7 @@
 
 Sqyre lets you build and run macros without writing code. Each macro is a tree of actions: loops and branches for flow control, detection steps when the screen matters, and leaf actions for concrete input. Macros, images, masks, and data tables live under **`~/.sqyre/`** (config in `db.yaml`).
 
-**Platforms:** Linux X11 (shipped). Windows screen capture is in progress; macOS capture/focus and Win/macOS releases are not shipped yet.
+**Platforms:** Linux X11 (shipped). Windows ships a bare `.exe` (screen capture in progress). macOS capture/focus and macOS releases are not shipped yet. WASM editor zip is released for browser editing.
 
 ---
 
