@@ -1,0 +1,46 @@
+---
+description: Cross-platform Rust (conditional compilation) for Sqyre
+alwaysApply: true
+---
+
+# Cross-platform Rust
+
+When touching OS-specific code (capture, focus, overlays, trays, hotkeys), use Rust conditional compilation correctly so targets compile cleanly.
+
+## `#[cfg]` vs `cfg!`
+
+- **`#[cfg(...)]`** — compile-time inclusion; code is removed when false.
+- **`cfg!(...)`** — runtime boolean; code is still type-checked on every target.
+
+Never call platform-only APIs inside `if cfg!(...)` — use `#[cfg]` modules or blocks instead.
+
+```rust
+// CORRECT
+#[cfg(target_os = "windows")]
+fn capture() { /* Win32 */ }
+
+// WRONG — still type-checked on Linux
+fn capture() {
+    if cfg!(target_os = "windows") {
+        /* Win32 APIs fail to compile on Linux */
+    }
+}
+```
+
+## Scope imports inside cfg blocks
+
+Platform-specific imports belong inside the `#[cfg]` block or module that uses them. Do not paper over unused imports with `#[allow(unused_imports)]`.
+
+## Sqyre platform layout
+
+- **`sqyre-capture`**: Linux `x11_*`, Windows `win_*`, macOS/other stubs; public API is `OsCapturer`, `shared_capturer`, `SharedRunCapturer`, `OsWindowFocuser`.
+- **Cargo**: use `[target.'cfg(...)'.dependencies]` for OS crates (`x11`, `windows`, `tray-icon`, etc.).
+- Do not add dual codecs or compatibility shims for format changes.
+- Do not expand packaging (MSI/DMG) unless asked — Linux AppImage only for now.
+
+## Checklist
+
+- Platform imports scoped under `#[cfg]`
+- Shared traits (`ScreenCapturer`, `WindowFocuser`, `AutomationBackend`) stay OS-agnostic
+- Public names are OS-neutral (`OsCapturer`, not `X11Capturer`)
+- Prefer family predicates (`unix` / `windows`) only when behavior truly matches; Sqyre often needs `target_os = "linux"` vs `"windows"` vs `"macos"` separately

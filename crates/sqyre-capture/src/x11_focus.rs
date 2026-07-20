@@ -47,9 +47,9 @@ where
 
 /// Focus a top-level window by executable path + window title.
 #[derive(Debug, Default, Clone, Copy)]
-pub struct X11WindowFocuser;
+pub struct OsWindowFocuser;
 
-impl WindowFocuser for X11WindowFocuser {
+impl WindowFocuser for OsWindowFocuser {
     fn focus(&self, process_path: &str, window_title: &str) -> Result<(), String> {
         activate_window(process_path, window_title)
     }
