@@ -48,6 +48,16 @@ pub fn paint_galley_centered(
     ui.painter().galley(pos, galley, fallback);
 }
 
+/// Soft error / failure text (Find Pixel dropper, status banners).
+pub fn error_fg() -> Color32 {
+    Color32::from_rgb(220, 80, 80)
+}
+
+/// Soft success text for status banners.
+pub fn ok_fg() -> Color32 {
+    Color32::from_rgb(80, 160, 80)
+}
+
 /// Soft tag-chip fill (~11% opacity).
 pub fn chip_fill() -> Color32 {
     rgba([0xdc, 0x9d, 0x2e, 28])
