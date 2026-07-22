@@ -9,7 +9,7 @@ use crate::pickers::{self, ActivePicker, PickerResult};
 use crate::tree_chrome::{self, RowInteraction};
 use eframe::egui::{self, Key, Order, Vec2};
 use sqyre_domain::{
-    action_type_description, action_type_label, Action, ActionId, ActionKind, Macro, PressState,
+    action_type_description, action_type_label, Action, ActionId, ActionKind, Macro,
 };
 use sqyre_ui_model::{action_pastel_color, split_display_params, ActionDisplay};
 use sqyre_validate::validate_action;
@@ -671,7 +671,7 @@ pub(crate) fn apply_picker_result(draft: &mut Action, result: PickerResult) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqyre_domain::{root_loop, ActionKind, CoordinateRef, DetectionBranch, ScalarValue};
+    use sqyre_domain::{root_loop, ActionKind, CoordinateRef, DetectionBranch, PressState, ScalarValue};
 
     fn wait_action(time: i64) -> Action {
         Action {
