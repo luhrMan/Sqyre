@@ -67,10 +67,10 @@ pub fn paint_text_centered(
 }
 
 /// Glyph font size for all icon-only buttons.
-pub const ICON_BTN_FONT: f32 = 16.0;
+pub const ICON_BTN_FONT: f32 = 14.0;
 
 /// Fixed square hit target for all icon-only buttons (framed and bare).
-pub const ICON_BTN_SIDE: f32 = 20.0;
+pub const ICON_BTN_SIDE: f32 = 18.0;
 
 /// Framed icon-only button with optically centered glyph.
 pub fn icon_button(ui: &mut egui::Ui, glyph: &str) -> egui::Response {

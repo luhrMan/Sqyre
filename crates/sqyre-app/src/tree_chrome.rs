@@ -5,15 +5,15 @@ use crate::pickers::attach_item_icon_tooltip;
 use crate::theme::paint_galley_centered;
 use crate::var_pills;
 use eframe::egui::{self, Color32, FontId, Sense, Stroke, Vec2};
-use sqyre_domain::{parse_hex_color, Action, ActionKind, PressState};
+use sqyre_domain::{parse_hex_color, Action, ActionKind};
 use sqyre_persist::ProgramCatalog;
 use sqyre_ui_model::{action_icon_glyph, action_pastel_color, ActionDisplay, SummaryPill};
 use std::collections::HashSet;
 
 /// Icon badge edge length.
-const ICON_SIZE: f32 = 20.0;
+const ICON_SIZE: f32 = 18.0;
 /// Glyph inside the type badge.
-const ICON_GLYPH_SIZE: f32 = 14.0;
+const ICON_GLYPH_SIZE: f32 = 12.0;
 /// Pill label font (1px smaller than prior 13).
 const PILL_FONT_SIZE: f32 = 12.0;
 /// Pill inner padding (4×2).
@@ -521,7 +521,7 @@ fn paint_row_highlight(ui: &mut egui::Ui, rect: egui::Rect, highlight: RowHighli
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqyre_domain::{ActionId, ActionKind, CoordinateRef, DetectionBranch, ScalarValue};
+    use sqyre_domain::{ActionId, ActionKind, CoordinateRef, DetectionBranch, PressState, ScalarValue};
 
     fn with_ui(mut f: impl FnMut(&mut egui::Ui)) {
         let ctx = egui::Context::default();

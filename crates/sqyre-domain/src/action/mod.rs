@@ -167,17 +167,12 @@ string_enum! {
 }
 
 /// Press / release phase for click and key actions.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PressState {
     Up,
+    #[default]
     Down,
     Tap,
-}
-
-impl Default for PressState {
-    fn default() -> Self {
-        Self::Down
-    }
 }
 
 impl PressState {

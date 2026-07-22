@@ -5,7 +5,7 @@ use crate::error::{ExecError, FlowSignal, Result};
 use crate::run::{resolve_int, resolve_text, run_children, Executor};
 use sqyre_domain::{
     Action, ActionId, ActionKind, CoordinateRef, Macro, NavInputs, NavOptions, NavOutputs,
-    NavSelectAction, NavigateSelectData, PressState, ScalarValue,
+    NavSelectAction, NavigateSelectData, ScalarValue,
 };
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -484,7 +484,7 @@ mod tests {
     use crate::test_support::FixedResolver;
     use sqyre_domain::{
         root_loop, ActionId, NavChords, NavInputs, NavOptions, NavOutputs, NavSelectAction,
-        NavigateSelectData,
+        NavigateSelectData, PressState,
     };
     use std::sync::Mutex;
 

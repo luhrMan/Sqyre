@@ -104,7 +104,6 @@ pub fn main_toolbar(app: &mut SqyreApp, ui: &mut egui::Ui) {
         "Browser editor: import/export db.yaml. Run, capture, and global hotkeys are desktop-only.",
     );
     ui.separator();
-    ui.add_space(8.0);
 }
 
 /// Macro name/tags editor and global hotkey controls for the selected macro.
@@ -265,5 +264,6 @@ pub fn action_toolbar(app: &mut SqyreApp, ui: &mut egui::Ui) -> Option<bool> {
             force_openness = Some(false);
         }
     });
+    ui.add_space(4.0);
     force_openness
 }
