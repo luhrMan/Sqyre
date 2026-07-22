@@ -17,6 +17,11 @@ use std::thread;
 const GRID_CELL: f32 = 64.0;
 const GRID_THUMB: f32 = 52.0;
 const GRID_GAP: f32 = 6.0;
+/// Compact cells for Image Search tip edit (remove badge overlay).
+const EDIT_CELL: f32 = 40.0;
+const EDIT_THUMB: f32 = 36.0;
+const EDIT_GAP: f32 = 4.0;
+const REMOVE_BTN: f32 = 12.0;
 const HEADER_SIZE: f32 = 16.0;
 
 /// In-progress collection cell selection (1-based inclusive).
@@ -311,20 +316,55 @@ fn item_tooltip_parts(catalog: &ProgramCatalog, target: &str) -> (String, Vec<St
     (item_key.to_string(), Vec::new())
 }
 
-/// Rich hover tooltip: bold name, then italic primary-colored tags.
-pub fn attach_item_icon_tooltip(response: &egui::Response, catalog: &ProgramCatalog, target: &str) {
+/// Rich hover tooltip: bold name, 8×8 variant icons, then italic primary-colored tags.
+pub fn attach_item_icon_tooltip(
+    response: &egui::Response,
+    catalog: &ProgramCatalog,
+    icons: &mut IconCache,
+    target: &str,
+) {
     if !response.hovered() {
         return;
     }
     let (name, tags) = item_tooltip_parts(catalog, target);
     response.clone().on_hover_ui(|ui| {
-        paint_item_icon_tooltip(ui, &name, &tags);
+        paint_item_icon_tooltip(ui, catalog, icons, target, &name, &tags);
     });
 }
 
-fn paint_item_icon_tooltip(ui: &mut egui::Ui, name: &str, tags: &[String]) {
+const VARIANT_TIP_THUMB: f32 = 8.0;
+
+fn paint_item_icon_tooltip(
+    ui: &mut egui::Ui,
+    catalog: &ProgramCatalog,
+    icons: &mut IconCache,
+    target: &str,
+    name: &str,
+    tags: &[String],
+) {
     ui.set_max_width(280.0);
     ui.label(egui::RichText::new(name).strong().size(13.0));
+
+    let paths = crate::demo_icons::merged_variant_paths(catalog, target);
+    if !paths.is_empty() {
+        ui.add_space(4.0);
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = Vec2::splat(2.0);
+            for path in &paths {
+                let Some(tex) = icons.for_path(ui.ctx(), path) else {
+                    continue;
+                };
+                let [tw, th] = tex.size();
+                let size = fit_thumb(tw as f32, th as f32, VARIANT_TIP_THUMB);
+                ui.add(
+                    egui::Image::new((tex.id(), size))
+                        .fit_to_exact_size(size)
+                        .maintain_aspect_ratio(true),
+                );
+            }
+        });
+    }
+
     if tags.is_empty() {
         return;
     }
@@ -335,11 +375,18 @@ fn paint_item_icon_tooltip(ui: &mut egui::Ui, name: &str, tags: &[String]) {
     }
 }
 
-/// How many fixed-size columns fit in `avail_w`.
-pub fn grid_column_count_for_width(avail_w: f32) -> usize {
-    let avail = avail_w.max(GRID_CELL);
-    let cols = ((avail + GRID_GAP) / (GRID_CELL + GRID_GAP)).floor() as usize;
+fn grid_column_count_for_width(avail_w: f32, cell: f32, gap: f32) -> usize {
+    let avail = avail_w.max(cell);
+    let cols = ((avail + gap) / (cell + gap)).floor() as usize;
     cols.max(1)
+}
+
+fn icon_grid_metrics(show_remove: bool) -> (f32, f32, f32) {
+    if show_remove {
+        (EDIT_CELL, EDIT_THUMB, EDIT_GAP)
+    } else {
+        (GRID_CELL, GRID_THUMB, GRID_GAP)
+    }
 }
 
 /// Paint a selectable icon cell (fixed square, no under-icon label).
@@ -352,14 +399,11 @@ pub fn icon_grid_cell_ex(
     selected: bool,
     show_remove: bool,
 ) -> (bool, bool) {
-    let cell_h = if show_remove {
-        GRID_CELL + 18.0
-    } else {
-        GRID_CELL
-    };
+    let (cell, thumb, _) = icon_grid_metrics(show_remove);
+    let rounding = if show_remove { 3.0 } else { 4.0 };
 
     let mut remove_clicked = false;
-    let desired = Vec2::new(GRID_CELL, cell_h);
+    let desired = Vec2::splat(cell);
     let (rect, resp) = ui.allocate_exact_size(desired, Sense::click());
 
     let fill = if selected {
@@ -369,12 +413,12 @@ pub fn icon_grid_cell_ex(
     } else {
         Color32::TRANSPARENT
     };
-    let body = egui::Rect::from_min_size(rect.min, Vec2::splat(GRID_CELL));
-    ui.painter().rect_filled(body, 4.0, fill);
+    let body = rect;
+    ui.painter().rect_filled(body, rounding, fill);
     if selected {
         ui.painter().rect_stroke(
             body,
-            4.0,
+            rounding,
             egui::Stroke::new(2.0, Color32::from_rgb(60, 140, 80)),
             egui::StrokeKind::Outside,
         );
@@ -382,7 +426,7 @@ pub fn icon_grid_cell_ex(
 
     let tex = icons.for_target_or_fallback(ui.ctx(), catalog, target);
     let [tw, th] = tex.size();
-    let size = fit_thumb(tw as f32, th as f32, GRID_THUMB);
+    let size = fit_thumb(tw as f32, th as f32, thumb);
     let img_rect = egui::Rect::from_center_size(body.center(), size);
     // Paint directly — avoid `ui.put(Image)` which can advance the wrap cursor.
     ui.painter().image(
@@ -393,8 +437,10 @@ pub fn icon_grid_cell_ex(
     );
 
     if show_remove {
-        let btn_center = egui::pos2(rect.center().x, body.bottom() + 9.0);
-        let btn_rect = egui::Rect::from_center_size(btn_center, Vec2::new(22.0, 16.0));
+        let btn_rect = egui::Rect::from_center_size(
+            egui::pos2(body.right() - REMOVE_BTN * 0.35, body.top() + REMOVE_BTN * 0.35),
+            Vec2::splat(REMOVE_BTN),
+        );
         let btn_id = ui.id().with(("icon_rm", target));
         let btn_resp = ui.interact(btn_rect, btn_id, Sense::click());
         let btn_fill = if btn_resp.hovered() {
@@ -402,18 +448,19 @@ pub fn icon_grid_cell_ex(
         } else {
             Color32::from_gray(100)
         };
-        ui.painter().rect_filled(btn_rect, 3.0, btn_fill);
+        ui.painter()
+            .circle_filled(btn_rect.center(), REMOVE_BTN * 0.5, btn_fill);
         crate::theme::paint_text_centered(
             ui,
             btn_rect,
             "×",
-            egui::FontId::proportional(12.0),
+            egui::FontId::proportional(9.0),
             Color32::WHITE,
         );
         remove_clicked = btn_resp.clicked();
     }
 
-    attach_item_icon_tooltip(&resp, catalog, target);
+    attach_item_icon_tooltip(&resp, catalog, icons, target);
 
     (resp.clicked() && !remove_clicked, remove_clicked)
 }
@@ -440,25 +487,21 @@ pub fn paint_even_icon_grid(
     if targets.is_empty() {
         return;
     }
-    let avail = ui.available_width().max(GRID_CELL);
+    let (cell, _, gap) = icon_grid_metrics(show_remove);
+    let avail = ui.available_width().max(cell);
     ui.set_max_width(avail);
-    let cols = grid_column_count_for_width(avail);
-    let cell_h = if show_remove {
-        GRID_CELL + 18.0
-    } else {
-        GRID_CELL
-    };
+    let cols = grid_column_count_for_width(avail, cell, gap);
     let old_spacing = ui.spacing().item_spacing;
-    ui.spacing_mut().item_spacing = Vec2::splat(GRID_GAP);
+    ui.spacing_mut().item_spacing = Vec2::splat(gap);
 
     let mut i = 0;
     while i < targets.len() {
         ui.allocate_ui_with_layout(
-            egui::vec2(avail, cell_h),
+            egui::vec2(avail, cell),
             egui::Layout::left_to_right(egui::Align::Center),
             |ui| {
                 ui.set_max_width(avail);
-                ui.spacing_mut().item_spacing = Vec2::splat(GRID_GAP);
+                ui.spacing_mut().item_spacing = Vec2::splat(gap);
                 let end = (i + cols).min(targets.len());
                 for (k, target) in targets.iter().enumerate().take(end).skip(i) {
                     let sel = is_selected(target);

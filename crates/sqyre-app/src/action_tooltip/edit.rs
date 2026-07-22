@@ -106,8 +106,10 @@ pub fn paint_edit_fields(
                 *button = MouseButton::parse(&btn);
                 ui.vertical(|ui| {
                     help::tip(ui.small("Up"), h::CLICK_STATE);
-                    help::tip(theme::press_state_toggle(ui, state), h::CLICK_STATE);
-                    help::tip(ui.small("Tap"), h::CLICK_STATE);
+                    ui.horizontal(|ui| {
+                        help::tip(theme::press_state_toggle(ui, state), h::CLICK_STATE);
+                        help::tip(ui.small("Tap"), h::CLICK_STATE);
+                    });
                     help::tip(ui.small("Down"), h::CLICK_STATE);
                 });
             });
@@ -133,8 +135,10 @@ pub fn paint_edit_fields(
                 });
                 ui.vertical(|ui| {
                     help::tip(ui.small("Up"), h::KEY_STATE);
-                    help::tip(theme::press_state_toggle(ui, state), h::KEY_STATE);
-                    help::tip(ui.small("Tap"), h::KEY_STATE);
+                    ui.horizontal(|ui| {
+                        help::tip(theme::press_state_toggle(ui, state), h::KEY_STATE);
+                        help::tip(ui.small("Tap"), h::KEY_STATE);
+                    });
                     help::tip(ui.small("Down"), h::KEY_STATE);
                 });
             });

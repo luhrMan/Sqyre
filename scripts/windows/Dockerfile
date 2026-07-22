@@ -52,6 +52,20 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
     && rustc --version && rustup target list --installed \
     && rustup component list --installed
 
+# Host-mounted SCCACHE_DIR reuses rustc outputs across clean target/ trees and CI runners.
+ARG SCCACHE_VERSION=0.16.0
+RUN set -eux \
+ && curl -fsSL "https://github.com/mozilla/sccache/releases/download/v${SCCACHE_VERSION}/sccache-v${SCCACHE_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
+    | tar -xz -C /usr/local/bin --strip-components=1 \
+      "sccache-v${SCCACHE_VERSION}-x86_64-unknown-linux-musl/sccache" \
+ && chmod 755 /usr/local/bin/sccache \
+ && sccache --version
+
+# Cargo may inject CARGO_INCREMENTAL=0 into the wrapper env; sccache rejects any value.
+COPY sccache-rustc-wrapper.sh /usr/local/bin/sccache-rustc-wrapper
+RUN sed -i 's/\r$//' /usr/local/bin/sccache-rustc-wrapper \
+ && chmod 755 /usr/local/bin/sccache-rustc-wrapper
+
 COPY mingw-lld-link.sh /usr/local/bin/mingw-lld-link
 RUN sed -i 's/\r$//' /usr/local/bin/mingw-lld-link && chmod 755 /usr/local/bin/mingw-lld-link \
  && mkdir -p /usr/local/libexec/mingw-rust-lld \
@@ -80,6 +94,8 @@ ENV CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=mingw-lld-link \
     PKG_CONFIG_PATH=${MINGW_PREFIX}/lib/pkgconfig \
     PKG_CONFIG_LIBDIR=${MINGW_PREFIX}/lib/pkgconfig \
     BINDGEN_EXTRA_CLANG_ARGS_x86_64_pc_windows_gnu=--sysroot=/usr/x86_64-w64-mingw32 \
-    RUSTFLAGS="-L${MINGW_PREFIX}/lib -L/usr/local/mingw-libstdcpp -C link-arg=-lpng16 -C link-arg=-ljpeg -C link-arg=-lz -C link-arg=-lm -C link-arg=-lmsvcrt"
+    RUSTFLAGS="-L${MINGW_PREFIX}/lib -L/usr/local/mingw-libstdcpp -C link-arg=-lpng16 -C link-arg=-ljpeg -C link-arg=-lz -C link-arg=-lm -C link-arg=-lmsvcrt" \
+    SCCACHE_DIR=/workspace/.cache/sccache-windows \
+    SCCACHE_CACHE_SIZE=10G
 
 WORKDIR /workspace
