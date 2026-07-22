@@ -1,8 +1,10 @@
 //! Persistence for `~/.sqyre` (db.yaml, settings, program catalog).
 
+mod migrate;
 mod programs;
 mod settings;
 
+pub use migrate::{migrate_db_yaml, migrate_db_yaml_value, LegacyCatalog};
 pub use programs::{
     ProgramCatalog, ProgramCollection, ProgramData, ProgramItem, ProgramMask, ProgramPoint,
     ProgramSearchArea,

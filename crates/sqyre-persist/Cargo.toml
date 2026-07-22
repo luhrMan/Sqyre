@@ -8,6 +8,10 @@ description = "Load/save ~/.sqyre (db.yaml) macros, settings, and program catalo
 [lints]
 workspace = true
 
+[[bin]]
+name = "migrate_db_yaml"
+path = "src/bin/migrate_db_yaml.rs"
+
 [dependencies]
 serde = { workspace = true }
 serde_yaml = { workspace = true }
