@@ -1,8 +1,7 @@
 //! Validation helpers for macro entries and actions.
 
 use sqyre_domain::{
-    collect_known_variable_names, evaluate_expression, Action, ActionKind, Macro, PressState,
-    ScalarValue,
+    collect_known_variable_names, evaluate_expression, Action, ActionKind, Macro, ScalarValue,
 };
 use thiserror::Error;
 
@@ -446,7 +445,7 @@ pub fn validate_action_tree(action: &Action, macro_: Option<&Macro>) -> Result<(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqyre_domain::{ActionId, ScalarValue, VariableAssignment, VariableDecl, VariableType};
+    use sqyre_domain::{ActionId, PressState, ScalarValue, VariableAssignment, VariableDecl, VariableType};
 
     #[test]
     fn variable_name_rejects_braces() {
