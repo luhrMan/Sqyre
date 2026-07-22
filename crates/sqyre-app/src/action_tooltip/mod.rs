@@ -9,7 +9,7 @@ use crate::pickers::{self, ActivePicker, PickerResult};
 use crate::tree_chrome::{self, RowInteraction};
 use eframe::egui::{self, Key, Order, Vec2};
 use sqyre_domain::{
-    action_type_description, action_type_label, Action, ActionId, ActionKind, Macro,
+    action_type_description, action_type_label, Action, ActionId, ActionKind, Macro, PressState,
 };
 use sqyre_ui_model::{action_pastel_color, split_display_params, ActionDisplay};
 use sqyre_validate::validate_action;
@@ -744,7 +744,7 @@ mod tests {
             id: ActionId::new(),
             kind: ActionKind::Key {
                 key: "a".into(),
-                state: true,
+                state: PressState::Down,
             },
         };
         let id = child.id;
@@ -755,7 +755,7 @@ mod tests {
         if let TooltipState::Edit(edit) = &mut state {
             edit.draft.kind = ActionKind::Key {
                 key: String::new(),
-                state: true,
+                state: PressState::Down,
             };
         }
         assert!(!state.try_save_validated(&mut root, None, |_| {}));
@@ -775,7 +775,7 @@ mod tests {
             id: ActionId::new(),
             kind: ActionKind::Key {
                 key: String::new(),
-                state: true,
+                state: PressState::Down,
             },
         };
         let mut state = TooltipState::Hidden;

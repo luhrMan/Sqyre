@@ -166,6 +166,84 @@ string_enum! {
     }
 }
 
+/// Press / release phase for click and key actions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PressState {
+    Up,
+    Down,
+    Tap,
+}
+
+impl Default for PressState {
+    fn default() -> Self {
+        Self::Down
+    }
+}
+
+impl PressState {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Up => "up",
+            Self::Down => "down",
+            Self::Tap => "tap",
+        }
+    }
+
+    pub fn parse(s: &str) -> Self {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "up" => Self::Up,
+            "tap" => Self::Tap,
+            _ => Self::Down,
+        }
+    }
+
+    pub const fn is_down(self) -> bool {
+        matches!(self, Self::Down)
+    }
+}
+
+impl std::fmt::Display for PressState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl From<&str> for PressState {
+    fn from(s: &str) -> Self {
+        Self::parse(s)
+    }
+}
+
+impl serde::Serialize for PressState {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for PressState {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Visitor;
+
+        impl<'de> serde::de::Visitor<'de> for Visitor {
+            type Value = PressState;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("a press state (`up`, `down`, `tap`) or legacy bool")
+            }
+
+            fn visit_bool<E: serde::de::Error>(self, v: bool) -> Result<Self::Value, E> {
+                Ok(if v { PressState::Down } else { PressState::Up })
+            }
+
+            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
+                Ok(PressState::parse(v))
+            }
+        }
+
+        deserializer.deserialize_any(Visitor)
+    }
+}
+
 string_enum! {
     /// Overlay / mask geometry.
     pub enum MaskShape {
@@ -918,11 +996,11 @@ pub enum ActionKind {
     },
     Click {
         button: MouseButton,
-        state: bool,
+        state: PressState,
     },
     Key {
         key: String,
-        state: bool,
+        state: PressState,
     },
     Type {
         text: String,
@@ -1039,10 +1117,10 @@ impl ActionKind {
             Self::Wait { time } => format!("Wait {}", time.as_display()),
             Self::Move { point, .. } => format!("Move {}", point.display_label()),
             Self::Click { button, state } => {
-                format!("Click {button} {}", if *state { "down" } else { "up" })
+                format!("Click {button} {state}")
             }
             Self::Key { key, state } => {
-                format!("Key {key} {}", if *state { "down" } else { "up" })
+                format!("Key {key} {state}")
             }
             Self::Type { text, .. } => format!("Type {text}"),
             Self::SetVariable { assignments } => {
@@ -1112,6 +1190,26 @@ pub fn root_loop(subactions: Vec<Action>) -> Action {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn press_state_deserializes_bool_and_string() {
+        assert_eq!(
+            serde_yaml::from_str::<PressState>("true").unwrap(),
+            PressState::Down
+        );
+        assert_eq!(
+            serde_yaml::from_str::<PressState>("false").unwrap(),
+            PressState::Up
+        );
+        assert_eq!(
+            serde_yaml::from_str::<PressState>("tap").unwrap(),
+            PressState::Tap
+        );
+        assert_eq!(
+            serde_yaml::from_str::<PressState>("down").unwrap(),
+            PressState::Down
+        );
+    }
 
     #[test]
     fn string_enums_parse_aliases_and_defaults() {

@@ -221,7 +221,7 @@ fn wait_ms(ms: i64) -> Action {
     a
 }
 
-fn key(key: &str, state: bool) -> Action {
+fn key(key: &str, state: sqyre_domain::PressState) -> Action {
     let mut a = blank_action("key").expect("key");
     if let ActionKind::Key {
         key: k, state: s, ..
@@ -234,23 +234,22 @@ fn key(key: &str, state: bool) -> Action {
 }
 
 fn key_tap(key_name: &str) -> Vec<Action> {
-    vec![key(key_name, true), key(key_name, false)]
+    vec![key(key_name, sqyre_domain::PressState::Tap)]
 }
 
 fn key_chord(modifiers: &[&str], key_name: &str) -> Vec<Action> {
     let mut out = Vec::new();
     for m in modifiers {
-        out.push(key(m, true));
+        out.push(key(m, sqyre_domain::PressState::Down));
     }
-    out.push(key(key_name, true));
-    out.push(key(key_name, false));
+    out.push(key(key_name, sqyre_domain::PressState::Tap));
     for m in modifiers.iter().rev() {
-        out.push(key(m, false));
+        out.push(key(m, sqyre_domain::PressState::Up));
     }
     out
 }
 
-fn click_left(state: bool) -> Action {
+fn click_left(state: sqyre_domain::PressState) -> Action {
     let mut a = blank_action("click").expect("click");
     if let ActionKind::Click { button, state: s } = &mut a.kind {
         *button = MouseButton::Left;
@@ -733,14 +732,12 @@ fn demo_macro_eldoria_open_bags() -> Vec<Action> {
             vec![
                 wait_ms(55),
                 move_to_found(prog, true),
-                click_left(true),
-                click_left(false),
+                click_left(sqyre_domain::PressState::Tap),
                 wait_ms(100),
                 sort_ocr,
                 wait_ms(50),
                 move_to_found(prog, false),
-                click_left(true),
-                click_left(false),
+                click_left(sqyre_domain::PressState::Tap),
                 wait_ms(80),
             ],
         ),
@@ -791,8 +788,7 @@ fn demo_macro_hex_repeat_build() -> Vec<Action> {
             vec![
                 wait_ms(50),
                 move_to_found(prog, false),
-                click_left(true),
-                click_left(false),
+                click_left(sqyre_domain::PressState::Tap),
                 wait_ms(90),
                 place_loop,
             ],
@@ -855,8 +851,7 @@ fn demo_macro_pixelsmith_export() -> Vec<Action> {
             vec![
                 wait_ms(50),
                 move_to_found(prog, true),
-                click_left(true),
-                click_left(false),
+                click_left(sqyre_domain::PressState::Tap),
                 wait_ms(120),
                 menu_ocr,
             ],
@@ -918,8 +913,7 @@ fn demo_macro_nimbus_inbox() -> Vec<Action> {
             vec![
                 wait_ms(45),
                 move_to_found(prog, true),
-                click_left(true),
-                click_left(false),
+                click_left(sqyre_domain::PressState::Tap),
                 wait_ms(150),
                 read_header_ocr,
                 wait_ms(50),
@@ -942,8 +936,7 @@ fn demo_macro_nimbus_inbox() -> Vec<Action> {
         inbox_ocr,
         wait_ms(40),
         move_to_found(prog, false),
-        click_left(true),
-        click_left(false),
+        click_left(sqyre_domain::PressState::Tap),
         wait_ms(200),
     ];
     out.extend(key_tap("/"));
@@ -994,14 +987,12 @@ fn demo_macro_gem_daily() -> Vec<Action> {
             vec![
                 wait_ms(55),
                 move_to_found(prog, true),
-                click_left(true),
-                click_left(false),
+                click_left(sqyre_domain::PressState::Tap),
                 wait_ms(120),
                 claim_ocr,
                 wait_ms(50),
                 move_to_found(prog, false),
-                click_left(true),
-                click_left(false),
+                click_left(sqyre_domain::PressState::Tap),
             ],
         ),
     );
@@ -1020,8 +1011,7 @@ fn demo_macro_gem_daily() -> Vec<Action> {
         glow,
         wait_ms(45),
         move_to_found(prog, true),
-        click_left(true),
-        click_left(false),
+        click_left(sqyre_domain::PressState::Tap),
         wait_ms(90),
         wait_ms(80),
         chest,
@@ -1111,8 +1101,7 @@ fn demo_macro_mail_archive() -> Vec<Action> {
             vec![
                 wait_ms(40),
                 move_to_found(prog, true),
-                click_left(true),
-                click_left(false),
+                click_left(sqyre_domain::PressState::Tap),
                 wait_ms(100),
                 pdf_ocr,
                 wait_ms(40),
@@ -1127,8 +1116,7 @@ fn demo_macro_mail_archive() -> Vec<Action> {
         archive_ocr,
         wait_ms(45),
         move_to_found(prog, false),
-        click_left(true),
-        click_left(false),
+        click_left(sqyre_domain::PressState::Tap),
         wait_ms(120),
     ];
     out.extend(key_tap("#"));

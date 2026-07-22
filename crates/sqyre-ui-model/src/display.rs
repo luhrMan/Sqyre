@@ -113,12 +113,8 @@ impl ConditionDisplay for ConditionClause {
     }
 }
 
-fn up_or_down(state: bool) -> &'static str {
-    if state {
-        "down"
-    } else {
-        "up"
-    }
+fn press_state_label(state: sqyre_domain::PressState) -> &'static str {
+    state.as_str()
 }
 
 fn format_wait_time(t: &ScalarValue) -> String {
@@ -249,11 +245,11 @@ impl ActionKindDisplay for ActionKind {
             }
             Self::Click { button, state } => {
                 params.push(DisplayParam::new("Button", button.as_str()));
-                params.push(DisplayParam::new("State", up_or_down(*state)));
+                params.push(DisplayParam::new("State", press_state_label(*state)));
             }
             Self::Key { key, state } => {
                 params.push(DisplayParam::new("Key", key.as_str()));
-                params.push(DisplayParam::new("State", up_or_down(*state)));
+                params.push(DisplayParam::new("State", press_state_label(*state)));
             }
             Self::Type { text, delay_ms } => {
                 params.push(DisplayParam::new("Text", format!("{text:?}")));

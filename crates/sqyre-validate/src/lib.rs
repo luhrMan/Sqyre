@@ -1,7 +1,8 @@
 //! Validation helpers for macro entries and actions.
 
 use sqyre_domain::{
-    collect_known_variable_names, evaluate_expression, Action, ActionKind, Macro, ScalarValue,
+    collect_known_variable_names, evaluate_expression, Action, ActionKind, Macro, PressState,
+    ScalarValue,
 };
 use thiserror::Error;
 
@@ -484,7 +485,7 @@ mod tests {
             id: ActionId::new(),
             kind: ActionKind::Key {
                 key: k.into(),
-                state: true,
+                state: PressState::Down,
             },
         }
     }

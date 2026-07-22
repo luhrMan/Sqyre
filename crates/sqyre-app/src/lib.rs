@@ -105,7 +105,7 @@ pub fn run() -> eframe::Result<()> {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([960.0, 640.0])
             .with_min_inner_size([100.0, 100.0])
-            .with_title("Sqyre (Rust)")
+            .with_title("Sqyre")
             .with_icon(assets::app_icon()),
         ..Default::default()
     };
