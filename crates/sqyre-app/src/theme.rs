@@ -70,7 +70,7 @@ pub fn paint_text_centered(
 pub const ICON_BTN_FONT: f32 = 16.0;
 
 /// Fixed square hit target for all icon-only buttons (framed and bare).
-pub const ICON_BTN_SIDE: f32 = 24.0;
+pub const ICON_BTN_SIDE: f32 = 20.0;
 
 /// Framed icon-only button with optically centered glyph.
 pub fn icon_button(ui: &mut egui::Ui, glyph: &str) -> egui::Response {
@@ -226,6 +226,76 @@ pub fn record_icon_button(ui: &mut egui::Ui, tip: &str, enabled: bool) -> egui::
     })
     .inner
     .on_hover_text(tip)
+}
+
+/// Vertical up / tap / down switch for Click/Key press state.
+///
+/// Top = up, middle = tap, bottom = down. Click toggles; click a zone to set.
+pub fn press_state_toggle(ui: &mut egui::Ui, state: &mut sqyre_domain::PressState) -> egui::Response {
+    use sqyre_domain::PressState;
+
+    const TRACK_W: f32 = 18.0;
+    const TRACK_H: f32 = 54.0;
+    const PAD: f32 = 2.0;
+
+    let desired = Vec2::new(TRACK_W, TRACK_H);
+    let (rect, mut response) = ui.allocate_exact_size(desired, Sense::click());
+
+    if response.clicked() {
+        if let Some(pos) = response.interact_pointer_pos() {
+            let third = rect.height() / 3.0;
+            let y = pos.y - rect.top();
+            *state = if y < third {
+                PressState::Up
+            } else if y < third * 2.0 {
+                PressState::Tap
+            } else {
+                PressState::Down
+            };
+        } else {
+            *state = match *state {
+                PressState::Up => PressState::Tap,
+                PressState::Tap => PressState::Down,
+                PressState::Down => PressState::Up,
+            };
+        }
+        response.mark_changed();
+    }
+
+    let visuals = ui.style().interact(&response);
+    let track_fill = if matches!(*state, PressState::Down) {
+        PRIMARY
+    } else {
+        visuals.bg_fill
+    };
+    let painter = ui.painter();
+    let rounding = CornerRadius::same((TRACK_W / 2.0) as u8);
+    painter.rect_filled(rect, rounding, track_fill);
+    painter.rect_stroke(
+        rect,
+        rounding,
+        Stroke::new(1.0, visuals.bg_stroke.color),
+        egui::StrokeKind::Inside,
+    );
+
+    let knob_d = TRACK_W - PAD * 2.0;
+    let knob_x = rect.center().x;
+    let knob_y = match *state {
+        PressState::Up => rect.top() + PAD + knob_d / 2.0,
+        PressState::Tap => rect.center().y,
+        PressState::Down => rect.bottom() - PAD - knob_d / 2.0,
+    };
+    painter.circle_filled(
+        Pos2::new(knob_x, knob_y),
+        knob_d / 2.0,
+        visuals.fg_stroke.color,
+    );
+
+    response.on_hover_text(match *state {
+        PressState::Up => "Up",
+        PressState::Tap => "Tap",
+        PressState::Down => "Down",
+    })
 }
 
 /// Vertical up↔down switch for Click/Key button state (`true` = down).

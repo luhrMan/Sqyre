@@ -2,7 +2,7 @@
 
 use crate::{
     action_type_table, Action, ActionId, ActionKind, ConditionBlock, CoordinateRef,
-    DetectionBranch, ListColumn, ScalarValue, VariableAssignment, DEFAULT_SMOOTH_DELAY_MS,
+    DetectionBranch, ListColumn, PressState, ScalarValue, VariableAssignment, DEFAULT_SMOOTH_DELAY_MS,
     DEFAULT_SMOOTH_HIGH, DEFAULT_SMOOTH_LOW,
 };
 
@@ -69,11 +69,11 @@ pub(crate) fn blank_kind(action_type: &str) -> Option<ActionKind> {
         },
         "click" => ActionKind::Click {
             button: "left".into(),
-            state: true,
+            state: PressState::Down,
         },
         "key" => ActionKind::Key {
             key: "ctrl".into(),
-            state: true,
+            state: PressState::Down,
         },
         "type" => ActionKind::Type {
             text: String::new(),

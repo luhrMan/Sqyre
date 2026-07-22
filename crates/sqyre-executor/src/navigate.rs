@@ -5,7 +5,7 @@ use crate::error::{ExecError, FlowSignal, Result};
 use crate::run::{resolve_int, resolve_text, run_children, Executor};
 use sqyre_domain::{
     Action, ActionId, ActionKind, CoordinateRef, Macro, NavInputs, NavOptions, NavOutputs,
-    NavSelectAction, NavigateSelectData, ScalarValue,
+    NavSelectAction, NavigateSelectData, PressState, ScalarValue,
 };
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -596,7 +596,7 @@ mod tests {
                             id: ActionId::new(),
                             kind: ActionKind::Click {
                                 button: sqyre_domain::MouseButton::Right,
-                                state: true,
+                                state: PressState::Down,
                             },
                         }],
                     },

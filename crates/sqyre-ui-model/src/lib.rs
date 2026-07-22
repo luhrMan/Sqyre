@@ -17,8 +17,8 @@ mod tests {
     use super::*;
     use sqyre_domain::{
         root_loop, Action, ActionId, ActionKind, ConditionBlock, CoordinateOutputs, CoordinateRef,
-        DetectionBranch, MatchMode, MouseButton, RepeatMode, ScalarValue, VariableAssignment,
-        WaitTilFoundConfig,
+        DetectionBranch, MatchMode, MouseButton, PressState, RepeatMode, ScalarValue,
+        VariableAssignment, WaitTilFoundConfig,
     };
 
     #[test]
@@ -327,14 +327,14 @@ mod tests {
             id: ActionId::new(),
             kind: ActionKind::Click {
                 button: MouseButton::Left,
-                state: true,
+                state: PressState::Down,
             },
         };
         let up = Action {
             id: ActionId::new(),
             kind: ActionKind::Click {
                 button: MouseButton::Left,
-                state: false,
+                state: PressState::Up,
             },
         };
         assert_eq!(action_icon_glyph(&down), "⬇");

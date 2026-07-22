@@ -19,7 +19,7 @@ pub const DEFAULT_DRAG_PREVIEW_DEBOUNCE_MS: i32 = 150;
 pub const MIN_DRAG_PREVIEW_DEBOUNCE_MS: i32 = 25;
 pub const DEFAULT_HIDE_APP_DURING_RECORDING: bool = true;
 pub const DEFAULT_UI_FONT_SIZE: i32 = 14;
-pub const DEFAULT_UI_SCALE: f32 = 1.0;
+pub const DEFAULT_UI_SCALE: f32 = 1.7;
 
 /// Absolute path to the settings file (`{sqyre_dir}/settings.yaml`).
 pub fn settings_path() -> PathBuf {

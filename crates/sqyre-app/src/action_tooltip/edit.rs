@@ -106,7 +106,8 @@ pub fn paint_edit_fields(
                 *button = MouseButton::parse(&btn);
                 ui.vertical(|ui| {
                     help::tip(ui.small("Up"), h::CLICK_STATE);
-                    help::tip(theme::up_down_toggle(ui, state), h::CLICK_STATE);
+                    help::tip(theme::press_state_toggle(ui, state), h::CLICK_STATE);
+                    help::tip(ui.small("Tap"), h::CLICK_STATE);
                     help::tip(ui.small("Down"), h::CLICK_STATE);
                 });
             });
@@ -132,7 +133,8 @@ pub fn paint_edit_fields(
                 });
                 ui.vertical(|ui| {
                     help::tip(ui.small("Up"), h::KEY_STATE);
-                    help::tip(theme::up_down_toggle(ui, state), h::KEY_STATE);
+                    help::tip(theme::press_state_toggle(ui, state), h::KEY_STATE);
+                    help::tip(ui.small("Tap"), h::KEY_STATE);
                     help::tip(ui.small("Down"), h::KEY_STATE);
                 });
             });
@@ -1295,7 +1297,7 @@ fn assignments_editor(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqyre_domain::ActionId;
+    use sqyre_domain::{ActionId, PressState};
 
     #[test]
     fn parse_scalar_int_and_string() {
@@ -1364,7 +1366,7 @@ mod tests {
             id: live.id,
             kind: ActionKind::Click {
                 button: "left".into(),
-                state: true,
+                state: PressState::Down,
             },
         };
         assert!(apply_draft_preserving_children(&mut live, draft).is_err());
