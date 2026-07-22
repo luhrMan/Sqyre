@@ -116,21 +116,25 @@ pub fn show_meta_and_hotkey(app: &mut SqyreApp, ui: &mut egui::Ui) -> bool {
     app.macro_meta.sync_selection(idx, &app.macros[idx]);
     let other_names: Vec<String> = app.macros.iter().map(|m| m.name.clone()).collect();
     let all_tags = collect_all_macro_tags(&app.macros);
-    let meta = ui.horizontal(|ui| {
-        let row = {
-            let m = &mut app.macros[idx];
-            app.macro_meta
-                .paint_name_row(ui, m, &other_names, meta_enabled)
-        };
-        paint_hotkey_controls(app, ui, idx, running);
-        row
-    }).inner;
+    let meta = ui
+        .horizontal(|ui| {
+            let row = {
+                let m = &mut app.macros[idx];
+                app.macro_meta
+                    .paint_name_row(ui, m, &other_names, meta_enabled)
+            };
+            ui.separator();
+            paint_hotkey_controls(app, ui, idx, running);
+            row
+        })
+        .inner;
     if let Some(new_name) = meta.rename_to {
         app.rename_selected_macro(new_name);
     }
     let persist_tags = {
         let m = &mut app.macros[idx];
-        app.macro_meta.paint_tags_row(ui, m, &all_tags, meta_enabled)
+        app.macro_meta
+            .paint_tags_row(ui, m, &all_tags, meta_enabled)
     };
     if persist_tags {
         app.persist_macro_at(idx);

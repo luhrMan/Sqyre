@@ -1,5 +1,6 @@
 //! Hover tooltips showing a live screen capture around a point or search area.
 
+use crate::image_view::{self, ImageViewTransform};
 use eframe::egui::{self, ColorImage, TextureHandle, TextureOptions, Vec2};
 use image::{Rgba, RgbaImage};
 use sqyre_capture::{shared_capturer, OsCapturer};
@@ -17,8 +18,8 @@ const CAPTURE_PADDING: i32 = 48;
 const TOOLTIP_MAX_DIM: u32 = 640;
 const DISPLAY_MAX_W: f32 = 260.0;
 const DISPLAY_MAX_H: f32 = 195.0;
-const PANEL_MAX_W: f32 = 340.0;
-const PANEL_MAX_H: f32 = 240.0;
+const PANEL_MIN_W: f32 = 160.0;
+const PANEL_MIN_H: f32 = 120.0;
 const CACHE_MAX: usize = 24;
 const CACHE_TTL: Duration = Duration::from_secs(30);
 /// How long to remember a failed capture before trying again (manual ↻ clears sooner).
@@ -104,7 +105,7 @@ impl PreviewTooltipCache {
             Ok((key, caption, coords)) => {
                 let preview = self.texture_for(ui.ctx(), &key, &caption, coords, false);
                 response.clone().on_hover_ui(|ui| match &preview {
-                    Ok((tex, cap)) => paint_preview(ui, tex, cap, false),
+                    Ok((tex, cap)) => paint_preview(ui, tex, cap),
                     Err(err) => {
                         ui.label(caption.as_str());
                         ui.colored_label(crate::theme::error_fg(), err);
@@ -139,7 +140,7 @@ impl PreviewTooltipCache {
         match preview {
             // Tip/edit surface is capped around tip_max_width (~280); use the smaller
             // display fit so preview doesn't force the tooltip wider than view mode.
-            Ok((tex, cap)) => paint_preview(ui, &tex, &cap, false),
+            Ok((tex, cap)) => paint_preview(ui, &tex, &cap),
             Err(err) => {
                 ui.colored_label(crate::theme::error_fg(), err);
             }
@@ -147,7 +148,7 @@ impl PreviewTooltipCache {
     }
 
     /// Embedded form-panel preview for a point (uses form field coords).
-    /// Returns the image/placeholder rect for cardinal coord overlays.
+    /// Returns the viewport rect for cardinal coord overlays.
     /// Pass `None` for a coordinate that is a variable or non-literal expression.
     pub fn paint_point_panel(
         &mut self,
@@ -155,9 +156,10 @@ impl PreviewTooltipCache {
         x: Option<i32>,
         y: Option<i32>,
         force: bool,
+        view: &mut ImageViewTransform,
     ) -> egui::Rect {
         let (Some(x), Some(y)) = (x, y) else {
-            return paint_preview_panel_placeholder(ui, LITERAL_COORDS_MSG);
+            return paint_preview_panel_placeholder(ui, LITERAL_COORDS_MSG, view);
         };
         let key = format!("panel:pt:{x}:{y}");
         let caption = format!("X: {x}, Y: {y}");
@@ -169,13 +171,13 @@ impl PreviewTooltipCache {
             force,
         );
         match preview {
-            Ok((tex, _)) => paint_preview_panel_image(ui, &tex),
-            Err(err) => paint_preview_panel_placeholder(ui, &err),
+            Ok((tex, _)) => paint_preview_panel_image(ui, &tex, view),
+            Err(err) => paint_preview_panel_placeholder(ui, &err, view),
         }
     }
 
     /// Embedded form-panel preview for a search area (uses form field coords).
-    /// Returns the image/placeholder rect for cardinal coord overlays.
+    /// Returns the viewport rect for cardinal coord overlays.
     /// Pass `None` for a coordinate that is a variable or non-literal expression.
     pub fn paint_search_area_panel(
         &mut self,
@@ -185,9 +187,10 @@ impl PreviewTooltipCache {
         right: Option<i32>,
         bottom: Option<i32>,
         force: bool,
+        view: &mut ImageViewTransform,
     ) -> egui::Rect {
         let (Some(left), Some(top), Some(right), Some(bottom)) = (left, top, right, bottom) else {
-            return paint_preview_panel_placeholder(ui, LITERAL_COORDS_MSG);
+            return paint_preview_panel_placeholder(ui, LITERAL_COORDS_MSG, view);
         };
         let key = format!("panel:sa:{left}:{top}:{right}:{bottom}");
         let caption = format!("Left: {left}, Top: {top}, Right: {right}, Bottom: {bottom}");
@@ -204,8 +207,8 @@ impl PreviewTooltipCache {
             force,
         );
         match preview {
-            Ok((tex, _)) => paint_preview_panel_image(ui, &tex),
-            Err(err) => paint_preview_panel_placeholder(ui, &err),
+            Ok((tex, _)) => paint_preview_panel_image(ui, &tex, view),
+            Err(err) => paint_preview_panel_placeholder(ui, &err, view),
         }
     }
 
@@ -586,26 +589,51 @@ fn coord_to_literal(v: &ScalarValue) -> Option<i32> {
     }
 }
 
-fn paint_preview(ui: &mut egui::Ui, tex: &TextureHandle, caption: &str, panel: bool) {
+fn paint_preview(ui: &mut egui::Ui, tex: &TextureHandle, caption: &str) {
     let [tw, th] = tex.size();
-    let size = if panel {
-        fit_display_panel(tw as f32, th as f32)
-    } else {
-        fit_display(tw as f32, th as f32)
-    };
+    let size = fit_display(tw as f32, th as f32);
     ui.add(egui::Image::new((tex.id(), size)));
     ui.label(caption);
 }
 
-fn paint_preview_panel_image(ui: &mut egui::Ui, tex: &TextureHandle) -> egui::Rect {
-    let [tw, th] = tex.size();
-    let size = fit_display_panel(tw as f32, th as f32);
-    ui.add(egui::Image::new((tex.id(), size))).rect
+fn panel_viewport_size(ui: &egui::Ui) -> Vec2 {
+    let w = ui.available_width().max(PANEL_MIN_W);
+    let h = ui.available_height().max(PANEL_MIN_H);
+    Vec2::new(w, h)
 }
 
-fn paint_preview_panel_placeholder(ui: &mut egui::Ui, err: &str) -> egui::Rect {
-    let size = Vec2::new(PANEL_MAX_W, PANEL_MAX_H * 0.65);
-    let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+fn paint_preview_panel_image(
+    ui: &mut egui::Ui,
+    tex: &TextureHandle,
+    view: &mut ImageViewTransform,
+) -> egui::Rect {
+    let [tw, th] = tex.size();
+    let image_size = Vec2::new(tw as f32, th as f32);
+    let desired = panel_viewport_size(ui);
+    let (viewport, resp) = ui.allocate_exact_size(desired, egui::Sense::click_and_drag());
+    image_view::handle_scroll_zoom(ui, viewport, image_size, view, resp.hovered());
+    let content = image_view::image_content_rect(viewport, image_size, view.zoom, view.pan);
+    {
+        let painter = ui.painter_at(viewport);
+        painter.rect_filled(viewport, 0.0, egui::Color32::from_gray(20));
+        painter.image(
+            tex.id(),
+            content,
+            egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+            egui::Color32::WHITE,
+        );
+    }
+    let _ = image_view::handle_pan_drag(&resp, viewport, image_size, view);
+    viewport
+}
+
+fn paint_preview_panel_placeholder(
+    ui: &mut egui::Ui,
+    err: &str,
+    _view: &mut ImageViewTransform,
+) -> egui::Rect {
+    let desired = panel_viewport_size(ui);
+    let (rect, _) = ui.allocate_exact_size(desired, egui::Sense::hover());
     ui.painter()
         .rect_filled(rect, 4.0, egui::Color32::from_gray(28));
     ui.painter().text(
@@ -622,13 +650,6 @@ fn fit_display(w: f32, h: f32) -> Vec2 {
     let w = w.max(1.0);
     let h = h.max(1.0);
     let scale = (DISPLAY_MAX_W / w).min(DISPLAY_MAX_H / h).min(1.0);
-    Vec2::new(w * scale, h * scale)
-}
-
-fn fit_display_panel(w: f32, h: f32) -> Vec2 {
-    let w = w.max(1.0);
-    let h = h.max(1.0);
-    let scale = (PANEL_MAX_W / w).min(PANEL_MAX_H / h).min(1.0);
     Vec2::new(w * scale, h * scale)
 }
 

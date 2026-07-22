@@ -79,6 +79,7 @@ impl MacroMetaUi {
             ui.colored_label(ui.visuals().error_fg_color, err);
         }
 
+        ui.separator();
         let delay_tip = format_delay_tooltip(m);
         if ui
             .add_enabled(enabled, egui::Button::new("⏱ Delays"))
