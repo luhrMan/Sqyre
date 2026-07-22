@@ -1,8 +1,8 @@
 //! Fixed demo data for README / docs screenshots.
 
 use sqyre_domain::{
-    blank_action, root_loop, ActionKind, CoordinateOutputs, CoordinateRef, Macro, ScalarValue,
-    PROGRAM_DELIMITER,
+    blank_action, root_loop, ActionKind, CoordinateOutputs, CoordinateRef, Macro, PressState,
+    ScalarValue, PROGRAM_DELIMITER,
 };
 use sqyre_persist::{Database, ProgramCatalog, ProgramItem, ProgramPoint, ProgramSearchArea};
 
@@ -77,7 +77,7 @@ pub fn demo_macro() -> Macro {
     let mut click = blank_action("click").expect("click");
     if let ActionKind::Click { button, state } = &mut click.kind {
         *button = sqyre_domain::MouseButton::Left;
-        *state = true;
+        *state = PressState::Down;
     }
 
     let mut image_search = blank_action("imagesearch").expect("imagesearch");
@@ -114,7 +114,7 @@ pub fn demo_macro() -> Macro {
     let mut key = blank_action("key").expect("key");
     if let ActionKind::Key { key, state } = &mut key.kind {
         *key = "enter".into();
-        *state = true;
+        *state = PressState::Down;
     }
 
     let mut loop_act = blank_action("loop").expect("loop");

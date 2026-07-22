@@ -5,7 +5,7 @@ use crate::pickers::attach_item_icon_tooltip;
 use crate::theme::paint_galley_centered;
 use crate::var_pills;
 use eframe::egui::{self, Color32, FontId, Sense, Stroke, Vec2};
-use sqyre_domain::{parse_hex_color, Action, ActionKind};
+use sqyre_domain::{parse_hex_color, Action, ActionKind, PressState};
 use sqyre_persist::ProgramCatalog;
 use sqyre_ui_model::{action_icon_glyph, action_pastel_color, ActionDisplay, SummaryPill};
 use std::collections::HashSet;
@@ -222,31 +222,36 @@ fn paint_target_thumb(
     icons: &mut IconCache,
     target: &str,
 ) -> egui::Response {
-    let resp = if let Some(tex) = icons.for_target(ui.ctx(), catalog, target) {
+    // Fixed slot so mixed aspect ratios align across action rows.
+    let slot = Vec2::new(TARGET_THUMB_MAX_W, TARGET_THUMB_MAX_H);
+    let (slot_rect, slot_resp) = ui.allocate_exact_size(slot, Sense::hover());
+    if let Some(tex) = icons.for_target(ui.ctx(), catalog, target) {
         let [tw, th] = tex.size();
         let size = thumb_display_size(tw as f32, th as f32);
-        ui.add(
+        let inner = egui::Rect::from_center_size(slot_rect.center(), size);
+        let _ = ui.put(
+            inner,
             egui::Image::new((tex.id(), size))
                 .fit_to_exact_size(size)
                 .maintain_aspect_ratio(true)
                 .corner_radius(3.0)
                 .bg_fill(Color32::from_black_alpha(20)),
-        )
+        );
     } else {
-        // Placeholder when the PNG is missing (still aspect-neutral square).
-        let size = Vec2::splat(TARGET_THUMB_MAX_H);
-        let (rect, resp) = ui.allocate_exact_size(size, Sense::hover());
+        let inner = egui::Rect::from_center_size(
+            slot_rect.center(),
+            Vec2::splat(TARGET_THUMB_MAX_H),
+        );
         ui.painter().rect(
-            rect,
+            inner,
             3.0,
             Color32::from_gray(80),
             Stroke::new(1.0, Color32::from_gray(120)),
             egui::StrokeKind::Outside,
         );
-        resp
-    };
-    attach_item_icon_tooltip(&resp, catalog, target);
-    resp
+    }
+    attach_item_icon_tooltip(&slot_resp, catalog, target);
+    slot_resp
 }
 
 fn paint_image_search_extras(
@@ -333,7 +338,9 @@ pub fn paint_action_row(
     let mut chrome_hovered = false;
     let mut tip_hovered = false;
     // Match TreeView node height; only image-search rows grow for thumbs.
-    let row_h = action_row_height(action, ui.spacing().interact_size.y);
+    let interact_y = ui.spacing().interact_size.y;
+    let row_h = action_row_height(action, interact_y);
+    let base_h = default_row_height(interact_y);
 
     // egui_ltreeview remembers a content-based min width, so `available_width` can stay
     // wider than the visible panel after the user shrinks the window. Cap the row to the
@@ -379,40 +386,57 @@ pub fn paint_action_row(
                 let mut content = ui.new_child(
                     egui::UiBuilder::new()
                         .max_rect(content_rect)
-                        .layout(egui::Layout::left_to_right(egui::Align::Center)),
+                        .layout(egui::Layout::left_to_right(egui::Align::TOP)),
                 );
                 content.set_clip_rect(content_rect.intersect(ui.clip_rect()));
                 content.spacing_mut().item_spacing.x = spacing;
-                extend_drag_handle(
-                    &mut drag_handle_rect,
-                    paint_action_icon(&mut content, action, is_dark).rect,
+
+                // Pin the type badge to the standard row band so taller item thumbs
+                // do not vertically shift icons on neighboring rows.
+                content.allocate_ui_with_layout(
+                    Vec2::new(ICON_SIZE, base_h),
+                    egui::Layout::top_down(egui::Align::Center),
+                    |ui| {
+                        extend_drag_handle(
+                            &mut drag_handle_rect,
+                            paint_action_icon(ui, action, is_dark).rect,
+                        );
+                    },
                 );
 
-                for pill in action.tree_summary_pills() {
-                    let resp = paint_summary_pill(&mut content, action, &pill, known_vars, is_dark);
-                    extend_drag_handle(&mut drag_handle_rect, resp.rect);
-                    if resp.hovered() {
-                        tip_hovered = true;
-                    }
-                }
+                content.allocate_ui_with_layout(
+                    Vec2::new(content.available_width().max(0.0), row_h),
+                    egui::Layout::left_to_right(egui::Align::Center),
+                    |ui| {
+                        ui.spacing_mut().item_spacing.x = spacing;
+                        for pill in action.tree_summary_pills() {
+                            let resp =
+                                paint_summary_pill(ui, action, &pill, known_vars, is_dark);
+                            extend_drag_handle(&mut drag_handle_rect, resp.rect);
+                            if resp.hovered() {
+                                tip_hovered = true;
+                            }
+                        }
 
-                if let ActionKind::FindPixel { target_color, .. } = &action.kind {
-                    if let Some(swatch) = paint_color_swatch(&mut content, target_color) {
-                        extend_drag_handle(&mut drag_handle_rect, swatch.rect);
-                    }
-                }
-                if matches!(action.kind, ActionKind::ImageSearch { .. })
-                    && paint_image_search_extras(
-                        &mut content,
-                        action,
-                        catalog,
-                        icons,
-                        is_dark,
-                        &mut drag_handle_rect,
-                    )
-                {
-                    tip_hovered = true;
-                }
+                        if let ActionKind::FindPixel { target_color, .. } = &action.kind {
+                            if let Some(swatch) = paint_color_swatch(ui, target_color) {
+                                extend_drag_handle(&mut drag_handle_rect, swatch.rect);
+                            }
+                        }
+                        if matches!(action.kind, ActionKind::ImageSearch { .. })
+                            && paint_image_search_extras(
+                                ui,
+                                action,
+                                catalog,
+                                icons,
+                                is_dark,
+                                &mut drag_handle_rect,
+                            )
+                        {
+                            tip_hovered = true;
+                        }
+                    },
+                );
             }
         },
     );
@@ -793,7 +817,7 @@ mod tests {
                 id: ActionId::new(),
                 kind: ActionKind::Click {
                     button: "left".into(),
-                    state: true,
+                    state: PressState::Down,
                 },
             };
             paint_action_icon(ui, &action, false);
