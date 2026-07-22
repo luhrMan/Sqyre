@@ -356,7 +356,20 @@ pub(crate) fn paint_zoomable_collection_preview(
 
     let tex = icons.for_path(ui.ctx(), path);
     let avail_w = ui.available_width();
-    let avail_h = ui.available_height().max(160.0);
+    let path_footer_h = if path.is_file() {
+        ui.text_style_height(&egui::TextStyle::Body) + ui.spacing().item_spacing.y
+    } else {
+        0.0
+    };
+    // Fill remaining height; reserve path label; slack avoids ScrollArea overflow hysteresis.
+    const MIN_H: f32 = 120.0;
+    const FILL_SLACK: f32 = 1.0;
+    let avail_h = ui.available_height() - path_footer_h;
+    let desired_h = if avail_h < MIN_H {
+        MIN_H
+    } else {
+        (avail_h - FILL_SLACK).max(MIN_H)
+    };
     let image_size = match &tex {
         Some(t) => {
             let [tw, th] = t.size();
@@ -364,7 +377,7 @@ pub(crate) fn paint_zoomable_collection_preview(
         }
         None => egui::vec2(avail_w, avail_w * 0.75),
     };
-    let desired = egui::vec2(avail_w.max(160.0), avail_h.max(120.0));
+    let desired = egui::vec2(avail_w.max(160.0), desired_h);
     let (viewport, resp) = ui.allocate_exact_size(desired, egui::Sense::click_and_drag());
 
     image_view::handle_scroll_zoom(ui, viewport, image_size, view, resp.hovered());

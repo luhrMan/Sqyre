@@ -6,7 +6,6 @@ use crate::data_editor::DataEditor;
 use crate::icon_cache::IconCache;
 use crate::pixel_color;
 use crate::preview_tooltip::PreviewTooltipCache;
-use crate::single_instance;
 use crate::variables_panel;
 use crate::SqyreApp;
 use eframe::egui;
@@ -173,16 +172,6 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
     if app.settings_ui.reload_requested {
         app.settings_ui.reload_requested = false;
         apply_main_monitor_resolution(&mut app.catalog);
-        match single_instance::reacquire(app.instance_lock.take()) {
-            Ok(lock) => app.instance_lock = lock,
-            Err(e) => eprintln!("sqyre: re-acquire instance lock: {e}"),
-        }
-        if app.instance_lock.is_none() {
-            eprintln!(
-                "sqyre: warning: could not lock {} (another instance may be using this data dir)",
-                sqyre_persist::sqyre_dir().join("sqyre.lock").display()
-            );
-        }
         app.selected_macro = 0;
         app.selected_action = None;
         app.tree_histories.clear();

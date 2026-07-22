@@ -193,7 +193,7 @@ pub struct SqyreApp {
     /// Filter text for the macro list (name / tags fuzzy match).
     macro_list_filter: String,
     tray: tray::SystemTray,
-    /// Process-wide data-dir lock (re-acquired after relocate).
+    /// Process-wide single-instance lock (held for the app lifetime).
     instance_lock: Option<single_instance::InstanceLock>,
     /// Confirm dialog for deleting the selected macro.
     pending_delete_macro: Option<String>,

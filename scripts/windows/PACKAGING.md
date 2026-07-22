@@ -27,11 +27,14 @@ CI pushes the runnable image to GHCR on main. **Rebuild the local image** after 
 
 ### Compile caches
 
-| Path | Role |
-|------|------|
-| `.cache/cargo/` | Crate registry/git (or `.cargo-home` when Make exports that) |
-| `target/x86_64-pc-windows-gnu/` | Incremental Cargo artifacts for the Windows triple |
-| `.cache/sccache-windows/` | sccache rustc outputs (survives `cargo clean`) |
+| Path / volume | Role |
+|---------------|------|
+| `.cache/cargo/` | Crate registry/git (Linux/CI bind mount; or `.cargo-home` when Make exports that) |
+| `target/x86_64-pc-windows-gnu/` | Incremental Cargo artifacts (Linux/CI bind mount) |
+| `.cache/sccache-windows/` | sccache rustc outputs when sccache is enabled (Linux/CI) |
+| Docker volumes `sqyre-windows-{target,cargo,sccache}` | Same caches on **Docker Desktop** (Windows host path) — bind mounts there make incremental rebuilds very slow |
+
+On Docker Desktop, the first build after this change fills the Linux volumes (cold once); later incremental runs should be much faster. Override with `SQYRE_WINDOWS_BIND_CACHE=1` to force workspace bind mounts, or set `SQYRE_WINDOWS_TARGET_VOLUME` / `SQYRE_WINDOWS_CARGO_VOLUME` / `SQYRE_WINDOWS_SCCACHE_VOLUME`.
 
 Release builds default to **`CARGO_INCREMENTAL=1`** (best for warm `target/` locally). CI sets `SQYRE_WINDOWS_SCCACHE=1` instead (sccache rejects `CARGO_INCREMENTAL` when that variable is set at all, even to `0`):
 
@@ -47,8 +50,12 @@ SQYRE_WINDOWS_SCCACHE=1 make windows   # sccache (CI / cold caches)
 | `SQYRE_WINDOWS_SKIP_PULL=1` | Never pull; build locally if needed |
 | `SQYRE_WINDOWS_FORCE_NATIVE=1` | Native Windows only (fail on Linux) |
 | `SQYRE_WINDOWS_SCCACHE=1` | Enable sccache (disables incremental) |
+| `SQYRE_WINDOWS_BIND_CACHE=1` | Force bind-mount caches even on Windows Docker paths |
+| `SQYRE_WINDOWS_TARGET_VOLUME` | Docker volume name for target (default `sqyre-windows-target`) |
+| `SQYRE_WINDOWS_CARGO_VOLUME` | Docker volume name for cargo home (default `sqyre-windows-cargo`) |
+| `SQYRE_WINDOWS_SCCACHE_VOLUME` | Docker volume name for sccache (default `sqyre-windows-sccache`) |
 | `CARGO_INCREMENTAL` | Default `1` when sccache is off; must stay unset with sccache |
 | `CARGO_FLAGS` | Extra cargo args |
-| `SCCACHE_DIR` | Host cache dir under the repo (default `.cache/sccache-windows`) |
+| `SCCACHE_DIR` | Host cache dir under the repo (default `.cache/sccache-windows`; unused when cache volumes are on) |
 
 Output: `bin/sqyre.exe`.
