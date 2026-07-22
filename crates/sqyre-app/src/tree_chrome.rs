@@ -20,28 +20,20 @@ const PILL_FONT_SIZE: f32 = 12.0;
 const PILL_MARGIN_X: i8 = 4;
 const PILL_MARGIN_Y: i8 = 2;
 const PILL_RADIUS: f32 = 5.0;
-/// Image Search target thumbnail: max height (width follows original aspect).
-const TARGET_THUMB_MAX_H: f32 = 24.0;
+/// Item thumbnail max height — match action cell so rows stay uniform.
+const TARGET_THUMB_MAX_H: f32 = ICON_SIZE;
 /// Cap very wide icons so a row cannot grow unboundedly.
-const TARGET_THUMB_MAX_W: f32 = 40.0;
+const TARGET_THUMB_MAX_W: f32 = 30.0;
 const MAX_TARGET_THUMBS: usize = 8;
 
-/// Default tree-row height (icon column + chrome), excluding image-search thumbs.
+/// Default tree-row height (icon column + chrome).
 pub fn default_row_height(interact_y: f32) -> f32 {
     interact_y.max(ICON_SIZE)
 }
 
-/// Row height for a painted tree label (taller when image-search thumbs are shown).
-pub fn action_row_height(action: &Action, interact_y: f32) -> f32 {
-    let base = default_row_height(interact_y);
-    if matches!(
-        &action.kind,
-        ActionKind::ImageSearch { targets, .. } if !targets.is_empty()
-    ) {
-        base.max(TARGET_THUMB_MAX_H + 4.0)
-    } else {
-        base
-    }
+/// Row height for a painted tree label (item thumbs fit in the standard band).
+pub fn action_row_height(_action: &Action, interact_y: f32) -> f32 {
+    default_row_height(interact_y)
 }
 
 /// Clickable chrome on a tree row.
@@ -238,10 +230,8 @@ fn paint_target_thumb(
                 .bg_fill(Color32::from_black_alpha(20)),
         );
     } else {
-        let inner = egui::Rect::from_center_size(
-            slot_rect.center(),
-            Vec2::splat(TARGET_THUMB_MAX_H),
-        );
+        let inner =
+            egui::Rect::from_center_size(slot_rect.center(), Vec2::splat(TARGET_THUMB_MAX_H));
         ui.painter().rect(
             inner,
             3.0,
@@ -337,7 +327,7 @@ pub fn paint_action_row(
     let mut action_click = RowAction::None;
     let mut chrome_hovered = false;
     let mut tip_hovered = false;
-    // Match TreeView node height; only image-search rows grow for thumbs.
+    // Match TreeView node height.
     let interact_y = ui.spacing().interact_size.y;
     let row_h = action_row_height(action, interact_y);
     let base_h = default_row_height(interact_y);
@@ -391,8 +381,7 @@ pub fn paint_action_row(
                 content.set_clip_rect(content_rect.intersect(ui.clip_rect()));
                 content.spacing_mut().item_spacing.x = spacing;
 
-                // Pin the type badge to the standard row band so taller item thumbs
-                // do not vertically shift icons on neighboring rows.
+                // Pin the type badge to the standard row band.
                 content.allocate_ui_with_layout(
                     Vec2::new(ICON_SIZE, base_h),
                     egui::Layout::top_down(egui::Align::Center),
@@ -410,8 +399,7 @@ pub fn paint_action_row(
                     |ui| {
                         ui.spacing_mut().item_spacing.x = spacing;
                         for pill in action.tree_summary_pills() {
-                            let resp =
-                                paint_summary_pill(ui, action, &pill, known_vars, is_dark);
+                            let resp = paint_summary_pill(ui, action, &pill, known_vars, is_dark);
                             extend_drag_handle(&mut drag_handle_rect, resp.rect);
                             if resp.hovered() {
                                 tip_hovered = true;
@@ -521,7 +509,9 @@ fn paint_row_highlight(ui: &mut egui::Ui, rect: egui::Rect, highlight: RowHighli
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqyre_domain::{ActionId, ActionKind, CoordinateRef, DetectionBranch, PressState, ScalarValue};
+    use sqyre_domain::{
+        ActionId, ActionKind, CoordinateRef, DetectionBranch, PressState, ScalarValue,
+    };
 
     fn with_ui(mut f: impl FnMut(&mut egui::Ui)) {
         let ctx = egui::Context::default();
@@ -544,7 +534,7 @@ mod tests {
     }
 
     #[test]
-    fn row_height_only_grows_for_image_search_targets() {
+    fn row_height_stays_uniform_with_image_search_targets() {
         let interact = 18.0;
         assert_eq!(default_row_height(interact), ICON_SIZE);
 
@@ -580,10 +570,8 @@ mod tests {
                 detection: DetectionBranch::default(),
             },
         };
-        assert_eq!(
-            action_row_height(&with_target, interact),
-            TARGET_THUMB_MAX_H + 4.0
-        );
+        assert_eq!(action_row_height(&with_target, interact), ICON_SIZE);
+        assert!(TARGET_THUMB_MAX_H <= ICON_SIZE);
     }
 
     #[test]

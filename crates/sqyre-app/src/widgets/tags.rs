@@ -93,12 +93,7 @@ pub fn tag_chip_editor(
     changed
 }
 
-fn paint_tag_chips(
-    ui: &mut egui::Ui,
-    tags: &mut Vec<String>,
-    enabled: bool,
-    changed: &mut bool,
-) {
+fn paint_tag_chips(ui: &mut egui::Ui, tags: &mut Vec<String>, enabled: bool, changed: &mut bool) {
     let mut remove: Option<String> = None;
     for tag in tags.iter() {
         if ui

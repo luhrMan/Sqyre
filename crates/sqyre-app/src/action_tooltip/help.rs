@@ -30,14 +30,12 @@ pub const WAIT_TIME: &str = "Pause duration in milliseconds before the next acti
 // --- Click ---
 
 pub const CLICK_BUTTON: &str = "Which mouse button to press or release.";
-pub const CLICK_STATE: &str =
-    "Up = release; Down = press; Tap = press and release in one action.";
+pub const CLICK_STATE: &str = "Up = release; Down = press; Tap = press and release in one action.";
 
 // --- Key ---
 
 pub const KEY: &str = "Key name (e.g. enter, ctrl, a). Use Record to capture.";
-pub const KEY_STATE: &str =
-    "Up = release; Down = press; Tap = press and release in one action.";
+pub const KEY_STATE: &str = "Up = release; Down = press; Tap = press and release in one action.";
 
 // --- Type ---
 
