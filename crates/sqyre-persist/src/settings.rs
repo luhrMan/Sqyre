@@ -29,14 +29,7 @@ pub fn settings_path() -> PathBuf {
 /// XDG pointer that records a relocated data directory (one path per line).
 #[cfg(not(target_arch = "wasm32"))]
 fn data_dir_pointer_path() -> PathBuf {
-    dirs::config_dir()
-        .unwrap_or_else(|| {
-            dirs::home_dir()
-                .unwrap_or_else(std::env::temp_dir)
-                .join(".config")
-        })
-        .join("sqyre")
-        .join("data_dir")
+    crate::sqyre_config_dir().join("data_dir")
 }
 
 /// Apply a relocated data-dir pointer before loading settings from `.sqyre`.

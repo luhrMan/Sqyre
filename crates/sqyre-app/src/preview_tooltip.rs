@@ -15,11 +15,16 @@ use web_time::{Duration, Instant};
 
 const MIN_CAPTURE_SIZE: i32 = 320;
 const CAPTURE_PADDING: i32 = 48;
+/// Hover/action tooltip previews — small on screen, keep textures light.
 const TOOLTIP_MAX_DIM: u32 = 640;
+/// Data-editor panel previews stretch with the window and support zoom.
+const PANEL_MAX_DIM: u32 = 1600;
 const DISPLAY_MAX_W: f32 = 260.0;
 const DISPLAY_MAX_H: f32 = 195.0;
 const PANEL_MIN_W: f32 = 160.0;
 const PANEL_MIN_H: f32 = 120.0;
+/// Slack so filling remaining height does not trip ScrollArea overflow (rounding / bar hysteresis).
+const PANEL_FILL_SLACK: f32 = 1.0;
 const CACHE_MAX: usize = 24;
 const CACHE_TTL: Duration = Duration::from_secs(30);
 /// How long to remember a failed capture before trying again (manual ↻ clears sooner).
@@ -103,7 +108,8 @@ impl PreviewTooltipCache {
         }
         match entity_preview_spec(catalog, program, name, kind) {
             Ok((key, caption, coords)) => {
-                let preview = self.texture_for(ui.ctx(), &key, &caption, coords, false);
+                let preview =
+                    self.texture_for(ui.ctx(), &key, &caption, coords, false, TOOLTIP_MAX_DIM);
                 response.clone().on_hover_ui(|ui| match &preview {
                     Ok((tex, cap)) => paint_preview(ui, tex, cap),
                     Err(err) => {
@@ -134,7 +140,9 @@ impl PreviewTooltipCache {
         force: bool,
     ) {
         let preview = match ref_preview_spec(catalog, coord_ref, kind) {
-            Ok((key, caption, coords)) => self.texture_for(ui.ctx(), &key, &caption, coords, force),
+            Ok((key, caption, coords)) => {
+                self.texture_for(ui.ctx(), &key, &caption, coords, force, TOOLTIP_MAX_DIM)
+            }
             Err(err) => Err(err),
         };
         match preview {
@@ -169,6 +177,7 @@ impl PreviewTooltipCache {
             &caption,
             PreviewCoords::Point { x, y },
             force,
+            PANEL_MAX_DIM,
         );
         match preview {
             Ok((tex, _)) => paint_preview_panel_image(ui, &tex, view),
@@ -205,6 +214,7 @@ impl PreviewTooltipCache {
                 bottom,
             },
             force,
+            PANEL_MAX_DIM,
         );
         match preview {
             Ok((tex, _)) => paint_preview_panel_image(ui, &tex, view),
@@ -219,6 +229,7 @@ impl PreviewTooltipCache {
         caption: &str,
         coords: PreviewCoords,
         force: bool,
+        max_dim: u32,
     ) -> Result<(TextureHandle, String), String> {
         if force {
             self.entries.remove(key);
@@ -255,7 +266,7 @@ impl PreviewTooltipCache {
                         .map(|p| p.caption)
                         .unwrap_or_else(|| caption.to_string());
                     self.failures.remove(key);
-                    return self.finish_texture(ctx, key, &caption, img, now);
+                    return self.finish_texture(ctx, key, &caption, img, now, max_dim);
                 }
                 Ok(Err(e)) => {
                     self.pending.remove(key);
@@ -279,7 +290,7 @@ impl PreviewTooltipCache {
         let capturer = Arc::clone(self.capturer.as_ref().unwrap());
         let (tx, rx) = mpsc::channel();
         thread::spawn(move || {
-            let _ = tx.send(capture_preview(capturer.as_ref(), coords));
+            let _ = tx.send(capture_preview(capturer.as_ref(), coords, max_dim));
         });
         self.pending.insert(
             key.to_string(),
@@ -309,10 +320,17 @@ impl PreviewTooltipCache {
         caption: &str,
         img: RgbaImage,
         now: Instant,
+        max_dim: u32,
     ) -> Result<(TextureHandle, String), String> {
         let size = [img.width() as usize, img.height() as usize];
         let color = ColorImage::from_rgba_unmultiplied(size, img.as_raw());
-        let tex = ctx.load_texture(key.to_string(), color, TextureOptions::LINEAR);
+        // Mipmaps help panel zoom; tooltips stay cheap without them.
+        let opts = if max_dim >= PANEL_MAX_DIM {
+            TextureOptions::LINEAR.with_mipmap_mode(Some(egui::TextureFilter::Linear))
+        } else {
+            TextureOptions::LINEAR
+        };
+        let tex = ctx.load_texture(key.to_string(), color, opts);
         self.insert(
             key.to_string(),
             CacheEntry {
@@ -377,7 +395,11 @@ enum PreviewCoords {
     },
 }
 
-fn capture_preview(capturer: &OsCapturer, coords: PreviewCoords) -> Result<RgbaImage, String> {
+fn capture_preview(
+    capturer: &OsCapturer,
+    coords: PreviewCoords,
+    max_dim: u32,
+) -> Result<RgbaImage, String> {
     let vb = capturer.virtual_bounds_ref()?;
     match coords {
         PreviewCoords::Point { x, y } => {
@@ -393,7 +415,7 @@ fn capture_preview(capturer: &OsCapturer, coords: PreviewCoords) -> Result<RgbaI
             let bounds = preview_bounds_for_point(x, y, vb);
             let mut img = capturer.capture_rect_ref(bounds)?;
             draw_point_marker(&mut img, x - bounds.x, y - bounds.y, OVERLAY, 2);
-            Ok(downscale_max_dim(img, TOOLTIP_MAX_DIM))
+            Ok(downscale_max_dim(img, max_dim))
         }
         PreviewCoords::SearchArea {
             left,
@@ -416,7 +438,7 @@ fn capture_preview(capturer: &OsCapturer, coords: PreviewCoords) -> Result<RgbaI
                 OVERLAY,
                 2,
             );
-            Ok(downscale_max_dim(img, TOOLTIP_MAX_DIM))
+            Ok(downscale_max_dim(img, max_dim))
         }
     }
 }
@@ -598,7 +620,13 @@ fn paint_preview(ui: &mut egui::Ui, tex: &TextureHandle, caption: &str) {
 
 fn panel_viewport_size(ui: &egui::Ui) -> Vec2 {
     let w = ui.available_width().max(PANEL_MIN_W);
-    let h = ui.available_height().max(PANEL_MIN_H);
+    let avail_h = ui.available_height();
+    // Fill remaining height; only exceed it (scrollbar) when below the minimum.
+    let h = if avail_h < PANEL_MIN_H {
+        PANEL_MIN_H
+    } else {
+        (avail_h - PANEL_FILL_SLACK).max(PANEL_MIN_H)
+    };
     Vec2::new(w, h)
 }
 
@@ -760,7 +788,12 @@ fn downscale_max_dim(img: RgbaImage, max_dim: u32) -> RgbaImage {
     let longest = w.max(h).max(1);
     let nw = ((w as u64 * max_dim as u64) / longest as u64).max(1) as u32;
     let nh = ((h as u64 * max_dim as u64) / longest as u64).max(1) as u32;
-    image::imageops::resize(&img, nw, nh, image::imageops::FilterType::Triangle)
+    let filter = if max_dim >= PANEL_MAX_DIM {
+        image::imageops::FilterType::CatmullRom
+    } else {
+        image::imageops::FilterType::Triangle
+    };
+    image::imageops::resize(&img, nw, nh, filter)
 }
 
 fn put_pixel_safe(img: &mut RgbaImage, x: i32, y: i32, c: Rgba<u8>) {

@@ -33,10 +33,11 @@ Build caches (all gitignored):
 | `target/` | Incremental compile artifacts (host + docker bind-mount; Windows under `target/x86_64-pc-windows-gnu/`) |
 | `.cargo-home/` | Optional workspace-local cargo/rustup install |
 | `.cache/cargo/` | Cargo registry/git cache used by CI and docker AppImage / Windows builds |
-| `.cache/sccache-windows/` | sccache rustc cache for `make windows` (Docker MinGW cross) |
+| `.cache/sccache-windows/` | sccache rustc cache for `make windows` (Linux/CI bind mount) |
+| Docker volumes `sqyre-windows-*` | Windows cross cargo/target/sccache when the repo is on a Docker Desktop Windows path |
 | Dev container volume `sqyre-cargo-home` | Persistent `/home/vscode/.cargo` in the container |
 
-`make appimage` via Docker reuses `CARGO_HOME` when Make exports `.cargo-home`, otherwise `.cache/cargo`. `make windows` defaults to `CARGO_INCREMENTAL=1`; CI uses `SQYRE_WINDOWS_SCCACHE=1` instead. See [`scripts/windows/PACKAGING.md`](../scripts/windows/PACKAGING.md).
+`make appimage` via Docker reuses `CARGO_HOME` when Make exports `.cargo-home`, otherwise `.cache/cargo`. `make windows` defaults to `CARGO_INCREMENTAL=1`; on Docker Desktop it stores cargo caches in Linux volumes (bind-mounted `target/` on a Windows host path is very slow). CI uses `SQYRE_WINDOWS_SCCACHE=1` instead. See [`scripts/windows/PACKAGING.md`](../scripts/windows/PACKAGING.md).
 
 ---
 

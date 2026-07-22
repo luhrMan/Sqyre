@@ -15,6 +15,9 @@
 #   CARGO_FLAGS                    extra cargo args
 #   CARGO_HOME / CARGO_TARGET_DIR  optional cache paths (docker mounts in-repo)
 #   SCCACHE_DIR                    host-relative cache (default: .cache/sccache-windows)
+#   SQYRE_WINDOWS_TARGET_VOLUME    Docker volume for CARGO_TARGET_DIR (auto on Win paths)
+#   SQYRE_WINDOWS_CARGO_VOLUME     Docker volume for CARGO_HOME (auto on Win paths)
+#   SQYRE_WINDOWS_BIND_CACHE=1     force bind-mount caches even on Windows Docker paths
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -30,6 +33,17 @@ is_windows_host() {
     MINGW*|MSYS*|CYGWIN*) return 0 ;;
   esac
   [ "${OS:-}" = "Windows_NT" ]
+}
+
+# True when the docker daemon sees the repo on a Windows path (Docker Desktop).
+# Bind-mounted target/ there makes incremental rustc I/O very slow.
+is_windows_docker_bind_path() {
+  case "$1" in
+    [A-Za-z]:*) return 0 ;;          # C:\... or C:/...
+    /mnt/[a-zA-Z]/*) return 0 ;;     # WSL /mnt/c/...
+    //[a-zA-Z]/*) return 0 ;;        # //c/...
+  esac
+  return 1
 }
 
 need_native() {
@@ -164,7 +178,7 @@ run_docker() {
     esac
   fi
 
-  # Default: Cargo incremental (best for warm target/ on Docker Desktop).
+  # Default: Cargo incremental (best for warm target/).
   # sccache (SQYRE_WINDOWS_SCCACHE=1) is better for CI / cold caches; it rejects
   # CARGO_INCREMENTAL when that var is set at all (even to 0).
   local use_sccache=0
@@ -181,18 +195,61 @@ run_docker() {
     fi
   fi
 
-  mkdir -p "$REPO_ROOT/$cargo_home_rel" "$REPO_ROOT/$sccache_rel" "$REPO_ROOT/target" "$REPO_ROOT/bin"
+  # On Docker Desktop (Windows host path), keep cargo caches on Linux volumes —
+  # incremental artifacts on a Windows bind mount are extremely slow.
+  local use_linux_cache_vols=0
+  if [ "${SQYRE_WINDOWS_BIND_CACHE:-0}" != "1" ] && is_windows_docker_bind_path "$host_repo"; then
+    use_linux_cache_vols=1
+  fi
 
-  echo "Building Windows release (docker: $image, CARGO_HOME=$cargo_home_rel, SCCACHE_DIR=$sccache_rel, incremental=${cargo_incremental:-off}, sccache=$use_sccache)…"
+  local cargo_home_in="/workspace/$cargo_home_rel"
+  local cargo_target_in=/workspace/target
+  local sccache_in="/workspace/$sccache_rel"
+  local -a vol_args=()
+  local target_vol="${SQYRE_WINDOWS_TARGET_VOLUME:-sqyre-windows-target}"
+  local cargo_vol="${SQYRE_WINDOWS_CARGO_VOLUME:-sqyre-windows-cargo}"
+  local sccache_vol="${SQYRE_WINDOWS_SCCACHE_VOLUME:-sqyre-windows-sccache}"
+
+  mkdir -p "$REPO_ROOT/bin"
+  if [ "$use_linux_cache_vols" = 1 ]; then
+    docker volume create "$target_vol" >/dev/null
+    docker volume create "$cargo_vol" >/dev/null
+    docker volume create "$sccache_vol" >/dev/null
+    cargo_home_in=/cargo-home
+    cargo_target_in=/cargo-target
+    sccache_in=/sccache
+    vol_args+=(
+      -v "$cargo_vol:/cargo-home"
+      -v "$target_vol:/cargo-target"
+      -v "$sccache_vol:/sccache"
+    )
+    # Named volumes default to root:root; the build runs as the host uid.
+    docker run --rm \
+      -v "$cargo_vol:/cargo-home" \
+      -v "$target_vol:/cargo-target" \
+      -v "$sccache_vol:/sccache" \
+      "$image" \
+      chown -R "$(id -u):$(id -g)" /cargo-home /cargo-target /sccache
+  else
+    mkdir -p "$REPO_ROOT/$cargo_home_rel" "$REPO_ROOT/$sccache_rel" "$REPO_ROOT/target"
+  fi
+
+  local cache_note=""
+  if [ "$use_linux_cache_vols" = 1 ]; then
+    cache_note=", linux-cache-vols"
+  fi
+  echo "Building Windows release (docker: $image, CARGO_HOME=$cargo_home_in, CARGO_TARGET_DIR=$cargo_target_in, incremental=${cargo_incremental:-off}, sccache=$use_sccache$cache_note)…"
   docker run --rm \
     -u "$(id -u):$(id -g)" \
-    -v "$host_repo:/workspace" -w /workspace \
+    -v "$host_repo:/workspace" \
+    "${vol_args[@]}" \
+    -w /workspace \
     -e HOME=/tmp \
-    -e "CARGO_HOME=/workspace/$cargo_home_rel" \
-    -e CARGO_TARGET_DIR=/workspace/target \
+    -e "CARGO_HOME=$cargo_home_in" \
+    -e "CARGO_TARGET_DIR=$cargo_target_in" \
     "${docker_incr_args[@]}" \
     -e "RUSTC_WRAPPER=$rustc_wrapper" \
-    -e "SCCACHE_DIR=/workspace/$sccache_rel" \
+    -e "SCCACHE_DIR=$sccache_in" \
     -e SCCACHE_CACHE_SIZE="${SCCACHE_CACHE_SIZE:-10G}" \
     -e RUSTUP_HOME=/usr/local/rustup \
     -e PATH=/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin \
