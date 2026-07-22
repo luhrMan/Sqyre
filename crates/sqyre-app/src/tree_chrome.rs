@@ -240,7 +240,7 @@ fn paint_target_thumb(
             egui::StrokeKind::Outside,
         );
     }
-    attach_item_icon_tooltip(&slot_resp, catalog, target);
+    attach_item_icon_tooltip(&slot_resp, catalog, icons, target);
     slot_resp
 }
 
