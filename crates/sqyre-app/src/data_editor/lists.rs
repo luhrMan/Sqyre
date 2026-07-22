@@ -5,6 +5,7 @@ use crate::data_editor_preview::show_file_hover;
 use crate::icon_cache::IconCache;
 use crate::pickers::{self, PickerScrollOpts};
 use crate::preview_tooltip::{PreviewKind, PreviewTooltipCache};
+use crate::widgets::searchable_combo;
 use eframe::egui;
 use sqyre_persist::{OverlayButtonConfig, ProgramCatalog, UserSettings};
 use std::collections::HashMap;
@@ -239,24 +240,23 @@ impl DataEditor {
         self.ensure_list_cache(catalog);
         let names = self.list_cache.program_names.clone();
         let mut current = self.selected_program.clone().unwrap_or_default();
-        egui::ComboBox::from_label("Program")
-            .selected_text(if current.is_empty() {
-                "(none)".into()
-            } else {
-                current.clone()
-            })
-            .show_ui(ui, |ui| {
-                for n in &names {
-                    if ui.selectable_value(&mut current, n.clone(), n).clicked() {
-                        self.selected_program = Some(n.clone());
-                        self.selected_entity = None;
-                        self.reset_item_form();
-                        self.form_name.clear();
-                    }
-                }
-            });
-        if !current.is_empty() {
-            self.selected_program = Some(current);
+        let before = current.clone();
+        ui.horizontal(|ui| {
+            ui.label("Program");
+            searchable_combo(
+                ui,
+                "data_editor_program",
+                &mut current,
+                &names,
+                "(none)",
+                None,
+            );
+        });
+        if current != before {
+            self.selected_program = (!current.is_empty()).then_some(current);
+            self.selected_entity = None;
+            self.reset_item_form();
+            self.form_name.clear();
         }
     }
 }

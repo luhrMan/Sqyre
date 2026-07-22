@@ -132,6 +132,10 @@ pub struct DataEditor {
     collection_preview: ImageViewTransform,
     /// `(program, collection)` last shown; reset transform when this changes.
     collection_preview_key: Option<(String, String)>,
+    /// Zoom/pan for point / search-area / AutoPic live capture panels.
+    coord_preview: ImageViewTransform,
+    /// `(tab, program, entity)` last shown; reset transform when this changes.
+    coord_preview_key: Option<(EditorTab, String, String)>,
     /// Overlay button id whose icon picker popup is open.
     overlay_icon_picker_for: Option<String>,
     /// Filter text for the overlay icon picker.
@@ -194,6 +198,8 @@ impl Default for DataEditor {
             save_after_record: false,
             collection_preview: ImageViewTransform::default(),
             collection_preview_key: None,
+            coord_preview: ImageViewTransform::default(),
+            coord_preview_key: None,
             overlay_icon_picker_for: None,
             overlay_icon_search: String::new(),
             window_picker: ActivePicker::None,

@@ -231,7 +231,10 @@ pub fn record_icon_button(ui: &mut egui::Ui, tip: &str, enabled: bool) -> egui::
 /// Vertical up / tap / down switch for Click/Key press state.
 ///
 /// Top = up, middle = tap, bottom = down. Click toggles; click a zone to set.
-pub fn press_state_toggle(ui: &mut egui::Ui, state: &mut sqyre_domain::PressState) -> egui::Response {
+pub fn press_state_toggle(
+    ui: &mut egui::Ui,
+    state: &mut sqyre_domain::PressState,
+) -> egui::Response {
     use sqyre_domain::PressState;
 
     const TRACK_W: f32 = 18.0;

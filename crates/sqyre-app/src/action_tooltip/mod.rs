@@ -671,7 +671,9 @@ pub(crate) fn apply_picker_result(draft: &mut Action, result: PickerResult) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqyre_domain::{root_loop, ActionKind, CoordinateRef, DetectionBranch, PressState, ScalarValue};
+    use sqyre_domain::{
+        root_loop, ActionKind, CoordinateRef, DetectionBranch, PressState, ScalarValue,
+    };
 
     fn wait_action(time: i64) -> Action {
         Action {
