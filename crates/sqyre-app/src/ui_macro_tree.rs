@@ -236,10 +236,12 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
 
     // Row overlay is clickthrough (Sense::hover + geometric clicks). When a
     // view tip covers the row, TreeView never sees the click — select here.
+    // Surrender text-field focus so Ctrl+C/V/X/A hit the tree shortcuts.
     for (aid, interaction) in &row_events {
         if interaction.primary_clicked {
             state.set_one_selected(*aid);
             app.selected_action = Some(*aid);
+            ui.memory_mut(|m| m.surrender_focus());
         }
     }
     state.store(ui, id);
@@ -352,6 +354,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
         match action {
             TreeAction::SetSelected(sel) => {
                 app.selected_action = sel.into_iter().next();
+                ui.memory_mut(|m| m.surrender_focus());
             }
             TreeAction::Move(dnd) => {
                 if running || app.tree_drag_mode == TreeDragMode::Scroll {
