@@ -39,10 +39,7 @@ pub fn apply_draft_preserving_children(live: &mut Action, draft: Action) -> Resu
         return Err("cannot change action type in tooltip edit".into());
     }
     let preserved_then = live.children().to_vec();
-    let preserved_else = live
-        .else_children()
-        .map(|c| c.to_vec())
-        .unwrap_or_default();
+    let preserved_else = live.else_children().map(|c| c.to_vec()).unwrap_or_default();
     live.kind = draft.kind;
     if let Some(kids) = live.children_mut() {
         *kids = preserved_then;
