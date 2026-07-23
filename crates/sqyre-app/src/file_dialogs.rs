@@ -52,3 +52,20 @@ pub fn pick_folder(title: &str, start: &std::path::Path) -> Option<PathBuf> {
             .pick_folder()
     }
 }
+
+/// Zip open dialog (settings: restore backup).
+pub fn pick_zip(title: &str, start: &std::path::Path) -> Option<PathBuf> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = (title, start);
+        None
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        rfd::FileDialog::new()
+            .set_title(title)
+            .set_directory(start)
+            .add_filter("Zip archive", &["zip"])
+            .pick_file()
+    }
+}
