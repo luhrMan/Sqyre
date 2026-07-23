@@ -85,7 +85,21 @@ impl WaitDisplay for WaitTilFoundConfig {
                     format!("wait {}s", self.wait_til_found_seconds)
                 }
             }
-            RepeatMode::WhileFound => {
+            RepeatMode::WaitWhileFound => {
+                if self.wait_til_found_seconds > 0 {
+                    format!("{} seconds or while found", self.wait_til_found_seconds)
+                } else {
+                    format!("wait while found ({}s)", self.wait_til_found_seconds)
+                }
+            }
+            RepeatMode::RepeatUntilFound => {
+                if self.wait_til_found_seconds > 0 {
+                    format!("repeat until found ({}s)", self.wait_til_found_seconds)
+                } else {
+                    "repeat until found".to_string()
+                }
+            }
+            RepeatMode::RepeatWhileFound => {
                 if self.wait_til_found_seconds > 0 {
                     format!("repeat while found ({}s)", self.wait_til_found_seconds)
                 } else {
@@ -299,6 +313,7 @@ impl ActionKindDisplay for ActionKind {
                 search_area,
                 tolerance,
                 blur,
+                match_method,
                 detection,
             } => {
                 params.push(DisplayParam::new("Name", name.as_str()));
@@ -311,6 +326,7 @@ impl ActionKindDisplay for ActionKind {
                     "Wait",
                     detection.wait.display_wait_mode("instant"),
                 ));
+                params.push(DisplayParam::extra("Method", match_method.label()));
                 params.push(DisplayParam::extra("Tolerance", format_float(*tolerance)));
                 params.push(DisplayParam::extra("Blur", blur.to_string()));
                 if detection.run_branch_on_no_find {

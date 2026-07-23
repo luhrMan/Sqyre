@@ -201,7 +201,7 @@ pub(super) fn run_matches(
     Ok(())
 }
 
-/// Apply hits for a detection pass: Repeat miss skips children; otherwise sort is
+/// Apply hits for a detection pass: repeat-while miss skips children; otherwise sort is
 /// already done by the caller and [`run_matches`] runs the branch.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn apply_detection_hits(
@@ -215,9 +215,8 @@ pub(super) fn apply_detection_hits(
     macro_: &mut Macro,
     pass: DetectionPass,
 ) -> Result<bool> {
-    // Repeat-while-found stops on miss without running the no-find branch;
-    // the final single-shot still calls run_matches (for run_branch_on_no_find).
-    if matches!(pass, DetectionPass::Repeat { .. }) && hits.is_empty() {
+    // Repeat-while-found stops on miss without running the no-find branch.
+    if matches!(pass, DetectionPass::RepeatWhile { .. }) && hits.is_empty() {
         clear_coord_outputs(macro_, coords);
         return Ok(false);
     }
@@ -231,7 +230,11 @@ pub(super) fn apply_detection_hits(
         subactions,
         macro_,
     )?;
-    Ok(!hits.is_empty())
+    // Repeat-until-found continues while missing; other passes continue while found.
+    Ok(match pass {
+        DetectionPass::RepeatUntil { .. } => hits.is_empty(),
+        _ => !hits.is_empty(),
+    })
 }
 
 /// Shared wait → repeat → single-shot shell for detection actions.
@@ -257,12 +260,25 @@ pub(super) fn run_detection_shell<T>(
         state = try_once(exec, macro_)?;
         Ok(is_hit(&state))
     })?;
+    maybe_wait_while_found(exec, wait, is_hit(&state), wait_interval_ms, |exec| {
+        state = try_once(exec, macro_)?;
+        Ok(!is_hit(&state))
+    })?;
 
     if maybe_repeat_while_found(exec, wait, repeat_interval_ms, |exec, refresh| {
         if refresh {
             state = try_once(exec, macro_)?;
         }
-        on_outcome(exec, macro_, &state, DetectionPass::Repeat { refresh })
+        on_outcome(exec, macro_, &state, DetectionPass::RepeatWhile { refresh })
+    })? {
+        return Ok(());
+    }
+
+    if maybe_repeat_until_found(exec, wait, repeat_interval_ms, |exec, refresh| {
+        if refresh {
+            state = try_once(exec, macro_)?;
+        }
+        on_outcome(exec, macro_, &state, DetectionPass::RepeatUntil { refresh })
     })? {
         return Ok(());
     }
@@ -270,19 +286,19 @@ pub(super) fn run_detection_shell<T>(
     on_outcome(exec, macro_, &state, DetectionPass::Final).map(|_| ())
 }
 
-/// Whether `on_outcome` is running inside the repeat-while-found loop or as the
-/// single-shot after wait.
+/// Whether `on_outcome` is running inside a repeat loop or as the single-shot after wait.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum DetectionPass {
-    Repeat { refresh: bool },
+    RepeatWhile { refresh: bool },
+    RepeatUntil { refresh: bool },
     Final,
 }
 
-pub(super) fn retry_while_not_found(
+pub(super) fn retry_until(
     exec: &mut Executor<'_>,
     wait: &WaitTilFoundConfig,
     default_interval_ms: i32,
-    mut retry: impl FnMut(&mut Executor<'_>) -> Result<bool>,
+    mut done: impl FnMut(&mut Executor<'_>) -> Result<bool>,
 ) -> Result<()> {
     let deadline = Instant::now() + Duration::from_secs(wait.wait_til_found_seconds.max(0) as u64);
     let mut interval = wait.effective_interval_ms(default_interval_ms).max(1);
@@ -290,7 +306,7 @@ pub(super) fn retry_while_not_found(
     while Instant::now() < deadline {
         exec.check_stopped()?;
         exec.interruptible_sleep(interval)?;
-        if retry(exec)? {
+        if done(exec)? {
             return Ok(());
         }
         if interval < max_interval {
@@ -308,25 +324,40 @@ pub(super) fn maybe_wait_until_found(
     retry: impl FnMut(&mut Executor<'_>) -> Result<bool>,
 ) -> Result<()> {
     if wait.wait_until_found_active() && !hit {
-        retry_while_not_found(exec, wait, default_interval_ms, retry)?;
+        retry_until(exec, wait, default_interval_ms, retry)?;
     }
     Ok(())
 }
 
-/// When `wait` is repeat-while-found, run `iteration` until it returns false or limits hit.
+pub(super) fn maybe_wait_while_found(
+    exec: &mut Executor<'_>,
+    wait: &WaitTilFoundConfig,
+    hit: bool,
+    default_interval_ms: i32,
+    // `gone` returns true when the target disappeared (stop waiting).
+    gone: impl FnMut(&mut Executor<'_>) -> Result<bool>,
+) -> Result<()> {
+    if wait.wait_while_found_active() && hit {
+        retry_until(exec, wait, default_interval_ms, gone)?;
+    }
+    Ok(())
+}
+
+/// Shared repeat loop body for while-found / until-found modes.
 ///
 /// `iteration(exec, refresh)` — `refresh` is false on the first pass (caller already captured)
 /// and true after each sleep. If `wait_til_found_seconds > 0`, that value is also used as a
 /// wall-clock deadline (image-search behaviour).
 ///
-/// Returns `Ok(true)` when the repeat loop ran, `Ok(false)` when repeat mode is inactive.
-pub(super) fn maybe_repeat_while_found(
+/// Returns `Ok(true)` when the repeat loop ran, `Ok(false)` when the mode is inactive.
+fn maybe_repeat_loop(
     exec: &mut Executor<'_>,
     wait: &WaitTilFoundConfig,
     default_interval_ms: i32,
+    active: bool,
     mut iteration: impl FnMut(&mut Executor<'_>, bool) -> Result<bool>,
 ) -> Result<bool> {
-    if !wait.is_repeat_while_found() {
+    if !active {
         return Ok(false);
     }
 
@@ -351,4 +382,36 @@ pub(super) fn maybe_repeat_while_found(
         }
     }
     Ok(true)
+}
+
+/// When `wait` is repeat-while-found, run `iteration` until it returns false or limits hit.
+pub(super) fn maybe_repeat_while_found(
+    exec: &mut Executor<'_>,
+    wait: &WaitTilFoundConfig,
+    default_interval_ms: i32,
+    iteration: impl FnMut(&mut Executor<'_>, bool) -> Result<bool>,
+) -> Result<bool> {
+    maybe_repeat_loop(
+        exec,
+        wait,
+        default_interval_ms,
+        wait.is_repeat_while_found(),
+        iteration,
+    )
+}
+
+/// When `wait` is repeat-until-found, run `iteration` until it returns false or limits hit.
+pub(super) fn maybe_repeat_until_found(
+    exec: &mut Executor<'_>,
+    wait: &WaitTilFoundConfig,
+    default_interval_ms: i32,
+    iteration: impl FnMut(&mut Executor<'_>, bool) -> Result<bool>,
+) -> Result<bool> {
+    maybe_repeat_loop(
+        exec,
+        wait,
+        default_interval_ms,
+        wait.is_repeat_until_found(),
+        iteration,
+    )
 }

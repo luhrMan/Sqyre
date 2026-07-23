@@ -83,6 +83,7 @@ mod tests {
                 search_area: CoordinateRef("Prog~Box".into()),
                 tolerance: 0.9,
                 blur: 0,
+                match_method: Default::default(),
                 detection: DetectionBranch::default(),
             },
         };
@@ -282,6 +283,7 @@ mod tests {
                 search_area: CoordinateRef("Prog~Box".into()),
                 tolerance: 0.9,
                 blur: 0,
+                match_method: Default::default(),
                 detection: DetectionBranch {
                     coords: CoordinateOutputs {
                         output_x_variable: "x".into(),
@@ -402,6 +404,7 @@ mod tests {
                     search_area: CoordinateRef(String::new()),
                     tolerance: 0.0,
                     blur: 0,
+                    match_method: Default::default(),
                     detection: DetectionBranch::default(),
                 },
                 "🔍",

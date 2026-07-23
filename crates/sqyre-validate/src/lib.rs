@@ -420,9 +420,13 @@ pub fn validate_action(action: &Action, macro_: Option<&Macro>) -> Result<()> {
 
 fn validate_wait_config(label: &str, wait: &sqyre_domain::WaitTilFoundConfig) -> Result<()> {
     use sqyre_domain::RepeatMode;
-    if wait.repeat_mode == RepeatMode::WaitUntilFound && wait.wait_til_found_seconds <= 0 {
+    let needs_timeout = matches!(
+        wait.repeat_mode,
+        RepeatMode::WaitUntilFound | RepeatMode::WaitWhileFound
+    );
+    if needs_timeout && wait.wait_til_found_seconds <= 0 {
         return Err(ValidateError::Message(format!(
-            "{label}: wait-until-found requires a positive timeout (seconds)"
+            "{label}: wait modes require a positive timeout (seconds)"
         )));
     }
     if wait.wait_til_found_interval_ms < 0 {
@@ -680,6 +684,7 @@ mod tests {
                 search_area: Default::default(),
                 tolerance: 0.95,
                 blur: 5,
+                match_method: Default::default(),
                 detection: Default::default(),
             },
         };
@@ -696,6 +701,7 @@ mod tests {
                 search_area: Default::default(),
                 tolerance: 0.95,
                 blur: 5,
+                match_method: Default::default(),
                 detection: sqyre_domain::DetectionBranch {
                     wait: WaitTilFoundConfig {
                         repeat_mode: RepeatMode::WaitUntilFound,

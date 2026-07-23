@@ -3,7 +3,7 @@ name = "sqyre-match"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
-description = "OpenCV TM_CCOEFF_NORMED template matching with Sqyre mask/peak/dedup semantics"
+description = "OpenCV TM_* template matching (all six methods) with Sqyre mask/peak/dedup semantics"
 
 [lints]
 workspace = true
