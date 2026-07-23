@@ -132,6 +132,10 @@ pub struct DataEditor {
     collection_preview: ImageViewTransform,
     /// `(program, collection)` last shown; reset transform when this changes.
     collection_preview_key: Option<(String, String)>,
+    /// Zoom/pan for point / search-area / AutoPic live capture panels.
+    coord_preview: ImageViewTransform,
+    /// `(tab, program, entity)` last shown; reset transform when this changes.
+    coord_preview_key: Option<(EditorTab, String, String)>,
     /// Overlay button id whose icon picker popup is open.
     overlay_icon_picker_for: Option<String>,
     /// Filter text for the overlay icon picker.
@@ -194,6 +198,8 @@ impl Default for DataEditor {
             save_after_record: false,
             collection_preview: ImageViewTransform::default(),
             collection_preview_key: None,
+            coord_preview: ImageViewTransform::default(),
+            coord_preview_key: None,
             overlay_icon_picker_for: None,
             overlay_icon_search: String::new(),
             window_picker: ActivePicker::None,
@@ -526,7 +532,15 @@ impl DataEditor {
                 ui.separator();
                 ui.horizontal(|ui| {
                     let can_new = !matches!(self.tab, EditorTab::AutoPic);
-                    if ui.add_enabled(can_new, egui::Button::new("New")).clicked() {
+                    if ui
+                        .add_enabled(
+                            can_new,
+                            egui::Button::new(
+                                egui::RichText::new("New").color(crate::theme::MACRO_START),
+                            ),
+                        )
+                        .clicked()
+                    {
                         self.on_new(db, macros, catalog, icons, screen_click, settings);
                     }
                     let dirty = self.is_dirty(catalog, settings);
@@ -544,7 +558,12 @@ impl DataEditor {
                         _ => self.selected_program.is_some() && self.selected_entity.is_some(),
                     };
                     if ui
-                        .add_enabled(can_delete, egui::Button::new("Delete"))
+                        .add_enabled(
+                            can_delete,
+                            egui::Button::new(
+                                egui::RichText::new("Delete").color(crate::theme::MACRO_STOP),
+                            ),
+                        )
                         .clicked()
                     {
                         let label = match self.tab {
@@ -661,7 +680,10 @@ impl DataEditor {
                 self.variant_prompt = None;
                 self.variant_name_draft.clear();
             }
-            if ui.button("Add").clicked() {
+            if ui
+                .button(egui::RichText::new("Add").color(crate::theme::MACRO_START))
+                .clicked()
+            {
                 let name = self.variant_name_draft.trim().to_string();
                 self.variant_prompt = None;
                 self.variant_name_draft.clear();

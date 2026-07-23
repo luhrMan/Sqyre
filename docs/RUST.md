@@ -22,7 +22,7 @@ Cargo workspace at the repo root (egui + PureCV). Shipped CI releases: Linux bin
 | `sqyre-validate` | Names / action save checks |
 | `sqyre-persist` | `~/.sqyre/db.yaml` + program catalog |
 | `sqyre-executor` | Injected automation / capture / match / coords |
-| `sqyre-match` | `TM_CCOEFF_NORMED` + mask + peak/dedup |
+| `sqyre-match` | All six OpenCV `TM_*` methods + mask + peak/dedup |
 | `sqyre-vision` | RGB load, match façade, find-pixel, OCR preprocess / Tesseract |
 | `sqyre-input` | `AutomationBackend` (rustautogui lite + arboard) |
 | `sqyre-capture` | `ScreenCapturer` (`OsCapturer`: Linux X11, Windows GDI, macOS stub) |

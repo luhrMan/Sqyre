@@ -16,7 +16,15 @@ pub(crate) fn insert_slot_from_dir_position(position: DirPosition<ActionId>) -> 
 
 /// True when dropping `src` onto `target` would nest a node into itself / a descendant.
 pub(crate) fn is_invalid_tree_drop(root: &Action, src: ActionId, target: ActionId) -> bool {
-    src == target || root.find_by_id(src).is_some_and(|s| s.contains_id(target))
+    if src == target {
+        return true;
+    }
+    let target_for_check = match root.resolve_tree_id(target) {
+        Some(sqyre_domain::TreeNodeRef::ElseFolder { parent_id }) => parent_id,
+        _ => target,
+    };
+    root.find_by_id(src)
+        .is_some_and(|s| s.contains_id(target_for_check))
 }
 
 #[cfg(test)]

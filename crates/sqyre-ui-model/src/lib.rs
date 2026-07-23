@@ -17,8 +17,8 @@ mod tests {
     use super::*;
     use sqyre_domain::{
         root_loop, Action, ActionId, ActionKind, ConditionBlock, CoordinateOutputs, CoordinateRef,
-        DetectionBranch, MatchMode, MouseButton, RepeatMode, ScalarValue, VariableAssignment,
-        WaitTilFoundConfig,
+        DetectionBranch, MatchMode, MouseButton, PressState, RepeatMode, ScalarValue,
+        VariableAssignment, WaitTilFoundConfig,
     };
 
     #[test]
@@ -83,6 +83,7 @@ mod tests {
                 search_area: CoordinateRef("Prog~Box".into()),
                 tolerance: 0.9,
                 blur: 0,
+                match_method: Default::default(),
                 detection: DetectionBranch::default(),
             },
         };
@@ -197,6 +198,7 @@ mod tests {
                     ],
                 },
                 subactions: vec![],
+                else_actions: vec![],
             },
         };
         let pills = a.tree_summary_pills();
@@ -282,6 +284,7 @@ mod tests {
                 search_area: CoordinateRef("Prog~Box".into()),
                 tolerance: 0.9,
                 blur: 0,
+                match_method: Default::default(),
                 detection: DetectionBranch {
                     coords: CoordinateOutputs {
                         output_x_variable: "x".into(),
@@ -327,14 +330,14 @@ mod tests {
             id: ActionId::new(),
             kind: ActionKind::Click {
                 button: MouseButton::Left,
-                state: true,
+                state: PressState::Down,
             },
         };
         let up = Action {
             id: ActionId::new(),
             kind: ActionKind::Click {
                 button: MouseButton::Left,
-                state: false,
+                state: PressState::Up,
             },
         };
         assert_eq!(action_icon_glyph(&down), "⬇");
@@ -402,6 +405,7 @@ mod tests {
                     search_area: CoordinateRef(String::new()),
                     tolerance: 0.0,
                     blur: 0,
+                    match_method: Default::default(),
                     detection: DetectionBranch::default(),
                 },
                 "🔍",

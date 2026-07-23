@@ -1,3 +1,6 @@
+// Release GUI: no console window on Windows. Debug keeps a console for stderr.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 #[cfg(not(target_arch = "wasm32"))]
 fn main() -> eframe::Result<()> {
     sqyre_app::run()

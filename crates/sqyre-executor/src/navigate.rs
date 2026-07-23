@@ -483,8 +483,8 @@ mod tests {
     use crate::run::{execute_macro_with, ExecDeps};
     use crate::test_support::FixedResolver;
     use sqyre_domain::{
-        root_loop, ActionId, NavChords, NavInputs, NavOptions, NavOutputs,
-        NavSelectAction, NavigateSelectData,
+        root_loop, ActionId, NavChords, NavInputs, NavOptions, NavOutputs, NavSelectAction,
+        NavigateSelectData, PressState,
     };
     use std::sync::Mutex;
 
@@ -596,7 +596,7 @@ mod tests {
                             id: ActionId::new(),
                             kind: ActionKind::Click {
                                 button: sqyre_domain::MouseButton::Right,
-                                state: true,
+                                state: PressState::Down,
                             },
                         }],
                     },

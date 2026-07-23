@@ -55,7 +55,7 @@ pub fn encode_macro_to_yaml(macro_: &Macro) -> Result<String> {
 mod tests {
     use super::*;
     use proptest::prelude::*;
-    use sqyre_domain::{Action, ActionKind, MouseButton, ScalarValue};
+    use sqyre_domain::{Action, ActionKind, MouseButton, PressState, ScalarValue};
 
     #[test]
     fn roundtrip_wait_and_click() {
@@ -71,7 +71,7 @@ mod tests {
                 id: ActionId::new(),
                 kind: ActionKind::Click {
                     button: MouseButton::Left,
-                    state: true,
+                    state: PressState::Down,
                 },
             },
         ]);
