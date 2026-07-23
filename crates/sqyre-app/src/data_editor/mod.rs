@@ -436,7 +436,7 @@ impl DataEditor {
 
         if let Some(VariantPrompt::Name { source }) = self.variant_prompt.clone() {
             ui.scope_builder(egui::UiBuilder::new().max_rect(outer), |ui| {
-                self.draw_variant_name_prompt(ui, catalog, icons, source);
+                self.draw_variant_name_prompt(ui, catalog, icons, settings, source);
             });
             return;
         }
@@ -652,7 +652,7 @@ impl DataEditor {
                 }
                 PendingConfirm::DeleteVariant { variant } => {
                     self.confirm = None;
-                    self.delete_icon_variant(catalog, icons, &variant);
+                    self.delete_icon_variant(catalog, icons, settings, &variant);
                 }
                 PendingConfirm::OverwriteVariant { variant, source } => {
                     self.confirm = None;
@@ -668,6 +668,7 @@ impl DataEditor {
         ui: &mut egui::Ui,
         catalog: &ProgramCatalog,
         icons: &mut IconCache,
+        settings: &UserSettings,
         source: PathBuf,
     ) {
         ui.heading("Add Icon Variant");
@@ -687,7 +688,7 @@ impl DataEditor {
                 let name = self.variant_name_draft.trim().to_string();
                 self.variant_prompt = None;
                 self.variant_name_draft.clear();
-                self.add_icon_variant(catalog, icons, &name, &source);
+                self.add_icon_variant(catalog, icons, settings, &name, &source);
             }
         });
     }

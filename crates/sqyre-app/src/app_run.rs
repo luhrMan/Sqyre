@@ -110,6 +110,7 @@ mod native_run {
                 .settings()
                 .image_search_close_matches_distance;
             let play_finish_sound = self.settings_ui.settings().play_finish_sound;
+            let sound_volume = self.settings_ui.settings().sound_volume;
             let macro_lookup = {
                 let map: BTreeMap<String, Arc<Macro>> = self
                     .macros
@@ -173,7 +174,7 @@ mod native_run {
                     Ok(()) if stop_flag.is_stopped() => "Stopped.".into(),
                     Ok(()) => {
                         if play_finish_sound {
-                            crate::sound::play_finish_sound();
+                            crate::sound::play_finish_sound(sound_volume);
                         }
                         "Finished.".into()
                     }

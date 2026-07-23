@@ -13,6 +13,24 @@ impl SqyreApp {
         *self.hotkey_repaint.lock() = Some(ctx);
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn play_ui_add_sound(&self) {
+        let s = self.settings_ui.settings();
+        crate::sound::play_add_sound_if(s.play_ui_sounds, s.sound_volume);
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn play_ui_add_sound(&self) {}
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn play_ui_delete_sound(&self) {
+        let s = self.settings_ui.settings();
+        crate::sound::play_delete_sound_if(s.play_ui_sounds, s.sound_volume);
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn play_ui_delete_sound(&self) {}
+
     pub(crate) fn selected_action_id(&self) -> Option<ActionId> {
         self.selected_action
     }
@@ -84,6 +102,7 @@ impl SqyreApp {
         self.macros.sort_by(|a, b| a.name.cmp(&b.name));
         self.refresh_macro_hotkey_bindings();
         self.select_macro_by_name(&name);
+        self.play_ui_add_sound();
     }
 
     pub(crate) fn duplicate_selected_macro(&mut self) {
@@ -108,6 +127,7 @@ impl SqyreApp {
         self.macros.sort_by(|a, b| a.name.cmp(&b.name));
         self.refresh_macro_hotkey_bindings();
         self.select_macro_by_name(&name);
+        self.play_ui_add_sound();
     }
 
     pub(crate) fn delete_macro_named(&mut self, name: &str) {
@@ -121,6 +141,7 @@ impl SqyreApp {
             self.save_error = None;
         }
         self.refresh_macro_hotkey_bindings();
+        self.play_ui_delete_sound();
         if self.macros.is_empty() {
             self.selected_macro = 0;
             self.selected_action = None;
@@ -319,6 +340,7 @@ impl SqyreApp {
         self.selected_action = Some(new_id);
         self.tooltip.cancel();
         self.persist_macro_at(idx);
+        self.play_ui_add_sound();
         true
     }
 
@@ -347,6 +369,7 @@ impl SqyreApp {
         self.selected_action = Some(new_id);
         // Not persisted until Save; Cancel removes the provisional node.
         self.tooltip.open_edit_new(&action, edit_anchor);
+        self.play_ui_add_sound();
         true
     }
 
@@ -390,6 +413,7 @@ impl SqyreApp {
         }
         self.tooltip.cancel();
         self.persist_macro_at(idx);
+        self.play_ui_delete_sound();
         true
     }
 }

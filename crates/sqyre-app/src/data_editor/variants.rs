@@ -9,7 +9,7 @@ use crate::icon_cache::IconCache;
 use crate::icon_variants::{self, AddVariantError};
 use eframe::egui;
 use sqyre_executor::DesktopRect;
-use sqyre_persist::{auto_pic_path, ProgramCatalog};
+use sqyre_persist::{auto_pic_path, ProgramCatalog, UserSettings};
 use sqyre_vision::invalidate_search_masks_under;
 use std::sync::mpsc::{self, TryRecvError};
 use std::thread;
@@ -20,6 +20,7 @@ impl DataEditor {
         ui: &mut egui::Ui,
         icons: &mut IconCache,
         catalog: &ProgramCatalog,
+        settings: &UserSettings,
         target: &str,
         item: &str,
     ) {
@@ -40,7 +41,7 @@ impl DataEditor {
                 .button(egui::RichText::new("Add Icon Variant").color(crate::theme::MACRO_START))
                 .clicked()
             {
-                self.pick_and_add_variant(catalog, icons);
+                self.pick_and_add_variant(catalog, icons, settings);
             }
         });
         if paths.is_empty() {
@@ -95,7 +96,12 @@ impl DataEditor {
         });
     }
 
-    pub(crate) fn pick_and_add_variant(&mut self, catalog: &ProgramCatalog, icons: &mut IconCache) {
+    pub(crate) fn pick_and_add_variant(
+        &mut self,
+        catalog: &ProgramCatalog,
+        icons: &mut IconCache,
+        settings: &UserSettings,
+    ) {
         let Some(path) = crate::file_dialogs::pick_png() else {
             return;
         };
@@ -107,7 +113,7 @@ impl DataEditor {
         };
         let existing = icon_variants::variant_names(catalog, &prog, &item);
         if existing.is_empty() {
-            self.add_icon_variant(catalog, icons, "Original", &path);
+            self.add_icon_variant(catalog, icons, settings, "Original", &path);
         } else {
             self.variant_name_draft.clear();
             self.variant_prompt = Some(VariantPrompt::Name { source: path });
@@ -118,6 +124,7 @@ impl DataEditor {
         &mut self,
         catalog: &ProgramCatalog,
         icons: &mut IconCache,
+        settings: &UserSettings,
         name: &str,
         source: &std::path::Path,
     ) {
@@ -132,6 +139,10 @@ impl DataEditor {
                 let path = icon_variants::variant_path(catalog, &prog, &item, &added);
                 icons.invalidate_path(&path);
                 self.set_ok(format!("Added variant “{added}”."));
+                #[cfg(not(target_arch = "wasm32"))]
+                crate::sound::play_add_sound_if(settings.play_ui_sounds, settings.sound_volume);
+                #[cfg(target_arch = "wasm32")]
+                let _ = settings;
             }
             Err(AddVariantError::Exists(e)) => {
                 self.confirm = Some(PendingConfirm::OverwriteVariant {
@@ -169,6 +180,7 @@ impl DataEditor {
         &mut self,
         catalog: &ProgramCatalog,
         icons: &mut IconCache,
+        settings: &UserSettings,
         variant: &str,
     ) {
         let (Some(prog), Some(item)) =
@@ -190,6 +202,10 @@ impl DataEditor {
                 let path = icon_variants::variant_path(catalog, &prog, &item, variant);
                 icons.invalidate_path(&path);
                 self.set_ok(format!("Deleted variant “{variant}”."));
+                #[cfg(not(target_arch = "wasm32"))]
+                crate::sound::play_delete_sound_if(settings.play_ui_sounds, settings.sound_volume);
+                #[cfg(target_arch = "wasm32")]
+                let _ = settings;
             }
             Err(e) => self.set_err(e),
         }

@@ -19,6 +19,8 @@ pub const DEFAULT_DRAG_PREVIEW_DEBOUNCE_MS: i32 = 150;
 pub const MIN_DRAG_PREVIEW_DEBOUNCE_MS: i32 = 25;
 pub const DEFAULT_HIDE_APP_DURING_RECORDING: bool = true;
 pub const DEFAULT_PLAY_FINISH_SOUND: bool = true;
+pub const DEFAULT_PLAY_UI_SOUNDS: bool = true;
+pub const DEFAULT_SOUND_VOLUME: f32 = 1.0;
 pub const DEFAULT_UI_FONT_SIZE: i32 = 14;
 pub const DEFAULT_UI_SCALE: f32 = 1.7;
 pub const DEFAULT_BACKUP_INTERVAL_HOURS: i32 = 24;
@@ -302,6 +304,12 @@ pub struct UserSettings {
     /// Play an audible cue when a top-level macro run finishes successfully.
     #[serde(default = "default_play_finish_sound")]
     pub play_finish_sound: bool,
+    /// Play audible cues when the user adds or deletes macros, actions, or catalog entities.
+    #[serde(default = "default_play_ui_sounds")]
+    pub play_ui_sounds: bool,
+    /// Playback volume for app cue sounds (`0.0`–`1.0`).
+    #[serde(default = "default_sound_volume")]
+    pub sound_volume: f32,
     #[serde(default = "default_close_matches")]
     pub image_search_close_matches_distance: i32,
     #[serde(default = "default_drag_debounce")]
@@ -344,6 +352,12 @@ fn default_hide_recording() -> bool {
 fn default_play_finish_sound() -> bool {
     DEFAULT_PLAY_FINISH_SOUND
 }
+fn default_play_ui_sounds() -> bool {
+    DEFAULT_PLAY_UI_SOUNDS
+}
+fn default_sound_volume() -> f32 {
+    DEFAULT_SOUND_VOLUME
+}
 fn default_close_matches() -> i32 {
     DEFAULT_IMAGE_SEARCH_CLOSE_MATCHES_DISTANCE
 }
@@ -373,6 +387,8 @@ impl Default for UserSettings {
             highlight_active_action: false,
             hide_app_during_recording: DEFAULT_HIDE_APP_DURING_RECORDING,
             play_finish_sound: DEFAULT_PLAY_FINISH_SOUND,
+            play_ui_sounds: DEFAULT_PLAY_UI_SOUNDS,
+            sound_volume: DEFAULT_SOUND_VOLUME,
             image_search_close_matches_distance: DEFAULT_IMAGE_SEARCH_CLOSE_MATCHES_DISTANCE,
             drag_preview_debounce_ms: DEFAULT_DRAG_PREVIEW_DEBOUNCE_MS,
             sqyre_dir: String::new(),
@@ -455,6 +471,10 @@ impl UserSettings {
             self.ui_scale = DEFAULT_UI_SCALE;
         }
         self.ui_scale = ((self.ui_scale * 10.0).round() / 10.0).clamp(0.5, 2.5);
+        if !self.sound_volume.is_finite() {
+            self.sound_volume = DEFAULT_SOUND_VOLUME;
+        }
+        self.sound_volume = self.sound_volume.clamp(0.0, 1.0);
         for btn in &mut self.overlay_buttons {
             if btn.size <= 0.0 {
                 btn.size = DEFAULT_OVERLAY_BUTTON_SIZE;
