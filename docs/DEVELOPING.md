@@ -84,7 +84,7 @@ cargo install --locked trunk
 
 Uses `--no-default-features` (no global hotkey hooks). Native `make` / `make release` are unchanged.
 
-CI releases on merge to `main`: Linux binary + AppImage, Windows `.exe` (MinGW cross via [`scripts/windows/`](../scripts/windows/PACKAGING.md)), and the WASM editor zip (`make wasm`). PRs also `cargo check` on macOS (capture still stubbed). `make macos` stays native; MSI/DMG packaging is not shipped yet.
+CI on push/PR to `main` runs tests and a macOS `cargo check` (capture still stubbed). GitHub Releases publish daily at **23:00 UTC** only when `main` has non-docs changes since the last release tag (manual **workflow_dispatch** also available). Artifacts: Linux binary + AppImage, Windows `.exe` (MinGW cross via [`scripts/windows/`](../scripts/windows/PACKAGING.md)), and the WASM editor zip (`make wasm`). Tags are `vYYYY.MM.DD`. `make macos` stays native; MSI/DMG packaging is not shipped yet.
 
 CI caches: Linux Docker Buildx (GHA + GHCR), Windows cross-image Buildx + pushed `*-windows-cross:latest` image, Cargo registry/target (per job), Windows sccache, and tessdata; macOS Homebrew bottles + split Cargo caches.
 
