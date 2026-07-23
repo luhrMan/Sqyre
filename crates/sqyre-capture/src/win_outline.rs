@@ -15,7 +15,7 @@ use windows::Win32::Graphics::Gdi::{
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, RegisterClassW, SetWindowPos, CS_HREDRAW,
-    CS_VREDRAW, HWND_TOPMOST, HTTRANSPARENT, SWP_HIDEWINDOW, SWP_NOACTIVATE, SWP_NOMOVE,
+    CS_VREDRAW, HTTRANSPARENT, HWND_TOPMOST, SWP_HIDEWINDOW, SWP_NOACTIVATE, SWP_NOMOVE,
     SWP_NOSIZE, SWP_SHOWWINDOW, WM_NCHITTEST, WNDCLASSW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
     WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
 };
@@ -113,12 +113,10 @@ fn ensure_class() -> Result<(), String> {
         .get_or_init(|| {
             // SAFETY: RegisterClassW with a process-local class; brush lives for process life.
             unsafe {
-                let module = GetModuleHandleW(None)
-                    .map_err(|e| format!("GetModuleHandleW failed: {e}"))?;
+                let module =
+                    GetModuleHandleW(None).map_err(|e| format!("GetModuleHandleW failed: {e}"))?;
                 let brush = CreateSolidBrush(COLORREF(
-                    u32::from(STROKE_R)
-                        | (u32::from(STROKE_G) << 8)
-                        | (u32::from(STROKE_B) << 16),
+                    u32::from(STROKE_R) | (u32::from(STROKE_G) << 8) | (u32::from(STROKE_B) << 16),
                 ));
                 if brush.is_invalid() {
                     return Err("CreateSolidBrush failed for selection outline".into());
