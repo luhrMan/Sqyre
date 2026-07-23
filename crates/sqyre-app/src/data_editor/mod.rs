@@ -613,7 +613,9 @@ impl DataEditor {
             return;
         };
         let title = match &confirm {
-            PendingConfirm::Delete { .. } | PendingConfirm::DeleteVariant { .. } => "Confirm Delete",
+            PendingConfirm::Delete { .. } | PendingConfirm::DeleteVariant { .. } => {
+                "Confirm Delete"
+            }
             PendingConfirm::Overwrite { .. } | PendingConfirm::OverwriteVariant { .. } => {
                 "Confirm Overwrite"
             }
