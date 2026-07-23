@@ -13,7 +13,7 @@ macro_rules! define_action_wire_keys {
     (
         $(fields $Fields:ident => $fkey:literal / $FTag:ident,)+
         $(newtype $Newtype:ident => $nkey:literal / $NTag:ident,)+
-        $(unit $Unit:ident => $ukey:literal / $UTag:ident,)+
+        $(unit $Unit:ident => $ukey:literal / $UTag:ident,)*
     ) => {
         $(
             #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -35,12 +35,12 @@ macro_rules! define_action_wire_keys {
                 #[serde(rename = $ukey)]
                 Tag,
             }
-        )+
+        )*
 
         const WIRE_TYPE_KEYS_INNER: &[&str] = &[
             $($fkey,)+
             $($nkey,)+
-            $($ukey,)+
+            $($ukey,)*
         ];
 
         impl ActionKind {
@@ -48,7 +48,7 @@ macro_rules! define_action_wire_keys {
                 match self {
                     $(Self::$Fields { .. } => $fkey,)+
                     $(Self::$Newtype(_) => $nkey,)+
-                    $(Self::$Unit => $ukey,)+
+                    $(Self::$Unit => $ukey,)*
                 }
             }
         }
@@ -74,7 +74,6 @@ define_action_wire_keys! {
     fields FocusWindow => "focuswindow" / TagFocusWindow,
     fields RunMacro => "runmacro" / TagRunMacro,
     fields NavigateKey => "navigatekey" / TagNavigateKey,
+    fields LoopJump => "loopjump" / TagLoopJump,
     newtype NavigateSelect => "navigateselect" / TagNavigateSelect,
-    unit Break => "break" / TagBreak,
-    unit Continue => "continue" / TagContinue,
 }

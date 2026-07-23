@@ -25,7 +25,7 @@ Sqyre lets you build and run macros without writing code. Each macro is a tree o
 | **Mouse & keyboard** | Move, click, key, type |
 | **Detection** | Image search (PureCV), OCR (Tesseract), find pixel |
 | **Variables** | Set (values + expressions), for each row, save to file or clipboard |
-| **Loop flow** | Loop, while, break, continue, navigate select/key |
+| **Loop flow** | Loop, while, break/continue, navigate select/key |
 | **Miscellaneous** | Wait, pause, focus window, run macro, if (conditional) |
 
 **Also in the app:** data editor for reusable images, masks, and tabular sources; macro hotkeys (on press or release); global delay per macro; runtime variable panel while a macro runs.
@@ -42,7 +42,7 @@ Sqyre lets you build and run macros without writing code. Each macro is a tree o
 4. **Configure** each node in its pinned in-tree tooltip editor (coordinates, keys, templates, OCR regions, variables, etc.), picking reusable points, search areas, and images from entity pickers.
 5. **Run** from the toolbar, or assign a **hotkey** to the macro.
 
-Branching actions (**image search**, **OCR**, **find pixel**, **if**) run child steps only when their condition matches. **Loop** / **while** / **for each row** repeat children; **break** and **continue** control those loops.
+Branching actions (**image search**, **OCR**, **find pixel**, **if**) run child steps only when their condition matches. **Loop** / **while** / **for each row** repeat children; **break / continue** controls those loops.
 
 ---
 
