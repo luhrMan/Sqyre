@@ -127,6 +127,32 @@ pub fn main_monitor_resolution_key() -> Option<String> {
     }
 }
 
+/// Primary monitor DPI scale factor (`dpi / 96`).
+/// Returns `None` when no display is available (headless / CI).
+pub fn main_monitor_scale() -> Option<f32> {
+    #[cfg(target_os = "linux")]
+    {
+        x11_capture::primary_monitor_scale()
+    }
+    #[cfg(target_os = "windows")]
+    {
+        win_capture::primary_monitor_scale()
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+    {
+        Some(1.0)
+    }
+}
+
+/// Make the process Per-Monitor DPI aware V2 (Windows). No-op elsewhere.
+/// Call before creating windows / capture so GDI, metrics, and input agree on physical pixels.
+pub fn enable_per_monitor_dpi_v2() {
+    #[cfg(target_os = "windows")]
+    {
+        win_capture::enable_per_monitor_dpi_v2();
+    }
+}
+
 /// Number of displays from the live capturer, or `1` when capture is unavailable.
 pub fn monitor_count() -> usize {
     use sqyre_executor::ScreenCapturer;

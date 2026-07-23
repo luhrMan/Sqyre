@@ -53,6 +53,11 @@ pub(super) fn parse_program(name: &str, v: &Value) -> Result<ProgramData> {
             let Some(block) = rv.as_mapping() else {
                 continue;
             };
+            if let Some(scale) = yaml_f32(block.get(Value::String("scale".into()))) {
+                if scale > 0.0 {
+                    data.coord_scales.insert(res.clone(), scale);
+                }
+            }
             if let Some(Value::Mapping(pts)) = block.get(Value::String("points".into())) {
                 let mut m = BTreeMap::new();
                 for (pk, pv) in pts {
@@ -262,6 +267,18 @@ pub(super) fn scalar_field(v: Option<&Value>) -> ScalarValue {
 pub(super) fn yaml_i64(v: Option<&Value>) -> Option<i64> {
     match v? {
         Value::Number(n) => n.as_i64().or_else(|| n.as_u64().map(|u| u as i64)),
+        Value::String(s) => s.trim().parse().ok(),
+        _ => None,
+    }
+}
+
+pub(super) fn yaml_f32(v: Option<&Value>) -> Option<f32> {
+    match v? {
+        Value::Number(n) => n
+            .as_f64()
+            .map(|f| f as f32)
+            .or_else(|| n.as_i64().map(|i| i as f32))
+            .or_else(|| n.as_u64().map(|u| u as f32)),
         Value::String(s) => s.trim().parse().ok(),
         _ => None,
     }

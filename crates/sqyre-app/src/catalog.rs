@@ -5,11 +5,14 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-/// Set catalog resolution to the primary monitor size.
+/// Set catalog resolution + DPI scale from the primary monitor.
 /// No-op when capture is unavailable (headless).
 pub fn apply_main_monitor_resolution(catalog: &mut ProgramCatalog) {
     if let Some(key) = sqyre_capture::main_monitor_resolution_key() {
         catalog.set_resolution_key(key);
+    }
+    if let Some(scale) = sqyre_capture::main_monitor_scale() {
+        catalog.set_runtime_scale(scale);
     }
 }
 
