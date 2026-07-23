@@ -1102,10 +1102,7 @@ fn wait_editor(ui: &mut egui::Ui, wait: &mut WaitTilFoundConfig) {
                         RepeatMode::RepeatWhileFound,
                     ] {
                         if ui
-                            .selectable_label(
-                                wait.repeat_mode == mode,
-                                repeat_mode_label(ui, mode),
-                            )
+                            .selectable_label(wait.repeat_mode == mode, repeat_mode_label(ui, mode))
                             .clicked()
                         {
                             wait.repeat_mode = mode;
