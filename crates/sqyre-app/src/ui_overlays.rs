@@ -190,6 +190,10 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
         app.preview_tooltips = PreviewTooltipCache::new();
         app.refresh_macro_hotkey_bindings();
     }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    poll_scheduled_backup(app, ctx);
+
     // Sample color before restoring visibility so the app isn't under the cursor.
     if let Some((x, y)) = app.screen_click.take_color_point() {
         match pixel_color::sample_pixel_hex(x, y) {
@@ -228,7 +232,63 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
         // Overlay focus-gating polls on its own schedule; avoid per-frame
         // transparent window clears (flicker) while still draining click queue promptly.
         ctx.request_repaint_after(std::time::Duration::from_millis(250));
+    } else if app.settings_ui.settings().backup_enabled {
+        // Coarse wake so automatic backups can fire while idle.
+        ctx.request_repaint_after(std::time::Duration::from_secs(60));
     }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn poll_scheduled_backup(app: &mut SqyreApp, ctx: &egui::Context) {
+    use std::sync::mpsc;
+    use std::thread;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    // Poll in-flight task first.
+    if let Some(rx) = app.backup_task.take() {
+        match rx.try_recv() {
+            Ok(Ok(path)) => {
+                app.settings_ui.note_backup_success(&path);
+            }
+            Ok(Err(e)) => {
+                eprintln!("sqyre: automatic backup failed: {e}");
+            }
+            Err(mpsc::TryRecvError::Empty) => {
+                app.backup_task = Some(rx);
+                ctx.request_repaint_after(std::time::Duration::from_millis(250));
+                return;
+            }
+            Err(mpsc::TryRecvError::Disconnected) => {}
+        }
+    }
+
+    let settings = app.settings_ui.settings();
+    if !settings.backup_enabled || app.backup_task.is_some() {
+        return;
+    }
+    let interval_secs = (settings.backup_interval_hours.max(1) as u64).saturating_mul(3600);
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let due = settings.last_backup_unix <= 0
+        || now.saturating_sub(settings.last_backup_unix) as u64 >= interval_secs;
+    if !due {
+        return;
+    }
+
+    let keep = settings.backup_max_keep.max(1) as usize;
+    let (tx, rx) = mpsc::channel();
+    app.backup_task = Some(rx);
+    thread::spawn(move || {
+        let result = (|| {
+            let path = sqyre_persist::create_backup().map_err(|e| e.to_string())?;
+            sqyre_persist::prune_backups(keep).map_err(|e| e.to_string())?;
+            Ok(path)
+        })();
+        let _ = tx.send(result);
+    });
+    ctx.request_repaint_after(std::time::Duration::from_millis(250));
 }
 
 /// Ctrl+C / Ctrl+X / Ctrl+V / Ctrl+Z / Ctrl+Y / Ctrl+A — skip while editing an action
