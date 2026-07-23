@@ -284,6 +284,32 @@ impl SettingsUi {
             self.mark_dirty();
         }
 
+        if ui
+            .checkbox(
+                &mut self.settings.play_ui_sounds,
+                "Play sounds when adding or deleting",
+            )
+            .on_hover_text(
+                "Plays short cues when macros, actions, or data-editor entities are added or deleted.",
+            )
+            .changed()
+        {
+            self.mark_dirty();
+        }
+
+        ui.horizontal(|ui| {
+            ui.label("Sound volume:");
+            let mut pct = (self.settings.sound_volume * 100.0).round() as i32;
+            if ui
+                .add(egui::Slider::new(&mut pct, 0..=100).suffix("%"))
+                .on_hover_text("Volume for finish and add/delete cue sounds.")
+                .changed()
+            {
+                self.settings.sound_volume = pct as f32 / 100.0;
+                self.mark_dirty();
+            }
+        });
+
         ui.add_space(6.0);
 
         ui.horizontal(|ui| {

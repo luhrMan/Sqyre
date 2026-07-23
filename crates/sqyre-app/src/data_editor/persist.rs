@@ -14,6 +14,20 @@ use sqyre_persist::{
 };
 use sqyre_validate::validate_entity_name;
 
+fn play_ui_add_sound(settings: &UserSettings) {
+    #[cfg(not(target_arch = "wasm32"))]
+    crate::sound::play_add_sound_if(settings.play_ui_sounds, settings.sound_volume);
+    #[cfg(target_arch = "wasm32")]
+    let _ = settings;
+}
+
+fn play_ui_delete_sound(settings: &UserSettings) {
+    #[cfg(not(target_arch = "wasm32"))]
+    crate::sound::play_delete_sound_if(settings.play_ui_sounds, settings.sound_volume);
+    #[cfg(target_arch = "wasm32")]
+    let _ = settings;
+}
+
 fn new_entity_name(form_name: &str, default_base: &str, exists: impl Fn(&str) -> bool) -> String {
     let base = match form_name.trim() {
         "" => default_base,
@@ -237,6 +251,7 @@ impl DataEditor {
                 self.load_form(catalog, settings);
                 if self.persist_overlay_settings(settings) {
                     self.set_ok("Created overlay button.");
+                    play_ui_add_sound(settings);
                 }
                 return;
             }
@@ -246,6 +261,7 @@ impl DataEditor {
                 if let Err(e) = self.persist(db, macros, catalog) {
                     self.set_err(e);
                 } else {
+                    play_ui_add_sound(settings);
                     match self.tab {
                         EditorTab::Points if !screen_click.is_armed() => {
                             self.save_after_record = true;
@@ -665,6 +681,7 @@ impl DataEditor {
             self.reset_overlay_form();
             if self.persist_overlay_settings(settings) {
                 self.set_ok("Deleted overlay button.");
+                play_ui_delete_sound(settings);
             }
             return;
         }
@@ -746,6 +763,7 @@ impl DataEditor {
                 if let Err(e) = self.persist(db, macros, catalog) {
                     self.set_err(e);
                 } else {
+                    play_ui_delete_sound(settings);
                     self.set_ok("Deleted.");
                 }
             }

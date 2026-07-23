@@ -335,7 +335,7 @@ impl DataEditor {
                     (self.selected_program.clone(), self.selected_entity.clone())
                 {
                     let target = format!("{prog}{PROGRAM_DELIMITER}{item}");
-                    self.paint_item_variants_ui(ui, icons, catalog, &target, &item);
+                    self.paint_item_variants_ui(ui, icons, catalog, settings, &target, &item);
                 }
             }
             EditorTab::Points => {
