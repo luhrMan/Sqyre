@@ -14,8 +14,8 @@ pub use peaks::{
     cluster_points, find_peaks, find_peaks_for_method, DEFAULT_CLOSE_MATCHES_DISTANCE,
 };
 pub use template::{
-    match_template, match_template_with_integrals, prepare_search_integrals, MatchError,
-    MatchMap, MatchMethod, SearchIntegrals,
+    match_template, match_template_with_integrals, prepare_search_integrals, MatchError, MatchMap,
+    MatchMethod, SearchIntegrals,
 };
 
 /// Full path used by image search when the search image is already blurred and the

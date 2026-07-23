@@ -186,6 +186,7 @@ impl PreviewTooltipCache {
     /// Embedded form-panel preview for a search area (uses form field coords).
     /// Returns the viewport rect for cardinal coord overlays.
     /// Pass `None` for a coordinate that is a variable or non-literal expression.
+    #[allow(clippy::too_many_arguments)]
     pub fn paint_search_area_panel(
         &mut self,
         ui: &mut egui::Ui,

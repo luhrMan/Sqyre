@@ -438,7 +438,10 @@ pub fn icon_grid_cell_ex(
 
     if show_remove {
         let btn_rect = egui::Rect::from_center_size(
-            egui::pos2(body.right() - REMOVE_BTN * 0.35, body.top() + REMOVE_BTN * 0.35),
+            egui::pos2(
+                body.right() - REMOVE_BTN * 0.35,
+                body.top() + REMOVE_BTN * 0.35,
+            ),
             Vec2::splat(REMOVE_BTN),
         );
         let btn_id = ui.id().with(("icon_rm", target));
@@ -529,6 +532,7 @@ pub fn paint_even_icon_grid(
 ///
 /// When `selected_program` / `clicked_program` are used (data editor), program headers
 /// are selectable and write the clicked program name into `clicked_program`.
+#[allow(clippy::too_many_arguments)]
 pub fn paint_items_icon_grid(
     ui: &mut egui::Ui,
     catalog: &ProgramCatalog,
