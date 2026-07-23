@@ -1,9 +1,15 @@
 //! Persistence for `~/.sqyre` (db.yaml, settings, program catalog).
 
+#[cfg(not(target_arch = "wasm32"))]
+mod backup;
 mod migrate;
 mod programs;
 mod settings;
 
+#[cfg(not(target_arch = "wasm32"))]
+pub use backup::{
+    backups_dir, create_backup, list_backups, prune_backups, restore_backup, BackupError,
+};
 pub use migrate::{migrate_db_yaml, migrate_db_yaml_value, LegacyCatalog};
 pub use programs::{
     ProgramCatalog, ProgramCollection, ProgramData, ProgramItem, ProgramMask, ProgramPoint,
@@ -11,11 +17,13 @@ pub use programs::{
 };
 pub use settings::{
     move_dir, open_path_in_file_manager, open_sqyre_dir, settings_path, ActionColorPrefs,
-    OverlayButtonConfig, UserSettings, DEFAULT_DRAG_PREVIEW_DEBOUNCE_MS,
-    DEFAULT_HIDE_APP_DURING_RECORDING, DEFAULT_IMAGE_SEARCH_CLOSE_MATCHES_DISTANCE,
-    DEFAULT_OVERLAY_ACCENT_HEX, DEFAULT_OVERLAY_BORDER_WIDTH, DEFAULT_OVERLAY_BUTTON_SIZE,
-    DEFAULT_OVERLAY_CORNER_RADIUS, DEFAULT_OVERLAY_ICON_HEX, DEFAULT_UI_FONT_SIZE,
-    DEFAULT_UI_SCALE, MAX_OVERLAY_BORDER_WIDTH, MAX_OVERLAY_BUTTON_SIZE, MAX_OVERLAY_CORNER_RADIUS,
+    OverlayButtonConfig, UserSettings, DEFAULT_BACKUP_INTERVAL_HOURS, DEFAULT_BACKUP_MAX_KEEP,
+    DEFAULT_DRAG_PREVIEW_DEBOUNCE_MS, DEFAULT_HIDE_APP_DURING_RECORDING,
+    DEFAULT_IMAGE_SEARCH_CLOSE_MATCHES_DISTANCE, DEFAULT_OVERLAY_ACCENT_HEX,
+    DEFAULT_OVERLAY_BORDER_WIDTH, DEFAULT_OVERLAY_BUTTON_SIZE, DEFAULT_OVERLAY_CORNER_RADIUS,
+    DEFAULT_OVERLAY_ICON_HEX, DEFAULT_UI_FONT_SIZE, DEFAULT_UI_SCALE, MAX_BACKUP_INTERVAL_HOURS,
+    MAX_BACKUP_MAX_KEEP, MAX_OVERLAY_BORDER_WIDTH, MAX_OVERLAY_BUTTON_SIZE,
+    MAX_OVERLAY_CORNER_RADIUS, MIN_BACKUP_INTERVAL_HOURS, MIN_BACKUP_MAX_KEEP,
     MIN_DRAG_PREVIEW_DEBOUNCE_MS, MIN_OVERLAY_BORDER_WIDTH, MIN_OVERLAY_BUTTON_SIZE,
     MIN_OVERLAY_CORNER_RADIUS,
 };

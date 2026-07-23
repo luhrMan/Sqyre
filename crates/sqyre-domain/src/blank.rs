@@ -3,8 +3,7 @@
 use crate::{
     action_type_table, Action, ActionId, ActionKind, ConditionBlock, CoordinateRef,
     DetectionBranch, ListColumn, LoopJumpMode, PressState, ScalarValue, TemplateMatchMethod,
-    VariableAssignment,
-    DEFAULT_SMOOTH_DELAY_MS, DEFAULT_SMOOTH_HIGH, DEFAULT_SMOOTH_LOW,
+    VariableAssignment, DEFAULT_SMOOTH_DELAY_MS, DEFAULT_SMOOTH_HIGH, DEFAULT_SMOOTH_LOW,
 };
 
 /// One picker entry: label, type key, category, and a fresh blank [`Action`].
