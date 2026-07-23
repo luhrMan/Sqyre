@@ -1049,16 +1049,73 @@ fn detection_branch_editor(ui: &mut egui::Ui, detection: &mut DetectionBranch) {
     tip_wrapped_section(ui, |ui| order_editor(ui, &mut detection.order));
 }
 
-fn wait_editor(ui: &mut egui::Ui, wait: &mut WaitTilFoundConfig) {
-    let mut mode = wait.repeat_mode.as_str().to_string();
-    combo_str(
-        ui,
-        "Repeat mode",
-        h::REPEAT_MODE,
-        &mut mode,
-        options::REPEAT_MODES,
+/// Spaced repeat-mode label; *Until* italic, **While** bold.
+fn repeat_mode_label(ui: &egui::Ui, mode: RepeatMode) -> egui::WidgetText {
+    let style = ui.style();
+    let color = style.visuals.text_color();
+    let (prefix, mid, mid_italics, suffix) = match mode {
+        RepeatMode::Once => return "Once".into(),
+        RepeatMode::WaitUntilFound => ("Wait ", "Until", true, " Found"),
+        RepeatMode::WaitWhileFound => ("Wait ", "While", false, " Found"),
+        RepeatMode::RepeatUntilFound => ("Repeat ", "Until", true, " Found"),
+        RepeatMode::RepeatWhileFound => ("Repeat ", "While", false, " Found"),
+    };
+    let mut job = egui::text::LayoutJob::default();
+    egui::RichText::new(prefix).color(color).append_to(
+        &mut job,
+        style,
+        egui::FontSelection::Default,
+        egui::Align::LEFT,
     );
-    wait.repeat_mode = RepeatMode::parse(&mode);
+    let mid_rt = if mid_italics {
+        egui::RichText::new(mid).italics().color(color)
+    } else {
+        egui::RichText::new(mid).strong().color(color)
+    };
+    mid_rt.append_to(
+        &mut job,
+        style,
+        egui::FontSelection::Default,
+        egui::Align::LEFT,
+    );
+    egui::RichText::new(suffix).color(color).append_to(
+        &mut job,
+        style,
+        egui::FontSelection::Default,
+        egui::Align::LEFT,
+    );
+    job.into()
+}
+
+fn wait_editor(ui: &mut egui::Ui, wait: &mut WaitTilFoundConfig) {
+    ui.horizontal(|ui| {
+        help::label(ui, "Repeat mode", h::REPEAT_MODE);
+        help::tip(
+            egui::ComboBox::from_id_salt("Repeat mode")
+                .selected_text(repeat_mode_label(ui, wait.repeat_mode))
+                .show_ui(ui, |ui| {
+                    for mode in [
+                        RepeatMode::Once,
+                        RepeatMode::WaitUntilFound,
+                        RepeatMode::WaitWhileFound,
+                        RepeatMode::RepeatUntilFound,
+                        RepeatMode::RepeatWhileFound,
+                    ] {
+                        if ui
+                            .selectable_label(
+                                wait.repeat_mode == mode,
+                                repeat_mode_label(ui, mode),
+                            )
+                            .clicked()
+                        {
+                            wait.repeat_mode = mode;
+                        }
+                    }
+                })
+                .response,
+            h::REPEAT_MODE,
+        );
+    });
     // Once → timing off; wait modes → timing only; repeat modes → timing + max iterations.
     let timing_enabled = wait.uses_timing();
     let max_enabled = wait.uses_max_iterations();
