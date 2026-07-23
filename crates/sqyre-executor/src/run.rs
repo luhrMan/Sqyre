@@ -13,8 +13,8 @@ use crate::navigate::{execute_navigate_key, execute_navigate_select};
 use crate::runtime_vars::RuntimeVarSink;
 use crate::search::{execute_find_pixel, execute_image_search, execute_ocr};
 use sqyre_domain::{
-    action_type_label, resolve_scalar_int, Action, ActionId, ActionKind, Macro, MatchMode,
-    MouseButton, PressState, ScalarValue,
+    action_type_label, resolve_scalar_int, Action, ActionId, ActionKind, LoopJumpMode, Macro,
+    MatchMode, MouseButton, PressState, ScalarValue,
 };
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -348,14 +348,16 @@ fn dispatch(exec: &mut Executor<'_>, action: &Action, macro_: &mut Macro) -> Res
             }
             Ok(())
         }
-        ActionKind::Break => {
-            exec.log(action.id, "Break");
-            Err(FlowSignal::Break.into())
-        }
-        ActionKind::Continue => {
-            exec.log(action.id, "Continue");
-            Err(FlowSignal::Continue.into())
-        }
+        ActionKind::LoopJump { mode } => match mode {
+            LoopJumpMode::Break => {
+                exec.log(action.id, "Break");
+                Err(FlowSignal::Break.into())
+            }
+            LoopJumpMode::Continue => {
+                exec.log(action.id, "Continue");
+                Err(FlowSignal::Continue.into())
+            }
+        },
         ActionKind::Loop {
             name,
             count,
@@ -689,7 +691,9 @@ mod tests {
                         },
                         Action {
                             id: ActionId::new(),
-                            kind: ActionKind::Break,
+                            kind: ActionKind::LoopJump {
+                                mode: LoopJumpMode::Break,
+                            },
                         },
                     ],
                 },
@@ -1353,7 +1357,9 @@ mod tests {
                 subactions: vec![
                     Action {
                         id: ActionId::new(),
-                        kind: ActionKind::Continue,
+                        kind: ActionKind::LoopJump {
+                            mode: LoopJumpMode::Continue,
+                        },
                     },
                     Action {
                         id: ActionId::new(),

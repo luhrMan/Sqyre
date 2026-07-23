@@ -16,8 +16,9 @@ use crate::widgets::{
 use eframe::egui;
 use sqyre_domain::{
     parse_hex_color, Action, ActionKind, ConditionBlock, ConditionClause, CoordinateOutputs,
-    CoordinateRef, DetectionBranch, ListColumn, Macro, MatchMode, MatchOrder, MouseButton,
-    RepeatMode, ScalarValue, TemplateMatchMethod, VariableAssignment, WaitTilFoundConfig,
+    CoordinateRef, DetectionBranch, ListColumn, LoopJumpMode, Macro, MatchMode, MatchOrder,
+    MouseButton, RepeatMode, ScalarValue, TemplateMatchMethod, VariableAssignment,
+    WaitTilFoundConfig,
 };
 use sqyre_persist::ProgramCatalog;
 use sqyre_validate::{
@@ -80,9 +81,18 @@ pub fn paint_edit_fields(
     } = bridges;
     let active_macro = *active_macro;
     match &mut draft.kind {
-        ActionKind::Break | ActionKind::Continue => {
-            tip_section(ui, |ui| {
-                help::label(ui, "Nothing to edit.", h::NOTHING_TO_EDIT);
+        ActionKind::LoopJump { mode } => {
+            tip_wrapped_section(ui, |ui| {
+                let mut mode_s = mode.as_str().to_string();
+                combo_str_labeled(
+                    ui,
+                    "Mode",
+                    h::LOOP_JUMP_MODE,
+                    &mut mode_s,
+                    options::LOOP_JUMP_MODES,
+                    "break",
+                );
+                *mode = LoopJumpMode::parse(&mode_s);
             });
         }
         ActionKind::Wait { time } => {
