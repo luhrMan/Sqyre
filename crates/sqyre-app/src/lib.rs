@@ -32,9 +32,9 @@ mod preview_tooltip;
 mod recorded_action;
 mod recording_overlay;
 mod settings;
+mod single_instance;
 #[cfg(not(target_arch = "wasm32"))]
 mod sound;
-mod single_instance;
 mod status_banner;
 pub mod theme;
 mod tray;

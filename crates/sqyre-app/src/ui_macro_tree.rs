@@ -241,7 +241,11 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
         if interaction.primary_clicked {
             state.set_one_selected(*aid);
             app.selected_action = Some(*aid);
-            ui.memory_mut(|m| m.surrender_focus());
+            ui.memory_mut(|m| {
+                if let Some(fid) = m.focused() {
+                    m.surrender_focus(fid);
+                }
+            });
         }
     }
     state.store(ui, id);
@@ -354,7 +358,11 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
         match action {
             TreeAction::SetSelected(sel) => {
                 app.selected_action = sel.into_iter().next();
-                ui.memory_mut(|m| m.surrender_focus());
+                ui.memory_mut(|m| {
+                    if let Some(fid) = m.focused() {
+                        m.surrender_focus(fid);
+                    }
+                });
             }
             TreeAction::Move(dnd) => {
                 if running || app.tree_drag_mode == TreeDragMode::Scroll {
