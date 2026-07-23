@@ -85,7 +85,21 @@ impl WaitDisplay for WaitTilFoundConfig {
                     format!("wait {}s", self.wait_til_found_seconds)
                 }
             }
-            RepeatMode::WhileFound => {
+            RepeatMode::WaitWhileFound => {
+                if self.wait_til_found_seconds > 0 {
+                    format!("{} seconds or while found", self.wait_til_found_seconds)
+                } else {
+                    format!("wait while found ({}s)", self.wait_til_found_seconds)
+                }
+            }
+            RepeatMode::RepeatUntilFound => {
+                if self.wait_til_found_seconds > 0 {
+                    format!("repeat until found ({}s)", self.wait_til_found_seconds)
+                } else {
+                    "repeat until found".to_string()
+                }
+            }
+            RepeatMode::RepeatWhileFound => {
                 if self.wait_til_found_seconds > 0 {
                     format!("repeat while found ({}s)", self.wait_til_found_seconds)
                 } else {
@@ -113,12 +127,8 @@ impl ConditionDisplay for ConditionClause {
     }
 }
 
-fn up_or_down(state: bool) -> &'static str {
-    if state {
-        "down"
-    } else {
-        "up"
-    }
+fn press_state_label(state: sqyre_domain::PressState) -> &'static str {
+    state.as_str()
 }
 
 fn format_wait_time(t: &ScalarValue) -> String {
@@ -249,11 +259,11 @@ impl ActionKindDisplay for ActionKind {
             }
             Self::Click { button, state } => {
                 params.push(DisplayParam::new("Button", button.as_str()));
-                params.push(DisplayParam::new("State", up_or_down(*state)));
+                params.push(DisplayParam::new("State", press_state_label(*state)));
             }
             Self::Key { key, state } => {
                 params.push(DisplayParam::new("Key", key.as_str()));
-                params.push(DisplayParam::new("State", up_or_down(*state)));
+                params.push(DisplayParam::new("State", press_state_label(*state)));
             }
             Self::Type { text, delay_ms } => {
                 params.push(DisplayParam::new("Text", format!("{text:?}")));
@@ -303,6 +313,7 @@ impl ActionKindDisplay for ActionKind {
                 search_area,
                 tolerance,
                 blur,
+                match_method,
                 detection,
             } => {
                 params.push(DisplayParam::new("Name", name.as_str()));
@@ -315,11 +326,9 @@ impl ActionKindDisplay for ActionKind {
                     "Wait",
                     detection.wait.display_wait_mode("instant"),
                 ));
+                params.push(DisplayParam::extra("Method", match_method.label()));
                 params.push(DisplayParam::extra("Tolerance", format_float(*tolerance)));
                 params.push(DisplayParam::extra("Blur", blur.to_string()));
-                if detection.run_branch_on_no_find {
-                    params.push(DisplayParam::extra("Run on no find", "yes"));
-                }
             }
             Self::Ocr {
                 name,

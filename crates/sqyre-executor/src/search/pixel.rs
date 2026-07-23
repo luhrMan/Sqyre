@@ -1,8 +1,6 @@
 //! Find-pixel action.
 
-use super::common::{
-    apply_detection_hits, run_detection_shell, sort_hits, DetectionHit,
-};
+use super::common::{apply_detection_hits, run_detection_shell, sort_hits, DetectionHit};
 use crate::error::{ExecError, Result};
 use crate::run::Executor;
 use sqyre_domain::{Action, ActionKind, Macro, MatchOrder};
@@ -28,9 +26,9 @@ pub(crate) fn execute_find_pixel(
     let sqyre_domain::DetectionBranch {
         wait,
         coords,
-        run_branch_on_no_find,
         order,
         subactions,
+        else_actions,
     } = detection;
 
     let action_id = action.id;
@@ -82,8 +80,8 @@ pub(crate) fn execute_find_pixel(
                 targets,
                 hits,
                 coords,
-                *run_branch_on_no_find,
                 subactions,
+                else_actions,
                 macro_,
                 pass,
             )

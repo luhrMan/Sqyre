@@ -40,63 +40,67 @@ impl MacroMetaUi {
         self.delay_open = false;
     }
 
-    /// Name row + delay/tags controls. Hotkey stays in `main` beside this block.
-    ///
-    /// `other_macro_names` / `all_tags` are pre-collected so we can mutably borrow
-    /// the selected macro without aliasing the macros slice.
-    pub fn show(
+    /// Name + delay row. Hotkey widgets are painted by the caller on the same row.
+    pub fn paint_name_row(
         &mut self,
         ui: &mut egui::Ui,
         m: &mut Macro,
         other_macro_names: &[String],
-        all_tags: &[String],
         enabled: bool,
     ) -> MetaMutations {
         let mut out = MetaMutations::default();
 
-        ui.horizontal(|ui| {
-            help::label(ui, "Name:", help::META_NAME);
-            let te = egui::TextEdit::singleline(&mut self.name_draft)
-                .desired_width(220.0)
-                .hint_text("Macro name");
-            let resp = ui.add_enabled(enabled, te).on_hover_text(help::META_NAME);
-            // Commit on Enter, or when focus leaves with a different value.
-            let enter = resp.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-            let lost_dirty = resp.lost_focus() && self.name_draft.trim() != m.name;
-            if enabled && (enter || lost_dirty) {
-                let trimmed = self.name_draft.trim().to_string();
-                match validate_rename(&trimmed, &m.name, other_macro_names) {
-                    Ok(()) => {
-                        self.name_error = None;
-                        if trimmed != m.name {
-                            out.rename_to = Some(trimmed);
-                        } else {
-                            self.name_draft = m.name.clone();
-                        }
-                    }
-                    Err(e) => {
-                        self.name_error = Some(e);
+        help::label(ui, "Name:", help::META_NAME);
+        let te = egui::TextEdit::singleline(&mut self.name_draft)
+            .desired_width(220.0)
+            .hint_text("Macro name");
+        let resp = ui.add_enabled(enabled, te).on_hover_text(help::META_NAME);
+        // Commit on Enter, or when focus leaves with a different value.
+        let enter = resp.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+        let lost_dirty = resp.lost_focus() && self.name_draft.trim() != m.name;
+        if enabled && (enter || lost_dirty) {
+            let trimmed = self.name_draft.trim().to_string();
+            match validate_rename(&trimmed, &m.name, other_macro_names) {
+                Ok(()) => {
+                    self.name_error = None;
+                    if trimmed != m.name {
+                        out.rename_to = Some(trimmed);
+                    } else {
                         self.name_draft = m.name.clone();
                     }
                 }
+                Err(e) => {
+                    self.name_error = Some(e);
+                    self.name_draft = m.name.clone();
+                }
             }
-            if let Some(err) = &self.name_error {
-                ui.colored_label(ui.visuals().error_fg_color, err);
-            }
-        });
+        }
+        if let Some(err) = &self.name_error {
+            ui.colored_label(ui.visuals().error_fg_color, err);
+        }
 
-        ui.horizontal(|ui| {
-            let delay_tip = format_delay_tooltip(m);
-            if ui
-                .add_enabled(enabled, egui::Button::new("⏱ Delays"))
-                .on_hover_text(delay_tip)
-                .clicked()
-            {
-                self.delay_open = !self.delay_open;
-            }
-            ui.label("Tags:").on_hover_text(help::META_TAGS);
-        });
-        if crate::widgets::tag_chip_editor(
+        ui.separator();
+        let delay_tip = format_delay_tooltip(m);
+        if ui
+            .add_enabled(enabled, egui::Button::new("⏱ Delays"))
+            .on_hover_text(delay_tip)
+            .clicked()
+        {
+            self.delay_open = !self.delay_open;
+        }
+
+        out
+    }
+
+    /// Tag chips + draft entry (draft before `Tags:` label).
+    pub fn paint_tags_row(
+        &mut self,
+        ui: &mut egui::Ui,
+        m: &mut Macro,
+        all_tags: &[String],
+        enabled: bool,
+    ) -> bool {
+        crate::widgets::tag_chip_editor(
             ui,
             &mut m.tags,
             &mut self.tag_draft,
@@ -107,37 +111,46 @@ impl MacroMetaUi {
                 suggestion_limit: 8,
                 suggestions_with_separator: true,
                 draft_hover: Some(help::META_TAGS),
+                draft_first: true,
             },
-        ) {
-            out.persist = true;
+        )
+    }
+
+    pub fn paint_delay_popup(
+        &mut self,
+        ui: &mut egui::Ui,
+        m: &mut Macro,
+        enabled: bool,
+    ) -> MetaMutations {
+        let mut out = MetaMutations::default();
+        if !self.delay_open {
+            return out;
         }
 
-        if self.delay_open {
-            let mut close = false;
-            egui::Window::new("Delay between actions")
-                .collapsible(false)
-                .resizable(false)
-                .auto_sized()
-                .open(&mut self.delay_open)
-                .show(ui.ctx(), |ui| {
-                    ui.add_enabled_ui(enabled, |ui| {
-                        if delay_row(ui, "Global (ms)", &mut m.global_delay) {
-                            out.persist = true;
-                        }
-                        if delay_row(ui, "Keyboard (ms)", &mut m.keyboard_delay) {
-                            out.persist = true;
-                        }
-                        if delay_row(ui, "Mouse (ms)", &mut m.mouse_delay) {
-                            out.persist = true;
-                        }
-                        if ui.button("Close").clicked() {
-                            close = true;
-                        }
-                    });
+        let mut close = false;
+        egui::Window::new("Delay between actions")
+            .collapsible(false)
+            .resizable(false)
+            .auto_sized()
+            .open(&mut self.delay_open)
+            .show(ui.ctx(), |ui| {
+                ui.add_enabled_ui(enabled, |ui| {
+                    if delay_row(ui, "Global (ms)", &mut m.global_delay) {
+                        out.persist = true;
+                    }
+                    if delay_row(ui, "Keyboard (ms)", &mut m.keyboard_delay) {
+                        out.persist = true;
+                    }
+                    if delay_row(ui, "Mouse (ms)", &mut m.mouse_delay) {
+                        out.persist = true;
+                    }
+                    if ui.button("Close").clicked() {
+                        close = true;
+                    }
                 });
-            if close {
-                self.delay_open = false;
-            }
+            });
+        if close {
+            self.delay_open = false;
         }
 
         out

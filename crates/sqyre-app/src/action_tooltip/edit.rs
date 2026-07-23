@@ -10,13 +10,14 @@ use crate::theme;
 use crate::tree_chrome;
 use crate::var_pills;
 use crate::widgets::{
-    combo_str, drag_field, drag_field_enabled, text_field, W_MULTILINE, W_TEXT, W_VAR,
+    combo_str, combo_str_labeled, drag_field, drag_field_enabled, text_field, W_MULTILINE, W_TEXT,
+    W_VAR,
 };
 use eframe::egui;
 use sqyre_domain::{
     parse_hex_color, Action, ActionKind, ConditionBlock, ConditionClause, CoordinateOutputs,
     CoordinateRef, DetectionBranch, ListColumn, Macro, MatchMode, MatchOrder, MouseButton,
-    RepeatMode, ScalarValue, VariableAssignment, WaitTilFoundConfig,
+    RepeatMode, ScalarValue, TemplateMatchMethod, VariableAssignment, WaitTilFoundConfig,
 };
 use sqyre_persist::ProgramCatalog;
 use sqyre_validate::{
@@ -25,7 +26,7 @@ use sqyre_validate::{
 };
 use std::collections::HashSet;
 
-/// Copy draft fields onto `live`, keeping `live`'s children.
+/// Copy draft fields onto `live`, keeping `live`'s then/else children.
 pub fn apply_draft_preserving_children(live: &mut Action, draft: Action) -> Result<(), String> {
     if live.id != draft.id {
         return Err(format!(
@@ -37,10 +38,14 @@ pub fn apply_draft_preserving_children(live: &mut Action, draft: Action) -> Resu
     if std::mem::discriminant(&live.kind) != std::mem::discriminant(&draft.kind) {
         return Err("cannot change action type in tooltip edit".into());
     }
-    let preserved = live.children().to_vec();
+    let preserved_then = live.children().to_vec();
+    let preserved_else = live.else_children().map(|c| c.to_vec()).unwrap_or_default();
     live.kind = draft.kind;
     if let Some(kids) = live.children_mut() {
-        *kids = preserved;
+        *kids = preserved_then;
+    }
+    if let Some(kids) = live.else_children_mut() {
+        *kids = preserved_else;
     }
     Ok(())
 }
@@ -106,7 +111,10 @@ pub fn paint_edit_fields(
                 *button = MouseButton::parse(&btn);
                 ui.vertical(|ui| {
                     help::tip(ui.small("Up"), h::CLICK_STATE);
-                    help::tip(theme::up_down_toggle(ui, state), h::CLICK_STATE);
+                    ui.horizontal(|ui| {
+                        help::tip(theme::press_state_toggle(ui, state), h::CLICK_STATE);
+                        help::tip(ui.small("Tap"), h::CLICK_STATE);
+                    });
                     help::tip(ui.small("Down"), h::CLICK_STATE);
                 });
             });
@@ -132,7 +140,10 @@ pub fn paint_edit_fields(
                 });
                 ui.vertical(|ui| {
                     help::tip(ui.small("Up"), h::KEY_STATE);
-                    help::tip(theme::up_down_toggle(ui, state), h::KEY_STATE);
+                    ui.horizontal(|ui| {
+                        help::tip(theme::press_state_toggle(ui, state), h::KEY_STATE);
+                        help::tip(ui.small("Tap"), h::KEY_STATE);
+                    });
                     help::tip(ui.small("Down"), h::KEY_STATE);
                 });
             });
@@ -357,22 +368,51 @@ pub fn paint_edit_fields(
             search_area,
             tolerance,
             blur,
+            match_method,
             detection,
         } => {
             tip_wrapped_section(ui, |ui| {
                 text_field(ui, "Name", h::NAME, name);
+            });
+            tip_wrapped_section(ui, |ui| {
+                coords_editor(ui, &mut detection.coords, known_vars, is_dark);
             });
             tip_section(ui, |ui| {
                 targets_editor(ui, catalog, icons, targets, picker);
             });
             search_area_section(ui, catalog, previews, search_area, picker);
             tip_wrapped_section(ui, |ui| {
-                drag_field(ui, "Tolerance", h::IS_TOLERANCE, tolerance, |d| {
-                    d.speed(0.01).range(0.0..=1.0)
-                });
+                let mut method_label = match_method.label().to_string();
+                let method_opts: Vec<&str> =
+                    TemplateMatchMethod::ALL.iter().map(|m| m.label()).collect();
+                combo_str(ui, "Method", h::IS_METHOD, &mut method_label, &method_opts);
+                if let Some(m) = TemplateMatchMethod::ALL
+                    .iter()
+                    .copied()
+                    .find(|m| m.label() == method_label)
+                {
+                    *match_method = m;
+                }
+                let tol_help = if matches!(
+                    *match_method,
+                    TemplateMatchMethod::Sqdiff | TemplateMatchMethod::SqdiffNormed
+                ) {
+                    h::IS_TOLERANCE_SQDIFF
+                } else if match_method.is_normed() {
+                    h::IS_TOLERANCE
+                } else {
+                    h::IS_TOLERANCE_UNNORMED
+                };
+                if match_method.is_normed() {
+                    drag_field(ui, "Tolerance", tol_help, tolerance, |d| {
+                        d.speed(0.01).range(0.0..=1.0)
+                    });
+                } else {
+                    drag_field(ui, "Tolerance", tol_help, tolerance, |d| d.speed(1.0));
+                }
                 drag_field(ui, "Blur", h::IS_BLUR, blur, |d| d);
             });
-            detection_branch_editor(ui, detection, known_vars, is_dark);
+            detection_branch_editor(ui, detection);
         }
         ActionKind::Ocr {
             name,
@@ -389,6 +429,20 @@ pub fn paint_edit_fields(
         } => {
             tip_wrapped_section(ui, |ui| {
                 text_field(ui, "Name", h::NAME, name);
+            });
+            tip_wrapped_section(ui, |ui| {
+                var_pills::var_name_text_edit(
+                    ui,
+                    "Output variable",
+                    output_variable,
+                    known_vars,
+                    is_dark,
+                    W_VAR,
+                    h::OCR_OUTPUT,
+                );
+                coords_editor(ui, &mut detection.coords, known_vars, is_dark);
+            });
+            tip_wrapped_section(ui, |ui| {
                 var_ref_field(
                     ui,
                     "Target",
@@ -401,18 +455,7 @@ pub fn paint_edit_fields(
                 );
             });
             search_area_section(ui, catalog, previews, search_area, picker);
-            tip_wrapped_section(ui, |ui| {
-                var_pills::var_name_text_edit(
-                    ui,
-                    "Output variable",
-                    output_variable,
-                    known_vars,
-                    is_dark,
-                    W_VAR,
-                    h::OCR_OUTPUT,
-                );
-            });
-            detection_branch_editor(ui, detection, known_vars, is_dark);
+            detection_branch_editor(ui, detection);
             tip_wrapped_section(ui, |ui| {
                 drag_field(ui, "Blur", h::OCR_BLUR, blur, |d| d);
                 drag_field(
@@ -440,6 +483,9 @@ pub fn paint_edit_fields(
         } => {
             tip_wrapped_section(ui, |ui| {
                 text_field(ui, "Name", h::NAME, name);
+            });
+            tip_wrapped_section(ui, |ui| {
+                coords_editor(ui, &mut detection.coords, known_vars, is_dark);
             });
             search_area_section(ui, catalog, previews, search_area, picker);
             tip_wrapped_section(ui, |ui| {
@@ -483,7 +529,7 @@ pub fn paint_edit_fields(
                     |d| d,
                 );
             });
-            detection_branch_editor(ui, detection, known_vars, is_dark);
+            detection_branch_editor(ui, detection);
         }
         ActionKind::NavigateSelect(data) => {
             tip_wrapped_section(ui, |ui| {
@@ -641,7 +687,7 @@ fn targets_editor(
     ui.horizontal(|ui| {
         help::tip(ui.label(egui::RichText::new("Items").strong()), h::IS_ITEMS);
         if ui
-            .button("Add / edit…")
+            .button(egui::RichText::new("Add / edit…").color(theme::MACRO_START))
             .on_hover_text(h::IS_ITEMS)
             .clicked()
         {
@@ -675,8 +721,7 @@ fn targets_editor(
 }
 
 fn pick_icon_btn(ui: &mut egui::Ui) -> egui::Response {
-    ui.add(egui::Button::new(egui::RichText::new("☰").size(14.0)).small())
-        .on_hover_text("Pick…")
+    crate::theme::icon_button(ui, "☰").on_hover_text("Pick…")
 }
 
 /// Label + read-only value + pick button. Returns true when pick was clicked.
@@ -735,8 +780,7 @@ fn paint_coord_preview(
     let mut force = false;
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new("Preview").strong());
-        if ui
-            .add(egui::Button::new(egui::RichText::new("↻").size(14.0)).small())
+        if crate::theme::icon_button(ui, "↻")
             .on_hover_text("Refresh")
             .clicked()
         {
@@ -990,26 +1034,9 @@ fn search_area_section(
     });
 }
 
-fn detection_branch_editor(
-    ui: &mut egui::Ui,
-    detection: &mut DetectionBranch,
-    known_vars: &HashSet<String>,
-    is_dark: bool,
-) {
+fn detection_branch_editor(ui: &mut egui::Ui, detection: &mut DetectionBranch) {
     tip_wrapped_section(ui, |ui| wait_editor(ui, &mut detection.wait));
-    tip_wrapped_section(ui, |ui| {
-        coords_editor(ui, &mut detection.coords, known_vars, is_dark);
-    });
     tip_wrapped_section(ui, |ui| order_editor(ui, &mut detection.order));
-    tip_wrapped_section(ui, |ui| {
-        help::tip(
-            ui.checkbox(
-                &mut detection.run_branch_on_no_find,
-                "Run branch on no find",
-            ),
-            h::RUN_ON_NO_FIND,
-        );
-    });
 }
 
 fn wait_editor(ui: &mut egui::Ui, wait: &mut WaitTilFoundConfig) {
@@ -1022,10 +1049,9 @@ fn wait_editor(ui: &mut egui::Ui, wait: &mut WaitTilFoundConfig) {
         options::REPEAT_MODES,
     );
     wait.repeat_mode = RepeatMode::parse(&mode);
-    // Once → all off; waituntilfound → timing only;
-    // repeatwhilefound → timing + max iterations.
-    let timing_enabled = wait.repeat_mode != RepeatMode::Once;
-    let max_enabled = wait.is_repeat_while_found();
+    // Once → timing off; wait modes → timing only; repeat modes → timing + max iterations.
+    let timing_enabled = wait.uses_timing();
+    let max_enabled = wait.uses_max_iterations();
     drag_field_enabled(
         ui,
         "Wait seconds",
@@ -1079,26 +1105,29 @@ fn coords_editor(
 }
 
 fn order_editor(ui: &mut egui::Ui, order: &mut MatchOrder) {
-    combo_str(
+    combo_str_labeled(
         ui,
         "Grouping",
         h::ORDER_GROUPING,
         &mut order.grouping,
         options::ORDER_GROUPING,
+        "row",
     );
-    combo_str(
+    combo_str_labeled(
         ui,
         "Horizontal",
         h::ORDER_HORIZONTAL,
         &mut order.horizontal,
         options::ORDER_HORIZONTAL,
+        "left_to_right",
     );
-    combo_str(
+    combo_str_labeled(
         ui,
         "Vertical",
         h::ORDER_VERTICAL,
         &mut order.vertical,
         options::ORDER_VERTICAL,
+        "top_to_bottom",
     );
 }
 
@@ -1107,7 +1136,11 @@ fn list_header(ui: &mut egui::Ui, title: &str, add_help: &str) -> bool {
     let mut add = false;
     ui.horizontal(|ui| {
         ui.label(title);
-        if ui.small_button("+").on_hover_text(add_help).clicked() {
+        if ui
+            .add(egui::Button::new(egui::RichText::new("+").color(theme::MACRO_START)).small())
+            .on_hover_text(add_help)
+            .clicked()
+        {
             add = true;
         }
     });
@@ -1155,7 +1188,10 @@ fn clauses_editor(
                     active_macro,
                 );
                 if ui
-                    .small_button("−")
+                    .add(
+                        egui::Button::new(egui::RichText::new("−").color(theme::MACRO_STOP))
+                            .small(),
+                    )
                     .on_hover_text(h::CLAUSE_REMOVE)
                     .clicked()
                 {
@@ -1211,7 +1247,10 @@ fn list_columns_editor(
                     h::FOREACH_SKIP_BLANK,
                 );
                 if ui
-                    .small_button("Remove")
+                    .add(
+                        egui::Button::new(egui::RichText::new("Remove").color(theme::MACRO_STOP))
+                            .small(),
+                    )
                     .on_hover_text(h::FOREACH_REMOVE_SOURCE)
                     .clicked()
                 {
@@ -1262,7 +1301,12 @@ fn assignments_editor(
                 );
                 if can_remove
                     && ui
-                        .small_button("Remove")
+                        .add(
+                            egui::Button::new(
+                                egui::RichText::new("Remove").color(theme::MACRO_STOP),
+                            )
+                            .small(),
+                        )
                         .on_hover_text(h::SET_REMOVE_ASSIGNMENT)
                         .clicked()
                 {
@@ -1282,7 +1326,7 @@ fn assignments_editor(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqyre_domain::ActionId;
+    use sqyre_domain::{ActionId, PressState};
 
     #[test]
     fn parse_scalar_int_and_string() {
@@ -1351,7 +1395,7 @@ mod tests {
             id: live.id,
             kind: ActionKind::Click {
                 button: "left".into(),
-                state: true,
+                state: PressState::Down,
             },
         };
         assert!(apply_draft_preserving_children(&mut live, draft).is_err());

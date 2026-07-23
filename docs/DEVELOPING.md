@@ -30,12 +30,14 @@ Build caches (all gitignored):
 
 | Path | Role |
 |------|------|
-| `target/` | Incremental compile artifacts (host + docker bind-mount) |
+| `target/` | Incremental compile artifacts (host + docker bind-mount; Windows under `target/x86_64-pc-windows-gnu/`) |
 | `.cargo-home/` | Optional workspace-local cargo/rustup install |
-| `.cache/cargo/` | Cargo registry/git cache used by CI and docker AppImage builds |
+| `.cache/cargo/` | Cargo registry/git cache used by CI and docker AppImage / Windows builds |
+| `.cache/sccache-windows/` | sccache rustc cache for `make windows` (Linux/CI bind mount) |
+| Docker volumes `sqyre-windows-*` | Windows cross cargo/target/sccache when the repo is on a Docker Desktop Windows path |
 | Dev container volume `sqyre-cargo-home` | Persistent `/home/vscode/.cargo` in the container |
 
-`make appimage` via Docker reuses `CARGO_HOME` when Make exports `.cargo-home`, otherwise `.cache/cargo`.
+`make appimage` via Docker reuses `CARGO_HOME` when Make exports `.cargo-home`, otherwise `.cache/cargo`. `make windows` defaults to `CARGO_INCREMENTAL=1`; on Docker Desktop it stores cargo caches in Linux volumes (bind-mounted `target/` on a Windows host path is very slow). CI uses `SQYRE_WINDOWS_SCCACHE=1` instead. See [`scripts/windows/PACKAGING.md`](../scripts/windows/PACKAGING.md).
 
 ---
 
@@ -84,7 +86,7 @@ Uses `--no-default-features` (no global hotkey hooks). Native `make` / `make rel
 
 CI releases on merge to `main`: Linux binary + AppImage, Windows `.exe` (MinGW cross via [`scripts/windows/`](../scripts/windows/PACKAGING.md)), and the WASM editor zip (`make wasm`). PRs also `cargo check` on Windows and macOS (Windows GDI capture; macOS capture still stubbed). `make macos` stays native; MSI/DMG packaging is not shipped yet.
 
-CI caches: Linux Docker Buildx (GHA + GHCR), Windows cross-image Buildx, Cargo registry/target (per job), and tessdata; Windows LLVM install + vcpkg binaries + split Cargo caches; macOS Homebrew bottles + split Cargo caches.
+CI caches: Linux Docker Buildx (GHA + GHCR), Windows cross-image Buildx + pushed `*-windows-cross:latest` image, Cargo registry/target (per job), Windows sccache, and tessdata; Windows LLVM install + vcpkg binaries + split Cargo caches; macOS Homebrew bottles + split Cargo caches.
 
 ---
 

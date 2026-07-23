@@ -1,5 +1,6 @@
 //! Hover tooltips showing a live screen capture around a point or search area.
 
+use crate::image_view::{self, ImageViewTransform};
 use eframe::egui::{self, ColorImage, TextureHandle, TextureOptions, Vec2};
 use image::{Rgba, RgbaImage};
 use sqyre_capture::{shared_capturer, OsCapturer};
@@ -14,13 +15,17 @@ use web_time::{Duration, Instant};
 
 const MIN_CAPTURE_SIZE: i32 = 320;
 const CAPTURE_PADDING: i32 = 48;
+/// Hover/action tooltip previews — small on screen, keep textures light.
 const TOOLTIP_MAX_DIM: u32 = 640;
+/// Data-editor panel previews stretch with the window and support zoom.
+const PANEL_MAX_DIM: u32 = 1600;
 const DISPLAY_MAX_W: f32 = 260.0;
 const DISPLAY_MAX_H: f32 = 195.0;
-const PANEL_MAX_W: f32 = 340.0;
-const PANEL_MAX_H: f32 = 240.0;
+const PANEL_MIN_W: f32 = 160.0;
+const PANEL_MIN_H: f32 = 120.0;
+/// Slack so filling remaining height does not trip ScrollArea overflow (rounding / bar hysteresis).
+const PANEL_FILL_SLACK: f32 = 1.0;
 const CACHE_MAX: usize = 24;
-const CACHE_TTL: Duration = Duration::from_secs(30);
 /// How long to remember a failed capture before trying again (manual ↻ clears sooner).
 const FAIL_CACHE_TTL: Duration = Duration::from_secs(60);
 const OVERLAY: Rgba<u8> = Rgba([255, 0, 0, 255]);
@@ -35,7 +40,6 @@ pub enum PreviewKind {
 struct CacheEntry {
     texture: TextureHandle,
     caption: String,
-    expires: Instant,
 }
 
 struct FailureEntry {
@@ -102,9 +106,10 @@ impl PreviewTooltipCache {
         }
         match entity_preview_spec(catalog, program, name, kind) {
             Ok((key, caption, coords)) => {
-                let preview = self.texture_for(ui.ctx(), &key, &caption, coords, false);
+                let preview =
+                    self.texture_for(ui.ctx(), &key, &caption, coords, false, TOOLTIP_MAX_DIM);
                 response.clone().on_hover_ui(|ui| match &preview {
-                    Ok((tex, cap)) => paint_preview(ui, tex, cap, false),
+                    Ok((tex, cap)) => paint_preview(ui, tex, cap),
                     Err(err) => {
                         ui.label(caption.as_str());
                         ui.colored_label(crate::theme::error_fg(), err);
@@ -133,13 +138,15 @@ impl PreviewTooltipCache {
         force: bool,
     ) {
         let preview = match ref_preview_spec(catalog, coord_ref, kind) {
-            Ok((key, caption, coords)) => self.texture_for(ui.ctx(), &key, &caption, coords, force),
+            Ok((key, caption, coords)) => {
+                self.texture_for(ui.ctx(), &key, &caption, coords, force, TOOLTIP_MAX_DIM)
+            }
             Err(err) => Err(err),
         };
         match preview {
             // Tip/edit surface is capped around tip_max_width (~280); use the smaller
             // display fit so preview doesn't force the tooltip wider than view mode.
-            Ok((tex, cap)) => paint_preview(ui, &tex, &cap, false),
+            Ok((tex, cap)) => paint_preview(ui, &tex, &cap),
             Err(err) => {
                 ui.colored_label(crate::theme::error_fg(), err);
             }
@@ -147,7 +154,7 @@ impl PreviewTooltipCache {
     }
 
     /// Embedded form-panel preview for a point (uses form field coords).
-    /// Returns the image/placeholder rect for cardinal coord overlays.
+    /// Returns the viewport rect for cardinal coord overlays.
     /// Pass `None` for a coordinate that is a variable or non-literal expression.
     pub fn paint_point_panel(
         &mut self,
@@ -155,9 +162,10 @@ impl PreviewTooltipCache {
         x: Option<i32>,
         y: Option<i32>,
         force: bool,
+        view: &mut ImageViewTransform,
     ) -> egui::Rect {
         let (Some(x), Some(y)) = (x, y) else {
-            return paint_preview_panel_placeholder(ui, LITERAL_COORDS_MSG);
+            return paint_preview_panel_placeholder(ui, LITERAL_COORDS_MSG, view);
         };
         let key = format!("panel:pt:{x}:{y}");
         let caption = format!("X: {x}, Y: {y}");
@@ -167,16 +175,18 @@ impl PreviewTooltipCache {
             &caption,
             PreviewCoords::Point { x, y },
             force,
+            PANEL_MAX_DIM,
         );
         match preview {
-            Ok((tex, _)) => paint_preview_panel_image(ui, &tex),
-            Err(err) => paint_preview_panel_placeholder(ui, &err),
+            Ok((tex, _)) => paint_preview_panel_image(ui, &tex, view),
+            Err(err) => paint_preview_panel_placeholder(ui, &err, view),
         }
     }
 
     /// Embedded form-panel preview for a search area (uses form field coords).
-    /// Returns the image/placeholder rect for cardinal coord overlays.
+    /// Returns the viewport rect for cardinal coord overlays.
     /// Pass `None` for a coordinate that is a variable or non-literal expression.
+    #[allow(clippy::too_many_arguments)]
     pub fn paint_search_area_panel(
         &mut self,
         ui: &mut egui::Ui,
@@ -185,9 +195,10 @@ impl PreviewTooltipCache {
         right: Option<i32>,
         bottom: Option<i32>,
         force: bool,
+        view: &mut ImageViewTransform,
     ) -> egui::Rect {
         let (Some(left), Some(top), Some(right), Some(bottom)) = (left, top, right, bottom) else {
-            return paint_preview_panel_placeholder(ui, LITERAL_COORDS_MSG);
+            return paint_preview_panel_placeholder(ui, LITERAL_COORDS_MSG, view);
         };
         let key = format!("panel:sa:{left}:{top}:{right}:{bottom}");
         let caption = format!("Left: {left}, Top: {top}, Right: {right}, Bottom: {bottom}");
@@ -202,10 +213,11 @@ impl PreviewTooltipCache {
                 bottom,
             },
             force,
+            PANEL_MAX_DIM,
         );
         match preview {
-            Ok((tex, _)) => paint_preview_panel_image(ui, &tex),
-            Err(err) => paint_preview_panel_placeholder(ui, &err),
+            Ok((tex, _)) => paint_preview_panel_image(ui, &tex, view),
+            Err(err) => paint_preview_panel_placeholder(ui, &err, view),
         }
     }
 
@@ -216,6 +228,7 @@ impl PreviewTooltipCache {
         caption: &str,
         coords: PreviewCoords,
         force: bool,
+        max_dim: u32,
     ) -> Result<(TextureHandle, String), String> {
         if force {
             self.entries.remove(key);
@@ -223,18 +236,14 @@ impl PreviewTooltipCache {
             self.pending.remove(key);
             self.failures.remove(key);
         }
-        let now = Instant::now();
         if let Some(entry) = self.entries.get(key) {
-            if now < entry.expires {
-                let tex = entry.texture.clone();
-                let caption = entry.caption.clone();
-                self.touch(key);
-                return Ok((tex, caption));
-            }
+            let tex = entry.texture.clone();
+            let caption = entry.caption.clone();
+            self.touch(key);
+            return Ok((tex, caption));
         }
-        self.entries.remove(key);
-        self.order.retain(|k| k != key);
 
+        let now = Instant::now();
         if let Some(fail) = self.failures.get(key) {
             if now < fail.expires {
                 return Err(fail.error.clone());
@@ -252,7 +261,7 @@ impl PreviewTooltipCache {
                         .map(|p| p.caption)
                         .unwrap_or_else(|| caption.to_string());
                     self.failures.remove(key);
-                    return self.finish_texture(ctx, key, &caption, img, now);
+                    return self.finish_texture(ctx, key, &caption, img, max_dim);
                 }
                 Ok(Err(e)) => {
                     self.pending.remove(key);
@@ -276,7 +285,7 @@ impl PreviewTooltipCache {
         let capturer = Arc::clone(self.capturer.as_ref().unwrap());
         let (tx, rx) = mpsc::channel();
         thread::spawn(move || {
-            let _ = tx.send(capture_preview(capturer.as_ref(), coords));
+            let _ = tx.send(capture_preview(capturer.as_ref(), coords, max_dim));
         });
         self.pending.insert(
             key.to_string(),
@@ -305,17 +314,22 @@ impl PreviewTooltipCache {
         key: &str,
         caption: &str,
         img: RgbaImage,
-        now: Instant,
+        max_dim: u32,
     ) -> Result<(TextureHandle, String), String> {
         let size = [img.width() as usize, img.height() as usize];
         let color = ColorImage::from_rgba_unmultiplied(size, img.as_raw());
-        let tex = ctx.load_texture(key.to_string(), color, TextureOptions::LINEAR);
+        // Mipmaps help panel zoom; tooltips stay cheap without them.
+        let opts = if max_dim >= PANEL_MAX_DIM {
+            TextureOptions::LINEAR.with_mipmap_mode(Some(egui::TextureFilter::Linear))
+        } else {
+            TextureOptions::LINEAR
+        };
+        let tex = ctx.load_texture(key.to_string(), color, opts);
         self.insert(
             key.to_string(),
             CacheEntry {
                 texture: tex.clone(),
                 caption: caption.to_string(),
-                expires: now + CACHE_TTL,
             },
         );
         Ok((tex, caption.to_string()))
@@ -374,7 +388,11 @@ enum PreviewCoords {
     },
 }
 
-fn capture_preview(capturer: &OsCapturer, coords: PreviewCoords) -> Result<RgbaImage, String> {
+fn capture_preview(
+    capturer: &OsCapturer,
+    coords: PreviewCoords,
+    max_dim: u32,
+) -> Result<RgbaImage, String> {
     let vb = capturer.virtual_bounds_ref()?;
     match coords {
         PreviewCoords::Point { x, y } => {
@@ -390,7 +408,7 @@ fn capture_preview(capturer: &OsCapturer, coords: PreviewCoords) -> Result<RgbaI
             let bounds = preview_bounds_for_point(x, y, vb);
             let mut img = capturer.capture_rect_ref(bounds)?;
             draw_point_marker(&mut img, x - bounds.x, y - bounds.y, OVERLAY, 2);
-            Ok(downscale_max_dim(img, TOOLTIP_MAX_DIM))
+            Ok(downscale_max_dim(img, max_dim))
         }
         PreviewCoords::SearchArea {
             left,
@@ -413,7 +431,7 @@ fn capture_preview(capturer: &OsCapturer, coords: PreviewCoords) -> Result<RgbaI
                 OVERLAY,
                 2,
             );
-            Ok(downscale_max_dim(img, TOOLTIP_MAX_DIM))
+            Ok(downscale_max_dim(img, max_dim))
         }
     }
 }
@@ -586,26 +604,57 @@ fn coord_to_literal(v: &ScalarValue) -> Option<i32> {
     }
 }
 
-fn paint_preview(ui: &mut egui::Ui, tex: &TextureHandle, caption: &str, panel: bool) {
+fn paint_preview(ui: &mut egui::Ui, tex: &TextureHandle, caption: &str) {
     let [tw, th] = tex.size();
-    let size = if panel {
-        fit_display_panel(tw as f32, th as f32)
-    } else {
-        fit_display(tw as f32, th as f32)
-    };
+    let size = fit_display(tw as f32, th as f32);
     ui.add(egui::Image::new((tex.id(), size)));
     ui.label(caption);
 }
 
-fn paint_preview_panel_image(ui: &mut egui::Ui, tex: &TextureHandle) -> egui::Rect {
-    let [tw, th] = tex.size();
-    let size = fit_display_panel(tw as f32, th as f32);
-    ui.add(egui::Image::new((tex.id(), size))).rect
+fn panel_viewport_size(ui: &egui::Ui) -> Vec2 {
+    let w = ui.available_width().max(PANEL_MIN_W);
+    let avail_h = ui.available_height();
+    // Fill remaining height; only exceed it (scrollbar) when below the minimum.
+    let h = if avail_h < PANEL_MIN_H {
+        PANEL_MIN_H
+    } else {
+        (avail_h - PANEL_FILL_SLACK).max(PANEL_MIN_H)
+    };
+    Vec2::new(w, h)
 }
 
-fn paint_preview_panel_placeholder(ui: &mut egui::Ui, err: &str) -> egui::Rect {
-    let size = Vec2::new(PANEL_MAX_W, PANEL_MAX_H * 0.65);
-    let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+fn paint_preview_panel_image(
+    ui: &mut egui::Ui,
+    tex: &TextureHandle,
+    view: &mut ImageViewTransform,
+) -> egui::Rect {
+    let [tw, th] = tex.size();
+    let image_size = Vec2::new(tw as f32, th as f32);
+    let desired = panel_viewport_size(ui);
+    let (viewport, resp) = ui.allocate_exact_size(desired, egui::Sense::click_and_drag());
+    image_view::handle_scroll_zoom(ui, viewport, image_size, view, resp.hovered());
+    let content = image_view::image_content_rect(viewport, image_size, view.zoom, view.pan);
+    {
+        let painter = ui.painter_at(viewport);
+        painter.rect_filled(viewport, 0.0, egui::Color32::from_gray(20));
+        painter.image(
+            tex.id(),
+            content,
+            egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+            egui::Color32::WHITE,
+        );
+    }
+    let _ = image_view::handle_pan_drag(&resp, viewport, image_size, view);
+    viewport
+}
+
+fn paint_preview_panel_placeholder(
+    ui: &mut egui::Ui,
+    err: &str,
+    _view: &mut ImageViewTransform,
+) -> egui::Rect {
+    let desired = panel_viewport_size(ui);
+    let (rect, _) = ui.allocate_exact_size(desired, egui::Sense::hover());
     ui.painter()
         .rect_filled(rect, 4.0, egui::Color32::from_gray(28));
     ui.painter().text(
@@ -622,13 +671,6 @@ fn fit_display(w: f32, h: f32) -> Vec2 {
     let w = w.max(1.0);
     let h = h.max(1.0);
     let scale = (DISPLAY_MAX_W / w).min(DISPLAY_MAX_H / h).min(1.0);
-    Vec2::new(w * scale, h * scale)
-}
-
-fn fit_display_panel(w: f32, h: f32) -> Vec2 {
-    let w = w.max(1.0);
-    let h = h.max(1.0);
-    let scale = (PANEL_MAX_W / w).min(PANEL_MAX_H / h).min(1.0);
     Vec2::new(w * scale, h * scale)
 }
 
@@ -739,7 +781,12 @@ fn downscale_max_dim(img: RgbaImage, max_dim: u32) -> RgbaImage {
     let longest = w.max(h).max(1);
     let nw = ((w as u64 * max_dim as u64) / longest as u64).max(1) as u32;
     let nh = ((h as u64 * max_dim as u64) / longest as u64).max(1) as u32;
-    image::imageops::resize(&img, nw, nh, image::imageops::FilterType::Triangle)
+    let filter = if max_dim >= PANEL_MAX_DIM {
+        image::imageops::FilterType::CatmullRom
+    } else {
+        image::imageops::FilterType::Triangle
+    };
+    image::imageops::resize(&img, nw, nh, filter)
 }
 
 fn put_pixel_safe(img: &mut RgbaImage, x: i32, y: i32, c: Rgba<u8>) {
@@ -877,6 +924,7 @@ mod tests {
                 search_area: CoordinateRef("P~Box".into()),
                 tolerance: 0.9,
                 blur: 0,
+                match_method: Default::default(),
                 detection: DetectionBranch::default(),
             },
         };

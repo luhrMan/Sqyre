@@ -18,9 +18,11 @@ macro_rules! define_shared_run_capturer {
 
         /// Shared capturer for UI-thread offload (preview tooltips, AutoPic, etc.).
         pub fn shared_capturer() -> Result<::std::sync::Arc<OsCapturer>, String> {
-            match SHARED_UI_CAPTURER
-                .get_or_init(|| OsCapturer::open().map(::std::sync::Arc::new).map_err(|e| e.to_string()))
-            {
+            match SHARED_UI_CAPTURER.get_or_init(|| {
+                OsCapturer::open()
+                    .map(::std::sync::Arc::new)
+                    .map_err(|e| e.to_string())
+            }) {
                 Ok(c) => Ok(::std::sync::Arc::clone(c)),
                 Err(e) => Err(e.clone()),
             }
@@ -32,7 +34,9 @@ macro_rules! define_shared_run_capturer {
                 display_index: i32,
             ) -> Result<::image::RgbaImage, String> {
                 if display_index != 0 {
-                    return Err($crate::error::CaptureError::UnsupportedDisplay(display_index).into());
+                    return Err(
+                        $crate::error::CaptureError::UnsupportedDisplay(display_index).into(),
+                    );
                 }
                 let vb = self.virtual_bounds_ref()?;
                 self.capture_rect_ref(vb)
@@ -70,7 +74,9 @@ macro_rules! define_shared_run_capturer {
                 display_index: i32,
             ) -> Result<::image::RgbaImage, String> {
                 if display_index != 0 {
-                    return Err($crate::error::CaptureError::UnsupportedDisplay(display_index).into());
+                    return Err(
+                        $crate::error::CaptureError::UnsupportedDisplay(display_index).into(),
+                    );
                 }
                 let vb = self.0.virtual_bounds_ref()?;
                 self.0.capture_rect_ref(vb)

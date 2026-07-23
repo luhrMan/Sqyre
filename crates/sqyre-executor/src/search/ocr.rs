@@ -1,8 +1,6 @@
 //! OCR action: capture → preprocess → recognize → write vars → run children per hit.
 
-use super::common::{
-    apply_detection_hits, run_detection_shell, sort_hits, DetectionHit,
-};
+use super::common::{apply_detection_hits, run_detection_shell, sort_hits, DetectionHit};
 use crate::action_log::draw_rect_rgb;
 use crate::error::{ExecError, Result};
 use crate::run::Executor;
@@ -10,7 +8,7 @@ use sqyre_domain::{Action, ActionKind, Macro, MatchOrder, ScalarValue};
 use std::time::Instant;
 
 /// OCR branch action: capture → preprocess → recognize → write vars → run children per hit
-/// (or on miss when `run_branch_on_no_find`). Capture/OCR errors are logged and treated as miss.
+/// (or else children on miss). Capture/OCR errors are logged and treated as miss.
 pub(crate) fn execute_ocr(
     exec: &mut Executor<'_>,
     action: &Action,
@@ -35,9 +33,9 @@ pub(crate) fn execute_ocr(
     let sqyre_domain::DetectionBranch {
         wait,
         coords,
-        run_branch_on_no_find,
         order,
         subactions,
+        else_actions,
     } = detection;
 
     let action_id = action.id;
@@ -68,6 +66,14 @@ pub(crate) fn execute_ocr(
                 wait.wait_til_found_seconds
             ),
         );
+    } else if wait.wait_while_found_active() && !attempt0.hits.is_empty() {
+        exec.log(
+            action_id,
+            format!(
+                "OCR: waiting up to {}s while text contains {target:?}",
+                wait.wait_til_found_seconds
+            ),
+        );
     }
 
     let mut initial = Some(attempt0);
@@ -92,8 +98,8 @@ pub(crate) fn execute_ocr(
                 &targets,
                 &attempt.hits,
                 coords,
-                *run_branch_on_no_find,
                 subactions,
+                else_actions,
                 macro_,
                 pass,
             )
@@ -286,20 +292,13 @@ fn run_ocr_once(
     let resize_scale = if scale > 0.0 { scale } else { 1.0 };
     let mut hits = if params.target.is_empty() {
         // Empty target always matches once at search-area center.
-        vec![DetectionHit::plain(
-            search_center_x,
-            search_center_y,
-            "",
-        )]
+        vec![DetectionHit::plain(search_center_x, search_center_y, "")]
     } else {
         let occurrences = sqyre_vision::find_target_occurrences(&recognized.words, params.target);
         if occurrences.is_empty() {
             exec.log(
                 action_id,
-                format!(
-                    "OCR target {:?} not found among word boxes",
-                    params.target
-                ),
+                format!("OCR target {:?} not found among word boxes", params.target),
             );
             // Text-contains can still succeed when boxes miss; treat as miss for coords/hits
             // unless full text contains the target — then one synthetic center hit.

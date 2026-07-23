@@ -1,6 +1,7 @@
 //! Macro action tree: TreeView, DnD/scroll gestures, row chrome wiring, highlights.
 
 use crate::action_tooltip;
+use crate::action_tooltip::help;
 use crate::paint_ctx::{CatalogPaint, RecordBridges, TipUiCtx, TreePaint, VarTheme};
 use crate::tree_chrome::{self, RowAction, RowHighlight, RowInteraction};
 use crate::tree_dnd;
@@ -151,6 +152,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                         },
                         macro_name: &macro_name,
                         hl_snap: &hl_snap,
+                        selected: app.selected_action,
                     };
                     let (_, tree_actions) = TreeView::new(id)
                         .allow_drag_and_drop(allow_dnd)
@@ -241,7 +243,12 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
         app.logs_window = Some(aid);
     }
     if let Some(aid) = delete_action {
-        if !aid.is_root() {
+        if !aid.is_root()
+            && !matches!(
+                app.macros[idx].root.resolve_tree_id(aid),
+                Some(sqyre_domain::TreeNodeRef::ElseFolder { .. })
+            )
+        {
             app.record_tree_mutation();
             let cleared_sel = app.selected_action_id() == Some(aid);
             let _ = app.macros[idx].root.remove_by_id(aid);
@@ -381,18 +388,23 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
 
     if let Some(aid) = app.selected_action {
         let root = &app.macros[idx].root;
-        let action = if aid.is_root() {
-            Some(root)
-        } else {
-            root.find_by_id(aid)
-        };
-        if let Some(action) = action {
+        if let Some(sqyre_domain::TreeNodeRef::ElseFolder { .. }) = root.resolve_tree_id(aid) {
             ui.separator();
-            ui.label(format!(
-                "Selected: {} ({})",
-                action.display_name(),
-                action.type_key()
-            ));
+            ui.label("Selected: Else (runs when not found / condition false)");
+        } else {
+            let action = if aid.is_root() {
+                Some(root)
+            } else {
+                root.find_by_id(aid)
+            };
+            if let Some(action) = action {
+                ui.separator();
+                ui.label(format!(
+                    "Selected: {} ({})",
+                    action.display_name(),
+                    action.type_key()
+                ));
+            }
         }
     }
 }
@@ -401,6 +413,9 @@ fn set_all_branches_openness(root: &Action, state: &mut TreeViewState<ActionId>,
     root.walk(&mut |action| {
         if action.is_branch() && !action.id.is_root() {
             state.set_openness(action.id, open);
+            if action.has_else_folder() {
+                state.set_openness(ActionId::else_folder(action.id), open);
+            }
         }
     });
 }
@@ -466,6 +481,18 @@ fn flattened_visible_index(root: &Action, target: ActionId) -> Option<usize> {
             for child in action.children() {
                 walk(child, target, index, found);
             }
+            if action.has_else_folder() {
+                let else_id = ActionId::else_folder(action.id);
+                if else_id == target {
+                    *found = Some(*index);
+                }
+                *index += 1;
+                if let Some(else_kids) = action.else_children() {
+                    for child in else_kids {
+                        walk(child, target, index, found);
+                    }
+                }
+            }
         }
     }
     walk(root, target, &mut index, &mut found);
@@ -485,7 +512,7 @@ fn build_tree(
     interact_y: f32,
 ) {
     let action_id = action.id;
-    let highlight = row_highlight(tree.macro_name, action_id, tree.hl_snap);
+    let highlight = row_highlight_for(tree, action_id);
     let should_scroll = scroll_to == Some(action_id);
     let row_h = tree_chrome::action_row_height(action, interact_y);
 
@@ -538,6 +565,19 @@ fn build_tree(
                     interact_y,
                 );
             }
+            if action.has_else_folder() {
+                build_else_dir(
+                    builder,
+                    action,
+                    open_logs,
+                    delete_action,
+                    row_events,
+                    tree,
+                    scroll_to,
+                    scrolled_follow,
+                    interact_y,
+                );
+            }
         }
         builder.close_dir();
     } else {
@@ -545,6 +585,73 @@ fn build_tree(
             handle_row(ui, open_logs, delete_action, row_events, scrolled_follow);
         }));
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_else_dir(
+    builder: &mut TreeViewBuilder<'_, ActionId>,
+    detection: &Action,
+    open_logs: &mut Option<ActionId>,
+    delete_action: &mut Option<ActionId>,
+    row_events: &mut Vec<(ActionId, RowInteraction)>,
+    tree: &mut TreePaint<'_>,
+    scroll_to: Option<ActionId>,
+    scrolled_follow: &mut bool,
+    interact_y: f32,
+) {
+    let else_id = ActionId::else_folder(detection.id);
+    let row_h = tree_chrome::default_row_height(interact_y);
+    let should_scroll = scroll_to == Some(else_id);
+    let is_open = builder.node(
+        NodeBuilder::dir(else_id)
+            .drop_allowed(true)
+            .height(row_h)
+            .label_ui(|ui| {
+                let resp = help::tip(ui.strong("Else"), help::ELSE_BRANCH);
+                let mut row_rect = resp.rect;
+                row_rect.set_right(ui.max_rect().right());
+                tree_chrome::paint_row_highlight(
+                    ui,
+                    row_rect,
+                    else_folder_highlight(detection.id, tree.selected),
+                );
+                if should_scroll {
+                    ui.scroll_to_rect(row_rect, Some(egui::Align::Center));
+                    *scrolled_follow = true;
+                }
+                row_events.push((
+                    else_id,
+                    RowInteraction {
+                        action: RowAction::None,
+                        hovered: resp.hovered(),
+                        pointer_in_row: resp.hovered(),
+                        secondary_clicked: false,
+                        double_clicked: false,
+                        primary_clicked: resp.clicked(),
+                        row_rect,
+                        drag_handle_rect: row_rect,
+                    },
+                ));
+            }),
+    );
+    if is_open {
+        if let Some(else_kids) = detection.else_children() {
+            for child in else_kids {
+                build_tree(
+                    builder,
+                    child,
+                    open_logs,
+                    delete_action,
+                    row_events,
+                    tree,
+                    scroll_to,
+                    scrolled_follow,
+                    interact_y,
+                );
+            }
+        }
+    }
+    builder.close_dir();
 }
 
 pub(crate) fn row_highlight(
@@ -569,6 +676,38 @@ pub(crate) fn row_highlight(
         return RowHighlight::Cursor;
     }
     RowHighlight::None
+}
+
+fn row_highlight_for(tree: &TreePaint<'_>, action_id: ActionId) -> RowHighlight {
+    let exec = row_highlight(tree.macro_name, action_id, tree.hl_snap);
+    if !matches!(exec, RowHighlight::None) {
+        return exec;
+    }
+    else_owner_highlight(action_id, tree.selected)
+}
+
+/// Soft highlight on a branch when its Else folder is the tree selection.
+pub(crate) fn else_owner_highlight(
+    action_id: ActionId,
+    selected: Option<ActionId>,
+) -> RowHighlight {
+    if selected.is_some_and(|sel| ActionId::else_folder(action_id) == sel) {
+        RowHighlight::Owner
+    } else {
+        RowHighlight::None
+    }
+}
+
+/// Soft highlight on the Else folder when its owning branch is selected.
+pub(crate) fn else_folder_highlight(
+    owner_id: ActionId,
+    selected: Option<ActionId>,
+) -> RowHighlight {
+    if selected == Some(owner_id) {
+        RowHighlight::Owner
+    } else {
+        RowHighlight::None
+    }
 }
 
 #[cfg(test)]
@@ -618,5 +757,30 @@ mod highlight_ui_tests {
             fills: HashMap::new(),
         };
         assert!(matches!(row_highlight("m", id, &snap), RowHighlight::None));
+    }
+
+    #[test]
+    fn else_owner_highlight_when_else_selected() {
+        let id = ActionId::new();
+        assert_eq!(
+            else_owner_highlight(id, Some(ActionId::else_folder(id))),
+            RowHighlight::Owner
+        );
+        assert_eq!(
+            else_owner_highlight(id, Some(ActionId::new())),
+            RowHighlight::None
+        );
+        assert_eq!(else_owner_highlight(id, None), RowHighlight::None);
+    }
+
+    #[test]
+    fn else_folder_highlight_when_owner_selected() {
+        let id = ActionId::new();
+        assert_eq!(else_folder_highlight(id, Some(id)), RowHighlight::Owner);
+        assert_eq!(
+            else_folder_highlight(id, Some(ActionId::else_folder(id))),
+            RowHighlight::None
+        );
+        assert_eq!(else_folder_highlight(id, None), RowHighlight::None);
     }
 }

@@ -14,7 +14,7 @@ use crate::runtime_vars::RuntimeVarSink;
 use crate::search::{execute_find_pixel, execute_image_search, execute_ocr};
 use sqyre_domain::{
     action_type_label, resolve_scalar_int, Action, ActionId, ActionKind, Macro, MatchMode,
-    MouseButton, ScalarValue,
+    MouseButton, PressState, ScalarValue,
 };
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -327,11 +327,11 @@ fn apply_delay(exec: &mut Executor<'_>, action: &Action, macro_: &Macro) -> Resu
     if macro_.global_delay > 0 {
         exec.interruptible_sleep(macro_.global_delay)?;
     }
-    match action.type_key() {
-        "key" | "type" if macro_.keyboard_delay > 0 => {
+    match sqyre_domain::action_delay_class(action.type_key()) {
+        sqyre_domain::DelayClass::Keyboard if macro_.keyboard_delay > 0 => {
             exec.interruptible_sleep(macro_.keyboard_delay)?;
         }
-        "move" | "click" if macro_.mouse_delay > 0 => {
+        sqyre_domain::DelayClass::Mouse if macro_.mouse_delay > 0 => {
             exec.interruptible_sleep(macro_.mouse_delay)?;
         }
         _ => {}
@@ -364,6 +364,7 @@ fn dispatch(exec: &mut Executor<'_>, action: &Action, macro_: &mut Macro) -> Res
         ActionKind::Conditional {
             condition,
             subactions,
+            else_actions,
         } => {
             let ok = eval_clauses(condition.match_mode, &condition.clauses, macro_)?;
             if ok {
@@ -372,37 +373,64 @@ fn dispatch(exec: &mut Executor<'_>, action: &Action, macro_: &mut Macro) -> Res
                     format!("Conditional {:?}: true, running branch", condition.name),
                 );
                 run_children(exec, subactions, macro_)
-            } else {
+            } else if else_actions.is_empty() {
                 exec.log(
                     action.id,
                     format!("Conditional {:?}: false, skipping branch", condition.name),
                 );
                 Ok(())
+            } else {
+                exec.log(
+                    action.id,
+                    format!("Conditional {:?}: false, running else", condition.name),
+                );
+                run_children(exec, else_actions, macro_)
             }
         }
         ActionKind::Click { button, state } => {
             if *button == MouseButton::Scroll {
-                exec.deps
-                    .automation
-                    .scroll(*state)
-                    .map_err(ExecError::Message)
+                let up = matches!(*state, PressState::Up);
+                exec.deps.automation.scroll(up).map_err(ExecError::Message)
             } else {
-                exec.deps
-                    .automation
-                    .click(button.as_str(), *state)
-                    .map_err(ExecError::Message)
+                match *state {
+                    PressState::Down => exec
+                        .deps
+                        .automation
+                        .click(button.as_str(), true)
+                        .map_err(ExecError::Message),
+                    PressState::Up => exec
+                        .deps
+                        .automation
+                        .click(button.as_str(), false)
+                        .map_err(ExecError::Message),
+                    PressState::Tap => {
+                        exec.deps
+                            .automation
+                            .click(button.as_str(), true)
+                            .map_err(ExecError::Message)?;
+                        exec.deps
+                            .automation
+                            .click(button.as_str(), false)
+                            .map_err(ExecError::Message)
+                    }
+                }
             }
         }
-        ActionKind::Key { key, state } => {
-            if *state {
+        ActionKind::Key { key, state } => match *state {
+            PressState::Down => exec
+                .deps
+                .automation
+                .key_down(key)
+                .map_err(ExecError::Message),
+            PressState::Up => exec.deps.automation.key_up(key).map_err(ExecError::Message),
+            PressState::Tap => {
                 exec.deps
                     .automation
                     .key_down(key)
-                    .map_err(ExecError::Message)
-            } else {
+                    .map_err(ExecError::Message)?;
                 exec.deps.automation.key_up(key).map_err(ExecError::Message)
             }
-        }
+        },
         ActionKind::Type { text, delay_ms } => {
             let resolved = resolve_text(text, macro_)?;
             for ch in resolved.chars() {
@@ -634,8 +662,7 @@ mod tests {
         root_loop, Action, ActionId, ActionKind, CoordinateRef, ScalarValue, VariableAssignment,
     };
 
-    const RUN_RESOLVER: FixedResolver =
-        FixedResolver::point_area((42, 99), (0, 0, 10, 10));
+    const RUN_RESOLVER: FixedResolver = FixedResolver::point_area((42, 99), (0, 0, 10, 10));
 
     #[test]
     fn executes_wait_loop_break() {
@@ -845,14 +872,14 @@ mod tests {
                 id: ActionId::new(),
                 kind: ActionKind::Click {
                     button: "left".into(),
-                    state: true,
+                    state: PressState::Down,
                 },
             },
             Action {
                 id: ActionId::new(),
                 kind: ActionKind::Click {
                     button: "left".into(),
-                    state: false,
+                    state: PressState::Up,
                 },
             },
         ]);
@@ -881,6 +908,45 @@ mod tests {
     }
 
     #[test]
+    fn tap_click_and_key_press_down_then_up() {
+        let mut backend = RecordingBackend::default();
+        let mut macro_ = Macro::new("t", 0, vec![]);
+        macro_.mouse_delay = 0;
+        macro_.keyboard_delay = 0;
+        macro_.root = root_loop(vec![
+            Action {
+                id: ActionId::new(),
+                kind: ActionKind::Click {
+                    button: "left".into(),
+                    state: PressState::Tap,
+                },
+            },
+            Action {
+                id: ActionId::new(),
+                kind: ActionKind::Key {
+                    key: "a".into(),
+                    state: PressState::Tap,
+                },
+            },
+        ]);
+        execute_macro(&mut macro_, &mut backend).unwrap();
+        let click_down = backend
+            .log
+            .iter()
+            .filter(|e| e.as_str() == "click:left:down")
+            .count();
+        let click_up = backend
+            .log
+            .iter()
+            .filter(|e| e.as_str() == "click:left:up")
+            .count();
+        assert_eq!(click_down, 1);
+        assert_eq!(click_up, 1);
+        assert!(backend.log.iter().any(|e| e == "keydown:a"));
+        assert!(backend.log.iter().any(|e| e == "keyup:a"));
+    }
+
+    #[test]
     fn action_logger_tags_wait_and_click() {
         let mut backend = RecordingBackend::default();
         let logger = crate::SharedActionLog::new();
@@ -898,7 +964,7 @@ mod tests {
                 id: click_id,
                 kind: ActionKind::Click {
                     button: "left".into(),
-                    state: true,
+                    state: PressState::Down,
                 },
             },
         ]);
@@ -980,6 +1046,7 @@ mod tests {
                             time: ScalarValue::Int(7),
                         },
                     }],
+                    else_actions: Vec::new(),
                 },
             },
             Action {
@@ -1000,12 +1067,23 @@ mod tests {
                             time: ScalarValue::Int(99),
                         },
                     }],
+                    else_actions: vec![Action {
+                        id: ActionId::new(),
+                        kind: ActionKind::Wait {
+                            time: ScalarValue::Int(5),
+                        },
+                    }],
                 },
             },
         ]);
         execute_macro(&mut macro_, &mut backend).unwrap();
         assert!(backend.log.iter().any(|e| e == "sleep:7"));
         assert!(!backend.log.iter().any(|e| e == "sleep:99"));
+        assert!(
+            backend.log.iter().any(|e| e == "sleep:5"),
+            "false condition should run else: {:?}",
+            backend.log
+        );
     }
 
     #[test]
@@ -1252,7 +1330,7 @@ mod tests {
             id: ActionId::new(),
             kind: ActionKind::Click {
                 button: "left".into(),
-                state: true,
+                state: PressState::Down,
             },
         }]);
         execute_macro(&mut macro_, &mut backend).unwrap();

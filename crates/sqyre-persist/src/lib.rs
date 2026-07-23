@@ -1,8 +1,10 @@
 //! Persistence for `~/.sqyre` (db.yaml, settings, program catalog).
 
+mod migrate;
 mod programs;
 mod settings;
 
+pub use migrate::{migrate_db_yaml, migrate_db_yaml_value, LegacyCatalog};
 pub use programs::{
     ProgramCatalog, ProgramCollection, ProgramData, ProgramItem, ProgramMask, ProgramPoint,
     ProgramSearchArea,
@@ -82,6 +84,21 @@ pub(crate) fn atomic_write(path: &Path, bytes: impl AsRef<[u8]>) -> std::io::Res
 /// Override the Sqyre data directory (empty clears → `~/.sqyre`).
 pub fn set_sqyre_dir_override(path: Option<PathBuf>) {
     *DIR_OVERRIDE.write().unwrap() = path;
+}
+
+/// Per-user config directory for Sqyre (`~/.config/sqyre` on Linux).
+///
+/// Holds the data-dir pointer and the single-instance lock — paths that must
+/// not move when the relocatable data directory changes.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn sqyre_config_dir() -> PathBuf {
+    dirs::config_dir()
+        .unwrap_or_else(|| {
+            dirs::home_dir()
+                .unwrap_or_else(std::env::temp_dir)
+                .join(".config")
+        })
+        .join("sqyre")
 }
 
 /// Run `f` with a temporary Sqyre dir override, serialized against other override users.

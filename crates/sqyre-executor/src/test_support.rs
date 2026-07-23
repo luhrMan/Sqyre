@@ -30,14 +30,11 @@ impl FixedResolver {
 }
 
 /// Default used by most search tests: point (0,0), area (100,200)-(110,210).
-pub const SEARCH_FIXED_AREA: FixedResolver = FixedResolver::point_area((0, 0), (100, 200, 110, 210));
+pub const SEARCH_FIXED_AREA: FixedResolver =
+    FixedResolver::point_area((0, 0), (100, 200, 110, 210));
 
 impl CoordinateResolver for FixedResolver {
-    fn resolve_point(
-        &self,
-        r: &CoordinateRef,
-        _macro_: &Macro,
-    ) -> Result<(i32, i32), String> {
+    fn resolve_point(&self, r: &CoordinateRef, _macro_: &Macro) -> Result<(i32, i32), String> {
         if self.grid.is_some() {
             let (r1, c1, _, _) = r.cell_range().ok_or("expected cell")?;
             return Ok((c1 * 10, r1 * 10));
