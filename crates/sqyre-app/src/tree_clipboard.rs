@@ -39,10 +39,7 @@ pub(crate) fn insert_location_below_selection(
                     .else_children()
                     .is_some_and(|kids| kids.iter().any(|c| c.id == sel))
             {
-                return Some((
-                    ActionId::else_folder(parent_id),
-                    InsertSlot::After(sel),
-                ));
+                return Some((ActionId::else_folder(parent_id), InsertSlot::After(sel)));
             }
         }
         return Some((parent_id, InsertSlot::After(sel)));
