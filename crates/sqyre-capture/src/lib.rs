@@ -3,7 +3,7 @@
 mod diag;
 mod error;
 mod outline_rect;
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
 mod outline_stub;
 mod pixel_convert;
 #[macro_use]
@@ -11,6 +11,8 @@ mod shared_run;
 mod stub;
 #[cfg(target_os = "windows")]
 mod win_capture;
+#[cfg(target_os = "windows")]
+mod win_outline;
 #[cfg(target_os = "linux")]
 mod x11_capture;
 #[cfg(target_os = "linux")]
@@ -41,13 +43,16 @@ pub use x11_focus::OsWindowFocuser;
 #[cfg(target_os = "linux")]
 pub use x11_outline::SelectionOutline;
 
+#[cfg(target_os = "windows")]
+pub use win_outline::SelectionOutline;
+
 /// True if `display` is a Sqyre secondary X11 connection (for winit error hooks).
 #[cfg(target_os = "linux")]
 pub fn owns_secondary_x_display(display: *mut std::ffi::c_void) -> bool {
     x11_secondary::owns(display)
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
 pub use outline_stub::SelectionOutline;
 
 /// macOS / other: capture not implemented yet.
