@@ -6,8 +6,8 @@ use crate::test_support::SEARCH_FIXED_AREA;
 use crate::SharedActionLog;
 use image::{Rgba, RgbaImage};
 use sqyre_domain::{
-    root_loop, Action, ActionId, ActionKind, CoordinateOutputs, CoordinateRef, Macro, MatchOrder,
-    RepeatMode, ScalarValue, WaitTilFoundConfig,
+    root_loop, Action, ActionId, ActionKind, CoordinateOutputs, CoordinateRef, LoopJumpMode, Macro,
+    MatchOrder, RepeatMode, ScalarValue, WaitTilFoundConfig,
 };
 use sqyre_match::{search_blur_kernel, ImageBuf, DEFAULT_CLOSE_MATCHES_DISTANCE};
 use sqyre_vision::get_cached_blurred_template;
@@ -717,7 +717,9 @@ fn image_search_break_stops_match_loop() {
         },
         Action {
             id: ActionId::new(),
-            kind: ActionKind::Break,
+            kind: ActionKind::LoopJump {
+                mode: LoopJumpMode::Break,
+            },
         },
     ];
     run_matches(

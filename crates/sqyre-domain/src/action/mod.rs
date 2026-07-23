@@ -186,6 +186,15 @@ string_enum! {
     }
 }
 
+string_enum! {
+    /// Exit the enclosing loop, or skip to its next iteration.
+    pub enum LoopJumpMode {
+        #[default]
+        Break = "break",
+        Continue = "continue",
+    }
+}
+
 /// Press / release phase for click and key actions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PressState {
@@ -1262,8 +1271,9 @@ pub enum ActionKind {
         exit: bool,
         subactions: Vec<Action>,
     },
-    Break,
-    Continue,
+    LoopJump {
+        mode: LoopJumpMode,
+    },
 }
 
 impl ActionKind {
@@ -1446,7 +1456,10 @@ impl ActionKind {
                     format!("Pause: {message}")
                 }
             }
-            Self::Break | Self::Continue => label.to_string(),
+            Self::LoopJump { mode } => match mode {
+                LoopJumpMode::Break => "Break".into(),
+                LoopJumpMode::Continue => "Continue".into(),
+            },
         }
     }
 }

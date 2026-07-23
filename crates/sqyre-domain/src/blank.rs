@@ -2,7 +2,8 @@
 
 use crate::{
     action_type_table, Action, ActionId, ActionKind, ConditionBlock, CoordinateRef,
-    DetectionBranch, ListColumn, PressState, ScalarValue, TemplateMatchMethod, VariableAssignment,
+    DetectionBranch, ListColumn, LoopJumpMode, PressState, ScalarValue, TemplateMatchMethod,
+    VariableAssignment,
     DEFAULT_SMOOTH_DELAY_MS, DEFAULT_SMOOTH_HIGH, DEFAULT_SMOOTH_LOW,
 };
 
@@ -109,8 +110,9 @@ pub(crate) fn blank_kind(action_type: &str) -> Option<ActionKind> {
             max_iterations: 0,
             subactions: Vec::new(),
         },
-        "break" => ActionKind::Break,
-        "continue" => ActionKind::Continue,
+        "loopjump" => ActionKind::LoopJump {
+            mode: LoopJumpMode::Break,
+        },
         "imagesearch" => ActionKind::ImageSearch {
             name: String::new(),
             targets: Vec::new(),
