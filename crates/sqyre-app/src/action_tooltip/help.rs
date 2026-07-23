@@ -110,22 +110,30 @@ pub const FOREACH_REMOVE_SOURCE: &str = "Remove this source.";
 
 pub const SEARCH_AREA: &str = "Screen region to scan (from the Data Editor).";
 pub const REPEAT_MODE: &str =
-    "once = single try; waituntilfound = retry until found; repeatwhilefound = loop while found.";
+    "once = single try; wait* = silent poll then one branch; repeat* = run branch each pass.";
 pub const WAIT_SECONDS: &str = "How long to keep retrying (seconds). Required for wait modes.";
 pub const WAIT_INTERVAL: &str = "Milliseconds between detection retries.";
-pub const WAIT_MAX_ITER: &str = "Cap on repeat-while-found iterations (0 = default 100).";
+pub const WAIT_MAX_ITER: &str = "Cap on repeat-mode iterations (0 = default 100).";
 pub const OUT_X: &str = "Variable that receives the match X coordinate.";
 pub const OUT_Y: &str = "Variable that receives the match Y coordinate.";
 pub const ORDER_GROUPING: &str =
     "How multiple matches are grouped before ordering (Image Search, OCR occurrences, clustered Find Pixel).";
 pub const ORDER_HORIZONTAL: &str = "Left-to-right or right-to-left among matches.";
 pub const ORDER_VERTICAL: &str = "Top-to-bottom or bottom-to-top among matches.";
-pub const RUN_ON_NO_FIND: &str = "Run child actions when the target is not found.";
+pub const RUN_ON_NO_FIND: &str =
+    "Run child actions when the target is not found (once / wait final / repeat-until misses).";
 
 // --- Image search ---
 
 pub const IS_ITEMS: &str = "Template images to find (from the Data Editor).";
-pub const IS_TOLERANCE: &str = "Match confidence threshold (0–1). Higher = stricter.";
+pub const IS_TOLERANCE: &str =
+    "Score threshold for a hit. For CCOEFF/CCORR (and normed): higher is better; for SQDIFF*: lower is better. Normed methods are typically 0–1.";
+pub const IS_TOLERANCE_SQDIFF: &str =
+    "Maximum score to accept (lower = better). For SQDIFF_NORMED, 0 = perfect match.";
+pub const IS_TOLERANCE_UNNORMED: &str =
+    "Raw score threshold (not 0–1). Higher is better for CCORR/CCOEFF; lower is better for SQDIFF.";
+pub const IS_METHOD: &str =
+    "OpenCV template-match method. Default CCOEFF_NORMED. SQDIFF* treat lower scores as better.";
 pub const IS_BLUR: &str = "Blur radius applied before matching (reduces noise).";
 
 // --- OCR ---

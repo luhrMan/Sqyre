@@ -14,6 +14,11 @@ use std::collections::HashSet;
 const ICON_SIZE: f32 = 18.0;
 /// Glyph inside the type badge.
 const ICON_GLYPH_SIZE: f32 = 12.0;
+/// Dense logs/delete hit targets (smaller than toolbar `ICON_BTN_SIDE`).
+const ROW_ACTION_BTN_SIDE: f32 = 14.0;
+const ROW_ACTION_BTN_FONT: f32 = 12.0;
+/// Gap between logs and delete.
+const ROW_ACTION_BTN_GAP: f32 = 2.0;
 /// Pill label font (1px smaller than prior 13).
 const PILL_FONT_SIZE: f32 = 12.0;
 /// Pill inner padding (4×2).
@@ -115,12 +120,14 @@ pub(crate) fn image_search_overflow_count(total: usize) -> usize {
     total.saturating_sub(MAX_TARGET_THUMBS)
 }
 
-fn icon_btn(ui: &mut egui::Ui, glyph: &str, tip: &str) -> egui::Response {
-    crate::theme::icon_button_bare(ui, glyph).on_hover_text(tip)
-}
-
-fn icon_btn_colored(ui: &mut egui::Ui, glyph: &str, tip: &str, color: Color32) -> egui::Response {
-    crate::theme::icon_button_bare_colored(ui, glyph, Some(color)).on_hover_text(tip)
+fn row_action_btn(ui: &mut egui::Ui, glyph: &str, tip: &str, color: Option<Color32>) -> egui::Response {
+    let font_id = FontId::proportional(ROW_ACTION_BTN_FONT);
+    let (rect, response) =
+        ui.allocate_exact_size(Vec2::splat(ROW_ACTION_BTN_SIDE), Sense::click());
+    let visuals = ui.style().interact(&response);
+    let fg = color.unwrap_or_else(|| visuals.text_color());
+    crate::theme::paint_text_centered(ui, rect, glyph, font_id, fg);
+    response.on_hover_text(tip)
 }
 
 /// Paint the pastel type badge with a glyph.
@@ -348,9 +355,9 @@ pub fn paint_action_row(
         Vec2::new(row_w, row_h),
         egui::Layout::right_to_left(egui::Align::Center),
         |ui| {
-            ui.spacing_mut().item_spacing.x = spacing;
+            ui.spacing_mut().item_spacing.x = ROW_ACTION_BTN_GAP;
 
-            let del = icon_btn_colored(ui, "🗑", "Delete", crate::theme::MACRO_STOP);
+            let del = row_action_btn(ui, "🗑", "Delete", Some(crate::theme::MACRO_STOP));
             if del.contains_pointer() {
                 chrome_hovered = true;
             }
@@ -358,7 +365,7 @@ pub fn paint_action_row(
                 action_click = RowAction::Delete;
             }
 
-            let logs = icon_btn(ui, "📋", "Logs");
+            let logs = row_action_btn(ui, "📋", "Logs", None);
             // contains_pointer: the full-row sense below steals `.hovered()` over these buttons.
             if logs.contains_pointer() {
                 chrome_hovered = true;
@@ -367,6 +374,7 @@ pub fn paint_action_row(
                 action_click = RowAction::Logs;
             }
             chrome_rect = logs.rect.union(del.rect);
+            ui.spacing_mut().item_spacing.x = spacing;
 
             let content_w = ui.available_width().max(0.0);
             let (content_rect, _) =
@@ -554,6 +562,7 @@ mod tests {
                 search_area: CoordinateRef(String::new()),
                 tolerance: 0.9,
                 blur: 0,
+                match_method: Default::default(),
                 detection: DetectionBranch::default(),
             },
         };
@@ -567,6 +576,7 @@ mod tests {
                 search_area: CoordinateRef(String::new()),
                 tolerance: 0.9,
                 blur: 0,
+                match_method: Default::default(),
                 detection: DetectionBranch::default(),
             },
         };
@@ -689,6 +699,7 @@ mod tests {
                     search_area: CoordinateRef("P~Box".into()),
                     tolerance: 0.9,
                     blur: 0,
+                    match_method: Default::default(),
                     detection: DetectionBranch::default(),
                 },
             };
@@ -784,6 +795,7 @@ mod tests {
                 search_area: CoordinateRef("P~Box".into()),
                 tolerance: 0.9,
                 blur: 0,
+                match_method: Default::default(),
                 detection: DetectionBranch::default(),
             },
         };

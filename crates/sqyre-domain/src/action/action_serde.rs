@@ -6,10 +6,11 @@
 use super::{
     default_assignments, default_image_blur, default_loop_count, default_ocr_blur,
     default_ocr_text, default_resize, default_target_color, default_true, default_wait_time,
-    is_default_image_blur, is_default_ocr_blur, is_default_ocr_text, is_default_resize,
-    is_default_target_color, is_false, is_true, is_zero_i32, Action, ActionKind, ConditionBlock,
-    CoordinateRef, DetectionBranch, ListColumn, MouseButton, NavigateSelectData, PressState,
-    ScalarValue, VariableAssignment, DEFAULT_SMOOTH_DELAY_MS, DEFAULT_SMOOTH_HIGH, DEFAULT_SMOOTH_LOW,
+    is_default_image_blur, is_default_match_method, is_default_ocr_blur, is_default_ocr_text,
+    is_default_resize, is_default_target_color, is_false, is_true, is_zero_i32, Action,
+    ActionKind, ConditionBlock, CoordinateRef, DetectionBranch, ListColumn, MouseButton,
+    NavigateSelectData, PressState, ScalarValue, TemplateMatchMethod, VariableAssignment,
+    DEFAULT_SMOOTH_DELAY_MS, DEFAULT_SMOOTH_HIGH, DEFAULT_SMOOTH_LOW,
 };
 use serde::{Deserialize, Serialize};
 
@@ -74,6 +75,12 @@ enum ActionKindWire {
             skip_serializing_if = "is_default_image_blur"
         )]
         blur: i32,
+        #[serde(
+            rename = "matchmethod",
+            default,
+            skip_serializing_if = "is_default_match_method"
+        )]
+        match_method: TemplateMatchMethod,
         #[serde(flatten)]
         detection: DetectionBranch,
     },
@@ -342,6 +349,7 @@ impl From<ActionKindWire> for ActionKind {
                 search_area,
                 tolerance,
                 blur,
+                match_method,
                 detection,
                 ..
             } => Self::ImageSearch {
@@ -350,6 +358,7 @@ impl From<ActionKindWire> for ActionKind {
                 search_area,
                 tolerance,
                 blur,
+                match_method,
                 detection,
             },
             ActionKindWire::Ocr {
@@ -534,6 +543,7 @@ impl From<&ActionKind> for ActionKindWire {
                 search_area,
                 tolerance,
                 blur,
+                match_method,
                 detection,
             } => Self::ImageSearch {
                 type_: TagImageSearch::Tag,
@@ -542,6 +552,7 @@ impl From<&ActionKind> for ActionKindWire {
                 search_area: search_area.clone(),
                 tolerance: *tolerance,
                 blur: *blur,
+                match_method: *match_method,
                 detection: detection.clone(),
             },
             ActionKind::Ocr {

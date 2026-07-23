@@ -5,7 +5,7 @@ use eframe::egui::{self, Pos2, Vec2};
 const IMAGE_ZOOM_MIN: f32 = 0.5;
 const IMAGE_ZOOM_MAX: f32 = 16.0;
 /// Relative zoom change per mouse-wheel notch (~50px of `smooth_scroll_delta`).
-const IMAGE_ZOOM_WHEEL_STEP: f32 = 0.025;
+const IMAGE_ZOOM_WHEEL_STEP: f32 = 0.035;
 /// Typical egui wheel notch size in points of `smooth_scroll_delta.y`.
 const IMAGE_ZOOM_SCROLL_NOTCH: f32 = 50.0;
 const IMAGE_PAN_EDGE_PAD: f32 = 32.0;

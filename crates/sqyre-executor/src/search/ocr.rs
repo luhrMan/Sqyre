@@ -66,6 +66,14 @@ pub(crate) fn execute_ocr(
                 wait.wait_til_found_seconds
             ),
         );
+    } else if wait.wait_while_found_active() && !attempt0.hits.is_empty() {
+        exec.log(
+            action_id,
+            format!(
+                "OCR: waiting up to {}s while text contains {target:?}",
+                wait.wait_til_found_seconds
+            ),
+        );
     }
 
     let mut initial = Some(attempt0);

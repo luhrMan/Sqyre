@@ -26,7 +26,6 @@ const PANEL_MIN_H: f32 = 120.0;
 /// Slack so filling remaining height does not trip ScrollArea overflow (rounding / bar hysteresis).
 const PANEL_FILL_SLACK: f32 = 1.0;
 const CACHE_MAX: usize = 24;
-const CACHE_TTL: Duration = Duration::from_secs(30);
 /// How long to remember a failed capture before trying again (manual ↻ clears sooner).
 const FAIL_CACHE_TTL: Duration = Duration::from_secs(60);
 const OVERLAY: Rgba<u8> = Rgba([255, 0, 0, 255]);
@@ -41,7 +40,6 @@ pub enum PreviewKind {
 struct CacheEntry {
     texture: TextureHandle,
     caption: String,
-    expires: Instant,
 }
 
 struct FailureEntry {
@@ -237,18 +235,14 @@ impl PreviewTooltipCache {
             self.pending.remove(key);
             self.failures.remove(key);
         }
-        let now = Instant::now();
         if let Some(entry) = self.entries.get(key) {
-            if now < entry.expires {
-                let tex = entry.texture.clone();
-                let caption = entry.caption.clone();
-                self.touch(key);
-                return Ok((tex, caption));
-            }
+            let tex = entry.texture.clone();
+            let caption = entry.caption.clone();
+            self.touch(key);
+            return Ok((tex, caption));
         }
-        self.entries.remove(key);
-        self.order.retain(|k| k != key);
 
+        let now = Instant::now();
         if let Some(fail) = self.failures.get(key) {
             if now < fail.expires {
                 return Err(fail.error.clone());
@@ -266,7 +260,7 @@ impl PreviewTooltipCache {
                         .map(|p| p.caption)
                         .unwrap_or_else(|| caption.to_string());
                     self.failures.remove(key);
-                    return self.finish_texture(ctx, key, &caption, img, now, max_dim);
+                    return self.finish_texture(ctx, key, &caption, img, max_dim);
                 }
                 Ok(Err(e)) => {
                     self.pending.remove(key);
@@ -319,7 +313,6 @@ impl PreviewTooltipCache {
         key: &str,
         caption: &str,
         img: RgbaImage,
-        now: Instant,
         max_dim: u32,
     ) -> Result<(TextureHandle, String), String> {
         let size = [img.width() as usize, img.height() as usize];
@@ -336,7 +329,6 @@ impl PreviewTooltipCache {
             CacheEntry {
                 texture: tex.clone(),
                 caption: caption.to_string(),
-                expires: now + CACHE_TTL,
             },
         );
         Ok((tex, caption.to_string()))
@@ -931,6 +923,7 @@ mod tests {
                 search_area: CoordinateRef("P~Box".into()),
                 tolerance: 0.9,
                 blur: 0,
+                match_method: Default::default(),
                 detection: DetectionBranch::default(),
             },
         };

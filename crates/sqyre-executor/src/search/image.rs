@@ -12,7 +12,7 @@ use rayon::prelude::*;
 use sqyre_domain::{Action, ActionKind, Macro, MatchOrder};
 use sqyre_match::{
     blur_image_owned, find_template_matches_preblurred_with_integrals, prepare_search_integrals,
-    search_blur_kernel, ImageBuf, Point, DEFAULT_CLOSE_MATCHES_DISTANCE,
+    search_blur_kernel, ImageBuf, MatchMethod, Point, DEFAULT_CLOSE_MATCHES_DISTANCE,
 };
 use sqyre_vision::{get_cached_blurred_template, get_cached_image_mask, load_rgb_image};
 use std::path::PathBuf;
@@ -30,6 +30,7 @@ pub(crate) fn execute_image_search(
         search_area,
         tolerance,
         blur,
+        match_method,
         detection,
         ..
     } = &action.kind
@@ -57,6 +58,7 @@ pub(crate) fn execute_image_search(
             search_area,
             *tolerance,
             *blur,
+            *match_method,
             &order,
             macro_,
         )?;
@@ -65,6 +67,14 @@ pub(crate) fn execute_image_search(
                 action_id,
                 format!(
                     "Image Search: waiting up to {}s until found",
+                    wait.wait_til_found_seconds
+                ),
+            );
+        } else if wait.wait_while_found_active() && !results0.is_empty() {
+            exec.log(
+                action_id,
+                format!(
+                    "Image Search: waiting up to {}s while found",
                     wait.wait_til_found_seconds
                 ),
             );
@@ -88,6 +98,7 @@ pub(crate) fn execute_image_search(
                     search_area,
                     *tolerance,
                     *blur,
+                    *match_method,
                     &order,
                     macro_,
                 )
@@ -152,6 +163,17 @@ fn close_matches_distance(exec: &Executor<'_>) -> i32 {
     }
 }
 
+fn to_match_method(m: sqyre_domain::TemplateMatchMethod) -> MatchMethod {
+    match m {
+        sqyre_domain::TemplateMatchMethod::Sqdiff => MatchMethod::Sqdiff,
+        sqyre_domain::TemplateMatchMethod::SqdiffNormed => MatchMethod::SqdiffNormed,
+        sqyre_domain::TemplateMatchMethod::Ccorr => MatchMethod::Ccorr,
+        sqyre_domain::TemplateMatchMethod::CcorrNormed => MatchMethod::CcorrNormed,
+        sqyre_domain::TemplateMatchMethod::Ccoeff => MatchMethod::Ccoeff,
+        sqyre_domain::TemplateMatchMethod::CcoeffNormed => MatchMethod::CcoeffNormed,
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn capture_and_match(
     exec: &mut Executor<'_>,
@@ -160,6 +182,7 @@ fn capture_and_match(
     search_area: &sqyre_domain::CoordinateRef,
     tolerance: f64,
     blur: i32,
+    match_method: sqyre_domain::TemplateMatchMethod,
     order: &MatchOrder,
     macro_: &Macro,
 ) -> Result<Vec<DetectionHit>> {
@@ -262,6 +285,7 @@ fn capture_and_match(
     let match_started = Instant::now();
     let stop_flag: Option<&AtomicBool> = exec.deps.stop_flag;
     let search_integrals = std::sync::Arc::new(prepare_search_integrals(&search_blurred));
+    let method = to_match_method(match_method);
 
     let outcomes: Vec<VariantMatchOutcome> = jobs
         .into_par_iter()
@@ -315,6 +339,7 @@ fn capture_and_match(
                 mask_bytes.as_deref().map(|m| m.as_slice()),
                 threshold,
                 close_dist,
+                method,
                 Some(search_integrals.as_ref()),
             )
             .map_err(|e| e.to_string());
