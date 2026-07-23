@@ -268,6 +268,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                 app.tooltip.cancel();
             }
             app.persist_macro_at(idx);
+            app.play_ui_delete_sound();
         }
     }
 
