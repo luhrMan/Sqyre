@@ -185,18 +185,31 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
             .open(&mut open)
             .show(ui.ctx(), |ui| {
                 ui.label(format!("Delete macro \"{name}\"?"));
+                let mut outcome = crate::widgets::ConfirmCancel::None;
                 ui.horizontal(|ui| {
                     if ui.button("Cancel").clicked() {
-                        app.pending_delete_macro = None;
+                        outcome = crate::widgets::ConfirmCancel::Cancel;
                     }
                     if ui
                         .button(egui::RichText::new("Delete").color(crate::theme::MACRO_STOP))
                         .clicked()
                     {
+                        outcome = crate::widgets::ConfirmCancel::Confirm;
+                    }
+                });
+                if outcome == crate::widgets::ConfirmCancel::None {
+                    outcome = crate::widgets::poll_confirm_keys(ui);
+                }
+                match outcome {
+                    crate::widgets::ConfirmCancel::Cancel => {
+                        app.pending_delete_macro = None;
+                    }
+                    crate::widgets::ConfirmCancel::Confirm => {
                         app.pending_delete_macro = None;
                         app.delete_macro_named(&name);
                     }
-                });
+                    crate::widgets::ConfirmCancel::None => {}
+                }
             });
         if !open {
             app.pending_delete_macro = None;

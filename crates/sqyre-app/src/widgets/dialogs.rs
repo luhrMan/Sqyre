@@ -1,6 +1,6 @@
 //! Shared dialog chrome: Save/Cancel and Confirm/Cancel rows.
 
-use eframe::egui;
+use eframe::egui::{self, Key, Modifiers};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SaveCancel {
@@ -44,7 +44,22 @@ pub enum ConfirmCancel {
     Cancel,
 }
 
+/// Esc → cancel, Enter → submit for top-level confirm popups.
+///
+/// Keys are consumed so they do not leak to the UI under the dialog.
+pub fn poll_confirm_keys(ui: &mut egui::Ui) -> ConfirmCancel {
+    if ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) {
+        ConfirmCancel::Cancel
+    } else if ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Enter)) {
+        ConfirmCancel::Confirm
+    } else {
+        ConfirmCancel::None
+    }
+}
+
 /// Cancel + Confirm for destructive / overwrite prompts.
+///
+/// `Enter` confirms and `Esc` cancels.
 pub fn confirm_cancel_row(ui: &mut egui::Ui) -> ConfirmCancel {
     let mut out = ConfirmCancel::None;
     ui.horizontal(|ui| {
@@ -55,5 +70,8 @@ pub fn confirm_cancel_row(ui: &mut egui::Ui) -> ConfirmCancel {
             out = ConfirmCancel::Confirm;
         }
     });
+    if out == ConfirmCancel::None {
+        out = poll_confirm_keys(ui);
+    }
     out
 }
