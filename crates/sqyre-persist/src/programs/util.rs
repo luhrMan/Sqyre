@@ -5,9 +5,10 @@ use crate::{PersistError, Result};
 use sqyre_domain::PROGRAM_DELIMITER;
 use std::collections::BTreeMap;
 
-pub(super) fn ensure_resolution(p: &mut ProgramData, res: &str) {
+pub(super) fn ensure_resolution(p: &mut ProgramData, res: &str, scale: f32) {
     p.points.entry(res.to_string()).or_default();
     p.search_areas.entry(res.to_string()).or_default();
+    p.coord_scales.entry(res.to_string()).or_insert(scale);
 }
 
 /// Upsert into a resolution-scoped map (`points` / `search_areas`).
@@ -19,8 +20,9 @@ pub(super) fn upsert_resolution_entity<T>(
     maps: impl FnOnce(&mut ProgramData) -> &mut BTreeMap<String, BTreeMap<String, T>>,
 ) -> Result<()> {
     let res = catalog.default_resolution_key();
+    let scale = catalog.runtime_scale();
     let p = catalog.program_mut(program)?;
-    ensure_resolution(p, &res);
+    ensure_resolution(p, &res, scale);
     maps(p).get_mut(&res).unwrap().insert(key, value);
     Ok(())
 }
@@ -56,8 +58,9 @@ pub(super) fn rename_resolution_entity<T>(
 ) -> Result<()> {
     let new = new.trim();
     let res = catalog.default_resolution_key();
+    let scale = catalog.runtime_scale();
     let p = catalog.program_mut(program)?;
-    ensure_resolution(p, &res);
+    ensure_resolution(p, &res, scale);
     let map = maps(p).get_mut(&res).unwrap();
     rename_keyed_map(map, old, new, kind, set_name)
 }
@@ -130,18 +133,23 @@ pub(super) fn point_from<'a>(
     program: &str,
     name: &str,
     resolution_key: &str,
-) -> std::result::Result<&'a ProgramPoint, String> {
+) -> std::result::Result<(&'a ProgramPoint, &'a str), String> {
     let p = cat
         .programs
         .get(program)
         .ok_or_else(|| format!("program {program:?} not found"))?;
-    let pts = p
-        .points
-        .get(resolution_key)
-        .or_else(|| p.points.values().next())
-        .ok_or_else(|| format!("no points for program {program}"))?;
-    pts.get(name)
-        .ok_or_else(|| format!("point {name:?} not in {program}"))
+    if let Some((src_key, pts)) = p.points.get_key_value(resolution_key) {
+        if let Some(pt) = pts.get(name) {
+            return Ok((pt, src_key.as_str()));
+        }
+    }
+    // Fall back to another bucket; caller remaps by source key dims/scale.
+    for (src_key, pts) in &p.points {
+        if let Some(pt) = pts.get(name) {
+            return Ok((pt, src_key.as_str()));
+        }
+    }
+    Err(format!("point {name:?} not in {program}"))
 }
 
 pub(super) fn search_area_from<'a>(
@@ -149,19 +157,51 @@ pub(super) fn search_area_from<'a>(
     program: &str,
     name: &str,
     resolution_key: &str,
-) -> std::result::Result<&'a ProgramSearchArea, String> {
+) -> std::result::Result<(&'a ProgramSearchArea, &'a str), String> {
     let p = cat
         .programs
         .get(program)
         .ok_or_else(|| format!("program {program:?} not found"))?;
-    let areas = p
-        .search_areas
-        .get(resolution_key)
-        .or_else(|| p.search_areas.values().next())
-        .ok_or_else(|| format!("no search areas for program {program}"))?;
-    areas
-        .get(name)
-        .ok_or_else(|| format!("search area {name:?} not in {program}"))
+    if let Some((src_key, areas)) = p.search_areas.get_key_value(resolution_key) {
+        if let Some(sa) = areas.get(name) {
+            return Ok((sa, src_key.as_str()));
+        }
+    }
+    for (src_key, areas) in &p.search_areas {
+        if let Some(sa) = areas.get(name) {
+            return Ok((sa, src_key.as_str()));
+        }
+    }
+    Err(format!("search area {name:?} not in {program}"))
+}
+
+/// Parse `"WxH"` resolution key into positive dimensions.
+pub(super) fn parse_resolution_key(key: &str) -> std::result::Result<(i32, i32), String> {
+    let (w, h) = key
+        .split_once('x')
+        .ok_or_else(|| format!("invalid resolution key {key:?} (expected WxH)"))?;
+    let w: i32 = w
+        .parse()
+        .map_err(|_| format!("invalid resolution width in {key:?}"))?;
+    let h: i32 = h
+        .parse()
+        .map_err(|_| format!("invalid resolution height in {key:?}"))?;
+    if w <= 0 || h <= 0 {
+        return Err(format!("non-positive resolution in {key:?}"));
+    }
+    Ok((w, h))
+}
+
+/// Map a stored coordinate from source bucket space into runtime space.
+pub(super) fn remap_coord(v: i32, src_dim: i32, rt_dim: i32, src_scale: f32, rt_scale: f32) -> i32 {
+    let src_scale = if src_scale > 0.0 { src_scale } else { 1.0 };
+    let rt_scale = if rt_scale > 0.0 { rt_scale } else { 1.0 };
+    let factor = (rt_dim as f64 / src_dim as f64) * (rt_scale as f64 / src_scale as f64);
+    (v as f64 * factor).round() as i32
+}
+
+pub(super) fn bucket_scale(program: &ProgramData, res_key: &str) -> f32 {
+    program.coord_scales.get(res_key).copied().unwrap_or(1.0)
 }
 
 pub(super) fn collection_from<'a>(

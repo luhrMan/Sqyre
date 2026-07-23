@@ -5,12 +5,13 @@ use crate::pixel_convert::{zpixmap_to_rgb, zpixmap_to_rgba};
 use image::RgbaImage;
 use parking_lot::Mutex;
 use sqyre_executor::{DesktopRect, RgbCapture};
+use std::ffi::CStr;
 use std::os::raw::c_void;
 use std::ptr;
 use x11::xinerama::{XineramaIsActive, XineramaQueryScreens, XineramaScreenInfo};
 use x11::xlib::{
     XCloseDisplay, XDefaultRootWindow, XDestroyImage, XDisplayHeight, XDisplayWidth, XFree,
-    XGetImage, XOpenDisplay, XQueryPointer, ZPixmap, _XDisplay,
+    XGetImage, XOpenDisplay, XQueryPointer, XResourceManagerString, ZPixmap, _XDisplay,
 };
 
 const ALLPLANES: u64 = !0;
@@ -200,6 +201,51 @@ impl Drop for X11State {
                 self.display = ptr::null_mut();
             }
         }
+    }
+}
+
+/// Primary monitor DPI scale from `Xft.dpi` (`dpi / 96`), else `1.0`.
+/// Returns `None` when the display cannot be opened.
+pub(crate) fn primary_monitor_scale() -> Option<f32> {
+    if let Ok(cap) = shared_capturer() {
+        let st = cap.inner.lock();
+        return Some(xft_dpi_scale(st.display));
+    }
+    unsafe {
+        let display = XOpenDisplay(ptr::null());
+        if display.is_null() {
+            return None;
+        }
+        let scale = xft_dpi_scale(display);
+        XCloseDisplay(display);
+        Some(scale)
+    }
+}
+
+fn xft_dpi_scale(display: *mut _XDisplay) -> f32 {
+    unsafe {
+        let res = XResourceManagerString(display);
+        if res.is_null() {
+            return 1.0;
+        }
+        let Ok(s) = CStr::from_ptr(res).to_str() else {
+            return 1.0;
+        };
+        for line in s.split('\n') {
+            let line = line.trim();
+            let Some(rest) = line
+                .strip_prefix("Xft.dpi:")
+                .or_else(|| line.strip_prefix("Xft.dpi:\t"))
+            else {
+                continue;
+            };
+            if let Ok(dpi) = rest.trim().parse::<f32>() {
+                if dpi > 0.0 {
+                    return dpi / 96.0;
+                }
+            }
+        }
+        1.0
     }
 }
 
