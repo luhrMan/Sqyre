@@ -136,7 +136,10 @@ pub fn match_template_with_integrals(
 
     // OpenCV: constant / empty-energy templates for some normed methods → all ones.
     if pack.t_energy <= f64::EPSILON
-        && matches!(method, MatchMethod::CcoeffNormed | MatchMethod::SqdiffNormed)
+        && matches!(
+            method,
+            MatchMethod::CcoeffNormed | MatchMethod::SqdiffNormed
+        )
     {
         return Ok(MatchMap {
             width: out_w,
@@ -153,9 +156,7 @@ pub fn match_template_with_integrals(
         .saturating_mul(ch as u64);
 
     if full_mask && direct_cost > FFT_DIRECT_COST_THRESHOLD {
-        match_fft(
-            search, &pack, tw, th, out_w, out_h, ch, method, integrals,
-        )
+        match_fft(search, &pack, tw, th, out_w, out_h, ch, method, integrals)
     } else {
         match_direct(
             search, &pack, tw, th, out_w, out_h, ch, full_mask, method, integrals,
@@ -244,9 +245,9 @@ fn build_packed_template(
             let ti = template.pixel_offset(x, y);
             xs.push(x as u16);
             ys.push(y as u16);
-            for c in 0..ch {
+            for (c, mean) in t_mean.iter().enumerate() {
                 let v = if mean_subtract {
-                    template.data[ti + c] as f64 - t_mean[c]
+                    template.data[ti + c] as f64 - mean
                 } else {
                     template.data[ti + c] as f64
                 };
@@ -473,13 +474,7 @@ fn match_fft(
 ///
 /// `i_sq` is Σ_c Σ I²; `i_prime_sq` is Σ_c (ΣI² − (ΣI)²/n) (CCOEFF window energy).
 #[inline]
-fn finish_score(
-    method: MatchMethod,
-    numer: f64,
-    i_sq: f64,
-    i_prime_sq: f64,
-    t_energy: f64,
-) -> f32 {
+fn finish_score(method: MatchMethod, numer: f64, i_sq: f64, i_prime_sq: f64, t_energy: f64) -> f32 {
     match method {
         MatchMethod::Ccorr | MatchMethod::Ccoeff => numer as f32,
         MatchMethod::CcorrNormed => {
@@ -694,7 +689,17 @@ fn score_masked_ccoeff(
 ) -> f32 {
     let mut i_sum_buf = [0.0_f64; 4];
     if ch > 4 {
-        return score_masked_ccoeff_heap(search_data, search_w, ch, ox, oy, pack, n, t_energy, method);
+        return score_masked_ccoeff_heap(
+            search_data,
+            search_w,
+            ch,
+            ox,
+            oy,
+            pack,
+            n,
+            t_energy,
+            method,
+        );
     }
     let i_sum = &mut i_sum_buf[..ch];
     for i in 0..pack.len() {
@@ -922,8 +927,13 @@ mod tests {
             }
         }
 
-        let map =
-            match_template(&search, &masked_tmpl, Some(&mask), MatchMethod::CcoeffNormed).unwrap();
+        let map = match_template(
+            &search,
+            &masked_tmpl,
+            Some(&mask),
+            MatchMethod::CcoeffNormed,
+        )
+        .unwrap();
         let matches = find_peaks_for_method(
             &map,
             0.9,
