@@ -154,6 +154,11 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                         hl_snap: &hl_snap,
                         selected: app.selected_action,
                     };
+                    // egui_ltreeview sizes to max(available, content). Inside ScrollArea
+                    // that fills the viewport and trips a permanent vertical scrollbar
+                    // (content ≈ viewport + rounding). Cap available height so the tree
+                    // sizes to its nodes; allocate_rect still grows content for scrolling.
+                    ui.set_max_height(0.0);
                     let (_, tree_actions) = TreeView::new(id)
                         .allow_drag_and_drop(allow_dnd)
                         .default_node_height(Some(tree_chrome::default_row_height(interact_y)))
