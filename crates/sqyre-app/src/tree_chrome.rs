@@ -50,13 +50,15 @@ pub enum RowAction {
     Delete,
 }
 
-/// Execution highlight overlay for a tree row.
+/// Execution / related-selection highlight overlay for a tree row.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum RowHighlight {
     #[default]
     None,
     Cursor,
     Fill(f32),
+    /// Parent of the selected Else folder — softer than TreeView selection.
+    Owner,
 }
 
 /// Row hover / click signals for the action tooltip state machine.
@@ -120,10 +122,14 @@ pub(crate) fn image_search_overflow_count(total: usize) -> usize {
     total.saturating_sub(MAX_TARGET_THUMBS)
 }
 
-fn row_action_btn(ui: &mut egui::Ui, glyph: &str, tip: &str, color: Option<Color32>) -> egui::Response {
+fn row_action_btn(
+    ui: &mut egui::Ui,
+    glyph: &str,
+    tip: &str,
+    color: Option<Color32>,
+) -> egui::Response {
     let font_id = FontId::proportional(ROW_ACTION_BTN_FONT);
-    let (rect, response) =
-        ui.allocate_exact_size(Vec2::splat(ROW_ACTION_BTN_SIDE), Sense::click());
+    let (rect, response) = ui.allocate_exact_size(Vec2::splat(ROW_ACTION_BTN_SIDE), Sense::click());
     let visuals = ui.style().interact(&response);
     let fg = color.unwrap_or_else(|| visuals.text_color());
     crate::theme::paint_text_centered(ui, rect, glyph, font_id, fg);
@@ -496,8 +502,12 @@ fn highlight_cursor_color() -> Color32 {
 fn highlight_fill_color() -> Color32 {
     Color32::from_rgba_unmultiplied(90, 200, 130, 90)
 }
+/// Soft gold tint when this row owns the selected Else folder.
+fn highlight_owner_color() -> Color32 {
+    Color32::from_rgba_unmultiplied(0xdc, 0x9d, 0x2e, 0x28)
+}
 
-fn paint_row_highlight(ui: &mut egui::Ui, rect: egui::Rect, highlight: RowHighlight) {
+pub(crate) fn paint_row_highlight(ui: &mut egui::Ui, rect: egui::Rect, highlight: RowHighlight) {
     match highlight {
         RowHighlight::None => {}
         RowHighlight::Cursor => {
@@ -510,6 +520,10 @@ fn paint_row_highlight(ui: &mut egui::Ui, rect: egui::Rect, highlight: RowHighli
             fill_rect.max.x = fill_rect.min.x + fill_rect.width() * frac;
             ui.painter()
                 .rect_filled(fill_rect, 0.0, highlight_fill_color());
+        }
+        RowHighlight::Owner => {
+            ui.painter()
+                .rect_filled(rect, 0.0, highlight_owner_color());
         }
     }
 }
@@ -581,7 +595,7 @@ mod tests {
             },
         };
         assert_eq!(action_row_height(&with_target, interact), ICON_SIZE);
-        assert!(TARGET_THUMB_MAX_H <= ICON_SIZE);
+        const { assert!(TARGET_THUMB_MAX_H <= ICON_SIZE) };
     }
 
     #[test]

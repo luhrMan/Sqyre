@@ -113,8 +113,8 @@ pub(super) fn run_matches(
     targets: &[String],
     results: &[DetectionHit],
     coords: &CoordinateOutputs,
-    run_branch_on_no_find: bool,
     subactions: &[Action],
+    else_actions: &[Action],
     macro_: &mut Macro,
 ) -> Result<()> {
     let mut found_names: Vec<&str> = results.iter().map(|h| h.name.as_str()).collect();
@@ -137,8 +137,8 @@ pub(super) fn run_matches(
 
     if results.is_empty() {
         clear_coord_outputs(macro_, coords);
-        if run_branch_on_no_find {
-            run_children_flow(exec, subactions, macro_)?;
+        if !else_actions.is_empty() {
+            run_children_flow(exec, else_actions, macro_)?;
         }
         return Ok(());
     }
@@ -201,8 +201,8 @@ pub(super) fn run_matches(
     Ok(())
 }
 
-/// Apply hits for a detection pass: repeat-while miss skips children; otherwise sort is
-/// already done by the caller and [`run_matches`] runs the branch.
+/// Apply hits for a detection pass: repeat-while miss runs else (if any) and stops;
+/// otherwise [`run_matches`] runs the then or else branch.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn apply_detection_hits(
     exec: &mut Executor<'_>,
@@ -210,14 +210,17 @@ pub(super) fn apply_detection_hits(
     targets: &[String],
     hits: &[DetectionHit],
     coords: &CoordinateOutputs,
-    run_branch_on_no_find: bool,
     subactions: &[Action],
+    else_actions: &[Action],
     macro_: &mut Macro,
     pass: DetectionPass,
 ) -> Result<bool> {
-    // Repeat-while-found stops on miss without running the no-find branch.
+    // Repeat-while-found stops on miss after running the else branch once.
     if matches!(pass, DetectionPass::RepeatWhile { .. }) && hits.is_empty() {
         clear_coord_outputs(macro_, coords);
+        if !else_actions.is_empty() {
+            run_children_flow(exec, else_actions, macro_)?;
+        }
         return Ok(false);
     }
     run_matches(
@@ -226,8 +229,8 @@ pub(super) fn apply_detection_hits(
         targets,
         hits,
         coords,
-        run_branch_on_no_find,
         subactions,
+        else_actions,
         macro_,
     )?;
     // Repeat-until-found continues while missing; other passes continue while found.

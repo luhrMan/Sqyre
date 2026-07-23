@@ -97,6 +97,7 @@ pub(crate) fn blank_kind(action_type: &str) -> Option<ActionKind> {
         "conditional" => ActionKind::Conditional {
             condition: ConditionBlock::default(),
             subactions: Vec::new(),
+            else_actions: Vec::new(),
         },
         "loop" => ActionKind::Loop {
             name: String::new(),

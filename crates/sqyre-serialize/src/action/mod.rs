@@ -27,12 +27,21 @@ fn inject_action_uid(m: &mut Mapping, action: &Action) {
             Value::String(action.id.as_str()),
         );
     }
-    let Some(Value::Sequence(seq)) = m.get_mut(Value::String("subactions".into())) else {
-        return;
-    };
-    for (i, child) in action.children().iter().enumerate() {
-        if let Some(Value::Mapping(sub)) = seq.get_mut(i) {
-            inject_action_uid(sub, child);
+    if let Some(Value::Sequence(seq)) = m.get_mut(Value::String("subactions".into())) {
+        for (i, child) in action.children().iter().enumerate() {
+            if let Some(Value::Mapping(sub)) = seq.get_mut(i) {
+                inject_action_uid(sub, child);
+            }
+        }
+    }
+    if let (Some(else_kids), Some(Value::Sequence(seq))) = (
+        action.else_children(),
+        m.get_mut(Value::String("elseactions".into())),
+    ) {
+        for (i, child) in else_kids.iter().enumerate() {
+            if let Some(Value::Mapping(sub)) = seq.get_mut(i) {
+                inject_action_uid(sub, child);
+            }
         }
     }
 }
@@ -279,7 +288,6 @@ mod tests {
                         output_x_variable: "sx".into(),
                         output_y_variable: "sy".into(),
                     },
-                    run_branch_on_no_find: true,
                     order: MatchOrder {
                         grouping: "row".into(),
                         horizontal: "ltr".into(),
@@ -289,6 +297,12 @@ mod tests {
                         id: ActionId::new(),
                         kind: ActionKind::Wait {
                             time: ScalarValue::Int(1),
+                        },
+                    }],
+                    else_actions: vec![Action {
+                        id: ActionId::new(),
+                        kind: ActionKind::Wait {
+                            time: ScalarValue::Int(2),
                         },
                     }],
                 },
@@ -328,9 +342,9 @@ mod tests {
                         max_iterations: 42,
                     },
                     coords: CoordinateOutputs::defaults(),
-                    run_branch_on_no_find: false,
                     order: Default::default(),
                     subactions: Vec::new(),
+                    else_actions: Vec::new(),
                 },
             },
         };
