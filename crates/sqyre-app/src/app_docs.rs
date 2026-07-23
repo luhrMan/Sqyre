@@ -29,7 +29,11 @@ use std::sync::Arc;
 
 impl SqyreApp {
     pub fn for_docs() -> Self {
-        let settings = UserSettings::default();
+        let mut settings = UserSettings::default();
+        // Keep docs/screenshot/kittest harnesses at 1.0 PPP. Product default scale
+        // may be higher for desktop readability, but AccessKit pointer clicks and
+        // golden PNGs assume unscaled coordinates.
+        settings.ui_scale = 1.0;
         SettingsUi::apply_action_colors(&settings);
 
         let hotkeys: Box<dyn HotkeyService> = Box::new(NullHotkeys::default());
