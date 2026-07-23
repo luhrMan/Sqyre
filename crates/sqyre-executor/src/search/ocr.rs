@@ -8,7 +8,7 @@ use sqyre_domain::{Action, ActionKind, Macro, MatchOrder, ScalarValue};
 use std::time::Instant;
 
 /// OCR branch action: capture → preprocess → recognize → write vars → run children per hit
-/// (or on miss when `run_branch_on_no_find`). Capture/OCR errors are logged and treated as miss.
+/// (or else children on miss). Capture/OCR errors are logged and treated as miss.
 pub(crate) fn execute_ocr(
     exec: &mut Executor<'_>,
     action: &Action,
@@ -33,9 +33,9 @@ pub(crate) fn execute_ocr(
     let sqyre_domain::DetectionBranch {
         wait,
         coords,
-        run_branch_on_no_find,
         order,
         subactions,
+        else_actions,
     } = detection;
 
     let action_id = action.id;
@@ -98,8 +98,8 @@ pub(crate) fn execute_ocr(
                 &targets,
                 &attempt.hits,
                 coords,
-                *run_branch_on_no_find,
                 subactions,
+                else_actions,
                 macro_,
                 pass,
             )

@@ -26,7 +26,7 @@ use sqyre_validate::{
 };
 use std::collections::HashSet;
 
-/// Copy draft fields onto `live`, keeping `live`'s children.
+/// Copy draft fields onto `live`, keeping `live`'s then/else children.
 pub fn apply_draft_preserving_children(live: &mut Action, draft: Action) -> Result<(), String> {
     if live.id != draft.id {
         return Err(format!(
@@ -38,10 +38,17 @@ pub fn apply_draft_preserving_children(live: &mut Action, draft: Action) -> Resu
     if std::mem::discriminant(&live.kind) != std::mem::discriminant(&draft.kind) {
         return Err("cannot change action type in tooltip edit".into());
     }
-    let preserved = live.children().to_vec();
+    let preserved_then = live.children().to_vec();
+    let preserved_else = live
+        .else_children()
+        .map(|c| c.to_vec())
+        .unwrap_or_default();
     live.kind = draft.kind;
     if let Some(kids) = live.children_mut() {
-        *kids = preserved;
+        *kids = preserved_then;
+    }
+    if let Some(kids) = live.else_children_mut() {
+        *kids = preserved_else;
     }
     Ok(())
 }
@@ -379,10 +386,8 @@ pub fn paint_edit_fields(
             search_area_section(ui, catalog, previews, search_area, picker);
             tip_wrapped_section(ui, |ui| {
                 let mut method_label = match_method.label().to_string();
-                let method_opts: Vec<&str> = TemplateMatchMethod::ALL
-                    .iter()
-                    .map(|m| m.label())
-                    .collect();
+                let method_opts: Vec<&str> =
+                    TemplateMatchMethod::ALL.iter().map(|m| m.label()).collect();
                 combo_str(ui, "Method", h::IS_METHOD, &mut method_label, &method_opts);
                 if let Some(m) = TemplateMatchMethod::ALL
                     .iter()
@@ -1033,41 +1038,19 @@ fn search_area_section(
 }
 
 fn detection_branch_editor(ui: &mut egui::Ui, detection: &mut DetectionBranch) {
-    tip_wrapped_section(ui, |ui| {
-        wait_editor(
-            ui,
-            &mut detection.wait,
-            &mut detection.run_branch_on_no_find,
-        );
-    });
+    tip_wrapped_section(ui, |ui| wait_editor(ui, &mut detection.wait));
     tip_wrapped_section(ui, |ui| order_editor(ui, &mut detection.order));
 }
 
-fn wait_editor(
-    ui: &mut egui::Ui,
-    wait: &mut WaitTilFoundConfig,
-    run_branch_on_no_find: &mut bool,
-) {
+fn wait_editor(ui: &mut egui::Ui, wait: &mut WaitTilFoundConfig) {
     let mut mode = wait.repeat_mode.as_str().to_string();
-    ui.horizontal(|ui| {
-        help::label(ui, "Repeat mode", h::REPEAT_MODE);
-        let display = mode.clone();
-        help::tip(
-            egui::ComboBox::from_id_salt("Repeat mode")
-                .selected_text(display)
-                .show_ui(ui, |ui| {
-                    for opt in options::REPEAT_MODES {
-                        ui.selectable_value(&mut mode, (*opt).to_string(), *opt);
-                    }
-                })
-                .response,
-            h::REPEAT_MODE,
-        );
-        help::tip(
-            ui.checkbox(run_branch_on_no_find, "Run branch on no find"),
-            h::RUN_ON_NO_FIND,
-        );
-    });
+    combo_str(
+        ui,
+        "Repeat mode",
+        h::REPEAT_MODE,
+        &mut mode,
+        options::REPEAT_MODES,
+    );
     wait.repeat_mode = RepeatMode::parse(&mode);
     // Once → timing off; wait modes → timing only; repeat modes → timing + max iterations.
     let timing_enabled = wait.uses_timing();

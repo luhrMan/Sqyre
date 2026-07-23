@@ -137,9 +137,16 @@ impl TooltipState {
         };
 
         let mut candidate = draft;
-        let preserved = live.children().to_vec();
+        let preserved_then = live.children().to_vec();
+        let preserved_else = live
+            .else_children()
+            .map(|c| c.to_vec())
+            .unwrap_or_default();
         if let Some(kids) = candidate.children_mut() {
-            *kids = preserved;
+            *kids = preserved_then;
+        }
+        if let Some(kids) = candidate.else_children_mut() {
+            *kids = preserved_else;
         }
         candidate.id = live.id;
 

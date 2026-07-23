@@ -40,9 +40,9 @@ pub(crate) fn execute_image_search(
     let sqyre_domain::DetectionBranch {
         wait,
         coords,
-        run_branch_on_no_find,
         order,
         subactions,
+        else_actions,
     } = detection;
 
     highlight_fill(exec.deps.highlighter, &macro_.name, action.id, 0.0);
@@ -111,8 +111,8 @@ pub(crate) fn execute_image_search(
                     targets,
                     results,
                     coords,
-                    *run_branch_on_no_find,
                     subactions,
+                    else_actions,
                     macro_,
                     pass,
                 )

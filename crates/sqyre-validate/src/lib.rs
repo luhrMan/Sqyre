@@ -437,11 +437,16 @@ fn validate_wait_config(label: &str, wait: &sqyre_domain::WaitTilFoundConfig) ->
     Ok(())
 }
 
-/// Recursively validate `action` and every descendant via [`Action::children`].
+/// Recursively validate `action` and every descendant via then/else children.
 pub fn validate_action_tree(action: &Action, macro_: Option<&Macro>) -> Result<()> {
     validate_action(action, macro_)?;
     for child in action.children() {
         validate_action_tree(child, macro_)?;
+    }
+    if let Some(else_kids) = action.else_children() {
+        for child in else_kids {
+            validate_action_tree(child, macro_)?;
+        }
     }
     Ok(())
 }
@@ -449,7 +454,9 @@ pub fn validate_action_tree(action: &Action, macro_: Option<&Macro>) -> Result<(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqyre_domain::{ActionId, PressState, ScalarValue, VariableAssignment, VariableDecl, VariableType};
+    use sqyre_domain::{
+        ActionId, PressState, ScalarValue, VariableAssignment, VariableDecl, VariableType,
+    };
 
     #[test]
     fn variable_name_rejects_braces() {

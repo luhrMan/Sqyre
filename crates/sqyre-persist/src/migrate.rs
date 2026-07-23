@@ -36,20 +36,14 @@ impl LegacyCatalog {
             let Some(program) = prog_key.as_str() else {
                 continue;
             };
-            let Some(coords) = prog_val
-                .get("coordinates")
-                .and_then(|v| v.as_mapping())
-            else {
+            let Some(coords) = prog_val.get("coordinates").and_then(|v| v.as_mapping()) else {
                 continue;
             };
             for (_res, block) in coords {
                 let Some(block) = block.as_mapping() else {
                     continue;
                 };
-                if let Some(areas) = block
-                    .get("searchareas")
-                    .and_then(|v| v.as_mapping())
-                {
+                if let Some(areas) = block.get("searchareas").and_then(|v| v.as_mapping()) {
                     for (area_key, area_val) in areas {
                         let key_name = area_key.as_str().unwrap_or("").to_string();
                         if key_name.is_empty() {
@@ -182,7 +176,12 @@ fn migrate_waittilfound(map: &mut Mapping) {
     );
 }
 
-fn migrate_coordinate_field(map: &mut Mapping, field: &str, catalog: &LegacyCatalog, lookup: fn(&LegacyCatalog, &str) -> String) {
+fn migrate_coordinate_field(
+    map: &mut Mapping,
+    field: &str,
+    catalog: &LegacyCatalog,
+    lookup: fn(&LegacyCatalog, &str) -> String,
+) {
     let key = Value::String(field.into());
     let Some(val) = map.get(&key).cloned() else {
         return;
@@ -208,8 +207,8 @@ fn migrate_action(map: &mut Mapping, catalog: &LegacyCatalog) {
     migrate_coordinate_field(map, "point", catalog, LegacyCatalog::point_ref);
     migrate_click_button(map);
     migrate_waittilfound(map);
-    map.remove(&Value::String("rowsplit".into()));
-    map.remove(&Value::String("colsplit".into()));
+    map.remove(Value::String("rowsplit".into()));
+    map.remove(Value::String("colsplit".into()));
 
     let sub_key = Value::String("subactions".into());
     if let Some(Value::Sequence(subs)) = map.get_mut(&sub_key) {
@@ -219,6 +218,16 @@ fn migrate_action(map: &mut Mapping, catalog: &LegacyCatalog) {
             }
         }
     }
+    let else_key = Value::String("elseactions".into());
+    if let Some(Value::Sequence(subs)) = map.get_mut(&else_key) {
+        for sub in subs.iter_mut() {
+            if let Some(m) = sub.as_mapping_mut() {
+                migrate_action(m, catalog);
+            }
+        }
+    }
+    // Drop obsolete miss-reuse flag; elseactions replaces it.
+    map.remove(Value::String("runbranchonnofind".into()));
 }
 
 fn migrate_macro(map: &mut Mapping, catalog: &LegacyCatalog) {
@@ -247,7 +256,7 @@ pub fn migrate_db_yaml_value(root: &mut Value) -> Result<()> {
     };
 
     let programs = mapping
-        .get(&Value::String("programs".into()))
+        .get(Value::String("programs".into()))
         .cloned()
         .unwrap_or(Value::Mapping(Mapping::new()));
     let catalog = LegacyCatalog::from_programs(&programs);
