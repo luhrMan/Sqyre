@@ -5,21 +5,27 @@ use eframe::egui::{self, Color32};
 use sqyre_domain::Macro;
 use sqyre_domain::{format_hex_color, parse_hex_color, ACTION_COLOR_CATEGORIES};
 #[cfg(not(target_arch = "wasm32"))]
-use sqyre_persist::open_sqyre_dir;
+use sqyre_persist::{
+    backups_dir, create_backup, list_backups, open_sqyre_dir, prune_backups, restore_backup,
+};
 use sqyre_persist::{
     move_dir, set_sqyre_dir_override, sqyre_dir, Database, ProgramCatalog, UserSettings,
-    DEFAULT_UI_FONT_SIZE, DEFAULT_UI_SCALE,
+    DEFAULT_BACKUP_INTERVAL_HOURS, DEFAULT_BACKUP_MAX_KEEP, DEFAULT_UI_FONT_SIZE, DEFAULT_UI_SCALE,
+    MAX_BACKUP_INTERVAL_HOURS, MAX_BACKUP_MAX_KEEP, MIN_BACKUP_INTERVAL_HOURS, MIN_BACKUP_MAX_KEEP,
 };
 use sqyre_ui_model::{
     action_pastel_color, clear_all_custom_action_colors, clear_custom_action_color,
     default_action_pastel_color, sample_action_type_for_color_key, set_custom_action_color,
 };
 use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone)]
 enum PendingConfirm {
     /// Move current data to `new_dir` (Yes) or start fresh (No).
     MoveData { old_dir: PathBuf, new_dir: PathBuf },
+    /// Replace live data with the contents of a backup archive.
+    RestoreBackup { path: PathBuf },
 }
 
 #[derive(Default)]
@@ -204,6 +210,13 @@ impl SettingsUi {
                 );
                 crate::theme::titled_section(
                     ui,
+                    "Backup",
+                    "Zip archives of macros, settings, images, and variables.",
+                    12.0,
+                    |ui| self.draw_backup(ui, db, macros, catalog),
+                );
+                crate::theme::titled_section(
+                    ui,
                     "Appearance",
                     "Theme and display options.",
                     12.0,
@@ -311,6 +324,155 @@ impl SettingsUi {
         }
     }
 
+    fn draw_backup(
+        &mut self,
+        ui: &mut egui::Ui,
+        db: &mut Database,
+        macros: &mut Vec<Macro>,
+        catalog: &mut ProgramCatalog,
+    ) {
+        #[cfg(target_arch = "wasm32")]
+        {
+            let _ = (db, macros, catalog);
+            ui.label(
+                "Browser editor: full backups are not available. Use Import / Export for db.yaml.",
+            );
+            return;
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let _ = (db, macros, catalog);
+
+            if ui
+                .checkbox(
+                    &mut self.settings.backup_enabled,
+                    "Automatic backups",
+                )
+                .on_hover_text(
+                    "Periodically zip the data directory into the backups folder when Sqyre is running.",
+                )
+                .changed()
+            {
+                self.mark_dirty();
+            }
+
+            ui.horizontal(|ui| {
+                ui.label("Interval (hours):");
+                let mut v = self.settings.backup_interval_hours;
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut v)
+                            .range(MIN_BACKUP_INTERVAL_HOURS..=MAX_BACKUP_INTERVAL_HOURS)
+                            .speed(1),
+                    )
+                    .on_hover_text("Hours between automatic backups while Sqyre is open.")
+                    .changed()
+                {
+                    self.settings.backup_interval_hours = v;
+                    self.mark_dirty();
+                }
+                if ui.small_button("Reset").clicked() {
+                    self.settings.backup_interval_hours = DEFAULT_BACKUP_INTERVAL_HOURS;
+                    self.mark_dirty();
+                }
+            });
+
+            ui.horizontal(|ui| {
+                ui.label("Keep at most:");
+                let mut v = self.settings.backup_max_keep;
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut v)
+                            .range(MIN_BACKUP_MAX_KEEP..=MAX_BACKUP_MAX_KEEP)
+                            .speed(1),
+                    )
+                    .on_hover_text(
+                        "Oldest managed sqyre-backup-*.zip files are deleted beyond this count.",
+                    )
+                    .changed()
+                {
+                    self.settings.backup_max_keep = v;
+                    self.mark_dirty();
+                }
+                if ui.small_button("Reset").clicked() {
+                    self.settings.backup_max_keep = DEFAULT_BACKUP_MAX_KEEP;
+                    self.mark_dirty();
+                }
+            });
+
+            ui.add_space(6.0);
+            ui.label(
+                egui::RichText::new(format!("Backups folder: {}", backups_dir().display()))
+                    .weak()
+                    .small(),
+            );
+            ui.label(
+                egui::RichText::new(format_last_backup(self.settings.last_backup_unix))
+                    .weak()
+                    .small(),
+            );
+            if let Ok(list) = list_backups() {
+                if let Some(latest) = list.first() {
+                    if let Some(name) = latest.file_name().and_then(|n| n.to_str()) {
+                        ui.label(
+                            egui::RichText::new(format!("Latest archive: {name}"))
+                                .weak()
+                                .small(),
+                        );
+                    }
+                }
+            }
+
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                if ui.button("Back up now").clicked() {
+                    self.run_manual_backup();
+                }
+                if ui.button("Restore from backup…").clicked() {
+                    self.choose_restore_backup();
+                }
+            });
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn run_manual_backup(&mut self) {
+        match create_backup() {
+            Ok(path) => {
+                let keep = self.settings.backup_max_keep.max(1) as usize;
+                if let Err(e) = prune_backups(keep) {
+                    self.set_err(format!("Backup created but prune failed: {e}"));
+                }
+                self.note_backup_success(&path);
+            }
+            Err(e) => self.set_err(format!("Backup failed: {e}")),
+        }
+    }
+
+    /// Record a successful backup timestamp and persist settings.
+    pub fn note_backup_success(&mut self, path: &std::path::Path) {
+        self.settings.last_backup_unix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        self.persist();
+        let name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("backup");
+        self.set_ok(format!("Backup saved: {name}"));
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn choose_restore_backup(&mut self) {
+        let start = backups_dir();
+        let start = if start.exists() { start } else { sqyre_dir() };
+        let Some(path) = crate::file_dialogs::pick_zip("Restore from backup", &start) else {
+            return;
+        };
+        self.confirm = Some(PendingConfirm::RestoreBackup { path });
+    }
+
     fn choose_sqyre_location(&mut self) {
         let start = sqyre_dir()
             .parent()
@@ -362,7 +524,86 @@ impl SettingsUi {
                     }
                 });
             }
+            PendingConfirm::RestoreBackup { path } => {
+                ui.label("Restore from backup?");
+                ui.label(format!(
+                    "Replace the current data directory contents with:\n{}\n\nThis overwrites macros, settings, images, and variables from the archive. Automatic backups in the backups folder are not removed.",
+                    path.display()
+                ));
+                ui.horizontal(|ui| {
+                    if ui.button("Cancel").clicked() {
+                        self.confirm = None;
+                    }
+                    if ui.button("Restore").clicked() {
+                        let path = path.clone();
+                        self.confirm = None;
+                        self.apply_restore_backup(path, db, macros, catalog);
+                    }
+                });
+            }
         }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn apply_restore_backup(
+        &mut self,
+        path: PathBuf,
+        db: &mut Database,
+        macros: &mut Vec<Macro>,
+        catalog: &mut ProgramCatalog,
+    ) {
+        if let Err(e) = restore_backup(&path) {
+            self.set_err(format!("Restore failed: {e}"));
+            return;
+        }
+
+        // Prefer restored settings.yaml; keep current if load fails.
+        match UserSettings::load_default() {
+            Ok(loaded) => {
+                loaded.apply_sqyre_dir_override();
+                Self::apply_action_colors(&loaded);
+                self.settings = loaded;
+            }
+            Err(e) => {
+                eprintln!("sqyre: restore succeeded but settings reload failed: {e}");
+            }
+        }
+
+        match Database::load_default() {
+            Ok(loaded) => {
+                let mut cat = loaded.program_catalog().unwrap_or_default();
+                crate::catalog::apply_main_monitor_resolution(&mut cat);
+                let mut list: Vec<_> = loaded.macros.values().cloned().collect();
+                list.sort_by(|a, b| a.name.cmp(&b.name));
+                *db = loaded;
+                *macros = list;
+                *catalog = cat;
+                self.reload_requested = true;
+                let name = path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("backup");
+                self.set_ok(format!("Restored from {name}."));
+            }
+            Err(e) => {
+                *db = Database::default();
+                macros.clear();
+                *catalog = ProgramCatalog::default();
+                crate::catalog::apply_main_monitor_resolution(catalog);
+                self.reload_requested = true;
+                self.set_err(format!("Restored archive but failed to load db.yaml: {e}"));
+            }
+        }
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn apply_restore_backup(
+        &mut self,
+        _path: PathBuf,
+        _db: &mut Database,
+        _macros: &mut Vec<Macro>,
+        _catalog: &mut ProgramCatalog,
+    ) {
     }
 
     fn apply_sqyre_location(
@@ -508,4 +749,24 @@ impl SettingsUi {
             self.mark_dirty();
         }
     }
+}
+
+fn format_last_backup(unix: i64) -> String {
+    if unix <= 0 {
+        return "Last backup: never".into();
+    }
+    let Ok(now) = SystemTime::now().duration_since(UNIX_EPOCH) else {
+        return format!("Last backup: unix {unix}");
+    };
+    let age_secs = now.as_secs().saturating_sub(unix as u64);
+    let label = if age_secs < 60 {
+        format!("{age_secs}s ago")
+    } else if age_secs < 3600 {
+        format!("{}m ago", age_secs / 60)
+    } else if age_secs < 86_400 {
+        format!("{}h ago", age_secs / 3600)
+    } else {
+        format!("{}d ago", age_secs / 86_400)
+    };
+    format!("Last backup: {label}")
 }
