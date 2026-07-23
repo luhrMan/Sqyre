@@ -1,6 +1,8 @@
 //! Offline-testable X11 ZPixmap → RGBA / RGB conversion.
 
 use image::RgbaImage;
+use pulp::Arch;
+use rayon::prelude::*;
 
 /// Convert X11 ZPixmap bytes (typically BGRA on little-endian) into an [`RgbaImage`].
 ///
@@ -14,7 +16,12 @@ pub fn zpixmap_to_rgba(
     bpp: usize,
     bytes_per_line: usize,
 ) -> Result<RgbaImage, String> {
-    let mut out = Vec::with_capacity((width as usize).saturating_mul(height as usize) * 4);
+    let mut out = vec![
+        0u8;
+        (width as usize)
+            .saturating_mul(height as usize)
+            .saturating_mul(4)
+    ];
     zpixmap_swizzle(data, width, height, bpp, bytes_per_line, true, &mut out)?;
     RgbaImage::from_raw(width, height, out).ok_or_else(|| "RGBA buffer size mismatch".into())
 }
@@ -27,7 +34,12 @@ pub fn zpixmap_to_rgb(
     bpp: usize,
     bytes_per_line: usize,
 ) -> Result<Vec<u8>, String> {
-    let mut out = Vec::with_capacity((width as usize).saturating_mul(height as usize) * 3);
+    let mut out = vec![
+        0u8;
+        (width as usize)
+            .saturating_mul(height as usize)
+            .saturating_mul(3)
+    ];
     zpixmap_swizzle(data, width, height, bpp, bytes_per_line, false, &mut out)?;
     Ok(out)
 }
@@ -39,7 +51,7 @@ fn zpixmap_swizzle(
     bpp: usize,
     bytes_per_line: usize,
     with_alpha: bool,
-    out: &mut Vec<u8>,
+    out: &mut [u8],
 ) -> Result<(), String> {
     if bpp < 3 {
         return Err(format!("unexpected bytes_per_pixel {bpp}"));
@@ -64,17 +76,35 @@ fn zpixmap_swizzle(
             data.len()
         ));
     }
-    for y in 0..h {
-        let row = &data[y * row_stride..y * row_stride + w * bpp];
-        for chunk in row.chunks_exact(bpp) {
-            out.push(chunk[2]); // R
-            out.push(chunk[1]); // G
-            out.push(chunk[0]); // B
-            if with_alpha {
-                out.push(if bpp >= 4 { chunk[3] } else { 255 });
-            }
-        }
+    let out_bpp = if with_alpha { 4 } else { 3 };
+    let expect = w.saturating_mul(h).saturating_mul(out_bpp);
+    if out.len() != expect {
+        return Err(format!("output buffer size {} != {expect}", out.len()));
     }
+
+    let out_addr = out.as_mut_ptr() as usize;
+    (0..h)
+        .into_par_iter()
+        .try_for_each(|y| -> Result<(), String> {
+            let row = &data[y * row_stride..y * row_stride + w * bpp];
+            let arch = Arch::new();
+            arch.dispatch(|| {
+                for (x, chunk) in row.chunks_exact(bpp).enumerate() {
+                    let di = (y * w + x) * out_bpp;
+                    // SAFETY: each row `y` writes a disjoint output range.
+                    let dst = out_addr as *mut u8;
+                    unsafe {
+                        *dst.add(di) = chunk[2]; // R
+                        *dst.add(di + 1) = chunk[1]; // G
+                        *dst.add(di + 2) = chunk[0]; // B
+                        if with_alpha {
+                            *dst.add(di + 3) = if bpp >= 4 { chunk[3] } else { 255 };
+                        }
+                    }
+                }
+            });
+            Ok(())
+        })?;
     Ok(())
 }
 

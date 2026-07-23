@@ -171,10 +171,20 @@ fn capture_rect_gdi(rect: DesktopRect) -> Result<RgbaImage, String> {
             .into());
         }
 
-        // BGRA → RGBA
-        for pixel in bgra.chunks_exact_mut(4) {
-            pixel.swap(0, 2);
-            pixel[3] = 255;
+        // BGRA → RGBA (parallel rows; pulp dispatch per row for SIMD-friendly swaps)
+        {
+            use pulp::Arch;
+            use rayon::prelude::*;
+            let stride = (w as usize) * 4;
+            bgra.par_chunks_exact_mut(stride).for_each(|row| {
+                let arch = Arch::new();
+                arch.dispatch(|| {
+                    for pixel in row.chunks_exact_mut(4) {
+                        pixel.swap(0, 2);
+                        pixel[3] = 255;
+                    }
+                });
+            });
         }
 
         RgbaImage::from_raw(w, h, bgra)

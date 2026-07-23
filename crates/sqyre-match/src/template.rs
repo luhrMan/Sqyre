@@ -279,8 +279,14 @@ fn match_direct(
     method: MatchMethod,
     precomputed: Option<&SearchIntegrals>,
 ) -> Result<MatchMap, MatchError> {
+    let planar = crate::corr_simd::PlanarF32::from_interleaved(search);
+    let tmpl = crate::corr_simd::SparseTemplate::from_packed(&pack.vals, &pack.xs, &pack.ys, ch);
+    let n = pack.n;
+    let t_energy = pack.t_energy;
+    let ccoeff = method.is_ccoeff_family();
+
     let owned;
-    let integrals = if full_mask {
+    let integ = if full_mask {
         Some(if let Some(integ) = precomputed {
             integ
         } else {
@@ -290,35 +296,66 @@ fn match_direct(
     } else {
         None
     };
-    let search_w = search.width;
-    let search_data = &search.data;
-    let n = pack.n;
-    let t_energy = pack.t_energy;
 
     let mut scores = vec![0.0_f32; out_w * out_h];
     scores
         .par_chunks_mut(out_w)
         .enumerate()
         .for_each(|(oy, row)| {
-            for (ox, cell) in row.iter_mut().enumerate() {
-                *cell = if let Some(integ) = integrals.as_ref() {
-                    score_unmasked(
-                        integ,
-                        search_data,
-                        search_w,
-                        ch,
-                        ox,
-                        oy,
-                        tw,
-                        th,
-                        n,
-                        pack,
-                        t_energy,
+            let mut numer = vec![0.0_f32; out_w];
+            crate::corr_simd::accumulate_corr_row(&planar, &tmpl, oy, &mut numer);
+
+            if let Some(integ) = integ {
+                let stride = integ.width + 1;
+                for (ox, cell) in row.iter_mut().enumerate() {
+                    let mut i_sq = 0.0_f64;
+                    let mut i_prime_sq = 0.0_f64;
+                    for c in 0..ch {
+                        let s = rect_sum(&integ.sum[c], stride, ox, oy, tw, th);
+                        let sq = rect_sum(&integ.sumsq[c], stride, ox, oy, tw, th);
+                        i_sq += sq;
+                        i_prime_sq += sq - (s * s) / n;
+                    }
+                    *cell = finish_score(
                         method,
-                    )
-                } else {
-                    score_masked(search_data, search_w, ch, ox, oy, pack, n, t_energy, method)
-                };
+                        numer[ox] as f64,
+                        i_sq,
+                        i_prime_sq.max(0.0),
+                        t_energy,
+                    );
+                }
+            } else if ccoeff {
+                // Masked CCOEFF: ΣT'=0 ⇒ numer = Σ T'·I. Energy: ΣI² − Σ_c (ΣI_c)²/n.
+                let mut sum_sq = vec![0.0_f32; out_w];
+                let mut sums: Vec<Vec<f32>> = (0..ch).map(|_| vec![0.0_f32; out_w]).collect();
+                crate::corr_simd::accumulate_sum_sq_row(&planar, &tmpl, oy, &mut sum_sq);
+                crate::corr_simd::accumulate_channel_sums_row(&planar, &tmpl, oy, &mut sums);
+                for (ox, cell) in row.iter_mut().enumerate() {
+                    let mut i_prime = sum_sq[ox] as f64;
+                    for channel_sum in sums.iter().take(ch) {
+                        let s = channel_sum[ox] as f64;
+                        i_prime -= (s * s) / n;
+                    }
+                    *cell = match method {
+                        MatchMethod::Ccoeff => numer[ox],
+                        MatchMethod::CcoeffNormed => {
+                            let denom = (t_energy * i_prime.max(0.0)).sqrt();
+                            if denom > f64::EPSILON {
+                                (numer[ox] as f64 / denom) as f32
+                            } else {
+                                0.0
+                            }
+                        }
+                        _ => unreachable!("ccoeff branch"),
+                    };
+                }
+            } else {
+                let mut sum_sq = vec![0.0_f32; out_w];
+                crate::corr_simd::accumulate_sum_sq_row(&planar, &tmpl, oy, &mut sum_sq);
+                for (ox, cell) in row.iter_mut().enumerate() {
+                    *cell =
+                        finish_score(method, numer[ox] as f64, sum_sq[ox] as f64, 0.0, t_energy);
+                }
             }
         });
 
@@ -403,17 +440,20 @@ fn match_fft(
                 fft2d_forward(&mut img, dft_w, dft_h, &mut planner);
                 fft2d_forward(&mut tmpl, dft_w, dft_h, &mut planner);
 
-                for i in 0..area {
-                    img[i] *= tmpl[i].conj();
-                }
+                crate::corr_simd::complex_mul_conj(&mut img, &tmpl);
                 fft2d_inverse(&mut img, dft_w, dft_h, &mut planner);
             });
 
             let mut out = vec![0.0_f32; out_w * out_h];
-            for y in 0..out_h {
-                for x in 0..out_w {
-                    out[y * out_w + x] = img[y * dft_w + x].re * scale;
-                }
+            {
+                let arch = pulp::Arch::new();
+                arch.dispatch(|| {
+                    for y in 0..out_h {
+                        for x in 0..out_w {
+                            out[y * out_w + x] = img[y * dft_w + x].re * scale;
+                        }
+                    }
+                });
             }
             out
         })
@@ -421,9 +461,9 @@ fn match_fft(
 
     let mut corr = vec![0.0_f32; out_w * out_h];
     for ch_num in channel_numers {
-        for (i, v) in ch_num.into_iter().enumerate() {
-            corr[i] += v;
-        }
+        corr.par_iter_mut()
+            .zip(ch_num.into_par_iter())
+            .for_each(|(dst, v)| *dst += v);
     }
 
     if method == MatchMethod::Ccorr {
@@ -569,24 +609,34 @@ fn build_integrals(img: &ImageBuf) -> SearchIntegrals {
     let h = img.height;
     let ch = img.channels;
     let stride = w + 1;
-    let mut sum = vec![vec![0.0_f64; stride * (h + 1)]; ch];
-    let mut sumsq = vec![vec![0.0_f64; stride * (h + 1)]; ch];
-    for y in 0..h {
-        for x in 0..w {
-            let pi = img.pixel_offset(x, y);
-            for c in 0..ch {
-                let v = img.data[pi + c] as f64;
-                let above = sum[c][y * stride + (x + 1)];
-                let left = sum[c][(y + 1) * stride + x];
-                let corner = sum[c][y * stride + x];
-                sum[c][(y + 1) * stride + (x + 1)] = above + left - corner + v;
+    // Independent per channel — parallelize across channels.
+    let mut planes: Vec<(Vec<f64>, Vec<f64>)> = (0..ch)
+        .into_par_iter()
+        .map(|c| {
+            let mut sum = vec![0.0_f64; stride * (h + 1)];
+            let mut sumsq = vec![0.0_f64; stride * (h + 1)];
+            for y in 0..h {
+                for x in 0..w {
+                    let v = img.data[img.pixel_offset(x, y) + c] as f64;
+                    let above = sum[y * stride + (x + 1)];
+                    let left = sum[(y + 1) * stride + x];
+                    let corner = sum[y * stride + x];
+                    sum[(y + 1) * stride + (x + 1)] = above + left - corner + v;
 
-                let above_sq = sumsq[c][y * stride + (x + 1)];
-                let left_sq = sumsq[c][(y + 1) * stride + x];
-                let corner_sq = sumsq[c][y * stride + x];
-                sumsq[c][(y + 1) * stride + (x + 1)] = above_sq + left_sq - corner_sq + v * v;
+                    let above_sq = sumsq[y * stride + (x + 1)];
+                    let left_sq = sumsq[(y + 1) * stride + x];
+                    let corner_sq = sumsq[y * stride + x];
+                    sumsq[(y + 1) * stride + (x + 1)] = above_sq + left_sq - corner_sq + v * v;
+                }
             }
-        }
+            (sum, sumsq)
+        })
+        .collect();
+    let mut sum = Vec::with_capacity(ch);
+    let mut sumsq = Vec::with_capacity(ch);
+    for (s, sq) in planes.drain(..) {
+        sum.push(s);
+        sumsq.push(sq);
     }
     SearchIntegrals {
         width: w,
@@ -601,196 +651,6 @@ fn rect_sum(integ: &[f64], stride: usize, x: usize, y: usize, tw: usize, th: usi
     let y2 = y + th;
     integ[y2 * stride + x2] - integ[y * stride + x2] - integ[y2 * stride + x]
         + integ[y * stride + x]
-}
-
-#[allow(clippy::too_many_arguments)]
-fn score_unmasked(
-    integ: &SearchIntegrals,
-    search_data: &[u8],
-    search_w: usize,
-    ch: usize,
-    ox: usize,
-    oy: usize,
-    tw: usize,
-    th: usize,
-    n: f64,
-    pack: &PackedTemplate,
-    t_energy: f64,
-    method: MatchMethod,
-) -> f32 {
-    let stride = integ.width + 1;
-    let mut i_sq = 0.0_f64;
-    let mut i_prime_sq = 0.0_f64;
-    for c in 0..ch {
-        let s = rect_sum(&integ.sum[c], stride, ox, oy, tw, th);
-        let sq = rect_sum(&integ.sumsq[c], stride, ox, oy, tw, th);
-        i_sq += sq;
-        i_prime_sq += sq - (s * s) / n;
-    }
-
-    let mut numer = 0.0_f64;
-    for i in 0..pack.len() {
-        let x = pack.xs[i] as usize;
-        let y = pack.ys[i] as usize;
-        let si = ((oy + y) * search_w + (ox + x)) * ch;
-        let vals = pack.vals_at(i);
-        for c in 0..ch {
-            numer += vals[c] * search_data[si + c] as f64;
-        }
-    }
-
-    // CCOEFF: Σ(T'·I) == CCOEFF when ΣT'=0. No extra mean correction needed.
-    finish_score(method, numer, i_sq, i_prime_sq.max(0.0), t_energy)
-}
-
-#[allow(clippy::too_many_arguments)]
-fn score_masked(
-    search_data: &[u8],
-    search_w: usize,
-    ch: usize,
-    ox: usize,
-    oy: usize,
-    pack: &PackedTemplate,
-    n: f64,
-    t_energy: f64,
-    method: MatchMethod,
-) -> f32 {
-    if method.is_ccoeff_family() {
-        return score_masked_ccoeff(search_data, search_w, ch, ox, oy, pack, n, t_energy, method);
-    }
-
-    let mut numer = 0.0_f64;
-    let mut i_sq = 0.0_f64;
-    for i in 0..pack.len() {
-        let x = pack.xs[i] as usize;
-        let y = pack.ys[i] as usize;
-        let si = ((oy + y) * search_w + (ox + x)) * ch;
-        let vals = pack.vals_at(i);
-        for c in 0..ch {
-            let iv = search_data[si + c] as f64;
-            numer += vals[c] * iv;
-            i_sq += iv * iv;
-        }
-    }
-    finish_score(method, numer, i_sq, 0.0, t_energy)
-}
-
-#[allow(clippy::too_many_arguments)]
-fn score_masked_ccoeff(
-    search_data: &[u8],
-    search_w: usize,
-    ch: usize,
-    ox: usize,
-    oy: usize,
-    pack: &PackedTemplate,
-    n: f64,
-    t_energy: f64,
-    method: MatchMethod,
-) -> f32 {
-    let mut i_sum_buf = [0.0_f64; 4];
-    if ch > 4 {
-        return score_masked_ccoeff_heap(
-            search_data,
-            search_w,
-            ch,
-            ox,
-            oy,
-            pack,
-            n,
-            t_energy,
-            method,
-        );
-    }
-    let i_sum = &mut i_sum_buf[..ch];
-    for i in 0..pack.len() {
-        let x = pack.xs[i] as usize;
-        let y = pack.ys[i] as usize;
-        let si = ((oy + y) * search_w + (ox + x)) * ch;
-        for c in 0..ch {
-            i_sum[c] += search_data[si + c] as f64;
-        }
-    }
-    for s in i_sum.iter_mut() {
-        *s /= n;
-    }
-
-    let mut numer = 0.0_f64;
-    let mut i_prime_sq = 0.0_f64;
-    for i in 0..pack.len() {
-        let x = pack.xs[i] as usize;
-        let y = pack.ys[i] as usize;
-        let si = ((oy + y) * search_w + (ox + x)) * ch;
-        let vals = pack.vals_at(i);
-        for c in 0..ch {
-            let ip = search_data[si + c] as f64 - i_sum[c];
-            numer += vals[c] * ip;
-            i_prime_sq += ip * ip;
-        }
-    }
-
-    match method {
-        MatchMethod::Ccoeff => numer as f32,
-        MatchMethod::CcoeffNormed => {
-            let denom = (t_energy * i_prime_sq).sqrt();
-            if denom > f64::EPSILON {
-                (numer / denom) as f32
-            } else {
-                0.0
-            }
-        }
-        _ => unreachable!("score_masked_ccoeff only for CCOEFF family"),
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn score_masked_ccoeff_heap(
-    search_data: &[u8],
-    search_w: usize,
-    ch: usize,
-    ox: usize,
-    oy: usize,
-    pack: &PackedTemplate,
-    n: f64,
-    t_energy: f64,
-    method: MatchMethod,
-) -> f32 {
-    let mut i_sum = vec![0.0_f64; ch];
-    for i in 0..pack.len() {
-        let x = pack.xs[i] as usize;
-        let y = pack.ys[i] as usize;
-        let si = ((oy + y) * search_w + (ox + x)) * ch;
-        for c in 0..ch {
-            i_sum[c] += search_data[si + c] as f64;
-        }
-    }
-    for s in i_sum.iter_mut() {
-        *s /= n;
-    }
-    let mut numer = 0.0_f64;
-    let mut i_prime_sq = 0.0_f64;
-    for i in 0..pack.len() {
-        let x = pack.xs[i] as usize;
-        let y = pack.ys[i] as usize;
-        let si = ((oy + y) * search_w + (ox + x)) * ch;
-        let vals = pack.vals_at(i);
-        for c in 0..ch {
-            let ip = search_data[si + c] as f64 - i_sum[c];
-            numer += vals[c] * ip;
-            i_prime_sq += ip * ip;
-        }
-    }
-    match method {
-        MatchMethod::Ccoeff => numer as f32,
-        MatchMethod::CcoeffNormed => {
-            let denom = (t_energy * i_prime_sq).sqrt();
-            if denom > f64::EPSILON {
-                (numer / denom) as f32
-            } else {
-                0.0
-            }
-        }
-        _ => unreachable!("score_masked_ccoeff_heap only for CCOEFF family"),
-    }
 }
 
 fn prep_mask(tw: usize, th: usize, mask: Option<&[u8]>) -> Result<Vec<bool>, MatchError> {
