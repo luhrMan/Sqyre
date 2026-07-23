@@ -8,16 +8,16 @@ use super::{
     default_ocr_text, default_resize, default_target_color, default_true, default_wait_time,
     is_default_image_blur, is_default_match_method, is_default_ocr_blur, is_default_ocr_text,
     is_default_resize, is_default_target_color, is_false, is_true, is_zero_i32, Action, ActionKind,
-    ConditionBlock, CoordinateRef, DetectionBranch, ListColumn, MouseButton, NavigateSelectData,
-    PressState, ScalarValue, TemplateMatchMethod, VariableAssignment, DEFAULT_SMOOTH_DELAY_MS,
-    DEFAULT_SMOOTH_HIGH, DEFAULT_SMOOTH_LOW,
+    ConditionBlock, CoordinateRef, DetectionBranch, ListColumn, LoopJumpMode, MouseButton,
+    NavigateSelectData, PressState, ScalarValue, TemplateMatchMethod, VariableAssignment,
+    DEFAULT_SMOOTH_DELAY_MS, DEFAULT_SMOOTH_HIGH, DEFAULT_SMOOTH_LOW,
 };
 use serde::{Deserialize, Serialize};
 
 use super::wire_keys::{
-    TagBreak, TagClick, TagConditional, TagContinue, TagFindPixel, TagFocusWindow, TagForEachRow,
-    TagImageSearch, TagKey, TagLoop, TagMove, TagNavigateKey, TagNavigateSelect, TagOcr, TagPause,
-    TagRunMacro, TagSaveVariable, TagSetVariable, TagType, TagWait, TagWhile,
+    TagClick, TagConditional, TagFindPixel, TagFocusWindow, TagForEachRow, TagImageSearch, TagKey,
+    TagLoop, TagLoopJump, TagMove, TagNavigateKey, TagNavigateSelect, TagOcr, TagPause, TagRunMacro,
+    TagSaveVariable, TagSetVariable, TagType, TagWait, TagWhile,
 };
 
 fn is_default_smooth_low(v: &f64) -> bool {
@@ -289,13 +289,10 @@ enum ActionKindWire {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         subactions: Vec<Action>,
     },
-    Break {
+    LoopJump {
         #[serde(rename = "type")]
-        type_: TagBreak,
-    },
-    Continue {
-        #[serde(rename = "type")]
-        type_: TagContinue,
+        type_: TagLoopJump,
+        mode: LoopJumpMode,
     },
 }
 
@@ -504,8 +501,7 @@ impl From<ActionKindWire> for ActionKind {
                 exit,
                 subactions,
             },
-            ActionKindWire::Break { .. } => Self::Break,
-            ActionKindWire::Continue { .. } => Self::Continue,
+            ActionKindWire::LoopJump { mode, .. } => Self::LoopJump { mode },
         }
     }
 }
@@ -702,11 +698,9 @@ impl From<&ActionKind> for ActionKindWire {
                 exit: *exit,
                 subactions: subactions.clone(),
             },
-            ActionKind::Break => Self::Break {
-                type_: TagBreak::Tag,
-            },
-            ActionKind::Continue => Self::Continue {
-                type_: TagContinue::Tag,
+            ActionKind::LoopJump { mode } => Self::LoopJump {
+                type_: TagLoopJump::Tag,
+                mode: *mode,
             },
         }
     }

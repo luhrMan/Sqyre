@@ -102,7 +102,8 @@ root:
   subactions:
     - type: wait
       time: ${delay}
-    - type: break
+    - type: loopjump
+      mode: break
 "#;
         let m = decode_macro_from_yaml(yaml).unwrap();
         assert_eq!(m.name, "wait-var");

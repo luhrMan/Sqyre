@@ -15,8 +15,8 @@ mod tests {
     use crate::backends::RecordingBackend;
     use crate::run::{execute_macro, execute_macro_with, ExecDeps};
     use sqyre_domain::{
-        root_loop, Action, ActionId, ActionKind, ConditionClause, ListColumn, Macro, ScalarValue,
-        VariableAssignment,
+        root_loop, Action, ActionId, ActionKind, ConditionClause, ListColumn, LoopJumpMode, Macro,
+        ScalarValue, VariableAssignment,
     };
     use std::fs;
     use std::sync::atomic::AtomicBool;
@@ -240,7 +240,9 @@ mod tests {
                 subactions: vec![
                     Action {
                         id: ActionId::new(),
-                        kind: ActionKind::Continue,
+                        kind: ActionKind::LoopJump {
+                            mode: LoopJumpMode::Continue,
+                        },
                     },
                     Action {
                         id: ActionId::new(),
