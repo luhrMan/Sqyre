@@ -4,7 +4,10 @@ use eframe::egui::{self, Pos2, Vec2};
 
 const IMAGE_ZOOM_MIN: f32 = 0.5;
 const IMAGE_ZOOM_MAX: f32 = 16.0;
-const IMAGE_ZOOM_WHEEL_STEP: f32 = 0.07;
+/// Relative zoom change per mouse-wheel notch (~50px of `smooth_scroll_delta`).
+const IMAGE_ZOOM_WHEEL_STEP: f32 = 0.035;
+/// Typical egui wheel notch size in points of `smooth_scroll_delta.y`.
+const IMAGE_ZOOM_SCROLL_NOTCH: f32 = 50.0;
 const IMAGE_PAN_EDGE_PAD: f32 = 32.0;
 
 /// Zoom 1.0 = fit in viewport; values above enlarge. Pan is in viewport pixels.
@@ -48,12 +51,10 @@ pub fn clamp_image_zoom(z: f32) -> f32 {
 
 pub fn scroll_zoom_factor(delta_y: f32) -> f32 {
     if delta_y == 0.0 {
-        1.0
-    } else if delta_y > 0.0 {
-        1.0 + IMAGE_ZOOM_WHEEL_STEP
-    } else {
-        1.0 / (1.0 + IMAGE_ZOOM_WHEEL_STEP)
+        return 1.0;
     }
+    // Proportional to delta so trackpads zoom smoothly; one notch ≈ WHEEL_STEP.
+    (1.0 + IMAGE_ZOOM_WHEEL_STEP).powf(delta_y / IMAGE_ZOOM_SCROLL_NOTCH)
 }
 
 /// Displayed image rect inside the viewport.
@@ -199,9 +200,12 @@ mod tests {
     fn zoom_clamps_and_scroll_factor_is_symmetric() {
         assert_eq!(clamp_image_zoom(0.1), IMAGE_ZOOM_MIN);
         assert_eq!(clamp_image_zoom(100.0), IMAGE_ZOOM_MAX);
-        let up = scroll_zoom_factor(1.0);
-        let down = scroll_zoom_factor(-1.0);
+        let up = scroll_zoom_factor(IMAGE_ZOOM_SCROLL_NOTCH);
+        let down = scroll_zoom_factor(-IMAGE_ZOOM_SCROLL_NOTCH);
+        assert!((up - (1.0 + IMAGE_ZOOM_WHEEL_STEP)).abs() < 1e-5);
         assert!((up * down - 1.0).abs() < 1e-5);
+        let half = scroll_zoom_factor(IMAGE_ZOOM_SCROLL_NOTCH * 0.5);
+        assert!(half > 1.0 && half < up);
     }
 
     #[test]

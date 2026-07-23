@@ -6,44 +6,19 @@
 use super::{
     default_assignments, default_image_blur, default_loop_count, default_ocr_blur,
     default_ocr_text, default_resize, default_target_color, default_true, default_wait_time,
-    is_default_image_blur, is_default_ocr_blur, is_default_ocr_text, is_default_resize,
-    is_default_target_color, is_false, is_true, is_zero_i32, Action, ActionKind, ConditionBlock,
-    CoordinateRef, DetectionBranch, ListColumn, MouseButton, NavigateSelectData, ScalarValue,
-    VariableAssignment, DEFAULT_SMOOTH_DELAY_MS, DEFAULT_SMOOTH_HIGH, DEFAULT_SMOOTH_LOW,
+    is_default_image_blur, is_default_match_method, is_default_ocr_blur, is_default_ocr_text,
+    is_default_resize, is_default_target_color, is_false, is_true, is_zero_i32, Action, ActionKind,
+    ConditionBlock, CoordinateRef, DetectionBranch, ListColumn, MouseButton, NavigateSelectData,
+    PressState, ScalarValue, TemplateMatchMethod, VariableAssignment, DEFAULT_SMOOTH_DELAY_MS,
+    DEFAULT_SMOOTH_HIGH, DEFAULT_SMOOTH_LOW,
 };
 use serde::{Deserialize, Serialize};
 
-macro_rules! type_tag {
-    ($name:ident, $rename:literal) => {
-        #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-        enum $name {
-            #[serde(rename = $rename)]
-            Tag,
-        }
-    };
-}
-
-type_tag!(TagLoop, "loop");
-type_tag!(TagWhile, "while");
-type_tag!(TagConditional, "conditional");
-type_tag!(TagImageSearch, "imagesearch");
-type_tag!(TagOcr, "ocr");
-type_tag!(TagFindPixel, "findpixel");
-type_tag!(TagForEachRow, "foreachrow");
-type_tag!(TagWait, "wait");
-type_tag!(TagPause, "pause");
-type_tag!(TagMove, "move");
-type_tag!(TagClick, "click");
-type_tag!(TagKey, "key");
-type_tag!(TagType, "type");
-type_tag!(TagSetVariable, "setvariable");
-type_tag!(TagSaveVariable, "savevariable");
-type_tag!(TagFocusWindow, "focuswindow");
-type_tag!(TagRunMacro, "runmacro");
-type_tag!(TagNavigateSelect, "navigateselect");
-type_tag!(TagNavigateKey, "navigatekey");
-type_tag!(TagBreak, "break");
-type_tag!(TagContinue, "continue");
+use super::wire_keys::{
+    TagBreak, TagClick, TagConditional, TagContinue, TagFindPixel, TagFocusWindow, TagForEachRow,
+    TagImageSearch, TagKey, TagLoop, TagMove, TagNavigateKey, TagNavigateSelect, TagOcr, TagPause,
+    TagRunMacro, TagSaveVariable, TagSetVariable, TagType, TagWait, TagWhile,
+};
 
 fn is_default_smooth_low(v: &f64) -> bool {
     (*v - DEFAULT_SMOOTH_LOW).abs() < f64::EPSILON
@@ -84,6 +59,8 @@ enum ActionKindWire {
         condition: ConditionBlock,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         subactions: Vec<Action>,
+        #[serde(rename = "elseactions", default, skip_serializing_if = "Vec::is_empty")]
+        else_actions: Vec<Action>,
     },
     ImageSearch {
         #[serde(rename = "type")]
@@ -100,6 +77,12 @@ enum ActionKindWire {
             skip_serializing_if = "is_default_image_blur"
         )]
         blur: i32,
+        #[serde(
+            rename = "matchmethod",
+            default,
+            skip_serializing_if = "is_default_match_method"
+        )]
+        match_method: TemplateMatchMethod,
         #[serde(flatten)]
         detection: DetectionBranch,
     },
@@ -227,14 +210,14 @@ enum ActionKindWire {
         type_: TagClick,
         button: MouseButton,
         #[serde(default)]
-        state: bool,
+        state: PressState,
     },
     Key {
         #[serde(rename = "type")]
         type_: TagKey,
         key: String,
         #[serde(default)]
-        state: bool,
+        state: PressState,
     },
     Type {
         #[serde(rename = "type")]
@@ -357,10 +340,12 @@ impl From<ActionKindWire> for ActionKind {
             ActionKindWire::Conditional {
                 condition,
                 subactions,
+                else_actions,
                 ..
             } => Self::Conditional {
                 condition,
                 subactions,
+                else_actions,
             },
             ActionKindWire::ImageSearch {
                 name,
@@ -368,6 +353,7 @@ impl From<ActionKindWire> for ActionKind {
                 search_area,
                 tolerance,
                 blur,
+                match_method,
                 detection,
                 ..
             } => Self::ImageSearch {
@@ -376,6 +362,7 @@ impl From<ActionKindWire> for ActionKind {
                 search_area,
                 tolerance,
                 blur,
+                match_method,
                 detection,
             },
             ActionKindWire::Ocr {
@@ -549,10 +536,12 @@ impl From<&ActionKind> for ActionKindWire {
             ActionKind::Conditional {
                 condition,
                 subactions,
+                else_actions,
             } => Self::Conditional {
                 type_: TagConditional::Tag,
                 condition: condition.clone(),
                 subactions: subactions.clone(),
+                else_actions: else_actions.clone(),
             },
             ActionKind::ImageSearch {
                 name,
@@ -560,6 +549,7 @@ impl From<&ActionKind> for ActionKindWire {
                 search_area,
                 tolerance,
                 blur,
+                match_method,
                 detection,
             } => Self::ImageSearch {
                 type_: TagImageSearch::Tag,
@@ -568,6 +558,7 @@ impl From<&ActionKind> for ActionKindWire {
                 search_area: search_area.clone(),
                 tolerance: *tolerance,
                 blur: *blur,
+                match_method: *match_method,
                 detection: detection.clone(),
             },
             ActionKind::Ocr {

@@ -5,6 +5,12 @@ use eframe::egui::{self, Color32, CornerRadius, Pos2, Sense, Stroke, Vec2, Visua
 /// Sqyre gold/yellow primary (`#dc9d2e`).
 pub const PRIMARY: Color32 = Color32::from_rgb(0xdc, 0x9d, 0x2e);
 
+/// Start macro / add controls (`#36a258`).
+pub const MACRO_START: Color32 = Color32::from_rgb(0x36, 0xa2, 0x58);
+
+/// Stop macro / remove controls (`#e44134`).
+pub const MACRO_STOP: Color32 = Color32::from_rgb(0xe4, 0x41, 0x34);
+
 /// Convert `[r,g,b,a]` to egui [`Color32`] (unmultiplied).
 pub fn rgba(c: [u8; 4]) -> Color32 {
     Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3])
@@ -46,6 +52,76 @@ pub fn paint_galley_centered(
             .min
     };
     ui.painter().galley(pos, galley, fallback);
+}
+
+/// Layout and paint a single-line glyph/text optically centered in `rect`.
+pub fn paint_text_centered(
+    ui: &mut egui::Ui,
+    rect: egui::Rect,
+    text: impl Into<String>,
+    font_id: egui::FontId,
+    color: Color32,
+) {
+    let galley = ui.painter().layout_no_wrap(text.into(), font_id, color);
+    paint_galley_centered(ui, rect, galley, color);
+}
+
+/// Glyph font size for all icon-only buttons.
+pub const ICON_BTN_FONT: f32 = 14.0;
+
+/// Fixed square hit target for all icon-only buttons (framed and bare).
+pub const ICON_BTN_SIDE: f32 = 18.0;
+
+/// Framed icon-only button with optically centered glyph.
+pub fn icon_button(ui: &mut egui::Ui, glyph: &str) -> egui::Response {
+    icon_button_inner(ui, glyph, true, None)
+}
+
+/// Frameless icon control (optically centered); used in dense tree chrome.
+pub fn icon_button_bare(ui: &mut egui::Ui, glyph: &str) -> egui::Response {
+    icon_button_inner(ui, glyph, false, None)
+}
+
+/// Like [`icon_button_bare`], with an optional fixed glyph color.
+pub fn icon_button_bare_colored(
+    ui: &mut egui::Ui,
+    glyph: &str,
+    color: Option<Color32>,
+) -> egui::Response {
+    icon_button_inner(ui, glyph, false, color)
+}
+
+/// Like [`icon_button`], with an optional fixed glyph color (e.g. record ●).
+pub fn icon_button_colored(
+    ui: &mut egui::Ui,
+    glyph: &str,
+    color: Option<Color32>,
+) -> egui::Response {
+    icon_button_inner(ui, glyph, true, color)
+}
+
+fn icon_button_inner(
+    ui: &mut egui::Ui,
+    glyph: &str,
+    framed: bool,
+    color: Option<Color32>,
+) -> egui::Response {
+    let font_id = egui::FontId::proportional(ICON_BTN_FONT);
+    let desired = Vec2::splat(ICON_BTN_SIDE);
+    let (rect, response) = ui.allocate_exact_size(desired, Sense::click());
+    let visuals = ui.style().interact(&response);
+    if framed {
+        ui.painter().rect(
+            rect,
+            visuals.corner_radius,
+            visuals.weak_bg_fill,
+            visuals.bg_stroke,
+            egui::StrokeKind::Inside,
+        );
+    }
+    let fg = color.unwrap_or_else(|| visuals.text_color());
+    paint_text_centered(ui, rect, glyph, font_id, fg);
+    response
 }
 
 /// Soft error / failure text (Find Pixel dropper, status banners).
@@ -145,11 +221,84 @@ pub fn titled_section(
 
 /// Icon-only record control (danger styling).
 pub fn record_icon_button(ui: &mut egui::Ui, tip: &str, enabled: bool) -> egui::Response {
-    ui.add_enabled(
-        enabled,
-        egui::Button::new(egui::RichText::new("●").size(16.0).color(Color32::RED)),
-    )
+    ui.add_enabled_ui(enabled, |ui| {
+        icon_button_colored(ui, "●", Some(Color32::RED))
+    })
+    .inner
     .on_hover_text(tip)
+}
+
+/// Vertical up / tap / down switch for Click/Key press state.
+///
+/// Top = up, middle = tap, bottom = down. Click toggles; click a zone to set.
+pub fn press_state_toggle(
+    ui: &mut egui::Ui,
+    state: &mut sqyre_domain::PressState,
+) -> egui::Response {
+    use sqyre_domain::PressState;
+
+    const TRACK_W: f32 = 18.0;
+    const TRACK_H: f32 = 54.0;
+    const PAD: f32 = 2.0;
+
+    let desired = Vec2::new(TRACK_W, TRACK_H);
+    let (rect, mut response) = ui.allocate_exact_size(desired, Sense::click());
+
+    if response.clicked() {
+        if let Some(pos) = response.interact_pointer_pos() {
+            let third = rect.height() / 3.0;
+            let y = pos.y - rect.top();
+            *state = if y < third {
+                PressState::Up
+            } else if y < third * 2.0 {
+                PressState::Tap
+            } else {
+                PressState::Down
+            };
+        } else {
+            *state = match *state {
+                PressState::Up => PressState::Tap,
+                PressState::Tap => PressState::Down,
+                PressState::Down => PressState::Up,
+            };
+        }
+        response.mark_changed();
+    }
+
+    let visuals = ui.style().interact(&response);
+    let track_fill = if matches!(*state, PressState::Down) {
+        PRIMARY
+    } else {
+        visuals.bg_fill
+    };
+    let painter = ui.painter();
+    let rounding = CornerRadius::same((TRACK_W / 2.0) as u8);
+    painter.rect_filled(rect, rounding, track_fill);
+    painter.rect_stroke(
+        rect,
+        rounding,
+        Stroke::new(1.0, visuals.bg_stroke.color),
+        egui::StrokeKind::Inside,
+    );
+
+    let knob_d = TRACK_W - PAD * 2.0;
+    let knob_x = rect.center().x;
+    let knob_y = match *state {
+        PressState::Up => rect.top() + PAD + knob_d / 2.0,
+        PressState::Tap => rect.center().y,
+        PressState::Down => rect.bottom() - PAD - knob_d / 2.0,
+    };
+    painter.circle_filled(
+        Pos2::new(knob_x, knob_y),
+        knob_d / 2.0,
+        visuals.fg_stroke.color,
+    );
+
+    response.on_hover_text(match *state {
+        PressState::Up => "Up",
+        PressState::Tap => "Tap",
+        PressState::Down => "Down",
+    })
 }
 
 /// Vertical up↔down switch for Click/Key button state (`true` = down).

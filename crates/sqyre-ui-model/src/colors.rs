@@ -4,7 +4,7 @@
 //! so vision and persist can use them without depending on UI chrome.
 
 use sqyre_domain::{
-    action_color_category, ACTION_COLOR_KEY_DEFAULT, ACTION_COLOR_KEY_DETECTION,
+    action_color_key as taxonomy_color_key, ACTION_COLOR_KEY_DETECTION,
     ACTION_COLOR_KEY_MISCELLANEOUS, ACTION_COLOR_KEY_MOUSE_KEYBOARD, ACTION_COLOR_KEY_VARIABLES,
     ACTION_COLOR_KEY_WAIT,
 };
@@ -14,17 +14,7 @@ use std::sync::RwLock;
 static CUSTOM_ACTION_COLORS: RwLock<Option<HashMap<String, [u8; 4]>>> = RwLock::new(None);
 
 fn action_color_key(action_type: &str) -> &'static str {
-    let t = action_type.trim().to_ascii_lowercase();
-    if t == "wait" || t == "pause" {
-        return ACTION_COLOR_KEY_WAIT;
-    }
-    match action_color_category(&t) {
-        "Mouse & Keyboard" => ACTION_COLOR_KEY_MOUSE_KEYBOARD,
-        "Detection" => ACTION_COLOR_KEY_DETECTION,
-        "Variables" => ACTION_COLOR_KEY_VARIABLES,
-        "Miscellaneous" => ACTION_COLOR_KEY_MISCELLANEOUS,
-        _ => ACTION_COLOR_KEY_DEFAULT,
-    }
+    taxonomy_color_key(action_type)
 }
 
 /// Sample action type used when previewing a category swatch.
@@ -87,29 +77,24 @@ pub fn default_action_pastel_color(action_type: &str, is_dark: bool) -> [u8; 4] 
             [0xF0, 0xC0, 0x6A, 0xFF]
         };
     }
-    let is_wait = t == "wait" || t == "pause";
-    let category = action_color_category(&t);
+    let key = action_color_key(&t);
 
     if is_dark {
-        if is_wait {
-            return [0x7B, 0x4E, 0x3E, 0xFF];
-        }
-        return match category {
-            "Mouse & Keyboard" => [0x5E, 0x6B, 0x4A, 0xFF],
-            "Detection" => [0x5A, 0x4A, 0x44, 0xFF],
-            "Variables" => [0x2A, 0x42, 0x54, 0xFF],
-            "Miscellaneous" => [0x6A, 0x5A, 0x3F, 0xFF],
+        return match key {
+            ACTION_COLOR_KEY_WAIT => [0x7B, 0x4E, 0x3E, 0xFF],
+            ACTION_COLOR_KEY_MOUSE_KEYBOARD => [0x5E, 0x6B, 0x4A, 0xFF],
+            ACTION_COLOR_KEY_DETECTION => [0x5A, 0x4A, 0x44, 0xFF],
+            ACTION_COLOR_KEY_VARIABLES => [0x2A, 0x42, 0x54, 0xFF],
+            ACTION_COLOR_KEY_MISCELLANEOUS => [0x6A, 0x5A, 0x3F, 0xFF],
             _ => [0x5C, 0x54, 0x49, 0xFF],
         };
     }
-    if is_wait {
-        return [0xC9, 0x8D, 0x6A, 0xFF];
-    }
-    match category {
-        "Mouse & Keyboard" => [0xA1, 0xB0, 0x7A, 0xFF],
-        "Detection" => [0xB4, 0x9A, 0x84, 0xFF],
-        "Variables" => [0x5E, 0x8F, 0xB0, 0xFF],
-        "Miscellaneous" => [0xB8, 0x9A, 0x6A, 0xFF],
+    match key {
+        ACTION_COLOR_KEY_WAIT => [0xC9, 0x8D, 0x6A, 0xFF],
+        ACTION_COLOR_KEY_MOUSE_KEYBOARD => [0xA1, 0xB0, 0x7A, 0xFF],
+        ACTION_COLOR_KEY_DETECTION => [0xB4, 0x9A, 0x84, 0xFF],
+        ACTION_COLOR_KEY_VARIABLES => [0x5E, 0x8F, 0xB0, 0xFF],
+        ACTION_COLOR_KEY_MISCELLANEOUS => [0xB8, 0x9A, 0x6A, 0xFF],
         _ => [0xB2, 0xA4, 0x8E, 0xFF],
     }
 }

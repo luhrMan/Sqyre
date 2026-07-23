@@ -11,37 +11,34 @@ use sqyre_ui_model::{action_icon_glyph, action_pastel_color, ActionDisplay, Summ
 use std::collections::HashSet;
 
 /// Icon badge edge length.
-const ICON_SIZE: f32 = 20.0;
+const ICON_SIZE: f32 = 18.0;
 /// Glyph inside the type badge.
-const ICON_GLYPH_SIZE: f32 = 14.0;
+const ICON_GLYPH_SIZE: f32 = 12.0;
+/// Dense logs/delete hit targets (smaller than toolbar `ICON_BTN_SIDE`).
+const ROW_ACTION_BTN_SIDE: f32 = 14.0;
+const ROW_ACTION_BTN_FONT: f32 = 12.0;
+/// Gap between logs and delete.
+const ROW_ACTION_BTN_GAP: f32 = 2.0;
 /// Pill label font (1px smaller than prior 13).
 const PILL_FONT_SIZE: f32 = 12.0;
 /// Pill inner padding (4×2).
 const PILL_MARGIN_X: i8 = 4;
 const PILL_MARGIN_Y: i8 = 2;
 const PILL_RADIUS: f32 = 5.0;
-/// Image Search target thumbnail: max height (width follows original aspect).
-const TARGET_THUMB_MAX_H: f32 = 24.0;
+/// Item thumbnail max height — match action cell so rows stay uniform.
+const TARGET_THUMB_MAX_H: f32 = ICON_SIZE;
 /// Cap very wide icons so a row cannot grow unboundedly.
-const TARGET_THUMB_MAX_W: f32 = 40.0;
+const TARGET_THUMB_MAX_W: f32 = 30.0;
 const MAX_TARGET_THUMBS: usize = 8;
 
-/// Default tree-row height (icon column + chrome), excluding image-search thumbs.
+/// Default tree-row height (icon column + chrome).
 pub fn default_row_height(interact_y: f32) -> f32 {
     interact_y.max(ICON_SIZE)
 }
 
-/// Row height for a painted tree label (taller when image-search thumbs are shown).
-pub fn action_row_height(action: &Action, interact_y: f32) -> f32 {
-    let base = default_row_height(interact_y);
-    if matches!(
-        &action.kind,
-        ActionKind::ImageSearch { targets, .. } if !targets.is_empty()
-    ) {
-        base.max(TARGET_THUMB_MAX_H + 4.0)
-    } else {
-        base
-    }
+/// Row height for a painted tree label (item thumbs fit in the standard band).
+pub fn action_row_height(_action: &Action, interact_y: f32) -> f32 {
+    default_row_height(interact_y)
 }
 
 /// Clickable chrome on a tree row.
@@ -53,13 +50,15 @@ pub enum RowAction {
     Delete,
 }
 
-/// Execution highlight overlay for a tree row.
+/// Execution / related-selection highlight overlay for a tree row.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum RowHighlight {
     #[default]
     None,
     Cursor,
     Fill(f32),
+    /// Parent of the selected Else folder — softer than TreeView selection.
+    Owner,
 }
 
 /// Row hover / click signals for the action tooltip state machine.
@@ -123,13 +122,18 @@ pub(crate) fn image_search_overflow_count(total: usize) -> usize {
     total.saturating_sub(MAX_TARGET_THUMBS)
 }
 
-fn icon_btn(ui: &mut egui::Ui, glyph: &str, tip: &str) -> egui::Response {
-    ui.add(
-        egui::Button::new(egui::RichText::new(glyph).size(14.0))
-            .small()
-            .frame(false),
-    )
-    .on_hover_text(tip)
+fn row_action_btn(
+    ui: &mut egui::Ui,
+    glyph: &str,
+    tip: &str,
+    color: Option<Color32>,
+) -> egui::Response {
+    let font_id = FontId::proportional(ROW_ACTION_BTN_FONT);
+    let (rect, response) = ui.allocate_exact_size(Vec2::splat(ROW_ACTION_BTN_SIDE), Sense::click());
+    let visuals = ui.style().interact(&response);
+    let fg = color.unwrap_or_else(|| visuals.text_color());
+    crate::theme::paint_text_centered(ui, rect, glyph, font_id, fg);
+    response.on_hover_text(tip)
 }
 
 /// Paint the pastel type badge with a glyph.
@@ -145,9 +149,9 @@ pub fn paint_action_icon(ui: &mut egui::Ui, action: &Action, is_dark: bool) -> e
         egui::StrokeKind::Outside,
     );
     let glyph = action_icon_glyph(action);
-    ui.painter().text(
-        rect.center(),
-        egui::Align2::CENTER_CENTER,
+    crate::theme::paint_text_centered(
+        ui,
+        rect,
         glyph,
         FontId::proportional(ICON_GLYPH_SIZE),
         contrast_fg(pastel),
@@ -223,31 +227,34 @@ fn paint_target_thumb(
     icons: &mut IconCache,
     target: &str,
 ) -> egui::Response {
-    let resp = if let Some(tex) = icons.for_target(ui.ctx(), catalog, target) {
+    // Fixed slot so mixed aspect ratios align across action rows.
+    let slot = Vec2::new(TARGET_THUMB_MAX_W, TARGET_THUMB_MAX_H);
+    let (slot_rect, slot_resp) = ui.allocate_exact_size(slot, Sense::hover());
+    if let Some(tex) = icons.for_target(ui.ctx(), catalog, target) {
         let [tw, th] = tex.size();
         let size = thumb_display_size(tw as f32, th as f32);
-        ui.add(
+        let inner = egui::Rect::from_center_size(slot_rect.center(), size);
+        let _ = ui.put(
+            inner,
             egui::Image::new((tex.id(), size))
                 .fit_to_exact_size(size)
                 .maintain_aspect_ratio(true)
                 .corner_radius(3.0)
                 .bg_fill(Color32::from_black_alpha(20)),
-        )
+        );
     } else {
-        // Placeholder when the PNG is missing (still aspect-neutral square).
-        let size = Vec2::splat(TARGET_THUMB_MAX_H);
-        let (rect, resp) = ui.allocate_exact_size(size, Sense::hover());
+        let inner =
+            egui::Rect::from_center_size(slot_rect.center(), Vec2::splat(TARGET_THUMB_MAX_H));
         ui.painter().rect(
-            rect,
+            inner,
             3.0,
             Color32::from_gray(80),
             Stroke::new(1.0, Color32::from_gray(120)),
             egui::StrokeKind::Outside,
         );
-        resp
-    };
-    attach_item_icon_tooltip(&resp, catalog, target);
-    resp
+    }
+    attach_item_icon_tooltip(&slot_resp, catalog, icons, target);
+    slot_resp
 }
 
 fn paint_image_search_extras(
@@ -333,8 +340,10 @@ pub fn paint_action_row(
     let mut action_click = RowAction::None;
     let mut chrome_hovered = false;
     let mut tip_hovered = false;
-    // Match TreeView node height; only image-search rows grow for thumbs.
-    let row_h = action_row_height(action, ui.spacing().interact_size.y);
+    // Match TreeView node height.
+    let interact_y = ui.spacing().interact_size.y;
+    let row_h = action_row_height(action, interact_y);
+    let base_h = default_row_height(interact_y);
 
     // egui_ltreeview remembers a content-based min width, so `available_width` can stay
     // wider than the visible panel after the user shrinks the window. Cap the row to the
@@ -352,9 +361,9 @@ pub fn paint_action_row(
         Vec2::new(row_w, row_h),
         egui::Layout::right_to_left(egui::Align::Center),
         |ui| {
-            ui.spacing_mut().item_spacing.x = spacing;
+            ui.spacing_mut().item_spacing.x = ROW_ACTION_BTN_GAP;
 
-            let del = icon_btn(ui, "🗑", "Delete");
+            let del = row_action_btn(ui, "🗑", "Delete", Some(crate::theme::MACRO_STOP));
             if del.contains_pointer() {
                 chrome_hovered = true;
             }
@@ -362,7 +371,7 @@ pub fn paint_action_row(
                 action_click = RowAction::Delete;
             }
 
-            let logs = icon_btn(ui, "📋", "Logs");
+            let logs = row_action_btn(ui, "📋", "Logs", None);
             // contains_pointer: the full-row sense below steals `.hovered()` over these buttons.
             if logs.contains_pointer() {
                 chrome_hovered = true;
@@ -371,6 +380,7 @@ pub fn paint_action_row(
                 action_click = RowAction::Logs;
             }
             chrome_rect = logs.rect.union(del.rect);
+            ui.spacing_mut().item_spacing.x = spacing;
 
             let content_w = ui.available_width().max(0.0);
             let (content_rect, _) =
@@ -380,40 +390,55 @@ pub fn paint_action_row(
                 let mut content = ui.new_child(
                     egui::UiBuilder::new()
                         .max_rect(content_rect)
-                        .layout(egui::Layout::left_to_right(egui::Align::Center)),
+                        .layout(egui::Layout::left_to_right(egui::Align::TOP)),
                 );
                 content.set_clip_rect(content_rect.intersect(ui.clip_rect()));
                 content.spacing_mut().item_spacing.x = spacing;
-                extend_drag_handle(
-                    &mut drag_handle_rect,
-                    paint_action_icon(&mut content, action, is_dark).rect,
+
+                // Pin the type badge to the standard row band.
+                content.allocate_ui_with_layout(
+                    Vec2::new(ICON_SIZE, base_h),
+                    egui::Layout::top_down(egui::Align::Center),
+                    |ui| {
+                        extend_drag_handle(
+                            &mut drag_handle_rect,
+                            paint_action_icon(ui, action, is_dark).rect,
+                        );
+                    },
                 );
 
-                for pill in action.tree_summary_pills() {
-                    let resp = paint_summary_pill(&mut content, action, &pill, known_vars, is_dark);
-                    extend_drag_handle(&mut drag_handle_rect, resp.rect);
-                    if resp.hovered() {
-                        tip_hovered = true;
-                    }
-                }
+                content.allocate_ui_with_layout(
+                    Vec2::new(content.available_width().max(0.0), row_h),
+                    egui::Layout::left_to_right(egui::Align::Center),
+                    |ui| {
+                        ui.spacing_mut().item_spacing.x = spacing;
+                        for pill in action.tree_summary_pills() {
+                            let resp = paint_summary_pill(ui, action, &pill, known_vars, is_dark);
+                            extend_drag_handle(&mut drag_handle_rect, resp.rect);
+                            if resp.hovered() {
+                                tip_hovered = true;
+                            }
+                        }
 
-                if let ActionKind::FindPixel { target_color, .. } = &action.kind {
-                    if let Some(swatch) = paint_color_swatch(&mut content, target_color) {
-                        extend_drag_handle(&mut drag_handle_rect, swatch.rect);
-                    }
-                }
-                if matches!(action.kind, ActionKind::ImageSearch { .. })
-                    && paint_image_search_extras(
-                        &mut content,
-                        action,
-                        catalog,
-                        icons,
-                        is_dark,
-                        &mut drag_handle_rect,
-                    )
-                {
-                    tip_hovered = true;
-                }
+                        if let ActionKind::FindPixel { target_color, .. } = &action.kind {
+                            if let Some(swatch) = paint_color_swatch(ui, target_color) {
+                                extend_drag_handle(&mut drag_handle_rect, swatch.rect);
+                            }
+                        }
+                        if matches!(action.kind, ActionKind::ImageSearch { .. })
+                            && paint_image_search_extras(
+                                ui,
+                                action,
+                                catalog,
+                                icons,
+                                is_dark,
+                                &mut drag_handle_rect,
+                            )
+                        {
+                            tip_hovered = true;
+                        }
+                    },
+                );
             }
         },
     );
@@ -477,8 +502,12 @@ fn highlight_cursor_color() -> Color32 {
 fn highlight_fill_color() -> Color32 {
     Color32::from_rgba_unmultiplied(90, 200, 130, 90)
 }
+/// Soft gold tint when this row owns the selected Else folder.
+fn highlight_owner_color() -> Color32 {
+    Color32::from_rgba_unmultiplied(0xdc, 0x9d, 0x2e, 0x28)
+}
 
-fn paint_row_highlight(ui: &mut egui::Ui, rect: egui::Rect, highlight: RowHighlight) {
+pub(crate) fn paint_row_highlight(ui: &mut egui::Ui, rect: egui::Rect, highlight: RowHighlight) {
     match highlight {
         RowHighlight::None => {}
         RowHighlight::Cursor => {
@@ -492,13 +521,18 @@ fn paint_row_highlight(ui: &mut egui::Ui, rect: egui::Rect, highlight: RowHighli
             ui.painter()
                 .rect_filled(fill_rect, 0.0, highlight_fill_color());
         }
+        RowHighlight::Owner => {
+            ui.painter().rect_filled(rect, 0.0, highlight_owner_color());
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqyre_domain::{ActionId, ActionKind, CoordinateRef, DetectionBranch, ScalarValue};
+    use sqyre_domain::{
+        ActionId, ActionKind, CoordinateRef, DetectionBranch, PressState, ScalarValue,
+    };
 
     fn with_ui(mut f: impl FnMut(&mut egui::Ui)) {
         let ctx = egui::Context::default();
@@ -521,7 +555,7 @@ mod tests {
     }
 
     #[test]
-    fn row_height_only_grows_for_image_search_targets() {
+    fn row_height_stays_uniform_with_image_search_targets() {
         let interact = 18.0;
         assert_eq!(default_row_height(interact), ICON_SIZE);
 
@@ -541,6 +575,7 @@ mod tests {
                 search_area: CoordinateRef(String::new()),
                 tolerance: 0.9,
                 blur: 0,
+                match_method: Default::default(),
                 detection: DetectionBranch::default(),
             },
         };
@@ -554,13 +589,12 @@ mod tests {
                 search_area: CoordinateRef(String::new()),
                 tolerance: 0.9,
                 blur: 0,
+                match_method: Default::default(),
                 detection: DetectionBranch::default(),
             },
         };
-        assert_eq!(
-            action_row_height(&with_target, interact),
-            TARGET_THUMB_MAX_H + 4.0
-        );
+        assert_eq!(action_row_height(&with_target, interact), ICON_SIZE);
+        const { assert!(TARGET_THUMB_MAX_H <= ICON_SIZE) };
     }
 
     #[test]
@@ -678,6 +712,7 @@ mod tests {
                     search_area: CoordinateRef("P~Box".into()),
                     tolerance: 0.9,
                     blur: 0,
+                    match_method: Default::default(),
                     detection: DetectionBranch::default(),
                 },
             };
@@ -773,6 +808,7 @@ mod tests {
                 search_area: CoordinateRef("P~Box".into()),
                 tolerance: 0.9,
                 blur: 0,
+                match_method: Default::default(),
                 detection: DetectionBranch::default(),
             },
         };
@@ -794,7 +830,7 @@ mod tests {
                 id: ActionId::new(),
                 kind: ActionKind::Click {
                     button: "left".into(),
-                    state: true,
+                    state: PressState::Down,
                 },
             };
             paint_action_icon(ui, &action, false);

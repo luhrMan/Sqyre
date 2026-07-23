@@ -4,6 +4,7 @@ use crate::hotkey_record::HotkeyRecordUi;
 use crate::icon_cache::IconCache;
 use crate::key_record::KeyRecordUi;
 use crate::preview_tooltip::PreviewTooltipCache;
+use sqyre_domain::ActionId;
 use sqyre_executor::HighlightSnapshot;
 use sqyre_hotkeys::{MacroHotkeyBridge, ScreenClickBridge};
 use sqyre_persist::ProgramCatalog;
@@ -34,6 +35,8 @@ pub struct TreePaint<'a> {
     pub theme: VarTheme<'a>,
     pub macro_name: &'a str,
     pub hl_snap: &'a HighlightSnapshot,
+    /// Currently selected tree node (action or Else folder sentinel).
+    pub selected: Option<ActionId>,
 }
 
 /// Catalog paint + var theme + recording bridges (action tooltip / defaults edit).

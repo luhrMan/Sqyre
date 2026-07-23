@@ -1,41 +1,15 @@
 //! Action type icon glyphs for the macro tree.
 
-use sqyre_domain::{Action, ActionKind};
+use sqyre_domain::{action_icon, Action, ActionKind, PressState};
 
 pub fn action_icon_glyph(action: &Action) -> &'static str {
     match &action.kind {
-        ActionKind::Click { state, .. } => {
-            if *state {
-                "⬇"
-            } else {
-                "⬆"
-            }
-        }
-        ActionKind::Move { .. } => "➔",
-        ActionKind::Key { state, .. } => {
-            if *state {
-                "⬇"
-            } else {
-                "⬆"
-            }
-        }
-        ActionKind::Type { .. } => "⌨",
-        ActionKind::Wait { .. } => "⏱",
-        ActionKind::Pause { .. } => "⏸",
-        ActionKind::FocusWindow { .. } => "👁",
-        ActionKind::RunMacro { .. } => "▶",
-        ActionKind::Conditional { .. } => "?",
-        ActionKind::Loop { .. } | ActionKind::While { .. } => "↻",
-        ActionKind::Break => "⏹",
-        ActionKind::Continue => "⏭",
-        ActionKind::SetVariable { .. } => "x",
-        ActionKind::SaveVariable { .. } => "💾",
-        ActionKind::ForEachRow { .. } => "☰",
-        ActionKind::Ocr { .. } => "🔤",
-        ActionKind::ImageSearch { .. } => "🔍",
-        ActionKind::FindPixel { .. } => "🎨",
-        ActionKind::NavigateSelect(_) => "⌖",
-        ActionKind::NavigateKey { .. } => "⎇",
+        ActionKind::Click { state, .. } | ActionKind::Key { state, .. } => match state {
+            PressState::Down => "⬇",
+            PressState::Up => "⬆",
+            PressState::Tap => "↕",
+        },
+        _ => action_icon(action.type_key()),
     }
 }
 

@@ -1,13 +1,37 @@
 use crate::image::Point;
-use crate::template::MatchMap;
+use crate::template::{MatchMap, MatchMethod};
 use std::collections::HashMap;
 
 /// Default distance for spatially deduplicating nearby match peaks.
 pub const DEFAULT_CLOSE_MATCHES_DISTANCE: i32 = 10;
 
 /// Accept scores `>= threshold`, reject NaN/Inf, then spatial-dedup.
-/// Extract match peaks from a template-match result map.
+/// Extract match peaks from a template-match result map (higher-is-better).
 pub fn find_peaks(map: &MatchMap, threshold: f32, close_matches_distance: i32) -> Vec<Point> {
+    find_peaks_polarity(map, threshold, close_matches_distance, true)
+}
+
+/// Method-aware peak extraction: `SQDIFF*` use `score <= threshold`.
+pub fn find_peaks_for_method(
+    map: &MatchMap,
+    threshold: f32,
+    close_matches_distance: i32,
+    method: MatchMethod,
+) -> Vec<Point> {
+    find_peaks_polarity(
+        map,
+        threshold,
+        close_matches_distance,
+        method.higher_is_better(),
+    )
+}
+
+fn find_peaks_polarity(
+    map: &MatchMap,
+    threshold: f32,
+    close_matches_distance: i32,
+    higher_is_better: bool,
+) -> Vec<Point> {
     if map.width == 0 || map.height == 0 {
         return Vec::new();
     }
@@ -16,7 +40,15 @@ pub fn find_peaks(map: &MatchMap, threshold: f32, close_matches_distance: i32) -
         let row = y * map.width;
         for x in 0..map.width {
             let confidence = map.scores[row + x];
-            if confidence < threshold || !confidence.is_finite() {
+            if !confidence.is_finite() {
+                continue;
+            }
+            let ok = if higher_is_better {
+                confidence >= threshold
+            } else {
+                confidence <= threshold
+            };
+            if !ok {
                 continue;
             }
             matches.push(Point {
@@ -102,6 +134,19 @@ mod tests {
             scores,
         };
         let matches = find_peaks(&map, 0.9, 10);
+        assert_eq!(matches, vec![Point { x: 7, y: 5 }]);
+    }
+
+    #[test]
+    fn sqdiff_peaks_use_upper_bound() {
+        let mut scores = vec![1.0_f32; 100];
+        scores[5 * 10 + 7] = 0.05;
+        let map = MatchMap {
+            width: 10,
+            height: 10,
+            scores,
+        };
+        let matches = find_peaks_for_method(&map, 0.1, 10, MatchMethod::SqdiffNormed);
         assert_eq!(matches, vec![Point { x: 7, y: 5 }]);
     }
 }

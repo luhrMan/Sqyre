@@ -333,7 +333,9 @@ fn yaml_string_value(v: &sqyre_domain::ScalarValue) -> Option<&str> {
 }
 
 fn validate_continue_key(keys: &[String]) -> Result<()> {
-    sqyre_hotkeys::validate_continue_key(keys).map(|_| ()).map_err(ValidateError::Message)
+    sqyre_hotkeys::validate_continue_key(keys)
+        .map(|_| ())
+        .map_err(ValidateError::Message)
 }
 
 /// Checks minimum fields required to save/run an action.
@@ -418,9 +420,13 @@ pub fn validate_action(action: &Action, macro_: Option<&Macro>) -> Result<()> {
 
 fn validate_wait_config(label: &str, wait: &sqyre_domain::WaitTilFoundConfig) -> Result<()> {
     use sqyre_domain::RepeatMode;
-    if wait.repeat_mode == RepeatMode::WaitUntilFound && wait.wait_til_found_seconds <= 0 {
+    let needs_timeout = matches!(
+        wait.repeat_mode,
+        RepeatMode::WaitUntilFound | RepeatMode::WaitWhileFound
+    );
+    if needs_timeout && wait.wait_til_found_seconds <= 0 {
         return Err(ValidateError::Message(format!(
-            "{label}: wait-until-found requires a positive timeout (seconds)"
+            "{label}: wait modes require a positive timeout (seconds)"
         )));
     }
     if wait.wait_til_found_interval_ms < 0 {
@@ -431,11 +437,16 @@ fn validate_wait_config(label: &str, wait: &sqyre_domain::WaitTilFoundConfig) ->
     Ok(())
 }
 
-/// Recursively validate `action` and every descendant via [`Action::children`].
+/// Recursively validate `action` and every descendant via then/else children.
 pub fn validate_action_tree(action: &Action, macro_: Option<&Macro>) -> Result<()> {
     validate_action(action, macro_)?;
     for child in action.children() {
         validate_action_tree(child, macro_)?;
+    }
+    if let Some(else_kids) = action.else_children() {
+        for child in else_kids {
+            validate_action_tree(child, macro_)?;
+        }
     }
     Ok(())
 }
@@ -443,7 +454,9 @@ pub fn validate_action_tree(action: &Action, macro_: Option<&Macro>) -> Result<(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqyre_domain::{ActionId, ScalarValue, VariableAssignment, VariableDecl, VariableType};
+    use sqyre_domain::{
+        ActionId, PressState, ScalarValue, VariableAssignment, VariableDecl, VariableType,
+    };
 
     #[test]
     fn variable_name_rejects_braces() {
@@ -482,7 +495,7 @@ mod tests {
             id: ActionId::new(),
             kind: ActionKind::Key {
                 key: k.into(),
-                state: true,
+                state: PressState::Down,
             },
         }
     }
@@ -678,6 +691,7 @@ mod tests {
                 search_area: Default::default(),
                 tolerance: 0.95,
                 blur: 5,
+                match_method: Default::default(),
                 detection: Default::default(),
             },
         };
@@ -694,6 +708,7 @@ mod tests {
                 search_area: Default::default(),
                 tolerance: 0.95,
                 blur: 5,
+                match_method: Default::default(),
                 detection: sqyre_domain::DetectionBranch {
                     wait: WaitTilFoundConfig {
                         repeat_mode: RepeatMode::WaitUntilFound,

@@ -510,6 +510,11 @@ fn reassign_uids(action: &mut Action) {
             reassign_uids(kid);
         }
     }
+    if let Some(kids) = action.else_children_mut() {
+        for kid in kids.iter_mut() {
+            reassign_uids(kid);
+        }
+    }
 }
 
 fn picker_tile(

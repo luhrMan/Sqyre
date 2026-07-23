@@ -46,10 +46,10 @@ mod ui_overlays;
 mod ui_toolbar;
 mod var_pills;
 mod variables_panel;
-mod widgets;
 #[cfg(any(test, target_arch = "wasm32"))]
 mod wasm_demo_seed;
 mod wasm_io;
+mod widgets;
 
 pub use settings::SettingsUi;
 
@@ -105,7 +105,7 @@ pub fn run() -> eframe::Result<()> {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([960.0, 640.0])
             .with_min_inner_size([100.0, 100.0])
-            .with_title("Sqyre (Rust)")
+            .with_title("Sqyre")
             .with_icon(assets::app_icon()),
         ..Default::default()
     };
@@ -193,7 +193,7 @@ pub struct SqyreApp {
     /// Filter text for the macro list (name / tags fuzzy match).
     macro_list_filter: String,
     tray: tray::SystemTray,
-    /// Process-wide data-dir lock (re-acquired after relocate).
+    /// Process-wide single-instance lock (held for the app lifetime).
     instance_lock: Option<single_instance::InstanceLock>,
     /// Confirm dialog for deleting the selected macro.
     pending_delete_macro: Option<String>,

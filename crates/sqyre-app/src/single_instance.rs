@@ -1,19 +1,22 @@
-//! Exclusive process lock (`sqyre.lock`). Native only — WASM has no process lock.
+//! Exclusive process lock so only one native Sqyre can run per user.
+//!
+//! Lock path is fixed under the XDG config dir (not the relocatable data dir),
+//! so a second launch cannot slip through after `sqyre_dir` moves.
+//! WASM has no process lock.
 
 #[cfg(not(target_arch = "wasm32"))]
 mod native {
     use fs2::FileExt;
     use std::fs::{self, File};
     use std::io;
-    use std::path::PathBuf;
 
     /// Holds the open lock file for the process lifetime.
     pub struct InstanceLock {
         _file: File,
     }
 
-    fn lock_path() -> PathBuf {
-        sqyre_persist::sqyre_dir().join("sqyre.lock")
+    fn lock_path() -> std::path::PathBuf {
+        sqyre_persist::sqyre_config_dir().join("sqyre.lock")
     }
 
     fn is_lock_contention(err: &io::Error) -> bool {
@@ -35,15 +38,10 @@ mod native {
             Err(e) => Err(e),
         }
     }
-
-    pub fn reacquire(previous: Option<InstanceLock>) -> io::Result<Option<InstanceLock>> {
-        drop(previous);
-        try_acquire()
-    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub use native::{reacquire, try_acquire, InstanceLock};
+pub use native::{try_acquire, InstanceLock};
 
 #[cfg(target_arch = "wasm32")]
 mod wasm {
@@ -55,11 +53,7 @@ mod wasm {
     pub fn try_acquire() -> io::Result<Option<InstanceLock>> {
         Ok(Some(InstanceLock))
     }
-
-    pub fn reacquire(_previous: Option<InstanceLock>) -> io::Result<Option<InstanceLock>> {
-        Ok(Some(InstanceLock))
-    }
 }
 
 #[cfg(target_arch = "wasm32")]
-pub use wasm::{reacquire, InstanceLock};
+pub use wasm::{try_acquire, InstanceLock};

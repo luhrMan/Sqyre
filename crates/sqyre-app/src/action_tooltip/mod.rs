@@ -137,9 +137,13 @@ impl TooltipState {
         };
 
         let mut candidate = draft;
-        let preserved = live.children().to_vec();
+        let preserved_then = live.children().to_vec();
+        let preserved_else = live.else_children().map(|c| c.to_vec()).unwrap_or_default();
         if let Some(kids) = candidate.children_mut() {
-            *kids = preserved;
+            *kids = preserved_then;
+        }
+        if let Some(kids) = candidate.else_children_mut() {
+            *kids = preserved_else;
         }
         candidate.id = live.id;
 
@@ -671,7 +675,9 @@ pub(crate) fn apply_picker_result(draft: &mut Action, result: PickerResult) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqyre_domain::{root_loop, ActionKind, CoordinateRef, DetectionBranch, ScalarValue};
+    use sqyre_domain::{
+        root_loop, ActionKind, CoordinateRef, DetectionBranch, PressState, ScalarValue,
+    };
 
     fn wait_action(time: i64) -> Action {
         Action {
@@ -744,7 +750,7 @@ mod tests {
             id: ActionId::new(),
             kind: ActionKind::Key {
                 key: "a".into(),
-                state: true,
+                state: PressState::Down,
             },
         };
         let id = child.id;
@@ -755,7 +761,7 @@ mod tests {
         if let TooltipState::Edit(edit) = &mut state {
             edit.draft.kind = ActionKind::Key {
                 key: String::new(),
-                state: true,
+                state: PressState::Down,
             };
         }
         assert!(!state.try_save_validated(&mut root, None, |_| {}));
@@ -775,7 +781,7 @@ mod tests {
             id: ActionId::new(),
             kind: ActionKind::Key {
                 key: String::new(),
-                state: true,
+                state: PressState::Down,
             },
         };
         let mut state = TooltipState::Hidden;
@@ -865,6 +871,7 @@ mod tests {
                 search_area: CoordinateRef("P~Box".into()),
                 tolerance: 0.9,
                 blur: 0,
+                match_method: Default::default(),
                 detection: DetectionBranch::default(),
             },
         }]);

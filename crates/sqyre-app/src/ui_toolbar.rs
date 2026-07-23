@@ -3,17 +3,27 @@
 use crate::macro_meta::collect_all_macro_tags;
 use crate::theme;
 use crate::SqyreApp;
-use eframe::egui;
+use eframe::egui::{self, Color32, Vec2};
 use sqyre_hotkeys::{format_hotkey, HotkeyTrigger};
+use sqyre_ui_model::action_pastel_color;
 use std::sync::atomic::Ordering;
 
 /// Compact toolbar control: icon glyph + hover label.
 pub fn toolbar_icon(ui: &mut egui::Ui, glyph: &str, tip: &str, enabled: bool) -> egui::Response {
-    ui.add_enabled(
-        enabled,
-        egui::Button::new(egui::RichText::new(glyph).size(16.0)),
-    )
-    .on_hover_text(tip)
+    toolbar_icon_colored(ui, glyph, tip, enabled, None)
+}
+
+/// Compact toolbar control with an optional fixed glyph color.
+fn toolbar_icon_colored(
+    ui: &mut egui::Ui,
+    glyph: &str,
+    tip: &str,
+    enabled: bool,
+    color: Option<Color32>,
+) -> egui::Response {
+    ui.add_enabled_ui(enabled, |ui| theme::icon_button_colored(ui, glyph, color))
+        .inner
+        .on_hover_text(tip)
 }
 
 pub fn brand_header(app: &mut SqyreApp, ui: &mut egui::Ui) {
@@ -33,6 +43,8 @@ pub fn main_toolbar(app: &mut SqyreApp, ui: &mut egui::Ui) {
     #[cfg(not(target_arch = "wasm32"))]
     let running = app.run.running.load(Ordering::SeqCst);
     ui.horizontal(|ui| {
+        // Half the default gap between toolbar icon buttons.
+        ui.spacing_mut().item_spacing.x *= 0.5;
         let (list_glyph, list_tip) = if app.macro_list_open {
             ("◁", "Hide macro list")
         } else {
@@ -44,10 +56,18 @@ pub fn main_toolbar(app: &mut SqyreApp, ui: &mut egui::Ui) {
         ui.separator();
         #[cfg(not(target_arch = "wasm32"))]
         {
-            if toolbar_icon(ui, "▶", "Run", !running && !app.macros.is_empty()).clicked() {
+            if toolbar_icon_colored(
+                ui,
+                "▶",
+                "Run",
+                !running && !app.macros.is_empty(),
+                Some(theme::MACRO_START),
+            )
+            .clicked()
+            {
                 app.start_macro(ui.ctx());
             }
-            if toolbar_icon(ui, "⏹", "Stop", running).clicked() {
+            if toolbar_icon_colored(ui, "⏹", "Stop", running, Some(theme::MACRO_STOP)).clicked() {
                 app.request_stop();
             }
         }
@@ -63,13 +83,21 @@ pub fn main_toolbar(app: &mut SqyreApp, ui: &mut egui::Ui) {
         if toolbar_icon(ui, "📁", "Data Editor", true).clicked() {
             app.data_editor.open = true;
         }
-        if toolbar_icon(ui, "⚙", "Settings", true).clicked() {
-            app.settings_ui.open = true;
-        }
+
         let status = app.run.status.lock().clone();
-        if !status.is_empty() {
-            ui.label(status);
-        }
+        let right_w = ui.available_width();
+        ui.allocate_ui_with_layout(
+            Vec2::new(right_w, ui.spacing().interact_size.y),
+            egui::Layout::right_to_left(egui::Align::Center),
+            |ui| {
+                if toolbar_icon(ui, "⚙", "Settings", true).clicked() {
+                    app.settings_ui.open = true;
+                }
+                if !status.is_empty() {
+                    ui.label(status);
+                }
+            },
+        );
     });
     #[cfg(not(target_arch = "wasm32"))]
     ui.small("Esc stops the running macro; Esc+Ctrl+Shift exits (failsafe). Macro hotkeys launch from anywhere.");
@@ -90,15 +118,35 @@ pub fn show_meta_and_hotkey(app: &mut SqyreApp, ui: &mut egui::Ui) -> bool {
     app.macro_meta.sync_selection(idx, &app.macros[idx]);
     let other_names: Vec<String> = app.macros.iter().map(|m| m.name.clone()).collect();
     let all_tags = collect_all_macro_tags(&app.macros);
-    let meta = {
-        let m = &mut app.macros[idx];
-        app.macro_meta
-            .show(ui, m, &other_names, &all_tags, meta_enabled)
-    };
+    let meta = ui
+        .horizontal(|ui| {
+            let row = {
+                let m = &mut app.macros[idx];
+                app.macro_meta
+                    .paint_name_row(ui, m, &other_names, meta_enabled)
+            };
+            ui.separator();
+            paint_hotkey_controls(app, ui, idx, running);
+            row
+        })
+        .inner;
     if let Some(new_name) = meta.rename_to {
         app.rename_selected_macro(new_name);
-    } else if meta.persist {
+    }
+    let persist_tags = {
+        let m = &mut app.macros[idx];
+        app.macro_meta
+            .paint_tags_row(ui, m, &all_tags, meta_enabled)
+    };
+    if persist_tags {
         app.persist_macro_at(idx);
+    }
+    {
+        let m = &mut app.macros[idx];
+        let delay_out = app.macro_meta.paint_delay_popup(ui, m, meta_enabled);
+        if delay_out.persist {
+            app.persist_macro_at(idx);
+        }
     }
     // Selection / length may have changed after rename.
     let idx = app.selected_macro.min(app.macros.len().saturating_sub(1));
@@ -107,57 +155,58 @@ pub fn show_meta_and_hotkey(app: &mut SqyreApp, ui: &mut egui::Ui) -> bool {
         return false;
     }
 
-    ui.horizontal(|ui| {
-        ui.label("Hotkey:");
-        let hk_label = {
-            let m = &app.macros[idx];
-            if m.hotkey.is_empty() {
-                "—".to_string()
-            } else {
-                format_hotkey(&m.hotkey)
-            }
-        };
-        ui.monospace(&hk_label);
-
-        let mut trigger = HotkeyTrigger::parse(&app.macros[idx].hotkey_trigger);
-        let mut trigger_changed = false;
-        if ui
-            .selectable_label(trigger == HotkeyTrigger::Press, "On press")
-            .on_hover_text(crate::action_tooltip::help::META_HOTKEY_PRESS)
-            .clicked()
-        {
-            trigger = HotkeyTrigger::Press;
-            trigger_changed = true;
-        }
-        if ui
-            .selectable_label(trigger == HotkeyTrigger::Release, "On release")
-            .on_hover_text(crate::action_tooltip::help::META_HOTKEY_RELEASE)
-            .clicked()
-        {
-            trigger = HotkeyTrigger::Release;
-            trigger_changed = true;
-        }
-        if trigger_changed {
-            let chord = app.macros[idx].hotkey.clone();
-            app.apply_hotkey_to_selected(chord, Some(trigger));
-        }
-
-        if theme::record_icon_button(ui, "Record a global hotkey chord", !running).clicked() {
-            app.hotkey_record.open(&app.macro_hotkeys);
-        }
-        if ui
-            .add_enabled(
-                !running && !app.macros[idx].hotkey.is_empty(),
-                egui::Button::new("Clear"),
-            )
-            .on_hover_text(crate::action_tooltip::help::META_HOTKEY_CLEAR)
-            .clicked()
-        {
-            app.apply_hotkey_to_selected(Vec::new(), None);
-        }
-    });
     ui.separator();
     true
+}
+
+fn paint_hotkey_controls(app: &mut SqyreApp, ui: &mut egui::Ui, idx: usize, running: bool) {
+    ui.label("Hotkey:");
+    let hk_label = {
+        let m = &app.macros[idx];
+        if m.hotkey.is_empty() {
+            "—".to_string()
+        } else {
+            format_hotkey(&m.hotkey)
+        }
+    };
+    ui.monospace(&hk_label);
+
+    let mut trigger = HotkeyTrigger::parse(&app.macros[idx].hotkey_trigger);
+    let mut trigger_changed = false;
+    if ui
+        .selectable_label(trigger == HotkeyTrigger::Press, "On press")
+        .on_hover_text(crate::action_tooltip::help::META_HOTKEY_PRESS)
+        .clicked()
+    {
+        trigger = HotkeyTrigger::Press;
+        trigger_changed = true;
+    }
+    if ui
+        .selectable_label(trigger == HotkeyTrigger::Release, "On release")
+        .on_hover_text(crate::action_tooltip::help::META_HOTKEY_RELEASE)
+        .clicked()
+    {
+        trigger = HotkeyTrigger::Release;
+        trigger_changed = true;
+    }
+    if trigger_changed {
+        let chord = app.macros[idx].hotkey.clone();
+        app.apply_hotkey_to_selected(chord, Some(trigger));
+    }
+
+    if theme::record_icon_button(ui, "Record a global hotkey chord", !running).clicked() {
+        app.hotkey_record.open(&app.macro_hotkeys);
+    }
+    if ui
+        .add_enabled(
+            !running && !app.macros[idx].hotkey.is_empty(),
+            egui::Button::new("Clear"),
+        )
+        .on_hover_text(crate::action_tooltip::help::META_HOTKEY_CLEAR)
+        .clicked()
+    {
+        app.apply_hotkey_to_selected(Vec::new(), None);
+    }
 }
 
 /// Action chrome (add/vars/clipboard/history/expand). Returns expand/collapse force.
@@ -165,14 +214,26 @@ pub fn action_toolbar(app: &mut SqyreApp, ui: &mut egui::Ui) -> Option<bool> {
     let running = app.run.running.load(Ordering::SeqCst);
     let mut force_openness: Option<bool> = None;
     ui.horizontal(|ui| {
+        // Half the default gap between toolbar icon buttons.
+        ui.spacing_mut().item_spacing.x *= 0.5;
         let can_copy = app.can_copy_selection();
         let can_paste = app.can_paste_clipboard();
         let can_undo = app.can_undo();
         let can_redo = app.can_redo();
-        if toolbar_icon(ui, "+", "Add Action (Ctrl+A)", !running).clicked() {
+        if toolbar_icon_colored(
+            ui,
+            "+",
+            "Add Action (Ctrl+A)",
+            !running,
+            Some(theme::MACRO_START),
+        )
+        .clicked()
+        {
             app.add_action_picker.open();
         }
-        if toolbar_icon(ui, "x", "Variables", true).clicked() {
+        // Light-theme variables pastel reads better as a glyph on dark chrome.
+        let vars_color = theme::rgba(action_pastel_color("setvariable", false));
+        if toolbar_icon_colored(ui, "x", "Variables", true, Some(vars_color)).clicked() {
             app.variables_panel.open = true;
         }
         ui.separator();
@@ -191,12 +252,27 @@ pub fn action_toolbar(app: &mut SqyreApp, ui: &mut egui::Ui) -> Option<bool> {
         if toolbar_icon(ui, "↻", "Redo (Ctrl+Y)", can_redo && !running).clicked() {
             app.redo_tree();
         }
-        if toolbar_icon(ui, "⬇⬇", "Expand all branches", true).clicked() {
+        if toolbar_icon(
+            ui,
+            egui_phosphor::regular::TREE_VIEW,
+            "Expand all branches",
+            true,
+        )
+        .clicked()
+        {
             force_openness = Some(true);
         }
-        if toolbar_icon(ui, "⬆⬆", "Collapse all branches", true).clicked() {
+        if toolbar_icon(
+            ui,
+            egui_phosphor::regular::SQUARE_SPLIT_VERTICAL,
+            "Collapse all branches",
+            true,
+        )
+        .clicked()
+        {
             force_openness = Some(false);
         }
     });
+    ui.add_space(4.0);
     force_openness
 }

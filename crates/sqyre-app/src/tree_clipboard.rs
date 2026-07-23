@@ -9,6 +9,7 @@ use sqyre_domain::{Action, ActionId, InsertSlot};
 ///
 /// Insert location below the current selection:
 /// - no selection / root → append under root
+/// - detection Else folder → first child of that else branch
 /// - branch selected → first child of that branch
 /// - leaf selected → next sibling after the leaf
 pub(crate) fn insert_location_below_selection(
@@ -18,14 +19,32 @@ pub(crate) fn insert_location_below_selection(
     let Some(sel) = selected.filter(|id| !id.is_root()) else {
         return Some((root.id, InsertSlot::Last));
     };
+    if matches!(
+        root.resolve_tree_id(sel),
+        Some(sqyre_domain::TreeNodeRef::ElseFolder { .. })
+    ) {
+        return Some((sel, InsertSlot::First));
+    }
     let Some(node) = root.find_by_id(sel) else {
         return Some((root.id, InsertSlot::Last));
     };
     if node.is_branch() {
         return Some((sel, InsertSlot::First));
     }
-    let parent = root.find_parent_id(sel).unwrap_or(root.id);
-    Some((parent, InsertSlot::After(sel)))
+    // Else-branch leaves: parent insert target is the Else folder sentinel.
+    if let Some(parent_id) = root.find_parent_id(sel) {
+        if let Some(parent) = root.find_by_id(parent_id) {
+            if parent.has_else_folder()
+                && parent
+                    .else_children()
+                    .is_some_and(|kids| kids.iter().any(|c| c.id == sel))
+            {
+                return Some((ActionId::else_folder(parent_id), InsertSlot::After(sel)));
+            }
+        }
+        return Some((parent_id, InsertSlot::After(sel)));
+    }
+    Some((root.id, InsertSlot::Last))
 }
 
 #[cfg(test)]

@@ -14,6 +14,7 @@ use crate::paint_ctx::CatalogPaint;
 use crate::pickers;
 use crate::theme;
 use crate::var_pills;
+use crate::widgets::{searchable_combo, searchable_combo_width};
 use eframe::egui;
 use sqyre_domain::{collect_known_variable_names, Macro, PROGRAM_DELIMITER};
 use sqyre_hotkeys::ScreenClickBridge;
@@ -64,6 +65,18 @@ fn paint_coord_chips(
 }
 
 impl DataEditor {
+    fn sync_coord_preview_view(&mut self) {
+        let key = (
+            self.tab,
+            self.selected_program.clone().unwrap_or_default(),
+            self.selected_entity.clone().unwrap_or_default(),
+        );
+        if self.coord_preview_key.as_ref() != Some(&key) {
+            self.coord_preview.reset();
+            self.coord_preview_key = Some(key);
+        }
+    }
+
     /// Name field + optional screen-record arm/cancel controls.
     fn paint_name_record_row(
         &mut self,
@@ -232,7 +245,7 @@ impl DataEditor {
             }
             EditorTab::Items => {
                 ui.heading("Item");
-                self.program_selector(ui, catalog);
+                self.program_selector(ui, catalog, settings);
                 ui.add_space(4.0);
                 help::label(ui, "Name", help::DE_NAME);
                 help::tip(
@@ -270,25 +283,14 @@ impl DataEditor {
                         .map(|p| p.masks.keys().cloned().collect())
                         .unwrap_or_default();
                     let mut current = self.form_mask.clone();
-                    egui::ComboBox::from_id_salt("item_mask")
-                        .selected_text(if current.is_empty() {
-                            "(none)".into()
-                        } else {
-                            current.clone()
-                        })
-                        .show_ui(ui, |ui| {
-                            if ui
-                                .selectable_value(&mut current, String::new(), "(none)")
-                                .clicked()
-                            {
-                                self.form_mask.clear();
-                            }
-                            for m in &masks {
-                                if ui.selectable_value(&mut current, m.clone(), m).clicked() {
-                                    self.form_mask = m.clone();
-                                }
-                            }
-                        });
+                    searchable_combo(
+                        ui,
+                        "item_mask",
+                        &mut current,
+                        &masks,
+                        "(none)",
+                        Some("(none)"),
+                    );
                     if current != self.form_mask {
                         self.form_mask = current;
                     }
@@ -338,7 +340,7 @@ impl DataEditor {
             }
             EditorTab::Points => {
                 ui.heading("Point");
-                self.program_selector(ui, catalog);
+                self.program_selector(ui, catalog, settings);
                 ui.add_space(4.0);
                 self.paint_name_record_row(
                     ui,
@@ -350,8 +352,9 @@ impl DataEditor {
                 ui.weak("X/Y overlay the preview; integers or ${var}.");
                 let x = form_coord_literal(&self.form_x);
                 let y = form_coord_literal(&self.form_y);
-                let force = paint_preview_toolbar(ui);
-                let rect = previews.paint_point_panel(ui, x, y, force);
+                self.sync_coord_preview_view();
+                let force = paint_preview_toolbar(ui, Some(&mut self.coord_preview));
+                let rect = previews.paint_point_panel(ui, x, y, force, &mut self.coord_preview);
                 paint_coord_chips(
                     ui,
                     rect,
@@ -371,7 +374,7 @@ impl DataEditor {
             }
             EditorTab::SearchAreas => {
                 ui.heading("Search Area");
-                self.program_selector(ui, catalog);
+                self.program_selector(ui, catalog, settings);
                 ui.add_space(4.0);
                 self.paint_name_record_row(
                     ui,
@@ -385,8 +388,17 @@ impl DataEditor {
                 let ty = form_coord_literal(&self.form_top);
                 let rx = form_coord_literal(&self.form_right);
                 let by = form_coord_literal(&self.form_bottom);
-                let force = paint_preview_toolbar(ui);
-                let rect = previews.paint_search_area_panel(ui, lx, ty, rx, by, force);
+                self.sync_coord_preview_view();
+                let force = paint_preview_toolbar(ui, Some(&mut self.coord_preview));
+                let rect = previews.paint_search_area_panel(
+                    ui,
+                    lx,
+                    ty,
+                    rx,
+                    by,
+                    force,
+                    &mut self.coord_preview,
+                );
                 paint_coord_chips(
                     ui,
                     rect,
@@ -423,7 +435,7 @@ impl DataEditor {
             }
             EditorTab::Masks => {
                 ui.heading("Mask");
-                self.program_selector(ui, catalog);
+                self.program_selector(ui, catalog, settings);
                 ui.add_space(4.0);
                 ui.label("Name").on_hover_text(help::DE_NAME);
                 help::tip(
@@ -451,7 +463,12 @@ impl DataEditor {
                         self.upload_mask_image(catalog, icons);
                     }
                     if ui
-                        .add_enabled(has_image, egui::Button::new("Remove Image"))
+                        .add_enabled(
+                            has_image,
+                            egui::Button::new(
+                                egui::RichText::new("Remove Image").color(crate::theme::MACRO_STOP),
+                            ),
+                        )
                         .on_hover_text("Delete the PNG and use shape geometry instead.")
                         .clicked()
                     {
@@ -555,7 +572,7 @@ impl DataEditor {
             }
             EditorTab::Collections => {
                 ui.heading("Collection");
-                self.program_selector(ui, catalog);
+                self.program_selector(ui, catalog, settings);
                 ui.add_space(4.0);
                 ui.label("Name").on_hover_text(help::DE_NAME);
                 help::tip(
@@ -585,19 +602,7 @@ impl DataEditor {
                         })
                         .unwrap_or_default();
                     let mut current = self.form_search_area.clone();
-                    egui::ComboBox::from_id_salt("collection_sa")
-                        .selected_text(if current.is_empty() {
-                            "(none)".into()
-                        } else {
-                            current.clone()
-                        })
-                        .show_ui(ui, |ui| {
-                            for a in &areas {
-                                if ui.selectable_value(&mut current, a.clone(), a).clicked() {
-                                    self.form_search_area = a.clone();
-                                }
-                            }
-                        });
+                    searchable_combo(ui, "collection_sa", &mut current, &areas, "(none)", None);
                     if current != self.form_search_area {
                         self.form_search_area = current;
                     }
@@ -659,8 +664,17 @@ impl DataEditor {
                     let ty = form_coord_literal(&self.form_top);
                     let rx = form_coord_literal(&self.form_right);
                     let by = form_coord_literal(&self.form_bottom);
-                    let force = paint_preview_toolbar(ui);
-                    previews.paint_search_area_panel(ui, lx, ty, rx, by, force);
+                    self.sync_coord_preview_view();
+                    let force = paint_preview_toolbar(ui, Some(&mut self.coord_preview));
+                    previews.paint_search_area_panel(
+                        ui,
+                        lx,
+                        ty,
+                        rx,
+                        by,
+                        force,
+                        &mut self.coord_preview,
+                    );
                     ui.add_space(8.0);
                     let saving = self.autopix_pending.is_some();
                     if ui
@@ -695,7 +709,7 @@ impl DataEditor {
                     self.persist_overlay_settings(settings);
                 }
                 ui.add_space(6.0);
-                self.program_selector(ui, catalog);
+                self.program_selector(ui, catalog, settings);
                 if self.selected_program.is_none() {
                     ui.weak("Select a program, then New to add a button.");
                     return;
@@ -738,21 +752,16 @@ impl DataEditor {
                 let mut selected = self.form_overlay_macro.clone();
                 let before = selected.clone();
                 let macro_names: Vec<String> = macros.iter().map(|m| m.name.clone()).collect();
-                egui::ComboBox::from_id_salt("overlay_form_macro")
-                    .selected_text(if selected.is_empty() {
-                        "(pick macro)".to_string()
-                    } else {
-                        selected.clone()
-                    })
-                    .width(220.0)
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut selected, String::new(), "(none)");
-                        for name in &macro_names {
-                            ui.selectable_value(&mut selected, name.clone(), name);
-                        }
-                    })
-                    .response
-                    .on_hover_text(help::DE_OVERLAY_MACRO);
+                searchable_combo_width(
+                    ui,
+                    "overlay_form_macro",
+                    &mut selected,
+                    &macro_names,
+                    "(pick macro)",
+                    Some("(none)"),
+                    Some(220.0),
+                )
+                .on_hover_text(help::DE_OVERLAY_MACRO);
                 if selected != before {
                     self.form_overlay_macro = selected;
                 }
