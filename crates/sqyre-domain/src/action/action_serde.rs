@@ -16,8 +16,8 @@ use serde::{Deserialize, Serialize};
 
 use super::wire_keys::{
     TagClick, TagConditional, TagFindPixel, TagFocusWindow, TagForEachRow, TagImageSearch, TagKey,
-    TagLoop, TagLoopJump, TagMove, TagNavigateKey, TagNavigateSelect, TagOcr, TagPause, TagRunMacro,
-    TagSaveVariable, TagSetVariable, TagType, TagWait, TagWhile,
+    TagLoop, TagLoopJump, TagMove, TagNavigateKey, TagNavigateSelect, TagOcr, TagPause,
+    TagRunMacro, TagSaveVariable, TagSetVariable, TagType, TagWait, TagWhile,
 };
 
 fn is_default_smooth_low(v: &f64) -> bool {
