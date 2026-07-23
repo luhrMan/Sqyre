@@ -120,8 +120,8 @@ pub const ORDER_GROUPING: &str =
     "How multiple matches are grouped before ordering (Image Search, OCR occurrences, clustered Find Pixel).";
 pub const ORDER_HORIZONTAL: &str = "Left-to-right or right-to-left among matches.";
 pub const ORDER_VERTICAL: &str = "Top-to-bottom or bottom-to-top among matches.";
-pub const RUN_ON_NO_FIND: &str =
-    "Run child actions when the target is not found (once / wait final / repeat-until misses).";
+pub const ELSE_BRANCH: &str =
+    "Child actions under Else run when the condition is false (If) or the target is not found (detection).";
 
 // --- Image search ---
 

@@ -364,6 +364,7 @@ fn dispatch(exec: &mut Executor<'_>, action: &Action, macro_: &mut Macro) -> Res
         ActionKind::Conditional {
             condition,
             subactions,
+            else_actions,
         } => {
             let ok = eval_clauses(condition.match_mode, &condition.clauses, macro_)?;
             if ok {
@@ -372,21 +373,24 @@ fn dispatch(exec: &mut Executor<'_>, action: &Action, macro_: &mut Macro) -> Res
                     format!("Conditional {:?}: true, running branch", condition.name),
                 );
                 run_children(exec, subactions, macro_)
-            } else {
+            } else if else_actions.is_empty() {
                 exec.log(
                     action.id,
                     format!("Conditional {:?}: false, skipping branch", condition.name),
                 );
                 Ok(())
+            } else {
+                exec.log(
+                    action.id,
+                    format!("Conditional {:?}: false, running else", condition.name),
+                );
+                run_children(exec, else_actions, macro_)
             }
         }
         ActionKind::Click { button, state } => {
             if *button == MouseButton::Scroll {
                 let up = matches!(*state, PressState::Up);
-                exec.deps
-                    .automation
-                    .scroll(up)
-                    .map_err(ExecError::Message)
+                exec.deps.automation.scroll(up).map_err(ExecError::Message)
             } else {
                 match *state {
                     PressState::Down => exec
@@ -1042,6 +1046,7 @@ mod tests {
                             time: ScalarValue::Int(7),
                         },
                     }],
+                    else_actions: Vec::new(),
                 },
             },
             Action {
@@ -1062,12 +1067,23 @@ mod tests {
                             time: ScalarValue::Int(99),
                         },
                     }],
+                    else_actions: vec![Action {
+                        id: ActionId::new(),
+                        kind: ActionKind::Wait {
+                            time: ScalarValue::Int(5),
+                        },
+                    }],
                 },
             },
         ]);
         execute_macro(&mut macro_, &mut backend).unwrap();
         assert!(backend.log.iter().any(|e| e == "sleep:7"));
         assert!(!backend.log.iter().any(|e| e == "sleep:99"));
+        assert!(
+            backend.log.iter().any(|e| e == "sleep:5"),
+            "false condition should run else: {:?}",
+            backend.log
+        );
     }
 
     #[test]

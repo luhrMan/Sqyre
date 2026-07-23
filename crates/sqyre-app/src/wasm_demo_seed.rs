@@ -313,9 +313,9 @@ fn detection_branch(
     DetectionBranch {
         wait,
         coords: out,
-        run_branch_on_no_find: false,
         order: Default::default(),
         subactions,
+        else_actions: Vec::new(),
     }
 }
 
@@ -401,9 +401,9 @@ fn find_pixel(
         *detection = DetectionBranch {
             wait,
             coords: out,
-            run_branch_on_no_find: false,
             order: Default::default(),
             subactions: Vec::new(),
+            else_actions: Vec::new(),
         };
     }
     a
@@ -429,6 +429,7 @@ fn conditional_contains(name: &str, left: &str, right: &str, subactions: Vec<Act
     if let ActionKind::Conditional {
         condition,
         subactions: kids,
+        ..
     } = &mut a.kind
     {
         *condition = ConditionBlock {

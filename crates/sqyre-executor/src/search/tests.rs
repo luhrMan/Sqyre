@@ -108,16 +108,16 @@ fn coords_xy(x: &str, y: &str) -> CoordinateOutputs {
 }
 
 fn detection_branch(
-    child_ms: Option<i64>,
-    run_branch_on_no_find: bool,
+    then_ms: Option<i64>,
+    else_ms: Option<i64>,
     wait: WaitTilFoundConfig,
     coords: CoordinateOutputs,
 ) -> sqyre_domain::DetectionBranch {
     sqyre_domain::DetectionBranch {
         wait,
         coords,
-        run_branch_on_no_find,
-        subactions: child_ms.map(wait_child).into_iter().collect(),
+        subactions: then_ms.map(wait_child).into_iter().collect(),
+        else_actions: else_ms.map(wait_child).into_iter().collect(),
         ..Default::default()
     }
 }
@@ -547,7 +547,7 @@ fn find_pixel_runs_branch_when_found() {
     let mut macro_ = quiet_macro(vec![find_pixel_action(
         ActionId::new(),
         "#ff0000",
-        detection_branch(Some(21), false, Default::default(), Default::default()),
+        detection_branch(Some(21), None, Default::default(), Default::default()),
     )]);
 
     run_search(&mut macro_, &mut backend, &mut capturer, &resolver);
@@ -568,8 +568,8 @@ fn find_pixel_no_find_runs_branch_when_flag_set() {
         ActionId::new(),
         "#ff0000",
         detection_branch(
+            None,
             Some(15),
-            true,
             Default::default(),
             coords_xy("foundX", "foundY"),
         ),
@@ -589,7 +589,7 @@ fn find_pixel_skips_branch_when_missing() {
     let mut macro_ = quiet_macro(vec![find_pixel_action(
         ActionId::new(),
         "#ff0000",
-        detection_branch(Some(21), false, Default::default(), Default::default()),
+        detection_branch(Some(21), None, Default::default(), Default::default()),
     )]);
 
     run_search(&mut macro_, &mut backend, &mut capturer, &resolver);
@@ -640,8 +640,7 @@ fn image_search_no_find_runs_branch() {
             blur: 0,
             match_method: Default::default(),
             detection: sqyre_domain::DetectionBranch {
-                run_branch_on_no_find: true,
-                subactions: vec![sqyre_domain::test_action(ActionKind::Wait {
+                else_actions: vec![sqyre_domain::test_action(ActionKind::Wait {
                     time: ScalarValue::Int(13),
                 })],
                 ..Default::default()
@@ -727,8 +726,8 @@ fn image_search_break_stops_match_loop() {
         &["a".into(), "b".into()],
         &results,
         &CoordinateOutputs::defaults(),
-        false,
         &subactions,
+        &[],
         &mut macro_,
     )
     .unwrap();
@@ -964,7 +963,7 @@ fn ocr_runs_branch_when_target_found() {
         ActionId::new(),
         "Submit",
         "ocrText",
-        detection_branch(Some(19), false, Default::default(), Default::default()),
+        detection_branch(Some(19), None, Default::default(), Default::default()),
     )]);
 
     run_search_ocr(&mut macro_, &mut backend, &mut capturer, &resolver, &ocr);
@@ -1003,8 +1002,8 @@ fn ocr_no_find_runs_branch_when_flag_set() {
         "will-not-match-zzz",
         "ocrText",
         detection_branch(
+            None,
             Some(17),
-            true,
             Default::default(),
             coords_xy("foundX", "foundY"),
         ),
@@ -1036,7 +1035,7 @@ fn ocr_skips_branch_when_target_missing() {
         ActionId::new(),
         "Submit",
         "ocrText",
-        detection_branch(Some(19), false, Default::default(), Default::default()),
+        detection_branch(Some(19), None, Default::default(), Default::default()),
     )]);
 
     run_search_ocr(&mut macro_, &mut backend, &mut capturer, &resolver, &ocr);
@@ -1068,7 +1067,7 @@ fn find_pixel_wait_until_found_retries_then_succeeds() {
         "#ff0000",
         detection_branch(
             None,
-            false,
+            None,
             wait_until_found(5, 1),
             coords_xy("foundX", "foundY"),
         ),
@@ -1193,7 +1192,7 @@ fn find_pixel_repeat_while_found_runs_then_stops_on_miss() {
     let mut macro_ = quiet_macro(vec![find_pixel_action(
         ActionId::new(),
         "#00ff00",
-        detection_branch(Some(7), false, while_found(1, 5), Default::default()),
+        detection_branch(Some(7), None, while_found(1, 5), Default::default()),
     )]);
 
     run_search(&mut macro_, &mut backend, &mut capturer, &resolver);
@@ -1219,12 +1218,7 @@ fn find_pixel_wait_while_found_waits_then_runs_no_find() {
     let mut macro_ = quiet_macro(vec![find_pixel_action(
         ActionId::new(),
         "#00ff00",
-        detection_branch(
-            Some(11),
-            true,
-            wait_while_found(5, 1),
-            Default::default(),
-        ),
+        detection_branch(None, Some(11), wait_while_found(5, 1), Default::default()),
     )]);
 
     run_search(&mut macro_, &mut backend, &mut capturer, &resolver);
@@ -1255,7 +1249,7 @@ fn find_pixel_repeat_until_found_runs_no_find_then_hit() {
     let mut macro_ = quiet_macro(vec![find_pixel_action(
         ActionId::new(),
         "#00ff00",
-        detection_branch(Some(9), true, until_found(1, 5), Default::default()),
+        detection_branch(Some(9), Some(9), until_found(1, 5), Default::default()),
     )]);
 
     run_search(&mut macro_, &mut backend, &mut capturer, &resolver);
@@ -1286,7 +1280,7 @@ fn find_pixel_repeat_until_found_skips_no_find_without_flag() {
     let mut macro_ = quiet_macro(vec![find_pixel_action(
         ActionId::new(),
         "#00ff00",
-        detection_branch(Some(9), false, until_found(1, 5), Default::default()),
+        detection_branch(Some(9), None, until_found(1, 5), Default::default()),
     )]);
 
     run_search(&mut macro_, &mut backend, &mut capturer, &resolver);
@@ -1668,7 +1662,7 @@ fn ocr_wait_until_found_retries_then_succeeds() {
         "ocrText",
         detection_branch(
             Some(11),
-            false,
+            None,
             wait_until_found(5, 1),
             coords_xy("foundX", "foundY"),
         ),
@@ -1713,7 +1707,7 @@ fn ocr_repeat_while_found_then_stops_on_miss() {
         ActionId::new(),
         "Keep",
         "ocrText",
-        detection_branch(Some(8), false, while_found(1, 5), Default::default()),
+        detection_branch(Some(8), None, while_found(1, 5), Default::default()),
     )]);
 
     run_search_ocr(&mut macro_, &mut backend, &mut capturer, &resolver, &ocr);
@@ -1768,7 +1762,7 @@ fn ocr_runs_children_per_occurrence() {
         ActionId::new(),
         "Gold",
         "ocrText",
-        detection_branch(Some(5), false, Default::default(), Default::default()),
+        detection_branch(Some(5), None, Default::default(), Default::default()),
     )]);
 
     run_search_ocr(&mut macro_, &mut backend, &mut capturer, &resolver, &ocr);
@@ -1795,7 +1789,7 @@ fn find_pixel_runs_children_per_cluster() {
     let mut macro_ = quiet_macro(vec![find_pixel_action(
         ActionId::new(),
         "#00ff00",
-        detection_branch(Some(6), false, Default::default(), Default::default()),
+        detection_branch(Some(6), None, Default::default(), Default::default()),
     )]);
 
     run_search(&mut macro_, &mut backend, &mut capturer, &resolver);
@@ -1820,7 +1814,7 @@ fn run_matches_clears_coords_on_miss() {
         &[],
         &[],
         &coords_xy("foundX", "foundY"),
-        false,
+        &[],
         &[],
         &mut macro_,
     )

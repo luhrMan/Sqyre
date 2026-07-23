@@ -198,6 +198,7 @@ mod tests {
                     ],
                 },
                 subactions: vec![],
+                else_actions: vec![],
             },
         };
         let pills = a.tree_summary_pills();

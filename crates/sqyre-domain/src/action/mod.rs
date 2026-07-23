@@ -102,7 +102,22 @@ impl ActionId {
     pub fn as_str(self) -> String {
         self.to_string()
     }
+
+    /// Stable tree id for the Else directory under a branch that has an else list.
+    ///
+    /// Xor is reversible so [`Self::else_folder_owner`] can recover the parent.
+    pub fn else_folder(parent: Self) -> Self {
+        Self(Uuid::from_u128(parent.0.as_u128() ^ ELSE_FOLDER_ID_XOR))
+    }
+
+    /// Inverse of [`Self::else_folder`].
+    pub fn else_folder_owner(else_id: Self) -> Self {
+        Self(Uuid::from_u128(else_id.0.as_u128() ^ ELSE_FOLDER_ID_XOR))
+    }
 }
+
+/// Marker xor so Else folder ids never collide with normal v4 action ids in practice.
+const ELSE_FOLDER_ID_XOR: u128 = 0xE15E_A11C_E000_0000_0000_0000_0000_0001;
 
 impl<'de> Deserialize<'de> for ActionId {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
@@ -528,16 +543,18 @@ pub struct DetectionBranch {
     pub wait: WaitTilFoundConfig,
     #[serde(flatten)]
     pub coords: CoordinateOutputs,
-    #[serde(
-        rename = "runbranchonnofind",
-        default,
-        skip_serializing_if = "is_false"
-    )]
-    pub run_branch_on_no_find: bool,
     #[serde(flatten)]
     pub order: MatchOrder,
+    /// Children run once per match (the "then" branch).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub subactions: Vec<Action>,
+    /// Children run when nothing matched (the "else" branch).
+    #[serde(
+        rename = "elseactions",
+        default,
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub else_actions: Vec<Action>,
 }
 
 impl Default for DetectionBranch {
@@ -545,9 +562,9 @@ impl Default for DetectionBranch {
         Self {
             wait: WaitTilFoundConfig::default(),
             coords: CoordinateOutputs::defaults(),
-            run_branch_on_no_find: false,
             order: MatchOrder::default(),
             subactions: Vec::new(),
+            else_actions: Vec::new(),
         }
     }
 }
@@ -840,8 +857,46 @@ impl Action {
         self.kind.children_mut()
     }
 
+    /// Else-branch children for Conditional / detection actions (`None` otherwise).
+    pub fn else_children(&self) -> Option<&[Action]> {
+        self.kind.else_actions()
+    }
+
+    pub fn else_children_mut(&mut self) -> Option<&mut Vec<Action>> {
+        self.kind.else_actions_mut()
+    }
+
+    pub fn is_detection(&self) -> bool {
+        self.kind.is_detection()
+    }
+
+    /// True when this action paints an Else folder (Conditional or detection).
+    pub fn has_else_folder(&self) -> bool {
+        self.kind.has_else_folder()
+    }
+
     pub fn display_name(&self) -> String {
         self.kind.display_name()
+    }
+
+    /// Resolve a tree node id to either a real action or an Else folder.
+    pub fn resolve_tree_id(&self, id: ActionId) -> Option<TreeNodeRef> {
+        if self.id == id {
+            return Some(TreeNodeRef::Action(id));
+        }
+        if self.find_by_id(id).is_some() {
+            return Some(TreeNodeRef::Action(id));
+        }
+        let owner = ActionId::else_folder_owner(id);
+        let owner_has_else = if owner == self.id {
+            self.has_else_folder()
+        } else {
+            self.find_by_id(owner).is_some_and(Action::has_else_folder)
+        };
+        if owner_has_else && ActionId::else_folder(owner) == id {
+            return Some(TreeNodeRef::ElseFolder { parent_id: owner });
+        }
+        None
     }
 
     pub fn find_by_id(&self, id: ActionId) -> Option<&Action> {
@@ -853,6 +908,13 @@ impl Action {
                 return Some(found);
             }
         }
+        if let Some(else_kids) = self.else_children() {
+            for child in else_kids {
+                if let Some(found) = child.find_by_id(id) {
+                    return Some(found);
+                }
+            }
+        }
         None
     }
 
@@ -860,42 +922,83 @@ impl Action {
         if self.id == id {
             return Some(self);
         }
-        Self::find_descendant_mut(self, id)
+        let path = self.find_child_path(id)?;
+        Some(Self::follow_child_path_mut(self, &path))
     }
 
-    fn find_descendant_mut(node: &mut Action, id: ActionId) -> Option<&mut Action> {
-        let children = node.children_mut()?;
-        for child in children.iter_mut() {
+    /// Path of `(in_else_list, index)` steps from this node to a descendant.
+    fn find_child_path(&self, id: ActionId) -> Option<Vec<(bool, usize)>> {
+        for (i, child) in self.children().iter().enumerate() {
             if child.id == id {
-                return Some(child);
+                return Some(vec![(false, i)]);
             }
-            if let Some(found) = Self::find_descendant_mut(child, id) {
-                return Some(found);
+            if let Some(mut sub) = child.find_child_path(id) {
+                sub.insert(0, (false, i));
+                return Some(sub);
+            }
+        }
+        if let Some(else_kids) = self.else_children() {
+            for (i, child) in else_kids.iter().enumerate() {
+                if child.id == id {
+                    return Some(vec![(true, i)]);
+                }
+                if let Some(mut sub) = child.find_child_path(id) {
+                    sub.insert(0, (true, i));
+                    return Some(sub);
+                }
             }
         }
         None
+    }
+
+    fn follow_child_path_mut<'a>(node: &'a mut Action, path: &[(bool, usize)]) -> &'a mut Action {
+        let mut cur = node;
+        for &(in_else, index) in path {
+            let list = if in_else {
+                cur.else_children_mut().expect("else path")
+            } else {
+                cur.children_mut().expect("then path")
+            };
+            cur = &mut list[index];
+        }
+        cur
     }
 
     /// Remove a descendant by id (not self). Returns the detached node.
     pub fn remove_by_id(&mut self, id: ActionId) -> Option<Action> {
-        let children = self.children_mut()?;
-        if let Some(i) = children.iter().position(|c| c.id == id) {
-            return Some(children.remove(i));
-        }
-        for child in children.iter_mut() {
-            if let Some(found) = child.remove_by_id(id) {
-                return Some(found);
-            }
-        }
-        None
+        let path = self.find_child_path(id)?;
+        Self::remove_at_path(self, &path)
     }
 
-    /// True if `id` is this node or any descendant.
+    fn remove_at_path(node: &mut Action, path: &[(bool, usize)]) -> Option<Action> {
+        let [(in_else, index)] = path else {
+            let (in_else, index) = path[0];
+            let child = {
+                let list = if in_else {
+                    node.else_children_mut()?
+                } else {
+                    node.children_mut()?
+                };
+                &mut list[index]
+            };
+            return Self::remove_at_path(child, &path[1..]);
+        };
+        let list = if *in_else {
+            node.else_children_mut()?
+        } else {
+            node.children_mut()?
+        };
+        Some(list.remove(*index))
+    }
+
+    /// True if `id` is this node or any descendant (then or else).
     pub fn contains_id(&self, id: ActionId) -> bool {
         self.find_by_id(id).is_some()
     }
 
     /// Parent id of `id` when it is a descendant of this node (not self).
+    ///
+    /// Else-branch children report the detection action as parent (not the Else folder sentinel).
     pub fn find_parent_id(&self, id: ActionId) -> Option<ActionId> {
         for child in self.children() {
             if child.id == id {
@@ -905,22 +1008,60 @@ impl Action {
                 return Some(p);
             }
         }
+        if let Some(else_kids) = self.else_children() {
+            for child in else_kids {
+                if child.id == id {
+                    return Some(self.id);
+                }
+                if let Some(p) = child.find_parent_id(id) {
+                    return Some(p);
+                }
+            }
+        }
         None
     }
 
+    fn child_list_mut_for_insert(
+        &mut self,
+        parent_id: ActionId,
+    ) -> Result<&mut Vec<Action>, String> {
+        match self.resolve_tree_id(parent_id) {
+            Some(TreeNodeRef::ElseFolder { parent_id: owner }) => {
+                let parent = if owner == self.id {
+                    self
+                } else {
+                    self.find_by_id_mut(owner)
+                        .ok_or_else(|| format!("parent action {owner} not found"))?
+                };
+                parent
+                    .else_children_mut()
+                    .ok_or_else(|| "else drop target has no else branch".to_string())
+            }
+            Some(TreeNodeRef::Action(aid)) => {
+                let parent = if aid == self.id {
+                    self
+                } else {
+                    self.find_by_id_mut(aid)
+                        .ok_or_else(|| format!("parent action {aid} not found"))?
+                };
+                parent
+                    .children_mut()
+                    .ok_or_else(|| "drop target is not a branch".to_string())
+            }
+            None => Err(format!("parent action {parent_id} not found")),
+        }
+    }
+
     /// Insert `child` into the children of `parent_id` at `slot`.
+    ///
+    /// `parent_id` may be an Else folder sentinel ([`ActionId::else_folder`]).
     pub fn insert_at(
         &mut self,
         parent_id: ActionId,
         slot: InsertSlot,
         child: Action,
     ) -> Result<(), String> {
-        let parent = self
-            .find_by_id_mut(parent_id)
-            .ok_or_else(|| format!("parent action {parent_id} not found"))?;
-        let children = parent
-            .children_mut()
-            .ok_or_else(|| "drop target is not a branch".to_string())?;
+        let children = self.child_list_mut_for_insert(parent_id)?;
         match slot {
             InsertSlot::First => children.insert(0, child),
             InsertSlot::Last => children.push(child),
@@ -953,8 +1094,13 @@ impl Action {
         if source_id == parent_id {
             return Err("cannot drop onto self".into());
         }
+        // Else folder sentinel: treat containment against the owning parent.
+        let parent_for_check = match self.resolve_tree_id(parent_id) {
+            Some(TreeNodeRef::ElseFolder { parent_id }) => parent_id,
+            _ => parent_id,
+        };
         if let Some(src) = self.find_by_id(source_id) {
-            if src.contains_id(parent_id) {
+            if src.contains_id(parent_for_check) {
                 return Err("cannot drop into own descendant".into());
             }
         }
@@ -975,6 +1121,11 @@ impl Action {
         for child in self.children() {
             child.walk(f);
         }
+        if let Some(else_kids) = self.else_children() {
+            for child in else_kids {
+                child.walk(f);
+            }
+        }
     }
 
     pub fn walk_mut<F: FnMut(&mut Action)>(&mut self, f: &mut F) {
@@ -984,7 +1135,19 @@ impl Action {
                 child.walk_mut(f);
             }
         }
+        if let Some(else_kids) = self.else_children_mut() {
+            for child in else_kids.iter_mut() {
+                child.walk_mut(f);
+            }
+        }
     }
+}
+
+/// Tree selection / drop target: a real action, or an Else folder.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TreeNodeRef {
+    Action(ActionId),
+    ElseFolder { parent_id: ActionId },
 }
 
 /// Insertion slot relative to a parent directory (mirrors egui_ltreeview DirPosition).
@@ -1011,6 +1174,7 @@ pub enum ActionKind {
     Conditional {
         condition: ConditionBlock,
         subactions: Vec<Action>,
+        else_actions: Vec<Action>,
     },
     ImageSearch {
         name: String,
@@ -1127,6 +1291,61 @@ impl ActionKind {
                 | Self::NavigateSelect(_)
                 | Self::NavigateKey { .. }
         )
+    }
+
+    pub fn is_detection(&self) -> bool {
+        matches!(
+            self,
+            Self::ImageSearch { .. } | Self::Ocr { .. } | Self::FindPixel { .. }
+        )
+    }
+
+    pub fn has_else_folder(&self) -> bool {
+        matches!(
+            self,
+            Self::Conditional { .. }
+                | Self::ImageSearch { .. }
+                | Self::Ocr { .. }
+                | Self::FindPixel { .. }
+        )
+    }
+
+    pub fn else_actions(&self) -> Option<&[Action]> {
+        match self {
+            Self::Conditional { else_actions, .. } => Some(else_actions),
+            Self::ImageSearch { detection, .. }
+            | Self::Ocr { detection, .. }
+            | Self::FindPixel { detection, .. } => Some(&detection.else_actions),
+            _ => None,
+        }
+    }
+
+    pub fn else_actions_mut(&mut self) -> Option<&mut Vec<Action>> {
+        match self {
+            Self::Conditional { else_actions, .. } => Some(else_actions),
+            Self::ImageSearch { detection, .. }
+            | Self::Ocr { detection, .. }
+            | Self::FindPixel { detection, .. } => Some(&mut detection.else_actions),
+            _ => None,
+        }
+    }
+
+    pub fn detection(&self) -> Option<&DetectionBranch> {
+        match self {
+            Self::ImageSearch { detection, .. }
+            | Self::Ocr { detection, .. }
+            | Self::FindPixel { detection, .. } => Some(detection),
+            _ => None,
+        }
+    }
+
+    pub fn detection_mut(&mut self) -> Option<&mut DetectionBranch> {
+        match self {
+            Self::ImageSearch { detection, .. }
+            | Self::Ocr { detection, .. }
+            | Self::FindPixel { detection, .. } => Some(detection),
+            _ => None,
+        }
     }
 
     pub fn children(&self) -> &[Action] {
@@ -1300,6 +1519,72 @@ mod tests {
         );
         assert_eq!(MaskShape::parse("circle"), MaskShape::Circle);
         assert_eq!(format!("{}", MouseButton::Scroll), "scroll");
+    }
+
+    #[test]
+    fn detection_else_insert_and_walk() {
+        let detection_id = ActionId::new();
+        let then_id = ActionId::new();
+        let else_id = ActionId::new();
+        let mut root = root_loop(vec![Action {
+            id: detection_id,
+            kind: ActionKind::FindPixel {
+                name: String::new(),
+                search_area: Default::default(),
+                target_color: "#fff".into(),
+                color_tolerance: 0,
+                detection: DetectionBranch {
+                    subactions: vec![wait(then_id)],
+                    ..Default::default()
+                },
+            },
+        }]);
+        root.insert_at(
+            ActionId::else_folder(detection_id),
+            InsertSlot::Last,
+            wait(else_id),
+        )
+        .unwrap();
+        assert!(root.find_by_id(else_id).is_some());
+        assert_eq!(
+            root.find_parent_id(else_id),
+            Some(detection_id),
+            "else children report detection as parent"
+        );
+        let mut seen = Vec::new();
+        root.walk(&mut |a| seen.push(a.id));
+        assert!(seen.contains(&else_id));
+        assert!(matches!(
+            root.resolve_tree_id(ActionId::else_folder(detection_id)),
+            Some(TreeNodeRef::ElseFolder { parent_id: id }) if id == detection_id
+        ));
+    }
+
+    #[test]
+    fn conditional_else_insert_and_run_path() {
+        let cond_id = ActionId::new();
+        let else_id = ActionId::new();
+        let mut root = root_loop(vec![Action {
+            id: cond_id,
+            kind: ActionKind::Conditional {
+                condition: ConditionBlock::default(),
+                subactions: Vec::new(),
+                else_actions: Vec::new(),
+            },
+        }]);
+        root.insert_at(
+            ActionId::else_folder(cond_id),
+            InsertSlot::First,
+            wait(else_id),
+        )
+        .unwrap();
+        match &root.children()[0].kind {
+            ActionKind::Conditional { else_actions, .. } => {
+                assert_eq!(else_actions.len(), 1);
+                assert_eq!(else_actions[0].id, else_id);
+            }
+            other => panic!("expected Conditional, got {other:?}"),
+        }
     }
 
     fn wait(id: ActionId) -> Action {
