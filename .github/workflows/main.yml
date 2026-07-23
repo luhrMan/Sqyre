@@ -1,6 +1,6 @@
 # Build and release Sqyre on merge to main.
 # Releases: Linux binary + AppImage, Windows .exe (MinGW cross), WASM editor zip.
-# Also compile-checks Windows (GDI capture) and macOS (stub capture) on PRs/pushes.
+# Also compile-checks macOS (stub capture) on PRs/pushes.
 # Release tag / artifact names: vYYYY.MM.DD.HHMM (e.g. v2026.03.03.1643).
 
 name: Build and Release
@@ -149,73 +149,6 @@ jobs:
             target/coverage/lcov.info
           if-no-files-found: warn
           retention-days: 14
-
-  check-windows:
-    runs-on: windows-latest
-    env:
-      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.cache/vcpkg-binaries
-      # File-based binary cache (x-gha was removed from vcpkg); restored via actions/cache.
-      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/.cache/vcpkg-binaries,readwrite
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@1.92.0
-
-      - name: Cache LLVM install
-        id: llvm-cache
-        uses: actions/cache@v6
-        with:
-          path: C:\Program Files\LLVM
-          key: ${{ runner.os }}-llvm-choco-v1
-
-      - name: Install LLVM (bindgen) and pkg-config
-        run: |
-          if ("${{ steps.llvm-cache.outputs.cache-hit }}" -ne "true") {
-            choco install llvm -y
-          }
-          choco install pkgconfiglite -y
-
-      - name: Cache vcpkg binaries
-        uses: actions/cache@v6
-        with:
-          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
-          key: ${{ runner.os }}-vcpkg-bin-leptess-x64-windows-v1
-          restore-keys: |
-            ${{ runner.os }}-vcpkg-bin-leptess-x64-windows-
-
-      - name: Prepare vcpkg binary cache dir
-        run: New-Item -ItemType Directory -Force -Path $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
-
-      - name: Install leptonica and tesseract (vcpkg)
-        run: |
-          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install leptonica:x64-windows tesseract:x64-windows
-
-      - name: Cache Cargo registry
-        uses: actions/cache@v6
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: ${{ runner.os }}-cargo-reg-${{ hashFiles('Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-reg-
-
-      - name: Cache Cargo target
-        uses: actions/cache@v6
-        with:
-          path: target
-          key: ${{ runner.os }}-cargo-target-${{ hashFiles('Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-target-
-
-      - name: cargo check (sqyre-app)
-        env:
-          LIBCLANG_PATH: C:\Program Files\LLVM\bin
-        run: |
-          $env:VCPKG_ROOT = $env:VCPKG_INSTALLATION_ROOT
-          $env:PKG_CONFIG_PATH = "$($env:VCPKG_INSTALLATION_ROOT)\installed\x64-windows\lib\pkgconfig"
-          cargo check -p sqyre-app
 
   check-macos:
     runs-on: macos-latest

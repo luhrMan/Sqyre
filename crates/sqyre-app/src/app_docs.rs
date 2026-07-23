@@ -29,11 +29,13 @@ use std::sync::Arc;
 
 impl SqyreApp {
     pub fn for_docs() -> Self {
-        let mut settings = UserSettings::default();
         // Keep docs/screenshot/kittest harnesses at 1.0 PPP. Product default scale
         // may be higher for desktop readability, but AccessKit pointer clicks and
         // golden PNGs assume unscaled coordinates.
-        settings.ui_scale = 1.0;
+        let settings = UserSettings {
+            ui_scale: 1.0,
+            ..UserSettings::default()
+        };
         SettingsUi::apply_action_colors(&settings);
 
         let hotkeys: Box<dyn HotkeyService> = Box::new(NullHotkeys::default());
@@ -104,6 +106,8 @@ impl SqyreApp {
             instance_lock: None,
             pending_delete_macro: None,
             pending_import: crate::wasm_io::new_pending_import(),
+            #[cfg(not(target_arch = "wasm32"))]
+            backup_task: None,
         };
         if let Some(m) = app.macros.first() {
             app.macro_meta.sync_selection(0, m);
