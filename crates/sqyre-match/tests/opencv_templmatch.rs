@@ -35,7 +35,11 @@ fn random_binary_mask(w: usize, h: usize, seed: &mut u64) -> Vec<u8> {
         *seed ^= *seed >> 7;
         *seed ^= *seed << 17;
         // Mix of zeros and nonzeros (OpenCV CV_8U binary interpretation).
-        *v = if (*seed % 5) == 0 { 0 } else { ((*seed % 254) + 1) as u8 };
+        *v = if (*seed).is_multiple_of(5) {
+            0
+        } else {
+            ((*seed % 254) + 1) as u8
+        };
     }
     // Ensure at least some active pixels.
     if mask.iter().all(|&m| m == 0) {
@@ -45,12 +49,7 @@ fn random_binary_mask(w: usize, h: usize, seed: &mut u64) -> Vec<u8> {
 }
 
 /// Naive OpenCV masked formula at `(TEST_X, TEST_Y)`.
-fn naive_at(
-    img: &ImageBuf,
-    templ: &ImageBuf,
-    mask: &[u8],
-    method: MatchMethod,
-) -> f64 {
+fn naive_at(img: &ImageBuf, templ: &ImageBuf, mask: &[u8], method: MatchMethod) -> f64 {
     let ch = img.channels;
     let mut sum_m = 0.0_f64;
     let mut sum_tm = vec![0.0_f64; ch];
