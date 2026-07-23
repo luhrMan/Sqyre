@@ -11,6 +11,8 @@ workspace = true
 [dependencies]
 sqyre-executor = { path = "../sqyre-executor" }
 image = { workspace = true }
+pulp = { workspace = true }
+rayon = { workspace = true }
 thiserror = { workspace = true }
 parking_lot = { workspace = true }
 web-time = { workspace = true }
