@@ -4,11 +4,13 @@
 //! Blur uses PureCV (`gaussian_blur`, σ=0 → OpenCV ksize formula, `BORDER_REFLECT_101`).
 
 mod blur;
+mod corr_simd;
 mod image;
 mod peaks;
 mod template;
 
 pub use blur::{blur_image, blur_image_owned, search_blur_kernel};
+pub use corr_simd::{map_rgb_to_gray_u8, threshold_gray_in_place};
 pub use image::{ImageBuf, Point};
 pub use peaks::{
     cluster_points, find_peaks, find_peaks_for_method, DEFAULT_CLOSE_MATCHES_DISTANCE,

@@ -1,3 +1,4 @@
+use rayon::prelude::*;
 use sqyre_match::{ImageBuf, Point};
 
 /// Find first pixel matching `#rrggbb` within `tolerance`.
@@ -12,20 +13,31 @@ pub fn find_pixels(img: &ImageBuf, hex: &str, tolerance: i32) -> Vec<Point> {
     }
     let (tr, tg, tb) = parse_hex(hex).unwrap_or((0, 0, 0));
     let tol = tolerance.clamp(0, 255);
-    let mut out = Vec::new();
-    for y in 0..img.height {
-        for x in 0..img.width {
-            let o = img.pixel_offset(x, y);
-            let r = img.data[o] as i32;
-            let g = img.data[o + 1] as i32;
-            let b = img.data[o + 2] as i32;
-            if (r - tr).abs() <= tol && (g - tg).abs() <= tol && (b - tb).abs() <= tol {
-                out.push(Point {
-                    x: x as i32,
-                    y: y as i32,
-                });
+    let w = img.width;
+    let data = img.data.as_slice();
+    // Parallel per-row scan; flatten in row order.
+    let row_hits: Vec<Vec<Point>> = (0..img.height)
+        .into_par_iter()
+        .map(|y| {
+            let mut hits = Vec::new();
+            for x in 0..w {
+                let o = (y * w + x) * 3;
+                let r = data[o] as i32;
+                let g = data[o + 1] as i32;
+                let b = data[o + 2] as i32;
+                if (r - tr).abs() <= tol && (g - tg).abs() <= tol && (b - tb).abs() <= tol {
+                    hits.push(Point {
+                        x: x as i32,
+                        y: y as i32,
+                    });
+                }
             }
-        }
+            hits
+        })
+        .collect();
+    let mut out = Vec::new();
+    for row in row_hits {
+        out.extend(row);
     }
     out
 }

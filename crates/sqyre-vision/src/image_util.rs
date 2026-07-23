@@ -1,16 +1,31 @@
 use image::RgbaImage;
-use sqyre_match::ImageBuf;
+use pulp::Arch;
+use rayon::prelude::*;
+use sqyre_match::{map_rgb_to_gray_u8, ImageBuf};
 
 /// Convert RGBA capture to 3-channel RGB `ImageBuf` (R, G, B byte order).
 pub fn rgba_to_rgb_buf(img: &RgbaImage) -> ImageBuf {
     let w = img.width() as usize;
     let h = img.height() as usize;
-    let mut data = Vec::with_capacity(w * h * 3);
-    for chunk in img.as_raw().chunks_exact(4) {
-        data.push(chunk[0]);
-        data.push(chunk[1]);
-        data.push(chunk[2]);
-    }
+    let src = img.as_raw();
+    let mut data = vec![0u8; w * h * 3];
+    let data_addr = data.as_mut_ptr() as usize;
+    (0..h).into_par_iter().for_each(|y| {
+        let arch = Arch::new();
+        arch.dispatch(|| {
+            for x in 0..w {
+                let si = (y * w + x) * 4;
+                let di = (y * w + x) * 3;
+                // SAFETY: each row writes a disjoint range of `data`.
+                let dst = data_addr as *mut u8;
+                unsafe {
+                    *dst.add(di) = src[si];
+                    *dst.add(di + 1) = src[si + 1];
+                    *dst.add(di + 2) = src[si + 2];
+                }
+            }
+        });
+    });
     ImageBuf::from_raw(w, h, 3, data)
 }
 
@@ -19,12 +34,22 @@ pub fn rgb_to_grayscale(img: &ImageBuf) -> ImageBuf {
     if img.channels == 1 {
         return ImageBuf::from_raw(img.width, img.height, 1, img.data.clone());
     }
-    let mut data = Vec::with_capacity(img.width * img.height);
-    for chunk in img.data.chunks_exact(img.channels) {
-        let r = chunk[0] as f32;
-        let g = chunk.get(1).copied().unwrap_or(0) as f32;
-        let b = chunk.get(2).copied().unwrap_or(0) as f32;
-        data.push((0.299 * r + 0.587 * g + 0.114 * b).round() as u8);
+    let n = img.width * img.height;
+    let mut data = vec![0u8; n];
+    if img.channels == 3 {
+        let row_bytes = img.width * 3;
+        data.par_chunks_mut(img.width)
+            .zip(img.data.par_chunks(row_bytes))
+            .for_each(|(dst_row, src_row)| {
+                map_rgb_to_gray_u8(src_row, dst_row);
+            });
+    } else {
+        for (i, chunk) in img.data.chunks_exact(img.channels).enumerate() {
+            let r = chunk[0] as f32;
+            let g = chunk.get(1).copied().unwrap_or(0) as f32;
+            let b = chunk.get(2).copied().unwrap_or(0) as f32;
+            data[i] = (0.299 * r + 0.587 * g + 0.114 * b).round() as u8;
+        }
     }
     ImageBuf::from_raw(img.width, img.height, 1, data)
 }
@@ -34,12 +59,16 @@ pub fn gray_to_rgb(img: &ImageBuf) -> ImageBuf {
     if img.channels == 3 {
         return img.clone();
     }
-    let mut data = Vec::with_capacity(img.width * img.height * 3);
-    for &v in &img.data {
-        data.push(v);
-        data.push(v);
-        data.push(v);
-    }
+    let mut data = vec![0u8; img.width * img.height * 3];
+    let arch = Arch::new();
+    arch.dispatch(|| {
+        for (i, &v) in img.data.iter().enumerate() {
+            let o = i * 3;
+            data[o] = v;
+            data[o + 1] = v;
+            data[o + 2] = v;
+        }
+    });
     ImageBuf::from_raw(img.width, img.height, 3, data)
 }
 
@@ -79,15 +108,23 @@ pub fn resize_nearest(img: &ImageBuf, tw: usize, th: usize) -> ImageBuf {
     }
     let ch = img.channels;
     let mut data = vec![0u8; tw * th * ch];
-    for y in 0..th {
-        let sy = y * img.height / th;
+    let data_addr = data.as_mut_ptr() as usize;
+    let src = img.data.as_slice();
+    let sw = img.width;
+    let sh = img.height;
+    (0..th).into_par_iter().for_each(|y| {
+        let sy = y * sh / th;
         for x in 0..tw {
-            let sx = x * img.width / tw;
-            let src = img.pixel_offset(sx, sy);
-            let dst = (y * tw + x) * ch;
-            data[dst..dst + ch].copy_from_slice(&img.data[src..src + ch]);
+            let sx = x * sw / tw;
+            let s = (sy * sw + sx) * ch;
+            let d = (y * tw + x) * ch;
+            // SAFETY: each output row `y` is disjoint.
+            let dst = data_addr as *mut u8;
+            unsafe {
+                std::ptr::copy_nonoverlapping(src.as_ptr().add(s), dst.add(d), ch);
+            }
         }
-    }
+    });
     ImageBuf::from_raw(tw, th, ch, data)
 }
 
