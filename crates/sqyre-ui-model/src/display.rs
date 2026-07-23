@@ -1,7 +1,8 @@
 //! Display params and tree summary pills for actions.
 
 use sqyre_domain::{
-    Action, ActionKind, ConditionClause, MatchMode, RepeatMode, ScalarValue, WaitTilFoundConfig,
+    Action, ActionKind, ConditionClause, LoopJumpMode, MatchMode, RepeatMode, ScalarValue,
+    WaitTilFoundConfig,
 };
 
 /// One display parameter.
@@ -465,7 +466,15 @@ impl ActionKindDisplay for ActionKind {
                     params.push(DisplayParam::new("After", "exit"));
                 }
             }
-            Self::Break | Self::Continue => {}
+            Self::LoopJump { mode } => {
+                params.push(DisplayParam::new(
+                    "Mode",
+                    match mode {
+                        LoopJumpMode::Break => "Break",
+                        LoopJumpMode::Continue => "Continue",
+                    },
+                ));
+            }
         }
         params
     }

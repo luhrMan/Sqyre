@@ -21,7 +21,6 @@ pub fn label(ui: &mut egui::Ui, text: &str, help: &str) -> egui::Response {
 // --- Shared / common ---
 
 pub const NAME: &str = "Optional label shown in the tree.";
-pub const NOTHING_TO_EDIT: &str = "This action has no settings.";
 
 // --- Wait ---
 
@@ -84,6 +83,8 @@ pub const SAVE_NEWLINE: &str = "Add a newline after the value when appending.";
 // --- Loop ---
 
 pub const LOOP_COUNT: &str = "How many times to run child actions (number or ${var}).";
+pub const LOOP_JUMP_MODE: &str =
+    "Break exits the innermost loop; Continue skips to its next iteration.";
 
 // --- While / If ---
 

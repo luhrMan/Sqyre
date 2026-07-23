@@ -1423,6 +1423,8 @@ pub mod options {
 
     pub const CLICK_BUTTONS: &[&str] = &["left", "right", "center", "scroll"];
 
+    pub const LOOP_JUMP_MODES: &[(&str, &str)] = &[("break", "Break"), ("continue", "Continue")];
+
     pub const CONDITIONAL_OPERATORS: &[&str] = &[
         OP_EQUALS,
         "!=",
