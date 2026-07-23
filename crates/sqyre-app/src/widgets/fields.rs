@@ -96,6 +96,62 @@ pub fn combo_str(
     });
 }
 
+/// Like [`combo_str`], but each option is `(stored value, display label)`.
+///
+/// When `value` is empty, the closed button and open-list highlight use
+/// `empty_default` / its label without writing into `value` until the user picks.
+pub fn combo_str_labeled(
+    ui: &mut egui::Ui,
+    label: &str,
+    help_text: &str,
+    value: &mut String,
+    options: &[(&str, &str)],
+    empty_default: &str,
+) {
+    ui.horizontal(|ui| {
+        help::label(ui, label, help_text);
+        let empty_label = options
+            .iter()
+            .find(|(v, _)| *v == empty_default)
+            .map(|(_, l)| *l)
+            .unwrap_or(empty_default);
+        let display = if value.is_empty() {
+            empty_label.to_string()
+        } else {
+            options
+                .iter()
+                .find(|(v, _)| *v == value.as_str())
+                .map(|(_, l)| (*l).to_string())
+                .unwrap_or_else(|| value.clone())
+        };
+        let current = if value.is_empty() {
+            empty_default.to_string()
+        } else {
+            value.clone()
+        };
+        let mut custom = None;
+        if !value.is_empty() && !options.iter().any(|(v, _)| *v == value.as_str()) {
+            custom = Some(value.clone());
+        }
+        help::tip(
+            egui::ComboBox::from_id_salt(label)
+                .selected_text(display)
+                .show_ui(ui, |ui| {
+                    for &(stored, shown) in options {
+                        if ui.selectable_label(current == stored, shown).clicked() {
+                            *value = stored.to_string();
+                        }
+                    }
+                    if let Some(c) = custom {
+                        ui.selectable_value(value, c.clone(), c);
+                    }
+                })
+                .response,
+            help_text,
+        );
+    });
+}
+
 /// Searchable combo for unbounded / growing option lists (programs, masks, macros, …).
 ///
 /// Uses fuzzy subsequence matching. `empty_text` is the closed-button label when `value` is

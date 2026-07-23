@@ -867,6 +867,7 @@ mod tests {
                 search_area: CoordinateRef("P~Box".into()),
                 tolerance: 0.9,
                 blur: 0,
+                match_method: Default::default(),
                 detection: DetectionBranch::default(),
             },
         }]);

@@ -43,6 +43,8 @@ pub fn main_toolbar(app: &mut SqyreApp, ui: &mut egui::Ui) {
     #[cfg(not(target_arch = "wasm32"))]
     let running = app.run.running.load(Ordering::SeqCst);
     ui.horizontal(|ui| {
+        // Half the default gap between toolbar icon buttons.
+        ui.spacing_mut().item_spacing.x *= 0.5;
         let (list_glyph, list_tip) = if app.macro_list_open {
             ("◁", "Hide macro list")
         } else {
@@ -212,6 +214,8 @@ pub fn action_toolbar(app: &mut SqyreApp, ui: &mut egui::Ui) -> Option<bool> {
     let running = app.run.running.load(Ordering::SeqCst);
     let mut force_openness: Option<bool> = None;
     ui.horizontal(|ui| {
+        // Half the default gap between toolbar icon buttons.
+        ui.spacing_mut().item_spacing.x *= 0.5;
         let can_copy = app.can_copy_selection();
         let can_paste = app.can_paste_clipboard();
         let can_undo = app.can_undo();
@@ -227,7 +231,8 @@ pub fn action_toolbar(app: &mut SqyreApp, ui: &mut egui::Ui) -> Option<bool> {
         {
             app.add_action_picker.open();
         }
-        let vars_color = theme::rgba(action_pastel_color("setvariable", ui.visuals().dark_mode));
+        // Light-theme variables pastel reads better as a glyph on dark chrome.
+        let vars_color = theme::rgba(action_pastel_color("setvariable", false));
         if toolbar_icon_colored(ui, "x", "Variables", true, Some(vars_color)).clicked() {
             app.variables_panel.open = true;
         }

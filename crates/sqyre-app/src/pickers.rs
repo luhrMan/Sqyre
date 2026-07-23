@@ -526,6 +526,9 @@ pub fn paint_even_icon_grid(
 /// `multi` is true; otherwise replaces selection with the clicked target.
 /// When `multi`, each program header includes an All control over filtered targets
 /// (items picker tri-state / All button).
+///
+/// When `selected_program` / `clicked_program` are used (data editor), program headers
+/// are selectable and write the clicked program name into `clicked_program`.
 pub fn paint_items_icon_grid(
     ui: &mut egui::Ui,
     catalog: &ProgramCatalog,
@@ -533,6 +536,8 @@ pub fn paint_items_icon_grid(
     search: &str,
     selected: &mut Vec<String>,
     multi: bool,
+    selected_program: Option<&str>,
+    clicked_program: &mut Option<String>,
 ) {
     let q = search.trim().to_ascii_lowercase();
     let pane_w = ui.available_width();
@@ -587,9 +592,18 @@ pub fn paint_items_icon_grid(
             "All"
         };
 
-        egui::CollapsingHeader::new(header_text(prog))
-            .default_open(true)
-            .show(ui, |ui| {
+        let id = ui.make_persistent_id(("items_icon_grid", prog.as_str()));
+        egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, true)
+            .show_header(ui, |ui| {
+                let prog_selected = selected_program == Some(prog.as_str());
+                if ui
+                    .selectable_label(prog_selected, header_text(prog))
+                    .clicked()
+                {
+                    *clicked_program = Some(prog.clone());
+                }
+            })
+            .body(|ui| {
                 ui.set_max_width(pane_w);
                 if multi {
                     ui.horizontal(|ui| {
@@ -1161,8 +1175,18 @@ pub fn show_active_picker(
         .show(ctx, |ui| {
             match picker {
                 ActivePicker::Items { search, staged } => {
+                    let mut header_click = None;
                     picker_searchable_scroll(ui, search, PickerScrollOpts::list(ui), |ui, q| {
-                        paint_items_icon_grid(ui, paint.catalog, paint.icons, q, staged, true);
+                        paint_items_icon_grid(
+                            ui,
+                            paint.catalog,
+                            paint.icons,
+                            q,
+                            staged,
+                            true,
+                            None,
+                            &mut header_click,
+                        );
                     });
                     ui.separator();
                     ui.label(format!("{} selected", staged.len()));
@@ -1412,13 +1436,22 @@ pub mod options {
     pub const REPEAT_MODES: &[&str] = &[
         RepeatMode::Once.as_str(),
         RepeatMode::WaitUntilFound.as_str(),
-        RepeatMode::WhileFound.as_str(),
+        RepeatMode::WaitWhileFound.as_str(),
+        RepeatMode::RepeatUntilFound.as_str(),
+        RepeatMode::RepeatWhileFound.as_str(),
     ];
 
-    /// Match-order grouping (empty allowed as unset).
-    pub const ORDER_GROUPING: &[&str] = &["", "row", "column", "none"];
-    pub const ORDER_HORIZONTAL: &[&str] = &["", "left_to_right", "right_to_left"];
-    pub const ORDER_VERTICAL: &[&str] = &["", "top_to_bottom", "bottom_to_top"];
+    /// Match-order options as `(stored value, display label)`.
+    pub const ORDER_GROUPING: &[(&str, &str)] =
+        &[("row", "Row"), ("column", "Column"), ("none", "None")];
+    pub const ORDER_HORIZONTAL: &[(&str, &str)] = &[
+        ("left_to_right", "Left → Right"),
+        ("right_to_left", "Right → Left"),
+    ];
+    pub const ORDER_VERTICAL: &[(&str, &str)] = &[
+        ("top_to_bottom", "Top → Bottom"),
+        ("bottom_to_top", "Bottom → Top"),
+    ];
 
     pub const SELECT_DEVICES: &[&str] = &["", "mouse", "keyboard"];
     pub const SELECT_PRESS_MODES: &[&str] = &["", "click", "down", "up", "hold"];

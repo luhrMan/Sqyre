@@ -2,8 +2,8 @@
 
 use crate::{
     action_type_table, Action, ActionId, ActionKind, ConditionBlock, CoordinateRef,
-    DetectionBranch, ListColumn, PressState, ScalarValue, VariableAssignment, DEFAULT_SMOOTH_DELAY_MS,
-    DEFAULT_SMOOTH_HIGH, DEFAULT_SMOOTH_LOW,
+    DetectionBranch, ListColumn, PressState, ScalarValue, TemplateMatchMethod, VariableAssignment,
+    DEFAULT_SMOOTH_DELAY_MS, DEFAULT_SMOOTH_HIGH, DEFAULT_SMOOTH_LOW,
 };
 
 /// One picker entry: label, type key, category, and a fresh blank [`Action`].
@@ -116,6 +116,7 @@ pub(crate) fn blank_kind(action_type: &str) -> Option<ActionKind> {
             search_area: CoordinateRef::default(),
             tolerance: 0.95,
             blur: 5,
+            match_method: TemplateMatchMethod::CcoeffNormed,
             detection: DetectionBranch::default(),
         },
         "ocr" => ActionKind::Ocr {

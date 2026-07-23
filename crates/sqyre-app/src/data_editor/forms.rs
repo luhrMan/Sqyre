@@ -245,7 +245,7 @@ impl DataEditor {
             }
             EditorTab::Items => {
                 ui.heading("Item");
-                self.program_selector(ui, catalog);
+                self.program_selector(ui, catalog, settings);
                 ui.add_space(4.0);
                 help::label(ui, "Name", help::DE_NAME);
                 help::tip(
@@ -340,7 +340,7 @@ impl DataEditor {
             }
             EditorTab::Points => {
                 ui.heading("Point");
-                self.program_selector(ui, catalog);
+                self.program_selector(ui, catalog, settings);
                 ui.add_space(4.0);
                 self.paint_name_record_row(
                     ui,
@@ -374,7 +374,7 @@ impl DataEditor {
             }
             EditorTab::SearchAreas => {
                 ui.heading("Search Area");
-                self.program_selector(ui, catalog);
+                self.program_selector(ui, catalog, settings);
                 ui.add_space(4.0);
                 self.paint_name_record_row(
                     ui,
@@ -435,7 +435,7 @@ impl DataEditor {
             }
             EditorTab::Masks => {
                 ui.heading("Mask");
-                self.program_selector(ui, catalog);
+                self.program_selector(ui, catalog, settings);
                 ui.add_space(4.0);
                 ui.label("Name").on_hover_text(help::DE_NAME);
                 help::tip(
@@ -572,7 +572,7 @@ impl DataEditor {
             }
             EditorTab::Collections => {
                 ui.heading("Collection");
-                self.program_selector(ui, catalog);
+                self.program_selector(ui, catalog, settings);
                 ui.add_space(4.0);
                 ui.label("Name").on_hover_text(help::DE_NAME);
                 help::tip(
@@ -709,7 +709,7 @@ impl DataEditor {
                     self.persist_overlay_settings(settings);
                 }
                 ui.add_space(6.0);
-                self.program_selector(ui, catalog);
+                self.program_selector(ui, catalog, settings);
                 if self.selected_program.is_none() {
                     ui.weak("Select a program, then New to add a button.");
                     return;

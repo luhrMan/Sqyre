@@ -335,6 +335,7 @@ fn image_search(
         tolerance: tol,
         blur: b,
         detection: det,
+        ..
     } = &mut a.kind
     {
         *n = name.into();

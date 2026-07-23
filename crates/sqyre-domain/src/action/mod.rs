@@ -145,12 +145,17 @@ string_enum! {
 }
 
 string_enum! {
-    /// Image-search / OCR wait-until / repeat-while modes.
+    /// Image-search / OCR / find-pixel wait and repeat modes.
+    ///
+    /// Wait modes poll silently, then run the branch once. Repeat modes run the
+    /// branch each iteration until the stop condition.
     pub enum RepeatMode {
         #[default]
         Once = "once",
         WaitUntilFound = "waituntilfound",
-        WhileFound = "repeatwhilefound",
+        WaitWhileFound = "waitwhilefound",
+        RepeatUntilFound = "repeatuntilfound",
+        RepeatWhileFound = "repeatwhilefound",
     }
 }
 
@@ -384,14 +389,32 @@ impl Default for WaitTilFoundConfig {
 }
 
 impl WaitTilFoundConfig {
-    /// Retry until found (or timeout).
+    /// Silent poll until found (or timeout).
     pub fn wait_until_found_active(&self) -> bool {
         self.repeat_mode == RepeatMode::WaitUntilFound && self.wait_til_found_seconds > 0
     }
 
-    /// When true, repeat while the target remains found.
+    /// Silent poll while found (or timeout).
+    pub fn wait_while_found_active(&self) -> bool {
+        self.repeat_mode == RepeatMode::WaitWhileFound && self.wait_til_found_seconds > 0
+    }
+
+    /// Run the branch each pass while the target remains found.
     pub fn is_repeat_while_found(&self) -> bool {
-        self.repeat_mode == RepeatMode::WhileFound
+        self.repeat_mode == RepeatMode::RepeatWhileFound
+    }
+
+    /// Run the branch each miss (when configured) until the target is found.
+    pub fn is_repeat_until_found(&self) -> bool {
+        self.repeat_mode == RepeatMode::RepeatUntilFound
+    }
+
+    pub fn uses_timing(&self) -> bool {
+        self.repeat_mode != RepeatMode::Once
+    }
+
+    pub fn uses_max_iterations(&self) -> bool {
+        self.is_repeat_while_found() || self.is_repeat_until_found()
     }
 
     pub fn effective_interval_ms(&self, default_ms: i32) -> i32 {
@@ -402,7 +425,7 @@ impl WaitTilFoundConfig {
         }
     }
 
-    /// Max iterations for wait-until-found (default 100 when unset).
+    /// Max iterations for repeat modes (default 100 when unset).
     pub fn effective_max_iterations(&self) -> i32 {
         if self.max_iterations > 0 {
             self.max_iterations
@@ -435,6 +458,56 @@ impl CoordinateOutputs {
             output_y_variable: "foundY".into(),
         }
     }
+}
+
+/// OpenCV-style template match method for [`ActionKind::ImageSearch`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TemplateMatchMethod {
+    Sqdiff,
+    SqdiffNormed,
+    Ccorr,
+    CcorrNormed,
+    Ccoeff,
+    #[default]
+    CcoeffNormed,
+}
+
+impl TemplateMatchMethod {
+    pub const ALL: [Self; 6] = [
+        Self::Sqdiff,
+        Self::SqdiffNormed,
+        Self::Ccorr,
+        Self::CcorrNormed,
+        Self::Ccoeff,
+        Self::CcoeffNormed,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Sqdiff => "SQDIFF",
+            Self::SqdiffNormed => "SQDIFF_NORMED",
+            Self::Ccorr => "CCORR",
+            Self::CcorrNormed => "CCORR_NORMED",
+            Self::Ccoeff => "CCOEFF",
+            Self::CcoeffNormed => "CCOEFF_NORMED",
+        }
+    }
+
+    pub fn higher_is_better(self) -> bool {
+        !matches!(self, Self::Sqdiff | Self::SqdiffNormed)
+    }
+
+    pub fn is_normed(self) -> bool {
+        matches!(
+            self,
+            Self::SqdiffNormed | Self::CcorrNormed | Self::CcoeffNormed
+        )
+    }
+}
+
+pub(crate) fn is_default_match_method(v: &TemplateMatchMethod) -> bool {
+    *v == TemplateMatchMethod::CcoeffNormed
 }
 
 /// Optional match-order fields present in newer `~/.sqyre` data.
@@ -945,6 +1018,7 @@ pub enum ActionKind {
         search_area: CoordinateRef,
         tolerance: f64,
         blur: i32,
+        match_method: TemplateMatchMethod,
         detection: DetectionBranch,
     },
     Ocr {
@@ -1214,7 +1288,15 @@ mod tests {
         assert_eq!(MatchMode::parse("any"), MatchMode::Any);
         assert_eq!(
             RepeatMode::parse("repeatwhilefound"),
-            RepeatMode::WhileFound
+            RepeatMode::RepeatWhileFound
+        );
+        assert_eq!(
+            RepeatMode::parse("waitwhilefound"),
+            RepeatMode::WaitWhileFound
+        );
+        assert_eq!(
+            RepeatMode::parse("repeatuntilfound"),
+            RepeatMode::RepeatUntilFound
         );
         assert_eq!(MaskShape::parse("circle"), MaskShape::Circle);
         assert_eq!(format!("{}", MouseButton::Scroll), "scroll");

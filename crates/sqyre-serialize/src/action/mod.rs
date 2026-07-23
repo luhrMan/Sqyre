@@ -267,6 +267,7 @@ mod tests {
                 search_area: CoordinateRef("Game~Arena".into()),
                 tolerance: 0.87,
                 blur: 3,
+                match_method: Default::default(),
                 detection: DetectionBranch {
                     wait: WaitTilFoundConfig {
                         repeat_mode: RepeatMode::WaitUntilFound,
@@ -318,9 +319,10 @@ mod tests {
                 search_area: CoordinateRef::default(),
                 tolerance: 0.0,
                 blur: 5,
+                match_method: Default::default(),
                 detection: DetectionBranch {
                     wait: WaitTilFoundConfig {
-                        repeat_mode: RepeatMode::WhileFound,
+                        repeat_mode: RepeatMode::RepeatWhileFound,
                         wait_til_found_seconds: 0,
                         wait_til_found_interval_ms: 0,
                         max_iterations: 42,

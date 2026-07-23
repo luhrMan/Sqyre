@@ -42,6 +42,7 @@ impl DataEditor {
             }
             _ => Vec::new(),
         };
+        let mut clicked_program: Option<String> = None;
 
         // Take search out so the scroll body can borrow `&mut self`.
         let mut search = std::mem::take(&mut self.search);
@@ -59,7 +60,16 @@ impl DataEditor {
             }
             EditorTab::Items => {
                 ui.set_max_width(ui.available_width());
-                pickers::paint_items_icon_grid(ui, catalog, icons, q, &mut item_selection, false);
+                pickers::paint_items_icon_grid(
+                    ui,
+                    catalog,
+                    icons,
+                    q,
+                    &mut item_selection,
+                    false,
+                    self.selected_program.as_deref(),
+                    &mut clicked_program,
+                );
             }
             EditorTab::Points
             | EditorTab::SearchAreas
@@ -82,7 +92,16 @@ impl DataEditor {
                     if !prog_match && !any_entity {
                         continue;
                     }
-                    ui.label(egui::RichText::new(prog.as_str()).size(16.0).strong());
+                    let prog_selected = self.selected_program.as_deref() == Some(prog.as_str());
+                    if ui
+                        .selectable_label(
+                            prog_selected,
+                            egui::RichText::new(prog.as_str()).size(16.0).strong(),
+                        )
+                        .clicked()
+                    {
+                        clicked_program = Some(prog.clone());
+                    }
                     for ent in entities {
                         if !q.is_empty() && !pickers::fuzzy_match_fold(q, &ent) && !prog_match {
                             continue;
@@ -131,7 +150,16 @@ impl DataEditor {
                     if !prog_match && !any_btn {
                         continue;
                     }
-                    ui.label(egui::RichText::new(prog.as_str()).size(16.0).strong());
+                    let prog_selected = self.selected_program.as_deref() == Some(prog.as_str());
+                    if ui
+                        .selectable_label(
+                            prog_selected,
+                            egui::RichText::new(prog.as_str()).size(16.0).strong(),
+                        )
+                        .clicked()
+                    {
+                        clicked_program = Some(prog.clone());
+                    }
                     for btn in buttons {
                         if !q.is_empty()
                             && !pickers::fuzzy_match_fold(q, btn.display_name())
@@ -154,7 +182,9 @@ impl DataEditor {
         });
         self.search = search;
 
-        if matches!(self.tab, EditorTab::Items) {
+        if let Some(prog) = clicked_program {
+            self.select_program(&prog, catalog, settings);
+        } else if matches!(self.tab, EditorTab::Items) {
             if let Some(target) = item_selection.first() {
                 if let Some((prog, item)) = target.split_once(sqyre_domain::PROGRAM_DELIMITER) {
                     let changed = self.selected_program.as_deref() != Some(prog)
@@ -236,7 +266,12 @@ impl DataEditor {
         self.load_form(catalog, settings);
     }
 
-    pub(crate) fn program_selector(&mut self, ui: &mut egui::Ui, catalog: &ProgramCatalog) {
+    pub(crate) fn program_selector(
+        &mut self,
+        ui: &mut egui::Ui,
+        catalog: &ProgramCatalog,
+        settings: &UserSettings,
+    ) {
         self.ensure_list_cache(catalog);
         let names = self.list_cache.program_names.clone();
         let mut current = self.selected_program.clone().unwrap_or_default();
@@ -253,10 +288,14 @@ impl DataEditor {
             );
         });
         if current != before {
-            self.selected_program = (!current.is_empty()).then_some(current);
-            self.selected_entity = None;
-            self.reset_item_form();
-            self.form_name.clear();
+            if current.is_empty() {
+                self.selected_program = None;
+                self.selected_entity = None;
+                self.reset_item_form();
+                self.form_name.clear();
+            } else {
+                self.select_program(&current, catalog, settings);
+            }
         }
     }
 }
