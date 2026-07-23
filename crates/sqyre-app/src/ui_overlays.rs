@@ -293,6 +293,8 @@ fn poll_scheduled_backup(app: &mut SqyreApp, ctx: &egui::Context) {
 
 /// Ctrl+C / Ctrl+X / Ctrl+V / Ctrl+Z / Ctrl+Y / Ctrl+A — skip while editing an action
 /// or when a text field has keyboard focus (so Ctrl+A still selects-all in editors).
+///
+/// Mutating shortcuts match the action toolbar: disabled while a macro is running.
 pub fn handle_shortcuts(app: &mut SqyreApp, ui: &mut egui::Ui) {
     let running = app.run.running.load(Ordering::SeqCst);
     if !app.tooltip.is_editing()
@@ -312,6 +314,9 @@ pub fn handle_shortcuts(app: &mut SqyreApp, ui: &mut egui::Ui) {
             let add_action = mod_key && i.key_pressed(egui::Key::A);
             (copy, cut, paste, undo, redo, add_action)
         });
+        if running {
+            return;
+        }
         if cut {
             app.cut_selection();
         } else if copy {
@@ -322,7 +327,7 @@ pub fn handle_shortcuts(app: &mut SqyreApp, ui: &mut egui::Ui) {
             app.undo_tree();
         } else if redo {
             app.redo_tree();
-        } else if add_action && !running && !app.macros.is_empty() {
+        } else if add_action && !app.macros.is_empty() {
             app.add_action_picker.open();
         }
     }
