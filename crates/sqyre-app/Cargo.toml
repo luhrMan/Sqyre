@@ -48,6 +48,7 @@ web-time = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 fs2 = "0.4"
+rodio = { version = "0.22", default-features = false, features = ["playback", "mp3"] }
 sqyre-input = { path = "../sqyre-input" }
 
 [target.'cfg(all(not(target_arch = "wasm32"), target_os = "linux"))'.dependencies]

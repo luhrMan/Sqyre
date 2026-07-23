@@ -18,6 +18,7 @@ pub const DEFAULT_IMAGE_SEARCH_CLOSE_MATCHES_DISTANCE: i32 = 10;
 pub const DEFAULT_DRAG_PREVIEW_DEBOUNCE_MS: i32 = 150;
 pub const MIN_DRAG_PREVIEW_DEBOUNCE_MS: i32 = 25;
 pub const DEFAULT_HIDE_APP_DURING_RECORDING: bool = true;
+pub const DEFAULT_PLAY_FINISH_SOUND: bool = true;
 pub const DEFAULT_UI_FONT_SIZE: i32 = 14;
 pub const DEFAULT_UI_SCALE: f32 = 1.7;
 pub const DEFAULT_BACKUP_INTERVAL_HOURS: i32 = 24;
@@ -298,6 +299,9 @@ pub struct UserSettings {
     pub highlight_active_action: bool,
     #[serde(default = "default_hide_recording")]
     pub hide_app_during_recording: bool,
+    /// Play an audible cue when a top-level macro run finishes successfully.
+    #[serde(default = "default_play_finish_sound")]
+    pub play_finish_sound: bool,
     #[serde(default = "default_close_matches")]
     pub image_search_close_matches_distance: i32,
     #[serde(default = "default_drag_debounce")]
@@ -337,6 +341,9 @@ pub struct UserSettings {
 fn default_hide_recording() -> bool {
     DEFAULT_HIDE_APP_DURING_RECORDING
 }
+fn default_play_finish_sound() -> bool {
+    DEFAULT_PLAY_FINISH_SOUND
+}
 fn default_close_matches() -> i32 {
     DEFAULT_IMAGE_SEARCH_CLOSE_MATCHES_DISTANCE
 }
@@ -365,6 +372,7 @@ impl Default for UserSettings {
             save_meta_images: false,
             highlight_active_action: false,
             hide_app_during_recording: DEFAULT_HIDE_APP_DURING_RECORDING,
+            play_finish_sound: DEFAULT_PLAY_FINISH_SOUND,
             image_search_close_matches_distance: DEFAULT_IMAGE_SEARCH_CLOSE_MATCHES_DISTANCE,
             drag_preview_debounce_ms: DEFAULT_DRAG_PREVIEW_DEBOUNCE_MS,
             sqyre_dir: String::new(),
