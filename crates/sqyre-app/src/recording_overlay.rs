@@ -1,12 +1,12 @@
 //! Search-area selection outline + recording coords HUD.
 //!
 //! Driven by [`sqyre_hotkeys::ScreenClickBridge`]:
-//! - X11 edge windows ([`sqyre_capture::SelectionOutline`]) for the live search-area
-//!   rect — not a fullscreen desktop snapshot.
+//! - OS edge windows ([`sqyre_capture::SelectionOutline`]) for the live search-area
+//!   rect — not a fullscreen desktop snapshot (X11 on Linux, Win32 popups on Windows).
 //! - A small always-on-top egui viewport for live coords / status while recording
 //!   (needed when the main window is hidden via `hide_app_during_recording`).
 //!
-//! A short poller owns the X11 connection and keeps requesting egui repaints so the
+//! A short poller owns the outline and keeps requesting egui repaints so the
 //! HUD stays alive even when the root viewport is `Visible(false)`.
 
 use crate::theme;
@@ -21,7 +21,7 @@ use std::time::Duration;
 const POLL_MS: u64 = 16;
 const HUD_ID: &str = "sqyre_recording_coords_hud";
 
-/// Owns the Linux outline poller and syncs it to the armed search-area draft.
+/// Owns the outline poller and syncs it to the armed search-area draft.
 #[derive(Default)]
 pub struct RecordingOverlay {
     stop: Option<Arc<AtomicBool>>,

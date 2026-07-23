@@ -32,6 +32,8 @@ mod preview_tooltip;
 mod recorded_action;
 mod recording_overlay;
 mod settings;
+#[cfg(not(target_arch = "wasm32"))]
+mod sound;
 mod single_instance;
 mod status_banner;
 pub mod theme;
@@ -184,7 +186,7 @@ pub struct SqyreApp {
     variables_panel: variables_panel::VariablesPanelUi,
     /// Window was hidden because a point/search-area recording is armed.
     hidden_for_recording: bool,
-    /// X11 outline windows for live search-area selection rect.
+    /// Outline windows for live search-area selection rect.
     recording_overlay: RecordingOverlay,
     /// Always-on-top floating buttons that start macros.
     macro_overlay: MacroOverlay,
