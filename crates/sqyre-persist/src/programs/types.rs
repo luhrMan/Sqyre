@@ -80,18 +80,34 @@ pub struct ProgramData {
     /// resolution key → points
     pub points: BTreeMap<String, BTreeMap<String, ProgramPoint>>,
     pub search_areas: BTreeMap<String, BTreeMap<String, ProgramSearchArea>>,
+    /// resolution key → DPI scale (`dpi/96`) stamped when the bucket was first written.
+    pub coord_scales: BTreeMap<String, f32>,
     pub items: BTreeMap<String, ProgramItem>,
     pub masks: BTreeMap<String, ProgramMask>,
     pub collections: BTreeMap<String, ProgramCollection>,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct ProgramCatalog {
     pub(super) programs: BTreeMap<String, ProgramData>,
     /// Override for tests; empty → `images_path()`.
     pub(super) images_root: Option<PathBuf>,
     /// Main monitor resolution key. Empty → first key found.
     pub(super) resolution_key: String,
+    /// Live primary-monitor DPI scale (`dpi/96`). Used when remapping stored coords.
+    pub(super) runtime_scale: f32,
     /// Bumped on structural mutations; UI caches key off this.
     pub(super) generation: u64,
+}
+
+impl Default for ProgramCatalog {
+    fn default() -> Self {
+        Self {
+            programs: BTreeMap::new(),
+            images_root: None,
+            resolution_key: String::new(),
+            runtime_scale: 1.0,
+            generation: 0,
+        }
+    }
 }

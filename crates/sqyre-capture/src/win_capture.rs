@@ -5,11 +5,15 @@ use image::RgbaImage;
 use parking_lot::Mutex;
 use sqyre_executor::{DesktopRect, RgbCapture};
 use windows::core::BOOL;
-use windows::Win32::Foundation::{LPARAM, RECT};
+use windows::Win32::Foundation::{LPARAM, POINT, RECT};
 use windows::Win32::Graphics::Gdi::{
     BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject,
-    EnumDisplayMonitors, GetDC, GetDIBits, ReleaseDC, SelectObject, BITMAPINFO, BITMAPINFOHEADER,
-    DIB_RGB_COLORS, HDC, HGDIOBJ, HMONITOR, SRCCOPY,
+    EnumDisplayMonitors, GetDC, GetDIBits, MonitorFromPoint, ReleaseDC, SelectObject, BITMAPINFO,
+    BITMAPINFOHEADER, DIB_RGB_COLORS, HDC, HGDIOBJ, HMONITOR, MONITOR_DEFAULTTOPRIMARY, SRCCOPY,
+};
+use windows::Win32::UI::HiDpi::{
+    GetDpiForMonitor, SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
+    MDT_EFFECTIVE_DPI,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     GetSystemMetrics, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
@@ -193,6 +197,30 @@ fn enum_monitor_sizes() -> Result<Vec<(i32, i32)>, CaptureError> {
         }
     }
     Ok(sizes)
+}
+
+/// Primary monitor DPI scale (`dpi / 96`).
+pub(crate) fn primary_monitor_scale() -> Option<f32> {
+    unsafe {
+        let mon = MonitorFromPoint(POINT { x: 0, y: 0 }, MONITOR_DEFAULTTOPRIMARY);
+        if mon.is_invalid() {
+            return None;
+        }
+        let mut dpix = 0u32;
+        let mut dpiy = 0u32;
+        GetDpiForMonitor(mon, MDT_EFFECTIVE_DPI, &mut dpix, &mut dpiy).ok()?;
+        let _ = dpiy;
+        if dpix == 0 {
+            return None;
+        }
+        Some(dpix as f32 / 96.0)
+    }
+}
+
+/// Per-Monitor DPI awareness V2 so GDI / metrics / input use physical pixels.
+pub(crate) fn enable_per_monitor_dpi_v2() {
+    // Ignore failure (already set, or older Windows) — best-effort.
+    let _ = unsafe { SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2) };
 }
 
 unsafe extern "system" fn monitor_enum_proc(
