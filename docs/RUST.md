@@ -64,6 +64,6 @@ Do not expect X11 inside the container — build there, run the binary on the ho
 
 Host binary: `./bin/sqyre` after `make`, or `./target/debug/sqyre` from cargo. Esc stops a running macro; Esc+Ctrl+Shift exits (failsafe).
 
-Still improving: Wayland, macOS capture, Windows/macOS window focus, macOS releases. CI also `cargo check`s Win/macOS on PRs.
+Still improving: Wayland, macOS capture, Windows/macOS window focus, macOS releases. CI also `cargo check`s macOS on PRs.
 
 OCR uses Tesseract (`leptess`). Override tessdata with `SQYRE_TESSDATA` if needed (dev fallback: `assets/tessdata`).
