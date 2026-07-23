@@ -273,6 +273,17 @@ impl SettingsUi {
             self.mark_dirty();
         }
 
+        if ui
+            .checkbox(
+                &mut self.settings.play_finish_sound,
+                "Play a sound when a macro finishes",
+            )
+            .on_hover_text("Plays a short cue when a top-level macro run completes successfully.")
+            .changed()
+        {
+            self.mark_dirty();
+        }
+
         ui.add_space(6.0);
 
         ui.horizontal(|ui| {
