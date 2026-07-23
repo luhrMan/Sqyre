@@ -20,5 +20,8 @@ dirs = { workspace = true }
 sqyre-domain = { path = "../sqyre-domain" }
 sqyre-serialize = { path = "../sqyre-serialize" }
 
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+zip = { workspace = true }
+
 [dev-dependencies]
 tempfile = { workspace = true }

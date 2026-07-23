@@ -200,6 +200,9 @@ pub struct SqyreApp {
     /// WASM async YAML import result (unused on native).
     #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
     pending_import: PendingImport,
+    /// In-flight automatic backup (native only).
+    #[cfg(not(target_arch = "wasm32"))]
+    backup_task: Option<std::sync::mpsc::Receiver<Result<std::path::PathBuf, String>>>,
 }
 
 impl SqyreApp {
@@ -311,6 +314,8 @@ impl SqyreApp {
                     instance_lock: None,
                     pending_delete_macro: None,
                     pending_import: wasm_io::new_pending_import(),
+                    #[cfg(not(target_arch = "wasm32"))]
+                    backup_task: None,
                 };
                 app.refresh_macro_hotkey_bindings();
                 app
@@ -365,6 +370,8 @@ impl SqyreApp {
                     instance_lock: None,
                     pending_delete_macro: None,
                     pending_import: wasm_io::new_pending_import(),
+                    #[cfg(not(target_arch = "wasm32"))]
+                    backup_task: None,
                 }
             }
         }

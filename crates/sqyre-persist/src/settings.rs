@@ -20,6 +20,12 @@ pub const MIN_DRAG_PREVIEW_DEBOUNCE_MS: i32 = 25;
 pub const DEFAULT_HIDE_APP_DURING_RECORDING: bool = true;
 pub const DEFAULT_UI_FONT_SIZE: i32 = 14;
 pub const DEFAULT_UI_SCALE: f32 = 1.7;
+pub const DEFAULT_BACKUP_INTERVAL_HOURS: i32 = 24;
+pub const MIN_BACKUP_INTERVAL_HOURS: i32 = 1;
+pub const MAX_BACKUP_INTERVAL_HOURS: i32 = 720;
+pub const DEFAULT_BACKUP_MAX_KEEP: i32 = 10;
+pub const MIN_BACKUP_MAX_KEEP: i32 = 1;
+pub const MAX_BACKUP_MAX_KEEP: i32 = 100;
 
 /// Absolute path to the settings file (`{sqyre_dir}/settings.yaml`).
 pub fn settings_path() -> PathBuf {
@@ -314,6 +320,18 @@ pub struct UserSettings {
     /// User-configured overlay buttons (per-program; shown when that program is focused).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub overlay_buttons: Vec<OverlayButtonConfig>,
+    /// Automatically zip the data directory on a schedule.
+    #[serde(default)]
+    pub backup_enabled: bool,
+    /// Hours between automatic backups.
+    #[serde(default = "default_backup_interval")]
+    pub backup_interval_hours: i32,
+    /// How many managed `sqyre-backup-*.zip` files to keep.
+    #[serde(default = "default_backup_max_keep")]
+    pub backup_max_keep: i32,
+    /// Unix seconds of the last successful backup (0 = never).
+    #[serde(default, skip_serializing_if = "is_zero_i64")]
+    pub last_backup_unix: i64,
 }
 
 fn default_hide_recording() -> bool {
@@ -331,6 +349,15 @@ fn default_font_size() -> i32 {
 fn default_ui_scale() -> f32 {
     DEFAULT_UI_SCALE
 }
+fn default_backup_interval() -> i32 {
+    DEFAULT_BACKUP_INTERVAL_HOURS
+}
+fn default_backup_max_keep() -> i32 {
+    DEFAULT_BACKUP_MAX_KEEP
+}
+fn is_zero_i64(v: &i64) -> bool {
+    *v == 0
+}
 
 impl Default for UserSettings {
     fn default() -> Self {
@@ -347,6 +374,10 @@ impl Default for UserSettings {
             action_defaults: std::collections::BTreeMap::new(),
             overlay_enabled: false,
             overlay_buttons: Vec::new(),
+            backup_enabled: false,
+            backup_interval_hours: DEFAULT_BACKUP_INTERVAL_HOURS,
+            backup_max_keep: DEFAULT_BACKUP_MAX_KEEP,
+            last_backup_unix: 0,
         }
     }
 }
@@ -435,6 +466,21 @@ impl UserSettings {
             btn.border_width = btn
                 .border_width
                 .clamp(MIN_OVERLAY_BORDER_WIDTH, MAX_OVERLAY_BORDER_WIDTH);
+        }
+        if self.backup_interval_hours < MIN_BACKUP_INTERVAL_HOURS {
+            self.backup_interval_hours = DEFAULT_BACKUP_INTERVAL_HOURS;
+        }
+        self.backup_interval_hours = self
+            .backup_interval_hours
+            .clamp(MIN_BACKUP_INTERVAL_HOURS, MAX_BACKUP_INTERVAL_HOURS);
+        if self.backup_max_keep < MIN_BACKUP_MAX_KEEP {
+            self.backup_max_keep = DEFAULT_BACKUP_MAX_KEEP;
+        }
+        self.backup_max_keep = self
+            .backup_max_keep
+            .clamp(MIN_BACKUP_MAX_KEEP, MAX_BACKUP_MAX_KEEP);
+        if self.last_backup_unix < 0 {
+            self.last_backup_unix = 0;
         }
     }
 
