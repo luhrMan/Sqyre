@@ -549,11 +549,7 @@ pub struct DetectionBranch {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub subactions: Vec<Action>,
     /// Children run when nothing matched (the "else" branch).
-    #[serde(
-        rename = "elseactions",
-        default,
-        skip_serializing_if = "Vec::is_empty"
-    )]
+    #[serde(rename = "elseactions", default, skip_serializing_if = "Vec::is_empty")]
     pub else_actions: Vec<Action>,
 }
 

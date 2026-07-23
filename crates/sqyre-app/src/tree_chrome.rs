@@ -522,8 +522,7 @@ pub(crate) fn paint_row_highlight(ui: &mut egui::Ui, rect: egui::Rect, highlight
                 .rect_filled(fill_rect, 0.0, highlight_fill_color());
         }
         RowHighlight::Owner => {
-            ui.painter()
-                .rect_filled(rect, 0.0, highlight_owner_color());
+            ui.painter().rect_filled(rect, 0.0, highlight_owner_color());
         }
     }
 }

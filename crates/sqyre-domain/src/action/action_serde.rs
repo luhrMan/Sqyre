@@ -59,11 +59,7 @@ enum ActionKindWire {
         condition: ConditionBlock,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         subactions: Vec<Action>,
-        #[serde(
-            rename = "elseactions",
-            default,
-            skip_serializing_if = "Vec::is_empty"
-        )]
+        #[serde(rename = "elseactions", default, skip_serializing_if = "Vec::is_empty")]
         else_actions: Vec<Action>,
     },
     ImageSearch {

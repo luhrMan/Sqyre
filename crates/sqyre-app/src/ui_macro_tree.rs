@@ -587,6 +587,7 @@ fn build_tree(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_else_dir(
     builder: &mut TreeViewBuilder<'_, ActionId>,
     detection: &Action,
@@ -775,10 +776,7 @@ mod highlight_ui_tests {
     #[test]
     fn else_folder_highlight_when_owner_selected() {
         let id = ActionId::new();
-        assert_eq!(
-            else_folder_highlight(id, Some(id)),
-            RowHighlight::Owner
-        );
+        assert_eq!(else_folder_highlight(id, Some(id)), RowHighlight::Owner);
         assert_eq!(
             else_folder_highlight(id, Some(ActionId::else_folder(id))),
             RowHighlight::None
