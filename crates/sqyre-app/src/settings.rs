@@ -37,6 +37,9 @@ pub struct SettingsUi {
     confirm: Option<PendingConfirm>,
     /// Set when the data directory changed and the shell should reload from disk.
     pub reload_requested: bool,
+    /// Set when the user asks to restart after applying an update.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub restart_requested: bool,
 }
 
 impl SettingsUi {
@@ -149,12 +152,19 @@ impl SettingsUi {
         self.status_banner.set_err(msg);
     }
 
+    /// Surface an update-related success message in the settings status line.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn set_update_status_ok(&mut self, msg: impl Into<String>) {
+        self.set_ok(msg);
+    }
+
     pub fn show(
         &mut self,
         ctx: &egui::Context,
         db: &mut Database,
         macros: &mut Vec<Macro>,
         catalog: &mut ProgramCatalog,
+        #[cfg(not(target_arch = "wasm32"))] update: &mut crate::update::UpdateManager,
     ) {
         if !self.open {
             return;
@@ -167,6 +177,9 @@ impl SettingsUi {
             .resizable(true)
             .constrain(true)
             .show(ctx, |ui| {
+                #[cfg(not(target_arch = "wasm32"))]
+                self.ui(ui, ctx, db, macros, catalog, update);
+                #[cfg(target_arch = "wasm32")]
                 self.ui(ui, ctx, db, macros, catalog);
             });
         self.open = open;
@@ -183,6 +196,7 @@ impl SettingsUi {
         db: &mut Database,
         macros: &mut Vec<Macro>,
         catalog: &mut ProgramCatalog,
+        #[cfg(not(target_arch = "wasm32"))] update: &mut crate::update::UpdateManager,
     ) {
         if let Some(confirm) = self.confirm.clone() {
             self.draw_confirm(ui, confirm, db, macros, catalog);
@@ -219,6 +233,14 @@ impl SettingsUi {
                         ui.add_space(10.0);
                         self.draw_backup(ui, db, macros, catalog);
                     },
+                );
+                #[cfg(not(target_arch = "wasm32"))]
+                crate::theme::titled_section(
+                    ui,
+                    "Updates",
+                    "Check GitHub Releases for a newer Sqyre build.",
+                    12.0,
+                    |ui| self.draw_updates(ui, update),
                 );
                 crate::theme::titled_section(
                     ui,
@@ -513,6 +535,70 @@ impl SettingsUi {
             return;
         };
         self.confirm = Some(PendingConfirm::RestoreBackup { path });
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn draw_updates(&mut self, ui: &mut egui::Ui, update: &mut crate::update::UpdateManager) {
+        use crate::update::{UpdateState, SQYRE_VERSION};
+
+        ui.label(format!("Current version: {SQYRE_VERSION}"));
+
+        if ui
+            .checkbox(
+                &mut self.settings.auto_update_check,
+                "Check for updates on startup",
+            )
+            .on_hover_text("Queries GitHub Releases for a newer Sqyre build when the app starts.")
+            .changed()
+        {
+            self.mark_dirty();
+        }
+
+        ui.add_space(6.0);
+        ui.horizontal(|ui| {
+            let busy = update.is_busy();
+            if ui
+                .add_enabled(!busy, egui::Button::new("Check now"))
+                .on_hover_text("Query GitHub Releases for a newer build.")
+                .clicked()
+            {
+                update.start_check();
+            }
+            match &update.state {
+                UpdateState::Available { .. } => {
+                    if ui
+                        .add_enabled(!busy, egui::Button::new("Download & install"))
+                        .clicked()
+                    {
+                        update.start_download();
+                    }
+                }
+                UpdateState::Ready { .. } => {
+                    if ui.button("Restart to finish").clicked() {
+                        self.restart_requested = true;
+                    }
+                }
+                _ => {}
+            }
+        });
+
+        ui.add_space(4.0);
+        let status = match &update.state {
+            UpdateState::Idle => "Update status: idle".to_string(),
+            UpdateState::Checking => "Checking for updates…".to_string(),
+            UpdateState::UpToDate => "You are up to date.".to_string(),
+            UpdateState::Available { version, .. } => {
+                format!("Update available: v{version}")
+            }
+            UpdateState::Downloading { version } => {
+                format!("Downloading v{version}…")
+            }
+            UpdateState::Ready { version } => {
+                format!("v{version} installed. Restart to finish.")
+            }
+            UpdateState::Failed { message } => format!("Update check failed: {message}"),
+        };
+        ui.label(egui::RichText::new(status).weak().small());
     }
 
     fn choose_sqyre_location(&mut self) {

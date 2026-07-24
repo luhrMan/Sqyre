@@ -370,6 +370,9 @@ jobs:
         with:
           ref: main
 
+      - name: Write VERSION
+        run: echo "${{ needs.version.outputs.version }}" > VERSION
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
@@ -440,6 +443,7 @@ jobs:
           SQYRE_WINDOWS_IMAGE: sqyre-windows-cross:latest
           SQYRE_WINDOWS_SKIP_PULL: "1"
           SQYRE_WINDOWS_SCCACHE: "1"
+          RELEASE_VERSION: ${{ needs.version.outputs.version }}
           CARGO_HOME: ${{ github.workspace }}/${{ env.CARGO_HOME_DIR }}
           CARGO_TARGET_DIR: ${{ github.workspace }}/${{ env.CARGO_TARGET_DIR_HOST }}
         run: ./scripts/windows/build.sh
@@ -473,6 +477,9 @@ jobs:
       - uses: actions/checkout@v6
         with:
           ref: main
+
+      - name: Write VERSION
+        run: echo "${{ needs.version.outputs.version }}" > VERSION
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -527,6 +534,7 @@ jobs:
 
       - name: Build WASM editor
         run: |
+          VERSION="${{ needs.version.outputs.version }}"
           docker run --rm -u "$(id -u):$(id -g)" \
             -v ${{ github.workspace }}:/workspace -w /workspace \
             -e HOME=/tmp \
@@ -534,6 +542,7 @@ jobs:
             -e CARGO_TARGET_DIR=/workspace/${{ env.CARGO_TARGET_DIR_HOST }} \
             -e RUSTUP_HOME=/usr/local/rustup \
             -e PATH=/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin \
+            -e RELEASE_VERSION="$VERSION" \
             sqyre-linux-build \
             bash -c 'set -euo pipefail
               make wasm

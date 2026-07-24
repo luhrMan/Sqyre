@@ -109,6 +109,8 @@ impl SqyreApp {
             pending_import: crate::wasm_io::new_pending_import(),
             #[cfg(not(target_arch = "wasm32"))]
             backup_task: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            update: crate::update::UpdateManager::default(),
         };
         if let Some(m) = app.macros.first() {
             app.macro_meta.sync_selection(0, m);
