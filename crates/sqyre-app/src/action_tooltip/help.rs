@@ -28,7 +28,8 @@ pub const WAIT_TIME: &str = "Pause duration in milliseconds before the next acti
 
 // --- Click ---
 
-pub const CLICK_BUTTON: &str = "Which mouse button to press or release.";
+pub const CLICK_BUTTON: &str =
+    "Click a region on the mouse: left, right, middle (wheel), or scroll (body).";
 pub const CLICK_STATE: &str = "Up = release; Down = press; Tap = press and release in one action.";
 
 // --- Key ---

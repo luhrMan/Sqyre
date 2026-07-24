@@ -1421,8 +1421,6 @@ pub enum PickerResult {
 pub mod options {
     use sqyre_domain::OP_EQUALS;
 
-    pub const CLICK_BUTTONS: &[&str] = &["left", "right", "center", "scroll"];
-
     pub const LOOP_JUMP_MODES: &[(&str, &str)] = &[("break", "Break"), ("continue", "Continue")];
 
     pub const CONDITIONAL_OPERATORS: &[&str] = &[

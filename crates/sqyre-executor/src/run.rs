@@ -16,6 +16,7 @@ use sqyre_domain::{
     action_type_label, resolve_scalar_int, Action, ActionId, ActionKind, LoopJumpMode, Macro,
     MatchMode, MouseButton, PressState, ScalarValue,
 };
+use std::collections::BTreeSet;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
@@ -25,6 +26,10 @@ pub struct Executor<'a> {
     pub deps: ExecDeps<'a>,
     /// Set when a `Stop` action or `Break`/`Continue`-style flow requests halt.
     pub stop_requested: bool,
+    /// Keys still held from [`PressState::Down`] / navigate hold (released on run end).
+    held_keys: BTreeSet<String>,
+    /// Mouse buttons still held from down/hold (released on run end).
+    held_buttons: BTreeSet<String>,
 }
 
 impl<'a> Executor<'a> {
@@ -32,6 +37,56 @@ impl<'a> Executor<'a> {
         Self {
             deps: ExecDeps::new(automation),
             stop_requested: false,
+            held_keys: BTreeSet::new(),
+            held_buttons: BTreeSet::new(),
+        }
+    }
+
+    pub(crate) fn input_click_down(&mut self, button: &str) -> Result<()> {
+        self.deps
+            .automation
+            .click(button, true)
+            .map_err(ExecError::Message)?;
+        self.held_buttons.insert(button.to_string());
+        Ok(())
+    }
+
+    pub(crate) fn input_click_up(&mut self, button: &str) -> Result<()> {
+        self.deps
+            .automation
+            .click(button, false)
+            .map_err(ExecError::Message)?;
+        self.held_buttons.remove(button);
+        Ok(())
+    }
+
+    pub(crate) fn input_key_down(&mut self, key: &str) -> Result<()> {
+        self.deps
+            .automation
+            .key_down(key)
+            .map_err(ExecError::Message)?;
+        self.held_keys.insert(key.to_string());
+        Ok(())
+    }
+
+    pub(crate) fn input_key_up(&mut self, key: &str) -> Result<()> {
+        self.deps
+            .automation
+            .key_up(key)
+            .map_err(ExecError::Message)?;
+        self.held_keys.remove(key);
+        Ok(())
+    }
+
+    /// Best-effort release of any keys/buttons still held when the macro ends.
+    fn release_held_inputs(&mut self) {
+        let keys = std::mem::take(&mut self.held_keys);
+        for key in keys {
+            let _ = self.deps.automation.key_up(&key);
+        }
+        let buttons = std::mem::take(&mut self.held_buttons);
+        for button in buttons {
+            let _ = self.deps.automation.click(&button, false);
         }
     }
 
@@ -135,6 +190,8 @@ pub struct ExecDeps<'a> {
     pub capturer: Option<&'a mut dyn ScreenCapturer>,
     /// Spatial dedup distance for image-search peaks; `0` uses the library default.
     pub close_matches_distance: i32,
+    /// Release keys/buttons still held when the macro ends (success, stop, or error).
+    pub release_held_inputs: bool,
     pub resolver: Option<&'a dyn CoordinateResolver>,
     pub icons: Option<&'a dyn IconStore>,
     pub macros: Option<&'a dyn MacroLookup>,
@@ -155,6 +212,7 @@ impl<'a> ExecDeps<'a> {
             automation,
             capturer: None,
             close_matches_distance: 0,
+            release_held_inputs: true,
             resolver: None,
             icons: None,
             macros: None,
@@ -235,6 +293,8 @@ pub fn execute_macro_with(macro_: &mut Macro, deps: ExecDeps<'_>) -> Result<()> 
     let mut exec = Executor {
         deps,
         stop_requested: false,
+        held_keys: BTreeSet::new(),
+        held_buttons: BTreeSet::new(),
     };
     macro_.init_runtime_variables();
     let monitor_sizes = match exec.deps.capturer.as_mut() {
@@ -251,6 +311,9 @@ pub fn execute_macro_with(macro_: &mut Macro, deps: ExecDeps<'_>) -> Result<()> 
     };
     exec.log_timing(root_id, "macro total", macro_started.elapsed());
     clear_highlights(exec.deps.highlighter);
+    if exec.deps.release_held_inputs {
+        exec.release_held_inputs();
+    }
     result
 }
 
@@ -395,42 +458,21 @@ fn dispatch(exec: &mut Executor<'_>, action: &Action, macro_: &mut Macro) -> Res
                 exec.deps.automation.scroll(up).map_err(ExecError::Message)
             } else {
                 match *state {
-                    PressState::Down => exec
-                        .deps
-                        .automation
-                        .click(button.as_str(), true)
-                        .map_err(ExecError::Message),
-                    PressState::Up => exec
-                        .deps
-                        .automation
-                        .click(button.as_str(), false)
-                        .map_err(ExecError::Message),
+                    PressState::Down => exec.input_click_down(button.as_str()),
+                    PressState::Up => exec.input_click_up(button.as_str()),
                     PressState::Tap => {
-                        exec.deps
-                            .automation
-                            .click(button.as_str(), true)
-                            .map_err(ExecError::Message)?;
-                        exec.deps
-                            .automation
-                            .click(button.as_str(), false)
-                            .map_err(ExecError::Message)
+                        exec.input_click_down(button.as_str())?;
+                        exec.input_click_up(button.as_str())
                     }
                 }
             }
         }
         ActionKind::Key { key, state } => match *state {
-            PressState::Down => exec
-                .deps
-                .automation
-                .key_down(key)
-                .map_err(ExecError::Message),
-            PressState::Up => exec.deps.automation.key_up(key).map_err(ExecError::Message),
+            PressState::Down => exec.input_key_down(key),
+            PressState::Up => exec.input_key_up(key),
             PressState::Tap => {
-                exec.deps
-                    .automation
-                    .key_down(key)
-                    .map_err(ExecError::Message)?;
-                exec.deps.automation.key_up(key).map_err(ExecError::Message)
+                exec.input_key_down(key)?;
+                exec.input_key_up(key)
             }
         },
         ActionKind::Type { text, delay_ms } => {
@@ -731,6 +773,7 @@ mod tests {
                 automation: &mut backend,
                 capturer: Some(&mut capturer),
                 close_matches_distance: 0,
+                release_held_inputs: true,
                 resolver: None,
                 icons: None,
                 macros: None,
@@ -775,6 +818,7 @@ mod tests {
                 automation: &mut backend,
                 capturer: None,
                 close_matches_distance: 0,
+                release_held_inputs: true,
                 resolver: None,
                 icons: None,
                 macros: None,
@@ -819,6 +863,7 @@ mod tests {
                 automation: &mut backend,
                 capturer: None,
                 close_matches_distance: 0,
+                release_held_inputs: true,
                 resolver: None,
                 icons: None,
                 macros: None,
@@ -851,9 +896,127 @@ mod tests {
                 ..ExecDeps::new(&mut backend)
             },
             stop_requested: false,
+            held_keys: BTreeSet::new(),
+            held_buttons: BTreeSet::new(),
         };
         let err = exec.interruptible_sleep(1000).unwrap_err();
         assert!(matches!(err, ExecError::Flow(FlowSignal::Stopped)));
+    }
+
+    #[test]
+    fn releases_held_keys_and_buttons_when_macro_ends() {
+        let mut backend = RecordingBackend::default();
+        let mut macro_ = Macro::new("t", 0, vec![]);
+        macro_.mouse_delay = 0;
+        macro_.keyboard_delay = 0;
+        macro_.root = root_loop(vec![
+            Action {
+                id: ActionId::new(),
+                kind: ActionKind::Key {
+                    key: "shift".into(),
+                    state: PressState::Down,
+                },
+            },
+            Action {
+                id: ActionId::new(),
+                kind: ActionKind::Click {
+                    button: "left".into(),
+                    state: PressState::Down,
+                },
+            },
+        ]);
+        execute_macro(&mut macro_, &mut backend).unwrap();
+        assert_eq!(
+            backend.log,
+            vec![
+                "keydown:shift".to_string(),
+                "click:left:down".to_string(),
+                "keyup:shift".to_string(),
+                "click:left:up".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn does_not_double_release_balanced_presses() {
+        let mut backend = RecordingBackend::default();
+        let mut macro_ = Macro::new("t", 0, vec![]);
+        macro_.mouse_delay = 0;
+        macro_.keyboard_delay = 0;
+        macro_.root = root_loop(vec![
+            Action {
+                id: ActionId::new(),
+                kind: ActionKind::Key {
+                    key: "a".into(),
+                    state: PressState::Down,
+                },
+            },
+            Action {
+                id: ActionId::new(),
+                kind: ActionKind::Key {
+                    key: "a".into(),
+                    state: PressState::Up,
+                },
+            },
+        ]);
+        execute_macro(&mut macro_, &mut backend).unwrap();
+        assert_eq!(
+            backend
+                .log
+                .iter()
+                .filter(|e| e.as_str() == "keyup:a")
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn skips_held_input_release_when_disabled() {
+        let mut backend = RecordingBackend::default();
+        let mut macro_ = Macro::new("t", 0, vec![]);
+        macro_.mouse_delay = 0;
+        macro_.keyboard_delay = 0;
+        macro_.root = root_loop(vec![
+            Action {
+                id: ActionId::new(),
+                kind: ActionKind::Key {
+                    key: "shift".into(),
+                    state: PressState::Down,
+                },
+            },
+            Action {
+                id: ActionId::new(),
+                kind: ActionKind::Click {
+                    button: "left".into(),
+                    state: PressState::Down,
+                },
+            },
+        ]);
+        execute_macro_with(
+            &mut macro_,
+            ExecDeps {
+                automation: &mut backend,
+                capturer: None,
+                close_matches_distance: 0,
+                release_held_inputs: false,
+                resolver: None,
+                icons: None,
+                macros: None,
+                continue_waiter: None,
+                window_focuser: None,
+                ocr: None,
+                stop_flag: None,
+                logger: None,
+                highlighter: None,
+                runtime_vars: None,
+                variables_dir: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            backend.log,
+            vec!["keydown:shift".to_string(), "click:left:down".to_string(),]
+        );
     }
 
     #[test]
@@ -893,6 +1056,7 @@ mod tests {
                 automation: &mut backend,
                 capturer: None,
                 close_matches_distance: 0,
+                release_held_inputs: true,
                 resolver: Some(&resolver),
                 icons: None,
                 macros: None,
@@ -978,6 +1142,7 @@ mod tests {
                 automation: &mut backend,
                 capturer: None,
                 close_matches_distance: 0,
+                release_held_inputs: true,
                 resolver: None,
                 icons: None,
                 macros: None,
@@ -1299,6 +1464,7 @@ mod tests {
                 automation: &mut backend,
                 capturer: None,
                 close_matches_distance: 0,
+                release_held_inputs: true,
                 resolver: None,
                 icons: None,
                 macros: None,

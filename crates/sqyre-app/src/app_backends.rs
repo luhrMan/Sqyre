@@ -101,7 +101,8 @@ mod native {
             }
         }
         fn click(&mut self, button: &str, down: bool) -> Result<(), String> {
-            if self.stop.is_stopped() {
+            // Always forward releases so end-of-macro cleanup can unstick buttons.
+            if down && self.stop.is_stopped() {
                 return Ok(());
             }
             self.inner.click(button, down)
@@ -119,9 +120,7 @@ mod native {
             self.inner.key_down(key)
         }
         fn key_up(&mut self, key: &str) -> Result<(), String> {
-            if self.stop.is_stopped() {
-                return Ok(());
-            }
+            // Always forward releases so end-of-macro cleanup can unstick keys.
             self.inner.key_up(key)
         }
         fn type_char(&mut self, ch: char) {

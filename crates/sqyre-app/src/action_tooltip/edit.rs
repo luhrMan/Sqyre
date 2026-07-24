@@ -17,8 +17,7 @@ use eframe::egui;
 use sqyre_domain::{
     parse_hex_color, Action, ActionKind, ConditionBlock, ConditionClause, CoordinateOutputs,
     CoordinateRef, DetectionBranch, ListColumn, LoopJumpMode, Macro, MatchMode, MatchOrder,
-    MouseButton, RepeatMode, ScalarValue, TemplateMatchMethod, VariableAssignment,
-    WaitTilFoundConfig,
+    RepeatMode, ScalarValue, TemplateMatchMethod, VariableAssignment, WaitTilFoundConfig,
 };
 use sqyre_persist::ProgramCatalog;
 use sqyre_validate::{
@@ -110,15 +109,7 @@ pub fn paint_edit_fields(
         }
         ActionKind::Click { button, state } => {
             tip_wrapped_section(ui, |ui| {
-                let mut btn = button.as_str().to_string();
-                combo_str(
-                    ui,
-                    "Button",
-                    h::CLICK_BUTTON,
-                    &mut btn,
-                    options::CLICK_BUTTONS,
-                );
-                *button = MouseButton::parse(&btn);
+                help::tip(theme::mouse_button_picker(ui, button), h::CLICK_BUTTON);
                 ui.vertical(|ui| {
                     help::tip(ui.small("Up"), h::CLICK_STATE);
                     ui.horizontal(|ui| {

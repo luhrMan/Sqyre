@@ -38,7 +38,7 @@ pub struct TooltipEdit {
     pub discard_companions: Vec<ActionId>,
     /// Unclipped height of the fields column from the last frame.
     fields_height: f32,
-    /// While true, raise window height toward content (capped at screen max).
+    /// While true, size the window height to content (capped at screen max).
     /// Cleared after the initial fit settles, or when the user resizes.
     auto_fit: bool,
 }
@@ -525,10 +525,12 @@ fn show_edit_window(
     let mut open = true;
 
     // Stable Area id (also keys egui's resize state as `area_id.with("resize")`).
-    let area_id = egui::Id::new(("action_edit_tip", "grow_v3", action_id));
+    // Bump salt when changing default/min sizing so persisted fat heights are discarded.
+    let area_id = egui::Id::new(("action_edit_tip", "grow_v5", action_id));
+    let fitting = matches!(state, TooltipState::Edit(edit) if edit.auto_fit);
 
-    // Popup chrome (no title bar). On open, auto-fit height to content up to
-    // the screen max; afterward the user may freely shrink/grow (ScrollArea).
+    // Popup chrome (no title bar). On open, size to content (no ScrollArea) so
+    // height matches the fields; afterward ScrollArea lets the user shrink/grow.
     egui::Window::new(label)
         .id(area_id)
         .open(&mut open)
@@ -537,8 +539,8 @@ fn show_edit_window(
         .resizable(true)
         .constrain(true)
         .default_pos(anchor + Vec2::new(12.0, 12.0))
-        .default_size([max_w, 120.0])
-        .min_size([220.0, 100.0])
+        .default_size([max_w, 1.0])
+        .min_size([220.0, 48.0])
         .max_size(screen.size())
         .frame(
             egui::Frame::popup(ctx.global_style().as_ref())
@@ -554,8 +556,6 @@ fn show_edit_window(
                 SaveCancel::Save => save = true,
                 SaveCancel::None => {}
             }
-            // Always scroll so a user-shrunk window can still reach all fields.
-            // While `auto_fit`, raise min height toward measured content (capped).
             if let TooltipState::Edit(edit) = state {
                 let mut fields = EditFieldsCtx {
                     paint: CatalogPaint {
@@ -573,34 +573,53 @@ fn show_edit_window(
                     macros,
                     active_macro: Some(&*macro_),
                 };
-                let out = egui::ScrollArea::vertical()
-                    .id_salt("edit_fields")
-                    .auto_shrink([false, false])
-                    .max_height(max_scroll_h)
-                    .show(ui, |ui| {
+                // During the initial fit, paint fields directly so the window's
+                // resize state tracks real content height. `Ui::set_min_height`
+                // after the header would allocate *below the cursor* and leave
+                // blank space ≈ header height — do not use it here.
+                // Once settled (or content exceeds the screen cap), wrap in a
+                // ScrollArea so the user can shrink/grow.
+                let need_scroll = !fitting || edit.fields_height > max_scroll_h;
+                let measured = if need_scroll {
+                    let out = egui::ScrollArea::vertical()
+                        .id_salt("edit_fields")
+                        .auto_shrink([false, false])
+                        .max_height(max_scroll_h)
+                        .show(ui, |ui| {
+                            edit::paint_edit_fields(
+                                ui,
+                                &mut edit.draft,
+                                &mut edit.picker,
+                                &mut fields,
+                            );
+                        });
+                    out.content_size.y
+                } else {
+                    ui.scope(|ui| {
                         edit::paint_edit_fields(
                             ui,
                             &mut edit.draft,
                             &mut edit.picker,
                             &mut fields,
                         );
-                    });
-                let measured = out.content_size.y;
+                    })
+                    .response
+                    .rect
+                    .height()
+                };
                 if (measured - edit.fields_height).abs() > 1.0 {
                     ui.ctx().request_repaint();
                 }
                 edit.fields_height = measured;
 
                 if edit.auto_fit {
-                    let want = measured.min(max_scroll_h);
-                    if want > 1.0 {
-                        // Expand the resizable window toward content for the
-                        // next frame; does not block later user shrink once
-                        // `auto_fit` clears.
-                        ui.set_min_height(want);
-                    }
-                    if measured > 0.0 && out.inner_rect.height() >= want - 1.0 {
+                    if measured > max_scroll_h {
+                        // Next frame will scroll; keep fitting until that layout runs.
+                        ui.ctx().request_repaint();
+                    } else if measured > 0.0 {
                         edit.auto_fit = false;
+                    } else {
+                        ui.ctx().request_repaint();
                     }
                 }
             }
