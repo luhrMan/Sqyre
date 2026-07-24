@@ -3,6 +3,8 @@
 
 #[cfg(not(target_arch = "wasm32"))]
 fn main() -> eframe::Result<()> {
+    // Before egui/winit: physical pixels for capture, metrics, and input (Windows).
+    sqyre_capture::enable_per_monitor_dpi_v2();
     sqyre_app::run()
 }
 

@@ -10,17 +10,17 @@ From the repo root:
 
 ```bash
 make            # ./bin/sqyre (debug)
-make release    # ./bin/sqyre (release)
+make release    # fmt + check, then ./bin/sqyre (release)
 make run        # cargo run -p sqyre-app
 make check      # fmt --check + clippy (-D warnings) + cargo deny
 make machete    # unused crate deps
 make test       # cargo nextest (falls back to cargo test)
 make coverage   # llvm-cov HTML + lcov under target/coverage/
 make docs-media # regenerate docs/images screenshots
-make appimage   # bin/*.AppImage (Linux)
-make windows    # bin/sqyre.exe (Docker MinGW cross / native on Windows)
-make macos      # bin/sqyre (macOS host)
-make wasm       # bin/wasm/ GUI-only browser editor (Trunk)
+make appimage   # fmt + check, then bin/*.AppImage (Linux)
+make windows    # fmt + check, then bin/sqyre.exe (Docker MinGW cross / native on Windows)
+make macos      # fmt + check, then bin/sqyre (macOS host)
+make wasm       # fmt + check, then bin/wasm/ GUI-only browser editor (Trunk)
 make tessdata   # download eng.traineddata into assets/tessdata/
 ```
 
@@ -63,7 +63,7 @@ Build caches (all gitignored):
 | `wasm` | GUI-only browser editor → `bin/wasm/` (Trunk; no Run/capture/OCR) |
 | `tessdata` | Tesseract trained data via `scripts/download-tessdata.sh` |
 
-Set `CARGO_FLAGS` for extra cargo args. Set `RELEASE_VERSION` (or write a `VERSION` file) before `make appimage` to stamp the AppImage name.
+Set `CARGO_FLAGS` for extra cargo args. Set `RELEASE_VERSION` (or write a `VERSION` file) before `make appimage` / `make release` / `make windows` to stamp the AppImage name and embed `SQYRE_VERSION` in the binary for auto-update checks. Local builds without either default to `0.0.0-dev` (update checks disabled).
 
 ### WASM editor (`make wasm`)
 
@@ -84,7 +84,7 @@ cargo install --locked trunk
 
 Uses `--no-default-features` (no global hotkey hooks). Native `make` / `make release` are unchanged.
 
-CI releases on merge to `main`: Linux binary + AppImage, Windows `.exe` (MinGW cross via [`scripts/windows/`](../scripts/windows/PACKAGING.md)), and the WASM editor zip (`make wasm`). PRs also `cargo check` on macOS (capture still stubbed). `make macos` stays native; MSI/DMG packaging is not shipped yet.
+CI on push/PR to `main` runs tests and a macOS `cargo check` (capture still stubbed). GitHub Releases publish daily at **23:00 UTC** only when `main` has non-docs changes since the last release tag (manual **workflow_dispatch** also available). Artifacts: Linux binary + AppImage, Windows `.exe` (MinGW cross via [`scripts/windows/`](../scripts/windows/PACKAGING.md)), and the WASM editor zip (`make wasm`). Tags are `vYYYY.MM.DD`. `make macos` stays native; MSI/DMG packaging is not shipped yet.
 
 CI caches: Linux Docker Buildx (GHA + GHCR), Windows cross-image Buildx + pushed `*-windows-cross:latest` image, Cargo registry/target (per job), Windows sccache, and tessdata; macOS Homebrew bottles + split Cargo caches.
 

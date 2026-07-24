@@ -66,7 +66,7 @@ impl SqyreApp {
             load_error: None,
             save_error: None,
             selected_macro: 0,
-            selected_action: None,
+            selected_actions: Vec::new(),
             run,
             hotkeys,
             continue_wait,
@@ -102,12 +102,15 @@ impl SqyreApp {
             macro_overlay: MacroOverlay::new(),
             macro_list_open: false,
             macro_list_filter: String::new(),
+            hotkey_tag_filter: None,
             tray: tray::SystemTray::default(),
             instance_lock: None,
             pending_delete_macro: None,
             pending_import: crate::wasm_io::new_pending_import(),
             #[cfg(not(target_arch = "wasm32"))]
             backup_task: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            update: crate::update::UpdateManager::default(),
         };
         if let Some(m) = app.macros.first() {
             app.macro_meta.sync_selection(0, m);
@@ -126,7 +129,7 @@ impl SqyreApp {
     }
 
     pub fn select_action(&mut self, id: ActionId) {
-        self.selected_action = Some(id);
+        self.select_one_action(id);
     }
 
     /// First top-level action under the demo macro root (skips the root loop).

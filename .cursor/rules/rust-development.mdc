@@ -7,7 +7,7 @@ alwaysApply: true
 
 This repo is a Rust Cargo workspace (egui desktop). Do not add a second implementation language or dual-build stacks.
 
-**Platforms:** Linux/X11 is the shipped desktop path. Windows and macOS are in progress (capture on Windows; focus/outline/macOS capture still stubbed). Prefer extending existing `#[cfg]` modules over inventing parallel stacks.
+**Platforms:** Linux/X11 is the shipped desktop path. Windows and macOS are in progress (capture, selection outline, and window focus on Windows; macOS capture/focus still stubbed). Prefer extending existing `#[cfg]` modules over inventing parallel stacks.
 
 ## Layout
 

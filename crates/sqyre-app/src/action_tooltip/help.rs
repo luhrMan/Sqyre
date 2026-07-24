@@ -232,7 +232,8 @@ pub const VAR_TAB_BUILTINS: &str = "Names set automatically by the runtime or ce
 // --- Macro meta / list ---
 
 pub const META_NAME: &str = "Display name of this macro (must be unique).";
-pub const META_TAGS: &str = "Labels for filtering macros in the list.";
+pub const META_TAGS: &str =
+    "Labels that group macros in the list. Selecting a tag header enables hotkeys only for that group.";
 pub const META_HOTKEY_PRESS: &str = "Fire when the hotkey is pressed.";
 pub const META_HOTKEY_RELEASE: &str = "Fire when the hotkey is released.";
 pub const META_HOTKEY_CLEAR: &str = "Remove the global hotkey from this macro.";

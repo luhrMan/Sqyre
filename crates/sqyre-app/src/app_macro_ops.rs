@@ -7,21 +7,93 @@ use eframe::egui;
 use sqyre_domain::{Action, ActionId, Macro};
 use sqyre_hotkeys::{HotkeyTrigger, MacroHotkeyBinding};
 
+/// Whether `m` should receive hotkeys under `filter`.
+/// `None` = all macros; `Some("")` = untagged only; otherwise macros that include the tag.
+pub(crate) fn macro_matches_hotkey_tag(m: &Macro, filter: Option<&str>) -> bool {
+    match filter {
+        None => true,
+        Some("") => m.tags.is_empty(),
+        Some(tag) => m.tags.iter().any(|t| t == tag),
+    }
+}
+
 impl SqyreApp {
     /// Provide egui context so background hotkey fires can wake an idle UI frame.
     pub(crate) fn bind_hotkey_repaint(&self, ctx: egui::Context) {
         *self.hotkey_repaint.lock() = Some(ctx);
     }
 
-    pub(crate) fn selected_action_id(&self) -> Option<ActionId> {
-        self.selected_action
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn play_ui_add_sound(&self) {
+        let s = self.settings_ui.settings();
+        crate::sound::play_add_sound_if(s.play_ui_sounds, s.sound_volume);
     }
 
-    pub(crate) fn refresh_macro_hotkey_bindings(&self) {
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn play_ui_add_sound(&self) {}
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn play_ui_delete_sound(&self) {
+        let s = self.settings_ui.settings();
+        crate::sound::play_delete_sound_if(s.play_ui_sounds, s.sound_volume);
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn play_ui_delete_sound(&self) {}
+
+    pub(crate) fn selected_action_id(&self) -> Option<ActionId> {
+        self.selected_actions.last().copied()
+    }
+
+    pub(crate) fn set_selected_actions(&mut self, ids: Vec<ActionId>) {
+        self.selected_actions = ids;
+    }
+
+    pub(crate) fn clear_selected_actions(&mut self) {
+        self.selected_actions.clear();
+    }
+
+    pub(crate) fn select_one_action(&mut self, id: ActionId) {
+        self.selected_actions = vec![id];
+    }
+
+    pub(crate) fn remove_from_selection(&mut self, id: ActionId) {
+        self.selected_actions.retain(|&a| a != id);
+    }
+
+    /// Clear a stale tag filter when no macro still carries that tag.
+    pub(crate) fn sanitize_hotkey_tag_filter(&mut self) {
+        let Some(tag) = self.hotkey_tag_filter.as_deref() else {
+            return;
+        };
+        let still_valid = if tag.is_empty() {
+            self.macros.iter().any(|m| m.tags.is_empty())
+        } else {
+            self.macros.iter().any(|m| m.tags.iter().any(|t| t == tag))
+        };
+        if !still_valid {
+            self.hotkey_tag_filter = None;
+        }
+    }
+
+    /// Toggle which tag's macros receive hotkeys. Clicking the active tag clears the filter.
+    pub(crate) fn toggle_hotkey_tag_filter(&mut self, tag: String) {
+        if self.hotkey_tag_filter.as_ref() == Some(&tag) {
+            self.hotkey_tag_filter = None;
+        } else {
+            self.hotkey_tag_filter = Some(tag);
+        }
+        self.refresh_macro_hotkey_bindings();
+    }
+
+    pub(crate) fn refresh_macro_hotkey_bindings(&mut self) {
+        self.sanitize_hotkey_tag_filter();
+        let filter = self.hotkey_tag_filter.as_deref();
         let bindings = self
             .macros
             .iter()
             .filter(|m| !m.hotkey.is_empty())
+            .filter(|m| macro_matches_hotkey_tag(m, filter))
             .map(|m| {
                 MacroHotkeyBinding::new(
                     m.name.clone(),
@@ -64,7 +136,7 @@ impl SqyreApp {
     pub(crate) fn select_macro_by_name(&mut self, name: &str) {
         if let Some(i) = self.macros.iter().position(|m| m.name == name) {
             self.selected_macro = i;
-            self.selected_action = None;
+            self.clear_selected_actions();
             self.tooltip.cancel();
             self.macro_meta.sync_selection(i, &self.macros[i]);
         }
@@ -84,6 +156,7 @@ impl SqyreApp {
         self.macros.sort_by(|a, b| a.name.cmp(&b.name));
         self.refresh_macro_hotkey_bindings();
         self.select_macro_by_name(&name);
+        self.play_ui_add_sound();
     }
 
     pub(crate) fn duplicate_selected_macro(&mut self) {
@@ -108,6 +181,7 @@ impl SqyreApp {
         self.macros.sort_by(|a, b| a.name.cmp(&b.name));
         self.refresh_macro_hotkey_bindings();
         self.select_macro_by_name(&name);
+        self.play_ui_add_sound();
     }
 
     pub(crate) fn delete_macro_named(&mut self, name: &str) {
@@ -121,14 +195,15 @@ impl SqyreApp {
             self.save_error = None;
         }
         self.refresh_macro_hotkey_bindings();
+        self.play_ui_delete_sound();
         if self.macros.is_empty() {
             self.selected_macro = 0;
-            self.selected_action = None;
+            self.clear_selected_actions();
             self.tooltip.cancel();
             return;
         }
         self.selected_macro = self.selected_macro.min(self.macros.len() - 1);
-        self.selected_action = None;
+        self.clear_selected_actions();
         self.tooltip.cancel();
         self.macro_meta
             .sync_selection(self.selected_macro, &self.macros[self.selected_macro]);
@@ -192,7 +267,7 @@ impl SqyreApp {
             return;
         }
         let idx = self.selected_macro.min(self.macros.len() - 1);
-        let selected = self.selected_action_id();
+        let selected = self.selected_actions.clone();
         let name = self.macros[idx].name.clone();
         let Ok(snap) = TreeHistory::take_snapshot(&self.macros[idx].root, selected) else {
             return;
@@ -209,12 +284,12 @@ impl SqyreApp {
         }
         let idx = self.selected_macro.min(self.macros.len() - 1);
         let name = self.macros[idx].name.clone();
-        let mut selected = self.selected_action_id();
+        let mut selected = self.selected_actions.clone();
         let mut history = self.tree_histories.remove(&name).unwrap_or_default();
         let ok = history.undo(&mut self.macros[idx].root, &mut selected);
         self.tree_histories.insert(name, history);
         if ok {
-            self.selected_action = selected;
+            self.set_selected_actions(selected);
             self.tooltip.cancel();
             self.persist_macro_at(idx);
         }
@@ -226,12 +301,12 @@ impl SqyreApp {
         }
         let idx = self.selected_macro.min(self.macros.len() - 1);
         let name = self.macros[idx].name.clone();
-        let mut selected = self.selected_action_id();
+        let mut selected = self.selected_actions.clone();
         let mut history = self.tree_histories.remove(&name).unwrap_or_default();
         let ok = history.redo(&mut self.macros[idx].root, &mut selected);
         self.tree_histories.insert(name, history);
         if ok {
-            self.selected_action = selected;
+            self.set_selected_actions(selected);
             self.tooltip.cancel();
             self.persist_macro_at(idx);
         }
@@ -262,7 +337,7 @@ impl SqyreApp {
             return false;
         }
         let idx = self.selected_macro.min(self.macros.len() - 1);
-        let Some(aid) = self.selected_action.filter(|a| !a.is_root()) else {
+        let Some(aid) = self.selected_action_id().filter(|a| !a.is_root()) else {
             return false;
         };
         self.macros[idx].root.find_by_id(aid).is_some()
@@ -272,12 +347,12 @@ impl SqyreApp {
         self.action_clipboard.is_some() && !self.macros.is_empty()
     }
 
-    pub(crate) fn copy_selection(&mut self) -> bool {
+    pub(crate) fn copy_selection(&mut self, ctx: &egui::Context) -> bool {
         if self.macros.is_empty() {
             return false;
         }
         let idx = self.selected_macro.min(self.macros.len() - 1);
-        let Some(aid) = self.selected_action.filter(|a| !a.is_root()) else {
+        let Some(aid) = self.selected_action_id().filter(|a| !a.is_root()) else {
             return false;
         };
         let Some(action) = self.macros[idx].root.find_by_id(aid) else {
@@ -287,6 +362,9 @@ impl SqyreApp {
             return false;
         };
         self.action_clipboard = Some(map);
+        // egui-winit only emits Event::Paste when the OS clipboard is non-empty.
+        // Action data stays process-local; this sentinel just unblocks Ctrl+V.
+        ctx.copy_text(String::from("sqyre-action"));
         true
     }
 
@@ -316,14 +394,18 @@ impl SqyreApp {
         {
             return false;
         }
-        self.selected_action = Some(new_id);
+        self.select_one_action(new_id);
         self.tooltip.cancel();
         self.persist_macro_at(idx);
+        self.play_ui_add_sound();
         true
     }
 
     /// Insert a blank action below the current selection.
     /// Opens a provisional edit tip — Cancel removes the action without keeping it.
+    ///
+    /// Key/click actions inserted as [`PressState::Down`] also get a matching `Up`
+    /// sibling inserted immediately below (discarded together if Cancel).
     pub(crate) fn insert_blank_action(&mut self, action: Action, edit_anchor: egui::Pos2) -> bool {
         if self.macros.is_empty() {
             return false;
@@ -336,6 +418,7 @@ impl SqyreApp {
         else {
             return false;
         };
+        let release = action.matching_release();
         self.record_tree_mutation();
         if self.macros[idx]
             .root
@@ -344,24 +427,36 @@ impl SqyreApp {
         {
             return false;
         }
-        self.selected_action = Some(new_id);
-        // Not persisted until Save; Cancel removes the provisional node.
-        self.tooltip.open_edit_new(&action, edit_anchor);
+        let mut companions = Vec::new();
+        if let Some(release) = release {
+            let release_id = release.id;
+            if self.macros[idx]
+                .root
+                .insert_at(parent, sqyre_domain::InsertSlot::After(new_id), release)
+                .is_ok()
+            {
+                companions.push(release_id);
+            }
+        }
+        self.select_one_action(new_id);
+        // Not persisted until Save; Cancel removes the provisional node(s).
+        self.tooltip.open_edit_new(&action, edit_anchor, companions);
+        self.play_ui_add_sound();
         true
     }
 
-    pub(crate) fn discard_provisional_action(&mut self, action_id: ActionId) {
-        if self.macros.is_empty() {
+    pub(crate) fn discard_provisional_actions(&mut self, action_ids: &[ActionId]) {
+        if self.macros.is_empty() || action_ids.is_empty() {
             return;
         }
         let idx = self.selected_macro.min(self.macros.len() - 1);
-        let _ = self.macros[idx].root.remove_by_id(action_id);
-        if self.selected_action == Some(action_id) {
-            self.selected_action = None;
-        }
-        if self.logs_window == Some(action_id) {
-            self.logs_window = None;
-            self.logs_image_cache.clear();
+        for &action_id in action_ids {
+            let _ = self.macros[idx].root.remove_by_id(action_id);
+            self.remove_from_selection(action_id);
+            if self.logs_window == Some(action_id) {
+                self.logs_window = None;
+                self.logs_image_cache.clear();
+            }
         }
         // Drop the undo entry recorded for the provisional insert so Undo is a no-op.
         let name = self.macros[idx].name.clone();
@@ -370,26 +465,52 @@ impl SqyreApp {
         }
     }
 
-    pub(crate) fn cut_selection(&mut self) -> bool {
-        if !self.copy_selection() {
+    pub(crate) fn cut_selection(&mut self, ctx: &egui::Context) -> bool {
+        if !self.copy_selection(ctx) {
             return false;
         }
         if self.macros.is_empty() {
             return false;
         }
         let idx = self.selected_macro.min(self.macros.len() - 1);
-        let Some(aid) = self.selected_action.filter(|a| !a.is_root()) else {
+        let Some(aid) = self.selected_action_id().filter(|a| !a.is_root()) else {
             return false;
         };
         self.record_tree_mutation();
         let _ = self.macros[idx].root.remove_by_id(aid);
-        self.selected_action = None;
+        self.clear_selected_actions();
         if self.logs_window == Some(aid) {
             self.logs_window = None;
             self.logs_image_cache.clear();
         }
         self.tooltip.cancel();
         self.persist_macro_at(idx);
+        self.play_ui_delete_sound();
         true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::macro_matches_hotkey_tag;
+    use sqyre_domain::Macro;
+
+    fn m(tags: &[&str]) -> Macro {
+        let mut macro_ = Macro::new("m", 0, Vec::new());
+        macro_.tags = tags.iter().map(|s| (*s).to_string()).collect();
+        macro_
+    }
+
+    #[test]
+    fn hotkey_tag_filter_matches() {
+        let tagged = m(&["combat", "farm"]);
+        let bare = m(&[]);
+        assert!(macro_matches_hotkey_tag(&tagged, None));
+        assert!(macro_matches_hotkey_tag(&bare, None));
+        assert!(macro_matches_hotkey_tag(&tagged, Some("combat")));
+        assert!(!macro_matches_hotkey_tag(&tagged, Some("other")));
+        assert!(!macro_matches_hotkey_tag(&bare, Some("combat")));
+        assert!(macro_matches_hotkey_tag(&bare, Some("")));
+        assert!(!macro_matches_hotkey_tag(&tagged, Some("")));
     }
 }

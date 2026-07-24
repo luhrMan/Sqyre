@@ -11,6 +11,8 @@ workspace = true
 [dependencies]
 image = { workspace = true }
 parking_lot = { workspace = true }
+pulp = { workspace = true }
+rayon = { workspace = true }
 sqyre-match = { path = "../sqyre-match" }
 sqyre-domain = { path = "../sqyre-domain" }
 
@@ -18,5 +20,4 @@ sqyre-domain = { path = "../sqyre-domain" }
 leptess = "0.14"
 
 [dev-dependencies]
-rayon = { workspace = true }
 tempfile = { workspace = true }

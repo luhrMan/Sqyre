@@ -47,7 +47,7 @@ impl SqyreApp {
         }
     }
 
-    /// Live X11 selection outline + coords HUD while screen-click recording is armed.
+    /// Live selection outline + coords HUD while screen-click recording is armed.
     pub(crate) fn sync_recording_overlay(&mut self, ctx: &egui::Context) {
         #[cfg(not(target_arch = "wasm32"))]
         self.recording_overlay.sync(ctx, &self.screen_click);
@@ -109,6 +109,8 @@ mod native_run {
                 .settings_ui
                 .settings()
                 .image_search_close_matches_distance;
+            let play_finish_sound = self.settings_ui.settings().play_finish_sound;
+            let sound_volume = self.settings_ui.settings().sound_volume;
             let macro_lookup = {
                 let map: BTreeMap<String, Arc<Macro>> = self
                     .macros
@@ -170,7 +172,12 @@ mod native_run {
 
                 let msg = match result {
                     Ok(()) if stop_flag.is_stopped() => "Stopped.".into(),
-                    Ok(()) => "Finished.".into(),
+                    Ok(()) => {
+                        if play_finish_sound {
+                            crate::sound::play_finish_sound(sound_volume);
+                        }
+                        "Finished.".into()
+                    }
                     Err(e) => format!("Error: {e}"),
                 };
                 *status.lock() = msg;

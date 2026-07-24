@@ -9,6 +9,7 @@ description = "OpenCV TM_* template matching (all six methods) with Sqyre mask/p
 workspace = true
 
 [dependencies]
+pulp = { workspace = true }
 purecv = { workspace = true }
 rayon = { workspace = true }
 rustfft = { workspace = true }
