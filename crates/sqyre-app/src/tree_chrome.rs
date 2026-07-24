@@ -57,7 +57,8 @@ pub enum RowHighlight {
     None,
     Cursor,
     Fill(f32),
-    /// Parent of the selected Else folder — softer than TreeView selection.
+    /// Parent of the selected Else folder, or the opposite key/click press —
+    /// softer than TreeView selection.
     Owner,
 }
 
@@ -502,7 +503,7 @@ fn highlight_cursor_color() -> Color32 {
 fn highlight_fill_color() -> Color32 {
     Color32::from_rgba_unmultiplied(90, 200, 130, 90)
 }
-/// Soft gold tint when this row owns the selected Else folder.
+/// Soft gold tint for related selection (Else owner/folder, key/click press pair).
 fn highlight_owner_color() -> Color32 {
     Color32::from_rgba_unmultiplied(0xdc, 0x9d, 0x2e, 0x28)
 }

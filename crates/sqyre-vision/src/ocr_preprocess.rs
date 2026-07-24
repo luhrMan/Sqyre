@@ -213,13 +213,7 @@ fn otsu_threshold(hist_src: &[u8]) -> u8 {
 
 fn apply_threshold(img: &mut ImageBuf, thresh: u8, invert: bool) {
     debug_assert_eq!(img.channels, 1);
-    for p in &mut img.data {
-        let above = *p >= thresh;
-        *p = match (above, invert) {
-            (true, false) | (false, true) => 255,
-            (false, false) | (true, true) => 0,
-        };
-    }
+    sqyre_match::threshold_gray_in_place(&mut img.data, thresh, invert);
 }
 
 /// 2×2 rectangular morphological open (erode then dilate), after threshold.

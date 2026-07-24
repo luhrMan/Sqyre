@@ -29,7 +29,7 @@ pub(super) fn encode_program(data: &ProgramData, previous: &Mapping) -> Value {
     }
     map.insert(Value::String("items".into()), Value::Mapping(items));
 
-    // Union resolution keys from points and search_areas.
+    // Union resolution keys from points, search_areas, and stamped scales.
     let mut res_keys: BTreeMap<String, ()> = BTreeMap::new();
     for k in data.points.keys() {
         res_keys.insert(k.clone(), ());
@@ -37,9 +37,17 @@ pub(super) fn encode_program(data: &ProgramData, previous: &Mapping) -> Value {
     for k in data.search_areas.keys() {
         res_keys.insert(k.clone(), ());
     }
+    for k in data.coord_scales.keys() {
+        res_keys.insert(k.clone(), ());
+    }
     let mut coords = Mapping::new();
     for res in res_keys.keys() {
         let mut block = Mapping::new();
+        let scale = data.coord_scales.get(res).copied().unwrap_or(1.0);
+        block.insert(
+            Value::String("scale".into()),
+            Value::Number(serde_yaml::Number::from(scale as f64)),
+        );
         let mut pts = Mapping::new();
         if let Some(m) = data.points.get(res) {
             for (k, pt) in m {

@@ -310,6 +310,7 @@ impl DataEditor {
                 );
             });
         self.open = open;
+        self.draw_confirm(ctx, db, macros, catalog, icons, previews, settings);
         self.draw_overlay_icon_picker(ctx, settings);
         self.poll_window_picker(ctx, catalog, icons, previews, macros);
         self.poll_autopix(ctx);
@@ -429,21 +430,15 @@ impl DataEditor {
         // Claim exactly the remaining window area once (body + footer).
         // Allocating body then drawing footer separately made min_size > window size,
         // so egui's Resize auto-expand ratcheted toward max every frame.
-        // Confirm / variant prompts must also claim this area — otherwise the window
-        // shrinks to the small dialog content.
+        // Variant name prompts must also claim this area — otherwise the window
+        // shrinks to the small dialog content. Delete/overwrite confirms are separate
+        // popup windows (see draw_confirm).
         let rem = ui.available_size();
         let (outer, _) = ui.allocate_exact_size(rem, egui::Sense::hover());
 
         if let Some(VariantPrompt::Name { source }) = self.variant_prompt.clone() {
             ui.scope_builder(egui::UiBuilder::new().max_rect(outer), |ui| {
-                self.draw_variant_name_prompt(ui, catalog, icons, source);
-            });
-            return;
-        }
-
-        if let Some(confirm) = self.confirm.clone() {
-            ui.scope_builder(egui::UiBuilder::new().max_rect(outer), |ui| {
-                self.draw_confirm(ui, confirm, db, macros, catalog, icons, previews, settings);
+                self.draw_variant_name_prompt(ui, catalog, icons, settings, source);
             });
             return;
         }
@@ -606,8 +601,7 @@ impl DataEditor {
     #[allow(clippy::too_many_arguments)]
     fn draw_confirm(
         &mut self,
-        ui: &mut egui::Ui,
-        confirm: PendingConfirm,
+        ctx: &egui::Context,
         db: &mut Database,
         macros: &mut [Macro],
         catalog: &mut ProgramCatalog,
@@ -615,51 +609,74 @@ impl DataEditor {
         previews: &mut PreviewTooltipCache,
         settings: &mut UserSettings,
     ) {
-        match &confirm {
-            PendingConfirm::Delete { label } => {
-                ui.label(format!("Delete {label}? This cannot be undone."));
+        let Some(confirm) = self.confirm.clone() else {
+            return;
+        };
+        let title = match &confirm {
+            PendingConfirm::Delete { .. } | PendingConfirm::DeleteVariant { .. } => {
+                "Confirm Delete"
             }
-            PendingConfirm::Overwrite { kind, name } => {
-                ui.label(format!(
-                    "{kind} “{name}” already exists. Overwrite / rename onto it?"
-                ));
+            PendingConfirm::Overwrite { .. } | PendingConfirm::OverwriteVariant { .. } => {
+                "Confirm Overwrite"
             }
-            PendingConfirm::DeleteVariant { variant } => {
-                ui.label(format!(
-                    "Delete icon variant “{}”? This cannot be undone.",
-                    variant_display_label(variant)
-                ));
-            }
-            PendingConfirm::OverwriteVariant { variant, .. } => {
-                ui.label(format!(
-                    "Variant “{}” already exists. Overwrite it?",
-                    variant_display_label(variant)
-                ));
-            }
-        }
-        match crate::widgets::confirm_cancel_row(ui) {
-            crate::widgets::ConfirmCancel::Cancel => {
-                self.confirm = None;
-            }
-            crate::widgets::ConfirmCancel::Confirm => match confirm {
-                PendingConfirm::Delete { .. } => {
-                    self.confirm = None;
-                    self.on_delete(db, macros, catalog, previews, settings);
+        };
+        let mut open = true;
+        egui::Window::new(title)
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .order(egui::Order::Foreground)
+            .open(&mut open)
+            .show(ctx, |ui| {
+                match &confirm {
+                    PendingConfirm::Delete { label } => {
+                        ui.label(format!("Delete {label}? This cannot be undone."));
+                    }
+                    PendingConfirm::Overwrite { kind, name } => {
+                        ui.label(format!(
+                            "{kind} “{name}” already exists. Overwrite / rename onto it?"
+                        ));
+                    }
+                    PendingConfirm::DeleteVariant { variant } => {
+                        ui.label(format!(
+                            "Delete icon variant “{}”? This cannot be undone.",
+                            variant_display_label(variant)
+                        ));
+                    }
+                    PendingConfirm::OverwriteVariant { variant, .. } => {
+                        ui.label(format!(
+                            "Variant “{}” already exists. Overwrite it?",
+                            variant_display_label(variant)
+                        ));
+                    }
                 }
-                PendingConfirm::Overwrite { .. } => {
-                    self.confirm = None;
-                    self.apply_update(db, macros, catalog, true, previews, settings);
+                match crate::widgets::confirm_cancel_row(ui) {
+                    crate::widgets::ConfirmCancel::Cancel => {
+                        self.confirm = None;
+                    }
+                    crate::widgets::ConfirmCancel::Confirm => match confirm {
+                        PendingConfirm::Delete { .. } => {
+                            self.confirm = None;
+                            self.on_delete(db, macros, catalog, previews, settings);
+                        }
+                        PendingConfirm::Overwrite { .. } => {
+                            self.confirm = None;
+                            self.apply_update(db, macros, catalog, true, previews, settings);
+                        }
+                        PendingConfirm::DeleteVariant { variant } => {
+                            self.confirm = None;
+                            self.delete_icon_variant(catalog, icons, settings, &variant);
+                        }
+                        PendingConfirm::OverwriteVariant { variant, source } => {
+                            self.confirm = None;
+                            self.overwrite_icon_variant(catalog, icons, &variant, &source);
+                        }
+                    },
+                    crate::widgets::ConfirmCancel::None => {}
                 }
-                PendingConfirm::DeleteVariant { variant } => {
-                    self.confirm = None;
-                    self.delete_icon_variant(catalog, icons, &variant);
-                }
-                PendingConfirm::OverwriteVariant { variant, source } => {
-                    self.confirm = None;
-                    self.overwrite_icon_variant(catalog, icons, &variant, &source);
-                }
-            },
-            crate::widgets::ConfirmCancel::None => {}
+            });
+        if !open {
+            self.confirm = None;
         }
     }
 
@@ -668,6 +685,7 @@ impl DataEditor {
         ui: &mut egui::Ui,
         catalog: &ProgramCatalog,
         icons: &mut IconCache,
+        settings: &UserSettings,
         source: PathBuf,
     ) {
         ui.heading("Add Icon Variant");
@@ -687,7 +705,7 @@ impl DataEditor {
                 let name = self.variant_name_draft.trim().to_string();
                 self.variant_prompt = None;
                 self.variant_name_draft.clear();
-                self.add_icon_variant(catalog, icons, &name, &source);
+                self.add_icon_variant(catalog, icons, settings, &name, &source);
             }
         });
     }

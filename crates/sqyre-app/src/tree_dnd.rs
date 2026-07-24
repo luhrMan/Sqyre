@@ -14,6 +14,12 @@ pub(crate) fn insert_slot_from_dir_position(position: DirPosition<ActionId>) -> 
     }
 }
 
+/// True when dropping any of `srcs` onto `target` would nest a node into itself / a descendant.
+pub(crate) fn is_invalid_tree_drop_any(root: &Action, srcs: &[ActionId], target: ActionId) -> bool {
+    srcs.iter()
+        .any(|&src| is_invalid_tree_drop(root, src, target))
+}
+
 /// True when dropping `src` onto `target` would nest a node into itself / a descendant.
 pub(crate) fn is_invalid_tree_drop(root: &Action, src: ActionId, target: ActionId) -> bool {
     if src == target {
@@ -75,5 +81,11 @@ mod tests {
         assert!(is_invalid_tree_drop(&root, child_id, child_id));
         assert!(is_invalid_tree_drop(&root, child_id, grandchild_id));
         assert!(!is_invalid_tree_drop(&root, grandchild_id, child_id));
+        assert!(is_invalid_tree_drop_any(
+            &root,
+            &[grandchild_id, child_id],
+            grandchild_id
+        ));
+        assert!(!is_invalid_tree_drop_any(&root, &[grandchild_id], child_id));
     }
 }

@@ -37,6 +37,9 @@ pub struct SettingsUi {
     confirm: Option<PendingConfirm>,
     /// Set when the data directory changed and the shell should reload from disk.
     pub reload_requested: bool,
+    /// Set when the user asks to restart after applying an update.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub restart_requested: bool,
 }
 
 impl SettingsUi {
@@ -149,12 +152,19 @@ impl SettingsUi {
         self.status_banner.set_err(msg);
     }
 
+    /// Surface an update-related success message in the settings status line.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn set_update_status_ok(&mut self, msg: impl Into<String>) {
+        self.set_ok(msg);
+    }
+
     pub fn show(
         &mut self,
         ctx: &egui::Context,
         db: &mut Database,
         macros: &mut Vec<Macro>,
         catalog: &mut ProgramCatalog,
+        #[cfg(not(target_arch = "wasm32"))] update: &mut crate::update::UpdateManager,
     ) {
         if !self.open {
             return;
@@ -167,6 +177,9 @@ impl SettingsUi {
             .resizable(true)
             .constrain(true)
             .show(ctx, |ui| {
+                #[cfg(not(target_arch = "wasm32"))]
+                self.ui(ui, ctx, db, macros, catalog, update);
+                #[cfg(target_arch = "wasm32")]
                 self.ui(ui, ctx, db, macros, catalog);
             });
         self.open = open;
@@ -183,6 +196,7 @@ impl SettingsUi {
         db: &mut Database,
         macros: &mut Vec<Macro>,
         catalog: &mut ProgramCatalog,
+        #[cfg(not(target_arch = "wasm32"))] update: &mut crate::update::UpdateManager,
     ) {
         if let Some(confirm) = self.confirm.clone() {
             self.draw_confirm(ui, confirm, db, macros, catalog);
@@ -203,17 +217,30 @@ impl SettingsUi {
                 );
                 crate::theme::titled_section(
                     ui,
-                    "Data",
-                    "User data and configuration files.",
+                    "Sound",
+                    "Cue sounds for macros and UI actions.",
                     12.0,
-                    |ui| self.draw_data(ui, db, macros, catalog),
+                    |ui| self.draw_sound(ui),
                 );
                 crate::theme::titled_section(
                     ui,
-                    "Backup",
-                    "Zip archives of macros, settings, images, and variables.",
+                    "Data",
+                    "Data folder location and zip backups of macros, settings, images, and variables.",
                     12.0,
-                    |ui| self.draw_backup(ui, db, macros, catalog),
+                    |ui| {
+                        self.draw_data(ui, db, macros, catalog);
+                        #[cfg(not(target_arch = "wasm32"))]
+                        ui.add_space(10.0);
+                        self.draw_backup(ui, db, macros, catalog);
+                    },
+                );
+                #[cfg(not(target_arch = "wasm32"))]
+                crate::theme::titled_section(
+                    ui,
+                    "Updates",
+                    "Check GitHub Releases for a newer Sqyre build.",
+                    12.0,
+                    |ui| self.draw_updates(ui, update),
                 );
                 crate::theme::titled_section(
                     ui,
@@ -289,6 +316,45 @@ impl SettingsUi {
         });
     }
 
+    fn draw_sound(&mut self, ui: &mut egui::Ui) {
+        if ui
+            .checkbox(
+                &mut self.settings.play_finish_sound,
+                "Play a sound when a macro finishes",
+            )
+            .on_hover_text("Plays a short cue when a top-level macro run completes successfully.")
+            .changed()
+        {
+            self.mark_dirty();
+        }
+
+        if ui
+            .checkbox(
+                &mut self.settings.play_ui_sounds,
+                "Play sounds when adding or deleting",
+            )
+            .on_hover_text(
+                "Plays short cues when macros, actions, or data-editor entities are added or deleted.",
+            )
+            .changed()
+        {
+            self.mark_dirty();
+        }
+
+        ui.horizontal(|ui| {
+            ui.label("Sound volume:");
+            let mut pct = (self.settings.sound_volume * 100.0).round() as i32;
+            if ui
+                .add(egui::Slider::new(&mut pct, 0..=100).suffix("%"))
+                .on_hover_text("Volume for finish and add/delete cue sounds.")
+                .changed()
+            {
+                self.settings.sound_volume = pct as f32 / 100.0;
+                self.mark_dirty();
+            }
+        });
+    }
+
     fn draw_data(
         &mut self,
         ui: &mut egui::Ui,
@@ -298,7 +364,9 @@ impl SettingsUi {
     ) {
         #[cfg(target_arch = "wasm32")]
         {
-            ui.label("Browser editor: macros live in memory. Use Import / Export on the toolbar for db.yaml.");
+            ui.label(
+                "Browser editor: macros live in memory. Use Import / Export on the toolbar for db.yaml. Full backups are not available.",
+            );
             return;
         }
         #[cfg(not(target_arch = "wasm32"))]
@@ -333,11 +401,7 @@ impl SettingsUi {
     ) {
         #[cfg(target_arch = "wasm32")]
         {
-            let _ = (db, macros, catalog);
-            ui.label(
-                "Browser editor: full backups are not available. Use Import / Export for db.yaml.",
-            );
-            return;
+            let _ = (ui, db, macros, catalog);
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
@@ -471,6 +535,70 @@ impl SettingsUi {
             return;
         };
         self.confirm = Some(PendingConfirm::RestoreBackup { path });
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn draw_updates(&mut self, ui: &mut egui::Ui, update: &mut crate::update::UpdateManager) {
+        use crate::update::{UpdateState, SQYRE_VERSION};
+
+        ui.label(format!("Current version: {SQYRE_VERSION}"));
+
+        if ui
+            .checkbox(
+                &mut self.settings.auto_update_check,
+                "Check for updates on startup",
+            )
+            .on_hover_text("Queries GitHub Releases for a newer Sqyre build when the app starts.")
+            .changed()
+        {
+            self.mark_dirty();
+        }
+
+        ui.add_space(6.0);
+        ui.horizontal(|ui| {
+            let busy = update.is_busy();
+            if ui
+                .add_enabled(!busy, egui::Button::new("Check now"))
+                .on_hover_text("Query GitHub Releases for a newer build.")
+                .clicked()
+            {
+                update.start_check();
+            }
+            match &update.state {
+                UpdateState::Available { .. } => {
+                    if ui
+                        .add_enabled(!busy, egui::Button::new("Download & install"))
+                        .clicked()
+                    {
+                        update.start_download();
+                    }
+                }
+                UpdateState::Ready { .. } => {
+                    if ui.button("Restart to finish").clicked() {
+                        self.restart_requested = true;
+                    }
+                }
+                _ => {}
+            }
+        });
+
+        ui.add_space(4.0);
+        let status = match &update.state {
+            UpdateState::Idle => "Update status: idle".to_string(),
+            UpdateState::Checking => "Checking for updates…".to_string(),
+            UpdateState::UpToDate => "You are up to date.".to_string(),
+            UpdateState::Available { version, .. } => {
+                format!("Update available: v{version}")
+            }
+            UpdateState::Downloading { version } => {
+                format!("Downloading v{version}…")
+            }
+            UpdateState::Ready { version } => {
+                format!("v{version} installed. Restart to finish.")
+            }
+            UpdateState::Failed { message } => format!("Update check failed: {message}"),
+        };
+        ui.label(egui::RichText::new(status).weak().small());
     }
 
     fn choose_sqyre_location(&mut self) {

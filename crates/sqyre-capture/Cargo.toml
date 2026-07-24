@@ -3,7 +3,7 @@ name = "sqyre-capture"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
-description = "ScreenCapturer for absolute virtual-desktop rects (Linux X11; Windows GDI; macOS stub)"
+description = "ScreenCapturer for absolute virtual-desktop rects (Linux X11; Windows GDI; macOS stub); selection outline + window focus on Linux/Windows"
 
 [lints]
 workspace = true
@@ -11,6 +11,8 @@ workspace = true
 [dependencies]
 sqyre-executor = { path = "../sqyre-executor" }
 image = { workspace = true }
+pulp = { workspace = true }
+rayon = { workspace = true }
 thiserror = { workspace = true }
 parking_lot = { workspace = true }
 web-time = { workspace = true }
@@ -22,6 +24,9 @@ x11 = { workspace = true }
 windows = { version = "0.62", features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Threading",
+    "Win32_UI_HiDpi",
     "Win32_UI_WindowsAndMessaging",
 ] }
 

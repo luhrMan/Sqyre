@@ -34,6 +34,8 @@ pub struct TooltipEdit {
     /// When true, Cancel / Escape / close removes this action from the tree
     /// (used for freshly inserted blank actions that were never saved).
     pub discard_on_cancel: bool,
+    /// Extra ids removed with the provisional action (e.g. auto-paired key/click Up).
+    pub discard_companions: Vec<ActionId>,
     /// Unclipped height of the fields column from the last frame.
     fields_height: f32,
     /// While true, raise window height toward content (capped at screen max).
@@ -80,13 +82,19 @@ impl TooltipState {
             anchor,
             picker: ActivePicker::None,
             discard_on_cancel: false,
+            discard_companions: Vec::new(),
             fields_height: 0.0,
             auto_fit: true,
         }));
     }
 
-    /// Edit a freshly inserted blank action; Cancel removes it from the tree.
-    pub fn open_edit_new(&mut self, action: &Action, anchor: egui::Pos2) {
+    /// Edit a freshly inserted blank action; Cancel removes it (and companions) from the tree.
+    pub fn open_edit_new(
+        &mut self,
+        action: &Action,
+        anchor: egui::Pos2,
+        discard_companions: Vec<ActionId>,
+    ) {
         *self = Self::Edit(Box::new(TooltipEdit {
             action_id: action.id,
             draft: action.clone(),
@@ -94,17 +102,22 @@ impl TooltipState {
             anchor,
             picker: ActivePicker::None,
             discard_on_cancel: true,
+            discard_companions,
             fields_height: 0.0,
             auto_fit: true,
         }));
     }
 
-    /// Close the tooltip. Returns an action id that should be removed from the tree
+    /// Close the tooltip. Returns action ids that should be removed from the tree
     /// when a provisional new-action edit was cancelled.
-    pub fn cancel(&mut self) -> Option<ActionId> {
+    pub fn cancel(&mut self) -> Vec<ActionId> {
         let discard = match self {
-            Self::Edit(edit) if edit.discard_on_cancel => Some(edit.action_id),
-            _ => None,
+            Self::Edit(edit) if edit.discard_on_cancel => {
+                let mut ids = vec![edit.action_id];
+                ids.append(&mut edit.discard_companions);
+                ids
+            }
+            _ => Vec::new(),
         };
         *self = Self::Hidden;
         discard
@@ -192,11 +205,11 @@ impl TooltipState {
         crate::recorded_action::apply_recorded_color(&mut edit.draft.kind, recorded);
     }
 
-    /// Escape handling. Returns `(consumed, discard_id)` — discard_id is set when a
+    /// Escape handling. Returns `(consumed, discard_ids)` — discard_ids is set when a
     /// provisional new-action edit is fully cancelled.
-    pub fn handle_escape(&mut self) -> (bool, Option<ActionId>) {
+    pub fn handle_escape(&mut self) -> (bool, Vec<ActionId>) {
         match self {
-            Self::Hidden => (false, None),
+            Self::Hidden => (false, Vec::new()),
             Self::Edit(edit)
                 if matches!(
                     edit.picker,
@@ -209,7 +222,7 @@ impl TooltipState {
                 if let ActivePicker::Coord { cell_pick, .. } = &mut edit.picker {
                     *cell_pick = None;
                 }
-                (true, None)
+                (true, Vec::new())
             }
             Self::Edit(edit)
                 if matches!(
@@ -221,7 +234,7 @@ impl TooltipState {
                 ) =>
             {
                 edit.picker = ActivePicker::None;
-                (true, None)
+                (true, Vec::new())
             }
             Self::View { .. } | Self::Edit { .. } => (true, self.cancel()),
         }
@@ -268,7 +281,7 @@ pub fn end_hover_pass(state: &mut TooltipState, any_view_hover: bool) {
 
 /// Paint view or edit tooltip for the current frame.
 ///
-/// Returns an action id that should be removed when a provisional new-action
+/// Returns action ids that should be removed when a provisional new-action
 /// edit was cancelled without saving.
 pub fn show(
     state: &mut TooltipState,
@@ -277,7 +290,7 @@ pub fn show(
     macros: &[(String, Vec<String>)],
     ui: &mut TipUiCtx<'_>,
     mut before_mutate: impl FnMut(&Action),
-) -> Option<ActionId> {
+) -> Vec<ActionId> {
     let TipUiCtx {
         paint,
         theme,
@@ -296,14 +309,14 @@ pub fn show(
     }
 
     match state.clone() {
-        TooltipState::Hidden => None,
+        TooltipState::Hidden => Vec::new(),
         TooltipState::View { action_id } => {
             let Some(action) = macro_.root.find_by_id(action_id).cloned() else {
                 *state = TooltipState::Hidden;
-                return None;
+                return Vec::new();
             };
             show_view_tip(ctx, &action, paint, *theme);
-            None
+            Vec::new()
         }
         TooltipState::Edit { .. } => {
             show_edit_window(state, ctx, macro_, macros, ui, &mut before_mutate)
@@ -470,7 +483,7 @@ fn show_edit_window(
     macros: &[(String, Vec<String>)],
     ui: &mut TipUiCtx<'_>,
     before_mutate: &mut dyn FnMut(&Action),
-) -> Option<ActionId> {
+) -> Vec<ActionId> {
     let TipUiCtx {
         paint,
         theme,
@@ -484,7 +497,7 @@ fn show_edit_window(
             edit.draft.type_key(),
             crate::preview_tooltip::coordinate_ref_for_preview(&edit.draft).is_some(),
         ),
-        _ => return None,
+        _ => return Vec::new(),
     };
 
     let label = action_type_label(type_key);
@@ -629,7 +642,7 @@ fn show_edit_window(
         };
         let _ = state.try_save_validated(&mut macro_.root, Some(&snap), before_mutate);
     }
-    None
+    Vec::new()
 }
 
 pub(crate) fn apply_picker_result(draft: &mut Action, result: PickerResult) {
@@ -726,7 +739,7 @@ mod tests {
                 time: ScalarValue::Int(999),
             };
         }
-        assert_eq!(state.cancel(), None);
+        assert_eq!(state.cancel(), Vec::<ActionId>::new());
         assert!(matches!(state, TooltipState::Hidden));
         match &root.find_by_id(id).unwrap().kind {
             ActionKind::Wait { time } => assert_eq!(*time, ScalarValue::Int(100)),
@@ -739,8 +752,8 @@ mod tests {
         let child = wait_action(100);
         let id = child.id;
         let mut state = TooltipState::Hidden;
-        state.open_edit_new(&child, egui::pos2(0.0, 0.0));
-        assert_eq!(state.cancel(), Some(id));
+        state.open_edit_new(&child, egui::pos2(0.0, 0.0), Vec::new());
+        assert_eq!(state.cancel(), vec![id]);
         assert!(matches!(state, TooltipState::Hidden));
     }
 
@@ -896,18 +909,18 @@ mod tests {
         let mut state = TooltipState::View {
             action_id: ActionId::new(),
         };
-        assert_eq!(state.handle_escape(), (true, None));
+        assert_eq!(state.handle_escape(), (true, Vec::new()));
         assert!(matches!(state, TooltipState::Hidden));
 
         let draft = wait_action(1);
         state.open_edit(&draft, egui::pos2(0.0, 0.0));
-        assert_eq!(state.handle_escape(), (true, None));
+        assert_eq!(state.handle_escape(), (true, Vec::new()));
         assert!(matches!(state, TooltipState::Hidden));
 
         let draft = wait_action(2);
         let id = draft.id;
-        state.open_edit_new(&draft, egui::pos2(0.0, 0.0));
-        assert_eq!(state.handle_escape(), (true, Some(id)));
+        state.open_edit_new(&draft, egui::pos2(0.0, 0.0), Vec::new());
+        assert_eq!(state.handle_escape(), (true, vec![id]));
         assert!(matches!(state, TooltipState::Hidden));
     }
 

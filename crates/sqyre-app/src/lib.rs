@@ -33,6 +33,8 @@ mod recorded_action;
 mod recording_overlay;
 mod settings;
 mod single_instance;
+#[cfg(not(target_arch = "wasm32"))]
+mod sound;
 mod status_banner;
 pub mod theme;
 mod tray;
@@ -44,12 +46,16 @@ mod ui_macro_list;
 mod ui_macro_tree;
 mod ui_overlays;
 mod ui_toolbar;
+#[cfg(not(target_arch = "wasm32"))]
+mod update;
 mod var_pills;
 mod variables_panel;
 #[cfg(any(test, target_arch = "wasm32"))]
 mod wasm_demo_seed;
 mod wasm_io;
 mod widgets;
+#[cfg(target_os = "windows")]
+mod win_focused_keys;
 
 pub use settings::SettingsUi;
 
@@ -86,6 +92,7 @@ use wasm_io::PendingImport;
 pub fn run() -> eframe::Result<()> {
     let _ = sqyre_persist::initialize_directories();
     diag::install(sqyre_persist::sqyre_dir());
+    sqyre_update::cleanup_stale_update();
     #[cfg(target_os = "linux")]
     install_x11_secondary_error_hook();
 
@@ -140,8 +147,9 @@ pub struct SqyreApp {
     /// Last failed macro/db save; shown in the macro list until a save succeeds.
     save_error: Option<String>,
     selected_macro: usize,
-    /// Currently selected action in the macro tree (also the egui tree node id).
-    selected_action: Option<ActionId>,
+    /// Currently selected action ids in the macro tree (egui tree node ids).
+    /// Empty = none; order matches TreeView (last is the primary for insert/paste).
+    selected_actions: Vec<ActionId>,
     run: RunState,
     hotkeys: Box<dyn HotkeyService>,
     continue_wait: ContinueWaitBridge,
@@ -184,7 +192,7 @@ pub struct SqyreApp {
     variables_panel: variables_panel::VariablesPanelUi,
     /// Window was hidden because a point/search-area recording is armed.
     hidden_for_recording: bool,
-    /// X11 outline windows for live search-area selection rect.
+    /// Outline windows for live search-area selection rect.
     recording_overlay: RecordingOverlay,
     /// Always-on-top floating buttons that start macros.
     macro_overlay: MacroOverlay,
@@ -192,6 +200,8 @@ pub struct SqyreApp {
     macro_list_open: bool,
     /// Filter text for the macro list (name / tags fuzzy match).
     macro_list_filter: String,
+    /// When set, only macros with this tag (empty string = untagged) have hotkeys enabled.
+    hotkey_tag_filter: Option<String>,
     tray: tray::SystemTray,
     /// Process-wide single-instance lock (held for the app lifetime).
     instance_lock: Option<single_instance::InstanceLock>,
@@ -203,6 +213,9 @@ pub struct SqyreApp {
     /// In-flight automatic backup (native only).
     #[cfg(not(target_arch = "wasm32"))]
     backup_task: Option<std::sync::mpsc::Receiver<Result<std::path::PathBuf, String>>>,
+    /// Background update check / download (native only).
+    #[cfg(not(target_arch = "wasm32"))]
+    update: update::UpdateManager,
 }
 
 impl SqyreApp {
@@ -223,7 +236,7 @@ impl SqyreApp {
         let repaint_for_cb = Arc::clone(&hotkey_repaint);
 
         #[cfg(not(target_arch = "wasm32"))]
-        let _ = hotkeys.start(HotkeyCallbacks {
+        if let Err(e) = hotkeys.start(HotkeyCallbacks {
             on_escape_stop: Arc::new(move || stop.request_stop()),
             on_failsafe: Arc::new(|| {
                 eprintln!("failsafe Esc+Ctrl+Shift — exiting");
@@ -235,7 +248,9 @@ impl SqyreApp {
                     ctx.request_repaint();
                 }
             }),
-        });
+        }) {
+            eprintln!("sqyre: failed to start global hotkeys: {e}");
+        }
         #[cfg(target_arch = "wasm32")]
         {
             let _ = (
@@ -267,14 +282,14 @@ impl SqyreApp {
                     let _ =
                         wasm_demo_seed::ensure_demo_if_empty(&mut macros, &mut catalog, &mut db);
                 }
-                let app = Self {
+                let mut app = Self {
                     db,
                     macros,
                     catalog,
                     load_error: None,
                     save_error: None,
                     selected_macro: 0,
-                    selected_action: None,
+                    selected_actions: Vec::new(),
                     run,
                     hotkeys,
                     continue_wait,
@@ -310,27 +325,32 @@ impl SqyreApp {
                     macro_overlay: MacroOverlay::new(),
                     macro_list_open: true,
                     macro_list_filter: String::new(),
+                    hotkey_tag_filter: None,
                     tray: tray::SystemTray::default(),
                     instance_lock: None,
                     pending_delete_macro: None,
                     pending_import: wasm_io::new_pending_import(),
                     #[cfg(not(target_arch = "wasm32"))]
                     backup_task: None,
+                    #[cfg(not(target_arch = "wasm32"))]
+                    update: update::UpdateManager::default(),
                 };
                 app.refresh_macro_hotkey_bindings();
+                #[cfg(not(target_arch = "wasm32"))]
+                app.maybe_start_update_check();
                 app
             }
             Err(e) => {
                 let mut catalog = ProgramCatalog::default();
                 apply_main_monitor_resolution(&mut catalog);
-                Self {
+                let mut app = Self {
                     db: Database::default(),
                     macros: Vec::new(),
                     catalog,
                     load_error: Some(e.to_string()),
                     save_error: None,
                     selected_macro: 0,
-                    selected_action: None,
+                    selected_actions: Vec::new(),
                     run,
                     hotkeys,
                     continue_wait,
@@ -366,14 +386,28 @@ impl SqyreApp {
                     macro_overlay: MacroOverlay::new(),
                     macro_list_open: true,
                     macro_list_filter: String::new(),
+                    hotkey_tag_filter: None,
                     tray: tray::SystemTray::default(),
                     instance_lock: None,
                     pending_delete_macro: None,
                     pending_import: wasm_io::new_pending_import(),
                     #[cfg(not(target_arch = "wasm32"))]
                     backup_task: None,
-                }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    update: update::UpdateManager::default(),
+                };
+                #[cfg(not(target_arch = "wasm32"))]
+                app.maybe_start_update_check();
+                app
             }
+        }
+    }
+
+    /// Start a background update check when the preference is on.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn maybe_start_update_check(&mut self) {
+        if self.settings_ui.settings().auto_update_check {
+            self.update.start_check();
         }
     }
 

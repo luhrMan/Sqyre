@@ -95,19 +95,42 @@ pub fn tag_chip_editor(
 
 fn paint_tag_chips(ui: &mut egui::Ui, tags: &mut Vec<String>, enabled: bool, changed: &mut bool) {
     let mut remove: Option<String> = None;
+    let fill = if enabled {
+        crate::theme::PRIMARY
+    } else {
+        crate::theme::PRIMARY.gamma_multiply(0.5)
+    };
+    let fg = crate::theme::contrast_fg(crate::theme::PRIMARY);
+    let chip = egui::Frame::NONE
+        .fill(fill)
+        .stroke(egui::Stroke::NONE)
+        .corner_radius(egui::CornerRadius::same(8))
+        .inner_margin(egui::Margin::symmetric(5, 1));
+
     for tag in tags.iter() {
-        if ui
-            .add_enabled(
-                enabled,
-                egui::Button::new(
-                    egui::RichText::new(format!("{tag} ×")).color(crate::theme::MACRO_STOP),
-                ),
-            )
-            .on_hover_text("Remove tag")
-            .clicked()
-        {
-            remove = Some(tag.clone());
-        }
+        // Pill wraps label + × so `horizontal_wrapped` treats each chip as one unit.
+        chip.show(ui, |ui| {
+            ui.spacing_mut().item_spacing.x = 1.0;
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new(tag.as_str()).size(11.0).color(fg));
+                if ui
+                    .add_enabled(
+                        enabled,
+                        egui::Button::new(
+                            egui::RichText::new("×")
+                                .size(11.0)
+                                .color(crate::theme::MACRO_STOP),
+                        )
+                        .frame(false)
+                        .min_size(egui::vec2(10.0, 10.0)),
+                    )
+                    .on_hover_text("Remove tag")
+                    .clicked()
+                {
+                    remove = Some(tag.clone());
+                }
+            });
+        });
     }
     if let Some(tag) = remove {
         if remove_tag(tags, &tag) {
@@ -130,7 +153,8 @@ fn paint_tag_draft(
     if let Some(tip) = opts.draft_hover {
         tag_resp = tag_resp.on_hover_text(tip);
     }
-    let add_enter = tag_resp.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+    // Singleline TextEdit loses focus on Enter, so check lost_focus — not has_focus.
+    let add_enter = tag_resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
     let add_clicked = opts.show_add_button
         && ui
             .add_enabled(
