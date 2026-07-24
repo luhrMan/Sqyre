@@ -13,6 +13,7 @@ members = [
     "crates/sqyre-input",
     "crates/sqyre-capture",
     "crates/sqyre-hotkeys",
+    "crates/sqyre-update",
     "crates/sqyre-app",
 ]
 default-members = [

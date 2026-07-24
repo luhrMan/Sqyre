@@ -27,39 +27,75 @@ fn toolbar_icon_colored(
 }
 
 pub fn brand_header(app: &mut SqyreApp, ui: &mut egui::Ui) {
-    let tex = app.icon_cache.sqyre_fallback(ui.ctx());
-    let size = egui::vec2(28.0, 28.0);
-    let image = egui::Image::new((tex.id(), size))
-        .fit_to_exact_size(size)
-        .maintain_aspect_ratio(true);
-    let button = egui::Button::image_and_text(image, egui::RichText::new("Sqyre").heading())
-        .frame_when_inactive(false);
+    ui.horizontal(|ui| {
+        let tex = app.icon_cache.sqyre_fallback(ui.ctx());
+        let size = egui::vec2(28.0, 28.0);
+        let image = egui::Image::new((tex.id(), size))
+            .fit_to_exact_size(size)
+            .maintain_aspect_ratio(true);
+        let button = egui::Button::image_and_text(image, egui::RichText::new("Sqyre").heading())
+            .frame_when_inactive(false);
 
-    let (response, _) = egui::containers::menu::MenuButton::from_button(button).ui(ui, |ui| {
-        if ui.button("📁  Data Editor").clicked() {
-            app.data_editor.open = true;
-            ui.close();
+        let (response, _) = egui::containers::menu::MenuButton::from_button(button).ui(ui, |ui| {
+            if ui.button("📁  Data Editor").clicked() {
+                app.data_editor.open = true;
+                ui.close();
+            }
+            if ui.button("Variables").clicked() {
+                app.variables_panel.open = true;
+                ui.close();
+            }
+            if ui.button("⚙  Settings").clicked() {
+                app.settings_ui.open = true;
+                ui.close();
+            }
+            ui.separator();
+            let list_label = if app.macro_list_open {
+                "◁  Hide Macro List"
+            } else {
+                "☰  Show Macro List"
+            };
+            if ui.button(list_label).clicked() {
+                app.macro_list_open = !app.macro_list_open;
+                ui.close();
+            }
+        });
+        response.on_hover_text("App menu");
+
+        #[cfg(not(target_arch = "wasm32"))]
+        show_update_banner(app, ui);
+    });
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn show_update_banner(app: &mut SqyreApp, ui: &mut egui::Ui) {
+    use crate::update::UpdateState;
+
+    if !app.update.show_banner() {
+        if let UpdateState::Ready { version } = &app.update.state {
+            let version = version.clone();
+            ui.horizontal(|ui| {
+                ui.colored_label(
+                    theme::ok_fg(),
+                    format!("v{version} installed — restart to finish"),
+                );
+                if ui.small_button("Restart").clicked() {
+                    crate::update::restart_app(&mut app.instance_lock);
+                }
+            });
         }
-        if ui.button("Variables").clicked() {
-            app.variables_panel.open = true;
-            ui.close();
+        return;
+    }
+    let version = app.update.available_version().unwrap_or("?").to_string();
+    ui.horizontal(|ui| {
+        ui.colored_label(theme::ok_fg(), format!("Update available: v{version}"));
+        if ui.small_button("Download & install").clicked() {
+            app.update.start_download();
         }
-        if ui.button("⚙  Settings").clicked() {
-            app.settings_ui.open = true;
-            ui.close();
-        }
-        ui.separator();
-        let list_label = if app.macro_list_open {
-            "◁  Hide Macro List"
-        } else {
-            "☰  Show Macro List"
-        };
-        if ui.button(list_label).clicked() {
-            app.macro_list_open = !app.macro_list_open;
-            ui.close();
+        if ui.small_button("Dismiss").clicked() {
+            app.update.dismiss_banner();
         }
     });
-    response.on_hover_text("App menu");
 }
 
 pub fn main_toolbar(app: &mut SqyreApp, ui: &mut egui::Ui) {

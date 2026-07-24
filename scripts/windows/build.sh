@@ -269,6 +269,7 @@ run_docker() {
     -e RUSTUP_HOME=/usr/local/rustup \
     -e PATH=/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin \
     -e "CARGO_FLAGS=${CARGO_FLAGS:-}" \
+    -e "RELEASE_VERSION=${RELEASE_VERSION:-}" \
     "$image" \
     bash -c 'set -euo pipefail
       cargo build -p sqyre-app --release --target x86_64-pc-windows-gnu ${CARGO_FLAGS:-}

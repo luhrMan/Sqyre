@@ -63,7 +63,7 @@ Build caches (all gitignored):
 | `wasm` | GUI-only browser editor → `bin/wasm/` (Trunk; no Run/capture/OCR) |
 | `tessdata` | Tesseract trained data via `scripts/download-tessdata.sh` |
 
-Set `CARGO_FLAGS` for extra cargo args. Set `RELEASE_VERSION` (or write a `VERSION` file) before `make appimage` to stamp the AppImage name.
+Set `CARGO_FLAGS` for extra cargo args. Set `RELEASE_VERSION` (or write a `VERSION` file) before `make appimage` / `make release` / `make windows` to stamp the AppImage name and embed `SQYRE_VERSION` in the binary for auto-update checks. Local builds without either default to `0.0.0-dev` (update checks disabled).
 
 ### WASM editor (`make wasm`)
 

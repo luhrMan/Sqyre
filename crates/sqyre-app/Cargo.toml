@@ -53,6 +53,7 @@ web-time = { workspace = true }
 fs2 = "0.4"
 rodio = { version = "0.22", default-features = false, features = ["playback", "mp3"] }
 sqyre-input = { path = "../sqyre-input" }
+sqyre-update = { path = "../sqyre-update" }
 
 [target.'cfg(all(not(target_arch = "wasm32"), target_os = "linux"))'.dependencies]
 ksni = { workspace = true }

@@ -29,6 +29,7 @@ pub const MAX_BACKUP_INTERVAL_HOURS: i32 = 720;
 pub const DEFAULT_BACKUP_MAX_KEEP: i32 = 10;
 pub const MIN_BACKUP_MAX_KEEP: i32 = 1;
 pub const MAX_BACKUP_MAX_KEEP: i32 = 100;
+pub const DEFAULT_AUTO_UPDATE_CHECK: bool = true;
 
 /// Absolute path to the settings file (`{sqyre_dir}/settings.yaml`).
 pub fn settings_path() -> PathBuf {
@@ -344,6 +345,12 @@ pub struct UserSettings {
     /// Unix seconds of the last successful backup (0 = never).
     #[serde(default, skip_serializing_if = "is_zero_i64")]
     pub last_backup_unix: i64,
+    /// Check GitHub Releases for a newer Sqyre build on startup.
+    #[serde(default = "default_auto_update_check")]
+    pub auto_update_check: bool,
+    /// Unix seconds of the last successful update check (0 = never).
+    #[serde(default, skip_serializing_if = "is_zero_i64")]
+    pub last_update_check_unix: i64,
 }
 
 fn default_hide_recording() -> bool {
@@ -376,6 +383,9 @@ fn default_backup_interval() -> i32 {
 fn default_backup_max_keep() -> i32 {
     DEFAULT_BACKUP_MAX_KEEP
 }
+fn default_auto_update_check() -> bool {
+    DEFAULT_AUTO_UPDATE_CHECK
+}
 fn is_zero_i64(v: &i64) -> bool {
     *v == 0
 }
@@ -402,6 +412,8 @@ impl Default for UserSettings {
             backup_interval_hours: DEFAULT_BACKUP_INTERVAL_HOURS,
             backup_max_keep: DEFAULT_BACKUP_MAX_KEEP,
             last_backup_unix: 0,
+            auto_update_check: DEFAULT_AUTO_UPDATE_CHECK,
+            last_update_check_unix: 0,
         }
     }
 }
@@ -509,6 +521,9 @@ impl UserSettings {
             .clamp(MIN_BACKUP_MAX_KEEP, MAX_BACKUP_MAX_KEEP);
         if self.last_backup_unix < 0 {
             self.last_backup_unix = 0;
+        }
+        if self.last_update_check_unix < 0 {
+            self.last_update_check_unix = 0;
         }
     }
 
