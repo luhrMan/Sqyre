@@ -15,8 +15,9 @@
 //!    `children` (and optional validate / rename / bindings)
 
 use crate::color::{
-    ACTION_COLOR_KEY_DEFAULT, ACTION_COLOR_KEY_DETECTION, ACTION_COLOR_KEY_MISCELLANEOUS,
-    ACTION_COLOR_KEY_MOUSE_KEYBOARD, ACTION_COLOR_KEY_VARIABLES, ACTION_COLOR_KEY_WAIT,
+    ACTION_COLOR_KEY_CONTROL_FLOW, ACTION_COLOR_KEY_DEFAULT, ACTION_COLOR_KEY_DETECTION,
+    ACTION_COLOR_KEY_MISCELLANEOUS, ACTION_COLOR_KEY_MOUSE_KEYBOARD, ACTION_COLOR_KEY_VARIABLES,
+    ACTION_COLOR_KEY_WAIT,
 };
 
 /// Number of addable [`crate::ActionKind`] variants / taxonomy rows.
@@ -156,8 +157,8 @@ const ACTION_TYPE_TABLE: &[ActionTypeMeta] = &[
         label: "Loop",
         description: "Repeats its sub-actions a set number of times.",
         picker_category: "Control flow",
-        color_category: "Miscellaneous",
-        color_key: ACTION_COLOR_KEY_MISCELLANEOUS,
+        color_category: "Control flow",
+        color_key: ACTION_COLOR_KEY_CONTROL_FLOW,
         icon: "↻",
         delay_class: DelayClass::None,
     },
@@ -166,8 +167,8 @@ const ACTION_TYPE_TABLE: &[ActionTypeMeta] = &[
         label: "While",
         description: "Repeats its sub-actions while conditions remain true.",
         picker_category: "Control flow",
-        color_category: "Miscellaneous",
-        color_key: ACTION_COLOR_KEY_MISCELLANEOUS,
+        color_category: "Control flow",
+        color_key: ACTION_COLOR_KEY_CONTROL_FLOW,
         icon: "↻",
         delay_class: DelayClass::None,
     },
@@ -176,8 +177,8 @@ const ACTION_TYPE_TABLE: &[ActionTypeMeta] = &[
         label: "Break / Continue",
         description: "Break exits the innermost loop; Continue skips to its next iteration.",
         picker_category: "Control flow",
-        color_category: "Miscellaneous",
-        color_key: ACTION_COLOR_KEY_MISCELLANEOUS,
+        color_category: "Control flow",
+        color_key: ACTION_COLOR_KEY_CONTROL_FLOW,
         icon: "⏹",
         delay_class: DelayClass::None,
     },
@@ -186,8 +187,8 @@ const ACTION_TYPE_TABLE: &[ActionTypeMeta] = &[
         label: "For each row",
         description: "Runs its sub-actions once per row of a list source.",
         picker_category: "Control flow",
-        color_category: "Variables",
-        color_key: ACTION_COLOR_KEY_VARIABLES,
+        color_category: "Control flow",
+        color_key: ACTION_COLOR_KEY_CONTROL_FLOW,
         icon: "☰",
         delay_class: DelayClass::None,
     },
@@ -196,8 +197,8 @@ const ACTION_TYPE_TABLE: &[ActionTypeMeta] = &[
         label: "If",
         description: "Runs its sub-actions only when the conditions are true.",
         picker_category: "Control flow",
-        color_category: "Miscellaneous",
-        color_key: ACTION_COLOR_KEY_MISCELLANEOUS,
+        color_category: "Control flow",
+        color_key: ACTION_COLOR_KEY_CONTROL_FLOW,
         icon: "?",
         delay_class: DelayClass::None,
     },
@@ -396,12 +397,24 @@ mod tests {
     #[test]
     fn control_flow_picker_and_color_buckets() {
         assert_eq!(action_picker_category("loop"), "Control flow");
-        assert_eq!(action_color_category("loop"), "Miscellaneous");
-        assert_eq!(action_color_key("loop"), ACTION_COLOR_KEY_MISCELLANEOUS);
+        assert_eq!(action_color_category("loop"), "Control flow");
+        assert_eq!(action_color_key("loop"), ACTION_COLOR_KEY_CONTROL_FLOW);
         assert_eq!(action_picker_category("foreachrow"), "Control flow");
-        assert_eq!(action_color_category("foreachrow"), "Variables");
+        assert_eq!(action_color_category("foreachrow"), "Control flow");
+        assert_eq!(
+            action_color_key("foreachrow"),
+            ACTION_COLOR_KEY_CONTROL_FLOW
+        );
         assert_eq!(action_picker_category("conditional"), "Control flow");
+        assert_eq!(
+            action_color_key("conditional"),
+            ACTION_COLOR_KEY_CONTROL_FLOW
+        );
         assert_eq!(action_picker_category("navigateselect"), "Miscellaneous");
+        assert_eq!(
+            action_color_key("navigateselect"),
+            ACTION_COLOR_KEY_MISCELLANEOUS
+        );
         assert_eq!(action_picker_category("navigatekey"), "Miscellaneous");
         assert_eq!(action_icon("navigatekey"), "🔑");
     }

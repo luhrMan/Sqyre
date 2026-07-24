@@ -12,6 +12,10 @@ pub const SQYRE_VERSION: &str = env!("SQYRE_VERSION");
 pub enum UpdateState {
     #[default]
     Idle,
+    /// Local/unstamped or unsupported install — checks are skipped.
+    Unavailable {
+        reason: String,
+    },
     Checking,
     UpToDate,
     Available {
@@ -59,14 +63,22 @@ impl UpdateManager {
         ) || self.rx.is_some()
     }
 
-    /// Kick off a background `check_latest` if idle.
+    /// Kick off a background `check_latest` if not already working.
     pub fn start_check(&mut self) {
-        if self.is_busy() {
+        if matches!(
+            self.state,
+            UpdateState::Checking | UpdateState::Downloading { .. }
+        ) || self.rx.is_some()
+        {
             return;
         }
         // Local / unstamped builds never self-update.
-        if SQYRE_VERSION.ends_with("-dev") || SQYRE_VERSION == "0.0.0-dev" {
-            self.state = UpdateState::Idle;
+        if is_dev_version(SQYRE_VERSION) {
+            self.state = UpdateState::Unavailable {
+                reason: format!(
+                    "Dev build ({SQYRE_VERSION}) — set RELEASE_VERSION (or a VERSION file) when building to enable updates"
+                ),
+            };
             return;
         }
         self.banner_dismissed = false;
@@ -127,11 +139,16 @@ impl UpdateManager {
                 true
             }
             Ok(WorkerMsg::Check(Err(message))) => {
-                // Dev builds and unsupported platforms are quiet Idle, not Failed.
-                if message.contains("do not auto-update")
-                    || message.contains("not supported on this platform")
-                {
-                    self.state = UpdateState::Idle;
+                if message.contains("do not auto-update") {
+                    self.state = UpdateState::Unavailable {
+                        reason: format!(
+                            "Dev build ({SQYRE_VERSION}) — stamp RELEASE_VERSION when building to enable updates"
+                        ),
+                    };
+                } else if message.contains("not supported on this platform") {
+                    self.state = UpdateState::Unavailable {
+                        reason: "Auto-update is not supported on this platform".into(),
+                    };
                 } else {
                     self.state = UpdateState::Failed { message };
                 }
@@ -188,6 +205,10 @@ pub fn note_check_time(settings: &mut sqyre_persist::UserSettings) {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
+}
+
+fn is_dev_version(version: &str) -> bool {
+    version == "0.0.0-dev" || version.ends_with("-dev")
 }
 
 /// Drop the single-instance lock and re-exec / spawn the (updated) binary.

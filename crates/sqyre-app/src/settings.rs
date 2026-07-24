@@ -563,6 +563,7 @@ impl SettingsUi {
                 .clicked()
             {
                 update.start_check();
+                ui.ctx().request_repaint();
             }
             match &update.state {
                 UpdateState::Available { .. } => {
@@ -585,6 +586,7 @@ impl SettingsUi {
         ui.add_space(4.0);
         let status = match &update.state {
             UpdateState::Idle => "Update status: idle".to_string(),
+            UpdateState::Unavailable { reason } => reason.clone(),
             UpdateState::Checking => "Checking for updates…".to_string(),
             UpdateState::UpToDate => "You are up to date.".to_string(),
             UpdateState::Available { version, .. } => {

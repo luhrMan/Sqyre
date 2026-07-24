@@ -102,6 +102,21 @@ mod tests {
     }
 
     #[test]
+    fn foreachrow_matches_loop_pastel_and_misc_is_distinct() {
+        clear_all_custom_action_colors();
+        for is_dark in [false, true] {
+            assert_eq!(
+                action_pastel_color("foreachrow", is_dark),
+                action_pastel_color("loop", is_dark)
+            );
+            assert_ne!(
+                action_pastel_color("focuswindow", is_dark),
+                action_pastel_color("loop", is_dark)
+            );
+        }
+    }
+
+    #[test]
     fn custom_action_color_overrides_builtin() {
         clear_all_custom_action_colors();
         let custom = [0x11, 0x22, 0x33, 0xFF];
