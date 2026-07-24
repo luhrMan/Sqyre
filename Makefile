@@ -2,7 +2,7 @@
 # Binary is Rust (sqyre-app). Linux AppImage packaging uses the same stack.
 # Windows: Docker MinGW cross from Linux (scripts/windows/), or native on Windows.
 .PHONY: all sqyre release windows macos test coverage check check-fmt fmt clippy deny machete \
-	run tessdata appimage docs-media wasm help
+	release-gate run tessdata appimage docs-media wasm help
 
 ROOT := $(abspath .)
 BIN := $(abspath bin)
@@ -39,20 +39,25 @@ else
   endif
 endif
 
-# Prefer env/devcontainer cargo; fall back to workspace-local toolchain on the host.
+# Prefer env/devcontainer cargo; fall back to workspace-local, then ~/.cargo.
 # Docker/CI use .cache/cargo (or inherit CARGO_HOME when Make exports .cargo-home).
 ifeq ($(origin CARGO_HOME),undefined)
   ifneq ($(wildcard $(ROOT)/.cargo-home/bin/cargo),)
     export CARGO_HOME := $(ROOT)/.cargo-home
+  else ifneq ($(wildcard $(HOME)/.cargo/bin/cargo),)
+    export CARGO_HOME := $(HOME)/.cargo
   endif
 endif
 ifeq ($(origin RUSTUP_HOME),undefined)
   ifneq ($(wildcard $(ROOT)/.rustup-home),)
     export RUSTUP_HOME := $(ROOT)/.rustup-home
+  else ifneq ($(wildcard $(HOME)/.rustup),)
+    export RUSTUP_HOME := $(HOME)/.rustup
   endif
 endif
 ifneq ($(wildcard $(CARGO_HOME)/bin/cargo),)
   export PATH := $(CARGO_HOME)/bin:$(PATH)
+  CARGO := $(CARGO_HOME)/bin/cargo
 endif
 
 all: sqyre
@@ -60,10 +65,10 @@ all: sqyre
 help:
 	@echo "Targets:"
 	@echo "  all / sqyre  - cargo build (debug) -> $(BIN)/sqyre$(BIN_EXT)  [default]"
-	@echo "  release      - cargo build --release -> $(BIN)/sqyre$(BIN_EXT)"
-	@echo "  windows      - Windows release -> $(BIN)/sqyre.exe"
+	@echo "  release      - fmt + check, then cargo build --release -> $(BIN)/sqyre$(BIN_EXT)"
+	@echo "  windows      - fmt + check, then Windows release -> $(BIN)/sqyre.exe"
 	@echo "                 (Docker MinGW cross on Linux; native on Windows)"
-	@echo "  macos        - native macOS release -> $(BIN)/sqyre  (macOS host)"
+	@echo "  macos        - fmt + check, then native macOS release -> $(BIN)/sqyre  (macOS host)"
 	@echo "  test         - cargo nextest (fallback: cargo test)"
 	@echo "  check-fmt    - cargo fmt --check"
 	@echo "  fmt          - cargo fmt --all (write)"
@@ -71,13 +76,14 @@ help:
 	@echo "  deny         - cargo deny check (licenses / advisories / bans / sources)"
 	@echo "  machete      - cargo machete (unused path/crate deps)"
 	@echo "  check        - check-fmt + clippy + deny (CI quality gates)"
+	@echo "  release-gate - fmt then check (used by release/packaging targets)"
 	@echo "  coverage     - cargo llvm-cov HTML + lcov (install: cargo install cargo-llvm-cov)"
 	@echo "  run          - cargo run -p sqyre-app"
 	@echo "  tessdata     - scripts/download-tessdata.sh"
 	@echo "  docs-media   - regenerate docs/images screenshots"
-	@echo "  appimage     - AppImage -> $(BIN)/ (Docker fallback if tools missing)"
+	@echo "  appimage     - fmt + check, then AppImage -> $(BIN)/ (Docker fallback if tools missing)"
 	@echo "                 (RELEASE_VERSION=…; SQYRE_APPIMAGE_FORCE_NATIVE=1)"
-	@echo "  wasm         - GUI-only WASM editor -> $(BIN)/wasm/ (requires Trunk)"
+	@echo "  wasm         - fmt + check, then GUI-only WASM editor -> $(BIN)/wasm/ (requires Trunk)"
 
 $(BIN):
 	mkdir -p $(BIN)
@@ -86,15 +92,20 @@ sqyre: $(BIN)
 	$(CARGO) build -p sqyre-app $(CARGO_FLAGS)
 	cp -f $(TARGET_DIR)/debug/sqyre$(BIN_EXT) $(BIN)/sqyre$(BIN_EXT)
 
-release: $(BIN)
+# Sequential fmt → check so release/packaging stays gated under make -j.
+release-gate:
+	$(MAKE) fmt
+	$(MAKE) check
+
+release: release-gate $(BIN)
 	$(CARGO) build -p sqyre-app --release $(CARGO_FLAGS)
 	cp -f $(TARGET_DIR)/release/sqyre$(BIN_EXT) $(BIN)/sqyre$(BIN_EXT)
 
 # Windows release binary (no MSI). Docker MinGW cross from Linux; native on Windows.
-windows: $(BIN)
+windows: release-gate $(BIN)
 	./scripts/windows/build.sh
 
-macos: $(BIN)
+macos: release-gate $(BIN)
 	@if [ "$(HOST_OS)" != "macos" ]; then \
 		echo "make macos requires a macOS host (got $(HOST_OS))"; \
 		exit 1; \
@@ -164,11 +175,11 @@ tessdata:
 docs-media:
 	./scripts/generate-docs-media.sh
 
-appimage:
+appimage: release-gate
 	./scripts/linux/packaging/appimage/build-appimage.sh
 
 # Browser GUI editor (no Run / capture / OCR). Requires: rustup target wasm32-unknown-unknown, trunk.
-wasm:
+wasm: release-gate
 	@command -v trunk >/dev/null 2>&1 || { \
 		echo "trunk not found. Install with:"; \
 		echo "  cargo install --locked trunk"; \

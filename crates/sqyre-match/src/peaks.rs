@@ -1,5 +1,6 @@
 use crate::image::Point;
 use crate::template::{MatchMap, MatchMethod};
+use rayon::prelude::*;
 use std::collections::HashMap;
 
 /// Default distance for spatially deduplicating nearby match peaks.
@@ -35,27 +36,37 @@ fn find_peaks_polarity(
     if map.width == 0 || map.height == 0 {
         return Vec::new();
     }
+    let w = map.width;
+    let scores = &map.scores;
+    // Parallel per-row scan; flatten in row order so clustering stays stable.
+    let row_hits: Vec<Vec<Point>> = (0..map.height)
+        .into_par_iter()
+        .map(|y| {
+            let row = y * w;
+            let mut hits = Vec::new();
+            for x in 0..w {
+                let confidence = scores[row + x];
+                if !confidence.is_finite() {
+                    continue;
+                }
+                let ok = if higher_is_better {
+                    confidence >= threshold
+                } else {
+                    confidence <= threshold
+                };
+                if ok {
+                    hits.push(Point {
+                        x: x as i32,
+                        y: y as i32,
+                    });
+                }
+            }
+            hits
+        })
+        .collect();
     let mut matches = Vec::new();
-    for y in 0..map.height {
-        let row = y * map.width;
-        for x in 0..map.width {
-            let confidence = map.scores[row + x];
-            if !confidence.is_finite() {
-                continue;
-            }
-            let ok = if higher_is_better {
-                confidence >= threshold
-            } else {
-                confidence <= threshold
-            };
-            if !ok {
-                continue;
-            }
-            matches.push(Point {
-                x: x as i32,
-                y: y as i32,
-            });
-        }
+    for row in row_hits {
+        matches.extend(row);
     }
     cluster_points(&matches, close_matches_distance)
 }

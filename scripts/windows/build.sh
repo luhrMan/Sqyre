@@ -46,6 +46,20 @@ is_windows_docker_bind_path() {
   return 1
 }
 
+# Fail early if a prior `sudo make windows` left root-owned caches (breaks incremental link).
+check_target_writable() {
+  local target_dir="${CARGO_TARGET_DIR:-$REPO_ROOT/target}"
+  local win_dir="$target_dir/x86_64-pc-windows-gnu"
+  [ -d "$win_dir" ] || return 0
+  [ "$(id -u)" -eq 0 ] && return 0
+  if find "$win_dir" -user root -print -quit 2>/dev/null | grep -q .; then
+    echo "error: root-owned files under $win_dir (from sudo)." >&2
+    echo "  Fix:  sudo chown -R \"$(id -un):$(id -gn)\" \"$target_dir\" \"$REPO_ROOT/.cache\"" >&2
+    echo "  Then: rm -rf \"$win_dir/release/incremental\" && make windows" >&2
+    exit 1
+  fi
+}
+
 need_native() {
   have_cmd cargo
 }
@@ -147,6 +161,7 @@ run_native() {
 }
 
 run_docker() {
+  check_target_writable
   if ! have_cmd docker; then
     echo "Windows cross-build needs Docker on non-Windows hosts." >&2
     echo "Install Docker, or build on Windows with: make windows" >&2
@@ -254,6 +269,7 @@ run_docker() {
     -e RUSTUP_HOME=/usr/local/rustup \
     -e PATH=/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin \
     -e "CARGO_FLAGS=${CARGO_FLAGS:-}" \
+    -e "RELEASE_VERSION=${RELEASE_VERSION:-}" \
     "$image" \
     bash -c 'set -euo pipefail
       cargo build -p sqyre-app --release --target x86_64-pc-windows-gnu ${CARGO_FLAGS:-}

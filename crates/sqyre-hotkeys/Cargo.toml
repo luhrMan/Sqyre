@@ -18,4 +18,11 @@ parking_lot = { workspace = true }
 rdev = { workspace = true, optional = true }
 web-time = { workspace = true }
 
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_System_Threading",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
 [dev-dependencies]

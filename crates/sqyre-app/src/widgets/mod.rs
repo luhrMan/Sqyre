@@ -5,7 +5,8 @@ pub mod fields;
 pub mod tags;
 
 pub use dialogs::{
-    confirm_cancel_row, save_cancel_row, save_cancel_row_ltr, ConfirmCancel, SaveCancel,
+    confirm_cancel_row, poll_confirm_keys, save_cancel_row, save_cancel_row_ltr, ConfirmCancel,
+    SaveCancel,
 };
 pub use fields::{
     combo_str, combo_str_labeled, drag_field, drag_field_enabled, searchable_combo,

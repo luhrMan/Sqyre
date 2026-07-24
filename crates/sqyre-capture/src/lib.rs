@@ -3,7 +3,7 @@
 mod diag;
 mod error;
 mod outline_rect;
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
 mod outline_stub;
 mod pixel_convert;
 #[macro_use]
@@ -11,6 +11,10 @@ mod shared_run;
 mod stub;
 #[cfg(target_os = "windows")]
 mod win_capture;
+#[cfg(target_os = "windows")]
+mod win_focus;
+#[cfg(target_os = "windows")]
+mod win_outline;
 #[cfg(target_os = "linux")]
 mod x11_capture;
 #[cfg(target_os = "linux")]
@@ -38,8 +42,14 @@ pub use win_capture::{shared_capturer, OsCapturer, SharedRunCapturer};
 #[cfg(target_os = "linux")]
 pub use x11_focus::OsWindowFocuser;
 
+#[cfg(target_os = "windows")]
+pub use win_focus::OsWindowFocuser;
+
 #[cfg(target_os = "linux")]
 pub use x11_outline::SelectionOutline;
+
+#[cfg(target_os = "windows")]
+pub use win_outline::SelectionOutline;
 
 /// True if `display` is a Sqyre secondary X11 connection (for winit error hooks).
 #[cfg(target_os = "linux")]
@@ -47,7 +57,7 @@ pub fn owns_secondary_x_display(display: *mut std::ffi::c_void) -> bool {
     x11_secondary::owns(display)
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
 pub use outline_stub::SelectionOutline;
 
 /// macOS / other: capture not implemented yet.
@@ -127,6 +137,32 @@ pub fn main_monitor_resolution_key() -> Option<String> {
     }
 }
 
+/// Primary monitor DPI scale factor (`dpi / 96`).
+/// Returns `None` when no display is available (headless / CI).
+pub fn main_monitor_scale() -> Option<f32> {
+    #[cfg(target_os = "linux")]
+    {
+        x11_capture::primary_monitor_scale()
+    }
+    #[cfg(target_os = "windows")]
+    {
+        win_capture::primary_monitor_scale()
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+    {
+        Some(1.0)
+    }
+}
+
+/// Make the process Per-Monitor DPI aware V2 (Windows). No-op elsewhere.
+/// Call before creating windows / capture so GDI, metrics, and input agree on physical pixels.
+pub fn enable_per_monitor_dpi_v2() {
+    #[cfg(target_os = "windows")]
+    {
+        win_capture::enable_per_monitor_dpi_v2();
+    }
+}
+
 /// Number of displays from the live capturer, or `1` when capture is unavailable.
 pub fn monitor_count() -> usize {
     use sqyre_executor::ScreenCapturer;
@@ -143,7 +179,12 @@ pub fn list_open_windows() -> Result<Vec<WindowInfo>, String> {
     x11_focus::list_open_windows()
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "windows")]
+pub fn list_open_windows() -> Result<Vec<WindowInfo>, String> {
+    win_focus::list_open_windows()
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
 pub fn list_open_windows() -> Result<Vec<WindowInfo>, String> {
     Err("list windows: not supported on this platform".into())
 }
@@ -154,7 +195,12 @@ pub fn get_active_window() -> Result<Option<WindowInfo>, String> {
     x11_focus::get_active_window()
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "windows")]
+pub fn get_active_window() -> Result<Option<WindowInfo>, String> {
+    win_focus::get_active_window()
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
 pub fn get_active_window() -> Result<Option<WindowInfo>, String> {
     Err("active window: not supported on this platform".into())
 }
@@ -290,11 +336,11 @@ pub fn window_matches_binding(win: &WindowInfo, process_path: &str, window_title
 }
 
 /// Stub focuser when OS window activation is not implemented.
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
 #[derive(Debug, Default, Clone, Copy)]
 pub struct OsWindowFocuser;
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
 impl sqyre_executor::WindowFocuser for OsWindowFocuser {
     fn focus(&self, _process_path: &str, _window_title: &str) -> Result<(), String> {
         Err("focus window: not supported on this platform".into())

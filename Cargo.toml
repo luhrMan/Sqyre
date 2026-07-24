@@ -13,6 +13,7 @@ members = [
     "crates/sqyre-input",
     "crates/sqyre-capture",
     "crates/sqyre-hotkeys",
+    "crates/sqyre-update",
     "crates/sqyre-app",
 ]
 default-members = [
@@ -35,11 +36,12 @@ all = "warn"
 
 
 [workspace.dependencies]
-purecv = { version = "0.6.1", default-features = false, features = ["std", "parallel"] }
+purecv = { version = "0.6.1", default-features = false, features = ["std", "parallel", "simd"] }
 eframe = "0.34"
 egui = "0.34"
 egui-phosphor = "0.12"
 egui_ltreeview = "0.7"
+pulp = "0.22"
 rayon = "1.10"
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }

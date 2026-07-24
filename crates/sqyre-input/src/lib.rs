@@ -38,6 +38,38 @@ impl OsAutomation {
     }
 }
 
+/// Absolute move with signed virtual-desktop coords (Windows origin may be negative).
+#[cfg(target_os = "windows")]
+fn move_mouse_windows(x: i32, y: i32, moving_time: f32) {
+    use windows::Win32::Foundation::POINT;
+    use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, SetCursorPos};
+
+    unsafe {
+        if moving_time <= 0.0 {
+            let _ = SetCursorPos(x, y);
+            return;
+        }
+        let mut start = POINT::default();
+        if GetCursorPos(&mut start).is_err() {
+            let _ = SetCursorPos(x, y);
+            return;
+        }
+        let start_t = std::time::Instant::now();
+        let dx = x - start.x;
+        let dy = y - start.y;
+        loop {
+            let t = start_t.elapsed().as_secs_f32() / moving_time;
+            if t >= 1.0 {
+                let _ = SetCursorPos(x, y);
+                break;
+            }
+            let nx = start.x as f32 + t * dx as f32;
+            let ny = start.y as f32 + t * dy as f32;
+            let _ = SetCursorPos(nx as i32, ny as i32);
+        }
+    }
+}
+
 impl AutomationBackend for OsAutomation {
     fn milli_sleep(&mut self, ms: i32) {
         if ms > 0 {
@@ -57,13 +89,22 @@ impl AutomationBackend for OsAutomation {
         } else {
             0.0
         };
-        // Absolute root coords; cast carefully for negative multi-monitor origins.
-        let xu = x.max(0) as u32;
-        let yu = y.max(0) as u32;
-        if let Err(e) = self.gui.move_mouse_to_pos(xu, yu, moving_time) {
-            // Fallback: try zero-time again (bounds check can false-positive).
-            let _ = self.gui.move_mouse_to_pos(xu, yu, 0.0);
-            let _ = e;
+        // Absolute virtual-desktop coords (Windows origin may be negative).
+        #[cfg(target_os = "windows")]
+        {
+            move_mouse_windows(x, y, moving_time);
+            return;
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            // rustautogui's public API is u32; X11 virtual desktop starts at (0,0).
+            let xu = u32::try_from(x).unwrap_or(0);
+            let yu = u32::try_from(y).unwrap_or(0);
+            if let Err(e) = self.gui.move_mouse_to_pos(xu, yu, moving_time) {
+                // Fallback: try zero-time again (bounds check can false-positive).
+                let _ = self.gui.move_mouse_to_pos(xu, yu, 0.0);
+                let _ = e;
+            }
         }
     }
 

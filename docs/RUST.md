@@ -39,14 +39,15 @@ From the repo root:
 
 ```bash
 make                 # ./bin/sqyre (debug)
-make release         # ./bin/sqyre (release)
-make windows         # ./bin/sqyre.exe (Docker MinGW cross / native on Windows)
-make macos           # ./bin/sqyre (macOS host)
-make check           # fmt + clippy (-D warnings) + cargo deny
+make release         # fmt + check, then ./bin/sqyre (release)
+make windows         # fmt + check, then ./bin/sqyre.exe (Docker MinGW cross / native on Windows)
+make macos           # fmt + check, then ./bin/sqyre (macOS host)
+make check           # fmt --check + clippy (-D warnings) + cargo deny
 make test            # cargo nextest (falls back to cargo test)
 make coverage        # llvm-cov HTML + lcov under target/coverage/
 make run             # cargo run -p sqyre-app; loads ~/.sqyre/db.yaml
-make appimage        # Linux AppImage
+make appimage        # fmt + check, then Linux AppImage
+make wasm            # fmt + check, then bin/wasm/ GUI-only browser editor
 ```
 
 Or directly:
@@ -64,6 +65,6 @@ Do not expect X11 inside the container — build there, run the binary on the ho
 
 Host binary: `./bin/sqyre` after `make`, or `./target/debug/sqyre` from cargo. Esc stops a running macro; Esc+Ctrl+Shift exits (failsafe).
 
-Still improving: Wayland, macOS capture, Windows/macOS window focus, macOS releases. CI also `cargo check`s macOS on PRs.
+Still improving: Wayland, macOS capture, macOS window focus, macOS releases. CI also `cargo check`s macOS on PRs.
 
 OCR uses Tesseract (`leptess`). Override tessdata with `SQYRE_TESSDATA` if needed (dev fallback: `assets/tessdata`).

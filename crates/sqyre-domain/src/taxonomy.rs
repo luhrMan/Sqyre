@@ -29,7 +29,7 @@ pub const ACTION_PICKER_CATEGORIES: &[&str] = &[
     "Mouse & Keyboard",
     "Detection",
     "Variables",
-    "Loop flow",
+    "Control flow",
     "Miscellaneous",
 ];
 
@@ -142,16 +142,6 @@ const ACTION_TYPE_TABLE: &[ActionTypeMeta] = &[
         delay_class: DelayClass::None,
     },
     ActionTypeMeta {
-        type_key: "foreachrow",
-        label: "For each row",
-        description: "Runs its sub-actions once per row of a list source.",
-        picker_category: "Variables",
-        color_category: "Variables",
-        color_key: ACTION_COLOR_KEY_VARIABLES,
-        icon: "☰",
-        delay_class: DelayClass::None,
-    },
-    ActionTypeMeta {
         type_key: "savevariable",
         label: "Save to",
         description: "Writes a variable's value out to a file or the clipboard.",
@@ -165,7 +155,7 @@ const ACTION_TYPE_TABLE: &[ActionTypeMeta] = &[
         type_key: "loop",
         label: "Loop",
         description: "Repeats its sub-actions a set number of times.",
-        picker_category: "Loop flow",
+        picker_category: "Control flow",
         color_category: "Miscellaneous",
         color_key: ACTION_COLOR_KEY_MISCELLANEOUS,
         icon: "↻",
@@ -175,7 +165,7 @@ const ACTION_TYPE_TABLE: &[ActionTypeMeta] = &[
         type_key: "while",
         label: "While",
         description: "Repeats its sub-actions while conditions remain true.",
-        picker_category: "Loop flow",
+        picker_category: "Control flow",
         color_category: "Miscellaneous",
         color_key: ACTION_COLOR_KEY_MISCELLANEOUS,
         icon: "↻",
@@ -185,31 +175,30 @@ const ACTION_TYPE_TABLE: &[ActionTypeMeta] = &[
         type_key: "loopjump",
         label: "Break / Continue",
         description: "Break exits the innermost loop; Continue skips to its next iteration.",
-        picker_category: "Loop flow",
+        picker_category: "Control flow",
         color_category: "Miscellaneous",
         color_key: ACTION_COLOR_KEY_MISCELLANEOUS,
         icon: "⏹",
         delay_class: DelayClass::None,
     },
     ActionTypeMeta {
-        type_key: "navigateselect",
-        label: "Navigate Select",
-        description:
-            "Navigates a collection grid with chords; Nav Key children branch on custom keys.",
-        picker_category: "Loop flow",
-        color_category: "Miscellaneous",
-        color_key: ACTION_COLOR_KEY_MISCELLANEOUS,
-        icon: "⌖",
+        type_key: "foreachrow",
+        label: "For each row",
+        description: "Runs its sub-actions once per row of a list source.",
+        picker_category: "Control flow",
+        color_category: "Variables",
+        color_key: ACTION_COLOR_KEY_VARIABLES,
+        icon: "☰",
         delay_class: DelayClass::None,
     },
     ActionTypeMeta {
-        type_key: "navigatekey",
-        label: "Nav Key",
-        description: "Under Navigate Select: when this chord is pressed, runs nested actions.",
-        picker_category: "Loop flow",
+        type_key: "conditional",
+        label: "If",
+        description: "Runs its sub-actions only when the conditions are true.",
+        picker_category: "Control flow",
         color_category: "Miscellaneous",
         color_key: ACTION_COLOR_KEY_MISCELLANEOUS,
-        icon: "⎇",
+        icon: "?",
         delay_class: DelayClass::None,
     },
     ActionTypeMeta {
@@ -253,13 +242,25 @@ const ACTION_TYPE_TABLE: &[ActionTypeMeta] = &[
         delay_class: DelayClass::None,
     },
     ActionTypeMeta {
-        type_key: "conditional",
-        label: "If",
-        description: "Runs its sub-actions only when the conditions are true.",
+        type_key: "navigateselect",
+        label: "Navigate Select",
+        description:
+            "Navigates a collection grid with chords; Nav Key children branch on custom keys.",
         picker_category: "Miscellaneous",
         color_category: "Miscellaneous",
         color_key: ACTION_COLOR_KEY_MISCELLANEOUS,
-        icon: "?",
+        icon: "⌖",
+        delay_class: DelayClass::None,
+    },
+    ActionTypeMeta {
+        type_key: "navigatekey",
+        label: "Nav Key",
+        description: "Under Navigate Select: when this chord is pressed, runs nested actions.",
+        picker_category: "Miscellaneous",
+        color_category: "Miscellaneous",
+        color_key: ACTION_COLOR_KEY_MISCELLANEOUS,
+        // ⌨-family / Misc Technical glyphs (⎇) often tofu in egui fonts.
+        icon: "🔑",
         delay_class: DelayClass::None,
     },
 ];
@@ -393,12 +394,16 @@ mod tests {
     }
 
     #[test]
-    fn loop_types_use_misc_color_bucket() {
-        assert_eq!(action_picker_category("loop"), "Loop flow");
+    fn control_flow_picker_and_color_buckets() {
+        assert_eq!(action_picker_category("loop"), "Control flow");
         assert_eq!(action_color_category("loop"), "Miscellaneous");
         assert_eq!(action_color_key("loop"), ACTION_COLOR_KEY_MISCELLANEOUS);
-        assert_eq!(action_picker_category("navigateselect"), "Loop flow");
-        assert_eq!(action_color_category("navigateselect"), "Miscellaneous");
+        assert_eq!(action_picker_category("foreachrow"), "Control flow");
+        assert_eq!(action_color_category("foreachrow"), "Variables");
+        assert_eq!(action_picker_category("conditional"), "Control flow");
+        assert_eq!(action_picker_category("navigateselect"), "Miscellaneous");
+        assert_eq!(action_picker_category("navigatekey"), "Miscellaneous");
+        assert_eq!(action_icon("navigatekey"), "🔑");
     }
 
     #[test]

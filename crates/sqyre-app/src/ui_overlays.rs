@@ -97,8 +97,25 @@ pub fn show_floating_windows(app: &mut SqyreApp, ctx: &egui::Context) {
         &app.screen_click,
         app.settings_ui.settings_mut(),
     );
-    app.settings_ui
-        .show(ctx, &mut app.db, &mut app.macros, &mut app.catalog);
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        app.settings_ui.show(
+            ctx,
+            &mut app.db,
+            &mut app.macros,
+            &mut app.catalog,
+            &mut app.update,
+        );
+        if app.settings_ui.restart_requested {
+            app.settings_ui.restart_requested = false;
+            crate::update::restart_app(&mut app.instance_lock);
+        }
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        app.settings_ui
+            .show(ctx, &mut app.db, &mut app.macros, &mut app.catalog);
+    }
     if !app.macros.is_empty() {
         let idx = app.selected_macro.min(app.macros.len() - 1);
         let running = app.run.running.load(Ordering::SeqCst);
@@ -173,7 +190,7 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
         app.settings_ui.reload_requested = false;
         apply_main_monitor_resolution(&mut app.catalog);
         app.selected_macro = 0;
-        app.selected_action = None;
+        app.clear_selected_actions();
         app.tree_histories.clear();
         app.tooltip.cancel();
         app.add_action_picker = AddActionPicker::default();
@@ -193,6 +210,8 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
 
     #[cfg(not(target_arch = "wasm32"))]
     poll_scheduled_backup(app, ctx);
+    #[cfg(not(target_arch = "wasm32"))]
+    poll_update(app, ctx);
 
     // Sample color before restoring visibility so the app isn't under the cursor.
     if let Some((x, y)) = app.screen_click.take_color_point() {
@@ -207,6 +226,10 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
     app.update_recording_visibility(ctx);
     app.sync_recording_overlay(ctx);
     sync_macro_overlay(app, ctx);
+    // Windows Raw Input suppresses WH_KEYBOARD_LL while we are focused; mirror
+    // egui keys into the hotkey bridges so Record / Esc / chords still work.
+    #[cfg(target_os = "windows")]
+    crate::win_focused_keys::feed_focused_keyboard(app, ctx);
     app.drain_pending_hotkey_macros(ctx);
 
     if let Some(chord) = app.hotkey_record.show(ctx, &app.macro_hotkeys) {
@@ -232,9 +255,17 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
         // Overlay focus-gating polls on its own schedule; avoid per-frame
         // transparent window clears (flicker) while still draining click queue promptly.
         ctx.request_repaint_after(std::time::Duration::from_millis(250));
-    } else if app.settings_ui.settings().backup_enabled {
-        // Coarse wake so automatic backups can fire while idle.
-        ctx.request_repaint_after(std::time::Duration::from_secs(60));
+    } else {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            if app.settings_ui.settings().backup_enabled
+                || app.settings_ui.settings().auto_update_check
+                || app.update.is_busy()
+            {
+                // Coarse wake so automatic backups / update polls can fire while idle.
+                ctx.request_repaint_after(std::time::Duration::from_secs(60));
+            }
+        }
     }
 }
 
@@ -291,8 +322,37 @@ fn poll_scheduled_backup(app: &mut SqyreApp, ctx: &egui::Context) {
     ctx.request_repaint_after(std::time::Duration::from_millis(250));
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+fn poll_update(app: &mut SqyreApp, ctx: &egui::Context) {
+    if app.update.poll() {
+        match &app.update.state {
+            crate::update::UpdateState::UpToDate
+            | crate::update::UpdateState::Available { .. }
+            | crate::update::UpdateState::Failed { .. } => {
+                crate::update::note_check_time(app.settings_ui.settings_mut());
+                app.settings_ui.persist();
+            }
+            crate::update::UpdateState::Ready { version } => {
+                app.settings_ui.set_update_status_ok(format!(
+                    "Update {version} installed. Restart to finish."
+                ));
+            }
+            _ => {}
+        }
+        ctx.request_repaint();
+    } else if app.update.is_busy() {
+        ctx.request_repaint_after(std::time::Duration::from_millis(250));
+    }
+}
+
 /// Ctrl+C / Ctrl+X / Ctrl+V / Ctrl+Z / Ctrl+Y / Ctrl+A — skip while editing an action
 /// or when a text field has keyboard focus (so Ctrl+A still selects-all in editors).
+///
+/// Copy/cut/paste must listen for [`egui::Event::{Copy,Cut,Paste}`]: egui-winit
+/// converts those chords into clipboard events and never emits `Key` presses for
+/// C/X/V (unlike Ctrl+A / Ctrl+Z / Ctrl+Y).
+///
+/// Mutating shortcuts match the action toolbar: disabled while a macro is running.
 pub fn handle_shortcuts(app: &mut SqyreApp, ui: &mut egui::Ui) {
     let running = app.run.running.load(Ordering::SeqCst);
     if !app.tooltip.is_editing()
@@ -301,10 +361,18 @@ pub fn handle_shortcuts(app: &mut SqyreApp, ui: &mut egui::Ui) {
         && !ui.ctx().egui_wants_keyboard_input()
     {
         let (copy, cut, paste, undo, redo, add_action) = ui.ctx().input(|i| {
+            let mut copy = false;
+            let mut cut = false;
+            let mut paste = false;
+            for ev in &i.events {
+                match ev {
+                    egui::Event::Copy => copy = true,
+                    egui::Event::Cut => cut = true,
+                    egui::Event::Paste(_) => paste = true,
+                    _ => {}
+                }
+            }
             let mod_key = i.modifiers.command;
-            let copy = mod_key && i.key_pressed(egui::Key::C);
-            let cut = mod_key && i.key_pressed(egui::Key::X);
-            let paste = mod_key && i.key_pressed(egui::Key::V);
             let undo = mod_key && !i.modifiers.shift && i.key_pressed(egui::Key::Z);
             let redo = mod_key
                 && (i.key_pressed(egui::Key::Y)
@@ -312,17 +380,20 @@ pub fn handle_shortcuts(app: &mut SqyreApp, ui: &mut egui::Ui) {
             let add_action = mod_key && i.key_pressed(egui::Key::A);
             (copy, cut, paste, undo, redo, add_action)
         });
+        if running {
+            return;
+        }
         if cut {
-            app.cut_selection();
+            app.cut_selection(ui.ctx());
         } else if copy {
-            app.copy_selection();
+            app.copy_selection(ui.ctx());
         } else if paste {
             app.paste_clipboard();
         } else if undo {
             app.undo_tree();
         } else if redo {
             app.redo_tree();
-        } else if add_action && !running && !app.macros.is_empty() {
+        } else if add_action && !app.macros.is_empty() {
             app.add_action_picker.open();
         }
     }

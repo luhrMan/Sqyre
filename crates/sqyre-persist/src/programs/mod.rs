@@ -57,8 +57,24 @@ impl ProgramCatalog {
             if let Some(k) = p.search_areas.keys().next() {
                 return k.as_str();
             }
+            if let Some(k) = p.coord_scales.keys().next() {
+                return k.as_str();
+            }
         }
         ""
+    }
+
+    pub fn set_runtime_scale(&mut self, scale: f32) {
+        self.runtime_scale = if scale > 0.0 { scale } else { 1.0 };
+        self.bump_generation();
+    }
+
+    pub fn runtime_scale(&self) -> f32 {
+        if self.runtime_scale > 0.0 {
+            self.runtime_scale
+        } else {
+            1.0
+        }
     }
 
     /// Monotonic counter bumped when programs/entities change (or resolution key).
@@ -108,6 +124,15 @@ impl ProgramCatalog {
         r: &CoordinateRef,
         resolution_key: &str,
     ) -> std::result::Result<&ProgramPoint, String> {
+        Ok(self.lookup_point_sourced(r, resolution_key)?.0)
+    }
+
+    /// Point plus the resolution bucket key that supplied it (for remapping).
+    fn lookup_point_sourced<'a>(
+        &'a self,
+        r: &CoordinateRef,
+        resolution_key: &str,
+    ) -> std::result::Result<(&'a ProgramPoint, &'a str, &'a ProgramData), String> {
         if r.is_collection() {
             return Err(format!("point lookup does not accept collection ref {r:?}"));
         }
@@ -116,11 +141,17 @@ impl ProgramCatalog {
             return Err("empty point reference".into());
         }
         if let Some(prog) = r.program() {
-            return point_from(self, prog, name, resolution_key);
+            let (pt, src) = point_from(self, prog, name, resolution_key)?;
+            let data = self
+                .programs
+                .get(prog)
+                .ok_or_else(|| format!("program {prog:?} not found"))?;
+            return Ok((pt, src, data));
         }
         for prog in self.programs.keys() {
-            if let Ok(pt) = point_from(self, prog, name, resolution_key) {
-                return Ok(pt);
+            if let Ok((pt, src)) = point_from(self, prog, name, resolution_key) {
+                let data = self.programs.get(prog).expect("program exists");
+                return Ok((pt, src, data));
             }
         }
         Err(format!("point {name:?} not found"))
@@ -131,6 +162,14 @@ impl ProgramCatalog {
         r: &CoordinateRef,
         resolution_key: &str,
     ) -> std::result::Result<&ProgramSearchArea, String> {
+        Ok(self.lookup_search_area_sourced(r, resolution_key)?.0)
+    }
+
+    fn lookup_search_area_sourced<'a>(
+        &'a self,
+        r: &CoordinateRef,
+        resolution_key: &str,
+    ) -> std::result::Result<(&'a ProgramSearchArea, &'a str, &'a ProgramData), String> {
         if r.is_collection() {
             return Err(format!(
                 "search area lookup does not accept collection ref {r:?}"
@@ -141,11 +180,17 @@ impl ProgramCatalog {
             return Err("empty search area reference".into());
         }
         if let Some(prog) = r.program() {
-            return search_area_from(self, prog, name, resolution_key);
+            let (sa, src) = search_area_from(self, prog, name, resolution_key)?;
+            let data = self
+                .programs
+                .get(prog)
+                .ok_or_else(|| format!("program {prog:?} not found"))?;
+            return Ok((sa, src, data));
         }
         for prog in self.programs.keys() {
-            if let Ok(sa) = search_area_from(self, prog, name, resolution_key) {
-                return Ok(sa);
+            if let Ok((sa, src)) = search_area_from(self, prog, name, resolution_key) {
+                let data = self.programs.get(prog).expect("program exists");
+                return Ok((sa, src, data));
             }
         }
         Err(format!("search area {name:?} not found"))
@@ -180,10 +225,10 @@ impl ProgramCatalog {
             return Ok(((lx + rx) / 2, (ty + by) / 2));
         }
         let key = self.resolution_key().to_string();
-        let pt = self.lookup_point(r, &key)?;
+        let (pt, src_key, data) = self.lookup_point_sourced(r, &key)?;
         let x = resolve_scalar_int(&pt.x, macro_).map_err(|e| format!("point X: {e}"))?;
         let y = resolve_scalar_int(&pt.y, macro_).map_err(|e| format!("point Y: {e}"))?;
-        Ok((x, y))
+        self.remap_xy(x, y, src_key, data)
     }
 
     pub fn resolve_search_area(
@@ -195,12 +240,35 @@ impl ProgramCatalog {
             return self.resolve_collection_cells(r, macro_, r1, c1, r2, c2);
         }
         let key = self.resolution_key().to_string();
-        let sa = self.lookup_search_area(r, &key)?;
+        let (sa, src_key, data) = self.lookup_search_area_sourced(r, &key)?;
         let lx = resolve_scalar_int(&sa.left_x, macro_)?;
         let ty = resolve_scalar_int(&sa.top_y, macro_)?;
         let rx = resolve_scalar_int(&sa.right_x, macro_)?;
         let by = resolve_scalar_int(&sa.bottom_y, macro_)?;
+        let (lx, ty) = self.remap_xy(lx, ty, src_key, data)?;
+        let (rx, by) = self.remap_xy(rx, by, src_key, data)?;
         Ok((lx, ty, rx, by))
+    }
+
+    fn remap_xy(
+        &self,
+        x: i32,
+        y: i32,
+        src_key: &str,
+        data: &ProgramData,
+    ) -> std::result::Result<(i32, i32), String> {
+        let rt_key = self.resolution_key();
+        if rt_key.is_empty() {
+            return Ok((x, y));
+        }
+        let (src_w, src_h) = parse_resolution_key(src_key)?;
+        let (rt_w, rt_h) = parse_resolution_key(rt_key)?;
+        let src_scale = bucket_scale(data, src_key);
+        let rt_scale = self.runtime_scale();
+        Ok((
+            remap_coord(x, src_w, rt_w, src_scale, rt_scale),
+            remap_coord(y, src_h, rt_h, src_scale, rt_scale),
+        ))
     }
 
     fn resolve_collection_cells(
@@ -308,13 +376,15 @@ impl ProgramCatalog {
             )));
         }
         let res = self.default_resolution_key();
+        let scale = self.runtime_scale();
         let mut data = ProgramData {
             name: name.clone(),
             ..Default::default()
         };
         if !res.is_empty() {
             data.points.insert(res.clone(), BTreeMap::new());
-            data.search_areas.insert(res, BTreeMap::new());
+            data.search_areas.insert(res.clone(), BTreeMap::new());
+            data.coord_scales.insert(res, scale);
         }
         self.programs.insert(name, data);
         self.bump_generation();
@@ -739,6 +809,142 @@ Demo:
             .resolve_point(&CoordinateRef("Demo~grid@1,1-1,1".into()), &m)
             .unwrap();
         assert_eq!(center, (25, 25));
+    }
+
+    #[test]
+    fn resolve_remaps_by_resolution_ratio() {
+        let yaml = r#"
+Game:
+  name: Game
+  coordinates:
+    1920x1080:
+      scale: 1.0
+      points:
+        Spot:
+          name: Spot
+          x: 192
+          y: 108
+      searchareas:
+        Box:
+          name: Box
+          leftx: 0
+          topy: 0
+          rightx: 192
+          bottomy: 108
+"#;
+        let v: Value = serde_yaml::from_str(yaml).unwrap();
+        let mut cat = ProgramCatalog::from_yaml_value(&v).unwrap();
+        cat.set_resolution_key("2560x1440");
+        cat.set_runtime_scale(1.0);
+        let m = Macro::new("t", 0, vec![]);
+        let (x, y) = cat
+            .resolve_point(&CoordinateRef("Game~Spot".into()), &m)
+            .unwrap();
+        // 192 * 2560/1920 = 256, 108 * 1440/1080 = 144
+        assert_eq!((x, y), (256, 144));
+        let sa = cat
+            .resolve_search_area(&CoordinateRef("Game~Box".into()), &m)
+            .unwrap();
+        assert_eq!(sa, (0, 0, 256, 144));
+    }
+
+    #[test]
+    fn resolve_remaps_by_dpi_scale() {
+        let yaml = r#"
+Game:
+  name: Game
+  coordinates:
+    1920x1080:
+      scale: 1.0
+      points:
+        Spot:
+          name: Spot
+          x: 100
+          y: 200
+"#;
+        let v: Value = serde_yaml::from_str(yaml).unwrap();
+        let mut cat = ProgramCatalog::from_yaml_value(&v).unwrap();
+        cat.set_resolution_key("1920x1080");
+        cat.set_runtime_scale(1.5);
+        let m = Macro::new("t", 0, vec![]);
+        let (x, y) = cat
+            .resolve_point(&CoordinateRef("Game~Spot".into()), &m)
+            .unwrap();
+        assert_eq!((x, y), (150, 300));
+    }
+
+    #[test]
+    fn resolve_remaps_resolution_and_scale() {
+        let yaml = r#"
+Game:
+  name: Game
+  coordinates:
+    1920x1080:
+      scale: 1.0
+      points:
+        Spot:
+          name: Spot
+          x: 100
+          y: 50
+"#;
+        let v: Value = serde_yaml::from_str(yaml).unwrap();
+        let mut cat = ProgramCatalog::from_yaml_value(&v).unwrap();
+        cat.set_resolution_key("2560x1440");
+        cat.set_runtime_scale(1.5);
+        let m = Macro::new("t", 0, vec![]);
+        let (x, y) = cat
+            .resolve_point(&CoordinateRef("Game~Spot".into()), &m)
+            .unwrap();
+        // 100 * (2560/1920) * 1.5 = 200, 50 * (1440/1080) * 1.5 = 100
+        assert_eq!((x, y), (200, 100));
+    }
+
+    #[test]
+    fn resolve_same_bucket_identity() {
+        let yaml = r#"
+Game:
+  name: Game
+  coordinates:
+    1920x1080:
+      scale: 1.0
+      points:
+        Spot:
+          name: Spot
+          x: 100
+          y: 200
+"#;
+        let v: Value = serde_yaml::from_str(yaml).unwrap();
+        let mut cat = ProgramCatalog::from_yaml_value(&v).unwrap();
+        cat.set_resolution_key("1920x1080");
+        cat.set_runtime_scale(1.0);
+        let m = Macro::new("t", 0, vec![]);
+        let (x, y) = cat
+            .resolve_point(&CoordinateRef("Game~Spot".into()), &m)
+            .unwrap();
+        assert_eq!((x, y), (100, 200));
+    }
+
+    #[test]
+    fn upsert_stamps_bucket_scale() {
+        let mut cat = ProgramCatalog::default();
+        cat.set_resolution_key("1920x1080");
+        cat.set_runtime_scale(1.25);
+        cat.create_program("Demo").unwrap();
+        cat.upsert_point(
+            "Demo",
+            ProgramPoint {
+                name: "A".into(),
+                x: ScalarValue::Int(1),
+                y: ScalarValue::Int(2),
+            },
+        )
+        .unwrap();
+        let scale = cat.get("Demo").unwrap().coord_scales["1920x1080"];
+        assert!((scale - 1.25).abs() < f32::EPSILON);
+        let encoded = cat.to_yaml_value(&Value::Null);
+        let reparsed = ProgramCatalog::from_yaml_value(&encoded).unwrap();
+        let scale2 = reparsed.get("Demo").unwrap().coord_scales["1920x1080"];
+        assert!((scale2 - 1.25).abs() < f32::EPSILON);
     }
 
     #[test]

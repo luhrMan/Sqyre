@@ -24,9 +24,9 @@ Sqyre lets you build and run macros without writing code. Each macro is a tree o
 |----------|---------|
 | **Mouse & keyboard** | Move, click, key, type |
 | **Detection** | Image search (PureCV), OCR (Tesseract), find pixel |
-| **Variables** | Set (values + expressions), for each row, save to file or clipboard |
-| **Loop flow** | Loop, while, break/continue, navigate select/key |
-| **Miscellaneous** | Wait, pause, focus window, run macro, if (conditional) |
+| **Variables** | Set (values + expressions), save to file or clipboard |
+| **Control flow** | Loop, while, break/continue, for each row, if |
+| **Miscellaneous** | Wait, pause, focus window, run macro, navigate select/key |
 
 **Also in the app:** data editor for reusable images, masks, and tabular sources; macro hotkeys (on press or release); global delay per macro; runtime variable panel while a macro runs.
 

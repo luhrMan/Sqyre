@@ -35,8 +35,10 @@ pub struct TreePaint<'a> {
     pub theme: VarTheme<'a>,
     pub macro_name: &'a str,
     pub hl_snap: &'a HighlightSnapshot,
-    /// Currently selected tree node (action or Else folder sentinel).
-    pub selected: Option<ActionId>,
+    /// Currently selected tree nodes (action or Else folder sentinels).
+    pub selected: &'a [ActionId],
+    /// Primary selected action when it is a real node (not an Else folder sentinel).
+    pub selected_action: Option<&'a sqyre_domain::Action>,
 }
 
 /// Catalog paint + var theme + recording bridges (action tooltip / defaults edit).

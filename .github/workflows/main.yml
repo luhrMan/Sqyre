@@ -1,7 +1,7 @@
-# Build and release Sqyre on merge to main.
+# CI on push/PR to main. Daily release at 23:00 UTC when main has changed.
 # Releases: Linux binary + AppImage, Windows .exe (MinGW cross), WASM editor zip.
 # Also compile-checks macOS (stub capture) on PRs/pushes.
-# Release tag / artifact names: vYYYY.MM.DD.HHMM (e.g. v2026.03.03.1643).
+# Release tag / artifact names: vYYYY.MM.DD (e.g. v2026.03.03); HHMM suffix if that tag exists.
 
 name: Build and Release
 
@@ -16,10 +16,14 @@ on:
     paths-ignore:
       - "docs/**"
       - "**.md"
+  schedule:
+    # End of day UTC — only publishes when main moved since the last release tag.
+    - cron: "0 23 * * *"
+  workflow_dispatch:
 
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'schedule' && github.event_name != 'workflow_dispatch' }}
 
 env:
   # Shared with docker run mounts (see jobs below).
@@ -28,16 +32,52 @@ env:
 
 jobs:
   version:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-22.04
     outputs:
-      version: ${{ steps.version.outputs.VERSION }}
+      should_release: ${{ steps.check.outputs.should_release }}
+      version: ${{ steps.check.outputs.version }}
     steps:
-      - name: Set version
-        id: version
-        run: echo "VERSION=$(date +%Y.%m.%d.%H%M)" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Decide whether to release
+        id: check
+        run: |
+          set -euo pipefail
+          # Latest SemVer-ish / date tag (vYYYY.MM.DD or vYYYY.MM.DD.HHMM).
+          LATEST_TAG="$(git tag -l 'v*' --sort=-version:refname | head -n1 || true)"
+
+          if [ -z "$LATEST_TAG" ]; then
+            echo "No prior release tag; releasing HEAD."
+            SHOULD_RELEASE=true
+          else
+            # Match push paths-ignore: ignore docs-only / markdown-only changes.
+            RELEASABLE="$(git diff --name-only "${LATEST_TAG}..HEAD" \
+              | grep -Ev '(^docs/|\.md$)' || true)"
+            if [ -n "$RELEASABLE" ]; then
+              echo "Releasable changes since ${LATEST_TAG}:"
+              echo "$RELEASABLE"
+              SHOULD_RELEASE=true
+            else
+              echo "No releasable changes since ${LATEST_TAG}; skipping release."
+              SHOULD_RELEASE=false
+            fi
+          fi
+
+          VERSION="$(date -u +%Y.%m.%d)"
+          if [ "$SHOULD_RELEASE" = true ] && git rev-parse "refs/tags/v${VERSION}" >/dev/null 2>&1; then
+            VERSION="$(date -u +%Y.%m.%d.%H%M)"
+            echo "Tag v$(date -u +%Y.%m.%d) already exists; using v${VERSION}."
+          fi
+
+          echo "should_release=${SHOULD_RELEASE}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
   test:
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: ubuntu-22.04
     permissions:
       contents: read
@@ -151,6 +191,7 @@ jobs:
           retention-days: 14
 
   check-macos:
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v6
@@ -191,7 +232,7 @@ jobs:
         run: cargo check -p sqyre-app
 
   build-linux:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && needs.version.outputs.should_release == 'true'
     needs: version
     runs-on: ubuntu-22.04
     permissions:
@@ -201,6 +242,8 @@ jobs:
       version: ${{ needs.version.outputs.version }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: main
 
       - name: Write VERSION
         run: echo "${{ needs.version.outputs.version }}" > VERSION
@@ -314,7 +357,7 @@ jobs:
           path: Sqyre-v${{ needs.version.outputs.version }}-x86_64.AppImage.zip
 
   build-windows:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && needs.version.outputs.should_release == 'true'
     needs: version
     runs-on: ubuntu-22.04
     permissions:
@@ -324,6 +367,11 @@ jobs:
       version: ${{ needs.version.outputs.version }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: main
+
+      - name: Write VERSION
+        run: echo "${{ needs.version.outputs.version }}" > VERSION
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -395,6 +443,7 @@ jobs:
           SQYRE_WINDOWS_IMAGE: sqyre-windows-cross:latest
           SQYRE_WINDOWS_SKIP_PULL: "1"
           SQYRE_WINDOWS_SCCACHE: "1"
+          RELEASE_VERSION: ${{ needs.version.outputs.version }}
           CARGO_HOME: ${{ github.workspace }}/${{ env.CARGO_HOME_DIR }}
           CARGO_TARGET_DIR: ${{ github.workspace }}/${{ env.CARGO_TARGET_DIR_HOST }}
         run: ./scripts/windows/build.sh
@@ -416,7 +465,7 @@ jobs:
           path: sqyre-v${{ needs.version.outputs.version }}-windows-amd64.zip
 
   build-wasm:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && needs.version.outputs.should_release == 'true'
     needs: version
     runs-on: ubuntu-22.04
     permissions:
@@ -426,6 +475,11 @@ jobs:
       version: ${{ needs.version.outputs.version }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: main
+
+      - name: Write VERSION
+        run: echo "${{ needs.version.outputs.version }}" > VERSION
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -480,6 +534,7 @@ jobs:
 
       - name: Build WASM editor
         run: |
+          VERSION="${{ needs.version.outputs.version }}"
           docker run --rm -u "$(id -u):$(id -g)" \
             -v ${{ github.workspace }}:/workspace -w /workspace \
             -e HOME=/tmp \
@@ -487,6 +542,7 @@ jobs:
             -e CARGO_TARGET_DIR=/workspace/${{ env.CARGO_TARGET_DIR_HOST }} \
             -e RUSTUP_HOME=/usr/local/rustup \
             -e PATH=/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin \
+            -e RELEASE_VERSION="$VERSION" \
             sqyre-linux-build \
             bash -c 'set -euo pipefail
               make wasm
@@ -507,8 +563,8 @@ jobs:
           path: sqyre-v${{ needs.version.outputs.version }}-wasm.zip
 
   release:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [build-linux, build-windows, build-wasm]
+    if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && needs.version.outputs.should_release == 'true'
+    needs: [version, build-linux, build-windows, build-wasm]
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -522,8 +578,8 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: v${{ needs.build-linux.outputs.version }}
-          name: Release v${{ needs.build-linux.outputs.version }}
+          tag_name: v${{ needs.version.outputs.version }}
+          name: Release v${{ needs.version.outputs.version }}
           files: |
             artifacts/linux-binary-zip/*.zip
             artifacts/linux-appimage-zip/*.zip

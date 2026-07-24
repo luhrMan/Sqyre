@@ -316,7 +316,7 @@ fn item_tooltip_parts(catalog: &ProgramCatalog, target: &str) -> (String, Vec<St
     (item_key.to_string(), Vec::new())
 }
 
-/// Rich hover tooltip: bold name, 8×8 variant icons, then italic primary-colored tags.
+/// Rich hover tooltip: bold name, 12×12 variant icons, then italic primary-colored tags.
 pub fn attach_item_icon_tooltip(
     response: &egui::Response,
     catalog: &ProgramCatalog,
@@ -332,7 +332,7 @@ pub fn attach_item_icon_tooltip(
     });
 }
 
-const VARIANT_TIP_THUMB: f32 = 8.0;
+const VARIANT_TIP_THUMB: f32 = 12.0;
 
 fn paint_item_icon_tooltip(
     ui: &mut egui::Ui,
