@@ -426,8 +426,9 @@ impl eframe::App for SqyreApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.take_pending_db_import();
         ui_overlays::handle_close_to_tray(self, ui.ctx());
-        ui_overlays::show_floating_windows(self, ui.ctx());
+        // Poll background tasks before floating windows so Settings sees fresh update state.
         ui_overlays::sync_frame_state(self, ui.ctx());
+        ui_overlays::show_floating_windows(self, ui.ctx());
         ui_overlays::handle_shortcuts(self, ui);
 
         ui_macro_list::show(self, ui);

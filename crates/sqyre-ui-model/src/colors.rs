@@ -4,9 +4,9 @@
 //! so vision and persist can use them without depending on UI chrome.
 
 use sqyre_domain::{
-    action_color_key as taxonomy_color_key, ACTION_COLOR_KEY_DETECTION,
-    ACTION_COLOR_KEY_MISCELLANEOUS, ACTION_COLOR_KEY_MOUSE_KEYBOARD, ACTION_COLOR_KEY_VARIABLES,
-    ACTION_COLOR_KEY_WAIT,
+    action_color_key as taxonomy_color_key, ACTION_COLOR_KEY_CONTROL_FLOW,
+    ACTION_COLOR_KEY_DETECTION, ACTION_COLOR_KEY_MISCELLANEOUS, ACTION_COLOR_KEY_MOUSE_KEYBOARD,
+    ACTION_COLOR_KEY_VARIABLES, ACTION_COLOR_KEY_WAIT,
 };
 use std::collections::HashMap;
 use std::sync::RwLock;
@@ -23,7 +23,8 @@ pub fn sample_action_type_for_color_key(category_key: &str) -> &'static str {
         ACTION_COLOR_KEY_MOUSE_KEYBOARD => "click",
         ACTION_COLOR_KEY_DETECTION => "imagesearch",
         ACTION_COLOR_KEY_VARIABLES => "setvariable",
-        ACTION_COLOR_KEY_MISCELLANEOUS => "loop",
+        ACTION_COLOR_KEY_CONTROL_FLOW => "loop",
+        ACTION_COLOR_KEY_MISCELLANEOUS => "focuswindow",
         ACTION_COLOR_KEY_WAIT => "wait",
         _ => "",
     }
@@ -85,7 +86,8 @@ pub fn default_action_pastel_color(action_type: &str, is_dark: bool) -> [u8; 4] 
             ACTION_COLOR_KEY_MOUSE_KEYBOARD => [0x5E, 0x6B, 0x4A, 0xFF],
             ACTION_COLOR_KEY_DETECTION => [0x5A, 0x4A, 0x44, 0xFF],
             ACTION_COLOR_KEY_VARIABLES => [0x2A, 0x42, 0x54, 0xFF],
-            ACTION_COLOR_KEY_MISCELLANEOUS => [0x6A, 0x5A, 0x3F, 0xFF],
+            ACTION_COLOR_KEY_CONTROL_FLOW => [0x3A, 0x5A, 0x58, 0xFF],
+            ACTION_COLOR_KEY_MISCELLANEOUS => [0x8A, 0x45, 0x68, 0xFF],
             _ => [0x5C, 0x54, 0x49, 0xFF],
         };
     }
@@ -94,7 +96,8 @@ pub fn default_action_pastel_color(action_type: &str, is_dark: bool) -> [u8; 4] 
         ACTION_COLOR_KEY_MOUSE_KEYBOARD => [0xA1, 0xB0, 0x7A, 0xFF],
         ACTION_COLOR_KEY_DETECTION => [0xB4, 0x9A, 0x84, 0xFF],
         ACTION_COLOR_KEY_VARIABLES => [0x5E, 0x8F, 0xB0, 0xFF],
-        ACTION_COLOR_KEY_MISCELLANEOUS => [0xB8, 0x9A, 0x6A, 0xFF],
+        ACTION_COLOR_KEY_CONTROL_FLOW => [0x7A, 0xB8, 0xB0, 0xFF],
+        ACTION_COLOR_KEY_MISCELLANEOUS => [0xE0, 0x90, 0xB0, 0xFF],
         _ => [0xB2, 0xA4, 0x8E, 0xFF],
     }
 }

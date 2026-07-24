@@ -104,25 +104,25 @@ fn paint_tag_chips(ui: &mut egui::Ui, tags: &mut Vec<String>, enabled: bool, cha
     let chip = egui::Frame::NONE
         .fill(fill)
         .stroke(egui::Stroke::NONE)
-        .corner_radius(egui::CornerRadius::same(8))
-        .inner_margin(egui::Margin::symmetric(5, 1));
+        .corner_radius(egui::CornerRadius::same(6))
+        .inner_margin(egui::Margin::symmetric(4, 0));
 
     for tag in tags.iter() {
         // Pill wraps label + × so `horizontal_wrapped` treats each chip as one unit.
         chip.show(ui, |ui| {
-            ui.spacing_mut().item_spacing.x = 1.0;
+            ui.spacing_mut().item_spacing.x = 0.0;
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new(tag.as_str()).size(11.0).color(fg));
+                ui.label(egui::RichText::new(tag.as_str()).size(8.0).color(fg));
                 if ui
                     .add_enabled(
                         enabled,
                         egui::Button::new(
                             egui::RichText::new("×")
-                                .size(11.0)
+                                .size(8.0)
                                 .color(crate::theme::MACRO_STOP),
                         )
                         .frame(false)
-                        .min_size(egui::vec2(10.0, 10.0)),
+                        .min_size(egui::vec2(8.0, 8.0)),
                     )
                     .on_hover_text("Remove tag")
                     .clicked()
