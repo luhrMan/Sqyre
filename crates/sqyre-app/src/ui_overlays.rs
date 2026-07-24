@@ -173,7 +173,7 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
         app.settings_ui.reload_requested = false;
         apply_main_monitor_resolution(&mut app.catalog);
         app.selected_macro = 0;
-        app.selected_action = None;
+        app.clear_selected_actions();
         app.tree_histories.clear();
         app.tooltip.cancel();
         app.add_action_picker = AddActionPicker::default();
@@ -294,6 +294,10 @@ fn poll_scheduled_backup(app: &mut SqyreApp, ctx: &egui::Context) {
 /// Ctrl+C / Ctrl+X / Ctrl+V / Ctrl+Z / Ctrl+Y / Ctrl+A — skip while editing an action
 /// or when a text field has keyboard focus (so Ctrl+A still selects-all in editors).
 ///
+/// Copy/cut/paste must listen for [`egui::Event::{Copy,Cut,Paste}`]: egui-winit
+/// converts those chords into clipboard events and never emits `Key` presses for
+/// C/X/V (unlike Ctrl+A / Ctrl+Z / Ctrl+Y).
+///
 /// Mutating shortcuts match the action toolbar: disabled while a macro is running.
 pub fn handle_shortcuts(app: &mut SqyreApp, ui: &mut egui::Ui) {
     let running = app.run.running.load(Ordering::SeqCst);
@@ -303,10 +307,18 @@ pub fn handle_shortcuts(app: &mut SqyreApp, ui: &mut egui::Ui) {
         && !ui.ctx().egui_wants_keyboard_input()
     {
         let (copy, cut, paste, undo, redo, add_action) = ui.ctx().input(|i| {
+            let mut copy = false;
+            let mut cut = false;
+            let mut paste = false;
+            for ev in &i.events {
+                match ev {
+                    egui::Event::Copy => copy = true,
+                    egui::Event::Cut => cut = true,
+                    egui::Event::Paste(_) => paste = true,
+                    _ => {}
+                }
+            }
             let mod_key = i.modifiers.command;
-            let copy = mod_key && i.key_pressed(egui::Key::C);
-            let cut = mod_key && i.key_pressed(egui::Key::X);
-            let paste = mod_key && i.key_pressed(egui::Key::V);
             let undo = mod_key && !i.modifiers.shift && i.key_pressed(egui::Key::Z);
             let redo = mod_key
                 && (i.key_pressed(egui::Key::Y)
@@ -318,9 +330,9 @@ pub fn handle_shortcuts(app: &mut SqyreApp, ui: &mut egui::Ui) {
             return;
         }
         if cut {
-            app.cut_selection();
+            app.cut_selection(ui.ctx());
         } else if copy {
-            app.copy_selection();
+            app.copy_selection(ui.ctx());
         } else if paste {
             app.paste_clipboard();
         } else if undo {

@@ -410,6 +410,15 @@ mod tests {
                 },
                 "🔍",
             ),
+            (
+                ActionKind::NavigateKey {
+                    name: String::new(),
+                    chord: vec![],
+                    exit: false,
+                    subactions: vec![],
+                },
+                "🔑",
+            ),
         ];
         for (kind, want) in cases {
             let a = Action {

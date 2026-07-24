@@ -9,7 +9,7 @@ const MAX_TREE_HISTORY_ENTRIES: usize = 50;
 #[derive(Debug, Clone)]
 pub struct TreeSnapshot {
     root_map: Mapping,
-    selected: Option<ActionId>,
+    selected: Vec<ActionId>,
 }
 
 /// Per-macro undo/redo stacks of UID-preserving tree snapshots.
@@ -30,10 +30,7 @@ impl TreeHistory {
     }
 
     /// Build a snapshot without holding `&mut TreeHistory` (for borrow splitting).
-    pub fn take_snapshot(
-        root: &Action,
-        selected: Option<ActionId>,
-    ) -> Result<TreeSnapshot, String> {
+    pub fn take_snapshot(root: &Action, selected: Vec<ActionId>) -> Result<TreeSnapshot, String> {
         snapshot_tree(root, selected)
     }
 
@@ -50,11 +47,11 @@ impl TreeHistory {
         let _ = self.undo.pop();
     }
 
-    pub fn undo(&mut self, root: &mut Action, selected: &mut Option<ActionId>) -> bool {
+    pub fn undo(&mut self, root: &mut Action, selected: &mut Vec<ActionId>) -> bool {
         if !self.can_undo() {
             return false;
         }
-        let Ok(current) = snapshot_tree(root, *selected) else {
+        let Ok(current) = snapshot_tree(root, selected.clone()) else {
             eprintln!("tree undo: snapshot current failed");
             return false;
         };
@@ -69,11 +66,11 @@ impl TreeHistory {
         true
     }
 
-    pub fn redo(&mut self, root: &mut Action, selected: &mut Option<ActionId>) -> bool {
+    pub fn redo(&mut self, root: &mut Action, selected: &mut Vec<ActionId>) -> bool {
         if !self.can_redo() {
             return false;
         }
-        let Ok(current) = snapshot_tree(root, *selected) else {
+        let Ok(current) = snapshot_tree(root, selected.clone()) else {
             eprintln!("tree redo: snapshot current failed");
             return false;
         };
@@ -112,14 +109,23 @@ fn trim(stack: &mut Vec<TreeSnapshot>) {
     }
 }
 
-fn snapshot_tree(root: &Action, selected: Option<ActionId>) -> Result<TreeSnapshot, String> {
+fn snapshot_tree(root: &Action, selected: Vec<ActionId>) -> Result<TreeSnapshot, String> {
     let root_map = action_to_map_with_uid(root).map_err(|e| e.to_string())?;
     Ok(TreeSnapshot { root_map, selected })
 }
 
+fn selection_still_valid(root: &Action, id: ActionId) -> bool {
+    root.find_by_id(id).is_some()
+        || root.id == id
+        || matches!(
+            root.resolve_tree_id(id),
+            Some(sqyre_domain::TreeNodeRef::ElseFolder { .. })
+        )
+}
+
 fn apply_snapshot(
     root: &mut Action,
-    selected: &mut Option<ActionId>,
+    selected: &mut Vec<ActionId>,
     snap: TreeSnapshot,
     applying: &mut bool,
 ) -> Result<(), String> {
@@ -128,7 +134,9 @@ fn apply_snapshot(
     *root = restored;
     *selected = snap
         .selected
-        .filter(|id| root.find_by_id(*id).is_some() || root.id == *id);
+        .into_iter()
+        .filter(|&id| selection_still_valid(root, id))
+        .collect();
     *applying = false;
     Ok(())
 }
@@ -151,7 +159,7 @@ mod tests {
         root.children().iter().map(|c| c.id).collect()
     }
 
-    fn record(history: &mut TreeHistory, root: &Action, selected: Option<ActionId>) {
+    fn record(history: &mut TreeHistory, root: &Action, selected: Vec<ActionId>) {
         let snap = TreeHistory::take_snapshot(root, selected).unwrap();
         history.push_snapshot(snap);
     }
@@ -162,9 +170,9 @@ mod tests {
         let b = wait(2);
         let mut root = root_loop(vec![a, b]);
         let mut history = TreeHistory::default();
-        let mut selected = None;
+        let mut selected = Vec::new();
 
-        record(&mut history, &root, selected);
+        record(&mut history, &root, selected.clone());
         let c = wait(3);
         let c_id = c.id;
         root.children_mut().unwrap().push(c);
@@ -186,7 +194,7 @@ mod tests {
         let uid_a = a.id;
         let uid_b = b.id;
         let root = root_loop(vec![a, b]);
-        let snap = snapshot_tree(&root, Some(uid_b)).unwrap();
+        let snap = snapshot_tree(&root, vec![uid_b]).unwrap();
         let restored = action_from_map(&snap.root_map).unwrap();
         let ids = child_ids(&restored);
         assert_eq!(ids, vec![uid_a, uid_b]);
@@ -196,12 +204,12 @@ mod tests {
     fn applying_history_does_not_record() {
         let mut root = root_loop(vec![wait(1)]);
         let mut history = TreeHistory::default();
-        record(&mut history, &root, None);
+        record(&mut history, &root, Vec::new());
         root.children_mut().unwrap().push(wait(2));
         assert_eq!(history.undo.len(), 1);
 
         history.applying = true;
-        record(&mut history, &root, None);
+        record(&mut history, &root, Vec::new());
         history.applying = false;
         assert_eq!(history.undo.len(), 1);
     }
@@ -210,12 +218,12 @@ mod tests {
     fn redo_cleared_on_new_mutation() {
         let mut root = root_loop(vec![wait(1)]);
         let mut history = TreeHistory::default();
-        let mut selected = None;
-        record(&mut history, &root, selected);
+        let mut selected = Vec::new();
+        record(&mut history, &root, selected.clone());
         root.children_mut().unwrap().push(wait(2));
         assert!(history.undo(&mut root, &mut selected));
         assert!(history.can_redo());
-        record(&mut history, &root, selected);
+        record(&mut history, &root, selected.clone());
         root.children_mut().unwrap().push(wait(3));
         assert!(!history.can_redo());
     }

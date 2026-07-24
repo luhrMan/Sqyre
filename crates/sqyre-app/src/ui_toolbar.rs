@@ -27,16 +27,39 @@ fn toolbar_icon_colored(
 }
 
 pub fn brand_header(app: &mut SqyreApp, ui: &mut egui::Ui) {
-    ui.horizontal(|ui| {
-        let tex = app.icon_cache.sqyre_fallback(ui.ctx());
-        let size = egui::vec2(28.0, 28.0);
-        ui.add(
-            egui::Image::new((tex.id(), size))
-                .fit_to_exact_size(size)
-                .maintain_aspect_ratio(true),
-        );
-        ui.heading("Sqyre");
+    let tex = app.icon_cache.sqyre_fallback(ui.ctx());
+    let size = egui::vec2(28.0, 28.0);
+    let image = egui::Image::new((tex.id(), size))
+        .fit_to_exact_size(size)
+        .maintain_aspect_ratio(true);
+    let button = egui::Button::image_and_text(image, egui::RichText::new("Sqyre").heading())
+        .frame_when_inactive(false);
+
+    let (response, _) = egui::containers::menu::MenuButton::from_button(button).ui(ui, |ui| {
+        if ui.button("📁  Data Editor").clicked() {
+            app.data_editor.open = true;
+            ui.close();
+        }
+        if ui.button("Variables").clicked() {
+            app.variables_panel.open = true;
+            ui.close();
+        }
+        if ui.button("⚙  Settings").clicked() {
+            app.settings_ui.open = true;
+            ui.close();
+        }
+        ui.separator();
+        let list_label = if app.macro_list_open {
+            "◁  Hide Macro List"
+        } else {
+            "☰  Show Macro List"
+        };
+        if ui.button(list_label).clicked() {
+            app.macro_list_open = !app.macro_list_open;
+            ui.close();
+        }
     });
+    response.on_hover_text("App menu");
 }
 
 pub fn main_toolbar(app: &mut SqyreApp, ui: &mut egui::Ui) {
@@ -170,6 +193,19 @@ fn paint_hotkey_controls(app: &mut SqyreApp, ui: &mut egui::Ui, idx: usize, runn
         }
     };
     ui.monospace(&hk_label);
+    if theme::record_icon_button(ui, "Record a global hotkey chord", !running).clicked() {
+        app.hotkey_record.open(&app.macro_hotkeys);
+    }
+    if toolbar_icon(
+        ui,
+        egui_phosphor::regular::ERASER,
+        crate::action_tooltip::help::META_HOTKEY_CLEAR,
+        !running && !app.macros[idx].hotkey.is_empty(),
+    )
+    .clicked()
+    {
+        app.apply_hotkey_to_selected(Vec::new(), None);
+    }
 
     let mut trigger = HotkeyTrigger::parse(&app.macros[idx].hotkey_trigger);
     let mut trigger_changed = false;
@@ -192,20 +228,6 @@ fn paint_hotkey_controls(app: &mut SqyreApp, ui: &mut egui::Ui, idx: usize, runn
     if trigger_changed {
         let chord = app.macros[idx].hotkey.clone();
         app.apply_hotkey_to_selected(chord, Some(trigger));
-    }
-
-    if theme::record_icon_button(ui, "Record a global hotkey chord", !running).clicked() {
-        app.hotkey_record.open(&app.macro_hotkeys);
-    }
-    if ui
-        .add_enabled(
-            !running && !app.macros[idx].hotkey.is_empty(),
-            egui::Button::new("Clear"),
-        )
-        .on_hover_text(crate::action_tooltip::help::META_HOTKEY_CLEAR)
-        .clicked()
-    {
-        app.apply_hotkey_to_selected(Vec::new(), None);
     }
 }
 
@@ -238,10 +260,10 @@ pub fn action_toolbar(app: &mut SqyreApp, ui: &mut egui::Ui) -> Option<bool> {
         }
         ui.separator();
         if toolbar_icon(ui, "📄", "Copy (Ctrl+C)", can_copy && !running).clicked() {
-            app.copy_selection();
+            app.copy_selection(ui.ctx());
         }
         if toolbar_icon(ui, "✂", "Cut (Ctrl+X)", can_copy && !running).clicked() {
-            app.cut_selection();
+            app.cut_selection(ui.ctx());
         }
         if toolbar_icon(ui, "📋", "Paste (Ctrl+V)", can_paste && !running).clicked() {
             app.paste_clipboard();

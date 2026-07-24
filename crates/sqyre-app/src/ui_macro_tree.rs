@@ -143,6 +143,8 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                     let root_children = root.children();
                     let known_vars = collect_known_variable_names(&app.macros[idx]);
                     let interact_y = ui.spacing().interact_size.y;
+                    let primary_id = app.selected_actions.last().copied();
+                    let selected_action = primary_id.and_then(|id| root.find_by_id(id));
                     let mut tree_paint = TreePaint {
                         catalog,
                         icons,
@@ -152,7 +154,8 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                         },
                         macro_name: &macro_name,
                         hl_snap: &hl_snap,
-                        selected: app.selected_action,
+                        selected: &app.selected_actions,
+                        selected_action,
                     };
                     // egui_ltreeview sizes to max(available, content). Inside ScrollArea
                     // that fills the viewport and trips a permanent vertical scrollbar
@@ -161,6 +164,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                     ui.set_max_height(0.0);
                     let (_, tree_actions) = TreeView::new(id)
                         .allow_drag_and_drop(allow_dnd)
+                        .allow_multi_selection(true)
                         .default_node_height(Some(tree_chrome::default_row_height(interact_y)))
                         .show_state(
                             ui,
@@ -236,16 +240,24 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
 
     // Row overlay is clickthrough (Sense::hover + geometric clicks). When a
     // view tip covers the row, TreeView never sees the click — select here.
-    // Surrender text-field focus so Ctrl+C/V/X/A hit the tree shortcuts.
-    for (aid, interaction) in &row_events {
-        if interaction.primary_clicked {
-            state.set_one_selected(*aid);
-            app.selected_action = Some(*aid);
+    // Skip when TreeView already emitted SetSelected (avoids collapsing multi-select).
+    let treeview_set_selected = actions
+        .iter()
+        .any(|a| matches!(a, TreeAction::SetSelected(_)));
+    if !treeview_set_selected {
+        let modifiers = ui.input(|i| i.modifiers);
+        for (aid, interaction) in &row_events {
+            if !interaction.primary_clicked {
+                continue;
+            }
+            apply_overlay_selection(&mut state, &app.macros[idx].root, *aid, modifiers);
+            app.set_selected_actions(state.selected().clone());
             ui.memory_mut(|m| {
                 if let Some(fid) = m.focused() {
                     m.surrender_focus(fid);
                 }
             });
+            break;
         }
     }
     state.store(ui, id);
@@ -261,10 +273,10 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
             )
         {
             app.record_tree_mutation();
-            let cleared_sel = app.selected_action_id() == Some(aid);
+            let cleared_sel = app.selected_actions.contains(&aid);
             let _ = app.macros[idx].root.remove_by_id(aid);
             if cleared_sel {
-                app.selected_action = None;
+                app.remove_from_selection(aid);
             }
             if app.logs_window == Some(aid) {
                 app.logs_window = None;
@@ -293,7 +305,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
     action_tooltip::end_hover_pass(&mut app.tooltip, any_view_hover);
 
     {
-        let selected = app.selected_action_id();
+        let selected = app.selected_actions.clone();
         let name = app.macros[idx].name.clone();
         let catalog = &app.catalog;
         let icons = &mut app.icon_cache;
@@ -333,7 +345,8 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                 &mut tip_ui,
                 |root_before| {
                     if pending_record.is_none() {
-                        if let Ok(snap) = TreeHistory::take_snapshot(root_before, selected) {
+                        if let Ok(snap) = TreeHistory::take_snapshot(root_before, selected.clone())
+                        {
                             pending_record = Some(snap);
                         }
                     }
@@ -348,16 +361,16 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
             // Saved an edit (including first save of a provisional insert).
             app.persist_macro_at(idx);
         }
-        if let Some(aid) = discarded {
-            app.discard_provisional_action(aid);
+        if !discarded.is_empty() {
+            app.discard_provisional_actions(&discarded);
         }
     }
 
-    let mut pending_moves: Vec<(ActionId, ActionId, InsertSlot)> = Vec::new();
+    let mut pending_move: Option<(Vec<ActionId>, ActionId, InsertSlot)> = None;
     for action in actions {
         match action {
             TreeAction::SetSelected(sel) => {
-                app.selected_action = sel.into_iter().next();
+                app.set_selected_actions(sel);
                 ui.memory_mut(|m| {
                     if let Some(fid) = m.focused() {
                         m.surrender_focus(fid);
@@ -372,9 +385,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                 let Some(slot) = tree_dnd::insert_slot_from_dir_position(dnd.position) else {
                     continue;
                 };
-                for src_aid in &dnd.source {
-                    pending_moves.push((*src_aid, target_aid, slot));
-                }
+                pending_move = Some((dnd.source, target_aid, slot));
             }
             TreeAction::Drag(dnd) => {
                 if app.tree_drag_mode == TreeDragMode::Scroll {
@@ -383,47 +394,117 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                 }
                 // Disallow dropping a node into itself / a descendant while dragging.
                 let target_aid = dnd.target;
-                if let Some(src_aid) = dnd.source.first() {
-                    if tree_dnd::is_invalid_tree_drop(&app.macros[idx].root, *src_aid, target_aid) {
-                        dnd.remove_drop_marker(ui);
-                    }
+                if tree_dnd::is_invalid_tree_drop_any(
+                    &app.macros[idx].root,
+                    &dnd.source,
+                    target_aid,
+                ) {
+                    dnd.remove_drop_marker(ui);
                 }
             }
             _ => {}
         }
     }
-    if !pending_moves.is_empty() {
+    if let Some((sources, parent, slot)) = pending_move {
         app.record_tree_mutation();
-    }
-    let moved = !pending_moves.is_empty();
-    for (src, parent, slot) in pending_moves {
-        let _ = app.macros[idx].root.move_action(src, parent, slot);
-    }
-    if moved {
+        let _ = app.macros[idx].root.move_actions(&sources, parent, slot);
         app.persist_macro_at(idx);
     }
 
-    if let Some(aid) = app.selected_action {
-        let root = &app.macros[idx].root;
-        if let Some(sqyre_domain::TreeNodeRef::ElseFolder { .. }) = root.resolve_tree_id(aid) {
-            ui.separator();
-            ui.label("Selected: Else (runs when not found / condition false)");
-        } else {
-            let action = if aid.is_root() {
-                Some(root)
-            } else {
-                root.find_by_id(aid)
-            };
-            if let Some(action) = action {
+    match app.selected_actions.as_slice() {
+        [] => {}
+        [aid] => {
+            let root = &app.macros[idx].root;
+            if let Some(sqyre_domain::TreeNodeRef::ElseFolder { .. }) = root.resolve_tree_id(*aid) {
                 ui.separator();
-                ui.label(format!(
-                    "Selected: {} ({})",
-                    action.display_name(),
-                    action.type_key()
-                ));
+                ui.label("Selected: Else (runs when not found / condition false)");
+            } else {
+                let action = if aid.is_root() {
+                    Some(root)
+                } else {
+                    root.find_by_id(*aid)
+                };
+                if let Some(action) = action {
+                    ui.separator();
+                    ui.label(format!(
+                        "Selected: {} ({})",
+                        action.display_name(),
+                        action.type_key()
+                    ));
+                }
+            }
+        }
+        ids => {
+            ui.separator();
+            ui.label(format!("Selected: {} actions", ids.len()));
+        }
+    }
+}
+
+/// Apply Ctrl/Cmd toggle, Shift range, or plain single-select for tip-covered rows.
+fn apply_overlay_selection(
+    state: &mut TreeViewState<ActionId>,
+    root: &Action,
+    aid: ActionId,
+    modifiers: egui::Modifiers,
+) {
+    if modifiers.command {
+        let mut sel = state.selected().clone();
+        if let Some(i) = sel.iter().position(|id| *id == aid) {
+            sel.remove(i);
+        } else {
+            sel.push(aid);
+        }
+        state.set_selected(sel);
+        return;
+    }
+    if modifiers.shift {
+        let pivot = state.selected().first().copied().unwrap_or(aid);
+        state.set_selected(flattened_ids_between(root, pivot, aid));
+        return;
+    }
+    state.set_one_selected(aid);
+}
+
+/// Inclusive range of flattened visible node ids between `a` and `b` (tree order).
+fn flattened_ids_between(root: &Action, a: ActionId, b: ActionId) -> Vec<ActionId> {
+    let order = flattened_visible_ids(root);
+    let Some(i) = order.iter().position(|id| *id == a) else {
+        return vec![b];
+    };
+    let Some(j) = order.iter().position(|id| *id == b) else {
+        return vec![b];
+    };
+    let (lo, hi) = if i <= j { (i, j) } else { (j, i) };
+    order[lo..=hi].to_vec()
+}
+
+fn flattened_visible_ids(root: &Action) -> Vec<ActionId> {
+    let mut ids = Vec::new();
+    fn walk(action: &Action, ids: &mut Vec<ActionId>) {
+        if action.id.is_root() {
+            for child in action.children() {
+                walk(child, ids);
+            }
+            return;
+        }
+        ids.push(action.id);
+        if action.is_branch() {
+            for child in action.children() {
+                walk(child, ids);
+            }
+            if action.has_else_folder() {
+                ids.push(ActionId::else_folder(action.id));
+                if let Some(else_kids) = action.else_children() {
+                    for child in else_kids {
+                        walk(child, ids);
+                    }
+                }
             }
         }
     }
+    walk(root, &mut ids);
+    ids
 }
 
 fn set_all_branches_openness(root: &Action, state: &mut TreeViewState<ActionId>, open: bool) {
@@ -529,7 +610,7 @@ fn build_tree(
     interact_y: f32,
 ) {
     let action_id = action.id;
-    let highlight = row_highlight_for(tree, action_id);
+    let highlight = row_highlight_for(tree, action);
     let should_scroll = scroll_to == Some(action_id);
     let row_h = tree_chrome::action_row_height(action, interact_y);
 
@@ -630,7 +711,7 @@ fn build_else_dir(
                 tree_chrome::paint_row_highlight(
                     ui,
                     row_rect,
-                    else_folder_highlight(detection.id, tree.selected),
+                    else_folder_highlight(detection.id, tree.selected.last().copied()),
                 );
                 if should_scroll {
                     ui.scroll_to_rect(row_rect, Some(egui::Align::Center));
@@ -695,12 +776,17 @@ pub(crate) fn row_highlight(
     RowHighlight::None
 }
 
-fn row_highlight_for(tree: &TreePaint<'_>, action_id: ActionId) -> RowHighlight {
-    let exec = row_highlight(tree.macro_name, action_id, tree.hl_snap);
+fn row_highlight_for(tree: &TreePaint<'_>, action: &Action) -> RowHighlight {
+    let exec = row_highlight(tree.macro_name, action.id, tree.hl_snap);
     if !matches!(exec, RowHighlight::None) {
         return exec;
     }
-    else_owner_highlight(action_id, tree.selected)
+    let primary = tree.selected.last().copied();
+    let related = else_owner_highlight(action.id, primary);
+    if !matches!(related, RowHighlight::None) {
+        return related;
+    }
+    press_pair_highlight(action, tree.selected_action)
 }
 
 /// Soft highlight on a branch when its Else folder is the tree selection.
@@ -727,9 +813,18 @@ pub(crate) fn else_folder_highlight(
     }
 }
 
+/// Soft highlight on the opposite key/click press when its pair is selected.
+pub(crate) fn press_pair_highlight(action: &Action, selected: Option<&Action>) -> RowHighlight {
+    match selected {
+        Some(sel) if action.id != sel.id && sel.is_press_pair_of(action) => RowHighlight::Owner,
+        _ => RowHighlight::None,
+    }
+}
+
 #[cfg(test)]
 mod highlight_ui_tests {
     use super::*;
+    use sqyre_domain::{ActionKind, PressState};
     use sqyre_executor::HighlightSnapshot;
     use std::collections::HashMap;
 
@@ -799,5 +894,38 @@ mod highlight_ui_tests {
             RowHighlight::None
         );
         assert_eq!(else_folder_highlight(id, None), RowHighlight::None);
+    }
+
+    #[test]
+    fn press_pair_highlight_marks_opposite_same_key() {
+        let down = Action {
+            id: ActionId::new(),
+            kind: ActionKind::Key {
+                key: "ctrl".into(),
+                state: PressState::Down,
+            },
+        };
+        let up = Action {
+            id: ActionId::new(),
+            kind: ActionKind::Key {
+                key: "ctrl".into(),
+                state: PressState::Up,
+            },
+        };
+        let other = Action {
+            id: ActionId::new(),
+            kind: ActionKind::Key {
+                key: "alt".into(),
+                state: PressState::Up,
+            },
+        };
+        assert_eq!(press_pair_highlight(&up, Some(&down)), RowHighlight::Owner);
+        assert_eq!(press_pair_highlight(&down, Some(&up)), RowHighlight::Owner);
+        assert_eq!(
+            press_pair_highlight(&other, Some(&down)),
+            RowHighlight::None
+        );
+        assert_eq!(press_pair_highlight(&down, Some(&down)), RowHighlight::None);
+        assert_eq!(press_pair_highlight(&up, None), RowHighlight::None);
     }
 }

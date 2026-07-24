@@ -884,6 +884,57 @@ impl Action {
         self.kind.display_name()
     }
 
+    /// If this is a key/click [`PressState::Down`], a matching `Up` action (fresh id).
+    ///
+    /// Used when inserting a hold so the release is paired immediately below.
+    pub fn matching_release(&self) -> Option<Action> {
+        match &self.kind {
+            ActionKind::Click { button, state } if state.is_down() => Some(Action {
+                id: ActionId::new(),
+                kind: ActionKind::Click {
+                    button: *button,
+                    state: PressState::Up,
+                },
+            }),
+            ActionKind::Key { key, state } if state.is_down() => Some(Action {
+                id: ActionId::new(),
+                kind: ActionKind::Key {
+                    key: key.clone(),
+                    state: PressState::Up,
+                },
+            }),
+            _ => None,
+        }
+    }
+
+    /// True when `other` is the opposite press of the same key or mouse button
+    /// ([`PressState::Down`] ↔ [`PressState::Up`]; Tap does not pair).
+    pub fn is_press_pair_of(&self, other: &Action) -> bool {
+        match (&self.kind, &other.kind) {
+            (
+                ActionKind::Key {
+                    key: key_a,
+                    state: state_a,
+                },
+                ActionKind::Key {
+                    key: key_b,
+                    state: state_b,
+                },
+            ) => key_a.eq_ignore_ascii_case(key_b) && press_states_pair(*state_a, *state_b),
+            (
+                ActionKind::Click {
+                    button: button_a,
+                    state: state_a,
+                },
+                ActionKind::Click {
+                    button: button_b,
+                    state: state_b,
+                },
+            ) => button_a == button_b && press_states_pair(*state_a, *state_b),
+            _ => false,
+        }
+    }
+
     /// Resolve a tree node id to either a real action or an Else folder.
     pub fn resolve_tree_id(&self, id: ActionId) -> Option<TreeNodeRef> {
         if self.id == id {
@@ -1096,29 +1147,101 @@ impl Action {
         parent_id: ActionId,
         slot: InsertSlot,
     ) -> Result<(), String> {
-        if source_id == parent_id {
-            return Err("cannot drop onto self".into());
+        self.move_actions(&[source_id], parent_id, slot)
+    }
+
+    /// Move several nodes under `parent_id` at `slot`, preserving `source_ids` order.
+    ///
+    /// Removes every source first, then inserts so sequential Before/After slots do not
+    /// reverse relative order. Skips root / Else-folder sentinels and duplicate ids.
+    pub fn move_actions(
+        &mut self,
+        source_ids: &[ActionId],
+        parent_id: ActionId,
+        slot: InsertSlot,
+    ) -> Result<(), String> {
+        let mut seen = std::collections::HashSet::new();
+        let mut sources: Vec<ActionId> = Vec::new();
+        for &id in source_ids {
+            if id.is_root()
+                || matches!(
+                    self.resolve_tree_id(id),
+                    Some(TreeNodeRef::ElseFolder { .. })
+                )
+                || !seen.insert(id)
+            {
+                continue;
+            }
+            sources.push(id);
         }
-        // Else folder sentinel: treat containment against the owning parent.
+        if sources.is_empty() {
+            return Ok(());
+        }
+
         let parent_for_check = match self.resolve_tree_id(parent_id) {
             Some(TreeNodeRef::ElseFolder { parent_id }) => parent_id,
             _ => parent_id,
         };
-        if let Some(src) = self.find_by_id(source_id) {
-            if src.contains_id(parent_for_check) {
-                return Err("cannot drop into own descendant".into());
+        for &source_id in &sources {
+            if source_id == parent_id {
+                return Err("cannot drop onto self".into());
+            }
+            if let Some(src) = self.find_by_id(source_id) {
+                if src.contains_id(parent_for_check) {
+                    return Err("cannot drop into own descendant".into());
+                }
             }
         }
+
+        // Dropping Before/After a source that is itself moving is a no-op for a
+        // single-node move; with multiple sources, resolve to a non-moving sibling.
+        let slot = match slot {
+            InsertSlot::Before(id) | InsertSlot::After(id) if sources.contains(&id) => {
+                if sources.len() == 1 && sources[0] == id {
+                    return Ok(());
+                }
+                resolve_slot_around_moving_sources(self, parent_id, slot, &sources)?
+            }
+            other => other,
+        };
+
+        let mut nodes = Vec::with_capacity(sources.len());
+        for source_id in sources {
+            let node = self
+                .remove_by_id(source_id)
+                .ok_or_else(|| format!("source action {source_id} not found"))?;
+            nodes.push(node);
+        }
+
         match slot {
-            InsertSlot::Before(id) | InsertSlot::After(id) if id == source_id => {
-                return Ok(());
+            InsertSlot::First => {
+                for node in nodes.into_iter().rev() {
+                    self.insert_at(parent_id, InsertSlot::First, node)?;
+                }
             }
-            _ => {}
+            InsertSlot::Last => {
+                for node in nodes {
+                    self.insert_at(parent_id, InsertSlot::Last, node)?;
+                }
+            }
+            InsertSlot::Before(sib) => {
+                let mut anchor = InsertSlot::Before(sib);
+                for node in nodes {
+                    let id = node.id;
+                    self.insert_at(parent_id, anchor, node)?;
+                    anchor = InsertSlot::After(id);
+                }
+            }
+            InsertSlot::After(sib) => {
+                let mut anchor = InsertSlot::After(sib);
+                for node in nodes {
+                    let id = node.id;
+                    self.insert_at(parent_id, anchor, node)?;
+                    anchor = InsertSlot::After(id);
+                }
+            }
         }
-        let node = self
-            .remove_by_id(source_id)
-            .ok_or_else(|| format!("source action {source_id} not found"))?;
-        self.insert_at(parent_id, slot, node)
+        Ok(())
     }
 
     pub fn walk<F: FnMut(&Action)>(&self, f: &mut F) {
@@ -1143,6 +1266,98 @@ impl Action {
         if let Some(else_kids) = self.else_children_mut() {
             for child in else_kids.iter_mut() {
                 child.walk_mut(f);
+            }
+        }
+    }
+}
+
+/// When the drop marker is Before/After a node that is also moving, pick a
+/// stable sibling (or First/Last) that will still exist after sources detach.
+fn resolve_slot_around_moving_sources(
+    root: &Action,
+    parent_id: ActionId,
+    slot: InsertSlot,
+    sources: &[ActionId],
+) -> Result<InsertSlot, String> {
+    let children: Vec<ActionId> = {
+        // Read-only walk of the insert list (same resolution as insert_at).
+        let list = match root.resolve_tree_id(parent_id) {
+            Some(TreeNodeRef::ElseFolder { parent_id: owner }) => {
+                let parent = if owner == root.id {
+                    root
+                } else {
+                    root.find_by_id(owner)
+                        .ok_or_else(|| format!("parent action {owner} not found"))?
+                };
+                parent
+                    .else_children()
+                    .ok_or_else(|| "else drop target has no else branch".to_string())?
+            }
+            Some(TreeNodeRef::Action(aid)) => {
+                let parent = if aid == root.id {
+                    root
+                } else {
+                    root.find_by_id(aid)
+                        .ok_or_else(|| format!("parent action {aid} not found"))?
+                };
+                if !parent.is_branch() {
+                    return Err("drop target is not a branch".into());
+                }
+                parent.children()
+            }
+            None => return Err(format!("parent action {parent_id} not found")),
+        };
+        list.iter().map(|c| c.id).collect()
+    };
+    let source_set: std::collections::HashSet<_> = sources.iter().copied().collect();
+    let (anchor_id, after) = match slot {
+        InsertSlot::Before(id) => (id, false),
+        InsertSlot::After(id) => (id, true),
+        other => return Ok(other),
+    };
+    let Some(idx) = children.iter().position(|&id| id == anchor_id) else {
+        return Err("drop sibling not found".into());
+    };
+    if after {
+        // Find first non-moving sibling after the anchor block of movers.
+        let mut i = idx + 1;
+        while i < children.len() && source_set.contains(&children[i]) {
+            i += 1;
+        }
+        if i < children.len() {
+            // Insert before that survivor so movers land where the marker was.
+            Ok(InsertSlot::Before(children[i]))
+        } else {
+            // Scan backward for a non-moving sibling to place After.
+            let mut j = idx;
+            while j > 0 && source_set.contains(&children[j - 1]) {
+                j -= 1;
+            }
+            if j > 0 && !source_set.contains(&children[j - 1]) {
+                Ok(InsertSlot::After(children[j - 1]))
+            } else if !source_set.contains(&children[0]) && children[0] != anchor_id {
+                Ok(InsertSlot::Before(children[0]))
+            } else {
+                Ok(InsertSlot::Last)
+            }
+        }
+    } else {
+        // Before(anchor): find last non-moving sibling before the mover block.
+        let mut i = idx;
+        while i > 0 && source_set.contains(&children[i - 1]) {
+            i -= 1;
+        }
+        if i > 0 {
+            Ok(InsertSlot::After(children[i - 1]))
+        } else {
+            let mut j = idx;
+            while j < children.len() && source_set.contains(&children[j]) {
+                j += 1;
+            }
+            if j < children.len() {
+                Ok(InsertSlot::Before(children[j]))
+            } else {
+                Ok(InsertSlot::First)
             }
         }
     }
@@ -1484,6 +1699,13 @@ pub fn root_loop(subactions: Vec<Action>) -> Action {
     }
 }
 
+fn press_states_pair(a: PressState, b: PressState) -> bool {
+    matches!(
+        (a, b),
+        (PressState::Down, PressState::Up) | (PressState::Up, PressState::Down)
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1506,6 +1728,99 @@ mod tests {
             serde_yaml::from_str::<PressState>("down").unwrap(),
             PressState::Down
         );
+    }
+
+    #[test]
+    fn matching_release_pairs_down_key_and_click() {
+        let key_down = Action {
+            id: ActionId::new(),
+            kind: ActionKind::Key {
+                key: "shift".into(),
+                state: PressState::Down,
+            },
+        };
+        let key_up = key_down.matching_release().expect("key down has release");
+        assert_ne!(key_up.id, key_down.id);
+        assert_eq!(
+            key_up.kind,
+            ActionKind::Key {
+                key: "shift".into(),
+                state: PressState::Up,
+            }
+        );
+
+        let click_down = Action {
+            id: ActionId::new(),
+            kind: ActionKind::Click {
+                button: MouseButton::Right,
+                state: PressState::Down,
+            },
+        };
+        let click_up = click_down
+            .matching_release()
+            .expect("click down has release");
+        assert_eq!(
+            click_up.kind,
+            ActionKind::Click {
+                button: MouseButton::Right,
+                state: PressState::Up,
+            }
+        );
+
+        let tap = Action {
+            id: ActionId::new(),
+            kind: ActionKind::Key {
+                key: "a".into(),
+                state: PressState::Tap,
+            },
+        };
+        assert!(tap.matching_release().is_none());
+    }
+
+    #[test]
+    fn is_press_pair_of_matches_opposite_same_key_or_button() {
+        let down = Action {
+            id: ActionId::new(),
+            kind: ActionKind::Key {
+                key: "Ctrl".into(),
+                state: PressState::Down,
+            },
+        };
+        let up = Action {
+            id: ActionId::new(),
+            kind: ActionKind::Key {
+                key: "ctrl".into(),
+                state: PressState::Up,
+            },
+        };
+        let other_key = Action {
+            id: ActionId::new(),
+            kind: ActionKind::Key {
+                key: "alt".into(),
+                state: PressState::Up,
+            },
+        };
+        assert!(down.is_press_pair_of(&up));
+        assert!(up.is_press_pair_of(&down));
+        assert!(!down.is_press_pair_of(&other_key));
+        assert!(!down.is_press_pair_of(&down));
+
+        let click_down = Action {
+            id: ActionId::new(),
+            kind: ActionKind::Click {
+                button: MouseButton::Left,
+                state: PressState::Down,
+            },
+        };
+        let click_up = Action {
+            id: ActionId::new(),
+            kind: ActionKind::Click {
+                button: MouseButton::Left,
+                state: PressState::Up,
+            },
+        };
+        assert!(click_down.is_press_pair_of(&click_up));
+        assert!(!click_down.is_press_pair_of(&down));
     }
 
     #[test]
@@ -1615,6 +1930,32 @@ mod tests {
             .unwrap();
         let ids: Vec<_> = root.children().iter().map(|x| x.id).collect();
         assert_eq!(ids, vec![c, a, b]);
+    }
+
+    #[test]
+    fn move_actions_preserves_order_after_sibling() {
+        let a = ActionId::new();
+        let b = ActionId::new();
+        let c = ActionId::new();
+        let d = ActionId::new();
+        let mut root = root_loop(vec![wait(a), wait(b), wait(c), wait(d)]);
+        root.move_actions(&[b, c], ActionId::root(), InsertSlot::After(d))
+            .unwrap();
+        let ids: Vec<_> = root.children().iter().map(|x| x.id).collect();
+        assert_eq!(ids, vec![a, d, b, c]);
+    }
+
+    #[test]
+    fn move_actions_preserves_order_before_sibling() {
+        let a = ActionId::new();
+        let b = ActionId::new();
+        let c = ActionId::new();
+        let d = ActionId::new();
+        let mut root = root_loop(vec![wait(a), wait(b), wait(c), wait(d)]);
+        root.move_actions(&[c, d], ActionId::root(), InsertSlot::Before(a))
+            .unwrap();
+        let ids: Vec<_> = root.children().iter().map(|x| x.id).collect();
+        assert_eq!(ids, vec![c, d, a, b]);
     }
 
     #[test]

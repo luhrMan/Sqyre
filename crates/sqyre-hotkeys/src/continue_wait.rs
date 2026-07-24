@@ -295,7 +295,7 @@ fn validate_not_failsafe(keys: &[String]) -> Result<(), String> {
 
 /// Map an rdev key to a Sqyre hotkey name (lowercase).
 /// Stable key names for `db.yaml` chords (X11 keysym → hook name).
-#[cfg(feature = "hooks")]
+#[cfg(all(feature = "hooks", not(target_os = "windows")))]
 pub fn rdev_key_name(key: rdev::Key) -> Option<String> {
     use rdev::Key;
     let name = match key {
@@ -385,6 +385,103 @@ pub fn rdev_key_name(key: rdev::Key) -> Option<String> {
         Key::KpMultiply => "num_asterisk",
         Key::KpDivide => "num_slash",
         Key::KpDelete => "num_period",
+        _ => return None,
+    };
+    Some(name.into())
+}
+
+/// Map a Win32 virtual-key code to a Sqyre hotkey name (same strings as [`rdev_key_name`]).
+///
+/// `extended` is the LLKHF_EXTENDED bit from `KBDLLHOOKSTRUCT::flags` (numpad Enter, etc.).
+#[cfg(all(feature = "hooks", target_os = "windows"))]
+pub fn vk_key_name(vk: u32, extended: bool) -> Option<String> {
+    // https://learn.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
+    let name = match vk {
+        0x1B => "esc",                   // VK_ESCAPE
+        0xA2 | 0xA3 => "ctrl",           // VK_LCONTROL | VK_RCONTROL
+        0xA0 => "shift",                 // VK_LSHIFT
+        0xA1 => "rshift",                // VK_RSHIFT
+        0xA4 => "alt",                   // VK_LMENU
+        0xA5 => "ralt",                  // VK_RMENU
+        0x5B => "cmd",                   // VK_LWIN
+        0x5C => "rcmd",                  // VK_RWIN
+        0x20 => "space",                 // VK_SPACE
+        0x0D if extended => "num_enter", // VK_RETURN + extended
+        0x0D => "enter",                 // VK_RETURN
+        0x09 => "tab",                   // VK_TAB
+        0x08 => "delete",                // VK_BACK
+        0x2E => "delete",                // VK_DELETE
+        0x26 => "up",                    // VK_UP
+        0x28 => "down",                  // VK_DOWN
+        0x25 => "left",                  // VK_LEFT
+        0x27 => "right",                 // VK_RIGHT
+        0x24 => "home",                  // VK_HOME
+        0x23 => "end",                   // VK_END
+        0x21 => "pageup",                // VK_PRIOR
+        0x22 => "pagedown",              // VK_NEXT
+        0x70 => "f1",
+        0x71 => "f2",
+        0x72 => "f3",
+        0x73 => "f4",
+        0x74 => "f5",
+        0x75 => "f6",
+        0x76 => "f7",
+        0x77 => "f8",
+        0x78 => "f9",
+        0x79 => "f10",
+        0x7A => "f11",
+        0x7B => "f12",
+        0x41 => "a",
+        0x42 => "b",
+        0x43 => "c",
+        0x44 => "d",
+        0x45 => "e",
+        0x46 => "f",
+        0x47 => "g",
+        0x48 => "h",
+        0x49 => "i",
+        0x4A => "j",
+        0x4B => "k",
+        0x4C => "l",
+        0x4D => "m",
+        0x4E => "n",
+        0x4F => "o",
+        0x50 => "p",
+        0x51 => "q",
+        0x52 => "r",
+        0x53 => "s",
+        0x54 => "t",
+        0x55 => "u",
+        0x56 => "v",
+        0x57 => "w",
+        0x58 => "x",
+        0x59 => "y",
+        0x5A => "z",
+        0x30 => "0",
+        0x31 => "1",
+        0x32 => "2",
+        0x33 => "3",
+        0x34 => "4",
+        0x35 => "5",
+        0x36 => "6",
+        0x37 => "7",
+        0x38 => "8",
+        0x39 => "9",
+        0x60 => "num0",
+        0x61 => "num1",
+        0x62 => "num2",
+        0x63 => "num3",
+        0x64 => "num4",
+        0x65 => "num5",
+        0x66 => "num6",
+        0x67 => "num7",
+        0x68 => "num8",
+        0x69 => "num9",
+        0x6B => "num_plus",     // VK_ADD
+        0x6D => "num_minus",    // VK_SUBTRACT
+        0x6A => "num_asterisk", // VK_MULTIPLY
+        0x6F => "num_slash",    // VK_DIVIDE
+        0x6E => "num_period",   // VK_DECIMAL
         _ => return None,
     };
     Some(name.into())
