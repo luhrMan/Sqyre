@@ -73,5 +73,5 @@ console_error_panic_hook = "0.1"
 
 [dev-dependencies]
 tempfile = { workspace = true }
-egui_kittest = { version = "0.34", features = ["wgpu", "snapshot", "eframe"] }
+egui_kittest = { version = "0.35", features = ["wgpu", "snapshot", "eframe"] }
 image = { workspace = true }
