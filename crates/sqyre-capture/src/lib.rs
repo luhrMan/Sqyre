@@ -12,6 +12,8 @@ mod stub;
 #[cfg(target_os = "windows")]
 mod win_capture;
 #[cfg(target_os = "windows")]
+mod win_focus;
+#[cfg(target_os = "windows")]
 mod win_outline;
 #[cfg(target_os = "linux")]
 mod x11_capture;
@@ -39,6 +41,9 @@ pub use win_capture::{shared_capturer, OsCapturer, SharedRunCapturer};
 
 #[cfg(target_os = "linux")]
 pub use x11_focus::OsWindowFocuser;
+
+#[cfg(target_os = "windows")]
+pub use win_focus::OsWindowFocuser;
 
 #[cfg(target_os = "linux")]
 pub use x11_outline::SelectionOutline;
@@ -174,7 +179,12 @@ pub fn list_open_windows() -> Result<Vec<WindowInfo>, String> {
     x11_focus::list_open_windows()
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "windows")]
+pub fn list_open_windows() -> Result<Vec<WindowInfo>, String> {
+    win_focus::list_open_windows()
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
 pub fn list_open_windows() -> Result<Vec<WindowInfo>, String> {
     Err("list windows: not supported on this platform".into())
 }
@@ -185,7 +195,12 @@ pub fn get_active_window() -> Result<Option<WindowInfo>, String> {
     x11_focus::get_active_window()
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "windows")]
+pub fn get_active_window() -> Result<Option<WindowInfo>, String> {
+    win_focus::get_active_window()
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
 pub fn get_active_window() -> Result<Option<WindowInfo>, String> {
     Err("active window: not supported on this platform".into())
 }
@@ -321,11 +336,11 @@ pub fn window_matches_binding(win: &WindowInfo, process_path: &str, window_title
 }
 
 /// Stub focuser when OS window activation is not implemented.
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
 #[derive(Debug, Default, Clone, Copy)]
 pub struct OsWindowFocuser;
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
 impl sqyre_executor::WindowFocuser for OsWindowFocuser {
     fn focus(&self, _process_path: &str, _window_title: &str) -> Result<(), String> {
         Err("focus window: not supported on this platform".into())

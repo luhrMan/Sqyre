@@ -10,17 +10,17 @@ From the repo root:
 
 ```bash
 make            # ./bin/sqyre (debug)
-make release    # ./bin/sqyre (release)
+make release    # fmt + check, then ./bin/sqyre (release)
 make run        # cargo run -p sqyre-app
 make check      # fmt --check + clippy (-D warnings) + cargo deny
 make machete    # unused crate deps
 make test       # cargo nextest (falls back to cargo test)
 make coverage   # llvm-cov HTML + lcov under target/coverage/
 make docs-media # regenerate docs/images screenshots
-make appimage   # bin/*.AppImage (Linux)
-make windows    # bin/sqyre.exe (Docker MinGW cross / native on Windows)
-make macos      # bin/sqyre (macOS host)
-make wasm       # bin/wasm/ GUI-only browser editor (Trunk)
+make appimage   # fmt + check, then bin/*.AppImage (Linux)
+make windows    # fmt + check, then bin/sqyre.exe (Docker MinGW cross / native on Windows)
+make macos      # fmt + check, then bin/sqyre (macOS host)
+make wasm       # fmt + check, then bin/wasm/ GUI-only browser editor (Trunk)
 make tessdata   # download eng.traineddata into assets/tessdata/
 ```
 

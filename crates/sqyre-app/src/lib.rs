@@ -142,8 +142,9 @@ pub struct SqyreApp {
     /// Last failed macro/db save; shown in the macro list until a save succeeds.
     save_error: Option<String>,
     selected_macro: usize,
-    /// Currently selected action in the macro tree (also the egui tree node id).
-    selected_action: Option<ActionId>,
+    /// Currently selected action ids in the macro tree (egui tree node ids).
+    /// Empty = none; order matches TreeView (last is the primary for insert/paste).
+    selected_actions: Vec<ActionId>,
     run: RunState,
     hotkeys: Box<dyn HotkeyService>,
     continue_wait: ContinueWaitBridge,
@@ -194,6 +195,8 @@ pub struct SqyreApp {
     macro_list_open: bool,
     /// Filter text for the macro list (name / tags fuzzy match).
     macro_list_filter: String,
+    /// When set, only macros with this tag (empty string = untagged) have hotkeys enabled.
+    hotkey_tag_filter: Option<String>,
     tray: tray::SystemTray,
     /// Process-wide single-instance lock (held for the app lifetime).
     instance_lock: Option<single_instance::InstanceLock>,
@@ -225,7 +228,7 @@ impl SqyreApp {
         let repaint_for_cb = Arc::clone(&hotkey_repaint);
 
         #[cfg(not(target_arch = "wasm32"))]
-        let _ = hotkeys.start(HotkeyCallbacks {
+        if let Err(e) = hotkeys.start(HotkeyCallbacks {
             on_escape_stop: Arc::new(move || stop.request_stop()),
             on_failsafe: Arc::new(|| {
                 eprintln!("failsafe Esc+Ctrl+Shift — exiting");
@@ -237,7 +240,9 @@ impl SqyreApp {
                     ctx.request_repaint();
                 }
             }),
-        });
+        }) {
+            eprintln!("sqyre: failed to start global hotkeys: {e}");
+        }
         #[cfg(target_arch = "wasm32")]
         {
             let _ = (
@@ -269,14 +274,14 @@ impl SqyreApp {
                     let _ =
                         wasm_demo_seed::ensure_demo_if_empty(&mut macros, &mut catalog, &mut db);
                 }
-                let app = Self {
+                let mut app = Self {
                     db,
                     macros,
                     catalog,
                     load_error: None,
                     save_error: None,
                     selected_macro: 0,
-                    selected_action: None,
+                    selected_actions: Vec::new(),
                     run,
                     hotkeys,
                     continue_wait,
@@ -312,6 +317,7 @@ impl SqyreApp {
                     macro_overlay: MacroOverlay::new(),
                     macro_list_open: true,
                     macro_list_filter: String::new(),
+                    hotkey_tag_filter: None,
                     tray: tray::SystemTray::default(),
                     instance_lock: None,
                     pending_delete_macro: None,
@@ -332,7 +338,7 @@ impl SqyreApp {
                     load_error: Some(e.to_string()),
                     save_error: None,
                     selected_macro: 0,
-                    selected_action: None,
+                    selected_actions: Vec::new(),
                     run,
                     hotkeys,
                     continue_wait,
@@ -368,6 +374,7 @@ impl SqyreApp {
                     macro_overlay: MacroOverlay::new(),
                     macro_list_open: true,
                     macro_list_filter: String::new(),
+                    hotkey_tag_filter: None,
                     tray: tray::SystemTray::default(),
                     instance_lock: None,
                     pending_delete_macro: None,
