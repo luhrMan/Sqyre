@@ -30,7 +30,7 @@ impl SqyreApp {
                         self.catalog = catalog;
                         self.macros = macros;
                         self.selected_macro = 0;
-                        self.selected_action = None;
+                        self.clear_selected_actions();
                         self.load_error = None;
                         self.save_error = None;
                         *self.run.status.lock() = "Imported db.yaml.".into();

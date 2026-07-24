@@ -5,6 +5,10 @@ use crate::SqyreApp;
 use eframe::egui;
 use sqyre_domain::Macro;
 use sqyre_hotkeys::format_hotkey;
+use std::collections::BTreeMap;
+
+/// Empty-string group key for macros with no tags.
+const UNTAGGED_KEY: &str = "";
 
 /// Elide `text` to a single line that fits `max_width`, appending `…` only when needed.
 fn elide_to_width(ui: &egui::Ui, text: &str, max_width: f32, font_id: egui::FontId) -> String {
@@ -86,6 +90,37 @@ fn macro_list_item_text(ui: &egui::Ui, m: &Macro, max_text_width: f32) -> egui::
     job.into()
 }
 
+fn tag_header_label(tag: &str) -> &str {
+    if tag.is_empty() {
+        "Untagged"
+    } else {
+        tag
+    }
+}
+
+/// Group filtered macros under each of their tags (sorted). Untagged macros last.
+fn group_macros_by_tag(macros: &[Macro], filter: &str) -> Vec<(String, Vec<usize>)> {
+    let mut by_tag: BTreeMap<String, Vec<usize>> = BTreeMap::new();
+    let mut untagged = Vec::new();
+    for (i, m) in macros.iter().enumerate() {
+        if !pickers::query_matches_name_or_tags(filter, &m.name, &m.tags) {
+            continue;
+        }
+        if m.tags.is_empty() {
+            untagged.push(i);
+            continue;
+        }
+        for tag in &m.tags {
+            by_tag.entry(tag.clone()).or_default().push(i);
+        }
+    }
+    let mut groups: Vec<(String, Vec<usize>)> = by_tag.into_iter().collect();
+    if !untagged.is_empty() {
+        groups.push((UNTAGGED_KEY.to_string(), untagged));
+    }
+    groups
+}
+
 pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
     egui::Panel::left("macro_list")
         .default_size(220.0)
@@ -149,28 +184,72 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                     .hint_text("Search macros or tags…"),
             )
             .on_hover_text("Filter by macro name or tag.");
+            if let Some(tag) = app.hotkey_tag_filter.as_deref() {
+                ui.small(format!("Hotkeys: {}", tag_header_label(tag)));
+            }
             ui.separator();
             egui::ScrollArea::vertical().show(ui, |ui| {
-                let width = ui.available_width();
-                let text_width = (width - ui.spacing().button_padding.x * 2.0).max(0.0);
+                // Cap width so collapsing-header indent + full-width row buttons cannot
+                // expand the side panel each frame.
+                let pane_w = ui.available_width();
+                ui.set_max_width(pane_w);
                 let filter = app.macro_list_filter.trim().to_string();
-                for (i, m) in app.macros.iter().enumerate() {
-                    if !pickers::query_matches_name_or_tags(&filter, &m.name, &m.tags) {
-                        continue;
-                    }
-                    let label = macro_list_item_text(ui, m, text_width);
-                    if ui
-                        .add(
-                            egui::Button::selectable(app.selected_macro == i, label)
-                                .wrap_mode(egui::TextWrapMode::Extend)
-                                .min_size(egui::vec2(width, 0.0)),
-                        )
-                        .clicked()
-                    {
-                        app.selected_macro = i;
-                        app.selected_action = None;
-                        app.tooltip.cancel();
-                    }
+                let groups = group_macros_by_tag(&app.macros, &filter);
+                let mut clicked_macro: Option<usize> = None;
+                let mut clicked_tag: Option<String> = None;
+
+                for (tag, indices) in &groups {
+                    let id = ui.make_persistent_id(("macro_list_tag", tag.as_str()));
+                    let header = tag_header_label(tag);
+                    egui::collapsing_header::CollapsingState::load_with_default_open(
+                        ui.ctx(),
+                        id,
+                        true,
+                    )
+                    .show_header(ui, |ui| {
+                        let selected = app.hotkey_tag_filter.as_deref() == Some(tag.as_str());
+                        let resp = ui
+                            .selectable_label(selected, egui::RichText::new(header).strong())
+                            .on_hover_text(if selected {
+                                "Hotkeys enabled for this tag only. Click again to enable all."
+                            } else {
+                                "Enable hotkeys only for macros with this tag."
+                            });
+                        if resp.clicked() {
+                            clicked_tag = Some(tag.clone());
+                        }
+                    })
+                    .body(|ui| {
+                        ui.set_max_width(pane_w);
+                        let width = ui.available_width();
+                        let text_width =
+                            (width - ui.spacing().button_padding.x * 2.0).max(0.0);
+                        for &i in indices {
+                            let Some(m) = app.macros.get(i) else {
+                                continue;
+                            };
+                            let label = macro_list_item_text(ui, m, text_width);
+                            if ui
+                                .add(
+                                    egui::Button::selectable(app.selected_macro == i, label)
+                                        .wrap_mode(egui::TextWrapMode::Extend)
+                                        .min_size(egui::vec2(width, 0.0)),
+                                )
+                                .clicked()
+                            {
+                                clicked_macro = Some(i);
+                            }
+                        }
+                    });
+                }
+
+                if let Some(tag) = clicked_tag {
+                    app.toggle_hotkey_tag_filter(tag);
+                }
+                if let Some(i) = clicked_macro {
+                    app.selected_macro = i;
+                    app.selected_actions.clear();
+                    app.tooltip.cancel();
                 }
             });
         });
@@ -214,5 +293,43 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
         if !open {
             app.pending_delete_macro = None;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sqyre_domain::Macro;
+
+    fn m(name: &str, tags: &[&str]) -> Macro {
+        let mut macro_ = Macro::new(name, 0, Vec::new());
+        macro_.tags = tags.iter().map(|s| (*s).to_string()).collect();
+        macro_
+    }
+
+    #[test]
+    fn groups_by_each_tag_and_untagged() {
+        let macros = vec![
+            m("alpha", &["combat"]),
+            m("beta", &["combat", "farm"]),
+            m("gamma", &[]),
+        ];
+        let groups = group_macros_by_tag(&macros, "");
+        assert_eq!(groups.len(), 3);
+        assert_eq!(groups[0].0, "combat");
+        assert_eq!(groups[0].1, vec![0, 1]);
+        assert_eq!(groups[1].0, "farm");
+        assert_eq!(groups[1].1, vec![1]);
+        assert_eq!(groups[2].0, UNTAGGED_KEY);
+        assert_eq!(groups[2].1, vec![2]);
+    }
+
+    #[test]
+    fn filter_hides_empty_groups() {
+        let macros = vec![m("alpha", &["combat"]), m("beta", &["farm"])];
+        let groups = group_macros_by_tag(&macros, "farm");
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].0, "farm");
+        assert_eq!(groups[0].1, vec![1]);
     }
 }

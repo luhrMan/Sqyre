@@ -78,11 +78,17 @@ impl HotkeyService for NullHotkeys {
     }
 }
 
-#[cfg(feature = "hooks")]
+#[cfg(all(feature = "hooks", not(target_os = "windows")))]
 mod hooks;
 
-#[cfg(feature = "hooks")]
+#[cfg(all(feature = "hooks", not(target_os = "windows")))]
 pub use hooks::RdevHotkeys;
+
+#[cfg(all(feature = "hooks", target_os = "windows"))]
+mod win_hooks;
+
+#[cfg(all(feature = "hooks", target_os = "windows"))]
+pub use win_hooks::WinHotkeys;
 
 /// Default hotkeys + bridges (continue-wait, screen-click, macro chords).
 pub fn default_hotkeys() -> (
@@ -93,7 +99,21 @@ pub fn default_hotkeys() -> (
 ) {
     let screen_click = ScreenClickBridge::new();
     let macro_hotkeys = MacroHotkeyBridge::new();
-    #[cfg(feature = "hooks")]
+    #[cfg(all(feature = "hooks", target_os = "windows"))]
+    {
+        let bridge = ContinueWaitBridge::new(true);
+        (
+            Box::new(WinHotkeys::new(
+                bridge.clone(),
+                screen_click.clone(),
+                macro_hotkeys.clone(),
+            )),
+            bridge,
+            screen_click,
+            macro_hotkeys,
+        )
+    }
+    #[cfg(all(feature = "hooks", not(target_os = "windows")))]
     {
         let bridge = ContinueWaitBridge::new(true);
         (

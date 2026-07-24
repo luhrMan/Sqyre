@@ -527,7 +527,7 @@ fn picker_tile(
     let pastel = action_pastel_color(tmpl.action_type, is_dark);
     let fill = Color32::from_rgba_unmultiplied(pastel[0], pastel[1], pastel[2], pastel[3]);
 
-    let desired = Vec2::new(ui.available_width().max(120.0), 36.0);
+    let desired = Vec2::new(ui.available_width().max(100.0), 26.0);
     let (rect, response) = ui.allocate_exact_size(desired, Sense::click());
 
     let visuals = ui.style().interact(&response);
@@ -536,10 +536,10 @@ fn picker_tile(
     } else {
         fill
     };
-    ui.painter().rect_filled(rect, CornerRadius::same(8), bg);
+    ui.painter().rect_filled(rect, CornerRadius::same(5), bg);
     ui.painter().rect_stroke(
         rect,
-        CornerRadius::same(8),
+        CornerRadius::same(5),
         egui::Stroke::new(1.0, visuals.bg_stroke.color),
         egui::StrokeKind::Inside,
     );
@@ -548,8 +548,8 @@ fn picker_tile(
     let fg = crate::theme::contrast_fg(fill);
     let galley = ui
         .painter()
-        .layout_no_wrap(text, egui::FontId::proportional(14.0), fg);
-    let text_pos = egui::pos2(rect.left() + 10.0, rect.center().y - galley.size().y * 0.5);
+        .layout_no_wrap(text, egui::FontId::proportional(12.0), fg);
+    let text_pos = egui::pos2(rect.left() + 8.0, rect.center().y - galley.size().y * 0.5);
     ui.painter().galley(text_pos, galley, Color32::PLACEHOLDER);
 
     // No egui `on_hover_text` — the delayed action view tip is the hover UI.

@@ -203,17 +203,22 @@ impl SettingsUi {
                 );
                 crate::theme::titled_section(
                     ui,
-                    "Data",
-                    "User data and configuration files.",
+                    "Sound",
+                    "Cue sounds for macros and UI actions.",
                     12.0,
-                    |ui| self.draw_data(ui, db, macros, catalog),
+                    |ui| self.draw_sound(ui),
                 );
                 crate::theme::titled_section(
                     ui,
-                    "Backup",
-                    "Zip archives of macros, settings, images, and variables.",
+                    "Data",
+                    "Data folder location and zip backups of macros, settings, images, and variables.",
                     12.0,
-                    |ui| self.draw_backup(ui, db, macros, catalog),
+                    |ui| {
+                        self.draw_data(ui, db, macros, catalog);
+                        #[cfg(not(target_arch = "wasm32"))]
+                        ui.add_space(10.0);
+                        self.draw_backup(ui, db, macros, catalog);
+                    },
                 );
                 crate::theme::titled_section(
                     ui,
@@ -273,6 +278,23 @@ impl SettingsUi {
             self.mark_dirty();
         }
 
+        ui.add_space(6.0);
+
+        ui.horizontal(|ui| {
+            ui.label("Image search close-match distance (px):");
+            let mut v = self.settings.image_search_close_matches_distance;
+            if ui
+                .add(egui::DragValue::new(&mut v).range(0..=100).speed(1))
+                .on_hover_text("Image search: ignore duplicate matches within this many pixels.")
+                .changed()
+            {
+                self.settings.image_search_close_matches_distance = v;
+                self.mark_dirty();
+            }
+        });
+    }
+
+    fn draw_sound(&mut self, ui: &mut egui::Ui) {
         if ui
             .checkbox(
                 &mut self.settings.play_finish_sound,
@@ -309,21 +331,6 @@ impl SettingsUi {
                 self.mark_dirty();
             }
         });
-
-        ui.add_space(6.0);
-
-        ui.horizontal(|ui| {
-            ui.label("Image search close-match distance (px):");
-            let mut v = self.settings.image_search_close_matches_distance;
-            if ui
-                .add(egui::DragValue::new(&mut v).range(0..=100).speed(1))
-                .on_hover_text("Image search: ignore duplicate matches within this many pixels.")
-                .changed()
-            {
-                self.settings.image_search_close_matches_distance = v;
-                self.mark_dirty();
-            }
-        });
     }
 
     fn draw_data(
@@ -335,7 +342,9 @@ impl SettingsUi {
     ) {
         #[cfg(target_arch = "wasm32")]
         {
-            ui.label("Browser editor: macros live in memory. Use Import / Export on the toolbar for db.yaml.");
+            ui.label(
+                "Browser editor: macros live in memory. Use Import / Export on the toolbar for db.yaml. Full backups are not available.",
+            );
             return;
         }
         #[cfg(not(target_arch = "wasm32"))]
@@ -370,11 +379,7 @@ impl SettingsUi {
     ) {
         #[cfg(target_arch = "wasm32")]
         {
-            let _ = (db, macros, catalog);
-            ui.label(
-                "Browser editor: full backups are not available. Use Import / Export for db.yaml.",
-            );
-            return;
+            let _ = (ui, db, macros, catalog);
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
