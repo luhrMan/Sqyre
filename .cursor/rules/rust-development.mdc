@@ -7,13 +7,13 @@ alwaysApply: true
 
 This repo is a Rust Cargo workspace (egui desktop). Do not add a second implementation language or dual-build stacks.
 
-**Platforms:** Linux/X11 is the shipped desktop path. Windows and macOS are in progress (capture, selection outline, and window focus on Windows; macOS capture/focus still stubbed). Prefer extending existing `#[cfg]` modules over inventing parallel stacks.
+**Platforms:** Linux/X11 is the shipped desktop path. Windows ships a bare `.exe` (GDI capture, selection outline, window focus, hotkeys; no MSI). macOS capture/focus still stubbed. Prefer extending existing `#[cfg]` modules over inventing parallel stacks.
 
 ## Layout
 
 - Workspace root: `Cargo.toml` + `crates/sqyre-*` (not a nested `rust/` directory)
 - GUI binary: `crates/sqyre-app` → `./bin/sqyre`
-- Shared libs: `sqyre-domain`, `sqyre-serialize`, `sqyre-persist`, `sqyre-validate`, `sqyre-varref`, `sqyre-match`, `sqyre-vision`, `sqyre-capture`, `sqyre-executor`, `sqyre-hotkeys`, `sqyre-input`
+- Shared libs: `sqyre-domain`, `sqyre-ui-model`, `sqyre-serialize`, `sqyre-persist`, `sqyre-validate`, `sqyre-varref`, `sqyre-match`, `sqyre-vision`, `sqyre-capture`, `sqyre-executor`, `sqyre-hotkeys`, `sqyre-input`, `sqyre-update`
 - Brand icons: `crates/sqyre-app/assets/`; tessdata: `assets/tessdata/`
 - Product name is **Sqyre**; repo may still be named Squire
 

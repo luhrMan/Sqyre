@@ -84,7 +84,24 @@ cargo install --locked trunk
 
 Uses `--no-default-features` (no global hotkey hooks). Native `make` / `make release` are unchanged.
 
-CI on push/PR to `main` runs tests and a macOS `cargo check` (capture still stubbed). GitHub Releases publish daily at **23:00 UTC** only when `main` has non-docs changes since the last release tag (manual **workflow_dispatch** also available). Artifacts: Linux binary + AppImage, Windows `.exe` (MinGW cross via [`scripts/windows/`](../scripts/windows/PACKAGING.md)), and the WASM editor zip (`make wasm`). Tags are `vYYYY.MM.DD`. `make macos` stays native; MSI/DMG packaging is not shipped yet.
+### CI and GitHub Releases
+
+Push/PR to `main` runs tests and a macOS `cargo check` (capture still stubbed) — **not** a GitHub Release.
+
+Releases come from [`.github/workflows/main.yml`](../.github/workflows/main.yml) on **schedule** or **manual dispatch** only:
+
+| Trigger | When |
+|---------|------|
+| Cron | Daily at **23:00 UTC** (`0 23 * * *`) |
+| Manual | Actions → **Build and Release** → Run workflow, or `gh workflow run "Build and Release" --ref main` |
+
+The `version` job sets `should_release=true` only when there is no prior `v*` tag, or `main` has changed since the latest `v*` tag **excluding** `docs/**` and `*.md`. Docs-only / markdown-only changes do not publish. If nothing releasable changed, release jobs are skipped.
+
+**Tag shape:** `vYYYY.MM.DD` (UTC date). If that tag already exists, CI uses `vYYYY.MM.DD.HHMM`.
+
+**Artifacts:** Linux binary + AppImage, Windows `.exe` (MinGW cross via [`scripts/windows/`](../scripts/windows/PACKAGING.md)), and the WASM editor zip (`make wasm`). `make macos` stays native; MSI/DMG packaging is not shipped yet.
+
+Shipped Linux/Windows builds embed `SQYRE_VERSION` so the in-app updater can compare against GitHub Releases (local `0.0.0-dev` builds skip update checks).
 
 CI caches: Linux Docker Buildx (GHA + GHCR), Windows cross-image Buildx + pushed `*-windows-cross:latest` image, Cargo registry/target (per job), Windows sccache, and tessdata; macOS Homebrew bottles + split Cargo caches.
 
