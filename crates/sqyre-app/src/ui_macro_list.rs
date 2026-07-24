@@ -122,10 +122,13 @@ fn group_macros_by_tag(macros: &[Macro], filter: &str) -> Vec<(String, Vec<usize
 }
 
 pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
+    // Local copy: `show_collapsible` borrows `&mut bool` for the whole call,
+    // and the content closure also needs `&mut app`.
+    let mut open = app.macro_list_open;
     egui::Panel::left("macro_list_tags")
         .default_size(220.0)
         .size_range(160.0..=420.0)
-        .show_animated_inside(ui, app.macro_list_open, |ui| {
+        .show_collapsible(ui, &mut open, |ui| {
             // Side panels persist last-frame content width; never let children
             // request more than the allocated pane or the panel grows every frame.
             let pane_w = ui.available_width();
@@ -282,6 +285,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                     }
                 });
         });
+    app.macro_list_open = open;
 
     if let Some(name) = app.pending_delete_macro.clone() {
         let mut open = true;

@@ -203,9 +203,15 @@ impl SettingsUi {
             return;
         }
 
-        // Status line may appear below; leave room so the window doesn't grow unboundedly.
-        let list_h = crate::pickers::popup_scroll_max_height(ui, 40.0);
+        // Reserve space for the optional status banner below; fill the rest of the window.
+        let footer = if self.status_banner.status.is_some() {
+            40.0
+        } else {
+            0.0
+        };
+        let list_h = (ui.available_height() - footer).max(40.0);
         egui::ScrollArea::vertical()
+            .auto_shrink([false, false])
             .max_height(list_h)
             .show(ui, |ui| {
                 crate::theme::titled_section(

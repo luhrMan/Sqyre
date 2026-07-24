@@ -160,7 +160,7 @@ pub fn combo_str_labeled(
 /// Returns the combo button response; `changed` is set when the selection changes.
 pub fn searchable_combo(
     ui: &mut egui::Ui,
-    id_salt: impl Hash,
+    id_salt: impl Hash + std::fmt::Debug,
     value: &mut String,
     options: &[String],
     empty_text: &str,
@@ -172,15 +172,15 @@ pub fn searchable_combo(
 /// [`searchable_combo`] with an optional fixed button/popup width.
 pub fn searchable_combo_width(
     ui: &mut egui::Ui,
-    id_salt: impl Hash,
+    id_salt: impl Hash + std::fmt::Debug,
     value: &mut String,
     options: &[String],
     empty_text: &str,
     none_label: Option<&str>,
     width: Option<f32>,
 ) -> egui::Response {
-    // Match `ComboBox::from_id_salt(salt)` → `make_persistent_id(Id::new(salt))`.
-    let button_id = ui.make_persistent_id(egui::Id::new(&id_salt));
+    // Match `ComboBox::from_id_salt(salt)` → `make_persistent_id(salt)`.
+    let button_id = ui.make_persistent_id(&id_salt);
     let popup_id = button_id.with("popup");
     let search_id = button_id.with("search");
     let focused_id = button_id.with("search_focused");

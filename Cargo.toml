@@ -37,12 +37,12 @@ all = "warn"
 
 [workspace.dependencies]
 purecv = { version = "0.6.1", default-features = false, features = ["std", "parallel", "simd"] }
-eframe = "0.34"
-egui = "0.34"
-egui-phosphor = "0.12"
-egui_ltreeview = "0.7"
+eframe = "0.35"
+egui = "0.35"
+egui-phosphor = "0.13"
+egui_ltreeview = "0.8"
 pulp = "0.22"
-rayon = "1.10"
+rayon = "1.12"
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
@@ -50,7 +50,7 @@ uuid = { version = "1", features = ["v4", "js"] }
 regex = "1"
 dirs = "6"
 tempfile = "3"
-zip = { version = "2", default-features = false, features = ["deflate"] }
+zip = { version = "8", default-features = false, features = ["deflate"] }
 proptest = "1"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "bmp"] }
 resvg = { version = "0.47", default-features = false }
@@ -62,7 +62,7 @@ parking_lot = "0.12"
 # async-io (not default tokio): avoid forcing zbus/tokio, which panics accesskit's async-io thread.
 ksni = { version = "0.3", default-features = false, features = ["blocking", "async-io"] }
 tray-icon = { version = "0.24", default-features = false }
-rfd = "0.15"
+rfd = "0.17"
 rustfft = "6.4"
 # Instant/SystemTime that work on wasm32-unknown-unknown (std panics there).
 web-time = "1"
