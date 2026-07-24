@@ -62,7 +62,7 @@ parking_lot = "0.12"
 # async-io (not default tokio): avoid forcing zbus/tokio, which panics accesskit's async-io thread.
 ksni = { version = "0.3", default-features = false, features = ["blocking", "async-io"] }
 tray-icon = { version = "0.24", default-features = false }
-rfd = "0.15"
+rfd = "0.17"
 rustfft = "6.4"
 # Instant/SystemTime that work on wasm32-unknown-unknown (std panics there).
 web-time = "1"
