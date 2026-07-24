@@ -52,6 +52,8 @@ mod variables_panel;
 mod wasm_demo_seed;
 mod wasm_io;
 mod widgets;
+#[cfg(target_os = "windows")]
+mod win_focused_keys;
 
 pub use settings::SettingsUi;
 
