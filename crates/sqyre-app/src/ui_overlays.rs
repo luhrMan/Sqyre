@@ -349,6 +349,10 @@ fn poll_update(app: &mut SqyreApp, ctx: &egui::Context) {
 /// Ctrl+C / Ctrl+X / Ctrl+V / Ctrl+Z / Ctrl+Y / Ctrl+A — skip while editing an action
 /// or when a text field has keyboard focus (so Ctrl+A still selects-all in editors).
 ///
+/// Uses [`egui::Context::text_edit_focused`] rather than `egui_wants_keyboard_input`:
+/// the latter is true whenever *any* widget (including the TreeView) has focus, which
+/// would block tree clipboard shortcuts while selection is yellow.
+///
 /// Copy/cut/paste must listen for [`egui::Event::{Copy,Cut,Paste}`]: egui-winit
 /// converts those chords into clipboard events and never emits `Key` presses for
 /// C/X/V (unlike Ctrl+A / Ctrl+Z / Ctrl+Y).
@@ -359,7 +363,7 @@ pub fn handle_shortcuts(app: &mut SqyreApp, ui: &mut egui::Ui) {
     if !app.tooltip.is_editing()
         && !app.hotkey_record.is_open()
         && !app.key_record.is_open()
-        && !ui.ctx().egui_wants_keyboard_input()
+        && !ui.ctx().text_edit_focused()
     {
         let (copy, cut, paste, undo, redo, add_action) = ui.ctx().input(|i| {
             let mut copy = false;

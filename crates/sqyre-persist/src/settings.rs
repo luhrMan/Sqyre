@@ -31,6 +31,7 @@ pub const DEFAULT_BACKUP_MAX_KEEP: i32 = 10;
 pub const MIN_BACKUP_MAX_KEEP: i32 = 1;
 pub const MAX_BACKUP_MAX_KEEP: i32 = 100;
 pub const DEFAULT_AUTO_UPDATE_CHECK: bool = true;
+pub const DEFAULT_RELEASE_HELD_INPUTS_ON_END: bool = true;
 
 /// Absolute path to the settings file (`{sqyre_dir}/settings.yaml`).
 pub fn settings_path() -> PathBuf {
@@ -307,6 +308,9 @@ pub struct UserSettings {
     pub highlight_active_action: bool,
     #[serde(default = "default_hide_recording")]
     pub hide_app_during_recording: bool,
+    /// Release keys/buttons still held from Down/hold actions when a macro ends.
+    #[serde(default = "default_release_held_inputs_on_end")]
+    pub release_held_inputs_on_end: bool,
     /// Play an audible cue when a top-level macro run finishes successfully.
     #[serde(default = "default_play_finish_sound")]
     pub play_finish_sound: bool,
@@ -361,6 +365,9 @@ pub struct UserSettings {
 fn default_hide_recording() -> bool {
     DEFAULT_HIDE_APP_DURING_RECORDING
 }
+fn default_release_held_inputs_on_end() -> bool {
+    DEFAULT_RELEASE_HELD_INPUTS_ON_END
+}
 fn default_play_finish_sound() -> bool {
     DEFAULT_PLAY_FINISH_SOUND
 }
@@ -401,6 +408,7 @@ impl Default for UserSettings {
             save_meta_images: false,
             highlight_active_action: false,
             hide_app_during_recording: DEFAULT_HIDE_APP_DURING_RECORDING,
+            release_held_inputs_on_end: DEFAULT_RELEASE_HELD_INPUTS_ON_END,
             play_finish_sound: DEFAULT_PLAY_FINISH_SOUND,
             play_ui_sounds: DEFAULT_PLAY_UI_SOUNDS,
             sound_volume: DEFAULT_SOUND_VOLUME,

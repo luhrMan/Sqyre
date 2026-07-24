@@ -228,6 +228,173 @@ pub fn record_icon_button(ui: &mut egui::Ui, tip: &str, enabled: bool) -> egui::
     .on_hover_text(tip)
 }
 
+/// Top-down mouse for Click button selection.
+///
+/// Left / right buttons, center wheel (middle), lower body (scroll).
+pub fn mouse_button_picker(
+    ui: &mut egui::Ui,
+    button: &mut sqyre_domain::MouseButton,
+) -> egui::Response {
+    use sqyre_domain::MouseButton;
+
+    const W: f32 = 36.0;
+    const H: f32 = 54.0;
+
+    let desired = Vec2::new(W, H);
+    let (rect, mut response) = ui.allocate_exact_size(desired, Sense::click());
+
+    let body = rect.shrink2(Vec2::new(1.0, 1.0));
+    let button_h = body.height() * 0.42;
+    let buttons = egui::Rect::from_min_size(body.min, Vec2::new(body.width(), button_h));
+    let mid_x = buttons.center().x;
+    let left_btn = egui::Rect::from_min_max(buttons.min, Pos2::new(mid_x, buttons.bottom()));
+    let right_btn = egui::Rect::from_min_max(
+        Pos2::new(mid_x, buttons.top()),
+        Pos2::new(buttons.right(), buttons.bottom()),
+    );
+    let wheel = egui::Rect::from_center_size(
+        Pos2::new(mid_x, buttons.top() + button_h * 0.55),
+        Vec2::new(body.width() * 0.22, button_h * 0.55),
+    );
+    let scroll_body = egui::Rect::from_min_max(Pos2::new(body.left(), buttons.bottom()), body.max);
+
+    let hit = |pos: Pos2| -> MouseButton {
+        if wheel.contains(pos) {
+            MouseButton::Middle
+        } else if left_btn.contains(pos) {
+            MouseButton::Left
+        } else if right_btn.contains(pos) {
+            MouseButton::Right
+        } else {
+            MouseButton::Scroll
+        }
+    };
+
+    if response.clicked() {
+        if let Some(pos) = response.interact_pointer_pos() {
+            *button = hit(pos);
+            response.mark_changed();
+        }
+    }
+
+    let hover_btn = response.hover_pos().map(hit).filter(|_| response.hovered());
+
+    let visuals = ui.style().interact(&response);
+    let painter = ui.painter();
+    let rounding = CornerRadius::same(body.width() as u8 / 2);
+    let stroke = Stroke::new(1.0, visuals.bg_stroke.color);
+
+    painter.rect_filled(body, rounding, visuals.bg_fill);
+    painter.rect_stroke(body, rounding, stroke, egui::StrokeKind::Inside);
+
+    let highlight = |b: MouseButton| -> Option<Color32> {
+        if *button == b {
+            Some(PRIMARY)
+        } else if hover_btn == Some(b) {
+            Some(accent_dim())
+        } else {
+            None
+        }
+    };
+
+    // Clip button fills to the upper body shape via a slightly inset paint.
+    if let Some(c) = highlight(MouseButton::Left) {
+        painter.rect_filled(
+            left_btn.intersect(body).shrink(1.0),
+            CornerRadius {
+                nw: rounding.nw,
+                ne: 0,
+                sw: 0,
+                se: 0,
+            },
+            c,
+        );
+    }
+    if let Some(c) = highlight(MouseButton::Right) {
+        painter.rect_filled(
+            right_btn.intersect(body).shrink(1.0),
+            CornerRadius {
+                nw: 0,
+                ne: rounding.ne,
+                sw: 0,
+                se: 0,
+            },
+            c,
+        );
+    }
+    if let Some(c) = highlight(MouseButton::Scroll) {
+        painter.rect_filled(
+            scroll_body.intersect(body).shrink(1.0),
+            CornerRadius {
+                nw: 0,
+                ne: 0,
+                sw: rounding.sw,
+                se: rounding.se,
+            },
+            c,
+        );
+    }
+
+    // Seam between left/right and buttons/body.
+    painter.line_segment(
+        [
+            Pos2::new(mid_x, buttons.top() + 2.0),
+            Pos2::new(mid_x, buttons.bottom()),
+        ],
+        stroke,
+    );
+    painter.line_segment(
+        [
+            Pos2::new(body.left() + 2.0, buttons.bottom()),
+            Pos2::new(body.right() - 2.0, buttons.bottom()),
+        ],
+        stroke,
+    );
+
+    let wheel_fill = highlight(MouseButton::Middle).unwrap_or(visuals.weak_bg_fill);
+    let wheel_r = CornerRadius::same((wheel.width() / 2.0) as u8);
+    painter.rect_filled(wheel, wheel_r, wheel_fill);
+    painter.rect_stroke(wheel, wheel_r, stroke, egui::StrokeKind::Inside);
+
+    // Scroll affordance on the lower body (stronger when selected / hovered).
+    {
+        let cx = scroll_body.center().x;
+        let cy = scroll_body.center().y;
+        let active =
+            matches!(*button, MouseButton::Scroll) || hover_btn == Some(MouseButton::Scroll);
+        let chevron = if active {
+            visuals.fg_stroke.color
+        } else {
+            visuals.bg_stroke.color
+        };
+        let s = 3.5;
+        painter.line_segment(
+            [Pos2::new(cx - s, cy - 2.0), Pos2::new(cx, cy - 6.0)],
+            Stroke::new(1.5, chevron),
+        );
+        painter.line_segment(
+            [Pos2::new(cx + s, cy - 2.0), Pos2::new(cx, cy - 6.0)],
+            Stroke::new(1.5, chevron),
+        );
+        painter.line_segment(
+            [Pos2::new(cx - s, cy + 2.0), Pos2::new(cx, cy + 6.0)],
+            Stroke::new(1.5, chevron),
+        );
+        painter.line_segment(
+            [Pos2::new(cx + s, cy + 2.0), Pos2::new(cx, cy + 6.0)],
+            Stroke::new(1.5, chevron),
+        );
+    }
+
+    let tip = match hover_btn.unwrap_or(*button) {
+        MouseButton::Left => "Left",
+        MouseButton::Right => "Right",
+        MouseButton::Middle => "Middle",
+        MouseButton::Scroll => "Scroll",
+    };
+    response.on_hover_text(tip)
+}
+
 /// Vertical up / tap / down switch for Click/Key press state.
 ///
 /// Top = up, middle = tap, bottom = down. Click toggles; click a zone to set.

@@ -105,12 +105,14 @@ fn paint_tag_chips(ui: &mut egui::Ui, tags: &mut Vec<String>, enabled: bool, cha
         .fill(fill)
         .stroke(egui::Stroke::NONE)
         .corner_radius(egui::CornerRadius::same(6))
-        .inner_margin(egui::Margin::symmetric(4, 0));
+        .inner_margin(egui::Margin::symmetric(2, 0));
 
     for tag in tags.iter() {
         // Pill wraps label + × so `horizontal_wrapped` treats each chip as one unit.
         chip.show(ui, |ui| {
             ui.spacing_mut().item_spacing.x = 0.0;
+            ui.spacing_mut().button_padding = egui::vec2(0.0, 0.0);
+            ui.spacing_mut().interact_size.y = 8.0;
             ui.horizontal(|ui| {
                 ui.label(egui::RichText::new(tag.as_str()).size(8.0).color(fg));
                 if ui

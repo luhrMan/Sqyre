@@ -109,6 +109,7 @@ mod native_run {
                 .settings_ui
                 .settings()
                 .image_search_close_matches_distance;
+            let release_held_inputs = self.settings_ui.settings().release_held_inputs_on_end;
             let play_finish_sound = self.settings_ui.settings().play_finish_sound;
             let sound_volume = self.settings_ui.settings().sound_volume;
             let macro_lookup = {
@@ -151,6 +152,7 @@ mod native_run {
                             automation: &mut watched,
                             capturer: Some(&mut capturer),
                             close_matches_distance: close_matches,
+                            release_held_inputs,
                             resolver: Some(&resolver),
                             icons: Some(&icons),
                             macros: Some(&macro_lookup),

@@ -300,6 +300,19 @@ impl SettingsUi {
             self.mark_dirty();
         }
 
+        if ui
+            .checkbox(
+                &mut self.settings.release_held_inputs_on_end,
+                "Release held keys and buttons when a macro ends",
+            )
+            .on_hover_text(
+                "When enabled, any key or mouse button still held from Down/hold actions is released when the macro finishes, stops, or errors.",
+            )
+            .changed()
+        {
+            self.mark_dirty();
+        }
+
         ui.add_space(6.0);
 
         ui.horizontal(|ui| {

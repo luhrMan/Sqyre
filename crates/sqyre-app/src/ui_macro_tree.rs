@@ -252,11 +252,9 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
             }
             apply_overlay_selection(&mut state, &app.macros[idx].root, *aid, modifiers);
             app.set_selected_actions(state.selected().clone());
-            ui.memory_mut(|m| {
-                if let Some(fid) = m.focused() {
-                    m.surrender_focus(fid);
-                }
-            });
+            // Keep TreeView focused so egui_ltreeview paints selection.bg_fill
+            // (Sqyre yellow); unfocused selection falls back to gray.
+            ui.memory_mut(|m| m.request_focus(id));
             break;
         }
     }
@@ -371,11 +369,9 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
         match action {
             TreeAction::SetSelected(sel) => {
                 app.set_selected_actions(sel);
-                ui.memory_mut(|m| {
-                    if let Some(fid) = m.focused() {
-                        m.surrender_focus(fid);
-                    }
-                });
+                // Focus the tree (not surrender): yellow selection needs has_focus,
+                // and taking focus clears any TextEdit so Ctrl+C/V hit tree shortcuts.
+                ui.memory_mut(|m| m.request_focus(id));
             }
             TreeAction::Move(dnd) => {
                 if running || app.tree_drag_mode == TreeDragMode::Scroll {
