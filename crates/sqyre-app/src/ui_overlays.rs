@@ -179,6 +179,11 @@ pub fn show_floating_windows(app: &mut SqyreApp, ctx: &egui::Context) {
 /// Settings reload, highlighter / log prefs, color sample, recording + macro overlays,
 /// hotkey/key record UI, and repaint pacing.
 pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
+    #[cfg(not(target_arch = "wasm32"))]
+    poll_scheduled_backup(app, ctx);
+    #[cfg(not(target_arch = "wasm32"))]
+    poll_update(app, ctx);
+
     // Keep highlighter enable flag in sync with the preference.
     let highlight_on = app.settings_ui.settings().highlight_active_action;
     if app.highlighter.is_enabled() != highlight_on {
@@ -207,11 +212,6 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
         app.preview_tooltips = PreviewTooltipCache::new();
         app.refresh_macro_hotkey_bindings();
     }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    poll_scheduled_backup(app, ctx);
-    #[cfg(not(target_arch = "wasm32"))]
-    poll_update(app, ctx);
 
     // Sample color before restoring visibility so the app isn't under the cursor.
     if let Some((x, y)) = app.screen_click.take_color_point() {
@@ -258,9 +258,10 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
     } else {
         #[cfg(not(target_arch = "wasm32"))]
         {
-            if app.settings_ui.settings().backup_enabled
-                || app.settings_ui.settings().auto_update_check
-                || app.update.is_busy()
+            // While an update worker is running, poll_update already scheduled a short wake.
+            if !app.update.is_busy()
+                && (app.settings_ui.settings().backup_enabled
+                    || app.settings_ui.settings().auto_update_check)
             {
                 // Coarse wake so automatic backups / update polls can fire while idle.
                 ctx.request_repaint_after(std::time::Duration::from_secs(60));

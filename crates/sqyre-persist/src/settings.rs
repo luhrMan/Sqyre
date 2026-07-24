@@ -10,8 +10,9 @@ use std::path::{Path, PathBuf};
 
 use crate::{PersistError, Result};
 use sqyre_domain::{
-    ACTION_COLOR_KEY_DEFAULT, ACTION_COLOR_KEY_DETECTION, ACTION_COLOR_KEY_MISCELLANEOUS,
-    ACTION_COLOR_KEY_MOUSE_KEYBOARD, ACTION_COLOR_KEY_VARIABLES, ACTION_COLOR_KEY_WAIT,
+    ACTION_COLOR_KEY_CONTROL_FLOW, ACTION_COLOR_KEY_DEFAULT, ACTION_COLOR_KEY_DETECTION,
+    ACTION_COLOR_KEY_MISCELLANEOUS, ACTION_COLOR_KEY_MOUSE_KEYBOARD, ACTION_COLOR_KEY_VARIABLES,
+    ACTION_COLOR_KEY_WAIT,
 };
 
 pub const DEFAULT_IMAGE_SEARCH_CLOSE_MATCHES_DISTANCE: i32 = 10;
@@ -85,6 +86,8 @@ pub struct ActionColorPrefs {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub variables: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub control_flow: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub miscellaneous: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub wait: String,
@@ -98,6 +101,7 @@ impl ActionColorPrefs {
             ACTION_COLOR_KEY_MOUSE_KEYBOARD => &self.mouse_keyboard,
             ACTION_COLOR_KEY_DETECTION => &self.detection,
             ACTION_COLOR_KEY_VARIABLES => &self.variables,
+            ACTION_COLOR_KEY_CONTROL_FLOW => &self.control_flow,
             ACTION_COLOR_KEY_MISCELLANEOUS => &self.miscellaneous,
             ACTION_COLOR_KEY_WAIT => &self.wait,
             ACTION_COLOR_KEY_DEFAULT => &self.default,
@@ -110,6 +114,7 @@ impl ActionColorPrefs {
             ACTION_COLOR_KEY_MOUSE_KEYBOARD => self.mouse_keyboard = hex,
             ACTION_COLOR_KEY_DETECTION => self.detection = hex,
             ACTION_COLOR_KEY_VARIABLES => self.variables = hex,
+            ACTION_COLOR_KEY_CONTROL_FLOW => self.control_flow = hex,
             ACTION_COLOR_KEY_MISCELLANEOUS => self.miscellaneous = hex,
             ACTION_COLOR_KEY_WAIT => self.wait = hex,
             ACTION_COLOR_KEY_DEFAULT => self.default = hex,

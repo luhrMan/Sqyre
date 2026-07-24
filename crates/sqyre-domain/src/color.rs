@@ -6,6 +6,7 @@
 pub const ACTION_COLOR_KEY_MOUSE_KEYBOARD: &str = "mouse_keyboard";
 pub const ACTION_COLOR_KEY_DETECTION: &str = "detection";
 pub const ACTION_COLOR_KEY_VARIABLES: &str = "variables";
+pub const ACTION_COLOR_KEY_CONTROL_FLOW: &str = "control_flow";
 pub const ACTION_COLOR_KEY_MISCELLANEOUS: &str = "miscellaneous";
 pub const ACTION_COLOR_KEY_WAIT: &str = "wait";
 pub const ACTION_COLOR_KEY_DEFAULT: &str = "default";
@@ -15,6 +16,7 @@ pub const ACTION_COLOR_CATEGORIES: &[(&str, &str)] = &[
     (ACTION_COLOR_KEY_MOUSE_KEYBOARD, "Mouse & Keyboard"),
     (ACTION_COLOR_KEY_DETECTION, "Detection"),
     (ACTION_COLOR_KEY_VARIABLES, "Variables"),
+    (ACTION_COLOR_KEY_CONTROL_FLOW, "Control flow"),
     (ACTION_COLOR_KEY_MISCELLANEOUS, "Miscellaneous"),
     (ACTION_COLOR_KEY_WAIT, "Wait"),
     (ACTION_COLOR_KEY_DEFAULT, "Default"),
