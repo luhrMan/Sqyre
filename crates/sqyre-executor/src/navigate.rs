@@ -422,25 +422,11 @@ fn perform_select(exec: &mut Executor<'_>, select: &NavSelectAction) -> Result<(
                 select.button.trim()
             };
             match mode.as_str() {
-                "down" | "hold" => exec
-                    .deps
-                    .automation
-                    .click(btn, true)
-                    .map_err(ExecError::Message)?,
-                "up" => exec
-                    .deps
-                    .automation
-                    .click(btn, false)
-                    .map_err(ExecError::Message)?,
+                "down" | "hold" => exec.input_click_down(btn)?,
+                "up" => exec.input_click_up(btn)?,
                 _ => {
-                    exec.deps
-                        .automation
-                        .click(btn, true)
-                        .map_err(ExecError::Message)?;
-                    exec.deps
-                        .automation
-                        .click(btn, false)
-                        .map_err(ExecError::Message)?;
+                    exec.input_click_down(btn)?;
+                    exec.input_click_up(btn)?;
                 }
             }
         }
@@ -452,18 +438,11 @@ fn perform_select(exec: &mut Executor<'_>, select: &NavSelectAction) -> Result<(
                 ));
             }
             match mode.as_str() {
-                "down" | "hold" => exec
-                    .deps
-                    .automation
-                    .key_down(k)
-                    .map_err(ExecError::Message)?,
-                "up" => exec.deps.automation.key_up(k).map_err(ExecError::Message)?,
+                "down" | "hold" => exec.input_key_down(k)?,
+                "up" => exec.input_key_up(k)?,
                 _ => {
-                    exec.deps
-                        .automation
-                        .key_down(k)
-                        .map_err(ExecError::Message)?;
-                    exec.deps.automation.key_up(k).map_err(ExecError::Message)?;
+                    exec.input_key_down(k)?;
+                    exec.input_key_up(k)?;
                 }
             }
         }
@@ -533,6 +512,7 @@ mod tests {
                 automation: &mut backend,
                 capturer: None,
                 close_matches_distance: 0,
+                release_held_inputs: true,
                 resolver: Some(&resolver),
                 icons: None,
                 macros: None,
@@ -611,6 +591,7 @@ mod tests {
                 automation: &mut backend,
                 capturer: None,
                 close_matches_distance: 0,
+                release_held_inputs: true,
                 resolver: Some(&resolver),
                 icons: None,
                 macros: None,
