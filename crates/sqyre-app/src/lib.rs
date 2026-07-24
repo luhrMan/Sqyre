@@ -46,6 +46,8 @@ mod ui_macro_list;
 mod ui_macro_tree;
 mod ui_overlays;
 mod ui_toolbar;
+#[cfg(not(target_arch = "wasm32"))]
+mod update;
 mod var_pills;
 mod variables_panel;
 #[cfg(any(test, target_arch = "wasm32"))]
@@ -90,6 +92,7 @@ use wasm_io::PendingImport;
 pub fn run() -> eframe::Result<()> {
     let _ = sqyre_persist::initialize_directories();
     diag::install(sqyre_persist::sqyre_dir());
+    sqyre_update::cleanup_stale_update();
     #[cfg(target_os = "linux")]
     install_x11_secondary_error_hook();
 
@@ -210,6 +213,9 @@ pub struct SqyreApp {
     /// In-flight automatic backup (native only).
     #[cfg(not(target_arch = "wasm32"))]
     backup_task: Option<std::sync::mpsc::Receiver<Result<std::path::PathBuf, String>>>,
+    /// Background update check / download (native only).
+    #[cfg(not(target_arch = "wasm32"))]
+    update: update::UpdateManager,
 }
 
 impl SqyreApp {
@@ -326,14 +332,18 @@ impl SqyreApp {
                     pending_import: wasm_io::new_pending_import(),
                     #[cfg(not(target_arch = "wasm32"))]
                     backup_task: None,
+                    #[cfg(not(target_arch = "wasm32"))]
+                    update: update::UpdateManager::default(),
                 };
                 app.refresh_macro_hotkey_bindings();
+                #[cfg(not(target_arch = "wasm32"))]
+                app.maybe_start_update_check();
                 app
             }
             Err(e) => {
                 let mut catalog = ProgramCatalog::default();
                 apply_main_monitor_resolution(&mut catalog);
-                Self {
+                let mut app = Self {
                     db: Database::default(),
                     macros: Vec::new(),
                     catalog,
@@ -383,8 +393,21 @@ impl SqyreApp {
                     pending_import: wasm_io::new_pending_import(),
                     #[cfg(not(target_arch = "wasm32"))]
                     backup_task: None,
-                }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    update: update::UpdateManager::default(),
+                };
+                #[cfg(not(target_arch = "wasm32"))]
+                app.maybe_start_update_check();
+                app
             }
+        }
+    }
+
+    /// Start a background update check when the preference is on.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn maybe_start_update_check(&mut self) {
+        if self.settings_ui.settings().auto_update_check {
+            self.update.start_check();
         }
     }
 

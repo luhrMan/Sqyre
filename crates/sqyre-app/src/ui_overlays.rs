@@ -97,8 +97,25 @@ pub fn show_floating_windows(app: &mut SqyreApp, ctx: &egui::Context) {
         &app.screen_click,
         app.settings_ui.settings_mut(),
     );
-    app.settings_ui
-        .show(ctx, &mut app.db, &mut app.macros, &mut app.catalog);
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        app.settings_ui.show(
+            ctx,
+            &mut app.db,
+            &mut app.macros,
+            &mut app.catalog,
+            &mut app.update,
+        );
+        if app.settings_ui.restart_requested {
+            app.settings_ui.restart_requested = false;
+            crate::update::restart_app(&mut app.instance_lock);
+        }
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        app.settings_ui
+            .show(ctx, &mut app.db, &mut app.macros, &mut app.catalog);
+    }
     if !app.macros.is_empty() {
         let idx = app.selected_macro.min(app.macros.len() - 1);
         let running = app.run.running.load(Ordering::SeqCst);
@@ -193,6 +210,8 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
 
     #[cfg(not(target_arch = "wasm32"))]
     poll_scheduled_backup(app, ctx);
+    #[cfg(not(target_arch = "wasm32"))]
+    poll_update(app, ctx);
 
     // Sample color before restoring visibility so the app isn't under the cursor.
     if let Some((x, y)) = app.screen_click.take_color_point() {
@@ -236,9 +255,17 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
         // Overlay focus-gating polls on its own schedule; avoid per-frame
         // transparent window clears (flicker) while still draining click queue promptly.
         ctx.request_repaint_after(std::time::Duration::from_millis(250));
-    } else if app.settings_ui.settings().backup_enabled {
-        // Coarse wake so automatic backups can fire while idle.
-        ctx.request_repaint_after(std::time::Duration::from_secs(60));
+    } else {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            if app.settings_ui.settings().backup_enabled
+                || app.settings_ui.settings().auto_update_check
+                || app.update.is_busy()
+            {
+                // Coarse wake so automatic backups / update polls can fire while idle.
+                ctx.request_repaint_after(std::time::Duration::from_secs(60));
+            }
+        }
     }
 }
 
@@ -293,6 +320,29 @@ fn poll_scheduled_backup(app: &mut SqyreApp, ctx: &egui::Context) {
         let _ = tx.send(result);
     });
     ctx.request_repaint_after(std::time::Duration::from_millis(250));
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn poll_update(app: &mut SqyreApp, ctx: &egui::Context) {
+    if app.update.poll() {
+        match &app.update.state {
+            crate::update::UpdateState::UpToDate
+            | crate::update::UpdateState::Available { .. }
+            | crate::update::UpdateState::Failed { .. } => {
+                crate::update::note_check_time(app.settings_ui.settings_mut());
+                app.settings_ui.persist();
+            }
+            crate::update::UpdateState::Ready { version } => {
+                app.settings_ui.set_update_status_ok(format!(
+                    "Update {version} installed. Restart to finish."
+                ));
+            }
+            _ => {}
+        }
+        ctx.request_repaint();
+    } else if app.update.is_busy() {
+        ctx.request_repaint_after(std::time::Duration::from_millis(250));
+    }
 }
 
 /// Ctrl+C / Ctrl+X / Ctrl+V / Ctrl+Z / Ctrl+Y / Ctrl+A — skip while editing an action
