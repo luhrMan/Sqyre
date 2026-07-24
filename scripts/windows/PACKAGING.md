@@ -59,3 +59,5 @@ SQYRE_WINDOWS_SCCACHE=1 make windows   # sccache (CI / cold caches)
 | `SCCACHE_DIR` | Host cache dir under the repo (default `.cache/sccache-windows`; unused when cache volumes are on) |
 
 Output: `bin/sqyre.exe`.
+
+Set `RELEASE_VERSION` (or a `VERSION` file) before `make windows` so the binary embeds `SQYRE_VERSION` for in-app auto-update. Local builds without either default to `0.0.0-dev` (update checks disabled). See [DEVELOPING.md](../../docs/DEVELOPING.md).

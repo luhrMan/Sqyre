@@ -39,7 +39,7 @@ fn paint_text_chip(
     radius: f32,
     margin_x: i8,
     margin_y: i8,
-    id_salt: impl std::hash::Hash,
+    id_salt: impl std::hash::Hash + std::fmt::Debug,
 ) -> egui::Response {
     // allocate_exact_size (not Frame::show / Label) so text can be centered in the chrome.
     let fg = contrast_fg(fill);
@@ -366,7 +366,7 @@ fn var_ref_text_edit(
             .show(ui)
     };
 
-    let cursor_char = output.cursor_range.map(|r| r.primary.index);
+    let cursor_char = output.cursor_range.map(|r| r.primary.index.0);
     show_var_ref_autocomplete(
         ui,
         id,

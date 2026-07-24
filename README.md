@@ -14,7 +14,7 @@
 
 Sqyre lets you build and run macros without writing code. Each macro is a tree of actions: loops and branches for flow control, detection steps when the screen matters, and leaf actions for concrete input. Macros, images, masks, and data tables live under **`~/.sqyre/`** (config in `db.yaml`).
 
-**Platforms:** Linux X11 (shipped). Windows ships a bare `.exe` (screen capture in progress). macOS capture/focus and macOS releases are not shipped yet. WASM editor zip is released for browser editing.
+**Platforms:** Linux X11 (shipped). Windows `.exe` is released (GDI capture, window focus, selection outline, hotkeys; no MSI). macOS capture/focus and macOS releases are not shipped yet. WASM editor zip is released for browser editing.
 
 ---
 
@@ -28,7 +28,7 @@ Sqyre lets you build and run macros without writing code. Each macro is a tree o
 | **Control flow** | Loop, while, break/continue, for each row, if |
 | **Miscellaneous** | Wait, pause, focus window, run macro, navigate select/key |
 
-**Also in the app:** data editor for reusable images, masks, and tabular sources; macro hotkeys (on press or release); global delay per macro; runtime variable panel while a macro runs.
+**Also in the app:** data editor for reusable images, masks, and tabular sources; macro hotkeys (on press or release, including tag-scoped); zip backups of `~/.sqyre/`; in-app auto-update from GitHub Releases (Linux/Windows); global delay per macro; runtime variable panel while a macro runs.
 
 **Stack:** [egui](https://github.com/emilk/egui) · PureCV · Tesseract (`leptess`).
 

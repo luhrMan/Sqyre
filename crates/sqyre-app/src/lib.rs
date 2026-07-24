@@ -433,7 +433,7 @@ impl eframe::App for SqyreApp {
 
         ui_macro_list::show(self, ui);
 
-        egui::CentralPanel::default().show_inside(ui, |ui| {
+        egui::CentralPanel::default().show(ui, |ui| {
             ui_toolbar::brand_header(self, ui);
             ui_toolbar::main_toolbar(self, ui);
             if self.macros.is_empty() {
