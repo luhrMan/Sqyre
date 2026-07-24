@@ -207,6 +207,10 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
     app.update_recording_visibility(ctx);
     app.sync_recording_overlay(ctx);
     sync_macro_overlay(app, ctx);
+    // Windows Raw Input suppresses WH_KEYBOARD_LL while we are focused; mirror
+    // egui keys into the hotkey bridges so Record / Esc / chords still work.
+    #[cfg(target_os = "windows")]
+    crate::win_focused_keys::feed_focused_keyboard(app, ctx);
     app.drain_pending_hotkey_macros(ctx);
 
     if let Some(chord) = app.hotkey_record.show(ctx, &app.macro_hotkeys) {

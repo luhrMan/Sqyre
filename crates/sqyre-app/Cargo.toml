@@ -61,6 +61,9 @@ winit = "0.30"
 [target.'cfg(all(not(target_arch = "wasm32"), any(target_os = "windows", target_os = "macos")))'.dependencies]
 tray-icon = { workspace = true }
 
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.62", features = ["Win32_UI_Input_KeyboardAndMouse"] }
+
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen-futures = "0.4"
 web-sys = { version = "0.3", features = ["Window", "Document", "HtmlCanvasElement", "Element"] }
