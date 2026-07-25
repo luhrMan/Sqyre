@@ -1,9 +1,85 @@
 //! Real `AutomationBackend` using rustautogui (lite) + arboard.
+//!
+//! Tracks keys/buttons this process has pressed so hard exits (failsafe /
+//! `process::exit`) can still release them — executor cleanup never runs then.
 
 use arboard::Clipboard;
 use rustautogui::{MouseClick, RustAutoGui};
 use sqyre_executor::{AutomationBackend, MoveOptions};
+use std::collections::HashSet;
+use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
+
+/// Keys currently held via [`OsAutomation::key_down`] (rustautogui names).
+static HELD_KEYS: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(|| Mutex::new(HashSet::new()));
+/// Mouse buttons currently held via [`OsAutomation::click`] down.
+static HELD_BUTTONS: LazyLock<Mutex<HashSet<String>>> =
+    LazyLock::new(|| Mutex::new(HashSet::new()));
+
+fn note_key_down(key: &str) {
+    if let Ok(mut g) = HELD_KEYS.lock() {
+        g.insert(key.to_string());
+    }
+}
+
+fn note_key_up(key: &str) {
+    if let Ok(mut g) = HELD_KEYS.lock() {
+        g.remove(key);
+    }
+}
+
+fn note_button_down(button: &str) {
+    if let Ok(mut g) = HELD_BUTTONS.lock() {
+        g.insert(button.to_string());
+    }
+}
+
+fn note_button_up(button: &str) {
+    if let Ok(mut g) = HELD_BUTTONS.lock() {
+        g.remove(button);
+    }
+}
+
+fn take_held() -> (HashSet<String>, HashSet<String>) {
+    let keys = HELD_KEYS
+        .lock()
+        .map(|mut g| std::mem::take(&mut *g))
+        .unwrap_or_default();
+    let buttons = HELD_BUTTONS
+        .lock()
+        .map(|mut g| std::mem::take(&mut *g))
+        .unwrap_or_default();
+    (keys, buttons)
+}
+
+/// Canonical button name used for hold tracking (`left` / `right` / `middle`).
+fn canonical_button(button: &str) -> &'static str {
+    match button {
+        "right" => "right",
+        "center" | "middle" => "middle",
+        _ => "left",
+    }
+}
+
+/// Best-effort release of every key/button this process still has held.
+///
+/// Safe to call from any thread (including failsafe / `process::exit` paths).
+/// No-ops when nothing is held or when the OS input backend cannot start.
+pub fn release_held_inputs() {
+    let (keys, buttons) = take_held();
+    if keys.is_empty() && buttons.is_empty() {
+        return;
+    }
+    let Ok(gui) = RustAutoGui::new(false) else {
+        return;
+    };
+    for key in keys {
+        let _ = gui.key_up(&key);
+    }
+    for button in buttons {
+        let _ = gui.click_up(OsAutomation::map_button(&button));
+    }
+}
 
 pub struct OsAutomation {
     gui: RustAutoGui,
@@ -109,13 +185,20 @@ impl AutomationBackend for OsAutomation {
     }
 
     fn click(&mut self, button: &str, down: bool) -> Result<(), String> {
-        let btn = Self::map_button(button);
+        let canonical = canonical_button(button);
+        let btn = Self::map_button(canonical);
         if down {
             self.gui
                 .click_down(btn)
-                .map_err(|e| format!("click down: {e}"))
+                .map_err(|e| format!("click down: {e}"))?;
+            note_button_down(canonical);
+            Ok(())
         } else {
-            self.gui.click_up(btn).map_err(|e| format!("click up: {e}"))
+            self.gui
+                .click_up(btn)
+                .map_err(|e| format!("click up: {e}"))?;
+            note_button_up(canonical);
+            Ok(())
         }
     }
 
@@ -134,12 +217,18 @@ impl AutomationBackend for OsAutomation {
         let k = Self::map_key(key);
         self.gui
             .key_down(&k)
-            .map_err(|e| format!("key down {k}: {e}"))
+            .map_err(|e| format!("key down {k}: {e}"))?;
+        note_key_down(&k);
+        Ok(())
     }
 
     fn key_up(&mut self, key: &str) -> Result<(), String> {
         let k = Self::map_key(key);
-        self.gui.key_up(&k).map_err(|e| format!("key up {k}: {e}"))
+        self.gui
+            .key_up(&k)
+            .map_err(|e| format!("key up {k}: {e}"))?;
+        note_key_up(&k);
+        Ok(())
     }
 
     fn type_char(&mut self, ch: char) {
@@ -198,5 +287,30 @@ mod tests {
         assert!((default_smooth - 0.2).abs() < f32::EPSILON);
         let instant = 0.0_f32;
         assert_eq!(instant, 0.0);
+    }
+
+    #[test]
+    fn hold_tracking_take_clears() {
+        let _ = take_held(); // isolate from other tests
+        note_key_down("control");
+        note_key_down("a");
+        note_button_down("left");
+        note_key_up("a");
+        let (keys, buttons) = take_held();
+        assert!(keys.contains("control"));
+        assert!(!keys.contains("a"));
+        assert!(buttons.contains("left"));
+        let (keys2, buttons2) = take_held();
+        assert!(keys2.is_empty());
+        assert!(buttons2.is_empty());
+    }
+
+    #[test]
+    fn canonical_button_aliases() {
+        assert_eq!(canonical_button("left"), "left");
+        assert_eq!(canonical_button("right"), "right");
+        assert_eq!(canonical_button("middle"), "middle");
+        assert_eq!(canonical_button("center"), "middle");
+        assert_eq!(canonical_button("other"), "left");
     }
 }

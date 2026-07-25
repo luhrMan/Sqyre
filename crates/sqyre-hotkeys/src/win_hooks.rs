@@ -238,7 +238,7 @@ fn handle_keyboard(wparam: WPARAM, lparam: LPARAM) {
         let shift = ctx.pressed.contains("shift") || ctx.pressed.contains("rshift");
         if ctx.screen_click.on_escape() {
             // Recording takes Esc; don't also stop macros.
-        } else if ctrl && shift {
+        } else if crate::failsafe_modifiers_held(&ctx.pressed) {
             let on_failsafe = Arc::clone(&ctx.callbacks.on_failsafe);
             drop(guard);
             on_failsafe();

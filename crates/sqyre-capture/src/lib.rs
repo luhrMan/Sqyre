@@ -93,13 +93,34 @@ impl sqyre_executor::ScreenCapturer for SharedRunCapturer {
     }
 }
 
+/// RGBA icon extracted from an OS window or executable.
+#[derive(Debug, Clone)]
+pub struct ProcessIcon {
+    pub width: u32,
+    pub height: u32,
+    /// Unmultiplied RGBA, `width * height * 4` bytes.
+    pub rgba: Vec<u8>,
+}
+
 /// One top-level application window for Focus Window picker UI.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct WindowInfo {
     pub title: String,
     pub process_name: String,
     pub process_path: String,
+    /// Best-effort OS icon (filled by [`list_open_windows`] when available).
+    pub icon: Option<ProcessIcon>,
 }
+
+impl PartialEq for WindowInfo {
+    fn eq(&self, other: &Self) -> bool {
+        self.title == other.title
+            && self.process_name == other.process_name
+            && self.process_path == other.process_path
+    }
+}
+
+impl Eq for WindowInfo {}
 
 impl WindowInfo {
     /// Human-readable list line: `title  (name — path)`.
@@ -119,6 +140,28 @@ impl WindowInfo {
             (true, true) => title.to_string(),
         }
     }
+}
+
+/// Preferred pixel size when picking among multi-resolution OS icons.
+pub const PROCESS_ICON_TARGET_PX: u32 = 48;
+
+/// Best-effort icon for a bound process (`process_path` + optional `window_title`).
+///
+/// Linux: `_NET_WM_ICON` from a matching open window. Windows: icon resource from the
+/// executable (works even when the app is not running). Other platforms: always `None`.
+#[cfg(target_os = "linux")]
+pub fn process_icon(process_path: &str, window_title: &str) -> Option<ProcessIcon> {
+    x11_focus::process_icon(process_path, window_title)
+}
+
+#[cfg(target_os = "windows")]
+pub fn process_icon(process_path: &str, window_title: &str) -> Option<ProcessIcon> {
+    win_focus::process_icon(process_path, window_title)
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+pub fn process_icon(_process_path: &str, _window_title: &str) -> Option<ProcessIcon> {
+    None
 }
 
 /// Primary monitor resolution key (`"{w}x{h}"`).
@@ -213,6 +256,19 @@ pub fn skip_taskbar_for_overlay_windows() -> Result<(), String> {
 
 #[cfg(not(target_os = "linux"))]
 pub fn skip_taskbar_for_overlay_windows() -> Result<(), String> {
+    Ok(())
+}
+
+/// Windows: enable DWM per-pixel alpha on overlay HWNDs (no-op elsewhere).
+///
+/// Needed because eframe/glow strips `transparent` when creating deferred viewports.
+#[cfg(target_os = "windows")]
+pub fn enable_overlay_window_transparency() -> Result<(), String> {
+    win_focus::enable_overlay_window_transparency()
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn enable_overlay_window_transparency() -> Result<(), String> {
     Ok(())
 }
 
@@ -357,6 +413,7 @@ mod tests {
             title: "Notes".into(),
             process_name: "gedit".into(),
             process_path: "/usr/bin/gedit".into(),
+            icon: None,
         };
         assert_eq!(w.label(), "Notes  (gedit — /usr/bin/gedit)");
         assert_eq!(
@@ -364,6 +421,7 @@ mod tests {
                 title: "  ".into(),
                 process_name: "x".into(),
                 process_path: String::new(),
+                icon: None,
             }
             .label(),
             "(untitled)  (x)"
@@ -376,6 +434,7 @@ mod tests {
             title: "Demo Game — Lobby".into(),
             process_name: "demo-game".into(),
             process_path: "/opt/demo-game/bin/DemoGame".into(),
+            icon: None,
         };
         assert!(super::window_matches_program(&w, "Demo Game"));
         assert!(super::window_matches_program(&w, "demo-game"));
@@ -390,6 +449,7 @@ mod tests {
             title: "Demo Game — Lobby".into(),
             process_name: "demo-game".into(),
             process_path: "/opt/demo-game/bin/DemoGame".into(),
+            icon: None,
         };
         assert!(super::window_matches_process(
             &w,
@@ -407,6 +467,7 @@ mod tests {
             title: "Game A".into(),
             process_name: "GameThread".into(),
             process_path: "/opt/launcher/GameThread".into(),
+            icon: None,
         };
         assert!(super::window_matches_binding(
             &w,

@@ -40,6 +40,10 @@ impl CoordinateResolver for CatalogResolver<'_> {
         let col = self.0.lookup_collection(&r)?;
         Ok((col.rows, col.cols))
     }
+
+    fn atlas_members(&self, program: &str, atlas: &str) -> Result<Vec<String>, String> {
+        Ok(self.0.lookup_atlas(program, atlas)?.collections.clone())
+    }
 }
 
 pub struct CatalogIcons<'a>(pub &'a ProgramCatalog);
@@ -109,6 +113,11 @@ Game:
       searcharea: Arena
       rows: 4
       cols: 5
+  atlases:
+    Inventory:
+      name: Inventory
+      collections:
+        - Bag
 "#;
         let v: Value = serde_yaml::from_str(yaml).unwrap();
         let mut cat = ProgramCatalog::from_yaml_value(&v).unwrap();
@@ -134,6 +143,10 @@ Game:
             (0, 0, 100, 80)
         );
         assert_eq!(resolver.collection_grid("Game", "Bag").unwrap(), (4, 5));
+        assert_eq!(
+            resolver.atlas_members("Game", "Inventory").unwrap(),
+            vec!["Bag".to_string()]
+        );
     }
 
     #[test]
