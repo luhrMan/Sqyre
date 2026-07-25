@@ -1,7 +1,7 @@
 //! Shared entity pickers: item icon grids, point / search-area lists, collection cells,
 //! macros, and Focus Window live-window lists.
 
-use crate::data_editor_preview::paint_grid_overlay_painter;
+use crate::data_editor_preview::{paint_grid_overlay_painter, show_file_hover};
 use crate::icon_cache::IconCache;
 use crate::image_view::{self, ImageViewTransform};
 use crate::paint_ctx::CatalogPaint;
@@ -256,10 +256,6 @@ impl ActivePicker {
             _ => None,
         }
     }
-}
-
-fn header_text(label: &str) -> egui::RichText {
-    egui::RichText::new(label).size(HEADER_SIZE).strong()
 }
 
 /// Fuzzy match on `name` or any tag. Empty `q` matches everything.
@@ -600,9 +596,16 @@ pub fn paint_items_icon_grid(
         egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, true)
             .show_header(ui, |ui| {
                 let prog_selected = selected_program == Some(prog.as_str());
-                if ui
-                    .selectable_label(prog_selected, header_text(prog))
-                    .clicked()
+                if crate::icon_cache::paint_program_label(
+                    ui,
+                    catalog,
+                    icons,
+                    prog,
+                    crate::icon_cache::ProgramLabelStyle::Header {
+                        selected: Some(prog_selected),
+                    },
+                )
+                .clicked()
                 {
                     *clicked_program = Some(prog.clone());
                 }
@@ -884,7 +887,13 @@ pub fn paint_coord_ref_list(
                         })
                 });
 
-                ui.label(header_text(prog));
+                crate::icon_cache::paint_program_label(
+                    ui,
+                    catalog,
+                    icons,
+                    prog,
+                    crate::icon_cache::ProgramLabelStyle::Header { selected: None },
+                );
                 for (_, row) in rows {
                     match row {
                         Row::Coord { key, display } => {
@@ -913,20 +922,13 @@ pub fn paint_coord_ref_list(
                             let label = format!("  {} (collection)", col.name);
                             let resp = ui
                                 .selectable_label(selected, egui::RichText::new(label).size(13.0));
-                            let path = catalog.collection_image_path(prog, &col.name);
-                            if resp.hovered() {
-                                if let Some(tex) = icons.for_path(ui.ctx(), &path) {
-                                    resp.clone().on_hover_ui(|ui| {
-                                        let [tw, th] = tex.size();
-                                        let size = fit_panel(tw as f32, th as f32);
-                                        ui.add(egui::Image::new((tex.id(), size)));
-                                        ui.label(format!("{prog}~{}", col.name));
-                                    });
-                                } else {
-                                    resp.clone()
-                                        .on_hover_text(format!("{prog}~{} (no image)", col.name));
-                                }
-                            }
+                            show_file_hover(
+                                ui,
+                                &resp,
+                                icons,
+                                &catalog.collection_image_path(prog, &col.name),
+                                &format!("{prog}~{}", col.name),
+                            );
                             if selected && *scroll_to_selection && !did_scroll {
                                 maybe_scroll_to(ui, &resp, scroll_to_selection);
                                 did_scroll = true;
@@ -967,6 +969,7 @@ fn paint_collection_cell_picker(
     pick: &mut CollectionCellPick,
 ) {
     ui.horizontal(|ui| {
+        crate::icon_cache::paint_program_icon(ui, catalog, icons, &pick.program);
         ui.label(
             egui::RichText::new(format!(
                 "Select cells — {}~{}",
@@ -985,7 +988,7 @@ fn paint_collection_cell_picker(
             {
                 pick.reset_view();
             }
-            if pick.view.zoom != 1.0 {
+            if pick.view.shows_zoom_label() {
                 ui.weak(format!("{:.0}%", pick.view.zoom * 100.0));
             }
         });

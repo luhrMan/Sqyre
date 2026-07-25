@@ -259,6 +259,19 @@ pub fn skip_taskbar_for_overlay_windows() -> Result<(), String> {
     Ok(())
 }
 
+/// Windows: enable DWM per-pixel alpha on overlay HWNDs (no-op elsewhere).
+///
+/// Needed because eframe/glow strips `transparent` when creating deferred viewports.
+#[cfg(target_os = "windows")]
+pub fn enable_overlay_window_transparency() -> Result<(), String> {
+    win_focus::enable_overlay_window_transparency()
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn enable_overlay_window_transparency() -> Result<(), String> {
+    Ok(())
+}
+
 /// Stable WM title used by floating macro-overlay viewports.
 #[cfg(target_os = "linux")]
 pub use x11_focus::OVERLAY_WM_TITLE;

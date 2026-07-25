@@ -221,7 +221,12 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                     let mut clicked_macro: Option<usize> = None;
                     let mut clicked_tag: Option<String> = None;
 
-                    for (tag, indices) in &groups {
+                    for (group_i, (tag, indices)) in groups.iter().enumerate() {
+                        if group_i > 0 {
+                            ui.add_space(8.0);
+                            ui.separator();
+                            ui.add_space(4.0);
+                        }
                         let id = ui.make_persistent_id(("macro_list_tag", tag.as_str()));
                         let header = tag_header_label(tag);
                         // body_unindented: show_body_indented calls expand_to_include_x

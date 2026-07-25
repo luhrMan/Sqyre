@@ -26,7 +26,8 @@ workspace = true
 winresource = "0.1"
 
 [dependencies]
-eframe = { workspace = true }
+# `glow`: Windows overlay button per-pixel alpha (wgpu DX12 HWND swapchains are opaque).
+eframe = { workspace = true, features = ["glow"] }
 egui = { workspace = true }
 egui-phosphor = { workspace = true }
 egui_ltreeview = { workspace = true }

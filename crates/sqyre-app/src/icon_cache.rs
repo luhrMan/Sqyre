@@ -4,6 +4,7 @@ use crate::assets;
 use crate::demo_icons;
 use eframe::egui::{self, ColorImage, TextureHandle, TextureOptions, Vec2};
 use sqyre_capture::ProcessIcon;
+use sqyre_domain::PROGRAM_DELIMITER;
 use sqyre_persist::ProgramCatalog;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -118,6 +119,20 @@ impl IconCache {
         Some(self.insert_process_icon(ctx, &key, &icon))
     }
 
+    /// OS process icon for a catalog program (via its bound `process_path`).
+    pub fn for_program(
+        &mut self,
+        ctx: &egui::Context,
+        catalog: &ProgramCatalog,
+        program: &str,
+    ) -> Option<TextureHandle> {
+        let prog = catalog.get(program.trim())?;
+        if prog.process_path.trim().is_empty() {
+            return None;
+        }
+        self.for_process(ctx, &prog.process_path, &prog.window_title)
+    }
+
     /// Seed / refresh the process-icon cache from a listed window's icon bytes.
     pub fn seed_process_icon(
         &mut self,
@@ -180,6 +195,97 @@ pub fn paint_process_icon(ui: &mut egui::Ui, tex: &TextureHandle, side: f32) {
             .maintain_aspect_ratio(true)
             .sense(egui::Sense::hover()),
     );
+}
+
+/// How to render a catalog program name next to its OS icon.
+#[derive(Debug, Clone, Copy)]
+pub enum ProgramLabelStyle {
+    /// Plain selectable list row.
+    Selectable { selected: bool },
+    /// Strong 16px header. `selected: None` → non-interactive label.
+    Header { selected: Option<bool> },
+}
+
+/// Paint optional process icon + program name; returns the name widget response.
+pub fn paint_program_label(
+    ui: &mut egui::Ui,
+    catalog: &ProgramCatalog,
+    icons: &mut IconCache,
+    program: &str,
+    style: ProgramLabelStyle,
+) -> egui::Response {
+    let tex = icons.for_program(ui.ctx(), catalog, program);
+    ui.horizontal(|ui| {
+        if let Some(tex) = tex.as_ref() {
+            paint_process_icon(ui, tex, PROCESS_ICON_SIDE);
+        }
+        match style {
+            ProgramLabelStyle::Selectable { selected } => ui.selectable_label(selected, program),
+            ProgramLabelStyle::Header {
+                selected: Some(selected),
+            } => ui.selectable_label(
+                selected,
+                egui::RichText::new(program)
+                    .size(PROCESS_ICON_SIDE)
+                    .strong(),
+            ),
+            ProgramLabelStyle::Header { selected: None } => ui.label(
+                egui::RichText::new(program)
+                    .size(PROCESS_ICON_SIDE)
+                    .strong(),
+            ),
+        }
+    })
+    .inner
+}
+
+/// Paint a program's process icon when bound; returns whether an icon was drawn.
+pub fn paint_program_icon(
+    ui: &mut egui::Ui,
+    catalog: &ProgramCatalog,
+    icons: &mut IconCache,
+    program: &str,
+) -> bool {
+    let Some(tex) = icons.for_program(ui.ctx(), catalog, program) else {
+        return false;
+    };
+    paint_process_icon(ui, &tex, PROCESS_ICON_SIDE);
+    true
+}
+
+/// Leading OS icon for a catalog program name or `program~…` ref string.
+pub fn paint_leading_program_icon(
+    ui: &mut egui::Ui,
+    catalog: &ProgramCatalog,
+    icons: &mut IconCache,
+    text: &str,
+) -> bool {
+    let text = text.trim();
+    if text.is_empty() {
+        return false;
+    }
+    let prog = text
+        .split_once(PROGRAM_DELIMITER)
+        .map(|(p, _)| p)
+        .unwrap_or(text);
+    if catalog.get(prog).is_none() {
+        return false;
+    }
+    paint_program_icon(ui, catalog, icons, prog)
+}
+
+/// Leading OS icon for a Focus Window process path (+ optional title hint).
+pub fn paint_leading_process_icon(
+    ui: &mut egui::Ui,
+    icons: &mut IconCache,
+    process_path: &str,
+    window_title: &str,
+) -> bool {
+    let Some(tex) = icons.for_process(ui.ctx(), process_path, window_title) else {
+        return false;
+    };
+    paint_process_icon(ui, &tex, PROCESS_ICON_SIDE);
+    true
 }
 
 fn process_cache_key(process_path: &str) -> String {

@@ -153,6 +153,37 @@ impl PreviewTooltipCache {
         }
     }
 
+    /// Hover tooltip variant of [`Self::paint_for_coordinate_ref`].
+    pub fn show_for_coordinate_ref(
+        &mut self,
+        ui: &mut egui::Ui,
+        response: &egui::Response,
+        catalog: &ProgramCatalog,
+        coord_ref: &CoordinateRef,
+        kind: PreviewKind,
+    ) {
+        if !response.hovered() || coord_ref.is_empty() {
+            return;
+        }
+        let label = coord_ref.as_str().to_string();
+        let preview = match ref_preview_spec(catalog, coord_ref, kind) {
+            Ok((key, caption, coords)) => {
+                match self.texture_for(ui.ctx(), &key, &caption, coords, false, TOOLTIP_MAX_DIM) {
+                    Ok((tex, cap)) => Ok((tex, cap)),
+                    Err(err) => Err((caption, err)),
+                }
+            }
+            Err(err) => Err((label.clone(), err)),
+        };
+        response.clone().on_hover_ui(|ui| match &preview {
+            Ok((tex, cap)) => paint_preview(ui, tex, cap),
+            Err((cap, err)) => {
+                ui.label(cap.as_str());
+                ui.colored_label(crate::theme::error_fg(), err);
+            }
+        });
+    }
+
     /// Embedded form-panel preview for a point (uses form field coords).
     /// Returns the viewport rect for cardinal coord overlays.
     /// Pass `None` for a coordinate that is a variable or non-literal expression.
