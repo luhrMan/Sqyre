@@ -195,45 +195,48 @@ impl AddActionPicker {
             .collapsible(false)
             .resizable(true)
             .default_size([900.0, 420.0])
-            .min_width(640.0)
-            .min_height(280.0)
+            .min_size([100.0, 100.0])
             .show(ctx, |ui| {
                 let is_dark = ui.visuals().dark_mode;
-                ui.label(
-                    "Pick an action type — hover ~1s to preview defaults, right-click to edit",
-                );
-                ui.add_space(6.0);
-
                 let templates = action_templates();
                 let list_h = pickers::popup_scroll_max_height(ui, 0.0);
-                egui::ScrollArea::vertical()
+                // Content-sized columns (not equal-split) so shrinking the window
+                // yields horizontal scroll instead of squashing tiles.
+                egui::ScrollArea::both()
                     .auto_shrink([false, false])
                     .max_height(list_h)
                     .show(ui, |ui| {
-                        ui.columns(ACTION_PICKER_CATEGORIES.len(), |cols| {
-                            for (col_i, category) in ACTION_PICKER_CATEGORIES.iter().enumerate() {
-                                let col = &mut cols[col_i];
-                                col.strong(*category);
-                                col.add_space(4.0);
-                                for tmpl in templates.iter().filter(|t| t.category == *category) {
-                                    let sample = self
-                                        .prototype_for(tmpl.action_type)
-                                        .unwrap_or_else(|| tmpl.create());
-                                    let resp = picker_tile(col, tmpl, &sample, is_dark);
-                                    if resp.secondary_clicked() {
-                                        edit_request = Some((
-                                            tmpl.action_type.to_string(),
-                                            resp.rect.right_top(),
-                                        ));
-                                    } else if resp.clicked() {
-                                        picked = self.create_action(tmpl.action_type);
-                                    } else if resp.hovered() {
-                                        hover_type = Some((
-                                            tmpl.action_type.to_string(),
-                                            resp.rect.right_top(),
-                                        ));
+                        ui.label(
+                            "Pick an action type — hover ~1s to preview defaults, right-click to edit",
+                        );
+                        ui.add_space(6.0);
+                        ui.horizontal_top(|ui| {
+                            for category in ACTION_PICKER_CATEGORIES {
+                                ui.vertical(|ui| {
+                                    ui.strong(*category);
+                                    ui.add_space(4.0);
+                                    for tmpl in
+                                        templates.iter().filter(|t| t.category == *category)
+                                    {
+                                        let sample = self
+                                            .prototype_for(tmpl.action_type)
+                                            .unwrap_or_else(|| tmpl.create());
+                                        let resp = picker_tile(ui, tmpl, &sample, is_dark);
+                                        if resp.secondary_clicked() {
+                                            edit_request = Some((
+                                                tmpl.action_type.to_string(),
+                                                resp.rect.right_top(),
+                                            ));
+                                        } else if resp.clicked() {
+                                            picked = self.create_action(tmpl.action_type);
+                                        } else if resp.hovered() {
+                                            hover_type = Some((
+                                                tmpl.action_type.to_string(),
+                                                resp.rect.right_top(),
+                                            ));
+                                        }
                                     }
-                                }
+                                });
                             }
                         });
                     });

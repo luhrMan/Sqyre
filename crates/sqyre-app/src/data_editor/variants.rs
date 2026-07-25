@@ -3,7 +3,7 @@
 use super::helpers::{copy_image_as_png, form_coord_i32};
 use super::{DataEditor, PendingConfirm, VariantPrompt};
 use crate::data_editor_preview::{
-    fit_panel, fit_thumbnail, paint_preview_frame, variant_display_label, variant_name_from_path,
+    fit_panel, fit_thumbnail, variant_display_label, variant_name_from_path,
 };
 use crate::icon_cache::IconCache;
 use crate::icon_variants::{self, AddVariantError};
@@ -48,8 +48,7 @@ impl DataEditor {
             let fallback = icons.for_target_or_fallback(ui.ctx(), catalog, target);
             let [tw, th] = fallback.size();
             let size = fit_panel(tw as f32, th as f32);
-            let resp = ui.add(egui::Image::new((fallback.id(), size)));
-            paint_preview_frame(ui.painter(), resp.rect);
+            ui.add(egui::Image::new((fallback.id(), size)));
             ui.weak("No icon variants on disk.");
             return;
         }
@@ -65,8 +64,7 @@ impl DataEditor {
                         Some(tex) => {
                             let [tw, th] = tex.size();
                             let size = fit_thumbnail(tw as f32, th as f32);
-                            let resp = ui.add(egui::Image::new((tex.id(), size)));
-                            paint_preview_frame(ui.painter(), resp.rect);
+                            ui.add(egui::Image::new((tex.id(), size)));
                         }
                         None => {
                             ui.weak("Missing");
