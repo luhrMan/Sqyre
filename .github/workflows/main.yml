@@ -37,6 +37,7 @@ jobs:
     outputs:
       should_release: ${{ steps.check.outputs.should_release }}
       version: ${{ steps.check.outputs.version }}
+      sha: ${{ steps.check.outputs.sha }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -75,6 +76,7 @@ jobs:
 
           echo "should_release=${SHOULD_RELEASE}" >> "$GITHUB_OUTPUT"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
   test:
     # Also run on release triggers so scheduled/manual publishes cannot skip quality gates.
@@ -202,7 +204,7 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@1.92.0
+        uses: dtolnay/rust-toolchain@387aeee55b189f024a4f6d94890c5b18d73339cc # 1.92.0
 
       - name: Cache Homebrew bottles
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
@@ -237,13 +239,17 @@ jobs:
         run: cargo check -p sqyre-app
 
   check-windows:
-    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    if: >
+      github.event_name == 'push' ||
+      github.event_name == 'pull_request' ||
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@1.92.0
+        uses: dtolnay/rust-toolchain@387aeee55b189f024a4f6d94890c5b18d73339cc # 1.92.0
 
       - name: Cache Cargo registry
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
@@ -283,7 +289,7 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          ref: main
+          ref: ${{ needs.version.outputs.sha }}
 
       - name: Write VERSION
         run: echo "${{ needs.version.outputs.version }}" > VERSION
@@ -408,7 +414,7 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          ref: main
+          ref: ${{ needs.version.outputs.sha }}
 
       - name: Write VERSION
         run: echo "${{ needs.version.outputs.version }}" > VERSION
@@ -516,7 +522,7 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          ref: main
+          ref: ${{ needs.version.outputs.sha }}
 
       - name: Write VERSION
         run: echo "${{ needs.version.outputs.version }}" > VERSION
@@ -629,9 +635,21 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           path: src
+          ref: ${{ needs.version.outputs.sha }}
 
       - name: Install Rust toolchain (sign checksums)
-        uses: dtolnay/rust-toolchain@1.92.0
+        uses: dtolnay/rust-toolchain@387aeee55b189f024a4f6d94890c5b18d73339cc # 1.92.0
+
+      - name: Verify update public key is configured
+        working-directory: src
+        run: |
+          set -euo pipefail
+          PUBKEY_FILE="crates/sqyre-update/update_pubkey.hex"
+          PUBKEY="$(tr -d '[:space:]' < "$PUBKEY_FILE")"
+          if [ -z "$PUBKEY" ] || [ "$(printf '%s' "$PUBKEY" | tr '[:upper:]' '[:lower:]')" = "unconfigured" ]; then
+            echo "$PUBKEY_FILE must contain the configured update public key before signing a release" >&2
+            exit 1
+          fi
 
       - name: Sign SHA256SUMS (Ed25519)
         working-directory: src
@@ -647,7 +665,7 @@ jobs:
           ls -la ../release/SHA256SUMS ../release/SHA256SUMS.sig
 
       - name: Create Release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
         with:
           tag_name: v${{ needs.version.outputs.version }}
           name: Release v${{ needs.version.outputs.version }}
