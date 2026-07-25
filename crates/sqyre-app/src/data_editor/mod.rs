@@ -1,4 +1,4 @@
-//! Floating Data Editor: Programs / Items / Points / Search Areas / Masks / Collections / Atlases / AutoPic.
+//! Floating Data Editor: Programs / Items (Masks, AutoPic) / Coordinates / Overlay.
 
 mod form_state;
 mod forms;
@@ -27,17 +27,49 @@ use sqyre_persist::{
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+/// Top-level Data Editor section (tab bar).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum EditorSection {
+    Programs,
+    Items,
+    Coordinates,
+    Overlay,
+}
+
+impl EditorSection {
+    fn of(tab: EditorTab) -> Self {
+        match tab {
+            EditorTab::Programs => Self::Programs,
+            EditorTab::Items | EditorTab::Masks | EditorTab::AutoPic => Self::Items,
+            EditorTab::Points
+            | EditorTab::SearchAreas
+            | EditorTab::Collections
+            | EditorTab::Atlases => Self::Coordinates,
+            EditorTab::Overlay => Self::Overlay,
+        }
+    }
+
+    fn default_tab(self) -> EditorTab {
+        match self {
+            Self::Programs => EditorTab::Programs,
+            Self::Items => EditorTab::Items,
+            Self::Coordinates => EditorTab::Points,
+            Self::Overlay => EditorTab::Overlay,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) enum EditorTab {
     #[default]
     Programs,
     Items,
+    Masks,
+    AutoPic,
     Points,
     SearchAreas,
-    Masks,
     Collections,
     Atlases,
-    AutoPic,
     Overlay,
 }
 
@@ -103,11 +135,15 @@ pub struct DataEditor {
     form_atlas_add: String,
     /// Overlay button form: target macro name.
     form_overlay_macro: String,
+    /// Overlay button form: whether the button is drawn on screen.
+    form_overlay_enabled: bool,
     /// Overlay button form: built-in icon id.
     form_overlay_icon: String,
-    /// Overlay button form: desktop X position.
+    /// Overlay button form: optional catalog point (`program~name`) for location.
+    form_overlay_point: String,
+    /// Overlay button form: desktop X position (fallback when no point).
     form_overlay_x: f32,
-    /// Overlay button form: desktop Y position.
+    /// Overlay button form: desktop Y position (fallback when no point).
     form_overlay_y: f32,
     /// Overlay button form: size in points.
     form_overlay_size: f32,
@@ -190,7 +226,9 @@ impl Default for DataEditor {
             form_atlas_members: Vec::new(),
             form_atlas_add: String::new(),
             form_overlay_macro: String::new(),
+            form_overlay_enabled: true,
             form_overlay_icon: overlay_icons::DEFAULT_ICON_ID.into(),
+            form_overlay_point: String::new(),
             form_overlay_x: 48.0,
             form_overlay_y: 48.0,
             form_overlay_size: DEFAULT_OVERLAY_BUTTON_SIZE,
@@ -237,7 +275,9 @@ impl DataEditor {
         );
         btn.label = self.form_name.clone();
         btn.macro_name = self.form_overlay_macro.clone();
+        btn.enabled = self.form_overlay_enabled;
         btn.icon = self.form_overlay_icon.clone();
+        btn.point = self.form_overlay_point.clone();
         btn.x = self.form_overlay_x;
         btn.y = self.form_overlay_y;
         btn.size = self.form_overlay_size;
@@ -325,11 +365,11 @@ impl DataEditor {
         self.open = open;
         self.draw_confirm(ctx, db, macros, catalog, icons, previews, settings);
         self.draw_overlay_icon_picker(ctx, settings);
-        self.poll_window_picker(ctx, catalog, icons, previews, macros);
+        self.poll_form_picker(ctx, catalog, icons, previews, macros);
         self.poll_autopix(ctx);
     }
 
-    fn poll_window_picker(
+    fn poll_form_picker(
         &mut self,
         ctx: &egui::Context,
         catalog: &ProgramCatalog,
@@ -344,10 +384,7 @@ impl DataEditor {
             .iter()
             .map(|m| (m.name.clone(), m.tags.clone()))
             .collect();
-        if let PickerResult::Window {
-            process_path,
-            window_title,
-        } = pickers::show_active_picker(
+        match pickers::show_active_picker(
             ctx,
             &mut self.window_picker,
             &mut CatalogPaint {
@@ -357,8 +394,21 @@ impl DataEditor {
             },
             &macro_opts,
         ) {
-            self.form_process_path = process_path;
-            self.form_window_title = window_title;
+            PickerResult::Window {
+                process_path,
+                window_title,
+            } => {
+                self.form_process_path = process_path;
+                self.form_window_title = window_title;
+            }
+            PickerResult::Point(coord) => {
+                if let Ok((x, y)) = catalog.resolve_point(&coord, &Macro::new("", 0, vec![])) {
+                    self.form_overlay_x = x as f32;
+                    self.form_overlay_y = y as f32;
+                }
+                self.form_overlay_point = coord.0;
+            }
+            _ => {}
         }
     }
 
@@ -416,15 +466,17 @@ impl DataEditor {
     ) {
         ui.horizontal(|ui| {
             let prev = self.tab;
-            ui.selectable_value(&mut self.tab, EditorTab::Programs, "Programs");
-            ui.selectable_value(&mut self.tab, EditorTab::Items, "Items");
-            ui.selectable_value(&mut self.tab, EditorTab::Points, "Points");
-            ui.selectable_value(&mut self.tab, EditorTab::SearchAreas, "Search Areas");
-            ui.selectable_value(&mut self.tab, EditorTab::Masks, "Masks");
-            ui.selectable_value(&mut self.tab, EditorTab::Collections, "Collections");
-            ui.selectable_value(&mut self.tab, EditorTab::Atlases, "Atlases");
-            ui.selectable_value(&mut self.tab, EditorTab::AutoPic, "AutoPic");
-            ui.selectable_value(&mut self.tab, EditorTab::Overlay, "Overlay");
+            let section = EditorSection::of(self.tab);
+            for (sec, label) in [
+                (EditorSection::Programs, "Programs"),
+                (EditorSection::Items, "Items"),
+                (EditorSection::Coordinates, "Coordinates"),
+                (EditorSection::Overlay, "Overlay"),
+            ] {
+                if ui.selectable_label(section == sec, label).clicked() && section != sec {
+                    self.tab = sec.default_tab();
+                }
+            }
             if self.tab != prev {
                 self.selected_entity = None;
                 self.variant_prompt = None;
@@ -432,6 +484,35 @@ impl DataEditor {
                 self.load_form(catalog, settings);
             }
         });
+        let section = EditorSection::of(self.tab);
+        if matches!(section, EditorSection::Items | EditorSection::Coordinates) {
+            ui.horizontal(|ui| {
+                let prev = self.tab;
+                match section {
+                    EditorSection::Items => {
+                        ui.selectable_value(&mut self.tab, EditorTab::Items, "Items");
+                        ui.selectable_value(&mut self.tab, EditorTab::Masks, "Masks");
+                        ui.selectable_value(&mut self.tab, EditorTab::AutoPic, "AutoPic");
+                    }
+                    EditorSection::Coordinates => {
+                        ui.label(egui::RichText::new("Basic").weak().small());
+                        ui.selectable_value(&mut self.tab, EditorTab::Points, "Points");
+                        ui.selectable_value(&mut self.tab, EditorTab::SearchAreas, "Search Areas");
+                        ui.add_space(12.0);
+                        ui.label(egui::RichText::new("Advanced").weak().small());
+                        ui.selectable_value(&mut self.tab, EditorTab::Collections, "Collections");
+                        ui.selectable_value(&mut self.tab, EditorTab::Atlases, "Atlases");
+                    }
+                    _ => {}
+                }
+                if self.tab != prev {
+                    self.selected_entity = None;
+                    self.variant_prompt = None;
+                    self.overlay_icon_picker_for = None;
+                    self.load_form(catalog, settings);
+                }
+            });
+        }
         ui.separator();
 
         if let Some(msg) = screen_click.status_label() {

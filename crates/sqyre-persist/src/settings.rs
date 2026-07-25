@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 
 use crate::{PersistError, Result};
 use sqyre_domain::{
+    rename_coordinate_entity, rename_coordinate_program, CoordinateRef, Macro,
     ACTION_COLOR_KEY_CONTROL_FLOW, ACTION_COLOR_KEY_DEFAULT, ACTION_COLOR_KEY_DETECTION,
     ACTION_COLOR_KEY_MISCELLANEOUS, ACTION_COLOR_KEY_MOUSE_KEYBOARD, ACTION_COLOR_KEY_VARIABLES,
     ACTION_COLOR_KEY_WAIT,
@@ -134,8 +135,12 @@ pub struct OverlayButtonConfig {
     /// Stable id used for the deferred viewport hash.
     pub id: String,
     /// Catalog program this button belongs to (shown when that program is focused).
+    /// [`crate::GENERAL_PROGRAM`] buttons ignore focus and stay on screen when enabled.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub program: String,
+    /// When false the button is not drawn (except live Data Editor preview).
+    #[serde(default = "default_overlay_button_enabled")]
+    pub enabled: bool,
     /// Tooltip / optional caption under the icon.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub label: String,
@@ -145,7 +150,12 @@ pub struct OverlayButtonConfig {
     /// Icon catalog id (Phosphor kebab-case, e.g. `play`, `lightning`). Empty = default play.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub icon: String,
+    /// Optional catalog point (`program~name`). When set, desktop position is resolved from
+    /// that point each frame; [`Self::x`] / [`Self::y`] are fallbacks if resolve fails.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub point: String,
     /// Desktop position of the button viewport (top-left, points).
+    /// Used when [`Self::point`] is empty, or as fallback when the point cannot be resolved.
     #[serde(default)]
     pub x: f32,
     #[serde(default)]
@@ -200,6 +210,10 @@ fn default_overlay_button_size() -> f32 {
     DEFAULT_OVERLAY_BUTTON_SIZE
 }
 
+fn default_overlay_button_enabled() -> bool {
+    true
+}
+
 fn default_overlay_corner_radius() -> f32 {
     DEFAULT_OVERLAY_CORNER_RADIUS
 }
@@ -217,9 +231,11 @@ impl OverlayButtonConfig {
         Self {
             id: id.into(),
             program: program.into(),
+            enabled: true,
             label: String::new(),
             macro_name: String::new(),
             icon: String::new(),
+            point: String::new(),
             x: 48.0,
             y: 48.0,
             size: DEFAULT_OVERLAY_BUTTON_SIZE,
@@ -246,6 +262,22 @@ impl OverlayButtonConfig {
             return macro_name;
         }
         self.id.as_str()
+    }
+
+    /// Desktop top-left for the button viewport.
+    ///
+    /// When [`Self::point`] is set, resolves that catalog point (literal scalars /
+    /// arithmetic without macro variables). Falls back to [`Self::x`] / [`Self::y`]
+    /// when the point is empty or cannot be resolved.
+    pub fn resolved_position(&self, catalog: &crate::ProgramCatalog) -> (f32, f32) {
+        let point = self.point.trim();
+        if !point.is_empty() {
+            let m = Macro::new("", 0, vec![]);
+            if let Ok((x, y)) = catalog.resolve_point(&CoordinateRef(point.to_string()), &m) {
+                return (x as f32, y as f32);
+            }
+        }
+        (self.x, self.y)
     }
 
     /// Resolve `#rrggbb` (or empty → `fallback`) plus alpha → RGBA.
@@ -336,10 +368,8 @@ pub struct UserSettings {
     /// Per-action-type blank templates for the Add Action picker (YAML action maps).
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub action_defaults: std::collections::BTreeMap<String, serde_yaml::Mapping>,
-    /// Show floating always-on-top buttons that start macros.
-    #[serde(default)]
-    pub overlay_enabled: bool,
-    /// User-configured overlay buttons (per-program; shown when that program is focused).
+    /// User-configured overlay buttons (per-program; enabled buttons for
+    /// [`crate::GENERAL_PROGRAM`] always show, others when that program is focused).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub overlay_buttons: Vec<OverlayButtonConfig>,
     /// Automatically zip the data directory on a schedule.
@@ -419,7 +449,6 @@ impl Default for UserSettings {
             ui_scale: DEFAULT_UI_SCALE,
             action_colors: ActionColorPrefs::default(),
             action_defaults: std::collections::BTreeMap::new(),
-            overlay_enabled: false,
             overlay_buttons: Vec::new(),
             backup_enabled: false,
             backup_interval_hours: DEFAULT_BACKUP_INTERVAL_HOURS,
@@ -479,6 +508,59 @@ impl UserSettings {
         clamped.clamp();
         crate::atomic_write(path, serde_yaml::to_string(&clamped)?)?;
         Ok(())
+    }
+
+    /// Propagate a catalog point rename into overlay button point refs.
+    pub fn rename_overlay_point_entity(
+        &mut self,
+        program: &str,
+        old_name: &str,
+        new_name: &str,
+    ) -> bool {
+        let mut changed = false;
+        for btn in &mut self.overlay_buttons {
+            let cur = CoordinateRef(btn.point.clone());
+            let next = rename_coordinate_entity(&cur, program, old_name, new_name);
+            if next != cur {
+                btn.point = next.0;
+                changed = true;
+            }
+        }
+        changed
+    }
+
+    /// Propagate a program rename into overlay button point refs.
+    pub fn rename_overlay_point_program(&mut self, old_program: &str, new_program: &str) -> bool {
+        let mut changed = false;
+        for btn in &mut self.overlay_buttons {
+            let cur = CoordinateRef(btn.point.clone());
+            let next = rename_coordinate_program(&cur, old_program, new_program);
+            if next != cur {
+                btn.point = next.0;
+                changed = true;
+            }
+        }
+        changed
+    }
+
+    /// Clear overlay button point refs that target a deleted catalog point.
+    pub fn clear_overlay_point_refs(&mut self, program: &str, name: &str) -> bool {
+        let mut changed = false;
+        for btn in &mut self.overlay_buttons {
+            let cur = CoordinateRef(btn.point.clone());
+            if cur.is_empty() || cur.name() != name {
+                continue;
+            }
+            let matches = match cur.program() {
+                Some(p) => p == program,
+                None => true,
+            };
+            if matches {
+                btn.point.clear();
+                changed = true;
+            }
+        }
+        changed
     }
 
     /// Clamp numeric ranges to settings UI bounds.
@@ -658,16 +740,17 @@ mod tests {
             highlight_active_action: true,
             image_search_close_matches_distance: 25,
             ui_scale: 1.2,
-            overlay_enabled: true,
             ..Default::default()
         };
         s.action_colors.detection = "#aabbcc".into();
         s.overlay_buttons.push(OverlayButtonConfig {
             id: "btn-1".into(),
             program: "Demo Game".into(),
+            enabled: true,
             label: "Go".into(),
             macro_name: "demo".into(),
             icon: "bolt".into(),
+            point: String::new(),
             x: 100.0,
             y: 200.0,
             size: 64.0,
@@ -689,8 +772,8 @@ mod tests {
         assert_eq!(loaded.image_search_close_matches_distance, 25);
         assert!((loaded.ui_scale - 1.2).abs() < f32::EPSILON);
         assert_eq!(loaded.action_colors.detection, "#aabbcc");
-        assert!(loaded.overlay_enabled);
         assert_eq!(loaded.overlay_buttons.len(), 1);
+        assert!(loaded.overlay_buttons[0].enabled);
         assert_eq!(loaded.overlay_buttons[0].program, "Demo Game");
         assert_eq!(loaded.overlay_buttons[0].macro_name, "demo");
         assert_eq!(loaded.overlay_buttons[0].icon, "bolt");
@@ -711,7 +794,6 @@ mod tests {
         std::fs::write(
             &path,
             r#"
-overlay_enabled: true
 overlay_buttons:
   - id: btn-legacy
     program: P
@@ -724,6 +806,7 @@ overlay_buttons:
         .unwrap();
         let loaded = UserSettings::load_from_path(&path).unwrap();
         let btn = &loaded.overlay_buttons[0];
+        assert!(btn.enabled);
         assert!((btn.corner_radius - DEFAULT_OVERLAY_CORNER_RADIUS).abs() < f32::EPSILON);
         assert!((btn.border_width - DEFAULT_OVERLAY_BORDER_WIDTH).abs() < f32::EPSILON);
         assert!(btn.border_color.is_empty());

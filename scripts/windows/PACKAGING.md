@@ -23,7 +23,7 @@ make windows          # Docker MinGW cross from Linux/macOS; native on Windows
 2. Else try `docker pull` of `SQYRE_WINDOWS_REGISTRY_IMAGE`, or `ghcr.io/<owner>/<repo>-windows-cross:latest` (from `GITHUB_REPOSITORY` / `origin`).
 3. Else `docker build` (slow once: MinGW Tesseract).
 
-CI pushes the runnable image to GHCR on main. **Rebuild the local image** after Dockerfile or `mingw-lld-link.sh` changes (`docker build -f scripts/windows/Dockerfile -t sqyre-windows-cross:latest scripts/windows`), or delete the tag so the next `make windows` pulls/rebuilds.
+CI pushes the runnable image to GHCR on main (content-hash tag + `:latest`). **Rebuild the local image** after Dockerfile or `mingw-lld-link.sh` changes (`docker build -f scripts/windows/Dockerfile -t sqyre-windows-cross:latest scripts/windows`), or delete the tag so the next `make windows` pulls/rebuilds.
 
 ### Compile caches
 

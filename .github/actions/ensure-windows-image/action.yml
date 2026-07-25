@@ -1,0 +1,112 @@
+name: Ensure Windows cross image
+description: >
+  Pull a content-addressed Windows MinGW cross image from GHCR, or build it with
+  Buildx layer caches and push it for later runs / local make windows.
+inputs:
+  github-token:
+    description: Token for GHCR login (pass secrets.GITHUB_TOKEN)
+    required: true
+  local-tag:
+    description: Local image tag to load/tag
+    required: false
+    default: sqyre-windows-cross:latest
+  push:
+    description: Push runnable image tags to GHCR on cache miss
+    required: false
+    default: "true"
+outputs:
+  image:
+    description: Local image tag ready for docker run
+    value: ${{ steps.meta.outputs.local_tag }}
+  remote-image:
+    description: Content-addressed GHCR ref
+    value: ${{ steps.meta.outputs.remote_image }}
+  cache-hit:
+    description: Whether the runnable image was pulled (no rebuild)
+    value: ${{ steps.pull.outputs.hit }}
+runs:
+  using: composite
+  steps:
+    - name: Image refs
+      id: meta
+      shell: bash
+      run: |
+        set -euo pipefail
+        o=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+        n=$(echo "${{ github.event.repository.name }}" | tr '[:upper:]' '[:lower:]')
+        hash=$(sha256sum \
+          scripts/windows/Dockerfile \
+          scripts/windows/build-mingw-deps.sh \
+          scripts/windows/mingw-lld-link.sh \
+          scripts/windows/sccache-rustc-wrapper.sh \
+          | sha256sum | cut -c1-16)
+        echo "local_tag=${{ inputs.local-tag }}" >> "$GITHUB_OUTPUT"
+        echo "buildcache=ghcr.io/${o}/${n}-buildcache:windows" >> "$GITHUB_OUTPUT"
+        echo "remote_image=ghcr.io/${o}/${n}-windows-cross:${hash}" >> "$GITHUB_OUTPUT"
+        echo "remote_latest=ghcr.io/${o}/${n}-windows-cross:latest" >> "$GITHUB_OUTPUT"
+        echo "hash=${hash}" >> "$GITHUB_OUTPUT"
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v4
+
+    - name: Log in to GitHub Container Registry
+      uses: docker/login-action@v4
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ inputs.github-token }}
+
+    - name: Pull content-addressed Windows cross image
+      id: pull
+      shell: bash
+      run: |
+        set -euo pipefail
+        remote="${{ steps.meta.outputs.remote_image }}"
+        local_tag="${{ steps.meta.outputs.local_tag }}"
+        if docker pull "$remote"; then
+          docker tag "$remote" "$local_tag"
+          echo "hit=true" >> "$GITHUB_OUTPUT"
+          echo "Reusing $remote"
+        else
+          echo "hit=false" >> "$GITHUB_OUTPUT"
+          echo "No runnable image at $remote; will build"
+        fi
+
+    - name: Build Windows cross image (publish Buildx caches)
+      if: steps.pull.outputs.hit != 'true' && inputs.push == 'true'
+      uses: docker/build-push-action@v7
+      with:
+        context: scripts/windows
+        file: scripts/windows/Dockerfile
+        load: true
+        tags: ${{ steps.meta.outputs.local_tag }}
+        cache-from: |
+          type=registry,ref=${{ steps.meta.outputs.buildcache }}
+          type=gha,scope=sqyre-windows
+        cache-to: |
+          type=gha,mode=max,scope=sqyre-windows
+          type=registry,ref=${{ steps.meta.outputs.buildcache }},mode=max
+
+    - name: Build Windows cross image (GHA Buildx cache only)
+      if: steps.pull.outputs.hit != 'true' && inputs.push != 'true'
+      uses: docker/build-push-action@v7
+      with:
+        context: scripts/windows
+        file: scripts/windows/Dockerfile
+        load: true
+        tags: ${{ steps.meta.outputs.local_tag }}
+        cache-from: |
+          type=registry,ref=${{ steps.meta.outputs.buildcache }}
+          type=gha,scope=sqyre-windows
+        cache-to: type=gha,mode=max,scope=sqyre-windows
+
+    - name: Push runnable Windows cross image to GHCR
+      if: steps.pull.outputs.hit != 'true' && inputs.push == 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        local_tag="${{ steps.meta.outputs.local_tag }}"
+        docker tag "$local_tag" "${{ steps.meta.outputs.remote_image }}"
+        docker tag "$local_tag" "${{ steps.meta.outputs.remote_latest }}"
+        docker push "${{ steps.meta.outputs.remote_image }}"
+        docker push "${{ steps.meta.outputs.remote_latest }}"
