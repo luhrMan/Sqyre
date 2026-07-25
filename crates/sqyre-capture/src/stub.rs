@@ -22,6 +22,23 @@ impl NullCapturer {
             h: 1,
         })
     }
+
+    pub fn monitor_rects_ref(&self) -> Result<Vec<DesktopRect>, String> {
+        Ok(vec![DesktopRect {
+            x: 0,
+            y: 0,
+            w: 1,
+            h: 1,
+        }])
+    }
+
+    pub fn monitor_sizes_ref(&self) -> Result<Vec<(i32, i32)>, String> {
+        Ok(self
+            .monitor_rects_ref()?
+            .into_iter()
+            .map(|r| (r.w, r.h))
+            .collect())
+    }
 }
 
 impl ScreenCapturer for NullCapturer {

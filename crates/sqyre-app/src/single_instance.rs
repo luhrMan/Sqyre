@@ -56,4 +56,4 @@ mod wasm {
 }
 
 #[cfg(target_arch = "wasm32")]
-pub use wasm::{try_acquire, InstanceLock};
+pub use wasm::InstanceLock;
