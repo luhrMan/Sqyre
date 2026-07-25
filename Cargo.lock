@@ -4416,8 +4416,7 @@ name = "sqyre-ports"
 version = "0.1.0"
 dependencies = [
  "image",
- "sqyre-match",
- "sqyre-vision",
+ "rayon",
  "thiserror 2.0.19",
 ]
 
@@ -4481,6 +4480,7 @@ dependencies = [
  "rayon",
  "sqyre-domain",
  "sqyre-match",
+ "sqyre-ports",
  "tempfile",
 ]
 

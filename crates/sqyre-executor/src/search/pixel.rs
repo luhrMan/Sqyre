@@ -5,7 +5,7 @@ use crate::error::{ExecError, Result};
 use crate::run::Executor;
 use sqyre_domain::{Action, ActionKind, Macro, MatchOrder};
 use sqyre_match::{cluster_points, DEFAULT_CLOSE_MATCHES_DISTANCE};
-use sqyre_vision::find_pixels;
+use sqyre_vision::{find_pixels, rgb_capture_to_image_buf};
 use std::time::Instant;
 
 pub(crate) fn execute_find_pixel(
@@ -138,7 +138,7 @@ fn try_find_pixels(
     };
     exec.log_timing(action_id, "capture", capture_started.elapsed());
     let scan_started = Instant::now();
-    let buf = img.into_image_buf();
+    let buf = rgb_capture_to_image_buf(img);
     let locals = find_pixels(&buf, target_color, color_tolerance);
     let clustered = cluster_points(&locals, close_matches_distance(exec));
     exec.log_timing(action_id, "scan", scan_started.elapsed());
