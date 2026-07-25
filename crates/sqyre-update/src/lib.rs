@@ -3,10 +3,13 @@
 //! Supported install shapes: Linux raw binary, Linux AppImage (`$APPIMAGE`), Windows `.exe`.
 //! macOS compiles but returns [`UpdateError::Unsupported`].
 //!
-//! Updates require a `SHA256SUMS` asset on the release; the selected zip is size-capped
-//! and hash-verified before staging.
+//! Updates require a `SHA256SUMS` asset plus `SHA256SUMS.sig` (Ed25519 over the
+//! checksums file bytes). The selected zip is size-capped and hash-verified before staging.
 
+pub mod sign;
 mod version;
+
+pub use sign::{embedded_verifying_key, verify as verify_update_signature, SignError};
 
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -21,10 +24,13 @@ use version::{is_dev_sentinel, parse_release_version, version_newer};
 const USER_AGENT: &str = "Sqyre-Updater";
 const API_LATEST: &str = "https://api.github.com/repos/luhrMan/Squire/releases/latest";
 const CHECKSUMS_NAME: &str = "SHA256SUMS";
+const CHECKSUMS_SIG_NAME: &str = "SHA256SUMS.sig";
 /// Hard cap on release zip downloads (bytes).
 const MAX_ASSET_BYTES: u64 = 200 * 1024 * 1024;
 /// Cap for the checksums text file.
 const MAX_CHECKSUMS_BYTES: u64 = 64 * 1024;
+/// Cap for the checksums signature file.
+const MAX_CHECKSUMS_SIG_BYTES: u64 = 4 * 1024;
 /// Cap for GitHub API JSON bodies.
 const MAX_API_BYTES: u64 = 2 * 1024 * 1024;
 
@@ -71,6 +77,10 @@ pub enum UpdateError {
     NoMatchingAsset,
     #[error("release is missing SHA256SUMS checksums")]
     MissingChecksums,
+    #[error("release is missing SHA256SUMS.sig")]
+    MissingChecksumSignature,
+    #[error(transparent)]
+    Signature(#[from] SignError),
     #[error("no SHA-256 entry for asset {0}")]
     MissingAssetChecksum(String),
     #[error("download URL is not an allowed GitHub host: {0}")]
@@ -253,6 +263,20 @@ pub fn check_latest(current: &str) -> Result<UpdateStatus, UpdateError> {
     }
     assert_allowed_download_url(&sums_asset.browser_download_url)?;
     let sums_text = http_get_string(&sums_asset.browser_download_url, MAX_CHECKSUMS_BYTES)?;
+
+    let sig_asset = release
+        .assets
+        .iter()
+        .find(|a| a.name == CHECKSUMS_SIG_NAME)
+        .ok_or(UpdateError::MissingChecksumSignature)?;
+    if sig_asset.size > MAX_CHECKSUMS_SIG_BYTES {
+        return Err(UpdateError::AssetTooLarge(sig_asset.size));
+    }
+    assert_allowed_download_url(&sig_asset.browser_download_url)?;
+    let sig_bytes = http_get_bytes(&sig_asset.browser_download_url, MAX_CHECKSUMS_SIG_BYTES)?;
+    let key = embedded_verifying_key()?;
+    verify_update_signature(sums_text.as_bytes(), &sig_bytes, &key)?;
+
     let sums = parse_sha256sums(&sums_text);
     let sha256 = sums
         .get(&asset.name)
@@ -417,6 +441,36 @@ fn http_get_string(url: &str, max_bytes: u64) -> Result<String, UpdateError> {
         buf.extend_from_slice(&chunk[..n]);
     }
     String::from_utf8(buf).map_err(|e| UpdateError::Http(format!("response not UTF-8: {e}")))
+}
+
+fn http_get_bytes(url: &str, max_bytes: u64) -> Result<Vec<u8>, UpdateError> {
+    let response = ureq::get(url)
+        .header("User-Agent", USER_AGENT)
+        .header("Accept", "application/octet-stream")
+        .call()
+        .map_err(|e| UpdateError::Http(e.to_string()))?;
+    if !(200..300).contains(&response.status().as_u16()) {
+        return Err(UpdateError::Http(format!(
+            "status {} fetching {url}",
+            response.status()
+        )));
+    }
+    let mut reader = response.into_body().into_reader();
+    let mut buf = Vec::new();
+    let mut chunk = [0u8; 16 * 1024];
+    loop {
+        let n = reader
+            .read(&mut chunk)
+            .map_err(|e| UpdateError::Http(e.to_string()))?;
+        if n == 0 {
+            break;
+        }
+        if (buf.len() as u64).saturating_add(n as u64) > max_bytes {
+            return Err(UpdateError::AssetTooLarge(max_bytes.saturating_add(1)));
+        }
+        buf.extend_from_slice(&chunk[..n]);
+    }
+    Ok(buf)
 }
 
 fn http_download(url: &str, dest: &Path, max_bytes: u64) -> Result<u64, UpdateError> {
