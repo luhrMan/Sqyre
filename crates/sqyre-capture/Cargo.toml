@@ -9,7 +9,7 @@ description = "ScreenCapturer for absolute virtual-desktop rects (Linux X11; Win
 workspace = true
 
 [dependencies]
-sqyre-executor = { path = "../sqyre-executor" }
+sqyre-ports = { path = "../sqyre-ports" }
 image = { workspace = true }
 pulp = { workspace = true }
 rayon = { workspace = true }

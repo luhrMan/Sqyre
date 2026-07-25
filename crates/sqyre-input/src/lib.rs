@@ -5,7 +5,7 @@
 
 use arboard::Clipboard;
 use rustautogui::{MouseClick, RustAutoGui};
-use sqyre_executor::{AutomationBackend, MoveOptions};
+use sqyre_ports::{AutomationBackend, MoveOptions};
 use std::collections::HashSet;
 use std::sync::{LazyLock, Mutex};
 use std::time::Duration;

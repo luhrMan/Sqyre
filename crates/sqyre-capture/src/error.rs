@@ -1,6 +1,6 @@
-//! Linux session advisory for X11 capture (typed capture errors live in `sqyre-executor`).
+//! Linux session advisory for X11 capture (typed capture errors live in `sqyre-ports`).
 
-pub use sqyre_executor::CaptureError;
+pub use sqyre_ports::CaptureError;
 
 /// Human-readable warning when the Linux session cannot support X11 capture.
 ///

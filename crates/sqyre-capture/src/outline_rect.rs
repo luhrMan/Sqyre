@@ -13,7 +13,7 @@ impl OutlineRect {
     /// Normalize two corners so left≤right and top≤bottom.
     pub fn normalize(ax: i32, ay: i32, bx: i32, by: i32) -> Self {
         let (left, top, right, bottom) =
-            sqyre_executor::DesktopRect::normalize_corners(ax, ay, bx, by);
+            sqyre_ports::DesktopRect::normalize_corners(ax, ay, bx, by);
         Self {
             left,
             top,

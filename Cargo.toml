@@ -7,6 +7,7 @@ members = [
     "crates/sqyre-serialize",
     "crates/sqyre-validate",
     "crates/sqyre-persist",
+    "crates/sqyre-ports",
     "crates/sqyre-executor",
     "crates/sqyre-match",
     "crates/sqyre-vision",

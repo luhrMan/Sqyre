@@ -3,7 +3,7 @@
 use crate::error::CaptureError;
 use image::RgbaImage;
 use parking_lot::Mutex;
-use sqyre_executor::{DesktopRect, RgbCapture};
+use sqyre_ports::{DesktopRect, RgbCapture};
 use windows::core::BOOL;
 use windows::Win32::Foundation::{LPARAM, POINT, RECT};
 use windows::Win32::Graphics::Gdi::{

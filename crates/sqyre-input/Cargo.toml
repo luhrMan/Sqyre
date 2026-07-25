@@ -9,7 +9,7 @@ description = "OS AutomationBackend (rustautogui lite + arboard)"
 workspace = true
 
 [dependencies]
-sqyre-executor = { path = "../sqyre-executor" }
+sqyre-ports = { path = "../sqyre-ports" }
 rustautogui = { workspace = true }
 arboard = { workspace = true }
 

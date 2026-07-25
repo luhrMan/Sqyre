@@ -1,5 +1,5 @@
 use image::{Rgba, RgbaImage};
-use sqyre_executor::{CaptureError, DesktopRect, ScreenCapturer};
+use sqyre_ports::{CaptureError, DesktopRect, ScreenCapturer};
 
 /// Capturer that always fails — for headless CI / tests without display.
 #[derive(Debug, Default)]

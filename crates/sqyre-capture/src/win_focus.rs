@@ -1,7 +1,7 @@
 //! Windows window list + activate + process icons.
 
 use crate::{ProcessIcon, WindowInfo, PROCESS_ICON_TARGET_PX};
-use sqyre_executor::WindowFocuser;
+use sqyre_ports::WindowFocuser;
 use std::collections::HashSet;
 use std::mem::size_of;
 use std::os::windows::ffi::OsStrExt;

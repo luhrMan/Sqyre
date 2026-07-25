@@ -4,7 +4,7 @@ use crate::error::CaptureError;
 use crate::pixel_convert::{zpixmap_to_rgb, zpixmap_to_rgba};
 use image::RgbaImage;
 use parking_lot::Mutex;
-use sqyre_executor::{DesktopRect, RgbCapture};
+use sqyre_ports::{DesktopRect, RgbCapture};
 use std::ffi::CStr;
 use std::os::raw::c_void;
 use std::ptr;
