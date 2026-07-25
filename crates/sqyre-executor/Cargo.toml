@@ -17,6 +17,7 @@ sqyre-domain = { path = "../sqyre-domain" }
 sqyre-match = { path = "../sqyre-match" }
 sqyre-vision = { path = "../sqyre-vision" }
 sqyre-hotkeys = { path = "../sqyre-hotkeys" }
+sqyre-ports = { path = "../sqyre-ports" }
 
 [dev-dependencies]
 tempfile = { workspace = true }

@@ -28,13 +28,13 @@ macro_rules! define_shared_run_capturer {
             }
         }
 
-        impl ::sqyre_executor::ScreenCapturer for OsCapturer {
+        impl ::sqyre_ports::ScreenCapturer for OsCapturer {
             fn capture_monitor(
                 &mut self,
                 display_index: i32,
-            ) -> Result<::image::RgbaImage, ::sqyre_executor::CaptureError> {
+            ) -> Result<::image::RgbaImage, ::sqyre_ports::CaptureError> {
                 if display_index != 0 {
-                    return Err(::sqyre_executor::CaptureError::UnsupportedDisplay(
+                    return Err(::sqyre_ports::CaptureError::UnsupportedDisplay(
                         display_index,
                     ));
                 }
@@ -44,27 +44,27 @@ macro_rules! define_shared_run_capturer {
 
             fn capture_rect(
                 &mut self,
-                rect: ::sqyre_executor::DesktopRect,
-            ) -> Result<::image::RgbaImage, ::sqyre_executor::CaptureError> {
+                rect: ::sqyre_ports::DesktopRect,
+            ) -> Result<::image::RgbaImage, ::sqyre_ports::CaptureError> {
                 self.capture_rect_ref(rect)
             }
 
             fn capture_rect_rgb(
                 &mut self,
-                rect: ::sqyre_executor::DesktopRect,
-            ) -> Result<::sqyre_executor::RgbCapture, ::sqyre_executor::CaptureError> {
+                rect: ::sqyre_ports::DesktopRect,
+            ) -> Result<::sqyre_ports::RgbCapture, ::sqyre_ports::CaptureError> {
                 self.capture_rect_rgb_ref(rect)
             }
 
             fn virtual_bounds(
                 &mut self,
-            ) -> Result<::sqyre_executor::DesktopRect, ::sqyre_executor::CaptureError> {
+            ) -> Result<::sqyre_ports::DesktopRect, ::sqyre_ports::CaptureError> {
                 self.virtual_bounds_ref()
             }
 
             fn monitor_sizes(
                 &mut self,
-            ) -> Result<Vec<(i32, i32)>, ::sqyre_executor::CaptureError> {
+            ) -> Result<Vec<(i32, i32)>, ::sqyre_ports::CaptureError> {
                 self.monitor_sizes_ref()
             }
         }
@@ -72,13 +72,13 @@ macro_rules! define_shared_run_capturer {
         /// [`ScreenCapturer`] over a shared [`Arc`] capturer (macro run thread).
         pub struct SharedRunCapturer(pub ::std::sync::Arc<OsCapturer>);
 
-        impl ::sqyre_executor::ScreenCapturer for SharedRunCapturer {
+        impl ::sqyre_ports::ScreenCapturer for SharedRunCapturer {
             fn capture_monitor(
                 &mut self,
                 display_index: i32,
-            ) -> Result<::image::RgbaImage, ::sqyre_executor::CaptureError> {
+            ) -> Result<::image::RgbaImage, ::sqyre_ports::CaptureError> {
                 if display_index != 0 {
-                    return Err(::sqyre_executor::CaptureError::UnsupportedDisplay(
+                    return Err(::sqyre_ports::CaptureError::UnsupportedDisplay(
                         display_index,
                     ));
                 }
@@ -88,27 +88,27 @@ macro_rules! define_shared_run_capturer {
 
             fn capture_rect(
                 &mut self,
-                rect: ::sqyre_executor::DesktopRect,
-            ) -> Result<::image::RgbaImage, ::sqyre_executor::CaptureError> {
+                rect: ::sqyre_ports::DesktopRect,
+            ) -> Result<::image::RgbaImage, ::sqyre_ports::CaptureError> {
                 self.0.capture_rect_ref(rect)
             }
 
             fn capture_rect_rgb(
                 &mut self,
-                rect: ::sqyre_executor::DesktopRect,
-            ) -> Result<::sqyre_executor::RgbCapture, ::sqyre_executor::CaptureError> {
+                rect: ::sqyre_ports::DesktopRect,
+            ) -> Result<::sqyre_ports::RgbCapture, ::sqyre_ports::CaptureError> {
                 self.0.capture_rect_rgb_ref(rect)
             }
 
             fn virtual_bounds(
                 &mut self,
-            ) -> Result<::sqyre_executor::DesktopRect, ::sqyre_executor::CaptureError> {
+            ) -> Result<::sqyre_ports::DesktopRect, ::sqyre_ports::CaptureError> {
                 self.0.virtual_bounds_ref()
             }
 
             fn monitor_sizes(
                 &mut self,
-            ) -> Result<Vec<(i32, i32)>, ::sqyre_executor::CaptureError> {
+            ) -> Result<Vec<(i32, i32)>, ::sqyre_ports::CaptureError> {
                 self.0.monitor_sizes_ref()
             }
         }

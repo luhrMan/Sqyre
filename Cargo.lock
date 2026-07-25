@@ -4214,7 +4214,7 @@ dependencies = [
  "parking_lot",
  "pulp",
  "rayon",
- "sqyre-executor",
+ "sqyre-ports",
  "thiserror 2.0.19",
  "web-time",
  "windows",
@@ -4241,6 +4241,7 @@ dependencies = [
  "sqyre-domain",
  "sqyre-hotkeys",
  "sqyre-match",
+ "sqyre-ports",
  "sqyre-vision",
  "tempfile",
  "thiserror 2.0.19",
@@ -4262,7 +4263,7 @@ version = "0.1.0"
 dependencies = [
  "arboard",
  "rustautogui",
- "sqyre-executor",
+ "sqyre-ports",
  "windows",
 ]
 
@@ -4290,6 +4291,16 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.19",
  "zip",
+]
+
+[[package]]
+name = "sqyre-ports"
+version = "0.1.0"
+dependencies = [
+ "image",
+ "sqyre-match",
+ "sqyre-vision",
+ "thiserror 2.0.19",
 ]
 
 [[package]]
