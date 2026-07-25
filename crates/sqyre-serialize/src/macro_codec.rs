@@ -2,7 +2,32 @@
 
 use crate::{Result, SerializeError};
 use serde_yaml::{Mapping, Value};
-use sqyre_domain::{ActionId, ActionKind, Macro};
+use sqyre_domain::{ActionId, ActionKind, Macro, WIRE_TYPE_KEYS};
+
+/// Reject unknown wire `type` keys under an action tree before serde (untagged
+/// enums can otherwise mis-decode into the wrong variant).
+fn validate_action_type_keys(value: &Value) -> Result<()> {
+    let mapping = value
+        .as_mapping()
+        .ok_or_else(|| SerializeError::msg("expected mapping for action"))?;
+    let type_key = mapping
+        .get(Value::String("type".into()))
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| SerializeError::msg("action missing type"))?;
+    if !WIRE_TYPE_KEYS.iter().any(|k| *k == type_key) {
+        return Err(SerializeError::msg(format!(
+            "unknown action type {type_key:?}"
+        )));
+    }
+    for child_key in ["subactions", "elseactions"] {
+        if let Some(Value::Sequence(seq)) = mapping.get(Value::String(child_key.into())) {
+            for child in seq {
+                validate_action_type_keys(child)?;
+            }
+        }
+    }
+    Ok(())
+}
 
 /// Decode a macro from a YAML mapping.
 pub fn decode_macro_from_map(data: &Value) -> Result<Macro> {
@@ -14,6 +39,9 @@ pub fn decode_macro_from_map(data: &Value) -> Result<Macro> {
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
+    if let Some(root) = raw.get(Value::String("root".into())) {
+        validate_action_type_keys(root)?;
+    }
     let mut macro_: Macro = serde_yaml::from_value(Value::Mapping(raw.clone()))?;
     if macro_.name.is_empty() && !name_hint.is_empty() {
         macro_.name = name_hint;
@@ -109,6 +137,30 @@ root:
         assert_eq!(m.name, "wait-var");
         assert_eq!(m.variable_decls.len(), 1);
         assert_eq!(m.root.children().len(), 2);
+    }
+
+    #[test]
+    fn rejects_unknown_action_type() {
+        let yaml = r#"
+name: bad
+globaldelay: 0
+keyboarddelay: 0
+mousedelay: 0
+hotkey: []
+variables: []
+root:
+  type: loop
+  name: root
+  count: 1
+  subactions:
+    - type: notarealaction
+      time: 1
+"#;
+        let err = decode_macro_from_yaml(yaml).unwrap_err().to_string();
+        assert!(
+            err.contains("unknown action type") && err.contains("notarealaction"),
+            "{err}"
+        );
     }
 
     proptest! {

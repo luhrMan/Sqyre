@@ -236,6 +236,41 @@ jobs:
       - name: cargo check (sqyre-app)
         run: cargo check -p sqyre-app
 
+  check-windows:
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.92.0
+
+      - name: Cache Cargo registry
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-reg-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-reg-
+
+      - name: Cache Cargo target
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: target
+          key: ${{ runner.os }}-cargo-target-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-target-
+
+      # Native Windows compile gate (GDI capture / focus). Full OCR-linked app
+      # tests stay on the Linux Docker job; pure crates still get unit tests here.
+      - name: cargo check (sqyre-app)
+        run: cargo check -p sqyre-app
+
+      - name: cargo test (pure crates)
+        run: cargo test -p sqyre-domain -p sqyre-varref -p sqyre-validate -p sqyre-serialize -p sqyre-persist --offline
+
   build-linux:
     if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && needs.version.outputs.should_release == 'true'
     needs: [version, test]
