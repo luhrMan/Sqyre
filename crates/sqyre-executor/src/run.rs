@@ -30,7 +30,15 @@ pub struct Executor<'a> {
     held_keys: BTreeSet<String>,
     /// Mouse buttons still held from down/hold (released on run end).
     held_buttons: BTreeSet<String>,
+    /// Nested [`ActionKind::RunMacro`] call stack (includes the top-level macro name).
+    pub(crate) run_macro_stack: Vec<String>,
 }
+
+/// Hard cap on nested RunMacro depth (including the top-level macro).
+pub(crate) const MAX_RUN_MACRO_DEPTH: usize = 32;
+
+/// When While `max_iterations` is ≤ 0, use this finite budget instead of unbounded.
+pub(crate) const DEFAULT_WHILE_MAX_ITERATIONS: i32 = 100_000;
 
 impl<'a> Executor<'a> {
     pub fn new(automation: &'a mut dyn AutomationBackend) -> Self {
@@ -39,6 +47,7 @@ impl<'a> Executor<'a> {
             stop_requested: false,
             held_keys: BTreeSet::new(),
             held_buttons: BTreeSet::new(),
+            run_macro_stack: Vec::new(),
         }
     }
 
@@ -295,6 +304,7 @@ pub fn execute_macro_with(macro_: &mut Macro, deps: ExecDeps<'_>) -> Result<()> 
         stop_requested: false,
         held_keys: BTreeSet::new(),
         held_buttons: BTreeSet::new(),
+        run_macro_stack: vec![macro_.name.clone()],
     };
     macro_.init_runtime_variables();
     let monitor_sizes = match exec.deps.capturer.as_mut() {
@@ -898,6 +908,7 @@ mod tests {
             stop_requested: false,
             held_keys: BTreeSet::new(),
             held_buttons: BTreeSet::new(),
+            run_macro_stack: Vec::new(),
         };
         let err = exec.interruptible_sleep(1000).unwrap_err();
         assert!(matches!(err, ExecError::Flow(FlowSignal::Stopped)));
