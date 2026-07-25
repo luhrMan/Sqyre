@@ -27,6 +27,7 @@ impl DataEditor {
             | EditorTab::SearchAreas
             | EditorTab::Masks
             | EditorTab::Collections
+            | EditorTab::Atlases
             | EditorTab::AutoPic => "data_editor_coords",
         };
         let mut opts = PickerScrollOpts::pane();
@@ -53,7 +54,27 @@ impl DataEditor {
                         continue;
                     }
                     let selected = self.selected_program.as_deref() == Some(name.as_str());
-                    if ui.selectable_label(selected, name).clicked() {
+                    let prog = catalog.get(name.as_str());
+                    let process_tex = prog.and_then(|p| {
+                        if p.process_path.trim().is_empty() {
+                            None
+                        } else {
+                            icons.for_process(ui.ctx(), &p.process_path, &p.window_title)
+                        }
+                    });
+                    let clicked = ui
+                        .horizontal(|ui| {
+                            if let Some(tex) = process_tex.as_ref() {
+                                crate::icon_cache::paint_process_icon(
+                                    ui,
+                                    tex,
+                                    crate::icon_cache::PROCESS_ICON_SIDE,
+                                );
+                            }
+                            ui.selectable_label(selected, name).clicked()
+                        })
+                        .inner;
+                    if clicked {
                         self.select_program(name, catalog, settings);
                     }
                 }
@@ -75,6 +96,7 @@ impl DataEditor {
             | EditorTab::SearchAreas
             | EditorTab::Masks
             | EditorTab::Collections
+            | EditorTab::Atlases
             | EditorTab::AutoPic => {
                 let kind = match self.tab {
                     EditorTab::Points => Some(PreviewKind::Point),
@@ -372,6 +394,18 @@ fn compute_entity_names(catalog: &ProgramCatalog, tab: EditorTab, program: &str)
                     k.clone()
                 } else {
                     c.name.clone()
+                };
+                (k.clone(), display)
+            })
+            .collect(),
+        EditorTab::Atlases => p
+            .atlases
+            .iter()
+            .map(|(k, a)| {
+                let display = if a.name.trim().is_empty() {
+                    k.clone()
+                } else {
+                    a.name.clone()
                 };
                 (k.clone(), display)
             })

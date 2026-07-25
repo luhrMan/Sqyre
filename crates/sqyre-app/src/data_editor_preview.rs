@@ -268,6 +268,16 @@ pub(crate) fn fit_thumbnail(w: f32, h: f32) -> egui::Vec2 {
     egui::vec2(w * scale, h * scale)
 }
 
+/// 1px Sqyre yellow border around a Data Editor image preview.
+pub(crate) fn paint_preview_frame(painter: &egui::Painter, rect: egui::Rect) {
+    painter.rect_stroke(
+        rect,
+        0.0,
+        egui::Stroke::new(1.0, theme::PRIMARY),
+        egui::StrokeKind::Inside,
+    );
+}
+
 pub(crate) fn paint_disk_preview(
     ui: &mut egui::Ui,
     icons: &mut IconCache,
@@ -301,6 +311,7 @@ pub(crate) fn paint_disk_preview(
             let [tw, th] = tex.size();
             let size = fit_panel(tw as f32, th as f32);
             let resp = ui.add(egui::Image::new((tex.id(), size)));
+            paint_preview_frame(ui.painter(), resp.rect);
             if let Some((rows, cols)) = grid {
                 paint_grid_overlay(ui, resp.rect, rows, cols);
             }
@@ -403,6 +414,7 @@ pub(crate) fn paint_zoomable_collection_preview(
             );
         }
         paint_grid_overlay_painter(&painter, content, rows, cols);
+        paint_preview_frame(&painter, viewport);
     }
     let _ = image_view::handle_pan_drag(&resp, viewport, image_size, view);
 
@@ -467,4 +479,295 @@ pub(crate) fn paint_grid_overlay_painter(
         painter.vline(x, rect.y_range(), stroke);
     }
     painter.rect_stroke(rect, 0.0, stroke, egui::StrokeKind::Outside);
+}
+
+/// Per-monitor `(x, y, w, h)` in virtual-desktop coordinates for the atlas plane.
+/// Prefers real positions from the capturer; falls back to L→R layout from sizes.
+fn atlas_monitor_rects(catalog: &sqyre_persist::ProgramCatalog) -> Vec<(i32, i32, i32, i32)> {
+    if let Ok(capturer) = sqyre_capture::shared_capturer() {
+        if let Ok(rects) = capturer.monitor_rects_ref() {
+            let out: Vec<_> = rects
+                .into_iter()
+                .filter(|r| r.w > 0 && r.h > 0)
+                .map(|r| (r.x, r.y, r.w, r.h))
+                .collect();
+            if !out.is_empty() {
+                return out;
+            }
+        }
+        // Sizes only: place primary at virtual origin, others to the right.
+        if let Ok(sizes) = capturer.monitor_sizes_ref() {
+            let (ox, oy) = capturer
+                .virtual_bounds_ref()
+                .map(|vb| (vb.x, vb.y))
+                .unwrap_or((0, 0));
+            let laid = layout_monitors_ltr(ox, oy, &sizes);
+            if !laid.is_empty() {
+                return laid;
+            }
+        }
+        if let Ok(vb) = capturer.virtual_bounds_ref() {
+            if vb.w > 0 && vb.h > 0 {
+                return vec![(vb.x, vb.y, vb.w, vb.h)];
+            }
+        }
+    }
+    // Catalog resolution key (`"{w}x{h}"`) as a single primary monitor at origin.
+    let key = catalog.resolution_key();
+    if let Some((w, h)) = key.split_once('x') {
+        if let (Ok(w), Ok(h)) = (w.parse::<i32>(), h.parse::<i32>()) {
+            if w > 0 && h > 0 {
+                return vec![(0, 0, w, h)];
+            }
+        }
+    }
+    vec![(0, 0, 1920, 1080)]
+}
+
+fn layout_monitors_ltr(ox: i32, oy: i32, sizes: &[(i32, i32)]) -> Vec<(i32, i32, i32, i32)> {
+    let mut x = ox;
+    let mut out = Vec::new();
+    for &(w, h) in sizes {
+        if w > 0 && h > 0 {
+            out.push((x, oy, w, h));
+            x = x.saturating_add(w);
+        }
+    }
+    out
+}
+
+/// Desktop extent: union of monitors and collection member bounds.
+fn atlas_plane_desktop_bounds(
+    monitors: &[(i32, i32, i32, i32)],
+    member_bounds: &[(i32, i32, i32, i32)],
+) -> (i32, i32, i32, i32) {
+    let mut min_x = i32::MAX;
+    let mut min_y = i32::MAX;
+    let mut max_x = i32::MIN;
+    let mut max_y = i32::MIN;
+    for &(x, y, w, h) in monitors {
+        min_x = min_x.min(x);
+        min_y = min_y.min(y);
+        max_x = max_x.max(x.saturating_add(w));
+        max_y = max_y.max(y.saturating_add(h));
+    }
+    for &(lx, ty, rx, by) in member_bounds {
+        min_x = min_x.min(lx);
+        min_y = min_y.min(ty);
+        max_x = max_x.max(rx);
+        max_y = max_y.max(by);
+    }
+    if min_x >= max_x || min_y >= max_y {
+        (0, 0, 1920, 1080)
+    } else {
+        (min_x, min_y, max_x, max_y)
+    }
+}
+
+/// Atlas-tab plane preview: monitor rectangles, collection capture images,
+/// grids, and derived neighbor arrows.
+pub(crate) fn paint_zoomable_atlas_preview(
+    ui: &mut egui::Ui,
+    icons: &mut IconCache,
+    catalog: &sqyre_persist::ProgramCatalog,
+    program: &str,
+    members: &[String],
+    view: &mut ImageViewTransform,
+) {
+    use sqyre_domain::{AtlasLayout, AtlasNode, CoordinateRef, Macro, NavDir};
+
+    ui.add_space(8.0);
+    ui.separator();
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new("Atlas plane").strong());
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if ui
+                .add_enabled(view.needs_reset_button(), egui::Button::new("Reset view"))
+                .on_hover_text("Fit plane in viewport")
+                .clicked()
+            {
+                view.reset();
+            }
+            if view.zoom != 1.0 {
+                ui.weak(format!("{:.0}%", view.zoom * 100.0));
+            }
+        });
+    });
+    ui.weak("Monitors behind Collections; neighbors from search-area positions.");
+
+    let empty_macro = Macro::new("", 0, vec![]);
+    let mut nodes = Vec::new();
+    let mut unresolved = Vec::new();
+    for name in members {
+        let Ok(col) = catalog.lookup_collection(&if program.is_empty() {
+            CoordinateRef(name.clone())
+        } else {
+            CoordinateRef(format!("{program}~{name}"))
+        }) else {
+            unresolved.push(name.clone());
+            continue;
+        };
+        if col.rows < 1 || col.cols < 1 {
+            unresolved.push(name.clone());
+            continue;
+        }
+        let cell = CoordinateRef::collection(program, name, 1, 1, col.rows, col.cols);
+        match catalog.resolve_search_area(&cell, &empty_macro) {
+            Ok(bounds) => nodes.push(AtlasNode {
+                collection: name.clone(),
+                bounds,
+                rows: col.rows,
+                cols: col.cols,
+            }),
+            Err(_) => unresolved.push(name.clone()),
+        }
+    }
+
+    if !unresolved.is_empty() {
+        ui.colored_label(
+            egui::Color32::from_rgb(220, 160, 60),
+            format!("Unresolved: {}", unresolved.join(", ")),
+        );
+    }
+    if nodes.is_empty() {
+        ui.weak("No resolvable Collections to preview.");
+        return;
+    }
+
+    let monitors = atlas_monitor_rects(catalog);
+    let member_bounds: Vec<_> = nodes.iter().map(|n| n.bounds).collect();
+    let (min_x, min_y, max_x, max_y) = atlas_plane_desktop_bounds(&monitors, &member_bounds);
+    let layout = AtlasLayout::new(nodes);
+    let plane_w = (max_x - min_x).max(1) as f32;
+    let plane_h = (max_y - min_y).max(1) as f32;
+    let image_size = egui::vec2(plane_w, plane_h);
+
+    // Prefetch collection capture textures so handles stay alive for painting.
+    let textures: Vec<Option<egui::TextureHandle>> = layout
+        .nodes()
+        .iter()
+        .map(|n| {
+            let path = catalog.collection_image_path(program, &n.collection);
+            icons.for_path(ui.ctx(), path.as_path())
+        })
+        .collect();
+
+    let avail_w = ui.available_width();
+    const MIN_H: f32 = 160.0;
+    const FILL_SLACK: f32 = 1.0;
+    let avail_h = ui.available_height();
+    let desired_h = if avail_h < MIN_H {
+        MIN_H
+    } else {
+        (avail_h - FILL_SLACK).max(MIN_H)
+    };
+    let desired = egui::vec2(avail_w.max(160.0), desired_h);
+    let (viewport, resp) = ui.allocate_exact_size(desired, egui::Sense::click_and_drag());
+    image_view::handle_scroll_zoom(ui, viewport, image_size, view, resp.hovered());
+    let content = image_view::image_content_rect(viewport, image_size, view.zoom, view.pan);
+
+    let to_screen = |x: i32, y: i32| -> egui::Pos2 {
+        let nx = (x - min_x) as f32 / plane_w;
+        let ny = (y - min_y) as f32 / plane_h;
+        egui::pos2(
+            content.left() + nx * content.width(),
+            content.top() + ny * content.height(),
+        )
+    };
+
+    {
+        let painter = ui.painter_at(viewport);
+        painter.rect_filled(viewport, 0.0, egui::Color32::from_gray(22));
+
+        // One rectangle per monitor with identity + size label.
+        let mon_fill = egui::Color32::from_gray(36);
+        let mon_stroke = egui::Stroke::new(1.5, egui::Color32::from_gray(90));
+        let label_color = egui::Color32::from_gray(200);
+        for (i, &(mx, my, mw, mh)) in monitors.iter().enumerate() {
+            let rect = egui::Rect::from_min_max(
+                to_screen(mx, my),
+                to_screen(mx.saturating_add(mw), my.saturating_add(mh)),
+            );
+            painter.rect_filled(rect, 0.0, mon_fill);
+            painter.rect_stroke(rect, 0.0, mon_stroke, egui::StrokeKind::Outside);
+            let label = format!("Monitor {} — {mw}×{mh}", i + 1);
+            let galley =
+                painter.layout_no_wrap(label, egui::FontId::proportional(12.0), label_color);
+            let chip =
+                egui::Rect::from_center_size(rect.center(), galley.size() + egui::vec2(10.0, 4.0));
+            painter.rect_filled(
+                chip,
+                3.0,
+                egui::Color32::from_rgba_unmultiplied(0, 0, 0, 140),
+            );
+            painter.galley(chip.min + egui::vec2(5.0, 2.0), galley, label_color);
+        }
+
+        let fill = egui::Color32::from_rgba_unmultiplied(60, 100, 160, 60);
+        let stroke = egui::Stroke::new(1.5, egui::Color32::from_rgb(120, 180, 255));
+        let arrow = egui::Stroke::new(2.0, theme::PRIMARY);
+
+        for (i, node) in layout.nodes().iter().enumerate() {
+            let (lx, ty, rx, by) = node.bounds;
+            let tl = to_screen(lx, ty);
+            let br = to_screen(rx, by);
+            let rect = egui::Rect::from_min_max(tl, br);
+            if let Some(Some(tex)) = textures.get(i) {
+                painter.image(
+                    tex.id(),
+                    rect,
+                    egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                    egui::Color32::WHITE,
+                );
+            } else {
+                painter.rect_filled(rect, 2.0, fill);
+            }
+            painter.rect_stroke(rect, 2.0, stroke, egui::StrokeKind::Outside);
+            paint_grid_overlay_painter(&painter, rect, node.rows, node.cols);
+            // Label with a small dark chip so it stays readable over capture images.
+            let label_pos = egui::pos2(rect.left() + 4.0, rect.top() + 4.0);
+            let galley = painter.layout_no_wrap(
+                node.collection.clone(),
+                egui::FontId::proportional(11.0),
+                egui::Color32::WHITE,
+            );
+            let chip = egui::Rect::from_min_size(label_pos, galley.size() + egui::vec2(6.0, 2.0));
+            painter.rect_filled(
+                chip,
+                2.0,
+                egui::Color32::from_rgba_unmultiplied(0, 0, 0, 160),
+            );
+            painter.galley(
+                label_pos + egui::vec2(3.0, 1.0),
+                galley,
+                egui::Color32::WHITE,
+            );
+
+            for (dir, dest) in layout.neighbor_links(i) {
+                let Some(dest_node) = layout.nodes().get(dest) else {
+                    continue;
+                };
+                let (al, at, ar, ab) = node.bounds;
+                let (bl, bt, br, bb) = dest_node.bounds;
+                let (from, to) = match dir {
+                    NavDir::Right => (to_screen(ar, (at + ab) / 2), to_screen(bl, (bt + bb) / 2)),
+                    NavDir::Left => (to_screen(al, (at + ab) / 2), to_screen(br, (bt + bb) / 2)),
+                    NavDir::Down => (to_screen((al + ar) / 2, ab), to_screen((bl + br) / 2, bt)),
+                    NavDir::Up => (to_screen((al + ar) / 2, at), to_screen((bl + br) / 2, bb)),
+                };
+                painter.line_segment([from, to], arrow);
+                let v = to - from;
+                let len = v.length().max(1.0);
+                let dir_v = v / len;
+                let perp = egui::vec2(-dir_v.y, dir_v.x);
+                let tip = to;
+                let base = to - dir_v * 8.0;
+                painter.line_segment([tip, base + perp * 4.0], arrow);
+                painter.line_segment([tip, base - perp * 4.0], arrow);
+            }
+        }
+
+        paint_preview_frame(&painter, viewport);
+    }
+    let _ = image_view::handle_pan_drag(&resp, viewport, image_size, view);
 }

@@ -68,6 +68,14 @@ pub struct ProgramCollection {
     pub cols: i32,
 }
 
+/// Named group of Collections navigated together by Navigate Select.
+#[derive(Debug, Clone, Default)]
+pub struct ProgramAtlas {
+    pub name: String,
+    /// Member Collection names in this program.
+    pub collections: Vec<String>,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct ProgramData {
     pub name: String,
@@ -85,6 +93,7 @@ pub struct ProgramData {
     pub items: BTreeMap<String, ProgramItem>,
     pub masks: BTreeMap<String, ProgramMask>,
     pub collections: BTreeMap<String, ProgramCollection>,
+    pub atlases: BTreeMap<String, ProgramAtlas>,
 }
 
 #[derive(Debug, Clone)]

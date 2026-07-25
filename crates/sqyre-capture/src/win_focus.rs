@@ -1,19 +1,28 @@
-//! Windows window list + activate.
+//! Windows window list + activate + process icons.
 
-use crate::WindowInfo;
+use crate::{ProcessIcon, WindowInfo, PROCESS_ICON_TARGET_PX};
 use sqyre_executor::WindowFocuser;
 use std::collections::HashSet;
+use std::mem::size_of;
+use std::os::windows::ffi::OsStrExt;
 use std::path::Path;
-use windows::core::{Owned, BOOL, PWSTR};
-use windows::Win32::Foundation::{HWND, LPARAM};
+use windows::core::{Owned, BOOL, PCWSTR, PWSTR};
+use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
+use windows::Win32::Graphics::Gdi::{
+    CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, GetDC, GetObjectW, ReleaseDC,
+    SelectObject, BITMAP, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, HGDIOBJ,
+};
 use windows::Win32::System::Threading::{
     AttachThreadInput, GetCurrentThreadId, OpenProcess, QueryFullProcessImageNameW,
     PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
 };
+use windows::Win32::UI::Shell::SHDefExtractIconW;
 use windows::Win32::UI::WindowsAndMessaging::{
-    BringWindowToTop, EnumWindows, GetForegroundWindow, GetWindow, GetWindowLongPtrW,
-    GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsIconic, IsWindowVisible,
-    SetForegroundWindow, ShowWindow, GWL_EXSTYLE, GW_OWNER, SW_RESTORE, WS_EX_TOOLWINDOW,
+    BringWindowToTop, DestroyIcon, DrawIconEx, EnumWindows, GetClassLongPtrW, GetForegroundWindow,
+    GetIconInfo, GetWindow, GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW,
+    GetWindowThreadProcessId, IsIconic, IsWindowVisible, SendMessageW, SetForegroundWindow,
+    ShowWindow, DI_NORMAL, GCLP_HICON, GCLP_HICONSM, GWL_EXSTYLE, GW_OWNER, HICON, ICONINFO,
+    ICON_BIG, ICON_SMALL, SW_RESTORE, WM_GETICON, WS_EX_TOOLWINDOW,
 };
 
 /// Focus a top-level window by executable path + window title.
@@ -52,6 +61,42 @@ pub fn get_active_window() -> Result<Option<WindowInfo>, String> {
         return Ok(None);
     }
     Ok(window_info_of(hwnd))
+}
+
+/// Icon for a bound process: live window icon, else executable resource.
+pub fn process_icon(process_path: &str, window_title: &str) -> Option<ProcessIcon> {
+    let path = process_path.trim();
+    if path.is_empty() {
+        return None;
+    }
+    let title = window_title.trim();
+    if let Ok(hwnds) = enum_top_level_windows() {
+        let mut path_fallback: Option<ProcessIcon> = None;
+        for hwnd in hwnds {
+            let Some(wtitle) = window_title_of(hwnd) else {
+                continue;
+            };
+            let Some(exe) = window_exe_path(hwnd) else {
+                continue;
+            };
+            if !paths_equal(&exe, path) {
+                continue;
+            }
+            let Some(icon) = window_icon(hwnd).or_else(|| icon_from_exe(&exe)) else {
+                continue;
+            };
+            if !title.is_empty() && titles_equal(&wtitle, title) {
+                return Some(icon);
+            }
+            if path_fallback.is_none() {
+                path_fallback = Some(icon);
+            }
+        }
+        if path_fallback.is_some() {
+            return path_fallback;
+        }
+    }
+    icon_from_exe(path)
 }
 
 fn activate_window(process_path: &str, window_title: &str) -> Result<(), String> {
@@ -129,10 +174,18 @@ fn window_info_of(hwnd: HWND) -> Option<WindowInfo> {
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
+    let icon = window_icon(hwnd).or_else(|| {
+        if path.is_empty() {
+            None
+        } else {
+            icon_from_exe(&path)
+        }
+    });
     Some(WindowInfo {
         title,
         process_name: name,
         process_path: path,
+        icon,
     })
 }
 
@@ -189,6 +242,174 @@ fn process_exe_path(pid: u32) -> Option<String> {
         return None;
     }
     Some(String::from_utf16_lossy(&buf[..size as usize]))
+}
+
+fn window_icon(hwnd: HWND) -> Option<ProcessIcon> {
+    // Prefer live window icons; do not DestroyIcon shared handles.
+    // SAFETY: hwnd is a live top-level window.
+    unsafe {
+        for wparam in [ICON_BIG, ICON_SMALL, 2u32] {
+            let result = SendMessageW(hwnd, WM_GETICON, Some(WPARAM(wparam as usize)), None);
+            let hicon = HICON(result.0 as *mut _);
+            if !hicon.is_invalid() {
+                if let Some(icon) = hicon_to_rgba(hicon, false) {
+                    return Some(icon);
+                }
+            }
+        }
+        for index in [GCLP_HICON, GCLP_HICONSM] {
+            let ptr = GetClassLongPtrW(hwnd, index);
+            if ptr != 0 {
+                let hicon = HICON(ptr as *mut _);
+                if let Some(icon) = hicon_to_rgba(hicon, false) {
+                    return Some(icon);
+                }
+            }
+        }
+    }
+    None
+}
+
+fn icon_from_exe(path: &str) -> Option<ProcessIcon> {
+    let wide: Vec<u16> = Path::new(path)
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    let mut large = HICON::default();
+    // SAFETY: wide is NUL-terminated; large receives an owned icon we must destroy.
+    let hr = unsafe {
+        SHDefExtractIconW(
+            PCWSTR(wide.as_ptr()),
+            0,
+            0,
+            Some(&mut large),
+            None,
+            PROCESS_ICON_TARGET_PX,
+        )
+    };
+    if hr.is_err() || large.is_invalid() {
+        return None;
+    }
+    // SAFETY: `large` was created by SHDefExtractIconW; destroy after conversion.
+    unsafe { hicon_to_rgba(large, true) }
+}
+
+/// Convert `HICON` to RGBA. When `destroy` is true, destroys the icon afterward.
+unsafe fn hicon_to_rgba(hicon: HICON, destroy: bool) -> Option<ProcessIcon> {
+    let mut info = ICONINFO::default();
+    if GetIconInfo(hicon, &mut info).is_err() {
+        if destroy {
+            let _ = DestroyIcon(hicon);
+        }
+        return None;
+    }
+
+    let color = info.hbmColor;
+    let mask = info.hbmMask;
+    let mut bm = BITMAP::default();
+    let hbmp = if !color.is_invalid() { color } else { mask };
+    if hbmp.is_invalid()
+        || GetObjectW(
+            HGDIOBJ::from(hbmp),
+            size_of::<BITMAP>() as i32,
+            Some(&mut bm as *mut BITMAP as *mut _),
+        ) == 0
+    {
+        if !color.is_invalid() {
+            let _ = DeleteObject(HGDIOBJ::from(color));
+        }
+        if !mask.is_invalid() {
+            let _ = DeleteObject(HGDIOBJ::from(mask));
+        }
+        if destroy {
+            let _ = DestroyIcon(hicon);
+        }
+        return None;
+    }
+
+    let width = bm.bmWidth.max(1);
+    let height = bm.bmHeight.unsigned_abs().max(1);
+
+    if !color.is_invalid() {
+        let _ = DeleteObject(HGDIOBJ::from(color));
+    }
+    if !mask.is_invalid() {
+        let _ = DeleteObject(HGDIOBJ::from(mask));
+    }
+
+    let bmi = BITMAPINFO {
+        bmiHeader: BITMAPINFOHEADER {
+            biSize: size_of::<BITMAPINFOHEADER>() as u32,
+            biWidth: width,
+            biHeight: -(height as i32), // top-down
+            biPlanes: 1,
+            biBitCount: 32,
+            biCompression: 0, // BI_RGB
+            biSizeImage: 0,
+            biXPelsPerMeter: 0,
+            biYPelsPerMeter: 0,
+            biClrUsed: 0,
+            biClrImportant: 0,
+        },
+        bmiColors: [Default::default()],
+    };
+
+    let screen = GetDC(None);
+    if screen.is_invalid() {
+        if destroy {
+            let _ = DestroyIcon(hicon);
+        }
+        return None;
+    }
+    let mut bits: *mut core::ffi::c_void = std::ptr::null_mut();
+    let dib = match CreateDIBSection(Some(screen), &bmi, DIB_RGB_COLORS, &mut bits, None, 0) {
+        Ok(h) if !h.is_invalid() && !bits.is_null() => h,
+        _ => {
+            ReleaseDC(None, screen);
+            if destroy {
+                let _ = DestroyIcon(hicon);
+            }
+            return None;
+        }
+    };
+    let mem = CreateCompatibleDC(Some(screen));
+    if mem.is_invalid() {
+        let _ = DeleteObject(HGDIOBJ::from(dib));
+        ReleaseDC(None, screen);
+        if destroy {
+            let _ = DestroyIcon(hicon);
+        }
+        return None;
+    }
+    let old = SelectObject(mem, HGDIOBJ::from(dib));
+    let draw_ok = DrawIconEx(mem, 0, 0, hicon, width, height as i32, 0, None, DI_NORMAL).is_ok();
+    SelectObject(mem, old);
+    let _ = DeleteDC(mem);
+    ReleaseDC(None, screen);
+
+    let icon = if draw_ok {
+        let px = (width as usize).checked_mul(height as usize)?;
+        let src = std::slice::from_raw_parts(bits as *const u8, px * 4);
+        let mut rgba = Vec::with_capacity(px * 4);
+        // DIB is BGRA.
+        for chunk in src.chunks_exact(4) {
+            rgba.extend_from_slice(&[chunk[2], chunk[1], chunk[0], chunk[3]]);
+        }
+        Some(ProcessIcon {
+            width: width as u32,
+            height,
+            rgba,
+        })
+    } else {
+        None
+    };
+
+    let _ = DeleteObject(HGDIOBJ::from(dib));
+    if destroy {
+        let _ = DestroyIcon(hicon);
+    }
+    icon
 }
 
 fn set_foreground(hwnd: HWND) -> Result<(), String> {

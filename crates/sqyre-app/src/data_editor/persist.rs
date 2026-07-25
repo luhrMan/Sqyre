@@ -9,8 +9,8 @@ use crate::preview_tooltip::PreviewTooltipCache;
 use sqyre_domain::{Macro, ProgramEntityKind, ScalarValue};
 use sqyre_hotkeys::ScreenClickBridge;
 use sqyre_persist::{
-    Database, OverlayButtonConfig, ProgramCatalog, ProgramCollection, ProgramItem, ProgramMask,
-    ProgramPoint, ProgramSearchArea, UserSettings, DEFAULT_OVERLAY_BUTTON_SIZE,
+    Database, OverlayButtonConfig, ProgramAtlas, ProgramCatalog, ProgramCollection, ProgramItem,
+    ProgramMask, ProgramPoint, ProgramSearchArea, UserSettings, DEFAULT_OVERLAY_BUTTON_SIZE,
 };
 use sqyre_validate::validate_entity_name;
 
@@ -220,6 +220,31 @@ impl DataEditor {
                     Err(e) => Err(e.to_string()),
                 }
             }
+            EditorTab::Atlases => {
+                let Some(prog) = self.selected_program.clone() else {
+                    self.set_err("Select a program first.");
+                    return;
+                };
+                if self.form_atlas_members.is_empty() {
+                    self.set_err("Add at least one Collection to the Atlas.");
+                    return;
+                }
+                let name = new_entity_name(&self.form_name, "New Atlas", |n| {
+                    catalog.get(&prog).and_then(|p| p.atlases.get(n)).is_some()
+                });
+                let atlas = ProgramAtlas {
+                    name: name.clone(),
+                    collections: self.form_atlas_members.clone(),
+                };
+                match catalog.upsert_atlas(&prog, atlas) {
+                    Ok(()) => {
+                        self.selected_entity = Some(name);
+                        self.load_form(catalog, settings);
+                        Ok("Created atlas.")
+                    }
+                    Err(e) => Err(e.to_string()),
+                }
+            }
             EditorTab::AutoPic => {
                 self.set_err("Use Save on the AutoPic tab to capture a search area.");
                 return;
@@ -363,6 +388,13 @@ impl DataEditor {
                     return Some(("Collection", new.to_string()));
                 }
             }
+            EditorTab::Atlases => {
+                let prog = self.selected_program.as_deref()?;
+                let old = self.selected_entity.as_deref()?;
+                if old != new && catalog.get(prog).and_then(|p| p.atlases.get(new)).is_some() {
+                    return Some(("Atlas", new.to_string()));
+                }
+            }
             EditorTab::AutoPic => {}
             EditorTab::Overlay => {}
         }
@@ -442,6 +474,7 @@ impl DataEditor {
             }
             EditorTab::Masks => self.update_mask(catalog, &new_name, overwrite),
             EditorTab::Collections => self.update_collection(catalog, macros, &new_name, overwrite),
+            EditorTab::Atlases => self.update_atlas(catalog, macros, &new_name, overwrite),
             EditorTab::AutoPic | EditorTab::Overlay => Ok(()),
         };
 
@@ -660,6 +693,61 @@ impl DataEditor {
         Ok(())
     }
 
+    pub(crate) fn update_atlas(
+        &mut self,
+        catalog: &mut ProgramCatalog,
+        macros: &mut [Macro],
+        new_name: &str,
+        overwrite: bool,
+    ) -> Result<(), sqyre_persist::PersistError> {
+        let prog = self
+            .selected_program
+            .clone()
+            .ok_or_else(|| sqyre_persist::PersistError::Message("no program".into()))?;
+        if self.form_atlas_members.is_empty() {
+            return Err(sqyre_persist::PersistError::Message(
+                "atlas needs at least one collection".into(),
+            ));
+        }
+        let known = catalog
+            .get(&prog)
+            .map(|p| {
+                p.collections
+                    .keys()
+                    .cloned()
+                    .collect::<std::collections::BTreeSet<_>>()
+            })
+            .unwrap_or_default();
+        for m in &self.form_atlas_members {
+            if !known.contains(m) {
+                return Err(sqyre_persist::PersistError::Message(format!(
+                    "collection {m:?} not in program {prog}"
+                )));
+            }
+        }
+        let atlas = ProgramAtlas {
+            name: new_name.to_string(),
+            collections: self.form_atlas_members.clone(),
+        };
+        if let Some(old) = self.selected_entity.clone() {
+            if old != new_name {
+                if overwrite {
+                    let _ = catalog.delete_atlas(&prog, new_name);
+                }
+                catalog.rename_atlas(&prog, &old, new_name)?;
+                for m in macros.iter_mut() {
+                    m.rename_program_entity(ProgramEntityKind::Atlas, &prog, &old, new_name);
+                }
+                self.selected_entity = Some(new_name.to_string());
+            }
+            catalog.upsert_atlas(&prog, atlas)?;
+        } else {
+            catalog.upsert_atlas(&prog, atlas)?;
+            self.selected_entity = Some(new_name.to_string());
+        }
+        Ok(())
+    }
+
     pub(crate) fn on_delete(
         &mut self,
         db: &mut Database,
@@ -751,6 +839,17 @@ impl DataEditor {
                     self.reset_collection_form();
                 })
             }
+            EditorTab::Atlases => {
+                let (Some(prog), Some(name)) =
+                    (self.selected_program.clone(), self.selected_entity.clone())
+                else {
+                    return;
+                };
+                catalog.delete_atlas(&prog, &name).map(|_| {
+                    self.selected_entity = None;
+                    self.reset_atlas_form();
+                })
+            }
             EditorTab::AutoPic | EditorTab::Overlay => return,
         };
         match result {
@@ -777,10 +876,14 @@ impl DataEditor {
         macros: &[Macro],
         catalog: &mut ProgramCatalog,
     ) -> Result<(), String> {
+        let previous_generation = catalog.generation();
         db.set_programs_from_catalog(catalog);
         db.replace_macros(macros.iter().cloned());
         db.save_default().map_err(|e| e.to_string())?;
         *catalog = db.program_catalog().map_err(|e| e.to_string())?;
+        // YAML reload resets generation to 0; keep ListCache invalidation working.
+        catalog.continue_generation_after_reload(previous_generation);
+        self.rebuild_list_cache(catalog);
         Ok(())
     }
 }

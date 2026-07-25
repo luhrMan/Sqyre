@@ -148,7 +148,7 @@ mod tests {
             id: ActionId::new(),
             kind: ActionKind::NavigateSelect(Box::new(NavigateSelectData {
                 program: "P".into(),
-                graph_name: "bag".into(),
+                atlas: "inventory".into(),
                 chords: sqyre_domain::NavChords {
                     up: vec!["up".into()],
                     down: vec!["down".into()],
@@ -173,7 +173,7 @@ mod tests {
                 inputs: sqyre_domain::NavInputs::default(),
                 outputs: sqyre_domain::NavOutputs {
                     output_ref: "ref".into(),
-                    output_graph: String::new(),
+                    output_atlas: String::new(),
                     output_row: "r".into(),
                     output_col: "c".into(),
                     output_collection: String::new(),

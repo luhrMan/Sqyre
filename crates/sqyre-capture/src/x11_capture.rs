@@ -164,31 +164,55 @@ impl OsCapturer {
         })
     }
 
+    /// Per-monitor bounds in virtual-desktop coordinates (`&self`).
+    pub fn monitor_rects_ref(&self) -> Result<Vec<DesktopRect>, String> {
+        let st = self.inner.lock();
+        Ok(xinerama_monitor_rects(&st))
+    }
+
     /// Monitor sizes (`&self`).
     pub fn monitor_sizes_ref(&self) -> Result<Vec<(i32, i32)>, String> {
-        let st = self.inner.lock();
-        unsafe {
-            if XineramaIsActive(st.display) == 0 {
-                return Ok(vec![(st.width, st.height)]);
-            }
-            let mut count = 0;
-            let screens = XineramaQueryScreens(st.display, &mut count);
-            if screens.is_null() || count <= 0 {
-                return Ok(vec![(st.width, st.height)]);
-            }
-            let slice =
-                std::slice::from_raw_parts(screens as *const XineramaScreenInfo, count as usize);
-            let sizes: Vec<(i32, i32)> = slice
-                .iter()
-                .map(|s| (s.width as i32, s.height as i32))
-                .filter(|(w, h)| *w > 0 && *h > 0)
-                .collect();
-            XFree(screens as *mut c_void);
-            if sizes.is_empty() {
-                Ok(vec![(st.width, st.height)])
-            } else {
-                Ok(sizes)
-            }
+        Ok(self
+            .monitor_rects_ref()?
+            .into_iter()
+            .map(|r| (r.w, r.h))
+            .collect())
+    }
+}
+
+fn xinerama_monitor_rects(st: &X11State) -> Vec<DesktopRect> {
+    let fallback = DesktopRect {
+        x: 0,
+        y: 0,
+        w: st.width,
+        h: st.height,
+    };
+    unsafe {
+        if XineramaIsActive(st.display) == 0 {
+            return vec![fallback];
+        }
+        let mut count = 0;
+        let screens = XineramaQueryScreens(st.display, &mut count);
+        if screens.is_null() || count <= 0 {
+            return vec![fallback];
+        }
+        let slice =
+            std::slice::from_raw_parts(screens as *const XineramaScreenInfo, count as usize);
+        let rects: Vec<DesktopRect> = slice
+            .iter()
+            .map(|s| DesktopRect {
+                x: s.x_org as i32,
+                y: s.y_org as i32,
+                w: s.width as i32,
+                h: s.height as i32,
+            })
+            .filter(|r| r.w > 0 && r.h > 0)
+            .collect();
+        XFree(screens as *mut c_void);
+        if rects.is_empty() {
+            vec![fallback]
+        } else {
+            rects
         }
     }
 }
