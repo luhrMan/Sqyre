@@ -5,7 +5,7 @@
 #![cfg(not(target_arch = "wasm32"))]
 
 use image::{Rgb, RgbImage};
-use sqyre_vision::{preprocess_for_ocr, recognize_image, OcrPreprocessOptions, rgba_to_rgb_buf};
+use sqyre_vision::{preprocess_for_ocr, recognize_image, rgba_to_rgb_buf, OcrPreprocessOptions};
 use std::path::PathBuf;
 
 fn tessdata_or_skip() -> Option<String> {
@@ -29,12 +29,24 @@ fn fixtures_dir() -> PathBuf {
 /// Tiny 5×7 uppercase glyphs (bits top-to-bottom, MSB left).
 fn glyph(ch: char) -> Option<[u8; 7]> {
     Some(match ch {
-        'S' => [0b01110, 0b10000, 0b10000, 0b01110, 0b00001, 0b00001, 0b01110],
-        'U' => [0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110],
-        'B' => [0b11110, 0b10001, 0b10001, 0b11110, 0b10001, 0b10001, 0b11110],
-        'M' => [0b10001, 0b11011, 0b10101, 0b10001, 0b10001, 0b10001, 0b10001],
-        'I' => [0b01110, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110],
-        'T' => [0b11111, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100],
+        'S' => [
+            0b01110, 0b10000, 0b10000, 0b01110, 0b00001, 0b00001, 0b01110,
+        ],
+        'U' => [
+            0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110,
+        ],
+        'B' => [
+            0b11110, 0b10001, 0b10001, 0b11110, 0b10001, 0b10001, 0b11110,
+        ],
+        'M' => [
+            0b10001, 0b11011, 0b10101, 0b10001, 0b10001, 0b10001, 0b10001,
+        ],
+        'I' => [
+            0b01110, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110,
+        ],
+        'T' => [
+            0b11111, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100,
+        ],
         _ => return None,
     })
 }
@@ -83,7 +95,10 @@ fn ocr_submit_golden() {
     }
 
     let Some(tessdata) = tessdata_or_skip() else {
-        eprintln!("skipping ocr_submit_golden: tessdata not found (fixture ensured at {})", png_path.display());
+        eprintln!(
+            "skipping ocr_submit_golden: tessdata not found (fixture ensured at {})",
+            png_path.display()
+        );
         return;
     };
 

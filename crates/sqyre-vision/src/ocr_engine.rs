@@ -3,6 +3,7 @@
 use crate::ocr_boxes::{parse_tsv_word_boxes, text_from_ocr_boxes, OcrWordBox};
 use parking_lot::Mutex;
 use sqyre_match::ImageBuf;
+use std::path::PathBuf;
 
 /// Recognized page text plus word boxes in image coordinates.
 #[derive(Debug, Clone, Default)]
@@ -84,40 +85,80 @@ impl LeptessOcr {
         })
     }
 
-    /// Resolve tessdata: `SQYRE_TESSDATA`, then common system paths, then error.
+    /// Resolve tessdata from `SQYRE_TESSDATA`, platform locations, and the dev workspace.
     pub fn from_env_or_system() -> Result<Self, String> {
         if let Ok(p) = std::env::var("SQYRE_TESSDATA") {
-            let eng = std::path::Path::new(&p).join("eng.traineddata");
-            if eng.is_file() {
+            if has_english_tessdata(&p) {
                 return Self::new(p);
             }
         }
-        for candidate in [
-            "/usr/share/tesseract-ocr/4.00/tessdata",
-            "/usr/share/tesseract-ocr/5/tessdata",
-            "/usr/share/tessdata",
-            "/usr/local/share/tessdata",
-        ] {
-            let eng = std::path::Path::new(candidate).join("eng.traineddata");
-            if eng.is_file() {
-                return Self::new(candidate);
+        for candidate in platform_tessdata_paths() {
+            if has_english_tessdata(&candidate) {
+                return Self::new(candidate.to_string_lossy());
             }
         }
         // Workspace `assets/tessdata` when developing (path from build.rs).
         let repo = std::path::Path::new(env!("SQYRE_WORKSPACE_ROOT")).join("assets/tessdata");
-        if repo.join("eng.traineddata").is_file() {
+        if has_english_tessdata(&repo) {
             return Self::new(repo.to_string_lossy());
         }
-        Err(
-            "OCR: eng.traineddata not found (set SQYRE_TESSDATA or install tesseract-ocr-eng)"
-                .into(),
-        )
+        Err(missing_tessdata_message().into())
     }
 
     pub fn recognize(&self, img: &ImageBuf) -> Result<OcrRecognition, String> {
         let mut api = self.engine.lock();
         recognize_with(&mut api, img)
     }
+}
+
+fn has_english_tessdata(path: impl AsRef<std::path::Path>) -> bool {
+    path.as_ref().join("eng.traineddata").is_file()
+}
+
+fn platform_tessdata_paths() -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+
+    #[cfg(target_os = "windows")]
+    {
+        // Bare Windows releases keep data colocated with the executable, or in
+        // the user's roaming application data directory.
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(dir) = exe.parent() {
+                paths.push(dir.to_path_buf());
+                paths.push(dir.join("tessdata"));
+            }
+        }
+        if let Some(appdata) = std::env::var_os("APPDATA") {
+            paths.push(PathBuf::from(appdata).join("sqyre").join("tessdata"));
+        }
+        if let Some(program_files) = std::env::var_os("PROGRAMFILES") {
+            paths.push(
+                PathBuf::from(program_files)
+                    .join("Tesseract-OCR")
+                    .join("tessdata"),
+            );
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    paths.extend([
+        PathBuf::from("/usr/share/tesseract-ocr/4.00/tessdata"),
+        PathBuf::from("/usr/share/tesseract-ocr/5/tessdata"),
+        PathBuf::from("/usr/share/tessdata"),
+        PathBuf::from("/usr/local/share/tessdata"),
+    ]);
+
+    paths
+}
+
+#[cfg(target_os = "windows")]
+fn missing_tessdata_message() -> &'static str {
+    "OCR: eng.traineddata not found (set SQYRE_TESSDATA, place it beside sqyre.exe or in %APPDATA%\\sqyre\\tessdata)"
+}
+
+#[cfg(not(target_os = "windows"))]
+fn missing_tessdata_message() -> &'static str {
+    "OCR: eng.traineddata not found (set SQYRE_TESSDATA or install tesseract-ocr-eng)"
 }
 
 #[cfg(test)]
