@@ -8,8 +8,8 @@ pub use sqyre_ports::CaptureError;
 #[cfg(target_os = "linux")]
 pub fn linux_session_capture_warning() -> Option<String> {
     let session = std::env::var("XDG_SESSION_TYPE").unwrap_or_default();
-    let wayland = session.eq_ignore_ascii_case("wayland")
-        || std::env::var_os("WAYLAND_DISPLAY").is_some();
+    let wayland =
+        session.eq_ignore_ascii_case("wayland") || std::env::var_os("WAYLAND_DISPLAY").is_some();
     let has_x11 = std::env::var_os("DISPLAY").is_some();
     if wayland && !has_x11 {
         Some(

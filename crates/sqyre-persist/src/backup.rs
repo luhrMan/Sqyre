@@ -197,9 +197,7 @@ fn collect_files(root: &Path) -> Result<Vec<PathBuf>> {
 ///
 /// Skips `backups/`, lock, and diagnostic logs. Builds via temp file + rename.
 pub fn create_backup() -> Result<PathBuf> {
-    let _guard = backup_ops_lock()
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let _guard = backup_ops_lock().lock().unwrap_or_else(|e| e.into_inner());
     let root = sqyre_dir();
     if !root.exists() {
         return Err(BackupError::Message(format!(
@@ -323,9 +321,7 @@ fn safe_extract_path(dest: &Path, name: &str) -> Result<PathBuf> {
 /// live directory is left unchanged. After a successful commit the previous
 /// snapshot is deleted.
 pub fn restore_backup(zip_path: &Path) -> Result<()> {
-    let _guard = backup_ops_lock()
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let _guard = backup_ops_lock().lock().unwrap_or_else(|e| e.into_inner());
     if !zip_path.is_file() {
         return Err(BackupError::Message(format!(
             "backup file not found: {}",
@@ -371,9 +367,8 @@ pub fn restore_backup(zip_path: &Path) -> Result<()> {
             ));
         }
         let db_text = fs::read_to_string(&db_path)?;
-        Database::from_yaml_with_warnings(&db_text).map_err(|e| {
-            BackupError::Message(format!("restored db.yaml is invalid: {e}"))
-        })?;
+        Database::from_yaml_with_warnings(&db_text)
+            .map_err(|e| BackupError::Message(format!("restored db.yaml is invalid: {e}")))?;
         Ok(())
     };
 
@@ -525,10 +520,7 @@ mod tests {
 
         crate::with_sqyre_dir_override(data.clone(), || -> Result<()> {
             let err = restore_backup(&bad_zip).unwrap_err();
-            assert!(
-                err.to_string().contains("missing db.yaml"),
-                "got {err}"
-            );
+            assert!(err.to_string().contains("missing db.yaml"), "got {err}");
             assert_eq!(fs::read_to_string(data.join("db.yaml")).unwrap(), original);
             Ok(())
         })?;
@@ -568,10 +560,7 @@ mod tests {
 
         crate::with_sqyre_dir_override(data.clone(), || -> Result<()> {
             let err = restore_backup(&big_zip).unwrap_err();
-            assert!(
-                err.to_string().contains("too large"),
-                "got {err}"
-            );
+            assert!(err.to_string().contains("too large"), "got {err}");
             assert_eq!(fs::read_to_string(data.join("db.yaml")).unwrap(), original);
             Ok(())
         })?;
@@ -598,10 +587,7 @@ mod tests {
 
         crate::with_sqyre_dir_override(data.clone(), || -> Result<()> {
             let err = restore_backup(&bad_zip).unwrap_err();
-            assert!(
-                err.to_string().contains("invalid"),
-                "got {err}"
-            );
+            assert!(err.to_string().contains("invalid"), "got {err}");
             assert_eq!(fs::read_to_string(data.join("db.yaml")).unwrap(), original);
             Ok(())
         })?;

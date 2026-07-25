@@ -143,6 +143,19 @@ fn install_x11_secondary_error_hook() {
     }));
 }
 
+/// Sync macros/catalog into `db` and write `db.yaml`. The single database-save
+/// implementation shared by [`SqyreApp::persist_database`] and
+/// [`SqyreApp::persist_database_for_editor`] so the two call sites cannot drift.
+fn sync_and_save_database(
+    db: &mut Database,
+    macros: &[Macro],
+    catalog: &ProgramCatalog,
+) -> Result<(), String> {
+    db.set_programs_from_catalog(catalog);
+    db.replace_macros(macros.iter().cloned());
+    db.save_default().map_err(|e| e.to_string())
+}
+
 pub struct SqyreApp {
     db: Database,
     macros: Vec<Macro>,
@@ -319,7 +332,21 @@ impl SqyreApp {
                     }
                 })
             }
-            #[cfg(not(all(target_os = "linux", not(target_arch = "wasm32"))))]
+            #[cfg(all(target_os = "windows", not(target_arch = "wasm32")))]
+            {
+                match sqyre_vision::LeptessOcr::from_env_or_system() {
+                    Ok(_) => None,
+                    Err(e) => {
+                        let warning = format!("OCR unavailable: {e}");
+                        eprintln!("sqyre: {warning}");
+                        Some(warning)
+                    }
+                }
+            }
+            #[cfg(not(any(
+                all(target_os = "linux", not(target_arch = "wasm32")),
+                all(target_os = "windows", not(target_arch = "wasm32"))
+            )))]
             {
                 None
             }
@@ -387,15 +414,12 @@ impl SqyreApp {
 
     /// Sync working macros + catalog into `db` and write `db.yaml`.
     pub(crate) fn persist_database(&mut self) -> Result<(), String> {
-        self.db.set_programs_from_catalog(&self.catalog);
-        self.db.replace_macros(self.macros.iter().cloned());
-        match self.db.save_default() {
+        match sync_and_save_database(&mut self.db, &self.macros, &self.catalog) {
             Ok(()) => {
                 self.save_error = None;
                 Ok(())
             }
-            Err(e) => {
-                let msg = e.to_string();
+            Err(msg) => {
                 self.save_error = Some(msg.clone());
                 Err(msg)
             }
@@ -411,6 +435,26 @@ impl SqyreApp {
                 self.save_error = Some(e.to_string());
             }
         }
+    }
+
+    /// Data Editor's persist path: the same save implementation as [`Self::persist_database`],
+    /// plus catalog-generation continuity the editor's `ListCache` invalidation relies on.
+    ///
+    /// Takes explicit `db`/`macros`/`catalog` rather than `&mut self` because
+    /// `DataEditor::show` (and its `on_new`/`on_update`/`on_delete` helpers) run with those
+    /// fields already disjointly borrowed out of `SqyreApp`, so `&mut SqyreApp` isn't
+    /// available at the call site.
+    pub(crate) fn persist_database_for_editor(
+        db: &mut Database,
+        macros: &[Macro],
+        catalog: &mut ProgramCatalog,
+    ) -> Result<(), String> {
+        let previous_generation = catalog.generation();
+        sync_and_save_database(db, macros, catalog)?;
+        *catalog = db.program_catalog().map_err(|e| e.to_string())?;
+        // YAML reload resets generation to 0; keep ListCache invalidation working.
+        catalog.continue_generation_after_reload(previous_generation);
+        Ok(())
     }
 
     /// Start a background update check when the preference is on.
