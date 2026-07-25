@@ -77,10 +77,15 @@ pub fn clamp_search_rect(
     right: i32,
     bottom: i32,
     vb: Option<DesktopRect>,
-) -> Result<DesktopRect, String> {
+) -> Result<DesktopRect, crate::CaptureError> {
     let mut rect = DesktopRect::from_corners(left, top, right, bottom);
     if rect.is_empty() {
-        return Err(format!("empty search area {left},{top},{right},{bottom}"));
+        return Err(crate::CaptureError::EmptySearchArea {
+            left,
+            top,
+            right,
+            bottom,
+        });
     }
     if let Some(vb) = vb {
         let lx = left.max(vb.x);
@@ -89,7 +94,7 @@ pub fn clamp_search_rect(
         let by = bottom.min(vb.y + vb.h);
         rect = DesktopRect::from_corners(lx, ty, rx, by);
         if rect.is_empty() {
-            return Err("search area outside virtual desktop".into());
+            return Err(crate::CaptureError::OutsideVirtualDesktop);
         }
     }
     Ok(rect)
@@ -109,19 +114,25 @@ pub trait AutomationBackend {
 
 /// Screen capture in absolute virtual-desktop coordinates.
 pub trait ScreenCapturer {
-    fn capture_monitor(&mut self, display_index: i32) -> Result<RgbaImage, String>;
-    fn capture_rect(&mut self, rect: DesktopRect) -> Result<RgbaImage, String>;
-    fn virtual_bounds(&mut self) -> Result<DesktopRect, String>;
+    fn capture_monitor(
+        &mut self,
+        display_index: i32,
+    ) -> Result<RgbaImage, crate::CaptureError>;
+    fn capture_rect(&mut self, rect: DesktopRect) -> Result<RgbaImage, crate::CaptureError>;
+    fn virtual_bounds(&mut self) -> Result<DesktopRect, crate::CaptureError>;
 
     /// Per-monitor (width, height) in display order.
     /// Default: one entry from [`Self::virtual_bounds`].
-    fn monitor_sizes(&mut self) -> Result<Vec<(i32, i32)>, String> {
+    fn monitor_sizes(&mut self) -> Result<Vec<(i32, i32)>, crate::CaptureError> {
         let vb = self.virtual_bounds()?;
         Ok(vec![(vb.w, vb.h)])
     }
 
     /// Capture RGB (no alpha). Default: RGBA capture then strip alpha.
-    fn capture_rect_rgb(&mut self, rect: DesktopRect) -> Result<RgbCapture, String> {
+    fn capture_rect_rgb(
+        &mut self,
+        rect: DesktopRect,
+    ) -> Result<RgbCapture, crate::CaptureError> {
         Ok(RgbCapture::from_rgba(&self.capture_rect(rect)?))
     }
 
@@ -132,7 +143,7 @@ pub trait ScreenCapturer {
         top: i32,
         right: i32,
         bottom: i32,
-    ) -> Result<(RgbaImage, DesktopRect), String> {
+    ) -> Result<(RgbaImage, DesktopRect), crate::CaptureError> {
         let vb = self.virtual_bounds().ok();
         let rect = clamp_search_rect(left, top, right, bottom, vb)?;
         let img = self.capture_rect(rect)?;
@@ -146,7 +157,7 @@ pub trait ScreenCapturer {
         top: i32,
         right: i32,
         bottom: i32,
-    ) -> Result<(RgbCapture, DesktopRect), String> {
+    ) -> Result<(RgbCapture, DesktopRect), crate::CaptureError> {
         let vb = self.virtual_bounds().ok();
         let rect = clamp_search_rect(left, top, right, bottom, vb)?;
         let img = self.capture_rect_rgb(rect)?;
@@ -346,27 +357,30 @@ pub struct RecordingCapturer {
 }
 
 impl RecordingCapturer {
-    fn take_image(&mut self) -> Result<RgbaImage, String> {
+    fn take_image(&mut self) -> Result<RgbaImage, crate::CaptureError> {
         if !self.queue.is_empty() {
             return Ok(self.queue.remove(0));
         }
         self.next
             .clone()
-            .ok_or_else(|| "RecordingCapturer: no image".into())
+            .ok_or_else(|| crate::CaptureError::Message("RecordingCapturer: no image".into()))
     }
 }
 
 impl ScreenCapturer for RecordingCapturer {
-    fn capture_monitor(&mut self, display_index: i32) -> Result<RgbaImage, String> {
+    fn capture_monitor(
+        &mut self,
+        display_index: i32,
+    ) -> Result<RgbaImage, crate::CaptureError> {
         self.log.push(format!("monitor:{display_index}"));
         self.take_image()
     }
-    fn capture_rect(&mut self, rect: DesktopRect) -> Result<RgbaImage, String> {
+    fn capture_rect(&mut self, rect: DesktopRect) -> Result<RgbaImage, crate::CaptureError> {
         self.log
             .push(format!("rect:{},{},{},{}", rect.x, rect.y, rect.w, rect.h));
         self.take_image()
     }
-    fn virtual_bounds(&mut self) -> Result<DesktopRect, String> {
+    fn virtual_bounds(&mut self) -> Result<DesktopRect, crate::CaptureError> {
         Ok(self.bounds)
     }
 }

@@ -74,16 +74,21 @@ pub struct SharedRunCapturer(pub std::sync::Arc<OsCapturer>);
 
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
 impl sqyre_executor::ScreenCapturer for SharedRunCapturer {
-    fn capture_monitor(&mut self, _display_index: i32) -> Result<image::RgbaImage, String> {
-        Err("screen capture: not supported on this platform".into())
+    fn capture_monitor(
+        &mut self,
+        _display_index: i32,
+    ) -> Result<image::RgbaImage, sqyre_executor::CaptureError> {
+        Err(sqyre_executor::CaptureError::UnsupportedPlatform)
     }
     fn capture_rect(
         &mut self,
         _rect: sqyre_executor::DesktopRect,
-    ) -> Result<image::RgbaImage, String> {
-        Err("screen capture: not supported on this platform".into())
+    ) -> Result<image::RgbaImage, sqyre_executor::CaptureError> {
+        Err(sqyre_executor::CaptureError::UnsupportedPlatform)
     }
-    fn virtual_bounds(&mut self) -> Result<sqyre_executor::DesktopRect, String> {
+    fn virtual_bounds(
+        &mut self,
+    ) -> Result<sqyre_executor::DesktopRect, sqyre_executor::CaptureError> {
         Ok(sqyre_executor::DesktopRect {
             x: 0,
             y: 0,

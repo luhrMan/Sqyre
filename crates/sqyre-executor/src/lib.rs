@@ -3,6 +3,7 @@
 mod action_log;
 mod actions;
 mod backends;
+mod capture_error;
 mod error;
 mod highlight;
 mod navigate;
@@ -18,6 +19,7 @@ pub use action_log::{
     MAX_ENTRIES_PER_ACTION,
 };
 pub use backends::*;
+pub use capture_error::CaptureError;
 pub use error::{ExecError, FlowSignal};
 pub use highlight::{
     ActionHighlighter, HighlightEvent, HighlightKind, HighlightSnapshot, SharedHighlighter,

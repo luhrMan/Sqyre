@@ -86,16 +86,16 @@ impl OsCapturer {
     }
 
     /// Capture a desktop rect (`&self` — safe to call via [`Arc`] from worker threads).
-    pub fn capture_rect_ref(&self, rect: DesktopRect) -> Result<RgbaImage, String> {
+    pub fn capture_rect_ref(&self, rect: DesktopRect) -> Result<RgbaImage, CaptureError> {
         self.with_zpixmap(rect, |data, w, h, bpp, stride| {
-            zpixmap_to_rgba(data, w, h, bpp, stride)
+            zpixmap_to_rgba(data, w, h, bpp, stride).map_err(CaptureError::Message)
         })
     }
 
     /// Capture RGB directly (no alpha channel / no second conversion pass).
-    pub fn capture_rect_rgb_ref(&self, rect: DesktopRect) -> Result<RgbCapture, String> {
+    pub fn capture_rect_rgb_ref(&self, rect: DesktopRect) -> Result<RgbCapture, CaptureError> {
         self.with_zpixmap(rect, |data, w, h, bpp, stride| {
-            let data = zpixmap_to_rgb(data, w, h, bpp, stride)?;
+            let data = zpixmap_to_rgb(data, w, h, bpp, stride).map_err(CaptureError::Message)?;
             Ok(RgbCapture {
                 width: w,
                 height: h,
@@ -107,10 +107,10 @@ impl OsCapturer {
     fn with_zpixmap<T>(
         &self,
         rect: DesktopRect,
-        convert: impl FnOnce(&[u8], u32, u32, usize, usize) -> Result<T, String>,
-    ) -> Result<T, String> {
+        convert: impl FnOnce(&[u8], u32, u32, usize, usize) -> Result<T, CaptureError>,
+    ) -> Result<T, CaptureError> {
         if rect.is_empty() {
-            return Err(CaptureError::EmptyRect.into());
+            return Err(CaptureError::EmptyRect);
         }
         let st = self.inner.lock();
         unsafe {
@@ -130,8 +130,7 @@ impl OsCapturer {
                     y: rect.y,
                     w: rect.w,
                     h: rect.h,
-                }
-                .into());
+                });
             }
             let img = &*ximage;
             let w = img.width as u32;
@@ -140,7 +139,7 @@ impl OsCapturer {
             if bpp < 3 {
                 let bits = img.bits_per_pixel;
                 XDestroyImage(ximage);
-                return Err(CaptureError::BitsPerPixel(bits).into());
+                return Err(CaptureError::BitsPerPixel(bits));
             }
             let stride = img.bytes_per_line as usize;
             let data_len = stride.saturating_mul(h as usize);
@@ -154,7 +153,7 @@ impl OsCapturer {
     }
 
     /// Virtual desktop bounds (`&self`).
-    pub fn virtual_bounds_ref(&self) -> Result<DesktopRect, String> {
+    pub fn virtual_bounds_ref(&self) -> Result<DesktopRect, CaptureError> {
         let st = self.inner.lock();
         Ok(DesktopRect {
             x: 0,
@@ -165,13 +164,13 @@ impl OsCapturer {
     }
 
     /// Per-monitor bounds in virtual-desktop coordinates (`&self`).
-    pub fn monitor_rects_ref(&self) -> Result<Vec<DesktopRect>, String> {
+    pub fn monitor_rects_ref(&self) -> Result<Vec<DesktopRect>, CaptureError> {
         let st = self.inner.lock();
         Ok(xinerama_monitor_rects(&st))
     }
 
     /// Monitor sizes (`&self`).
-    pub fn monitor_sizes_ref(&self) -> Result<Vec<(i32, i32)>, String> {
+    pub fn monitor_sizes_ref(&self) -> Result<Vec<(i32, i32)>, CaptureError> {
         Ok(self
             .monitor_rects_ref()?
             .into_iter()
