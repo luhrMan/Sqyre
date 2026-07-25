@@ -52,37 +52,25 @@ impl<'a> Executor<'a> {
     }
 
     pub(crate) fn input_click_down(&mut self, button: &str) -> Result<()> {
-        self.deps
-            .automation
-            .click(button, true)
-            .map_err(ExecError::Message)?;
+        self.deps.automation.click(button, true)?;
         self.held_buttons.insert(button.to_string());
         Ok(())
     }
 
     pub(crate) fn input_click_up(&mut self, button: &str) -> Result<()> {
-        self.deps
-            .automation
-            .click(button, false)
-            .map_err(ExecError::Message)?;
+        self.deps.automation.click(button, false)?;
         self.held_buttons.remove(button);
         Ok(())
     }
 
     pub(crate) fn input_key_down(&mut self, key: &str) -> Result<()> {
-        self.deps
-            .automation
-            .key_down(key)
-            .map_err(ExecError::Message)?;
+        self.deps.automation.key_down(key)?;
         self.held_keys.insert(key.to_string());
         Ok(())
     }
 
     pub(crate) fn input_key_up(&mut self, key: &str) -> Result<()> {
-        self.deps
-            .automation
-            .key_up(key)
-            .map_err(ExecError::Message)?;
+        self.deps.automation.key_up(key)?;
         self.held_keys.remove(key);
         Ok(())
     }
@@ -471,7 +459,7 @@ fn dispatch(exec: &mut Executor<'_>, action: &Action, macro_: &mut Macro) -> Res
         ActionKind::Click { button, state } => {
             if *button == MouseButton::Scroll {
                 let up = matches!(*state, PressState::Up);
-                exec.deps.automation.scroll(up).map_err(ExecError::Message)
+                exec.deps.automation.scroll(up).map_err(ExecError::from)
             } else {
                 match *state {
                     PressState::Down => exec.input_click_down(button.as_str()),

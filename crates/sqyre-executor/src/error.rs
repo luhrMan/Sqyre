@@ -1,3 +1,4 @@
+use sqyre_ports::{AutomationError, CaptureError};
 use thiserror::Error;
 
 /// Control-flow signals consumed by loop / foreach / while / imagesearch.
@@ -15,6 +16,11 @@ pub enum FlowSignal {
 pub enum ExecError {
     #[error(transparent)]
     Flow(#[from] FlowSignal),
+    #[error(transparent)]
+    Capture(#[from] CaptureError),
+    #[error(transparent)]
+    Automation(#[from] AutomationError),
+    /// Domain / macro-configuration failure with no typed port error behind it.
     #[error("{0}")]
     Message(String),
 }

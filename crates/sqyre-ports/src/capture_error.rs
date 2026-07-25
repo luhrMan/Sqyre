@@ -5,9 +5,7 @@ use thiserror::Error;
 /// Failure capturing screen pixels or querying display geometry.
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum CaptureError {
-    #[error(
-        "open display failed (need X11 or XWayland; Wayland-only sessions are not supported)"
-    )]
+    #[error("open display failed (need X11 or XWayland; Wayland-only sessions are not supported)")]
     OpenDisplay,
     #[error("query pointer failed")]
     QueryPointer,
@@ -36,12 +34,6 @@ pub enum CaptureError {
     UnsupportedPlatform,
     #[error("{0}")]
     Message(String),
-}
-
-impl From<CaptureError> for String {
-    fn from(e: CaptureError) -> Self {
-        e.to_string()
-    }
 }
 
 #[cfg(test)]

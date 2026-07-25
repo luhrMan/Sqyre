@@ -9,8 +9,8 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 pub use sqyre_ports::{
-    clamp_search_rect, AutomationBackend, CaptureError, DesktopRect, MoveOptions, RgbCapture,
-    ScreenCapturer, WindowFocuser,
+    clamp_search_rect, AutomationBackend, AutomationError, CaptureError, DesktopRect, MoveOptions,
+    RgbCapture, ScreenCapturer, WindowFocuser,
 };
 
 /// Resolve `program~point` / search-area refs using the loaded program catalog.
@@ -159,30 +159,30 @@ impl AutomationBackend for RecordingBackend {
         self.log
             .push(format!("move:{x},{y},smooth={}", opts.smooth));
     }
-    fn click(&mut self, button: &str, down: bool) -> Result<(), String> {
+    fn click(&mut self, button: &str, down: bool) -> Result<(), AutomationError> {
         self.log.push(format!(
             "click:{button}:{}",
             if down { "down" } else { "up" }
         ));
         Ok(())
     }
-    fn scroll(&mut self, up: bool) -> Result<(), String> {
+    fn scroll(&mut self, up: bool) -> Result<(), AutomationError> {
         self.log
             .push(format!("scroll:{}", if up { "up" } else { "down" }));
         Ok(())
     }
-    fn key_down(&mut self, key: &str) -> Result<(), String> {
+    fn key_down(&mut self, key: &str) -> Result<(), AutomationError> {
         self.log.push(format!("keydown:{key}"));
         Ok(())
     }
-    fn key_up(&mut self, key: &str) -> Result<(), String> {
+    fn key_up(&mut self, key: &str) -> Result<(), AutomationError> {
         self.log.push(format!("keyup:{key}"));
         Ok(())
     }
     fn type_char(&mut self, ch: char) {
         self.log.push(format!("type:{ch}"));
     }
-    fn write_clipboard(&mut self, s: &str) -> Result<(), String> {
+    fn write_clipboard(&mut self, s: &str) -> Result<(), AutomationError> {
         self.log.push(format!("clipboard:{s}"));
         Ok(())
     }
@@ -211,10 +211,7 @@ impl RecordingCapturer {
 }
 
 impl ScreenCapturer for RecordingCapturer {
-    fn capture_monitor(
-        &mut self,
-        display_index: i32,
-    ) -> Result<RgbaImage, crate::CaptureError> {
+    fn capture_monitor(&mut self, display_index: i32) -> Result<RgbaImage, crate::CaptureError> {
         self.log.push(format!("monitor:{display_index}"));
         self.take_image()
     }
@@ -318,7 +315,7 @@ pub struct RecordingWindowFocuser {
 }
 
 impl WindowFocuser for RecordingWindowFocuser {
-    fn focus(&self, process_path: &str, window_title: &str) -> Result<(), String> {
+    fn focus(&self, process_path: &str, window_title: &str) -> Result<(), AutomationError> {
         if let Ok(mut g) = self.log.lock() {
             g.push(format!("focus:{process_path}:{window_title}"));
         }
