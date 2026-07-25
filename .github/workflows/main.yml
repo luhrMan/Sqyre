@@ -580,16 +580,23 @@ jobs:
           pattern: "*-zip"
           path: artifacts
 
+      - name: Assemble release files and SHA256SUMS
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          cp artifacts/linux-binary-zip/*.zip release/
+          cp artifacts/linux-appimage-zip/*.zip release/
+          cp artifacts/windows-binary-zip/*.zip release/
+          cp artifacts/wasm-editor-zip/*.zip release/
+          (cd release && sha256sum *.zip > SHA256SUMS)
+          cat release/SHA256SUMS
+
       - name: Create Release
         uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ needs.version.outputs.version }}
           name: Release v${{ needs.version.outputs.version }}
-          files: |
-            artifacts/linux-binary-zip/*.zip
-            artifacts/linux-appimage-zip/*.zip
-            artifacts/windows-binary-zip/*.zip
-            artifacts/wasm-editor-zip/*.zip
+          files: release/*
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
