@@ -212,7 +212,7 @@ fn run_ocr_once(
     exec.log_timing(action_id, "capture", capture_started.elapsed());
     let search_center_x = origin.x + origin.w / 2;
     let search_center_y = origin.y + origin.h / 2;
-    let rgb = img.into_image_buf();
+    let rgb = sqyre_vision::rgb_capture_to_image_buf(img);
     exec.log_image(action_id, "Capture (raw)", &rgb);
     let opts = sqyre_vision::OcrPreprocessOptions::from_action_fields(
         params.grayscale,

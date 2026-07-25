@@ -10,6 +10,5 @@ workspace = true
 
 [dependencies]
 image = { workspace = true }
+rayon = { workspace = true }
 thiserror = { workspace = true }
-sqyre-match = { path = "../sqyre-match" }
-sqyre-vision = { path = "../sqyre-vision" }

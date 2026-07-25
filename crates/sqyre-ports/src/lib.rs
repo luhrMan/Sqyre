@@ -8,7 +8,7 @@ mod capture_error;
 pub use capture_error::CaptureError;
 
 use image::RgbaImage;
-use sqyre_match::ImageBuf;
+use rayon::prelude::*;
 
 /// Mouse move options.
 #[derive(Debug, Clone, Copy, Default)]
@@ -61,18 +61,19 @@ pub struct RgbCapture {
 }
 
 impl RgbCapture {
-    /// Strip alpha from an RGBA capture (delegates to [`sqyre_vision::rgba_to_rgb_buf`]).
+    /// Strip alpha from an RGBA capture.
     pub fn from_rgba(img: &RgbaImage) -> Self {
-        let buf = sqyre_vision::rgba_to_rgb_buf(img);
+        let width = img.width();
+        let height = img.height();
+        let mut data = vec![0u8; width as usize * height as usize * 3];
+        data.par_chunks_exact_mut(3)
+            .zip(img.as_raw().par_chunks_exact(4))
+            .for_each(|(dst, src)| dst.copy_from_slice(&src[..3]));
         Self {
-            width: buf.width as u32,
-            height: buf.height as u32,
-            data: buf.data,
+            width,
+            height,
+            data,
         }
-    }
-
-    pub fn into_image_buf(self) -> ImageBuf {
-        ImageBuf::from_raw(self.width as usize, self.height as usize, 3, self.data)
     }
 }
 
