@@ -275,7 +275,7 @@ impl SqyreApp {
         let mut add_action_picker = AddActionPicker::default();
         add_action_picker.load_from_settings(settings_ui.settings());
 
-        match Database::load_default_with_warnings() {
+        let (db, macros, catalog, load_error) = match Database::load_default_with_warnings() {
             #[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut))]
             Ok((mut db, load_warnings)) => {
                 let mut catalog = db.program_catalog().unwrap_or_default();
@@ -292,124 +292,103 @@ impl SqyreApp {
                 } else {
                     Some(load_warnings.join("\n"))
                 };
-                let mut app = Self {
-                    db,
-                    macros,
-                    catalog,
-                    load_error,
-                    save_error: None,
-                    selected_macro: 0,
-                    selected_actions: Vec::new(),
-                    run,
-                    hotkeys,
-                    continue_wait,
-                    screen_click,
-                    macro_hotkeys,
-                    pending_hotkey_macros,
-                    hotkey_repaint,
-                    hotkey_record: HotkeyRecordUi::default(),
-                    key_record: KeyRecordUi::default(),
-                    macro_meta: MacroMetaUi::default(),
-                    action_log,
-                    runtime_vars: SharedRuntimeVars::new(),
-                    highlighter,
-                    pre_exec_closed: HashSet::new(),
-                    exec_fully_expanded: false,
-                    last_exec_follow: None,
-                    tree_drag_handles: Vec::new(),
-                    tree_drag_mode: TreeDragMode::Idle,
-                    tree_scroll_vel: 0.0,
-                    tree_histories: HashMap::new(),
-                    action_clipboard: None,
-                    logs_window: None,
-                    logs_image_cache: LogsImageCache::default(),
-                    icon_cache: IconCache::new(),
-                    preview_tooltips: PreviewTooltipCache::new(),
-                    tooltip: TooltipState::Hidden,
-                    add_action_picker,
-                    data_editor: DataEditor::default(),
-                    settings_ui,
-                    variables_panel: variables_panel::VariablesPanelUi::default(),
-                    hidden_for_recording: false,
-                    recording_overlay: RecordingOverlay::new(),
-                    macro_overlay: MacroOverlay::new(),
-                    macro_list_open: true,
-                    macro_list_filter: String::new(),
-                    hotkey_tag_filter: None,
-                    tray: tray::SystemTray::default(),
-                    instance_lock: None,
-                    pending_delete_macro: None,
-                    pending_import: wasm_io::new_pending_import(),
-                    #[cfg(not(target_arch = "wasm32"))]
-                    backup_task: None,
-                    #[cfg(not(target_arch = "wasm32"))]
-                    update: update::UpdateManager::default(),
-                };
-                app.refresh_macro_hotkey_bindings();
-                #[cfg(not(target_arch = "wasm32"))]
-                app.maybe_start_update_check();
-                app
+                (db, macros, catalog, load_error)
             }
             Err(e) => {
                 let mut catalog = ProgramCatalog::default();
                 apply_main_monitor_resolution(&mut catalog);
-                #[cfg_attr(target_arch = "wasm32", allow(unused_mut))]
-                let mut app = Self {
-                    db: Database::default(),
-                    macros: Vec::new(),
+                (
+                    Database::default(),
+                    Vec::new(),
                     catalog,
-                    load_error: Some(e.to_string()),
-                    save_error: None,
-                    selected_macro: 0,
-                    selected_actions: Vec::new(),
-                    run,
-                    hotkeys,
-                    continue_wait,
-                    screen_click,
-                    macro_hotkeys,
-                    pending_hotkey_macros,
-                    hotkey_repaint,
-                    hotkey_record: HotkeyRecordUi::default(),
-                    key_record: KeyRecordUi::default(),
-                    macro_meta: MacroMetaUi::default(),
-                    action_log,
-                    runtime_vars: SharedRuntimeVars::new(),
-                    highlighter,
-                    pre_exec_closed: HashSet::new(),
-                    exec_fully_expanded: false,
-                    last_exec_follow: None,
-                    tree_drag_handles: Vec::new(),
-                    tree_drag_mode: TreeDragMode::Idle,
-                    tree_scroll_vel: 0.0,
-                    tree_histories: HashMap::new(),
-                    action_clipboard: None,
-                    logs_window: None,
-                    logs_image_cache: LogsImageCache::default(),
-                    icon_cache: IconCache::new(),
-                    preview_tooltips: PreviewTooltipCache::new(),
-                    tooltip: TooltipState::Hidden,
-                    add_action_picker,
-                    data_editor: DataEditor::default(),
-                    settings_ui,
-                    variables_panel: variables_panel::VariablesPanelUi::default(),
-                    hidden_for_recording: false,
-                    recording_overlay: RecordingOverlay::new(),
-                    macro_overlay: MacroOverlay::new(),
-                    macro_list_open: true,
-                    macro_list_filter: String::new(),
-                    hotkey_tag_filter: None,
-                    tray: tray::SystemTray::default(),
-                    instance_lock: None,
-                    pending_delete_macro: None,
-                    pending_import: wasm_io::new_pending_import(),
-                    #[cfg(not(target_arch = "wasm32"))]
-                    backup_task: None,
-                    #[cfg(not(target_arch = "wasm32"))]
-                    update: update::UpdateManager::default(),
-                };
-                #[cfg(not(target_arch = "wasm32"))]
-                app.maybe_start_update_check();
-                app
+                    Some(e.to_string()),
+                )
+            }
+        };
+
+        let mut app = Self {
+            db,
+            macros,
+            catalog,
+            load_error,
+            save_error: None,
+            selected_macro: 0,
+            selected_actions: Vec::new(),
+            run,
+            hotkeys,
+            continue_wait,
+            screen_click,
+            macro_hotkeys,
+            pending_hotkey_macros,
+            hotkey_repaint,
+            hotkey_record: HotkeyRecordUi::default(),
+            key_record: KeyRecordUi::default(),
+            macro_meta: MacroMetaUi::default(),
+            action_log,
+            runtime_vars: SharedRuntimeVars::new(),
+            highlighter,
+            pre_exec_closed: HashSet::new(),
+            exec_fully_expanded: false,
+            last_exec_follow: None,
+            tree_drag_handles: Vec::new(),
+            tree_drag_mode: TreeDragMode::Idle,
+            tree_scroll_vel: 0.0,
+            tree_histories: HashMap::new(),
+            action_clipboard: None,
+            logs_window: None,
+            logs_image_cache: LogsImageCache::default(),
+            icon_cache: IconCache::new(),
+            preview_tooltips: PreviewTooltipCache::new(),
+            tooltip: TooltipState::Hidden,
+            add_action_picker,
+            data_editor: DataEditor::default(),
+            settings_ui,
+            variables_panel: variables_panel::VariablesPanelUi::default(),
+            hidden_for_recording: false,
+            recording_overlay: RecordingOverlay::new(),
+            macro_overlay: MacroOverlay::new(),
+            macro_list_open: true,
+            macro_list_filter: String::new(),
+            hotkey_tag_filter: None,
+            tray: tray::SystemTray::default(),
+            instance_lock: None,
+            pending_delete_macro: None,
+            pending_import: wasm_io::new_pending_import(),
+            #[cfg(not(target_arch = "wasm32"))]
+            backup_task: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            update: update::UpdateManager::default(),
+        };
+        app.refresh_macro_hotkey_bindings();
+        #[cfg(not(target_arch = "wasm32"))]
+        app.maybe_start_update_check();
+        app
+    }
+
+    /// Sync working macros + catalog into `db` and write `db.yaml`.
+    pub(crate) fn persist_database(&mut self) -> Result<(), String> {
+        self.db.set_programs_from_catalog(&self.catalog);
+        self.db.replace_macros(self.macros.iter().cloned());
+        match self.db.save_default() {
+            Ok(()) => {
+                self.save_error = None;
+                Ok(())
+            }
+            Err(e) => {
+                let msg = e.to_string();
+                self.save_error = Some(msg.clone());
+                Err(msg)
+            }
+        }
+    }
+
+    /// Persist `db` as currently held (caller already updated `db.macros` / programs).
+    pub(crate) fn save_database(&mut self) {
+        match self.db.save_default() {
+            Ok(()) => self.save_error = None,
+            Err(e) => {
+                eprintln!("sqyre: save database: {e}");
+                self.save_error = Some(e.to_string());
             }
         }
     }
