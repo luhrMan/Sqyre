@@ -8,14 +8,14 @@ use sqyre_domain::{format_hex_color, parse_hex_color, ACTION_COLOR_CATEGORIES};
 use sqyre_persist::{
     backups_dir, create_backup, list_backups, open_sqyre_dir, prune_backups, restore_backup,
 };
+use sqyre_persist::{
+    move_dir, set_sqyre_dir_override, sqyre_dir, Database, ProgramCatalog, UserSettings,
+    DEFAULT_UI_FONT_SIZE, DEFAULT_UI_SCALE,
+};
 #[cfg(not(target_arch = "wasm32"))]
 use sqyre_persist::{
     DEFAULT_BACKUP_INTERVAL_HOURS, DEFAULT_BACKUP_MAX_KEEP, MAX_BACKUP_INTERVAL_HOURS,
     MAX_BACKUP_MAX_KEEP, MIN_BACKUP_INTERVAL_HOURS, MIN_BACKUP_MAX_KEEP,
-};
-use sqyre_persist::{
-    move_dir, set_sqyre_dir_override, sqyre_dir, Database, ProgramCatalog, UserSettings,
-    DEFAULT_UI_FONT_SIZE, DEFAULT_UI_SCALE,
 };
 use sqyre_ui_model::{
     action_pastel_color, clear_all_custom_action_colors, clear_custom_action_color,
@@ -322,6 +322,52 @@ impl SettingsUi {
         {
             self.mark_dirty();
         }
+
+        ui.add_space(6.0);
+
+        ui.horizontal(|ui| {
+            ui.label("While safety budget (iterations):");
+            let mut v = self.settings.while_max_iterations;
+            if ui
+                .add(
+                    egui::DragValue::new(&mut v)
+                        .range(
+                            sqyre_persist::MIN_WHILE_MAX_ITERATIONS
+                                ..=sqyre_persist::MAX_WHILE_MAX_ITERATIONS,
+                        )
+                        .speed(1000),
+                )
+                .on_hover_text(
+                    "Used when a While action has max_iterations ≤ 0. Prevents runaway loops.",
+                )
+                .changed()
+            {
+                self.settings.while_max_iterations = v;
+                self.mark_dirty();
+            }
+        });
+
+        ui.horizontal(|ui| {
+            ui.label("Run Macro max nesting depth:");
+            let mut v = self.settings.run_macro_max_depth;
+            if ui
+                .add(
+                    egui::DragValue::new(&mut v)
+                        .range(
+                            sqyre_persist::MIN_RUN_MACRO_MAX_DEPTH
+                                ..=sqyre_persist::MAX_RUN_MACRO_MAX_DEPTH,
+                        )
+                        .speed(1),
+                )
+                .on_hover_text(
+                    "Maximum nested Run Macro calls (including the top-level macro). Cycles are always rejected.",
+                )
+                .changed()
+            {
+                self.settings.run_macro_max_depth = v;
+                self.mark_dirty();
+            }
+        });
 
         ui.add_space(6.0);
 

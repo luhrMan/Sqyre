@@ -34,11 +34,11 @@ pub struct Executor<'a> {
     pub(crate) run_macro_stack: Vec<String>,
 }
 
-/// Hard cap on nested RunMacro depth (including the top-level macro).
-pub(crate) const MAX_RUN_MACRO_DEPTH: usize = 32;
+/// Hard default for nested RunMacro depth when callers omit a custom budget.
+pub const DEFAULT_RUN_MACRO_MAX_DEPTH: usize = 32;
 
-/// When While `max_iterations` is ≤ 0, use this finite budget instead of unbounded.
-pub(crate) const DEFAULT_WHILE_MAX_ITERATIONS: i32 = 100_000;
+/// Hard default for While when `max_iterations` ≤ 0 and callers omit a custom budget.
+pub const DEFAULT_WHILE_MAX_ITERATIONS: i32 = 100_000;
 
 impl<'a> Executor<'a> {
     pub fn new(automation: &'a mut dyn AutomationBackend) -> Self {
@@ -201,6 +201,10 @@ pub struct ExecDeps<'a> {
     pub close_matches_distance: i32,
     /// Release keys/buttons still held when the macro ends (success, stop, or error).
     pub release_held_inputs: bool,
+    /// Safety budget for While actions with `max_iterations` ≤ 0.
+    pub while_max_iterations: i32,
+    /// Max nested RunMacro depth (including the top-level macro).
+    pub run_macro_max_depth: usize,
     pub resolver: Option<&'a dyn CoordinateResolver>,
     pub icons: Option<&'a dyn IconStore>,
     pub macros: Option<&'a dyn MacroLookup>,
@@ -222,6 +226,8 @@ impl<'a> ExecDeps<'a> {
             capturer: None,
             close_matches_distance: 0,
             release_held_inputs: true,
+            while_max_iterations: DEFAULT_WHILE_MAX_ITERATIONS,
+            run_macro_max_depth: DEFAULT_RUN_MACRO_MAX_DEPTH,
             resolver: None,
             icons: None,
             macros: None,
@@ -784,6 +790,8 @@ mod tests {
                 capturer: Some(&mut capturer),
                 close_matches_distance: 0,
                 release_held_inputs: true,
+                while_max_iterations: DEFAULT_WHILE_MAX_ITERATIONS,
+                run_macro_max_depth: DEFAULT_RUN_MACRO_MAX_DEPTH,
                 resolver: None,
                 icons: None,
                 macros: None,
@@ -829,6 +837,8 @@ mod tests {
                 capturer: None,
                 close_matches_distance: 0,
                 release_held_inputs: true,
+                while_max_iterations: DEFAULT_WHILE_MAX_ITERATIONS,
+                run_macro_max_depth: DEFAULT_RUN_MACRO_MAX_DEPTH,
                 resolver: None,
                 icons: None,
                 macros: None,
@@ -874,6 +884,8 @@ mod tests {
                 capturer: None,
                 close_matches_distance: 0,
                 release_held_inputs: true,
+                while_max_iterations: DEFAULT_WHILE_MAX_ITERATIONS,
+                run_macro_max_depth: DEFAULT_RUN_MACRO_MAX_DEPTH,
                 resolver: None,
                 icons: None,
                 macros: None,
@@ -1010,6 +1022,8 @@ mod tests {
                 capturer: None,
                 close_matches_distance: 0,
                 release_held_inputs: false,
+                while_max_iterations: DEFAULT_WHILE_MAX_ITERATIONS,
+                run_macro_max_depth: DEFAULT_RUN_MACRO_MAX_DEPTH,
                 resolver: None,
                 icons: None,
                 macros: None,
@@ -1068,6 +1082,8 @@ mod tests {
                 capturer: None,
                 close_matches_distance: 0,
                 release_held_inputs: true,
+                while_max_iterations: DEFAULT_WHILE_MAX_ITERATIONS,
+                run_macro_max_depth: DEFAULT_RUN_MACRO_MAX_DEPTH,
                 resolver: Some(&resolver),
                 icons: None,
                 macros: None,
@@ -1154,6 +1170,8 @@ mod tests {
                 capturer: None,
                 close_matches_distance: 0,
                 release_held_inputs: true,
+                while_max_iterations: DEFAULT_WHILE_MAX_ITERATIONS,
+                run_macro_max_depth: DEFAULT_RUN_MACRO_MAX_DEPTH,
                 resolver: None,
                 icons: None,
                 macros: None,
@@ -1476,6 +1494,8 @@ mod tests {
                 capturer: None,
                 close_matches_distance: 0,
                 release_held_inputs: true,
+                while_max_iterations: DEFAULT_WHILE_MAX_ITERATIONS,
+                run_macro_max_depth: DEFAULT_RUN_MACRO_MAX_DEPTH,
                 resolver: None,
                 icons: None,
                 macros: None,
