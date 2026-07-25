@@ -24,7 +24,7 @@ pub(crate) fn execute_while(
     macro_: &mut Macro,
 ) -> Result<()> {
     let cap = if max_iterations <= 0 {
-        i32::MAX
+        crate::run::DEFAULT_WHILE_MAX_ITERATIONS
     } else {
         max_iterations
     };
@@ -47,10 +47,17 @@ pub(crate) fn execute_while(
             Ok(()) => {}
         }
     }
-    if i >= cap && max_iterations > 0 {
+    if i >= cap {
         exec.log(
             action_id,
-            format!("While {name:?}: hit max iterations ({max_iterations})"),
+            format!(
+                "While {name:?}: hit max iterations ({cap}{})",
+                if max_iterations <= 0 {
+                    "; max_iterations≤0 uses default cap"
+                } else {
+                    ""
+                }
+            ),
         );
     }
     Ok(())
