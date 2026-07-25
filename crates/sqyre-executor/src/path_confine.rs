@@ -7,9 +7,7 @@ use std::path::{Component, Path, PathBuf};
 pub(crate) fn resolve_under_dir(base: &Path, relative: &str) -> Result<PathBuf> {
     let rel = Path::new(relative);
     if rel.as_os_str().is_empty() {
-        return Err(ExecError::Message(
-            "file path cannot be empty".into(),
-        ));
+        return Err(ExecError::Message("file path cannot be empty".into()));
     }
     if rel.is_absolute() {
         return Err(ExecError::Message(format!(

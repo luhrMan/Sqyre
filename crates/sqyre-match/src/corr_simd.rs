@@ -230,7 +230,12 @@ mod tests {
     use super::*;
     use crate::image::ImageBuf;
 
-    fn naive_corr_row(planar: &PlanarF32, tmpl: &SparseTemplate, oy: usize, out_w: usize) -> Vec<f32> {
+    fn naive_corr_row(
+        planar: &PlanarF32,
+        tmpl: &SparseTemplate,
+        oy: usize,
+        out_w: usize,
+    ) -> Vec<f32> {
         let mut numer = vec![0.0_f32; out_w];
         let search_w = planar.width;
         let ch = planar.channels;
@@ -243,8 +248,8 @@ mod tests {
             for c in 0..ch {
                 let tv = tmpl.vals[t_base + c];
                 let start = c * plane + row_y * search_w + tx;
-                for ox in 0..out_w {
-                    numer[ox] += tv * planar.data[start + ox];
+                for (ox, n) in numer.iter_mut().enumerate() {
+                    *n += tv * planar.data[start + ox];
                 }
             }
         }
@@ -267,9 +272,9 @@ mod tests {
             let row_y = oy + ty;
             for c in 0..ch {
                 let start = c * plane + row_y * search_w + tx;
-                for ox in 0..out_w {
+                for (ox, acc) in sum_sq.iter_mut().enumerate() {
                     let s = planar.data[start + ox];
-                    sum_sq[ox] += s * s;
+                    *acc += s * s;
                 }
             }
         }
