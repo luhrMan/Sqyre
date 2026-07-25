@@ -231,6 +231,12 @@ fn safe_extract_path(dest: &Path, name: &str) -> Result<PathBuf> {
 }
 
 /// Extract a backup zip into the current data directory.
+///
+/// Staging + snapshot commit: the zip is fully extracted to a temporary staging
+/// directory first; on success, the live data tree (except `backups/` and restore
+/// scratch dirs) is moved aside and replaced. On any failure before commit, the
+/// live directory is left unchanged. After a successful commit the previous
+/// snapshot is deleted.
 pub fn restore_backup(zip_path: &Path) -> Result<()> {
     if !zip_path.is_file() {
         return Err(BackupError::Message(format!(
@@ -241,24 +247,111 @@ pub fn restore_backup(zip_path: &Path) -> Result<()> {
     let dest = sqyre_dir();
     fs::create_dir_all(&dest)?;
 
-    let file = File::open(zip_path)?;
-    let mut archive = ZipArchive::new(file)?;
-    for i in 0..archive.len() {
-        let mut entry = archive.by_index(i)?;
-        let name = entry.name().to_string();
-        // Skip directory-only entries (trailing slash).
-        if name.ends_with('/') {
-            let dir = safe_extract_path(&dest, name.trim_end_matches('/'))?;
-            fs::create_dir_all(dir)?;
+    let stamp = format_timestamp(unix_now());
+    let staging = dest.join(format!(".restore-staging-{stamp}"));
+    let prev = dest.join(format!(".restore-prev-{stamp}"));
+    // Clean leftovers from interrupted runs.
+    let _ = fs::remove_dir_all(&staging);
+    let _ = fs::remove_dir_all(&prev);
+
+    let extract = || -> Result<()> {
+        fs::create_dir_all(&staging)?;
+        let file = File::open(zip_path)?;
+        let mut archive = ZipArchive::new(file)?;
+        for i in 0..archive.len() {
+            let mut entry = archive.by_index(i)?;
+            let name = entry.name().to_string();
+            if name.ends_with('/') {
+                let dir = safe_extract_path(&staging, name.trim_end_matches('/'))?;
+                fs::create_dir_all(dir)?;
+                continue;
+            }
+            let out_path = safe_extract_path(&staging, &name)?;
+            if let Some(parent) = out_path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            let mut out = File::create(&out_path)?;
+            io::copy(&mut entry, &mut out)?;
+        }
+        // Basic integrity: restored archives should include db.yaml.
+        if !staging.join("db.yaml").is_file() {
+            return Err(BackupError::Message(
+                "backup is missing db.yaml (refusing restore)".into(),
+            ));
+        }
+        Ok(())
+    };
+
+    if let Err(e) = extract() {
+        let _ = fs::remove_dir_all(&staging);
+        return Err(e);
+    }
+
+    // Move live entries aside (except backups/ and restore scratch).
+    fs::create_dir_all(&prev)?;
+    for entry in fs::read_dir(&dest)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+        if name_str == BACKUPS_SUBDIR
+            || name_str.starts_with(".restore-staging-")
+            || name_str.starts_with(".restore-prev-")
+        {
             continue;
         }
-        let out_path = safe_extract_path(&dest, &name)?;
-        if let Some(parent) = out_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        let mut out = File::create(&out_path)?;
-        io::copy(&mut entry, &mut out)?;
+        let from = entry.path();
+        let to = prev.join(&name);
+        fs::rename(&from, &to).map_err(|e| {
+            // Best-effort rollback of partial move.
+            let _ = rollback_prev(&prev, &dest);
+            let _ = fs::remove_dir_all(&staging);
+            BackupError::Message(format!(
+                "failed to snapshot {} before restore: {e}",
+                from.display()
+            ))
+        })?;
     }
+
+    // Commit staging into live dir.
+    for entry in fs::read_dir(&staging)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        let from = entry.path();
+        let to = dest.join(&name);
+        if let Err(e) = fs::rename(&from, &to) {
+            let _ = rollback_prev(&prev, &dest);
+            let _ = fs::remove_dir_all(&staging);
+            return Err(BackupError::Message(format!(
+                "failed to commit restore entry {}: {e}",
+                name.to_string_lossy()
+            )));
+        }
+    }
+
+    let _ = fs::remove_dir_all(&staging);
+    let _ = fs::remove_dir_all(&prev);
+    Ok(())
+}
+
+fn rollback_prev(prev: &Path, dest: &Path) -> Result<()> {
+    if !prev.exists() {
+        return Ok(());
+    }
+    for entry in fs::read_dir(prev)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        let from = entry.path();
+        let to = dest.join(&name);
+        if to.exists() {
+            if to.is_dir() {
+                let _ = fs::remove_dir_all(&to);
+            } else {
+                let _ = fs::remove_file(&to);
+            }
+        }
+        fs::rename(&from, &to)?;
+    }
+    let _ = fs::remove_dir_all(prev);
     Ok(())
 }
 
@@ -315,6 +408,36 @@ mod tests {
                 .any(|n| n == "crash.log"));
             Ok(())
         })
+    }
+
+    #[test]
+    fn restore_rejects_archive_without_db_yaml_and_keeps_live_data() -> Result<()> {
+        let tmp = tempfile::tempdir().map_err(BackupError::from)?;
+        let data = tmp.path().join(".sqyre");
+        fs::create_dir_all(&data)?;
+        fs::write(data.join("db.yaml"), "macros: {}\nprograms: {}\n")?;
+        let original = fs::read_to_string(data.join("db.yaml")).unwrap();
+
+        let bad_zip = tmp.path().join("bad.zip");
+        {
+            let file = File::create(&bad_zip)?;
+            let mut zip = ZipWriter::new(file);
+            let opts = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+            zip.start_file("settings.yaml", opts)?;
+            zip.write_all(b"backup_enabled: false\n")?;
+            zip.finish()?;
+        }
+
+        crate::with_sqyre_dir_override(data.clone(), || -> Result<()> {
+            let err = restore_backup(&bad_zip).unwrap_err();
+            assert!(
+                err.to_string().contains("missing db.yaml"),
+                "got {err}"
+            );
+            assert_eq!(fs::read_to_string(data.join("db.yaml")).unwrap(), original);
+            Ok(())
+        })?;
+        Ok(())
     }
 
     #[test]
