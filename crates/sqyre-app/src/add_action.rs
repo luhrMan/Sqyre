@@ -206,6 +206,9 @@ impl AddActionPicker {
                     .auto_shrink([false, false])
                     .max_height(list_h)
                     .show(ui, |ui| {
+                        // Horizontal layout assigns leftover viewport width to later
+                        // columns; without Extend they wrap letter-by-letter when shrunk.
+                        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
                         ui.label(
                             "Pick an action type — hover ~1s to preview defaults, right-click to edit",
                         );

@@ -217,8 +217,12 @@ pub const DE_ATLAS_MEMBERS: &str =
 pub const DE_MASK_SHAPE: &str = "Rectangle or circle geometry for the mask.";
 pub const DE_OVERLAY_LABEL: &str = "Text shown on the overlay button.";
 pub const DE_OVERLAY_MACRO: &str = "Macro launched when the overlay button is clicked.";
-pub const DE_OVERLAY_X: &str = "Button X on the overlay (pixels).";
-pub const DE_OVERLAY_Y: &str = "Button Y on the overlay (pixels).";
+pub const DE_OVERLAY_ENABLED: &str =
+    "When off, this button is hidden from the screen (still editable here).";
+pub const DE_OVERLAY_POINT: &str =
+    "Optional catalog point for button location. When set, X/Y are used only if the point cannot be resolved.";
+pub const DE_OVERLAY_X: &str = "Button X on the desktop (pixels). Ignored when a point is set.";
+pub const DE_OVERLAY_Y: &str = "Button Y on the desktop (pixels). Ignored when a point is set.";
 pub const DE_OVERLAY_SIZE: &str = "Button size in pixels.";
 pub const DE_OVERLAY_RADIUS: &str = "Corner roundness of the button.";
 pub const DE_OVERLAY_BORDER: &str = "Border thickness of the button.";
@@ -237,7 +241,7 @@ pub const VAR_TAB_BUILTINS: &str = "Names set automatically by the runtime or ce
 
 pub const META_NAME: &str = "Display name of this macro (must be unique).";
 pub const META_TAGS: &str =
-    "Labels that group macros in the list. Selecting a tag header enables hotkeys only for that group.";
+    "Labels that group macros in the list. Select a tag header to enable hotkeys for that group; none are active until a header is selected.";
 pub const META_HOTKEY_PRESS: &str = "Fire when the hotkey is pressed.";
 pub const META_HOTKEY_RELEASE: &str = "Fire when the hotkey is released.";
 pub const META_HOTKEY_CLEAR: &str = "Remove the global hotkey from this macro.";

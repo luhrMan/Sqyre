@@ -521,6 +521,38 @@ pub fn paint_even_icon_grid(
     ui.spacing_mut().item_spacing = old_spacing;
 }
 
+/// Persistent collapse id for a program group in [`paint_items_icon_grid`].
+pub fn items_icon_grid_collapse_id(program: &str) -> egui::Id {
+    egui::Id::new(("items_icon_grid", program))
+}
+
+/// Set open/closed for every program group in the items icon grid.
+pub fn set_items_icon_grid_openness<'a>(
+    ctx: &egui::Context,
+    programs: impl IntoIterator<Item = &'a str>,
+    open: bool,
+) {
+    set_collapsing_openness(
+        ctx,
+        programs.into_iter().map(items_icon_grid_collapse_id),
+        open,
+    );
+}
+
+/// Store open/closed for each collapsing id (expand/collapse-all).
+pub fn set_collapsing_openness(
+    ctx: &egui::Context,
+    ids: impl IntoIterator<Item = egui::Id>,
+    open: bool,
+) {
+    for id in ids {
+        let mut state =
+            egui::collapsing_header::CollapsingState::load_with_default_open(ctx, id, true);
+        state.set_open(open);
+        state.store(ctx);
+    }
+}
+
 /// Program accordion of item icon grids. Click toggles membership in `selected` when
 /// `multi` is true; otherwise replaces selection with the clicked target.
 /// When `multi`, each program header includes an All control over filtered targets
@@ -592,7 +624,8 @@ pub fn paint_items_icon_grid(
             "All"
         };
 
-        let id = ui.make_persistent_id(("items_icon_grid", prog.as_str()));
+        // Absolute id so expand/collapse-all (outside this ui stack) can target the same state.
+        let id = items_icon_grid_collapse_id(prog);
         egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, true)
             .show_header(ui, |ui| {
                 let prog_selected = selected_program == Some(prog.as_str());
@@ -603,6 +636,7 @@ pub fn paint_items_icon_grid(
                     prog,
                     crate::icon_cache::ProgramLabelStyle::Header {
                         selected: Some(prog_selected),
+                        child_count: pdata.items.len(),
                     },
                 )
                 .clicked()
@@ -731,7 +765,8 @@ pub fn picker_searchable_scroll(
 ) -> bool {
     let mut search_changed = false;
     ui.horizontal(|ui| {
-        ui.label(egui::RichText::new("Search").size(HEADER_SIZE));
+        ui.label(egui::RichText::new(egui_phosphor::regular::MAGNIFYING_GLASS).size(HEADER_SIZE))
+            .on_hover_text("Search");
         if ui.text_edit_singleline(search).changed() {
             search_changed = true;
         }
@@ -892,7 +927,10 @@ pub fn paint_coord_ref_list(
                     catalog,
                     icons,
                     prog,
-                    crate::icon_cache::ProgramLabelStyle::Header { selected: None },
+                    crate::icon_cache::ProgramLabelStyle::Header {
+                        selected: None,
+                        child_count: rows.len(),
+                    },
                 );
                 for (_, row) in rows {
                     match row {
@@ -1210,7 +1248,11 @@ pub fn show_active_picker(
                     } else {
                         // Search chrome only — list owns its own ScrollArea (program groups).
                         ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new("Search").size(HEADER_SIZE));
+                            ui.label(
+                                egui::RichText::new(egui_phosphor::regular::MAGNIFYING_GLASS)
+                                    .size(HEADER_SIZE),
+                            )
+                            .on_hover_text("Search");
                             if ui.text_edit_singleline(search).changed() {
                                 *scroll_to_selection = true;
                             }

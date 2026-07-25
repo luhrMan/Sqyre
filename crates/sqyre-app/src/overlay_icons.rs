@@ -246,7 +246,8 @@ pub fn show_icon_picker_grid(
     search: &mut String,
 ) -> Option<&'static str> {
     ui.horizontal(|ui| {
-        ui.label("Search");
+        ui.label(egui_phosphor::regular::MAGNIFYING_GLASS)
+            .on_hover_text("Search");
         ui.add(
             egui::TextEdit::singleline(search)
                 .desired_width(220.0)

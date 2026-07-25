@@ -8,10 +8,10 @@ use sqyre_domain::{Action, ActionId, Macro};
 use sqyre_hotkeys::{HotkeyTrigger, MacroHotkeyBinding};
 
 /// Whether `m` should receive hotkeys under `filter`.
-/// `None` = all macros; `Some("")` = untagged only; otherwise macros that include the tag.
+/// `None` = none (no tag header selected); `Some("")` = untagged only; otherwise macros that include the tag.
 pub(crate) fn macro_matches_hotkey_tag(m: &Macro, filter: Option<&str>) -> bool {
     match filter {
-        None => true,
+        None => false,
         Some("") => m.tags.is_empty(),
         Some(tag) => m.tags.iter().any(|t| t == tag),
     }
@@ -76,7 +76,7 @@ impl SqyreApp {
         }
     }
 
-    /// Toggle which tag's macros receive hotkeys. Clicking the active tag clears the filter.
+    /// Toggle which tag's macros receive hotkeys. Clicking the active tag clears the filter (no hotkeys).
     pub(crate) fn toggle_hotkey_tag_filter(&mut self, tag: String) {
         if self.hotkey_tag_filter.as_ref() == Some(&tag) {
             self.hotkey_tag_filter = None;
@@ -505,8 +505,8 @@ mod tests {
     fn hotkey_tag_filter_matches() {
         let tagged = m(&["combat", "farm"]);
         let bare = m(&[]);
-        assert!(macro_matches_hotkey_tag(&tagged, None));
-        assert!(macro_matches_hotkey_tag(&bare, None));
+        assert!(!macro_matches_hotkey_tag(&tagged, None));
+        assert!(!macro_matches_hotkey_tag(&bare, None));
         assert!(macro_matches_hotkey_tag(&tagged, Some("combat")));
         assert!(!macro_matches_hotkey_tag(&tagged, Some("other")));
         assert!(!macro_matches_hotkey_tag(&bare, Some("combat")));
