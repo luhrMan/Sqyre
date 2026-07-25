@@ -63,7 +63,7 @@ use action_logs_ui::LogsImageCache;
 use action_tooltip::TooltipState;
 use add_action::AddActionPicker;
 use app_backends::RunState;
-use catalog::apply_main_monitor_resolution;
+use catalog::{apply_main_monitor_resolution, ensure_general_program_seeded, prepare_catalog};
 use data_editor::DataEditor;
 use eframe::egui;
 use hotkey_record::HotkeyRecordUi;
@@ -279,14 +279,15 @@ impl SqyreApp {
             #[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut))]
             Ok(mut db) => {
                 let mut catalog = db.program_catalog().unwrap_or_default();
-                apply_main_monitor_resolution(&mut catalog);
                 let mut macros: Vec<_> = db.macros.values().cloned().collect();
                 macros.sort_by(|a, b| a.name.cmp(&b.name));
                 #[cfg(target_arch = "wasm32")]
                 {
+                    apply_main_monitor_resolution(&mut catalog);
                     let _ =
                         wasm_demo_seed::ensure_demo_if_empty(&mut macros, &mut catalog, &mut db);
                 }
+                let _ = prepare_catalog(&mut catalog, &mut db);
                 let mut app = Self {
                     db,
                     macros,
@@ -348,6 +349,7 @@ impl SqyreApp {
             Err(e) => {
                 let mut catalog = ProgramCatalog::default();
                 apply_main_monitor_resolution(&mut catalog);
+                let _ = ensure_general_program_seeded(&mut catalog);
                 #[cfg_attr(target_arch = "wasm32", allow(unused_mut))]
                 let mut app = Self {
                     db: Database::default(),

@@ -1,6 +1,6 @@
 use sqyre_domain::{CoordinateRef, Macro};
 use sqyre_executor::{CoordinateResolver, IconStore, ItemMeta, MacroLookup};
-use sqyre_persist::ProgramCatalog;
+use sqyre_persist::{ensure_general_program, Database, MonitorRect, ProgramCatalog};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -14,6 +14,56 @@ pub fn apply_main_monitor_resolution(catalog: &mut ProgramCatalog) {
     if let Some(scale) = sqyre_capture::main_monitor_scale() {
         catalog.set_runtime_scale(scale);
     }
+}
+
+/// Live monitor rects for seeding, or a single display from the catalog resolution key.
+pub fn seed_monitor_rects(catalog: &ProgramCatalog) -> Vec<MonitorRect> {
+    if let Ok(capturer) = sqyre_capture::shared_capturer() {
+        if let Ok(rects) = capturer.monitor_rects_ref() {
+            let usable: Vec<MonitorRect> = rects
+                .into_iter()
+                .filter(|r| r.w > 1 && r.h > 1)
+                .map(|r| (r.x, r.y, r.w, r.h))
+                .collect();
+            if !usable.is_empty() {
+                return usable;
+            }
+        }
+    }
+    let (w, h) = parse_resolution_wh(catalog.resolution_key()).unwrap_or((1920, 1080));
+    vec![(0, 0, w, h)]
+}
+
+fn parse_resolution_wh(key: &str) -> Option<(i32, i32)> {
+    let (w, h) = key.split_once('x')?;
+    Some((w.parse().ok()?, h.parse().ok()?))
+}
+
+/// Create/update the seeded `General` program when missing entries. Returns `true` if changed.
+pub fn ensure_general_program_seeded(catalog: &mut ProgramCatalog) -> bool {
+    let monitors = seed_monitor_rects(catalog);
+    match ensure_general_program(catalog, &monitors) {
+        Ok(created) => created,
+        Err(e) => {
+            eprintln!("sqyre: failed to seed General program: {e}");
+            false
+        }
+    }
+}
+
+/// Apply primary-monitor resolution, then seed `General` if needed and persist.
+/// Returns `true` when the catalog was written to `db`.
+pub fn prepare_catalog(catalog: &mut ProgramCatalog, db: &mut Database) -> bool {
+    apply_main_monitor_resolution(catalog);
+    if !ensure_general_program_seeded(catalog) {
+        return false;
+    }
+    db.set_programs_from_catalog(catalog);
+    if let Err(e) = db.save_default() {
+        eprintln!("sqyre: failed to save seeded General program: {e}");
+        return false;
+    }
+    true
 }
 
 pub struct CatalogResolver<'a>(pub &'a ProgramCatalog);

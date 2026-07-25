@@ -489,7 +489,9 @@ impl FormState for OverlayForm {
         };
         ed.form_name.trim() != btn.label.trim()
             || ed.form_overlay_macro.trim() != btn.macro_name.trim()
+            || ed.form_overlay_enabled != btn.enabled
             || ed.form_overlay_icon != btn.icon
+            || ed.form_overlay_point.trim() != btn.point.trim()
             || (ed.form_overlay_x - btn.x).abs() > f32::EPSILON
             || (ed.form_overlay_y - btn.y).abs() > f32::EPSILON
             || (ed.form_overlay_size - btn.size).abs() > f32::EPSILON
