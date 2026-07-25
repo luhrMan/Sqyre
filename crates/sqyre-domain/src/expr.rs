@@ -7,6 +7,9 @@ use std::f64::consts::{E, PI};
 
 type Result<T> = std::result::Result<T, String>;
 
+/// Max recursive-descent depth for parentheses, unary chains, `^`, and function calls.
+pub const MAX_EXPR_RECURSION_DEPTH: usize = 64;
+
 /// Evaluate a math expression after `${var}` substitution.
 /// Supports `+ - * / ^`, unary `+/-`, parentheses, functions (`sqrt`, `abs`,
 /// `round`, `floor`, `ceil`, `trunc`, `sin`, `cos`, `tan`, `ln`), and `~pi` / `~e`.
@@ -47,6 +50,7 @@ pub fn numeric_to_scalar(f: f64) -> ScalarValue {
 struct Parser<'a> {
     bytes: &'a [u8],
     pos: usize,
+    depth: usize,
 }
 
 impl<'a> Parser<'a> {
@@ -54,7 +58,20 @@ impl<'a> Parser<'a> {
         Self {
             bytes: s.as_bytes(),
             pos: 0,
+            depth: 0,
         }
+    }
+
+    fn recurse<T>(&mut self, f: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
+        if self.depth >= MAX_EXPR_RECURSION_DEPTH {
+            return Err(format!(
+                "expression too deeply nested (max {MAX_EXPR_RECURSION_DEPTH})"
+            ));
+        }
+        self.depth += 1;
+        let out = f(self);
+        self.depth -= 1;
+        out
     }
 
     fn skip_ws(&mut self) {
@@ -130,7 +147,7 @@ impl<'a> Parser<'a> {
         let base = self.parse_unary()?;
         if self.peek() == Some(b'^') {
             self.bump();
-            let exp = self.parse_power()?;
+            let exp = self.recurse(|p| p.parse_power())?;
             Ok(base.powf(exp))
         } else {
             Ok(base)
@@ -142,11 +159,11 @@ impl<'a> Parser<'a> {
         match self.peek() {
             Some(b'+') => {
                 self.bump();
-                self.parse_unary()
+                self.recurse(|p| p.parse_unary())
             }
             Some(b'-') => {
                 self.bump();
-                Ok(-self.parse_unary()?)
+                Ok(-self.recurse(|p| p.parse_unary())?)
             }
             _ => self.parse_primary(),
         }
@@ -157,7 +174,7 @@ impl<'a> Parser<'a> {
         match self.peek() {
             Some(b'(') => {
                 self.bump();
-                let v = self.parse_expr()?;
+                let v = self.recurse(|p| p.parse_expr())?;
                 self.expect(b')')?;
                 Ok(v)
             }
@@ -216,7 +233,7 @@ impl<'a> Parser<'a> {
             ));
         }
         self.bump(); // '('
-        let arg = self.parse_expr()?;
+        let arg = self.recurse(|p| p.parse_expr())?;
         self.expect(b')')?;
         apply_fn(&name, arg)
     }
@@ -278,5 +295,41 @@ mod tests {
     fn numeric_to_scalar_prefers_int() {
         assert_eq!(numeric_to_scalar(3.0), ScalarValue::Int(3));
         assert_eq!(numeric_to_scalar(3.5), ScalarValue::Float(3.5));
+    }
+
+    fn nested_parens(depth: usize) -> String {
+        format!("{}1{}", "(".repeat(depth), ")".repeat(depth))
+    }
+
+    fn nested_sqrt(depth: usize) -> String {
+        let mut s = "4".into();
+        for _ in 0..depth {
+            s = format!("sqrt({s})");
+        }
+        s
+    }
+
+    #[test]
+    fn rejects_deeply_nested_parens() {
+        let macro_ = Macro::new("t", 0, vec![]);
+        assert!(evaluate_expression(&nested_parens(MAX_EXPR_RECURSION_DEPTH - 1), &macro_).is_ok());
+        let err =
+            evaluate_expression(&nested_parens(MAX_EXPR_RECURSION_DEPTH + 1), &macro_).unwrap_err();
+        assert!(
+            err.contains("too deeply nested"),
+            "expected depth error, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn rejects_deeply_nested_function_calls() {
+        let macro_ = Macro::new("t", 0, vec![]);
+        assert!(evaluate_expression(&nested_sqrt(MAX_EXPR_RECURSION_DEPTH - 1), &macro_).is_ok());
+        let err =
+            evaluate_expression(&nested_sqrt(MAX_EXPR_RECURSION_DEPTH + 1), &macro_).unwrap_err();
+        assert!(
+            err.contains("too deeply nested"),
+            "expected depth error, got {err:?}"
+        );
     }
 }
