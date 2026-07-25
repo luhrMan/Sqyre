@@ -7,17 +7,26 @@
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::path::{Component, Path, PathBuf};
+use std::process;
+use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use thiserror::Error;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
-use crate::sqyre_dir;
+use crate::{sqyre_dir, Database};
 
 const BACKUPS_SUBDIR: &str = "backups";
 const BACKUP_PREFIX: &str = "sqyre-backup-";
 const BACKUP_SUFFIX: &str = ".zip";
+
+/// Max on-disk size of a backup `.zip` before restore refuses to open it.
+const MAX_ARCHIVE_FILE_BYTES: usize = 256 * 1024 * 1024;
+/// Max number of zip entries (files + directory markers) in one archive.
+const MAX_ARCHIVE_ENTRIES: usize = 10_000;
+/// Max total uncompressed payload when creating or extracting a backup.
+const MAX_EXPANDED_BYTES: usize = 512 * 1024 * 1024;
 
 /// Files / dirs under the data directory that are never included in a backup.
 const SKIP_NAMES: &[&str] = &[
@@ -84,6 +93,66 @@ fn should_skip_entry(name: &str) -> bool {
     SKIP_NAMES.contains(&name)
 }
 
+fn backup_ops_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
+/// Unique suffix for restore scratch directories (`pid` + subsecond time).
+fn unique_scratch_suffix() -> String {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    format!("{}-{nanos}", process::id())
+}
+
+fn reject_if_archive_too_large(bytes: u64) -> Result<()> {
+    if bytes as usize > MAX_ARCHIVE_FILE_BYTES {
+        return Err(BackupError::Message(format!(
+            "backup archive too large ({} bytes; max {MAX_ARCHIVE_FILE_BYTES})",
+            bytes
+        )));
+    }
+    Ok(())
+}
+
+fn reject_if_too_many_entries(count: usize) -> Result<()> {
+    if count > MAX_ARCHIVE_ENTRIES {
+        return Err(BackupError::Message(format!(
+            "backup has too many entries ({count}; max {MAX_ARCHIVE_ENTRIES})"
+        )));
+    }
+    Ok(())
+}
+
+fn reject_if_expanded_too_large(total: usize) -> Result<()> {
+    if total > MAX_EXPANDED_BYTES {
+        return Err(BackupError::Message(format!(
+            "backup expanded size exceeds limit ({total} bytes; max {MAX_EXPANDED_BYTES})"
+        )));
+    }
+    Ok(())
+}
+
+fn copy_with_expanded_limit<R: Read, W: Write>(
+    reader: &mut R,
+    writer: &mut W,
+    expanded_total: &mut usize,
+) -> Result<()> {
+    let mut buf = [0u8; 8192];
+    loop {
+        let n = reader.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        *expanded_total = expanded_total.saturating_add(n);
+        reject_if_expanded_too_large(*expanded_total)?;
+        writer.write_all(&buf[..n])?;
+    }
+    Ok(())
+}
+
 /// Walk `root`, collecting relative file paths to include in the archive.
 fn collect_files(root: &Path) -> Result<Vec<PathBuf>> {
     let mut out = Vec::new();
@@ -98,10 +167,13 @@ fn collect_files(root: &Path) -> Result<Vec<PathBuf>> {
             if dir == root && should_skip_entry(&name) {
                 continue;
             }
-            let meta = entry.metadata()?;
-            if meta.is_dir() {
+            let file_type = entry.file_type()?;
+            if file_type.is_symlink() {
+                continue;
+            }
+            if file_type.is_dir() {
                 stack.push(path);
-            } else if meta.is_file() {
+            } else if file_type.is_file() {
                 let rel = path
                     .strip_prefix(root)
                     .map_err(|e| BackupError::Message(e.to_string()))?
@@ -111,6 +183,13 @@ fn collect_files(root: &Path) -> Result<Vec<PathBuf>> {
         }
     }
     out.sort();
+    reject_if_too_many_entries(out.len())?;
+    let mut expanded_total = 0usize;
+    for rel in &out {
+        let len = fs::metadata(root.join(rel))?.len() as usize;
+        expanded_total = expanded_total.saturating_add(len);
+        reject_if_expanded_too_large(expanded_total)?;
+    }
     Ok(out)
 }
 
@@ -118,6 +197,9 @@ fn collect_files(root: &Path) -> Result<Vec<PathBuf>> {
 ///
 /// Skips `backups/`, lock, and diagnostic logs. Builds via temp file + rename.
 pub fn create_backup() -> Result<PathBuf> {
+    let _guard = backup_ops_lock()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     let root = sqyre_dir();
     if !root.exists() {
         return Err(BackupError::Message(format!(
@@ -141,11 +223,14 @@ pub fn create_backup() -> Result<PathBuf> {
         let opts = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
 
         let mut buf = Vec::new();
+        let mut expanded_total = 0usize;
         for rel in &files {
             let abs = root.join(rel);
             let mut src = File::open(&abs)?;
             buf.clear();
             src.read_to_end(&mut buf)?;
+            expanded_total = expanded_total.saturating_add(buf.len());
+            reject_if_expanded_too_large(expanded_total)?;
             // Zip paths use forward slashes.
             let name = rel
                 .components()
@@ -238,18 +323,22 @@ fn safe_extract_path(dest: &Path, name: &str) -> Result<PathBuf> {
 /// live directory is left unchanged. After a successful commit the previous
 /// snapshot is deleted.
 pub fn restore_backup(zip_path: &Path) -> Result<()> {
+    let _guard = backup_ops_lock()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     if !zip_path.is_file() {
         return Err(BackupError::Message(format!(
             "backup file not found: {}",
             zip_path.display()
         )));
     }
+    reject_if_archive_too_large(fs::metadata(zip_path)?.len())?;
     let dest = sqyre_dir();
     fs::create_dir_all(&dest)?;
 
-    let stamp = format_timestamp(unix_now());
-    let staging = dest.join(format!(".restore-staging-{stamp}"));
-    let prev = dest.join(format!(".restore-prev-{stamp}"));
+    let tag = unique_scratch_suffix();
+    let staging = dest.join(format!(".restore-staging-{tag}"));
+    let prev = dest.join(format!(".restore-prev-{tag}"));
     // Clean leftovers from interrupted runs.
     let _ = fs::remove_dir_all(&staging);
     let _ = fs::remove_dir_all(&prev);
@@ -258,6 +347,8 @@ pub fn restore_backup(zip_path: &Path) -> Result<()> {
         fs::create_dir_all(&staging)?;
         let file = File::open(zip_path)?;
         let mut archive = ZipArchive::new(file)?;
+        reject_if_too_many_entries(archive.len())?;
+        let mut expanded_total = 0usize;
         for i in 0..archive.len() {
             let mut entry = archive.by_index(i)?;
             let name = entry.name().to_string();
@@ -271,14 +362,18 @@ pub fn restore_backup(zip_path: &Path) -> Result<()> {
                 fs::create_dir_all(parent)?;
             }
             let mut out = File::create(&out_path)?;
-            io::copy(&mut entry, &mut out)?;
+            copy_with_expanded_limit(&mut entry, &mut out, &mut expanded_total)?;
         }
-        // Basic integrity: restored archives should include db.yaml.
-        if !staging.join("db.yaml").is_file() {
+        let db_path = staging.join("db.yaml");
+        if !db_path.is_file() {
             return Err(BackupError::Message(
                 "backup is missing db.yaml (refusing restore)".into(),
             ));
         }
+        let db_text = fs::read_to_string(&db_path)?;
+        Database::from_yaml_with_warnings(&db_text).map_err(|e| {
+            BackupError::Message(format!("restored db.yaml is invalid: {e}"))
+        })?;
         Ok(())
     };
 
@@ -446,5 +541,93 @@ mod tests {
         assert!(safe_extract_path(dest, "../etc/passwd").is_err());
         assert!(safe_extract_path(dest, "/etc/passwd").is_err());
         assert!(safe_extract_path(dest, "images/icons/a.png").is_ok());
+    }
+
+    #[test]
+    fn restore_limits_reject_oversized_archive_and_too_many_entries() {
+        assert!(reject_if_archive_too_large(MAX_ARCHIVE_FILE_BYTES as u64).is_ok());
+        assert!(reject_if_archive_too_large(MAX_ARCHIVE_FILE_BYTES as u64 + 1).is_err());
+
+        assert!(reject_if_too_many_entries(MAX_ARCHIVE_ENTRIES).is_ok());
+        assert!(reject_if_too_many_entries(MAX_ARCHIVE_ENTRIES + 1).is_err());
+
+        assert!(reject_if_expanded_too_large(MAX_EXPANDED_BYTES).is_ok());
+        assert!(reject_if_expanded_too_large(MAX_EXPANDED_BYTES + 1).is_err());
+    }
+
+    #[test]
+    fn restore_rejects_oversized_archive_and_keeps_live_data() -> Result<()> {
+        let tmp = tempfile::tempdir().map_err(BackupError::from)?;
+        let data = tmp.path().join(".sqyre");
+        fs::create_dir_all(&data)?;
+        fs::write(data.join("db.yaml"), "macros: {}\nprograms: {}\n")?;
+        let original = fs::read_to_string(data.join("db.yaml")).unwrap();
+
+        let big_zip = tmp.path().join("big.zip");
+        fs::write(&big_zip, vec![0u8; MAX_ARCHIVE_FILE_BYTES + 1])?;
+
+        crate::with_sqyre_dir_override(data.clone(), || -> Result<()> {
+            let err = restore_backup(&big_zip).unwrap_err();
+            assert!(
+                err.to_string().contains("too large"),
+                "got {err}"
+            );
+            assert_eq!(fs::read_to_string(data.join("db.yaml")).unwrap(), original);
+            Ok(())
+        })?;
+        Ok(())
+    }
+
+    #[test]
+    fn restore_rejects_invalid_db_yaml_and_keeps_live_data() -> Result<()> {
+        let tmp = tempfile::tempdir().map_err(BackupError::from)?;
+        let data = tmp.path().join(".sqyre");
+        fs::create_dir_all(&data)?;
+        fs::write(data.join("db.yaml"), "macros: {}\nprograms: {}\n")?;
+        let original = fs::read_to_string(data.join("db.yaml")).unwrap();
+
+        let bad_zip = tmp.path().join("bad-db.zip");
+        {
+            let file = File::create(&bad_zip)?;
+            let mut zip = ZipWriter::new(file);
+            let opts = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+            zip.start_file("db.yaml", opts)?;
+            zip.write_all(b"macros: [unterminated")?;
+            zip.finish()?;
+        }
+
+        crate::with_sqyre_dir_override(data.clone(), || -> Result<()> {
+            let err = restore_backup(&bad_zip).unwrap_err();
+            assert!(
+                err.to_string().contains("invalid"),
+                "got {err}"
+            );
+            assert_eq!(fs::read_to_string(data.join("db.yaml")).unwrap(), original);
+            Ok(())
+        })?;
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn create_backup_skips_symlink_files() -> Result<()> {
+        use std::os::unix::fs::symlink;
+
+        let tmp = tempfile::tempdir().map_err(BackupError::from)?;
+        let data = tmp.path().join(".sqyre");
+        fs::create_dir_all(data.join("images"))?;
+        fs::write(data.join("db.yaml"), "macros: {}\nprograms: {}\n")?;
+        fs::write(data.join("images/real.png"), b"png")?;
+        symlink(data.join("images/real.png"), data.join("images/link.png"))?;
+
+        crate::with_sqyre_dir_override(data.clone(), || -> Result<()> {
+            let path = create_backup()?;
+            let archive = ZipArchive::new(File::open(&path)?)?;
+            let names: Vec<_> = archive.file_names().map(str::to_owned).collect();
+            assert!(names.iter().any(|n| n == "images/real.png"));
+            assert!(!names.iter().any(|n| n == "images/link.png"));
+            Ok(())
+        })?;
+        Ok(())
     }
 }
