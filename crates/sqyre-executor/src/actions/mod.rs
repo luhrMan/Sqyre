@@ -368,6 +368,126 @@ mod tests {
     }
 
     #[test]
+    fn run_macro_rejects_nesting_beyond_max_depth() {
+        use crate::backends::MapMacroLookup;
+        use std::collections::BTreeMap;
+        use std::sync::Arc;
+
+        let mut inner = Macro::new("inner", 0, vec![]);
+        inner.root = root_loop(vec![Action {
+            id: ActionId::new(),
+            kind: ActionKind::Wait {
+                time: ScalarValue::Int(1),
+            },
+        }]);
+        let mut outer = Macro::new("outer", 0, vec![]);
+        outer.root = root_loop(vec![Action {
+            id: ActionId::new(),
+            kind: ActionKind::RunMacro {
+                macro_name: "inner".into(),
+            },
+        }]);
+        let lookup = MapMacroLookup {
+            macros: BTreeMap::from([
+                ("outer".into(), Arc::new(outer.clone())),
+                ("inner".into(), Arc::new(inner)),
+            ]),
+        };
+
+        let mut caller = Macro::new("caller", 0, vec![]);
+        caller.root = root_loop(vec![Action {
+            id: ActionId::new(),
+            kind: ActionKind::RunMacro {
+                macro_name: "outer".into(),
+            },
+        }]);
+
+        let mut backend = RecordingBackend::default();
+        let err = execute_macro_with(
+            &mut caller,
+            ExecDeps {
+                automation: &mut backend,
+                capturer: None,
+                close_matches_distance: 0,
+                release_held_inputs: true,
+                while_max_iterations: crate::run::DEFAULT_WHILE_MAX_ITERATIONS,
+                run_macro_max_depth: 1,
+                resolver: None,
+                icons: None,
+                macros: Some(&lookup),
+                continue_waiter: None,
+                window_focuser: None,
+                ocr: None,
+                stop_flag: None,
+                logger: None,
+                highlighter: None,
+                runtime_vars: None,
+                variables_dir: None,
+            },
+        )
+        .unwrap_err();
+        assert!(
+            err.to_string().contains("nesting depth exceeded"),
+            "expected depth error, got {err}"
+        );
+    }
+
+    #[test]
+    fn while_with_zero_max_iterations_uses_exec_deps_budget() {
+        let mut backend = RecordingBackend::default();
+        let budget = 3;
+        let mut macro_ = Macro::new("t", 0, vec![]);
+        macro_.root = root_loop(vec![Action {
+            id: ActionId::new(),
+            kind: ActionKind::While {
+                condition: sqyre_domain::ConditionBlock {
+                    name: "forever".into(),
+                    match_mode: "all".into(),
+                    clauses: vec![],
+                },
+                max_iterations: 0,
+                subactions: vec![Action {
+                    id: ActionId::new(),
+                    kind: ActionKind::Wait {
+                        time: ScalarValue::Int(1),
+                    },
+                }],
+            },
+        }]);
+        execute_macro_with(
+            &mut macro_,
+            ExecDeps {
+                automation: &mut backend,
+                capturer: None,
+                close_matches_distance: 0,
+                release_held_inputs: true,
+                while_max_iterations: budget,
+                run_macro_max_depth: crate::run::DEFAULT_RUN_MACRO_MAX_DEPTH,
+                resolver: None,
+                icons: None,
+                macros: None,
+                continue_waiter: None,
+                window_focuser: None,
+                ocr: None,
+                stop_flag: None,
+                logger: None,
+                highlighter: None,
+                runtime_vars: None,
+                variables_dir: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            backend
+                .log
+                .iter()
+                .filter(|e| e.as_str() == "sleep:1")
+                .count(),
+            budget as usize
+        );
+    }
+
+    #[test]
     fn run_macro_rejects_cycles() {
         use crate::backends::MapMacroLookup;
         use std::collections::BTreeMap;
