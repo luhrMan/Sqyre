@@ -100,7 +100,7 @@ fn show_update_banner(app: &mut SqyreApp, ui: &mut egui::Ui) {
 
 pub fn main_toolbar(app: &mut SqyreApp, ui: &mut egui::Ui) {
     #[cfg(not(target_arch = "wasm32"))]
-    let running = app.run.running.load(Ordering::SeqCst);
+    let running = app.run_session.state.running.load(Ordering::SeqCst);
     ui.horizontal(|ui| {
         // Half the default gap between toolbar icon buttons.
         ui.spacing_mut().item_spacing.x *= 0.5;
@@ -119,7 +119,7 @@ pub fn main_toolbar(app: &mut SqyreApp, ui: &mut egui::Ui) {
                 ui,
                 "▶",
                 "Run",
-                !running && !app.macros.is_empty(),
+                !running && !app.workspace.macros.is_empty(),
                 Some(theme::MACRO_START),
             )
             .clicked()
@@ -143,7 +143,7 @@ pub fn main_toolbar(app: &mut SqyreApp, ui: &mut egui::Ui) {
             app.data_editor.open = true;
         }
 
-        let status = app.run.status.lock().clone();
+        let status = app.run_session.state.status.lock().clone();
         let right_w = ui.available_width();
         ui.allocate_ui_with_layout(
             Vec2::new(right_w, ui.spacing().interact_size.y),
@@ -173,18 +173,29 @@ pub fn main_toolbar(app: &mut SqyreApp, ui: &mut egui::Ui) {
 /// Macro name/tags editor and global hotkey controls for the selected macro.
 /// Returns `false` if macros became empty (caller should stop drawing the editor).
 pub fn show_meta_and_hotkey(app: &mut SqyreApp, ui: &mut egui::Ui) -> bool {
-    let running = app.run.running.load(Ordering::SeqCst);
-    let idx = app.selected_macro.min(app.macros.len() - 1);
-    app.selected_macro = idx;
+    let running = app.run_session.state.running.load(Ordering::SeqCst);
+    let idx = app
+        .workspace
+        .selected_macro
+        .min(app.workspace.macros.len() - 1);
+    app.workspace.selected_macro = idx;
     let meta_enabled = !running;
-    app.macro_meta.sync_selection(idx, &app.macros[idx]);
-    let other_names: Vec<String> = app.macros.iter().map(|m| m.name.clone()).collect();
-    let all_tags = collect_all_macro_tags(&app.macros);
+    app.workspace
+        .macro_meta
+        .sync_selection(idx, &app.workspace.macros[idx]);
+    let other_names: Vec<String> = app
+        .workspace
+        .macros
+        .iter()
+        .map(|m| m.name.clone())
+        .collect();
+    let all_tags = collect_all_macro_tags(&app.workspace.macros);
     let meta = ui
         .horizontal(|ui| {
             let row = {
-                let m = &mut app.macros[idx];
-                app.macro_meta
+                let m = &mut app.workspace.macros[idx];
+                app.workspace
+                    .macro_meta
                     .paint_name_row(ui, m, &other_names, meta_enabled)
             };
             ui.separator();
@@ -196,24 +207,31 @@ pub fn show_meta_and_hotkey(app: &mut SqyreApp, ui: &mut egui::Ui) -> bool {
         app.rename_selected_macro(new_name);
     }
     let persist_tags = {
-        let m = &mut app.macros[idx];
-        app.macro_meta
+        let m = &mut app.workspace.macros[idx];
+        app.workspace
+            .macro_meta
             .paint_tags_row(ui, m, &all_tags, meta_enabled)
     };
     if persist_tags {
         app.persist_macro_at(idx);
     }
     {
-        let m = &mut app.macros[idx];
-        let delay_out = app.macro_meta.paint_delay_popup(ui, m, meta_enabled);
+        let m = &mut app.workspace.macros[idx];
+        let delay_out = app
+            .workspace
+            .macro_meta
+            .paint_delay_popup(ui, m, meta_enabled);
         if delay_out.persist {
             app.persist_macro_at(idx);
         }
     }
     // Selection / length may have changed after rename.
-    let idx = app.selected_macro.min(app.macros.len().saturating_sub(1));
-    app.selected_macro = idx;
-    if app.macros.is_empty() {
+    let idx = app
+        .workspace
+        .selected_macro
+        .min(app.workspace.macros.len().saturating_sub(1));
+    app.workspace.selected_macro = idx;
+    if app.workspace.macros.is_empty() {
         return false;
     }
 
@@ -224,7 +242,7 @@ pub fn show_meta_and_hotkey(app: &mut SqyreApp, ui: &mut egui::Ui) -> bool {
 fn paint_hotkey_controls(app: &mut SqyreApp, ui: &mut egui::Ui, idx: usize, running: bool) {
     ui.label("Hotkey:");
     let hk_label = {
-        let m = &app.macros[idx];
+        let m = &app.workspace.macros[idx];
         if m.hotkey.is_empty() {
             "—".to_string()
         } else {
@@ -233,20 +251,20 @@ fn paint_hotkey_controls(app: &mut SqyreApp, ui: &mut egui::Ui, idx: usize, runn
     };
     ui.monospace(&hk_label);
     if theme::record_icon_button(ui, "Record a global hotkey chord", !running).clicked() {
-        app.hotkey_record.open(&app.macro_hotkeys);
+        app.hotkey_record.open(&app.run_session.macro_hotkeys);
     }
     if toolbar_icon(
         ui,
         egui_phosphor::regular::ERASER,
         crate::action_tooltip::help::META_HOTKEY_CLEAR,
-        !running && !app.macros[idx].hotkey.is_empty(),
+        !running && !app.workspace.macros[idx].hotkey.is_empty(),
     )
     .clicked()
     {
         app.apply_hotkey_to_selected(Vec::new(), None);
     }
 
-    let mut trigger = HotkeyTrigger::parse(&app.macros[idx].hotkey_trigger);
+    let mut trigger = HotkeyTrigger::parse(&app.workspace.macros[idx].hotkey_trigger);
     let mut trigger_changed = false;
     if ui
         .selectable_label(trigger == HotkeyTrigger::Press, "On press")
@@ -265,14 +283,14 @@ fn paint_hotkey_controls(app: &mut SqyreApp, ui: &mut egui::Ui, idx: usize, runn
         trigger_changed = true;
     }
     if trigger_changed {
-        let chord = app.macros[idx].hotkey.clone();
+        let chord = app.workspace.macros[idx].hotkey.clone();
         app.apply_hotkey_to_selected(chord, Some(trigger));
     }
 }
 
 /// Action chrome (add/vars/clipboard/history/expand). Returns expand/collapse force.
 pub fn action_toolbar(app: &mut SqyreApp, ui: &mut egui::Ui) -> Option<bool> {
-    let running = app.run.running.load(Ordering::SeqCst);
+    let running = app.run_session.state.running.load(Ordering::SeqCst);
     let mut force_openness: Option<bool> = None;
     ui.horizontal(|ui| {
         // Half the default gap between toolbar icon buttons.

@@ -5,11 +5,14 @@ use eframe::egui;
 
 impl SqyreApp {
     pub(crate) fn start_macro(&mut self, ctx: &egui::Context) {
-        if self.macros.is_empty() {
+        if self.workspace.macros.is_empty() {
             return;
         }
-        let idx = self.selected_macro.min(self.macros.len() - 1);
-        let name = self.macros[idx].name.clone();
+        let idx = self
+            .workspace
+            .selected_macro
+            .min(self.workspace.macros.len() - 1);
+        let name = self.workspace.macros[idx].name.clone();
         self.start_macro_by_name(&name, ctx);
     }
 
@@ -21,8 +24,8 @@ impl SqyreApp {
     }
 
     pub(crate) fn request_stop(&mut self) {
-        self.run.stop.request_stop();
-        *self.run.status.lock() = "Stop requested…".into();
+        self.run_session.state.stop.request_stop();
+        *self.run_session.state.status.lock() = "Stop requested…".into();
     }
 
     /// Hide the main window while a screen-click recording is armed.
@@ -57,7 +60,8 @@ impl SqyreApp {
 
     #[cfg(target_arch = "wasm32")]
     pub(crate) fn start_macro_by_name(&mut self, _name: &str, _ctx: &egui::Context) {
-        *self.run.status.lock() = "Run is not available in the browser editor.".into();
+        *self.run_session.state.status.lock() =
+            "Run is not available in the browser editor.".into();
     }
 }
 
@@ -79,35 +83,35 @@ mod native_run {
 
     impl SqyreApp {
         pub(crate) fn start_macro_by_name(&mut self, name: &str, ctx: &egui::Context) {
-            if self.run.running.load(Ordering::SeqCst) {
+            if self.run_session.state.running.load(Ordering::SeqCst) {
                 return;
             }
-            let Some(idx) = self.macros.iter().position(|m| m.name == name) else {
+            let Some(idx) = self.workspace.macros.iter().position(|m| m.name == name) else {
                 return;
             };
-            if let Err(e) = sqyre_validate::validate_macro(&self.macros[idx]) {
-                *self.run.status.lock() = format!("Cannot run {name}: {e}");
+            if let Err(e) = sqyre_validate::validate_macro(&self.workspace.macros[idx]) {
+                *self.run_session.state.status.lock() = format!("Cannot run {name}: {e}");
                 return;
             }
             // Show the running macro's tree so highlight overlays have matching rows.
-            self.selected_macro = idx;
-            let mut macro_ = self.macros[idx].clone();
-            let catalog = self.catalog.clone();
-            let stop_flag = self.run.stop.clone();
+            self.workspace.selected_macro = idx;
+            let mut macro_ = self.workspace.macros[idx].clone();
+            let catalog = self.workspace.catalog.clone();
+            let stop_flag = self.run_session.state.stop.clone();
             stop_flag.clear();
-            let running = Arc::clone(&self.run.running);
-            let status = Arc::clone(&self.run.status);
-            self.action_log.clear();
-            self.runtime_vars.clear();
-            self.logs_image_cache.clear();
-            self.highlighter.clear_all();
-            self.last_exec_follow = None;
-            let action_log = self.action_log.clone();
-            let runtime_vars = self.runtime_vars.clone();
-            let highlighter = self.highlighter.clone();
+            let running = Arc::clone(&self.run_session.state.running);
+            let status = Arc::clone(&self.run_session.state.status);
+            self.run_session.action_log.clear();
+            self.run_session.runtime_vars.clear();
+            self.run_session.logs_image_cache.clear();
+            self.run_session.highlighter.clear_all();
+            self.tree.last_exec_follow = None;
+            let action_log = self.run_session.action_log.clone();
+            let runtime_vars = self.run_session.runtime_vars.clone();
+            let highlighter = self.run_session.highlighter.clone();
             let continue_wait = BridgeContinueWait {
-                continue_wait: self.continue_wait.clone(),
-                macro_hotkeys: self.macro_hotkeys.clone(),
+                continue_wait: self.run_session.continue_wait.clone(),
+                macro_hotkeys: self.run_session.macro_hotkeys.clone(),
             };
             let close_matches = self
                 .settings_ui
@@ -121,6 +125,7 @@ mod native_run {
             let sound_volume = self.settings_ui.settings().sound_volume;
             let macro_lookup = {
                 let map: BTreeMap<String, Arc<Macro>> = self
+                    .workspace
                     .macros
                     .iter()
                     .map(|m| (m.name.clone(), Arc::new(m.clone())))

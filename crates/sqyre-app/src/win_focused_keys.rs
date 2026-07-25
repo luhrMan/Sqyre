@@ -44,16 +44,18 @@ pub fn feed_focused_keyboard(app: &mut SqyreApp, ctx: &egui::Context) {
         pressed.insert("rcmd".into());
     }
 
-    app.continue_wait.on_pressed_keys(&pressed);
+    app.run_session.continue_wait.on_pressed_keys(&pressed);
 
     let pending = Arc::clone(&app.pending_hotkey_macros);
     let repaint = Arc::clone(&app.hotkey_repaint);
-    app.macro_hotkeys.on_pressed_keys(&pressed, &move |name| {
-        pending.lock().push(name);
-        if let Some(ctx) = repaint.lock().as_ref() {
-            ctx.request_repaint();
-        }
-    });
+    app.run_session
+        .macro_hotkeys
+        .on_pressed_keys(&pressed, &move |name| {
+            pending.lock().push(name);
+            if let Some(ctx) = repaint.lock().as_ref() {
+                ctx.request_repaint();
+            }
+        });
 
     if esc_pressed && !app.hotkey_record.is_open() && !app.key_record.is_open() {
         let ctrl = pressed.contains("ctrl");
@@ -64,7 +66,7 @@ pub fn feed_focused_keyboard(app: &mut SqyreApp, ctx: &egui::Context) {
             eprintln!("failsafe {} — exiting", sqyre_hotkeys::FAILSAFE_LABEL);
             sqyre_input::release_held_inputs();
             std::process::exit(0);
-        } else if !ctrl && !shift && !app.continue_wait.continue_is_escape() {
+        } else if !ctrl && !shift && !app.run_session.continue_wait.continue_is_escape() {
             app.request_stop();
         }
     }

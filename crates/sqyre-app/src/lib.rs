@@ -31,6 +31,7 @@ mod pixel_color;
 mod preview_tooltip;
 mod recorded_action;
 mod recording_overlay;
+mod run_session;
 mod settings;
 mod single_instance;
 #[cfg(not(target_arch = "wasm32"))]
@@ -42,6 +43,7 @@ mod tree_chrome;
 mod tree_clipboard;
 mod tree_dnd;
 mod tree_history;
+mod tree_state;
 mod ui_macro_list;
 mod ui_macro_tree;
 mod ui_overlays;
@@ -56,11 +58,10 @@ mod wasm_io;
 mod widgets;
 #[cfg(target_os = "windows")]
 mod win_focused_keys;
+mod workspace;
 
 pub use settings::SettingsUi;
 
-use action_logs_ui::LogsImageCache;
-use action_tooltip::TooltipState;
 use add_action::AddActionPicker;
 use app_backends::RunState;
 use catalog::apply_main_monitor_resolution;
@@ -74,18 +75,15 @@ use macro_overlay::MacroOverlay;
 use parking_lot::Mutex;
 use preview_tooltip::PreviewTooltipCache;
 use recording_overlay::RecordingOverlay;
-use sqyre_domain::{ActionId, Macro};
+use run_session::RunSession;
+use sqyre_domain::Macro;
 use sqyre_executor::{SharedActionLog, SharedHighlighter, SharedRuntimeVars};
-use sqyre_hotkeys::{
-    default_hotkeys, ContinueWaitBridge, HotkeyCallbacks, HotkeyService, MacroHotkeyBridge,
-    ScreenClickBridge,
-};
+use sqyre_hotkeys::{default_hotkeys, HotkeyCallbacks, HotkeyService, ScreenClickBridge};
 use sqyre_persist::{Database, ProgramCatalog, UserSettings};
-use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use tree_history::TreeHistory;
-use ui_macro_tree::TreeDragMode;
+use tree_state::TreeState;
 use wasm_io::PendingImport;
+use workspace::Workspace;
 
 /// Launch the desktop shell (single-instance lock, tray, fonts).
 #[cfg(not(target_arch = "wasm32"))]
@@ -157,54 +155,19 @@ fn sync_and_save_database(
 }
 
 pub struct SqyreApp {
-    db: Database,
-    macros: Vec<Macro>,
-    catalog: ProgramCatalog,
-    load_error: Option<String>,
-    /// Non-fatal platform/session advisory (e.g. Wayland without X11).
-    platform_warning: Option<String>,
-    /// Last failed macro/db save; shown in the macro list until a save succeeds.
-    save_error: Option<String>,
-    selected_macro: usize,
-    /// Currently selected action ids in the macro tree (egui tree node ids).
-    /// Empty = none; order matches TreeView (last is the primary for insert/paste).
-    selected_actions: Vec<ActionId>,
-    run: RunState,
+    pub(crate) workspace: Workspace,
+    pub(crate) run_session: RunSession,
+    pub(crate) tree: TreeState,
     hotkeys: Box<dyn HotkeyService>,
-    continue_wait: ContinueWaitBridge,
     screen_click: ScreenClickBridge,
-    macro_hotkeys: MacroHotkeyBridge,
     /// Macro names requested by the hotkey thread (drained each frame).
     pending_hotkey_macros: Arc<Mutex<Vec<String>>>,
     /// egui context for waking the UI when a hotkey queues a macro while idle/unfocused.
     hotkey_repaint: Arc<Mutex<Option<egui::Context>>>,
     hotkey_record: HotkeyRecordUi,
     key_record: KeyRecordUi,
-    macro_meta: MacroMetaUi,
-    action_log: SharedActionLog,
-    runtime_vars: SharedRuntimeVars,
-    highlighter: SharedHighlighter,
-    /// Branches that were collapsed before execution expand.
-    pre_exec_closed: HashSet<ActionId>,
-    /// True while branches are force-opened for the active run.
-    exec_fully_expanded: bool,
-    /// Last action scrolled into view for execution highlight follow.
-    last_exec_follow: Option<ActionId>,
-    /// Prior-frame icon/pill rects; used to decide reorder vs drag-scroll.
-    tree_drag_handles: Vec<egui::Rect>,
-    /// Active pointer gesture on the macro tree (idle / reorder / drag-scroll).
-    tree_drag_mode: TreeDragMode,
-    /// Vertical coast velocity after a drag-scroll release (points/sec).
-    tree_scroll_vel: f32,
-    /// Per-macro undo/redo stacks keyed by macro name.
-    tree_histories: HashMap<String, TreeHistory>,
-    /// Process-local action clipboard (YAML map without UIDs).
-    action_clipboard: Option<serde_yaml::Mapping>,
-    logs_window: Option<ActionId>,
-    logs_image_cache: LogsImageCache,
     icon_cache: IconCache,
     preview_tooltips: PreviewTooltipCache,
-    tooltip: TooltipState,
     add_action_picker: AddActionPicker,
     data_editor: DataEditor,
     settings_ui: SettingsUi,
@@ -219,8 +182,6 @@ pub struct SqyreApp {
     macro_list_open: bool,
     /// Filter text for the macro list (name / tags fuzzy match).
     macro_list_filter: String,
-    /// When set, only macros with this tag (empty string = untagged) have hotkeys enabled.
-    hotkey_tag_filter: Option<String>,
     tray: tray::SystemTray,
     /// Process-wide single-instance lock (held for the app lifetime).
     instance_lock: Option<single_instance::InstanceLock>,
@@ -353,40 +314,36 @@ impl SqyreApp {
         };
 
         let mut app = Self {
-            db,
-            macros,
-            catalog,
-            load_error,
-            platform_warning,
-            save_error: None,
-            selected_macro: 0,
-            selected_actions: Vec::new(),
-            run,
+            workspace: Workspace {
+                db,
+                macros,
+                catalog,
+                load_error,
+                platform_warning,
+                save_error: None,
+                selected_macro: 0,
+                macro_meta: MacroMetaUi::default(),
+                hotkey_tag_filter: None,
+            },
+            run_session: RunSession {
+                state: run,
+                continue_wait,
+                macro_hotkeys,
+                action_log,
+                runtime_vars: SharedRuntimeVars::new(),
+                highlighter,
+                logs_window: None,
+                logs_image_cache: action_logs_ui::LogsImageCache::default(),
+            },
+            tree: TreeState::default(),
             hotkeys,
-            continue_wait,
             screen_click,
-            macro_hotkeys,
             pending_hotkey_macros,
             hotkey_repaint,
             hotkey_record: HotkeyRecordUi::default(),
             key_record: KeyRecordUi::default(),
-            macro_meta: MacroMetaUi::default(),
-            action_log,
-            runtime_vars: SharedRuntimeVars::new(),
-            highlighter,
-            pre_exec_closed: HashSet::new(),
-            exec_fully_expanded: false,
-            last_exec_follow: None,
-            tree_drag_handles: Vec::new(),
-            tree_drag_mode: TreeDragMode::Idle,
-            tree_scroll_vel: 0.0,
-            tree_histories: HashMap::new(),
-            action_clipboard: None,
-            logs_window: None,
-            logs_image_cache: LogsImageCache::default(),
             icon_cache: IconCache::new(),
             preview_tooltips: PreviewTooltipCache::new(),
-            tooltip: TooltipState::Hidden,
             add_action_picker,
             data_editor: DataEditor::default(),
             settings_ui,
@@ -396,7 +353,6 @@ impl SqyreApp {
             macro_overlay: MacroOverlay::new(),
             macro_list_open: true,
             macro_list_filter: String::new(),
-            hotkey_tag_filter: None,
             tray: tray::SystemTray::default(),
             instance_lock: None,
             pending_delete_macro: None,
@@ -414,13 +370,17 @@ impl SqyreApp {
 
     /// Sync working macros + catalog into `db` and write `db.yaml`.
     pub(crate) fn persist_database(&mut self) -> Result<(), String> {
-        match sync_and_save_database(&mut self.db, &self.macros, &self.catalog) {
+        match sync_and_save_database(
+            &mut self.workspace.db,
+            &self.workspace.macros,
+            &self.workspace.catalog,
+        ) {
             Ok(()) => {
-                self.save_error = None;
+                self.workspace.save_error = None;
                 Ok(())
             }
             Err(msg) => {
-                self.save_error = Some(msg.clone());
+                self.workspace.save_error = Some(msg.clone());
                 Err(msg)
             }
         }
@@ -428,11 +388,11 @@ impl SqyreApp {
 
     /// Persist `db` as currently held (caller already updated `db.macros` / programs).
     pub(crate) fn save_database(&mut self) {
-        match self.db.save_default() {
-            Ok(()) => self.save_error = None,
+        match self.workspace.db.save_default() {
+            Ok(()) => self.workspace.save_error = None,
             Err(e) => {
                 eprintln!("sqyre: save database: {e}");
-                self.save_error = Some(e.to_string());
+                self.workspace.save_error = Some(e.to_string());
             }
         }
     }
@@ -490,7 +450,7 @@ impl eframe::App for SqyreApp {
         egui::CentralPanel::default().show(ui, |ui| {
             ui_toolbar::brand_header(self, ui);
             ui_toolbar::main_toolbar(self, ui);
-            if self.macros.is_empty() {
+            if self.workspace.macros.is_empty() {
                 #[cfg(target_arch = "wasm32")]
                 ui.label("No macros loaded. Use Import to open a db.yaml.");
                 #[cfg(not(target_arch = "wasm32"))]
