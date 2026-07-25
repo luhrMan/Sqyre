@@ -28,7 +28,7 @@ pub use diag::{
     disk_logging_enabled, mark_site, note, read_last_site, set_disk_logging, set_log_dir,
     CRASH_LOG_FILE, DIAG_LOG_FILE, LAST_SITE_FILE,
 };
-pub use error::CaptureError;
+pub use error::{linux_session_capture_warning, CaptureError};
 pub use outline_rect::OutlineRect;
 pub use pixel_convert::{zpixmap_to_rgb, zpixmap_to_rgba};
 pub use stub::{NullCapturer, SolidCapturer};
