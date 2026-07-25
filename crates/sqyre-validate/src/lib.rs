@@ -492,9 +492,8 @@ pub fn validate_action_tree(action: &Action, macro_: Option<&Macro>) -> Result<(
 
 /// Validate a macro's name and full action tree (for load / pre-run gates).
 pub fn validate_macro(macro_: &Macro) -> Result<()> {
-    validate_entity_name(&macro_.name).map_err(|e| {
-        ValidateError::Message(format!("macro name {:?}: {e}", macro_.name))
-    })?;
+    validate_entity_name(&macro_.name)
+        .map_err(|e| ValidateError::Message(format!("macro name {:?}: {e}", macro_.name)))?;
     validate_action_tree(&macro_.root, Some(macro_))
 }
 
