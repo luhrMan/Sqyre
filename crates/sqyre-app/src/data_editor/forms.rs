@@ -7,14 +7,15 @@ use crate::action_tooltip::help;
 use crate::collection_capture::capture_and_save_collection_image;
 use crate::data_editor_preview::{
     paint_disk_preview, paint_preview_coord_chip, paint_preview_toolbar,
-    paint_zoomable_atlas_preview, paint_zoomable_collection_preview, CardinalEdge,
+    paint_zoomable_atlas_preview, paint_zoomable_collection_preview, show_file_hover, CardinalEdge,
 };
 use crate::overlay_icons;
 use crate::paint_ctx::CatalogPaint;
 use crate::pickers;
+use crate::preview_tooltip::PreviewKind;
 use crate::theme;
 use crate::var_pills;
-use crate::widgets::{searchable_combo, searchable_combo_width};
+use crate::widgets::{searchable_combo_width, searchable_combo_with};
 use eframe::egui;
 use sqyre_domain::{collect_known_variable_names, Macro, PROGRAM_DELIMITER};
 use sqyre_hotkeys::ScreenClickBridge;
@@ -202,7 +203,12 @@ impl DataEditor {
         let is_dark = ui.visuals().dark_mode;
         match self.tab {
             EditorTab::Programs => {
-                ui.heading("Program");
+                ui.horizontal(|ui| {
+                    if let Some(name) = self.selected_program.as_deref() {
+                        crate::icon_cache::paint_program_icon(ui, catalog, icons, name);
+                    }
+                    ui.heading("Program");
+                });
                 help::label(ui, "Name", help::DE_NAME);
                 help::tip(
                     ui.add(
@@ -266,7 +272,7 @@ impl DataEditor {
             }
             EditorTab::Items => {
                 ui.heading("Item");
-                self.program_selector(ui, catalog, settings);
+                self.program_selector(ui, catalog, icons, settings);
                 ui.add_space(4.0);
                 help::label(ui, "Name", help::DE_NAME);
                 help::tip(
@@ -304,13 +310,32 @@ impl DataEditor {
                         .map(|p| p.masks.keys().cloned().collect())
                         .unwrap_or_default();
                     let mut current = self.form_mask.clone();
-                    searchable_combo(
+                    let prog = self.selected_program.clone();
+                    let mut on_hover = |ui: &mut egui::Ui, resp: &egui::Response, name: &str| {
+                        if name.is_empty() {
+                            return;
+                        }
+                        let Some(prog) = prog.as_deref() else {
+                            return;
+                        };
+                        show_file_hover(
+                            ui,
+                            resp,
+                            icons,
+                            &catalog.mask_image_path(prog, name),
+                            &format!("{prog}~{name}"),
+                        );
+                    };
+                    searchable_combo_with(
                         ui,
                         "item_mask",
                         &mut current,
                         &masks,
                         "(none)",
                         Some("(none)"),
+                        None,
+                        Some(&mut on_hover),
+                        None,
                     );
                     if current != self.form_mask {
                         self.form_mask = current;
@@ -361,7 +386,7 @@ impl DataEditor {
             }
             EditorTab::Points => {
                 ui.heading("Point");
-                self.program_selector(ui, catalog, settings);
+                self.program_selector(ui, catalog, icons, settings);
                 ui.add_space(4.0);
                 self.paint_name_record_row(
                     ui,
@@ -395,7 +420,7 @@ impl DataEditor {
             }
             EditorTab::SearchAreas => {
                 ui.heading("Search Area");
-                self.program_selector(ui, catalog, settings);
+                self.program_selector(ui, catalog, icons, settings);
                 ui.add_space(4.0);
                 self.paint_name_record_row(
                     ui,
@@ -456,7 +481,7 @@ impl DataEditor {
             }
             EditorTab::Masks => {
                 ui.heading("Mask");
-                self.program_selector(ui, catalog, settings);
+                self.program_selector(ui, catalog, icons, settings);
                 ui.add_space(4.0);
                 ui.label("Name").on_hover_text(help::DE_NAME);
                 help::tip(
@@ -593,7 +618,7 @@ impl DataEditor {
             }
             EditorTab::Collections => {
                 ui.heading("Collection");
-                self.program_selector(ui, catalog, settings);
+                self.program_selector(ui, catalog, icons, settings);
                 ui.add_space(4.0);
                 ui.label("Name").on_hover_text(help::DE_NAME);
                 help::tip(
@@ -623,7 +648,34 @@ impl DataEditor {
                         })
                         .unwrap_or_default();
                     let mut current = self.form_search_area.clone();
-                    searchable_combo(ui, "collection_sa", &mut current, &areas, "(none)", None);
+                    let prog = self.selected_program.clone();
+                    let mut on_hover = |ui: &mut egui::Ui, resp: &egui::Response, name: &str| {
+                        if name.is_empty() {
+                            return;
+                        }
+                        let Some(prog) = prog.as_deref() else {
+                            return;
+                        };
+                        previews.show_for_entity(
+                            ui,
+                            resp,
+                            catalog,
+                            prog,
+                            name,
+                            PreviewKind::SearchArea,
+                        );
+                    };
+                    searchable_combo_with(
+                        ui,
+                        "collection_sa",
+                        &mut current,
+                        &areas,
+                        "(none)",
+                        None,
+                        None,
+                        Some(&mut on_hover),
+                        None,
+                    );
                     if current != self.form_search_area {
                         self.form_search_area = current;
                     }
@@ -679,7 +731,7 @@ impl DataEditor {
             }
             EditorTab::Atlases => {
                 ui.heading("Atlas");
-                self.program_selector(ui, catalog, settings);
+                self.program_selector(ui, catalog, icons, settings);
                 ui.add_space(4.0);
                 ui.label("Name").on_hover_text(help::DE_NAME);
                 help::tip(
@@ -704,12 +756,31 @@ impl DataEditor {
                     })
                     .unwrap_or_default();
                 ui.horizontal(|ui| {
-                    searchable_combo(
+                    let prog = self.selected_program.clone();
+                    let mut on_hover = |ui: &mut egui::Ui, resp: &egui::Response, name: &str| {
+                        if name.is_empty() {
+                            return;
+                        }
+                        let Some(prog) = prog.as_deref() else {
+                            return;
+                        };
+                        show_file_hover(
+                            ui,
+                            resp,
+                            icons,
+                            &catalog.collection_image_path(prog, name),
+                            &format!("{prog}~{name}"),
+                        );
+                    };
+                    searchable_combo_with(
                         ui,
                         "atlas_add_member",
                         &mut self.form_atlas_add,
                         &available,
                         "(add collection)",
+                        None,
+                        None,
+                        Some(&mut on_hover),
                         None,
                     );
                     if ui
@@ -729,7 +800,16 @@ impl DataEditor {
                 let mut remove_at: Option<usize> = None;
                 for (i, member) in self.form_atlas_members.iter().enumerate() {
                     ui.horizontal(|ui| {
-                        ui.label(format!("• {member}"));
+                        let label = ui.label(format!("• {member}"));
+                        if let Some(prog) = self.selected_program.as_deref() {
+                            show_file_hover(
+                                ui,
+                                &label,
+                                icons,
+                                &catalog.collection_image_path(prog, member),
+                                &format!("{prog}~{member}"),
+                            );
+                        }
                         if theme::icon_button_colored(ui, "×", Some(theme::MACRO_STOP))
                             .on_hover_text("Remove")
                             .clicked()
@@ -823,7 +903,7 @@ impl DataEditor {
                     self.persist_overlay_settings(settings);
                 }
                 ui.add_space(6.0);
-                self.program_selector(ui, catalog, settings);
+                self.program_selector(ui, catalog, icons, settings);
                 if self.selected_program.is_none() {
                     ui.weak("Select a program, then New to add a button.");
                     return;

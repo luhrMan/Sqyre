@@ -8,13 +8,16 @@ use std::os::windows::ffi::OsStrExt;
 use std::path::Path;
 use windows::core::{Owned, BOOL, PCWSTR, PWSTR};
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
+use windows::Win32::Graphics::Dwm::{
+    DwmEnableBlurBehindWindow, DWM_BB_BLURREGION, DWM_BB_ENABLE, DWM_BLURBEHIND,
+};
 use windows::Win32::Graphics::Gdi::{
-    CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, GetDC, GetObjectW, ReleaseDC,
-    SelectObject, BITMAP, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, HGDIOBJ,
+    CreateCompatibleDC, CreateDIBSection, CreateRectRgn, DeleteDC, DeleteObject, GetDC, GetObjectW,
+    ReleaseDC, SelectObject, BITMAP, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, HGDIOBJ,
 };
 use windows::Win32::System::Threading::{
-    AttachThreadInput, GetCurrentThreadId, OpenProcess, QueryFullProcessImageNameW,
-    PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
+    AttachThreadInput, GetCurrentProcessId, GetCurrentThreadId, OpenProcess,
+    QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
 };
 use windows::Win32::UI::Shell::SHDefExtractIconW;
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -470,6 +473,81 @@ fn paths_equal(a: &str, b: &str) -> bool {
 
 fn titles_equal(a: &str, b: &str) -> bool {
     a.trim() == b.trim()
+}
+
+/// Enable per-pixel alpha on deferred egui overlay viewports.
+///
+/// eframe's glow path strips `transparent` when creating secondary windows on Windows
+/// (`glutin_winit::finalize_window` + false `supports_transparency`), so winit never
+/// calls [`DwmEnableBlurBehindWindow`]. Re-apply the same empty-region blur-behind
+/// winit uses for the root window so clear alpha and button α settings composite.
+pub fn enable_overlay_window_transparency() -> Result<(), String> {
+    let our_pid = unsafe { GetCurrentProcessId() };
+    let mut hwnds: Vec<HWND> = Vec::new();
+    // SAFETY: callback only touches the Vec via lparam for the duration of EnumWindows.
+    unsafe {
+        EnumWindows(
+            Some(enum_overlay_windows_proc),
+            LPARAM(&mut hwnds as *mut Vec<HWND> as isize),
+        )
+        .map_err(|e| format!("EnumWindows failed: {e}"))?;
+    }
+
+    let mut hinted = 0usize;
+    for hwnd in hwnds {
+        let mut pid = 0u32;
+        // SAFETY: hwnd came from EnumWindows; GetWindowThreadProcessId is always safe.
+        unsafe {
+            GetWindowThreadProcessId(hwnd, Some(&mut pid));
+        }
+        if pid != our_pid {
+            continue;
+        }
+        let Some(title) = window_title_of(hwnd) else {
+            continue;
+        };
+        if title.trim() != crate::OVERLAY_WM_TITLE {
+            continue;
+        }
+        enable_dwm_per_pixel_alpha(hwnd)?;
+        hinted += 1;
+    }
+    if hinted > 0 {
+        crate::diag::mark_site(&format!("win:overlay_transparency:hinted={hinted}"));
+    }
+    Ok(())
+}
+
+unsafe extern "system" fn enum_overlay_windows_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
+    // SAFETY: `lparam` is the `Vec<HWND>` pointer from `enable_overlay_window_transparency`.
+    let list = &mut *(lparam.0 as *mut Vec<HWND>);
+    // Include tool windows (`with_taskbar(false)` → WS_EX_TOOLWINDOW); overlays are not
+    // "listable" app windows.
+    if IsWindowVisible(hwnd).as_bool() {
+        list.push(hwnd);
+    }
+    BOOL(1)
+}
+
+fn enable_dwm_per_pixel_alpha(hwnd: HWND) -> Result<(), String> {
+    // Mirror winit's transparent-window setup: empty blur region → use framebuffer alpha.
+    // SAFETY: CreateRectRgn / DwmEnableBlurBehindWindow / DeleteObject with our HWND + region.
+    unsafe {
+        let region = CreateRectRgn(0, 0, -1, -1);
+        if region.is_invalid() {
+            return Err("CreateRectRgn failed for overlay transparency".into());
+        }
+        let bb = DWM_BLURBEHIND {
+            dwFlags: DWM_BB_ENABLE | DWM_BB_BLURREGION,
+            fEnable: true.into(),
+            hRgnBlur: region,
+            fTransitionOnMaximized: false.into(),
+        };
+        let result = DwmEnableBlurBehindWindow(hwnd, &bb)
+            .map_err(|e| format!("DwmEnableBlurBehindWindow failed: {e}"));
+        let _ = DeleteObject(HGDIOBJ::from(region));
+        result
+    }
 }
 
 #[cfg(test)]

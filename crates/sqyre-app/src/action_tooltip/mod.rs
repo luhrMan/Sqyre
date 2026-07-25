@@ -417,9 +417,27 @@ pub(crate) fn show_action_view_tip(
                         sections::tip_wrapped_section(ui, |ui| {
                             ui.spacing_mut().item_spacing = Vec2::splat(3.0);
                             for pill in &summary_pills {
-                                let _ = var_pills::paint_summary_pill(
-                                    ui, type_key, pill, known_vars, is_dark,
-                                );
+                                ui.horizontal(|ui| {
+                                    if let ActionKind::FocusWindow {
+                                        process_path,
+                                        window_title,
+                                    } = &action.kind
+                                    {
+                                        crate::icon_cache::paint_leading_process_icon(
+                                            ui,
+                                            icons,
+                                            process_path,
+                                            window_title,
+                                        );
+                                    } else {
+                                        crate::icon_cache::paint_leading_program_icon(
+                                            ui, catalog, icons, &pill.text,
+                                        );
+                                    }
+                                    let _ = var_pills::paint_summary_pill(
+                                        ui, type_key, pill, known_vars, is_dark,
+                                    );
+                                });
                             }
                         });
                     }
@@ -446,6 +464,27 @@ pub(crate) fn show_action_view_tip(
                                             .size(12.0)
                                             .strong(),
                                     );
+                                    if p.label.eq_ignore_ascii_case("Program") {
+                                        crate::icon_cache::paint_program_icon(
+                                            ui,
+                                            catalog,
+                                            icons,
+                                            p.minimal(),
+                                        );
+                                    } else if p.label.eq_ignore_ascii_case("App") {
+                                        if let ActionKind::FocusWindow {
+                                            process_path,
+                                            window_title,
+                                        } = &action.kind
+                                        {
+                                            crate::icon_cache::paint_leading_process_icon(
+                                                ui,
+                                                icons,
+                                                process_path,
+                                                window_title,
+                                            );
+                                        }
+                                    }
                                     var_pills::paint_var_ref_content(
                                         ui,
                                         p.minimal(),

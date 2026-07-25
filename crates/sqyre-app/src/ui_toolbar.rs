@@ -159,7 +159,10 @@ pub fn main_toolbar(app: &mut SqyreApp, ui: &mut egui::Ui) {
         );
     });
     #[cfg(not(target_arch = "wasm32"))]
-    ui.small("Esc stops the running macro; Esc+Ctrl+Shift exits (failsafe). Macro hotkeys launch from anywhere.");
+    ui.small(format!(
+        "Esc stops the running macro; {} exits (failsafe). Macro hotkeys launch from anywhere.",
+        sqyre_hotkeys::FAILSAFE_LABEL
+    ));
     #[cfg(target_arch = "wasm32")]
     ui.small(
         "Browser editor: import/export db.yaml. Run, capture, and global hotkeys are desktop-only.",

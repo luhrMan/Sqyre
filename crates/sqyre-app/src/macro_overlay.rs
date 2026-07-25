@@ -13,8 +13,9 @@ use crate::overlay_icons::{self, OverlayIcon};
 use eframe::egui::{self, Color32, Pos2, ViewportBuilder, ViewportClass, ViewportId};
 use parking_lot::Mutex;
 use sqyre_capture::{
-    get_active_window, mark_site, note, skip_taskbar_for_overlay_windows, window_is_our_process,
-    window_matches_binding, window_matches_program, WindowInfo, OVERLAY_WM_TITLE,
+    enable_overlay_window_transparency, get_active_window, mark_site, note,
+    skip_taskbar_for_overlay_windows, window_is_our_process, window_matches_binding,
+    window_matches_program, WindowInfo, OVERLAY_WM_TITLE,
 };
 use sqyre_persist::{
     OverlayButtonConfig, ProgramCatalog, DEFAULT_OVERLAY_BUTTON_SIZE, MAX_OVERLAY_BUTTON_SIZE,
@@ -25,7 +26,7 @@ use web_time::{Duration, Instant};
 
 const VIEWPORT_PAD_MIN: f32 = 2.0;
 const FOCUS_POLL: Duration = Duration::from_millis(250);
-/// Re-apply EWMH skip hints often — new viewports can appear in Alt-Tab until hinted.
+/// Re-apply OS overlay hints often — new viewports need skip-taskbar / transparency.
 const SKIP_TASKBAR_EVERY: Duration = Duration::from_millis(250);
 const FOCUS_ERR_LOG_EVERY: Duration = Duration::from_secs(5);
 
@@ -147,7 +148,7 @@ impl MacroOverlay {
         }
 
         if any_shown {
-            self.maybe_skip_taskbar();
+            self.maybe_hint_overlay_windows();
         }
 
         if any_gated {
@@ -181,7 +182,7 @@ impl MacroOverlay {
         }
     }
 
-    fn maybe_skip_taskbar(&mut self) {
+    fn maybe_hint_overlay_windows(&mut self) {
         let now = Instant::now();
         if self
             .last_skip_taskbar
@@ -190,9 +191,12 @@ impl MacroOverlay {
             return;
         }
         self.last_skip_taskbar = Some(now);
-        mark_site("overlay:skip_taskbar");
+        mark_site("overlay:hint_windows");
         if let Err(e) = skip_taskbar_for_overlay_windows() {
             note(&format!("overlay: skip_taskbar failed: {e}"));
+        }
+        if let Err(e) = enable_overlay_window_transparency() {
+            note(&format!("overlay: enable transparency failed: {e}"));
         }
     }
 }
