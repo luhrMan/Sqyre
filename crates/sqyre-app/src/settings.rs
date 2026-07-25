@@ -8,14 +8,14 @@ use sqyre_domain::{format_hex_color, parse_hex_color, ACTION_COLOR_CATEGORIES};
 use sqyre_persist::{
     backups_dir, create_backup, list_backups, open_sqyre_dir, prune_backups, restore_backup,
 };
+use sqyre_persist::{
+    move_dir, set_sqyre_dir_override, sqyre_dir, Database, ProgramCatalog, UserSettings,
+    DEFAULT_UI_FONT_SIZE, DEFAULT_UI_SCALE,
+};
 #[cfg(not(target_arch = "wasm32"))]
 use sqyre_persist::{
     DEFAULT_BACKUP_INTERVAL_HOURS, DEFAULT_BACKUP_MAX_KEEP, MAX_BACKUP_INTERVAL_HOURS,
     MAX_BACKUP_MAX_KEEP, MIN_BACKUP_INTERVAL_HOURS, MIN_BACKUP_MAX_KEEP,
-};
-use sqyre_persist::{
-    move_dir, set_sqyre_dir_override, sqyre_dir, Database, ProgramCatalog, UserSettings,
-    DEFAULT_UI_FONT_SIZE, DEFAULT_UI_SCALE,
 };
 use sqyre_ui_model::{
     action_pastel_color, clear_all_custom_action_colors, clear_custom_action_color,
@@ -723,9 +723,9 @@ impl SettingsUi {
         }
 
         match Database::load_default() {
-            Ok(loaded) => {
+            Ok(mut loaded) => {
                 let mut cat = loaded.program_catalog().unwrap_or_default();
-                crate::catalog::apply_main_monitor_resolution(&mut cat);
+                let _ = crate::catalog::prepare_catalog(&mut cat, &mut loaded);
                 let mut list: Vec<_> = loaded.macros.values().cloned().collect();
                 list.sort_by(|a, b| a.name.cmp(&b.name));
                 *db = loaded;
@@ -743,6 +743,7 @@ impl SettingsUi {
                 macros.clear();
                 *catalog = ProgramCatalog::default();
                 crate::catalog::apply_main_monitor_resolution(catalog);
+                let _ = crate::catalog::ensure_general_program_seeded(catalog);
                 self.reload_requested = true;
                 self.set_err(format!("Restored archive but failed to load db.yaml: {e}"));
             }
@@ -780,9 +781,9 @@ impl SettingsUi {
         self.persist();
 
         match Database::load_default() {
-            Ok(loaded) => {
+            Ok(mut loaded) => {
                 let mut cat = loaded.program_catalog().unwrap_or_default();
-                crate::catalog::apply_main_monitor_resolution(&mut cat);
+                let _ = crate::catalog::prepare_catalog(&mut cat, &mut loaded);
                 let mut list: Vec<_> = loaded.macros.values().cloned().collect();
                 list.sort_by(|a, b| a.name.cmp(&b.name));
                 *db = loaded;
@@ -797,6 +798,7 @@ impl SettingsUi {
                 macros.clear();
                 *catalog = ProgramCatalog::default();
                 crate::catalog::apply_main_monitor_resolution(catalog);
+                let _ = crate::catalog::ensure_general_program_seeded(catalog);
                 self.reload_requested = true;
                 self.set_err(format!(
                     "Switched to {} but failed to load db.yaml: {e}",

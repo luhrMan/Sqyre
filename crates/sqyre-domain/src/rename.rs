@@ -190,7 +190,8 @@ impl Macro {
     }
 }
 
-fn rename_coordinate_entity(
+/// Rewrite a `program~entity` (or bare entity) ref when that entity is renamed.
+pub fn rename_coordinate_entity(
     ref_: &CoordinateRef,
     program: &str,
     old_name: &str,
@@ -211,7 +212,8 @@ fn rename_coordinate_entity(
     ref_.with_entity_name("", new_name)
 }
 
-fn rename_coordinate_program(
+/// Rewrite the program portion of a `program~entity` ref when the program is renamed.
+pub fn rename_coordinate_program(
     ref_: &CoordinateRef,
     old_program: &str,
     new_program: &str,

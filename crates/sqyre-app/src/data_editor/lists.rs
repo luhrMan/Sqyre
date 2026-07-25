@@ -21,17 +21,47 @@ impl DataEditor {
     ) {
         let id_salt = match self.tab {
             EditorTab::Programs => "data_editor_programs",
-            EditorTab::Items => "data_editor_items",
+            EditorTab::Items | EditorTab::Masks | EditorTab::AutoPic => "data_editor_items",
             EditorTab::Overlay => "data_editor_overlay_list",
             EditorTab::Points
             | EditorTab::SearchAreas
-            | EditorTab::Masks
             | EditorTab::Collections
-            | EditorTab::Atlases
-            | EditorTab::AutoPic => "data_editor_coords",
+            | EditorTab::Atlases => "data_editor_coords",
+        };
+        let show_collapse_chrome = !matches!(self.tab, EditorTab::Programs);
+        let tab = self.tab;
+        // Owned names so expand/collapse trailing does not borrow `catalog` across the list body.
+        let program_names_for_collapse: Vec<String> = if show_collapse_chrome {
+            catalog.program_names().cloned().collect()
+        } else {
+            Vec::new()
         };
         let mut opts = PickerScrollOpts::pane();
         opts.id_salt = Some(id_salt);
+        let mut trailing = |ui: &mut egui::Ui| {
+            if !show_collapse_chrome {
+                return;
+            }
+            collapse_all_buttons(ui, |ctx, open| match tab {
+                EditorTab::Items => {
+                    pickers::set_items_icon_grid_openness(
+                        ctx,
+                        program_names_for_collapse.iter().map(|n| n.as_str()),
+                        open,
+                    );
+                }
+                _ => {
+                    pickers::set_collapsing_openness(
+                        ctx,
+                        program_names_for_collapse
+                            .iter()
+                            .map(|n| data_editor_list_collapse_id(tab, n)),
+                        open,
+                    );
+                }
+            });
+        };
+        opts.trailing = Some(&mut trailing);
 
         let mut item_selection: Vec<String> = match (
             self.tab,
@@ -103,49 +133,61 @@ impl DataEditor {
                         continue;
                     }
                     let prog_selected = self.selected_program.as_deref() == Some(prog.as_str());
-                    if crate::icon_cache::paint_program_label(
-                        ui,
-                        catalog,
-                        icons,
-                        prog,
-                        crate::icon_cache::ProgramLabelStyle::Header {
-                            selected: Some(prog_selected),
-                        },
+                    let id = data_editor_list_collapse_id(self.tab, prog);
+                    egui::collapsing_header::CollapsingState::load_with_default_open(
+                        ui.ctx(),
+                        id,
+                        true,
                     )
-                    .clicked()
-                    {
-                        clicked_program = Some(prog.clone());
-                    }
-                    for ent in entities {
-                        if !q.is_empty() && !pickers::fuzzy_match_fold(q, &ent) && !prog_match {
-                            continue;
+                    .show_header(ui, |ui| {
+                        if crate::icon_cache::paint_program_label(
+                            ui,
+                            catalog,
+                            icons,
+                            prog,
+                            crate::icon_cache::ProgramLabelStyle::Header {
+                                selected: Some(prog_selected),
+                                child_count: entities.len(),
+                            },
+                        )
+                        .clicked()
+                        {
+                            clicked_program = Some(prog.clone());
                         }
-                        let selected = self.selected_program.as_deref() == Some(prog.as_str())
-                            && self.selected_entity.as_deref() == Some(ent.as_str());
-                        let resp = ui.selectable_label(selected, format!("  {ent}"));
-                        if let Some(kind) = kind {
-                            previews.show_for_entity(ui, &resp, catalog, prog, &ent, kind);
-                        } else if matches!(self.tab, EditorTab::Masks) {
-                            show_file_hover(
-                                ui,
-                                &resp,
-                                icons,
-                                &catalog.mask_image_path(prog, &ent),
-                                &format!("{prog}~{ent}"),
-                            );
-                        } else if matches!(self.tab, EditorTab::Collections) {
-                            show_file_hover(
-                                ui,
-                                &resp,
-                                icons,
-                                &catalog.collection_image_path(prog, &ent),
-                                &format!("{prog}~{ent}"),
-                            );
+                    })
+                    .body(|ui| {
+                        ui.set_max_width(ui.available_width());
+                        for ent in entities {
+                            if !q.is_empty() && !pickers::fuzzy_match_fold(q, &ent) && !prog_match {
+                                continue;
+                            }
+                            let selected = self.selected_program.as_deref() == Some(prog.as_str())
+                                && self.selected_entity.as_deref() == Some(ent.as_str());
+                            let resp = ui.selectable_label(selected, &ent);
+                            if let Some(kind) = kind {
+                                previews.show_for_entity(ui, &resp, catalog, prog, &ent, kind);
+                            } else if matches!(self.tab, EditorTab::Masks) {
+                                show_file_hover(
+                                    ui,
+                                    &resp,
+                                    icons,
+                                    &catalog.mask_image_path(prog, &ent),
+                                    &format!("{prog}~{ent}"),
+                                );
+                            } else if matches!(self.tab, EditorTab::Collections) {
+                                show_file_hover(
+                                    ui,
+                                    &resp,
+                                    icons,
+                                    &catalog.collection_image_path(prog, &ent),
+                                    &format!("{prog}~{ent}"),
+                                );
+                            }
+                            if resp.clicked() {
+                                self.select_entity(prog, &ent, catalog, settings);
+                            }
                         }
-                        if resp.clicked() {
-                            self.select_entity(prog, &ent, catalog, settings);
-                        }
-                    }
+                    });
                 }
             }
             EditorTab::Overlay => {
@@ -165,36 +207,45 @@ impl DataEditor {
                         continue;
                     }
                     let prog_selected = self.selected_program.as_deref() == Some(prog.as_str());
-                    if crate::icon_cache::paint_program_label(
-                        ui,
-                        catalog,
-                        icons,
-                        prog,
-                        crate::icon_cache::ProgramLabelStyle::Header {
-                            selected: Some(prog_selected),
-                        },
+                    let id = data_editor_list_collapse_id(EditorTab::Overlay, prog);
+                    egui::collapsing_header::CollapsingState::load_with_default_open(
+                        ui.ctx(),
+                        id,
+                        true,
                     )
-                    .clicked()
-                    {
-                        clicked_program = Some(prog.clone());
-                    }
-                    for btn in buttons {
-                        if !q.is_empty()
-                            && !pickers::fuzzy_match_fold(q, btn.display_name())
-                            && !pickers::fuzzy_match_fold(q, &btn.id)
-                            && !prog_match
+                    .show_header(ui, |ui| {
+                        if crate::icon_cache::paint_program_label(
+                            ui,
+                            catalog,
+                            icons,
+                            prog,
+                            crate::icon_cache::ProgramLabelStyle::Header {
+                                selected: Some(prog_selected),
+                                child_count: buttons.len(),
+                            },
+                        )
+                        .clicked()
                         {
-                            continue;
+                            clicked_program = Some(prog.clone());
                         }
-                        let selected = self.selected_program.as_deref() == Some(prog.as_str())
-                            && self.selected_entity.as_deref() == Some(btn.id.as_str());
-                        if ui
-                            .selectable_label(selected, format!("  {}", btn.display_name()))
-                            .clicked()
-                        {
-                            self.select_entity(prog, &btn.id, catalog, settings);
+                    })
+                    .body(|ui| {
+                        ui.set_max_width(ui.available_width());
+                        for btn in buttons {
+                            if !q.is_empty()
+                                && !pickers::fuzzy_match_fold(q, btn.display_name())
+                                && !pickers::fuzzy_match_fold(q, &btn.id)
+                                && !prog_match
+                            {
+                                continue;
+                            }
+                            let selected = self.selected_program.as_deref() == Some(prog.as_str())
+                                && self.selected_entity.as_deref() == Some(btn.id.as_str());
+                            if ui.selectable_label(selected, btn.display_name()).clicked() {
+                                self.select_entity(prog, &btn.id, catalog, settings);
+                            }
                         }
-                    }
+                    });
                 }
             }
         });
@@ -321,6 +372,37 @@ impl DataEditor {
                 self.select_program(&current, catalog, settings);
             }
         }
+    }
+}
+
+fn data_editor_list_collapse_id(tab: EditorTab, program: &str) -> egui::Id {
+    egui::Id::new(("data_editor_list", tab_collapse_key(tab), program))
+}
+
+fn tab_collapse_key(tab: EditorTab) -> &'static str {
+    match tab {
+        EditorTab::Programs => "programs",
+        EditorTab::Items => "items",
+        EditorTab::Points => "points",
+        EditorTab::SearchAreas => "search_areas",
+        EditorTab::Masks => "masks",
+        EditorTab::Collections => "collections",
+        EditorTab::Atlases => "atlases",
+        EditorTab::AutoPic => "autopix",
+        EditorTab::Overlay => "overlay",
+    }
+}
+
+fn collapse_all_buttons(ui: &mut egui::Ui, mut on_set: impl FnMut(&egui::Context, bool)) {
+    let expand = crate::theme::icon_button(ui, egui_phosphor::regular::CARET_DOUBLE_DOWN)
+        .on_hover_text("Expand all");
+    let collapse = crate::theme::icon_button(ui, egui_phosphor::regular::CARET_DOUBLE_UP)
+        .on_hover_text("Collapse all");
+    if expand.clicked() {
+        on_set(ui.ctx(), true);
+    }
+    if collapse.clicked() {
+        on_set(ui.ctx(), false);
     }
 }
 
