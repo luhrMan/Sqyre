@@ -1,20 +1,20 @@
 use image::{Rgba, RgbaImage};
-use sqyre_executor::{DesktopRect, ScreenCapturer};
+use sqyre_executor::{CaptureError, DesktopRect, ScreenCapturer};
 
 /// Capturer that always fails — for headless CI / tests without display.
 #[derive(Debug, Default)]
 pub struct NullCapturer;
 
 impl NullCapturer {
-    pub fn open() -> Result<Self, String> {
-        Err("NullCapturer: no display".into())
+    pub fn open() -> Result<Self, CaptureError> {
+        Err(CaptureError::Message("NullCapturer: no display".into()))
     }
 
-    pub fn capture_rect_ref(&self, _rect: DesktopRect) -> Result<RgbaImage, String> {
-        Err("NullCapturer: no display".into())
+    pub fn capture_rect_ref(&self, _rect: DesktopRect) -> Result<RgbaImage, CaptureError> {
+        Err(CaptureError::Message("NullCapturer: no display".into()))
     }
 
-    pub fn virtual_bounds_ref(&self) -> Result<DesktopRect, String> {
+    pub fn virtual_bounds_ref(&self) -> Result<DesktopRect, CaptureError> {
         Ok(DesktopRect {
             x: 0,
             y: 0,
@@ -23,7 +23,7 @@ impl NullCapturer {
         })
     }
 
-    pub fn monitor_rects_ref(&self) -> Result<Vec<DesktopRect>, String> {
+    pub fn monitor_rects_ref(&self) -> Result<Vec<DesktopRect>, CaptureError> {
         Ok(vec![DesktopRect {
             x: 0,
             y: 0,
@@ -32,7 +32,7 @@ impl NullCapturer {
         }])
     }
 
-    pub fn monitor_sizes_ref(&self) -> Result<Vec<(i32, i32)>, String> {
+    pub fn monitor_sizes_ref(&self) -> Result<Vec<(i32, i32)>, CaptureError> {
         Ok(self
             .monitor_rects_ref()?
             .into_iter()
@@ -42,13 +42,13 @@ impl NullCapturer {
 }
 
 impl ScreenCapturer for NullCapturer {
-    fn capture_monitor(&mut self, _display_index: i32) -> Result<RgbaImage, String> {
-        Err("NullCapturer: no display".into())
+    fn capture_monitor(&mut self, _display_index: i32) -> Result<RgbaImage, CaptureError> {
+        Err(CaptureError::Message("NullCapturer: no display".into()))
     }
-    fn capture_rect(&mut self, _rect: DesktopRect) -> Result<RgbaImage, String> {
-        Err("NullCapturer: no display".into())
+    fn capture_rect(&mut self, _rect: DesktopRect) -> Result<RgbaImage, CaptureError> {
+        Err(CaptureError::Message("NullCapturer: no display".into()))
     }
-    fn virtual_bounds(&mut self) -> Result<DesktopRect, String> {
+    fn virtual_bounds(&mut self) -> Result<DesktopRect, CaptureError> {
         Ok(DesktopRect {
             x: 0,
             y: 0,
@@ -80,12 +80,12 @@ impl Default for SolidCapturer {
 }
 
 impl ScreenCapturer for SolidCapturer {
-    fn capture_monitor(&mut self, _display_index: i32) -> Result<RgbaImage, String> {
+    fn capture_monitor(&mut self, _display_index: i32) -> Result<RgbaImage, CaptureError> {
         self.capture_rect(self.bounds)
     }
-    fn capture_rect(&mut self, rect: DesktopRect) -> Result<RgbaImage, String> {
+    fn capture_rect(&mut self, rect: DesktopRect) -> Result<RgbaImage, CaptureError> {
         if rect.is_empty() {
-            return Err("empty rect".into());
+            return Err(CaptureError::EmptyRect);
         }
         Ok(RgbaImage::from_pixel(
             rect.w as u32,
@@ -93,7 +93,7 @@ impl ScreenCapturer for SolidCapturer {
             self.color,
         ))
     }
-    fn virtual_bounds(&mut self) -> Result<DesktopRect, String> {
+    fn virtual_bounds(&mut self) -> Result<DesktopRect, CaptureError> {
         Ok(self.bounds)
     }
 }

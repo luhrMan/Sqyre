@@ -32,11 +32,11 @@ macro_rules! define_shared_run_capturer {
             fn capture_monitor(
                 &mut self,
                 display_index: i32,
-            ) -> Result<::image::RgbaImage, String> {
+            ) -> Result<::image::RgbaImage, ::sqyre_executor::CaptureError> {
                 if display_index != 0 {
-                    return Err(
-                        $crate::error::CaptureError::UnsupportedDisplay(display_index).into(),
-                    );
+                    return Err(::sqyre_executor::CaptureError::UnsupportedDisplay(
+                        display_index,
+                    ));
                 }
                 let vb = self.virtual_bounds_ref()?;
                 self.capture_rect_ref(vb)
@@ -45,22 +45,26 @@ macro_rules! define_shared_run_capturer {
             fn capture_rect(
                 &mut self,
                 rect: ::sqyre_executor::DesktopRect,
-            ) -> Result<::image::RgbaImage, String> {
+            ) -> Result<::image::RgbaImage, ::sqyre_executor::CaptureError> {
                 self.capture_rect_ref(rect)
             }
 
             fn capture_rect_rgb(
                 &mut self,
                 rect: ::sqyre_executor::DesktopRect,
-            ) -> Result<::sqyre_executor::RgbCapture, String> {
+            ) -> Result<::sqyre_executor::RgbCapture, ::sqyre_executor::CaptureError> {
                 self.capture_rect_rgb_ref(rect)
             }
 
-            fn virtual_bounds(&mut self) -> Result<::sqyre_executor::DesktopRect, String> {
+            fn virtual_bounds(
+                &mut self,
+            ) -> Result<::sqyre_executor::DesktopRect, ::sqyre_executor::CaptureError> {
                 self.virtual_bounds_ref()
             }
 
-            fn monitor_sizes(&mut self) -> Result<Vec<(i32, i32)>, String> {
+            fn monitor_sizes(
+                &mut self,
+            ) -> Result<Vec<(i32, i32)>, ::sqyre_executor::CaptureError> {
                 self.monitor_sizes_ref()
             }
         }
@@ -72,11 +76,11 @@ macro_rules! define_shared_run_capturer {
             fn capture_monitor(
                 &mut self,
                 display_index: i32,
-            ) -> Result<::image::RgbaImage, String> {
+            ) -> Result<::image::RgbaImage, ::sqyre_executor::CaptureError> {
                 if display_index != 0 {
-                    return Err(
-                        $crate::error::CaptureError::UnsupportedDisplay(display_index).into(),
-                    );
+                    return Err(::sqyre_executor::CaptureError::UnsupportedDisplay(
+                        display_index,
+                    ));
                 }
                 let vb = self.0.virtual_bounds_ref()?;
                 self.0.capture_rect_ref(vb)
@@ -85,22 +89,26 @@ macro_rules! define_shared_run_capturer {
             fn capture_rect(
                 &mut self,
                 rect: ::sqyre_executor::DesktopRect,
-            ) -> Result<::image::RgbaImage, String> {
+            ) -> Result<::image::RgbaImage, ::sqyre_executor::CaptureError> {
                 self.0.capture_rect_ref(rect)
             }
 
             fn capture_rect_rgb(
                 &mut self,
                 rect: ::sqyre_executor::DesktopRect,
-            ) -> Result<::sqyre_executor::RgbCapture, String> {
+            ) -> Result<::sqyre_executor::RgbCapture, ::sqyre_executor::CaptureError> {
                 self.0.capture_rect_rgb_ref(rect)
             }
 
-            fn virtual_bounds(&mut self) -> Result<::sqyre_executor::DesktopRect, String> {
+            fn virtual_bounds(
+                &mut self,
+            ) -> Result<::sqyre_executor::DesktopRect, ::sqyre_executor::CaptureError> {
                 self.0.virtual_bounds_ref()
             }
 
-            fn monitor_sizes(&mut self) -> Result<Vec<(i32, i32)>, String> {
+            fn monitor_sizes(
+                &mut self,
+            ) -> Result<Vec<(i32, i32)>, ::sqyre_executor::CaptureError> {
                 self.0.monitor_sizes_ref()
             }
         }
