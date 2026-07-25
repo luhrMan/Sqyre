@@ -42,54 +42,58 @@ impl SqyreApp {
     pub(crate) fn play_ui_delete_sound(&self) {}
 
     pub(crate) fn selected_action_id(&self) -> Option<ActionId> {
-        self.selected_actions.last().copied()
+        self.tree.selected_actions.last().copied()
     }
 
     pub(crate) fn set_selected_actions(&mut self, ids: Vec<ActionId>) {
-        self.selected_actions = ids;
+        self.tree.selected_actions = ids;
     }
 
     pub(crate) fn clear_selected_actions(&mut self) {
-        self.selected_actions.clear();
+        self.tree.selected_actions.clear();
     }
 
     pub(crate) fn select_one_action(&mut self, id: ActionId) {
-        self.selected_actions = vec![id];
+        self.tree.selected_actions = vec![id];
     }
 
     pub(crate) fn remove_from_selection(&mut self, id: ActionId) {
-        self.selected_actions.retain(|&a| a != id);
+        self.tree.selected_actions.retain(|&a| a != id);
     }
 
     /// Clear a stale tag filter when no macro still carries that tag.
     pub(crate) fn sanitize_hotkey_tag_filter(&mut self) {
-        let Some(tag) = self.hotkey_tag_filter.as_deref() else {
+        let Some(tag) = self.workspace.hotkey_tag_filter.as_deref() else {
             return;
         };
         let still_valid = if tag.is_empty() {
-            self.macros.iter().any(|m| m.tags.is_empty())
+            self.workspace.macros.iter().any(|m| m.tags.is_empty())
         } else {
-            self.macros.iter().any(|m| m.tags.iter().any(|t| t == tag))
+            self.workspace
+                .macros
+                .iter()
+                .any(|m| m.tags.iter().any(|t| t == tag))
         };
         if !still_valid {
-            self.hotkey_tag_filter = None;
+            self.workspace.hotkey_tag_filter = None;
         }
     }
 
     /// Toggle which tag's macros receive hotkeys. Clicking the active tag clears the filter.
     pub(crate) fn toggle_hotkey_tag_filter(&mut self, tag: String) {
-        if self.hotkey_tag_filter.as_ref() == Some(&tag) {
-            self.hotkey_tag_filter = None;
+        if self.workspace.hotkey_tag_filter.as_ref() == Some(&tag) {
+            self.workspace.hotkey_tag_filter = None;
         } else {
-            self.hotkey_tag_filter = Some(tag);
+            self.workspace.hotkey_tag_filter = Some(tag);
         }
         self.refresh_macro_hotkey_bindings();
     }
 
     pub(crate) fn refresh_macro_hotkey_bindings(&mut self) {
         self.sanitize_hotkey_tag_filter();
-        let filter = self.hotkey_tag_filter.as_deref();
+        let filter = self.workspace.hotkey_tag_filter.as_deref();
         let bindings = self
+            .workspace
             .macros
             .iter()
             .filter(|m| !m.hotkey.is_empty())
@@ -103,26 +107,26 @@ impl SqyreApp {
                 )
             })
             .collect();
-        self.macro_hotkeys.set_bindings(bindings);
+        self.run_session.macro_hotkeys.set_bindings(bindings);
     }
 
     pub(crate) fn persist_macro_at(&mut self, idx: usize) {
-        if idx >= self.macros.len() {
+        if idx >= self.workspace.macros.len() {
             return;
         }
-        let m = self.macros[idx].clone();
-        self.db.macros.insert(m.name.clone(), m);
+        let m = self.workspace.macros[idx].clone();
+        self.workspace.db.macros.insert(m.name.clone(), m);
         self.save_database();
         self.refresh_macro_hotkey_bindings();
     }
 
     pub(crate) fn unique_macro_name(&self, base: &str) -> String {
-        if !self.macros.iter().any(|m| m.name == base) {
+        if !self.workspace.macros.iter().any(|m| m.name == base) {
             return base.to_string();
         }
         for i in 2.. {
             let candidate = format!("{base} {i}");
-            if !self.macros.iter().any(|m| m.name == candidate) {
+            if !self.workspace.macros.iter().any(|m| m.name == candidate) {
                 return candidate;
             }
         }
@@ -130,102 +134,122 @@ impl SqyreApp {
     }
 
     pub(crate) fn select_macro_by_name(&mut self, name: &str) {
-        if let Some(i) = self.macros.iter().position(|m| m.name == name) {
-            self.selected_macro = i;
+        if let Some(i) = self.workspace.macros.iter().position(|m| m.name == name) {
+            self.workspace.selected_macro = i;
             self.clear_selected_actions();
-            self.tooltip.cancel();
-            self.macro_meta.sync_selection(i, &self.macros[i]);
+            self.tree.tooltip.cancel();
+            self.workspace
+                .macro_meta
+                .sync_selection(i, &self.workspace.macros[i]);
         }
     }
 
     pub(crate) fn create_macro(&mut self) {
         let name = self.unique_macro_name("new macro");
         let m = Macro::new(name.clone(), 0, vec![]);
-        self.db.macros.insert(m.name.clone(), m.clone());
+        self.workspace.db.macros.insert(m.name.clone(), m.clone());
         self.save_database();
-        if self.save_error.is_some() {
+        if self.workspace.save_error.is_some() {
             return;
         }
-        self.macros.push(m);
-        self.macros.sort_by(|a, b| a.name.cmp(&b.name));
+        self.workspace.macros.push(m);
+        self.workspace.macros.sort_by(|a, b| a.name.cmp(&b.name));
         self.refresh_macro_hotkey_bindings();
         self.select_macro_by_name(&name);
         self.play_ui_add_sound();
     }
 
     pub(crate) fn duplicate_selected_macro(&mut self) {
-        if self.macros.is_empty() {
+        if self.workspace.macros.is_empty() {
             return;
         }
-        let idx = self.selected_macro.min(self.macros.len() - 1);
-        let src_name = self.macros[idx].name.clone();
-        let mut dup = self.macros[idx].clone();
+        let idx = self
+            .workspace
+            .selected_macro
+            .min(self.workspace.macros.len() - 1);
+        let src_name = self.workspace.macros[idx].name.clone();
+        let mut dup = self.workspace.macros[idx].clone();
         dup.name = self.unique_macro_name(&format!("{src_name} copy"));
         // Clear hotkey so duplicate doesn't steal the source chord.
         dup.hotkey.clear();
         let name = dup.name.clone();
-        self.db.macros.insert(name.clone(), dup.clone());
+        self.workspace.db.macros.insert(name.clone(), dup.clone());
         self.save_database();
-        if self.save_error.is_some() {
+        if self.workspace.save_error.is_some() {
             return;
         }
-        self.macros.push(dup);
-        self.macros.sort_by(|a, b| a.name.cmp(&b.name));
+        self.workspace.macros.push(dup);
+        self.workspace.macros.sort_by(|a, b| a.name.cmp(&b.name));
         self.refresh_macro_hotkey_bindings();
         self.select_macro_by_name(&name);
         self.play_ui_add_sound();
     }
 
     pub(crate) fn delete_macro_named(&mut self, name: &str) {
-        self.db.macros.remove(name);
-        self.tree_histories.remove(name);
-        self.macros.retain(|m| m.name != name);
+        self.workspace.db.macros.remove(name);
+        self.tree.histories.remove(name);
+        self.workspace.macros.retain(|m| m.name != name);
         self.save_database();
         self.refresh_macro_hotkey_bindings();
         self.play_ui_delete_sound();
-        if self.macros.is_empty() {
-            self.selected_macro = 0;
+        if self.workspace.macros.is_empty() {
+            self.workspace.selected_macro = 0;
             self.clear_selected_actions();
-            self.tooltip.cancel();
+            self.tree.tooltip.cancel();
             return;
         }
-        self.selected_macro = self.selected_macro.min(self.macros.len() - 1);
+        self.workspace.selected_macro = self
+            .workspace
+            .selected_macro
+            .min(self.workspace.macros.len() - 1);
         self.clear_selected_actions();
-        self.tooltip.cancel();
-        self.macro_meta
-            .sync_selection(self.selected_macro, &self.macros[self.selected_macro]);
+        self.tree.tooltip.cancel();
+        self.workspace.macro_meta.sync_selection(
+            self.workspace.selected_macro,
+            &self.workspace.macros[self.workspace.selected_macro],
+        );
     }
 
     /// Rename the selected macro, drop the old db key, and rewrite Run Macro refs.
     pub(crate) fn rename_selected_macro(&mut self, new_name: String) {
-        if self.macros.is_empty() {
+        if self.workspace.macros.is_empty() {
             return;
         }
-        let idx = self.selected_macro.min(self.macros.len() - 1);
-        let old_name = self.macros[idx].name.clone();
+        let idx = self
+            .workspace
+            .selected_macro
+            .min(self.workspace.macros.len() - 1);
+        let old_name = self.workspace.macros[idx].name.clone();
         if old_name == new_name {
             return;
         }
 
-        self.macros[idx].name = new_name.clone();
-        for m in &mut self.macros {
+        self.workspace.macros[idx].name = new_name.clone();
+        for m in &mut self.workspace.macros {
             m.rename_macro_reference(&old_name, &new_name);
         }
-        if let Some(hist) = self.tree_histories.remove(&old_name) {
-            self.tree_histories.insert(new_name.clone(), hist);
+        if let Some(hist) = self.tree.histories.remove(&old_name) {
+            self.tree.histories.insert(new_name.clone(), hist);
         }
-        self.db.macros.remove(&old_name);
+        self.workspace.db.macros.remove(&old_name);
         if let Err(e) = self.persist_database() {
             eprintln!("sqyre: rename macro: {e}");
         }
         self.refresh_macro_hotkey_bindings();
 
-        self.macros.sort_by(|a, b| a.name.cmp(&b.name));
-        if let Some(i) = self.macros.iter().position(|m| m.name == new_name) {
-            self.selected_macro = i;
+        self.workspace.macros.sort_by(|a, b| a.name.cmp(&b.name));
+        if let Some(i) = self
+            .workspace
+            .macros
+            .iter()
+            .position(|m| m.name == new_name)
+        {
+            self.workspace.selected_macro = i;
         }
-        self.macro_meta
-            .sync_selection(self.selected_macro, &self.macros[self.selected_macro]);
+        self.workspace.macro_meta.sync_selection(
+            self.workspace.selected_macro,
+            &self.workspace.macros[self.workspace.selected_macro],
+        );
     }
 
     pub(crate) fn apply_hotkey_to_selected(
@@ -233,140 +257,169 @@ impl SqyreApp {
         chord: Vec<String>,
         trigger: Option<HotkeyTrigger>,
     ) {
-        if self.macros.is_empty() {
+        if self.workspace.macros.is_empty() {
             return;
         }
-        let idx = self.selected_macro.min(self.macros.len() - 1);
-        let trigger =
-            trigger.unwrap_or_else(|| HotkeyTrigger::parse(&self.macros[idx].hotkey_trigger));
-        let binding = MacroHotkeyBinding::new(self.macros[idx].name.clone(), chord, trigger);
-        self.macros[idx].hotkey = binding.chord;
-        self.macros[idx].hotkey_trigger = trigger.as_str().to_string();
+        let idx = self
+            .workspace
+            .selected_macro
+            .min(self.workspace.macros.len() - 1);
+        let trigger = trigger
+            .unwrap_or_else(|| HotkeyTrigger::parse(&self.workspace.macros[idx].hotkey_trigger));
+        let binding =
+            MacroHotkeyBinding::new(self.workspace.macros[idx].name.clone(), chord, trigger);
+        self.workspace.macros[idx].hotkey = binding.chord;
+        self.workspace.macros[idx].hotkey_trigger = trigger.as_str().to_string();
         self.persist_macro_at(idx);
     }
 
     pub(crate) fn record_tree_mutation(&mut self) {
-        if self.macros.is_empty() {
+        if self.workspace.macros.is_empty() {
             return;
         }
-        let idx = self.selected_macro.min(self.macros.len() - 1);
-        let selected = self.selected_actions.clone();
-        let name = self.macros[idx].name.clone();
-        let Ok(snap) = TreeHistory::take_snapshot(&self.macros[idx].root, selected) else {
+        let idx = self
+            .workspace
+            .selected_macro
+            .min(self.workspace.macros.len() - 1);
+        let selected = self.tree.selected_actions.clone();
+        let name = self.workspace.macros[idx].name.clone();
+        let Ok(snap) = TreeHistory::take_snapshot(&self.workspace.macros[idx].root, selected)
+        else {
             return;
         };
-        self.tree_histories
+        self.tree
+            .histories
             .entry(name)
             .or_default()
             .push_snapshot(snap);
     }
 
     pub(crate) fn undo_tree(&mut self) {
-        if self.macros.is_empty() {
+        if self.workspace.macros.is_empty() {
             return;
         }
-        let idx = self.selected_macro.min(self.macros.len() - 1);
-        let name = self.macros[idx].name.clone();
-        let mut selected = self.selected_actions.clone();
-        let mut history = self.tree_histories.remove(&name).unwrap_or_default();
-        let result = history.undo(&mut self.macros[idx].root, &mut selected);
-        self.tree_histories.insert(name, history);
+        let idx = self
+            .workspace
+            .selected_macro
+            .min(self.workspace.macros.len() - 1);
+        let name = self.workspace.macros[idx].name.clone();
+        let mut selected = self.tree.selected_actions.clone();
+        let mut history = self.tree.histories.remove(&name).unwrap_or_default();
+        let result = history.undo(&mut self.workspace.macros[idx].root, &mut selected);
+        self.tree.histories.insert(name, history);
         match result {
             Ok(()) => {
                 self.set_selected_actions(selected);
-                self.tooltip.cancel();
+                self.tree.tooltip.cancel();
                 self.persist_macro_at(idx);
             }
             Err(e) => {
                 eprintln!("sqyre: undo: {e}");
-                *self.run.status.lock() = format!("Undo failed: {e}");
+                *self.run_session.state.status.lock() = format!("Undo failed: {e}");
             }
         }
     }
 
     pub(crate) fn redo_tree(&mut self) {
-        if self.macros.is_empty() {
+        if self.workspace.macros.is_empty() {
             return;
         }
-        let idx = self.selected_macro.min(self.macros.len() - 1);
-        let name = self.macros[idx].name.clone();
-        let mut selected = self.selected_actions.clone();
-        let mut history = self.tree_histories.remove(&name).unwrap_or_default();
-        let result = history.redo(&mut self.macros[idx].root, &mut selected);
-        self.tree_histories.insert(name, history);
+        let idx = self
+            .workspace
+            .selected_macro
+            .min(self.workspace.macros.len() - 1);
+        let name = self.workspace.macros[idx].name.clone();
+        let mut selected = self.tree.selected_actions.clone();
+        let mut history = self.tree.histories.remove(&name).unwrap_or_default();
+        let result = history.redo(&mut self.workspace.macros[idx].root, &mut selected);
+        self.tree.histories.insert(name, history);
         match result {
             Ok(()) => {
                 self.set_selected_actions(selected);
-                self.tooltip.cancel();
+                self.tree.tooltip.cancel();
                 self.persist_macro_at(idx);
             }
             Err(e) => {
                 eprintln!("sqyre: redo: {e}");
-                *self.run.status.lock() = format!("Redo failed: {e}");
+                *self.run_session.state.status.lock() = format!("Redo failed: {e}");
             }
         }
     }
 
     pub(crate) fn can_undo(&self) -> bool {
-        if self.macros.is_empty() {
+        if self.workspace.macros.is_empty() {
             return false;
         }
-        let idx = self.selected_macro.min(self.macros.len() - 1);
-        self.tree_histories
-            .get(&self.macros[idx].name)
+        let idx = self
+            .workspace
+            .selected_macro
+            .min(self.workspace.macros.len() - 1);
+        self.tree
+            .histories
+            .get(&self.workspace.macros[idx].name)
             .is_some_and(|h| h.can_undo())
     }
 
     pub(crate) fn can_redo(&self) -> bool {
-        if self.macros.is_empty() {
+        if self.workspace.macros.is_empty() {
             return false;
         }
-        let idx = self.selected_macro.min(self.macros.len() - 1);
-        self.tree_histories
-            .get(&self.macros[idx].name)
+        let idx = self
+            .workspace
+            .selected_macro
+            .min(self.workspace.macros.len() - 1);
+        self.tree
+            .histories
+            .get(&self.workspace.macros[idx].name)
             .is_some_and(|h| h.can_redo())
     }
 
     pub(crate) fn can_copy_selection(&self) -> bool {
-        if self.macros.is_empty() {
+        if self.workspace.macros.is_empty() {
             return false;
         }
-        let idx = self.selected_macro.min(self.macros.len() - 1);
+        let idx = self
+            .workspace
+            .selected_macro
+            .min(self.workspace.macros.len() - 1);
         let Some(aid) = self.selected_action_id().filter(|a| !a.is_root()) else {
             return false;
         };
-        self.macros[idx].root.find_by_id(aid).is_some()
+        self.workspace.macros[idx].root.find_by_id(aid).is_some()
     }
 
     pub(crate) fn can_paste_clipboard(&self) -> bool {
-        self.action_clipboard.is_some() && !self.macros.is_empty()
+        self.tree.clipboard.is_some() && !self.workspace.macros.is_empty()
     }
 
     pub(crate) fn copy_selection(&mut self, ctx: &egui::Context) -> bool {
-        if self.macros.is_empty() {
+        if self.workspace.macros.is_empty() {
             return false;
         }
-        let idx = self.selected_macro.min(self.macros.len() - 1);
+        let idx = self
+            .workspace
+            .selected_macro
+            .min(self.workspace.macros.len() - 1);
         let Some(aid) = self.selected_action_id().filter(|a| !a.is_root()) else {
             return false;
         };
-        let Some(action) = self.macros[idx].root.find_by_id(aid) else {
+        let Some(action) = self.workspace.macros[idx].root.find_by_id(aid) else {
             return false;
         };
         let map = match sqyre_serialize::action_to_map(action) {
             Ok(m) => m,
             Err(e) => {
-                *self.run.status.lock() = format!("Copy failed: {e}");
+                *self.run_session.state.status.lock() = format!("Copy failed: {e}");
                 return false;
             }
         };
         // Round-trip through the same nest-depth/type-key decode gates paste
         // uses, so a corrupt map can never land in the clipboard.
         if let Err(e) = sqyre_serialize::action_from_map(&map) {
-            *self.run.status.lock() = format!("Copy failed: {e}");
+            *self.run_session.state.status.lock() = format!("Copy failed: {e}");
             return false;
         }
-        self.action_clipboard = Some(map);
+        self.tree.clipboard = Some(map);
         // egui-winit only emits Event::Paste when the OS clipboard is non-empty.
         // Action data stays process-local; this sentinel just unblocks Ctrl+V.
         ctx.copy_text(String::from("sqyre-action"));
@@ -374,43 +427,49 @@ impl SqyreApp {
     }
 
     pub(crate) fn paste_clipboard(&mut self) -> bool {
-        if self.macros.is_empty() {
+        if self.workspace.macros.is_empty() {
             return false;
         }
-        let Some(clip) = self.action_clipboard.clone() else {
+        let Some(clip) = self.tree.clipboard.clone() else {
             return false;
         };
         let new_action = match sqyre_serialize::action_from_map(&clip) {
             Ok(a) => a,
             Err(e) => {
-                *self.run.status.lock() = format!("Paste failed: {e}");
+                *self.run_session.state.status.lock() = format!("Paste failed: {e}");
                 return false;
             }
         };
-        let idx = self.selected_macro.min(self.macros.len() - 1);
-        if let Err(e) = sqyre_validate::validate_action_tree(&new_action, Some(&self.macros[idx])) {
-            *self.run.status.lock() = format!("Paste failed: {e}");
+        let idx = self
+            .workspace
+            .selected_macro
+            .min(self.workspace.macros.len() - 1);
+        if let Err(e) =
+            sqyre_validate::validate_action_tree(&new_action, Some(&self.workspace.macros[idx]))
+        {
+            *self.run_session.state.status.lock() = format!("Paste failed: {e}");
             return false;
         }
         let new_id = new_action.id;
         let selected = self.selected_action_id();
-        let Some((parent, slot)) =
-            tree_clipboard::insert_location_below_selection(&self.macros[idx].root, selected)
-        else {
-            *self.run.status.lock() = "Paste failed: no valid insert location".into();
+        let Some((parent, slot)) = tree_clipboard::insert_location_below_selection(
+            &self.workspace.macros[idx].root,
+            selected,
+        ) else {
+            *self.run_session.state.status.lock() = "Paste failed: no valid insert location".into();
             return false;
         };
         self.record_tree_mutation();
-        if self.macros[idx]
+        if self.workspace.macros[idx]
             .root
             .insert_at(parent, slot, new_action)
             .is_err()
         {
-            *self.run.status.lock() = "Paste failed: could not insert action".into();
+            *self.run_session.state.status.lock() = "Paste failed: could not insert action".into();
             return false;
         }
         self.select_one_action(new_id);
-        self.tooltip.cancel();
+        self.tree.tooltip.cancel();
         self.persist_macro_at(idx);
         self.play_ui_add_sound();
         true
@@ -422,20 +481,24 @@ impl SqyreApp {
     /// Key/click actions inserted as [`PressState::Down`] also get a matching `Up`
     /// sibling inserted immediately below (discarded together if Cancel).
     pub(crate) fn insert_blank_action(&mut self, action: Action, edit_anchor: egui::Pos2) -> bool {
-        if self.macros.is_empty() {
+        if self.workspace.macros.is_empty() {
             return false;
         }
         let new_id = action.id;
-        let idx = self.selected_macro.min(self.macros.len() - 1);
+        let idx = self
+            .workspace
+            .selected_macro
+            .min(self.workspace.macros.len() - 1);
         let selected = self.selected_action_id();
-        let Some((parent, slot)) =
-            tree_clipboard::insert_location_below_selection(&self.macros[idx].root, selected)
-        else {
+        let Some((parent, slot)) = tree_clipboard::insert_location_below_selection(
+            &self.workspace.macros[idx].root,
+            selected,
+        ) else {
             return false;
         };
         let release = action.matching_release();
         self.record_tree_mutation();
-        if self.macros[idx]
+        if self.workspace.macros[idx]
             .root
             .insert_at(parent, slot, action.clone())
             .is_err()
@@ -445,7 +508,7 @@ impl SqyreApp {
         let mut companions = Vec::new();
         if let Some(release) = release {
             let release_id = release.id;
-            if self.macros[idx]
+            if self.workspace.macros[idx]
                 .root
                 .insert_at(parent, sqyre_domain::InsertSlot::After(new_id), release)
                 .is_ok()
@@ -455,27 +518,32 @@ impl SqyreApp {
         }
         self.select_one_action(new_id);
         // Not persisted until Save; Cancel removes the provisional node(s).
-        self.tooltip.open_edit_new(&action, edit_anchor, companions);
+        self.tree
+            .tooltip
+            .open_edit_new(&action, edit_anchor, companions);
         self.play_ui_add_sound();
         true
     }
 
     pub(crate) fn discard_provisional_actions(&mut self, action_ids: &[ActionId]) {
-        if self.macros.is_empty() || action_ids.is_empty() {
+        if self.workspace.macros.is_empty() || action_ids.is_empty() {
             return;
         }
-        let idx = self.selected_macro.min(self.macros.len() - 1);
+        let idx = self
+            .workspace
+            .selected_macro
+            .min(self.workspace.macros.len() - 1);
         for &action_id in action_ids {
-            let _ = self.macros[idx].root.remove_by_id(action_id);
+            let _ = self.workspace.macros[idx].root.remove_by_id(action_id);
             self.remove_from_selection(action_id);
-            if self.logs_window == Some(action_id) {
-                self.logs_window = None;
-                self.logs_image_cache.clear();
+            if self.run_session.logs_window == Some(action_id) {
+                self.run_session.logs_window = None;
+                self.run_session.logs_image_cache.clear();
             }
         }
         // Drop the undo entry recorded for the provisional insert so Undo is a no-op.
-        let name = self.macros[idx].name.clone();
-        if let Some(hist) = self.tree_histories.get_mut(&name) {
+        let name = self.workspace.macros[idx].name.clone();
+        if let Some(hist) = self.tree.histories.get_mut(&name) {
             hist.pop_last_undo();
         }
     }
@@ -484,21 +552,24 @@ impl SqyreApp {
         if !self.copy_selection(ctx) {
             return false;
         }
-        if self.macros.is_empty() {
+        if self.workspace.macros.is_empty() {
             return false;
         }
-        let idx = self.selected_macro.min(self.macros.len() - 1);
+        let idx = self
+            .workspace
+            .selected_macro
+            .min(self.workspace.macros.len() - 1);
         let Some(aid) = self.selected_action_id().filter(|a| !a.is_root()) else {
             return false;
         };
         self.record_tree_mutation();
-        let _ = self.macros[idx].root.remove_by_id(aid);
+        let _ = self.workspace.macros[idx].root.remove_by_id(aid);
         self.clear_selected_actions();
-        if self.logs_window == Some(aid) {
-            self.logs_window = None;
-            self.logs_image_cache.clear();
+        if self.run_session.logs_window == Some(aid) {
+            self.run_session.logs_window = None;
+            self.run_session.logs_image_cache.clear();
         }
-        self.tooltip.cancel();
+        self.tree.tooltip.cancel();
         self.persist_macro_at(idx);
         self.play_ui_delete_sound();
         true

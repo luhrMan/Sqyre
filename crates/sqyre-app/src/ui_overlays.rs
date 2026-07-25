@@ -33,9 +33,14 @@ pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
     let buttons = app.settings_ui.settings().overlay_buttons.clone();
     let preview = app.data_editor.overlay_edit_preview();
     let hide = app.screen_click.is_armed();
-    let running_macro = if app.run.running.load(Ordering::SeqCst) && !app.macros.is_empty() {
-        let idx = app.selected_macro.min(app.macros.len() - 1);
-        Some(app.macros[idx].name.as_str())
+    let running_macro = if app.run_session.state.running.load(Ordering::SeqCst)
+        && !app.workspace.macros.is_empty()
+    {
+        let idx = app
+            .workspace
+            .selected_macro
+            .min(app.workspace.macros.len() - 1);
+        Some(app.workspace.macros[idx].name.as_str())
     } else {
         None
     };
@@ -44,7 +49,7 @@ pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
         enabled,
         &buttons,
         preview.as_ref(),
-        &app.catalog,
+        &app.workspace.catalog,
         &app.pending_hotkey_macros,
         hide,
         running_macro,
@@ -52,11 +57,14 @@ pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
 }
 
 fn action_display_name(app: &SqyreApp, action_id: ActionId) -> String {
-    if app.macros.is_empty() {
+    if app.workspace.macros.is_empty() {
         return action_id.as_str();
     }
-    let idx = app.selected_macro.min(app.macros.len() - 1);
-    let root = &app.macros[idx].root;
+    let idx = app
+        .workspace
+        .selected_macro
+        .min(app.workspace.macros.len() - 1);
+    let root = &app.workspace.macros[idx].root;
     let action = if action_id.is_root() {
         Some(root)
     } else {
@@ -68,7 +76,7 @@ fn action_display_name(app: &SqyreApp, action_id: ActionId) -> String {
 }
 
 pub fn show_logs_window(app: &mut SqyreApp, ctx: &egui::Context) {
-    let Some(action_id) = app.logs_window else {
+    let Some(action_id) = app.run_session.logs_window else {
         return;
     };
     let title = format!("Logs — {}", action_display_name(app, action_id));
@@ -76,10 +84,10 @@ pub fn show_logs_window(app: &mut SqyreApp, ctx: &egui::Context) {
         ctx,
         action_id,
         &title,
-        &app.action_log,
-        &mut app.logs_image_cache,
+        &app.run_session.action_log,
+        &mut app.run_session.logs_image_cache,
     ) {
-        app.logs_window = None;
+        app.run_session.logs_window = None;
     }
 }
 
@@ -88,10 +96,10 @@ pub fn show_floating_windows(app: &mut SqyreApp, ctx: &egui::Context) {
     show_logs_window(app, ctx);
     app.data_editor.show(
         ctx,
-        &mut app.db,
-        &mut app.macros,
-        app.selected_macro,
-        &mut app.catalog,
+        &mut app.workspace.db,
+        &mut app.workspace.macros,
+        app.workspace.selected_macro,
+        &mut app.workspace.catalog,
         &mut app.icon_cache,
         &mut app.preview_tooltips,
         &app.screen_click,
@@ -101,9 +109,9 @@ pub fn show_floating_windows(app: &mut SqyreApp, ctx: &egui::Context) {
     {
         app.settings_ui.show(
             ctx,
-            &mut app.db,
-            &mut app.macros,
-            &mut app.catalog,
+            &mut app.workspace.db,
+            &mut app.workspace.macros,
+            &mut app.workspace.catalog,
             &mut app.update,
         );
         if app.settings_ui.restart_requested {
@@ -113,36 +121,47 @@ pub fn show_floating_windows(app: &mut SqyreApp, ctx: &egui::Context) {
     }
     #[cfg(target_arch = "wasm32")]
     {
-        app.settings_ui
-            .show(ctx, &mut app.db, &mut app.macros, &mut app.catalog);
+        app.settings_ui.show(
+            ctx,
+            &mut app.workspace.db,
+            &mut app.workspace.macros,
+            &mut app.workspace.catalog,
+        );
     }
-    if !app.macros.is_empty() {
-        let idx = app.selected_macro.min(app.macros.len() - 1);
-        let running = app.run.running.load(Ordering::SeqCst);
+    if !app.workspace.macros.is_empty() {
+        let idx = app
+            .workspace
+            .selected_macro
+            .min(app.workspace.macros.len() - 1);
+        let running = app.run_session.state.running.load(Ordering::SeqCst);
         if app.variables_panel.show(
             ctx,
-            &mut app.macros[idx],
+            &mut app.workspace.macros[idx],
             !running,
-            &app.runtime_vars,
+            &app.run_session.runtime_vars,
             running,
         ) {
             app.persist_macro_at(idx);
         }
     }
     if let Some(action) = {
-        let catalog = &app.catalog;
+        let catalog = &app.workspace.catalog;
         let icons = &mut app.icon_cache;
         let previews = &mut app.preview_tooltips;
         let macros: Vec<(String, Vec<String>)> = app
+            .workspace
             .macros
             .iter()
             .map(|m| (m.name.clone(), m.tags.clone()))
             .collect();
-        let known_vars = if app.macros.is_empty() {
+        let known_vars = if app.workspace.macros.is_empty() {
             HashSet::new()
         } else {
-            let idx = app.selected_macro.min(app.macros.len() - 1);
-            collect_known_variable_names(&app.macros[idx])
+            let idx = app
+                .workspace
+                .selected_macro
+                .min(app.workspace.macros.len() - 1);
+            collect_known_variable_names(&app.workspace.macros[idx])
         };
         let mut defaults_to_persist = false;
         let picked = app.add_action_picker.show(
@@ -154,7 +173,7 @@ pub fn show_floating_windows(app: &mut SqyreApp, ctx: &egui::Context) {
             &known_vars,
             &mut app.key_record,
             &mut app.hotkey_record,
-            &app.macro_hotkeys,
+            &app.run_session.macro_hotkeys,
             &app.screen_click,
             |_| {
                 defaults_to_persist = true;
@@ -186,18 +205,19 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
 
     // Keep highlighter enable flag in sync with the preference.
     let highlight_on = app.settings_ui.settings().highlight_active_action;
-    if app.highlighter.is_enabled() != highlight_on {
-        app.highlighter.set_enabled(highlight_on);
+    if app.run_session.highlighter.is_enabled() != highlight_on {
+        app.run_session.highlighter.set_enabled(highlight_on);
     }
-    app.action_log
+    app.run_session
+        .action_log
         .set_log_images(app.settings_ui.settings().save_meta_images);
     if app.settings_ui.reload_requested {
         app.settings_ui.reload_requested = false;
-        apply_main_monitor_resolution(&mut app.catalog);
-        app.selected_macro = 0;
+        apply_main_monitor_resolution(&mut app.workspace.catalog);
+        app.workspace.selected_macro = 0;
         app.clear_selected_actions();
-        app.tree_histories.clear();
-        app.tooltip.cancel();
+        app.tree.histories.clear();
+        app.tree.tooltip.cancel();
         app.add_action_picker = AddActionPicker::default();
         app.add_action_picker
             .load_from_settings(app.settings_ui.settings());
@@ -217,7 +237,7 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
     if let Some((x, y)) = app.screen_click.take_color_point() {
         match pixel_color::sample_pixel_hex(x, y) {
             Ok(hex) => {
-                app.tooltip.apply_recorded_color(hex.clone());
+                app.tree.tooltip.apply_recorded_color(hex.clone());
                 app.add_action_picker.apply_recorded_color(hex);
             }
             Err(e) => eprintln!("sqyre: sample pixel color: {e}"),
@@ -232,19 +252,19 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
     crate::win_focused_keys::feed_focused_keyboard(app, ctx);
     app.drain_pending_hotkey_macros(ctx);
 
-    if let Some(chord) = app.hotkey_record.show(ctx, &app.macro_hotkeys) {
-        if !app.tooltip.apply_recorded_chord(chord.clone())
+    if let Some(chord) = app.hotkey_record.show(ctx, &app.run_session.macro_hotkeys) {
+        if !app.tree.tooltip.apply_recorded_chord(chord.clone())
             && !app.add_action_picker.apply_recorded_chord(chord.clone())
         {
             app.apply_hotkey_to_selected(chord, None);
         }
     }
-    if let Some(key) = app.key_record.show(ctx, &app.macro_hotkeys) {
-        app.tooltip.apply_recorded_key(key.clone());
+    if let Some(key) = app.key_record.show(ctx, &app.run_session.macro_hotkeys) {
+        app.tree.tooltip.apply_recorded_key(key.clone());
         app.add_action_picker.apply_recorded_key(key);
     }
 
-    let running = app.run.running.load(Ordering::SeqCst);
+    let running = app.run_session.state.running.load(Ordering::SeqCst);
     if running
         || app.hotkey_record.is_open()
         || app.key_record.is_open()
@@ -359,8 +379,8 @@ fn poll_update(app: &mut SqyreApp, ctx: &egui::Context) {
 ///
 /// Mutating shortcuts match the action toolbar: disabled while a macro is running.
 pub fn handle_shortcuts(app: &mut SqyreApp, ui: &mut egui::Ui) {
-    let running = app.run.running.load(Ordering::SeqCst);
-    if !app.tooltip.is_editing()
+    let running = app.run_session.state.running.load(Ordering::SeqCst);
+    if !app.tree.tooltip.is_editing()
         && !app.hotkey_record.is_open()
         && !app.key_record.is_open()
         && !ui.ctx().text_edit_focused()
@@ -398,7 +418,7 @@ pub fn handle_shortcuts(app: &mut SqyreApp, ui: &mut egui::Ui) {
             app.undo_tree();
         } else if redo {
             app.redo_tree();
-        } else if add_action && !app.macros.is_empty() {
+        } else if add_action && !app.workspace.macros.is_empty() {
             app.add_action_picker.open();
         }
     }
