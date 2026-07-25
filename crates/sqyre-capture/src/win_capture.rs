@@ -38,32 +38,32 @@ impl OsCapturer {
     }
 
     /// Capture a desktop rect (`&self` — safe to call via [`Arc`] from worker threads).
-    pub fn capture_rect_ref(&self, rect: DesktopRect) -> Result<RgbaImage, String> {
+    pub fn capture_rect_ref(&self, rect: DesktopRect) -> Result<RgbaImage, CaptureError> {
         let _guard = self.inner.lock();
         capture_rect_gdi(rect)
     }
 
     /// Capture RGB directly (no alpha channel / no second conversion pass).
-    pub fn capture_rect_rgb_ref(&self, rect: DesktopRect) -> Result<RgbCapture, String> {
+    pub fn capture_rect_rgb_ref(&self, rect: DesktopRect) -> Result<RgbCapture, CaptureError> {
         let _guard = self.inner.lock();
         let rgba = capture_rect_gdi(rect)?;
         Ok(RgbCapture::from_rgba(&rgba))
     }
 
     /// Virtual desktop bounds (`&self`).
-    pub fn virtual_bounds_ref(&self) -> Result<DesktopRect, String> {
+    pub fn virtual_bounds_ref(&self) -> Result<DesktopRect, CaptureError> {
         let _guard = self.inner.lock();
-        virtual_screen_metrics().map_err(Into::into)
+        virtual_screen_metrics()
     }
 
     /// Per-monitor bounds in virtual-desktop coordinates (`&self`).
-    pub fn monitor_rects_ref(&self) -> Result<Vec<DesktopRect>, String> {
+    pub fn monitor_rects_ref(&self) -> Result<Vec<DesktopRect>, CaptureError> {
         let _guard = self.inner.lock();
-        enum_monitor_rects().map_err(Into::into)
+        enum_monitor_rects()
     }
 
     /// Monitor sizes (`&self`).
-    pub fn monitor_sizes_ref(&self) -> Result<Vec<(i32, i32)>, String> {
+    pub fn monitor_sizes_ref(&self) -> Result<Vec<(i32, i32)>, CaptureError> {
         Ok(self
             .monitor_rects_ref()?
             .into_iter()
@@ -85,9 +85,9 @@ fn virtual_screen_metrics() -> Result<DesktopRect, CaptureError> {
     }
 }
 
-fn capture_rect_gdi(rect: DesktopRect) -> Result<RgbaImage, String> {
+fn capture_rect_gdi(rect: DesktopRect) -> Result<RgbaImage, CaptureError> {
     if rect.is_empty() {
-        return Err(CaptureError::EmptyRect.into());
+        return Err(CaptureError::EmptyRect);
     }
     let w = rect.w as u32;
     let h = rect.h as u32;
@@ -95,20 +95,20 @@ fn capture_rect_gdi(rect: DesktopRect) -> Result<RgbaImage, String> {
     unsafe {
         let screen_dc = GetDC(None);
         if screen_dc.is_invalid() {
-            return Err(CaptureError::Gdi("GetDC failed".into()).into());
+            return Err(CaptureError::Gdi("GetDC failed".into()));
         }
 
         let mem_dc = CreateCompatibleDC(Some(screen_dc));
         if mem_dc.is_invalid() {
             ReleaseDC(None, screen_dc);
-            return Err(CaptureError::Gdi("CreateCompatibleDC failed".into()).into());
+            return Err(CaptureError::Gdi("CreateCompatibleDC failed".into()));
         }
 
         let bitmap = CreateCompatibleBitmap(screen_dc, rect.w, rect.h);
         if bitmap.is_invalid() {
             let _ = DeleteDC(mem_dc);
             ReleaseDC(None, screen_dc);
-            return Err(CaptureError::Gdi("CreateCompatibleBitmap failed".into()).into());
+            return Err(CaptureError::Gdi("CreateCompatibleBitmap failed".into()));
         }
 
         let old = SelectObject(mem_dc, HGDIOBJ::from(bitmap));
@@ -133,8 +133,7 @@ fn capture_rect_gdi(rect: DesktopRect) -> Result<RgbaImage, String> {
                 y: rect.y,
                 w: rect.w,
                 h: rect.h,
-            }
-            .into());
+            });
         }
 
         let mut bmi = BITMAPINFO {
@@ -176,8 +175,7 @@ fn capture_rect_gdi(rect: DesktopRect) -> Result<RgbaImage, String> {
                 y: rect.y,
                 w: rect.w,
                 h: rect.h,
-            }
-            .into());
+            });
         }
 
         // BGRA → RGBA (parallel rows; pulp dispatch per row for SIMD-friendly swaps)
@@ -197,7 +195,7 @@ fn capture_rect_gdi(rect: DesktopRect) -> Result<RgbaImage, String> {
         }
 
         RgbaImage::from_raw(w, h, bgra)
-            .ok_or_else(|| CaptureError::Message("invalid RGBA buffer".into()).into())
+            .ok_or_else(|| CaptureError::Message("invalid RGBA buffer".into()))
     }
 }
 
