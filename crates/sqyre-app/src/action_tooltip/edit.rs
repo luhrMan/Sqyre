@@ -10,8 +10,8 @@ use crate::theme;
 use crate::tree_chrome;
 use crate::var_pills;
 use crate::widgets::{
-    combo_str, combo_str_labeled, drag_field, drag_field_enabled, text_field, W_MULTILINE, W_TEXT,
-    W_VAR,
+    combo_str, combo_str_labeled, drag_field, drag_field_enabled, searchable_combo, text_field,
+    W_MULTILINE, W_TEXT, W_VAR,
 };
 use eframe::egui;
 use sqyre_domain::{
@@ -535,7 +535,20 @@ pub fn paint_edit_fields(
         ActionKind::NavigateSelect(data) => {
             tip_wrapped_section(ui, |ui| {
                 text_field(ui, "Program", h::NAV_PROGRAM, &mut data.program);
-                text_field(ui, "Graph", h::NAV_GRAPH, &mut data.graph_name);
+                help::label(ui, "Atlas", h::NAV_ATLAS);
+                let atlases: Vec<String> = if data.program.trim().is_empty() {
+                    Vec::new()
+                } else {
+                    catalog
+                        .get(data.program.trim())
+                        .map(|p| p.atlases.keys().cloned().collect())
+                        .unwrap_or_default()
+                };
+                let mut current = data.atlas.clone();
+                searchable_combo(ui, "nav_atlas", &mut current, &atlases, "(none)", None);
+                if current != data.atlas {
+                    data.atlas = current;
+                }
             });
             tip_section(ui, |ui| {
                 string_list_field(ui, "Chord up", &mut data.chords.up, h::NAV_CHORD_UP);
@@ -605,7 +618,7 @@ pub fn paint_edit_fields(
                 );
             });
             tip_wrapped_section(ui, |ui| {
-                text_field(ui, "In graph", h::NAV_IN_GRAPH, &mut data.inputs.graph);
+                text_field(ui, "In atlas", h::NAV_IN_ATLAS, &mut data.inputs.atlas);
                 text_field(ui, "In row", h::NAV_IN_ROW, &mut data.inputs.row);
                 text_field(ui, "In col", h::NAV_IN_COL, &mut data.inputs.col);
                 text_field(
@@ -624,9 +637,9 @@ pub fn paint_edit_fields(
                 );
                 text_field(
                     ui,
-                    "Output graph",
-                    h::NAV_OUT_GRAPH,
-                    &mut data.outputs.output_graph,
+                    "Output atlas",
+                    h::NAV_OUT_ATLAS,
+                    &mut data.outputs.output_atlas,
                 );
                 text_field(
                     ui,

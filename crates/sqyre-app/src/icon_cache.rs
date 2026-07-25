@@ -1,8 +1,9 @@
-//! Cached egui textures for program-catalog item PNGs.
+//! Cached egui textures for program-catalog item PNGs and OS process icons.
 
 use crate::assets;
 use crate::demo_icons;
-use eframe::egui::{self, ColorImage, TextureHandle, TextureOptions};
+use eframe::egui::{self, ColorImage, TextureHandle, TextureOptions, Vec2};
+use sqyre_capture::ProcessIcon;
 use sqyre_persist::ProgramCatalog;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -10,6 +11,8 @@ use std::path::{Path, PathBuf};
 const FALLBACK_KEY: &str = "__sqyre_fallback__";
 /// Raster size for the brand fallback texture (displayed smaller in UI).
 const FALLBACK_PX: u32 = 128;
+/// Display size for OS process icons in lists / forms.
+pub const PROCESS_ICON_SIDE: f32 = 16.0;
 
 #[derive(Default)]
 pub struct IconCache {
@@ -17,6 +20,9 @@ pub struct IconCache {
     /// Remember targets that failed so we do not spam disk/read errors.
     missing: HashMap<String, ()>,
     fallback: Option<TextureHandle>,
+    /// OS process icons keyed by process path.
+    process: HashMap<String, TextureHandle>,
+    process_missing: HashMap<String, ()>,
 }
 
 impl IconCache {
@@ -85,9 +91,74 @@ impl IconCache {
         None
     }
 
+    /// OS process icon for a bound executable path (and optional window title).
+    ///
+    /// Uses a previously seeded texture when the window picker already supplied
+    /// [`ProcessIcon`] bytes; otherwise asks [`sqyre_capture::process_icon`].
+    pub fn for_process(
+        &mut self,
+        ctx: &egui::Context,
+        process_path: &str,
+        window_title: &str,
+    ) -> Option<TextureHandle> {
+        let key = process_cache_key(process_path);
+        if key.is_empty() {
+            return None;
+        }
+        if let Some(t) = self.process.get(&key) {
+            return Some(t.clone());
+        }
+        if self.process_missing.contains_key(&key) {
+            return None;
+        }
+        let Some(icon) = sqyre_capture::process_icon(process_path, window_title) else {
+            self.process_missing.insert(key, ());
+            return None;
+        };
+        Some(self.insert_process_icon(ctx, &key, &icon))
+    }
+
+    /// Seed / refresh the process-icon cache from a listed window's icon bytes.
+    pub fn seed_process_icon(
+        &mut self,
+        ctx: &egui::Context,
+        process_path: &str,
+        icon: &ProcessIcon,
+    ) -> Option<TextureHandle> {
+        let key = process_cache_key(process_path);
+        if key.is_empty() {
+            return None;
+        }
+        self.process_missing.remove(&key);
+        Some(self.insert_process_icon(ctx, &key, icon))
+    }
+
+    /// Cached process icon only (no OS fetch).
+    pub fn cached_process(&self, process_path: &str) -> Option<TextureHandle> {
+        let key = process_cache_key(process_path);
+        if key.is_empty() {
+            return None;
+        }
+        self.process.get(&key).cloned()
+    }
+
     /// Drop a cached texture so the next load re-reads from disk / demo store.
     pub fn invalidate_path(&mut self, path: &Path) {
         self.textures.remove(path);
+    }
+
+    fn insert_process_icon(
+        &mut self,
+        ctx: &egui::Context,
+        key: &str,
+        icon: &ProcessIcon,
+    ) -> TextureHandle {
+        let size = [icon.width as usize, icon.height as usize];
+        let color = ColorImage::from_rgba_unmultiplied(size, &icon.rgba);
+        let name = format!("process_icon:{key}");
+        let tex = ctx.load_texture(name, color, TextureOptions::LINEAR);
+        self.process.insert(key.to_string(), tex.clone());
+        tex
     }
 
     fn get_or_load(&mut self, ctx: &egui::Context, path: &Path) -> Option<TextureHandle> {
@@ -97,6 +168,32 @@ impl IconCache {
         let tex = load_texture(ctx, path)?;
         self.textures.insert(path.to_path_buf(), tex.clone());
         Some(tex)
+    }
+}
+
+/// Draw a square process icon (non-interactive).
+pub fn paint_process_icon(ui: &mut egui::Ui, tex: &TextureHandle, side: f32) {
+    let side = side.max(1.0);
+    ui.add(
+        egui::Image::new((tex.id(), Vec2::splat(side)))
+            .fit_to_exact_size(Vec2::splat(side))
+            .maintain_aspect_ratio(true)
+            .sense(egui::Sense::hover()),
+    );
+}
+
+fn process_cache_key(process_path: &str) -> String {
+    let path = process_path.trim();
+    if path.is_empty() {
+        return String::new();
+    }
+    #[cfg(windows)]
+    {
+        path.to_lowercase()
+    }
+    #[cfg(not(windows))]
+    {
+        path.to_string()
     }
 }
 

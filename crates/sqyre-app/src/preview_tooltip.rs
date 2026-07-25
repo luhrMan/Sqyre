@@ -643,6 +643,7 @@ fn paint_preview_panel_image(
             egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
             egui::Color32::WHITE,
         );
+        crate::data_editor_preview::paint_preview_frame(&painter, viewport);
     }
     let _ = image_view::handle_pan_drag(&resp, viewport, image_size, view);
     viewport
@@ -664,6 +665,7 @@ fn paint_preview_panel_placeholder(
         egui::FontId::proportional(13.0),
         crate::theme::error_fg(),
     );
+    crate::data_editor_preview::paint_preview_frame(ui.painter(), rect);
     rect
 }
 
