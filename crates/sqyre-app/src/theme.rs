@@ -129,6 +129,11 @@ pub fn error_fg() -> Color32 {
     Color32::from_rgb(220, 80, 80)
 }
 
+/// Soft warning text (platform/session advisories).
+pub fn warn_fg() -> Color32 {
+    Color32::from_rgb(220, 160, 60)
+}
+
 /// Soft success text for status banners.
 pub fn ok_fg() -> Color32 {
     Color32::from_rgb(80, 160, 80)

@@ -151,6 +151,9 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                     ui.small(elide_to_width(ui, &status, pane_w, font));
                 }
             }
+            if let Some(warn) = &app.platform_warning {
+                ui.colored_label(crate::theme::warn_fg(), warn);
+            }
             if let Some(err) = &app.save_error {
                 ui.colored_label(crate::theme::error_fg(), format!("Save error: {err}"));
             }
