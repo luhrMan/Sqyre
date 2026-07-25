@@ -44,6 +44,10 @@ use thiserror::Error;
 
 const SQYRE_DIR: &str = ".sqyre";
 const DB_FILE: &str = "db.yaml";
+/// Reject absurdly large `db.yaml` bodies before parsing.
+pub const MAX_DB_YAML_BYTES: usize = 32 * 1024 * 1024;
+/// Soft cap on macro count in one database.
+pub const MAX_MACROS: usize = 2_000;
 
 static DIR_OVERRIDE: RwLock<Option<PathBuf>> = RwLock::new(None);
 
@@ -267,6 +271,12 @@ impl Database {
     ///
     /// Returns `(database, warnings)` where warnings describe skipped macros.
     pub fn from_yaml_with_warnings(text: &str) -> Result<(Self, Vec<String>)> {
+        if text.len() > MAX_DB_YAML_BYTES {
+            return Err(PersistError::Message(format!(
+                "db.yaml too large ({} bytes; max {MAX_DB_YAML_BYTES})",
+                text.len()
+            )));
+        }
         let root: Value = serde_yaml::from_str(text)?;
         let mapping = root
             .as_mapping()
@@ -275,6 +285,12 @@ impl Database {
         let mut macros = BTreeMap::new();
         let mut warnings = Vec::new();
         if let Some(Value::Mapping(mm)) = mapping.get(Value::String("macros".into())) {
+            if mm.len() > MAX_MACROS {
+                return Err(PersistError::Message(format!(
+                    "too many macros ({}; max {MAX_MACROS})",
+                    mm.len()
+                )));
+            }
             for (k, v) in mm {
                 let key = match k.as_str() {
                     Some(s) => s.to_string(),
@@ -391,6 +407,17 @@ mod tests {
             assert!(loaded.macros.contains_key("Test"));
             assert_eq!(loaded.macros["Test"].root.children().len(), 1);
         });
+    }
+
+    #[test]
+    fn rejects_oversized_db_yaml() {
+        let mut huge = String::from("macros: {}\nprograms: {}\n#");
+        huge.push_str(&"x".repeat(MAX_DB_YAML_BYTES));
+        let err = Database::from_yaml_with_warnings(&huge).unwrap_err();
+        assert!(
+            err.to_string().contains("too large"),
+            "expected size error, got {err}"
+        );
     }
 
     #[test]

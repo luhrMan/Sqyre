@@ -450,6 +450,13 @@ impl UserSettings {
             return Ok(Self::default());
         }
         let text = fs::read_to_string(path)?;
+        const MAX_SETTINGS_YAML_BYTES: usize = 1024 * 1024;
+        if text.len() > MAX_SETTINGS_YAML_BYTES {
+            return Err(PersistError::Message(format!(
+                "settings.yaml too large ({} bytes; max {MAX_SETTINGS_YAML_BYTES})",
+                text.len()
+            )));
+        }
         let mut s: Self = serde_yaml::from_str(&text)?;
         s.clamp();
         Ok(s)
