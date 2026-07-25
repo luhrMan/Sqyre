@@ -50,6 +50,34 @@ const DB_FILE: &str = "db.yaml";
 pub const MAX_DB_YAML_BYTES: usize = 32 * 1024 * 1024;
 /// Soft cap on macro count in one database.
 pub const MAX_MACROS: usize = 2_000;
+/// Max nesting depth for YAML mappings/sequences in `db.yaml` (DoS guard).
+pub const MAX_YAML_NESTING_DEPTH: usize = 64;
+
+/// Walk `value` and error if mapping/sequence nesting exceeds [`MAX_YAML_NESTING_DEPTH`].
+pub fn check_yaml_nesting_depth(value: &Value) -> Result<()> {
+    fn walk(v: &Value, depth: usize) -> Result<()> {
+        if depth > MAX_YAML_NESTING_DEPTH {
+            return Err(PersistError::Message(format!(
+                "db.yaml nesting too deep (max {MAX_YAML_NESTING_DEPTH})"
+            )));
+        }
+        match v {
+            Value::Mapping(m) => {
+                for (_, child) in m {
+                    walk(child, depth + 1)?;
+                }
+            }
+            Value::Sequence(s) => {
+                for child in s {
+                    walk(child, depth + 1)?;
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+    walk(value, 0)
+}
 
 static DIR_OVERRIDE: RwLock<Option<PathBuf>> = RwLock::new(None);
 
@@ -280,6 +308,7 @@ impl Database {
             )));
         }
         let root: Value = serde_yaml::from_str(text)?;
+        check_yaml_nesting_depth(&root)?;
         let mapping = root
             .as_mapping()
             .ok_or_else(|| PersistError::Message("db.yaml root must be a mapping".into()))?;
@@ -419,6 +448,31 @@ mod tests {
         assert!(
             err.to_string().contains("too large"),
             "expected size error, got {err}"
+        );
+    }
+
+    #[test]
+    fn rejects_deeply_nested_yaml() {
+        let mut v = Value::Null;
+        for _ in 0..=MAX_YAML_NESTING_DEPTH + 1 {
+            let mut m = Mapping::new();
+            m.insert(Value::String("a".into()), v);
+            v = Value::Mapping(m);
+        }
+        let err = check_yaml_nesting_depth(&v).unwrap_err();
+        assert!(
+            err.to_string().contains("nesting too deep"),
+            "expected nesting error, got {err}"
+        );
+
+        let mut root = Mapping::new();
+        root.insert(Value::String("macros".into()), Value::Mapping(Mapping::new()));
+        root.insert(Value::String("programs".into()), v);
+        let text = serde_yaml::to_string(&Value::Mapping(root)).unwrap();
+        let err = Database::from_yaml_with_warnings(&text).unwrap_err();
+        assert!(
+            err.to_string().contains("nesting too deep"),
+            "expected nesting error, got {err}"
         );
     }
 
