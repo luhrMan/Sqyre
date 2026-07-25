@@ -112,12 +112,7 @@ impl SqyreApp {
         }
         let m = self.macros[idx].clone();
         self.db.macros.insert(m.name.clone(), m);
-        if let Err(e) = self.db.save_default() {
-            eprintln!("sqyre: save macro: {e}");
-            self.save_error = Some(e.to_string());
-        } else {
-            self.save_error = None;
-        }
+        self.save_database();
         self.refresh_macro_hotkey_bindings();
     }
 
@@ -147,12 +142,10 @@ impl SqyreApp {
         let name = self.unique_macro_name("new macro");
         let m = Macro::new(name.clone(), 0, vec![]);
         self.db.macros.insert(m.name.clone(), m.clone());
-        if let Err(e) = self.db.save_default() {
-            eprintln!("sqyre: create macro: {e}");
-            self.save_error = Some(e.to_string());
+        self.save_database();
+        if self.save_error.is_some() {
             return;
         }
-        self.save_error = None;
         self.macros.push(m);
         self.macros.sort_by(|a, b| a.name.cmp(&b.name));
         self.refresh_macro_hotkey_bindings();
@@ -172,12 +165,10 @@ impl SqyreApp {
         dup.hotkey.clear();
         let name = dup.name.clone();
         self.db.macros.insert(name.clone(), dup.clone());
-        if let Err(e) = self.db.save_default() {
-            eprintln!("sqyre: duplicate macro: {e}");
-            self.save_error = Some(e.to_string());
+        self.save_database();
+        if self.save_error.is_some() {
             return;
         }
-        self.save_error = None;
         self.macros.push(dup);
         self.macros.sort_by(|a, b| a.name.cmp(&b.name));
         self.refresh_macro_hotkey_bindings();
@@ -189,12 +180,7 @@ impl SqyreApp {
         self.db.macros.remove(name);
         self.tree_histories.remove(name);
         self.macros.retain(|m| m.name != name);
-        if let Err(e) = self.db.save_default() {
-            eprintln!("sqyre: delete macro: {e}");
-            self.save_error = Some(e.to_string());
-        } else {
-            self.save_error = None;
-        }
+        self.save_database();
         self.refresh_macro_hotkey_bindings();
         self.play_ui_delete_sound();
         if self.macros.is_empty() {
@@ -229,12 +215,8 @@ impl SqyreApp {
             self.tree_histories.insert(new_name.clone(), hist);
         }
         self.db.macros.remove(&old_name);
-        self.db.replace_macros(self.macros.iter().cloned());
-        if let Err(e) = self.db.save_default() {
+        if let Err(e) = self.persist_database() {
             eprintln!("sqyre: rename macro: {e}");
-            self.save_error = Some(e.to_string());
-        } else {
-            self.save_error = None;
         }
         self.refresh_macro_hotkey_bindings();
 
