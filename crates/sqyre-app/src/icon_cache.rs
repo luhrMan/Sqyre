@@ -202,8 +202,12 @@ pub fn paint_process_icon(ui: &mut egui::Ui, tex: &TextureHandle, side: f32) {
 pub enum ProgramLabelStyle {
     /// Plain selectable list row.
     Selectable { selected: bool },
-    /// Strong 16px header. `selected: None` → non-interactive label.
-    Header { selected: Option<bool> },
+    /// Strong 16px header with child count in parentheses.
+    /// `selected: None` → non-interactive label.
+    Header {
+        selected: Option<bool>,
+        child_count: usize,
+    },
 }
 
 /// Paint optional process icon + program name; returns the name widget response.
@@ -223,14 +227,18 @@ pub fn paint_program_label(
             ProgramLabelStyle::Selectable { selected } => ui.selectable_label(selected, program),
             ProgramLabelStyle::Header {
                 selected: Some(selected),
+                child_count,
             } => ui.selectable_label(
                 selected,
-                egui::RichText::new(program)
+                egui::RichText::new(format!("{program} ({child_count})"))
                     .size(PROCESS_ICON_SIDE)
                     .strong(),
             ),
-            ProgramLabelStyle::Header { selected: None } => ui.label(
-                egui::RichText::new(program)
+            ProgramLabelStyle::Header {
+                selected: None,
+                child_count,
+            } => ui.label(
+                egui::RichText::new(format!("{program} ({child_count})"))
                     .size(PROCESS_ICON_SIDE)
                     .strong(),
             ),

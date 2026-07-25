@@ -27,12 +27,13 @@ pub fn handle_close_to_tray(app: &mut SqyreApp, ctx: &egui::Context) {
 
 /// Always-on-top macro buttons (settings-backed); hidden while recording is armed.
 /// While the Data Editor Overlay tab is editing a button, that button is previewed
-/// live (even if overlays are globally disabled / focus-gated).
+/// live (even if that button is disabled / focus-gated).
 pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
-    let enabled = app.settings_ui.settings().overlay_enabled;
+    if app.screen_click.is_armed() {
+        return;
+    }
     let buttons = app.settings_ui.settings().overlay_buttons.clone();
     let preview = app.data_editor.overlay_edit_preview();
-    let hide = app.screen_click.is_armed();
     let running_macro = if app.run.running.load(Ordering::SeqCst) && !app.macros.is_empty() {
         let idx = app.selected_macro.min(app.macros.len() - 1);
         Some(app.macros[idx].name.as_str())
@@ -41,12 +42,10 @@ pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
     };
     app.macro_overlay.sync(
         ctx,
-        enabled,
         &buttons,
         preview.as_ref(),
         &app.catalog,
         &app.pending_hotkey_macros,
-        hide,
         running_macro,
     );
 }
@@ -251,7 +250,13 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
         || app.screen_click.is_armed()
     {
         ctx.request_repaint();
-    } else if app.settings_ui.settings().overlay_enabled {
+    } else if app
+        .settings_ui
+        .settings()
+        .overlay_buttons
+        .iter()
+        .any(|b| b.enabled)
+    {
         // Overlay focus-gating polls on its own schedule; avoid per-frame
         // transparent window clears (flicker) while still draining click queue promptly.
         ctx.request_repaint_after(std::time::Duration::from_millis(250));
