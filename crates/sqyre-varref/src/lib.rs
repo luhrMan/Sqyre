@@ -1,5 +1,8 @@
 //! Variable-reference grammar: `${name}` and `{name}` (brace form only when not
 //! preceded by `$`).
+//!
+//! Both forms only match identifier-like names (`[A-Za-z_][A-Za-z0-9_]*`) so
+//! arbitrary braces in typed text (JSON, code) are not treated as refs.
 
 use std::collections::HashSet;
 
@@ -18,6 +21,16 @@ struct Match {
     name: String,
 }
 
+/// Identifier-like variable name: letter/underscore, then alnum/underscore.
+pub fn is_ref_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_alphabetic() || c == '_' => {}
+        _ => return false,
+    }
+    chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
 /// Collect `${…}` and bare `{…}` matches (bare braces skip `$` prefixes).
 fn find_all_refs(text: &str) -> Vec<Match> {
     let bytes = text.as_bytes();
@@ -31,7 +44,7 @@ fn find_all_refs(text: &str) -> Vec<Match> {
                 .map(|p| i + 2 + p)
             {
                 let name = &text[i + 2..end];
-                if !name.is_empty() {
+                if is_ref_name(name) {
                     out.push(Match {
                         start: i,
                         end: end + 1,
@@ -55,7 +68,7 @@ fn find_all_refs(text: &str) -> Vec<Match> {
                 .map(|p| i + 1 + p)
             {
                 let name = &text[i + 1..end];
-                if !name.is_empty() {
+                if is_ref_name(name) {
                     out.push(Match {
                         start: i,
                         end: end + 1,
@@ -213,8 +226,17 @@ mod tests {
     #[test]
     fn references_case_insensitive() {
         assert!(references("${Delay}", "delay"));
-        assert!(references(" { Delay } ", "delay"));
+        assert!(references(" {Delay} ", "delay"));
         assert!(!references("${other}", "delay"));
+    }
+
+    #[test]
+    fn bare_braces_ignore_non_identifiers() {
+        assert!(!contains("json {\"a\":1}"));
+        assert!(!contains("fmt {0}"));
+        assert!(!contains("{not-a-var}"));
+        assert!(contains("ok {foo}"));
+        assert!(contains("ok ${foo}"));
     }
 
     #[test]

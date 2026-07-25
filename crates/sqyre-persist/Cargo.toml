@@ -19,6 +19,7 @@ thiserror = { workspace = true }
 dirs = { workspace = true }
 sqyre-domain = { path = "../sqyre-domain" }
 sqyre-serialize = { path = "../sqyre-serialize" }
+sqyre-validate = { path = "../sqyre-validate" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 zip = { workspace = true }

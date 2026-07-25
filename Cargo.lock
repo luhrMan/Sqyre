@@ -4227,6 +4227,7 @@ dependencies = [
  "serde_yaml",
  "sqyre-domain",
  "sqyre-serialize",
+ "sqyre-validate",
  "tempfile",
  "thiserror 2.0.19",
  "zip",

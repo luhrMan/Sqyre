@@ -6,6 +6,7 @@ mod backends;
 mod error;
 mod highlight;
 mod navigate;
+mod path_confine;
 mod run;
 mod runtime_vars;
 mod search;
