@@ -362,6 +362,61 @@ mod tests {
     }
 
     #[test]
+    fn run_macro_rejects_cycles() {
+        use crate::backends::MapMacroLookup;
+        use std::collections::BTreeMap;
+        use std::sync::Arc;
+
+        let mut a = Macro::new("A", 0, vec![]);
+        a.root = root_loop(vec![Action {
+            id: ActionId::new(),
+            kind: ActionKind::RunMacro {
+                macro_name: "B".into(),
+            },
+        }]);
+        let mut b = Macro::new("B", 0, vec![]);
+        b.root = root_loop(vec![Action {
+            id: ActionId::new(),
+            kind: ActionKind::RunMacro {
+                macro_name: "A".into(),
+            },
+        }]);
+        let lookup = MapMacroLookup {
+            macros: BTreeMap::from([
+                ("A".into(), Arc::new(a.clone())),
+                ("B".into(), Arc::new(b)),
+            ]),
+        };
+
+        let mut backend = RecordingBackend::default();
+        let err = execute_macro_with(
+            &mut a,
+            ExecDeps {
+                automation: &mut backend,
+                capturer: None,
+                close_matches_distance: 0,
+                release_held_inputs: true,
+                resolver: None,
+                icons: None,
+                macros: Some(&lookup),
+                continue_waiter: None,
+                window_focuser: None,
+                ocr: None,
+                stop_flag: None,
+                logger: None,
+                highlighter: None,
+                runtime_vars: None,
+                variables_dir: None,
+            },
+        )
+        .unwrap_err();
+        assert!(
+            err.to_string().contains("cycle"),
+            "expected cycle error, got {err}"
+        );
+    }
+
+    #[test]
     fn run_macro_respects_root_loop_count() {
         use crate::backends::MapMacroLookup;
         use std::collections::BTreeMap;

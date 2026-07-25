@@ -2,7 +2,7 @@
 
 use crate::error::{ExecError, Result};
 use crate::highlight::{highlight_clear, highlight_cursor, highlight_fill};
-use crate::run::{execute_action, Executor};
+use crate::run::{execute_action, Executor, MAX_RUN_MACRO_DEPTH};
 use sqyre_domain::{ActionId, ActionKind, Macro};
 
 pub(crate) fn execute_run_macro(
@@ -13,6 +13,21 @@ pub(crate) fn execute_run_macro(
 ) -> Result<()> {
     if macro_name.trim().is_empty() {
         return Err(ExecError::Message("run macro: macro name not set".into()));
+    }
+    if exec
+        .run_macro_stack
+        .iter()
+        .any(|n| n.eq_ignore_ascii_case(macro_name))
+    {
+        return Err(ExecError::Message(format!(
+            "run macro: cycle detected involving {macro_name:?} (stack: {})",
+            exec.run_macro_stack.join(" → ")
+        )));
+    }
+    if exec.run_macro_stack.len() >= MAX_RUN_MACRO_DEPTH {
+        return Err(ExecError::Message(format!(
+            "run macro: nesting depth exceeded ({MAX_RUN_MACRO_DEPTH})"
+        )));
     }
     let lookup = exec
         .deps
@@ -39,8 +54,10 @@ pub(crate) fn execute_run_macro(
     let caller_name = caller.name.clone();
     highlight_fill(exec.deps.highlighter, &caller_name, action_id, 0.0);
 
+    exec.run_macro_stack.push(macro_name.to_string());
     // Run the target root Loop so its count and Break/Continue semantics match a direct run.
     let result = execute_action(exec, &target.root.clone(), &mut target);
+    exec.run_macro_stack.pop();
 
     highlight_clear(exec.deps.highlighter, &caller_name, action_id);
     highlight_cursor(exec.deps.highlighter, &target.name, None);
