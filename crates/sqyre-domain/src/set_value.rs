@@ -45,16 +45,16 @@ fn is_expr_number_char(b: u8) -> bool {
 /// Expand `${references}` once. Values that themselves contain refs are left as-is.
 pub fn expand_variable_refs(text: &str, macro_: &Macro) -> Result<String> {
     if !sqyre_varref::contains(text) {
-        return Ok(text.to_string());
+        return Ok(sqyre_varref::unescape_plain(text));
     }
     let segs = sqyre_varref::segments(text);
     if segs.is_empty() {
-        return Ok(text.to_string());
+        return Ok(sqyre_varref::unescape_plain(text));
     }
     let mut out = String::new();
     for seg in segs {
         if !seg.is_ref {
-            out.push_str(&seg.text);
+            out.push_str(&sqyre_varref::unescape_plain(&seg.text));
             continue;
         }
         let val = macro_
@@ -155,6 +155,20 @@ mod tests {
 
         let v = resolve_set_variable_value(&ScalarValue::String("plain".into()), &m).unwrap();
         assert_eq!(v, ScalarValue::String("plain".into()));
+    }
+
+    #[test]
+    fn expand_unescapes_literal_refs() {
+        let mut m = Macro::new("t", 0, vec![]);
+        m.variables.set("x", ScalarValue::Int(5));
+        assert_eq!(
+            expand_variable_refs("show $${x} and ${x}", &m).unwrap(),
+            "show ${x} and 5"
+        );
+        assert_eq!(
+            expand_variable_refs("braces {{x}} vs {x}", &m).unwrap(),
+            "braces {x} vs 5"
+        );
     }
 
     #[test]
