@@ -42,10 +42,7 @@ pub(crate) fn execute_save_variable(
     let val_str = val.as_display();
 
     if destination == "clipboard" {
-        exec.deps
-            .automation
-            .write_clipboard(&val_str)
-            .map_err(ExecError::Message)?;
+        exec.deps.automation.write_clipboard(&val_str)?;
         exec.log(
             action_id,
             format!("SaveVariable: {variable_name} → clipboard"),

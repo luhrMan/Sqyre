@@ -15,7 +15,9 @@ pub fn sample_pixel_hex_with(
     x: i32,
     y: i32,
 ) -> Result<String, String> {
-    let img = capturer.capture_rect(DesktopRect { x, y, w: 1, h: 1 })?;
+    let img = capturer
+        .capture_rect(DesktopRect { x, y, w: 1, h: 1 })
+        .map_err(|e| e.to_string())?;
     if img.width() < 1 || img.height() < 1 {
         return Err("empty pixel capture".into());
     }

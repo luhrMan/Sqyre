@@ -5,7 +5,7 @@ use eframe::egui::{self, ColorImage, TextureHandle, TextureOptions, Vec2};
 use image::{Rgba, RgbaImage};
 use sqyre_capture::{shared_capturer, OsCapturer};
 use sqyre_domain::{Action, ActionKind, CoordinateRef, Macro, ScalarValue};
-use sqyre_executor::DesktopRect;
+use sqyre_executor::{CaptureError, DesktopRect};
 use sqyre_persist::{ProgramCatalog, ProgramPoint, ProgramSearchArea};
 use std::collections::HashMap;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
@@ -49,7 +49,7 @@ struct FailureEntry {
 
 struct PendingCapture {
     caption: String,
-    rx: Receiver<Result<RgbaImage, String>>,
+    rx: Receiver<Result<RgbaImage, CaptureError>>,
 }
 
 /// Lazy capturer + LRU texture cache for coordinate preview tooltips.
@@ -296,6 +296,7 @@ impl PreviewTooltipCache {
                 }
                 Ok(Err(e)) => {
                     self.pending.remove(key);
+                    let e = e.to_string();
                     self.remember_failure(key, e.clone(), now);
                     return Err(e);
                 }
@@ -423,18 +424,18 @@ fn capture_preview(
     capturer: &OsCapturer,
     coords: PreviewCoords,
     max_dim: u32,
-) -> Result<RgbaImage, String> {
+) -> Result<RgbaImage, CaptureError> {
     let vb = capturer.virtual_bounds_ref()?;
     match coords {
         PreviewCoords::Point { x, y } => {
             if x < vb.x || y < vb.y || x > vb.x + vb.w || y > vb.y + vb.h {
-                return Err(format!(
+                return Err(CaptureError::Message(format!(
                     "point outside desktop ({},{})..({},{}), got ({x},{y})",
                     vb.x,
                     vb.y,
                     vb.x + vb.w,
                     vb.y + vb.h
-                ));
+                )));
             }
             let bounds = preview_bounds_for_point(x, y, vb);
             let mut img = capturer.capture_rect_ref(bounds)?;
@@ -449,7 +450,12 @@ fn capture_preview(
         } => {
             let (lx, ty, rx, by) = normalize_rect(left, top, right, bottom);
             if rx <= lx || by <= ty {
-                return Err("empty search area".into());
+                return Err(CaptureError::EmptySearchArea {
+                    left,
+                    top,
+                    right,
+                    bottom,
+                });
             }
             let bounds = preview_bounds_for_search_area(lx, ty, rx, by, vb);
             let mut img = capturer.capture_rect_ref(bounds)?;

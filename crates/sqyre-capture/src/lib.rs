@@ -86,9 +86,7 @@ impl sqyre_ports::ScreenCapturer for SharedRunCapturer {
     ) -> Result<image::RgbaImage, sqyre_ports::CaptureError> {
         Err(sqyre_ports::CaptureError::UnsupportedPlatform)
     }
-    fn virtual_bounds(
-        &mut self,
-    ) -> Result<sqyre_ports::DesktopRect, sqyre_ports::CaptureError> {
+    fn virtual_bounds(&mut self) -> Result<sqyre_ports::DesktopRect, sqyre_ports::CaptureError> {
         Ok(sqyre_ports::DesktopRect {
             x: 0,
             y: 0,
@@ -403,8 +401,12 @@ pub struct OsWindowFocuser;
 
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
 impl sqyre_ports::WindowFocuser for OsWindowFocuser {
-    fn focus(&self, _process_path: &str, _window_title: &str) -> Result<(), String> {
-        Err("focus window: not supported on this platform".into())
+    fn focus(
+        &self,
+        _process_path: &str,
+        _window_title: &str,
+    ) -> Result<(), sqyre_ports::AutomationError> {
+        Err(sqyre_ports::AutomationError::Unsupported("focus window"))
     }
 }
 

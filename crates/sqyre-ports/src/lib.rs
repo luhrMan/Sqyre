@@ -3,8 +3,10 @@
 //! Domain-coupled ports (`CoordinateResolver`, `MacroLookup`, `OcrEngine`, …)
 //! stay in `sqyre-executor`.
 
+mod automation_error;
 mod capture_error;
 
+pub use automation_error::AutomationError;
 pub use capture_error::CaptureError;
 
 use image::RgbaImage;
@@ -111,12 +113,12 @@ pub fn clamp_search_rect(
 pub trait AutomationBackend {
     fn milli_sleep(&mut self, ms: i32);
     fn move_to(&mut self, x: i32, y: i32, opts: MoveOptions);
-    fn click(&mut self, button: &str, down: bool) -> Result<(), String>;
-    fn scroll(&mut self, up: bool) -> Result<(), String>;
-    fn key_down(&mut self, key: &str) -> Result<(), String>;
-    fn key_up(&mut self, key: &str) -> Result<(), String>;
+    fn click(&mut self, button: &str, down: bool) -> Result<(), AutomationError>;
+    fn scroll(&mut self, up: bool) -> Result<(), AutomationError>;
+    fn key_down(&mut self, key: &str) -> Result<(), AutomationError>;
+    fn key_up(&mut self, key: &str) -> Result<(), AutomationError>;
     fn type_char(&mut self, ch: char);
-    fn write_clipboard(&mut self, s: &str) -> Result<(), String>;
+    fn write_clipboard(&mut self, s: &str) -> Result<(), AutomationError>;
 }
 
 /// Screen capture in absolute virtual-desktop coordinates.
@@ -168,5 +170,5 @@ pub trait ScreenCapturer {
 
 /// Bring a window to the front by executable path + title.
 pub trait WindowFocuser: Send + Sync {
-    fn focus(&self, process_path: &str, window_title: &str) -> Result<(), String>;
+    fn focus(&self, process_path: &str, window_title: &str) -> Result<(), AutomationError>;
 }

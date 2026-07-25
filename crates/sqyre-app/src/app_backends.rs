@@ -60,7 +60,7 @@ impl Default for RunState {
 #[cfg(not(target_arch = "wasm32"))]
 mod native {
     use super::StopFlag;
-    use sqyre_executor::{OcrEngine, OcrResult};
+    use sqyre_executor::{AutomationError, OcrEngine, OcrResult};
     use sqyre_input::OsAutomation;
     use sqyre_match::ImageBuf;
     use sqyre_vision::LeptessOcr;
@@ -100,26 +100,26 @@ mod native {
                 self.inner.move_to(x, y, opts);
             }
         }
-        fn click(&mut self, button: &str, down: bool) -> Result<(), String> {
+        fn click(&mut self, button: &str, down: bool) -> Result<(), AutomationError> {
             // Always forward releases so end-of-macro cleanup can unstick buttons.
             if down && self.stop.is_stopped() {
                 return Ok(());
             }
             self.inner.click(button, down)
         }
-        fn scroll(&mut self, up: bool) -> Result<(), String> {
+        fn scroll(&mut self, up: bool) -> Result<(), AutomationError> {
             if self.stop.is_stopped() {
                 return Ok(());
             }
             self.inner.scroll(up)
         }
-        fn key_down(&mut self, key: &str) -> Result<(), String> {
+        fn key_down(&mut self, key: &str) -> Result<(), AutomationError> {
             if self.stop.is_stopped() {
                 return Ok(());
             }
             self.inner.key_down(key)
         }
-        fn key_up(&mut self, key: &str) -> Result<(), String> {
+        fn key_up(&mut self, key: &str) -> Result<(), AutomationError> {
             // Always forward releases so end-of-macro cleanup can unstick keys.
             self.inner.key_up(key)
         }
@@ -128,7 +128,7 @@ mod native {
                 self.inner.type_char(ch);
             }
         }
-        fn write_clipboard(&mut self, s: &str) -> Result<(), String> {
+        fn write_clipboard(&mut self, s: &str) -> Result<(), AutomationError> {
             if self.stop.is_stopped() {
                 return Ok(());
             }
