@@ -7,7 +7,7 @@ use crate::action_tooltip::help;
 use crate::collection_capture::capture_and_save_collection_image;
 use crate::data_editor_preview::{
     paint_disk_preview, paint_preview_coord_chip, paint_preview_toolbar,
-    paint_zoomable_collection_preview, CardinalEdge,
+    paint_zoomable_atlas_preview, paint_zoomable_collection_preview, CardinalEdge,
 };
 use crate::overlay_icons;
 use crate::paint_ctx::CatalogPaint;
@@ -176,6 +176,12 @@ impl DataEditor {
         self.form_cols = "1".into();
     }
 
+    pub(crate) fn reset_atlas_form(&mut self) {
+        self.form_name.clear();
+        self.form_atlas_members.clear();
+        self.form_atlas_add.clear();
+    }
+
     pub(crate) fn draw_form(
         &mut self,
         ui: &mut egui::Ui,
@@ -222,7 +228,22 @@ impl DataEditor {
                         self.form_process_path.trim()
                     )
                 };
-                ui.label(egui::RichText::new(bound).monospace());
+                ui.horizontal(|ui| {
+                    if !self.form_process_path.trim().is_empty() {
+                        if let Some(tex) = icons.for_process(
+                            ui.ctx(),
+                            &self.form_process_path,
+                            &self.form_window_title,
+                        ) {
+                            crate::icon_cache::paint_process_icon(
+                                ui,
+                                &tex,
+                                crate::icon_cache::PROCESS_ICON_SIDE * 1.25,
+                            );
+                        }
+                    }
+                    ui.label(egui::RichText::new(bound).monospace());
+                });
                 ui.horizontal(|ui| {
                     if ui.button("Select…").clicked() {
                         self.window_picker = pickers::open_window_picker(
@@ -653,6 +674,99 @@ impl DataEditor {
                             }
                             Err(e) => self.set_err(e),
                         }
+                    }
+                }
+            }
+            EditorTab::Atlases => {
+                ui.heading("Atlas");
+                self.program_selector(ui, catalog, settings);
+                ui.add_space(4.0);
+                ui.label("Name").on_hover_text(help::DE_NAME);
+                help::tip(
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.form_name)
+                            .desired_width(f32::INFINITY),
+                    ),
+                    help::DE_NAME,
+                );
+                ui.add_space(4.0);
+                help::label(ui, "Collections", help::DE_ATLAS_MEMBERS);
+                let available: Vec<String> = self
+                    .selected_program
+                    .as_deref()
+                    .and_then(|p| catalog.get(p))
+                    .map(|prog| {
+                        prog.collections
+                            .keys()
+                            .filter(|k| !self.form_atlas_members.iter().any(|m| m == *k))
+                            .cloned()
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                ui.horizontal(|ui| {
+                    searchable_combo(
+                        ui,
+                        "atlas_add_member",
+                        &mut self.form_atlas_add,
+                        &available,
+                        "(add collection)",
+                        None,
+                    );
+                    if ui
+                        .add_enabled(
+                            !self.form_atlas_add.trim().is_empty(),
+                            egui::Button::new("Add"),
+                        )
+                        .clicked()
+                    {
+                        let name = self.form_atlas_add.trim().to_string();
+                        if !name.is_empty() && !self.form_atlas_members.iter().any(|m| m == &name) {
+                            self.form_atlas_members.push(name);
+                        }
+                        self.form_atlas_add.clear();
+                    }
+                });
+                let mut remove_at: Option<usize> = None;
+                for (i, member) in self.form_atlas_members.iter().enumerate() {
+                    ui.horizontal(|ui| {
+                        ui.label(format!("• {member}"));
+                        if theme::icon_button_colored(ui, "×", Some(theme::MACRO_STOP))
+                            .on_hover_text("Remove")
+                            .clicked()
+                        {
+                            remove_at = Some(i);
+                        }
+                    });
+                }
+                if let Some(i) = remove_at {
+                    self.form_atlas_members.remove(i);
+                }
+                if let (Some(prog), Some(atlas_name)) =
+                    (self.selected_program.clone(), self.selected_entity.clone())
+                {
+                    let key = (prog.clone(), atlas_name.clone());
+                    if self.atlas_preview_key.as_ref() != Some(&key) {
+                        self.atlas_preview.reset();
+                        self.atlas_preview_key = Some(key);
+                    }
+                    paint_zoomable_atlas_preview(
+                        ui,
+                        icons,
+                        catalog,
+                        &prog,
+                        &self.form_atlas_members,
+                        &mut self.atlas_preview,
+                    );
+                } else if !self.form_atlas_members.is_empty() {
+                    if let Some(prog) = self.selected_program.clone() {
+                        paint_zoomable_atlas_preview(
+                            ui,
+                            icons,
+                            catalog,
+                            &prog,
+                            &self.form_atlas_members,
+                            &mut self.atlas_preview,
+                        );
                     }
                 }
             }

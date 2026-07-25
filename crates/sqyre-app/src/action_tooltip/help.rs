@@ -158,15 +158,16 @@ pub const PIXEL_TOLERANCE: &str = "Allowed per-channel color distance from the t
 
 // --- Navigate Select ---
 
-pub const NAV_PROGRAM: &str = "Program whose collection/graph this navigator uses.";
-pub const NAV_GRAPH: &str = "Graph name within the program.";
+pub const NAV_PROGRAM: &str = "Program whose Atlas this navigator uses.";
+pub const NAV_ATLAS: &str = "Atlas name within the program (group of Collections).";
 pub const NAV_CHORD_UP: &str = "Keys that move selection up (one per line).";
 pub const NAV_CHORD_DOWN: &str = "Keys that move selection down (one per line).";
 pub const NAV_CHORD_LEFT: &str = "Keys that move selection left (one per line).";
 pub const NAV_CHORD_RIGHT: &str = "Keys that move selection right (one per line).";
 pub const NAV_CHORD_SELECT: &str = "Keys that confirm the current cell (one per line).";
 pub const NAV_CHORD_BACK: &str = "Keys that exit navigation (one per line).";
-pub const NAV_WRAP: &str = "Wrap to the opposite edge when moving past a boundary.";
+pub const NAV_WRAP: &str =
+    "Wrap to the opposite edge of the current Collection when there is no connected neighbor.";
 pub const NAV_MOVE_CURSOR: &str = "Move the mouse cursor to the selected cell.";
 pub const NAV_SMOOTH: &str = "Smooth the cursor when Move cursor with nav is on.";
 pub const NAV_PASS_THROUGH: &str = "Let navigation keys also reach the focused app.";
@@ -175,12 +176,12 @@ pub const NAV_SELECT_DEVICE: &str = "mouse or keyboard for the Select action.";
 pub const NAV_SELECT_BUTTON: &str = "Mouse button used when Select device is mouse.";
 pub const NAV_SELECT_KEY: &str = "Key used when Select device is keyboard.";
 pub const NAV_SELECT_PRESS: &str = "click = down+up; down or up for a single edge.";
-pub const NAV_IN_GRAPH: &str = "Optional starting graph override.";
+pub const NAV_IN_ATLAS: &str = "Optional starting Atlas override (variable or name).";
 pub const NAV_IN_ROW: &str = "Optional starting row override.";
 pub const NAV_IN_COL: &str = "Optional starting column override.";
-pub const NAV_IN_COLLECTION: &str = "Optional starting collection override.";
+pub const NAV_IN_COLLECTION: &str = "Optional starting Collection within the Atlas.";
 pub const NAV_OUT_REF: &str = "Variable for the selected cell reference.";
-pub const NAV_OUT_GRAPH: &str = "Variable for the current graph name.";
+pub const NAV_OUT_ATLAS: &str = "Variable for the current Atlas name.";
 pub const NAV_OUT_ROW: &str = "Variable for the current row.";
 pub const NAV_OUT_COL: &str = "Variable for the current column.";
 pub const NAV_OUT_COLLECTION: &str = "Variable for the current collection.";
@@ -211,6 +212,8 @@ pub const DE_AREA_BOTTOM: &str = "Bottom edge Y of the search area.";
 pub const DE_COLLECTION_AREA: &str = "Search area used when capturing this collection.";
 pub const DE_COLLECTION_ROWS: &str = "Number of rows in the collection grid.";
 pub const DE_COLLECTION_COLS: &str = "Number of columns in the collection grid.";
+pub const DE_ATLAS_MEMBERS: &str =
+    "Collections included in this Atlas. Neighbors are derived from their on-screen positions.";
 pub const DE_MASK_SHAPE: &str = "Rectangle or circle geometry for the mask.";
 pub const DE_OVERLAY_LABEL: &str = "Text shown on the overlay button.";
 pub const DE_OVERLAY_MACRO: &str = "Macro launched when the overlay button is clicked.";

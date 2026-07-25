@@ -168,6 +168,12 @@ pub trait CoordinateResolver {
         let _ = (program, collection);
         Err("collection grid lookup not configured".into())
     }
+
+    /// Member Collection names for `program` + atlas name.
+    fn atlas_members(&self, program: &str, atlas: &str) -> Result<Vec<String>, String> {
+        let _ = (program, atlas);
+        Err("atlas lookup not configured".into())
+    }
 }
 
 /// Resolve image-search targets to on-disk icon / mask paths.

@@ -11,7 +11,7 @@ pub enum BindingRole {
     Value,
     Output,
     Ref,
-    Graph,
+    Atlas,
     Row,
     Col,
     Collection,
@@ -78,7 +78,7 @@ impl NavOutputs {
         let mut out = Vec::new();
         for (name, role) in [
             (&self.output_ref, BindingRole::Ref),
-            (&self.output_graph, BindingRole::Graph),
+            (&self.output_atlas, BindingRole::Atlas),
             (&self.output_row, BindingRole::Row),
             (&self.output_col, BindingRole::Col),
             (&self.output_collection, BindingRole::Collection),

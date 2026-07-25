@@ -81,6 +81,12 @@ pub(super) fn encode_program(data: &ProgramData, previous: &Mapping) -> Value {
         Value::Mapping(collections),
     );
 
+    let mut atlases = Mapping::new();
+    for (k, atlas) in &data.atlases {
+        atlases.insert(Value::String(k.clone()), encode_atlas(atlas));
+    }
+    map.insert(Value::String("atlases".into()), Value::Mapping(atlases));
+
     // Preserve unknown keys from previous YAML (not typed catalog fields).
     for (k, v) in previous {
         let Some(key) = k.as_str() else {
@@ -88,7 +94,7 @@ pub(super) fn encode_program(data: &ProgramData, previous: &Mapping) -> Value {
         };
         match key {
             "name" | "processpath" | "windowtitle" | "items" | "coordinates" | "masks"
-            | "collections" => {}
+            | "collections" | "atlases" => {}
             _ => {
                 map.insert(k.clone(), v.clone());
             }
@@ -188,5 +194,20 @@ pub(super) fn encode_collection(col: &ProgramCollection) -> Value {
     );
     map.insert(Value::String("rows".into()), Value::Number(col.rows.into()));
     map.insert(Value::String("cols".into()), Value::Number(col.cols.into()));
+    Value::Mapping(map)
+}
+
+pub(super) fn encode_atlas(atlas: &ProgramAtlas) -> Value {
+    let mut map = Mapping::new();
+    map.insert(
+        Value::String("name".into()),
+        Value::String(atlas.name.clone()),
+    );
+    let cols: Vec<Value> = atlas
+        .collections
+        .iter()
+        .map(|c| Value::String(c.clone()))
+        .collect();
+    map.insert(Value::String("collections".into()), Value::Sequence(cols));
     Value::Mapping(map)
 }

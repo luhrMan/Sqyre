@@ -1294,10 +1294,30 @@ pub fn show_active_picker(
                             }
                             let selected =
                                 window_title == &w.title && process_path == &w.process_path;
-                            let resp = ui.selectable_label(
-                                selected,
-                                egui::RichText::new(w.label()).size(13.0),
-                            );
+                            // Prefer icon bytes from the list fetch; avoid per-row OS re-scan.
+                            let process_tex = match w.icon.as_ref() {
+                                Some(icon) => {
+                                    paint
+                                        .icons
+                                        .seed_process_icon(ui.ctx(), &w.process_path, icon)
+                                }
+                                None => paint.icons.cached_process(&w.process_path),
+                            };
+                            let resp = ui
+                                .horizontal(|ui| {
+                                    if let Some(tex) = process_tex.as_ref() {
+                                        crate::icon_cache::paint_process_icon(
+                                            ui,
+                                            tex,
+                                            crate::icon_cache::PROCESS_ICON_SIDE,
+                                        );
+                                    }
+                                    ui.selectable_label(
+                                        selected,
+                                        egui::RichText::new(w.label()).size(13.0),
+                                    )
+                                })
+                                .inner;
                             if selected && *scroll_to_selection && !did_scroll {
                                 maybe_scroll_to(ui, &resp, scroll_to_selection);
                                 did_scroll = true;
@@ -1555,6 +1575,7 @@ mod tests {
             title: "Inbox — Mail".into(),
             process_name: "thunderbird".into(),
             process_path: "/usr/lib/thunderbird/thunderbird".into(),
+            icon: None,
         };
         assert!(query_matches_window("", &w));
         assert!(query_matches_window("inbox", &w));

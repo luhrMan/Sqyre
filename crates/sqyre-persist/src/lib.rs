@@ -12,8 +12,8 @@ pub use backup::{
 };
 pub use migrate::{migrate_db_yaml, migrate_db_yaml_value, LegacyCatalog};
 pub use programs::{
-    ProgramCatalog, ProgramCollection, ProgramData, ProgramItem, ProgramMask, ProgramPoint,
-    ProgramSearchArea,
+    ProgramAtlas, ProgramCatalog, ProgramCollection, ProgramData, ProgramItem, ProgramMask,
+    ProgramPoint, ProgramSearchArea,
 };
 pub use settings::{
     move_dir, open_path_in_file_manager, open_sqyre_dir, settings_path, ActionColorPrefs,
@@ -198,7 +198,7 @@ impl Database {
         *self.catalog_cache.get_mut() = None;
     }
 
-    /// Replace `programs` from a typed catalog, preserving masks/collections via merge.
+    /// Replace `programs` from a typed catalog, preserving masks/collections/atlases via merge.
     pub fn set_programs_from_catalog(&mut self, catalog: &ProgramCatalog) {
         self.programs = catalog.to_yaml_value(&self.programs);
         self.invalidate_catalog_cache();
