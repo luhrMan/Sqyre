@@ -77,7 +77,12 @@ jobs:
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
   test:
-    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    # Also run on release triggers so scheduled/manual publishes cannot skip quality gates.
+    if: >
+      github.event_name == 'push' ||
+      github.event_name == 'pull_request' ||
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-22.04
     permissions:
       contents: read
@@ -233,7 +238,7 @@ jobs:
 
   build-linux:
     if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && needs.version.outputs.should_release == 'true'
-    needs: version
+    needs: [version, test]
     runs-on: ubuntu-22.04
     permissions:
       contents: read
@@ -358,7 +363,7 @@ jobs:
 
   build-windows:
     if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && needs.version.outputs.should_release == 'true'
-    needs: version
+    needs: [version, test]
     runs-on: ubuntu-22.04
     permissions:
       contents: read
@@ -466,7 +471,7 @@ jobs:
 
   build-wasm:
     if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && needs.version.outputs.should_release == 'true'
-    needs: version
+    needs: [version, test]
     runs-on: ubuntu-22.04
     permissions:
       contents: read
@@ -564,7 +569,7 @@ jobs:
 
   release:
     if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && needs.version.outputs.should_release == 'true'
-    needs: [version, build-linux, build-windows, build-wasm]
+    needs: [version, test, build-linux, build-windows, build-wasm]
     runs-on: ubuntu-22.04
     permissions:
       contents: write

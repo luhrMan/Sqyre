@@ -85,6 +85,10 @@ mod native_run {
             let Some(idx) = self.macros.iter().position(|m| m.name == name) else {
                 return;
             };
+            if let Err(e) = sqyre_validate::validate_macro(&self.macros[idx]) {
+                *self.run.status.lock() = format!("Cannot run {name}: {e}");
+                return;
+            }
             // Show the running macro's tree so highlight overlays have matching rows.
             self.selected_macro = idx;
             let mut macro_ = self.macros[idx].clone();

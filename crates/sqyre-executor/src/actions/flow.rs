@@ -2,13 +2,14 @@
 
 use crate::error::{ExecError, FlowSignal, Result};
 use crate::highlight::{highlight_clear, highlight_fill};
+use crate::path_confine::resolve_under_dir;
 use crate::run::{eval_clauses, resolve_int, resolve_text, run_children, Executor};
 use sqyre_domain::{
     Action, ActionId, ConditionClause, ListColumn, Macro, MatchMode, ScalarValue,
     FOREACH_ROW_BUILTIN_ROW, FOREACH_ROW_BUILTIN_ROW_COUNT,
 };
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 #[allow(clippy::too_many_arguments)]
@@ -208,17 +209,13 @@ fn resolve_row_bound(v: &ScalarValue, default: i32, macro_: &Macro) -> Result<i3
 
 fn load_lines(col: &ListColumn, variables_dir: Option<&Path>) -> Result<Vec<String>> {
     let raw = if col.is_file {
-        let path = if Path::new(&col.source).is_absolute() {
-            PathBuf::from(&col.source)
-        } else {
-            let base = variables_dir.ok_or_else(|| {
-                ExecError::Message(format!(
-                    "for each row: relative file {:?} needs variables directory",
-                    col.source
-                ))
-            })?;
-            base.join(&col.source)
-        };
+        let base = variables_dir.ok_or_else(|| {
+            ExecError::Message(format!(
+                "for each row: file {:?} needs variables directory",
+                col.source
+            ))
+        })?;
+        let path = resolve_under_dir(base, &col.source)?;
         fs::read_to_string(&path).map_err(|e| {
             ExecError::Message(format!("failed to read file {}: {e}", path.display()))
         })?

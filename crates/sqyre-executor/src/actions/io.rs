@@ -1,11 +1,12 @@
 //! Variable I/O actions: SetVariable, SaveVariable.
 
 use crate::error::{ExecError, Result};
+use crate::path_confine::resolve_under_dir;
 use crate::run::Executor;
 use sqyre_domain::{resolve_set_variable_value, ActionId, Macro, VariableAssignment};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 pub(crate) fn execute_set_variable(
     exec: &mut Executor<'_>,
@@ -55,11 +56,7 @@ pub(crate) fn execute_save_variable(
     let base = exec.deps.variables_dir.ok_or_else(|| {
         ExecError::Message("save variable: variables directory not configured".into())
     })?;
-    let file_path = if Path::new(destination).is_absolute() {
-        PathBuf::from(destination)
-    } else {
-        base.join(destination)
-    };
+    let file_path = resolve_under_dir(base, destination)?;
     if let Some(parent) = file_path.parent() {
         fs::create_dir_all(parent).map_err(|e| {
             ExecError::Message(format!(
