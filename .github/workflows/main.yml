@@ -626,6 +626,26 @@ jobs:
           (cd release && sha256sum *.zip > SHA256SUMS)
           cat release/SHA256SUMS
 
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          path: src
+
+      - name: Install Rust toolchain (sign checksums)
+        uses: dtolnay/rust-toolchain@1.92.0
+
+      - name: Sign SHA256SUMS (Ed25519)
+        working-directory: src
+        env:
+          SQYRE_UPDATE_SIGNING_KEY: ${{ secrets.SQYRE_UPDATE_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SQYRE_UPDATE_SIGNING_KEY:-}" ]; then
+            echo "SQYRE_UPDATE_SIGNING_KEY secret is required to publish signed releases" >&2
+            exit 1
+          fi
+          cargo run -q -p sqyre-update --bin sign_update_sums -- ../release/SHA256SUMS
+          ls -la ../release/SHA256SUMS ../release/SHA256SUMS.sig
+
       - name: Create Release
         uses: softprops/action-gh-release@v3
         with:

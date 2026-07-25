@@ -103,6 +103,16 @@ The `version` job sets `should_release=true` only when there is no prior `v*` ta
 
 Shipped Linux/Windows builds embed `SQYRE_VERSION` so the in-app updater can compare against GitHub Releases (local `0.0.0-dev` builds skip update checks).
 
+**Signed updates:** Releases must publish `SHA256SUMS` and `SHA256SUMS.sig` (Ed25519 over the exact `SHA256SUMS` bytes). The client verifies the signature with the public key in `crates/sqyre-update/update_pubkey.hex` before trusting hashes.
+
+To configure signing (maintainer, once):
+
+1. Generate a keypair (32-byte seed as hex), e.g. with Python `nacl` / `cryptography`, or any Ed25519 tool that can emit raw keys.
+2. Write the **public** key as 64 lowercase hex characters into `crates/sqyre-update/update_pubkey.hex` and commit it.
+3. Store the **private** seed hex as GitHub Actions secret `SQYRE_UPDATE_SIGNING_KEY` (never commit it). CI runs `sign_update_sums` during the release job.
+
+Until `update_pubkey.hex` is configured (not `UNCONFIGURED`), auto-update checks fail closed on signature setup.
+
 CI caches: Linux Docker Buildx (GHA + GHCR), Windows cross-image Buildx + pushed `*-windows-cross:latest` image, Cargo registry/target (per job), Windows sccache, and tessdata; macOS Homebrew bottles + split Cargo caches.
 
 ---
