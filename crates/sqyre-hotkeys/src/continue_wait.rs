@@ -255,19 +255,48 @@ pub fn normalize_key_name(key: &str) -> String {
     }
 }
 
-/// Emergency-stop chord keys (order-independent): Ctrl + Shift + Esc.
-pub const FAILSAFE_KEYS: &[&str] = &["ctrl", "esc", "shift"];
+/// Emergency-stop chord keys (order-independent): Ctrl + Alt + Shift + Esc.
+///
+/// Includes Alt so the chord does not collide with Windows Task Manager
+/// (`Ctrl+Shift+Esc`), which the OS often delivers outside user-mode hooks.
+pub const FAILSAFE_KEYS: &[&str] = &["alt", "ctrl", "esc", "shift"];
+
+/// Human-readable failsafe chord for UI / logs.
+pub const FAILSAFE_LABEL: &str = "Esc+Ctrl+Alt+Shift";
+
+/// Collapse left/right modifier variants for failsafe matching.
+fn canonicalize_failsafe_key(key: &str) -> &str {
+    match key {
+        "rshift" => "shift",
+        "ralt" => "alt",
+        other => other,
+    }
+}
 
 /// Whether `keys` (already normalized) match the failsafe chord.
+///
+/// Left/right Shift and Alt are treated as equivalent.
 pub fn is_failsafe_chord(keys: &[String]) -> bool {
-    if keys.len() != FAILSAFE_KEYS.len() {
+    let mut sorted: Vec<&str> = keys
+        .iter()
+        .map(|k| canonicalize_failsafe_key(k.as_str()))
+        .collect();
+    sorted.sort_unstable();
+    sorted.dedup();
+    if sorted.len() != FAILSAFE_KEYS.len() {
         return false;
     }
-    let mut sorted: Vec<&str> = keys.iter().map(String::as_str).collect();
-    sorted.sort_unstable();
     let mut failsafe = FAILSAFE_KEYS.to_vec();
     failsafe.sort_unstable();
     sorted == failsafe
+}
+
+/// Whether Ctrl, Alt, and Shift are all held (left/right variants accepted).
+pub fn failsafe_modifiers_held(pressed: &std::collections::HashSet<String>) -> bool {
+    let ctrl = pressed.contains("ctrl");
+    let alt = pressed.contains("alt") || pressed.contains("ralt");
+    let shift = pressed.contains("shift") || pressed.contains("rshift");
+    ctrl && alt && shift
 }
 
 /// Normalize and validate a Pause continue-key chord.
@@ -279,16 +308,18 @@ pub fn validate_continue_key(keys: &[String]) -> Result<Vec<String>, String> {
         return Err("pause: continue key not set".into());
     }
     if is_failsafe_chord(&normalized) {
-        return Err(
-            "pause: continue key cannot match the failsafe hotkey (esc + ctrl + shift)".into(),
-        );
+        return Err(format!(
+            "pause: continue key cannot match the failsafe hotkey ({FAILSAFE_LABEL})"
+        ));
     }
     Ok(normalized)
 }
 
 fn validate_not_failsafe(keys: &[String]) -> Result<(), String> {
     if is_failsafe_chord(keys) {
-        return Err("key wait: chord cannot match the failsafe hotkey (esc + ctrl + shift)".into());
+        return Err(format!(
+            "key wait: chord cannot match the failsafe hotkey ({FAILSAFE_LABEL})"
+        ));
     }
     Ok(())
 }
@@ -555,5 +586,37 @@ mod tests {
             .unwrap_err();
         assert!(err.contains("stopped"));
         handle.join().unwrap();
+    }
+
+    #[test]
+    fn failsafe_chord_requires_alt() {
+        assert!(!is_failsafe_chord(&[
+            "ctrl".into(),
+            "esc".into(),
+            "shift".into(),
+        ]));
+        assert!(is_failsafe_chord(&[
+            "ctrl".into(),
+            "alt".into(),
+            "esc".into(),
+            "shift".into(),
+        ]));
+        assert!(is_failsafe_chord(&[
+            "ctrl".into(),
+            "ralt".into(),
+            "esc".into(),
+            "rshift".into(),
+        ]));
+    }
+
+    #[test]
+    fn failsafe_modifiers_accept_left_right() {
+        let mut pressed = HashSet::new();
+        pressed.insert("ctrl".into());
+        pressed.insert("ralt".into());
+        pressed.insert("rshift".into());
+        assert!(failsafe_modifiers_held(&pressed));
+        pressed.remove("ralt");
+        assert!(!failsafe_modifiers_held(&pressed));
     }
 }

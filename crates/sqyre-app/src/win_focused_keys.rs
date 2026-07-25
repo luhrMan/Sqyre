@@ -60,8 +60,9 @@ pub fn feed_focused_keyboard(app: &mut SqyreApp, ctx: &egui::Context) {
         let shift = pressed.contains("shift") || pressed.contains("rshift");
         if app.screen_click.on_escape() {
             // Recording takes Esc; don't also stop macros.
-        } else if ctrl && shift {
-            eprintln!("failsafe Esc+Ctrl+Shift — exiting");
+        } else if sqyre_hotkeys::failsafe_modifiers_held(&pressed) {
+            eprintln!("failsafe {} — exiting", sqyre_hotkeys::FAILSAFE_LABEL);
+            sqyre_input::release_held_inputs();
             std::process::exit(0);
         } else if !ctrl && !shift && !app.continue_wait.continue_is_escape() {
             app.request_stop();
@@ -71,8 +72,9 @@ pub fn feed_focused_keyboard(app: &mut SqyreApp, ctx: &egui::Context) {
 
 fn win_logo_down() -> (bool, bool) {
     // SAFETY: GetAsyncKeyState is process-safe; high bit means currently down.
-    let left = unsafe { GetAsyncKeyState(i32::from(VK_LWIN.0)) } < 0;
-    let right = unsafe { GetAsyncKeyState(i32::from(VK_RWIN.0)) } < 0;
+    // Parens required: `unsafe { … } < 0` is parsed as a type, not a comparison.
+    let left = (unsafe { GetAsyncKeyState(i32::from(VK_LWIN.0)) }) < 0;
+    let right = (unsafe { GetAsyncKeyState(i32::from(VK_RWIN.0)) }) < 0;
     (left, right)
 }
 

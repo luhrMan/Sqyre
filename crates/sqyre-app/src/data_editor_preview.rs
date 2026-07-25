@@ -32,7 +32,7 @@ pub(crate) fn paint_preview_toolbar(
                 {
                     view.reset();
                 }
-                if view.zoom != 1.0 {
+                if view.shows_zoom_label() {
                     ui.weak(format!("{:.0}%", view.zoom * 100.0));
                 }
             });
@@ -358,7 +358,7 @@ pub(crate) fn paint_zoomable_collection_preview(
             {
                 view.reset();
             }
-            if view.zoom != 1.0 {
+            if view.shows_zoom_label() {
                 ui.weak(format!("{:.0}%", view.zoom * 100.0));
             }
         });
@@ -588,7 +588,7 @@ pub(crate) fn paint_zoomable_atlas_preview(
             {
                 view.reset();
             }
-            if view.zoom != 1.0 {
+            if view.shows_zoom_label() {
                 ui.weak(format!("{:.0}%", view.zoom * 100.0));
             }
         });

@@ -64,7 +64,7 @@ Optional local pre-push hooks: install [lefthook](https://lefthook.dev), then `l
 
 Do not expect X11 inside the container — build there, run the binary on the host.
 
-Host binary: `./bin/sqyre` after `make`, or `./target/debug/sqyre` from cargo. Esc stops a running macro; Esc+Ctrl+Shift exits (failsafe).
+Host binary: `./bin/sqyre` after `make`, or `./target/debug/sqyre` from cargo. Esc stops a running macro; Esc+Ctrl+Alt+Shift exits (failsafe).
 
 Still improving: Wayland, macOS capture / window focus / releases. Windows ships without an MSI. CI also `cargo check`s macOS on PRs.
 

@@ -647,7 +647,12 @@ impl DataEditor {
             .show(ctx, |ui| {
                 match &confirm {
                     PendingConfirm::Delete { label } => {
-                        ui.label(format!("Delete {label}? This cannot be undone."));
+                        ui.horizontal(|ui| {
+                            if let Some(prog) = self.selected_program.as_deref() {
+                                crate::icon_cache::paint_program_icon(ui, catalog, icons, prog);
+                            }
+                            ui.label(format!("Delete {label}? This cannot be undone."));
+                        });
                     }
                     PendingConfirm::Overwrite { kind, name } => {
                         ui.label(format!(

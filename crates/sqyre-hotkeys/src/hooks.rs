@@ -1,4 +1,4 @@
-//! rdev-based Esc stop + Esc+Ctrl+Shift failsafe + per-macro chords (Linux X11 / non-root).
+//! rdev-based Esc stop + Esc+Ctrl+Alt+Shift failsafe + per-macro chords (Linux X11 / non-root).
 
 use crate::continue_wait::{rdev_key_name, ContinueWaitBridge};
 use crate::macro_hotkeys::MacroHotkeyBridge;
@@ -73,7 +73,7 @@ impl HotkeyService for RdevHotkeys {
                             if matches!(key, Key::Escape) {
                                 if screen_click.on_escape() {
                                     // Recording takes Esc; don't also stop macros.
-                                } else if ctrl && shift {
+                                } else if crate::failsafe_modifiers_held(&pressed) {
                                     (callbacks.on_failsafe)();
                                 } else if !ctrl && !shift && !continue_wait.continue_is_escape() {
                                     (callbacks.on_escape_stop)();
