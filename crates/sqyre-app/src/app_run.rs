@@ -115,7 +115,8 @@ mod native_run {
                 .image_search_close_matches_distance;
             let release_held_inputs = self.settings_ui.settings().release_held_inputs_on_end;
             let while_max_iterations = self.settings_ui.settings().while_max_iterations;
-            let run_macro_max_depth = self.settings_ui.settings().run_macro_max_depth.max(1) as usize;
+            let run_macro_max_depth =
+                self.settings_ui.settings().run_macro_max_depth.max(1) as usize;
             let play_finish_sound = self.settings_ui.settings().play_finish_sound;
             let sound_volume = self.settings_ui.settings().sound_volume;
             let macro_lookup = {

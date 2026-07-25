@@ -489,7 +489,10 @@ mod tests {
         );
 
         let mut root = Mapping::new();
-        root.insert(Value::String("macros".into()), Value::Mapping(Mapping::new()));
+        root.insert(
+            Value::String("macros".into()),
+            Value::Mapping(Mapping::new()),
+        );
         root.insert(Value::String("programs".into()), v);
         let text = serde_yaml::to_string(&Value::Mapping(root)).unwrap();
         let err = Database::from_yaml_with_warnings(&text).unwrap_err();
