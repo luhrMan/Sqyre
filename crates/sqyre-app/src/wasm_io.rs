@@ -21,9 +21,9 @@ impl SqyreApp {
             };
             match result {
                 Ok(bytes) => match sqyre_persist::Database::from_yaml_bytes(&bytes) {
-                    Ok(db) => {
+                    Ok(mut db) => {
                         let mut catalog = db.program_catalog().unwrap_or_default();
-                        crate::catalog::apply_main_monitor_resolution(&mut catalog);
+                        let _ = crate::catalog::prepare_catalog(&mut catalog, &mut db);
                         let mut macros: Vec<_> = db.macros.values().cloned().collect();
                         macros.sort_by(|a, b| a.name.cmp(&b.name));
                         self.db = db;

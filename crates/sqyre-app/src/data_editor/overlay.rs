@@ -37,7 +37,9 @@ impl DataEditor {
         btn.program = prog;
         btn.label = self.form_name.trim().to_string();
         btn.macro_name = self.form_overlay_macro.trim().to_string();
+        btn.enabled = self.form_overlay_enabled;
         btn.icon = self.form_overlay_icon.clone();
+        btn.point = self.form_overlay_point.trim().to_string();
         btn.x = self.form_overlay_x;
         btn.y = self.form_overlay_y;
         btn.size = self.form_overlay_size;

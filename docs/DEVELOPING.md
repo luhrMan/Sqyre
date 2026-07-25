@@ -103,7 +103,18 @@ The `version` job sets `should_release=true` only when there is no prior `v*` ta
 
 Shipped Linux/Windows builds embed `SQYRE_VERSION` so the in-app updater can compare against GitHub Releases (local `0.0.0-dev` builds skip update checks).
 
-CI caches: Linux Docker Buildx (GHA + GHCR), Windows cross-image Buildx + pushed `*-windows-cross:latest` image, Cargo registry/target (per job), Windows sccache, and tessdata; macOS Homebrew bottles + split Cargo caches.
+CI caches (shared where possible):
+
+| Cache | Shared by | Notes |
+|-------|-----------|--------|
+| Cargo registry (`.cache/cargo`) | All Linux jobs | One key on `Cargo.lock`; warmed once per run via `cargo-registry` |
+| Cargo `target/` | Per triple | `linux` / `windows-gnu` / `wasm32` / macOS — not cross-shareable |
+| Linux build image | `test`, `build-linux`, `build-wasm` | Content-hash tag on GHCR + Buildx layers; built once per run |
+| Windows cross image | `build-windows` (+ local `make windows`) | Content-hash tag on GHCR + Buildx layers |
+| Windows sccache | `build-windows` | Separate from Cargo target |
+| tessdata / Homebrew | Across runs | Stable keys |
+
+Runnable images are tagged `ghcr.io/<owner>/<repo>-linux-build:<dockerfile-hash>` and `…-windows-cross:<scripts-hash>` (also `:latest`).
 
 ---
 

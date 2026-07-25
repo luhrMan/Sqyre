@@ -422,7 +422,7 @@ impl DataEditor {
         }
 
         let old_entity = self.selected_entity.clone();
-        let mut overlay_program_renamed = false;
+        let mut overlay_settings_dirty = false;
         let result = match self.tab {
             EditorTab::Programs => {
                 if let Some(old) = self.selected_program.clone() {
@@ -452,7 +452,8 @@ impl DataEditor {
                                     btn.program = new_name.clone();
                                 }
                             }
-                            overlay_program_renamed = true;
+                            let _ = settings.rename_overlay_point_program(&old, &new_name);
+                            overlay_settings_dirty = true;
                             self.selected_program = Some(new_name.clone());
                         })
                     }
@@ -468,7 +469,14 @@ impl DataEditor {
                 }
             }
             EditorTab::Items => self.update_item(catalog, macros, &new_name, overwrite),
-            EditorTab::Points => self.update_point(catalog, macros, &new_name, overwrite),
+            EditorTab::Points => self.update_point(
+                catalog,
+                macros,
+                settings,
+                &mut overlay_settings_dirty,
+                &new_name,
+                overwrite,
+            ),
             EditorTab::SearchAreas => {
                 self.update_search_area(catalog, macros, &new_name, overwrite)
             }
@@ -490,7 +498,7 @@ impl DataEditor {
                     self.set_err(e);
                 } else {
                     let overlay_ok =
-                        !overlay_program_renamed || self.persist_overlay_settings(settings);
+                        !overlay_settings_dirty || self.persist_overlay_settings(settings);
                     self.load_form(catalog, settings);
                     if overlay_ok {
                         self.set_ok("Saved.");
@@ -546,6 +554,8 @@ impl DataEditor {
         &mut self,
         catalog: &mut ProgramCatalog,
         macros: &mut [Macro],
+        settings: &mut UserSettings,
+        overlay_settings_dirty: &mut bool,
         new_name: &str,
         overwrite: bool,
     ) -> Result<(), sqyre_persist::PersistError> {
@@ -566,6 +576,9 @@ impl DataEditor {
                 catalog.rename_point(&prog, &old, new_name)?;
                 for m in macros.iter_mut() {
                     m.rename_program_entity(ProgramEntityKind::Point, &prog, &old, new_name);
+                }
+                if settings.rename_overlay_point_entity(&prog, &old, new_name) {
+                    *overlay_settings_dirty = true;
                 }
                 self.selected_entity = Some(new_name.to_string());
             }
@@ -802,6 +815,9 @@ impl DataEditor {
                     return;
                 };
                 catalog.delete_point(&prog, &name).map(|_| {
+                    if settings.clear_overlay_point_refs(&prog, &name) {
+                        let _ = self.persist_overlay_settings(settings);
+                    }
                     self.selected_entity = None;
                     self.form_name.clear();
                 })

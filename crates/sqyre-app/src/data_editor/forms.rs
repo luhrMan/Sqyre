@@ -124,9 +124,11 @@ impl DataEditor {
             return;
         };
         self.form_name = btn.label.clone();
+        self.form_overlay_point = btn.point.clone();
         self.form_overlay_x = btn.x;
         self.form_overlay_y = btn.y;
         self.form_overlay_macro = btn.macro_name.clone();
+        self.form_overlay_enabled = btn.enabled;
         self.form_overlay_icon = if btn.icon.trim().is_empty() {
             overlay_icons::DEFAULT_ICON_ID.into()
         } else {
@@ -142,9 +144,11 @@ impl DataEditor {
 
     pub(crate) fn reset_overlay_form(&mut self) {
         self.form_name.clear();
+        self.form_overlay_point.clear();
         self.form_overlay_x = 48.0;
         self.form_overlay_y = 48.0;
         self.form_overlay_macro.clear();
+        self.form_overlay_enabled = true;
         self.form_overlay_icon = overlay_icons::DEFAULT_ICON_ID.into();
         self.form_overlay_size = DEFAULT_OVERLAY_BUTTON_SIZE;
         self.reset_overlay_style_form();
@@ -889,19 +893,9 @@ impl DataEditor {
             EditorTab::Overlay => {
                 ui.heading("Overlay Button");
                 ui.weak(
-                    "Buttons appear when this program's bound process and window title own focus. Bind a window on the Programs tab.",
+                    "General buttons stay on screen when enabled. Other programs show only while their bound process and window title own focus (bind a window on the Programs tab).",
                 );
                 ui.weak("The selected button is previewed on screen while you edit.");
-                ui.add_space(4.0);
-                if ui
-                    .checkbox(
-                        &mut settings.overlay_enabled,
-                        "Show overlay buttons on screen",
-                    )
-                    .changed()
-                {
-                    self.persist_overlay_settings(settings);
-                }
                 ui.add_space(6.0);
                 self.program_selector(ui, catalog, icons, settings);
                 if self.selected_program.is_none() {
@@ -911,6 +905,20 @@ impl DataEditor {
                 if self.selected_entity.is_none() {
                     ui.weak("Select a button from the list, or click New.");
                     return;
+                }
+                ui.add_space(6.0);
+                if ui
+                    .checkbox(&mut self.form_overlay_enabled, "Enabled")
+                    .on_hover_text(help::DE_OVERLAY_ENABLED)
+                    .changed()
+                {
+                    if let Some(id) = self.selected_entity.as_deref() {
+                        if let Some(btn) = settings.overlay_buttons.iter_mut().find(|b| b.id == id)
+                        {
+                            btn.enabled = self.form_overlay_enabled;
+                            self.persist_overlay_settings(settings);
+                        }
+                    }
                 }
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
@@ -960,26 +968,84 @@ impl DataEditor {
                     self.form_overlay_macro = selected;
                 }
                 ui.add_space(4.0);
-                ui.horizontal(|ui| {
-                    help::label(ui, "X", help::DE_OVERLAY_X);
-                    help::tip(
-                        ui.add(
-                            egui::DragValue::new(&mut self.form_overlay_x)
-                                .speed(1.0)
-                                .suffix(" px"),
-                        ),
-                        help::DE_OVERLAY_X,
-                    );
-                    help::label(ui, "Y", help::DE_OVERLAY_Y);
-                    help::tip(
-                        ui.add(
-                            egui::DragValue::new(&mut self.form_overlay_y)
-                                .speed(1.0)
-                                .suffix(" px"),
-                        ),
-                        help::DE_OVERLAY_Y,
-                    );
+                {
+                    use crate::pickers::{ActivePicker, CoordKind};
+                    use sqyre_domain::CoordinateRef;
+                    let point = CoordinateRef(self.form_overlay_point.clone());
+                    let display = if point.is_empty() {
+                        "(unset — use X/Y below)"
+                    } else {
+                        point.as_str()
+                    };
+                    ui.horizontal(|ui| {
+                        help::label(ui, "Point", help::DE_OVERLAY_POINT);
+                        if let Some(prog) = point.program() {
+                            crate::icon_cache::paint_program_icon(ui, catalog, icons, prog);
+                        }
+                        let resp = ui.monospace(display);
+                        if !point.is_empty() {
+                            previews.show_for_coordinate_ref(
+                                ui,
+                                &resp,
+                                catalog,
+                                &point,
+                                PreviewKind::Point,
+                            );
+                        }
+                        if crate::theme::icon_button(ui, "☰")
+                            .on_hover_text("Pick point…")
+                            .clicked()
+                        {
+                            self.window_picker = ActivePicker::Coord {
+                                kind: CoordKind::Point,
+                                search: String::new(),
+                                value: self.form_overlay_point.clone(),
+                                cell_pick: None,
+                                scroll_to_selection: true,
+                            };
+                        }
+                        if !self.form_overlay_point.is_empty()
+                            && ui
+                                .small_button("Clear")
+                                .on_hover_text("Use manual X/Y instead of a catalog point")
+                                .clicked()
+                        {
+                            self.form_overlay_point.clear();
+                        }
+                    });
+                }
+                ui.add_space(4.0);
+                let point_set = !self.form_overlay_point.trim().is_empty();
+                ui.add_enabled_ui(!point_set, |ui| {
+                    ui.horizontal(|ui| {
+                        help::label(ui, "X", help::DE_OVERLAY_X);
+                        help::tip(
+                            ui.add(
+                                egui::DragValue::new(&mut self.form_overlay_x)
+                                    .speed(1.0)
+                                    .suffix(" px"),
+                            ),
+                            help::DE_OVERLAY_X,
+                        );
+                        help::label(ui, "Y", help::DE_OVERLAY_Y);
+                        help::tip(
+                            ui.add(
+                                egui::DragValue::new(&mut self.form_overlay_y)
+                                    .speed(1.0)
+                                    .suffix(" px"),
+                            ),
+                            help::DE_OVERLAY_Y,
+                        );
+                    });
                 });
+                if point_set {
+                    let mut loc = OverlayButtonConfig::new("preview", "");
+                    loc.point = self.form_overlay_point.clone();
+                    loc.x = self.form_overlay_x;
+                    loc.y = self.form_overlay_y;
+                    let (rx, ry) = loc.resolved_position(catalog);
+                    ui.weak(format!("Position from point → ({rx:.0}, {ry:.0})"));
+                }
                 ui.add_space(8.0);
                 ui.collapsing("Appearance", |ui| {
                     ui.horizontal(|ui| {

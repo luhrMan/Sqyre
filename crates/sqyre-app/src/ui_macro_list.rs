@@ -194,8 +194,11 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                     .hint_text("Search macros or tags…"),
             )
             .on_hover_text("Filter by macro name or tag.");
-            if let Some(tag) = app.hotkey_tag_filter.as_deref() {
-                let label = format!("Hotkeys: {}", tag_header_label(tag));
+            {
+                let label = match app.hotkey_tag_filter.as_deref() {
+                    Some(tag) => format!("Hotkeys: {}", tag_header_label(tag)),
+                    None => "Hotkeys: off".to_string(),
+                };
                 let font = egui::TextStyle::Small.resolve(ui.style());
                 ui.small(elide_to_width(ui, &label, pane_w, font));
             }
@@ -248,9 +251,9 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                                     egui::RichText::new(header_text).strong(),
                                 )
                                 .on_hover_text(if selected {
-                                    "Hotkeys enabled for this tag only. Click again to enable all."
+                                    "Hotkeys enabled for this tag. Click again to disable."
                                 } else {
-                                    "Enable hotkeys only for macros with this tag."
+                                    "Enable hotkeys for macros with this tag."
                                 });
                             if resp.clicked() {
                                 clicked_tag = Some(tag.clone());

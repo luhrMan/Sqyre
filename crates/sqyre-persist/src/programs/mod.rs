@@ -2,9 +2,13 @@
 
 mod encode;
 mod parse;
+mod seed_general;
 mod types;
 mod util;
 
+pub use seed_general::{
+    ensure_general_program, MonitorRect, GENERAL_PROGRAM, IMAGE_SEARCH_REFERENCE,
+};
 pub use types::{
     ProgramAtlas, ProgramCatalog, ProgramCollection, ProgramData, ProgramItem, ProgramMask,
     ProgramPoint, ProgramSearchArea,

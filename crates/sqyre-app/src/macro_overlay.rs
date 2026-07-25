@@ -18,8 +18,8 @@ use sqyre_capture::{
     window_matches_program, WindowInfo, OVERLAY_WM_TITLE,
 };
 use sqyre_persist::{
-    OverlayButtonConfig, ProgramCatalog, DEFAULT_OVERLAY_BUTTON_SIZE, MAX_OVERLAY_BUTTON_SIZE,
-    MIN_OVERLAY_BUTTON_SIZE,
+    OverlayButtonConfig, ProgramCatalog, DEFAULT_OVERLAY_BUTTON_SIZE, GENERAL_PROGRAM,
+    MAX_OVERLAY_BUTTON_SIZE, MIN_OVERLAY_BUTTON_SIZE,
 };
 use std::sync::Arc;
 use web_time::{Duration, Instant};
@@ -59,10 +59,10 @@ impl MacroOverlay {
 
     /// Register deferred always-on-top viewports for each configured button.
     ///
-    /// Skipped while screen-click recording is armed. Each button is shown only
-    /// when its assigned catalog program matches the focused OS window (empty
-    /// program = always show). Prefer the program's bound `process_path` when set;
-    /// otherwise fall back to fuzzy catalog-name match.
+    /// Each enabled button is shown when its assigned catalog program matches the
+    /// focused OS window. Empty program and [`GENERAL_PROGRAM`] buttons always show.
+    /// Prefer the program's bound `process_path` when set; otherwise fall back to
+    /// fuzzy catalog-name match.
     ///
     /// When `preview` is set (Data Editor Overlay tab), that button is always drawn
     /// with live form values so the user can see placement and look while editing.
@@ -70,25 +70,17 @@ impl MacroOverlay {
     ///
     /// `running_macro` is the name of the macro currently executing (if any); buttons
     /// bound to that name show a spinner over their icon.
-    #[allow(clippy::too_many_arguments)]
+    ///
+    /// Callers should skip this while screen-click recording is armed.
     pub fn sync(
         &mut self,
         ctx: &egui::Context,
-        enabled: bool,
         buttons: &[OverlayButtonConfig],
         preview: Option<&OverlayButtonConfig>,
         catalog: &ProgramCatalog,
         pending_macros: &Arc<Mutex<Vec<String>>>,
-        hide: bool,
         running_macro: Option<&str>,
     ) {
-        if hide {
-            return;
-        }
-        if !enabled && preview.is_none() {
-            return;
-        }
-
         let focus = self.resolve_focus();
         let preview_id = preview.map(|b| b.id.as_str());
         let mut any_gated = false;
@@ -96,32 +88,41 @@ impl MacroOverlay {
         let mut any_busy = false;
         let mut shown = 0usize;
 
-        if enabled {
-            for btn in buttons {
-                if preview_id == Some(btn.id.as_str()) {
-                    continue;
-                }
-                if btn.macro_name.trim().is_empty() {
-                    continue;
-                }
-                if !btn.program.trim().is_empty() {
-                    any_gated = true;
-                    if !program_owns_focus(catalog, &btn.program, focus.as_ref()) {
-                        continue;
-                    }
-                }
-                let busy = button_is_busy(btn, running_macro);
-                any_busy |= busy;
-                show_button_viewport(ctx, btn, Arc::clone(pending_macros), busy);
-                any_shown = true;
-                shown += 1;
+        for btn in buttons {
+            if preview_id == Some(btn.id.as_str()) {
+                continue;
             }
+            if !btn.enabled {
+                continue;
+            }
+            if btn.macro_name.trim().is_empty() {
+                continue;
+            }
+            if button_is_focus_gated(btn) {
+                any_gated = true;
+                if !program_owns_focus(catalog, &btn.program, focus.as_ref()) {
+                    continue;
+                }
+            }
+            let busy = button_is_busy(btn, running_macro);
+            any_busy |= busy;
+            let mut drawn = btn.clone();
+            let (x, y) = btn.resolved_position(catalog);
+            drawn.x = x;
+            drawn.y = y;
+            show_button_viewport(ctx, &drawn, Arc::clone(pending_macros), busy);
+            any_shown = true;
+            shown += 1;
         }
 
         if let Some(btn) = preview {
             let busy = button_is_busy(btn, running_macro);
             any_busy |= busy;
-            show_button_viewport(ctx, btn, Arc::clone(pending_macros), busy);
+            let mut drawn = btn.clone();
+            let (x, y) = btn.resolved_position(catalog);
+            drawn.x = x;
+            drawn.y = y;
+            show_button_viewport(ctx, &drawn, Arc::clone(pending_macros), busy);
             any_shown = true;
             shown += 1;
             // Keep the preview viewport updating while the form is edited.
@@ -201,9 +202,15 @@ impl MacroOverlay {
     }
 }
 
+/// Empty program and General stay on screen; other programs require focus match.
+fn button_is_focus_gated(btn: &OverlayButtonConfig) -> bool {
+    let program = btn.program.trim();
+    !program.is_empty() && program != GENERAL_PROGRAM
+}
+
 fn program_owns_focus(catalog: &ProgramCatalog, program: &str, focus: Option<&WindowInfo>) -> bool {
     let program = program.trim();
-    if program.is_empty() {
+    if program.is_empty() || program == GENERAL_PROGRAM {
         return true;
     }
     let Some(win) = focus else {
