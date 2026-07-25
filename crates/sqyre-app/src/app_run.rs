@@ -114,6 +114,8 @@ mod native_run {
                 .settings()
                 .image_search_close_matches_distance;
             let release_held_inputs = self.settings_ui.settings().release_held_inputs_on_end;
+            let while_max_iterations = self.settings_ui.settings().while_max_iterations;
+            let run_macro_max_depth = self.settings_ui.settings().run_macro_max_depth.max(1) as usize;
             let play_finish_sound = self.settings_ui.settings().play_finish_sound;
             let sound_volume = self.settings_ui.settings().sound_volume;
             let macro_lookup = {
@@ -157,6 +159,8 @@ mod native_run {
                             capturer: Some(&mut capturer),
                             close_matches_distance: close_matches,
                             release_held_inputs,
+                            while_max_iterations,
+                            run_macro_max_depth,
                             resolver: Some(&resolver),
                             icons: Some(&icons),
                             macros: Some(&macro_lookup),

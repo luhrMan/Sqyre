@@ -2,7 +2,7 @@
 
 use crate::error::{ExecError, Result};
 use crate::highlight::{highlight_clear, highlight_cursor, highlight_fill};
-use crate::run::{execute_action, Executor, MAX_RUN_MACRO_DEPTH};
+use crate::run::{execute_action, Executor};
 use sqyre_domain::{ActionId, ActionKind, Macro};
 
 pub(crate) fn execute_run_macro(
@@ -24,9 +24,10 @@ pub(crate) fn execute_run_macro(
             exec.run_macro_stack.join(" → ")
         )));
     }
-    if exec.run_macro_stack.len() >= MAX_RUN_MACRO_DEPTH {
+    let max_depth = exec.deps.run_macro_max_depth.max(1);
+    if exec.run_macro_stack.len() >= max_depth {
         return Err(ExecError::Message(format!(
-            "run macro: nesting depth exceeded ({MAX_RUN_MACRO_DEPTH})"
+            "run macro: nesting depth exceeded ({max_depth})"
         )));
     }
     let lookup = exec
