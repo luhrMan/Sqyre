@@ -64,6 +64,7 @@ impl SqyreApp {
             macros,
             catalog,
             load_error: None,
+            platform_warning: None,
             save_error: None,
             selected_macro: 0,
             selected_actions: Vec::new(),

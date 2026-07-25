@@ -148,6 +148,8 @@ pub struct SqyreApp {
     macros: Vec<Macro>,
     catalog: ProgramCatalog,
     load_error: Option<String>,
+    /// Non-fatal platform/session advisory (e.g. Wayland without X11).
+    platform_warning: Option<String>,
     /// Last failed macro/db save; shown in the macro list until a save succeeds.
     save_error: Option<String>,
     selected_macro: usize,
@@ -306,11 +308,29 @@ impl SqyreApp {
             }
         };
 
+        let platform_warning = {
+            #[cfg(all(target_os = "linux", not(target_arch = "wasm32")))]
+            {
+                sqyre_capture::linux_session_capture_warning().or_else(|| {
+                    // Soft probe: if DISPLAY is set but capturer still fails, surface the error.
+                    match sqyre_capture::shared_capturer() {
+                        Ok(_) => None,
+                        Err(e) => Some(format!("Screen capture unavailable: {e}")),
+                    }
+                })
+            }
+            #[cfg(not(all(target_os = "linux", not(target_arch = "wasm32"))))]
+            {
+                None
+            }
+        };
+
         let mut app = Self {
             db,
             macros,
             catalog,
             load_error,
+            platform_warning,
             save_error: None,
             selected_macro: 0,
             selected_actions: Vec::new(),
