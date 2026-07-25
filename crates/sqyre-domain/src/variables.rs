@@ -156,6 +156,33 @@ pub fn is_known_variable(known: &HashSet<String>, name: &str) -> bool {
     !needle.is_empty() && known.iter().any(|n| n.trim().eq_ignore_ascii_case(&needle))
 }
 
+/// True when `name` collides with a runtime builtin (Image Search / ForEachRow / monitors).
+pub fn is_reserved_runtime_variable_name(name: &str) -> bool {
+    let name = name.trim();
+    if name.is_empty() {
+        return false;
+    }
+    if IMAGE_SEARCH_BUILTIN_VARS
+        .iter()
+        .any(|n| n.eq_ignore_ascii_case(name))
+    {
+        return true;
+    }
+    if name.eq_ignore_ascii_case(FOREACH_ROW_BUILTIN_ROW)
+        || name.eq_ignore_ascii_case(FOREACH_ROW_BUILTIN_ROW_COUNT)
+    {
+        return true;
+    }
+    // monitorNWidth / monitorNHeight for any positive N.
+    let lower = name.to_ascii_lowercase();
+    if let Some(rest) = lower.strip_prefix("monitor") {
+        if let Some(num) = rest.strip_suffix("width").or_else(|| rest.strip_suffix("height")) {
+            return !num.is_empty() && num.chars().all(|c| c.is_ascii_digit());
+        }
+    }
+    false
+}
+
 crate::string_enum! {
     /// Declared value type of a user-defined macro variable.
     pub enum VariableType {

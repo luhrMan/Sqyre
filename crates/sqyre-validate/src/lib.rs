@@ -165,6 +165,11 @@ pub fn validate_variable_name(name: &str) -> Result<()> {
             "must not contain control characters".into(),
         ));
     }
+    if sqyre_domain::is_reserved_runtime_variable_name(name) {
+        return Err(ValidateError::InvalidVariable(format!(
+            "{name:?} is a reserved runtime builtin name"
+        )));
+    }
     Ok(())
 }
 
@@ -518,6 +523,15 @@ mod tests {
     fn variable_name_rejects_braces() {
         assert!(validate_variable_name("${x}").is_err());
         assert!(validate_variable_name("ok").is_ok());
+    }
+
+    #[test]
+    fn variable_name_rejects_reserved_builtins() {
+        assert!(validate_variable_name("StackMax").is_err());
+        assert!(validate_variable_name("Row").is_err());
+        assert!(validate_variable_name("monitor1Width").is_err());
+        assert!(validate_variable_name("Monitor12Height").is_err());
+        assert!(validate_variable_name("myStackMax").is_ok());
     }
 
     #[test]
