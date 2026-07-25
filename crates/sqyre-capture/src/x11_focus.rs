@@ -2,7 +2,7 @@
 
 use crate::{ProcessIcon, WindowInfo, PROCESS_ICON_TARGET_PX};
 use parking_lot::Mutex;
-use sqyre_executor::WindowFocuser;
+use sqyre_ports::WindowFocuser;
 use std::collections::HashSet;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_ulong;
