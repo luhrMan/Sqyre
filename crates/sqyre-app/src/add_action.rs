@@ -82,8 +82,15 @@ impl AddActionPicker {
     pub fn load_from_settings(&mut self, settings: &UserSettings) {
         self.defaults.clear();
         for (ty, map) in &settings.action_defaults {
-            if let Ok(action) = action_from_map(map) {
-                self.defaults.insert(ty.clone(), action);
+            match action_from_map(map) {
+                Ok(action) => {
+                    self.defaults.insert(ty.clone(), action);
+                }
+                Err(e) => {
+                    // Corrupt/incompatible default in user settings; skip it
+                    // rather than fail the whole load.
+                    eprintln!("sqyre: dropping invalid action default for {ty:?}: {e}");
+                }
             }
         }
     }

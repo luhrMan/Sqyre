@@ -269,12 +269,18 @@ impl SqyreApp {
         let name = self.macros[idx].name.clone();
         let mut selected = self.selected_actions.clone();
         let mut history = self.tree_histories.remove(&name).unwrap_or_default();
-        let ok = history.undo(&mut self.macros[idx].root, &mut selected);
+        let result = history.undo(&mut self.macros[idx].root, &mut selected);
         self.tree_histories.insert(name, history);
-        if ok {
-            self.set_selected_actions(selected);
-            self.tooltip.cancel();
-            self.persist_macro_at(idx);
+        match result {
+            Ok(()) => {
+                self.set_selected_actions(selected);
+                self.tooltip.cancel();
+                self.persist_macro_at(idx);
+            }
+            Err(e) => {
+                eprintln!("sqyre: undo: {e}");
+                *self.run.status.lock() = format!("Undo failed: {e}");
+            }
         }
     }
 
@@ -286,12 +292,18 @@ impl SqyreApp {
         let name = self.macros[idx].name.clone();
         let mut selected = self.selected_actions.clone();
         let mut history = self.tree_histories.remove(&name).unwrap_or_default();
-        let ok = history.redo(&mut self.macros[idx].root, &mut selected);
+        let result = history.redo(&mut self.macros[idx].root, &mut selected);
         self.tree_histories.insert(name, history);
-        if ok {
-            self.set_selected_actions(selected);
-            self.tooltip.cancel();
-            self.persist_macro_at(idx);
+        match result {
+            Ok(()) => {
+                self.set_selected_actions(selected);
+                self.tooltip.cancel();
+                self.persist_macro_at(idx);
+            }
+            Err(e) => {
+                eprintln!("sqyre: redo: {e}");
+                *self.run.status.lock() = format!("Redo failed: {e}");
+            }
         }
     }
 
@@ -341,9 +353,19 @@ impl SqyreApp {
         let Some(action) = self.macros[idx].root.find_by_id(aid) else {
             return false;
         };
-        let Ok(map) = sqyre_serialize::action_to_map(action) else {
-            return false;
+        let map = match sqyre_serialize::action_to_map(action) {
+            Ok(m) => m,
+            Err(e) => {
+                *self.run.status.lock() = format!("Copy failed: {e}");
+                return false;
+            }
         };
+        // Round-trip through the same nest-depth/type-key decode gates paste
+        // uses, so a corrupt map can never land in the clipboard.
+        if let Err(e) = sqyre_serialize::action_from_map(&map) {
+            *self.run.status.lock() = format!("Copy failed: {e}");
+            return false;
+        }
         self.action_clipboard = Some(map);
         // egui-winit only emits Event::Paste when the OS clipboard is non-empty.
         // Action data stays process-local; this sentinel just unblocks Ctrl+V.
@@ -358,15 +380,24 @@ impl SqyreApp {
         let Some(clip) = self.action_clipboard.clone() else {
             return false;
         };
-        let Ok(new_action) = sqyre_serialize::action_from_map(&clip) else {
-            return false;
+        let new_action = match sqyre_serialize::action_from_map(&clip) {
+            Ok(a) => a,
+            Err(e) => {
+                *self.run.status.lock() = format!("Paste failed: {e}");
+                return false;
+            }
         };
-        let new_id = new_action.id;
         let idx = self.selected_macro.min(self.macros.len() - 1);
+        if let Err(e) = sqyre_validate::validate_action_tree(&new_action, Some(&self.macros[idx])) {
+            *self.run.status.lock() = format!("Paste failed: {e}");
+            return false;
+        }
+        let new_id = new_action.id;
         let selected = self.selected_action_id();
         let Some((parent, slot)) =
             tree_clipboard::insert_location_below_selection(&self.macros[idx].root, selected)
         else {
+            *self.run.status.lock() = "Paste failed: no valid insert location".into();
             return false;
         };
         self.record_tree_mutation();
@@ -375,6 +406,7 @@ impl SqyreApp {
             .insert_at(parent, slot, new_action)
             .is_err()
         {
+            *self.run.status.lock() = "Paste failed: could not insert action".into();
             return false;
         }
         self.select_one_action(new_id);
