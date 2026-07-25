@@ -441,6 +441,29 @@ mod tests {
     }
 
     #[test]
+    fn rejects_too_many_macros() {
+        let mut macros = Mapping::new();
+        for i in 0..=MAX_MACROS {
+            macros.insert(
+                Value::String(format!("m{i}")),
+                Value::Mapping(Mapping::new()),
+            );
+        }
+        let mut root = Mapping::new();
+        root.insert(Value::String("macros".into()), Value::Mapping(macros));
+        root.insert(
+            Value::String("programs".into()),
+            Value::Mapping(Mapping::new()),
+        );
+        let text = serde_yaml::to_string(&Value::Mapping(root)).unwrap();
+        let err = Database::from_yaml_with_warnings(&text).unwrap_err();
+        assert!(
+            err.to_string().contains("too many macros"),
+            "expected macro count error, got {err}"
+        );
+    }
+
+    #[test]
     fn rejects_oversized_db_yaml() {
         let mut huge = String::from("macros: {}\nprograms: {}\n#");
         huge.push_str(&"x".repeat(MAX_DB_YAML_BYTES));
