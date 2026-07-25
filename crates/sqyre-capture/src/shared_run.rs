@@ -62,9 +62,7 @@ macro_rules! define_shared_run_capturer {
                 self.virtual_bounds_ref()
             }
 
-            fn monitor_sizes(
-                &mut self,
-            ) -> Result<Vec<(i32, i32)>, ::sqyre_ports::CaptureError> {
+            fn monitor_sizes(&mut self) -> Result<Vec<(i32, i32)>, ::sqyre_ports::CaptureError> {
                 self.monitor_sizes_ref()
             }
         }
@@ -106,9 +104,7 @@ macro_rules! define_shared_run_capturer {
                 self.0.virtual_bounds_ref()
             }
 
-            fn monitor_sizes(
-                &mut self,
-            ) -> Result<Vec<(i32, i32)>, ::sqyre_ports::CaptureError> {
+            fn monitor_sizes(&mut self) -> Result<Vec<(i32, i32)>, ::sqyre_ports::CaptureError> {
                 self.0.monitor_sizes_ref()
             }
         }

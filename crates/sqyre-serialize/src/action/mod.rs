@@ -277,10 +277,7 @@ mod tests {
                     Value::Sequence(vec![Value::Mapping(nested_loop(depth - 1))]),
                 );
             } else {
-                m.insert(
-                    Value::String("subactions".into()),
-                    Value::Sequence(vec![]),
-                );
+                m.insert(Value::String("subactions".into()), Value::Sequence(vec![]));
             }
             m
         }

@@ -876,13 +876,7 @@ impl DataEditor {
         macros: &[Macro],
         catalog: &mut ProgramCatalog,
     ) -> Result<(), String> {
-        let previous_generation = catalog.generation();
-        db.set_programs_from_catalog(catalog);
-        db.replace_macros(macros.iter().cloned());
-        db.save_default().map_err(|e| e.to_string())?;
-        *catalog = db.program_catalog().map_err(|e| e.to_string())?;
-        // YAML reload resets generation to 0; keep ListCache invalidation working.
-        catalog.continue_generation_after_reload(previous_generation);
+        crate::SqyreApp::persist_database_for_editor(db, macros, catalog)?;
         self.rebuild_list_cache(catalog);
         Ok(())
     }

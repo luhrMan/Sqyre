@@ -168,10 +168,7 @@ root:
 
         let mut macro_map = Mapping::new();
         macro_map.insert(Value::String("name".into()), Value::String("bad".into()));
-        macro_map.insert(
-            Value::String("globaldelay".into()),
-            Value::Number(0.into()),
-        );
+        macro_map.insert(Value::String("globaldelay".into()), Value::Number(0.into()));
         macro_map.insert(
             Value::String("keyboarddelay".into()),
             Value::Number(0.into()),
