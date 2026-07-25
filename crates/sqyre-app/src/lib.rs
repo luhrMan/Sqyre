@@ -114,6 +114,10 @@ pub fn run() -> eframe::Result<()> {
             .with_min_inner_size([100.0, 100.0])
             .with_title("Sqyre")
             .with_icon(assets::app_icon()),
+        // wgpu's DX12 HWND swapchain has no per-pixel alpha; glow + DWM blur-behind
+        // is required for deferred overlay button transparency (egui#3632).
+        #[cfg(target_os = "windows")]
+        renderer: eframe::Renderer::Glow,
         ..Default::default()
     };
     eframe::run_native(
@@ -239,7 +243,8 @@ impl SqyreApp {
         if let Err(e) = hotkeys.start(HotkeyCallbacks {
             on_escape_stop: Arc::new(move || stop.request_stop()),
             on_failsafe: Arc::new(|| {
-                eprintln!("failsafe Esc+Ctrl+Shift — exiting");
+                eprintln!("failsafe {} — exiting", sqyre_hotkeys::FAILSAFE_LABEL);
+                sqyre_input::release_held_inputs();
                 std::process::exit(0);
             }),
             on_macro_hotkey: Arc::new(move |name| {
@@ -470,6 +475,8 @@ impl eframe::App for SqyreApp {
 
 impl Drop for SqyreApp {
     fn drop(&mut self) {
+        #[cfg(not(target_arch = "wasm32"))]
+        sqyre_input::release_held_inputs();
         self.hotkeys.stop();
     }
 }

@@ -246,7 +246,7 @@ const ACTION_TYPE_TABLE: &[ActionTypeMeta] = &[
         type_key: "navigateselect",
         label: "Navigate Select",
         description:
-            "Navigates a collection grid with chords; Nav Key children branch on custom keys.",
+            "Navigates an Atlas of Collections with chords; Nav Key children branch on custom keys.",
         picker_category: "Miscellaneous",
         color_category: "Miscellaneous",
         color_key: ACTION_COLOR_KEY_MISCELLANEOUS,

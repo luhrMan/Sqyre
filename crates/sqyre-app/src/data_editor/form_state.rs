@@ -29,6 +29,7 @@ pub(crate) fn load_tab(
         EditorTab::SearchAreas => SearchAreasForm::load(ed, catalog, settings),
         EditorTab::Masks => MasksForm::load(ed, catalog, settings),
         EditorTab::Collections => CollectionsForm::load(ed, catalog, settings),
+        EditorTab::Atlases => AtlasesForm::load(ed, catalog, settings),
         EditorTab::AutoPic => AutoPicForm::load(ed, catalog, settings),
         EditorTab::Overlay => OverlayForm::load(ed, catalog, settings),
     }
@@ -47,6 +48,7 @@ pub(crate) fn dirty_tab(
         EditorTab::SearchAreas => SearchAreasForm::is_dirty(ed, catalog, settings),
         EditorTab::Masks => MasksForm::is_dirty(ed, catalog, settings),
         EditorTab::Collections => CollectionsForm::is_dirty(ed, catalog, settings),
+        EditorTab::Atlases => AtlasesForm::is_dirty(ed, catalog, settings),
         EditorTab::AutoPic => AutoPicForm::is_dirty(ed, catalog, settings),
         EditorTab::Overlay => OverlayForm::is_dirty(ed, catalog, settings),
     }
@@ -63,6 +65,7 @@ pub(crate) fn valid_tab(tab: EditorTab, ed: &DataEditor, active_macro: Option<&M
         EditorTab::SearchAreas => SearchAreasForm::is_valid(ed, active_macro),
         EditorTab::Masks => MasksForm::is_valid(ed, active_macro),
         EditorTab::Collections => CollectionsForm::is_valid(ed, active_macro),
+        EditorTab::Atlases => AtlasesForm::is_valid(ed, active_macro),
         EditorTab::AutoPic => AutoPicForm::is_valid(ed, active_macro),
         EditorTab::Overlay => OverlayForm::is_valid(ed, active_macro),
     }
@@ -74,6 +77,7 @@ pub(crate) struct PointsForm;
 pub(crate) struct SearchAreasForm;
 pub(crate) struct MasksForm;
 pub(crate) struct CollectionsForm;
+pub(crate) struct AtlasesForm;
 pub(crate) struct AutoPicForm;
 pub(crate) struct OverlayForm;
 
@@ -391,6 +395,46 @@ impl FormState for CollectionsForm {
             && !ed.form_search_area.trim().is_empty()
             && parse_i32(&ed.form_rows).map(|n| n >= 1).unwrap_or(false)
             && parse_i32(&ed.form_cols).map(|n| n >= 1).unwrap_or(false)
+    }
+}
+
+impl FormState for AtlasesForm {
+    fn load(ed: &mut DataEditor, catalog: &ProgramCatalog, _settings: &UserSettings) {
+        let (prog, name) = match (
+            ed.selected_program.as_deref(),
+            ed.selected_entity.as_deref(),
+        ) {
+            (Some(p), Some(n)) => (p, n),
+            _ => {
+                ed.reset_atlas_form();
+                return;
+            }
+        };
+        let Some(atlas) = catalog.get(prog).and_then(|p| p.atlases.get(name)) else {
+            ed.reset_atlas_form();
+            return;
+        };
+        ed.form_name = atlas.name.clone();
+        ed.form_atlas_members = atlas.collections.clone();
+        ed.form_atlas_add.clear();
+        ed.atlas_preview_key = Some((prog.to_string(), name.to_string()));
+    }
+
+    fn is_dirty(ed: &DataEditor, catalog: &ProgramCatalog, _settings: &UserSettings) -> bool {
+        let (Some(prog), Some(ent)) = (
+            ed.selected_program.as_deref(),
+            ed.selected_entity.as_deref(),
+        ) else {
+            return !ed.form_name.trim().is_empty() || !ed.form_atlas_members.is_empty();
+        };
+        let Some(atlas) = catalog.get(prog).and_then(|p| p.atlases.get(ent)) else {
+            return true;
+        };
+        ed.form_name.trim() != atlas.name || ed.form_atlas_members != atlas.collections
+    }
+
+    fn is_valid(ed: &DataEditor, _active_macro: Option<&Macro>) -> bool {
+        ed.selected_program.is_some() && !ed.form_atlas_members.is_empty()
     }
 }
 

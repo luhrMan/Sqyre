@@ -1,4 +1,4 @@
-//! Floating Data Editor: Programs / Items / Points / Search Areas / Masks / Collections / AutoPic.
+//! Floating Data Editor: Programs / Items / Points / Search Areas / Masks / Collections / Atlases / AutoPic.
 
 mod form_state;
 mod forms;
@@ -36,6 +36,7 @@ pub(crate) enum EditorTab {
     SearchAreas,
     Masks,
     Collections,
+    Atlases,
     AutoPic,
     Overlay,
 }
@@ -96,6 +97,10 @@ pub struct DataEditor {
     form_radius: String,
     form_inverse: bool,
     form_search_area: String,
+    /// Atlas member Collection names (ordered).
+    form_atlas_members: Vec<String>,
+    /// Draft Collection name to add to the Atlas member list.
+    form_atlas_add: String,
     /// Overlay button form: target macro name.
     form_overlay_macro: String,
     /// Overlay button form: built-in icon id.
@@ -132,6 +137,10 @@ pub struct DataEditor {
     collection_preview: ImageViewTransform,
     /// `(program, collection)` last shown; reset transform when this changes.
     collection_preview_key: Option<(String, String)>,
+    /// `(program, atlas)` last shown for plane preview; reset transform when this changes.
+    atlas_preview_key: Option<(String, String)>,
+    /// Zoom/pan for the atlas plane preview.
+    atlas_preview: ImageViewTransform,
     /// Zoom/pan for point / search-area / AutoPic live capture panels.
     coord_preview: ImageViewTransform,
     /// `(tab, program, entity)` last shown; reset transform when this changes.
@@ -178,6 +187,8 @@ impl Default for DataEditor {
             form_radius: String::new(),
             form_inverse: false,
             form_search_area: String::new(),
+            form_atlas_members: Vec::new(),
+            form_atlas_add: String::new(),
             form_overlay_macro: String::new(),
             form_overlay_icon: overlay_icons::DEFAULT_ICON_ID.into(),
             form_overlay_x: 48.0,
@@ -198,6 +209,8 @@ impl Default for DataEditor {
             save_after_record: false,
             collection_preview: ImageViewTransform::default(),
             collection_preview_key: None,
+            atlas_preview: ImageViewTransform::default(),
+            atlas_preview_key: None,
             coord_preview: ImageViewTransform::default(),
             coord_preview_key: None,
             overlay_icon_picker_for: None,
@@ -409,6 +422,7 @@ impl DataEditor {
             ui.selectable_value(&mut self.tab, EditorTab::SearchAreas, "Search Areas");
             ui.selectable_value(&mut self.tab, EditorTab::Masks, "Masks");
             ui.selectable_value(&mut self.tab, EditorTab::Collections, "Collections");
+            ui.selectable_value(&mut self.tab, EditorTab::Atlases, "Atlases");
             ui.selectable_value(&mut self.tab, EditorTab::AutoPic, "AutoPic");
             ui.selectable_value(&mut self.tab, EditorTab::Overlay, "Overlay");
             if self.tab != prev {
@@ -583,6 +597,9 @@ impl DataEditor {
                                 "collection “{}”",
                                 self.selected_entity.as_deref().unwrap_or("")
                             ),
+                            EditorTab::Atlases => {
+                                format!("atlas “{}”", self.selected_entity.as_deref().unwrap_or(""))
+                            }
                             EditorTab::Overlay => format!(
                                 "overlay button “{}”",
                                 self.selected_entity.as_deref().unwrap_or("")
@@ -630,7 +647,12 @@ impl DataEditor {
             .show(ctx, |ui| {
                 match &confirm {
                     PendingConfirm::Delete { label } => {
-                        ui.label(format!("Delete {label}? This cannot be undone."));
+                        ui.horizontal(|ui| {
+                            if let Some(prog) = self.selected_program.as_deref() {
+                                crate::icon_cache::paint_program_icon(ui, catalog, icons, prog);
+                            }
+                            ui.label(format!("Delete {label}? This cannot be undone."));
+                        });
                     }
                     PendingConfirm::Overwrite { kind, name } => {
                         ui.label(format!(

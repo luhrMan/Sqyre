@@ -5,7 +5,7 @@ use crate::data_editor_preview::show_file_hover;
 use crate::icon_cache::IconCache;
 use crate::pickers::{self, PickerScrollOpts};
 use crate::preview_tooltip::{PreviewKind, PreviewTooltipCache};
-use crate::widgets::searchable_combo;
+use crate::widgets::searchable_combo_with;
 use eframe::egui;
 use sqyre_persist::{OverlayButtonConfig, ProgramCatalog, UserSettings};
 use std::collections::HashMap;
@@ -27,6 +27,7 @@ impl DataEditor {
             | EditorTab::SearchAreas
             | EditorTab::Masks
             | EditorTab::Collections
+            | EditorTab::Atlases
             | EditorTab::AutoPic => "data_editor_coords",
         };
         let mut opts = PickerScrollOpts::pane();
@@ -53,7 +54,15 @@ impl DataEditor {
                         continue;
                     }
                     let selected = self.selected_program.as_deref() == Some(name.as_str());
-                    if ui.selectable_label(selected, name).clicked() {
+                    if crate::icon_cache::paint_program_label(
+                        ui,
+                        catalog,
+                        icons,
+                        name,
+                        crate::icon_cache::ProgramLabelStyle::Selectable { selected },
+                    )
+                    .clicked()
+                    {
                         self.select_program(name, catalog, settings);
                     }
                 }
@@ -75,6 +84,7 @@ impl DataEditor {
             | EditorTab::SearchAreas
             | EditorTab::Masks
             | EditorTab::Collections
+            | EditorTab::Atlases
             | EditorTab::AutoPic => {
                 let kind = match self.tab {
                     EditorTab::Points => Some(PreviewKind::Point),
@@ -93,12 +103,16 @@ impl DataEditor {
                         continue;
                     }
                     let prog_selected = self.selected_program.as_deref() == Some(prog.as_str());
-                    if ui
-                        .selectable_label(
-                            prog_selected,
-                            egui::RichText::new(prog.as_str()).size(16.0).strong(),
-                        )
-                        .clicked()
+                    if crate::icon_cache::paint_program_label(
+                        ui,
+                        catalog,
+                        icons,
+                        prog,
+                        crate::icon_cache::ProgramLabelStyle::Header {
+                            selected: Some(prog_selected),
+                        },
+                    )
+                    .clicked()
                     {
                         clicked_program = Some(prog.clone());
                     }
@@ -151,12 +165,16 @@ impl DataEditor {
                         continue;
                     }
                     let prog_selected = self.selected_program.as_deref() == Some(prog.as_str());
-                    if ui
-                        .selectable_label(
-                            prog_selected,
-                            egui::RichText::new(prog.as_str()).size(16.0).strong(),
-                        )
-                        .clicked()
+                    if crate::icon_cache::paint_program_label(
+                        ui,
+                        catalog,
+                        icons,
+                        prog,
+                        crate::icon_cache::ProgramLabelStyle::Header {
+                            selected: Some(prog_selected),
+                        },
+                    )
+                    .clicked()
                     {
                         clicked_program = Some(prog.clone());
                     }
@@ -270,6 +288,7 @@ impl DataEditor {
         &mut self,
         ui: &mut egui::Ui,
         catalog: &ProgramCatalog,
+        icons: &mut IconCache,
         settings: &UserSettings,
     ) {
         self.ensure_list_cache(catalog);
@@ -278,13 +297,18 @@ impl DataEditor {
         let before = current.clone();
         ui.horizontal(|ui| {
             ui.label("Program");
-            searchable_combo(
+            let mut option_icon =
+                |ctx: &egui::Context, name: &str| icons.for_program(ctx, catalog, name);
+            searchable_combo_with(
                 ui,
                 "data_editor_program",
                 &mut current,
                 &names,
                 "(none)",
                 None,
+                None,
+                None,
+                Some(&mut option_icon),
             );
         });
         if current != before {
@@ -372,6 +396,18 @@ fn compute_entity_names(catalog: &ProgramCatalog, tab: EditorTab, program: &str)
                     k.clone()
                 } else {
                     c.name.clone()
+                };
+                (k.clone(), display)
+            })
+            .collect(),
+        EditorTab::Atlases => p
+            .atlases
+            .iter()
+            .map(|(k, a)| {
+                let display = if a.name.trim().is_empty() {
+                    k.clone()
+                } else {
+                    a.name.clone()
                 };
                 (k.clone(), display)
             })

@@ -4,8 +4,8 @@ use crate::backends::MoveOptions;
 use crate::error::{ExecError, FlowSignal, Result};
 use crate::run::{resolve_int, resolve_text, run_children, Executor};
 use sqyre_domain::{
-    Action, ActionId, ActionKind, CoordinateRef, Macro, NavInputs, NavOptions, NavOutputs,
-    NavSelectAction, NavigateSelectData, ScalarValue,
+    Action, ActionId, ActionKind, AtlasLayout, AtlasNode, AtlasPos, CoordinateRef, Macro, NavDir,
+    NavInputs, NavOptions, NavOutputs, NavSelectAction, NavigateSelectData, ScalarValue,
 };
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -17,6 +17,18 @@ enum BuiltinChord {
     Right,
     Select,
     Back,
+}
+
+impl BuiltinChord {
+    fn as_dir(self) -> Option<NavDir> {
+        match self {
+            Self::Up => Some(NavDir::Up),
+            Self::Down => Some(NavDir::Down),
+            Self::Left => Some(NavDir::Left),
+            Self::Right => Some(NavDir::Right),
+            Self::Select | Self::Back => None,
+        }
+    }
 }
 
 pub(crate) fn execute_navigate_select(
@@ -31,52 +43,98 @@ pub(crate) fn execute_navigate_select(
     };
     let data: &NavigateSelectData = data;
 
-    let graph = resolve_graph_name(macro_, &data.graph_name, &data.inputs)?;
-    if graph.is_empty() {
-        return Err(ExecError::Message(
-            "navigate select: graph/collection not set".into(),
-        ));
+    let atlas_name = resolve_atlas_name(macro_, &data.atlas, &data.inputs)?;
+    if atlas_name.is_empty() {
+        return Err(ExecError::Message("navigate select: atlas not set".into()));
     }
 
     let resolver = exec.deps.resolver.ok_or_else(|| {
         ExecError::Message("navigate select: coordinate resolver not configured".into())
     })?;
-    let (rows, cols) = resolver
-        .collection_grid(&data.program, &graph)
+    let members = resolver
+        .atlas_members(&data.program, &atlas_name)
         .map_err(|e| {
             ExecError::Message(format!(
-                "navigate select: collection {}/{}: {e}",
-                data.program, graph
+                "navigate select: atlas {}/{}: {e}",
+                data.program, atlas_name
             ))
         })?;
-    if rows < 1 || cols < 1 {
+    if members.is_empty() {
         return Err(ExecError::Message(format!(
-            "navigate select: invalid grid {rows}x{cols}"
+            "navigate select: atlas {atlas_name:?} has no collections"
         )));
     }
 
-    let mut row = resolve_cell_start(macro_, &data.inputs.row, 1)?.clamp(1, rows);
-    let mut col = resolve_cell_start(macro_, &data.inputs.col, 1)?.clamp(1, cols);
+    let mut nodes = Vec::with_capacity(members.len());
+    for name in &members {
+        let (rows, cols) = resolver.collection_grid(&data.program, name).map_err(|e| {
+            ExecError::Message(format!(
+                "navigate select: collection {}/{}: {e}",
+                data.program, name
+            ))
+        })?;
+        if rows < 1 || cols < 1 {
+            return Err(ExecError::Message(format!(
+                "navigate select: invalid grid {rows}x{cols} for {name}"
+            )));
+        }
+        let cell = CoordinateRef::collection(&data.program, name, 1, 1, rows, cols);
+        let bounds = resolver.resolve_search_area(&cell, macro_).map_err(|e| {
+            ExecError::Message(format!("navigate select: resolve bounds for {name}: {e}"))
+        })?;
+        nodes.push(AtlasNode {
+            collection: name.clone(),
+            bounds,
+            rows,
+            cols,
+        });
+    }
+    let layout = AtlasLayout::new(nodes);
 
-    write_outputs(macro_, &data.program, &graph, row, col, &data.outputs);
+    let start_collection = resolve_start_collection(macro_, &data.inputs)?;
+    let start_node = if start_collection.is_empty() {
+        0
+    } else {
+        layout.find_collection(&start_collection).ok_or_else(|| {
+            ExecError::Message(format!(
+                "navigate select: start collection {start_collection:?} is not in atlas {atlas_name:?}"
+            ))
+        })?
+    };
+    let start_rows = layout.nodes()[start_node].rows;
+    let start_cols = layout.nodes()[start_node].cols;
+    let mut pos = AtlasPos {
+        node: start_node,
+        row: resolve_cell_start(macro_, &data.inputs.row, 1)?.clamp(1, start_rows),
+        col: resolve_cell_start(macro_, &data.inputs.col, 1)?.clamp(1, start_cols),
+    };
+
+    write_outputs(
+        macro_,
+        &data.program,
+        &atlas_name,
+        &layout,
+        pos,
+        &data.outputs,
+    );
 
     if data.options.move_cursor_with_nav {
         move_to_cell(
             exec,
             macro_,
             &data.program,
-            &graph,
-            row,
-            col,
+            &layout,
+            pos,
             data.options.smooth,
         )?;
     }
 
+    let cur = &layout.nodes()[pos.node];
     exec.log(
         action.id,
         format!(
-            "Navigate Select: {} · {graph} @ {row},{col} ({rows}x{cols})",
-            data.program
+            "Navigate Select: {} · {atlas_name} / {} @ {},{} ({}x{})",
+            data.program, cur.collection, pos.row, pos.col, cur.rows, cur.cols
         ),
     );
 
@@ -153,71 +211,61 @@ pub(crate) fn execute_navigate_select(
 
         if let Some(b) = builtins.get(idx).copied().flatten() {
             match b {
-                BuiltinChord::Up => {
-                    row = step(row, -1, rows, data.options.wrap_edges);
+                BuiltinChord::Up
+                | BuiltinChord::Down
+                | BuiltinChord::Left
+                | BuiltinChord::Right => {
+                    let dir = b.as_dir().expect("nav chord has direction");
+                    pos = layout.step(pos, dir, data.options.wrap_edges);
                     on_nav(
                         exec,
                         action.id,
                         macro_,
                         &data.program,
-                        &graph,
-                        &mut row,
-                        &mut col,
-                        &data.options,
-                        &data.outputs,
-                    )?;
-                }
-                BuiltinChord::Down => {
-                    row = step(row, 1, rows, data.options.wrap_edges);
-                    on_nav(
-                        exec,
-                        action.id,
-                        macro_,
-                        &data.program,
-                        &graph,
-                        &mut row,
-                        &mut col,
-                        &data.options,
-                        &data.outputs,
-                    )?;
-                }
-                BuiltinChord::Left => {
-                    col = step(col, -1, cols, data.options.wrap_edges);
-                    on_nav(
-                        exec,
-                        action.id,
-                        macro_,
-                        &data.program,
-                        &graph,
-                        &mut row,
-                        &mut col,
-                        &data.options,
-                        &data.outputs,
-                    )?;
-                }
-                BuiltinChord::Right => {
-                    col = step(col, 1, cols, data.options.wrap_edges);
-                    on_nav(
-                        exec,
-                        action.id,
-                        macro_,
-                        &data.program,
-                        &graph,
-                        &mut row,
-                        &mut col,
+                        &atlas_name,
+                        &layout,
+                        &mut pos,
                         &data.options,
                         &data.outputs,
                     )?;
                 }
                 BuiltinChord::Select => {
-                    write_outputs(macro_, &data.program, &graph, row, col, &data.outputs);
+                    write_outputs(
+                        macro_,
+                        &data.program,
+                        &atlas_name,
+                        &layout,
+                        pos,
+                        &data.outputs,
+                    );
                     perform_select(exec, &data.select)?;
-                    exec.log(action.id, format!("Navigate Select: select @ {row},{col}"));
+                    let cur = &layout.nodes()[pos.node];
+                    exec.log(
+                        action.id,
+                        format!(
+                            "Navigate Select: select {} @ {},{}",
+                            cur.collection, pos.row, pos.col
+                        ),
+                    );
                     return Ok(());
                 }
                 BuiltinChord::Back => {
-                    write_outputs(macro_, &data.program, &graph, row, col, &data.outputs);
-                    exec.log(action.id, format!("Navigate Select: back @ {row},{col}"));
+                    write_outputs(
+                        macro_,
+                        &data.program,
+                        &atlas_name,
+                        &layout,
+                        pos,
+                        &data.outputs,
+                    );
+                    let cur = &layout.nodes()[pos.node];
+                    exec.log(
+                        action.id,
+                        format!(
+                            "Navigate Select: back {} @ {},{}",
+                            cur.collection, pos.row, pos.col
+                        ),
+                    );
                     return Ok(());
                 }
             }
@@ -237,7 +285,14 @@ pub(crate) fn execute_navigate_select(
             else {
                 continue;
             };
-            write_outputs(macro_, &data.program, &graph, row, col, &data.outputs);
+            write_outputs(
+                macro_,
+                &data.program,
+                &atlas_name,
+                &layout,
+                pos,
+                &data.outputs,
+            );
             let label = if name.trim().is_empty() {
                 "Nav Key".to_string()
             } else {
@@ -245,9 +300,13 @@ pub(crate) fn execute_navigate_select(
             };
             let kids = kids.clone();
             let exit = *exit;
+            let cur = &layout.nodes()[pos.node];
             exec.log(
                 action.id,
-                format!("Navigate Select: branch {label:?} @ {row},{col}"),
+                format!(
+                    "Navigate Select: branch {label:?} {} @ {},{}",
+                    cur.collection, pos.row, pos.col
+                ),
             );
             match run_children(exec, &kids, macro_) {
                 Err(ExecError::Flow(FlowSignal::Break)) => return Ok(()),
@@ -277,52 +336,59 @@ fn on_nav(
     action_id: ActionId,
     macro_: &mut Macro,
     program: &str,
-    graph: &str,
-    row: &mut i32,
-    col: &mut i32,
+    atlas: &str,
+    layout: &AtlasLayout,
+    pos: &mut AtlasPos,
     options: &NavOptions,
     outputs: &NavOutputs,
 ) -> Result<()> {
-    write_outputs(macro_, program, graph, *row, *col, outputs);
+    write_outputs(macro_, program, atlas, layout, *pos, outputs);
     if options.move_cursor_with_nav {
-        move_to_cell(exec, macro_, program, graph, *row, *col, options.smooth)?;
+        move_to_cell(exec, macro_, program, layout, *pos, options.smooth)?;
     }
-    exec.log(action_id, format!("Navigate Select: cell {row},{col}"));
+    let cur = &layout.nodes()[pos.node];
+    exec.log(
+        action_id,
+        format!(
+            "Navigate Select: cell {} @ {},{}",
+            cur.collection, pos.row, pos.col
+        ),
+    );
     Ok(())
 }
 
-fn step(cur: i32, delta: i32, max: i32, wrap: bool) -> i32 {
-    let next = cur + delta;
-    if wrap {
-        if next < 1 {
-            max
-        } else if next > max {
-            1
-        } else {
-            next
-        }
-    } else {
-        next.clamp(1, max)
-    }
-}
-
-fn resolve_graph_name(macro_: &Macro, graph_name: &str, inputs: &NavInputs) -> Result<String> {
-    for src in [&inputs.graph, &inputs.collection] {
-        if src.trim().is_empty() {
-            continue;
-        }
-        if let Some(v) = macro_.variables.get(src.trim()) {
+fn resolve_atlas_name(macro_: &Macro, atlas: &str, inputs: &NavInputs) -> Result<String> {
+    if !inputs.atlas.trim().is_empty() {
+        if let Some(v) = macro_.variables.get(inputs.atlas.trim()) {
             let s = v.as_display();
             if !s.trim().is_empty() {
                 return Ok(s);
             }
         }
-        let resolved = resolve_text(src, macro_).unwrap_or_else(|_| src.to_string());
-        if !resolved.trim().is_empty() && resolved != *src {
+        let resolved = resolve_text(&inputs.atlas, macro_).unwrap_or_else(|_| inputs.atlas.clone());
+        if !resolved.trim().is_empty() && resolved != inputs.atlas {
             return Ok(resolved);
         }
+        if !inputs.atlas.trim().is_empty() {
+            return Ok(inputs.atlas.trim().to_string());
+        }
     }
-    Ok(graph_name.trim().to_string())
+    Ok(atlas.trim().to_string())
+}
+
+fn resolve_start_collection(macro_: &Macro, inputs: &NavInputs) -> Result<String> {
+    let t = inputs.collection.trim();
+    if t.is_empty() {
+        return Ok(String::new());
+    }
+    if let Some(v) = macro_.variables.get(t) {
+        let s = v.as_display();
+        if !s.trim().is_empty() {
+            return Ok(s);
+        }
+    }
+    let resolved = resolve_text(t, macro_).unwrap_or_else(|_| t.to_string());
+    Ok(resolved.trim().to_string())
 }
 
 fn resolve_cell_start(macro_: &Macro, field: &str, default: i32) -> Result<i32> {
@@ -346,39 +412,49 @@ fn resolve_cell_start(macro_: &Macro, field: &str, default: i32) -> Result<i32> 
 fn write_outputs(
     macro_: &mut Macro,
     program: &str,
-    graph: &str,
-    row: i32,
-    col: i32,
+    atlas: &str,
+    layout: &AtlasLayout,
+    pos: AtlasPos,
     outputs: &NavOutputs,
 ) {
-    let cell = CoordinateRef::collection(program, graph, row, col, row, col);
+    let Some(node) = layout.nodes().get(pos.node) else {
+        return;
+    };
+    let cell = CoordinateRef::collection(
+        program,
+        &node.collection,
+        pos.row,
+        pos.col,
+        pos.row,
+        pos.col,
+    );
     if !outputs.output_ref.trim().is_empty() {
         macro_.variables.set(
             outputs.output_ref.trim(),
             ScalarValue::String(cell.0.clone()),
         );
     }
-    if !outputs.output_graph.trim().is_empty() {
+    if !outputs.output_atlas.trim().is_empty() {
         macro_.variables.set(
-            outputs.output_graph.trim(),
-            ScalarValue::String(graph.to_string()),
+            outputs.output_atlas.trim(),
+            ScalarValue::String(atlas.to_string()),
         );
     }
     if !outputs.output_collection.trim().is_empty() {
         macro_.variables.set(
             outputs.output_collection.trim(),
-            ScalarValue::String(graph.to_string()),
+            ScalarValue::String(node.collection.clone()),
         );
     }
     if !outputs.output_row.trim().is_empty() {
         macro_
             .variables
-            .set(outputs.output_row.trim(), ScalarValue::Int(row as i64));
+            .set(outputs.output_row.trim(), ScalarValue::Int(pos.row as i64));
     }
     if !outputs.output_col.trim().is_empty() {
         macro_
             .variables
-            .set(outputs.output_col.trim(), ScalarValue::Int(col as i64));
+            .set(outputs.output_col.trim(), ScalarValue::Int(pos.col as i64));
     }
 }
 
@@ -386,17 +462,30 @@ fn move_to_cell(
     exec: &mut Executor<'_>,
     macro_: &Macro,
     program: &str,
-    graph: &str,
-    row: i32,
-    col: i32,
+    layout: &AtlasLayout,
+    pos: AtlasPos,
     smooth: bool,
 ) -> Result<()> {
+    let node = layout
+        .nodes()
+        .get(pos.node)
+        .ok_or_else(|| ExecError::Message("navigate select: invalid atlas position".into()))?;
     let resolver = exec.deps.resolver.ok_or_else(|| {
         ExecError::Message("navigate select: coordinate resolver not configured".into())
     })?;
-    let cell = CoordinateRef::collection(program, graph, row, col, row, col);
+    let cell = CoordinateRef::collection(
+        program,
+        &node.collection,
+        pos.row,
+        pos.col,
+        pos.row,
+        pos.col,
+    );
     let (x, y) = resolver.resolve_point(&cell, macro_).map_err(|e| {
-        ExecError::Message(format!("navigate select: resolve cell {row},{col}: {e}"))
+        ExecError::Message(format!(
+            "navigate select: resolve cell {} @ {},{}: {e}",
+            node.collection, pos.row, pos.col
+        ))
     })?;
     exec.deps.automation.move_to(
         x,
@@ -460,7 +549,7 @@ mod tests {
     use super::*;
     use crate::backends::{ImmediateContinueWaiter, RecordingBackend};
     use crate::run::{execute_macro_with, ExecDeps};
-    use crate::test_support::FixedResolver;
+    use crate::test_support::{AtlasMemberSpec, FixedCollection, FixedResolver};
     use sqyre_domain::{
         root_loop, ActionId, NavChords, NavInputs, NavOptions, NavOutputs, NavSelectAction,
         NavigateSelectData, PressState,
@@ -474,13 +563,23 @@ mod tests {
             any_queue: Mutex::new(vec![0]), // select is only chord
             ..Default::default()
         };
-        let resolver = FixedResolver::with_grid(3, 4);
+        let resolver = FixedResolver::with_atlas(
+            vec![AtlasMemberSpec {
+                name: "bag".into(),
+                collection: FixedCollection {
+                    rows: 3,
+                    cols: 4,
+                    bounds: (0, 0, 120, 90),
+                },
+            }],
+            vec!["bag".into()],
+        );
         let mut macro_ = Macro::new("t", 0, vec![]);
         macro_.root = root_loop(vec![Action {
             id: ActionId::new(),
             kind: ActionKind::NavigateSelect(Box::new(NavigateSelectData {
                 program: "P".into(),
-                graph_name: "bag".into(),
+                atlas: "inventory".into(),
                 chords: NavChords {
                     select: vec!["enter".into()],
                     ..Default::default()
@@ -497,7 +596,7 @@ mod tests {
                 },
                 outputs: NavOutputs {
                     output_ref: "ref".into(),
-                    output_graph: "g".into(),
+                    output_atlas: "a".into(),
                     output_row: "r".into(),
                     output_col: "c".into(),
                     output_collection: "col".into(),
@@ -533,6 +632,14 @@ mod tests {
             Some("P~bag@2,3-2,3".into())
         );
         assert_eq!(
+            macro_.variables.get("a").map(|v| v.as_display()),
+            Some("inventory".into())
+        );
+        assert_eq!(
+            macro_.variables.get("col").map(|v| v.as_display()),
+            Some("bag".into())
+        );
+        assert_eq!(
             macro_.variables.get("r").map(|v| v.as_display()),
             Some("2".into())
         );
@@ -553,13 +660,23 @@ mod tests {
             any_queue: Mutex::new(vec![0]),
             ..Default::default()
         };
-        let resolver = FixedResolver::with_grid(2, 2);
+        let resolver = FixedResolver::with_atlas(
+            vec![AtlasMemberSpec {
+                name: "bag".into(),
+                collection: FixedCollection {
+                    rows: 2,
+                    cols: 2,
+                    bounds: (0, 0, 100, 100),
+                },
+            }],
+            vec!["bag".into()],
+        );
         let mut macro_ = Macro::new("t", 0, vec![]);
         macro_.root = root_loop(vec![Action {
             id: ActionId::new(),
             kind: ActionKind::NavigateSelect(Box::new(NavigateSelectData {
                 program: "P".into(),
-                graph_name: "bag".into(),
+                atlas: "inventory".into(),
                 chords: NavChords::default(),
                 outputs: NavOutputs {
                     output_row: "r".into(),
@@ -610,6 +727,102 @@ mod tests {
         assert!(backend.log.iter().any(|e| e == "click:right:down"));
         assert_eq!(
             macro_.variables.get("r").map(|v| v.as_display()),
+            Some("1".into())
+        );
+    }
+
+    #[test]
+    fn walks_right_into_neighbor_collection() {
+        let mut backend = RecordingBackend::default();
+        // chords: up, down, left, right, select — index 3 = right, then select
+        let waiter = ImmediateContinueWaiter {
+            any_queue: Mutex::new(vec![3, 4]),
+            ..Default::default()
+        };
+        let resolver = FixedResolver::with_atlas(
+            vec![
+                AtlasMemberSpec {
+                    name: "A".into(),
+                    collection: FixedCollection {
+                        rows: 2,
+                        cols: 2,
+                        bounds: (0, 0, 100, 100),
+                    },
+                },
+                AtlasMemberSpec {
+                    name: "B".into(),
+                    collection: FixedCollection {
+                        rows: 2,
+                        cols: 2,
+                        bounds: (120, 0, 220, 100),
+                    },
+                },
+            ],
+            vec!["A".into(), "B".into()],
+        );
+        let mut macro_ = Macro::new("t", 0, vec![]);
+        macro_.root = root_loop(vec![Action {
+            id: ActionId::new(),
+            kind: ActionKind::NavigateSelect(Box::new(NavigateSelectData {
+                program: "P".into(),
+                atlas: "inv".into(),
+                chords: NavChords {
+                    up: vec!["up".into()],
+                    down: vec!["down".into()],
+                    left: vec!["left".into()],
+                    right: vec!["right".into()],
+                    select: vec!["enter".into()],
+                    ..Default::default()
+                },
+                options: NavOptions {
+                    wrap_edges: false,
+                    move_cursor_with_nav: false,
+                    ..Default::default()
+                },
+                inputs: NavInputs {
+                    collection: "A".into(),
+                    row: "1".into(),
+                    col: "2".into(),
+                    ..Default::default()
+                },
+                outputs: NavOutputs {
+                    output_collection: "col".into(),
+                    output_row: "r".into(),
+                    output_col: "c".into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            })),
+        }]);
+
+        execute_macro_with(
+            &mut macro_,
+            ExecDeps {
+                automation: &mut backend,
+                capturer: None,
+                close_matches_distance: 0,
+                release_held_inputs: true,
+                resolver: Some(&resolver),
+                icons: None,
+                macros: None,
+                continue_waiter: Some(&waiter),
+                window_focuser: None,
+                ocr: None,
+                stop_flag: None,
+                logger: None,
+                highlighter: None,
+                runtime_vars: None,
+                variables_dir: None,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            macro_.variables.get("col").map(|v| v.as_display()),
+            Some("B".into())
+        );
+        assert_eq!(
+            macro_.variables.get("c").map(|v| v.as_display()),
             Some("1".into())
         );
     }

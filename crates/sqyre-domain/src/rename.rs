@@ -9,6 +9,7 @@ pub enum ProgramEntityKind {
     SearchArea,
     Item,
     Collection,
+    Atlas,
 }
 
 impl Macro {
@@ -81,13 +82,25 @@ impl Macro {
                     }
                 }
                 ActionKind::NavigateSelect(data) => {
-                    if data.program == program && data.graph_name == old_name {
-                        data.graph_name = new_name.to_string();
+                    if data.program == program && data.inputs.collection == old_name {
+                        data.inputs.collection = new_name.to_string();
                         changed = true;
                     }
                 }
                 _ => {}
             },
+            ProgramEntityKind::Atlas => {
+                if let ActionKind::NavigateSelect(data) = &mut a.kind {
+                    if data.program == program && data.atlas == old_name {
+                        data.atlas = new_name.to_string();
+                        changed = true;
+                    }
+                    if data.program == program && data.inputs.atlas == old_name {
+                        data.inputs.atlas = new_name.to_string();
+                        changed = true;
+                    }
+                }
+            }
             ProgramEntityKind::Item => {
                 if let ActionKind::ImageSearch { targets, .. } = &mut a.kind {
                     for target in targets.iter_mut() {

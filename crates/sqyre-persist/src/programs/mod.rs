@@ -6,8 +6,8 @@ mod types;
 mod util;
 
 pub use types::{
-    ProgramCatalog, ProgramCollection, ProgramData, ProgramItem, ProgramMask, ProgramPoint,
-    ProgramSearchArea,
+    ProgramAtlas, ProgramCatalog, ProgramCollection, ProgramData, ProgramItem, ProgramMask,
+    ProgramPoint, ProgramSearchArea,
 };
 
 use crate::{images_path, PersistError, Result};
@@ -84,6 +84,12 @@ impl ProgramCatalog {
 
     fn bump_generation(&mut self) {
         self.generation = self.generation.wrapping_add(1);
+    }
+
+    /// After a YAML/DB round-trip that rebuilt this catalog at generation 0, continue
+    /// the prior counter so UI caches keyed on [`Self::generation`] invalidate.
+    pub fn continue_generation_after_reload(&mut self, previous: u64) {
+        self.generation = previous.wrapping_add(1);
     }
 
     pub fn get(&self, name: &str) -> Option<&ProgramData> {
@@ -520,11 +526,28 @@ impl ProgramCatalog {
             "search area",
             |p| &mut p.search_areas,
             |sa, n| sa.name = n,
-        )
+        )?;
+        // Propagate to collection.search_area references within this program.
+        if old != new {
+            let p = self.program_mut(program)?;
+            for col in p.collections.values_mut() {
+                if col.search_area == old {
+                    col.search_area = new.to_string();
+                }
+            }
+        }
+        Ok(())
     }
 
     pub fn delete_search_area(&mut self, program: &str, name: &str) -> Result<()> {
-        delete_resolution_entity(self, program, name, "search area", |p| &mut p.search_areas)
+        delete_resolution_entity(self, program, name, "search area", |p| &mut p.search_areas)?;
+        let p = self.program_mut(program)?;
+        for col in p.collections.values_mut() {
+            if col.search_area == name {
+                col.search_area.clear();
+            }
+        }
+        Ok(())
     }
 
     pub fn upsert_mask(&mut self, program: &str, mask: ProgramMask) -> Result<()> {
@@ -584,6 +607,16 @@ impl ProgramCatalog {
             rename_keyed_map(&mut p.collections, old, new, "collection", |col, n| {
                 col.name = n
             })?;
+            // Propagate to atlas member lists within this program.
+            if old != new {
+                for atlas in p.atlases.values_mut() {
+                    for member in atlas.collections.iter_mut() {
+                        if member == old {
+                            *member = new.to_string();
+                        }
+                    }
+                }
+            }
         }
         if old != new && old_path.is_file() {
             if let Some(parent) = new_path.parent() {
@@ -597,8 +630,41 @@ impl ProgramCatalog {
     pub fn delete_collection(&mut self, program: &str, name: &str) -> Result<()> {
         let path = self.collection_image_path(program, name);
         delete_named_entity(self, program, name, "collection", |p| &mut p.collections)?;
+        let p = self.program_mut(program)?;
+        for atlas in p.atlases.values_mut() {
+            atlas.collections.retain(|c| c != name);
+        }
         let _ = std::fs::remove_file(path);
         Ok(())
+    }
+
+    pub fn upsert_atlas(&mut self, program: &str, atlas: ProgramAtlas) -> Result<()> {
+        let key = atlas.name.clone();
+        upsert_named_entity(self, program, key, atlas, |p| &mut p.atlases)
+    }
+
+    pub fn rename_atlas(&mut self, program: &str, old: &str, new: &str) -> Result<()> {
+        let new = new.trim();
+        let p = self.program_mut(program)?;
+        rename_keyed_map(&mut p.atlases, old, new, "atlas", |atlas, n| atlas.name = n)
+    }
+
+    pub fn delete_atlas(&mut self, program: &str, name: &str) -> Result<()> {
+        delete_named_entity(self, program, name, "atlas", |p| &mut p.atlases)
+    }
+
+    pub fn lookup_atlas(
+        &self,
+        program: &str,
+        name: &str,
+    ) -> std::result::Result<&ProgramAtlas, String> {
+        let p = self
+            .programs
+            .get(program)
+            .ok_or_else(|| format!("program {program:?} not found"))?;
+        p.atlases
+            .get(name)
+            .ok_or_else(|| format!("atlas {name:?} not in {program}"))
     }
 
     fn program_mut(&mut self, name: &str) -> Result<&mut ProgramData> {
@@ -809,6 +875,82 @@ Demo:
             .resolve_point(&CoordinateRef("Demo~grid@1,1-1,1".into()), &m)
             .unwrap();
         assert_eq!(center, (25, 25));
+    }
+
+    #[test]
+    fn atlas_roundtrip_and_collection_cascade() {
+        let yaml = r#"
+Game:
+  name: Game
+  items: {}
+  coordinates:
+    1920x1080:
+      points: {}
+      searchareas:
+        BagArea:
+          name: BagArea
+          leftx: 0
+          topy: 0
+          rightx: 100
+          bottomy: 100
+        EquipArea:
+          name: EquipArea
+          leftx: 120
+          topy: 0
+          rightx: 220
+          bottomy: 100
+  masks: {}
+  collections:
+    Bag:
+      name: Bag
+      searcharea: BagArea
+      rows: 2
+      cols: 2
+    Equip:
+      name: Equip
+      searcharea: EquipArea
+      rows: 2
+      cols: 2
+  atlases:
+    Inventory:
+      name: Inventory
+      collections:
+        - Bag
+        - Equip
+"#;
+        let v: Value = serde_yaml::from_str(yaml).unwrap();
+        let mut cat = ProgramCatalog::from_yaml_value(&v).unwrap();
+        let atlas = cat.lookup_atlas("Game", "Inventory").unwrap();
+        assert_eq!(atlas.collections, vec!["Bag", "Equip"]);
+
+        let encoded = cat.to_yaml_value(&Value::Mapping(Mapping::new()));
+        let reparsed = ProgramCatalog::from_yaml_value(&encoded).unwrap();
+        let atlas = reparsed.lookup_atlas("Game", "Inventory").unwrap();
+        assert_eq!(atlas.name, "Inventory");
+        assert_eq!(atlas.collections, vec!["Bag", "Equip"]);
+
+        cat.rename_collection("Game", "Bag", "Satchel").unwrap();
+        assert_eq!(
+            cat.lookup_atlas("Game", "Inventory").unwrap().collections,
+            vec!["Satchel", "Equip"]
+        );
+        assert_eq!(
+            cat.get("Game").unwrap().collections["Satchel"].search_area,
+            "BagArea"
+        );
+
+        cat.rename_search_area("Game", "BagArea", "PackArea")
+            .unwrap();
+        assert_eq!(
+            cat.get("Game").unwrap().collections["Satchel"].search_area,
+            "PackArea"
+        );
+
+        cat.delete_collection("Game", "Equip").unwrap();
+        assert_eq!(
+            cat.lookup_atlas("Game", "Inventory").unwrap().collections,
+            vec!["Satchel"]
+        );
     }
 
     #[test]
@@ -1041,5 +1183,20 @@ Demo:
                 ScalarValue::Int(5)
             );
         });
+    }
+
+    #[test]
+    fn continue_generation_after_yaml_reload() {
+        let mut cat = ProgramCatalog::default();
+        cat.create_program("Demo").unwrap();
+        let gen_after_mutate = cat.generation();
+        assert!(gen_after_mutate > 0);
+
+        // Simulate DataEditor::persist replacing the catalog from YAML.
+        let yaml = cat.to_yaml_value(&Value::Null);
+        let mut reloaded = ProgramCatalog::from_yaml_value(&yaml).unwrap();
+        assert_eq!(reloaded.generation(), 0);
+        reloaded.continue_generation_after_reload(gen_after_mutate);
+        assert_eq!(reloaded.generation(), gen_after_mutate.wrapping_add(1));
     }
 }

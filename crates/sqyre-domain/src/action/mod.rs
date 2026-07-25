@@ -739,12 +739,13 @@ impl Default for NavSelectAction {
 /// Optional start / override sources for Navigate Select.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct NavInputs {
-    #[serde(rename = "ingraph", default, skip_serializing_if = "String::is_empty")]
-    pub graph: String,
+    #[serde(rename = "inatlas", default, skip_serializing_if = "String::is_empty")]
+    pub atlas: String,
     #[serde(rename = "inrow", default, skip_serializing_if = "String::is_empty")]
     pub row: String,
     #[serde(rename = "incol", default, skip_serializing_if = "String::is_empty")]
     pub col: String,
+    /// Starting Collection within the atlas (optional).
     #[serde(
         rename = "incollection",
         default,
@@ -763,11 +764,11 @@ pub struct NavOutputs {
     )]
     pub output_ref: String,
     #[serde(
-        rename = "outputgraph",
+        rename = "outputatlas",
         default,
         skip_serializing_if = "String::is_empty"
     )]
-    pub output_graph: String,
+    pub output_atlas: String,
     #[serde(
         rename = "outputrow",
         default,
@@ -780,6 +781,7 @@ pub struct NavOutputs {
         skip_serializing_if = "String::is_empty"
     )]
     pub output_col: String,
+    /// Current Collection within the atlas.
     #[serde(
         rename = "outputcollection",
         default,
@@ -793,12 +795,9 @@ pub struct NavOutputs {
 pub struct NavigateSelectData {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub program: String,
-    #[serde(
-        rename = "graphname",
-        default,
-        skip_serializing_if = "String::is_empty"
-    )]
-    pub graph_name: String,
+    /// Atlas name within the program.
+    #[serde(rename = "atlas", default, skip_serializing_if = "String::is_empty")]
+    pub atlas: String,
     #[serde(flatten)]
     pub chords: NavChords,
     #[serde(flatten)]
@@ -818,7 +817,7 @@ impl Default for NavigateSelectData {
     fn default() -> Self {
         Self {
             program: String::new(),
-            graph_name: String::new(),
+            atlas: String::new(),
             chords: NavChords::blank_defaults(),
             options: NavOptions::default(),
             select: NavSelectAction::default(),
@@ -1658,10 +1657,10 @@ impl ActionKind {
             }
             Self::RunMacro { macro_name } => format!("Run {macro_name}"),
             Self::NavigateSelect(data) => {
-                if data.program.is_empty() && data.graph_name.is_empty() {
+                if data.program.is_empty() && data.atlas.is_empty() {
                     label.to_string()
                 } else {
-                    format!("{label}: {} · {}", data.program, data.graph_name)
+                    format!("{label}: {} · {}", data.program, data.atlas)
                 }
             }
             Self::Pause { message, .. } => {
