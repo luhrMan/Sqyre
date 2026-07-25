@@ -348,6 +348,7 @@ impl SqyreApp {
             Err(e) => {
                 let mut catalog = ProgramCatalog::default();
                 apply_main_monitor_resolution(&mut catalog);
+                #[cfg_attr(target_arch = "wasm32", allow(unused_mut))]
                 let mut app = Self {
                     db: Database::default(),
                     macros: Vec::new(),

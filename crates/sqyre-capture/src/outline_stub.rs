@@ -1,7 +1,5 @@
 //! Stub selection outline when no platform backend is available (e.g. macOS).
 
-pub use crate::outline_rect::OutlineRect;
-
 /// No-op outline for platforms without a selection-outline backend.
 #[derive(Debug, Default)]
 pub struct SelectionOutline;
