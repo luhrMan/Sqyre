@@ -14,7 +14,9 @@ use sqyre_match::{
     blur_image_owned, find_template_matches_preblurred_with_integrals, prepare_search_integrals,
     search_blur_kernel, ImageBuf, MatchMethod, Point, DEFAULT_CLOSE_MATCHES_DISTANCE,
 };
-use sqyre_vision::{get_cached_blurred_template, get_cached_image_mask, load_rgb_image};
+use sqyre_vision::{
+    get_cached_blurred_template, get_cached_image_mask, load_rgb_image, rgb_capture_to_image_buf,
+};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -235,7 +237,7 @@ fn capture_and_match(
             return Ok(Vec::new());
         }
     };
-    let search = img.into_image_buf();
+    let search = rgb_capture_to_image_buf(img);
     exec.log_image(action_id, "1. Capture (search area)", &search);
     let kernel = search_blur_kernel(blur);
     let want_pipeline = exec.log_images_enabled();
