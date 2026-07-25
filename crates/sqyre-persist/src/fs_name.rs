@@ -5,8 +5,7 @@ use std::path::{Component, Path, PathBuf};
 
 /// Reject names that could escape a managed directory when joined as a path component.
 pub fn validate_fs_entity_name(name: &str) -> Result<()> {
-    sqyre_validate::validate_entity_name(name)
-        .map_err(|e| PersistError::Message(e.to_string()))
+    sqyre_validate::validate_entity_name(name).map_err(|e| PersistError::Message(e.to_string()))
 }
 
 pub fn is_safe_fs_entity_name(name: &str) -> bool {
@@ -19,10 +18,7 @@ pub fn confined_join(base: &Path, name: &str) -> Result<PathBuf> {
     let joined = base.join(name);
     // Defense in depth: joined must stay a direct child of base by components.
     let rel = joined.strip_prefix(base).map_err(|_| {
-        PersistError::Message(format!(
-            "path escapes base {}: {name}",
-            base.display()
-        ))
+        PersistError::Message(format!("path escapes base {}: {name}", base.display()))
     })?;
     let mut comps = rel.components();
     match comps.next() {
