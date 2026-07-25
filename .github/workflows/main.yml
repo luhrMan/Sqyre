@@ -275,7 +275,7 @@ jobs:
         run: cargo check -p sqyre-app
 
       - name: cargo test (pure crates)
-        run: cargo test -p sqyre-domain -p sqyre-varref -p sqyre-validate -p sqyre-serialize -p sqyre-persist --offline
+        run: cargo test -p sqyre-domain -p sqyre-varref -p sqyre-validate -p sqyre-serialize -p sqyre-persist -p sqyre-ui-model -p sqyre-update -p sqyre-ports -p sqyre-hotkeys -p sqyre-match -p sqyre-executor --offline
 
   build-linux:
     if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && needs.version.outputs.should_release == 'true'
@@ -610,7 +610,7 @@ jobs:
 
   release:
     if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && needs.version.outputs.should_release == 'true'
-    needs: [version, test, build-linux, build-windows, build-wasm]
+    needs: [version, test, check-windows, build-linux, build-windows, build-wasm]
     runs-on: ubuntu-22.04
     permissions:
       contents: write
