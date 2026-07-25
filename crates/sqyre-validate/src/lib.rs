@@ -17,12 +17,46 @@ pub enum ValidateError {
 
 pub type Result<T> = std::result::Result<T, ValidateError>;
 
+/// True when `name` is safe to use as a single path component under a managed directory.
+///
+/// Rejects empty/whitespace names, `.` / `..`, separators, absolute forms, and control chars
+/// so catalog keys cannot escape `images/` via join + `remove_dir_all` / rename.
+pub fn is_safe_fs_entity_name(name: &str) -> bool {
+    validate_entity_name(name).is_ok()
+}
+
 pub fn validate_entity_name(name: &str) -> Result<()> {
-    if name.trim().is_empty() {
-        Err(ValidateError::EmptyName)
-    } else {
-        Ok(())
+    let name = name.trim();
+    if name.is_empty() {
+        return Err(ValidateError::EmptyName);
     }
+    if name == "." || name == ".." {
+        return Err(ValidateError::Message(
+            "name cannot be \".\" or \"..\"".into(),
+        ));
+    }
+    if name.starts_with('/') || name.starts_with('\\') {
+        return Err(ValidateError::Message(
+            "name cannot be an absolute path".into(),
+        ));
+    }
+    // Windows drive / UNC prefixes (`C:`, `\\server`, …).
+    if name.len() >= 2 && name.as_bytes()[1] == b':' {
+        return Err(ValidateError::Message(
+            "name cannot include a drive prefix".into(),
+        ));
+    }
+    if name.contains(['/', '\\', '\0']) {
+        return Err(ValidateError::Message(
+            "name cannot contain path separators or NUL".into(),
+        ));
+    }
+    if name.chars().any(|c| c.is_control()) {
+        return Err(ValidateError::Message(
+            "name cannot contain control characters".into(),
+        ));
+    }
+    Ok(())
 }
 
 pub fn parse_positive_i32(s: &str) -> Result<i32> {
@@ -451,12 +485,34 @@ pub fn validate_action_tree(action: &Action, macro_: Option<&Macro>) -> Result<(
     Ok(())
 }
 
+/// Validate a macro's name and full action tree (for load / pre-run gates).
+pub fn validate_macro(macro_: &Macro) -> Result<()> {
+    validate_entity_name(&macro_.name).map_err(|e| {
+        ValidateError::Message(format!("macro name {:?}: {e}", macro_.name))
+    })?;
+    validate_action_tree(&macro_.root, Some(macro_))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use sqyre_domain::{
         ActionId, PressState, ScalarValue, VariableAssignment, VariableDecl, VariableType,
     };
+
+    #[test]
+    fn entity_name_rejects_path_escape() {
+        assert!(validate_entity_name("Demo").is_ok());
+        assert!(validate_entity_name("").is_err());
+        assert!(validate_entity_name(".").is_err());
+        assert!(validate_entity_name("..").is_err());
+        assert!(validate_entity_name("../etc").is_err());
+        assert!(validate_entity_name("a/b").is_err());
+        assert!(validate_entity_name("a\\b").is_err());
+        assert!(validate_entity_name("/abs").is_err());
+        assert!(validate_entity_name("C:foo").is_err());
+        assert!(validate_entity_name("has\0nul").is_err());
+    }
 
     #[test]
     fn variable_name_rejects_braces() {

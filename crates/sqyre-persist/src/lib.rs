@@ -2,6 +2,7 @@
 
 #[cfg(not(target_arch = "wasm32"))]
 mod backup;
+mod fs_name;
 mod migrate;
 mod programs;
 mod settings;
@@ -10,6 +11,7 @@ mod settings;
 pub use backup::{
     backups_dir, create_backup, list_backups, prune_backups, restore_backup, BackupError,
 };
+pub use fs_name::{confined_join, is_safe_fs_entity_name, validate_fs_entity_name};
 pub use migrate::{migrate_db_yaml, migrate_db_yaml_value, LegacyCatalog};
 pub use programs::{
     ProgramAtlas, ProgramCatalog, ProgramCollection, ProgramData, ProgramItem, ProgramMask,
@@ -215,7 +217,24 @@ impl Database {
             return Ok(Self::default());
         }
         let text = fs::read_to_string(path)?;
-        Self::from_yaml(&text)
+        Ok(Self::from_yaml_with_warnings(&text)?.0)
+    }
+
+    /// Load default `db.yaml`, returning any per-macro decode/validation warnings.
+    pub fn load_default_with_warnings() -> Result<(Self, Vec<String>)> {
+        #[cfg(target_arch = "wasm32")]
+        {
+            return Ok((Self::default(), Vec::new()));
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let path = db_path();
+            if !path.exists() {
+                return Ok((Self::default(), Vec::new()));
+            }
+            let text = fs::read_to_string(path)?;
+            Self::from_yaml_with_warnings(&text)
+        }
     }
 
     pub fn load_default() -> Result<Self> {
@@ -231,7 +250,7 @@ impl Database {
     pub fn from_yaml_bytes(bytes: &[u8]) -> Result<Self> {
         let text = std::str::from_utf8(bytes)
             .map_err(|e| PersistError::Message(format!("db.yaml is not UTF-8: {e}")))?;
-        Self::from_yaml(text)
+        Ok(Self::from_yaml_with_warnings(text)?.0)
     }
 
     /// Serialize to YAML bytes (UTF-8). Used by WASM export.
@@ -240,24 +259,46 @@ impl Database {
     }
 
     pub fn from_yaml(text: &str) -> Result<Self> {
+        Ok(Self::from_yaml_with_warnings(text)?.0)
+    }
+
+    /// Load `db.yaml`, skipping individual macros that fail to decode so one
+    /// corrupt entry cannot lock the user out of the rest of the library.
+    ///
+    /// Returns `(database, warnings)` where warnings describe skipped macros.
+    pub fn from_yaml_with_warnings(text: &str) -> Result<(Self, Vec<String>)> {
         let root: Value = serde_yaml::from_str(text)?;
         let mapping = root
             .as_mapping()
             .ok_or_else(|| PersistError::Message("db.yaml root must be a mapping".into()))?;
 
         let mut macros = BTreeMap::new();
+        let mut warnings = Vec::new();
         if let Some(Value::Mapping(mm)) = mapping.get(Value::String("macros".into())) {
             for (k, v) in mm {
-                let key = k
-                    .as_str()
-                    .ok_or_else(|| PersistError::Message("macro key must be a string".into()))?
-                    .to_string();
-                let mut macro_ = decode_macro_from_map(v)
-                    .map_err(|e| PersistError::Message(format!("macro \"{key}\": {e}")))?;
-                if macro_.name.is_empty() {
-                    macro_.name = key.clone();
+                let key = match k.as_str() {
+                    Some(s) => s.to_string(),
+                    None => {
+                        warnings.push("skipped macro with non-string key".into());
+                        continue;
+                    }
+                };
+                match decode_macro_from_map(v) {
+                    Ok(mut macro_) => {
+                        if macro_.name.is_empty() {
+                            macro_.name = key.clone();
+                        }
+                        if let Err(e) = sqyre_validate::validate_macro(&macro_) {
+                            warnings.push(format!(
+                                "macro \"{key}\" loaded with validation issues: {e}"
+                            ));
+                        }
+                        macros.insert(key, macro_);
+                    }
+                    Err(e) => {
+                        warnings.push(format!("skipped macro \"{key}\": {e}"));
+                    }
                 }
-                macros.insert(key, macro_);
             }
         }
 
@@ -266,11 +307,14 @@ impl Database {
             .cloned()
             .unwrap_or(Value::Mapping(Mapping::new()));
 
-        Ok(Self {
-            macros,
-            programs,
-            catalog_cache: RefCell::new(None),
-        })
+        Ok((
+            Self {
+                macros,
+                programs,
+                catalog_cache: RefCell::new(None),
+            },
+            warnings,
+        ))
     }
 
     pub fn to_yaml(&self) -> Result<String> {
@@ -347,6 +391,35 @@ mod tests {
             assert!(loaded.macros.contains_key("Test"));
             assert_eq!(loaded.macros["Test"].root.children().len(), 1);
         });
+    }
+
+    #[test]
+    fn one_bad_macro_does_not_block_others() {
+        let text = r#"
+macros:
+  Good:
+    name: Good
+    globaldelay: 0
+    hotkey: []
+    root:
+      type: loop
+      name: root
+      count: 1
+      subactions:
+        - type: wait
+          time: 1
+  Bad:
+    name: Bad
+    root: { type: not_a_real_action }
+programs: {}
+"#;
+        let (db, warnings) = Database::from_yaml_with_warnings(text).unwrap();
+        assert!(db.macros.contains_key("Good"));
+        assert!(!db.macros.contains_key("Bad"));
+        assert!(
+            warnings.iter().any(|w| w.contains("Bad")),
+            "warnings={warnings:?}"
+        );
     }
 
     #[test]

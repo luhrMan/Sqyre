@@ -1,6 +1,7 @@
 //! Shared mutation/resolve helpers for the program catalog.
 
 use super::types::*;
+use crate::fs_name::validate_fs_entity_name;
 use crate::{PersistError, Result};
 use sqyre_domain::PROGRAM_DELIMITER;
 use std::collections::BTreeMap;
@@ -19,6 +20,7 @@ pub(super) fn upsert_resolution_entity<T>(
     value: T,
     maps: impl FnOnce(&mut ProgramData) -> &mut BTreeMap<String, BTreeMap<String, T>>,
 ) -> Result<()> {
+    validate_fs_entity_name(key.trim())?;
     let res = catalog.default_resolution_key();
     let scale = catalog.runtime_scale();
     let p = catalog.program_mut(program)?;
@@ -57,6 +59,7 @@ pub(super) fn rename_resolution_entity<T>(
     set_name: impl FnOnce(&mut T, String),
 ) -> Result<()> {
     let new = new.trim();
+    validate_fs_entity_name(new)?;
     let res = catalog.default_resolution_key();
     let scale = catalog.runtime_scale();
     let p = catalog.program_mut(program)?;
@@ -73,6 +76,7 @@ pub(super) fn upsert_named_entity<T>(
     value: T,
     map: impl FnOnce(&mut ProgramData) -> &mut BTreeMap<String, T>,
 ) -> Result<()> {
+    validate_fs_entity_name(key.trim())?;
     let p = catalog.program_mut(program)?;
     map(p).insert(key, value);
     Ok(())
@@ -107,6 +111,7 @@ pub(super) fn rename_keyed_map<T>(
             "{kind} name cannot be empty"
         )));
     }
+    validate_fs_entity_name(new)?;
     if old != new && map.contains_key(new) {
         return Err(PersistError::Message(format!(
             "{kind} {new:?} already exists"

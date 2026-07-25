@@ -275,9 +275,9 @@ impl SqyreApp {
         let mut add_action_picker = AddActionPicker::default();
         add_action_picker.load_from_settings(settings_ui.settings());
 
-        match Database::load_default() {
+        match Database::load_default_with_warnings() {
             #[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut))]
-            Ok(mut db) => {
+            Ok((mut db, load_warnings)) => {
                 let mut catalog = db.program_catalog().unwrap_or_default();
                 apply_main_monitor_resolution(&mut catalog);
                 let mut macros: Vec<_> = db.macros.values().cloned().collect();
@@ -287,11 +287,16 @@ impl SqyreApp {
                     let _ =
                         wasm_demo_seed::ensure_demo_if_empty(&mut macros, &mut catalog, &mut db);
                 }
+                let load_error = if load_warnings.is_empty() {
+                    None
+                } else {
+                    Some(load_warnings.join("\n"))
+                };
                 let mut app = Self {
                     db,
                     macros,
                     catalog,
-                    load_error: None,
+                    load_error,
                     save_error: None,
                     selected_macro: 0,
                     selected_actions: Vec::new(),

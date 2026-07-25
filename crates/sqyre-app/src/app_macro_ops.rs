@@ -94,6 +94,7 @@ impl SqyreApp {
             .iter()
             .filter(|m| !m.hotkey.is_empty())
             .filter(|m| macro_matches_hotkey_tag(m, filter))
+            .filter(|m| sqyre_validate::validate_macro(m).is_ok())
             .map(|m| {
                 MacroHotkeyBinding::new(
                     m.name.clone(),

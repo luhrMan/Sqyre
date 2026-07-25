@@ -10,6 +10,7 @@ pub use types::{
     ProgramPoint, ProgramSearchArea,
 };
 
+use crate::fs_name::{confined_join_or_invalid, is_safe_fs_entity_name, validate_fs_entity_name};
 use crate::{images_path, PersistError, Result};
 use encode::*;
 use parse::*;
@@ -105,24 +106,33 @@ impl ProgramCatalog {
     }
 
     pub fn icons_dir(&self, program: &str) -> PathBuf {
-        self.images_root().join("icons").join(program)
+        confined_join_or_invalid(&self.images_root().join("icons"), program)
     }
 
     pub fn masks_dir(&self, program: &str) -> PathBuf {
-        self.images_root().join("masks").join(program)
+        confined_join_or_invalid(&self.images_root().join("masks"), program)
     }
 
     pub fn collections_dir(&self, program: &str) -> PathBuf {
-        self.images_root().join("Collections").join(program)
+        confined_join_or_invalid(&self.images_root().join("Collections"), program)
     }
 
     pub fn collection_image_path(&self, program: &str, collection: &str) -> PathBuf {
-        self.collections_dir(program)
-            .join(format!("{collection}.png"))
+        let dir = self.collections_dir(program);
+        if is_safe_fs_entity_name(collection) {
+            dir.join(format!("{collection}.png"))
+        } else {
+            dir.join("__invalid__.png")
+        }
     }
 
     pub fn mask_image_path(&self, program: &str, mask: &str) -> PathBuf {
-        self.masks_dir(program).join(format!("{mask}.png"))
+        let dir = self.masks_dir(program);
+        if is_safe_fs_entity_name(mask) {
+            dir.join(format!("{mask}.png"))
+        } else {
+            dir.join("__invalid__.png")
+        }
     }
 
     pub fn lookup_point(
@@ -328,7 +338,7 @@ impl ProgramCatalog {
         if item.mask.is_empty() {
             return None;
         }
-        let path = self.masks_dir(program).join(format!("{}.png", item.mask));
+        let path = self.mask_image_path(program, &item.mask);
         if path.is_file() {
             Some(path)
         } else {
@@ -373,9 +383,8 @@ impl ProgramCatalog {
 
     pub fn create_program(&mut self, name: impl Into<String>) -> Result<()> {
         let name = name.into();
-        if name.trim().is_empty() {
-            return Err(PersistError::Message("program name cannot be empty".into()));
-        }
+        validate_fs_entity_name(name.trim())?;
+        let name = name.trim().to_string();
         if self.programs.contains_key(&name) {
             return Err(PersistError::Message(format!(
                 "program {name:?} already exists"
@@ -399,9 +408,7 @@ impl ProgramCatalog {
 
     pub fn rename_program(&mut self, old: &str, new: &str) -> Result<()> {
         let new = new.trim();
-        if new.is_empty() {
-            return Err(PersistError::Message("program name cannot be empty".into()));
-        }
+        validate_fs_entity_name(new)?;
         if old == new {
             return Ok(());
         }
@@ -424,12 +431,15 @@ impl ProgramCatalog {
         if self.programs.remove(name).is_none() {
             return Err(PersistError::Message(format!("program {name:?} not found")));
         }
-        let icons = self.icons_dir(name);
-        let masks = self.masks_dir(name);
-        let collections = self.collections_dir(name);
-        let _ = std::fs::remove_dir_all(icons);
-        let _ = std::fs::remove_dir_all(masks);
-        let _ = std::fs::remove_dir_all(collections);
+        // Only touch the filesystem when the name cannot escape the images root.
+        if is_safe_fs_entity_name(name) {
+            let icons = self.icons_dir(name);
+            let masks = self.masks_dir(name);
+            let collections = self.collections_dir(name);
+            let _ = std::fs::remove_dir_all(icons);
+            let _ = std::fs::remove_dir_all(masks);
+            let _ = std::fs::remove_dir_all(collections);
+        }
         self.bump_generation();
         Ok(())
     }
@@ -454,11 +464,12 @@ impl ProgramCatalog {
 
     pub fn rename_item(&mut self, program: &str, old: &str, new: &str) -> Result<()> {
         let new = new.trim();
+        validate_fs_entity_name(new)?;
         {
             let p = self.program_mut(program)?;
             rename_keyed_map(&mut p.items, old, new, "item", |item, n| item.name = n)?;
         }
-        if old != new {
+        if old != new && is_safe_fs_entity_name(program) && is_safe_fs_entity_name(old) {
             self.rename_item_icon_files(program, old, new);
         }
         Ok(())
@@ -557,6 +568,7 @@ impl ProgramCatalog {
 
     pub fn rename_mask(&mut self, program: &str, old: &str, new: &str) -> Result<()> {
         let new = new.trim();
+        validate_fs_entity_name(new)?;
         let old_path = self.mask_image_path(program, old);
         let new_path = self.mask_image_path(program, new);
         let p = self.program_mut(program)?;
@@ -567,7 +579,11 @@ impl ProgramCatalog {
                 item.mask = new.to_string();
             }
         }
-        if old != new && old_path.is_file() {
+        if old != new
+            && is_safe_fs_entity_name(program)
+            && is_safe_fs_entity_name(old)
+            && old_path.is_file()
+        {
             if let Some(parent) = new_path.parent() {
                 let _ = std::fs::create_dir_all(parent);
             }
@@ -585,7 +601,9 @@ impl ProgramCatalog {
                 item.mask.clear();
             }
         }
-        let _ = std::fs::remove_file(path);
+        if is_safe_fs_entity_name(program) && is_safe_fs_entity_name(name) {
+            let _ = std::fs::remove_file(path);
+        }
         Ok(())
     }
 
@@ -600,6 +618,7 @@ impl ProgramCatalog {
 
     pub fn rename_collection(&mut self, program: &str, old: &str, new: &str) -> Result<()> {
         let new = new.trim();
+        validate_fs_entity_name(new)?;
         let old_path = self.collection_image_path(program, old);
         let new_path = self.collection_image_path(program, new);
         {
@@ -618,7 +637,11 @@ impl ProgramCatalog {
                 }
             }
         }
-        if old != new && old_path.is_file() {
+        if old != new
+            && is_safe_fs_entity_name(program)
+            && is_safe_fs_entity_name(old)
+            && old_path.is_file()
+        {
             if let Some(parent) = new_path.parent() {
                 let _ = std::fs::create_dir_all(parent);
             }
@@ -634,7 +657,9 @@ impl ProgramCatalog {
         for atlas in p.atlases.values_mut() {
             atlas.collections.retain(|c| c != name);
         }
-        let _ = std::fs::remove_file(path);
+        if is_safe_fs_entity_name(program) && is_safe_fs_entity_name(name) {
+            let _ = std::fs::remove_file(path);
+        }
         Ok(())
     }
 
@@ -645,6 +670,7 @@ impl ProgramCatalog {
 
     pub fn rename_atlas(&mut self, program: &str, old: &str, new: &str) -> Result<()> {
         let new = new.trim();
+        validate_fs_entity_name(new)?;
         let p = self.program_mut(program)?;
         rename_keyed_map(&mut p.atlases, old, new, "atlas", |atlas, n| atlas.name = n)
     }
