@@ -1123,22 +1123,26 @@ fn find_pixel_wait_until_found_stops_when_flag_set() {
         fn move_to(&mut self, x: i32, y: i32, opts: crate::backends::MoveOptions) {
             self.inner.move_to(x, y, opts);
         }
-        fn click(&mut self, button: &str, down: bool) -> Result<(), String> {
+        fn click(
+            &mut self,
+            button: &str,
+            down: bool,
+        ) -> Result<(), crate::backends::AutomationError> {
             self.inner.click(button, down)
         }
-        fn scroll(&mut self, up: bool) -> Result<(), String> {
+        fn scroll(&mut self, up: bool) -> Result<(), crate::backends::AutomationError> {
             self.inner.scroll(up)
         }
-        fn key_down(&mut self, key: &str) -> Result<(), String> {
+        fn key_down(&mut self, key: &str) -> Result<(), crate::backends::AutomationError> {
             self.inner.key_down(key)
         }
-        fn key_up(&mut self, key: &str) -> Result<(), String> {
+        fn key_up(&mut self, key: &str) -> Result<(), crate::backends::AutomationError> {
             self.inner.key_up(key)
         }
         fn type_char(&mut self, ch: char) {
             self.inner.type_char(ch);
         }
-        fn write_clipboard(&mut self, s: &str) -> Result<(), String> {
+        fn write_clipboard(&mut self, s: &str) -> Result<(), crate::backends::AutomationError> {
             self.inner.write_clipboard(s)
         }
     }

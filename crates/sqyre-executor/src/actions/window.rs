@@ -26,9 +26,7 @@ pub(crate) fn execute_focus_window(
         .deps
         .window_focuser
         .ok_or_else(|| ExecError::Message("focus window: window focuser not configured".into()))?;
-    focuser
-        .focus(path, title)
-        .map_err(|e| ExecError::Message(format!("focus window {title:?} ({path}): {e}")))?;
+    focuser.focus(path, title)?;
     exec.log(action_id, format!("Focus Window: {title} ({path})"));
     Ok(())
 }
