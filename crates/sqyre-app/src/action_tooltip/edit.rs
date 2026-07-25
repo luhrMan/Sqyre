@@ -2,6 +2,7 @@
 
 use super::sections::{tip_section, tip_wrapped_section};
 use super::{help, help as h};
+use crate::data_editor_preview::show_file_hover;
 use crate::icon_cache::IconCache;
 use crate::paint_ctx::{CatalogPaint, EditFieldsCtx, RecordBridges, VarTheme};
 use crate::pickers::{self, options, ActivePicker, CoordKind};
@@ -10,8 +11,8 @@ use crate::theme;
 use crate::tree_chrome;
 use crate::var_pills;
 use crate::widgets::{
-    combo_str, combo_str_labeled, drag_field, drag_field_enabled, text_field, W_MULTILINE, W_TEXT,
-    W_VAR,
+    combo_str, combo_str_labeled, drag_field, drag_field_enabled, searchable_combo,
+    searchable_combo_with, text_field, W_MULTILINE, W_TEXT, W_VAR,
 };
 use eframe::egui;
 use sqyre_domain::{
@@ -108,15 +109,18 @@ pub fn paint_edit_fields(
             });
         }
         ActionKind::Click { button, state } => {
-            tip_wrapped_section(ui, |ui| {
-                help::tip(theme::mouse_button_picker(ui, button), h::CLICK_BUTTON);
-                ui.vertical(|ui| {
-                    help::tip(ui.small("Up"), h::CLICK_STATE);
-                    ui.horizontal(|ui| {
-                        help::tip(theme::press_state_toggle(ui, state), h::CLICK_STATE);
-                        help::tip(ui.small("Tap"), h::CLICK_STATE);
+            tip_section(ui, |ui| {
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                    ui.spacing_mut().item_spacing = egui::vec2(6.0, 6.0);
+                    help::tip(theme::mouse_button_picker(ui, button), h::CLICK_BUTTON);
+                    ui.vertical(|ui| {
+                        help::tip(ui.small("Up"), h::CLICK_STATE);
+                        ui.horizontal(|ui| {
+                            help::tip(theme::press_state_toggle(ui, state), h::CLICK_STATE);
+                            help::tip(ui.small("Tap"), h::CLICK_STATE);
+                        });
+                        help::tip(ui.small("Down"), h::CLICK_STATE);
                     });
-                    help::tip(ui.small("Down"), h::CLICK_STATE);
                 });
             });
         }
@@ -172,7 +176,16 @@ pub fn paint_edit_fields(
             smooth_delay_ms,
         } => {
             tip_section(ui, |ui| {
-                point_picker_row(ui, point, picker);
+                point_picker_row(
+                    ui,
+                    &mut CatalogPaint {
+                        catalog,
+                        icons,
+                        previews,
+                    },
+                    point,
+                    picker,
+                );
                 paint_coord_preview(ui, catalog, previews, point, PreviewKind::Point);
             });
             tip_wrapped_section(ui, |ui| {
@@ -237,13 +250,28 @@ pub fn paint_edit_fields(
         } => {
             tip_wrapped_section(ui, |ui| {
                 text_field(ui, "Window title", h::FOCUS_TITLE, window_title);
-                if picker_edit_row(
-                    ui,
-                    "Process path",
-                    h::FOCUS_PROCESS,
-                    process_path,
-                    "/path/to/app",
-                ) {
+                let mut pick = false;
+                ui.horizontal(|ui| {
+                    help::label(ui, "Process path", h::FOCUS_PROCESS);
+                    crate::icon_cache::paint_leading_process_icon(
+                        ui,
+                        icons,
+                        process_path,
+                        window_title,
+                    );
+                    help::tip(
+                        ui.add(
+                            egui::TextEdit::singleline(process_path)
+                                .desired_width(W_TEXT)
+                                .hint_text("/path/to/app"),
+                        ),
+                        h::FOCUS_PROCESS,
+                    );
+                    if pick_icon_btn(ui).clicked() {
+                        pick = true;
+                    }
+                });
+                if pick {
                     *picker = pickers::open_window_picker(process_path, window_title);
                 }
             });
@@ -381,7 +409,16 @@ pub fn paint_edit_fields(
             tip_section(ui, |ui| {
                 targets_editor(ui, catalog, icons, targets, picker);
             });
-            search_area_section(ui, catalog, previews, search_area, picker);
+            search_area_section(
+                ui,
+                &mut CatalogPaint {
+                    catalog,
+                    icons,
+                    previews,
+                },
+                search_area,
+                picker,
+            );
             tip_wrapped_section(ui, |ui| {
                 let mut method_label = match_method.label().to_string();
                 let method_opts: Vec<&str> =
@@ -455,7 +492,16 @@ pub fn paint_edit_fields(
                     active_macro,
                 );
             });
-            search_area_section(ui, catalog, previews, search_area, picker);
+            search_area_section(
+                ui,
+                &mut CatalogPaint {
+                    catalog,
+                    icons,
+                    previews,
+                },
+                search_area,
+                picker,
+            );
             detection_branch_editor(ui, detection);
             tip_wrapped_section(ui, |ui| {
                 drag_field(ui, "Blur", h::OCR_BLUR, blur, |d| d);
@@ -488,7 +534,16 @@ pub fn paint_edit_fields(
             tip_wrapped_section(ui, |ui| {
                 coords_editor(ui, &mut detection.coords, known_vars, is_dark);
             });
-            search_area_section(ui, catalog, previews, search_area, picker);
+            search_area_section(
+                ui,
+                &mut CatalogPaint {
+                    catalog,
+                    icons,
+                    previews,
+                },
+                search_area,
+                picker,
+            );
             tip_wrapped_section(ui, |ui| {
                 ui.horizontal(|ui| {
                     var_ref_field(
@@ -534,8 +589,39 @@ pub fn paint_edit_fields(
         }
         ActionKind::NavigateSelect(data) => {
             tip_wrapped_section(ui, |ui| {
-                text_field(ui, "Program", h::NAV_PROGRAM, &mut data.program);
-                text_field(ui, "Graph", h::NAV_GRAPH, &mut data.graph_name);
+                help::label(ui, "Program", h::NAV_PROGRAM);
+                let programs: Vec<String> = catalog.program_names().cloned().collect();
+                let mut current = data.program.clone();
+                let mut option_icon =
+                    |ctx: &egui::Context, name: &str| icons.for_program(ctx, catalog, name);
+                searchable_combo_with(
+                    ui,
+                    "nav_program",
+                    &mut current,
+                    &programs,
+                    "(none)",
+                    Some("(none)"),
+                    None,
+                    None,
+                    Some(&mut option_icon),
+                );
+                if current != data.program {
+                    data.program = current;
+                }
+                help::label(ui, "Atlas", h::NAV_ATLAS);
+                let atlases: Vec<String> = if data.program.trim().is_empty() {
+                    Vec::new()
+                } else {
+                    catalog
+                        .get(data.program.trim())
+                        .map(|p| p.atlases.keys().cloned().collect())
+                        .unwrap_or_default()
+                };
+                let mut current = data.atlas.clone();
+                searchable_combo(ui, "nav_atlas", &mut current, &atlases, "(none)", None);
+                if current != data.atlas {
+                    data.atlas = current;
+                }
             });
             tip_section(ui, |ui| {
                 string_list_field(ui, "Chord up", &mut data.chords.up, h::NAV_CHORD_UP);
@@ -605,7 +691,7 @@ pub fn paint_edit_fields(
                 );
             });
             tip_wrapped_section(ui, |ui| {
-                text_field(ui, "In graph", h::NAV_IN_GRAPH, &mut data.inputs.graph);
+                text_field(ui, "In atlas", h::NAV_IN_ATLAS, &mut data.inputs.atlas);
                 text_field(ui, "In row", h::NAV_IN_ROW, &mut data.inputs.row);
                 text_field(ui, "In col", h::NAV_IN_COL, &mut data.inputs.col);
                 text_field(
@@ -624,9 +710,9 @@ pub fn paint_edit_fields(
                 );
                 text_field(
                     ui,
-                    "Output graph",
-                    h::NAV_OUT_GRAPH,
-                    &mut data.outputs.output_graph,
+                    "Output atlas",
+                    h::NAV_OUT_ATLAS,
+                    &mut data.outputs.output_atlas,
                 );
                 text_field(
                     ui,
@@ -742,32 +828,6 @@ fn picker_display_row(ui: &mut egui::Ui, label: &str, help_text: &str, display: 
     clicked
 }
 
-/// Label + editable text + pick button. Returns true when pick was clicked.
-fn picker_edit_row(
-    ui: &mut egui::Ui,
-    label: &str,
-    help_text: &str,
-    value: &mut String,
-    hint: &str,
-) -> bool {
-    let mut clicked = false;
-    ui.horizontal(|ui| {
-        help::label(ui, label, help_text);
-        help::tip(
-            ui.add(
-                egui::TextEdit::singleline(value)
-                    .desired_width(W_TEXT)
-                    .hint_text(hint),
-            ),
-            help_text,
-        );
-        if pick_icon_btn(ui).clicked() {
-            clicked = true;
-        }
-    });
-    clicked
-}
-
 fn paint_coord_preview(
     ui: &mut egui::Ui,
     catalog: &ProgramCatalog,
@@ -791,15 +851,34 @@ fn paint_coord_preview(
     previews.paint_for_coordinate_ref(ui, catalog, coord, kind, force);
 }
 
-fn point_picker_row(ui: &mut egui::Ui, point: &mut CoordinateRef, picker: &mut ActivePicker) {
-    coord_picker_row(ui, "Point", h::MOVE_POINT, point, CoordKind::Point, picker);
+fn point_picker_row(
+    ui: &mut egui::Ui,
+    paint: &mut CatalogPaint<'_>,
+    point: &mut CoordinateRef,
+    picker: &mut ActivePicker,
+) {
+    coord_picker_row(
+        ui,
+        "Point",
+        h::MOVE_POINT,
+        paint,
+        point,
+        CoordKind::Point,
+        picker,
+    );
 }
 
-fn search_area_picker_row(ui: &mut egui::Ui, area: &mut CoordinateRef, picker: &mut ActivePicker) {
+fn search_area_picker_row(
+    ui: &mut egui::Ui,
+    paint: &mut CatalogPaint<'_>,
+    area: &mut CoordinateRef,
+    picker: &mut ActivePicker,
+) {
     coord_picker_row(
         ui,
         "Search area",
         h::SEARCH_AREA,
+        paint,
         area,
         CoordKind::SearchArea,
         picker,
@@ -810,10 +889,16 @@ fn coord_picker_row(
     ui: &mut egui::Ui,
     label: &str,
     help_text: &str,
+    paint: &mut CatalogPaint<'_>,
     coord: &mut CoordinateRef,
     kind: CoordKind,
     picker: &mut ActivePicker,
 ) {
+    let CatalogPaint {
+        catalog,
+        icons,
+        previews,
+    } = paint;
     let display = if coord.is_empty() {
         "(unset)"
     } else {
@@ -821,7 +906,13 @@ fn coord_picker_row(
     };
     ui.horizontal(|ui| {
         help::label(ui, label, help_text);
-        ui.monospace(display);
+        if let Some(prog) = coord.program() {
+            crate::icon_cache::paint_program_icon(ui, catalog, icons, prog);
+        }
+        let resp = ui.monospace(display);
+        if !coord.is_empty() {
+            attach_coord_hover(ui, &resp, catalog, icons, previews, coord, kind);
+        }
         if pick_icon_btn(ui).clicked() {
             *picker = ActivePicker::Coord {
                 kind,
@@ -832,6 +923,35 @@ fn coord_picker_row(
             };
         }
     });
+}
+
+fn attach_coord_hover(
+    ui: &mut egui::Ui,
+    response: &egui::Response,
+    catalog: &ProgramCatalog,
+    icons: &mut IconCache,
+    previews: &mut PreviewTooltipCache,
+    coord: &CoordinateRef,
+    kind: CoordKind,
+) {
+    if coord.is_collection() {
+        let Some(prog) = coord.program() else {
+            return;
+        };
+        show_file_hover(
+            ui,
+            response,
+            icons,
+            &catalog.collection_image_path(prog, coord.name()),
+            coord.as_str(),
+        );
+        return;
+    }
+    let preview_kind = match kind {
+        CoordKind::Point => PreviewKind::Point,
+        CoordKind::SearchArea => PreviewKind::SearchArea,
+    };
+    previews.show_for_coordinate_ref(ui, response, catalog, coord, preview_kind);
 }
 
 fn scalar_field(
@@ -1024,14 +1144,19 @@ fn condition_editor(
 
 fn search_area_section(
     ui: &mut egui::Ui,
-    catalog: &ProgramCatalog,
-    previews: &mut PreviewTooltipCache,
+    paint: &mut CatalogPaint<'_>,
     search_area: &mut CoordinateRef,
     picker: &mut ActivePicker,
 ) {
     tip_section(ui, |ui| {
-        search_area_picker_row(ui, search_area, picker);
-        paint_coord_preview(ui, catalog, previews, search_area, PreviewKind::SearchArea);
+        search_area_picker_row(ui, paint, search_area, picker);
+        paint_coord_preview(
+            ui,
+            paint.catalog,
+            paint.previews,
+            search_area,
+            PreviewKind::SearchArea,
+        );
     });
 }
 

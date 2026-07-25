@@ -105,7 +105,7 @@ fn paint_tag_chips(ui: &mut egui::Ui, tags: &mut Vec<String>, enabled: bool, cha
         .fill(fill)
         .stroke(egui::Stroke::NONE)
         .corner_radius(egui::CornerRadius::same(6))
-        .inner_margin(egui::Margin::symmetric(2, 0));
+        .inner_margin(egui::Margin::same(2));
 
     for tag in tags.iter() {
         // Pill wraps label + × so `horizontal_wrapped` treats each chip as one unit.

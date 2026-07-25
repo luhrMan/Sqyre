@@ -4,6 +4,9 @@ use eframe::egui::{self, Pos2, Vec2};
 
 const IMAGE_ZOOM_MIN: f32 = 0.5;
 const IMAGE_ZOOM_MAX: f32 = 16.0;
+/// Fit-relative zoom at reset / first open: slightly under 1 so images aren't flush
+/// with the viewport edges (padding on the constraining axis).
+pub const IMAGE_ZOOM_DEFAULT: f32 = 0.92;
 /// Relative zoom change per mouse-wheel notch (~50px of `smooth_scroll_delta`).
 const IMAGE_ZOOM_WHEEL_STEP: f32 = 0.035;
 /// Typical egui wheel notch size in points of `smooth_scroll_delta.y`.
@@ -11,6 +14,7 @@ const IMAGE_ZOOM_SCROLL_NOTCH: f32 = 50.0;
 const IMAGE_PAN_EDGE_PAD: f32 = 32.0;
 
 /// Zoom 1.0 = fit in viewport; values above enlarge. Pan is in viewport pixels.
+/// Default / reset uses [`IMAGE_ZOOM_DEFAULT`] (slightly zoomed out).
 #[derive(Debug, Clone)]
 pub struct ImageViewTransform {
     pub zoom: f32,
@@ -22,7 +26,7 @@ pub struct ImageViewTransform {
 impl Default for ImageViewTransform {
     fn default() -> Self {
         Self {
-            zoom: 1.0,
+            zoom: IMAGE_ZOOM_DEFAULT,
             pan: Vec2::ZERO,
             pan_drag: None,
         }
@@ -31,7 +35,7 @@ impl Default for ImageViewTransform {
 
 impl ImageViewTransform {
     pub fn reset(&mut self) {
-        self.zoom = 1.0;
+        self.zoom = IMAGE_ZOOM_DEFAULT;
         self.pan = Vec2::ZERO;
         self.pan_drag = None;
     }
@@ -41,7 +45,12 @@ impl ImageViewTransform {
     }
 
     pub fn needs_reset_button(&self) -> bool {
-        self.zoom != 1.0 || self.pan != Vec2::ZERO
+        self.zoom != IMAGE_ZOOM_DEFAULT || self.pan != Vec2::ZERO
+    }
+
+    /// Whether to show the zoom percentage (hidden at the default fit-out zoom).
+    pub fn shows_zoom_label(&self) -> bool {
+        (self.zoom - IMAGE_ZOOM_DEFAULT).abs() > 0.005
     }
 }
 
@@ -209,11 +218,29 @@ mod tests {
     }
 
     #[test]
+    fn default_zoom_is_slightly_under_fit() {
+        const { assert!(IMAGE_ZOOM_DEFAULT < 1.0) };
+        let v = ImageViewTransform::default();
+        assert_eq!(v.zoom, IMAGE_ZOOM_DEFAULT);
+        assert!(!v.needs_reset_button());
+        assert!(!v.shows_zoom_label());
+        let mut z = v;
+        z.zoom = 1.0;
+        assert!(z.needs_reset_button());
+        assert!(z.shows_zoom_label());
+        z.reset();
+        assert_eq!(z.zoom, IMAGE_ZOOM_DEFAULT);
+    }
+
+    #[test]
     fn content_rect_centers_at_zoom_one() {
         let vp = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), Vec2::new(200.0, 100.0));
         let img = Vec2::new(100.0, 100.0);
         let r = image_content_rect(vp, img, 1.0, Vec2::ZERO);
         assert!((r.height() - 100.0).abs() < 0.01);
         assert!((r.center().x - 100.0).abs() < 0.01);
+        let padded = image_content_rect(vp, img, IMAGE_ZOOM_DEFAULT, Vec2::ZERO);
+        assert!(padded.height() < r.height());
+        assert!((padded.center().y - r.center().y).abs() < 0.01);
     }
 }

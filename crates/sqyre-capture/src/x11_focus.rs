@@ -1,10 +1,11 @@
 //! Linux X11 window list + activate.
 
-use crate::WindowInfo;
+use crate::{ProcessIcon, WindowInfo, PROCESS_ICON_TARGET_PX};
 use parking_lot::Mutex;
 use sqyre_executor::WindowFocuser;
 use std::collections::HashSet;
 use std::ffi::{CStr, CString};
+use std::os::raw::c_ulong;
 use std::path::{Path, PathBuf};
 use std::ptr;
 use x11::xlib::{
@@ -72,6 +73,42 @@ pub fn get_active_window() -> Result<Option<WindowInfo>, String> {
         crate::diag::note(&format!("x11:get_active_window err: {e}"));
     }
     result
+}
+
+/// Icon for a bound process: matching open window's `_NET_WM_ICON`, if any.
+pub fn process_icon(process_path: &str, window_title: &str) -> Option<ProcessIcon> {
+    let path = process_path.trim();
+    if path.is_empty() {
+        return None;
+    }
+    let title = window_title.trim();
+    with_display(|display| -> Result<Option<ProcessIcon>, String> {
+        unsafe {
+            let root = XDefaultRootWindow(display);
+            let clients = client_list(display, root)?;
+            let mut path_fallback: Option<ProcessIcon> = None;
+            for win in clients {
+                let Some(info) = window_info_of(display, win) else {
+                    continue;
+                };
+                if !paths_equal(&info.process_path, path) {
+                    continue;
+                }
+                let Some(icon) = info.icon else {
+                    continue;
+                };
+                if !title.is_empty() && titles_equal(&info.title, title) {
+                    return Ok(Some(icon));
+                }
+                if path_fallback.is_none() {
+                    path_fallback = Some(icon);
+                }
+            }
+            Ok(path_fallback)
+        }
+    })
+    .ok()
+    .flatten()
 }
 
 /// Ask the WM to omit this process's overlay tool windows from taskbar / pager / Alt-Tab.
@@ -179,11 +216,103 @@ unsafe fn window_info_of(display: *mut Display, win: Window) -> Option<WindowInf
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default()
     });
+    let icon = window_icon(display, win);
     Some(WindowInfo {
         title,
         process_name: name,
         process_path: path,
+        icon,
     })
+}
+
+/// Read `_NET_WM_ICON` and pick the size closest to [`PROCESS_ICON_TARGET_PX`].
+unsafe fn window_icon(display: *mut Display, win: Window) -> Option<ProcessIcon> {
+    let atom = intern(display, "_NET_WM_ICON").ok()?;
+    let mut actual_type: Atom = 0;
+    let mut actual_format: i32 = 0;
+    let mut nitems: u64 = 0;
+    let mut bytes_after: u64 = 0;
+    let mut prop: *mut u8 = ptr::null_mut();
+    // Enough for several multi-resolution icons (CARDINALs as platform longs).
+    let status = XGetWindowProperty(
+        display,
+        win,
+        atom,
+        0,
+        1 << 18,
+        False,
+        XA_CARDINAL,
+        &mut actual_type,
+        &mut actual_format,
+        &mut nitems,
+        &mut bytes_after,
+        &mut prop,
+    );
+    if status != Success as i32 || prop.is_null() || nitems == 0 || actual_format != 32 {
+        if !prop.is_null() {
+            XFree(prop as *mut _);
+        }
+        return None;
+    }
+    let slice = std::slice::from_raw_parts(prop as *const c_ulong, nitems as usize);
+    let icon = pick_net_wm_icon(slice);
+    XFree(prop as *mut _);
+    icon
+}
+
+/// Parse EWMH `_NET_WM_ICON` cardinals (ARGB in the low 32 bits of each long).
+fn pick_net_wm_icon(data: &[c_ulong]) -> Option<ProcessIcon> {
+    let mut best: Option<(u32, u32, usize)> = None; // w, h, pixel_start
+    let mut i = 0usize;
+    while i + 2 <= data.len() {
+        let w = data[i] as u32;
+        let h = data[i + 1] as u32;
+        i += 2;
+        let pixels = (w as usize).checked_mul(h as usize)?;
+        if w == 0 || h == 0 || i.checked_add(pixels)? > data.len() {
+            break;
+        }
+        let replace = match best {
+            None => true,
+            Some((bw, bh, _)) => icon_size_prefer(w, h, bw, bh),
+        };
+        if replace {
+            best = Some((w, h, i));
+        }
+        i += pixels;
+    }
+    let (w, h, start) = best?;
+    let px = (w as usize).checked_mul(h as usize)?;
+    let mut rgba = Vec::with_capacity(px * 4);
+    for &card in &data[start..start + px] {
+        let argb = card as u32;
+        let a = ((argb >> 24) & 0xff) as u8;
+        let r = ((argb >> 16) & 0xff) as u8;
+        let g = ((argb >> 8) & 0xff) as u8;
+        let b = (argb & 0xff) as u8;
+        rgba.extend_from_slice(&[r, g, b, a]);
+    }
+    Some(ProcessIcon {
+        width: w,
+        height: h,
+        rgba,
+    })
+}
+
+/// Prefer sizes at or just above the target; otherwise the largest below.
+fn icon_size_prefer(w: u32, h: u32, best_w: u32, best_h: u32) -> bool {
+    icon_size_score(w, h) < icon_size_score(best_w, best_h)
+}
+
+fn icon_size_score(w: u32, h: u32) -> u32 {
+    let side = w.min(h);
+    let target = PROCESS_ICON_TARGET_PX;
+    if side >= target {
+        side - target
+    } else {
+        // Penalize undersized icons so we prefer any >= target when available.
+        (target - side) + 10_000
+    }
 }
 
 unsafe fn activate_on_display(
@@ -514,5 +643,28 @@ mod tests {
         assert!(paths_equal("/usr/bin/foo", "/usr/bin/foo"));
         assert!(!paths_equal("/usr/bin/foo", "/usr/bin/bar"));
         assert!(titles_equal(" Hi ", "Hi"));
+    }
+
+    #[test]
+    fn pick_net_wm_icon_prefers_near_target() {
+        // Two icons: 16x16 solid red, 48x48 solid green (ARGB in low 32 bits).
+        let mut data = Vec::new();
+        data.push(16);
+        data.push(16);
+        data.extend(std::iter::repeat_n(0xFFFF0000u64, 16 * 16));
+        data.push(48);
+        data.push(48);
+        data.extend(std::iter::repeat_n(0xFF00FF00u64, 48 * 48));
+        let icon = pick_net_wm_icon(&data).expect("icon");
+        assert_eq!((icon.width, icon.height), (48, 48));
+        assert_eq!(icon.rgba.len(), 48 * 48 * 4);
+        assert_eq!(&icon.rgba[..4], &[0, 255, 0, 255]);
+    }
+
+    #[test]
+    fn pick_net_wm_icon_argb_to_rgba() {
+        let data = [1u64, 1, 0x80AABBCC];
+        let icon = pick_net_wm_icon(&data).expect("icon");
+        assert_eq!(icon.rgba, vec![0xAA, 0xBB, 0xCC, 0x80]);
     }
 }

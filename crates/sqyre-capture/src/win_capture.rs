@@ -56,10 +56,19 @@ impl OsCapturer {
         virtual_screen_metrics().map_err(Into::into)
     }
 
+    /// Per-monitor bounds in virtual-desktop coordinates (`&self`).
+    pub fn monitor_rects_ref(&self) -> Result<Vec<DesktopRect>, String> {
+        let _guard = self.inner.lock();
+        enum_monitor_rects().map_err(Into::into)
+    }
+
     /// Monitor sizes (`&self`).
     pub fn monitor_sizes_ref(&self) -> Result<Vec<(i32, i32)>, String> {
-        let _guard = self.inner.lock();
-        enum_monitor_sizes().map_err(Into::into)
+        Ok(self
+            .monitor_rects_ref()?
+            .into_iter()
+            .map(|r| (r.w, r.h))
+            .collect())
     }
 }
 
@@ -192,21 +201,21 @@ fn capture_rect_gdi(rect: DesktopRect) -> Result<RgbaImage, String> {
     }
 }
 
-fn enum_monitor_sizes() -> Result<Vec<(i32, i32)>, CaptureError> {
-    let mut sizes: Vec<(i32, i32)> = Vec::new();
+fn enum_monitor_rects() -> Result<Vec<DesktopRect>, CaptureError> {
+    let mut rects: Vec<DesktopRect> = Vec::new();
     unsafe {
         let ok = EnumDisplayMonitors(
             None,
             None,
             Some(monitor_enum_proc),
-            LPARAM(&mut sizes as *mut Vec<(i32, i32)> as isize),
+            LPARAM(&mut rects as *mut Vec<DesktopRect> as isize),
         );
-        if !ok.as_bool() || sizes.is_empty() {
+        if !ok.as_bool() || rects.is_empty() {
             let vb = virtual_screen_metrics()?;
-            return Ok(vec![(vb.w, vb.h)]);
+            return Ok(vec![vb]);
         }
     }
-    Ok(sizes)
+    Ok(rects)
 }
 
 /// Primary monitor DPI scale (`dpi / 96`).
@@ -239,13 +248,18 @@ unsafe extern "system" fn monitor_enum_proc(
     lprc: *mut RECT,
     lparam: LPARAM,
 ) -> BOOL {
-    let sizes = &mut *(lparam.0 as *mut Vec<(i32, i32)>);
+    let rects = &mut *(lparam.0 as *mut Vec<DesktopRect>);
     if !lprc.is_null() {
         let r = *lprc;
         let w = r.right - r.left;
         let h = r.bottom - r.top;
         if w > 0 && h > 0 {
-            sizes.push((w, h));
+            rects.push(DesktopRect {
+                x: r.left,
+                y: r.top,
+                w,
+                h,
+            });
         }
     }
     BOOL(1)

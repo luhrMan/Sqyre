@@ -104,6 +104,16 @@ pub(super) fn parse_program(name: &str, v: &Value) -> Result<ProgramData> {
         }
     }
 
+    if let Some(Value::Mapping(atlases)) = map.get(Value::String("atlases".into())) {
+        for (ak, av) in atlases {
+            let aname = ak.as_str().unwrap_or("").to_string();
+            if aname.is_empty() {
+                continue;
+            }
+            data.atlases.insert(aname.clone(), parse_atlas(&aname, av));
+        }
+    }
+
     Ok(data)
 }
 
@@ -245,6 +255,30 @@ pub(super) fn parse_collection(name: &str, v: &Value) -> ProgramCollection {
         col.cols = n.max(1) as i32;
     }
     col
+}
+
+pub(super) fn parse_atlas(name: &str, v: &Value) -> ProgramAtlas {
+    let mut atlas = ProgramAtlas {
+        name: name.to_string(),
+        collections: Vec::new(),
+    };
+    let Some(map) = v.as_mapping() else {
+        return atlas;
+    };
+    if let Some(n) = map
+        .get(Value::String("name".into()))
+        .and_then(|x| x.as_str())
+    {
+        atlas.name = n.to_string();
+    }
+    if let Some(Value::Sequence(cols)) = map.get(Value::String("collections".into())) {
+        atlas.collections = cols
+            .iter()
+            .filter_map(|c| c.as_str().map(str::to_string))
+            .filter(|s| !s.is_empty())
+            .collect();
+    }
+    atlas
 }
 
 pub(super) fn yaml_string_field(v: Option<&Value>, default: &str) -> String {

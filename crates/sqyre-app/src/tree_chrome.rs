@@ -414,7 +414,27 @@ pub fn paint_action_row(
                     |ui| {
                         ui.spacing_mut().item_spacing.x = spacing;
                         for pill in action.tree_summary_pills() {
-                            let resp = paint_summary_pill(ui, action, &pill, known_vars, is_dark);
+                            let resp = ui
+                                .horizontal(|ui| {
+                                    if let ActionKind::FocusWindow {
+                                        process_path,
+                                        window_title,
+                                    } = &action.kind
+                                    {
+                                        crate::icon_cache::paint_leading_process_icon(
+                                            ui,
+                                            icons,
+                                            process_path,
+                                            window_title,
+                                        );
+                                    } else {
+                                        crate::icon_cache::paint_leading_program_icon(
+                                            ui, catalog, icons, &pill.text,
+                                        );
+                                    }
+                                    paint_summary_pill(ui, action, &pill, known_vars, is_dark);
+                                })
+                                .response;
                             extend_drag_handle(&mut drag_handle_rect, resp.rect);
                             if resp.hovered() {
                                 tip_hovered = true;

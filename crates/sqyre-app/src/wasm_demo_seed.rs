@@ -7,8 +7,8 @@ use sqyre_domain::{
     RepeatMode, ScalarValue, VariableAssignment, WaitTilFoundConfig, PROGRAM_DELIMITER,
 };
 use sqyre_persist::{
-    Database, ProgramCatalog, ProgramCollection, ProgramItem, ProgramMask, ProgramPoint,
-    ProgramSearchArea,
+    Database, ProgramAtlas, ProgramCatalog, ProgramCollection, ProgramItem, ProgramMask,
+    ProgramPoint, ProgramSearchArea,
 };
 
 const DEMO_RESOLUTION: &str = "1920x1080";
@@ -644,6 +644,17 @@ fn seed_program_from_theme(
         .expect("collection");
     demo_icons::register_collection(theme.name, collection, accent, program_idx);
 
+    let atlas_name = format!("{collection} atlas");
+    catalog
+        .upsert_atlas(
+            theme.name,
+            ProgramAtlas {
+                name: atlas_name.clone(),
+                collections: vec![collection.into()],
+            },
+        )
+        .expect("atlas");
+
     for i in 0..n.min(theme.points.len()) {
         catalog
             .upsert_point(
@@ -1144,6 +1155,11 @@ mod tests {
             assert_eq!(eldoria.items.len(), 6);
             assert!(eldoria.items.contains_key("Health potion stack"));
             assert!(eldoria.collections.contains_key("Bag slots"));
+            assert!(eldoria.atlases.contains_key("Bag slots atlas"));
+            assert_eq!(
+                eldoria.atlases["Bag slots atlas"].collections,
+                vec!["Bag slots".to_string()]
+            );
             assert!(
                 demo_icons::path_for_item_target("Eldoria Online~Health potion stack").is_some()
             );

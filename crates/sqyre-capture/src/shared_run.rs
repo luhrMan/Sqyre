@@ -7,7 +7,7 @@
 ///
 /// `$capturer` must implement `open() -> Result<Self, E: ToString>` and the
 /// `capture_rect_ref` / `capture_rect_rgb_ref` / `virtual_bounds_ref` /
-/// `monitor_sizes_ref` methods used below.
+/// `monitor_sizes_ref` / `monitor_rects_ref` methods used below.
 #[macro_export]
 macro_rules! define_shared_run_capturer {
     () => {

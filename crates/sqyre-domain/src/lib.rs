@@ -5,6 +5,7 @@
 //! injected for undo/clipboard snapshots.
 
 mod action;
+mod atlas;
 mod bindings;
 mod blank;
 mod color;
@@ -18,6 +19,7 @@ mod variables;
 
 pub use action::WIRE_TYPE_KEYS;
 pub use action::*;
+pub use atlas::{AtlasLayout, AtlasNode, AtlasPos, NavDir};
 pub use bindings::{BindingRole, VariableBinding};
 pub use blank::{action_templates, blank_action, test_action, ActionTemplate};
 pub use color::{

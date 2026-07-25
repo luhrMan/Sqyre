@@ -451,8 +451,8 @@ impl ActionKindDisplay for ActionKind {
                 if !data.program.is_empty() {
                     params.push(DisplayParam::new("Program", data.program.as_str()));
                 }
-                if !data.graph_name.is_empty() {
-                    params.push(DisplayParam::new("Graph", data.graph_name.as_str()));
+                if !data.atlas.is_empty() {
+                    params.push(DisplayParam::new("Atlas", data.atlas.as_str()));
                 }
             }
             Self::NavigateKey { chord, exit, .. } => {
