@@ -403,13 +403,6 @@ impl SqyreApp {
         }
     }
 
-    /// Persist `db.yaml` from the workspace Vec/catalog (single source of truth).
-    pub(crate) fn save_database(&mut self) {
-        if let Err(e) = self.persist_database() {
-            eprintln!("sqyre: save database: {e}");
-        }
-    }
-
     /// Data Editor's persist path: the same save implementation as [`Self::persist_database`],
     /// plus catalog-generation continuity the editor's `ListCache` invalidation relies on.
     ///

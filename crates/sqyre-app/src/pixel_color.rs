@@ -1,15 +1,19 @@
 //! Sample a screen pixel as `rrggbb` (Find Pixel dropper).
 
 use sqyre_capture::shared_capturer;
-use sqyre_executor::{DesktopRect, ScreenCapturer};
+use sqyre_executor::DesktopRect;
+#[cfg(any(test, target_arch = "wasm32"))]
+use sqyre_executor::ScreenCapturer;
 
 /// Capture the 1×1 pixel at `(x, y)` and return lowercase hex without `#`.
+#[cfg(target_arch = "wasm32")]
 pub fn sample_pixel_hex(x: i32, y: i32) -> Result<String, String> {
     let capturer = shared_capturer()?;
     let mut wrap = sqyre_capture::SharedRunCapturer(capturer);
     sample_pixel_hex_with(&mut wrap, x, y)
 }
 
+#[cfg(any(test, target_arch = "wasm32"))]
 pub fn sample_pixel_hex_with(
     capturer: &mut dyn ScreenCapturer,
     x: i32,
