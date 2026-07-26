@@ -182,7 +182,7 @@ pub fn show_floating_windows(app: &mut SqyreApp, ctx: &egui::Context) {
             app.add_action_picker
                 .store_into_settings(app.settings_ui.settings_mut());
             if let Err(e) = app.settings_ui.save_settings() {
-                crate::log::warn(format_args!("save action defaults: {e}"));
+                crate::log::warn(format!("save action defaults: {e}"));
             }
         }
         picked
@@ -246,7 +246,7 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
                 }
                 Ok(Err(e)) => {
                     app.pixel_sample_pending = None;
-                    crate::log::warn(format_args!("sample pixel color: {e}"));
+                    crate::log::warn(format!("sample pixel color: {e}"));
                 }
                 Err(TryRecvError::Empty) => ctx.request_repaint(),
                 Err(TryRecvError::Disconnected) => {
@@ -262,7 +262,7 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
                         app.pixel_sample_pending = Some(rx);
                         ctx.request_repaint();
                     }
-                    Err(e) => crate::log::warn(format_args!("sample pixel color: {e}")),
+                    Err(e) => crate::log::warn(format!("sample pixel color: {e}")),
                 }
             }
         }
@@ -274,7 +274,7 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
                 app.tree.tooltip.apply_recorded_color(hex.clone());
                 app.add_action_picker.apply_recorded_color(hex);
             }
-            Err(e) => crate::log::warn(format_args!("sample pixel color: {e}")),
+            Err(e) => crate::log::warn(format!("sample pixel color: {e}")),
         }
     }
     app.update_recording_visibility(ctx);
@@ -344,7 +344,7 @@ fn poll_scheduled_backup(app: &mut SqyreApp, ctx: &egui::Context) {
                 app.settings_ui.note_backup_success(&path);
             }
             Ok(Err(e)) => {
-                crate::log::warn(format_args!("automatic backup failed: {e}"));
+                crate::log::warn(format!("automatic backup failed: {e}"));
             }
             Err(mpsc::TryRecvError::Empty) => {
                 app.backup_task = Some(rx);
