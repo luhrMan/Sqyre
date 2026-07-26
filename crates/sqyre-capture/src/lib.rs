@@ -2,6 +2,7 @@
 
 mod diag;
 mod error;
+mod outline_geometry;
 mod outline_rect;
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
 mod outline_stub;
@@ -15,6 +16,7 @@ mod win_capture;
 mod win_focus;
 #[cfg(target_os = "windows")]
 mod win_outline;
+mod window_match;
 #[cfg(target_os = "linux")]
 mod x11_capture;
 #[cfg(target_os = "linux")]
