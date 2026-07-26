@@ -48,3 +48,4 @@ db.migrated.yaml
 
 # Local update-signing private key (never commit)
 .secrets/
+.cursor/rules/clean-git-messages.mdc
