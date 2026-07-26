@@ -9,7 +9,6 @@ use crate::preview_tooltip::PreviewTooltipCache;
 use crate::variables_panel;
 use crate::SqyreApp;
 use eframe::egui;
-use sqyre_domain::collect_known_variable_names;
 use sqyre_domain::ActionId;
 use std::sync::atomic::Ordering;
 
@@ -160,7 +159,9 @@ pub fn show_floating_windows(app: &mut SqyreApp, ctx: &egui::Context) {
                 .workspace
                 .selected_macro
                 .min(app.workspace.macros.len() - 1);
-            collect_known_variable_names(&app.workspace.macros[idx])
+            app.tree
+                .known_vars_cached(&app.workspace.macros[idx])
+                .clone()
         };
         let mut defaults_to_persist = false;
         let picked = app.add_action_picker.show(

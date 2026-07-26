@@ -292,6 +292,7 @@ impl SqyreApp {
             .entry(name)
             .or_default()
             .push_snapshot(snap);
+        self.tree.invalidate_paint_cache();
     }
 
     pub(crate) fn undo_tree(&mut self) {
@@ -311,6 +312,7 @@ impl SqyreApp {
             Ok(()) => {
                 self.set_selected_actions(selected);
                 self.tree.tooltip.cancel();
+                self.tree.invalidate_paint_cache();
                 self.persist_macro_at(idx);
             }
             Err(e) => {
@@ -337,6 +339,7 @@ impl SqyreApp {
             Ok(()) => {
                 self.set_selected_actions(selected);
                 self.tree.tooltip.cancel();
+                self.tree.invalidate_paint_cache();
                 self.persist_macro_at(idx);
             }
             Err(e) => {

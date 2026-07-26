@@ -6,9 +6,10 @@ use crate::pickers::attach_item_icon_tooltip;
 use crate::theme::paint_galley_centered;
 use crate::var_pills;
 use eframe::egui::{self, Color32, FontId, Sense, Stroke, Vec2};
-use sqyre_domain::{parse_hex_color, Action, ActionKind, KnownVariableNames};
+use sqyre_domain::{parse_hex_color, Action, ActionId, ActionKind, KnownVariableNames};
 use sqyre_persist::ProgramCatalog;
 use sqyre_ui_model::{action_icon_glyph, action_pastel_color, ActionDisplay, SummaryPill};
+use std::collections::HashMap;
 
 /// Icon badge edge length.
 const ICON_SIZE: f32 = 18.0;
@@ -324,6 +325,8 @@ pub fn paint_action_row(
     known_vars: &KnownVariableNames,
     is_dark: bool,
     highlight: RowHighlight,
+    pills_cache: &mut HashMap<ActionId, (u64, Vec<SummaryPill>)>,
+    paint_revision: u64,
 ) -> RowInteraction {
     let mut action_click = RowAction::None;
     let mut chrome_hovered = false;
@@ -400,7 +403,19 @@ pub fn paint_action_row(
                     egui::Layout::left_to_right(egui::Align::Center),
                     |ui| {
                         ui.spacing_mut().item_spacing.x = spacing;
-                        for pill in action.tree_summary_pills() {
+                        let pills = {
+                            let rev = paint_revision;
+                            let id = action.id;
+                            let stale = pills_cache
+                                .get(&id)
+                                .map(|(cached_rev, _)| *cached_rev != rev)
+                                .unwrap_or(true);
+                            if stale {
+                                pills_cache.insert(id, (rev, action.tree_summary_pills()));
+                            }
+                            pills_cache.get(&id).map(|(_, p)| p.as_slice()).unwrap_or(&[])
+                        };
+                        for pill in pills {
                             let resp = ui
                                 .horizontal(|ui| {
                                     if let ActionKind::FocusWindow {
@@ -635,6 +650,8 @@ mod tests {
                 &KnownVariableNames::default(),
                 false,
                 RowHighlight::None,
+                &mut HashMap::new(),
+                0,
             );
             assert_eq!(result.action, RowAction::None);
         });
@@ -663,6 +680,8 @@ mod tests {
                     &KnownVariableNames::default(),
                     false,
                     RowHighlight::None,
+                    &mut HashMap::new(),
+                    0,
                 );
                 assert!(
                     result.drag_handle_rect.width() > 0.0 && result.drag_handle_rect.height() > 0.0,
@@ -702,7 +721,9 @@ mod tests {
                     &mut icons,
                     &KnownVariableNames::default(),
                     true,
-                    RowHighlight::None
+                    RowHighlight::None,
+                    &mut HashMap::new(),
+                    0,
                 )
                 .action,
                 RowAction::None
@@ -732,7 +753,9 @@ mod tests {
                     &mut icons,
                     &KnownVariableNames::default(),
                     false,
-                    RowHighlight::None
+                    RowHighlight::None,
+                    &mut HashMap::new(),
+                    0,
                 )
                 .action,
                 RowAction::None
@@ -828,6 +851,8 @@ mod tests {
             &KnownVariableNames::default(),
             true,
             RowHighlight::None,
+            &mut HashMap::new(),
+            0,
         )
     }
 
