@@ -33,6 +33,7 @@ pub use settings::{
     MIN_OVERLAY_CORNER_RADIUS, MIN_RUN_MACRO_MAX_DEPTH, MIN_WHILE_MAX_ITERATIONS,
 };
 pub use sqyre_domain::resolve_scalar_int;
+pub use sqyre_serialize::{check_yaml_nesting_depth, MAX_YAML_NESTING_DEPTH};
 
 use serde_yaml::{Mapping, Value};
 use sqyre_domain::Macro;
@@ -50,34 +51,6 @@ const DB_FILE: &str = "db.yaml";
 pub const MAX_DB_YAML_BYTES: usize = 32 * 1024 * 1024;
 /// Soft cap on macro count in one database.
 pub const MAX_MACROS: usize = 2_000;
-/// Max nesting depth for YAML mappings/sequences in `db.yaml` (DoS guard).
-pub const MAX_YAML_NESTING_DEPTH: usize = 64;
-
-/// Walk `value` and error if mapping/sequence nesting exceeds [`MAX_YAML_NESTING_DEPTH`].
-pub fn check_yaml_nesting_depth(value: &Value) -> Result<()> {
-    fn walk(v: &Value, depth: usize) -> Result<()> {
-        if depth > MAX_YAML_NESTING_DEPTH {
-            return Err(PersistError::Message(format!(
-                "db.yaml nesting too deep (max {MAX_YAML_NESTING_DEPTH})"
-            )));
-        }
-        match v {
-            Value::Mapping(m) => {
-                for (_, child) in m {
-                    walk(child, depth + 1)?;
-                }
-            }
-            Value::Sequence(s) => {
-                for child in s {
-                    walk(child, depth + 1)?;
-                }
-            }
-            _ => {}
-        }
-        Ok(())
-    }
-    walk(value, 0)
-}
 
 static DIR_OVERRIDE: RwLock<Option<PathBuf>> = RwLock::new(None);
 
