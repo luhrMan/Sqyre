@@ -112,44 +112,48 @@ impl OsCapturer {
         if rect.is_empty() {
             return Err(CaptureError::EmptyRect);
         }
-        let st = self.inner.lock();
-        unsafe {
-            let ximage = XGetImage(
-                st.display,
-                st.root,
-                rect.x,
-                rect.y,
-                rect.w as u32,
-                rect.h as u32,
-                ALLPLANES,
-                ZPixmap,
-            );
-            if ximage.is_null() {
-                return Err(CaptureError::GetImage {
-                    x: rect.x,
-                    y: rect.y,
-                    w: rect.w,
-                    h: rect.h,
-                });
-            }
-            let img = &*ximage;
-            let w = img.width as u32;
-            let h = img.height as u32;
-            let bpp = (img.bits_per_pixel / 8) as usize;
-            if bpp < 3 {
-                let bits = img.bits_per_pixel;
+        // Fetch and own the raw pixels while the lock is held, then release the
+        // lock before running the (Rayon-parallel) RGB/RGBA swizzle below, so
+        // other threads aren't blocked on the X11 connection during conversion.
+        let (data, w, h, bpp, stride) = {
+            let st = self.inner.lock();
+            unsafe {
+                let ximage = XGetImage(
+                    st.display,
+                    st.root,
+                    rect.x,
+                    rect.y,
+                    rect.w as u32,
+                    rect.h as u32,
+                    ALLPLANES,
+                    ZPixmap,
+                );
+                if ximage.is_null() {
+                    return Err(CaptureError::GetImage {
+                        x: rect.x,
+                        y: rect.y,
+                        w: rect.w,
+                        h: rect.h,
+                    });
+                }
+                let img = &*ximage;
+                let w = img.width as u32;
+                let h = img.height as u32;
+                let bpp = (img.bits_per_pixel / 8) as usize;
+                if bpp < 3 {
+                    let bits = img.bits_per_pixel;
+                    XDestroyImage(ximage);
+                    return Err(CaptureError::BitsPerPixel(bits));
+                }
+                let stride = img.bytes_per_line as usize;
+                let data_len = stride.saturating_mul(h as usize);
+                let data =
+                    std::slice::from_raw_parts(img.data as *const u8, data_len).to_vec();
                 XDestroyImage(ximage);
-                return Err(CaptureError::BitsPerPixel(bits));
+                (data, w, h, bpp, stride)
             }
-            let stride = img.bytes_per_line as usize;
-            let data_len = stride.saturating_mul(h as usize);
-            let data = std::slice::from_raw_parts(img.data as *const u8, data_len);
-            let out = convert(data, w, h, bpp, stride).inspect_err(|_e| {
-                XDestroyImage(ximage);
-            })?;
-            XDestroyImage(ximage);
-            Ok(out)
-        }
+        };
+        convert(&data, w, h, bpp, stride)
     }
 
     /// Virtual desktop bounds (`&self`).
