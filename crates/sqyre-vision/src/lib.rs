@@ -15,10 +15,10 @@ pub use image_util::{
 };
 pub use ocr_boxes::{
     find_target_in_boxes, find_target_occurrences, parse_tsv_word_boxes, text_from_ocr_boxes,
-    OcrWordBox,
+    OcrRecognition, OcrWordBox,
 };
 #[cfg(not(target_arch = "wasm32"))]
-pub use ocr_engine::{recognize_image, LeptessOcr, OcrRecognition};
+pub use ocr_engine::{recognize_image, LeptessOcr};
 pub use ocr_preprocess::{
     preprocess_for_ocr, preprocess_for_ocr_with_steps, OcrPreprocessOptions, OcrPreprocessStep,
 };

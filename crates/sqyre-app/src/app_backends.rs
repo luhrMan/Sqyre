@@ -60,22 +60,8 @@ impl Default for RunState {
 #[cfg(not(target_arch = "wasm32"))]
 mod native {
     use super::StopFlag;
-    use sqyre_executor::{AutomationError, OcrEngine, OcrResult};
+    use sqyre_executor::AutomationError;
     use sqyre_input::OsAutomation;
-    use sqyre_match::ImageBuf;
-    use sqyre_vision::LeptessOcr;
-
-    pub(crate) struct AppOcr(pub(crate) LeptessOcr);
-
-    impl OcrEngine for AppOcr {
-        fn recognize(&self, image: &ImageBuf) -> Result<OcrResult, String> {
-            let r = self.0.recognize(image)?;
-            Ok(OcrResult {
-                text: r.text,
-                words: r.words,
-            })
-        }
-    }
 
     /// Forwards automation but surfaces stop via milli_sleep / between calls.
     pub(crate) struct StopWatchAutomation<'a> {
@@ -151,4 +137,4 @@ mod native {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub(crate) use native::{trim_process_heap, AppOcr, StopWatchAutomation};
+pub(crate) use native::{trim_process_heap, StopWatchAutomation};
