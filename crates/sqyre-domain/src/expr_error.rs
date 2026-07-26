@@ -37,5 +37,24 @@ pub enum ResolveError {
     #[error("cannot parse int from {value:?}")]
     ParseInt { value: String },
     #[error(transparent)]
-    Expression(#[from] ExprError),
+    Expr(#[from] ExprError),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn expr_error_display_roundtrip() {
+        let err = ExprError::UnknownFunction {
+            name: "foo".into(),
+        };
+        assert!(err.to_string().contains("unknown function"));
+    }
+
+    #[test]
+    fn resolve_error_wraps_expr() {
+        let err = ResolveError::from(ExprError::Empty);
+        assert!(matches!(err, ResolveError::Expr(ExprError::Empty)));
+    }
 }

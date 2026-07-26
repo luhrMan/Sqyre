@@ -1231,6 +1231,20 @@ mod tests {
     }
 
     #[test]
+    fn string_enums_deserialize_reject_unknown_wire() {
+        let err = serde_yaml::from_str::<MouseButton>("bogus").unwrap_err();
+        assert!(
+            err.to_string().contains("unknown MouseButton"),
+            "{err}"
+        );
+        let err = serde_yaml::from_str::<RepeatMode>("not-a-mode").unwrap_err();
+        assert!(
+            err.to_string().contains("unknown RepeatMode"),
+            "{err}"
+        );
+    }
+
+    #[test]
     fn action_id_deserialize_rejects_malformed_uuid_instead_of_reminting() {
         let err = serde_yaml::from_str::<ActionId>("\"not-a-uuid\"").unwrap_err();
         assert!(err.to_string().contains("invalid action id"), "{err}");

@@ -207,6 +207,12 @@ mod tests {
     }
 
     #[test]
+    fn hotkey_error_display() {
+        let err = HotkeyError::ThreadSpawn("spawn failed".into());
+        assert!(err.to_string().contains("hotkey thread"));
+    }
+
+    #[test]
     fn latch_blocks_repeat() {
         let m = parking_lot::Mutex::new(false);
         assert!(latch::try_acquire(&m));
