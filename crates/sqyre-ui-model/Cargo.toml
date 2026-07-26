@@ -10,3 +10,4 @@ workspace = true
 
 [dependencies]
 sqyre-domain = { path = "../sqyre-domain" }
+sqyre-varref = { path = "../sqyre-varref" }
