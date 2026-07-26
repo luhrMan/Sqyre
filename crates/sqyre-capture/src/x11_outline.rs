@@ -15,9 +15,9 @@ use x11::xlib::{
     XWindowChanges, _XDisplay, CWX, CWY,
 };
 
+use crate::outline_geometry::{edge_placements, outline_should_clear};
 pub use crate::outline_rect::OutlineRect;
 
-const EDGE_PX: i32 = 2;
 /// Selection stroke color (gold).
 const STROKE_R: u16 = 255;
 const STROKE_G: u16 = 200;
@@ -80,7 +80,7 @@ impl SelectionOutline {
     /// Show/update the outline for absolute desktop corners.
     pub fn set_rect(&mut self, left: i32, top: i32, right: i32, bottom: i32) {
         let rect = OutlineRect::normalize(left, top, right, bottom);
-        if rect.is_empty() || rect.width() < EDGE_PX * 2 || rect.height() < EDGE_PX * 2 {
+        if outline_should_clear(rect) {
             self.clear();
             return;
         }
@@ -178,14 +178,9 @@ unsafe fn create_edge(
 }
 
 unsafe fn place_edges(display: *mut Display, edges: &[Window; 4], r: OutlineRect) {
-    let w = r.width().max(1);
-    let h = r.height().max(1);
-    let t = EDGE_PX;
-    // top, bottom, left, right
-    configure(display, edges[0], r.left, r.top, w, t);
-    configure(display, edges[1], r.left, r.bottom - EDGE_PX, w, t);
-    configure(display, edges[2], r.left, r.top, t, h);
-    configure(display, edges[3], r.right - EDGE_PX, r.top, t, h);
+    for (&win, &(x, y, w, h)) in edges.iter().zip(edge_placements(r).iter()) {
+        configure(display, win, x, y, w, h);
+    }
 }
 
 unsafe fn configure(display: *mut Display, win: Window, x: i32, y: i32, w: i32, h: i32) {
