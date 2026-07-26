@@ -769,7 +769,7 @@ fn find_template_matches_exact_peak() {
         0.7,
         0,
         DEFAULT_CLOSE_MATCHES_DISTANCE,
-        sqyre_match::MatchMethod::CcoeffNormed,
+        sqyre_domain::MatchMethod::CcoeffNormed,
     )
     .unwrap();
     assert!(
@@ -798,7 +798,7 @@ fn find_template_matches_sqdiff_normed_peak() {
         None,
         0.1,
         DEFAULT_CLOSE_MATCHES_DISTANCE,
-        sqyre_match::MatchMethod::SqdiffNormed,
+        sqyre_domain::MatchMethod::SqdiffNormed,
     )
     .unwrap();
     assert!(

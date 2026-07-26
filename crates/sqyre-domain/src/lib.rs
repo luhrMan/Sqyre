@@ -10,7 +10,9 @@ mod bindings;
 mod blank;
 mod color;
 mod expr;
+mod keys;
 mod macro_model;
+mod match_method;
 mod rename;
 mod scalar;
 mod set_value;
@@ -29,7 +31,12 @@ pub use color::{
     ACTION_COLOR_KEY_WAIT,
 };
 pub use expr::{evaluate_expression, numeric_to_scalar};
+pub use keys::{
+    failsafe_modifiers_held, is_failsafe_chord, normalize_key_name, normalize_keys,
+    validate_continue_key, validate_not_failsafe, FAILSAFE_KEYS, FAILSAFE_LABEL,
+};
 pub use macro_model::*;
+pub use match_method::MatchMethod;
 pub use rename::*;
 pub use scalar::*;
 pub use set_value::{

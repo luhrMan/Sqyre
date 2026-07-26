@@ -12,4 +12,3 @@ workspace = true
 thiserror = { workspace = true }
 sqyre-domain = { path = "../sqyre-domain" }
 sqyre-varref = { path = "../sqyre-varref" }
-sqyre-hotkeys = { path = "../sqyre-hotkeys" }

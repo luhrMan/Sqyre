@@ -1,5 +1,6 @@
 use crate::image::Point;
-use crate::template::{MatchMap, MatchMethod};
+use crate::template::MatchMap;
+use sqyre_domain::MatchMethod;
 use rayon::prelude::*;
 use std::collections::HashMap;
 
