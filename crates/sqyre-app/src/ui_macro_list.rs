@@ -135,23 +135,26 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
             ui.set_max_width(pane_w);
 
             ui.heading("Macros");
-            if let Some(err) = &app.load_error {
+            if let Some(err) = &app.workspace.load_error {
                 ui.colored_label(crate::theme::error_fg(), format!("Load error: {err}"));
             } else {
                 #[cfg(target_arch = "wasm32")]
                 ui.small(format!(
                     "{} (browser — import/export db.yaml)",
-                    app.macros.len()
+                    app.workspace.macros.len()
                 ));
                 #[cfg(not(target_arch = "wasm32"))]
                 {
                     let path = sqyre_persist::db_path();
-                    let status = format!("{} from {}", app.macros.len(), path.display());
+                    let status = format!("{} from {}", app.workspace.macros.len(), path.display());
                     let font = egui::TextStyle::Small.resolve(ui.style());
                     ui.small(elide_to_width(ui, &status, pane_w, font));
                 }
             }
-            if let Some(err) = &app.save_error {
+            if let Some(warn) = &app.workspace.platform_warning {
+                ui.colored_label(crate::theme::warn_fg(), warn);
+            }
+            if let Some(err) = &app.workspace.save_error {
                 ui.colored_label(crate::theme::error_fg(), format!("Save error: {err}"));
             }
             ui.horizontal(|ui| {
@@ -167,7 +170,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                 if new_resp.clicked() {
                     app.create_macro();
                 }
-                let has_sel = !app.macros.is_empty();
+                let has_sel = !app.workspace.macros.is_empty();
                 if ui
                     .add_enabled_ui(has_sel, |ui| crate::theme::icon_button(ui, "📄"))
                     .inner
@@ -184,8 +187,11 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                     .on_hover_text("Delete selected macro")
                     .clicked()
                 {
-                    let idx = app.selected_macro.min(app.macros.len() - 1);
-                    app.pending_delete_macro = Some(app.macros[idx].name.clone());
+                    let idx = app
+                        .workspace
+                        .selected_macro
+                        .min(app.workspace.macros.len() - 1);
+                    app.pending_delete_macro = Some(app.workspace.macros[idx].name.clone());
                 }
             });
             ui.add(
@@ -195,7 +201,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
             )
             .on_hover_text("Filter by macro name or tag.");
             {
-                let label = match app.hotkey_tag_filter.as_deref() {
+                let label = match app.workspace.hotkey_tag_filter.as_deref() {
                     Some(tag) => format!("Hotkeys: {}", tag_header_label(tag)),
                     None => "Hotkeys: off".to_string(),
                 };
@@ -220,7 +226,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                     let list_w = ui.available_width().min(pane_w);
                     ui.set_max_width(list_w);
                     let filter = app.macro_list_filter.trim().to_string();
-                    let groups = group_macros_by_tag(&app.macros, &filter);
+                    let groups = group_macros_by_tag(&app.workspace.macros, &filter);
                     let mut clicked_macro: Option<usize> = None;
                     let mut clicked_tag: Option<String> = None;
 
@@ -240,7 +246,8 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                             true,
                         )
                         .show_header(ui, |ui| {
-                            let selected = app.hotkey_tag_filter.as_deref() == Some(tag.as_str());
+                            let selected =
+                                app.workspace.hotkey_tag_filter.as_deref() == Some(tag.as_str());
                             let header_budget =
                                 (ui.available_width() - ui.spacing().button_padding.x).max(0.0);
                             let font = egui::FontSelection::Default.resolve(ui.style());
@@ -262,7 +269,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                         .body_unindented(|ui| {
                             ui.set_max_width(list_w);
                             for &i in indices {
-                                let Some(m) = app.macros.get(i) else {
+                                let Some(m) = app.workspace.macros.get(i) else {
                                     continue;
                                 };
                                 let width = ui.available_width().min(list_w).max(0.0);
@@ -271,9 +278,12 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                                 let label = macro_list_item_text(ui, m, text_width);
                                 if ui
                                     .add(
-                                        egui::Button::selectable(app.selected_macro == i, label)
-                                            .wrap_mode(egui::TextWrapMode::Extend)
-                                            .min_size(egui::vec2(width, 0.0)),
+                                        egui::Button::selectable(
+                                            app.workspace.selected_macro == i,
+                                            label,
+                                        )
+                                        .wrap_mode(egui::TextWrapMode::Extend)
+                                        .min_size(egui::vec2(width, 0.0)),
                                     )
                                     .clicked()
                                 {
@@ -287,50 +297,43 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                         app.toggle_hotkey_tag_filter(tag);
                     }
                     if let Some(i) = clicked_macro {
-                        app.selected_macro = i;
-                        app.selected_actions.clear();
-                        app.tooltip.cancel();
+                        app.workspace.selected_macro = i;
+                        app.tree.selected_actions.clear();
+                        app.tree.tooltip.cancel();
                     }
                 });
         });
     app.macro_list_open = open;
 
     if let Some(name) = app.pending_delete_macro.clone() {
-        let mut open = true;
-        egui::Window::new("Delete Macro")
-            .collapsible(false)
-            .resizable(false)
-            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-            .order(egui::Order::Foreground)
-            .open(&mut open)
-            .show(ui.ctx(), |ui| {
-                ui.label(format!("Delete macro \"{name}\"?"));
-                let mut outcome = crate::widgets::ConfirmCancel::None;
-                ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
-                        outcome = crate::widgets::ConfirmCancel::Cancel;
-                    }
-                    if ui
-                        .button(egui::RichText::new("Delete").color(crate::theme::MACRO_STOP))
-                        .clicked()
-                    {
-                        outcome = crate::widgets::ConfirmCancel::Confirm;
-                    }
-                });
-                if outcome == crate::widgets::ConfirmCancel::None {
-                    outcome = crate::widgets::poll_confirm_keys(ui);
+        let open = crate::widgets::confirm_window(ui.ctx(), "Delete Macro", |ui| {
+            ui.label(format!("Delete macro \"{name}\"?"));
+            let mut outcome = crate::widgets::ConfirmCancel::None;
+            ui.horizontal(|ui| {
+                if ui.button("Cancel").clicked() {
+                    outcome = crate::widgets::ConfirmCancel::Cancel;
                 }
-                match outcome {
-                    crate::widgets::ConfirmCancel::Cancel => {
-                        app.pending_delete_macro = None;
-                    }
-                    crate::widgets::ConfirmCancel::Confirm => {
-                        app.pending_delete_macro = None;
-                        app.delete_macro_named(&name);
-                    }
-                    crate::widgets::ConfirmCancel::None => {}
+                if ui
+                    .button(egui::RichText::new("Delete").color(crate::theme::MACRO_STOP))
+                    .clicked()
+                {
+                    outcome = crate::widgets::ConfirmCancel::Confirm;
                 }
             });
+            if outcome == crate::widgets::ConfirmCancel::None {
+                outcome = crate::widgets::poll_confirm_keys(ui);
+            }
+            match outcome {
+                crate::widgets::ConfirmCancel::Cancel => {
+                    app.pending_delete_macro = None;
+                }
+                crate::widgets::ConfirmCancel::Confirm => {
+                    app.pending_delete_macro = None;
+                    app.delete_macro_named(&name);
+                }
+                crate::widgets::ConfirmCancel::None => {}
+            }
+        });
         if !open {
             app.pending_delete_macro = None;
         }

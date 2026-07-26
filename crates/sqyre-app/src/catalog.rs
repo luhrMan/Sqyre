@@ -1,5 +1,5 @@
 use sqyre_domain::{CoordinateRef, Macro};
-use sqyre_executor::{CoordinateResolver, IconStore, ItemMeta, MacroLookup};
+use sqyre_executor::{CoordinateResolver, IconStore, ItemMeta, MacroLookup, PortError};
 use sqyre_persist::{ensure_general_program, Database, MonitorRect, ProgramCatalog};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -69,7 +69,7 @@ pub fn prepare_catalog(catalog: &mut ProgramCatalog, db: &mut Database) -> bool 
 pub struct CatalogResolver<'a>(pub &'a ProgramCatalog);
 
 impl CoordinateResolver for CatalogResolver<'_> {
-    fn resolve_point(&self, r: &CoordinateRef, macro_: &Macro) -> Result<(i32, i32), String> {
+    fn resolve_point(&self, r: &CoordinateRef, macro_: &Macro) -> Result<(i32, i32), PortError> {
         self.0.resolve_point(r, macro_)
     }
 
@@ -77,11 +77,11 @@ impl CoordinateResolver for CatalogResolver<'_> {
         &self,
         r: &CoordinateRef,
         macro_: &Macro,
-    ) -> Result<(i32, i32, i32, i32), String> {
+    ) -> Result<(i32, i32, i32, i32), PortError> {
         self.0.resolve_search_area(r, macro_)
     }
 
-    fn collection_grid(&self, program: &str, collection: &str) -> Result<(i32, i32), String> {
+    fn collection_grid(&self, program: &str, collection: &str) -> Result<(i32, i32), PortError> {
         let r = if program.is_empty() {
             CoordinateRef(collection.to_string())
         } else {
@@ -91,7 +91,7 @@ impl CoordinateResolver for CatalogResolver<'_> {
         Ok((col.rows, col.cols))
     }
 
-    fn atlas_members(&self, program: &str, atlas: &str) -> Result<Vec<String>, String> {
+    fn atlas_members(&self, program: &str, atlas: &str) -> Result<Vec<String>, PortError> {
         Ok(self.0.lookup_atlas(program, atlas)?.collections.clone())
     }
 }
@@ -108,14 +108,7 @@ impl IconStore for CatalogIcons<'_> {
     }
 
     fn item_meta(&self, target: &str) -> Option<ItemMeta> {
-        self.0
-            .item_meta(target)
-            .map(|(name, stack_max, cols, rows)| ItemMeta {
-                name,
-                stack_max,
-                cols,
-                rows,
-            })
+        self.0.item_meta(target)
     }
 }
 

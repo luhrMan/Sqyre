@@ -33,6 +33,14 @@ pub const MIN_BACKUP_MAX_KEEP: i32 = 1;
 pub const MAX_BACKUP_MAX_KEEP: i32 = 100;
 pub const DEFAULT_AUTO_UPDATE_CHECK: bool = true;
 pub const DEFAULT_RELEASE_HELD_INPUTS_ON_END: bool = true;
+/// Default While budget when a macro sets `max_iterations` ≤ 0.
+pub const DEFAULT_WHILE_MAX_ITERATIONS: i32 = 100_000;
+pub const MIN_WHILE_MAX_ITERATIONS: i32 = 1;
+pub const MAX_WHILE_MAX_ITERATIONS: i32 = 10_000_000;
+/// Default max nested RunMacro depth (including the top-level macro).
+pub const DEFAULT_RUN_MACRO_MAX_DEPTH: i32 = 32;
+pub const MIN_RUN_MACRO_MAX_DEPTH: i32 = 1;
+pub const MAX_RUN_MACRO_MAX_DEPTH: i32 = 256;
 
 /// Absolute path to the settings file (`{sqyre_dir}/settings.yaml`).
 pub fn settings_path() -> PathBuf {
@@ -343,6 +351,12 @@ pub struct UserSettings {
     /// Release keys/buttons still held from Down/hold actions when a macro ends.
     #[serde(default = "default_release_held_inputs_on_end")]
     pub release_held_inputs_on_end: bool,
+    /// Safety budget for While actions with `max_iterations` ≤ 0.
+    #[serde(default = "default_while_max_iterations")]
+    pub while_max_iterations: i32,
+    /// Max nested RunMacro depth (including the top-level macro).
+    #[serde(default = "default_run_macro_max_depth")]
+    pub run_macro_max_depth: i32,
     /// Play an audible cue when a top-level macro run finishes successfully.
     #[serde(default = "default_play_finish_sound")]
     pub play_finish_sound: bool,
@@ -398,6 +412,12 @@ fn default_hide_recording() -> bool {
 fn default_release_held_inputs_on_end() -> bool {
     DEFAULT_RELEASE_HELD_INPUTS_ON_END
 }
+fn default_while_max_iterations() -> i32 {
+    DEFAULT_WHILE_MAX_ITERATIONS
+}
+fn default_run_macro_max_depth() -> i32 {
+    DEFAULT_RUN_MACRO_MAX_DEPTH
+}
 fn default_play_finish_sound() -> bool {
     DEFAULT_PLAY_FINISH_SOUND
 }
@@ -439,6 +459,8 @@ impl Default for UserSettings {
             highlight_active_action: false,
             hide_app_during_recording: DEFAULT_HIDE_APP_DURING_RECORDING,
             release_held_inputs_on_end: DEFAULT_RELEASE_HELD_INPUTS_ON_END,
+            while_max_iterations: DEFAULT_WHILE_MAX_ITERATIONS,
+            run_macro_max_depth: DEFAULT_RUN_MACRO_MAX_DEPTH,
             play_finish_sound: DEFAULT_PLAY_FINISH_SOUND,
             play_ui_sounds: DEFAULT_PLAY_UI_SOUNDS,
             sound_volume: DEFAULT_SOUND_VOLUME,
@@ -479,6 +501,13 @@ impl UserSettings {
             return Ok(Self::default());
         }
         let text = fs::read_to_string(path)?;
+        const MAX_SETTINGS_YAML_BYTES: usize = 1024 * 1024;
+        if text.len() > MAX_SETTINGS_YAML_BYTES {
+            return Err(PersistError::Message(format!(
+                "settings.yaml too large ({} bytes; max {MAX_SETTINGS_YAML_BYTES})",
+                text.len()
+            )));
+        }
         let mut s: Self = serde_yaml::from_str(&text)?;
         s.clamp();
         Ok(s)
@@ -582,6 +611,18 @@ impl UserSettings {
             self.sound_volume = DEFAULT_SOUND_VOLUME;
         }
         self.sound_volume = self.sound_volume.clamp(0.0, 1.0);
+        if self.while_max_iterations <= 0 {
+            self.while_max_iterations = DEFAULT_WHILE_MAX_ITERATIONS;
+        }
+        self.while_max_iterations = self
+            .while_max_iterations
+            .clamp(MIN_WHILE_MAX_ITERATIONS, MAX_WHILE_MAX_ITERATIONS);
+        if self.run_macro_max_depth <= 0 {
+            self.run_macro_max_depth = DEFAULT_RUN_MACRO_MAX_DEPTH;
+        }
+        self.run_macro_max_depth = self
+            .run_macro_max_depth
+            .clamp(MIN_RUN_MACRO_MAX_DEPTH, MAX_RUN_MACRO_MAX_DEPTH);
         for btn in &mut self.overlay_buttons {
             if btn.size <= 0.0 {
                 btn.size = DEFAULT_OVERLAY_BUTTON_SIZE;

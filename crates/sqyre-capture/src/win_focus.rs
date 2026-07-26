@@ -1,7 +1,8 @@
 //! Windows window list + activate + process icons.
 
+use crate::window_match::{paths_equal, pick_matching_icon, titles_equal};
 use crate::{ProcessIcon, WindowInfo, PROCESS_ICON_TARGET_PX};
-use sqyre_executor::WindowFocuser;
+use sqyre_ports::{AutomationError, WindowFocuser};
 use std::collections::HashSet;
 use std::mem::size_of;
 use std::os::windows::ffi::OsStrExt;
@@ -33,7 +34,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 pub struct OsWindowFocuser;
 
 impl WindowFocuser for OsWindowFocuser {
-    fn focus(&self, process_path: &str, window_title: &str) -> Result<(), String> {
+    fn focus(&self, process_path: &str, window_title: &str) -> Result<(), AutomationError> {
         activate_window(process_path, window_title)
     }
 }
@@ -72,44 +73,32 @@ pub fn process_icon(process_path: &str, window_title: &str) -> Option<ProcessIco
     if path.is_empty() {
         return None;
     }
-    let title = window_title.trim();
     if let Ok(hwnds) = enum_top_level_windows() {
-        let mut path_fallback: Option<ProcessIcon> = None;
-        for hwnd in hwnds {
-            let Some(wtitle) = window_title_of(hwnd) else {
-                continue;
-            };
-            let Some(exe) = window_exe_path(hwnd) else {
-                continue;
-            };
-            if !paths_equal(&exe, path) {
-                continue;
-            }
-            let Some(icon) = window_icon(hwnd).or_else(|| icon_from_exe(&exe)) else {
-                continue;
-            };
-            if !title.is_empty() && titles_equal(&wtitle, title) {
-                return Some(icon);
-            }
-            if path_fallback.is_none() {
-                path_fallback = Some(icon);
-            }
-        }
-        if path_fallback.is_some() {
-            return path_fallback;
+        let found = pick_matching_icon(
+            hwnds,
+            path,
+            window_title,
+            |&hwnd| Some((window_title_of(hwnd)?, window_exe_path(hwnd)?)),
+            |&hwnd, _wtitle, wpath| window_icon(hwnd).or_else(|| icon_from_exe(wpath)),
+        );
+        if found.is_some() {
+            return found;
         }
     }
     icon_from_exe(path)
 }
 
-fn activate_window(process_path: &str, window_title: &str) -> Result<(), String> {
+fn activate_window(process_path: &str, window_title: &str) -> Result<(), AutomationError> {
     let path = process_path.trim();
     let title = window_title.trim();
     if path.is_empty() || title.is_empty() {
-        return Err("path and title required".into());
+        return Err(AutomationError::InvalidArg(
+            "focus window: path and title required".into(),
+        ));
     }
 
-    for hwnd in enum_top_level_windows()? {
+    let hwnds = enum_top_level_windows().map_err(AutomationError::Backend)?;
+    for hwnd in hwnds {
         let Some(wtitle) = window_title_of(hwnd) else {
             continue;
         };
@@ -122,11 +111,12 @@ fn activate_window(process_path: &str, window_title: &str) -> Result<(), String>
         if !paths_equal(&exe, path) {
             continue;
         }
-        return set_foreground(hwnd);
+        return set_foreground(hwnd).map_err(AutomationError::Backend);
     }
-    Err(format!(
-        "no window with title {window_title:?} from {process_path:?}"
-    ))
+    Err(AutomationError::WindowNotFound {
+        process_path: path.to_string(),
+        title: title.to_string(),
+    })
 }
 
 fn enum_top_level_windows() -> Result<Vec<HWND>, String> {
@@ -459,20 +449,6 @@ fn set_foreground(hwnd: HWND) -> Result<(), String> {
         }
         Ok(())
     }
-}
-
-fn paths_equal(a: &str, b: &str) -> bool {
-    let a = Path::new(a.trim());
-    let b = Path::new(b.trim());
-    if a.as_os_str().is_empty() || b.as_os_str().is_empty() {
-        return false;
-    }
-    // Path::eq is case-insensitive on Windows.
-    a == b
-}
-
-fn titles_equal(a: &str, b: &str) -> bool {
-    a.trim() == b.trim()
 }
 
 /// Enable per-pixel alpha on deferred egui overlay viewports.

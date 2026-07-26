@@ -718,66 +718,59 @@ impl DataEditor {
                 "Confirm Overwrite"
             }
         };
-        let mut open = true;
-        egui::Window::new(title)
-            .collapsible(false)
-            .resizable(false)
-            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-            .order(egui::Order::Foreground)
-            .open(&mut open)
-            .show(ctx, |ui| {
-                match &confirm {
-                    PendingConfirm::Delete { label } => {
-                        ui.horizontal(|ui| {
-                            if let Some(prog) = self.selected_program.as_deref() {
-                                crate::icon_cache::paint_program_icon(ui, catalog, icons, prog);
-                            }
-                            ui.label(format!("Delete {label}? This cannot be undone."));
-                        });
+        let open = crate::widgets::confirm_window(ctx, title, |ui| {
+            match &confirm {
+                PendingConfirm::Delete { label } => {
+                    ui.horizontal(|ui| {
+                        if let Some(prog) = self.selected_program.as_deref() {
+                            crate::icon_cache::paint_program_icon(ui, catalog, icons, prog);
+                        }
+                        ui.label(format!("Delete {label}? This cannot be undone."));
+                    });
+                }
+                PendingConfirm::Overwrite { kind, name } => {
+                    ui.label(format!(
+                        "{kind} “{name}” already exists. Overwrite / rename onto it?"
+                    ));
+                }
+                PendingConfirm::DeleteVariant { variant } => {
+                    ui.label(format!(
+                        "Delete icon variant “{}”? This cannot be undone.",
+                        variant_display_label(variant)
+                    ));
+                }
+                PendingConfirm::OverwriteVariant { variant, .. } => {
+                    ui.label(format!(
+                        "Variant “{}” already exists. Overwrite it?",
+                        variant_display_label(variant)
+                    ));
+                }
+            }
+            match crate::widgets::confirm_cancel_row(ui) {
+                crate::widgets::ConfirmCancel::Cancel => {
+                    self.confirm = None;
+                }
+                crate::widgets::ConfirmCancel::Confirm => match confirm {
+                    PendingConfirm::Delete { .. } => {
+                        self.confirm = None;
+                        self.on_delete(db, macros, catalog, previews, settings);
                     }
-                    PendingConfirm::Overwrite { kind, name } => {
-                        ui.label(format!(
-                            "{kind} “{name}” already exists. Overwrite / rename onto it?"
-                        ));
+                    PendingConfirm::Overwrite { .. } => {
+                        self.confirm = None;
+                        self.apply_update(db, macros, catalog, true, previews, settings);
                     }
                     PendingConfirm::DeleteVariant { variant } => {
-                        ui.label(format!(
-                            "Delete icon variant “{}”? This cannot be undone.",
-                            variant_display_label(variant)
-                        ));
-                    }
-                    PendingConfirm::OverwriteVariant { variant, .. } => {
-                        ui.label(format!(
-                            "Variant “{}” already exists. Overwrite it?",
-                            variant_display_label(variant)
-                        ));
-                    }
-                }
-                match crate::widgets::confirm_cancel_row(ui) {
-                    crate::widgets::ConfirmCancel::Cancel => {
                         self.confirm = None;
+                        self.delete_icon_variant(catalog, icons, settings, &variant);
                     }
-                    crate::widgets::ConfirmCancel::Confirm => match confirm {
-                        PendingConfirm::Delete { .. } => {
-                            self.confirm = None;
-                            self.on_delete(db, macros, catalog, previews, settings);
-                        }
-                        PendingConfirm::Overwrite { .. } => {
-                            self.confirm = None;
-                            self.apply_update(db, macros, catalog, true, previews, settings);
-                        }
-                        PendingConfirm::DeleteVariant { variant } => {
-                            self.confirm = None;
-                            self.delete_icon_variant(catalog, icons, settings, &variant);
-                        }
-                        PendingConfirm::OverwriteVariant { variant, source } => {
-                            self.confirm = None;
-                            self.overwrite_icon_variant(catalog, icons, &variant, &source);
-                        }
-                    },
-                    crate::widgets::ConfirmCancel::None => {}
-                }
-            });
+                    PendingConfirm::OverwriteVariant { variant, source } => {
+                        self.confirm = None;
+                        self.overwrite_icon_variant(catalog, icons, &variant, &source);
+                    }
+                },
+                crate::widgets::ConfirmCancel::None => {}
+            }
+        });
         if !open {
             self.confirm = None;
         }

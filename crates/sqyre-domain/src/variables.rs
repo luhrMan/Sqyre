@@ -3,7 +3,7 @@
 use crate::{
     Action, ActionKind, Macro, ScalarValue, FOREACH_ROW_BUILTIN_ROW, FOREACH_ROW_BUILTIN_ROW_COUNT,
 };
-use std::collections::HashSet;
+use std::collections::HashMap;
 
 /// Image Search builtins set inside sub-actions.
 pub const IMAGE_SEARCH_BUILTIN_VARS: &[&str] = &[
@@ -78,48 +78,84 @@ pub fn builtin_variable_catalog(num_monitors: usize) -> Vec<BuiltinVariableInfo>
     out
 }
 
-/// Lowercase name set for known/unknown nested variable chips.
-pub fn known_variable_set(names: impl IntoIterator<Item = impl AsRef<str>>) -> HashSet<String> {
-    names
-        .into_iter()
-        .map(|n| n.as_ref().trim().to_ascii_lowercase())
-        .filter(|n| !n.is_empty())
-        .collect()
+/// Case-insensitive set of known variable names with O(1) lookup.
+///
+/// Keyed internally by ascii-lowercased name; preserves the first-seen declared/canonical
+/// casing for display (autocomplete, chips) via [`KnownVariableNames::iter`].
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct KnownVariableNames {
+    by_lower: HashMap<String, String>,
+}
+
+impl KnownVariableNames {
+    /// Insert `name`, keeping the first-seen casing for an already-present (case-insensitive) key.
+    fn insert(&mut self, name: &str) {
+        let n = name.trim();
+        if n.is_empty() {
+            return;
+        }
+        self.by_lower
+            .entry(n.to_ascii_lowercase())
+            .or_insert_with(|| n.to_string());
+    }
+
+    /// True when `name` is in the set (case-insensitive), in O(1).
+    pub fn contains(&self, name: &str) -> bool {
+        let needle = name.trim().to_ascii_lowercase();
+        !needle.is_empty() && self.by_lower.contains_key(&needle)
+    }
+
+    /// Display-cased names, in arbitrary order.
+    pub fn iter(&self) -> impl Iterator<Item = &str> {
+        self.by_lower.values().map(String::as_str)
+    }
+
+    pub fn len(&self) -> usize {
+        self.by_lower.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.by_lower.is_empty()
+    }
+}
+
+impl<S: AsRef<str>> FromIterator<S> for KnownVariableNames {
+    fn from_iter<T: IntoIterator<Item = S>>(iter: T) -> Self {
+        let mut out = Self::default();
+        for name in iter {
+            out.insert(name.as_ref());
+        }
+        out
+    }
+}
+
+/// Known-name set for known/unknown nested variable chips.
+pub fn known_variable_set(names: impl IntoIterator<Item = impl AsRef<str>>) -> KnownVariableNames {
+    names.into_iter().collect()
 }
 
 /// Collect defined variable names from decls, action bindings, and relevant builtins.
 ///
 /// Includes `monitor1Width` / `monitor1Height` (one display). Prefer
 /// [`collect_known_variable_names_with_monitors`] when the live display count is known.
-pub fn collect_known_variable_names(macro_: &Macro) -> HashSet<String> {
+pub fn collect_known_variable_names(macro_: &Macro) -> KnownVariableNames {
     collect_known_variable_names_with_monitors(macro_, 1)
 }
 
 /// Like [`collect_known_variable_names`], plus monitor builtins for `num_monitors`.
 ///
 /// Names keep their declared/canonical casing for display (autocomplete, chips).
-/// Lookup remains case-insensitive via [`is_known_variable`].
+/// Lookup remains case-insensitive and O(1) via [`is_known_variable`].
 pub fn collect_known_variable_names_with_monitors(
     macro_: &Macro,
     num_monitors: usize,
-) -> HashSet<String> {
-    // lowercase key → first-seen display casing (decls, then bindings, then builtins)
-    let mut by_lower = std::collections::HashMap::<String, String>::new();
+) -> KnownVariableNames {
+    let mut known = KnownVariableNames::default();
     let mut has_image_search = false;
     let mut has_for_each_row = false;
 
-    let mut insert = |name: &str| {
-        let n = name.trim();
-        if n.is_empty() {
-            return;
-        }
-        by_lower
-            .entry(n.to_ascii_lowercase())
-            .or_insert_with(|| n.to_string());
-    };
-
     for d in &macro_.variable_decls {
-        insert(&d.name);
+        known.insert(&d.name);
     }
 
     macro_.root.walk(&mut |action: &Action| {
@@ -129,31 +165,60 @@ pub fn collect_known_variable_names_with_monitors(
             _ => {}
         }
         for b in action.variable_bindings() {
-            insert(&b.name);
+            known.insert(&b.name);
         }
     });
 
     if has_image_search {
         for n in IMAGE_SEARCH_BUILTIN_VARS {
-            insert(n);
+            known.insert(n);
         }
     }
     if has_for_each_row {
-        insert(FOREACH_ROW_BUILTIN_ROW);
-        insert(FOREACH_ROW_BUILTIN_ROW_COUNT);
+        known.insert(FOREACH_ROW_BUILTIN_ROW);
+        known.insert(FOREACH_ROW_BUILTIN_ROW_COUNT);
     }
 
     for name in monitor_builtin_var_names(num_monitors) {
-        insert(&name);
+        known.insert(&name);
     }
 
-    by_lower.into_values().collect()
+    known
 }
 
-/// True when `name` is in the known set (case-insensitive).
-pub fn is_known_variable(known: &HashSet<String>, name: &str) -> bool {
-    let needle = name.trim().to_ascii_lowercase();
-    !needle.is_empty() && known.iter().any(|n| n.trim().eq_ignore_ascii_case(&needle))
+/// True when `name` is in the known set (case-insensitive), in O(1).
+pub fn is_known_variable(known: &KnownVariableNames, name: &str) -> bool {
+    known.contains(name)
+}
+
+/// True when `name` collides with a runtime builtin (Image Search / ForEachRow / monitors).
+pub fn is_reserved_runtime_variable_name(name: &str) -> bool {
+    let name = name.trim();
+    if name.is_empty() {
+        return false;
+    }
+    if IMAGE_SEARCH_BUILTIN_VARS
+        .iter()
+        .any(|n| n.eq_ignore_ascii_case(name))
+    {
+        return true;
+    }
+    if name.eq_ignore_ascii_case(FOREACH_ROW_BUILTIN_ROW)
+        || name.eq_ignore_ascii_case(FOREACH_ROW_BUILTIN_ROW_COUNT)
+    {
+        return true;
+    }
+    // monitorNWidth / monitorNHeight for any positive N.
+    let lower = name.to_ascii_lowercase();
+    if let Some(rest) = lower.strip_prefix("monitor") {
+        if let Some(num) = rest
+            .strip_suffix("width")
+            .or_else(|| rest.strip_suffix("height"))
+        {
+            return !num.is_empty() && num.chars().all(|c| c.is_ascii_digit());
+        }
+    }
+    false
 }
 
 crate::string_enum! {
@@ -202,9 +267,11 @@ impl VariableDecl {
 }
 
 /// Case-insensitive runtime variable store (not persisted).
+///
+/// Keyed internally by ascii-lowercased name for O(1) get/set/delete.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct VariableStore {
-    entries: Vec<(String, ScalarValue)>,
+    entries: HashMap<String, (String, ScalarValue)>,
 }
 
 impl VariableStore {
@@ -213,33 +280,28 @@ impl VariableStore {
     }
 
     pub fn get(&self, name: &str) -> Option<&ScalarValue> {
-        let key = name.trim();
-        self.entries
-            .iter()
-            .find(|(n, _)| n.eq_ignore_ascii_case(key))
-            .map(|(_, v)| v)
+        let key = name.trim().to_ascii_lowercase();
+        self.entries.get(&key).map(|(_, v)| v)
     }
 
     pub fn set(&mut self, name: impl Into<String>, value: ScalarValue) {
         let name = name.into();
-        if let Some((_, v)) = self
-            .entries
-            .iter_mut()
-            .find(|(n, _)| n.eq_ignore_ascii_case(name.trim()))
-        {
-            *v = value;
-        } else {
-            self.entries.push((name, value));
+        let key = name.trim().to_ascii_lowercase();
+        match self.entries.get_mut(&key) {
+            Some((_, v)) => *v = value,
+            None => {
+                self.entries.insert(key, (name, value));
+            }
         }
     }
 
     /// Remove a variable by name (case-insensitive). No-op when name is empty or missing.
     pub fn delete(&mut self, name: &str) {
-        let key = name.trim();
+        let key = name.trim().to_ascii_lowercase();
         if key.is_empty() {
             return;
         }
-        self.entries.retain(|(n, _)| !n.eq_ignore_ascii_case(key));
+        self.entries.remove(&key);
     }
 
     pub fn clear(&mut self) {
@@ -247,7 +309,7 @@ impl VariableStore {
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (&str, &ScalarValue)> {
-        self.entries.iter().map(|(n, v)| (n.as_str(), v))
+        self.entries.values().map(|(n, v)| (n.as_str(), v))
     }
 }
 

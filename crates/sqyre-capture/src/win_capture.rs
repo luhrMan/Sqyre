@@ -1,9 +1,10 @@
 //! Windows GDI absolute virtual-desktop capture.
 
 use crate::error::CaptureError;
+use crate::pixel_convert::zpixmap_to_rgb;
 use image::RgbaImage;
 use parking_lot::Mutex;
-use sqyre_executor::{DesktopRect, RgbCapture};
+use sqyre_ports::{DesktopRect, RgbCapture};
 use windows::core::BOOL;
 use windows::Win32::Foundation::{LPARAM, POINT, RECT};
 use windows::Win32::Graphics::Gdi::{
@@ -38,32 +39,31 @@ impl OsCapturer {
     }
 
     /// Capture a desktop rect (`&self` — safe to call via [`Arc`] from worker threads).
-    pub fn capture_rect_ref(&self, rect: DesktopRect) -> Result<RgbaImage, String> {
+    pub fn capture_rect_ref(&self, rect: DesktopRect) -> Result<RgbaImage, CaptureError> {
         let _guard = self.inner.lock();
         capture_rect_gdi(rect)
     }
 
     /// Capture RGB directly (no alpha channel / no second conversion pass).
-    pub fn capture_rect_rgb_ref(&self, rect: DesktopRect) -> Result<RgbCapture, String> {
+    pub fn capture_rect_rgb_ref(&self, rect: DesktopRect) -> Result<RgbCapture, CaptureError> {
         let _guard = self.inner.lock();
-        let rgba = capture_rect_gdi(rect)?;
-        Ok(RgbCapture::from_rgba(&rgba))
+        capture_rect_rgb_gdi(rect)
     }
 
     /// Virtual desktop bounds (`&self`).
-    pub fn virtual_bounds_ref(&self) -> Result<DesktopRect, String> {
+    pub fn virtual_bounds_ref(&self) -> Result<DesktopRect, CaptureError> {
         let _guard = self.inner.lock();
-        virtual_screen_metrics().map_err(Into::into)
+        virtual_screen_metrics()
     }
 
     /// Per-monitor bounds in virtual-desktop coordinates (`&self`).
-    pub fn monitor_rects_ref(&self) -> Result<Vec<DesktopRect>, String> {
+    pub fn monitor_rects_ref(&self) -> Result<Vec<DesktopRect>, CaptureError> {
         let _guard = self.inner.lock();
-        enum_monitor_rects().map_err(Into::into)
+        enum_monitor_rects()
     }
 
     /// Monitor sizes (`&self`).
-    pub fn monitor_sizes_ref(&self) -> Result<Vec<(i32, i32)>, String> {
+    pub fn monitor_sizes_ref(&self) -> Result<Vec<(i32, i32)>, CaptureError> {
         Ok(self
             .monitor_rects_ref()?
             .into_iter()
@@ -85,9 +85,46 @@ fn virtual_screen_metrics() -> Result<DesktopRect, CaptureError> {
     }
 }
 
-fn capture_rect_gdi(rect: DesktopRect) -> Result<RgbaImage, String> {
+fn capture_rect_gdi(rect: DesktopRect) -> Result<RgbaImage, CaptureError> {
+    let (mut bgra, w, h) = capture_rect_bgra(rect)?;
+
+    // BGRA → RGBA in place (parallel rows; pulp dispatch per row for SIMD-friendly swaps)
+    {
+        use pulp::Arch;
+        use rayon::prelude::*;
+        let stride = (w as usize) * 4;
+        bgra.par_chunks_exact_mut(stride).for_each(|row| {
+            let arch = Arch::new();
+            arch.dispatch(|| {
+                for pixel in row.chunks_exact_mut(4) {
+                    pixel.swap(0, 2);
+                    pixel[3] = 255;
+                }
+            });
+        });
+    }
+
+    RgbaImage::from_raw(w, h, bgra)
+        .ok_or_else(|| CaptureError::Message("invalid RGBA buffer".into()))
+}
+
+/// Capture RGB directly from the GDI BGRA buffer (no RGBA intermediate / no second
+/// allocation pass — mirrors the X11 ZPixmap→RGB path for search/OCR hot paths).
+fn capture_rect_rgb_gdi(rect: DesktopRect) -> Result<RgbCapture, CaptureError> {
+    let (bgra, w, h) = capture_rect_bgra(rect)?;
+    let data = zpixmap_to_rgb(&bgra, w, h, 4, 0).map_err(CaptureError::Message)?;
+    Ok(RgbCapture {
+        width: w,
+        height: h,
+        data,
+    })
+}
+
+/// BitBlt the desktop rect into a compatible bitmap and read it back as tightly
+/// packed top-down BGRA via `GetDIBits`. Shared by the RGBA and RGB-direct paths.
+fn capture_rect_bgra(rect: DesktopRect) -> Result<(Vec<u8>, u32, u32), CaptureError> {
     if rect.is_empty() {
-        return Err(CaptureError::EmptyRect.into());
+        return Err(CaptureError::EmptyRect);
     }
     let w = rect.w as u32;
     let h = rect.h as u32;
@@ -95,20 +132,20 @@ fn capture_rect_gdi(rect: DesktopRect) -> Result<RgbaImage, String> {
     unsafe {
         let screen_dc = GetDC(None);
         if screen_dc.is_invalid() {
-            return Err(CaptureError::Gdi("GetDC failed".into()).into());
+            return Err(CaptureError::Gdi("GetDC failed".into()));
         }
 
         let mem_dc = CreateCompatibleDC(Some(screen_dc));
         if mem_dc.is_invalid() {
             ReleaseDC(None, screen_dc);
-            return Err(CaptureError::Gdi("CreateCompatibleDC failed".into()).into());
+            return Err(CaptureError::Gdi("CreateCompatibleDC failed".into()));
         }
 
         let bitmap = CreateCompatibleBitmap(screen_dc, rect.w, rect.h);
         if bitmap.is_invalid() {
             let _ = DeleteDC(mem_dc);
             ReleaseDC(None, screen_dc);
-            return Err(CaptureError::Gdi("CreateCompatibleBitmap failed".into()).into());
+            return Err(CaptureError::Gdi("CreateCompatibleBitmap failed".into()));
         }
 
         let old = SelectObject(mem_dc, HGDIOBJ::from(bitmap));
@@ -133,8 +170,7 @@ fn capture_rect_gdi(rect: DesktopRect) -> Result<RgbaImage, String> {
                 y: rect.y,
                 w: rect.w,
                 h: rect.h,
-            }
-            .into());
+            });
         }
 
         let mut bmi = BITMAPINFO {
@@ -176,28 +212,10 @@ fn capture_rect_gdi(rect: DesktopRect) -> Result<RgbaImage, String> {
                 y: rect.y,
                 w: rect.w,
                 h: rect.h,
-            }
-            .into());
-        }
-
-        // BGRA → RGBA (parallel rows; pulp dispatch per row for SIMD-friendly swaps)
-        {
-            use pulp::Arch;
-            use rayon::prelude::*;
-            let stride = (w as usize) * 4;
-            bgra.par_chunks_exact_mut(stride).for_each(|row| {
-                let arch = Arch::new();
-                arch.dispatch(|| {
-                    for pixel in row.chunks_exact_mut(4) {
-                        pixel.swap(0, 2);
-                        pixel[3] = 255;
-                    }
-                });
             });
         }
 
-        RgbaImage::from_raw(w, h, bgra)
-            .ok_or_else(|| CaptureError::Message("invalid RGBA buffer".into()).into())
+        Ok((bgra, w, h))
     }
 }
 

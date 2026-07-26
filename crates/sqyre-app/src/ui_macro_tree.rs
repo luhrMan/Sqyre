@@ -9,19 +9,11 @@ use crate::tree_history::{TreeHistory, TreeSnapshot};
 use crate::SqyreApp;
 use eframe::egui;
 use egui_ltreeview::{Action as TreeAction, NodeBuilder, TreeView, TreeViewBuilder, TreeViewState};
-use sqyre_domain::{collect_known_variable_names, Action, ActionId, InsertSlot};
+use sqyre_domain::{Action, ActionId, InsertSlot};
 use std::collections::HashSet;
 use std::sync::atomic::Ordering;
 
-/// Pointer gesture over the macro tree: reorder only from icon/pill handles;
-/// dragging elsewhere scrolls the tree.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum TreeDragMode {
-    #[default]
-    Idle,
-    Reorder,
-    Scroll,
-}
+pub use crate::tree_state::TreeDragMode;
 
 /// Match egui `ScrollArea` kinetic scrolling (points / second).
 const TREE_SCROLL_STOP_SPEED: f32 = 20.0;
@@ -29,32 +21,35 @@ const TREE_SCROLL_STOP_SPEED: f32 = 20.0;
 const TREE_SCROLL_FRICTION: f32 = 1000.0;
 
 pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>) {
-    let running = app.run.running.load(Ordering::SeqCst);
-    let idx = app.selected_macro.min(app.macros.len() - 1);
-    app.selected_macro = idx;
+    let running = app.run_session.state.running.load(Ordering::SeqCst);
+    let idx = app
+        .workspace
+        .selected_macro
+        .min(app.workspace.macros.len() - 1);
+    app.workspace.selected_macro = idx;
 
     let mut open_logs: Option<ActionId> = None;
     let mut delete_action: Option<ActionId> = None;
     let mut row_events: Vec<(ActionId, RowInteraction)> = Vec::new();
     let is_dark = ui.visuals().dark_mode;
-    let root_aid = app.macros[idx].root.id;
-    let macro_name = app.macros[idx].name.clone();
-    let hl_snap = app.highlighter.snapshot();
+    let root_aid = app.workspace.macros[idx].root.id;
+    let macro_name = app.workspace.macros[idx].name.clone();
+    let hl_snap = app.run_session.highlighter.snapshot();
     let id = ui.make_persistent_id(("macro_tree", idx));
     let mut state = TreeViewState::<ActionId>::load(ui, id).unwrap_or_default();
     if let Some(open) = force_openness {
-        set_all_branches_openness(&app.macros[idx].root, &mut state, open);
+        set_all_branches_openness(&app.workspace.macros[idx].root, &mut state, open);
     }
     sync_execution_expand(
         running,
-        &app.macros[idx].root,
+        &app.workspace.macros[idx].root,
         &mut state,
-        &mut app.exec_fully_expanded,
-        &mut app.pre_exec_closed,
-        &mut app.last_exec_follow,
+        &mut app.tree.exec_fully_expanded,
+        &mut app.tree.pre_exec_closed,
+        &mut app.tree.last_exec_follow,
     );
     let follow = highlight_follow_target(&hl_snap);
-    let scroll_to = follow.filter(|id| app.last_exec_follow != Some(*id));
+    let scroll_to = follow.filter(|id| app.tree.last_exec_follow != Some(*id));
     let mut scrolled_follow = false;
     // Floating bars allocate 0 by default and cover the row chrome; reserve
     // bar_width so logs/delete stay clear when the scrollbar appears.
@@ -77,16 +72,16 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                                 i.stable_dt.min(0.1),
                             )
                         });
-                    if primary_released && app.tree_drag_mode == TreeDragMode::Scroll {
+                    if primary_released && app.tree.drag_mode == TreeDragMode::Scroll {
                         // Hand off to kinetic coast (same as egui ScrollArea).
-                        app.tree_scroll_vel = pointer_vel_y;
+                        app.tree.scroll_vel = pointer_vel_y;
                     }
                     if !primary_down {
-                        app.tree_drag_mode = TreeDragMode::Idle;
-                    } else if app.tree_drag_mode == TreeDragMode::Idle {
+                        app.tree.drag_mode = TreeDragMode::Idle;
+                    } else if app.tree.drag_mode == TreeDragMode::Idle {
                         let become_drag = ui.input(|i| !i.pointer.could_any_button_be_click());
                         if become_drag {
-                            app.tree_scroll_vel = 0.0;
+                            app.tree.scroll_vel = 0.0;
                             // Only claim the gesture when press started on this
                             // scroll surface — edit tooltips / other Windows sit
                             // above and must keep drag-move and resize without
@@ -104,10 +99,10 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                             if press_on_tree {
                                 let on_handle = ui.input(|i| {
                                     i.pointer.press_origin().is_some_and(|p| {
-                                        app.tree_drag_handles.iter().any(|r| r.contains(p))
+                                        app.tree.drag_handles.iter().any(|r| r.contains(p))
                                     })
                                 });
-                                app.tree_drag_mode = if on_handle {
+                                app.tree.drag_mode = if on_handle {
                                     TreeDragMode::Reorder
                                 } else {
                                     TreeDragMode::Scroll
@@ -115,36 +110,40 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                             }
                         }
                     }
-                    if app.tree_drag_mode == TreeDragMode::Scroll {
+                    if app.tree.drag_mode == TreeDragMode::Scroll {
                         ui.scroll_with_delta_animation(
                             pointer_delta,
                             egui::style::ScrollAnimation::none(),
                         );
-                    } else if app.tree_scroll_vel.abs() >= TREE_SCROLL_STOP_SPEED {
+                    } else if app.tree.scroll_vel.abs() >= TREE_SCROLL_STOP_SPEED {
                         ui.scroll_with_delta_animation(
-                            egui::vec2(0.0, app.tree_scroll_vel * dt),
+                            egui::vec2(0.0, app.tree.scroll_vel * dt),
                             egui::style::ScrollAnimation::none(),
                         );
                         let friction = TREE_SCROLL_FRICTION * dt;
-                        if friction > app.tree_scroll_vel.abs() {
-                            app.tree_scroll_vel = 0.0;
+                        if friction > app.tree.scroll_vel.abs() {
+                            app.tree.scroll_vel = 0.0;
                         } else {
-                            app.tree_scroll_vel -= friction * app.tree_scroll_vel.signum();
+                            app.tree.scroll_vel -= friction * app.tree.scroll_vel.signum();
                             ui.ctx().request_repaint();
                         }
                     } else {
-                        app.tree_scroll_vel = 0.0;
+                        app.tree.scroll_vel = 0.0;
                     }
-                    let allow_dnd = !running && app.tree_drag_mode != TreeDragMode::Scroll;
+                    let allow_dnd = !running && app.tree.drag_mode != TreeDragMode::Scroll;
 
-                    let catalog = &app.catalog;
+                    let catalog = &app.workspace.catalog;
                     let icons = &mut app.icon_cache;
-                    let root = &app.macros[idx].root;
+                    let root = &app.workspace.macros[idx].root;
                     let root_children = root.children();
-                    let known_vars = collect_known_variable_names(&app.macros[idx]);
+                    let known_vars = app
+                        .tree
+                        .known_vars_cached(&app.workspace.macros[idx])
+                        .clone();
                     let interact_y = ui.spacing().interact_size.y;
-                    let primary_id = app.selected_actions.last().copied();
+                    let primary_id = app.tree.selected_actions.last().copied();
                     let selected_action = primary_id.and_then(|id| root.find_by_id(id));
+                    let paint_revision = app.tree.paint_revision;
                     let mut tree_paint = TreePaint {
                         catalog,
                         icons,
@@ -154,8 +153,10 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                         },
                         macro_name: &macro_name,
                         hl_snap: &hl_snap,
-                        selected: &app.selected_actions,
+                        selected: &app.tree.selected_actions,
                         selected_action,
+                        pills_cache: &mut app.tree.pills_cache,
+                        paint_revision,
                     };
                     // egui_ltreeview sizes to max(available, content). Inside ScrollArea
                     // that fills the viewport and trips a permanent vertical scrollbar
@@ -218,23 +219,23 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
             let max_offset_y =
                 (scroll_out.content_size.y - scroll_out.inner_rect.height()).max(0.0);
             let y = scroll_out.state.offset.y;
-            if (y <= 0.0 && app.tree_scroll_vel > 0.0)
-                || (y >= max_offset_y && app.tree_scroll_vel < 0.0)
+            if (y <= 0.0 && app.tree.scroll_vel > 0.0)
+                || (y >= max_offset_y && app.tree.scroll_vel < 0.0)
             {
-                app.tree_scroll_vel = 0.0;
+                app.tree.scroll_vel = 0.0;
             }
             scroll_out.inner
         })
         .inner;
     if scrolled_follow {
-        app.last_exec_follow = follow;
+        app.tree.last_exec_follow = follow;
     }
 
-    app.tree_drag_handles.clear();
+    app.tree.drag_handles.clear();
     for (_, interaction) in &row_events {
         let r = interaction.drag_handle_rect;
         if r.width() > 0.0 && r.height() > 0.0 {
-            app.tree_drag_handles.push(r);
+            app.tree.drag_handles.push(r);
         }
     }
 
@@ -250,7 +251,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
             if !interaction.primary_clicked {
                 continue;
             }
-            apply_overlay_selection(&mut state, &app.macros[idx].root, *aid, modifiers);
+            apply_overlay_selection(&mut state, &app.workspace.macros[idx].root, *aid, modifiers);
             app.set_selected_actions(state.selected().clone());
             // Keep TreeView focused so egui_ltreeview paints selection.bg_fill
             // (Sqyre yellow); unfocused selection falls back to gray.
@@ -261,27 +262,27 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
     state.store(ui, id);
 
     if let Some(aid) = open_logs {
-        app.logs_window = Some(aid);
+        app.run_session.logs_window = Some(aid);
     }
     if let Some(aid) = delete_action {
         if !aid.is_root()
             && !matches!(
-                app.macros[idx].root.resolve_tree_id(aid),
+                app.workspace.macros[idx].root.resolve_tree_id(aid),
                 Some(sqyre_domain::TreeNodeRef::ElseFolder { .. })
             )
         {
             app.record_tree_mutation();
-            let cleared_sel = app.selected_actions.contains(&aid);
-            let _ = app.macros[idx].root.remove_by_id(aid);
+            let cleared_sel = app.tree.selected_actions.contains(&aid);
+            let _ = app.workspace.macros[idx].root.remove_by_id(aid);
             if cleared_sel {
                 app.remove_from_selection(aid);
             }
-            if app.logs_window == Some(aid) {
-                app.logs_window = None;
-                app.logs_image_cache.clear();
+            if app.run_session.logs_window == Some(aid) {
+                app.run_session.logs_window = None;
+                app.run_session.logs_image_cache.clear();
             }
-            if app.tooltip.action_id() == Some(aid) {
-                app.tooltip.cancel();
+            if app.tree.tooltip.action_id() == Some(aid) {
+                app.tree.tooltip.cancel();
             }
             app.persist_macro_at(idx);
             app.play_ui_delete_sound();
@@ -295,29 +296,33 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
         if interaction.hovered || interaction.pointer_in_row {
             any_view_hover = true;
         }
-        if let Some(action) = app.macros[idx].root.find_by_id(*aid) {
+        if let Some(action) = app.workspace.macros[idx].root.find_by_id(*aid) {
             let action = action.clone();
-            action_tooltip::ingest_row(&mut app.tooltip, &action, *interaction, pointer);
+            action_tooltip::ingest_row(&mut app.tree.tooltip, &action, *interaction, pointer);
         }
     }
-    action_tooltip::end_hover_pass(&mut app.tooltip, any_view_hover);
+    action_tooltip::end_hover_pass(&mut app.tree.tooltip, any_view_hover);
 
     {
-        let selected = app.selected_actions.clone();
-        let name = app.macros[idx].name.clone();
-        let catalog = &app.catalog;
+        let selected = app.tree.selected_actions.clone();
+        let name = app.workspace.macros[idx].name.clone();
+        let catalog = &app.workspace.catalog;
         let icons = &mut app.icon_cache;
         let previews = &mut app.preview_tooltips;
         let macros: Vec<(String, Vec<String>)> = app
+            .workspace
             .macros
             .iter()
             .map(|m| (m.name.clone(), m.tags.clone()))
             .collect();
         // Snapshot before tooltip may mutate; record via borrow-split.
         let mut pending_record: Option<TreeSnapshot> = None;
-        let known_vars = collect_known_variable_names(&app.macros[idx]);
+        let known_vars = app
+            .tree
+            .known_vars_cached(&app.workspace.macros[idx])
+            .clone();
         let discarded = {
-            let macro_ = &mut app.macros[idx];
+            let macro_ = &mut app.workspace.macros[idx];
             let mut tip_ui = TipUiCtx {
                 paint: CatalogPaint {
                     catalog,
@@ -331,12 +336,12 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                 bridges: RecordBridges {
                     key_record: &mut app.key_record,
                     hotkey_record: &mut app.hotkey_record,
-                    macro_hotkeys: &app.macro_hotkeys,
+                    macro_hotkeys: &app.run_session.macro_hotkeys,
                     screen_click: &app.screen_click,
                 },
             };
             action_tooltip::show(
-                &mut app.tooltip,
+                &mut app.tree.tooltip,
                 ui.ctx(),
                 macro_,
                 &macros,
@@ -352,10 +357,12 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
             )
         };
         if let Some(snap) = pending_record {
-            app.tree_histories
+            app.tree
+                .histories
                 .entry(name.clone())
                 .or_default()
                 .push_snapshot(snap);
+            app.tree.invalidate_paint_cache();
             // Saved an edit (including first save of a provisional insert).
             app.persist_macro_at(idx);
         }
@@ -374,7 +381,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                 ui.memory_mut(|m| m.request_focus(id));
             }
             TreeAction::Move(dnd) => {
-                if running || app.tree_drag_mode == TreeDragMode::Scroll {
+                if running || app.tree.drag_mode == TreeDragMode::Scroll {
                     continue;
                 }
                 let target_aid = dnd.target;
@@ -384,14 +391,14 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                 pending_move = Some((dnd.source, target_aid, slot));
             }
             TreeAction::Drag(dnd) => {
-                if app.tree_drag_mode == TreeDragMode::Scroll {
+                if app.tree.drag_mode == TreeDragMode::Scroll {
                     dnd.remove_drop_marker(ui);
                     continue;
                 }
                 // Disallow dropping a node into itself / a descendant while dragging.
                 let target_aid = dnd.target;
                 if tree_dnd::is_invalid_tree_drop_any(
-                    &app.macros[idx].root,
+                    &app.workspace.macros[idx].root,
                     &dnd.source,
                     target_aid,
                 ) {
@@ -403,14 +410,16 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
     }
     if let Some((sources, parent, slot)) = pending_move {
         app.record_tree_mutation();
-        let _ = app.macros[idx].root.move_actions(&sources, parent, slot);
+        let _ = app.workspace.macros[idx]
+            .root
+            .move_actions(&sources, parent, slot);
         app.persist_macro_at(idx);
     }
 
-    match app.selected_actions.as_slice() {
+    match app.tree.selected_actions.as_slice() {
         [] => {}
         [aid] => {
-            let root = &app.macros[idx].root;
+            let root = &app.workspace.macros[idx].root;
             if let Some(sqyre_domain::TreeNodeRef::ElseFolder { .. }) = root.resolve_tree_id(*aid) {
                 ui.separator();
                 ui.label("Selected: Else (runs when not found / condition false)");
@@ -623,6 +632,8 @@ fn build_tree(
             tree.theme.known_vars,
             tree.theme.is_dark,
             highlight,
+            tree.pills_cache,
+            tree.paint_revision,
         );
         if should_scroll {
             ui.scroll_to_rect(interaction.row_rect, Some(egui::Align::Center));

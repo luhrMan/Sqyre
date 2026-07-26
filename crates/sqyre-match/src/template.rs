@@ -2,10 +2,17 @@ use crate::image::ImageBuf;
 use rayon::prelude::*;
 use rustfft::num_complex::Complex;
 use rustfft::FftPlanner;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use thiserror::Error;
 
 /// OpenCV `cv::TemplateMatchModes` (methods 0–5).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+///
+/// The single template-match-method enum shared by the domain action model
+/// (wire format) and the matching engine itself.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum MatchMethod {
     Sqdiff = 0,
     SqdiffNormed = 1,
@@ -17,6 +24,26 @@ pub enum MatchMethod {
 }
 
 impl MatchMethod {
+    pub const ALL: [Self; 6] = [
+        Self::Sqdiff,
+        Self::SqdiffNormed,
+        Self::Ccorr,
+        Self::CcorrNormed,
+        Self::Ccoeff,
+        Self::CcoeffNormed,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Sqdiff => "SQDIFF",
+            Self::SqdiffNormed => "SQDIFF_NORMED",
+            Self::Ccorr => "CCORR",
+            Self::CcorrNormed => "CCORR_NORMED",
+            Self::Ccoeff => "CCOEFF",
+            Self::CcoeffNormed => "CCOEFF_NORMED",
+        }
+    }
+
     /// `false` for `SQDIFF` / `SQDIFF_NORMED` (lower score is better).
     #[inline]
     pub fn higher_is_better(self) -> bool {
@@ -34,17 +61,6 @@ impl MatchMethod {
     #[inline]
     fn is_ccoeff_family(self) -> bool {
         matches!(self, Self::Ccoeff | Self::CcoeffNormed)
-    }
-
-    pub fn all() -> [Self; 6] {
-        [
-            Self::Sqdiff,
-            Self::SqdiffNormed,
-            Self::Ccorr,
-            Self::CcorrNormed,
-            Self::Ccoeff,
-            Self::CcoeffNormed,
-        ]
     }
 }
 
@@ -88,17 +104,76 @@ pub fn match_template(
     mask: Option<&[u8]>,
     method: MatchMethod,
 ) -> Result<MatchMap, MatchError> {
-    match_template_with_integrals(search, template, mask, method, None)
+    let mask_bits = prep_mask(template.width, template.height, mask)?;
+    let prepared = prepare_template_from_mask_bits(template, &mask_bits, method);
+    run_match(search, template, &prepared, None)
 }
 
-/// Like [`match_template`], but reuses precomputed search-image integrals
-/// (built once per capture and shared across template variants).
-pub fn match_template_with_integrals(
-    search: &ImageBuf,
+/// Template packing (masked/mean-subtracted pixels + sparse SIMD samples), built once
+/// per (template, mask, method) and reused across repeated match attempts — see
+/// [`prepare_template`].
+pub struct PreparedTemplate {
+    pack: PackedTemplate,
+    sparse: crate::corr_simd::SparseTemplate,
+    method: MatchMethod,
+    full_mask: bool,
+}
+
+impl PreparedTemplate {
+    /// Approximate heap bytes retained, for cache accounting.
+    pub fn approx_bytes(&self) -> usize {
+        let pack_bytes = self.pack.xs.len() * (2 + 2) + self.pack.vals.len() * 8;
+        let sparse_bytes = self.sparse.xs.len() * (2 + 2) + self.sparse.vals.len() * 4;
+        pack_bytes + sparse_bytes
+    }
+}
+
+fn prepare_template_from_mask_bits(
+    template: &ImageBuf,
+    mask_bits: &[bool],
+    method: MatchMethod,
+) -> PreparedTemplate {
+    let ch = template.channels;
+    let pack = build_packed_template(template, mask_bits, ch, method);
+    let sparse = crate::corr_simd::SparseTemplate::from_packed(&pack.vals, &pack.xs, &pack.ys, ch);
+    let full_mask = mask_bits.iter().all(|&b| b);
+    PreparedTemplate {
+        pack,
+        sparse,
+        method,
+        full_mask,
+    }
+}
+
+/// Pack `template` (masked/mean-subtracted pixels + sparse SIMD samples) for `method`,
+/// so repeated match attempts against the same template + mask can skip re-packing.
+pub fn prepare_template(
     template: &ImageBuf,
     mask: Option<&[u8]>,
     method: MatchMethod,
-    integrals: Option<&SearchIntegrals>,
+) -> Result<PreparedTemplate, MatchError> {
+    let mask_bits = prep_mask(template.width, template.height, mask)?;
+    Ok(prepare_template_from_mask_bits(
+        template, &mask_bits, method,
+    ))
+}
+
+/// Like [`match_template`], but reuses a [`PreparedTemplate`] (skips re-packing the
+/// template) and optionally a [`SearchPrep`] (skips re-deriving the search frame).
+pub fn match_template_with_prepared(
+    search: &ImageBuf,
+    template: &ImageBuf,
+    prepared: &PreparedTemplate,
+    search_prep: Option<&SearchPrep>,
+) -> Result<MatchMap, MatchError> {
+    run_match(search, template, prepared, search_prep)
+}
+
+fn run_match(
+    search: &ImageBuf,
+    template: &ImageBuf,
+    prepared: &PreparedTemplate,
+    search_prep: Option<&SearchPrep>,
 ) -> Result<MatchMap, MatchError> {
     if search.width == 0 || search.height == 0 || template.width == 0 || template.height == 0 {
         return Err(MatchError::Empty);
@@ -118,14 +193,14 @@ pub fn match_template_with_integrals(
         });
     }
 
-    let mask_bits = prep_mask(template.width, template.height, mask)?;
     let ch = search.channels;
     let tw = template.width;
     let th = template.height;
     let out_w = search.width - tw + 1;
     let out_h = search.height - th + 1;
+    let pack = &prepared.pack;
+    let method = prepared.method;
 
-    let pack = build_packed_template(template, &mask_bits, ch, method);
     if pack.n <= 0.0 {
         return Ok(MatchMap {
             width: out_w,
@@ -148,7 +223,7 @@ pub fn match_template_with_integrals(
         });
     }
 
-    let full_mask = mask_bits.iter().all(|&b| b);
+    let full_mask = prepared.full_mask;
     let direct_cost = (out_w as u64)
         .saturating_mul(out_h as u64)
         .saturating_mul(tw as u64)
@@ -156,10 +231,20 @@ pub fn match_template_with_integrals(
         .saturating_mul(ch as u64);
 
     if full_mask && direct_cost > FFT_DIRECT_COST_THRESHOLD {
-        match_fft(search, &pack, tw, th, out_w, out_h, ch, method, integrals)
+        match_fft(search, pack, tw, th, out_w, out_h, ch, method, search_prep)
     } else {
         match_direct(
-            search, &pack, tw, th, out_w, out_h, ch, full_mask, method, integrals,
+            search,
+            pack,
+            &prepared.sparse,
+            tw,
+            th,
+            out_w,
+            out_h,
+            ch,
+            full_mask,
+            method,
+            search_prep,
         )
     }
 }
@@ -270,6 +355,7 @@ fn build_packed_template(
 fn match_direct(
     search: &ImageBuf,
     pack: &PackedTemplate,
+    tmpl: &crate::corr_simd::SparseTemplate,
     tw: usize,
     th: usize,
     out_w: usize,
@@ -277,18 +363,23 @@ fn match_direct(
     ch: usize,
     full_mask: bool,
     method: MatchMethod,
-    precomputed: Option<&SearchIntegrals>,
+    search_prep: Option<&SearchPrep>,
 ) -> Result<MatchMap, MatchError> {
-    let planar = crate::corr_simd::PlanarF32::from_interleaved(search);
-    let tmpl = crate::corr_simd::SparseTemplate::from_packed(&pack.vals, &pack.xs, &pack.ys, ch);
+    let owned_planar;
+    let planar = if let Some(prep) = search_prep {
+        &prep.planar
+    } else {
+        owned_planar = crate::corr_simd::PlanarF32::from_interleaved(search);
+        &owned_planar
+    };
     let n = pack.n;
     let t_energy = pack.t_energy;
     let ccoeff = method.is_ccoeff_family();
 
     let owned;
     let integ = if full_mask {
-        Some(if let Some(integ) = precomputed {
-            integ
+        Some(if let Some(prep) = search_prep {
+            &prep.integrals
         } else {
             owned = build_integrals(search);
             &owned
@@ -303,7 +394,7 @@ fn match_direct(
         .enumerate()
         .for_each(|(oy, row)| {
             let mut numer = vec![0.0_f32; out_w];
-            crate::corr_simd::accumulate_corr_row(&planar, &tmpl, oy, &mut numer);
+            crate::corr_simd::accumulate_corr_row(planar, tmpl, oy, &mut numer);
 
             if let Some(integ) = integ {
                 let stride = integ.width + 1;
@@ -328,8 +419,8 @@ fn match_direct(
                 // Masked CCOEFF: ΣT'=0 ⇒ numer = Σ T'·I. Energy: ΣI² − Σ_c (ΣI_c)²/n.
                 let mut sum_sq = vec![0.0_f32; out_w];
                 let mut sums: Vec<Vec<f32>> = (0..ch).map(|_| vec![0.0_f32; out_w]).collect();
-                crate::corr_simd::accumulate_sum_sq_row(&planar, &tmpl, oy, &mut sum_sq);
-                crate::corr_simd::accumulate_channel_sums_row(&planar, &tmpl, oy, &mut sums);
+                crate::corr_simd::accumulate_sum_sq_row(planar, tmpl, oy, &mut sum_sq);
+                crate::corr_simd::accumulate_channel_sums_row(planar, tmpl, oy, &mut sums);
                 for (ox, cell) in row.iter_mut().enumerate() {
                     let mut i_prime = sum_sq[ox] as f64;
                     for channel_sum in sums.iter().take(ch) {
@@ -351,7 +442,7 @@ fn match_direct(
                 }
             } else {
                 let mut sum_sq = vec![0.0_f32; out_w];
-                crate::corr_simd::accumulate_sum_sq_row(&planar, &tmpl, oy, &mut sum_sq);
+                crate::corr_simd::accumulate_sum_sq_row(planar, tmpl, oy, &mut sum_sq);
                 for (ox, cell) in row.iter_mut().enumerate() {
                     *cell =
                         finish_score(method, numer[ox] as f64, sum_sq[ox] as f64, 0.0, t_energy);
@@ -396,6 +487,33 @@ fn optimal_dft_size(n: usize) -> usize {
     best
 }
 
+/// Forward-FFT each channel of `search`, zero-padded to `dft_w`×`dft_h`.
+fn forward_fft_search(search: &ImageBuf, dft_w: usize, dft_h: usize) -> SearchFft {
+    let ch = search.channels;
+    let area = dft_w * dft_h;
+    (0..ch)
+        .into_par_iter()
+        .map(|c| {
+            let mut img = vec![Complex::new(0.0, 0.0); area];
+            for y in 0..search.height {
+                for x in 0..search.width {
+                    let v = search.data[(y * search.width + x) * ch + c] as f32;
+                    img[y * dft_w + x] = Complex::new(v, 0.0);
+                }
+            }
+            thread_local! {
+                static PLANNER: std::cell::RefCell<FftPlanner<f32>> =
+                    std::cell::RefCell::new(FftPlanner::new());
+            }
+            PLANNER.with(|p| {
+                let mut planner = p.borrow_mut();
+                fft2d_forward(&mut img, dft_w, dft_h, &mut planner);
+            });
+            img
+        })
+        .collect()
+}
+
 /// DFT cross-correlation of packed template vs search, then method-specific finish.
 #[allow(clippy::too_many_arguments)]
 fn match_fft(
@@ -407,23 +525,26 @@ fn match_fft(
     out_h: usize,
     ch: usize,
     method: MatchMethod,
-    precomputed: Option<&SearchIntegrals>,
+    search_prep: Option<&SearchPrep>,
 ) -> Result<MatchMap, MatchError> {
     let dft_w = optimal_dft_size(search.width + tw - 1);
     let dft_h = optimal_dft_size(search.height + th - 1);
     let area = dft_w * dft_h;
     let scale = 1.0_f32 / area as f32;
 
+    let owned_search_fft;
+    let search_fft: &[Vec<Complex<f32>>] = if let Some(prep) = search_prep {
+        owned_search_fft = prep.fft_for_size(search, dft_w, dft_h);
+        owned_search_fft.as_ref()
+    } else {
+        owned_search_fft = Arc::new(forward_fft_search(search, dft_w, dft_h));
+        owned_search_fft.as_ref()
+    };
+
     let channel_numers: Vec<Vec<f32>> = (0..ch)
         .into_par_iter()
         .map(|c| {
-            let mut img = vec![Complex::new(0.0, 0.0); area];
-            for y in 0..search.height {
-                for x in 0..search.width {
-                    let v = search.data[(y * search.width + x) * ch + c] as f32;
-                    img[y * dft_w + x] = Complex::new(v, 0.0);
-                }
-            }
+            let mut img = search_fft[c].clone();
             let mut tmpl = vec![Complex::new(0.0, 0.0); area];
             for i in 0..pack.len() {
                 let x = pack.xs[i] as usize;
@@ -437,7 +558,6 @@ fn match_fft(
             }
             PLANNER.with(|p| {
                 let mut planner = p.borrow_mut();
-                fft2d_forward(&mut img, dft_w, dft_h, &mut planner);
                 fft2d_forward(&mut tmpl, dft_w, dft_h, &mut planner);
 
                 crate::corr_simd::complex_mul_conj(&mut img, &tmpl);
@@ -475,8 +595,8 @@ fn match_fft(
     }
 
     let owned;
-    let integ = if let Some(integ) = precomputed {
-        integ
+    let integ = if let Some(prep) = search_prep {
+        &prep.integrals
     } else {
         owned = build_integrals(search);
         &owned
@@ -593,15 +713,48 @@ fn fft2d_inverse(
 }
 
 /// Precomputed integral images for a search frame (shared across template variants).
-pub struct SearchIntegrals {
+struct SearchIntegrals {
     width: usize,
     sum: Vec<Vec<f64>>,
     sumsq: Vec<Vec<f64>>,
 }
 
-/// Build integral images once per blurred search capture.
-pub fn prepare_search_integrals(img: &ImageBuf) -> SearchIntegrals {
-    build_integrals(img)
+/// Per-capture search-frame prep, built once and shared across every template variant
+/// matched against the same buffer: integral images (for CCOEFF*/normed finish) and
+/// planar `f32` (for the direct SIMD correlator). FFT cross-correlations of the search
+/// frame are cached lazily per padded DFT size, since different template sizes need
+/// different padding.
+pub struct SearchPrep {
+    integrals: SearchIntegrals,
+    planar: crate::corr_simd::PlanarF32,
+    fft_cache: Mutex<HashMap<(usize, usize), Arc<SearchFft>>>,
+}
+
+/// Forward-FFT'd search image, one plane per channel.
+type SearchFft = Vec<Vec<Complex<f32>>>;
+
+impl SearchPrep {
+    fn fft_for_size(&self, search: &ImageBuf, dft_w: usize, dft_h: usize) -> Arc<SearchFft> {
+        if let Some(hit) = self.fft_cache.lock().unwrap().get(&(dft_w, dft_h)) {
+            return Arc::clone(hit);
+        }
+        let built = Arc::new(forward_fft_search(search, dft_w, dft_h));
+        self.fft_cache
+            .lock()
+            .unwrap()
+            .insert((dft_w, dft_h), Arc::clone(&built));
+        built
+    }
+}
+
+/// Build the shared search-frame prep once per blurred capture, for reuse across
+/// every template variant matched against it.
+pub fn prepare_search(img: &ImageBuf) -> SearchPrep {
+    SearchPrep {
+        integrals: build_integrals(img),
+        planar: crate::corr_simd::PlanarF32::from_interleaved(img),
+        fft_cache: Mutex::new(HashMap::new()),
+    }
 }
 
 fn build_integrals(img: &ImageBuf) -> SearchIntegrals {
@@ -894,9 +1047,12 @@ mod tests {
         search.stamp(&tmpl, 40, 30);
         let mask_bits = vec![true; 24 * 24];
         let pack = build_packed_template(&tmpl, &mask_bits, 3, MatchMethod::CcoeffNormed);
+        let sparse =
+            crate::corr_simd::SparseTemplate::from_packed(&pack.vals, &pack.xs, &pack.ys, 3);
         let direct = match_direct(
             &search,
             &pack,
+            &sparse,
             24,
             24,
             97,

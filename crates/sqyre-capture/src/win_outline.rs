@@ -20,9 +20,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
 };
 
+use crate::outline_geometry::{edge_placements, outline_should_clear};
 pub use crate::outline_rect::OutlineRect;
 
-const EDGE_PX: i32 = 2;
 /// Selection stroke color (gold) — same as X11 outline.
 const STROKE_R: u8 = 255;
 const STROKE_G: u8 = 200;
@@ -63,7 +63,7 @@ impl SelectionOutline {
     /// Show/update the outline for absolute desktop corners.
     pub fn set_rect(&mut self, left: i32, top: i32, right: i32, bottom: i32) {
         let rect = OutlineRect::normalize(left, top, right, bottom);
-        if rect.is_empty() || rect.width() < EDGE_PX * 2 || rect.height() < EDGE_PX * 2 {
+        if outline_should_clear(rect) {
             self.clear();
             return;
         }
@@ -183,14 +183,9 @@ fn destroy_edges(edges: &[HWND; 4]) {
 }
 
 unsafe fn place_edges(edges: &[HWND; 4], r: OutlineRect) {
-    let w = r.width().max(1);
-    let h = r.height().max(1);
-    let t = EDGE_PX;
-    // top, bottom, left, right
-    configure(edges[0], r.left, r.top, w, t);
-    configure(edges[1], r.left, r.bottom - EDGE_PX, w, t);
-    configure(edges[2], r.left, r.top, t, h);
-    configure(edges[3], r.right - EDGE_PX, r.top, t, h);
+    for (&hwnd, &(x, y, w, h)) in edges.iter().zip(edge_placements(r).iter()) {
+        configure(hwnd, x, y, w, h);
+    }
 }
 
 unsafe fn configure(hwnd: HWND, x: i32, y: i32, w: i32, h: i32) {

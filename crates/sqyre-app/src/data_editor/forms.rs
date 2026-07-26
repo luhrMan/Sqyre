@@ -17,7 +17,7 @@ use crate::theme;
 use crate::var_pills;
 use crate::widgets::{searchable_combo_width, searchable_combo_with};
 use eframe::egui;
-use sqyre_domain::{collect_known_variable_names, Macro, PROGRAM_DELIMITER};
+use sqyre_domain::{collect_known_variable_names, KnownVariableNames, Macro, PROGRAM_DELIMITER};
 use sqyre_hotkeys::ScreenClickBridge;
 use sqyre_persist::{
     auto_pic_path, OverlayButtonConfig, ProgramCatalog, ProgramCollection, UserSettings,
@@ -26,7 +26,6 @@ use sqyre_persist::{
     MIN_OVERLAY_CORNER_RADIUS,
 };
 use sqyre_validate::validate_numeric_expression;
-use std::collections::HashSet;
 
 fn color_alpha_drag(ui: &mut egui::Ui, label: &str, color: &mut egui::Color32) {
     ui.label(label);
@@ -44,7 +43,7 @@ fn color_alpha_drag(ui: &mut egui::Ui, label: &str, color: &mut egui::Color32) {
 fn paint_coord_chips(
     ui: &mut egui::Ui,
     rect: egui::Rect,
-    known: &HashSet<String>,
+    known: &KnownVariableNames,
     is_dark: bool,
     active_macro: Option<&Macro>,
     chips: &mut [(&mut String, CardinalEdge, &str, &str)],

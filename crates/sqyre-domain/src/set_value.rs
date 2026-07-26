@@ -1,6 +1,6 @@
 //! Set-variable value resolution.
 
-use crate::{evaluate_expression, numeric_to_scalar, Macro, ScalarValue};
+use crate::{evaluate_expression, numeric_to_scalar, ScalarValue, VariableStore};
 
 type Result<T> = std::result::Result<T, String>;
 
@@ -43,22 +43,21 @@ fn is_expr_number_char(b: u8) -> bool {
 }
 
 /// Expand `${references}` once. Values that themselves contain refs are left as-is.
-pub fn expand_variable_refs(text: &str, macro_: &Macro) -> Result<String> {
+pub fn expand_variable_refs(text: &str, vars: &VariableStore) -> Result<String> {
     if !sqyre_varref::contains(text) {
-        return Ok(text.to_string());
+        return Ok(sqyre_varref::unescape_plain(text));
     }
     let segs = sqyre_varref::segments(text);
     if segs.is_empty() {
-        return Ok(text.to_string());
+        return Ok(sqyre_varref::unescape_plain(text));
     }
     let mut out = String::new();
     for seg in segs {
         if !seg.is_ref {
-            out.push_str(&seg.text);
+            out.push_str(&sqyre_varref::unescape_plain(&seg.text));
             continue;
         }
-        let val = macro_
-            .variables
+        let val = vars
             .get(&seg.name)
             .ok_or_else(|| format!("unresolved variable ${{{}}}", seg.name))?;
         out.push_str(&val.as_display());
@@ -67,8 +66,8 @@ pub fn expand_variable_refs(text: &str, macro_: &Macro) -> Result<String> {
 }
 
 /// Resolve `${references}` in plain text; errors on unresolved or nested refs.
-pub fn resolve_variables_in_text(text: &str, macro_: &Macro) -> Result<String> {
-    let out = expand_variable_refs(text, macro_)?;
+pub fn resolve_variables_in_text(text: &str, vars: &VariableStore) -> Result<String> {
+    let out = expand_variable_refs(text, vars)?;
     if sqyre_varref::contains(&out) {
         return Err(format!("unresolved variable reference in {text:?}"));
     }
@@ -76,21 +75,24 @@ pub fn resolve_variables_in_text(text: &str, macro_: &Macro) -> Result<String> {
 }
 
 /// Resolve a Set action value: literals, text, `${refs}`, and arithmetic expressions.
-pub fn resolve_set_variable_value(value: &ScalarValue, macro_: &Macro) -> Result<ScalarValue> {
+pub fn resolve_set_variable_value(
+    value: &ScalarValue,
+    vars: &VariableStore,
+) -> Result<ScalarValue> {
     match value {
         ScalarValue::Bool(b) => Ok(ScalarValue::Bool(*b)),
         ScalarValue::Int(_) | ScalarValue::Float(_) | ScalarValue::Null => Ok(value.clone()),
-        ScalarValue::String(s) => resolve_set_variable_string(s, macro_),
+        ScalarValue::String(s) => resolve_set_variable_string(s, vars),
     }
 }
 
-fn resolve_set_variable_string(text: &str, macro_: &Macro) -> Result<ScalarValue> {
-    let resolved = resolve_variables_in_text(text, macro_)?;
+fn resolve_set_variable_string(text: &str, vars: &VariableStore) -> Result<ScalarValue> {
+    let resolved = resolve_variables_in_text(text, vars)?;
     if resolved.is_empty() {
         return Ok(ScalarValue::String(String::new()));
     }
     if looks_like_arithmetic(&resolved) {
-        if let Ok(f) = evaluate_expression(text, macro_) {
+        if let Ok(f) = evaluate_expression(text, vars) {
             return Ok(numeric_to_scalar(f));
         }
     }
@@ -106,28 +108,28 @@ fn resolve_set_variable_string(text: &str, macro_: &Macro) -> Result<ScalarValue
 /// Resolve a scalar to `i32`: literals, `${refs}`, and arithmetic expressions.
 ///
 /// Used for point/search-area coordinates, wait times, loop counts, etc.
-pub fn resolve_scalar_int(v: &ScalarValue, macro_: &Macro) -> Result<i32> {
+pub fn resolve_scalar_int(v: &ScalarValue, vars: &VariableStore) -> Result<i32> {
     match v {
         ScalarValue::Int(i) => Ok(*i as i32),
         ScalarValue::Float(f) => Ok(*f as i32),
         ScalarValue::Bool(b) => Ok(if *b { 1 } else { 0 }),
         ScalarValue::Null => Ok(0),
-        ScalarValue::String(s) => resolve_int_string(s, macro_),
+        ScalarValue::String(s) => resolve_int_string(s, vars),
     }
 }
 
-fn resolve_int_string(text: &str, macro_: &Macro) -> Result<i32> {
+fn resolve_int_string(text: &str, vars: &VariableStore) -> Result<i32> {
     let trimmed = text.trim();
     // Source may already be an expression with `${refs}` (evaluate_expression expands them).
     if looks_like_arithmetic(trimmed) {
-        let f = evaluate_expression(trimmed, macro_)?;
+        let f = evaluate_expression(trimmed, vars)?;
         return Ok(f as i32);
     }
-    let resolved = resolve_variables_in_text(trimmed, macro_)?;
+    let resolved = resolve_variables_in_text(trimmed, vars)?;
     let resolved = resolved.trim();
     // A lone `${ref}` can expand to an expression (e.g. builtin-built formulas).
     if looks_like_arithmetic(resolved) {
-        let f = evaluate_expression(resolved, macro_)?;
+        let f = evaluate_expression(resolved, vars)?;
         return Ok(f as i32);
     }
     resolved
@@ -138,36 +140,37 @@ fn resolve_int_string(text: &str, macro_: &Macro) -> Result<i32> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{VariableDecl, VariableType};
 
     #[test]
     fn resolves_plain_text_and_refs() {
-        let mut m = Macro::new("t", 0, vec![]);
-        m.variable_decls.push(VariableDecl {
-            name: "x".into(),
-            type_: VariableType::Number,
-            initial_value: "5".into(),
-            description: String::new(),
-        });
-        m.init_runtime_variables();
-        let v = resolve_set_variable_value(&ScalarValue::String("${x}".into()), &m).unwrap();
+        let mut vars = VariableStore::new();
+        vars.set("x", ScalarValue::Int(5));
+        let v = resolve_set_variable_value(&ScalarValue::String("${x}".into()), &vars).unwrap();
         assert_eq!(v, ScalarValue::Int(5));
 
-        let v = resolve_set_variable_value(&ScalarValue::String("plain".into()), &m).unwrap();
+        let v = resolve_set_variable_value(&ScalarValue::String("plain".into()), &vars).unwrap();
         assert_eq!(v, ScalarValue::String("plain".into()));
     }
 
     #[test]
+    fn expand_unescapes_literal_refs() {
+        let mut vars = VariableStore::new();
+        vars.set("x", ScalarValue::Int(5));
+        assert_eq!(
+            expand_variable_refs("show $${x} and ${x}", &vars).unwrap(),
+            "show ${x} and 5"
+        );
+        assert_eq!(
+            expand_variable_refs("braces {{x}} vs {x}", &vars).unwrap(),
+            "braces {x} vs 5"
+        );
+    }
+
+    #[test]
     fn evaluates_arithmetic_expressions() {
-        let mut m = Macro::new("t", 0, vec![]);
-        m.variable_decls.push(VariableDecl {
-            name: "x".into(),
-            type_: VariableType::Number,
-            initial_value: "5".into(),
-            description: String::new(),
-        });
-        m.init_runtime_variables();
-        let v = resolve_set_variable_value(&ScalarValue::String("1+${x}".into()), &m).unwrap();
+        let mut vars = VariableStore::new();
+        vars.set("x", ScalarValue::Int(5));
+        let v = resolve_set_variable_value(&ScalarValue::String("1+${x}".into()), &vars).unwrap();
         assert_eq!(v, ScalarValue::Int(6));
     }
 
@@ -180,24 +183,23 @@ mod tests {
 
     #[test]
     fn resolve_scalar_int_evaluates_arithmetic_after_refs() {
-        let mut m = Macro::new("t", 0, vec![]);
-        m.variables.set("ox", ScalarValue::Int(2560));
-        m.variables.set("w", ScalarValue::Int(1920));
+        let mut vars = VariableStore::new();
+        vars.set("ox", ScalarValue::Int(2560));
+        vars.set("w", ScalarValue::Int(1920));
         // Expression with refs (typical point formula).
         assert_eq!(
-            resolve_scalar_int(&ScalarValue::String("${ox}+(${w}/2)".into()), &m).unwrap(),
+            resolve_scalar_int(&ScalarValue::String("${ox}+(${w}/2)".into()), &vars).unwrap(),
             3520
         );
         // Already-expanded expression (builtin resolution left a formula string).
         assert_eq!(
-            resolve_scalar_int(&ScalarValue::String("2560+(1920/2)".into()), &m).unwrap(),
+            resolve_scalar_int(&ScalarValue::String("2560+(1920/2)".into()), &vars).unwrap(),
             3520
         );
         // Ref whose value is itself an expression.
-        m.variables
-            .set("formula", ScalarValue::String("2560+(1920/2)".into()));
+        vars.set("formula", ScalarValue::String("2560+(1920/2)".into()));
         assert_eq!(
-            resolve_scalar_int(&ScalarValue::String("${formula}".into()), &m).unwrap(),
+            resolve_scalar_int(&ScalarValue::String("${formula}".into()), &vars).unwrap(),
             3520
         );
     }

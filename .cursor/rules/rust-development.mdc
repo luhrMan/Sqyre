@@ -13,7 +13,7 @@ This repo is a Rust Cargo workspace (egui desktop). Do not add a second implemen
 
 - Workspace root: `Cargo.toml` + `crates/sqyre-*` (not a nested `rust/` directory)
 - GUI binary: `crates/sqyre-app` → `./bin/sqyre`
-- Shared libs: `sqyre-domain`, `sqyre-ui-model`, `sqyre-serialize`, `sqyre-persist`, `sqyre-validate`, `sqyre-varref`, `sqyre-match`, `sqyre-vision`, `sqyre-capture`, `sqyre-executor`, `sqyre-hotkeys`, `sqyre-input`, `sqyre-update`
+- Shared libs: `sqyre-domain`, `sqyre-ui-model`, `sqyre-serialize`, `sqyre-persist`, `sqyre-validate`, `sqyre-varref`, `sqyre-match`, `sqyre-vision`, `sqyre-ports`, `sqyre-capture`, `sqyre-executor`, `sqyre-hotkeys`, `sqyre-input`, `sqyre-update`
 - Brand icons: `crates/sqyre-app/assets/`; tessdata: `assets/tessdata/`
 - Product name is **Sqyre**; repo may still be named Squire
 

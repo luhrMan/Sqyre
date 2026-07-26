@@ -14,11 +14,13 @@ pub use types::{
     ProgramPoint, ProgramSearchArea,
 };
 
+use crate::fs_name::{confined_join_or_invalid, is_safe_fs_entity_name, validate_fs_entity_name};
 use crate::{images_path, PersistError, Result};
 use encode::*;
 use parse::*;
 use serde_yaml::{Mapping, Value};
 use sqyre_domain::{resolve_scalar_int, CoordinateRef, Macro, PROGRAM_DELIMITER};
+use sqyre_ports::PortError;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use util::*;
@@ -109,31 +111,40 @@ impl ProgramCatalog {
     }
 
     pub fn icons_dir(&self, program: &str) -> PathBuf {
-        self.images_root().join("icons").join(program)
+        confined_join_or_invalid(&self.images_root().join("icons"), program)
     }
 
     pub fn masks_dir(&self, program: &str) -> PathBuf {
-        self.images_root().join("masks").join(program)
+        confined_join_or_invalid(&self.images_root().join("masks"), program)
     }
 
     pub fn collections_dir(&self, program: &str) -> PathBuf {
-        self.images_root().join("Collections").join(program)
+        confined_join_or_invalid(&self.images_root().join("Collections"), program)
     }
 
     pub fn collection_image_path(&self, program: &str, collection: &str) -> PathBuf {
-        self.collections_dir(program)
-            .join(format!("{collection}.png"))
+        let dir = self.collections_dir(program);
+        if is_safe_fs_entity_name(collection) {
+            dir.join(format!("{collection}.png"))
+        } else {
+            dir.join("__invalid__.png")
+        }
     }
 
     pub fn mask_image_path(&self, program: &str, mask: &str) -> PathBuf {
-        self.masks_dir(program).join(format!("{mask}.png"))
+        let dir = self.masks_dir(program);
+        if is_safe_fs_entity_name(mask) {
+            dir.join(format!("{mask}.png"))
+        } else {
+            dir.join("__invalid__.png")
+        }
     }
 
     pub fn lookup_point(
         &self,
         r: &CoordinateRef,
         resolution_key: &str,
-    ) -> std::result::Result<&ProgramPoint, String> {
+    ) -> std::result::Result<&ProgramPoint, PortError> {
         Ok(self.lookup_point_sourced(r, resolution_key)?.0)
     }
 
@@ -142,20 +153,22 @@ impl ProgramCatalog {
         &'a self,
         r: &CoordinateRef,
         resolution_key: &str,
-    ) -> std::result::Result<(&'a ProgramPoint, &'a str, &'a ProgramData), String> {
+    ) -> std::result::Result<(&'a ProgramPoint, &'a str, &'a ProgramData), PortError> {
         if r.is_collection() {
-            return Err(format!("point lookup does not accept collection ref {r:?}"));
+            return Err(PortError::invalid(format!(
+                "point lookup does not accept collection ref {r:?}"
+            )));
         }
         let name = r.name();
         if name.is_empty() {
-            return Err("empty point reference".into());
+            return Err(PortError::invalid("empty point reference"));
         }
         if let Some(prog) = r.program() {
             let (pt, src) = point_from(self, prog, name, resolution_key)?;
             let data = self
                 .programs
                 .get(prog)
-                .ok_or_else(|| format!("program {prog:?} not found"))?;
+                .ok_or_else(|| PortError::not_found(format!("program {prog:?} not found")))?;
             return Ok((pt, src, data));
         }
         for prog in self.programs.keys() {
@@ -164,14 +177,14 @@ impl ProgramCatalog {
                 return Ok((pt, src, data));
             }
         }
-        Err(format!("point {name:?} not found"))
+        Err(PortError::not_found(format!("point {name:?} not found")))
     }
 
     pub fn lookup_search_area(
         &self,
         r: &CoordinateRef,
         resolution_key: &str,
-    ) -> std::result::Result<&ProgramSearchArea, String> {
+    ) -> std::result::Result<&ProgramSearchArea, PortError> {
         Ok(self.lookup_search_area_sourced(r, resolution_key)?.0)
     }
 
@@ -179,22 +192,22 @@ impl ProgramCatalog {
         &'a self,
         r: &CoordinateRef,
         resolution_key: &str,
-    ) -> std::result::Result<(&'a ProgramSearchArea, &'a str, &'a ProgramData), String> {
+    ) -> std::result::Result<(&'a ProgramSearchArea, &'a str, &'a ProgramData), PortError> {
         if r.is_collection() {
-            return Err(format!(
+            return Err(PortError::invalid(format!(
                 "search area lookup does not accept collection ref {r:?}"
-            ));
+            )));
         }
         let name = r.name();
         if name.is_empty() {
-            return Err("empty search area reference".into());
+            return Err(PortError::invalid("empty search area reference"));
         }
         if let Some(prog) = r.program() {
             let (sa, src) = search_area_from(self, prog, name, resolution_key)?;
             let data = self
                 .programs
                 .get(prog)
-                .ok_or_else(|| format!("program {prog:?} not found"))?;
+                .ok_or_else(|| PortError::not_found(format!("program {prog:?} not found")))?;
             return Ok((sa, src, data));
         }
         for prog in self.programs.keys() {
@@ -203,16 +216,18 @@ impl ProgramCatalog {
                 return Ok((sa, src, data));
             }
         }
-        Err(format!("search area {name:?} not found"))
+        Err(PortError::not_found(format!(
+            "search area {name:?} not found"
+        )))
     }
 
     pub fn lookup_collection(
         &self,
         r: &CoordinateRef,
-    ) -> std::result::Result<&ProgramCollection, String> {
+    ) -> std::result::Result<&ProgramCollection, PortError> {
         let name = r.name();
         if name.is_empty() {
-            return Err("empty collection reference".into());
+            return Err(PortError::invalid("empty collection reference"));
         }
         if let Some(prog) = r.program() {
             return collection_from(self, prog, name);
@@ -222,22 +237,26 @@ impl ProgramCatalog {
                 return Ok(c);
             }
         }
-        Err(format!("collection {name:?} not found"))
+        Err(PortError::not_found(format!(
+            "collection {name:?} not found"
+        )))
     }
 
     pub fn resolve_point(
         &self,
         r: &CoordinateRef,
         macro_: &Macro,
-    ) -> std::result::Result<(i32, i32), String> {
+    ) -> std::result::Result<(i32, i32), PortError> {
         if r.is_collection() {
             let (lx, ty, rx, by) = self.resolve_search_area(r, macro_)?;
             return Ok(((lx + rx) / 2, (ty + by) / 2));
         }
         let key = self.resolution_key().to_string();
         let (pt, src_key, data) = self.lookup_point_sourced(r, &key)?;
-        let x = resolve_scalar_int(&pt.x, macro_).map_err(|e| format!("point X: {e}"))?;
-        let y = resolve_scalar_int(&pt.y, macro_).map_err(|e| format!("point Y: {e}"))?;
+        let x = resolve_scalar_int(&pt.x, &macro_.variables)
+            .map_err(|e| PortError::invalid(format!("point X: {e}")))?;
+        let y = resolve_scalar_int(&pt.y, &macro_.variables)
+            .map_err(|e| PortError::invalid(format!("point Y: {e}")))?;
         self.remap_xy(x, y, src_key, data)
     }
 
@@ -245,16 +264,16 @@ impl ProgramCatalog {
         &self,
         r: &CoordinateRef,
         macro_: &Macro,
-    ) -> std::result::Result<(i32, i32, i32, i32), String> {
+    ) -> std::result::Result<(i32, i32, i32, i32), PortError> {
         if let Some((r1, c1, r2, c2)) = r.cell_range() {
             return self.resolve_collection_cells(r, macro_, r1, c1, r2, c2);
         }
         let key = self.resolution_key().to_string();
         let (sa, src_key, data) = self.lookup_search_area_sourced(r, &key)?;
-        let lx = resolve_scalar_int(&sa.left_x, macro_)?;
-        let ty = resolve_scalar_int(&sa.top_y, macro_)?;
-        let rx = resolve_scalar_int(&sa.right_x, macro_)?;
-        let by = resolve_scalar_int(&sa.bottom_y, macro_)?;
+        let lx = resolve_scalar_int(&sa.left_x, &macro_.variables).map_err(PortError::invalid)?;
+        let ty = resolve_scalar_int(&sa.top_y, &macro_.variables).map_err(PortError::invalid)?;
+        let rx = resolve_scalar_int(&sa.right_x, &macro_.variables).map_err(PortError::invalid)?;
+        let by = resolve_scalar_int(&sa.bottom_y, &macro_.variables).map_err(PortError::invalid)?;
         let (lx, ty) = self.remap_xy(lx, ty, src_key, data)?;
         let (rx, by) = self.remap_xy(rx, by, src_key, data)?;
         Ok((lx, ty, rx, by))
@@ -266,7 +285,7 @@ impl ProgramCatalog {
         y: i32,
         src_key: &str,
         data: &ProgramData,
-    ) -> std::result::Result<(i32, i32), String> {
+    ) -> std::result::Result<(i32, i32), PortError> {
         let rt_key = self.resolution_key();
         if rt_key.is_empty() {
             return Ok((x, y));
@@ -289,10 +308,13 @@ impl ProgramCatalog {
         c1: i32,
         r2: i32,
         c2: i32,
-    ) -> std::result::Result<(i32, i32, i32, i32), String> {
+    ) -> std::result::Result<(i32, i32, i32, i32), PortError> {
         let col = self.lookup_collection(r)?;
         if col.search_area.is_empty() {
-            return Err(format!("collection {:?} has no search area", col.name));
+            return Err(PortError::invalid(format!(
+                "collection {:?} has no search area",
+                col.name
+            )));
         }
         let sa_ref = match r.program() {
             Some(prog) => CoordinateRef(format!("{prog}{PROGRAM_DELIMITER}{}", col.search_area)),
@@ -332,7 +354,7 @@ impl ProgramCatalog {
         if item.mask.is_empty() {
             return None;
         }
-        let path = self.masks_dir(program).join(format!("{}.png", item.mask));
+        let path = self.mask_image_path(program, &item.mask);
         if path.is_file() {
             Some(path)
         } else {
@@ -340,15 +362,15 @@ impl ProgramCatalog {
         }
     }
 
-    pub fn item_meta(&self, target: &str) -> Option<(String, i32, i32, i32)> {
+    pub fn item_meta(&self, target: &str) -> Option<sqyre_ports::ItemMeta> {
         let (program, item) = split_target(target)?;
         let item = self.programs.get(program)?.items.get(item)?;
-        Some((
-            item.name.clone(),
-            item.stack_max,
-            item.grid_cols,
-            item.grid_rows,
-        ))
+        Some(sqyre_ports::ItemMeta {
+            name: item.name.clone(),
+            stack_max: item.stack_max,
+            cols: item.grid_cols,
+            rows: item.grid_rows,
+        })
     }
 
     pub fn programs_mut(&mut self) -> &mut BTreeMap<String, ProgramData> {
@@ -377,9 +399,8 @@ impl ProgramCatalog {
 
     pub fn create_program(&mut self, name: impl Into<String>) -> Result<()> {
         let name = name.into();
-        if name.trim().is_empty() {
-            return Err(PersistError::Message("program name cannot be empty".into()));
-        }
+        validate_fs_entity_name(name.trim())?;
+        let name = name.trim().to_string();
         if self.programs.contains_key(&name) {
             return Err(PersistError::Message(format!(
                 "program {name:?} already exists"
@@ -403,9 +424,7 @@ impl ProgramCatalog {
 
     pub fn rename_program(&mut self, old: &str, new: &str) -> Result<()> {
         let new = new.trim();
-        if new.is_empty() {
-            return Err(PersistError::Message("program name cannot be empty".into()));
-        }
+        validate_fs_entity_name(new)?;
         if old == new {
             return Ok(());
         }
@@ -428,12 +447,15 @@ impl ProgramCatalog {
         if self.programs.remove(name).is_none() {
             return Err(PersistError::Message(format!("program {name:?} not found")));
         }
-        let icons = self.icons_dir(name);
-        let masks = self.masks_dir(name);
-        let collections = self.collections_dir(name);
-        let _ = std::fs::remove_dir_all(icons);
-        let _ = std::fs::remove_dir_all(masks);
-        let _ = std::fs::remove_dir_all(collections);
+        // Only touch the filesystem when the name cannot escape the images root.
+        if is_safe_fs_entity_name(name) {
+            let icons = self.icons_dir(name);
+            let masks = self.masks_dir(name);
+            let collections = self.collections_dir(name);
+            let _ = std::fs::remove_dir_all(icons);
+            let _ = std::fs::remove_dir_all(masks);
+            let _ = std::fs::remove_dir_all(collections);
+        }
         self.bump_generation();
         Ok(())
     }
@@ -458,11 +480,12 @@ impl ProgramCatalog {
 
     pub fn rename_item(&mut self, program: &str, old: &str, new: &str) -> Result<()> {
         let new = new.trim();
+        validate_fs_entity_name(new)?;
         {
             let p = self.program_mut(program)?;
             rename_keyed_map(&mut p.items, old, new, "item", |item, n| item.name = n)?;
         }
-        if old != new {
+        if old != new && is_safe_fs_entity_name(program) && is_safe_fs_entity_name(old) {
             self.rename_item_icon_files(program, old, new);
         }
         Ok(())
@@ -561,6 +584,7 @@ impl ProgramCatalog {
 
     pub fn rename_mask(&mut self, program: &str, old: &str, new: &str) -> Result<()> {
         let new = new.trim();
+        validate_fs_entity_name(new)?;
         let old_path = self.mask_image_path(program, old);
         let new_path = self.mask_image_path(program, new);
         let p = self.program_mut(program)?;
@@ -571,7 +595,11 @@ impl ProgramCatalog {
                 item.mask = new.to_string();
             }
         }
-        if old != new && old_path.is_file() {
+        if old != new
+            && is_safe_fs_entity_name(program)
+            && is_safe_fs_entity_name(old)
+            && old_path.is_file()
+        {
             if let Some(parent) = new_path.parent() {
                 let _ = std::fs::create_dir_all(parent);
             }
@@ -589,7 +617,9 @@ impl ProgramCatalog {
                 item.mask.clear();
             }
         }
-        let _ = std::fs::remove_file(path);
+        if is_safe_fs_entity_name(program) && is_safe_fs_entity_name(name) {
+            let _ = std::fs::remove_file(path);
+        }
         Ok(())
     }
 
@@ -604,6 +634,7 @@ impl ProgramCatalog {
 
     pub fn rename_collection(&mut self, program: &str, old: &str, new: &str) -> Result<()> {
         let new = new.trim();
+        validate_fs_entity_name(new)?;
         let old_path = self.collection_image_path(program, old);
         let new_path = self.collection_image_path(program, new);
         {
@@ -622,7 +653,11 @@ impl ProgramCatalog {
                 }
             }
         }
-        if old != new && old_path.is_file() {
+        if old != new
+            && is_safe_fs_entity_name(program)
+            && is_safe_fs_entity_name(old)
+            && old_path.is_file()
+        {
             if let Some(parent) = new_path.parent() {
                 let _ = std::fs::create_dir_all(parent);
             }
@@ -638,7 +673,9 @@ impl ProgramCatalog {
         for atlas in p.atlases.values_mut() {
             atlas.collections.retain(|c| c != name);
         }
-        let _ = std::fs::remove_file(path);
+        if is_safe_fs_entity_name(program) && is_safe_fs_entity_name(name) {
+            let _ = std::fs::remove_file(path);
+        }
         Ok(())
     }
 
@@ -649,6 +686,7 @@ impl ProgramCatalog {
 
     pub fn rename_atlas(&mut self, program: &str, old: &str, new: &str) -> Result<()> {
         let new = new.trim();
+        validate_fs_entity_name(new)?;
         let p = self.program_mut(program)?;
         rename_keyed_map(&mut p.atlases, old, new, "atlas", |atlas, n| atlas.name = n)
     }
@@ -661,14 +699,14 @@ impl ProgramCatalog {
         &self,
         program: &str,
         name: &str,
-    ) -> std::result::Result<&ProgramAtlas, String> {
+    ) -> std::result::Result<&ProgramAtlas, PortError> {
         let p = self
             .programs
             .get(program)
-            .ok_or_else(|| format!("program {program:?} not found"))?;
+            .ok_or_else(|| PortError::not_found(format!("program {program:?} not found")))?;
         p.atlases
             .get(name)
-            .ok_or_else(|| format!("atlas {name:?} not in {program}"))
+            .ok_or_else(|| PortError::not_found(format!("atlas {name:?} not in {program}")))
     }
 
     fn program_mut(&mut self, name: &str) -> Result<&mut ProgramData> {

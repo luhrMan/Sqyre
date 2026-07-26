@@ -65,6 +65,19 @@ Build caches (all gitignored):
 
 Set `CARGO_FLAGS` for extra cargo args. Set `RELEASE_VERSION` (or write a `VERSION` file) before `make appimage` / `make release` / `make windows` to stamp the AppImage name and embed `SQYRE_VERSION` in the binary for auto-update checks. Local builds without either default to `0.0.0-dev` (update checks disabled).
 
+### OCR data (`eng.traineddata`)
+
+On native startup Sqyre resolves Tesseract English data, then **downloads** it if nothing usable is found:
+
+| Platform | Auto-download location |
+|----------|------------------------|
+| Windows | `%APPDATA%\sqyre\tessdata\eng.traineddata` |
+| Linux / macOS | `~/.sqyre/tessdata/eng.traineddata` |
+
+Discovery order (earlier entries win): `SQYRE_TESSDATA`, platform system paths (and beside `sqyre.exe` on Windows), workspace `assets/tessdata` (dev), then the auto-download path above.
+
+`make tessdata` still fills `assets/tessdata/` for packaging / CI. A failed download is a non-fatal warning in the app and on stderr; OCR actions stay unavailable until data can be found.
+
 ### WASM editor (`make wasm`)
 
 Browser-only macro editor (import/export `db.yaml`). Does not run automation. The **dev container** already has Trunk and the `wasm32-unknown-unknown` target — rebuild the container after pulling those Dockerfile changes, then:
@@ -103,6 +116,16 @@ The `version` job sets `should_release=true` only when there is no prior `v*` ta
 
 Shipped Linux/Windows builds embed `SQYRE_VERSION` so the in-app updater can compare against GitHub Releases (local `0.0.0-dev` builds skip update checks).
 
+**Signed updates:** Releases must publish `SHA256SUMS` and `SHA256SUMS.sig` (Ed25519 over the exact `SHA256SUMS` bytes). The client verifies the signature with the public key in `crates/sqyre-update/update_pubkey.hex` before trusting hashes.
+
+To configure signing (maintainer, once):
+
+1. Generate a keypair (32-byte seed as hex), e.g. with Python `nacl` / `cryptography`, or any Ed25519 tool that can emit raw keys.
+2. Write the **public** key as 64 lowercase hex characters into `crates/sqyre-update/update_pubkey.hex` and commit it.
+3. Store the **private** seed hex as GitHub Actions secret `SQYRE_UPDATE_SIGNING_KEY` (never commit it). CI runs `sign_update_sums` during the release job.
+
+Until `update_pubkey.hex` is configured (not `UNCONFIGURED`), auto-update checks fail closed on signature setup.
+
 CI caches (shared where possible):
 
 | Cache | Shared by | Notes |
@@ -128,7 +151,7 @@ Runnable images are tagged `ghcr.io/<owner>/<repo>-linux-build:<dockerfile-hash>
 | [crates/sqyre-app/assets/icons/](../crates/sqyre-app/assets/icons/) | Brand icons (embedded SVG) |
 | [assets/tessdata/](../assets/tessdata/) | Optional local `eng.traineddata` fallback |
 
-OCR uses system tessdata when available, or `SQYRE_TESSDATA` / `assets/tessdata` when developing.
+OCR uses system tessdata when available, or `SQYRE_TESSDATA` / `assets/tessdata` when developing. If none are found, startup downloads `eng.traineddata` into the user data path (see above).
 
 ---
 

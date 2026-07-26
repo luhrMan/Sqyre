@@ -1,5 +1,12 @@
 //! Variable-reference grammar: `${name}` and `{name}` (brace form only when not
 //! preceded by `$`).
+//!
+//! Both forms only match identifier-like names (`[A-Za-z_][A-Za-z0-9_]*`) so
+//! arbitrary braces in typed text (JSON, code) are not treated as refs.
+//!
+//! Escapes (so identifier-shaped literals survive expansion):
+//! - `$$` → literal `$` (use `$${name}` for a literal `${name}`)
+//! - `{{` → literal `{`, `}}` → literal `}` (use `{{name}}` for a literal `{name}`)
 
 use std::collections::HashSet;
 
@@ -18,12 +25,83 @@ struct Match {
     name: String,
 }
 
+/// Identifier-like variable name: letter/underscore, then alnum/underscore.
+pub fn is_ref_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_alphabetic() || c == '_' => {}
+        _ => return false,
+    }
+    chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// Unescape `$$` / `{{` / `}}` in plain (non-ref) text.
+pub fn unescape_plain(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'$' && i + 1 < bytes.len() && bytes[i + 1] == b'$' {
+            out.push('$');
+            i += 2;
+            continue;
+        }
+        if bytes[i] == b'{' && i + 1 < bytes.len() && bytes[i + 1] == b'{' {
+            out.push('{');
+            i += 2;
+            continue;
+        }
+        if bytes[i] == b'}' && i + 1 < bytes.len() && bytes[i + 1] == b'}' {
+            out.push('}');
+            i += 2;
+            continue;
+        }
+        let ch = text[i..].chars().next().expect("valid utf-8 offset");
+        out.push(ch);
+        i += ch.len_utf8();
+    }
+    out
+}
+
 /// Collect `${…}` and bare `{…}` matches (bare braces skip `$` prefixes).
+///
+/// Skips escaped forms so `$${name}` / `{{name}}` are not references.
 fn find_all_refs(text: &str) -> Vec<Match> {
     let bytes = text.as_bytes();
     let mut out = Vec::new();
     let mut i = 0;
     while i < bytes.len() {
+        // `$${name}` → literal `${name}` (skip entire span; no Match).
+        if bytes[i] == b'$'
+            && i + 1 < bytes.len()
+            && bytes[i + 1] == b'$'
+            && i + 2 < bytes.len()
+            && bytes[i + 2] == b'{'
+        {
+            if let Some(end) = bytes[i + 3..]
+                .iter()
+                .position(|&b| b == b'}')
+                .map(|p| i + 3 + p)
+            {
+                let name = &text[i + 3..end];
+                if is_ref_name(name) {
+                    i = end + 1;
+                    continue;
+                }
+            }
+            i += 2;
+            continue;
+        }
+        // Lone `$$` escape (not followed by a dollar-ref shape).
+        if bytes[i] == b'$' && i + 1 < bytes.len() && bytes[i + 1] == b'$' {
+            i += 2;
+            continue;
+        }
+        // `{{` starts a literal `{`, not a bare ref.
+        if bytes[i] == b'{' && i + 1 < bytes.len() && bytes[i + 1] == b'{' {
+            i += 2;
+            continue;
+        }
         if bytes[i] == b'$' && i + 1 < bytes.len() && bytes[i + 1] == b'{' {
             if let Some(end) = bytes[i + 2..]
                 .iter()
@@ -31,7 +109,7 @@ fn find_all_refs(text: &str) -> Vec<Match> {
                 .map(|p| i + 2 + p)
             {
                 let name = &text[i + 2..end];
-                if !name.is_empty() {
+                if is_ref_name(name) {
                     out.push(Match {
                         start: i,
                         end: end + 1,
@@ -55,7 +133,7 @@ fn find_all_refs(text: &str) -> Vec<Match> {
                 .map(|p| i + 1 + p)
             {
                 let name = &text[i + 1..end];
-                if !name.is_empty() {
+                if is_ref_name(name) {
                     out.push(Match {
                         start: i,
                         end: end + 1,
@@ -213,8 +291,29 @@ mod tests {
     #[test]
     fn references_case_insensitive() {
         assert!(references("${Delay}", "delay"));
-        assert!(references(" { Delay } ", "delay"));
+        assert!(references(" {Delay} ", "delay"));
         assert!(!references("${other}", "delay"));
+    }
+
+    #[test]
+    fn bare_braces_ignore_non_identifiers() {
+        assert!(!contains("json {\"a\":1}"));
+        assert!(!contains("fmt {0}"));
+        assert!(!contains("{not-a-var}"));
+        assert!(contains("ok {foo}"));
+        assert!(contains("ok ${foo}"));
+    }
+
+    #[test]
+    fn escaped_dollar_and_brace_refs_are_literal() {
+        assert!(!contains("$${foo}"));
+        assert!(!contains("{{foo}}"));
+        assert!(!contains("price $${amount}"));
+        assert!(contains("mix $${foo} and ${bar}"));
+        assert_eq!(names("mix $${foo} and ${bar}"), vec!["bar".to_string()]);
+        assert_eq!(unescape_plain("$${foo}"), "${foo}");
+        assert_eq!(unescape_plain("{{foo}}"), "{foo}");
+        assert_eq!(unescape_plain("a$$b{{c}}d"), "a$b{c}d");
     }
 
     #[test]
@@ -248,7 +347,13 @@ mod tests {
             dollar in any::<bool>(),
         ) {
             // Avoid accidental new refs in prefix/suffix by stripping braces.
-            let prefix = prefix.replace(['{', '}'], "");
+            // Also strip trailing `$` so prefix=`$` + `${name}` does not become `$${name}` escape.
+            let mut prefix = prefix.replace(['{', '}'], "");
+            if dollar {
+                while prefix.ends_with('$') {
+                    prefix.pop();
+                }
+            }
             let suffix = suffix.replace(['{', '}'], "");
             let text = if dollar {
                 format!("{prefix}${{{name}}}{suffix}")

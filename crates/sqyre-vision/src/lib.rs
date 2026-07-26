@@ -10,20 +10,20 @@ mod search_cache;
 
 pub use find_pixel::{find_pixel, find_pixels};
 pub use image_util::{
-    gray_to_rgb, load_rgb_image, mask_as_u8, resize_mask, resize_nearest, rgb_to_grayscale,
-    rgba_to_rgb_buf,
+    gray_to_rgb, load_rgb_image, mask_as_u8, resize_mask, resize_nearest, rgb_capture_to_image_buf,
+    rgb_to_grayscale, rgba_to_rgb_buf,
 };
 pub use ocr_boxes::{
     find_target_in_boxes, find_target_occurrences, parse_tsv_word_boxes, text_from_ocr_boxes,
-    OcrWordBox,
+    OcrRecognition, OcrWordBox,
 };
 #[cfg(not(target_arch = "wasm32"))]
-pub use ocr_engine::{recognize_image, LeptessOcr, OcrRecognition};
+pub use ocr_engine::{ensure_english_tessdata, recognize_image, shared_leptess, LeptessOcr};
 pub use ocr_preprocess::{
     preprocess_for_ocr, preprocess_for_ocr_with_steps, OcrPreprocessOptions, OcrPreprocessStep,
 };
 pub use search_cache::{
     clear_search_cache, get_cached_blurred_template, get_cached_image_mask,
-    invalidate_search_masks_under, invalidate_search_templates_under,
+    get_cached_prepared_template, invalidate_search_masks_under, invalidate_search_templates_under,
     reset_search_cache_for_testing, with_search_cache_test_lock,
 };

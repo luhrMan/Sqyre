@@ -1,6 +1,8 @@
 //! OCR action: capture → preprocess → recognize → write vars → run children per hit.
 
-use super::common::{apply_detection_hits, run_detection_shell, sort_hits, DetectionHit};
+use super::common::{
+    apply_detection_hits, capture_search_buf, run_detection_shell, sort_hits, DetectionHit,
+};
 use crate::action_log::draw_rect_rgb;
 use crate::error::{ExecError, Result};
 use crate::run::Executor;
@@ -160,59 +162,30 @@ fn run_ocr_once(
     order: &MatchOrder,
     macro_: &Macro,
 ) -> Option<OcrAttempt> {
-    let Some(resolver) = exec.deps.resolver else {
-        exec.log(action_id, "OCR: missing CoordinateResolver");
-        return None;
-    };
-    if exec.deps.capturer.is_none() {
-        exec.log(action_id, "OCR: missing ScreenCapturer");
-        return None;
-    }
     let Some(ocr) = exec.deps.ocr else {
         exec.log(action_id, "OCR: missing OcrEngine");
         return None;
     };
 
-    let (lx, ty, rx, by) = match resolver.resolve_search_area(params.search_area, macro_) {
-        Ok(v) => v,
-        Err(e) => {
+    let (rgb, origin) = capture_search_buf(
+        exec,
+        action_id,
+        "OCR",
+        params.search_area,
+        macro_,
+        |exec, lx, ty, rx, by| {
             exec.log(
                 action_id,
                 format!(
-                    "OCR: resolve search area {}: {e}",
+                    "{} OCR search | {} in X1:{lx} Y1:{ty} X2:{rx} Y2:{by}",
+                    params.target,
                     params.search_area.display_label()
                 ),
             );
-            return None;
-        }
-    };
-    exec.log(
-        action_id,
-        format!(
-            "{} OCR search | {} in X1:{lx} Y1:{ty} X2:{rx} Y2:{by}",
-            params.target,
-            params.search_area.display_label()
-        ),
-    );
-
-    let capture_started = Instant::now();
-    let (img, origin) = match exec
-        .deps
-        .capturer
-        .as_mut()
-        .unwrap()
-        .capture_search_area_rgb(lx, ty, rx, by)
-    {
-        Ok(v) => v,
-        Err(e) => {
-            exec.log(action_id, format!("OCR: capture: {e}"));
-            return None;
-        }
-    };
-    exec.log_timing(action_id, "capture", capture_started.elapsed());
+        },
+    )?;
     let search_center_x = origin.x + origin.w / 2;
     let search_center_y = origin.y + origin.h / 2;
-    let rgb = img.into_image_buf();
     exec.log_image(action_id, "Capture (raw)", &rgb);
     let opts = sqyre_vision::OcrPreprocessOptions::from_action_fields(
         params.grayscale,
@@ -258,16 +231,18 @@ fn run_ocr_once(
         action_id,
         format!("OCR words found: {}", recognized.words.len()),
     );
-    for (i, w) in recognized.words.iter().enumerate() {
-        let ww = (w.right - w.left).max(0);
-        let wh = (w.bottom - w.top).max(0);
-        exec.log(
-            action_id,
-            format!(
-                "  word[{i}] {:?} box=({},{})-({},{}) size={ww}×{wh}",
-                w.word, w.left, w.top, w.right, w.bottom
-            ),
-        );
+    if collect {
+        for (i, w) in recognized.words.iter().enumerate() {
+            let ww = (w.right - w.left).max(0);
+            let wh = (w.bottom - w.top).max(0);
+            exec.log(
+                action_id,
+                format!(
+                    "  word[{i}] {:?} box=({},{})-({},{}) size={ww}×{wh}",
+                    w.word, w.left, w.top, w.right, w.bottom
+                ),
+            );
+        }
     }
 
     if collect && !recognized.words.is_empty() {
@@ -319,16 +294,26 @@ fn run_ocr_once(
                 Vec::new()
             }
         } else {
-            for (bx, by) in &occurrences {
-                let sx = origin.x + (*bx as f64 / resize_scale) as i32;
-                let sy = origin.y + (*by as f64 / resize_scale) as i32;
-                exec.log(
-                    action_id,
-                    format!(
-                        "OCR target {:?} matched at image ({bx}, {by}) → screen ({sx}, {sy}) (scale={resize_scale:.3})",
-                        params.target
-                    ),
-                );
+            exec.log(
+                action_id,
+                format!(
+                    "OCR target {:?} matched {} occurrence(s)",
+                    params.target,
+                    occurrences.len()
+                ),
+            );
+            if collect {
+                for (bx, by) in &occurrences {
+                    let sx = origin.x + (*bx as f64 / resize_scale) as i32;
+                    let sy = origin.y + (*by as f64 / resize_scale) as i32;
+                    exec.log(
+                        action_id,
+                        format!(
+                            "OCR target {:?} matched at image ({bx}, {by}) → screen ({sx}, {sy}) (scale={resize_scale:.3})",
+                            params.target
+                        ),
+                    );
+                }
             }
             occurrences
                 .into_iter()

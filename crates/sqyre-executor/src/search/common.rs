@@ -1,13 +1,86 @@
 //! Helpers shared across the image search, OCR, and find-pixel implementations.
 
-use crate::backends::ItemMeta;
+use crate::backends::{DesktopRect, ItemMeta};
 use crate::error::{ExecError, FlowSignal, Result};
 use crate::highlight::{highlight_clear, highlight_fill};
 use crate::run::{run_children, Executor};
 use sqyre_domain::{
-    Action, ActionId, CoordinateOutputs, Macro, MatchOrder, ScalarValue, WaitTilFoundConfig,
+    Action, ActionId, CoordinateOutputs, CoordinateRef, Macro, MatchOrder, ScalarValue,
+    WaitTilFoundConfig,
 };
+use sqyre_match::{ImageBuf, DEFAULT_CLOSE_MATCHES_DISTANCE};
+use sqyre_vision::rgb_capture_to_image_buf;
 use std::time::{Duration, Instant};
+
+/// Spatial dedup distance for match/pixel peaks, falling back to the library default
+/// when the configured value is `0`. Shared by Image Search and Find Pixel.
+pub(super) fn close_matches_distance(exec: &Executor<'_>) -> i32 {
+    let d = exec.deps.close_matches_distance;
+    if d > 0 {
+        d
+    } else {
+        DEFAULT_CLOSE_MATCHES_DISTANCE
+    }
+}
+
+/// Resolve the search area, capture it, and convert to an [`ImageBuf`] — the shared
+/// resolve→capture→convert preamble used by Image Search, OCR, and Find Pixel.
+///
+/// Missing resolver/capturer deps, resolve failures, and capture failures are logged
+/// with `label` and treated as a miss (`None`) so the shared wait/repeat shell in
+/// [`run_detection_shell`] can retry instead of aborting the macro.
+///
+/// `on_resolved` runs after a successful resolve but before capture, so callers can
+/// log action-specific detail (e.g. targets, dimensions) using the resolved rect.
+pub(super) fn capture_search_buf(
+    exec: &mut Executor<'_>,
+    action_id: ActionId,
+    label: &str,
+    search_area: &CoordinateRef,
+    macro_: &Macro,
+    on_resolved: impl FnOnce(&mut Executor<'_>, i32, i32, i32, i32),
+) -> Option<(ImageBuf, DesktopRect)> {
+    let Some(resolver) = exec.deps.resolver else {
+        exec.log(action_id, format!("{label}: missing CoordinateResolver"));
+        return None;
+    };
+    if exec.deps.capturer.is_none() {
+        exec.log(action_id, format!("{label}: missing ScreenCapturer"));
+        return None;
+    }
+
+    let (lx, ty, rx, by) = match resolver.resolve_search_area(search_area, macro_) {
+        Ok(v) => v,
+        Err(e) => {
+            exec.log(
+                action_id,
+                format!(
+                    "{label}: resolve search area {}: {e}",
+                    search_area.display_label()
+                ),
+            );
+            return None;
+        }
+    };
+    on_resolved(exec, lx, ty, rx, by);
+
+    let capture_started = Instant::now();
+    let (img, origin) = match exec
+        .deps
+        .capturer
+        .as_mut()
+        .expect("checked Some above")
+        .capture_search_area_rgb(lx, ty, rx, by)
+    {
+        Ok(v) => v,
+        Err(e) => {
+            exec.log(action_id, format!("{label}: capture: {e}"));
+            return None;
+        }
+    };
+    exec.log_timing(action_id, "capture", capture_started.elapsed());
+    Some((rgb_capture_to_image_buf(img), origin))
+}
 
 pub(super) fn run_children_flow(
     exec: &mut Executor<'_>,

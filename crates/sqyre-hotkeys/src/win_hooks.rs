@@ -28,7 +28,7 @@ struct HookCtx {
     continue_wait: ContinueWaitBridge,
     screen_click: ScreenClickBridge,
     macro_hotkeys: MacroHotkeyBridge,
-    pressed: HashSet<String>,
+    pressed: HashSet<&'static str>,
 }
 
 static CTX: Mutex<Option<HookCtx>> = Mutex::new(None);
@@ -224,9 +224,9 @@ fn handle_keyboard(wparam: WPARAM, lparam: LPARAM) {
     }
 
     if is_press {
-        ctx.pressed.insert(name.clone());
+        ctx.pressed.insert(name);
     } else {
-        ctx.pressed.remove(&name);
+        ctx.pressed.remove(name);
     }
 
     ctx.continue_wait.on_pressed_keys(&ctx.pressed);
@@ -275,11 +275,11 @@ mod tests {
 
     #[test]
     fn vk_map_matches_sqyre_names() {
-        assert_eq!(vk_key_name(0x1B, false).as_deref(), Some("esc"));
-        assert_eq!(vk_key_name(0xA2, false).as_deref(), Some("ctrl"));
-        assert_eq!(vk_key_name(0xA0, false).as_deref(), Some("shift"));
-        assert_eq!(vk_key_name(0x41, false).as_deref(), Some("a"));
-        assert_eq!(vk_key_name(0x0D, false).as_deref(), Some("enter"));
-        assert_eq!(vk_key_name(0x0D, true).as_deref(), Some("num_enter"));
+        assert_eq!(vk_key_name(0x1B, false), Some("esc"));
+        assert_eq!(vk_key_name(0xA2, false), Some("ctrl"));
+        assert_eq!(vk_key_name(0xA0, false), Some("shift"));
+        assert_eq!(vk_key_name(0x41, false), Some("a"));
+        assert_eq!(vk_key_name(0x0D, false), Some("enter"));
+        assert_eq!(vk_key_name(0x0D, true), Some("num_enter"));
     }
 }

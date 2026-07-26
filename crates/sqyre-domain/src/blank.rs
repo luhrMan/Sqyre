@@ -2,7 +2,7 @@
 
 use crate::{
     action_type_table, Action, ActionId, ActionKind, ConditionBlock, CoordinateRef,
-    DetectionBranch, ListColumn, LoopJumpMode, PressState, ScalarValue, TemplateMatchMethod,
+    DetectionBranch, ListColumn, LoopJumpMode, MatchMethod, PressState, ScalarValue,
     VariableAssignment, DEFAULT_SMOOTH_DELAY_MS, DEFAULT_SMOOTH_HIGH, DEFAULT_SMOOTH_LOW,
 };
 
@@ -118,7 +118,7 @@ pub(crate) fn blank_kind(action_type: &str) -> Option<ActionKind> {
             search_area: CoordinateRef::default(),
             tolerance: 0.95,
             blur: 5,
-            match_method: TemplateMatchMethod::CcoeffNormed,
+            match_method: MatchMethod::CcoeffNormed,
             detection: DetectionBranch::default(),
         },
         "ocr" => ActionKind::Ocr {

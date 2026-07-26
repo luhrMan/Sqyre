@@ -13,6 +13,7 @@ pulp = { workspace = true }
 purecv = { workspace = true }
 rayon = { workspace = true }
 rustfft = { workspace = true }
+serde = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]

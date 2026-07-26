@@ -1,10 +1,13 @@
 //! Find-pixel action.
 
-use super::common::{apply_detection_hits, run_detection_shell, sort_hits, DetectionHit};
+use super::common::{
+    apply_detection_hits, capture_search_buf, close_matches_distance, run_detection_shell,
+    sort_hits, DetectionHit,
+};
 use crate::error::{ExecError, Result};
 use crate::run::Executor;
 use sqyre_domain::{Action, ActionKind, Macro, MatchOrder};
-use sqyre_match::{cluster_points, DEFAULT_CLOSE_MATCHES_DISTANCE};
+use sqyre_match::cluster_points;
 use sqyre_vision::find_pixels;
 use std::time::Instant;
 
@@ -89,15 +92,6 @@ pub(crate) fn execute_find_pixel(
     )
 }
 
-fn close_matches_distance(exec: &Executor<'_>) -> i32 {
-    let d = exec.deps.close_matches_distance;
-    if d > 0 {
-        d
-    } else {
-        DEFAULT_CLOSE_MATCHES_DISTANCE
-    }
-}
-
 fn try_find_pixels(
     exec: &mut Executor<'_>,
     action_id: sqyre_domain::ActionId,
@@ -107,38 +101,17 @@ fn try_find_pixels(
     order: &MatchOrder,
     macro_: &Macro,
 ) -> Vec<DetectionHit> {
-    let Some(resolver) = exec.deps.resolver else {
-        exec.log(action_id, "FindPixel: missing CoordinateResolver");
+    let Some((buf, origin)) = capture_search_buf(
+        exec,
+        action_id,
+        "FindPixel",
+        search_area,
+        macro_,
+        |_, _, _, _, _| {},
+    ) else {
         return Vec::new();
     };
-    let Some(capturer) = exec.deps.capturer.as_mut() else {
-        exec.log(action_id, "FindPixel: missing ScreenCapturer");
-        return Vec::new();
-    };
-    let (lx, ty, rx, by) = match resolver.resolve_search_area(search_area, macro_) {
-        Ok(v) => v,
-        Err(e) => {
-            exec.log(
-                action_id,
-                format!(
-                    "FindPixel: resolve search area {}: {e}",
-                    search_area.display_label()
-                ),
-            );
-            return Vec::new();
-        }
-    };
-    let capture_started = Instant::now();
-    let (img, origin) = match capturer.capture_search_area_rgb(lx, ty, rx, by) {
-        Ok(v) => v,
-        Err(e) => {
-            exec.log(action_id, format!("FindPixel: capture: {e}"));
-            return Vec::new();
-        }
-    };
-    exec.log_timing(action_id, "capture", capture_started.elapsed());
     let scan_started = Instant::now();
-    let buf = img.into_image_buf();
     let locals = find_pixels(&buf, target_color, color_tolerance);
     let clustered = cluster_points(&locals, close_matches_distance(exec));
     exec.log_timing(action_id, "scan", scan_started.elapsed());

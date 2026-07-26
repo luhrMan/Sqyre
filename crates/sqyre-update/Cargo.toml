@@ -10,12 +10,14 @@ workspace = true
 
 [dependencies]
 serde = { workspace = true }
-serde_json = "1"
+serde_json = { workspace = true }
+sha2 = "0.10"
 thiserror = { workspace = true }
 tempfile = { workspace = true }
 zip = { workspace = true }
 # Blocking HTTPS with rustls+ring (MinGW-friendly; avoids aws-lc-sys).
 ureq = { version = "3", default-features = false, features = ["rustls"] }
+ed25519-dalek = { version = "2", features = ["rand_core"] }
 
 [dev-dependencies]
 tempfile = { workspace = true }
