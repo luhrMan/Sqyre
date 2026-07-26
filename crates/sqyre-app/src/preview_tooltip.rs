@@ -498,7 +498,9 @@ fn ref_preview_spec(
     let macro_ = Macro::new("", 0, vec![]);
     match kind {
         PreviewKind::Point => {
-            let (x, y) = catalog.resolve_point(coord_ref, &macro_)?;
+            let (x, y) = catalog
+                .resolve_point(coord_ref, &macro_)
+                .map_err(|e| e.to_string())?;
             let coords = PreviewCoords::Point { x, y };
             Ok((
                 cache_key_ref(coord_ref, coords),
@@ -507,7 +509,9 @@ fn ref_preview_spec(
             ))
         }
         PreviewKind::SearchArea => {
-            let (left, top, right, bottom) = catalog.resolve_search_area(coord_ref, &macro_)?;
+            let (left, top, right, bottom) = catalog
+                .resolve_search_area(coord_ref, &macro_)
+                .map_err(|e| e.to_string())?;
             let coords = PreviewCoords::SearchArea {
                 left,
                 top,
