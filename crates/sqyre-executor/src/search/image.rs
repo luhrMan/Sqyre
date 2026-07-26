@@ -12,10 +12,13 @@ use crate::run::Executor;
 use rayon::prelude::*;
 use sqyre_domain::{Action, ActionKind, Macro, MatchOrder};
 use sqyre_match::{
-    blur_image_owned, find_template_matches_preblurred_with_integrals, prepare_search_integrals,
+    blur_image_owned, find_template_matches_preblurred_with_prepared, prepare_search,
     search_blur_kernel, ImageBuf, MatchMethod, Point,
 };
-use sqyre_vision::{get_cached_blurred_template, get_cached_image_mask, load_rgb_image};
+use sqyre_vision::{
+    get_cached_blurred_template, get_cached_image_mask, get_cached_prepared_template,
+    load_rgb_image,
+};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -242,7 +245,7 @@ fn capture_and_match(
     let close_dist = close_matches_distance(exec);
     let match_started = Instant::now();
     let stop_flag: Option<&AtomicBool> = exec.deps.stop_flag;
-    let search_integrals = std::sync::Arc::new(prepare_search_integrals(&search_blurred));
+    let search_prep = Arc::new(prepare_search(&search_blurred));
     let method = match_method;
 
     let outcomes: Vec<VariantMatchOutcome> = jobs
@@ -291,16 +294,27 @@ fn capture_and_match(
             };
 
             let t0 = Instant::now();
-            let matches = find_template_matches_preblurred_with_integrals(
-                &search_blurred,
+            let matches = get_cached_prepared_template(
+                &job.path,
+                kernel,
                 template_blurred.as_ref(),
+                job.mask_path.as_deref(),
                 mask_bytes.as_deref().map(|m| m.as_slice()),
-                threshold,
-                close_dist,
                 method,
-                Some(search_integrals.as_ref()),
             )
-            .map_err(SearchError::from);
+            .map_err(|e| SearchError::Template(format!("prepare {:?}: {e}", job.path)))
+            .and_then(|prepared| {
+                find_template_matches_preblurred_with_prepared(
+                    &search_blurred,
+                    template_blurred.as_ref(),
+                    &prepared,
+                    threshold,
+                    close_dist,
+                    method,
+                    Some(search_prep.as_ref()),
+                )
+                .map_err(SearchError::from)
+            });
             let match_ms = t0.elapsed().as_secs_f64() * 1000.0;
 
             VariantMatchOutcome {
