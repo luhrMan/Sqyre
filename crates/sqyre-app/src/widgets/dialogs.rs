@@ -75,3 +75,20 @@ pub fn confirm_cancel_row(ui: &mut egui::Ui) -> ConfirmCancel {
     }
     out
 }
+
+/// Centered, non-resizable popup chrome shared by delete/overwrite confirm prompts.
+///
+/// Runs `body` inside the window and returns `false` once the user has closed
+/// it via the titlebar close control (callers should clear their pending-confirm
+/// state in that case, same as an explicit Cancel).
+pub fn confirm_window(ctx: &egui::Context, title: &str, body: impl FnOnce(&mut egui::Ui)) -> bool {
+    let mut open = true;
+    egui::Window::new(title)
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .order(egui::Order::Foreground)
+        .open(&mut open)
+        .show(ctx, body);
+    open
+}

@@ -351,7 +351,7 @@ fn paint_item_icon_tooltip(
                     continue;
                 };
                 let [tw, th] = tex.size();
-                let size = fit_thumb(tw as f32, th as f32, VARIANT_TIP_THUMB);
+                let size = image_view::fit_in_box(tw as f32, th as f32, VARIANT_TIP_THUMB, VARIANT_TIP_THUMB);
                 ui.add(
                     egui::Image::new((tex.id(), size))
                         .fit_to_exact_size(size)
@@ -422,7 +422,7 @@ pub fn icon_grid_cell_ex(
 
     let tex = icons.for_target_or_fallback(ui.ctx(), catalog, target);
     let [tw, th] = tex.size();
-    let size = fit_thumb(tw as f32, th as f32, thumb);
+    let size = image_view::fit_in_box(tw as f32, th as f32, thumb, thumb);
     let img_rect = egui::Rect::from_center_size(body.center(), size);
     // Paint directly — avoid `ui.put(Image)` which can advance the wrap cursor.
     ui.painter().image(
@@ -462,13 +462,6 @@ pub fn icon_grid_cell_ex(
     attach_item_icon_tooltip(&resp, catalog, icons, target);
 
     (resp.clicked() && !remove_clicked, remove_clicked)
-}
-
-fn fit_thumb(w: f32, h: f32, max: f32) -> Vec2 {
-    let w = w.max(1.0);
-    let h = h.max(1.0);
-    let scale = (max / w).min(max / h);
-    Vec2::new(w * scale, h * scale)
 }
 
 /// Lay out `targets` in fixed-size rows (no column stretch, no staircase wrap).
