@@ -158,6 +158,19 @@ mod tests {
     }
 
     #[test]
+    fn looks_like_var_ref_matches_real_expansion_grammar() {
+        // Escaped forms never expand, so they must not look like a var ref.
+        assert!(!looks_like_var_ref("$${foo}"));
+        assert!(!looks_like_var_ref("{{foo}}"));
+        // Non-identifier brace contents never expand either.
+        assert!(!looks_like_var_ref("{0}"));
+        assert!(!looks_like_var_ref("{not-a-var}"));
+        // Mixed plain text + ref is not a *whole-string* ref.
+        assert!(!looks_like_var_ref("prefix ${foo}"));
+        assert!(!looks_like_var_ref("${foo} suffix"));
+    }
+
+    #[test]
     fn split_filters_type_empty_and_splits_extra() {
         let params = vec![
             DisplayParam::new("Type", "move"),
