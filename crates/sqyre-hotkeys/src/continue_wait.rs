@@ -179,8 +179,7 @@ impl ContinueWaitBridge {
                 .iter()
                 .enumerate()
                 .filter(|(_, chord)| {
-                    !chord.is_empty()
-                        && chord.iter().all(|k| g.last_pressed.contains(k.as_str()))
+                    !chord.is_empty() && chord.iter().all(|k| g.last_pressed.contains(k.as_str()))
                 })
                 .map(|(i, _)| i)
                 .collect();

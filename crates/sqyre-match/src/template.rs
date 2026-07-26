@@ -153,7 +153,9 @@ pub fn prepare_template(
     method: MatchMethod,
 ) -> Result<PreparedTemplate, MatchError> {
     let mask_bits = prep_mask(template.width, template.height, mask)?;
-    Ok(prepare_template_from_mask_bits(template, &mask_bits, method))
+    Ok(prepare_template_from_mask_bits(
+        template, &mask_bits, method,
+    ))
 }
 
 /// Like [`match_template`], but reuses a [`PreparedTemplate`] (skips re-packing the

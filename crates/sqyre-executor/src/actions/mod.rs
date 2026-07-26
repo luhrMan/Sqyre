@@ -12,8 +12,8 @@ pub(crate) use window::execute_focus_window;
 
 #[cfg(test)]
 mod tests {
-    use crate::test_support::RecordingBackend;
     use crate::run::{execute_macro, execute_macro_with, ExecDeps};
+    use crate::test_support::RecordingBackend;
     use sqyre_domain::{
         root_loop, Action, ActionId, ActionKind, ConditionClause, ListColumn, LoopJumpMode, Macro,
         ScalarValue, VariableAssignment,

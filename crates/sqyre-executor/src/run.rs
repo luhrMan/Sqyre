@@ -705,8 +705,8 @@ pub(crate) fn resolve_text(text: &str, macro_: &Macro) -> Result<String> {
 mod tests {
     use super::*;
     use crate::backends::DesktopRect;
-    use crate::test_support::{RecordingBackend, RecordingCapturer};
     use crate::test_support::FixedResolver;
+    use crate::test_support::{RecordingBackend, RecordingCapturer};
     use sqyre_domain::{
         root_loop, Action, ActionId, ActionKind, CoordinateRef, ScalarValue, VariableAssignment,
     };

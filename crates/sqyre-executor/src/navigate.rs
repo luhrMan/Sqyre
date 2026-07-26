@@ -547,9 +547,9 @@ fn perform_select(exec: &mut Executor<'_>, select: &NavSelectAction) -> Result<(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::{ImmediateContinueWaiter, RecordingBackend};
     use crate::run::{execute_macro_with, ExecDeps};
     use crate::test_support::{AtlasMemberSpec, FixedCollection, FixedResolver};
+    use crate::test_support::{ImmediateContinueWaiter, RecordingBackend};
     use sqyre_domain::{
         root_loop, ActionId, NavChords, NavInputs, NavOptions, NavOutputs, NavSelectAction,
         NavigateSelectData, PressState,
