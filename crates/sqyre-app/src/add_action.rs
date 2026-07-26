@@ -23,7 +23,7 @@ use sqyre_hotkeys::{MacroHotkeyBridge, ScreenClickBridge};
 use sqyre_persist::ProgramCatalog;
 use sqyre_persist::UserSettings;
 use sqyre_serialize::{action_from_map, action_to_map};
-use sqyre_ui_model::{action_icon_glyph, action_pastel_color, ACTION_PICKER_CATEGORIES};
+use sqyre_ui_model::{action_icon_glyph, action_pastel_color, action_picker_category, ACTION_PICKER_CATEGORIES};
 use sqyre_validate::validate_action;
 use std::collections::HashMap;
 use web_time::{Duration, Instant};
@@ -226,7 +226,7 @@ impl AddActionPicker {
                                     ui.strong(*category);
                                     ui.add_space(4.0);
                                     for tmpl in
-                                        templates.iter().filter(|t| t.category == *category)
+                                        templates.iter().filter(|t| action_picker_category(t.action_type) == *category)
                                     {
                                         let sample = self
                                             .prototype_for(tmpl.action_type)
