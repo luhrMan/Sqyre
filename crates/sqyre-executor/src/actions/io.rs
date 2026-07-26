@@ -15,7 +15,8 @@ pub(crate) fn execute_set_variable(
     macro_: &mut Macro,
 ) -> Result<()> {
     for a in assignments {
-        let scalar = resolve_set_variable_value(&a.value, macro_).map_err(ExecError::Message)?;
+        let scalar =
+            resolve_set_variable_value(&a.value, &macro_.variables).map_err(ExecError::Message)?;
         exec.log(
             action_id,
             format!("Set: {} = {}", a.variable_name, scalar.as_display()),
