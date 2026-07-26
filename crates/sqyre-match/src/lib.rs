@@ -2,6 +2,7 @@
 //! all six `TM_*` methods, optional CV_8U binary mask, peak scan + spatial dedup.
 //!
 //! Blur uses PureCV (`gaussian_blur`, σ=0 → OpenCV ksize formula, `BORDER_REFLECT_101`).
+//! `blur <= 0` means no blur — [`search_blur_kernel`] returns `0` and blurring is skipped.
 
 mod blur;
 mod corr_simd;
@@ -32,6 +33,16 @@ pub fn find_template_matches(
     method: MatchMethod,
 ) -> Result<Vec<Point>, MatchError> {
     let kernel = search_blur_kernel(blur);
+    if kernel <= 0 {
+        return find_template_matches_preblurred(
+            search_blurred,
+            template,
+            mask,
+            threshold,
+            close_matches_distance,
+            method,
+        );
+    }
     let template_blurred = blur_image_owned(template.clone(), kernel)?;
     find_template_matches_preblurred(
         search_blurred,
