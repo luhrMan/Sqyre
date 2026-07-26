@@ -1,5 +1,6 @@
 //! Flow-control actions: While, ForEachRow, Pause.
 
+use crate::backends::PortError;
 use crate::error::{ExecError, FlowSignal, Result};
 use crate::highlight::{highlight_clear, highlight_fill};
 use crate::path_confine::resolve_under_dir;
@@ -190,8 +191,8 @@ pub(crate) fn execute_pause(
             exec.log(action_id, format!("Pause: continued ({key_label})"));
             Ok(())
         }
-        Err(e) if e.contains("stopped") => Err(FlowSignal::Stopped.into()),
-        Err(e) => Err(ExecError::Message(e)),
+        Err(PortError::Stopped) => Err(FlowSignal::Stopped.into()),
+        Err(e) => Err(e.into()),
     }
 }
 
