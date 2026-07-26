@@ -16,6 +16,7 @@ use encode::*;
 use parse::*;
 use serde_yaml::{Mapping, Value};
 use sqyre_domain::{resolve_scalar_int, CoordinateRef, Macro, PROGRAM_DELIMITER};
+use sqyre_ports::PortError;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use util::*;
@@ -139,7 +140,7 @@ impl ProgramCatalog {
         &self,
         r: &CoordinateRef,
         resolution_key: &str,
-    ) -> std::result::Result<&ProgramPoint, String> {
+    ) -> std::result::Result<&ProgramPoint, PortError> {
         Ok(self.lookup_point_sourced(r, resolution_key)?.0)
     }
 
@@ -148,20 +149,22 @@ impl ProgramCatalog {
         &'a self,
         r: &CoordinateRef,
         resolution_key: &str,
-    ) -> std::result::Result<(&'a ProgramPoint, &'a str, &'a ProgramData), String> {
+    ) -> std::result::Result<(&'a ProgramPoint, &'a str, &'a ProgramData), PortError> {
         if r.is_collection() {
-            return Err(format!("point lookup does not accept collection ref {r:?}"));
+            return Err(PortError::invalid(format!(
+                "point lookup does not accept collection ref {r:?}"
+            )));
         }
         let name = r.name();
         if name.is_empty() {
-            return Err("empty point reference".into());
+            return Err(PortError::invalid("empty point reference"));
         }
         if let Some(prog) = r.program() {
             let (pt, src) = point_from(self, prog, name, resolution_key)?;
             let data = self
                 .programs
                 .get(prog)
-                .ok_or_else(|| format!("program {prog:?} not found"))?;
+                .ok_or_else(|| PortError::not_found(format!("program {prog:?} not found")))?;
             return Ok((pt, src, data));
         }
         for prog in self.programs.keys() {
@@ -170,14 +173,14 @@ impl ProgramCatalog {
                 return Ok((pt, src, data));
             }
         }
-        Err(format!("point {name:?} not found"))
+        Err(PortError::not_found(format!("point {name:?} not found")))
     }
 
     pub fn lookup_search_area(
         &self,
         r: &CoordinateRef,
         resolution_key: &str,
-    ) -> std::result::Result<&ProgramSearchArea, String> {
+    ) -> std::result::Result<&ProgramSearchArea, PortError> {
         Ok(self.lookup_search_area_sourced(r, resolution_key)?.0)
     }
 
@@ -185,22 +188,22 @@ impl ProgramCatalog {
         &'a self,
         r: &CoordinateRef,
         resolution_key: &str,
-    ) -> std::result::Result<(&'a ProgramSearchArea, &'a str, &'a ProgramData), String> {
+    ) -> std::result::Result<(&'a ProgramSearchArea, &'a str, &'a ProgramData), PortError> {
         if r.is_collection() {
-            return Err(format!(
+            return Err(PortError::invalid(format!(
                 "search area lookup does not accept collection ref {r:?}"
-            ));
+            )));
         }
         let name = r.name();
         if name.is_empty() {
-            return Err("empty search area reference".into());
+            return Err(PortError::invalid("empty search area reference"));
         }
         if let Some(prog) = r.program() {
             let (sa, src) = search_area_from(self, prog, name, resolution_key)?;
             let data = self
                 .programs
                 .get(prog)
-                .ok_or_else(|| format!("program {prog:?} not found"))?;
+                .ok_or_else(|| PortError::not_found(format!("program {prog:?} not found")))?;
             return Ok((sa, src, data));
         }
         for prog in self.programs.keys() {
@@ -209,16 +212,18 @@ impl ProgramCatalog {
                 return Ok((sa, src, data));
             }
         }
-        Err(format!("search area {name:?} not found"))
+        Err(PortError::not_found(format!(
+            "search area {name:?} not found"
+        )))
     }
 
     pub fn lookup_collection(
         &self,
         r: &CoordinateRef,
-    ) -> std::result::Result<&ProgramCollection, String> {
+    ) -> std::result::Result<&ProgramCollection, PortError> {
         let name = r.name();
         if name.is_empty() {
-            return Err("empty collection reference".into());
+            return Err(PortError::invalid("empty collection reference"));
         }
         if let Some(prog) = r.program() {
             return collection_from(self, prog, name);
@@ -228,24 +233,26 @@ impl ProgramCatalog {
                 return Ok(c);
             }
         }
-        Err(format!("collection {name:?} not found"))
+        Err(PortError::not_found(format!(
+            "collection {name:?} not found"
+        )))
     }
 
     pub fn resolve_point(
         &self,
         r: &CoordinateRef,
         macro_: &Macro,
-    ) -> std::result::Result<(i32, i32), String> {
+    ) -> std::result::Result<(i32, i32), PortError> {
         if r.is_collection() {
             let (lx, ty, rx, by) = self.resolve_search_area(r, macro_)?;
             return Ok(((lx + rx) / 2, (ty + by) / 2));
         }
         let key = self.resolution_key().to_string();
         let (pt, src_key, data) = self.lookup_point_sourced(r, &key)?;
-        let x =
-            resolve_scalar_int(&pt.x, &macro_.variables).map_err(|e| format!("point X: {e}"))?;
-        let y =
-            resolve_scalar_int(&pt.y, &macro_.variables).map_err(|e| format!("point Y: {e}"))?;
+        let x = resolve_scalar_int(&pt.x, &macro_.variables)
+            .map_err(|e| PortError::invalid(format!("point X: {e}")))?;
+        let y = resolve_scalar_int(&pt.y, &macro_.variables)
+            .map_err(|e| PortError::invalid(format!("point Y: {e}")))?;
         self.remap_xy(x, y, src_key, data)
     }
 
@@ -253,16 +260,16 @@ impl ProgramCatalog {
         &self,
         r: &CoordinateRef,
         macro_: &Macro,
-    ) -> std::result::Result<(i32, i32, i32, i32), String> {
+    ) -> std::result::Result<(i32, i32, i32, i32), PortError> {
         if let Some((r1, c1, r2, c2)) = r.cell_range() {
             return self.resolve_collection_cells(r, macro_, r1, c1, r2, c2);
         }
         let key = self.resolution_key().to_string();
         let (sa, src_key, data) = self.lookup_search_area_sourced(r, &key)?;
-        let lx = resolve_scalar_int(&sa.left_x, &macro_.variables)?;
-        let ty = resolve_scalar_int(&sa.top_y, &macro_.variables)?;
-        let rx = resolve_scalar_int(&sa.right_x, &macro_.variables)?;
-        let by = resolve_scalar_int(&sa.bottom_y, &macro_.variables)?;
+        let lx = resolve_scalar_int(&sa.left_x, &macro_.variables).map_err(PortError::invalid)?;
+        let ty = resolve_scalar_int(&sa.top_y, &macro_.variables).map_err(PortError::invalid)?;
+        let rx = resolve_scalar_int(&sa.right_x, &macro_.variables).map_err(PortError::invalid)?;
+        let by = resolve_scalar_int(&sa.bottom_y, &macro_.variables).map_err(PortError::invalid)?;
         let (lx, ty) = self.remap_xy(lx, ty, src_key, data)?;
         let (rx, by) = self.remap_xy(rx, by, src_key, data)?;
         Ok((lx, ty, rx, by))
@@ -274,7 +281,7 @@ impl ProgramCatalog {
         y: i32,
         src_key: &str,
         data: &ProgramData,
-    ) -> std::result::Result<(i32, i32), String> {
+    ) -> std::result::Result<(i32, i32), PortError> {
         let rt_key = self.resolution_key();
         if rt_key.is_empty() {
             return Ok((x, y));
@@ -297,10 +304,13 @@ impl ProgramCatalog {
         c1: i32,
         r2: i32,
         c2: i32,
-    ) -> std::result::Result<(i32, i32, i32, i32), String> {
+    ) -> std::result::Result<(i32, i32, i32, i32), PortError> {
         let col = self.lookup_collection(r)?;
         if col.search_area.is_empty() {
-            return Err(format!("collection {:?} has no search area", col.name));
+            return Err(PortError::invalid(format!(
+                "collection {:?} has no search area",
+                col.name
+            )));
         }
         let sa_ref = match r.program() {
             Some(prog) => CoordinateRef(format!("{prog}{PROGRAM_DELIMITER}{}", col.search_area)),
@@ -685,14 +695,14 @@ impl ProgramCatalog {
         &self,
         program: &str,
         name: &str,
-    ) -> std::result::Result<&ProgramAtlas, String> {
+    ) -> std::result::Result<&ProgramAtlas, PortError> {
         let p = self
             .programs
             .get(program)
-            .ok_or_else(|| format!("program {program:?} not found"))?;
+            .ok_or_else(|| PortError::not_found(format!("program {program:?} not found")))?;
         p.atlases
             .get(name)
-            .ok_or_else(|| format!("atlas {name:?} not in {program}"))
+            .ok_or_else(|| PortError::not_found(format!("atlas {name:?} not in {program}")))
     }
 
     fn program_mut(&mut self, name: &str) -> Result<&mut ProgramData> {
