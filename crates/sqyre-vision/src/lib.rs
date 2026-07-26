@@ -18,7 +18,7 @@ pub use ocr_boxes::{
     OcrRecognition, OcrWordBox,
 };
 #[cfg(not(target_arch = "wasm32"))]
-pub use ocr_engine::{recognize_image, LeptessOcr};
+pub use ocr_engine::{ensure_english_tessdata, recognize_image, LeptessOcr};
 pub use ocr_preprocess::{
     preprocess_for_ocr, preprocess_for_ocr_with_steps, OcrPreprocessOptions, OcrPreprocessStep,
 };

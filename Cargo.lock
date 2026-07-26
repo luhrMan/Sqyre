@@ -4475,6 +4475,7 @@ dependencies = [
 name = "sqyre-vision"
 version = "0.1.0"
 dependencies = [
+ "dirs",
  "image",
  "leptess",
  "parking_lot",
@@ -4484,6 +4485,7 @@ dependencies = [
  "sqyre-match",
  "sqyre-ports",
  "tempfile",
+ "ureq",
 ]
 
 [[package]]
