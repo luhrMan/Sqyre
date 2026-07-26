@@ -30,7 +30,15 @@ pub struct Executor<'a> {
     held_keys: BTreeSet<String>,
     /// Mouse buttons still held from down/hold (released on run end).
     held_buttons: BTreeSet<String>,
+    /// Nested [`ActionKind::RunMacro`] call stack (includes the top-level macro name).
+    pub(crate) run_macro_stack: Vec<String>,
 }
+
+/// Hard default for nested RunMacro depth when callers omit a custom budget.
+pub const DEFAULT_RUN_MACRO_MAX_DEPTH: usize = 32;
+
+/// Hard default for While when `max_iterations` ≤ 0 and callers omit a custom budget.
+pub const DEFAULT_WHILE_MAX_ITERATIONS: i32 = 100_000;
 
 impl<'a> Executor<'a> {
     pub fn new(automation: &'a mut dyn AutomationBackend) -> Self {
@@ -39,41 +47,30 @@ impl<'a> Executor<'a> {
             stop_requested: false,
             held_keys: BTreeSet::new(),
             held_buttons: BTreeSet::new(),
+            run_macro_stack: Vec::new(),
         }
     }
 
     pub(crate) fn input_click_down(&mut self, button: &str) -> Result<()> {
-        self.deps
-            .automation
-            .click(button, true)
-            .map_err(ExecError::Message)?;
+        self.deps.automation.click(button, true)?;
         self.held_buttons.insert(button.to_string());
         Ok(())
     }
 
     pub(crate) fn input_click_up(&mut self, button: &str) -> Result<()> {
-        self.deps
-            .automation
-            .click(button, false)
-            .map_err(ExecError::Message)?;
+        self.deps.automation.click(button, false)?;
         self.held_buttons.remove(button);
         Ok(())
     }
 
     pub(crate) fn input_key_down(&mut self, key: &str) -> Result<()> {
-        self.deps
-            .automation
-            .key_down(key)
-            .map_err(ExecError::Message)?;
+        self.deps.automation.key_down(key)?;
         self.held_keys.insert(key.to_string());
         Ok(())
     }
 
     pub(crate) fn input_key_up(&mut self, key: &str) -> Result<()> {
-        self.deps
-            .automation
-            .key_up(key)
-            .map_err(ExecError::Message)?;
+        self.deps.automation.key_up(key)?;
         self.held_keys.remove(key);
         Ok(())
     }
@@ -192,6 +189,10 @@ pub struct ExecDeps<'a> {
     pub close_matches_distance: i32,
     /// Release keys/buttons still held when the macro ends (success, stop, or error).
     pub release_held_inputs: bool,
+    /// Safety budget for While actions with `max_iterations` ≤ 0.
+    pub while_max_iterations: i32,
+    /// Max nested RunMacro depth (including the top-level macro).
+    pub run_macro_max_depth: usize,
     pub resolver: Option<&'a dyn CoordinateResolver>,
     pub icons: Option<&'a dyn IconStore>,
     pub macros: Option<&'a dyn MacroLookup>,
@@ -213,6 +214,8 @@ impl<'a> ExecDeps<'a> {
             capturer: None,
             close_matches_distance: 0,
             release_held_inputs: true,
+            while_max_iterations: DEFAULT_WHILE_MAX_ITERATIONS,
+            run_macro_max_depth: DEFAULT_RUN_MACRO_MAX_DEPTH,
             resolver: None,
             icons: None,
             macros: None,
@@ -295,6 +298,7 @@ pub fn execute_macro_with(macro_: &mut Macro, deps: ExecDeps<'_>) -> Result<()> 
         stop_requested: false,
         held_keys: BTreeSet::new(),
         held_buttons: BTreeSet::new(),
+        run_macro_stack: vec![macro_.name.clone()],
     };
     macro_.init_runtime_variables();
     let monitor_sizes = match exec.deps.capturer.as_mut() {
@@ -455,7 +459,7 @@ fn dispatch(exec: &mut Executor<'_>, action: &Action, macro_: &mut Macro) -> Res
         ActionKind::Click { button, state } => {
             if *button == MouseButton::Scroll {
                 let up = matches!(*state, PressState::Up);
-                exec.deps.automation.scroll(up).map_err(ExecError::Message)
+                exec.deps.automation.scroll(up).map_err(ExecError::from)
             } else {
                 match *state {
                     PressState::Down => exec.input_click_down(button.as_str()),
@@ -690,18 +694,19 @@ fn compare_ordered(left: &str, right: &str, op: &str) -> bool {
 }
 
 pub(crate) fn resolve_int(v: &ScalarValue, macro_: &Macro) -> Result<i32> {
-    resolve_scalar_int(v, macro_).map_err(ExecError::Message)
+    resolve_scalar_int(v, &macro_.variables).map_err(ExecError::Message)
 }
 
 pub(crate) fn resolve_text(text: &str, macro_: &Macro) -> Result<String> {
-    sqyre_domain::expand_variable_refs(text, macro_).map_err(ExecError::Message)
+    sqyre_domain::expand_variable_refs(text, &macro_.variables).map_err(ExecError::Message)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::backends::{DesktopRect, RecordingBackend, RecordingCapturer};
+    use crate::backends::DesktopRect;
     use crate::test_support::FixedResolver;
+    use crate::test_support::{RecordingBackend, RecordingCapturer};
     use sqyre_domain::{
         root_loop, Action, ActionId, ActionKind, CoordinateRef, ScalarValue, VariableAssignment,
     };
@@ -774,6 +779,8 @@ mod tests {
                 capturer: Some(&mut capturer),
                 close_matches_distance: 0,
                 release_held_inputs: true,
+                while_max_iterations: DEFAULT_WHILE_MAX_ITERATIONS,
+                run_macro_max_depth: DEFAULT_RUN_MACRO_MAX_DEPTH,
                 resolver: None,
                 icons: None,
                 macros: None,
@@ -819,6 +826,8 @@ mod tests {
                 capturer: None,
                 close_matches_distance: 0,
                 release_held_inputs: true,
+                while_max_iterations: DEFAULT_WHILE_MAX_ITERATIONS,
+                run_macro_max_depth: DEFAULT_RUN_MACRO_MAX_DEPTH,
                 resolver: None,
                 icons: None,
                 macros: None,
@@ -864,6 +873,8 @@ mod tests {
                 capturer: None,
                 close_matches_distance: 0,
                 release_held_inputs: true,
+                while_max_iterations: DEFAULT_WHILE_MAX_ITERATIONS,
+                run_macro_max_depth: DEFAULT_RUN_MACRO_MAX_DEPTH,
                 resolver: None,
                 icons: None,
                 macros: None,
@@ -898,6 +909,7 @@ mod tests {
             stop_requested: false,
             held_keys: BTreeSet::new(),
             held_buttons: BTreeSet::new(),
+            run_macro_stack: Vec::new(),
         };
         let err = exec.interruptible_sleep(1000).unwrap_err();
         assert!(matches!(err, ExecError::Flow(FlowSignal::Stopped)));
@@ -999,6 +1011,8 @@ mod tests {
                 capturer: None,
                 close_matches_distance: 0,
                 release_held_inputs: false,
+                while_max_iterations: DEFAULT_WHILE_MAX_ITERATIONS,
+                run_macro_max_depth: DEFAULT_RUN_MACRO_MAX_DEPTH,
                 resolver: None,
                 icons: None,
                 macros: None,
@@ -1057,6 +1071,8 @@ mod tests {
                 capturer: None,
                 close_matches_distance: 0,
                 release_held_inputs: true,
+                while_max_iterations: DEFAULT_WHILE_MAX_ITERATIONS,
+                run_macro_max_depth: DEFAULT_RUN_MACRO_MAX_DEPTH,
                 resolver: Some(&resolver),
                 icons: None,
                 macros: None,
@@ -1143,6 +1159,8 @@ mod tests {
                 capturer: None,
                 close_matches_distance: 0,
                 release_held_inputs: true,
+                while_max_iterations: DEFAULT_WHILE_MAX_ITERATIONS,
+                run_macro_max_depth: DEFAULT_RUN_MACRO_MAX_DEPTH,
                 resolver: None,
                 icons: None,
                 macros: None,
@@ -1465,6 +1483,8 @@ mod tests {
                 capturer: None,
                 close_matches_distance: 0,
                 release_held_inputs: true,
+                while_max_iterations: DEFAULT_WHILE_MAX_ITERATIONS,
+                run_macro_max_depth: DEFAULT_RUN_MACRO_MAX_DEPTH,
                 resolver: None,
                 icons: None,
                 macros: None,

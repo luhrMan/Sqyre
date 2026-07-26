@@ -2,6 +2,7 @@
 
 use sqyre_domain::{
     collect_known_variable_names, evaluate_expression, Action, ActionKind, Macro, ScalarValue,
+    VariableStore,
 };
 use thiserror::Error;
 
@@ -17,12 +18,46 @@ pub enum ValidateError {
 
 pub type Result<T> = std::result::Result<T, ValidateError>;
 
+/// True when `name` is safe to use as a single path component under a managed directory.
+///
+/// Rejects empty/whitespace names, `.` / `..`, separators, absolute forms, and control chars
+/// so catalog keys cannot escape `images/` via join + `remove_dir_all` / rename.
+pub fn is_safe_fs_entity_name(name: &str) -> bool {
+    validate_entity_name(name).is_ok()
+}
+
 pub fn validate_entity_name(name: &str) -> Result<()> {
-    if name.trim().is_empty() {
-        Err(ValidateError::EmptyName)
-    } else {
-        Ok(())
+    let name = name.trim();
+    if name.is_empty() {
+        return Err(ValidateError::EmptyName);
     }
+    if name == "." || name == ".." {
+        return Err(ValidateError::Message(
+            "name cannot be \".\" or \"..\"".into(),
+        ));
+    }
+    if name.starts_with('/') || name.starts_with('\\') {
+        return Err(ValidateError::Message(
+            "name cannot be an absolute path".into(),
+        ));
+    }
+    // Windows drive / UNC prefixes (`C:`, `\\server`, …).
+    if name.len() >= 2 && name.as_bytes()[1] == b':' {
+        return Err(ValidateError::Message(
+            "name cannot include a drive prefix".into(),
+        ));
+    }
+    if name.contains(['/', '\\', '\0']) {
+        return Err(ValidateError::Message(
+            "name cannot contain path separators or NUL".into(),
+        ));
+    }
+    if name.chars().any(|c| c.is_control()) {
+        return Err(ValidateError::Message(
+            "name cannot contain control characters".into(),
+        ));
+    }
+    Ok(())
 }
 
 pub fn parse_positive_i32(s: &str) -> Result<i32> {
@@ -131,6 +166,11 @@ pub fn validate_variable_name(name: &str) -> Result<()> {
             "must not contain control characters".into(),
         ));
     }
+    if sqyre_domain::is_reserved_runtime_variable_name(name) {
+        return Err(ValidateError::InvalidVariable(format!(
+            "{name:?} is a reserved runtime builtin name"
+        )));
+    }
     Ok(())
 }
 
@@ -209,17 +249,9 @@ fn validate_expression_structure(expr: &str, macro_: Option<&Macro>) -> Result<(
         return Ok(());
     }
 
-    let mut scratch = match macro_ {
-        Some(m) => {
-            let mut scratch = Macro::new(m.name.clone(), m.global_delay, vec![]);
-            scratch.variable_decls = m.variable_decls.clone();
-            scratch.init_runtime_variables();
-            for (name, val) in m.variables.iter() {
-                scratch.variables.set(name, val.clone());
-            }
-            scratch
-        }
-        None => Macro::new(String::new(), 0, vec![]),
+    let mut vars = match macro_ {
+        Some(m) => scratch_variables(m),
+        None => VariableStore::new(),
     };
     // Seed missing refs as 0 so structure (not unknown-var) is what we check.
     for name in sqyre_varref::names(expr) {
@@ -227,12 +259,29 @@ fn validate_expression_structure(expr: &str, macro_: Option<&Macro>) -> Result<(
         if name.is_empty() {
             continue;
         }
-        if scratch.variables.get(name).is_none() {
-            scratch.variables.set(name, ScalarValue::Int(0));
+        if vars.get(name).is_none() {
+            vars.set(name, ScalarValue::Int(0));
         }
     }
-    evaluate_expression(expr, &scratch).map_err(ValidateError::Message)?;
+    evaluate_expression(expr, &vars).map_err(ValidateError::Message)?;
     Ok(())
+}
+
+/// Runtime variables for `macro_`, falling back to declared initial values for any
+/// decl not yet present in its live store (e.g. never-initialized macros).
+fn scratch_variables(macro_: &Macro) -> VariableStore {
+    let mut vars = VariableStore::new();
+    for d in &macro_.variable_decls {
+        let name = d.name.trim();
+        if name.is_empty() || d.initial_value.trim().is_empty() {
+            continue;
+        }
+        vars.set(name, d.initial_stored_value());
+    }
+    for (name, val) in macro_.variables.iter() {
+        vars.set(name, val.clone());
+    }
+    vars
 }
 
 /// Live expression preview for Set-value editing.
@@ -245,13 +294,7 @@ pub fn preview_calculate(expr: &str, macro_: &Macro) -> std::result::Result<Stri
         return Ok(String::new());
     }
 
-    let mut scratch = Macro::new(macro_.name.clone(), macro_.global_delay, vec![]);
-    scratch.variable_decls = macro_.variable_decls.clone();
-    scratch.root = macro_.root.clone();
-    scratch.init_runtime_variables();
-    for (name, val) in macro_.variables.iter() {
-        scratch.variables.set(name, val.clone());
-    }
+    let mut vars = scratch_variables(macro_);
 
     let mut runtime_dependent = false;
     for name in sqyre_varref::names(expr) {
@@ -259,13 +302,13 @@ pub fn preview_calculate(expr: &str, macro_: &Macro) -> std::result::Result<Stri
         if name.is_empty() {
             continue;
         }
-        if scratch.variables.get(name).is_none() {
-            scratch.variables.set(name, ScalarValue::Int(0));
+        if vars.get(name).is_none() {
+            vars.set(name, ScalarValue::Int(0));
             runtime_dependent = true;
         }
     }
 
-    let res = evaluate_expression(expr, &scratch)?;
+    let res = evaluate_expression(expr, &vars)?;
     if runtime_dependent || !unknown_variable_warning(expr, Some(macro_)).is_empty() {
         return Ok("valid (result depends on runtime values)".into());
     }
@@ -451,6 +494,13 @@ pub fn validate_action_tree(action: &Action, macro_: Option<&Macro>) -> Result<(
     Ok(())
 }
 
+/// Validate a macro's name and full action tree (for load / pre-run gates).
+pub fn validate_macro(macro_: &Macro) -> Result<()> {
+    validate_entity_name(&macro_.name)
+        .map_err(|e| ValidateError::Message(format!("macro name {:?}: {e}", macro_.name)))?;
+    validate_action_tree(&macro_.root, Some(macro_))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -459,9 +509,32 @@ mod tests {
     };
 
     #[test]
+    fn entity_name_rejects_path_escape() {
+        assert!(validate_entity_name("Demo").is_ok());
+        assert!(validate_entity_name("").is_err());
+        assert!(validate_entity_name(".").is_err());
+        assert!(validate_entity_name("..").is_err());
+        assert!(validate_entity_name("../etc").is_err());
+        assert!(validate_entity_name("a/b").is_err());
+        assert!(validate_entity_name("a\\b").is_err());
+        assert!(validate_entity_name("/abs").is_err());
+        assert!(validate_entity_name("C:foo").is_err());
+        assert!(validate_entity_name("has\0nul").is_err());
+    }
+
+    #[test]
     fn variable_name_rejects_braces() {
         assert!(validate_variable_name("${x}").is_err());
         assert!(validate_variable_name("ok").is_ok());
+    }
+
+    #[test]
+    fn variable_name_rejects_reserved_builtins() {
+        assert!(validate_variable_name("StackMax").is_err());
+        assert!(validate_variable_name("Row").is_err());
+        assert!(validate_variable_name("monitor1Width").is_err());
+        assert!(validate_variable_name("Monitor12Height").is_err());
+        assert!(validate_variable_name("myStackMax").is_ok());
     }
 
     #[test]

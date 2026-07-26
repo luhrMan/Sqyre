@@ -1,14 +1,15 @@
 //! Macro tree row chrome: icon badge, pastel pills, swatches.
 
 use crate::icon_cache::IconCache;
+use crate::image_view;
 use crate::pickers::attach_item_icon_tooltip;
 use crate::theme::paint_galley_centered;
 use crate::var_pills;
 use eframe::egui::{self, Color32, FontId, Sense, Stroke, Vec2};
-use sqyre_domain::{parse_hex_color, Action, ActionKind};
+use sqyre_domain::{parse_hex_color, Action, ActionId, ActionKind, KnownVariableNames};
 use sqyre_persist::ProgramCatalog;
 use sqyre_ui_model::{action_icon_glyph, action_pastel_color, ActionDisplay, SummaryPill};
-use std::collections::HashSet;
+use std::collections::HashMap;
 
 /// Icon badge edge length.
 const ICON_SIZE: f32 = 18.0;
@@ -188,23 +189,10 @@ fn paint_summary_pill(
     ui: &mut egui::Ui,
     action: &Action,
     pill: &SummaryPill,
-    known: &HashSet<String>,
+    known: &KnownVariableNames,
     is_dark: bool,
 ) -> egui::Response {
     var_pills::paint_summary_pill(ui, action.type_key(), pill, known, is_dark)
-}
-
-/// Fit texture into a max height/width box while keeping the source aspect ratio.
-fn thumb_display_size(tex_w: f32, tex_h: f32) -> Vec2 {
-    let h = tex_h.max(1.0);
-    let w = tex_w.max(1.0);
-    let mut out_h = TARGET_THUMB_MAX_H;
-    let mut out_w = out_h * (w / h);
-    if out_w > TARGET_THUMB_MAX_W {
-        out_w = TARGET_THUMB_MAX_W;
-        out_h = out_w * (h / w);
-    }
-    Vec2::new(out_w, out_h)
 }
 
 fn paint_color_swatch(ui: &mut egui::Ui, hex: &str) -> Option<egui::Response> {
@@ -233,7 +221,8 @@ fn paint_target_thumb(
     let (slot_rect, slot_resp) = ui.allocate_exact_size(slot, Sense::hover());
     if let Some(tex) = icons.for_target(ui.ctx(), catalog, target) {
         let [tw, th] = tex.size();
-        let size = thumb_display_size(tw as f32, th as f32);
+        let size =
+            image_view::fit_in_box(tw as f32, th as f32, TARGET_THUMB_MAX_W, TARGET_THUMB_MAX_H);
         let inner = egui::Rect::from_center_size(slot_rect.center(), size);
         let _ = ui.put(
             inner,
@@ -329,14 +318,17 @@ fn floating_scrollbar_overlay_width(ui: &egui::Ui) -> f32 {
 }
 
 /// Full tree-row label content. Tooltip show/hide is handled by `action_tooltip`.
+#[allow(clippy::too_many_arguments)]
 pub fn paint_action_row(
     ui: &mut egui::Ui,
     action: &Action,
     catalog: &ProgramCatalog,
     icons: &mut IconCache,
-    known_vars: &HashSet<String>,
+    known_vars: &KnownVariableNames,
     is_dark: bool,
     highlight: RowHighlight,
+    pills_cache: &mut HashMap<ActionId, (u64, Vec<SummaryPill>)>,
+    paint_revision: u64,
 ) -> RowInteraction {
     let mut action_click = RowAction::None;
     let mut chrome_hovered = false;
@@ -413,7 +405,22 @@ pub fn paint_action_row(
                     egui::Layout::left_to_right(egui::Align::Center),
                     |ui| {
                         ui.spacing_mut().item_spacing.x = spacing;
-                        for pill in action.tree_summary_pills() {
+                        let pills = {
+                            let rev = paint_revision;
+                            let id = action.id;
+                            let stale = pills_cache
+                                .get(&id)
+                                .map(|(cached_rev, _)| *cached_rev != rev)
+                                .unwrap_or(true);
+                            if stale {
+                                pills_cache.insert(id, (rev, action.tree_summary_pills()));
+                            }
+                            pills_cache
+                                .get(&id)
+                                .map(|(_, p)| p.as_slice())
+                                .unwrap_or(&[])
+                        };
+                        for pill in pills {
                             let resp = ui
                                 .horizontal(|ui| {
                                     if let ActionKind::FocusWindow {
@@ -432,7 +439,7 @@ pub fn paint_action_row(
                                             ui, catalog, icons, &pill.text,
                                         );
                                     }
-                                    paint_summary_pill(ui, action, &pill, known_vars, is_dark);
+                                    paint_summary_pill(ui, action, pill, known_vars, is_dark);
                                 })
                                 .response;
                             extend_drag_handle(&mut drag_handle_rect, resp.rect);
@@ -620,11 +627,11 @@ mod tests {
 
     #[test]
     fn thumb_display_size_preserves_aspect() {
-        let wide = thumb_display_size(64.0, 32.0);
+        let wide = image_view::fit_in_box(64.0, 32.0, TARGET_THUMB_MAX_W, TARGET_THUMB_MAX_H);
         assert!((wide.x / wide.y - 2.0).abs() < 0.01);
         assert!(wide.y <= TARGET_THUMB_MAX_H + 0.01);
 
-        let tall = thumb_display_size(16.0, 32.0);
+        let tall = image_view::fit_in_box(16.0, 32.0, TARGET_THUMB_MAX_W, TARGET_THUMB_MAX_H);
         assert!((tall.x / tall.y - 0.5).abs() < 0.01);
         assert!((tall.y - TARGET_THUMB_MAX_H).abs() < 0.01);
     }
@@ -645,9 +652,11 @@ mod tests {
                 &action,
                 &catalog,
                 &mut icons,
-                &HashSet::new(),
+                &KnownVariableNames::default(),
                 false,
                 RowHighlight::None,
+                &mut HashMap::new(),
+                0,
             );
             assert_eq!(result.action, RowAction::None);
         });
@@ -673,9 +682,11 @@ mod tests {
                     &action,
                     &catalog,
                     &mut icons,
-                    &HashSet::new(),
+                    &KnownVariableNames::default(),
                     false,
                     RowHighlight::None,
+                    &mut HashMap::new(),
+                    0,
                 );
                 assert!(
                     result.drag_handle_rect.width() > 0.0 && result.drag_handle_rect.height() > 0.0,
@@ -713,9 +724,11 @@ mod tests {
                     &find,
                     &catalog,
                     &mut icons,
-                    &HashSet::new(),
+                    &KnownVariableNames::default(),
                     true,
-                    RowHighlight::None
+                    RowHighlight::None,
+                    &mut HashMap::new(),
+                    0,
                 )
                 .action,
                 RowAction::None
@@ -743,9 +756,11 @@ mod tests {
                     &search,
                     &catalog,
                     &mut icons,
-                    &HashSet::new(),
+                    &KnownVariableNames::default(),
                     false,
-                    RowHighlight::None
+                    RowHighlight::None,
+                    &mut HashMap::new(),
+                    0,
                 )
                 .action,
                 RowAction::None
@@ -838,9 +853,11 @@ mod tests {
             &search,
             &ProgramCatalog::default(),
             &mut IconCache::new(),
-            &HashSet::new(),
+            &KnownVariableNames::default(),
             true,
             RowHighlight::None,
+            &mut HashMap::new(),
+            0,
         )
     }
 

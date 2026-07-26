@@ -22,27 +22,28 @@ impl SqyreApp {
             match result {
                 Ok(bytes) => match sqyre_persist::Database::from_yaml_bytes(&bytes) {
                     Ok(mut db) => {
-                        let mut catalog = db.program_catalog().unwrap_or_default();
+                        let mut catalog =
+                            Arc::unwrap_or_clone(db.program_catalog().unwrap_or_default());
                         let _ = crate::catalog::prepare_catalog(&mut catalog, &mut db);
                         let mut macros: Vec<_> = db.macros.values().cloned().collect();
                         macros.sort_by(|a, b| a.name.cmp(&b.name));
-                        self.db = db;
-                        self.catalog = catalog;
-                        self.macros = macros;
-                        self.selected_macro = 0;
+                        self.workspace.db = db;
+                        self.workspace.catalog = catalog;
+                        self.workspace.macros = macros;
+                        self.workspace.selected_macro = 0;
                         self.clear_selected_actions();
-                        self.load_error = None;
-                        self.save_error = None;
-                        *self.run.status.lock() = "Imported db.yaml.".into();
+                        self.workspace.load_error = None;
+                        self.workspace.save_error = None;
+                        *self.run_session.state.status.lock() = "Imported db.yaml.".into();
                         self.refresh_macro_hotkey_bindings();
                     }
                     Err(e) => {
-                        self.load_error = Some(e.to_string());
-                        *self.run.status.lock() = format!("Import failed: {e}");
+                        self.workspace.load_error = Some(e.to_string());
+                        *self.run_session.state.status.lock() = format!("Import failed: {e}");
                     }
                 },
                 Err(e) => {
-                    *self.run.status.lock() = format!("Import failed: {e}");
+                    *self.run_session.state.status.lock() = format!("Import failed: {e}");
                 }
             }
         }
@@ -70,7 +71,7 @@ impl SqyreApp {
 
     #[cfg(target_arch = "wasm32")]
     pub(crate) fn export_db_yaml(&mut self) {
-        match self.db.to_yaml_bytes() {
+        match self.workspace.db.to_yaml_bytes() {
             Ok(bytes) => {
                 let pending = bytes;
                 wasm_bindgen_futures::spawn_local(async move {
@@ -83,11 +84,11 @@ impl SqyreApp {
                         let _ = file.write(&pending).await;
                     }
                 });
-                *self.run.status.lock() = "Export started…".into();
+                *self.run_session.state.status.lock() = "Export started…".into();
             }
             Err(e) => {
-                self.save_error = Some(e.to_string());
-                *self.run.status.lock() = format!("Export failed: {e}");
+                self.workspace.save_error = Some(e.to_string());
+                *self.run_session.state.status.lock() = format!("Export failed: {e}");
             }
         }
     }

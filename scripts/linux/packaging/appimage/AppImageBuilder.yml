@@ -48,7 +48,9 @@ script:
     if [ -n "$eng" ]; then
       cp "$eng" "$TARGET_APPDIR/usr/share/tessdata/"
     else
-      echo "WARNING: eng.traineddata not found; Tesseract OCR will not work in the AppImage" >&2
+      echo "ERROR: eng.traineddata not found; refusing to build AppImage without OCR data" >&2
+      echo "Run: make tessdata   (or ensure /usr/share/tessdata/eng.traineddata exists)" >&2
+      exit 1
     fi
     # Explicitly bundle Tesseract and Leptonica (strace may miss them).
     mkdir -p "$TARGET_APPDIR/usr/lib"

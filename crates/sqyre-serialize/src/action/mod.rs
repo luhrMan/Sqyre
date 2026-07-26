@@ -1,6 +1,6 @@
 //! Encode/decode a single action (and subtree) to/from YAML mappings.
 
-use crate::{Result, SerializeError};
+use crate::{check_yaml_nesting_depth, validate_action_type_keys, Result, SerializeError};
 use serde_yaml::{Mapping, Value};
 use sqyre_domain::{Action, ActionId, ActionKind};
 use uuid::Uuid;
@@ -55,13 +55,10 @@ pub fn action_from_map(raw: &Mapping) -> Result<Action> {
     if type_name.is_empty() {
         return Err(SerializeError::msg("missing field \"type\""));
     }
-    let mut action: Action = serde_yaml::from_value(Value::Mapping(raw.clone())).map_err(|e| {
-        if e.to_string().contains("untagged") || e.to_string().contains("data did not match") {
-            SerializeError::msg(format!("unknown action type {type_name}"))
-        } else {
-            SerializeError::Yaml(e)
-        }
-    })?;
+    let value = Value::Mapping(raw.clone());
+    check_yaml_nesting_depth(&value)?;
+    validate_action_type_keys(&value)?;
+    let mut action: Action = serde_yaml::from_value(value)?;
     action.id = restore_uid(raw, type_name, &action.kind);
     Ok(action)
 }
@@ -263,6 +260,30 @@ mod tests {
                 || err.to_string().contains("notarealaction"),
             "{err}"
         );
+    }
+
+    #[test]
+    fn decode_rejects_deeply_nested_subactions() {
+        use crate::MAX_YAML_NESTING_DEPTH;
+
+        fn nested_loop(depth: usize) -> Mapping {
+            let mut m = Mapping::new();
+            m.insert(Value::String("type".into()), Value::String("loop".into()));
+            m.insert(Value::String("name".into()), Value::String("l".into()));
+            m.insert(Value::String("count".into()), Value::Number(1.into()));
+            if depth > 0 {
+                m.insert(
+                    Value::String("subactions".into()),
+                    Value::Sequence(vec![Value::Mapping(nested_loop(depth - 1))]),
+                );
+            } else {
+                m.insert(Value::String("subactions".into()), Value::Sequence(vec![]));
+            }
+            m
+        }
+        let deeply_nested = nested_loop(MAX_YAML_NESTING_DEPTH + 10);
+        let err = action_from_map(&deeply_nested).unwrap_err();
+        assert!(err.to_string().contains("nesting too deep"), "{err}");
     }
 
     #[test]

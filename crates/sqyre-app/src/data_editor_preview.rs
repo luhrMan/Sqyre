@@ -3,9 +3,8 @@ use crate::image_view::{self, ImageViewTransform};
 use crate::theme;
 use crate::var_pills;
 use eframe::egui;
-use sqyre_domain::PROGRAM_DELIMITER;
+use sqyre_domain::{KnownVariableNames, PROGRAM_DELIMITER};
 use sqyre_validate::EntryValidation;
-use std::collections::HashSet;
 
 pub(crate) fn paint_preview_toolbar(
     ui: &mut egui::Ui,
@@ -70,7 +69,7 @@ pub(crate) fn paint_preview_coord_chip(
     edge: CardinalEdge,
     placeholder: &str,
     value: &mut String,
-    known: &HashSet<String>,
+    known: &KnownVariableNames,
     is_dark: bool,
     validation: &EntryValidation,
     help: &str,
@@ -262,10 +261,7 @@ pub(crate) fn variant_display_label(name: &str) -> &str {
 
 pub(crate) fn fit_thumbnail(w: f32, h: f32) -> egui::Vec2 {
     const MAX: f32 = 96.0;
-    let w = w.max(1.0);
-    let h = h.max(1.0);
-    let scale = (MAX / w).min(MAX / h).min(1.0);
-    egui::vec2(w * scale, h * scale)
+    image_view::fit_in_box_no_upscale(w, h, MAX, MAX)
 }
 
 /// 1px Sqyre yellow border around a Data Editor image preview.

@@ -1,31 +1,27 @@
-//! Typed capture / focus errors (map to `String` at `ScreenCapturer` boundary).
+//! Linux session advisory for X11 capture (typed capture errors live in `sqyre-ports`).
 
-use thiserror::Error;
+pub use sqyre_ports::CaptureError;
 
-#[derive(Debug, Error)]
-pub enum CaptureError {
-    #[error("open display failed (need a graphical session)")]
-    OpenDisplay,
-    #[error("query pointer failed")]
-    QueryPointer,
-    #[error("empty capture rect")]
-    EmptyRect,
-    #[error("capture failed for {x},{y},{w},{h}")]
-    GetImage { x: i32, y: i32, w: i32, h: i32 },
-    #[error("unexpected bits_per_pixel {0}")]
-    BitsPerPixel(i32),
-    #[error("OsCapturer: only display 0 supported for now (got {0})")]
-    UnsupportedDisplay(i32),
-    #[error("GDI: {0}")]
-    Gdi(String),
-    #[error("mutex poisoned: {0}")]
-    Mutex(String),
-    #[error("{0}")]
-    Message(String),
+/// Human-readable warning when the Linux session cannot support X11 capture.
+///
+/// Returns `None` on non-Linux targets and when `DISPLAY` is available.
+#[cfg(target_os = "linux")]
+pub fn linux_session_capture_warning() -> Option<String> {
+    let session = std::env::var("XDG_SESSION_TYPE").unwrap_or_default();
+    let wayland =
+        session.eq_ignore_ascii_case("wayland") || std::env::var_os("WAYLAND_DISPLAY").is_some();
+    let has_x11 = std::env::var_os("DISPLAY").is_some();
+    if wayland && !has_x11 {
+        Some(
+            "Pure Wayland session detected (no DISPLAY). Sqyre needs X11 or XWayland for screen capture, window focus, and overlays."
+                .into(),
+        )
+    } else {
+        None
+    }
 }
 
-impl From<CaptureError> for String {
-    fn from(e: CaptureError) -> Self {
-        e.to_string()
-    }
+#[cfg(not(target_os = "linux"))]
+pub fn linux_session_capture_warning() -> Option<String> {
+    None
 }

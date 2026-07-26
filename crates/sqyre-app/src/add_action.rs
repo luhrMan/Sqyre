@@ -17,7 +17,7 @@ use crate::widgets::SaveCancel;
 use eframe::egui::{self, Color32, CornerRadius, Key, Sense, Vec2};
 use sqyre_domain::{
     action_templates, action_type_label, blank_action, Action, ActionId, ActionTemplate,
-    ACTION_PICKER_CATEGORIES,
+    KnownVariableNames, ACTION_PICKER_CATEGORIES,
 };
 use sqyre_hotkeys::{MacroHotkeyBridge, ScreenClickBridge};
 use sqyre_persist::ProgramCatalog;
@@ -25,7 +25,7 @@ use sqyre_persist::UserSettings;
 use sqyre_serialize::{action_from_map, action_to_map};
 use sqyre_ui_model::{action_icon_glyph, action_pastel_color};
 use sqyre_validate::validate_action;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use web_time::{Duration, Instant};
 
 /// How long a tile must be hovered before the defaults **view** tip opens.
@@ -82,8 +82,15 @@ impl AddActionPicker {
     pub fn load_from_settings(&mut self, settings: &UserSettings) {
         self.defaults.clear();
         for (ty, map) in &settings.action_defaults {
-            if let Ok(action) = action_from_map(map) {
-                self.defaults.insert(ty.clone(), action);
+            match action_from_map(map) {
+                Ok(action) => {
+                    self.defaults.insert(ty.clone(), action);
+                }
+                Err(e) => {
+                    // Corrupt/incompatible default in user settings; skip it
+                    // rather than fail the whole load.
+                    eprintln!("sqyre: dropping invalid action default for {ty:?}: {e}");
+                }
             }
         }
     }
@@ -173,7 +180,7 @@ impl AddActionPicker {
         icons: &mut IconCache,
         previews: &mut PreviewTooltipCache,
         macros: &[(String, Vec<String>)],
-        known_vars: &HashSet<String>,
+        known_vars: &KnownVariableNames,
         key_record: &mut KeyRecordUi,
         hotkey_record: &mut HotkeyRecordUi,
         macro_hotkeys: &MacroHotkeyBridge,
@@ -335,7 +342,7 @@ impl AddActionPicker {
         catalog: &ProgramCatalog,
         icons: &mut IconCache,
         previews: &mut PreviewTooltipCache,
-        known_vars: &HashSet<String>,
+        known_vars: &KnownVariableNames,
         is_dark: bool,
     ) {
         let Some(DefaultsTip::View {
@@ -370,7 +377,7 @@ impl AddActionPicker {
         icons: &mut IconCache,
         previews: &mut PreviewTooltipCache,
         macros: &[(String, Vec<String>)],
-        known_vars: &HashSet<String>,
+        known_vars: &KnownVariableNames,
         key_record: &mut KeyRecordUi,
         hotkey_record: &mut HotkeyRecordUi,
         macro_hotkeys: &MacroHotkeyBridge,

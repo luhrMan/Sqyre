@@ -8,8 +8,8 @@ use super::{
     default_ocr_text, default_resize, default_target_color, default_true, default_wait_time,
     is_default_image_blur, is_default_match_method, is_default_ocr_blur, is_default_ocr_text,
     is_default_resize, is_default_target_color, is_false, is_true, is_zero_i32, Action, ActionKind,
-    ConditionBlock, CoordinateRef, DetectionBranch, ListColumn, LoopJumpMode, MouseButton,
-    NavigateSelectData, PressState, ScalarValue, TemplateMatchMethod, VariableAssignment,
+    ConditionBlock, CoordinateRef, DetectionBranch, ListColumn, LoopJumpMode, MatchMethod,
+    MouseButton, NavigateSelectData, PressState, ScalarValue, VariableAssignment,
     DEFAULT_SMOOTH_DELAY_MS, DEFAULT_SMOOTH_HIGH, DEFAULT_SMOOTH_LOW,
 };
 use serde::{Deserialize, Serialize};
@@ -30,7 +30,11 @@ fn is_default_smooth_delay(v: &i32) -> bool {
     *v == DEFAULT_SMOOTH_DELAY_MS
 }
 
-#[derive(Serialize, Deserialize)]
+// `type_` fields are only read by the derived untagged-enum matching logic
+// (each variant is tried in turn and only matches if its tag deserializes),
+// never by ordinary field access, so they trip `dead_code` post-monomorphization.
+#[allow(dead_code)]
+#[derive(Deserialize)]
 #[serde(untagged)]
 enum ActionKindWire {
     Loop {
@@ -82,7 +86,7 @@ enum ActionKindWire {
             default,
             skip_serializing_if = "is_default_match_method"
         )]
-        match_method: TemplateMatchMethod,
+        match_method: MatchMethod,
         #[serde(flatten)]
         detection: DetectionBranch,
     },
@@ -506,8 +510,284 @@ impl From<ActionKindWire> for ActionKind {
     }
 }
 
-impl From<&ActionKind> for ActionKindWire {
-    fn from(kind: &ActionKind) -> Self {
+/// Skip predicate for a borrowed slice field (mirrors `Vec::is_empty`, which
+/// does not accept `&&[T]` once the wire field itself becomes a reference).
+fn is_empty_slice<T>(v: &[T]) -> bool {
+    v.is_empty()
+}
+
+/// Serialize-only mirror of [`ActionKindWire`] that borrows every field
+/// instead of cloning it, so writing YAML never deep-clones a subtree.
+///
+/// Kept in exact field/tag/rename parity with `ActionKindWire` so the wire
+/// format is unaffected; only `Deserialize` needs owned data, so that side
+/// keeps using `ActionKindWire`.
+#[derive(Serialize)]
+#[serde(untagged)]
+enum ActionKindWireRef<'a> {
+    Loop {
+        #[serde(rename = "type")]
+        type_: TagLoop,
+        name: &'a str,
+        count: &'a ScalarValue,
+        #[serde(default, skip_serializing_if = "is_empty_slice")]
+        subactions: &'a [Action],
+    },
+    While {
+        #[serde(rename = "type")]
+        type_: TagWhile,
+        #[serde(flatten)]
+        condition: &'a ConditionBlock,
+        #[serde(rename = "maxiterations", default, skip_serializing_if = "is_zero_i32")]
+        max_iterations: i32,
+        #[serde(default, skip_serializing_if = "is_empty_slice")]
+        subactions: &'a [Action],
+    },
+    Conditional {
+        #[serde(rename = "type")]
+        type_: TagConditional,
+        #[serde(flatten)]
+        condition: &'a ConditionBlock,
+        #[serde(default, skip_serializing_if = "is_empty_slice")]
+        subactions: &'a [Action],
+        #[serde(
+            rename = "elseactions",
+            default,
+            skip_serializing_if = "is_empty_slice"
+        )]
+        else_actions: &'a [Action],
+    },
+    ImageSearch {
+        #[serde(rename = "type")]
+        type_: TagImageSearch,
+        name: &'a str,
+        #[serde(default, skip_serializing_if = "is_empty_slice")]
+        targets: &'a [String],
+        #[serde(rename = "searcharea", default)]
+        search_area: &'a CoordinateRef,
+        #[serde(default)]
+        tolerance: f64,
+        #[serde(
+            default = "default_image_blur",
+            skip_serializing_if = "is_default_image_blur"
+        )]
+        blur: i32,
+        #[serde(
+            rename = "matchmethod",
+            default,
+            skip_serializing_if = "is_default_match_method"
+        )]
+        match_method: MatchMethod,
+        #[serde(flatten)]
+        detection: &'a DetectionBranch,
+    },
+    Ocr {
+        #[serde(rename = "type")]
+        type_: TagOcr,
+        #[serde(default, skip_serializing_if = "str::is_empty")]
+        name: &'a str,
+        #[serde(default, skip_serializing_if = "str::is_empty")]
+        target: &'a str,
+        #[serde(rename = "searcharea", default)]
+        search_area: &'a CoordinateRef,
+        #[serde(
+            rename = "outputvariable",
+            default = "default_ocr_text",
+            skip_serializing_if = "is_default_ocr_text"
+        )]
+        output_variable: &'a str,
+        #[serde(
+            default = "default_ocr_blur",
+            skip_serializing_if = "is_default_ocr_blur"
+        )]
+        blur: i32,
+        #[serde(rename = "minthreshold", default, skip_serializing_if = "is_zero_i32")]
+        min_threshold: i32,
+        #[serde(default = "default_resize", skip_serializing_if = "is_default_resize")]
+        resize: f64,
+        #[serde(default = "default_true", skip_serializing_if = "is_true")]
+        grayscale: bool,
+        #[serde(rename = "thresholdotsu", default, skip_serializing_if = "is_false")]
+        threshold_otsu: bool,
+        #[serde(rename = "thresholdinvert", default, skip_serializing_if = "is_false")]
+        threshold_invert: bool,
+        #[serde(flatten)]
+        detection: &'a DetectionBranch,
+    },
+    FindPixel {
+        #[serde(rename = "type")]
+        type_: TagFindPixel,
+        #[serde(default, skip_serializing_if = "str::is_empty")]
+        name: &'a str,
+        #[serde(rename = "searcharea", default)]
+        search_area: &'a CoordinateRef,
+        #[serde(
+            rename = "targetcolor",
+            default = "default_target_color",
+            skip_serializing_if = "is_default_target_color"
+        )]
+        target_color: &'a str,
+        #[serde(
+            rename = "colortolerance",
+            default,
+            skip_serializing_if = "is_zero_i32"
+        )]
+        color_tolerance: i32,
+        #[serde(flatten)]
+        detection: &'a DetectionBranch,
+    },
+    ForEachRow {
+        #[serde(rename = "type")]
+        type_: TagForEachRow,
+        #[serde(default, skip_serializing_if = "str::is_empty")]
+        name: &'a str,
+        #[serde(default, skip_serializing_if = "is_empty_slice")]
+        sources: &'a [ListColumn],
+        #[serde(
+            rename = "startrow",
+            default,
+            skip_serializing_if = "ScalarValue::is_null"
+        )]
+        start_row: &'a ScalarValue,
+        #[serde(
+            rename = "endrow",
+            default,
+            skip_serializing_if = "ScalarValue::is_null"
+        )]
+        end_row: &'a ScalarValue,
+        #[serde(default, skip_serializing_if = "is_empty_slice")]
+        subactions: &'a [Action],
+    },
+    Wait {
+        #[serde(rename = "type")]
+        type_: TagWait,
+        #[serde(default = "default_wait_time")]
+        time: &'a ScalarValue,
+    },
+    Pause {
+        #[serde(rename = "type")]
+        type_: TagPause,
+        #[serde(default, skip_serializing_if = "str::is_empty")]
+        message: &'a str,
+        #[serde(
+            rename = "continuekey",
+            default,
+            skip_serializing_if = "is_empty_slice"
+        )]
+        continue_key: &'a [String],
+        #[serde(rename = "passthrough", default, skip_serializing_if = "is_false")]
+        pass_through: bool,
+    },
+    Move {
+        #[serde(rename = "type")]
+        type_: TagMove,
+        #[serde(default)]
+        point: &'a CoordinateRef,
+        #[serde(default, skip_serializing_if = "is_false")]
+        smooth: bool,
+        #[serde(
+            rename = "smoothlow",
+            default = "default_smooth_low",
+            skip_serializing_if = "is_default_smooth_low"
+        )]
+        smooth_low: f64,
+        #[serde(
+            rename = "smoothhigh",
+            default = "default_smooth_high",
+            skip_serializing_if = "is_default_smooth_high"
+        )]
+        smooth_high: f64,
+        #[serde(
+            rename = "smoothdelayms",
+            default = "default_smooth_delay",
+            skip_serializing_if = "is_default_smooth_delay"
+        )]
+        smooth_delay_ms: i32,
+    },
+    Click {
+        #[serde(rename = "type")]
+        type_: TagClick,
+        button: MouseButton,
+        #[serde(default)]
+        state: PressState,
+    },
+    Key {
+        #[serde(rename = "type")]
+        type_: TagKey,
+        key: &'a str,
+        #[serde(default)]
+        state: PressState,
+    },
+    Type {
+        #[serde(rename = "type")]
+        type_: TagType,
+        #[serde(default, skip_serializing_if = "str::is_empty")]
+        text: &'a str,
+        #[serde(rename = "delayms", default, skip_serializing_if = "is_zero_i32")]
+        delay_ms: i32,
+    },
+    SetVariable {
+        #[serde(rename = "type")]
+        type_: TagSetVariable,
+        #[serde(
+            default = "default_assignments",
+            skip_serializing_if = "is_empty_slice"
+        )]
+        assignments: &'a [VariableAssignment],
+    },
+    SaveVariable {
+        #[serde(rename = "type")]
+        type_: TagSaveVariable,
+        #[serde(rename = "variablename")]
+        variable_name: &'a str,
+        #[serde(default, skip_serializing_if = "str::is_empty")]
+        destination: &'a str,
+        #[serde(default, skip_serializing_if = "is_false")]
+        append: bool,
+        #[serde(rename = "appendnewline", default, skip_serializing_if = "is_false")]
+        append_newline: bool,
+    },
+    FocusWindow {
+        #[serde(rename = "type")]
+        type_: TagFocusWindow,
+        #[serde(rename = "processpath", default, skip_serializing_if = "str::is_empty")]
+        process_path: &'a str,
+        #[serde(rename = "windowtitle", default, skip_serializing_if = "str::is_empty")]
+        window_title: &'a str,
+    },
+    RunMacro {
+        #[serde(rename = "type")]
+        type_: TagRunMacro,
+        #[serde(rename = "macroname", default, skip_serializing_if = "str::is_empty")]
+        macro_name: &'a str,
+    },
+    NavigateSelect {
+        #[serde(rename = "type")]
+        type_: TagNavigateSelect,
+        #[serde(flatten)]
+        data: &'a NavigateSelectData,
+    },
+    NavigateKey {
+        #[serde(rename = "type")]
+        type_: TagNavigateKey,
+        #[serde(default, skip_serializing_if = "str::is_empty")]
+        name: &'a str,
+        #[serde(default, skip_serializing_if = "is_empty_slice")]
+        chord: &'a [String],
+        #[serde(default, skip_serializing_if = "is_false")]
+        exit: bool,
+        #[serde(default, skip_serializing_if = "is_empty_slice")]
+        subactions: &'a [Action],
+    },
+    LoopJump {
+        #[serde(rename = "type")]
+        type_: TagLoopJump,
+        mode: LoopJumpMode,
+    },
+}
+
+impl<'a> From<&'a ActionKind> for ActionKindWireRef<'a> {
+    fn from(kind: &'a ActionKind) -> Self {
         match kind {
             ActionKind::Loop {
                 name,
@@ -515,9 +795,9 @@ impl From<&ActionKind> for ActionKindWire {
                 subactions,
             } => Self::Loop {
                 type_: TagLoop::Tag,
-                name: name.clone(),
-                count: count.clone(),
-                subactions: subactions.clone(),
+                name,
+                count,
+                subactions,
             },
             ActionKind::While {
                 condition,
@@ -525,9 +805,9 @@ impl From<&ActionKind> for ActionKindWire {
                 subactions,
             } => Self::While {
                 type_: TagWhile::Tag,
-                condition: condition.clone(),
+                condition,
                 max_iterations: *max_iterations,
-                subactions: subactions.clone(),
+                subactions,
             },
             ActionKind::Conditional {
                 condition,
@@ -535,9 +815,9 @@ impl From<&ActionKind> for ActionKindWire {
                 else_actions,
             } => Self::Conditional {
                 type_: TagConditional::Tag,
-                condition: condition.clone(),
-                subactions: subactions.clone(),
-                else_actions: else_actions.clone(),
+                condition,
+                subactions,
+                else_actions,
             },
             ActionKind::ImageSearch {
                 name,
@@ -549,13 +829,13 @@ impl From<&ActionKind> for ActionKindWire {
                 detection,
             } => Self::ImageSearch {
                 type_: TagImageSearch::Tag,
-                name: name.clone(),
-                targets: targets.clone(),
-                search_area: search_area.clone(),
+                name,
+                targets,
+                search_area,
                 tolerance: *tolerance,
                 blur: *blur,
                 match_method: *match_method,
-                detection: detection.clone(),
+                detection,
             },
             ActionKind::Ocr {
                 name,
@@ -571,17 +851,17 @@ impl From<&ActionKind> for ActionKindWire {
                 detection,
             } => Self::Ocr {
                 type_: TagOcr::Tag,
-                name: name.clone(),
-                target: target.clone(),
-                search_area: search_area.clone(),
-                output_variable: output_variable.clone(),
+                name,
+                target,
+                search_area,
+                output_variable,
                 blur: *blur,
                 min_threshold: *min_threshold,
                 resize: *resize,
                 grayscale: *grayscale,
                 threshold_otsu: *threshold_otsu,
                 threshold_invert: *threshold_invert,
-                detection: detection.clone(),
+                detection,
             },
             ActionKind::FindPixel {
                 name,
@@ -591,11 +871,11 @@ impl From<&ActionKind> for ActionKindWire {
                 detection,
             } => Self::FindPixel {
                 type_: TagFindPixel::Tag,
-                name: name.clone(),
-                search_area: search_area.clone(),
-                target_color: target_color.clone(),
+                name,
+                search_area,
+                target_color,
                 color_tolerance: *color_tolerance,
-                detection: detection.clone(),
+                detection,
             },
             ActionKind::ForEachRow {
                 name,
@@ -605,15 +885,15 @@ impl From<&ActionKind> for ActionKindWire {
                 subactions,
             } => Self::ForEachRow {
                 type_: TagForEachRow::Tag,
-                name: name.clone(),
-                sources: sources.clone(),
-                start_row: start_row.clone(),
-                end_row: end_row.clone(),
-                subactions: subactions.clone(),
+                name,
+                sources,
+                start_row,
+                end_row,
+                subactions,
             },
             ActionKind::Wait { time } => Self::Wait {
                 type_: TagWait::Tag,
-                time: time.clone(),
+                time,
             },
             ActionKind::Pause {
                 message,
@@ -621,8 +901,8 @@ impl From<&ActionKind> for ActionKindWire {
                 pass_through,
             } => Self::Pause {
                 type_: TagPause::Tag,
-                message: message.clone(),
-                continue_key: continue_key.clone(),
+                message,
+                continue_key,
                 pass_through: *pass_through,
             },
             ActionKind::Move {
@@ -633,7 +913,7 @@ impl From<&ActionKind> for ActionKindWire {
                 smooth_delay_ms,
             } => Self::Move {
                 type_: TagMove::Tag,
-                point: point.clone(),
+                point,
                 smooth: *smooth,
                 smooth_low: *smooth_low,
                 smooth_high: *smooth_high,
@@ -646,17 +926,17 @@ impl From<&ActionKind> for ActionKindWire {
             },
             ActionKind::Key { key, state } => Self::Key {
                 type_: TagKey::Tag,
-                key: key.clone(),
+                key,
                 state: *state,
             },
             ActionKind::Type { text, delay_ms } => Self::Type {
                 type_: TagType::Tag,
-                text: text.clone(),
+                text,
                 delay_ms: *delay_ms,
             },
             ActionKind::SetVariable { assignments } => Self::SetVariable {
                 type_: TagSetVariable::Tag,
-                assignments: assignments.clone(),
+                assignments,
             },
             ActionKind::SaveVariable {
                 variable_name,
@@ -665,8 +945,8 @@ impl From<&ActionKind> for ActionKindWire {
                 append_newline,
             } => Self::SaveVariable {
                 type_: TagSaveVariable::Tag,
-                variable_name: variable_name.clone(),
-                destination: destination.clone(),
+                variable_name,
+                destination,
                 append: *append,
                 append_newline: *append_newline,
             },
@@ -675,16 +955,16 @@ impl From<&ActionKind> for ActionKindWire {
                 window_title,
             } => Self::FocusWindow {
                 type_: TagFocusWindow::Tag,
-                process_path: process_path.clone(),
-                window_title: window_title.clone(),
+                process_path,
+                window_title,
             },
             ActionKind::RunMacro { macro_name } => Self::RunMacro {
                 type_: TagRunMacro::Tag,
-                macro_name: macro_name.clone(),
+                macro_name,
             },
             ActionKind::NavigateSelect(data) => Self::NavigateSelect {
                 type_: TagNavigateSelect::Tag,
-                data: data.clone(),
+                data: data.as_ref(),
             },
             ActionKind::NavigateKey {
                 name,
@@ -693,10 +973,10 @@ impl From<&ActionKind> for ActionKindWire {
                 subactions,
             } => Self::NavigateKey {
                 type_: TagNavigateKey::Tag,
-                name: name.clone(),
-                chord: chord.clone(),
+                name,
+                chord,
                 exit: *exit,
-                subactions: subactions.clone(),
+                subactions,
             },
             ActionKind::LoopJump { mode } => Self::LoopJump {
                 type_: TagLoopJump::Tag,
@@ -708,7 +988,7 @@ impl From<&ActionKind> for ActionKindWire {
 
 impl Serialize for ActionKind {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        ActionKindWire::from(self).serialize(serializer)
+        ActionKindWireRef::from(self).serialize(serializer)
     }
 }
 

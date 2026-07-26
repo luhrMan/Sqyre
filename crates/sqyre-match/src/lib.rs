@@ -16,8 +16,8 @@ pub use peaks::{
     cluster_points, find_peaks, find_peaks_for_method, DEFAULT_CLOSE_MATCHES_DISTANCE,
 };
 pub use template::{
-    match_template, match_template_with_integrals, prepare_search_integrals, MatchError, MatchMap,
-    MatchMethod, SearchIntegrals,
+    match_template, match_template_with_prepared, prepare_search, prepare_template, MatchError,
+    MatchMap, MatchMethod, PreparedTemplate, SearchPrep,
 };
 
 /// Full path used by image search when the search image is already blurred and the
@@ -52,10 +52,11 @@ pub fn find_template_matches_preblurred(
     close_matches_distance: i32,
     method: MatchMethod,
 ) -> Result<Vec<Point>, MatchError> {
-    find_template_matches_preblurred_with_integrals(
+    let prepared = prepare_template(template_blurred, mask, method)?;
+    find_template_matches_preblurred_with_prepared(
         search_blurred,
         template_blurred,
-        mask,
+        &prepared,
         threshold,
         close_matches_distance,
         method,
@@ -63,18 +64,20 @@ pub fn find_template_matches_preblurred(
     )
 }
 
-/// Like [`find_template_matches_preblurred`], reusing shared search integrals.
-pub fn find_template_matches_preblurred_with_integrals(
+/// Like [`find_template_matches_preblurred`], reusing a [`PreparedTemplate`] (skips
+/// re-packing the template) and optionally a [`SearchPrep`] (skips re-deriving the
+/// search frame) — both shared across template variants matched against one capture.
+pub fn find_template_matches_preblurred_with_prepared(
     search_blurred: &ImageBuf,
     template_blurred: &ImageBuf,
-    mask: Option<&[u8]>,
+    prepared: &PreparedTemplate,
     threshold: f32,
     close_matches_distance: i32,
     method: MatchMethod,
-    integrals: Option<&SearchIntegrals>,
+    search_prep: Option<&SearchPrep>,
 ) -> Result<Vec<Point>, MatchError> {
     let map =
-        match_template_with_integrals(search_blurred, template_blurred, mask, method, integrals)?;
+        match_template_with_prepared(search_blurred, template_blurred, prepared, search_prep)?;
     Ok(find_peaks_for_method(
         &map,
         threshold,

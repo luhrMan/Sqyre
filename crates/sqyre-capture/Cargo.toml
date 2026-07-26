@@ -9,7 +9,7 @@ description = "ScreenCapturer for absolute virtual-desktop rects (Linux X11; Win
 workspace = true
 
 [dependencies]
-sqyre-executor = { path = "../sqyre-executor" }
+sqyre-ports = { path = "../sqyre-ports" }
 image = { workspace = true }
 pulp = { workspace = true }
 rayon = { workspace = true }
@@ -21,7 +21,7 @@ web-time = { workspace = true }
 x11 = { workspace = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
-windows = { version = "0.62", features = [
+windows = { workspace = true, features = [
     "Win32_Foundation",
     "Win32_Graphics_Dwm",
     "Win32_Graphics_Gdi",

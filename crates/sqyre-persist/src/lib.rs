@@ -2,6 +2,7 @@
 
 #[cfg(not(target_arch = "wasm32"))]
 mod backup;
+mod fs_name;
 mod migrate;
 mod programs;
 mod settings;
@@ -10,6 +11,7 @@ mod settings;
 pub use backup::{
     backups_dir, create_backup, list_backups, prune_backups, restore_backup, BackupError,
 };
+pub use fs_name::{confined_join, is_safe_fs_entity_name, validate_fs_entity_name};
 pub use migrate::{migrate_db_yaml, migrate_db_yaml_value, LegacyCatalog};
 pub use programs::{
     ensure_general_program, MonitorRect, ProgramAtlas, ProgramCatalog, ProgramCollection,
@@ -23,13 +25,16 @@ pub use settings::{
     DEFAULT_IMAGE_SEARCH_CLOSE_MATCHES_DISTANCE, DEFAULT_OVERLAY_ACCENT_HEX,
     DEFAULT_OVERLAY_BORDER_WIDTH, DEFAULT_OVERLAY_BUTTON_SIZE, DEFAULT_OVERLAY_CORNER_RADIUS,
     DEFAULT_OVERLAY_ICON_HEX, DEFAULT_PLAY_FINISH_SOUND, DEFAULT_PLAY_UI_SOUNDS,
-    DEFAULT_RELEASE_HELD_INPUTS_ON_END, DEFAULT_SOUND_VOLUME, DEFAULT_UI_FONT_SIZE,
-    DEFAULT_UI_SCALE, MAX_BACKUP_INTERVAL_HOURS, MAX_BACKUP_MAX_KEEP, MAX_OVERLAY_BORDER_WIDTH,
-    MAX_OVERLAY_BUTTON_SIZE, MAX_OVERLAY_CORNER_RADIUS, MIN_BACKUP_INTERVAL_HOURS,
-    MIN_BACKUP_MAX_KEEP, MIN_DRAG_PREVIEW_DEBOUNCE_MS, MIN_OVERLAY_BORDER_WIDTH,
-    MIN_OVERLAY_BUTTON_SIZE, MIN_OVERLAY_CORNER_RADIUS,
+    DEFAULT_RELEASE_HELD_INPUTS_ON_END, DEFAULT_RUN_MACRO_MAX_DEPTH, DEFAULT_SOUND_VOLUME,
+    DEFAULT_UI_FONT_SIZE, DEFAULT_UI_SCALE, DEFAULT_WHILE_MAX_ITERATIONS,
+    MAX_BACKUP_INTERVAL_HOURS, MAX_BACKUP_MAX_KEEP, MAX_OVERLAY_BORDER_WIDTH,
+    MAX_OVERLAY_BUTTON_SIZE, MAX_OVERLAY_CORNER_RADIUS, MAX_RUN_MACRO_MAX_DEPTH,
+    MAX_WHILE_MAX_ITERATIONS, MIN_BACKUP_INTERVAL_HOURS, MIN_BACKUP_MAX_KEEP,
+    MIN_DRAG_PREVIEW_DEBOUNCE_MS, MIN_OVERLAY_BORDER_WIDTH, MIN_OVERLAY_BUTTON_SIZE,
+    MIN_OVERLAY_CORNER_RADIUS, MIN_RUN_MACRO_MAX_DEPTH, MIN_WHILE_MAX_ITERATIONS,
 };
 pub use sqyre_domain::resolve_scalar_int;
+pub use sqyre_serialize::{check_yaml_nesting_depth, MAX_YAML_NESTING_DEPTH};
 
 use serde_yaml::{Mapping, Value};
 use sqyre_domain::Macro;
@@ -38,11 +43,15 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, OnceLock, RwLock};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use thiserror::Error;
 
 const SQYRE_DIR: &str = ".sqyre";
 const DB_FILE: &str = "db.yaml";
+/// Reject absurdly large `db.yaml` bodies before parsing.
+pub const MAX_DB_YAML_BYTES: usize = 32 * 1024 * 1024;
+/// Soft cap on macro count in one database.
+pub const MAX_MACROS: usize = 2_000;
 
 static DIR_OVERRIDE: RwLock<Option<PathBuf>> = RwLock::new(None);
 
@@ -182,16 +191,20 @@ pub struct Database {
     /// Programs remain as raw YAML; use [`Self::program_catalog`] for lookups.
     pub programs: Value,
     /// Parsed catalog cache; invalidated when `programs` is replaced via known mutators.
-    catalog_cache: RefCell<Option<ProgramCatalog>>,
+    catalog_cache: RefCell<Option<Arc<ProgramCatalog>>>,
 }
 
 impl Database {
-    pub fn program_catalog(&self) -> Result<ProgramCatalog> {
+    /// Parse (or reuse the cached parse of) `programs` into a [`ProgramCatalog`].
+    ///
+    /// Returns a shared `Arc` so cache hits are a refcount bump rather than a deep clone;
+    /// callers that need an owned, mutable catalog should use `Arc::unwrap_or_clone`.
+    pub fn program_catalog(&self) -> Result<Arc<ProgramCatalog>> {
         if let Some(cached) = self.catalog_cache.borrow().as_ref() {
-            return Ok(cached.clone());
+            return Ok(Arc::clone(cached));
         }
-        let catalog = ProgramCatalog::from_yaml_value(&self.programs)?;
-        *self.catalog_cache.borrow_mut() = Some(catalog.clone());
+        let catalog = Arc::new(ProgramCatalog::from_yaml_value(&self.programs)?);
+        *self.catalog_cache.borrow_mut() = Some(Arc::clone(&catalog));
         Ok(catalog)
     }
 
@@ -216,7 +229,24 @@ impl Database {
             return Ok(Self::default());
         }
         let text = fs::read_to_string(path)?;
-        Self::from_yaml(&text)
+        Ok(Self::from_yaml_with_warnings(&text)?.0)
+    }
+
+    /// Load default `db.yaml`, returning any per-macro decode/validation warnings.
+    pub fn load_default_with_warnings() -> Result<(Self, Vec<String>)> {
+        #[cfg(target_arch = "wasm32")]
+        {
+            return Ok((Self::default(), Vec::new()));
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let path = db_path();
+            if !path.exists() {
+                return Ok((Self::default(), Vec::new()));
+            }
+            let text = fs::read_to_string(path)?;
+            Self::from_yaml_with_warnings(&text)
+        }
     }
 
     pub fn load_default() -> Result<Self> {
@@ -232,7 +262,7 @@ impl Database {
     pub fn from_yaml_bytes(bytes: &[u8]) -> Result<Self> {
         let text = std::str::from_utf8(bytes)
             .map_err(|e| PersistError::Message(format!("db.yaml is not UTF-8: {e}")))?;
-        Self::from_yaml(text)
+        Ok(Self::from_yaml_with_warnings(text)?.0)
     }
 
     /// Serialize to YAML bytes (UTF-8). Used by WASM export.
@@ -241,24 +271,59 @@ impl Database {
     }
 
     pub fn from_yaml(text: &str) -> Result<Self> {
+        Ok(Self::from_yaml_with_warnings(text)?.0)
+    }
+
+    /// Load `db.yaml`, skipping individual macros that fail to decode so one
+    /// corrupt entry cannot lock the user out of the rest of the library.
+    ///
+    /// Returns `(database, warnings)` where warnings describe skipped macros.
+    pub fn from_yaml_with_warnings(text: &str) -> Result<(Self, Vec<String>)> {
+        if text.len() > MAX_DB_YAML_BYTES {
+            return Err(PersistError::Message(format!(
+                "db.yaml too large ({} bytes; max {MAX_DB_YAML_BYTES})",
+                text.len()
+            )));
+        }
         let root: Value = serde_yaml::from_str(text)?;
+        check_yaml_nesting_depth(&root)?;
         let mapping = root
             .as_mapping()
             .ok_or_else(|| PersistError::Message("db.yaml root must be a mapping".into()))?;
 
         let mut macros = BTreeMap::new();
+        let mut warnings = Vec::new();
         if let Some(Value::Mapping(mm)) = mapping.get(Value::String("macros".into())) {
+            if mm.len() > MAX_MACROS {
+                return Err(PersistError::Message(format!(
+                    "too many macros ({}; max {MAX_MACROS})",
+                    mm.len()
+                )));
+            }
             for (k, v) in mm {
-                let key = k
-                    .as_str()
-                    .ok_or_else(|| PersistError::Message("macro key must be a string".into()))?
-                    .to_string();
-                let mut macro_ = decode_macro_from_map(v)
-                    .map_err(|e| PersistError::Message(format!("macro \"{key}\": {e}")))?;
-                if macro_.name.is_empty() {
-                    macro_.name = key.clone();
+                let key = match k.as_str() {
+                    Some(s) => s.to_string(),
+                    None => {
+                        warnings.push("skipped macro with non-string key".into());
+                        continue;
+                    }
+                };
+                match decode_macro_from_map(v) {
+                    Ok(mut macro_) => {
+                        if macro_.name.is_empty() {
+                            macro_.name = key.clone();
+                        }
+                        if let Err(e) = sqyre_validate::validate_macro(&macro_) {
+                            warnings.push(format!(
+                                "macro \"{key}\" loaded with validation issues: {e}"
+                            ));
+                        }
+                        macros.insert(key, macro_);
+                    }
+                    Err(e) => {
+                        warnings.push(format!("skipped macro \"{key}\": {e}"));
+                    }
                 }
-                macros.insert(key, macro_);
             }
         }
 
@@ -267,11 +332,14 @@ impl Database {
             .cloned()
             .unwrap_or(Value::Mapping(Mapping::new()));
 
-        Ok(Self {
-            macros,
-            programs,
-            catalog_cache: RefCell::new(None),
-        })
+        Ok((
+            Self {
+                macros,
+                programs,
+                catalog_cache: RefCell::new(None),
+            },
+            warnings,
+        ))
     }
 
     pub fn to_yaml(&self) -> Result<String> {
@@ -348,6 +416,97 @@ mod tests {
             assert!(loaded.macros.contains_key("Test"));
             assert_eq!(loaded.macros["Test"].root.children().len(), 1);
         });
+    }
+
+    #[test]
+    fn rejects_too_many_macros() {
+        let mut macros = Mapping::new();
+        for i in 0..=MAX_MACROS {
+            macros.insert(
+                Value::String(format!("m{i}")),
+                Value::Mapping(Mapping::new()),
+            );
+        }
+        let mut root = Mapping::new();
+        root.insert(Value::String("macros".into()), Value::Mapping(macros));
+        root.insert(
+            Value::String("programs".into()),
+            Value::Mapping(Mapping::new()),
+        );
+        let text = serde_yaml::to_string(&Value::Mapping(root)).unwrap();
+        let err = Database::from_yaml_with_warnings(&text).unwrap_err();
+        assert!(
+            err.to_string().contains("too many macros"),
+            "expected macro count error, got {err}"
+        );
+    }
+
+    #[test]
+    fn rejects_oversized_db_yaml() {
+        let mut huge = String::from("macros: {}\nprograms: {}\n#");
+        huge.push_str(&"x".repeat(MAX_DB_YAML_BYTES));
+        let err = Database::from_yaml_with_warnings(&huge).unwrap_err();
+        assert!(
+            err.to_string().contains("too large"),
+            "expected size error, got {err}"
+        );
+    }
+
+    #[test]
+    fn rejects_deeply_nested_yaml() {
+        let mut v = Value::Null;
+        for _ in 0..=MAX_YAML_NESTING_DEPTH + 1 {
+            let mut m = Mapping::new();
+            m.insert(Value::String("a".into()), v);
+            v = Value::Mapping(m);
+        }
+        let err = check_yaml_nesting_depth(&v).unwrap_err();
+        assert!(
+            err.to_string().contains("nesting too deep"),
+            "expected nesting error, got {err}"
+        );
+
+        let mut root = Mapping::new();
+        root.insert(
+            Value::String("macros".into()),
+            Value::Mapping(Mapping::new()),
+        );
+        root.insert(Value::String("programs".into()), v);
+        let text = serde_yaml::to_string(&Value::Mapping(root)).unwrap();
+        let err = Database::from_yaml_with_warnings(&text).unwrap_err();
+        assert!(
+            err.to_string().contains("nesting too deep"),
+            "expected nesting error, got {err}"
+        );
+    }
+
+    #[test]
+    fn one_bad_macro_does_not_block_others() {
+        let text = r#"
+macros:
+  Good:
+    name: Good
+    globaldelay: 0
+    hotkey: []
+    root:
+      type: loop
+      name: root
+      count: 1
+      subactions:
+        - type: wait
+          time: 1
+  Bad:
+    name: Bad
+    root: { type: not_a_real_action }
+programs: {}
+"#;
+        let (db, warnings) = Database::from_yaml_with_warnings(text).unwrap();
+        assert!(db.macros.contains_key("Good"));
+        assert!(!db.macros.contains_key("Bad"));
+        assert!(
+            warnings.iter().any(|w| w.contains("Bad")),
+            "warnings={warnings:?}"
+        );
     }
 
     #[test]

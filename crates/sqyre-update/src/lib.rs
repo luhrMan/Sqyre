@@ -2,12 +2,20 @@
 //!
 //! Supported install shapes: Linux raw binary, Linux AppImage (`$APPIMAGE`), Windows `.exe`.
 //! macOS compiles but returns [`UpdateError::Unsupported`].
+//!
+//! Updates require a `SHA256SUMS` asset plus `SHA256SUMS.sig` (Ed25519 over the
+//! checksums file bytes). The selected zip is size-capped and hash-verified before staging.
 
+pub mod sign;
 mod version;
 
+pub use sign::{embedded_verifying_key, verify as verify_update_signature, SignError};
+
 use serde::Deserialize;
+use sha2::{Digest, Sha256};
+use std::collections::HashMap;
 use std::fs::{self, File};
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use thiserror::Error;
@@ -15,6 +23,16 @@ use version::{is_dev_sentinel, parse_release_version, version_newer};
 
 const USER_AGENT: &str = "Sqyre-Updater";
 const API_LATEST: &str = "https://api.github.com/repos/luhrMan/Squire/releases/latest";
+const CHECKSUMS_NAME: &str = "SHA256SUMS";
+const CHECKSUMS_SIG_NAME: &str = "SHA256SUMS.sig";
+/// Hard cap on release zip downloads (bytes).
+const MAX_ASSET_BYTES: u64 = 200 * 1024 * 1024;
+/// Cap for the checksums text file.
+const MAX_CHECKSUMS_BYTES: u64 = 64 * 1024;
+/// Cap for the checksums signature file.
+const MAX_CHECKSUMS_SIG_BYTES: u64 = 4 * 1024;
+/// Cap for GitHub API JSON bodies.
+const MAX_API_BYTES: u64 = 2 * 1024 * 1024;
 
 /// Result of comparing the running build against the latest GitHub release.
 #[derive(Debug, Clone)]
@@ -32,6 +50,8 @@ pub struct ReleaseAsset {
     pub name: String,
     pub url: String,
     pub size: u64,
+    /// Lowercase hex SHA-256 of the zip (from release `SHA256SUMS`).
+    pub sha256: String,
 }
 
 /// Extracted update file ready to replace the running install.
@@ -55,6 +75,26 @@ pub enum UpdateError {
     Json(#[from] serde_json::Error),
     #[error("no matching release asset for this install")]
     NoMatchingAsset,
+    #[error("release is missing SHA256SUMS checksums")]
+    MissingChecksums,
+    #[error("release is missing SHA256SUMS.sig")]
+    MissingChecksumSignature,
+    #[error(transparent)]
+    Signature(#[from] SignError),
+    #[error("no SHA-256 entry for asset {0}")]
+    MissingAssetChecksum(String),
+    #[error("download URL is not an allowed GitHub host: {0}")]
+    BadDownloadUrl(String),
+    #[error("asset too large ({0} bytes; max {MAX_ASSET_BYTES})")]
+    AssetTooLarge(u64),
+    #[error("downloaded size mismatch: expected {expected}, got {actual}")]
+    SizeMismatch { expected: u64, actual: u64 },
+    #[error("SHA-256 mismatch for {name}: expected {expected}, got {actual}")]
+    ChecksumMismatch {
+        name: String,
+        expected: String,
+        actual: String,
+    },
     #[error("invalid release version: {0}")]
     BadVersion(String),
     #[error("I/O error: {0}")]
@@ -136,6 +176,55 @@ fn update_target_path(kind: InstallKind) -> Result<PathBuf, UpdateError> {
     }
 }
 
+fn assert_allowed_download_url(url: &str) -> Result<(), UpdateError> {
+    let ok = url.starts_with("https://github.com/")
+        || url.starts_with("https://objects.githubusercontent.com/")
+        || url.starts_with("https://release-assets.githubusercontent.com/");
+    if ok {
+        Ok(())
+    } else {
+        Err(UpdateError::BadDownloadUrl(url.to_string()))
+    }
+}
+
+/// Parse GNU `sha256sum` style lines (`<hex>  <name>` or `<hex> *<name>`).
+fn parse_sha256sums(text: &str) -> HashMap<String, String> {
+    let mut out = HashMap::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let mut parts = line.split_whitespace();
+        let Some(hash) = parts.next() else {
+            continue;
+        };
+        if hash.len() != 64 || !hash.chars().all(|c| c.is_ascii_hexdigit()) {
+            continue;
+        }
+        let Some(name) = parts.next() else {
+            continue;
+        };
+        let name = name.trim_start_matches('*');
+        out.insert(name.to_string(), hash.to_ascii_lowercase());
+    }
+    out
+}
+
+fn sha256_hex_file(path: &Path) -> Result<String, UpdateError> {
+    let mut file = File::open(path)?;
+    let mut hasher = Sha256::new();
+    let mut buf = [0u8; 64 * 1024];
+    loop {
+        let n = file.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
 /// Query GitHub for the latest release and compare against `current` (embedded `SQYRE_VERSION`).
 pub fn check_latest(current: &str) -> Result<UpdateStatus, UpdateError> {
     if is_dev_sentinel(current) {
@@ -147,7 +236,7 @@ pub fn check_latest(current: &str) -> Result<UpdateStatus, UpdateError> {
     let current_v =
         parse_release_version(current).ok_or_else(|| UpdateError::BadVersion(current.into()))?;
 
-    let body = http_get_string(API_LATEST)?;
+    let body = http_get_string(API_LATEST, MAX_API_BYTES)?;
     let release: GhRelease = serde_json::from_str(&body)?;
     let remote_v = parse_release_version(&release.tag_name)
         .ok_or_else(|| UpdateError::BadVersion(release.tag_name.clone()))?;
@@ -159,6 +248,40 @@ pub fn check_latest(current: &str) -> Result<UpdateStatus, UpdateError> {
     let asset = kind
         .pick_asset(&release.assets)
         .ok_or(UpdateError::NoMatchingAsset)?;
+    if asset.size > MAX_ASSET_BYTES {
+        return Err(UpdateError::AssetTooLarge(asset.size));
+    }
+    assert_allowed_download_url(&asset.browser_download_url)?;
+
+    let sums_asset = release
+        .assets
+        .iter()
+        .find(|a| a.name == CHECKSUMS_NAME)
+        .ok_or(UpdateError::MissingChecksums)?;
+    if sums_asset.size > MAX_CHECKSUMS_BYTES {
+        return Err(UpdateError::AssetTooLarge(sums_asset.size));
+    }
+    assert_allowed_download_url(&sums_asset.browser_download_url)?;
+    let sums_text = http_get_string(&sums_asset.browser_download_url, MAX_CHECKSUMS_BYTES)?;
+
+    let sig_asset = release
+        .assets
+        .iter()
+        .find(|a| a.name == CHECKSUMS_SIG_NAME)
+        .ok_or(UpdateError::MissingChecksumSignature)?;
+    if sig_asset.size > MAX_CHECKSUMS_SIG_BYTES {
+        return Err(UpdateError::AssetTooLarge(sig_asset.size));
+    }
+    assert_allowed_download_url(&sig_asset.browser_download_url)?;
+    let sig_bytes = http_get_bytes(&sig_asset.browser_download_url, MAX_CHECKSUMS_SIG_BYTES)?;
+    let key = embedded_verifying_key()?;
+    verify_update_signature(sums_text.as_bytes(), &sig_bytes, &key)?;
+
+    let sums = parse_sha256sums(&sums_text);
+    let sha256 = sums
+        .get(&asset.name)
+        .cloned()
+        .ok_or_else(|| UpdateError::MissingAssetChecksum(asset.name.clone()))?;
 
     Ok(UpdateStatus::Available {
         version: strip_v(&release.tag_name).to_string(),
@@ -166,18 +289,38 @@ pub fn check_latest(current: &str) -> Result<UpdateStatus, UpdateError> {
             name: asset.name.clone(),
             url: asset.browser_download_url.clone(),
             size: asset.size,
+            sha256,
         },
     })
 }
 
-/// Download `asset` zip, extract the single payload file to a durable temp path.
+/// Download `asset` zip, verify size + SHA-256, extract the single payload file.
 pub fn download_and_stage(asset: &ReleaseAsset) -> Result<StagedUpdate, UpdateError> {
     let kind = InstallKind::detect()?;
     let target_path = update_target_path(kind)?;
 
+    if asset.size > MAX_ASSET_BYTES {
+        return Err(UpdateError::AssetTooLarge(asset.size));
+    }
+    assert_allowed_download_url(&asset.url)?;
+
     let tmp_dir = tempfile::tempdir()?;
     let zip_path = tmp_dir.path().join(&asset.name);
-    http_download(&asset.url, &zip_path)?;
+    let downloaded = http_download(&asset.url, &zip_path, MAX_ASSET_BYTES)?;
+    if downloaded != asset.size {
+        return Err(UpdateError::SizeMismatch {
+            expected: asset.size,
+            actual: downloaded,
+        });
+    }
+    let actual = sha256_hex_file(&zip_path)?;
+    if actual != asset.sha256 {
+        return Err(UpdateError::ChecksumMismatch {
+            name: asset.name.clone(),
+            expected: asset.sha256.clone(),
+            actual,
+        });
+    }
 
     let extracted = extract_single_file(&zip_path, tmp_dir.path())?;
     let durable = std::env::temp_dir().join(format!(
@@ -270,7 +413,7 @@ fn strip_v(tag: &str) -> &str {
     version::strip_v(tag)
 }
 
-fn http_get_string(url: &str) -> Result<String, UpdateError> {
+fn http_get_string(url: &str, max_bytes: u64) -> Result<String, UpdateError> {
     let response = ureq::get(url)
         .header("User-Agent", USER_AGENT)
         .header("Accept", "application/vnd.github+json")
@@ -282,13 +425,55 @@ fn http_get_string(url: &str) -> Result<String, UpdateError> {
             response.status()
         )));
     }
-    response
-        .into_body()
-        .read_to_string()
-        .map_err(|e| UpdateError::Http(e.to_string()))
+    let mut reader = response.into_body().into_reader();
+    let mut buf = Vec::new();
+    let mut chunk = [0u8; 16 * 1024];
+    loop {
+        let n = reader
+            .read(&mut chunk)
+            .map_err(|e| UpdateError::Http(e.to_string()))?;
+        if n == 0 {
+            break;
+        }
+        if (buf.len() as u64).saturating_add(n as u64) > max_bytes {
+            return Err(UpdateError::AssetTooLarge(max_bytes.saturating_add(1)));
+        }
+        buf.extend_from_slice(&chunk[..n]);
+    }
+    String::from_utf8(buf).map_err(|e| UpdateError::Http(format!("response not UTF-8: {e}")))
 }
 
-fn http_download(url: &str, dest: &Path) -> Result<(), UpdateError> {
+fn http_get_bytes(url: &str, max_bytes: u64) -> Result<Vec<u8>, UpdateError> {
+    let response = ureq::get(url)
+        .header("User-Agent", USER_AGENT)
+        .header("Accept", "application/octet-stream")
+        .call()
+        .map_err(|e| UpdateError::Http(e.to_string()))?;
+    if !(200..300).contains(&response.status().as_u16()) {
+        return Err(UpdateError::Http(format!(
+            "status {} fetching {url}",
+            response.status()
+        )));
+    }
+    let mut reader = response.into_body().into_reader();
+    let mut buf = Vec::new();
+    let mut chunk = [0u8; 16 * 1024];
+    loop {
+        let n = reader
+            .read(&mut chunk)
+            .map_err(|e| UpdateError::Http(e.to_string()))?;
+        if n == 0 {
+            break;
+        }
+        if (buf.len() as u64).saturating_add(n as u64) > max_bytes {
+            return Err(UpdateError::AssetTooLarge(max_bytes.saturating_add(1)));
+        }
+        buf.extend_from_slice(&chunk[..n]);
+    }
+    Ok(buf)
+}
+
+fn http_download(url: &str, dest: &Path, max_bytes: u64) -> Result<u64, UpdateError> {
     let response = ureq::get(url)
         .header("User-Agent", USER_AGENT)
         .header("Accept", "application/octet-stream")
@@ -302,14 +487,35 @@ fn http_download(url: &str, dest: &Path) -> Result<(), UpdateError> {
     }
     let mut file = File::create(dest)?;
     let mut reader = response.into_body().into_reader();
-    io::copy(&mut reader, &mut file)?;
+    let mut total = 0u64;
+    let mut chunk = [0u8; 64 * 1024];
+    loop {
+        let n = reader
+            .read(&mut chunk)
+            .map_err(|e| UpdateError::Http(e.to_string()))?;
+        if n == 0 {
+            break;
+        }
+        total = total.saturating_add(n as u64);
+        if total > max_bytes {
+            let _ = fs::remove_file(dest);
+            return Err(UpdateError::AssetTooLarge(total));
+        }
+        file.write_all(&chunk[..n])?;
+    }
     file.flush()?;
-    Ok(())
+    Ok(total)
 }
 
 fn extract_single_file(zip_path: &Path, out_dir: &Path) -> Result<PathBuf, UpdateError> {
     let file = File::open(zip_path)?;
     let mut archive = zip::ZipArchive::new(file).map_err(|e| UpdateError::Zip(e.to_string()))?;
+    if archive.len() > 8 {
+        return Err(UpdateError::Zip(format!(
+            "unexpected entry count {}",
+            archive.len()
+        )));
+    }
     let mut chosen = None;
     for i in 0..archive.len() {
         let entry = archive
@@ -322,6 +528,9 @@ fn extract_single_file(zip_path: &Path, out_dir: &Path) -> Result<PathBuf, Updat
             .enclosed_name()
             .map(|p| p.to_path_buf())
             .ok_or_else(|| UpdateError::Zip("unsafe zip path".into()))?;
+        if entry.size() > MAX_ASSET_BYTES {
+            return Err(UpdateError::AssetTooLarge(entry.size()));
+        }
         chosen = Some((i, name));
         break;
     }
@@ -430,6 +639,33 @@ mod tests {
                 .map(|a| a.name.as_str()),
             Some("sqyre-v2026.07.23-windows-amd64.zip")
         );
+    }
+
+    #[test]
+    fn parse_sha256sums_gnu_format() {
+        let text = "\
+# comment
+abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789  sqyre-v1-linux-amd64.zip
+fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210 *Sqyre.AppImage.zip
+";
+        let map = parse_sha256sums(text);
+        assert_eq!(
+            map.get("sqyre-v1-linux-amd64.zip").map(String::as_str),
+            Some("abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789")
+        );
+        assert_eq!(
+            map.get("Sqyre.AppImage.zip").map(String::as_str),
+            Some("fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210")
+        );
+    }
+
+    #[test]
+    fn assert_allowed_download_url_accepts_github() {
+        assert!(assert_allowed_download_url(
+            "https://github.com/luhrMan/Squire/releases/download/v1/a.zip"
+        )
+        .is_ok());
+        assert!(assert_allowed_download_url("https://evil.example/a.zip").is_err());
     }
 
     #[test]

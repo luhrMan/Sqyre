@@ -36,7 +36,7 @@ struct WaitState {
     /// For hold-repeat: last fire time per index.
     last_fire: Vec<Option<Instant>>,
     /// Latest pressed-key snapshot from the hook thread.
-    last_pressed: HashSet<String>,
+    last_pressed: HashSet<&'static str>,
 }
 
 impl ContinueWaitBridge {
@@ -57,7 +57,7 @@ impl ContinueWaitBridge {
     }
 
     /// Called from the hotkey thread when the set of pressed keys changes.
-    pub fn on_pressed_keys(&self, pressed: &HashSet<String>) {
+    pub fn on_pressed_keys(&self, pressed: &HashSet<&'static str>) {
         let mut g = self.inner.state.lock();
         // Always refresh — wait arming reads last_pressed for already-held chords.
         g.last_pressed.clone_from(pressed);
@@ -81,7 +81,7 @@ impl ContinueWaitBridge {
             if chord.is_empty() {
                 continue;
             }
-            let all = chord.iter().all(|k| pressed.contains(k));
+            let all = chord.iter().all(|k| pressed.contains(k.as_str()));
             if all {
                 let len = chord.len();
                 match best {
@@ -179,7 +179,7 @@ impl ContinueWaitBridge {
                 .iter()
                 .enumerate()
                 .filter(|(_, chord)| {
-                    !chord.is_empty() && chord.iter().all(|k| g.last_pressed.contains(k))
+                    !chord.is_empty() && chord.iter().all(|k| g.last_pressed.contains(k.as_str()))
                 })
                 .map(|(i, _)| i)
                 .collect();
@@ -292,7 +292,7 @@ pub fn is_failsafe_chord(keys: &[String]) -> bool {
 }
 
 /// Whether Ctrl, Alt, and Shift are all held (left/right variants accepted).
-pub fn failsafe_modifiers_held(pressed: &std::collections::HashSet<String>) -> bool {
+pub fn failsafe_modifiers_held(pressed: &std::collections::HashSet<&'static str>) -> bool {
     let ctrl = pressed.contains("ctrl");
     let alt = pressed.contains("alt") || pressed.contains("ralt");
     let shift = pressed.contains("shift") || pressed.contains("rshift");
@@ -327,7 +327,7 @@ fn validate_not_failsafe(keys: &[String]) -> Result<(), String> {
 /// Map an rdev key to a Sqyre hotkey name (lowercase).
 /// Stable key names for `db.yaml` chords (X11 keysym → hook name).
 #[cfg(all(feature = "hooks", not(target_os = "windows")))]
-pub fn rdev_key_name(key: rdev::Key) -> Option<String> {
+pub fn rdev_key_name(key: rdev::Key) -> Option<&'static str> {
     use rdev::Key;
     let name = match key {
         Key::Escape => "esc",
@@ -418,14 +418,14 @@ pub fn rdev_key_name(key: rdev::Key) -> Option<String> {
         Key::KpDelete => "num_period",
         _ => return None,
     };
-    Some(name.into())
+    Some(name)
 }
 
 /// Map a Win32 virtual-key code to a Sqyre hotkey name (same strings as [`rdev_key_name`]).
 ///
 /// `extended` is the LLKHF_EXTENDED bit from `KBDLLHOOKSTRUCT::flags` (numpad Enter, etc.).
 #[cfg(all(feature = "hooks", target_os = "windows"))]
-pub fn vk_key_name(vk: u32, extended: bool) -> Option<String> {
+pub fn vk_key_name(vk: u32, extended: bool) -> Option<&'static str> {
     // https://learn.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
     let name = match vk {
         0x1B => "esc",                   // VK_ESCAPE
@@ -515,7 +515,7 @@ pub fn vk_key_name(vk: u32, extended: bool) -> Option<String> {
         0x6E => "num_period",   // VK_DECIMAL
         _ => return None,
     };
-    Some(name.into())
+    Some(name)
 }
 
 #[cfg(test)]
@@ -541,7 +541,7 @@ mod tests {
         let handle = thread::spawn(move || {
             thread::sleep(Duration::from_millis(30));
             let mut pressed = HashSet::new();
-            pressed.insert("f9".into());
+            pressed.insert("f9");
             bridge.on_pressed_keys(&pressed);
         });
         b.wait_for_continue(&["f9".into()], false, &stop).unwrap();
@@ -556,8 +556,8 @@ mod tests {
         let handle = thread::spawn(move || {
             thread::sleep(Duration::from_millis(30));
             let mut pressed = HashSet::new();
-            pressed.insert("ctrl".into());
-            pressed.insert("a".into());
+            pressed.insert("ctrl");
+            pressed.insert("a");
             bridge.on_pressed_keys(&pressed);
         });
         let idx = b
@@ -612,9 +612,9 @@ mod tests {
     #[test]
     fn failsafe_modifiers_accept_left_right() {
         let mut pressed = HashSet::new();
-        pressed.insert("ctrl".into());
-        pressed.insert("ralt".into());
-        pressed.insert("rshift".into());
+        pressed.insert("ctrl");
+        pressed.insert("ralt");
+        pressed.insert("rshift");
         assert!(failsafe_modifiers_held(&pressed));
         pressed.remove("ralt");
         assert!(!failsafe_modifiers_held(&pressed));

@@ -1,8 +1,8 @@
 use super::common::{run_matches, set_coord_outputs, sort_hits, DetectionHit};
 use super::ocr::ocr_target_matched;
-use crate::backends::{DesktopRect, IconStore, ItemMeta, RecordingBackend, RecordingCapturer};
+use crate::backends::{DesktopRect, IconStore, ItemMeta};
 use crate::run::{execute_macro_with, ExecDeps};
-use crate::test_support::SEARCH_FIXED_AREA;
+use crate::test_support::{RecordingBackend, RecordingCapturer, SEARCH_FIXED_AREA};
 use crate::SharedActionLog;
 use image::{Rgba, RgbaImage};
 use sqyre_domain::{
@@ -394,14 +394,14 @@ fn find_pixel_uses_collection_cell_search_area() {
             &self,
             _r: &CoordinateRef,
             _macro_: &Macro,
-        ) -> std::result::Result<(i32, i32), String> {
-            Err("point".into())
+        ) -> std::result::Result<(i32, i32), crate::backends::PortError> {
+            Err(crate::backends::PortError::invalid("point"))
         }
         fn resolve_search_area(
             &self,
             r: &CoordinateRef,
             _macro_: &Macro,
-        ) -> std::result::Result<(i32, i32, i32, i32), String> {
+        ) -> std::result::Result<(i32, i32, i32, i32), crate::backends::PortError> {
             assert!(r.is_collection(), "expected collection ref, got {r:?}");
             assert_eq!(r.as_str(), "Demo~bag@1,2-1,2");
             Ok((50, 60, 54, 64))
@@ -809,7 +809,8 @@ fn find_template_matches_sqdiff_normed_peak() {
 
 #[test]
 fn ocr_writes_text_and_target_coords() {
-    use crate::backends::{FixedOcrEngine, OcrResult};
+    use crate::test_support::FixedOcrEngine;
+    use sqyre_vision::OcrRecognition;
     use sqyre_vision::OcrWordBox;
 
     let img = RgbaImage::from_pixel(20, 10, Rgba([255, 255, 255, 255]));
@@ -821,7 +822,7 @@ fn ocr_writes_text_and_target_coords() {
     };
     let resolver = SEARCH_FIXED_AREA;
     let ocr = FixedOcrEngine {
-        result: OcrResult {
+        result: OcrRecognition {
             text: "Hello Submit Button".into(),
             words: vec![
                 OcrWordBox {
@@ -941,14 +942,15 @@ fn ocr_writes_text_and_target_coords() {
 
 #[test]
 fn ocr_runs_branch_when_target_found() {
-    use crate::backends::{FixedOcrEngine, OcrResult};
+    use crate::test_support::FixedOcrEngine;
+    use sqyre_vision::OcrRecognition;
     use sqyre_vision::OcrWordBox;
 
     let mut backend = RecordingBackend::default();
     let mut capturer = capturer_next(RgbaImage::from_pixel(20, 10, Rgba([255, 255, 255, 255])));
     let resolver = SEARCH_FIXED_AREA;
     let ocr = FixedOcrEngine {
-        result: OcrResult {
+        result: OcrRecognition {
             text: "Hello Submit Button".into(),
             words: vec![OcrWordBox {
                 word: "Submit".into(),
@@ -978,13 +980,14 @@ fn ocr_runs_branch_when_target_found() {
 
 #[test]
 fn ocr_no_find_runs_branch_when_flag_set() {
-    use crate::backends::{FixedOcrEngine, OcrResult};
+    use crate::test_support::FixedOcrEngine;
+    use sqyre_vision::OcrRecognition;
 
     let mut backend = RecordingBackend::default();
     let mut capturer = capturer_next(RgbaImage::from_pixel(20, 10, Rgba([255, 255, 255, 255])));
     let resolver = SEARCH_FIXED_AREA;
     let ocr = FixedOcrEngine {
-        result: OcrResult {
+        result: OcrRecognition {
             text: "Hello World".into(),
             words: vec![],
         },
@@ -1020,13 +1023,14 @@ fn ocr_no_find_runs_branch_when_flag_set() {
 
 #[test]
 fn ocr_skips_branch_when_target_missing() {
-    use crate::backends::{FixedOcrEngine, OcrResult};
+    use crate::test_support::FixedOcrEngine;
+    use sqyre_vision::OcrRecognition;
 
     let mut backend = RecordingBackend::default();
     let mut capturer = capturer_next(RgbaImage::from_pixel(20, 10, Rgba([255, 255, 255, 255])));
     let resolver = SEARCH_FIXED_AREA;
     let ocr = FixedOcrEngine {
-        result: OcrResult {
+        result: OcrRecognition {
             text: "Hello World".into(),
             words: vec![],
         },
@@ -1123,22 +1127,26 @@ fn find_pixel_wait_until_found_stops_when_flag_set() {
         fn move_to(&mut self, x: i32, y: i32, opts: crate::backends::MoveOptions) {
             self.inner.move_to(x, y, opts);
         }
-        fn click(&mut self, button: &str, down: bool) -> Result<(), String> {
+        fn click(
+            &mut self,
+            button: &str,
+            down: bool,
+        ) -> Result<(), crate::backends::AutomationError> {
             self.inner.click(button, down)
         }
-        fn scroll(&mut self, up: bool) -> Result<(), String> {
+        fn scroll(&mut self, up: bool) -> Result<(), crate::backends::AutomationError> {
             self.inner.scroll(up)
         }
-        fn key_down(&mut self, key: &str) -> Result<(), String> {
+        fn key_down(&mut self, key: &str) -> Result<(), crate::backends::AutomationError> {
             self.inner.key_down(key)
         }
-        fn key_up(&mut self, key: &str) -> Result<(), String> {
+        fn key_up(&mut self, key: &str) -> Result<(), crate::backends::AutomationError> {
             self.inner.key_up(key)
         }
         fn type_char(&mut self, ch: char) {
             self.inner.type_char(ch);
         }
-        fn write_clipboard(&mut self, s: &str) -> Result<(), String> {
+        fn write_clipboard(&mut self, s: &str) -> Result<(), crate::backends::AutomationError> {
             self.inner.write_clipboard(s)
         }
     }
@@ -1639,18 +1647,19 @@ fn image_search_uses_mask_path_when_present() {
 
 #[test]
 fn ocr_wait_until_found_retries_then_succeeds() {
-    use crate::backends::{OcrResult, QueuedOcrEngine};
+    use crate::test_support::QueuedOcrEngine;
+    use sqyre_vision::OcrRecognition;
 
     let mut backend = RecordingBackend::default();
     let mut capturer = capturer_next(RgbaImage::from_pixel(20, 10, Rgba([255, 255, 255, 255])));
     let resolver = SEARCH_FIXED_AREA;
     let ocr = QueuedOcrEngine {
         queue: std::sync::Mutex::new(vec![
-            OcrResult {
+            OcrRecognition {
                 text: "noise".into(),
                 words: vec![],
             },
-            OcrResult {
+            OcrRecognition {
                 text: "Submit now".into(),
                 words: vec![],
             },
@@ -1686,18 +1695,19 @@ fn ocr_wait_until_found_retries_then_succeeds() {
 
 #[test]
 fn ocr_repeat_while_found_then_stops_on_miss() {
-    use crate::backends::{OcrResult, QueuedOcrEngine};
+    use crate::test_support::QueuedOcrEngine;
+    use sqyre_vision::OcrRecognition;
 
     let mut backend = RecordingBackend::default();
     let mut capturer = capturer_next(RgbaImage::from_pixel(20, 10, Rgba([255, 255, 255, 255])));
     let resolver = SEARCH_FIXED_AREA;
     let ocr = QueuedOcrEngine {
         queue: std::sync::Mutex::new(vec![
-            OcrResult {
+            OcrRecognition {
                 text: "Keep going".into(),
                 words: vec![],
             },
-            OcrResult {
+            OcrRecognition {
                 text: "gone".into(),
                 words: vec![],
             },
@@ -1724,14 +1734,15 @@ fn ocr_repeat_while_found_then_stops_on_miss() {
 
 #[test]
 fn ocr_runs_children_per_occurrence() {
-    use crate::backends::{FixedOcrEngine, OcrResult};
+    use crate::test_support::FixedOcrEngine;
+    use sqyre_vision::OcrRecognition;
     use sqyre_vision::OcrWordBox;
 
     let mut backend = RecordingBackend::default();
     let mut capturer = capturer_next(RgbaImage::from_pixel(20, 10, Rgba([255, 255, 255, 255])));
     let resolver = SEARCH_FIXED_AREA;
     let ocr = FixedOcrEngine {
-        result: OcrResult {
+        result: OcrRecognition {
             text: "Gold Silver Gold".into(),
             words: vec![
                 OcrWordBox {
