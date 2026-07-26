@@ -46,7 +46,7 @@ impl HotkeyService for RdevHotkeys {
         let handle = thread::Builder::new()
             .name("sqyre-hotkeys".into())
             .spawn(move || {
-                let mut pressed: HashSet<String> = HashSet::new();
+                let mut pressed: HashSet<&'static str> = HashSet::new();
                 let _ = listen(move |event: Event| {
                     if stop.load(Ordering::SeqCst) {
                         return;

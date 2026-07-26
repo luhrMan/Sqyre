@@ -2,7 +2,9 @@
 
 use crate::normalize_key_name;
 use parking_lot::Mutex;
+use std::borrow::Borrow;
 use std::collections::HashSet;
+use std::hash::Hash;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -117,16 +119,28 @@ fn normalize_chord(keys: &[String]) -> Vec<String> {
 }
 
 /// Whether every chord key (or a modifier alias) is currently held.
-pub fn chord_all_pressed(pressed: &HashSet<String>, chord: &[String]) -> bool {
+///
+/// Generic over the pressed-set element so callers can use `&'static str`
+/// (hook threads) or `String` (UI snapshots) without extra allocation.
+pub fn chord_all_pressed<S>(pressed: &HashSet<S>, chord: &[String]) -> bool
+where
+    S: Borrow<str> + Hash + Eq,
+{
     !chord.is_empty() && chord.iter().all(|k| key_or_alias_pressed(pressed, k))
 }
 
 /// Whether no chord key (or alias) remains held.
-pub fn chord_fully_released(pressed: &HashSet<String>, chord: &[String]) -> bool {
+pub fn chord_fully_released<S>(pressed: &HashSet<S>, chord: &[String]) -> bool
+where
+    S: Borrow<str> + Hash + Eq,
+{
     chord.iter().all(|k| !key_or_alias_pressed(pressed, k))
 }
 
-fn key_or_alias_pressed(pressed: &HashSet<String>, key: &str) -> bool {
+fn key_or_alias_pressed<S>(pressed: &HashSet<S>, key: &str) -> bool
+where
+    S: Borrow<str> + Hash + Eq,
+{
     if pressed.contains(key) {
         return true;
     }
@@ -160,7 +174,7 @@ struct BindingRuntime {
 struct Inner {
     bindings: Mutex<Vec<BindingRuntime>>,
     suspend_count: Mutex<u32>,
-    pressed: Mutex<HashSet<String>>,
+    pressed: Mutex<HashSet<&'static str>>,
 }
 
 /// Shared registry between the hook thread and the UI.
@@ -232,13 +246,19 @@ impl MacroHotkeyBridge {
 
     /// Snapshot of currently pressed key names (for record UI).
     pub fn pressed_keys(&self) -> Vec<String> {
-        let mut v: Vec<String> = self.inner.pressed.lock().iter().cloned().collect();
+        let mut v: Vec<String> = self
+            .inner
+            .pressed
+            .lock()
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
         v.sort();
         v
     }
 
     /// Hotkey thread: mirror pressed set + evaluate chords.
-    pub fn on_pressed_keys(&self, pressed: &HashSet<String>, on_fire: &dyn Fn(String)) {
+    pub fn on_pressed_keys(&self, pressed: &HashSet<&'static str>, on_fire: &dyn Fn(String)) {
         // Reuse the existing HashSet allocation; match against the caller's set.
         self.inner.pressed.lock().clone_from(pressed);
         if *self.inner.suspend_count.lock() > 0 {
@@ -348,15 +368,15 @@ mod tests {
         };
 
         let mut pressed = HashSet::new();
-        pressed.insert("ctrl".into());
-        pressed.insert("a".into());
+        pressed.insert("ctrl");
+        pressed.insert("a");
         bridge.on_pressed_keys(&pressed, &fire);
         bridge.on_pressed_keys(&pressed, &fire); // repeat / latch
         assert_eq!(fires.load(Ordering::SeqCst), 1);
 
         pressed.remove("a");
         bridge.on_pressed_keys(&pressed, &fire);
-        pressed.insert("a".into());
+        pressed.insert("a");
         bridge.on_pressed_keys(&pressed, &fire);
         assert_eq!(fires.load(Ordering::SeqCst), 2);
     }
@@ -376,8 +396,8 @@ mod tests {
         };
 
         let mut pressed = HashSet::new();
-        pressed.insert("ctrl".into());
-        pressed.insert("b".into());
+        pressed.insert("ctrl");
+        pressed.insert("b");
         bridge.on_pressed_keys(&pressed, &fire);
         assert_eq!(fires.load(Ordering::SeqCst), 0);
 
@@ -404,13 +424,13 @@ mod tests {
         };
         bridge.suspend();
         let mut pressed = HashSet::new();
-        pressed.insert("f9".into());
+        pressed.insert("f9");
         bridge.on_pressed_keys(&pressed, &fire);
         assert_eq!(fires.load(Ordering::SeqCst), 0);
         bridge.resume();
         pressed.clear();
         bridge.on_pressed_keys(&pressed, &fire);
-        pressed.insert("f9".into());
+        pressed.insert("f9");
         bridge.on_pressed_keys(&pressed, &fire);
         assert_eq!(fires.load(Ordering::SeqCst), 1);
     }
@@ -418,8 +438,8 @@ mod tests {
     #[test]
     fn shift_alias_matches_rshift() {
         let mut pressed = HashSet::new();
-        pressed.insert("rshift".into());
-        pressed.insert("a".into());
+        pressed.insert("rshift");
+        pressed.insert("a");
         assert!(chord_all_pressed(&pressed, &["shift".into(), "a".into()]));
     }
 }
