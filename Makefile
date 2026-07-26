@@ -1,7 +1,7 @@
 # Sqyre build helpers. Default output: ./bin
 # Binary is Rust (sqyre-app). Linux AppImage packaging uses the same stack.
 # Windows: Docker MinGW cross from Linux (scripts/windows/), or native on Windows.
-.PHONY: all sqyre release windows macos test coverage check check-fmt fmt clippy deny machete \
+.PHONY: all sqyre release windows macos test coverage coverage-floors check check-fmt fmt clippy deny machete \
 	release-gate run tessdata appimage docs-media wasm help
 
 ROOT := $(abspath .)
@@ -78,6 +78,7 @@ help:
 	@echo "  check        - check-fmt + clippy + deny (CI quality gates)"
 	@echo "  release-gate - fmt then check (used by release/packaging targets)"
 	@echo "  coverage     - cargo llvm-cov HTML + lcov (install: cargo install cargo-llvm-cov)"
+	@echo "  coverage-floors - line-coverage gates for pure crates (see scripts/coverage-floors.json)"
 	@echo "  run          - cargo run -p sqyre-app"
 	@echo "  tessdata     - scripts/download-tessdata.sh"
 	@echo "  docs-media   - regenerate docs/images screenshots"
@@ -165,6 +166,13 @@ coverage:
 	$(CARGO) llvm-cov report --lcov --output-path $(TARGET_DIR)/coverage/lcov.info
 	@echo "HTML report: $(TARGET_DIR)/coverage/html/index.html"
 	@echo "LCOV:        $(TARGET_DIR)/coverage/lcov.info"
+ifdef COVERAGE_FLOORS
+	$(MAKE) coverage-floors
+endif
+
+# Optional floors for pure crates/modules only (not OS crates). Requires cargo-llvm-cov.
+coverage-floors:
+	./scripts/check-coverage-floors.sh
 
 run:
 	$(CARGO) run -p sqyre-app $(CARGO_FLAGS)
