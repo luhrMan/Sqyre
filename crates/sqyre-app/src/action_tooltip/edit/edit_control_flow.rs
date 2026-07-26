@@ -75,6 +75,7 @@ pub(super) fn paint_conditional(
     condition_editor(ui, condition, known_vars, is_dark, active_macro, |_| {});
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn paint_foreach_row(
     ui: &mut egui::Ui,
     name: &mut String,

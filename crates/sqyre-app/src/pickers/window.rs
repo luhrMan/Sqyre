@@ -1,10 +1,14 @@
 use super::types::ActivePicker;
-use crate::window_types::{self, WindowInfo};
+use crate::window_types::WindowInfo;
 use eframe::egui;
 use std::sync::mpsc::{self, TryRecvError};
+
+#[cfg(feature = "native-runtime")]
 use std::thread;
 
+#[cfg(feature = "native-runtime")]
 pub(crate) fn fetch_open_windows() -> Result<Vec<WindowInfo>, String> {
+    use crate::window_types;
     sqyre_capture::list_open_windows()
         .map(|rows| {
             rows.into_iter()
@@ -12,6 +16,11 @@ pub(crate) fn fetch_open_windows() -> Result<Vec<WindowInfo>, String> {
                 .collect()
         })
         .map_err(|e| e.to_string())
+}
+
+#[cfg(not(feature = "native-runtime"))]
+pub(crate) fn fetch_open_windows() -> Result<Vec<WindowInfo>, String> {
+    Ok(Vec::new())
 }
 
 pub fn refresh_window_picker(picker: &mut ActivePicker) {

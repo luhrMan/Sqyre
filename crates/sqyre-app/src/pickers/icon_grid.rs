@@ -1,10 +1,7 @@
-use super::types::{EDIT_CELL, EDIT_GAP, EDIT_THUMB, GRID_CELL, GRID_GAP, GRID_THUMB, HEADER_SIZE, REMOVE_BTN};
-use crate::data_editor_preview::show_file_hover;
+use super::types::{EDIT_CELL, EDIT_GAP, EDIT_THUMB, GRID_CELL, GRID_GAP, GRID_THUMB, REMOVE_BTN};
 use crate::icon_cache::IconCache;
 use crate::image_view;
-use crate::paint_ctx::CatalogPaint;
-use crate::preview_tooltip::PreviewKind;
-use eframe::egui::{self, Color32, Pos2, Sense, Vec2};
+use eframe::egui::{self, Color32, Sense, Vec2};
 use sqyre_domain::PROGRAM_DELIMITER;
 use sqyre_persist::ProgramCatalog;
 

@@ -1,17 +1,10 @@
 //! Shared entity pickers: item icon grids, point / search-area lists, collection cells,
 //! macros, and Focus Window live-window lists.
 
-use crate::data_editor_preview::{paint_grid_overlay_painter, show_file_hover};
-use crate::icon_cache::IconCache;
-use crate::image_view::{self, ImageViewTransform};
-use crate::paint_ctx::CatalogPaint;
-use crate::preview_tooltip::PreviewKind;
-use eframe::egui::{self, Color32, Pos2, Sense, Vec2};
+use crate::image_view::ImageViewTransform;
 use crate::window_types::WindowInfo;
-use sqyre_domain::{CoordinateRef, PROGRAM_DELIMITER};
-use sqyre_persist::ProgramCatalog;
-use std::sync::mpsc::{self, Receiver, TryRecvError};
-use std::thread;
+use sqyre_domain::CoordinateRef;
+use std::sync::mpsc::Receiver;
 
 /// Fixed cell size (thumb + padding; no under-icon label).
 pub(crate) const GRID_CELL: f32 = 64.0;
