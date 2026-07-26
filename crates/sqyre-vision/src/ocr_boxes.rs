@@ -10,6 +10,16 @@ pub struct OcrWordBox {
     pub bottom: i32,
 }
 
+/// Recognized page text plus word boxes in image coordinates.
+///
+/// Platform-agnostic (unlike [`crate::LeptessOcr`], which needs Tesseract and is
+/// native-only) so it can be the shared OCR result type on every target, wasm included.
+#[derive(Debug, Clone, Default)]
+pub struct OcrRecognition {
+    pub text: String,
+    pub words: Vec<OcrWordBox>,
+}
+
 /// Join non-empty word boxes with spaces.
 pub fn text_from_ocr_boxes(boxes: &[OcrWordBox]) -> String {
     let mut parts = Vec::new();
