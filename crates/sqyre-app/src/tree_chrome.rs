@@ -6,10 +6,9 @@ use crate::pickers::attach_item_icon_tooltip;
 use crate::theme::paint_galley_centered;
 use crate::var_pills;
 use eframe::egui::{self, Color32, FontId, Sense, Stroke, Vec2};
-use sqyre_domain::{parse_hex_color, Action, ActionKind};
+use sqyre_domain::{parse_hex_color, Action, ActionKind, KnownVariableNames};
 use sqyre_persist::ProgramCatalog;
 use sqyre_ui_model::{action_icon_glyph, action_pastel_color, ActionDisplay, SummaryPill};
-use std::collections::HashSet;
 
 /// Icon badge edge length.
 const ICON_SIZE: f32 = 18.0;
@@ -189,7 +188,7 @@ fn paint_summary_pill(
     ui: &mut egui::Ui,
     action: &Action,
     pill: &SummaryPill,
-    known: &HashSet<String>,
+    known: &KnownVariableNames,
     is_dark: bool,
 ) -> egui::Response {
     var_pills::paint_summary_pill(ui, action.type_key(), pill, known, is_dark)
@@ -322,7 +321,7 @@ pub fn paint_action_row(
     action: &Action,
     catalog: &ProgramCatalog,
     icons: &mut IconCache,
-    known_vars: &HashSet<String>,
+    known_vars: &KnownVariableNames,
     is_dark: bool,
     highlight: RowHighlight,
 ) -> RowInteraction {
@@ -633,7 +632,7 @@ mod tests {
                 &action,
                 &catalog,
                 &mut icons,
-                &HashSet::new(),
+                &KnownVariableNames::default(),
                 false,
                 RowHighlight::None,
             );
@@ -661,7 +660,7 @@ mod tests {
                     &action,
                     &catalog,
                     &mut icons,
-                    &HashSet::new(),
+                    &KnownVariableNames::default(),
                     false,
                     RowHighlight::None,
                 );
@@ -701,7 +700,7 @@ mod tests {
                     &find,
                     &catalog,
                     &mut icons,
-                    &HashSet::new(),
+                    &KnownVariableNames::default(),
                     true,
                     RowHighlight::None
                 )
@@ -731,7 +730,7 @@ mod tests {
                     &search,
                     &catalog,
                     &mut icons,
-                    &HashSet::new(),
+                    &KnownVariableNames::default(),
                     false,
                     RowHighlight::None
                 )
@@ -826,7 +825,7 @@ mod tests {
             &search,
             &ProgramCatalog::default(),
             &mut IconCache::new(),
-            &HashSet::new(),
+            &KnownVariableNames::default(),
             true,
             RowHighlight::None,
         )

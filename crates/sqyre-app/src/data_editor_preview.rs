@@ -3,9 +3,8 @@ use crate::image_view::{self, ImageViewTransform};
 use crate::theme;
 use crate::var_pills;
 use eframe::egui;
-use sqyre_domain::PROGRAM_DELIMITER;
+use sqyre_domain::{KnownVariableNames, PROGRAM_DELIMITER};
 use sqyre_validate::EntryValidation;
-use std::collections::HashSet;
 
 pub(crate) fn paint_preview_toolbar(
     ui: &mut egui::Ui,
@@ -70,7 +69,7 @@ pub(crate) fn paint_preview_coord_chip(
     edge: CardinalEdge,
     placeholder: &str,
     value: &mut String,
-    known: &HashSet<String>,
+    known: &KnownVariableNames,
     is_dark: bool,
     validation: &EntryValidation,
     help: &str,
