@@ -1,5 +1,6 @@
 //! Linux X11 window list + activate.
 
+use crate::window_match::{paths_equal, pick_matching_icon, titles_equal};
 use crate::{ProcessIcon, WindowInfo, PROCESS_ICON_TARGET_PX};
 use parking_lot::Mutex;
 use sqyre_ports::{AutomationError, WindowFocuser};
@@ -81,31 +82,22 @@ pub fn process_icon(process_path: &str, window_title: &str) -> Option<ProcessIco
     if path.is_empty() {
         return None;
     }
-    let title = window_title.trim();
     with_display(|display| -> Result<Option<ProcessIcon>, String> {
-        unsafe {
+        let infos = unsafe {
             let root = XDefaultRootWindow(display);
             let clients = client_list(display, root)?;
-            let mut path_fallback: Option<ProcessIcon> = None;
-            for win in clients {
-                let Some(info) = window_info_of(display, win) else {
-                    continue;
-                };
-                if !paths_equal(&info.process_path, path) {
-                    continue;
-                }
-                let Some(icon) = info.icon else {
-                    continue;
-                };
-                if !title.is_empty() && titles_equal(&info.title, title) {
-                    return Ok(Some(icon));
-                }
-                if path_fallback.is_none() {
-                    path_fallback = Some(icon);
-                }
-            }
-            Ok(path_fallback)
-        }
+            clients
+                .into_iter()
+                .filter_map(|win| window_info_of(display, win))
+                .collect::<Vec<_>>()
+        };
+        Ok(pick_matching_icon(
+            infos,
+            path,
+            window_title,
+            |info| Some((info.title.clone(), info.process_path.clone())),
+            |info, _wtitle, _wpath| info.icon.clone(),
+        ))
     })
     .ok()
     .flatten()
@@ -631,29 +623,9 @@ unsafe fn intern(display: *mut Display, name: &str) -> Result<Atom, String> {
     }
 }
 
-fn paths_equal(a: &str, b: &str) -> bool {
-    let a = Path::new(a.trim());
-    let b = Path::new(b.trim());
-    if a.as_os_str().is_empty() || b.as_os_str().is_empty() {
-        return false;
-    }
-    a == b
-}
-
-fn titles_equal(a: &str, b: &str) -> bool {
-    a.trim() == b.trim()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn paths_and_titles() {
-        assert!(paths_equal("/usr/bin/foo", "/usr/bin/foo"));
-        assert!(!paths_equal("/usr/bin/foo", "/usr/bin/bar"));
-        assert!(titles_equal(" Hi ", "Hi"));
-    }
 
     #[test]
     fn pick_net_wm_icon_prefers_near_target() {
