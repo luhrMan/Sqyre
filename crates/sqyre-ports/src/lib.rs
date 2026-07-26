@@ -5,9 +5,11 @@
 
 mod automation_error;
 mod capture_error;
+mod port_error;
 
 pub use automation_error::AutomationError;
 pub use capture_error::CaptureError;
+pub use port_error::PortError;
 
 use image::RgbaImage;
 use rayon::prelude::*;

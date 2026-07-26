@@ -1,6 +1,7 @@
 //! Runtime adapters shared by macro execution (OCR, continue-wait, stop-watch).
 
 use parking_lot::Mutex;
+use sqyre_executor::PortError;
 use sqyre_hotkeys::{ContinueWaitBridge, MacroHotkeyBridge, StopFlag};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -10,19 +11,29 @@ pub(crate) struct BridgeContinueWait {
     pub(crate) macro_hotkeys: MacroHotkeyBridge,
 }
 
+/// `sqyre-hotkeys` predates the typed port error and still reports failures as
+/// plain strings; translate at this adapter boundary instead of widening that crate.
+fn to_port_error(e: String) -> PortError {
+    if e == "stopped" {
+        PortError::Stopped
+    } else {
+        PortError::Message(e)
+    }
+}
+
 impl sqyre_executor::ContinueKeyWaiter for BridgeContinueWait {
     fn wait_for_continue(
         &self,
         keys: &[String],
         pass_through: bool,
         stop: &AtomicBool,
-    ) -> Result<(), String> {
+    ) -> Result<(), PortError> {
         self.macro_hotkeys.suspend();
         let result = self
             .continue_wait
             .wait_for_continue(keys, pass_through, stop);
         self.macro_hotkeys.resume();
-        result
+        result.map_err(to_port_error)
     }
 
     fn wait_for_any_chord(
@@ -31,13 +42,13 @@ impl sqyre_executor::ContinueKeyWaiter for BridgeContinueWait {
         hold_repeat: &[bool],
         pass_through: bool,
         stop: &AtomicBool,
-    ) -> Result<usize, String> {
+    ) -> Result<usize, PortError> {
         self.macro_hotkeys.suspend();
         let result = self
             .continue_wait
             .wait_for_any_chord(chords, hold_repeat, pass_through, stop);
         self.macro_hotkeys.resume();
-        result
+        result.map_err(to_port_error)
     }
 }
 

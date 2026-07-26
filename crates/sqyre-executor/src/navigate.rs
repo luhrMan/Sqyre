@@ -1,6 +1,6 @@
 //! NavigateSelect / NavigateKey execution.
 
-use crate::backends::MoveOptions;
+use crate::backends::{MoveOptions, PortError};
 use crate::error::{ExecError, FlowSignal, Result};
 use crate::run::{resolve_int, resolve_text, run_children, Executor};
 use sqyre_domain::{
@@ -201,8 +201,8 @@ pub(crate) fn execute_navigate_select(
             })?;
             match waiter.wait_for_any_chord(&chords, &hold_mask, data.options.pass_through, stop) {
                 Ok(i) => i,
-                Err(e) if e.contains("stopped") => return Err(FlowSignal::Stopped.into()),
-                Err(e) => return Err(ExecError::Message(e)),
+                Err(PortError::Stopped) => return Err(FlowSignal::Stopped.into()),
+                Err(e) => return Err(e.into()),
             }
         };
         if stop.load(Ordering::SeqCst) {
