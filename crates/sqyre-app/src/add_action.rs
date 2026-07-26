@@ -25,7 +25,7 @@ use sqyre_persist::UserSettings;
 use sqyre_serialize::{action_from_map, action_to_map};
 use sqyre_ui_model::{action_icon_glyph, action_pastel_color};
 use sqyre_validate::validate_action;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use web_time::{Duration, Instant};
 
 /// How long a tile must be hovered before the defaults **view** tip opens.
