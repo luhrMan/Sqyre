@@ -18,13 +18,9 @@ pub fn apply_main_monitor_resolution(catalog: &mut ProgramCatalog) {
 
 pub struct CatalogResolver<'a>(pub &'a ProgramCatalog);
 
-fn persist_port_err(err: String) -> PortError {
-    PortError::Message(err)
-}
-
 impl CoordinateResolver for CatalogResolver<'_> {
     fn resolve_point(&self, r: &CoordinateRef, macro_: &Macro) -> Result<(i32, i32), PortError> {
-        self.0.resolve_point(r, macro_).map_err(persist_port_err)
+        self.0.resolve_point(r, macro_)
     }
 
     fn resolve_search_area(
@@ -32,9 +28,7 @@ impl CoordinateResolver for CatalogResolver<'_> {
         r: &CoordinateRef,
         macro_: &Macro,
     ) -> Result<(i32, i32, i32, i32), PortError> {
-        self.0
-            .resolve_search_area(r, macro_)
-            .map_err(persist_port_err)
+        self.0.resolve_search_area(r, macro_)
     }
 
     fn collection_grid(&self, program: &str, collection: &str) -> Result<(i32, i32), PortError> {
@@ -43,17 +37,12 @@ impl CoordinateResolver for CatalogResolver<'_> {
         } else {
             CoordinateRef(format!("{program}~{collection}"))
         };
-        let col = self.0.lookup_collection(&r).map_err(persist_port_err)?;
+        let col = self.0.lookup_collection(&r)?;
         Ok((col.rows, col.cols))
     }
 
     fn atlas_members(&self, program: &str, atlas: &str) -> Result<Vec<String>, PortError> {
-        Ok(self
-            .0
-            .lookup_atlas(program, atlas)
-            .map_err(persist_port_err)?
-            .collections
-            .clone())
+        Ok(self.0.lookup_atlas(program, atlas)?.collections.clone())
     }
 }
 

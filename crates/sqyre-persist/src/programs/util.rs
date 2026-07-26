@@ -4,6 +4,7 @@ use super::types::*;
 use crate::fs_name::validate_fs_entity_name;
 use crate::{PersistError, Result};
 use sqyre_domain::PROGRAM_DELIMITER;
+use sqyre_ports::PortError;
 use std::collections::BTreeMap;
 
 pub(super) fn ensure_resolution(p: &mut ProgramData, res: &str, scale: f32) {
@@ -138,11 +139,11 @@ pub(super) fn point_from<'a>(
     program: &str,
     name: &str,
     resolution_key: &str,
-) -> std::result::Result<(&'a ProgramPoint, &'a str), String> {
+) -> std::result::Result<(&'a ProgramPoint, &'a str), PortError> {
     let p = cat
         .programs
         .get(program)
-        .ok_or_else(|| format!("program {program:?} not found"))?;
+        .ok_or_else(|| PortError::not_found(format!("program {program:?} not found")))?;
     if let Some((src_key, pts)) = p.points.get_key_value(resolution_key) {
         if let Some(pt) = pts.get(name) {
             return Ok((pt, src_key.as_str()));
@@ -154,7 +155,9 @@ pub(super) fn point_from<'a>(
             return Ok((pt, src_key.as_str()));
         }
     }
-    Err(format!("point {name:?} not in {program}"))
+    Err(PortError::not_found(format!(
+        "point {name:?} not in {program}"
+    )))
 }
 
 pub(super) fn search_area_from<'a>(
@@ -162,11 +165,11 @@ pub(super) fn search_area_from<'a>(
     program: &str,
     name: &str,
     resolution_key: &str,
-) -> std::result::Result<(&'a ProgramSearchArea, &'a str), String> {
+) -> std::result::Result<(&'a ProgramSearchArea, &'a str), PortError> {
     let p = cat
         .programs
         .get(program)
-        .ok_or_else(|| format!("program {program:?} not found"))?;
+        .ok_or_else(|| PortError::not_found(format!("program {program:?} not found")))?;
     if let Some((src_key, areas)) = p.search_areas.get_key_value(resolution_key) {
         if let Some(sa) = areas.get(name) {
             return Ok((sa, src_key.as_str()));
@@ -177,22 +180,26 @@ pub(super) fn search_area_from<'a>(
             return Ok((sa, src_key.as_str()));
         }
     }
-    Err(format!("search area {name:?} not in {program}"))
+    Err(PortError::not_found(format!(
+        "search area {name:?} not in {program}"
+    )))
 }
 
 /// Parse `"WxH"` resolution key into positive dimensions.
-pub(super) fn parse_resolution_key(key: &str) -> std::result::Result<(i32, i32), String> {
-    let (w, h) = key
-        .split_once('x')
-        .ok_or_else(|| format!("invalid resolution key {key:?} (expected WxH)"))?;
+pub(super) fn parse_resolution_key(key: &str) -> std::result::Result<(i32, i32), PortError> {
+    let (w, h) = key.split_once('x').ok_or_else(|| {
+        PortError::invalid(format!("invalid resolution key {key:?} (expected WxH)"))
+    })?;
     let w: i32 = w
         .parse()
-        .map_err(|_| format!("invalid resolution width in {key:?}"))?;
+        .map_err(|_| PortError::invalid(format!("invalid resolution width in {key:?}")))?;
     let h: i32 = h
         .parse()
-        .map_err(|_| format!("invalid resolution height in {key:?}"))?;
+        .map_err(|_| PortError::invalid(format!("invalid resolution height in {key:?}")))?;
     if w <= 0 || h <= 0 {
-        return Err(format!("non-positive resolution in {key:?}"));
+        return Err(PortError::invalid(format!(
+            "non-positive resolution in {key:?}"
+        )));
     }
     Ok((w, h))
 }
@@ -213,14 +220,14 @@ pub(super) fn collection_from<'a>(
     cat: &'a ProgramCatalog,
     program: &str,
     name: &str,
-) -> std::result::Result<&'a ProgramCollection, String> {
+) -> std::result::Result<&'a ProgramCollection, PortError> {
     let p = cat
         .programs
         .get(program)
-        .ok_or_else(|| format!("program {program:?} not found"))?;
+        .ok_or_else(|| PortError::not_found(format!("program {program:?} not found")))?;
     p.collections
         .get(name)
-        .ok_or_else(|| format!("collection {name:?} not in {program}"))
+        .ok_or_else(|| PortError::not_found(format!("collection {name:?} not in {program}")))
 }
 
 /// Axis-aligned union of selected cells within search-area bounds (1-based inclusive).
@@ -236,25 +243,25 @@ pub(super) fn cell_rect(
     c1: i32,
     r2: i32,
     c2: i32,
-) -> std::result::Result<(i32, i32, i32, i32), String> {
+) -> std::result::Result<(i32, i32, i32, i32), PortError> {
     if rows < 1 || cols < 1 {
-        return Err(format!(
+        return Err(PortError::invalid(format!(
             "collection grid {rows}x{cols}: rows and cols must be >= 1"
-        ));
+        )));
     }
     let (r1, r2) = if r1 <= r2 { (r1, r2) } else { (r2, r1) };
     let (c1, c2) = if c1 <= c2 { (c1, c2) } else { (c2, c1) };
     if r1 < 1 || c1 < 1 || r2 > rows || c2 > cols {
-        return Err(format!(
+        return Err(PortError::invalid(format!(
             "cell range {r1},{c1}-{r2},{c2} out of bounds for {rows}x{cols} grid"
-        ));
+        )));
     }
     let width = right_x - left_x;
     let height = bottom_y - top_y;
     if width <= 0 || height <= 0 {
-        return Err(format!(
+        return Err(PortError::invalid(format!(
             "invalid search area bounds {left_x},{top_y}-{right_x},{bottom_y}"
-        ));
+        )));
     }
     let cell_left = left_x + (c1 - 1) * width / cols;
     let cell_right = left_x + c2 * width / cols;
