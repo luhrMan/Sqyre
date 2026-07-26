@@ -1,4 +1,3 @@
-use crate::action_log::ActionLogger;
 use crate::actions::{
     execute_focus_window, execute_for_each_row, execute_pause, execute_run_macro,
     execute_save_variable, execute_set_variable, execute_while,
@@ -8,9 +7,10 @@ use crate::backends::{
     OcrEngine, ScreenCapturer, WindowFocuser,
 };
 use crate::error::{ExecError, FlowSignal, Result};
-use crate::highlight::{clear_highlights, highlight_cursor, ActionHighlighter};
+use sqyre_ui_model::{
+    clear_highlights, highlight_cursor, ActionHighlighter, ActionLogger, RuntimeVarSink,
+};
 use crate::navigate::{execute_navigate_key, execute_navigate_select};
-use crate::runtime_vars::RuntimeVarSink;
 use crate::search::{execute_find_pixel, execute_image_search, execute_ocr};
 use sqyre_domain::{
     action_type_label, resolve_scalar_int, Action, ActionId, ActionKind, LoopJumpMode, Macro,
@@ -747,7 +747,7 @@ pub(crate) fn resolve_text(text: &str, macro_: &Macro) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::action_log::lines_for;
+    use sqyre_ui_model::lines_for;
     use crate::backends::DesktopRect;
     use crate::test_support::FixedResolver;
     use crate::test_support::{RecordingBackend, RecordingCapturer};

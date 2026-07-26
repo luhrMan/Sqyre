@@ -4359,6 +4359,7 @@ dependencies = [
  "sqyre-hotkeys",
  "sqyre-match",
  "sqyre-ports",
+ "sqyre-ui-model",
  "sqyre-vision",
  "tempfile",
  "thiserror 2.0.19",
@@ -4421,6 +4422,7 @@ version = "0.1.0"
 dependencies = [
  "image",
  "rayon",
+ "sqyre-domain",
  "thiserror 2.0.19",
 ]
 
@@ -4441,6 +4443,7 @@ version = "0.1.0"
 dependencies = [
  "parking_lot",
  "sqyre-domain",
+ "sqyre-match",
  "sqyre-varref",
 ]
 

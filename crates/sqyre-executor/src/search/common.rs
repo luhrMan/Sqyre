@@ -2,7 +2,7 @@
 
 use crate::backends::{DesktopRect, ItemMeta};
 use crate::error::{ExecError, FlowSignal, Result};
-use crate::highlight::{highlight_clear, highlight_fill};
+use sqyre_ui_model::{highlight_clear, highlight_fill};
 use crate::run::{run_children, Executor};
 use sqyre_domain::{
     Action, ActionId, CoordinateOutputs, CoordinateRef, Macro, MatchOrder, ScalarValue,
