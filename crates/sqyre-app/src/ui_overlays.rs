@@ -11,7 +11,6 @@ use crate::SqyreApp;
 use eframe::egui;
 use sqyre_domain::collect_known_variable_names;
 use sqyre_domain::ActionId;
-use std::collections::HashSet;
 use std::sync::atomic::Ordering;
 
 /// Close → hide to tray when available; Quit from tray allows real exit.
@@ -155,7 +154,7 @@ pub fn show_floating_windows(app: &mut SqyreApp, ctx: &egui::Context) {
             .map(|m| (m.name.clone(), m.tags.clone()))
             .collect();
         let known_vars = if app.workspace.macros.is_empty() {
-            HashSet::new()
+            sqyre_domain::KnownVariableNames::default()
         } else {
             let idx = app
                 .workspace

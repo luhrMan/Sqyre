@@ -17,7 +17,7 @@ use crate::widgets::SaveCancel;
 use eframe::egui::{self, Color32, CornerRadius, Key, Sense, Vec2};
 use sqyre_domain::{
     action_templates, action_type_label, blank_action, Action, ActionId, ActionTemplate,
-    ACTION_PICKER_CATEGORIES,
+    KnownVariableNames, ACTION_PICKER_CATEGORIES,
 };
 use sqyre_hotkeys::{MacroHotkeyBridge, ScreenClickBridge};
 use sqyre_persist::ProgramCatalog;
@@ -180,7 +180,7 @@ impl AddActionPicker {
         icons: &mut IconCache,
         previews: &mut PreviewTooltipCache,
         macros: &[(String, Vec<String>)],
-        known_vars: &HashSet<String>,
+        known_vars: &KnownVariableNames,
         key_record: &mut KeyRecordUi,
         hotkey_record: &mut HotkeyRecordUi,
         macro_hotkeys: &MacroHotkeyBridge,
@@ -336,7 +336,7 @@ impl AddActionPicker {
         catalog: &ProgramCatalog,
         icons: &mut IconCache,
         previews: &mut PreviewTooltipCache,
-        known_vars: &HashSet<String>,
+        known_vars: &KnownVariableNames,
         is_dark: bool,
     ) {
         let Some(DefaultsTip::View {
@@ -371,7 +371,7 @@ impl AddActionPicker {
         icons: &mut IconCache,
         previews: &mut PreviewTooltipCache,
         macros: &[(String, Vec<String>)],
-        known_vars: &HashSet<String>,
+        known_vars: &KnownVariableNames,
         key_record: &mut KeyRecordUi,
         hotkey_record: &mut HotkeyRecordUi,
         macro_hotkeys: &MacroHotkeyBridge,

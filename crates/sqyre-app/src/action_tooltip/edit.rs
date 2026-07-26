@@ -18,15 +18,14 @@ use crate::widgets::{
 use eframe::egui;
 use sqyre_domain::{
     Action, ActionKind, ConditionBlock, ConditionClause, CoordinateOutputs, CoordinateRef,
-    DetectionBranch, ListColumn, LoopJumpMode, Macro, MatchMode, MatchOrder, RepeatMode,
-    ScalarValue, VariableAssignment, WaitTilFoundConfig,
+    DetectionBranch, KnownVariableNames, ListColumn, LoopJumpMode, Macro, MatchMode, MatchOrder,
+    RepeatMode, ScalarValue, VariableAssignment, WaitTilFoundConfig,
 };
 use sqyre_persist::ProgramCatalog;
 use sqyre_validate::{
     preview_calculate, validate_numeric_expression, validate_set_variable_value,
     validate_variable_references,
 };
-use std::collections::HashSet;
 
 /// Copy draft fields onto `live`, keeping `live`'s then/else children.
 pub fn apply_draft_preserving_children(live: &mut Action, draft: Action) -> Result<(), String> {
@@ -852,7 +851,7 @@ fn scalar_field(
     label: &str,
     help_text: &str,
     value: &mut ScalarValue,
-    known_vars: &HashSet<String>,
+    known_vars: &KnownVariableNames,
     is_dark: bool,
     active_macro: Option<&Macro>,
 ) {
@@ -880,7 +879,7 @@ fn var_ref_field(
     label: &str,
     help_text: &str,
     value: &mut String,
-    known_vars: &HashSet<String>,
+    known_vars: &KnownVariableNames,
     is_dark: bool,
     desired_width: f32,
     active_macro: Option<&Macro>,
@@ -930,7 +929,7 @@ fn yaml_value_field(
     ui: &mut egui::Ui,
     label: &str,
     value: &mut ScalarValue,
-    known_vars: &HashSet<String>,
+    known_vars: &KnownVariableNames,
     is_dark: bool,
     active_macro: Option<&Macro>,
 ) {
@@ -1006,7 +1005,7 @@ const EXPRESSION_CONSTANTS: &[&str] = &["~pi", "~e"];
 fn condition_editor(
     ui: &mut egui::Ui,
     condition: &mut ConditionBlock,
-    known_vars: &HashSet<String>,
+    known_vars: &KnownVariableNames,
     is_dark: bool,
     active_macro: Option<&Macro>,
     extra: impl FnOnce(&mut egui::Ui),
@@ -1154,7 +1153,7 @@ fn wait_editor(ui: &mut egui::Ui, wait: &mut WaitTilFoundConfig) {
 fn coords_editor(
     ui: &mut egui::Ui,
     coords: &mut CoordinateOutputs,
-    known_vars: &HashSet<String>,
+    known_vars: &KnownVariableNames,
     is_dark: bool,
 ) {
     var_pills::var_name_text_edit(
@@ -1223,7 +1222,7 @@ fn list_header(ui: &mut egui::Ui, title: &str, add_help: &str) -> bool {
 fn clauses_editor(
     ui: &mut egui::Ui,
     clauses: &mut Vec<ConditionClause>,
-    known_vars: &HashSet<String>,
+    known_vars: &KnownVariableNames,
     is_dark: bool,
     active_macro: Option<&Macro>,
 ) {
@@ -1281,7 +1280,7 @@ fn clauses_editor(
 fn list_columns_editor(
     ui: &mut egui::Ui,
     sources: &mut Vec<ListColumn>,
-    known_vars: &HashSet<String>,
+    known_vars: &KnownVariableNames,
     is_dark: bool,
     active_macro: Option<&Macro>,
 ) {
@@ -1340,7 +1339,7 @@ fn list_columns_editor(
 fn assignments_editor(
     ui: &mut egui::Ui,
     assignments: &mut Vec<VariableAssignment>,
-    known_vars: &HashSet<String>,
+    known_vars: &KnownVariableNames,
     is_dark: bool,
     active_macro: Option<&Macro>,
 ) {
