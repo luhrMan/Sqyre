@@ -1,6 +1,6 @@
 //! NavigateSelect / NavigateKey execution.
 
-use crate::backends::MoveOptions;
+use crate::backends::{MoveOptions, PortError};
 use crate::error::{ExecError, FlowSignal, Result};
 use crate::run::{resolve_int, resolve_text, run_children, Executor};
 use sqyre_domain::{
@@ -201,8 +201,8 @@ pub(crate) fn execute_navigate_select(
             })?;
             match waiter.wait_for_any_chord(&chords, &hold_mask, data.options.pass_through, stop) {
                 Ok(i) => i,
-                Err(e) if e.contains("stopped") => return Err(FlowSignal::Stopped.into()),
-                Err(e) => return Err(ExecError::Message(e)),
+                Err(PortError::Stopped) => return Err(FlowSignal::Stopped.into()),
+                Err(e) => return Err(e.into()),
             }
         };
         if stop.load(Ordering::SeqCst) {
@@ -547,9 +547,9 @@ fn perform_select(exec: &mut Executor<'_>, select: &NavSelectAction) -> Result<(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::backends::{ImmediateContinueWaiter, RecordingBackend};
     use crate::run::{execute_macro_with, ExecDeps};
     use crate::test_support::{AtlasMemberSpec, FixedCollection, FixedResolver};
+    use crate::test_support::{ImmediateContinueWaiter, RecordingBackend};
     use sqyre_domain::{
         root_loop, ActionId, NavChords, NavInputs, NavOptions, NavOutputs, NavSelectAction,
         NavigateSelectData, PressState,
@@ -612,6 +612,8 @@ mod tests {
                 capturer: None,
                 close_matches_distance: 0,
                 release_held_inputs: true,
+                while_max_iterations: crate::run::DEFAULT_WHILE_MAX_ITERATIONS,
+                run_macro_max_depth: crate::run::DEFAULT_RUN_MACRO_MAX_DEPTH,
                 resolver: Some(&resolver),
                 icons: None,
                 macros: None,
@@ -709,6 +711,8 @@ mod tests {
                 capturer: None,
                 close_matches_distance: 0,
                 release_held_inputs: true,
+                while_max_iterations: crate::run::DEFAULT_WHILE_MAX_ITERATIONS,
+                run_macro_max_depth: crate::run::DEFAULT_RUN_MACRO_MAX_DEPTH,
                 resolver: Some(&resolver),
                 icons: None,
                 macros: None,
@@ -802,6 +806,8 @@ mod tests {
                 capturer: None,
                 close_matches_distance: 0,
                 release_held_inputs: true,
+                while_max_iterations: crate::run::DEFAULT_WHILE_MAX_ITERATIONS,
+                run_macro_max_depth: crate::run::DEFAULT_RUN_MACRO_MAX_DEPTH,
                 resolver: Some(&resolver),
                 icons: None,
                 macros: None,

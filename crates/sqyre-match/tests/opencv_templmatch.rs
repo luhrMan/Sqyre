@@ -178,7 +178,7 @@ fn compare_naive_impl_all_methods_rgb() {
     let mask = random_binary_mask(TEMPL_W, TEMPL_H, &mut seed);
     let area = (TEMPL_W * TEMPL_H) as f64;
 
-    for method in MatchMethod::all() {
+    for method in MatchMethod::ALL {
         let map = match_template(&img, &templ, Some(&mask), method).unwrap();
         let got = map.scores[TEST_Y * map.width + TEST_X] as f64;
         let want = naive_at(&img, &templ, &mask, method);
@@ -194,7 +194,7 @@ fn compare_naive_impl_all_methods_gray() {
     let mask = random_binary_mask(TEMPL_W, TEMPL_H, &mut seed);
     let area = (TEMPL_W * TEMPL_H) as f64;
 
-    for method in MatchMethod::all() {
+    for method in MatchMethod::ALL {
         let map = match_template(&img, &templ, Some(&mask), method).unwrap();
         let got = map.scores[TEST_Y * map.width + TEST_X] as f64;
         let want = naive_at(&img, &templ, &mask, method);
@@ -210,7 +210,7 @@ fn compare_with_and_without_all_ones_mask() {
     let ones = vec![255u8; TEMPL_W * TEMPL_H];
     let area = (TEMPL_W * TEMPL_H) as f64;
 
-    for method in MatchMethod::all() {
+    for method in MatchMethod::ALL {
         let with = match_template(&img, &templ, Some(&ones), method).unwrap();
         let without = match_template(&img, &templ, None, method).unwrap();
         assert_eq!(with.width, without.width);

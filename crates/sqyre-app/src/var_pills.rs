@@ -5,10 +5,9 @@ use eframe::egui::{
     PopupCloseBehavior, RectAlign, Sense, Stroke, Vec2,
 };
 use egui::text_selection::CCursorRange;
-use sqyre_domain::is_known_variable;
+use sqyre_domain::{is_known_variable, KnownVariableNames};
 use sqyre_ui_model::{action_pastel_color, nested_var_ref_color, SummaryPill};
 use sqyre_validate::EntryValidation;
-use std::collections::HashSet;
 
 use crate::theme::{contrast_fg, paint_galley_centered};
 use crate::tree_chrome::rgba_pub;
@@ -67,7 +66,7 @@ fn paint_plain_segment(ui: &mut egui::Ui, text: &str, color: Color32) {
 pub fn paint_nested_var_chip(
     ui: &mut egui::Ui,
     name: &str,
-    known: &HashSet<String>,
+    known: &KnownVariableNames,
     is_dark: bool,
 ) -> egui::Response {
     let unknown = !is_known_variable(known, name);
@@ -90,7 +89,7 @@ pub fn paint_nested_var_chip(
 pub fn paint_var_ref_content(
     ui: &mut egui::Ui,
     text: &str,
-    known: &HashSet<String>,
+    known: &KnownVariableNames,
     is_dark: bool,
     plain_fg: Color32,
 ) {
@@ -159,7 +158,7 @@ pub fn paint_value_pill(
     ui: &mut egui::Ui,
     text: &str,
     action_type: &str,
-    known: &HashSet<String>,
+    known: &KnownVariableNames,
     is_dark: bool,
 ) -> egui::Response {
     let fill = rgba_pub(action_pastel_color(action_type, is_dark));
@@ -187,7 +186,7 @@ pub fn paint_variable_name_pill(
     label: &str,
     var_name: &str,
     action_type: &str,
-    known: &HashSet<String>,
+    known: &KnownVariableNames,
     is_dark: bool,
 ) -> egui::Response {
     let fill = rgba_pub(action_pastel_color(action_type, is_dark));
@@ -211,7 +210,7 @@ pub fn paint_summary_pill(
     ui: &mut egui::Ui,
     action_type: &str,
     pill: &SummaryPill,
-    known: &HashSet<String>,
+    known: &KnownVariableNames,
     is_dark: bool,
 ) -> egui::Response {
     match &pill.prefix {
@@ -264,9 +263,9 @@ fn byte_index_from_char_index(s: &str, char_index: usize) -> usize {
 }
 
 /// Filter known names by prefix (case-insensitive); empty prefix → all (up to limit).
-fn var_completion_options(prefix: &str, known: &HashSet<String>, limit: usize) -> Vec<String> {
+fn var_completion_options(prefix: &str, known: &KnownVariableNames, limit: usize) -> Vec<String> {
     let p = prefix.to_ascii_lowercase();
-    let mut names: Vec<String> = known.iter().cloned().collect();
+    let mut names: Vec<String> = known.iter().map(str::to_string).collect();
     names.sort_by_key(|a| a.to_ascii_lowercase());
     names
         .into_iter()
@@ -342,7 +341,7 @@ fn var_ref_text_edit(
     ui: &mut egui::Ui,
     id: egui::Id,
     value: &mut String,
-    known: &HashSet<String>,
+    known: &KnownVariableNames,
     desired_width: f32,
     multiline: Option<usize>,
 ) {
@@ -388,7 +387,7 @@ fn show_var_ref_autocomplete(
     response: &egui::Response,
     value: &mut String,
     cursor_char: Option<usize>,
-    known: &HashSet<String>,
+    known: &KnownVariableNames,
     down: bool,
     up: bool,
     accept: bool,
@@ -499,7 +498,7 @@ pub fn var_name_text_edit(
     ui: &mut egui::Ui,
     label: &str,
     value: &mut String,
-    known: &HashSet<String>,
+    known: &KnownVariableNames,
     is_dark: bool,
     desired_width: f32,
     help: &str,
@@ -579,7 +578,7 @@ pub fn validated_var_ref_edit(
     ui: &mut egui::Ui,
     label: &str,
     value: &mut String,
-    known: &HashSet<String>,
+    known: &KnownVariableNames,
     is_dark: bool,
     desired_width: f32,
     validation: &EntryValidation,
@@ -622,7 +621,7 @@ pub fn validated_var_ref_multiline_edit(
     ui: &mut egui::Ui,
     label: &str,
     value: &mut String,
-    known: &HashSet<String>,
+    known: &KnownVariableNames,
     is_dark: bool,
     desired_width: f32,
     rows: usize,
@@ -712,10 +711,7 @@ mod tests {
 
     #[test]
     fn completion_filters_and_applies() {
-        let known: HashSet<String> = ["Count", "Cols", "other"]
-            .into_iter()
-            .map(str::to_string)
-            .collect();
+        let known: KnownVariableNames = ["Count", "Cols", "other"].into_iter().collect();
         let opts = var_completion_options("c", &known, 10);
         assert_eq!(opts, vec!["Cols".to_string(), "Count".to_string()]);
 

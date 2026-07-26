@@ -15,9 +15,13 @@ pulp = { workspace = true }
 rayon = { workspace = true }
 sqyre-match = { path = "../sqyre-match" }
 sqyre-domain = { path = "../sqyre-domain" }
+sqyre-ports = { path = "../sqyre-ports" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 leptess = "0.14"
+dirs = { workspace = true }
+# Blocking HTTPS with rustls (same stack as sqyre-update; MinGW-friendly).
+ureq = { version = "3", default-features = false, features = ["rustls"] }
 
 [dev-dependencies]
 tempfile = { workspace = true }

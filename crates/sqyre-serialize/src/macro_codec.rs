@@ -1,11 +1,12 @@
 //! Macro ↔ YAML map / string.
 
-use crate::{Result, SerializeError};
+use crate::{check_yaml_nesting_depth, validate_action_type_keys, Result, SerializeError};
 use serde_yaml::{Mapping, Value};
 use sqyre_domain::{ActionId, ActionKind, Macro};
 
 /// Decode a macro from a YAML mapping.
 pub fn decode_macro_from_map(data: &Value) -> Result<Macro> {
+    check_yaml_nesting_depth(data)?;
     let raw = data
         .as_mapping()
         .ok_or_else(|| SerializeError::msg("expected mapping for macro"))?;
@@ -14,6 +15,9 @@ pub fn decode_macro_from_map(data: &Value) -> Result<Macro> {
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
+    if let Some(root) = raw.get(Value::String("root".into())) {
+        validate_action_type_keys(root)?;
+    }
     let mut macro_: Macro = serde_yaml::from_value(Value::Mapping(raw.clone()))?;
     if macro_.name.is_empty() && !name_hint.is_empty() {
         macro_.name = name_hint;
@@ -109,6 +113,75 @@ root:
         assert_eq!(m.name, "wait-var");
         assert_eq!(m.variable_decls.len(), 1);
         assert_eq!(m.root.children().len(), 2);
+    }
+
+    #[test]
+    fn rejects_unknown_action_type() {
+        let yaml = r#"
+name: bad
+globaldelay: 0
+keyboarddelay: 0
+mousedelay: 0
+hotkey: []
+variables: []
+root:
+  type: loop
+  name: root
+  count: 1
+  subactions:
+    - type: notarealaction
+      time: 1
+"#;
+        let err = decode_macro_from_yaml(yaml).unwrap_err().to_string();
+        assert!(
+            err.contains("unknown action type") && err.contains("notarealaction"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn rejects_deeply_nested_subactions_in_macro() {
+        use crate::MAX_YAML_NESTING_DEPTH;
+
+        fn nested_loop(depth: usize) -> Mapping {
+            let mut m = Mapping::new();
+            m.insert(Value::String("type".into()), Value::String("loop".into()));
+            m.insert(Value::String("name".into()), Value::String("l".into()));
+            m.insert(Value::String("count".into()), Value::Number(1.into()));
+            let child = if depth > 0 {
+                Value::Mapping(nested_loop(depth - 1))
+            } else {
+                Value::Sequence(vec![])
+            };
+            m.insert(
+                Value::String("subactions".into()),
+                if depth > 0 {
+                    Value::Sequence(vec![child])
+                } else {
+                    Value::Sequence(vec![])
+                },
+            );
+            m
+        }
+        let mut root = nested_loop(MAX_YAML_NESTING_DEPTH + 10);
+        root.insert(Value::String("name".into()), Value::String("root".into()));
+
+        let mut macro_map = Mapping::new();
+        macro_map.insert(Value::String("name".into()), Value::String("bad".into()));
+        macro_map.insert(Value::String("globaldelay".into()), Value::Number(0.into()));
+        macro_map.insert(
+            Value::String("keyboarddelay".into()),
+            Value::Number(0.into()),
+        );
+        macro_map.insert(Value::String("mousedelay".into()), Value::Number(0.into()));
+        macro_map.insert(Value::String("hotkey".into()), Value::Sequence(vec![]));
+        macro_map.insert(Value::String("variables".into()), Value::Sequence(vec![]));
+        macro_map.insert(Value::String("root".into()), Value::Mapping(root));
+
+        let err = decode_macro_from_map(&Value::Mapping(macro_map))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("nesting too deep"), "{err}");
     }
 
     proptest! {

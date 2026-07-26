@@ -1,8 +1,9 @@
 //! Linux X11 window list + activate.
 
+use crate::window_match::{paths_equal, pick_matching_icon, titles_equal};
 use crate::{ProcessIcon, WindowInfo, PROCESS_ICON_TARGET_PX};
 use parking_lot::Mutex;
-use sqyre_executor::WindowFocuser;
+use sqyre_ports::{AutomationError, WindowFocuser};
 use std::collections::HashSet;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_ulong;
@@ -51,7 +52,7 @@ where
 pub struct OsWindowFocuser;
 
 impl WindowFocuser for OsWindowFocuser {
-    fn focus(&self, process_path: &str, window_title: &str) -> Result<(), String> {
+    fn focus(&self, process_path: &str, window_title: &str) -> Result<(), AutomationError> {
         activate_window(process_path, window_title)
     }
 }
@@ -81,31 +82,22 @@ pub fn process_icon(process_path: &str, window_title: &str) -> Option<ProcessIco
     if path.is_empty() {
         return None;
     }
-    let title = window_title.trim();
     with_display(|display| -> Result<Option<ProcessIcon>, String> {
-        unsafe {
+        let infos = unsafe {
             let root = XDefaultRootWindow(display);
             let clients = client_list(display, root)?;
-            let mut path_fallback: Option<ProcessIcon> = None;
-            for win in clients {
-                let Some(info) = window_info_of(display, win) else {
-                    continue;
-                };
-                if !paths_equal(&info.process_path, path) {
-                    continue;
-                }
-                let Some(icon) = info.icon else {
-                    continue;
-                };
-                if !title.is_empty() && titles_equal(&info.title, title) {
-                    return Ok(Some(icon));
-                }
-                if path_fallback.is_none() {
-                    path_fallback = Some(icon);
-                }
-            }
-            Ok(path_fallback)
-        }
+            clients
+                .into_iter()
+                .filter_map(|win| window_info_of(display, win))
+                .collect::<Vec<_>>()
+        };
+        Ok(pick_matching_icon(
+            infos,
+            path,
+            window_title,
+            |info| Some((info.title.clone(), info.process_path.clone())),
+            |info, _wtitle, _wpath| info.icon.clone(),
+        ))
     })
     .ok()
     .flatten()
@@ -131,14 +123,25 @@ pub fn skip_taskbar_for_overlay_windows() -> Result<(), String> {
     result
 }
 
-fn activate_window(process_path: &str, window_title: &str) -> Result<(), String> {
+fn activate_window(process_path: &str, window_title: &str) -> Result<(), AutomationError> {
     let path = process_path.trim();
     let title = window_title.trim();
     if path.is_empty() || title.is_empty() {
-        return Err("path and title required".into());
+        return Err(AutomationError::InvalidArg(
+            "focus window: path and title required".into(),
+        ));
     }
 
-    with_display(|display| unsafe { activate_on_display(display, path, title) })
+    let activated = with_display(|display| unsafe { activate_on_display(display, path, title) })
+        .map_err(AutomationError::Backend)?;
+    if activated {
+        Ok(())
+    } else {
+        Err(AutomationError::WindowNotFound {
+            process_path: path.to_string(),
+            title: title.to_string(),
+        })
+    }
 }
 
 unsafe fn list_on_display(display: *mut _XDisplay) -> Result<Vec<WindowInfo>, String> {
@@ -315,11 +318,12 @@ fn icon_size_score(w: u32, h: u32) -> u32 {
     }
 }
 
+/// `Ok(false)` when no window matched; `Err` only for X11 failures.
 unsafe fn activate_on_display(
     display: *mut _XDisplay,
     process_path: &str,
     window_title: &str,
-) -> Result<(), String> {
+) -> Result<bool, String> {
     let root = XDefaultRootWindow(display);
     let clients = client_list(display, root)?;
     for win in clients {
@@ -338,11 +342,9 @@ unsafe fn activate_on_display(
         if !paths_equal(&exe, process_path) {
             continue;
         }
-        return set_active_window(display, root, win);
+        return set_active_window(display, root, win).map(|()| true);
     }
-    Err(format!(
-        "no window with title {window_title:?} from {process_path:?}"
-    ))
+    Ok(false)
 }
 
 unsafe fn client_list(display: *mut Display, root: Window) -> Result<Vec<Window>, String> {
@@ -621,29 +623,9 @@ unsafe fn intern(display: *mut Display, name: &str) -> Result<Atom, String> {
     }
 }
 
-fn paths_equal(a: &str, b: &str) -> bool {
-    let a = Path::new(a.trim());
-    let b = Path::new(b.trim());
-    if a.as_os_str().is_empty() || b.as_os_str().is_empty() {
-        return false;
-    }
-    a == b
-}
-
-fn titles_equal(a: &str, b: &str) -> bool {
-    a.trim() == b.trim()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn paths_and_titles() {
-        assert!(paths_equal("/usr/bin/foo", "/usr/bin/foo"));
-        assert!(!paths_equal("/usr/bin/foo", "/usr/bin/bar"));
-        assert!(titles_equal(" Hi ", "Hi"));
-    }
 
     #[test]
     fn pick_net_wm_icon_prefers_near_target() {

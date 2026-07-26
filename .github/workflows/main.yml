@@ -308,6 +308,47 @@ jobs:
       - name: cargo check (sqyre-app)
         run: cargo check -p sqyre-app
 
+  check-windows:
+    if: |
+      github.event_name == 'push' ||
+      github.event_name == 'pull_request' ||
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.92.0
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-reg-v3-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-reg-v3-
+            ${{ runner.os }}-cargo-reg-
+
+      - name: Cache Cargo target
+        uses: actions/cache@v6
+        with:
+          path: target
+          key: ${{ runner.os }}-cargo-target-windows-v3-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-target-windows-v3-
+            ${{ runner.os }}-cargo-target-
+
+      # Native Windows compile gate (GDI capture / focus). Full OCR-linked app
+      # tests stay on the Linux Docker job; pure crates still get unit tests here.
+      - name: cargo check (sqyre-app)
+        run: cargo check -p sqyre-app
+
+      - name: cargo test (pure crates)
+        run: cargo test -p sqyre-domain -p sqyre-varref -p sqyre-validate -p sqyre-serialize -p sqyre-persist -p sqyre-ui-model -p sqyre-update -p sqyre-ports -p sqyre-hotkeys -p sqyre-match -p sqyre-executor --offline
+
   build-linux:
     if: |
       always() && !cancelled() &&
@@ -587,10 +628,11 @@ jobs:
       always() && !cancelled() &&
       needs.version.result == 'success' &&
       needs.version.outputs.should_release == 'true' &&
+      needs.check-windows.result == 'success' &&
       needs.build-linux.result == 'success' &&
       needs.build-windows.result == 'success' &&
       needs.build-wasm.result == 'success'
-    needs: [version, build-linux, build-windows, build-wasm]
+    needs: [version, check-windows, build-linux, build-windows, build-wasm]
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -601,16 +643,55 @@ jobs:
           pattern: "*-zip"
           path: artifacts
 
+      - name: Assemble release files and SHA256SUMS
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          cp artifacts/linux-binary-zip/*.zip release/
+          cp artifacts/linux-appimage-zip/*.zip release/
+          cp artifacts/windows-binary-zip/*.zip release/
+          cp artifacts/wasm-editor-zip/*.zip release/
+          (cd release && sha256sum *.zip > SHA256SUMS)
+          cat release/SHA256SUMS
+
+      - uses: actions/checkout@v6
+        with:
+          path: src
+          ref: ${{ needs.version.outputs.sha }}
+
+      - name: Install Rust toolchain (sign checksums)
+        uses: dtolnay/rust-toolchain@1.92.0
+
+      - name: Verify update public key is configured
+        working-directory: src
+        run: |
+          set -euo pipefail
+          PUBKEY_FILE="crates/sqyre-update/update_pubkey.hex"
+          PUBKEY="$(tr -d '[:space:]' < "$PUBKEY_FILE")"
+          if [ -z "$PUBKEY" ] || [ "$(printf '%s' "$PUBKEY" | tr '[:upper:]' '[:lower:]')" = "unconfigured" ]; then
+            echo "$PUBKEY_FILE must contain the configured update public key before signing a release" >&2
+            exit 1
+          fi
+
+      - name: Sign SHA256SUMS (Ed25519)
+        working-directory: src
+        env:
+          SQYRE_UPDATE_SIGNING_KEY: ${{ secrets.SQYRE_UPDATE_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SQYRE_UPDATE_SIGNING_KEY:-}" ]; then
+            echo "SQYRE_UPDATE_SIGNING_KEY secret is required to publish signed releases" >&2
+            exit 1
+          fi
+          cargo run -q -p sqyre-update --bin sign_update_sums -- ../release/SHA256SUMS
+          ls -la ../release/SHA256SUMS ../release/SHA256SUMS.sig
+
       - name: Create Release
         uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ needs.version.outputs.version }}
           name: Release v${{ needs.version.outputs.version }}
-          files: |
-            artifacts/linux-binary-zip/*.zip
-            artifacts/linux-appimage-zip/*.zip
-            artifacts/windows-binary-zip/*.zip
-            artifacts/wasm-editor-zip/*.zip
+          files: release/*
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

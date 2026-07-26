@@ -22,6 +22,7 @@ use sqyre_ui_model::{
     default_action_pastel_color, sample_action_type_for_color_key, set_custom_action_color,
 };
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone)]
@@ -322,6 +323,52 @@ impl SettingsUi {
         {
             self.mark_dirty();
         }
+
+        ui.add_space(6.0);
+
+        ui.horizontal(|ui| {
+            ui.label("While safety budget (iterations):");
+            let mut v = self.settings.while_max_iterations;
+            if ui
+                .add(
+                    egui::DragValue::new(&mut v)
+                        .range(
+                            sqyre_persist::MIN_WHILE_MAX_ITERATIONS
+                                ..=sqyre_persist::MAX_WHILE_MAX_ITERATIONS,
+                        )
+                        .speed(1000),
+                )
+                .on_hover_text(
+                    "Used when a While action has max_iterations ≤ 0. Prevents runaway loops.",
+                )
+                .changed()
+            {
+                self.settings.while_max_iterations = v;
+                self.mark_dirty();
+            }
+        });
+
+        ui.horizontal(|ui| {
+            ui.label("Run Macro max nesting depth:");
+            let mut v = self.settings.run_macro_max_depth;
+            if ui
+                .add(
+                    egui::DragValue::new(&mut v)
+                        .range(
+                            sqyre_persist::MIN_RUN_MACRO_MAX_DEPTH
+                                ..=sqyre_persist::MAX_RUN_MACRO_MAX_DEPTH,
+                        )
+                        .speed(1),
+                )
+                .on_hover_text(
+                    "Maximum nested Run Macro calls (including the top-level macro). Cycles are always rejected.",
+                )
+                .changed()
+            {
+                self.settings.run_macro_max_depth = v;
+                self.mark_dirty();
+            }
+        });
 
         ui.add_space(6.0);
 
@@ -724,7 +771,7 @@ impl SettingsUi {
 
         match Database::load_default() {
             Ok(mut loaded) => {
-                let mut cat = loaded.program_catalog().unwrap_or_default();
+                let mut cat = Arc::unwrap_or_clone(loaded.program_catalog().unwrap_or_default());
                 let _ = crate::catalog::prepare_catalog(&mut cat, &mut loaded);
                 let mut list: Vec<_> = loaded.macros.values().cloned().collect();
                 list.sort_by(|a, b| a.name.cmp(&b.name));
@@ -782,7 +829,7 @@ impl SettingsUi {
 
         match Database::load_default() {
             Ok(mut loaded) => {
-                let mut cat = loaded.program_catalog().unwrap_or_default();
+                let mut cat = Arc::unwrap_or_clone(loaded.program_catalog().unwrap_or_default());
                 let _ = crate::catalog::prepare_catalog(&mut cat, &mut loaded);
                 let mut list: Vec<_> = loaded.macros.values().cloned().collect();
                 list.sort_by(|a, b| a.name.cmp(&b.name));

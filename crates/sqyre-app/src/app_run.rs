@@ -5,11 +5,14 @@ use eframe::egui;
 
 impl SqyreApp {
     pub(crate) fn start_macro(&mut self, ctx: &egui::Context) {
-        if self.macros.is_empty() {
+        if self.workspace.macros.is_empty() {
             return;
         }
-        let idx = self.selected_macro.min(self.macros.len() - 1);
-        let name = self.macros[idx].name.clone();
+        let idx = self
+            .workspace
+            .selected_macro
+            .min(self.workspace.macros.len() - 1);
+        let name = self.workspace.macros[idx].name.clone();
         self.start_macro_by_name(&name, ctx);
     }
 
@@ -21,8 +24,8 @@ impl SqyreApp {
     }
 
     pub(crate) fn request_stop(&mut self) {
-        self.run.stop.request_stop();
-        *self.run.status.lock() = "Stop requested…".into();
+        self.run_session.state.stop.request_stop();
+        *self.run_session.state.status.lock() = "Stop requested…".into();
     }
 
     /// Hide the main window while a screen-click recording is armed.
@@ -57,21 +60,22 @@ impl SqyreApp {
 
     #[cfg(target_arch = "wasm32")]
     pub(crate) fn start_macro_by_name(&mut self, _name: &str, _ctx: &egui::Context) {
-        *self.run.status.lock() = "Run is not available in the browser editor.".into();
+        *self.run_session.state.status.lock() =
+            "Run is not available in the browser editor.".into();
     }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 mod native_run {
     use super::*;
-    use crate::app_backends::{trim_process_heap, AppOcr, BridgeContinueWait, StopWatchAutomation};
+    use crate::app_backends::{trim_process_heap, BridgeContinueWait, StopWatchAutomation};
     use crate::catalog::{CatalogIcons, CatalogResolver, SnapshotMacros};
     use sqyre_capture::{shared_capturer, OsWindowFocuser, SharedRunCapturer};
     use sqyre_domain::Macro;
     use sqyre_executor::{execute_macro_with, ExecDeps, OcrEngine};
     use sqyre_input::OsAutomation;
     use sqyre_persist::variables_path;
-    use sqyre_vision::LeptessOcr;
+    use sqyre_vision::shared_leptess;
     use std::collections::BTreeMap;
     use std::sync::atomic::Ordering;
     use std::sync::Arc;
@@ -79,41 +83,49 @@ mod native_run {
 
     impl SqyreApp {
         pub(crate) fn start_macro_by_name(&mut self, name: &str, ctx: &egui::Context) {
-            if self.run.running.load(Ordering::SeqCst) {
+            if self.run_session.state.running.load(Ordering::SeqCst) {
                 return;
             }
-            let Some(idx) = self.macros.iter().position(|m| m.name == name) else {
+            let Some(idx) = self.workspace.macros.iter().position(|m| m.name == name) else {
                 return;
             };
+            if let Err(e) = sqyre_validate::validate_macro(&self.workspace.macros[idx]) {
+                *self.run_session.state.status.lock() = format!("Cannot run {name}: {e}");
+                return;
+            }
             // Show the running macro's tree so highlight overlays have matching rows.
-            self.selected_macro = idx;
-            let mut macro_ = self.macros[idx].clone();
-            let catalog = self.catalog.clone();
-            let stop_flag = self.run.stop.clone();
+            self.workspace.selected_macro = idx;
+            let mut macro_ = self.workspace.macros[idx].clone();
+            let catalog = self.workspace.catalog.clone();
+            let stop_flag = self.run_session.state.stop.clone();
             stop_flag.clear();
-            let running = Arc::clone(&self.run.running);
-            let status = Arc::clone(&self.run.status);
-            self.action_log.clear();
-            self.runtime_vars.clear();
-            self.logs_image_cache.clear();
-            self.highlighter.clear_all();
-            self.last_exec_follow = None;
-            let action_log = self.action_log.clone();
-            let runtime_vars = self.runtime_vars.clone();
-            let highlighter = self.highlighter.clone();
+            let running = Arc::clone(&self.run_session.state.running);
+            let status = Arc::clone(&self.run_session.state.status);
+            self.run_session.action_log.clear();
+            self.run_session.runtime_vars.clear();
+            self.run_session.logs_image_cache.clear();
+            self.run_session.highlighter.clear_all();
+            self.tree.last_exec_follow = None;
+            let action_log = self.run_session.action_log.clone();
+            let runtime_vars = self.run_session.runtime_vars.clone();
+            let highlighter = self.run_session.highlighter.clone();
             let continue_wait = BridgeContinueWait {
-                continue_wait: self.continue_wait.clone(),
-                macro_hotkeys: self.macro_hotkeys.clone(),
+                continue_wait: self.run_session.continue_wait.clone(),
+                macro_hotkeys: self.run_session.macro_hotkeys.clone(),
             };
             let close_matches = self
                 .settings_ui
                 .settings()
                 .image_search_close_matches_distance;
             let release_held_inputs = self.settings_ui.settings().release_held_inputs_on_end;
+            let while_max_iterations = self.settings_ui.settings().while_max_iterations;
+            let run_macro_max_depth =
+                self.settings_ui.settings().run_macro_max_depth.max(1) as usize;
             let play_finish_sound = self.settings_ui.settings().play_finish_sound;
             let sound_volume = self.settings_ui.settings().sound_volume;
             let macro_lookup = {
                 let map: BTreeMap<String, Arc<Macro>> = self
+                    .workspace
                     .macros
                     .iter()
                     .map(|m| (m.name.clone(), Arc::new(m.clone())))
@@ -133,13 +145,12 @@ mod native_run {
                     let resolver = CatalogResolver(&catalog);
                     let icons = CatalogIcons(&catalog);
                     let focuser = OsWindowFocuser;
-                    let ocr_engine = LeptessOcr::from_env_or_system()
+                    let ocr_engine = shared_leptess()
                         .map_err(|e| {
                             eprintln!("sqyre: {e}");
                             e
                         })
-                        .ok()
-                        .map(AppOcr);
+                        .ok();
                     let stop_raw = stop_flag.raw();
                     let mut watched = StopWatchAutomation {
                         inner: &mut automation,
@@ -153,12 +164,14 @@ mod native_run {
                             capturer: Some(&mut capturer),
                             close_matches_distance: close_matches,
                             release_held_inputs,
+                            while_max_iterations,
+                            run_macro_max_depth,
                             resolver: Some(&resolver),
                             icons: Some(&icons),
                             macros: Some(&macro_lookup),
                             continue_waiter: Some(&continue_wait),
                             window_focuser: Some(&focuser),
-                            ocr: ocr_engine.as_ref().map(|e| e as &dyn OcrEngine),
+                            ocr: ocr_engine.as_ref().map(|e| e.as_ref() as &dyn OcrEngine),
                             stop_flag: Some(stop_raw.as_ref()),
                             logger: Some(&action_log),
                             highlighter: Some(&highlighter),

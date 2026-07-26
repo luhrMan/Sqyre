@@ -2,31 +2,21 @@ use image::RgbaImage;
 use pulp::Arch;
 use rayon::prelude::*;
 use sqyre_match::{map_rgb_to_gray_u8, ImageBuf};
+use sqyre_ports::RgbCapture;
+
+/// Wrap a packed RGB capture as an `ImageBuf` (reuses the pixel buffer).
+pub fn rgb_capture_to_image_buf(capture: RgbCapture) -> ImageBuf {
+    ImageBuf::from_raw(
+        capture.width as usize,
+        capture.height as usize,
+        3,
+        capture.data,
+    )
+}
 
 /// Convert RGBA capture to 3-channel RGB `ImageBuf` (R, G, B byte order).
 pub fn rgba_to_rgb_buf(img: &RgbaImage) -> ImageBuf {
-    let w = img.width() as usize;
-    let h = img.height() as usize;
-    let src = img.as_raw();
-    let mut data = vec![0u8; w * h * 3];
-    let data_addr = data.as_mut_ptr() as usize;
-    (0..h).into_par_iter().for_each(|y| {
-        let arch = Arch::new();
-        arch.dispatch(|| {
-            for x in 0..w {
-                let si = (y * w + x) * 4;
-                let di = (y * w + x) * 3;
-                // SAFETY: each row writes a disjoint range of `data`.
-                let dst = data_addr as *mut u8;
-                unsafe {
-                    *dst.add(di) = src[si];
-                    *dst.add(di + 1) = src[si + 1];
-                    *dst.add(di + 2) = src[si + 2];
-                }
-            }
-        });
-    });
-    ImageBuf::from_raw(w, h, 3, data)
+    rgb_capture_to_image_buf(RgbCapture::from_rgba(img))
 }
 
 /// Convert RGB `ImageBuf` to grayscale (Rec.601 luma).

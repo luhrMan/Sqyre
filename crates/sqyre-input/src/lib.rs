@@ -5,7 +5,7 @@
 
 use arboard::Clipboard;
 use rustautogui::{MouseClick, RustAutoGui};
-use sqyre_executor::{AutomationBackend, MoveOptions};
+use sqyre_ports::{AutomationBackend, AutomationError, MoveOptions};
 use std::collections::HashSet;
 use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
@@ -87,8 +87,9 @@ pub struct OsAutomation {
 }
 
 impl OsAutomation {
-    pub fn new() -> Result<Self, String> {
-        let gui = RustAutoGui::new(false).map_err(|e| format!("rustautogui: {e}"))?;
+    pub fn new() -> Result<Self, AutomationError> {
+        let gui = RustAutoGui::new(false)
+            .map_err(|e| AutomationError::Backend(format!("rustautogui: {e}")))?;
         let clipboard = Clipboard::new().ok();
         Ok(Self { gui, clipboard })
     }
@@ -184,49 +185,51 @@ impl AutomationBackend for OsAutomation {
         }
     }
 
-    fn click(&mut self, button: &str, down: bool) -> Result<(), String> {
+    fn click(&mut self, button: &str, down: bool) -> Result<(), AutomationError> {
         let canonical = canonical_button(button);
         let btn = Self::map_button(canonical);
         if down {
             self.gui
                 .click_down(btn)
-                .map_err(|e| format!("click down: {e}"))?;
+                .map_err(|e| AutomationError::Backend(format!("click down: {e}")))?;
             note_button_down(canonical);
             Ok(())
         } else {
             self.gui
                 .click_up(btn)
-                .map_err(|e| format!("click up: {e}"))?;
+                .map_err(|e| AutomationError::Backend(format!("click up: {e}")))?;
             note_button_up(canonical);
             Ok(())
         }
     }
 
-    fn scroll(&mut self, up: bool) -> Result<(), String> {
+    fn scroll(&mut self, up: bool) -> Result<(), AutomationError> {
         // Scroll intensity ~3 notches.
         if up {
-            self.gui.scroll_up(3).map_err(|e| format!("scroll up: {e}"))
+            self.gui
+                .scroll_up(3)
+                .map_err(|e| AutomationError::Backend(format!("scroll up: {e}")))
         } else {
             self.gui
                 .scroll_down(3)
-                .map_err(|e| format!("scroll down: {e}"))
+                .map_err(|e| AutomationError::Backend(format!("scroll down: {e}")))
         }
     }
 
-    fn key_down(&mut self, key: &str) -> Result<(), String> {
+    fn key_down(&mut self, key: &str) -> Result<(), AutomationError> {
         let k = Self::map_key(key);
         self.gui
             .key_down(&k)
-            .map_err(|e| format!("key down {k}: {e}"))?;
+            .map_err(|e| AutomationError::Backend(format!("key down {k}: {e}")))?;
         note_key_down(&k);
         Ok(())
     }
 
-    fn key_up(&mut self, key: &str) -> Result<(), String> {
+    fn key_up(&mut self, key: &str) -> Result<(), AutomationError> {
         let k = Self::map_key(key);
         self.gui
             .key_up(&k)
-            .map_err(|e| format!("key up {k}: {e}"))?;
+            .map_err(|e| AutomationError::Backend(format!("key up {k}: {e}")))?;
         note_key_up(&k);
         Ok(())
     }
@@ -237,13 +240,13 @@ impl AutomationBackend for OsAutomation {
         let _ = self.gui.keyboard_input(s);
     }
 
-    fn write_clipboard(&mut self, s: &str) -> Result<(), String> {
+    fn write_clipboard(&mut self, s: &str) -> Result<(), AutomationError> {
         let clip = self
             .clipboard
             .as_mut()
-            .ok_or_else(|| "clipboard unavailable".to_string())?;
+            .ok_or(AutomationError::Unsupported("clipboard"))?;
         clip.set_text(s.to_string())
-            .map_err(|e| format!("clipboard: {e}"))
+            .map_err(|e| AutomationError::Backend(format!("clipboard: {e}")))
     }
 }
 

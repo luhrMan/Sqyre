@@ -18,7 +18,9 @@ serde_yaml = { workspace = true }
 thiserror = { workspace = true }
 dirs = { workspace = true }
 sqyre-domain = { path = "../sqyre-domain" }
+sqyre-ports = { path = "../sqyre-ports" }
 sqyre-serialize = { path = "../sqyre-serialize" }
+sqyre-validate = { path = "../sqyre-validate" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 zip = { workspace = true }

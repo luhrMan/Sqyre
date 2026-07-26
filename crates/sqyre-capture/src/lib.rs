@@ -2,6 +2,7 @@
 
 mod diag;
 mod error;
+mod outline_geometry;
 mod outline_rect;
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
 mod outline_stub;
@@ -15,6 +16,7 @@ mod win_capture;
 mod win_focus;
 #[cfg(target_os = "windows")]
 mod win_outline;
+mod window_match;
 #[cfg(target_os = "linux")]
 mod x11_capture;
 #[cfg(target_os = "linux")]
@@ -28,7 +30,7 @@ pub use diag::{
     disk_logging_enabled, mark_site, note, read_last_site, set_disk_logging, set_log_dir,
     CRASH_LOG_FILE, DIAG_LOG_FILE, LAST_SITE_FILE,
 };
-pub use error::CaptureError;
+pub use error::{linux_session_capture_warning, CaptureError};
 pub use outline_rect::OutlineRect;
 pub use pixel_convert::{zpixmap_to_rgb, zpixmap_to_rgba};
 pub use stub::{NullCapturer, SolidCapturer};
@@ -73,18 +75,21 @@ pub fn shared_capturer() -> Result<std::sync::Arc<OsCapturer>, String> {
 pub struct SharedRunCapturer(pub std::sync::Arc<OsCapturer>);
 
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
-impl sqyre_executor::ScreenCapturer for SharedRunCapturer {
-    fn capture_monitor(&mut self, _display_index: i32) -> Result<image::RgbaImage, String> {
-        Err("screen capture: not supported on this platform".into())
+impl sqyre_ports::ScreenCapturer for SharedRunCapturer {
+    fn capture_monitor(
+        &mut self,
+        _display_index: i32,
+    ) -> Result<image::RgbaImage, sqyre_ports::CaptureError> {
+        Err(sqyre_ports::CaptureError::UnsupportedPlatform)
     }
     fn capture_rect(
         &mut self,
-        _rect: sqyre_executor::DesktopRect,
-    ) -> Result<image::RgbaImage, String> {
-        Err("screen capture: not supported on this platform".into())
+        _rect: sqyre_ports::DesktopRect,
+    ) -> Result<image::RgbaImage, sqyre_ports::CaptureError> {
+        Err(sqyre_ports::CaptureError::UnsupportedPlatform)
     }
-    fn virtual_bounds(&mut self) -> Result<sqyre_executor::DesktopRect, String> {
-        Ok(sqyre_executor::DesktopRect {
+    fn virtual_bounds(&mut self) -> Result<sqyre_ports::DesktopRect, sqyre_ports::CaptureError> {
+        Ok(sqyre_ports::DesktopRect {
             x: 0,
             y: 0,
             w: 1,
@@ -168,7 +173,7 @@ pub fn process_icon(_process_path: &str, _window_title: &str) -> Option<ProcessI
 /// Uses the first entry from [`ScreenCapturer::monitor_sizes`] (display 0 / primary).
 /// Returns `None` when no display is available (headless / CI).
 pub fn main_monitor_resolution_key() -> Option<String> {
-    use sqyre_executor::ScreenCapturer;
+    use sqyre_ports::ScreenCapturer;
     let capturer = shared_capturer().ok()?;
     let mut wrap = SharedRunCapturer(capturer);
     let sizes = wrap.monitor_sizes().ok()?;
@@ -208,7 +213,7 @@ pub fn enable_per_monitor_dpi_v2() {
 
 /// Number of displays from the live capturer, or `1` when capture is unavailable.
 pub fn monitor_count() -> usize {
-    use sqyre_executor::ScreenCapturer;
+    use sqyre_ports::ScreenCapturer;
     let Ok(capturer) = shared_capturer() else {
         return 1;
     };
@@ -397,9 +402,13 @@ pub fn window_matches_binding(win: &WindowInfo, process_path: &str, window_title
 pub struct OsWindowFocuser;
 
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
-impl sqyre_executor::WindowFocuser for OsWindowFocuser {
-    fn focus(&self, _process_path: &str, _window_title: &str) -> Result<(), String> {
-        Err("focus window: not supported on this platform".into())
+impl sqyre_ports::WindowFocuser for OsWindowFocuser {
+    fn focus(
+        &self,
+        _process_path: &str,
+        _window_title: &str,
+    ) -> Result<(), sqyre_ports::AutomationError> {
+        Err(sqyre_ports::AutomationError::Unsupported("focus window"))
     }
 }
 
