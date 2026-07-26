@@ -1,5 +1,6 @@
 //! Staged field editors and draft apply (preserve `subactions`).
 
+mod edit_control_flow;
 mod edit_detect;
 
 use super::sections::{tip_section, tip_wrapped_section};
@@ -82,20 +83,7 @@ pub fn paint_edit_fields(
     } = bridges;
     let active_macro = *active_macro;
     match &mut draft.kind {
-        ActionKind::LoopJump { mode } => {
-            tip_wrapped_section(ui, |ui| {
-                let mut mode_s = mode.as_str().to_string();
-                combo_str_labeled(
-                    ui,
-                    "Mode",
-                    h::LOOP_JUMP_MODE,
-                    &mut mode_s,
-                    options::LOOP_JUMP_MODES,
-                    "break",
-                );
-                *mode = LoopJumpMode::parse(&mode_s);
-            });
-        }
+        ActionKind::LoopJump { mode } => edit_control_flow::paint_loop_jump(ui, mode),
         ActionKind::Wait { time } => {
             tip_wrapped_section(ui, |ui| {
                 scalar_field(
@@ -329,36 +317,24 @@ pub fn paint_edit_fields(
             });
         }
         ActionKind::Loop { name, count, .. } => {
-            tip_wrapped_section(ui, |ui| {
-                scalar_field(
-                    ui,
-                    "Count",
-                    h::LOOP_COUNT,
-                    count,
-                    known_vars,
-                    is_dark,
-                    active_macro,
-                );
-                text_field(ui, "Name", h::NAME, name);
-            });
+            edit_control_flow::paint_loop(ui, name, count, known_vars, is_dark, active_macro);
         }
         ActionKind::While {
             condition,
             max_iterations,
             ..
         } => {
-            condition_editor(ui, condition, known_vars, is_dark, active_macro, |ui| {
-                drag_field(
-                    ui,
-                    "Max iterations",
-                    h::MAX_ITERATIONS,
-                    max_iterations,
-                    |d| d,
-                );
-            });
+            edit_control_flow::paint_while(
+                ui,
+                condition,
+                max_iterations,
+                known_vars,
+                is_dark,
+                active_macro,
+            );
         }
         ActionKind::Conditional { condition, .. } => {
-            condition_editor(ui, condition, known_vars, is_dark, active_macro, |_| {});
+            edit_control_flow::paint_conditional(ui, condition, known_vars, is_dark, active_macro);
         }
         ActionKind::ForEachRow {
             name,
@@ -367,30 +343,16 @@ pub fn paint_edit_fields(
             end_row,
             ..
         } => {
-            tip_wrapped_section(ui, |ui| {
-                text_field(ui, "Name", h::NAME, name);
-                scalar_field(
-                    ui,
-                    "Start row",
-                    h::FOREACH_START,
-                    start_row,
-                    known_vars,
-                    is_dark,
-                    active_macro,
-                );
-                scalar_field(
-                    ui,
-                    "End row",
-                    h::FOREACH_END,
-                    end_row,
-                    known_vars,
-                    is_dark,
-                    active_macro,
-                );
-            });
-            tip_section(ui, |ui| {
-                list_columns_editor(ui, sources, known_vars, is_dark, active_macro);
-            });
+            edit_control_flow::paint_foreach_row(
+                ui,
+                name,
+                sources,
+                start_row,
+                end_row,
+                known_vars,
+                is_dark,
+                active_macro,
+            );
         }
         ActionKind::ImageSearch {
             name,
@@ -856,7 +818,7 @@ fn attach_coord_hover(
     previews.show_for_coordinate_ref(ui, response, catalog, coord, preview_kind);
 }
 
-fn scalar_field(
+pub(super) fn scalar_field(
     ui: &mut egui::Ui,
     label: &str,
     help_text: &str,
@@ -1012,7 +974,7 @@ const EXPRESSION_FUNCTIONS: &[&str] = &[
 ];
 const EXPRESSION_CONSTANTS: &[&str] = &["~pi", "~e"];
 
-fn condition_editor(
+pub(super) fn condition_editor(
     ui: &mut egui::Ui,
     condition: &mut ConditionBlock,
     known_vars: &KnownVariableNames,
@@ -1281,7 +1243,7 @@ fn clauses_editor(
     }
 }
 
-fn list_columns_editor(
+pub(super) fn list_columns_editor(
     ui: &mut egui::Ui,
     sources: &mut Vec<ListColumn>,
     known_vars: &KnownVariableNames,
