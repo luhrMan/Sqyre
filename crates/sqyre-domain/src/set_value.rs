@@ -1,8 +1,10 @@
 //! Set-variable value resolution.
 
-use crate::{evaluate_expression, numeric_to_scalar, ScalarValue, VariableStore};
+use crate::{
+    evaluate_expression, numeric_to_scalar, ResolveError, ScalarValue, VariableStore,
+};
 
-type Result<T> = std::result::Result<T, String>;
+type Result<T> = std::result::Result<T, ResolveError>;
 
 /// Whether text will be evaluated as arithmetic at runtime.
 pub fn looks_like_arithmetic(text: &str) -> bool {
@@ -57,9 +59,9 @@ pub fn expand_variable_refs(text: &str, vars: &VariableStore) -> Result<String> 
             out.push_str(&sqyre_varref::unescape_plain(&seg.text));
             continue;
         }
-        let val = vars
-            .get(&seg.name)
-            .ok_or_else(|| format!("unresolved variable ${{{}}}", seg.name))?;
+        let val = vars.get(&seg.name).ok_or_else(|| ResolveError::UnresolvedVariable {
+            name: seg.name.clone(),
+        })?;
         out.push_str(&val.as_display());
     }
     Ok(out)
@@ -69,7 +71,9 @@ pub fn expand_variable_refs(text: &str, vars: &VariableStore) -> Result<String> 
 pub fn resolve_variables_in_text(text: &str, vars: &VariableStore) -> Result<String> {
     let out = expand_variable_refs(text, vars)?;
     if sqyre_varref::contains(&out) {
-        return Err(format!("unresolved variable reference in {text:?}"));
+        return Err(ResolveError::NestedReference {
+            text: text.to_string(),
+        });
     }
     Ok(out)
 }
@@ -134,7 +138,9 @@ fn resolve_int_string(text: &str, vars: &VariableStore) -> Result<i32> {
     }
     resolved
         .parse()
-        .map_err(|_| format!("cannot parse int from {resolved:?}"))
+        .map_err(|_| ResolveError::ParseInt {
+            value: resolved.to_string(),
+        })
 }
 
 #[cfg(test)]

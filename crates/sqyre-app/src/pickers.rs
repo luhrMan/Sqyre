@@ -182,7 +182,7 @@ pub fn refresh_window_picker(picker: &mut ActivePicker) {
     *load_error = None;
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
-        let _ = tx.send(sqyre_capture::list_open_windows());
+        let _ = tx.send(sqyre_capture::list_open_windows().map_err(|e| e.to_string()));
     });
     *pending = Some(rx);
 }
@@ -1375,7 +1375,7 @@ pub fn show_active_picker(
                         *load_error = None;
                         let (tx, rx) = mpsc::channel();
                         thread::spawn(move || {
-                            let _ = tx.send(sqyre_capture::list_open_windows());
+                            let _ = tx.send(sqyre_capture::list_open_windows().map_err(|e| e.to_string()));
                         });
                         *pending = Some(rx);
                         *scroll_to_selection = true;

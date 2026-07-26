@@ -22,6 +22,7 @@ mod icon_cache;
 mod icon_variants;
 mod image_view;
 mod key_record;
+mod log;
 mod macro_meta;
 mod macro_overlay;
 mod overlay_icons;
@@ -97,11 +98,11 @@ pub fn run() -> eframe::Result<()> {
     let instance_lock = match single_instance::try_acquire() {
         Ok(Some(lock)) => Some(lock),
         Ok(None) => {
-            eprintln!("Sqyre is already running");
+            crate::log::warn("Sqyre is already running");
             std::process::exit(0);
         }
         Err(e) => {
-            eprintln!("failed to acquire instance lock: {e}");
+            crate::log::warn(format!("failed to acquire instance lock: {e}"));
             std::process::exit(1);
         }
     };
@@ -204,7 +205,7 @@ pub struct SqyreApp {
 impl SqyreApp {
     fn load() -> Self {
         let settings = UserSettings::load_default().unwrap_or_else(|e| {
-            eprintln!("sqyre: failed to load settings: {e}");
+            crate::log::warn(format!("failed to load settings: {e}"));
             UserSettings::default()
         });
         settings.apply_sqyre_dir_override();
@@ -222,7 +223,10 @@ impl SqyreApp {
         if let Err(e) = hotkeys.start(HotkeyCallbacks {
             on_escape_stop: Arc::new(move || stop.request_stop()),
             on_failsafe: Arc::new(|| {
-                eprintln!("failsafe {} — exiting", sqyre_hotkeys::FAILSAFE_LABEL);
+                crate::log::warn(format!(
+                    "failsafe {} — exiting",
+                    sqyre_hotkeys::FAILSAFE_LABEL
+                ));
                 sqyre_input::release_held_inputs();
                 std::process::exit(0);
             }),
@@ -233,7 +237,7 @@ impl SqyreApp {
                 }
             }),
         }) {
-            eprintln!("sqyre: failed to start global hotkeys: {e}");
+            crate::log::warn(format!("failed to start global hotkeys: {e}"));
         }
         #[cfg(target_arch = "wasm32")]
         {
@@ -298,7 +302,7 @@ impl SqyreApp {
                     Ok(_) => None,
                     Err(e) => {
                         let warning = format!("OCR unavailable: {e}");
-                        eprintln!("sqyre: {warning}");
+                        crate::log::warn(&warning);
                         Some(warning)
                     }
                 };
