@@ -189,8 +189,17 @@ pub struct DataEditor {
     window_picker: ActivePicker,
     /// Background AutoPic capture+save; polled each frame.
     autopix_pending: Option<std::sync::mpsc::Receiver<Result<String, String>>>,
+    /// Background collection image capture+save; polled each frame.
+    collection_capture_pending: Option<CollectionCapturePending>,
     /// Cached program/entity name lists keyed by catalog generation.
     list_cache: ListCache,
+}
+
+pub(super) struct CollectionCapturePending {
+    pub path: PathBuf,
+    /// When set, delete this collection if capture fails (new-collection flow).
+    pub rollback_collection: Option<(String, String)>,
+    pub rx: std::sync::mpsc::Receiver<Result<(), String>>,
 }
 
 impl Default for DataEditor {
@@ -255,6 +264,7 @@ impl Default for DataEditor {
             overlay_icon_search: String::new(),
             window_picker: ActivePicker::None,
             autopix_pending: None,
+            collection_capture_pending: None,
             list_cache: ListCache::default(),
         }
     }
@@ -367,6 +377,7 @@ impl DataEditor {
         self.draw_overlay_icon_picker(ctx, settings);
         self.poll_form_picker(ctx, catalog, icons, previews, macros);
         self.poll_autopix(ctx);
+        self.poll_collection_capture(ctx, catalog, icons);
     }
 
     fn poll_form_picker(

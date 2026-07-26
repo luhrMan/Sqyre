@@ -363,4 +363,72 @@ impl DataEditor {
             }
         }
     }
+
+    pub(crate) fn start_collection_capture(
+        &mut self,
+        catalog: &ProgramCatalog,
+        program: &str,
+        collection: &sqyre_persist::ProgramCollection,
+        rollback_collection: Option<(String, String)>,
+    ) -> Result<(), String> {
+        use crate::collection_capture::{capture_search_area_to_png, collection_capture_job};
+        use std::sync::mpsc;
+        use std::thread;
+
+        if self.collection_capture_pending.is_some() {
+            self.set_ok("Collection: capturing…");
+            return Ok(());
+        }
+        let (path, left, top, right, bottom) =
+            collection_capture_job(catalog, program, collection)?;
+        let path_for_thread = path.clone();
+        let (tx, rx) = mpsc::channel();
+        thread::spawn(move || {
+            let result = capture_search_area_to_png(left, top, right, bottom, &path_for_thread);
+            let _ = tx.send(result);
+        });
+        self.collection_capture_pending = Some(super::CollectionCapturePending {
+            path,
+            rollback_collection,
+            rx,
+        });
+        self.set_ok("Collection: capturing…");
+        Ok(())
+    }
+
+    pub(crate) fn poll_collection_capture(
+        &mut self,
+        ctx: &egui::Context,
+        catalog: &mut ProgramCatalog,
+        icons: &mut crate::icon_cache::IconCache,
+    ) {
+        use std::sync::mpsc::TryRecvError;
+
+        let Some(pending) = self.collection_capture_pending.take() else {
+            return;
+        };
+        match pending.rx.try_recv() {
+            Ok(Ok(())) => {
+                icons.invalidate_path(&pending.path);
+                self.collection_preview.reset();
+                self.set_ok("Collection image saved.");
+            }
+            Ok(Err(e)) => {
+                if let Some((prog, name)) = pending.rollback_collection {
+                    let _ = catalog.delete_collection(&prog, &name);
+                }
+                self.set_err(e);
+            }
+            Err(TryRecvError::Empty) => {
+                self.collection_capture_pending = Some(pending);
+                ctx.request_repaint();
+            }
+            Err(TryRecvError::Disconnected) => {
+                if let Some((prog, name)) = pending.rollback_collection {
+                    let _ = catalog.delete_collection(&prog, &name);
+                }
+                self.set_err("Collection: capture failed");
+            }
+        }
+    }
 }

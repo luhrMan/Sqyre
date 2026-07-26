@@ -114,9 +114,9 @@ impl SqyreApp {
         if idx >= self.workspace.macros.len() {
             return;
         }
-        let m = self.workspace.macros[idx].clone();
-        self.workspace.db.macros.insert(m.name.clone(), m);
-        self.save_database();
+        if let Err(e) = self.persist_database() {
+            eprintln!("sqyre: persist macro: {e}");
+        }
         self.refresh_macro_hotkey_bindings();
     }
 
@@ -147,13 +147,13 @@ impl SqyreApp {
     pub(crate) fn create_macro(&mut self) {
         let name = self.unique_macro_name("new macro");
         let m = Macro::new(name.clone(), 0, vec![]);
-        self.workspace.db.macros.insert(m.name.clone(), m.clone());
-        self.save_database();
-        if self.workspace.save_error.is_some() {
-            return;
-        }
         self.workspace.macros.push(m);
         self.workspace.macros.sort_by(|a, b| a.name.cmp(&b.name));
+        if let Err(e) = self.persist_database() {
+            self.workspace.macros.retain(|m| m.name != name);
+            eprintln!("sqyre: create macro: {e}");
+            return;
+        }
         self.refresh_macro_hotkey_bindings();
         self.select_macro_by_name(&name);
         self.play_ui_add_sound();
@@ -173,23 +173,24 @@ impl SqyreApp {
         // Clear hotkey so duplicate doesn't steal the source chord.
         dup.hotkey.clear();
         let name = dup.name.clone();
-        self.workspace.db.macros.insert(name.clone(), dup.clone());
-        self.save_database();
-        if self.workspace.save_error.is_some() {
-            return;
-        }
         self.workspace.macros.push(dup);
         self.workspace.macros.sort_by(|a, b| a.name.cmp(&b.name));
+        if let Err(e) = self.persist_database() {
+            self.workspace.macros.retain(|m| m.name != name);
+            eprintln!("sqyre: duplicate macro: {e}");
+            return;
+        }
         self.refresh_macro_hotkey_bindings();
         self.select_macro_by_name(&name);
         self.play_ui_add_sound();
     }
 
     pub(crate) fn delete_macro_named(&mut self, name: &str) {
-        self.workspace.db.macros.remove(name);
         self.tree.histories.remove(name);
         self.workspace.macros.retain(|m| m.name != name);
-        self.save_database();
+        if let Err(e) = self.persist_database() {
+            eprintln!("sqyre: delete macro: {e}");
+        }
         self.refresh_macro_hotkey_bindings();
         self.play_ui_delete_sound();
         if self.workspace.macros.is_empty() {
@@ -210,7 +211,7 @@ impl SqyreApp {
         );
     }
 
-    /// Rename the selected macro, drop the old db key, and rewrite Run Macro refs.
+    /// Rename the selected macro and rewrite Run Macro refs.
     pub(crate) fn rename_selected_macro(&mut self, new_name: String) {
         if self.workspace.macros.is_empty() {
             return;
@@ -231,7 +232,6 @@ impl SqyreApp {
         if let Some(hist) = self.tree.histories.remove(&old_name) {
             self.tree.histories.insert(new_name.clone(), hist);
         }
-        self.workspace.db.macros.remove(&old_name);
         if let Err(e) = self.persist_database() {
             eprintln!("sqyre: rename macro: {e}");
         }

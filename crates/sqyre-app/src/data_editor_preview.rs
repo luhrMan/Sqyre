@@ -332,6 +332,7 @@ pub(crate) fn paint_zoomable_collection_preview(
     cols: i32,
     view: &mut ImageViewTransform,
     replace_clicked: &mut bool,
+    capturing: bool,
 ) {
     ui.add_space(8.0);
     ui.separator();
@@ -343,7 +344,14 @@ pub(crate) fn paint_zoomable_collection_preview(
         {
             icons.invalidate_path(path);
         }
-        if ui.button("Replace Image").clicked() {
+        if ui
+            .add_enabled(!capturing, egui::Button::new(if capturing {
+                "Capturing…"
+            } else {
+                "Replace Image"
+            }))
+            .clicked()
+        {
             *replace_clicked = true;
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

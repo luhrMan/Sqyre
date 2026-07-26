@@ -108,6 +108,8 @@ impl SqyreApp {
             #[cfg(not(target_arch = "wasm32"))]
             backup_task: None,
             #[cfg(not(target_arch = "wasm32"))]
+            pixel_sample_pending: None,
+            #[cfg(not(target_arch = "wasm32"))]
             update: crate::update::UpdateManager::default(),
         };
         if let Some(m) = app.workspace.macros.first() {
