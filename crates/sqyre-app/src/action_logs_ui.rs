@@ -1,6 +1,7 @@
 //! Per-action Logs window: text detail, shared pipeline images, and clickable
 //! image-search item cards with per-item processing / find steps.
 
+use crate::image_view;
 use eframe::egui::{self, ColorImage, TextureHandle, TextureOptions};
 use sqyre_domain::ActionId;
 use sqyre_executor::{ActionLogEntry, LogImage, SharedActionLog};
@@ -359,6 +360,6 @@ fn fit_thumb(w: f32, h: f32, max_edge: f32) -> egui::Vec2 {
     if w <= 0.0 || h <= 0.0 {
         return egui::vec2(64.0, 64.0);
     }
-    let scale = (max_edge / w.max(h)).clamp(0.05, 4.0);
+    let scale = image_view::fit_scale(w, h, max_edge, max_edge).clamp(0.05, 4.0);
     egui::vec2(w * scale, h * scale)
 }
