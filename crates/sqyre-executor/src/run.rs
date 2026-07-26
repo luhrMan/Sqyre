@@ -32,6 +32,10 @@ pub struct Executor<'a> {
     held_buttons: BTreeSet<String>,
     /// Nested [`ActionKind::RunMacro`] call stack (includes the top-level macro name).
     pub(crate) run_macro_stack: Vec<String>,
+    /// [`VariableStore::revision`] last handed to [`ExecDeps::runtime_vars`];
+    /// `None` until the first publish. Skips re-publishing unchanged variables
+    /// after every action.
+    published_vars_revision: Option<u64>,
 }
 
 /// Hard default for nested RunMacro depth when callers omit a custom budget.
@@ -48,6 +52,7 @@ impl<'a> Executor<'a> {
             held_keys: BTreeSet::new(),
             held_buttons: BTreeSet::new(),
             run_macro_stack: Vec::new(),
+            published_vars_revision: None,
         }
     }
 
@@ -110,6 +115,25 @@ impl<'a> Executor<'a> {
             left -= chunk;
         }
         self.check_stopped()
+    }
+
+    /// Push the macro's variables to the live-variables sink, unless they are
+    /// unchanged since the last publish (this runs after every action).
+    fn publish_runtime_vars(&mut self, macro_: &Macro) {
+        let Some(sink) = self.deps.runtime_vars else {
+            return;
+        };
+        let revision = macro_.variables.revision();
+        if self.published_vars_revision == Some(revision) {
+            return;
+        }
+        let pairs: Vec<(String, String)> = macro_
+            .variables
+            .iter()
+            .map(|(n, v)| (n.to_string(), v.as_display()))
+            .collect();
+        sink.publish(&pairs);
+        self.published_vars_revision = Some(revision);
     }
 
     pub fn log(&self, action_id: ActionId, message: impl Into<String>) {
@@ -299,6 +323,7 @@ pub fn execute_macro_with(macro_: &mut Macro, deps: ExecDeps<'_>) -> Result<()> 
         held_keys: BTreeSet::new(),
         held_buttons: BTreeSet::new(),
         run_macro_stack: vec![macro_.name.clone()],
+        published_vars_revision: None,
     };
     macro_.init_runtime_variables();
     let monitor_sizes = match exec.deps.capturer.as_mut() {
@@ -306,7 +331,7 @@ pub fn execute_macro_with(macro_: &mut Macro, deps: ExecDeps<'_>) -> Result<()> 
         None => vec![(0, 0)],
     };
     apply_monitor_sizes(macro_, &monitor_sizes);
-    publish_runtime_vars(exec.deps.runtime_vars, macro_);
+    exec.publish_runtime_vars(macro_);
     let root = macro_.root.clone();
     let root_id = root.id;
     let result = match execute_action(&mut exec, &root, macro_) {
@@ -363,7 +388,7 @@ pub fn execute_action(exec: &mut Executor<'_>, action: &Action, macro_: &mut Mac
         Ok(())
         | Err(ExecError::Flow(FlowSignal::Break))
         | Err(ExecError::Flow(FlowSignal::Continue)) => {
-            publish_runtime_vars(exec.deps.runtime_vars, macro_);
+            exec.publish_runtime_vars(macro_);
             let delay_started = Instant::now();
             let delay_out = apply_delay(exec, action, macro_);
             exec.log_timing(action.id, "post-delay", delay_started.elapsed());
@@ -376,18 +401,6 @@ pub fn execute_action(exec: &mut Executor<'_>, action: &Action, macro_: &mut Mac
         Ok(()) => result,
         Err(e) => Err(e),
     }
-}
-
-fn publish_runtime_vars(sink: Option<&dyn RuntimeVarSink>, macro_: &Macro) {
-    let Some(sink) = sink else {
-        return;
-    };
-    let pairs: Vec<(String, String)> = macro_
-        .variables
-        .iter()
-        .map(|(n, v)| (n.to_string(), v.as_display()))
-        .collect();
-    sink.publish(&pairs);
 }
 
 fn apply_delay(exec: &mut Executor<'_>, action: &Action, macro_: &Macro) -> Result<()> {
@@ -704,6 +717,7 @@ pub(crate) fn resolve_text(text: &str, macro_: &Macro) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::action_log::lines_for;
     use crate::backends::DesktopRect;
     use crate::test_support::FixedResolver;
     use crate::test_support::{RecordingBackend, RecordingCapturer};
@@ -910,6 +924,7 @@ mod tests {
             held_keys: BTreeSet::new(),
             held_buttons: BTreeSet::new(),
             run_macro_stack: Vec::new(),
+            published_vars_revision: None,
         };
         let err = exec.interruptible_sleep(1000).unwrap_err();
         assert!(matches!(err, ExecError::Flow(FlowSignal::Stopped)));
@@ -1175,8 +1190,8 @@ mod tests {
             },
         )
         .unwrap();
-        let wait_lines = logger.lines_for(wait_id);
-        let click_lines = logger.lines_for(click_id);
+        let wait_lines = lines_for(&logger.entries_for(wait_id));
+        let click_lines = lines_for(&logger.entries_for(click_id));
         assert!(
             wait_lines.iter().any(|l| l.starts_with("Wait:")),
             "wait lines: {wait_lines:?}"
@@ -1193,7 +1208,7 @@ mod tests {
             click_lines.iter().any(|l| l.starts_with("timing: total ")),
             "click timing: {click_lines:?}"
         );
-        let root_lines = logger.lines_for(macro_.root.id);
+        let root_lines = lines_for(&logger.entries_for(macro_.root.id));
         assert!(
             root_lines
                 .iter()
