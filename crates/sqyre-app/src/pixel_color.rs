@@ -1,7 +1,10 @@
 //! Sample a screen pixel as `rrggbb` (Find Pixel dropper).
 
 use sqyre_capture::shared_capturer;
-use sqyre_ports::{DesktopRect, ScreenCapturer};
+use sqyre_ports::DesktopRect;
+
+#[cfg(any(test, target_arch = "wasm32"))]
+use sqyre_ports::ScreenCapturer;
 
 /// Capture the 1×1 pixel at `(x, y)` and return lowercase hex without `#`.
 #[cfg(target_arch = "wasm32")]

@@ -1,7 +1,7 @@
 use super::types::CollectionCellPick;
 use crate::data_editor_preview::paint_grid_overlay_painter;
 use crate::icon_cache::IconCache;
-use crate::image_view::{self, ImageViewTransform};
+use crate::image_view::{self};
 use eframe::egui::{self, Color32, Pos2, Sense, Vec2};
 use sqyre_persist::ProgramCatalog;
 

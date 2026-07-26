@@ -1,8 +1,6 @@
-use super::icon_grid::{grid_column_count_for_width, icon_grid_cell_ex, icon_grid_metrics, paint_even_icon_grid};
+use super::icon_grid::paint_even_icon_grid;
 use super::query::{fuzzy_match_fold, query_matches_name_or_tags};
-use super::types::{GRID_CELL, GRID_GAP, GRID_THUMB};
 use crate::icon_cache::IconCache;
-use crate::paint_ctx::CatalogPaint;
 use eframe::egui;
 use sqyre_domain::PROGRAM_DELIMITER;
 use sqyre_persist::ProgramCatalog;

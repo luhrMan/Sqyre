@@ -13,8 +13,6 @@ mod tests;
 mod types;
 mod window;
 
-pub use collection_cell::*;
-pub use coord_list::*;
 pub use icon_grid::*;
 pub use items_grid::*;
 pub use modal::*;

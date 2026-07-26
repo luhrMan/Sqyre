@@ -2,12 +2,10 @@ use super::query::fuzzy_match_fold;
 use super::scroll::{maybe_scroll_to, popup_scroll_max_height};
 use super::types::{CollectionCellPick, CoordKind};
 use crate::data_editor_preview::show_file_hover;
-use crate::icon_cache::IconCache;
 use crate::paint_ctx::CatalogPaint;
 use crate::preview_tooltip::PreviewKind;
 use eframe::egui;
 use sqyre_domain::{CoordinateRef, PROGRAM_DELIMITER};
-use sqyre_persist::ProgramCatalog;
 
 pub fn paint_coord_ref_list(
     ui: &mut egui::Ui,

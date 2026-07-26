@@ -124,7 +124,7 @@ impl IconCache {
                 self.process_missing.insert(key, ());
                 return None;
             };
-            return Some(self.insert_process_icon(ctx, &key, &icon));
+            Some(self.insert_process_icon(ctx, &key, &icon))
         }
         #[cfg(not(feature = "native-runtime"))]
         {
