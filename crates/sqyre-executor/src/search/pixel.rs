@@ -6,7 +6,7 @@ use super::common::{
 };
 use crate::error::{ExecError, Result};
 use crate::run::Executor;
-use sqyre_domain::{Action, ActionKind, Macro, MatchOrder};
+use sqyre_domain::{action_type_label, Action, ActionKind, Macro, MatchOrder};
 use sqyre_match::cluster_points;
 use sqyre_vision::find_pixels;
 use std::time::Instant;
@@ -35,6 +35,7 @@ pub(crate) fn execute_find_pixel(
     } = detection;
 
     let action_id = action.id;
+    let label = action_type_label(action.type_key());
     let order = order.clone();
     let targets: &[String] = &[];
     run_detection_shell(
@@ -47,6 +48,7 @@ pub(crate) fn execute_find_pixel(
             Ok(try_find_pixels(
                 exec,
                 action_id,
+                label,
                 search_area,
                 target_color,
                 *color_tolerance,
@@ -57,12 +59,12 @@ pub(crate) fn execute_find_pixel(
         |hits| !hits.is_empty(),
         |exec, macro_, hits, pass| {
             if hits.is_empty() {
-                exec.log(action_id, "FindPixel: pixel not found");
+                exec.log(action_id, format!("{label}: pixel not found"));
             } else if hits.len() == 1 {
                 exec.log(
                     action_id,
                     format!(
-                        "FindPixel: found matching pixel at screen ({}, {})",
+                        "{label}: found matching pixel at screen ({}, {})",
                         hits[0].screen_x, hits[0].screen_y
                     ),
                 );
@@ -70,7 +72,7 @@ pub(crate) fn execute_find_pixel(
                 exec.log(
                     action_id,
                     format!(
-                        "FindPixel: {} clustered match(es); first at ({}, {})",
+                        "{label}: {} clustered match(es); first at ({}, {})",
                         hits.len(),
                         hits[0].screen_x,
                         hits[0].screen_y
@@ -95,6 +97,7 @@ pub(crate) fn execute_find_pixel(
 fn try_find_pixels(
     exec: &mut Executor<'_>,
     action_id: sqyre_domain::ActionId,
+    label: &str,
     search_area: &sqyre_domain::CoordinateRef,
     target_color: &str,
     color_tolerance: i32,
@@ -104,7 +107,7 @@ fn try_find_pixels(
     let Some((buf, origin)) = capture_search_buf(
         exec,
         action_id,
-        "FindPixel",
+        label,
         search_area,
         macro_,
         |_, _, _, _, _| {},
