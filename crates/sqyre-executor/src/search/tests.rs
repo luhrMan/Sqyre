@@ -1,5 +1,6 @@
 use super::common::{run_matches, set_coord_outputs, sort_hits, DetectionHit};
 use super::ocr::ocr_target_matched;
+use crate::action_log::lines_for;
 use crate::backends::{DesktopRect, IconStore, ItemMeta};
 use crate::run::{execute_macro_with, ExecDeps};
 use crate::test_support::{RecordingBackend, RecordingCapturer, SEARCH_FIXED_AREA};
@@ -495,7 +496,7 @@ fn find_pixel_sets_coords_and_logs() {
         macro_.variables.get("foundY").map(|v| v.as_display()),
         Some("205".into()) // 200 origin + 5
     );
-    let lines = logger.lines_for(find_id);
+    let lines = lines_for(&logger.entries_for(find_id));
     assert!(
         lines.iter().any(|l| l.contains("found matching pixel")),
         "{lines:?}"
@@ -526,7 +527,7 @@ fn find_pixel_not_found_logs() {
         },
     }]);
     run_search_logged(&mut macro_, &mut backend, &mut capturer, &resolver, &logger);
-    let lines = logger.lines_for(find_id);
+    let lines = lines_for(&logger.entries_for(find_id));
     assert!(
         lines.iter().any(|l| l.contains("pixel not found")),
         "{lines:?}"
@@ -659,7 +660,7 @@ fn image_search_no_find_runs_branch() {
     .unwrap();
 
     assert!(backend.log.iter().any(|e| e == "sleep:13"));
-    let lines = logger.lines_for(search_id);
+    let lines = lines_for(&logger.entries_for(search_id));
     assert!(
         lines.iter().any(|l| l.contains("Image Search: searching")),
         "expected search-area log before match: {lines:?}"
@@ -921,7 +922,7 @@ fn ocr_writes_text_and_target_coords() {
         image_labels.iter().any(|l| l.contains("word boxes")),
         "expected OCR word-box overlay: {image_labels:?}"
     );
-    let lines = log.lines_for(ocr_id);
+    let lines = lines_for(&entries);
     assert!(
         lines.iter().any(|l| l.contains("OCR full text")),
         "expected full OCR text log: {lines:?}"
@@ -1091,13 +1092,10 @@ fn find_pixel_wait_until_found_retries_then_succeeds() {
         macro_.variables.get("foundX").map(|v| v.as_display()),
         Some("102".into())
     );
+    let lines = lines_for(&logger.entries_for(find_id));
     assert!(
-        logger
-            .lines_for(find_id)
-            .iter()
-            .any(|l| l.starts_with("timing: total ")),
-        "{:?}",
-        logger.lines_for(find_id)
+        lines.iter().any(|l| l.starts_with("timing: total ")),
+        "{lines:?}"
     );
 }
 
@@ -1562,7 +1560,7 @@ fn image_search_multi_variant_matches_either_template() {
             macro_.variables.get("StackMax").map(|v| v.as_display()),
             Some("3".into())
         );
-        let lines = logger.lines_for(search_id);
+        let lines = lines_for(&logger.entries_for(search_id));
         assert!(
             lines.iter().any(|l| l.contains("Total # found:")),
             "{lines:?}"

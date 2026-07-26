@@ -14,8 +14,8 @@ mod search;
 pub(crate) mod test_support;
 
 pub use action_log::{
-    crop_match_preview, draw_rect_rgb, ActionLogEntry, ActionLogger, LogImage, SharedActionLog,
-    MAX_ENTRIES_PER_ACTION,
+    crop_match_preview, draw_rect_rgb, lines_for, ActionLogEntry, ActionLogger, LogImage,
+    SharedActionLog, MAX_ENTRIES_PER_ACTION,
 };
 pub use backends::*;
 pub use error::{ExecError, FlowSignal, SearchError};

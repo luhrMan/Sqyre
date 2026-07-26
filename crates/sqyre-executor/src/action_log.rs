@@ -123,6 +123,10 @@ impl SharedActionLog {
         self.inner.lock().clear();
     }
 
+    /// Snapshot of the entries logged for `action_id`.
+    ///
+    /// Takes the lock and clones once; callers that also need text (e.g.
+    /// [`lines_for`]) should reuse this snapshot rather than snapshotting again.
     pub fn entries_for(&self, action_id: ActionId) -> Vec<ActionLogEntry> {
         self.inner
             .lock()
@@ -130,28 +134,29 @@ impl SharedActionLog {
             .cloned()
             .unwrap_or_default()
     }
+}
 
-    /// Text-only lines (skips images) — convenient for tests and Copy.
-    /// Item pipelines contribute their title, summary, and detail lines.
-    pub fn lines_for(&self, action_id: ActionId) -> Vec<String> {
-        let mut out = Vec::new();
-        for e in self.entries_for(action_id) {
-            match e {
-                ActionLogEntry::Text(s) => out.push(s),
-                ActionLogEntry::Image(img) => out.push(format!("[image] {}", img.label)),
-                ActionLogEntry::ItemPipeline {
-                    title,
-                    summary,
-                    details,
-                    ..
-                } => {
-                    out.push(format!("[item] {title} — {summary}"));
-                    out.extend(details);
-                }
+/// Render a snapshot as text lines — convenient for tests and Copy.
+/// Images become a `[image] label` placeholder; item pipelines contribute their
+/// title, summary, and detail lines.
+pub fn lines_for(entries: &[ActionLogEntry]) -> Vec<String> {
+    let mut out = Vec::new();
+    for e in entries {
+        match e {
+            ActionLogEntry::Text(s) => out.push(s.clone()),
+            ActionLogEntry::Image(img) => out.push(format!("[image] {}", img.label)),
+            ActionLogEntry::ItemPipeline {
+                title,
+                summary,
+                details,
+                ..
+            } => {
+                out.push(format!("[item] {title} — {summary}"));
+                out.extend(details.iter().cloned());
             }
         }
-        out
     }
+    out
 }
 
 impl ActionLogger for SharedActionLog {
@@ -368,7 +373,7 @@ mod tests {
         for i in 0..(MAX_ENTRIES_PER_ACTION + 50) {
             log.log(id, format!("line-{i}"));
         }
-        let lines = log.lines_for(id);
+        let lines = lines_for(&log.entries_for(id));
         assert_eq!(lines.len(), MAX_ENTRIES_PER_ACTION);
         assert_eq!(lines[0], format!("line-{}", 50));
         assert_eq!(
@@ -384,11 +389,11 @@ mod tests {
         let b = ActionId::new();
         log.log(a, "from-a".into());
         log.log(b, "from-b".into());
-        assert_eq!(log.lines_for(a), vec!["from-a".to_string()]);
-        assert_eq!(log.lines_for(b), vec!["from-b".to_string()]);
+        assert_eq!(lines_for(&log.entries_for(a)), vec!["from-a".to_string()]);
+        assert_eq!(lines_for(&log.entries_for(b)), vec!["from-b".to_string()]);
         log.clear();
-        assert!(log.lines_for(a).is_empty());
-        assert!(log.lines_for(b).is_empty());
+        assert!(log.entries_for(a).is_empty());
+        assert!(log.entries_for(b).is_empty());
     }
 
     #[test]
@@ -464,7 +469,7 @@ mod tests {
             }
             other => panic!("expected ItemPipeline, got {other:?}"),
         }
-        let lines = log.lines_for(id);
+        let lines = lines_for(&entries);
         assert!(lines[0].contains("Sword"));
         assert!(lines.iter().any(|l| l.contains("Found at")));
     }
