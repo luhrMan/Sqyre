@@ -18,7 +18,7 @@ pub use action_log::{
     MAX_ENTRIES_PER_ACTION,
 };
 pub use backends::*;
-pub use error::{ExecError, FlowSignal};
+pub use error::{ExecError, FlowSignal, SearchError};
 pub use highlight::{
     ActionHighlighter, HighlightEvent, HighlightKind, HighlightSnapshot, SharedHighlighter,
 };
