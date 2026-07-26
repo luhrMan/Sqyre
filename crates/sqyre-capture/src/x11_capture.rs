@@ -28,13 +28,16 @@ struct X11State {
     height: i32,
 }
 
-// X11 display pointer: we serialize all access via Mutex.
+// SAFETY: the raw display pointer is only ever touched while `OsCapturer::inner`
+// (a `Mutex`) is held, so concurrent access from another thread never overlaps.
 unsafe impl Send for X11State {}
 
 crate::define_shared_run_capturer!();
 
 impl OsCapturer {
     pub fn open() -> Result<Self, CaptureError> {
+        // SAFETY: `XOpenDisplay(null)` connects to the default display; the
+        // returned pointer is checked for null before any other Xlib call uses it.
         unsafe {
             let display = XOpenDisplay(ptr::null());
             if display.is_null() {
@@ -59,6 +62,8 @@ impl OsCapturer {
     /// Absolute pointer position on the virtual desktop (root coords).
     pub fn pointer_position(&self) -> Result<(i32, i32), CaptureError> {
         let st = self.inner.lock();
+        // SAFETY: `st.display`/`st.root` are the live display/root opened by
+        // `OsCapturer::open`; all out-params are stack-local and correctly sized.
         unsafe {
             let mut root_ret = 0u64;
             let mut child_ret = 0u64;
@@ -117,6 +122,9 @@ impl OsCapturer {
         // other threads aren't blocked on the X11 connection during conversion.
         let (data, w, h, bpp, stride) = {
             let st = self.inner.lock();
+            // SAFETY: `st.display`/`st.root` are the live display/root; `ximage` is
+            // null-checked before dereference, and `XDestroyImage` runs on every
+            // return path (including the `bpp < 3` error) so the image is never leaked.
             unsafe {
                 let ximage = XGetImage(
                     st.display,
@@ -189,6 +197,8 @@ fn xinerama_monitor_rects(st: &X11State) -> Vec<DesktopRect> {
         w: st.width,
         h: st.height,
     };
+    // SAFETY: `st.display` is the live display; `screens` is null/`count`-checked
+    // before the slice is built, and `XFree` releases the Xinerama-allocated array.
     unsafe {
         if XineramaIsActive(st.display) == 0 {
             return vec![fallback];
@@ -221,6 +231,8 @@ fn xinerama_monitor_rects(st: &X11State) -> Vec<DesktopRect> {
 
 impl Drop for X11State {
     fn drop(&mut self) {
+        // SAFETY: `self.display` is null-checked; closing it here is sound since
+        // no other reference to this `X11State` (and thus this display) can exist.
         unsafe {
             if !self.display.is_null() {
                 XCloseDisplay(self.display);
@@ -237,6 +249,8 @@ pub(crate) fn primary_monitor_scale() -> Option<f32> {
         let st = cap.inner.lock();
         return Some(xft_dpi_scale(st.display));
     }
+    // SAFETY: `display` is null-checked before use, and `XCloseDisplay` runs
+    // exactly once after `xft_dpi_scale` returns, before this pointer is dropped.
     unsafe {
         let display = XOpenDisplay(ptr::null());
         if display.is_null() {
@@ -249,6 +263,9 @@ pub(crate) fn primary_monitor_scale() -> Option<f32> {
 }
 
 fn xft_dpi_scale(display: *mut _XDisplay) -> f32 {
+    // SAFETY: `display` is a live connection owned by the caller; `res` is
+    // null-checked before `CStr::from_ptr`, and the string is owned by Xlib
+    // (not freed here), matching Xlib's resource-manager string contract.
     unsafe {
         let res = XResourceManagerString(display);
         if res.is_null() {
