@@ -303,41 +303,34 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
     app.macro_list_open = open;
 
     if let Some(name) = app.pending_delete_macro.clone() {
-        let mut open = true;
-        egui::Window::new("Delete Macro")
-            .collapsible(false)
-            .resizable(false)
-            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-            .order(egui::Order::Foreground)
-            .open(&mut open)
-            .show(ui.ctx(), |ui| {
-                ui.label(format!("Delete macro \"{name}\"?"));
-                let mut outcome = crate::widgets::ConfirmCancel::None;
-                ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
-                        outcome = crate::widgets::ConfirmCancel::Cancel;
-                    }
-                    if ui
-                        .button(egui::RichText::new("Delete").color(crate::theme::MACRO_STOP))
-                        .clicked()
-                    {
-                        outcome = crate::widgets::ConfirmCancel::Confirm;
-                    }
-                });
-                if outcome == crate::widgets::ConfirmCancel::None {
-                    outcome = crate::widgets::poll_confirm_keys(ui);
+        let open = crate::widgets::confirm_window(ui.ctx(), "Delete Macro", |ui| {
+            ui.label(format!("Delete macro \"{name}\"?"));
+            let mut outcome = crate::widgets::ConfirmCancel::None;
+            ui.horizontal(|ui| {
+                if ui.button("Cancel").clicked() {
+                    outcome = crate::widgets::ConfirmCancel::Cancel;
                 }
-                match outcome {
-                    crate::widgets::ConfirmCancel::Cancel => {
-                        app.pending_delete_macro = None;
-                    }
-                    crate::widgets::ConfirmCancel::Confirm => {
-                        app.pending_delete_macro = None;
-                        app.delete_macro_named(&name);
-                    }
-                    crate::widgets::ConfirmCancel::None => {}
+                if ui
+                    .button(egui::RichText::new("Delete").color(crate::theme::MACRO_STOP))
+                    .clicked()
+                {
+                    outcome = crate::widgets::ConfirmCancel::Confirm;
                 }
             });
+            if outcome == crate::widgets::ConfirmCancel::None {
+                outcome = crate::widgets::poll_confirm_keys(ui);
+            }
+            match outcome {
+                crate::widgets::ConfirmCancel::Cancel => {
+                    app.pending_delete_macro = None;
+                }
+                crate::widgets::ConfirmCancel::Confirm => {
+                    app.pending_delete_macro = None;
+                    app.delete_macro_named(&name);
+                }
+                crate::widgets::ConfirmCancel::None => {}
+            }
+        });
         if !open {
             app.pending_delete_macro = None;
         }

@@ -1,6 +1,7 @@
 //! Macro tree row chrome: icon badge, pastel pills, swatches.
 
 use crate::icon_cache::IconCache;
+use crate::image_view;
 use crate::pickers::attach_item_icon_tooltip;
 use crate::theme::paint_galley_centered;
 use crate::var_pills;
@@ -194,19 +195,6 @@ fn paint_summary_pill(
     var_pills::paint_summary_pill(ui, action.type_key(), pill, known, is_dark)
 }
 
-/// Fit texture into a max height/width box while keeping the source aspect ratio.
-fn thumb_display_size(tex_w: f32, tex_h: f32) -> Vec2 {
-    let h = tex_h.max(1.0);
-    let w = tex_w.max(1.0);
-    let mut out_h = TARGET_THUMB_MAX_H;
-    let mut out_w = out_h * (w / h);
-    if out_w > TARGET_THUMB_MAX_W {
-        out_w = TARGET_THUMB_MAX_W;
-        out_h = out_w * (h / w);
-    }
-    Vec2::new(out_w, out_h)
-}
-
 fn paint_color_swatch(ui: &mut egui::Ui, hex: &str) -> Option<egui::Response> {
     let c = parse_hex_color(hex)?;
     let fill = rgba(c);
@@ -233,7 +221,7 @@ fn paint_target_thumb(
     let (slot_rect, slot_resp) = ui.allocate_exact_size(slot, Sense::hover());
     if let Some(tex) = icons.for_target(ui.ctx(), catalog, target) {
         let [tw, th] = tex.size();
-        let size = thumb_display_size(tw as f32, th as f32);
+        let size = image_view::fit_in_box(tw as f32, th as f32, TARGET_THUMB_MAX_W, TARGET_THUMB_MAX_H);
         let inner = egui::Rect::from_center_size(slot_rect.center(), size);
         let _ = ui.put(
             inner,
@@ -620,11 +608,11 @@ mod tests {
 
     #[test]
     fn thumb_display_size_preserves_aspect() {
-        let wide = thumb_display_size(64.0, 32.0);
+        let wide = image_view::fit_in_box(64.0, 32.0, TARGET_THUMB_MAX_W, TARGET_THUMB_MAX_H);
         assert!((wide.x / wide.y - 2.0).abs() < 0.01);
         assert!(wide.y <= TARGET_THUMB_MAX_H + 0.01);
 
-        let tall = thumb_display_size(16.0, 32.0);
+        let tall = image_view::fit_in_box(16.0, 32.0, TARGET_THUMB_MAX_W, TARGET_THUMB_MAX_H);
         assert!((tall.x / tall.y - 0.5).abs() < 0.01);
         assert!((tall.y - TARGET_THUMB_MAX_H).abs() < 0.01);
     }
