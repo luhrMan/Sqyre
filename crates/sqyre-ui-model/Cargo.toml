@@ -9,5 +9,6 @@ description = "Sqyre UI chrome: display params, tree summary pills, action color
 workspace = true
 
 [dependencies]
+parking_lot = { workspace = true }
 sqyre-domain = { path = "../sqyre-domain" }
 sqyre-varref = { path = "../sqyre-varref" }

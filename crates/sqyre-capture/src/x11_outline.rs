@@ -31,11 +31,16 @@ pub struct SelectionOutline {
     last: Option<OutlineRect>,
 }
 
-// X11 display pointer: all use stays on the UI / owning thread.
+// SAFETY: the raw display pointer is owned exclusively by this struct — only
+// `&mut self` methods and `Drop` touch it, so it is never used from two threads
+// at once even after the value is moved to another thread.
 unsafe impl Send for SelectionOutline {}
 
 impl SelectionOutline {
     pub fn open() -> Result<Self, String> {
+        // SAFETY: `XOpenDisplay(null)` connects to the default display and its
+        // result is null-checked before any other Xlib call; every early return
+        // destroys the windows created so far and closes the connection.
         unsafe {
             let display = XOpenDisplay(ptr::null());
             if display.is_null() {
@@ -87,6 +92,8 @@ impl SelectionOutline {
         if self.last == Some(rect) && self.mapped {
             return;
         }
+        // SAFETY: `self.display` is a live connection (non-null since `open`
+        // succeeded) and `self.edges` were created on it.
         unsafe {
             place_edges(self.display, &self.edges, rect);
             for &w in &self.edges {
@@ -102,6 +109,8 @@ impl SelectionOutline {
         if !self.mapped && self.last.is_none() {
             return;
         }
+        // SAFETY: `self.display` is a live connection (non-null since `open`
+        // succeeded) and `self.edges` were created on it.
         unsafe {
             for &w in &self.edges {
                 XUnmapWindow(self.display, w);
@@ -115,6 +124,8 @@ impl SelectionOutline {
 
 impl Drop for SelectionOutline {
     fn drop(&mut self) {
+        // SAFETY: the edges were created on `self.display`, which is still live
+        // here; it is closed last and nulled so nothing can reuse it.
         unsafe {
             for &w in &self.edges {
                 if w != 0 {
@@ -130,6 +141,8 @@ impl Drop for SelectionOutline {
     }
 }
 
+// SAFETY: callers must pass a live, non-null Xlib `display` connection and a
+// screen index valid on it; `color` is a stack local that outlives `XAllocColor`.
 unsafe fn alloc_stroke_pixel(display: *mut Display, screen: c_int) -> Result<c_ulong, String> {
     let mut color = XColor {
         pixel: 0,
@@ -146,6 +159,9 @@ unsafe fn alloc_stroke_pixel(display: *mut Display, screen: c_int) -> Result<c_u
     Ok(color.pixel)
 }
 
+// SAFETY: callers must pass a live, non-null Xlib `display` connection plus a
+// `root`/`screen`/`pixel` valid on it; `attrs` is zeroed before the fields named
+// by `mask` are set, and it outlives the `XCreateWindow` call that reads it.
 unsafe fn create_edge(
     display: *mut Display,
     root: Window,
@@ -177,12 +193,17 @@ unsafe fn create_edge(
     Ok(win)
 }
 
+// SAFETY: callers must pass a live, non-null Xlib `display` connection and
+// `edges` created on it.
 unsafe fn place_edges(display: *mut Display, edges: &[Window; 4], r: OutlineRect) {
     for (&win, &(x, y, w, h)) in edges.iter().zip(edge_placements(r).iter()) {
         configure(display, win, x, y, w, h);
     }
 }
 
+// SAFETY: callers must pass a live, non-null Xlib `display` connection and a
+// `win` created on it; `changes` is a stack local that outlives
+// `XConfigureWindow`, and every field named by `mask` is initialized.
 unsafe fn configure(display: *mut Display, win: Window, x: i32, y: i32, w: i32, h: i32) {
     let mut changes = XWindowChanges {
         x,

@@ -472,6 +472,9 @@ unsafe fn get_string_prop(display: *mut Display, win: Window, atom: Atom) -> Opt
     Some(s)
 }
 
+// SAFETY: callers must pass a live, non-null Xlib `display` connection and a
+// valid `win` window; `prop`/`nitems` are status- and null-checked before the
+// `u32` read, and `XFree` is called on every path that allocates `prop`.
 unsafe fn window_pid(display: *mut Display, win: Window) -> Option<u32> {
     let atom = intern(display, "_NET_WM_PID").ok()?;
     let mut actual_type: Atom = 0;
@@ -525,6 +528,9 @@ fn process_comm(pid: u32) -> Option<String> {
     }
 }
 
+// SAFETY: callers must pass a live, non-null Xlib `display` connection plus a
+// valid `root` and `win`; the `XEvent` is zeroed before its `client_message`
+// variant is written, and it outlives the `XSendEvent` call that borrows it.
 unsafe fn set_active_window(
     display: *mut Display,
     root: Window,
@@ -561,6 +567,9 @@ unsafe fn set_active_window(
     Ok(())
 }
 
+// SAFETY: callers must pass a live, non-null Xlib `display` connection that
+// outlives this call; the windows passed on come from `_NET_CLIENT_LIST` on
+// that same connection.
 unsafe fn skip_taskbar_on_display(display: *mut _XDisplay) -> Result<(), String> {
     let our_pid = std::process::id();
     let root = XDefaultRootWindow(display);
@@ -597,6 +606,9 @@ unsafe fn skip_taskbar_on_display(display: *mut _XDisplay) -> Result<(), String>
     Ok(())
 }
 
+// SAFETY: callers must pass a live, non-null Xlib `display` connection, a valid
+// `win`, and atoms interned on that connection; the single-element `atom` buffer
+// matches the `format: 32` / `nelements: 1` passed to `XChangeProperty`.
 unsafe fn set_window_type_dock(
     display: *mut Display,
     win: Window,
@@ -616,6 +628,9 @@ unsafe fn set_window_type_dock(
     );
 }
 
+// SAFETY: callers must pass a live, non-null Xlib `display` connection, valid
+// `root`/`win` windows, and atoms interned on that connection; the `XEvent` is
+// zeroed before its `client_message` variant is written and outlives `XSendEvent`.
 unsafe fn send_net_wm_state_add(
     display: *mut Display,
     root: Window,
@@ -650,6 +665,8 @@ unsafe fn send_net_wm_state_add(
     let _ = XSendEvent(display, root, False, mask, &mut event);
 }
 
+// SAFETY: callers must pass a live, non-null Xlib `display` connection; the
+// `CString` outlives the `XInternAtom` call that reads its pointer.
 unsafe fn intern(display: *mut Display, name: &str) -> Result<Atom, String> {
     let c = CString::new(name).map_err(|e| e.to_string())?;
     let atom = XInternAtom(display, c.as_ptr(), False);
